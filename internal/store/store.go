@@ -174,7 +174,19 @@ if desc := r.LatestFlightDescriptor(); desc != nil && len(desc.Path) > 0 {
 name = desc.Path[0]
 }
 
-rowsWritten := 0
+
+// Schema Validation
+s.mu.RLock()
+if existingRecs, ok := s.vectors[name]; ok && len(existingRecs) > 0 {
+existingSchema := existingRecs[0].Schema()
+if !existingSchema.Equal(r.Schema()) {
+s.mu.RUnlock()
+return fmt.Errorf("schema mismatch: incoming schema does not match existing dataset '%s'", name)
+}
+}
+s.mu.RUnlock()
+
+	rowsWritten := 0
 
 for r.Next() {
 rec := r.Record()

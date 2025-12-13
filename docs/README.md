@@ -7,16 +7,16 @@ Apache Arrow Flight protocol.
 
 ```mermaid
 graph TD
- Client[Client Application] -->|Arrow Flight (gRPC/HTTP2)| LB[Longbow Server]
- LB -->|Store| Mem[In-Memory Vector Store]
- LB -->|Metrics| Prom[Prometheus]
- LB -->|Persistence| PVC[Persistent Volume]
+    Client[Client Application] -->|"Arrow Flight (gRPC/HTTP2)"| LB[Longbow Server]
+    LB -->|Store| Mem[In-Memory Vector Store]
+    LB -->|Metrics| Prom[Prometheus]
+    LB -->|Persistence| PVC[Persistent Volume]
 
- subgraph Kubernetes
- LB
- Mem
- PVC
- end
+    subgraph Kubernetes
+        LB
+        Mem
+        PVC
+    end
 ```
 
 ## Key Features

@@ -33,7 +33,10 @@ func bufDialer(ctx context.Context, address string) (net.Conn, error) {
 return lis.Dial()
 }
 
-func setupServer(t *testing.T) (*store.VectorStore, string) {
+
+func setupServer(t *testing.T) (*store.VectorStore, string, func(context.Context, string) (net.Conn, error)) {
+lis := bufconn.Listen(bufSize)
+
 // Create temp dir for persistence
 tmpDir, err := os.MkdirTemp("", "longbow_test_*")
 if err != nil {
@@ -54,26 +57,33 @@ flight.RegisterFlightServiceServer(s, vs)
 
 go func() {
 if err := s.Serve(lis); err != nil {
-// log.Fatalf("Server exited with error: %v", err)
+// Server closed
+_ = err
 }
 }()
 
+dialer := func(ctx context.Context, address string) (net.Conn, error) {
+return lis.Dial()
+}
+
 t.Cleanup(func() {
 s.Stop()
+lis.Close()
 os.RemoveAll(tmpDir)
 })
 
-return vs, tmpDir
+return vs, tmpDir, dialer
 }
 
 func TestDoPutAndDoGet(t *testing.T) {
-_, _ = setupServer(t)
+_, _, dialer := setupServer(t)
 
 ctx := context.Background()
-client, err := flight.NewFlightClient(
+client, err := flight.NewClientWithMiddleware(
 "passthrough",
 nil,
-grpc.WithContextDialer(bufDialer),
+nil,
+grpc.WithContextDialer(dialer),
 grpc.WithTransportCredentials(insecure.NewCredentials()),
 )
 if err != nil {
@@ -117,12 +127,13 @@ if err := w.Write(rec); err != nil {
 t.Fatalf("Write failed: %v", err)
 }
 w.Close()
-stream.CloseSend() // FIX: CloseSend must be called before Recv to signal EOF to server
+if err := stream.CloseSend(); err != nil { t.Fatalf("CloseSend failed: %v", err) }
 
 // Wait for server to process
 _, err = stream.Recv()
 if err != nil {
-// t.Fatalf("Stream recv failed: %v", err) // EOF is expected
+	// Expected EOF
+	_ = err
 }
 
 // 3. DoGet
@@ -154,12 +165,13 @@ t.Errorf("Expected 3 rows, got %d", count)
 
 
 func TestSchemaValidation(t *testing.T) {
-_, _ = setupServer(t)
+_, _, dialer := setupServer(t)
 ctx := context.Background()
-client, err := flight.NewFlightClient(
+client, err := flight.NewClientWithMiddleware(
 "passthrough",
 nil,
-grpc.WithContextDialer(bufDialer),
+nil,
+grpc.WithContextDialer(dialer),
 grpc.WithTransportCredentials(insecure.NewCredentials()),
 )
 if err != nil {
@@ -182,7 +194,8 @@ bA.Field(0).(*array.Int64Builder).AppendValues([]int64{1}, nil)
 recA := bA.NewRecord()
 defer recA.Release()
 
-streamA, _ := client.DoPut(ctx)
+streamA, err := client.DoPut(ctx)
+	if err != nil { t.Fatalf("DoPut A failed: %v", err) }
 wA := flight.NewRecordWriter(streamA, ipc.WithSchema(schemaA))
 wA.SetFlightDescriptor(&flight.FlightDescriptor{Path: []string{"schema_test"}})
 
@@ -190,10 +203,10 @@ if err := wA.Write(recA); err != nil {
 t.Fatalf("Write A failed: %v", err)
 }
 wA.Close()
-streamA.CloseSend()
+if err := streamA.CloseSend(); err != nil { t.Fatalf("CloseSend A failed: %v", err) }
 _, err = streamA.Recv() // Wait for completion
 if err != nil && err.Error() != "EOF" {
-// t.Logf("Stream A recv: %v", err)
+	t.Logf("Stream A recv: %v", err)
 }
 
 // Upload Schema B (Should Fail)
@@ -219,7 +232,7 @@ if err := wB.Write(recB); err != nil {
 // t.Logf("Write B failed as expected: %v", err)
 }
 wB.Close()
-streamB.CloseSend()
+if err := streamB.CloseSend(); err != nil { t.Fatalf("CloseSend B failed: %v", err) }
 
 _, err = streamB.Recv()
 if err == nil {
@@ -228,12 +241,13 @@ t.Fatal("Expected error due to schema mismatch, got nil")
 }
 
 func TestPersistence(t *testing.T) {
-vs, tmpDir := setupServer(t)
+vs, tmpDir, dialer := setupServer(t)
 ctx := context.Background()
-client, err := flight.NewFlightClient(
+client, err := flight.NewClientWithMiddleware(
 "passthrough",
 nil,
-grpc.WithContextDialer(bufDialer),
+nil,
+grpc.WithContextDialer(dialer),
 grpc.WithTransportCredentials(insecure.NewCredentials()),
 )
 if err != nil {
@@ -259,7 +273,8 @@ ib.AppendValues([]int64{100}, nil)
 rec := b.NewRecord()
 defer rec.Release()
 
-stream, _ := client.DoPut(ctx)
+stream, err := client.DoPut(ctx)
+	if err != nil { t.Fatalf("DoPut failed: %v", err) }
 w := flight.NewRecordWriter(stream, ipc.WithSchema(schema))
 w.SetFlightDescriptor(&flight.FlightDescriptor{Path: []string{"persist_test"}})
 
@@ -267,7 +282,7 @@ if err := w.Write(rec); err != nil {
 t.Fatalf("Write failed: %v", err)
 }
 w.Close()
-stream.CloseSend()
+if err := stream.CloseSend(); err != nil { t.Fatalf("CloseSend failed: %v", err) }
 _, _ = stream.Recv()
 
 // Force Snapshot

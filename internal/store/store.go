@@ -30,7 +30,6 @@ currentMemory int64
 dataPath         string
 walFile          *os.File
 walMu            sync.Mutex
-snapshotInterval time.Duration
 snapshotReset    chan time.Duration
 }
 
@@ -222,8 +221,7 @@ rowsWritten := 0
 for r.Next() {
 rec := r.Record()
 rec.Retain()
-
-size := calculateRecordSize(rec)
+		size := calculateRecordSize(rec)
 
 s.mu.Lock()
 if s.maxMemory > 0 && s.currentMemory+size > s.maxMemory {
@@ -235,6 +233,12 @@ return fmt.Errorf("resource exhausted: memory limit exceeded")
 s.vectors[name] = append(s.vectors[name], rec)
 s.currentMemory += size
 s.mu.Unlock()
+
+// Write to WAL
+		if err := s.writeToWAL(rec, name); err != nil {
+	s.logger.Error("Failed to write to WAL", "error", err)
+	// Decide if we should fail the request or just log. For now, log.
+}
 
 rowsWritten += int(rec.NumRows())
 }
@@ -288,7 +292,7 @@ return err
 case "force_snapshot":
 if err := s.Snapshot(); err != nil {
 result, _ := json.Marshal(map[string]string{"status": "error", "message": err.Error()})
-stream.Send(&flight.Result{Body: result})
+if err := stream.Send(&flight.Result{Body: result}); err != nil { return err }
 return err
 }
 result, _ := json.Marshal(map[string]string{"status": "ok", "message": "snapshot created"})

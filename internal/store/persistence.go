@@ -55,7 +55,8 @@ func (s *VectorStore) writeToWAL(rec arrow.Record, name string) error {
 s.walMu.Lock()
 defer s.walMu.Unlock()
 
-if s.walFile == nil {
+if rec == nil { return fmt.Errorf("record is nil") }
+	if s.walFile == nil {
 return nil // Persistence disabled or not initialized
 }
 
@@ -63,8 +64,8 @@ return nil // Persistence disabled or not initialized
 
 // 1. Serialize Record to buffer
 var buf bytes.Buffer
-w := ipc.NewWriter(&buf, ipc.WithSchema(rec.Schema()))
-if err := w.Write(rec); err != nil {
+	w := ipc.NewWriter(&buf, ipc.WithSchema(rec.Schema()), ipc.WithAllocator(s.mem))
+	if err := w.Write(rec); err != nil {
 return fmt.Errorf("failed to serialize record for WAL: %w", err)
 }
 if err := w.Close(); err != nil {
@@ -182,7 +183,7 @@ continue
 // We assume same schema for a dataset.
 w := ipc.NewWriter(f, ipc.WithSchema(recs[0].Schema()))
 for _, rec := range recs {
-if err := w.Write(rec); err != nil {
+	if err := w.Write(rec); err != nil {
 s.logger.Error("Failed to write record to snapshot", "name", name, "error", err)
 break
 }
@@ -195,7 +196,7 @@ f.Close()
 s.walMu.Lock()
 if s.walFile != nil {
 s.walFile.Close()
-os.Truncate(filepath.Join(s.dataPath, walFileName), 0)
+if err := os.Truncate(filepath.Join(s.dataPath, walFileName), 0); err != nil { s.logger.Error("Failed to truncate WAL", "error", err) }
 // Reopen
 f, err := os.OpenFile(filepath.Join(s.dataPath, walFileName), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 if err == nil {

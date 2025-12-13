@@ -52,7 +52,7 @@ When a `SIGHUP` is received, Longbow re-reads the `.env` file and updates the fo
 1. **Max Memory** (`LONGBOW_MAX_MEMORY`): Updates the memory limit for the vector store.
 <!-- markdownlint-enable MD013 -->
 <!-- markdownlint-disable MD013 -->
-2. **Snapshot Interval** (`LONGBOW_SNAPSHOT_INTERVAL`): Updates the frequency of automated snapshots.
+1. **Snapshot Interval** (`LONGBOW_SNAPSHOT_INTERVAL`): Updates the frequency of automated snapshots.
 <!-- markdownlint-enable MD013 -->
 
 ### Logging

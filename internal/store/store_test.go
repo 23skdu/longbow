@@ -1,4 +1,3 @@
-
 package store_test
 
 import (
@@ -118,13 +117,13 @@ if err := w.Write(rec); err != nil {
 t.Fatalf("Write failed: %v", err)
 }
 w.Close()
+stream.CloseSend() // FIX: CloseSend must be called before Recv to signal EOF to server
 
 // Wait for server to process
 _, err = stream.Recv()
 if err != nil {
 // t.Fatalf("Stream recv failed: %v", err) // EOF is expected
 }
-stream.CloseSend()
 
 // 3. DoGet
 ticketBytes, _ := json.Marshal(map[string]interface{}{"name": "test_dataset"})
@@ -153,6 +152,7 @@ t.Errorf("Expected 3 rows, got %d", count)
 }
 }
 
+
 func TestSchemaValidation(t *testing.T) {
 _, _ = setupServer(t)
 ctx := context.Background()
@@ -176,6 +176,8 @@ mem := memory.NewGoAllocator()
 
 // Upload Schema A
 bA := array.NewRecordBuilder(mem, schemaA)
+defer bA.Release()
+
 bA.Field(0).(*array.Int64Builder).AppendValues([]int64{1}, nil)
 recA := bA.NewRecord()
 defer recA.Release()
@@ -184,14 +186,27 @@ streamA, _ := client.DoPut(ctx)
 wA := flight.NewRecordWriter(streamA, ipc.WithSchema(schemaA))
 wA.SetFlightDescriptor(&flight.FlightDescriptor{Path: []string{"schema_test"}})
 
-wA.Write(recA)
+if err := wA.Write(recA); err != nil {
+t.Fatalf("Write A failed: %v", err)
+}
 wA.Close()
 streamA.CloseSend()
-streamA.Recv() // Wait for completion
+_, err = streamA.Recv() // Wait for completion
+if err != nil && err.Error() != "EOF" {
+// t.Logf("Stream A recv: %v", err)
+}
 
 // Upload Schema B (Should Fail)
 bB := array.NewRecordBuilder(mem, schemaB)
-bB.Field(0).(*array.Float64Builder).AppendValues([]float64{1.1}, nil)
+defer bB.Release()
+
+// Safe type assertion
+fb, ok := bB.Field(0).(*array.Float64Builder)
+if !ok {
+t.Fatalf("Expected Float64Builder, got %T", bB.Field(0))
+}
+fb.AppendValues([]float64{1.1}, nil)
+
 recB := bB.NewRecord()
 defer recB.Release()
 
@@ -199,7 +214,10 @@ streamB, _ := client.DoPut(ctx)
 wB := flight.NewRecordWriter(streamB, ipc.WithSchema(schemaB))
 wB.SetFlightDescriptor(&flight.FlightDescriptor{Path: []string{"schema_test"}})
 
-wB.Write(recB)
+if err := wB.Write(recB); err != nil {
+// Write might fail immediately if server rejects schema
+// t.Logf("Write B failed as expected: %v", err)
+}
 wB.Close()
 streamB.CloseSend()
 
@@ -227,7 +245,17 @@ defer client.Close()
 schema := arrow.NewSchema([]arrow.Field{{Name: "id", Type: arrow.PrimitiveTypes.Int64}}, nil)
 mem := memory.NewGoAllocator()
 b := array.NewRecordBuilder(mem, schema)
-b.Field(0).(*array.Int64Builder).AppendValues([]int64{100}, nil)
+defer b.Release()
+
+if b.Field(0) == nil {
+t.Fatal("Field 0 builder is nil")
+}
+ib, ok := b.Field(0).(*array.Int64Builder)
+if !ok {
+t.Fatalf("Field 0 is not Int64Builder, got %T", b.Field(0))
+}
+ib.AppendValues([]int64{100}, nil)
+
 rec := b.NewRecord()
 defer rec.Release()
 
@@ -235,10 +263,12 @@ stream, _ := client.DoPut(ctx)
 w := flight.NewRecordWriter(stream, ipc.WithSchema(schema))
 w.SetFlightDescriptor(&flight.FlightDescriptor{Path: []string{"persist_test"}})
 
-w.Write(rec)
+if err := w.Write(rec); err != nil {
+t.Fatalf("Write failed: %v", err)
+}
 w.Close()
 stream.CloseSend()
-stream.Recv()
+_, _ = stream.Recv()
 
 // Force Snapshot
 if err := vs.Snapshot(); err != nil {
@@ -247,9 +277,11 @@ t.Fatalf("Snapshot failed: %v", err)
 
 // Verify file exists
 path := fmt.Sprintf("%s/snapshots/persist_test.arrow", tmpDir)
+
+// Wait briefly for file system
+time.Sleep(100 * time.Millisecond)
+
 if _, err := os.Stat(path); os.IsNotExist(err) {
 t.Fatal("Snapshot file not created")
 }
-
-time.Sleep(10 * time.Millisecond)
 }

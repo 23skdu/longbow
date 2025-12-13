@@ -4,21 +4,33 @@ import (
 "flag"
 "log/slog"
 "net"
+"net/http"
 "os"
 
 "github.com/apache/arrow/go/v18/arrow/flight"
 "github.com/apache/arrow/go/v18/arrow/memory"
+"github.com/prometheus/client_golang/prometheus/promhttp"
 "github.com/23skdu/longbow/internal/store"
 "google.golang.org/grpc"
 )
 
 func main() {
-listenAddr := flag.String("listen", "0.0.0.0:3000", "Address to listen on")
+listenAddr := flag.String("listen", "0.0.0.0:3000", "Address to listen on for Flight service")
+metricsAddr := flag.String("metrics", "0.0.0.0:9090", "Address to listen on for Prometheus metrics")
 flag.Parse()
 
 // Setup JSON Logger
 logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 slog.SetDefault(logger)
+
+// Start Metrics Server
+go func() {
+logger.Info("Starting metrics server", "address", *metricsAddr)
+http.Handle("/metrics", promhttp.Handler())
+if err := http.ListenAndServe(*metricsAddr, nil); err != nil {
+logger.Error("Failed to start metrics server", "error", err)
+}
+}()
 
 mem := memory.NewGoAllocator()
 vectorStore := store.NewVectorStore(mem, logger)

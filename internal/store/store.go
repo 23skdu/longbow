@@ -303,8 +303,14 @@ return nil
 }
 
 func calculateRecordSize(rec arrow.Record) int64 {
+if rec == nil {
+return 0
+}
 size := int64(0)
 for _, col := range rec.Columns() {
+if col == nil || col.Data() == nil {
+continue
+}
 for _, buf := range col.Data().Buffers() {
 if buf != nil {
 size += int64(buf.Len())

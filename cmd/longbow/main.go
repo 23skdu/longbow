@@ -11,6 +11,7 @@ import (
 
 "github.com/23skdu/longbow/internal/store"
 "github.com/apache/arrow/go/v18/arrow/flight"
+"github.com/apache/arrow/go/v18/arrow/memory"
 "github.com/joho/godotenv"
 "github.com/kelseyhightower/envconfig"
 "github.com/prometheus/client_golang/prometheus/promhttp"
@@ -47,8 +48,12 @@ logger.Info("Starting Longbow",
 "data_path", cfg.DataPath,
 "snapshot_interval", cfg.SnapshotInterval)
 
+// Create memory allocator
+mem := memory.NewGoAllocator()
+
 // Initialize vector store
-vectorStore := store.NewVectorStore(cfg.MaxMemory, logger)
+// Signature: NewVectorStore(mem memory.Allocator, logger *slog.Logger, maxMemory int64)
+vectorStore := store.NewVectorStore(mem, logger, cfg.MaxMemory)
 
 // Start metrics server
 go func() {
@@ -58,13 +63,11 @@ logger.Error("Metrics server failed", "error", err)
 }
 }()
 
-// Create Flight server
-server := flight.NewFlightServer(vectorStore)
-server.Init(cfg.ListenAddr)
-
-// Setup gRPC server with options
+// Create gRPC server
 grpcServer := grpc.NewServer()
-server.RegisterFlightService(grpcServer)
+
+// Register Flight service
+flight.RegisterFlightServiceServer(grpcServer, vectorStore)
 
 // Start listener
 lis, err := net.Listen("tcp", cfg.ListenAddr)

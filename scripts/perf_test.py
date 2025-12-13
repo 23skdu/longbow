@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
-import argparse
-import time
+import argparse,sys,time
 import numpy as np
 import pyarrow as pa
 import pyarrow.flight as flight
-import sys
 
 def generate_batch(num_rows, dim):
     print(f"Generating {num_rows} vectors of dimension {dim}...")

@@ -5,11 +5,13 @@ import (
 "fmt"
 "log/slog"
 "sync"
+"time"
 
 "github.com/apache/arrow/go/v18/arrow"
 "github.com/apache/arrow/go/v18/arrow/flight"
 "github.com/apache/arrow/go/v18/arrow/ipc"
 "github.com/apache/arrow/go/v18/arrow/memory"
+"github.com/23skdu/longbow/internal/metrics"
 )
 
 // VectorStore implements flight.FlightServer
@@ -77,6 +79,8 @@ TotalBytes: -1,
 
 // DoGet streams data to the client
 func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGetServer) error {
+start := time.Now()
+method := "DoGet"
 name := string(tkt.Ticket)
 s.logger.Info("DoGet called", "ticket", name)
 
@@ -86,6 +90,7 @@ s.mu.RUnlock()
 
 if !ok {
 s.logger.Warn("Vector not found for ticket", "ticket", name)
+metrics.FlightOperationsTotal.WithLabelValues(method, "error").Inc()
 return fmt.Errorf("vector not found: %s", name)
 }
 
@@ -96,16 +101,28 @@ defer w.Close()
 w.SetFlightDescriptor(&flight.FlightDescriptor{Path: []string{name}})
 if err := w.Write(rec); err != nil {
 s.logger.Error("Failed to write record", "error", err, "ticket", name)
+metrics.FlightOperationsTotal.WithLabelValues(method, "error").Inc()
 return err
 }
+
+// Metrics success
+metrics.FlightOperationsTotal.WithLabelValues(method, "ok").Inc()
+metrics.FlightDurationSeconds.WithLabelValues(method).Observe(time.Since(start).Seconds())
+// Approximate bytes (rows * cols * avg_size - hard to get exact without serialization, using num_rows as proxy for now or 0)
+// Better to just count rows if bytes aren't easily available without cost
+
 return nil
 }
 
 // DoPut accepts data from the client
 func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
+start := time.Now()
+method := "DoPut"
+
 r, err := flight.NewRecordReader(stream)
 if err != nil {
 s.logger.Error("Failed to create record reader", "error", err)
+metrics.FlightOperationsTotal.WithLabelValues(method, "error").Inc()
 return err
 }
 defer r.Release()
@@ -124,6 +141,17 @@ old.Release()
 }
 s.vectors[name] = rec
 s.mu.Unlock()
+
+metrics.FlightBytesProcessed.WithLabelValues(method).Add(float64(rec.NumRows())) // Using rows as proxy for now
 }
+
+if r.Err() != nil {
+s.logger.Error("Error reading stream", "error", r.Err())
+metrics.FlightOperationsTotal.WithLabelValues(method, "error").Inc()
+return r.Err()
+}
+
+metrics.FlightOperationsTotal.WithLabelValues(method, "ok").Inc()
+metrics.FlightDurationSeconds.WithLabelValues(method).Observe(time.Since(start).Seconds())
 return nil
 }

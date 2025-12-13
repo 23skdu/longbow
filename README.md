@@ -5,9 +5,12 @@
 [![Markdown Lint](https://github.com/23skdu/longbow/actions/workflows/markdown-lint.yml/badge.svg)](https://github.com/23skdu/longbow/actions/workflows/markdown-lint.yml)
 [![Release](https://github.com/23skdu/longbow/actions/workflows/release.yml/badge.svg)](https://github.com/23skdu/longbow/actions/workflows/release.yml)
 
+<!-- markdownlint-disable MD033 -->
 <img width="1024" height="559" alt="image" src="https://github.com/user-attachments/assets/fc6c1662-f529-424a-a0d6-e7e27e813592" />
+<!-- markdownlint-enable MD033 -->
 
-**Longbow** is a high-performance, in-memory vector store implementing the **Apache Arrow Flight** protocol. It is designed for efficient, zero-copy transport of large datasets and vector embeddings between agents and services.
+**Longbow** is a high-performance, in-memory vector store implementing the **Apache Arrow Flight** protocol.
+It is designed for efficient, zero-copy transport of large datasets and vector embeddings between agents and services.
 
 ## Features
 
@@ -20,16 +23,18 @@
 
 Longbow exposes Prometheus metrics on a dedicated port to ensure observability without impacting the main Flight service.
 
-*   **Scrape Port**: `9090`
-*   **Scrape Path**: `/metrics`
+* **Scrape Port**: `9090`
+* **Scrape Path**: `/metrics`
 
 ### Custom Metrics
 
+<!-- markdownlint-disable MD013 -->
 | Metric Name | Type | Description |
 | :--- | :--- | :--- |
 | `longbow_flight_operations_total` | Counter | Total number of Flight operations (DoGet, DoPut, etc.) |
 | `longbow_flight_duration_seconds` | Histogram | Latency distribution of Flight operations |
 | `longbow_flight_bytes_processed_total` | Counter | Total bytes processed in Flight operations |
+<!-- markdownlint-enable MD013 -->
 
 Standard Go runtime metrics are also exposed.
 

@@ -2,10 +2,10 @@ package store
 
 import (
 "fmt"
+"log/slog"
 "sync"
 
 "github.com/apache/arrow/go/v18/arrow"
-"github.com/apache/arrow/go/v18/arrow/array"
 "github.com/apache/arrow/go/v18/arrow/flight"
 "github.com/apache/arrow/go/v18/arrow/memory"
 )
@@ -14,19 +14,22 @@ import (
 type VectorStore struct {
 flight.BaseFlightServer
 mem      memory.Allocator
+logger   *slog.Logger
 mu       sync.RWMutex
 vectors  map[string]arrow.Record
 }
 
-func NewVectorStore(mem memory.Allocator) *VectorStore {
+func NewVectorStore(mem memory.Allocator, logger *slog.Logger) *VectorStore {
 return &VectorStore{
 mem:     mem,
+logger:  logger,
 vectors: make(map[string]arrow.Record),
 }
 }
 
 // ListFlights returns available streams
 func (s *VectorStore) ListFlights(c *flight.Criteria, stream flight.FlightService_ListFlightsServer) error {
+s.logger.Info("ListFlights called")
 s.mu.RLock()
 defer s.mu.RUnlock()
 
@@ -38,6 +41,7 @@ Path: []string{name},
 },
 }
 if err := stream.Send(info); err != nil {
+s.logger.Error("Failed to send flight info", "error", err, "name", name)
 return err
 }
 }
@@ -47,6 +51,7 @@ return nil
 // GetFlightInfo returns metadata for a specific stream
 func (s *VectorStore) GetFlightInfo(ctx flight.FlightServerContext, desc *flight.FlightDescriptor) (*flight.FlightInfo, error) {
 if len(desc.Path) == 0 {
+s.logger.Warn("GetFlightInfo called with invalid path")
 return nil, fmt.Errorf("invalid path")
 }
 name := desc.Path[0]
@@ -56,6 +61,7 @@ rec, ok := s.vectors[name]
 s.mu.RUnlock()
 
 if !ok {
+s.logger.Warn("Vector not found", "name", name)
 return nil, fmt.Errorf("vector not found: %s", name)
 }
 
@@ -70,12 +76,14 @@ TotalBytes: -1,
 // DoGet streams data to the client
 func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGetServer) error {
 name := string(tkt.Ticket)
+s.logger.Info("DoGet called", "ticket", name)
 
 s.mu.RLock()
 rec, ok := s.vectors[name]
 s.mu.RUnlock()
 
 if !ok {
+s.logger.Warn("Vector not found for ticket", "ticket", name)
 return fmt.Errorf("vector not found: %s", name)
 }
 
@@ -83,13 +91,18 @@ w := flight.NewRecordWriter(stream, flight.NewIpcPayloadWriter(stream))
 defer w.Close()
 
 w.SetFlightDescriptor(&flight.FlightDescriptor{Path: []string{name}})
-return w.Write(rec)
+if err := w.Write(rec); err != nil {
+s.logger.Error("Failed to write record", "error", err, "ticket", name)
+return err
+}
+return nil
 }
 
 // DoPut accepts data from the client
 func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 r, err := flight.NewRecordReader(stream)
 if err != nil {
+s.logger.Error("Failed to create record reader", "error", err)
 return err
 }
 defer r.Release()
@@ -98,16 +111,18 @@ for r.Next() {
 rec := r.Record()
 rec.Retain()
 
-// Simple storage: overwrite based on first path component
-// In reality, you'd append or handle chunks
 if len(r.FlightDescriptor().Path) > 0 {
 name := r.FlightDescriptor().Path[0]
+s.logger.Info("Storing vector", "name", name, "rows", rec.NumRows())
+
 s.mu.Lock()
 if old, exists := s.vectors[name]; exists {
 old.Release()
 }
 s.vectors[name] = rec
 s.mu.Unlock()
+} else {
+s.logger.Warn("Received record without path descriptor")
 }
 }
 return nil

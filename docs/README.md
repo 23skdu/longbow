@@ -18,13 +18,13 @@ graph TD
 
 ## Key Features
 
-*   **Apache Arrow Flight Protocol**: Zero-copy data transfer.
-*   **In-Memory Storage**: Fast read/write operations.
-*   **Prometheus Metrics**: Built-in observability.
-*   **Helm Deployment**: Easy installation on Kubernetes.
+* **Apache Arrow Flight Protocol**: Zero-copy data transfer.
+* **In-Memory Storage**: Fast read/write operations.
+* **Prometheus Metrics**: Built-in observability.
+* **Helm Deployment**: Easy installation on Kubernetes.
 
 ## Navigation
 
-*   [Components](components.md)
-*   [Usage Guide](usage.md)
-*   [Arrow Protocol Spec](arrow-protocol.md)
+* [Components](components.md)
+* [Usage Guide](usage.md)
+* [Arrow Protocol Spec](arrow-protocol.md)

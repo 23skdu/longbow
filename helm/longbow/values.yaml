@@ -1,9 +1,10 @@
+
 replicaCount: 1
 
 image:
   repository: ghcr.io/23skdu/longbow
   pullPolicy: IfNotPresent
-  tag: "latest"
+  tag: "0.0.2"
 
 imagePullSecrets: []
 nameOverride: ""
@@ -14,7 +15,7 @@ serviceAccount:
   annotations: {}
   name: ""
 
-podAnnotations:
+podAnnotations: 
   prometheus.io/scrape: "true"
   prometheus.io/port: "9090"
   prometheus.io/path: "/metrics"
@@ -30,9 +31,33 @@ service:
 
 metrics:
   enabled: true
-  port: 9090
+  serviceMonitor:
+    enabled: false
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: chart-example.local
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+  tls: []
+
+httpRoute:
+  enabled: false
+  gateway: {}
+  hostnames: []
+  rules: []
 
 resources: {}
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 100
+  targetCPUUtilizationPercentage: 80
 
 nodeSelector: {}
 

@@ -101,12 +101,11 @@ metrics.FlightOperationsTotal.WithLabelValues(method, "error").Inc()
 return fmt.Errorf("vector not found: %s", name)
 }
 
-// Use flight.NewRecordWriter directly with the stream
-// Assuming all records have the same schema (enforced in DoPut or assumed)
 if len(recs) == 0 {
 return nil
 }
 
+// Use flight.NewRecordWriter directly with the stream
 w := flight.NewRecordWriter(stream, ipc.WithSchema(recs[0].Schema()))
 defer w.Close()
 

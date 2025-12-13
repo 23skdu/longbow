@@ -168,8 +168,11 @@ return err
 }
 defer r.Release()
 
-// Fixed: Removed r.FlightDescriptor() call as it is undefined in v18 Reader
 name := "default"
+// Use LatestFlightDescriptor to get the descriptor from the stream
+if desc := r.LatestFlightDescriptor(); desc != nil && len(desc.Path) > 0 {
+name = desc.Path[0]
+}
 
 rowsWritten := 0
 

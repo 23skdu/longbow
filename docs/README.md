@@ -1,6 +1,7 @@
 # Longbow Documentation
 
-Longbow is a high-performance, in-memory vector store implementing the Apache Arrow Flight protocol.
+Longbow is a high-performance, in-memory vector store implementing the
+Apache Arrow Flight protocol.
 
 ## Architecture
 

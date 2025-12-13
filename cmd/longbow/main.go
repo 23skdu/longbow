@@ -2,8 +2,9 @@ package main
 
 import (
 "flag"
-"log"
+"log/slog"
 "net"
+"os"
 
 "github.com/apache/arrow/go/v18/arrow/flight"
 "github.com/apache/arrow/go/v18/arrow/memory"
@@ -15,8 +16,12 @@ func main() {
 listenAddr := flag.String("listen", "0.0.0.0:3000", "Address to listen on")
 flag.Parse()
 
+// Setup JSON Logger
+logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+slog.SetDefault(logger)
+
 mem := memory.NewGoAllocator()
-vectorStore := store.NewVectorStore(mem)
+vectorStore := store.NewVectorStore(mem, logger)
 
 // Create Flight Server
 srv := flight.NewFlightServer(vectorStore)
@@ -24,16 +29,18 @@ srv.Init("0.0.0.0:3000")
 
 lis, err := net.Listen("tcp", *listenAddr)
 if err != nil {
-log.Fatalf("Failed to listen: %v", err)
+logger.Error("Failed to listen", "error", err, "address", *listenAddr)
+os.Exit(1)
 }
 
-log.Printf("Longbow Arrow Flight server listening on %s", *listenAddr)
+logger.Info("Longbow Arrow Flight server starting", "address", *listenAddr)
 
 // Standard gRPC server (HTTP/2)
 grpcServer := grpc.NewServer()
 srv.RegisterFlightService(grpcServer)
 
 if err := grpcServer.Serve(lis); err != nil {
-log.Fatalf("Failed to serve: %v", err)
+logger.Error("Failed to serve", "error", err)
+os.Exit(1)
 }
 }

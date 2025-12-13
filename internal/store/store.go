@@ -225,7 +225,9 @@ delete(s.vectors, name)
 }
 s.mu.Unlock()
 result, _ := json.Marshal(map[string]string{"status": "ok", "message": "dataset dropped"})
-stream.Send(&flight.Result{Body: result})
+if err := stream.Send(&flight.Result{Body: result}); err != nil {
+return err
+}
 
 case "get_stats":
 s.mu.RLock()
@@ -236,13 +238,17 @@ stats := map[string]interface{}{
 }
 s.mu.RUnlock()
 result, _ := json.Marshal(stats)
-stream.Send(&flight.Result{Body: result})
+if err := stream.Send(&flight.Result{Body: result}); err != nil {
+return err
+}
 
 case "force_snapshot":
 // Placeholder for persistence logic
 s.logger.Info("Snapshot requested (not implemented)")
 result, _ := json.Marshal(map[string]string{"status": "skipped", "message": "persistence not enabled"})
-stream.Send(&flight.Result{Body: result})
+if err := stream.Send(&flight.Result{Body: result}); err != nil {
+return err
+}
 
 default:
 return fmt.Errorf("unknown action: %s", action.Type)

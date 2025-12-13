@@ -17,17 +17,17 @@ import (
 // VectorStore implements flight.FlightServer
 type VectorStore struct {
 flight.BaseFlightServer
-mem      memory.Allocator
-logger   *slog.Logger
-mu       sync.RWMutex
-vectors  map[string]arrow.Record
+mem     memory.Allocator
+logger  *slog.Logger
+mu      sync.RWMutex
+vectors map[string][]arrow.Record // Changed to slice for append-only support
 }
 
 func NewVectorStore(mem memory.Allocator, logger *slog.Logger) *VectorStore {
 return &VectorStore{
 mem:     mem,
 logger:  logger,
-vectors: make(map[string]arrow.Record),
+vectors: make(map[string][]arrow.Record),
 }
 }
 
@@ -61,19 +61,26 @@ return nil, fmt.Errorf("invalid path")
 name := desc.Path[0]
 
 s.mu.RLock()
-rec, ok := s.vectors[name]
+recs, ok := s.vectors[name]
 s.mu.RUnlock()
 
-if !ok {
+if !ok || len(recs) == 0 {
 s.logger.Warn("Vector not found", "name", name)
 return nil, fmt.Errorf("vector not found: %s", name)
 }
 
+// Use schema from the first record
+schema := recs[0].Schema()
+totalRows := int64(0)
+for _, r := range recs {
+totalRows += r.NumRows()
+}
+
 return &flight.FlightInfo{
-Schema: flight.SerializeSchema(rec.Schema(), s.mem),
+Schema:           flight.SerializeSchema(schema, s.mem),
 FlightDescriptor: desc,
-TotalRecords: rec.NumRows(),
-TotalBytes: -1,
+TotalRecords:     totalRows,
+TotalBytes:       -1,
 }, nil
 }
 
@@ -85,7 +92,7 @@ name := string(tkt.Ticket)
 s.logger.Info("DoGet called", "ticket", name)
 
 s.mu.RLock()
-rec, ok := s.vectors[name]
+recs, ok := s.vectors[name]
 s.mu.RUnlock()
 
 if !ok {
@@ -95,21 +102,29 @@ return fmt.Errorf("vector not found: %s", name)
 }
 
 // Use flight.NewRecordWriter directly with the stream
-w := flight.NewRecordWriter(stream, ipc.WithSchema(rec.Schema()))
+// Assuming all records have the same schema (enforced in DoPut or assumed)
+if len(recs) == 0 {
+return nil
+}
+
+w := flight.NewRecordWriter(stream, ipc.WithSchema(recs[0].Schema()))
 defer w.Close()
 
 w.SetFlightDescriptor(&flight.FlightDescriptor{Path: []string{name}})
+
+rowsSent := 0
+for _, rec := range recs {
 if err := w.Write(rec); err != nil {
 s.logger.Error("Failed to write record", "error", err, "ticket", name)
 metrics.FlightOperationsTotal.WithLabelValues(method, "error").Inc()
 return err
 }
+rowsSent += int(rec.NumRows())
+}
 
-// Metrics success
 metrics.FlightOperationsTotal.WithLabelValues(method, "ok").Inc()
 metrics.FlightDurationSeconds.WithLabelValues(method).Observe(time.Since(start).Seconds())
-// Approximate bytes (rows * cols * avg_size - hard to get exact without serialization, using num_rows as proxy for now or 0)
-// Better to just count rows if bytes aren't easily available without cost
+metrics.FlightBytesProcessed.WithLabelValues(method).Add(float64(rowsSent))
 
 return nil
 }
@@ -127,22 +142,25 @@ return err
 }
 defer r.Release()
 
+// Extract dataset name from descriptor if available
+name := "default"
+if r.FlightDescriptor() != nil && len(r.FlightDescriptor().Path) > 0 {
+name = r.FlightDescriptor().Path[0]
+}
+
+rowsWritten := 0
+
 for r.Next() {
 rec := r.Record()
 rec.Retain()
 
-// Simplified: Store everything under "default" for now
-name := "default"
-s.logger.Info("Storing vector", "name", name, "rows", rec.NumRows())
+s.logger.Info("Storing vector batch", "name", name, "rows", rec.NumRows())
 
 s.mu.Lock()
-if old, exists := s.vectors[name]; exists {
-old.Release()
-}
-s.vectors[name] = rec
+s.vectors[name] = append(s.vectors[name], rec)
 s.mu.Unlock()
 
-metrics.FlightBytesProcessed.WithLabelValues(method).Add(float64(rec.NumRows())) // Using rows as proxy for now
+rowsWritten += int(rec.NumRows())
 }
 
 if r.Err() != nil {
@@ -153,5 +171,7 @@ return r.Err()
 
 metrics.FlightOperationsTotal.WithLabelValues(method, "ok").Inc()
 metrics.FlightDurationSeconds.WithLabelValues(method).Observe(time.Since(start).Seconds())
+metrics.FlightBytesProcessed.WithLabelValues(method).Add(float64(rowsWritten))
+
 return nil
 }

@@ -5,6 +5,7 @@ import (
 "encoding/json"
 "fmt"
 "log/slog"
+"os"
 "sync"
 "time"
 
@@ -24,6 +25,13 @@ mu            sync.RWMutex
 vectors       map[string][]arrow.Record
 maxMemory     int64
 currentMemory int64
+
+// Persistence
+dataPath         string
+walFile          *os.File
+walMu            sync.Mutex
+snapshotInterval time.Duration
+snapshotReset    chan time.Duration
 }
 
 func NewVectorStore(mem memory.Allocator, logger *slog.Logger, maxMemory int64) *VectorStore {
@@ -33,6 +41,30 @@ logger:        logger,
 vectors:       make(map[string][]arrow.Record),
 maxMemory:     maxMemory,
 currentMemory: 0,
+snapshotReset: make(chan time.Duration, 1),
+}
+}
+
+// UpdateConfig updates the dynamic configuration of the store
+func (s *VectorStore) UpdateConfig(maxMemory int64, snapshotInterval time.Duration) {
+s.mu.Lock()
+s.maxMemory = maxMemory
+s.mu.Unlock()
+
+s.logger.Info("Store configuration updated", "max_memory", maxMemory)
+
+// Non-blocking send to reset channel
+select {
+case s.snapshotReset <- snapshotInterval:
+s.logger.Info("Snapshot interval update signal sent", "new_interval", snapshotInterval)
+default:
+// If channel is full, drain and replace (last write wins for config)
+select {
+case <-s.snapshotReset:
+default:
+}
+s.snapshotReset <- snapshotInterval
+s.logger.Info("Snapshot interval update signal sent (drained previous)", "new_interval", snapshotInterval)
 }
 }
 
@@ -88,8 +120,8 @@ TotalBytes:       -1,
 
 // TicketQuery defines the JSON structure for DoGet tickets
 type TicketQuery struct {
-Name  string `json:"name"`
-Limit int64  `json:"limit"`
+Name  string 
+Limit int64  
 }
 
 // DoGet streams data to the client with optional predicate pushdown
@@ -174,7 +206,6 @@ if desc := r.LatestFlightDescriptor(); desc != nil && len(desc.Path) > 0 {
 name = desc.Path[0]
 }
 
-
 // Schema Validation
 s.mu.RLock()
 if existingRecs, ok := s.vectors[name]; ok && len(existingRecs) > 0 {
@@ -186,7 +217,7 @@ return fmt.Errorf("schema mismatch: incoming schema does not match existing data
 }
 s.mu.RUnlock()
 
-	rowsWritten := 0
+rowsWritten := 0
 
 for r.Next() {
 rec := r.Record()
@@ -255,9 +286,12 @@ return err
 }
 
 case "force_snapshot":
-// Placeholder for persistence logic
-s.logger.Info("Snapshot requested (not implemented)")
-result, _ := json.Marshal(map[string]string{"status": "skipped", "message": "persistence not enabled"})
+if err := s.Snapshot(); err != nil {
+result, _ := json.Marshal(map[string]string{"status": "error", "message": err.Error()})
+stream.Send(&flight.Result{Body: result})
+return err
+}
+result, _ := json.Marshal(map[string]string{"status": "ok", "message": "snapshot created"})
 if err := stream.Send(&flight.Result{Body: result}); err != nil {
 return err
 }

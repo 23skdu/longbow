@@ -23,15 +23,8 @@ import (
 
 const bufSize = 1024 * 1024
 
-var lis *bufconn.Listener
 
-func init() {
-	lis = bufconn.Listen(bufSize)
-}
 
-func bufDialer(ctx context.Context, address string) (net.Conn, error) {
-	return lis.Dial()
-}
 
 func setupServer(t *testing.T) (*store.VectorStore, string, func(context.Context, string) (net.Conn, error)) {
 	lis := bufconn.Listen(bufSize)
@@ -233,7 +226,7 @@ func TestSchemaValidation(t *testing.T) {
 
 	if err := wB.Write(recB); err != nil {
 		// Write might fail immediately if server rejects schema
-		// t.Logf("Write B failed as expected: %v", err)
+		t.Logf("Write B failed as expected: %v", err)
 	}
 	wB.Close()
 	if err := streamB.CloseSend(); err != nil {

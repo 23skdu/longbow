@@ -15,14 +15,21 @@ serviceAccount:
   annotations: {}
   name: ""
 
-podAnnotations: 
+podAnnotations:
   prometheus.io/scrape: "true"
   prometheus.io/port: "9090"
   prometheus.io/path: "/metrics"
 
-podSecurityContext: {}
+podSecurityContext:
+  fsGroup: 2000
 
-securityContext: {}
+securityContext:
+  capabilities:
+    drop:
+    - ALL
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 1000
 
 service:
   type: ClusterIP
@@ -33,6 +40,13 @@ metrics:
   enabled: true
   serviceMonitor:
     enabled: false
+
+persistence:
+  enabled: false
+  storageClass: ""
+  accessMode: ReadWriteOnce
+  size: 1Gi
+  path: /data
 
 ingress:
   enabled: false

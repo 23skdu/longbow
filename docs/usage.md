@@ -12,7 +12,9 @@ helm install my-release helm/longbow
 
 ### Configuration
 
+<!-- markdownlint-disable MD013 -->
 The following table lists the configurable parameters of the Longbow chart and their default values.
+<!-- markdownlint-enable MD013 -->
 
 | Parameter | Description | Default |
 | :--- | :--- | :--- |
@@ -31,10 +33,14 @@ import pyarrow as pa
 client = flight.FlightClient("grpc://localhost:3000")
 
 # Create a schema
+<!-- markdownlint-disable MD013 -->
 schema = pa.schema([("id", pa.int64()), ("vector", pa.list_(pa.float32(), 128))])
+<!-- markdownlint-enable MD013 -->
 
 # Upload data
+<!-- markdownlint-disable MD013 -->
 writer, _ = client.do_put(flight.FlightDescriptor.for_path("test_dataset"), schema)
+<!-- markdownlint-enable MD013 -->
 # ... write data ...
 writer.close()
 
@@ -46,4 +52,6 @@ print(table)
 
 ## Persistence and Hot Reload
 
+<!-- markdownlint-disable MD013 -->
 For details on persistence (WAL, Snapshots) and hot reloading, please refer to [WAL.md](WAL.md).
+<!-- markdownlint-enable MD013 -->

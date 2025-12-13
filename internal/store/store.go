@@ -88,8 +88,8 @@ TotalBytes:       -1,
 
 // TicketQuery defines the JSON structure for DoGet tickets
 type TicketQuery struct {
-Name  string json:"name"
-Limit int64  json:"limit"
+Name  string `json:"name"`
+Limit int64  `json:"limit"`
 }
 
 // DoGet streams data to the client with optional predicate pushdown
@@ -168,10 +168,8 @@ return err
 }
 defer r.Release()
 
+// Fixed: Removed r.FlightDescriptor() call as it is undefined in v18 Reader
 name := "default"
-if r.FlightDescriptor() != nil && len(r.FlightDescriptor().Path) > 0 {
-name = r.FlightDescriptor().Path[0]
-}
 
 rowsWritten := 0
 

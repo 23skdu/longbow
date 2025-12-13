@@ -23,10 +23,6 @@ slog.SetDefault(logger)
 mem := memory.NewGoAllocator()
 vectorStore := store.NewVectorStore(mem, logger)
 
-// Create Flight Server
-srv := flight.NewFlightServer(vectorStore)
-srv.Init("0.0.0.0:3000")
-
 lis, err := net.Listen("tcp", *listenAddr)
 if err != nil {
 logger.Error("Failed to listen", "error", err, "address", *listenAddr)
@@ -38,8 +34,8 @@ logger.Info("Longbow Arrow Flight server starting", "address", *listenAddr)
 // Standard gRPC server (HTTP/2)
 grpcServer := grpc.NewServer()
 
-// Correct registration: Register the server implementation with the gRPC server
-flight.RegisterFlightServiceServer(grpcServer, srv)
+// Register the VectorStore directly as the Flight Service
+flight.RegisterFlightServiceServer(grpcServer, vectorStore)
 
 if err := grpcServer.Serve(lis); err != nil {
 logger.Error("Failed to serve", "error", err)

@@ -114,8 +114,7 @@ for r.Next() {
 rec := r.Record()
 rec.Retain()
 
-// Simplified: Store everything under "default" for now as Reader descriptor access is tricky in v18
-// In a real app, we'd parse the descriptor from the stream metadata or first message
+// Simplified: Store everything under "default" for now
 name := "default"
 s.logger.Info("Storing vector", "name", name, "rows", rec.NumRows())
 

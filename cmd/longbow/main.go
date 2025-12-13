@@ -37,7 +37,9 @@ logger.Info("Longbow Arrow Flight server starting", "address", *listenAddr)
 
 // Standard gRPC server (HTTP/2)
 grpcServer := grpc.NewServer()
-srv.RegisterFlightService(grpcServer)
+
+// Correct registration: Register the server implementation with the gRPC server
+flight.RegisterFlightServiceServer(grpcServer, srv)
 
 if err := grpcServer.Serve(lis); err != nil {
 logger.Error("Failed to serve", "error", err)

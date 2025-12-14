@@ -25,6 +25,7 @@ To prevent the WAL from growing indefinitely and to speed up recovery, Longbow p
 - **Directory**: `snapshots/`
 - **Mechanism**: The entire in-memory vector store is serialized to disk.
 <!-- markdownlint-disable MD013 -->
+- **Optimization**: Uses memory mapping (`mmap`) for Zero-Copy loading, drastically reducing startup time for large datasets.
 - **Configuration**: The interval is controlled by the `LONGBOW_SNAPSHOT_INTERVAL` environment variable (e.g., `5m`, `1h`).
 <!-- markdownlint-enable MD013 -->
 

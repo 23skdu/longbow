@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/23skdu/longbow/internal/metrics"
@@ -24,8 +25,16 @@ import (
 
 // Dataset wraps records with metadata for eviction
 type Dataset struct {
-Records    []arrow.Record
-LastAccess time.Time
+Records []arrow.Record
+lastAccess int64 // UnixNano
+}
+
+func (d *Dataset) LastAccess() time.Time {
+return time.Unix(0, atomic.LoadInt64(&d.lastAccess))
+}
+
+func (d *Dataset) SetLastAccess(t time.Time) {
+atomic.StoreInt64(&d.lastAccess, t.UnixNano())
 }
 
 // VectorStore implements flight.FlightServer
@@ -248,12 +257,12 @@ limit = query.Limit
 
 s.logger.Info("DoGet called", "ticket", name, "limit", limit)
 
-s.mu.Lock() // Upgrade to Lock to update LastAccess
-ds, ok := s.vectors[name]
-if ok {
-ds.LastAccess = time.Now()
-}
-s.mu.Unlock()
+s.mu.RLock() // Read lock is sufficient with atomic LastAccess
+	ds, ok := s.vectors[name]
+	if ok {
+		ds.SetLastAccess(time.Now())
+	}
+	s.mu.RUnlock()
 
 recs := ds.Records
 
@@ -363,10 +372,10 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 			return fmt.Errorf("resource exhausted: memory limit exceeded")
 		}
 		if _, ok := s.vectors[name]; !ok {
-			s.vectors[name] = &Dataset{Records: []arrow.Record{}, LastAccess: time.Now()}
+			s.vectors[name] = &Dataset{Records: []arrow.Record{}, lastAccess: time.Now().UnixNano()}
 		}
 		s.vectors[name].Records = append(s.vectors[name].Records, rec)
-		s.vectors[name].LastAccess = time.Now()
+		s.vectors[name].SetLastAccess(time.Now())
 		s.currentMemory += size
 		s.mu.Unlock()
 
@@ -574,7 +583,7 @@ now := time.Now()
 evictedCount := 0
 
 for name, ds := range s.vectors {
-if now.Sub(ds.LastAccess) > s.ttlDuration {
+if now.Sub(ds.LastAccess()) > s.ttlDuration {
 // Evict
 for _, r := range ds.Records {
 s.currentMemory -= calculateRecordSize(r)
@@ -601,9 +610,9 @@ var oldestTime time.Time
 first := true
 
 for name, ds := range s.vectors {
-if first || ds.LastAccess.Before(oldestTime) {
+if first || ds.LastAccess().Before(oldestTime) {
 oldestName = name
-oldestTime = ds.LastAccess
+oldestTime = ds.LastAccess()
 first = false
 }
 }

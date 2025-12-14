@@ -33,21 +33,29 @@ spec:
             {{- toYaml .Values.securityContext | nindent 12 }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: LONGBOW_LISTEN_ADDR
+              value: "0.0.0.0:{{ .Values.service.port }}"
+            - name: LONGBOW_META_ADDR
+              value: "0.0.0.0:{{ .Values.service.metaPort }}"
           ports:
-            - name: grpc
+            - name: grpc-data
               containerPort: {{ .Values.service.port }}
+              protocol: TCP
+            - name: grpc-meta
+              containerPort: {{ .Values.service.metaPort }}
               protocol: TCP
             - name: metrics
               containerPort: {{ .Values.service.metricsPort }}
               protocol: TCP
           livenessProbe:
             tcpSocket:
-              port: grpc
+              port: grpc-data
             initialDelaySeconds: 5
             periodSeconds: 10
           readinessProbe:
             tcpSocket:
-              port: grpc
+              port: grpc-data
             initialDelaySeconds: 5
             periodSeconds: 10
           resources:

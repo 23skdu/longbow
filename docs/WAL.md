@@ -90,7 +90,8 @@ client.do_action(flight.Action("force_snapshot", b""))
 
 ## Observability & Metrics
 
-Longbow exports Prometheus metrics to track the health and performance of the persistence layer.
+Longbow exports Prometheus metrics to track the health and performance of the
+persistence layer.
 
 ### WAL Metrics
 

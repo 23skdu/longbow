@@ -34,6 +34,7 @@ securityContext:
 service:
   type: ClusterIP
   port: 3000
+  metaPort: 3001
   metricsPort: 9090
 
 metrics:

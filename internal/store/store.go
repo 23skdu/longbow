@@ -27,6 +27,7 @@ import (
 type Dataset struct {
 Records []arrow.Record
 lastAccess int64 // UnixNano
+Version int64
 }
 
 func (d *Dataset) LastAccess() time.Time {
@@ -351,9 +352,34 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 		existingRecs := ds.Records
 		existingSchema := existingRecs[0].Schema()
 		if !existingSchema.Equal(r.Schema()) {
-			s.mu.RUnlock()
-			return fmt.Errorf("schema mismatch: incoming schema does not match existing dataset '%s'", name)
-		}
+// Schema Evolution: Check if new schema is compatible (superset)
+// For now, we allow adding new nullable columns.
+if len(r.Schema().Fields()) > len(existingSchema.Fields()) {
+// Check if prefix matches
+compatible := true
+for i, f := range existingSchema.Fields() {
+if !f.Equal(r.Schema().Field(i)) {
+compatible = false
+break
+}
+}
+if compatible {
+// Upgrade Schema: Accept new record, increment version
+s.mu.RUnlock()
+s.mu.Lock()
+s.vectors[name].Version++
+s.logger.Info("Schema evolved", "name", name, "version", s.vectors[name].Version)
+s.mu.Unlock()
+s.mu.RLock()
+} else {
+s.mu.RUnlock()
+return fmt.Errorf("schema mismatch: incompatible schema evolution for dataset '%s'", name)
+}
+} else {
+s.mu.RUnlock()
+return fmt.Errorf("schema mismatch: incoming schema does not match existing dataset '%s'", name)
+}
+}
 	}
 	s.mu.RUnlock()
 

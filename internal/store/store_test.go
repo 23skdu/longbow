@@ -331,12 +331,12 @@ defer rec.Release()
 
 // Add 3 datasets. 3rd one should force eviction of the 1st one.
 // Dataset 1
-store.vectors["ds1"] = &Dataset{Records: []arrow.Record{rec}, LastAccess: time.Now().Add(-time.Minute)}
+store.vectors["ds1"] = &Dataset{Records: []arrow.Record{rec}, lastAccess: time.Now().Add(-time.Minute).UnixNano()}
 rec.Retain()
 store.currentMemory += calculateRecordSize(rec)
 
 // Dataset 2
-store.vectors["ds2"] = &Dataset{Records: []arrow.Record{rec}, LastAccess: time.Now()}
+store.vectors["ds2"] = &Dataset{Records: []arrow.Record{rec}, lastAccess: time.Now().UnixNano()}
 rec.Retain()
 store.currentMemory += calculateRecordSize(rec)
 
@@ -372,13 +372,13 @@ store := NewVectorStore(mem, logger, 0, ttl)
 // Add expired dataset
 store.vectors["expired"] = &Dataset{
 Records: []arrow.Record{},
-LastAccess: time.Now().Add(-200 * time.Millisecond),
+lastAccess: time.Now().Add(-200 * time.Millisecond).UnixNano(),
 }
 
 // Add fresh dataset
 store.vectors["fresh"] = &Dataset{
 Records: []arrow.Record{},
-LastAccess: time.Now(),
+lastAccess: time.Now().UnixNano(),
 }
 
 // Run eviction

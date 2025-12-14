@@ -1,5 +1,5 @@
 
-package store_test
+package store
 
 import (
 	"io"
@@ -7,7 +7,7 @@ import (
 "encoding/json"
 "testing"
 
-"github.com/23skdu/longbow/internal/store"
+
 "github.com/apache/arrow/go/v18/arrow"
 "github.com/apache/arrow/go/v18/arrow/array"
 "github.com/apache/arrow/go/v18/arrow/flight"
@@ -80,27 +80,27 @@ if _, err := stream.Recv(); err != io.EOF {
 // 3. Test Cases
 tests := []struct {
 name string
-filters []store.Filter
+filters []Filter
 expectedCount int
 }{
 {
 name: "Filter ID > 3",
-filters: []store.Filter{{Field: "id", Operator: ">", Value: "3"}},
+filters: []Filter{{Field: "id", Operator: ">", Value: "3"}},
 expectedCount: 2, // 4, 5
 },
 {
 name: "Filter Category = A",
-filters: []store.Filter{{Field: "category", Operator: "=", Value: "A"}},
+filters: []Filter{{Field: "category", Operator: "=", Value: "A"}},
 expectedCount: 2, // 1, 3
 },
 {
 name: "Filter Score <= 20.0",
-filters: []store.Filter{{Field: "score", Operator: "<=", Value: "20.0"}},
+filters: []Filter{{Field: "score", Operator: "<=", Value: "20.0"}},
 expectedCount: 2, // 10.5, 20.0
 },
 {
 name: "Combined Filter: Category = B AND ID > 2",
-filters: []store.Filter{
+filters: []Filter{
 {Field: "category", Operator: "=", Value: "B"},
 {Field: "id", Operator: ">", Value: "2"},
 },
@@ -110,7 +110,7 @@ expectedCount: 1, // 5 (2 is B but id=2 not > 2)
 
 for _, tc := range tests {
 t.Run(tc.name, func(t *testing.T) {
-query := store.TicketQuery{
+query := TicketQuery{
 Name: "filter_test",
 Filters: tc.filters,
 }
@@ -202,32 +202,32 @@ rec.Release()
 // 2. Test Cases
 tests := []struct {
 name string
-filters []store.Filter
+filters []Filter
 expected []string
 }{
 {
 name: "Name Contains 'a'",
-filters: []store.Filter{{Field: "name", Operator: "contains", Value: "a"}},
+filters: []Filter{{Field: "name", Operator: "contains", Value: "a"}},
 expected: []string{"alpha", "beta", "gamma"},
 },
 {
 name: "Name Contains 'mm'",
-filters: []store.Filter{{Field: "name", Operator: "contains", Value: "mm"}},
+filters: []Filter{{Field: "name", Operator: "contains", Value: "mm"}},
 expected: []string{"gamma"},
 },
 {
 name: "Rows > 15",
-filters: []store.Filter{{Field: "rows", Operator: ">", Value: "15"}},
+filters: []Filter{{Field: "rows", Operator: ">", Value: "15"}},
 expected: []string{"beta", "gamma"},
 },
 {
 name: "Rows <= 10",
-filters: []store.Filter{{Field: "rows", Operator: "<=", Value: "10"}},
+filters: []Filter{{Field: "rows", Operator: "<=", Value: "10"}},
 expected: []string{"alpha"},
 },
 {
 name: "Combined: Name contains 'a' AND Rows > 20",
-filters: []store.Filter{
+filters: []Filter{
 {Field: "name", Operator: "contains", Value: "a"},
 {Field: "rows", Operator: ">", Value: "20"},
 },
@@ -237,7 +237,7 @@ expected: []string{"gamma"},
 
 for _, tc := range tests {
 t.Run(tc.name, func(t *testing.T) {
-query := store.TicketQuery{
+query := TicketQuery{
 Filters: tc.filters,
 }
 criteriaBytes, _ := json.Marshal(query)

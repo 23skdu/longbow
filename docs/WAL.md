@@ -62,11 +62,13 @@ The application logs the reload event:
 Longbow exposes a `DoAction` Flight endpoint for administrative tasks. The
 following actions are supported:
 
+<!-- markdownlint-disable MD013 -->
 | Action Type | Description |
 | :--- | :--- |
 | `force_snapshot` | Triggers an immediate snapshot of the current state to disk. |
 | `get_stats` | Returns current statistics (record count, memory usage). |
 | `drop_dataset` | Drops a specific dataset from memory. Requires a request body with the dataset name. |
+<!-- markdownlint-enable MD013 -->
 
 ### Example: Force Snapshot
 
@@ -88,15 +90,20 @@ persistence layer.
 
 ### WAL Metrics
 
+<!-- markdownlint-disable MD013 -->
 | Metric Name | Type | Labels | Description |
 | :--- | :--- | :--- | :--- |
 | longbow_wal_writes_total | Counter | status (ok/error) | Total number of write operations to the WAL. |
 | longbow_wal_bytes_written_total | Counter | - | Total bytes written to the WAL file. |
 | longbow_wal_replay_duration_seconds | Histogram | - | Time taken to replay the WAL during startup. |
+<!-- markdownlint-enable MD013 -->
 
 ### Snapshot Metrics
 
+<!-- markdownlint-disable MD013 -->
 | Metric Name | Type | Labels | Description |
 | :--- | :--- | :--- | :--- |
 | longbow_snapshot_operations_total | Counter | status (ok/error) | Total number of snapshot attempts. |
 | longbow_snapshot_duration_seconds | Histogram | - | Duration of the snapshot process. |
+
+<!-- markdownlint-enable MD013 -->

@@ -380,10 +380,11 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 		s.mu.Unlock()
 
 		// Write to WAL
-		if err := s.writeToWAL(rec, name); err != nil {
-			s.logger.Error("Failed to write to WAL", "error", err)
-			// Decide if we should fail the request or just log. For now, log.
-		}
+if err := s.writeToWAL(rec, name); err != nil {
+s.logger.Error("Failed to write to WAL", "error", err)
+// Strict Durability: Fail the request if persistence fails
+return fmt.Errorf("persistence failed: %w", err)
+}
 
 		rowsWritten += int(rec.NumRows())
 	}

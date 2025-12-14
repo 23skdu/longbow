@@ -76,5 +76,15 @@ Name: "longbow_snapshot_duration_seconds",
 Help: "Duration of snapshot creation operations",
 Buckets: prometheus.DefBuckets,
 },
+
+)
+// EvictionsTotal counts the number of evicted records
+EvictionsTotal = promauto.NewCounterVec(
+prometheus.CounterOpts{
+Name: "longbow_evictions_total",
+Help: "Total number of evicted records due to memory limits",
+},
+[]string{"reason"},
+)
 )
 )

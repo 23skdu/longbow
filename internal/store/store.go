@@ -21,6 +21,13 @@ import (
 	"github.com/apache/arrow/go/v18/arrow/array"
 	"github.com/apache/arrow/go/v18/arrow/scalar")
 
+
+// Dataset wraps records with metadata for eviction
+type Dataset struct {
+Records    []arrow.Record
+LastAccess time.Time
+}
+
 // VectorStore implements flight.FlightServer
 type VectorStore struct {
 	flight.BaseFlightServer
@@ -36,9 +43,10 @@ type VectorStore struct {
 	walFile       *os.File
 	walMu         sync.Mutex
 	snapshotReset chan time.Duration
+	ttlDuration time.Duration
 }
 
-func NewVectorStore(mem memory.Allocator, logger *slog.Logger, maxMemory int64) *VectorStore {
+func NewVectorStore(mem memory.Allocator, logger *slog.Logger, maxMemory int64, ttl time.Duration) *VectorStore {
 	return &VectorStore{
 		mem:           mem,
 		logger:        logger,
@@ -162,7 +170,8 @@ s.logger.Warn("Failed to parse criteria expression", "error", err)
 var infos []*flight.FlightInfo
 
 s.mu.RLock()
-for name, recs := range s.vectors {
+for name, ds := range s.vectors {
+		recs := ds.Records
 if !s.applyFilter(name, recs, query.Filters) {
 continue
 }
@@ -198,13 +207,14 @@ func (s *VectorStore) GetFlightInfo(ctx context.Context, desc *flight.FlightDesc
 	}
 	name := desc.Path[0]
 
-	s.mu.RLock()
-	recs, ok := s.vectors[name]
-	s.mu.RUnlock()
+s.mu.RLock()
+ds, ok := s.vectors[name]
+s.mu.RUnlock()
 
-	if !ok || len(recs) == 0 {
-		return nil, fmt.Errorf("vector not found: %s", name)
-	}
+if !ok || len(ds.Records) == 0 {
+return nil, fmt.Errorf("vector not found: %s", name)
+}
+recs := ds.Records
 
 	schema := recs[0].Schema()
 	totalRows := int64(0)
@@ -237,9 +247,14 @@ limit = query.Limit
 
 s.logger.Info("DoGet called", "ticket", name, "limit", limit)
 
-s.mu.RLock()
-recs, ok := s.vectors[name]
-s.mu.RUnlock()
+s.mu.Lock() // Upgrade to Lock to update LastAccess
+ds, ok := s.vectors[name]
+if ok {
+ds.LastAccess = time.Now()
+}
+s.mu.Unlock()
+
+recs := ds.Records
 
 if !ok {
 metrics.FlightOperationsTotal.WithLabelValues(method, "error").Inc()
@@ -322,7 +337,8 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 
 	// Schema Validation
 	s.mu.RLock()
-	if existingRecs, ok := s.vectors[name]; ok && len(existingRecs) > 0 {
+	if ds, ok := s.vectors[name]; ok && len(ds.Records) > 0 {
+		existingRecs := ds.Records
 		existingSchema := existingRecs[0].Schema()
 		if !existingSchema.Equal(r.Schema()) {
 			s.mu.RUnlock()
@@ -345,7 +361,11 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 			s.logger.Error("Memory limit exceeded", "current", s.currentMemory, "max", s.maxMemory, "needed", size)
 			return fmt.Errorf("resource exhausted: memory limit exceeded")
 		}
-		s.vectors[name] = append(s.vectors[name], rec)
+		if _, ok := s.vectors[name]; !ok {
+			s.vectors[name] = &Dataset{Records: []arrow.Record{}, LastAccess: time.Now()}
+		}
+		s.vectors[name].Records = append(s.vectors[name].Records, rec)
+		s.vectors[name].LastAccess = time.Now()
 		s.currentMemory += size
 		s.mu.Unlock()
 
@@ -378,7 +398,8 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 	case "drop_dataset":
 		name := string(action.Body)
 		s.mu.Lock()
-		if recs, ok := s.vectors[name]; ok {
+		if ds, ok := s.vectors[name]; ok {
+			recs := ds.Records
 			for _, r := range recs {
 				s.currentMemory -= calculateRecordSize(r)
 				r.Release()
@@ -526,4 +547,92 @@ if err != nil {
 return nil, err
 }
 return filterRes.(*compute.RecordDatum).Value, nil
+}
+
+
+// StartEvictionTicker starts the background eviction loop
+func (s *VectorStore) StartEvictionTicker(interval time.Duration) {
+ticker := time.NewTicker(interval)
+go func() {
+for {
+select {
+case <-ticker.C:
+s.evictTTL()
+}
+}
+}()
+}
+
+// evictTTL removes datasets that haven't been accessed within the TTL duration
+func (s *VectorStore) evictTTL() {
+if s.ttlDuration <= 0 {
+return
+}
+
+s.mu.Lock()
+defer s.mu.Unlock()
+
+now := time.Now()
+evictedCount := 0
+
+for name, ds := range s.vectors {
+if now.Sub(ds.LastAccess) > s.ttlDuration {
+// Evict
+for _, r := range ds.Records {
+s.currentMemory -= calculateRecordSize(r)
+r.Release()
+}
+delete(s.vectors, name)
+evictedCount++
+s.logger.Info("Evicted dataset due to TTL", "name", name)
+metrics.EvictionsTotal.WithLabelValues("ttl").Inc()
+}
+}
+if evictedCount > 0 {
+s.logger.Info("TTL eviction completed", "evicted_count", evictedCount)
+}
+}
+
+// evictLRU removes the least recently used datasets until enough memory is freed
+func (s *VectorStore) evictLRU(needed int64) error {
+// Assumes s.mu is already locked by the caller
+
+for s.maxMemory > 0 && s.currentMemory+needed > s.maxMemory {
+var oldestName string
+var oldestTime time.Time
+first := true
+
+for name, ds := range s.vectors {
+if first || ds.LastAccess.Before(oldestTime) {
+oldestName = name
+oldestTime = ds.LastAccess
+first = false
+}
+}
+
+if first {
+// No datasets to evict
+return fmt.Errorf("resource exhausted: memory limit exceeded and no datasets to evict")
+}
+
+// Evict oldest
+if ds, ok := s.vectors[oldestName]; ok {
+for _, r := range ds.Records {
+s.currentMemory -= calculateRecordSize(r)
+r.Release()
+}
+delete(s.vectors, oldestName)
+s.logger.Info("Evicted dataset due to LRU", "name", oldestName, "freed", calculateDatasetSize(ds))
+metrics.EvictionsTotal.WithLabelValues("lru").Inc()
+}
+}
+return nil
+}
+
+func calculateDatasetSize(ds *Dataset) int64 {
+size := int64(0)
+for _, r := range ds.Records {
+size += calculateRecordSize(r)
+}
+return size
 }

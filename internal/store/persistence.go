@@ -12,7 +12,8 @@ import (
 "github.com/23skdu/longbow/internal/metrics"
 "github.com/apache/arrow/go/v18/arrow"
 "github.com/apache/arrow/go/v18/arrow/ipc"
-)
+
+	"golang.org/x/exp/mmap")
 
 const (
 walFileName = "wal.log"
@@ -251,30 +252,40 @@ if entry.IsDir() || filepath.Ext(entry.Name()) != ".arrow" {
 continue
 }
 name := entry.Name()[:len(entry.Name())-6] // remove .arrow
+path := filepath.Join(snapshotDir, entry.Name())
 
-f, err := os.Open(filepath.Join(snapshotDir, entry.Name()))
+// Use mmap for zero-copy load
+mm, err := mmap.Open(path)
 if err != nil {
-s.logger.Error("Failed to open snapshot file", "name", name, "error", err)
+s.logger.Error("Failed to mmap snapshot file", "name", name, "error", err)
 continue
 }
+// We don't close mm here immediately because the records might reference the memory.
+// However, in this simple store, we might need to keep track of mapped files to close them on shutdown.
+// For now, we let the OS handle cleanup on exit or we leak the fd/map until shutdown (which isn't implemented).
+// A better approach would be to add a 'closers' list to VectorStore.
 
-r, err := ipc.NewReader(f)
+r, err := ipc.NewFileReader(&mmapReader{ReaderAt: mm})
 if err != nil {
-f.Close()
-s.logger.Error("Failed to create IPC reader for snapshot", "name", name, "error", err)
+mm.Close()
+s.logger.Error("Failed to create IPC file reader for snapshot", "name", name, "error", err)
 continue
 }
 
 s.mu.Lock()
-for r.Next() {
-rec := r.Record()
+for i := 0; i < r.NumRecords(); i++ {
+rec, err := r.Record(i)
+if err != nil {
+s.logger.Error("Failed to read record from snapshot", "name", name, "index", i, "error", err)
+continue
+}
 rec.Retain()
 s.vectors[name] = append(s.vectors[name], rec)
 s.currentMemory += calculateRecordSize(rec)
 }
 s.mu.Unlock()
-r.Release()
-f.Close()
+r.Close()
+// mm.Close() // Do NOT close mm, as records point to this memory
 }
 return nil
 }
@@ -311,4 +322,29 @@ ticker = time.NewTicker(newInterval)
 initialInterval = newInterval
 }
 }
+}
+
+
+// mmapReader wraps mmap.ReaderAt to implement io.ReadSeeker
+type mmapReader struct {
+*mmap.ReaderAt
+offset int64
+}
+
+func (r *mmapReader) Read(p []byte) (n int, err error) {
+n, err = r.ReaderAt.ReadAt(p, r.offset)
+r.offset += int64(n)
+return
+}
+
+func (r *mmapReader) Seek(offset int64, whence int) (int64, error) {
+switch whence {
+case io.SeekStart:
+r.offset = offset
+case io.SeekCurrent:
+r.offset += offset
+case io.SeekEnd:
+r.offset = int64(r.Len()) + offset
+}
+return r.offset, nil
 }

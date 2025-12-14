@@ -29,6 +29,7 @@ The following table lists the configurable parameters of the Longbow chart and t
 ```python
 import pyarrow.flight as flight
 import pyarrow as pa
+import json
 
 client = flight.FlightClient("grpc://localhost:3000")
 
@@ -45,9 +46,29 @@ writer, _ = client.do_put(flight.FlightDescriptor.for_path("test_dataset"), sche
 writer.close()
 
 # Query data
-reader = client.do_get(flight.Ticket("{"dataset": "test_dataset"}"))
+reader = client.do_get(flight.Ticket('{"dataset": "test_dataset"}'))
 table = reader.read_all()
 print(table)
+
+# List and Filter Flights
+# Create a filter query
+query = {
+ "name": "test",
+ "limit": 10,
+ "filters": [
+ {"field": "rows", "operator": ">", "value": "100"}
+ ]
+}
+
+# Serialize query to JSON bytes
+criteria = json.dumps(query).encode('utf-8')
+
+# List flights with criteria
+flights = client.list_flights(criteria=criteria)
+
+print("Filtered Flights:")
+for flight_info in flights:
+ print(flight_info.descriptor.path)
 ```
 
 ## Persistence and Hot Reload

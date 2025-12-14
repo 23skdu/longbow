@@ -555,11 +555,8 @@ return filterRes.(*compute.RecordDatum).Value, nil
 func (s *VectorStore) StartEvictionTicker(interval time.Duration) {
 ticker := time.NewTicker(interval)
 go func() {
-for {
-select {
-case <-ticker.C:
+for range ticker.C {
 s.evictTTL()
-}
 }
 }()
 }

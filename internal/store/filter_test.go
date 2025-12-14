@@ -2,6 +2,7 @@
 package store_test
 
 import (
+	"io"
 "context"
 "encoding/json"
 "testing"
@@ -69,8 +70,12 @@ if err := w.Write(rec); err != nil {
 t.Fatalf("Write failed: %v", err)
 }
 w.Close()
-stream.CloseSend()
-stream.Recv()
+if err := stream.CloseSend(); err != nil {
+	t.Fatalf("CloseSend failed: %v", err)
+}
+if _, err := stream.Recv(); err != io.EOF {
+	t.Fatalf("Recv expected EOF, got: %v", err)
+}
 
 // 3. Test Cases
 tests := []struct {
@@ -181,10 +186,16 @@ b.Release()
 stream, _ := client.DoPut(ctx)
 w := flight.NewRecordWriter(stream, ipc.WithSchema(schema))
 w.SetFlightDescriptor(&flight.FlightDescriptor{Path: []string{ds.name}})
-w.Write(rec)
+if err := w.Write(rec); err != nil {
+	t.Fatalf("Write failed: %v", err)
+}
 w.Close()
-stream.CloseSend()
-stream.Recv()
+if err := stream.CloseSend(); err != nil {
+	t.Fatalf("CloseSend failed: %v", err)
+}
+if _, err := stream.Recv(); err != io.EOF {
+	t.Fatalf("Recv expected EOF, got: %v", err)
+}
 rec.Release()
 }
 
@@ -237,14 +248,17 @@ if err != nil {
 t.Fatalf("ListFlights failed: %v", err)
 }
 
-var found []string
-for {
-info, err := stream.Recv()
-if err != nil {
-break
-}
-found = append(found, info.FlightDescriptor.Path[0])
-}
+	var found []string
+	for {
+		info, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatalf("Recv failed: %v", err)
+		}
+		found = append(found, info.FlightDescriptor.Path[0])
+	}
 
 // Check length
 if len(found) != len(tc.expected) {

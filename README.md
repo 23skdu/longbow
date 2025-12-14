@@ -34,6 +34,11 @@ Longbow exposes Prometheus metrics on a dedicated port to ensure observability w
 | `longbow_flight_operations_total` | Counter | Total number of Flight operations (DoGet, DoPut, etc.) |
 | `longbow_flight_duration_seconds` | Histogram | Latency distribution of Flight operations |
 | `longbow_flight_bytes_processed_total` | Counter | Total bytes processed in Flight operations |
+| `longbow_wal_writes_total` | Counter | Total number of write operations to the WAL. |
+| `longbow_wal_bytes_written_total` | Counter | Total bytes written to the WAL file. |
+| `longbow_wal_replay_duration_seconds` | Histogram | Time taken to replay the WAL during startup. |
+| `longbow_snapshot_operations_total` | Counter | Total number of snapshot attempts. |
+| `longbow_snapshot_duration_seconds` | Histogram | Duration of the snapshot process. |
 <!-- markdownlint-enable MD013 -->
 
 Standard Go runtime metrics are also exposed.

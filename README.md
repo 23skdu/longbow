@@ -17,7 +17,6 @@ It is designed for efficient, zero-copy transport of large datasets and vector e
 * **Protocol**: Apache Arrow Flight (over gRPC/HTTP2).
 * **Storage**: In-memory ephemeral storage for high-speed access.
 * **Observability**: Structured JSON logging and Prometheus metrics.
-* **Deployment**: Minimal Docker image (scratch-based).
 
 ## Architecture & Ports
 

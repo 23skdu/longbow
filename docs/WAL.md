@@ -87,3 +87,22 @@ Longbow exposes a `DoAction` Flight endpoint for administrative tasks. The follo
 ```python
 client.do_action(flight.Action("force_snapshot", b""))
 ```
+
+## Observability & Metrics
+
+Longbow exports Prometheus metrics to track the health and performance of the persistence layer.
+
+### WAL Metrics
+
+| Metric Name | Type | Labels | Description |
+| :--- | :--- | :--- | :--- |
+| longbow_wal_writes_total | Counter | status (ok/error) | Total number of write operations to the WAL. |
+| longbow_wal_bytes_written_total | Counter | - | Total bytes written to the WAL file. |
+| longbow_wal_replay_duration_seconds | Histogram | - | Time taken to replay the WAL during startup. |
+
+### Snapshot Metrics
+
+| Metric Name | Type | Labels | Description |
+| :--- | :--- | :--- | :--- |
+| longbow_snapshot_operations_total | Counter | status (ok/error) | Total number of snapshot attempts. |
+| longbow_snapshot_duration_seconds | Histogram | - | Duration of the snapshot process. |

@@ -184,17 +184,23 @@ s.mu.RLock()
 defer s.mu.RUnlock()
 
 snapshotDir := filepath.Join(s.dataPath, snapshotDirName)
-if err := os.MkdirAll(snapshotDir, 0755); err != nil {
+tempDir := filepath.Join(s.dataPath, snapshotDirName+"_tmp")
+
+// Clean up any previous temp dir
+if err := os.RemoveAll(tempDir); err != nil {
+return fmt.Errorf("failed to clean temp snapshot dir: %w", err)
+}
+if err := os.MkdirAll(tempDir, 0755); err != nil {
 metrics.SnapshotTotal.WithLabelValues("error").Inc()
-return err
+return fmt.Errorf("failed to create temp snapshot dir: %w", err)
 }
 
-// Save each dataset
+// Save each dataset to temp dir
 for name, recs := range s.vectors {
 if len(recs) == 0 {
 continue
 }
-path := filepath.Join(snapshotDir, name+".arrow")
+path := filepath.Join(tempDir, name+".arrow")
 f, err := os.Create(path)
 if err != nil {
 s.logger.Error("Failed to create snapshot file", "name", name, "error", err)
@@ -212,6 +218,16 @@ break
 }
 w.Close()
 f.Close()
+}
+
+// Atomic swap: Remove old, Rename temp to new
+// If we crash here, we have full WAL, so it's safe to lose old snapshot.
+if err := os.RemoveAll(snapshotDir); err != nil {
+s.logger.Error("Failed to remove old snapshot dir", "error", err)
+}
+if err := os.Rename(tempDir, snapshotDir); err != nil {
+metrics.SnapshotTotal.WithLabelValues("error").Inc()
+return fmt.Errorf("failed to rename snapshot dir: %w", err)
 }
 
 // Truncate WAL
@@ -236,7 +252,6 @@ metrics.SnapshotDurationSeconds.Observe(time.Since(start).Seconds())
 s.logger.Info("Snapshot complete")
 return nil
 }
-
 func (s *VectorStore) loadSnapshots() error {
 snapshotDir := filepath.Join(s.dataPath, snapshotDirName)
 entries, err := os.ReadDir(snapshotDir)
@@ -347,4 +362,24 @@ case io.SeekEnd:
 r.offset = int64(r.Len()) + offset
 }
 return r.offset, nil
+}
+
+
+// Close ensures the WAL is flushed and closed properly
+func (s *VectorStore) Close() error {
+s.logger.Info("Closing VectorStore...")
+s.walMu.Lock()
+defer s.walMu.Unlock()
+
+if s.walFile != nil {
+s.logger.Info("Syncing and closing WAL file")
+if err := s.walFile.Sync(); err != nil {
+s.logger.Error("Failed to sync WAL", "error", err)
+}
+if err := s.walFile.Close(); err != nil {
+return fmt.Errorf("failed to close WAL: %w", err)
+}
+s.walFile = nil
+}
+return nil
 }

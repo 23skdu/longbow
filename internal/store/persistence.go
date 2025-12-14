@@ -165,7 +165,10 @@ rec := r.Record()
 rec.Retain()
 // Append to store (skipping WAL write)
 s.mu.Lock()
-s.vectors[name] = append(s.vectors[name], rec)
+if _, ok := s.vectors[name]; !ok {
+	s.vectors[name] = &Dataset{Records: []arrow.Record{}, LastAccess: time.Now()}
+}
+s.vectors[name].Records = append(s.vectors[name].Records, rec)
 s.currentMemory += calculateRecordSize(rec)
 s.mu.Unlock()
 count++
@@ -196,7 +199,8 @@ return fmt.Errorf("failed to create temp snapshot dir: %w", err)
 }
 
 // Save each dataset to temp dir
-for name, recs := range s.vectors {
+for name, ds := range s.vectors {
+		recs := ds.Records
 if len(recs) == 0 {
 continue
 }
@@ -295,7 +299,10 @@ s.logger.Error("Failed to read record from snapshot", "name", name, "index", i, 
 continue
 }
 rec.Retain()
-s.vectors[name] = append(s.vectors[name], rec)
+if _, ok := s.vectors[name]; !ok {
+	s.vectors[name] = &Dataset{Records: []arrow.Record{}, LastAccess: time.Now()}
+}
+s.vectors[name].Records = append(s.vectors[name].Records, rec)
 s.currentMemory += calculateRecordSize(rec)
 }
 s.mu.Unlock()

@@ -166,7 +166,7 @@ rec.Retain()
 // Append to store (skipping WAL write)
 s.mu.Lock()
 if _, ok := s.vectors[name]; !ok {
-	s.vectors[name] = &Dataset{Records: []arrow.Record{}, LastAccess: time.Now()}
+	s.vectors[name] = &Dataset{Records: []arrow.Record{}, lastAccess: time.Now().UnixNano()}
 }
 s.vectors[name].Records = append(s.vectors[name].Records, rec)
 s.currentMemory += calculateRecordSize(rec)
@@ -300,7 +300,7 @@ continue
 }
 rec.Retain()
 if _, ok := s.vectors[name]; !ok {
-	s.vectors[name] = &Dataset{Records: []arrow.Record{}, LastAccess: time.Now()}
+	s.vectors[name] = &Dataset{Records: []arrow.Record{}, lastAccess: time.Now().UnixNano()}
 }
 s.vectors[name].Records = append(s.vectors[name].Records, rec)
 s.currentMemory += calculateRecordSize(rec)

@@ -25,7 +25,8 @@ MetaAddr         string        `envconfig:"META_ADDR" default:"0.0.0.0:3001"` //
 MetricsAddr      string        `envconfig:"METRICS_ADDR" default:"0.0.0.0:9090"`
 MaxMemory        int64         `envconfig:"MAX_MEMORY" default:"1073741824"` // 1GB default
 DataPath         string        `envconfig:"DATA_PATH" default:"./data"`
-SnapshotInterval time.Duration `envconfig:"SNAPSHOT_INTERVAL" default:"1h"`
+TTL time.Duration `envconfig:"TTL" default:"0s"` // 0s means disabled
+	SnapshotInterval time.Duration `envconfig:"SNAPSHOT_INTERVAL" default:"1h"`
 }
 
 func main() {
@@ -48,15 +49,31 @@ logger.Info("Starting Longbow",
 "metrics_addr", cfg.MetricsAddr,
 "max_memory", cfg.MaxMemory,
 "data_path", cfg.DataPath,
-"snapshot_interval", cfg.SnapshotInterval)
+"snapshot_interval", cfg.SnapshotInterval,
+		"ttl", cfg.TTL)
 
 // Create memory allocator
 mem := memory.NewGoAllocator()
 
 // Initialize vector store
-vectorStore := store.NewVectorStore(mem, logger, cfg.MaxMemory)
+vectorStore := store.NewVectorStore(mem, logger, cfg.MaxMemory, cfg.TTL)
 
-// Start metrics server
+
+// Start eviction ticker if TTL is enabled
+if cfg.TTL > 0 {
+// Check for evictions every minute or 1/10th of TTL, whichever is smaller but at least 1s
+checkInterval := time.Minute
+if cfg.TTL/10 < checkInterval {
+checkInterval = cfg.TTL / 10
+}
+if checkInterval < time.Second {
+checkInterval = time.Second
+}
+vectorStore.StartEvictionTicker(checkInterval)
+logger.Info("Eviction ticker started", "interval", checkInterval)
+}
+
+	// Start metrics server
 go func() {
 http.Handle("/metrics", promhttp.Handler())
 if err := http.ListenAndServe(cfg.MetricsAddr, nil); err != nil {

@@ -16,10 +16,17 @@ import (
 "github.com/kelseyhightower/envconfig"
 "github.com/prometheus/client_golang/prometheus/promhttp"
 "google.golang.org/grpc"
+	"google.golang.org/grpc/keepalive"
 )
 
 // Config holds the application configuration
 type Config struct {
+// gRPC KeepAlive Configuration
+KeepAliveTime                time.Duration `envconfig:"GRPC_KEEPALIVE_TIME" default:"2h"`
+KeepAliveTimeout             time.Duration `envconfig:"GRPC_KEEPALIVE_TIMEOUT" default:"20s"`
+KeepAliveMinTime             time.Duration `envconfig:"GRPC_KEEPALIVE_MIN_TIME" default:"5m"`
+KeepAlivePermitWithoutStream bool          `envconfig:"GRPC_KEEPALIVE_PERMIT_WITHOUT_STREAM" default:"false"`
+
 ListenAddr       string        `envconfig:"LISTEN_ADDR" default:"0.0.0.0:3000"`
 MetaAddr         string        `envconfig:"META_ADDR" default:"0.0.0.0:3001"` // New config for Metadata Server
 MetricsAddr      string        `envconfig:"METRICS_ADDR" default:"0.0.0.0:9090"`
@@ -81,8 +88,23 @@ logger.Error("Metrics server failed", "error", err)
 }
 }()
 
+
+// gRPC Server Options
+kaParams := keepalive.ServerParameters{
+Time:    cfg.KeepAliveTime,
+Timeout: cfg.KeepAliveTimeout,
+}
+kaPolicy := keepalive.EnforcementPolicy{
+MinTime:             cfg.KeepAliveMinTime,
+PermitWithoutStream: cfg.KeepAlivePermitWithoutStream,
+}
+serverOpts := []grpc.ServerOption{
+grpc.KeepaliveParams(kaParams),
+grpc.KeepaliveEnforcementPolicy(kaPolicy),
+}
+
 // --- Data Server Setup ---
-dataServer := grpc.NewServer()
+dataServer := grpc.NewServer(serverOpts...)
 flight.RegisterFlightServiceServer(dataServer, store.NewDataServer(vectorStore))
 
 dataLis, err := net.Listen("tcp", cfg.ListenAddr)
@@ -92,7 +114,7 @@ os.Exit(1)
 }
 
 // --- Meta Server Setup ---
-metaServer := grpc.NewServer()
+metaServer := grpc.NewServer(serverOpts...)
 flight.RegisterFlightServiceServer(metaServer, store.NewMetaServer(vectorStore))
 
 metaLis, err := net.Listen("tcp", cfg.MetaAddr)

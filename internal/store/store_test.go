@@ -1,4 +1,4 @@
-package store_test
+package store
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/23skdu/longbow/internal/store"
+	
 	"github.com/apache/arrow/go/v18/arrow"
 	"github.com/apache/arrow/go/v18/arrow/array"
 	"github.com/apache/arrow/go/v18/arrow/flight"
@@ -26,7 +26,7 @@ const bufSize = 1024 * 1024
 
 
 
-func setupServer(t *testing.T) (*store.VectorStore, string, func(context.Context, string) (net.Conn, error)) {
+func setupServer(t *testing.T) (*VectorStore, string, func(context.Context, string) (net.Conn, error)) {
 	lis := bufconn.Listen(bufSize)
 
 	// Create temp dir for persistence
@@ -37,7 +37,7 @@ func setupServer(t *testing.T) (*store.VectorStore, string, func(context.Context
 
 	mem := memory.NewGoAllocator()
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-	vs := store.NewVectorStore(mem, logger, 1024*1024*100) // 100MB limit
+	vs := NewVectorStore(mem, logger, 1024*1024*100, 0) // 100MB limit
 
 	// Init persistence
 	if err := vs.InitPersistence(tmpDir, 0); err != nil {

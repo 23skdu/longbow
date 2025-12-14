@@ -16,7 +16,10 @@ import (
 	"github.com/apache/arrow/go/v18/arrow/flight"
 	"github.com/apache/arrow/go/v18/arrow/ipc"
 	"github.com/apache/arrow/go/v18/arrow/memory"
-)
+
+	"github.com/apache/arrow/go/v18/arrow/compute"
+	"github.com/apache/arrow/go/v18/arrow/array"
+	"github.com/apache/arrow/go/v18/arrow/scalar")
 
 // VectorStore implements flight.FlightServer
 type VectorStore struct {
@@ -219,66 +222,84 @@ func (s *VectorStore) GetFlightInfo(ctx context.Context, desc *flight.FlightDesc
 
 // DoGet streams data to the client with optional predicate pushdown
 func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGetServer) error {
-	start := time.Now()
-	method := "DoGet"
+start := time.Now()
+method := "DoGet"
 
-	// Parse Ticket
-	name := string(tkt.Ticket)
-	limit := int64(-1)
+// Parse Ticket
+name := string(tkt.Ticket)
+limit := int64(-1)
 
-	var query TicketQuery
-	if err := json.Unmarshal(tkt.Ticket, &query); err == nil && query.Name != "" {
-		name = query.Name
-		limit = query.Limit
-	}
+var query TicketQuery
+if err := json.Unmarshal(tkt.Ticket, &query); err == nil && query.Name != "" {
+name = query.Name
+limit = query.Limit
+}
 
-	s.logger.Info("DoGet called", "ticket", name, "limit", limit)
+s.logger.Info("DoGet called", "ticket", name, "limit", limit)
 
-	s.mu.RLock()
-	recs, ok := s.vectors[name]
-	s.mu.RUnlock()
+s.mu.RLock()
+recs, ok := s.vectors[name]
+s.mu.RUnlock()
 
-	if !ok {
-		metrics.FlightOperationsTotal.WithLabelValues(method, "error").Inc()
-		return fmt.Errorf("vector not found: %s", name)
-	}
+if !ok {
+metrics.FlightOperationsTotal.WithLabelValues(method, "error").Inc()
+return fmt.Errorf("vector not found: %s", name)
+}
 
-	if len(recs) == 0 {
-		return nil
-	}
+if len(recs) == 0 {
+return nil
+}
 
-	w := flight.NewRecordWriter(stream, ipc.WithSchema(recs[0].Schema()), ipc.WithZstd())
-	defer w.Close()
+w := flight.NewRecordWriter(stream, ipc.WithSchema(recs[0].Schema()), ipc.WithZstd())
+defer w.Close()
 
-	w.SetFlightDescriptor(&flight.FlightDescriptor{Path: []string{name}})
+w.SetFlightDescriptor(&flight.FlightDescriptor{Path: []string{name}})
 
-	rowsSent := int64(0)
-	for _, rec := range recs {
-		if limit > 0 && rowsSent >= limit {
-			break
-		}
+rowsSent := int64(0)
+for _, rec := range recs {
+if limit > 0 && rowsSent >= limit {
+break
+}
 
-		// If we need to slice the record to fit the limit
-		toWrite := rec
-		if limit > 0 && rowsSent+rec.NumRows() > limit {
-			remaining := limit - rowsSent
-			toWrite = rec.NewSlice(0, remaining)
-			defer toWrite.Release()
-		}
+// Apply Filtering using arrow/compute
+filteredRec, err := s.filterRecord(stream.Context(), rec, query.Filters)
+if err != nil {
+s.logger.Error("Filtering failed", "error", err)
+metrics.FlightOperationsTotal.WithLabelValues(method, "error").Inc()
+return err
+}
 
-		if err := w.Write(toWrite); err != nil {
-			s.logger.Error("Failed to write record", "error", err)
-			metrics.FlightOperationsTotal.WithLabelValues(method, "error").Inc()
-			return err
-		}
-		rowsSent += toWrite.NumRows()
-	}
+if filteredRec.NumRows() == 0 {
+filteredRec.Release()
+continue
+}
 
-	metrics.FlightOperationsTotal.WithLabelValues(method, "ok").Inc()
-	metrics.FlightDurationSeconds.WithLabelValues(method).Observe(time.Since(start).Seconds())
-	metrics.FlightBytesProcessed.WithLabelValues(method).Add(float64(rowsSent))
+toWrite := filteredRec
+sliced := false
+if limit > 0 && rowsSent+filteredRec.NumRows() > limit {
+remaining := limit - rowsSent
+toWrite = filteredRec.NewSlice(0, remaining)
+sliced = true
+}
 
-	return nil
+if err := w.Write(toWrite); err != nil {
+if sliced { toWrite.Release() }
+filteredRec.Release()
+s.logger.Error("Failed to write record", "error", err)
+metrics.FlightOperationsTotal.WithLabelValues(method, "error").Inc()
+return err
+}
+rowsSent += toWrite.NumRows()
+
+if sliced { toWrite.Release() }
+filteredRec.Release()
+}
+
+metrics.FlightOperationsTotal.WithLabelValues(method, "ok").Inc()
+metrics.FlightDurationSeconds.WithLabelValues(method).Observe(time.Since(start).Seconds())
+metrics.FlightBytesProcessed.WithLabelValues(method).Add(float64(rowsSent))
+
+return nil
 }
 
 // DoPut accepts data from the client with memory limits
@@ -418,4 +439,91 @@ func calculateRecordSize(rec arrow.Record) int64 {
 		}
 	}
 	return size
+}
+
+
+// filterRecord applies filters using arrow/compute
+func (s *VectorStore) filterRecord(ctx context.Context, rec arrow.Record, filters []Filter) (arrow.Record, error) {
+if len(filters) == 0 {
+rec.Retain()
+return rec, nil
+}
+
+var mask *array.Boolean
+
+for _, f := range filters {
+indices := rec.Schema().FieldIndices(f.Field)
+if len(indices) == 0 {
+continue
+}
+colIdx := indices[0]
+col := rec.Column(colIdx)
+
+var valScalar scalar.Scalar
+switch col.DataType().ID() {
+case arrow.STRING:
+valScalar = scalar.NewStringScalar(f.Value)
+case arrow.INT64:
+v, err := strconv.ParseInt(f.Value, 10, 64)
+if err != nil {
+continue
+}
+valScalar = scalar.NewInt64Scalar(v)
+case arrow.FLOAT64:
+v, err := strconv.ParseFloat(f.Value, 64)
+if err != nil {
+continue
+}
+valScalar = scalar.NewFloat64Scalar(v)
+default:
+continue
+}
+
+var fn string
+switch f.Operator {
+case "=": fn = "equal"
+case "!=": fn = "not_equal"
+case ">": fn = "greater"
+case "<": fn = "less"
+case ">=": fn = "greater_equal"
+case "<=": fn = "less_equal"
+default:
+continue
+}
+
+args := []compute.Datum{
+compute.NewDatum(col.Data()),
+compute.NewDatum(valScalar),
+}
+result, err := compute.CallFunction(ctx, fn, nil, args...)
+if err != nil {
+return nil, fmt.Errorf("compute error on field %s: %w", f.Field, err)
+}
+
+resultArr := result.(*compute.ArrayDatum).MakeArray().(*array.Boolean)
+
+if mask == nil {
+mask = resultArr
+} else {
+andRes, err := compute.CallFunction(ctx, "and", nil, compute.NewDatum(mask.Data()), compute.NewDatum(resultArr.Data()))
+mask.Release()
+resultArr.Release()
+if err != nil {
+return nil, err
+}
+mask = andRes.(*compute.ArrayDatum).MakeArray().(*array.Boolean)
+}
+}
+
+if mask == nil {
+rec.Retain()
+return rec, nil
+}
+defer mask.Release()
+
+filterRes, err := compute.CallFunction(ctx, "filter", nil, compute.NewDatum(rec), compute.NewDatum(mask.Data()))
+if err != nil {
+return nil, err
+}
+return filterRes.(*compute.RecordDatum).Value, nil
 }

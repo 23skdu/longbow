@@ -8,9 +8,13 @@ spec:
   type: {{ .Values.service.type }}
   ports:
     - port: {{ .Values.service.port }}
-      targetPort: flight
+      targetPort: grpc-data
       protocol: TCP
-      name: flight
+      name: grpc-data
+    - port: {{ .Values.service.metaPort }}
+      targetPort: grpc-meta
+      protocol: TCP
+      name: grpc-meta
     {{- if .Values.metrics.enabled }}
     - port: {{ .Values.service.metricsPort }}
       targetPort: metrics

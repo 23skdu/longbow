@@ -145,35 +145,47 @@ func (s *VectorStore) applyFilter(name string, recs []arrow.Record, filters []Fi
 
 // ListFlights returns available streams
 func (s *VectorStore) ListFlights(c *flight.Criteria, stream flight.FlightService_ListFlightsServer) error {
-	s.logger.Info("ListFlights called")
+s.logger.Info("ListFlights called")
 
-	var query TicketQuery
-	if c != nil && len(c.Expression) > 0 {
-		if err := json.Unmarshal(c.Expression, &query); err != nil {
-			s.logger.Warn("Failed to parse criteria expression", "error", err)
-		}
-	}
+var query TicketQuery
+if c != nil && len(c.Expression) > 0 {
+if err := json.Unmarshal(c.Expression, &query); err != nil {
+s.logger.Warn("Failed to parse criteria expression", "error", err)
+}
+}
 
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+// Optimization: Collect info under lock, send outside lock
+// This prevents slow clients from blocking write operations (DoPut)
+var infos []*flight.FlightInfo
 
-	for name, recs := range s.vectors {
-		if !s.applyFilter(name, recs, query.Filters) {
-			continue
-		}
+s.mu.RLock()
+for name, recs := range s.vectors {
+if !s.applyFilter(name, recs, query.Filters) {
+continue
+}
 
-		info := &flight.FlightInfo{
-			FlightDescriptor: &flight.FlightDescriptor{
-				Type: flight.DescriptorPATH,
-				Path: []string{name},
-			},
-		}
-		if err := stream.Send(info); err != nil {
-			s.logger.Error("Failed to send flight info", "error", err, "name", name)
-			return err
-		}
-	}
-	return nil
+info := &flight.FlightInfo{
+FlightDescriptor: &flight.FlightDescriptor{
+Type: flight.DescriptorPATH,
+Path: []string{name},
+},
+}
+infos = append(infos, info)
+}
+s.mu.RUnlock()
+
+// Send stream messages without holding the lock
+for _, info := range infos {
+if err := stream.Send(info); err != nil {
+name := ""
+if len(info.FlightDescriptor.Path) > 0 {
+name = info.FlightDescriptor.Path[0]
+}
+s.logger.Error("Failed to send flight info", "error", err, "name", name)
+return err
+}
+}
+return nil
 }
 
 // GetFlightInfo returns metadata for a specific stream

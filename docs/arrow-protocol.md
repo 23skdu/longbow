@@ -12,6 +12,29 @@ Standard gRPC handshake.
 
 Returns a stream of `FlightInfo` objects representing stored vectors.
 
+Clients can filter the results by providing a JSON-serialized
+in the  argument.
+
+#### TicketQuery Structure
+
+```json
+{
+ "name": "optional_name_match",
+ "limit": 100,
+ "filters": [
+ {"field": "name", "operator": "contains", "value": "test"},
+ {"field": "rows", "operator": ">", "value": "1000"}
+ ]
+}
+```
+
+#### Supported Filters
+
+| Field | Supported Operators | Description |
+| :--- | :--- | :--- |
+| `name` | `=`, `!=`, `contains` | Filter by dataset name. |
+| `rows` | `=`, `>`, `<`, `>=`, `<=` | Filter by total row count. |
+
 ### GetFlightInfo
 
 **Input**: `FlightDescriptor` (Path)

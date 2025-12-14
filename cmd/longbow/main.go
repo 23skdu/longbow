@@ -133,6 +133,11 @@ logger.Info("Shutting down...")
 // Stop both servers
 dataServer.GracefulStop()
 metaServer.GracefulStop()
+
+// Close VectorStore
+if err := vectorStore.Close(); err != nil {
+logger.Error("Failed to close VectorStore", "error", err)
+}
 return
 }
 }

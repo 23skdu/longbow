@@ -94,15 +94,19 @@ Longbow exports Prometheus metrics to track the health and performance of the pe
 
 ### WAL Metrics
 
+<!-- markdownlint-disable MD013 -->
 | Metric Name | Type | Labels | Description |
 | :--- | :--- | :--- | :--- |
 | longbow_wal_writes_total | Counter | status (ok/error) | Total number of write operations to the WAL. |
 | longbow_wal_bytes_written_total | Counter | - | Total bytes written to the WAL file. |
 | longbow_wal_replay_duration_seconds | Histogram | - | Time taken to replay the WAL during startup. |
+<!-- markdownlint-enable MD013 -->
 
 ### Snapshot Metrics
 
+<!-- markdownlint-disable MD013 -->
 | Metric Name | Type | Labels | Description |
 | :--- | :--- | :--- | :--- |
 | longbow_snapshot_operations_total | Counter | status (ok/error) | Total number of snapshot attempts. |
 | longbow_snapshot_duration_seconds | Histogram | - | Duration of the snapshot process. |
+<!-- markdownlint-enable MD013 -->

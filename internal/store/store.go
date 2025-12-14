@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -67,13 +69,99 @@ func (s *VectorStore) UpdateConfig(maxMemory int64, snapshotInterval time.Durati
 	}
 }
 
+// TicketQuery defines the JSON structure for DoGet tickets and ListFlights criteria
+type TicketQuery struct {
+	Name    string   `json:"name"`
+	Limit   int64    `json:"limit"`
+	Filters []Filter `json:"filters"`
+}
+
+// Filter defines a predicate for filtering streams
+type Filter struct {
+	Field    string `json:"field"`
+	Operator string `json:"operator"`
+	Value    string `json:"value"`
+}
+
+// applyFilter evaluates filters against stream metadata
+func (s *VectorStore) applyFilter(name string, recs []arrow.Record, filters []Filter) bool {
+	if len(filters) == 0 {
+		return true
+	}
+
+	for _, f := range filters {
+		switch f.Field {
+		case "name":
+			switch f.Operator {
+			case "=":
+				if name != f.Value {
+					return false
+				}
+			case "!=":
+				if name == f.Value {
+					return false
+				}
+			case "contains":
+				if !strings.Contains(name, f.Value) {
+					return false
+				}
+			}
+		case "rows":
+			// Calculate total rows
+			totalRows := int64(0)
+			for _, r := range recs {
+				totalRows += r.NumRows()
+			}
+			val, err := strconv.ParseInt(f.Value, 10, 64)
+			if err != nil {
+				continue // Skip invalid filter values
+			}
+			switch f.Operator {
+			case "=":
+				if totalRows != val {
+					return false
+				}
+			case ">":
+				if totalRows <= val {
+					return false
+				}
+			case "<":
+				if totalRows >= val {
+					return false
+				}
+			case ">=":
+				if totalRows < val {
+					return false
+				}
+			case "<=":
+				if totalRows > val {
+					return false
+				}
+			}
+		}
+	}
+	return true
+}
+
 // ListFlights returns available streams
 func (s *VectorStore) ListFlights(c *flight.Criteria, stream flight.FlightService_ListFlightsServer) error {
 	s.logger.Info("ListFlights called")
+
+	var query TicketQuery
+	if c != nil && len(c.Expression) > 0 {
+		if err := json.Unmarshal(c.Expression, &query); err != nil {
+			s.logger.Warn("Failed to parse criteria expression", "error", err)
+		}
+	}
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	for name := range s.vectors {
+	for name, recs := range s.vectors {
+		if !s.applyFilter(name, recs, query.Filters) {
+			continue
+		}
+
 		info := &flight.FlightInfo{
 			FlightDescriptor: &flight.FlightDescriptor{
 				Type: flight.DescriptorPATH,
@@ -115,12 +203,6 @@ func (s *VectorStore) GetFlightInfo(ctx context.Context, desc *flight.FlightDesc
 		TotalRecords:     totalRows,
 		TotalBytes:       -1,
 	}, nil
-}
-
-// TicketQuery defines the JSON structure for DoGet tickets
-type TicketQuery struct {
-	Name  string
-	Limit int64
 }
 
 // DoGet streams data to the client with optional predicate pushdown

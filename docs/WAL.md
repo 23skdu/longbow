@@ -1,27 +1,35 @@
 # Persistence and Hot Reloading
 
-This document describes the persistence mechanisms (Write-Ahead Logging and Snapshots), Hot Reload capability, and Management Actions implemented in Longbow.
+This document describes the persistence mechanisms (Write-Ahead Logging and
+Snapshots), Hot Reload capability, and Management Actions implemented in
+Longbow.
 
 ## Write-Ahead Logging (WAL)
 
-Longbow uses a Write-Ahead Log (WAL) to ensure data durability. Every write operation (`DoPut`) is first appended to a WAL file before being acknowledged to the client. This ensures that in the event of a crash, the data can be recovered.
+Longbow uses a Write-Ahead Log (WAL) to ensure data durability. Every write
+operation (`DoPut`) is first appended to a WAL file before being acknowledged to
+the client. This ensures that in the event of a crash, the data can be
+recovered.
 
-- **File Location**: `wal.log` in the working directory.
-- **Format**: The WAL stores raw Arrow IPC streams.
-- **Recovery**: On startup, Longbow reads the `wal.log` to reconstruct the in-memory state.
+- **File Location**: `wal.log` in the working directory. - **Format**: The WAL
+  stores raw Arrow IPC streams. - **Recovery**: On startup, Longbow reads the
+  `wal.log` to reconstruct the in-memory state.
 
 ## Snapshots
 
-To prevent the WAL from growing indefinitely and to speed up recovery, Longbow periodically creates snapshots of the in-memory state.
+To prevent the WAL from growing indefinitely and to speed up recovery, Longbow
+periodically creates snapshots of the in-memory state.
 
-- **Directory**: `snapshots/`
-- **Mechanism**: The entire in-memory vector store is serialized to disk.
-- **Optimization**: Uses memory mapping (`mmap`) for Zero-Copy loading, drastically reducing startup time for large datasets.
-- **Configuration**: The interval is controlled by the `LONGBOW_SNAPSHOT_INTERVAL` environment variable (e.g., `5m`, `1h`).
+- **Directory**: `snapshots/` - **Mechanism**: The entire in-memory vector store
+  is serialized to disk. - **Optimization**: Uses memory mapping (`mmap`) for
+  Zero-Copy loading, drastically reducing startup time for large datasets. -
+  **Configuration**: The interval is controlled by the
+  `LONGBOW_SNAPSHOT_INTERVAL` environment variable (e.g., `5m`, `1h`).
 
 ## Hot Reloading
 
-Longbow supports dynamic configuration updates without restarting the process. This is achieved by sending a `SIGHUP` signal to the running process.
+Longbow supports dynamic configuration updates without restarting the process.
+This is achieved by sending a `SIGHUP` signal to the running process.
 
 ### Triggering a Reload
 
@@ -33,10 +41,12 @@ kill -HUP <PID>
 
 ### Reloadable Configurations
 
-When a `SIGHUP` is received, Longbow re-reads the `.env` file and updates the following parameters dynamically:
+When a `SIGHUP` is received, Longbow re-reads the `.env` file and updates the
+following parameters dynamically:
 
-1. **Max Memory** (`LONGBOW_MAX_MEMORY`): Updates the memory limit for the vector store.
-1. **Snapshot Interval** (`LONGBOW_SNAPSHOT_INTERVAL`): Updates the frequency of automated snapshots.
+1. **Max Memory** (`LONGBOW_MAX_MEMORY`): Updates the memory limit for the
+   vector store. 1. **Snapshot Interval** (`LONGBOW_SNAPSHOT_INTERVAL`): Updates
+   the frequency of automated snapshots.
 
 ### Logging
 
@@ -49,7 +59,8 @@ The application logs the reload event:
 
 ## Management Actions
 
-Longbow exposes a `DoAction` Flight endpoint for administrative tasks. The following actions are supported:
+Longbow exposes a `DoAction` Flight endpoint for administrative tasks. The
+following actions are supported:
 
 | Action Type | Description |
 | :--- | :--- |

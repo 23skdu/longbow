@@ -303,3 +303,97 @@ func TestPersistence(t *testing.T) {
 		t.Fatal("Snapshot file not created")
 	}
 }
+
+
+func TestEviction(t *testing.T) {
+mem := memory.NewGoAllocator()
+logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+
+// Test LRU Eviction
+t.Run("LRU", func(t *testing.T) {
+// Max memory small enough to force eviction
+// Create a store with 1KB limit
+store := NewVectorStore(mem, logger, 1024, 0)
+
+// Create a record that takes up ~400 bytes
+schema := arrow.NewSchema([]arrow.Field{
+{Name: "val", Type: arrow.PrimitiveTypes.Int64},
+}, nil)
+b := array.NewInt64Builder(mem)
+defer b.Release()
+for i := 0; i < 50; i++ {
+b.Append(int64(i))
+}
+arr := b.NewArray()
+defer arr.Release()
+rec := array.NewRecord(schema, []arrow.Array{arr}, 50)
+defer rec.Release()
+
+// Add 3 datasets. 3rd one should force eviction of the 1st one.
+// Dataset 1
+store.vectors["ds1"] = &Dataset{Records: []arrow.Record{rec}, LastAccess: time.Now().Add(-time.Minute)}
+rec.Retain()
+store.currentMemory += calculateRecordSize(rec)
+
+// Dataset 2
+store.vectors["ds2"] = &Dataset{Records: []arrow.Record{rec}, LastAccess: time.Now()}
+rec.Retain()
+store.currentMemory += calculateRecordSize(rec)
+
+// Now try to add Dataset 3 via DoPut logic (simulated)
+// We need to lock manually as we are accessing internals or use evictLRU directly
+store.mu.Lock()
+err := store.evictLRU(calculateRecordSize(rec))
+store.mu.Unlock()
+
+if err != nil {
+t.Fatalf("evictLRU failed: %v", err)
+}
+
+// Check if ds1 is gone
+store.mu.RLock()
+_, ok1 := store.vectors["ds1"]
+_, ok2 := store.vectors["ds2"]
+store.mu.RUnlock()
+
+if ok1 {
+t.Error("ds1 should have been evicted")
+}
+if !ok2 {
+t.Error("ds2 should still be present")
+}
+})
+
+// Test TTL Eviction
+t.Run("TTL", func(t *testing.T) {
+ttl := 100 * time.Millisecond
+store := NewVectorStore(mem, logger, 0, ttl)
+
+// Add expired dataset
+store.vectors["expired"] = &Dataset{
+Records: []arrow.Record{},
+LastAccess: time.Now().Add(-200 * time.Millisecond),
+}
+
+// Add fresh dataset
+store.vectors["fresh"] = &Dataset{
+Records: []arrow.Record{},
+LastAccess: time.Now(),
+}
+
+// Run eviction
+store.evictTTL()
+
+store.mu.RLock()
+_, okExpired := store.vectors["expired"]
+_, okFresh := store.vectors["fresh"]
+store.mu.RUnlock()
+
+if okExpired {
+t.Error("expired dataset should have been evicted")
+}
+if !okFresh {
+t.Error("fresh dataset should still be present")
+}
+})
+}

@@ -89,6 +89,11 @@ Longbow exposes a `DoAction` Flight endpoint for administrative tasks. The follo
 client.do_action(flight.Action("force_snapshot", b""))
 ```
 
+
+## Compression
+
+To optimize network bandwidth and performance, Longbow uses **LZ4** compression for all Arrow Flight data streams (`DoGet`, `DoPut`). LZ4 was chosen over ZSTD for its superior decompression speed, which is critical for high-throughput real-time applications.
+
 ## Observability & Metrics
 
 Longbow exports Prometheus metrics to track the health and performance of the

@@ -250,7 +250,7 @@ if len(recs) == 0 {
 return nil
 }
 
-w := flight.NewRecordWriter(stream, ipc.WithSchema(recs[0].Schema()), ipc.WithZstd())
+w := flight.NewRecordWriter(stream, ipc.WithSchema(recs[0].Schema()), ipc.WithLZ4())
 defer w.Close()
 
 w.SetFlightDescriptor(&flight.FlightDescriptor{Path: []string{name}})

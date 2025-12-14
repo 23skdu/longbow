@@ -247,7 +247,7 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 		return nil
 	}
 
-	w := flight.NewRecordWriter(stream, ipc.WithSchema(recs[0].Schema()))
+	w := flight.NewRecordWriter(stream, ipc.WithSchema(recs[0].Schema()), ipc.WithZstd())
 	defer w.Close()
 
 	w.SetFlightDescriptor(&flight.FlightDescriptor{Path: []string{name}})

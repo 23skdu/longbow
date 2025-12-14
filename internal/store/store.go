@@ -1,9 +1,9 @@
 package store
 
 import (
+	"fmt"
 	"context"
 	"encoding/json"
-	"fmt"
 	"log/slog"
 	"os"
 	"strconv"
@@ -47,14 +47,15 @@ type VectorStore struct {
 }
 
 func NewVectorStore(mem memory.Allocator, logger *slog.Logger, maxMemory int64, ttl time.Duration) *VectorStore {
-	return &VectorStore{
-		mem:           mem,
-		logger:        logger,
-		vectors: make(map[string]*Dataset),
-		maxMemory:     maxMemory,
-		currentMemory: 0,
-		snapshotReset: make(chan time.Duration, 1),
-	}
+return &VectorStore{
+mem: mem,
+logger: logger,
+vectors: make(map[string]*Dataset),
+maxMemory: maxMemory,
+ttlDuration: ttl,
+currentMemory: 0,
+snapshotReset: make(chan time.Duration, 1),
+}
 }
 
 // UpdateConfig updates the dynamic configuration of the store
@@ -554,11 +555,8 @@ return filterRes.(*compute.RecordDatum).Value, nil
 func (s *VectorStore) StartEvictionTicker(interval time.Duration) {
 ticker := time.NewTicker(interval)
 go func() {
-for {
-select {
-case <-ticker.C:
+for range ticker.C {
 s.evictTTL()
-}
 }
 }()
 }

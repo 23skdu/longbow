@@ -34,7 +34,7 @@ type VectorStore struct {
 	mem           memory.Allocator
 	logger        *slog.Logger
 	mu            sync.RWMutex
-	vectors       map[string][]arrow.Record
+	vectors map[string]*Dataset
 	maxMemory     int64
 	currentMemory int64
 
@@ -50,7 +50,7 @@ func NewVectorStore(mem memory.Allocator, logger *slog.Logger, maxMemory int64, 
 	return &VectorStore{
 		mem:           mem,
 		logger:        logger,
-		vectors:       make(map[string][]arrow.Record),
+		vectors: make(map[string]*Dataset),
 		maxMemory:     maxMemory,
 		currentMemory: 0,
 		snapshotReset: make(chan time.Duration, 1),

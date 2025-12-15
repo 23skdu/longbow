@@ -1,3 +1,4 @@
+
 package store
 
 import (
@@ -10,9 +11,9 @@ import (
 )
 
 type TestRecord struct {
-ID    int32     parquet:"id"
-Value float64   parquet:"value"
-Label string    parquet:"label"
+ID    int32     `parquet:"id"`
+Value float64   `parquet:"value"`
+Label string    `parquet:"label"`
 }
 
 func createTestParquetFile(t *testing.T, dir, name string) {

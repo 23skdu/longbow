@@ -75,3 +75,8 @@ bash
 docker build -t longbow .
 docker run -p 3000:3000 -p 3001:3001 -p 9090:9090 longbow
 
+
+## Architecture
+*   [Persistence & Snapshots](docs/persistence.md)
+*   [Vector Search](docs/vectorsearch.md)
+*   [Metrics](docs/metrics.md)

@@ -1,10 +1,13 @@
+
 package store
 
 import (
+"bytes"
 "context"
 "encoding/json"
 
-"github.com/apache/arrow/go/v18/arrow/flight"
+"github.com/apache/arrow-go/v18/arrow/flight"
+"github.com/apache/arrow-go/v18/arrow/ipc"
 "google.golang.org/grpc/codes"
 "google.golang.org/grpc/status"
 )
@@ -53,9 +56,9 @@ return status.Error(codes.Unimplemented, "DoPut is not implemented on MetaServer
 
 // DoAction handles management and analytics commands on MetaServer
 func (s *MetaServer) DoAction(action *flight.Action, stream flight.FlightService_DoActionServer) error {
-	if action == nil {
-		return status.Error(codes.InvalidArgument, "action is required")
-	}
+if action == nil {
+return status.Error(codes.InvalidArgument, "action is required")
+}
 s.logger.Info("MetaServer DoAction called", "type", action.Type)
 
 switch action.Type {
@@ -74,14 +77,33 @@ return status.Error(codes.InvalidArgument, "dataset and query are required")
 }
 
 // Execute via DuckDB Adapter
-jsonResult, err := s.duckDB.QuerySnapshot(req.Dataset, req.Query)
+rdr, cleanup, err := s.duckDB.QuerySnapshot(stream.Context(), req.Dataset, req.Query)
 if err != nil {
 s.logger.Error("Analytics query failed", "error", err)
 return status.Errorf(codes.Internal, "query failed: %v", err)
 }
+defer cleanup()
+
+// Serialize Arrow Records to IPC stream
+var buf bytes.Buffer
+writer := ipc.NewWriter(&buf, ipc.WithSchema(rdr.Schema()))
+
+for rdr.Next() {
+rec := rdr.Record()
+if err := writer.Write(rec); err != nil {
+return status.Errorf(codes.Internal, "failed to write arrow record: %v", err)
+}
+}
+if err := rdr.Err(); err != nil {
+return status.Errorf(codes.Internal, "error reading arrow results: %v", err)
+}
+
+if err := writer.Close(); err != nil {
+return status.Errorf(codes.Internal, "failed to close ipc writer: %v", err)
+}
 
 // Send result back
-if err := stream.Send(&flight.Result{Body: []byte(jsonResult)}); err != nil {
+if err := stream.Send(&flight.Result{Body: buf.Bytes()}); err != nil {
 return err
 }
 return nil

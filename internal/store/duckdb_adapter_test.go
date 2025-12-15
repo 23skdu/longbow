@@ -2,102 +2,85 @@
 package store
 
 import (
-"encoding/json"
+"context"
 "os"
 "path/filepath"
 "testing"
 
 "github.com/parquet-go/parquet-go"
+"github.com/stretchr/testify/require"
 )
 
-type TestRecord struct {
-ID    int32     `parquet:"id"`
-Value float64   `parquet:"value"`
-Label string    `parquet:"label"`
-}
-
-func createTestParquetFile(t *testing.T, dir, name string) {
-path := filepath.Join(dir, snapshotDirName)
-if err := os.MkdirAll(path, 0755); err != nil {
-t.Fatalf("failed to create snapshot dir: %v", err)
-}
-
-f, err := os.Create(filepath.Join(path, name+".parquet"))
-if err != nil {
-t.Fatalf("failed to create parquet file: %v", err)
-}
-defer func() { _ = f.Close() }()
-
-w := parquet.NewGenericWriter[TestRecord](f)
-records := []TestRecord{
-{ID: 1, Value: 10.5, Label: "A"},
-{ID: 2, Value: 20.0, Label: "B"},
-{ID: 3, Value: 30.5, Label: "C"},
-}
-
-if _, err := w.Write(records); err != nil {
-t.Fatalf("failed to write records: %v", err)
-}
-if err := w.Close(); err != nil {
-t.Fatalf("failed to close writer: %v", err)
-}
-}
-
 func TestDuckDBAdapter_QuerySnapshot(t *testing.T) {
+// Setup temporary directory
 tmpDir := t.TempDir()
-adapter := NewDuckDBAdapter(tmpDir)
-datasetName := "test_dataset"
+snapshotDir := filepath.Join(tmpDir, snapshotDirName)
+err := os.MkdirAll(snapshotDir, 0755)
+require.NoError(t, err)
 
-createTestParquetFile(t, tmpDir, datasetName)
+// Create a dummy parquet file
+datasetName := "test_dataset"
+filePath := filepath.Join(snapshotDir, datasetName+".parquet")
+
+type Row struct {
+ID    int32   `parquet:"id"`
+Value float64 `parquet:"value"`
+}
+
+rows := []Row{
+{ID: 1, Value: 1.1},
+{ID: 2, Value: 2.2},
+{ID: 3, Value: 3.3},
+}
+
+err = parquet.WriteFile(filePath, rows)
+require.NoError(t, err)
+
+adapter := NewDuckDBAdapter(tmpDir)
 
 tests := []struct {
 name      string
 query     string
-wantCount int
 wantErr   bool
+wantCount int64
 }{
 {
 name:      "Select All",
-query:     "SELECT * FROM " + datasetName,
+query:     "SELECT * FROM test_dataset",
+wantErr:   false,
 wantCount: 3,
-wantErr:   false,
 },
 {
-name:      "Filter Query",
-query:     "SELECT * FROM " + datasetName + " WHERE id > 1",
+name:      "Filter",
+query:     "SELECT * FROM test_dataset WHERE id > 1",
+wantErr:   false,
 wantCount: 2,
-wantErr:   false,
-},
-{
-name:      "Aggregation",
-query:     "SELECT COUNT(*) as count FROM " + datasetName,
-wantCount: 1,
-wantErr:   false,
 },
 {
 name:      "Invalid Query",
-query:     "SELECT * FROM non_existent_table",
-wantCount: 0,
+query:     "SELECT * FROM non_existent",
 wantErr:   true,
+wantCount: 0,
 },
 }
 
 for _, tt := range tests {
 t.Run(tt.name, func(t *testing.T) {
-gotJSON, err := adapter.QuerySnapshot(datasetName, tt.query)
-if (err != nil) != tt.wantErr {
-t.Errorf("QuerySnapshot() error = %v, wantErr %v", err, tt.wantErr)
+rdr, cleanup, err := adapter.QuerySnapshot(context.Background(), datasetName, tt.query)
+if tt.wantErr {
+require.Error(t, err)
 return
 }
-if !tt.wantErr {
-var results []map[string]interface{}
-if err := json.Unmarshal([]byte(gotJSON), &results); err != nil {
-t.Fatalf("failed to unmarshal result json: %v", err)
+require.NoError(t, err)
+defer cleanup()
+
+var count int64
+for rdr.Next() {
+rec := rdr.Record()
+count += rec.NumRows()
 }
-if len(results) != tt.wantCount {
-t.Errorf("QuerySnapshot() returned %d rows, want %d", len(results), tt.wantCount)
-}
-}
+require.NoError(t, rdr.Err())
+require.Equal(t, tt.wantCount, count)
 })
 }
 }

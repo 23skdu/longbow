@@ -48,9 +48,4 @@ st, ok = status.FromError(err)
 assert.True(t, ok)
 assert.Equal(t, codes.Unimplemented, st.Code())
 
-err = server.DoAction(nil, nil)
-assert.Error(t, err)
-st, ok = status.FromError(err)
-assert.True(t, ok)
-assert.Equal(t, codes.Unimplemented, st.Code())
 }

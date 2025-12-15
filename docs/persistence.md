@@ -144,6 +144,7 @@ The Meta Server (port 3001) exposes a query_analytics action via the Arrow Fligh
 4.  Executes the query and returns the results as a JSON string.
 
 ### Use Cases
+
 * **Ad-hoc Analytics**: "What is the average vector norm for data ingested yesterday?"
 * **Data Quality Checks**: "Count rows where metadata field 'source' is null."
 * **Debugging**: Inspecting the raw contents of the cold storage.

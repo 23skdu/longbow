@@ -51,8 +51,8 @@ return pw.Close()
 
 // readParquet reads a Parquet file and converts it to an Arrow record
 func readParquet(r io.ReaderAt, size int64, mem memory.Allocator) (arrow.Record, error) {
-// Fix: Use parquet.Open to handle size, then pass the file to NewGenericReader
-f, err := parquet.Open(r, size)
+// Fix: Use parquet.OpenFile to handle size, then pass the file to NewGenericReader
+f, err := parquet.OpenFile(r, size)
 if err != nil {
 return nil, err
 }

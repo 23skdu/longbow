@@ -12,7 +12,7 @@ Longbow splits persistence into two distinct paths:
 
  consistency.
 
-2. **Cold Storage (Snapshots)**: Asynchronous, columnar (Parquet) storage for
+1. **Cold Storage (Snapshots)**: Asynchronous, columnar (Parquet) storage for
 
  compaction and fast startup.
 
@@ -60,12 +60,12 @@ root
 ### Mechanism
 
 1. A background ticker triggers snapshots at configured intervals.
-2. In-memory Arrow records are serialized into Parquet files (one per dataset).
-3. Parquet offers superior compression (Snappy/ZSTD) and is a standard format
+1. In-memory Arrow records are serialized into Parquet files (one per dataset).
+1. Parquet offers superior compression (Snappy/ZSTD) and is a standard format
 
  for analytics.
 
-4. After a successful snapshot, the WAL is truncated to free up space.
+1. After a successful snapshot, the WAL is truncated to free up space.
 
 ## Configuration
 

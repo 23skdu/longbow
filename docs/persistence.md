@@ -1,53 +1,65 @@
 
 # Persistence Architecture
 
-Longbow uses a hybrid persistence model to ensure data durability, efficient storage, and fast recovery. This document describes the Write-Ahead Logging (WAL), Snapshot mechanisms, Hot Reload capabilities, and Observability signals.
+Longbow uses a hybrid persistence model to ensure data durability, efficient
+storage, and fast recovery. This document describes the Write-Ahead Logging
+(WAL), Snapshot mechanisms, Hot Reload capabilities, and Observability signals.
 
 ## Architecture Overview
 
 Longbow splits persistence into two distinct paths:
 
-1.  **Hot Path (WAL)**: Synchronous, row-oriented log for immediate crash consistency.
-2.  **Cold Storage (Snapshots)**: Asynchronous, columnar (Parquet) storage for compaction and fast startup.
+1. **Hot Path (WAL)**: Synchronous, row-oriented log for immediate crash
+   consistency.
+2. **Cold Storage (Snapshots)**: Asynchronous, columnar (Parquet) storage for
+   compaction and fast startup.
 
 ### Hybrid Workflow
 
-1.  **Write**: Client sends data -> Appended to WAL -> Added to Memory.
-2.  **Snapshot**: Timer fires -> Memory dumped to Parquet -> WAL truncated.
-3.  **Recovery**: Load Parquet Snapshots -> Replay remaining WAL -> System Ready.
+1. **Write**: Client sends data -> Appended to WAL -> Added to Memory.
+2. **Snapshot**: Timer fires -> Memory dumped to Parquet -> WAL truncated.
+3. **Recovery**: Load Parquet Snapshots -> Replay remaining WAL -> System Ready.
 
 ## Write-Ahead Log (WAL)
 
-*   **Format**: Row-oriented, append-only log (Arrow IPC stream).
-*   **Purpose**: Provides immediate durability for incoming writes.
-*   **Mechanism**: Every `DoPut` operation appends the record to `wal.log` before acknowledging success to the client.
-*   **File Location**: Configurable via `LONGBOW_DATA_PATH` (default: `/data/wal.log`).
+* **Format**: Row-oriented, append-only log (Arrow IPC stream).
+* **Purpose**: Provides immediate durability for incoming writes.
+* **Mechanism**: Every `DoPut` operation appends the record to `wal.log` before
+  acknowledging success to the client.
+* **File Location**: Configurable via `LONGBOW_DATA_PATH` (default:
+  `/data/wal.log`).
 
 ## Snapshots
 
-*   **Format**: Apache Parquet (`.parquet`).
-*   **Purpose**: Efficient long-term storage, compaction, and faster startup.
-*   **Mechanism**:
-    *   A background ticker triggers snapshots at configured intervals.
-    *   In-memory Arrow records are serialized into Parquet files (one per dataset).
-    *   Parquet offers superior compression (Snappy/ZSTD) and is a standard format for analytics.
-    *   After a successful snapshot, the WAL is truncated to free up space.
-*   **Directory**: Configurable via `LONGBOW_SNAPSHOT_PATH` (default: `/snapshots/`).
+* **Format**: Apache Parquet (`.parquet`).
+* **Purpose**: Efficient long-term storage, compaction, and faster startup.
+* **Mechanism**:
+  * A background ticker triggers snapshots at configured intervals.
+  * In-memory Arrow records are serialized into Parquet files (one per dataset).
+  * Parquet offers superior compression (Snappy/ZSTD) and is a standard format
+    for analytics.
+  * After a successful snapshot, the WAL is truncated to free up space.
+* **Directory**: Configurable via `LONGBOW_SNAPSHOT_PATH` (default:
+  `/snapshots/`).
 
 ## Configuration
 
-The persistence layer is configured via environment variables, which are mapped in the Helm chart.
+The persistence layer is configured via environment variables, which are mapped
+in the Helm chart.
 
+<!-- markdownlint-disable MD013 -->
 | Variable | Description | Default |
 | :--- | :--- | :--- |
 | `LONGBOW_DATA_PATH` | Directory/File path for the WAL. | `/data` |
 | `LONGBOW_SNAPSHOT_PATH` | Directory path for storing Parquet snapshots. | `/snapshots` |
 | `LONGBOW_SNAPSHOT_INTERVAL` | Interval for automated snapshots (e.g., `5m`, `1h`). | `1h` |
 | `LONGBOW_MAX_MEMORY` | Max memory limit before eviction/snapshotting. | `0` (unlimited) |
+<!-- markdownlint-enable MD013 -->
 
 ## Hot Reloading
 
-Longbow supports dynamic configuration updates without restarting the process by sending a `SIGHUP` signal.
+Longbow supports dynamic configuration updates without restarting the process by
+sending a `SIGHUP` signal.
 
 ### Triggering a Reload
 
@@ -57,8 +69,8 @@ kill -HUP <PID>
 
 ### Reloadable Parameters
 
-*   **Max Memory** (`LONGBOW_MAX_MEMORY`)
-*   **Snapshot Interval** (`LONGBOW_SNAPSHOT_INTERVAL`)
+* **Max Memory** (`LONGBOW_MAX_MEMORY`)
+* **Snapshot Interval** (`LONGBOW_SNAPSHOT_INTERVAL`)
 
 ## Management Actions
 
@@ -80,7 +92,8 @@ client.do_action(flight.Action("force_snapshot", b""))
 
 ## Observability & Metrics
 
-Longbow exports Prometheus metrics to track the health and performance of the persistence layer.
+Longbow exports Prometheus metrics to track the health and performance of the
+persistence layer.
 
 ### WAL Metrics
 

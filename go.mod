@@ -4,7 +4,6 @@ go 1.24.9
 
 require (
 	github.com/apache/arrow-go/v18 v18.1.0
-	github.com/apache/arrow/go/v18 v18.0.0-20241007013041-ab95a4d25142
 	github.com/coder/hnsw v0.6.1
 	github.com/joho/godotenv v1.5.1
 	github.com/kelseyhightower/envconfig v1.4.0

@@ -1,12 +1,23 @@
-[![CI](https://github.com/23skdu/longbow/actions/workflows/ci.yml/badge.svg)](https://github.com/23skdu/longbow/actions/workflows/ci.yml)
-[![Helm Validation](https://github.com/23skdu/longbow/actions/workflows/helm-validation.yml/badge.svg)](https://github.com/23skdu/longbow/actions/workflows/helm-validation.yml)
-[![Markdown Lint](https://github.com/23skdu/longbow/actions/workflows/markdown-lint.yml/badge.svg)](https://github.com/23skdu/longbow/actions/workflows/markdown-lint.yml)
-[![Release](https://github.com/23skdu/longbow/actions/workflows/release.yml/badge.svg)](https://github.com/23skdu/longbow/actions/workflows/release.yml)
-
 # Longbow
 
 <!-- markdownlint-disable MD033 -->
-<img width="1024" height="559" alt="image" src="https://github.com/user-attachments/assets/fc6c1662-f529-424a-a0d6-e7e27e813592" />
+```mermaid
+graph TD
+    Client[Client] -->|DoPut| DataServer[Data Server :3000]
+    Client -->|ListFlights| MetaServer[Meta Server :3001]
+
+    subgraph "Longbow Node"
+        DataServer --> WAL[(WAL Log)]
+        DataServer --> Mem[In-Memory Store]
+        Mem -->|Async Snapshot| Parquet[(Parquet Snapshots)]
+
+        subgraph "Zero-Copy Index"
+            HNSW[HNSW Graph] -.->|Refers to| Mem
+        end
+    end
+
+    Prometheus -->|Scrape| Metrics[:9090]
+```
 <!-- markdownlint-enable MD033 -->
 
 **Longbow** is a high-performance, in-memory vector store implementing the **Apache Arrow Flight** protocol.
@@ -58,25 +69,25 @@ Longbow exposes Prometheus metrics on a dedicated port to ensure observability w
 
 For a detailed explanation of each metric, see [Metrics Documentation](docs/metrics.md).
 
-
 Standard Go runtime metrics are also exposed.
 
 ## Usage
 
 ### Running locally
 
-bash
+```bash
 go run cmd/longbow/main.go
-
+```
 
 ### Docker
 
-bash
+```bash
 docker build -t longbow .
 docker run -p 3000:3000 -p 3001:3001 -p 9090:9090 longbow
+```
 
-
-## Architecture
-*   [Persistence & Snapshots](docs/persistence.md)
-*   [Vector Search](docs/vectorsearch.md)
-*   [Metrics](docs/metrics.md)
+## Documentation
+* [Persistence & Snapshots](docs/persistence.md)
+* [Vector Search Architecture](docs/vectorsearch.md)
+* [Troubleshooting Guide](docs/troubleshooting.md)
+* [Metrics](docs/metrics.md)

@@ -53,6 +53,9 @@ return status.Error(codes.Unimplemented, "DoPut is not implemented on MetaServer
 
 // DoAction handles management and analytics commands on MetaServer
 func (s *MetaServer) DoAction(action *flight.Action, stream flight.FlightService_DoActionServer) error {
+	if action == nil {
+		return status.Error(codes.InvalidArgument, "action is required")
+	}
 s.logger.Info("MetaServer DoAction called", "type", action.Type)
 
 switch action.Type {

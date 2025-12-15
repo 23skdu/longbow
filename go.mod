@@ -3,7 +3,7 @@ module github.com/23skdu/longbow
 go 1.24.9
 
 require (
-	github.com/apache/arrow/go/v18 v18.0.0-20241007013041-ab95a4d25142
+	github.com/apache/arrow-go/v18 v18.1.0
 	github.com/coder/hnsw v0.6.1
 	github.com/joho/godotenv v1.5.1
 	github.com/kelseyhightower/envconfig v1.4.0
@@ -17,7 +17,6 @@ require (
 require (
 	github.com/JohnCGriffin/overflow v0.0.0-20211019200055-46fa312c352c // indirect
 	github.com/andybalholm/brotli v1.1.1 // indirect
-	github.com/apache/arrow-go/v18 v18.1.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/chewxy/math32 v1.10.1 // indirect

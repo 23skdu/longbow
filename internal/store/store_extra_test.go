@@ -5,8 +5,8 @@ import (
 "testing"
 "time"
 
-"github.com/apache/arrow/go/v18/arrow/flight"
-"github.com/apache/arrow/go/v18/arrow/memory"
+"github.com/apache/arrow-go/v18/arrow/flight"
+"github.com/apache/arrow-go/v18/arrow/memory"
 "github.com/stretchr/testify/assert"
 )
 

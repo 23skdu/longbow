@@ -1,5 +1,10 @@
 # Longbow
 
+<img width="1024" height="559" alt="image" src="https://github.com/user-attachments/assets/16b4632a-f09b-42ab-9b05-9ab5a25566bf" />
+
+**Longbow** is a high-performance, in-memory vector store implementing the **Apache Arrow Flight** protocol.
+It is designed for efficient, zero-copy transport of large datasets and vector embeddings between agents and services.
+
 <!-- markdownlint-disable MD033 -->
 ```mermaid
 graph TD
@@ -19,10 +24,6 @@ graph TD
     Prometheus -->|Scrape| Metrics[:9090]
 ```
 <!-- markdownlint-enable MD033 -->
-
-**Longbow** is a high-performance, in-memory vector store implementing the **Apache Arrow Flight** protocol.
-It is designed for efficient, zero-copy transport of large datasets and vector embeddings between agents and services.
-
 ## Features
 
 * **Protocol**: Apache Arrow Flight (over gRPC/HTTP2).

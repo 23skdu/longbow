@@ -12,7 +12,6 @@ import (
 "github.com/23skdu/longbow/internal/metrics"
 "github.com/apache/arrow/go/v18/arrow"
 "github.com/apache/arrow/go/v18/arrow/ipc"
-"golang.org/x/exp/mmap"
 )
 
 const (
@@ -198,34 +197,30 @@ metrics.SnapshotTotal.WithLabelValues("error").Inc()
 return fmt.Errorf("failed to create temp snapshot dir: %w", err)
 }
 
-// Save each dataset to temp dir
+// Save each dataset to temp dir as Parquet
 for name, ds := range s.vectors {
 recs := ds.Records
 if len(recs) == 0 {
 continue
 }
-path := filepath.Join(tempDir, name+".arrow")
+path := filepath.Join(tempDir, name+".parquet")
 f, err := os.Create(path)
 if err != nil {
 s.logger.Error("Failed to create snapshot file", "name", name, "error", err)
 continue
 }
 
-// We need to write all records. Since they might have different schemas (unlikely due to validation) or just be chunks.
-// We assume same schema for a dataset.
-w := ipc.NewWriter(f, ipc.WithSchema(recs[0].Schema()))
+// Write all records to the parquet file
 for _, rec := range recs {
-if err := w.Write(rec); err != nil {
-s.logger.Error("Failed to write record to snapshot", "name", name, "error", err)
+if err := writeParquet(f, rec); err != nil {
+s.logger.Error("Failed to write record to parquet snapshot", "name", name, "error", err)
 break
 }
 }
-w.Close()
 f.Close()
 }
 
 // Atomic swap: Remove old, Rename temp to new
-// If we crash here, we have full WAL, so it's safe to lose old snapshot.
 if err := os.RemoveAll(snapshotDir); err != nil {
 s.logger.Error("Failed to remove old snapshot dir", "error", err)
 }
@@ -256,6 +251,7 @@ metrics.SnapshotDurationSeconds.Observe(time.Since(start).Seconds())
 s.logger.Info("Snapshot complete")
 return nil
 }
+
 func (s *VectorStore) loadSnapshots() error {
 snapshotDir := filepath.Join(s.dataPath, snapshotDirName)
 entries, err := os.ReadDir(snapshotDir)
@@ -267,47 +263,35 @@ return err
 }
 
 for _, entry := range entries {
-if entry.IsDir() || filepath.Ext(entry.Name()) != ".arrow" {
+if entry.IsDir() || filepath.Ext(entry.Name()) != ".parquet" {
 continue
 }
-name := entry.Name()[:len(entry.Name())-6] // remove .arrow
+name := entry.Name()[:len(entry.Name())-8] // remove .parquet
 path := filepath.Join(snapshotDir, entry.Name())
 
-// Use mmap for zero-copy load
-mm, err := mmap.Open(path)
+f, err := os.Open(path)
 if err != nil {
-s.logger.Error("Failed to mmap snapshot file", "name", name, "error", err)
+s.logger.Error("Failed to open snapshot file", "name", name, "error", err)
 continue
 }
-// We don't close mm here immediately because the records might reference the memory.
-// However, in this simple store, we might need to keep track of mapped files to close them on shutdown.
-// For now, we let the OS handle cleanup on exit or we leak the fd/map until shutdown (which isn't implemented).
-// A better approach would be to add a 'closers' list to VectorStore.
+stat, _ := f.Stat()
 
-r, err := ipc.NewFileReader(&mmapReader{ReaderAt: mm})
+// Read Parquet file
+rec, err := readParquet(f, stat.Size(), s.mem)
+f.Close()
 if err != nil {
-mm.Close()
-s.logger.Error("Failed to create IPC file reader for snapshot", "name", name, "error", err)
+s.logger.Error("Failed to read parquet snapshot", "name", name, "error", err)
 continue
 }
 
-s.mu.Lock()
-for i := 0; i < r.NumRecords(); i++ {
-rec, err := r.Record(i)
-if err != nil {
-s.logger.Error("Failed to read record from snapshot", "name", name, "index", i, "error", err)
-continue
-}
 rec.Retain()
+s.mu.Lock()
 if _, ok := s.vectors[name]; !ok {
 s.vectors[name] = &Dataset{Records: []arrow.Record{}, lastAccess: time.Now().UnixNano()}
 }
 s.vectors[name].Records = append(s.vectors[name].Records, rec)
 s.currentMemory += calculateRecordSize(rec)
-}
 s.mu.Unlock()
-r.Close()
-// mm.Close() // Do NOT close mm, as records point to this memory
 }
 return nil
 }
@@ -345,32 +329,6 @@ initialInterval = newInterval
 }
 }
 }
-
-
-// mmapReader wraps mmap.ReaderAt to implement io.ReadSeeker
-type mmapReader struct {
-*mmap.ReaderAt
-offset int64
-}
-
-func (r *mmapReader) Read(p []byte) (n int, err error) {
-n, err = r.ReaderAt.ReadAt(p, r.offset)
-r.offset += int64(n)
-return
-}
-
-func (r *mmapReader) Seek(offset int64, whence int) (int64, error) {
-switch whence {
-case io.SeekStart:
-r.offset = offset
-case io.SeekCurrent:
-r.offset += offset
-case io.SeekEnd:
-r.offset = int64(r.Len()) + offset
-}
-return r.offset, nil
-}
-
 
 // Close ensures the WAL is flushed and closed properly
 func (s *VectorStore) Close() error {

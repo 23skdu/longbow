@@ -1,7 +1,6 @@
 package store
 
 import (
-"fmt"
 "math"
 "sync"
 
@@ -50,10 +49,18 @@ return euclidean(vecA, vecB)
 // getVector retrieves the float32 slice for a given ID directly from Arrow memory.
 func (h *HNSWIndex) getVector(id VectorID) []float32 {
 h.mu.RLock()
+// Bounds check
+if int(id) >= len(h.locations) {
+h.mu.RUnlock()
+return nil
+}
 loc := h.locations[id]
 h.mu.RUnlock()
 
 // Access the record
+if loc.BatchIdx >= len(h.dataset.Records) {
+return nil
+}
 rec := h.dataset.Records[loc.BatchIdx]
 
 // Find the vector column (assuming it is named "vector")
@@ -71,9 +78,13 @@ return nil // Should not happen if schema is validated
 }
 
 // Cast to FixedSizeList
-listArr := vecCol.(*array.FixedSizeList)
+listArr, ok := vecCol.(*array.FixedSizeList)
+if !ok {
+return nil
+}
 
 // Get the underlying float32 array
+// The data is in the first child of the FixedSizeList
 values := listArr.Data().Children()[0]
 floatArr := array.NewFloat32Data(values)
 defer floatArr.Release()
@@ -101,16 +112,10 @@ h.Graph.Add(hnsw.Node[VectorID]{Key: id})
 return nil
 }
 
-// Search performs a nearest neighbor search.
-// Note: This requires a way to inject a query vector which isn't in the store yet.
-// The coder/hnsw library typically searches by ID. To search by a raw vector,
-// we would need to add it temporarily or use a specialized entry point if available.
-// For this implementation, we assume we are searching for similar vectors to an existing ID,
-// or we would extend the library to support raw vector search.
-// 
-// However, to strictly follow "store only int32 RecordIDs", we expose SearchByID.
+// SearchByID performs a nearest neighbor search for an existing vector in the index.
 func (h *HNSWIndex) SearchByID(id VectorID, k int) []VectorID {
-neighbors := h.Graph.Search(id, k)
+// ef is set to k * 2 by default for better recall, can be tuned
+neighbors := h.Graph.Search(id, k, k*2)
 res := make([]VectorID, len(neighbors))
 for i, n := range neighbors {
 res[i] = n.Key
@@ -119,6 +124,9 @@ return res
 }
 
 func euclidean(a, b []float32) float32 {
+if len(a) != len(b) {
+return 0 // Should handle error or panic, but Dist signature is fixed
+}
 var sum float32
 for i := range a {
 d := a[i] - b[i]

@@ -28,6 +28,7 @@ import (
 // Dataset wraps records with metadata for eviction
 type Dataset struct {
 	Index *HNSWIndex
+	Index *HNSWIndex
 Records []arrow.Record
 lastAccess int64 // UnixNano
 Version int64

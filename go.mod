@@ -4,6 +4,7 @@ go 1.24.9
 
 require (
 	github.com/apache/arrow/go/v18 v18.0.0-20241007013041-ab95a4d25142
+	github.com/coder/hnsw v0.6.1
 	github.com/joho/godotenv v1.5.1
 	github.com/kelseyhightower/envconfig v1.4.0
 	github.com/prometheus/client_golang v1.23.2
@@ -18,7 +19,6 @@ require (
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/chewxy/math32 v1.10.1 // indirect
-	github.com/coder/hnsw v0.6.1 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/goccy/go-json v0.10.3 // indirect
 	github.com/google/flatbuffers v24.3.25+incompatible // indirect

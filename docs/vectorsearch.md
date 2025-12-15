@@ -54,19 +54,20 @@ idx.Add(0, 0) // Add first row of first batch
 
 ## Analytics with DuckDB
 
-Longbow integrates with DuckDB to provide powerful analytical capabilities on top of the stored Parquet snapshots. This allows users to execute SQL queries directly against the historical data without needing to load it all into memory.
+Longbow integrates with DuckDB to provide powerful analytical capabilities on top of the stored Parquet snapshots. This
+allows users to execute SQL queries directly against the historical data without needing to load it all into memory.
 
 ### Features
 
-*   **SQL Interface**: Execute standard SQL queries on your vector data.
-*   **Zero-Copy Reads**: DuckDB reads Parquet files directly, minimizing overhead.
-*   **Aggregations**: Perform complex aggregations (COUNT, AVG, SUM) efficiently.
+* **SQL Interface**: Execute standard SQL queries on your vector data.
+* **Zero-Copy Reads**: DuckDB reads Parquet files directly, minimizing overhead.
+* **Aggregations**: Perform complex aggregations (COUNT, AVG, SUM) efficiently.
 
-### Usage
+### DuckDB Usage
 
-The DuckDBAdapter exposes a QuerySnapshot method that takes a dataset name and a SQL query string. It returns the result as a JSON string.
+The DuckDBAdapter exposes a QuerySnapshot method that takes a dataset name and a SQL query string. It returns the result
+as a JSON string.
 
 go
 adapter := store.NewDuckDBAdapter("/data/path")
 jsonResult, err := adapter.QuerySnapshot("my_dataset", "SELECT count(*) FROM my_dataset WHERE value > 0.5")
-

@@ -328,7 +328,7 @@ logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 t.Run("LRU", func(t *testing.T) {
 // Max memory small enough to force eviction
 // Create a store with 1KB limit
-store := NewVectorStore(mem, logger, 1024, 0)
+store := NewVectorStore(mem, logger, 500, 0)
 
 // Create a record that takes up ~400 bytes
 schema := arrow.NewSchema([]arrow.Field{

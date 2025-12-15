@@ -10,8 +10,8 @@ import (
 "time"
 
 "github.com/23skdu/longbow/internal/store"
-"github.com/apache/arrow/go/v18/arrow/flight"
-"github.com/apache/arrow/go/v18/arrow/memory"
+"github.com/apache/arrow-go/v18/arrow/flight"
+"github.com/apache/arrow-go/v18/arrow/memory"
 "github.com/joho/godotenv"
 "github.com/kelseyhightower/envconfig"
 "github.com/prometheus/client_golang/prometheus/promhttp"

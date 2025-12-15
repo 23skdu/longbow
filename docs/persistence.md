@@ -23,6 +23,7 @@ optimize your storage costs and performance:
 
 * **WAL Volume**: Should be backed by high-IOPS storage (e.g., NVMe SSD) as
   every write operation hits this disk.
+
 * **Snapshot Volume**: Can be backed by slower, cheaper storage (e.g., HDD or
   standard cloud block storage) as snapshots are written asynchronously in the
   background.
@@ -136,15 +137,16 @@ Longbow includes an embedded **DuckDB** adapter that allows you to run complex S
 ### How it works
 
 The Meta Server (port 3001) exposes a query_analytics action via the Arrow Flight DoAction interface. This action:
-1.  Accepts a JSON payload specifying the target dataset and the SQL query.
+
+1. Accepts a JSON payload specifying the target dataset and the SQL query.
 2.  Spins up an ephemeral, in-process DuckDB instance.
 3.  Registers the dataset's Parquet snapshot as a virtual table.
 4.  Executes the query and returns the results as a JSON string.
 
 ### Use Cases
-*   **Ad-hoc Analytics**: "What is the average vector norm for data ingested yesterday?"
-*   **Data Quality Checks**: "Count rows where metadata field 'source' is null."
-*   **Debugging**: Inspecting the raw contents of the cold storage.
+* **Ad-hoc Analytics**: "What is the average vector norm for data ingested yesterday?"
+* **Data Quality Checks**: "Count rows where metadata field 'source' is null."
+* **Debugging**: Inspecting the raw contents of the cold storage.
 
 ### Example Usage (Python)
 

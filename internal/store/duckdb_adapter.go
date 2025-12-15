@@ -35,7 +35,7 @@ return nil, nil, fmt.Errorf("failed to open duckdb: %w", err)
 // We need a dedicated connection to access the driver-specific Arrow interface
 conn, err := db.Conn(ctx)
 if err != nil {
-db.Close()
+_ = db.Close()
 return nil, nil, fmt.Errorf("failed to open conn: %w", err)
 }
 
@@ -51,8 +51,8 @@ ar, err = duckdb.NewArrowFromConn(dc)
 return err
 })
 if err != nil {
-conn.Close()
-db.Close()
+_ = conn.Close()
+_ = db.Close()
 return nil, nil, fmt.Errorf("failed to init arrow: %w", err)
 }
 
@@ -60,23 +60,23 @@ return nil, nil, fmt.Errorf("failed to init arrow: %w", err)
 // We use ExecContext on the specific connection to ensure visibility
 createViewSQL := fmt.Sprintf("CREATE VIEW %s AS SELECT * FROM read_parquet('%s')", datasetName, snapshotPath)
 if _, err := conn.ExecContext(ctx, createViewSQL); err != nil {
-conn.Close()
-db.Close()
+_ = conn.Close()
+_ = db.Close()
 return nil, nil, fmt.Errorf("failed to create view for snapshot: %w", err)
 }
 
 // Execute the user's query via Arrow interface
 rdr, err := ar.QueryContext(ctx, query)
 if err != nil {
-conn.Close()
-db.Close()
+_ = conn.Close()
+_ = db.Close()
 return nil, nil, fmt.Errorf("query execution failed: %w", err)
 }
 
 cleanup := func() {
 rdr.Release()
-conn.Close()
-db.Close()
+_ = conn.Close()
+_ = db.Close()
 }
 
 return rdr, cleanup, nil

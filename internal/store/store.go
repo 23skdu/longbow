@@ -760,6 +760,7 @@ func (s *VectorStore) updateVectorMetrics(rec arrow.Record) {
 	}
 }
 
+
 func calculateBatchNorm(arr arrow.Array) float64 {
 	listArr, ok := arr.(*array.FixedSizeList)
 	if !ok {
@@ -779,8 +780,6 @@ func calculateBatchNorm(arr arrow.Array) float64 {
 	floatArr := array.NewFloat32Data(valsData)
 	defer floatArr.Release()
 	
-	values := floatArr.Values()
-	
 	var totalNorm float64
 	count := 0
 	
@@ -788,13 +787,13 @@ func calculateBatchNorm(arr arrow.Array) float64 {
 		start := i * width
 		end := start + width
 		
-		if end > len(values) {
+		if end > floatArr.Len() {
 			break
 		}
 		
 		var sumSq float64
 		for j := start; j < end; j++ {
-			val := values[j]
+			val := floatArr.Value(j)
 			sumSq += float64(val * val)
 		}
 		totalNorm += math.Sqrt(sumSq)

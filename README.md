@@ -2,11 +2,8 @@
 [![Helm Validation](https://github.com/23skdu/longbow/actions/workflows/helm-validation.yml/badge.svg)](https://github.com/23skdu/longbow/actions/workflows/helm-validation.yml)
 [![Markdown Lint](https://github.com/23skdu/longbow/actions/workflows/markdown-lint.yml/badge.svg)](https://github.com/23skdu/longbow/actions/workflows/markdown-lint.yml)
 [![Release](https://github.com/23skdu/longbow/actions/workflows/release.yml/badge.svg)](https://github.com/23skdu/longbow/actions/workflows/release.yml)
-[![Dependabot](https://badgen.net/dependabot/23skdu/longbow?icon=dependabot)](https://github.com/23skdu/longbow/pulls?q=is%3Apr+author%3Aapp%2Fdependabot)
 
 # Longbow
-
-
 
 <!-- markdownlint-disable MD033 -->
 <img width="1024" height="559" alt="image" src="https://github.com/user-attachments/assets/fc6c1662-f529-424a-a0d6-e7e27e813592" />
@@ -18,6 +15,7 @@ It is designed for efficient, zero-copy transport of large datasets and vector e
 ## Features
 
 * **Protocol**: Apache Arrow Flight (over gRPC/HTTP2).
+* **Durable**: WAL, with Apache Parquet format snapshots
 * **Storage**: In-memory ephemeral storage for high-speed access.
 * **Observability**: Structured JSON logging and Prometheus metrics.
 

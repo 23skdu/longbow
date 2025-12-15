@@ -55,7 +55,8 @@ storage:
 
 ## 🦆 Analytical Sidecar (DuckDB Integration)
 
-Longbow includes an embedded **DuckDB** adapter that allows you to run complex SQL OLAP queries directly against your Parquet snapshots without loading them into the main memory.
+Longbow includes an embedded **DuckDB** adapter that allows you to run complex SQL OLAP queries directly against your
+Parquet snapshots without loading them into the main memory.
 
 ### How it works
 

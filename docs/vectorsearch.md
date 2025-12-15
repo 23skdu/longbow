@@ -36,4 +36,3 @@ idx.Add(0, 0) // Add first row of first batch
 * **Memory**: Extremely efficient as vector data is not duplicated.
 * **Concurrency**: The coder/hnsw library supports concurrent inserts and
     searches. Our wrapper protects the location mapping with a mutex.
-

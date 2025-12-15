@@ -60,8 +60,8 @@ switch action.Type {
 case "query_analytics":
 // Expects JSON body: { "dataset": "name", "query": "SELECT ..." }
 var req struct {
-Dataset string json:"dataset"
-Query   string json:"query"
+Dataset string `json:"dataset"`
+Query   string `json:"query"`
 }
 if err := json.Unmarshal(action.Body, &req); err != nil {
 return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)

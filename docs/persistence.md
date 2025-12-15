@@ -51,10 +51,8 @@ directly by external tools like DuckDB or Pandas:
 
 ```text
 root
-<!-- markdownlint-disable MD013 -->
  |-- id: int32
  |-- vector: list<element: float> (fixed_size_list[128])
-<!-- markdownlint-enable MD013 -->
 ```
 
 ### Mechanism
@@ -72,15 +70,12 @@ root
 The persistence layer is configured via environment variables, which are mapped
 in the Helm chart.
 
-<!-- markdownlint-disable MD013 -->
 | Variable | Description | Default |
 | :--- | :--- | :--- |
 | `LONGBOW_DATA_PATH` | Directory/File path for the WAL. | `/data` |
 | `LONGBOW_SNAPSHOT_PATH` | Directory path for storing Parquet snapshots. | `/snapshots` |
 | `LONGBOW_SNAPSHOT_INTERVAL` | Interval for automated snapshots (e.g., `5m`, `1h`). | `1h` |
 | `LONGBOW_MAX_MEMORY` | Max memory limit before eviction/snapshotting. | `0` (unlimited) |
-<!-- markdownlint-enable MD013 -->
-<!-- markdownlint-enable MD013 -->
 
 ## Hot Reloading
 
@@ -102,14 +97,11 @@ kill -HUP <PID>
 
 Longbow exposes a `DoAction` Flight endpoint for administrative tasks.
 
-<!-- markdownlint-disable MD013 -->
 | Action Type | Description |
 | :--- | :--- |
 | `force_snapshot` | Triggers an immediate snapshot of the current state to disk. |
 | `get_stats` | Returns current statistics (record count, memory usage). |
 | `drop_dataset` | Drops a specific dataset from memory. Requires a request body with the dataset name. |
-<!-- markdownlint-enable MD013 -->
-<!-- markdownlint-enable MD013 -->
 
 ### Example: Force Snapshot (Python)
 
@@ -124,21 +116,15 @@ persistence layer.
 
 ### WAL Metrics
 
-<!-- markdownlint-disable MD013 -->
 | Metric Name | Type | Labels | Description |
 | :--- | :--- | :--- | :--- |
 | `longbow_wal_writes_total` | Counter | status (ok/error) | Total number of write operations to the WAL. |
 | `longbow_wal_bytes_written_total` | Counter | - | Total bytes written to the WAL file. |
 | `longbow_wal_replay_duration_seconds` | Histogram | - | Time taken to replay the WAL during startup. |
-<!-- markdownlint-enable MD013 -->
-<!-- markdownlint-enable MD013 -->
 
 ### Snapshot Metrics
 
-<!-- markdownlint-disable MD013 -->
 | Metric Name | Type | Labels | Description |
 | :--- | :--- | :--- | :--- |
 | `longbow_snapshot_operations_total` | Counter | status (ok/error) | Total number of snapshot attempts. |
 | `longbow_snapshot_duration_seconds` | Histogram | - | Duration of the snapshot process. |
-<!-- markdownlint-enable MD013 -->
-<!-- markdownlint-enable MD013 -->

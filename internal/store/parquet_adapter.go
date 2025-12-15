@@ -25,12 +25,11 @@ rows := rec.NumRows()
 cols := rec.Columns()
 
 // Assuming col 0 is ID (int32) and col 1 is Vector (FixedSizeList<float32>)
-// We should probably check schema or find columns by name
-// For now, let's assume the standard schema used in this repo
-
 idCol := cols[0].(*array.Int32)
 vecCol := cols[1].(*array.FixedSizeList)
-vecData := vecCol.Data().Children()[0].(*array.Float32)
+
+// Fix: Use ListValues() to get the underlying flat array, then cast to *array.Float32
+vecData := vecCol.ListValues().(*array.Float32)
 vecLen := int(vecCol.DataType().(*arrow.FixedSizeListType).Len())
 
 batch := make([]VectorRecord, rows)
@@ -52,18 +51,29 @@ return pw.Close()
 
 // readParquet reads a Parquet file and converts it to an Arrow record
 func readParquet(r io.ReaderAt, size int64, mem memory.Allocator) (arrow.Record, error) {
-pr := parquet.NewGenericReader[VectorRecord](r, size)
+// Fix: Use parquet.Open to handle size, then pass the file to NewGenericReader
+f, err := parquet.Open(r, size)
+if err != nil {
+return nil, err
+}
+
+pr := parquet.NewGenericReader[VectorRecord](f)
 rows := make([]VectorRecord, pr.NumRows())
-_, err := pr.Read(rows)
+_, err = pr.Read(rows)
 if err != nil && err != io.EOF {
 return nil, err
 }
 
+if len(rows) == 0 {
+return nil, nil // Or empty record
+}
+
 // Convert back to Arrow Record
+// Fix: Cast len() to int32 for FixedSizeListOf
 b := array.NewRecordBuilder(mem, arrow.NewSchema(
 []arrow.Field{
 {Name: "id", Type: arrow.PrimitiveTypes.Int32},
-{Name: "vector", Type: arrow.FixedSizeListOf(len(rows[0].Vector), arrow.PrimitiveTypes.Float32)},
+{Name: "vector", Type: arrow.FixedSizeListOf(int32(len(rows[0].Vector)), arrow.PrimitiveTypes.Float32)},
 },
 nil,
 ))

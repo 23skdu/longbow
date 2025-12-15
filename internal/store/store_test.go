@@ -72,7 +72,7 @@ func TestDoPutAndDoGet(t *testing.T) {
 
 	ctx := context.Background()
 	client, err := flight.NewClientWithMiddleware(
-		"passthrough",
+		"passthrough:///bufnet",
 		nil,
 		nil,
 		grpc.WithContextDialer(dialer),
@@ -161,7 +161,7 @@ func TestSchemaValidation(t *testing.T) {
 	_, _, dialer := setupServer(t)
 	ctx := context.Background()
 	client, err := flight.NewClientWithMiddleware(
-		"passthrough",
+		"passthrough:///bufnet",
 		nil,
 		nil,
 		grpc.WithContextDialer(dialer),
@@ -243,7 +243,7 @@ func TestPersistence(t *testing.T) {
 vs, tmpDir, dialer := setupServer(t)
 ctx := context.Background()
 client, err := flight.NewClientWithMiddleware(
-"passthrough",
+"passthrough:///bufnet",
 nil,
 nil,
 grpc.WithContextDialer(dialer),

@@ -1,4 +1,3 @@
-
 # Persistence Architecture
 
 Longbow uses a hybrid persistence model to ensure data durability, efficient
@@ -10,37 +9,48 @@ storage, and fast recovery. This document describes the Write-Ahead Logging
 Longbow splits persistence into two distinct paths:
 
 1. **Hot Path (WAL)**: Synchronous, row-oriented log for immediate crash
-   consistency.
+ consistency.
 2. **Cold Storage (Snapshots)**: Asynchronous, columnar (Parquet) storage for
-   compaction and fast startup.
+ compaction and fast startup.
 
-### Hybrid Workflow
+### Storage Tiering Strategy
 
-1. **Write**: Client sends data -> Appended to WAL -> Added to Memory.
-2. **Snapshot**: Timer fires -> Memory dumped to Parquet -> WAL truncated.
-3. **Recovery**: Load Parquet Snapshots -> Replay remaining WAL -> System Ready.
+With the introduction of split persistence paths in the Helm chart, you can optimize your storage costs and performance:
+
+* **WAL Volume**: Should be backed by high-IOPS storage (e.g., NVMe SSD) as every write operation hits this disk.
+* **Snapshot Volume**: Can be backed by slower, cheaper storage (e.g., HDD or standard cloud block storage) as snapshots are written asynchronously in the background.
 
 ## Write-Ahead Log (WAL)
 
 * **Format**: Row-oriented, append-only log (Arrow IPC stream).
 * **Purpose**: Provides immediate durability for incoming writes.
 * **Mechanism**: Every `DoPut` operation appends the record to `wal.log` before
-  acknowledging success to the client.
+ acknowledging success to the client.
 * **File Location**: Configurable via `LONGBOW_DATA_PATH` (default:
-  `/data/wal.log`).
+ `/data/wal.log`).
 
 ## Snapshots
 
 * **Format**: Apache Parquet (`.parquet`).
 * **Purpose**: Efficient long-term storage, compaction, and faster startup.
-* **Mechanism**:
-  * A background ticker triggers snapshots at configured intervals.
-  * In-memory Arrow records are serialized into Parquet files (one per dataset).
-  * Parquet offers superior compression (Snappy/ZSTD) and is a standard format
-    for analytics.
-  * After a successful snapshot, the WAL is truncated to free up space.
-* **Directory**: Configurable via `LONGBOW_SNAPSHOT_PATH` (default:
-  `/snapshots/`).
+
+### Parquet Schema
+
+Snapshots are stored using a standardized schema, allowing them to be queried directly by external tools like DuckDB or Pandas:
+
+```text
+root
+ |-- id: int32
+ |-- vector: list<element: float> (fixed_size_list[128])
+```
+
+### Mechanism
+
+1. A background ticker triggers snapshots at configured intervals.
+2. In-memory Arrow records are serialized into Parquet files (one per dataset).
+3. Parquet offers superior compression (Snappy/ZSTD) and is a standard format
+ for analytics.
+4. After a successful snapshot, the WAL is truncated to free up space.
 
 ## Configuration
 

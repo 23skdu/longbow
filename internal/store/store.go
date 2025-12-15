@@ -387,7 +387,12 @@ return fmt.Errorf("schema mismatch: incoming schema does not match existing data
 
 	for r.Next() {
 		rec := r.Record()
-		rec.Retain()
+ 		rawRec := r.Record()
+		rec, err := s.ensureTimestamp(rawRec)
+		if err != nil {
+			metrics.FlightOperationsTotal.WithLabelValues(method, "error").Inc()
+			return fmt.Errorf("failed to ensure timestamp: %w", err)
+		}
 		size := calculateRecordSize(rec)
 
 		s.mu.Lock()
@@ -527,6 +532,13 @@ if err != nil {
 continue
 }
 valScalar = scalar.NewInt64Scalar(v)
+ 		case arrow.TIMESTAMP:
+			t, err := time.Parse(time.RFC3339, f.Value)
+			if err != nil {
+				continue
+			}
+			ts, _ := arrow.TimestampFromTime(t, col.DataType().(*arrow.TimestampType).Unit)
+			valScalar = scalar.NewTimestampScalar(ts, col.DataType().(*arrow.TimestampType))
 case arrow.FLOAT64:
 v, err := strconv.ParseFloat(f.Value, 64)
 if err != nil {
@@ -669,4 +681,42 @@ for _, r := range ds.Records {
 size += calculateRecordSize(r)
 }
 return size
+}
+
+// ensureTimestamp ensures the record has a timestamp column, adding one if missing
+func (s *VectorStore) ensureTimestamp(rec arrow.Record) (arrow.Record, error) {
+if rec.Schema().HasField("timestamp") {
+rec.Retain()
+return rec, nil
+}
+
+// Create new schema
+fields := rec.Schema().Fields()
+tsField := arrow.Field{Name: "timestamp", Type: arrow.FixedWidthTypes.Timestamp_ns, Nullable: false}
+newFields := append(fields, tsField)
+meta := rec.Schema().Metadata()
+newSchema := arrow.NewSchema(newFields, &meta)
+
+// Create timestamp column
+bldr := array.NewTimestampBuilder(s.mem, arrow.FixedWidthTypes.Timestamp_ns.(*arrow.TimestampType))
+defer bldr.Release()
+
+now := time.Now()
+ts, _ := arrow.TimestampFromTime(now, arrow.Nanosecond)
+
+for i := 0; i < int(rec.NumRows()); i++ {
+bldr.Append(ts)
+}
+tsArr := bldr.NewArray()
+defer tsArr.Release()
+
+// Build new columns
+cols := make([]arrow.Array, len(fields)+1)
+for i, col := range rec.Columns() {
+cols[i] = col
+}
+cols[len(fields)] = tsArr
+
+newRec := array.NewRecord(newSchema, cols, rec.NumRows())
+return newRec, nil
 }

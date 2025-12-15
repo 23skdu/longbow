@@ -60,8 +60,8 @@ func setupServer(t *testing.T) (*VectorStore, string, func(context.Context, stri
 
 	t.Cleanup(func() {
 		s.Stop()
-		lis.Close()
-		os.RemoveAll(tmpDir)
+		_ = lis.Close()
+		_ = os.RemoveAll(tmpDir)
 	})
 
 	return vs, tmpDir, dialer
@@ -81,7 +81,7 @@ func TestDoPutAndDoGet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	// 1. Create Data
 	schema := arrow.NewSchema(
@@ -118,7 +118,7 @@ func TestDoPutAndDoGet(t *testing.T) {
 	if err := w.Write(rec); err != nil {
 		t.Fatalf("Write failed: %v", err)
 	}
-	w.Close()
+	_ = w.Close()
 	if err := stream.CloseSend(); err != nil {
 		t.Fatalf("CloseSend failed: %v", err)
 	}
@@ -170,7 +170,7 @@ func TestSchemaValidation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	// Schema A
 	schemaA := arrow.NewSchema([]arrow.Field{{Name: "col1", Type: arrow.PrimitiveTypes.Int32}}, nil)
@@ -197,7 +197,7 @@ func TestSchemaValidation(t *testing.T) {
 	if err := wA.Write(recA); err != nil {
 		t.Fatalf("Write A failed: %v", err)
 	}
-	wA.Close()
+	_ = wA.Close()
 	if err := streamA.CloseSend(); err != nil {
 		t.Fatalf("CloseSend A failed: %v", err)
 	}
@@ -228,7 +228,7 @@ func TestSchemaValidation(t *testing.T) {
 		// Write might fail immediately if server rejects schema
 		t.Logf("Write B failed as expected: %v", err)
 	}
-	wB.Close()
+	_ = wB.Close()
 	if err := streamB.CloseSend(); err != nil {
 		t.Fatalf("CloseSend B failed: %v", err)
 	}
@@ -252,7 +252,7 @@ grpc.WithTransportCredentials(insecure.NewCredentials()),
 if err != nil {
 t.Fatalf("Failed to create client: %v", err)
 }
-defer client.Close()
+defer func() { _ = client.Close() }()
 
 // Write Data with Vector to match Parquet schema expectation
 schema := arrow.NewSchema(
@@ -297,7 +297,7 @@ w.SetFlightDescriptor(&flight.FlightDescriptor{Path: []string{"persist_test"}})
 if err := w.Write(rec); err != nil {
 t.Fatalf("Write failed: %v", err)
 }
-w.Close()
+_ = w.Close()
 if err := stream.CloseSend(); err != nil {
 t.Fatalf("CloseSend failed: %v", err)
 }

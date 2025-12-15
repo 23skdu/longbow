@@ -26,7 +26,7 @@ f, err := os.Create(filepath.Join(path, name+".parquet"))
 if err != nil {
 t.Fatalf("failed to create parquet file: %v", err)
 }
-defer f.Close()
+defer func() { _ = f.Close() }()
 
 w := parquet.NewGenericWriter[TestRecord](f)
 records := []TestRecord{

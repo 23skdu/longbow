@@ -124,7 +124,7 @@ return nil
 if err != nil {
 return err
 }
-defer f.Close()
+defer func() { _ = f.Close() }()
 
 s.logger.Info("Replaying WAL...")
 count := 0
@@ -217,7 +217,7 @@ s.logger.Error("Failed to write record to parquet snapshot", "name", name, "erro
 break
 }
 }
-f.Close()
+_ = f.Close()
 }
 
 // Atomic swap: Remove old, Rename temp to new
@@ -232,7 +232,7 @@ return fmt.Errorf("failed to rename snapshot dir: %w", err)
 // Truncate WAL
 s.walMu.Lock()
 if s.walFile != nil {
-s.walFile.Close()
+_ = s.walFile.Close()
 if err := os.Truncate(filepath.Join(s.dataPath, walFileName), 0); err != nil {
 s.logger.Error("Failed to truncate WAL", "error", err)
 }
@@ -278,7 +278,7 @@ stat, _ := f.Stat()
 
 // Read Parquet file
 rec, err := readParquet(f, stat.Size(), s.mem)
-f.Close()
+_ = f.Close()
 if err != nil {
 s.logger.Error("Failed to read parquet snapshot", "name", name, "error", err)
 continue

@@ -3,7 +3,7 @@
 [![Release](https://github.com/23skdu/longbow/actions/workflows/release.yml/badge.svg)](https://github.com/23skdu/longbow/actions/workflows/release.yml)
 # Longbow
 <img width="1024" height="559" alt="image" src="https://github.com/user-attachments/assets/16b4632a-f09b-42ab-9b05-9ab5a25566bf" />
-**Longbow** is a high-performance, in-memory vector store implementing the **Apache Arrow Flight** protocol.
+Longbow is a high-performance, in-memory vector store implementing the **Apache Arrow Flight** protocol.
 It is designed for efficient, zero-copy transport of large datasets and vector embeddings between agents and services.
 
 <!-- markdownlint-disable MD033 -->

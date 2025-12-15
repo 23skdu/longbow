@@ -21,7 +21,7 @@ func TestFiltering(t *testing.T) {
 _, _, dialer := setupServer(t)
 ctx := context.Background()
 client, err := flight.NewClientWithMiddleware(
-"passthrough",
+"passthrough:///bufnet",
 nil,
 nil,
 grpc.WithContextDialer(dialer),
@@ -148,7 +148,7 @@ func TestListFlightsFiltering(t *testing.T) {
 _, _, dialer := setupServer(t)
 ctx := context.Background()
 client, err := flight.NewClientWithMiddleware(
-"passthrough",
+"passthrough:///bufnet",
 nil,
 nil,
 grpc.WithContextDialer(dialer),

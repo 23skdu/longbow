@@ -2,6 +2,7 @@ package store
 
 import (
 "context"
+"encoding/json"
 
 "github.com/apache/arrow/go/v18/arrow/flight"
 "google.golang.org/grpc/codes"
@@ -27,13 +28,17 @@ func (s *DataServer) GetFlightInfo(ctx context.Context, desc *flight.FlightDescr
 return nil, status.Error(codes.Unimplemented, "GetFlightInfo is not implemented on DataServer; use MetaServer")
 }
 
-// MetaServer handles control plane operations (ListFlights, GetFlightInfo)
+// MetaServer handles control plane operations (ListFlights, GetFlightInfo) and Analytics
 type MetaServer struct {
 *VectorStore
+duckDB *DuckDBAdapter
 }
 
 func NewMetaServer(store *VectorStore) *MetaServer {
-return &MetaServer{VectorStore: store}
+return &MetaServer{
+VectorStore: store,
+duckDB:      NewDuckDBAdapter(store.dataPath),
+}
 }
 
 // DoGet returns Unimplemented on MetaServer
@@ -46,16 +51,42 @@ func (s *MetaServer) DoPut(stream flight.FlightService_DoPutServer) error {
 return status.Error(codes.Unimplemented, "DoPut is not implemented on MetaServer; use DataServer")
 }
 
-// DoAction returns Unimplemented on MetaServer (assuming actions are data-related or we want to restrict them)
-// For now, let's keep DoAction on DataServer as it modifies state (drop_dataset) or gets stats.
-// Actually, get_stats might be useful on MetaServer too, but let's stick to the plan of separating traffic.
-// If DoAction is called on MetaServer, we should probably return Unimplemented unless we decide otherwise.
-// The prompt didn't explicitly mention DoAction, but usually management is on Meta or Data depending on architecture.
-// Given "drop_dataset" modifies data, it fits DataServer. "get_stats" fits both but let's default to DataServer for now to keep Meta pure metadata lookup.
-// Wait, the prompt says "segregate read and write traffic" but also "contention on heavy data streams blocking metadata lookups".
-// So MetaServer should be lightweight.
-// Let's explicitly disable DoAction on MetaServer for now to be safe.
-
+// DoAction handles management and analytics commands on MetaServer
 func (s *MetaServer) DoAction(action *flight.Action, stream flight.FlightService_DoActionServer) error {
-return status.Error(codes.Unimplemented, "DoAction is not implemented on MetaServer; use DataServer")
+	if action == nil {
+		return status.Error(codes.InvalidArgument, "action is required")
+	}
+s.logger.Info("MetaServer DoAction called", "type", action.Type)
+
+switch action.Type {
+case "query_analytics":
+// Expects JSON body: { "dataset": "name", "query": "SELECT ..." }
+var req struct {
+Dataset string `json:"dataset"`
+Query   string `json:"query"`
+}
+if err := json.Unmarshal(action.Body, &req); err != nil {
+return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
+}
+
+if req.Dataset == "" || req.Query == "" {
+return status.Error(codes.InvalidArgument, "dataset and query are required")
+}
+
+// Execute via DuckDB Adapter
+jsonResult, err := s.duckDB.QuerySnapshot(req.Dataset, req.Query)
+if err != nil {
+s.logger.Error("Analytics query failed", "error", err)
+return status.Errorf(codes.Internal, "query failed: %v", err)
+}
+
+// Send result back
+if err := stream.Send(&flight.Result{Body: []byte(jsonResult)}); err != nil {
+return err
+}
+return nil
+
+default:
+return status.Errorf(codes.Unimplemented, "unknown action: %s", action.Type)
+}
 }

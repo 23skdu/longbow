@@ -3,7 +3,6 @@ package store
 import (
 "context"
 "encoding/json"
-"fmt"
 
 "github.com/apache/arrow/go/v18/arrow/flight"
 "google.golang.org/grpc/codes"

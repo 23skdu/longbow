@@ -805,3 +805,4 @@ func calculateBatchNorm(arr arrow.Array) float64 {
 	}
 	return totalNorm / float64(count)
 }
+// Trigger CI

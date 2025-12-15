@@ -19,7 +19,7 @@ vector data into the index memory space, significantly reducing memory overhead.
 
  specific BatchIndex and RowIndex within the Arrow Dataset.
 
-2. **Direct Access**: When the distance between two nodes is calculated, the
+1. **Direct Access**: When the distance between two nodes is calculated, the
 
  system resolves their locations and accesses the float32 slices directly
  from the Arrow FixedSizeList arrays.

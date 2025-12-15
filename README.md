@@ -1,8 +1,14 @@
-[![Validate Artifacts](https://github.com/23skdu/longbow/actions/workflows/ci.yml/badge.svg)](https://github.com/23skdu/longbow/actions/workflows/ci.yml)
-[![Helm Validation](https://github.com/23skdu/longbow/actions/workflows/helm-validation.yml/badge.svg)](https://github.com/23skdu/longbow/actions/workflows/helm-validation.yml)
-[![Markdown Lint](https://github.com/23skdu/longbow/actions/workflows/markdown-lint.yml/badge.svg)](https://github.com/23skdu/longbow/actions/workflows/markdown-lint.yml)
+<!-- markdownlint-disable MD033 MD041 -->
+[![Validate
+Artifacts](https://github.com/23skdu/longbow/actions/workflows/ci.yml/badge.svg)](https://github.com/23skdu/longbow/actions/workflows/ci.yml)
+[![Helm
+Validation](https://github.com/23skdu/longbow/actions/workflows/helm-validation.yml/badge.svg)](https://github.com/23skdu/longbow/actions/workflows/helm-validation.yml)
+[![Markdown
+Lint](https://github.com/23skdu/longbow/actions/workflows/markdown-lint.yml/badge.svg)](https://github.com/23skdu/longbow/actions/workflows/markdown-lint.yml)
 [![Release](https://github.com/23skdu/longbow/actions/workflows/release.yml/badge.svg)](https://github.com/23skdu/longbow/actions/workflows/release.yml)
+
 # Longbow
+
 <img width="1024" height="559" alt="image" src="https://github.com/user-attachments/assets/16b4632a-f09b-42ab-9b05-9ab5a25566bf" />
 
 Longbow is a high-performance, in-memory vector store implementing the Apache Arrow Flight protocol.
@@ -42,11 +48,13 @@ To ensure high performance under load, Longbow splits traffic into two dedicated
 * **Meta Server (Port 3001)**: Handles lightweight metadata operations (ListFlights, GetFlightInfo).
 
 **Why?**
-Separating these concerns prevents long-running data transfer operations from blocking metadata requests. This ensures that clients can always discover streams and check status even when the system is under heavy write/read load.
+Separating these concerns prevents long-running data transfer operations from blocking metadata requests. This ensures
+that clients can always discover streams and check status even when the system is under heavy write/read load.
 
 ## Observability & Metrics
 
-Longbow exposes Prometheus metrics on a dedicated port to ensure observability without impacting the main Flight service.
+Longbow exposes Prometheus metrics on a dedicated port to ensure observability without impacting the main Flight
+service.
 
 * **Scrape Port**: 9090
 * **Scrape Path**: /metrics
@@ -89,6 +97,7 @@ docker run -p 3000:3000 -p 3001:3001 -p 9090:9090 longbow
 ```
 
 ## Documentation
+
 * [Persistence & Snapshots](docs/persistence.md)
 * [Vector Search Architecture](docs/vectorsearch.md)
 * [Troubleshooting Guide](docs/troubleshooting.md)

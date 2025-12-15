@@ -9,7 +9,7 @@ A Python script using `pyarrow` and `dask` to interact with the Longbow server. 
 ### Requirements
 
 ```bash
-pip install pyarrow pandas numpy dask[dataframe]
+pip install pyarrow polars numpy dask[dataframe]
 ```
 
 ### Usage

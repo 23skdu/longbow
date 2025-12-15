@@ -386,7 +386,6 @@ return fmt.Errorf("schema mismatch: incoming schema does not match existing data
 	rowsWritten := 0
 
 	for r.Next() {
-		rec := r.Record()
  		rawRec := r.Record()
 		rec, err := s.ensureTimestamp(rawRec)
 		if err != nil {

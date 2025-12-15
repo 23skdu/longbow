@@ -164,4 +164,3 @@ action_body = json.dumps({
 results = client.do_action(flight.Action("query_analytics", action_body))
 for result in results:
     print(result.body.to_pybytes().decode('utf-8'))
-

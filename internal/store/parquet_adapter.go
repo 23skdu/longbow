@@ -1,13 +1,12 @@
 package store
 
 import (
-"bytes"
 "fmt"
 "io"
 
-"github.com/apache/arrow/go/v14/arrow"
-"github.com/apache/arrow/go/v14/arrow/array"
-"github.com/apache/arrow/go/v14/arrow/memory"
+"github.com/apache/arrow/go/v18/arrow"
+"github.com/apache/arrow/go/v18/arrow/array"
+"github.com/apache/arrow/go/v18/arrow/memory"
 "github.com/parquet-go/parquet-go"
 )
 
@@ -43,7 +42,7 @@ return writer.Close()
 
 // readParquet reads a Parquet file into an Arrow record
 func readParquet(r io.ReaderAt, size int64, pool memory.Allocator) (arrow.Record, error) {
-file, err := parquet.OpenFile(r, size)
+_, err := parquet.OpenFile(r, size)
 if err != nil {
 return nil, fmt.Errorf("failed to open parquet file: %w", err)
 }

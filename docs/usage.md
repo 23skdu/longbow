@@ -1,3 +1,4 @@
+
 # Usage Guide
 
 ## Installation
@@ -23,6 +24,12 @@ The following table lists the configurable parameters of the Longbow chart and t
 | `image.tag` | Image tag | `latest` |
 | `service.port` | Service port | `3000` |
 | `metrics.enabled` | Enable Prometheus metrics | `true` |
+| `persistence.wal.enabled` | Enable WAL persistence | `false` |
+| `persistence.wal.size` | Size of WAL PVC | `5Gi` |
+| `persistence.wal.path` | Mount path for WAL | `/data` |
+| `persistence.snapshots.enabled` | Enable Snapshot persistence | `false` |
+| `persistence.snapshots.size` | Size of Snapshot PVC | `10Gi` |
+| `persistence.snapshots.path` | Mount path for Snapshots | `/snapshots` |
 
 ## Client Example (Python)
 
@@ -53,11 +60,11 @@ print(table)
 # List and Filter Flights
 # Create a filter query
 query = {
- "name": "test",
- "limit": 10,
- "filters": [
- {"field": "rows", "operator": ">", "value": "100"}
- ]
+  "name": "test",
+  "limit": 10,
+  "filters": [
+    {"field": "rows", "operator": ">", "value": "100"}
+  ]
 }
 
 # Serialize query to JSON bytes
@@ -68,11 +75,11 @@ flights = client.list_flights(criteria=criteria)
 
 print("Filtered Flights:")
 for flight_info in flights:
- print(flight_info.descriptor.path)
+    print(flight_info.descriptor.path)
 ```
 
 ## Persistence and Hot Reload
 
 <!-- markdownlint-disable MD013 -->
-For details on persistence (WAL, Snapshots) and hot reloading, please refer to [WAL.md](WAL.md).
+For details on persistence (WAL, Snapshots) and hot reloading, please refer to [persistence.md](persistence.md).
 <!-- markdownlint-enable MD013 -->

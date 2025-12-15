@@ -87,3 +87,36 @@ Help: "Total number of evicted records due to memory limits",
 []string{"reason"},
 )
 )
+
+// VectorIndexSize tracks the number of vectors in the index
+var VectorIndexSize = promauto.NewGauge(
+prometheus.GaugeOpts{
+Name: "longbow_vector_index_size",
+Help: "Current number of vectors in the index",
+},
+)
+
+// AverageVectorNorm tracks the average L2 norm of stored vectors
+var AverageVectorNorm = promauto.NewGauge(
+prometheus.GaugeOpts{
+Name: "longbow_average_vector_norm",
+Help: "Average L2 norm of vectors in the index",
+},
+)
+
+// IndexBuildLatency measures the time taken to rebuild or update the index
+var IndexBuildLatency = promauto.NewHistogram(
+prometheus.HistogramOpts{
+Name: "longbow_index_build_latency_seconds",
+Help: "Latency of vector index build operations",
+Buckets: prometheus.DefBuckets,
+},
+)
+
+// MemoryFragmentationRatio tracks the ratio of allocated to used memory
+var MemoryFragmentationRatio = promauto.NewGauge(
+prometheus.GaugeOpts{
+Name: "longbow_memory_fragmentation_ratio",
+Help: "Ratio of system memory reserved vs used (fragmentation indicator)",
+},
+)

@@ -1,0 +1,40 @@
+# Zero-Copy HNSW Implementation
+
+This document describes the implementation of the Hierarchical Navigable Small
+World (HNSW) index in Longbow, designed with a "Zero-Copy" philosophy.
+
+## Architecture
+
+We utilize the [coder/hnsw](https://github.com/coder/hnsw) library to manage the
+graph structure. Crucially, the graph itself stores **only** int32 (aliased as
+VectorID) identifiers. It does not store the vector data itself.
+
+### Zero-Copy Lookup
+
+The distance function required by HNSW is implemented to look up vector data
+directly from the underlying Apache Arrow buffers. This avoids duplicating
+vector data into the index memory space, significantly reducing memory overhead.
+
+1.  **ID Mapping**: A lightweight Location struct maps a VectorID to a
+    specific BatchIndex and RowIndex within the Arrow Dataset.
+2.  **Direct Access**: When the distance between two nodes is calculated, the
+    system resolves their locations and accesses the float32 slices directly
+    from the Arrow FixedSizeList arrays.
+
+## Usage
+
+The HNSWIndex is attached to each Dataset. When records are added via
+DoPut, they should be indexed by calling Index.Add(batchIdx, rowIdx).
+
+go
+// Example usage within store
+idx := NewHNSWIndex(dataset)
+idx.Add(0, 0) // Add first row of first batch
+
+
+## Performance Considerations
+
+*   **Memory**: Extremely efficient as vector data is not duplicated.
+*   **Concurrency**: The coder/hnsw library supports concurrent inserts and
+    searches. Our wrapper protects the location mapping with a mutex.
+

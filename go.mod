@@ -10,7 +10,6 @@ require (
 	github.com/parquet-go/parquet-go v0.26.3
 	github.com/prometheus/client_golang v1.23.2
 	github.com/stretchr/testify v1.11.1
-	golang.org/x/exp v0.0.0-20240222234643-814bf88cf225
 	google.golang.org/grpc v1.77.0
 )
 

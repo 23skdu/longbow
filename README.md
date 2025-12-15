@@ -1,9 +1,6 @@
 # Longbow
 
-[![CI](https://github.com/23skdu/longbow/actions/workflows/ci.yml/badge.svg)](https://github.com/23skdu/longbow/actions/workflows/ci.yml)
-[![Helm Validation](https://github.com/23skdu/longbow/actions/workflows/helm-validation.yml/badge.svg)](https://github.com/23skdu/longbow/actions/workflows/helm-validation.yml)
-[![Markdown Lint](https://github.com/23skdu/longbow/actions/workflows/markdown-lint.yml/badge.svg)](https://github.com/23skdu/longbow/actions/workflows/markdown-lint.yml)
-[![Release](https://github.com/23skdu/longbow/actions/workflows/release.yml/badge.svg)](https://github.com/23skdu/longbow/actions/workflows/release.yml)
+
 
 <!-- markdownlint-disable MD033 -->
 <img width="1024" height="559" alt="image" src="https://github.com/user-attachments/assets/fc6c1662-f529-424a-a0d6-e7e27e813592" />

@@ -11,6 +11,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"math"
+	"runtime"
 
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/apache/arrow/go/v18/arrow"
@@ -57,7 +59,7 @@ type VectorStore struct {
 }
 
 func NewVectorStore(mem memory.Allocator, logger *slog.Logger, maxMemory int64, ttl time.Duration) *VectorStore {
-return &VectorStore{
+s := &VectorStore{
 mem: mem,
 logger: logger,
 vectors: make(map[string]*Dataset),
@@ -66,6 +68,8 @@ ttlDuration: ttl,
 currentMemory: 0,
 snapshotReset: make(chan time.Duration, 1),
 }
+	s.StartMetricsTicker(10 * time.Second)
+	return s
 }
 
 // UpdateConfig updates the dynamic configuration of the store
@@ -409,6 +413,7 @@ return fmt.Errorf("schema mismatch: incoming schema does not match existing data
 		s.currentMemory += size
 		s.mu.Unlock()
 
+		buildStart := time.Now()
 		// Write to WAL
 if err := s.writeToWAL(rec, name); err != nil {
 s.logger.Error("Failed to write to WAL", "error", err)
@@ -417,6 +422,8 @@ return fmt.Errorf("persistence failed: %w", err)
 }
 
 		rowsWritten += int(rec.NumRows())
+		metrics.IndexBuildLatency.Observe(time.Since(buildStart).Seconds())
+		s.updateVectorMetrics(rec)
 	}
 
 	if r.Err() != nil {
@@ -718,4 +725,84 @@ cols[len(fields)] = tsArr
 
 newRec := array.NewRecord(newSchema, cols, rec.NumRows())
 return newRec, nil
+}
+
+
+// StartMetricsTicker starts background metrics collection
+func (s *VectorStore) StartMetricsTicker(interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	go func() {
+		for range ticker.C {
+			s.updateMemoryMetrics()
+		}
+	}()
+}
+
+func (s *VectorStore) updateMemoryMetrics() {
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+
+	if m.Sys > 0 {
+		ratio := float64(m.HeapAlloc) / float64(m.Sys)
+		metrics.MemoryFragmentationRatio.Set(ratio)
+	}
+}
+
+func (s *VectorStore) updateVectorMetrics(rec arrow.Record) {
+	metrics.VectorIndexSize.Add(float64(rec.NumRows()))
+	for i, field := range rec.Schema().Fields() {
+		if field.Name == "vector" {
+			col := rec.Column(i)
+			avgNorm := calculateBatchNorm(col)
+			metrics.AverageVectorNorm.Set(avgNorm)
+			break
+		}
+	}
+}
+
+func calculateBatchNorm(arr arrow.Array) float64 {
+	listArr, ok := arr.(*array.FixedSizeList)
+	if !ok {
+		return 0
+	}
+
+	// Get list size from type
+	width := int(listArr.DataType().(*arrow.FixedSizeListType).Len())
+
+	// Access values via child data
+	if len(listArr.Data().Children()) == 0 {
+		return 0
+	}
+	valsData := listArr.Data().Children()[0]
+	
+	// Create a Float32 array wrapper to access values
+	floatArr := array.NewFloat32Data(valsData)
+	defer floatArr.Release()
+	
+	values := floatArr.Values()
+	
+	var totalNorm float64
+	count := 0
+	
+	for i := 0; i < listArr.Len(); i++ {
+		start := i * width
+		end := start + width
+		
+		if end > len(values) {
+			break
+		}
+		
+		var sumSq float64
+		for j := start; j < end; j++ {
+			val := values[j]
+			sumSq += float64(val * val)
+		}
+		totalNorm += math.Sqrt(sumSq)
+		count++
+	}
+	
+	if count == 0 {
+		return 0
+	}
+	return totalNorm / float64(count)
 }

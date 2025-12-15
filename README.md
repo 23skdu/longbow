@@ -49,7 +49,6 @@ Longbow exposes Prometheus metrics on a dedicated port to ensure observability w
 
 ### Custom Metrics
 
-<!-- markdownlint-disable MD013 -->
 | Metric Name | Type | Description |
 | :--- | :--- | :--- |
 | `longbow_flight_operations_total` | Counter | Total number of Flight operations (DoGet, DoPut, etc.) |
@@ -65,7 +64,6 @@ Longbow exposes Prometheus metrics on a dedicated port to ensure observability w
 | `longbow_snapshot_operations_total` | Counter | Total number of snapshot attempts. |
 | `longbow_snapshot_duration_seconds` | Histogram | Duration of the snapshot process. |
 | `longbow_evictions_total` | Counter | Total number of evicted records. |
-<!-- markdownlint-enable MD013 -->
 
 For a detailed explanation of each metric, see [Metrics Documentation](docs/metrics.md).
 

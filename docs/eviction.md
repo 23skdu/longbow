@@ -35,11 +35,9 @@ accessed datasets until enough memory is freed to accommodate the new data.
 
 Eviction events are tracked via Prometheus metrics:
 
-<!-- markdownlint-disable MD013 -->
 | Metric Name | Type | Labels | Description |
 | :--- | :--- | :--- | :--- |
 | `longbow_evictions_total` | Counter | `reason` (ttl/lru) | Total number of evicted datasets. |
-<!-- markdownlint-enable MD013 -->
 
 ## Implementation Details
 

@@ -139,9 +139,9 @@ Longbow includes an embedded **DuckDB** adapter that allows you to run complex S
 The Meta Server (port 3001) exposes a query_analytics action via the Arrow Flight DoAction interface. This action:
 
 1. Accepts a JSON payload specifying the target dataset and the SQL query.
-2.  Spins up an ephemeral, in-process DuckDB instance.
-3.  Registers the dataset's Parquet snapshot as a virtual table.
-4.  Executes the query and returns the results as a JSON string.
+2. Spins up an ephemeral, in-process DuckDB instance.
+3. Registers the dataset's Parquet snapshot as a virtual table.
+4. Executes the query and returns the results as a JSON string.
 
 ### Use Cases
 

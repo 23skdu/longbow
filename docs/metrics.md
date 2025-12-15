@@ -1,6 +1,9 @@
 # Longbow Metrics Documentation
 
-Longbow exposes Prometheus metrics to provide visibility into the system's performance, resource usage, and data characteristics. These metrics are available at the `/metrics` endpoint on the configured metrics port (default: 9090).
+Longbow exposes Prometheus metrics to provide visibility into the system's
+performance, resource usage, and data characteristics. These metrics are
+available at the `/metrics` endpoint on the configured metrics port
+(default: 9090).
 
 ## Flight Operations Metrics
 
@@ -16,7 +19,8 @@ These metrics track the core Arrow Flight operations (DoGet, DoPut, etc.).
 
 ## Vector Store Metrics
 
-These metrics provide insights into the state and characteristics of the stored vectors.
+These metrics provide insights into the state and characteristics of the
+stored vectors.
 
 <!-- markdownlint-disable MD013 -->
 | Metric Name | Type | Labels | Description |

@@ -42,12 +42,21 @@ metrics:
   serviceMonitor:
     enabled: false
 
+# Persistence configuration
+# Separated into WAL (Hot Path) and Snapshots (Cold Storage)
 persistence:
-  enabled: false
-  storageClass: ""
-  accessMode: ReadWriteOnce
-  size: 5Gi
-  path: /data
+  wal:
+    enabled: false
+    storageClass: ""
+    accessMode: ReadWriteOnce
+    size: 5Gi
+    path: /data
+  snapshots:
+    enabled: false
+    storageClass: ""
+    accessMode: ReadWriteOnce
+    size: 10Gi
+    path: /snapshots
 
 ingress:
   enabled: false
@@ -58,7 +67,7 @@ ingress:
       paths:
         - path: /
           pathType: ImplementationSpecific
-  tls: []
+      tls: []
 
 httpRoute:
   enabled: false

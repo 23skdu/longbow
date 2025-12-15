@@ -5,7 +5,7 @@ WORKDIR /app
 
 # Install git and build tools (gcc/g++ required for CGO)
 # build-base is needed for compiling CGO dependencies like DuckDB
-RUN apk add --no-cache git build-base
+RUN apk add --no-cache git build-base build-base
 
 COPY go.mod go.sum* ./
 RUN go mod download

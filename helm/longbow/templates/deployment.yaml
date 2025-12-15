@@ -1,3 +1,4 @@
+
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -38,6 +39,11 @@ spec:
               value: "0.0.0.0:{{ .Values.service.port }}"
             - name: LONGBOW_META_ADDR
               value: "0.0.0.0:{{ .Values.service.metaPort }}"
+            # Configure paths based on mount points
+            - name: LONGBOW_DATA_PATH
+              value: {{ .Values.persistence.wal.path | quote }}
+            - name: LONGBOW_SNAPSHOT_PATH
+              value: {{ .Values.persistence.snapshots.path | quote }}
           ports:
             - name: grpc-data
               containerPort: {{ .Values.service.port }}
@@ -60,16 +66,25 @@ spec:
             periodSeconds: 10
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
-          {{- if .Values.persistence.enabled }}
           volumeMounts:
-            - name: data
-              mountPath: {{ .Values.persistence.path }}
+          {{- if .Values.persistence.wal.enabled }}
+            - name: wal-storage
+              mountPath: {{ .Values.persistence.wal.path }}
           {{- end }}
-      {{- if .Values.persistence.enabled }}
+          {{- if .Values.persistence.snapshots.enabled }}
+            - name: snapshots-storage
+              mountPath: {{ .Values.persistence.snapshots.path }}
+          {{- end }}
       volumes:
-        - name: data
+      {{- if .Values.persistence.wal.enabled }}
+        - name: wal-storage
           persistentVolumeClaim:
-            claimName: {{ include "longbow.fullname" . }}
+            claimName: {{ include "longbow.fullname" . }}-wal
+      {{- end }}
+      {{- if .Values.persistence.snapshots.enabled }}
+        - name: snapshots-storage
+          persistentVolumeClaim:
+            claimName: {{ include "longbow.fullname" . }}-snapshots
       {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:

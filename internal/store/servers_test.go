@@ -5,7 +5,7 @@ import (
 "testing"
 "time"
 
-"github.com/apache/arrow/go/v18/arrow/memory"
+"github.com/apache/arrow-go/v18/arrow/memory"
 "github.com/stretchr/testify/assert"
 "google.golang.org/grpc/codes"
 "google.golang.org/grpc/status"

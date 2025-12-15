@@ -1,4 +1,4 @@
-name: CI
+name: Validate Artifacts
 on:
   push:
     branches:

@@ -16,8 +16,11 @@ directly from the underlying Apache Arrow buffers. This avoids duplicating
 vector data into the index memory space, significantly reducing memory overhead.
 
 1. **ID Mapping**: A lightweight Location struct maps a VectorID to a
+
  specific BatchIndex and RowIndex within the Arrow Dataset.
+
 2. **Direct Access**: When the distance between two nodes is calculated, the
+
  system resolves their locations and accesses the float32 slices directly
  from the Arrow FixedSizeList arrays.
 
@@ -25,7 +28,7 @@ vector data into the index memory space, significantly reducing memory overhead.
 
 Currently, Longbow supports the following distance metric:
 
-* **Euclidean Distance (L2)**: The straight-line distance between two vectors. 
+* **Euclidean Distance (L2)**: The straight-line distance between two vectors.
 
 *Note: Cosine similarity and Dot Product are planned for future releases.*
 
@@ -42,6 +45,9 @@ idx.Add(0, 0) // Add first row of first batch
 
 ## Performance Considerations
 
-* **Memory Efficiency**: By avoiding data duplication, Longbow reduces the RAM footprint of the index by approximately 50% compared to standard HNSW implementations that copy vectors.
+* **Memory Efficiency**: By avoiding data duplication, Longbow reduces the RAM
+  footprint of the index by approximately 50% compared to standard HNSW
+  implementations that copy vectors.
 * **Concurrency**: The coder/hnsw library supports concurrent inserts and
+
  searches. Our wrapper protects the location mapping with a mutex.

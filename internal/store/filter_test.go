@@ -30,7 +30,7 @@ grpc.WithTransportCredentials(insecure.NewCredentials()),
 if err != nil {
 t.Fatalf("Failed to create client: %v", err)
 }
-defer client.Close()
+defer func() { _ = client.Close() }()
 
 // 1. Create Data with various types
 schema := arrow.NewSchema(
@@ -69,7 +69,7 @@ w.SetFlightDescriptor(desc)
 if err := w.Write(rec); err != nil {
 t.Fatalf("Write failed: %v", err)
 }
-w.Close()
+_ = w.Close()
 if err := stream.CloseSend(); err != nil {
 	t.Fatalf("CloseSend failed: %v", err)
 }
@@ -157,7 +157,7 @@ grpc.WithTransportCredentials(insecure.NewCredentials()),
 if err != nil {
 t.Fatalf("Failed to create client: %v", err)
 }
-defer client.Close()
+defer func() { _ = client.Close() }()
 
 // 1. Create Datasets
 // Dataset A: "alpha", 10 rows
@@ -189,7 +189,7 @@ w.SetFlightDescriptor(&flight.FlightDescriptor{Path: []string{ds.name}})
 if err := w.Write(rec); err != nil {
 	t.Fatalf("Write failed: %v", err)
 }
-w.Close()
+_ = w.Close()
 if err := stream.CloseSend(); err != nil {
 	t.Fatalf("CloseSend failed: %v", err)
 }

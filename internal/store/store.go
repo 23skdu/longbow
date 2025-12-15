@@ -281,7 +281,7 @@ return nil
 }
 
 w := flight.NewRecordWriter(stream, ipc.WithSchema(recs[0].Schema()), ipc.WithLZ4())
-defer w.Close()
+defer func() { _ = w.Close() }()
 
 w.SetFlightDescriptor(&flight.FlightDescriptor{Path: []string{name}})
 
@@ -805,3 +805,4 @@ func calculateBatchNorm(arr arrow.Array) float64 {
 	}
 	return totalNorm / float64(count)
 }
+// Trigger CI

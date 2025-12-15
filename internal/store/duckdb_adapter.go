@@ -27,7 +27,7 @@ db, err := sql.Open("duckdb", "")
 if err != nil {
 return "", fmt.Errorf("failed to open duckdb: %w", err)
 }
-defer db.Close()
+defer func() { _ = db.Close() }()
 
 // Create a view for the parquet file
 // We use Sprintf carefully here. In a real prod env, we'd want stricter validation of datasetName
@@ -42,7 +42,7 @@ rows, err := db.Query(query)
 if err != nil {
 return "", fmt.Errorf("query execution failed: %w", err)
 }
-defer rows.Close()
+defer func() { _ = rows.Close() }()
 
 // Convert rows to JSON
 columns, err := rows.Columns()

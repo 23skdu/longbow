@@ -3,16 +3,19 @@ FROM golang:1.25.5-alpine AS builder
 
 WORKDIR /app
 
-# Install git and build tools
-RUN apk add --no-cache git
+# Install git and build tools (gcc/g++ required for CGO)
+# build-base is needed for compiling CGO dependencies like DuckDB
+RUN apk add --no-cache git build-base
 
 COPY go.mod go.sum* ./
 RUN go mod download
 
 COPY . .
 
-# Build static binary
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o longbow ./cmd/longbow
+# Build static binary with CGO enabled
+# -tags musl: optimizes for Alpine
+# -ldflags "-extldflags '-static'": ensures static linking for scratch image compatibility
+RUN CGO_ENABLED=1 GOOS=linux go build -a -tags musl -ldflags "-extldflags '-static'" -o longbow ./cmd/longbow
 
 # Stage 2: Runtime
 FROM scratch

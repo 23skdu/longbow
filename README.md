@@ -40,15 +40,23 @@ Longbow exposes Prometheus metrics on a dedicated port to ensure observability w
 <!-- markdownlint-disable MD013 -->
 | Metric Name | Type | Description |
 | :--- | :--- | :--- |
-| longbow_flight_operations_total | Counter | Total number of Flight operations (DoGet, DoPut, etc.) |
-| longbow_flight_duration_seconds | Histogram | Latency distribution of Flight operations |
-| longbow_flight_bytes_processed_total | Counter | Total bytes processed in Flight operations |
-| longbow_wal_writes_total | Counter | Total number of write operations to the WAL. |
-| longbow_wal_bytes_written_total | Counter | Total bytes written to the WAL file. |
-| longbow_wal_replay_duration_seconds | Histogram | Time taken to replay the WAL during startup. |
-| longbow_snapshot_operations_total | Counter | Total number of snapshot attempts. |
-| longbow_snapshot_duration_seconds | Histogram | Duration of the snapshot process. |
+| `longbow_flight_operations_total` | Counter | Total number of Flight operations (DoGet, DoPut, etc.) |
+| `longbow_flight_duration_seconds` | Histogram | Latency distribution of Flight operations |
+| `longbow_flight_bytes_processed_total` | Counter | Total bytes processed in Flight operations |
+| `longbow_vector_index_size` | Gauge | Current number of vectors in the index |
+| `longbow_average_vector_norm` | Gauge | Average L2 norm of vectors in the index |
+| `longbow_index_build_latency_seconds` | Histogram | Latency of vector index build operations |
+| `longbow_memory_fragmentation_ratio` | Gauge | Ratio of system memory reserved vs used |
+| `longbow_wal_writes_total` | Counter | Total number of write operations to the WAL. |
+| `longbow_wal_bytes_written_total` | Counter | Total bytes written to the WAL file. |
+| `longbow_wal_replay_duration_seconds` | Histogram | Time taken to replay the WAL during startup. |
+| `longbow_snapshot_operations_total` | Counter | Total number of snapshot attempts. |
+| `longbow_snapshot_duration_seconds` | Histogram | Duration of the snapshot process. |
+| `longbow_evictions_total` | Counter | Total number of evicted records. |
 <!-- markdownlint-enable MD013 -->
+
+For a detailed explanation of each metric, see [Metrics Documentation](docs/metrics.md).
+
 
 Standard Go runtime metrics are also exposed.
 

@@ -1,12 +1,15 @@
+
 package store
 
 import (
+"context"
 "database/sql"
-"encoding/json"
+"database/sql/driver"
 "fmt"
 "path/filepath"
 
-_ "github.com/marcboeker/go-duckdb"
+"github.com/apache/arrow-go/v18/arrow/array"
+duckdb "github.com/marcboeker/go-duckdb"
 )
 
 // DuckDBAdapter handles analytical queries on Parquet snapshots
@@ -19,69 +22,62 @@ return &DuckDBAdapter{dataPath: dataPath}
 }
 
 // QuerySnapshot executes a SQL query against a specific dataset's snapshot
-func (d *DuckDBAdapter) QuerySnapshot(datasetName string, query string) (string, error) {
+// Returns a RecordReader and a cleanup function. The caller must call cleanup() when done.
+func (d *DuckDBAdapter) QuerySnapshot(ctx context.Context, datasetName string, query string) (array.RecordReader, func(), error) {
 snapshotPath := filepath.Join(d.dataPath, snapshotDirName, datasetName+".parquet")
 
 // Open in-memory DuckDB
 db, err := sql.Open("duckdb", "")
 if err != nil {
-return "", fmt.Errorf("failed to open duckdb: %w", err)
+return nil, nil, fmt.Errorf("failed to open duckdb: %w", err)
 }
-defer func() { _ = db.Close() }()
+
+// We need a dedicated connection to access the driver-specific Arrow interface
+conn, err := db.Conn(ctx)
+if err != nil {
+db.Close()
+return nil, nil, fmt.Errorf("failed to open conn: %w", err)
+}
+
+// Initialize Arrow interface from the connection
+var ar *duckdb.Arrow
+err = conn.Raw(func(c interface{}) error {
+dc, ok := c.(driver.Conn)
+if !ok {
+return fmt.Errorf("not a duckdb driver connection")
+}
+var err error
+ar, err = duckdb.NewArrowFromConn(dc)
+return err
+})
+if err != nil {
+conn.Close()
+db.Close()
+return nil, nil, fmt.Errorf("failed to init arrow: %w", err)
+}
 
 // Create a view for the parquet file
-// We use Sprintf carefully here. In a real prod env, we'd want stricter validation of datasetName
-// to prevent path traversal, though filepath.Join helps.
+// We use ExecContext on the specific connection to ensure visibility
 createViewSQL := fmt.Sprintf("CREATE VIEW %s AS SELECT * FROM read_parquet('%s')", datasetName, snapshotPath)
-if _, err := db.Exec(createViewSQL); err != nil {
-return "", fmt.Errorf("failed to create view for snapshot: %w", err)
+if _, err := conn.ExecContext(ctx, createViewSQL); err != nil {
+conn.Close()
+db.Close()
+return nil, nil, fmt.Errorf("failed to create view for snapshot: %w", err)
 }
 
-// Execute the user's query
-rows, err := db.Query(query)
+// Execute the user's query via Arrow interface
+rdr, err := ar.QueryContext(ctx, query)
 if err != nil {
-return "", fmt.Errorf("query execution failed: %w", err)
-}
-defer func() { _ = rows.Close() }()
-
-// Convert rows to JSON
-columns, err := rows.Columns()
-if err != nil {
-return "", err
+conn.Close()
+db.Close()
+return nil, nil, fmt.Errorf("query execution failed: %w", err)
 }
 
-var result []map[string]interface{}
-
-for rows.Next() {
-values := make([]interface{}, len(columns))
-valuePtrs := make([]interface{}, len(columns))
-for i := range values {
-valuePtrs[i] = &values[i]
+cleanup := func() {
+rdr.Release()
+conn.Close()
+db.Close()
 }
 
-if err := rows.Scan(valuePtrs...); err != nil {
-return "", err
-}
-
-rowMap := make(map[string]interface{})
-for i, col := range columns {
-var v interface{}
-val := values[i]
-b, ok := val.([]byte)
-if ok {
-v = string(b)
-} else {
-v = val
-}
-rowMap[col] = v
-}
-result = append(result, rowMap)
-}
-
-jsonBytes, err := json.Marshal(result)
-if err != nil {
-return "", err
-}
-
-return string(jsonBytes), nil
+return rdr, cleanup, nil
 }

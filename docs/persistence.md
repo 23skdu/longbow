@@ -1,32 +1,102 @@
+
 # Persistence Architecture
 
-Longbow uses a hybrid persistence model to ensure data durability and efficient storage.
+Longbow uses a hybrid persistence model to ensure data durability, efficient storage, and fast recovery. This document describes the Write-Ahead Logging (WAL), Snapshot mechanisms, Hot Reload capabilities, and Observability signals.
+
+## Architecture Overview
+
+Longbow splits persistence into two distinct paths:
+
+1.  **Hot Path (WAL)**: Synchronous, row-oriented log for immediate crash consistency.
+2.  **Cold Storage (Snapshots)**: Asynchronous, columnar (Parquet) storage for compaction and fast startup.
+
+### Hybrid Workflow
+
+1.  **Write**: Client sends data -> Appended to WAL -> Added to Memory.
+2.  **Snapshot**: Timer fires -> Memory dumped to Parquet -> WAL truncated.
+3.  **Recovery**: Load Parquet Snapshots -> Replay remaining WAL -> System Ready.
 
 ## Write-Ahead Log (WAL)
 
-* **Format**: Row-oriented, append-only log.
-* **Purpose**: Provides immediate durability for incoming writes (Hot Path).
-* **Mechanism**: Every DoPut operation appends the record to wal.log before
-  acknowledging success. This ensures crash consistency.
-* **Replay**: On startup, the WAL is replayed to restore the in-memory state.
+*   **Format**: Row-oriented, append-only log (Arrow IPC stream).
+*   **Purpose**: Provides immediate durability for incoming writes.
+*   **Mechanism**: Every `DoPut` operation appends the record to `wal.log` before acknowledging success to the client.
+*   **File Location**: Configurable via `LONGBOW_DATA_PATH` (default: `/data/wal.log`).
 
 ## Snapshots
 
-* **Format**: Apache Parquet ().
-* **Purpose**: Efficient long-term storage and faster startup (Cold Storage).
-* **Mechanism**:
-  * A background ticker triggers snapshots at configured intervals.
-  * In-memory Arrow records are serialized into Parquet files (one per dataset).
-  * Parquet offers better compression and is a standard format for analytics.
-  * After a successful snapshot, the WAL is truncated to free up space.
-
-## Hybrid Workflow
-
-1. **Write**: Client sends data -> Appended to WAL -> Added to Memory.
-2. **Snapshot**: Timer fires -> Memory dumped to Parquet -> WAL truncated.
-3. **Recovery**: Load Parquet Snapshots -> Replay remaining WAL -> System Ready.
+*   **Format**: Apache Parquet (`.parquet`).
+*   **Purpose**: Efficient long-term storage, compaction, and faster startup.
+*   **Mechanism**:
+    *   A background ticker triggers snapshots at configured intervals.
+    *   In-memory Arrow records are serialized into Parquet files (one per dataset).
+    *   Parquet offers superior compression (Snappy/ZSTD) and is a standard format for analytics.
+    *   After a successful snapshot, the WAL is truncated to free up space.
+*   **Directory**: Configurable via `LONGBOW_SNAPSHOT_PATH` (default: `/snapshots/`).
 
 ## Configuration
 
-* **Data Path**: Directory where WAL and snapshots are stored.
-* **Snapshot Interval**: Frequency of automatic snapshots.
+The persistence layer is configured via environment variables, which are mapped in the Helm chart.
+
+| Variable | Description | Default |
+| :--- | :--- | :--- |
+| `LONGBOW_DATA_PATH` | Directory/File path for the WAL. | `/data` |
+| `LONGBOW_SNAPSHOT_PATH` | Directory path for storing Parquet snapshots. | `/snapshots` |
+| `LONGBOW_SNAPSHOT_INTERVAL` | Interval for automated snapshots (e.g., `5m`, `1h`). | `1h` |
+| `LONGBOW_MAX_MEMORY` | Max memory limit before eviction/snapshotting. | `0` (unlimited) |
+
+## Hot Reloading
+
+Longbow supports dynamic configuration updates without restarting the process by sending a `SIGHUP` signal.
+
+### Triggering a Reload
+
+```bash
+kill -HUP <PID>
+```
+
+### Reloadable Parameters
+
+*   **Max Memory** (`LONGBOW_MAX_MEMORY`)
+*   **Snapshot Interval** (`LONGBOW_SNAPSHOT_INTERVAL`)
+
+## Management Actions
+
+Longbow exposes a `DoAction` Flight endpoint for administrative tasks.
+
+<!-- markdownlint-disable MD013 -->
+| Action Type | Description |
+| :--- | :--- |
+| `force_snapshot` | Triggers an immediate snapshot of the current state to disk. |
+| `get_stats` | Returns current statistics (record count, memory usage). |
+| `drop_dataset` | Drops a specific dataset from memory. Requires a request body with the dataset name. |
+<!-- markdownlint-enable MD013 -->
+
+### Example: Force Snapshot (Python)
+
+```python
+client.do_action(flight.Action("force_snapshot", b""))
+```
+
+## Observability & Metrics
+
+Longbow exports Prometheus metrics to track the health and performance of the persistence layer.
+
+### WAL Metrics
+
+<!-- markdownlint-disable MD013 -->
+| Metric Name | Type | Labels | Description |
+| :--- | :--- | :--- | :--- |
+| `longbow_wal_writes_total` | Counter | status (ok/error) | Total number of write operations to the WAL. |
+| `longbow_wal_bytes_written_total` | Counter | - | Total bytes written to the WAL file. |
+| `longbow_wal_replay_duration_seconds` | Histogram | - | Time taken to replay the WAL during startup. |
+<!-- markdownlint-enable MD013 -->
+
+### Snapshot Metrics
+
+<!-- markdownlint-disable MD013 -->
+| Metric Name | Type | Labels | Description |
+| :--- | :--- | :--- | :--- |
+| `longbow_snapshot_operations_total` | Counter | status (ok/error) | Total number of snapshot attempts. |
+| `longbow_snapshot_duration_seconds` | Histogram | - | Duration of the snapshot process. |
+<!-- markdownlint-enable MD013 -->

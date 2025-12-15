@@ -1,17 +1,36 @@
-{{- if .Values.persistence.enabled -}}
+
+{{- if .Values.persistence.wal.enabled -}}
 kind: PersistentVolumeClaim
 apiVersion: v1
 metadata:
-  name: {{ include "longbow.fullname" . }}
+  name: {{ include "longbow.fullname" . }}-wal
   labels:
     {{- include "longbow.labels" . | nindent 4 }}
 spec:
   accessModes:
-    - {{ .Values.persistence.accessMode | quote }}
+    - {{ .Values.persistence.wal.accessMode | quote }}
   resources:
     requests:
-      storage: {{ .Values.persistence.size | quote }}
-  {{- if .Values.persistence.storageClass }}
-  storageClassName: {{ .Values.persistence.storageClass | quote }}
+      storage: {{ .Values.persistence.wal.size | quote }}
+  {{- if .Values.persistence.wal.storageClass }}
+  storageClassName: {{ .Values.persistence.wal.storageClass | quote }}
+  {{- end }}
+{{- end }}
+---
+{{- if .Values.persistence.snapshots.enabled -}}
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: {{ include "longbow.fullname" . }}-snapshots
+  labels:
+    {{- include "longbow.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - {{ .Values.persistence.snapshots.accessMode | quote }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.snapshots.size | quote }}
+  {{- if .Values.persistence.snapshots.storageClass }}
+  storageClassName: {{ .Values.persistence.snapshots.storageClass | quote }}
   {{- end }}
 {{- end }}

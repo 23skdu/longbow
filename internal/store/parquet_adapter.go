@@ -2,6 +2,7 @@ package store
 
 import (
 "io"
+"os"
 
 "github.com/apache/arrow/go/v18/arrow"
 "github.com/apache/arrow/go/v18/arrow/array"
@@ -50,14 +51,15 @@ return pw.Close()
 }
 
 // readParquet reads a Parquet file and converts it to an Arrow record
-func readParquet(r io.ReaderAt, size int64, mem memory.Allocator) (arrow.Record, error) {
-// Fix: Use parquet.OpenFile to handle size, then pass the file to NewGenericReader
-f, err := parquet.OpenFile(r, size)
+// Changed r from io.ReaderAt to *os.File to use parquet.OpenFile
+func readParquet(f *os.File, size int64, mem memory.Allocator) (arrow.Record, error) {
+// Use parquet.OpenFile to correctly handle the file and size
+pf, err := parquet.OpenFile(f, size)
 if err != nil {
 return nil, err
 }
 
-pr := parquet.NewGenericReader[VectorRecord](f)
+pr := parquet.NewGenericReader[VectorRecord](pf)
 rows := make([]VectorRecord, pr.NumRows())
 _, err = pr.Read(rows)
 if err != nil && err != io.EOF {

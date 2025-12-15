@@ -1,28 +1,29 @@
 # Stage 1: Build
-FROM golang:1.25.5-alpine AS builder
+# Use Debian-based Go image (glibc) to match DuckDB pre-compiled libs
+FROM golang:1.25 AS builder
 
 WORKDIR /app
 
-# Install git and build tools (gcc/g++ required for CGO)
-# build-base is needed for compiling CGO dependencies like DuckDB
-RUN apk add --no-cache git build-base build-base
-
-COPY go.mod go.sum* ./
+COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
 
-# Build static binary with CGO enabled
-# -tags musl: optimizes for Alpine
-# -ldflags "-extldflags '-static'": ensures static linking for scratch image compatibility
-RUN CGO_ENABLED=1 GOOS=linux go build -a -tags musl -ldflags "-extldflags '-static'" -o longbow ./cmd/longbow
+# Build with CGO enabled for DuckDB
+# Removed '-tags musl' and static linking flags as we are now on glibc
+RUN CGO_ENABLED=1 GOOS=linux go build -o longbow ./cmd/longbow
 
 # Stage 2: Runtime
-FROM scratch
+# Use debian-slim to provide the necessary glibc runtime libraries
+FROM debian:bookworm-slim
 
-COPY --from=builder /app/longbow /longbow
+WORKDIR /app
 
-# Expose port
+# Install ca-certificates for HTTPS connectivity
+RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /app/longbow /usr/local/bin/longbow
+
 EXPOSE 3000
 
-ENTRYPOINT ["/longbow"]
+ENTRYPOINT ["longbow"]

@@ -19,7 +19,7 @@ underlying memory.Allocator
 }
 
 // Bucket sizes: 64, 128, 256, 512, 1K, 2K, 4K, 8K, 16K, 32K,
-//               64K, 128K, 256K, 512K, 1M, 2M, 4M, 8M, 16M, 32M
+// 64K, 128K, 256K, 512K, 1M, 2M, 4M, 8M, 16M, 32M
 const (
 minBucketShift = 6  // 64 bytes minimum
 maxBucketShift = 25 // 32MB maximum
@@ -39,7 +39,8 @@ size := 1 << (i + minBucketShift)
 p.pools[i] = &sync.Pool{
 New: func(s int) func() interface{} {
 return func() interface{} {
-return make([]byte, s)
+b := make([]byte, s)
+return &b
 }
 }(size),
 }
@@ -77,11 +78,11 @@ p.allocated.Add(int64(size))
 return p.underlying.Allocate(size)
 }
 
-buf := p.pools[idx].Get().([]byte)
+bp := p.pools[idx].Get().(*[]byte)
 p.reused.Add(1)
 
 // Return slice of exact requested size (capacity may be larger)
-return buf[:size]
+return (*bp)[:size]
 }
 
 // Reallocate resizes a buffer, potentially reusing pooled memory.
@@ -110,7 +111,8 @@ return
 }
 
 // Reset slice to full capacity before returning to pool
-p.pools[idx].Put(b[:cap(b)])
+b = b[:cap(b)]
+p.pools[idx].Put(&b)
 }
 
 // Stats returns allocator statistics.

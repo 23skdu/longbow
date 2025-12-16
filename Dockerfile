@@ -1,6 +1,6 @@
 # Stage 1: Build
 # Use Debian Bookworm-based Go image to match runtime glibc version
-FROM golang:1.23-bookworm AS builder
+FROM golang:1.24-bookworm AS builder
 
 WORKDIR /app
 

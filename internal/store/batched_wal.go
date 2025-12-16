@@ -1,7 +1,6 @@
 package store
 
 import (
-	"bytes"
 	"encoding/binary"
 	"os"
 	"path/filepath"
@@ -50,6 +49,7 @@ type WALBatcher struct {
 	batch     []WALEntry
 	backBatch []WALEntry // double-buffer: swap on flush to avoid allocation
 	running   bool
+	bufPool   *walBufferPool // pooled buffers for IPC serialization
 	stopCh    chan struct{}
 	doneCh    chan struct{}
 	flushErr  error
@@ -64,6 +64,7 @@ func NewWALBatcher(dataPath string, config WALBatcherConfig) *WALBatcher {
 		entries:   make(chan WALEntry, config.MaxBatchSize*10),
 		batch:     make([]WALEntry, 0, config.MaxBatchSize),
 		backBatch: make([]WALEntry, 0, config.MaxBatchSize),
+		bufPool:   newWALBufferPool(),
 		stopCh:    make(chan struct{}),
 		doneCh:    make(chan struct{}),
 	}
@@ -211,8 +212,9 @@ func (w *WALBatcher) writeEntry(entry WALEntry) error {
 	}
 
 	// Format: [NameLen: uint32][Name: bytes][RecordLen: uint64][RecordBytes: bytes]
-	var buf bytes.Buffer
-	writer := ipc.NewWriter(&buf, ipc.WithSchema(rec.Schema()), ipc.WithAllocator(w.mem))
+	buf := w.bufPool.Get()
+	defer w.bufPool.Put(buf)
+	writer := ipc.NewWriter(buf, ipc.WithSchema(rec.Schema()), ipc.WithAllocator(w.mem))
 	if err := writer.Write(rec); err != nil {
 		return err
 	}

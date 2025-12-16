@@ -41,7 +41,7 @@ func tokenize(text string) []string {
 text = strings.ToLower(text)
 // Split on whitespace and punctuation
 fields := strings.FieldsFunc(text, func(r rune) bool {
-return !((r >= 'a' && r <= 'z') || (r >= '0' && r <= '9'))
+return (r < 'a' || r > 'z') && (r < '0' || r > '9')
 })
 return fields
 }
@@ -144,7 +144,7 @@ return results
 // ReciprocalRankFusion combines two ranked lists using RRF algorithm
 // k is the ranking constant (typically 60)
 // Formula: RRF(d) = sum(1 / (k + rank(d)))
-func ReciprocalRankFusion(denseResults, sparseResults []SearchResult, k int, limit int) []SearchResult {
+func ReciprocalRankFusion(denseResults, sparseResults []SearchResult, k, limit int) []SearchResult {
 if k <= 0 {
 k = 60 // default
 }

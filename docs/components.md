@@ -1,28 +1,211 @@
 # Components
 
-## 1. Flight Server
+This document describes the major components and architectural features of
+Longbow.
 
-The core component that listens for Arrow Flight requests. It handles:
+## 1. Flight Servers
 
-* DoGet: Streaming vector data to clients.
-* DoPut: Receiving vector data from clients.
-* ListFlights: Listing available vector streams.
-* GetFlightInfo: Returning metadata about streams.
+Longbow implements the Apache Arrow Flight protocol via two gRPC servers:
 
-## 2. In-Memory Store
+### Data Server (Port 3000)
 
-A thread-safe map storage engine that holds Arrow Records in memory.
-It uses sync.RWMutex for concurrent access control.
+Handles high-throughput data operations:
 
-## 3. Metrics Server
+- **DoGet**: Stream vector data to clients
+- **DoPut**: Receive and store vector data
+- **DoExchange**: Bidirectional streaming
 
-A separate HTTP server running on port 9090 that exposes Prometheus metrics.
+### Meta Server (Port 3001)
 
-## Port Optimization
+Handles metadata and analytics operations:
 
-As of version 0.0.3, the Flight service is split into two ports:
+- **ListFlights**: List available collections
+- **GetFlightInfo**: Collection metadata
+- **DoAction**: Analytics queries via DuckDB sidecar
 
-* **Data Port (default 3000)**: Handles DoGet and DoPut operations.
-* **Meta Port (default 3001)**: Handles ListFlights and GetFlightInfo operations.
+> Port separation prevents heavy data transfers from blocking metadata lookups.
 
-This separation prevents heavy data transfer operations from blocking metadata lookups.
+## 2. In-Memory Vector Store
+
+### Sharded Architecture
+
+The store uses 32 shards with independent locks for high concurrency:
+
+```text
+┌─────────────────────────────────────────────────┐
+│ VectorStore │
+├─────────┬─────────┬─────────┬─────────┬────────┤
+│ Shard 0 │ Shard 1 │ Shard 2 │ ... │Shard 31│
+│ RWMutex │ RWMutex │ RWMutex │ │ RWMutex│
+└─────────┴─────────┴─────────┴─────────┴────────┘
+```
+
+### Lock-Free Memory Tracking
+
+Memory limits use atomic operations instead of global mutex:
+
+- `atomic.Int64` for `maxMemory`, `currentMemory`, `maxWALSize`
+- CAS loop for memory limit checking in DoPut hot path
+
+## 3. HNSW Index
+
+### Zero-Copy Design
+
+The HNSW graph stores only vector IDs, not data:
+
+1. **ID Mapping**: `Location` struct maps VectorID → BatchIndex + RowIndex
+2. **Direct Access**: Float32 slices accessed from Arrow buffers
+3. **Memory Efficiency**: ~50% RAM reduction vs standard HNSW
+
+### Scratch Buffer Pool
+
+Search operations use pooled scratch buffers via `sync.Pool`:
+
+- Eliminates per-search allocations
+- Reduces GC pressure during query spikes
+- Pointer storage pattern for `sync.Pool` compliance
+
+### Async Indexing Pipeline
+
+1. **Immediate Write**: Data written to WAL and Arrow buffers
+2. **Job Queue**: Indexing jobs pushed to buffered channel
+3. **Worker Pool**: `runtime.NumCPU()` workers update HNSW graph
+
+## 4. SIMD-Optimized Distance Functions
+
+Vector distance calculations use CPU-specific SIMD instructions:
+
+| Architecture | Instructions | Functions |
+| :----------- | :----------- | :---------------------------- |
+| AMD64 | AVX2 | euclideanAVX2, cosineAVX2 |
+| AMD64 | AVX-512 | euclideanAVX512, cosineAVX512 |
+| ARM64 | NEON | euclideanNEON, cosineNEON |
+
+Runtime detection via `CPUFeatures` struct selects optimal implementation.
+
+## 5. Write-Ahead Log (WAL)
+
+### Batched Writes
+
+WAL entries are batched for improved throughput:
+
+- Configurable batch size and flush interval
+- Double-buffer swap eliminates allocation churn
+- Background flush goroutine
+
+### Double-Buffer Strategy
+
+```go
+// On flush: swap buffers instead of reallocating
+batch := w.batch
+w.batch = w.backBatch[:0] // Reuse capacity
+w.backBatch = batch
+```
+
+### Auto-Snapshot on Size Limit
+
+When WAL exceeds `MAX_WAL_SIZE` (default 100MB):
+
+1. Snapshot triggered automatically
+2. WAL truncated after successful snapshot
+3. Prevents unbounded disk growth
+
+## 6. Persistence Backends
+
+### Local Disk (Default)
+
+Parquet snapshots written to local filesystem.
+
+### S3-Compatible Storage
+
+Production-ready backend supporting:
+
+- Amazon S3
+- MinIO
+- Cloudflare R2
+- DigitalOcean Spaces
+
+See [Persistence Documentation](persistence.md) for configuration details.
+
+## 7. Hybrid Search
+
+### Search Components
+
+- **Dense Search**: HNSW index for vector similarity
+- **Sparse Search**: Inverted index with TF-IDF scoring
+- **Reciprocal Rank Fusion (RRF)**: Combines results without normalization
+
+### RRF Algorithm
+
+```text
+RRF_score(doc) = Σ 1/(k + rank(doc))
+```
+
+See [Vector Search Documentation](vectorsearch.md) for details.
+
+## 8. Memory Pooling
+
+### PooledAllocator
+
+Size-bucketed memory pools reduce GC pressure:
+
+- Bucket sizes: 64B to 32MB (powers of 2)
+- Per-bucket `sync.Pool` instances
+- Used for Arrow buffer allocation
+
+## 9. Graceful Shutdown
+
+On SIGTERM/SIGINT:
+
+1. Stop accepting new connections
+2. Drain in-flight requests
+3. Flush WAL to disk
+4. Create final snapshot
+5. Truncate WAL
+6. Exit cleanly
+
+## 10. Metrics Server
+
+Prometheus metrics exposed on port 9090:
+
+- Flight operation counters and histograms
+- Vector store gauges
+- WAL write metrics
+- Snapshot duration histograms
+
+See [Metrics Documentation](metrics.md) for full list.
+
+## Architecture Diagram
+
+```text
+┌──────────────────────────────────────────────────────────────┐
+│ Client │
+└────────────────────────┬─────────────────────────────────────┘
+ │ Arrow Flight (gRPC)
+ ┌────────────────────────▼─────────────────────────────────────┐
+ │ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ │
+ │ │ Data Server │ │ Meta Server │ │ Metrics │ │
+ │ │ :3000 │ │ :3001 │ │ :9090 │ │
+ │ └──────┬──────┘ └──────┬──────┘ └─────────────┘ │
+ │ │ │ │
+ │ ┌──────▼──────────────────▼──────┐ │
+ │ │ Vector Store (32 Shards) │ │
+ │ │ ┌───────────┐ ┌───────────┐ │ │
+ │ │ │ HNSW Index│ │ Inverted │ │ │
+ │ │ │ (Dense) │ │ Index │ │ │
+ │ │ └───────────┘ └───────────┘ │ │
+ │ └───────────────────────────────┘ │
+ │ │ │
+ │ ┌────────▼────────┐ │
+ │ │ WAL Batcher │ │
+ │ │ (Double-Buffer) │ │
+ │ └────────┬────────┘ │
+ │ │ │
+ │ ┌───────────┴───────────┐ │
+ │ ▼ ▼ │
+ │ ┌───────────────┐ ┌───────────────┐ │
+ │ │ Local Disk │ │ S3 Backend │ │
+ │ │ (Parquet) │ │ (Parquet) │ │
+ │ └───────────────┘ └───────────────┘ │
+ └──────────────────────────────────────────────────────────────┘
+```

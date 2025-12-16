@@ -1,10 +1,9 @@
-
 replicaCount: 1
 
 image:
   repository: ghcr.io/23skdu/longbow
   pullPolicy: IfNotPresent
-  tag: "0.0.6"
+  tag: "0.0.8"
 
 imagePullSecrets: []
 nameOverride: ""
@@ -26,7 +25,7 @@ podSecurityContext:
 securityContext:
   capabilities:
     drop:
-    - ALL
+      - ALL
   readOnlyRootFilesystem: true
   runAsNonRoot: true
   runAsUser: 1000
@@ -42,8 +41,14 @@ metrics:
   serviceMonitor:
     enabled: false
 
+# Longbow configuration
+config:
+  maxMemory: "1073741824"      # 1GB default
+  maxWALSize: "104857600"      # 100MB default
+  snapshotInterval: "1h"
+  ttl: "0s"                    # 0s = disabled
+
 # Persistence configuration
-# Separated into WAL (Hot Path) and Snapshots (Cold Storage)
 persistence:
   wal:
     enabled: false
@@ -58,6 +63,23 @@ persistence:
     size: 10Gi
     path: /snapshots
 
+# S3 Backend for Snapshots
+# When enabled, snapshots are stored in S3-compatible storage
+s3:
+  enabled: false
+  endpoint: ""                  # Leave empty for AWS S3, set for MinIO/R2
+  bucket: "longbow-snapshots"
+  prefix: ""                    # Optional key prefix (e.g., "prod/vectors")
+  region: "us-east-1"
+  usePathStyle: false           # Set true for MinIO
+  # Credentials - use existingSecret or provide directly (not recommended)
+  existingSecret: ""
+  existingSecretAccessKeyKey: "access-key-id"
+  existingSecretSecretKeyKey: "secret-access-key"
+  # Direct credentials (not recommended for production)
+  accessKeyId: ""
+  secretAccessKey: ""
+
 ingress:
   enabled: false
   className: ""
@@ -67,7 +89,7 @@ ingress:
       paths:
         - path: /
           pathType: ImplementationSpecific
-      tls: []
+  tls: []
 
 httpRoute:
   enabled: false

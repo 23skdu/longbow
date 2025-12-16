@@ -54,7 +54,7 @@ vvb := vb.ValueBuilder().(*array.Float32Builder)
 vb.Append(true)
 vvb.AppendValues([]float32{0.1, 0.2}, nil)
 
-rec := b.NewRecord()
+rec := b.NewRecordBatch()
 defer rec.Release()
 
 // DoPut
@@ -127,13 +127,13 @@ floats[i] = 0.5
 }
 vvb.AppendValues(floats, nil)
 
-rec := b.NewRecord()
+rec := b.NewRecordBatch()
 defer rec.Release()
 
 // Manually populate memory so Snapshot has data to write
 rec.Retain()
 store.vectors.Set("wal_limit_test", &Dataset{
-Records: []arrow.Record{rec},
+Records: []arrow.RecordBatch{rec},
 lastAccess: time.Now().UnixNano(),
 })
 

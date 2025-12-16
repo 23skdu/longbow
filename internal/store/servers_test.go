@@ -338,11 +338,9 @@ defer rec.Release()
 
 // Store directly - this is a simplified approach
 // In real scenario we'd use DoPut through DataServer
-vs.globalMu.Lock()
 vs.vectors.Set(name, &Dataset{
 Records: []arrow.Record{rec},
 })
-vs.globalMu.Unlock()
 rec.Retain() // Keep record alive in dataset
 }
 

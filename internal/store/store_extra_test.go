@@ -16,9 +16,7 @@ logger := mockLogger()
 store := NewVectorStore(mem, logger, 1024, 0, time.Hour)
 
 store.UpdateConfig(2048, 0, 30*time.Minute)
-store.globalMu.RLock()
-assert.Equal(t, int64(2048), store.maxMemory)
-store.globalMu.RUnlock()
+assert.Equal(t, int64(2048), store.maxMemory.Load())
 }
 
 func TestStore_DoAction(t *testing.T) {

@@ -54,11 +54,10 @@ type VectorStore struct {
 flight.BaseFlightServer
 mem           memory.Allocator
 logger        *slog.Logger
-globalMu sync.RWMutex // protects currentMemory and global state
 vectors *ShardedMap
-maxMemory     int64
-currentMemory int64
-maxWALSize    int64
+maxMemory atomic.Int64
+currentMemory atomic.Int64
+maxWALSize atomic.Int64
 
 // Persistence
 dataPath      string
@@ -81,14 +80,13 @@ s := &VectorStore{
 mem:           mem,
 logger:        logger,
 vectors: NewShardedMap(),
-maxMemory:     maxMemory,
-maxWALSize:    maxWALSize,
 ttlDuration:   ttl,
-currentMemory: 0,
 snapshotReset: make(chan time.Duration, 1),
 		indexChan:     make(chan IndexJob, 10000),
 		stopChan:      make(chan struct{}),
 	}
+	s.maxMemory.Store(maxMemory)
+	s.maxWALSize.Store(maxWALSize)
 	s.startIndexingWorkers(runtime.NumCPU())
 s.StartMetricsTicker(10 * time.Second)
 if maxWALSize > 0 {
@@ -99,10 +97,8 @@ return s
 
 // UpdateConfig updates the dynamic configuration of the store
 func (s *VectorStore) UpdateConfig(maxMemory, maxWALSize int64, snapshotInterval time.Duration) {
-s.globalMu.Lock()
-s.maxMemory = maxMemory
-s.maxWALSize = maxWALSize
-s.globalMu.Unlock()
+s.maxMemory.Store(maxMemory)
+s.maxWALSize.Store(maxWALSize)
 
 s.logger.Info("Store configuration updated", "max_memory", maxMemory, "max_wal_size", maxWALSize)
 
@@ -413,15 +409,23 @@ return NewSchemaMismatchError(name, "incoming schema does not match existing")
 		}
 		size := calculateRecordSize(rec)
 
-		s.globalMu.Lock()
-		if s.maxMemory > 0 && s.currentMemory+size > s.maxMemory {
-			s.globalMu.Unlock()
-			rec.Release()
-			s.logger.Error("Memory limit exceeded", "current", s.currentMemory, "max", s.maxMemory, "needed", size)
-			return NewResourceExhaustedError("memory", "limit exceeded")
+		// Lock-free memory limit check with CAS loop
+		maxMem := s.maxMemory.Load()
+		if maxMem > 0 {
+			for {
+				current := s.currentMemory.Load()
+				if current+size > maxMem {
+					rec.Release()
+					s.logger.Error("Memory limit exceeded", "current", current, "max", maxMem, "needed", size)
+					return NewResourceExhaustedError("memory", "limit exceeded")
+				}
+				if s.currentMemory.CompareAndSwap(current, current+size) {
+					break
+				}
+			}
+		} else {
+			s.currentMemory.Add(size)
 		}
-		s.currentMemory += size
-		s.globalMu.Unlock()
 
 		ds := s.vectors.GetOrCreate(name, func() *Dataset {
 			newDs := &Dataset{Records: []arrow.Record{}, lastAccess: time.Now().UnixNano()}
@@ -477,32 +481,29 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 	switch action.Type {
 	case "drop_dataset":
 		name := string(action.Body)
-		s.globalMu.Lock()
 		if ds, ok := s.vectors.Get(name); ok {
 ds.mu.Lock()
-recs := ds.Records
-for _, r := range recs {
-s.currentMemory -= calculateRecordSize(r)
+var freedMem int64
+for _, r := range ds.Records {
+freedMem += calculateRecordSize(r)
 r.Release()
 }
 ds.Records = nil // Clear references
 ds.mu.Unlock()
+s.currentMemory.Add(-freedMem)
 s.vectors.Delete(name)
 }
-		s.globalMu.Unlock()
 		result, _ := json.Marshal(map[string]string{"status": "ok", "message": "dataset dropped"})
 		if err := stream.Send(&flight.Result{Body: result}); err != nil {
 			return err
 		}
 
 	case "get_stats":
-		s.globalMu.RLock()
 		stats := map[string]interface{}{
 			"datasets":       s.vectors.Len(),
-			"current_memory": s.currentMemory,
-			"max_memory":     s.maxMemory,
+			"current_memory": s.currentMemory.Load(),
+			"max_memory": s.maxMemory.Load(),
 		}
-		s.globalMu.RUnlock()
 		result, _ := json.Marshal(stats)
 		if err := stream.Send(&flight.Result{Body: result}); err != nil {
 			return err
@@ -656,9 +657,6 @@ if s.ttlDuration <= 0 {
 return
 }
 
-s.globalMu.Lock()
-defer s.globalMu.Unlock()
-
 now := time.Now()
 evictedCount := 0
 
@@ -678,12 +676,14 @@ if !ok {
 continue
 }
 ds.mu.Lock()
+var freedMem int64
 for _, r := range ds.Records {
-s.currentMemory -= calculateRecordSize(r)
+freedMem += calculateRecordSize(r)
 r.Release()
 }
 ds.Records = nil
 ds.mu.Unlock()
+s.currentMemory.Add(-freedMem)
 s.vectors.Delete(name)
 evictedCount++
 s.logger.Info("Evicted dataset due to TTL", "name", name)
@@ -698,7 +698,7 @@ s.logger.Info("TTL eviction completed", "evicted_count", evictedCount)
 func (s *VectorStore) evictLRU(needed int64) error {
 // Assumes s.mu is already locked by the caller
 
-for s.maxMemory > 0 && s.currentMemory+needed > s.maxMemory {
+for s.maxMemory.Load() > 0 && s.currentMemory.Load()+needed > s.maxMemory.Load() {
 var oldestName string
 var oldestTime time.Time
 first := true
@@ -721,7 +721,7 @@ return NewResourceExhaustedError("memory", "limit exceeded and no datasets to ev
 if ds, ok := s.vectors.Get(oldestName); ok {
 ds.mu.Lock()
 for _, r := range ds.Records {
-s.currentMemory -= calculateRecordSize(r)
+s.currentMemory.Add(-calculateRecordSize(r))
 r.Release()
 }
 ds.Records = nil
@@ -872,10 +872,8 @@ s.checkWALSize()
 
 // checkWALSize checks if the WAL file size exceeds the limit and triggers a snapshot
 func (s *VectorStore) checkWALSize() {
-s.globalMu.RLock()
-limit := s.maxWALSize
+limit := s.maxWALSize.Load()
 dataPath := s.dataPath
-s.globalMu.RUnlock()
 
 if limit <= 0 || dataPath == "" {
 return
@@ -906,9 +904,7 @@ func (s *VectorStore) startIndexingWorkers(numWorkers int) {
 		go func() {
 		defer s.indexWg.Done()
 			for job := range s.indexChan {
-				s.globalMu.RLock()
 				ds, ok := s.vectors.Get(job.DatasetName)
-				s.globalMu.RUnlock()
 				if !ok || ds.Index == nil {
 					continue
 				}

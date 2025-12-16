@@ -38,13 +38,11 @@ s.logger.Error("Failed to replay WAL", "error", err)
 return err
 }
 
-// Open WAL for appending
-walPath := filepath.Join(s.dataPath, walFileName)
-f, err := os.OpenFile(walPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-if err != nil {
-return fmt.Errorf("failed to open WAL file: %w", err)
+// Initialize WAL batcher for async writes
+s.walBatcher = NewWALBatcher(s.dataPath, DefaultWALBatcherConfig())
+if err := s.walBatcher.Start(); err != nil {
+return fmt.Errorf("failed to start WAL batcher: %w", err)
 }
-s.walFile = f
 
 // Start snapshot ticker
 go s.runSnapshotTicker(snapshotInterval)
@@ -341,6 +339,15 @@ initialInterval = newInterval
 // Close ensures the WAL is flushed and closed properly
 func (s *VectorStore) Close() error {
 s.logger.Info("Closing VectorStore...")
+
+// Stop WAL batcher first to flush pending writes
+if s.walBatcher != nil {
+if err := s.walBatcher.Stop(); err != nil {
+s.logger.Error("Failed to stop WAL batcher", "error", err)
+}
+s.walBatcher = nil
+}
+
 s.walMu.Lock()
 defer s.walMu.Unlock()
 

@@ -7,6 +7,7 @@ import (
 "log/slog"
 "math"
 "os"
+"path/filepath"
 "runtime"
 "strconv"
 "strings"
@@ -63,6 +64,7 @@ maxWALSize    int64
 dataPath      string
 walFile       *os.File
 walMu         sync.Mutex
+walBatcher *WALBatcher
 snapshotReset chan time.Duration
 ttlDuration   time.Duration
 	indexChan chan IndexJob
@@ -429,15 +431,16 @@ ds.mu.Unlock()
 
 ds.SetLastAccess(time.Now())
 
-// Write to WAL
-if err := s.writeToWAL(rec, name); err != nil {
-s.logger.Error("Failed to write to WAL", "error", err)
-// Strict Durability: Fail the request if persistence fails
-return NewPersistenceError("WAL write", err)
-}
+	// Write to WAL
+	if s.walBatcher != nil {
+		if err := s.walBatcher.Write(rec, name); err != nil {
+			s.logger.Error("Failed to write to WAL", "error", err)
+			// Strict Durability: Fail the request if persistence fails
+			return NewPersistenceError("WAL write", err)
+		}
+	}
 
-		rowsWritten += int(rec.NumRows())
-
+	rowsWritten += int(rec.NumRows())
 // Async Indexing
 numRows := int(rec.NumRows())
 for i := 0; i < numRows; i++ {
@@ -865,22 +868,20 @@ s.checkWALSize()
 func (s *VectorStore) checkWALSize() {
 s.globalMu.RLock()
 limit := s.maxWALSize
+dataPath := s.dataPath
 s.globalMu.RUnlock()
 
-if limit <= 0 {
+if limit <= 0 || dataPath == "" {
 return
 }
 
-s.walMu.Lock()
-if s.walFile == nil {
-s.walMu.Unlock()
-return
-}
-stat, err := s.walFile.Stat()
-s.walMu.Unlock()
-
+// Stat WAL file directly from filesystem
+walPath := filepath.Join(dataPath, walFileName)
+stat, err := os.Stat(walPath)
 if err != nil {
+if !os.IsNotExist(err) {
 s.logger.Error("Failed to stat WAL file", "error", err)
+}
 return
 }
 

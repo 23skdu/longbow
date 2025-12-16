@@ -141,8 +141,12 @@ lastAccess: time.Now().UnixNano(),
 })
 store.globalMu.Unlock()
 
-// Write to WAL directly to simulate accumulation and trigger limit
-err = store.writeToWAL(rec, "wal_limit_test")
+// Write through WAL batcher and flush to ensure on-disk
+err = store.walBatcher.Write(rec, "wal_limit_test")
+assert.NoError(t, err)
+
+// Stop batcher to force flush to disk
+err = store.walBatcher.Stop()
 assert.NoError(t, err)
 
 // Trigger check manually

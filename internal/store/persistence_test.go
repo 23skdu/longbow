@@ -14,7 +14,7 @@ func TestPersistence_ReadSeekClose(t *testing.T) {
 tmpDir := t.TempDir()
 mem := memory.NewGoAllocator()
 logger := mockLogger()
-store := NewVectorStore(mem, logger, 1024, time.Hour)
+store := NewVectorStore(mem, logger, 1024, 0, time.Hour)
 
 err := store.InitPersistence(tmpDir, time.Hour)
 assert.NoError(t, err)
@@ -28,7 +28,7 @@ assert.Nil(t, store.walFile)
 func TestPersistence_WriteToWAL_NoFile(t *testing.T) {
 mem := memory.NewGoAllocator()
 logger := mockLogger()
-store := NewVectorStore(mem, logger, 1024, time.Hour)
+store := NewVectorStore(mem, logger, 1024, 0, time.Hour)
 
 // Should not error if persistence not initialized (walFile is nil)
 err := store.writeToWAL(nil, "test")

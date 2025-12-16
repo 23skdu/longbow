@@ -67,7 +67,7 @@ t.Cleanup(func() {
 _ = client.Close()
 s.Stop()
 _ = lis.Close()
-vs.Close()
+_ = vs.Close()
 _ = os.RemoveAll(tmpDir)
 })
 
@@ -322,7 +322,7 @@ t.Cleanup(func() {
 _ = client.Close()
 s.Stop()
 _ = lis.Close()
-vs.Close()
+_ = vs.Close()
 _ = os.RemoveAll(tmpDir)
 })
 
@@ -330,7 +330,7 @@ return client, vs
 }
 
 // putDataViaVectorStore puts test data directly to VectorStore for MetaServer tests
-func putDataViaVectorStore(t *testing.T, vs *VectorStore, name string) {
+func putDataViaVectorStore(vs *VectorStore, name string) {
 // Use internal method to add data for testing
 mem := memory.NewGoAllocator()
 rec := makeVectorRecord(mem, 128, 5)
@@ -352,7 +352,7 @@ client, vs := setupMetaServerTest(t)
 ctx := context.Background()
 
 // Add test data
-putDataViaVectorStore(t, vs, "meta_list_test")
+putDataViaVectorStore(vs, "meta_list_test")
 
 stream, err := client.ListFlights(ctx, &flight.Criteria{})
 if err != nil {
@@ -383,7 +383,7 @@ client, vs := setupMetaServerTest(t)
 ctx := context.Background()
 
 // Add test data
-putDataViaVectorStore(t, vs, "meta_info_test")
+putDataViaVectorStore(vs, "meta_info_test")
 
 desc := &flight.FlightDescriptor{
 Type: flight.DescriptorPATH,

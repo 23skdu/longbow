@@ -24,7 +24,7 @@ tmpDir, err := os.MkdirTemp("", "shutdown-test-*")
 if err != nil {
 t.Fatal(err)
 }
-defer os.RemoveAll(tmpDir)
+defer func() { _ = os.RemoveAll(tmpDir) }()
 
 s := NewVectorStore(memory.NewGoAllocator(), discardLogger(), 1<<30, 1<<20, time.Hour)
 if err := s.InitPersistence(tmpDir, time.Hour); err != nil {
@@ -52,7 +52,7 @@ tmpDir, err := os.MkdirTemp("", "shutdown-drain-*")
 if err != nil {
 t.Fatal(err)
 }
-defer os.RemoveAll(tmpDir)
+defer func() { _ = os.RemoveAll(tmpDir) }()
 
 s := NewVectorStore(memory.NewGoAllocator(), discardLogger(), 1<<30, 1<<20, time.Hour)
 if err := s.InitPersistence(tmpDir, time.Hour); err != nil {
@@ -81,7 +81,7 @@ tmpDir, err := os.MkdirTemp("", "shutdown-wal-*")
 if err != nil {
 t.Fatal(err)
 }
-defer os.RemoveAll(tmpDir)
+defer func() { _ = os.RemoveAll(tmpDir) }()
 
 s := NewVectorStore(memory.NewGoAllocator(), discardLogger(), 1<<30, 1<<20, time.Hour)
 if err := s.InitPersistence(tmpDir, time.Hour); err != nil {
@@ -117,7 +117,7 @@ tmpDir, err := os.MkdirTemp("", "shutdown-workers-*")
 if err != nil {
 t.Fatal(err)
 }
-defer os.RemoveAll(tmpDir)
+defer func() { _ = os.RemoveAll(tmpDir) }()
 
 s := NewVectorStore(memory.NewGoAllocator(), discardLogger(), 1<<30, 1<<20, time.Hour)
 s.StartEvictionTicker(100 * time.Millisecond)
@@ -145,7 +145,7 @@ tmpDir, err := os.MkdirTemp("", "wal-truncate-*")
 if err != nil {
 t.Fatal(err)
 }
-defer os.RemoveAll(tmpDir)
+defer func() { _ = os.RemoveAll(tmpDir) }()
 
 s := NewVectorStore(memory.NewGoAllocator(), discardLogger(), 1<<30, 1<<20, time.Hour)
 if err := s.InitPersistence(tmpDir, time.Hour); err != nil {
@@ -191,7 +191,7 @@ tmpDir, err := os.MkdirTemp("", "shutdown-idempotent-*")
 if err != nil {
 t.Fatal(err)
 }
-defer os.RemoveAll(tmpDir)
+defer func() { _ = os.RemoveAll(tmpDir) }()
 
 s := NewVectorStore(memory.NewGoAllocator(), discardLogger(), 1<<30, 1<<20, time.Hour)
 if err := s.InitPersistence(tmpDir, time.Hour); err != nil {
@@ -219,7 +219,7 @@ tmpDir, err := os.MkdirTemp("", "shutdown-concurrent-*")
 if err != nil {
 t.Fatal(err)
 }
-defer os.RemoveAll(tmpDir)
+defer func() { _ = os.RemoveAll(tmpDir) }()
 
 s := NewVectorStore(memory.NewGoAllocator(), discardLogger(), 1<<30, 1<<20, time.Hour)
 if err := s.InitPersistence(tmpDir, time.Hour); err != nil {

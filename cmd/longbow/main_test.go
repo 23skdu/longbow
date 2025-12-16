@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -151,7 +150,7 @@ func TestServerStartsAndAcceptsConnections(t *testing.T) {
 	defer si.stop()
 
 	// Test Data Server connection
-	conn, err := grpc.NewClient(si.dataAddr,
+	conn, err := grpc.NewClient(si.metaAddr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		t.Fatalf("Failed to connect to meta server: %v", err)
@@ -273,16 +272,10 @@ func TestDataServerDoPutDoGet(t *testing.T) {
 	defer rec.Release()
 
 	// Build FlightDescriptor with metadata
-	meta := map[string]interface{}{
-		"collection": "test_collection",
-		"dimensions": 128,
-		"metric":     "cosine",
-	}
-	metaBytes, _ := json.Marshal(meta)
 
 	desc := &flight.FlightDescriptor{
-		Type: flight.DescriptorCMD,
-		Cmd:  metaBytes,
+		Type: flight.DescriptorPATH,
+		Path: []string{"test_collection"},
 	}
 
 	// DoPut
@@ -332,7 +325,7 @@ func TestDataServerDoPutDoGet(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ListFlights recv failed: %v", err)
 		}
-		if bytes.Contains(info.FlightDescriptor.Cmd, []byte("test_collection")) {
+		if len(info.FlightDescriptor.Path) > 0 && info.FlightDescriptor.Path[0] == "test_collection" {
 			found = true
 		}
 	}

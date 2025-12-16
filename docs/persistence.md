@@ -16,6 +16,8 @@ Longbow uses a tiered storage architecture designed for high throughput ingestio
 
 * **Compaction**: Background processes merge small Parquet files into larger ones to optimize read performance.
 
+* **WAL Size Limit**: A configurable limit (default 100MB) ensures that the Write-Ahead Log (WAL) doesn't grow indefinitely. When the limit is reached, a snapshot is automatically triggered to compact the data and truncate the WAL.
+
 ## Data Format
 
 Longbow stores vectors and metadata in **Apache Parquet** format. This allows for:
@@ -37,14 +39,15 @@ Longbow stores vectors and metadata in **Apache Parquet** format. This allows fo
 
 ## Configuration
 
-Persistence is configured via the longbow.yaml file:
+Persistence is configured via the longbow.yaml file or environment variables:
 
 yaml
 storage:
-  path: "/var/lib/longbow/data"
-  flush_interval_ms: 10000
-  max_segment_size: 1048576
-  compression: "snappy"
+ path: "/var/lib/longbow/data"
+ flush_interval_ms: 10000
+ max_segment_size: 1048576
+ compression: "snappy"
+ max_wal_size: 104857600 # 100MB
 
 ## Metrics
 

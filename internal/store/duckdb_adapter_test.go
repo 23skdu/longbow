@@ -15,7 +15,7 @@ func TestDuckDBAdapter_QuerySnapshot(t *testing.T) {
 // Setup temporary directory
 tmpDir := t.TempDir()
 snapshotDir := filepath.Join(tmpDir, snapshotDirName)
-err := os.MkdirAll(snapshotDir, 0755)
+err := os.MkdirAll(snapshotDir, 0o755)
 require.NoError(t, err)
 
 // Create a dummy parquet file

@@ -1,35 +1,34 @@
 package store
 
 import (
-	"fmt"
-	"context"
-	"encoding/json"
-	"log/slog"
-	"os"
-	"strconv"
-	"strings"
-	"sync"
-	"sync/atomic"
-	"time"
-	"math"
-	"runtime"
+"context"
+"encoding/json"
+"fmt"
+"log/slog"
+"math"
+"os"
+"runtime"
+"strconv"
+"strings"
+"sync"
+"sync/atomic"
+"time"
 
-	"github.com/23skdu/longbow/internal/metrics"
-	"github.com/apache/arrow-go/v18/arrow"
-	"github.com/apache/arrow-go/v18/arrow/flight"
-	"github.com/apache/arrow-go/v18/arrow/ipc"
-	"github.com/apache/arrow-go/v18/arrow/memory"
-
-	"github.com/apache/arrow-go/v18/arrow/compute"
-	"github.com/apache/arrow-go/v18/arrow/array"
-	"github.com/apache/arrow-go/v18/arrow/scalar")
-
+"github.com/23skdu/longbow/internal/metrics"
+"github.com/apache/arrow-go/v18/arrow"
+"github.com/apache/arrow-go/v18/arrow/array"
+"github.com/apache/arrow-go/v18/arrow/compute"
+"github.com/apache/arrow-go/v18/arrow/flight"
+"github.com/apache/arrow-go/v18/arrow/ipc"
+"github.com/apache/arrow-go/v18/arrow/memory"
+"github.com/apache/arrow-go/v18/arrow/scalar"
+)
 
 // Dataset wraps records with metadata for eviction
 type Dataset struct {
-Records []arrow.Record
+Records    []arrow.Record
 lastAccess int64 // UnixNano
-Version int64
+Version    int64
 }
 
 func (d *Dataset) LastAccess() time.Time {
@@ -42,60 +41,65 @@ atomic.StoreInt64(&d.lastAccess, t.UnixNano())
 
 // VectorStore implements flight.FlightServer
 type VectorStore struct {
-	flight.BaseFlightServer
-	mem           memory.Allocator
-	logger        *slog.Logger
-	mu            sync.RWMutex
-	vectors map[string]*Dataset
-	maxMemory     int64
-	currentMemory int64
+flight.BaseFlightServer
+mem           memory.Allocator
+logger        *slog.Logger
+mu            sync.RWMutex
+vectors       map[string]*Dataset
+maxMemory     int64
+currentMemory int64
+maxWALSize    int64
 
-	// Persistence
-	dataPath      string
-	walFile       *os.File
-	walMu         sync.Mutex
-	snapshotReset chan time.Duration
-	ttlDuration time.Duration
+// Persistence
+dataPath      string
+walFile       *os.File
+walMu         sync.Mutex
+snapshotReset chan time.Duration
+ttlDuration   time.Duration
 }
 
-func NewVectorStore(mem memory.Allocator, logger *slog.Logger, maxMemory int64, ttl time.Duration) *VectorStore {
+func NewVectorStore(mem memory.Allocator, logger *slog.Logger, maxMemory int64, maxWALSize int64, ttl time.Duration) *VectorStore {
 s := &VectorStore{
-mem: mem,
-logger: logger,
-vectors: make(map[string]*Dataset),
-maxMemory: maxMemory,
-ttlDuration: ttl,
+mem:           mem,
+logger:        logger,
+vectors:       make(map[string]*Dataset),
+maxMemory:     maxMemory,
+maxWALSize:    maxWALSize,
+ttlDuration:   ttl,
 currentMemory: 0,
 snapshotReset: make(chan time.Duration, 1),
 }
-	s.StartMetricsTicker(10 * time.Second)
-	return s
+s.StartMetricsTicker(10 * time.Second)
+if maxWALSize > 0 {
+s.StartWALCheckTicker(1 * time.Minute)
+}
+return s
 }
 
 // UpdateConfig updates the dynamic configuration of the store
-func (s *VectorStore) UpdateConfig(maxMemory int64, snapshotInterval time.Duration) {
-	s.mu.Lock()
-	s.maxMemory = maxMemory
-	s.mu.Unlock()
+func (s *VectorStore) UpdateConfig(maxMemory int64, maxWALSize int64, snapshotInterval time.Duration) {
+s.mu.Lock()
+s.maxMemory = maxMemory
+s.maxWALSize = maxWALSize
+s.mu.Unlock()
 
-	s.logger.Info("Store configuration updated", "max_memory", maxMemory)
+s.logger.Info("Store configuration updated", "max_memory", maxMemory, "max_wal_size", maxWALSize)
 
-	// Non-blocking send to reset channel
-	select {
-	case s.snapshotReset <- snapshotInterval:
-		s.logger.Info("Snapshot interval update signal sent", "new_interval", snapshotInterval)
-	default:
-		// If channel is full, drain and replace (last write wins for config)
-		select {
-		case <-s.snapshotReset:
-		default:
-		}
-		s.snapshotReset <- snapshotInterval
-		s.logger.Info("Snapshot interval update signal sent (drained previous)", "new_interval", snapshotInterval)
-	}
+// Non-blocking send to reset channel
+select {
+case s.snapshotReset <- snapshotInterval:
+s.logger.Info("Snapshot interval update signal sent", "new_interval", snapshotInterval)
+default:
+// If channel is full, drain and replace (last write wins for config)
+select {
+case <-s.snapshotReset:
+default:
+}
+s.snapshotReset <- snapshotInterval
+s.logger.Info("Snapshot interval update signal sent (drained previous)", "new_interval", snapshotInterval)
+}
 }
 
-// TicketQuery defines the JSON structure for DoGet tickets and ListFlights criteria
 type TicketQuery struct {
 	Name    string   `json:"name"`
 	Limit   int64    `json:"limit"`

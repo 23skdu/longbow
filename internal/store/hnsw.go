@@ -6,6 +6,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/coder/hnsw"
+	"sync/atomic"
 
 	"github.com/23skdu/longbow/internal/simd"
 )
@@ -22,12 +23,14 @@ type Location struct {
 
 // HNSWIndex wraps the hnsw.Graph and manages the mapping from ID to Arrow data.
 type HNSWIndex struct {
-	Graph       *hnsw.Graph[VectorID]
-	mu          sync.RWMutex
-	locations   []Location
-	dataset     *Dataset
-	scratchPool sync.Pool // Pool for temporary vector buffers during search
-	dims        int       // Vector dimensions for pool sizing
+	Graph         *hnsw.Graph[VectorID]
+	mu            sync.RWMutex
+	locations     []Location
+	dataset       *Dataset
+	scratchPool   sync.Pool     // Pool for temporary vector buffers during search
+	dims          int           // Vector dimensions for pool sizing
+	currentEpoch  atomic.Uint64 // Current epoch for zero-copy reclamation
+	activeReaders atomic.Int32  // Count of readers in current epoch
 }
 
 // NewHNSWIndex creates a new index for the given dataset.
@@ -107,6 +110,27 @@ func (h *HNSWIndex) getVector(id VectorID) []float32 {
 	return dst
 }
 
+// enterEpoch marks a reader as active in the current epoch.
+// Must be paired with exitEpoch to release.
+func (h *HNSWIndex) enterEpoch() {
+	h.activeReaders.Add(1)
+}
+
+// exitEpoch marks a reader as finished with the current epoch.
+func (h *HNSWIndex) exitEpoch() {
+	h.activeReaders.Add(-1)
+}
+
+// advanceEpoch increments the epoch counter after waiting for all readers to exit.
+// Used during data structure modifications that invalidate unsafe references.
+func (h *HNSWIndex) advanceEpoch() {
+	// Wait for all active readers in current epoch to finish
+	for h.activeReaders.Load() > 0 {
+		// Spin - in production could use runtime.Gosched() or brief sleep
+	}
+	h.currentEpoch.Add(1)
+}
+
 // getScratch retrieves a scratch buffer from the pool, sized for current dimensions.
 func (h *HNSWIndex) getScratch() []float32 {
 	if h.dims == 0 {
@@ -178,6 +202,84 @@ func (h *HNSWIndex) getVectorInto(id VectorID, dst []float32) bool {
 
 	copy(dst, floatArr.Float32Values()[start:end])
 	return true
+}
+
+// getVectorUnsafe returns a direct reference to the vector data without copying.
+// The caller MUST call the returned release function when done accessing the data.
+// The returned slice is only valid until release() is called.
+// This provides zero-copy access for read-only search hot paths.
+func (h *HNSWIndex) getVectorUnsafe(id VectorID) (vec []float32, release func()) {
+	h.enterEpoch()
+
+	h.mu.RLock()
+	if int(id) >= len(h.locations) {
+		h.mu.RUnlock()
+		h.exitEpoch()
+		return nil, nil
+	}
+	loc := h.locations[id]
+	h.mu.RUnlock()
+
+	h.dataset.mu.RLock()
+
+	if h.dataset.Records == nil || loc.BatchIdx >= len(h.dataset.Records) {
+		h.dataset.mu.RUnlock()
+		h.exitEpoch()
+		return nil, nil
+	}
+	rec := h.dataset.Records[loc.BatchIdx]
+
+	var vecCol arrow.Array
+	for i, field := range rec.Schema().Fields() {
+		if field.Name == "vector" {
+			vecCol = rec.Column(i)
+			break
+		}
+	}
+
+	if vecCol == nil {
+		h.dataset.mu.RUnlock()
+		h.exitEpoch()
+		return nil, nil
+	}
+
+	listArr, ok := vecCol.(*array.FixedSizeList)
+	if !ok {
+		h.dataset.mu.RUnlock()
+		h.exitEpoch()
+		return nil, nil
+	}
+
+	if len(listArr.Data().Children()) == 0 {
+		h.dataset.mu.RUnlock()
+		h.exitEpoch()
+		return nil, nil
+	}
+	values := listArr.Data().Children()[0]
+	floatArr := array.NewFloat32Data(values)
+
+	width := int(listArr.DataType().(*arrow.FixedSizeListType).Len())
+	start := loc.RowIdx * width
+	end := start + width
+
+	if start < 0 || end > floatArr.Len() {
+		floatArr.Release()
+		h.dataset.mu.RUnlock()
+		h.exitEpoch()
+		return nil, nil
+	}
+
+	// Return direct slice - caller must not hold reference after release
+	vec = floatArr.Float32Values()[start:end]
+
+	// Release function cleans up in reverse order
+	release = func() {
+		floatArr.Release()
+		h.dataset.mu.RUnlock()
+		h.exitEpoch()
+	}
+
+	return vec, release
 }
 
 // Add inserts a new vector location into the index and adds it to the graph.

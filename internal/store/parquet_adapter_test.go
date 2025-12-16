@@ -13,7 +13,7 @@ import (
 
 // makeParquetTestRecord creates a record compatible with parquet_adapter.go
 // Uses Int32 for ID (matching VectorRecord struct) and FixedSizeList<Float32> for vectors
-func makeParquetTestRecord(mem memory.Allocator, numRows int, vecDim int) arrow.Record {
+func makeParquetTestRecord(mem memory.Allocator, numRows, vecDim int) arrow.Record {
 schema := arrow.NewSchema([]arrow.Field{
 {Name: "id", Type: arrow.PrimitiveTypes.Int32},
 {Name: "vector", Type: arrow.FixedSizeListOf(int32(vecDim), arrow.PrimitiveTypes.Float32)},

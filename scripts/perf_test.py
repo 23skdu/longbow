@@ -1,138 +1,719 @@
 #!/usr/bin/env python3
+"""Longbow Performance Test Suite
+
+Comprehensive benchmarking for Longbow vector store including:
+- Basic DoPut/DoGet throughput
+- Vector similarity search (HNSW)
+- Hybrid search (dense + sparse)
+- Concurrent load testing
+- Large dimension vectors
+- S3 snapshot operations
+- Memory pressure scenarios
+"""
 import argparse
-import sys
-import time
+import concurrent.futures
 import json
+import os
+import statistics
+import sys
+import threading
+import time
+from dataclasses import dataclass, field
+from typing import Optional
+
 import numpy as np
+import pandas as pd
 import pyarrow as pa
 import pyarrow.flight as flight
-import pandas as pd
-import dask.dataframe as dd
 
-def generate_batch(num_rows, dim):
-    print(f"Generating {num_rows} vectors of dimension {dim}...")
+try:
+    import dask.dataframe as dd
+    HAS_DASK = True
+except ImportError:
+    HAS_DASK = False
+
+try:
+    import boto3
+    HAS_BOTO3 = True
+except ImportError:
+    HAS_BOTO3 = False
+
+
+# =============================================================================
+# Data Classes
+# =============================================================================
+
+@dataclass
+class BenchmarkResult:
+    """Container for benchmark results."""
+    name: str
+    duration_seconds: float
+    throughput: float
+    throughput_unit: str
+    rows: int = 0
+    bytes_processed: int = 0
+    latencies_ms: list = field(default_factory=list)
+    errors: int = 0
+
+    @property
+    def p50_ms(self) -> float:
+        if not self.latencies_ms:
+            return 0.0
+        return statistics.median(self.latencies_ms)
+
+    @property
+    def p95_ms(self) -> float:
+        if not self.latencies_ms:
+            return 0.0
+        sorted_lat = sorted(self.latencies_ms)
+        idx = int(len(sorted_lat) * 0.95)
+        return sorted_lat[min(idx, len(sorted_lat) - 1)]
+
+    @property
+    def p99_ms(self) -> float:
+        if not self.latencies_ms:
+            return 0.0
+        sorted_lat = sorted(self.latencies_ms)
+        idx = int(len(sorted_lat) * 0.99)
+        return sorted_lat[min(idx, len(sorted_lat) - 1)]
+
+
+# =============================================================================
+# Data Generation
+# =============================================================================
+
+def generate_vectors(num_rows: int, dim: int, with_text: bool = False) -> pa.Table:
+    """Generate random vectors with optional text field for hybrid search."""
+    print(f"Generating {num_rows:,} vectors of dimension {dim}...")
+
+    # Vector data
     data = np.random.rand(num_rows, dim).astype(np.float32)
     tensor_type = pa.list_(pa.float32(), dim)
     flat_data = data.flatten()
     vectors = pa.FixedSizeListArray.from_arrays(flat_data, type=tensor_type)
+
+    # IDs
     ids = pa.array(np.arange(num_rows), type=pa.int64())
-    
-    # Add timestamp column for testing temporal filters
-    # Generate timestamps from now backwards
+
+    # Timestamps
     now = pd.Timestamp.now()
     timestamps = [now - pd.Timedelta(minutes=i) for i in range(num_rows)]
-    ts_array = pa.array(timestamps, type=pa.timestamp('ns'))
+    ts_array = pa.array(timestamps, type=pa.timestamp("ns"))
 
-    schema = pa.schema([
-        pa.field('id', pa.int64()),
-        pa.field('vector', tensor_type),
-        pa.field('timestamp', pa.timestamp('ns'))
-    ])
+    fields = [
+        pa.field("id", pa.int64()),
+        pa.field("vector", tensor_type),
+        pa.field("timestamp", pa.timestamp("ns")),
+    ]
+    arrays = [ids, vectors, ts_array]
 
-    return pa.Table.from_arrays([ids, vectors, ts_array], schema=schema)
+    # Optional text field for hybrid search
+    if with_text:
+        words = ["machine", "learning", "vector", "database", "search",
+                 "embedding", "neural", "network", "model", "data"]
+        texts = [" ".join(np.random.choice(words, size=10)) for _ in range(num_rows)]
+        text_array = pa.array(texts, type=pa.string())
+        fields.append(pa.field("meta", pa.string()))
+        arrays.append(text_array)
 
-def run_put(client, table, name):
+    schema = pa.schema(fields)
+    return pa.Table.from_arrays(arrays, schema=schema)
+
+
+def generate_query_vectors(num_queries: int, dim: int) -> np.ndarray:
+    """Generate random query vectors."""
+    return np.random.rand(num_queries, dim).astype(np.float32)
+
+
+# =============================================================================
+# Basic Benchmarks
+# =============================================================================
+
+def benchmark_put(client: flight.FlightClient, table: pa.Table, name: str) -> BenchmarkResult:
+    """Benchmark DoPut operation."""
     print(f"\n[PUT] Uploading dataset '{name}'...")
     descriptor = flight.FlightDescriptor.for_path(name)
+
     start_time = time.time()
     writer, _ = client.do_put(descriptor, table.schema)
     writer.write_table(table)
     writer.close()
     duration = time.time() - start_time
-    
-    mb = table.nbytes / 1024 / 1024
-    print(f"[PUT] Completed in {duration:.4f}s ({mb:.2f} MB)")
-    print(f"[PUT] Throughput: {mb / duration:.2f} MB/s")
-    return duration
 
-def run_get(client, name, filters=None):
-    print(f"\n[GET] Downloading dataset '{name}' with filters: {filters}...")
-    
+    mb = table.nbytes / 1024 / 1024
+    throughput = mb / duration
+
+    print(f"[PUT] Completed in {duration:.4f}s ({mb:.2f} MB)")
+    print(f"[PUT] Throughput: {throughput:.2f} MB/s")
+
+    return BenchmarkResult(
+        name="DoPut",
+        duration_seconds=duration,
+        throughput=throughput,
+        throughput_unit="MB/s",
+        rows=table.num_rows,
+        bytes_processed=table.nbytes,
+    )
+
+
+def benchmark_get(client: flight.FlightClient, name: str,
+                  filters: Optional[list] = None) -> BenchmarkResult:
+    """Benchmark DoGet operation."""
+    filter_desc = f"with filters: {filters}" if filters else "(full scan)"
+    print(f"\n[GET] Downloading dataset '{name}' {filter_desc}...")
+
     query = {"name": name}
     if filters:
         query["filters"] = filters
-        
-    ticket = flight.Ticket(json.dumps(query).encode('utf-8'))
-    
+
+    ticket = flight.Ticket(json.dumps(query).encode("utf-8"))
+
     start_time = time.time()
     try:
         reader = client.do_get(ticket)
         table = reader.read_all()
     except flight.FlightError as e:
         print(f"[GET] Error: {e}")
-        return
-        
-    duration = time.time() - start_time
-    
-    # Dask Integration
-    print("[DASK] Converting to Dask DataFrame...")
-    pdf = table.to_pandas()
-    ddf = dd.from_pandas(pdf, npartitions=4)
-    
-    print(f"[GET] Retrieved {len(ddf)} rows")
-    print(f"[GET] Completed in {duration:.4f}s")
-    print("\n--- Head of Data ---")
-    print(ddf.head())
-    print("--------------------
-")
+        return BenchmarkResult(
+            name="DoGet", duration_seconds=0, throughput=0,
+            throughput_unit="MB/s", errors=1
+        )
 
-def list_available_flights(client):
-    print("\n[META] Listing available flights...")
+    duration = time.time() - start_time
+    mb = table.nbytes / 1024 / 1024
+    throughput = mb / duration if duration > 0 else 0
+
+    print(f"[GET] Retrieved {table.num_rows:,} rows in {duration:.4f}s")
+    print(f"[GET] Throughput: {throughput:.2f} MB/s")
+
+    return BenchmarkResult(
+        name="DoGet",
+        duration_seconds=duration,
+        throughput=throughput,
+        throughput_unit="MB/s",
+        rows=table.num_rows,
+        bytes_processed=table.nbytes,
+    )
+
+
+# =============================================================================
+# Vector Search Benchmarks
+# =============================================================================
+
+def benchmark_vector_search(client: flight.FlightClient, name: str,
+                            query_vectors: np.ndarray, k: int) -> BenchmarkResult:
+    """Benchmark HNSW vector similarity search."""
+    num_queries = len(query_vectors)
+    print(f"\n[SEARCH] Running {num_queries:,} vector searches (k={k})...")
+
+    latencies = []
+    errors = 0
+    total_results = 0
+
+    for i, qvec in enumerate(query_vectors):
+        query = {
+            "name": name,
+            "action": "search",
+            "vector": qvec.tolist(),
+            "k": k,
+        }
+        ticket = flight.Ticket(json.dumps(query).encode("utf-8"))
+
+        start = time.time()
+        try:
+            reader = client.do_get(ticket)
+            results = reader.read_all()
+            total_results += results.num_rows
+        except flight.FlightError as e:
+            errors += 1
+            if errors <= 3:
+                print(f"[SEARCH] Error on query {i}: {e}")
+            continue
+
+        latencies.append((time.time() - start) * 1000)  # ms
+
+        if (i + 1) % 100 == 0:
+            print(f"[SEARCH] Completed {i + 1}/{num_queries} queries...")
+
+    duration = sum(latencies) / 1000  # total seconds
+    qps = num_queries / duration if duration > 0 else 0
+
+    result = BenchmarkResult(
+        name="VectorSearch",
+        duration_seconds=duration,
+        throughput=qps,
+        throughput_unit="queries/s",
+        rows=total_results,
+        latencies_ms=latencies,
+        errors=errors,
+    )
+
+    print(f"[SEARCH] Completed: {qps:.2f} queries/s")
+    print(f"[SEARCH] Latency p50={result.p50_ms:.2f}ms p95={result.p95_ms:.2f}ms p99={result.p99_ms:.2f}ms")
+    print(f"[SEARCH] Errors: {errors}")
+
+    return result
+
+
+def benchmark_hybrid_search(client: flight.FlightClient, name: str,
+                            query_vectors: np.ndarray, k: int,
+                            text_queries: list) -> BenchmarkResult:
+    """Benchmark hybrid search (dense vectors + sparse text)."""
+    num_queries = len(query_vectors)
+    print(f"\n[HYBRID] Running {num_queries:,} hybrid searches (k={k})...")
+
+    latencies = []
+    errors = 0
+    total_results = 0
+
+    for i, (qvec, text_query) in enumerate(zip(query_vectors, text_queries)):
+        query = {
+            "name": name,
+            "action": "hybrid_search",
+            "vector": qvec.tolist(),
+            "text_query": text_query,
+            "k": k,
+            "alpha": 0.5,  # balance between dense and sparse
+        }
+        ticket = flight.Ticket(json.dumps(query).encode("utf-8"))
+
+        start = time.time()
+        try:
+            reader = client.do_get(ticket)
+            results = reader.read_all()
+            total_results += results.num_rows
+        except flight.FlightError as e:
+            errors += 1
+            if errors <= 3:
+                print(f"[HYBRID] Error on query {i}: {e}")
+            continue
+
+        latencies.append((time.time() - start) * 1000)
+
+        if (i + 1) % 100 == 0:
+            print(f"[HYBRID] Completed {i + 1}/{num_queries} queries...")
+
+    duration = sum(latencies) / 1000
+    qps = num_queries / duration if duration > 0 else 0
+
+    result = BenchmarkResult(
+        name="HybridSearch",
+        duration_seconds=duration,
+        throughput=qps,
+        throughput_unit="queries/s",
+        rows=total_results,
+        latencies_ms=latencies,
+        errors=errors,
+    )
+
+    print(f"[HYBRID] Completed: {qps:.2f} queries/s")
+    print(f"[HYBRID] Latency p50={result.p50_ms:.2f}ms p95={result.p95_ms:.2f}ms p99={result.p99_ms:.2f}ms")
+
+    return result
+
+
+# =============================================================================
+# Concurrent Load Testing
+# =============================================================================
+
+def benchmark_concurrent_load(data_loc: str, name: str, dim: int,
+                              num_workers: int, duration_seconds: int,
+                              operation: str = "mixed") -> BenchmarkResult:
+    """Benchmark concurrent load with multiple clients."""
+    print(f"\n[CONCURRENT] Running {num_workers} workers for {duration_seconds}s ({operation})...")
+
+    stop_event = threading.Event()
+    results_lock = threading.Lock()
+    all_latencies = []
+    total_ops = 0
+    total_errors = 0
+
+    def worker(worker_id: int):
+        nonlocal total_ops, total_errors
+        client = flight.FlightClient(data_loc)
+        local_latencies = []
+        local_ops = 0
+        local_errors = 0
+
+        # Small batch for concurrent testing
+        small_table = generate_vectors(100, dim)
+        worker_name = f"{name}_worker_{worker_id}"
+
+        while not stop_event.is_set():
+            start = time.time()
+            try:
+                if operation == "put" or (operation == "mixed" and local_ops % 2 == 0):
+                    descriptor = flight.FlightDescriptor.for_path(worker_name)
+                    writer, _ = client.do_put(descriptor, small_table.schema)
+                    writer.write_table(small_table)
+                    writer.close()
+                else:
+                    query = {"name": worker_name}
+                    ticket = flight.Ticket(json.dumps(query).encode("utf-8"))
+                    reader = client.do_get(ticket)
+                    _ = reader.read_all()
+
+                local_latencies.append((time.time() - start) * 1000)
+                local_ops += 1
+            except Exception:
+                local_errors += 1
+
+        with results_lock:
+            all_latencies.extend(local_latencies)
+            total_ops += local_ops
+            total_errors += local_errors
+
+    # Start workers
+    with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
+        futures = [executor.submit(worker, i) for i in range(num_workers)]
+        time.sleep(duration_seconds)
+        stop_event.set()
+        concurrent.futures.wait(futures)
+
+    ops_per_sec = total_ops / duration_seconds
+
+    result = BenchmarkResult(
+        name=f"Concurrent_{operation}",
+        duration_seconds=duration_seconds,
+        throughput=ops_per_sec,
+        throughput_unit="ops/s",
+        rows=total_ops,
+        latencies_ms=all_latencies,
+        errors=total_errors,
+    )
+
+    print(f"[CONCURRENT] Total ops: {total_ops:,} ({ops_per_sec:.2f} ops/s)")
+    print(f"[CONCURRENT] Latency p50={result.p50_ms:.2f}ms p95={result.p95_ms:.2f}ms p99={result.p99_ms:.2f}ms")
+    print(f"[CONCURRENT] Errors: {total_errors}")
+
+    return result
+
+
+# =============================================================================
+# S3 Snapshot Benchmarks
+# =============================================================================
+
+def benchmark_s3_snapshot(client: flight.FlightClient, name: str,
+                          s3_endpoint: str, s3_bucket: str) -> BenchmarkResult:
+    """Benchmark S3 snapshot write/read operations."""
+    if not HAS_BOTO3:
+        print("[S3] boto3 not installed, skipping S3 benchmark")
+        return BenchmarkResult(
+            name="S3Snapshot", duration_seconds=0, throughput=0,
+            throughput_unit="MB/s", errors=1
+        )
+
+    print(f"\n[S3] Benchmarking snapshot to {s3_endpoint}/{s3_bucket}...")
+
+    # Trigger snapshot via DoAction
+    snapshot_request = json.dumps({
+        "action": "snapshot",
+        "collection": name,
+        "backend": "s3",
+        "endpoint": s3_endpoint,
+        "bucket": s3_bucket,
+    }).encode("utf-8")
+
+    start = time.time()
     try:
-        for flight_info in client.list_flights():
-            print(f" - Path: {flight_info.descriptor.path}")
-            print(f"   Total Records: {flight_info.total_records}")
-            print(f"   Total Bytes: {flight_info.total_bytes}")
+        action = flight.Action("snapshot", snapshot_request)
+        results = list(client.do_action(action))
+        duration = time.time() - start
+
+        # Parse response for bytes written
+        response = json.loads(results[0].body.to_pybytes()) if results else {}
+        bytes_written = response.get("bytes", 0)
+        mb = bytes_written / 1024 / 1024
+        throughput = mb / duration if duration > 0 else 0
+
+        print(f"[S3] Snapshot completed in {duration:.4f}s ({mb:.2f} MB)")
+        print(f"[S3] Throughput: {throughput:.2f} MB/s")
+
+        return BenchmarkResult(
+            name="S3Snapshot",
+            duration_seconds=duration,
+            throughput=throughput,
+            throughput_unit="MB/s",
+            bytes_processed=bytes_written,
+        )
     except Exception as e:
-        print(f"[META] Error listing flights: {e}")
+        print(f"[S3] Error: {e}")
+        return BenchmarkResult(
+            name="S3Snapshot", duration_seconds=0, throughput=0,
+            throughput_unit="MB/s", errors=1
+        )
+
+
+# =============================================================================
+# Memory Pressure Testing
+# =============================================================================
+
+def benchmark_memory_pressure(data_loc: str, memory_limit_mb: int,
+                              dim: int) -> BenchmarkResult:
+    """Benchmark behavior under memory pressure."""
+    print(f"\n[MEMORY] Testing with {memory_limit_mb}MB limit...")
+
+    client = flight.FlightClient(data_loc)
+
+    # Calculate rows to exceed memory limit
+    bytes_per_row = dim * 4 + 8 + 8  # vector + id + timestamp
+    target_bytes = memory_limit_mb * 1024 * 1024 * 2  # 2x limit
+    target_rows = target_bytes // bytes_per_row
+    batch_rows = min(10000, target_rows // 10)
+
+    print(f"[MEMORY] Inserting {target_rows:,} rows in batches of {batch_rows:,}...")
+
+    latencies = []
+    total_rows = 0
+    errors = 0
+    evictions = 0
+
+    start_total = time.time()
+    batch_num = 0
+
+    while total_rows < target_rows:
+        batch = generate_vectors(batch_rows, dim)
+        name = f"memory_test_{batch_num}"
+
+        start = time.time()
+        try:
+            descriptor = flight.FlightDescriptor.for_path(name)
+            writer, _ = client.do_put(descriptor, batch.schema)
+            writer.write_table(batch)
+            writer.close()
+            latencies.append((time.time() - start) * 1000)
+            total_rows += batch_rows
+        except flight.FlightError as e:
+            if "memory" in str(e).lower() or "evict" in str(e).lower():
+                evictions += 1
+                print(f"[MEMORY] Eviction triggered at {total_rows:,} rows")
+            else:
+                errors += 1
+                print(f"[MEMORY] Error: {e}")
+
+        batch_num += 1
+        if batch_num % 10 == 0:
+            print(f"[MEMORY] Progress: {total_rows:,}/{target_rows:,} rows")
+
+    duration = time.time() - start_total
+    rows_per_sec = total_rows / duration if duration > 0 else 0
+
+    result = BenchmarkResult(
+        name="MemoryPressure",
+        duration_seconds=duration,
+        throughput=rows_per_sec,
+        throughput_unit="rows/s",
+        rows=total_rows,
+        latencies_ms=latencies,
+        errors=errors,
+    )
+
+    print(f"[MEMORY] Completed: {total_rows:,} rows in {duration:.2f}s")
+    print(f"[MEMORY] Throughput: {rows_per_sec:.2f} rows/s")
+    print(f"[MEMORY] Evictions: {evictions}, Errors: {errors}")
+
+    return result
+
+
+# =============================================================================
+# Report Generation
+# =============================================================================
+
+def print_report(results: list):
+    """Print benchmark summary report."""
+    print("\n" + "=" * 70)
+    print("BENCHMARK SUMMARY")
+    print("=" * 70)
+
+    header = f'{"Benchmark":<20} {"Duration":>10} {"Throughput":>15} {"p50":>8} {"p95":>8} {"p99":>8}'
+    print(header)
+    print("-" * 70)
+
+    for r in results:
+        p50 = f"{r.p50_ms:.1f}ms" if r.latencies_ms else "N/A"
+        p95 = f"{r.p95_ms:.1f}ms" if r.latencies_ms else "N/A"
+        p99 = f"{r.p99_ms:.1f}ms" if r.latencies_ms else "N/A"
+        tput = f"{r.throughput:.2f}"
+        print(f"{r.name:<20} {r.duration_seconds:>9.2f}s {tput:>10} {r.throughput_unit:<7} {p50:>8} {p95:>8} {p99:>8}")
+
+    print("=" * 70)
+
+
+def export_json(results: list, filepath: str):
+    """Export results to JSON file."""
+    data = []
+    for r in results:
+        data.append({
+            "name": r.name,
+            "duration_seconds": r.duration_seconds,
+            "throughput": r.throughput,
+            "throughput_unit": r.throughput_unit,
+            "rows": r.rows,
+            "bytes_processed": r.bytes_processed,
+            "p50_ms": r.p50_ms,
+            "p95_ms": r.p95_ms,
+            "p99_ms": r.p99_ms,
+            "errors": r.errors,
+        })
+
+    with open(filepath, "w") as f:
+        json.dump(data, f, indent=2)
+    print(f"\nResults exported to {filepath}")
+
+
+# =============================================================================
+# Main
+# =============================================================================
 
 def main():
-    parser = argparse.ArgumentParser(description='Longbow Perf Test with Dask & Filters')
-    parser.add_argument('--host', default='localhost', help='Server host')
-    parser.add_argument('--data-port', default=3000, type=int, help='Port for DoPut/DoGet')
-    parser.add_argument('--meta-port', default=3001, type=int, help='Port for Metadata ops')
-    parser.add_argument('--rows', default=10000, type=int, help='Number of rows')
-    parser.add_argument('--dim', default=128, type=int, help='Vector dimension')
-    parser.add_argument('--name', default='test_dataset', help='Dataset name')
-    parser.add_argument('--filter', action='append', help='Add filter in format field:op:value (e.g. timestamp:>:2023-01-01)')
+    parser = argparse.ArgumentParser(
+        description="Longbow Performance Test Suite",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""Examples:
+  # Basic throughput test
+  %(prog)s --rows 100000 --dim 128
+
+  # Vector search benchmark
+  %(prog)s --search --search-k 10 --query-count 1000
+
+  # Hybrid search benchmark
+  %(prog)s --hybrid --search-k 10 --query-count 500
+
+  # Concurrent load test
+  %(prog)s --concurrent 16 --duration 60
+
+  # Large OpenAI embeddings
+  %(prog)s --rows 50000 --dim 1536
+
+  # Memory pressure test
+  %(prog)s --memory-pressure --memory-limit 512
+
+  # S3 snapshot test
+  %(prog)s --s3 --s3-endpoint localhost:9000 --s3-bucket longbow-test
+
+  # Full benchmark suite
+  %(prog)s --all --rows 50000 --dim 768
+"""
+    )
+
+    # Connection
+    parser.add_argument("--host", default="localhost", help="Server host")
+    parser.add_argument("--data-port", default=3000, type=int, help="Data server port")
+    parser.add_argument("--meta-port", default=3001, type=int, help="Meta server port")
+
+    # Data generation
+    parser.add_argument("--rows", default=10000, type=int, help="Number of rows")
+    parser.add_argument("--dim", default=128, type=int,
+                        help="Vector dimension (128, 768, 1536, 3072)")
+    parser.add_argument("--name", default="perf_test", help="Dataset name")
+
+    # Vector search
+    parser.add_argument("--search", action="store_true", help="Run vector search benchmark")
+    parser.add_argument("--search-k", default=10, type=int, help="Top-k results")
+    parser.add_argument("--query-count", default=1000, type=int, help="Number of queries")
+
+    # Hybrid search
+    parser.add_argument("--hybrid", action="store_true", help="Run hybrid search benchmark")
+    parser.add_argument("--text-field", default="meta", help="Text field for sparse search")
+
+    # Concurrent load
+    parser.add_argument("--concurrent", default=0, type=int,
+                        help="Parallel clients for load test")
+    parser.add_argument("--duration", default=60, type=int,
+                        help="Duration in seconds for concurrent test")
+    parser.add_argument("--operation", default="mixed",
+                        choices=["put", "get", "mixed"], help="Operation type")
+
+    # Memory pressure
+    parser.add_argument("--memory-pressure", action="store_true",
+                        help="Run memory pressure test")
+    parser.add_argument("--memory-limit", default=512, type=int,
+                        help="Memory limit in MB for pressure test")
+
+    # S3 snapshot
+    parser.add_argument("--s3", action="store_true", help="Run S3 snapshot benchmark")
+    parser.add_argument("--s3-endpoint", default="localhost:9000", help="S3 endpoint")
+    parser.add_argument("--s3-bucket", default="longbow-snapshots", help="S3 bucket")
+
+    # Output
+    parser.add_argument("--json", help="Export results to JSON file")
+    parser.add_argument("--all", action="store_true", help="Run all benchmarks")
+
+    # Filters (legacy support)
+    parser.add_argument("--filter", action="append",
+                        help="Filter in format field:op:value")
 
     args = parser.parse_args()
 
+    # Connection strings
     data_loc = f"grpc://{args.host}:{args.data_port}"
     meta_loc = f"grpc://{args.host}:{args.meta_port}"
 
-    print(f"Data Client: {data_loc}")
-    print(f"Meta Client: {meta_loc}")
+    print("Longbow Performance Test Suite")
+    print("=" * 40)
+    print(f"Data Server: {data_loc}")
+    print(f"Meta Server: {meta_loc}")
+    print(f"Vector Dimension: {args.dim}")
+    print(f"Rows: {args.rows:,}")
 
-    data_client = flight.FlightClient(data_loc)
-    meta_client = flight.FlightClient(meta_loc)
+    results = []
 
-    # 1. Generate and Put Data
-    table = generate_batch(args.rows, args.dim)
-    run_put(data_client, table, args.name)
+    try:
+        data_client = flight.FlightClient(data_loc)
+        meta_client = flight.FlightClient(meta_loc)
+    except Exception as e:
+        print(f"Failed to connect: {e}")
+        sys.exit(1)
 
-    # 2. Metadata Lookup
-    list_available_flights(meta_client)
+    # Always run basic PUT/GET
+    include_text = args.hybrid or args.all
+    table = generate_vectors(args.rows, args.dim, with_text=include_text)
 
-    # 3. Get Data (Full)
-    run_get(data_client, args.name)
+    results.append(benchmark_put(data_client, table, args.name))
+    results.append(benchmark_get(data_client, args.name))
 
-    # 4. Get Data (Filtered)
-    # Example filter if none provided: last 5000 rows based on timestamp logic or ID
-    # We'll use the user provided filters if any
-    parsed_filters = []
-    if args.filter:
-        for f in args.filter:
-            parts = f.split(':', 2)
-            if len(parts) == 3:
-                parsed_filters.append({"field": parts[0], "operator": parts[1], "value": parts[2]})
-    
-    if parsed_filters:
-        run_get(data_client, args.name, parsed_filters)
-    else:
-        # Demo filter: ID < 10
-        print("Running demo filter: id < 10")
-        run_get(data_client, args.name, [{"field": "id", "operator": "<", "value": "10"}])
+    # Vector search
+    if args.search or args.all:
+        query_vectors = generate_query_vectors(args.query_count, args.dim)
+        results.append(benchmark_vector_search(
+            data_client, args.name, query_vectors, args.search_k
+        ))
+
+    # Hybrid search
+    if args.hybrid or args.all:
+        query_vectors = generate_query_vectors(args.query_count, args.dim)
+        text_queries = ["machine learning neural"] * args.query_count
+        results.append(benchmark_hybrid_search(
+            data_client, args.name, query_vectors, args.search_k, text_queries
+        ))
+
+    # Concurrent load
+    if args.concurrent > 0 or args.all:
+        workers = args.concurrent if args.concurrent > 0 else 8
+        results.append(benchmark_concurrent_load(
+            data_loc, args.name, args.dim, workers, args.duration, args.operation
+        ))
+
+    # S3 snapshot
+    if args.s3 or args.all:
+        results.append(benchmark_s3_snapshot(
+            data_client, args.name, args.s3_endpoint, args.s3_bucket
+        ))
+
+    # Memory pressure
+    if args.memory_pressure or args.all:
+        results.append(benchmark_memory_pressure(
+            data_loc, args.memory_limit, args.dim
+        ))
+
+    # Report
+    print_report(results)
+
+    if args.json:
+        export_json(results, args.json)
+
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

@@ -1,5 +1,30 @@
-version: 2
+version: "2"
 
 run:
   timeout: 10m
 
+linters:
+  enable:
+    - gocritic
+    - prealloc
+    - unparam
+  settings:
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - performance
+        - style
+      disabled-checks:
+        - whyNoLint
+    prealloc:
+      simple: true
+      range-loops: true
+      for-loops: true
+
+issues:
+  exclude-rules:
+    # Exclude some linters from running on tests files
+    - path: _test\.go
+      linters:
+        - prealloc
+        - unparam

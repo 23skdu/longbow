@@ -12,7 +12,7 @@ import (
 )
 
 // makeHNSWTestRecord creates a test record with configurable dimensions
-func makeHNSWTestRecord(mem memory.Allocator, dims int, vectors [][]float32) arrow.Record {
+func makeHNSWTestRecord(mem memory.Allocator, dims int, vectors [][]float32) arrow.RecordBatch {
 schema := arrow.NewSchema([]arrow.Field{
 {Name: "id", Type: arrow.PrimitiveTypes.Int64},
 {Name: "vector", Type: arrow.FixedSizeListOf(int32(dims), arrow.PrimitiveTypes.Float32)},
@@ -30,7 +30,7 @@ vecBuilder.Append(v)
 }
 }
 
-return array.NewRecord(schema, []arrow.Array{idBuilder.NewArray(), listBuilder.NewArray()}, int64(len(vectors)))
+return array.NewRecordBatch(schema, []arrow.Array{idBuilder.NewArray(), listBuilder.NewArray()}, int64(len(vectors)))
 }
 
 // TestHNSW_EmptyIndex verifies search on empty index returns nil
@@ -53,7 +53,7 @@ rec := makeHNSWTestRecord(mem, 4, vectors)
 defer rec.Release()
 
 ds := &Dataset{
-Records: []arrow.Record{rec},
+Records: []arrow.RecordBatch{rec},
 mu:      sync.RWMutex{},
 }
 idx := NewHNSWIndex(ds)
@@ -87,7 +87,7 @@ rec := makeHNSWTestRecord(mem, 4, vectors)
 defer rec.Release()
 
 ds := &Dataset{
-Records: []arrow.Record{rec},
+Records: []arrow.RecordBatch{rec},
 mu:      sync.RWMutex{},
 }
 idx := NewHNSWIndex(ds)
@@ -117,7 +117,7 @@ rec := makeHNSWTestRecord(mem, 4, vectors)
 defer rec.Release()
 
 ds := &Dataset{
-Records: []arrow.Record{rec},
+Records: []arrow.RecordBatch{rec},
 mu:      sync.RWMutex{},
 }
 idx := NewHNSWIndex(ds)
@@ -155,7 +155,7 @@ rec := makeHNSWTestRecord(mem, dims, vectors)
 defer rec.Release()
 
 ds := &Dataset{
-Records: []arrow.Record{rec},
+Records: []arrow.RecordBatch{rec},
 mu:      sync.RWMutex{},
 }
 idx := NewHNSWIndex(ds)

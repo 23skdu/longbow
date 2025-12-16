@@ -37,7 +37,7 @@ assert.Error(t, err) // record is nil
 schema := arrow.NewSchema([]arrow.Field{{Name: "f", Type: arrow.PrimitiveTypes.Int64}}, nil)
 b := array.NewRecordBuilder(mem, schema)
 b.Field(0).(*array.Int64Builder).Append(1)
-rec := b.NewRecord()
+rec := b.NewRecordBatch()
 defer rec.Release()
 
 err = store.writeToWAL(rec, "test")

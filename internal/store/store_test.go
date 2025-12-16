@@ -98,7 +98,7 @@ func TestDoPutAndDoGet(t *testing.T) {
 
 	b.Field(0).(*array.Int32Builder).AppendValues([]int32{1, 2, 3}, nil)
 	b.Field(1).(*array.Float64Builder).AppendValues([]float64{1.1, 2.2, 3.3}, nil)
-	rec := b.NewRecord()
+	rec := b.NewRecordBatch()
 	defer rec.Release()
 
 	// 2. DoPut
@@ -146,7 +146,7 @@ func TestDoPutAndDoGet(t *testing.T) {
 
 	count := 0
 	for r.Next() {
-		count += int(r.Record().NumRows())
+		count += int(r.RecordBatch().NumRows())
 	}
 	if r.Err() != nil {
 		t.Fatalf("Reader error: %v", r.Err())
@@ -184,7 +184,7 @@ func TestSchemaValidation(t *testing.T) {
 	defer bA.Release()
 
 	bA.Field(0).(*array.Int32Builder).AppendValues([]int32{1}, nil)
-	recA := bA.NewRecord()
+	recA := bA.NewRecordBatch()
 	defer recA.Release()
 
 	streamA, err := client.DoPut(ctx)
@@ -217,7 +217,7 @@ func TestSchemaValidation(t *testing.T) {
 	}
 	fb.AppendValues([]float64{1.1}, nil)
 
-	recB := bB.NewRecord()
+	recB := bB.NewRecordBatch()
 	defer recB.Release()
 
 	streamB, _ := client.DoPut(ctx)
@@ -284,7 +284,7 @@ vvb := vb.ValueBuilder().(*array.Float32Builder)
 vb.Append(true)
 vvb.AppendValues([]float32{0.1, 0.2}, nil)
 
-rec := b.NewRecord()
+rec := b.NewRecordBatch()
 defer rec.Release()
 
 stream, err := client.DoPut(ctx)
@@ -341,17 +341,17 @@ b.Append(int32(i))
 }
 arr := b.NewArray()
 defer arr.Release()
-rec := array.NewRecord(schema, []arrow.Array{arr}, 50)
+rec := array.NewRecordBatch(schema, []arrow.Array{arr}, 50)
 defer rec.Release()
 
 // Add 3 datasets. 3rd one should force eviction of the 1st one.
 // Dataset 1
-store.vectors.Set("ds1", &Dataset{Records: []arrow.Record{rec}, lastAccess: time.Now().Add(-time.Minute).UnixNano()})
+store.vectors.Set("ds1", &Dataset{Records: []arrow.RecordBatch{rec}, lastAccess: time.Now().Add(-time.Minute).UnixNano()})
 rec.Retain()
 store.currentMemory.Add(calculateRecordSize(rec))
 
 // Dataset 2
-store.vectors.Set("ds2", &Dataset{Records: []arrow.Record{rec}, lastAccess: time.Now().UnixNano()})
+store.vectors.Set("ds2", &Dataset{Records: []arrow.RecordBatch{rec}, lastAccess: time.Now().UnixNano()})
 rec.Retain()
 store.currentMemory.Add(calculateRecordSize(rec))
 
@@ -382,13 +382,13 @@ store := NewVectorStore(mem, logger, 0, 0, ttl)
 
 // Add expired dataset
 store.vectors.Set("expired", &Dataset{
-Records:    []arrow.Record{},
+Records:    []arrow.RecordBatch{},
 lastAccess: time.Now().Add(-200 * time.Millisecond).UnixNano(),
 })
 
 // Add fresh dataset
 store.vectors.Set("fresh", &Dataset{
-Records:    []arrow.Record{},
+Records:    []arrow.RecordBatch{},
 lastAccess: time.Now().UnixNano(),
 })
 

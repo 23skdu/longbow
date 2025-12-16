@@ -31,6 +31,7 @@ type HNSWIndex struct {
 	dims          int           // Vector dimensions for pool sizing
 	currentEpoch  atomic.Uint64 // Current epoch for zero-copy reclamation
 	activeReaders atomic.Int32  // Count of readers in current epoch
+	resultPool  *resultPool // Pool for search result slices
 }
 
 // NewHNSWIndex creates a new index for the given dataset.
@@ -41,6 +42,7 @@ func NewHNSWIndex(ds *Dataset) *HNSWIndex {
 	}
 	// Initialize the graph with VectorID as the key type.
 	h.Graph = hnsw.NewGraph[VectorID]()
+	h.resultPool = newResultPool()
 	// Use Euclidean distance to match previous implementation intent
 	h.Graph.Distance = simd.EuclideanDistance
 	return h
@@ -315,7 +317,7 @@ func (h *HNSWIndex) SearchByID(id VectorID, k int) []VectorID {
 			return nil
 		}
 		neighbors := h.Graph.Search(vec, k)
-		res := make([]VectorID, len(neighbors))
+		res := h.resultPool.get(len(neighbors))
 		for i, n := range neighbors {
 			res[i] = n.Key
 		}
@@ -328,9 +330,14 @@ func (h *HNSWIndex) SearchByID(id VectorID, k int) []VectorID {
 	}
 
 	neighbors := h.Graph.Search(scratch, k)
-	res := make([]VectorID, len(neighbors))
+	res := h.resultPool.get(len(neighbors))
 	for i, n := range neighbors {
 		res[i] = n.Key
 	}
 	return res
+}
+// PutResults returns a search result slice to the pool for reuse.
+// Callers should call this when done with SearchByID results.
+func (h *HNSWIndex) PutResults(results []VectorID) {
+	h.resultPool.put(results)
 }

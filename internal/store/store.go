@@ -287,16 +287,13 @@ limit = query.Limit
 s.logger.Info("DoGet called", "ticket", name, "limit", limit)
 
 ds, ok := s.vectors.Get(name)
-	if ok {
-		ds.SetLastAccess(time.Now())
-	}
-
-recs := ds.Records
-
 if !ok {
 metrics.FlightOperationsTotal.WithLabelValues(method, "error").Inc()
 return NewNotFoundError("dataset", name)
 }
+
+ds.SetLastAccess(time.Now())
+recs := ds.Records
 
 if len(recs) == 0 {
 return nil

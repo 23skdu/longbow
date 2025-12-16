@@ -6,6 +6,8 @@ import (
 "github.com/apache/arrow-go/v18/arrow"
 "github.com/apache/arrow-go/v18/arrow/array"
 "github.com/coder/hnsw"
+
+"github.com/23skdu/longbow/internal/simd"
 )
 
 // VectorID represents a unique identifier for a vector in the index.
@@ -35,7 +37,9 @@ locations: make([]Location, 0),
 // Initialize the graph with VectorID as the key type.
 h.Graph = hnsw.NewGraph[VectorID]()
 // Use Euclidean distance to match previous implementation intent
-h.Graph.Distance = hnsw.EuclideanDistance
+h.Graph.Distance = func(a, b []float32) float32 {
+return simd.EuclideanDistance(a, b)
+}
 return h
 }
 

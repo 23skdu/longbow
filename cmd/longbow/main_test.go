@@ -154,7 +154,7 @@ func TestServerStartsAndAcceptsConnections(t *testing.T) {
 	conn, err := grpc.NewClient(si.dataAddr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		t.Fatalf("Failed to connect to data server: %v", err)
+		t.Fatalf("Failed to connect to meta server: %v", err)
 	}
 	defer func() { _ = conn.Close() }()
 
@@ -310,12 +310,19 @@ func TestDataServerDoPutDoGet(t *testing.T) {
 		}
 	}
 
-	// Verify collection exists via ListFlights
-	listStream, err := client.ListFlights(ctx, &flight.Criteria{})
+	// Verify collection exists via ListFlights (on MetaServer)
+	metaConn, err := grpc.NewClient(si.metaAddr,
+		grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("Failed to connect to meta server: %v", err)
+	}
+	defer func() { _ = metaConn.Close() }()
+
+	metaClient := flight.NewClientFromConn(metaConn, nil)
+	listStream, err := metaClient.ListFlights(ctx, &flight.Criteria{})
 	if err != nil {
 		t.Fatalf("ListFlights failed: %v", err)
 	}
-
 	found := false
 	for {
 		info, err := listStream.Recv()

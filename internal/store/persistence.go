@@ -167,9 +167,7 @@ return &Dataset{Records: []arrow.Record{}, lastAccess: time.Now().UnixNano()}
 ds.mu.Lock()
 ds.Records = append(ds.Records, rec)
 ds.mu.Unlock()
-s.globalMu.Lock()
-s.currentMemory += calculateRecordSize(rec)
-s.globalMu.Unlock()
+s.currentMemory.Add(calculateRecordSize(rec))
 count++
 }
 r.Release()
@@ -182,8 +180,6 @@ return nil
 func (s *VectorStore) Snapshot() error {
 start := time.Now()
 s.logger.Info("Starting Snapshot...")
-s.globalMu.RLock()
-defer s.globalMu.RUnlock()
 
 snapshotDir := filepath.Join(s.dataPath, snapshotDirName)
 tempDir := filepath.Join(s.dataPath, snapshotDirName+"_tmp")
@@ -295,9 +291,7 @@ return &Dataset{Records: []arrow.Record{}, lastAccess: time.Now().UnixNano()}
 ds.mu.Lock()
 ds.Records = append(ds.Records, rec)
 ds.mu.Unlock()
-s.globalMu.Lock()
-s.currentMemory += calculateRecordSize(rec)
-s.globalMu.Unlock()
+s.currentMemory.Add(calculateRecordSize(rec))
 }
 return nil
 }

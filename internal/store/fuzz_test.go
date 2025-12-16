@@ -26,7 +26,7 @@ lb := bldr.Field(0).(*array.ListBuilder)
 vb := lb.ValueBuilder().(*array.Float32Builder)
 lb.Append(true)
 vb.AppendValues([]float32{1.0, 2.0, 3.0}, nil)
-rec := bldr.NewRecord()
+rec := bldr.NewRecordBatch()
 defer rec.Release()
 
 var buf bytes.Buffer
@@ -47,7 +47,7 @@ return
 }
 defer r.Release()
 for r.Next() {
-rec := r.Record()
+rec := r.RecordBatch()
 if rec != nil {
 _ = rec.NumRows()
 _ = rec.NumCols()
@@ -111,7 +111,7 @@ return
 defer ipcReader.Release()
 
 for ipcReader.Next() {
-rec := ipcReader.Record()
+rec := ipcReader.RecordBatch()
 if rec != nil {
 _ = rec.NumRows()
 }
@@ -217,7 +217,7 @@ vb.Append(float32(i) * float32(j))
 }
 }
 
-rec := bldr.NewRecord()
+rec := bldr.NewRecordBatch()
 defer rec.Release()
 
 if rec.NumRows() != int64(rows) {

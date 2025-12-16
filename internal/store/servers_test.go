@@ -75,7 +75,7 @@ return client
 }
 
 // makeVectorRecord creates test record with vectors
-func makeVectorRecord(mem memory.Allocator, dims, count int) arrow.Record {
+func makeVectorRecord(mem memory.Allocator, dims, count int) arrow.RecordBatch {
 schema := arrow.NewSchema([]arrow.Field{
 {Name: "id", Type: arrow.BinaryTypes.String},
 {Name: "vec", Type: arrow.FixedSizeListOf(int32(dims), arrow.PrimitiveTypes.Float32)},
@@ -96,7 +96,7 @@ valBldr.Append(float32(i*dims + j))
 }
 }
 
-return bldr.NewRecord()
+return bldr.NewRecordBatch()
 }
 
 // TestDataServerDoPut tests successful data ingestion
@@ -168,7 +168,7 @@ defer reader.Release()
 
 rowCount := int64(0)
 for reader.Next() {
-rowCount += reader.Record().NumRows()
+rowCount += reader.RecordBatch().NumRows()
 }
 
 if rowCount != 10 {
@@ -339,7 +339,7 @@ defer rec.Release()
 // Store directly - this is a simplified approach
 // In real scenario we'd use DoPut through DataServer
 vs.vectors.Set(name, &Dataset{
-Records: []arrow.Record{rec},
+Records: []arrow.RecordBatch{rec},
 })
 rec.Retain() // Keep record alive in dataset
 }

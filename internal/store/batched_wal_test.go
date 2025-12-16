@@ -17,7 +17,7 @@ import (
 )
 
 // Helper to create test records
-func makeTestRecord(mem memory.Allocator, id int64) arrow.Record {
+func makeTestRecord(mem memory.Allocator, id int64) arrow.RecordBatch {
 	schema := arrow.NewSchema([]arrow.Field{
 		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
 		{Name: "vector", Type: arrow.FixedSizeListOf(4, arrow.PrimitiveTypes.Float32)},
@@ -33,7 +33,7 @@ func makeTestRecord(mem memory.Allocator, id int64) arrow.Record {
 		vecBuilder.Append(float32(id) + float32(j)*0.1)
 	}
 
-	return array.NewRecord(schema, []arrow.Array{idBuilder.NewArray(), listBuilder.NewArray()}, 1)
+	return array.NewRecordBatch(schema, []arrow.Array{idBuilder.NewArray(), listBuilder.NewArray()}, 1)
 }
 
 // TestBatchedWAL_TimeBasedFlush verifies WAL flushes after time interval

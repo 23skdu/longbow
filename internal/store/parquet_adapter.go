@@ -17,7 +17,7 @@ Vector []float32 `parquet:"vector"`
 }
 
 // writeParquet writes an Arrow record to a Parquet writer
-func writeParquet(w io.Writer, rec arrow.Record) error {
+func writeParquet(w io.Writer, rec arrow.RecordBatch) error {
 pw := parquet.NewGenericWriter[VectorRecord](w)
 
 // Iterate over rows and write
@@ -52,7 +52,7 @@ return pw.Close()
 
 // readParquet reads a Parquet file and converts it to an Arrow record
 // Changed r from io.ReaderAt to *os.File to use parquet.OpenFile
-func readParquet(f *os.File, size int64, mem memory.Allocator) (arrow.Record, error) {
+func readParquet(f *os.File, size int64, mem memory.Allocator) (arrow.RecordBatch, error) {
 // Use parquet.OpenFile to correctly handle the file and size
 pf, err := parquet.OpenFile(f, size)
 if err != nil {
@@ -91,5 +91,5 @@ vecBuilder.Append(true)
 vecValBuilder.AppendValues(row.Vector, nil)
 }
 
-return b.NewRecord(), nil
+return b.NewRecordBatch(), nil
 }

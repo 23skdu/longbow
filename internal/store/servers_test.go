@@ -14,7 +14,7 @@ import (
 func TestDataServer_Unimplemented(t *testing.T) {
 mem := memory.NewGoAllocator()
 logger := mockLogger()
-store := NewVectorStore(mem, logger, 1024, time.Hour)
+store := NewVectorStore(mem, logger, 1024, 0, time.Hour)
 server := NewDataServer(store)
 
 err := server.ListFlights(nil, nil)
@@ -33,7 +33,7 @@ assert.Equal(t, codes.Unimplemented, st.Code())
 func TestMetaServer_Unimplemented(t *testing.T) {
 mem := memory.NewGoAllocator()
 logger := mockLogger()
-store := NewVectorStore(mem, logger, 1024, time.Hour)
+store := NewVectorStore(mem, logger, 1024, 0, time.Hour)
 server := NewMetaServer(store)
 
 err := server.DoGet(nil, nil)

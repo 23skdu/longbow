@@ -1,6 +1,5 @@
 <!-- markdownlint-disable MD033 MD041 -->
-[![Validate
-Artifacts](https://github.com/23skdu/longbow/actions/workflows/ci.yml/badge.svg)](https://github.com/23skdu/longbow/actions/workflows/ci.yml)
+
 [![Helm
 Validation](https://github.com/23skdu/longbow/actions/workflows/helm-validation.yml/badge.svg)](https://github.com/23skdu/longbow/actions/workflows/helm-validation.yml)
 [![Markdown

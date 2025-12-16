@@ -51,7 +51,7 @@ logger.Error("Failed to process config", "error", err)
 os.Exit(1)
 }
 
-logger.Info("Starting Longbow",
+logger.Info(">>---> Starting Longbow",
 "listen_addr", cfg.ListenAddr,
 "meta_addr", cfg.MetaAddr,
 "metrics_addr", cfg.MetricsAddr,

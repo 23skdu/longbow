@@ -24,11 +24,20 @@ import (
 "github.com/apache/arrow-go/v18/arrow/scalar"
 )
 
+
+type IndexJob struct {
+	DatasetName string
+	BatchIdx    int
+	RowIdx      int
+}
+
 // Dataset wraps records with metadata for eviction
 type Dataset struct {
 Records    []arrow.Record
 lastAccess int64 // UnixNano
 Version    int64
+	Index *HNSWIndex
+	mu sync.RWMutex
 }
 
 func (d *Dataset) LastAccess() time.Time {
@@ -56,6 +65,7 @@ walFile       *os.File
 walMu         sync.Mutex
 snapshotReset chan time.Duration
 ttlDuration   time.Duration
+	indexChan chan IndexJob
 }
 
 func NewVectorStore(mem memory.Allocator, logger *slog.Logger, maxMemory int64, maxWALSize int64, ttl time.Duration) *VectorStore {
@@ -68,7 +78,9 @@ maxWALSize:    maxWALSize,
 ttlDuration:   ttl,
 currentMemory: 0,
 snapshotReset: make(chan time.Duration, 1),
-}
+		indexChan:     make(chan IndexJob, 10000),
+	}
+	s.startIndexingWorkers(runtime.NumCPU())
 s.StartMetricsTicker(10 * time.Second)
 if maxWALSize > 0 {
 s.StartWALCheckTicker(1 * time.Minute)
@@ -410,15 +422,21 @@ return fmt.Errorf("schema mismatch: incoming schema does not match existing data
 			return fmt.Errorf("resource exhausted: memory limit exceeded")
 		}
 		if _, ok := s.vectors[name]; !ok {
-			s.vectors[name] = &Dataset{Records: []arrow.Record{}, lastAccess: time.Now().UnixNano()}
+			ds := &Dataset{Records: []arrow.Record{}, lastAccess: time.Now().UnixNano()}
+			ds.Index = NewHNSWIndex(ds)
+			s.vectors[name] = ds
 		}
-		s.vectors[name].Records = append(s.vectors[name].Records, rec)
-		s.vectors[name].SetLastAccess(time.Now())
-		s.currentMemory += size
-		s.mu.Unlock()
+		ds := s.vectors[name]
+ds.mu.Lock()
+batchIdx := len(ds.Records)
+ds.Records = append(ds.Records, rec)
+ds.mu.Unlock()
 
-		buildStart := time.Now()
-		// Write to WAL
+ds.SetLastAccess(time.Now())
+s.currentMemory += size
+s.mu.Unlock()
+
+// Write to WAL
 if err := s.writeToWAL(rec, name); err != nil {
 s.logger.Error("Failed to write to WAL", "error", err)
 // Strict Durability: Fail the request if persistence fails
@@ -426,8 +444,18 @@ return fmt.Errorf("persistence failed: %w", err)
 }
 
 		rowsWritten += int(rec.NumRows())
-		metrics.IndexBuildLatency.Observe(time.Since(buildStart).Seconds())
-		s.updateVectorMetrics(rec)
+
+// Async Indexing
+numRows := int(rec.NumRows())
+for i := 0; i < numRows; i++ {
+s.indexChan <- IndexJob{
+DatasetName: name,
+BatchIdx:    batchIdx,
+RowIdx:      i,
+}
+}
+
+s.updateVectorMetrics(rec)
 	}
 
 	if r.Err() != nil {
@@ -451,13 +479,16 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 		name := string(action.Body)
 		s.mu.Lock()
 		if ds, ok := s.vectors[name]; ok {
-			recs := ds.Records
-			for _, r := range recs {
-				s.currentMemory -= calculateRecordSize(r)
-				r.Release()
-			}
-			delete(s.vectors, name)
-		}
+ds.mu.Lock()
+recs := ds.Records
+for _, r := range recs {
+s.currentMemory -= calculateRecordSize(r)
+r.Release()
+}
+ds.Records = nil // Clear references
+ds.mu.Unlock()
+delete(s.vectors, name)
+}
 		s.mu.Unlock()
 		result, _ := json.Marshal(map[string]string{"status": "ok", "message": "dataset dropped"})
 		if err := stream.Send(&flight.Result{Body: result}); err != nil {
@@ -634,10 +665,13 @@ evictedCount := 0
 for name, ds := range s.vectors {
 if now.Sub(ds.LastAccess()) > s.ttlDuration {
 // Evict
+ds.mu.Lock()
 for _, r := range ds.Records {
 s.currentMemory -= calculateRecordSize(r)
 r.Release()
 }
+ds.Records = nil
+ds.mu.Unlock()
 delete(s.vectors, name)
 evictedCount++
 s.logger.Info("Evicted dataset due to TTL", "name", name)
@@ -673,10 +707,13 @@ return fmt.Errorf("resource exhausted: memory limit exceeded and no datasets to 
 
 // Evict oldest
 if ds, ok := s.vectors[oldestName]; ok {
+ds.mu.Lock()
 for _, r := range ds.Records {
 s.currentMemory -= calculateRecordSize(r)
 r.Release()
 }
+ds.Records = nil
+ds.mu.Unlock()
 delete(s.vectors, oldestName)
 s.logger.Info("Evicted dataset due to LRU", "name", oldestName, "freed", calculateDatasetSize(ds))
 metrics.EvictionsTotal.WithLabelValues("lru").Inc()
@@ -850,4 +887,23 @@ if err := s.Snapshot(); err != nil {
 s.logger.Error("Failed to create snapshot triggered by WAL size", "error", err)
 }
 }
+}
+
+
+func (s *VectorStore) startIndexingWorkers(numWorkers int) {
+	for i := 0; i < numWorkers; i++ {
+		go func() {
+			for job := range s.indexChan {
+				s.mu.RLock()
+				ds, ok := s.vectors[job.DatasetName]
+				s.mu.RUnlock()
+				if !ok || ds.Index == nil {
+					continue
+				}
+				if err := ds.Index.Add(job.BatchIdx, job.RowIdx); err != nil {
+					s.logger.Error("Async index add failed", "dataset", job.DatasetName, "error", err)
+				}
+			}
+		}()
+	}
 }

@@ -268,7 +268,7 @@ func TestDataServerDoPutDoGet(t *testing.T) {
 		vecValBuilder.Append(float32(i) * 0.01)
 	}
 
-	rec := builder.NewRecord()
+	rec := builder.NewRecordBatch()
 	defer rec.Release()
 
 	// Build FlightDescriptor with metadata

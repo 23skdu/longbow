@@ -49,7 +49,7 @@ defer b.Release()
 b.Field(0).(*array.Int64Builder).AppendValues([]int64{1, 2, 3, 4, 5}, nil)
 b.Field(1).(*array.Float64Builder).AppendValues([]float64{10.5, 20.0, 30.5, 40.0, 50.5}, nil)
 b.Field(2).(*array.StringBuilder).AppendValues([]string{"A", "B", "A", "C", "B"}, nil)
-rec := b.NewRecord()
+rec := b.NewRecordBatch()
 defer rec.Release()
 
 // 2. Upload Data
@@ -130,7 +130,7 @@ defer r.Release()
 
 count := 0
 for r.Next() {
-count += int(r.Record().NumRows())
+count += int(r.RecordBatch().NumRows())
 }
 if r.Err() != nil {
 t.Fatalf("Reader error: %v", r.Err())
@@ -180,7 +180,7 @@ b := array.NewRecordBuilder(mem, schema)
 for i := 0; i < ds.rows; i++ {
 b.Field(0).(*array.Int64Builder).Append(int64(i))
 }
-rec := b.NewRecord()
+rec := b.NewRecordBatch()
 b.Release()
 
 stream, _ := client.DoPut(ctx)

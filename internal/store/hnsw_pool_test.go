@@ -22,7 +22,7 @@ func TestHNSW_ScratchPoolBasic(t *testing.T) {
 	defer rec.Release()
 
 	ds := &Dataset{
-		Records: []arrow.Record{rec},
+		Records: []arrow.RecordBatch{rec},
 		mu:      sync.RWMutex{},
 	}
 	idx := NewHNSWIndex(ds)
@@ -59,7 +59,7 @@ func TestHNSW_ScratchPoolConcurrent(t *testing.T) {
 	defer rec.Release()
 
 	ds := &Dataset{
-		Records: []arrow.Record{rec},
+		Records: []arrow.RecordBatch{rec},
 		mu:      sync.RWMutex{},
 	}
 	idx := NewHNSWIndex(ds)
@@ -115,7 +115,7 @@ func TestHNSW_ScratchPoolDifferentDimensions(t *testing.T) {
 			defer rec.Release()
 
 			ds := &Dataset{
-				Records: []arrow.Record{rec},
+				Records: []arrow.RecordBatch{rec},
 				mu:      sync.RWMutex{},
 			}
 			idx := NewHNSWIndex(ds)
@@ -148,7 +148,7 @@ func BenchmarkHNSW_ScratchPoolAllocs(b *testing.B) {
 	defer rec.Release()
 
 	ds := &Dataset{
-		Records: []arrow.Record{rec},
+		Records: []arrow.RecordBatch{rec},
 		mu:      sync.RWMutex{},
 	}
 	idx := NewHNSWIndex(ds)
@@ -183,7 +183,7 @@ func BenchmarkHNSW_ScratchPoolAllocsParallel(b *testing.B) {
 	defer rec.Release()
 
 	ds := &Dataset{
-		Records: []arrow.Record{rec},
+		Records: []arrow.RecordBatch{rec},
 		mu:      sync.RWMutex{},
 	}
 	idx := NewHNSWIndex(ds)

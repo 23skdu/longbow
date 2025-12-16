@@ -27,23 +27,27 @@ import (
 var binaryPath string
 
 func TestMain(m *testing.M) {
-	// Build binary once for all tests
-	tmpDir, err := os.MkdirTemp("", "longbow-test-*")
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to create temp dir: %v\n", err)
-		os.Exit(1)
-	}
-	defer os.RemoveAll(tmpDir)
+os.Exit(testMain(m))
+}
 
-	binaryPath = filepath.Join(tmpDir, "longbow")
-	cmd := exec.Command("go", "build", "-o", binaryPath, ".")
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to build binary: %v\n", err)
-		os.Exit(1)
-	}
+func testMain(m *testing.M) int {
+// Build binary once for all tests
+tmpDir, err := os.MkdirTemp("", "longbow-test-*")
+if err != nil {
+fmt.Fprintf(os.Stderr, "Failed to create temp dir: %v\n", err)
+return 1
+}
+defer func() { _ = os.RemoveAll(tmpDir) }()
 
-	os.Exit(m.Run())
+binaryPath = filepath.Join(tmpDir, "longbow")
+cmd := exec.Command("go", "build", "-o", binaryPath, ".")
+cmd.Stderr = os.Stderr
+if err := cmd.Run(); err != nil {
+fmt.Fprintf(os.Stderr, "Failed to build binary: %v\n", err)
+return 1
+}
+
+return m.Run()
 }
 
 // getFreePort returns an available port
@@ -52,7 +56,7 @@ func getFreePort() (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	defer l.Close()
+	defer func() { _ = l.Close() }()
 	return l.Addr().(*net.TCPAddr).Port, nil
 }
 
@@ -106,7 +110,7 @@ func startServer(t *testing.T) *serverInstance {
 	si.cmd.Stderr = io.Discard
 
 	if err := si.cmd.Start(); err != nil {
-		os.RemoveAll(dataDir)
+		_ = os.RemoveAll(dataDir)
 		t.Fatalf("Failed to start server: %v", err)
 	}
 
@@ -122,7 +126,7 @@ func startServer(t *testing.T) *serverInstance {
 		default:
 			conn, err := net.DialTimeout("tcp", si.dataAddr, 100*time.Millisecond)
 			if err == nil {
-				conn.Close()
+				_ = conn.Close()
 				return si
 			}
 			time.Sleep(50 * time.Millisecond)
@@ -133,11 +137,11 @@ func startServer(t *testing.T) *serverInstance {
 // stop gracefully stops the server
 func (si *serverInstance) stop() {
 	if si.cmd != nil && si.cmd.Process != nil {
-		si.cmd.Process.Signal(syscall.SIGTERM)
-		si.cmd.Wait()
+		_ = si.cmd.Process.Signal(syscall.SIGTERM)
+		_ = si.cmd.Wait()
 	}
 	if si.dataDir != "" {
-		os.RemoveAll(si.dataDir)
+		_ = os.RemoveAll(si.dataDir)
 	}
 }
 
@@ -152,7 +156,7 @@ func TestServerStartsAndAcceptsConnections(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to connect to data server: %v", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	client := flight.NewClientFromConn(conn, nil)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -186,7 +190,7 @@ func TestMetaServerConnection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to connect to meta server: %v", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	client := flight.NewClientFromConn(conn, nil)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -217,7 +221,7 @@ func TestMetricsEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to get metrics: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("Expected 200, got %d", resp.StatusCode)
@@ -239,7 +243,7 @@ func TestDataServerDoPutDoGet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to connect: %v", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	client := flight.NewClientFromConn(conn, nil)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -292,8 +296,8 @@ func TestDataServerDoPutDoGet(t *testing.T) {
 	if err := w.Write(rec); err != nil {
 		t.Fatalf("Write record failed: %v", err)
 	}
-	w.Close()
-	stream.CloseSend()
+	_ = w.Close()
+	_ = stream.CloseSend()
 
 	// Read ack
 	for {
@@ -336,7 +340,7 @@ func TestGracefulShutdown(t *testing.T) {
 	si := startServer(t)
 
 	// Send SIGTERM
-	si.cmd.Process.Signal(syscall.SIGTERM)
+	_ = si.cmd.Process.Signal(syscall.SIGTERM)
 
 	// Wait for exit with timeout
 	done := make(chan error, 1)
@@ -351,9 +355,9 @@ func TestGracefulShutdown(t *testing.T) {
 			t.Logf("Server exited: %v", err)
 		}
 	case <-time.After(10 * time.Second):
-		si.cmd.Process.Kill()
+		_ = si.cmd.Process.Kill()
 		t.Fatal("Server did not shut down gracefully within timeout")
 	}
 
-	os.RemoveAll(si.dataDir)
+	_ = os.RemoveAll(si.dataDir)
 }

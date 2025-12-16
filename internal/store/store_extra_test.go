@@ -13,9 +13,9 @@ import (
 func TestStore_UpdateConfig(t *testing.T) {
 mem := memory.NewGoAllocator()
 logger := mockLogger()
-store := NewVectorStore(mem, logger, 1024, time.Hour)
+store := NewVectorStore(mem, logger, 1024, 0, time.Hour)
 
-store.UpdateConfig(2048, 30*time.Minute)
+store.UpdateConfig(2048, 0, 30*time.Minute)
 store.mu.RLock()
 assert.Equal(t, int64(2048), store.maxMemory)
 store.mu.RUnlock()
@@ -24,7 +24,7 @@ store.mu.RUnlock()
 func TestStore_DoAction(t *testing.T) {
 mem := memory.NewGoAllocator()
 logger := mockLogger()
-store := NewVectorStore(mem, logger, 1024, time.Hour)
+store := NewVectorStore(mem, logger, 1024, 0, time.Hour)
 
 // Test get_stats
 action := &flight.Action{Type: "get_stats"}

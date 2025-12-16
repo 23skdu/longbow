@@ -235,14 +235,14 @@ return nil
 // GetFlightInfo returns metadata for a specific stream
 func (s *VectorStore) GetFlightInfo(ctx context.Context, desc *flight.FlightDescriptor) (*flight.FlightInfo, error) {
 	if len(desc.Path) == 0 {
-		return nil, fmt.Errorf("invalid path")
+		return nil, NewInvalidArgumentError("path", "must not be empty")
 	}
 	name := desc.Path[0]
 
 ds, ok := s.vectors.Get(name)
 
 if !ok || len(ds.Records) == 0 {
-return nil, fmt.Errorf("vector not found: %s", name)
+return nil, NewNotFoundError("dataset", name)
 }
 recs := ds.Records
 
@@ -286,7 +286,7 @@ recs := ds.Records
 
 if !ok {
 metrics.FlightOperationsTotal.WithLabelValues(method, "error").Inc()
-return fmt.Errorf("vector not found: %s", name)
+return NewNotFoundError("dataset", name)
 }
 
 if len(recs) == 0 {
@@ -388,10 +388,10 @@ s.logger.Info("Schema evolved", "name", name, "version", ds.Version)
 ds.mu.Unlock()
 }
 } else {
-return fmt.Errorf("schema mismatch: incompatible schema evolution for dataset '%s'", name)
+return NewSchemaMismatchError(name, "incompatible schema evolution")
 }
 } else {
-return fmt.Errorf("schema mismatch: incoming schema does not match existing dataset '%s'", name)
+return NewSchemaMismatchError(name, "incoming schema does not match existing")
 }
 }
 	}
@@ -403,7 +403,7 @@ return fmt.Errorf("schema mismatch: incoming schema does not match existing data
 		rec, err := s.ensureTimestamp(rawRec)
 		if err != nil {
 			metrics.FlightOperationsTotal.WithLabelValues(method, "error").Inc()
-			return fmt.Errorf("failed to ensure timestamp: %w", err)
+			return NewInternalError("ensure timestamp", err)
 		}
 		size := calculateRecordSize(rec)
 
@@ -412,7 +412,7 @@ return fmt.Errorf("schema mismatch: incoming schema does not match existing data
 			s.globalMu.Unlock()
 			rec.Release()
 			s.logger.Error("Memory limit exceeded", "current", s.currentMemory, "max", s.maxMemory, "needed", size)
-			return fmt.Errorf("resource exhausted: memory limit exceeded")
+			return NewResourceExhaustedError("memory", "limit exceeded")
 		}
 		s.currentMemory += size
 		s.globalMu.Unlock()
@@ -433,7 +433,7 @@ ds.SetLastAccess(time.Now())
 if err := s.writeToWAL(rec, name); err != nil {
 s.logger.Error("Failed to write to WAL", "error", err)
 // Strict Durability: Fail the request if persistence fails
-return fmt.Errorf("persistence failed: %w", err)
+return NewPersistenceError("WAL write", err)
 }
 
 		rowsWritten += int(rec.NumRows())
@@ -705,7 +705,7 @@ return true
 
 if first {
 // No datasets to evict
-return fmt.Errorf("resource exhausted: memory limit exceeded and no datasets to evict")
+return NewResourceExhaustedError("memory", "limit exceeded and no datasets to evict")
 }
 
 // Evict oldest

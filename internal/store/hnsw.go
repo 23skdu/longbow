@@ -37,9 +37,7 @@ locations: make([]Location, 0),
 // Initialize the graph with VectorID as the key type.
 h.Graph = hnsw.NewGraph[VectorID]()
 // Use Euclidean distance to match previous implementation intent
-h.Graph.Distance = func(a, b []float32) float32 {
-return simd.EuclideanDistance(a, b)
-}
+    h.Graph.Distance = simd.EuclideanDistance
 return h
 }
 

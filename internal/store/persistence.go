@@ -22,7 +22,7 @@ snapshotDirName = "snapshots"
 // InitPersistence initializes the WAL and loads any existing data
 func (s *VectorStore) InitPersistence(dataPath string, snapshotInterval time.Duration) error {
 s.dataPath = dataPath
-if err := os.MkdirAll(s.dataPath, 0755); err != nil {
+if err := os.MkdirAll(s.dataPath, 0o755); err != nil {
 return fmt.Errorf("failed to create data directory: %w", err)
 }
 
@@ -192,7 +192,7 @@ tempDir := filepath.Join(s.dataPath, snapshotDirName+"_tmp")
 if err := os.RemoveAll(tempDir); err != nil {
 return fmt.Errorf("failed to clean temp snapshot dir: %w", err)
 }
-if err := os.MkdirAll(tempDir, 0755); err != nil {
+if err := os.MkdirAll(tempDir, 0o755); err != nil {
 metrics.SnapshotTotal.WithLabelValues("error").Inc()
 return fmt.Errorf("failed to create temp snapshot dir: %w", err)
 }
@@ -241,7 +241,7 @@ if err := os.Truncate(filepath.Join(s.dataPath, walFileName), 0); err != nil {
 s.logger.Error("Failed to truncate WAL", "error", err)
 }
 // Reopen
-f, err := os.OpenFile(filepath.Join(s.dataPath, walFileName), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+f, err := os.OpenFile(filepath.Join(s.dataPath, walFileName), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 if err == nil {
 s.walFile = f
 } else {

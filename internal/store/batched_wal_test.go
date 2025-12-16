@@ -378,13 +378,13 @@ func TestBatchedWAL_DoubleBufferCapacityPreserved(t *testing.T) {
 
 		// Check capacity is preserved
 		batcher.mu.Lock()
-		cap := cap(batcher.batch)
-		len := len(batcher.batch)
+		batchCap := cap(batcher.batch)
+		batchLen := len(batcher.batch)
 		batcher.mu.Unlock()
 
-		assert.Equal(t, 0, len, "batch should be empty after flush (cycle %d)", cycle)
-		assert.GreaterOrEqual(t, cap, maxBatch,
-			"batch capacity should be >= maxBatch (cycle %d): got %d", cycle, cap)
+		assert.Equal(t, 0, batchLen, "batch should be empty after flush (cycle %d)", cycle)
+		assert.GreaterOrEqual(t, batchCap, maxBatch,
+			"batch capacity should be >= maxBatch (cycle %d): got %d", cycle, batchCap)
 	}
 }
 

@@ -68,6 +68,12 @@ walBatcher *WALBatcher
 snapshotReset chan time.Duration
 ttlDuration   time.Duration
 	indexChan chan IndexJob
+
+// Shutdown coordination
+shutdownState int32
+stopChan      chan struct{}
+workerWg      sync.WaitGroup
+indexWg       sync.WaitGroup
 }
 
 func NewVectorStore(mem memory.Allocator, logger *slog.Logger, maxMemory, maxWALSize int64, ttl time.Duration) *VectorStore {
@@ -81,6 +87,7 @@ ttlDuration:   ttl,
 currentMemory: 0,
 snapshotReset: make(chan time.Duration, 1),
 		indexChan:     make(chan IndexJob, 10000),
+		stopChan:      make(chan struct{}),
 	}
 	s.startIndexingWorkers(runtime.NumCPU())
 s.StartMetricsTicker(10 * time.Second)
@@ -898,7 +905,9 @@ s.logger.Error("Failed to create snapshot triggered by WAL size", "error", err)
 
 func (s *VectorStore) startIndexingWorkers(numWorkers int) {
 	for i := 0; i < numWorkers; i++ {
+	s.indexWg.Add(1)
 		go func() {
+		defer s.indexWg.Done()
 			for job := range s.indexChan {
 				s.globalMu.RLock()
 				ds, ok := s.vectors.Get(job.DatasetName)

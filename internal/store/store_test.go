@@ -346,30 +346,30 @@ defer rec.Release()
 
 // Add 3 datasets. 3rd one should force eviction of the 1st one.
 // Dataset 1
-store.vectors["ds1"] = &Dataset{Records: []arrow.Record{rec}, lastAccess: time.Now().Add(-time.Minute).UnixNano()}
+store.vectors.Set("ds1", &Dataset{Records: []arrow.Record{rec}, lastAccess: time.Now().Add(-time.Minute).UnixNano()})
 rec.Retain()
 store.currentMemory += calculateRecordSize(rec)
 
 // Dataset 2
-store.vectors["ds2"] = &Dataset{Records: []arrow.Record{rec}, lastAccess: time.Now().UnixNano()}
+store.vectors.Set("ds2", &Dataset{Records: []arrow.Record{rec}, lastAccess: time.Now().UnixNano()})
 rec.Retain()
 store.currentMemory += calculateRecordSize(rec)
 
 // Now try to add Dataset 3 via DoPut logic (simulated)
 // We need to lock manually as we are accessing internals or use evictLRU directly
-store.mu.Lock()
+store.globalMu.Lock()
 err := store.evictLRU(calculateRecordSize(rec))
-store.mu.Unlock()
+store.globalMu.Unlock()
 
 if err != nil {
 t.Fatalf("evictLRU failed: %v", err)
 }
 
 // Check if ds1 is gone
-store.mu.RLock()
-_, ok1 := store.vectors["ds1"]
-_, ok2 := store.vectors["ds2"]
-store.mu.RUnlock()
+store.globalMu.RLock()
+_, ok1 := store.vectors.Get("ds1")
+_, ok2 := store.vectors.Get("ds2")
+store.globalMu.RUnlock()
 
 if ok1 {
 t.Error("ds1 should have been evicted")
@@ -385,24 +385,24 @@ ttl := 100 * time.Millisecond
 store := NewVectorStore(mem, logger, 0, 0, ttl)
 
 // Add expired dataset
-store.vectors["expired"] = &Dataset{
+store.vectors.Set("expired", &Dataset{
 Records:    []arrow.Record{},
 lastAccess: time.Now().Add(-200 * time.Millisecond).UnixNano(),
-}
+})
 
 // Add fresh dataset
-store.vectors["fresh"] = &Dataset{
+store.vectors.Set("fresh", &Dataset{
 Records:    []arrow.Record{},
 lastAccess: time.Now().UnixNano(),
-}
+})
 
 // Run eviction
 store.evictTTL()
 
-store.mu.RLock()
-_, okExpired := store.vectors["expired"]
-_, okFresh := store.vectors["fresh"]
-store.mu.RUnlock()
+store.globalMu.RLock()
+_, okExpired := store.vectors.Get("expired")
+_, okFresh := store.vectors.Get("fresh")
+store.globalMu.RUnlock()
 
 if okExpired {
 t.Error("expired dataset should have been evicted")

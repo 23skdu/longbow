@@ -79,9 +79,9 @@ t.Logf("DoPut completed in %v", duration)
 
 // Verify index is eventually updated
 assert.Eventually(t, func() bool {
-vs.mu.RLock()
-defer vs.mu.RUnlock()
-ds, ok := vs.vectors["async_test"]
+vs.globalMu.RLock()
+defer vs.globalMu.RUnlock()
+ds, ok := vs.vectors.Get("async_test")
 if !ok || ds.Index == nil {
 return false
 }
@@ -133,13 +133,13 @@ rec := b.NewRecord()
 defer rec.Release()
 
 // Manually populate memory so Snapshot has data to write
-store.mu.Lock()
+store.globalMu.Lock()
 rec.Retain()
-store.vectors["wal_limit_test"] = &Dataset{
+store.vectors.Set("wal_limit_test", &Dataset{
 Records: []arrow.Record{rec},
 lastAccess: time.Now().UnixNano(),
-}
-store.mu.Unlock()
+})
+store.globalMu.Unlock()
 
 // Write to WAL directly to simulate accumulation and trigger limit
 err = store.writeToWAL(rec, "wal_limit_test")

@@ -37,7 +37,7 @@ Records    []arrow.Record
 lastAccess int64 // UnixNano
 Version    int64
 	Index *HNSWIndex
-	mu sync.RWMutex
+mu sync.RWMutex
 }
 
 func (d *Dataset) LastAccess() time.Time {
@@ -53,8 +53,8 @@ type VectorStore struct {
 flight.BaseFlightServer
 mem           memory.Allocator
 logger        *slog.Logger
-mu            sync.RWMutex
-vectors       map[string]*Dataset
+globalMu sync.RWMutex // protects currentMemory and global state
+vectors *ShardedMap
 maxMemory     int64
 currentMemory int64
 maxWALSize    int64
@@ -72,7 +72,7 @@ func NewVectorStore(mem memory.Allocator, logger *slog.Logger, maxMemory int64, 
 s := &VectorStore{
 mem:           mem,
 logger:        logger,
-vectors:       make(map[string]*Dataset),
+vectors: NewShardedMap(),
 maxMemory:     maxMemory,
 maxWALSize:    maxWALSize,
 ttlDuration:   ttl,
@@ -90,10 +90,10 @@ return s
 
 // UpdateConfig updates the dynamic configuration of the store
 func (s *VectorStore) UpdateConfig(maxMemory int64, maxWALSize int64, snapshotInterval time.Duration) {
-s.mu.Lock()
+s.globalMu.Lock()
 s.maxMemory = maxMemory
 s.maxWALSize = maxWALSize
-s.mu.Unlock()
+s.globalMu.Unlock()
 
 s.logger.Info("Store configuration updated", "max_memory", maxMemory, "max_wal_size", maxWALSize)
 
@@ -200,11 +200,12 @@ s.logger.Warn("Failed to parse criteria expression", "error", err)
 // This prevents slow clients from blocking write operations (DoPut)
 var infos []*flight.FlightInfo
 
-s.mu.RLock()
-for name, ds := range s.vectors {
+s.vectors.Range(func(name string, ds *Dataset) bool {
+		ds.mu.RLock()
 		recs := ds.Records
+		ds.mu.RUnlock()
 if !s.applyFilter(name, recs, query.Filters) {
-continue
+return true // continue
 }
 
 info := &flight.FlightInfo{
@@ -214,8 +215,8 @@ Path: []string{name},
 },
 }
 infos = append(infos, info)
-}
-s.mu.RUnlock()
+return true // continue
+})
 
 // Send stream messages without holding the lock
 for _, info := range infos {
@@ -238,9 +239,7 @@ func (s *VectorStore) GetFlightInfo(ctx context.Context, desc *flight.FlightDesc
 	}
 	name := desc.Path[0]
 
-s.mu.RLock()
-ds, ok := s.vectors[name]
-s.mu.RUnlock()
+ds, ok := s.vectors.Get(name)
 
 if !ok || len(ds.Records) == 0 {
 return nil, fmt.Errorf("vector not found: %s", name)
@@ -278,12 +277,10 @@ limit = query.Limit
 
 s.logger.Info("DoGet called", "ticket", name, "limit", limit)
 
-s.mu.RLock() // Read lock is sufficient with atomic LastAccess
-	ds, ok := s.vectors[name]
+ds, ok := s.vectors.Get(name)
 	if ok {
 		ds.SetLastAccess(time.Now())
 	}
-	s.mu.RUnlock()
 
 recs := ds.Records
 
@@ -367,8 +364,7 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 	}
 
 	// Schema Validation
-	s.mu.RLock()
-	if ds, ok := s.vectors[name]; ok && len(ds.Records) > 0 {
+	if ds, ok := s.vectors.Get(name); ok && len(ds.Records) > 0 {
 		existingRecs := ds.Records
 		existingSchema := existingRecs[0].Schema()
 		if !existingSchema.Equal(r.Schema()) {
@@ -385,23 +381,20 @@ break
 }
 if compatible {
 // Upgrade Schema: Accept new record, increment version
-s.mu.RUnlock()
-s.mu.Lock()
-s.vectors[name].Version++
-s.logger.Info("Schema evolved", "name", name, "version", s.vectors[name].Version)
-s.mu.Unlock()
-s.mu.RLock()
+if ds, ok := s.vectors.Get(name); ok {
+ds.mu.Lock()
+ds.Version++
+s.logger.Info("Schema evolved", "name", name, "version", ds.Version)
+ds.mu.Unlock()
+}
 } else {
-s.mu.RUnlock()
 return fmt.Errorf("schema mismatch: incompatible schema evolution for dataset '%s'", name)
 }
 } else {
-s.mu.RUnlock()
 return fmt.Errorf("schema mismatch: incoming schema does not match existing dataset '%s'", name)
 }
 }
 	}
-	s.mu.RUnlock()
 
 	rowsWritten := 0
 
@@ -414,27 +407,27 @@ return fmt.Errorf("schema mismatch: incoming schema does not match existing data
 		}
 		size := calculateRecordSize(rec)
 
-		s.mu.Lock()
+		s.globalMu.Lock()
 		if s.maxMemory > 0 && s.currentMemory+size > s.maxMemory {
-			s.mu.Unlock()
+			s.globalMu.Unlock()
 			rec.Release()
 			s.logger.Error("Memory limit exceeded", "current", s.currentMemory, "max", s.maxMemory, "needed", size)
 			return fmt.Errorf("resource exhausted: memory limit exceeded")
 		}
-		if _, ok := s.vectors[name]; !ok {
-			ds := &Dataset{Records: []arrow.Record{}, lastAccess: time.Now().UnixNano()}
-			ds.Index = NewHNSWIndex(ds)
-			s.vectors[name] = ds
-		}
-		ds := s.vectors[name]
+		s.currentMemory += size
+		s.globalMu.Unlock()
+
+		ds := s.vectors.GetOrCreate(name, func() *Dataset {
+			newDs := &Dataset{Records: []arrow.Record{}, lastAccess: time.Now().UnixNano()}
+			newDs.Index = NewHNSWIndex(newDs)
+			return newDs
+		})
 ds.mu.Lock()
 batchIdx := len(ds.Records)
 ds.Records = append(ds.Records, rec)
 ds.mu.Unlock()
 
 ds.SetLastAccess(time.Now())
-s.currentMemory += size
-s.mu.Unlock()
 
 // Write to WAL
 if err := s.writeToWAL(rec, name); err != nil {
@@ -477,8 +470,8 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 	switch action.Type {
 	case "drop_dataset":
 		name := string(action.Body)
-		s.mu.Lock()
-		if ds, ok := s.vectors[name]; ok {
+		s.globalMu.Lock()
+		if ds, ok := s.vectors.Get(name); ok {
 ds.mu.Lock()
 recs := ds.Records
 for _, r := range recs {
@@ -487,22 +480,22 @@ r.Release()
 }
 ds.Records = nil // Clear references
 ds.mu.Unlock()
-delete(s.vectors, name)
+s.vectors.Delete(name)
 }
-		s.mu.Unlock()
+		s.globalMu.Unlock()
 		result, _ := json.Marshal(map[string]string{"status": "ok", "message": "dataset dropped"})
 		if err := stream.Send(&flight.Result{Body: result}); err != nil {
 			return err
 		}
 
 	case "get_stats":
-		s.mu.RLock()
+		s.globalMu.RLock()
 		stats := map[string]interface{}{
-			"datasets":       len(s.vectors),
+			"datasets":       s.vectors.Len(),
 			"current_memory": s.currentMemory,
 			"max_memory":     s.maxMemory,
 		}
-		s.mu.RUnlock()
+		s.globalMu.RUnlock()
 		result, _ := json.Marshal(stats)
 		if err := stream.Send(&flight.Result{Body: result}); err != nil {
 			return err
@@ -656,15 +649,24 @@ if s.ttlDuration <= 0 {
 return
 }
 
-s.mu.Lock()
-defer s.mu.Unlock()
+s.globalMu.Lock()
+defer s.globalMu.Unlock()
 
 now := time.Now()
 evictedCount := 0
 
-for name, ds := range s.vectors {
+// Collect keys to evict first (avoid deadlock - can't delete during Range)
+var toEvict []string
+s.vectors.Range(func(name string, ds *Dataset) bool {
 if now.Sub(ds.LastAccess()) > s.ttlDuration {
-// Evict
+toEvict = append(toEvict, name)
+}
+return true
+})
+
+// Now delete outside of Range
+for _, name := range toEvict {
+if ds, ok := s.vectors.Get(name); ok {
 ds.mu.Lock()
 for _, r := range ds.Records {
 s.currentMemory -= calculateRecordSize(r)
@@ -672,7 +674,7 @@ r.Release()
 }
 ds.Records = nil
 ds.mu.Unlock()
-delete(s.vectors, name)
+s.vectors.Delete(name)
 evictedCount++
 s.logger.Info("Evicted dataset due to TTL", "name", name)
 metrics.EvictionsTotal.WithLabelValues("ttl").Inc()
@@ -692,13 +694,14 @@ var oldestName string
 var oldestTime time.Time
 first := true
 
-for name, ds := range s.vectors {
+s.vectors.Range(func(name string, ds *Dataset) bool {
 if first || ds.LastAccess().Before(oldestTime) {
 oldestName = name
 oldestTime = ds.LastAccess()
 first = false
 }
-}
+return true
+})
 
 if first {
 // No datasets to evict
@@ -706,7 +709,7 @@ return fmt.Errorf("resource exhausted: memory limit exceeded and no datasets to 
 }
 
 // Evict oldest
-if ds, ok := s.vectors[oldestName]; ok {
+if ds, ok := s.vectors.Get(oldestName); ok {
 ds.mu.Lock()
 for _, r := range ds.Records {
 s.currentMemory -= calculateRecordSize(r)
@@ -714,7 +717,7 @@ r.Release()
 }
 ds.Records = nil
 ds.mu.Unlock()
-delete(s.vectors, oldestName)
+s.vectors.Delete(oldestName)
 s.logger.Info("Evicted dataset due to LRU", "name", oldestName, "freed", calculateDatasetSize(ds))
 metrics.EvictionsTotal.WithLabelValues("lru").Inc()
 }
@@ -860,9 +863,9 @@ s.checkWALSize()
 
 // checkWALSize checks if the WAL file size exceeds the limit and triggers a snapshot
 func (s *VectorStore) checkWALSize() {
-s.mu.RLock()
+s.globalMu.RLock()
 limit := s.maxWALSize
-s.mu.RUnlock()
+s.globalMu.RUnlock()
 
 if limit <= 0 {
 return
@@ -894,9 +897,9 @@ func (s *VectorStore) startIndexingWorkers(numWorkers int) {
 	for i := 0; i < numWorkers; i++ {
 		go func() {
 			for job := range s.indexChan {
-				s.mu.RLock()
-				ds, ok := s.vectors[job.DatasetName]
-				s.mu.RUnlock()
+				s.globalMu.RLock()
+				ds, ok := s.vectors.Get(job.DatasetName)
+				s.globalMu.RUnlock()
 				if !ok || ds.Index == nil {
 					continue
 				}

@@ -50,7 +50,7 @@ go s.runSnapshotTicker(snapshotInterval)
 return nil
 }
 
-func (s *VectorStore) writeToWAL(rec arrow.Record, name string) error {
+func (s *VectorStore) writeToWAL(rec arrow.RecordBatch, name string) error {
 s.walMu.Lock()
 defer s.walMu.Unlock()
 
@@ -158,11 +158,11 @@ if err != nil {
 return fmt.Errorf("wal ipc reader error: %w", err)
 }
 if r.Next() {
-rec := r.Record()
+rec := r.RecordBatch()
 rec.Retain()
 // Append to store (skipping WAL write)
 ds := s.vectors.GetOrCreate(name, func() *Dataset {
-return &Dataset{Records: []arrow.Record{}, lastAccess: time.Now().UnixNano()}
+return &Dataset{Records: []arrow.RecordBatch{}, lastAccess: time.Now().UnixNano()}
 })
 ds.mu.Lock()
 ds.Records = append(ds.Records, rec)
@@ -196,7 +196,7 @@ return fmt.Errorf("failed to create temp snapshot dir: %w", err)
 // Save each dataset to temp dir as Parquet
 s.vectors.Range(func(name string, ds *Dataset) bool {
 ds.mu.RLock()
-recs := make([]arrow.Record, len(ds.Records))
+recs := make([]arrow.RecordBatch, len(ds.Records))
 copy(recs, ds.Records)
 ds.mu.RUnlock()
 if len(recs) == 0 {
@@ -286,7 +286,7 @@ continue
 
 rec.Retain()
 ds := s.vectors.GetOrCreate(name, func() *Dataset {
-return &Dataset{Records: []arrow.Record{}, lastAccess: time.Now().UnixNano()}
+return &Dataset{Records: []arrow.RecordBatch{}, lastAccess: time.Now().UnixNano()}
 })
 ds.mu.Lock()
 ds.Records = append(ds.Records, rec)

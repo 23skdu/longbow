@@ -26,7 +26,7 @@ const bufSize = 1024 * 1024
 
 
 
-func setupServer(t *testing.T) (*VectorStore, string, func(context.Context, string) (net.Conn, error)) {
+func setupServer(t *testing.T) (store *VectorStore, dir string, dialer func(context.Context, string) (net.Conn, error)) {
 	lis := bufconn.Listen(bufSize)
 
 	// Create temp dir for persistence
@@ -54,7 +54,7 @@ func setupServer(t *testing.T) (*VectorStore, string, func(context.Context, stri
 		}
 	}()
 
-	dialer := func(ctx context.Context, address string) (net.Conn, error) {
+	dialer = func(ctx context.Context, address string) (net.Conn, error) {
 		return lis.Dial()
 	}
 

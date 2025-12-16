@@ -37,7 +37,7 @@ func setupServer(t *testing.T) (*VectorStore, string, func(context.Context, stri
 
 	mem := memory.NewGoAllocator()
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-	vs := NewVectorStore(mem, logger, 1024*1024*100, 0) // 100MB limit
+	vs := NewVectorStore(mem, logger, 1024*1024*100, 0, 0) // 100MB limit
 
 	// Init persistence
 	if err := vs.InitPersistence(tmpDir, 0); err != nil {
@@ -328,7 +328,7 @@ logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 t.Run("LRU", func(t *testing.T) {
 // Max memory small enough to force eviction
 // Create a store with 1KB limit
-store := NewVectorStore(mem, logger, 500, 0)
+store := NewVectorStore(mem, logger, 500, 0, 0)
 
 // Create a record that takes up ~400 bytes
 schema := arrow.NewSchema([]arrow.Field{
@@ -382,7 +382,7 @@ t.Error("ds2 should still be present")
 // Test TTL Eviction
 t.Run("TTL", func(t *testing.T) {
 ttl := 100 * time.Millisecond
-store := NewVectorStore(mem, logger, 0, ttl)
+store := NewVectorStore(mem, logger, 0, 0, ttl)
 
 // Add expired dataset
 store.vectors["expired"] = &Dataset{

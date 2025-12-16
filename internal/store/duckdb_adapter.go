@@ -23,7 +23,7 @@ return &DuckDBAdapter{dataPath: dataPath}
 
 // QuerySnapshot executes a SQL query against a specific dataset's snapshot
 // Returns a RecordReader and a cleanup function. The caller must call cleanup() when done.
-func (d *DuckDBAdapter) QuerySnapshot(ctx context.Context, datasetName string, query string) (array.RecordReader, func(), error) {
+func (d *DuckDBAdapter) QuerySnapshot(ctx context.Context, datasetName, query string) (array.RecordReader, func(), error) {
 snapshotPath := filepath.Join(d.dataPath, snapshotDirName, datasetName+".parquet")
 
 // Open in-memory DuckDB

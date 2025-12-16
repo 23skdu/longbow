@@ -24,6 +24,16 @@ vector data into the index memory space, significantly reducing memory overhead.
  system resolves their locations and accesses the float32 slices directly
  from the Arrow FixedSizeList arrays.
 
+## Async Indexing
+
+To minimize write latency, Longbow implements an asynchronous indexing pipeline:
+
+1. **Immediate Write**: Incoming data via  is immediately written to the Write-Ahead Log (WAL) and in-memory Arrow buffers for durability and visibility.
+2. **Job Queue**: An indexing job (containing dataset name, batch index, and row index) is pushed to a buffered channel.
+3. **Worker Pool**: A pool of background workers (scaled to ) consumes these jobs and updates the HNSW graph concurrently.
+
+This decoupling ensures that the critical write path is not blocked by the computationally expensive graph insertion operations.
+
 ## Supported Metrics
 
 Currently, Longbow supports the following distance metric:
@@ -37,17 +47,11 @@ Currently, Longbow supports the following distance metric:
 The HNSWIndex is attached to each Dataset. When records are added via
 DoPut, they should be indexed by calling Index.Add(batchIdx, rowIdx).
 
-```go
-// Example usage within store
-idx := NewHNSWIndex(dataset)
-idx.Add(0, 0) // Add first row of first batch
-```
-
 ## Performance Considerations
 
 * **Memory Efficiency**: By avoiding data duplication, Longbow reduces the RAM
-  footprint of the index by approximately 50% compared to standard HNSW
-  implementations that copy vectors.
+ footprint of the index by approximately 50% compared to standard HNSW
+ implementations that copy vectors.
 * **Concurrency**: The coder/hnsw library supports concurrent inserts and
 
  searches. Our wrapper protects the location mapping with a mutex.

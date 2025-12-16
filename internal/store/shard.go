@@ -118,15 +118,10 @@ func (sm *ShardedMap) RangeWithLock(fn func(name string, ds *Dataset, deleteFn f
 for i := 0; i < numShards; i++ {
 sm.shards[i].mu.Lock()
 for name, ds := range sm.shards[i].data {
-deleted := false
 deleteFn := func() {
 delete(sm.shards[i].data, name)
-deleted = true
 }
 fn(name, ds, deleteFn)
-if deleted {
-// Continue iteration safely
-}
 }
 sm.shards[i].mu.Unlock()
 }

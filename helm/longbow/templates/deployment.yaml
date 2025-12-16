@@ -1,4 +1,3 @@
-
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -39,11 +38,57 @@ spec:
               value: "0.0.0.0:{{ .Values.service.port }}"
             - name: LONGBOW_META_ADDR
               value: "0.0.0.0:{{ .Values.service.metaPort }}"
-            # Configure paths based on mount points
+            - name: LONGBOW_METRICS_ADDR
+              value: "0.0.0.0:{{ .Values.service.metricsPort }}"
             - name: LONGBOW_DATA_PATH
               value: {{ .Values.persistence.wal.path | quote }}
             - name: LONGBOW_SNAPSHOT_PATH
               value: {{ .Values.persistence.snapshots.path | quote }}
+            - name: LONGBOW_MAX_MEMORY
+              value: {{ .Values.config.maxMemory | quote }}
+            - name: LONGBOW_MAX_WAL_SIZE
+              value: {{ .Values.config.maxWALSize | quote }}
+            - name: LONGBOW_SNAPSHOT_INTERVAL
+              value: {{ .Values.config.snapshotInterval | quote }}
+            - name: LONGBOW_TTL
+              value: {{ .Values.config.ttl | quote }}
+            {{- if .Values.s3.enabled }}
+            - name: LONGBOW_S3_ENABLED
+              value: "true"
+            - name: LONGBOW_S3_BUCKET
+              value: {{ .Values.s3.bucket | quote }}
+            - name: LONGBOW_S3_REGION
+              value: {{ .Values.s3.region | quote }}
+            {{- if .Values.s3.endpoint }}
+            - name: LONGBOW_S3_ENDPOINT
+              value: {{ .Values.s3.endpoint | quote }}
+            {{- end }}
+            {{- if .Values.s3.prefix }}
+            - name: LONGBOW_S3_PREFIX
+              value: {{ .Values.s3.prefix | quote }}
+            {{- end }}
+            {{- if .Values.s3.usePathStyle }}
+            - name: LONGBOW_S3_USE_PATH_STYLE
+              value: "true"
+            {{- end }}
+            {{- if .Values.s3.existingSecret }}
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.s3.existingSecret }}
+                  key: {{ .Values.s3.existingSecretAccessKeyKey }}
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.s3.existingSecret }}
+                  key: {{ .Values.s3.existingSecretSecretKeyKey }}
+            {{- else if and .Values.s3.accessKeyId .Values.s3.secretAccessKey }}
+            - name: AWS_ACCESS_KEY_ID
+              value: {{ .Values.s3.accessKeyId | quote }}
+            - name: AWS_SECRET_ACCESS_KEY
+              value: {{ .Values.s3.secretAccessKey | quote }}
+            {{- end }}
+            {{- end }}
           ports:
             - name: grpc-data
               containerPort: {{ .Values.service.port }}
@@ -67,25 +112,25 @@ spec:
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
-          {{- if .Values.persistence.wal.enabled }}
+            {{- if .Values.persistence.wal.enabled }}
             - name: wal-storage
               mountPath: {{ .Values.persistence.wal.path }}
-          {{- end }}
-          {{- if .Values.persistence.snapshots.enabled }}
+            {{- end }}
+            {{- if .Values.persistence.snapshots.enabled }}
             - name: snapshots-storage
               mountPath: {{ .Values.persistence.snapshots.path }}
-          {{- end }}
+            {{- end }}
       volumes:
-      {{- if .Values.persistence.wal.enabled }}
+        {{- if .Values.persistence.wal.enabled }}
         - name: wal-storage
           persistentVolumeClaim:
             claimName: {{ include "longbow.fullname" . }}-wal
-      {{- end }}
-      {{- if .Values.persistence.snapshots.enabled }}
+        {{- end }}
+        {{- if .Values.persistence.snapshots.enabled }}
         - name: snapshots-storage
           persistentVolumeClaim:
             claimName: {{ include "longbow.fullname" . }}-snapshots
-      {{- end }}
+        {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

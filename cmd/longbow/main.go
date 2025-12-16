@@ -79,7 +79,7 @@ if checkInterval < time.Second {
 checkInterval = time.Second
 }
 vectorStore.StartEvictionTicker(checkInterval)
-t	vectorStore.StartWALCheckTicker(10 * time.Second)
+	vectorStore.StartWALCheckTicker(10 * time.Second)
 logger.Info("Eviction ticker started", "interval", checkInterval)
 }
 

@@ -35,6 +35,7 @@ The distance function accesses vector data directly from Apache Arrow buffers:
 ### Why Hybrid Search?
 
 Semantic (vector) search excels at finding conceptually similar content but can miss:
+
 - Exact keyword matches (error codes, product IDs)
 - Rare technical terms
 - Specific names or identifiers
@@ -61,6 +62,7 @@ results := idx.Search("error code", 10)
 ```
 
 Features:
+
 - **Tokenization**: Lowercase, alphanumeric splitting
 - **TF-IDF Scoring**: `score = TF * (1 + IDF)` where `TF = 1 + log(count)`
 - **Multi-term queries**: Scores aggregated across all query terms
@@ -94,16 +96,18 @@ weightedResults := hs.SearchHybridWeighted(queryVector, "error", 10, 0.7, 60)
 
 RRF combines ranked lists without requiring score normalization:
 
-```
+```text
 RRF_score(doc) = Σ 1/(k + rank(doc))
 ```
 
 Where:
+
 - `k` is a constant (default: 60) that controls rank importance
 - `rank(doc)` is the 1-based position in each result list
 
 **Example:**
-```
+
+```text
 Dense results:  [A, B, C, D]  (A is rank 1)
 Sparse results: [C, A, E, B]  (C is rank 1)
 
@@ -118,6 +122,7 @@ Fused result: [A, C, B, E, D]
 ```
 
 RRF advantages:
+
 - No score normalization needed
 - Robust to different scoring scales
 - Simple and effective in practice

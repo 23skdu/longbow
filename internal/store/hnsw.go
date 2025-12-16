@@ -39,10 +39,10 @@ h.Graph.Distance = hnsw.EuclideanDistance
 return h
 }
 
-// getVector retrieves the float32 slice for a given ID directly from Arrow memory.
+// getVector retrieves the float32 slice for a given ID.
+// It returns a copy of the vector to ensure safety against concurrent eviction.
 func (h *HNSWIndex) getVector(id VectorID) []float32 {
 h.mu.RLock()
-// Bounds check
 if int(id) >= len(h.locations) {
 h.mu.RUnlock()
 return nil
@@ -50,8 +50,12 @@ return nil
 loc := h.locations[id]
 h.mu.RUnlock()
 
-// Access the record
-if loc.BatchIdx >= len(h.dataset.Records) {
+// Lock the dataset to safely access records
+h.dataset.mu.RLock()
+defer h.dataset.mu.RUnlock()
+
+// Check if records still exist
+if h.dataset.Records == nil || loc.BatchIdx >= len(h.dataset.Records) {
 return nil
 }
 rec := h.dataset.Records[loc.BatchIdx]
@@ -76,6 +80,9 @@ return nil
 }
 
 // Get the underlying float32 array
+if len(listArr.Data().Children()) == 0 {
+return nil
+}
 values := listArr.Data().Children()[0]
 floatArr := array.NewFloat32Data(values)
 defer floatArr.Release()
@@ -85,8 +92,15 @@ width := int(listArr.DataType().(*arrow.FixedSizeListType).Len())
 start := loc.RowIdx * width
 end := start + width
 
-// Return the slice. This is zero-copy as it points to Arrow memory.
-return floatArr.Float32Values()[start:end]
+if start < 0 || end > floatArr.Len() {
+return nil
+}
+
+// Return a copy of the slice
+src := floatArr.Float32Values()[start:end]
+dst := make([]float32, len(src))
+copy(dst, src)
+return dst
 }
 
 // Add inserts a new vector location into the index and adds it to the graph.
@@ -96,14 +110,13 @@ id := VectorID(len(h.locations))
 h.locations = append(h.locations, Location{BatchIdx: batchIdx, RowIdx: rowIdx})
 h.mu.Unlock()
 
-// Get the vector slice (zero-copy)
+// Get the vector slice (copy)
 vec := h.getVector(id)
 if vec == nil {
 return nil
 }
 
 // Add to HNSW graph
-// We use MakeNode to create the node with the vector slice.
 h.Graph.Add(hnsw.MakeNode(id, vec))
 return nil
 }

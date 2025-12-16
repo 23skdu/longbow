@@ -137,7 +137,7 @@ var buf bytes.Buffer
 writer := ipc.NewWriter(&buf, ipc.WithSchema(rdr.Schema()))
 
 for rdr.Next() {
-rec := rdr.Record()
+rec := rdr.RecordBatch()
 if err := writer.Write(rec); err != nil {
 return status.Errorf(codes.Internal, "failed to write Arrow record: %v", err)
 }

@@ -76,7 +76,7 @@ defer cleanup()
 
 var count int64
 for rdr.Next() {
-rec := rdr.Record()
+rec := rdr.RecordBatch()
 count += rec.NumRows()
 }
 require.NoError(t, rdr.Err())

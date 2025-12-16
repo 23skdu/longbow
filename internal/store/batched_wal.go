@@ -16,7 +16,7 @@ import (
 
 // WALEntry represents a single entry to be written to the WAL
 type WALEntry struct {
-	Record arrow.Record
+	Record arrow.RecordBatch
 	Name   string
 }
 
@@ -99,7 +99,7 @@ func (w *WALBatcher) Start() error {
 }
 
 // Write queues a record for batched WAL writing (non-blocking)
-func (w *WALBatcher) Write(rec arrow.Record, name string) error {
+func (w *WALBatcher) Write(rec arrow.RecordBatch, name string) error {
 	if rec == nil {
 		return nil
 	}

@@ -13,7 +13,7 @@ import (
 
 // makeParquetTestRecord creates a record compatible with parquet_adapter.go
 // Uses Int32 for ID (matching VectorRecord struct) and FixedSizeList<Float32> for vectors
-func makeParquetTestRecord(mem memory.Allocator, numRows, vecDim int) arrow.Record {
+func makeParquetTestRecord(mem memory.Allocator, numRows, vecDim int) arrow.RecordBatch {
 schema := arrow.NewSchema([]arrow.Field{
 {Name: "id", Type: arrow.PrimitiveTypes.Int32},
 {Name: "vector", Type: arrow.FixedSizeListOf(int32(vecDim), arrow.PrimitiveTypes.Float32)},
@@ -31,7 +31,7 @@ vecBuilder.Append(float32(i) + float32(j)*0.01)
 }
 }
 
-return array.NewRecord(schema, []arrow.Array{idBuilder.NewArray(), listBuilder.NewArray()}, int64(numRows))
+return array.NewRecordBatch(schema, []arrow.Array{idBuilder.NewArray(), listBuilder.NewArray()}, int64(numRows))
 }
 
 // TestParquetRoundTrip_BasicIntegrity tests write -> read preserves data

@@ -34,7 +34,7 @@ type IndexJob struct {
 
 // Dataset wraps records with metadata for eviction
 type Dataset struct {
-Records    []arrow.Record
+Records    []arrow.RecordBatch
 lastAccess int64 // UnixNano
 Version    int64
 	Index *HNSWIndex
@@ -131,7 +131,7 @@ type Filter struct {
 }
 
 // applyFilter evaluates filters against stream metadata
-func (s *VectorStore) applyFilter(name string, recs []arrow.Record, filters []Filter) bool {
+func (s *VectorStore) applyFilter(name string, recs []arrow.RecordBatch, filters []Filter) bool {
 	if len(filters) == 0 {
 		return true
 	}
@@ -401,7 +401,7 @@ return NewSchemaMismatchError(name, "incoming schema does not match existing")
 	rowsWritten := 0
 
 	for r.Next() {
- 		rawRec := r.Record()
+ 		rawRec := r.RecordBatch()
 		rec, err := s.ensureTimestamp(rawRec)
 		if err != nil {
 			metrics.FlightOperationsTotal.WithLabelValues(method, "error").Inc()
@@ -428,7 +428,7 @@ return NewSchemaMismatchError(name, "incoming schema does not match existing")
 		}
 
 		ds := s.vectors.GetOrCreate(name, func() *Dataset {
-			newDs := &Dataset{Records: []arrow.Record{}, lastAccess: time.Now().UnixNano()}
+			newDs := &Dataset{Records: []arrow.RecordBatch{}, lastAccess: time.Now().UnixNano()}
 			newDs.Index = NewHNSWIndex(newDs)
 			return newDs
 		})
@@ -528,7 +528,7 @@ s.vectors.Delete(name)
 	return nil
 }
 
-func calculateRecordSize(rec arrow.Record) int64 {
+func calculateRecordSize(rec arrow.RecordBatch) int64 {
 	if rec == nil {
 		return 0
 	}
@@ -548,7 +548,7 @@ func calculateRecordSize(rec arrow.Record) int64 {
 
 
 // filterRecord applies filters using arrow/compute
-func (s *VectorStore) filterRecord(ctx context.Context, rec arrow.Record, filters []Filter) (arrow.Record, error) {
+func (s *VectorStore) filterRecord(ctx context.Context, rec arrow.RecordBatch, filters []Filter) (arrow.RecordBatch, error) {
 if len(filters) == 0 {
 rec.Retain()
 return rec, nil
@@ -743,7 +743,7 @@ return size
 }
 
 // ensureTimestamp ensures the record has a timestamp column, adding one if missing
-func (s *VectorStore) ensureTimestamp(rec arrow.Record) (arrow.Record, error) {
+func (s *VectorStore) ensureTimestamp(rec arrow.RecordBatch) (arrow.RecordBatch, error) {
 if rec.Schema().HasField("timestamp") {
 rec.Retain()
 return rec, nil
@@ -776,7 +776,7 @@ cols[i] = col
 }
 cols[len(fields)-1] = tsArr
 
-newRec := array.NewRecord(newSchema, cols, rec.NumRows())
+newRec := array.NewRecordBatch(newSchema, cols, rec.NumRows())
 return newRec, nil
 }
 
@@ -801,7 +801,7 @@ func (s *VectorStore) updateMemoryMetrics() {
 	}
 }
 
-func (s *VectorStore) updateVectorMetrics(rec arrow.Record) {
+func (s *VectorStore) updateVectorMetrics(rec arrow.RecordBatch) {
 	metrics.VectorIndexSize.Add(float64(rec.NumRows()))
 	for i, field := range rec.Schema().Fields() {
 		if field.Name == "vector" {

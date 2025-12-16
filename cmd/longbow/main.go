@@ -34,6 +34,7 @@ MaxMemory        int64         `envconfig:"MAX_MEMORY" default:"1073741824"` // 
 DataPath         string        `envconfig:"DATA_PATH" default:"./data"`
 TTL time.Duration `envconfig:"TTL" default:"0s"` // 0s means disabled
 	SnapshotInterval time.Duration `envconfig:"SNAPSHOT_INTERVAL" default:"1h"`
+	MaxWALSize int64 `envconfig:"MAX_WAL_SIZE" default:"104857600"` // 100MB default
 }
 
 func main() {
@@ -57,13 +58,14 @@ logger.Info("Starting Longbow",
 "max_memory", cfg.MaxMemory,
 "data_path", cfg.DataPath,
 "snapshot_interval", cfg.SnapshotInterval,
+		"max_wal_size", cfg.MaxWALSize,
 		"ttl", cfg.TTL)
 
 // Create memory allocator
 mem := memory.NewGoAllocator()
 
 // Initialize vector store
-vectorStore := store.NewVectorStore(mem, logger, cfg.MaxMemory, cfg.TTL)
+vectorStore := store.NewVectorStore(mem, logger, cfg.MaxMemory, cfg.MaxWALSize, cfg.TTL)
 
 
 // Start eviction ticker if TTL is enabled
@@ -77,6 +79,7 @@ if checkInterval < time.Second {
 checkInterval = time.Second
 }
 vectorStore.StartEvictionTicker(checkInterval)
+	vectorStore.StartWALCheckTicker(10 * time.Second)
 logger.Info("Eviction ticker started", "interval", checkInterval)
 }
 
@@ -161,11 +164,12 @@ continue
 }
 
 // Update dynamic parameters
-vectorStore.UpdateConfig(newCfg.MaxMemory, newCfg.SnapshotInterval)
+vectorStore.UpdateConfig(newCfg.MaxMemory, newCfg.MaxWALSize, newCfg.SnapshotInterval)
 
 logger.Info("Configuration reloaded",
 "max_memory", newCfg.MaxMemory,
-"snapshot_interval", newCfg.SnapshotInterval)
+"snapshot_interval", newCfg.SnapshotInterval,
+					"max_wal_size", newCfg.MaxWALSize)
 
 case os.Interrupt, syscall.SIGTERM:
 logger.Info("Shutting down...")

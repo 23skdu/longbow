@@ -810,3 +810,44 @@ func calculateBatchNorm(arr arrow.Array) float64 {
 	return totalNorm / float64(count)
 }
 // Trigger CI
+
+// StartWALCheckTicker starts the background WAL size check loop
+func (s *VectorStore) StartWALCheckTicker(interval time.Duration) {
+ticker := time.NewTicker(interval)
+go func() {
+for range ticker.C {
+s.checkWALSize()
+}
+}()
+}
+
+// checkWALSize checks if the WAL file size exceeds the limit and triggers a snapshot
+func (s *VectorStore) checkWALSize() {
+s.mu.RLock()
+limit := s.maxWALSize
+s.mu.RUnlock()
+
+if limit <= 0 {
+return
+}
+
+s.walMu.Lock()
+if s.walFile == nil {
+s.walMu.Unlock()
+return
+}
+stat, err := s.walFile.Stat()
+s.walMu.Unlock()
+
+if err != nil {
+s.logger.Error("Failed to stat WAL file", "error", err)
+return
+}
+
+if stat.Size() > limit {
+s.logger.Info("WAL size exceeded limit, triggering snapshot", "current_size", stat.Size(), "limit", limit)
+if err := s.Snapshot(); err != nil {
+s.logger.Error("Failed to create snapshot triggered by WAL size", "error", err)
+}
+}
+}

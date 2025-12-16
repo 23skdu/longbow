@@ -163,13 +163,15 @@ if r.Next() {
 rec := r.Record()
 rec.Retain()
 // Append to store (skipping WAL write)
-s.mu.Lock()
-if _, ok := s.vectors[name]; !ok {
-s.vectors[name] = &Dataset{Records: []arrow.Record{}, lastAccess: time.Now().UnixNano()}
-}
-s.vectors[name].Records = append(s.vectors[name].Records, rec)
+ds := s.vectors.GetOrCreate(name, func() *Dataset {
+return &Dataset{Records: []arrow.Record{}, lastAccess: time.Now().UnixNano()}
+})
+ds.mu.Lock()
+ds.Records = append(ds.Records, rec)
+ds.mu.Unlock()
+s.globalMu.Lock()
 s.currentMemory += calculateRecordSize(rec)
-s.mu.Unlock()
+s.globalMu.Unlock()
 count++
 }
 r.Release()
@@ -182,8 +184,8 @@ return nil
 func (s *VectorStore) Snapshot() error {
 start := time.Now()
 s.logger.Info("Starting Snapshot...")
-s.mu.RLock()
-defer s.mu.RUnlock()
+s.globalMu.RLock()
+defer s.globalMu.RUnlock()
 
 snapshotDir := filepath.Join(s.dataPath, snapshotDirName)
 tempDir := filepath.Join(s.dataPath, snapshotDirName+"_tmp")
@@ -198,16 +200,19 @@ return fmt.Errorf("failed to create temp snapshot dir: %w", err)
 }
 
 // Save each dataset to temp dir as Parquet
-for name, ds := range s.vectors {
-recs := ds.Records
+s.vectors.Range(func(name string, ds *Dataset) bool {
+ds.mu.RLock()
+recs := make([]arrow.Record, len(ds.Records))
+copy(recs, ds.Records)
+ds.mu.RUnlock()
 if len(recs) == 0 {
-continue
+return true
 }
 path := filepath.Join(tempDir, name+".parquet")
 f, err := os.Create(path)
 if err != nil {
 s.logger.Error("Failed to create snapshot file", "name", name, "error", err)
-continue
+return true
 }
 
 // Write all records to the parquet file
@@ -218,7 +223,8 @@ break
 }
 }
 _ = f.Close()
-}
+return true
+})
 
 // Atomic swap: Remove old, Rename temp to new
 if err := os.RemoveAll(snapshotDir); err != nil {
@@ -285,13 +291,15 @@ continue
 }
 
 rec.Retain()
-s.mu.Lock()
-if _, ok := s.vectors[name]; !ok {
-s.vectors[name] = &Dataset{Records: []arrow.Record{}, lastAccess: time.Now().UnixNano()}
-}
-s.vectors[name].Records = append(s.vectors[name].Records, rec)
+ds := s.vectors.GetOrCreate(name, func() *Dataset {
+return &Dataset{Records: []arrow.Record{}, lastAccess: time.Now().UnixNano()}
+})
+ds.mu.Lock()
+ds.Records = append(ds.Records, rec)
+ds.mu.Unlock()
+s.globalMu.Lock()
 s.currentMemory += calculateRecordSize(rec)
-s.mu.Unlock()
+s.globalMu.Unlock()
 }
 return nil
 }

@@ -342,7 +342,9 @@ s.logger.Info("Closing VectorStore...")
 
 // Stop WAL batcher first to flush pending writes
 if s.walBatcher != nil {
-s.walBatcher.Stop()
+if err := s.walBatcher.Stop(); err != nil {
+s.logger.Error("Failed to stop WAL batcher", "error", err)
+}
 s.walBatcher = nil
 }
 

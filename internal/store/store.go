@@ -70,7 +70,7 @@ ttlDuration   time.Duration
 	indexChan chan IndexJob
 }
 
-func NewVectorStore(mem memory.Allocator, logger *slog.Logger, maxMemory int64, maxWALSize int64, ttl time.Duration) *VectorStore {
+func NewVectorStore(mem memory.Allocator, logger *slog.Logger, maxMemory, maxWALSize int64, ttl time.Duration) *VectorStore {
 s := &VectorStore{
 mem:           mem,
 logger:        logger,
@@ -91,7 +91,7 @@ return s
 }
 
 // UpdateConfig updates the dynamic configuration of the store
-func (s *VectorStore) UpdateConfig(maxMemory int64, maxWALSize int64, snapshotInterval time.Duration) {
+func (s *VectorStore) UpdateConfig(maxMemory, maxWALSize int64, snapshotInterval time.Duration) {
 s.globalMu.Lock()
 s.maxMemory = maxMemory
 s.maxWALSize = maxWALSize
@@ -669,7 +669,10 @@ return true
 
 // Now delete outside of Range
 for _, name := range toEvict {
-if ds, ok := s.vectors.Get(name); ok {
+ds, ok := s.vectors.Get(name)
+if !ok {
+continue
+}
 ds.mu.Lock()
 for _, r := range ds.Records {
 s.currentMemory -= calculateRecordSize(r)
@@ -681,7 +684,6 @@ s.vectors.Delete(name)
 evictedCount++
 s.logger.Info("Evicted dataset due to TTL", "name", name)
 metrics.EvictionsTotal.WithLabelValues("ttl").Inc()
-}
 }
 if evictedCount > 0 {
 s.logger.Info("TTL eviction completed", "evicted_count", evictedCount)
@@ -746,9 +748,9 @@ return rec, nil
 // Create new schema
 fields := rec.Schema().Fields()
 tsField := arrow.Field{Name: "timestamp", Type: arrow.FixedWidthTypes.Timestamp_ns, Nullable: false}
-newFields := append(fields, tsField)
+fields = append(fields, tsField)
 meta := rec.Schema().Metadata()
-newSchema := arrow.NewSchema(newFields, &meta)
+newSchema := arrow.NewSchema(fields, &meta)
 
 // Create timestamp column
 bldr := array.NewTimestampBuilder(s.mem, arrow.FixedWidthTypes.Timestamp_ns.(*arrow.TimestampType))
@@ -764,11 +766,11 @@ tsArr := bldr.NewArray()
 defer tsArr.Release()
 
 // Build new columns
-cols := make([]arrow.Array, len(fields)+1)
+cols := make([]arrow.Array, len(fields))
 for i, col := range rec.Columns() {
 cols[i] = col
 }
-cols[len(fields)] = tsArr
+cols[len(fields)-1] = tsArr
 
 newRec := array.NewRecord(newSchema, cols, rec.NumRows())
 return newRec, nil

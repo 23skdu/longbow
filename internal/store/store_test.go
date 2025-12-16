@@ -348,28 +348,24 @@ defer rec.Release()
 // Dataset 1
 store.vectors.Set("ds1", &Dataset{Records: []arrow.Record{rec}, lastAccess: time.Now().Add(-time.Minute).UnixNano()})
 rec.Retain()
-store.currentMemory += calculateRecordSize(rec)
+store.currentMemory.Add(calculateRecordSize(rec))
 
 // Dataset 2
 store.vectors.Set("ds2", &Dataset{Records: []arrow.Record{rec}, lastAccess: time.Now().UnixNano()})
 rec.Retain()
-store.currentMemory += calculateRecordSize(rec)
+store.currentMemory.Add(calculateRecordSize(rec))
 
 // Now try to add Dataset 3 via DoPut logic (simulated)
 // We need to lock manually as we are accessing internals or use evictLRU directly
-store.globalMu.Lock()
 err := store.evictLRU(calculateRecordSize(rec))
-store.globalMu.Unlock()
 
 if err != nil {
 t.Fatalf("evictLRU failed: %v", err)
 }
 
 // Check if ds1 is gone
-store.globalMu.RLock()
 _, ok1 := store.vectors.Get("ds1")
 _, ok2 := store.vectors.Get("ds2")
-store.globalMu.RUnlock()
 
 if ok1 {
 t.Error("ds1 should have been evicted")
@@ -399,10 +395,8 @@ lastAccess: time.Now().UnixNano(),
 // Run eviction
 store.evictTTL()
 
-store.globalMu.RLock()
 _, okExpired := store.vectors.Get("expired")
 _, okFresh := store.vectors.Get("fresh")
-store.globalMu.RUnlock()
 
 if okExpired {
 t.Error("expired dataset should have been evicted")

@@ -28,9 +28,9 @@ vector data into the index memory space, significantly reducing memory overhead.
 
 To minimize write latency, Longbow implements an asynchronous indexing pipeline:
 
-1.  **Immediate Write**: Incoming data via  is immediately written to the Write-Ahead Log (WAL) and in-memory Arrow buffers for durability and visibility.
-2.  **Job Queue**: An indexing job (containing dataset name, batch index, and row index) is pushed to a buffered channel.
-3.  **Worker Pool**: A pool of background workers (scaled to ) consumes these jobs and updates the HNSW graph concurrently.
+1. **Immediate Write**: Incoming data via  is immediately written to the Write-Ahead Log (WAL) and in-memory Arrow buffers for durability and visibility.
+2. **Job Queue**: An indexing job (containing dataset name, batch index, and row index) is pushed to a buffered channel.
+3. **Worker Pool**: A pool of background workers (scaled to ) consumes these jobs and updates the HNSW graph concurrently.
 
 This decoupling ensures that the critical write path is not blocked by the computationally expensive graph insertion operations.
 
@@ -46,8 +46,6 @@ Currently, Longbow supports the following distance metric:
 
 The HNSWIndex is attached to each Dataset. When records are added via
 DoPut, they should be indexed by calling Index.Add(batchIdx, rowIdx).
-
-
 
 ## Performance Considerations
 

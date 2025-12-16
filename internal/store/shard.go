@@ -5,7 +5,7 @@ import (
 "sync"
 )
 
-const numShards = 16
+const numShards = 32
 
 // shard represents a single segment of the sharded map
 type shard struct {

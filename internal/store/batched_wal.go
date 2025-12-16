@@ -77,13 +77,13 @@ return nil
 }
 
 // Ensure data directory exists
-if err := os.MkdirAll(w.dataPath, 0755); err != nil {
+if err := os.MkdirAll(w.dataPath, 0o755); err != nil {
 return err
 }
 
 // Open WAL file
 walPath := filepath.Join(w.dataPath, walFileName)
-f, err := os.OpenFile(walPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+f, err := os.OpenFile(walPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 if err != nil {
 return err
 }

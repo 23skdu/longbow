@@ -47,7 +47,7 @@ FlushInterval: 50 * time.Millisecond,
 MaxBatchSize:  1000, // Won't trigger size-based flush
 })
 require.NoError(t, batcher.Start())
-defer batcher.Stop()
+defer func() { _ = batcher.Stop() }()
 
 // Write single record
 rec := makeTestRecord(mem, 1)
@@ -79,7 +79,7 @@ FlushInterval: 10 * time.Second, // Won't trigger time-based flush
 MaxBatchSize:  5,
 })
 require.NoError(t, batcher.Start())
-defer batcher.Stop()
+defer func() { _ = batcher.Stop() }()
 
 walPath := filepath.Join(tmpDir, walFileName)
 
@@ -174,7 +174,7 @@ require.NoError(t, batcher.Stop())
 // Phase 2: Create new VectorStore and replay WAL
 store := NewVectorStore(mem, slog.Default(), 1<<30, 0, time.Hour)
 require.NoError(t, store.InitPersistence(tmpDir, time.Hour))
-defer store.Close()
+defer func() { _ = store.Close() }()
 
 // Verify all records were replayed
 ds, ok := store.vectors.Get("replay_test")
@@ -228,7 +228,7 @@ FlushInterval: 10 * time.Millisecond,
 MaxBatchSize:  100,
 })
 require.NoError(t, batcher.Start())
-defer batcher.Stop()
+defer func() { _ = batcher.Stop() }()
 
 // Measure time for many writes
 start := time.Now()

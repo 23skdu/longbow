@@ -21,8 +21,9 @@ type WALEntry struct {
 
 // WALBatcherConfig configures the batched WAL writer
 type WALBatcherConfig struct {
-	FlushInterval time.Duration // Time between flushes (e.g., 10ms)
-	MaxBatchSize  int           // Max entries before forced flush (e.g., 100)
+	FlushInterval time.Duration     // Time between flushes (e.g., 10ms)
+	MaxBatchSize  int               // Max entries before forced flush (e.g., 100)
+	Adaptive      AdaptiveWALConfig // Adaptive batching configuration
 }
 
 // DefaultWALBatcherConfig returns sensible defaults
@@ -44,20 +45,22 @@ type WALBatcher struct {
 	entries chan WALEntry
 
 	// Internal state
-	mu        sync.Mutex
-	walFile   *os.File
-	batch     []WALEntry
-	backBatch []WALEntry // double-buffer: swap on flush to avoid allocation
-	running   bool
-	bufPool   *walBufferPool // pooled buffers for IPC serialization
-	stopCh    chan struct{}
-	doneCh    chan struct{}
-	flushErr  error
+	mu           sync.Mutex
+	walFile      *os.File
+	batch        []WALEntry
+	backBatch    []WALEntry // double-buffer: swap on flush to avoid allocation
+	running      bool
+	bufPool      *walBufferPool // pooled buffers for IPC serialization
+	stopCh       chan struct{}
+	doneCh       chan struct{}
+	flushErr     error
+	rateTracker  *WriteRateTracker           // Adaptive: tracks write rate
+	intervalCalc *AdaptiveIntervalCalculator // Adaptive: calculates intervals
 }
 
 // NewWALBatcher creates a new batched WAL writer
 func NewWALBatcher(dataPath string, config WALBatcherConfig) *WALBatcher {
-	return &WALBatcher{
+	w := &WALBatcher{
 		dataPath:  dataPath,
 		config:    config,
 		mem:       memory.NewGoAllocator(),
@@ -68,6 +71,11 @@ func NewWALBatcher(dataPath string, config WALBatcherConfig) *WALBatcher {
 		stopCh:    make(chan struct{}),
 		doneCh:    make(chan struct{}),
 	}
+	if config.Adaptive.Enabled {
+		w.rateTracker = NewWriteRateTracker(1 * time.Second)
+		w.intervalCalc = NewAdaptiveIntervalCalculator(config.Adaptive)
+	}
+	return w
 }
 
 // Start initializes the WAL file and starts the background flush goroutine
@@ -279,4 +287,21 @@ func (w *WALBatcher) FlushError() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return w.flushErr
+}
+
+// IsAdaptiveEnabled returns whether adaptive batching is enabled
+func (w *WALBatcher) IsAdaptiveEnabled() bool {
+	return w.config.Adaptive.Enabled
+}
+
+// GetCurrentInterval returns the current flush interval
+func (w *WALBatcher) GetCurrentInterval() time.Duration {
+	if !w.config.Adaptive.Enabled {
+		return w.config.FlushInterval
+	}
+	if w.rateTracker == nil || w.intervalCalc == nil {
+		return w.config.FlushInterval
+	}
+	rate := w.rateTracker.GetRate()
+	return w.intervalCalc.CalculateInterval(rate)
 }

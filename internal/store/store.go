@@ -68,6 +68,9 @@ walBatcher *WALBatcher
 snapshotReset chan time.Duration
 ttlDuration   time.Duration
 	indexChan chan IndexJob
+	// Column-based inverted index for O(1) equality filter lookups
+	columnIndex *ColumnInvertedIndex
+	indexedColumns []string // columns to index for fast equality lookups
 
 // Shutdown coordination
 shutdownState int32
@@ -85,6 +88,7 @@ ttlDuration:   ttl,
 snapshotReset: make(chan time.Duration, 1),
 		indexChan:     make(chan IndexJob, 10000),
 		stopChan:      make(chan struct{}),
+		columnIndex: NewColumnInvertedIndex(),
 	}
 	s.maxMemory.Store(maxMemory)
 	s.maxWALSize.Store(maxWALSize)
@@ -302,13 +306,13 @@ defer func() { _ = w.Close() }()
 w.SetFlightDescriptor(&flight.FlightDescriptor{Path: []string{name}})
 
 rowsSent := int64(0)
-for _, rec := range recs {
+for batchIdx, rec := range recs {
 if limit > 0 && rowsSent >= limit {
 break
 }
 
 // Apply Filtering using arrow/compute
-filteredRec, err := s.filterRecord(stream.Context(), rec, query.Filters)
+filteredRec, err := s.filterRecordOptimized(stream.Context(), name, rec, batchIdx, query.Filters)
 if err != nil {
 s.logger.Error("Filtering failed", "error", err)
 metrics.FlightOperationsTotal.WithLabelValues(method, "error").Inc()
@@ -437,6 +441,9 @@ ds.mu.Lock()
 batchIdx := len(ds.Records)
 ds.Records = append(ds.Records, rec)
 ds.mu.Unlock()
+
+// Index columns for fast equality lookups
+s.IndexRecordColumns(name, rec, batchIdx)
 
 ds.SetLastAccess(time.Now())
 

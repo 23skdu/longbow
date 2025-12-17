@@ -78,7 +78,7 @@ func TestVectorStore_Warmup(t *testing.T) {
 t.Run("warmup on empty store", func(t *testing.T) {
 logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
 store := NewVectorStore(memory.DefaultAllocator, logger, 1<<30, 0, time.Hour)
-defer store.Close()
+defer func() { _ = store.Close() }()
 
 // Should not panic
 warmupStats := store.Warmup()
@@ -91,7 +91,7 @@ t.Errorf("expected 0 datasets, got %d", warmupStats.DatasetsWarmed)
 t.Run("warmup warms all datasets with indexes", func(t *testing.T) {
 logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
 store := NewVectorStore(memory.DefaultAllocator, logger, 1<<30, 0, time.Hour)
-defer store.Close()
+defer func() { _ = store.Close() }()
 
 // Create test datasets with indexes
 for i := 0; i < 3; i++ {
@@ -117,7 +117,7 @@ t.Errorf("expected 30 total nodes warmed, got %d", warmupStats.TotalNodesWarmed)
 t.Run("warmup skips datasets without indexes", func(t *testing.T) {
 logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
 store := NewVectorStore(memory.DefaultAllocator, logger, 1<<30, 0, time.Hour)
-defer store.Close()
+defer func() { _ = store.Close() }()
 
 // Dataset with index
 ds1 := &Dataset{Name: "with_index"}
@@ -142,7 +142,7 @@ t.Errorf("expected 1 dataset skipped, got %d", warmupStats.DatasetsSkipped)
 t.Run("warmup duration is tracked", func(t *testing.T) {
 logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
 store := NewVectorStore(memory.DefaultAllocator, logger, 1<<30, 0, time.Hour)
-defer store.Close()
+defer func() { _ = store.Close() }()
 
 ds := &Dataset{Name: "test_duration"}
 ds.Index = NewHNSWIndex(ds)

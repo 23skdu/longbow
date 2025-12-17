@@ -126,7 +126,7 @@ return shutdownErr
 // drainIndexQueue closes the index channel and waits for pending jobs to complete
 func (s *VectorStore) drainIndexQueue(ctx context.Context) error {
 // Close channel to signal workers to stop accepting new jobs
-close(s.indexChan)
+s.indexQueue.Stop()
 
 // Wait for index workers to finish with timeout
 done := make(chan struct{})

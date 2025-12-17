@@ -87,3 +87,16 @@ func cosineAVX2(a, b []float32) float32     { return cosineGeneric(a, b) }
 func cosineAVX512(a, b []float32) float32   { return cosineGeneric(a, b) }
 func dotAVX2(a, b []float32) float32        { return dotGeneric(a, b) }
 func dotAVX512(a, b []float32) float32      { return dotGeneric(a, b) }
+
+func euclideanBatchNEON(query []float32, vectors [][]float32, results []float32) {
+for i, v := range vectors {
+results[i] = euclideanNEON(query, v)
+}
+}
+
+func euclideanBatchAVX2(query []float32, vectors [][]float32, results []float32) { euclideanBatchGeneric(query, vectors, results) }
+func euclideanBatchAVX512(query []float32, vectors [][]float32, results []float32) { euclideanBatchGeneric(query, vectors, results) }
+
+// AVX stubs for ARM64
+func euclideanBatchAVX2(query []float32, vectors [][]float32, results []float32) { euclideanBatchGeneric(query, vectors, results) }
+func euclideanBatchAVX512(query []float32, vectors [][]float32, results []float32) { euclideanBatchGeneric(query, vectors, results) }

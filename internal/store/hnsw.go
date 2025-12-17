@@ -476,3 +476,35 @@ res[i] = n.Key
 
 return res
 }
+
+// SearchByIDUnsafe performs k-NN search using zero-copy vector access.
+// This avoids the allocation and copy overhead of SearchByID by using
+// getVectorUnsafe with epoch protection. The vector data is only valid
+// during the search operation.
+// Returns nil if id is invalid or k <= 0.
+func (h *HNSWIndex) SearchByIDUnsafe(id VectorID, k int) []VectorID {
+if k <= 0 {
+return nil
+}
+
+// Get vector with zero-copy - epoch protection is inside getVectorUnsafe
+vec, release := h.getVectorUnsafe(id)
+if vec == nil || release == nil {
+return nil
+}
+// Ensure release is called when done with vector data
+defer release()
+
+// Perform search while vector is pinned
+neighbors := h.Graph.Search(vec, k)
+if len(neighbors) == 0 {
+return nil
+}
+
+// Allocate result slice from pool
+res := h.resultPool.get(len(neighbors))
+for i, n := range neighbors {
+res[i] = n.Key
+}
+return res
+}

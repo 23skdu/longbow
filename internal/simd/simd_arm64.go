@@ -97,6 +97,3 @@ results[i] = euclideanNEON(query, v)
 func euclideanBatchAVX2(query []float32, vectors [][]float32, results []float32) { euclideanBatchGeneric(query, vectors, results) }
 func euclideanBatchAVX512(query []float32, vectors [][]float32, results []float32) { euclideanBatchGeneric(query, vectors, results) }
 
-// AVX stubs for ARM64
-func euclideanBatchAVX2(query []float32, vectors [][]float32, results []float32) { euclideanBatchGeneric(query, vectors, results) }
-func euclideanBatchAVX512(query []float32, vectors [][]float32, results []float32) { euclideanBatchGeneric(query, vectors, results) }

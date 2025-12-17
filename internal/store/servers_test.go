@@ -342,6 +342,14 @@ vs.vectors.Set(name, &Dataset{
 Records: []arrow.RecordBatch{rec},
 })
 rec.Retain() // Keep record alive in dataset
+
+// Also update COW metadata for ListFlights
+vs.metadata.Set(name, DatasetMetadata{
+Name:       name,
+Schema:     rec.Schema(),
+TotalRows:  rec.NumRows(),
+BatchCount: 1,
+})
 }
 
 // TestMetaServerListFlights tests listing available datasets

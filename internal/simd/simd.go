@@ -14,13 +14,26 @@ HasAVX512 bool
 HasNEON   bool
 }
 
+// Function pointer types for dispatch
+type (
+distanceFunc      func(a, b []float32) float32
+distanceBatchFunc func(query []float32, vectors [][]float32, results []float32)
+)
+
 var (
-features     CPUFeatures
+features       CPUFeatures
 implementation string
+
+// Function pointers initialized at startup - eliminates switch overhead in hot path
+euclideanDistanceImpl      distanceFunc
+cosineDistanceImpl         distanceFunc
+dotProductImpl             distanceFunc
+euclideanDistanceBatchImpl distanceBatchFunc
 )
 
 func init() {
 detectCPU()
+initializeDispatch()
 }
 
 func detectCPU() {
@@ -44,6 +57,33 @@ implementation = "generic"
 }
 }
 
+// initializeDispatch sets function pointers based on detected CPU features.
+// This is called once at startup, removing branch overhead from hot paths.
+func initializeDispatch() {
+switch implementation {
+case "avx512":
+euclideanDistanceImpl = euclideanAVX512
+cosineDistanceImpl = cosineAVX512
+dotProductImpl = dotAVX512
+euclideanDistanceBatchImpl = euclideanBatchAVX512
+case "avx2":
+euclideanDistanceImpl = euclideanAVX2
+cosineDistanceImpl = cosineAVX2
+dotProductImpl = dotAVX2
+euclideanDistanceBatchImpl = euclideanBatchAVX2
+case "neon":
+euclideanDistanceImpl = euclideanNEON
+cosineDistanceImpl = cosineNEON
+dotProductImpl = dotNEON
+euclideanDistanceBatchImpl = euclideanBatchNEON
+default:
+euclideanDistanceImpl = euclideanGeneric
+cosineDistanceImpl = cosineGeneric
+dotProductImpl = dotGeneric
+euclideanDistanceBatchImpl = euclideanBatchGeneric
+}
+}
+
 // GetCPUFeatures returns detected CPU SIMD capabilities
 func GetCPUFeatures() CPUFeatures {
 return features
@@ -54,7 +94,8 @@ func GetImplementation() string {
 return implementation
 }
 
-// EuclideanDistance calculates the Euclidean distance between two vectors
+// EuclideanDistance calculates the Euclidean distance between two vectors.
+// Uses pre-selected implementation via function pointer (no switch overhead).
 func EuclideanDistance(a, b []float32) float32 {
 if len(a) != len(b) {
 panic("simd: vector length mismatch")
@@ -62,20 +103,11 @@ panic("simd: vector length mismatch")
 if len(a) == 0 {
 return 0
 }
-
-switch implementation {
-case "avx512":
-return euclideanAVX512(a, b)
-case "avx2":
-return euclideanAVX2(a, b)
-case "neon":
-return euclideanNEON(a, b)
-default:
-return euclideanGeneric(a, b)
-}
+return euclideanDistanceImpl(a, b)
 }
 
-// CosineDistance calculates the cosine distance (1 - similarity) between two vectors
+// CosineDistance calculates the cosine distance (1 - similarity) between two vectors.
+// Uses pre-selected implementation via function pointer (no switch overhead).
 func CosineDistance(a, b []float32) float32 {
 if len(a) != len(b) {
 panic("simd: vector length mismatch")
@@ -83,20 +115,11 @@ panic("simd: vector length mismatch")
 if len(a) == 0 {
 return 1.0
 }
-
-switch implementation {
-case "avx512":
-return cosineAVX512(a, b)
-case "avx2":
-return cosineAVX2(a, b)
-case "neon":
-return cosineNEON(a, b)
-default:
-return cosineGeneric(a, b)
-}
+return cosineDistanceImpl(a, b)
 }
 
-// DotProduct calculates the dot product of two vectors
+// DotProduct calculates the dot product of two vectors.
+// Uses pre-selected implementation via function pointer (no switch overhead).
 func DotProduct(a, b []float32) float32 {
 if len(a) != len(b) {
 panic("simd: vector length mismatch")
@@ -104,17 +127,7 @@ panic("simd: vector length mismatch")
 if len(a) == 0 {
 return 0
 }
-
-switch implementation {
-case "avx512":
-return dotAVX512(a, b)
-case "avx2":
-return dotAVX2(a, b)
-case "neon":
-return dotNEON(a, b)
-default:
-return dotGeneric(a, b)
-}
+return dotProductImpl(a, b)
 }
 
 // Generic implementations (fallback)
@@ -149,8 +162,9 @@ sum += a[i] * b[i]
 return sum
 }
 
-// EuclideanDistanceBatch calculates the Euclidean distance between a query vector and multiple candidate vectors
-// This batch version reduces function call overhead and allows for CPU-specific optimizations
+// EuclideanDistanceBatch calculates the Euclidean distance between a query vector and multiple candidate vectors.
+// This batch version reduces function call overhead and allows for CPU-specific optimizations.
+// Uses pre-selected implementation via function pointer (no switch overhead).
 func EuclideanDistanceBatch(query []float32, vectors [][]float32, results []float32) {
 if len(vectors) != len(results) {
 panic("simd: vectors and results length mismatch")
@@ -158,17 +172,7 @@ panic("simd: vectors and results length mismatch")
 if len(vectors) == 0 {
 return
 }
-
-switch implementation {
-case "avx512":
-euclideanBatchAVX512(query, vectors, results)
-case "avx2":
-euclideanBatchAVX2(query, vectors, results)
-case "neon":
-euclideanBatchNEON(query, vectors, results)
-default:
-euclideanBatchGeneric(query, vectors, results)
-}
+euclideanDistanceBatchImpl(query, vectors, results)
 }
 
 // euclideanBatchGeneric is the fallback implementation

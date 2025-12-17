@@ -35,7 +35,7 @@ f2, err := os.Open(path)
 if err != nil {
 t.Fatalf("Failed to open file: %v", err)
 }
-defer f2.Close()
+defer func() { _ = f2.Close() }()
 
 stat, _ := f2.Stat()
 pf, err := parquet.OpenFile(f2, stat.Size())

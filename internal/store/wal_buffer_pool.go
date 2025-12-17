@@ -3,6 +3,8 @@ package store
 import (
 "bytes"
 "sync"
+
+"github.com/23skdu/longbow/internal/metrics"
 )
 
 // walBufferPool pools bytes.Buffer instances to reduce allocation
@@ -25,11 +27,13 @@ return new(bytes.Buffer)
 // Get retrieves a buffer from the pool.
 // The buffer is guaranteed to be empty (Reset called).
 func (p *walBufferPool) Get() *bytes.Buffer {
+metrics.WalBufferPoolOperations.WithLabelValues("get").Inc()
 return p.pool.Get().(*bytes.Buffer)
 }
 
 // Put returns a buffer to the pool after resetting it.
 func (p *walBufferPool) Put(buf *bytes.Buffer) {
+metrics.WalBufferPoolOperations.WithLabelValues("put").Inc()
 buf.Reset()
 p.pool.Put(buf)
 }

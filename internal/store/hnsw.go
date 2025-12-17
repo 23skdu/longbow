@@ -442,3 +442,37 @@ func (h *HNSWIndex) UnregisterReader() {
 h.activeReaders.Add(-1)
 metrics.HnswActiveReaders.WithLabelValues(h.dataset.Name).Dec()
 }
+
+// SearchWithArena performs k-NN search using the provided arena for allocations.
+// If arena is nil or exhausted, falls back to heap allocation.
+// The returned slice is allocated from the arena and should NOT be returned to resultPool.
+// Call arena.Reset() after processing results to reclaim memory for next request.
+func (h *HNSWIndex) SearchWithArena(query []float32, k int, arena *SearchArena) []VectorID {
+if len(query) == 0 || k <= 0 {
+return nil
+}
+
+// Perform the search using hnsw library
+neighbors := h.Graph.Search(query, k)
+if len(neighbors) == 0 {
+return nil
+}
+
+// Try to allocate result slice from arena
+var res []VectorID
+if arena != nil {
+res = arena.AllocVectorIDSlice(len(neighbors))
+}
+
+// Fall back to heap allocation if arena unavailable or exhausted
+if res == nil {
+res = make([]VectorID, len(neighbors))
+}
+
+// Copy results
+for i, n := range neighbors {
+res[i] = n.Key
+}
+
+return res
+}

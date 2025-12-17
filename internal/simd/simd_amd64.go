@@ -238,3 +238,84 @@ func dot8AVX2(a, b unsafe.Pointer) float32
 
 //go:noescape
 func dot16AVX512(a, b unsafe.Pointer) float32
+
+// AVX2 optimized Batch Euclidean distance
+func euclideanBatchAVX2(query []float32, vectors [][]float32, results []float32) {
+if !features.HasAVX2 {
+euclideanBatchGeneric(query, vectors, results)
+return
+}
+
+for idx, v := range vectors {
+// Inline the AVX2 logic to avoid function call overhead
+if len(query) != len(v) {
+panic("simd: vector length mismatch")
+}
+
+var sum float32
+n := len(query)
+i := 0
+
+// Process 8 elements at a time
+for ; i <= n-8; i += 8 {
+sum += euclidean8AVX2(
+unsafe.Pointer(&query[i]),
+unsafe.Pointer(&v[i]),
+)
+}
+
+// Handle remaining elements
+for ; i < n; i++ {
+d := query[i] - v[i]
+sum += d * d
+}
+results[idx] = float32(math.Sqrt(float64(sum)))
+}
+}
+
+// AVX512 optimized Batch Euclidean distance
+func euclideanBatchAVX512(query []float32, vectors [][]float32, results []float32) {
+if !features.HasAVX512 {
+euclideanBatchAVX2(query, vectors, results)
+return
+}
+
+for idx, v := range vectors {
+// Inline the AVX512 logic
+if len(query) != len(v) {
+panic("simd: vector length mismatch")
+}
+
+var sum float32
+n := len(query)
+i := 0
+
+// Process 16 elements at a time
+for ; i <= n-16; i += 16 {
+sum += euclidean16AVX512(
+unsafe.Pointer(&query[i]),
+unsafe.Pointer(&v[i]),
+)
+}
+
+// Fall back to AVX2 for remaining 8+ elements
+for ; i <= n-8; i += 8 {
+sum += euclidean8AVX2(
+unsafe.Pointer(&query[i]),
+unsafe.Pointer(&v[i]),
+)
+}
+
+// Handle remaining elements
+for ; i < n; i++ {
+d := query[i] - v[i]
+sum += d * d
+}
+results[idx] = float32(math.Sqrt(float64(sum)))
+}
+}
+
+// NEON stub for AMD64
+func euclideanBatchNEON(query []float32, vectors [][]float32, results []float32) {
+euclideanBatchGeneric(query, vectors, results)
+}

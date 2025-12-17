@@ -148,3 +148,32 @@ sum += a[i] * b[i]
 }
 return sum
 }
+
+// EuclideanDistanceBatch calculates the Euclidean distance between a query vector and multiple candidate vectors
+// This batch version reduces function call overhead and allows for CPU-specific optimizations
+func EuclideanDistanceBatch(query []float32, vectors [][]float32, results []float32) {
+if len(vectors) != len(results) {
+panic("simd: vectors and results length mismatch")
+}
+if len(vectors) == 0 {
+return
+}
+
+switch implementation {
+case "avx512":
+euclideanBatchAVX512(query, vectors, results)
+case "avx2":
+euclideanBatchAVX2(query, vectors, results)
+case "neon":
+euclideanBatchNEON(query, vectors, results)
+default:
+euclideanBatchGeneric(query, vectors, results)
+}
+}
+
+// euclideanBatchGeneric is the fallback implementation
+func euclideanBatchGeneric(query []float32, vectors [][]float32, results []float32) {
+for i, v := range vectors {
+results[i] = euclideanGeneric(query, v)
+}
+}

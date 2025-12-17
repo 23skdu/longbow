@@ -18,15 +18,21 @@ assert.Greater(t, count, 0, "Expected shard lock metrics to be recorded")
 }
 
 func TestObservability_WALBufferPool(t *testing.T) {
+// Capture counter values BEFORE operations to handle global metric pollution
+// from other tests (counters are cumulative and can't be reset)
+getBefore := testutil.ToFloat64(metrics.WalBufferPoolOperations.WithLabelValues("get"))
+putBefore := testutil.ToFloat64(metrics.WalBufferPoolOperations.WithLabelValues("put"))
+
 pool := newWALBufferPool()
 buf := pool.Get()
 pool.Put(buf)
 
-val := testutil.ToFloat64(metrics.WalBufferPoolOperations.WithLabelValues("get"))
-assert.Equal(t, 1.0, val, "Expected 1 Get operation")
+// Verify delta (increment of 1) rather than absolute value
+getAfter := testutil.ToFloat64(metrics.WalBufferPoolOperations.WithLabelValues("get"))
+assert.Equal(t, 1.0, getAfter-getBefore, "Expected 1 Get operation (delta)")
 
-val = testutil.ToFloat64(metrics.WalBufferPoolOperations.WithLabelValues("put"))
-assert.Equal(t, 1.0, val, "Expected 1 Put operation")
+putAfter := testutil.ToFloat64(metrics.WalBufferPoolOperations.WithLabelValues("put"))
+assert.Equal(t, 1.0, putAfter-putBefore, "Expected 1 Put operation (delta)")
 }
 
 func TestObservability_HNSWZeroCopy(t *testing.T) {

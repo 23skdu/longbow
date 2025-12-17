@@ -1,15 +1,15 @@
 package store
 
 import (
-	"sync"
-
+	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/simd"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/coder/hnsw"
+	"sync"
 	"sync/atomic"
-
-	"github.com/23skdu/longbow/internal/simd"
 )
+
 
 // VectorID represents a unique identifier for a vector in the index.
 // It maps to a specific location (Batch, Row) in the Arrow buffers.
@@ -340,4 +340,22 @@ func (h *HNSWIndex) SearchByID(id VectorID, k int) []VectorID {
 // Callers should call this when done with SearchByID results.
 func (h *HNSWIndex) PutResults(results []VectorID) {
 	h.resultPool.put(results)
+}
+
+
+
+
+
+
+
+// RegisterReader increments the active reader count for zero-copy safety
+func (h *HNSWIndex) RegisterReader() {
+h.activeReaders.Add(1)
+metrics.HnswActiveReaders.WithLabelValues(h.dataset.Name).Inc()
+}
+
+// UnregisterReader decrements the active reader count
+func (h *HNSWIndex) UnregisterReader() {
+h.activeReaders.Add(-1)
+metrics.HnswActiveReaders.WithLabelValues(h.dataset.Name).Dec()
 }

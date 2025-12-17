@@ -3,6 +3,9 @@ package store
 import (
 "hash/fnv"
 "sync"
+"time"
+
+"github.com/23skdu/longbow/internal/metrics"
 )
 
 const numShards = 32
@@ -39,7 +42,9 @@ return sm.shards[h.Sum32()%numShards]
 // Get retrieves a dataset by name (read lock on single shard)
 func (sm *ShardedMap) Get(name string) (*Dataset, bool) {
 s := sm.getShard(name)
+start := time.Now()
 s.mu.RLock()
+metrics.ShardLockWaitDuration.Observe(time.Since(start).Seconds())
 defer s.mu.RUnlock()
 ds, ok := s.data[name]
 return ds, ok
@@ -48,7 +53,9 @@ return ds, ok
 // Set stores a dataset (write lock on single shard)
 func (sm *ShardedMap) Set(name string, ds *Dataset) {
 s := sm.getShard(name)
+start := time.Now()
 s.mu.Lock()
+metrics.ShardLockWaitDuration.Observe(time.Since(start).Seconds())
 defer s.mu.Unlock()
 s.data[name] = ds
 }
@@ -56,7 +63,9 @@ s.data[name] = ds
 // Delete removes a dataset (write lock on single shard)
 func (sm *ShardedMap) Delete(name string) {
 s := sm.getShard(name)
+start := time.Now()
 s.mu.Lock()
+metrics.ShardLockWaitDuration.Observe(time.Since(start).Seconds())
 defer s.mu.Unlock()
 delete(s.data, name)
 }
@@ -66,7 +75,9 @@ func (sm *ShardedMap) GetOrCreate(name string, create func() *Dataset) *Dataset 
 s := sm.getShard(name)
 
 // Try read first
+start := time.Now()
 s.mu.RLock()
+metrics.ShardLockWaitDuration.Observe(time.Since(start).Seconds())
 if ds, ok := s.data[name]; ok {
 s.mu.RUnlock()
 return ds
@@ -74,7 +85,9 @@ return ds
 s.mu.RUnlock()
 
 // Upgrade to write lock
+start = time.Now()
 s.mu.Lock()
+metrics.ShardLockWaitDuration.Observe(time.Since(start).Seconds())
 defer s.mu.Unlock()
 
 // Double-check after acquiring write lock
@@ -143,15 +156,19 @@ return keys
 // WithLock executes fn with write lock on the shard containing name
 func (sm *ShardedMap) WithLock(name string, fn func(data map[string]*Dataset)) {
 s := sm.getShard(name)
+start := time.Now()
 s.mu.Lock()
+metrics.ShardLockWaitDuration.Observe(time.Since(start).Seconds())
 defer s.mu.Unlock()
 fn(s.data)
 }
 
-// WithRLock executes fn with read lock on the shard containing name  
+// WithRLock executes fn with read lock on the shard containing name
 func (sm *ShardedMap) WithRLock(name string, fn func(data map[string]*Dataset)) {
 s := sm.getShard(name)
+start := time.Now()
 s.mu.RLock()
+metrics.ShardLockWaitDuration.Observe(time.Since(start).Seconds())
 defer s.mu.RUnlock()
 fn(s.data)
 }

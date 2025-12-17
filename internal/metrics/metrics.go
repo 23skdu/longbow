@@ -120,3 +120,32 @@ Name: "longbow_memory_fragmentation_ratio",
 Help: "Ratio of system memory reserved vs used (fragmentation indicator)",
 },
 )
+
+// ShardLockWaitDuration measures time spent waiting for shard locks
+var ShardLockWaitDuration = promauto.NewHistogram(
+prometheus.HistogramOpts{
+Name: "longbow_shard_lock_wait_seconds",
+Help: "Time spent waiting to acquire shard locks",
+Buckets: []float64{0.0001, 0.001, 0.005, 0.01, 0.05, 0.1},
+},
+)
+
+// WalBufferPoolOperations counts buffer pool Get/Put operations
+var WalBufferPoolOperations = promauto.NewCounterVec(
+prometheus.CounterOpts{
+Name: "longbow_wal_buffer_pool_operations_total",
+Help: "Total number of WAL buffer pool operations",
+},
+[]string{"operation"},
+)
+
+// HnswActiveReaders tracks the number of active zero-copy readers per dataset
+var HnswActiveReaders = promauto.NewGaugeVec(
+prometheus.GaugeOpts{
+Name: "longbow_hnsw_active_readers",
+Help: "Number of active zero-copy readers per dataset",
+},
+[]string{"dataset"},
+)
+
+// ShardLockWaitDuration measures time spent waiting for shard locks

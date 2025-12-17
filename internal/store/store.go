@@ -39,6 +39,7 @@ lastAccess int64 // UnixNano
 Version    int64
 	Index *HNSWIndex
 mu sync.RWMutex
+	Name string
 }
 
 func (d *Dataset) LastAccess() time.Time {

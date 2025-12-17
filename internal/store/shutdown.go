@@ -37,7 +37,7 @@ close(s.stopChan)
 s.logger.Info("Draining index queue...")
 if err := s.drainIndexQueue(ctx); err != nil {
 s.logger.Error("Failed to drain index queue", "error", err)
-shutdownErr = fmt.Errorf("drain index queue: %w", err)
+shutdownErr = NewShutdownError("drain", "index_queue", err)
 } else {
 s.logger.Info("Index queue drained successfully")
 }
@@ -48,7 +48,7 @@ if s.walBatcher != nil {
 if err := s.walBatcher.Stop(); err != nil {
 s.logger.Error("Failed to stop WAL batcher", "error", err)
 if shutdownErr == nil {
-shutdownErr = fmt.Errorf("stop WAL batcher: %w", err)
+shutdownErr = NewShutdownError("stop", "WAL_batcher", err)
 }
 } else {
 s.logger.Info("WAL batcher stopped successfully")
@@ -86,7 +86,7 @@ s.logger.Error("Failed to sync WAL", "error", err)
 if err := s.walFile.Close(); err != nil {
 s.logger.Error("Failed to close WAL", "error", err)
 if shutdownErr == nil {
-shutdownErr = fmt.Errorf("close WAL: %w", err)
+shutdownErr = NewShutdownError("close", "WAL", err)
 }
 } else {
 s.logger.Info("WAL file closed successfully")
@@ -154,10 +154,10 @@ walPath := filepath.Join(s.dataPath, "wal.bin")
 // If WAL file is open, close it first
 if s.walFile != nil {
 if err := s.walFile.Sync(); err != nil {
-return fmt.Errorf("sync before truncate: %w", err)
+return NewShutdownError("truncate", "WAL", fmt.Errorf("sync: %w", err))
 }
 if err := s.walFile.Close(); err != nil {
-return fmt.Errorf("close before truncate: %w", err)
+return NewShutdownError("truncate", "WAL", fmt.Errorf("close: %w", err))
 }
 s.walFile = nil
 }
@@ -165,10 +165,10 @@ s.walFile = nil
 // Truncate by creating empty file
 f, err := os.OpenFile(walPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
 if err != nil {
-return fmt.Errorf("truncate WAL: %w", err)
+return NewShutdownError("truncate", "WAL", err)
 }
 if err := f.Close(); err != nil {
-return fmt.Errorf("close truncated WAL: %w", err)
+return NewShutdownError("truncate", "WAL", fmt.Errorf("close after truncate: %w", err))
 }
 
 s.logger.Info("WAL truncated", "path", walPath)

@@ -2,6 +2,7 @@ package store
 
 import (
 "errors"
+	"time"
 "fmt"
 
 "google.golang.org/grpc/codes"
@@ -220,4 +221,157 @@ if result == nil && err != nil {
 panic(fmt.Sprintf("failed to convert error to gRPC status: %v", err))
 }
 return result
+}
+
+// =============================================================================
+// Structured Error Types with Rich Context
+// =============================================================================
+
+// WALError provides rich context for Write-Ahead Log operations.
+type WALError struct {
+Op        string    // Operation: "write", "read", "flush", "truncate"
+Path      string    // WAL file path
+Offset    int64     // Byte offset where error occurred
+Cause     error     // Underlying error
+Timestamp time.Time // When the error occurred
+}
+
+func (e *WALError) Error() string {
+if e.Cause != nil {
+return fmt.Sprintf("WAL %s failed at %s (offset %d): %v", e.Op, e.Path, e.Offset, e.Cause)
+}
+return fmt.Sprintf("WAL %s failed at %s (offset %d)", e.Op, e.Path, e.Offset)
+}
+
+func (e *WALError) Unwrap() error {
+return e.Cause
+}
+
+// NewWALError creates a WAL error with timestamp.
+func NewWALError(op, path string, offset int64, cause error) error {
+return &WALError{
+Op:        op,
+Path:      path,
+Offset:    offset,
+Cause:     cause,
+Timestamp: time.Now(),
+}
+}
+
+// S3Error provides rich context for S3 backend operations.
+type S3Error struct {
+Op        string    // Operation: "upload", "download", "list", "delete"
+Bucket    string    // S3 bucket name
+Key       string    // S3 object key
+Cause     error     // Underlying error
+Timestamp time.Time // When the error occurred
+}
+
+func (e *S3Error) Error() string {
+if e.Cause != nil {
+return fmt.Sprintf("S3 %s failed for s3://%s/%s: %v", e.Op, e.Bucket, e.Key, e.Cause)
+}
+return fmt.Sprintf("S3 %s failed for s3://%s/%s", e.Op, e.Bucket, e.Key)
+}
+
+func (e *S3Error) Unwrap() error {
+return e.Cause
+}
+
+// NewS3Error creates an S3 error with timestamp.
+func NewS3Error(op, bucket, key string, cause error) error {
+return &S3Error{
+Op:        op,
+Bucket:    bucket,
+Key:       key,
+Cause:     cause,
+Timestamp: time.Now(),
+}
+}
+
+// ReplicationError provides rich context for replication operations.
+type ReplicationError struct {
+Op        string    // Operation: "sync", "replicate", "connect"
+PeerAddr  string    // Peer address
+Dataset   string    // Dataset being replicated
+Cause     error     // Underlying error
+Timestamp time.Time // When the error occurred
+}
+
+func (e *ReplicationError) Error() string {
+if e.Dataset != "" {
+return fmt.Sprintf("replication %s to %s for dataset %s: %v", e.Op, e.PeerAddr, e.Dataset, e.Cause)
+}
+return fmt.Sprintf("replication %s to %s: %v", e.Op, e.PeerAddr, e.Cause)
+}
+
+func (e *ReplicationError) Unwrap() error {
+return e.Cause
+}
+
+// NewReplicationError creates a replication error with timestamp.
+func NewReplicationError(op, peerAddr, dataset string, cause error) error {
+return &ReplicationError{
+Op:        op,
+PeerAddr:  peerAddr,
+Dataset:   dataset,
+Cause:     cause,
+Timestamp: time.Now(),
+}
+}
+
+// ConfigError provides rich context for configuration validation errors.
+type ConfigError struct {
+Component string    // Component: "NUMA", "S3Backend", "Replication"
+Field     string    // Configuration field name
+Value     string    // Invalid value (as string)
+Message   string    // Validation error message
+Timestamp time.Time // When the error occurred
+}
+
+func (e *ConfigError) Error() string {
+if e.Value != "" {
+return fmt.Sprintf("config error in %s.%s (value=%q): %s", e.Component, e.Field, e.Value, e.Message)
+}
+return fmt.Sprintf("config error in %s.%s: %s", e.Component, e.Field, e.Message)
+}
+
+// NewConfigError creates a configuration error with timestamp.
+func NewConfigError(component, field, value, message string) error {
+return &ConfigError{
+Component: component,
+Field:     field,
+Value:     value,
+Message:   message,
+Timestamp: time.Now(),
+}
+}
+
+// ShutdownError provides rich context for graceful shutdown operations.
+type ShutdownError struct {
+Phase     string    // Phase: "drain", "flush", "close", "truncate"
+Component string    // Component: "WAL", "index_queue", "connections"
+Cause     error     // Underlying error
+Timestamp time.Time // When the error occurred
+}
+
+func (e *ShutdownError) Error() string {
+if e.Cause != nil {
+return fmt.Sprintf("shutdown %s phase failed for %s: %v", e.Phase, e.Component, e.Cause)
+}
+return fmt.Sprintf("shutdown %s phase failed for %s", e.Phase, e.Component)
+}
+
+func (e *ShutdownError) Unwrap() error {
+return e.Cause
+}
+
+// NewShutdownError creates a shutdown error with timestamp.
+func NewShutdownError(phase, component string, cause error) error {
+return &ShutdownError{
+Phase:     phase,
+Component: component,
+Cause:     cause,
+Timestamp: time.Now(),
+}
 }

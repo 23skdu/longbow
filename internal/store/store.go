@@ -71,6 +71,7 @@ ttlDuration   time.Duration
 	// Column-based inverted index for O(1) equality filter lookups
 	columnIndex *ColumnInvertedIndex
 	indexedColumns []string // columns to index for fast equality lookups
+	metadata *COWMetadataMap // COW metadata map for lock-free ListFlights
 
 // Shutdown coordination
 shutdownState int32
@@ -89,6 +90,7 @@ snapshotReset: make(chan time.Duration, 1),
 		indexQueue: NewIndexJobQueue(DefaultIndexJobQueueConfig()),
 		stopChan:      make(chan struct{}),
 		columnIndex: NewColumnInvertedIndex(),
+metadata: NewCOWMetadataMap(),
 	}
 	s.maxMemory.Store(maxMemory)
 	s.maxWALSize.Store(maxWALSize)
@@ -135,65 +137,63 @@ type Filter struct {
 	Value    string `json:"value"`
 }
 
-// applyFilter evaluates filters against stream metadata
-func (s *VectorStore) applyFilter(name string, recs []arrow.RecordBatch, filters []Filter) bool {
-	if len(filters) == 0 {
-		return true
-	}
-
-	for _, f := range filters {
-		switch f.Field {
-		case "name":
-			switch f.Operator {
-			case "=":
-				if name != f.Value {
-					return false
-				}
-			case "!=":
-				if name == f.Value {
-					return false
-				}
-			case "contains":
-				if !strings.Contains(name, f.Value) {
-					return false
-				}
-			}
-		case "rows":
-			// Calculate total rows
-			totalRows := int64(0)
-			for _, r := range recs {
-				totalRows += r.NumRows()
-			}
-			val, err := strconv.ParseInt(f.Value, 10, 64)
-			if err != nil {
-				continue // Skip invalid filter values
-			}
-			switch f.Operator {
-			case "=":
-				if totalRows != val {
-					return false
-				}
-			case ">":
-				if totalRows <= val {
-					return false
-				}
-			case "<":
-				if totalRows >= val {
-					return false
-				}
-			case ">=":
-				if totalRows < val {
-					return false
-				}
-			case "<=":
-				if totalRows > val {
-					return false
-				}
-			}
-		}
-	}
-	return true
+// applyMetadataFilter evaluates filters using COW metadata (lock-free)
+func (s *VectorStore) applyMetadataFilter(name string, meta DatasetMetadata, filters []Filter) bool {
+if len(filters) == 0 {
+return true
 }
+
+for _, f := range filters {
+switch f.Field {
+case "name":
+switch f.Operator {
+case "=":
+if name != f.Value {
+return false
+}
+case "!=":
+if name == f.Value {
+return false
+}
+case "contains":
+if !strings.Contains(name, f.Value) {
+return false
+}
+}
+case "rows":
+// Use pre-calculated TotalRows from metadata - O(1)
+totalRows := meta.TotalRows
+val, err := strconv.ParseInt(f.Value, 10, 64)
+if err != nil {
+continue // Skip invalid filter values
+}
+switch f.Operator {
+case "=":
+if totalRows != val {
+return false
+}
+case ">":
+if totalRows <= val {
+return false
+}
+case "<":
+if totalRows >= val {
+return false
+}
+case ">=":
+if totalRows < val {
+return false
+}
+case "<=":
+if totalRows > val {
+return false
+}
+}
+}
+}
+return true
+}
+
 
 // ListFlights returns available streams
 func (s *VectorStore) ListFlights(c *flight.Criteria, stream flight.FlightService_ListFlightsServer) error {
@@ -206,27 +206,23 @@ s.logger.Warn("Failed to parse criteria expression", "error", err)
 }
 }
 
-// Optimization: Collect info under lock, send outside lock
-// This prevents slow clients from blocking write operations (DoPut)
-var infos []*flight.FlightInfo
+// Lock-free iteration using COW metadata snapshot
+// This eliminates per-dataset RLock contention entirely
+metaSnapshot := s.metadata.Snapshot()
+infos := make([]*flight.FlightInfo, 0, len(metaSnapshot))
+for name, meta := range metaSnapshot {
+	if !s.applyMetadataFilter(name, meta, query.Filters) {
+		continue
+	}
 
-s.vectors.Range(func(name string, ds *Dataset) bool {
-		ds.mu.RLock()
-		recs := ds.Records
-		ds.mu.RUnlock()
-if !s.applyFilter(name, recs, query.Filters) {
-return true // continue
+	info := &flight.FlightInfo{
+		FlightDescriptor: &flight.FlightDescriptor{
+			Type: flight.DescriptorPATH,
+			Path: []string{name},
+		},
+	}
+	infos = append(infos, info)
 }
-
-info := &flight.FlightInfo{
-FlightDescriptor: &flight.FlightDescriptor{
-Type: flight.DescriptorPATH,
-Path: []string{name},
-},
-}
-infos = append(infos, info)
-return true // continue
-})
 
 // Send stream messages without holding the lock
 for _, info := range infos {
@@ -428,6 +424,18 @@ ds.mu.Lock()
 batchIdx := len(ds.Records)
 ds.Records = append(ds.Records, rec)
 ds.mu.Unlock()
+
+// Update COW metadata for lock-free ListFlights
+if _, exists := s.metadata.Get(name); !exists {
+s.metadata.Set(name, DatasetMetadata{
+Name:       name,
+Schema:     rec.Schema(),
+TotalRows:  rec.NumRows(),
+BatchCount: 1,
+})
+} else {
+s.metadata.IncrementStats(name, rec.NumRows(), 1)
+}
 
 // Index columns for fast equality lookups
 s.IndexRecordColumns(name, rec, batchIdx)

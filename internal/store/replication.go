@@ -206,7 +206,7 @@ func (m *ReplicationManager) AddPeer(addr string) error {
 	defer m.mu.Unlock()
 
 	if _, exists := m.peers[addr]; exists {
-		return fmt.Errorf("peer %s already exists", addr)
+		return NewReplicationError("add_peer", addr, "", fmt.Errorf("peer already exists"))
 	}
 
 	m.peers[addr] = &PeerInfo{
@@ -222,7 +222,7 @@ func (m *ReplicationManager) RemovePeer(addr string) error {
 	defer m.mu.Unlock()
 
 	if _, exists := m.peers[addr]; !exists {
-		return fmt.Errorf("peer %s not found", addr)
+		return NewReplicationError("remove_peer", addr, "", fmt.Errorf("peer not found"))
 	}
 
 	delete(m.peers, addr)
@@ -236,7 +236,7 @@ func (m *ReplicationManager) GetPeerInfo(addr string) (*PeerInfo, error) {
 
 	info, ok := m.peers[addr]
 	if !ok {
-		return nil, fmt.Errorf("peer %s not found", addr)
+		return nil, NewReplicationError("remove_peer", addr, "", fmt.Errorf("peer not found"))
 	}
 
 	infoCopy := *info

@@ -10,6 +10,7 @@ const invertedIndexShards = 32
 
 // termShard holds the inverted index for a subset of terms
 type termShard struct {
+	bloom *BloomFilter
 	mu    sync.RWMutex
 	index map[string]map[VectorID]float32 // term -> docID -> score
 }
@@ -30,6 +31,7 @@ type ShardedInvertedIndex struct {
 func NewShardedInvertedIndex() *ShardedInvertedIndex {
 	idx := &ShardedInvertedIndex{}
 	for i := 0; i < invertedIndexShards; i++ {
+		idx.termShards[i].bloom = NewBloomFilter(10000, 0.01)
 		idx.termShards[i].index = make(map[string]map[VectorID]float32)
 		idx.docShards[i].terms = make(map[VectorID][]string)
 	}
@@ -90,6 +92,7 @@ func (idx *ShardedInvertedIndex) Add(id VectorID, text string) {
 			if shard.index[term] == nil {
 				shard.index[term] = make(map[VectorID]float32)
 			}
+				shard.bloom.Add(term)
 			shard.index[term][id] = score
 		}
 		shard.mu.Unlock()
@@ -154,6 +157,10 @@ func (idx *ShardedInvertedIndex) Search(query string, limit int) []SearchResult 
 		shard := &idx.termShards[shardIdx]
 		shard.mu.RLock()
 		for _, term := range terms {
+			// Bloom filter pre-check - skip if term definitely not present
+			if !shard.bloom.Contains(term) {
+				continue
+			}
 			if docs, ok := shard.index[term]; ok {
 				for id, score := range docs {
 					scores[id] += score

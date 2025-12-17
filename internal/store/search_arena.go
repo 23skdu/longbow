@@ -83,3 +83,31 @@ func (a *SearchArena) AllocFloat32Slice(count int) []float32 {
 	ptr := unsafe.Pointer(&a.buf[alignedOffset])
 	return unsafe.Slice((*float32)(ptr), count)
 }
+
+// AllocVectorIDSlice allocates a slice of VectorID values from the arena.
+// Returns nil if the allocation would exceed capacity.
+// This is useful for allocating search result arrays without GC pressure.
+func (a *SearchArena) AllocVectorIDSlice(count int) []VectorID {
+if count == 0 {
+return []VectorID{}
+}
+
+// Calculate bytes needed (4 bytes per VectorID which is uint32)
+const vectorIDSize = 4
+bytesNeeded := count * vectorIDSize
+
+// Ensure proper alignment for uint32 (4-byte alignment)
+alignment := vectorIDSize
+alignedOffset := (a.offset + alignment - 1) &^ (alignment - 1)
+
+if alignedOffset+bytesNeeded > len(a.buf) {
+return nil
+}
+
+// Update offset to aligned position plus allocation
+a.offset = alignedOffset + bytesNeeded
+
+// Convert byte slice to VectorID slice using unsafe
+ptr := unsafe.Pointer(&a.buf[alignedOffset])
+return unsafe.Slice((*VectorID)(ptr), count)
+}

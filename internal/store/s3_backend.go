@@ -196,7 +196,7 @@ Body:        bytes.NewReader(data),
 ContentType: aws.String("application/vnd.apache.parquet"),
 })
 if err != nil {
-return fmt.Errorf("failed to upload snapshot %s: %w", name, err)
+return NewS3Error("upload", b.bucket, name, err)
 }
 
 return nil
@@ -220,7 +220,7 @@ return nil, &NotFoundError{Name: name}
 if strings.Contains(err.Error(), "NoSuchKey") || strings.Contains(err.Error(), "NotFound") {
 return nil, &NotFoundError{Name: name}
 }
-return nil, fmt.Errorf("failed to download snapshot %s: %w", name, err)
+return nil, NewS3Error("download", b.bucket, name, err)
 }
 
 return result.Body, nil
@@ -242,7 +242,7 @@ Prefix: aws.String(prefix),
 for paginator.HasMorePages() {
 page, err := paginator.NextPage(ctx)
 if err != nil {
-return nil, fmt.Errorf("failed to list snapshots: %w", err)
+return nil, NewS3Error("list", b.bucket, b.prefix, err)
 }
 
 for _, obj := range page.Contents {
@@ -268,7 +268,7 @@ Bucket: aws.String(b.bucket),
 Key:    aws.String(key),
 })
 if err != nil {
-return fmt.Errorf("failed to delete snapshot %s: %w", name, err)
+return NewS3Error("delete", b.bucket, name, err)
 }
 
 return nil

@@ -370,37 +370,24 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 		name = desc.Path[0]
 	}
 
-	// Schema Validation
-	if ds, ok := s.vectors.Get(name); ok && len(ds.Records) > 0 {
-		existingRecs := ds.Records
-		existingSchema := existingRecs[0].Schema()
-		if !existingSchema.Equal(r.Schema()) {
-// Schema Evolution: Check if new schema is compatible (superset)
-// For now, we allow adding new nullable columns.
-if len(r.Schema().Fields()) > len(existingSchema.Fields()) {
-// Check if prefix matches
-compatible := true
-for i, f := range existingSchema.Fields() {
-if !f.Equal(r.Schema().Field(i)) {
-compatible = false
-break
-}
-}
-if compatible {
-// Upgrade Schema: Accept new record, increment version
-if ds, ok := s.vectors.Get(name); ok {
-ds.mu.Lock()
-ds.Version++
-s.logger.Info("Schema evolved", "name", name, "version", ds.Version)
-ds.mu.Unlock()
-}
-} else {
-return NewSchemaMismatchError(name, "incompatible schema evolution")
-}
-} else {
-return NewSchemaMismatchError(name, "incoming schema does not match existing")
-}
-}
+	// Schema Validation with Lock Granularity:
+	// Use RLock for initial schema check (read-only), only upgrade to Lock if schema evolution needed.
+	// This reduces contention on the hot write path.
+	if ds, ok := s.vectors.Get(name); ok {
+		existingSchema := ds.GetExistingSchema() // Uses RLock internally
+		if existingSchema != nil {
+			compat := CheckSchemaCompatibility(existingSchema, r.Schema())
+			switch compat {
+			case SchemaExactMatch:
+				// Schema matches, proceed without any write lock
+			case SchemaEvolution:
+				// Schema evolved - upgrade to write lock only for version increment
+				ds.UpgradeSchemaVersion() // Uses Lock internally
+				s.logger.Info("Schema evolved", "name", name, "version", ds.GetVersion())
+			case SchemaIncompatible:
+				return NewSchemaMismatchError(name, "incompatible schema: incoming schema does not match existing")
+			}
+		}
 	}
 
 	rowsWritten := 0

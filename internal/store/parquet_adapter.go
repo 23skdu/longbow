@@ -18,7 +18,7 @@ Vector []float32 `parquet:"vector"`
 
 // writeParquet writes an Arrow record to a Parquet writer
 func writeParquet(w io.Writer, rec arrow.RecordBatch) error {
-pw := parquet.NewGenericWriter[VectorRecord](w)
+pw := parquet.NewGenericWriter[VectorRecord](w, parquet.Compression(&parquet.Zstd))
 
 // Iterate over rows and write
 // This is not zero-copy but good for snapshots/cold storage

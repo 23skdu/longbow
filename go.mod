@@ -4,6 +4,10 @@ go 1.24.9
 
 require (
 	github.com/apache/arrow-go/v18 v18.5.0
+	github.com/aws/aws-sdk-go-v2 v1.41.0
+	github.com/aws/aws-sdk-go-v2/config v1.32.5
+	github.com/aws/aws-sdk-go-v2/credentials v1.19.5
+	github.com/aws/aws-sdk-go-v2/service/s3 v1.94.0
 	github.com/coder/hnsw v0.6.1
 	github.com/joho/godotenv v1.5.1
 	github.com/kelseyhightower/envconfig v1.4.0
@@ -18,10 +22,7 @@ require (
 require (
 	github.com/andybalholm/brotli v1.2.0 // indirect
 	github.com/apache/thrift v0.22.0 // indirect
-	github.com/aws/aws-sdk-go-v2 v1.41.0 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.4 // indirect
-	github.com/aws/aws-sdk-go-v2/config v1.32.5 // indirect
-	github.com/aws/aws-sdk-go-v2/credentials v1.19.5 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.18.16 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.16 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.16 // indirect
@@ -31,7 +32,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.9.7 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.16 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.19.16 // indirect
-	github.com/aws/aws-sdk-go-v2/service/s3 v1.94.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/signin v1.0.4 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sso v1.30.7 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.35.12 // indirect
@@ -49,6 +49,7 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/klauspost/asmfmt v1.3.2 // indirect
 	github.com/klauspost/compress v1.18.2 // indirect
+	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/minio/asm2plan9s v0.0.0-20200509001527-cdd76441f9d8 // indirect
 	github.com/minio/c2goasm v0.0.0-20190812172519-36a3d3bbc4f3 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect

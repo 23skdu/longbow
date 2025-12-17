@@ -133,29 +133,29 @@ if err := binary.Read(f, binary.LittleEndian, &nameLen); err != nil {
 if err == io.EOF {
 break
 }
-return fmt.Errorf("wal read error (nameLen): %w", err)
+return NewWALError("read", walPath, 0, fmt.Errorf("nameLen: %w", err))
 }
 
 nameBytes := make([]byte, nameLen)
 if _, err := io.ReadFull(f, nameBytes); err != nil {
-return fmt.Errorf("wal read error (name): %w", err)
+return NewWALError("read", walPath, 0, fmt.Errorf("name: %w", err))
 }
 name := string(nameBytes)
 
 var recLen uint64
 if err := binary.Read(f, binary.LittleEndian, &recLen); err != nil {
-return fmt.Errorf("wal read error (recLen): %w", err)
+return NewWALError("read", walPath, 0, fmt.Errorf("recLen: %w", err))
 }
 
 recBytes := make([]byte, recLen)
 if _, err := io.ReadFull(f, recBytes); err != nil {
-return fmt.Errorf("wal read error (recBytes): %w", err)
+return NewWALError("read", walPath, 0, fmt.Errorf("recBytes: %w", err))
 }
 
 // Deserialize Record
 r, err := ipc.NewReader(bytes.NewReader(recBytes))
 if err != nil {
-return fmt.Errorf("wal ipc reader error: %w", err)
+return NewWALError("read", walPath, 0, fmt.Errorf("ipc reader: %w", err))
 }
 if r.Next() {
 rec := r.RecordBatch()
@@ -351,7 +351,7 @@ if err := s.walFile.Sync(); err != nil {
 s.logger.Error("Failed to sync WAL", "error", err)
 }
 if err := s.walFile.Close(); err != nil {
-return fmt.Errorf("failed to close WAL: %w", err)
+return NewWALError("close", s.dataPath, 0, err)
 }
 s.walFile = nil
 }

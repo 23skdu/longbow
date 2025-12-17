@@ -210,6 +210,15 @@ func (w *WALBatcher) drainAndFlush() {
 	}
 }
 
+// encodeWALEntryHeader encodes nameLen (uint32) and recLen (uint64) into a 12-byte slice
+// using manual binary encoding to avoid reflection overhead from binary.Write
+func encodeWALEntryHeader(nameLen uint32, recLen uint64) []byte {
+	buf := make([]byte, 12)
+	binary.LittleEndian.PutUint32(buf[0:4], nameLen)
+	binary.LittleEndian.PutUint64(buf[4:12], recLen)
+	return buf
+}
+
 // writeEntry serializes and writes a single entry to WAL
 func (w *WALBatcher) writeEntry(entry WALEntry) error {
 	rec := entry.Record
@@ -236,13 +245,15 @@ func (w *WALBatcher) writeEntry(entry WALEntry) error {
 	recLen := uint64(len(recBytes))
 
 	// Write header + data (no sync here, batched at flush level)
-	if err := binary.Write(w.walFile, binary.LittleEndian, nameLen); err != nil {
+	// Use manual encoding to avoid reflection overhead from binary.Write
+	headerBuf := encodeWALEntryHeader(nameLen, recLen)
+	if _, err := w.walFile.Write(headerBuf[0:4]); err != nil { // nameLen
 		return err
 	}
 	if _, err := w.walFile.Write(nameBytes); err != nil {
 		return err
 	}
-	if err := binary.Write(w.walFile, binary.LittleEndian, recLen); err != nil {
+	if _, err := w.walFile.Write(headerBuf[4:12]); err != nil { // recLen
 		return err
 	}
 	if _, err := w.walFile.Write(recBytes); err != nil {

@@ -275,8 +275,8 @@ method := "DoGet"
 name := string(tkt.Ticket)
 limit := int64(-1)
 
-var query TicketQuery
-if err := json.Unmarshal(tkt.Ticket, &query); err == nil && query.Name != "" {
+query, parseErr := FastParseTicketQuery(tkt.Ticket)
+if parseErr == nil && query.Name != "" {
 name = query.Name
 limit = query.Limit
 }

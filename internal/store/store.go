@@ -67,7 +67,7 @@ walMu         sync.Mutex
 walBatcher *WALBatcher
 snapshotReset chan time.Duration
 ttlDuration   time.Duration
-	indexChan chan IndexJob
+	indexQueue *IndexJobQueue
 	// Column-based inverted index for O(1) equality filter lookups
 	columnIndex *ColumnInvertedIndex
 	indexedColumns []string // columns to index for fast equality lookups
@@ -86,7 +86,7 @@ logger:        logger,
 vectors: NewShardedMap(),
 ttlDuration:   ttl,
 snapshotReset: make(chan time.Duration, 1),
-		indexChan:     make(chan IndexJob, 10000),
+		indexQueue: NewIndexJobQueue(DefaultIndexJobQueueConfig()),
 		stopChan:      make(chan struct{}),
 		columnIndex: NewColumnInvertedIndex(),
 	}
@@ -447,11 +447,11 @@ ds.SetLastAccess(time.Now())
 // Async Indexing
 numRows := int(rec.NumRows())
 for i := 0; i < numRows; i++ {
-s.indexChan <- IndexJob{
+s.indexQueue.Send(IndexJob{
 DatasetName: name,
 BatchIdx:    batchIdx,
 RowIdx:      i,
-}
+})
 }
 
 s.updateVectorMetrics(rec)
@@ -898,7 +898,7 @@ func (s *VectorStore) startIndexingWorkers(numWorkers int) {
 	s.indexWg.Add(1)
 		go func() {
 		defer s.indexWg.Done()
-			for job := range s.indexChan {
+			for job := range s.indexQueue.Jobs() {
 				ds, ok := s.vectors.Get(job.DatasetName)
 				if !ok || ds.Index == nil {
 					continue

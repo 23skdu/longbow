@@ -78,6 +78,9 @@ shutdownState int32
 stopChan      chan struct{}
 workerWg      sync.WaitGroup
 indexWg       sync.WaitGroup
+// Compaction subsystem
+compactionConfig CompactionConfig
+compactionWorker *CompactionWorker
 }
 
 func NewVectorStore(mem memory.Allocator, logger *slog.Logger, maxMemory, maxWALSize int64, ttl time.Duration) *VectorStore {
@@ -99,6 +102,7 @@ s.StartMetricsTicker(10 * time.Second)
 if maxWALSize > 0 {
 s.StartWALCheckTicker(1 * time.Minute)
 }
+s.initCompaction(DefaultCompactionConfig())
 return s
 }
 

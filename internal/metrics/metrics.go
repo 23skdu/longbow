@@ -679,3 +679,40 @@ Name: "longbow_record_size_cache_hit_rate",
 Help: "Record size cache hit rate (0-1)",
 },
 )
+
+// BitmapPool metrics
+var BitmapPoolGetsTotal = promauto.NewCounter(
+prometheus.CounterOpts{
+Name: "longbow_bitmap_pool_gets_total",
+Help: "Total bitmap buffer get operations",
+},
+)
+
+var BitmapPoolHitsTotal = promauto.NewCounter(
+prometheus.CounterOpts{
+Name: "longbow_bitmap_pool_hits_total",
+Help: "Total bitmap buffer pool hits (reused buffers)",
+},
+)
+
+var BitmapPoolMissesTotal = promauto.NewCounter(
+prometheus.CounterOpts{
+Name: "longbow_bitmap_pool_misses_total",
+Help: "Total bitmap buffer pool misses (new allocations)",
+},
+)
+
+var BitmapPoolPutsTotal = promauto.NewCounter(
+prometheus.CounterOpts{
+Name: "longbow_bitmap_pool_puts_total",
+Help: "Total bitmap buffer put (return) operations",
+},
+)
+
+var BitmapPoolDiscardsTotal = promauto.NewCounter(
+prometheus.CounterOpts{
+Name: "longbow_bitmap_pool_discards_total",
+Help: "Total bitmap buffers discarded (oversized)",
+},
+)
+

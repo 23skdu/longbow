@@ -784,3 +784,35 @@ Name:      "record_size_cache_misses_total",
 Help:      "Total number of record size cache misses",
 },
 )
+
+// =============================================================================
+// Adaptive Index Metrics
+// =============================================================================
+
+// AdaptiveIndexType tracks the current index type per dataset (0=brute_force, 1=hnsw)
+var AdaptiveIndexType = promauto.NewGaugeVec(prometheus.GaugeOpts{
+Namespace: "longbow",
+Name:      "adaptive_index_type",
+Help:      "Current index type (0=brute_force, 1=hnsw)",
+}, []string{"dataset"})
+
+// AdaptiveIndexMigrationsTotal tracks total BruteForce to HNSW migrations
+var AdaptiveIndexMigrationsTotal = promauto.NewCounter(prometheus.CounterOpts{
+Namespace: "longbow",
+Name:      "adaptive_index_migrations_total",
+Help:      "Total number of BruteForce to HNSW migrations",
+})
+
+// BruteForceSearchesTotal tracks total brute force searches
+var BruteForceSearchesTotal = promauto.NewCounter(prometheus.CounterOpts{
+Namespace: "longbow",
+Name:      "brute_force_searches_total",
+Help:      "Total number of brute force linear scan searches",
+})
+
+// HnswSearchesTotal tracks total HNSW searches
+var HnswSearchesTotal = promauto.NewCounter(prometheus.CounterOpts{
+Namespace: "longbow",
+Name:      "hnsw_searches_total",
+Help:      "Total number of HNSW approximate nearest neighbor searches",
+})

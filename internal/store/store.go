@@ -81,6 +81,9 @@ indexWg       sync.WaitGroup
 // Compaction subsystem
 compactionConfig CompactionConfig
 compactionWorker *CompactionWorker
+	// Hybrid search (BM25 + Vector)
+	hybridSearchConfig HybridSearchConfig
+	bm25Index          *BM25InvertedIndex
 }
 
 func NewVectorStore(mem memory.Allocator, logger *slog.Logger, maxMemory, maxWALSize int64, ttl time.Duration) *VectorStore {

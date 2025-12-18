@@ -12,20 +12,32 @@ import (
 
 // IsFastPathSupported returns true if the data type and operator can use
 // the fast path that bypasses Arrow Compute overhead.
-// Only primitive numeric types with = or != operators are supported.
 func IsFastPathSupported(dt arrow.DataType, op FilterOperator) bool {
-// Only equality operators benefit from fast path
-if op != FilterOpEqual && op != FilterOpNotEqual {
+// Check operator support
+switch op {
+case FilterOpEqual, FilterOpNotEqual:
+// All supported types work with = and !=
+case FilterOpLess, FilterOpGreater, FilterOpLessEqual, FilterOpGreaterEqual:
+// Ordered comparisons only for numeric types
+switch dt.ID() {
+case arrow.BOOL, arrow.STRING, arrow.LARGE_STRING:
+return false
+}
+default:
 return false
 }
 
-// Check for primitive numeric types
+// Check type support
 switch dt.ID() {
 case arrow.INT64, arrow.INT32, arrow.INT16, arrow.INT8:
 return true
 case arrow.UINT64, arrow.UINT32, arrow.UINT16, arrow.UINT8:
 return true
 case arrow.FLOAT64, arrow.FLOAT32:
+return true
+case arrow.BOOL:
+return true
+case arrow.STRING, arrow.LARGE_STRING:
 return true
 default:
 return false
@@ -98,7 +110,42 @@ return nil, fmt.Errorf("invalid float32 value: %w", err)
 }
 fastPathFloat32(typedArr, float32(val), equal, builder)
 
-default:
+	case *array.Int16:
+		val, err := strconv.ParseInt(value, 10, 16)
+		if err != nil {
+			return nil, fmt.Errorf("invalid int16 value: %w", err)
+		}
+		fastPathInt16(typedArr, int16(val), equal, builder)
+
+	case *array.Int8:
+		val, err := strconv.ParseInt(value, 10, 8)
+		if err != nil {
+			return nil, fmt.Errorf("invalid int8 value: %w", err)
+		}
+		fastPathInt8(typedArr, int8(val), equal, builder)
+
+	case *array.Uint16:
+		val, err := strconv.ParseUint(value, 10, 16)
+		if err != nil {
+			return nil, fmt.Errorf("invalid uint16 value: %w", err)
+		}
+		fastPathUint16(typedArr, uint16(val), equal, builder)
+
+	case *array.Uint8:
+		val, err := strconv.ParseUint(value, 10, 8)
+		if err != nil {
+			return nil, fmt.Errorf("invalid uint8 value: %w", err)
+		}
+		fastPathUint8(typedArr, uint8(val), equal, builder)
+
+	case *array.Boolean:
+		val := value == "true" || value == "1"
+		fastPathBool(typedArr, val, equal, builder)
+
+	case *array.String:
+		fastPathString(typedArr, value, equal, builder)
+
+	default:
 return nil, fmt.Errorf("fast path not supported for type: %v", arr.DataType())
 }
 
@@ -248,4 +295,140 @@ builder.Append(values[i] != val)
 }
 }
 }
+}
+
+// fastPathInt16 compares int16 array with scalar value.
+func fastPathInt16(arr *array.Int16, val int16, equal bool, builder *array.BooleanBuilder) {
+	values := arr.Int16Values()
+	n := arr.Len()
+	if equal {
+		for i := 0; i < n; i++ {
+			if arr.IsNull(i) {
+				builder.Append(false)
+			} else {
+				builder.Append(values[i] == val)
+			}
+		}
+	} else {
+		for i := 0; i < n; i++ {
+			if arr.IsNull(i) {
+				builder.Append(false)
+			} else {
+				builder.Append(values[i] != val)
+			}
+		}
+	}
+}
+
+// fastPathInt8 compares int8 array with scalar value.
+func fastPathInt8(arr *array.Int8, val int8, equal bool, builder *array.BooleanBuilder) {
+	values := arr.Int8Values()
+	n := arr.Len()
+	if equal {
+		for i := 0; i < n; i++ {
+			if arr.IsNull(i) {
+				builder.Append(false)
+			} else {
+				builder.Append(values[i] == val)
+			}
+		}
+	} else {
+		for i := 0; i < n; i++ {
+			if arr.IsNull(i) {
+				builder.Append(false)
+			} else {
+				builder.Append(values[i] != val)
+			}
+		}
+	}
+}
+
+// fastPathUint16 compares uint16 array with scalar value.
+func fastPathUint16(arr *array.Uint16, val uint16, equal bool, builder *array.BooleanBuilder) {
+	values := arr.Uint16Values()
+	n := arr.Len()
+	if equal {
+		for i := 0; i < n; i++ {
+			if arr.IsNull(i) {
+				builder.Append(false)
+			} else {
+				builder.Append(values[i] == val)
+			}
+		}
+	} else {
+		for i := 0; i < n; i++ {
+			if arr.IsNull(i) {
+				builder.Append(false)
+			} else {
+				builder.Append(values[i] != val)
+			}
+		}
+	}
+}
+
+// fastPathUint8 compares uint8 array with scalar value.
+func fastPathUint8(arr *array.Uint8, val uint8, equal bool, builder *array.BooleanBuilder) {
+	values := arr.Uint8Values()
+	n := arr.Len()
+	if equal {
+		for i := 0; i < n; i++ {
+			if arr.IsNull(i) {
+				builder.Append(false)
+			} else {
+				builder.Append(values[i] == val)
+			}
+		}
+	} else {
+		for i := 0; i < n; i++ {
+			if arr.IsNull(i) {
+				builder.Append(false)
+			} else {
+				builder.Append(values[i] != val)
+			}
+		}
+	}
+}
+
+// fastPathBool compares boolean array with scalar value.
+func fastPathBool(arr *array.Boolean, val, equal bool, builder *array.BooleanBuilder) {
+	n := arr.Len()
+	if equal {
+		for i := 0; i < n; i++ {
+			if arr.IsNull(i) {
+				builder.Append(false)
+			} else {
+				builder.Append(arr.Value(i) == val)
+			}
+		}
+	} else {
+		for i := 0; i < n; i++ {
+			if arr.IsNull(i) {
+				builder.Append(false)
+			} else {
+				builder.Append(arr.Value(i) != val)
+			}
+		}
+	}
+}
+
+// fastPathString compares string array with scalar value.
+func fastPathString(arr *array.String, val string, equal bool, builder *array.BooleanBuilder) {
+	n := arr.Len()
+	if equal {
+		for i := 0; i < n; i++ {
+			if arr.IsNull(i) {
+				builder.Append(false)
+			} else {
+				builder.Append(arr.Value(i) == val)
+			}
+		}
+	} else {
+		for i := 0; i < n; i++ {
+			if arr.IsNull(i) {
+				builder.Append(false)
+			} else {
+				builder.Append(arr.Value(i) != val)
+			}
+		}
+	}
 }

@@ -30,6 +30,7 @@ type IndexJob struct {
 	DatasetName string
 	BatchIdx    int
 	RowIdx      int
+CreatedAt time.Time
 }
 
 // Dataset wraps records with metadata for eviction
@@ -276,13 +277,19 @@ recs := ds.Records
 // DoGet streams data to the client with optional predicate pushdown
 func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGetServer) error {
 start := time.Now()
+// Track active search contexts
+metrics.ActiveSearchContexts.Inc()
+defer metrics.ActiveSearchContexts.Dec()
 method := "DoGet"
 
 // Parse Ticket
 name := string(tkt.Ticket)
 limit := int64(-1)
 
+// Track ticket parsing duration
+ticketParseStart := time.Now()
 query, parseErr := FastParseTicketQuery(tkt.Ticket)
+metrics.FlightTicketParseDurationSeconds.Observe(time.Since(ticketParseStart).Seconds())
 if parseErr == nil && query.Name != "" {
 name = query.Name
 limit = query.Limit
@@ -315,11 +322,19 @@ break
 }
 
 // Apply Filtering using arrow/compute
+// Track filter execution time
+filterStart := time.Now()
+inputRows := rec.NumRows()
 filteredRec, err := s.filterRecordOptimized(stream.Context(), name, rec, batchIdx, query.Filters)
 if err != nil {
 s.logger.Error("Filtering failed", "error", err)
 metrics.FlightOperationsTotal.WithLabelValues(method, "error").Inc()
 return err
+}
+// Record filter execution duration and selectivity
+metrics.FilterExecutionDurationSeconds.WithLabelValues(name).Observe(time.Since(filterStart).Seconds())
+if inputRows > 0 {
+metrics.FilterSelectivityRatio.WithLabelValues(name).Observe(float64(filteredRec.NumRows()) / float64(inputRows))
 }
 
 if filteredRec.NumRows() == 0 {
@@ -421,17 +436,24 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 		} else {
 			s.currentMemory.Add(size)
 		}
+// Track Arrow memory usage
+metrics.ArrowMemoryUsedBytes.WithLabelValues("default").Set(float64(s.currentMemory.Load()))
 
 		ds := s.vectors.GetOrCreate(name, func() *Dataset {
 			newDs := &Dataset{Records: []arrow.RecordBatch{}, lastAccess: time.Now().UnixNano()}
 			newDs.Index = NewHNSWIndex(newDs)
 			return newDs
 		})
+// Track lock wait duration
+lockWaitStart := time.Now()
 ds.mu.Lock()
+metrics.DatasetLockWaitDurationSeconds.WithLabelValues("write").Observe(time.Since(lockWaitStart).Seconds())
 batchIdx := len(ds.Records)
 ds.Records = append(ds.Records, rec)
 ds.mu.Unlock()
 
+// Track RecordBatch count (fragmentation indicator)
+metrics.DatasetRecordBatchesCount.WithLabelValues(name).Set(float64(len(ds.Records)))
 // Update COW metadata for lock-free ListFlights
 if _, exists := s.metadata.Get(name); !exists {
 s.metadata.Set(name, DatasetMetadata{
@@ -466,6 +488,7 @@ s.indexQueue.Send(IndexJob{
 DatasetName: name,
 BatchIdx:    batchIdx,
 RowIdx:      i,
+CreatedAt: time.Now(),
 })
 }
 
@@ -779,6 +802,10 @@ func (s *VectorStore) updateMemoryMetrics() {
 	if m.Sys > 0 {
 		ratio := float64(m.HeapAlloc) / float64(m.Sys)
 		metrics.MemoryFragmentationRatio.Set(ratio)
+}
+if m.NumGC > 0 {
+lastPauseNs := m.PauseNs[(m.NumGC+255)%256]
+metrics.GcPauseDurationSeconds.Observe(float64(lastPauseNs) / 1e9)
 	}
 }
 
@@ -885,6 +912,8 @@ func (s *VectorStore) startIndexingWorkers(numWorkers int) {
 		go func() {
 		defer s.indexWg.Done()
 			for job := range s.indexQueue.Jobs() {
+	// Track index queue depth
+metrics.IndexQueueDepth.Set(float64(s.indexQueue.Len()))
 				ds, ok := s.vectors.Get(job.DatasetName)
 				if !ok || ds.Index == nil {
 					continue
@@ -892,6 +921,8 @@ func (s *VectorStore) startIndexingWorkers(numWorkers int) {
 				if err := ds.Index.Add(job.BatchIdx, job.RowIdx); err != nil {
 					s.logger.Error("Async index add failed", "dataset", job.DatasetName, "error", err)
 				}
+	// Record job latency
+metrics.IndexJobLatencySeconds.WithLabelValues(job.DatasetName).Observe(time.Since(job.CreatedAt).Seconds())
 			}
 		}()
 	}

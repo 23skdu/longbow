@@ -1,6 +1,7 @@
 package store
 
 import (
+"math"
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/simd"
 	"github.com/apache/arrow-go/v18/arrow"
@@ -141,6 +142,7 @@ func (h *HNSWIndex) getScratch() []float32 {
 	if ptr := h.scratchPool.Get(); ptr != nil {
 		return *(ptr.(*[]float32))
 	}
+metrics.VectorScratchPoolMissesTotal.Inc()
 	return make([]float32, h.dims)
 }
 
@@ -303,6 +305,12 @@ func (h *HNSWIndex) Add(batchIdx, rowIdx int) error {
 	}
 	// Add to HNSW graph
 	h.Graph.Add(hnsw.MakeNode(id, vec))
+// Track HNSW metrics
+metrics.HnswNodeCount.WithLabelValues(h.dataset.Name).Set(float64(len(h.locations)))
+nodeCount := float64(len(h.locations))
+if nodeCount > 1 {
+metrics.HnswGraphHeight.WithLabelValues(h.dataset.Name).Set(math.Log(nodeCount) / math.Log(4))
+}
 	return nil
 }
 

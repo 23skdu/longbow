@@ -33,6 +33,7 @@ var shutdownErr error
 s.logger.Info("Signaling background workers to stop")
 close(s.stopChan)
 
+s.stopCompaction()
 // Step 2: Drain the index queue
 s.logger.Info("Draining index queue...")
 if err := s.drainIndexQueue(ctx); err != nil {

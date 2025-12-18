@@ -418,7 +418,7 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 			metrics.FlightOperationsTotal.WithLabelValues(method, "error").Inc()
 			return NewInternalError("ensure timestamp", err)
 		}
-		size := calculateRecordSize(rec)
+		size := CachedRecordSize(rec)
 
 		// Lock-free memory limit check with CAS loop
 		maxMem := s.maxMemory.Load()
@@ -519,7 +519,7 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 ds.mu.Lock()
 var freedMem int64
 for _, r := range ds.Records {
-freedMem += calculateRecordSize(r)
+freedMem += CachedRecordSize(r)
 r.Release()
 }
 ds.Records = nil // Clear references
@@ -712,7 +712,7 @@ continue
 ds.mu.Lock()
 var freedMem int64
 for _, r := range ds.Records {
-freedMem += calculateRecordSize(r)
+freedMem += CachedRecordSize(r)
 r.Release()
 }
 ds.Records = nil
@@ -755,7 +755,7 @@ return NewResourceExhaustedError("memory", "limit exceeded and no datasets to ev
 if ds, ok := s.vectors.Get(oldestName); ok {
 ds.mu.Lock()
 for _, r := range ds.Records {
-s.currentMemory.Add(-calculateRecordSize(r))
+s.currentMemory.Add(-CachedRecordSize(r))
 r.Release()
 }
 ds.Records = nil
@@ -771,7 +771,7 @@ return nil
 func calculateDatasetSize(ds *Dataset) int64 {
 size := int64(0)
 for _, r := range ds.Records {
-size += calculateRecordSize(r)
+size += CachedRecordSize(r)
 }
 return size
 }

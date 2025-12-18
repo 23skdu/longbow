@@ -766,3 +766,21 @@ Help:      "Distribution of operations across PerP pool shards",
 Buckets:   prometheus.LinearBuckets(0, 1, 16),
 }, []string{"operation"})
 )
+
+// RecordSizeCacheHitsTotal tracks total cache hits
+var RecordSizeCacheHitsTotal = promauto.NewCounter(
+prometheus.CounterOpts{
+Namespace: "longbow",
+Name:      "record_size_cache_hits_total",
+Help:      "Total number of record size cache hits",
+},
+)
+
+// RecordSizeCacheMissesTotal tracks total cache misses
+var RecordSizeCacheMissesTotal = promauto.NewCounter(
+prometheus.CounterOpts{
+Namespace: "longbow",
+Name:      "record_size_cache_misses_total",
+Help:      "Total number of record size cache misses",
+},
+)

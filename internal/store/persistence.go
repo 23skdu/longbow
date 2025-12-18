@@ -168,7 +168,7 @@ return &Dataset{Records: []arrow.RecordBatch{}, lastAccess: time.Now().UnixNano(
 ds.mu.Lock()
 ds.Records = append(ds.Records, rec)
 ds.mu.Unlock()
-s.currentMemory.Add(calculateRecordSize(rec))
+s.currentMemory.Add(CachedRecordSize(rec))
 count++
 }
 r.Release()
@@ -303,7 +303,7 @@ return &Dataset{Records: []arrow.RecordBatch{}, lastAccess: time.Now().UnixNano(
 ds.mu.Lock()
 ds.Records = append(ds.Records, rec)
 ds.mu.Unlock()
-s.currentMemory.Add(calculateRecordSize(rec))
+s.currentMemory.Add(CachedRecordSize(rec))
 }
 return nil
 }

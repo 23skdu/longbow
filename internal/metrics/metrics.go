@@ -246,6 +246,14 @@ Help: "Total number of nodes in the HNSW graph",
 []string{"dataset"},
 )
 
+// HnswShardingMigrationsTotal counts HNSW index migrations to sharded format
+var HnswShardingMigrationsTotal = promauto.NewCounter(
+prometheus.CounterOpts{
+Name: "longbow_hnsw_sharding_migrations_total",
+Help: "Total number of HNSW index migrations to sharded format",
+},
+)
+
 // 11. FlightTicketParseDurationSeconds - Time spent parsing JSON ticket
 var FlightTicketParseDurationSeconds = promauto.NewHistogram(
 prometheus.HistogramOpts{

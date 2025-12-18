@@ -834,3 +834,36 @@ Name:      "ticket_parse_fallback_total",
 Help:      "Total number of fallbacks to standard JSON ticket parser",
 },
 )
+
+// Arrow Allocator Metrics
+var (
+ArrowZeroCopyReadsTotal = promauto.NewCounter(prometheus.CounterOpts{
+Namespace: "longbow",
+Name:      "arrow_zerocopy_reads_total",
+Help:      "Total number of zero-copy buffer reads",
+})
+
+ArrowBufferCopiesTotal = promauto.NewCounter(prometheus.CounterOpts{
+Namespace: "longbow",
+Name:      "arrow_buffer_copies_total",
+Help:      "Total number of buffer copy operations",
+})
+
+ArrowBufferRetainedBytes = promauto.NewGauge(prometheus.GaugeOpts{
+Namespace: "longbow",
+Name:      "arrow_buffer_retained_bytes",
+Help:      "Total bytes currently retained in zero-copy buffers",
+})
+
+ArrowAllocatorPoolHitsTotal = promauto.NewCounter(prometheus.CounterOpts{
+Namespace: "longbow",
+Name:      "arrow_allocator_pool_hits_total",
+Help:      "Total buffer reuse hits from pooled allocator",
+})
+
+ArrowAllocatorPoolMissesTotal = promauto.NewCounter(prometheus.CounterOpts{
+Namespace: "longbow",
+Name:      "arrow_allocator_pool_misses_total",
+Help:      "Total buffer allocations that missed the pool",
+})
+)

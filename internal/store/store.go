@@ -38,7 +38,8 @@ type Dataset struct {
 Records    []arrow.RecordBatch
 lastAccess int64 // UnixNano
 Version    int64
-	Index *HNSWIndex
+	Index        *HNSWIndex
+	shardedIndex *ShardedHNSW
 mu sync.RWMutex
 	Name string
 }

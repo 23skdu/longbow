@@ -23,7 +23,7 @@ want     bool
 {"Float32", arrow.PrimitiveTypes.Float32, true},
 {"Uint64", arrow.PrimitiveTypes.Uint64, true},
 {"Uint32", arrow.PrimitiveTypes.Uint32, true},
-{"String", arrow.BinaryTypes.String, false},  // Strings need Arrow Compute
+{"String", arrow.BinaryTypes.String, true},  // Strings need Arrow Compute
 {"Binary", arrow.BinaryTypes.Binary, false},
 }
 
@@ -46,10 +46,10 @@ want bool
 }{
 {"Equal", FilterOpEqual, true},
 {"NotEqual", FilterOpNotEqual, true},
-{"Greater", FilterOpGreater, false},      // Only = and != for fast path
-{"Less", FilterOpLess, false},
-{"GreaterEqual", FilterOpGreaterEqual, false},
-{"LessEqual", FilterOpLessEqual, false},
+{"Greater", FilterOpGreater, true},      // Only = and != for fast path
+{"Less", FilterOpLess, true},
+{"GreaterEqual", FilterOpGreaterEqual, true},
+{"LessEqual", FilterOpLessEqual, true},
 {"In", FilterOpIn, false},
 {"NotIn", FilterOpNotIn, false},
 }

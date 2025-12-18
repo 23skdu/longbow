@@ -248,6 +248,17 @@ s.walMu.Unlock()
 
 metrics.SnapshotTotal.WithLabelValues("ok").Inc()
 metrics.SnapshotDurationSeconds.Observe(time.Since(start).Seconds())
+metrics.SnapshotWriteDurationSeconds.Observe(time.Since(start).Seconds())
+// Calculate and track snapshot size
+snapshotSize := int64(0)
+if entries, err := os.ReadDir(snapshotDir); err == nil {
+for _, entry := range entries {
+if info, err := entry.Info(); err == nil {
+snapshotSize += info.Size()
+}
+}
+}
+metrics.SnapshotSizeBytes.Observe(float64(snapshotSize))
 s.logger.Info("Snapshot complete")
 return nil
 }

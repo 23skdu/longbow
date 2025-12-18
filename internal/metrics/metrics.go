@@ -334,3 +334,348 @@ Help: "Total compaction operations by status",
 },
 []string{"status"},
 )
+
+// =============================================================================
+// Comprehensive Prometheus Metrics Expansion
+// Added for enhanced observability across all components
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// SearchArena Metrics
+// -----------------------------------------------------------------------------
+
+// ArenaAllocBytesTotal tracks total bytes allocated from search arenas
+var ArenaAllocBytesTotal = promauto.NewCounter(
+prometheus.CounterOpts{
+Name: "longbow_arena_alloc_bytes_total",
+Help: "Total bytes allocated from search arenas",
+},
+)
+
+// ArenaOverflowTotal counts arena capacity overflow events
+var ArenaOverflowTotal = promauto.NewCounter(
+prometheus.CounterOpts{
+Name: "longbow_arena_overflow_total",
+Help: "Total arena capacity overflow events requiring heap fallback",
+},
+)
+
+// ArenaResetsTotal counts arena reset operations
+var ArenaResetsTotal = promauto.NewCounter(
+prometheus.CounterOpts{
+Name: "longbow_arena_resets_total",
+Help: "Total arena reset operations",
+},
+)
+
+// -----------------------------------------------------------------------------
+// Result Pool Metrics
+// -----------------------------------------------------------------------------
+
+// ResultPoolHitsTotal counts pool hits by k-size
+var ResultPoolHitsTotal = promauto.NewCounterVec(
+prometheus.CounterOpts{
+Name: "longbow_result_pool_hits_total",
+Help: "Total result pool hits by k-size",
+},
+[]string{"k_size"},
+)
+
+// ResultPoolMissesTotal counts pool misses by k-size
+var ResultPoolMissesTotal = promauto.NewCounterVec(
+prometheus.CounterOpts{
+Name: "longbow_result_pool_misses_total",
+Help: "Total result pool misses by k-size",
+},
+[]string{"k_size"},
+)
+
+// -----------------------------------------------------------------------------
+// Bloom Filter Metrics
+// -----------------------------------------------------------------------------
+
+// BloomLookupsTotal counts bloom filter lookups by result
+var BloomLookupsTotal = promauto.NewCounterVec(
+prometheus.CounterOpts{
+Name: "longbow_bloom_lookups_total",
+Help: "Total bloom filter lookups by result (hit/miss)",
+},
+[]string{"result"},
+)
+
+// BloomFalsePositiveRate tracks observed false positive rate
+var BloomFalsePositiveRate = promauto.NewGauge(
+prometheus.GaugeOpts{
+Name: "longbow_bloom_false_positive_rate",
+Help: "Observed bloom filter false positive rate",
+},
+)
+
+// -----------------------------------------------------------------------------
+// Column Index Metrics
+// -----------------------------------------------------------------------------
+
+// ColumnIndexSize tracks index size by dataset and column
+var ColumnIndexSize = promauto.NewGaugeVec(
+prometheus.GaugeOpts{
+Name: "longbow_column_index_size",
+Help: "Column inverted index size by dataset and column",
+},
+[]string{"dataset", "column"},
+)
+
+// ColumnIndexLookupDuration measures index lookup latency
+var ColumnIndexLookupDuration = promauto.NewHistogramVec(
+prometheus.HistogramOpts{
+Name:    "longbow_column_index_lookup_duration_seconds",
+Help:    "Column index lookup duration by dataset",
+Buckets: []float64{0.00001, 0.0001, 0.001, 0.01, 0.1},
+},
+[]string{"dataset"},
+)
+
+// -----------------------------------------------------------------------------
+// HNSW Search Metrics
+// -----------------------------------------------------------------------------
+
+// HnswNodesVisited tracks nodes visited per search
+var HnswNodesVisited = promauto.NewHistogramVec(
+prometheus.HistogramOpts{
+Name:    "longbow_hnsw_nodes_visited",
+Help:    "Number of HNSW nodes visited per search",
+Buckets: []float64{10, 25, 50, 100, 200, 500, 1000, 2500, 5000},
+},
+[]string{"dataset"},
+)
+
+// HnswDistanceCalculations counts total distance computations
+var HnswDistanceCalculations = promauto.NewCounter(
+prometheus.CounterOpts{
+Name: "longbow_hnsw_distance_calculations_total",
+Help: "Total HNSW distance calculations performed",
+},
+)
+
+// -----------------------------------------------------------------------------
+// Peer Replication Metrics
+// -----------------------------------------------------------------------------
+
+// ReplicationLagSeconds tracks replication lag by peer
+var ReplicationLagSeconds = promauto.NewGaugeVec(
+prometheus.GaugeOpts{
+Name: "longbow_replication_lag_seconds",
+Help: "Replication lag in seconds by peer",
+},
+[]string{"peer"},
+)
+
+// PeerHealthStatus tracks peer health (0=down, 1=up)
+var PeerHealthStatus = promauto.NewGaugeVec(
+prometheus.GaugeOpts{
+Name: "longbow_peer_health_status",
+Help: "Peer health status (0=down, 1=up)",
+},
+[]string{"peer"},
+)
+
+// -----------------------------------------------------------------------------
+// Flight Client Pool Metrics
+// -----------------------------------------------------------------------------
+
+// FlightPoolConnectionsActive tracks active connections by host
+var FlightPoolConnectionsActive = promauto.NewGaugeVec(
+prometheus.GaugeOpts{
+Name: "longbow_flight_pool_connections_active",
+Help: "Active Flight client pool connections by host",
+},
+[]string{"host"},
+)
+
+// FlightPoolWaitDuration measures time waiting for connections
+var FlightPoolWaitDuration = promauto.NewHistogramVec(
+prometheus.HistogramOpts{
+Name:    "longbow_flight_pool_wait_duration_seconds",
+Help:    "Time spent waiting for Flight pool connection by host",
+Buckets: []float64{0.0001, 0.001, 0.01, 0.1, 1, 10},
+},
+[]string{"host"},
+)
+
+// -----------------------------------------------------------------------------
+// DoGet Pipeline Metrics
+// -----------------------------------------------------------------------------
+
+// PipelineBatchesPerSecond tracks pipeline throughput
+var PipelineBatchesPerSecond = promauto.NewGauge(
+prometheus.GaugeOpts{
+Name: "longbow_pipeline_batches_per_second",
+Help: "DoGet pipeline throughput in batches per second",
+},
+)
+
+// PipelineWorkerUtilization tracks worker busy percentage
+var PipelineWorkerUtilization = promauto.NewGaugeVec(
+prometheus.GaugeOpts{
+Name: "longbow_pipeline_worker_utilization",
+Help: "DoGet pipeline worker utilization (0-1)",
+},
+[]string{"worker_id"},
+)
+
+// -----------------------------------------------------------------------------
+// Adaptive WAL Metrics
+// -----------------------------------------------------------------------------
+
+// WalAdaptiveIntervalMs tracks current adaptive flush interval
+var WalAdaptiveIntervalMs = promauto.NewGauge(
+prometheus.GaugeOpts{
+Name: "longbow_wal_adaptive_interval_ms",
+Help: "Current adaptive WAL flush interval in milliseconds",
+},
+)
+
+// WalWriteRatePerSecond tracks current write rate
+var WalWriteRatePerSecond = promauto.NewGauge(
+prometheus.GaugeOpts{
+Name: "longbow_wal_write_rate_per_second",
+Help: "Current WAL write rate per second",
+},
+)
+
+// -----------------------------------------------------------------------------
+// Zero-Copy / HNSW Epoch Metrics
+// -----------------------------------------------------------------------------
+
+// HnswEpochTransitions counts epoch advancement events
+var HnswEpochTransitions = promauto.NewCounter(
+prometheus.CounterOpts{
+Name: "longbow_hnsw_epoch_transitions_total",
+Help: "Total HNSW epoch transitions for zero-copy access",
+},
+)
+
+// -----------------------------------------------------------------------------
+// Fast Path Filter Metrics
+// -----------------------------------------------------------------------------
+
+// FastPathUsageTotal counts fast path vs fallback usage
+var FastPathUsageTotal = promauto.NewCounterVec(
+prometheus.CounterOpts{
+Name: "longbow_fast_path_usage_total",
+Help: "Filter fast path usage count (fast/fallback)",
+},
+[]string{"path"},
+)
+
+// -----------------------------------------------------------------------------
+// IPC Buffer Pool Metrics
+// -----------------------------------------------------------------------------
+
+// IpcBufferPoolUtilization tracks buffer pool utilization
+var IpcBufferPoolUtilization = promauto.NewGauge(
+prometheus.GaugeOpts{
+Name: "longbow_ipc_buffer_pool_utilization",
+Help: "IPC buffer pool utilization ratio (0-1)",
+},
+)
+
+// IpcBufferPoolHits counts pool hits
+var IpcBufferPoolHits = promauto.NewCounter(
+prometheus.CounterOpts{
+Name: "longbow_ipc_buffer_pool_hits_total",
+Help: "Total IPC buffer pool hits",
+},
+)
+
+// IpcBufferPoolMisses counts pool misses
+var IpcBufferPoolMisses = promauto.NewCounter(
+prometheus.CounterOpts{
+Name: "longbow_ipc_buffer_pool_misses_total",
+Help: "Total IPC buffer pool misses",
+},
+)
+
+// -----------------------------------------------------------------------------
+// S3 Backend Metrics
+// -----------------------------------------------------------------------------
+
+// S3RequestDuration measures S3 operation latency
+var S3RequestDuration = promauto.NewHistogramVec(
+prometheus.HistogramOpts{
+Name:    "longbow_s3_request_duration_seconds",
+Help:    "S3 request duration by operation type",
+Buckets: []float64{0.01, 0.05, 0.1, 0.5, 1, 5, 10, 30},
+},
+[]string{"operation"},
+)
+
+// S3RetriesTotal counts S3 retries by operation
+var S3RetriesTotal = promauto.NewCounterVec(
+prometheus.CounterOpts{
+Name: "longbow_s3_retries_total",
+Help: "Total S3 operation retries by operation type",
+},
+[]string{"operation"},
+)
+
+// -----------------------------------------------------------------------------
+// Warmup Metrics
+// -----------------------------------------------------------------------------
+
+// WarmupProgressPercent tracks warmup progress
+var WarmupProgressPercent = promauto.NewGauge(
+prometheus.GaugeOpts{
+Name: "longbow_warmup_progress_percent",
+Help: "Warmup progress percentage (0-100)",
+},
+)
+
+// WarmupDatasetsTotal tracks total datasets to warm up
+var WarmupDatasetsTotal = promauto.NewGauge(
+prometheus.GaugeOpts{
+Name: "longbow_warmup_datasets_total",
+Help: "Total datasets to warm up",
+},
+)
+
+// WarmupDatasetsCompleted tracks completed warmup datasets
+var WarmupDatasetsCompleted = promauto.NewGauge(
+prometheus.GaugeOpts{
+Name: "longbow_warmup_datasets_completed",
+Help: "Number of datasets warmed up",
+},
+)
+
+// -----------------------------------------------------------------------------
+// Sharded HNSW Metrics
+// -----------------------------------------------------------------------------
+
+// ShardedHnswLoadFactor tracks load factor by shard
+var ShardedHnswLoadFactor = promauto.NewGaugeVec(
+prometheus.GaugeOpts{
+Name: "longbow_sharded_hnsw_load_factor",
+Help: "Sharded HNSW load factor by shard (0-1)",
+},
+[]string{"shard_id"},
+)
+
+// ShardedHnswShardSize tracks shard sizes
+var ShardedHnswShardSize = promauto.NewGaugeVec(
+prometheus.GaugeOpts{
+Name: "longbow_sharded_hnsw_shard_size",
+Help: "Sharded HNSW shard size (vector count)",
+},
+[]string{"shard_id"},
+)
+
+// -----------------------------------------------------------------------------
+// Record Size Cache Metrics
+// -----------------------------------------------------------------------------
+
+// RecordSizeCacheHitRate tracks cache hit rate
+var RecordSizeCacheHitRate = promauto.NewGauge(
+prometheus.GaugeOpts{
+Name: "longbow_record_size_cache_hit_rate",
+Help: "Record size cache hit rate (0-1)",
+},
+)

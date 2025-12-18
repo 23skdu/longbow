@@ -6,7 +6,8 @@ import (
 "sync/atomic"
 "time"
 
-"github.com/apache/arrow-go/v18/arrow"
+"github.com/23skdu/longbow/internal/metrics"
+	"github.com/apache/arrow-go/v18/arrow"
 "github.com/apache/arrow-go/v18/arrow/array"
 "github.com/apache/arrow-go/v18/arrow/memory"
 )
@@ -145,6 +146,7 @@ return
 case <-ticker.C:
 // Compaction logic will be integrated in Subtask 4
 w.compactionsRun.Add(1)
+metrics.CompactionOperationsTotal.WithLabelValues("completed").Inc()
 w.lastRunTime.Store(time.Now())
 }
 }

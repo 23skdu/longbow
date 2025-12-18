@@ -61,10 +61,10 @@ type WALBatcher struct {
 }
 
 // NewWALBatcher creates a new batched WAL writer
-func NewWALBatcher(dataPath string, config WALBatcherConfig) *WALBatcher {
+func NewWALBatcher(dataPath string, config *WALBatcherConfig) *WALBatcher {
 	w := &WALBatcher{
 		dataPath:  dataPath,
-		config:    config,
+		config:   *config,
 		mem:       memory.NewGoAllocator(),
 		entries:   make(chan WALEntry, config.MaxBatchSize*10),
 		batch:     make([]WALEntry, 0, config.MaxBatchSize),

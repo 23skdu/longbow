@@ -337,7 +337,7 @@ cfg := DefaultWALBatcherConfig()
 cfg.AsyncFsync = DefaultAsyncFsyncConfig()
 cfg.AsyncFsync.DirtyThreshold = 100 // Low threshold for testing
 
-batcher := NewWALBatcher(tmpDir, cfg)
+batcher := NewWALBatcher(tmpDir, &cfg)
 if batcher == nil {
 t.Fatal("NewWALBatcher returned nil")
 }
@@ -361,7 +361,7 @@ cfg := DefaultWALBatcherConfig()
 cfg.AsyncFsync = DefaultAsyncFsyncConfig()
 cfg.AsyncFsync.DirtyThreshold = 50
 
-batcher := NewWALBatcher(tmpDir, cfg)
+batcher := NewWALBatcher(tmpDir, &cfg)
 if err := batcher.Start(); err != nil {
 t.Fatalf("Start: %v", err)
 }
@@ -380,7 +380,7 @@ tmpDir := t.TempDir()
 cfg := DefaultWALBatcherConfig()
 cfg.AsyncFsync = AsyncFsyncConfig{Enabled: false}
 
-batcher := NewWALBatcher(tmpDir, cfg)
+batcher := NewWALBatcher(tmpDir, &cfg)
 if err := batcher.Start(); err != nil {
 t.Fatalf("Start: %v", err)
 }

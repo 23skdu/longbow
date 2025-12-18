@@ -39,7 +39,8 @@ return err
 }
 
 // Initialize WAL batcher for async writes
-s.walBatcher = NewWALBatcher(s.dataPath, DefaultWALBatcherConfig())
+cfg := DefaultWALBatcherConfig()
+	s.walBatcher = NewWALBatcher(s.dataPath, &cfg)
 if err := s.walBatcher.Start(); err != nil {
 return fmt.Errorf("failed to start WAL batcher: %w", err)
 }

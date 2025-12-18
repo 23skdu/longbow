@@ -724,3 +724,45 @@ Help: "Total bitmap buffers discarded (oversized)",
 },
 )
 
+
+// -----------------------------------------------------------------------------
+// PerP Result Pool Metrics
+// -----------------------------------------------------------------------------
+
+var (
+// PerPPoolGetsTotal tracks total Get operations per shard
+PerPPoolGetsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+
+Name:      "longbow_perp_pool_gets_total",
+Help:      "Total number of Get operations on PerP result pool",
+}, []string{"shard"})
+
+// PerPPoolPutsTotal tracks total Put operations per shard
+PerPPoolPutsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+
+Name:      "longbow_perp_pool_puts_total",
+Help:      "Total number of Put operations on PerP result pool",
+}, []string{"shard"})
+
+// PerPPoolHitsTotal tracks pool hits (buffer reuse)
+PerPPoolHitsTotal = promauto.NewCounter(prometheus.CounterOpts{
+
+Name:      "longbow_perp_pool_hits_total",
+Help:      "Total number of pool hits (buffer reuse) on PerP result pool",
+})
+
+// PerPPoolMissesTotal tracks pool misses (new allocations)
+PerPPoolMissesTotal = promauto.NewCounter(prometheus.CounterOpts{
+
+Name:      "longbow_perp_pool_misses_total",
+Help:      "Total number of pool misses (new allocations) on PerP result pool",
+})
+
+// PerPPoolShardDistribution tracks distribution of operations across shards
+PerPPoolShardDistribution = promauto.NewHistogramVec(prometheus.HistogramOpts{
+
+Name:      "longbow_perp_pool_shard_distribution",
+Help:      "Distribution of operations across PerP pool shards",
+Buckets:   prometheus.LinearBuckets(0, 1, 16),
+}, []string{"operation"})
+)

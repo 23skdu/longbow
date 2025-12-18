@@ -110,6 +110,7 @@ func (h *HNSWIndex) getVector(id VectorID) []float32 {
 	src := floatArr.Float32Values()[start:end]
 	dst := make([]float32, len(src))
 	copy(dst, src)
+	metrics.HnswCopyAccessTotal.WithLabelValues(h.dataset.Name).Inc()
 	return dst
 }
 
@@ -283,6 +284,7 @@ func (h *HNSWIndex) getVectorUnsafe(id VectorID) (vec []float32, release func())
 		h.exitEpoch()
 	}
 
+	metrics.HnswZeroCopyAccessTotal.WithLabelValues(h.dataset.Name).Inc()
 	return vec, release
 }
 

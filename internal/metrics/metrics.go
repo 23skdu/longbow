@@ -679,3 +679,21 @@ Name: "longbow_record_size_cache_hit_rate",
 Help: "Record size cache hit rate (0-1)",
 },
 )
+
+// HnswZeroCopyAccessTotal counts zero-copy vector accesses (no allocation)
+var HnswZeroCopyAccessTotal = promauto.NewCounterVec(
+prometheus.CounterOpts{
+Name: "longbow_hnsw_zerocopy_access_total",
+Help: "Total count of zero-copy vector accesses using getVectorUnsafe",
+},
+[]string{"dataset"},
+)
+
+// HnswCopyAccessTotal counts vector accesses that require allocation and copy
+var HnswCopyAccessTotal = promauto.NewCounterVec(
+prometheus.CounterOpts{
+Name: "longbow_hnsw_copy_access_total",
+Help: "Total count of vector accesses using getVector (with allocation)",
+},
+[]string{"dataset"},
+)

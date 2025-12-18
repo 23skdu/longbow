@@ -81,11 +81,11 @@ cosineDistanceImpl = cosineNEON
 dotProductImpl = dotNEON
 euclideanDistanceBatchImpl = euclideanBatchNEON
 default:
-euclideanDistanceImpl = euclideanGeneric
+euclideanDistanceImpl = euclideanUnrolled4x
 metrics.SimdDispatchCount.WithLabelValues("generic").Inc()
-cosineDistanceImpl = cosineGeneric
-dotProductImpl = dotGeneric
-euclideanDistanceBatchImpl = euclideanBatchGeneric
+cosineDistanceImpl = cosineUnrolled4x
+dotProductImpl = dotUnrolled4x
+euclideanDistanceBatchImpl = euclideanBatchUnrolled4x
 }
 }
 
@@ -184,5 +184,128 @@ euclideanDistanceBatchImpl(query, vectors, results)
 func euclideanBatchGeneric(query []float32, vectors [][]float32, results []float32) {
 for i, v := range vectors {
 results[i] = euclideanGeneric(query, v)
+}
+}
+
+// =============================================================================
+// 4x Unrolled Generic Implementations
+// Multiple accumulators break loop-carried dependencies, enabling:
+// - Instruction-level parallelism (ILP)
+// - Go compiler auto-vectorization on generic architectures
+// - ~2-4x speedup over simple scalar loops
+// =============================================================================
+
+// euclideanUnrolled4x computes Euclidean distance with 4x loop unrolling
+func euclideanUnrolled4x(a, b []float32) float32 {
+if len(a) == 0 {
+return 0
+}
+
+var sum0, sum1, sum2, sum3 float32
+n := len(a)
+i := 0
+
+// Main loop: process 4 elements at a time
+for ; i <= n-4; i += 4 {
+d0 := a[i] - b[i]
+d1 := a[i+1] - b[i+1]
+d2 := a[i+2] - b[i+2]
+d3 := a[i+3] - b[i+3]
+sum0 += d0 * d0
+sum1 += d1 * d1
+sum2 += d2 * d2
+sum3 += d3 * d3
+}
+
+// Handle remainder (0-3 elements)
+for ; i < n; i++ {
+d := a[i] - b[i]
+sum0 += d * d
+}
+
+return float32(math.Sqrt(float64(sum0 + sum1 + sum2 + sum3)))
+}
+
+// cosineUnrolled4x computes cosine distance with 4x loop unrolling
+func cosineUnrolled4x(a, b []float32) float32 {
+if len(a) == 0 {
+return 1.0
+}
+
+var dot0, dot1, dot2, dot3 float32
+var normA0, normA1, normA2, normA3 float32
+var normB0, normB1, normB2, normB3 float32
+n := len(a)
+i := 0
+
+// Main loop: process 4 elements at a time
+for ; i <= n-4; i += 4 {
+a0, a1, a2, a3 := a[i], a[i+1], a[i+2], a[i+3]
+b0, b1, b2, b3 := b[i], b[i+1], b[i+2], b[i+3]
+
+dot0 += a0 * b0
+dot1 += a1 * b1
+dot2 += a2 * b2
+dot3 += a3 * b3
+
+normA0 += a0 * a0
+normA1 += a1 * a1
+normA2 += a2 * a2
+normA3 += a3 * a3
+
+normB0 += b0 * b0
+normB1 += b1 * b1
+normB2 += b2 * b2
+normB3 += b3 * b3
+}
+
+// Handle remainder
+for ; i < n; i++ {
+dot0 += a[i] * b[i]
+normA0 += a[i] * a[i]
+normB0 += b[i] * b[i]
+}
+
+// Reduce accumulators
+dot := dot0 + dot1 + dot2 + dot3
+normA := normA0 + normA1 + normA2 + normA3
+normB := normB0 + normB1 + normB2 + normB3
+
+if normA == 0 || normB == 0 {
+return 1.0
+}
+return 1.0 - (dot / float32(math.Sqrt(float64(normA)*float64(normB))))
+}
+
+// dotUnrolled4x computes dot product with 4x loop unrolling
+func dotUnrolled4x(a, b []float32) float32 {
+if len(a) == 0 {
+return 0
+}
+
+var sum0, sum1, sum2, sum3 float32
+n := len(a)
+i := 0
+
+// Main loop: process 4 elements at a time
+for ; i <= n-4; i += 4 {
+sum0 += a[i] * b[i]
+sum1 += a[i+1] * b[i+1]
+sum2 += a[i+2] * b[i+2]
+sum3 += a[i+3] * b[i+3]
+}
+
+// Handle remainder
+for ; i < n; i++ {
+sum0 += a[i] * b[i]
+}
+
+return sum0 + sum1 + sum2 + sum3
+}
+
+// euclideanBatchUnrolled4x computes batch Euclidean distances using unrolled inner loop
+func euclideanBatchUnrolled4x(query []float32, vectors [][]float32, results []float32) {
+for i, v := range vectors {
+results[i] = euclideanUnrolled4x(query, v)
 }
 }

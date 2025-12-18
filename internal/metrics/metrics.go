@@ -816,3 +816,21 @@ Namespace: "longbow",
 Name:      "hnsw_searches_total",
 Help:      "Total number of HNSW approximate nearest neighbor searches",
 })
+
+// ZeroAllocTicketParseTotal - Counter for successful zero-alloc ticket parses
+var ZeroAllocTicketParseTotal = promauto.NewCounter(
+prometheus.CounterOpts{
+Namespace: "longbow",
+Name:      "zero_alloc_ticket_parse_total",
+Help:      "Total number of tickets parsed with zero-allocation parser",
+},
+)
+
+// TicketParseFallbackTotal - Counter for fallbacks to standard JSON parser
+var TicketParseFallbackTotal = promauto.NewCounter(
+prometheus.CounterOpts{
+Namespace: "longbow",
+Name:      "ticket_parse_fallback_total",
+Help:      "Total number of fallbacks to standard JSON ticket parser",
+},
+)

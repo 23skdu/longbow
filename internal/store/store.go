@@ -25,6 +25,8 @@ import (
 "github.com/apache/arrow-go/v18/arrow/scalar"
 )
 
+// zeroAllocTicketParser is a package-level parser for DoGet hot path
+var zeroAllocTicketParser = NewZeroAllocTicketParser()
 
 type IndexJob struct {
 	DatasetName string
@@ -287,9 +289,16 @@ method := "DoGet"
 name := string(tkt.Ticket)
 limit := int64(-1)
 
-// Track ticket parsing duration
+// Track ticket parsing duration - use zero-alloc parser
 ticketParseStart := time.Now()
-query, parseErr := FastParseTicketQuery(tkt.Ticket)
+query, parseErr := zeroAllocTicketParser.Parse(tkt.Ticket)
+if parseErr != nil {
+// Fallback to standard parser on error
+query, parseErr = FastParseTicketQuery(tkt.Ticket)
+metrics.TicketParseFallbackTotal.Inc()
+} else {
+metrics.ZeroAllocTicketParseTotal.Inc()
+}
 metrics.FlightTicketParseDurationSeconds.Observe(time.Since(ticketParseStart).Seconds())
 if parseErr == nil && query.Name != "" {
 name = query.Name

@@ -6,6 +6,7 @@ import (
 "unsafe"
 
 "github.com/apache/arrow-go/v18/arrow"
+	"github.com/23skdu/longbow/internal/metrics"
 )
 
 // RecordSizeCache caches computed sizes for Arrow record batches.
@@ -51,12 +52,14 @@ c.mu.RLock()
 if size, ok := c.cache[key]; ok {
 c.mu.RUnlock()
 c.hits.Add(1)
+		metrics.RecordSizeCacheHitsTotal.Inc()
 return size
 }
 c.mu.RUnlock()
 
 // Slow path: compute size
 c.misses.Add(1)
+	metrics.RecordSizeCacheMissesTotal.Inc()
 size := calculateRecordSize(rec)
 
 // Store in cache

@@ -2,6 +2,7 @@ package simd
 
 import (
 "math"
+"github.com/23skdu/longbow/internal/metrics"
 
 "github.com/klauspost/cpuid/v2"
 )
@@ -63,21 +64,25 @@ func initializeDispatch() {
 switch implementation {
 case "avx512":
 euclideanDistanceImpl = euclideanAVX512
+metrics.SimdDispatchCount.WithLabelValues("avx512").Inc()
 cosineDistanceImpl = cosineAVX512
 dotProductImpl = dotAVX512
 euclideanDistanceBatchImpl = euclideanBatchAVX512
 case "avx2":
 euclideanDistanceImpl = euclideanAVX2
+metrics.SimdDispatchCount.WithLabelValues("avx2").Inc()
 cosineDistanceImpl = cosineAVX2
 dotProductImpl = dotAVX2
 euclideanDistanceBatchImpl = euclideanBatchAVX2
 case "neon":
 euclideanDistanceImpl = euclideanNEON
+metrics.SimdDispatchCount.WithLabelValues("neon").Inc()
 cosineDistanceImpl = cosineNEON
 dotProductImpl = dotNEON
 euclideanDistanceBatchImpl = euclideanBatchNEON
 default:
 euclideanDistanceImpl = euclideanGeneric
+metrics.SimdDispatchCount.WithLabelValues("generic").Inc()
 cosineDistanceImpl = cosineGeneric
 dotProductImpl = dotGeneric
 euclideanDistanceBatchImpl = euclideanBatchGeneric

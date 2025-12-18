@@ -136,6 +136,8 @@ func (w *WALBatcher) flushLoop() {
 		select {
 		case entry := <-w.entries:
 			w.mu.Lock()
+// Track pending entries (backpressure indicator)
+metrics.WalPendingEntries.Set(float64(len(w.entries)))
 			w.batch = append(w.batch, entry)
 			shoudFlush := len(w.batch) >= w.config.MaxBatchSize
 			w.mu.Unlock()
@@ -168,6 +170,8 @@ func (w *WALBatcher) flush() {
 	w.batch = w.backBatch[:0]
 	w.backBatch = batch // double-buffer swap: reuse slices to avoid allocation
 	w.mu.Unlock()
+// Record batch size (measures batching efficiency)
+metrics.WalBatchSize.Observe(float64(len(batch)))
 
 	// Write all entries
 	for _, entry := range batch {
@@ -184,11 +188,19 @@ func (w *WALBatcher) flush() {
 	}
 
 	// Sync once per batch instead of per-write
+	// Sync once per batch instead of per-write
 	if w.walFile != nil {
-		if err := w.walFile.Sync(); err != nil {
+		// Time the fsync operation (critical for detecting I/O stalls)
+		fsyncStart := time.Now()
+		err := w.walFile.Sync()
+		fsyncDuration := time.Since(fsyncStart).Seconds()
+		if err != nil {
+			metrics.WalFsyncDurationSeconds.WithLabelValues("error").Observe(fsyncDuration)
 			w.mu.Lock()
 			w.flushErr = err
 			w.mu.Unlock()
+		} else {
+			metrics.WalFsyncDurationSeconds.WithLabelValues("success").Observe(fsyncDuration)
 		}
 	}
 }

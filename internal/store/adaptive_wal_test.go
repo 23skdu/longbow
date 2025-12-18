@@ -125,7 +125,7 @@ FlushInterval: 10 * time.Millisecond,
 MaxBatchSize:  100,
 Adaptive:      NewAdaptiveWALConfig(),
 }
-batcher := NewWALBatcher(tmpDir, cfg)
+batcher := NewWALBatcher(tmpDir, &cfg)
 require.NotNil(t, batcher)
 assert.True(t, batcher.IsAdaptiveEnabled())
 interval := batcher.GetCurrentInterval()
@@ -140,7 +140,7 @@ FlushInterval: 10 * time.Millisecond,
 MaxBatchSize:  100,
 Adaptive:      AdaptiveWALConfig{Enabled: false},
 }
-batcher := NewWALBatcher(tmpDir, cfg)
+batcher := NewWALBatcher(tmpDir, &cfg)
 assert.False(t, batcher.IsAdaptiveEnabled())
 assert.Equal(t, cfg.FlushInterval, batcher.GetCurrentInterval())
 }

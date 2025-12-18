@@ -42,7 +42,7 @@ func TestBatchedWAL_TimeBasedFlush(t *testing.T) {
 	mem := memory.NewGoAllocator()
 
 	// Create WAL batcher with 50ms flush interval, large batch size
-	batcher := NewWALBatcher(tmpDir, WALBatcherConfig{
+	batcher := NewWALBatcher(tmpDir, &WALBatcherConfig{
 		FlushInterval: 50 * time.Millisecond,
 		MaxBatchSize:  1000, // Won't trigger size-based flush
 	})
@@ -74,7 +74,7 @@ func TestBatchedWAL_SizeBasedFlush(t *testing.T) {
 	mem := memory.NewGoAllocator()
 
 	// Create WAL batcher with long interval, small batch size
-	batcher := NewWALBatcher(tmpDir, WALBatcherConfig{
+	batcher := NewWALBatcher(tmpDir, &WALBatcherConfig{
 		FlushInterval: 10 * time.Second, // Won't trigger time-based flush
 		MaxBatchSize:  5,
 	})
@@ -111,7 +111,7 @@ func TestBatchedWAL_ConcurrentWrites(t *testing.T) {
 	tmpDir := t.TempDir()
 	mem := memory.NewGoAllocator()
 
-	batcher := NewWALBatcher(tmpDir, WALBatcherConfig{
+	batcher := NewWALBatcher(tmpDir, &WALBatcherConfig{
 		FlushInterval: 20 * time.Millisecond,
 		MaxBatchSize:  50,
 	})
@@ -155,7 +155,7 @@ func TestBatchedWAL_ReplayAfterBatch(t *testing.T) {
 	mem := memory.NewGoAllocator()
 
 	// Phase 1: Write with batching
-	batcher := NewWALBatcher(tmpDir, WALBatcherConfig{
+	batcher := NewWALBatcher(tmpDir, &WALBatcherConfig{
 		FlushInterval: 10 * time.Millisecond,
 		MaxBatchSize:  10,
 	})
@@ -195,7 +195,7 @@ func TestBatchedWAL_FlushOnStop(t *testing.T) {
 	tmpDir := t.TempDir()
 	mem := memory.NewGoAllocator()
 
-	batcher := NewWALBatcher(tmpDir, WALBatcherConfig{
+	batcher := NewWALBatcher(tmpDir, &WALBatcherConfig{
 		FlushInterval: 1 * time.Hour, // Very long, won't trigger
 		MaxBatchSize:  1000,          // Very large, won't trigger
 	})
@@ -223,7 +223,7 @@ func TestBatchedWAL_NonBlockingWrite(t *testing.T) {
 	tmpDir := t.TempDir()
 	mem := memory.NewGoAllocator()
 
-	batcher := NewWALBatcher(tmpDir, WALBatcherConfig{
+	batcher := NewWALBatcher(tmpDir, &WALBatcherConfig{
 		FlushInterval: 10 * time.Millisecond,
 		MaxBatchSize:  100,
 	})
@@ -270,7 +270,7 @@ func TestBatchedWAL_DoubleBufferSwap(t *testing.T) {
 	tmpDir := t.TempDir()
 	mem := memory.NewGoAllocator()
 
-	batcher := NewWALBatcher(tmpDir, WALBatcherConfig{
+	batcher := NewWALBatcher(tmpDir, &WALBatcherConfig{
 		FlushInterval: 1 * time.Hour, // Manual flush only
 		MaxBatchSize:  1000,
 	})
@@ -314,7 +314,7 @@ func TestBatchedWAL_NoAllocOnFlush(t *testing.T) {
 	tmpDir := t.TempDir()
 	mem := memory.NewGoAllocator()
 
-	batcher := NewWALBatcher(tmpDir, WALBatcherConfig{
+	batcher := NewWALBatcher(tmpDir, &WALBatcherConfig{
 		FlushInterval: 1 * time.Hour,
 		MaxBatchSize:  100,
 	})
@@ -357,7 +357,7 @@ func TestBatchedWAL_DoubleBufferCapacityPreserved(t *testing.T) {
 	mem := memory.NewGoAllocator()
 
 	const maxBatch = 50
-	batcher := NewWALBatcher(tmpDir, WALBatcherConfig{
+	batcher := NewWALBatcher(tmpDir, &WALBatcherConfig{
 		FlushInterval: 1 * time.Hour,
 		MaxBatchSize:  maxBatch,
 	})
@@ -393,7 +393,7 @@ func TestBatchedWAL_DoubleBufferUnderLoad(t *testing.T) {
 	tmpDir := t.TempDir()
 	mem := memory.NewGoAllocator()
 
-	batcher := NewWALBatcher(tmpDir, WALBatcherConfig{
+	batcher := NewWALBatcher(tmpDir, &WALBatcherConfig{
 		FlushInterval: 5 * time.Millisecond, // Fast flushes
 		MaxBatchSize:  20,                   // Small batches = frequent flushes
 	})

@@ -334,6 +334,7 @@ initialInterval = newInterval
 func (s *VectorStore) Close() error {
 s.logger.Info("Closing VectorStore...")
 
+s.stopCompaction()
 // Stop WAL batcher first to flush pending writes
 if s.walBatcher != nil {
 if err := s.walBatcher.Stop(); err != nil {

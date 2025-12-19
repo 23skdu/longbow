@@ -1049,3 +1049,27 @@ Help:    "Duration of Louvain community detection",
 Buckets: prometheus.DefBuckets,
 },
 )
+
+// Batch Distance Search Metrics
+var BatchDistanceCallsTotal = promauto.NewCounter(
+prometheus.CounterOpts{
+Name: "longbow_batch_distance_calls_total",
+Help: "Total number of batch distance calculation calls",
+},
+)
+
+var BatchDistanceBatchSize = promauto.NewHistogram(
+prometheus.HistogramOpts{
+Name: "longbow_batch_distance_batch_size",
+Help: "Distribution of batch sizes in batch distance calculations",
+Buckets: []float64{1, 5, 10, 25, 50, 100, 250, 500, 1000},
+},
+)
+
+var BatchDistanceDurationSeconds = promauto.NewHistogram(
+prometheus.HistogramOpts{
+Name: "longbow_batch_distance_duration_seconds",
+Help: "Duration of batch distance calculations",
+Buckets: prometheus.DefBuckets,
+},
+)

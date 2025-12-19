@@ -17,11 +17,11 @@ Handles high-throughput data operations:
 
 ### Meta Server (Port 3001)
 
-Handles metadata and analytics operations:
+Handles metadata and control plane operations:
 
 - **ListFlights**: List available collections
 - **GetFlightInfo**: Collection metadata
-- **DoAction**: Analytics queries via DuckDB sidecar
+- **DoAction**: Management commands (extensible)
 
 > Port separation prevents heavy data transfers from blocking metadata lookups.
 

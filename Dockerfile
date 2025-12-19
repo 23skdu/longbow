@@ -1,30 +1,36 @@
 # Stage 1: Build
-# Use Debian Bookworm-based Go image to match runtime glibc version
-FROM golang:1.24-bookworm AS builder
+FROM golang:1.24-alpine AS builder
 
 WORKDIR /app
+
+# Install CA certificates for copying to scratch
+RUN apk add --no-cache ca-certificates
 
 COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
 
-# Build with CGO enabled for DuckDB
-RUN CGO_ENABLED=1 GOOS=linux go build -o longbow ./cmd/longbow
+# Build static binary (no CGO required after DuckDB removal)
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+    -ldflags="-s -w" \
+    -o longbow ./cmd/longbow
 
-# Stage 2: Runtime
-# Use debian-slim to provide the necessary glibc runtime libraries
-FROM debian:bookworm-slim
+# Stage 2: Minimal runtime
+# scratch = zero OS overhead, ~50MB total image
+FROM scratch
 
 WORKDIR /app
 
-# Install ca-certificates for HTTPS connectivity and libm for math ops
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+# Copy CA certificates for TLS
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
+# Copy binary
 COPY --from=builder /app/longbow /usr/local/bin/longbow
+
+# Default data directory
+VOLUME /data
 
 EXPOSE 3000 3001 9090
 
-ENTRYPOINT ["longbow"]
+ENTRYPOINT ["/usr/local/bin/longbow"]

@@ -119,24 +119,26 @@ grpc.KeepaliveEnforcementPolicy(kaPolicy),
 dataServer := grpc.NewServer(serverOpts...)
 flight.RegisterFlightServiceServer(dataServer, store.NewDataServer(vectorStore))
 
-dataLis, err := net.Listen("tcp", cfg.ListenAddr)
+dataLisBase, err := net.Listen("tcp", cfg.ListenAddr)
 if err != nil {
 logger.Error("Failed to listen for Data Server", zap.Error(err), zap.String("addr", cfg.ListenAddr))
 _ = logger.Sync()
 	os.Exit(1) //nolint:gocritic // sync called above
 }
+	dataLis := store.NewTCPNoDelayListener(dataLisBase.(*net.TCPListener))
 
 // --- Meta Server Setup ---
 metaServer := grpc.NewServer(serverOpts...)
 flight.RegisterFlightServiceServer(metaServer, store.NewMetaServer(vectorStore))
 
-metaLis, err := net.Listen("tcp", cfg.MetaAddr)
+metaLisBase, err := net.Listen("tcp", cfg.MetaAddr)
 if err != nil {
 logger.Error("Failed to listen for Meta Server", zap.Error(err), zap.String("addr", cfg.MetaAddr))
 _ = logger.Sync()
 	os.Exit(1) //nolint:gocritic // sync called above
 }
 
+	metaLis := store.NewTCPNoDelayListener(metaLisBase.(*net.TCPListener))
 // Handle signals for graceful shutdown and hot reload
 sigChan := make(chan os.Signal, 1)
 signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)

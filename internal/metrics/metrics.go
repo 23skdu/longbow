@@ -1110,3 +1110,27 @@ Name: "longbow_do_exchange_errors_total",
 Help: "Total number of DoExchange errors",
 },
 )
+
+// TCP_NODELAY Metrics - Low-latency connection configuration
+var TCPNoDelayConnectionsTotal = promauto.NewCounter(
+prometheus.CounterOpts{
+Name: "longbow_tcp_nodelay_connections_total",
+Help: "Total number of connections with TCP_NODELAY set",
+},
+)
+
+// Multi-Tenancy Namespace Metrics
+var NamespacesTotal = promauto.NewGauge(
+prometheus.GaugeOpts{
+Name: "longbow_namespaces_total",
+Help: "Total number of namespaces",
+},
+)
+
+var NamespaceDatasets = promauto.NewGaugeVec(
+prometheus.GaugeOpts{
+Name: "longbow_namespace_datasets",
+Help: "Number of datasets per namespace",
+},
+[]string{"namespace"},
+)

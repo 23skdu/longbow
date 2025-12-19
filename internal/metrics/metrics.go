@@ -850,6 +850,44 @@ Help:      "Total number of tickets parsed with zero-allocation parser",
 },
 )
 
+
+// ParserPoolGets - Counter for parser pool Get operations
+var ParserPoolGets = promauto.NewCounter(
+	prometheus.CounterOpts{
+		Namespace: "longbow",
+		Name:      "parser_pool_gets_total",
+		Help:      "Total number of Get operations on the ticket parser pool",
+	},
+)
+
+// ParserPoolPuts - Counter for parser pool Put operations
+var ParserPoolPuts = promauto.NewCounter(
+	prometheus.CounterOpts{
+		Namespace: "longbow",
+		Name:      "parser_pool_puts_total",
+		Help:      "Total number of Put operations on the ticket parser pool",
+	},
+)
+
+// ParserPoolHits - Counter for parser pool hits (reused parser)
+var ParserPoolHits = promauto.NewCounter(
+	prometheus.CounterOpts{
+		Namespace: "longbow",
+		Name:      "parser_pool_hits_total",
+		Help:      "Total number of hits (parser reuse) from the ticket parser pool",
+	},
+)
+
+// ParserPoolMisses - Counter for parser pool misses (new parser created)
+var ParserPoolMisses = promauto.NewCounter(
+	prometheus.CounterOpts{
+		Namespace: "longbow",
+		Name:      "parser_pool_misses_total",
+		Help:      "Total number of misses (new parser allocation) from the ticket parser pool",
+	},
+)
+
+
 // TicketParseFallbackTotal - Counter for fallbacks to standard JSON parser
 var TicketParseFallbackTotal = promauto.NewCounter(
 prometheus.CounterOpts{

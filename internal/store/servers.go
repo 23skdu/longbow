@@ -1,12 +1,9 @@
 package store
 
 import (
-"bytes"
 "context"
-"encoding/json"
 
 "github.com/apache/arrow-go/v18/arrow/flight"
-"github.com/apache/arrow-go/v18/arrow/ipc"
 "google.golang.org/grpc/codes"
 "google.golang.org/grpc/status"
 )
@@ -54,17 +51,15 @@ func (s *DataServer) DoAction(action *flight.Action, stream flight.FlightService
 return status.Error(codes.Unimplemented, "DoAction not implemented on DataServer; use MetaServer")
 }
 
-// MetaServer handles control plane operations (ListFlights, GetFlightInfo) and Analytics
+// MetaServer handles control plane operations (ListFlights, GetFlightInfo)
 // Embeds VectorStore to inherit base interface, overrides methods for error conversion.
 type MetaServer struct {
 *VectorStore
-duckDB *DuckDBAdapter
 }
 
 func NewMetaServer(store *VectorStore) *MetaServer {
 return &MetaServer{
 VectorStore: store,
-duckDB:      NewDuckDBAdapter(store.dataPath),
 }
 }
 
@@ -95,61 +90,13 @@ func (s *MetaServer) DoExchange(stream flight.FlightService_DoExchangeServer) er
 return status.Error(codes.Unimplemented, "DoExchange not implemented")
 }
 
-// DoAction handles management and analytics commands on MetaServer
+// DoAction handles management commands on MetaServer
 func (s *MetaServer) DoAction(action *flight.Action, stream flight.FlightService_DoActionServer) error {
 if action == nil {
 return status.Error(codes.InvalidArgument, "action is required")
 }
 s.logger.Info("MetaServer DoAction called", "type", action.Type)
 
-switch action.Type {
-case "query_analytics":
-return s.handleQueryAnalytics(action, stream)
-default:
+// No actions currently implemented
 return status.Errorf(codes.Unimplemented, "unknown action: %s", action.Type)
-}
-}
-
-// handleQueryAnalytics processes analytics queries via DuckDB
-func (s *MetaServer) handleQueryAnalytics(action *flight.Action, stream flight.FlightService_DoActionServer) error {
-var req struct {
-Dataset string `json:"dataset"`
-Query   string `json:"query"`
-}
-if err := json.Unmarshal(action.Body, &req); err != nil {
-return status.Errorf(codes.InvalidArgument, "invalid JSON body: %v", err)
-}
-
-if req.Dataset == "" || req.Query == "" {
-return status.Error(codes.InvalidArgument, "dataset and query are required")
-}
-
-// Execute via DuckDB Adapter
-rdr, cleanup, err := s.duckDB.QuerySnapshot(stream.Context(), req.Dataset, req.Query)
-if err != nil {
-s.logger.Error("Analytics query failed", "dataset", req.Dataset, "error", err)
-return status.Errorf(codes.Internal, "query failed: %v", err)
-}
-defer cleanup()
-
-// Serialize Arrow Records to IPC stream
-var buf bytes.Buffer
-writer := ipc.NewWriter(&buf, ipc.WithSchema(rdr.Schema()))
-
-for rdr.Next() {
-rec := rdr.RecordBatch()
-if err := writer.Write(rec); err != nil {
-return status.Errorf(codes.Internal, "failed to write Arrow record: %v", err)
-}
-}
-if err := rdr.Err(); err != nil {
-return status.Errorf(codes.Internal, "error reading Arrow results: %v", err)
-}
-
-if err := writer.Close(); err != nil {
-return status.Errorf(codes.Internal, "failed to close IPC writer: %v", err)
-}
-
-// Send result back
-return stream.Send(&flight.Result{Body: buf.Bytes()})
 }

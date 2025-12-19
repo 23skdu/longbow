@@ -199,17 +199,6 @@ results := hs.SearchHybridWeighted(query, "keywords", 10, 0.8, 60)
 results := hs.SearchHybridWeighted(query, "keywords", 10, 0.2, 60)
 ```
 
-## DuckDB Analytics Integration
-
-Longbow integrates with DuckDB for SQL queries on Parquet snapshots:
-
-```go
-adapter := store.NewDuckDBAdapter("/data/path")
-result, err := adapter.QuerySnapshot(
-    "my_dataset",
-    "SELECT count(*) FROM my_dataset WHERE value > 0.5",
-)
-```
 
 ## API Reference
 

@@ -1447,3 +1447,23 @@ Name: "longbow_memory_backpressure_rejects_total",
 Help: "Total number of rejected requests due to backpressure",
 })
 )
+
+// Checkpoint coordinator metrics
+var (
+CheckpointEpoch = promauto.NewGauge(prometheus.GaugeOpts{
+Name: "longbow_checkpoint_epoch",
+Help: "Current checkpoint epoch",
+})
+CheckpointsTotal = promauto.NewCounter(prometheus.CounterOpts{
+Name: "longbow_checkpoints_total",
+Help: "Total number of checkpoints completed",
+})
+CheckpointBarrierReached = promauto.NewCounter(prometheus.CounterOpts{
+Name: "longbow_checkpoint_barrier_reached_total",
+Help: "Total number of checkpoint barriers reached",
+})
+CheckpointTimeoutsTotal = promauto.NewCounter(prometheus.CounterOpts{
+Name: "longbow_checkpoint_timeouts_total",
+Help: "Total number of checkpoint timeouts",
+})
+)

@@ -867,3 +867,43 @@ Name:      "arrow_allocator_pool_misses_total",
 Help:      "Total buffer allocations that missed the pool",
 })
 )
+
+// ==================== Request Semaphore Metrics ====================
+
+var (
+// SemaphoreWaitingRequests tracks requests waiting to acquire the semaphore
+SemaphoreWaitingRequests = promauto.NewGauge(prometheus.GaugeOpts{
+Namespace: "longbow",
+Name:      "semaphore_waiting_requests",
+Help:      "Number of requests currently waiting to acquire the semaphore",
+})
+
+// SemaphoreAcquiredTotal tracks total successful semaphore acquisitions
+SemaphoreAcquiredTotal = promauto.NewCounter(prometheus.CounterOpts{
+Namespace: "longbow",
+Name:      "semaphore_acquired_total",
+Help:      "Total number of successful semaphore acquisitions",
+})
+
+// SemaphoreTimeoutsTotal tracks semaphore acquisition timeouts
+SemaphoreTimeoutsTotal = promauto.NewCounter(prometheus.CounterOpts{
+Namespace: "longbow",
+Name:      "semaphore_timeouts_total",
+Help:      "Total number of semaphore acquisition timeouts",
+})
+
+// SemaphoreQueueDurationSeconds tracks time spent waiting for semaphore
+SemaphoreQueueDurationSeconds = promauto.NewHistogram(prometheus.HistogramOpts{
+Namespace: "longbow",
+Name:      "semaphore_queue_duration_seconds",
+Help:      "Time spent waiting to acquire the semaphore",
+Buckets:   []float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10},
+})
+
+// SemaphoreActiveRequests tracks currently active requests (holding semaphore)
+SemaphoreActiveRequests = promauto.NewGauge(prometheus.GaugeOpts{
+Namespace: "longbow",
+Name:      "semaphore_active_requests",
+Help:      "Number of requests currently holding the semaphore",
+})
+)

@@ -907,3 +907,40 @@ Name:      "semaphore_active_requests",
 Help:      "Number of requests currently holding the semaphore",
 })
 )
+
+// =============================================================================
+// Lock Contention Metrics - Added for comprehensive lock instrumentation
+// =============================================================================
+
+// WALLockWaitDuration measures time spent waiting for WAL locks
+var WALLockWaitDuration = promauto.NewHistogramVec(
+prometheus.HistogramOpts{
+Namespace: "longbow",
+Name:      "wal_lock_wait_duration_seconds",
+Help:      "Time spent waiting for WAL mutex locks",
+Buckets:   []float64{0.00001, 0.00005, 0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1},
+},
+[]string{"operation"},
+)
+
+// PoolLockWaitDuration measures time spent waiting for connection pool locks
+var PoolLockWaitDuration = promauto.NewHistogramVec(
+prometheus.HistogramOpts{
+Namespace: "longbow",
+Name:      "pool_lock_wait_duration_seconds",
+Help:      "Time spent waiting for connection pool mutex locks",
+Buckets:   []float64{0.00001, 0.00005, 0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1},
+},
+[]string{"operation"},
+)
+
+// IndexLockWaitDuration measures time spent waiting for HNSW index locks
+var IndexLockWaitDuration = promauto.NewHistogramVec(
+prometheus.HistogramOpts{
+Namespace: "longbow",
+Name:      "index_lock_wait_duration_seconds",
+Help:      "Time spent waiting for HNSW index mutex locks",
+Buckets:   []float64{0.00001, 0.00005, 0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1},
+},
+[]string{"operation"},
+)

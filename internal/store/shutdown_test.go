@@ -2,8 +2,7 @@ package store
 
 import (
 "context"
-"io"
-"log/slog"
+"go.uber.org/zap"
 "os"
 "path/filepath"
 "sync"
@@ -14,8 +13,8 @@ import (
 "github.com/apache/arrow-go/v18/arrow/memory"
 )
 
-func discardLogger() *slog.Logger {
-return slog.New(slog.NewTextHandler(io.Discard, nil))
+func discardLogger() *zap.Logger {
+return zap.NewNop()
 }
 
 // TestShutdownCompletesWithinTimeout verifies shutdown respects context deadline

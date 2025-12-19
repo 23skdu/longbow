@@ -520,7 +520,9 @@ metrics.ArrowMemoryUsedBytes.WithLabelValues("default").Set(float64(s.currentMem
 		})
 // Track lock wait duration
 lockWaitStart := time.Now()
+dsLockStart1 := time.Now()
 ds.mu.Lock()
+metrics.DatasetLockWaitDurationSeconds.WithLabelValues("put").Observe(time.Since(dsLockStart1).Seconds())
 metrics.DatasetLockWaitDurationSeconds.WithLabelValues("write").Observe(time.Since(lockWaitStart).Seconds())
 batchIdx := len(ds.Records)
 ds.Records = append(ds.Records, rec)
@@ -589,7 +591,9 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 	case "drop_dataset":
 		name := string(action.Body)
 		if ds, ok := s.vectors.Get(name); ok {
+dsLockStart2 := time.Now()
 ds.mu.Lock()
+metrics.DatasetLockWaitDurationSeconds.WithLabelValues("put").Observe(time.Since(dsLockStart2).Seconds())
 var freedMem int64
 for _, r := range ds.Records {
 freedMem += CachedRecordSize(r)
@@ -782,7 +786,9 @@ ds, ok := s.vectors.Get(name)
 if !ok {
 continue
 }
+dsLockStart3 := time.Now()
 ds.mu.Lock()
+metrics.DatasetLockWaitDurationSeconds.WithLabelValues("append").Observe(time.Since(dsLockStart3).Seconds())
 var freedMem int64
 for _, r := range ds.Records {
 freedMem += CachedRecordSize(r)
@@ -826,7 +832,9 @@ return NewResourceExhaustedError("memory", "limit exceeded and no datasets to ev
 
 // Evict oldest
 if ds, ok := s.vectors.Get(oldestName); ok {
+dsLockStart4 := time.Now()
 ds.mu.Lock()
+metrics.DatasetLockWaitDurationSeconds.WithLabelValues("snapshot").Observe(time.Since(dsLockStart4).Seconds())
 for _, r := range ds.Records {
 s.currentMemory.Add(-CachedRecordSize(r))
 r.Release()

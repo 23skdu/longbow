@@ -1467,3 +1467,22 @@ Name: "longbow_checkpoint_timeouts_total",
 Help: "Total number of checkpoint timeouts",
 })
 )
+
+// Quorum consistency metrics
+var (
+QuorumOperationDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
+Name:    "longbow_quorum_operation_duration_seconds",
+Help:    "Duration of quorum operations in seconds",
+Buckets: prometheus.DefBuckets,
+}, []string{"operation", "level"})
+
+QuorumSuccessTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+Name: "longbow_quorum_success_total",
+Help: "Total number of successful quorum operations",
+}, []string{"operation", "level"})
+
+QuorumFailureTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+Name: "longbow_quorum_failure_total",
+Help: "Total number of failed quorum operations",
+}, []string{"operation", "level"})
+)

@@ -1161,3 +1161,30 @@ Name:      "slice_pool_puts_total",
 Help:      "Total number of Put calls on slice pools",
 }, []string{"pool_name"})
 )
+
+// Per-Record Eviction Metrics
+var (
+RecordEvictionsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+Namespace: "longbow",
+Name:      "record_evictions_total",
+Help:      "Total per-record evictions by policy type",
+}, []string{"policy"})
+
+RecordTTLExpirationsTotal = promauto.NewCounter(prometheus.CounterOpts{
+Namespace: "longbow",
+Name:      "record_ttl_expirations_total",
+Help:      "Total TTL-based per-record expirations",
+})
+
+RecordAccessTotal = promauto.NewCounter(prometheus.CounterOpts{
+Namespace: "longbow",
+Name:      "record_access_total",
+Help:      "Total per-record access count for LRU/LFU tracking",
+})
+
+RecordMetadataEntries = promauto.NewGauge(prometheus.GaugeOpts{
+Namespace: "longbow",
+Name:      "record_metadata_entries",
+Help:      "Current number of tracked records with eviction metadata",
+})
+)

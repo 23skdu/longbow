@@ -30,6 +30,7 @@ var zeroAllocTicketParser = NewZeroAllocTicketParser()
 
 type IndexJob struct {
 	DatasetName string
+	recordEviction *RecordEvictionManager //nolint:unused // future integration
 	BatchIdx    int
 	RowIdx      int
 CreatedAt time.Time
@@ -44,6 +45,7 @@ Version    int64
 	shardedIndex *ShardedHNSW
 mu sync.RWMutex
 	Name string
+	recordEviction *RecordEvictionManager //nolint:unused // future integration
 }
 
 func (d *Dataset) LastAccess() time.Time {
@@ -212,6 +214,7 @@ s.logger.Info("Snapshot interval update signal sent (drained previous)", zap.Any
 
 type TicketQuery struct {
 	Name    string   `json:"name"`
+	recordEviction *RecordEvictionManager //nolint:unused // future integration
 	Limit   int64    `json:"limit"`
 	Filters []Filter `json:"filters"`
 }

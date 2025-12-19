@@ -4,7 +4,7 @@ import (
 "context"
 "encoding/json"
 "fmt"
-"log/slog"
+"go.uber.org/zap"
 "net"
 "os"
 "testing"
@@ -33,7 +33,7 @@ t.Fatalf("Failed to create temp dir: %v", err)
 }
 
 mem := memory.NewGoAllocator()
-logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+logger := zap.NewNop()
 vs := NewVectorStore(mem, logger, 1024*1024*100, 0, 0)
 
 if err := vs.InitPersistence(tmpDir, 0); err != nil {
@@ -288,7 +288,7 @@ t.Fatalf("Failed to create temp dir: %v", err)
 }
 
 mem := memory.NewGoAllocator()
-logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+logger := zap.NewNop()
 vs := NewVectorStore(mem, logger, 1024*1024*100, 0, 0)
 
 if err := vs.InitPersistence(tmpDir, 0); err != nil {

@@ -6,6 +6,7 @@ import (
 "github.com/apache/arrow-go/v18/arrow/flight"
 "google.golang.org/grpc/codes"
 "google.golang.org/grpc/status"
+	"go.uber.org/zap"
 )
 
 // DataServer handles data plane operations (DoGet, DoPut)
@@ -95,7 +96,7 @@ func (s *MetaServer) DoAction(action *flight.Action, stream flight.FlightService
 if action == nil {
 return status.Error(codes.InvalidArgument, "action is required")
 }
-s.logger.Info("MetaServer DoAction called", "type", action.Type)
+s.logger.Info("MetaServer DoAction called", zap.String("type", action.Type))
 
 // No actions currently implemented
 return status.Errorf(codes.Unimplemented, "unknown action: %s", action.Type)

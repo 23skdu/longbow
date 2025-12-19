@@ -3,6 +3,7 @@ package store
 import (
 "fmt"
 "time"
+	"go.uber.org/zap"
 )
 
 // WarmupStats contains statistics from a warmup operation
@@ -65,11 +66,10 @@ stats.Duration = time.Since(start)
 
 if stats.DatasetsWarmed > 0 {
 s.logger.Info("Index warmup complete",
-"datasets_warmed", stats.DatasetsWarmed,
-"datasets_skipped", stats.DatasetsSkipped,
-"total_nodes", stats.TotalNodesWarmed,
-"duration", stats.Duration,
-)
+		zap.Any("datasets_warmed", stats.DatasetsWarmed),
+		zap.Any("datasets_skipped", stats.DatasetsSkipped),
+		zap.Any("total_nodes", stats.TotalNodesWarmed),
+		zap.Duration("duration", stats.Duration))
 }
 
 return stats

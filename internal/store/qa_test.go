@@ -3,7 +3,7 @@ package store
 import (
 "context"
 "fmt"
-"log/slog"
+"go.uber.org/zap"
 "os"
 "testing"
 "time"
@@ -94,7 +94,7 @@ return len(ds.Index.locations) > 0
 func TestWALSizeLimitQA(t *testing.T) {
 tmpDir := t.TempDir()
 mem := memory.NewGoAllocator()
-logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+logger := zap.NewNop()
 // Set small WAL limit (e.g., 100 bytes)
 store := NewVectorStore(mem, logger, 1024*1024, 100, 0)
 err := store.InitPersistence(tmpDir, 0)

@@ -1486,3 +1486,15 @@ Name: "longbow_quorum_failure_total",
 Help: "Total number of failed quorum operations",
 }, []string{"operation", "level"})
 )
+
+// Vector Clock metrics
+var (
+VectorClockMergesTotal = promauto.NewCounter(prometheus.CounterOpts{
+Name: "longbow_vector_clock_merges_total",
+Help: "Total number of vector clock merge operations",
+})
+VectorClockConflictsTotal = promauto.NewCounter(prometheus.CounterOpts{
+Name: "longbow_vector_clock_conflicts_total",
+Help: "Total number of concurrent/conflicting vector clock comparisons",
+})
+)

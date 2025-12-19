@@ -90,6 +90,10 @@ compactionWorker *CompactionWorker
 	bm25Index          *BM25InvertedIndex
 	// Request concurrency limiter
 	semaphore *RequestSemaphore
+    // Replication subsystem
+	flightClientPool  *FlightClientPool
+	replicationConfig ReplicationConfig
+	replicationHook   func(ctx context.Context, dataset string, records []arrow.RecordBatch)
 }
 
 func NewVectorStore(mem memory.Allocator, logger *zap.Logger, maxMemory, maxWALSize int64, ttl time.Duration) *VectorStore {

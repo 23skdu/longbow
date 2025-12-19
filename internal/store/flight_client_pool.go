@@ -13,7 +13,8 @@ import (
 "github.com/apache/arrow-go/v18/arrow/flight"
 "github.com/apache/arrow-go/v18/arrow/ipc"
 "github.com/apache/arrow-go/v18/arrow/memory"
-"google.golang.org/grpc"
+"github.com/23skdu/longbow/internal/metrics"
+	"google.golang.org/grpc"
 "google.golang.org/grpc/credentials/insecure"
 )
 
@@ -278,6 +279,7 @@ return nil
 // Get acquires a connection to the specified host.
 // If no idle connection is available, creates a new one.
 func (p *FlightClientPool) Get(ctx context.Context, host string) (*PooledFlightClient, error) {
+startTime := time.Now()
 atomic.AddInt64(&p.gets, 1)
 
 p.mu.Lock()
@@ -297,6 +299,8 @@ p.mu.Unlock()
 // Try to get idle connection
 if conn := hp.getIdle(); conn != nil && conn.client != nil {
 atomic.AddInt64(&p.hits, 1)
+metrics.FlightPoolWaitDuration.WithLabelValues(host).Observe(time.Since(startTime).Seconds())
+metrics.FlightPoolConnectionsActive.WithLabelValues(host).Inc()
 return conn, nil
 }
 
@@ -333,6 +337,8 @@ Cmd:  []byte("ping"),
 
 conn.client = client
 conn.createdAt = time.Now()
+metrics.FlightPoolWaitDuration.WithLabelValues(host).Observe(time.Since(startTime).Seconds())
+metrics.FlightPoolConnectionsActive.WithLabelValues(host).Inc()
 return conn, nil
 }
 
@@ -341,6 +347,7 @@ func (p *FlightClientPool) Put(conn *PooledFlightClient) {
 if conn == nil {
 return
 }
+metrics.FlightPoolConnectionsActive.WithLabelValues(conn.host).Dec()
 
 atomic.AddInt64(&p.puts, 1)
 

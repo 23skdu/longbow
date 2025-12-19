@@ -1341,3 +1341,21 @@ Name: "longbow_replication_queue_dropped_total",
 Help: "Total records dropped due to full queue",
 })
 )
+
+// Load Balancer Metrics
+var (
+LoadBalancerSelectionsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+Name: "longbow_load_balancer_selections_total",
+Help: "Total number of replica selections by result",
+}, []string{"result"})
+
+LoadBalancerReplicasTotal = promauto.NewGauge(prometheus.GaugeOpts{
+Name: "longbow_load_balancer_replicas_total",
+Help: "Current number of replicas in load balancer",
+})
+
+LoadBalancerUnhealthyTotal = promauto.NewCounter(prometheus.CounterOpts{
+Name: "longbow_load_balancer_unhealthy_total",
+Help: "Total number of replicas marked unhealthy",
+})
+)

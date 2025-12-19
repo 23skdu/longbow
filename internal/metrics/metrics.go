@@ -1342,7 +1342,6 @@ Help: "Total records dropped due to full queue",
 })
 )
 
-
 // Merkle tree anti-entropy metrics
 var (
 MerkleTreeBuilds = promauto.NewCounter(prometheus.CounterOpts{
@@ -1365,7 +1364,8 @@ AntiEntropySyncDuration = promauto.NewHistogram(prometheus.HistogramOpts{
 Name:    "longbow_anti_entropy_sync_duration_seconds",
 Help:    "Duration of anti-entropy sync operations",
 Buckets: prometheus.DefBuckets,
-  )
+ })
+)
 // Split-brain detector metrics
 var (
 SplitBrainHeartbeatsTotal = promauto.NewCounter(prometheus.CounterOpts{
@@ -1382,6 +1382,119 @@ Help: "Total number of network partitions detected",
 })
 SplitBrainFenced = promauto.NewGauge(prometheus.GaugeOpts{
 Name: "longbow_split_brain_fenced",
-  )
+ 	Help: "Whether this node is fenced due to split-brain",
+})
+)
+
+// Load Balancer Metrics
+var (
+LoadBalancerSelectionsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+Name: "longbow_load_balancer_selections_total",
+Help: "Total number of replica selections by result",
+}, []string{"result"})
+
+LoadBalancerReplicasTotal = promauto.NewGauge(prometheus.GaugeOpts{
+Name: "longbow_load_balancer_replicas_total",
+Help: "Current number of replicas in load balancer",
+})
+
+LoadBalancerUnhealthyTotal = promauto.NewCounter(prometheus.CounterOpts{
+Name: "longbow_load_balancer_unhealthy_total",
+Help: "Total number of replicas marked unhealthy",
+})
+)
+
+// HNSW Graph Sync metrics
+var (
+HNSWGraphSyncExportsTotal = promauto.NewCounter(prometheus.CounterOpts{
+Name: "longbow_hnsw_graph_sync_exports_total",
+Help: "Total number of HNSW graph state exports",
+})
+HNSWGraphSyncImportsTotal = promauto.NewCounter(prometheus.CounterOpts{
+Name: "longbow_hnsw_graph_sync_imports_total",
+Help: "Total number of HNSW graph state imports",
+})
+HNSWGraphSyncDeltasTotal = promauto.NewCounter(prometheus.CounterOpts{
+Name: "longbow_hnsw_graph_sync_deltas_total",
+Help: "Total number of HNSW graph delta exports",
+})
+HNSWGraphSyncDeltaAppliesTotal = promauto.NewCounter(prometheus.CounterOpts{
+Name: "longbow_hnsw_graph_sync_delta_applies_total",
+Help: "Total number of HNSW graph delta applies",
+})
+)
+
+// Memory backpressure metrics
+var (
+MemoryPressureLevel = promauto.NewGauge(prometheus.GaugeOpts{
+Name: "longbow_memory_pressure_level",
+Help: "Current memory pressure level (0=none, 1=soft, 2=hard)",
+})
+MemoryHeapInUse = promauto.NewGauge(prometheus.GaugeOpts{
+Name: "longbow_memory_heap_in_use_bytes",
+Help: "Current heap memory in use in bytes",
+})
+MemoryBackpressureAcquiresTotal = promauto.NewCounter(prometheus.CounterOpts{
+Name: "longbow_memory_backpressure_acquires_total",
+Help: "Total number of successful backpressure acquires",
+})
+MemoryBackpressureReleasesTotal = promauto.NewCounter(prometheus.CounterOpts{
+Name: "longbow_memory_backpressure_releases_total",
+Help: "Total number of backpressure releases",
+})
+MemoryBackpressureRejectsTotal = promauto.NewCounter(prometheus.CounterOpts{
+Name: "longbow_memory_backpressure_rejects_total",
+Help: "Total number of rejected requests due to backpressure",
+})
+)
+
+// Checkpoint coordinator metrics
+var (
+CheckpointEpoch = promauto.NewGauge(prometheus.GaugeOpts{
+Name: "longbow_checkpoint_epoch",
+Help: "Current checkpoint epoch",
+})
+CheckpointsTotal = promauto.NewCounter(prometheus.CounterOpts{
+Name: "longbow_checkpoints_total",
+Help: "Total number of checkpoints completed",
+})
+CheckpointBarrierReached = promauto.NewCounter(prometheus.CounterOpts{
+Name: "longbow_checkpoint_barrier_reached_total",
+Help: "Total number of checkpoint barriers reached",
+})
+CheckpointTimeoutsTotal = promauto.NewCounter(prometheus.CounterOpts{
+Name: "longbow_checkpoint_timeouts_total",
+Help: "Total number of checkpoint timeouts",
+})
+)
+
+// Quorum consistency metrics
+var (
+QuorumOperationDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
+Name:    "longbow_quorum_operation_duration_seconds",
+Help:    "Duration of quorum operations in seconds",
+Buckets: prometheus.DefBuckets,
+}, []string{"operation", "level"})
+
+QuorumSuccessTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+Name: "longbow_quorum_success_total",
+Help: "Total number of successful quorum operations",
+}, []string{"operation", "level"})
+
+QuorumFailureTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+Name: "longbow_quorum_failure_total",
+Help: "Total number of failed quorum operations",
+}, []string{"operation", "level"})
+)
+
+// Vector Clock metrics
+var (
+VectorClockMergesTotal = promauto.NewCounter(prometheus.CounterOpts{
+Name: "longbow_vector_clock_merges_total",
+Help: "Total number of vector clock merge operations",
+})
+VectorClockConflictsTotal = promauto.NewCounter(prometheus.CounterOpts{
+Name: "longbow_vector_clock_conflicts_total",
+Help: "Total number of concurrent/conflicting vector clock comparisons",
 })
 )

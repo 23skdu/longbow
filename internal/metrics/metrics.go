@@ -984,6 +984,14 @@ VectorSearchActionErrors = promauto.NewCounter(prometheus.CounterOpts{
 Name: "longbow_vector_search_action_errors_total",
 Help: "Total number of VectorSearch DoAction errors",
 })
+	ZeroAllocVectorSearchParseTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "longbow_zero_alloc_vector_search_parse_total",
+		Help: "Total successful zero-alloc VectorSearch JSON parses",
+	})
+	VectorSearchParseFallbackTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "longbow_vector_search_parse_fallback_total",
+		Help: "Total VectorSearch JSON parse fallbacks to standard parser",
+	})
 )
 
 // BM25 Indexing metrics

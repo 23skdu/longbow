@@ -165,7 +165,7 @@ expect: []uint8{255, 255, 255, 255},
 {
 name:   "half values -> 127 or 128",
 input:  []float32{0.5, 0.5, 0.5, 0.5},
-expect: []uint8{127, 127, 127, 127}, // floor(0.5 * 255)
+expect: []uint8{127, 127, 127, 127}, // half value maps to 127
 },
 {
 name:   "values below min clamped to 0",

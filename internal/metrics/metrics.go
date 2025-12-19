@@ -1341,3 +1341,28 @@ Name: "longbow_replication_queue_dropped_total",
 Help: "Total records dropped due to full queue",
 })
 )
+
+// Merkle tree anti-entropy metrics
+var (
+MerkleTreeBuilds = promauto.NewCounter(prometheus.CounterOpts{
+Name: "longbow_merkle_tree_builds_total",
+Help: "Total number of Merkle trees built",
+})
+
+MerkleTreeBuildDuration = promauto.NewHistogram(prometheus.HistogramOpts{
+Name:    "longbow_merkle_tree_build_duration_seconds",
+Help:    "Duration of Merkle tree build operations",
+Buckets: prometheus.DefBuckets,
+})
+
+MerkleDivergencesFound = promauto.NewCounter(prometheus.CounterOpts{
+Name: "longbow_merkle_divergences_found_total",
+Help: "Total number of divergent records found via Merkle comparison",
+})
+
+AntiEntropySyncDuration = promauto.NewHistogram(prometheus.HistogramOpts{
+Name:    "longbow_anti_entropy_sync_duration_seconds",
+Help:    "Duration of anti-entropy sync operations",
+Buckets: prometheus.DefBuckets,
+})
+)

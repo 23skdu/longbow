@@ -1341,3 +1341,27 @@ Name: "longbow_replication_queue_dropped_total",
 Help: "Total records dropped due to full queue",
 })
 )
+
+// Memory backpressure metrics
+var (
+MemoryPressureLevel = promauto.NewGauge(prometheus.GaugeOpts{
+Name: "longbow_memory_pressure_level",
+Help: "Current memory pressure level (0=none, 1=soft, 2=hard)",
+})
+MemoryHeapInUse = promauto.NewGauge(prometheus.GaugeOpts{
+Name: "longbow_memory_heap_in_use_bytes",
+Help: "Current heap memory in use in bytes",
+})
+MemoryBackpressureAcquiresTotal = promauto.NewCounter(prometheus.CounterOpts{
+Name: "longbow_memory_backpressure_acquires_total",
+Help: "Total number of successful backpressure acquires",
+})
+MemoryBackpressureReleasesTotal = promauto.NewCounter(prometheus.CounterOpts{
+Name: "longbow_memory_backpressure_releases_total",
+Help: "Total number of backpressure releases",
+})
+MemoryBackpressureRejectsTotal = promauto.NewCounter(prometheus.CounterOpts{
+Name: "longbow_memory_backpressure_rejects_total",
+Help: "Total number of rejected requests due to backpressure",
+})
+)

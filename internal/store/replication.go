@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
+	"go.uber.org/zap"
 	"sync"
 	"time"
 
@@ -107,16 +107,16 @@ type ReplicationStatus struct {
 // ReplicationManager handles Arrow Flight replication to peer servers
 type ReplicationManager struct {
 	config ReplicationConfig
-	logger *slog.Logger
+	logger *zap.Logger
 	mu     sync.RWMutex
 	peers  map[string]*PeerInfo
 	stopCh chan struct{}
 }
 
 // NewReplicationManager creates a new replication manager
-func NewReplicationManager(config ReplicationConfig, logger *slog.Logger) *ReplicationManager {
+func NewReplicationManager(config ReplicationConfig, logger *zap.Logger) *ReplicationManager {
 	if logger == nil {
-		logger = slog.Default()
+		logger = zap.NewNop()
 	}
 
 	m := &ReplicationManager{
@@ -249,6 +249,6 @@ func (m *ReplicationManager) ReplicateDataset(ctx context.Context, name string, 
 		return nil
 	}
 
-	m.logger.Info("Replicating dataset", "name", name, "records", len(records))
+	m.logger.Info("Replicating dataset", zap.String("name", name), zap.Int("records", len(records)))
 	return nil
 }

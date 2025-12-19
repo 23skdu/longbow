@@ -260,11 +260,11 @@ func TestRequestSemaphore_ConcurrentAccess(t *testing.T) {
 			// Track max concurrent
 			c := atomic.AddInt64(&current, 1)
 			for {
-				max := atomic.LoadInt64(&maxConcurrent)
-				if c <= max {
+				maxVal := atomic.LoadInt64(&maxConcurrent)
+				if c <= maxVal {
 					break
 				}
-				if atomic.CompareAndSwapInt64(&maxConcurrent, max, c) {
+				if atomic.CompareAndSwapInt64(&maxConcurrent, maxVal, c) {
 					break
 				}
 			}

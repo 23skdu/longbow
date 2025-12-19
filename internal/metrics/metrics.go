@@ -1010,3 +1010,42 @@ Name: "longbow_bm25_index_errors_total",
 Help: "Total number of BM25 indexing errors",
 })
 )
+
+
+// GraphRAG metrics
+var GraphEdgesTotal = promauto.NewCounter(
+prometheus.CounterOpts{
+Name: "longbow_graph_edges_total",
+Help: "Total number of edges stored in the graph",
+},
+)
+
+var GraphTraversalDurationSeconds = promauto.NewHistogram(
+prometheus.HistogramOpts{
+Name:    "longbow_graph_traversal_duration_seconds",
+Help:    "Duration of graph traversal operations",
+Buckets: prometheus.DefBuckets,
+},
+)
+
+var GraphCommunitiesTotal = promauto.NewGauge(
+prometheus.GaugeOpts{
+Name: "longbow_graph_communities_total",
+Help: "Number of detected communities in the graph",
+},
+)
+
+var GraphDictionarySize = promauto.NewGauge(
+prometheus.GaugeOpts{
+Name: "longbow_graph_dictionary_size",
+Help: "Number of unique predicates in the graph dictionary",
+},
+)
+
+var GraphClusteringDurationSeconds = promauto.NewHistogram(
+prometheus.HistogramOpts{
+Name:    "longbow_graph_clustering_duration_seconds",
+Help:    "Duration of Louvain community detection",
+Buckets: prometheus.DefBuckets,
+},
+)

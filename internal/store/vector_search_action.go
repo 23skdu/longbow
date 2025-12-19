@@ -10,6 +10,9 @@ import (
 "google.golang.org/grpc/codes"
 "google.golang.org/grpc/status"
 )
+// Global zero-alloc parser for VectorSearch (reusable, pre-allocated for 768 dims)
+var vectorSearchParser = NewZeroAllocVectorSearchParser(768)
+
 
 // VectorSearchRequest defines the request format for VectorSearch action
 type VectorSearchRequest struct {
@@ -28,13 +31,21 @@ Scores []float32 `json:"scores"`
 func (s *MetaServer) handleVectorSearchAction(action *flight.Action, stream flight.FlightService_DoActionServer) error {
 start := time.Now()
 
-// Parse request
-var req VectorSearchRequest
-if err := json.Unmarshal(action.Body, &req); err != nil {
-metrics.VectorSearchActionErrors.Inc()
-return status.Errorf(codes.InvalidArgument, "invalid JSON request: %v", err)
-}
-
+// Parse request using zero-alloc parser with fallback
+	var req VectorSearchRequest
+	var parseErr error
+	req, parseErr = vectorSearchParser.Parse(action.Body)
+	if parseErr != nil {
+		// Fallback to standard JSON parser for edge cases
+		metrics.VectorSearchParseFallbackTotal.Inc()
+		if err := json.Unmarshal(action.Body, &req); err != nil {
+			metrics.VectorSearchActionErrors.Inc()
+			s.logger.Warn("VectorSearch JSON parse failed", zap.Error(err))
+			return status.Errorf(codes.InvalidArgument, "invalid JSON request: %v", err)
+		}
+	} else {
+		metrics.ZeroAllocVectorSearchParseTotal.Inc()
+	}
 // Validate K
 if req.K < 1 {
 metrics.VectorSearchActionErrors.Inc()

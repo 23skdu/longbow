@@ -94,6 +94,9 @@ compactionWorker *CompactionWorker
 	flightClientPool  *FlightClientPool
 	replicationConfig ReplicationConfig
 	replicationHook   func(ctx context.Context, dataset string, records []arrow.RecordBatch)
+	// DoGet pipeline subsystem
+	doGetPipelinePool *DoGetPipelinePool
+	pipelineThreshold int
 }
 
 func NewVectorStore(mem memory.Allocator, logger *zap.Logger, maxMemory, maxWALSize int64, ttl time.Duration) *VectorStore {
@@ -365,6 +368,21 @@ defer func() { _ = w.Close() }()
 
 w.SetFlightDescriptor(&flight.FlightDescriptor{Path: []string{name}})
 
+// Use pipeline for multi-batch datasets (parallel processing)
+if s.shouldUsePipeline(len(recs)) {
+rowsSent, err := s.doGetWithPipeline(stream.Context(), name, recs, &query, w, limit)
+if err != nil {
+s.logger.Error("Pipeline processing failed", zap.Error(err))
+metrics.FlightOperationsTotal.WithLabelValues(method, "error").Inc()
+return err
+}
+metrics.FlightOperationsTotal.WithLabelValues(method, "ok").Inc()
+metrics.FlightDurationSeconds.WithLabelValues(method).Observe(time.Since(start).Seconds())
+metrics.FlightBytesProcessed.WithLabelValues(method).Add(float64(rowsSent))
+return nil
+}
+
+// Fallback: serial processing for small datasets
 rowsSent := int64(0)
 for batchIdx, rec := range recs {
 if limit > 0 && rowsSent >= limit {

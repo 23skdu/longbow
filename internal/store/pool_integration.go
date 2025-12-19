@@ -91,8 +91,14 @@ return newDs
 })
 
 ds.mu.Lock()
+batchIdx := len(ds.Records)
 ds.Records = append(ds.Records, rec)
 ds.mu.Unlock()
+
+// Auto-trigger compaction if batch count exceeds threshold
+if s.compactionWorker != nil && batchIdx+1 > s.compactionConfig.MinBatchesToCompact {
+_ = s.compactionWorker.TriggerCompaction(dataset)
+}
 
 // Update metadata
 if _, exists := s.metadata.Get(dataset); !exists {

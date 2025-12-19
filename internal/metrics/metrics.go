@@ -1221,4 +1221,30 @@ Namespace: "longbow",
 Name:      "grpc_max_concurrent_streams",
 Help:      "Configured maximum concurrent streams per connection",
 })
+
+// Schema Evolution Metrics
+SchemaVersionCurrent = promauto.NewGauge(prometheus.GaugeOpts{
+Namespace: "longbow",
+Name:      "schema_version_current",
+Help:      "Current schema version number",
+})
+
+SchemaColumnsAddedTotal = promauto.NewCounter(prometheus.CounterOpts{
+Namespace: "longbow",
+Name:      "schema_columns_added_total",
+Help:      "Total number of columns added via schema evolution",
+})
+
+SchemaColumnsDroppedTotal = promauto.NewCounter(prometheus.CounterOpts{
+Namespace: "longbow",
+Name:      "schema_columns_dropped_total",
+Help:      "Total number of columns dropped via schema evolution",
+})
+
+SchemaEvolutionDuration = promauto.NewHistogram(prometheus.HistogramOpts{
+Namespace: "longbow",
+Name:      "schema_evolution_duration_seconds",
+Help:      "Time taken for schema evolution operations",
+Buckets:   prometheus.DefBuckets,
+})
 )

@@ -144,7 +144,9 @@ conns:    make([]*PooledFlightClient, 0, maxConns),
 // tryCreate attempts to create a new connection slot (not actual connection).
 // Returns a placeholder PooledFlightClient if slot available, nil if at max.
 func (hp *hostPool) tryCreate() *PooledFlightClient {
+poolLockStart1 := time.Now()
 hp.mu.Lock()
+metrics.PoolLockWaitDuration.WithLabelValues("healthcheck").Observe(time.Since(poolLockStart1).Seconds())
 defer hp.mu.Unlock()
 
 active := int(atomic.LoadInt32(&hp.activeCount))
@@ -164,7 +166,9 @@ inUse:     true,
 
 // getIdle retrieves an idle connection if available.
 func (hp *hostPool) getIdle() *PooledFlightClient {
+poolLockStart2 := time.Now()
 hp.mu.Lock()
+metrics.PoolLockWaitDuration.WithLabelValues("healthcheck").Observe(time.Since(poolLockStart2).Seconds())
 defer hp.mu.Unlock()
 
 if len(hp.conns) == 0 {
@@ -182,7 +186,9 @@ return conn
 
 // returnConn returns a connection to the idle pool.
 func (hp *hostPool) returnConn(conn *PooledFlightClient) {
+poolLockStart3 := time.Now()
 hp.mu.Lock()
+metrics.PoolLockWaitDuration.WithLabelValues("healthcheck").Observe(time.Since(poolLockStart3).Seconds())
 defer hp.mu.Unlock()
 
 atomic.AddInt32(&hp.activeCount, -1)
@@ -200,7 +206,9 @@ _ = conn.client.Close()
 
 // close closes all connections in the pool.
 func (hp *hostPool) close() {
+poolLockStart4 := time.Now()
 hp.mu.Lock()
+metrics.PoolLockWaitDuration.WithLabelValues("healthcheck").Observe(time.Since(poolLockStart4).Seconds())
 defer hp.mu.Unlock()
 
 for _, conn := range hp.conns {
@@ -213,7 +221,9 @@ hp.conns = nil
 
 // stats returns pool statistics.
 func (hp *hostPool) stats() (idle, active int) {
+poolLockStart5 := time.Now()
 hp.mu.Lock()
+metrics.PoolLockWaitDuration.WithLabelValues("healthcheck").Observe(time.Since(poolLockStart5).Seconds())
 defer hp.mu.Unlock()
 return len(hp.conns), int(atomic.LoadInt32(&hp.activeCount))
 }
@@ -246,7 +256,9 @@ allocator: memory.NewGoAllocator(),
 
 // AddHost adds a peer host to the pool.
 func (p *FlightClientPool) AddHost(host string) error {
+poolLockStart6 := time.Now()
 p.mu.Lock()
+metrics.PoolLockWaitDuration.WithLabelValues("pool").Observe(time.Since(poolLockStart6).Seconds())
 defer p.mu.Unlock()
 
 if p.closed {
@@ -263,7 +275,9 @@ return nil
 
 // RemoveHost removes a peer host from the pool and closes its connections.
 func (p *FlightClientPool) RemoveHost(host string) error {
+poolLockStart7 := time.Now()
 p.mu.Lock()
+metrics.PoolLockWaitDuration.WithLabelValues("pool").Observe(time.Since(poolLockStart7).Seconds())
 defer p.mu.Unlock()
 
 hp, exists := p.hosts[host]
@@ -282,7 +296,9 @@ func (p *FlightClientPool) Get(ctx context.Context, host string) (*PooledFlightC
 startTime := time.Now()
 atomic.AddInt64(&p.gets, 1)
 
+poolLockStart8 := time.Now()
 p.mu.Lock()
+metrics.PoolLockWaitDuration.WithLabelValues("pool").Observe(time.Since(poolLockStart8).Seconds())
 if p.closed {
 p.mu.Unlock()
 return nil, errors.New("pool is closed")
@@ -351,7 +367,9 @@ metrics.FlightPoolConnectionsActive.WithLabelValues(conn.host).Dec()
 
 atomic.AddInt64(&p.puts, 1)
 
+poolLockStart9 := time.Now()
 p.mu.RLock()
+metrics.PoolLockWaitDuration.WithLabelValues("read").Observe(time.Since(poolLockStart9).Seconds())
 hp, exists := p.hosts[conn.host]
 p.mu.RUnlock()
 
@@ -377,7 +395,9 @@ hp.returnConn(conn)
 
 // Stats returns current pool statistics.
 func (p *FlightClientPool) Stats() FlightClientPoolStats {
+poolLockStart10 := time.Now()
 p.mu.RLock()
+metrics.PoolLockWaitDuration.WithLabelValues("read").Observe(time.Since(poolLockStart10).Seconds())
 defer p.mu.RUnlock()
 
 stats := FlightClientPoolStats{
@@ -402,7 +422,9 @@ return stats
 
 // Close closes all connections and shuts down the pool.
 func (p *FlightClientPool) Close() error {
+poolLockStart11 := time.Now()
 p.mu.Lock()
+metrics.PoolLockWaitDuration.WithLabelValues("pool").Observe(time.Since(poolLockStart11).Seconds())
 defer p.mu.Unlock()
 
 if p.closed {
@@ -534,7 +556,9 @@ wg.Add(1)
 go func(host string) {
 defer wg.Done()
 if err := p.DoPutToPeer(ctx, host, dataset, records); err != nil {
+poolLockStart12 := time.Now()
 mu.Lock()
+metrics.PoolLockWaitDuration.WithLabelValues("global").Observe(time.Since(poolLockStart12).Seconds())
 errMap[host] = err
 mu.Unlock()
 }

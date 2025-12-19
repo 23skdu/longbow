@@ -88,6 +88,8 @@ compactionWorker *CompactionWorker
 	// Hybrid search (BM25 + Vector)
 	hybridSearchConfig HybridSearchConfig
 	bm25Index          *BM25InvertedIndex
+	// Request concurrency limiter
+	semaphore *RequestSemaphore
 }
 
 func NewVectorStore(mem memory.Allocator, logger *zap.Logger, maxMemory, maxWALSize int64, ttl time.Duration) *VectorStore {
@@ -101,6 +103,7 @@ snapshotReset: make(chan time.Duration, 1),
 		stopChan:      make(chan struct{}),
 		columnIndex: NewColumnInvertedIndex(),
 metadata: NewCOWMetadataMap(),
+		semaphore: NewRequestSemaphore(DefaultRequestSemaphoreConfig()),
 	}
 	s.maxMemory.Store(maxMemory)
 	s.maxWALSize.Store(maxWALSize)
@@ -112,6 +115,33 @@ s.StartWALCheckTicker(1 * time.Minute)
 s.initCompaction(DefaultCompactionConfig())
 return s
 }
+
+// NewVectorStoreWithSemaphore creates a VectorStore with custom semaphore configuration.
+// Use this for fine-grained control over concurrent request limiting.
+func NewVectorStoreWithSemaphore(mem memory.Allocator, logger *zap.Logger, maxMemory, maxWALSize int64, ttl time.Duration, semCfg RequestSemaphoreConfig) *VectorStore {
+s := &VectorStore{
+mem:           mem,
+logger:        logger,
+vectors:       NewShardedMap(),
+ttlDuration:   ttl,
+snapshotReset: make(chan time.Duration, 1),
+indexQueue:    NewIndexJobQueue(DefaultIndexJobQueueConfig()),
+stopChan:      make(chan struct{}),
+columnIndex:   NewColumnInvertedIndex(),
+metadata:      NewCOWMetadataMap(),
+semaphore:     NewRequestSemaphore(semCfg),
+}
+s.maxMemory.Store(maxMemory)
+s.maxWALSize.Store(maxWALSize)
+s.startIndexingWorkers(runtime.NumCPU())
+s.StartMetricsTicker(10 * time.Second)
+if maxWALSize > 0 {
+s.StartWALCheckTicker(1 * time.Minute)
+}
+s.initCompaction(DefaultCompactionConfig())
+return s
+}
+
 
 // UpdateConfig updates the dynamic configuration of the store
 func (s *VectorStore) UpdateConfig(maxMemory, maxWALSize int64, snapshotInterval time.Duration) {
@@ -279,7 +309,13 @@ recs := ds.Records
 
 // DoGet streams data to the client with optional predicate pushdown
 func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGetServer) error {
-start := time.Now()
+	// Acquire semaphore - limit concurrent requests to prevent thread thrashing
+	if err := s.semaphore.Acquire(stream.Context()); err != nil {
+		return err
+	}
+	defer s.semaphore.Release()
+
+	start := time.Now()
 // Track active search contexts
 metrics.ActiveSearchContexts.Inc()
 defer metrics.ActiveSearchContexts.Dec()
@@ -382,6 +418,12 @@ return nil
 
 // DoPut accepts data from the client with memory limits
 func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
+	// Acquire semaphore - limit concurrent requests to prevent thread thrashing
+	if err := s.semaphore.Acquire(stream.Context()); err != nil {
+		return err
+	}
+	defer s.semaphore.Release()
+
 	start := time.Now()
 	method := "DoPut"
 

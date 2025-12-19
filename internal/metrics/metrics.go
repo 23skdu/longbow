@@ -1342,7 +1342,6 @@ Help: "Total records dropped due to full queue",
 })
 )
 
-
 // Merkle tree anti-entropy metrics
 var (
 MerkleTreeBuilds = promauto.NewCounter(prometheus.CounterOpts{
@@ -1365,7 +1364,8 @@ AntiEntropySyncDuration = promauto.NewHistogram(prometheus.HistogramOpts{
 Name:    "longbow_anti_entropy_sync_duration_seconds",
 Help:    "Duration of anti-entropy sync operations",
 Buckets: prometheus.DefBuckets,
-  )
+ })
+)
 // Split-brain detector metrics
 var (
 SplitBrainHeartbeatsTotal = promauto.NewCounter(prometheus.CounterOpts{
@@ -1382,6 +1382,24 @@ Help: "Total number of network partitions detected",
 })
 SplitBrainFenced = promauto.NewGauge(prometheus.GaugeOpts{
 Name: "longbow_split_brain_fenced",
-  )
+ 	Help: "Whether this node is fenced due to split-brain",
+})
+)
+
+// Load Balancer Metrics
+var (
+LoadBalancerSelectionsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+Name: "longbow_load_balancer_selections_total",
+Help: "Total number of replica selections by result",
+}, []string{"result"})
+
+LoadBalancerReplicasTotal = promauto.NewGauge(prometheus.GaugeOpts{
+Name: "longbow_load_balancer_replicas_total",
+Help: "Current number of replicas in load balancer",
+})
+
+LoadBalancerUnhealthyTotal = promauto.NewCounter(prometheus.CounterOpts{
+Name: "longbow_load_balancer_unhealthy_total",
+Help: "Total number of replicas marked unhealthy",
 })
 )

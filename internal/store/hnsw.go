@@ -31,6 +31,7 @@ type HNSWIndex struct {
 	dataset       *Dataset
 	scratchPool   sync.Pool     // Pool for temporary vector buffers during search
 	dims          int           // Vector dimensions for pool sizing
+dimsOnce sync.Once // Ensures thread-safe dims initialization
 	currentEpoch  atomic.Uint64 // Current epoch for zero-copy reclamation
 	activeReaders atomic.Int32  // Count of readers in current epoch
 	resultPool  *resultPool // Pool for search result slices
@@ -330,10 +331,10 @@ func (h *HNSWIndex) Add(batchIdx, rowIdx int) error {
 		return nil
 	}
 
-	// Initialize dims for pool on first vector
-	if h.dims == 0 {
+	// Initialize dims for pool on first vector (thread-safe)
+	h.dimsOnce.Do(func() {
 		h.dims = len(vec)
-	}
+	})
 	// Add to HNSW graph
 	h.Graph.Add(hnsw.MakeNode(id, vec))
 // Track HNSW metrics
@@ -406,9 +407,11 @@ results[i] = vectorData{id: id, vec: vec}
 }
 wg.Wait()
 
-// Initialize dims for pool on first vector if needed
-if h.dims == 0 && len(results) > 0 && results[0].vec != nil {
+// Initialize dims for pool on first vector if needed (thread-safe)
+if len(results) > 0 && results[0].vec != nil {
+h.dimsOnce.Do(func() {
 h.dims = len(results[0].vec)
+})
 }
 
 // Phase 3: Sequential graph insertion with mutex protection

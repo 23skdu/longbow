@@ -1498,3 +1498,31 @@ Name: "longbow_vector_clock_conflicts_total",
 Help: "Total number of concurrent/conflicting vector clock comparisons",
 })
 )
+
+// SIMD FMA kernel metrics
+var (
+SIMDFMAOperationsTotal = promauto.NewCounterVec(
+prometheus.CounterOpts{
+Name: "longbow_simd_fma_operations_total",
+Help: "Total SIMD FMA operations by kernel type",
+},
+[]string{"kernel", "dimension"},
+)
+
+SIMDFMADurationSeconds = promauto.NewHistogramVec(
+prometheus.HistogramOpts{
+Name:    "longbow_simd_fma_duration_seconds",
+Help:    "SIMD FMA kernel execution duration",
+Buckets: prometheus.ExponentialBuckets(1e-9, 2, 20), // 1ns to ~500μs
+},
+[]string{"kernel"},
+)
+
+SIMDKernelType = promauto.NewGaugeVec(
+prometheus.GaugeOpts{
+Name: "longbow_simd_kernel_type",
+Help: "Active SIMD kernel type (1=avx512_fma, 2=avx512, 3=avx2, 4=neon, 5=scalar)",
+},
+[]string{"operation"},
+)
+)

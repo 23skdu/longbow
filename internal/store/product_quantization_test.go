@@ -122,14 +122,14 @@ t.Errorf("CodeSize() = %d, want 4 (M bytes)", enc.CodeSize())
 // TestPQEncoderTrainFromData tests training codebook via k-means
 func TestPQEncoderTrainFromData(t *testing.T) {
 // Generate random training vectors
-rand.Seed(42)
+rng := rand.New(rand.NewSource(42))
 numVectors := 1000
 dim := 16
 vectors := make([][]float32, numVectors)
 for i := 0; i < numVectors; i++ {
 vectors[i] = make([]float32, dim)
 for j := 0; j < dim; j++ {
-vectors[i][j] = rand.Float32()*2 - 1 // [-1, 1]
+vectors[i][j] = rng.Float32()*2 - 1 // [-1, 1]
 }
 }
 
@@ -317,6 +317,7 @@ t.Errorf("EncodeInto()[%d] = %d, want %d", i, c, expected[i])
 // =============================================================================
 
 func BenchmarkPQEncode(b *testing.B) {
+    rng := rand.New(rand.NewSource(42))
 cfg := &PQConfig{M: 8, Ksub: 256, Dim: 128, SubDim: 16}
 codebook := make([][][]float32, cfg.M)
 for m := 0; m < cfg.M; m++ {
@@ -324,7 +325,7 @@ codebook[m] = make([][]float32, cfg.Ksub)
 for k := 0; k < cfg.Ksub; k++ {
 codebook[m][k] = make([]float32, cfg.SubDim)
 for d := 0; d < cfg.SubDim; d++ {
-codebook[m][k][d] = rand.Float32()
+codebook[m][k][d] = rng.Float32()
 }
 }
 }
@@ -332,7 +333,7 @@ codebook[m][k][d] = rand.Float32()
 enc, _ := NewPQEncoder(cfg, codebook)
 vec := make([]float32, 128)
 for i := range vec {
-vec[i] = rand.Float32()
+vec[i] = rng.Float32()
 }
 
 b.ResetTimer()
@@ -342,6 +343,7 @@ _ = enc.Encode(vec)
 }
 
 func BenchmarkPQADCDistance(b *testing.B) {
+    rng := rand.New(rand.NewSource(42))
 cfg := &PQConfig{M: 8, Ksub: 256, Dim: 128, SubDim: 16}
 codebook := make([][][]float32, cfg.M)
 for m := 0; m < cfg.M; m++ {
@@ -349,7 +351,7 @@ codebook[m] = make([][]float32, cfg.Ksub)
 for k := 0; k < cfg.Ksub; k++ {
 codebook[m][k] = make([]float32, cfg.SubDim)
 for d := 0; d < cfg.SubDim; d++ {
-codebook[m][k][d] = rand.Float32()
+codebook[m][k][d] = rng.Float32()
 }
 }
 }
@@ -357,7 +359,7 @@ codebook[m][k][d] = rand.Float32()
 enc, _ := NewPQEncoder(cfg, codebook)
 query := make([]float32, 128)
 for i := range query {
-query[i] = rand.Float32()
+query[i] = rng.Float32()
 }
 table := enc.ComputeDistanceTable(query)
 
@@ -373,6 +375,7 @@ _ = enc.ADCDistance(table, code)
 }
 
 func BenchmarkPQDistanceTable(b *testing.B) {
+    rng := rand.New(rand.NewSource(42))
 cfg := &PQConfig{M: 8, Ksub: 256, Dim: 128, SubDim: 16}
 codebook := make([][][]float32, cfg.M)
 for m := 0; m < cfg.M; m++ {
@@ -380,7 +383,7 @@ codebook[m] = make([][]float32, cfg.Ksub)
 for k := 0; k < cfg.Ksub; k++ {
 codebook[m][k] = make([]float32, cfg.SubDim)
 for d := 0; d < cfg.SubDim; d++ {
-codebook[m][k][d] = rand.Float32()
+codebook[m][k][d] = rng.Float32()
 }
 }
 }
@@ -388,7 +391,7 @@ codebook[m][k][d] = rand.Float32()
 enc, _ := NewPQEncoder(cfg, codebook)
 query := make([]float32, 128)
 for i := range query {
-query[i] = rand.Float32()
+query[i] = rng.Float32()
 }
 
 b.ResetTimer()

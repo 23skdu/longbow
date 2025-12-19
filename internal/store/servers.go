@@ -98,6 +98,11 @@ return status.Error(codes.InvalidArgument, "action is required")
 }
 s.logger.Info("MetaServer DoAction called", zap.String("type", action.Type))
 
-// No actions currently implemented
+// Route to specific action handlers
+switch action.Type {
+case "VectorSearch":
+return s.handleVectorSearchAction(action, stream)
+default:
 return status.Errorf(codes.Unimplemented, "unknown action: %s", action.Type)
+}
 }

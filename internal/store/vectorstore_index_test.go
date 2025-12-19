@@ -3,7 +3,7 @@ package store
 
 import (
 "context"
-"log/slog"
+"go.uber.org/zap"
 	"testing"
 
 "github.com/apache/arrow-go/v18/arrow"
@@ -13,7 +13,7 @@ import (
 
 func TestVectorStore_IndexRecordColumns(t *testing.T) {
 mem := memory.NewGoAllocator()
-store := NewVectorStore(mem, slog.Default(), 0, 0, 0)
+store := NewVectorStore(mem, zap.NewNop(), 0, 0, 0)
 defer func() { _ = store.Close() }()
 
 // Set columns to index
@@ -50,7 +50,7 @@ t.Errorf("Expected 2 matching rows for category=A, got %d", len(rows))
 
 func TestVectorStore_IndexRecordColumns_NoIndexedColumns(t *testing.T) {
 mem := memory.NewGoAllocator()
-store := NewVectorStore(mem, slog.Default(), 0, 0, 0)
+store := NewVectorStore(mem, zap.NewNop(), 0, 0, 0)
 defer func() { _ = store.Close() }()
 
 // Don't set any indexed columns - should be a no-op
@@ -76,7 +76,7 @@ t.Error("Expected no index to be created when indexedColumns is empty")
 
 func TestVectorStore_GetSetIndexedColumns(t *testing.T) {
 mem := memory.NewGoAllocator()
-store := NewVectorStore(mem, slog.Default(), 0, 0, 0)
+store := NewVectorStore(mem, zap.NewNop(), 0, 0, 0)
 defer func() { _ = store.Close() }()
 
 // Initially empty
@@ -94,7 +94,7 @@ t.Errorf("Expected [col1, col2], got %v", cols)
 
 func TestVectorStore_FilterRecordOptimized_NoFilters(t *testing.T) {
 mem := memory.NewGoAllocator()
-store := NewVectorStore(mem, slog.Default(), 0, 0, 0)
+store := NewVectorStore(mem, zap.NewNop(), 0, 0, 0)
 defer func() { _ = store.Close() }()
 
 schema := arrow.NewSchema([]arrow.Field{
@@ -122,7 +122,7 @@ t.Errorf("Expected 3 rows, got %d", result.NumRows())
 
 func TestVectorStore_FilterRecordOptimized_WithIndex(t *testing.T) {
 mem := memory.NewGoAllocator()
-store := NewVectorStore(mem, slog.Default(), 0, 0, 0)
+store := NewVectorStore(mem, zap.NewNop(), 0, 0, 0)
 defer func() { _ = store.Close() }()
 
 store.SetIndexedColumns([]string{"category"})
@@ -159,7 +159,7 @@ t.Errorf("Expected 3 rows with category=A, got %d", result.NumRows())
 
 func TestVectorStore_FilterRecordOptimized_FallbackToCompute(t *testing.T) {
 mem := memory.NewGoAllocator()
-store := NewVectorStore(mem, slog.Default(), 0, 0, 0)
+store := NewVectorStore(mem, zap.NewNop(), 0, 0, 0)
 defer func() { _ = store.Close() }()
 
 // Don't index any columns - will fallback to Arrow compute
@@ -192,7 +192,7 @@ t.Errorf("Expected 2 rows with value>15, got %d", result.NumRows())
 
 func BenchmarkFilterRecordOptimized_WithIndex(b *testing.B) {
 mem := memory.NewGoAllocator()
-store := NewVectorStore(mem, slog.Default(), 0, 0, 0)
+store := NewVectorStore(mem, zap.NewNop(), 0, 0, 0)
 defer func() { _ = store.Close() }()
 
 store.SetIndexedColumns([]string{"category"})
@@ -235,7 +235,7 @@ result.Release()
 
 func BenchmarkFilterRecord_WithoutIndex(b *testing.B) {
 mem := memory.NewGoAllocator()
-store := NewVectorStore(mem, slog.Default(), 0, 0, 0)
+store := NewVectorStore(mem, zap.NewNop(), 0, 0, 0)
 defer func() { _ = store.Close() }()
 
 // No indexed columns - uses full Arrow compute

@@ -1,10 +1,9 @@
 package store
 
 import (
-"log/slog"
-"os"
+"go.uber.org/zap"
 )
 
-func mockLogger() *slog.Logger {
-return slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+func mockLogger() *zap.Logger {
+return zap.NewNop()
 }

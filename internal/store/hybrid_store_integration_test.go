@@ -1,7 +1,7 @@
 package store
 
 import (
-"log/slog"
+"go.uber.org/zap"
 "testing"
 "time"
 
@@ -16,7 +16,7 @@ import (
 
 func TestVectorStoreHybridSearchConfig(t *testing.T) {
 mem := memory.NewGoAllocator()
-logger := slog.Default()
+logger := zap.NewNop()
 
 hybridCfg := DefaultHybridSearchConfig()
 hybridCfg.Enabled = true
@@ -43,7 +43,7 @@ t.Errorf("expected TextColumns=[description], got %v", cfg.TextColumns)
 
 func TestVectorStoreHybridSearchDisabled(t *testing.T) {
 mem := memory.NewGoAllocator()
-logger := slog.Default()
+logger := zap.NewNop()
 
 store := NewVectorStore(mem, logger, 1<<30, 1<<28, 5*time.Minute)
 defer func() { _ = store.Close() }()
@@ -56,7 +56,7 @@ t.Error("expected hybrid search to be disabled by default")
 
 func TestVectorStoreBM25IndexCreation(t *testing.T) {
 mem := memory.NewGoAllocator()
-logger := slog.Default()
+logger := zap.NewNop()
 
 hybridCfg := DefaultHybridSearchConfig()
 hybridCfg.Enabled = true
@@ -75,7 +75,7 @@ t.Error("expected BM25 index to be created when hybrid search is enabled")
 
 func TestVectorStoreBM25IndexNilWhenDisabled(t *testing.T) {
 mem := memory.NewGoAllocator()
-logger := slog.Default()
+logger := zap.NewNop()
 
 hybridCfg := DefaultHybridSearchConfig()
 hybridCfg.Enabled = false
@@ -93,7 +93,7 @@ t.Error("expected BM25 index to be nil when hybrid search is disabled")
 
 func TestVectorStoreHybridConfigValidation(t *testing.T) {
 mem := memory.NewGoAllocator()
-logger := slog.Default()
+logger := zap.NewNop()
 
 hybridCfg := DefaultHybridSearchConfig()
 hybridCfg.Enabled = true
@@ -108,7 +108,7 @@ t.Error("expected error for invalid alpha")
 
 func TestVectorStoreIndexTextColumns(t *testing.T) {
 mem := memory.NewGoAllocator()
-logger := slog.Default()
+logger := zap.NewNop()
 
 hybridCfg := DefaultHybridSearchConfig()
 hybridCfg.Enabled = true

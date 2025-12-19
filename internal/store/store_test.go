@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
+	"go.uber.org/zap"
 	"net"
 	"os"
 	"testing"
@@ -36,7 +36,7 @@ func setupServer(t *testing.T) (store *VectorStore, dir string, dialer func(cont
 	}
 
 	mem := memory.NewGoAllocator()
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	logger := zap.NewNop()
 	vs := NewVectorStore(mem, logger, 1024*1024*100, 0, 0) // 100MB limit
 
 	// Init persistence
@@ -322,7 +322,7 @@ t.Fatal("Snapshot file not created")
 
 func TestEviction(t *testing.T) {
 mem := memory.NewGoAllocator()
-logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+logger := zap.NewNop()
 
 // Test LRU Eviction
 t.Run("LRU", func(t *testing.T) {

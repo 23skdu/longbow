@@ -2,8 +2,7 @@ package store
 
 import (
 "fmt"
-"log/slog"
-"os"
+"go.uber.org/zap"
 "sync"
 "testing"
 "time"
@@ -76,7 +75,7 @@ wg.Wait()
 // TestVectorStore_Warmup tests warmup on VectorStore level
 func TestVectorStore_Warmup(t *testing.T) {
 t.Run("warmup on empty store", func(t *testing.T) {
-logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+logger := zap.NewNop()
 store := NewVectorStore(memory.DefaultAllocator, logger, 1<<30, 0, time.Hour)
 defer func() { _ = store.Close() }()
 
@@ -89,7 +88,7 @@ t.Errorf("expected 0 datasets, got %d", warmupStats.DatasetsWarmed)
 })
 
 t.Run("warmup warms all datasets with indexes", func(t *testing.T) {
-logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+logger := zap.NewNop()
 store := NewVectorStore(memory.DefaultAllocator, logger, 1<<30, 0, time.Hour)
 defer func() { _ = store.Close() }()
 
@@ -115,7 +114,7 @@ t.Errorf("expected 30 total nodes warmed, got %d", warmupStats.TotalNodesWarmed)
 })
 
 t.Run("warmup skips datasets without indexes", func(t *testing.T) {
-logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+logger := zap.NewNop()
 store := NewVectorStore(memory.DefaultAllocator, logger, 1<<30, 0, time.Hour)
 defer func() { _ = store.Close() }()
 
@@ -140,7 +139,7 @@ t.Errorf("expected 1 dataset skipped, got %d", warmupStats.DatasetsSkipped)
 })
 
 t.Run("warmup duration is tracked", func(t *testing.T) {
-logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+logger := zap.NewNop()
 store := NewVectorStore(memory.DefaultAllocator, logger, 1<<30, 0, time.Hour)
 defer func() { _ = store.Close() }()
 

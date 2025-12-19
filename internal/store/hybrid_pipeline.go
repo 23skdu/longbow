@@ -130,8 +130,8 @@ exactIDs = p.applyExactFilters(query.ExactFilters)
 var denseResults []HybridResult
 if len(query.Vector) > 0 && p.hnswIndex != nil && alpha > 0 {
 // Use SearchWithArena - create temporary arena
-arena := NewSearchArena(64 * 1024)
-defer arena.Reset()
+arena := GetArena()
+defer PutArena(arena)
 ids := p.hnswIndex.SearchWithArena(query.Vector, query.K*2, arena)
 for rank, id := range ids {
 // Convert rank to score (higher rank = lower score)

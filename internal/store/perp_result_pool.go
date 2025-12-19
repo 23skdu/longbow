@@ -202,7 +202,6 @@ type PerPResultPool struct {
 shards      []*perpShard
 numShards   int
 enableStats bool
-roundRobin  atomic.Uint64 // For round-robin shard selection
 }
 
 // NewPerPResultPool creates a new per-processor result pool.
@@ -237,16 +236,31 @@ return p.numShards
 
 // selectShard returns the shard index for the current operation.
 // Uses round-robin for fair distribution across shards.
-func (p *PerPResultPool) selectShard() int {
-// Round-robin distribution
-idx := p.roundRobin.Add(1) - 1
-return int(idx % uint64(p.numShards))
+// selectShardByK returns deterministic shard based on k value
+// This ensures Get(k) and Put of same-capacity slice hit the same shard
+func (p *PerPResultPool) selectShardByK(k int) int {
+var bucket int
+switch {
+case k <= 10:
+bucket = 0
+case k <= 50:
+bucket = 1
+case k <= 100:
+bucket = 2
+case k <= 256:
+bucket = 3
+case k <= 1000:
+bucket = 4
+default:
+bucket = 5
+}
+return bucket % p.numShards
 }
 
 // Get retrieves a []VectorID slice of the specified length.
 // For common k values, slices are pooled per-shard.
 func (p *PerPResultPool) Get(k int) []VectorID {
-shardIdx := p.selectShard()
+shardIdx := p.selectShardByK(k)
 slice, _ := p.shards[shardIdx].get(k, p.enableStats)
 return slice
 }
@@ -256,7 +270,7 @@ func (p *PerPResultPool) Put(slice []VectorID) {
 if slice == nil {
 return
 }
-shardIdx := p.selectShard()
+shardIdx := p.selectShardByK(cap(slice))
 p.shards[shardIdx].put(slice, p.enableStats)
 }
 

@@ -343,6 +343,14 @@ Help: "Total compaction operations by status",
 []string{"status"},
 )
 
+// 21. CompactionAutoTriggersTotal - Auto-triggered compaction tracking
+var CompactionAutoTriggersTotal = promauto.NewCounter(
+prometheus.CounterOpts{
+Name: "longbow_compaction_auto_triggers_total",
+Help: "Total number of auto-triggered compactions when batch count exceeds threshold",
+},
+)
+
 // =============================================================================
 // Comprehensive Prometheus Metrics Expansion
 // Added for enhanced observability across all components

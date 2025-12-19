@@ -149,6 +149,39 @@ s.initCompaction(DefaultCompactionConfig())
 return s
 }
 
+// NewVectorStoreWithCompaction creates a VectorStore with custom compaction configuration.
+// Use this to configure auto-compaction threshold and timing.
+func NewVectorStoreWithCompaction(mem memory.Allocator, logger *zap.Logger, maxMemory, maxWALSize int64, ttl time.Duration, compactCfg CompactionConfig) *VectorStore {
+s := &VectorStore{
+mem:           mem,
+logger:        logger,
+vectors:       NewShardedMap(),
+ttlDuration:   ttl,
+snapshotReset: make(chan time.Duration, 1),
+indexQueue:    NewIndexJobQueue(DefaultIndexJobQueueConfig()),
+stopChan:      make(chan struct{}),
+columnIndex:   NewColumnInvertedIndex(),
+metadata:      NewCOWMetadataMap(),
+semaphore:     NewRequestSemaphore(DefaultRequestSemaphoreConfig()),
+}
+s.maxMemory.Store(maxMemory)
+s.maxWALSize.Store(maxWALSize)
+s.startIndexingWorkers(runtime.NumCPU())
+s.StartMetricsTicker(10 * time.Second)
+if maxWALSize > 0 {
+s.StartWALCheckTicker(1 * time.Minute)
+}
+s.initCompaction(compactCfg)
+return s
+}
+
+// GetAutoCompactionTriggerCount returns the number of auto-triggered compactions.
+func (s *VectorStore) GetAutoCompactionTriggerCount() int64 {
+if s.compactionWorker == nil {
+return 0
+}
+return s.compactionWorker.GetTriggerCount()
+}
 
 // UpdateConfig updates the dynamic configuration of the store
 func (s *VectorStore) UpdateConfig(maxMemory, maxWALSize int64, snapshotInterval time.Duration) {
@@ -528,6 +561,11 @@ batchIdx := len(ds.Records)
 ds.Records = append(ds.Records, rec)
 ds.mu.Unlock()
 
+
+// Auto-trigger compaction if batch count exceeds threshold
+if s.compactionWorker != nil && batchIdx+1 > s.compactionConfig.MinBatchesToCompact {
+_ = s.compactionWorker.TriggerCompaction(name)
+}
 // Track RecordBatch count (fragmentation indicator)
 metrics.DatasetRecordBatchesCount.WithLabelValues(name).Set(float64(len(ds.Records)))
 // Update COW metadata for lock-free ListFlights

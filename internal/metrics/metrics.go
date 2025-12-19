@@ -1073,3 +1073,40 @@ Help: "Duration of batch distance calculations",
 Buckets: prometheus.DefBuckets,
 },
 )
+
+// DoExchange Metrics - Bidirectional Arrow Flight streaming for mesh replication
+var DoExchangeCallsTotal = promauto.NewCounter(
+prometheus.CounterOpts{
+Name: "longbow_do_exchange_calls_total",
+Help: "Total number of DoExchange invocations",
+},
+)
+
+var DoExchangeDurationSeconds = promauto.NewHistogram(
+prometheus.HistogramOpts{
+Name: "longbow_do_exchange_duration_seconds",
+Help: "Duration of DoExchange sessions",
+Buckets: prometheus.DefBuckets,
+},
+)
+
+var DoExchangeBatchesReceivedTotal = promauto.NewCounter(
+prometheus.CounterOpts{
+Name: "longbow_do_exchange_batches_received_total",
+Help: "Total number of FlightData batches received via DoExchange",
+},
+)
+
+var DoExchangeBatchesSentTotal = promauto.NewCounter(
+prometheus.CounterOpts{
+Name: "longbow_do_exchange_batches_sent_total",
+Help: "Total number of FlightData batches sent via DoExchange",
+},
+)
+
+var DoExchangeErrorsTotal = promauto.NewCounter(
+prometheus.CounterOpts{
+Name: "longbow_do_exchange_errors_total",
+Help: "Total number of DoExchange errors",
+},
+)

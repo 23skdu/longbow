@@ -538,3 +538,8 @@ res[i] = n.Key
 }
 return res
 }
+
+// GetDimension returns the vector dimension for this index
+func (h *HNSWIndex) GetDimension() uint32 {
+return uint32(h.dims)
+}

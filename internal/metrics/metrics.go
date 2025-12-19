@@ -384,6 +384,22 @@ Help: "Total arena reset operations",
 },
 )
 
+// ArenaPoolGets counts arena acquisitions from the global pool
+var ArenaPoolGets = promauto.NewCounter(
+prometheus.CounterOpts{
+Name: "longbow_arena_pool_gets_total",
+Help: "Total arena acquisitions from global pool",
+},
+)
+
+// ArenaPoolPuts counts arena returns to the global pool
+var ArenaPoolPuts = promauto.NewCounter(
+prometheus.CounterOpts{
+Name: "longbow_arena_pool_puts_total",
+Help: "Total arena returns to global pool",
+},
+)
+
 // -----------------------------------------------------------------------------
 // Result Pool Metrics
 // -----------------------------------------------------------------------------

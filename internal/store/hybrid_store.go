@@ -8,6 +8,8 @@ import (
 "github.com/apache/arrow-go/v18/arrow/array"
 "github.com/apache/arrow-go/v18/arrow/memory"
 "go.uber.org/zap"
+
+	"github.com/23skdu/longbow/internal/metrics"
 )
 
 // =============================================================================
@@ -112,6 +114,7 @@ continue
 // BM25InvertedIndex.Add will tokenize the text internally
 vecID := VectorID(baseRowID + uint32(row))
 s.bm25Index.Add(vecID, text)
+metrics.BM25DocumentsIndexedTotal.Inc()
 }
 }
 }

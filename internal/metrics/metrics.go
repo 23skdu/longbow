@@ -1134,3 +1134,30 @@ Help: "Number of datasets per namespace",
 },
 []string{"namespace"},
 )
+
+// Slice pool metrics
+var (
+SlicePoolHitsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+Namespace: "longbow",
+Name:      "slice_pool_hits_total",
+Help:      "Total number of slice pool hits (reused allocations)",
+}, []string{"pool_name"})
+
+SlicePoolMissesTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+Namespace: "longbow",
+Name:      "slice_pool_misses_total",
+Help:      "Total number of slice pool misses (new allocations)",
+}, []string{"pool_name"})
+
+SlicePoolGetsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+Namespace: "longbow",
+Name:      "slice_pool_gets_total",
+Help:      "Total number of Get calls on slice pools",
+}, []string{"pool_name"})
+
+SlicePoolPutsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+Namespace: "longbow",
+Name:      "slice_pool_puts_total",
+Help:      "Total number of Put calls on slice pools",
+}, []string{"pool_name"})
+)

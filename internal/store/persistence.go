@@ -12,6 +12,7 @@ import (
 "github.com/23skdu/longbow/internal/metrics"
 "github.com/apache/arrow-go/v18/arrow"
 "github.com/apache/arrow-go/v18/arrow/ipc"
+	"go.uber.org/zap"
 )
 
 const (
@@ -28,13 +29,13 @@ return fmt.Errorf("failed to create data directory: %w", err)
 
 // Load latest snapshot if exists
 if err := s.loadSnapshots(); err != nil {
-s.logger.Error("Failed to load snapshots", "error", err)
+s.logger.Error("Failed to load snapshots", zap.Error(err))
 // Continue, maybe partial load or fresh start
 }
 
 // Replay WAL
 if err := s.replayWAL(); err != nil {
-s.logger.Error("Failed to replay WAL", "error", err)
+s.logger.Error("Failed to replay WAL", zap.Error(err))
 return err
 }
 
@@ -174,7 +175,7 @@ count++
 r.Release()
 }
 
-s.logger.Info("WAL Replay complete", "records_loaded", count)
+s.logger.Info("WAL Replay complete", zap.Any("records_loaded", count))
 return nil
 }
 
@@ -206,14 +207,18 @@ return true
 path := filepath.Join(tempDir, name+".parquet")
 f, err := os.Create(path)
 if err != nil {
-s.logger.Error("Failed to create snapshot file", "name", name, "error", err)
+s.logger.Error("Failed to create snapshot file",
+		zap.Any("name", name),
+		zap.Error(err))
 return true
 }
 
 // Write all records to the parquet file
 for _, rec := range recs {
 if err := writeParquet(f, rec); err != nil {
-s.logger.Error("Failed to write record to parquet snapshot", "name", name, "error", err)
+s.logger.Error("Failed to write record to parquet snapshot",
+		zap.Any("name", name),
+		zap.Error(err))
 break
 }
 }
@@ -223,7 +228,7 @@ return true
 
 // Atomic swap: Remove old, Rename temp to new
 if err := os.RemoveAll(snapshotDir); err != nil {
-s.logger.Error("Failed to remove old snapshot dir", "error", err)
+s.logger.Error("Failed to remove old snapshot dir", zap.Error(err))
 }
 if err := os.Rename(tempDir, snapshotDir); err != nil {
 metrics.SnapshotTotal.WithLabelValues("error").Inc()
@@ -235,14 +240,14 @@ s.walMu.Lock()
 if s.walFile != nil {
 _ = s.walFile.Close()
 if err := os.Truncate(filepath.Join(s.dataPath, walFileName), 0); err != nil {
-s.logger.Error("Failed to truncate WAL", "error", err)
+s.logger.Error("Failed to truncate WAL", zap.Error(err))
 }
 // Reopen
 f, err := os.OpenFile(filepath.Join(s.dataPath, walFileName), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 if err == nil {
 s.walFile = f
 } else {
-s.logger.Error("Failed to reopen WAL after snapshot", "error", err)
+s.logger.Error("Failed to reopen WAL after snapshot", zap.Error(err))
 }
 }
 s.walMu.Unlock()
@@ -283,7 +288,9 @@ path := filepath.Join(snapshotDir, entry.Name())
 
 f, err := os.Open(path)
 if err != nil {
-s.logger.Error("Failed to open snapshot file", "name", name, "error", err)
+s.logger.Error("Failed to open snapshot file",
+		zap.Any("name", name),
+		zap.Error(err))
 continue
 }
 stat, _ := f.Stat()
@@ -292,7 +299,9 @@ stat, _ := f.Stat()
 rec, err := readParquet(f, stat.Size(), s.mem)
 _ = f.Close()
 if err != nil {
-s.logger.Error("Failed to read parquet snapshot", "name", name, "error", err)
+s.logger.Error("Failed to read parquet snapshot",
+		zap.Any("name", name),
+		zap.Error(err))
 continue
 }
 
@@ -326,10 +335,12 @@ for {
 select {
 case <-getTickChan():
 if err := s.Snapshot(); err != nil {
-s.logger.Error("Scheduled snapshot failed", "error", err)
+s.logger.Error("Scheduled snapshot failed", zap.Error(err))
 }
 case newInterval := <-s.snapshotReset:
-s.logger.Info("Snapshot ticker updating", "old_interval", initialInterval, "new_interval", newInterval)
+s.logger.Info("Snapshot ticker updating",
+		zap.Duration("old_interval", initialInterval),
+		zap.Duration("new_interval", newInterval))
 if ticker != nil {
 ticker.Stop()
 ticker = nil
@@ -350,7 +361,7 @@ s.stopCompaction()
 // Stop WAL batcher first to flush pending writes
 if s.walBatcher != nil {
 if err := s.walBatcher.Stop(); err != nil {
-s.logger.Error("Failed to stop WAL batcher", "error", err)
+s.logger.Error("Failed to stop WAL batcher", zap.Error(err))
 }
 s.walBatcher = nil
 }
@@ -361,7 +372,7 @@ defer s.walMu.Unlock()
 if s.walFile != nil {
 s.logger.Info("Syncing and closing WAL file")
 if err := s.walFile.Sync(); err != nil {
-s.logger.Error("Failed to sync WAL", "error", err)
+s.logger.Error("Failed to sync WAL", zap.Error(err))
 }
 if err := s.walFile.Close(); err != nil {
 return NewWALError("close", s.dataPath, 0, err)

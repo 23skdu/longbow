@@ -4,7 +4,7 @@ import (
 "context"
 "encoding/json"
 "fmt"
-"log/slog"
+"go.uber.org/zap"
 "math"
 "os"
 "path/filepath"
@@ -58,7 +58,7 @@ atomic.StoreInt64(&d.lastAccess, t.UnixNano())
 type VectorStore struct {
 flight.BaseFlightServer
 mem           memory.Allocator
-logger        *slog.Logger
+logger        *zap.Logger
 vectors *ShardedMap
 maxMemory atomic.Int64
 currentMemory atomic.Int64
@@ -90,7 +90,7 @@ compactionWorker *CompactionWorker
 	bm25Index          *BM25InvertedIndex
 }
 
-func NewVectorStore(mem memory.Allocator, logger *slog.Logger, maxMemory, maxWALSize int64, ttl time.Duration) *VectorStore {
+func NewVectorStore(mem memory.Allocator, logger *zap.Logger, maxMemory, maxWALSize int64, ttl time.Duration) *VectorStore {
 s := &VectorStore{
 mem:           mem,
 logger:        logger,
@@ -118,12 +118,12 @@ func (s *VectorStore) UpdateConfig(maxMemory, maxWALSize int64, snapshotInterval
 s.maxMemory.Store(maxMemory)
 s.maxWALSize.Store(maxWALSize)
 
-s.logger.Info("Store configuration updated", "max_memory", maxMemory, "max_wal_size", maxWALSize)
+s.logger.Info("Store configuration updated", zap.Any("max_memory", maxMemory), zap.Any("max_wal_size", maxWALSize))
 
 // Non-blocking send to reset channel
 select {
 case s.snapshotReset <- snapshotInterval:
-s.logger.Info("Snapshot interval update signal sent", "new_interval", snapshotInterval)
+s.logger.Info("Snapshot interval update signal sent", zap.Any("new_interval", snapshotInterval))
 default:
 // If channel is full, drain and replace (last write wins for config)
 select {
@@ -131,7 +131,7 @@ case <-s.snapshotReset:
 default:
 }
 s.snapshotReset <- snapshotInterval
-s.logger.Info("Snapshot interval update signal sent (drained previous)", "new_interval", snapshotInterval)
+s.logger.Info("Snapshot interval update signal sent (drained previous)", zap.Any("new_interval", snapshotInterval))
 }
 }
 
@@ -213,7 +213,7 @@ s.logger.Info("ListFlights called")
 var query TicketQuery
 if c != nil && len(c.Expression) > 0 {
 if err := json.Unmarshal(c.Expression, &query); err != nil {
-s.logger.Warn("Failed to parse criteria expression", "error", err)
+s.logger.Warn("Failed to parse criteria expression", zap.Error(err))
 }
 }
 
@@ -242,7 +242,7 @@ name := ""
 if len(info.FlightDescriptor.Path) > 0 {
 name = info.FlightDescriptor.Path[0]
 }
-s.logger.Error("Failed to send flight info", "error", err, "name", name)
+s.logger.Error("Failed to send flight info", zap.Error(err), zap.Any("name", name))
 return err
 }
 }
@@ -305,7 +305,7 @@ name = query.Name
 limit = query.Limit
 }
 
-s.logger.Info("DoGet called", "ticket", name, "limit", limit)
+s.logger.Info("DoGet called", zap.Any("ticket", name), zap.Int64("limit", limit))
 
 ds, ok := s.vectors.Get(name)
 if !ok {
@@ -337,7 +337,7 @@ filterStart := time.Now()
 inputRows := rec.NumRows()
 filteredRec, err := s.filterRecordOptimized(stream.Context(), name, rec, batchIdx, query.Filters)
 if err != nil {
-s.logger.Error("Filtering failed", "error", err)
+s.logger.Error("Filtering failed", zap.Error(err))
 metrics.FlightOperationsTotal.WithLabelValues(method, "error").Inc()
 return err
 }
@@ -363,7 +363,7 @@ sliced = true
 if err := w.Write(toWrite); err != nil {
 if sliced { toWrite.Release() }
 filteredRec.Release()
-s.logger.Error("Failed to write record", "error", err)
+s.logger.Error("Failed to write record", zap.Error(err))
 metrics.FlightOperationsTotal.WithLabelValues(method, "error").Inc()
 return err
 }
@@ -411,7 +411,7 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 			case SchemaEvolution:
 				// Schema evolved - upgrade to write lock only for version increment
 				ds.UpgradeSchemaVersion() // Uses Lock internally
-				s.logger.Info("Schema evolved", "name", name, "version", ds.GetVersion())
+				s.logger.Info("Schema evolved", zap.Any("name", name), zap.Any("version", ds.GetVersion()))
 			case SchemaIncompatible:
 				return NewSchemaMismatchError(name, "incompatible schema: incoming schema does not match existing")
 			}
@@ -436,7 +436,7 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 				current := s.currentMemory.Load()
 				if current+size > maxMem {
 					rec.Release()
-					s.logger.Error("Memory limit exceeded", "current", current, "max", maxMem, "needed", size)
+					s.logger.Error("Memory limit exceeded", zap.Any("current", current), zap.Any("max", maxMem), zap.Any("needed", size))
 					return NewResourceExhaustedError("memory", "limit exceeded")
 				}
 				if s.currentMemory.CompareAndSwap(current, current+size) {
@@ -484,7 +484,7 @@ ds.SetLastAccess(time.Now())
 	// Write to WAL
 	if s.walBatcher != nil {
 		if err := s.walBatcher.Write(rec, name); err != nil {
-			s.logger.Error("Failed to write to WAL", "error", err)
+			s.logger.Error("Failed to write to WAL", zap.Error(err))
 			// Strict Durability: Fail the request if persistence fails
 			return NewPersistenceError("WAL write", err)
 		}
@@ -519,7 +519,7 @@ s.updateVectorMetrics(rec)
 
 // DoAction handles management commands
 func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightService_DoActionServer) error {
-	s.logger.Info("DoAction called", "type", action.Type)
+	s.logger.Info("DoAction called", zap.Any("type", action.Type))
 
 	switch action.Type {
 	case "drop_dataset":
@@ -729,11 +729,11 @@ ds.mu.Unlock()
 s.currentMemory.Add(-freedMem)
 s.vectors.Delete(name)
 evictedCount++
-s.logger.Info("Evicted dataset due to TTL", "name", name)
+s.logger.Info("Evicted dataset due to TTL", zap.Any("name", name))
 metrics.EvictionsTotal.WithLabelValues("ttl").Inc()
 }
 if evictedCount > 0 {
-s.logger.Info("TTL eviction completed", "evicted_count", evictedCount)
+s.logger.Info("TTL eviction completed", zap.Any("evicted_count", evictedCount))
 }
 }
 
@@ -770,7 +770,7 @@ r.Release()
 ds.Records = nil
 ds.mu.Unlock()
 s.vectors.Delete(oldestName)
-s.logger.Info("Evicted dataset due to LRU", "name", oldestName, "freed", calculateDatasetSize(ds))
+s.logger.Info("Evicted dataset due to LRU", zap.Any("name", oldestName), zap.Any("freed", calculateDatasetSize(ds)))
 metrics.EvictionsTotal.WithLabelValues("lru").Inc()
 }
 }
@@ -902,15 +902,15 @@ walPath := filepath.Join(dataPath, walFileName)
 stat, err := os.Stat(walPath)
 if err != nil {
 if !os.IsNotExist(err) {
-s.logger.Error("Failed to stat WAL file", "error", err)
+s.logger.Error("Failed to stat WAL file", zap.Error(err))
 }
 return
 }
 
 if stat.Size() > limit {
-s.logger.Info("WAL size exceeded limit, triggering snapshot", "current_size", stat.Size(), "limit", limit)
+s.logger.Info("WAL size exceeded limit, triggering snapshot", zap.Any("current_size", stat.Size()), zap.Int64("limit", limit))
 if err := s.Snapshot(); err != nil {
-s.logger.Error("Failed to create snapshot triggered by WAL size", "error", err)
+s.logger.Error("Failed to create snapshot triggered by WAL size", zap.Error(err))
 }
 }
 }
@@ -929,7 +929,7 @@ metrics.IndexQueueDepth.Set(float64(s.indexQueue.Len()))
 					continue
 				}
 				if err := ds.Index.Add(job.BatchIdx, job.RowIdx); err != nil {
-					s.logger.Error("Async index add failed", "dataset", job.DatasetName, "error", err)
+					s.logger.Error("Async index add failed", zap.Any("dataset", job.DatasetName), zap.Error(err))
 				}
 	// Record job latency
 metrics.IndexJobLatencySeconds.WithLabelValues(job.DatasetName).Observe(time.Since(job.CreatedAt).Seconds())

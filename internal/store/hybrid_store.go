@@ -1,13 +1,13 @@
 package store
 
 import (
-"log/slog"
 "runtime"
 "time"
 
 "github.com/apache/arrow-go/v18/arrow"
 "github.com/apache/arrow-go/v18/arrow/array"
 "github.com/apache/arrow-go/v18/arrow/memory"
+"go.uber.org/zap"
 )
 
 // =============================================================================
@@ -16,7 +16,7 @@ import (
 
 // NewVectorStoreWithHybridConfig creates a VectorStore with hybrid search enabled.
 // When hybrid search is enabled, text columns are indexed using BM25 during DoPut.
-func NewVectorStoreWithHybridConfig(mem memory.Allocator, logger *slog.Logger, hybridCfg HybridSearchConfig) (*VectorStore, error) {
+func NewVectorStoreWithHybridConfig(mem memory.Allocator, logger *zap.Logger, hybridCfg HybridSearchConfig) (*VectorStore, error) {
 if hybridCfg.Enabled {
 if err := hybridCfg.Validate(); err != nil {
 return nil, err
@@ -41,7 +41,7 @@ if hybridCfg.Enabled {
 s.bm25Index = NewBM25InvertedIndex(hybridCfg.BM25)
 }
 
-s.maxMemory.Store(1 << 30)  // 1GB default
+s.maxMemory.Store(1 << 30) // 1GB default
 s.maxWALSize.Store(1 << 28) // 256MB default
 s.startIndexingWorkers(runtime.NumCPU())
 s.StartMetricsTicker(10 * time.Second)
@@ -92,8 +92,8 @@ col := batch.Column(colIdx)
 strArr, ok := col.(*array.String)
 if !ok {
 s.logger.Warn("hybrid search: text column is not string type",
-"column", colName,
-"actual_type", col.DataType().Name())
+zap.String("column", colName),
+zap.String("actual_type", col.DataType().Name()))
 continue
 }
 
@@ -115,4 +115,3 @@ s.bm25Index.Add(vecID, text)
 }
 }
 }
-

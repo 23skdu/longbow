@@ -1,7 +1,7 @@
 package store
 
 import (
-"log/slog"
+"go.uber.org/zap"
 "sync"
 "testing"
 "time"
@@ -105,7 +105,7 @@ t.Error("expected ShardedHNSW when shardedIndex is set")
 func createShardingTestVectorStore(t *testing.T) *VectorStore {
 t.Helper()
 mem := memory.NewGoAllocator()
-logger := slog.Default()
+logger := zap.NewNop()
 return NewVectorStore(mem, logger, 1<<30, 1<<20, 5*time.Minute)
 }
 

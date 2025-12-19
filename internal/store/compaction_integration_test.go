@@ -1,7 +1,7 @@
 package store
 
 import (
-"log/slog"
+"go.uber.org/zap"
 "testing"
 "time"
 
@@ -10,7 +10,7 @@ import (
 
 // TestVectorStoreCompactionConfig tests compaction config on VectorStore
 func TestVectorStoreCompactionConfig(t *testing.T) {
-store := NewVectorStore(memory.NewGoAllocator(), slog.Default(), 1<<30, 1<<20, time.Hour)
+store := NewVectorStore(memory.NewGoAllocator(), zap.NewNop(), 1<<30, 1<<20, time.Hour)
 defer func() { _ = store.Close() }()
 
 cfg := store.GetCompactionConfig()
@@ -24,7 +24,7 @@ t.Errorf("expected default MinBatchesToCompact 10, got %d", cfg.MinBatchesToComp
 
 // TestVectorStoreCompactionWorkerStartStop tests worker lifecycle
 func TestVectorStoreCompactionWorkerStartStop(t *testing.T) {
-store := NewVectorStore(memory.NewGoAllocator(), slog.Default(), 1<<30, 1<<20, time.Hour)
+store := NewVectorStore(memory.NewGoAllocator(), zap.NewNop(), 1<<30, 1<<20, time.Hour)
 
 // Worker should start automatically with store
 if !store.IsCompactionRunning() {
@@ -44,7 +44,7 @@ t.Error("compaction worker should stop after Close")
 
 // TestVectorStoreCompactionStats tests compaction statistics
 func TestVectorStoreCompactionStats(t *testing.T) {
-store := NewVectorStore(memory.NewGoAllocator(), slog.Default(), 1<<30, 1<<20, time.Hour)
+store := NewVectorStore(memory.NewGoAllocator(), zap.NewNop(), 1<<30, 1<<20, time.Hour)
 defer func() { _ = store.Close() }()
 
 stats := store.GetCompactionStats()
@@ -55,7 +55,7 @@ t.Error("CompactionsRun should be non-negative")
 
 // TestVectorStoreCompactDatasetNotFound tests compaction of non-existent dataset
 func TestVectorStoreCompactDatasetNotFound(t *testing.T) {
-store := NewVectorStore(memory.NewGoAllocator(), slog.Default(), 1<<30, 1<<20, time.Hour)
+store := NewVectorStore(memory.NewGoAllocator(), zap.NewNop(), 1<<30, 1<<20, time.Hour)
 defer func() { _ = store.Close() }()
 
 err := store.CompactDataset("non_existent")

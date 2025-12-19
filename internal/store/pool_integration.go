@@ -92,8 +92,16 @@ return newDs
 
 ds.mu.Lock()
 batchIdx := len(ds.Records)
+// Calculate baseRowID for BM25 indexing based on existing rows
+var baseRowID uint32
+for _, existingRec := range ds.Records {
+	baseRowID += uint32(existingRec.NumRows())
+}
 ds.Records = append(ds.Records, rec)
 ds.mu.Unlock()
+
+// Auto-index text columns for BM25 hybrid search
+s.indexTextColumnsForHybridSearch(rec, baseRowID)
 
 // Auto-trigger compaction if batch count exceeds threshold
 if s.compactionWorker != nil && batchIdx+1 > s.compactionConfig.MinBatchesToCompact {

@@ -9,6 +9,7 @@ import (
 "time"
 
 "github.com/23skdu/longbow/internal/logging"
+"github.com/23skdu/longbow/internal/metrics"
 "github.com/23skdu/longbow/internal/store"
 "github.com/apache/arrow-go/v18/arrow/flight"
 "github.com/apache/arrow-go/v18/arrow/memory"
@@ -17,7 +18,6 @@ import (
 "github.com/prometheus/client_golang/prometheus/promhttp"
 "go.uber.org/zap"
 "google.golang.org/grpc"
-"google.golang.org/grpc/keepalive"
 )
 
 // Config holds the application configuration
@@ -40,6 +40,13 @@ MaxWALSize       int64         `envconfig:"MAX_WAL_SIZE" default:"104857600"`
 // Logging configuration
 LogFormat string `envconfig:"LOG_FORMAT" default:"json"`
 LogLevel  string `envconfig:"LOG_LEVEL" default:"info"`
+
+// gRPC Server Options - configurable for large RecordBatch transfers
+GRPCMaxRecvMsgSize        int    `envconfig:"GRPC_MAX_RECV_MSG_SIZE" default:"67108864"`         // 64MB default
+GRPCMaxSendMsgSize        int    `envconfig:"GRPC_MAX_SEND_MSG_SIZE" default:"67108864"`         // 64MB default
+GRPCInitialWindowSize     int32  `envconfig:"GRPC_INITIAL_WINDOW_SIZE" default:"1048576"`        // 1MB default
+GRPCInitialConnWindowSize int32  `envconfig:"GRPC_INITIAL_CONN_WINDOW_SIZE" default:"1048576"`   // 1MB default
+GRPCMaxConcurrentStreams  uint32 `envconfig:"GRPC_MAX_CONCURRENT_STREAMS" default:"250"`         // 250 default
 }
 
 func main() {
@@ -101,19 +108,27 @@ logger.Error("Metrics server failed", zap.Error(err))
 }
 }()
 
-// gRPC Server Options
-kaParams := keepalive.ServerParameters{
-Time:    cfg.KeepAliveTime,
-Timeout: cfg.KeepAliveTimeout,
+// gRPC Server Options - using env-configurable message sizes and window sizes
+if err := cfg.ValidateGRPCConfig(); err != nil {
+logger.Error("Invalid gRPC config", zap.Error(err))
+_ = logger.Sync()
+os.Exit(1) //nolint:gocritic // Explicit sync before exit
 }
-kaPolicy := keepalive.EnforcementPolicy{
-MinTime:             cfg.KeepAliveMinTime,
-PermitWithoutStream: cfg.KeepAlivePermitWithoutStream,
-}
-serverOpts := []grpc.ServerOption{
-grpc.KeepaliveParams(kaParams),
-grpc.KeepaliveEnforcementPolicy(kaPolicy),
-}
+serverOpts := cfg.BuildGRPCServerOptions()
+logger.Info("gRPC server options configured",
+zap.Int("max_recv_msg_size", cfg.GRPCMaxRecvMsgSize),
+zap.Int("max_send_msg_size", cfg.GRPCMaxSendMsgSize),
+zap.Int32("initial_window_size", cfg.GRPCInitialWindowSize),
+zap.Int32("initial_conn_window_size", cfg.GRPCInitialConnWindowSize),
+zap.Uint32("max_concurrent_streams", cfg.GRPCMaxConcurrentStreams),
+)
+
+// Set Prometheus metrics for gRPC configuration
+metrics.GRPCMaxRecvMsgSizeBytes.Set(float64(cfg.GRPCMaxRecvMsgSize))
+metrics.GRPCMaxSendMsgSizeBytes.Set(float64(cfg.GRPCMaxSendMsgSize))
+metrics.GRPCInitialWindowSizeBytes.Set(float64(cfg.GRPCInitialWindowSize))
+metrics.GRPCInitialConnWindowSizeBytes.Set(float64(cfg.GRPCInitialConnWindowSize))
+metrics.GRPCMaxConcurrentStreams.Set(float64(cfg.GRPCMaxConcurrentStreams))
 
 // --- Data Server Setup ---
 dataServer := grpc.NewServer(serverOpts...)

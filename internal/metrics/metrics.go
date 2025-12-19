@@ -1403,3 +1403,23 @@ Name: "longbow_load_balancer_unhealthy_total",
 Help: "Total number of replicas marked unhealthy",
 })
 )
+
+// HNSW Graph Sync metrics
+var (
+HNSWGraphSyncExportsTotal = promauto.NewCounter(prometheus.CounterOpts{
+Name: "longbow_hnsw_graph_sync_exports_total",
+Help: "Total number of HNSW graph state exports",
+})
+HNSWGraphSyncImportsTotal = promauto.NewCounter(prometheus.CounterOpts{
+Name: "longbow_hnsw_graph_sync_imports_total",
+Help: "Total number of HNSW graph state imports",
+})
+HNSWGraphSyncDeltasTotal = promauto.NewCounter(prometheus.CounterOpts{
+Name: "longbow_hnsw_graph_sync_deltas_total",
+Help: "Total number of HNSW graph delta exports",
+})
+HNSWGraphSyncDeltaAppliesTotal = promauto.NewCounter(prometheus.CounterOpts{
+Name: "longbow_hnsw_graph_sync_delta_applies_total",
+Help: "Total number of HNSW graph delta applies",
+})
+)

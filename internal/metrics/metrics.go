@@ -968,3 +968,20 @@ Buckets:   []float64{0.00001, 0.00005, 0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05,
 },
 []string{"operation"},
 )
+
+// VectorSearch Action metrics
+var (
+VectorSearchActionTotal = promauto.NewCounter(prometheus.CounterOpts{
+Name: "longbow_vector_search_action_total",
+Help: "Total number of VectorSearch DoAction calls",
+})
+VectorSearchActionDuration = promauto.NewHistogram(prometheus.HistogramOpts{
+Name:    "longbow_vector_search_action_duration_seconds",
+Help:    "Duration of VectorSearch DoAction calls",
+Buckets: prometheus.DefBuckets,
+})
+VectorSearchActionErrors = promauto.NewCounter(prometheus.CounterOpts{
+Name: "longbow_vector_search_action_errors_total",
+Help: "Total number of VectorSearch DoAction errors",
+})
+)

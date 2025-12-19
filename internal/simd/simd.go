@@ -68,24 +68,32 @@ metrics.SimdDispatchCount.WithLabelValues("avx512").Inc()
 cosineDistanceImpl = cosineAVX512
 dotProductImpl = dotAVX512
 euclideanDistanceBatchImpl = euclideanBatchAVX512
+		cosineDistanceBatchImpl = cosineBatchUnrolled4x
+		dotProductBatchImpl = dotBatchUnrolled4x
 case "avx2":
 euclideanDistanceImpl = euclideanAVX2
 metrics.SimdDispatchCount.WithLabelValues("avx2").Inc()
 cosineDistanceImpl = cosineAVX2
 dotProductImpl = dotAVX2
 euclideanDistanceBatchImpl = euclideanBatchAVX2
+		cosineDistanceBatchImpl = cosineBatchUnrolled4x
+		dotProductBatchImpl = dotBatchUnrolled4x
 case "neon":
 euclideanDistanceImpl = euclideanNEON
 metrics.SimdDispatchCount.WithLabelValues("neon").Inc()
 cosineDistanceImpl = cosineNEON
 dotProductImpl = dotNEON
 euclideanDistanceBatchImpl = euclideanBatchNEON
+		cosineDistanceBatchImpl = cosineBatchUnrolled4x
+		dotProductBatchImpl = dotBatchUnrolled4x
 default:
 euclideanDistanceImpl = euclideanUnrolled4x
 metrics.SimdDispatchCount.WithLabelValues("generic").Inc()
 cosineDistanceImpl = cosineUnrolled4x
 dotProductImpl = dotUnrolled4x
 euclideanDistanceBatchImpl = euclideanBatchUnrolled4x
+		cosineDistanceBatchImpl = cosineBatchUnrolled4x
+		dotProductBatchImpl = dotBatchUnrolled4x
 }
 }
 
@@ -307,5 +315,59 @@ return sum0 + sum1 + sum2 + sum3
 func euclideanBatchUnrolled4x(query []float32, vectors [][]float32, results []float32) {
 for i, v := range vectors {
 results[i] = euclideanUnrolled4x(query, v)
+}
+}
+
+// =============================================================================
+// Parallel Sum Reduction with Multiple Accumulators - Batch Operations
+// =============================================================================
+
+// Batch function type for cosine and dot distance
+var (
+cosineDistanceBatchImpl  distanceBatchFunc
+dotProductBatchImpl      distanceBatchFunc
+)
+
+// CosineDistanceBatch calculates cosine distance between query and multiple vectors.
+// Uses parallel sum reduction with multiple accumulators for ILP optimization.
+func CosineDistanceBatch(query []float32, vectors [][]float32, results []float32) {
+if len(vectors) == 0 {
+return
+}
+if len(results) < len(vectors) {
+panic("results slice too small")
+}
+metrics.CosineBatchCallsTotal.Inc()
+	metrics.ParallelReductionVectorsProcessed.Add(float64(len(vectors)))
+	cosineDistanceBatchImpl(query, vectors, results)
+}
+
+// DotProductBatch calculates dot product between query and multiple vectors.
+// Uses parallel sum reduction with multiple accumulators for ILP optimization.
+func DotProductBatch(query []float32, vectors [][]float32, results []float32) {
+if len(vectors) == 0 {
+return
+}
+if len(results) < len(vectors) {
+panic("results slice too small")
+}
+metrics.DotProductBatchCallsTotal.Inc()
+	metrics.ParallelReductionVectorsProcessed.Add(float64(len(vectors)))
+	dotProductBatchImpl(query, vectors, results)
+}
+
+// cosineBatchUnrolled4x computes batch cosine distances using unrolled inner loop
+// with 4 independent accumulators per dot/norm calculation (12 total accumulators).
+func cosineBatchUnrolled4x(query []float32, vectors [][]float32, results []float32) {
+for i, v := range vectors {
+results[i] = cosineUnrolled4x(query, v)
+}
+}
+
+// dotBatchUnrolled4x computes batch dot products using unrolled inner loop
+// with 4 independent accumulators to break loop-carried dependencies.
+func dotBatchUnrolled4x(query []float32, vectors [][]float32, results []float32) {
+for i, v := range vectors {
+results[i] = dotUnrolled4x(query, v)
 }
 }

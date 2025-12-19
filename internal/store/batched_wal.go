@@ -131,6 +131,11 @@ func (w *WALBatcher) Write(rec arrow.RecordBatch, name string) error {
 	// Retain the record since we're passing it to another goroutine
 	rec.Retain()
 
+	// Track write for adaptive interval calculation
+	if w.rateTracker != nil {
+		w.rateTracker.RecordWrite()
+	}
+
 	select {
 	case w.entries <- WALEntry{Record: rec, Name: name}:
 		return nil

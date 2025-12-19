@@ -6,6 +6,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/23skdu/longbow/internal/metrics"
 )
 
 // AdaptiveWALConfig configures adaptive batching behavior
@@ -59,6 +61,7 @@ func NewAdaptiveIntervalCalculator(cfg AdaptiveWALConfig) *AdaptiveIntervalCalcu
 // CalculateInterval returns the optimal flush interval for the given write rate
 func (c *AdaptiveIntervalCalculator) CalculateInterval(writeRate float64) time.Duration {
 	if writeRate <= 0 {
+		metrics.WalAdaptiveIntervalMs.Set(float64(c.cfg.MaxInterval.Milliseconds()))
 		return c.cfg.MaxInterval
 	}
 
@@ -73,11 +76,14 @@ func (c *AdaptiveIntervalCalculator) CalculateInterval(writeRate float64) time.D
 	interval := time.Duration(intervalNs)
 
 	if interval < c.cfg.MinInterval {
+		metrics.WalAdaptiveIntervalMs.Set(float64(c.cfg.MinInterval.Milliseconds()))
 		return c.cfg.MinInterval
 	}
 	if interval > c.cfg.MaxInterval {
+		metrics.WalAdaptiveIntervalMs.Set(float64(c.cfg.MaxInterval.Milliseconds()))
 		return c.cfg.MaxInterval
 	}
+	metrics.WalAdaptiveIntervalMs.Set(float64(interval.Milliseconds()))
 	return interval
 }
 
@@ -131,6 +137,8 @@ func (t *WriteRateTracker) maybeUpdateRate() {
 	newRate := alpha*instantRate + (1-alpha)*oldRate
 
 	t.rate.Store(math.Float64bits(newRate))
+	// Emit write rate metric
+	metrics.WalWriteRatePerSecond.Set(newRate)
 	t.lastTime.Store(now)
 }
 

@@ -2,6 +2,7 @@ package store
 
 import (
 "math"
+	"time"
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/simd"
 	"github.com/apache/arrow-go/v18/arrow"
@@ -52,7 +53,9 @@ func NewHNSWIndex(ds *Dataset) *HNSWIndex {
 // getVector retrieves the float32 slice for a given ID.
 // It returns a copy of the vector to ensure safety against concurrent eviction.
 func (h *HNSWIndex) getVector(id VectorID) []float32 {
+	indexLockStart1 := time.Now()
 	h.mu.RLock()
+	metrics.IndexLockWaitDuration.WithLabelValues("read").Observe(time.Since(indexLockStart1).Seconds())
 	if int(id) >= len(h.locations) {
 		h.mu.RUnlock()
 		return nil
@@ -61,7 +64,9 @@ func (h *HNSWIndex) getVector(id VectorID) []float32 {
 	h.mu.RUnlock()
 
 	// Lock the dataset to safely access records
+	indexLockStart2 := time.Now()
 	h.dataset.mu.RLock()
+	metrics.IndexLockWaitDuration.WithLabelValues("read").Observe(time.Since(indexLockStart2).Seconds())
 	defer h.dataset.mu.RUnlock()
 
 	// Check if records still exist
@@ -156,7 +161,9 @@ func (h *HNSWIndex) putScratch(buf []float32) {
 // getVectorInto copies vector data into the provided buffer.
 // Returns false if vector not found or buffer too small.
 func (h *HNSWIndex) getVectorInto(id VectorID, dst []float32) bool {
+	indexLockStart3 := time.Now()
 	h.mu.RLock()
+	metrics.IndexLockWaitDuration.WithLabelValues("read").Observe(time.Since(indexLockStart3).Seconds())
 	if int(id) >= len(h.locations) {
 		h.mu.RUnlock()
 		return false
@@ -164,7 +171,9 @@ func (h *HNSWIndex) getVectorInto(id VectorID, dst []float32) bool {
 	loc := h.locations[id]
 	h.mu.RUnlock()
 
+	indexLockStart4 := time.Now()
 	h.dataset.mu.RLock()
+	metrics.IndexLockWaitDuration.WithLabelValues("read").Observe(time.Since(indexLockStart4).Seconds())
 	defer h.dataset.mu.RUnlock()
 
 	if h.dataset.Records == nil || loc.BatchIdx >= len(h.dataset.Records) {
@@ -215,7 +224,9 @@ func (h *HNSWIndex) getVectorInto(id VectorID, dst []float32) bool {
 func (h *HNSWIndex) getVectorUnsafe(id VectorID) (vec []float32, release func()) {
 	h.enterEpoch()
 
+	indexLockStart5 := time.Now()
 	h.mu.RLock()
+	metrics.IndexLockWaitDuration.WithLabelValues("read").Observe(time.Since(indexLockStart5).Seconds())
 	if int(id) >= len(h.locations) {
 		h.mu.RUnlock()
 		h.exitEpoch()
@@ -224,7 +235,9 @@ func (h *HNSWIndex) getVectorUnsafe(id VectorID) (vec []float32, release func())
 	loc := h.locations[id]
 	h.mu.RUnlock()
 
+	indexLockStart6 := time.Now()
 	h.dataset.mu.RLock()
+	metrics.IndexLockWaitDuration.WithLabelValues("read").Observe(time.Since(indexLockStart6).Seconds())
 
 	if h.dataset.Records == nil || loc.BatchIdx >= len(h.dataset.Records) {
 		h.dataset.mu.RUnlock()
@@ -288,7 +301,9 @@ func (h *HNSWIndex) getVectorUnsafe(id VectorID) (vec []float32, release func())
 
 // Add inserts a new vector location into the index and adds it to the graph.
 func (h *HNSWIndex) Add(batchIdx, rowIdx int) error {
+	indexLockStart7 := time.Now()
 	h.mu.Lock()
+	metrics.IndexLockWaitDuration.WithLabelValues("write").Observe(time.Since(indexLockStart7).Seconds())
 	id := VectorID(len(h.locations))
 	h.locations = append(h.locations, Location{BatchIdx: batchIdx, RowIdx: rowIdx})
 	h.mu.Unlock()
@@ -341,7 +356,9 @@ workers = len(locations)
 }
 
 // Phase 1: Pre-allocate all locations atomically
+indexLockStart8 := time.Now()
 h.mu.Lock()
+metrics.IndexLockWaitDuration.WithLabelValues("write").Observe(time.Since(indexLockStart8).Seconds())
 baseID := VectorID(len(h.locations))
 h.locations = append(h.locations, locations...)
 h.mu.Unlock()
@@ -381,11 +398,14 @@ h.dims = len(results[0].vec)
 // Phase 3: Sequential graph insertion with mutex protection
 // The hnsw library's Graph.Add is not thread-safe
 for _, vd := range results {
-if vd.vec != nil {
+if vd.vec == nil {
+continue
+}
+indexLockStart9 := time.Now()
 h.mu.Lock()
+metrics.IndexLockWaitDuration.WithLabelValues("write").Observe(time.Since(indexLockStart9).Seconds())
 h.Graph.Add(hnsw.MakeNode(vd.id, vd.vec))
 h.mu.Unlock()
-}
 }
 
 return nil
@@ -393,7 +413,9 @@ return nil
 
 // Len returns the number of vectors in the index
 func (h *HNSWIndex) Len() int {
+indexLockStart10 := time.Now()
 h.mu.RLock()
+metrics.IndexLockWaitDuration.WithLabelValues("read").Observe(time.Since(indexLockStart10).Seconds())
 defer h.mu.RUnlock()
 return len(h.locations)
 }

@@ -36,6 +36,7 @@ stopChan:          make(chan struct{}),
 columnIndex:       NewColumnInvertedIndex(),
 metadata:          NewCOWMetadataMap(),
 hybridSearchConfig: hybridCfg,
+		nsManager: newNamespaceManager(),
 }
 
 // Initialize BM25 index if hybrid search is enabled

@@ -97,6 +97,8 @@ compactionWorker *CompactionWorker
 	// DoGet pipeline subsystem
 	doGetPipelinePool *DoGetPipelinePool
 	pipelineThreshold int
+	// Multi-tenancy namespace manager
+	nsManager *namespaceManager
 }
 
 func NewVectorStore(mem memory.Allocator, logger *zap.Logger, maxMemory, maxWALSize int64, ttl time.Duration) *VectorStore {
@@ -111,6 +113,7 @@ snapshotReset: make(chan time.Duration, 1),
 		columnIndex: NewColumnInvertedIndex(),
 metadata: NewCOWMetadataMap(),
 		semaphore: NewRequestSemaphore(DefaultRequestSemaphoreConfig()),
+		nsManager: newNamespaceManager(),
 	}
 	s.maxMemory.Store(maxMemory)
 	s.maxWALSize.Store(maxWALSize)
@@ -137,6 +140,7 @@ stopChan:      make(chan struct{}),
 columnIndex:   NewColumnInvertedIndex(),
 metadata:      NewCOWMetadataMap(),
 semaphore:     NewRequestSemaphore(semCfg),
+		nsManager: newNamespaceManager(),
 }
 s.maxMemory.Store(maxMemory)
 s.maxWALSize.Store(maxWALSize)
@@ -163,6 +167,7 @@ stopChan:      make(chan struct{}),
 columnIndex:   NewColumnInvertedIndex(),
 metadata:      NewCOWMetadataMap(),
 semaphore:     NewRequestSemaphore(DefaultRequestSemaphoreConfig()),
+		nsManager: newNamespaceManager(),
 }
 s.maxMemory.Store(maxMemory)
 s.maxWALSize.Store(maxWALSize)

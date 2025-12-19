@@ -1341,3 +1341,23 @@ Name: "longbow_replication_queue_dropped_total",
 Help: "Total records dropped due to full queue",
 })
 )
+
+// Split-brain detector metrics
+var (
+SplitBrainHeartbeatsTotal = promauto.NewCounter(prometheus.CounterOpts{
+Name: "longbow_split_brain_heartbeats_total",
+Help: "Total number of peer heartbeats received",
+})
+SplitBrainHealthyPeers = promauto.NewGauge(prometheus.GaugeOpts{
+Name: "longbow_split_brain_healthy_peers",
+Help: "Current number of healthy peers",
+})
+SplitBrainPartitionsTotal = promauto.NewCounter(prometheus.CounterOpts{
+Name: "longbow_split_brain_partitions_total",
+Help: "Total number of network partitions detected",
+})
+SplitBrainFenced = promauto.NewGauge(prometheus.GaugeOpts{
+Name: "longbow_split_brain_fenced",
+Help: "Whether node is currently fenced (1=fenced, 0=not fenced)",
+})
+)

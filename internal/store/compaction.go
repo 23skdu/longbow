@@ -67,6 +67,10 @@ stopCh  chan struct{}
 doneCh  chan struct{}
 mu      sync.Mutex
 
+	// Trigger channel for auto-compaction
+	triggerChan  chan string
+	triggerCount atomic.Int64
+
 // Statistics
 compactionsRun atomic.Int64
 batchesMerged  atomic.Int64
@@ -77,7 +81,8 @@ lastRunTime    atomic.Value // time.Time
 // NewCompactionWorker creates a new compaction worker with the given config.
 func NewCompactionWorker(cfg CompactionConfig) *CompactionWorker {
 w := &CompactionWorker{
-config: cfg,
+config:      cfg,
+triggerChan: make(chan string, 100), // Buffered to avoid blocking
 }
 w.lastRunTime.Store(time.Time{})
 return w
@@ -293,4 +298,30 @@ b.Append(arr.Value(i))
 }
 }
 }
+}
+
+// TriggerCompaction triggers compaction for a specific dataset.
+// This is non-blocking - if the channel is full, it returns without blocking.
+func (w *CompactionWorker) TriggerCompaction(dataset string) error {
+if !w.config.Enabled {
+return nil
+}
+if !w.running.Load() {
+return nil
+}
+
+// Non-blocking send - drop if buffer full
+select {
+case w.triggerChan <- dataset:
+w.triggerCount.Add(1)
+metrics.CompactionAutoTriggersTotal.Inc()
+default:
+// Channel full, skip this trigger (debounce)
+}
+return nil
+}
+
+// GetTriggerCount returns the total number of auto-compaction triggers.
+func (w *CompactionWorker) GetTriggerCount() int64 {
+return w.triggerCount.Load()
 }

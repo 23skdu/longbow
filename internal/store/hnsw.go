@@ -50,6 +50,22 @@ func NewHNSWIndex(ds *Dataset) *HNSWIndex {
 	return h
 }
 
+// NewHNSWIndexWithCapacity creates a new index with pre-allocated locations slice.
+// Use this when the expected number of vectors is known to avoid re-allocations.
+func NewHNSWIndexWithCapacity(ds *Dataset, capacity int) *HNSWIndex {
+h := &HNSWIndex{
+dataset:   ds,
+locations: make([]Location, 0, capacity),
+}
+// Initialize the graph with VectorID as the key type.
+h.Graph = hnsw.NewGraph[VectorID]()
+h.resultPool = newResultPool()
+// Use Euclidean distance to match previous implementation intent
+h.Graph.Distance = simd.EuclideanDistance
+return h
+}
+
+
 // getVector retrieves the float32 slice for a given ID.
 // It returns a copy of the vector to ensure safety against concurrent eviction.
 func (h *HNSWIndex) getVector(id VectorID) []float32 {

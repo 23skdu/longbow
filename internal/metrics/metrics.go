@@ -1188,3 +1188,37 @@ Name:      "record_metadata_entries",
 Help:      "Current number of tracked records with eviction metadata",
 })
 )
+
+
+// gRPC Server Configuration Metrics
+var (
+GRPCMaxRecvMsgSizeBytes = promauto.NewGauge(prometheus.GaugeOpts{
+Namespace: "longbow",
+Name:      "grpc_max_recv_msg_size_bytes",
+Help:      "Configured maximum receive message size in bytes",
+})
+
+GRPCMaxSendMsgSizeBytes = promauto.NewGauge(prometheus.GaugeOpts{
+Namespace: "longbow",
+Name:      "grpc_max_send_msg_size_bytes",
+Help:      "Configured maximum send message size in bytes",
+})
+
+GRPCInitialWindowSizeBytes = promauto.NewGauge(prometheus.GaugeOpts{
+Namespace: "longbow",
+Name:      "grpc_initial_window_size_bytes",
+Help:      "Configured HTTP/2 initial stream window size in bytes",
+})
+
+GRPCInitialConnWindowSizeBytes = promauto.NewGauge(prometheus.GaugeOpts{
+Namespace: "longbow",
+Name:      "grpc_initial_conn_window_size_bytes",
+Help:      "Configured HTTP/2 initial connection window size in bytes",
+})
+
+GRPCMaxConcurrentStreams = promauto.NewGauge(prometheus.GaugeOpts{
+Namespace: "longbow",
+Name:      "grpc_max_concurrent_streams",
+Help:      "Configured maximum concurrent streams per connection",
+})
+)

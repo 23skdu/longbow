@@ -1248,3 +1248,45 @@ Help:      "Time taken for schema evolution operations",
 Buckets:   prometheus.DefBuckets,
 })
 )
+
+// =============================================================================
+// Pluggable Index Metrics
+// =============================================================================
+
+var (
+// IndexTypesRegistered tracks number of registered index types
+IndexTypesRegistered = promauto.NewCounter(prometheus.CounterOpts{
+Namespace: "longbow",
+Name:      "index_types_registered_total",
+Help:      "Total number of index types registered in factory",
+})
+
+// IndexCreationsTotal tracks index creation attempts
+IndexCreationsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+Namespace: "longbow",
+Name:      "index_creations_total",
+Help:      "Total index creation attempts by type and result",
+}, []string{"type", "result"})
+
+// IndexCreationDuration tracks index creation latency
+IndexCreationDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
+Namespace: "longbow",
+Name:      "index_creation_duration_seconds",
+Help:      "Index creation latency by type",
+Buckets:   prometheus.DefBuckets,
+}, []string{"type"})
+
+// IndexOperationsTotal tracks index operations
+IndexOperationsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+Namespace: "longbow",
+Name:      "index_operations_total",
+Help:      "Total index operations by type and operation",
+}, []string{"type", "operation"})
+
+// IndexSize tracks vectors in each index
+IndexSize = promauto.NewGaugeVec(prometheus.GaugeOpts{
+Namespace: "longbow",
+Name:      "index_size",
+Help:      "Number of vectors in index by type",
+}, []string{"type", "dataset"})
+)

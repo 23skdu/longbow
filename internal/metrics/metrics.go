@@ -1526,3 +1526,26 @@ Help: "Active SIMD kernel type (1=avx512_fma, 2=avx512, 3=avx2, 4=neon, 5=scalar
 []string{"operation"},
 )
 )
+
+
+// Parallel Sum Reduction Batch Metrics
+var CosineBatchCallsTotal = promauto.NewCounter(
+prometheus.CounterOpts{
+Namespace: "longbow",
+Name:      "cosine_batch_calls_total",
+Help:      "Total number of batch cosine distance operations using parallel sum reduction",
+})
+
+var DotProductBatchCallsTotal = promauto.NewCounter(
+prometheus.CounterOpts{
+Namespace: "longbow",
+Name:      "dot_product_batch_calls_total",
+Help:      "Total number of batch dot product operations using parallel sum reduction",
+})
+
+var ParallelReductionVectorsProcessed = promauto.NewCounter(
+prometheus.CounterOpts{
+Namespace: "longbow",
+Name:      "parallel_reduction_vectors_processed_total",
+Help:      "Total number of vectors processed via 4x accumulator parallel reduction",
+})

@@ -1342,6 +1342,30 @@ Help: "Total records dropped due to full queue",
 })
 )
 
+
+// Merkle tree anti-entropy metrics
+var (
+MerkleTreeBuilds = promauto.NewCounter(prometheus.CounterOpts{
+Name: "longbow_merkle_tree_builds_total",
+Help: "Total number of Merkle trees built",
+})
+
+MerkleTreeBuildDuration = promauto.NewHistogram(prometheus.HistogramOpts{
+Name:    "longbow_merkle_tree_build_duration_seconds",
+Help:    "Duration of Merkle tree build operations",
+Buckets: prometheus.DefBuckets,
+})
+
+MerkleDivergencesFound = promauto.NewCounter(prometheus.CounterOpts{
+Name: "longbow_merkle_divergences_found_total",
+Help: "Total number of divergent records found via Merkle comparison",
+})
+
+AntiEntropySyncDuration = promauto.NewHistogram(prometheus.HistogramOpts{
+Name:    "longbow_anti_entropy_sync_duration_seconds",
+Help:    "Duration of anti-entropy sync operations",
+Buckets: prometheus.DefBuckets,
+  )
 // Split-brain detector metrics
 var (
 SplitBrainHeartbeatsTotal = promauto.NewCounter(prometheus.CounterOpts{
@@ -1358,6 +1382,6 @@ Help: "Total number of network partitions detected",
 })
 SplitBrainFenced = promauto.NewGauge(prometheus.GaugeOpts{
 Name: "longbow_split_brain_fenced",
-Help: "Whether node is currently fenced (1=fenced, 0=not fenced)",
+  )
 })
 )

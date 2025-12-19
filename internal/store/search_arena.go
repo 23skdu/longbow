@@ -1,6 +1,11 @@
 package store
 
-import "unsafe"
+import (
+	"sync"
+
+	"github.com/23skdu/longbow/internal/metrics"
+	"unsafe"
+)
 
 // SearchArena is a per-request arena allocator that provides O(1) allocations
 // with zero GC pressure. It uses a simple bump allocator strategy where
@@ -110,4 +115,34 @@ a.offset = alignedOffset + bytesNeeded
 // Convert byte slice to VectorID slice using unsafe
 ptr := unsafe.Pointer(&a.buf[alignedOffset])
 return unsafe.Slice((*VectorID)(ptr), count)
+}
+
+// DefaultArenaSize is the default capacity for pooled arenas (64KB)
+const DefaultArenaSize = 64 * 1024
+
+// arenaPool is a global pool of SearchArena objects for reuse
+// This eliminates per-search allocations and reduces GC pressure
+var arenaPool = sync.Pool{
+New: func() any {
+return NewSearchArena(DefaultArenaSize)
+},
+}
+
+// GetArena retrieves a SearchArena from the global pool.
+// The arena is reset and ready for use.
+// Caller must call PutArena when done to return it to the pool.
+func GetArena() *SearchArena {
+	metrics.ArenaPoolGets.Inc()
+return arenaPool.Get().(*SearchArena)
+}
+
+// PutArena returns a SearchArena to the global pool for reuse.
+// The arena is automatically reset before being pooled.
+func PutArena(arena *SearchArena) {
+	metrics.ArenaPoolPuts.Inc()
+if arena == nil {
+return
+}
+arena.Reset()
+arenaPool.Put(arena)
 }

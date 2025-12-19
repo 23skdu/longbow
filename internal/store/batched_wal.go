@@ -86,7 +86,9 @@ func NewWALBatcher(dataPath string, config *WALBatcherConfig) *WALBatcher {
 
 // Start initializes the WAL file and starts the background flush goroutine
 func (w *WALBatcher) Start() error {
+	walLockStart1 := time.Now()
 	w.mu.Lock()
+	metrics.WALLockWaitDuration.WithLabelValues("append").Observe(time.Since(walLockStart1).Seconds())
 	defer w.mu.Unlock()
 
 	if w.running {
@@ -148,7 +150,9 @@ func (w *WALBatcher) flushLoop() {
 	for {
 		select {
 		case entry := <-w.entries:
+			walLockStart2 := time.Now()
 			w.mu.Lock()
+			metrics.WALLockWaitDuration.WithLabelValues("flush_check").Observe(time.Since(walLockStart2).Seconds())
 // Track pending entries (backpressure indicator)
 metrics.WalPendingEntries.Set(float64(len(w.entries)))
 			w.batch = append(w.batch, entry)
@@ -172,7 +176,9 @@ metrics.WalPendingEntries.Set(float64(len(w.entries)))
 
 // flush writes all batched entries to disk
 func (w *WALBatcher) flush() {
+	walLockStart3 := time.Now()
 	w.mu.Lock()
+	metrics.WALLockWaitDuration.WithLabelValues("flush").Observe(time.Since(walLockStart3).Seconds())
 	if len(w.batch) == 0 {
 		w.mu.Unlock()
 		return
@@ -193,7 +199,9 @@ metrics.WalBatchSize.Observe(float64(len(batch)))
 	for _, entry := range batch {
 		n, err := w.writeEntryBytes(entry)
 		if err != nil {
+			walLockStart4 := time.Now()
 			w.mu.Lock()
+			metrics.WALLockWaitDuration.WithLabelValues("sync_check").Observe(time.Since(walLockStart4).Seconds())
 			w.flushErr = err
 			w.mu.Unlock()
 			metrics.WalWritesTotal.WithLabelValues("error").Inc()
@@ -218,7 +226,9 @@ metrics.WalBatchSize.Observe(float64(len(batch)))
 			fsyncDuration := time.Since(fsyncStart).Seconds()
 			if err != nil {
 				metrics.WalFsyncDurationSeconds.WithLabelValues("error").Observe(fsyncDuration)
+				walLockStart5 := time.Now()
 				w.mu.Lock()
+				metrics.WALLockWaitDuration.WithLabelValues("sync_wait").Observe(time.Since(walLockStart5).Seconds())
 				w.flushErr = err
 				w.mu.Unlock()
 			} else {
@@ -234,7 +244,9 @@ func (w *WALBatcher) drainAndFlush() {
 	for {
 		select {
 		case entry := <-w.entries:
+			walLockStart6 := time.Now()
 			w.mu.Lock()
+			metrics.WALLockWaitDuration.WithLabelValues("sync_complete").Observe(time.Since(walLockStart6).Seconds())
 			w.batch = append(w.batch, entry)
 			w.mu.Unlock()
 		default:
@@ -303,7 +315,9 @@ return totalBytes, nil
 
 // Stop gracefully shuts down the batcher, flushing pending writes
 func (w *WALBatcher) Stop() error {
+	walLockStart7 := time.Now()
 	w.mu.Lock()
+	metrics.WALLockWaitDuration.WithLabelValues("close").Observe(time.Since(walLockStart7).Seconds())
 	if !w.running {
 		w.mu.Unlock()
 		return nil
@@ -321,7 +335,9 @@ func (w *WALBatcher) Stop() error {
 	}
 
 	// Close file
+	walLockStart8 := time.Now()
 	w.mu.Lock()
+	metrics.WALLockWaitDuration.WithLabelValues("replay").Observe(time.Since(walLockStart8).Seconds())
 	defer w.mu.Unlock()
 	if w.walFile != nil {
 		// Final sync to ensure all data is persisted
@@ -339,7 +355,9 @@ func (w *WALBatcher) Stop() error {
 
 // FlushError returns the last flush error if any
 func (w *WALBatcher) FlushError() error {
+	walLockStart9 := time.Now()
 	w.mu.Lock()
+	metrics.WALLockWaitDuration.WithLabelValues("reset").Observe(time.Since(walLockStart9).Seconds())
 	defer w.mu.Unlock()
 	return w.flushErr
 }

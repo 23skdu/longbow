@@ -985,3 +985,20 @@ Name: "longbow_vector_search_action_errors_total",
 Help: "Total number of VectorSearch DoAction errors",
 })
 )
+
+// BM25 Indexing metrics
+var (
+BM25DocumentsIndexedTotal = promauto.NewCounter(prometheus.CounterOpts{
+Name: "longbow_bm25_documents_indexed_total",
+Help: "Total number of documents indexed in BM25",
+})
+BM25IndexDuration = promauto.NewHistogram(prometheus.HistogramOpts{
+Name:    "longbow_bm25_index_duration_seconds",
+Help:    "Duration of BM25 indexing operations",
+Buckets: prometheus.DefBuckets,
+})
+BM25IndexErrorsTotal = promauto.NewCounter(prometheus.CounterOpts{
+Name: "longbow_bm25_index_errors_total",
+Help: "Total number of BM25 indexing errors",
+})
+)

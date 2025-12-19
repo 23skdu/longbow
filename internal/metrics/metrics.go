@@ -1290,3 +1290,54 @@ Name:      "index_size",
 Help:      "Number of vectors in index by type",
 }, []string{"type", "dataset"})
 )
+
+// Circuit Breaker Metrics
+var (
+CircuitBreakerStateChanges = promauto.NewCounter(prometheus.CounterOpts{
+Name: "longbow_circuit_breaker_state_changes_total",
+Help: "Total number of circuit breaker state changes",
+})
+
+CircuitBreakerSuccesses = promauto.NewCounter(prometheus.CounterOpts{
+Name: "longbow_circuit_breaker_successes_total",
+Help: "Total number of successful operations through circuit breakers",
+})
+
+CircuitBreakerFailures = promauto.NewCounter(prometheus.CounterOpts{
+Name: "longbow_circuit_breaker_failures_total",
+Help: "Total number of failed operations through circuit breakers",
+})
+
+CircuitBreakerRejections = promauto.NewCounter(prometheus.CounterOpts{
+Name: "longbow_circuit_breaker_rejections_total",
+Help: "Total number of requests rejected by open circuit breakers",
+})
+)
+
+// Replication metrics
+var (
+ReplicationPeersTotal = promauto.NewGauge(prometheus.GaugeOpts{
+Name: "longbow_replication_peers_total",
+Help: "Total number of replication peers",
+})
+ReplicationSuccessTotal = promauto.NewCounter(prometheus.CounterOpts{
+Name: "longbow_replication_success_total",
+Help: "Total successful replications",
+})
+ReplicationFailuresTotal = promauto.NewCounter(prometheus.CounterOpts{
+Name: "longbow_replication_failures_total",
+Help: "Total failed replications",
+})
+ReplicationRetriesTotal = promauto.NewCounter(prometheus.CounterOpts{
+Name: "longbow_replication_retries_total",
+Help: "Total replication retries",
+})
+ReplicationQueuedTotal = promauto.NewCounter(prometheus.CounterOpts{
+Name: "longbow_replication_queued_total",
+Help: "Total records queued for async replication",
+})
+ReplicationQueueDropped = promauto.NewCounter(prometheus.CounterOpts{
+Name: "longbow_replication_queue_dropped_total",
+Help: "Total records dropped due to full queue",
+})
+)

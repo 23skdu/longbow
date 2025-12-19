@@ -1587,3 +1587,32 @@ Namespace: "longbow",
 Name:      "parallel_reduction_vectors_processed_total",
 Help:      "Total number of vectors processed via 4x accumulator parallel reduction",
 })
+
+// Binary Quantization Metrics
+var BinaryQuantizeOpsTotal = promauto.NewCounter(
+prometheus.CounterOpts{
+Namespace: "longbow",
+Name:      "binary_quantize_ops_total",
+Help:      "Total number of binary quantization operations",
+})
+
+var POPCNTDistanceOpsTotal = promauto.NewCounter(
+prometheus.CounterOpts{
+Namespace: "longbow",
+Name:      "popcnt_distance_ops_total",
+Help:      "Total number of POPCNT-based Hamming distance calculations",
+})
+
+var QuantizedVectorsTotal = promauto.NewGauge(
+prometheus.GaugeOpts{
+Namespace: "longbow",
+Name:      "quantized_vectors_total",
+Help:      "Total number of vectors stored in quantized format",
+})
+
+var QuantizationMemorySavedBytes = promauto.NewGauge(
+prometheus.GaugeOpts{
+Namespace: "longbow",
+Name:      "quantization_memory_saved_bytes",
+Help:      "Total memory saved via vector quantization",
+})

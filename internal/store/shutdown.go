@@ -7,6 +7,7 @@ import (
 "path/filepath"
 "sync/atomic"
 "time"
+	"go.uber.org/zap"
 )
 
 // shutdown state constants
@@ -37,7 +38,7 @@ s.stopCompaction()
 // Step 2: Drain the index queue
 s.logger.Info("Draining index queue...")
 if err := s.drainIndexQueue(ctx); err != nil {
-s.logger.Error("Failed to drain index queue", "error", err)
+s.logger.Error("Failed to drain index queue", zap.Error(err))
 shutdownErr = NewShutdownError("drain", "index_queue", err)
 } else {
 s.logger.Info("Index queue drained successfully")
@@ -47,7 +48,7 @@ s.logger.Info("Index queue drained successfully")
 s.logger.Info("Flushing WAL batcher...")
 if s.walBatcher != nil {
 if err := s.walBatcher.Stop(); err != nil {
-s.logger.Error("Failed to stop WAL batcher", "error", err)
+s.logger.Error("Failed to stop WAL batcher", zap.Error(err))
 if shutdownErr == nil {
 shutdownErr = NewShutdownError("stop", "WAL_batcher", err)
 }
@@ -64,13 +65,13 @@ s.logger.Warn("Shutdown timeout, skipping final snapshot")
 default:
 s.logger.Info("Creating final snapshot...")
 if err := s.Snapshot(); err != nil {
-s.logger.Error("Failed to create final snapshot", "error", err)
+s.logger.Error("Failed to create final snapshot", zap.Error(err))
 // Don't fail shutdown for snapshot errors
 } else {
 s.logger.Info("Final snapshot created successfully")
 // Truncate WAL after successful snapshot
 if err := s.TruncateWAL(); err != nil {
-s.logger.Error("Failed to truncate WAL", "error", err)
+s.logger.Error("Failed to truncate WAL", zap.Error(err))
 } else {
 s.logger.Info("WAL truncated successfully")
 }
@@ -82,10 +83,10 @@ s.walMu.Lock()
 if s.walFile != nil {
 s.logger.Info("Closing WAL file...")
 if err := s.walFile.Sync(); err != nil {
-s.logger.Error("Failed to sync WAL", "error", err)
+s.logger.Error("Failed to sync WAL", zap.Error(err))
 }
 if err := s.walFile.Close(); err != nil {
-s.logger.Error("Failed to close WAL", "error", err)
+s.logger.Error("Failed to close WAL", zap.Error(err))
 if shutdownErr == nil {
 shutdownErr = NewShutdownError("close", "WAL", err)
 }
@@ -108,7 +109,7 @@ select {
 case <-done:
 s.logger.Info("All workers finished")
 case <-ctx.Done():
-s.logger.Warn("Shutdown timeout waiting for workers", "error", ctx.Err())
+s.logger.Warn("Shutdown timeout waiting for workers", zap.Any("error", ctx.Err()))
 if shutdownErr == nil {
 shutdownErr = ctx.Err()
 }
@@ -116,9 +117,11 @@ shutdownErr = ctx.Err()
 
 elapsed := time.Since(start)
 if shutdownErr != nil {
-s.logger.Error("Graceful shutdown completed with errors", "elapsed", elapsed, "error", shutdownErr)
+s.logger.Error("Graceful shutdown completed with errors",
+		zap.Any("elapsed", elapsed),
+		zap.Any("error", shutdownErr))
 } else {
-s.logger.Info("Graceful shutdown completed successfully", "elapsed", elapsed)
+s.logger.Info("Graceful shutdown completed successfully", zap.Any("elapsed", elapsed))
 }
 
 return shutdownErr
@@ -172,7 +175,7 @@ if err := f.Close(); err != nil {
 return NewShutdownError("truncate", "WAL", fmt.Errorf("close after truncate: %w", err))
 }
 
-s.logger.Info("WAL truncated", "path", walPath)
+s.logger.Info("WAL truncated", zap.Any("path", walPath))
 return nil
 }
 

@@ -263,6 +263,12 @@ t.Errorf("Expected 1 put, got %d", stats.TotalPuts)
 }
 
 func TestPerPResultPoolHitMissTracking(t *testing.T) {
+// Force single P to ensure sync.Pool deterministic behavior
+oldProcs := runtime.GOMAXPROCS(1)
+defer runtime.GOMAXPROCS(oldProcs)
+runtime.LockOSThread()
+defer runtime.UnlockOSThread()
+
 cfg := &PerPResultPoolConfig{
 NumShards:   1, // Single shard for deterministic testing
 EnableStats: true,

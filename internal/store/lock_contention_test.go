@@ -231,8 +231,10 @@ rwmu.RUnlock()
 rwmutexTime := time.Since(start)
 
 t.Logf("Mutex: %v, RWMutex: %v", mutexTime, rwmutexTime)
-// RWMutex should be at least as fast for reads
-assert.LessOrEqual(t, rwmutexTime, mutexTime*2)
+// NOTE: RWMutex is not necessarily faster for serial reads.
+// It only outperforms Mutex when multiple goroutines hold RLock concurrently.
+// This benchmark is informational only - timing varies by CPU, scheduling, etc.
+// No assertion: microbenchmark timings are inherently non-deterministic.
 })
 }
 

@@ -12,15 +12,17 @@ import (
 	"unsafe"
 
 	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/simd"
 	"github.com/23skdu/longbow/internal/store/memory"
 	"github.com/coder/hnsw"
 )
 
 // ShardedHNSWConfig configures the sharded HNSW index.
 type ShardedHNSWConfig struct {
-	NumShards      int // Number of independent HNSW shards
-	M              int // HNSW M parameter (max connections per node)
-	EfConstruction int // HNSW efConstruction parameter
+	NumShards      int          // Number of independent HNSW shards
+	M              int          // HNSW M parameter (max connections per node)
+	EfConstruction int          // HNSW efConstruction parameter
+	Metric         VectorMetric // Distance metric for this index
 }
 
 // DefaultShardedHNSWConfig returns sensible defaults.
@@ -29,6 +31,7 @@ func DefaultShardedHNSWConfig() ShardedHNSWConfig {
 		NumShards:      runtime.NumCPU(),
 		M:              16,
 		EfConstruction: 200,
+		Metric:         MetricEuclidean,
 	}
 }
 
@@ -96,6 +99,8 @@ func NewShardedHNSW(config ShardedHNSWConfig, dataset *Dataset) *ShardedHNSW {
 			vectors:   make([][]float32, 0, 1024),
 			allocator: memory.NewSlabAllocator(),
 		}
+		// Set distance metric for each shard's graph
+		shards[i].graph.Distance = sHNSWGetDistFunc(config.Metric)
 	}
 
 	return &ShardedHNSW{
@@ -103,6 +108,17 @@ func NewShardedHNSW(config ShardedHNSWConfig, dataset *Dataset) *ShardedHNSW {
 		shards:     shards,
 		dataset:    dataset,
 		globalLocs: make([]Location, 0, 4096),
+	}
+}
+
+func sHNSWGetDistFunc(m VectorMetric) func(a, b []float32) float32 {
+	switch m {
+	case MetricCosine:
+		return simd.CosineDistance
+	case MetricDotProduct:
+		return simd.DotProduct
+	default:
+		return simd.EuclideanDistance
 	}
 }
 
@@ -254,7 +270,7 @@ func (s *ShardedHNSW) SearchVectors(query []float32, k int) []SearchResult {
 				shard := s.shards[shardIdx]
 				shard.mu.RLock()
 				if localIdx < len(shard.vectors) {
-					dist = shardedEuclideanDist(query, shard.vectors[localIdx])
+					dist = s.shardedDist(query, shard.vectors[localIdx])
 				}
 				shard.mu.RUnlock()
 			}
@@ -360,16 +376,16 @@ func (s *ShardedHNSW) Close() error {
 	return nil
 }
 
-// shardedEuclideanDist computes L2 distance between two vectors.
-func shardedEuclideanDist(a, b []float32) float32 {
-	var sum float32
-	for i := range a {
-		if i < len(b) {
-			d := a[i] - b[i]
-			sum += d * d
-		}
+// shardedDist computes the distance between two vectors using the configured metric.
+func (s *ShardedHNSW) shardedDist(a, b []float32) float32 {
+	switch s.config.Metric {
+	case MetricCosine:
+		return simd.CosineDistance(a, b)
+	case MetricDotProduct:
+		return -simd.DotProduct(a, b)
+	default:
+		return simd.EuclideanDistance(a, b)
 	}
-	return sum
 }
 
 // GetLocation retrieves the location for a given VectorID.

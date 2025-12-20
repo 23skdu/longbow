@@ -4,6 +4,15 @@ import (
 	"io"
 )
 
+// VectorMetric defines the distance metric used for vector search.
+type VectorMetric int
+
+const (
+	MetricEuclidean VectorMetric = iota
+	MetricCosine
+	MetricDotProduct
+)
+
 // Index defines the interface for vector index implementations.
 // It abstracts the underlying algorithm (HNSW, IVF, etc.) from the dataset.
 type Index interface {

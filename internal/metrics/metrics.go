@@ -105,6 +105,43 @@ var (
 		},
 		[]string{"source", "reason"},
 	)
+
+	// FlightRowsProcessed counts rows processed in Flight operations
+	FlightRowsProcessed = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_flight_rows_processed_total",
+			Help: "Total number of rows processed in Flight operations",
+		},
+		[]string{"method", "status"},
+	)
+
+	// DoPutPayloadSizeBytes tracks the distribution of DoPut batch sizes
+	DoPutPayloadSizeBytes = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_doput_payload_size_bytes",
+			Help:    "Size of DoPut record batches in bytes",
+			Buckets: []float64{1024, 4096, 16384, 65536, 262144, 1048576, 4194304, 16777216}, // 1KB to 16MB
+		},
+	)
+
+	// VectorSearchLatencySeconds measures latency of vector search operations
+	VectorSearchLatencySeconds = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_vector_search_latency_seconds",
+			Help:    "Latency of vector search operations",
+			Buckets: prometheus.DefBuckets,
+		},
+		[]string{"dataset"},
+	)
+
+	// TombstonesTotal counts active tombstones per dataset
+	TombstonesTotal = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "longbow_tombstones_total",
+			Help: "Total number of active tombstones",
+		},
+		[]string{"dataset"},
+	)
 )
 
 // VectorIndexSize tracks the number of vectors in the index

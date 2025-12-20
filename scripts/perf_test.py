@@ -205,7 +205,8 @@ def benchmark_get(client: flight.FlightClient, name: str,
 # =============================================================================
 
 def benchmark_vector_search(client: flight.FlightClient, name: str,
-                            query_vectors: np.ndarray, k: int) -> BenchmarkResult:
+                            query_vectors: np.ndarray, k: int,
+                            filters: Optional[list] = None) -> BenchmarkResult:
     """Benchmark HNSW vector similarity search using DoAction(VectorSearch)."""
     num_queries = len(query_vectors)
     print(f"\n[SEARCH] Running {num_queries:,} vector searches (k={k})...")
@@ -218,11 +219,15 @@ def benchmark_vector_search(client: flight.FlightClient, name: str,
         # NOTE: Using DoAction "VectorSearch" as per server implementation
         # Payload must match internal/store/vector_search_action.go: VectorSearchRequest
         # {"dataset": "name", "vector": [...], "k": 10}
-        request_body = json.dumps({
+        body = {
             "dataset": name,
             "vector": qvec.tolist(),
             "k": k,
-        }).encode("utf-8")
+        }
+        if filters:
+            body["filters"] = filters
+            
+        request_body = json.dumps(body).encode("utf-8")
         
         start = time.time()
         try:
@@ -338,6 +343,60 @@ def benchmark_hybrid_search(client: flight.FlightClient, name: str,
     print(f"[HYBRID] Completed: {qps:.2f} queries/s")
     print(f"[HYBRID] Latency p50={result.p50_ms:.2f}ms p95={result.p95_ms:.2f}ms p99={result.p99_ms:.2f}ms")
 
+    return result
+
+
+def benchmark_delete(client: flight.FlightClient, name: str, ids: list) -> BenchmarkResult:
+    """Benchmark vector deletion via DoAction(delete-vector)."""
+    print(f"\n[DELETE] Deleting {len(ids):,} vectors from '{name}'...")
+    
+    latencies = []
+    errors = 0
+    success = 0
+    
+    start_total = time.time()
+    for i, vid in enumerate(ids):
+        # NOTE: Current server implementation handles single ID
+        body = {
+            "dataset": name,
+            "vector_id": float(vid)
+        }
+        request_body = json.dumps(body).encode("utf-8")
+        
+        start = time.time()
+        try:
+            action = flight.Action("delete-vector", request_body)
+            # Fetch results to ensure completion
+            list(client.do_action(action))
+            success += 1
+        except Exception as e:
+            errors += 1
+            if errors <= 3:
+                print(f"[DELETE] Error on ID {vid}: {e}")
+            continue
+            
+        latencies.append((time.time() - start) * 1000)
+        
+        if (i + 1) % 1000 == 0:
+            print(f"[DELETE] Completed {i + 1}/{len(ids)} deletions...")
+            
+    duration = time.time() - start_total
+    throughput = success / duration if duration > 0 else 0
+    
+    result = BenchmarkResult(
+        name="Delete",
+        duration_seconds=duration,
+        throughput=throughput,
+        throughput_unit="ops/s",
+        rows=success,
+        latencies_ms=latencies,
+        errors=errors,
+    )
+    
+    print(f"[DELETE] Completed: {throughput:.2f} ops/s")
+    print(f"[DELETE] Latency p50={result.p50_ms:.2f}ms p95={result.p95_ms:.2f}ms p99={result.p99_ms:.2f}ms")
+    print(f"[DELETE] Errors: {errors}")
+    
     return result
 
 
@@ -635,6 +694,10 @@ def main():
     parser.add_argument("--search-k", default=10, type=int, help="Top-k results")
     parser.add_argument("--query-count", default=1000, type=int, help="Number of queries")
 
+    # Vector delete
+    parser.add_argument("--delete", action="store_true", help="Run vector delete benchmark")
+    parser.add_argument("--delete-count", default=1000, type=int, help="Number of deletions")
+
     # Hybrid search
     parser.add_argument("--hybrid", action="store_true", help="Run hybrid search benchmark")
     parser.add_argument("--text-field", default="meta", help="Text field for sparse search")
@@ -675,6 +738,14 @@ def main():
     print(f"Vector Dimension: {args.dim}")
     print(f"Rows: {args.rows:,}")
 
+    # Parse filters
+    filters = []
+    if args.filter:
+        for f in args.filter:
+            parts = f.split(':')
+            if len(parts) == 3:
+                filters.append({"field": parts[0], "operator": parts[1], "value": parts[2]})
+    
     results = []
 
     try:
@@ -690,14 +761,14 @@ def main():
 
     # Data Plane operations
     results.append(benchmark_put(data_client, table, args.name))
-    results.append(benchmark_get(data_client, args.name))
+    results.append(benchmark_get(data_client, args.name, filters=filters if filters else None))
 
     # Meta Plane operations (Search)
     if args.search or args.all:
         query_vectors = generate_query_vectors(args.query_count, args.dim)
         # Search goes to Meta Server
         results.append(benchmark_vector_search(
-            meta_client, args.name, query_vectors, args.search_k
+            meta_client, args.name, query_vectors, args.search_k, filters=filters if filters else None
         ))
 
     # Meta Plane operations (Hybrid Search)
@@ -708,6 +779,13 @@ def main():
         results.append(benchmark_hybrid_search(
             meta_client, args.name, query_vectors, args.search_k, text_queries
         ))
+
+    # Meta Plane operations (Delete)
+    if args.delete or args.all:
+        count = min(args.delete_count, args.rows)
+        # Delete first N IDs
+        ids_to_delete = list(range(count))
+        results.append(benchmark_delete(meta_client, args.name, ids_to_delete))
 
     # Concurrent load (Data Plane focus)
     if args.concurrent > 0 or args.all:

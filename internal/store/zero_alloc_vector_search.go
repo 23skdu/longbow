@@ -11,15 +11,17 @@ import (
 // For the common case (no escape sequences in dataset name), this achieves
 // zero allocations beyond the initial pre-allocation.
 type ZeroAllocVectorSearchParser struct {
-	result VectorSearchRequest
-	vector []float32 // pre-allocated vector buffer
+	result  VectorSearchRequest
+	vector  []float32 // pre-allocated vector buffer
+	filters []Filter  // pre-allocated filters buffer
 }
 
 // NewZeroAllocVectorSearchParser creates a new reusable parser.
 // maxDims specifies the maximum expected vector dimensions for pre-allocation.
 func NewZeroAllocVectorSearchParser(maxDims int) *ZeroAllocVectorSearchParser {
 	return &ZeroAllocVectorSearchParser{
-		vector: make([]float32, 0, maxDims),
+		vector:  make([]float32, 0, maxDims),
+		filters: make([]Filter, 0, 16),
 	}
 }
 
@@ -31,6 +33,7 @@ func (p *ZeroAllocVectorSearchParser) Parse(data []byte) (VectorSearchRequest, e
 	p.result.Dataset = ""
 	p.result.K = 0
 	p.vector = p.vector[:0]
+	p.filters = p.filters[:0]
 
 	if len(data) == 0 {
 		return p.result, nil
@@ -51,6 +54,12 @@ func (p *ZeroAllocVectorSearchParser) Parse(data []byte) (VectorSearchRequest, e
 		if data[i] == '}' {
 			// Copy vector to result (shares backing array)
 			p.result.Vector = p.vector
+			if len(p.filters) > 0 {
+				p.result.Filters = make([]Filter, len(p.filters))
+				copy(p.result.Filters, p.filters)
+			} else {
+				p.result.Filters = nil
+			}
 			return p.result, nil
 		}
 
@@ -88,6 +97,12 @@ func (p *ZeroAllocVectorSearchParser) Parse(data []byte) (VectorSearchRequest, e
 			i = newPos
 		case "vector":
 			newPos, err := p.parseFloat32Array(data, i)
+			if err != nil {
+				return p.result, err
+			}
+			i = newPos
+		case "filters":
+			newPos, err := p.parseFilters(data, i)
 			if err != nil {
 				return p.result, err
 			}
@@ -182,12 +197,44 @@ func parseFloat32(data []byte, pos int) (float32, int, error) { //nolint:gocriti
 	}
 
 	// Use strconv.ParseFloat for accurate conversion
-	val, err := strconv.ParseFloat(unsafeString(data[start:pos]), 32)
+	val, err := strconv.ParseFloat(string(data[start:pos]), 32)
 	if err != nil {
 		return 0, start, err
 	}
 
 	return float32(val), pos, nil
+}
+
+func (p *ZeroAllocVectorSearchParser) parseFilters(data []byte, pos int) (int, error) {
+	if pos >= len(data) || data[pos] != '[' {
+		return pos, errors.New("expected opening bracket")
+	}
+	pos++
+
+	for pos < len(data) {
+		pos = skipWhitespace(data, pos)
+		if pos >= len(data) {
+			return pos, errors.New("unexpected end in filters")
+		}
+
+		if data[pos] == ']' {
+			return pos + 1, nil
+		}
+
+		f, newPos, err := parseFilter(data, pos)
+		if err != nil {
+			return pos, err
+		}
+		p.filters = append(p.filters, f)
+		pos = newPos
+
+		pos = skipWhitespace(data, pos)
+		if pos < len(data) && data[pos] == ',' {
+			pos++
+		}
+	}
+
+	return pos, errors.New("unexpected end in filters")
 }
 
 // Ensure imports are used

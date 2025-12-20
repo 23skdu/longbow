@@ -4,7 +4,6 @@ import (
 	"errors"
 	"sync"
 	"sync/atomic"
-	"unsafe"
 
 	"github.com/23skdu/longbow/internal/metrics"
 )
@@ -222,7 +221,7 @@ func parseFilter(data []byte, pos int) (Filter, int, error) {
 				for pos < len(data) && ((data[pos] >= '0' && data[pos] <= '9') || data[pos] == '.' || data[pos] == 'e' || data[pos] == 'E') {
 					pos++
 				}
-				f.Value = unsafeString(data[start:pos])
+				f.Value = safeString(data[start:pos])
 			}
 		default:
 			newPos, err := skipValue(data, pos)
@@ -250,8 +249,8 @@ func skipWhitespace(data []byte, pos int) int {
 	return pos
 }
 
-func unsafeString(b []byte) string {
-	return unsafe.String(&b[0], len(b))
+func safeString(b []byte) string {
+	return string(b)
 }
 
 func parseString(data []byte, pos int) (s string, newPos int, err error) {
@@ -268,7 +267,7 @@ func parseString(data []byte, pos int) (s string, newPos int, err error) {
 		if c == '"' {
 			if !hasEscape {
 				// No escapes, return direct slice (zero-alloc)
-				return unsafeString(data[start:i]), i + 1, nil
+				return safeString(data[start:i]), i + 1, nil
 			}
 			// Has escapes, decode them
 			return decodeEscapes(data[start:i]), i + 1, nil

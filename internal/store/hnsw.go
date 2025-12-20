@@ -24,6 +24,16 @@ type Location struct {
 	RowIdx   int
 }
 
+// GetLocation returns the storage location for a given VectorID
+func (h *HNSWIndex) GetLocation(id VectorID) (Location, bool) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	if int(id) >= len(h.locations) {
+		return Location{}, false
+	}
+	return h.locations[id], true
+}
+
 // HNSWIndex wraps the hnsw.Graph and manages the mapping from ID to Arrow data.
 type HNSWIndex struct {
 	Graph         *hnsw.Graph[VectorID]
@@ -170,6 +180,10 @@ func (h *HNSWIndex) advanceEpoch() {
 
 // Search performs k-NN search using the provided query vector.
 func (h *HNSWIndex) Search(query []float32, k int) []VectorID {
+	defer func(start time.Time) {
+		metrics.VectorSearchLatencySeconds.WithLabelValues(h.dataset.Name).Observe(time.Since(start).Seconds())
+	}(time.Now())
+
 	// coder/hnsw is not thread-safe for concurrent Search and Add.
 	// Hold RLock to serialize against Add (which holds write lock).
 	h.mu.RLock()
@@ -185,6 +199,10 @@ func (h *HNSWIndex) Search(query []float32, k int) []VectorID {
 
 // SearchVectors performs k-NN search returning full results with scores (distances).
 func (h *HNSWIndex) SearchVectors(query []float32, k int, filters []Filter) []SearchResult {
+	defer func(start time.Time) {
+		metrics.VectorSearchLatencySeconds.WithLabelValues(h.dataset.Name).Observe(time.Since(start).Seconds())
+	}(time.Now())
+
 	// Post-filtering approach:
 	// 1. Search for K * factor candidates
 	// 2. Filter candidates
@@ -439,10 +457,10 @@ func (h *HNSWIndex) Add(batchIdx, rowIdx int) error {
 		return nil
 	}
 
-	// COPY the vector data to ensure stable memory in the HNSW graph.
-	// This makes the index immune to future compaction/eviction of Arrow records.
-	vec := make([]float32, len(vecRaw))
-	copy(vec, vecRaw)
+	// ZERO-COPY: Use unsafe vector reference.
+	// We rely on Dataset lifecycle management (Eviction clears Index) to ensure safety.
+	// This avoids doubling memory usage.
+	vec := vecRaw
 
 	// Initialize dims for pool on first vector (thread-safe as we hold mu.Lock)
 	h.dimsOnce.Do(func() {
@@ -500,10 +518,8 @@ func (h *HNSWIndex) AddSafe(rec arrow.RecordBatch, rowIdx, batchIdx int) error {
 		return fmt.Errorf("AddSafe: row index out of bounds")
 	}
 
-	// COPY the vector data to ensure stable memory in the HNSW graph
-	vecRaw := floatArr.Float32Values()[start:end]
-	vec := make([]float32, len(vecRaw))
-	copy(vec, vecRaw)
+	// ZERO-COPY: Use slice directly
+	vec := floatArr.Float32Values()[start:end]
 
 	indexLockStart7 := time.Now()
 	h.mu.Lock()
@@ -695,6 +711,10 @@ func (h *HNSWIndex) Len() int {
 }
 
 func (h *HNSWIndex) SearchByID(id VectorID, k int) []VectorID {
+	defer func(start time.Time) {
+		metrics.VectorSearchLatencySeconds.WithLabelValues(h.dataset.Name).Observe(time.Since(start).Seconds())
+	}(time.Now())
+
 	if k <= 0 {
 		return nil
 	}
@@ -749,6 +769,10 @@ func (h *HNSWIndex) UnregisterReader() {
 // The returned slice is allocated from the arena and should NOT be returned to resultPool.
 // Call arena.Reset() after processing results to reclaim memory for next request.
 func (h *HNSWIndex) SearchWithArena(query []float32, k int, arena *SearchArena) []VectorID {
+	defer func(start time.Time) {
+		metrics.VectorSearchLatencySeconds.WithLabelValues(h.dataset.Name).Observe(time.Since(start).Seconds())
+	}(time.Now())
+
 	if len(query) == 0 || k <= 0 {
 		return nil
 	}
@@ -787,6 +811,10 @@ func (h *HNSWIndex) SearchWithArena(query []float32, k int, arena *SearchArena) 
 // during the search operation.
 // Returns nil if id is invalid or k <= 0.
 func (h *HNSWIndex) SearchByIDUnsafe(id VectorID, k int) []VectorID {
+	defer func(start time.Time) {
+		metrics.VectorSearchLatencySeconds.WithLabelValues(h.dataset.Name).Observe(time.Since(start).Seconds())
+	}(time.Now())
+
 	if k <= 0 {
 		return nil
 	}

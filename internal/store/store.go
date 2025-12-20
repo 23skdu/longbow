@@ -212,6 +212,14 @@ func (s *VectorStore) GetAutoCompactionTriggerCount() int64 {
 	return s.compactionWorker.GetTriggerCount()
 }
 
+// GetWALQueueDepth returns the current WAL waiting queue depth
+func (s *VectorStore) GetWALQueueDepth() (int, int) {
+	if s.walBatcher == nil {
+		return 0, 0
+	}
+	return s.walBatcher.QueueDepth(), s.walBatcher.QueueCapacity()
+}
+
 // UpdateConfig updates the dynamic configuration of the store
 func (s *VectorStore) UpdateConfig(maxMemory, maxWALSize int64, snapshotInterval time.Duration) {
 	s.maxMemory.Store(maxMemory)

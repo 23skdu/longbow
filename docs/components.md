@@ -13,6 +13,7 @@ Handles high-throughput data operations:
 
 - **DoGet**: Stream vector data to clients
 - **DoPut**: Receive and store vector data
+    - **Backpressure**: Returns `{"status": "slow_down"}` metadata if WAL queue > 80% full.
 - **DoExchange**: Bidirectional streaming
 
 ### Meta Server (Port 3001)
@@ -27,25 +28,13 @@ Handles metadata and control plane operations:
 
 ## 2. In-Memory Vector Store
 
-### Sharded Architecture
+### Arena Allocation (SlabAllocator)
 
-The store uses 32 shards with independent locks for high concurrency:
+Vectors are stored in off-heap "slabs" (1MB chunks) using `memory.SlabAllocator`:
 
-```text
-┌─────────────────────────────────────────────────┐
-│ VectorStore │
-├─────────┬─────────┬─────────┬─────────┬────────┤
-│ Shard 0 │ Shard 1 │ Shard 2 │ ... │Shard 31│
-│ RWMutex │ RWMutex │ RWMutex │ │ RWMutex│
-└─────────┴─────────┴─────────┴─────────┴────────┘
-```
-
-### Lock-Free Memory Tracking
-
-Memory limits use atomic operations instead of global mutex:
-
-- `atomic.Int64` for `maxMemory`, `currentMemory`, `maxWALSize`
-- CAS loop for memory limit checking in DoPut hot path
+- **Zero-GC Overhead**: Vectors are not scanned by Go's GC.
+- **Slab Allocation**: Sequential allocation reduces fragmentation.
+- **Reset Capability**: Instant reclamation of memory for index rebuilds.
 
 ## 3. HNSW Index
 
@@ -54,7 +43,7 @@ Memory limits use atomic operations instead of global mutex:
 The HNSW graph stores only vector IDs, not data:
 
 1. **ID Mapping**: `Location` struct maps VectorID → BatchIndex + RowIndex
-2. **Direct Access**: Float32 slices accessed from Arrow buffers
+2. **Direct Access**: Float32 slices accessed from Arena or Arrow buffers
 3. **Memory Efficiency**: ~50% RAM reduction vs standard HNSW
 
 ### Scratch Buffer Pool
@@ -84,6 +73,12 @@ Vector distance calculations use CPU-specific SIMD instructions:
 Runtime detection via `CPUFeatures` struct selects optimal implementation.
 
 ## 5. Write-Ahead Log (WAL)
+
+### Data Integrity
+
+Every WAL entry is protected by a **CRC32 (IEEE)** checksum:
+- **Format**: `[CRC32: 4b][NameLen: 4b][RecLen: 8b][Name][Record]`
+- **Verification**: Replay fails immediately on checksum mismatch, preventing data corruption.
 
 ### Batched Writes
 

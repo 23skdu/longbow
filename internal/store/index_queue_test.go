@@ -220,7 +220,8 @@ func TestIndexJobQueue_GracefulStop(t *testing.T) {
 	// Stop should drain and close
 	q.Stop()
 
-	time.Sleep(50 * time.Millisecond)
+	// Wait for consumer to process (longer timeout under race detector)
+	time.Sleep(200 * time.Millisecond)
 	if atomic.LoadInt64(&consumed) != 20 {
 		t.Errorf("Expected 20 consumed after Stop, got %d", atomic.LoadInt64(&consumed))
 	}

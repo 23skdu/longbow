@@ -13,8 +13,8 @@ Handles high-throughput data operations:
 
 - **DoGet**: Stream vector data to clients
 - **DoPut**: Receive and store vector data
-    - **Backpressure**: Returns `{"status": "slow_down"}` metadata if WAL queue > 80% full.
-- **DoExchange**: Bidirectional streaming
+  - **Backpressure**: Returns `{"status": "slow_down"}` metadata if WAL queue > 80% full.
+- **DoExchange**: Bidirectional streaming for mesh replication protocols (sync/fetch).
 
 ### Meta Server (Port 3001)
 
@@ -77,6 +77,7 @@ Runtime detection via `CPUFeatures` struct selects optimal implementation.
 ### Data Integrity
 
 Every WAL entry is protected by a **CRC32 (IEEE)** checksum:
+
 - **Format**: `[CRC32: 4b][NameLen: 4b][RecLen: 8b][Name][Record]`
 - **Verification**: Replay fails immediately on checksum mismatch, preventing data corruption.
 

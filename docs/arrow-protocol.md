@@ -42,10 +42,50 @@ in the  argument.
 
 ### DoGet
 
-**Input**: `Ticket` (containing the vector ID)
-**Output**: Stream of Arrow Record Batches
+**Input**: `Ticket` containing a JSON-serialized `TicketQuery`.
+**Output**: Stream of Arrow Record Batches.
+
+#### TicketQuery Structure
+
+```json
+{
+  "name": "dataset_name",
+  "filters": [
+    {"field": "id", "op": ">", "value": "50"},
+    {"field": "category", "op": "=", "value": "A"}
+  ]
+}
+```
 
 ### DoPut
 
 **Input**: Stream of Arrow Record Batches
 **Output**: Stream of `PutResult`
+
+### DoExchange
+
+**Input**: Bidirectional stream of `FlightData`
+**Output**: Bidirectional stream (used for sync/replication)
+
+- **Foundation**: Currently implements a basic ping/ack and dataset fetch mechanism using `cmd` in descriptor.
+
+## Actions
+
+### VectorSearch
+
+**Type**: `VectorSearch`
+**Input**: JSON payload
+**Output**: JSON stream of results
+
+**Payload**:
+
+```json
+{
+  "dataset": "my_data",
+  "vector": [0.1, 0.2, ...],
+  "k": 10,
+  "filters": [
+    {"field": "tag", "op": "=", "value": "important"}
+  ]
+}
+```

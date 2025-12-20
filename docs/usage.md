@@ -29,6 +29,26 @@ The following table lists the configurable parameters of the Longbow chart and t
 | `persistence.snapshots.size` | Size of Snapshot PVC | `10Gi` |
 | `persistence.snapshots.path` | Mount path for Snapshots | `/snapshots` |
 
+## CLI Tools
+
+Longbow provides a comprehensive operations script `scripts/ops_test.py` for interacting with the server.
+
+### Basic Usage
+
+```bash
+# Upload data
+python scripts/ops_test.py put --dataset test_data --rows 1000
+
+# Download data with filter
+python scripts/ops_test.py get --dataset test_data --filter "id:>:500"
+
+# Vector Search with filter
+python scripts/ops_test.py search --dataset test_data --k 5 --filter "category:=:news"
+
+# Run full validation suite
+python scripts/ops_test.py validate
+```
+
 ## Client Example (Python)
 
 ```python

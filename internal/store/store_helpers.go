@@ -275,7 +275,8 @@ func MatchesFilters(rec arrow.RecordBatch, rowIdx int, filters []Filter) (bool, 
 
 		// Manual check without scalar/compute overhead for single row
 		// This is faster for scattered access
-		if !checkFilterRow(col, rowIdx, f) {
+		match := checkFilterRow(col, rowIdx, f)
+		if !match {
 			return false, nil
 		}
 	}

@@ -28,21 +28,15 @@ func (s *DataServer) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGet
 // DoPut stores a dataset, converting domain errors to gRPC status codes.
 func (s *DataServer) DoPut(stream flight.FlightService_DoPutServer) error {
 	// Backpressure Check: If WAL queue is > 80% full, signal client
-	depth, cap := s.VectorStore.GetWALQueueDepth()
-	if cap > 0 && float64(depth)/float64(cap) > 0.8 {
+	depth, queueCap := s.GetWALQueueDepth()
+	if queueCap > 0 && float64(depth)/float64(queueCap) > 0.8 {
 		// Send metadata as "Warning" - client should slow down
-		// Note: Flight DoPut returns a stream of PutResult. We can send one immediately?
-		// Usually DoPut reads first. But we can send a "header" result if client is reading.
-		// For simplicity, we just log and maybe could fail fast if CRITICAL (e.g. >95%)
-		// But sending metadata in the *response* stream (PutResult) is the standard way.
-		// We'll do it inside VectorStore.DoPut loop or here if we wrap it.
-		// Since s.VectorStore.DoPut controls the loop, we should inject it there or wrap it.
-		// Wrapping s.VectorStore.DoPut is hard without duplicating code.
-		// Let's rely on s.VectorStore.DoPut to handle it (I should update store.go instead).
-		// Wait, I updated store.go to expose GetWALQueueDepth.
-		// I should update VectorStore.DoPut in store.go to actually *use* it.
-		// The prompt said "Add backpressure signals to the Flight Server implementation".
-		// Doing it in store.go (which implements the logic) is correct.
+		s.logger.Warn("Applying backpressure", zap.Int("wal_depth", depth), zap.Int("wal_cap", queueCap))
+		metadata := []byte(`{"status": "slow_down", "reason": "wal_pressure"}`)
+		if err := stream.Send(&flight.PutResult{AppMetadata: metadata}); err != nil {
+			// Log error but proceed, don't fail the whole request just because signaling failed
+			s.logger.Error("Failed to send backpressure signal", zap.Error(err))
+		}
 	}
 	err := s.VectorStore.DoPut(stream)
 	return ToGRPCStatus(err)

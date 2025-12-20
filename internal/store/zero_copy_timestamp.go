@@ -1,6 +1,7 @@
 package store
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/apache/arrow-go/v18/arrow"
@@ -23,6 +24,9 @@ func EnsureTimestampZeroCopy(mem memory.Allocator, rec arrow.RecordBatch) (arrow
 	}
 
 	numRows := rec.NumRows()
+	if int(rec.NumCols()) != rec.Schema().NumFields() {
+		return nil, fmt.Errorf("EnsureTimestampZeroCopy: columns/fields mismatch: cols=%d, fields=%d", rec.NumCols(), rec.Schema().NumFields())
+	}
 
 	// Build new schema with timestamp field
 	fields := rec.Schema().Fields()

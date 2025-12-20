@@ -154,8 +154,8 @@ func (c GRPCConfig) BuildClientOptions() []grpc.DialOption {
 		// HTTP/2 flow control windows
 		grpc.WithInitialWindowSize(c.InitialWindowSize),
 		// OpenTelemetry tracing interceptors
-	// OpenTelemetry stats handler
-	grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
+		// OpenTelemetry stats handler
+		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
 		grpc.WithInitialConnWindowSize(c.InitialConnWindowSize),
 
 		// Message size limits and compression

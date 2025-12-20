@@ -34,35 +34,56 @@ type HNSWIndex struct {
 	currentEpoch  atomic.Uint64 // Current epoch for zero-copy reclamation
 	activeReaders atomic.Int32  // Count of readers in current epoch
 	resultPool    *resultPool   // Pool for search result slices
+	Metric        VectorMetric  // Distance metric used by this index
 }
 
-// NewHNSWIndex creates a new index for the given dataset.
+// NewHNSWIndex creates a new index for the given dataset using Euclidean distance.
 func NewHNSWIndex(ds *Dataset) *HNSWIndex {
+	return NewHNSWIndexWithMetric(ds, MetricEuclidean)
+}
+
+// NewHNSWIndexWithMetric creates a new index for the given dataset with the specified metric.
+func NewHNSWIndexWithMetric(ds *Dataset, metric VectorMetric) *HNSWIndex {
 	h := &HNSWIndex{
 		dataset:   ds,
 		locations: make([]Location, 0),
+		Metric:    metric,
 	}
 	// Initialize the graph with VectorID as the key type.
 	h.Graph = hnsw.NewGraph[VectorID]()
 	h.resultPool = newResultPool()
-	// Use Euclidean distance to match previous implementation intent
-	h.Graph.Distance = simd.EuclideanDistance
+	// Set distance function based on metric
+	h.Graph.Distance = h.GetDistanceFunc()
 	return h
 }
 
 // NewHNSWIndexWithCapacity creates a new index with pre-allocated locations slice.
-// Use this when the expected number of vectors is known to avoid re-allocations.
 func NewHNSWIndexWithCapacity(ds *Dataset, capacity int) *HNSWIndex {
 	h := &HNSWIndex{
 		dataset:   ds,
 		locations: make([]Location, 0, capacity),
+		Metric:    MetricEuclidean,
 	}
-	// Initialize the graph with VectorID as the key type.
 	h.Graph = hnsw.NewGraph[VectorID]()
 	h.resultPool = newResultPool()
-	// Use Euclidean distance to match previous implementation intent
 	h.Graph.Distance = simd.EuclideanDistance
 	return h
+}
+
+// GetDistanceFunc returns the SIMD distance function for the index's metric.
+func (h *HNSWIndex) GetDistanceFunc() func(a, b []float32) float32 {
+	switch h.Metric {
+	case MetricCosine:
+		return simd.CosineDistance
+	case MetricDotProduct:
+		return func(a, b []float32) float32 {
+			return -simd.DotProduct(a, b)
+		}
+	case MetricEuclidean:
+		return simd.EuclideanDistance
+	default:
+		return simd.EuclideanDistance
+	}
 }
 
 // getVector retrieves the float32 slice for a given ID.
@@ -153,7 +174,42 @@ func (h *HNSWIndex) advanceEpoch() {
 
 // Search performs k-NN search using the provided query vector.
 func (h *HNSWIndex) Search(query []float32, k int) []VectorID {
-	return h.SearchWithArena(query, k, nil)
+	neighbors := h.Graph.Search(query, k)
+	res := make([]VectorID, len(neighbors))
+	for i, n := range neighbors {
+		res[i] = n.Key
+	}
+	return res
+}
+
+// SearchVectors performs k-NN search returning full results with scores (distances).
+func (h *HNSWIndex) SearchVectors(query []float32, k int) []SearchResult {
+	neighbors := h.Graph.Search(query, k)
+	res := make([]SearchResult, len(neighbors))
+	for i, n := range neighbors {
+		// coder/hnsw Node doesn't expose distance directly in Search results easily?
+		// Actually, neighbors is []hnsw.Node[T]. Node has Key and Value.
+		// Wait, does it have distance?
+		// Let's check coder/hnsw API or just recompute if necessary.
+		// Usually HNSW returns distances.
+		// If not, we recompute using GetDistanceFunc.
+		distFunc := h.GetDistanceFunc()
+		// Get vector for the node to compute distance
+		h.mu.RLock()
+		vec := h.getVectorDirectLocked(n.Key)
+		h.mu.RUnlock()
+
+		var dist float32
+		if vec != nil {
+			dist = distFunc(query, vec)
+		}
+
+		res[i] = SearchResult{
+			ID:    n.Key,
+			Score: dist,
+		}
+	}
+	return res
 }
 
 // getVectorUnsafe returns a direct reference to the vector data without copying.

@@ -29,8 +29,7 @@ type HNSWIndex struct {
 	mu            sync.RWMutex
 	locations     []Location
 	dataset       *Dataset
-	scratchPool   sync.Pool     // Pool for temporary vector buffers during search
-	dims          int           // Vector dimensions for pool sizing
+	dims          int           // Vector dimensions
 	dimsOnce      sync.Once     // Ensures thread-safe dims initialization
 	currentEpoch  atomic.Uint64 // Current epoch for zero-copy reclamation
 	activeReaders atomic.Int32  // Count of readers in current epoch
@@ -135,7 +134,6 @@ func (h *HNSWIndex) getVector(id VectorID) []float32 {
 }
 
 // enterEpoch marks a reader as active in the current epoch.
-// Must be paired with exitEpoch to release.
 func (h *HNSWIndex) enterEpoch() {
 	h.activeReaders.Add(1)
 }
@@ -146,100 +144,16 @@ func (h *HNSWIndex) exitEpoch() {
 }
 
 // advanceEpoch increments the epoch counter after waiting for all readers to exit.
-// Used during data structure modifications that invalidate unsafe references.
 func (h *HNSWIndex) advanceEpoch() {
-	// Wait for all active readers in current epoch to finish
 	for h.activeReaders.Load() > 0 {
-		// Spin - in production could use runtime.Gosched() or brief sleep
+		// spin
 	}
 	h.currentEpoch.Add(1)
-}
-
-// getScratch retrieves a scratch buffer from the pool, sized for current dimensions.
-func (h *HNSWIndex) getScratch() []float32 {
-	if h.dims == 0 {
-		return nil
-	}
-	if val := h.scratchPool.Get(); val != nil {
-		return val.([]float32)
-	}
-	metrics.VectorScratchPoolMissesTotal.Inc()
-	return make([]float32, h.dims)
-}
-
-// putScratch returns a scratch buffer to the pool.
-// putScratch returns a scratch buffer to the pool.
-func (h *HNSWIndex) putScratch(buf []float32) {
-	if buf != nil && len(buf) == h.dims {
-		h.scratchPool.Put(buf)
-	}
 }
 
 // Search performs k-NN search using the provided query vector.
 func (h *HNSWIndex) Search(query []float32, k int) []VectorID {
 	return h.SearchWithArena(query, k, nil)
-}
-
-// getVectorInto copies vector data into the provided buffer.
-// Returns false if vector not found or buffer too small.
-func (h *HNSWIndex) getVectorInto(id VectorID, dst []float32) bool {
-	indexLockStart3 := time.Now()
-	h.mu.RLock()
-	metrics.IndexLockWaitDuration.WithLabelValues("read").Observe(time.Since(indexLockStart3).Seconds())
-	if int(id) >= len(h.locations) {
-		h.mu.RUnlock()
-		return false
-	}
-	loc := h.locations[id]
-	h.mu.RUnlock()
-
-	indexLockStart4 := time.Now()
-	h.dataset.dataMu.RLock()
-	metrics.IndexLockWaitDuration.WithLabelValues("read").Observe(time.Since(indexLockStart4).Seconds())
-	defer h.dataset.dataMu.RUnlock()
-
-	if h.dataset.Records == nil || loc.BatchIdx >= len(h.dataset.Records) {
-		return false
-	}
-	rec := h.dataset.Records[loc.BatchIdx]
-	if rec == nil { // Tombstone
-		return false
-	}
-
-	var vecCol arrow.Array
-	for i, field := range rec.Schema().Fields() {
-		if field.Name == "vector" {
-			vecCol = rec.Column(i)
-			break
-		}
-	}
-
-	if vecCol == nil {
-		return false
-	}
-
-	listArr, ok := vecCol.(*array.FixedSizeList)
-	if !ok {
-		return false
-	}
-
-	if len(listArr.Data().Children()) == 0 {
-		return false
-	}
-	values := listArr.Data().Children()[0]
-	floatArr := array.NewFloat32Data(values)
-	defer floatArr.Release()
-
-	width := int(listArr.DataType().(*arrow.FixedSizeListType).Len())
-	start := loc.RowIdx * width
-	end := start + width
-
-	if start < 0 || end > floatArr.Len() || len(dst) < width {
-		return false
-	}
-
-	copy(dst, floatArr.Float32Values()[start:end])
-	return true
 }
 
 // getVectorUnsafe returns a direct reference to the vector data without copying.

@@ -241,6 +241,8 @@ func BenchmarkAddBatchParallel(b *testing.B) {
 	}
 
 	b.Run("Sequential", func(b *testing.B) {
+		b.SetBytes(int64(numVectors * 64 * 4))
+		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			ds := &Dataset{
 				Records: []arrow.RecordBatch{rec},
@@ -251,10 +253,13 @@ func BenchmarkAddBatchParallel(b *testing.B) {
 				_ = idx.Add(0, j)
 			}
 		}
+		b.ReportMetric(float64(numVectors*b.N)/b.Elapsed().Seconds(), "vectors/sec")
 	})
 
 	for _, workers := range []int{2, 4, 8} {
 		b.Run(fmt.Sprintf("Parallel_%d_workers", workers), func(b *testing.B) {
+			b.SetBytes(int64(numVectors * 64 * 4))
+			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				ds := &Dataset{
 					Records: []arrow.RecordBatch{rec},
@@ -263,6 +268,7 @@ func BenchmarkAddBatchParallel(b *testing.B) {
 				idx := NewHNSWIndex(ds)
 				_ = idx.AddBatchParallel(locations, workers)
 			}
+			b.ReportMetric(float64(numVectors*b.N)/b.Elapsed().Seconds(), "vectors/sec")
 		})
 	}
 }

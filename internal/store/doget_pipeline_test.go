@@ -431,6 +431,8 @@ func BenchmarkDoGetPipelineThroughput(b *testing.B) {
 		}
 	}()
 
+	totalRowsPerIter := int64(numBatches * 10000)
+	b.SetBytes(totalRowsPerIter * 8) // 8 bytes per Int64 row
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		ctx := context.Background()
@@ -445,4 +447,5 @@ func BenchmarkDoGetPipelineThroughput(b *testing.B) {
 		<-errCh
 	}
 	b.ReportMetric(float64(numBatches*b.N)/b.Elapsed().Seconds(), "batches/sec")
+	b.ReportMetric(float64(totalRowsPerIter*int64(b.N))/b.Elapsed().Seconds(), "rows/sec")
 }

@@ -251,19 +251,28 @@ func (d *Dataset) EvictExpiredRecords() []arrow.Record {
 		expiredSet[ptr] = true
 	}
 
-	// Tombstone expired records (Zero-Copy eviction)
+	// Compact d.Records in-place (remove expired)
 	var evicted []arrow.Record
-
-	for i, rec := range d.Records {
+	n := 0
+	for _, rec := range d.Records {
 		if rec == nil {
-			continue // Already tombstoned
+			continue // Skip existing tombstones
 		}
 		ptr := evictionRecordKey(rec)
 		if expiredSet[ptr] {
 			evicted = append(evicted, rec)
-			d.Records[i] = nil // Tombstone
+			// item evicted, do not keep in d.Records
+		} else {
+			d.Records[n] = rec
+			n++
 		}
 	}
+
+	// Nil out the rest to help GC
+	for i := n; i < len(d.Records); i++ {
+		d.Records[i] = nil
+	}
+	d.Records = d.Records[:n]
 
 	return evicted
 }

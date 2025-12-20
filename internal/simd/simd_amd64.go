@@ -3,219 +3,219 @@
 package simd
 
 import (
-"math"
-"unsafe"
+	"math"
+	"unsafe"
 )
 
 // AVX2 optimized Euclidean distance
 // Processes 8 float32s at a time (256-bit registers)
 func euclideanAVX2(a, b []float32) float32 {
-if !features.HasAVX2 {
-return euclideanGeneric(a, b)
-}
+	if !features.HasAVX2 {
+		return euclideanGeneric(a, b)
+	}
 
-var sum float32
-n := len(a)
-i := 0
+	var sum float32
+	n := len(a)
+	i := 0
 
-// Process 8 elements at a time (AVX2: 256-bit = 8 x float32)
-for ; i <= n-8; i += 8 {
-sum += euclidean8AVX2(
-unsafe.Pointer(&a[i]),
-unsafe.Pointer(&b[i]),
-)
-}
+	// Process 8 elements at a time (AVX2: 256-bit = 8 x float32)
+	for ; i <= n-8; i += 8 {
+		sum += euclidean8AVX2(
+			unsafe.Pointer(&a[i]),
+			unsafe.Pointer(&b[i]),
+		)
+	}
 
-// Handle remaining elements
-for ; i < n; i++ {
-d := a[i] - b[i]
-sum += d * d
-}
+	// Handle remaining elements
+	for ; i < n; i++ {
+		d := a[i] - b[i]
+		sum += d * d
+	}
 
-return float32(math.Sqrt(float64(sum)))
+	return float32(math.Sqrt(float64(sum)))
 }
 
 // AVX512 optimized Euclidean distance
 // Processes 16 float32s at a time (512-bit registers)
 func euclideanAVX512(a, b []float32) float32 {
-if !features.HasAVX512 {
-return euclideanAVX2(a, b)
-}
+	if !features.HasAVX512 {
+		return euclideanAVX2(a, b)
+	}
 
-var sum float32
-n := len(a)
-i := 0
+	var sum float32
+	n := len(a)
+	i := 0
 
-// Process 16 elements at a time (AVX512: 512-bit = 16 x float32)
-for ; i <= n-16; i += 16 {
-sum += euclidean16AVX512(
-unsafe.Pointer(&a[i]),
-unsafe.Pointer(&b[i]),
-)
-}
+	// Process 16 elements at a time (AVX512: 512-bit = 16 x float32)
+	for ; i <= n-16; i += 16 {
+		sum += euclidean16AVX512(
+			unsafe.Pointer(&a[i]),
+			unsafe.Pointer(&b[i]),
+		)
+	}
 
-// Fall back to AVX2 for remaining 8+ elements
-for ; i <= n-8; i += 8 {
-sum += euclidean8AVX2(
-unsafe.Pointer(&a[i]),
-unsafe.Pointer(&b[i]),
-)
-}
+	// Fall back to AVX2 for remaining 8+ elements
+	for ; i <= n-8; i += 8 {
+		sum += euclidean8AVX2(
+			unsafe.Pointer(&a[i]),
+			unsafe.Pointer(&b[i]),
+		)
+	}
 
-// Handle remaining elements
-for ; i < n; i++ {
-d := a[i] - b[i]
-sum += d * d
-}
+	// Handle remaining elements
+	for ; i < n; i++ {
+		d := a[i] - b[i]
+		sum += d * d
+	}
 
-return float32(math.Sqrt(float64(sum)))
+	return float32(math.Sqrt(float64(sum)))
 }
 
 // AVX2 optimized Cosine distance
 func cosineAVX2(a, b []float32) float32 {
-if !features.HasAVX2 {
-return cosineGeneric(a, b)
-}
+	if !features.HasAVX2 {
+		return cosineGeneric(a, b)
+	}
 
-var dot, normA, normB float32
-n := len(a)
-i := 0
+	var dot, normA, normB float32
+	n := len(a)
+	i := 0
 
-// Process 8 elements at a time
-for ; i <= n-8; i += 8 {
-d, na, nb := cosine8AVX2(
-unsafe.Pointer(&a[i]),
-unsafe.Pointer(&b[i]),
-)
-dot += d
-normA += na
-normB += nb
-}
+	// Process 8 elements at a time
+	for ; i <= n-8; i += 8 {
+		d, na, nb := cosine8AVX2(
+			unsafe.Pointer(&a[i]),
+			unsafe.Pointer(&b[i]),
+		)
+		dot += d
+		normA += na
+		normB += nb
+	}
 
-// Handle remaining elements
-for ; i < n; i++ {
-dot += a[i] * b[i]
-normA += a[i] * a[i]
-normB += b[i] * b[i]
-}
+	// Handle remaining elements
+	for ; i < n; i++ {
+		dot += a[i] * b[i]
+		normA += a[i] * a[i]
+		normB += b[i] * b[i]
+	}
 
-if normA == 0 || normB == 0 {
-return 1.0
-}
-return 1.0 - (dot / float32(math.Sqrt(float64(normA)*float64(normB))))
+	if normA == 0 || normB == 0 {
+		return 1.0
+	}
+	return 1.0 - (dot / float32(math.Sqrt(float64(normA)*float64(normB))))
 }
 
 // AVX512 optimized Cosine distance
 func cosineAVX512(a, b []float32) float32 {
-if !features.HasAVX512 {
-return cosineAVX2(a, b)
-}
+	if !features.HasAVX512 {
+		return cosineAVX2(a, b)
+	}
 
-var dot, normA, normB float32
-n := len(a)
-i := 0
+	var dot, normA, normB float32
+	n := len(a)
+	i := 0
 
-// Process 16 elements at a time
-for ; i <= n-16; i += 16 {
-d, na, nb := cosine16AVX512(
-unsafe.Pointer(&a[i]),
-unsafe.Pointer(&b[i]),
-)
-dot += d
-normA += na
-normB += nb
-}
+	// Process 16 elements at a time
+	for ; i <= n-16; i += 16 {
+		d, na, nb := cosine16AVX512(
+			unsafe.Pointer(&a[i]),
+			unsafe.Pointer(&b[i]),
+		)
+		dot += d
+		normA += na
+		normB += nb
+	}
 
-// Fall back to AVX2
-for ; i <= n-8; i += 8 {
-d, na, nb := cosine8AVX2(
-unsafe.Pointer(&a[i]),
-unsafe.Pointer(&b[i]),
-)
-dot += d
-normA += na
-normB += nb
-}
+	// Fall back to AVX2
+	for ; i <= n-8; i += 8 {
+		d, na, nb := cosine8AVX2(
+			unsafe.Pointer(&a[i]),
+			unsafe.Pointer(&b[i]),
+		)
+		dot += d
+		normA += na
+		normB += nb
+	}
 
-// Handle remaining
-for ; i < n; i++ {
-dot += a[i] * b[i]
-normA += a[i] * a[i]
-normB += b[i] * b[i]
-}
+	// Handle remaining
+	for ; i < n; i++ {
+		dot += a[i] * b[i]
+		normA += a[i] * a[i]
+		normB += b[i] * b[i]
+	}
 
-if normA == 0 || normB == 0 {
-return 1.0
-}
-return 1.0 - (dot / float32(math.Sqrt(float64(normA)*float64(normB))))
+	if normA == 0 || normB == 0 {
+		return 1.0
+	}
+	return 1.0 - (dot / float32(math.Sqrt(float64(normA)*float64(normB))))
 }
 
 // AVX2 optimized dot product
 func dotAVX2(a, b []float32) float32 {
-if !features.HasAVX2 {
-return dotGeneric(a, b)
-}
+	if !features.HasAVX2 {
+		return dotGeneric(a, b)
+	}
 
-var sum float32
-n := len(a)
-i := 0
+	var sum float32
+	n := len(a)
+	i := 0
 
-for ; i <= n-8; i += 8 {
-sum += dot8AVX2(
-unsafe.Pointer(&a[i]),
-unsafe.Pointer(&b[i]),
-)
-}
+	for ; i <= n-8; i += 8 {
+		sum += dot8AVX2(
+			unsafe.Pointer(&a[i]),
+			unsafe.Pointer(&b[i]),
+		)
+	}
 
-for ; i < n; i++ {
-sum += a[i] * b[i]
-}
+	for ; i < n; i++ {
+		sum += a[i] * b[i]
+	}
 
-return sum
+	return sum
 }
 
 // AVX512 optimized dot product
 func dotAVX512(a, b []float32) float32 {
-if !features.HasAVX512 {
-return dotAVX2(a, b)
-}
+	if !features.HasAVX512 {
+		return dotAVX2(a, b)
+	}
 
-var sum float32
-n := len(a)
-i := 0
+	var sum float32
+	n := len(a)
+	i := 0
 
-for ; i <= n-16; i += 16 {
-sum += dot16AVX512(
-unsafe.Pointer(&a[i]),
-unsafe.Pointer(&b[i]),
-)
-}
+	for ; i <= n-16; i += 16 {
+		sum += dot16AVX512(
+			unsafe.Pointer(&a[i]),
+			unsafe.Pointer(&b[i]),
+		)
+	}
 
-for ; i <= n-8; i += 8 {
-sum += dot8AVX2(
-unsafe.Pointer(&a[i]),
-unsafe.Pointer(&b[i]),
-)
-}
+	for ; i <= n-8; i += 8 {
+		sum += dot8AVX2(
+			unsafe.Pointer(&a[i]),
+			unsafe.Pointer(&b[i]),
+		)
+	}
 
-for ; i < n; i++ {
-sum += a[i] * b[i]
-}
+	for ; i < n; i++ {
+		sum += a[i] * b[i]
+	}
 
-return sum
+	return sum
 }
 
 // NEON stubs for AMD64 (not available)
 func euclideanNEON(a, b []float32) float32 {
-return euclideanGeneric(a, b)
+	return euclideanGeneric(a, b)
 }
 
 func cosineNEON(a, b []float32) float32 {
-return cosineGeneric(a, b)
+	return cosineGeneric(a, b)
 }
 
 func dotNEON(a, b []float32) float32 {
-return dotGeneric(a, b)
+	return dotGeneric(a, b)
 }
 
 // Assembly function declarations (implemented in simd_amd64.s)
@@ -241,81 +241,81 @@ func dot16AVX512(a, b unsafe.Pointer) float32
 
 // AVX2 optimized Batch Euclidean distance
 func euclideanBatchAVX2(query []float32, vectors [][]float32, results []float32) {
-if !features.HasAVX2 {
-euclideanBatchGeneric(query, vectors, results)
-return
-}
+	if !features.HasAVX2 {
+		euclideanBatchGeneric(query, vectors, results)
+		return
+	}
 
-for idx, v := range vectors {
-// Inline the AVX2 logic to avoid function call overhead
-if len(query) != len(v) {
-panic("simd: vector length mismatch")
-}
+	for idx, v := range vectors {
+		// Inline the AVX2 logic to avoid function call overhead
+		if len(query) != len(v) {
+			panic("simd: vector length mismatch")
+		}
 
-var sum float32
-n := len(query)
-i := 0
+		var sum float32
+		n := len(query)
+		i := 0
 
-// Process 8 elements at a time
-for ; i <= n-8; i += 8 {
-sum += euclidean8AVX2(
-unsafe.Pointer(&query[i]),
-unsafe.Pointer(&v[i]),
-)
-}
+		// Process 8 elements at a time
+		for ; i <= n-8; i += 8 {
+			sum += euclidean8AVX2(
+				unsafe.Pointer(&query[i]),
+				unsafe.Pointer(&v[i]),
+			)
+		}
 
-// Handle remaining elements
-for ; i < n; i++ {
-d := query[i] - v[i]
-sum += d * d
-}
-results[idx] = float32(math.Sqrt(float64(sum)))
-}
+		// Handle remaining elements
+		for ; i < n; i++ {
+			d := query[i] - v[i]
+			sum += d * d
+		}
+		results[idx] = float32(math.Sqrt(float64(sum)))
+	}
 }
 
 // AVX512 optimized Batch Euclidean distance
 func euclideanBatchAVX512(query []float32, vectors [][]float32, results []float32) {
-if !features.HasAVX512 {
-euclideanBatchAVX2(query, vectors, results)
-return
-}
+	if !features.HasAVX512 {
+		euclideanBatchAVX2(query, vectors, results)
+		return
+	}
 
-for idx, v := range vectors {
-// Inline the AVX512 logic
-if len(query) != len(v) {
-panic("simd: vector length mismatch")
-}
+	for idx, v := range vectors {
+		// Inline the AVX512 logic
+		if len(query) != len(v) {
+			panic("simd: vector length mismatch")
+		}
 
-var sum float32
-n := len(query)
-i := 0
+		var sum float32
+		n := len(query)
+		i := 0
 
-// Process 16 elements at a time
-for ; i <= n-16; i += 16 {
-sum += euclidean16AVX512(
-unsafe.Pointer(&query[i]),
-unsafe.Pointer(&v[i]),
-)
-}
+		// Process 16 elements at a time
+		for ; i <= n-16; i += 16 {
+			sum += euclidean16AVX512(
+				unsafe.Pointer(&query[i]),
+				unsafe.Pointer(&v[i]),
+			)
+		}
 
-// Fall back to AVX2 for remaining 8+ elements
-for ; i <= n-8; i += 8 {
-sum += euclidean8AVX2(
-unsafe.Pointer(&query[i]),
-unsafe.Pointer(&v[i]),
-)
-}
+		// Fall back to AVX2 for remaining 8+ elements
+		for ; i <= n-8; i += 8 {
+			sum += euclidean8AVX2(
+				unsafe.Pointer(&query[i]),
+				unsafe.Pointer(&v[i]),
+			)
+		}
 
-// Handle remaining elements
-for ; i < n; i++ {
-d := query[i] - v[i]
-sum += d * d
-}
-results[idx] = float32(math.Sqrt(float64(sum)))
-}
+		// Handle remaining elements
+		for ; i < n; i++ {
+			d := query[i] - v[i]
+			sum += d * d
+		}
+		results[idx] = float32(math.Sqrt(float64(sum)))
+	}
 }
 
 // NEON stub for AMD64
 func euclideanBatchNEON(query []float32, vectors [][]float32, results []float32) {
-euclideanBatchGeneric(query, vectors, results)
+	euclideanBatchGeneric(query, vectors, results)
 }

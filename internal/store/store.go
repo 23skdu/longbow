@@ -528,9 +528,8 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 				toWrite.Release()
 			}
 			filteredRec.Release()
-			s.logger.Error("Invalid record batch before cast", zap.Error(err))
-			metrics.FlightOperationsTotal.WithLabelValues(method, "error").Inc()
-			return err
+			s.logger.Warn("Skipping invalid record batch", zap.Error(err))
+			continue
 		}
 
 		// Cast to target schema to handle evolution (e.g. missing columns in old records)
@@ -670,12 +669,11 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 		rawRec.Release()
 
 		// Validate record integrity before processing
-		if int(rec.NumCols()) != rec.Schema().NumFields() {
+		if err := validateRecordBatch(rec); err != nil {
 			rec.Release()
-			s.logger.Error("Malformed record: column count mismatch",
-				zap.Int("cols", int(rec.NumCols())),
-				zap.Int("fields", rec.Schema().NumFields()))
-			return NewInvalidArgumentError("record", "column count does not match schema field count")
+			s.logger.Error("Malformed record in DoPut", zap.Error(err))
+			metrics.FlightOperationsTotal.WithLabelValues(method, "error").Inc()
+			return NewInvalidArgumentError("record", err.Error())
 		}
 
 		size := CachedRecordSize(rec)

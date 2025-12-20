@@ -39,13 +39,16 @@ Longbow provides a comprehensive operations script `scripts/ops_test.py` for int
 # Upload data
 python scripts/ops_test.py put --dataset test_data --rows 1000
 
-# Download data with filter
-python scripts/ops_test.py get --dataset test_data --filter "id:>:500"
+# Download data with filter (scan)
+python scripts/ops_test.py get --dataset test_data --filter "[{\"field\": \"id\", \"operator\": \">\", \"value\": \"500\"}]"
 
-# Vector Search with filter
-python scripts/ops_test.py search --dataset test_data --k 5 --filter "category:=:news"
+# Vector Search with filter (hybrid search)
+python scripts/ops_test.py search --dataset test_data --k 5 --filter "[{\"field\": \"category\", \"operator\": \"=\", \"value\": \"news\"}]"
 
-# Run full validation suite
+# Delete vectors (single or range)
+python scripts/ops_test.py delete --dataset test_data --ids 1,2,3-10
+
+# Bidirectional Health Check (Flight DoExchange)
 python scripts/ops_test.py validate
 ```
 

@@ -529,12 +529,13 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 				toWrite.Release()
 			}
 			filteredRec.Release()
-			s.logger.Warn("Skipping invalid record batch",
+			s.logger.Error("Invalid record batch found during DoGet",
 				zap.Error(err),
 				zap.Int64("numCols", toWrite.NumCols()),
 				zap.Int("numFields", toWrite.Schema().NumFields()),
 				zap.Int64("numRows", toWrite.NumRows()))
-			continue
+			metrics.FlightOperationsTotal.WithLabelValues(method, "error").Inc()
+			return fmt.Errorf("invalid record batch: %w", err)
 		}
 
 		// Cast to target schema to handle evolution (e.g. missing columns in old records)
@@ -578,9 +579,9 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 				toWrite.Release()
 			}
 			filteredRec.Release()
-			s.logger.Error("Record batch validation failed", zap.Error(err))
+			s.logger.Error("Record batch validation failed after casting", zap.Error(err))
 			metrics.FlightOperationsTotal.WithLabelValues(method, "error").Inc()
-			return err
+			return fmt.Errorf("validation failed after casting: %w", err)
 		}
 
 		if err := w.Write(castedRec); err != nil {
@@ -885,7 +886,7 @@ func (s *VectorStore) filterRecord(ctx context.Context, rec arrow.RecordBatch, f
 	for _, f := range filters {
 		indices := rec.Schema().FieldIndices(f.Field)
 		if len(indices) == 0 {
-			continue
+			return nil, fmt.Errorf("field %s not found in schema", f.Field)
 		}
 		colIdx := indices[0]
 		col := rec.Column(colIdx)
@@ -897,24 +898,24 @@ func (s *VectorStore) filterRecord(ctx context.Context, rec arrow.RecordBatch, f
 		case arrow.INT64:
 			v, err := strconv.ParseInt(f.Value, 10, 64)
 			if err != nil {
-				continue
+				return nil, fmt.Errorf("invalid int64 value for field %s: %w", f.Field, err)
 			}
 			valScalar = scalar.NewInt64Scalar(v)
 		case arrow.TIMESTAMP:
 			t, err := time.Parse(time.RFC3339, f.Value)
 			if err != nil {
-				continue
+				return nil, fmt.Errorf("invalid timestamp value for field %s: %w", f.Field, err)
 			}
 			ts, _ := arrow.TimestampFromTime(t, col.DataType().(*arrow.TimestampType).Unit)
 			valScalar = scalar.NewTimestampScalar(ts, col.DataType().(*arrow.TimestampType))
 		case arrow.FLOAT64:
 			v, err := strconv.ParseFloat(f.Value, 64)
 			if err != nil {
-				continue
+				return nil, fmt.Errorf("invalid float64 value for field %s: %w", f.Field, err)
 			}
 			valScalar = scalar.NewFloat64Scalar(v)
 		default:
-			continue
+			return nil, fmt.Errorf("unsupported data type %s for field %s", col.DataType().Name(), f.Field)
 		}
 
 		var fn string
@@ -932,7 +933,7 @@ func (s *VectorStore) filterRecord(ctx context.Context, rec arrow.RecordBatch, f
 		case "<=":
 			fn = "less_equal"
 		default:
-			continue
+			return nil, fmt.Errorf("unsupported operator %s", f.Operator)
 		}
 
 		args := []compute.Datum{

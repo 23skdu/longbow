@@ -1,21 +1,21 @@
-{{- if .Values.ingress.enabled -}}
+{{- if .Values.ingress.meta.enabled -}}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: {{ include "longbow.fullname" . }}
+  name: {{ include "longbow.fullname" . }}-meta
   labels:
     {{- include "longbow.labels" . | nindent 4 }}
-  {{- with .Values.ingress.annotations }}
+  {{- with .Values.ingress.meta.annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
   {{- end }}
 spec:
-  {{- with .Values.ingress.className }}
+  {{- with .Values.ingress.meta.className }}
   ingressClassName: {{ . }}
   {{- end }}
-  {{- if .Values.ingress.tls }}
+  {{- if .Values.ingress.meta.tls }}
   tls:
-    {{- range .Values.ingress.tls }}
+    {{- range .Values.ingress.meta.tls }}
     - hosts:
         {{- range .hosts }}
         - {{ . | quote }}
@@ -24,7 +24,7 @@ spec:
     {{- end }}
   {{- end }}
   rules:
-    {{- range .Values.ingress.hosts }}
+    {{- range .Values.ingress.meta.hosts }}
     - host: {{ .host | quote }}
       http:
         paths:
@@ -35,9 +35,9 @@ spec:
             {{- end }}
             backend:
               service:
-                name: {{ include "longbow.fullname" $ }}
+                name: {{ include "longbow.fullname" $ }}-meta
                 port:
-                  number: {{ $.Values.service.port }}
+                  number: {{ $.Values.service.meta.port }}
           {{- end }}
     {{- end }}
 {{- end }}

@@ -9,6 +9,18 @@ import (
 	"github.com/23skdu/longbow/internal/metrics"
 )
 
+type TicketQuery struct {
+	Name    string   `json:"name"`
+	Limit   int64    `json:"limit"`
+	Filters []Filter `json:"filters"`
+}
+
+type Filter struct {
+	Field    string `json:"field"`
+	Operator string `json:"operator"`
+	Value    string `json:"value"`
+}
+
 // ZeroAllocTicketParser parses TicketQuery JSON with zero allocations
 // for the common case (no escape sequences).
 type ZeroAllocTicketParser struct {
@@ -229,6 +241,19 @@ func parseFilter(data []byte, pos int) (Filter, int, error) {
 	return f, pos, errors.New("unexpected end in filter")
 }
 
+// ... Primitives ...
+
+func skipWhitespace(data []byte, pos int) int {
+	for pos < len(data) && (data[pos] == ' ' || data[pos] == '\t' || data[pos] == '\n' || data[pos] == '\r') {
+		pos++
+	}
+	return pos
+}
+
+func unsafeString(b []byte) string {
+	return unsafe.String(&b[0], len(b))
+}
+
 func parseString(data []byte, pos int) (s string, newPos int, err error) {
 	if pos >= len(data) || data[pos] != '"' {
 		return "", pos, errors.New("expected quote at start of string")
@@ -257,7 +282,6 @@ func parseString(data []byte, pos int) (s string, newPos int, err error) {
 	return "", pos, errors.New("unterminated string")
 }
 
-// decodeEscapes decodes JSON escape sequences (allocates)
 func decodeEscapes(data []byte) string {
 	buf := make([]byte, 0, len(data))
 	i := 0
@@ -309,7 +333,6 @@ func decodeEscapes(data []byte) string {
 	return string(buf)
 }
 
-// parseHex4 parses 4 hex digits, returns -1 on error
 func parseHex4(data []byte) int {
 	var r int
 	for _, c := range data {
@@ -328,7 +351,6 @@ func parseHex4(data []byte) int {
 	return r
 }
 
-// encodeRune encodes a rune as UTF-8
 func encodeRune(buf []byte, r rune) int {
 	if r < 0x80 {
 		buf[0] = byte(r)
@@ -476,17 +498,6 @@ func skipNumber(data []byte, pos int) (int, error) {
 	return pos, nil
 }
 
-func skipWhitespace(data []byte, pos int) int {
-	for pos < len(data) && (data[pos] == ' ' || data[pos] == '\t' || data[pos] == '\n' || data[pos] == '\r') {
-		pos++
-	}
-	return pos
-}
-
-func unsafeString(b []byte) string {
-	return unsafe.String(&b[0], len(b))
-}
-
 // ParserPoolStats tracks pool usage statistics
 type ParserPoolStats struct {
 	Gets   uint64
@@ -517,21 +528,26 @@ func GetParserPoolStats() ParserPoolStats {
 }
 
 // ParseTicketQuerySafe is a thread-safe wrapper that uses pooled parsers
-// This function should be used for concurrent parsing instead of a shared parser
 func ParseTicketQuerySafe(data []byte) (TicketQuery, error) {
 	atomic.AddUint64(&parserPoolGets, 1)
-	metrics.ParserPoolGets.Inc()
+	if metrics.ParserPoolGets != nil {
+		metrics.ParserPoolGets.Inc()
+	}
 
 	// Try to get a parser from the pool
 	pooled := ticketParserPool.Get()
 	var parser *ZeroAllocTicketParser
 	if pooled != nil {
 		atomic.AddUint64(&parserPoolHits, 1)
-		metrics.ParserPoolHits.Inc()
+		if metrics.ParserPoolHits != nil {
+			metrics.ParserPoolHits.Inc()
+		}
 		parser = pooled.(*ZeroAllocTicketParser)
 	} else {
 		atomic.AddUint64(&parserPoolMisses, 1)
-		metrics.ParserPoolMisses.Inc()
+		if metrics.ParserPoolMisses != nil {
+			metrics.ParserPoolMisses.Inc()
+		}
 		parser = NewZeroAllocTicketParser()
 	}
 
@@ -541,7 +557,9 @@ func ParseTicketQuerySafe(data []byte) (TicketQuery, error) {
 	// Return parser to pool
 	ticketParserPool.Put(parser)
 	atomic.AddUint64(&parserPoolPuts, 1)
-	metrics.ParserPoolPuts.Inc()
+	if metrics.ParserPoolPuts != nil {
+		metrics.ParserPoolPuts.Inc()
+	}
 
 	return result, err
 }

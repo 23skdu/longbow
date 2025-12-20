@@ -114,6 +114,11 @@ func run() error {
 		logger.Info("Eviction ticker started", zap.Duration("interval", checkInterval))
 	}
 
+	// Initialize Persistence (WAL + Snapshots)
+	if err := vectorStore.InitPersistence(cfg.DataPath, cfg.SnapshotInterval); err != nil {
+		logger.Panic("Failed to initialize persistence", zap.Error(err))
+	}
+
 	// Initialize OpenTelemetry Tracer
 	tp := initTracer()
 	defer func() {

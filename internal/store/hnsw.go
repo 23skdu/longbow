@@ -168,10 +168,16 @@ func (h *HNSWIndex) getScratch() []float32 {
 }
 
 // putScratch returns a scratch buffer to the pool.
+// putScratch returns a scratch buffer to the pool.
 func (h *HNSWIndex) putScratch(buf []float32) {
 	if buf != nil && len(buf) == h.dims {
 		h.scratchPool.Put(buf)
 	}
+}
+
+// Search performs k-NN search using the provided query vector.
+func (h *HNSWIndex) Search(query []float32, k int) []VectorID {
+	return h.SearchWithArena(query, k, nil)
 }
 
 // getVectorInto copies vector data into the provided buffer.
@@ -532,6 +538,12 @@ func (h *HNSWIndex) PutResults(results []VectorID) {
 func (h *HNSWIndex) RegisterReader() {
 	h.activeReaders.Add(1)
 	metrics.HnswActiveReaders.WithLabelValues(h.dataset.Name).Inc()
+}
+
+// Close releases resources associated with the index.
+func (h *HNSWIndex) Close() error {
+	// Future cleanup: release pools, unregister metrics, etc.
+	return nil
 }
 
 // UnregisterReader decrements the active reader count

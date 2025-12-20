@@ -42,8 +42,7 @@ type Dataset struct {
 	Records        []arrow.RecordBatch
 	lastAccess     int64 // UnixNano
 	Version        int64
-	Index          *HNSWIndex
-	shardedIndex   *ShardedHNSW
+	Index          Index        // Abstract Interface
 	mu             sync.RWMutex // Protects metadata (version, etc)
 	dataMu         sync.RWMutex // Protects Records slice (append-only)
 	Name           string
@@ -140,10 +139,8 @@ func NewVectorStore(mem memory.Allocator, logger *zap.Logger, maxMemory, maxWALS
 					return
 				case <-ticker.C:
 					// Run eviction on all datasets
-					s.vectors.Range(func(key string, value interface{}) bool {
-						if ds, ok := value.(*Dataset); ok {
-							ds.EvictExpiredRecords()
-						}
+					s.vectors.Range(func(key string, ds *Dataset) bool {
+						ds.EvictExpiredRecords()
 						return true
 					})
 				}

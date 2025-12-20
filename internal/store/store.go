@@ -370,7 +370,14 @@ func (s *VectorStore) GetFlightInfo(ctx context.Context, desc *flight.FlightDesc
 	}
 	recs := ds.Records
 
-	schema := recs[0].Schema()
+	var schema *arrow.Schema
+	if existing := ds.GetExistingSchema(); existing != nil {
+		schema = existing
+	} else if len(recs) > 0 {
+		schema = recs[0].Schema()
+	} else {
+		return nil, NewNotFoundError("dataset", name) // Should be handled by len==0 check above but safe
+	}
 	totalRows := int64(0)
 	for _, r := range recs {
 		totalRows += r.NumRows()
@@ -436,7 +443,15 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 		return nil
 	}
 
-	w := flight.NewRecordWriter(stream, ipc.WithSchema(recs[0].Schema()), ipc.WithLZ4())
+	// Use existing schema for writer to ensure consistency across batches
+	var targetSchema *arrow.Schema
+	if existing := ds.GetExistingSchema(); existing != nil {
+		targetSchema = existing
+	} else {
+		targetSchema = recs[0].Schema()
+	}
+
+	w := flight.NewRecordWriter(stream, ipc.WithSchema(targetSchema), ipc.WithLZ4())
 	defer func() { _ = w.Close() }()
 
 	w.SetFlightDescriptor(&flight.FlightDescriptor{Path: []string{name}})
@@ -491,7 +506,20 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 			sliced = true
 		}
 
-		if err := w.Write(toWrite); err != nil {
+		// Cast to target schema to handle evolution (e.g. missing columns in old records)
+		castedRec, err := s.castRecordToSchema(toWrite, targetSchema)
+		if err != nil {
+			if sliced {
+				toWrite.Release()
+			}
+			filteredRec.Release()
+			s.logger.Error("Failed to cast record to target schema", zap.Error(err))
+			metrics.FlightOperationsTotal.WithLabelValues(method, "error").Inc()
+			return err
+		}
+
+		if err := w.Write(castedRec); err != nil {
+			castedRec.Release()
 			if sliced {
 				toWrite.Release()
 			}
@@ -500,6 +528,7 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 			metrics.FlightOperationsTotal.WithLabelValues(method, "error").Inc()
 			return err
 		}
+		castedRec.Release()
 		rowsSent += toWrite.NumRows()
 
 		if sliced {
@@ -1123,4 +1152,54 @@ func (s *VectorStore) startIndexingWorkers(numWorkers int) {
 			}
 		}()
 	}
+}
+
+// castRecordToSchema projects a record to the target schema.
+// If the record already matches, it returns the record retained.
+// Otherwise, it projects columns, filling missing ones with nulls.
+func (s *VectorStore) castRecordToSchema(rec arrow.RecordBatch, targetSchema *arrow.Schema) (arrow.RecordBatch, error) {
+	if rec.Schema().Equal(targetSchema) {
+		rec.Retain()
+		return rec, nil
+	}
+
+	cols := make([]arrow.Array, len(targetSchema.Fields()))
+
+	// Create columns
+	for i, field := range targetSchema.Fields() {
+		indices := rec.Schema().FieldIndices(field.Name)
+		if len(indices) > 0 {
+			// Found column
+			srcCol := rec.Column(indices[0])
+			if !arrow.TypeEqual(srcCol.DataType(), field.Type) {
+				// Clean up any cols created so far
+				for j := 0; j < i; j++ {
+					if cols[j] != nil {
+						cols[j].Release()
+					}
+				}
+				return nil, fmt.Errorf("field %s type mismatch: expected %s, got %s", field.Name, field.Type, srcCol.DataType())
+			}
+			srcCol.Retain()
+			cols[i] = srcCol
+		} else {
+			// Missing column - create nulls
+			bldr := array.NewBuilder(s.mem, field.Type)
+			bldr.AppendNulls(int(rec.NumRows()))
+			cols[i] = bldr.NewArray()
+			bldr.Release()
+		}
+	}
+
+	// Create new record batch (Retains arrays)
+	out := array.NewRecordBatch(targetSchema, cols, rec.NumRows())
+
+	// Release our local references (since NewRecordBatch retained them)
+	for _, c := range cols {
+		if c != nil {
+			c.Release()
+		}
+	}
+
+	return out, nil
 }

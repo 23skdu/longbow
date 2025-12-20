@@ -518,6 +518,27 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 			return err
 		}
 
+		// Skip empty batches to avoid potential IPC serialization issues with zero-length slices
+		if castedRec.NumRows() == 0 {
+			castedRec.Release()
+			if sliced {
+				toWrite.Release()
+			}
+			filteredRec.Release()
+			continue
+		}
+
+		if err := validateRecordBatch(castedRec); err != nil {
+			castedRec.Release()
+			if sliced {
+				toWrite.Release()
+			}
+			filteredRec.Release()
+			s.logger.Error("Record batch validation failed", zap.Error(err))
+			metrics.FlightOperationsTotal.WithLabelValues(method, "error").Inc()
+			return err
+		}
+
 		if err := w.Write(castedRec); err != nil {
 			castedRec.Release()
 			if sliced {
@@ -1202,4 +1223,20 @@ func (s *VectorStore) castRecordToSchema(rec arrow.RecordBatch, targetSchema *ar
 	}
 
 	return out, nil
+}
+
+// validateRecordBatch checks for common internal inconsistencies in a record batch
+func validateRecordBatch(rec arrow.RecordBatch) error {
+	rows := rec.NumRows()
+	for i, col := range rec.Columns() {
+		// Paranoid check for nil columns (should not happen in valid record)
+		if col == nil {
+			return fmt.Errorf("column %d is nil", i)
+		}
+		// Check length consistency
+		if int64(col.Len()) != rows {
+			return fmt.Errorf("column %d length mismatch: expected %d, got %d", i, rows, col.Len())
+		}
+	}
+	return nil
 }

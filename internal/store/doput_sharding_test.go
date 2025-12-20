@@ -299,7 +299,7 @@ func BenchmarkAddToIndexSharded(b *testing.B) {
 	rec := createShardingTestRecordBatch(&testing.T{}, mem, 1, 128)
 	defer rec.Release()
 
-	ds := createDatasetWithShardedIndex(&testing.T{})
+	ds := createDatasetWithShardedIndex()
 	// Break the back-reference
 	ds.Index.(*ShardedHNSW).dataset = ds
 
@@ -309,7 +309,7 @@ func BenchmarkAddToIndexSharded(b *testing.B) {
 	}
 }
 
-func createDatasetWithShardedIndex(t *testing.T) *Dataset {
+func createDatasetWithShardedIndex() *Dataset {
 	ds := &Dataset{Name: "test"}
 	ds.Index = NewShardedHNSW(DefaultShardedHNSWConfig(), ds)
 	return ds

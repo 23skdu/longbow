@@ -459,6 +459,17 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 		return nil
 	}
 
+	// Validate input records
+	for i, rec := range recs {
+		if rec.NumCols() == 0 && rec.Schema().NumFields() > 0 {
+			s.logger.Error("Record batch has 0 columns but non-empty schema",
+				zap.String("dataset", name),
+				zap.Int("batch_idx", i),
+				zap.Int("fields", rec.Schema().NumFields()),
+				zap.Int64("rows", rec.NumRows()))
+		}
+	}
+
 	// Use existing schema from the dataset (requires lock to be safe)
 	var targetSchema *arrow.Schema
 	if existing := ds.GetExistingSchema(); existing != nil {
@@ -531,9 +542,11 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 			filteredRec.Release()
 			s.logger.Error("Invalid record batch found during DoGet",
 				zap.Error(err),
+				zap.String("dataset", name),
 				zap.Int64("numCols", toWrite.NumCols()),
 				zap.Int("numFields", toWrite.Schema().NumFields()),
-				zap.Int64("numRows", toWrite.NumRows()))
+				zap.Int64("numRows", toWrite.NumRows()),
+				zap.Int("batchIdx", batchIdx))
 			metrics.FlightOperationsTotal.WithLabelValues(method, "error").Inc()
 			return fmt.Errorf("invalid record batch: %w", err)
 		}

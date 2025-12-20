@@ -10,6 +10,17 @@ Longbow provides three search modes:
 1. **Dense Search** - Vector similarity using HNSW index
 2. **Sparse Search** - Keyword matching using inverted index
 3. **Hybrid Search** - Combines dense + sparse with Reciprocal Rank Fusion (RRF)
+4. **Filtered Search** - Vector similarity with metadata predicate filtering
+
+## Filtered Search
+
+Longbow supports metadata filtering during vector search. Currently implemented as **Post-Filtering**:
+
+1. **Oversampling**: The index retrieves `k * oversample_factor` candidates.
+2. **Predicate Check**: Metadata for candidates is checked against provided filters (e.g., `id > 100`, `category == 'news'`).
+3. **Selection**: The first `k` matching candidates are returned.
+
+This approach ensures accuracy while preserving the zero-copy architecture.
 
 ## Query Flow Architecture
 
@@ -223,7 +234,6 @@ results := hs.SearchHybridWeighted(query, "keywords", 10, 0.8, 60)
 // Favor keyword matching (alpha=0.2)  
 results := hs.SearchHybridWeighted(query, "keywords", 10, 0.2, 60)
 ```
-
 
 ## API Reference
 

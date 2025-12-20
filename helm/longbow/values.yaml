@@ -30,23 +30,42 @@ securityContext:
   runAsNonRoot: true
   runAsUser: 1000
 
+# gRPC Configuration
+grpc:
+  maxRecvMsgSize: 67108864 # 64MB
+  maxSendMsgSize: 67108864 # 64MB
+  initialWindowSize: 1048576 # 1MB
+  initialConnWindowSize: 1048576 # 1MB
+  maxConcurrentStreams: 250
+  keepAliveTime: "2h"
+  keepAliveTimeout: "20s"
+  keepAliveMinTime: "5m"
+  keepAlivePermitWithoutStream: false
+
 service:
-  type: ClusterIP
-  port: 3000
-  metaPort: 3001
-  metricsPort: 9090
+  data:
+    enabled: true
+    type: ClusterIP
+    port: 3000
+    annotations: {}
+  meta:
+    enabled: true
+    type: ClusterIP
+    port: 3001
+    annotations: {}
 
 metrics:
   enabled: true
+  port: 9090
   serviceMonitor:
     enabled: false
 
 # Longbow configuration
 config:
-  maxMemory: "1073741824"      # 1GB default
-  maxWALSize: "104857600"      # 100MB default
+  maxMemory: "1073741824" # 1GB default
+  maxWALSize: "104857600" # 100MB default
   snapshotInterval: "1h"
-  ttl: "0s"                    # 0s = disabled
+  ttl: "0s" # 0s = disabled
 
 # Persistence configuration
 persistence:
@@ -67,11 +86,11 @@ persistence:
 # When enabled, snapshots are stored in S3-compatible storage
 s3:
   enabled: false
-  endpoint: ""                  # Leave empty for AWS S3, set for MinIO/R2
+  endpoint: "" # Leave empty for AWS S3, set for MinIO/R2
   bucket: "longbow-snapshots"
-  prefix: ""                    # Optional key prefix (e.g., "prod/vectors")
+  prefix: "" # Optional key prefix (e.g., "prod/vectors")
   region: "us-east-1"
-  usePathStyle: false           # Set true for MinIO
+  usePathStyle: false # Set true for MinIO
   # Credentials - use existingSecret or provide directly (not recommended)
   existingSecret: ""
   existingSecretAccessKeyKey: "access-key-id"
@@ -81,15 +100,26 @@ s3:
   secretAccessKey: ""
 
 ingress:
-  enabled: false
-  className: ""
-  annotations: {}
-  hosts:
-    - host: longbow.local
-      paths:
-        - path: /
-          pathType: ImplementationSpecific
-  tls: []
+  data:
+    enabled: false
+    className: ""
+    annotations: {}
+    hosts:
+      - host: longbow-data.local
+        paths:
+          - path: /
+            pathType: ImplementationSpecific
+    tls: []
+  meta:
+    enabled: false
+    className: ""
+    annotations: {}
+    hosts:
+      - host: longbow-meta.local
+        paths:
+          - path: /
+            pathType: ImplementationSpecific
+    tls: []
 
 httpRoute:
   enabled: false

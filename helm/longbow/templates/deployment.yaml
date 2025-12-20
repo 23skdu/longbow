@@ -35,11 +35,11 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           env:
             - name: LONGBOW_LISTEN_ADDR
-              value: "0.0.0.0:{{ .Values.service.port }}"
+              value: "0.0.0.0:{{ .Values.service.data.port }}"
             - name: LONGBOW_META_ADDR
-              value: "0.0.0.0:{{ .Values.service.metaPort }}"
+              value: "0.0.0.0:{{ .Values.service.meta.port }}"
             - name: LONGBOW_METRICS_ADDR
-              value: "0.0.0.0:{{ .Values.service.metricsPort }}"
+              value: "0.0.0.0:{{ .Values.metrics.port }}"
             - name: LONGBOW_DATA_PATH
               value: {{ .Values.persistence.wal.path | quote }}
             - name: LONGBOW_SNAPSHOT_PATH
@@ -52,6 +52,25 @@ spec:
               value: {{ .Values.config.snapshotInterval | quote }}
             - name: LONGBOW_TTL
               value: {{ .Values.config.ttl | quote }}
+            # gRPC Options
+            - name: LONGBOW_GRPC_MAX_RECV_MSG_SIZE
+              value: {{ .Values.grpc.maxRecvMsgSize | quote }}
+            - name: LONGBOW_GRPC_MAX_SEND_MSG_SIZE
+              value: {{ .Values.grpc.maxSendMsgSize | quote }}
+            - name: LONGBOW_GRPC_INITIAL_WINDOW_SIZE
+              value: {{ .Values.grpc.initialWindowSize | quote }}
+            - name: LONGBOW_GRPC_INITIAL_CONN_WINDOW_SIZE
+              value: {{ .Values.grpc.initialConnWindowSize | quote }}
+            - name: LONGBOW_GRPC_MAX_CONCURRENT_STREAMS
+              value: {{ .Values.grpc.maxConcurrentStreams | quote }}
+            - name: LONGBOW_GRPC_KEEPALIVE_TIME
+              value: {{ .Values.grpc.keepAliveTime | quote }}
+            - name: LONGBOW_GRPC_KEEPALIVE_TIMEOUT
+              value: {{ .Values.grpc.keepAliveTimeout | quote }}
+            - name: LONGBOW_GRPC_KEEPALIVE_MIN_TIME
+              value: {{ .Values.grpc.keepAliveMinTime | quote }}
+            - name: LONGBOW_GRPC_KEEPALIVE_PERMIT_WITHOUT_STREAM
+              value: {{ .Values.grpc.keepAlivePermitWithoutStream | quote }}
             {{- if .Values.s3.enabled }}
             - name: LONGBOW_S3_ENABLED
               value: "true"
@@ -91,13 +110,13 @@ spec:
             {{- end }}
           ports:
             - name: grpc-data
-              containerPort: {{ .Values.service.port }}
+              containerPort: {{ .Values.service.data.port }}
               protocol: TCP
             - name: grpc-meta
-              containerPort: {{ .Values.service.metaPort }}
+              containerPort: {{ .Values.service.meta.port }}
               protocol: TCP
             - name: metrics
-              containerPort: {{ .Values.service.metricsPort }}
+              containerPort: {{ .Values.metrics.port }}
               protocol: TCP
           livenessProbe:
             tcpSocket:

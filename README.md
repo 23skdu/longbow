@@ -1,4 +1,7 @@
-<!-- markdownlint-disable MD033 MD041 -->
+![CI](https://github.com/23skdu/longbow/actions/workflows/ci.yml/badge.svg)
+![Helm Validation](https://github.com/23skdu/longbow/actions/workflows/helm-validation.yml/badge.svg)
+![Markdown Lint](https://github.com/23skdu/longbow/actions/workflows/markdown-lint.yml/badge.svg)
+
 # Longbow
 
 <img width="1024" height="559" alt="image" src="https://github.com/user-attachments/assets/16b4632a-f09b-42ab-9b05-9ab5a25566bf" />

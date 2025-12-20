@@ -47,7 +47,7 @@ func (idx *ShardedInvertedIndex) termShardIndex(term string) int {
 
 // docShardIndex returns the shard index for a document
 func (idx *ShardedInvertedIndex) docShardIndex(id VectorID) int {
-	return int(uint64(id) % invertedIndexShards)
+	return int(uint64(id) % invertedIndexShards) //nolint:gosec // G115 - invertedIndexShards is small const
 }
 
 // Add indexes a document with the given text
@@ -92,7 +92,7 @@ func (idx *ShardedInvertedIndex) Add(id VectorID, text string) {
 			if shard.index[term] == nil {
 				shard.index[term] = make(map[VectorID]float32)
 			}
-				shard.bloom.Add(term)
+			shard.bloom.Add(term)
 			shard.index[term][id] = score
 		}
 		shard.mu.Unlock()

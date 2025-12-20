@@ -4,7 +4,6 @@ import (
 	"container/heap"
 	"errors"
 	"fmt"
-	"reflect"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -146,19 +145,11 @@ func (s *ShardedHNSW) AddVector(loc Location, vec []float32) (VectorID, error) {
 	vecBytes := shard.allocator.Alloc(vecSize)
 
 	// Unsafe cast to []float32 (zero-copy from arena slice)
-	// We know arena returns aligned bytes usually, but we should be careful.
-	// For simplicity in this "production hardening" step, we'll assume alignment is handled or irrelevant for now on x86/arm64 for simple floats,
-	// but strictly we should ensure 4-byte alignment. SlabAllocator generally allocates sequentially.
+	// We know arena returns bytes. We interpret them as float32s.
+	// unsafe.Slice requires Go 1.17+
+	vecCopy := unsafe.Slice((*float32)(unsafe.Pointer(&vecBytes[0])), len(vec))
 
-	// Manual copy to the bytes
-	// Or better, just cast the slice header.
-	// Let's use a helper or unsafe.
-	var vecCopy []float32
-	header := (*reflect.SliceHeader)(unsafe.Pointer(&vecCopy))
-	header.Data = uintptr(unsafe.Pointer(&vecBytes[0]))
-	header.Len = len(vec)
-	header.Cap = len(vec)
-
+	// Copy data into the arena slice
 	copy(vecCopy, vec)
 
 	// Add to shard with fine-grained lock

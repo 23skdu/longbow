@@ -87,10 +87,7 @@ func TestAsyncIndexingQA(t *testing.T) {
 		// Check internal locations slice of HNSWIndex
 		ds.Index.(*HNSWIndex).mu.RLock()
 		defer ds.Index.(*HNSWIndex).mu.RUnlock()
-		if len(ds.Index.(*HNSWIndex).locations) != 1 {
-			return false
-		}
-		return true
+		return len(ds.Index.(*HNSWIndex).locations) == 1
 	}, 2*time.Second, 100*time.Millisecond, "Index should be updated asynchronously")
 }
 

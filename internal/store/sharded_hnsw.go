@@ -4,6 +4,7 @@ import (
 	"container/heap"
 	"errors"
 	"fmt"
+	"math"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -114,7 +115,7 @@ func (s *ShardedHNSW) GetShardForID(id VectorID) int {
 	hash ^= hash >> 33
 	hash *= 0xc4ceb9fe1a85ec53
 	hash ^= hash >> 33
-	return int(hash % uint64(s.config.NumShards))
+	return int(hash % uint64(s.config.NumShards)) //nolint:gosec // G115 - shard index guaranteed to fit in int
 }
 
 // AddVector inserts a vector into the appropriate shard based on the assigned ID.
@@ -125,7 +126,11 @@ func (s *ShardedHNSW) AddVector(loc Location, vec []float32) (VectorID, error) {
 	}
 
 	// Allocate global ID atomically
-	id := VectorID(s.nextID.Add(1) - 1)
+	next := s.nextID.Add(1) - 1
+	if next > math.MaxUint32 {
+		return 0, fmt.Errorf("vector ID overflow: %d > %d", next, math.MaxUint32)
+	}
+	id := VectorID(next)
 
 	// Store location globally
 	s.globalMu.Lock()

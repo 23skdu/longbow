@@ -4,9 +4,10 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"hash/crc32"
 	"io"
 	"os"
-	"path/filepath"
+	"path/filepath" // Added by user instruction
 	"time"
 
 	"github.com/23skdu/longbow/internal/metrics"
@@ -83,15 +84,23 @@ func (s *VectorStore) writeToWAL(rec arrow.RecordBatch, name string) error {
 	nameLen := uint32(len(nameBytes))
 	recLen := uint64(len(recBytes))
 
-	if err := binary.Write(s.walFile, binary.LittleEndian, nameLen); err != nil {
+	// Calc CRC
+	crc := crc32.NewIEEE()
+	_, _ = crc.Write(nameBytes)
+	_, _ = crc.Write(recBytes)
+	checksum := crc.Sum32()
+
+	// Write 16-byte header
+	header := make([]byte, 16)
+	binary.LittleEndian.PutUint32(header[0:4], checksum)
+	binary.LittleEndian.PutUint32(header[4:8], nameLen)
+	binary.LittleEndian.PutUint64(header[8:16], recLen)
+
+	if _, err := s.walFile.Write(header); err != nil {
 		metrics.WalWritesTotal.WithLabelValues("error").Inc()
 		return err
 	}
 	if _, err := s.walFile.Write(nameBytes); err != nil {
-		metrics.WalWritesTotal.WithLabelValues("error").Inc()
-		return err
-	}
-	if err := binary.Write(s.walFile, binary.LittleEndian, recLen); err != nil {
 		metrics.WalWritesTotal.WithLabelValues("error").Inc()
 		return err
 	}
@@ -130,13 +139,17 @@ func (s *VectorStore) replayWAL() error {
 	count := 0
 
 	for {
-		var nameLen uint32
-		if err := binary.Read(f, binary.LittleEndian, &nameLen); err != nil {
+		header := make([]byte, 16)
+		if _, err := io.ReadFull(f, header); err != nil {
 			if err == io.EOF {
 				break
 			}
-			return NewWALError("read", walPath, 0, fmt.Errorf("nameLen: %w", err))
+			return NewWALError("read", walPath, 0, fmt.Errorf("header: %w", err))
 		}
+
+		storedChecksum := binary.LittleEndian.Uint32(header[0:4])
+		nameLen := binary.LittleEndian.Uint32(header[4:8])
+		recLen := binary.LittleEndian.Uint64(header[8:16])
 
 		nameBytes := make([]byte, nameLen)
 		if _, err := io.ReadFull(f, nameBytes); err != nil {
@@ -144,13 +157,18 @@ func (s *VectorStore) replayWAL() error {
 		}
 		name := string(nameBytes)
 
-		var recLen uint64
-		if err := binary.Read(f, binary.LittleEndian, &recLen); err != nil {
-			return NewWALError("read", walPath, 0, fmt.Errorf("recLen: %w", err))
-		}
 		recBytes := make([]byte, recLen)
 		if _, err := io.ReadFull(f, recBytes); err != nil {
 			return NewWALError("read", walPath, 0, fmt.Errorf("recBytes: %w", err))
+		}
+
+		// Verify Checksum
+		crc := crc32.NewIEEE()
+		_, _ = crc.Write(nameBytes)
+		_, _ = crc.Write(recBytes)
+		if crc.Sum32() != storedChecksum {
+			metrics.WalWritesTotal.WithLabelValues("corruption").Inc()
+			return NewWALError("read", walPath, 0, fmt.Errorf("crc mismatch: corrupted WAL entry"))
 		}
 
 		// Deserialize Record

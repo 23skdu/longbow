@@ -2,6 +2,7 @@ package store
 
 import (
 	"encoding/binary"
+	"hash/crc32"
 	"os"
 	"path/filepath"
 	"sync"
@@ -24,7 +25,7 @@ type WALBatcherConfig struct {
 	FlushInterval time.Duration     // Time between flushes (e.g., 10ms)
 	MaxBatchSize  int               // Max entries before forced flush (e.g., 100)
 	Adaptive      AdaptiveWALConfig // Adaptive batching configuration
-	AsyncFsync AsyncFsyncConfig // Async fsync configuration
+	AsyncFsync    AsyncFsyncConfig  // Async fsync configuration
 }
 
 // DefaultWALBatcherConfig returns sensible defaults
@@ -57,14 +58,14 @@ type WALBatcher struct {
 	flushErr     error
 	rateTracker  *WriteRateTracker           // Adaptive: tracks write rate
 	intervalCalc *AdaptiveIntervalCalculator // Adaptive: calculates intervals
-	asyncFsyncer *AsyncFsyncer // Async: background fsync handler
+	asyncFsyncer *AsyncFsyncer               // Async: background fsync handler
 }
 
 // NewWALBatcher creates a new batched WAL writer
 func NewWALBatcher(dataPath string, config *WALBatcherConfig) *WALBatcher {
 	w := &WALBatcher{
 		dataPath:  dataPath,
-		config:   *config,
+		config:    *config,
 		mem:       memory.NewGoAllocator(),
 		entries:   make(chan WALEntry, config.MaxBatchSize*10),
 		batch:     make([]WALEntry, 0, config.MaxBatchSize),
@@ -158,8 +159,8 @@ func (w *WALBatcher) flushLoop() {
 			walLockStart2 := time.Now()
 			w.mu.Lock()
 			metrics.WALLockWaitDuration.WithLabelValues("flush_check").Observe(time.Since(walLockStart2).Seconds())
-// Track pending entries (backpressure indicator)
-metrics.WalPendingEntries.Set(float64(len(w.entries)))
+			// Track pending entries (backpressure indicator)
+			metrics.WalPendingEntries.Set(float64(len(w.entries)))
 			w.batch = append(w.batch, entry)
 			shoudFlush := len(w.batch) >= w.config.MaxBatchSize
 			w.mu.Unlock()
@@ -194,8 +195,8 @@ func (w *WALBatcher) flush() {
 	w.batch = w.backBatch[:0]
 	w.backBatch = batch // double-buffer swap: reuse slices to avoid allocation
 	w.mu.Unlock()
-// Record batch size (measures batching efficiency)
-metrics.WalBatchSize.Observe(float64(len(batch)))
+	// Record batch size (measures batching efficiency)
+	metrics.WalBatchSize.Observe(float64(len(batch)))
 
 	// Track bytes written for async fsync threshold
 	var bytesWritten int
@@ -262,60 +263,67 @@ func (w *WALBatcher) drainAndFlush() {
 	}
 }
 
-// encodeWALEntryHeader encodes nameLen (uint32) and recLen (uint64) into a 12-byte slice
-// using manual binary encoding to avoid reflection overhead from binary.Write
-func encodeWALEntryHeader(nameLen uint32, recLen uint64) []byte {
-	buf := make([]byte, 12)
-	binary.LittleEndian.PutUint32(buf[0:4], nameLen)
-	binary.LittleEndian.PutUint64(buf[4:12], recLen)
+// encodeWALEntryHeader encodes crc (uint32), nameLen (uint32) and recLen (uint64) into a 16-byte slice
+func encodeWALEntryHeader(crc uint32, nameLen uint32, recLen uint64) []byte {
+	buf := make([]byte, 16)
+	binary.LittleEndian.PutUint32(buf[0:4], crc)
+	binary.LittleEndian.PutUint32(buf[4:8], nameLen)
+	binary.LittleEndian.PutUint64(buf[8:16], recLen)
 	return buf
 }
 
 // writeEntry serializes and writes a single entry to WAL
 // writeEntryBytes writes a WAL entry and returns bytes written
 func (w *WALBatcher) writeEntryBytes(entry WALEntry) (int, error) {
-rec := entry.Record
-name := entry.Name
+	rec := entry.Record
+	name := entry.Name
 
-if w.walFile == nil {
-return 0, nil
-}
+	if w.walFile == nil {
+		return 0, nil
+	}
 
-// Format: [NameLen: uint32][Name: bytes][RecordLen: uint64][RecordBytes: bytes]
-buf := w.bufPool.Get()
-defer w.bufPool.Put(buf)
-writer := ipc.NewWriter(buf, ipc.WithSchema(rec.Schema()), ipc.WithAllocator(w.mem))
-if err := writer.Write(rec); err != nil {
-return 0, err
-}
-if err := writer.Close(); err != nil {
-return 0, err
-}
-recBytes := buf.Bytes()
+	// Format: [CRC: uint32][NameLen: uint32][RecordLen: uint64][Name: bytes][RecordBytes: bytes]
 
-nameBytes := []byte(name)
-nameLen := uint32(len(nameBytes))
-recLen := uint64(len(recBytes))
+	buf := w.bufPool.Get()
+	defer w.bufPool.Put(buf)
+	writer := ipc.NewWriter(buf, ipc.WithSchema(rec.Schema()), ipc.WithAllocator(w.mem))
+	if err := writer.Write(rec); err != nil {
+		return 0, err
+	}
+	if err := writer.Close(); err != nil {
+		return 0, err
+	}
+	recBytes := buf.Bytes()
 
-// Write header + data (no sync here, batched at flush level)
-// Use manual encoding to avoid reflection overhead from binary.Write
-headerBuf := encodeWALEntryHeader(nameLen, recLen)
-if _, err := w.walFile.Write(headerBuf[0:4]); err != nil { // nameLen
-return 0, err
-}
-if _, err := w.walFile.Write(nameBytes); err != nil {
-return 0, err
-}
-if _, err := w.walFile.Write(headerBuf[4:12]); err != nil { // recLen
-return 0, err
-}
-if _, err := w.walFile.Write(recBytes); err != nil {
-return 0, err
-}
+	nameBytes := []byte(name)
+	nameLen := uint32(len(nameBytes))
+	recLen := uint64(len(recBytes))
 
-// Total bytes: 4 (nameLen) + len(name) + 8 (recLen) + len(recBytes)
-totalBytes := 4 + len(nameBytes) + 8 + len(recBytes)
-return totalBytes, nil
+	// Calculate CRC32 over Name + Record
+	crc := crc32.NewIEEE()
+	_, _ = crc.Write(nameBytes)
+	_, _ = crc.Write(recBytes)
+	checksum := crc.Sum32()
+
+	// Write header + data
+	headerBuf := encodeWALEntryHeader(checksum, nameLen, recLen)
+
+	// Write in one go if possible? No, scatter/gather usually fine with buffers.
+	// Order: Header (CRC, Len1, Len2), Name, Record
+
+	if _, err := w.walFile.Write(headerBuf); err != nil {
+		return 0, err
+	}
+	if _, err := w.walFile.Write(nameBytes); err != nil {
+		return 0, err
+	}
+	if _, err := w.walFile.Write(recBytes); err != nil {
+		return 0, err
+	}
+
+	// Total bytes: 16 (Header) + len(name) + len(recBytes)
+	totalBytes := 16 + len(nameBytes) + len(recBytes)
+	return totalBytes, nil
 }
 
 // Stop gracefully shuts down the batcher, flushing pending writes
@@ -366,20 +374,20 @@ func (w *WALBatcher) FlushError() error {
 	defer w.mu.Unlock()
 	return w.flushErr
 }
+
 // IsAsyncFsyncEnabled returns true if async fsync is configured and running
 func (w *WALBatcher) IsAsyncFsyncEnabled() bool {
-return w.asyncFsyncer != nil && w.asyncFsyncer.IsRunning()
+	return w.asyncFsyncer != nil && w.asyncFsyncer.IsRunning()
 }
 
 // AsyncFsyncStats returns stats from the async fsyncer, or nil if not enabled
 func (w *WALBatcher) AsyncFsyncStats() *AsyncFsyncerStats {
-if w.asyncFsyncer == nil {
-return nil
+	if w.asyncFsyncer == nil {
+		return nil
+	}
+	stats := w.asyncFsyncer.Stats()
+	return &stats
 }
-stats := w.asyncFsyncer.Stats()
-return &stats
-}
-
 
 // IsAdaptiveEnabled returns whether adaptive batching is enabled
 func (w *WALBatcher) IsAdaptiveEnabled() bool {
@@ -396,4 +404,14 @@ func (w *WALBatcher) GetCurrentInterval() time.Duration {
 	}
 	rate := w.rateTracker.GetRate()
 	return w.intervalCalc.CalculateInterval(rate)
+}
+
+// QueueDepth returns the current number of pending entries
+func (w *WALBatcher) QueueDepth() int {
+	return len(w.entries)
+}
+
+// QueueCapacity returns the maximum capacity of the queue
+func (w *WALBatcher) QueueCapacity() int {
+	return cap(w.entries)
 }

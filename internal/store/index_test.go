@@ -2,6 +2,8 @@ package store
 
 import (
 	"testing"
+
+	"github.com/apache/arrow-go/v18/arrow"
 )
 
 // MockIndex is a simple mock implementation of the Index interface for testing.
@@ -50,6 +52,10 @@ func (m *MockIndex) SearchVectors(query []float32, k int) []SearchResult {
 }
 
 func (m *MockIndex) AddByLocation(batchIdx, rowIdx int) error {
+	return m.Add(batchIdx, rowIdx)
+}
+
+func (m *MockIndex) AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx int) error {
 	return m.Add(batchIdx, rowIdx)
 }
 

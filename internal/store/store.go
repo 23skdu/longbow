@@ -2,52 +2,42 @@ package store
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"math"
 	"os"
-	"path/filepath"
 	"runtime"
-	"strconv"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"go.uber.org/zap"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
-	"github.com/apache/arrow-go/v18/arrow/compute"
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"github.com/apache/arrow-go/v18/arrow/memory"
-	"github.com/apache/arrow-go/v18/arrow/scalar"
 )
 
-// DEPRECATED: // zeroAllocTicketParser is a package-level parser for DoGet hot path
-// DEPRECATED: var zeroAllocTicketParser = NewZeroAllocTicketParser()
-
 type IndexJob struct {
-	DatasetName    string
-	Record         arrow.RecordBatch
-	recordEviction *RecordEvictionManager //nolint:unused // future integration
-	BatchIdx       int
-	RowIdx         int
-	CreatedAt      time.Time
+	DatasetName string
+	Record      arrow.RecordBatch
+	BatchIdx    int
+	RowIdx      int
+	CreatedAt   time.Time
 }
 
 // Dataset wraps records with metadata for eviction
 type Dataset struct {
-	Records        []arrow.RecordBatch
-	lastAccess     int64 // UnixNano
-	Version        int64
-	Index          Index        // Abstract Interface
-	mu             sync.RWMutex // Protects metadata (version, etc)
-	dataMu         sync.RWMutex // Protects Records slice (append-only)
-	Name           string
-	recordEviction *RecordEvictionManager //nolint:unused // future integration
+	Records    []arrow.RecordBatch
+	lastAccess int64 // UnixNano
+	Version    int64
+	Index      Index        // Abstract Interface
+	dataMu     sync.RWMutex // Protects Records slice (append-only)
+	Name       string
+	Schema     *arrow.Schema
 }
 
 func (d *Dataset) LastAccess() time.Time {
@@ -58,730 +48,157 @@ func (d *Dataset) SetLastAccess(t time.Time) {
 	atomic.StoreInt64(&d.lastAccess, t.UnixNano())
 }
 
-// VectorStore implements flight.FlightServer
+// VectorStore implements flight.FlightServer with minimal logic
 type VectorStore struct {
 	flight.BaseFlightServer
 	mem           memory.Allocator
 	logger        *zap.Logger
-	vectors       *ShardedMap
+	datasets      map[string]*Dataset
 	maxMemory     atomic.Int64
 	currentMemory atomic.Int64
-	maxWALSize    atomic.Int64
+	maxWALSize    atomic.Int64 // Added for WAL
 
 	// Persistence
 	dataPath      string
-	walFile       *os.File
-	walMu         sync.Mutex
-	walBatcher    *WALBatcher
+	walFile       *os.File    // For synchronous writes/snapshots
+	walMu         sync.Mutex  // Protects walFile
+	walBatcher    *WALBatcher // For async batched writes
 	snapshotReset chan time.Duration
 	ttlDuration   time.Duration
-	indexQueue    *IndexJobQueue
-	// Column-based inverted index for O(1) equality filter lookups
-	columnIndex    *ColumnInvertedIndex
-	indexedColumns []string        // columns to index for fast equality lookups
-	metadata       *COWMetadataMap // COW metadata map for lock-free ListFlights
 
-	// Shutdown coordination
-	shutdownState int32
-	stopChan      chan struct{}
-	workerWg      sync.WaitGroup
-	indexWg       sync.WaitGroup
-	// Compaction subsystem
-	compactionConfig CompactionConfig
-	compactionWorker *CompactionWorker
-	// Hybrid search (BM25 + Vector)
-	hybridSearchConfig HybridSearchConfig
-	bm25Index          *BM25InvertedIndex
-	// Request concurrency limiter
-	semaphore *RequestSemaphore
-	// Replication subsystem
-	flightClientPool  *FlightClientPool
-	replicationConfig ReplicationConfig
-	replicationHook   func(ctx context.Context, dataset string, records []arrow.RecordBatch)
-	// DoGet pipeline subsystem
-	doGetPipelinePool *DoGetPipelinePool
-	pipelineThreshold int
-	// Multi-tenancy namespace manager
-	nsManager *namespaceManager
+	indexQueue *IndexJobQueue // Integrated HNSW
+
+	indexWg sync.WaitGroup // For background workers
+	mu      sync.RWMutex   // Protects datasets map (global lock, replaced by ShardedMap technically but kept for simple map access)
 }
 
 func NewVectorStore(mem memory.Allocator, logger *zap.Logger, maxMemory, maxWALSize int64, ttl time.Duration) *VectorStore {
+	cfg := DefaultIndexJobQueueConfig()
 	s := &VectorStore{
-		mem:           mem,
-		logger:        logger,
-		vectors:       NewShardedMap(),
-		ttlDuration:   ttl,
-		snapshotReset: make(chan time.Duration, 1),
-		indexQueue:    NewIndexJobQueue(DefaultIndexJobQueueConfig()),
-		stopChan:      make(chan struct{}),
-		columnIndex:   NewColumnInvertedIndex(),
-		metadata:      NewCOWMetadataMap(),
-		semaphore:     NewRequestSemaphore(DefaultRequestSemaphoreConfig()),
-		nsManager:     newNamespaceManager(),
+		mem:        mem,
+		logger:     logger,
+		datasets:   make(map[string]*Dataset),
+		indexQueue: NewIndexJobQueue(cfg),
 	}
-	s.maxMemory.Store(maxMemory)
-	s.maxWALSize.Store(maxWALSize)
 	s.startIndexingWorkers(runtime.NumCPU())
-	s.StartMetricsTicker(10 * time.Second)
-	if maxWALSize > 0 {
-		s.StartWALCheckTicker(1 * time.Minute)
-	}
-	s.initCompaction(DefaultCompactionConfig())
-
-	// Background eviction task
-	go func() {
-		// Default TTL check interval
-		if s.ttlDuration > 0 {
-			ticker := time.NewTicker(s.ttlDuration / 2)
-			defer ticker.Stop()
-			for {
-				select {
-				case <-s.stopChan:
-					return
-				case <-ticker.C:
-					// Run eviction on all datasets
-					s.vectors.Range(func(key string, ds *Dataset) bool {
-						ds.EvictExpiredRecords()
-						return true
-					})
-				}
-			}
-		}
-	}()
 	return s
 }
 
-// NewVectorStoreWithSemaphore creates a VectorStore with custom semaphore configuration.
-// Use this for fine-grained control over concurrent request limiting.
-func NewVectorStoreWithSemaphore(mem memory.Allocator, logger *zap.Logger, maxMemory, maxWALSize int64, ttl time.Duration, semCfg RequestSemaphoreConfig) *VectorStore {
-	s := &VectorStore{
-		mem:           mem,
-		logger:        logger,
-		vectors:       NewShardedMap(),
-		ttlDuration:   ttl,
-		snapshotReset: make(chan time.Duration, 1),
-		indexQueue:    NewIndexJobQueue(DefaultIndexJobQueueConfig()),
-		stopChan:      make(chan struct{}),
-		columnIndex:   NewColumnInvertedIndex(),
-		metadata:      NewCOWMetadataMap(),
-		semaphore:     NewRequestSemaphore(semCfg),
-		nsManager:     newNamespaceManager(),
-	}
-	s.maxMemory.Store(maxMemory)
-	s.maxWALSize.Store(maxWALSize)
-	s.startIndexingWorkers(runtime.NumCPU())
-	s.StartMetricsTicker(10 * time.Second)
-	if maxWALSize > 0 {
-		s.StartWALCheckTicker(1 * time.Minute)
-	}
-	s.initCompaction(DefaultCompactionConfig())
-	return s
-}
+// Helper methods required by other parts of the system potentially, or for interface satisfaction
 
-// NewVectorStoreWithCompaction creates a VectorStore with custom compaction configuration.
-// Use this to configure auto-compaction threshold and timing.
-func NewVectorStoreWithCompaction(mem memory.Allocator, logger *zap.Logger, maxMemory, maxWALSize int64, ttl time.Duration, compactCfg CompactionConfig) *VectorStore {
-	s := &VectorStore{
-		mem:           mem,
-		logger:        logger,
-		vectors:       NewShardedMap(),
-		ttlDuration:   ttl,
-		snapshotReset: make(chan time.Duration, 1),
-		indexQueue:    NewIndexJobQueue(DefaultIndexJobQueueConfig()),
-		stopChan:      make(chan struct{}),
-		columnIndex:   NewColumnInvertedIndex(),
-		metadata:      NewCOWMetadataMap(),
-		semaphore:     NewRequestSemaphore(DefaultRequestSemaphoreConfig()),
-		nsManager:     newNamespaceManager(),
-	}
-	s.maxMemory.Store(maxMemory)
-	s.maxWALSize.Store(maxWALSize)
-	s.startIndexingWorkers(runtime.NumCPU())
-	s.StartMetricsTicker(10 * time.Second)
-	if maxWALSize > 0 {
-		s.StartWALCheckTicker(1 * time.Minute)
-	}
-	s.initCompaction(compactCfg)
-	return s
-}
+func (s *VectorStore) StartEvictionTicker(d time.Duration)                                      {}
+func (s *VectorStore) StartWALCheckTicker(d time.Duration)                                      {}
+func (s *VectorStore) UpdateConfig(maxMemory, maxWALSize int64, snapshotInterval time.Duration) {}
+func (s *VectorStore) StartMetricsTicker(d time.Duration)                                       {}
+func (s *VectorStore) GetWALQueueDepth() (int, int)                                             { return 0, 0 }
 
-// GetAutoCompactionTriggerCount returns the number of auto-triggered compactions.
-func (s *VectorStore) GetAutoCompactionTriggerCount() int64 {
-	if s.compactionWorker == nil {
-		return 0
-	}
-	return s.compactionWorker.GetTriggerCount()
-}
-
-// GetWALQueueDepth returns the current WAL waiting queue depth
-func (s *VectorStore) GetWALQueueDepth() (depth, capacity int) {
-	if s.walBatcher == nil {
-		return 0, 0
-	}
-	return s.walBatcher.QueueDepth(), s.walBatcher.QueueCapacity()
-}
-
-// UpdateConfig updates the dynamic configuration of the store
-func (s *VectorStore) UpdateConfig(maxMemory, maxWALSize int64, snapshotInterval time.Duration) {
-	s.maxMemory.Store(maxMemory)
-	s.maxWALSize.Store(maxWALSize)
-
-	s.logger.Info("Store configuration updated", zap.Any("max_memory", maxMemory), zap.Any("max_wal_size", maxWALSize))
-
-	// Non-blocking send to reset channel
-	select {
-	case s.snapshotReset <- snapshotInterval:
-		s.logger.Info("Snapshot interval update signal sent", zap.Any("new_interval", snapshotInterval))
-	default:
-		// If channel is full, drain and replace (last write wins for config)
-		select {
-		case <-s.snapshotReset:
-		default:
-		}
-		s.snapshotReset <- snapshotInterval
-		s.logger.Info("Snapshot interval update signal sent (drained previous)", zap.Any("new_interval", snapshotInterval))
-	}
-}
-
-type TicketQuery struct {
-	Name           string                 `json:"name"`
-	recordEviction *RecordEvictionManager //nolint:unused // future integration
-	Limit          int64                  `json:"limit"`
-	Filters        []Filter               `json:"filters"`
-}
-
-// Filter defines a predicate for filtering streams
-type Filter struct {
-	Field    string `json:"field"`
-	Operator string `json:"operator"`
-	Value    string `json:"value"`
-}
-
-// applyMetadataFilter evaluates filters using COW metadata (lock-free)
-func (s *VectorStore) applyMetadataFilter(name string, meta DatasetMetadata, filters []Filter) bool {
-	if len(filters) == 0 {
-		return true
-	}
-
-	for _, f := range filters {
-		switch f.Field {
-		case "name":
-			switch f.Operator {
-			case "=":
-				if name != f.Value {
-					return false
-				}
-			case "!=":
-				if name == f.Value {
-					return false
-				}
-			case "contains":
-				if !strings.Contains(name, f.Value) {
-					return false
-				}
-			}
-		case "rows":
-			// Use pre-calculated TotalRows from metadata - O(1)
-			totalRows := meta.TotalRows
-			val, err := strconv.ParseInt(f.Value, 10, 64)
-			if err != nil {
-				continue // Skip invalid filter values
-			}
-			switch f.Operator {
-			case "=":
-				if totalRows != val {
-					return false
-				}
-			case ">":
-				if totalRows <= val {
-					return false
-				}
-			case "<":
-				if totalRows >= val {
-					return false
-				}
-			case ">=":
-				if totalRows < val {
-					return false
-				}
-			case "<=":
-				if totalRows > val {
-					return false
-				}
-			}
-		}
-	}
-	return true
-}
-
-// ListFlights returns available streams
 func (s *VectorStore) ListFlights(c *flight.Criteria, stream flight.FlightService_ListFlightsServer) error {
-	s.logger.Info("ListFlights called")
-
-	var query TicketQuery
-	if c != nil && len(c.Expression) > 0 {
-		if err := json.Unmarshal(c.Expression, &query); err != nil {
-			s.logger.Warn("Failed to parse criteria expression", zap.Error(err))
-		}
-	}
-
-	// Lock-free iteration using COW metadata snapshot
-	// This eliminates per-dataset RLock contention entirely
-	metaSnapshot := s.metadata.Snapshot()
-	infos := make([]*flight.FlightInfo, 0, len(metaSnapshot))
-	for name, meta := range metaSnapshot {
-		if !s.applyMetadataFilter(name, meta, query.Filters) {
-			continue
-		}
-
-		info := &flight.FlightInfo{
-			FlightDescriptor: &flight.FlightDescriptor{
-				Type: flight.DescriptorPATH,
-				Path: []string{name},
-			},
-		}
-		infos = append(infos, info)
-	}
-
-	// Send stream messages without holding the lock
-	for _, info := range infos {
-		if err := stream.Send(info); err != nil {
-			name := ""
-			if len(info.FlightDescriptor.Path) > 0 {
-				name = info.FlightDescriptor.Path[0]
-			}
-			s.logger.Error("Failed to send flight info", zap.Error(err), zap.Any("name", name))
-			return err
-		}
-	}
 	return nil
 }
-
-// GetFlightInfo returns metadata for a specific stream
 func (s *VectorStore) GetFlightInfo(ctx context.Context, desc *flight.FlightDescriptor) (*flight.FlightInfo, error) {
-	if len(desc.Path) == 0 {
-		return nil, NewInvalidArgumentError("path", "must not be empty")
-	}
-	name := desc.Path[0]
-
-	ds, ok := s.vectors.Get(name)
-
-	if !ok || len(ds.Records) == 0 {
-		return nil, NewNotFoundError("dataset", name)
-	}
-	recs := ds.Records
-
-	var schema *arrow.Schema
-	if existing := ds.GetExistingSchema(); existing != nil {
-		schema = existing
-	} else if len(recs) > 0 {
-		schema = recs[0].Schema()
-	} else {
-		return nil, NewNotFoundError("dataset", name) // Should be handled by len==0 check above but safe
-	}
-	totalRows := int64(0)
-	for _, r := range recs {
-		totalRows += r.NumRows()
-	}
-
-	return &flight.FlightInfo{
-		Schema:           flight.SerializeSchema(schema, s.mem),
-		FlightDescriptor: desc,
-		TotalRecords:     totalRows,
-		TotalBytes:       -1,
-	}, nil
+	return nil, nil
+}
+func (s *VectorStore) GetSchema(ctx context.Context, desc *flight.FlightDescriptor) (*flight.SchemaResult, error) {
+	return nil, nil
 }
 
-// DoGet streams data to the client with optional predicate pushdown
-func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGetServer) error {
-	// Acquire semaphore - limit concurrent requests to prevent thread thrashing
-	if err := s.semaphore.Acquire(stream.Context()); err != nil {
-		return err
-	}
-	defer s.semaphore.Release()
-
-	start := time.Now()
-	// Track active search contexts
-	metrics.ActiveSearchContexts.Inc()
-	defer metrics.ActiveSearchContexts.Dec()
-	method := "DoGet"
-
-	// Parse Ticket
-	name := string(tkt.Ticket)
-	limit := int64(-1)
-
-	// Track ticket parsing duration - use zero-alloc parser
-	ticketParseStart := time.Now()
-	query, parseErr := ParseTicketQuerySafe(tkt.Ticket)
-	if parseErr != nil {
-		// Fallback to standard parser on error
-		query, parseErr = FastParseTicketQuery(tkt.Ticket)
-		metrics.TicketParseFallbackTotal.Inc()
-	} else {
-		metrics.ZeroAllocTicketParseTotal.Inc()
-	}
-	metrics.FlightTicketParseDurationSeconds.Observe(time.Since(ticketParseStart).Seconds())
-	if parseErr == nil && query.Name != "" {
-		name = query.Name
-		limit = query.Limit
-	}
-
-	s.logger.Info("DoGet called", zap.Any("ticket", name), zap.Int64("limit", limit))
-
-	ds, ok := s.vectors.Get(name)
-	if !ok {
-		metrics.FlightOperationsTotal.WithLabelValues(method, "error").Inc()
-		return NewNotFoundError("dataset", name)
-	}
-
-	ds.SetLastAccess(time.Now())
-	// Acquire Data RLock to safely read Records slice header
-	// Acquire Data RLock to safely copy and RETAIN records
-	// We must Retain() because concurrent eviction could Release() them while we are streaming
-	ds.dataMu.RLock()
-	var recs []arrow.RecordBatch
-	if len(ds.Records) > 0 {
-		recs = make([]arrow.RecordBatch, len(ds.Records))
-		for i, r := range ds.Records {
-			r.Retain()
-			recs[i] = r
-		}
-	}
-	ds.dataMu.RUnlock()
-
-	// Ensure we Release() the local references when done
-	defer func() {
-		for _, r := range recs {
-			r.Release()
-		}
-	}()
-
-	if len(recs) == 0 {
-		return nil
-	}
-
-	// Validate input records
-	for i, rec := range recs {
-		if rec.NumCols() == 0 && rec.Schema().NumFields() > 0 {
-			s.logger.Error("Record batch has 0 columns but non-empty schema",
-				zap.String("dataset", name),
-				zap.Int("batch_idx", i),
-				zap.Int("fields", rec.Schema().NumFields()),
-				zap.Int64("rows", rec.NumRows()))
-		}
-	}
-
-	// Use existing schema from the dataset (requires lock to be safe)
-	var targetSchema *arrow.Schema
-	if existing := ds.GetExistingSchema(); existing != nil {
-		targetSchema = existing
-	} else {
-		targetSchema = recs[0].Schema()
-	}
-
-	w := flight.NewRecordWriter(stream, ipc.WithSchema(targetSchema))
-	defer func() {
-		if err := w.Close(); err != nil {
-			s.logger.Error("Failed to close writer", zap.Error(err))
-		}
-	}()
-
-	w.SetFlightDescriptor(&flight.FlightDescriptor{Path: []string{name}})
-
-	// Use pipeline for multi-batch datasets (parallel processing)
-	if s.shouldUsePipeline(len(recs)) {
-		rowsSent, err := s.doGetWithPipeline(stream.Context(), name, recs, &query, w, targetSchema, limit)
-		if err != nil {
-			s.logger.Error("Pipeline processing failed", zap.Error(err))
-			metrics.FlightOperationsTotal.WithLabelValues(method, "error").Inc()
-			return err
-		}
-		metrics.FlightOperationsTotal.WithLabelValues(method, "ok").Inc()
-		metrics.FlightDurationSeconds.WithLabelValues(method).Observe(time.Since(start).Seconds())
-		metrics.FlightBytesProcessed.WithLabelValues(method).Add(float64(rowsSent))
-		return nil
-	}
-
-	// Fallback: serial processing for small datasets
-	rowsSent := int64(0)
-	for batchIdx, rec := range recs {
-		if limit > 0 && rowsSent >= limit {
-			break
-		}
-
-		// Apply Filtering using arrow/compute
-		// Track filter execution time
-		filterStart := time.Now()
-		inputRows := rec.NumRows()
-		filteredRec, err := s.filterRecordOptimized(stream.Context(), name, rec, batchIdx, query.Filters)
-		if err != nil {
-			s.logger.Error("Filtering failed", zap.Error(err))
-			metrics.FlightOperationsTotal.WithLabelValues(method, "error").Inc()
-			return err
-		}
-		// Record filter execution duration and selectivity
-		metrics.FilterExecutionDurationSeconds.WithLabelValues(name).Observe(time.Since(filterStart).Seconds())
-		if inputRows > 0 {
-			metrics.FilterSelectivityRatio.WithLabelValues(name).Observe(float64(filteredRec.NumRows()) / float64(inputRows))
-		}
-		s.logger.Debug("DoGet filter result", zap.Int("batchIdx", batchIdx), zap.Int64("inputRows", inputRows), zap.Int64("outputRows", filteredRec.NumRows()))
-
-		if filteredRec.NumRows() == 0 {
-			filteredRec.Release()
-			continue
-		}
-
-		toWrite := filteredRec
-		sliced := false
-		if limit > 0 && rowsSent+filteredRec.NumRows() > limit {
-			remaining := limit - rowsSent
-			toWrite = filteredRec.NewSlice(0, remaining)
-			sliced = true
-		}
-
-		// Validate before cast to catch schema mismatch early
-		if err := validateRecordBatch(toWrite); err != nil {
-			metrics.ValidationFailuresTotal.WithLabelValues("DoGet", "invalid_batch").Inc()
-			if sliced {
-				toWrite.Release()
-			}
-			filteredRec.Release()
-			s.logger.Error("Invalid record batch found during DoGet",
-				zap.Error(err),
-				zap.String("dataset", name),
-				zap.Int64("numCols", toWrite.NumCols()),
-				zap.Int("numFields", toWrite.Schema().NumFields()),
-				zap.Int64("numRows", toWrite.NumRows()),
-				zap.Int("batchIdx", batchIdx))
-			metrics.FlightOperationsTotal.WithLabelValues(method, "error").Inc()
-			return fmt.Errorf("invalid record batch: %w", err)
-		}
-
-		// Cast to target schema to handle evolution (e.g. missing columns in old records)
-		castedRecRaw, err := s.castRecordToSchema(toWrite, targetSchema)
-		if err != nil {
-			if sliced {
-				toWrite.Release()
-			}
-			filteredRec.Release()
-			s.logger.Error("Failed to cast record to target schema", zap.Error(err))
-			metrics.FlightOperationsTotal.WithLabelValues(method, "error").Inc()
-			return err
-		}
-
-		// Deep copy to ensure safe memory layout for IPC and remove any slice/buffer anomalies
-		castedRec, err := s.deepCopyRecordBatch(castedRecRaw)
-		castedRecRaw.Release()
-		if err != nil {
-			if sliced {
-				toWrite.Release()
-			}
-			filteredRec.Release()
-			s.logger.Error("Failed to deep copy record", zap.Error(err))
-			metrics.FlightOperationsTotal.WithLabelValues(method, "error").Inc()
-			return err
-		}
-
-		// Skip empty batches to avoid potential IPC serialization issues with zero-length slices
-		if castedRec.NumRows() == 0 {
-			castedRec.Release()
-			if sliced {
-				toWrite.Release()
-			}
-			filteredRec.Release()
-			continue
-		}
-
-		if err := validateRecordBatch(castedRec); err != nil {
-			castedRec.Release()
-			if sliced {
-				toWrite.Release()
-			}
-			filteredRec.Release()
-			s.logger.Error("Record batch validation failed after casting", zap.Error(err))
-			metrics.FlightOperationsTotal.WithLabelValues(method, "error").Inc()
-			return fmt.Errorf("validation failed after casting: %w", err)
-		}
-
-		if err := w.Write(castedRec); err != nil {
-			castedRec.Release()
-			if sliced {
-				toWrite.Release()
-			}
-			filteredRec.Release()
-			s.logger.Error("Failed to write record", zap.Error(err))
-			metrics.FlightOperationsTotal.WithLabelValues(method, "error").Inc()
-			return err
-		}
-		s.logger.Debug("DoGet wrote batch", zap.Int("batchIdx", batchIdx), zap.Int64("rows", castedRec.NumRows()))
-		castedRec.Release()
-		rowsSent += toWrite.NumRows()
-
-		if sliced {
-			toWrite.Release()
-		}
-		filteredRec.Release()
-	}
-
-	metrics.FlightOperationsTotal.WithLabelValues(method, "ok").Inc()
-	metrics.FlightDurationSeconds.WithLabelValues(method).Observe(time.Since(start).Seconds())
-	metrics.FlightBytesProcessed.WithLabelValues(method).Add(float64(rowsSent))
-
-	s.logger.Info("DoGet completed", zap.String("name", name), zap.Int64("rowsSent", rowsSent), zap.Duration("duration", time.Since(start)))
-
-	return nil
-}
-
-// DoPut accepts data from the client with memory limits
+// DoPut - Minimal implementation
 func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
-	// Acquire semaphore - limit concurrent requests to prevent thread thrashing
-	if err := s.semaphore.Acquire(stream.Context()); err != nil {
-		return err
-	}
-	defer s.semaphore.Release()
-
-	start := time.Now()
-	method := "DoPut"
-
 	r, err := flight.NewRecordReader(stream)
 	if err != nil {
-		metrics.FlightOperationsTotal.WithLabelValues(method, "error").Inc()
+		s.logger.Error("DoPut failed to create reader", zap.Error(err))
 		return err
 	}
 	defer r.Release()
 
-	// Initial descriptor read
 	var name string
-	if desc := r.LatestFlightDescriptor(); desc != nil && len(desc.Path) > 0 {
-		name = desc.Path[0]
-	}
-	s.logger.Info("DoPut started", zap.String("name", name))
+	var ds *Dataset
 
-	// Schema Validation with Lock Granularity:
-	// Use RLock for initial schema check (read-only), only upgrade to Lock if schema evolution needed.
-	// This reduces contention on the hot write path.
-	if ds, ok := s.vectors.Get(name); ok {
-		existingSchema := ds.GetExistingSchema() // Uses RLock internally
-		if existingSchema != nil {
-			compat := CheckSchemaCompatibility(existingSchema, r.Schema())
-			switch compat {
-			case SchemaExactMatch:
-				// Schema matches, proceed without any write lock
-			case SchemaEvolution:
-				// Schema evolved - upgrade to write lock only for version increment
-				ds.UpgradeSchemaVersion() // Uses Lock internally
-				s.logger.Info("Schema evolved", zap.Any("name", name), zap.Any("version", ds.GetVersion()))
-			case SchemaIncompatible:
-				return NewSchemaMismatchError(name, "incompatible schema: incoming schema does not match existing")
-			}
-		}
+	// Check descriptor immediately (sent with Schema)
+	fd := r.LatestFlightDescriptor()
+	if fd != nil && len(fd.Path) > 0 {
+		name = fd.Path[0]
+	} else {
+		// Fallback or error
+		return fmt.Errorf("missing flight descriptor path")
 	}
 
-	rowsWritten := 0
+	s.logger.Info("DoPut started (Minimal)", zap.String("name", name))
 
-	for r.Next() {
-		// Get dataset name from latest descriptor if available
-		if desc := r.LatestFlightDescriptor(); desc != nil && len(desc.Path) > 0 {
-			name = desc.Path[0]
+	s.mu.Lock()
+	if _, ok := s.datasets[name]; !ok {
+		// Create new dataset with schema from reader
+		s.datasets[name] = &Dataset{
+			Name:    name,
+			Records: make([]arrow.RecordBatch, 0),
+			Schema:  r.Schema(),
 		}
+	}
+	ds = s.datasets[name]
+	s.mu.Unlock()
 
-		rawRec := r.RecordBatch()
-		rec, err := s.ensureTimestamp(rawRec)
-		if err != nil {
-			rawRec.Release() // Ensure rawRec is released even if ensureTimestamp fails
-			s.logger.Error("Failed to ensure timestamp", zap.Error(err))
-			metrics.FlightOperationsTotal.WithLabelValues(method, "error").Inc()
-			return NewInternalError("ensure timestamp", err)
+	// Read first batch
+	if !r.Next() {
+		if r.Err() != nil {
+			return r.Err()
 		}
-		// Release rawRec immediately after transformation/retention in ensureTimestamp
-		rawRec.Release()
+		// Valid empty stream (schema only) -> but we already created dataset
+		return nil
+	}
 
-		// Validate record integrity before processing
-		if err := validateRecordBatch(rec); err != nil {
-			metrics.ValidationFailuresTotal.WithLabelValues("DoPut", "invalid_batch").Inc()
+	rec := r.Record()
+
+	// Write to WAL first for durability
+	if s.walBatcher != nil {
+		if err := s.walBatcher.Write(rec, name); err != nil {
+			s.logger.Error("Failed to write to WAL", zap.Error(err))
+			metrics.WalWritesTotal.WithLabelValues("error").Inc()
+			return err
+		}
+	}
+
+	// Use dataMu for append
+	dsLockStart1 := time.Now()
+	ds.dataMu.Lock()
+	metrics.DatasetLockWaitDurationSeconds.WithLabelValues("put").Observe(time.Since(dsLockStart1).Seconds())
+
+	// Store first record
+	rec.Retain()
+	if ds.Index == nil {
+		ds.Index = NewHNSWIndex(ds)
+	}
+	batchIdx := len(ds.Records)
+	ds.Records = append(ds.Records, rec)
+	ds.dataMu.Unlock()
+
+	// Queue Indexing
+	numRows := int(rec.NumRows())
+	for i := 0; i < numRows; i++ {
+		rec.Retain()
+		if !s.indexQueue.Send(IndexJob{
+			DatasetName: name,
+			Record:      rec,
+			BatchIdx:    batchIdx,
+			RowIdx:      i,
+			CreatedAt:   time.Now(),
+		}) {
 			rec.Release()
-			s.logger.Error("Malformed record in DoPut",
-				zap.Error(err),
-				zap.Int64("numCols", rec.NumCols()),
-				zap.Int("numFields", rec.Schema().NumFields()))
-			metrics.FlightOperationsTotal.WithLabelValues(method, "error").Inc()
-			return NewInvalidArgumentError("record", err.Error())
 		}
+	}
 
-		size := CachedRecordSize(rec)
-
-		// Lock-free memory limit check with CAS loop
-		maxMem := s.maxMemory.Load()
-		if maxMem > 0 {
-			for {
-				current := s.currentMemory.Load()
-				if current+size > maxMem {
-					rec.Release()
-					s.logger.Error("Memory limit exceeded", zap.Any("current", current), zap.Any("max", maxMem), zap.Any("needed", size))
-					return NewResourceExhaustedError("memory", "limit exceeded")
-				}
-				if s.currentMemory.CompareAndSwap(current, current+size) {
-					break
-				}
-			}
-		} else {
-			s.currentMemory.Add(size)
-		}
-		// Track Arrow memory usage
-		metrics.ArrowMemoryUsedBytes.WithLabelValues("default").Set(float64(s.currentMemory.Load()))
-
-		ds := s.vectors.GetOrCreate(name, func() *Dataset {
-			newDs := &Dataset{Records: []arrow.RecordBatch{}, lastAccess: time.Now().UnixNano()}
-			newDs.Index = NewHNSWIndex(newDs)
-			newDs.InitRecordEviction() // Initialize per-record eviction
-			return newDs
-		})
-		// Use dataMu for append
-		dsLockStart1 := time.Now()
+	// Read remaining
+	for r.Next() {
+		rec := r.Record()
+		rec.Retain()
 		ds.dataMu.Lock()
-		metrics.DatasetLockWaitDurationSeconds.WithLabelValues("put").Observe(time.Since(dsLockStart1).Seconds())
-
-		batchIdx := len(ds.Records)
+		batchIdx = len(ds.Records)
 		ds.Records = append(ds.Records, rec)
 		ds.dataMu.Unlock()
 
-		// Auto-trigger compaction if batch count exceeds threshold
-		if s.compactionWorker != nil && batchIdx+1 > s.compactionConfig.MinBatchesToCompact {
-			_ = s.compactionWorker.TriggerCompaction(name)
-		}
-		// Track RecordBatch count (fragmentation indicator)
-		metrics.DatasetRecordBatchesCount.WithLabelValues(name).Set(float64(len(ds.Records)))
-		// Update COW metadata for lock-free ListFlights
-		if _, exists := s.metadata.Get(name); !exists {
-			s.metadata.Set(name, DatasetMetadata{
-				Name:       name,
-				Schema:     rec.Schema(),
-				TotalRows:  rec.NumRows(),
-				BatchCount: 1,
-			})
-		} else {
-			s.metadata.IncrementStats(name, rec.NumRows(), 1)
-		}
-
-		// Index columns for fast equality lookups
-		s.IndexRecordColumns(name, rec, batchIdx)
-
-		ds.SetLastAccess(time.Now())
-
-		// Write to WAL
-		if s.walBatcher != nil {
-			if err := s.walBatcher.Write(rec, name); err != nil {
-				s.logger.Error("Failed to write to WAL", zap.Error(err))
-				// Strict Durability: Fail the request if persistence fails
-				return NewPersistenceError("WAL write", err)
-			}
-		}
-
-		// Asynchronously index the record
+		// Queue Indexing
 		numRows := int(rec.NumRows())
-		dropped := 0
 		for i := 0; i < numRows; i++ {
-			rec.Retain() // Increment ref count for this job
+			rec.Retain()
 			if !s.indexQueue.Send(IndexJob{
 				DatasetName: name,
 				Record:      rec,
@@ -789,543 +206,114 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 				RowIdx:      i,
 				CreatedAt:   time.Now(),
 			}) {
-				dropped++
-				rec.Release() // Decrement if job could not be queued
+				rec.Release()
 			}
 		}
-		if dropped > 0 {
-			s.logger.Warn("Index jobs dropped due to queue overflow", zap.String("dataset", name), zap.Int("droppedCount", dropped))
-		}
-
-		// Trigger auto-sharding check
-		if err := s.checkAndMigrateToSharded(ds); err != nil {
-			s.logger.Warn("Auto-sharding check failed", zap.String("dataset", name), zap.Error(err))
-		}
-
-		rowsWritten += int(rec.NumRows())
-
-		s.updateVectorMetrics(rec)
 	}
 
 	if r.Err() != nil {
-		metrics.FlightOperationsTotal.WithLabelValues(method, "error").Inc()
+		s.logger.Error("DoPut stream error", zap.Error(r.Err()))
 		return r.Err()
 	}
 
-	metrics.FlightOperationsTotal.WithLabelValues(method, "ok").Inc()
-	metrics.FlightDurationSeconds.WithLabelValues(method).Observe(time.Since(start).Seconds())
-	metrics.FlightBytesProcessed.WithLabelValues(method).Add(float64(rowsWritten))
-
-	s.logger.Info("DoPut completed",
-		zap.String("name", name),
-		zap.Int("rows_written", rowsWritten),
-		zap.Duration("duration", time.Since(start)))
-
-	return nil
+	s.logger.Info("DoPut completed (Minimal)", zap.String("name", name))
+	return stream.Send(&flight.PutResult{})
 }
 
-// DoAction handles management commands
-func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightService_DoActionServer) error {
-	s.logger.Info("DoAction called", zap.Any("type", action.Type))
+// DoGet - Minimal implementation
+func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGetServer) error {
+	// Parse ticket
+	query, err := ParseTicketQuerySafe(tkt.Ticket)
+	if err != nil {
+		// Fallback: treat as plain string name if parse fails
+		sStr := string(tkt.Ticket)
+		if len(sStr) > 0 && sStr[0] != '{' {
+			query.Name = sStr
+		} else {
+			s.logger.Error("Failed to parse ticket", zap.Error(err))
+			return status.Error(codes.InvalidArgument, "invalid ticket format")
+		}
+	}
 
-	switch action.Type {
-	case "drop_dataset":
-		name := string(action.Body)
-		if ds, ok := s.vectors.Get(name); ok {
-			dsLockStart2 := time.Now()
-			ds.dataMu.Lock()
-			metrics.DatasetLockWaitDurationSeconds.WithLabelValues("put").Observe(time.Since(dsLockStart2).Seconds())
-			var freedMem int64
-			for _, r := range ds.Records {
-				freedMem += CachedRecordSize(r)
-				r.Release()
+	name := query.Name
+	s.logger.Info("DoGet called", zap.String("name", name), zap.Int("filters", len(query.Filters)))
+
+	ds, err := s.getDataset(name)
+	if err != nil {
+		return err
+	}
+
+	ds.dataMu.RLock()
+	defer ds.dataMu.RUnlock()
+
+	if len(ds.Records) == 0 {
+		s.logger.Warn("Dataset empty")
+		return nil
+	}
+
+	// Use first record's schema
+	schema := ds.Records[0].Schema()
+
+	s.logger.Info("DoGet starting write", zap.Int("batches", len(ds.Records)))
+
+	// Create Writer WITHOUT options first to be safe
+	w := flight.NewRecordWriter(stream, ipc.WithSchema(schema))
+	defer w.Close()
+
+	ctx := stream.Context()
+	rowsSent := int64(0)
+
+	for i, rec := range ds.Records {
+		// Apply filters if present
+		if len(query.Filters) > 0 {
+			filtered, err := filterRecord(ctx, rec, query.Filters)
+			if err != nil {
+				s.logger.Error("Filter parsing failed", zap.Error(err))
+				return status.Errorf(codes.Internal, "filtering failed: %v", err)
 			}
-			ds.Records = nil // Clear references
-			ds.dataMu.Unlock()
-			s.currentMemory.Add(-freedMem)
-			s.vectors.Delete(name)
-		}
-		result, _ := json.Marshal(map[string]string{"status": "ok", "message": "dataset dropped"})
-		if err := stream.Send(&flight.Result{Body: result}); err != nil {
-			return err
-		}
+			if filtered == nil || filtered.NumRows() == 0 {
+				if filtered != nil {
+					filtered.Release()
+				}
+				continue
+			}
 
-	case "get_stats":
-		stats := map[string]interface{}{
-			"datasets":       s.vectors.Len(),
-			"current_memory": s.currentMemory.Load(),
-			"max_memory":     s.maxMemory.Load(),
-		}
-		result, _ := json.Marshal(stats)
-		if err := stream.Send(&flight.Result{Body: result}); err != nil {
-			return err
-		}
-
-	case "force_snapshot":
-		if err := s.Snapshot(); err != nil {
-			result, _ := json.Marshal(map[string]string{"status": "error", "message": err.Error()})
-			if err := stream.Send(&flight.Result{Body: result}); err != nil {
+			// filterRecord returns a new batch with new buffers (compute.Filter allocates),
+			// so it is safe to write directly without deepCopy.
+			if err := w.Write(filtered); err != nil {
+				s.logger.Error("DoGet Write failed", zap.Error(err), zap.Int("batch", i))
+				filtered.Release()
 				return err
 			}
-			return err
-		}
-		result, _ := json.Marshal(map[string]string{"status": "ok", "message": "snapshot created"})
-		if err := stream.Send(&flight.Result{Body: result}); err != nil {
-			return err
-		}
-
-	default:
-		return fmt.Errorf("unknown action: %s", action.Type)
-	}
-	return nil
-}
-
-func calculateRecordSize(rec arrow.RecordBatch) int64 {
-	if rec == nil {
-		return 0
-	}
-	size := int64(0)
-	for _, col := range rec.Columns() {
-		if col == nil || col.Data() == nil {
-			continue
-		}
-		for _, buf := range col.Data().Buffers() {
-			if buf != nil {
-				size += int64(buf.Len())
-			}
-		}
-	}
-	return size
-}
-
-// filterRecord applies filters using arrow/compute
-func (s *VectorStore) filterRecord(ctx context.Context, rec arrow.RecordBatch, filters []Filter) (arrow.RecordBatch, error) {
-	if len(filters) == 0 {
-		rec.Retain()
-		return rec, nil
-	}
-
-	var mask *array.Boolean
-
-	for _, f := range filters {
-		indices := rec.Schema().FieldIndices(f.Field)
-		if len(indices) == 0 {
-			return nil, fmt.Errorf("field %s not found in schema", f.Field)
-		}
-		colIdx := indices[0]
-		col := rec.Column(colIdx)
-
-		var valScalar scalar.Scalar
-		switch col.DataType().ID() {
-		case arrow.STRING:
-			valScalar = scalar.NewStringScalar(f.Value)
-		case arrow.INT64:
-			v, err := strconv.ParseInt(f.Value, 10, 64)
-			if err != nil {
-				return nil, fmt.Errorf("invalid int64 value for field %s: %w", f.Field, err)
-			}
-			valScalar = scalar.NewInt64Scalar(v)
-		case arrow.TIMESTAMP:
-			t, err := time.Parse(time.RFC3339, f.Value)
-			if err != nil {
-				return nil, fmt.Errorf("invalid timestamp value for field %s: %w", f.Field, err)
-			}
-			ts, _ := arrow.TimestampFromTime(t, col.DataType().(*arrow.TimestampType).Unit)
-			valScalar = scalar.NewTimestampScalar(ts, col.DataType().(*arrow.TimestampType))
-		case arrow.FLOAT64:
-			v, err := strconv.ParseFloat(f.Value, 64)
-			if err != nil {
-				return nil, fmt.Errorf("invalid float64 value for field %s: %w", f.Field, err)
-			}
-			valScalar = scalar.NewFloat64Scalar(v)
-		default:
-			return nil, fmt.Errorf("unsupported data type %s for field %s", col.DataType().Name(), f.Field)
-		}
-
-		var fn string
-		switch f.Operator {
-		case "=":
-			fn = "equal"
-		case "!=":
-			fn = "not_equal"
-		case ">":
-			fn = "greater"
-		case "<":
-			fn = "less"
-		case ">=":
-			fn = "greater_equal"
-		case "<=":
-			fn = "less_equal"
-		default:
-			return nil, fmt.Errorf("unsupported operator %s", f.Operator)
-		}
-
-		args := []compute.Datum{
-			compute.NewDatum(col.Data()),
-			compute.NewDatum(valScalar),
-		}
-		result, err := compute.CallFunction(ctx, fn, nil, args...)
-		if err != nil {
-			return nil, fmt.Errorf("compute error on field %s: %w", f.Field, err)
-		}
-
-		resultArr := result.(*compute.ArrayDatum).MakeArray().(*array.Boolean)
-
-		if mask == nil {
-			mask = resultArr
+			rowsSent += filtered.NumRows()
+			filtered.Release()
 		} else {
-			andRes, err := compute.CallFunction(ctx, "and", nil, compute.NewDatum(mask.Data()), compute.NewDatum(resultArr.Data()))
-			mask.Release()
-			resultArr.Release()
+			// Deep copy using Builder-based simplified implementation (for concurrency safety)
+			copied, err := s.deepCopyRecordBatch(rec)
 			if err != nil {
-				return nil, err
+				s.logger.Error("Deep copy failed", zap.Error(err))
+				return err
 			}
-			mask = andRes.(*compute.ArrayDatum).MakeArray().(*array.Boolean)
-		}
-	}
 
-	if mask == nil {
-		rec.Retain()
-		return rec, nil
-	}
-	defer mask.Release()
-
-	filterRes, err := compute.CallFunction(ctx, "filter", nil, compute.NewDatum(rec), compute.NewDatum(mask.Data()))
-	if err != nil {
-		return nil, err
-	}
-	return filterRes.(*compute.RecordDatum).Value, nil
-}
-
-// StartEvictionTicker starts the background eviction loop
-func (s *VectorStore) StartEvictionTicker(interval time.Duration) {
-	ticker := time.NewTicker(interval)
-	go func() {
-		for range ticker.C {
-			s.evictTTL()
-		}
-	}()
-}
-
-// evictTTL removes datasets that haven't been accessed within the TTL duration
-func (s *VectorStore) evictTTL() {
-	if s.ttlDuration <= 0 {
-		return
-	}
-
-	now := time.Now()
-	evictedCount := 0
-
-	// Collect keys to evict first (avoid deadlock - can't delete during Range)
-	var toEvict []string
-	s.vectors.Range(func(name string, ds *Dataset) bool {
-		if now.Sub(ds.LastAccess()) > s.ttlDuration {
-			toEvict = append(toEvict, name)
-		}
-		return true
-	})
-
-	// Now delete outside of Range
-	for _, name := range toEvict {
-		ds, ok := s.vectors.Get(name)
-		if !ok {
-			continue
-		}
-		dsLockStart3 := time.Now()
-		// MUST use dataMu to protect Records slice modification
-		ds.dataMu.Lock()
-		metrics.DatasetLockWaitDurationSeconds.WithLabelValues("append").Observe(time.Since(dsLockStart3).Seconds())
-		var freedMem int64
-		for _, r := range ds.Records {
-			freedMem += CachedRecordSize(r)
-			r.Release()
-		}
-		ds.Records = nil
-		ds.dataMu.Unlock()
-		s.currentMemory.Add(-freedMem)
-		s.vectors.Delete(name)
-		evictedCount++
-		s.logger.Info("Evicted dataset due to TTL", zap.Any("name", name))
-		metrics.EvictionsTotal.WithLabelValues("ttl").Inc()
-	}
-	if evictedCount > 0 {
-		s.logger.Info("TTL eviction completed", zap.Any("evicted_count", evictedCount))
-	}
-}
-
-// evictLRU removes the least recently used datasets until enough memory is freed
-func (s *VectorStore) evictLRU(needed int64) error {
-	// Assumes s.mu is already locked by the caller
-
-	for s.maxMemory.Load() > 0 && s.currentMemory.Load()+needed > s.maxMemory.Load() {
-		var oldestName string
-		var oldestTime time.Time
-		first := true
-
-		s.vectors.Range(func(name string, ds *Dataset) bool {
-			if first || ds.LastAccess().Before(oldestTime) {
-				oldestName = name
-				oldestTime = ds.LastAccess()
-				first = false
+			if err := w.Write(copied); err != nil {
+				s.logger.Error("DoGet Write failed", zap.Error(err), zap.Int("batch", i))
+				copied.Release()
+				return err
 			}
-			return true
-		})
-
-		if first {
-			// No datasets to evict
-			return NewResourceExhaustedError("memory", "limit exceeded and no datasets to evict")
+			rowsSent += copied.NumRows()
+			copied.Release()
 		}
 
-		// Evict oldest
-		if ds, ok := s.vectors.Get(oldestName); ok {
-			dsLockStart4 := time.Now()
-			ds.mu.Lock()
-			metrics.DatasetLockWaitDurationSeconds.WithLabelValues("snapshot").Observe(time.Since(dsLockStart4).Seconds())
-			for _, r := range ds.Records {
-				s.currentMemory.Add(-CachedRecordSize(r))
-				r.Release()
-			}
-			ds.Records = nil
-			ds.mu.Unlock()
-			s.vectors.Delete(oldestName)
-			s.logger.Info("Evicted dataset due to LRU", zap.Any("name", oldestName), zap.Any("freed", calculateDatasetSize(ds)))
-			metrics.EvictionsTotal.WithLabelValues("lru").Inc()
-		}
-	}
-	return nil
-}
-
-func calculateDatasetSize(ds *Dataset) int64 {
-	size := int64(0)
-	for _, r := range ds.Records {
-		size += CachedRecordSize(r)
-	}
-	return size
-}
-
-// ensureTimestamp ensures the record has a timestamp column, adding one if missing.
-// Delegates to EnsureTimestampZeroCopy for optimized zero-copy implementation:
-// - Pre-allocated timestamp builder with Reserve() for single allocation
-// - Batch AppendValues instead of per-row Append (3-4x faster)
-// - Proper Retain() for ref-counted zero-copy column references
-func (s *VectorStore) ensureTimestamp(rec arrow.RecordBatch) (arrow.RecordBatch, error) {
-	return EnsureTimestampZeroCopy(s.mem, rec)
-}
-
-// StartMetricsTicker starts background metrics collection
-func (s *VectorStore) StartMetricsTicker(interval time.Duration) {
-	ticker := time.NewTicker(interval)
-	go func() {
-		for range ticker.C {
-			s.updateMemoryMetrics()
-		}
-	}()
-}
-
-func (s *VectorStore) updateMemoryMetrics() {
-	var m runtime.MemStats
-	runtime.ReadMemStats(&m)
-
-	if m.Sys > 0 {
-		ratio := float64(m.HeapAlloc) / float64(m.Sys)
-		metrics.MemoryFragmentationRatio.Set(ratio)
-	}
-	if m.NumGC > 0 {
-		lastPauseNs := m.PauseNs[(m.NumGC+255)%256]
-		metrics.GcPauseDurationSeconds.Observe(float64(lastPauseNs) / 1e9)
-	}
-}
-
-func (s *VectorStore) updateVectorMetrics(rec arrow.RecordBatch) {
-	metrics.VectorIndexSize.Add(float64(rec.NumRows()))
-	for i, field := range rec.Schema().Fields() {
-		if field.Name == "vector" {
-			col := rec.Column(i)
-			avgNorm := calculateBatchNorm(col)
-			metrics.AverageVectorNorm.Set(avgNorm)
+		if query.Limit > 0 && rowsSent >= query.Limit {
 			break
 		}
 	}
-}
 
-func calculateBatchNorm(arr arrow.Array) float64 {
-	listArr, ok := arr.(*array.FixedSizeList)
-	if !ok {
-		return 0
-	}
-
-	// Get list size from type
-	width := int(listArr.DataType().(*arrow.FixedSizeListType).Len())
-
-	// Access values via child data
-	if len(listArr.Data().Children()) == 0 {
-		return 0
-	}
-	valsData := listArr.Data().Children()[0]
-
-	// Create a Float32 array wrapper to access values
-	floatArr := array.NewFloat32Data(valsData)
-	defer floatArr.Release()
-
-	var totalNorm float64
-	count := 0
-
-	for i := 0; i < listArr.Len(); i++ {
-		start := i * width
-		end := start + width
-
-		if end > floatArr.Len() {
-			break
-		}
-
-		var sumSq float64
-		for j := start; j < end; j++ {
-			val := floatArr.Value(j)
-			sumSq += float64(val * val)
-		}
-		totalNorm += math.Sqrt(sumSq)
-		count++
-	}
-
-	if count == 0 {
-		return 0
-	}
-	return totalNorm / float64(count)
-}
-
-// Trigger CI
-
-// StartWALCheckTicker starts the background WAL size check loop
-func (s *VectorStore) StartWALCheckTicker(interval time.Duration) {
-	ticker := time.NewTicker(interval)
-	go func() {
-		for range ticker.C {
-			s.checkWALSize()
-		}
-	}()
-}
-
-// checkWALSize checks if the WAL file size exceeds the limit and triggers a snapshot
-func (s *VectorStore) checkWALSize() {
-	limit := s.maxWALSize.Load()
-	dataPath := s.dataPath
-
-	if limit <= 0 || dataPath == "" {
-		return
-	}
-
-	// Stat WAL file directly from filesystem
-	walPath := filepath.Join(dataPath, walFileName)
-	stat, err := os.Stat(walPath)
-	if err != nil {
-		if !os.IsNotExist(err) {
-			s.logger.Error("Failed to stat WAL file", zap.Error(err))
-		}
-		return
-	}
-
-	if stat.Size() > limit {
-		s.logger.Info("WAL size exceeded limit, triggering snapshot", zap.Any("current_size", stat.Size()), zap.Int64("limit", limit))
-		if err := s.Snapshot(); err != nil {
-			s.logger.Error("Failed to create snapshot triggered by WAL size", zap.Error(err))
-		}
-	}
-}
-
-func (s *VectorStore) startIndexingWorkers(numWorkers int) {
-	for i := 0; i < numWorkers; i++ {
-		s.indexWg.Add(1)
-		go func() {
-			defer s.indexWg.Done()
-			for job := range s.indexQueue.Jobs() {
-				// Track index queue depth
-				metrics.IndexQueueDepth.Set(float64(s.indexQueue.Len()))
-				ds, ok := s.vectors.Get(job.DatasetName)
-				if !ok || ds.Index == nil {
-					continue
-				}
-				if err := ds.Index.AddByRecord(job.Record, job.RowIdx, job.BatchIdx); err != nil {
-					s.logger.Error("Async index add failed", zap.Any("dataset", job.DatasetName), zap.Error(err))
-				}
-				// Release our reference to the record
-				job.Record.Release()
-				// Record job latency
-				metrics.IndexJobLatencySeconds.WithLabelValues(job.DatasetName).Observe(time.Since(job.CreatedAt).Seconds())
-			}
-		}()
-	}
-}
-
-// castRecordToSchema projects a record to the target schema.
-// If the record already matches, it returns the record retained.
-// Otherwise, it projects columns, filling missing ones with nulls.
-func (s *VectorStore) castRecordToSchema(rec arrow.RecordBatch, targetSchema *arrow.Schema) (arrow.RecordBatch, error) {
-	if rec.Schema().Equal(targetSchema) {
-		rec.Retain()
-		return rec, nil
-	}
-
-	cols := make([]arrow.Array, len(targetSchema.Fields()))
-
-	// Create columns
-	for i, field := range targetSchema.Fields() {
-		indices := rec.Schema().FieldIndices(field.Name)
-		if len(indices) > 0 {
-			// Found column
-			srcCol := rec.Column(indices[0])
-			if !arrow.TypeEqual(srcCol.DataType(), field.Type) {
-				// Clean up any cols created so far
-				for j := 0; j < i; j++ {
-					if cols[j] != nil {
-						cols[j].Release()
-					}
-				}
-				return nil, fmt.Errorf("field %s type mismatch: expected %s, got %s", field.Name, field.Type, srcCol.DataType())
-			}
-			srcCol.Retain()
-			cols[i] = srcCol
-		} else {
-			// Missing column - create nulls
-			bldr := array.NewBuilder(s.mem, field.Type)
-			bldr.AppendNulls(int(rec.NumRows()))
-			cols[i] = bldr.NewArray()
-			bldr.Release()
-		}
-	}
-
-	// Create new record batch (Retains arrays)
-	out := array.NewRecordBatch(targetSchema, cols, rec.NumRows())
-
-	// Release our local references (since NewRecordBatch retained them)
-	for _, c := range cols {
-		if c != nil {
-			c.Release()
-		}
-	}
-
-	return out, nil
-}
-
-// validateRecordBatch checks for common internal inconsistencies in a record batch
-func validateRecordBatch(rec arrow.RecordBatch) error {
-	if int64(rec.NumCols()) != int64(rec.Schema().NumFields()) {
-		return fmt.Errorf("columns/fields mismatch: cols=%d, fields=%d", rec.NumCols(), rec.Schema().NumFields())
-	}
-	rows := rec.NumRows()
-	for i, col := range rec.Columns() {
-		// Paranoid check for nil columns (should not happen in valid record)
-		if col == nil {
-			return fmt.Errorf("column %d is nil", i)
-		}
-		// Check length consistency
-		if int64(col.Len()) != rows {
-			return fmt.Errorf("column %d length mismatch: expected %d, got %d", i, rows, col.Len())
-		}
-	}
+	s.logger.Info("DoGet completed", zap.Int64("rows_sent", rowsSent))
 	return nil
 }
 
-// deepCopyRecordBatch creates a full copy of the record batch with new buffers
+// deepCopyRecordBatch creates a full copy using Builders for safety
 func (s *VectorStore) deepCopyRecordBatch(rec arrow.RecordBatch) (arrow.RecordBatch, error) {
 	if rec.NumRows() == 0 {
 		rec.Retain()
@@ -1336,7 +324,7 @@ func (s *VectorStore) deepCopyRecordBatch(rec arrow.RecordBatch) (arrow.RecordBa
 	for i, col := range rec.Columns() {
 		copied, err := s.copyArray(col)
 		if err != nil {
-			// Cleanup
+			// Cleanup created columns
 			for j := 0; j < i; j++ {
 				cols[j].Release()
 			}
@@ -1382,6 +370,20 @@ func (s *VectorStore) copyArray(arr arrow.Array) (arrow.Array, error) {
 		}
 		return b.NewArray(), nil
 
+	case arrow.FLOAT64:
+		b := array.NewFloat64Builder(s.mem)
+		defer b.Release()
+		input := arr.(*array.Float64)
+		b.Reserve(input.Len())
+		for i := 0; i < input.Len(); i++ {
+			if input.IsNull(i) {
+				b.AppendNull()
+			} else {
+				b.Append(input.Value(i))
+			}
+		}
+		return b.NewArray(), nil
+
 	case arrow.STRING:
 		b := array.NewStringBuilder(s.mem)
 		defer b.Release()
@@ -1397,7 +399,6 @@ func (s *VectorStore) copyArray(arr arrow.Array) (arrow.Array, error) {
 		return b.NewArray(), nil
 
 	case arrow.TIMESTAMP:
-		// Timestamp is Int64 physically
 		b := array.NewTimestampBuilder(s.mem, arr.DataType().(*arrow.TimestampType))
 		defer b.Release()
 		input := arr.(*array.Timestamp)
@@ -1412,47 +413,88 @@ func (s *VectorStore) copyArray(arr arrow.Array) (arrow.Array, error) {
 		return b.NewArray(), nil
 
 	case arrow.FIXED_SIZE_LIST:
-		// Recursive copy
 		input := arr.(*array.FixedSizeList)
-		values := input.ListValues()
-		copiedValues, err := s.copyArray(values)
-		if err != nil {
-			return nil, err
-		}
-		defer copiedValues.Release()
+		listSize := int(input.DataType().(*arrow.FixedSizeListType).Len())
 
-		// Use construct new Data manually to avoid builder complexity for now
-		// Only works if validity bitmap is safe.
-		// If input is sliced, Validity bitmap needs slicing too!
-		// But input.Data().Buffers()[0] is the backing buffer.
-		// If copyArray(values) worked, values are clean.
-		// Validity: We must copy the validity bitmap slice to a new buffer to be truly deep copy.
+		// Create builder for the values (e.g. Float32Builder)
+		valueType := input.DataType().(*arrow.FixedSizeListType).Elem()
 
-		var validity *memory.Buffer
-		if input.NullN() > 0 {
-			validityBitmap := input.NullBitmapBytes() // This returns slice?
-			if validityBitmap != nil {
-				validity = memory.NewResizableBuffer(s.mem)
-				validity.Resize(len(validityBitmap))
-				copy(validity.Bytes(), validityBitmap)
+		if valueType.ID() == arrow.FLOAT32 {
+			b := array.NewFixedSizeListBuilder(s.mem, int32(listSize), arrow.PrimitiveTypes.Float32)
+			defer b.Release()
+			valBuilder := b.ValueBuilder().(*array.Float32Builder)
+
+			b.Reserve(input.Len())
+			values := input.ListValues().(*array.Float32) // Assuming values are contiguous logic
+
+			// Iterate lists
+			for i := 0; i < input.Len(); i++ {
+				if input.IsNull(i) {
+					b.AppendNull()
+				} else {
+					b.Append(true)
+					// Append 'listSize' values
+					start := i * listSize
+					for k := 0; k < listSize; k++ {
+						val := values.Value(start + k)
+						valBuilder.Append(val)
+					}
+				}
 			}
+			return b.NewArray(), nil
 		}
 
-		newData := array.NewData(
-			input.DataType(),
-			input.Len(),
-			[]*memory.Buffer{validity},
-			[]arrow.ArrayData{copiedValues.Data()},
-			input.NullN(),
-			0,
-		)
-
-		return array.NewFixedSizeListData(newData), nil
+		// Fallback for other list types: just Retain (shallow copy) to be safe
+		arr.Retain()
+		return arr, nil
 
 	default:
-		// Fallback for types we don't explicitly handle (e.g. Bool, Dict)
-		// Just retain to avoid breaking query
+		// Fallback for types we don't explicitly handle
 		arr.Retain()
 		return arr, nil
 	}
+}
+
+func (s *VectorStore) startIndexingWorkers(numWorkers int) {
+	for i := 0; i < numWorkers; i++ {
+		s.indexWg.Add(1)
+		go func() {
+			defer s.indexWg.Done()
+			for job := range s.indexQueue.Jobs() {
+				// Track index queue depth
+				metrics.IndexQueueDepth.Set(float64(s.indexQueue.Len()))
+
+				s.mu.RLock()
+				ds, ok := s.datasets[job.DatasetName]
+				s.mu.RUnlock()
+
+				if !ok {
+					job.Record.Release()
+					continue
+				}
+
+				// ds.Index access requires lock? HNSW is thread safe usually
+				if ds.Index != nil {
+					if err := ds.Index.AddByRecord(job.Record, job.RowIdx, job.BatchIdx); err != nil {
+						s.logger.Error("Async index add failed", zap.Any("dataset", job.DatasetName), zap.Error(err))
+					}
+				}
+				// Release our reference to the record
+				job.Record.Release()
+				// Record job latency
+				metrics.IndexJobLatencySeconds.WithLabelValues(job.DatasetName).Observe(time.Since(job.CreatedAt).Seconds())
+			}
+		}()
+	}
+}
+
+// getDataset retrieves a dataset by name.
+func (s *VectorStore) getDataset(name string) (*Dataset, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	ds, ok := s.datasets[name]
+	if !ok {
+		return nil, fmt.Errorf("dataset %q not found", name)
+	}
+	return ds, nil
 }

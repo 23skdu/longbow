@@ -29,9 +29,9 @@ type Index interface {
 	// Returns just IDs.
 	Search(query []float32, k int) []VectorID
 
-	// SearchVectors performs k-NN search returning full results with scores.
-	// This matches the existing VectorIndex interface.
-	SearchVectors(query []float32, k int) []SearchResult
+	// SearchVectors performs a k-NN search on the index.
+	// filtering is applied if filters serve as a predicate.
+	SearchVectors(query []float32, k int, filters []Filter) []SearchResult
 
 	// AddByLocation adds a vector from the dataset using batch and row indices.
 	// This matches the existing VectorIndex interface.

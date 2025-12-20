@@ -247,24 +247,27 @@ func (h *HNSWIndex) getVectorUnsafe(id VectorID) (vec []float32, release func())
 func (h *HNSWIndex) Add(batchIdx, rowIdx int) error {
 	indexLockStart7 := time.Now()
 	h.mu.Lock()
+	defer h.mu.Unlock()
 	metrics.IndexLockWaitDuration.WithLabelValues("write").Observe(time.Since(indexLockStart7).Seconds())
+
 	id := VectorID(len(h.locations))
 	h.locations = append(h.locations, Location{BatchIdx: batchIdx, RowIdx: rowIdx})
-	h.mu.Unlock()
 
 	// Use Zero-Copy Vector Access via helper
 	// This avoids allocating a new slice copy on heap.
-	vec := h.getVectorDirect(id)
+	vec := h.getVectorDirectLocked(id)
 	if vec == nil {
 		return nil
 	}
 
-	// Initialize dims for pool on first vector (thread-safe)
+	// Initialize dims for pool on first vector (thread-safe as we hold mu.Lock)
 	h.dimsOnce.Do(func() {
 		h.dims = len(vec)
 	})
-	// Add to HNSW graph
+
+	// Add to HNSW graph - MUST be under lock as coder/hnsw is not thread-safe for Add
 	h.Graph.Add(hnsw.MakeNode(id, vec))
+
 	// Track HNSW metrics
 	metrics.HnswNodeCount.WithLabelValues(h.dataset.Name).Set(float64(len(h.locations)))
 	nodeCount := float64(len(h.locations))
@@ -275,16 +278,22 @@ func (h *HNSWIndex) Add(batchIdx, rowIdx int) error {
 }
 
 // getVectorDirect retrieves the vector slice directly from Arrow memory without copy.
-// It uses dataMu for safety but does NOT use epoch protection or return a release function,
-// because the vector reference stored in the graph is tied to the Dataset lifecycle.
+// It uses RLock for safety.
 func (h *HNSWIndex) getVectorDirect(id VectorID) []float32 {
 	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.getVectorDirectLocked(id)
+}
+
+// getVectorDirectLocked retrieves the vector slice directly from Arrow memory without copy.
+// Caller MUST hold h.mu.Lock or h.mu.RLock.
+// It uses dataset.dataMu for safety but does NOT use epoch protection or return a release function,
+// because the vector reference stored in the graph is tied to the Dataset lifecycle.
+func (h *HNSWIndex) getVectorDirectLocked(id VectorID) []float32 {
 	if int(id) >= len(h.locations) {
-		h.mu.RUnlock()
 		return nil
 	}
 	loc := h.locations[id]
-	h.mu.RUnlock()
 
 	h.dataset.dataMu.RLock()
 	defer h.dataset.dataMu.RUnlock()

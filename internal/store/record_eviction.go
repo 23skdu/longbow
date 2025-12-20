@@ -89,7 +89,7 @@ func NewRecordEvictionManager() *RecordEvictionManager {
 
 // evictionRecordKey extracts pointer identity from an Arrow record (zero-copy)
 // Uses interface data pointer pattern for stable identity
-func evictionRecordKey(rec arrow.Record) uintptr { //nolint:staticcheck
+func evictionRecordKey(rec arrow.RecordBatch) uintptr { //nolint:staticcheck
 	if rec == nil {
 		return 0
 	}
@@ -102,14 +102,14 @@ func evictionRecordKey(rec arrow.Record) uintptr { //nolint:staticcheck
 }
 
 // Register adds a record to the eviction manager with optional TTL
-func (m *RecordEvictionManager) Register(rec arrow.Record, ttl time.Duration) { //nolint:staticcheck
+func (m *RecordEvictionManager) Register(rec arrow.RecordBatch, ttl time.Duration) { //nolint:staticcheck
 	key := evictionRecordKey(rec)
 	meta := NewRecordMetadata(ttl)
 	m.metadata.Store(key, meta)
 }
 
 // Get retrieves metadata for a record by pointer identity
-func (m *RecordEvictionManager) Get(rec arrow.Record) *RecordMetadata { //nolint:staticcheck
+func (m *RecordEvictionManager) Get(rec arrow.RecordBatch) *RecordMetadata { //nolint:staticcheck
 	key := evictionRecordKey(rec)
 	if val, ok := m.metadata.Load(key); ok {
 		return val.(*RecordMetadata)
@@ -118,7 +118,7 @@ func (m *RecordEvictionManager) Get(rec arrow.Record) *RecordMetadata { //nolint
 }
 
 // Unregister removes a record from the eviction manager
-func (m *RecordEvictionManager) Unregister(rec arrow.Record) { //nolint:staticcheck
+func (m *RecordEvictionManager) Unregister(rec arrow.RecordBatch) { //nolint:staticcheck
 	key := evictionRecordKey(rec)
 	m.metadata.Delete(key)
 }
@@ -231,7 +231,7 @@ func (m *RecordEvictionManager) Count() int {
 
 // EvictExpiredRecords removes TTL-expired records from the dataset using tombstones
 // Returns the number of records evicted
-func (d *Dataset) EvictExpiredRecords() []arrow.Record {
+func (d *Dataset) EvictExpiredRecords() []arrow.RecordBatch {
 	if d.recordEviction == nil {
 		return nil
 	}
@@ -252,7 +252,7 @@ func (d *Dataset) EvictExpiredRecords() []arrow.Record {
 	}
 
 	// Compact d.Records in-place (remove expired)
-	var evicted []arrow.Record
+	var evicted []arrow.RecordBatch
 	n := 0
 	for _, rec := range d.Records {
 		if rec == nil {
@@ -285,7 +285,7 @@ func (d *Dataset) InitRecordEviction() {
 }
 
 // RegisterRecordWithTTL registers a record for per-record TTL eviction
-func (d *Dataset) RegisterRecordWithTTL(rec arrow.Record, ttl time.Duration) { //nolint:staticcheck
+func (d *Dataset) RegisterRecordWithTTL(rec arrow.RecordBatch, ttl time.Duration) { //nolint:staticcheck
 	if d.recordEviction == nil {
 		d.recordEviction = NewRecordEvictionManager()
 	}
@@ -293,7 +293,7 @@ func (d *Dataset) RegisterRecordWithTTL(rec arrow.Record, ttl time.Duration) { /
 }
 
 // GetRecordMetadata retrieves eviction metadata for a record
-func (d *Dataset) GetRecordMetadata(rec arrow.Record) *RecordMetadata { //nolint:staticcheck
+func (d *Dataset) GetRecordMetadata(rec arrow.RecordBatch) *RecordMetadata { //nolint:staticcheck
 	if d.recordEviction == nil {
 		return nil
 	}

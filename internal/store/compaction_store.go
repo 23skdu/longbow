@@ -49,8 +49,8 @@ func (vs *VectorStore) CompactDataset(name string) error {
 		return errors.New("compaction: dataset not found")
 	}
 
-	ds.mu.Lock()
-	defer ds.mu.Unlock()
+	ds.dataMu.Lock()
+	defer ds.dataMu.Unlock()
 
 	if len(ds.Records) < 2 {
 		return nil // Nothing to compact

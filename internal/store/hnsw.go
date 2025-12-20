@@ -1,6 +1,7 @@
 package store
 
 import (
+	"fmt"
 	"math"
 	"sync"
 	"sync/atomic"
@@ -126,12 +127,7 @@ func (h *HNSWIndex) getVector(id VectorID) []float32 {
 
 	// Cast to FixedSizeList
 	listArr, ok := vecCol.(*array.FixedSizeList)
-	if !ok {
-		return nil
-	}
-
-	// Get the underlying float32 array
-	if len(listArr.Data().Children()) == 0 {
+	if !ok || listArr == nil || listArr.Data() == nil || len(listArr.Data().Children()) == 0 {
 		return nil
 	}
 	values := listArr.Data().Children()[0]
@@ -174,7 +170,12 @@ func (h *HNSWIndex) advanceEpoch() {
 
 // Search performs k-NN search using the provided query vector.
 func (h *HNSWIndex) Search(query []float32, k int) []VectorID {
+	// coder/hnsw is not thread-safe for concurrent Search and Add.
+	// Hold RLock to serialize against Add (which holds write lock).
+	h.mu.RLock()
 	neighbors := h.Graph.Search(query, k)
+	h.mu.RUnlock()
+
 	res := make([]VectorID, len(neighbors))
 	for i, n := range neighbors {
 		res[i] = n.Key
@@ -184,16 +185,15 @@ func (h *HNSWIndex) Search(query []float32, k int) []VectorID {
 
 // SearchVectors performs k-NN search returning full results with scores (distances).
 func (h *HNSWIndex) SearchVectors(query []float32, k int) []SearchResult {
+	// coder/hnsw is not thread-safe for concurrent Search and Add.
+	// Hold RLock to serialize against Add (which holds write lock).
+	h.mu.RLock()
 	neighbors := h.Graph.Search(query, k)
+	h.mu.RUnlock()
+
 	res := make([]SearchResult, len(neighbors))
+	distFunc := h.GetDistanceFunc()
 	for i, n := range neighbors {
-		// coder/hnsw Node doesn't expose distance directly in Search results easily?
-		// Actually, neighbors is []hnsw.Node[T]. Node has Key and Value.
-		// Wait, does it have distance?
-		// Let's check coder/hnsw API or just recompute if necessary.
-		// Usually HNSW returns distances.
-		// If not, we recompute using GetDistanceFunc.
-		distFunc := h.GetDistanceFunc()
 		// Get vector for the node to compute distance
 		h.mu.RLock()
 		vec := h.getVectorDirectLocked(n.Key)
@@ -311,10 +311,15 @@ func (h *HNSWIndex) Add(batchIdx, rowIdx int) error {
 
 	// Use Zero-Copy Vector Access via helper
 	// This avoids allocating a new slice copy on heap.
-	vec := h.getVectorDirectLocked(id)
-	if vec == nil {
+	vecRaw := h.getVectorDirectLocked(id)
+	if vecRaw == nil {
 		return nil
 	}
+
+	// COPY the vector data to ensure stable memory in the HNSW graph.
+	// This makes the index immune to future compaction/eviction of Arrow records.
+	vec := make([]float32, len(vecRaw))
+	copy(vec, vecRaw)
 
 	// Initialize dims for pool on first vector (thread-safe as we hold mu.Lock)
 	h.dimsOnce.Do(func() {
@@ -330,6 +335,76 @@ func (h *HNSWIndex) Add(batchIdx, rowIdx int) error {
 	if nodeCount > 1 {
 		metrics.HnswGraphHeight.WithLabelValues(h.dataset.Name).Set(math.Log(nodeCount) / math.Log(4))
 	}
+	return nil
+}
+
+// AddSafe adds a vector using a direct record batch reference.
+// It COPIES the vector to ensure it remains stable even if the record batch is released.
+func (h *HNSWIndex) AddSafe(rec arrow.RecordBatch, rowIdx, batchIdx int) error {
+	if rec == nil {
+		return fmt.Errorf("AddSafe: record is nil")
+	}
+
+	// Extract vector from record batch
+	var vecCol arrow.Array
+	for i, field := range rec.Schema().Fields() {
+		if field.Name == "vector" {
+			if i < int(rec.NumCols()) {
+				vecCol = rec.Column(i)
+				break
+			}
+		}
+	}
+
+	if vecCol == nil {
+		return fmt.Errorf("AddSafe: vector column not found")
+	}
+
+	listArr, ok := vecCol.(*array.FixedSizeList)
+	if !ok || listArr == nil || listArr.Data() == nil || len(listArr.Data().Children()) == 0 {
+		return fmt.Errorf("AddSafe: invalid vector column format")
+	}
+
+	values := listArr.Data().Children()[0]
+	floatArr := array.NewFloat32Data(values)
+	defer floatArr.Release()
+
+	width := int(listArr.DataType().(*arrow.FixedSizeListType).Len())
+	start := rowIdx * width
+	end := start + width
+
+	if start < 0 || end > floatArr.Len() {
+		return fmt.Errorf("AddSafe: row index out of bounds")
+	}
+
+	// COPY the vector data to ensure stable memory in the HNSW graph
+	vecRaw := floatArr.Float32Values()[start:end]
+	vec := make([]float32, len(vecRaw))
+	copy(vec, vecRaw)
+
+	indexLockStart7 := time.Now()
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	metrics.IndexLockWaitDuration.WithLabelValues("write").Observe(time.Since(indexLockStart7).Seconds())
+
+	id := VectorID(len(h.locations))
+	h.locations = append(h.locations, Location{BatchIdx: batchIdx, RowIdx: rowIdx})
+
+	// Initialize dims for pool on first vector (thread-safe as we hold mu.Lock)
+	h.dimsOnce.Do(func() {
+		h.dims = len(vec)
+	})
+
+	// Add to HNSW graph - MUST be under lock as coder/hnsw is not thread-safe for Add
+	h.Graph.Add(hnsw.MakeNode(id, vec))
+
+	// Track HNSW metrics
+	metrics.HnswNodeCount.WithLabelValues(h.dataset.Name).Set(float64(len(h.locations)))
+	nodeCount := float64(len(h.locations))
+	if nodeCount > 1 {
+		metrics.HnswGraphHeight.WithLabelValues(h.dataset.Name).Set(math.Log(nodeCount) / math.Log(4))
+	}
+
 	return nil
 }
 
@@ -367,7 +442,7 @@ func (h *HNSWIndex) getVectorDirectLocked(id VectorID) []float32 {
 	}
 
 	listArr, ok := vecCol.(*array.FixedSizeList)
-	if !ok || len(listArr.Data().Children()) == 0 {
+	if !ok || listArr == nil || listArr.Data() == nil || len(listArr.Data().Children()) == 0 {
 		return nil
 	}
 
@@ -495,7 +570,11 @@ func (h *HNSWIndex) SearchByID(id VectorID, k int) []VectorID {
 	}
 	defer release()
 
+	// coder/hnsw is not thread-safe for concurrent Search and Add.
+	h.mu.RLock()
 	neighbors := h.Graph.Search(vec, k)
+	h.mu.RUnlock()
+
 	res := h.resultPool.get(len(neighbors))
 	for i, n := range neighbors {
 		res[i] = n.Key
@@ -536,8 +615,11 @@ func (h *HNSWIndex) SearchWithArena(query []float32, k int, arena *SearchArena) 
 		return nil
 	}
 
-	// Perform the search using hnsw library
+	// coder/hnsw is not thread-safe for concurrent Search and Add.
+	h.mu.RLock()
 	neighbors := h.Graph.Search(query, k)
+	h.mu.RUnlock()
+
 	if len(neighbors) == 0 {
 		return nil
 	}
@@ -579,8 +661,11 @@ func (h *HNSWIndex) SearchByIDUnsafe(id VectorID, k int) []VectorID {
 	// Ensure release is called when done with vector data
 	defer release()
 
-	// Perform search while vector is pinned
+	// coder/hnsw is not thread-safe for concurrent Search and Add.
+	h.mu.RLock()
 	neighbors := h.Graph.Search(vec, k)
+	h.mu.RUnlock()
+
 	if len(neighbors) == 0 {
 		return nil
 	}

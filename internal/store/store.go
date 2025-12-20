@@ -31,6 +31,7 @@ import (
 
 type IndexJob struct {
 	DatasetName    string
+	Record         arrow.RecordBatch
 	recordEviction *RecordEvictionManager //nolint:unused // future integration
 	BatchIdx       int
 	RowIdx         int
@@ -478,8 +479,12 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 		targetSchema = recs[0].Schema()
 	}
 
-	w := flight.NewRecordWriter(stream, ipc.WithSchema(targetSchema), ipc.WithLZ4())
-	defer func() { _ = w.Close() }()
+	w := flight.NewRecordWriter(stream, ipc.WithSchema(targetSchema))
+	defer func() {
+		if err := w.Close(); err != nil {
+			s.logger.Error("Failed to close writer", zap.Error(err))
+		}
+	}()
 
 	w.SetFlightDescriptor(&flight.FlightDescriptor{Path: []string{name}})
 
@@ -519,6 +524,7 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 		if inputRows > 0 {
 			metrics.FilterSelectivityRatio.WithLabelValues(name).Observe(float64(filteredRec.NumRows()) / float64(inputRows))
 		}
+		s.logger.Debug("DoGet filter result", zap.Int("batchIdx", batchIdx), zap.Int64("inputRows", inputRows), zap.Int64("outputRows", filteredRec.NumRows()))
 
 		if filteredRec.NumRows() == 0 {
 			filteredRec.Release()
@@ -607,6 +613,7 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 			metrics.FlightOperationsTotal.WithLabelValues(method, "error").Inc()
 			return err
 		}
+		s.logger.Debug("DoGet wrote batch", zap.Int("batchIdx", batchIdx), zap.Int64("rows", castedRec.NumRows()))
 		castedRec.Release()
 		rowsSent += toWrite.NumRows()
 
@@ -619,6 +626,8 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 	metrics.FlightOperationsTotal.WithLabelValues(method, "ok").Inc()
 	metrics.FlightDurationSeconds.WithLabelValues(method).Observe(time.Since(start).Seconds())
 	metrics.FlightBytesProcessed.WithLabelValues(method).Add(float64(rowsSent))
+
+	s.logger.Info("DoGet completed", zap.String("name", name), zap.Int64("rowsSent", rowsSent), zap.Duration("duration", time.Since(start)))
 
 	return nil
 }
@@ -768,18 +777,20 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 			}
 		}
 
-		// Async Indexing
 		// Asynchronously index the record
 		numRows := int(rec.NumRows())
 		dropped := 0
 		for i := 0; i < numRows; i++ {
+			rec.Retain() // Increment ref count for this job
 			if !s.indexQueue.Send(IndexJob{
 				DatasetName: name,
+				Record:      rec,
 				BatchIdx:    batchIdx,
 				RowIdx:      i,
 				CreatedAt:   time.Now(),
 			}) {
 				dropped++
+				rec.Release() // Decrement if job could not be queued
 			}
 		}
 		if dropped > 0 {
@@ -1233,9 +1244,11 @@ func (s *VectorStore) startIndexingWorkers(numWorkers int) {
 				if !ok || ds.Index == nil {
 					continue
 				}
-				if err := ds.Index.Add(job.BatchIdx, job.RowIdx); err != nil {
+				if err := ds.Index.AddByRecord(job.Record, job.RowIdx, job.BatchIdx); err != nil {
 					s.logger.Error("Async index add failed", zap.Any("dataset", job.DatasetName), zap.Error(err))
 				}
+				// Release our reference to the record
+				job.Record.Release()
 				// Record job latency
 				metrics.IndexJobLatencySeconds.WithLabelValues(job.DatasetName).Observe(time.Since(job.CreatedAt).Seconds())
 			}

@@ -20,6 +20,9 @@ type VectorIndex interface {
 	// AddByLocation adds a vector from the dataset using batch and row indices.
 	AddByLocation(batchIdx, rowIdx int) error
 
+	// AddByRecord adds a vector directly from a record batch.
+	AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx int) error
+
 	// SearchVectors returns the k nearest neighbors for the query vector.
 	SearchVectors(query []float32, k int) []SearchResult
 
@@ -36,6 +39,11 @@ func (h *HNSWIndex) AddByLocation(batchIdx, rowIdx int) error {
 	return h.Add(batchIdx, rowIdx)
 }
 
+// AddByRecord implements VectorIndex interface for HNSWIndex.
+func (h *HNSWIndex) AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx int) error {
+	return h.AddSafe(rec, rowIdx, batchIdx)
+}
+
 // =============================================================================
 // ShardedHNSW VectorIndex Implementation
 // =============================================================================
@@ -46,6 +54,30 @@ func (s *ShardedHNSW) AddByLocation(batchIdx, rowIdx int) error {
 	vec := s.getVectorFromDataset(batchIdx, rowIdx)
 	if vec == nil {
 		return fmt.Errorf("failed to get vector at batch %d, row %d", batchIdx, rowIdx)
+	}
+
+	loc := Location{BatchIdx: batchIdx, RowIdx: rowIdx}
+	_, err := s.AddVector(loc, vec)
+	return err
+}
+
+// AddByRecord implements VectorIndex interface for ShardedHNSW.
+func (s *ShardedHNSW) AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx int) error {
+	vecColIdx := -1
+	for i := 0; i < int(rec.NumCols()); i++ {
+		if rec.ColumnName(i) == "vector" {
+			vecColIdx = i
+			break
+		}
+	}
+
+	if vecColIdx < 0 {
+		return fmt.Errorf("failed to find vector column")
+	}
+
+	vec := extractVectorFromCol(rec.Column(vecColIdx), rowIdx)
+	if vec == nil {
+		return fmt.Errorf("failed to extract vector from column")
 	}
 
 	loc := Location{BatchIdx: batchIdx, RowIdx: rowIdx}

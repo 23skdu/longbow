@@ -562,12 +562,22 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 	rowsWritten := 0
 
 	for r.Next() {
+		// Get dataset name from latest descriptor if available
+		if desc := r.LatestFlightDescriptor(); desc != nil && len(desc.Path) > 0 {
+			name = desc.Path[0]
+		}
+
 		rawRec := r.RecordBatch()
 		rec, err := s.ensureTimestamp(rawRec)
 		if err != nil {
+			rawRec.Release() // Ensure rawRec is released even if ensureTimestamp fails
+			s.logger.Error("Failed to ensure timestamp", zap.Error(err))
 			metrics.FlightOperationsTotal.WithLabelValues(method, "error").Inc()
 			return NewInternalError("ensure timestamp", err)
 		}
+		// Release rawRec immediately after transformation/retention in ensureTimestamp
+		rawRec.Release()
+
 		size := CachedRecordSize(rec)
 
 		// Lock-free memory limit check with CAS loop
@@ -637,17 +647,30 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 			}
 		}
 
-		rowsWritten += int(rec.NumRows())
 		// Async Indexing
+		// Asynchronously index the record
 		numRows := int(rec.NumRows())
+		dropped := 0
 		for i := 0; i < numRows; i++ {
-			s.indexQueue.Send(IndexJob{
+			if !s.indexQueue.Send(IndexJob{
 				DatasetName: name,
 				BatchIdx:    batchIdx,
 				RowIdx:      i,
 				CreatedAt:   time.Now(),
-			})
+			}) {
+				dropped++
+			}
 		}
+		if dropped > 0 {
+			s.logger.Warn("Index jobs dropped due to queue overflow", zap.String("dataset", name), zap.Int("droppedCount", dropped))
+		}
+
+		// Trigger auto-sharding check
+		if err := s.checkAndMigrateToSharded(ds); err != nil {
+			s.logger.Warn("Auto-sharding check failed", zap.String("dataset", name), zap.Error(err))
+		}
+
+		rowsWritten += int(rec.NumRows())
 
 		s.updateVectorMetrics(rec)
 	}

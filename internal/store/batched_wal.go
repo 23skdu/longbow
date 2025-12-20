@@ -67,7 +67,7 @@ func NewWALBatcher(dataPath string, config *WALBatcherConfig) *WALBatcher {
 		dataPath:  dataPath,
 		config:    *config,
 		mem:       memory.NewGoAllocator(),
-		entries:   make(chan WALEntry, config.MaxBatchSize*10),
+		entries:   make(chan WALEntry, config.MaxBatchSize*100), // Increased capacity (10k by default) to handle bursts
 		batch:     make([]WALEntry, 0, config.MaxBatchSize),
 		backBatch: make([]WALEntry, 0, config.MaxBatchSize),
 		bufPool:   newWALBufferPool(),
@@ -143,6 +143,10 @@ func (w *WALBatcher) Write(rec arrow.RecordBatch, name string) error {
 	case <-w.stopCh:
 		rec.Release()
 		return NewUnavailableError("write", "batcher stopped")
+	default:
+		// Queue full - non-blocking fail to prevent deadlock
+		rec.Release()
+		return NewResourceExhaustedError("wal", "write queue full")
 	}
 }
 

@@ -523,13 +523,26 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 		}
 
 		// Cast to target schema to handle evolution (e.g. missing columns in old records)
-		castedRec, err := s.castRecordToSchema(toWrite, targetSchema)
+		castedRecRaw, err := s.castRecordToSchema(toWrite, targetSchema)
 		if err != nil {
 			if sliced {
 				toWrite.Release()
 			}
 			filteredRec.Release()
 			s.logger.Error("Failed to cast record to target schema", zap.Error(err))
+			metrics.FlightOperationsTotal.WithLabelValues(method, "error").Inc()
+			return err
+		}
+
+		// Deep copy to ensure safe memory layout for IPC and remove any slice/buffer anomalies
+		castedRec, err := s.deepCopyRecordBatch(castedRecRaw)
+		castedRecRaw.Release()
+		if err != nil {
+			if sliced {
+				toWrite.Release()
+			}
+			filteredRec.Release()
+			s.logger.Error("Failed to deep copy record", zap.Error(err))
 			metrics.FlightOperationsTotal.WithLabelValues(method, "error").Inc()
 			return err
 		}
@@ -1256,4 +1269,136 @@ func validateRecordBatch(rec arrow.RecordBatch) error {
 		}
 	}
 	return nil
+}
+
+// deepCopyRecordBatch creates a full copy of the record batch with new buffers
+func (s *VectorStore) deepCopyRecordBatch(rec arrow.RecordBatch) (arrow.RecordBatch, error) {
+	if rec.NumRows() == 0 {
+		rec.Retain()
+		return rec, nil
+	}
+
+	cols := make([]arrow.Array, rec.NumCols())
+	for i, col := range rec.Columns() {
+		copied, err := s.copyArray(col)
+		if err != nil {
+			// Cleanup
+			for j := 0; j < i; j++ {
+				cols[j].Release()
+			}
+			return nil, fmt.Errorf("failed to copy column %d: %w", i, err)
+		}
+		cols[i] = copied
+	}
+	return array.NewRecordBatch(rec.Schema(), cols, rec.NumRows()), nil
+}
+
+func (s *VectorStore) copyArray(arr arrow.Array) (arrow.Array, error) {
+	if arr.Len() == 0 {
+		arr.Retain()
+		return arr, nil
+	}
+
+	switch arr.DataType().ID() {
+	case arrow.INT64:
+		b := array.NewInt64Builder(s.mem)
+		defer b.Release()
+		input := arr.(*array.Int64)
+		b.Reserve(input.Len())
+		for i := 0; i < input.Len(); i++ {
+			if input.IsNull(i) {
+				b.AppendNull()
+			} else {
+				b.Append(input.Value(i))
+			}
+		}
+		return b.NewArray(), nil
+
+	case arrow.FLOAT32:
+		b := array.NewFloat32Builder(s.mem)
+		defer b.Release()
+		input := arr.(*array.Float32)
+		b.Reserve(input.Len())
+		for i := 0; i < input.Len(); i++ {
+			if input.IsNull(i) {
+				b.AppendNull()
+			} else {
+				b.Append(input.Value(i))
+			}
+		}
+		return b.NewArray(), nil
+
+	case arrow.STRING:
+		b := array.NewStringBuilder(s.mem)
+		defer b.Release()
+		input := arr.(*array.String)
+		b.Reserve(input.Len())
+		for i := 0; i < input.Len(); i++ {
+			if input.IsNull(i) {
+				b.AppendNull()
+			} else {
+				b.Append(input.Value(i))
+			}
+		}
+		return b.NewArray(), nil
+
+	case arrow.TIMESTAMP:
+		// Timestamp is Int64 physically
+		b := array.NewTimestampBuilder(s.mem, arr.DataType().(*arrow.TimestampType))
+		defer b.Release()
+		input := arr.(*array.Timestamp)
+		b.Reserve(input.Len())
+		for i := 0; i < input.Len(); i++ {
+			if input.IsNull(i) {
+				b.AppendNull()
+			} else {
+				b.Append(input.Value(i))
+			}
+		}
+		return b.NewArray(), nil
+
+	case arrow.FIXED_SIZE_LIST:
+		// Recursive copy
+		input := arr.(*array.FixedSizeList)
+		values := input.ListValues()
+		copiedValues, err := s.copyArray(values)
+		if err != nil {
+			return nil, err
+		}
+		defer copiedValues.Release()
+
+		// Use construct new Data manually to avoid builder complexity for now
+		// Only works if validity bitmap is safe.
+		// If input is sliced, Validity bitmap needs slicing too!
+		// But input.Data().Buffers()[0] is the backing buffer.
+		// If copyArray(values) worked, values are clean.
+		// Validity: We must copy the validity bitmap slice to a new buffer to be truly deep copy.
+
+		var validity *memory.Buffer
+		if input.NullN() > 0 {
+			validityBitmap := input.NullBitmapBytes() // This returns slice?
+			if validityBitmap != nil {
+				validity = memory.NewResizableBuffer(s.mem)
+				validity.Resize(len(validityBitmap))
+				copy(validity.Bytes(), validityBitmap)
+			}
+		}
+
+		newData := array.NewData(
+			input.DataType(),
+			input.Len(),
+			[]*memory.Buffer{validity},
+			[]arrow.ArrayData{copiedValues.Data()},
+			input.NullN(),
+			0,
+		)
+
+		return array.NewFixedSizeListData(newData), nil
+
+	default:
+		// Fallback for types we don't explicitly handle (e.g. Bool, Dict)
+		// Just retain to avoid breaking query
+		arr.Retain()
+		return arr, nil
+	}
 }

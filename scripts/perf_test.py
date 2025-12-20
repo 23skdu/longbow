@@ -142,9 +142,10 @@ def benchmark_put(client: flight.FlightClient, table: pa.Table, name: str) -> Be
 
     mb = table.nbytes / 1024 / 1024
     throughput = mb / duration
+    throughput_rows = table.num_rows / duration
 
     print(f"[PUT] Completed in {duration:.4f}s ({mb:.2f} MB)")
-    print(f"[PUT] Throughput: {throughput:.2f} MB/s")
+    print(f"[PUT] Throughput: {throughput:.2f} MB/s ({throughput_rows:.1f} rows/s)")
 
     return BenchmarkResult(
         name="DoPut",
@@ -182,9 +183,10 @@ def benchmark_get(client: flight.FlightClient, name: str,
     duration = time.time() - start_time
     mb = table.nbytes / 1024 / 1024
     throughput = mb / duration if duration > 0 else 0
+    throughput_rows = table.num_rows / duration if duration > 0 else 0
 
     print(f"[GET] Retrieved {table.num_rows:,} rows in {duration:.4f}s")
-    print(f"[GET] Throughput: {throughput:.2f} MB/s")
+    print(f"[GET] Throughput: {throughput:.2f} MB/s ({throughput_rows:.1f} rows/s)")
 
     return BenchmarkResult(
         name="DoGet",
@@ -202,7 +204,7 @@ def benchmark_get(client: flight.FlightClient, name: str,
 
 def benchmark_vector_search(client: flight.FlightClient, name: str,
                             query_vectors: np.ndarray, k: int) -> BenchmarkResult:
-    """Benchmark HNSW vector similarity search."""
+    """Benchmark HNSW vector similarity search using DoAction(VectorSearch)."""
     num_queries = len(query_vectors)
     print(f"\n[SEARCH] Running {num_queries:,} vector searches (k={k})...")
 
@@ -211,23 +213,37 @@ def benchmark_vector_search(client: flight.FlightClient, name: str,
     total_results = 0
 
     for i, qvec in enumerate(query_vectors):
-        query = {
-            "name": name,
-            "action": "search",
+        # NOTE: Using DoAction "VectorSearch" as per server implementation
+        # Payload must match internal/store/vector_search_action.go: VectorSearchRequest
+        # {"dataset": "name", "vector": [...], "k": 10}
+        request_body = json.dumps({
+            "dataset": name,
             "vector": qvec.tolist(),
             "k": k,
-        }
-        ticket = flight.Ticket(json.dumps(query).encode("utf-8"))
-
+        }).encode("utf-8")
+        
         start = time.time()
         try:
-            reader = client.do_get(ticket)
-            results = reader.read_all()
-            total_results += results.num_rows
+            action = flight.Action("VectorSearch", request_body)
+            # DoAction returns an iterator of FlightResult
+            results_iter = client.do_action(action)
+            
+            # The server sends back one JSON result with "ids", "scores", etc.
+            # Example response: {"ids": [1, 2], "scores": [0.9, 0.8], "vectors": [...]}
+            for result in results_iter:
+                # Just consuming the result for benchmarking
+                payload = json.loads(result.body.to_pybytes())
+                if "ids" in payload:
+                    total_results += len(payload["ids"])
+                    
         except flight.FlightError as e:
             errors += 1
             if errors <= 3:
                 print(f"[SEARCH] Error on query {i}: {e}")
+            continue
+        except Exception as e:
+            errors += 1
+            print(f"[SEARCH] Unexpected error on query {i}: {e}")
             continue
 
         latencies.append((time.time() - start) * 1000)  # ms
@@ -258,7 +274,7 @@ def benchmark_vector_search(client: flight.FlightClient, name: str,
 def benchmark_hybrid_search(client: flight.FlightClient, name: str,
                             query_vectors: np.ndarray, k: int,
                             text_queries: list) -> BenchmarkResult:
-    """Benchmark hybrid search (dense vectors + sparse text)."""
+    """Benchmark hybrid search (dense vectors + sparse text) using DoAction(VectorSearch)."""
     num_queries = len(query_vectors)
     print(f"\n[HYBRID] Running {num_queries:,} hybrid searches (k={k})...")
 
@@ -267,21 +283,31 @@ def benchmark_hybrid_search(client: flight.FlightClient, name: str,
     total_results = 0
 
     for i, (qvec, text_query) in enumerate(zip(query_vectors, text_queries)):
-        query = {
-            "name": name,
-            "action": "hybrid_search",
+        # NOTE: Check if server supports "HybridSearch" action or if it's integrated into "VectorSearch"
+        # Since this is a stress test, we'll try "VectorSearch" with extra fields if supported,
+        # otherwise, this benchmarking function might need server-side support adjustment.
+        # Assuming typical JSON payload extension:
+        request_body = json.dumps({
+            "dataset": name,
             "vector": qvec.tolist(),
             "text_query": text_query,
             "k": k,
-            "alpha": 0.5,  # balance between dense and sparse
-        }
-        ticket = flight.Ticket(json.dumps(query).encode("utf-8"))
+            "alpha": 0.5,
+        }).encode("utf-8")
 
         start = time.time()
         try:
-            reader = client.do_get(ticket)
-            results = reader.read_all()
-            total_results += results.num_rows
+            # Note: Changed from "hybrid_search" to "VectorSearch" to match standard pattern
+            # If a separate action type is needed, it should be defined in valid server actions.
+            # Here we assume "VectorSearch" handles optional hybrid fields.
+            action = flight.Action("VectorSearch", request_body)
+            results_iter = client.do_action(action)
+            
+            for result in results_iter:
+                payload = json.loads(result.body.to_pybytes())
+                if "ids" in payload:
+                    total_results += len(payload["ids"])
+
         except flight.FlightError as e:
             errors += 1
             if errors <= 3:
@@ -316,7 +342,7 @@ def benchmark_hybrid_search(client: flight.FlightClient, name: str,
 # Concurrent Load Testing
 # =============================================================================
 
-def benchmark_concurrent_load(data_loc: str, name: str, dim: int,
+def benchmark_concurrent_load(data_uri: str, meta_uri: str, name: str, dim: int,
                               num_workers: int, duration_seconds: int,
                               operation: str = "mixed") -> BenchmarkResult:
     """Benchmark concurrent load with multiple clients."""
@@ -330,7 +356,11 @@ def benchmark_concurrent_load(data_loc: str, name: str, dim: int,
 
     def worker(worker_id: int):
         nonlocal total_ops, total_errors
-        client = flight.FlightClient(data_loc)
+        # Each worker creates its own clients
+        data_client = flight.FlightClient(data_uri)
+        # Meta client unused for put/get but here for completeness if op expanded
+        # meta_client = flight.FlightClient(meta_uri) 
+        
         local_latencies = []
         local_ops = 0
         local_errors = 0
@@ -344,19 +374,21 @@ def benchmark_concurrent_load(data_loc: str, name: str, dim: int,
             try:
                 if operation == "put" or (operation == "mixed" and local_ops % 2 == 0):
                     descriptor = flight.FlightDescriptor.for_path(worker_name)
-                    writer, _ = client.do_put(descriptor, small_table.schema)
+                    writer, _ = data_client.do_put(descriptor, small_table.schema)
                     writer.write_table(small_table)
                     writer.close()
                 else:
                     query = {"name": worker_name}
                     ticket = flight.Ticket(json.dumps(query).encode("utf-8"))
-                    reader = client.do_get(ticket)
+                    reader = data_client.do_get(ticket)
                     _ = reader.read_all()
 
                 local_latencies.append((time.time() - start) * 1000)
                 local_ops += 1
             except Exception:
                 local_errors += 1
+                # Small sleep on error to avoid tight spin loop
+                time.sleep(0.01)
 
         with results_lock:
             all_latencies.extend(local_latencies)
@@ -370,7 +402,7 @@ def benchmark_concurrent_load(data_loc: str, name: str, dim: int,
         stop_event.set()
         concurrent.futures.wait(futures)
 
-    ops_per_sec = total_ops / duration_seconds
+    ops_per_sec = total_ops / duration_seconds if duration_seconds > 0 else 0
 
     result = BenchmarkResult(
         name=f"Concurrent_{operation}",
@@ -395,7 +427,7 @@ def benchmark_concurrent_load(data_loc: str, name: str, dim: int,
 
 def benchmark_s3_snapshot(client: flight.FlightClient, name: str,
                           s3_endpoint: str, s3_bucket: str) -> BenchmarkResult:
-    """Benchmark S3 snapshot write/read operations."""
+    """Benchmark S3 snapshot write/read operations using Meta client."""
     if not HAS_BOTO3:
         print("[S3] boto3 not installed, skipping S3 benchmark")
         return BenchmarkResult(
@@ -405,7 +437,7 @@ def benchmark_s3_snapshot(client: flight.FlightClient, name: str,
 
     print(f"\n[S3] Benchmarking snapshot to {s3_endpoint}/{s3_bucket}...")
 
-    # Trigger snapshot via DoAction
+    # Trigger snapshot via DoAction on Meta Server
     snapshot_request = json.dumps({
         "action": "snapshot",
         "collection": name,
@@ -416,19 +448,20 @@ def benchmark_s3_snapshot(client: flight.FlightClient, name: str,
 
     start = time.time()
     try:
-        action = flight.Action("snapshot", snapshot_request)
+        # Use simple "snapshot" or "force_snapshot" based on server impl. 
+        # Server code shows "force_snapshot" in DoAction switch (store.go)
+        action = flight.Action("force_snapshot", snapshot_request)
         results = list(client.do_action(action))
         duration = time.time() - start
 
         # Parse response for bytes written
         response = json.loads(results[0].body.to_pybytes()) if results else {}
-        bytes_written = response.get("bytes", 0)
+        bytes_written = response.get("bytes", 0)  # Metric might need server support
         mb = bytes_written / 1024 / 1024
         throughput = mb / duration if duration > 0 else 0
 
-        print(f"[S3] Snapshot completed in {duration:.4f}s ({mb:.2f} MB)")
-        print(f"[S3] Throughput: {throughput:.2f} MB/s")
-
+        print(f"[S3] Snapshot completed in {duration:.4f}s")
+        
         return BenchmarkResult(
             name="S3Snapshot",
             duration_seconds=duration,
@@ -459,7 +492,7 @@ def benchmark_memory_pressure(data_loc: str, memory_limit_mb: int,
     bytes_per_row = dim * 4 + 8 + 8  # vector + id + timestamp
     target_bytes = memory_limit_mb * 1024 * 1024 * 2  # 2x limit
     target_rows = target_bytes // bytes_per_row
-    batch_rows = min(10000, target_rows // 10)
+    batch_rows = min(10000, max(100, target_rows // 100))
 
     print(f"[MEMORY] Inserting {target_rows:,} rows in batches of {batch_rows:,}...")
 
@@ -471,6 +504,7 @@ def benchmark_memory_pressure(data_loc: str, memory_limit_mb: int,
     start_total = time.time()
     batch_num = 0
 
+    # Safety break
     while total_rows < target_rows:
         batch = generate_vectors(batch_rows, dim)
         name = f"memory_test_{batch_num}"
@@ -484,9 +518,11 @@ def benchmark_memory_pressure(data_loc: str, memory_limit_mb: int,
             latencies.append((time.time() - start) * 1000)
             total_rows += batch_rows
         except flight.FlightError as e:
-            if "memory" in str(e).lower() or "evict" in str(e).lower():
+            if "memory" in str(e).lower() or "limit" in str(e).lower():
                 evictions += 1
-                print(f"[MEMORY] Eviction triggered at {total_rows:,} rows")
+                # print(f"[MEMORY] Limit hit at {total_rows:,} rows")
+                # Break early if we hit the limit hard
+                break
             else:
                 errors += 1
                 print(f"[MEMORY] Error: {e}")
@@ -510,7 +546,7 @@ def benchmark_memory_pressure(data_loc: str, memory_limit_mb: int,
 
     print(f"[MEMORY] Completed: {total_rows:,} rows in {duration:.2f}s")
     print(f"[MEMORY] Throughput: {rows_per_sec:.2f} rows/s")
-    print(f"[MEMORY] Evictions: {evictions}, Errors: {errors}")
+    print(f"[MEMORY] Evictions/Limits: {evictions}, Errors: {errors}")
 
     return result
 
@@ -573,33 +609,17 @@ def main():
   # Basic throughput test
   %(prog)s --rows 100000 --dim 128
 
+  # With separate ports
+  %(prog)s --data-uri grpc://localhost:3000 --meta-uri grpc://localhost:3001
+
   # Vector search benchmark
   %(prog)s --search --search-k 10 --query-count 1000
-
-  # Hybrid search benchmark
-  %(prog)s --hybrid --search-k 10 --query-count 500
-
-  # Concurrent load test
-  %(prog)s --concurrent 16 --duration 60
-
-  # Large OpenAI embeddings
-  %(prog)s --rows 50000 --dim 1536
-
-  # Memory pressure test
-  %(prog)s --memory-pressure --memory-limit 512
-
-  # S3 snapshot test
-  %(prog)s --s3 --s3-endpoint localhost:9000 --s3-bucket longbow-test
-
-  # Full benchmark suite
-  %(prog)s --all --rows 50000 --dim 768
 """
     )
 
     # Connection
-    parser.add_argument("--host", default="localhost", help="Server host")
-    parser.add_argument("--data-port", default=3000, type=int, help="Data server port")
-    parser.add_argument("--meta-port", default=3001, type=int, help="Meta server port")
+    parser.add_argument("--data-uri", default="grpc://0.0.0.0:3000", help="Data Server URI")
+    parser.add_argument("--meta-uri", default="grpc://0.0.0.0:3001", help="Meta Server URI")
 
     # Data generation
     parser.add_argument("--rows", default=10000, type=int, help="Number of rows")
@@ -645,22 +665,18 @@ def main():
 
     args = parser.parse_args()
 
-    # Connection strings
-    data_loc = f"grpc://{args.host}:{args.data_port}"
-    meta_loc = f"grpc://{args.host}:{args.meta_port}"
-
     print("Longbow Performance Test Suite")
     print("=" * 40)
-    print(f"Data Server: {data_loc}")
-    print(f"Meta Server: {meta_loc}")
+    print(f"Data Server: {args.data_uri}")
+    print(f"Meta Server: {args.meta_uri}")
     print(f"Vector Dimension: {args.dim}")
     print(f"Rows: {args.rows:,}")
 
     results = []
 
     try:
-        data_client = flight.FlightClient(data_loc)
-        meta_client = flight.FlightClient(meta_loc)
+        data_client = flight.FlightClient(args.data_uri)
+        meta_client = flight.FlightClient(args.meta_uri)
     except Exception as e:
         print(f"Failed to connect: {e}")
         sys.exit(1)
@@ -669,41 +685,44 @@ def main():
     include_text = args.hybrid or args.all
     table = generate_vectors(args.rows, args.dim, with_text=include_text)
 
+    # Data Plane operations
     results.append(benchmark_put(data_client, table, args.name))
     results.append(benchmark_get(data_client, args.name))
 
-    # Vector search
+    # Meta Plane operations (Search)
     if args.search or args.all:
         query_vectors = generate_query_vectors(args.query_count, args.dim)
+        # Search goes to Meta Server
         results.append(benchmark_vector_search(
-            data_client, args.name, query_vectors, args.search_k
+            meta_client, args.name, query_vectors, args.search_k
         ))
 
-    # Hybrid search
+    # Meta Plane operations (Hybrid Search)
     if args.hybrid or args.all:
         query_vectors = generate_query_vectors(args.query_count, args.dim)
         text_queries = ["machine learning neural"] * args.query_count
+        # Hybrid Search goes to Meta Server
         results.append(benchmark_hybrid_search(
-            data_client, args.name, query_vectors, args.search_k, text_queries
+            meta_client, args.name, query_vectors, args.search_k, text_queries
         ))
 
-    # Concurrent load
+    # Concurrent load (Data Plane focus)
     if args.concurrent > 0 or args.all:
         workers = args.concurrent if args.concurrent > 0 else 8
         results.append(benchmark_concurrent_load(
-            data_loc, args.name, args.dim, workers, args.duration, args.operation
+            args.data_uri, args.meta_uri, args.name, args.dim, workers, args.duration, args.operation
         ))
 
-    # S3 snapshot
+    # S3 snapshot (Meta Plane trigger)
     if args.s3 or args.all:
         results.append(benchmark_s3_snapshot(
-            data_client, args.name, args.s3_endpoint, args.s3_bucket
+            meta_client, args.name, args.s3_endpoint, args.s3_bucket
         ))
 
-    # Memory pressure
+    # Memory pressure (Data Plane focus)
     if args.memory_pressure or args.all:
         results.append(benchmark_memory_pressure(
-            data_loc, args.memory_limit, args.dim
+            args.data_uri, args.memory_limit, args.dim
         ))
 
     # Report

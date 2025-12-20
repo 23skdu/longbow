@@ -129,6 +129,12 @@ func (w *WALBatcher) Write(rec arrow.RecordBatch, name string) error {
 		return nil
 	}
 
+	// Validate record integrity before queuing for WAL
+	if err := validateRecordBatch(rec); err != nil {
+		metrics.ValidationFailuresTotal.WithLabelValues("WAL_Write", "invalid_batch").Inc()
+		return err
+	}
+
 	// Retain the record since we're passing it to another goroutine
 	rec.Retain()
 

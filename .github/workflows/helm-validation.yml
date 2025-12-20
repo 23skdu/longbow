@@ -3,10 +3,14 @@ name: Helm Validation
 on:
   push:
     paths:
-      - 'helm/**'
+      - "helm/**"
   pull_request:
     paths:
-      - 'helm/**'
+      - "helm/**"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   lint-test:

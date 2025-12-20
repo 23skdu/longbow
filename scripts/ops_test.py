@@ -86,7 +86,7 @@ def command_get(args, data_client, meta_client):
         for f in args.filter:
             parts = f.split(':')
             if len(parts) == 3:
-                filters.append({"field": parts[0], "op": parts[1], "value": parts[2]})
+                filters.append({"field": parts[0], "operator": parts[1], "value": parts[2]})
         query["filters"] = filters
 
     ticket = flight.Ticket(json.dumps(query).encode("utf-8"))
@@ -137,6 +137,46 @@ def command_info(args, data_client, meta_client):
         print(f"Error: {e}")
 
 
+
+def command_delete(args, data_client, meta_client):
+    """Delete vectors from a dataset via Meta Server DoAction."""
+    name = args.dataset
+    print(f"Deleting vectors from '{name}'...")
+
+    # Parse IDs
+    ids = []
+    if args.ids:
+        for p in args.ids.split(','):
+            if '-' in p:
+                start, end = map(int, p.split('-'))
+                ids.extend(range(start, end + 1))
+            else:
+                ids.append(int(p))
+    
+    # DoAction "delete-vector" currently supports single ID per request on server
+    # We will loop for now. Efficient batch deletion requires server update.
+    count = 0
+    errors = 0
+    
+    for vid in ids:
+        payload = {
+            "dataset": name,
+            "vector_id": float(vid) # Server expects float64 for generic interface, cast to uint32 internal
+        }
+        try:
+            action = flight.Action("delete-vector", json.dumps(payload).encode("utf-8"))
+            results = list(meta_client.do_action(action))
+            # Just consuming
+            count += 1
+            if count % 100 == 0:
+                print(f"Deleted {count} vectors...")
+        except Exception as e:
+            print(f"Failed to delete ID {vid}: {e}")
+            errors += 1
+            
+    print(f"Deletion complete. Success: {count}, Errors: {errors}")
+
+
 def command_search(args, data_client, meta_client):
     """Perform vector search via Meta Server DoAction."""
     name = args.dataset
@@ -156,7 +196,7 @@ def command_search(args, data_client, meta_client):
         for f in args.filter:
             parts = f.split(':')
             if len(parts) == 3:
-                filters.append({"field": parts[0], "op": parts[1], "value": parts[2]})
+                filters.append({"field": parts[0], "operator": parts[1], "value": parts[2]})
         request["filters"] = filters
     
     # Add text query for hybrid search
@@ -164,8 +204,6 @@ def command_search(args, data_client, meta_client):
         request["text_query"] = args.text_query
         request["alpha"] = args.alpha
         print(f"Hybrid search with text='{args.text_query}' alpha={args.alpha}")
-        # NOTE: Current server implementation of "VectorSearch" action ignores "text_query" and "alpha".
-        # This is a placeholder for future hybrid search support.
 
     payload = json.dumps(request).encode("utf-8")
     
@@ -205,8 +243,7 @@ def command_snapshot(args, data_client, meta_client):
 def command_exchange(args, data_client, meta_client):
     """Test DoExchange for DataPort connectivity."""
     print("Testing DoExchange on DataPort...")
-    descriptor = flight.FlightDescriptor.for_path("exchange-test")
-    descriptor.cmd = b"fetch" # Trigger sync logic
+    descriptor = flight.FlightDescriptor.for_command(b"fetch") # Trigger sync logic
 
     try:
         # DoExchange is a bidirectional stream
@@ -249,7 +286,7 @@ def command_validate(args, data_client, meta_client):
     # Filter: id > 50
     # Note: Filter format supported by parser: "field=value" or json?
     # Based on store implementation: TicketQuery json
-    filters = [{"field": "id", "op": ">", "value": "50"}]
+    filters = [{"field": "id", "operator": ">", "value": "50"}]
     query = {"name": args.dataset, "filters": filters}
     ticket = flight.Ticket(json.dumps(query).encode("utf-8"))
     reader = data_client.do_get(ticket)
@@ -264,12 +301,15 @@ def command_validate(args, data_client, meta_client):
 
     # 3. Vector Search with Filter
     print("\n[Validation] Testing VectorSearch with Filter...")
-    filters = [{"field": "id", "op": "<", "value": "10"}]
+    # Using 'operator' instead of 'op' for filter struct in zero_alloc_parser?
+    # Checked zero_alloc_parser.go: struct Filter { Field, Operator, Value } json:"operator"
+    # But DoGet logic might map "op" to "operator" manually? 
+    # DoGet uses TicketQuery which has Filters []Filter.
+    # So both should use "operator".
+    filters = [{"field": "id", "operator": "<", "value": "10"}]
     # Random query vector of dim 4
     qvec = [0.1, 0.2, 0.3, 0.4]
     
-    # Need to check if VectorSearch action supports filters in ops_test
-    # We update command_search to do this, but here we do it manually or via helper
     req = {
         "dataset": args.dataset,
         "vector": qvec,
@@ -321,6 +361,11 @@ def main():
     get_parser.add_argument("--dataset", required=True, help="Dataset name")
     # Add filter argument support
     get_parser.add_argument("--filter", action="append", help="Filter: field:op:value")
+
+    # DELETE
+    del_parser = subparsers.add_parser("delete", help="Delete vectors")
+    del_parser.add_argument("--dataset", required=True, help="Dataset name")
+    del_parser.add_argument("--ids", required=True, help="Comma separated IDs or ranges (1,2,5-10)")
     
     # LIST
     subparsers.add_parser("list", help="List all datasets")
@@ -362,6 +407,7 @@ def main():
         commands = {
             "put": command_put,
             "get": command_get,
+            "delete": command_delete,
             "list": command_list,
             "info": command_info,
             "search": command_search,

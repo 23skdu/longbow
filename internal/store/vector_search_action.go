@@ -19,6 +19,7 @@ type VectorSearchRequest struct {
 	Dataset string    `json:"dataset"`
 	Vector  []float32 `json:"vector"`
 	K       int       `json:"k"`
+	Filters []Filter  `json:"filters"`
 }
 
 // VectorSearchResponse defines the response format for VectorSearch action
@@ -73,7 +74,7 @@ func (s *MetaServer) handleVectorSearchAction(action *flight.Action, stream flig
 	}
 
 	// Perform search using SearchVectors from Index interface
-	searchResults := ds.Index.SearchVectors(req.Vector, req.K, nil)
+	searchResults := ds.Index.SearchVectors(req.Vector, req.K, req.Filters)
 
 	// Build response
 	resp := VectorSearchResponse{

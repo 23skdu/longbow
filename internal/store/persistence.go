@@ -197,9 +197,9 @@ func (s *VectorStore) replayWAL() error {
 			ds := s.vectors.GetOrCreate(name, func() *Dataset {
 				return &Dataset{Records: []arrow.RecordBatch{}, lastAccess: time.Now().UnixNano()}
 			})
-			ds.mu.Lock()
+			ds.dataMu.Lock()
 			ds.Records = append(ds.Records, rec)
-			ds.mu.Unlock()
+			ds.dataMu.Unlock()
 			s.currentMemory.Add(CachedRecordSize(rec))
 			count++
 		}
@@ -352,9 +352,9 @@ func (s *VectorStore) loadSnapshots() error {
 		ds := s.vectors.GetOrCreate(name, func() *Dataset {
 			return &Dataset{Records: []arrow.RecordBatch{}, lastAccess: time.Now().UnixNano()}
 		})
-		ds.mu.Lock()
+		ds.dataMu.Lock()
 		ds.Records = append(ds.Records, rec)
-		ds.mu.Unlock()
+		ds.dataMu.Unlock()
 		s.currentMemory.Add(CachedRecordSize(rec))
 	}
 	return nil

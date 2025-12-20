@@ -96,7 +96,7 @@ sharded := NewShardedHNSW(cfg, nil)
 // Add vectors with known locations
 for i := 0; i < 100; i++ {
 loc := Location{BatchIdx: 0, RowIdx: i}
-id, err := sharded.Add(loc, []float32{float32(i), float32(i * 2), float32(i * 3)})
+id, err := sharded.AddVector(loc, []float32{float32(i), float32(i * 2), float32(i * 3)})
 if err != nil {
 t.Fatalf("Add failed: %v", err)
 }
@@ -144,7 +144,7 @@ defer wg.Done()
 for i := 0; i < vectorsPerGoroutine; i++ {
 loc := Location{BatchIdx: goroutineID, RowIdx: i}
 vec := []float32{float32(goroutineID), float32(i), float32(goroutineID + i)}
-_, err := sharded.Add(loc, vec)
+_, err := sharded.AddVector(loc, vec)
 if err != nil {
 errCount.Add(1)
 }
@@ -178,7 +178,7 @@ sharded := NewShardedHNSW(cfg, nil)
 for i := 0; i < 100; i++ {
 loc := Location{BatchIdx: 0, RowIdx: i}
 vec := []float32{float32(i), float32(i), float32(i)}
-_, err := sharded.Add(loc, vec)
+_, err := sharded.AddVector(loc, vec)
 if err != nil {
 t.Fatalf("Add failed: %v", err)
 }
@@ -186,7 +186,7 @@ t.Fatalf("Add failed: %v", err)
 
 // Search for vector near [50, 50, 50]
 query := []float32{50.0, 50.0, 50.0}
-results := sharded.Search(query, 10)
+results := sharded.SearchVectors(query, 10)
 
 if len(results) == 0 {
 t.Fatal("expected search results, got none")
@@ -218,7 +218,7 @@ cfg.NumShards = 4
 sharded := NewShardedHNSW(cfg, nil)
 
 query := []float32{1.0, 2.0, 3.0}
-results := sharded.Search(query, 10)
+results := sharded.SearchVectors(query, 10)
 
 if len(results) != 0 {
 t.Errorf("expected 0 results on empty index, got %d", len(results))
@@ -241,7 +241,7 @@ expected := []Location{
 
 for i, loc := range expected {
 vec := []float32{float32(i), float32(i), float32(i)}
-_, err := sharded.Add(loc, vec)
+_, err := sharded.AddVector(loc, vec)
 if err != nil {
 t.Fatalf("Add failed: %v", err)
 }
@@ -277,7 +277,7 @@ sharded := NewShardedHNSW(cfg, nil)
 for i := 0; i < 100; i++ {
 loc := Location{BatchIdx: 0, RowIdx: i}
 vec := []float32{float32(i), float32(i * 2), float32(i * 3)}
-_, _ = sharded.Add(loc, vec)
+_, _ = sharded.AddVector(loc, vec)
 }
 
 stats := sharded.ShardStats()
@@ -312,7 +312,7 @@ sharded := NewShardedHNSW(cfg, nil)
 for i := 0; i < 50; i++ {
 loc := Location{BatchIdx: 0, RowIdx: i}
 vec := []float32{float32(i), float32(i), float32(i)}
-_, _ = sharded.Add(loc, vec)
+_, _ = sharded.AddVector(loc, vec)
 }
 
 var wg sync.WaitGroup
@@ -330,7 +330,7 @@ return
 default:
 loc := Location{BatchIdx: id + 1, RowIdx: i}
 vec := []float32{float32(id * 100 + i), float32(id * 100 + i), 0}
-_, _ = sharded.Add(loc, vec)
+_, _ = sharded.AddVector(loc, vec)
 }
 }
 }(g)
@@ -347,7 +347,7 @@ case <-done:
 return
 default:
 query := []float32{float32(i), float32(i), float32(i)}
-_ = sharded.Search(query, 5)
+_ = sharded.SearchVectors(query, 5)
 }
 }
 }()
@@ -381,7 +381,7 @@ b.ReportAllocs()
 
 for i := 0; i < b.N; i++ {
 loc := Location{BatchIdx: 0, RowIdx: i}
-_, _ = sharded.Add(loc, vec)
+_, _ = sharded.AddVector(loc, vec)
 }
 }
 
@@ -405,7 +405,7 @@ b.RunParallel(func(pb *testing.PB) {
 idx := 0
 for pb.Next() {
 loc := Location{BatchIdx: 0, RowIdx: idx}
-_, _ = sharded.Add(loc, vec)
+_, _ = sharded.AddVector(loc, vec)
 idx++
 }
 })
@@ -426,7 +426,7 @@ vec := make([]float32, 128)
 for j := range vec {
 vec[j] = float32(i + j)
 }
-_, _ = sharded.Add(loc, vec)
+_, _ = sharded.AddVector(loc, vec)
 }
 
 query := make([]float32, 128)
@@ -438,6 +438,86 @@ b.ResetTimer()
 b.ReportAllocs()
 
 for i := 0; i < b.N; i++ {
-_ = sharded.Search(query, 10)
+_ = sharded.SearchVectors(query, 10)
 }
+}
+
+// TestShardedHNSW_SearchByID verifies searching by ID
+func TestShardedHNSW_SearchByID(t *testing.T) {
+	cfg := DefaultShardedHNSWConfig()
+	cfg.NumShards = 4
+	sharded := NewShardedHNSW(cfg, nil)
+
+	// Add vector
+	vec := []float32{1.0, 2.0, 3.0}
+	loc := Location{BatchIdx: 0, RowIdx: 0}
+	id, err := sharded.AddVector(loc, vec)
+	if err != nil {
+		t.Fatalf("Add failed: %v", err)
+	}
+
+	// Search by ID
+	results := sharded.SearchByID(id, 5)
+	if len(results) == 0 {
+		t.Fatal("expected results, got none")
+	}
+
+	// Should include itself (distance 0)
+	found := false
+	for _, rid := range results {
+		if rid == id {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("results did not contain query ID %d", id)
+	}
+}
+
+// TestShardedHNSW_GetDimension verifies dimension reporting
+func TestShardedHNSW_GetDimension(t *testing.T) {
+	cfg := DefaultShardedHNSWConfig()
+	sharded := NewShardedHNSW(cfg, nil)
+
+	if sharded.GetDimension() != 0 {
+		t.Error("expected 0 dimension for empty index")
+	}
+
+	// Add vector
+	vec := []float32{1.0, 2.0, 3.0}
+	loc := Location{BatchIdx: 0, RowIdx: 0}
+	_, _ = sharded.AddVector(loc, vec)
+
+	if sharded.GetDimension() != 3 {
+		t.Errorf("expected dimension 3, got %d", sharded.GetDimension())
+	}
+}
+
+func BenchmarkShardedHNSW_SearchByID(b *testing.B) {
+	cfg := DefaultShardedHNSWConfig()
+	cfg.NumShards = runtime.NumCPU()
+	sharded := NewShardedHNSW(cfg, nil)
+
+	// Pre-populate
+	count := 10000
+	ids := make([]VectorID, count)
+	for i := 0; i < count; i++ {
+		loc := Location{BatchIdx: 0, RowIdx: i}
+		vec := make([]float32, 128)
+		for j := range vec {
+			vec[j] = float32(i + j)
+		}
+		id, _ := sharded.AddVector(loc, vec)
+		ids[i] = id
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		// Randomly pick an ID to search
+		targetID := ids[i%count]
+		_ = sharded.SearchByID(targetID, 5)
+	}
 }

@@ -339,6 +339,6 @@ vec[i] = float32(i)
 b.ResetTimer()
 for i := 0; i < b.N; i++ {
 loc := Location{BatchIdx: 0, RowIdx: i}
-_, _ = sharded.Add(loc, vec)
+_, _ = sharded.AddVector(loc, vec)
 }
 }

@@ -11,6 +11,31 @@ Longbow provides three search modes:
 2. **Sparse Search** - Keyword matching using inverted index
 3. **Hybrid Search** - Combines dense + sparse with Reciprocal Rank Fusion (RRF)
 
+## Query Flow Architecture
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant DS as Data Server
+    participant SH as ShardedHNSW
+    participant S as HNSW Shards (1..32)
+    participant WAL as WAL/Batcher
+
+    C->>DS: SearchRequest (Vector + k)
+    DS->>SH: SearchVectors(Vector, k)
+    
+    par Parallel Search
+        SH->>S: Search Shard 1
+        SH->>S: Search Shard 2
+        SH->>S: Search Shard N
+    end
+    
+    S-->>SH: Top K results per shard
+    SH->>SH: Merge & Rerank (Global Top K)
+    SH-->>DS: SearchResults[]
+    DS-->>C: FlightData (Stream)
+```
+
 ## Zero-Copy HNSW Implementation
 
 We utilize the [coder/hnsw](https://github.com/coder/hnsw) library to manage the
@@ -132,8 +157,8 @@ RRF advantages:
 | Metric | Description | Status |
 |--------|-------------|--------|
 | Euclidean (L2) | Straight-line distance | ✅ Implemented |
-| Cosine Similarity | Angle-based similarity | 🚧 Planned |
-| Dot Product | Inner product | 🚧 Planned |
+| Cosine Similarity | Angle-based similarity | ✅ Implemented |
+| Dot Product | Inner product | ✅ Implemented |
 
 ## Performance
 

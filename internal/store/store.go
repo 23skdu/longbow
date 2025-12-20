@@ -522,6 +522,17 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 			sliced = true
 		}
 
+		// Validate before cast to catch schema mismatch early
+		if err := validateRecordBatch(toWrite); err != nil {
+			if sliced {
+				toWrite.Release()
+			}
+			filteredRec.Release()
+			s.logger.Error("Invalid record batch before cast", zap.Error(err))
+			metrics.FlightOperationsTotal.WithLabelValues(method, "error").Inc()
+			return err
+		}
+
 		// Cast to target schema to handle evolution (e.g. missing columns in old records)
 		castedRecRaw, err := s.castRecordToSchema(toWrite, targetSchema)
 		if err != nil {
@@ -612,11 +623,12 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 	}
 	defer r.Release()
 
-	name := "default"
-	// Use LatestFlightDescriptor to get the descriptor from the stream
+	// Initial descriptor read
+	var name string
 	if desc := r.LatestFlightDescriptor(); desc != nil && len(desc.Path) > 0 {
 		name = desc.Path[0]
 	}
+	s.logger.Info("DoPut started", zap.String("name", name))
 
 	// Schema Validation with Lock Granularity:
 	// Use RLock for initial schema check (read-only), only upgrade to Lock if schema evolution needed.
@@ -771,6 +783,11 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 	metrics.FlightOperationsTotal.WithLabelValues(method, "ok").Inc()
 	metrics.FlightDurationSeconds.WithLabelValues(method).Observe(time.Since(start).Seconds())
 	metrics.FlightBytesProcessed.WithLabelValues(method).Add(float64(rowsWritten))
+
+	s.logger.Info("DoPut completed",
+		zap.String("name", name),
+		zap.Int("rows_written", rowsWritten),
+		zap.Duration("duration", time.Since(start)))
 
 	return nil
 }
@@ -1257,6 +1274,9 @@ func (s *VectorStore) castRecordToSchema(rec arrow.RecordBatch, targetSchema *ar
 
 // validateRecordBatch checks for common internal inconsistencies in a record batch
 func validateRecordBatch(rec arrow.RecordBatch) error {
+	if int64(rec.NumCols()) != int64(rec.Schema().NumFields()) {
+		return fmt.Errorf("columns/fields mismatch: cols=%d, fields=%d", rec.NumCols(), rec.Schema().NumFields())
+	}
 	rows := rec.NumRows()
 	for i, col := range rec.Columns() {
 		// Paranoid check for nil columns (should not happen in valid record)

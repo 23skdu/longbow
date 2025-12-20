@@ -2,6 +2,8 @@ package store
 
 import (
 	"io"
+
+	"github.com/apache/arrow-go/v18/arrow"
 )
 
 // VectorMetric defines the distance metric used for vector search.
@@ -19,6 +21,9 @@ type Index interface {
 	// Add inserts a vector location into the index.
 	// The vector data is retrieved from the Dataset via the callback or internal reference.
 	Add(batchIdx, rowIdx int) error
+
+	// AddByRecord adds a vector directly from a record batch.
+	AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx int) error
 
 	// Search performs k-NN search using a query vector.
 	// Returns just IDs.

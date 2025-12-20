@@ -1,0 +1,43 @@
+{{- if .Values.ingress.data.enabled -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "longbow.fullname" . }}-data
+  labels:
+    {{- include "longbow.labels" . | nindent 4 }}
+  {{- with .Values.ingress.data.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.ingress.data.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- if .Values.ingress.data.tls }}
+  tls:
+    {{- range .Values.ingress.data.tls }}
+    - hosts:
+        {{- range .hosts }}
+        - {{ . | quote }}
+        {{- end }}
+      secretName: {{ .secretName }}
+    {{- end }}
+  {{- end }}
+  rules:
+    {{- range .Values.ingress.data.hosts }}
+    - host: {{ .host | quote }}
+      http:
+        paths:
+          {{- range .paths }}
+          - path: {{ .path }}
+            {{- with .pathType }}
+            pathType: {{ . }}
+            {{- end }}
+            backend:
+              service:
+                name: {{ include "longbow.fullname" $ }}-data
+                port:
+                  number: {{ $.Values.service.data.port }}
+          {{- end }}
+    {{- end }}
+{{- end }}

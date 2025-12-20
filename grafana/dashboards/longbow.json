@@ -1,0 +1,512 @@
+{
+    "annotations": {
+        "list": [
+            {
+                "builtIn": 1,
+                "datasource": {
+                    "type": "datasource",
+                    "uid": "grafana"
+                },
+                "enable": true,
+                "hide": true,
+                "iconColor": "rgba(0, 211, 255, 1)",
+                "name": "Annotations & Alerts",
+                "type": "dashboard"
+            }
+        ]
+    },
+    "editable": true,
+    "fiscalYearStartMonth": 0,
+    "graphTooltip": 0,
+    "id": null,
+    "links": [],
+    "liveNow": false,
+    "panels": [
+        {
+            "collapsed": false,
+            "gridPos": {
+                "h": 1,
+                "w": 24,
+                "x": 0,
+                "y": 0
+            },
+            "id": 1,
+            "panels": [],
+            "title": "Cluster Overview",
+            "type": "row"
+        },
+        {
+            "datasource": "${datasource}",
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "thresholds"
+                    },
+                    "mappings": [],
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": null
+                            },
+                            {
+                                "color": "red",
+                                "value": 80
+                            }
+                        ]
+                    }
+                },
+                "overrides": []
+            },
+            "gridPos": {
+                "h": 4,
+                "w": 6,
+                "x": 0,
+                "y": 1
+            },
+            "id": 2,
+            "options": {
+                "colorMode": "value",
+                "graphMode": "area",
+                "justifyMode": "auto",
+                "orientation": "auto",
+                "reduceOptions": {
+                    "calcs": [
+                        "mean"
+                    ],
+                    "fields": "",
+                    "values": false
+                },
+                "textMode": "auto"
+            },
+            "pluginVersion": "10.0.0",
+            "targets": [
+                {
+                    "expr": "sum(longbow_flight_operations_total)",
+                    "refId": "A"
+                }
+            ],
+            "title": "Total Flight Ops",
+            "type": "stat"
+        },
+        {
+            "datasource": "${datasource}",
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "thresholds"
+                    },
+                    "unit": "short",
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": null
+                            }
+                        ]
+                    }
+                },
+                "overrides": []
+            },
+            "gridPos": {
+                "h": 4,
+                "w": 6,
+                "x": 6,
+                "y": 1
+            },
+            "id": 3,
+            "targets": [
+                {
+                    "expr": "longbow_active_search_contexts",
+                    "refId": "A"
+                }
+            ],
+            "title": "Active Search Contexts",
+            "type": "stat"
+        },
+        {
+            "datasource": "${datasource}",
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "thresholds"
+                    },
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": 0
+                            },
+                            {
+                                "color": "yellow",
+                                "value": 1
+                            },
+                            {
+                                "color": "red",
+                                "value": 2
+                            }
+                        ]
+                    },
+                    "min": 0,
+                    "max": 2
+                }
+            },
+            "gridPos": {
+                "h": 4,
+                "w": 6,
+                "x": 12,
+                "y": 1
+            },
+            "id": 4,
+            "targets": [
+                {
+                    "expr": "longbow_memory_pressure_level",
+                    "refId": "A"
+                }
+            ],
+            "title": "Memory Pressure Level",
+            "type": "gauge"
+        },
+        {
+            "datasource": "${datasource}",
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "thresholds"
+                    },
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "red",
+                                "value": null
+                            },
+                            {
+                                "color": "green",
+                                "value": 1
+                            }
+                        ]
+                    }
+                }
+            },
+            "gridPos": {
+                "h": 4,
+                "w": 6,
+                "x": 18,
+                "y": 1
+            },
+            "id": 5,
+            "targets": [
+                {
+                    "expr": "longbow_split_brain_healthy_peers",
+                    "refId": "A"
+                }
+            ],
+            "title": "Healthy Peers",
+            "type": "stat"
+        },
+        {
+            "collapsed": false,
+            "gridPos": {
+                "h": 1,
+                "w": 24,
+                "x": 0,
+                "y": 5
+            },
+            "id": 6,
+            "title": "Flight & Search Performance",
+            "type": "row"
+        },
+        {
+            "datasource": "${datasource}",
+            "fieldConfig": {
+                "defaults": {
+                    "custom": {
+                        "drawStyle": "line",
+                        "lineInterpolation": "linear",
+                        "showPoints": "auto",
+                        "axisLabel": "Ops/sec"
+                    }
+                }
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 0,
+                "y": 6
+            },
+            "id": 7,
+            "targets": [
+                {
+                    "expr": "rate(longbow_flight_operations_total[1m])",
+                    "legendFormat": "{{method}} - {{status}}",
+                    "refId": "A"
+                }
+            ],
+            "title": "Flight Operations Rate",
+            "type": "timeseries"
+        },
+        {
+            "datasource": "${datasource}",
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 12,
+                "y": 6
+            },
+            "id": 8,
+            "targets": [
+                {
+                    "expr": "histogram_quantile(0.99, sum(rate(longbow_flight_duration_seconds_bucket[5m])) by (le, method))",
+                    "legendFormat": "{{method}} P99",
+                    "refId": "A"
+                }
+            ],
+            "title": "Flight P99 Latency",
+            "type": "timeseries"
+        },
+        {
+            "collapsed": false,
+            "gridPos": {
+                "h": 1,
+                "w": 24,
+                "x": 0,
+                "y": 14
+            },
+            "id": 9,
+            "title": "Vector Index & Storage",
+            "type": "row"
+        },
+        {
+            "datasource": "${datasource}",
+            "gridPos": {
+                "h": 6,
+                "w": 8,
+                "x": 0,
+                "y": 15
+            },
+            "id": 10,
+            "targets": [
+                {
+                    "expr": "longbow_vector_index_size",
+                    "refId": "A"
+                }
+            ],
+            "title": "Vector Index Size",
+            "type": "stat"
+        },
+        {
+            "datasource": "${datasource}",
+            "gridPos": {
+                "h": 6,
+                "w": 8,
+                "x": 8,
+                "y": 15
+            },
+            "id": 11,
+            "targets": [
+                {
+                    "expr": "longbow_hnsw_node_count",
+                    "legendFormat": "{{dataset}}",
+                    "refId": "A"
+                }
+            ],
+            "title": "HNSW Node Count",
+            "type": "timeseries"
+        },
+        {
+            "datasource": "${datasource}",
+            "gridPos": {
+                "h": 6,
+                "w": 8,
+                "x": 16,
+                "y": 15
+            },
+            "id": 12,
+            "targets": [
+                {
+                    "expr": "longbow_wal_writes_total",
+                    "legendFormat": "{{status}}",
+                    "refId": "A"
+                }
+            ],
+            "title": "WAL Writes Total",
+            "type": "stat"
+        },
+        {
+            "collapsed": false,
+            "gridPos": {
+                "h": 1,
+                "w": 24,
+                "x": 0,
+                "y": 21
+            },
+            "id": 13,
+            "title": "Pipeline & Filtering",
+            "type": "row"
+        },
+        {
+            "datasource": "${datasource}",
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "s"
+                }
+            },
+            "gridPos": {
+                "h": 6,
+                "w": 12,
+                "x": 0,
+                "y": 22
+            },
+            "id": 14,
+            "targets": [
+                {
+                    "expr": "histogram_quantile(0.95, sum(rate(longbow_filter_execution_duration_seconds_bucket[5m])) by (le, dataset))",
+                    "legendFormat": "{{dataset}} Filter P95",
+                    "refId": "A"
+                }
+            ],
+            "title": "Filter Execution Duration",
+            "type": "timeseries"
+        },
+        {
+            "datasource": "${datasource}",
+            "gridPos": {
+                "h": 6,
+                "w": 12,
+                "x": 12,
+                "y": 22
+            },
+            "id": 15,
+            "targets": [
+                {
+                    "expr": "histogram_quantile(0.95, sum(rate(longbow_filter_selectivity_ratio_bucket[5m])) by (le, dataset))",
+                    "legendFormat": "{{dataset}} Selectivity P95",
+                    "refId": "A"
+                }
+            ],
+            "title": "Filter Selectivity Ratio",
+            "type": "timeseries"
+        },
+        {
+            "collapsed": false,
+            "gridPos": {
+                "h": 1,
+                "w": 24,
+                "x": 0,
+                "y": 28
+            },
+            "id": 16,
+            "title": "Memory & Systems",
+            "type": "row"
+        },
+        {
+            "datasource": "${datasource}",
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "bytes"
+                }
+            },
+            "gridPos": {
+                "h": 6,
+                "w": 8,
+                "x": 0,
+                "y": 29
+            },
+            "id": 17,
+            "targets": [
+                {
+                    "expr": "longbow_memory_heap_in_use_bytes",
+                    "legendFormat": "Heap In Use",
+                    "refId": "A"
+                },
+                {
+                    "expr": "longbow_arrow_memory_used_bytes",
+                    "legendFormat": "Arrow Allocator",
+                    "refId": "B"
+                }
+            ],
+            "title": "Memory Usage",
+            "type": "timeseries"
+        },
+        {
+            "datasource": "${datasource}",
+            "gridPos": {
+                "h": 6,
+                "w": 8,
+                "x": 8,
+                "y": 29
+            },
+            "id": 18,
+            "targets": [
+                {
+                    "expr": "longbow_memory_fragmentation_ratio",
+                    "refId": "A"
+                }
+            ],
+            "title": "Fragmentation Ratio",
+            "type": "gauge"
+        },
+        {
+            "datasource": "${datasource}",
+            "gridPos": {
+                "h": 6,
+                "w": 8,
+                "x": 16,
+                "y": 29
+            },
+            "id": 19,
+            "targets": [
+                {
+                    "expr": "sum(rate(longbow_evictions_total[5m])) by (reason)",
+                    "legendFormat": "{{reason}}",
+                    "refId": "A"
+                }
+            ],
+            "title": "Eviction Rate",
+            "type": "timeseries"
+        }
+    ],
+    "refresh": "5s",
+    "schemaVersion": 38,
+    "style": "dark",
+    "tags": [
+        "longbow",
+        "vector-store"
+    ],
+    "templating": {
+        "list": [
+            {
+                "current": {
+                    "selected": false,
+                    "text": "Prometheus",
+                    "value": "Prometheus"
+                },
+                "hide": 0,
+                "includeAll": false,
+                "label": "Datasource",
+                "multi": false,
+                "name": "datasource",
+                "options": [],
+                "query": "prometheus",
+                "refresh": 1,
+                "regex": "",
+                "skipUrlSync": false,
+                "type": "datasource"
+            }
+        ]
+    },
+    "time": {
+        "from": "now-1h",
+        "to": "now"
+    },
+    "timepicker": {},
+    "timezone": "",
+    "title": "Longbow Cluster Dashboard",
+    "uid": "longbow-cluster",
+    "version": 1,
+    "weekStart": ""
+}

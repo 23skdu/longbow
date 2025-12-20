@@ -144,8 +144,13 @@ func (s *ShardedHNSW) AddVector(loc Location, vec []float32) (VectorID, error) {
 	shardIdx := s.GetShardForID(id)
 	shard := s.shards[shardIdx]
 
+	// Add to shard with fine-grained lock
+	shard.mu.Lock()
+	defer shard.mu.Unlock()
+
 	// Make a copy of the vector for storage using the arena
 	// This reduces GC pressure by keeping vectors in large contiguous slabs
+	// Must be under shard lock as SlabAllocator is not thread-safe and shard.vectors is shared.
 	vecSize := len(vec) * 4 // 4 bytes per float32
 	vecBytes := shard.allocator.Alloc(vecSize)
 
@@ -157,8 +162,6 @@ func (s *ShardedHNSW) AddVector(loc Location, vec []float32) (VectorID, error) {
 	// Copy data into the arena slice
 	copy(vecCopy, vec)
 
-	// Add to shard with fine-grained lock
-	shard.mu.Lock()
 	localIdx := len(shard.localIDs)
 	shard.locations = append(shard.locations, loc)
 	shard.localIDs = append(shard.localIDs, id)
@@ -166,7 +169,6 @@ func (s *ShardedHNSW) AddVector(loc Location, vec []float32) (VectorID, error) {
 
 	// Add to HNSW graph
 	shard.graph.Add(hnsw.MakeNode(id, vecCopy))
-	shard.mu.Unlock()
 
 	// Update metrics
 	metrics.ShardedHnswShardSize.WithLabelValues(fmt.Sprintf("%d", shardIdx)).Inc()

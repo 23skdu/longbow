@@ -93,28 +93,28 @@ func (a *SearchArena) AllocFloat32Slice(count int) []float32 {
 // Returns nil if the allocation would exceed capacity.
 // This is useful for allocating search result arrays without GC pressure.
 func (a *SearchArena) AllocVectorIDSlice(count int) []VectorID {
-if count == 0 {
-return []VectorID{}
-}
+	if count == 0 {
+		return []VectorID{}
+	}
 
-// Calculate bytes needed (4 bytes per VectorID which is uint32)
-const vectorIDSize = 4
-bytesNeeded := count * vectorIDSize
+	// Calculate bytes needed (4 bytes per VectorID which is uint32)
+	const vectorIDSize = 4
+	bytesNeeded := count * vectorIDSize
 
-// Ensure proper alignment for uint32 (4-byte alignment)
-alignment := vectorIDSize
-alignedOffset := (a.offset + alignment - 1) &^ (alignment - 1)
+	// Ensure proper alignment for uint32 (4-byte alignment)
+	alignment := vectorIDSize
+	alignedOffset := (a.offset + alignment - 1) &^ (alignment - 1)
 
-if alignedOffset+bytesNeeded > len(a.buf) {
-return nil
-}
+	if alignedOffset+bytesNeeded > len(a.buf) {
+		return nil
+	}
 
-// Update offset to aligned position plus allocation
-a.offset = alignedOffset + bytesNeeded
+	// Update offset to aligned position plus allocation
+	a.offset = alignedOffset + bytesNeeded
 
-// Convert byte slice to VectorID slice using unsafe
-ptr := unsafe.Pointer(&a.buf[alignedOffset])
-return unsafe.Slice((*VectorID)(ptr), count)
+	// Convert byte slice to VectorID slice using unsafe
+	ptr := unsafe.Pointer(&a.buf[alignedOffset])
+	return unsafe.Slice((*VectorID)(ptr), count)
 }
 
 // DefaultArenaSize is the default capacity for pooled arenas (64KB)
@@ -123,9 +123,9 @@ const DefaultArenaSize = 64 * 1024
 // arenaPool is a global pool of SearchArena objects for reuse
 // This eliminates per-search allocations and reduces GC pressure
 var arenaPool = sync.Pool{
-New: func() any {
-return NewSearchArena(DefaultArenaSize)
-},
+	New: func() any {
+		return NewSearchArena(DefaultArenaSize)
+	},
 }
 
 // GetArena retrieves a SearchArena from the global pool.
@@ -133,16 +133,16 @@ return NewSearchArena(DefaultArenaSize)
 // Caller must call PutArena when done to return it to the pool.
 func GetArena() *SearchArena {
 	metrics.ArenaPoolGets.Inc()
-return arenaPool.Get().(*SearchArena)
+	return arenaPool.Get().(*SearchArena)
 }
 
 // PutArena returns a SearchArena to the global pool for reuse.
 // The arena is automatically reset before being pooled.
 func PutArena(arena *SearchArena) {
 	metrics.ArenaPoolPuts.Inc()
-if arena == nil {
-return
-}
-arena.Reset()
-arenaPool.Put(arena)
+	if arena == nil {
+		return
+	}
+	arena.Reset()
+	arenaPool.Put(arena)
 }

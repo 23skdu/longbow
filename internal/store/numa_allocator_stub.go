@@ -10,11 +10,11 @@ var ErrNotSupported = errors.New("NUMA CPU affinity not supported on this platfo
 // setCPUAffinity is a stub for non-Linux platforms.
 // Returns ErrNotSupported as CPU affinity syscalls are Linux-specific.
 func setCPUAffinity(cpus []int) error {
-return ErrNotSupported
+	return ErrNotSupported
 }
 
 // GetCurrentCPU is a stub for non-Linux platforms.
 // Returns -1 as getcpu syscall is Linux-specific.
 func GetCurrentCPU() int {
-return -1
+	return -1
 }

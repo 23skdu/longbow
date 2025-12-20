@@ -213,7 +213,7 @@ func (s *VectorStore) GetAutoCompactionTriggerCount() int64 {
 }
 
 // GetWALQueueDepth returns the current WAL waiting queue depth
-func (s *VectorStore) GetWALQueueDepth() (depth int, capacity int) {
+func (s *VectorStore) GetWALQueueDepth() (depth, capacity int) {
 	if s.walBatcher == nil {
 		return 0, 0
 	}

@@ -46,6 +46,18 @@ Metrics related to data lifecycle management.
 | `longbow_snapshot_duration_seconds` | Histogram | None | The duration of the snapshot creation process. |
 | `longbow_evictions_total` | Counter | `reason` | The number of records evicted due to memory limits (`reason="lru"` or `reason="ttl"`). High eviction rates may suggest the need for more memory or a larger cluster. |
 
+## Bitmap Pool Metrics
+
+These metrics monitor the efficiency of the bitmap buffer pooling system.
+
+| Metric Name | Type | Labels | Description |
+| :--- | :--- | :--- | :--- |
+| `longbow_bitmap_pool_gets_total` | Counter | None | Total requests for bitmap buffers. |
+| `longbow_bitmap_pool_puts_total` | Counter | None | Total buffers returned to the pool. |
+| `longbow_bitmap_pool_hits_total` | Counter | None | Buffers successfully retrieved from pool (local or global). |
+| `longbow_bitmap_pool_misses_total` | Counter | None | Cache misses requiring new allocations. |
+| `longbow_bitmap_pool_discards_total` | Counter | None | Buffers discarded because they exceeded `MaxBufferSize`. |
+
 ## System Resource Metrics
 
 | Metric Name | Type | Labels | Description |

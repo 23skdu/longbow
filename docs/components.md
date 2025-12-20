@@ -65,10 +65,10 @@ Search operations use pooled scratch buffers via `sync.Pool`:
 Vector distance calculations use CPU-specific SIMD instructions:
 
 | Architecture | Instructions | Functions |
-| :----------- | :----------- | :---------------------------- |
-| AMD64 | AVX2 | euclideanAVX2, cosineAVX2 |
-| AMD64 | AVX-512 | euclideanAVX512, cosineAVX512 |
-| ARM64 | NEON | euclideanNEON, cosineNEON |
+| :----------- | :----------- | :--------------------------------------- |
+| AMD64        | AVX2         | euclideanAVX2, cosineAVX2, dotProductAVX2 |
+| AMD64        | AVX-512      | euclideanAVX512, cosineAVX512, dotAVX512 |
+| ARM64        | NEON         | euclideanNEON, cosineNEON, dotProductNEON |
 
 Runtime detection via `CPUFeatures` struct selects optimal implementation.
 
@@ -172,35 +172,37 @@ See [Metrics Documentation](metrics.md) for full list.
 
 ## Architecture Diagram
 
-```text
-┌──────────────────────────────────────────────────────────────┐
-│ Client │
-└────────────────────────┬─────────────────────────────────────┘
- │ Arrow Flight (gRPC)
- ┌────────────────────────▼─────────────────────────────────────┐
- │ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ │
- │ │ Data Server │ │ Meta Server │ │ Metrics │ │
- │ │ :3000 │ │ :3001 │ │ :9090 │ │
- │ └──────┬──────┘ └──────┬──────┘ └─────────────┘ │
- │ │ │ │
- │ ┌──────▼──────────────────▼──────┐ │
- │ │ Vector Store (32 Shards) │ │
- │ │ ┌───────────┐ ┌───────────┐ │ │
- │ │ │ HNSW Index│ │ Inverted │ │ │
- │ │ │ (Dense) │ │ Index │ │ │
- │ │ └───────────┘ └───────────┘ │ │
- │ └───────────────────────────────┘ │
- │ │ │
- │ ┌────────▼────────┐ │
- │ │ WAL Batcher │ │
- │ │ (Double-Buffer) │ │
- │ └────────┬────────┘ │
- │ │ │
- │ ┌───────────┴───────────┐ │
- │ ▼ ▼ │
- │ ┌───────────────┐ ┌───────────────┐ │
- │ │ Local Disk │ │ S3 Backend │ │
- │ │ (Parquet) │ │ (Parquet) │ │
- │ └───────────────┘ └───────────────┘ │
- └──────────────────────────────────────────────────────────────┘
+```mermaid
+graph TB
+    subgraph Net["Network Layer"]
+        Client["Client (Arrow Flight)"]
+    end
+
+    subgraph Front["Frontend Servers"]
+        direction LR
+        DS["Data Server (:3000)"]
+        MS["Meta Server (:3001)"]
+        Prom["Metrics (:9090)"]
+    end
+
+    subgraph Store["Sharded Vector Store"]
+        direction TB
+        LS["Load Balancer"]
+        Shards["HNSW Shards (1-32)"]
+        Inverted["Inverted Index (BM25)"]
+        LS --> Shards
+    end
+
+    subgraph Infra["Infrastructure"]
+        WAL["WAL Batcher"]
+        Storage["Storage (Parquet/S3)"]
+    end
+
+    Client <--> DS
+    Client <--> MS
+    DS --> LS
+    MS --> LS
+    Shards --> WAL
+    Inverted --> WAL
+    WAL --> Storage
 ```

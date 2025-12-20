@@ -3,12 +3,18 @@ name: Markdown Lint
 on:
   push:
     paths:
-      - 'docs/**/*.md'
-      - 'README.md'
+      - "docs/**/*.md"
+      - "README.md"
+      - "CONTRIBUTING.md"
   pull_request:
     paths:
-      - 'docs/**/*.md'
-      - 'README.md'
+      - "docs/**/*.md"
+      - "README.md"
+      - "CONTRIBUTING.md"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   lint:
@@ -20,4 +26,4 @@ jobs:
       - name: Markdown Lint
         uses: DavidAnson/markdownlint-cli2-action@v16
         with:
-          globs: 'docs/**/*.md'
+          globs: "docs/**/*.md"

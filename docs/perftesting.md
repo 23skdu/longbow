@@ -33,7 +33,7 @@ pip install pyarrow numpy pandas dask boto3
 python scripts/perf_test.py
 
 # Full benchmark suite
-python scripts/perf_test.py --all --rows 50000 --dim 768
+python scripts/perf_test.py --all --rows 50000 --dim 768 --data-uri grpc://localhost:3000 --meta-uri grpc://localhost:3001
 
 # Export results to JSON
 python scripts/perf_test.py --all --json results.json
@@ -327,9 +327,8 @@ def benchmark_memory_pressure(data_loc, memory_limit_mb, dim):
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--host` | localhost | Server hostname |
-| `--data-port` | 3000 | Data server port |
-| `--meta-port` | 3001 | Meta server port |
+| `--data-uri` | grpc://0.0.0.0:3000 | Data Server URI |
+| `--meta-uri` | grpc://0.0.0.0:3001 | Meta Server URI |
 
 ### Data Generation Options
 

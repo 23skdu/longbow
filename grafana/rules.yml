@@ -1,0 +1,45 @@
+groups:
+  - name: longbow_alerts
+    rules:
+      - alert: LongbowHighSearchLatency
+        expr: histogram_quantile(0.99, sum by (le, dataset) (rate(longbow_vector_search_latency_seconds_bucket[5m]))) > 1
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High search latency on {{ $labels.dataset }}"
+          description: "99th percentile search latency is above 1s for more than 2 minutes."
+
+      - alert: LongbowHighIpcErrors
+        expr: rate(longbow_ipc_decode_errors_total[5m]) > 1
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High IPC decoding error rate"
+          description: "Longbow is encountering more than 1 IPC error per second."
+
+      - alert: LongbowIndexingLag
+        expr: longbow_index_queue_depth > 10000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High indexing queue depth"
+          description: "The asynchronous indexing queue is growing faster than it can be processed."
+
+      - alert: LongbowMemoryPressure
+        expr: longbow_memory_fragmentation_ratio > 1.5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory fragmentation"
+          description: "System memory reserved is significantly higher than used memory."
+
+  - name: longbow_recording_rules
+    rules:
+      - record: job:longbow_search_qps:rate5m
+        expr: sum(rate(longbow_vector_search_latency_seconds_count[5m]))
+      - record: job:longbow_put_qps:rate5m
+        expr: sum(rate(longbow_flight_rows_processed_total{method="put"}[5m]))

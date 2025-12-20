@@ -84,4 +84,3 @@ podAnnotations:
 ![CI](https://github.com/23skdu/longbow/actions/workflows/ci.yml/badge.svg)
 ![Helm Validation](https://github.com/23skdu/longbow/actions/workflows/helm-validation.yml/badge.svg)
 ![Markdown Lint](https://github.com/23skdu/longbow/actions/workflows/markdown-lint.yml/badge.svg)
-![Release](https://github.com/23skdu/longbow/actions/workflows/release.yml/badge.svg)

@@ -180,6 +180,19 @@ func (s *VectorStore) replayWAL() error {
 		if r.Next() {
 			rec := r.RecordBatch()
 			rec.Retain()
+
+			// Validate record integrity before adding to store
+			if err := validateRecordBatch(rec); err != nil {
+				metrics.ValidationFailuresTotal.WithLabelValues("WAL", "invalid_batch").Inc()
+				s.logger.Warn("Skipping corrupted record in WAL",
+					zap.Error(err),
+					zap.String("dataset", name),
+					zap.Int64("numCols", rec.NumCols()),
+					zap.Int("numFields", rec.Schema().NumFields()))
+				rec.Release()
+				continue
+			}
+
 			// Append to store (skipping WAL write)
 			ds := s.vectors.GetOrCreate(name, func() *Dataset {
 				return &Dataset{Records: []arrow.RecordBatch{}, lastAccess: time.Now().UnixNano()}
@@ -320,6 +333,18 @@ func (s *VectorStore) loadSnapshots() error {
 			s.logger.Error("Failed to read parquet snapshot",
 				zap.Any("name", name),
 				zap.Error(err))
+			continue
+		}
+
+		// Validate record integrity
+		if err := validateRecordBatch(rec); err != nil {
+			metrics.ValidationFailuresTotal.WithLabelValues("Snapshot", "invalid_batch").Inc()
+			s.logger.Warn("Skipping corrupted record in snapshot",
+				zap.Error(err),
+				zap.String("dataset", name),
+				zap.Int64("numCols", rec.NumCols()),
+				zap.Int("numFields", rec.Schema().NumFields()))
+			rec.Release()
 			continue
 		}
 

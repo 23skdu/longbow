@@ -474,7 +474,7 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 
 	// Use pipeline for multi-batch datasets (parallel processing)
 	if s.shouldUsePipeline(len(recs)) {
-		rowsSent, err := s.doGetWithPipeline(stream.Context(), name, recs, &query, w, limit)
+		rowsSent, err := s.doGetWithPipeline(stream.Context(), name, recs, &query, w, targetSchema, limit)
 		if err != nil {
 			s.logger.Error("Pipeline processing failed", zap.Error(err))
 			metrics.FlightOperationsTotal.WithLabelValues(method, "error").Inc()
@@ -524,11 +524,16 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 
 		// Validate before cast to catch schema mismatch early
 		if err := validateRecordBatch(toWrite); err != nil {
+			metrics.ValidationFailuresTotal.WithLabelValues("DoGet", "invalid_batch").Inc()
 			if sliced {
 				toWrite.Release()
 			}
 			filteredRec.Release()
-			s.logger.Warn("Skipping invalid record batch", zap.Error(err))
+			s.logger.Warn("Skipping invalid record batch",
+				zap.Error(err),
+				zap.Int64("numCols", toWrite.NumCols()),
+				zap.Int("numFields", toWrite.Schema().NumFields()),
+				zap.Int64("numRows", toWrite.NumRows()))
 			continue
 		}
 
@@ -670,8 +675,12 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 
 		// Validate record integrity before processing
 		if err := validateRecordBatch(rec); err != nil {
+			metrics.ValidationFailuresTotal.WithLabelValues("DoPut", "invalid_batch").Inc()
 			rec.Release()
-			s.logger.Error("Malformed record in DoPut", zap.Error(err))
+			s.logger.Error("Malformed record in DoPut",
+				zap.Error(err),
+				zap.Int64("numCols", rec.NumCols()),
+				zap.Int("numFields", rec.Schema().NumFields()))
 			metrics.FlightOperationsTotal.WithLabelValues(method, "error").Inc()
 			return NewInvalidArgumentError("record", err.Error())
 		}

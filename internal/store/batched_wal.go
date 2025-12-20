@@ -264,7 +264,7 @@ func (w *WALBatcher) drainAndFlush() {
 }
 
 // encodeWALEntryHeader encodes crc (uint32), nameLen (uint32) and recLen (uint64) into a 16-byte slice
-func encodeWALEntryHeader(crc uint32, nameLen uint32, recLen uint64) []byte {
+func encodeWALEntryHeader(crc, nameLen uint32, recLen uint64) []byte {
 	buf := make([]byte, 16)
 	binary.LittleEndian.PutUint32(buf[0:4], crc)
 	binary.LittleEndian.PutUint32(buf[4:8], nameLen)

@@ -108,7 +108,7 @@ func MigrateToSharded(original *HNSWIndex, cfg AutoShardingConfig) (*ShardedHNSW
 func migrateVectors(original *HNSWIndex, sharded *ShardedHNSW, count int) error {
 	// Iterate through all VectorIDs
 	for i := 0; i < count; i++ {
-		vid := VectorID(i)
+		vid := VectorID(i) //nolint:gosec // G115 - i < count where count is within limits
 
 		// Get vector using VectorID
 		vec := original.getVector(vid)

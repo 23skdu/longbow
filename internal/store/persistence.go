@@ -81,7 +81,7 @@ func (s *VectorStore) writeToWAL(rec arrow.RecordBatch, name string) error {
 
 	// 2. Write Header & Data
 	nameBytes := []byte(name)
-	nameLen := uint32(len(nameBytes))
+	nameLen := uint32(len(nameBytes)) //nolint:gosec // G115 - name length fits in uint32
 	recLen := uint64(len(recBytes))
 
 	// Calc CRC

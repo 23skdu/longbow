@@ -53,8 +53,8 @@ func (s *MetaServer) handleVectorSearchAction(action *flight.Action, stream flig
 	}
 
 	// Get dataset
-	ds, ok := s.vectors.Get(req.Dataset)
-	if !ok {
+	ds, err := s.getDataset(req.Dataset)
+	if err != nil {
 		metrics.VectorSearchActionErrors.Inc()
 		return status.Errorf(codes.NotFound, "dataset not found: %s", req.Dataset)
 	}
@@ -73,7 +73,7 @@ func (s *MetaServer) handleVectorSearchAction(action *flight.Action, stream flig
 	}
 
 	// Perform search using SearchVectors from Index interface
-	searchResults := ds.Index.SearchVectors(req.Vector, req.K)
+	searchResults := ds.Index.SearchVectors(req.Vector, req.K, nil)
 
 	// Build response
 	resp := VectorSearchResponse{

@@ -2,6 +2,7 @@ package main
 
 import (
 "net"
+	_ "net/http/pprof" // Register pprof handlers
 "net/http"
 "os"
 "os/signal"
@@ -17,6 +18,12 @@ import (
 "github.com/kelseyhightower/envconfig"
 "github.com/prometheus/client_golang/prometheus/promhttp"
 "go.uber.org/zap"
+	"context"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/sdk/resource"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.17.0"
 "google.golang.org/grpc"
 )
 
@@ -99,6 +106,15 @@ vectorStore.StartEvictionTicker(checkInterval)
 vectorStore.StartWALCheckTicker(10 * time.Second)
 logger.Info("Eviction ticker started", zap.Duration("interval", checkInterval))
 }
+
+
+	// Initialize OpenTelemetry Tracer
+	tp := initTracer()
+	defer func() {
+		if err := tp.Shutdown(context.Background()); err != nil {
+			logger.Error("Error shutting down tracer provider", zap.Error(err))
+		}
+	}()
 
 // Start metrics server
 go func() {
@@ -209,4 +225,24 @@ logger.Error("Failed to close VectorStore", zap.Error(err))
 return
 }
 }
+}
+
+func initTracer() *sdktrace.TracerProvider {
+	// Define resource attributes
+	res := resource.NewWithAttributes(
+		semconv.SchemaURL,
+		semconv.ServiceNameKey.String("longbow"),
+	)
+
+	// Create TracerProvider
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithResource(res),
+		// sdktrace.WithBatcher(exporter), // Add exporter here
+	)
+
+	// Register globals
+	otel.SetTracerProvider(tp)
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}))
+
+	return tp
 }

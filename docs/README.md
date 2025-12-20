@@ -45,13 +45,16 @@ graph TB
 * **In-Memory Storage**: Fast read/write operations.
 * **Prometheus Metrics**: Built-in observability.
 * **Helm Deployment**: Easy installation on Kubernetes.
-* **Persistence**: Optional persistent storage for data durability.
+* **Persistence**: Optional persistent storage (WAL + Snapshots) for data durability.
+* **Filtering**: Predicate pushdown for DoGet and Post-filtering for Vector Search.
+* **Mesh Replication**: Foundation for multi-node sync using DoExchange.
 * **Security**: Configurable security contexts for Pods and Containers.
 
 ## Navigation
 
 * [Components](components.md)
 * [Usage Guide](usage.md)
+* [Helm Deployment Guide](helm.md)
 * [Arrow Protocol Spec](arrow-protocol.md)
 
 ## Observability & Metrics

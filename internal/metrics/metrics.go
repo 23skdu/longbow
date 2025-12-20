@@ -89,10 +89,21 @@ var (
 	// IpcDecodeErrorsTotal counts IPC decoding errors and recovered panics
 	IpcDecodeErrorsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "longbow_ipc_decode_errors_total",
-			Help: "Total number of IPC decoding errors and recovered panics",
+			Namespace: "longbow",
+			Name:      "ipc_decode_errors_total",
+			Help:      "Total number of IPC decoding errors and recovered panics",
 		},
 		[]string{"source", "status"},
+	)
+
+	// ValidationFailuresTotal counts record batch validation failures
+	ValidationFailuresTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: "longbow",
+			Name:      "validation_failures_total",
+			Help:      "Total number of record batch validation failures",
+		},
+		[]string{"source", "reason"},
 	)
 )
 
@@ -219,11 +230,12 @@ var DatasetRecordBatchesCount = promauto.NewGaugeVec(
 // 7. FilterExecutionDurationSeconds - Time spent applying filters
 var FilterExecutionDurationSeconds = promauto.NewHistogramVec(
 	prometheus.HistogramOpts{
-		Name:    "longbow_filter_execution_duration_seconds",
-		Help:    "Duration of filter execution by operator type",
-		Buckets: []float64{0.00001, 0.0001, 0.001, 0.01, 0.1, 1},
+		Namespace: "longbow",
+		Name:      "filter_execution_duration_seconds",
+		Help:      "Duration of filter execution by dataset",
+		Buckets:   []float64{0.00001, 0.0001, 0.001, 0.01, 0.1, 1},
 	},
-	[]string{"operator"},
+	[]string{"dataset"},
 )
 
 // 8. FilterSelectivityRatio - Ratio of rows output / rows input
@@ -548,8 +560,18 @@ var FlightPoolWaitDuration = promauto.NewHistogramVec(
 // PipelineBatchesPerSecond tracks pipeline throughput
 var PipelineBatchesPerSecond = promauto.NewGauge(
 	prometheus.GaugeOpts{
-		Name: "longbow_pipeline_batches_per_second",
-		Help: "DoGet pipeline throughput in batches per second",
+		Namespace: "longbow",
+		Name:      "pipeline_batches_per_second",
+		Help:      "DoGet pipeline throughput in batches per second (gauge)",
+	},
+)
+
+// PipelineBatchesTotal tracks total historical pipeline throughput
+var PipelineBatchesTotal = promauto.NewCounter(
+	prometheus.CounterOpts{
+		Namespace: "longbow",
+		Name:      "pipeline_batches_total",
+		Help:      "Total number of batches processed via DoGet pipeline",
 	},
 )
 

@@ -58,10 +58,14 @@ def command_put(args, data_client, meta_client):
     # Add text field for hybrid search testing
     if args.with_text:
         texts = [f"doc_{i} keyword_{i%10}" for i in range(rows)]
-        fields.append(pa.field("text", pa.string()))
+        # Use "meta" to align with perf_test.py and internal convention
+        fields.append(pa.field("meta", pa.string()))
         table = pa.Table.from_arrays([ids, vectors, ts, pa.array(texts)], schema=pa.schema(fields))
     else:
         table = pa.Table.from_arrays([ids, vectors, ts], schema=pa.schema(fields))
+
+    # NOTE: Schema: id (int64), vector (FixedSizeList<float32>[dim]), timestamp (Timestamp[ns]), meta (string)
+    # The server strictly validates that NumColumns matches NumFields in schema.
 
     print(f"Uploading {rows} rows to '{name}'...")
     descriptor = flight.FlightDescriptor.for_path(name)
@@ -144,6 +148,8 @@ def command_search(args, data_client, meta_client):
         request["text_query"] = args.text_query
         request["alpha"] = args.alpha
         print(f"Hybrid search with text='{args.text_query}' alpha={args.alpha}")
+        # NOTE: Current server implementation of "VectorSearch" action ignores "text_query" and "alpha".
+        # This is a placeholder for future hybrid search support.
 
     payload = json.dumps(request).encode("utf-8")
     

@@ -22,6 +22,11 @@ ingestion and low-latency retrieval.
   Write-Ahead Log (WAL) doesn't grow indefinitely. When the limit is reached, a
   snapshot is automatically triggered to compact the data and truncate the WAL.
 
+### Data Integrity
+
+- **CRC32 Checksums**: All WAL entries are checksummed. The server validates integrity
+  on startup (replay) and stops if corruption is detected.
+
 ## Data Format
 
 Longbow stores vectors and metadata in **Apache Parquet** format. This allows

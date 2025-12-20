@@ -115,6 +115,6 @@ func (s *MetaServer) DoAction(action *flight.Action, stream flight.FlightService
 		return s.handleVectorSearchAction(action, stream)
 		// return status.Error(codes.Unimplemented, "VectorSearch temporarily disabled")
 	default:
-		return status.Errorf(codes.Unimplemented, "unknown action: %s", action.Type)
+		return s.VectorStore.DoAction(action, stream)
 	}
 }

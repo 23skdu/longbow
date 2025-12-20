@@ -36,23 +36,6 @@ func (h *HNSWIndex) AddByLocation(batchIdx, rowIdx int) error {
 	return h.Add(batchIdx, rowIdx)
 }
 
-// SearchVectors implements VectorIndex interface for HNSWIndex.
-// It adapts the existing SearchWithArena to return SearchResult.
-func (h *HNSWIndex) SearchVectors(query []float32, k int) []SearchResult {
-	arena := GetArena() // Use pooled arena
-	defer PutArena(arena)
-
-	ids := h.SearchWithArena(query, k, arena)
-	results := make([]SearchResult, len(ids))
-	for i, id := range ids {
-		results[i] = SearchResult{
-			ID:    id,
-			Score: 0, // Score not available from SearchWithArena
-		}
-	}
-	return results
-}
-
 // =============================================================================
 // ShardedHNSW VectorIndex Implementation
 // =============================================================================

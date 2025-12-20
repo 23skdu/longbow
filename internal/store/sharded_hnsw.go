@@ -116,7 +116,9 @@ func sHNSWGetDistFunc(m VectorMetric) func(a, b []float32) float32 {
 	case MetricCosine:
 		return simd.CosineDistance
 	case MetricDotProduct:
-		return simd.DotProduct
+		return func(a, b []float32) float32 {
+			return -simd.DotProduct(a, b)
+		}
 	default:
 		return simd.EuclideanDistance
 	}

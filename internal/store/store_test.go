@@ -4,13 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"go.uber.org/zap"
 	"net"
 	"os"
 	"testing"
 	"time"
 
-	
+	"go.uber.org/zap"
+
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/flight"
@@ -22,9 +22,6 @@ import (
 )
 
 const bufSize = 1024 * 1024
-
-
-
 
 func setupServer(t *testing.T) (store *VectorStore, dir string, dialer func(context.Context, string) (net.Conn, error)) {
 	lis := bufconn.Listen(bufSize)
@@ -240,169 +237,168 @@ func TestSchemaValidation(t *testing.T) {
 }
 
 func TestPersistence(t *testing.T) {
-vs, tmpDir, dialer := setupServer(t)
-ctx := context.Background()
-client, err := flight.NewClientWithMiddleware(
-"passthrough:///bufnet",
-nil,
-nil,
-grpc.WithContextDialer(dialer),
-grpc.WithTransportCredentials(insecure.NewCredentials()),
-)
-if err != nil {
-t.Fatalf("Failed to create client: %v", err)
+	vs, tmpDir, dialer := setupServer(t)
+	ctx := context.Background()
+	client, err := flight.NewClientWithMiddleware(
+		"passthrough:///bufnet",
+		nil,
+		nil,
+		grpc.WithContextDialer(dialer),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
+	defer func() { _ = client.Close() }()
+
+	// Write Data with Vector to match Parquet schema expectation
+	schema := arrow.NewSchema(
+		[]arrow.Field{
+			{Name: "id", Type: arrow.PrimitiveTypes.Int32},
+			{Name: "vector", Type: arrow.FixedSizeListOf(2, arrow.PrimitiveTypes.Float32)},
+		},
+		nil,
+	)
+	mem := memory.NewGoAllocator()
+	b := array.NewRecordBuilder(mem, schema)
+	defer b.Release()
+
+	if b.Field(0) == nil {
+		t.Fatal("Field 0 builder is nil")
+	}
+	ib, ok := b.Field(0).(*array.Int32Builder)
+	if !ok {
+		t.Fatalf("Field 0 is not Int32Builder, got %T", b.Field(0))
+	}
+	ib.AppendValues([]int32{100}, nil)
+
+	// Add vector data
+	vb, ok := b.Field(1).(*array.FixedSizeListBuilder)
+	if !ok {
+		t.Fatalf("Field 1 is not FixedSizeListBuilder, got %T", b.Field(1))
+	}
+	vvb := vb.ValueBuilder().(*array.Float32Builder)
+	vb.Append(true)
+	vvb.AppendValues([]float32{0.1, 0.2}, nil)
+
+	rec := b.NewRecordBatch()
+	defer rec.Release()
+
+	stream, err := client.DoPut(ctx)
+	if err != nil {
+		t.Fatalf("DoPut failed: %v", err)
+	}
+	w := flight.NewRecordWriter(stream, ipc.WithSchema(schema))
+	w.SetFlightDescriptor(&flight.FlightDescriptor{Path: []string{"persist_test"}})
+
+	if err := w.Write(rec); err != nil {
+		t.Fatalf("Write failed: %v", err)
+	}
+	_ = w.Close()
+	if err := stream.CloseSend(); err != nil {
+		t.Fatalf("CloseSend failed: %v", err)
+	}
+	_, _ = stream.Recv()
+
+	// Force Snapshot
+	if err := vs.Snapshot(); err != nil {
+		t.Fatalf("Snapshot failed: %v", err)
+	}
+
+	// Verify file exists
+	path := fmt.Sprintf("%s/snapshots/persist_test.parquet", tmpDir)
+
+	// Wait briefly for file system
+	time.Sleep(100 * time.Millisecond)
+
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		t.Fatal("Snapshot file not created")
+	}
 }
-defer func() { _ = client.Close() }()
-
-// Write Data with Vector to match Parquet schema expectation
-schema := arrow.NewSchema(
-[]arrow.Field{
-{Name: "id", Type: arrow.PrimitiveTypes.Int32},
-{Name: "vector", Type: arrow.FixedSizeListOf(2, arrow.PrimitiveTypes.Float32)},
-},
-nil,
-)
-mem := memory.NewGoAllocator()
-b := array.NewRecordBuilder(mem, schema)
-defer b.Release()
-
-if b.Field(0) == nil {
-t.Fatal("Field 0 builder is nil")
-}
-ib, ok := b.Field(0).(*array.Int32Builder)
-if !ok {
-t.Fatalf("Field 0 is not Int32Builder, got %T", b.Field(0))
-}
-ib.AppendValues([]int32{100}, nil)
-
-// Add vector data
-vb, ok := b.Field(1).(*array.FixedSizeListBuilder)
-if !ok {
-t.Fatalf("Field 1 is not FixedSizeListBuilder, got %T", b.Field(1))
-}
-vvb := vb.ValueBuilder().(*array.Float32Builder)
-vb.Append(true)
-vvb.AppendValues([]float32{0.1, 0.2}, nil)
-
-rec := b.NewRecordBatch()
-defer rec.Release()
-
-stream, err := client.DoPut(ctx)
-if err != nil {
-t.Fatalf("DoPut failed: %v", err)
-}
-w := flight.NewRecordWriter(stream, ipc.WithSchema(schema))
-w.SetFlightDescriptor(&flight.FlightDescriptor{Path: []string{"persist_test"}})
-
-if err := w.Write(rec); err != nil {
-t.Fatalf("Write failed: %v", err)
-}
-_ = w.Close()
-if err := stream.CloseSend(); err != nil {
-t.Fatalf("CloseSend failed: %v", err)
-}
-_, _ = stream.Recv()
-
-// Force Snapshot
-if err := vs.Snapshot(); err != nil {
-t.Fatalf("Snapshot failed: %v", err)
-}
-
-// Verify file exists
-path := fmt.Sprintf("%s/snapshots/persist_test.parquet", tmpDir)
-
-// Wait briefly for file system
-time.Sleep(100 * time.Millisecond)
-
-if _, err := os.Stat(path); os.IsNotExist(err) {
-t.Fatal("Snapshot file not created")
-}
-}
-
 
 func TestEviction(t *testing.T) {
-mem := memory.NewGoAllocator()
-logger := zap.NewNop()
+	mem := memory.NewGoAllocator()
+	logger := zap.NewNop()
 
-// Test LRU Eviction
-t.Run("LRU", func(t *testing.T) {
-// Max memory small enough to force eviction
-// Create a store with 1KB limit
-store := NewVectorStore(mem, logger, 500, 0, 0)
+	// Test LRU Eviction
+	t.Run("LRU", func(t *testing.T) {
+		// Max memory small enough to force eviction
+		// Create a store with 1KB limit
+		store := NewVectorStore(mem, logger, 500, 0, 0)
 
-// Create a record that takes up ~400 bytes
-schema := arrow.NewSchema([]arrow.Field{
-{Name: "val", Type: arrow.PrimitiveTypes.Int32},
-}, nil)
-b := array.NewInt32Builder(mem)
-defer b.Release()
-for i := 0; i < 50; i++ {
-b.Append(int32(i))
-}
-arr := b.NewArray()
-defer arr.Release()
-rec := array.NewRecordBatch(schema, []arrow.Array{arr}, 50)
-defer rec.Release()
+		// Create a record that takes up ~400 bytes
+		schema := arrow.NewSchema([]arrow.Field{
+			{Name: "val", Type: arrow.PrimitiveTypes.Int32},
+		}, nil)
+		b := array.NewInt32Builder(mem)
+		defer b.Release()
+		for i := 0; i < 50; i++ {
+			b.Append(int32(i))
+		}
+		arr := b.NewArray()
+		defer arr.Release()
+		rec := array.NewRecordBatch(schema, []arrow.Array{arr}, 50)
+		defer rec.Release()
 
-// Add 3 datasets. 3rd one should force eviction of the 1st one.
-// Dataset 1
-store.vectors.Set("ds1", &Dataset{Records: []arrow.RecordBatch{rec}, lastAccess: time.Now().Add(-time.Minute).UnixNano()})
-rec.Retain()
-store.currentMemory.Add(calculateRecordSize(rec))
+		// Add 3 datasets. 3rd one should force eviction of the 1st one.
+		// Dataset 1
+		store.vectors.Set("ds1", &Dataset{Records: []arrow.RecordBatch{rec}, lastAccess: time.Now().Add(-time.Minute).UnixNano()})
+		rec.Retain()
+		store.currentMemory.Add(calculateRecordSize(rec))
 
-// Dataset 2
-store.vectors.Set("ds2", &Dataset{Records: []arrow.RecordBatch{rec}, lastAccess: time.Now().UnixNano()})
-rec.Retain()
-store.currentMemory.Add(calculateRecordSize(rec))
+		// Dataset 2
+		store.vectors.Set("ds2", &Dataset{Records: []arrow.RecordBatch{rec}, lastAccess: time.Now().UnixNano()})
+		rec.Retain()
+		store.currentMemory.Add(calculateRecordSize(rec))
 
-// Now try to add Dataset 3 via DoPut logic (simulated)
-// We need to lock manually as we are accessing internals or use evictLRU directly
-err := store.evictLRU(calculateRecordSize(rec))
+		// Now try to add Dataset 3 via DoPut logic (simulated)
+		// We need to lock manually as we are accessing internals or use evictLRU directly
+		err := store.evictLRU(calculateRecordSize(rec))
 
-if err != nil {
-t.Fatalf("evictLRU failed: %v", err)
-}
+		if err != nil {
+			t.Fatalf("evictLRU failed: %v", err)
+		}
 
-// Check if ds1 is gone
-_, ok1 := store.vectors.Get("ds1")
-_, ok2 := store.vectors.Get("ds2")
+		// Check if ds1 is gone
+		_, ok1 := store.vectors.Get("ds1")
+		_, ok2 := store.vectors.Get("ds2")
 
-if ok1 {
-t.Error("ds1 should have been evicted")
-}
-if !ok2 {
-t.Error("ds2 should still be present")
-}
-})
+		if ok1 {
+			t.Error("ds1 should have been evicted")
+		}
+		if !ok2 {
+			t.Error("ds2 should still be present")
+		}
+	})
 
-// Test TTL Eviction
-t.Run("TTL", func(t *testing.T) {
-ttl := 100 * time.Millisecond
-store := NewVectorStore(mem, logger, 0, 0, ttl)
+	// Test TTL Eviction
+	t.Run("TTL", func(t *testing.T) {
+		ttl := 100 * time.Millisecond
+		store := NewVectorStore(mem, logger, 0, 0, ttl)
 
-// Add expired dataset
-store.vectors.Set("expired", &Dataset{
-Records:    []arrow.RecordBatch{},
-lastAccess: time.Now().Add(-200 * time.Millisecond).UnixNano(),
-})
+		// Add expired dataset
+		store.vectors.Set("expired", &Dataset{
+			Records:    []arrow.RecordBatch{},
+			lastAccess: time.Now().Add(-200 * time.Millisecond).UnixNano(),
+		})
 
-// Add fresh dataset
-store.vectors.Set("fresh", &Dataset{
-Records:    []arrow.RecordBatch{},
-lastAccess: time.Now().UnixNano(),
-})
+		// Add fresh dataset
+		store.vectors.Set("fresh", &Dataset{
+			Records:    []arrow.RecordBatch{},
+			lastAccess: time.Now().UnixNano(),
+		})
 
-// Run eviction
-store.evictTTL()
+		// Run eviction
+		store.evictTTL()
 
-_, okExpired := store.vectors.Get("expired")
-_, okFresh := store.vectors.Get("fresh")
+		_, okExpired := store.vectors.Get("expired")
+		_, okFresh := store.vectors.Get("fresh")
 
-if okExpired {
-t.Error("expired dataset should have been evicted")
-}
-if !okFresh {
-t.Error("fresh dataset should still be present")
-}
-})
+		if okExpired {
+			t.Error("expired dataset should have been evicted")
+		}
+		if !okFresh {
+			t.Error("fresh dataset should still be present")
+		}
+	})
 }

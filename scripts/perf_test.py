@@ -116,6 +116,8 @@ def generate_vectors(num_rows: int, dim: int, with_text: bool = False) -> pa.Tab
         fields.append(pa.field("meta", pa.string()))
         arrays.append(text_array)
 
+    # Schema: id (int64), vector (FixedSizeList<float32>[dim]), timestamp (Timestamp[ns]), meta (string)
+    # The server strictly validates that NumColumns matches NumFields in schema.
     schema = pa.schema(fields)
     return pa.Table.from_arrays(arrays, schema=schema)
 
@@ -293,6 +295,7 @@ def benchmark_hybrid_search(client: flight.FlightClient, name: str,
             "text_query": text_query,
             "k": k,
             "alpha": 0.5,
+            # NOTE: Current server implementation of "VectorSearch" action ignores "text_query" and "alpha".
         }).encode("utf-8")
 
         start = time.time()

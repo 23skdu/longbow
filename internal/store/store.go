@@ -578,6 +578,15 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 		// Release rawRec immediately after transformation/retention in ensureTimestamp
 		rawRec.Release()
 
+		// Validate record integrity before processing
+		if int(rec.NumCols()) != rec.Schema().NumFields() {
+			rec.Release()
+			s.logger.Error("Malformed record: column count mismatch",
+				zap.Int("cols", int(rec.NumCols())),
+				zap.Int("fields", rec.Schema().NumFields()))
+			return NewInvalidArgumentError("record", "column count does not match schema field count")
+		}
+
 		size := CachedRecordSize(rec)
 
 		// Lock-free memory limit check with CAS loop

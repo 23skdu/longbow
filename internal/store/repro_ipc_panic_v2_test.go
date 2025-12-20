@@ -28,7 +28,9 @@ func TestCastRecordToSchema_EdgeCases(t *testing.T) {
 	schema := arrow.NewSchema(fields, nil)
 
 	// Target schema with an extra column
-	fieldsTarget := append(fields, arrow.Field{Name: "new_col", Type: arrow.PrimitiveTypes.Int64})
+	fieldsTarget := make([]arrow.Field, len(fields))
+	copy(fieldsTarget, fields)
+	fieldsTarget = append(fieldsTarget, arrow.Field{Name: "new_col", Type: arrow.PrimitiveTypes.Int64})
 	targetSchema := arrow.NewSchema(fieldsTarget, nil)
 
 	// Case 1: Zero-length record batch
@@ -49,7 +51,7 @@ func TestCastRecordToSchema_EdgeCases(t *testing.T) {
 	w := ipc.NewWriter(&buf, ipc.WithSchema(targetSchema), ipc.WithLZ4())
 	err = w.Write(outZero)
 	require.NoError(t, err, "IPC Write of zero-length record failed")
-	w.Close()
+	require.NoError(t, w.Close())
 
 	// Case 2: Sliced RecordBatch (offset non-zero)
 	bldr.Field(0).(*array.Int64Builder).AppendValues([]int64{1, 2, 3, 4, 5}, nil)
@@ -74,5 +76,5 @@ func TestCastRecordToSchema_EdgeCases(t *testing.T) {
 	wSlice := ipc.NewWriter(&bufSlice, ipc.WithSchema(targetSchema), ipc.WithLZ4())
 	err = wSlice.Write(outSlice)
 	require.NoError(t, err, "IPC Write of sliced record failed")
-	wSlice.Close()
+	require.NoError(t, wSlice.Close())
 }

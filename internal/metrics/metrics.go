@@ -85,6 +85,15 @@ var (
 		},
 		[]string{"reason"},
 	)
+
+	// IpcDecodeErrorsTotal counts IPC decoding errors and recovered panics
+	IpcDecodeErrorsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_ipc_decode_errors_total",
+			Help: "Total number of IPC decoding errors and recovered panics",
+		},
+		[]string{"source", "status"},
+	)
 )
 
 // VectorIndexSize tracks the number of vectors in the index

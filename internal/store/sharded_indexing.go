@@ -9,9 +9,9 @@ import (
 
 // ShardStats holds per-shard statistics
 type ShardStats struct {
-	ShardID      int
-	JobsSent     int64
-	QueueLength  int
+	ShardID       int
+	JobsSent      int64
+	QueueLength   int
 	QueueCapacity int
 }
 
@@ -31,7 +31,7 @@ type ShardedIndexChannel struct {
 // with the specified number of shards and buffer size per shard.
 func NewShardedIndexChannel(numShards, bufferSize int) *ShardedIndexChannel {
 	if numShards < 1 {
-		numShards = 1 
+		numShards = 1
 	}
 	if bufferSize < 1 {
 		bufferSize = 1

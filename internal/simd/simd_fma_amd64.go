@@ -25,120 +25,120 @@ func cosine32FMA(a, b uintptr) (dot, normA, normB float32)
 // DotProductFMA computes dot product using AVX-512 FMA instructions
 // Processes 64 elements per iteration for maximum throughput
 func DotProductFMA(a, b []float32) float32 {
-if len(a) == 0 || len(a) != len(b) {
-return 0
-}
+	if len(a) == 0 || len(a) != len(b) {
+		return 0
+	}
 
-var sum float32
-n := len(a)
-i := 0
+	var sum float32
+	n := len(a)
+	i := 0
 
-// Process 64-element blocks
-for ; i+64 <= n; i += 64 {
-sum += dot64FMA(
-uintptr(unsafe.Pointer(&a[i])),
-uintptr(unsafe.Pointer(&b[i])),
-)
-}
+	// Process 64-element blocks
+	for ; i+64 <= n; i += 64 {
+		sum += dot64FMA(
+			uintptr(unsafe.Pointer(&a[i])),
+			uintptr(unsafe.Pointer(&b[i])),
+		)
+	}
 
-// Process 32-element blocks
-for ; i+32 <= n; i += 32 {
-sum += dot32FMA(
-uintptr(unsafe.Pointer(&a[i])),
-uintptr(unsafe.Pointer(&b[i])),
-)
-}
+	// Process 32-element blocks
+	for ; i+32 <= n; i += 32 {
+		sum += dot32FMA(
+			uintptr(unsafe.Pointer(&a[i])),
+			uintptr(unsafe.Pointer(&b[i])),
+		)
+	}
 
-// Scalar tail
-for ; i < n; i++ {
-sum += a[i] * b[i]
-}
+	// Scalar tail
+	for ; i < n; i++ {
+		sum += a[i] * b[i]
+	}
 
-return sum
+	return sum
 }
 
 // EuclideanDistanceFMA computes squared Euclidean distance using AVX-512 FMA
 func EuclideanDistanceFMA(a, b []float32) float32 {
-if len(a) == 0 || len(a) != len(b) {
-return 0
-}
+	if len(a) == 0 || len(a) != len(b) {
+		return 0
+	}
 
-var sum float32
-n := len(a)
-i := 0
+	var sum float32
+	n := len(a)
+	i := 0
 
-// Process 64-element blocks
-for ; i+64 <= n; i += 64 {
-sum += euclidean64FMA(
-uintptr(unsafe.Pointer(&a[i])),
-uintptr(unsafe.Pointer(&b[i])),
-)
-}
+	// Process 64-element blocks
+	for ; i+64 <= n; i += 64 {
+		sum += euclidean64FMA(
+			uintptr(unsafe.Pointer(&a[i])),
+			uintptr(unsafe.Pointer(&b[i])),
+		)
+	}
 
-// Process 32-element blocks
-for ; i+32 <= n; i += 32 {
-sum += euclidean32FMA(
-uintptr(unsafe.Pointer(&a[i])),
-uintptr(unsafe.Pointer(&b[i])),
-)
-}
+	// Process 32-element blocks
+	for ; i+32 <= n; i += 32 {
+		sum += euclidean32FMA(
+			uintptr(unsafe.Pointer(&a[i])),
+			uintptr(unsafe.Pointer(&b[i])),
+		)
+	}
 
-// Scalar tail
-for ; i < n; i++ {
-diff := a[i] - b[i]
-sum += diff * diff
-}
+	// Scalar tail
+	for ; i < n; i++ {
+		diff := a[i] - b[i]
+		sum += diff * diff
+	}
 
-return sum
+	return sum
 }
 
 // CosineDistanceFMA computes cosine distance (1 - similarity) using AVX-512 FMA
 func CosineDistanceFMA(a, b []float32) float32 {
-if len(a) == 0 || len(a) != len(b) {
-return 1.0
-}
+	if len(a) == 0 || len(a) != len(b) {
+		return 1.0
+	}
 
-var dotSum, normASum, normBSum float32
-n := len(a)
-i := 0
+	var dotSum, normASum, normBSum float32
+	n := len(a)
+	i := 0
 
-// Process 32-element blocks (cosine needs 3 accumulators)
-for ; i+32 <= n; i += 32 {
-dot, normA, normB := cosine32FMA(
-uintptr(unsafe.Pointer(&a[i])),
-uintptr(unsafe.Pointer(&b[i])),
-)
-dotSum += dot
-normASum += normA
-normBSum += normB
-}
+	// Process 32-element blocks (cosine needs 3 accumulators)
+	for ; i+32 <= n; i += 32 {
+		dot, normA, normB := cosine32FMA(
+			uintptr(unsafe.Pointer(&a[i])),
+			uintptr(unsafe.Pointer(&b[i])),
+		)
+		dotSum += dot
+		normASum += normA
+		normBSum += normB
+	}
 
-// Scalar tail
-for ; i < n; i++ {
-dotSum += a[i] * b[i]
-normASum += a[i] * a[i]
-normBSum += b[i] * b[i]
-}
+	// Scalar tail
+	for ; i < n; i++ {
+		dotSum += a[i] * b[i]
+		normASum += a[i] * a[i]
+		normBSum += b[i] * b[i]
+	}
 
-if normASum == 0 || normBSum == 0 {
-return 1.0
-}
+	if normASum == 0 || normBSum == 0 {
+		return 1.0
+	}
 
-sqrtNormA := sqrt32(normASum)
-sqrtNormB := sqrt32(normBSum)
+	sqrtNormA := sqrt32(normASum)
+	sqrtNormB := sqrt32(normBSum)
 
-similarity := dotSum / (sqrtNormA * sqrtNormB)
-return 1.0 - similarity
+	similarity := dotSum / (sqrtNormA * sqrtNormB)
+	return 1.0 - similarity
 }
 
 // sqrt32 computes square root of float32 using Newton-Raphson
 func sqrt32(x float32) float32 {
-if x <= 0 {
-return 0
-}
-guess := x / 2
-for i := 0; i < 10; i++ {
-guess = (guess + x/guess) / 2
-}
-return guess
+	if x <= 0 {
+		return 0
+	}
+	guess := x / 2
+	for i := 0; i < 10; i++ {
+		guess = (guess + x/guess) / 2
+	}
+	return guess
 }

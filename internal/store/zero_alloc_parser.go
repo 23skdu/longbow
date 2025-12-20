@@ -489,59 +489,59 @@ func unsafeString(b []byte) string {
 
 // ParserPoolStats tracks pool usage statistics
 type ParserPoolStats struct {
-Gets   uint64
-Puts   uint64
-Hits   uint64
-Misses uint64
+	Gets   uint64
+	Puts   uint64
+	Hits   uint64
+	Misses uint64
 }
 
 var (
-// ticketParserPool is a thread-safe pool of parsers
-ticketParserPool sync.Pool
+	// ticketParserPool is a thread-safe pool of parsers
+	ticketParserPool sync.Pool
 
-// Pool statistics tracked with atomics for thread-safety
-parserPoolGets   uint64
-parserPoolPuts   uint64
-parserPoolHits   uint64
-parserPoolMisses uint64
+	// Pool statistics tracked with atomics for thread-safety
+	parserPoolGets   uint64
+	parserPoolPuts   uint64
+	parserPoolHits   uint64
+	parserPoolMisses uint64
 )
 
 // GetParserPoolStats returns current pool statistics
 func GetParserPoolStats() ParserPoolStats {
-return ParserPoolStats{
-Gets:   atomic.LoadUint64(&parserPoolGets),
-Puts:   atomic.LoadUint64(&parserPoolPuts),
-Hits:   atomic.LoadUint64(&parserPoolHits),
-Misses: atomic.LoadUint64(&parserPoolMisses),
-}
+	return ParserPoolStats{
+		Gets:   atomic.LoadUint64(&parserPoolGets),
+		Puts:   atomic.LoadUint64(&parserPoolPuts),
+		Hits:   atomic.LoadUint64(&parserPoolHits),
+		Misses: atomic.LoadUint64(&parserPoolMisses),
+	}
 }
 
 // ParseTicketQuerySafe is a thread-safe wrapper that uses pooled parsers
 // This function should be used for concurrent parsing instead of a shared parser
 func ParseTicketQuerySafe(data []byte) (TicketQuery, error) {
-atomic.AddUint64(&parserPoolGets, 1)
+	atomic.AddUint64(&parserPoolGets, 1)
 	metrics.ParserPoolGets.Inc()
 
-// Try to get a parser from the pool
-pooled := ticketParserPool.Get()
-var parser *ZeroAllocTicketParser
-if pooled != nil {
-atomic.AddUint64(&parserPoolHits, 1)
+	// Try to get a parser from the pool
+	pooled := ticketParserPool.Get()
+	var parser *ZeroAllocTicketParser
+	if pooled != nil {
+		atomic.AddUint64(&parserPoolHits, 1)
 		metrics.ParserPoolHits.Inc()
-parser = pooled.(*ZeroAllocTicketParser)
-} else {
-atomic.AddUint64(&parserPoolMisses, 1)
+		parser = pooled.(*ZeroAllocTicketParser)
+	} else {
+		atomic.AddUint64(&parserPoolMisses, 1)
 		metrics.ParserPoolMisses.Inc()
-parser = NewZeroAllocTicketParser()
-}
+		parser = NewZeroAllocTicketParser()
+	}
 
-// Parse the data
-result, err := parser.Parse(data)
+	// Parse the data
+	result, err := parser.Parse(data)
 
-// Return parser to pool
-ticketParserPool.Put(parser)
-atomic.AddUint64(&parserPoolPuts, 1)
+	// Return parser to pool
+	ticketParserPool.Put(parser)
+	atomic.AddUint64(&parserPoolPuts, 1)
 	metrics.ParserPoolPuts.Inc()
 
-return result, err
+	return result, err
 }

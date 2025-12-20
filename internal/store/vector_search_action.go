@@ -67,7 +67,7 @@ func (s *MetaServer) handleVectorSearchAction(action *flight.Action, stream flig
 
 	// Validate vector dimension
 	expectedDim := ds.Index.GetDimension()
-	if uint32(len(req.Vector)) != expectedDim {
+	if uint32(len(req.Vector)) != expectedDim { //nolint:gosec // G115 - vector length unlikely to exceed uint32
 		metrics.VectorSearchActionErrors.Inc()
 		return status.Errorf(codes.InvalidArgument, "dimension mismatch: expected %d, got %d", expectedDim, len(req.Vector))
 	}

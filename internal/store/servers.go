@@ -28,7 +28,7 @@ func (s *DataServer) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGet
 // DoPut stores a dataset, converting domain errors to gRPC status codes.
 func (s *DataServer) DoPut(stream flight.FlightService_DoPutServer) error {
 	// Backpressure Check: If WAL queue is > 80% full, signal client
-	depth, queueCap := s.VectorStore.GetWALQueueDepth()
+	depth, queueCap := s.GetWALQueueDepth()
 	if queueCap > 0 && float64(depth)/float64(queueCap) > 0.8 {
 		// Send metadata as "Warning" - client should slow down
 		s.logger.Warn("Applying backpressure", zap.Int("wal_depth", depth), zap.Int("wal_cap", queueCap))

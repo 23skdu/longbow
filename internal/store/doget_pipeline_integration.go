@@ -6,6 +6,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/apache/arrow-go/v18/arrow/memory"
@@ -98,11 +99,13 @@ func (s *VectorStore) StoreRecords(name string, records []arrow.Record) error { 
 // incrementPipelineBatches safely increments processed batch count
 func (s *VectorStore) incrementPipelineBatches(count int64) {
 	globalPipelineStats.batchesProcessed.Add(count)
+	metrics.PipelineBatchesTotal.Add(float64(count))
 }
 
 // incrementPipelineErrors safely increments error count
 func (s *VectorStore) incrementPipelineErrors() {
 	globalPipelineStats.errorsTotal.Add(1)
+	metrics.FlightOperationsTotal.WithLabelValues("pipeline", "error").Inc()
 }
 
 // doGetWithPipeline processes multiple batches using the pipeline for parallelism
@@ -112,6 +115,7 @@ func (s *VectorStore) doGetWithPipeline(
 	recs []arrow.Record, //nolint:staticcheck
 	query *TicketQuery,
 	w *flight.Writer,
+	targetSchema *arrow.Schema,
 	limit int64,
 ) (int64, error) {
 	if s.doGetPipelinePool == nil {
@@ -169,7 +173,55 @@ func (s *VectorStore) doGetWithPipeline(
 			sliced = true
 		}
 
-		if err := w.Write(toWrite); err != nil {
+		if err := validateRecordBatch(toWrite); err != nil {
+			metrics.ValidationFailuresTotal.WithLabelValues("pipeline", "invalid_batch").Inc()
+			if sliced {
+				toWrite.Release()
+			}
+			filteredRec.Release()
+			s.logger.Warn("Skipping invalid record batch in pipeline",
+				zap.Error(err),
+				zap.Int64("numCols", toWrite.NumCols()),
+				zap.Int("numFields", toWrite.Schema().NumFields()),
+				zap.Int64("numRows", toWrite.NumRows()))
+			continue
+		}
+
+		// Cast to target schema to handle evolution
+		castedRecRaw, err := s.castRecordToSchema(toWrite, targetSchema)
+		if err != nil {
+			if sliced {
+				toWrite.Release()
+			}
+			filteredRec.Release()
+			s.logger.Error("Failed to cast record in pipeline", zap.Error(err))
+			continue
+		}
+
+		// Deep copy for IPC safety
+		castedRec, err := s.deepCopyRecordBatch(castedRecRaw)
+		castedRecRaw.Release()
+		if err != nil {
+			if sliced {
+				toWrite.Release()
+			}
+			filteredRec.Release()
+			s.logger.Error("Failed to deep copy record in pipeline", zap.Error(err))
+			continue
+		}
+
+		// Skip empty batches post-cast (unlikely but safe)
+		if castedRec.NumRows() == 0 {
+			castedRec.Release()
+			if sliced {
+				toWrite.Release()
+			}
+			filteredRec.Release()
+			continue
+		}
+
+		if err := w.Write(castedRec); err != nil {
+			castedRec.Release()
 			if sliced {
 				toWrite.Release()
 			}
@@ -178,6 +230,7 @@ func (s *VectorStore) doGetWithPipeline(
 		}
 		rowsSent += toWrite.NumRows()
 		s.incrementPipelineBatches(1)
+		castedRec.Release()
 
 		if sliced {
 			toWrite.Release()

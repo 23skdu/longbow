@@ -297,6 +297,37 @@ func appendColumn(builder array.Builder, col arrow.Array) {
 				b.Append(arr.Value(i))
 			}
 		}
+	case *array.TimestampBuilder:
+		arr := col.(*array.Timestamp)
+		for i := 0; i < arr.Len(); i++ {
+			if arr.IsNull(i) {
+				b.AppendNull()
+			} else {
+				b.Append(arr.Value(i))
+			}
+		}
+	case *array.FixedSizeListBuilder:
+		arr := col.(*array.FixedSizeList)
+		values := arr.ListValues().(*array.Float32)
+		size := int(arr.DataType().(*arrow.FixedSizeListType).Len())
+		valBldr := b.ValueBuilder().(*array.Float32Builder)
+
+		for i := 0; i < arr.Len(); i++ {
+			if arr.IsNull(i) {
+				b.AppendNull()
+			} else {
+				b.Append(true)
+				start := i * size
+				end := start + size
+				for j := start; j < end; j++ {
+					if values.IsNull(j) {
+						valBldr.AppendNull()
+					} else {
+						valBldr.Append(values.Value(j))
+					}
+				}
+			}
+		}
 	}
 }
 

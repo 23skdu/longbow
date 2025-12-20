@@ -6,25 +6,6 @@
 Longbow is a high-performance, in-memory vector store implementing the Apache Arrow Flight protocol.
 It is designed for efficient, zero-copy transport of large datasets and vector embeddings between agents and services.
 
-<!-- markdownlint-disable MD033 -->
-```mermaid
-graph TD
-    Client[Client] -->|DoPut| DataServer[Data Server :3000]
-    Client -->|ListFlights| MetaServer[Meta Server :3001]
-
-    subgraph "Longbow Node"
-        DataServer --> WAL[(WAL Log)]
-        DataServer --> Mem[In-Memory Store]
-        Mem -->|Async Snapshot| Parquet[(Parquet Snapshots)]
-
-        subgraph "Zero-Copy Index"
-            HNSW[HNSW Graph] -.->|Refers to| Mem
-        end
-    end
-
-    Prometheus -->|Scrape| Metrics[:9090]
-```
-<!-- markdownlint-enable MD033 -->
 ## Features
 
 * **Protocol**: Apache Arrow Flight (over gRPC/HTTP2).

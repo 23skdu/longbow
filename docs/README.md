@@ -6,17 +6,37 @@ Apache Arrow Flight protocol.
 ## Architecture
 
 ```mermaid
-graph TD
-    Client[Client Application] -->|"Arrow Flight (gRPC/HTTP2)"| LB[Longbow Server]
-    LB -->|Store| Mem[In-Memory Vector Store]
-    LB -->|Metrics| Prom[Prometheus]
-    LB -->|Persistence| PVC[Persistent Volume]
-
-    subgraph Kubernetes
-        LB
-        Mem
-        PVC
+graph TB
+    Client["Client Application"]
+    
+    subgraph LB["Longbow Cluster (gRPC/Arrow Flight)"]
+        direction TB
+        DS["Data Server (:3000)"]
+        MS["Meta Server (:3001)"]
+        Metrics["Metrics Server (:9090)"]
     end
+
+    subgraph Core["Vector Store Core"]
+        direction TB
+        Shards["Sharded HNSW Index (32 shards)"]
+        Sparse["Inverted Index (BM25/Sparse)"]
+        Arena["Slab Arena (Off-heap Vectors)"]
+        Pool["Bitmap & Result Pools (Optimized)"]
+    end
+
+    subgraph Durability["Persistence & WAL"]
+        direction TB
+        WAL["Write-Ahead Log (Batched)"]
+        Snap["Parquet Snapshots"]
+        Storage["Local Disk / S3 Backend"]
+    end
+
+    Client <-->|"Flight Streams"| DS
+    Client <--> MS
+    LB --> Core
+    Core --> WAL
+    WAL --> Snap
+    Snap --> Storage
 ```
 
 ## Key Features

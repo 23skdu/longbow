@@ -435,15 +435,31 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 
 	ds.SetLastAccess(time.Now())
 	// Acquire Data RLock to safely read Records slice header
+	// Acquire Data RLock to safely copy and RETAIN records
+	// We must Retain() because concurrent eviction could Release() them while we are streaming
 	ds.dataMu.RLock()
-	recs := ds.Records
+	var recs []arrow.RecordBatch
+	if len(ds.Records) > 0 {
+		recs = make([]arrow.RecordBatch, len(ds.Records))
+		for i, r := range ds.Records {
+			r.Retain()
+			recs[i] = r
+		}
+	}
 	ds.dataMu.RUnlock()
+
+	// Ensure we Release() the local references when done
+	defer func() {
+		for _, r := range recs {
+			r.Release()
+		}
+	}()
 
 	if len(recs) == 0 {
 		return nil
 	}
 
-	// Use existing schema for writer to ensure consistency across batches
+	// Use existing schema from the dataset (requires lock to be safe)
 	var targetSchema *arrow.Schema
 	if existing := ds.GetExistingSchema(); existing != nil {
 		targetSchema = existing
@@ -954,7 +970,8 @@ func (s *VectorStore) evictTTL() {
 			continue
 		}
 		dsLockStart3 := time.Now()
-		ds.mu.Lock()
+		// MUST use dataMu to protect Records slice modification
+		ds.dataMu.Lock()
 		metrics.DatasetLockWaitDurationSeconds.WithLabelValues("append").Observe(time.Since(dsLockStart3).Seconds())
 		var freedMem int64
 		for _, r := range ds.Records {
@@ -962,7 +979,7 @@ func (s *VectorStore) evictTTL() {
 			r.Release()
 		}
 		ds.Records = nil
-		ds.mu.Unlock()
+		ds.dataMu.Unlock()
 		s.currentMemory.Add(-freedMem)
 		s.vectors.Delete(name)
 		evictedCount++

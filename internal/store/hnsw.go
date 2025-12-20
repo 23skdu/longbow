@@ -277,14 +277,6 @@ func (h *HNSWIndex) Add(batchIdx, rowIdx int) error {
 	return nil
 }
 
-// getVectorDirect retrieves the vector slice directly from Arrow memory without copy.
-// It uses RLock for safety.
-func (h *HNSWIndex) getVectorDirect(id VectorID) []float32 {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	return h.getVectorDirectLocked(id)
-}
-
 // getVectorDirectLocked retrieves the vector slice directly from Arrow memory without copy.
 // Caller MUST hold h.mu.Lock or h.mu.RLock.
 // It uses dataset.dataMu for safety but does NOT use epoch protection or return a release function,

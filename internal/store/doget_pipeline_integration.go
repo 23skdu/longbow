@@ -179,12 +179,13 @@ func (s *VectorStore) doGetWithPipeline(
 				toWrite.Release()
 			}
 			filteredRec.Release()
-			s.logger.Warn("Skipping invalid record batch in pipeline",
+			s.logger.Error("Invalid record batch in pipeline during DoGet",
 				zap.Error(err),
 				zap.Int64("numCols", toWrite.NumCols()),
 				zap.Int("numFields", toWrite.Schema().NumFields()),
 				zap.Int64("numRows", toWrite.NumRows()))
-			continue
+			s.incrementPipelineErrors()
+			return rowsSent, fmt.Errorf("invalid record batch in pipeline: %w", err)
 		}
 
 		// Cast to target schema to handle evolution

@@ -17,36 +17,36 @@ import (
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/flight"
+	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"google.golang.org/grpc"
-	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
 var binaryPath string
 
 func TestMain(m *testing.M) {
-os.Exit(testMain(m))
+	os.Exit(testMain(m))
 }
 
 func testMain(m *testing.M) int {
-// Build binary once for all tests
-tmpDir, err := os.MkdirTemp("", "longbow-test-*")
-if err != nil {
-fmt.Fprintf(os.Stderr, "Failed to create temp dir: %v\n", err)
-return 1
-}
-defer func() { _ = os.RemoveAll(tmpDir) }()
+	// Build binary once for all tests
+	tmpDir, err := os.MkdirTemp("", "longbow-test-*")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to create temp dir: %v\n", err)
+		return 1
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
-binaryPath = filepath.Join(tmpDir, "longbow")
-cmd := exec.Command("go", "build", "-o", binaryPath, ".")
-cmd.Stderr = os.Stderr
-if err := cmd.Run(); err != nil {
-fmt.Fprintf(os.Stderr, "Failed to build binary: %v\n", err)
-return 1
-}
+	binaryPath = filepath.Join(tmpDir, "longbow")
+	cmd := exec.Command("go", "build", "-o", binaryPath, ".")
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to build binary: %v\n", err)
+		return 1
+	}
 
-return m.Run()
+	return m.Run()
 }
 
 // getFreePort returns an available port

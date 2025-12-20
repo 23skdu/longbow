@@ -1,9 +1,9 @@
 package store
 
 import (
-"go.uber.org/zap"
+	"go.uber.org/zap"
 )
 
 func mockLogger() *zap.Logger {
-return zap.NewNop()
+	return zap.NewNop()
 }

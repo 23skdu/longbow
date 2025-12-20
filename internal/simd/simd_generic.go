@@ -16,12 +16,18 @@ func dotAVX512(a, b []float32) float32       { return dotGeneric(a, b) }
 func dotNEON(a, b []float32) float32         { return dotGeneric(a, b) }
 
 func euclideanBatchGeneric(query []float32, vectors [][]float32, results []float32) {
-for i, v := range vectors {
-results[i] = euclideanGeneric(query, v)
-}
+	for i, v := range vectors {
+		results[i] = euclideanGeneric(query, v)
+	}
 }
 
 // Stubs for generic architecture
-func euclideanBatchAVX2(query []float32, vectors [][]float32, results []float32) { euclideanBatchGeneric(query, vectors, results) }
-func euclideanBatchAVX512(query []float32, vectors [][]float32, results []float32) { euclideanBatchGeneric(query, vectors, results) }
-func euclideanBatchNEON(query []float32, vectors [][]float32, results []float32) { euclideanBatchGeneric(query, vectors, results) }
+func euclideanBatchAVX2(query []float32, vectors [][]float32, results []float32) {
+	euclideanBatchGeneric(query, vectors, results)
+}
+func euclideanBatchAVX512(query []float32, vectors [][]float32, results []float32) {
+	euclideanBatchGeneric(query, vectors, results)
+}
+func euclideanBatchNEON(query []float32, vectors [][]float32, results []float32) {
+	euclideanBatchGeneric(query, vectors, results)
+}

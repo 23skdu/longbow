@@ -58,6 +58,12 @@ type Config struct {
 }
 
 func main() {
+	if err := run(); err != nil {
+		os.Exit(1)
+	}
+}
+
+func run() error {
 	// Load .env file if it exists (do this before logger init to read LOG_* vars)
 	_ = godotenv.Load()
 
@@ -138,7 +144,7 @@ func main() {
 	if err := cfg.ValidateGRPCConfig(); err != nil {
 		logger.Error("Invalid gRPC config", zap.Error(err))
 		_ = logger.Sync()
-		os.Exit(1) //nolint:gocritic // Explicit sync before exit
+		return err
 	}
 	serverOpts := cfg.BuildGRPCServerOptions()
 	logger.Info("gRPC server options configured",
@@ -164,7 +170,7 @@ func main() {
 	if err != nil {
 		logger.Error("Failed to listen for Data Server", zap.Error(err), zap.String("addr", cfg.ListenAddr))
 		_ = logger.Sync()
-		os.Exit(1) //nolint:gocritic // sync called above
+		return err
 	}
 	dataLis := store.NewTCPNoDelayListener(dataLisBase.(*net.TCPListener))
 
@@ -176,7 +182,7 @@ func main() {
 	if err != nil {
 		logger.Error("Failed to listen for Meta Server", zap.Error(err), zap.String("addr", cfg.MetaAddr))
 		_ = logger.Sync()
-		os.Exit(1) //nolint:gocritic // sync called above
+		return err
 	}
 
 	metaLis := store.NewTCPNoDelayListener(metaLisBase.(*net.TCPListener))
@@ -232,7 +238,7 @@ func main() {
 			if err := vectorStore.Close(); err != nil {
 				logger.Error("Failed to close VectorStore", zap.Error(err))
 			}
-			return
+			return nil
 		}
 	}
 }

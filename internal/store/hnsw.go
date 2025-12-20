@@ -354,6 +354,10 @@ func (h *HNSWIndex) getVectorDirectLocked(id VectorID) []float32 {
 	var vecCol arrow.Array
 	for i, field := range rec.Schema().Fields() {
 		if field.Name == "vector" {
+			if i >= int(rec.NumCols()) {
+				// Malformed record: missing column data
+				return nil
+			}
 			vecCol = rec.Column(i)
 			break
 		}

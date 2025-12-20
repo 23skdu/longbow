@@ -17,11 +17,11 @@ const (
 )
 
 // GetExistingSchema returns the schema of the first record in the dataset.
-// Uses RLock for read-only access, allowing concurrent readers.
+// Uses dataMu RLock for read-only access to Records.
 // Returns nil if dataset has no records.
 func (ds *Dataset) GetExistingSchema() *arrow.Schema {
-	ds.mu.RLock()
-	defer ds.mu.RUnlock()
+	ds.dataMu.RLock()
+	defer ds.dataMu.RUnlock()
 
 	if len(ds.Records) == 0 {
 		return nil
@@ -31,9 +31,10 @@ func (ds *Dataset) GetExistingSchema() *arrow.Schema {
 }
 
 // GetRecordsCount returns the number of records in the dataset.
-// Uses RLock for read-only access.
+// Uses dataMu RLock for read-only access.
 func (ds *Dataset) GetRecordsCount() int {
-	defer ds.mu.RUnlock()
+	ds.dataMu.RLock()
+	defer ds.dataMu.RUnlock()
 	return len(ds.Records)
 }
 

@@ -194,9 +194,14 @@ func (s *VectorStore) replayWAL() error {
 			}
 
 			// Append to store (skipping WAL write)
-			ds := s.vectors.GetOrCreate(name, func() *Dataset {
-				return &Dataset{Records: []arrow.RecordBatch{}, lastAccess: time.Now().UnixNano()}
-			})
+			s.mu.Lock()
+			ds, ok := s.datasets[name]
+			if !ok {
+				ds = &Dataset{Records: []arrow.RecordBatch{}, lastAccess: time.Now().UnixNano(), Name: name}
+				s.datasets[name] = ds
+			}
+			s.mu.Unlock()
+
 			ds.dataMu.Lock()
 			ds.Records = append(ds.Records, rec)
 			ds.dataMu.Unlock()
@@ -227,35 +232,57 @@ func (s *VectorStore) Snapshot() error {
 	}
 
 	// Save each dataset to temp dir as Parquet
-	s.vectors.Range(func(name string, ds *Dataset) bool {
-		ds.mu.RLock()
-		recs := make([]arrow.RecordBatch, len(ds.Records))
-		copy(recs, ds.Records)
-		ds.mu.RUnlock()
-		if len(recs) == 0 {
-			return true
+	s.mu.RLock()
+	// Snapshot the map keys/values to avoid holding lock during I/O
+	type snapItem struct {
+		Name string
+		Recs []arrow.RecordBatch
+	}
+	items := make([]snapItem, 0, len(s.datasets))
+	for name, ds := range s.datasets {
+		ds.dataMu.RLock()
+		if len(ds.Records) > 0 {
+			recs := make([]arrow.RecordBatch, len(ds.Records))
+			// Retain? Parquet writer might not need retain if we write synchronously
+			// But to be safe from concurrent eviction? Eviction holds dataMu lock?
+			// ds.Evict holds dataMu. So RLock is enough.
+			copy(recs, ds.Records)
+			for _, r := range recs {
+				r.Retain()
+			}
+			items = append(items, snapItem{Name: name, Recs: recs})
 		}
-		path := filepath.Join(tempDir, name+".parquet")
+		ds.dataMu.RUnlock()
+	}
+	s.mu.RUnlock()
+
+	for _, item := range items {
+		defer func(recs []arrow.RecordBatch) {
+			for _, r := range recs {
+				r.Release()
+			}
+		}(item.Recs)
+
+		path := filepath.Join(tempDir, item.Name+".parquet")
 		f, err := os.Create(path)
 		if err != nil {
 			s.logger.Error("Failed to create snapshot file",
-				zap.Any("name", name),
+				zap.Any("name", item.Name),
 				zap.Error(err))
-			return true
+			continue
 		}
 
 		// Write all records to the parquet file
-		for _, rec := range recs {
+		for _, rec := range item.Recs {
 			if err := writeParquet(f, rec); err != nil {
 				s.logger.Error("Failed to write record to parquet snapshot",
-					zap.Any("name", name),
+					zap.Any("name", item.Name),
 					zap.Error(err))
 				break
 			}
 		}
 		_ = f.Close()
-		return true
-	})
+	}
 
 	// Atomic swap: Remove old, Rename temp to new
 	if err := os.RemoveAll(snapshotDir); err != nil {
@@ -349,9 +376,14 @@ func (s *VectorStore) loadSnapshots() error {
 		}
 
 		rec.Retain()
-		ds := s.vectors.GetOrCreate(name, func() *Dataset {
-			return &Dataset{Records: []arrow.RecordBatch{}, lastAccess: time.Now().UnixNano()}
-		})
+		s.mu.Lock()
+		ds, ok := s.datasets[name]
+		if !ok {
+			ds = &Dataset{Records: []arrow.RecordBatch{}, lastAccess: time.Now().UnixNano(), Name: name}
+			s.datasets[name] = ds
+		}
+		s.mu.Unlock()
+
 		ds.dataMu.Lock()
 		ds.Records = append(ds.Records, rec)
 		ds.dataMu.Unlock()
@@ -400,7 +432,6 @@ func (s *VectorStore) runSnapshotTicker(initialInterval time.Duration) {
 func (s *VectorStore) Close() error {
 	s.logger.Info("Closing VectorStore...")
 
-	s.stopCompaction()
 	// Stop WAL batcher first to flush pending writes
 	if s.walBatcher != nil {
 		if err := s.walBatcher.Stop(); err != nil {

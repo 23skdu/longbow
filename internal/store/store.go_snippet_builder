@@ -1,0 +1,174 @@
+	for i, rec := range ds.Records {
+		// Deep copy using Builder-based simplified implementation
+		copied, err := s.deepCopyRecordBatch(rec)
+		if err != nil {
+			s.logger.Error("Deep copy failed", zap.Error(err))
+			rec.Release() // Release original if we fail? or just return error
+			// rec loop variable is a copy of the struct in slice? No, range returns value.
+			// s.datasets is pointers?
+			// Dataset.Records is []arrow.RecordBatch.
+			return err
+		}
+
+		if err := w.Write(copied); err != nil {
+			s.logger.Error("DoGet Write failed", zap.Error(err), zap.Int("batch", i))
+			copied.Release()
+			return err
+		}
+		copied.Release()
+	}
+
+	s.logger.Info("DoGet completed (Minimal)")
+	return nil
+}
+
+// deepCopyRecordBatch creates a full copy using Builders for safety
+func (s *VectorStore) deepCopyRecordBatch(rec arrow.RecordBatch) (arrow.RecordBatch, error) {
+	if rec.NumRows() == 0 {
+		rec.Retain()
+		return rec, nil
+	}
+
+	cols := make([]arrow.Array, rec.NumCols())
+	for i, col := range rec.Columns() {
+		copied, err := s.copyArray(col)
+		if err != nil {
+			// Cleanup created columns
+			for j := 0; j < i; j++ {
+				cols[j].Release()
+			}
+			return nil, fmt.Errorf("failed to copy column %d: %w", i, err)
+		}
+		cols[i] = copied
+	}
+	return array.NewRecordBatch(rec.Schema(), cols, rec.NumRows()), nil
+}
+
+func (s *VectorStore) copyArray(arr arrow.Array) (arrow.Array, error) {
+	if arr.Len() == 0 {
+		arr.Retain()
+		return arr, nil
+	}
+
+	switch arr.DataType().ID() {
+	case arrow.INT64:
+		b := array.NewInt64Builder(s.mem)
+		defer b.Release()
+		input := arr.(*array.Int64)
+		b.Reserve(input.Len())
+		for i := 0; i < input.Len(); i++ {
+			if input.IsNull(i) {
+				b.AppendNull()
+			} else {
+				b.Append(input.Value(i))
+			}
+		}
+		return b.NewArray(), nil
+
+	case arrow.FLOAT32:
+		b := array.NewFloat32Builder(s.mem)
+		defer b.Release()
+		input := arr.(*array.Float32)
+		b.Reserve(input.Len())
+		for i := 0; i < input.Len(); i++ {
+			if input.IsNull(i) {
+				b.AppendNull()
+			} else {
+				b.Append(input.Value(i))
+			}
+		}
+		return b.NewArray(), nil
+		
+    case arrow.FLOAT64:
+		b := array.NewFloat64Builder(s.mem)
+		defer b.Release()
+		input := arr.(*array.Float64)
+		b.Reserve(input.Len())
+		for i := 0; i < input.Len(); i++ {
+			if input.IsNull(i) {
+				b.AppendNull()
+			} else {
+				b.Append(input.Value(i))
+			}
+		}
+		return b.NewArray(), nil
+
+	case arrow.STRING:
+		b := array.NewStringBuilder(s.mem)
+		defer b.Release()
+		input := arr.(*array.String)
+		b.Reserve(input.Len())
+		for i := 0; i < input.Len(); i++ {
+			if input.IsNull(i) {
+				b.AppendNull()
+			} else {
+				b.Append(input.Value(i))
+			}
+		}
+		return b.NewArray(), nil
+
+	case arrow.TIMESTAMP:
+		b := array.NewTimestampBuilder(s.mem, arr.DataType().(*arrow.TimestampType))
+		defer b.Release()
+		input := arr.(*array.Timestamp)
+		b.Reserve(input.Len())
+		for i := 0; i < input.Len(); i++ {
+			if input.IsNull(i) {
+				b.AppendNull()
+			} else {
+				b.Append(input.Value(i))
+			}
+		}
+		return b.NewArray(), nil
+
+	case arrow.FIXED_SIZE_LIST:
+		input := arr.(*array.FixedSizeList)
+		listSize := int(input.DataType().(*arrow.FixedSizeListType).Len())
+		
+		// Create builder for the values (e.g. Float32Builder)
+		valueType := input.DataType().(*arrow.FixedSizeListType).Elem()
+		
+		// We need a specific builder for the values.
+		// Since we don't know the type generically easily without reflection or switch,
+		// and we know our vectors are likely Float32, let's handle that specifically or use a recursive builder if possible.
+		// But FixedSizeListBuilder requires a specific value builder.
+		
+		// For the purpose of this prototype and typical vector store usage, assuming Float32 underlying is common.
+		// However, to be robust, let's try to match the value type.
+		
+		if valueType.ID() == arrow.FLOAT32 {
+		    b := array.NewFixedSizeListBuilder(s.mem, listSize, arrow.PrimitiveTypes.Float32)
+		    defer b.Release()
+		    valBuilder := b.ValueBuilder().(*array.Float32Builder)
+		    
+		    b.Reserve(input.Len())
+		    values := input.ListValues().(*array.Float32) // Assuming values are contiguous logic
+		    
+		    // Iterate lists
+		    for i := 0; i < input.Len(); i++ {
+		        if input.IsNull(i) {
+		            b.AppendNull()
+		        } else {
+		            b.Append(true)
+		            // Append 'listSize' values
+		            start := i * listSize
+		            for k := 0; k < listSize; k++ {
+		                val := values.Value(start + k)
+		                valBuilder.Append(val)
+		            }
+		        }
+		    }
+		    return b.NewArray(), nil
+		}
+		
+		// Fallback for other list types: just Retain (shallow copy) to be safe if we can't build it
+		// This avoids the risk of manual data corruption for types we don't handle explicitly yet.
+		arr.Retain()
+		return arr, nil
+
+	default:
+		// Fallback for types we don't explicitly handle
+		arr.Retain()
+		return arr, nil
+	}
+}

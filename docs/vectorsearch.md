@@ -14,13 +14,18 @@ Longbow provides three search modes:
 
 ## Filtered Search
 
-Longbow supports metadata filtering during vector search. Currently implemented as **Post-Filtering**:
+Longbow supports metadata filtering during vector search and data scans.
 
-1. **Oversampling**: The index retrieves `k * oversample_factor` candidates.
-2. **Predicate Check**: Metadata for candidates is checked against provided filters (e.g., `id > 100`, `category == 'news'`).
-3. **Selection**: The first `k` matching candidates are returned.
+### Implementation: Post-Filtering
 
-This approach ensures accuracy while preserving the zero-copy architecture.
+Currently, Longbow uses a robust **Post-Filtering** strategy integrated with the HNSW graph traversal:
+
+1. **Oversampling**: The index retrieves a larger set of candidates (`k * oversample_factor`).
+2. **Deterministic Mapping**: Internal `VectorID`s are mapped to metadata row locations using a high-density mapping table.
+3. **Predicate Application**: Each candidate is checked against the provided filter criteria (e.g., `id > 100`, `category == 'news'`) using the `MatchesFilters` engine.
+4. **Result Selection**: The first `k` matching candidates that satisfy all predicates are returned to the client.
+
+This approach maintains the system's **zero-copy architecture** by accessing metadata directly from Arrow memory during the filtering phase.
 
 ## Query Flow Architecture
 

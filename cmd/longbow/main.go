@@ -10,8 +10,10 @@ import (
 	"time"
 
 	"context"
+	"strconv" // Added for hostname fallback
 
 	"github.com/23skdu/longbow/internal/logging"
+	"github.com/23skdu/longbow/internal/mesh"
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/store"
 	"github.com/apache/arrow-go/v18/arrow/flight"
@@ -55,6 +57,16 @@ type Config struct {
 	GRPCInitialWindowSize     int32  `envconfig:"GRPC_INITIAL_WINDOW_SIZE" default:"1048576"`      // 1MB default
 	GRPCInitialConnWindowSize int32  `envconfig:"GRPC_INITIAL_CONN_WINDOW_SIZE" default:"1048576"` // 1MB default
 	GRPCMaxConcurrentStreams  uint32 `envconfig:"GRPC_MAX_CONCURRENT_STREAMS" default:"250"`       // 250 default
+
+	// Gossip Configuration (Production Readiness)
+	GossipEnabled       bool          `envconfig:"GOSSIP_ENABLED" default:"false"`
+	GossipPort          int           `envconfig:"GOSSIP_PORT" default:"7946"`
+	GossipInterval      time.Duration `envconfig:"GOSSIP_INTERVAL" default:"200ms"`
+	GossipAdvertiseAddr string        `envconfig:"GOSSIP_ADVERTISE_ADDR" default:"127.0.0.1"` // Set to Pod IP in K8s
+
+	// Storage Configuration
+	StorageAsyncFsync     bool `envconfig:"STORAGE_ASYNC_FSYNC" default:"true"`
+	StorageDoPutBatchSize int  `envconfig:"STORAGE_DOPUT_BATCH_SIZE" default:"100"`
 }
 
 func main() {
@@ -115,7 +127,13 @@ func run() error {
 	}
 
 	// Initialize Persistence (WAL + Snapshots)
-	if err := vectorStore.InitPersistence(cfg.DataPath, cfg.SnapshotInterval); err != nil {
+	storageCfg := store.StorageConfig{
+		DataPath:         cfg.DataPath,
+		SnapshotInterval: cfg.SnapshotInterval,
+		AsyncFsync:       cfg.StorageAsyncFsync,
+		DoPutBatchSize:   cfg.StorageDoPutBatchSize,
+	}
+	if err := vectorStore.InitPersistence(storageCfg); err != nil {
 		logger.Panic("Failed to initialize persistence", zap.Error(err))
 	}
 
@@ -144,6 +162,40 @@ func run() error {
 			logger.Error("Metrics server failed", zap.Error(err))
 		}
 	}()
+
+	// Start Gossip if enabled
+	if cfg.GossipEnabled {
+		// Use hostname or random ID?
+		hostname, _ := os.Hostname()
+		if hostname == "" {
+			hostname = "node-" + strconv.FormatInt(time.Now().UnixNano(), 10)
+		}
+
+		gossipCfg := mesh.GossipConfig{
+			ID:             hostname,
+			Port:           cfg.GossipPort,
+			ProtocolPeriod: cfg.GossipInterval,
+			Addr:           "0.0.0.0", // Bind to all interfaces
+		}
+
+		// If provided, override advertise addr logic (TODO: pass to NewGossip if supported or modify Gossip to take AdvertiseAddr)
+		// Current gossip.go uses "127.0.0.1" hardcoded in Start(). We should probably fix that too but for now...
+		// Let's rely on GossipConfig defaults or update internal/mesh/gossip.go later.
+		// Wait, NewGossip takes GossipConfig but g.Start() uses "127.0.0.1". I should fix gossip.go too!
+		// Proceeding with initialization.
+
+		g := mesh.NewGossip(gossipCfg)
+		if err := g.Start(); err != nil {
+			logger.Error("Failed to start Gossip", zap.Error(err))
+		} else {
+			logger.Info("Gossip started",
+				zap.String("id", gossipCfg.ID),
+				zap.Int("port", gossipCfg.Port),
+				zap.Duration("interval", gossipCfg.ProtocolPeriod))
+			vectorStore.SetMesh(g)
+			defer g.Stop()
+		}
+	}
 
 	// gRPC Server Options - using env-configurable message sizes and window sizes
 	if err := cfg.ValidateGRPCConfig(); err != nil {

@@ -173,7 +173,10 @@ func TestBatchedWAL_ReplayAfterBatch(t *testing.T) {
 
 	// Phase 2: Create new VectorStore and replay WAL
 	store := NewVectorStore(mem, zap.NewNop(), 1<<30, 0, time.Hour)
-	require.NoError(t, store.InitPersistence(tmpDir, time.Hour))
+	require.NoError(t, store.InitPersistence(StorageConfig{
+		DataPath:         tmpDir,
+		SnapshotInterval: time.Hour,
+	}))
 	defer func() { _ = store.Close() }()
 
 	// Verify all records were replayed

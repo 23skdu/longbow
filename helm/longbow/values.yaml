@@ -42,6 +42,18 @@ grpc:
   keepAliveMinTime: "5m"
   keepAlivePermitWithoutStream: false
 
+# Gossip Configuration (Cluster)
+gossip:
+  enabled: false
+  port: 7946
+  interval: "200ms"
+  # advertiseAddr: "127.0.0.1" # Override if needed (e.g. status.podIP)
+
+# Storage Configuration
+storage:
+  asyncFsync: true
+  doPutBatchSize: 100
+
 service:
   data:
     enabled: true

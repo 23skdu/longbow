@@ -31,7 +31,8 @@ type VectorStore struct {
 	datasets      map[string]*Dataset
 	maxMemory     atomic.Int64
 	currentMemory atomic.Int64
-	maxWALSize    atomic.Int64 // Added for WAL
+	maxWALSize    atomic.Int64  // Added for WAL
+	sequence      atomic.Uint64 // Global operation sequence
 
 	// Persistence
 	dataPath      string
@@ -274,9 +275,13 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 
 	rec := r.Record()
 
+	// Capture timestamp once for both WAL and local state
+	ts := time.Now().UnixNano()
+
 	// Write to WAL first for durability
 	if s.walBatcher != nil {
-		if err := s.walBatcher.Write(rec, name); err != nil {
+		seq := s.sequence.Add(1)
+		if err := s.walBatcher.Write(rec, name, seq, ts); err != nil {
 			s.logger.Error("Failed to write to WAL", zap.Error(err))
 			metrics.WalWritesTotal.WithLabelValues("error").Inc()
 			return err
@@ -312,6 +317,9 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 	ds.Records = append(ds.Records, rec)
 	ds.dataMu.Unlock()
 
+	// Update LWW and Merkle if "id" column exists
+	s.updateLWWAndMerkle(ds, rec, ts)
+
 	// Advise Memory: Random access for HNSW
 	AdviseRecord(rec, AdviceRandom)
 
@@ -335,6 +343,17 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 		rec := r.Record()
 		rec.Retain()
 
+		ts := time.Now().UnixNano()
+		// Write to WAL first
+		if s.walBatcher != nil {
+			seq := s.sequence.Add(1)
+			if err := s.walBatcher.Write(rec, name, seq, ts); err != nil {
+				s.logger.Error("Failed to write to WAL (loop)", zap.Error(err))
+				// Continue processing, but metrics
+				metrics.WalWritesTotal.WithLabelValues("error").Inc()
+			}
+		}
+
 		// Metric: Payload Size & Rows
 		batchSize := estimateBatchSize(rec)
 		metrics.DoPutPayloadSizeBytes.Observe(float64(batchSize))
@@ -348,6 +367,8 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 		batchIdx = len(ds.Records)
 		ds.Records = append(ds.Records, rec)
 		ds.dataMu.Unlock()
+
+		s.updateLWWAndMerkle(ds, rec, ts)
 
 		// Advise Memory: Random access for HNSW
 		AdviseRecord(rec, AdviceRandom)
@@ -740,7 +761,11 @@ func (s *VectorStore) startIndexingWorkers(numWorkers int) {
 	}
 }
 
-// getDataset retrieves a dataset by name.
+// GetDataset retrieves a dataset by name.
+func (s *VectorStore) GetDataset(name string) (*Dataset, error) {
+	return s.getDataset(name)
+}
+
 func (s *VectorStore) getDataset(name string) (*Dataset, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -749,6 +774,38 @@ func (s *VectorStore) getDataset(name string) (*Dataset, error) {
 		return nil, fmt.Errorf("dataset %q not found", name)
 	}
 	return ds, nil
+}
+
+func (s *VectorStore) updateLWWAndMerkle(ds *Dataset, rec arrow.RecordBatch, ts int64) {
+	idColIdx := -1
+	for i, f := range rec.Schema().Fields() {
+		if f.Name == "id" {
+			idColIdx = i
+			break
+		}
+	}
+
+	if idColIdx >= 0 {
+		column := rec.Column(idColIdx)
+		if ids, ok := column.(*array.Uint32); ok {
+			for i := 0; i < int(rec.NumRows()); i++ {
+				vid := VectorID(ids.Value(i))
+				if ds.LWW.Update(vid, ts) {
+					if ds.Merkle != nil {
+						ds.Merkle.Update(vid, ts)
+					}
+				}
+			}
+		}
+	}
+}
+
+func (s *VectorStore) MerkleRoot(name string) [32]byte {
+	ds, err := s.getDataset(name)
+	if err != nil {
+		return [32]byte{}
+	}
+	return ds.Merkle.RootHash()
 }
 
 // estimateBatchSize calculates appropriate size in bytes of a record batch

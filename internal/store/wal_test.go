@@ -34,7 +34,7 @@ func BenchmarkWAL_Write(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		name := fmt.Sprintf("dataset_%d", i)
-		err := wal.Write(name, rec)
+		err := wal.Write(name, uint64(i+1), 0, rec)
 		if err != nil {
 			b.Fatalf("Write failed: %v", err)
 		}
@@ -59,7 +59,7 @@ func BenchmarkWAL_Write_Sync(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		name := fmt.Sprintf("dataset_%d", i)
-		err := wal.Write(name, rec)
+		err := wal.Write(name, uint64(i+1), 0, rec)
 		if err != nil {
 			b.Fatalf("Write failed: %v", err)
 		}

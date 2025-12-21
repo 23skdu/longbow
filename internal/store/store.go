@@ -15,6 +15,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/23skdu/longbow/internal/mesh"
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
@@ -46,6 +47,9 @@ type VectorStore struct {
 
 	indexWg sync.WaitGroup // For background workers
 	mu      sync.RWMutex   // Protects datasets map (global lock, replaced by ShardedMap technically but kept for simple map access)
+
+	// Mesh integration
+	Mesh *mesh.Gossip
 }
 
 func NewVectorStore(mem memory.Allocator, logger *zap.Logger, maxMemory, maxWALSize int64, ttl time.Duration) *VectorStore {
@@ -58,6 +62,9 @@ func NewVectorStore(mem memory.Allocator, logger *zap.Logger, maxMemory, maxWALS
 	}
 	s.startIndexingWorkers(1)
 	return s
+}
+func (s *VectorStore) SetMesh(m *mesh.Gossip) {
+	s.Mesh = m
 }
 
 // Helper methods required by other parts of the system potentially, or for interface satisfaction

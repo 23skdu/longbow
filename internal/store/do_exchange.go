@@ -1,12 +1,17 @@
 package store
 
 import (
+	"bytes"
+	"encoding/binary"
 	"io"
 	"time"
 
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/apache/arrow-go/v18/arrow/flight"
+	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"go.uber.org/zap"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // DoExchange implements bidirectional Arrow Flight streaming for mesh replication.
@@ -16,7 +21,7 @@ import (
 // - Client sends FlightData messages with FlightDescriptor indicating dataset
 // - Server receives, processes, and can send data back
 // - Enables future mesh replication between peers
-func (s *DataServer) DoExchange(stream flight.FlightService_DoExchangeServer) error {
+func (s *VectorStore) DoExchange(stream flight.FlightService_DoExchangeServer) error {
 	start := time.Now()
 
 	// Track operation
@@ -72,18 +77,142 @@ func (s *DataServer) DoExchange(stream flight.FlightService_DoExchangeServer) er
 		// Check for sync command - foundation for mesh replication
 		if lastDescriptor != nil && len(lastDescriptor.Cmd) > 0 {
 			cmd := string(lastDescriptor.Cmd)
-			if cmd == "sync" || cmd == "fetch" {
-				// Send existing data back to requester
-				if ds, err := s.getDataset(datasetName); err == nil {
-					ds.dataMu.RLock()
-					for _, rec := range ds.Records {
-						_ = rec // Would serialize and send in full implementation
-						// For DoExchange ack/sync, we might want to actually send data?
-						// The original code passed `ack` later. This loop does nothing.
-						// Keeping it as a stub for now as requested by user ("foundation").
-					}
-					ds.dataMu.RUnlock()
+			if cmd == "sync" {
+				// Parse last sequence
+				if len(data.DataBody) < 8 {
+					// Default to 0? Or error.
+					// Let's assume 0 if empty.
 				}
+				var lastSeq uint64
+				if len(data.DataBody) >= 8 {
+					lastSeq = binary.LittleEndian.Uint64(data.DataBody[0:8])
+				}
+
+				s.logger.Info("Starting delta sync", zap.Uint64("last_seq", lastSeq))
+
+				// Create Iterator
+				it, err := NewWALIterator(s.dataPath, s.mem)
+				if err != nil {
+					s.logger.Error("Failed to create WAL iterator", zap.Error(err))
+					return err
+				}
+				defer it.Close()
+
+				if err := it.Seek(lastSeq); err != nil {
+					s.logger.Error("Failed to seek WAL", zap.Error(err))
+					return err
+				}
+
+				// Stream deltas
+				for {
+					seq, ts, name, rec, err := it.Next()
+					if err == io.EOF {
+						break
+					}
+					if err != nil {
+						s.logger.Error("WAL read error", zap.Error(err))
+						return err
+					}
+
+					// Serialize record using existing helper from DoGet or manually
+					// We need to send FlightData.
+					// Use flight.Writer? No, directly constructing FlightData is complex for Records (header+body).
+					// Better to use `flight.NewRecordWriter(stream)`.
+					// But we are sharing the stream? `DoExchange` is bidirectional.
+					// Can we create a Writer on the stream?
+
+					// Yes: `w := flight.NewRecordWriter(stream, ipc.WithSchema(rec.Schema()))`.
+					// BUT schema might change between records in WAL (different datasets!).
+					// Flight stream usually expects CONSTANT schema.
+					// If strictly streaming ONE dataset, fine.
+					// But WAL has mixed datasets.
+					// Mixed schema stream is tricky in Arrow Flight (requires dictionary batches etc or schema messages).
+					// Workaround: Send purely raw bytes as `FlightData.Body` if client can parse?
+					// Or simpler: Only sync ONE dataset? The plan implied generic sync.
+					// "Delta transfer".
+
+					// If we mix schemas, `flight.NewRecordWriter` will complain or we need to recreate it for each record if schema differs.
+					// Recreating writer sends Schema message each time. That effectively works as concatenation of valid Arrow streams.
+					// Let's try that.
+					// Send Header: Metadata with Seq, Name.
+
+					// To transmit metadata (Name, Seq) we can use FlightDescriptor on the write.
+					// `w.SetFlightDescriptor(...)` before writing? `RecordWriter` abstraction might hide this.
+					// Actually `DoExchange` stream allows raw `Send(*FlightData)`.
+					// We can serialize record to bytes (what WAL has) and wrap in FlightData.
+					// Client (Peer) needs to deserialize.
+
+					// Let's serialize manually to ensure controlling metadata.
+					var buf bytes.Buffer
+					writer := ipc.NewWriter(&buf, ipc.WithSchema(rec.Schema()))
+					if err := writer.Write(rec); err != nil {
+						rec.Release()
+						return err
+					}
+					writer.Close()
+
+					// Construct FlightData
+					// We send the whole IPC Payload (Schema + Record) in one blob?
+					// Or valid IPC stream.
+					// Let's send raw bytes of IPC stream.
+
+					metaBuf := make([]byte, 16)
+					binary.LittleEndian.PutUint64(metaBuf[0:8], seq)
+					binary.LittleEndian.PutUint64(metaBuf[8:16], uint64(ts))
+
+					// Using explicit FlightData construction
+					fd := &flight.FlightData{
+						FlightDescriptor: &flight.FlightDescriptor{
+							Type: flight.DescriptorPATH,
+							Path: []string{name},
+						},
+						AppMetadata: metaBuf, // Pass consistency tokens (Seq | TS)
+						DataBody:    buf.Bytes(),
+					}
+
+					if err := stream.Send(fd); err != nil {
+						rec.Release()
+						return err
+					}
+					rec.Release() // Release after send
+
+					sentCount++
+					metrics.DoExchangeBatchesSentTotal.Inc()
+				}
+				s.logger.Info("Sent deltas to peer", zap.Int64("count", sentCount), zap.Uint64("last_seq", lastSeq))
+
+				// Send "done" or just end? Client reads until EOF?
+				// Client triggered it.
+			} else if cmd == "merkle_node" {
+				pathLen := len(data.DataBody) / 4
+				path := make([]int, pathLen)
+				for i := 0; i < pathLen; i++ {
+					path[i] = int(binary.LittleEndian.Uint32(data.DataBody[i*4 : (i+1)*4]))
+				}
+
+				ds, err := s.getDataset(datasetName)
+				if err != nil {
+					return err
+				}
+
+				hash, children, ok := ds.Merkle.GetNode(path)
+				if !ok {
+					return status.Errorf(codes.NotFound, "Merkle node not found")
+				}
+
+				// Respond with hashes: ParentHash(32) | Child1Hash(32) | ... | Child16Hash(32)
+				resBuf := make([]byte, 32*(1+len(children)))
+				copy(resBuf[0:32], hash[:])
+				for i, child := range children {
+					copy(resBuf[32+i*32:32+(i+1)*32], child[:])
+				}
+
+				if err := stream.Send(&flight.FlightData{
+					DataBody: resBuf,
+				}); err != nil {
+					return err
+				}
+				continue // Skip the final ack for this command
 			}
 		}
 

@@ -42,6 +42,12 @@ func (s *DataServer) DoPut(stream flight.FlightService_DoPutServer) error {
 	return ToGRPCStatus(err)
 }
 
+// DoExchange delegates to VectorStore with error conversion
+func (s *DataServer) DoExchange(stream flight.FlightService_DoExchangeServer) error {
+	err := s.VectorStore.DoExchange(stream)
+	return ToGRPCStatus(err)
+}
+
 // ListFlights returns Unimplemented on DataServer
 func (s *DataServer) ListFlights(c *flight.Criteria, stream flight.FlightService_ListFlightsServer) error {
 	return status.Error(codes.Unimplemented, "ListFlights not implemented on DataServer; use MetaServer")

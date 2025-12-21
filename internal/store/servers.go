@@ -148,11 +148,33 @@ func (s *MetaServer) handleMeshStatus(action *flight.Action, stream flight.Fligh
 	if s.Mesh == nil {
 		return status.Error(codes.FailedPrecondition, "mesh is not initialized")
 	}
+
+	// Get member count for cache validation
 	members := s.Mesh.GetMembers()
-	body, err := json.Marshal(members)
-	if err != nil {
+	memberCount := len(members)
+
+	// Try cache first
+	if s.meshStatusCache != nil {
+		if cached := s.meshStatusCache.Get(memberCount); cached != nil {
+			return stream.Send(&flight.Result{Body: cached})
+		}
+	}
+
+	// Cache miss - serialize with pooled encoder
+	buf, enc := GetJSONEncoder()
+	defer PutJSONEncoder(buf, enc)
+
+	if err := enc.Encode(members); err != nil {
 		return status.Errorf(codes.Internal, "failed to marshal members: %v", err)
 	}
+
+	body := buf.Bytes()
+
+	// Update cache
+	if s.meshStatusCache != nil {
+		s.meshStatusCache.Set(body, memberCount)
+	}
+
 	return stream.Send(&flight.Result{Body: body})
 }
 

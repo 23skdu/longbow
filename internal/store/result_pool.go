@@ -9,14 +9,18 @@ import "sync"
 // - k=20: reranking workloads
 // - k=50: medium queries
 // - k=100: standard retrieval
+// - k=128: small RAG workloads (common embedding model output)
 // - k=256: retrieval augmented generation (RAG)
+// - k=512: large RAG workloads
 // - k=1000: batch processing
 type resultPool struct {
 	pool10   sync.Pool // for k=10
 	pool20   sync.Pool // for k=20 (common for reranking)
 	pool50   sync.Pool // for k=50
 	pool100  sync.Pool // for k=100
+	pool128  sync.Pool // for k=128 (small RAG)
 	pool256  sync.Pool // for k=256 (retrieval augmented generation)
+	pool512  sync.Pool // for k=512 (large RAG)
 	pool1000 sync.Pool // for k=1000 (batch processing)
 }
 
@@ -47,9 +51,21 @@ func newResultPool() *resultPool {
 				return &s
 			},
 		},
+		pool128: sync.Pool{
+			New: func() any {
+				s := make([]VectorID, 128)
+				return &s
+			},
+		},
 		pool256: sync.Pool{
 			New: func() any {
 				s := make([]VectorID, 256)
+				return &s
+			},
+		},
+		pool512: sync.Pool{
+			New: func() any {
+				s := make([]VectorID, 512)
 				return &s
 			},
 		},
@@ -63,7 +79,7 @@ func newResultPool() *resultPool {
 }
 
 // get retrieves a []VectorID slice of the specified length.
-// For common k values (10, 20, 50, 100, 256, 1000), slices are pooled.
+// For common k values (10, 20, 50, 100, 128, 256, 512, 1000), slices are pooled.
 // For other values, the next larger pool is used and resliced.
 // For k > 1000, a new slice is allocated.
 func (p *resultPool) get(k int) []VectorID {
@@ -83,8 +99,14 @@ func (p *resultPool) get(k int) []VectorID {
 	case k == 100:
 		ptr := p.pool100.Get().(*[]VectorID)
 		slice = *ptr
+	case k == 128:
+		ptr := p.pool128.Get().(*[]VectorID)
+		slice = *ptr
 	case k == 256:
 		ptr := p.pool256.Get().(*[]VectorID)
+		slice = *ptr
+	case k == 512:
+		ptr := p.pool512.Get().(*[]VectorID)
 		slice = *ptr
 	case k == 1000:
 		ptr := p.pool1000.Get().(*[]VectorID)
@@ -102,8 +124,14 @@ func (p *resultPool) get(k int) []VectorID {
 	case k < 100:
 		ptr := p.pool100.Get().(*[]VectorID)
 		slice = (*ptr)[:k]
+	case k < 128:
+		ptr := p.pool128.Get().(*[]VectorID)
+		slice = (*ptr)[:k]
 	case k < 256:
 		ptr := p.pool256.Get().(*[]VectorID)
+		slice = (*ptr)[:k]
+	case k < 512:
+		ptr := p.pool512.Get().(*[]VectorID)
 		slice = (*ptr)[:k]
 	case k < 1000:
 		ptr := p.pool1000.Get().(*[]VectorID)
@@ -140,8 +168,12 @@ func (p *resultPool) put(slice []VectorID) {
 		p.pool50.Put(&slice)
 	case 100:
 		p.pool100.Put(&slice)
+	case 128:
+		p.pool128.Put(&slice)
 	case 256:
 		p.pool256.Put(&slice)
+	case 512:
+		p.pool512.Put(&slice)
 	case 1000:
 		p.pool1000.Put(&slice)
 		// Non-standard capacities are not pooled, let GC handle them

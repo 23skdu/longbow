@@ -40,6 +40,7 @@ type Config struct {
 	KeepAlivePermitWithoutStream bool          `envconfig:"GRPC_KEEPALIVE_PERMIT_WITHOUT_STREAM" default:"false"`
 
 	ListenAddr       string        `envconfig:"LISTEN_ADDR" default:"0.0.0.0:3000"`
+	NodeID           string        `envconfig:"NODE_ID" default:""` // Optional override
 	MetaAddr         string        `envconfig:"META_ADDR" default:"0.0.0.0:3001"`
 	MetricsAddr      string        `envconfig:"METRICS_ADDR" default:"0.0.0.0:9090"`
 	MaxMemory        int64         `envconfig:"MAX_MEMORY" default:"1073741824"`
@@ -63,7 +64,10 @@ type Config struct {
 	GossipEnabled       bool          `envconfig:"GOSSIP_ENABLED" default:"false"`
 	GossipPort          int           `envconfig:"GOSSIP_PORT" default:"7946"`
 	GossipInterval      time.Duration `envconfig:"GOSSIP_INTERVAL" default:"200ms"`
-	GossipAdvertiseAddr string        `envconfig:"GOSSIP_ADVERTISE_ADDR" default:"127.0.0.1"` // Set to Pod IP in K8s
+	GossipAdvertiseAddr string        `envconfig:"GOSSIP_ADVERTISE_ADDR" default:"127.0.0.1"`  // Set to Pod IP in K8s
+	GossipDiscovery     string        `envconfig:"GOSSIP_DISCOVERY_PROVIDER" default:"static"` // static, k8s, dns
+	GossipStaticPeers   string        `envconfig:"GOSSIP_STATIC_PEERS" default:""`             // Comma separated
+	GossipDNSRecord     string        `envconfig:"GOSSIP_DNS_RECORD" default:""`
 
 	// Storage Configuration
 	StorageAsyncFsync     bool `envconfig:"STORAGE_ASYNC_FSYNC" default:"true"`
@@ -165,26 +169,36 @@ func run() error {
 	}()
 
 	// Initialize Sharding Ring Manager
-	// We use hostname as nodeID for now, same as Gossip
-	hostname, _ := os.Hostname()
-	if hostname == "" {
-		hostname = "node-" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	// Use configured NodeID or fallback to hostname
+	nodeID := cfg.NodeID
+	if nodeID == "" {
+		hostname, _ := os.Hostname()
+		if hostname == "" {
+			nodeID = "node-" + strconv.FormatInt(time.Now().UnixNano(), 10)
+		} else {
+			nodeID = hostname
+		}
 	}
-	ringManager := sharding.NewRingManager(hostname, logger)
+
+	ringManager := sharding.NewRingManager(nodeID, logger)
 	// Add self to ring immediately
-	ringManager.NotifyJoin(&mesh.Member{ID: hostname, Addr: cfg.ListenAddr, Status: mesh.StatusAlive})
+	ringManager.NotifyJoin(&mesh.Member{ID: nodeID, Addr: cfg.ListenAddr, Status: mesh.StatusAlive})
 
 	// Start Gossip if enabled
 	if cfg.GossipEnabled {
 		// Use hostname or random ID?
-		// hostname already retrieved above
 
 		gossipCfg := mesh.GossipConfig{
-			ID:             hostname,
+			ID:             nodeID,
 			Port:           cfg.GossipPort,
 			ProtocolPeriod: cfg.GossipInterval,
 			Addr:           "0.0.0.0", // Bind to all interfaces
 			Delegate:       ringManager,
+			Discovery: mesh.DiscoveryConfig{
+				Provider:    cfg.GossipDiscovery,
+				StaticPeers: cfg.GossipStaticPeers,
+				DNSRecord:   cfg.GossipDNSRecord,
+			},
 		}
 
 		// If provided, override advertise addr logic (TODO: pass to NewGossip if supported or modify Gossip to take AdvertiseAddr)

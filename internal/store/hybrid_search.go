@@ -280,8 +280,21 @@ func (hs *HybridSearcher) SearchHybrid(vectorQuery []float32, textQuery string, 
 		candidateK = 20
 	}
 
-	denseResults := hs.SearchDense(vectorQuery, candidateK)
-	sparseResults := hs.SearchSparse(textQuery, candidateK)
+	var denseResults, sparseResults []SearchResult
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		denseResults = hs.SearchDense(vectorQuery, candidateK)
+	}()
+
+	go func() {
+		defer wg.Done()
+		sparseResults = hs.SearchSparse(textQuery, candidateK)
+	}()
+
+	wg.Wait()
 
 	return ReciprocalRankFusion(rrfK, k, denseResults, sparseResults)
 }
@@ -302,8 +315,21 @@ func (hs *HybridSearcher) SearchHybridWeighted(vectorQuery []float32, textQuery 
 		candidateK = 20
 	}
 
-	denseResults := hs.SearchDense(vectorQuery, candidateK)
-	sparseResults := hs.SearchSparse(textQuery, candidateK)
+	var denseResults, sparseResults []SearchResult
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		denseResults = hs.SearchDense(vectorQuery, candidateK)
+	}()
+
+	go func() {
+		defer wg.Done()
+		sparseResults = hs.SearchSparse(textQuery, candidateK)
+	}()
+
+	wg.Wait()
 
 	// Weighted score combination
 	scores := make(map[VectorID]float32)

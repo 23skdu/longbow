@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/23skdu/longbow/internal/simd"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 )
@@ -11,6 +12,7 @@ import (
 // filterOp represents a typed operation on a specific column
 type filterOp interface {
 	Match(rowIdx int) bool
+	MatchBitmap(dst []byte)
 }
 
 // int64FilterOp avoids string conversion for int64 columns
@@ -42,6 +44,44 @@ func (o *int64FilterOp) Match(rowIdx int) bool {
 	return false
 }
 
+func (o *int64FilterOp) MatchBitmap(dst []byte) {
+	var op simd.CompareOp
+	switch o.operator {
+	case "=", "eq", "==":
+		op = simd.CompareEq
+	case "!=", "neq":
+		op = simd.CompareNeq
+	case ">":
+		op = simd.CompareGt
+	case ">=":
+		op = simd.CompareGe
+	case "<":
+		op = simd.CompareLt
+	case "<=":
+		op = simd.CompareLe
+	default:
+		for i := 0; i < len(dst); i++ {
+			if o.Match(i) {
+				dst[i] = 1
+			} else {
+				dst[i] = 0
+			}
+		}
+		return
+	}
+
+	simd.MatchInt64(o.col.Int64Values(), o.val, op, dst)
+
+	if o.col.NullN() > 0 {
+		offset := o.col.Data().Offset()
+		for i := 0; i < len(dst); i++ {
+			if o.col.IsNull(i + offset) {
+				dst[i] = 0
+			}
+		}
+	}
+}
+
 // float32FilterOp avoids string conversion for float32 columns
 type float32FilterOp struct {
 	col      *array.Float32
@@ -71,6 +111,44 @@ func (o *float32FilterOp) Match(rowIdx int) bool {
 	return false
 }
 
+func (o *float32FilterOp) MatchBitmap(dst []byte) {
+	var op simd.CompareOp
+	switch o.operator {
+	case "=", "eq", "==":
+		op = simd.CompareEq
+	case "!=", "neq":
+		op = simd.CompareNeq
+	case ">":
+		op = simd.CompareGt
+	case ">=":
+		op = simd.CompareGe
+	case "<":
+		op = simd.CompareLt
+	case "<=":
+		op = simd.CompareLe
+	default:
+		for i := 0; i < len(dst); i++ {
+			if o.Match(i) {
+				dst[i] = 1
+			} else {
+				dst[i] = 0
+			}
+		}
+		return
+	}
+
+	simd.MatchFloat32(o.col.Float32Values(), o.val, op, dst)
+
+	if o.col.NullN() > 0 {
+		offset := o.col.Data().Offset()
+		for i := 0; i < len(dst); i++ {
+			if o.col.IsNull(i + offset) {
+				dst[i] = 0
+			}
+		}
+	}
+}
+
 // stringFilterOp optimizes string comparisons
 type stringFilterOp struct {
 	col      *array.String
@@ -98,6 +176,16 @@ func (o *stringFilterOp) Match(rowIdx int) bool {
 		return v <= o.val
 	}
 	return false
+}
+
+func (o *stringFilterOp) MatchBitmap(dst []byte) {
+	for i := 0; i < len(dst); i++ {
+		if o.Match(i) {
+			dst[i] = 1
+		} else {
+			dst[i] = 0
+		}
+	}
 }
 
 // FilterEvaluator pre-processes filters for a specific RecordBatch to enable fast scanning
@@ -189,4 +277,50 @@ func (e *FilterEvaluator) MatchesBatch(rowIndices []int) []int {
 		}
 	}
 	return filtered
+}
+
+// MatchesAll evaluates all filters on the entire batch using SIMD and returns matching row indices.
+// This is optimal for dense scans.
+func (e *FilterEvaluator) MatchesAll(batchLen int) []int {
+	if len(e.ops) == 0 {
+		// Return all indices
+		indices := make([]int, batchLen)
+		for i := 0; i < batchLen; i++ {
+			indices[i] = i
+		}
+		return indices
+	}
+
+	// Allocate bitmaps
+	// Note: batchLen serves as capacity.
+	// We assume all columns in the batch have the same length.
+	// Ops access columns which know their length, but dst must be sized correctly.
+	// We pass dst of batchLen.
+
+	bitmap := make([]byte, batchLen)
+	// Initialize first op
+	e.ops[0].MatchBitmap(bitmap)
+
+	if len(e.ops) > 1 {
+		tmp := make([]byte, batchLen)
+		for i := 1; i < len(e.ops); i++ {
+			e.ops[i].MatchBitmap(tmp)
+			// Intersect (AND)
+			// TODO: Vectorize this loop too (16 bytes at a time)
+			for j := 0; j < batchLen; j++ {
+				if tmp[j] == 0 {
+					bitmap[j] = 0
+				}
+			}
+		}
+	}
+
+	// Collect indices
+	indices := make([]int, 0, batchLen/2) // Pre-allocate estimate
+	for i, b := range bitmap {
+		if b != 0 {
+			indices = append(indices, i)
+		}
+	}
+	return indices
 }

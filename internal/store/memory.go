@@ -76,17 +76,53 @@ func UnlockMemory(ptr unsafe.Pointer, size uintptr) error {
 
 // PinThreadToCore pins the current goroutine's thread to a specific CPU core.
 // This is most effective when combined with runtime.LockOSThread().
-// On non-Linux systems, this returns an error or is a no-op.
+// On non-Linux systems, this returns nil (no-op).
 func PinThreadToCore(core int) error {
-	if runtime.GOOS != "linux" {
-		return nil
+	if runtime.GOOS == "linux" {
+		return pinThreadToCoreLinux(core)
 	}
-
-	// Linux specific implementation using sched_setaffinity
-	// This would require more complex syscall wrapping or cgo
-	// For now, we provide the hook for Linux environments.
 	return nil
 }
+
+// GetNumaNode returns the NUMA node (memory bank) where the page containing
+// the given pointer resides.
+// On non-Linux systems, returns -1 and nil error.
+func GetNumaNode(ptr unsafe.Pointer) (int, error) {
+	if runtime.GOOS == "linux" {
+		return getNumaNodeLinux(ptr)
+	}
+	return -1, nil
+}
+
+// PinThreadToNode pins the current goroutine's thread to the set of CPUs
+// associated with the given NUMA node.
+// On non-Linux systems, this returns nil (no-op).
+func PinThreadToNode(node int) error {
+	if runtime.GOOS == "linux" {
+		return pinThreadToNodeLinux(node)
+	}
+	return nil
+}
+
+// Linux-specific hooks (implemented in memory_linux.go)
+// We define them here as stubs to allow compilation on non-Linux if memory_linux.go isn't compiled,
+// but usually file suffixes handle that.
+// However, since we call them from here conditionally, we need build tags or stubs.
+// Better approach: Use build tags completely.
+// Let's refactor:
+// memory.go: contains the exported functions calling internal platform-specific implementations.
+// But Go build tags are file-level.
+// To keep it simple in one file for non-Linux and one for Linux:
+// We can have `memory_generated.go` or similar?
+// Or just:
+// memory.go:
+//   func PinThreadToCore(core int) error { return pinThreadToCoreImpl(core) }
+// memory_stub.go (build !linux):
+//   func pinThreadToCoreImpl(core int) error { return nil }
+// memory_linux.go (build linux):
+//   func pinThreadToCoreImpl(core int) error { <real impl> }
+//
+// Let's adopt this pattern.
 
 // AdviseRecord provides memory hints for all buffers in an Arrow RecordBatch.
 func AdviseRecord(rec arrow.RecordBatch, advice MemoryAdvice) {

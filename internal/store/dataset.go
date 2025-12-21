@@ -5,6 +5,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/RoaringBitmap/roaring/v2"
 	"github.com/apache/arrow-go/v18/arrow"
 )
 
@@ -22,7 +23,7 @@ type Dataset struct {
 	Records    []arrow.RecordBatch
 	lastAccess int64 // UnixNano
 	Version    int64
-	Index      Index        // Abstract Interface
+	Index      VectorIndex  // Use common interface (Item 3)
 	dataMu     sync.RWMutex // Protects Records slice (append-only)
 	Name       string
 	Schema     *arrow.Schema
@@ -32,6 +33,24 @@ type Dataset struct {
 
 	// Memory tracking
 	SizeBytes atomic.Int64
+}
+
+// IsSharded returns true if the dataset uses ShardedHNSW.
+func (d *Dataset) IsSharded() bool {
+	d.dataMu.RLock()
+	defer d.dataMu.RUnlock()
+	_, ok := d.Index.(*ShardedHNSW)
+	return ok
+}
+
+// IndexLen returns the number of vectors in the index.
+func (d *Dataset) IndexLen() int {
+	d.dataMu.RLock()
+	defer d.dataMu.RUnlock()
+	if d.Index != nil {
+		return d.Index.Len()
+	}
+	return 0
 }
 
 func NewDataset(name string, schema *arrow.Schema) *Dataset {
@@ -51,43 +70,48 @@ func (d *Dataset) SetLastAccess(t time.Time) {
 	atomic.StoreInt64(&d.lastAccess, t.UnixNano())
 }
 
-// Bitset is a thread-safe simple bitmap implementation
+// Bitset is a thread-safe wrapper around a Roaring Bitmap (Item 10)
 type Bitset struct {
-	data []uint64
-	mu   sync.RWMutex
+	bitmap *roaring.Bitmap
+	mu     sync.RWMutex
 }
 
 func NewBitset() *Bitset {
 	return &Bitset{
-		data: make([]uint64, 0),
+		bitmap: roaring.New(),
 	}
 }
 
 func (b *Bitset) Set(i int) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	word, bit := i/64, i%64
-	for word >= len(b.data) {
-		b.data = append(b.data, 0)
-	}
-	b.data[word] |= 1 << bit
+	b.bitmap.Add(uint32(i))
 }
 
 func (b *Bitset) Clear(i int) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	word, bit := i/64, i%64
-	if word < len(b.data) {
-		b.data[word] &^= 1 << bit
-	}
+	b.bitmap.Remove(uint32(i))
 }
 
 func (b *Bitset) Contains(i int) bool {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	word, bit := i/64, i%64
-	if word >= len(b.data) {
-		return false
+	return b.bitmap.Contains(uint32(i))
+}
+
+// Clone creates a thread-safe copy of the bitset.
+func (b *Bitset) Clone() *Bitset {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return &Bitset{
+		bitmap: b.bitmap.Clone(),
 	}
-	return (b.data[word] & (1 << bit)) != 0
+}
+
+// Count returns the number of set bits.
+func (b *Bitset) Count() uint64 {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.bitmap.GetCardinality()
 }

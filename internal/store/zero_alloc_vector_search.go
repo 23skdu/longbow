@@ -153,6 +153,11 @@ func (p *ZeroAllocVectorSearchParser) parseFloat32Array(data []byte, pos int) (i
 		pos = skipWhitespace(data, pos)
 		if pos < len(data) && data[pos] == ',' {
 			pos++
+			// Check for trailing comma
+			next := skipWhitespace(data, pos)
+			if next < len(data) && data[next] == ']' {
+				return pos, errors.New("trailing comma in vector array")
+			}
 		}
 	}
 

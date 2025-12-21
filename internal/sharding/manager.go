@@ -3,7 +3,7 @@ package sharding
 import (
 	"sync"
 
-	"github.com/hashicorp/memberlist"
+	"github.com/23skdu/longbow/internal/mesh"
 	"go.uber.org/zap"
 )
 
@@ -13,6 +13,7 @@ type RingManager struct {
 	ring        *ConsistentHash
 	localNodeID string
 	logger      *zap.Logger
+	nodeAddrs   map[string]string // ID -> Addr
 }
 
 // NewRingManager creates a new RingManager
@@ -21,27 +22,30 @@ func NewRingManager(localNodeID string, logger *zap.Logger) *RingManager {
 		ring:        NewConsistentHash(20), // 20 vnodes default
 		localNodeID: localNodeID,
 		logger:      logger,
+		nodeAddrs:   make(map[string]string),
 	}
 }
 
-// NotifyJoin is invoked when a node joins the memberlist cluster
-func (rm *RingManager) NotifyJoin(node *memberlist.Node) {
+// NotifyJoin is invoked when a node joins the cluster
+func (rm *RingManager) NotifyJoin(member *mesh.Member) {
 	rm.mu.Lock()
 	defer rm.mu.Unlock()
-	rm.logger.Info("Node joined ring", zap.String("node", node.Name), zap.String("addr", node.Address()))
-	rm.ring.AddNode(node.Name)
+	rm.logger.Info("Node joined ring", zap.String("node", member.ID), zap.String("addr", member.Addr))
+	rm.ring.AddNode(member.ID)
+	rm.nodeAddrs[member.ID] = member.Addr
 }
 
-// NotifyLeave is invoked when a node leaves the memberlist cluster
-func (rm *RingManager) NotifyLeave(node *memberlist.Node) {
+// NotifyLeave is invoked when a node leaves the cluster
+func (rm *RingManager) NotifyLeave(member *mesh.Member) {
 	rm.mu.Lock()
 	defer rm.mu.Unlock()
-	rm.logger.Info("Node left ring", zap.String("node", node.Name))
-	rm.ring.RemoveNode(node.Name)
+	rm.logger.Info("Node left ring", zap.String("node", member.ID))
+	rm.ring.RemoveNode(member.ID)
+	delete(rm.nodeAddrs, member.ID)
 }
 
-// NotifyUpdate is invoked when a node is updated (we ignore this for the ring usually)
-func (rm *RingManager) NotifyUpdate(node *memberlist.Node) {
+// NotifyUpdate is invoked when a node is updated
+func (rm *RingManager) NotifyUpdate(member *mesh.Member) {
 	// No-op for ring structure
 }
 
@@ -65,4 +69,11 @@ func (rm *RingManager) GetPreferenceList(key string, n int) []string {
 	rm.mu.RLock()
 	defer rm.mu.RUnlock()
 	return rm.ring.GetPreferenceList(key, n)
+}
+
+// GetNodeAddr returns the network address for a given node ID
+func (rm *RingManager) GetNodeAddr(nodeID string) string {
+	rm.mu.RLock()
+	defer rm.mu.RUnlock()
+	return rm.nodeAddrs[nodeID]
 }

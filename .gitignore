@@ -213,3 +213,8 @@ internal/store/wal.bin
 *.txt
 *.pprof
 *.test
+longbow_bin
+coverage.out
+*.out
+tmp/
+debug/

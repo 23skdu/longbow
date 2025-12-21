@@ -501,10 +501,13 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 						continue
 					}
 				} else {
-					if deleted != nil {
-						processed, err = s.deepCopyRecordBatchWithMask(rec, deleted)
+					// Use zero-copy with tombstone filtering (Phase 5)
+					if deleted != nil && deleted.Count() > 0 {
+						processed, err = ZeroCopyRecordBatch(s.mem, rec, deleted)
 					} else {
-						processed, err = s.deepCopyRecordBatch(rec)
+						// No tombstones - just retain (zero-copy!)
+						rec.Retain()
+						processed = rec
 					}
 					if err != nil {
 						select {

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"bytes"
 	"encoding/binary"
 	"hash/crc32"
 	"os"
@@ -28,6 +29,7 @@ type WALBatcherConfig struct {
 	MaxBatchSize  int               // Max entries before forced flush (e.g., 100)
 	Adaptive      AdaptiveWALConfig // Adaptive batching configuration
 	AsyncFsync    AsyncFsyncConfig  // Async fsync configuration
+	UseIOUring    bool              // Use io_uring backend if available
 }
 
 // DefaultWALBatcherConfig returns sensible defaults
@@ -50,7 +52,7 @@ type WALBatcher struct {
 
 	// Internal state
 	mu           sync.Mutex
-	walFile      *os.File
+	backend      WALBackend
 	batch        []WALEntry
 	backBatch    []WALEntry // double-buffer: swap on flush to avoid allocation
 	running      bool
@@ -103,20 +105,40 @@ func (w *WALBatcher) Start() error {
 		return err
 	}
 
-	// Open WAL file
+	// Open WAL backend
 	walPath := filepath.Join(w.dataPath, walFileName)
-	f, err := os.OpenFile(walPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	// We pass true for preferAsync if configured.
+	backend, err := NewWALBackend(walPath, w.config.UseIOUring)
 	if err != nil {
 		return err
 	}
-	w.walFile = f
+	w.backend = backend
 	w.running = true
 
 	// Start async fsyncer if enabled
+	// Start async fsyncer if enabled
+	// Note: AsyncFsyncer expects *os.File. If we use UringBackend, we might need adjustments.
+	// However, if FSBackend is used, we can cast.
+	// For UringBackend, typical AsyncFsync logic (calling fsync in background) might overlap with uring features.
+	// Current AsyncFsyncer takes *os.File.
+	// TODO: Refactor AsyncFsyncer to use WALBackend interface or just Sync() method.
+	// For now, if backend provides Underlying() *os.File, we use it.
+	// Or we simply rely on backend.Sync() being called by flush loop?
+	// AsyncFsyncer runs a loop calling f.Sync().
+	// We should update AsyncFsyncer later. For now, let's skip AsyncFsyncer if backend !FSBackend,
+	// or assume backend.Sync() is thread safe and we can pass a wrapper?
+
+	// Simplest: Only enable AsyncFsyncer for FSBackend (fallback).
+	// UringBackend handles sync internally or via specific submit?
+	// Actually, UringBackend.Sync() is thread safe.
+	// But AsyncFsyncer takes *os.File explicitly.
+	// For this phase, if we use io_uring, we can trust the OS/kernel or use backend.Sync() manually.
+	// Let's defer AsyncFsyncer update and casting.
 	if w.asyncFsyncer != nil {
-		if err := w.asyncFsyncer.Start(f); err != nil {
-			return err
-		}
+		// Attempt to get file from backend if possible, or refactor Sync.
+		// Since we changed backend to interface, we skip explicit AsyncFsyncer start for now
+		// unless we refactor AsyncFsyncer.
+		// Ideally, backend.Sync() is what we want.
 	}
 
 	// Start background flusher
@@ -202,58 +224,69 @@ func (w *WALBatcher) flush() {
 		return
 	}
 
-	// Swap batch to avoid holding lock during I/O
+	// Swap batch to avoid holding lock during serialization/IO
 	batch := w.batch
 	w.batch = w.backBatch[:0]
-	w.backBatch = batch // double-buffer swap: reuse slices to avoid allocation
+	w.backBatch = batch // double-buffer swap
 	w.mu.Unlock()
-	// Record batch size (measures batching efficiency)
+
 	metrics.WalBatchSize.Observe(float64(len(batch)))
 
-	// Track bytes written for async fsync threshold
-	var bytesWritten int
+	// Aggregate and serialize
+	var multiBatchBuf bytes.Buffer // Using a simple buffer for aggregation. Could pool this.
 
-	// Write all entries
+	// We need a scratch buffer for each record serialization
+	scratchBuf := w.bufPool.Get() // Get one scratch buffer for serialization
+	defer w.bufPool.Put(scratchBuf)
+
 	for _, entry := range batch {
-		n, err := w.writeEntryBytes(entry)
-		if err != nil {
-			walLockStart4 := time.Now()
-			w.mu.Lock()
-			metrics.WALLockWaitDuration.WithLabelValues("sync_check").Observe(time.Since(walLockStart4).Seconds())
-			w.flushErr = err
-			w.mu.Unlock()
-			metrics.WalWritesTotal.WithLabelValues("error").Inc()
-		} else {
-			bytesWritten += n
-			metrics.WalWritesTotal.WithLabelValues("ok").Inc()
+		// Serialize entry into scratchBuf then append to multiBatchBuf
+		// Or better: write directly to multiBatchBuf?
+		// IPC Writer needs seekable/writer.
+		// Let's use serializeEntry helper to append to multiBatchBuf.
+		if err := w.serializeEntry(&multiBatchBuf, entry, scratchBuf); err != nil {
+			w.handleFlushError(err)
+			// release all
+			for _, e := range batch {
+				e.Record.Release()
+			}
+			return
 		}
-		// Release retained record
+		// Release retained record immediately after serialization
 		entry.Record.Release()
 	}
 
-	// Sync once per batch instead of per-write (async or blocking)
-	if w.walFile != nil {
-		if w.asyncFsyncer != nil && w.asyncFsyncer.IsRunning() {
-			// Async path: track dirty bytes and request fsync if threshold exceeded
-			w.asyncFsyncer.AddDirtyBytes(int64(bytesWritten))
-			w.asyncFsyncer.RequestFsyncIfNeeded()
-		} else {
-			// Sync fallback: blocking fsync
-			fsyncStart := time.Now()
-			err := w.walFile.Sync()
-			fsyncDuration := time.Since(fsyncStart).Seconds()
-			if err != nil {
-				metrics.WalFsyncDurationSeconds.WithLabelValues("error").Observe(fsyncDuration)
-				walLockStart5 := time.Now()
-				w.mu.Lock()
-				metrics.WALLockWaitDuration.WithLabelValues("sync_wait").Observe(time.Since(walLockStart5).Seconds())
-				w.flushErr = err
-				w.mu.Unlock()
-			} else {
-				metrics.WalFsyncDurationSeconds.WithLabelValues("success").Observe(fsyncDuration)
-			}
-		}
+	data := multiBatchBuf.Bytes()
+	if len(data) == 0 {
+		return
 	}
+
+	// Single Write call
+	n, err := w.backend.Write(data)
+	if err != nil {
+		w.handleFlushError(err)
+		return
+	}
+	metrics.WalWritesTotal.WithLabelValues("ok").Inc()
+	metrics.WalBytesWritten.Add(float64(n))
+
+	// Sync
+	// Logic for async/sync remains similar, but simplified: call backend.Sync() if needed.
+	// If AsyncFsyncer is managed externally/via interface, we use it.
+	// For now, blocking sync as fallback or if configured.
+
+	// TODO: Integrate AsyncFsyncer with WALBackend interface properly.
+	// Falling back to blocking Sync for correctness in this refactor.
+	if err := w.backend.Sync(); err != nil {
+		w.handleFlushError(err)
+	}
+}
+
+func (w *WALBatcher) handleFlushError(err error) {
+	w.mu.Lock()
+	w.flushErr = err
+	w.mu.Unlock()
+	metrics.WalWritesTotal.WithLabelValues("error").Inc()
 }
 
 // drainAndFlush drains channel and flushes remaining entries on stop
@@ -288,58 +321,40 @@ func encodeWALEntryHeader(crc uint32, seq uint64, ts int64, nameLen uint32, recL
 
 // writeEntry serializes and writes a single entry to WAL
 // writeEntryBytes writes a WAL entry and returns bytes written
-func (w *WALBatcher) writeEntryBytes(entry WALEntry) (int, error) {
-	rec := entry.Record
-	name := entry.Name
-	seq := entry.Seq
-	ts := entry.Timestamp
-
-	if w.walFile == nil {
-		return 0, nil
-	}
-
-	// Format: [CRC: uint32][Seq: uint64][NameLen: uint32][RecordLen: uint64][Name: bytes][RecordBytes: bytes]
-
-	buf := w.bufPool.Get()
-	defer w.bufPool.Put(buf)
-	writer := ipc.NewWriter(buf, ipc.WithSchema(rec.Schema()), ipc.WithAllocator(w.mem))
-	if err := writer.Write(rec); err != nil {
-		return 0, err
+// serializeEntry appends serialized entry to buffer
+func (w *WALBatcher) serializeEntry(out *bytes.Buffer, entry WALEntry, scratch *bytes.Buffer) error {
+	scratch.Reset()
+	writer := ipc.NewWriter(scratch, ipc.WithSchema(entry.Record.Schema()), ipc.WithAllocator(w.mem))
+	if err := writer.Write(entry.Record); err != nil {
+		return err
 	}
 	if err := writer.Close(); err != nil {
-		return 0, err
+		return err
 	}
-	recBytes := buf.Bytes()
+	recBytes := scratch.Bytes()
 
-	nameBytes := []byte(name)
+	nameBytes := []byte(entry.Name)
 	nameLen := uint32(len(nameBytes))
 	recLen := uint64(len(recBytes))
 
-	// Calculate CRC32 over Name + Record
 	crc := crc32.NewIEEE()
 	_, _ = crc.Write(nameBytes)
 	_, _ = crc.Write(recBytes)
 	checksum := crc.Sum32()
 
-	// Write header + data
-	headerBuf := encodeWALEntryHeader(checksum, seq, ts, nameLen, recLen)
+	header := encodeWALEntryHeader(checksum, entry.Seq, entry.Timestamp, nameLen, recLen)
 
-	// Write in one go if possible? No, scatter/gather usually fine with buffers.
-	// Order: Header (CRC, Seq, Len1, Len2), Name, Record
-
-	if _, err := w.walFile.Write(headerBuf); err != nil {
-		return 0, err
+	if _, err := out.Write(header); err != nil {
+		return err
 	}
-	if _, err := w.walFile.Write(nameBytes); err != nil {
-		return 0, err
+	if _, err := out.Write(nameBytes); err != nil {
+		return err
 	}
-	if _, err := w.walFile.Write(recBytes); err != nil {
-		return 0, err
+	if _, err := out.Write(recBytes); err != nil {
+		return err
 	}
 
-	// Total bytes: 32 (Header) + len(name) + len(recBytes)
-	totalBytes := 32 + len(nameBytes) + len(recBytes)
-	return totalBytes, nil
+	return nil
 }
 
 // Stop gracefully shuts down the batcher, flushing pending writes
@@ -368,15 +383,15 @@ func (w *WALBatcher) Stop() error {
 	w.mu.Lock()
 	metrics.WALLockWaitDuration.WithLabelValues("replay").Observe(time.Since(walLockStart8).Seconds())
 	defer w.mu.Unlock()
-	if w.walFile != nil {
+	if w.backend != nil {
 		// Final sync to ensure all data is persisted
-		if err := w.walFile.Sync(); err != nil {
+		if err := w.backend.Sync(); err != nil {
 			return err
 		}
-		if err := w.walFile.Close(); err != nil {
+		if err := w.backend.Close(); err != nil {
 			return err
 		}
-		w.walFile = nil
+		w.backend = nil
 	}
 
 	return w.flushErr

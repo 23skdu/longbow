@@ -21,7 +21,10 @@ func TestPersistence_ReadSeekClose(t *testing.T) {
 	logger := mockLogger()
 	store := NewVectorStore(mem, logger, 1024, 0, time.Hour)
 
-	err := store.InitPersistence(tmpDir, time.Hour)
+	err := store.InitPersistence(StorageConfig{
+		DataPath:         tmpDir,
+		SnapshotInterval: 1 * time.Hour,
+	})
 	assert.NoError(t, err)
 
 	// Test Close

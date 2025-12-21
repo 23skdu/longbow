@@ -22,9 +22,17 @@ const (
 	snapshotDirName = "snapshots"
 )
 
+// StorageConfig holds configuration for persistence
+type StorageConfig struct {
+	DataPath         string
+	SnapshotInterval time.Duration
+	AsyncFsync       bool
+	DoPutBatchSize   int
+}
+
 // InitPersistence initializes the WAL and loads any existing data
-func (s *VectorStore) InitPersistence(dataPath string, snapshotInterval time.Duration) error {
-	s.dataPath = dataPath
+func (s *VectorStore) InitPersistence(cfg StorageConfig) error {
+	s.dataPath = cfg.DataPath
 	if err := os.MkdirAll(s.dataPath, 0o755); err != nil {
 		return fmt.Errorf("failed to create data directory: %w", err)
 	}
@@ -45,14 +53,19 @@ func (s *VectorStore) InitPersistence(dataPath string, snapshotInterval time.Dur
 	s.wal = NewWAL(s.dataPath, s)
 
 	// Initialize WAL batcher for async writes
-	cfg := DefaultWALBatcherConfig()
-	s.walBatcher = NewWALBatcher(s.dataPath, &cfg)
+	batcherCfg := DefaultWALBatcherConfig()
+	if cfg.DoPutBatchSize > 0 {
+		batcherCfg.MaxBatchSize = cfg.DoPutBatchSize
+	}
+	batcherCfg.AsyncFsync.Enabled = cfg.AsyncFsync
+
+	s.walBatcher = NewWALBatcher(s.dataPath, &batcherCfg)
 	if err := s.walBatcher.Start(); err != nil {
 		return fmt.Errorf("failed to start WAL batcher: %w", err)
 	}
 
 	// Start snapshot ticker
-	go s.runSnapshotTicker(snapshotInterval)
+	go s.runSnapshotTicker(cfg.SnapshotInterval)
 
 	return nil
 }

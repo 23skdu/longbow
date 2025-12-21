@@ -21,6 +21,7 @@ type Member struct {
 	Status      MemberStatus
 	Incarnation uint32
 	LastSeen    time.Time
+	SuspectAt   time.Time // When the node was marked Suspect
 }
 
 // EncodeMember serializes a member update into a compact binary format.

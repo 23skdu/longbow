@@ -28,6 +28,7 @@ type StorageConfig struct {
 	SnapshotInterval time.Duration
 	AsyncFsync       bool
 	DoPutBatchSize   int
+	UseIOUring       bool
 }
 
 // InitPersistence initializes the WAL and loads any existing data
@@ -58,6 +59,7 @@ func (s *VectorStore) InitPersistence(cfg StorageConfig) error {
 		batcherCfg.MaxBatchSize = cfg.DoPutBatchSize
 	}
 	batcherCfg.AsyncFsync.Enabled = cfg.AsyncFsync
+	batcherCfg.UseIOUring = cfg.UseIOUring
 
 	s.walBatcher = NewWALBatcher(s.dataPath, &batcherCfg)
 	if err := s.walBatcher.Start(); err != nil {

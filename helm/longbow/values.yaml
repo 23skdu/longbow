@@ -67,6 +67,30 @@ config:
   snapshotInterval: "1h"
   ttl: "0s" # 0s = disabled
 
+# Gossip Mesh Configuration
+# SWIM-based failure detection and membership protocol
+gossip:
+  enabled: true
+  # Port for UDP gossip communication (one per pod)
+  port: 7946
+  # Protocol timing parameters
+  protocolPeriod: "200ms"  # How often to probe a random member
+  ackTimeout: "100ms"      # Timeout for direct ping acknowledgment
+  suspicionTimeout: "5s"   # Time before suspect member marked dead
+  # Discovery configuration
+  discovery:
+    # Discovery provider: static, dns, or k8s
+    provider: "k8s"
+    # For static discovery: comma-separated list of seed nodes
+    # Example: "longbow-0.longbow:7946,longbow-1.longbow:7946"
+    staticPeers: ""
+    # For k8s discovery: namespace and label selector
+    namespace: ""  # Empty = same namespace as pod
+    labelSelector: "app.kubernetes.io/name=longbow"
+    # For DNS discovery: SRV record to query
+    dnsRecord: "_gossip._udp.longbow.default.svc.cluster.local"
+
+
 # Persistence configuration
 persistence:
   wal:

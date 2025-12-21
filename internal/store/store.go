@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"os"
 	"runtime"
 	"sort"
 	"sync"
@@ -36,8 +35,8 @@ type VectorStore struct {
 
 	// Persistence
 	dataPath      string
-	walFile       *os.File    // For synchronous writes/snapshots
-	walMu         sync.Mutex  // Protects walFile
+	wal           WAL         // For synchronous writes/snapshots
+	walMu         sync.Mutex  // Protects wal
 	walBatcher    *WALBatcher // For async batched writes
 	snapshotReset chan time.Duration
 	ttlDuration   time.Duration
@@ -134,10 +133,42 @@ func (s *VectorStore) StartMetricsTicker(d time.Duration)                       
 func (s *VectorStore) GetWALQueueDepth() (int, int)                                             { return 0, 0 }
 
 func (s *VectorStore) ListFlights(c *flight.Criteria, stream flight.FlightService_ListFlightsServer) error {
+	s.mu.RLock()
+	datasets := make([]*Dataset, 0, len(s.datasets))
+	for _, ds := range s.datasets {
+		datasets = append(datasets, ds)
+	}
+	s.mu.RUnlock()
+
+	for _, ds := range datasets {
+		info := &flight.FlightInfo{
+			FlightDescriptor: &flight.FlightDescriptor{
+				Type: flight.DescriptorPATH,
+				Path: []string{ds.Name},
+			},
+		}
+		if err := stream.Send(info); err != nil {
+			return err
+		}
+	}
 	return nil
 }
+
 func (s *VectorStore) GetFlightInfo(ctx context.Context, desc *flight.FlightDescriptor) (*flight.FlightInfo, error) {
-	return nil, nil
+	if len(desc.Path) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "Empty path")
+	}
+	name := desc.Path[0]
+	ds, err := s.getDataset(name)
+	if err != nil {
+		return nil, status.Error(codes.NotFound, err.Error())
+	}
+
+	return &flight.FlightInfo{
+		FlightDescriptor: desc,
+		TotalRecords:     int64(len(ds.Records)),
+		TotalBytes:       ds.SizeBytes.Load(),
+	}, nil
 }
 func (s *VectorStore) GetSchema(ctx context.Context, desc *flight.FlightDescriptor) (*flight.SchemaResult, error) {
 	return nil, nil
@@ -276,6 +307,9 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 	ds.Records = append(ds.Records, rec)
 	ds.dataMu.Unlock()
 
+	// Advise Memory: Random access for HNSW
+	AdviseRecord(rec, AdviceRandom)
+
 	// Queue Indexing
 	numRows := int(rec.NumRows())
 	for i := 0; i < numRows; i++ {
@@ -309,6 +343,9 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 		batchIdx = len(ds.Records)
 		ds.Records = append(ds.Records, rec)
 		ds.dataMu.Unlock()
+
+		// Advise Memory: Random access for HNSW
+		AdviseRecord(rec, AdviceRandom)
 
 		// Queue Indexing
 		numRows := int(rec.NumRows())
@@ -680,12 +717,32 @@ func (s *VectorStore) startIndexingWorkers(numWorkers int) {
 					continue
 				}
 
-				// ds.Index access requires lock? HNSW is thread safe usually
+				// ds.Index access
 				if ds.Index != nil {
+					// Adaptive Sharding (Item 3): Check if we should migrate to sharded index
+					// This is done before adding the record to avoid missing it in the old index.
+					if !ds.IsSharded() {
+						// Hardcoded threshold for now, could be dynamic based on latency metrics
+						if ds.IndexLen() >= 10000 {
+							s.logger.Info("Triggering adaptive sharding", zap.String("dataset", job.DatasetName), zap.Int("count", ds.IndexLen()))
+							cfg := AutoShardingConfig{
+								Enabled:        true,
+								Threshold:      10000,
+								NumShards:      runtime.NumCPU(),
+								M:              16,
+								EfConstruction: 200,
+							}
+							if err := MigrateToShardedInDataset(ds, cfg); err != nil {
+								s.logger.Error("Sharding migration failed", zap.Error(err))
+							}
+						}
+					}
+
 					if err := ds.Index.AddByRecord(job.Record, job.RowIdx, job.BatchIdx); err != nil {
 						s.logger.Error("Async index add failed", zap.Any("dataset", job.DatasetName), zap.Error(err))
 					}
 				}
+
 				// Release our reference to the record
 				job.Record.Release()
 				// Record job latency

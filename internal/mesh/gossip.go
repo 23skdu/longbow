@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/rand"
 	"net"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -35,6 +36,8 @@ type Gossip struct {
 
 	closeCh  chan struct{}
 	stopOnce sync.Once
+
+	discoveryProvider DiscoveryProvider
 }
 
 type updateItem struct {
@@ -46,7 +49,7 @@ type GossipConfig struct {
 	ID        string
 	Addr      string // Bind Addr
 	Port      int
-	Discovery DiscoveryProvider
+	Discovery DiscoveryConfig
 
 	ProtocolPeriod   time.Duration
 	AckTimeout       time.Duration
@@ -104,13 +107,34 @@ func (g *Gossip) Start() error {
 	})
 
 	// Discovery Bootstrap
-	if g.Config.Discovery != nil {
+	// Discovery Bootstrap
+	// Initialize provider based on config
+	switch g.Config.Discovery.Provider {
+	case "static":
+		peers := strings.Split(g.Config.Discovery.StaticPeers, ",")
+		// Filter empty strings
+		var validPeers []string
+		for _, p := range peers {
+			if p != "" {
+				validPeers = append(validPeers, p)
+			}
+		}
+		g.discoveryProvider = NewStaticProvider(validPeers)
+	case "none", "":
+		// No discovery
+	default:
+		// TODO: Implement K8s/DNS/MDNS support dynamically or via injection
+		// For now we only support Static in this refactor
+		// g.discoveryProvider = ...
+	}
+
+	if g.discoveryProvider != nil {
 		ctx := context.Background()
 		// Announce self
-		_ = g.Config.Discovery.Register(ctx, g.Config.ID, g.Config.Port)
+		_ = g.discoveryProvider.Register(ctx, g.Config.ID, g.Config.Port)
 
 		// Find initial peers
-		peers, _ := g.Config.Discovery.FindPeers(ctx)
+		peers, _ := g.discoveryProvider.FindPeers(ctx)
 		for _, peer := range peers {
 			// Don't join self
 			if peer == fmt.Sprintf("127.0.0.1:%d", g.Config.Port) {
@@ -167,6 +191,10 @@ func (g *Gossip) checkSuspicion() {
 			if now.Sub(m.SuspectAt) > g.Config.SuspicionTimeout {
 				m.Status = StatusDead
 				g.addUpdate(m)
+				// Notify delegate
+				if g.Config.Delegate != nil {
+					go g.Config.Delegate.NotifyLeave(m)
+				}
 				metrics.GossipActiveMembers.Set(float64(g.countAlive()))
 			}
 		}
@@ -486,6 +514,7 @@ func (g *Gossip) UpdateMember(m *Member) {
 
 	if isNew {
 		g.members[m.ID] = m
+		g.peers = append(g.peers, m.ID)
 		g.addUpdate(m)
 		// If new and alive, notify join
 		if m.Status == StatusAlive && g.Config.Delegate != nil {
@@ -574,9 +603,16 @@ func (g *Gossip) GetIdentity() Member {
 }
 
 func (g *Gossip) GetDiscoveryStatus() (string, []string) {
-	if g.Config.Discovery == nil {
+	if g.discoveryProvider == nil {
 		return "none", nil
 	}
-	peers, _ := g.Config.Discovery.FindPeers(context.Background())
-	return fmt.Sprintf("%T", g.Config.Discovery), peers
+	peers, _ := g.discoveryProvider.FindPeers(context.Background())
+	return fmt.Sprintf("%T", g.discoveryProvider), peers
+}
+
+// DiscoveryConfig holds configuration for peer discovery
+type DiscoveryConfig struct {
+	Provider    string // "static", "k8s", "dns"
+	StaticPeers string // comma separated
+	DNSRecord   string // for dns provider
 }

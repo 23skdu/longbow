@@ -53,7 +53,7 @@ func TestBatchedWAL_TimeBasedFlush(t *testing.T) {
 	rec := makeTestRecord(mem, 1)
 	defer rec.Release()
 
-	err := batcher.Write(rec, "test_dataset")
+	err := batcher.Write(rec, "test_dataset", 1, time.Now().UnixNano())
 	require.NoError(t, err)
 
 	// Immediately after write, file should be empty or small (not flushed)
@@ -86,7 +86,7 @@ func TestBatchedWAL_SizeBasedFlush(t *testing.T) {
 	// Write 4 records (below threshold)
 	for i := int64(1); i <= 4; i++ {
 		rec := makeTestRecord(mem, i)
-		require.NoError(t, batcher.Write(rec, "test_dataset"))
+		require.NoError(t, batcher.Write(rec, "test_dataset", uint64(i), time.Now().UnixNano()))
 		rec.Release()
 	}
 
@@ -95,9 +95,9 @@ func TestBatchedWAL_SizeBasedFlush(t *testing.T) {
 	sizeAfter4 := getFileSize(t, walPath)
 
 	// Write 5th record to trigger flush
-	rec := makeTestRecord(mem, 5)
-	require.NoError(t, batcher.Write(rec, "test_dataset"))
-	rec.Release()
+	rec5 := makeTestRecord(mem, 5)
+	require.NoError(t, batcher.Write(rec5, "test_dataset", 5, time.Now().UnixNano()))
+	rec5.Release()
 
 	// Give small time for async flush
 	time.Sleep(20 * time.Millisecond)
@@ -129,7 +129,7 @@ func TestBatchedWAL_ConcurrentWrites(t *testing.T) {
 			defer wg.Done()
 			for i := 0; i < writesPerWriter; i++ {
 				rec := makeTestRecord(mem, int64(writerID*1000+i))
-				if err := batcher.Write(rec, "concurrent_test"); err != nil {
+				if err := batcher.Write(rec, "concurrent_test", uint64(writerID*1000+i), time.Now().UnixNano()); err != nil {
 					writeErrors.Add(1)
 				}
 				rec.Release()
@@ -164,7 +164,7 @@ func TestBatchedWAL_ReplayAfterBatch(t *testing.T) {
 	const numRecords = 25
 	for i := int64(1); i <= numRecords; i++ {
 		rec := makeTestRecord(mem, i)
-		require.NoError(t, batcher.Write(rec, "replay_test"))
+		require.NoError(t, batcher.Write(rec, "replay_test", uint64(i), time.Now().UnixNano()))
 		rec.Release()
 	}
 
@@ -204,7 +204,7 @@ func TestBatchedWAL_FlushOnStop(t *testing.T) {
 	// Write records that won't auto-flush
 	for i := int64(1); i <= 10; i++ {
 		rec := makeTestRecord(mem, i)
-		require.NoError(t, batcher.Write(rec, "flush_on_stop"))
+		require.NoError(t, batcher.Write(rec, "flush_on_stop", uint64(i), time.Now().UnixNano()))
 		rec.Release()
 	}
 
@@ -236,7 +236,7 @@ func TestBatchedWAL_NonBlockingWrite(t *testing.T) {
 
 	for i := int64(0); i < numWrites; i++ {
 		rec := makeTestRecord(mem, i)
-		require.NoError(t, batcher.Write(rec, "perf_test"))
+		require.NoError(t, batcher.Write(rec, "perf_test", uint64(i), time.Now().UnixNano()))
 		rec.Release()
 	}
 
@@ -280,7 +280,7 @@ func TestBatchedWAL_DoubleBufferSwap(t *testing.T) {
 	// Write some records
 	for i := int64(1); i <= 5; i++ {
 		rec := makeTestRecord(mem, i)
-		require.NoError(t, batcher.Write(rec, "swap_test"))
+		require.NoError(t, batcher.Write(rec, "swap_test", uint64(i), time.Now().UnixNano()))
 		rec.Release()
 	}
 
@@ -325,7 +325,7 @@ func TestBatchedWAL_NoAllocOnFlush(t *testing.T) {
 	for cycle := 0; cycle < 3; cycle++ {
 		for i := int64(1); i <= 10; i++ {
 			rec := makeTestRecord(mem, i)
-			_ = batcher.Write(rec, "alloc_test")
+			_ = batcher.Write(rec, "alloc_test", uint64(i), time.Now().UnixNano())
 			rec.Release()
 		}
 		time.Sleep(10 * time.Millisecond)
@@ -369,7 +369,7 @@ func TestBatchedWAL_DoubleBufferCapacityPreserved(t *testing.T) {
 		// Fill batch
 		for i := int64(1); i <= 20; i++ {
 			rec := makeTestRecord(mem, i)
-			require.NoError(t, batcher.Write(rec, "capacity_test"))
+			require.NoError(t, batcher.Write(rec, "capacity_test", uint64(i), time.Now().UnixNano()))
 			rec.Release()
 		}
 
@@ -413,7 +413,7 @@ func TestBatchedWAL_DoubleBufferUnderLoad(t *testing.T) {
 			defer wg.Done()
 			for i := 0; i < writesPerWriter; i++ {
 				rec := makeTestRecord(mem, int64(writerID*1000+i))
-				if err := batcher.Write(rec, "load_test"); err == nil {
+				if err := batcher.Write(rec, "load_test", uint64(writerID*1000+i), time.Now().UnixNano()); err == nil {
 					writeCount.Add(1)
 				}
 				rec.Release()

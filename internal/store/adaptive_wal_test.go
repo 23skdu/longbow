@@ -77,7 +77,7 @@ func TestWALBatcher_FlushLogic(t *testing.T) {
 	t.Run("SizeBasedFlush", func(t *testing.T) {
 		// Write MaxBatchSize entries
 		for i := 0; i < 10; i++ {
-			err := batcher.Write(rec, "test")
+			err := batcher.Write(rec, "test", uint64(i+1), time.Now().UnixNano())
 			require.NoError(t, err)
 		}
 
@@ -98,7 +98,7 @@ func TestWALBatcher_FlushLogic(t *testing.T) {
 		initialSize := initialInfo.Size()
 
 		// Write only 1 entry (less than MaxBatchSize)
-		err := batcher.Write(rec, "test_time")
+		err := batcher.Write(rec, "test_time", 100, time.Now().UnixNano())
 		require.NoError(t, err)
 
 		// Should not be flushed yet

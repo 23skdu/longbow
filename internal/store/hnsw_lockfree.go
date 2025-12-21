@@ -79,7 +79,10 @@ func (h *LockFreeHNSW) Search(query []float32, k, ef int) []VectorID {
 		for changed {
 			changed = false
 			currObj.mu.RLock()
-			friends := currObj.Friends[level]
+			var friends []VectorID
+			if level < len(currObj.Friends) {
+				friends = currObj.Friends[level]
+			}
 			currObj.mu.RUnlock()
 
 			for _, friendID := range friends {

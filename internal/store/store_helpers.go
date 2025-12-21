@@ -288,63 +288,97 @@ func checkFilterRow(col arrow.Array, i int, f Filter) bool {
 		return false
 	}
 
-	strVal := ""
-	numVal := 0.0
-	isNum := false
-
-	switch col.DataType().ID() {
-	case arrow.STRING:
-		strVal = col.(*array.String).Value(i)
-	case arrow.INT64:
-		val := col.(*array.Int64).Value(i)
-		strVal = strconv.FormatInt(val, 10)
-		numVal = float64(val)
-		isNum = true
-	case arrow.INT32:
-		val := col.(*array.Int32).Value(i)
-		strVal = strconv.FormatInt(int64(val), 10)
-		numVal = float64(val)
-		isNum = true
-	case arrow.FLOAT32:
-		val := col.(*array.Float32).Value(i)
-		strVal = strconv.FormatFloat(float64(val), 'f', -1, 32)
-		numVal = float64(val)
-		isNum = true
-	case arrow.FLOAT64:
-		val := col.(*array.Float64).Value(i)
-		strVal = strconv.FormatFloat(val, 'f', -1, 64)
-		numVal = val
-		isNum = true
-	// Add Timestamp support if needed
-	default:
-		return false
-	}
-
-	// Check operator
-	switch f.Operator {
-	case "eq", "=":
-		return strVal == f.Value
-	case "neq", "!=":
-		return strVal != f.Value
-	case ">", "<", ">=", "<=":
-		if !isNum {
-			// String comparison?
-			return compareStrings(strVal, f.Value, f.Operator)
+	switch c := col.(type) {
+	case *array.String:
+		val := c.Value(i)
+		switch f.Operator {
+		case "eq", "=":
+			return val == f.Value
+		case "neq", "!=":
+			return val != f.Value
+		case ">", "<", ">=", "<=":
+			return compareStrings(val, f.Value, f.Operator)
 		}
-		// Parse filter value as float
+	case *array.Int64:
+		val := c.Value(i)
+		fVal, err := strconv.ParseInt(f.Value, 10, 64)
+		if err != nil {
+			return false
+		}
+		switch f.Operator {
+		case "eq", "=":
+			return val == fVal
+		case "neq", "!=":
+			return val != fVal
+		case ">":
+			return val > fVal
+		case "<":
+			return val < fVal
+		case ">=":
+			return val >= fVal
+		case "<=":
+			return val <= fVal
+		}
+	case *array.Int32:
+		val := c.Value(i)
+		fVal, err := strconv.ParseInt(f.Value, 10, 32)
+		if err != nil {
+			return false
+		}
+		switch f.Operator {
+		case "eq", "=":
+			return int32(val) == int32(fVal)
+		case "neq", "!=":
+			return int32(val) != int32(fVal)
+		case ">":
+			return val > int32(fVal)
+		case "<":
+			return val < int32(fVal)
+		case ">=":
+			return val >= int32(fVal)
+		case "<=":
+			return val <= int32(fVal)
+		}
+	case *array.Float32:
+		val := c.Value(i)
+		fVal, err := strconv.ParseFloat(f.Value, 32)
+		if err != nil {
+			return false
+		}
+		fv := float32(fVal)
+		switch f.Operator {
+		case "eq", "=":
+			return val == fv
+		case "neq", "!=":
+			return val != fv
+		case ">":
+			return val > fv
+		case "<":
+			return val < fv
+		case ">=":
+			return val >= fv
+		case "<=":
+			return val <= fv
+		}
+	case *array.Float64:
+		val := c.Value(i)
 		fVal, err := strconv.ParseFloat(f.Value, 64)
 		if err != nil {
 			return false
 		}
 		switch f.Operator {
+		case "eq", "=":
+			return val == fVal
+		case "neq", "!=":
+			return val != fVal
 		case ">":
-			return numVal > fVal
+			return val > fVal
 		case "<":
-			return numVal < fVal
+			return val < fVal
 		case ">=":
-			return numVal >= fVal
+			return val >= fVal
 		case "<=":
-			return numVal <= fVal
+			return val <= fVal
 		}
 	}
 	return false

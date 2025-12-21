@@ -2,7 +2,10 @@
 
 package simd
 
-import "math"
+import (
+	"math"
+	"unsafe"
+)
 
 // ARM64 NEON implementations
 // For now using optimized Go code; can be replaced with assembly later
@@ -87,10 +90,23 @@ func cosineAVX2(a, b []float32) float32      { return cosineGeneric(a, b) }
 func cosineAVX512(a, b []float32) float32    { return cosineGeneric(a, b) }
 func dotAVX2(a, b []float32) float32         { return dotGeneric(a, b) }
 func dotAVX512(a, b []float32) float32       { return dotGeneric(a, b) }
+func prefetchNTA(p unsafe.Pointer)           {}
 
 func euclideanBatchNEON(query []float32, vectors [][]float32, results []float32) {
 	for i, v := range vectors {
 		results[i] = euclideanNEON(query, v)
+	}
+}
+
+func dotBatchNEON(query []float32, vectors [][]float32, results []float32) {
+	for i, v := range vectors {
+		results[i] = dotNEON(query, v)
+	}
+}
+
+func cosineBatchNEON(query []float32, vectors [][]float32, results []float32) {
+	for i, v := range vectors {
+		results[i] = cosineNEON(query, v)
 	}
 }
 
@@ -99,4 +115,16 @@ func euclideanBatchAVX2(query []float32, vectors [][]float32, results []float32)
 }
 func euclideanBatchAVX512(query []float32, vectors [][]float32, results []float32) {
 	euclideanBatchGeneric(query, vectors, results)
+}
+func dotBatchAVX2(query []float32, vectors [][]float32, results []float32) {
+	dotBatchGeneric(query, vectors, results)
+}
+func dotBatchAVX512(query []float32, vectors [][]float32, results []float32) {
+	dotBatchGeneric(query, vectors, results)
+}
+func cosineBatchAVX2(query []float32, vectors [][]float32, results []float32) {
+	cosineBatchGeneric(query, vectors, results)
+}
+func cosineBatchAVX512(query []float32, vectors [][]float32, results []float32) {
+	cosineBatchGeneric(query, vectors, results)
 }

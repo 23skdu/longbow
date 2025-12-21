@@ -40,6 +40,9 @@ func (s *VectorStore) InitPersistence(dataPath string, snapshotInterval time.Dur
 		return err
 	}
 
+	// Initialize WAL
+	s.wal = NewStdWAL(s.dataPath, s)
+
 	// Initialize WAL batcher for async writes
 	cfg := DefaultWALBatcherConfig()
 	s.walBatcher = NewWALBatcher(s.dataPath, &cfg)
@@ -60,63 +63,11 @@ func (s *VectorStore) writeToWAL(rec arrow.RecordBatch, name string) error {
 	if rec == nil {
 		return fmt.Errorf("record is nil")
 	}
-	if s.walFile == nil {
+	if s.wal == nil {
 		return nil // Persistence disabled or not initialized
 	}
 
-	// Format: [NameLen: uint32][Name: bytes][RecordLen: uint64][RecordBytes: bytes]
-
-	// 1. Serialize Record to buffer
-	var buf bytes.Buffer
-	w := ipc.NewWriter(&buf, ipc.WithSchema(rec.Schema()), ipc.WithAllocator(s.mem))
-	if err := w.Write(rec); err != nil {
-		metrics.WalWritesTotal.WithLabelValues("error").Inc()
-		return fmt.Errorf("failed to serialize record for WAL: %w", err)
-	}
-	if err := w.Close(); err != nil {
-		metrics.WalWritesTotal.WithLabelValues("error").Inc()
-		return fmt.Errorf("failed to close IPC writer: %w", err)
-	}
-	recBytes := buf.Bytes()
-
-	// 2. Write Header & Data
-	nameBytes := []byte(name)
-	nameLen := uint32(len(nameBytes)) //nolint:gosec // G115 - name length fits in uint32
-	recLen := uint64(len(recBytes))
-
-	// Calc CRC
-	crc := crc32.NewIEEE()
-	_, _ = crc.Write(nameBytes)
-	_, _ = crc.Write(recBytes)
-	checksum := crc.Sum32()
-
-	// Write 16-byte header
-	header := make([]byte, 16)
-	binary.LittleEndian.PutUint32(header[0:4], checksum)
-	binary.LittleEndian.PutUint32(header[4:8], nameLen)
-	binary.LittleEndian.PutUint64(header[8:16], recLen)
-
-	if _, err := s.walFile.Write(header); err != nil {
-		metrics.WalWritesTotal.WithLabelValues("error").Inc()
-		return err
-	}
-	if _, err := s.walFile.Write(nameBytes); err != nil {
-		metrics.WalWritesTotal.WithLabelValues("error").Inc()
-		return err
-	}
-	n, err := s.walFile.Write(recBytes)
-	if err != nil {
-		metrics.WalWritesTotal.WithLabelValues("error").Inc()
-		return err
-	}
-
-	// Metrics success
-	metrics.WalWritesTotal.WithLabelValues("ok").Inc()
-	metrics.WalBytesWritten.Add(float64(4 + len(nameBytes) + 8 + n))
-
-	// Ensure it's on disk
-	// return s.walFile.Sync() // Optional: Sync every write for durability vs performance
-	return nil
+	return s.wal.Write(name, rec)
 }
 
 func (s *VectorStore) replayWAL() error {
@@ -295,18 +246,14 @@ func (s *VectorStore) Snapshot() error {
 
 	// Truncate WAL
 	s.walMu.Lock()
-	if s.walFile != nil {
-		_ = s.walFile.Close()
-		if err := os.Truncate(filepath.Join(s.dataPath, walFileName), 0); err != nil {
+	if s.wal != nil {
+		_ = s.wal.Close()
+		walPath := filepath.Join(s.dataPath, walFileName)
+		if err := os.Truncate(walPath, 0); err != nil {
 			s.logger.Error("Failed to truncate WAL", zap.Error(err))
 		}
 		// Reopen
-		f, err := os.OpenFile(filepath.Join(s.dataPath, walFileName), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-		if err == nil {
-			s.walFile = f
-		} else {
-			s.logger.Error("Failed to reopen WAL after snapshot", zap.Error(err))
-		}
+		s.wal = NewStdWAL(s.dataPath, s)
 	}
 	s.walMu.Unlock()
 
@@ -443,15 +390,15 @@ func (s *VectorStore) Close() error {
 	s.walMu.Lock()
 	defer s.walMu.Unlock()
 
-	if s.walFile != nil {
-		s.logger.Info("Syncing and closing WAL file")
-		if err := s.walFile.Sync(); err != nil {
+	if s.wal != nil {
+		s.logger.Info("Syncing and closing WAL")
+		if err := s.wal.Sync(); err != nil {
 			s.logger.Error("Failed to sync WAL", zap.Error(err))
 		}
-		if err := s.walFile.Close(); err != nil {
+		if err := s.wal.Close(); err != nil {
 			return NewWALError("close", s.dataPath, 0, err)
 		}
-		s.walFile = nil
+		s.wal = nil
 	}
 	return nil
 }

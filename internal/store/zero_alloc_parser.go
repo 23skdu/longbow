@@ -122,6 +122,9 @@ func (p *ZeroAllocTicketParser) Parse(data []byte) (TicketQuery, error) {
 }
 
 func (p *ZeroAllocTicketParser) parseFilters(data []byte, pos int) (int, error) {
+	if pos+4 <= len(data) && string(data[pos:pos+4]) == "null" {
+		return pos + 4, nil
+	}
 	if pos >= len(data) || data[pos] != '[' {
 		return pos, errors.New("expected opening bracket")
 	}

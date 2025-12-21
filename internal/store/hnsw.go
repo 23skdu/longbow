@@ -3,9 +3,11 @@ package store
 import (
 	"fmt"
 	"math"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
+	"unsafe"
 
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/simd"
@@ -46,6 +48,11 @@ type HNSWIndex struct {
 	activeReaders atomic.Int32  // Count of readers in current epoch
 	resultPool    *resultPool   // Pool for search result slices
 	Metric        VectorMetric  // Distance metric used by this index
+
+	// Lock-Striping (Item 8)
+	stripedLocks []sync.RWMutex
+	numStripes   int
+	nextVecID    atomic.Uint32
 }
 
 // NewHNSWIndex creates a new index for the given dataset using Euclidean distance.
@@ -65,6 +72,14 @@ func NewHNSWIndexWithMetric(ds *Dataset, metric VectorMetric) *HNSWIndex {
 	h.resultPool = newResultPool()
 	// Set distance function based on metric
 	h.Graph.Distance = h.GetDistanceFunc()
+
+	// Initialize striped locks
+	h.numStripes = runtime.NumCPU() * 2
+	if h.numStripes < 16 {
+		h.numStripes = 16
+	}
+	h.stripedLocks = make([]sync.RWMutex, h.numStripes)
+
 	return h
 }
 
@@ -78,6 +93,14 @@ func NewHNSWIndexWithCapacity(ds *Dataset, capacity int) *HNSWIndex {
 	h.Graph = hnsw.NewGraph[VectorID]()
 	h.resultPool = newResultPool()
 	h.Graph.Distance = simd.EuclideanDistance
+
+	// Initialize striped locks
+	h.numStripes = runtime.NumCPU() * 2
+	if h.numStripes < 16 {
+		h.numStripes = 16
+	}
+	h.stripedLocks = make([]sync.RWMutex, h.numStripes)
+
 	return h
 }
 
@@ -221,11 +244,20 @@ func (h *HNSWIndex) SearchVectors(query []float32, k int, filters []Filter) []Se
 
 	distFunc := h.GetDistanceFunc()
 
-	// Use pre-allocated slice for results if possible (not doing here to keep simpler)
+	// Pre-process filters once per search (Item 6)
+	var evaluator *FilterEvaluator
+	if len(filters) > 0 {
+		h.dataset.dataMu.RLock()
+		if len(h.dataset.Records) > 0 {
+			evaluator, _ = NewFilterEvaluator(h.dataset.Records[0], filters)
+		}
+		h.dataset.dataMu.RUnlock()
+	}
+
 	res := make([]SearchResult, 0, len(neighbors))
 
 	count := 0
-	for _, n := range neighbors {
+	for idx, n := range neighbors {
 		if count >= k {
 			break
 		}
@@ -243,17 +275,37 @@ func (h *HNSWIndex) SearchVectors(query []float32, k int, filters []Filter) []Se
 
 		// Access Record for filtering
 		h.dataset.dataMu.RLock()
-		// Check validity
 		if h.dataset.Records == nil || loc.BatchIdx >= len(h.dataset.Records) {
 			h.dataset.dataMu.RUnlock()
 			continue
 		}
 		rec := h.dataset.Records[loc.BatchIdx]
 
-		// Check Filters
-		if len(filters) > 0 {
-			match, err := MatchesFilters(rec, loc.RowIdx, filters)
-			if err != nil || !match {
+		// SIMD PREFETCH (Item 5): Fetch next few results data while filtering current one
+		if idx+1 < len(neighbors) {
+			nextKey := neighbors[idx+1].Key
+			if int(nextKey) < len(h.locations) {
+				nextLoc := h.locations[nextKey]
+				if nextLoc.BatchIdx < len(h.dataset.Records) {
+					nextRec := h.dataset.Records[nextLoc.BatchIdx]
+					if nextRec != nil && nextRec.NumCols() > 0 {
+						// Prefetch the first buffer of the first column as a hint
+						col := nextRec.Column(0)
+						if col != nil && col.Data() != nil && len(col.Data().Buffers()) > 1 {
+							buf := col.Data().Buffers()[1] // Data buffer is usually index 1
+							if buf != nil {
+								simd.Prefetch(unsafe.Pointer(&buf.Bytes()[0]))
+							}
+						}
+					}
+
+				}
+			}
+		}
+
+		// Check Filters using optimized evaluator (Item 6)
+		if evaluator != nil {
+			if !evaluator.Matches(loc.RowIdx) {
 				h.dataset.dataMu.RUnlock()
 				continue
 			}
@@ -442,37 +494,47 @@ func (h *HNSWIndex) getVectorUnsafe(id VectorID) (vec []float32, release func())
 
 // Add inserts a new vector location into the index and adds it to the graph.
 func (h *HNSWIndex) Add(batchIdx, rowIdx int) error {
+	// 1. Allocate ID atomically
+	id := VectorID(h.nextVecID.Add(1) - 1)
+
+	// 2. Prepare location and update locations slice under striped lock
+	stripe := int(id) % h.numStripes
+	h.stripedLocks[stripe].Lock()
+
+	// Ensure locations slice is large enough (might need a global lock or pre-allocation)
+	h.mu.Lock()
+	for len(h.locations) <= int(id) {
+		h.locations = append(h.locations, Location{})
+	}
+	h.locations[id] = Location{BatchIdx: batchIdx, RowIdx: rowIdx}
+	h.mu.Unlock()
+
+	h.stripedLocks[stripe].Unlock()
+
+	// 3. Get vector (Safe to call as ID is reserved and location is set)
+	// Note: We need the dataset lock for this
+	vecRaw := h.getVectorDirectLocked(id)
+	if vecRaw == nil {
+		return nil
+	}
+	vec := vecRaw
+
+	// 4. Initialize dims for pool on first vector
+	h.dimsOnce.Do(func() {
+		h.dims = len(vec)
+	})
+
+	// 5. Add to HNSW graph - serialization is unfortunately required for coder/hnsw
 	indexLockStart7 := time.Now()
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	metrics.IndexLockWaitDuration.WithLabelValues("write").Observe(time.Since(indexLockStart7).Seconds())
 
-	id := VectorID(len(h.locations))
-	h.locations = append(h.locations, Location{BatchIdx: batchIdx, RowIdx: rowIdx})
-
-	// Use Zero-Copy Vector Access via helper
-	// This avoids allocating a new slice copy on heap.
-	vecRaw := h.getVectorDirectLocked(id)
-	if vecRaw == nil {
-		return nil
-	}
-
-	// ZERO-COPY: Use unsafe vector reference.
-	// We rely on Dataset lifecycle management (Eviction clears Index) to ensure safety.
-	// This avoids doubling memory usage.
-	vec := vecRaw
-
-	// Initialize dims for pool on first vector (thread-safe as we hold mu.Lock)
-	h.dimsOnce.Do(func() {
-		h.dims = len(vec)
-	})
-
-	// Add to HNSW graph - MUST be under lock as coder/hnsw is not thread-safe for Add
 	h.Graph.Add(hnsw.MakeNode(id, vec))
 
 	// Track HNSW metrics
-	metrics.HnswNodeCount.WithLabelValues(h.dataset.Name).Set(float64(len(h.locations)))
-	nodeCount := float64(len(h.locations))
+	metrics.HnswNodeCount.WithLabelValues(h.dataset.Name).Set(float64(h.nextVecID.Load()))
+	nodeCount := float64(h.nextVecID.Load())
 	if nodeCount > 1 {
 		metrics.HnswGraphHeight.WithLabelValues(h.dataset.Name).Set(math.Log(nodeCount) / math.Log(4))
 	}
@@ -486,7 +548,10 @@ func (h *HNSWIndex) AddSafe(rec arrow.RecordBatch, rowIdx, batchIdx int) error {
 		return fmt.Errorf("AddSafe: record is nil")
 	}
 
-	// Extract vector from record batch
+	// 1. Allocate ID atomically
+	id := VectorID(h.nextVecID.Add(1) - 1)
+
+	// 2. Extract vector from record batch (Done outside global lock)
 	var vecCol arrow.Array
 	for i, field := range rec.Schema().Fields() {
 		if field.Name == "vector" {
@@ -518,28 +583,37 @@ func (h *HNSWIndex) AddSafe(rec arrow.RecordBatch, rowIdx, batchIdx int) error {
 		return fmt.Errorf("AddSafe: row index out of bounds")
 	}
 
-	// ZERO-COPY: Use slice directly
 	vec := floatArr.Float32Values()[start:end]
 
+	// 3. Update locations under striped lock
+	stripe := int(id) % h.numStripes
+	h.stripedLocks[stripe].Lock()
+
+	h.mu.Lock()
+	for len(h.locations) <= int(id) {
+		h.locations = append(h.locations, Location{})
+	}
+	h.locations[id] = Location{BatchIdx: batchIdx, RowIdx: rowIdx}
+	h.mu.Unlock()
+
+	h.stripedLocks[stripe].Unlock()
+
+	// 4. Initialize dims
+	h.dimsOnce.Do(func() {
+		h.dims = len(vec)
+	})
+
+	// 5. Add to graph under global lock
 	indexLockStart7 := time.Now()
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	metrics.IndexLockWaitDuration.WithLabelValues("write").Observe(time.Since(indexLockStart7).Seconds())
 
-	id := VectorID(len(h.locations))
-	h.locations = append(h.locations, Location{BatchIdx: batchIdx, RowIdx: rowIdx})
-
-	// Initialize dims for pool on first vector (thread-safe as we hold mu.Lock)
-	h.dimsOnce.Do(func() {
-		h.dims = len(vec)
-	})
-
-	// Add to HNSW graph - MUST be under lock as coder/hnsw is not thread-safe for Add
 	h.Graph.Add(hnsw.MakeNode(id, vec))
 
 	// Track HNSW metrics
-	metrics.HnswNodeCount.WithLabelValues(h.dataset.Name).Set(float64(len(h.locations)))
-	nodeCount := float64(len(h.locations))
+	metrics.HnswNodeCount.WithLabelValues(h.dataset.Name).Set(float64(h.nextVecID.Load()))
+	nodeCount := float64(h.nextVecID.Load())
 	if nodeCount > 1 {
 		metrics.HnswGraphHeight.WithLabelValues(h.dataset.Name).Set(math.Log(nodeCount) / math.Log(4))
 	}

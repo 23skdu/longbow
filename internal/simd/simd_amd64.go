@@ -234,10 +234,10 @@ func cosine8AVX2(a, b unsafe.Pointer) (dot, normA, normB float32)
 func cosine16AVX512(a, b unsafe.Pointer) (dot, normA, normB float32)
 
 //go:noescape
-func dot8AVX2(a, b unsafe.Pointer) float32
+func dot16AVX512(a, b unsafe.Pointer) float32
 
 //go:noescape
-func dot16AVX512(a, b unsafe.Pointer) float32
+func prefetchNTA(p unsafe.Pointer)
 
 // AVX2 optimized Batch Euclidean distance
 func euclideanBatchAVX2(query []float32, vectors [][]float32, results []float32) {
@@ -315,7 +315,59 @@ func euclideanBatchAVX512(query []float32, vectors [][]float32, results []float3
 	}
 }
 
+// AVX2 optimized Batch Dot Product
+func dotBatchAVX2(query []float32, vectors [][]float32, results []float32) {
+	if !features.HasAVX2 {
+		dotBatchGeneric(query, vectors, results)
+		return
+	}
+	for idx, v := range vectors {
+		results[idx] = dotAVX2(query, v)
+	}
+}
+
+// AVX512 optimized Batch Dot Product
+func dotBatchAVX512(query []float32, vectors [][]float32, results []float32) {
+	if !features.HasAVX512 {
+		dotBatchAVX2(query, vectors, results)
+		return
+	}
+	for idx, v := range vectors {
+		results[idx] = dotAVX512(query, v)
+	}
+}
+
+// AVX2 optimized Batch Cosine distance
+func cosineBatchAVX2(query []float32, vectors [][]float32, results []float32) {
+	if !features.HasAVX2 {
+		cosineBatchGeneric(query, vectors, results)
+		return
+	}
+	for idx, v := range vectors {
+		results[idx] = cosineAVX2(query, v)
+	}
+}
+
+// AVX512 optimized Batch Cosine distance
+func cosineBatchAVX512(query []float32, vectors [][]float32, results []float32) {
+	if !features.HasAVX512 {
+		cosineBatchAVX2(query, vectors, results)
+		return
+	}
+	for idx, v := range vectors {
+		results[idx] = cosineAVX512(query, v)
+	}
+}
+
 // NEON stub for AMD64
 func euclideanBatchNEON(query []float32, vectors [][]float32, results []float32) {
 	euclideanBatchGeneric(query, vectors, results)
+}
+
+func dotBatchNEON(query []float32, vectors [][]float32, results []float32) {
+	dotBatchGeneric(query, vectors, results)
+}
+
+func cosineBatchNEON(query []float32, vectors [][]float32, results []float32) {
+	cosineBatchGeneric(query, vectors, results)
 }

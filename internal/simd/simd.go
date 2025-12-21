@@ -1,8 +1,10 @@
 package simd
 
 import (
-	"github.com/23skdu/longbow/internal/metrics"
 	"math"
+	"unsafe"
+
+	"github.com/23skdu/longbow/internal/metrics"
 
 	"github.com/klauspost/cpuid/v2"
 )
@@ -68,24 +70,27 @@ func initializeDispatch() {
 		cosineDistanceImpl = cosineAVX512
 		dotProductImpl = dotAVX512
 		euclideanDistanceBatchImpl = euclideanBatchAVX512
-		cosineDistanceBatchImpl = cosineBatchUnrolled4x
-		dotProductBatchImpl = dotBatchUnrolled4x
+		cosineDistanceBatchImpl = cosineBatchAVX512
+		dotProductBatchImpl = dotBatchAVX512
+		prefetchImpl = prefetchNTA
 	case "avx2":
 		euclideanDistanceImpl = euclideanAVX2
 		metrics.SimdDispatchCount.WithLabelValues("avx2").Inc()
 		cosineDistanceImpl = cosineAVX2
 		dotProductImpl = dotAVX2
 		euclideanDistanceBatchImpl = euclideanBatchAVX2
-		cosineDistanceBatchImpl = cosineBatchUnrolled4x
-		dotProductBatchImpl = dotBatchUnrolled4x
+		cosineDistanceBatchImpl = cosineBatchAVX2
+		dotProductBatchImpl = dotBatchAVX2
+		prefetchImpl = prefetchNTA
 	case "neon":
 		euclideanDistanceImpl = euclideanNEON
 		metrics.SimdDispatchCount.WithLabelValues("neon").Inc()
 		cosineDistanceImpl = cosineNEON
 		dotProductImpl = dotNEON
 		euclideanDistanceBatchImpl = euclideanBatchNEON
-		cosineDistanceBatchImpl = cosineBatchUnrolled4x
-		dotProductBatchImpl = dotBatchUnrolled4x
+		cosineDistanceBatchImpl = cosineBatchNEON
+		dotProductBatchImpl = dotBatchNEON
+		prefetchImpl = prefetchGeneric
 	default:
 		euclideanDistanceImpl = euclideanUnrolled4x
 		metrics.SimdDispatchCount.WithLabelValues("generic").Inc()
@@ -94,7 +99,9 @@ func initializeDispatch() {
 		euclideanDistanceBatchImpl = euclideanBatchUnrolled4x
 		cosineDistanceBatchImpl = cosineBatchUnrolled4x
 		dotProductBatchImpl = dotBatchUnrolled4x
+		prefetchImpl = prefetchGeneric
 	}
+
 }
 
 // GetCPUFeatures returns detected CPU SIMD capabilities
@@ -141,6 +148,12 @@ func DotProduct(a, b []float32) float32 {
 		return 0
 	}
 	return dotProductImpl(a, b)
+}
+
+// Prefetch hints to the CPU to fetch data into cache for future use.
+// It uses the PREFETCHNTA instruction on x86 for non-temporal access.
+func Prefetch(p unsafe.Pointer) {
+	prefetchImpl(p)
 }
 
 // Generic implementations (fallback)
@@ -192,6 +205,18 @@ func EuclideanDistanceBatch(query []float32, vectors [][]float32, results []floa
 func euclideanBatchGeneric(query []float32, vectors [][]float32, results []float32) {
 	for i, v := range vectors {
 		results[i] = euclideanGeneric(query, v)
+	}
+}
+
+func dotBatchGeneric(query []float32, vectors [][]float32, results []float32) {
+	for i, v := range vectors {
+		results[i] = dotGeneric(query, v)
+	}
+}
+
+func cosineBatchGeneric(query []float32, vectors [][]float32, results []float32) {
+	for i, v := range vectors {
+		results[i] = cosineGeneric(query, v)
 	}
 }
 
@@ -371,3 +396,6 @@ func dotBatchUnrolled4x(query []float32, vectors [][]float32, results []float32)
 		results[i] = dotUnrolled4x(query, v)
 	}
 }
+
+// Internal implementation pointers
+var prefetchImpl func(p unsafe.Pointer)

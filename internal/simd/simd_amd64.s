@@ -76,10 +76,12 @@ TEXT ·dot16AVX512(SB), NOSPLIT, $0-20
     MOVQ    a+0(FP), SI
     MOVQ    b+8(FP), DI
     
-    VMOVUPS (SI), Z0
-    VMOVUPS (DI), Z1
-    VMULPS  Z0, Z1, Z0
+    VXORPS  Z0, Z0, Z0          // Z0 = accumulator
+    VMOVUPS (SI), Z1            // Z1 = a
+    VMOVUPS (DI), Z2            // Z2 = b
+    VFMADD231PS Z1, Z2, Z0      // Z0 += a * b
     
+    // Horizontal sum
     VEXTRACTF64X4 $1, Z0, Y1
     VADDPS  Y1, Y0, Y0
     VEXTRACTF128 $1, Y0, X1
@@ -141,12 +143,16 @@ TEXT ·cosine16AVX512(SB), NOSPLIT, $0-28
     MOVQ    a+0(FP), SI
     MOVQ    b+8(FP), DI
     
+    VXORPS  Z2, Z2, Z2          // Z2 = dot accumulator
+    VXORPS  Z3, Z3, Z3          // Z3 = normA accumulator
+    VXORPS  Z4, Z4, Z4          // Z4 = normB accumulator
+    
     VMOVUPS (SI), Z0            // Z0 = a
     VMOVUPS (DI), Z1            // Z1 = b
     
-    VMULPS  Z0, Z1, Z2          // dot
-    VMULPS  Z0, Z0, Z3          // normA
-    VMULPS  Z1, Z1, Z4          // normB
+    VFMADD231PS Z0, Z1, Z2      // Z2 += a * b (dot)
+    VFMADD231PS Z0, Z0, Z3      // Z3 += a * a (normA)
+    VFMADD231PS Z1, Z1, Z4      // Z4 += b * b (normB)
     
     // Reduce Z2 (dot)
     VEXTRACTF64X4 $1, Z2, Y5
@@ -182,4 +188,10 @@ TEXT ·cosine16AVX512(SB), NOSPLIT, $0-28
     VMOVSS  X4, ret+24(FP)
     
     VZEROUPPER
+    RET
+
+// func prefetchNTA(p unsafe.Pointer)
+TEXT ·prefetchNTA(SB), NOSPLIT, $0-8
+    MOVQ    p+0(FP), SI
+    PREFETCHNTA (SI)
     RET

@@ -141,25 +141,44 @@ func (idx *InvertedIndex) Search(query string, limit int) []SearchResult {
 // Reciprocal Rank Fusion (RRF)
 // =============================================================================
 
-// ReciprocalRankFusion combines two ranked lists using RRF algorithm
+// ReciprocalRankFusion combines multiple ranked lists using RRF algorithm
 // k is the ranking constant (typically 60)
 // Formula: RRF(d) = sum(1 / (k + rank(d)))
-func ReciprocalRankFusion(denseResults, sparseResults []SearchResult, k, limit int) []SearchResult {
+func ReciprocalRankFusion(k, limit int, resultSets ...[]SearchResult) []SearchResult {
 	if k <= 0 {
 		k = 60 // default
 	}
 
+	if len(resultSets) == 0 {
+		return nil
+	}
+
+	// For small numbers of result sets, we can use a single map
+	// For larger sets, we could use partitioned maps to reduce lock contention
+	var mu sync.Mutex
 	scores := make(map[VectorID]float64)
 
-	// Add dense results contribution
-	for rank, result := range denseResults {
-		scores[result.ID] += 1.0 / float64(k+rank+1)
-	}
+	var wg sync.WaitGroup
+	for _, resultSet := range resultSets {
+		if len(resultSet) == 0 {
+			continue
+		}
+		wg.Add(1)
+		go func(results []SearchResult) {
+			defer wg.Done()
+			localScores := make(map[VectorID]float64)
+			for rank, result := range results {
+				localScores[result.ID] += 1.0 / float64(k+rank+1)
+			}
 
-	// Add sparse results contribution
-	for rank, result := range sparseResults {
-		scores[result.ID] += 1.0 / float64(k+rank+1)
+			mu.Lock()
+			for id, score := range localScores {
+				scores[id] += score
+			}
+			mu.Unlock()
+		}(resultSet)
 	}
+	wg.Wait()
 
 	// Convert to sorted results
 	results := make([]SearchResult, 0, len(scores))
@@ -264,7 +283,7 @@ func (hs *HybridSearcher) SearchHybrid(vectorQuery []float32, textQuery string, 
 	denseResults := hs.SearchDense(vectorQuery, candidateK)
 	sparseResults := hs.SearchSparse(textQuery, candidateK)
 
-	return ReciprocalRankFusion(denseResults, sparseResults, rrfK, k)
+	return ReciprocalRankFusion(rrfK, k, denseResults, sparseResults)
 }
 
 // SearchHybridWeighted performs hybrid search with weighted combination

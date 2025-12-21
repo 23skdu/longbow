@@ -49,16 +49,18 @@ type VectorStore struct {
 	mu      sync.RWMutex   // Protects datasets map (global lock, replaced by ShardedMap technically but kept for simple map access)
 
 	// Mesh integration
-	Mesh *mesh.Gossip
+	Mesh            *mesh.Gossip
+	meshStatusCache *MeshStatusCache // Cache for mesh status serialization
 }
 
 func NewVectorStore(mem memory.Allocator, logger *zap.Logger, maxMemory, maxWALSize int64, ttl time.Duration) *VectorStore {
 	cfg := DefaultIndexJobQueueConfig()
 	s := &VectorStore{
-		mem:        mem,
-		logger:     logger,
-		datasets:   make(map[string]*Dataset),
-		indexQueue: NewIndexJobQueue(cfg),
+		mem:             mem,
+		logger:          logger,
+		datasets:        make(map[string]*Dataset),
+		indexQueue:      NewIndexJobQueue(cfg),
+		meshStatusCache: NewMeshStatusCache(100 * time.Millisecond), // Cache mesh status for 100ms
 	}
 	s.startIndexingWorkers(1)
 	return s

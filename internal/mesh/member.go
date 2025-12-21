@@ -3,6 +3,7 @@ package mesh
 import (
 	"encoding/binary"
 	"errors"
+	"time"
 )
 
 type MemberStatus uint8
@@ -19,6 +20,7 @@ type Member struct {
 	Addr        string // Host:Port
 	Status      MemberStatus
 	Incarnation uint32
+	LastSeen    time.Time
 }
 
 // EncodeMember serializes a member update into a compact binary format.

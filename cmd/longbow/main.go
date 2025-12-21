@@ -15,6 +15,7 @@ import (
 	"github.com/23skdu/longbow/internal/logging"
 	"github.com/23skdu/longbow/internal/mesh"
 	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/sharding"
 	"github.com/23skdu/longbow/internal/store"
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/apache/arrow-go/v18/arrow/memory"
@@ -163,19 +164,27 @@ func run() error {
 		}
 	}()
 
+	// Initialize Sharding Ring Manager
+	// We use hostname as nodeID for now, same as Gossip
+	hostname, _ := os.Hostname()
+	if hostname == "" {
+		hostname = "node-" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	}
+	ringManager := sharding.NewRingManager(hostname, logger)
+	// Add self to ring immediately
+	ringManager.NotifyJoin(&mesh.Member{ID: hostname, Addr: cfg.ListenAddr, Status: mesh.StatusAlive})
+
 	// Start Gossip if enabled
 	if cfg.GossipEnabled {
 		// Use hostname or random ID?
-		hostname, _ := os.Hostname()
-		if hostname == "" {
-			hostname = "node-" + strconv.FormatInt(time.Now().UnixNano(), 10)
-		}
+		// hostname already retrieved above
 
 		gossipCfg := mesh.GossipConfig{
 			ID:             hostname,
 			Port:           cfg.GossipPort,
 			ProtocolPeriod: cfg.GossipInterval,
 			Addr:           "0.0.0.0", // Bind to all interfaces
+			Delegate:       ringManager,
 		}
 
 		// If provided, override advertise addr logic (TODO: pass to NewGossip if supported or modify Gossip to take AdvertiseAddr)
@@ -197,6 +206,9 @@ func run() error {
 		}
 	}
 
+	// Initialize Request Forwarder with RingManager for address resolution
+	forwarder := sharding.NewRequestForwarder(sharding.DefaultForwarderConfig(), ringManager)
+
 	// gRPC Server Options - using env-configurable message sizes and window sizes
 	if err := cfg.ValidateGRPCConfig(); err != nil {
 		logger.Error("Invalid gRPC config", zap.Error(err))
@@ -204,6 +216,9 @@ func run() error {
 		return err
 	}
 	serverOpts := cfg.BuildGRPCServerOptions()
+	// Add Partition Proxy Interceptor
+	serverOpts = append(serverOpts, grpc.UnaryInterceptor(sharding.PartitionProxyInterceptor(ringManager, forwarder)))
+
 	logger.Info("gRPC server options configured",
 		zap.Int("max_recv_msg_size", cfg.GRPCMaxRecvMsgSize),
 		zap.Int("max_send_msg_size", cfg.GRPCMaxSendMsgSize),

@@ -798,936 +798,297 @@ var ShardedHnswLoadFactor = promauto.NewGaugeVec(
 		Name: "longbow_sharded_hnsw_load_factor",
 		Help: "Sharded HNSW load factor by shard (0-1)",
 	},
-	[]string{"shard_id"},
+	[]string{"dataset", "shard"},
 )
 
-// ShardedHnswShardSize tracks shard sizes
-var ShardedHnswShardSize = promauto.NewGaugeVec(
+// -----------------------------------------------------------------------------
+// Phase 5: Final Optimization Metrics (New)
+// -----------------------------------------------------------------------------
+
+// DoGetZeroCopyTotal counts zero-copy vs key-copy operations
+var DoGetZeroCopyTotal = promauto.NewCounterVec(
+	prometheus.CounterOpts{
+		Name: "longbow_doget_zero_copy_total",
+		Help: "Total DoGet operations by copy method (zero-copy vs deep-copy)",
+	},
+	[]string{"type"}, // "zero_copy", "copy"
+)
+
+// DoGetPipelineStepsTotal counts pipeline vs simple path usage
+var DoGetPipelineStepsTotal = promauto.NewCounterVec(
+	prometheus.CounterOpts{
+		Name: "longbow_doget_pipeline_steps_total",
+		Help: "Total DoGet pipeline steps processed by method",
+	},
+	[]string{"method"}, // "pipeline", "simple"
+)
+
+// NumaWorkerDistribution tracks workers pinned to NUMA nodes
+var NumaWorkerDistribution = promauto.NewGaugeVec(
 	prometheus.GaugeOpts{
-		Name: "longbow_sharded_hnsw_shard_size",
-		Help: "Sharded HNSW shard size (vector count)",
+		Name: "longbow_numa_worker_distribution",
+		Help: "Number of workers pinned to each NUMA node",
 	},
-	[]string{"shard_id"},
+	[]string{"node"},
 )
 
-// -----------------------------------------------------------------------------
-// Record Size Cache Metrics
-// -----------------------------------------------------------------------------
+// =============================================================================
+// SIMD Metrics (Restored)
+// =============================================================================
 
-// RecordSizeCacheHitRate tracks cache hit rate
-var RecordSizeCacheHitRate = promauto.NewGauge(
-	prometheus.GaugeOpts{
-		Name: "longbow_record_size_cache_hit_rate",
-		Help: "Record size cache hit rate (0-1)",
-	},
-)
-
-// BitmapPool metrics
-var BitmapPoolGetsTotal = promauto.NewCounter(
+// CosineBatchCallsTotal counts batch cosine distance calls
+var CosineBatchCallsTotal = promauto.NewCounter(
 	prometheus.CounterOpts{
-		Name: "longbow_bitmap_pool_gets_total",
-		Help: "Total bitmap buffer get operations",
+		Name: "longbow_simd_cosine_batch_calls_total",
+		Help: "Total number of batch cosine distance calculations",
 	},
 )
 
-var BitmapPoolHitsTotal = promauto.NewCounter(
+// DotProductBatchCallsTotal counts batch dot product calls
+var DotProductBatchCallsTotal = promauto.NewCounter(
 	prometheus.CounterOpts{
-		Name: "longbow_bitmap_pool_hits_total",
-		Help: "Total bitmap buffer pool hits (reused buffers)",
+		Name: "longbow_simd_dot_product_batch_calls_total",
+		Help: "Total number of batch dot product calculations",
 	},
 )
 
-var BitmapPoolMissesTotal = promauto.NewCounter(
+// ParallelReductionVectorsProcessed tracks vectors processed by parallel reduction
+var ParallelReductionVectorsProcessed = promauto.NewCounter(
 	prometheus.CounterOpts{
-		Name: "longbow_bitmap_pool_misses_total",
-		Help: "Total bitmap buffer pool misses (new allocations)",
-	},
-)
-
-var BitmapPoolPutsTotal = promauto.NewCounter(
-	prometheus.CounterOpts{
-		Name: "longbow_bitmap_pool_puts_total",
-		Help: "Total bitmap buffer put (return) operations",
-	},
-)
-
-var BitmapPoolDiscardsTotal = promauto.NewCounter(
-	prometheus.CounterOpts{
-		Name: "longbow_bitmap_pool_discards_total",
-		Help: "Total bitmap buffers discarded (oversized)",
-	},
-)
-
-// -----------------------------------------------------------------------------
-// PerP Result Pool Metrics
-// -----------------------------------------------------------------------------
-
-var (
-	// PerPPoolGetsTotal tracks total Get operations per shard
-	PerPPoolGetsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
-
-		Name: "longbow_perp_pool_gets_total",
-		Help: "Total number of Get operations on PerP result pool",
-	}, []string{"shard"})
-
-	// PerPPoolPutsTotal tracks total Put operations per shard
-	PerPPoolPutsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
-
-		Name: "longbow_perp_pool_puts_total",
-		Help: "Total number of Put operations on PerP result pool",
-	}, []string{"shard"})
-
-	// PerPPoolHitsTotal tracks pool hits (buffer reuse)
-	PerPPoolHitsTotal = promauto.NewCounter(prometheus.CounterOpts{
-
-		Name: "longbow_perp_pool_hits_total",
-		Help: "Total number of pool hits (buffer reuse) on PerP result pool",
-	})
-
-	// PerPPoolMissesTotal tracks pool misses (new allocations)
-	PerPPoolMissesTotal = promauto.NewCounter(prometheus.CounterOpts{
-
-		Name: "longbow_perp_pool_misses_total",
-		Help: "Total number of pool misses (new allocations) on PerP result pool",
-	})
-
-	// PerPPoolShardDistribution tracks distribution of operations across shards
-	PerPPoolShardDistribution = promauto.NewHistogramVec(prometheus.HistogramOpts{
-
-		Name:    "longbow_perp_pool_shard_distribution",
-		Help:    "Distribution of operations across PerP pool shards",
-		Buckets: prometheus.LinearBuckets(0, 1, 16),
-	}, []string{"operation"})
-)
-
-// RecordSizeCacheHitsTotal tracks total cache hits
-var RecordSizeCacheHitsTotal = promauto.NewCounter(
-	prometheus.CounterOpts{
-		Namespace: "longbow",
-		Name:      "record_size_cache_hits_total",
-		Help:      "Total number of record size cache hits",
-	},
-)
-
-// RecordSizeCacheMissesTotal tracks total cache misses
-var RecordSizeCacheMissesTotal = promauto.NewCounter(
-	prometheus.CounterOpts{
-		Namespace: "longbow",
-		Name:      "record_size_cache_misses_total",
-		Help:      "Total number of record size cache misses",
+		Name: "longbow_simd_parallel_reduction_vectors_total",
+		Help: "Total number of vectors processed using parallel reduction",
 	},
 )
 
 // =============================================================================
-// Adaptive Index Metrics
+// WAL & Exchange Metrics (Restored)
 // =============================================================================
 
-// AdaptiveIndexMigrationsTotal tracks total BruteForce to HNSW migrations
-var AdaptiveIndexMigrationsTotal = promauto.NewCounter(prometheus.CounterOpts{
-	Namespace: "longbow",
-	Name:      "adaptive_index_migrations_total",
-	Help:      "Total number of BruteForce to HNSW migrations",
-})
-
-// BruteForceSearchesTotal tracks total brute force searches
-var BruteForceSearchesTotal = promauto.NewCounter(prometheus.CounterOpts{
-	Namespace: "longbow",
-	Name:      "brute_force_searches_total",
-	Help:      "Total number of brute force linear scan searches",
-})
-
-// HnswSearchesTotal tracks total HNSW searches
-var HnswSearchesTotal = promauto.NewCounter(prometheus.CounterOpts{
-	Namespace: "longbow",
-	Name:      "hnsw_searches_total",
-	Help:      "Total number of HNSW approximate nearest neighbor searches",
-})
-
-// ZeroAllocTicketParseTotal - Counter for successful zero-alloc ticket parses
-var ZeroAllocTicketParseTotal = promauto.NewCounter(
-	prometheus.CounterOpts{
-		Namespace: "longbow",
-		Name:      "zero_alloc_ticket_parse_total",
-		Help:      "Total number of tickets parsed with zero-allocation parser",
-	},
-)
-
-// ParserPoolGets - Counter for parser pool Get operations
-var ParserPoolGets = promauto.NewCounter(
-	prometheus.CounterOpts{
-		Namespace: "longbow",
-		Name:      "parser_pool_gets_total",
-		Help:      "Total number of Get operations on the ticket parser pool",
-	},
-)
-
-// ParserPoolPuts - Counter for parser pool Put operations
-var ParserPoolPuts = promauto.NewCounter(
-	prometheus.CounterOpts{
-		Namespace: "longbow",
-		Name:      "parser_pool_puts_total",
-		Help:      "Total number of Put operations on the ticket parser pool",
-	},
-)
-
-// ParserPoolHits - Counter for parser pool hits (reused parser)
-var ParserPoolHits = promauto.NewCounter(
-	prometheus.CounterOpts{
-		Namespace: "longbow",
-		Name:      "parser_pool_hits_total",
-		Help:      "Total number of hits (parser reuse) from the ticket parser pool",
-	},
-)
-
-// ParserPoolMisses - Counter for parser pool misses (new parser created)
-var ParserPoolMisses = promauto.NewCounter(
-	prometheus.CounterOpts{
-		Namespace: "longbow",
-		Name:      "parser_pool_misses_total",
-		Help:      "Total number of misses (new parser allocation) from the ticket parser pool",
-	},
-)
-
-// TicketParseFallbackTotal - Counter for fallbacks to standard JSON parser
-var TicketParseFallbackTotal = promauto.NewCounter(
-	prometheus.CounterOpts{
-		Namespace: "longbow",
-		Name:      "ticket_parse_fallback_total",
-		Help:      "Total number of fallbacks to standard JSON ticket parser",
-	},
-)
-
-// Arrow Allocator Metrics
-var (
-	ArrowZeroCopyReadsTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Namespace: "longbow",
-		Name:      "arrow_zerocopy_reads_total",
-		Help:      "Total number of zero-copy buffer reads",
-	})
-
-	ArrowBufferCopiesTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Namespace: "longbow",
-		Name:      "arrow_buffer_copies_total",
-		Help:      "Total number of buffer copy operations",
-	})
-
-	ArrowBufferRetainedBytes = promauto.NewGauge(prometheus.GaugeOpts{
-		Namespace: "longbow",
-		Name:      "arrow_buffer_retained_bytes",
-		Help:      "Total bytes currently retained in zero-copy buffers",
-	})
-
-	ArrowAllocatorPoolHitsTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Namespace: "longbow",
-		Name:      "arrow_allocator_pool_hits_total",
-		Help:      "Total buffer reuse hits from pooled allocator",
-	})
-
-	ArrowAllocatorPoolMissesTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Namespace: "longbow",
-		Name:      "arrow_allocator_pool_misses_total",
-		Help:      "Total buffer allocations that missed the pool",
-	})
-)
-
-// ==================== Request Semaphore Metrics ====================
-
-var (
-	// SemaphoreWaitingRequests tracks requests waiting to acquire the semaphore
-	SemaphoreWaitingRequests = promauto.NewGauge(prometheus.GaugeOpts{
-		Namespace: "longbow",
-		Name:      "semaphore_waiting_requests",
-		Help:      "Number of requests currently waiting to acquire the semaphore",
-	})
-
-	// SemaphoreAcquiredTotal tracks total successful semaphore acquisitions
-	SemaphoreAcquiredTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Namespace: "longbow",
-		Name:      "semaphore_acquired_total",
-		Help:      "Total number of successful semaphore acquisitions",
-	})
-
-	// SemaphoreTimeoutsTotal tracks semaphore acquisition timeouts
-	SemaphoreTimeoutsTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Namespace: "longbow",
-		Name:      "semaphore_timeouts_total",
-		Help:      "Total number of semaphore acquisition timeouts",
-	})
-
-	// SemaphoreQueueDurationSeconds tracks time spent waiting for semaphore
-	SemaphoreQueueDurationSeconds = promauto.NewHistogram(prometheus.HistogramOpts{
-		Namespace: "longbow",
-		Name:      "semaphore_queue_duration_seconds",
-		Help:      "Time spent waiting to acquire the semaphore",
-		Buckets:   []float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10},
-	})
-
-	// SemaphoreActiveRequests tracks currently active requests (holding semaphore)
-	SemaphoreActiveRequests = promauto.NewGauge(prometheus.GaugeOpts{
-		Namespace: "longbow",
-		Name:      "semaphore_active_requests",
-		Help:      "Number of requests currently holding the semaphore",
-	})
-)
-
-// =============================================================================
-// Lock Contention Metrics - Added for comprehensive lock instrumentation
-// =============================================================================
-
-// WALLockWaitDuration measures time spent waiting for WAL locks
+// WALLockWaitDuration measures time waiting for WAL locks
 var WALLockWaitDuration = promauto.NewHistogramVec(
 	prometheus.HistogramOpts{
-		Namespace: "longbow",
-		Name:      "wal_lock_wait_duration_seconds",
-		Help:      "Time spent waiting for WAL mutex locks",
-		Buckets:   []float64{0.00001, 0.00005, 0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1},
+		Name:    "longbow_wal_lock_wait_duration_seconds",
+		Help:    "Time spent waiting for WAL locks",
+		Buckets: []float64{0.000001, 0.00001, 0.0001, 0.001, 0.01},
 	},
-	[]string{"operation"},
+	[]string{"type"}, // "data", "cond"
 )
 
-// PoolLockWaitDuration measures time spent waiting for connection pool locks
-var PoolLockWaitDuration = promauto.NewHistogramVec(
-	prometheus.HistogramOpts{
-		Namespace: "longbow",
-		Name:      "pool_lock_wait_duration_seconds",
-		Help:      "Time spent waiting for connection pool mutex locks",
-		Buckets:   []float64{0.00001, 0.00005, 0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1},
-	},
-	[]string{"operation"},
-)
-
-// IndexLockWaitDuration measures time spent waiting for HNSW index locks
-var IndexLockWaitDuration = promauto.NewHistogramVec(
-	prometheus.HistogramOpts{
-		Namespace: "longbow",
-		Name:      "index_lock_wait_duration_seconds",
-		Help:      "Time spent waiting for HNSW index mutex locks",
-		Buckets:   []float64{0.00001, 0.00005, 0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1},
-	},
-	[]string{"operation"},
-)
-
-// VectorSearch Action metrics
-var (
-	VectorSearchActionTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "longbow_vector_search_action_total",
-		Help: "Total number of VectorSearch DoAction calls",
-	})
-	VectorSearchActionDuration = promauto.NewHistogram(prometheus.HistogramOpts{
-		Name:    "longbow_vector_search_action_duration_seconds",
-		Help:    "Duration of VectorSearch DoAction calls",
-		Buckets: prometheus.DefBuckets,
-	})
-	VectorSearchActionErrors = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "longbow_vector_search_action_errors_total",
-		Help: "Total number of VectorSearch DoAction errors",
-	})
-	ZeroAllocVectorSearchParseTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "longbow_zero_alloc_vector_search_parse_total",
-		Help: "Total successful zero-alloc VectorSearch JSON parses",
-	})
-	VectorSearchParseFallbackTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "longbow_vector_search_parse_fallback_total",
-		Help: "Total VectorSearch JSON parse fallbacks to standard parser",
-	})
-)
-
-// BM25 Indexing metrics
-var (
-	BM25DocumentsIndexedTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "longbow_bm25_documents_indexed_total",
-		Help: "Total number of documents indexed in BM25",
-	})
-	BM25IndexDuration = promauto.NewHistogram(prometheus.HistogramOpts{
-		Name:    "longbow_bm25_index_duration_seconds",
-		Help:    "Duration of BM25 indexing operations",
-		Buckets: prometheus.DefBuckets,
-	})
-	BM25IndexErrorsTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "longbow_bm25_index_errors_total",
-		Help: "Total number of BM25 indexing errors",
-	})
-)
-
-// GraphRAG metrics
-var GraphEdgesTotal = promauto.NewCounter(
-	prometheus.CounterOpts{
-		Name: "longbow_graph_edges_total",
-		Help: "Total number of edges stored in the graph",
-	},
-)
-
-var GraphTraversalDurationSeconds = promauto.NewHistogram(
-	prometheus.HistogramOpts{
-		Name:    "longbow_graph_traversal_duration_seconds",
-		Help:    "Duration of graph traversal operations",
-		Buckets: prometheus.DefBuckets,
-	},
-)
-
-var GraphCommunitiesTotal = promauto.NewGauge(
-	prometheus.GaugeOpts{
-		Name: "longbow_graph_communities_total",
-		Help: "Number of detected communities in the graph",
-	},
-)
-
-var GraphDictionarySize = promauto.NewGauge(
-	prometheus.GaugeOpts{
-		Name: "longbow_graph_dictionary_size",
-		Help: "Number of unique predicates in the graph dictionary",
-	},
-)
-
-var GraphClusteringDurationSeconds = promauto.NewHistogram(
-	prometheus.HistogramOpts{
-		Name:    "longbow_graph_clustering_duration_seconds",
-		Help:    "Duration of Louvain community detection",
-		Buckets: prometheus.DefBuckets,
-	},
-)
-
-// Batch Distance Search Metrics
-var BatchDistanceCallsTotal = promauto.NewCounter(
-	prometheus.CounterOpts{
-		Name: "longbow_batch_distance_calls_total",
-		Help: "Total number of batch distance calculation calls",
-	},
-)
-
-var BatchDistanceBatchSize = promauto.NewHistogram(
-	prometheus.HistogramOpts{
-		Name:    "longbow_batch_distance_batch_size",
-		Help:    "Distribution of batch sizes in batch distance calculations",
-		Buckets: []float64{1, 5, 10, 25, 50, 100, 250, 500, 1000},
-	},
-)
-
-var BatchDistanceDurationSeconds = promauto.NewHistogram(
-	prometheus.HistogramOpts{
-		Name:    "longbow_batch_distance_duration_seconds",
-		Help:    "Duration of batch distance calculations",
-		Buckets: prometheus.DefBuckets,
-	},
-)
-
-// DoExchange Metrics - Bidirectional Arrow Flight streaming for mesh replication
+// DoExchangeCallsTotal counts calls to DoExchange (gossip)
 var DoExchangeCallsTotal = promauto.NewCounter(
 	prometheus.CounterOpts{
 		Name: "longbow_do_exchange_calls_total",
-		Help: "Total number of DoExchange invocations",
+		Help: "Total number of DoExchange (gossip) calls",
 	},
 )
 
-var DoExchangeDurationSeconds = promauto.NewHistogram(
-	prometheus.HistogramOpts{
-		Name:    "longbow_do_exchange_duration_seconds",
-		Help:    "Duration of DoExchange sessions",
-		Buckets: prometheus.DefBuckets,
-	},
-)
-
-var DoExchangeBatchesReceivedTotal = promauto.NewCounter(
-	prometheus.CounterOpts{
-		Name: "longbow_do_exchange_batches_received_total",
-		Help: "Total number of FlightData batches received via DoExchange",
-	},
-)
-
-var DoExchangeBatchesSentTotal = promauto.NewCounter(
-	prometheus.CounterOpts{
-		Name: "longbow_do_exchange_batches_sent_total",
-		Help: "Total number of FlightData batches sent via DoExchange",
-	},
-)
-
+// DoExchangeErrorsTotal counts failed DoExchange calls
 var DoExchangeErrorsTotal = promauto.NewCounter(
 	prometheus.CounterOpts{
 		Name: "longbow_do_exchange_errors_total",
-		Help: "Total number of DoExchange errors",
+		Help: "Total number of failed DoExchange (gossip) calls",
 	},
 )
 
-// TCP_NODELAY Metrics - Low-latency connection configuration
+// DoExchangeBatchesReceivedTotal counts batches received during gossip
+var DoExchangeBatchesReceivedTotal = promauto.NewCounter(
+	prometheus.CounterOpts{
+		Name: "longbow_do_exchange_batches_received_total",
+		Help: "Total number of record batches received via DoExchange",
+	},
+)
+
+// DoExchangeBatchesSentTotal counts batches sent during gossip
+var DoExchangeBatchesSentTotal = promauto.NewCounter(
+	prometheus.CounterOpts{
+		Name: "longbow_do_exchange_batches_sent_total",
+		Help: "Total number of record batches sent via DoExchange",
+	},
+)
+
+// DoExchangeDurationSeconds measures latency of gossip exchange
+var DoExchangeDurationSeconds = promauto.NewHistogram(
+	prometheus.HistogramOpts{
+		Name:    "longbow_do_exchange_duration_seconds",
+		Help:    "Latency of DoExchange (gossip) operations",
+		Buckets: []float64{0.001, 0.01, 0.1, 0.5, 1, 5, 10},
+	},
+)
+
+// IndexLockWaitDuration measures time waiting for index RWMutex
+var IndexLockWaitDuration = promauto.NewHistogramVec(
+	prometheus.HistogramOpts{
+		Name:    "longbow_index_lock_wait_duration_seconds",
+		Help:    "Time spent waiting for index locks",
+		Buckets: []float64{0.000001, 0.00001, 0.0001, 0.001, 0.01, 0.1},
+	},
+	[]string{"dataset", "type"}, // "dataset", "read/write"
+)
+
+// =============================================================================
+// Batch, Sharding & TCP Metrics (Restored)
+// =============================================================================
+
+// BatchDistanceDurationSeconds measures latency of batch distance calcs
+var BatchDistanceDurationSeconds = promauto.NewHistogram(
+	prometheus.HistogramOpts{
+		Name:    "longbow_batch_distance_duration_seconds",
+		Help:    "Latency of batch distance calculations",
+		Buckets: []float64{0.000001, 0.00001, 0.0001, 0.001, 0.01},
+	},
+)
+
+// BatchDistanceCallsTotal counts batch distance function calls
+var BatchDistanceCallsTotal = promauto.NewCounter(
+	prometheus.CounterOpts{
+		Name: "longbow_batch_distance_calls_total",
+		Help: "Total number of batch distance function calls",
+	},
+)
+
+// BatchDistanceBatchSize tracks distribution of batch sizes
+var BatchDistanceBatchSize = promauto.NewHistogram(
+	prometheus.HistogramOpts{
+		Name:    "longbow_batch_distance_batch_size",
+		Help:    "Size of batches in distance calculations",
+		Buckets: []float64{10, 50, 100, 500, 1000, 5000},
+	},
+)
+
+// ShardedHnswShardSize tracks number of vectors per shard
+var ShardedHnswShardSize = promauto.NewGaugeVec(
+	prometheus.GaugeOpts{
+		Name: "longbow_sharded_hnsw_shard_size",
+		Help: "Number of vectors in each HNSW shard",
+	},
+	[]string{"dataset", "shard"},
+)
+
+// TCPNoDelayConnectionsTotal counts connections with TCP_NODELAY set
 var TCPNoDelayConnectionsTotal = promauto.NewCounter(
 	prometheus.CounterOpts{
 		Name: "longbow_tcp_nodelay_connections_total",
-		Help: "Total number of connections with TCP_NODELAY set",
+		Help: "Total connections configured with TCP_NODELAY",
 	},
 )
 
-// Multi-Tenancy Namespace Metrics
-var NamespacesTotal = promauto.NewGauge(
-	prometheus.GaugeOpts{
-		Name: "longbow_namespaces_total",
-		Help: "Total number of namespaces",
+// VectorSearchParseFallbackTotal counts fallbacks to standard JSON parsing
+var VectorSearchParseFallbackTotal = promauto.NewCounter(
+	prometheus.CounterOpts{
+		Name: "longbow_vector_search_parse_fallback_total",
+		Help: "Total fallback to standard JSON parsing for search queries",
 	},
 )
 
-var NamespaceDatasets = promauto.NewGaugeVec(
-	prometheus.GaugeOpts{
-		Name: "longbow_namespace_datasets",
-		Help: "Number of datasets per namespace",
+// ZeroAllocVectorSearchParseTotal counts successful zero-alloc parsing
+var ZeroAllocVectorSearchParseTotal = promauto.NewCounter(
+	prometheus.CounterOpts{
+		Name: "longbow_zero_alloc_vector_search_parse_total",
+		Help: "Total successful zero-allocation parsing of search queries",
 	},
-	[]string{"namespace"},
 )
 
-// Slice pool metrics
-var (
-	SlicePoolHitsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "longbow",
-		Name:      "slice_pool_hits_total",
-		Help:      "Total number of slice pool hits (reused allocations)",
-	}, []string{"pool_name"})
-
-	SlicePoolMissesTotal = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "longbow",
-		Name:      "slice_pool_misses_total",
-		Help:      "Total number of slice pool misses (new allocations)",
-	}, []string{"pool_name"})
-
-	SlicePoolGetsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "longbow",
-		Name:      "slice_pool_gets_total",
-		Help:      "Total number of Get calls on slice pools",
-	}, []string{"pool_name"})
-
-	SlicePoolPutsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "longbow",
-		Name:      "slice_pool_puts_total",
-		Help:      "Total number of Put calls on slice pools",
-	}, []string{"pool_name"})
-)
-
-// Per-Record Eviction Metrics
-var (
-	RecordEvictionsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "longbow",
-		Name:      "record_evictions_total",
-		Help:      "Total per-record evictions by policy type",
-	}, []string{"policy"})
-
-	RecordTTLExpirationsTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Namespace: "longbow",
-		Name:      "record_ttl_expirations_total",
-		Help:      "Total TTL-based per-record expirations",
-	})
-
-	RecordAccessTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Namespace: "longbow",
-		Name:      "record_access_total",
-		Help:      "Total per-record access count for LRU/LFU tracking",
-	})
-
-	RecordMetadataEntries = promauto.NewGauge(prometheus.GaugeOpts{
-		Namespace: "longbow",
-		Name:      "record_metadata_entries",
-		Help:      "Current number of tracked records with eviction metadata",
-	})
-)
-
-// gRPC Server Configuration Metrics
-var (
-	GRPCMaxRecvMsgSizeBytes = promauto.NewGauge(prometheus.GaugeOpts{
-		Namespace: "longbow",
-		Name:      "grpc_max_recv_msg_size_bytes",
-		Help:      "Configured maximum receive message size in bytes",
-	})
-
-	GRPCMaxSendMsgSizeBytes = promauto.NewGauge(prometheus.GaugeOpts{
-		Namespace: "longbow",
-		Name:      "grpc_max_send_msg_size_bytes",
-		Help:      "Configured maximum send message size in bytes",
-	})
-
-	GRPCInitialWindowSizeBytes = promauto.NewGauge(prometheus.GaugeOpts{
-		Namespace: "longbow",
-		Name:      "grpc_initial_window_size_bytes",
-		Help:      "Configured HTTP/2 initial stream window size in bytes",
-	})
-
-	GRPCInitialConnWindowSizeBytes = promauto.NewGauge(prometheus.GaugeOpts{
-		Namespace: "longbow",
-		Name:      "grpc_initial_conn_window_size_bytes",
-		Help:      "Configured HTTP/2 initial connection window size in bytes",
-	})
-
-	GRPCMaxConcurrentStreams = promauto.NewGauge(prometheus.GaugeOpts{
-		Namespace: "longbow",
-		Name:      "grpc_max_concurrent_streams",
-		Help:      "Configured maximum concurrent streams per connection",
-	})
-
-	// Schema Evolution Metrics
-	SchemaVersionCurrent = promauto.NewGauge(prometheus.GaugeOpts{
-		Namespace: "longbow",
-		Name:      "schema_version_current",
-		Help:      "Current schema version number",
-	})
-
-	SchemaColumnsAddedTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Namespace: "longbow",
-		Name:      "schema_columns_added_total",
-		Help:      "Total number of columns added via schema evolution",
-	})
-
-	SchemaColumnsDroppedTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Namespace: "longbow",
-		Name:      "schema_columns_dropped_total",
-		Help:      "Total number of columns dropped via schema evolution",
-	})
-
-	SchemaEvolutionDuration = promauto.NewHistogram(prometheus.HistogramOpts{
-		Namespace: "longbow",
-		Name:      "schema_evolution_duration_seconds",
-		Help:      "Time taken for schema evolution operations",
-		Buckets:   prometheus.DefBuckets,
-	})
-)
-
-// =============================================================================
-// Pluggable Index Metrics
-// =============================================================================
-
-var (
-	// IndexTypesRegistered tracks number of registered index types
-	IndexTypesRegistered = promauto.NewCounter(prometheus.CounterOpts{
-		Namespace: "longbow",
-		Name:      "index_types_registered_total",
-		Help:      "Total number of index types registered in factory",
-	})
-
-	// IndexCreationsTotal tracks index creation attempts
-	IndexCreationsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "longbow",
-		Name:      "index_creations_total",
-		Help:      "Total index creation attempts by type and result",
-	}, []string{"type", "result"})
-
-	// IndexCreationDuration tracks index creation latency
-	IndexCreationDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: "longbow",
-		Name:      "index_creation_duration_seconds",
-		Help:      "Index creation latency by type",
-		Buckets:   prometheus.DefBuckets,
-	}, []string{"type"})
-
-	// IndexOperationsTotal tracks index operations
-	IndexOperationsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "longbow",
-		Name:      "index_operations_total",
-		Help:      "Total index operations by type and operation",
-	}, []string{"type", "operation"})
-
-	// IndexSearchDurationSeconds
-	IndexSearchDurationSeconds = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: "longbow",
-		Name:      "index_search_duration_seconds",
-		Help:      "Total latency of generic index search",
-		Buckets:   prometheus.DefBuckets,
-	}, []string{"dataset"})
-
-	// IndexSize tracks vectors in each index
-	IndexSize = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Namespace: "longbow",
-		Name:      "index_size",
-		Help:      "Number of vectors in index by type",
-	}, []string{"type", "dataset"})
-)
-
-// Circuit Breaker Metrics
-var (
-	CircuitBreakerStateChanges = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "longbow_circuit_breaker_state_changes_total",
-		Help: "Total number of circuit breaker state changes",
-	})
-
-	CircuitBreakerSuccesses = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "longbow_circuit_breaker_successes_total",
-		Help: "Total number of successful operations through circuit breakers",
-	})
-
-	CircuitBreakerFailures = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "longbow_circuit_breaker_failures_total",
-		Help: "Total number of failed operations through circuit breakers",
-	})
-
-	CircuitBreakerRejections = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "longbow_circuit_breaker_rejections_total",
-		Help: "Total number of requests rejected by open circuit breakers",
-	})
-)
-
-// Replication metrics
-var (
-	ReplicationPeersTotal = promauto.NewGauge(prometheus.GaugeOpts{
-		Name: "longbow_replication_peers_total",
-		Help: "Total number of replication peers",
-	})
-	ReplicationSuccessTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "longbow_replication_success_total",
-		Help: "Total successful replications",
-	})
-	ReplicationFailuresTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "longbow_replication_failures_total",
-		Help: "Total failed replications",
-	})
-	ReplicationRetriesTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "longbow_replication_retries_total",
-		Help: "Total replication retries",
-	})
-	ReplicationQueuedTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "longbow_replication_queued_total",
-		Help: "Total records queued for async replication",
-	})
-	ReplicationQueueDropped = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "longbow_replication_queue_dropped_total",
-		Help: "Total records dropped due to full queue",
-	})
-)
-
-// Merkle tree anti-entropy metrics
-var (
-	MerkleTreeBuilds = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "longbow_merkle_tree_builds_total",
-		Help: "Total number of Merkle trees built",
-	})
-
-	MerkleTreeBuildDuration = promauto.NewHistogram(prometheus.HistogramOpts{
-		Name:    "longbow_merkle_tree_build_duration_seconds",
-		Help:    "Duration of Merkle tree build operations",
-		Buckets: prometheus.DefBuckets,
-	})
-
-	MerkleDivergencesFound = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "longbow_merkle_divergences_found_total",
-		Help: "Total number of divergent records found via Merkle comparison",
-	})
-
-	AntiEntropySyncDuration = promauto.NewHistogram(prometheus.HistogramOpts{
-		Name:    "longbow_anti_entropy_sync_duration_seconds",
-		Help:    "Duration of anti-entropy sync operations",
-		Buckets: prometheus.DefBuckets,
-	})
-)
-
-// Split-brain detector metrics
-var (
-	SplitBrainHeartbeatsTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "longbow_split_brain_heartbeats_total",
-		Help: "Total number of peer heartbeats received",
-	})
-	SplitBrainHealthyPeers = promauto.NewGauge(prometheus.GaugeOpts{
-		Name: "longbow_split_brain_healthy_peers",
-		Help: "Current number of healthy peers",
-	})
-	SplitBrainPartitionsTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "longbow_split_brain_partitions_total",
-		Help: "Total number of network partitions detected",
-	})
-	SplitBrainFenced = promauto.NewGauge(prometheus.GaugeOpts{
-		Name: "longbow_split_brain_fenced",
-		Help: "Whether this node is fenced due to split-brain",
-	})
-)
-
-// Load Balancer Metrics
-var (
-	LoadBalancerSelectionsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
-		Name: "longbow_load_balancer_selections_total",
-		Help: "Total number of replica selections by result",
-	}, []string{"result"})
-
-	LoadBalancerReplicasTotal = promauto.NewGauge(prometheus.GaugeOpts{
-		Name: "longbow_load_balancer_replicas_total",
-		Help: "Current number of replicas in load balancer",
-	})
-
-	LoadBalancerUnhealthyTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "longbow_load_balancer_unhealthy_total",
-		Help: "Total number of replicas marked unhealthy",
-	})
-)
-
-// HNSW Graph Sync metrics
-var (
-	HNSWGraphSyncExportsTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "longbow_hnsw_graph_sync_exports_total",
-		Help: "Total number of HNSW graph state exports",
-	})
-	HNSWGraphSyncImportsTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "longbow_hnsw_graph_sync_imports_total",
-		Help: "Total number of HNSW graph state imports",
-	})
-	HNSWGraphSyncDeltasTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "longbow_hnsw_graph_sync_deltas_total",
-		Help: "Total number of HNSW graph delta exports",
-	})
-	HNSWGraphSyncDeltaAppliesTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "longbow_hnsw_graph_sync_delta_applies_total",
-		Help: "Total number of HNSW graph delta applies",
-	})
-)
-
-// Memory backpressure metrics
-var (
-	MemoryPressureLevel = promauto.NewGauge(prometheus.GaugeOpts{
-		Name: "longbow_memory_pressure_level",
-		Help: "Current memory pressure level (0=none, 1=soft, 2=hard)",
-	})
-	MemoryHeapInUse = promauto.NewGauge(prometheus.GaugeOpts{
-		Name: "longbow_memory_heap_in_use_bytes",
-		Help: "Current heap memory in use in bytes",
-	})
-	MemoryBackpressureAcquiresTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "longbow_memory_backpressure_acquires_total",
-		Help: "Total number of successful backpressure acquires",
-	})
-	MemoryBackpressureReleasesTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "longbow_memory_backpressure_releases_total",
-		Help: "Total number of backpressure releases",
-	})
-	MemoryBackpressureRejectsTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "longbow_memory_backpressure_rejects_total",
-		Help: "Total number of rejected requests due to backpressure",
-	})
-)
-
-// Checkpoint coordinator metrics
-var (
-	CheckpointEpoch = promauto.NewGauge(prometheus.GaugeOpts{
-		Name: "longbow_checkpoint_epoch",
-		Help: "Current checkpoint epoch",
-	})
-	CheckpointsTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "longbow_checkpoints_total",
-		Help: "Total number of checkpoints completed",
-	})
-	CheckpointBarrierReached = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "longbow_checkpoint_barrier_reached_total",
-		Help: "Total number of checkpoint barriers reached",
-	})
-	CheckpointTimeoutsTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "longbow_checkpoint_timeouts_total",
-		Help: "Total number of checkpoint timeouts",
-	})
-)
-
-// Quorum consistency metrics
-var (
-	QuorumOperationDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Name:    "longbow_quorum_operation_duration_seconds",
-		Help:    "Duration of quorum operations in seconds",
-		Buckets: prometheus.DefBuckets,
-	}, []string{"operation", "level"})
-
-	QuorumSuccessTotal = promauto.NewCounterVec(prometheus.CounterOpts{
-		Name: "longbow_quorum_success_total",
-		Help: "Total number of successful quorum operations",
-	}, []string{"operation", "level"})
-
-	QuorumFailureTotal = promauto.NewCounterVec(prometheus.CounterOpts{
-		Name: "longbow_quorum_failure_total",
-		Help: "Total number of failed quorum operations",
-	}, []string{"operation", "level"})
-)
-
-// Vector Clock metrics
-var (
-	VectorClockMergesTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "longbow_vector_clock_merges_total",
-		Help: "Total number of vector clock merge operations",
-	})
-	VectorClockConflictsTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "longbow_vector_clock_conflicts_total",
-		Help: "Total number of concurrent/conflicting vector clock comparisons",
-	})
-)
-
-// SIMD FMA kernel metrics
-var (
-	SIMDFMAOperationsTotal = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "longbow_simd_fma_operations_total",
-			Help: "Total SIMD FMA operations by kernel type",
-		},
-		[]string{"kernel", "dimension"},
-	)
-
-	SIMDFMADurationSeconds = promauto.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "longbow_simd_fma_duration_seconds",
-			Help:    "SIMD FMA kernel execution duration",
-			Buckets: prometheus.ExponentialBuckets(1e-9, 2, 20), // 1ns to ~500μs
-		},
-		[]string{"kernel"},
-	)
-
-	SIMDKernelType = promauto.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "longbow_simd_kernel_type",
-			Help: "Active SIMD kernel type (1=avx512_fma, 2=avx512, 3=avx2, 4=neon, 5=scalar)",
-		},
-		[]string{"operation"},
-	)
-)
-
-// Parallel Sum Reduction Batch Metrics
-var CosineBatchCallsTotal = promauto.NewCounter(
+// VectorSearchActionErrors counts errors in search action processing
+var VectorSearchActionErrors = promauto.NewCounter(
 	prometheus.CounterOpts{
-		Namespace: "longbow",
-		Name:      "cosine_batch_calls_total",
-		Help:      "Total number of batch cosine distance operations using parallel sum reduction",
-	})
+		Name: "longbow_vector_search_action_errors_total",
+		Help: "Total errors during vector search action processing",
+	},
+)
 
-var DotProductBatchCallsTotal = promauto.NewCounter(
+// VectorSearchActionTotal counts total search action requests
+var VectorSearchActionTotal = promauto.NewCounter(
 	prometheus.CounterOpts{
-		Namespace: "longbow",
-		Name:      "dot_product_batch_calls_total",
-		Help:      "Total number of batch dot product operations using parallel sum reduction",
-	})
+		Name: "longbow_vector_search_action_requests_total",
+		Help: "Total vector search action requests processed",
+	},
+)
 
-var ParallelReductionVectorsProcessed = promauto.NewCounter(
-	prometheus.CounterOpts{
-		Namespace: "longbow",
-		Name:      "parallel_reduction_vectors_processed_total",
-		Help:      "Total number of vectors processed via 4x accumulator parallel reduction",
-	})
-
-// Binary Quantization Metrics
-var BinaryQuantizeOpsTotal = promauto.NewCounter(
-	prometheus.CounterOpts{
-		Namespace: "longbow",
-		Name:      "binary_quantize_ops_total",
-		Help:      "Total number of binary quantization operations",
-	})
-
-var POPCNTDistanceOpsTotal = promauto.NewCounter(
-	prometheus.CounterOpts{
-		Namespace: "longbow",
-		Name:      "popcnt_distance_ops_total",
-		Help:      "Total number of POPCNT-based Hamming distance calculations",
-	})
-
-var QuantizedVectorsTotal = promauto.NewGauge(
-	prometheus.GaugeOpts{
-		Namespace: "longbow",
-		Name:      "quantized_vectors_total",
-		Help:      "Total number of vectors stored in quantized format",
-	})
-
-var QuantizationMemorySavedBytes = promauto.NewGauge(
-	prometheus.GaugeOpts{
-		Namespace: "longbow",
-		Name:      "quantization_memory_saved_bytes",
-		Help:      "Total memory saved via vector quantization",
-	})
-
-// ShardedSearchLatency measures latency of sharded search operations
-var ShardedSearchLatency = promauto.NewHistogram(
+// VectorSearchActionDuration measures latency of search actions
+var VectorSearchActionDuration = promauto.NewHistogram(
 	prometheus.HistogramOpts{
-		Name:    "longbow_sharded_search_latency_seconds",
-		Help:    "Latency of search operations on sharded index",
-		Buckets: prometheus.DefBuckets,
+		Name:    "longbow_vector_search_action_duration_seconds",
+		Help:    "Latency of vector search action requests",
+		Buckets: []float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1},
+	},
+)
+
+// =============================================================================
+// Parser Pool Metrics (Restored)
+// =============================================================================
+
+// ParserPoolGets counts wrapper acquisitions from the pool
+var ParserPoolGets = promauto.NewCounter(
+	prometheus.CounterOpts{
+		Name: "longbow_parser_pool_gets_total",
+		Help: "Total number of parser wrapper acquisitions from the pool",
+	},
+)
+
+// ParserPoolHits counts wrapper pool hits
+var ParserPoolHits = promauto.NewCounter(
+	prometheus.CounterOpts{
+		Name: "longbow_parser_pool_hits_total",
+		Help: "Total number of parser wrapper pool hits",
+	},
+)
+
+// ParserPoolMisses counts wrapper pool misses
+var ParserPoolMisses = promauto.NewCounter(
+	prometheus.CounterOpts{
+		Name: "longbow_parser_pool_misses_total",
+		Help: "Total number of parser wrapper pool misses",
+	},
+)
+
+// ParserPoolPuts counts wrapper returns to the pool
+var ParserPoolPuts = promauto.NewCounter(
+	prometheus.CounterOpts{
+		Name: "longbow_parser_pool_puts_total",
+		Help: "Total number of parser wrapper returns to the pool",
+	},
+)
+
+// =============================================================================
+// gRPC Configuration Metrics (Restored)
+// =============================================================================
+
+// GRPCMaxRecvMsgSizeBytes tracks the configured max receive message size
+var GRPCMaxRecvMsgSizeBytes = promauto.NewGauge(
+	prometheus.GaugeOpts{
+		Name: "longbow_grpc_max_recv_msg_size_bytes",
+		Help: "Configured maximum gRPC receive message size in bytes",
+	},
+)
+
+// GRPCMaxSendMsgSizeBytes tracks the configured max send message size
+var GRPCMaxSendMsgSizeBytes = promauto.NewGauge(
+	prometheus.GaugeOpts{
+		Name: "longbow_grpc_max_send_msg_size_bytes",
+		Help: "Configured maximum gRPC send message size in bytes",
+	},
+)
+
+// GRPCInitialWindowSizeBytes tracks the configured initial window size
+var GRPCInitialWindowSizeBytes = promauto.NewGauge(
+	prometheus.GaugeOpts{
+		Name: "longbow_grpc_initial_window_size_bytes",
+		Help: "Configured gRPC initial window size in bytes",
+	},
+)
+
+// GRPCInitialConnWindowSizeBytes tracks the configured initial connection window size
+var GRPCInitialConnWindowSizeBytes = promauto.NewGauge(
+	prometheus.GaugeOpts{
+		Name: "longbow_grpc_initial_conn_window_size_bytes",
+		Help: "Configured gRPC initial connection window size in bytes",
+	},
+)
+
+// GRPCMaxConcurrentStreams tracks the configured max concurrent streams
+var GRPCMaxConcurrentStreams = promauto.NewGauge(
+	prometheus.GaugeOpts{
+		Name: "longbow_grpc_max_concurrent_streams",
+		Help: "Configured maximum concurrent gRPC streams",
 	},
 )

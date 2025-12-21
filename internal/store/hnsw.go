@@ -138,7 +138,7 @@ func (h *HNSWIndex) GetDistanceFunc() func(a, b []float32) float32 {
 func (h *HNSWIndex) getVector(id VectorID) []float32 {
 	indexLockStart1 := time.Now()
 	h.mu.RLock()
-	metrics.IndexLockWaitDuration.WithLabelValues("read").Observe(time.Since(indexLockStart1).Seconds())
+	metrics.IndexLockWaitDuration.WithLabelValues(h.dataset.Name, "read").Observe(time.Since(indexLockStart1).Seconds())
 	if int(id) >= len(h.locations) {
 		h.mu.RUnlock()
 		return nil
@@ -149,7 +149,7 @@ func (h *HNSWIndex) getVector(id VectorID) []float32 {
 	// Lock the dataset to safely access records
 	indexLockStart2 := time.Now()
 	h.dataset.dataMu.RLock()
-	metrics.IndexLockWaitDuration.WithLabelValues("read").Observe(time.Since(indexLockStart2).Seconds())
+	metrics.IndexLockWaitDuration.WithLabelValues(h.dataset.Name, "read").Observe(time.Since(indexLockStart2).Seconds())
 	defer h.dataset.dataMu.RUnlock()
 
 	// Check if records still exist
@@ -425,7 +425,7 @@ func (h *HNSWIndex) getVectorUnsafe(id VectorID) (vec []float32, release func())
 
 	indexLockStart5 := time.Now()
 	h.mu.RLock()
-	metrics.IndexLockWaitDuration.WithLabelValues("read").Observe(time.Since(indexLockStart5).Seconds())
+	metrics.IndexLockWaitDuration.WithLabelValues(h.dataset.Name, "read").Observe(time.Since(indexLockStart5).Seconds())
 	if int(id) >= len(h.locations) {
 		h.mu.RUnlock()
 		h.exitEpoch()
@@ -436,7 +436,7 @@ func (h *HNSWIndex) getVectorUnsafe(id VectorID) (vec []float32, release func())
 
 	indexLockStart6 := time.Now()
 	h.dataset.dataMu.RLock()
-	metrics.IndexLockWaitDuration.WithLabelValues("read").Observe(time.Since(indexLockStart6).Seconds())
+	metrics.IndexLockWaitDuration.WithLabelValues(h.dataset.Name, "read").Observe(time.Since(indexLockStart6).Seconds())
 
 	if h.dataset.Records == nil || loc.BatchIdx >= len(h.dataset.Records) {
 		h.dataset.dataMu.RUnlock()
@@ -539,7 +539,7 @@ func (h *HNSWIndex) Add(batchIdx, rowIdx int) error {
 	indexLockStart7 := time.Now()
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	metrics.IndexLockWaitDuration.WithLabelValues("write").Observe(time.Since(indexLockStart7).Seconds())
+	metrics.IndexLockWaitDuration.WithLabelValues(h.dataset.Name, "write").Observe(time.Since(indexLockStart7).Seconds())
 
 	h.Graph.Add(hnsw.MakeNode(id, vec))
 
@@ -618,7 +618,7 @@ func (h *HNSWIndex) AddSafe(rec arrow.RecordBatch, rowIdx, batchIdx int) error {
 	indexLockStart7 := time.Now()
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	metrics.IndexLockWaitDuration.WithLabelValues("write").Observe(time.Since(indexLockStart7).Seconds())
+	metrics.IndexLockWaitDuration.WithLabelValues(h.dataset.Name, "write").Observe(time.Since(indexLockStart7).Seconds())
 
 	h.Graph.Add(hnsw.MakeNode(id, vec))
 
@@ -731,7 +731,7 @@ func (h *HNSWIndex) AddBatchParallel(locations []Location, workers int) error {
 	// Phase 1: Pre-allocate all locations atomically
 	indexLockStart8 := time.Now()
 	h.mu.Lock()
-	metrics.IndexLockWaitDuration.WithLabelValues("write").Observe(time.Since(indexLockStart8).Seconds())
+	metrics.IndexLockWaitDuration.WithLabelValues(h.dataset.Name, "write").Observe(time.Since(indexLockStart8).Seconds())
 	baseID := VectorID(len(h.locations))
 	h.locations = append(h.locations, locations...)
 	h.mu.Unlock()
@@ -778,7 +778,7 @@ func (h *HNSWIndex) AddBatchParallel(locations []Location, workers int) error {
 		}
 		indexLockStart9 := time.Now()
 		h.mu.Lock()
-		metrics.IndexLockWaitDuration.WithLabelValues("write").Observe(time.Since(indexLockStart9).Seconds())
+		metrics.IndexLockWaitDuration.WithLabelValues(h.dataset.Name, "write").Observe(time.Since(indexLockStart9).Seconds())
 		h.Graph.Add(hnsw.MakeNode(vd.id, vd.vec))
 		h.mu.Unlock()
 	}
@@ -790,7 +790,7 @@ func (h *HNSWIndex) AddBatchParallel(locations []Location, workers int) error {
 func (h *HNSWIndex) Len() int {
 	indexLockStart10 := time.Now()
 	h.mu.RLock()
-	metrics.IndexLockWaitDuration.WithLabelValues("read").Observe(time.Since(indexLockStart10).Seconds())
+	metrics.IndexLockWaitDuration.WithLabelValues(h.dataset.Name, "read").Observe(time.Since(indexLockStart10).Seconds())
 	defer h.mu.RUnlock()
 	return len(h.locations)
 }

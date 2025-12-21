@@ -36,38 +36,14 @@ func euclideanAVX2(a, b []float32) float32 {
 }
 
 // AVX512 optimized Euclidean distance
-// Processes 16 float32s at a time (512-bit registers)
 func euclideanAVX512(a, b []float32) float32 {
 	if !features.HasAVX512 {
 		return euclideanAVX2(a, b)
 	}
-
-	var sum float32
-	n := len(a)
-	i := 0
-
-	// Process 16 elements at a time (AVX512: 512-bit = 16 x float32)
-	for ; i <= n-16; i += 16 {
-		sum += euclidean16AVX512(
-			unsafe.Pointer(&a[i]),
-			unsafe.Pointer(&b[i]),
-		)
+	if len(a) == 0 {
+		return 0
 	}
-
-	// Fall back to AVX2 for remaining 8+ elements
-	for ; i <= n-8; i += 8 {
-		sum += euclidean8AVX2(
-			unsafe.Pointer(&a[i]),
-			unsafe.Pointer(&b[i]),
-		)
-	}
-
-	// Handle remaining elements
-	for ; i < n; i++ {
-		d := a[i] - b[i]
-		sum += d * d
-	}
-
+	sum := l2SquaredAVX512(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a))
 	return float32(math.Sqrt(float64(sum)))
 }
 
@@ -110,40 +86,10 @@ func cosineAVX512(a, b []float32) float32 {
 	if !features.HasAVX512 {
 		return cosineAVX2(a, b)
 	}
-
-	var dot, normA, normB float32
-	n := len(a)
-	i := 0
-
-	// Process 16 elements at a time
-	for ; i <= n-16; i += 16 {
-		d, na, nb := cosine16AVX512(
-			unsafe.Pointer(&a[i]),
-			unsafe.Pointer(&b[i]),
-		)
-		dot += d
-		normA += na
-		normB += nb
+	if len(a) == 0 {
+		return 1.0
 	}
-
-	// Fall back to AVX2
-	for ; i <= n-8; i += 8 {
-		d, na, nb := cosine8AVX2(
-			unsafe.Pointer(&a[i]),
-			unsafe.Pointer(&b[i]),
-		)
-		dot += d
-		normA += na
-		normB += nb
-	}
-
-	// Handle remaining
-	for ; i < n; i++ {
-		dot += a[i] * b[i]
-		normA += a[i] * a[i]
-		normB += b[i] * b[i]
-	}
-
+	dot, normA, normB := cosineDotAVX512(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a))
 	if normA == 0 || normB == 0 {
 		return 1.0
 	}
@@ -180,6 +126,7 @@ func dotAVX512(a, b []float32) float32 {
 		return dotAVX2(a, b)
 	}
 
+	// Legacy loop implementation for Dot (didn't optimize yet)
 	var sum float32
 	n := len(a)
 	i := 0
@@ -205,40 +152,6 @@ func dotAVX512(a, b []float32) float32 {
 	return sum
 }
 
-// NEON stubs for AMD64 (not available)
-func euclideanNEON(a, b []float32) float32 {
-	return euclideanGeneric(a, b)
-}
-
-func cosineNEON(a, b []float32) float32 {
-	return cosineGeneric(a, b)
-}
-
-func dotNEON(a, b []float32) float32 {
-	return dotGeneric(a, b)
-}
-
-// Assembly function declarations (implemented in simd_amd64.s)
-// These compute partial sums for 8/16 element chunks
-
-//go:noescape
-func euclidean8AVX2(a, b unsafe.Pointer) float32
-
-//go:noescape
-func euclidean16AVX512(a, b unsafe.Pointer) float32
-
-//go:noescape
-func cosine8AVX2(a, b unsafe.Pointer) (dot, normA, normB float32)
-
-//go:noescape
-func cosine16AVX512(a, b unsafe.Pointer) (dot, normA, normB float32)
-
-//go:noescape
-func dot16AVX512(a, b unsafe.Pointer) float32
-
-//go:noescape
-func prefetchNTA(p unsafe.Pointer)
-
 // AVX2 optimized Batch Euclidean distance
 func euclideanBatchAVX2(query []float32, vectors [][]float32, results []float32) {
 	if !features.HasAVX2 {
@@ -247,7 +160,6 @@ func euclideanBatchAVX2(query []float32, vectors [][]float32, results []float32)
 	}
 
 	for idx, v := range vectors {
-		// Inline the AVX2 logic to avoid function call overhead
 		if len(query) != len(v) {
 			panic("simd: vector length mismatch")
 		}
@@ -256,7 +168,6 @@ func euclideanBatchAVX2(query []float32, vectors [][]float32, results []float32)
 		n := len(query)
 		i := 0
 
-		// Process 8 elements at a time
 		for ; i <= n-8; i += 8 {
 			sum += euclidean8AVX2(
 				unsafe.Pointer(&query[i]),
@@ -264,7 +175,6 @@ func euclideanBatchAVX2(query []float32, vectors [][]float32, results []float32)
 			)
 		}
 
-		// Handle remaining elements
 		for ; i < n; i++ {
 			d := query[i] - v[i]
 			sum += d * d
@@ -279,39 +189,22 @@ func euclideanBatchAVX512(query []float32, vectors [][]float32, results []float3
 		euclideanBatchAVX2(query, vectors, results)
 		return
 	}
+	if len(query) == 0 {
+		return
+	}
+	queryPtr := unsafe.Pointer(&query[0])
+	qLen := len(query)
 
 	for idx, v := range vectors {
-		// Inline the AVX512 logic
-		if len(query) != len(v) {
+		if len(v) != qLen {
 			panic("simd: vector length mismatch")
 		}
-
-		var sum float32
-		n := len(query)
-		i := 0
-
-		// Process 16 elements at a time
-		for ; i <= n-16; i += 16 {
-			sum += euclidean16AVX512(
-				unsafe.Pointer(&query[i]),
-				unsafe.Pointer(&v[i]),
-			)
+		if len(v) > 0 {
+			sum := l2SquaredAVX512(queryPtr, unsafe.Pointer(&v[0]), qLen)
+			results[idx] = float32(math.Sqrt(float64(sum)))
+		} else {
+			results[idx] = 0
 		}
-
-		// Fall back to AVX2 for remaining 8+ elements
-		for ; i <= n-8; i += 8 {
-			sum += euclidean8AVX2(
-				unsafe.Pointer(&query[i]),
-				unsafe.Pointer(&v[i]),
-			)
-		}
-
-		// Handle remaining elements
-		for ; i < n; i++ {
-			d := query[i] - v[i]
-			sum += d * d
-		}
-		results[idx] = float32(math.Sqrt(float64(sum)))
 	}
 }
 
@@ -354,12 +247,45 @@ func cosineBatchAVX512(query []float32, vectors [][]float32, results []float32) 
 		cosineBatchAVX2(query, vectors, results)
 		return
 	}
+	if len(query) == 0 {
+		for i := range results {
+			results[i] = 1.0
+		}
+		return
+	}
+	queryPtr := unsafe.Pointer(&query[0])
+	qLen := len(query)
+
 	for idx, v := range vectors {
-		results[idx] = cosineAVX512(query, v)
+		if len(v) != qLen {
+			panic("simd: vector length mismatch")
+		}
+		if len(v) > 0 {
+			dot, normA, normB := cosineDotAVX512(queryPtr, unsafe.Pointer(&v[0]), qLen)
+			if normA == 0 || normB == 0 {
+				results[idx] = 1.0
+			} else {
+				results[idx] = 1.0 - (dot / float32(math.Sqrt(float64(normA)*float64(normB))))
+			}
+		} else {
+			results[idx] = 1.0
+		}
 	}
 }
 
-// NEON stub for AMD64
+// NEON stubs for AMD64
+func euclideanNEON(a, b []float32) float32 {
+	return euclideanGeneric(a, b)
+}
+
+func cosineNEON(a, b []float32) float32 {
+	return cosineGeneric(a, b)
+}
+
+func dotNEON(a, b []float32) float32 {
+	return dotGeneric(a, b)
+}
+
 func euclideanBatchNEON(query []float32, vectors [][]float32, results []float32) {
 	euclideanBatchGeneric(query, vectors, results)
 }
@@ -371,3 +297,106 @@ func dotBatchNEON(query []float32, vectors [][]float32, results []float32) {
 func cosineBatchNEON(query []float32, vectors [][]float32, results []float32) {
 	cosineBatchGeneric(query, vectors, results)
 }
+
+// Assembly function declarations
+// New full-loop kernels
+//
+//go:noescape
+func l2SquaredAVX512(a, b unsafe.Pointer, n int) float32
+
+//go:noescape
+func cosineDotAVX512(a, b unsafe.Pointer, n int) (dot, normA, normB float32)
+
+// Existing partial-block definitions (kept for compatibility/Dot/legacy)
+//
+//go:noescape
+func euclidean8AVX2(a, b unsafe.Pointer) float32
+
+//go:noescape
+func euclidean16AVX512(a, b unsafe.Pointer) float32
+
+//go:noescape
+func cosine8AVX2(a, b unsafe.Pointer) (dot, normA, normB float32)
+
+//go:noescape
+func cosine16AVX512(a, b unsafe.Pointer) (dot, normA, normB float32)
+
+//go:noescape
+func dot8AVX2(a, b unsafe.Pointer) float32
+
+//go:noescape
+func dot16AVX512(a, b unsafe.Pointer) float32
+
+//go:noescape
+func prefetchNTA(p unsafe.Pointer)
+
+// =============================================================================
+// Comparison Wrapper Functions
+// =============================================================================
+
+func matchInt64AVX2(src []int64, val int64, op CompareOp, dst []byte) {
+	if !features.HasAVX2 {
+		matchInt64Generic(src, val, op, dst)
+		return
+	}
+	if len(src) == 0 {
+		return
+	}
+	matchInt64AVX2Kernel(unsafe.Pointer(&src[0]), val, int(op), unsafe.Pointer(&dst[0]), len(src))
+}
+
+func matchFloat32AVX2(src []float32, val float32, op CompareOp, dst []byte) {
+	if !features.HasAVX2 {
+		matchFloat32Generic(src, val, op, dst)
+		return
+	}
+	if len(src) == 0 {
+		return
+	}
+	matchFloat32AVX2Kernel(unsafe.Pointer(&src[0]), val, int(op), unsafe.Pointer(&dst[0]), len(src))
+}
+
+func matchInt64AVX512(src []int64, val int64, op CompareOp, dst []byte) {
+	if !features.HasAVX512 {
+		matchInt64AVX2(src, val, op, dst)
+		return
+	}
+	if len(src) == 0 {
+		return
+	}
+	matchInt64AVX512Kernel(unsafe.Pointer(&src[0]), val, int(op), unsafe.Pointer(&dst[0]), len(src))
+}
+
+func matchFloat32AVX512(src []float32, val float32, op CompareOp, dst []byte) {
+	if !features.HasAVX512 {
+		matchFloat32AVX2(src, val, op, dst)
+		return
+	}
+	if len(src) == 0 {
+		return
+	}
+	matchFloat32AVX512Kernel(unsafe.Pointer(&src[0]), val, int(op), unsafe.Pointer(&dst[0]), len(src))
+}
+
+// NEON stubs for cross-platform link satisfaction (if referenced by simd.go)
+func matchInt64NEON(src []int64, val int64, op CompareOp, dst []byte) {
+	matchInt64Generic(src, val, op, dst)
+}
+
+func matchFloat32NEON(src []float32, val float32, op CompareOp, dst []byte) {
+	matchFloat32Generic(src, val, op, dst)
+}
+
+// Kernel Declarations
+
+//go:noescape
+func matchInt64AVX2Kernel(src unsafe.Pointer, val int64, op int, dst unsafe.Pointer, n int)
+
+//go:noescape
+func matchFloat32AVX2Kernel(src unsafe.Pointer, val float32, op int, dst unsafe.Pointer, n int)
+
+//go:noescape
+func matchInt64AVX512Kernel(src unsafe.Pointer, val int64, op int, dst unsafe.Pointer, n int)
+
+//go:noescape
+func matchFloat32AVX512Kernel(src unsafe.Pointer, val float32, op int, dst unsafe.Pointer, n int)

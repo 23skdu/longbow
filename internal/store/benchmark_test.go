@@ -35,7 +35,9 @@ func setupDataServerBench(b *testing.B) flight.Client {
 	// 512MB memory limit for benchmarks
 	vs := NewVectorStore(mem, logger, 1024*1024*512, 0, 0)
 
-	if err := vs.InitPersistence(tmpDir, 0); err != nil {
+	if err := vs.InitPersistence(StorageConfig{
+		DataPath: tmpDir,
+	}); err != nil {
 		b.Fatalf("Failed to init persistence: %v", err)
 	}
 

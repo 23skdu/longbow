@@ -242,7 +242,10 @@ func TestDoExchange_BidirectionalResponse(t *testing.T) {
 	logger := zap.NewNop()
 	store := NewVectorStore(alloc, logger, 1<<30, 0, time.Hour)
 	tmpDir := t.TempDir()
-	require.NoError(t, store.InitPersistence(tmpDir, time.Hour))
+	require.NoError(t, store.InitPersistence(StorageConfig{
+		DataPath:         tmpDir,
+		SnapshotInterval: 1 * time.Hour,
+	}))
 	defer func() { _ = store.Close() }()
 
 	// Pre-populate store with data for response

@@ -29,7 +29,10 @@ func TestStore_EndToEnd_TDD(t *testing.T) {
 	store := NewVectorStore(mem, logger, 1<<30, 0, 0)
 	store.dataPath = tmpDir
 	// Start WAL/Persistence subsystem
-	err := store.InitPersistence(tmpDir, 1*time.Hour)
+	err := store.InitPersistence(StorageConfig{
+		DataPath:         tmpDir,
+		SnapshotInterval: 1 * time.Hour,
+	})
 	require.NoError(t, err)
 
 	// Start Server
@@ -114,7 +117,10 @@ func TestStore_EndToEnd_TDD(t *testing.T) {
 	store2 := NewVectorStore(mem, logger, 1<<30, 0, 0)
 	store2.dataPath = tmpDir
 	// InitPersistence requires path and interval
-	err = store2.InitPersistence(tmpDir, 1*time.Hour)
+	err = store2.InitPersistence(StorageConfig{
+		DataPath:         tmpDir,
+		SnapshotInterval: 1 * time.Hour,
+	})
 	require.NoError(t, err)
 
 	// Start new server

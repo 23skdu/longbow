@@ -12,6 +12,7 @@ import (
 
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/apache/arrow-go/v18/arrow"
+	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"go.uber.org/zap"
 )
@@ -67,7 +68,9 @@ func (s *VectorStore) writeToWAL(rec arrow.RecordBatch, name string) error {
 		return nil // Persistence disabled or not initialized
 	}
 
-	return s.wal.Write(name, rec)
+	seq := s.sequence.Add(1)
+	ts := time.Now().UnixNano()
+	return s.wal.Write(name, seq, ts, rec)
 }
 
 func (s *VectorStore) replayWAL() error {
@@ -89,8 +92,9 @@ func (s *VectorStore) replayWAL() error {
 	s.logger.Info("Replaying WAL...")
 	count := 0
 
+	var maxSeq uint64
 	for {
-		header := make([]byte, 16)
+		header := make([]byte, 32)
 		if _, err := io.ReadFull(f, header); err != nil {
 			if err == io.EOF {
 				break
@@ -99,8 +103,21 @@ func (s *VectorStore) replayWAL() error {
 		}
 
 		storedChecksum := binary.LittleEndian.Uint32(header[0:4])
-		nameLen := binary.LittleEndian.Uint32(header[4:8])
-		recLen := binary.LittleEndian.Uint64(header[8:16])
+		seq := binary.LittleEndian.Uint64(header[4:12])
+		ts := int64(binary.LittleEndian.Uint64(header[12:20]))
+		nameLen := binary.LittleEndian.Uint32(header[20:24])
+		recLen := binary.LittleEndian.Uint64(header[24:32])
+
+		_ = ts // LWW logic will use this later
+
+		if seq > maxSeq {
+			maxSeq = seq
+		}
+
+		// Safety checks for corrupted data
+		if nameLen > 1024*1024 || recLen > 1024*1024*1024 { // 1MB name, 1GB record
+			return NewWALError("read", walPath, 0, fmt.Errorf("invalid entry lengths: nameLen=%d, recLen=%d", nameLen, recLen))
+		}
 
 		nameBytes := make([]byte, nameLen)
 		if _, err := io.ReadFull(f, nameBytes); err != nil {
@@ -132,37 +149,16 @@ func (s *VectorStore) replayWAL() error {
 			rec := r.RecordBatch()
 			rec.Retain()
 
-			// Validate record integrity before adding to store
-			if err := validateRecordBatch(rec); err != nil {
-				metrics.ValidationFailuresTotal.WithLabelValues("WAL", "invalid_batch").Inc()
-				s.logger.Warn("Skipping corrupted record in WAL",
-					zap.Error(err),
-					zap.String("dataset", name),
-					zap.Int64("numCols", rec.NumCols()),
-					zap.Int("numFields", rec.Schema().NumFields()))
-				rec.Release()
-				continue
+			if err := s.ApplyDelta(name, rec, seq, ts); err != nil {
+				s.logger.Warn("Failed to apply WAL record", zap.Error(err), zap.String("dataset", name))
 			}
-
-			// Append to store (skipping WAL write)
-			s.mu.Lock()
-			ds, ok := s.datasets[name]
-			if !ok {
-				ds = &Dataset{Records: []arrow.RecordBatch{}, lastAccess: time.Now().UnixNano(), Name: name}
-				s.datasets[name] = ds
-			}
-			s.mu.Unlock()
-
-			ds.dataMu.Lock()
-			ds.Records = append(ds.Records, rec)
-			ds.dataMu.Unlock()
-			s.currentMemory.Add(CachedRecordSize(rec))
 			count++
 		}
 		r.Release()
 	}
 
-	s.logger.Info("WAL Replay complete", zap.Any("records_loaded", count))
+	s.sequence.Store(maxSeq)
+	s.logger.Info("WAL Replay complete", zap.Any("records_loaded", count), zap.Uint64("max_seq", maxSeq))
 	return nil
 }
 
@@ -400,6 +396,79 @@ func (s *VectorStore) Close() error {
 		}
 		s.wal = nil
 	}
+	return nil
+}
+
+func (s *VectorStore) ApplyDelta(name string, rec arrow.RecordBatch, seq uint64, ts int64) error {
+	// 1. Validate
+	if err := validateRecordBatch(rec); err != nil {
+		metrics.ValidationFailuresTotal.WithLabelValues("Apply", "invalid_batch").Inc()
+		rec.Release()
+		return err
+	}
+
+	// 2. Get or create dataset
+	s.mu.Lock()
+	ds, ok := s.datasets[name]
+	if !ok {
+		ds = NewDataset(name, rec.Schema())
+		s.datasets[name] = ds
+	}
+	s.mu.Unlock()
+
+	// Ensure index exists
+	if ds.Index == nil {
+		config := AutoShardingConfig{ShardThreshold: 10000}
+		ds.Index = NewAutoShardingIndex(ds, config)
+	}
+
+	// 3. Row-level LWW if "id" column exists
+	idColIdx := -1
+	for i, f := range rec.Schema().Fields() {
+		if f.Name == "id" {
+			idColIdx = i
+			break
+		}
+	}
+
+	if idColIdx >= 0 {
+		column := rec.Column(idColIdx)
+		if ids, ok := column.(*array.Uint32); ok {
+			for i := 0; i < int(rec.NumRows()); i++ {
+				vid := VectorID(ids.Value(i))
+				if ds.LWW.Update(vid, ts) {
+					if ds.Merkle != nil {
+						ds.Merkle.Update(vid, ts)
+					}
+				}
+			}
+		}
+	}
+
+	// 4. Append to dataset
+	ds.dataMu.Lock()
+	batchIdx := len(ds.Records)
+	ds.Records = append(ds.Records, rec)
+	ds.dataMu.Unlock()
+
+	s.currentMemory.Add(CachedRecordSize(rec))
+	ds.SizeBytes.Add(CachedRecordSize(rec))
+
+	// 5. Queue for indexing
+	numRows := int(rec.NumRows())
+	for i := 0; i < numRows; i++ {
+		rec.Retain()
+		if !s.indexQueue.Send(IndexJob{
+			DatasetName: name,
+			Record:      rec,
+			BatchIdx:    batchIdx,
+			RowIdx:      i,
+			CreatedAt:   time.Now(),
+		}) {
+			rec.Release()
+		}
+	}
+
 	return nil
 }
 

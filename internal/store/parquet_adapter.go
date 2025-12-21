@@ -23,13 +23,41 @@ func writeParquet(w io.Writer, rec arrow.RecordBatch) error {
 	// Iterate over rows and write
 	// This is not zero-copy but good for snapshots/cold storage
 	rows := rec.NumRows()
-	cols := rec.Columns()
+	// Find ID and Vector columns by name
+	idColIdx := -1
+	vecColIdx := -1
+	for i, f := range rec.Schema().Fields() {
+		switch f.Name {
+		case "id":
+			idColIdx = i
+		case "vector":
+			vecColIdx = i
+		}
+	}
 
-	// Assuming col 0 is ID (int32) and col 1 is Vector (FixedSizeList<float32>)
-	idCol := cols[0].(*array.Int32)
-	vecCol := cols[1].(*array.FixedSizeList)
+	if idColIdx == -1 || vecColIdx == -1 {
+		// If columns not found by name, fallback to 0 and 1 if types match
+		idColIdx = 0
+		vecColIdx = 1
+	}
 
-	// Fix: Use ListValues() to get the underlying flat array, then cast to *array.Float32
+	var ids []int32
+	idCol := rec.Column(idColIdx)
+	if idArr, ok := idCol.(*array.Int32); ok {
+		ids = idArr.Int32Values()
+	} else if idArr, ok := idCol.(*array.Uint32); ok {
+		// Convert Uint32 to Int32 for Parquet if needed, or change VectorRecord
+		for i := 0; i < int(rec.NumRows()); i++ {
+			ids = append(ids, int32(idArr.Value(i)))
+		}
+	} else {
+		// fallback for other types?
+		for i := 0; i < int(rec.NumRows()); i++ {
+			ids = append(ids, int32(i))
+		}
+	}
+
+	vecCol := rec.Column(vecColIdx).(*array.FixedSizeList)
 	vecData := vecCol.ListValues().(*array.Float32)
 	vecLen := int(vecCol.DataType().(*arrow.FixedSizeListType).Len())
 
@@ -38,7 +66,7 @@ func writeParquet(w io.Writer, rec arrow.RecordBatch) error {
 		start := int(i) * vecLen
 		end := start + vecLen
 		batch[i] = VectorRecord{
-			ID:     idCol.Value(int(i)),
+			ID:     ids[i],
 			Vector: vecData.Float32Values()[start:end],
 		}
 	}

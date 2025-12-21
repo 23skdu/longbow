@@ -61,7 +61,7 @@ func NewUringWAL(dir string, v *VectorStore) (*UringWAL, error) {
 	return w, nil
 }
 
-func (w *UringWAL) Write(name string, record arrow.RecordBatch) error {
+func (w *UringWAL) Write(name string, seq uint64, ts int64, record arrow.RecordBatch) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
@@ -84,18 +84,20 @@ func (w *UringWAL) Write(name string, record arrow.RecordBatch) error {
 	nameLen := uint32(len(nameBytes))
 	recLen := uint64(len(recBytes))
 
-	// Header: Checksum (4) + NameLen (4) + RecLen (8) = 16 bytes
-	header := make([]byte, 16)
+	// Header: Checksum (4) + Seq (8) + Timestamp (8) + NameLen (4) + RecLen (8) = 32 bytes
+	header := make([]byte, 32)
 	crc := crc32.NewIEEE()
 	_, _ = crc.Write(nameBytes)
 	_, _ = crc.Write(recBytes)
 	checksum := crc.Sum32()
 
 	binary.LittleEndian.PutUint32(header[0:4], checksum)
-	binary.LittleEndian.PutUint32(header[4:8], nameLen)
-	binary.LittleEndian.PutUint64(header[8:16], recLen)
+	binary.LittleEndian.PutUint64(header[4:12], seq)
+	binary.LittleEndian.PutUint64(header[12:20], uint64(ts))
+	binary.LittleEndian.PutUint32(header[20:24], nameLen)
+	binary.LittleEndian.PutUint64(header[24:32], recLen)
 
-	data := make([]byte, 0, 16+len(nameBytes)+len(recBytes))
+	data := make([]byte, 0, 32+len(nameBytes)+len(recBytes))
 	data = append(data, header...)
 	data = append(data, nameBytes...)
 	data = append(data, recBytes...)

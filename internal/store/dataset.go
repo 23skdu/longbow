@@ -33,6 +33,12 @@ type Dataset struct {
 
 	// Memory tracking
 	SizeBytes atomic.Int64
+
+	// LWW State
+	LWW *TimestampMap
+
+	// Anti-Entropy
+	Merkle *MerkleTree
 }
 
 // IsSharded returns true if the dataset uses ShardedHNSW.
@@ -59,6 +65,8 @@ func NewDataset(name string, schema *arrow.Schema) *Dataset {
 		Records:    make([]arrow.RecordBatch, 0),
 		Schema:     schema,
 		Tombstones: make(map[int]*Bitset),
+		LWW:        NewTimestampMap(),
+		Merkle:     NewMerkleTree(),
 	}
 }
 

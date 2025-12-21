@@ -14,7 +14,7 @@ import (
 
 // WAL defines the interface for Write-Ahead Logging.
 type WAL interface {
-	Write(name string, record arrow.RecordBatch) error
+	Write(name string, seq uint64, ts int64, record arrow.RecordBatch) error
 	Close() error
 	Sync() error
 }
@@ -33,7 +33,7 @@ func NewStdWAL(dir string, v *VectorStore) *StdWAL {
 	}
 }
 
-func (w *StdWAL) Write(name string, record arrow.RecordBatch) error {
+func (w *StdWAL) Write(name string, seq uint64, ts int64, record arrow.RecordBatch) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
@@ -63,10 +63,13 @@ func (w *StdWAL) Write(name string, record arrow.RecordBatch) error {
 	_, _ = crc.Write(recBytes)
 	checksum := crc.Sum32()
 
-	header := make([]byte, 16)
+	// Header: Checksum(4) | Seq(8) | Timestamp(8) | NameLen(4) | RecLen(8) = 32 bytes
+	header := make([]byte, 32)
 	binary.LittleEndian.PutUint32(header[0:4], checksum)
-	binary.LittleEndian.PutUint32(header[4:8], nameLen)
-	binary.LittleEndian.PutUint64(header[8:16], recLen)
+	binary.LittleEndian.PutUint64(header[4:12], seq)
+	binary.LittleEndian.PutUint64(header[12:20], uint64(ts))
+	binary.LittleEndian.PutUint32(header[20:24], nameLen)
+	binary.LittleEndian.PutUint64(header[24:32], recLen)
 
 	if _, err := f.Write(header); err != nil {
 		return err

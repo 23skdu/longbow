@@ -108,6 +108,23 @@ spec:
               value: {{ .Values.s3.secretAccessKey | quote }}
             {{- end }}
             {{- end }}
+            # Gossip Configuration
+            - name: GOSSIP_ENABLED
+              value: {{ .Values.gossip.enabled | quote }}
+            - name: GOSSIP_PORT
+              value: {{ .Values.gossip.port | quote }}
+            - name: GOSSIP_INTERVAL
+              value: {{ .Values.gossip.interval | quote }}
+            {{- if .Values.gossip.advertiseAddr }}
+            - name: GOSSIP_ADVERTISE_ADDR
+              value: {{ .Values.gossip.advertiseAddr | quote }}
+            {{- end }}
+            # Storage Configuration
+            - name: STORAGE_ASYNC_FSYNC
+              value: {{ .Values.storage.asyncFsync | quote }}
+            - name: STORAGE_DOPUT_BATCH_SIZE
+              value: {{ .Values.storage.doPutBatchSize | quote }}
+
           ports:
             - name: grpc-data
               containerPort: {{ .Values.service.data.port }}

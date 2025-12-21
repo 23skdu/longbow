@@ -468,6 +468,93 @@
             ],
             "title": "Eviction Rate",
             "type": "timeseries"
+        },
+        {
+            "collapsed": false,
+            "gridPos": {
+                "h": 1,
+                "w": 24,
+                "x": 0,
+                "y": 35
+            },
+            "id": 20,
+            "title": "Mesh & Gossip",
+            "type": "row"
+        },
+        {
+            "datasource": "${datasource}",
+            "gridPos": {
+                "h": 6,
+                "w": 4,
+                "x": 0,
+                "y": 36
+            },
+            "id": 21,
+            "targets": [
+                {
+                    "expr": "longbow_gossip_active_members",
+                    "refId": "A"
+                }
+            ],
+            "title": "Mesh Members",
+            "type": "stat"
+        },
+        {
+            "datasource": "${datasource}",
+            "gridPos": {
+                "h": 6,
+                "w": 6,
+                "x": 4,
+                "y": 36
+            },
+            "id": 22,
+            "targets": [
+                {
+                    "expr": "rate(longbow_gossip_pings_total[1m])",
+                    "legendFormat": "{{direction}}",
+                    "refId": "A"
+                }
+            ],
+            "title": "Gossip Pings/sec",
+            "type": "timeseries"
+        },
+        {
+            "datasource": "${datasource}",
+            "gridPos": {
+                "h": 6,
+                "w": 7,
+                "x": 10,
+                "y": 36
+            },
+            "id": 23,
+            "targets": [
+                {
+                    "expr": "rate(longbow_mesh_sync_deltas_total[1m])",
+                    "legendFormat": "{{status}}",
+                    "refId": "A"
+                }
+            ],
+            "title": "Sync Replication Rate",
+            "type": "timeseries"
+        },
+        {
+            "datasource": "${datasource}",
+            "gridPos": {
+                "h": 6,
+                "w": 7,
+                "x": 17,
+                "y": 36
+            },
+            "id": 24,
+            "targets": [
+                {
+                    "expr": "rate(longbow_mesh_merkle_match_total[1m])",
+                    "legendFormat": "{{result}}",
+                    "refId": "A"
+                }
+            ],
+            "title": "Merkle Consistency Match Rate",
+            "type": "timeseries"
         }
     ],
     "refresh": "5s",

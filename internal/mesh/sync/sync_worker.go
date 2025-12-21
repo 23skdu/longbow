@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/23skdu/longbow/internal/mesh"
+	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/store"
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
@@ -86,6 +88,20 @@ func (w *SyncWorker) run() {
 }
 
 func (w *SyncWorker) syncAll() {
+	// 1. Discover peers from Gossip if available
+	if w.store.Mesh != nil {
+		members := w.store.Mesh.GetMembers()
+		for _, m := range members {
+			// Skip self and non-alive nodes
+			if m.ID != w.store.Mesh.Config.ID && m.Status == mesh.StatusAlive {
+				// Gossip address might be UDP, but SyncWorker needs gRPC (TCP).
+				// We assume they share the same host, but we might need a way to map ports.
+				// For now, we use the Addr from gossip directly.
+				w.AddPeer(m.Addr)
+			}
+		}
+	}
+
 	w.mu.RLock()
 	var peers []*PeerState
 	for _, p := range w.peers {
@@ -140,9 +156,11 @@ func (w *SyncWorker) syncPeer(p *PeerState) error {
 	if err == nil {
 		localRoot := w.store.MerkleRoot("ds1")
 		if remoteRoot == localRoot {
+			metrics.MeshMerkleMatchTotal.WithLabelValues("match").Inc()
 			w.logger.Info("Merkle roots match, skipping sync", zap.String("peer", p.Addr))
 			// return nil
 		} else {
+			metrics.MeshMerkleMatchTotal.WithLabelValues("mismatch").Inc()
 			w.logger.Info("Merkle roots differ, starting sync", zap.String("peer", p.Addr))
 		}
 	}
@@ -186,7 +204,11 @@ func (w *SyncWorker) syncPeer(p *PeerState) error {
 
 			// Apply to local store
 			if err := w.store.ApplyDelta(datasetName, rec, seq, ts); err != nil {
+				metrics.MeshSyncDeltasTotal.WithLabelValues("error").Inc()
 				w.logger.Error("Failed to apply delta", zap.String("dataset", datasetName), zap.Error(err))
+			} else {
+				metrics.MeshSyncDeltasTotal.WithLabelValues("success").Inc()
+				metrics.MeshSyncBytesTotal.Add(float64(len(resp.DataBody)))
 			}
 
 			// Update last seen seq

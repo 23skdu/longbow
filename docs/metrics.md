@@ -85,6 +85,11 @@ Metrics for multi-node operations, replication, and split-brain detection.
 | `longbow_do_exchange_calls_total` | Counter | None | Total DoExchange invocations. |
 | `longbow_replication_lag_seconds` | Gauge | `peer` | Replication lag by peer. |
 | `longbow_peer_health_status` | Gauge | `peer` | Peer health (0=Down, 1=Up). |
+| `longbow_gossip_active_members` | Gauge | None | Current number of alive members in the gossip mesh. |
+| `longbow_gossip_pings_total` | Counter | `direction` | Total number of gossip pings (sent/received). |
+| `longbow_mesh_sync_deltas_total` | Counter | `status` | Total record batches replicated via mesh sync (success/error). |
+| `longbow_mesh_sync_bytes_total` | Counter | None | Total bytes replicated via mesh sync. |
+| `longbow_mesh_merkle_match_total` | Counter | `result` | Merkle root comparison results (match/mismatch). |
 | `longbow_replication_queued_total` | Counter | None | Records queued for replication. |
 | `longbow_split_brain_partitions_total` | Counter | None | Network partitions detected. |
 | `longbow_quorum_operation_duration_seconds` | Histogram | `operation`, `level` | Duration of quorum operations. |

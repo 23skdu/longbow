@@ -567,6 +567,49 @@ var PeerHealthStatus = promauto.NewGaugeVec(
 	[]string{"peer"},
 )
 
+// GossipActiveMembers tracks the number of alive members in the mesh
+var GossipActiveMembers = promauto.NewGauge(
+	prometheus.GaugeOpts{
+		Name: "longbow_gossip_active_members",
+		Help: "Current number of alive members in the gossip mesh",
+	},
+)
+
+// GossipPingsTotal counts gossip pings sent and received
+var GossipPingsTotal = promauto.NewCounterVec(
+	prometheus.CounterOpts{
+		Name: "longbow_gossip_pings_total",
+		Help: "Total number of gossip pings",
+	},
+	[]string{"direction"}, // "sent", "received"
+)
+
+// MeshSyncDeltasTotal counts record batches replicated via mesh sync
+var MeshSyncDeltasTotal = promauto.NewCounterVec(
+	prometheus.CounterOpts{
+		Name: "longbow_mesh_sync_deltas_total",
+		Help: "Total number of record batches replicated via mesh sync",
+	},
+	[]string{"status"}, // "success", "error"
+)
+
+// MeshSyncBytesTotal counts bytes replicated via mesh sync
+var MeshSyncBytesTotal = promauto.NewCounter(
+	prometheus.CounterOpts{
+		Name: "longbow_mesh_sync_bytes_total",
+		Help: "Total bytes replicated via mesh sync",
+	},
+)
+
+// MeshMerkleMatchTotal counts Merkle root comparison results
+var MeshMerkleMatchTotal = promauto.NewCounterVec(
+	prometheus.CounterOpts{
+		Name: "longbow_mesh_merkle_match_total",
+		Help: "Total Merkle root comparison results",
+	},
+	[]string{"result"}, // "match", "mismatch"
+)
+
 // -----------------------------------------------------------------------------
 // Flight Client Pool Metrics
 // -----------------------------------------------------------------------------

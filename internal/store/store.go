@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-
 	"runtime"
 	"sort"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -51,18 +51,42 @@ type VectorStore struct {
 	// Mesh integration
 	Mesh            *mesh.Gossip
 	meshStatusCache *MeshStatusCache // Cache for mesh status serialization
+
+	// NUMA integration (Phase 4/5)
+	numaTopology *NUMATopology
 }
 
 func NewVectorStore(mem memory.Allocator, logger *zap.Logger, maxMemory, maxWALSize int64, ttl time.Duration) *VectorStore {
 	cfg := DefaultIndexJobQueueConfig()
+
+	// Detect NUMA topology (Phase 4/5)
+	topo, err := DetectNUMATopology()
+	if err != nil {
+		logger.Warn("Failed to detect NUMA topology", zap.Error(err))
+		topo = &NUMATopology{NumNodes: 1}
+	}
+	if topo.NumNodes > 1 {
+		logger.Info("NUMA topology detected",
+			zap.Int("nodes", topo.NumNodes),
+			zap.String("topology", topo.String()))
+	}
+
 	s := &VectorStore{
 		mem:             mem,
 		logger:          logger,
 		datasets:        make(map[string]*Dataset),
 		indexQueue:      NewIndexJobQueue(cfg),
 		meshStatusCache: NewMeshStatusCache(100 * time.Millisecond), // Cache mesh status for 100ms
+		numaTopology:    topo,
 	}
-	s.startIndexingWorkers(1)
+
+	// Start workers based on CPU count (Phase 5: Scale up)
+	numWorkers := runtime.NumCPU()
+	if numWorkers < 1 {
+		numWorkers = 1
+	}
+	s.startNUMAWorkers(numWorkers)
+
 	return s
 }
 func (s *VectorStore) SetMesh(m *mesh.Gossip) {
@@ -243,6 +267,7 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 }
 
 // DoPut - Minimal implementation
+// DoPut - Optimized implementation with batching
 func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 	r, err := flight.NewRecordReader(stream)
 	if err != nil {
@@ -263,7 +288,7 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 		return fmt.Errorf("missing flight descriptor path")
 	}
 
-	s.logger.Info("DoPut started (Minimal)", zap.String("name", name))
+	s.logger.Info("DoPut started (Batched)", zap.String("name", name))
 
 	s.mu.Lock()
 	if _, ok := s.datasets[name]; !ok {
@@ -273,47 +298,103 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 	ds = s.datasets[name]
 	s.mu.Unlock()
 
-	// Read first batch
-	if !r.Next() {
-		if r.Err() != nil {
-			return r.Err()
+	// Batching configuration
+	const maxBatchSize = 100
+	batch := make([]arrow.RecordBatch, 0, maxBatchSize)
+
+	// Helper to flush batch
+	flush := func() error {
+		if err := s.flushPutBatch(ds, name, batch); err != nil {
+			return err
 		}
-		// Valid empty stream (schema only) -> but we already created dataset
+		// Clear batch slice (records are now owned by store)
+		batch = batch[:0]
 		return nil
 	}
 
-	rec := r.Record()
+	for r.Next() {
+		rec := r.Record()
+		rec.Retain()
+		batch = append(batch, rec)
 
-	// Capture timestamp once for both WAL and local state
-	ts := time.Now().UnixNano()
+		if len(batch) >= maxBatchSize {
+			if err := flush(); err != nil {
+				// Cleanup remaining in batch
+				for _, b := range batch {
+					b.Release()
+				}
+				return err
+			}
+		}
+	}
 
-	// Write to WAL first for durability
-	if s.walBatcher != nil {
-		seq := s.sequence.Add(1)
-		if err := s.walBatcher.Write(rec, name, seq, ts); err != nil {
-			s.logger.Error("Failed to write to WAL", zap.Error(err))
-			metrics.WalWritesTotal.WithLabelValues("error").Inc()
+	if r.Err() != nil {
+		s.logger.Error("DoPut stream error", zap.Error(r.Err()))
+		// Cleanup pending
+		for _, b := range batch {
+			b.Release()
+		}
+		return r.Err()
+	}
+
+	// Flush remaining
+	if len(batch) > 0 {
+		if err := flush(); err != nil {
+			for _, b := range batch {
+				b.Release()
+			}
 			return err
 		}
 	}
 
-	// Use dataMu for append
-	dsLockStart1 := time.Now()
+	s.logger.Info("DoPut completed (Batched)", zap.String("name", name))
+	return stream.Send(&flight.PutResult{})
+}
 
-	// Metric: Payload Size & Rows (First Batch)
-	batchSize := estimateBatchSize(rec)
-	metrics.DoPutPayloadSizeBytes.Observe(float64(batchSize))
-	metrics.FlightRowsProcessed.WithLabelValues("put", "ok").Add(float64(rec.NumRows()))
+// flushPutBatch handles writing a batch of records to WAL and memory
+func (s *VectorStore) flushPutBatch(ds *Dataset, name string, batch []arrow.RecordBatch) error {
+	if len(batch) == 0 {
+		return nil
+	}
 
-	// Track memory
-	s.currentMemory.Add(batchSize)
-	ds.SizeBytes.Add(batchSize)
+	// 1. Write to WAL (Iterate)
+	ts := time.Now().UnixNano()
+	if s.walBatcher != nil {
+		for _, rec := range batch {
+			seq := s.sequence.Add(1)
+			if err := s.walBatcher.Write(rec, name, seq, ts); err != nil {
+				s.logger.Error("Failed to write to WAL (batch)", zap.Error(err))
+				metrics.WalWritesTotal.WithLabelValues("error").Inc()
+				// Continue processing, but metrics
+			} else {
+				metrics.WalWritesTotal.WithLabelValues("ok").Inc()
+			}
+		}
+	}
+
+	// 2. Append to Memory AND Initialize Index if needed (Batch Lock)
+	totalSize := int64(0)
+	totalRows := int64(0)
+
+	// Calculate size and prep metrics first (outside lock)
+	for _, rec := range batch {
+		batchSize := estimateBatchSize(rec)
+		totalSize += batchSize
+		totalRows += int64(rec.NumRows())
+
+		metrics.DoPutPayloadSizeBytes.Observe(float64(batchSize))
+		// Advise Memory: Random access for HNSW
+		AdviseRecord(rec, AdviceRandom)
+	}
+
+	s.currentMemory.Add(totalSize)
+	ds.SizeBytes.Add(totalSize)
+	metrics.FlightRowsProcessed.WithLabelValues("put", "ok").Add(float64(totalRows))
 
 	ds.dataMu.Lock()
-	metrics.DatasetLockWaitDurationSeconds.WithLabelValues("put").Observe(time.Since(dsLockStart1).Seconds())
+	dsLockStart := time.Now()
 
-	// Store first record
-	rec.Retain()
+	// Lazy Index Initialization (moved from DoPut)
 	if ds.Index == nil {
 		// Use AutoShardingIndex by default
 		config := AutoShardingConfig{
@@ -322,75 +403,25 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 		}
 		ds.Index = NewAutoShardingIndex(ds, config)
 	}
-	batchIdx := len(ds.Records)
-	ds.Records = append(ds.Records, rec)
+
+	batchStartIdx := len(ds.Records)
+	ds.Records = append(ds.Records, batch...)
 	ds.dataMu.Unlock()
+	metrics.DatasetLockWaitDurationSeconds.WithLabelValues("put").Observe(time.Since(dsLockStart).Seconds())
 
-	// Update LWW and Merkle if "id" column exists
-	s.updateLWWAndMerkle(ds, rec, ts)
-
-	// Advise Memory: Random access for HNSW
-	AdviseRecord(rec, AdviceRandom)
-
-	// Queue Indexing
-	numRows := int(rec.NumRows())
-	for i := 0; i < numRows; i++ {
-		rec.Retain()
-		if !s.indexQueue.Send(IndexJob{
-			DatasetName: name,
-			Record:      rec,
-			BatchIdx:    batchIdx,
-			RowIdx:      i,
-			CreatedAt:   time.Now(),
-		}) {
-			rec.Release()
-		}
-	}
-
-	// Read remaining
-	for r.Next() {
-		rec := r.Record()
-		rec.Retain()
-
-		ts := time.Now().UnixNano()
-		// Write to WAL first
-		if s.walBatcher != nil {
-			seq := s.sequence.Add(1)
-			if err := s.walBatcher.Write(rec, name, seq, ts); err != nil {
-				s.logger.Error("Failed to write to WAL (loop)", zap.Error(err))
-				// Continue processing, but metrics
-				metrics.WalWritesTotal.WithLabelValues("error").Inc()
-			}
-		}
-
-		// Metric: Payload Size & Rows
-		batchSize := estimateBatchSize(rec)
-		metrics.DoPutPayloadSizeBytes.Observe(float64(batchSize))
-		metrics.FlightRowsProcessed.WithLabelValues("put", "ok").Add(float64(rec.NumRows()))
-
-		// Track memory
-		s.currentMemory.Add(batchSize)
-		ds.SizeBytes.Add(batchSize)
-
-		ds.dataMu.Lock()
-		batchIdx = len(ds.Records)
-		ds.Records = append(ds.Records, rec)
-		ds.dataMu.Unlock()
-
+	// 3. Update LWW/Merkle and Queue Indexing
+	for i, rec := range batch {
 		s.updateLWWAndMerkle(ds, rec, ts)
 
-		// Advise Memory: Random access for HNSW
-		AdviseRecord(rec, AdviceRandom)
-
-		// Queue Indexing
+		batchIdx := batchStartIdx + i
 		numRows := int(rec.NumRows())
-		for i := 0; i < numRows; i++ {
+		for r := 0; r < numRows; r++ {
 			rec.Retain()
 			if !s.indexQueue.Send(IndexJob{
 				DatasetName: name,
 				Record:      rec,
 				BatchIdx:    batchIdx,
-				RowIdx:      i,
+				RowIdx:      r,
 				CreatedAt:   time.Now(),
 			}) {
 				rec.Release()
@@ -398,13 +429,7 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 		}
 	}
 
-	if r.Err() != nil {
-		s.logger.Error("DoPut stream error", zap.Error(r.Err()))
-		return r.Err()
-	}
-
-	s.logger.Info("DoPut completed (Minimal)", zap.String("name", name))
-	return stream.Send(&flight.PutResult{})
+	return nil
 }
 
 // DoGet - Minimal implementation
@@ -450,7 +475,7 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 	ctx := stream.Context()
 	rowsSent := int64(0)
 
-	// Parallel Processing
+	// Parallel Processing with Pipeline Support (Phase 5)
 	numWorkers := runtime.NumCPU()
 	if numWorkers > len(ds.Records) {
 		numWorkers = len(ds.Records)
@@ -459,26 +484,56 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 		numWorkers = 1
 	}
 
-	workChan := make(chan int, len(ds.Records))
 	resultsChan := make(chan arrow.RecordBatch, numWorkers*2)
-	errChan := make(chan error, 1) // Buffer 1 to prevent blocking on first error check
+	// Buffer 1 to prevent blocking on first error check
+	errChan := make(chan error, 1)
 	var wg sync.WaitGroup
+
+	// Determine execution strategy
+	var stageChan <-chan PipelineStage
+	usePipeline := ShouldUsePipeline(len(ds.Records))
+
+	if usePipeline {
+		// Use prefetching pipeline
+		pipeline := NewDoGetPipeline(8) // config.PipelineDepth default
+		// ProcessRecords handles feeding safely
+		stageChan = pipeline.ProcessRecords(ctx, ds.Records, ds.Tombstones, query.Filters, nil)
+		metrics.DoGetPipelineStepsTotal.WithLabelValues("pipeline").Add(float64(len(ds.Records)))
+		s.logger.Debug("Using DoGetPipeline", zap.Int("workers", numWorkers))
+	} else {
+		// Simple feeder for small datasets
+		metrics.DoGetPipelineStepsTotal.WithLabelValues("simple").Add(float64(len(ds.Records)))
+		c := make(chan PipelineStage, len(ds.Records))
+		stageChan = c
+		go func() {
+			defer close(c)
+			for i, rec := range ds.Records {
+				var ts *Bitset
+				// Map access is safe under RLock
+				if t, ok := ds.Tombstones[i]; ok {
+					ts = t
+				}
+				select {
+				case c <- PipelineStage{
+					Record:    rec,
+					BatchIdx:  i,
+					Tombstone: ts,
+				}:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}()
+	}
 
 	// Start Workers
 	for w := 0; w < numWorkers; w++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for i := range workChan {
-				rec := ds.Records[i]
-
-				// Prepare Tombstone
-				var deleted *Bitset
-				// Map access under RLock (already held by DoGet)
-				// Accessing map is safe if we hold RLock and writers hold Lock.
-				if ts, ok := ds.Tombstones[i]; ok {
-					deleted = ts
-				}
+			for stage := range stageChan {
+				rec := stage.Record
+				deleted := stage.Tombstone
 
 				var processed arrow.RecordBatch
 				var err error
@@ -504,10 +559,12 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 					// Use zero-copy with tombstone filtering (Phase 5)
 					if deleted != nil && deleted.Count() > 0 {
 						processed, err = ZeroCopyRecordBatch(s.mem, rec, deleted)
+						metrics.DoGetZeroCopyTotal.WithLabelValues("zero_copy_mask").Inc()
 					} else {
 						// No tombstones - just retain (zero-copy!)
 						rec.Retain()
 						processed = rec
+						metrics.DoGetZeroCopyTotal.WithLabelValues("zero_copy_retain").Inc()
 					}
 					if err != nil {
 						select {
@@ -529,12 +586,8 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 		}()
 	}
 
-	// Feed Work
+	// Monitor to close results channel
 	go func() {
-		for i := 0; i < len(ds.Records); i++ {
-			workChan <- i
-		}
-		close(workChan)
 		wg.Wait()
 		close(resultsChan)
 		close(errChan)
@@ -737,39 +790,86 @@ func (s *VectorStore) copyArray(arr arrow.Array) (arrow.Array, error) {
 	}
 }
 
+func (s *VectorStore) startNUMAWorkers(numWorkers int) {
+	if s.numaTopology == nil || s.numaTopology.NumNodes <= 1 {
+		// Fallback to regular workers
+		s.startIndexingWorkers(numWorkers)
+		return
+	}
+
+	// Distribute workers across NUMA nodes
+	workersPerNode := numWorkers / s.numaTopology.NumNodes
+	if workersPerNode < 1 {
+		workersPerNode = 1
+	}
+
+	// Adjust total to account for rounding
+	totalStarted := 0
+
+	for nodeID := 0; nodeID < s.numaTopology.NumNodes; nodeID++ {
+		for i := 0; i < workersPerNode; i++ {
+			s.indexWg.Add(1)
+			totalStarted++
+			go func(node int) {
+				defer s.indexWg.Done()
+
+				// Pin to NUMA node
+				if err := PinToNUMANode(s.numaTopology, node); err != nil {
+					s.logger.Warn("Failed to pin to NUMA node",
+						zap.Int("node", node), zap.Error(err))
+				}
+
+				// Create NUMA-aware allocator (future use for allocations)
+				allocator := NewNUMAAllocator(s.numaTopology, node)
+
+				metrics.NumaWorkerDistribution.WithLabelValues(strconv.Itoa(node)).Inc()
+				s.logger.Info("Started NUMA-aware worker", zap.Int("node", node))
+
+				s.runIndexWorker(allocator)
+			}(nodeID)
+		}
+	}
+	s.logger.Info("Started NUMA indexing workers", zap.Int("count", totalStarted), zap.Int("nodes", s.numaTopology.NumNodes))
+}
+
 func (s *VectorStore) startIndexingWorkers(numWorkers int) {
 	for i := 0; i < numWorkers; i++ {
 		s.indexWg.Add(1)
 		go func() {
 			defer s.indexWg.Done()
-			for job := range s.indexQueue.Jobs() {
-				// Track index queue depth
-				metrics.IndexQueueDepth.Set(float64(s.indexQueue.Len()))
-
-				s.mu.RLock()
-				ds, ok := s.datasets[job.DatasetName]
-				s.mu.RUnlock()
-
-				if !ok {
-					job.Record.Release()
-					continue
-				}
-
-				// ds.Index access
-				if ds.Index != nil {
-					// Adaptive Sharding handled by AutoShardingIndex wrapper
-
-					if err := ds.Index.AddByRecord(job.Record, job.RowIdx, job.BatchIdx); err != nil {
-						s.logger.Error("Async index add failed", zap.Any("dataset", job.DatasetName), zap.Error(err))
-					}
-				}
-
-				// Release our reference to the record
-				job.Record.Release()
-				// Record job latency
-				metrics.IndexJobLatencySeconds.WithLabelValues(job.DatasetName).Observe(time.Since(job.CreatedAt).Seconds())
-			}
+			s.runIndexWorker(nil)
 		}()
+	}
+	s.logger.Info("Started indexing workers", zap.Int("count", numWorkers))
+}
+
+func (s *VectorStore) runIndexWorker(allocator memory.Allocator) {
+	for job := range s.indexQueue.Jobs() {
+		// Track index queue depth
+		metrics.IndexQueueDepth.Set(float64(s.indexQueue.Len()))
+
+		s.mu.RLock()
+		ds, ok := s.datasets[job.DatasetName]
+		s.mu.RUnlock()
+
+		if !ok {
+			job.Record.Release()
+			continue
+		}
+
+		// ds.Index access
+		if ds.Index != nil {
+			// Adaptive Sharding handled by AutoShardingIndex wrapper
+			// Note: We currently don't use 'allocator' in AddByRecord, but pinning provides main benefit.
+			if err := ds.Index.AddByRecord(job.Record, job.RowIdx, job.BatchIdx); err != nil {
+				s.logger.Error("Async index add failed", zap.Any("dataset", job.DatasetName), zap.Error(err))
+			}
+		}
+
+		// Release our reference to the record
+		job.Record.Release()
+		// Record job latency
+		metrics.IndexJobLatencySeconds.WithLabelValues(job.DatasetName).Observe(time.Since(job.CreatedAt).Seconds())
 	}
 }
 

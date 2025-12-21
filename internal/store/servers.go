@@ -3,6 +3,8 @@ package store
 import (
 	"context"
 
+	"encoding/json"
+
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
@@ -119,8 +121,53 @@ func (s *MetaServer) DoAction(action *flight.Action, stream flight.FlightService
 	switch action.Type {
 	case "VectorSearch":
 		return s.handleVectorSearchAction(action, stream)
-		// return status.Error(codes.Unimplemented, "VectorSearch temporarily disabled")
+	case "MeshIdentity":
+		return s.handleMeshIdentity(action, stream)
+	case "MeshStatus":
+		return s.handleMeshStatus(action, stream)
+	case "DiscoveryStatus":
+		return s.handleDiscoveryStatus(action, stream)
 	default:
 		return s.VectorStore.DoAction(action, stream)
 	}
+}
+
+func (s *MetaServer) handleMeshIdentity(action *flight.Action, stream flight.FlightService_DoActionServer) error {
+	if s.Mesh == nil {
+		return status.Error(codes.FailedPrecondition, "mesh is not initialized")
+	}
+	identity := s.Mesh.GetIdentity()
+	body, err := json.Marshal(identity)
+	if err != nil {
+		return status.Errorf(codes.Internal, "failed to marshal identity: %v", err)
+	}
+	return stream.Send(&flight.Result{Body: body})
+}
+
+func (s *MetaServer) handleMeshStatus(action *flight.Action, stream flight.FlightService_DoActionServer) error {
+	if s.Mesh == nil {
+		return status.Error(codes.FailedPrecondition, "mesh is not initialized")
+	}
+	members := s.Mesh.GetMembers()
+	body, err := json.Marshal(members)
+	if err != nil {
+		return status.Errorf(codes.Internal, "failed to marshal members: %v", err)
+	}
+	return stream.Send(&flight.Result{Body: body})
+}
+
+func (s *MetaServer) handleDiscoveryStatus(action *flight.Action, stream flight.FlightService_DoActionServer) error {
+	if s.Mesh == nil {
+		return status.Error(codes.FailedPrecondition, "mesh is not initialized")
+	}
+	provider, peers := s.Mesh.GetDiscoveryStatus()
+	statusInfo := map[string]interface{}{
+		"provider": provider,
+		"peers":    peers,
+	}
+	body, err := json.Marshal(statusInfo)
+	if err != nil {
+		return status.Errorf(codes.Internal, "failed to marshal discovery status: %v", err)
+	}
+	return stream.Send(&flight.Result{Body: body})
 }

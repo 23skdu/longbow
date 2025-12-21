@@ -26,6 +26,10 @@ type StdWAL struct {
 	v   *VectorStore
 }
 
+func NewWAL(dir string, v *VectorStore) WAL {
+	return NewStdWAL(dir, v)
+}
+
 func NewStdWAL(dir string, v *VectorStore) *StdWAL {
 	return &StdWAL{
 		dir: dir,

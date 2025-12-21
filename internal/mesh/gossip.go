@@ -205,6 +205,7 @@ func (g *Gossip) UpdateMember(m *Member) {
 
 	existing, ok := g.members[m.ID]
 	if !ok {
+		m.LastSeen = time.Now()
 		g.members[m.ID] = m
 		if m.ID != g.Config.ID {
 			g.peers = append(g.peers, m.ID)
@@ -213,7 +214,45 @@ func (g *Gossip) UpdateMember(m *Member) {
 	}
 
 	// Apply conflict resolution (Incarnation check)
-	if m.Incarnation > existing.Incarnation {
-		g.members[m.ID] = m
+	if m.Incarnation >= existing.Incarnation {
+		existing.Status = m.Status
+		existing.Incarnation = m.Incarnation
+		existing.Addr = m.Addr
+		existing.LastSeen = time.Now()
 	}
+}
+
+// GetMembers returns a list of all known members.
+func (g *Gossip) GetMembers() []Member {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	members := make([]Member, 0, len(g.members))
+	for _, m := range g.members {
+		members = append(members, *m)
+	}
+	return members
+}
+
+// GetIdentity returns information about this node.
+func (g *Gossip) GetIdentity() Member {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	if m, ok := g.members[g.Config.ID]; ok {
+		return *m
+	}
+	return Member{
+		ID:     g.Config.ID,
+		Addr:   fmt.Sprintf("127.0.0.1:%d", g.Config.Port),
+		Status: StatusAlive,
+	}
+}
+
+func (g *Gossip) GetDiscoveryStatus() (string, []string) {
+	if g.Config.Discovery == nil {
+		return "none", nil
+	}
+	peers, _ := g.Config.Discovery.FindPeers(context.Background())
+	return fmt.Sprintf("%T", g.Config.Discovery), peers
 }

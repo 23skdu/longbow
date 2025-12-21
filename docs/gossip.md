@@ -8,6 +8,7 @@ Longbow uses a **SWIM (Scalable Weakly-consistent Infection-style Process Group 
 - **Membership Management**: Maintain consistent view of cluster members
 - **Metadata Propagation**: Efficiently spread updates across the cluster
 - **Decentralized Coordination**: No single point of failure
+- **Topology Driver**: Drives the Consistent Hash Ring via `EventDelegate`
 
 ## Architecture
 
@@ -23,6 +24,8 @@ Longbow uses a **SWIM (Scalable Weakly-consistent Infection-style Process Group 
 │  └──────────────┘  └──────────────┘  └──────────────┘      │
 ├─────────────────────────────────────────────────────────────┤
 │              Member State (Alive/Suspect/Dead)               │
+├─────────────────────────────────────────────────────────────┤
+│           Event Delegate (Ring Manager Notification)         │
 ├─────────────────────────────────────────────────────────────┤
 │           Discovery (K8s / DNS / Static Seeds)               │
 └─────────────────────────────────────────────────────────────┘

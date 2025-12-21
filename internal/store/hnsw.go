@@ -36,6 +36,19 @@ func (h *HNSWIndex) GetLocation(id VectorID) (Location, bool) {
 	return h.locations[id], true
 }
 
+// getLocationStriped returns the storage location using striped locking for reduced contention.
+// This is used in hot paths like SearchVectors where multiple concurrent searches need location access.
+func (h *HNSWIndex) getLocationStriped(id VectorID) (Location, bool) {
+	stripe := int(id) % h.numStripes
+	h.stripedLocks[stripe].RLock()
+	defer h.stripedLocks[stripe].RUnlock()
+
+	if int(id) >= len(h.locations) {
+		return Location{}, false
+	}
+	return h.locations[id], true
+}
+
 // HNSWIndex wraps the hnsw.Graph and manages the mapping from ID to Arrow data.
 type HNSWIndex struct {
 	Graph         *hnsw.Graph[VectorID]
@@ -207,8 +220,8 @@ func (h *HNSWIndex) Search(query []float32, k int) []VectorID {
 		metrics.VectorSearchLatencySeconds.WithLabelValues(h.dataset.Name).Observe(time.Since(start).Seconds())
 	}(time.Now())
 
-	// coder/hnsw is not thread-safe for concurrent Search and Add.
-	// Hold RLock to serialize against Add (which holds write lock).
+	// coder/hnsw library requires synchronization between Search and Add
+	// Use global RLock for graph search (multiple concurrent searches OK)
 	h.mu.RLock()
 	neighbors := h.Graph.Search(query, k)
 	h.mu.RUnlock()
@@ -221,6 +234,7 @@ func (h *HNSWIndex) Search(query []float32, k int) []VectorID {
 }
 
 // SearchVectors performs k-NN search returning full results with scores (distances).
+// Uses striped locks for location access to reduce contention in result processing.
 func (h *HNSWIndex) SearchVectors(query []float32, k int, filters []Filter) []SearchResult {
 	defer func(start time.Time) {
 		metrics.VectorSearchLatencySeconds.WithLabelValues(h.dataset.Name).Observe(time.Since(start).Seconds())
@@ -236,8 +250,8 @@ func (h *HNSWIndex) SearchVectors(query []float32, k int, filters []Filter) []Se
 		limit = k * 10 // Oversample for filtering. TODO: Adaptive or configurable factor
 	}
 
-	// coder/hnsw is not thread-safe for concurrent Search and Add.
-	// Hold RLock to serialize against Add (which holds write lock).
+	// Graph search requires global lock (coder/hnsw library requirement)
+	// Multiple concurrent searches can hold RLock simultaneously
 	h.mu.RLock()
 	neighbors := h.Graph.Search(query, limit)
 	h.mu.RUnlock()
@@ -263,15 +277,12 @@ func (h *HNSWIndex) SearchVectors(query []float32, k int, filters []Filter) []Se
 		}
 
 		// Retrieve vector/record for verification + score calc
-		// We need to access the record to check filters.
+		// Use striped lock for location access (fine-grained locking)
 
-		h.mu.RLock()
-		if int(n.Key) >= len(h.locations) {
-			h.mu.RUnlock()
+		loc, found := h.getLocationStriped(n.Key)
+		if !found {
 			continue
 		}
-		loc := h.locations[n.Key]
-		h.mu.RUnlock()
 
 		// Access Record for filtering
 		h.dataset.dataMu.RLock()

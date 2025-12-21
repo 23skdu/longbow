@@ -15,6 +15,7 @@ import (
 	"github.com/23skdu/longbow/internal/logging"
 	"github.com/23skdu/longbow/internal/mesh"
 	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/sharding"
 	"github.com/23skdu/longbow/internal/store"
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/apache/arrow-go/v18/arrow/memory"
@@ -39,6 +40,7 @@ type Config struct {
 	KeepAlivePermitWithoutStream bool          `envconfig:"GRPC_KEEPALIVE_PERMIT_WITHOUT_STREAM" default:"false"`
 
 	ListenAddr       string        `envconfig:"LISTEN_ADDR" default:"0.0.0.0:3000"`
+	NodeID           string        `envconfig:"NODE_ID" default:""` // Optional override
 	MetaAddr         string        `envconfig:"META_ADDR" default:"0.0.0.0:3001"`
 	MetricsAddr      string        `envconfig:"METRICS_ADDR" default:"0.0.0.0:9090"`
 	MaxMemory        int64         `envconfig:"MAX_MEMORY" default:"1073741824"`
@@ -62,7 +64,10 @@ type Config struct {
 	GossipEnabled       bool          `envconfig:"GOSSIP_ENABLED" default:"false"`
 	GossipPort          int           `envconfig:"GOSSIP_PORT" default:"7946"`
 	GossipInterval      time.Duration `envconfig:"GOSSIP_INTERVAL" default:"200ms"`
-	GossipAdvertiseAddr string        `envconfig:"GOSSIP_ADVERTISE_ADDR" default:"127.0.0.1"` // Set to Pod IP in K8s
+	GossipAdvertiseAddr string        `envconfig:"GOSSIP_ADVERTISE_ADDR" default:"127.0.0.1"`  // Set to Pod IP in K8s
+	GossipDiscovery     string        `envconfig:"GOSSIP_DISCOVERY_PROVIDER" default:"static"` // static, k8s, dns
+	GossipStaticPeers   string        `envconfig:"GOSSIP_STATIC_PEERS" default:""`             // Comma separated
+	GossipDNSRecord     string        `envconfig:"GOSSIP_DNS_RECORD" default:""`
 
 	// Storage Configuration
 	StorageAsyncFsync     bool `envconfig:"STORAGE_ASYNC_FSYNC" default:"true"`
@@ -163,19 +168,37 @@ func run() error {
 		}
 	}()
 
+	// Initialize Sharding Ring Manager
+	// Use configured NodeID or fallback to hostname
+	nodeID := cfg.NodeID
+	if nodeID == "" {
+		hostname, _ := os.Hostname()
+		if hostname == "" {
+			nodeID = "node-" + strconv.FormatInt(time.Now().UnixNano(), 10)
+		} else {
+			nodeID = hostname
+		}
+	}
+
+	ringManager := sharding.NewRingManager(nodeID, logger)
+	// Add self to ring immediately
+	ringManager.NotifyJoin(&mesh.Member{ID: nodeID, Addr: cfg.ListenAddr, Status: mesh.StatusAlive})
+
 	// Start Gossip if enabled
 	if cfg.GossipEnabled {
 		// Use hostname or random ID?
-		hostname, _ := os.Hostname()
-		if hostname == "" {
-			hostname = "node-" + strconv.FormatInt(time.Now().UnixNano(), 10)
-		}
 
 		gossipCfg := mesh.GossipConfig{
-			ID:             hostname,
+			ID:             nodeID,
 			Port:           cfg.GossipPort,
 			ProtocolPeriod: cfg.GossipInterval,
 			Addr:           "0.0.0.0", // Bind to all interfaces
+			Delegate:       ringManager,
+			Discovery: mesh.DiscoveryConfig{
+				Provider:    cfg.GossipDiscovery,
+				StaticPeers: cfg.GossipStaticPeers,
+				DNSRecord:   cfg.GossipDNSRecord,
+			},
 		}
 
 		// If provided, override advertise addr logic (TODO: pass to NewGossip if supported or modify Gossip to take AdvertiseAddr)
@@ -197,6 +220,9 @@ func run() error {
 		}
 	}
 
+	// Initialize Request Forwarder with RingManager for address resolution
+	forwarder := sharding.NewRequestForwarder(sharding.DefaultForwarderConfig(), ringManager)
+
 	// gRPC Server Options - using env-configurable message sizes and window sizes
 	if err := cfg.ValidateGRPCConfig(); err != nil {
 		logger.Error("Invalid gRPC config", zap.Error(err))
@@ -204,6 +230,9 @@ func run() error {
 		return err
 	}
 	serverOpts := cfg.BuildGRPCServerOptions()
+	// Add Partition Proxy Interceptor
+	serverOpts = append(serverOpts, grpc.UnaryInterceptor(sharding.PartitionProxyInterceptor(ringManager, forwarder)))
+
 	logger.Info("gRPC server options configured",
 		zap.Int("max_recv_msg_size", cfg.GRPCMaxRecvMsgSize),
 		zap.Int("max_send_msg_size", cfg.GRPCMaxSendMsgSize),

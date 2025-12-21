@@ -301,7 +301,12 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 	// Store first record
 	rec.Retain()
 	if ds.Index == nil {
-		ds.Index = NewHNSWIndex(ds)
+		// Use AutoShardingIndex by default
+		config := AutoShardingConfig{
+			ShardThreshold: 10000,
+			ShardCount:     runtime.NumCPU(),
+		}
+		ds.Index = NewAutoShardingIndex(ds, config)
 	}
 	batchIdx := len(ds.Records)
 	ds.Records = append(ds.Records, rec)
@@ -719,24 +724,7 @@ func (s *VectorStore) startIndexingWorkers(numWorkers int) {
 
 				// ds.Index access
 				if ds.Index != nil {
-					// Adaptive Sharding (Item 3): Check if we should migrate to sharded index
-					// This is done before adding the record to avoid missing it in the old index.
-					if !ds.IsSharded() {
-						// Hardcoded threshold for now, could be dynamic based on latency metrics
-						if ds.IndexLen() >= 10000 {
-							s.logger.Info("Triggering adaptive sharding", zap.String("dataset", job.DatasetName), zap.Int("count", ds.IndexLen()))
-							cfg := AutoShardingConfig{
-								Enabled:        true,
-								Threshold:      10000,
-								NumShards:      runtime.NumCPU(),
-								M:              16,
-								EfConstruction: 200,
-							}
-							if err := MigrateToShardedInDataset(ds, cfg); err != nil {
-								s.logger.Error("Sharding migration failed", zap.Error(err))
-							}
-						}
-					}
+					// Adaptive Sharding handled by AutoShardingIndex wrapper
 
 					if err := ds.Index.AddByRecord(job.Record, job.RowIdx, job.BatchIdx); err != nil {
 						s.logger.Error("Async index add failed", zap.Any("dataset", job.DatasetName), zap.Error(err))

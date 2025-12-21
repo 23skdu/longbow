@@ -21,6 +21,23 @@ type CPUFeatures struct {
 type (
 	distanceFunc      func(a, b []float32) float32
 	distanceBatchFunc func(query []float32, vectors [][]float32, results []float32)
+
+	// CompareOp represents a comparison operator for SIMD filters
+	CompareOp int
+)
+
+const (
+	CompareEq CompareOp = iota
+	CompareNeq
+	CompareGt
+	CompareGe
+	CompareLt
+	CompareLe
+)
+
+type (
+	matchInt64Func   func(src []int64, val int64, op CompareOp, dst []byte)
+	matchFloat32Func func(src []float32, val float32, op CompareOp, dst []byte)
 )
 
 var (
@@ -32,6 +49,9 @@ var (
 	cosineDistanceImpl         distanceFunc
 	dotProductImpl             distanceFunc
 	euclideanDistanceBatchImpl distanceBatchFunc
+
+	matchInt64Impl   matchInt64Func
+	matchFloat32Impl matchFloat32Func
 )
 
 func init() {
@@ -73,6 +93,8 @@ func initializeDispatch() {
 		cosineDistanceBatchImpl = cosineBatchAVX512
 		dotProductBatchImpl = dotBatchAVX512
 		prefetchImpl = prefetchNTA
+		matchInt64Impl = matchInt64AVX512
+		matchFloat32Impl = matchFloat32AVX512
 	case "avx2":
 		euclideanDistanceImpl = euclideanAVX2
 		metrics.SimdDispatchCount.WithLabelValues("avx2").Inc()
@@ -82,6 +104,8 @@ func initializeDispatch() {
 		cosineDistanceBatchImpl = cosineBatchAVX2
 		dotProductBatchImpl = dotBatchAVX2
 		prefetchImpl = prefetchNTA
+		matchInt64Impl = matchInt64AVX2
+		matchFloat32Impl = matchFloat32AVX2
 	case "neon":
 		euclideanDistanceImpl = euclideanNEON
 		metrics.SimdDispatchCount.WithLabelValues("neon").Inc()
@@ -91,6 +115,8 @@ func initializeDispatch() {
 		cosineDistanceBatchImpl = cosineBatchNEON
 		dotProductBatchImpl = dotBatchNEON
 		prefetchImpl = prefetchGeneric
+		matchInt64Impl = matchInt64Generic
+		matchFloat32Impl = matchFloat32Generic
 	default:
 		euclideanDistanceImpl = euclideanUnrolled4x
 		metrics.SimdDispatchCount.WithLabelValues("generic").Inc()
@@ -100,6 +126,8 @@ func initializeDispatch() {
 		cosineDistanceBatchImpl = cosineBatchUnrolled4x
 		dotProductBatchImpl = dotBatchUnrolled4x
 		prefetchImpl = prefetchGeneric
+		matchInt64Impl = matchInt64Generic
+		matchFloat32Impl = matchFloat32Generic
 	}
 
 }
@@ -399,3 +427,128 @@ func dotBatchUnrolled4x(query []float32, vectors [][]float32, results []float32)
 
 // Internal implementation pointers
 var prefetchImpl func(p unsafe.Pointer)
+
+// MatchInt64 performs a comparison of src elements against val, storing the result (0 or 1) in dst.
+// One byte per element is written to dst.
+func MatchInt64(src []int64, val int64, op CompareOp, dst []byte) {
+	if len(src) != len(dst) {
+		panic("simd: length mismatch")
+	}
+	matchInt64Impl(src, val, op, dst)
+}
+
+// MatchFloat32 performs a comparison of src elements against val, storing the result (0 or 1) in dst.
+// One byte per element is written to dst.
+func MatchFloat32(src []float32, val float32, op CompareOp, dst []byte) {
+	if len(src) != len(dst) {
+		panic("simd: length mismatch")
+	}
+	matchFloat32Impl(src, val, op, dst)
+}
+
+func matchInt64Generic(src []int64, val int64, op CompareOp, dst []byte) {
+	switch op {
+	case CompareEq:
+		for i, v := range src {
+			if v == val {
+				dst[i] = 1
+			} else {
+				dst[i] = 0
+			}
+		}
+	case CompareNeq:
+		for i, v := range src {
+			if v != val {
+				dst[i] = 1
+			} else {
+				dst[i] = 0
+			}
+		}
+	case CompareGt:
+		for i, v := range src {
+			if v > val {
+				dst[i] = 1
+			} else {
+				dst[i] = 0
+			}
+		}
+	case CompareGe:
+		for i, v := range src {
+			if v >= val {
+				dst[i] = 1
+			} else {
+				dst[i] = 0
+			}
+		}
+	case CompareLt:
+		for i, v := range src {
+			if v < val {
+				dst[i] = 1
+			} else {
+				dst[i] = 0
+			}
+		}
+	case CompareLe:
+		for i, v := range src {
+			if v <= val {
+				dst[i] = 0 // Wait, logic error in original paste? No, v <= val means 1.
+				dst[i] = 1
+			} else {
+				dst[i] = 0
+			}
+		}
+	}
+}
+
+func matchFloat32Generic(src []float32, val float32, op CompareOp, dst []byte) {
+	switch op {
+	case CompareEq:
+		for i, v := range src {
+			if v == val {
+				dst[i] = 1
+			} else {
+				dst[i] = 0
+			}
+		}
+	case CompareNeq:
+		for i, v := range src {
+			if v != val {
+				dst[i] = 1
+			} else {
+				dst[i] = 0
+			}
+		}
+	case CompareGt:
+		for i, v := range src {
+			if v > val {
+				dst[i] = 1
+			} else {
+				dst[i] = 0
+			}
+		}
+	case CompareGe:
+		for i, v := range src {
+			if v >= val {
+				dst[i] = 1
+			} else {
+				dst[i] = 0
+			}
+		}
+	case CompareLt:
+		for i, v := range src {
+			if v < val {
+				dst[i] = 1
+			} else {
+				dst[i] = 0
+			}
+		}
+	case CompareLe:
+		for i, v := range src {
+			if v <= val {
+				dst[i] = 1
+			} else {
+				dst[i] = 0
+			}
+		}
+	}
+}

@@ -41,7 +41,7 @@ func (s *VectorStore) InitPersistence(dataPath string, snapshotInterval time.Dur
 	}
 
 	// Initialize WAL
-	s.wal = NewStdWAL(s.dataPath, s)
+	s.wal = NewWAL(s.dataPath, s)
 
 	// Initialize WAL batcher for async writes
 	cfg := DefaultWALBatcherConfig()

@@ -8,18 +8,21 @@ import (
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
+
+	"github.com/23skdu/longbow/internal/mesh"
 )
 
 func TestPartitionProxyInterceptor_Local(t *testing.T) {
 	logger := zap.NewNop()
 	rm := NewRingManager("local-node", logger)
-	rm.ring.AddNode("local-node") // Ensure local node is in ring
+	rm.NotifyJoin(&mesh.Member{ID: "local-node", Addr: "localhost:1234", Status: mesh.StatusAlive})
 
 	// Key hashing to ensure it lands on local-node
 	// Since we only have one node, all keys land on it
 	key := "some-key"
 
-	interceptor := PartitionProxyInterceptor(rm, &RequestForwarder{})
+	forwarder := NewRequestForwarder(DefaultForwarderConfig(), rm)
+	interceptor := PartitionProxyInterceptor(rm, forwarder)
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return "success", nil
 	}
@@ -34,13 +37,14 @@ func TestPartitionProxyInterceptor_Local(t *testing.T) {
 func TestPartitionProxyInterceptor_Remote(t *testing.T) {
 	logger := zap.NewNop()
 	rm := NewRingManager("local-node", logger)
-	rm.ring.AddNode("remote-node")
+	rm.NotifyJoin(&mesh.Member{ID: "remote-node", Addr: "remotehost:5678", Status: mesh.StatusAlive})
 	// Make sure local-node is NOT in the ring or at least ensure the key maps to remote-node
 	// By default NewRingManager adds NO nodes initially besides what we add.
 	// So consistent hash has only "remote-node". All keys go there.
 
 	key := "some-key"
-	interceptor := PartitionProxyInterceptor(rm, &RequestForwarder{})
+	forwarder := NewRequestForwarder(DefaultForwarderConfig(), rm)
+	interceptor := PartitionProxyInterceptor(rm, forwarder)
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return "should-not-be-called", nil
 	}
@@ -48,7 +52,8 @@ func TestPartitionProxyInterceptor_Remote(t *testing.T) {
 	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("x-longbow-key", key))
 	_, err := interceptor(ctx, nil, &grpc.UnaryServerInfo{}, handler)
 
-	// Since RequestForwarder is a stub returning error
+	// Since RequestForwarder tries to dial a non-existent host, we expect a dial error
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "WRONG_NODE")
+	// We expect the error to come from the forwarder's GetConn
+	assert.Contains(t, err.Error(), "forwarder: get conn")
 }

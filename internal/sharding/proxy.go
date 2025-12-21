@@ -49,13 +49,4 @@ func extractRoutingKey(ctx context.Context, req interface{}) (string, error) {
 	return "", fmt.Errorf("no routing key found")
 }
 
-// RequestForwarder handles gRPC forwarding logic
-type RequestForwarder struct {
-	// connectionPool pool.ConnectionPool
-}
-
-func (f *RequestForwarder) Forward(ctx context.Context, targetNode string, req interface{}, method string) (interface{}, error) {
-	// TODO: lookup connection, invoke method
-	// For prototype, return error indicating where it SHOULD go
-	return nil, status.Errorf(codes.FailedPrecondition, "WRONG_NODE: Request belongs to %s", targetNode)
-}
+// RequestForwarder (Now defined in forwarder.go)

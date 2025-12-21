@@ -51,6 +51,15 @@ type GossipConfig struct {
 	ProtocolPeriod   time.Duration
 	AckTimeout       time.Duration
 	SuspicionTimeout time.Duration
+
+	Delegate EventDelegate
+}
+
+// EventDelegate handles cluster membership change events
+type EventDelegate interface {
+	NotifyJoin(member *Member)
+	NotifyLeave(member *Member)
+	NotifyUpdate(member *Member)
 }
 
 func NewGossip(cfg GossipConfig) *Gossip {
@@ -467,22 +476,27 @@ func (g *Gossip) nextSeq() uint32 {
 	return atomic.AddUint32(&g.seq, 1)
 }
 
+// UpdateMember updates the state of a member and triggers delegates
 func (g *Gossip) UpdateMember(m *Member) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
 	existing, ok := g.members[m.ID]
-	if !ok {
-		// New member found
-		m.LastSeen = time.Now()
+	isNew := !ok
+
+	if isNew {
 		g.members[m.ID] = m
-		if m.ID != g.Config.ID {
-			g.peers = append(g.peers, m.ID)
-		}
 		g.addUpdate(m)
-		metrics.GossipActiveMembers.Set(float64(len(g.members)))
+		// If new and alive, notify join
+		if m.Status == StatusAlive && g.Config.Delegate != nil {
+			go g.Config.Delegate.NotifyJoin(m)
+		}
+		metrics.GossipActiveMembers.Set(float64(g.countAlive()))
 		return
 	}
+
+	oldStatus := existing.Status
+	shouldUpdate := false
 
 	// Apply conflict resolution (Incarnation check)
 	// SWIM rules:
@@ -492,18 +506,16 @@ func (g *Gossip) UpdateMember(m *Member) {
 
 	if m.Status == StatusDead {
 		if existing.Status != StatusDead {
-			existing.Status = StatusDead
-			g.addUpdate(existing)
-		}
-		return
-	}
-
-	shouldUpdate := false
-	if m.Incarnation > existing.Incarnation {
-		shouldUpdate = true
-	} else if m.Incarnation == existing.Incarnation {
-		if m.Status == StatusSuspect && existing.Status == StatusAlive {
 			shouldUpdate = true
+		}
+	} else {
+		// Update rules for non-dead
+		if m.Incarnation > existing.Incarnation {
+			shouldUpdate = true
+		} else if m.Incarnation == existing.Incarnation {
+			if m.Status == StatusSuspect && existing.Status == StatusAlive {
+				shouldUpdate = true
+			}
 		}
 	}
 
@@ -512,14 +524,24 @@ func (g *Gossip) UpdateMember(m *Member) {
 		existing.Incarnation = m.Incarnation
 		existing.Addr = m.Addr
 		existing.LastSeen = time.Now()
+
 		if m.Status == StatusSuspect {
-			existing.SuspectAt = time.Now()
+			if existing.SuspectAt.IsZero() {
+				existing.SuspectAt = time.Now()
+			}
+		} else if m.Status == StatusAlive {
+			existing.SuspectAt = time.Time{}
 		}
+
 		g.addUpdate(existing)
 
-		// If we were suspect and got an Alive with higher incarnation, we cleared it
-		if m.Status == StatusAlive {
-			existing.SuspectAt = time.Time{}
+		// Trigger notifications on transition
+		if g.Config.Delegate != nil {
+			if oldStatus != StatusAlive && existing.Status == StatusAlive {
+				go g.Config.Delegate.NotifyJoin(existing)
+			} else if oldStatus != StatusDead && existing.Status == StatusDead {
+				go g.Config.Delegate.NotifyLeave(existing)
+			}
 		}
 	}
 }

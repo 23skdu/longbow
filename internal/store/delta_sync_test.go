@@ -47,7 +47,10 @@ func TestDeltaSync_Integration(t *testing.T) {
 	pool := memory.NewGoAllocator()
 	dir := t.TempDir()
 	store := NewVectorStore(pool, zap.NewNop(), 1024*1024, 1024*1024, 0)
-	require.NoError(t, store.InitPersistence(dir, 0))
+	require.NoError(t, store.InitPersistence(StorageConfig{
+		DataPath:         dir,
+		SnapshotInterval: 1 * time.Hour,
+	}))
 	defer store.Close()
 
 	// Create Record

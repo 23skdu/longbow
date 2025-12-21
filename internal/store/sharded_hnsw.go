@@ -181,7 +181,7 @@ func (s *ShardedHNSW) AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx int) e
 	copy(vecCopy, vec)
 	shard.graph.Add(hnsw.MakeNode(id, vecCopy))
 
-	metrics.ShardedHnswShardSize.WithLabelValues(fmt.Sprintf("%d", shardIdx)).Inc()
+	metrics.ShardedHnswShardSize.WithLabelValues(s.dataset.Name, fmt.Sprintf("%d", shardIdx)).Inc()
 	return nil
 }
 

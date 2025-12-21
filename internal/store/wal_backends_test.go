@@ -31,7 +31,7 @@ func TestWALBackends_StdWAL(t *testing.T) {
 
 	t.Run("WriteAndReplay", func(t *testing.T) {
 		// Write using StdWAL
-		err := stdWAL.Write("ds1", rec)
+		err := stdWAL.Write("ds1", 1, 0, rec)
 		require.NoError(t, err)
 
 		// Verify file exists
@@ -51,7 +51,7 @@ func TestWALBackends_StdWAL(t *testing.T) {
 
 	t.Run("AppendMultiple", func(t *testing.T) {
 		// Write second record
-		err := stdWAL.Write("ds1", rec)
+		err := stdWAL.Write("ds1", 2, 0, rec)
 		require.NoError(t, err)
 
 		store.datasets = make(map[string]*Dataset) // Clear memory

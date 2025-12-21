@@ -48,11 +48,13 @@ func TestPersistence_ReplayWAL_Corruption(t *testing.T) {
 		_, _ = crc.Write(recBytes)
 		checksum := crc.Sum32()
 
-		// Write header
-		header := make([]byte, 16)
+		// Write header (CRC(4) | Seq(8) | Timestamp(8) | NameLen(4) | RecLen(8)) = 32 bytes
+		header := make([]byte, 32)
 		binary.LittleEndian.PutUint32(header[0:4], checksum)
-		binary.LittleEndian.PutUint32(header[4:8], uint32(len(nameBytes)))
-		binary.LittleEndian.PutUint64(header[8:16], uint64(len(recBytes)))
+		binary.LittleEndian.PutUint64(header[4:12], 0)  // dummy seq
+		binary.LittleEndian.PutUint64(header[12:20], 0) // dummy ts
+		binary.LittleEndian.PutUint32(header[20:24], uint32(len(nameBytes)))
+		binary.LittleEndian.PutUint64(header[24:32], uint64(len(recBytes)))
 
 		buf.Write(header)
 		buf.Write(nameBytes)
@@ -93,7 +95,7 @@ func TestPersistence_ReplayWAL_Corruption(t *testing.T) {
 
 	t.Run("TruncatedHeader", func(t *testing.T) {
 		walPath := filepath.Join(tmpDir, walFileName)
-		// Only write 10 bytes instead of 16
+		// Only write 10 bytes instead of 32
 		err := os.WriteFile(walPath, make([]byte, 10), 0644)
 		require.NoError(t, err)
 

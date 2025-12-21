@@ -16,8 +16,10 @@ import (
 
 // WALEntry represents a single entry to be written to the WAL
 type WALEntry struct {
-	Record arrow.RecordBatch
-	Name   string
+	Record    arrow.RecordBatch
+	Name      string
+	Seq       uint64
+	Timestamp int64
 }
 
 // WALBatcherConfig configures the batched WAL writer
@@ -124,7 +126,7 @@ func (w *WALBatcher) Start() error {
 }
 
 // Write queues a record for batched WAL writing (non-blocking)
-func (w *WALBatcher) Write(rec arrow.RecordBatch, name string) error {
+func (w *WALBatcher) Write(rec arrow.RecordBatch, name string, seq uint64, ts int64) error {
 	if rec == nil {
 		return nil
 	}
@@ -144,7 +146,7 @@ func (w *WALBatcher) Write(rec arrow.RecordBatch, name string) error {
 	}
 
 	select {
-	case w.entries <- WALEntry{Record: rec, Name: name}:
+	case w.entries <- WALEntry{Record: rec, Name: name, Seq: seq, Timestamp: ts}:
 		return nil
 	case <-w.stopCh:
 		rec.Release()
@@ -273,12 +275,14 @@ func (w *WALBatcher) drainAndFlush() {
 	}
 }
 
-// encodeWALEntryHeader encodes crc (uint32), nameLen (uint32) and recLen (uint64) into a 16-byte slice
-func encodeWALEntryHeader(crc, nameLen uint32, recLen uint64) []byte {
-	buf := make([]byte, 16)
+// encodeWALEntryHeader encodes crc(uint32), seq(uint64), ts(int64), nameLen(uint32) and recLen(uint64) into a 32-byte slice
+func encodeWALEntryHeader(crc uint32, seq uint64, ts int64, nameLen uint32, recLen uint64) []byte {
+	buf := make([]byte, 32)
 	binary.LittleEndian.PutUint32(buf[0:4], crc)
-	binary.LittleEndian.PutUint32(buf[4:8], nameLen)
-	binary.LittleEndian.PutUint64(buf[8:16], recLen)
+	binary.LittleEndian.PutUint64(buf[4:12], seq)
+	binary.LittleEndian.PutUint64(buf[12:20], uint64(ts))
+	binary.LittleEndian.PutUint32(buf[20:24], nameLen)
+	binary.LittleEndian.PutUint64(buf[24:32], recLen)
 	return buf
 }
 
@@ -287,12 +291,14 @@ func encodeWALEntryHeader(crc, nameLen uint32, recLen uint64) []byte {
 func (w *WALBatcher) writeEntryBytes(entry WALEntry) (int, error) {
 	rec := entry.Record
 	name := entry.Name
+	seq := entry.Seq
+	ts := entry.Timestamp
 
 	if w.walFile == nil {
 		return 0, nil
 	}
 
-	// Format: [CRC: uint32][NameLen: uint32][RecordLen: uint64][Name: bytes][RecordBytes: bytes]
+	// Format: [CRC: uint32][Seq: uint64][NameLen: uint32][RecordLen: uint64][Name: bytes][RecordBytes: bytes]
 
 	buf := w.bufPool.Get()
 	defer w.bufPool.Put(buf)
@@ -316,10 +322,10 @@ func (w *WALBatcher) writeEntryBytes(entry WALEntry) (int, error) {
 	checksum := crc.Sum32()
 
 	// Write header + data
-	headerBuf := encodeWALEntryHeader(checksum, nameLen, recLen)
+	headerBuf := encodeWALEntryHeader(checksum, seq, ts, nameLen, recLen)
 
 	// Write in one go if possible? No, scatter/gather usually fine with buffers.
-	// Order: Header (CRC, Len1, Len2), Name, Record
+	// Order: Header (CRC, Seq, Len1, Len2), Name, Record
 
 	if _, err := w.walFile.Write(headerBuf); err != nil {
 		return 0, err
@@ -331,8 +337,8 @@ func (w *WALBatcher) writeEntryBytes(entry WALEntry) (int, error) {
 		return 0, err
 	}
 
-	// Total bytes: 16 (Header) + len(name) + len(recBytes)
-	totalBytes := 16 + len(nameBytes) + len(recBytes)
+	// Total bytes: 32 (Header) + len(name) + len(recBytes)
+	totalBytes := 32 + len(nameBytes) + len(recBytes)
 	return totalBytes, nil
 }
 

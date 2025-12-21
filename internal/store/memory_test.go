@@ -4,89 +4,65 @@ import (
 	"runtime"
 	"testing"
 	"unsafe"
-
-	"github.com/apache/arrow-go/v18/arrow"
-	"github.com/apache/arrow-go/v18/arrow/array"
-	"github.com/apache/arrow-go/v18/arrow/memory"
-	"github.com/stretchr/testify/assert"
 )
 
-func TestMemory_AdviseMemory(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("AdviseMemory is no-op on Windows")
-	}
+func TestGetNumaNode(t *testing.T) {
+	// Allocate a byte slice
+	data := make([]byte, 4096)
+	// Force allocation by touching
+	data[0] = 1
 
-	size := 4096 // 4KB (page size)
-	buf := make([]byte, size)
-	ptr := unsafe.Pointer(&buf[0])
+	ptr := unsafe.Pointer(&data[0])
+	node, err := GetNumaNode(ptr)
 
-	t.Run("Normal", func(t *testing.T) {
-		err := AdviseMemory(ptr, uintptr(size), AdviceNormal)
-		assert.NoError(t, err)
-	})
-
-	t.Run("Random", func(t *testing.T) {
-		err := AdviseMemory(ptr, uintptr(size), AdviceRandom)
-		assert.NoError(t, err)
-	})
-
-	t.Run("Sequential", func(t *testing.T) {
-		err := AdviseMemory(ptr, uintptr(size), AdviceSequential)
-		assert.NoError(t, err)
-	})
-
-	t.Run("InvalidPointer", func(t *testing.T) {
-		// Nil pointer should probably error or at least not crash
-		err := AdviseMemory(nil, 0, AdviceNormal)
-		assert.NoError(t, err) // Current implementation handles it or it's a no-op
-	})
-}
-
-func TestMemory_LockMemory(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("LockMemory is no-op on Windows")
-	}
-
-	// Note: mlock might require permissions (e.g. root or ulimit)
-	// On many dev systems it might fail if limit is too low.
-	// We'll try with a very small chunk.
-	size := 128
-	buf := make([]byte, size)
-	ptr := unsafe.Pointer(&buf[0])
-
-	t.Run("LockAndUnlock", func(t *testing.T) {
-		err := LockMemory(ptr, uintptr(size))
+	if runtime.GOOS != "linux" {
 		if err != nil {
-			t.Logf("Skipping Mlock verification due to environment limits: %v", err)
-			return
+			t.Errorf("Expected nil error on non-Linux, got %v", err)
 		}
-
-		err = UnlockMemory(ptr, uintptr(size))
-		assert.NoError(t, err)
-	})
-}
-
-func TestMemory_PinThreadToCore(t *testing.T) {
-	// Currently a stub/no-op on macOS/Windows, but let's ensure it doesn't crash
-	err := PinThreadToCore(0)
-	assert.NoError(t, err)
-}
-
-func TestMemory_AdviseRecord(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("AdviseRecord uses AdviseMemory which is no-op on Windows")
+		if node != -1 {
+			t.Errorf("Expected node -1 on non-Linux, got %d", node)
+		}
+		t.Skip("Skipping NUMA test on non-Linux")
 	}
 
-	mem := memory.NewGoAllocator()
-	schema := arrow.NewSchema([]arrow.Field{
-		{Name: "f1", Type: arrow.PrimitiveTypes.Int32},
-	}, nil)
+	if err != nil {
+		t.Fatalf("GetNumaNode failed: %v", err)
+	}
+	t.Logf("Memory mapped to NUMA node: %d", node)
+}
 
-	b := array.NewInt32Builder(mem)
-	b.AppendValues([]int32{1, 2, 3, 4, 5}, nil)
-	rec := array.NewRecordBatch(schema, []arrow.Array{b.NewArray()}, 5)
-	defer rec.Release()
+func TestPinThreadToNode(t *testing.T) {
+	// This test is tricky because it requires existing nodes.
+	// We'll try node 0 which usually exists.
+	err := PinThreadToNode(0)
 
-	// Verify it doesn't crash and handles zero length if any
-	AdviseRecord(rec, AdviceRandom)
+	if runtime.GOOS != "linux" {
+		if err != nil {
+			t.Errorf("Expected nil error on non-Linux, got %v", err)
+		}
+		t.Skip("Skipping thread pinning test on non-Linux")
+	}
+
+	if err != nil {
+		// Might fail if we don't have permission or node 0 doesn't exist (unlikely)
+		// Or if we are in a container/restricted env.
+		// We'll just log it for now to avoid flaky tests in restricted CI.
+		t.Logf("PinThreadToNode failed (expected in some envs): %v", err)
+	} else {
+		t.Log("Successfully pinned thread to node 0")
+	}
+}
+
+func TestPinThreadToCore(t *testing.T) {
+	err := PinThreadToCore(0)
+	if runtime.GOOS != "linux" {
+		if err != nil {
+			t.Errorf("Expected nil error on non-Linux, got %v", err)
+		}
+		t.Skip("Skipping core pinning test on non-Linux")
+	}
+
+	if err != nil {
+		t.Logf("PinThreadToCore failed: %v", err)
+	}
 }

@@ -2,100 +2,196 @@ package store
 
 import (
 	"fmt"
-	"runtime"
+	"sync"
+	"time"
 
 	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/apache/arrow-go/v18/arrow"
 )
 
-// AutoShardingConfig configures automatic HNSW index sharding
+// AutoShardingConfig configures the auto-sharding behavior.
 type AutoShardingConfig struct {
-	Enabled        bool
-	Threshold      int
-	NumShards      int
-	M              int
-	EfConstruction int
+	// ShardThreshold is the number of vectors at which to trigger sharding.
+	ShardThreshold int
+	// ShardCount is the target number of shards to create (defaults to NumCPU).
+	ShardCount int
 }
 
-// DefaultAutoShardingConfig returns sensible defaults for auto-sharding.
-func DefaultAutoShardingConfig() AutoShardingConfig {
-	return AutoShardingConfig{
-		Enabled:        true,
-		Threshold:      10000,
-		NumShards:      runtime.NumCPU(),
-		M:              16,
-		EfConstruction: 200,
+// AutoShardingIndex wraps a VectorIndex and transparently upgrades it
+// to a ShardedHNSW when the dataset grows beyond a threshold.
+type AutoShardingIndex struct {
+	mu      sync.RWMutex
+	current VectorIndex
+	config  AutoShardingConfig
+	dataset *Dataset
+	sharded bool
+}
+
+// NewAutoShardingIndex creates a new auto-sharding index.
+// Initially, it uses a standard HNSWIndex.
+func NewAutoShardingIndex(ds *Dataset, config AutoShardingConfig) *AutoShardingIndex {
+	if config.ShardThreshold <= 0 {
+		config.ShardThreshold = 10000 // Default to 10k
+	}
+	return &AutoShardingIndex{
+		current: NewHNSWIndex(ds),
+		config:  config,
+		dataset: ds,
+		sharded: false,
 	}
 }
 
-// MigrateToShardedInDataset performs an in-place migration of a dataset's index.
-func MigrateToShardedInDataset(d *Dataset, cfg AutoShardingConfig) error {
-	d.dataMu.Lock()
-	defer d.dataMu.Unlock()
+// AddByLocation adds a vector to the index.
+func (a *AutoShardingIndex) AddByLocation(batchIdx, rowIdx int) error {
+	a.mu.RLock()
+	// Optimistic check: if not sharded, we might trigger migration *after* this add.
+	// But simply calling add is safe.
+	err := a.current.AddByLocation(batchIdx, rowIdx)
+	currentLen := a.current.Len()
+	a.mu.RUnlock()
 
-	if _, ok := d.Index.(*ShardedHNSW); ok {
-		return nil // Already sharded
-	}
-
-	hnswIdx, ok := d.Index.(*HNSWIndex)
-	if !ok {
-		return fmt.Errorf("current index is not HNSW, cannot migrate")
-	}
-
-	sharded, err := MigrateToSharded(hnswIdx, cfg)
 	if err != nil {
 		return err
 	}
 
-	d.Index = sharded
+	// Check threshold asynchronously or synchronously?
+	// Synchronous check is simpler. 20k items is small enough that cost of check (atomic load) is negligible.
+	if !a.sharded && currentLen >= a.config.ShardThreshold {
+		a.migrateToSharded()
+	}
+
 	return nil
 }
 
-// ShouldShard returns true if the vector count exceeds the threshold.
-func (c AutoShardingConfig) ShouldShard(vectorCount int) bool {
+// AddByRecord adds a vector from a record batch.
+func (a *AutoShardingIndex) AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx int) error {
+	a.mu.RLock()
+	err := a.current.AddByRecord(rec, rowIdx, batchIdx)
+	currentLen := a.current.Len()
+	a.mu.RUnlock()
 
-	if !c.Enabled {
-		return false
+	if err != nil {
+		return err
 	}
-	return vectorCount >= c.Threshold
+
+	if !a.sharded && currentLen >= a.config.ShardThreshold {
+		a.migrateToSharded()
+	}
+	return nil
 }
 
-// MigrateToSharded converts an HNSWIndex to a ShardedHNSW.
-func MigrateToSharded(original *HNSWIndex, cfg AutoShardingConfig) (*ShardedHNSW, error) {
-	if original == nil {
-		return nil, fmt.Errorf("original index is nil")
+// migrateToSharded performs the migration from HNSWIndex to ShardedHNSW.
+func (a *AutoShardingIndex) migrateToSharded() {
+	start := time.Now()
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	// Double check inside lock
+	if a.sharded {
+		return
+	}
+	if a.current.Len() < a.config.ShardThreshold {
+		return
 	}
 
-	ds := original.dataset
-	shardConfig := ShardedHNSWConfig{
-		NumShards:      cfg.NumShards,
-		M:              cfg.M,
-		EfConstruction: cfg.EfConstruction,
-		Metric:         original.Metric,
+	fmt.Println("Starting migration to ShardedHNSW...")
+
+	// Verify we have a basic HNSWIndex
+	oldIndex, ok := a.current.(*HNSWIndex)
+	if !ok {
+		// Should not happen unless initialized incorrectly or wrapped recursively
+		fmt.Printf("Cannot migrate: current index is not *HNSWIndex, but %T\n", a.current)
+		return
 	}
 
-	sharded := NewShardedHNSW(shardConfig, ds)
-	origLen := original.Len()
-	if origLen == 0 {
-		return sharded, nil
+	// Create new ShardedHNSW
+	shardedConfig := DefaultShardedHNSWConfig()
+	shardedConfig.Metric = oldIndex.Metric
+	if a.config.ShardCount > 0 {
+		shardedConfig.NumShards = a.config.ShardCount
 	}
 
-	// Migrate vectors
-	for i := 0; i < origLen; i++ {
-		vid := VectorID(i)
-		vec := original.getVector(vid)
-		if vec == nil {
-			continue
+	newIndex := NewShardedHNSW(shardedConfig, a.dataset)
+
+	// Migrate data
+	// Iterate through all vectors in old index
+	// Iterate through all vectors in old index
+	// NOTE: We assume IDs are contiguous [0, count).
+	// If HNSWIndex supported deletes/gaps, this would need iteration over Graph nodes.
+	// Current HNSW implementation uses monotonic IDs via nextVecID.
+
+	// Better approach: Iterate the graph nodes just in case.
+	// But HNSWIndex.locations is slice, accessing by ID.
+	// nextVecID tracks max ID.
+	// Let's iterate 0..nextVecID.
+	// But `nextVecID` is essentially `Len()` if no deletes.
+	// We'll iterate up to `len(oldIndex.locations)` to be safe.
+
+	// We access locations directly via oldIndex.GetLocation
+	// Wait, we need to iterate.
+	// oldIndex.Len() returns count.
+	// Safest is to loop over IDs. The locations slice grows with IDs.
+	// Accessing locations via GetLocation is safe.
+
+	// We can't easily access the length of locations slice from outside package (if unexported).
+	// But we are in `package store`, so we can access unexported fields of HNSWIndex!
+	// Yes, accessing `oldIndex.locations` is possible since we are in `package store`.
+
+	n := len(oldIndex.locations)
+	for id := 0; id < n; id++ {
+		loc := oldIndex.locations[id]
+		// Check for empty/tombstone if applicable (Location{0,0} might be valid though).
+		// HNSWIndex initializes locations slice locs.
+		// If we support deletes later, we'd check for tombstone.
+		// For now, blindly migrate.
+
+		// Add to new index
+		// Use AddByLocation which looks up data in dataset.
+		err := newIndex.AddByLocation(loc.BatchIdx, loc.RowIdx)
+		if err != nil {
+			fmt.Printf("Error migrating vector %d: %v\n", id, err)
+			// Continue or abort?
+			// Abort might leave us in weird state.
+			// Log and continue best effort.
 		}
-		loc, _ := original.GetLocation(vid)
-		if err := sharded.AddByRecord(nil, loc.RowIdx, loc.BatchIdx); err != nil {
-			// Note: AddByRecord in ShardedHNSW (as restored) expects a record or uses dataset.
-			// Let's use AddByLocation if dataset is linked.
-			if err := sharded.AddByLocation(loc.BatchIdx, loc.RowIdx); err != nil {
-				return nil, err
-			}
-		}
 	}
 
-	metrics.HnswShardingMigrationsTotal.Inc()
-	return sharded, nil
+	// Swap
+	a.current = newIndex
+	a.sharded = true
+
+	// Close old index to release resources if any (currently none for HNSWIndex except generic GC)
+	_ = oldIndex.Close()
+
+	duration := time.Since(start)
+	metrics.IndexMigrationDuration.Observe(duration.Seconds())
+	fmt.Printf("Migration complete. %d vectors moved to %d shards in %v.\n", n, shardedConfig.NumShards, duration)
+}
+
+// SearchVectors implements VectorIndex.
+func (a *AutoShardingIndex) SearchVectors(query []float32, k int, filters []Filter) []SearchResult {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.current.SearchVectors(query, k, filters)
+}
+
+// Len implements VectorIndex.
+func (a *AutoShardingIndex) Len() int {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.current.Len()
+}
+
+// GetDimension implements VectorIndex.
+func (a *AutoShardingIndex) GetDimension() uint32 {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.current.GetDimension()
+}
+
+// Close implements VectorIndex.
+func (a *AutoShardingIndex) Close() error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.current.Close()
 }

@@ -171,6 +171,24 @@ Prometheus metrics exposed on port 9090:
 
 See [Metrics Documentation](metrics.md) for full list.
 
+## 11. Distributed Components
+
+### Ring Manager
+
+- **Role**: Maintains the Consistent Hashing Ring state.
+- **Integration**: Subscribes to gossip events to automatically add/remove nodes from the ring.
+
+### Partition Proxy
+
+- **Role**: gRPC Interceptor that routes requests.
+- **Logic**: Hashes request keys (`x-longbow-key`) to find owner node.
+- **Action**: Forwards request if owner is remote; processes locally if owner is self.
+
+### Request Forwarder
+
+- **Role**: Manages connection pool to peer nodes.
+- **Smart Client**: Returns `FORWARD_REQUIRED` errors with target hints to allow clients to re-route.
+
 ## Architecture Diagram
 
 ```mermaid
@@ -184,6 +202,14 @@ graph TB
         DS["Data Server (:3000)"]
         MS["Meta Server (:3001)"]
         Prom["Metrics (:9090)"]
+    end
+
+    subgraph Dist["Distributed Layer"]
+        Proxy["Partition Proxy"]
+        Ring["Ring Manager"]
+        Gossip["Gossip Mesh"]
+        Ring --> Gossip
+        Proxy --> Ring
     end
 
     subgraph Store["Sharded Vector Store"]
@@ -201,8 +227,9 @@ graph TB
 
     Client <--> DS
     Client <--> MS
-    DS --> LS
-    MS --> LS
+    DS --> Proxy
+    MS --> Proxy
+    Proxy --> LS
     Shards --> WAL
     Inverted --> WAL
     WAL --> Storage

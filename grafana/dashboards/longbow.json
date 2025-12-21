@@ -592,8 +592,8 @@
     },
     "timepicker": {},
     "timezone": "",
-    "title": "Longbow Cluster Dashboard",
+    "title": "Longbow Distributed Cluster",
     "uid": "longbow-cluster",
-    "version": 1,
+    "version": 2,
     "weekStart": ""
 }

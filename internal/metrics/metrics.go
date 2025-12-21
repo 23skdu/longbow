@@ -409,6 +409,35 @@ var CompactionAutoTriggersTotal = promauto.NewCounter(
 )
 
 // =============================================================================
+// IO_Uring Metrics
+// =============================================================================
+
+// WalUringSubmissionQueueDepth tracks the number of entries in the submission queue
+var WalUringSubmissionQueueDepth = promauto.NewGauge(
+	prometheus.GaugeOpts{
+		Name: "longbow_wal_uring_sq_depth",
+		Help: "Current depth of the io_uring submission queue",
+	},
+)
+
+// WalUringCompletionQueueDepth tracks the number of entries in the completion queue
+var WalUringCompletionQueueDepth = promauto.NewGauge(
+	prometheus.GaugeOpts{
+		Name: "longbow_wal_uring_cq_depth",
+		Help: "Current depth of the io_uring completion queue",
+	},
+)
+
+// WalUringSubmitLatencySeconds measures the latency of io_uring submission calls
+var WalUringSubmitLatencySeconds = promauto.NewHistogram(
+	prometheus.HistogramOpts{
+		Name:    "longbow_wal_uring_submit_latency_seconds",
+		Help:    "Latency of io_uring Enter/Submit calls",
+		Buckets: []float64{0.00001, 0.00005, 0.0001, 0.0005, 0.001, 0.005, 0.01}, // Microsecond resolution
+	},
+)
+
+// =============================================================================
 // Comprehensive Prometheus Metrics Expansion
 // Added for enhanced observability across all components
 // =============================================================================

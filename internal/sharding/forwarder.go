@@ -3,13 +3,56 @@ package sharding
 import (
 	"context"
 	"fmt"
+	"io"
 	"sync"
 	"time"
 
+	"github.com/apache/arrow-go/v18/arrow/flight"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
+
+// rawCodec is a transparent gRPC codec that passes raw bytes.
+type rawCodec struct{}
+
+func (rawCodec) Marshal(v interface{}) ([]byte, error) {
+	if b, ok := v.([]byte); ok {
+		return b, nil
+	}
+	if m, ok := v.(proto.Message); ok {
+		return proto.Marshal(m)
+	}
+	return nil, fmt.Errorf("rawCodec: unexpected type %T", v)
+}
+
+func (rawCodec) Unmarshal(data []byte, v interface{}) error {
+	if b, ok := v.(*[]byte); ok {
+		*b = data
+		return nil
+	}
+	if m, ok := v.(proto.Message); ok {
+		return proto.Unmarshal(data, m)
+	}
+	return fmt.Errorf("rawCodec: unexpected type %T", v)
+}
+
+func (rawCodec) Name() string { return "raw" }
+
+// frame is a proxy frame that carries raw bytes.
+type frame struct {
+	payload []byte
+}
+
+func (f *frame) Marshal() ([]byte, error) { return f.payload, nil }
+func (f *frame) Unmarshal(data []byte) error {
+	f.payload = data
+	return nil
+}
 
 // ForwarderConfig holds configuration for the forwarder
 type ForwarderConfig struct {
@@ -81,7 +124,7 @@ func (f *RequestForwarder) GetConn(ctx context.Context, target string) (*grpc.Cl
 	return conn, nil
 }
 
-// Forward forwards a unary request to the target node
+// Forward forwards a unary request to the target node transparently.
 func (f *RequestForwarder) Forward(ctx context.Context, targetNodeID string, req interface{}, method string) (interface{}, error) {
 	addr := f.resolver.GetNodeAddr(targetNodeID)
 	if addr == "" {
@@ -90,56 +133,127 @@ func (f *RequestForwarder) Forward(ctx context.Context, targetNodeID string, req
 
 	conn, err := f.GetConn(ctx, addr)
 	if err != nil {
-		return nil, fmt.Errorf("forwarder: get conn: %w", err)
+		return nil, status.Errorf(codes.Unavailable, "forwarder: get conn: %v", err)
 	}
-	_ = conn // Connectivity verified, but actual forwarding deferred
 
-	// Create a new response object of the same type as req (if possible) or generic
-	// grpc.Invoke expects a return pointer.
-	// We don't know the return type here!
-	// This is the tricky part of generic forwarding without a transparent proxy.
-	// If we use standard grpc.Invoke, we need to pass a pointer to the response struct.
-	// But we don't know what it is.
+	// Since we don't know the response type here, we need to handle it carefully.
+	// For "fully transparent" proxying in an interceptor, we ideally want to return
+	// the same type the server expects.
+	// However, we can use the original req's type to help with discovery if needed.
 
-	// Option A: Use a Codec that passes raw bytes?
-	// Option B: Reflection?
-	// Option C: Accept we can't generic forward easily with UnaryServerInterceptor *unless* we use the keys to just redirect the client (HTTP 301 style? gRPC doesn't support that easily).
+	// Propagate metadata
+	if md, ok := metadata.FromIncomingContext(ctx); ok {
+		ctx = metadata.NewOutgoingContext(ctx, md)
+	}
 
-	// WAIT. PartitionProxy is usually implemented as a transparent proxy.
-	// If we are interpreting this as "Double Hop", we must know the response type.
+	// We use the rawCodec to handle the request/response as bytes or proto.Message.
+	// If it's already a proto.Message, grpc will use the default codec unless we override.
+	// But in an interceptor, we are already unmarshaled.
 
-	// Given this is a prototype/core implementation, let's assume specific methods or use Codec.
-	// BUT, the simplest way for now is to return an error telling the CLIENT to go elsewhere?
-	// "WRONG_NODE" error with metadata "x-longbow-leader: <addr>"?
-	// The client SDK can then retry. This is "Smart Client" routing.
-	// The "Forwarder" approach implies "Server logic" routing.
+	// Since we are in Longbow, we know most methods are FlightService.
+	// For now, let's implement a typed forward for known methods if we can,
+	// or fallback to a smarter generic approach.
 
-	// Let's implement Server Side Forwarding with the assumption that this is Flight service.
-	// Flight DoGet/DoPut are streams, but we also have Handshake/ListFlights which are unary?
-	// Actually DoGet/DoPut are streams.
-	// Our Interceptor is Unary.
-	// Meaning it only affects Unary calls (like ListFlights, GetFlightInfo).
-	// Stream calls use StreamInterceptor.
+	var reply interface{}
+	switch method {
+	case "/arrow.flight.protocol.FlightService/GetFlightInfo":
+		reply = &flight.FlightInfo{}
+	case "/arrow.flight.protocol.FlightService/GetSchema":
+		reply = &flight.SchemaResult{}
+	default:
+		// Fallback for unknown unary methods: attempt to use raw bytes
+		// Note: This requires the server to accept the raw bytes back.
+		return nil, status.Errorf(codes.Unimplemented, "forwarding for method %s not yet implemented", method)
+	}
 
-	// If the user wants "Request Forwarding", they probably mean for Metadata operations.
-	// GetFlightInfo returns FlightInfo.
-	// We can't transparently marshal into `interface{}` without knowing the concrete type.
+	err = conn.Invoke(ctx, method, req, reply)
+	if err != nil {
+		return nil, err
+	}
 
-	// Compromise: For this phase, we implemented address resolution and connection.
-	// But generic `Forward` is blocked by Go's typing.
-	// I will implement a "Smart Error" return for now, but use the connection check to validation reachability.
-	// OR I can use `grpc.CallOption` with `grpc.ForceCodec` to handle raw bytes.
+	return reply, nil
+}
 
-	// Let's stick to the "Smart Client" hint for now as it's safer than broken reflection.
-	// AND return the specific address.
-	// Wait, the interface says `Forward(...) returns (interface{}, error)`.
-	// The proxy expects a response.
+// ForwardStream handles transparent proxying for streaming gRPC calls.
+func (f *RequestForwarder) ForwardStream(ctx context.Context, targetNodeID string, serverStream grpc.ServerStream, method string) error {
+	addr := f.resolver.GetNodeAddr(targetNodeID)
+	if addr == "" {
+		return status.Errorf(codes.Unavailable, "forwarder: unknown node ID %s", targetNodeID)
+	}
 
-	// Let's leave a TODO and return the Address so the caller (Proxy) can decide?
-	// No, Proxy expects (interface{}, error).
+	conn, err := f.GetConn(ctx, addr)
+	if err != nil {
+		return status.Errorf(codes.Unavailable, "forwarder: get conn: %v", err)
+	}
 
-	// I will return an error that contains the target address.
-	return nil, fmt.Errorf("FORWARD_REQUIRED: target=%s addr=%s", targetNodeID, addr)
+	// Propagate metadata
+	if md, ok := metadata.FromIncomingContext(ctx); ok {
+		ctx = metadata.NewOutgoingContext(ctx, md)
+	}
+
+	// Create client stream
+	// We use a custom Desc to handle arbitrary streams
+	desc := &grpc.StreamDesc{
+		ServerStreams: true,
+		ClientStreams: true,
+	}
+
+	clientStream, err := conn.NewStream(ctx, desc, method)
+	if err != nil {
+		return status.Errorf(codes.Internal, "failed to create client stream: %v", err)
+	}
+
+	// Bi-directional piping of raw frames
+	// This makes it truly transparent without knowing the types
+	errChan := make(chan error, 2)
+
+	// Server -> Client (Forwarding request/data)
+	go func() {
+		for {
+			var f frame
+			if err := serverStream.RecvMsg(&f); err != nil {
+				clientStream.CloseSend()
+				if err == io.EOF {
+					errChan <- nil
+				} else {
+					errChan <- err
+				}
+				return
+			}
+			if err := clientStream.SendMsg(&f); err != nil {
+				errChan <- err
+				return
+			}
+		}
+	}()
+
+	// Client -> Server (Returning data/response)
+	go func() {
+		for {
+			var f frame
+			if err := clientStream.RecvMsg(&f); err != nil {
+				if err == io.EOF {
+					errChan <- nil
+				} else {
+					errChan <- err
+				}
+				return
+			}
+			if err := serverStream.SendMsg(&f); err != nil {
+				errChan <- err
+				return
+			}
+		}
+	}()
+
+	// Wait for completion or error
+	for i := 0; i < 2; i++ {
+		if err := <-errChan; err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // Close closes all connections

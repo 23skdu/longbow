@@ -1,5 +1,11 @@
 package gpu
 
+// GPUConfig holds GPU-specific configuration
+type GPUConfig struct {
+	DeviceID  int
+	Dimension int
+}
+
 // Index defines the interface for a GPU-accelerated vector index.
 type Index interface {
 	// Add adds vectors to the index.

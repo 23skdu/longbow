@@ -472,15 +472,8 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 			return err
 		}
 
-		// Resolve location
-		var loc Location
-		var found bool
-		if hnsw, ok := ds.Index.(*HNSWIndex); ok {
-			loc, found = hnsw.GetLocation(VectorID(vid))
-		} else {
-			return status.Error(codes.Unimplemented, "index does not support deletion")
-		}
-
+		// Resolve location using interface method (works for all index types)
+		loc, found := ds.Index.GetLocation(VectorID(vid))
 		if !found {
 			return status.Error(codes.NotFound, "vector id not found")
 		}

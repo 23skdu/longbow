@@ -207,6 +207,40 @@ Complete reference for all Prometheus metrics exported by Longbow.
 **Labels**: `dataset`  
 **Description**: Total migrations to sharded HNSW
 
+### longbow_hnsw_pq_enabled
+
+**Type**: Gauge  
+**Labels**: `dataset`  
+**Description**: Whether Product Quantization is enabled (1) or disabled (0)
+
+---
+
+## Compaction
+
+### longbow_compaction_operations_total
+
+**Type**: Counter  
+**Labels**: `dataset`, `status`  
+**Description**: Total number of compaction operations
+
+### longbow_compaction_duration_seconds
+
+**Type**: Histogram  
+**Labels**: `dataset`  
+**Description**: Duration of compaction operations
+
+### longbow_compaction_batches_merged_total
+
+**Type**: Counter  
+**Labels**: `dataset`  
+**Description**: Total number of source batches merged by compaction
+
+### longbow_compaction_records_removed_total
+
+**Type**: Counter  
+**Labels**: `dataset`  
+**Description**: Total number of records (including tombstones) removed during compaction
+
 ---
 
 ## WAL & Persistence

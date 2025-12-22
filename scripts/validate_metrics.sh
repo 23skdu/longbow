@@ -1,6 +1,6 @@
 #!/bin/bash
-# Metrics Validation Script
-# Validates Longbow metrics across cluster nodes
+# Longbow Metrics Validation Script
+# Validates metrics across cluster nodes and analyzes dashboard coverage
 
 set -e
 

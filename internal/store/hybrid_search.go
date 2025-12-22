@@ -2,83 +2,118 @@ package store
 
 import (
 	"context"
-	"fmt"
-	"time"
 
 	"github.com/23skdu/longbow/internal/metrics"
+	"go.uber.org/zap"
 )
 
-// HybridSearch performs a vector search filtered by metadata criteria
-func (s *VectorStore) HybridSearch(ctx context.Context, datasetName string, queryVector []float32, k int, filters map[string]string) ([]SearchResult, error) {
-	start := time.Now()
-	metrics.FlightOperationsTotal.WithLabelValues("hybrid_search", "processing").Inc()
+// SearchHybrid performs a hybrid search combining dense vector search and sparse keyword search.
+func SearchHybrid(ctx context.Context, s *VectorStore, name string, query []float32, textQuery string, k int, alpha float32, rrfK int) ([]SearchResult, error) {
+	s.logger.Info("SearchHybrid called",
+		zap.String("dataset", name),
+		zap.String("text_query", textQuery),
+		zap.Float32("alpha", alpha),
+		zap.Int("k", k))
 
-	s.mu.RLock()
-	ds, ok := s.datasets[datasetName]
-	s.mu.RUnlock()
-
-	if !ok {
-		return nil, fmt.Errorf("dataset not found: %s", datasetName)
+	ds, err := s.getDataset(name)
+	if err != nil {
+		return nil, err
 	}
 
-	// 1. Build Filter Bitmap
-	// Combine all filters using AND logic
-	var filterBitmap *Bitset // Our thread-safe wrapper
+	ds.dataMu.RLock()
+	defer ds.dataMu.RUnlock()
+
+	var denseResults []SearchResult
+	var sparseResults []SearchResult
+
+	// 1. Dense (Vector) Search
+	if alpha > 0 && len(query) > 0 {
+		if ds.Index != nil {
+			denseResults = ds.Index.SearchVectors(query, k*2, nil)
+			metrics.HybridSearchVectorTotal.Inc()
+		}
+	}
+
+	// 2. Sparse (Keyword) Search
+	if alpha < 1.0 && textQuery != "" {
+		if ds.BM25Index != nil {
+			sparseResults = ds.BM25Index.SearchBM25(textQuery, k*2)
+			metrics.HybridSearchKeywordTotal.Inc()
+		}
+	}
+
+	// 3. Fusion logic
+	var finalResults []SearchResult
+	if alpha == 1.0 {
+		finalResults = denseResults
+	} else if alpha == 0.0 {
+		finalResults = sparseResults
+	} else {
+		// Fusion! Use RRF.
+		if rrfK <= 0 {
+			rrfK = 60 // Default
+		}
+		finalResults = ReciprocalRankFusion(denseResults, sparseResults, rrfK, k)
+	}
+
+	// Map internal IDs to user IDs (Phase 14 integration)
+	resolved := s.MapInternalToUserIDs(ds, finalResults)
+	if len(resolved) > k {
+		resolved = resolved[:k]
+	}
+
+	return resolved, nil
+}
+
+// HybridSearch performs a filtered vector search using inverted indexes for pre-filtering.
+func HybridSearch(ctx context.Context, s *VectorStore, name string, query []float32, k int, filters map[string]string) ([]SearchResult, error) {
+	ds, err := s.getDataset(name)
+	if err != nil {
+		return nil, err
+	}
 
 	ds.dataMu.RLock()
+	defer ds.dataMu.RUnlock()
+
+	var filterBitmap *Bitset
 	hasFilters := len(filters) > 0
+
 	if hasFilters {
 		for col, val := range filters {
 			idx, ok := ds.InvertedIndexes[col]
 			if !ok {
-				// Filter column not found or no index - treat as empty match (strict AND)
-				ds.dataMu.RUnlock()
-				return []SearchResult{}, nil
+				continue
 			}
 
-			termRaw := val // simple match
-			bmRaw := idx.Get(termRaw)
-
-			if bmRaw == nil || bmRaw.IsEmpty() {
-				ds.dataMu.RUnlock()
-				return []SearchResult{}, nil
+			bm := idx.Get(val)
+			if bm == nil {
+				// Term not found in this column, empty result
+				return nil, nil
 			}
 
-			// Intersect
 			if filterBitmap == nil {
-				// First filter
-				filterBitmap = &Bitset{bitmap: bmRaw} // Take ownership of Clone from Get
+				filterBitmap = &Bitset{bitmap: bm}
 			} else {
-				// AND
-				filterBitmap.bitmap.And(bmRaw)
-			}
-
-			// Short-circuit
-			if filterBitmap.bitmap.IsEmpty() {
-				ds.dataMu.RUnlock()
-				return []SearchResult{}, nil
+				filterBitmap.mu.Lock()
+				filterBitmap.bitmap.And(bm)
+				filterBitmap.mu.Unlock()
 			}
 		}
 	}
-	ds.dataMu.RUnlock()
 
-	// 3. Perform Search with Bitmap
 	var results []SearchResult
-	if hasFilters {
-		// Use optimized inverted index bitmap search
-		if ds.Index != nil {
-			results = ds.Index.SearchVectorsWithBitmap(queryVector, k, filterBitmap)
-		}
+	if filterBitmap != nil && filterBitmap.Count() > 0 {
+		// Perform filtered search
+		results = ds.Index.SearchVectorsWithBitmap(query, k, filterBitmap)
+	} else if !hasFilters {
+		// No filters, standard search
+		results = ds.Index.SearchVectors(query, k, nil)
 	} else {
-		// Standard search
-		// Empty filter list for standard search
-		if ds.Index != nil {
-			results = ds.Index.SearchVectors(queryVector, k, nil)
-		}
+		// Filters yielded no results
+		return nil, nil
 	}
 
-	metrics.FlightDurationSeconds.WithLabelValues("hybrid_search").Observe(time.Since(start).Seconds())
-
-	// 4. Map internal IDs to user IDs
-	return s.MapInternalToUserIDs(ds, results), nil
+	// Map internal IDs to user IDs
+	resolved := s.MapInternalToUserIDs(ds, results)
+	return resolved, nil
 }

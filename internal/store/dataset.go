@@ -42,6 +42,7 @@ type Dataset struct {
 
 	// Hybrid Search
 	InvertedIndexes map[string]*InvertedIndex
+	BM25Index       *BM25InvertedIndex
 }
 
 // IsSharded returns true if the dataset uses ShardedHNSW.
@@ -81,6 +82,7 @@ func NewDataset(name string, schema *arrow.Schema) *Dataset {
 		LWW:             NewTimestampMap(),
 		Merkle:          NewMerkleTree(),
 		InvertedIndexes: make(map[string]*InvertedIndex),
+		BM25Index:       NewBM25InvertedIndex(DefaultBM25Config()),
 	}
 }
 

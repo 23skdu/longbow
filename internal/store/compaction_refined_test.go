@@ -44,7 +44,7 @@ func TestCompactRecords_Incremental(t *testing.T) {
 	records := []arrow.RecordBatch{b1, b2, b3, b4, b5}
 	target := int64(300)
 
-	compacted, remapping, err := compactRecords(records, target)
+	compacted, remapping, err := compactRecords(records, nil, target, "test")
 	require.NoError(t, err)
 
 	require.Len(t, compacted, 3)
@@ -53,19 +53,20 @@ func TestCompactRecords_Incremental(t *testing.T) {
 	require.Equal(t, int64(100), compacted[2].NumRows())
 
 	require.Equal(t, 0, remapping[0].NewBatchIdx)
-	require.Equal(t, 0, remapping[0].RowOffset)
+	// remapping[0].NewRowIdxs should be 0..99
+	require.Equal(t, 0, remapping[0].NewRowIdxs[0])
 
 	require.Equal(t, 0, remapping[1].NewBatchIdx)
-	require.Equal(t, 100, remapping[1].RowOffset)
+	require.Equal(t, 100, remapping[1].NewRowIdxs[0])
 
 	require.Equal(t, 1, remapping[2].NewBatchIdx)
-	require.Equal(t, 0, remapping[2].RowOffset)
+	require.Equal(t, 0, remapping[2].NewRowIdxs[0])
 
 	require.Equal(t, 2, remapping[3].NewBatchIdx)
-	require.Equal(t, 0, remapping[3].RowOffset)
+	require.Equal(t, 0, remapping[3].NewRowIdxs[0])
 
 	require.Equal(t, 2, remapping[4].NewBatchIdx)
-	require.Equal(t, 50, remapping[4].RowOffset)
+	require.Equal(t, 50, remapping[4].NewRowIdxs[0])
 }
 
 // TestCompaction_IndexIntegrity validates HNSW index updates
@@ -91,12 +92,13 @@ func TestCompaction_IndexIntegrity(t *testing.T) {
 	// 2. Add Vectors in small batches
 	for i := 0; i < 10; i++ {
 		b := array.NewRecordBuilder(s.mem, schema)
-		strB := b.Field(0).(*array.StringBuilder)
+
+		bldr0 := b.Field(0).(*array.StringBuilder)
 		vecB := b.Field(1).(*array.FixedSizeListBuilder)
 		floatB := vecB.ValueBuilder().(*array.Float32Builder)
 
 		for j := 0; j < 10; j++ {
-			strB.Append(fmt.Sprintf("batch%d-row%d", i, j))
+			bldr0.Append(fmt.Sprintf("batch%d-row%d", i, j))
 			vecB.Append(true)
 			vec := make([]float32, vectorDim)
 			vec[0] = float32(i*10 + j)
@@ -106,6 +108,7 @@ func TestCompaction_IndexIntegrity(t *testing.T) {
 
 		ds.dataMu.Lock()
 		ds.Records = append(ds.Records, rec)
+		ds.BatchNodes = append(ds.BatchNodes, -1) // Unspecified node
 		batchIdx := len(ds.Records) - 1
 		ds.dataMu.Unlock()
 
@@ -127,10 +130,6 @@ func TestCompaction_IndexIntegrity(t *testing.T) {
 	res := ds.SearchDataset(query, 1)
 	require.Len(t, res, 1)
 
-	// Assuming SearchResult has Record and RowIdx fields
-	// Need to fetch from them. Record is public?
-	// If SearchResult uses pointers to RecordBatch, we should be careful about lifetime if we release.
-	// But let's check values.
 	// Verify result via Location Lookup
 	loc, found := ds.Index.GetLocation(res[0].ID)
 	require.True(t, found)
@@ -161,7 +160,7 @@ func TestCompaction_IndexIntegrity(t *testing.T) {
 	require.Equal(t, "batch5-row5", valAfter)
 }
 
-// TestCompaction_Tombstones verifies deletion preservation
+// TestCompaction_Tombstones verifies deletion filtering during compaction
 func TestCompaction_Tombstones(t *testing.T) {
 	s := NewVectorStore(memory.NewGoAllocator(), zap.NewNop(), 1<<30, 1<<20, time.Hour)
 	defer s.Close()
@@ -179,6 +178,7 @@ func TestCompaction_Tombstones(t *testing.T) {
 		rec := b.NewRecordBatch()
 		ds.dataMu.Lock()
 		ds.Records = append(ds.Records, rec)
+		ds.BatchNodes = append(ds.BatchNodes, -1)
 		ds.dataMu.Unlock()
 	}
 
@@ -194,16 +194,14 @@ func TestCompaction_Tombstones(t *testing.T) {
 	}
 	ds.Tombstones[2].Set(2)
 
-	// Compact with target 100 (merge all 4 -> 1 batch of 40)
+	// Compact with target 100 (merge all 4 -> 1 batch of 40 theoretically, but with filtering it will be 38)
 	s.compactionConfig.TargetBatchSize = 100
 	err := s.CompactDataset("tombstone_test")
 	require.NoError(t, err)
 
 	require.Len(t, ds.Records, 1)
-	require.Equal(t, int64(40), ds.Records[0].NumRows())
+	require.Equal(t, int64(38), ds.Records[0].NumRows())
 
-	tomb := ds.Tombstones[0]
-	require.NotNil(t, tomb)
-	require.True(t, tomb.Contains(5))
-	require.True(t, tomb.Contains(22))
+	// Tombstones should have been cleared because they are physically removed
+	require.Empty(t, ds.Tombstones)
 }

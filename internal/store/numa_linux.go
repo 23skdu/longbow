@@ -123,3 +123,18 @@ func (t *NUMATopology) String() string {
 	}
 	return sb.String()
 }
+
+// GetNodeForCPU returns the node ID for a given CPU, or -1 if not found.
+func (t *NUMATopology) GetNodeForCPU(cpu int) int {
+	if cpu < 0 {
+		return -1
+	}
+	for nodeID, cpus := range t.CPUs {
+		for _, c := range cpus {
+			if c == cpu {
+				return nodeID
+			}
+		}
+	}
+	return -1
+}

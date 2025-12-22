@@ -86,12 +86,40 @@ func (c *SmartClient) getClient(ctx context.Context, addr string) (flight.Client
 
 // DoGet performs a Flight DoGet with automatic redirection handling
 func (c *SmartClient) DoGet(ctx context.Context, ticket []byte) (flight.FlightService_DoGetClient, error) {
-	currentAddr := c.primaryAddr
-	attempts := 0
-	maxAttempts := 3
+	// Initial attempt
+	client, err := c.getClient(ctx, c.primaryAddr)
+	if err != nil {
+		return nil, err
+	}
 
-	for attempts < maxAttempts {
-		attempts++
+	stream, err := client.DoGet(ctx, &flight.Ticket{Ticket: ticket})
+	if err != nil {
+		// Handshake error check
+		if forwardErr := IsForwardRequired(err); forwardErr != nil {
+			// Fast path for immediate failures (rare for streams)
+			return c.retryDoGet(ctx, ticket, forwardErr.TargetAddr, 1)
+		}
+		return nil, err
+	}
+
+	return &smartDoGetStream{
+		FlightService_DoGetClient: stream,
+		sc:                        c,
+		ticket:                    ticket,
+		ctx:                       ctx,
+		stream:                    stream,
+		firstRecv:                 true,
+		attempt:                   1,
+	}, nil
+}
+
+// retryDoGet performs the retry logic
+func (c *SmartClient) retryDoGet(ctx context.Context, ticket []byte, targetAddr string, attempt int) (flight.FlightService_DoGetClient, error) {
+	maxAttempts := 3
+	currentAddr := targetAddr
+
+	for attempt < maxAttempts {
+		attempt++
 
 		client, err := c.getClient(ctx, currentAddr)
 		if err != nil {
@@ -100,23 +128,70 @@ func (c *SmartClient) DoGet(ctx context.Context, ticket []byte) (flight.FlightSe
 
 		stream, err := client.DoGet(ctx, &flight.Ticket{Ticket: ticket})
 		if err == nil {
-			return stream, nil
+			return &smartDoGetStream{
+				FlightService_DoGetClient: stream,
+				sc:                        c,
+				ticket:                    ticket,
+				ctx:                       ctx,
+				stream:                    stream,
+				firstRecv:                 true,
+				attempt:                   attempt,
+			}, nil
 		}
 
-		// Check for forward error
 		if forwardErr := IsForwardRequired(err); forwardErr != nil {
-			// Update target and retry
 			currentAddr = forwardErr.TargetAddr
 			if currentAddr == "" {
 				return nil, fmt.Errorf("redirect with empty address")
 			}
 			continue
 		}
-
 		return nil, err
 	}
-
 	return nil, fmt.Errorf("max redirects exceeded")
+}
+
+// smartDoGetStream wraps the stream to intercept the first Recv()
+type smartDoGetStream struct {
+	flight.FlightService_DoGetClient
+	sc        *SmartClient
+	ticket    []byte
+	ctx       context.Context
+	stream    flight.FlightService_DoGetClient
+	firstRecv bool
+	attempt   int
+}
+
+func (s *smartDoGetStream) Recv() (*flight.FlightData, error) {
+	data, err := s.stream.Recv()
+	if err != nil && s.firstRecv {
+		// Check for redirect
+		if forwardErr := IsForwardRequired(err); forwardErr != nil {
+			// Retry!
+			newStream, retryErr := s.sc.retryDoGet(s.ctx, s.ticket, forwardErr.TargetAddr, s.attempt)
+			if retryErr != nil {
+				return nil, retryErr
+			}
+			// Update internal stream (type assertion to get the inner wrapper or just use the interface)
+			// But wait, retryDoGet returns a WRAPPED stream.
+			// We need the UNDERLYING stream to continue reading?
+			// No, retryDoGet returns a *new* wrapper.
+			// We can just forward calls to the new wrapper?
+			// Actually, implementing this recursively is tricky if we just return the new stream's Recv.
+
+			// Unbox the new wrapper to get state?
+			// Or just swap `s.stream` with the new wrapper's stream?
+			// No, `retryDoGet` returns a wrapper. The wrapper has the new `stream`.
+			if wrapped, ok := newStream.(*smartDoGetStream); ok {
+				s.stream = wrapped.stream
+				s.attempt = wrapped.attempt
+				s.firstRecv = true // Reset for the new stream
+				return s.Recv()    // Recursive call
+			}
+		}
+	}
+	s.firstRecv = false
+	return data, err
 }
 
 // DoPut performs a Flight DoPut with automatic redirection handling (best-effort)

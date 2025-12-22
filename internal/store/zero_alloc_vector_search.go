@@ -32,6 +32,7 @@ func (p *ZeroAllocVectorSearchParser) Parse(data []byte) (VectorSearchRequest, e
 	// Reset state
 	p.result.Dataset = ""
 	p.result.K = 0
+	p.result.LocalOnly = false
 	p.vector = p.vector[:0]
 	p.filters = p.filters[:0]
 
@@ -106,6 +107,13 @@ func (p *ZeroAllocVectorSearchParser) Parse(data []byte) (VectorSearchRequest, e
 			if err != nil {
 				return p.result, err
 			}
+			i = newPos
+		case "local_only":
+			val, newPos, err := parseBool(data, i)
+			if err != nil {
+				return p.result, err
+			}
+			p.result.LocalOnly = val
 			i = newPos
 		default:
 			// Skip unknown fields
@@ -240,6 +248,16 @@ func (p *ZeroAllocVectorSearchParser) parseFilters(data []byte, pos int) (int, e
 	}
 
 	return pos, errors.New("unexpected end in filters")
+}
+
+func parseBool(data []byte, pos int) (bool, int, error) {
+	if pos+4 <= len(data) && string(data[pos:pos+4]) == "true" {
+		return true, pos + 4, nil
+	}
+	if pos+5 <= len(data) && string(data[pos:pos+5]) == "false" {
+		return false, pos + 5, nil
+	}
+	return false, pos, errors.New("expected boolean")
 }
 
 // Ensure imports are used

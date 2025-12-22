@@ -225,6 +225,12 @@ def command_search(args, data_client, meta_client):
         request["alpha"] = args.alpha
         print(f"Hybrid search with text='{args.text_query}' alpha={args.alpha}")
 
+    if args.local:
+        request["local_only"] = True
+        print("Performing LOCAL-ONLY search")
+    else:
+        print("Performing GLOBAL search")
+    
     payload = json.dumps(request).encode("utf-8")
     
     try:
@@ -400,6 +406,7 @@ def main():
     search_parser.add_argument("--dim", type=int, default=128, help="Vector dimension")
     search_parser.add_argument("--k", type=int, default=5, help="Top K results")
     search_parser.add_argument("--text-query", help="Text query for hybrid search")
+    search_parser.add_argument("--local", action="store_true", help="Force local-only search")
     search_parser.add_argument("--alpha", type=float, default=0.5, help="Hybrid alpha (0=sparse, 1=dense)")
     search_parser.add_argument("--filter", action="append", help="Filter: field:op:value")
 

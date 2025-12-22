@@ -48,6 +48,7 @@ type HNSWIndex struct {
 	activeReaders atomic.Int32  // Count of readers in current epoch
 	resultPool    *resultPool   // Pool for search result slices
 	Metric        VectorMetric  // Distance metric used by this index
+	numaTopology  *NUMATopology // NUMA topology for cross-node tracking
 
 	nextVecID atomic.Uint32
 
@@ -70,6 +71,9 @@ func NewHNSWIndexWithMetric(ds *Dataset, metric VectorMetric) *HNSWIndex {
 		locations: make([]Location, 0),
 		Metric:    metric,
 	}
+	if ds != nil {
+		h.numaTopology = ds.Topo
+	}
 	// Initialize the graph with VectorID as the key type.
 	h.Graph = hnsw.NewGraph[VectorID]()
 	h.resultPool = newResultPool()
@@ -91,9 +95,10 @@ func NewHNSWIndexWithMetric(ds *Dataset, metric VectorMetric) *HNSWIndex {
 // NewHNSWIndexWithCapacity creates a new index with pre-allocated locations slice.
 func NewHNSWIndexWithCapacity(ds *Dataset, capacity int) *HNSWIndex {
 	h := &HNSWIndex{
-		dataset:   ds,
-		locations: make([]Location, 0, capacity),
-		Metric:    MetricEuclidean,
+		dataset:      ds,
+		locations:    make([]Location, 0, capacity),
+		Metric:       MetricEuclidean,
+		numaTopology: ds.Topo,
 	}
 	h.Graph = hnsw.NewGraph[VectorID]()
 	h.resultPool = newResultPool()
@@ -105,7 +110,7 @@ func NewHNSWIndexWithCapacity(ds *Dataset, capacity int) *HNSWIndex {
 // BatchRemapInfo describes how a batch ID maps to a new one
 type BatchRemapInfo struct {
 	NewBatchIdx int
-	RowOffset   int
+	NewRowIdxs  []int // Maps oldRowIdx to newRowIdx in NewBatchIdx, or -1 if dropped
 }
 
 // RemapLocations safely updates vector locations after compaction.
@@ -116,9 +121,19 @@ func (h *HNSWIndex) RemapLocations(remapping map[int]BatchRemapInfo) {
 
 	for i, loc := range h.locations {
 		if info, ok := remapping[loc.BatchIdx]; ok {
-			h.locations[i] = Location{
-				BatchIdx: info.NewBatchIdx,
-				RowIdx:   loc.RowIdx + info.RowOffset,
+			if loc.RowIdx >= 0 && loc.RowIdx < len(info.NewRowIdxs) {
+				newRowIdx := info.NewRowIdxs[loc.RowIdx]
+				if newRowIdx == -1 {
+					h.locations[i] = Location{BatchIdx: -1, RowIdx: -1}
+				} else {
+					h.locations[i] = Location{
+						BatchIdx: info.NewBatchIdx,
+						RowIdx:   newRowIdx,
+					}
+				}
+			} else {
+				// Out of bounds - should not happen if compaction is correct
+				h.locations[i] = Location{BatchIdx: -1, RowIdx: -1}
 			}
 		}
 	}
@@ -130,6 +145,7 @@ func (h *HNSWIndex) SetPQEncoder(encoder *PQEncoder) {
 	defer h.pqCodesMu.Unlock()
 	h.pqEncoder = encoder
 	h.pqEnabled = true
+	metrics.HNSWPQEnabled.WithLabelValues(h.dataset.Name).Set(1)
 	// Initialize code storage if needed, but typically we do this incrementally.
 	if h.pqCodes == nil {
 		h.pqCodes = make([][]uint8, 0)
@@ -141,6 +157,10 @@ func (h *HNSWIndex) SetPQEncoder(encoder *PQEncoder) {
 // TrainPQ trains a PQ encoder on the current dataset elements and enables it.
 // This is a blocking operation.
 func (h *HNSWIndex) TrainPQ(dimensions, m, ksub, iterations int) error {
+	start := time.Now()
+	defer func() {
+		metrics.HNSWPQTrainingDuration.WithLabelValues(h.dataset.Name).Observe(time.Since(start).Seconds())
+	}()
 	// 1. Gather all current vectors
 	// This might be expensive for large datasets.
 	// For now, we take a sample or all.
@@ -587,6 +607,23 @@ func (h *HNSWIndex) getVectorUnsafe(id VectorID) (vec []float32, release func())
 	}
 	loc := h.locations[id]
 	h.mu.RUnlock()
+
+	// NUMA instrumentation: check if we are accessing data from a remote node
+	if h.numaTopology != nil && h.numaTopology.NumNodes > 1 && loc.BatchIdx != -1 {
+		if loc.BatchIdx < len(h.dataset.BatchNodes) {
+			dataNode := h.dataset.BatchNodes[loc.BatchIdx]
+			if dataNode != -1 {
+				currCPU := GetCurrentCPU()
+				workerNode := h.numaTopology.GetNodeForCPU(currCPU)
+				if workerNode != -1 && workerNode != dataNode {
+					metrics.NUMACrossNodeAccessTotal.WithLabelValues(
+						fmt.Sprintf("%d", workerNode),
+						fmt.Sprintf("%d", dataNode),
+					).Inc()
+				}
+			}
+		}
+	}
 
 	indexLockStart6 := time.Now()
 	h.dataset.dataMu.RLock()
@@ -1152,10 +1189,15 @@ func (h *HNSWIndex) SearchByID(id VectorID, k int) []VectorID {
 	h.mu.RUnlock()
 
 	res := h.resultPool.get(len(neighbors))
-	for i, n := range neighbors {
-		res[i] = n.Key
+	idx := 0
+	for _, n := range neighbors {
+		loc := h.locations[n.Key]
+		if loc.BatchIdx != -1 {
+			res[idx] = n.Key
+			idx++
+		}
 	}
-	return res
+	return res[:idx]
 }
 
 // PutResults returns a search result slice to the pool for reuse.
@@ -1256,10 +1298,15 @@ func (h *HNSWIndex) SearchByIDUnsafe(id VectorID, k int) []VectorID {
 
 	// Allocate result slice from pool
 	res := h.resultPool.get(len(neighbors))
-	for i, n := range neighbors {
-		res[i] = n.Key
+	idx := 0
+	for _, n := range neighbors {
+		loc := h.locations[n.Key]
+		if loc.BatchIdx != -1 {
+			res[idx] = n.Key
+			idx++
+		}
 	}
-	return res
+	return res[:idx]
 }
 
 // GetDimension returns the vector dimension for this index

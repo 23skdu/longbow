@@ -43,12 +43,12 @@ func releaseBatches(batches []arrow.RecordBatch) {
 
 // TestCompactRecordsEmpty verifies empty input returns empty output
 func TestCompactRecordsEmpty(t *testing.T) {
-	result, _, _ := compactRecords(nil, 1000)
+	result, _, _ := compactRecords(nil, nil, 1000, "test")
 	if len(result) != 0 {
 		t.Errorf("expected empty result, got %d batches", len(result))
 	}
 
-	result, _, _ = compactRecords([]arrow.RecordBatch{}, 1000)
+	result, _, _ = compactRecords([]arrow.RecordBatch{}, nil, 1000, "test")
 	if len(result) != 0 {
 		t.Errorf("expected empty result, got %d batches", len(result))
 	}
@@ -64,7 +64,7 @@ func TestCompactRecordsMergesSmallBatches(t *testing.T) {
 	defer releaseBatches(batches)
 
 	// Target 500 rows per batch - should result in 2 batches
-	result, _, _ := compactRecords(batches, 500)
+	result, _, _ := compactRecords(batches, nil, 500, "test")
 	defer releaseBatches(result)
 
 	if len(result) != 2 {
@@ -88,7 +88,7 @@ func TestCompactRecordsLargeBatchUnchanged(t *testing.T) {
 	defer batch.Release()
 
 	// Target 500 rows - but we don't split, just don't merge
-	result, _, _ := compactRecords([]arrow.RecordBatch{batch}, 500)
+	result, _, _ := compactRecords([]arrow.RecordBatch{batch}, nil, 500, "test")
 	defer releaseBatches(result)
 
 	// Since NO compaction was needed, our optimization returns nil to indicate no change.
@@ -106,7 +106,7 @@ func TestCompactRecordsPreservesSchema(t *testing.T) {
 	defer releaseBatches(batches)
 
 	originalSchema := batches[0].Schema()
-	result, _, _ := compactRecords(batches, 200)
+	result, _, _ := compactRecords(batches, nil, 200, "test")
 	defer releaseBatches(result)
 
 	if len(result) != 1 {
@@ -125,7 +125,7 @@ func TestCompactRecordsPreservesData(t *testing.T) {
 	batches[1] = makeTestBatch(t, 5) // ids: 0,1,2,3,4
 	defer releaseBatches(batches)
 
-	result, _, _ := compactRecords(batches, 100)
+	result, _, _ := compactRecords(batches, nil, 100, "test")
 	defer releaseBatches(result)
 
 	if len(result) != 1 {
@@ -142,5 +142,53 @@ func TestCompactRecordsPreservesData(t *testing.T) {
 		if idCol.Value(i) != exp {
 			t.Errorf("row %d: expected id=%d, got %d", i, exp, idCol.Value(i))
 		}
+	}
+}
+
+// TestCompactRecordsFiltersTombstones verifies that deleted rows are removed
+func TestCompactRecordsFiltersTombstones(t *testing.T) {
+	batches := make([]arrow.RecordBatch, 2)
+	batches[0] = makeTestBatch(t, 10) // 0..9
+	batches[1] = makeTestBatch(t, 10) // 0..9
+	defer releaseBatches(batches)
+
+	tombstones := make(map[int]*Bitset)
+	t0 := NewBitset()
+	t0.Set(0) // Remove id 0 from first batch
+	t0.Set(5) // Remove id 5 from first batch
+	tombstones[0] = t0
+
+	t1 := NewBitset()
+	t1.Set(9) // Remove id 9 from second batch
+	tombstones[1] = t1
+
+	// Compacting both into one batch
+	result, remapping, err := compactRecords(batches, tombstones, 1000, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer releaseBatches(result)
+
+	if len(result) != 1 {
+		t.Fatalf("expected 1 batch, got %d", len(result))
+	}
+
+	// 20 total - 3 deleted = 17 rows
+	if result[0].NumRows() != 17 {
+		t.Errorf("expected 17 rows, got %d", result[0].NumRows())
+	}
+
+	// Verify remapping
+	info0 := remapping[0]
+	if info0.NewRowIdxs[0] != -1 {
+		t.Errorf("row 0 in batch 0 should be deleted (-1), got %d", info0.NewRowIdxs[0])
+	}
+	if info0.NewRowIdxs[1] != 0 {
+		t.Errorf("row 1 in batch 0 should be at new index 0, got %d", info0.NewRowIdxs[1])
+	}
+
+	info1 := remapping[1]
+	if info1.NewRowIdxs[9] != -1 {
+		t.Errorf("row 9 in batch 1 should be deleted, got %d", info1.NewRowIdxs[9])
 	}
 }

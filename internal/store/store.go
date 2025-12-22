@@ -540,7 +540,9 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 	s.mu.Lock()
 	if _, ok := s.datasets[name]; !ok {
 		// Create new dataset with schema from reader
-		s.datasets[name] = NewDataset(name, r.Schema())
+		ds := NewDataset(name, r.Schema())
+		ds.Topo = s.numaTopology
+		s.datasets[name] = ds
 	}
 	ds = s.datasets[name]
 	s.mu.Unlock()
@@ -703,6 +705,17 @@ func (s *VectorStore) flushPutBatch(ds *Dataset, name string, batch []arrow.Reco
 
 	batchStartIdx := len(ds.Records)
 	ds.Records = append(ds.Records, batch...)
+
+	// Record NUMA node for these batches
+	currCPU := GetCurrentCPU()
+	currNode := -1
+	if s.numaTopology != nil {
+		currNode = s.numaTopology.GetNodeForCPU(currCPU)
+	}
+	for range batch {
+		ds.BatchNodes = append(ds.BatchNodes, currNode)
+	}
+
 	ds.dataMu.Unlock()
 	metrics.DatasetLockWaitDurationSeconds.WithLabelValues("put").Observe(time.Since(dsLockStart).Seconds())
 
@@ -841,13 +854,19 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 				var err error
 
 				if len(query.Filters) > 0 {
+					filterStart := time.Now()
 					filtered, err := filterRecord(ctx, rec, query.Filters)
+					metrics.FilterExecutionDurationSeconds.WithLabelValues(name).Observe(time.Since(filterStart).Seconds())
 					if err != nil {
 						select {
 						case errChan <- err:
 						default:
 						} // Try send error
 						return
+					}
+					if rec.NumRows() > 0 && filtered != nil {
+						ratio := float64(filtered.NumRows()) / float64(rec.NumRows())
+						metrics.FilterSelectivityRatio.WithLabelValues(name).Observe(ratio)
 					}
 					if filtered != nil && filtered.NumRows() > 0 {
 						processed = filtered
@@ -1822,6 +1841,7 @@ func (s *VectorStore) StoreRecordBatch(ctx context.Context, name string, rec arr
 	ds, ok := s.datasets[name]
 	if !ok {
 		ds = NewDataset(name, rec.Schema())
+		ds.Topo = s.numaTopology
 		s.datasets[name] = ds
 	}
 	s.mu.Unlock()

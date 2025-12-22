@@ -48,7 +48,7 @@ func TestAutoSharding_Trigger(t *testing.T) {
 
 	// Add first 5 vectors (rec1, row 0-4)
 	for i := 0; i < 5; i++ {
-		err := idx.AddByLocation(0, i)
+		_, err := idx.AddByLocation(0, i)
 		require.NoError(t, err)
 	}
 
@@ -72,7 +72,7 @@ func TestAutoSharding_Trigger(t *testing.T) {
 
 	// Add remaining vectors from rec1 (5-9)
 	for i := 5; i < 10; i++ {
-		err := idx.AddByLocation(0, i)
+		_, err := idx.AddByLocation(0, i)
 		require.NoError(t, err)
 	}
 
@@ -82,7 +82,7 @@ func TestAutoSharding_Trigger(t *testing.T) {
 	ds.dataMu.Unlock()
 
 	for i := 0; i < 10; i++ {
-		err := idx.AddByLocation(1, i)
+		_, err := idx.AddByLocation(1, i)
 		require.NoError(t, err)
 	}
 
@@ -127,7 +127,7 @@ func TestAutoSharding_Concurrency(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		for i := 0; i < numVectors; i++ {
-			err := idx.AddByLocation(0, i)
+			_, err := idx.AddByLocation(0, i)
 			assert.NoError(t, err)
 			time.Sleep(100 * time.Microsecond) // Simulate work
 		}
@@ -186,7 +186,7 @@ func TestAutoSharding_AddByRecord(t *testing.T) {
 	idx := NewAutoShardingIndex(ds, config)
 
 	// Add 1st
-	err := idx.AddByRecord(rec, 0, 0)
+	_, err := idx.AddByRecord(rec, 0, 0)
 	require.NoError(t, err)
 
 	assert.True(t, idx.sharded)

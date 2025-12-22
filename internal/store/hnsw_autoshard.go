@@ -42,16 +42,16 @@ func NewAutoShardingIndex(ds *Dataset, config AutoShardingConfig) *AutoShardingI
 }
 
 // AddByLocation adds a vector to the index.
-func (a *AutoShardingIndex) AddByLocation(batchIdx, rowIdx int) error {
+func (a *AutoShardingIndex) AddByLocation(batchIdx, rowIdx int) (uint32, error) {
 	a.mu.RLock()
 	// Optimistic check: if not sharded, we might trigger migration *after* this add.
 	// But simply calling add is safe.
-	err := a.current.AddByLocation(batchIdx, rowIdx)
+	id, err := a.current.AddByLocation(batchIdx, rowIdx)
 	currentLen := a.current.Len()
 	a.mu.RUnlock()
 
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	// Check threshold asynchronously or synchronously?
@@ -60,24 +60,24 @@ func (a *AutoShardingIndex) AddByLocation(batchIdx, rowIdx int) error {
 		a.migrateToSharded()
 	}
 
-	return nil
+	return id, nil
 }
 
 // AddByRecord adds a vector from a record batch.
-func (a *AutoShardingIndex) AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx int) error {
+func (a *AutoShardingIndex) AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32, error) {
 	a.mu.RLock()
-	err := a.current.AddByRecord(rec, rowIdx, batchIdx)
+	id, err := a.current.AddByRecord(rec, rowIdx, batchIdx)
 	currentLen := a.current.Len()
 	a.mu.RUnlock()
 
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	if !a.sharded && currentLen >= a.config.ShardThreshold {
 		a.migrateToSharded()
 	}
-	return nil
+	return id, nil
 }
 
 // migrateToSharded performs the migration from HNSWIndex to ShardedHNSW.
@@ -147,7 +147,8 @@ func (a *AutoShardingIndex) migrateToSharded() {
 
 		// Add to new index
 		// Use AddByLocation which looks up data in dataset.
-		err := newIndex.AddByLocation(loc.BatchIdx, loc.RowIdx)
+		// Ignore returned ID (we assume it preserves order 0..N)
+		_, err := newIndex.AddByLocation(loc.BatchIdx, loc.RowIdx)
 		if err != nil {
 			fmt.Printf("Error migrating vector %d: %v\n", id, err)
 			// Continue or abort?
@@ -173,6 +174,13 @@ func (a *AutoShardingIndex) SearchVectors(query []float32, k int, filters []Filt
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return a.current.SearchVectors(query, k, filters)
+}
+
+// SearchVectorsWithBitmap implements VectorIndex.
+func (a *AutoShardingIndex) SearchVectorsWithBitmap(query []float32, k int, filter *Bitset) []SearchResult {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.current.SearchVectorsWithBitmap(query, k, filter)
 }
 
 // Len implements VectorIndex.

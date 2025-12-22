@@ -2,6 +2,7 @@ package sync
 
 import (
 	"context"
+	"io"
 	"net"
 	"testing"
 	"time"
@@ -89,7 +90,7 @@ func TestSyncWorker_Replication(t *testing.T) {
 	writer.Close()
 	require.NoError(t, putStream.CloseSend())
 	_, err = putStream.Recv() // wait for ack
-	require.NoError(t, err)
+	require.Equal(t, io.EOF, err)
 
 	// Wait for WAL flush on leader
 	time.Sleep(100 * time.Millisecond)

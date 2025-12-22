@@ -60,8 +60,8 @@ func TestGRPCServerConfigDefaults(t *testing.T) {
 		t.Fatalf("Failed to process config: %v", err)
 	}
 
-	// Default: 64MB
-	expectedMaxRecv := 64 * 1024 * 1024
+	// Default: 512MB
+	expectedMaxRecv := 512 * 1024 * 1024
 	if cfg.GRPCMaxRecvMsgSize != expectedMaxRecv {
 		t.Errorf("GRPCMaxRecvMsgSize default = %d, want %d", cfg.GRPCMaxRecvMsgSize, expectedMaxRecv)
 	}

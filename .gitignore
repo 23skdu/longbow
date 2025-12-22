@@ -220,3 +220,23 @@ coverage.out
 *.out
 tmp/
 debug/
+
+# User Requested Robust Python Ignores
+__pycache__
+__pycache__/
+*.py[cod]
+*.class
+.venv
+.venv/
+venv
+venv/
+venv*
+.venv*
+.pytest_cache
+.pytest_cache/
+.mypy_cache
+.mypy_cache/
+*.egg-info
+*.egg-info/
+.coverage
+htmlcov/

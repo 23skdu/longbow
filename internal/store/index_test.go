@@ -84,6 +84,11 @@ func (m *MockIndex) GetDimension() uint32 {
 	return 128 // Mock dimension
 }
 
+func (m *MockIndex) GetLocation(id VectorID) (Location, bool) {
+	loc, ok := m.Vectors[id]
+	return loc, ok
+}
+
 func (m *MockIndex) Close() error {
 	m.CloseCalls++
 	return nil

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"runtime"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -85,6 +86,10 @@ func NewHNSWIndexWithMetric(ds *Dataset, metric VectorMetric) *HNSWIndex {
 	h.resultPool = newResultPool()
 	// Set distance function based on metric
 	h.Graph.Distance = h.GetDistanceFunc()
+	// Set default HNSW parameters
+	// h.Graph.EfSearch = 100
+	// h.Graph.EfConstruction = 200
+	// h.Graph.M = 32
 
 	// Initialize striped locks
 	h.numStripes = runtime.NumCPU() * 2
@@ -504,7 +509,7 @@ func (h *HNSWIndex) getVectorUnsafe(id VectorID) (vec []float32, release func())
 }
 
 // Add inserts a new vector location into the index and adds it to the graph.
-func (h *HNSWIndex) Add(batchIdx, rowIdx int) error {
+func (h *HNSWIndex) Add(batchIdx, rowIdx int) (uint32, error) {
 	// 1. Allocate ID atomically
 	id := VectorID(h.nextVecID.Add(1) - 1)
 
@@ -526,7 +531,7 @@ func (h *HNSWIndex) Add(batchIdx, rowIdx int) error {
 	// Note: We need the dataset lock for this
 	vecRaw := h.getVectorDirectLocked(id)
 	if vecRaw == nil {
-		return nil
+		return 0, nil
 	}
 	vec := vecRaw
 
@@ -549,14 +554,14 @@ func (h *HNSWIndex) Add(batchIdx, rowIdx int) error {
 	if nodeCount > 1 {
 		metrics.HnswGraphHeight.WithLabelValues(h.dataset.Name).Set(math.Log(nodeCount) / math.Log(4))
 	}
-	return nil
+	return uint32(id), nil
 }
 
 // AddSafe adds a vector using a direct record batch reference.
 // It COPIES the vector to ensure it remains stable even if the record batch is released.
-func (h *HNSWIndex) AddSafe(rec arrow.RecordBatch, rowIdx, batchIdx int) error {
+func (h *HNSWIndex) AddSafe(rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32, error) {
 	if rec == nil {
-		return fmt.Errorf("AddSafe: record is nil")
+		return 0, fmt.Errorf("AddSafe: record is nil")
 	}
 
 	// 1. Allocate ID atomically
@@ -574,12 +579,12 @@ func (h *HNSWIndex) AddSafe(rec arrow.RecordBatch, rowIdx, batchIdx int) error {
 	}
 
 	if vecCol == nil {
-		return fmt.Errorf("AddSafe: vector column not found")
+		return 0, fmt.Errorf("AddSafe: vector column not found")
 	}
 
 	listArr, ok := vecCol.(*array.FixedSizeList)
 	if !ok || listArr == nil || listArr.Data() == nil || len(listArr.Data().Children()) == 0 {
-		return fmt.Errorf("AddSafe: invalid vector column format")
+		return 0, fmt.Errorf("AddSafe: invalid vector column format")
 	}
 
 	values := listArr.Data().Children()[0]
@@ -591,7 +596,7 @@ func (h *HNSWIndex) AddSafe(rec arrow.RecordBatch, rowIdx, batchIdx int) error {
 	end := start + width
 
 	if start < 0 || end > floatArr.Len() {
-		return fmt.Errorf("AddSafe: row index out of bounds")
+		return 0, fmt.Errorf("AddSafe: row index out of bounds")
 	}
 
 	vec := floatArr.Float32Values()[start:end]
@@ -629,17 +634,132 @@ func (h *HNSWIndex) AddSafe(rec arrow.RecordBatch, rowIdx, batchIdx int) error {
 		metrics.HnswGraphHeight.WithLabelValues(h.dataset.Name).Set(math.Log(nodeCount) / math.Log(4))
 	}
 
-	return nil
+	return uint32(id), nil
 }
 
 // AddByLocation implements VectorIndex interface for HNSWIndex.
-func (h *HNSWIndex) AddByLocation(batchIdx, rowIdx int) error {
+func (h *HNSWIndex) AddByLocation(batchIdx, rowIdx int) (uint32, error) {
 	return h.Add(batchIdx, rowIdx)
 }
 
 // AddByRecord implements VectorIndex interface for HNSWIndex.
-func (h *HNSWIndex) AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx int) error {
+func (h *HNSWIndex) AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32, error) {
 	return h.AddSafe(rec, rowIdx, batchIdx)
+}
+
+// SearchVectorsWithBitmap returns k nearest neighbors filtered by a bitset.
+func (h *HNSWIndex) SearchVectorsWithBitmap(query []float32, k int, filter *Bitset) []SearchResult {
+	if filter == nil || filter.Count() == 0 {
+		// Empty filter means NO results allowed? Or all?
+		// Typically filter means "Must be in this set". Empty set = no results.
+		// If filter is nil, we assume "No filtering"?? No, caller should pass nil if no filtering.
+		// Interface signature: filter *Bitset.
+		// If it's nil, we could treat as "Allow All", but explicit method implies filtering.
+		// Let's assume filter is required.
+		return []SearchResult{}
+	}
+
+	defer func(start time.Time) {
+		metrics.VectorSearchLatencySeconds.WithLabelValues(h.dataset.Name).Observe(time.Since(start).Seconds())
+	}(time.Now())
+
+	// Heuristic: If filter is very restrictive (small count), Brute Force might be faster.
+	// Check count.
+	count := filter.Count()
+	if count < 1000 {
+		// Brute force: iterate set bits, compute distance.
+		return h.searchBruteForceWithBitmap(query, k, filter)
+	}
+
+	// HNSW Post-Filtering with Oversampling
+	limit := k * 10
+
+	h.mu.RLock()
+	neighbors := h.Graph.Search(query, limit)
+	h.mu.RUnlock()
+	fmt.Println("DEBUG HNSW NEIGHBORS:", len(neighbors))
+
+	res := make([]SearchResult, 0, k)
+	resultCount := 0
+
+	// panic(fmt.Sprintf("DEBUG HNSW: Found Neighbors=%d", len(neighbors)))
+
+	for _, n := range neighbors {
+		if resultCount >= k {
+			break
+		}
+
+		id := uint32(n.Key)
+		// Check Bitmap
+		// Bitset is thread-safe wrapper around Roaring.
+		if !filter.Contains(int(id)) {
+			continue
+		}
+
+		// Valid match
+		// Re-verify existence (sanity check)
+		_, found := h.getLocationStriped(VectorID(id))
+		if !found {
+			continue
+		}
+
+		// Assuming n.Distance is available based on previous analysis of coder/hnsw
+		// If n (hnsw.Item) doesn't have Distance exposed, we'd need to recompute.
+		// But let's assume implementation details of coder/hnsw (which I can't see but standard impls have it).
+		// Wait, previously I recomputed distance. I should be consistent.
+		// Recomputing distance here for safety until confirmed.
+
+		// To recompute, we need vector.
+		// Use Unsafe get?
+		vec, release := h.getVectorUnsafe(VectorID(id))
+		if vec != nil {
+			distFunc := h.GetDistanceFunc()
+			dist := distFunc(query, vec)
+			res = append(res, SearchResult{ID: VectorID(id), Score: dist})
+			resultCount++
+			release()
+		}
+	}
+	return res
+}
+
+func (h *HNSWIndex) searchBruteForceWithBitmap(query []float32, k int, filter *Bitset) []SearchResult {
+	// 1. Get all IDs from filter
+	ids := filter.ToUint32Array()
+	if len(ids) == 0 {
+		return []SearchResult{}
+	}
+
+	// 2. Iterate and compute distances
+	distFunc := h.GetDistanceFunc()
+	results := make([]SearchResult, 0, len(ids))
+
+	for _, id := range ids {
+		vec, release := h.getVectorUnsafe(VectorID(id))
+		if vec == nil {
+			continue
+		}
+
+		dist := distFunc(query, vec)
+		results = append(results, SearchResult{
+			ID:    VectorID(id),
+			Score: dist,
+		})
+		release()
+	}
+
+	// 3. Sort and truncate to K
+	// Using simple sort for now, could use a heap for better performance if len(ids) is large
+	// but this path is intended for highly selective filters.
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Score < results[j].Score
+	})
+
+	if len(results) > k {
+		results = results[:k]
+	}
+
+	return results
 }
 
 // Warmup implements Index interface.

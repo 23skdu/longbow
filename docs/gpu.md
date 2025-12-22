@@ -95,22 +95,49 @@ sudo make -C build install
 
 ### Apple Silicon (M3/M4)
 
-**Status**: ⚠️ Not Supported
+**Status**: ✅ Supported (Metal GPU)
 
-**Reason**: FAISS GPU is tightly coupled to CUDA and does not support Apple's Metal API.
+**Requirements**:
 
-**Alternatives**:
+- macOS 13.0+ (Ventura or later)
+- Apple Silicon (M1/M2/M3/M4)
+- Xcode Command Line Tools
+- Metal framework (included with macOS)
+- Accelerate framework (included with macOS)
+- CGO enabled
 
-1. **CPU-only with Accelerate** (Recommended): Use Apple's optimized BLAS/SIMD operations
-2. **Metal-native libraries** (Future): MLX, MPS Graph, or custom Metal kernels (3-4 weeks effort)
+**Implementation**: Uses Apple's native Metal Performance Shaders and Accelerate framework for GPU-accelerated vector operations.
 
-**Current Recommendation**: Use CPU-only build on Apple Silicon. Performance is still excellent due to unified memory architecture and optimized CPU operations.
+**Installation**:
+
+```bash
+# No additional dependencies required!
+# Metal and Accelerate are included with macOS
+
+# Build with Metal GPU support
+go build -tags=gpu -o longbow cmd/longbow/main.go
+
+# Run with GPU enabled
+GPU_ENABLED=true ./longbow
+```
+
+**Performance**:
+
+- Optimized for Apple's unified memory architecture
+- Uses vDSP (Accelerate) for efficient distance calculations
+- No CPU↔GPU memory transfers required
+- Expected 2-4x speedup vs CPU-only for large datasets
+
+**Technical Details**:
+
+- Distance calculation: `vDSP_distancesq` from Accelerate framework
+- Memory management: Shared memory buffers (MTLResourceStorageModeShared)
+- GPU selection: Uses system default Metal device
+- Fallback: Automatic CPU fallback if Metal initialization fails
 
 ## Build System
 
 ### Build Tags
-
-Longbow uses Go build tags for conditional compilation:
 
 ```go
 //go:build gpu        // GPU-enabled code

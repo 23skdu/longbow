@@ -36,8 +36,6 @@ Vectors are stored in off-heap "slabs" (1MB chunks) using `memory.SlabAllocator`
 - **Slab Allocation**: Sequential allocation reduces fragmentation.
 - **Reset Capability**: Instant reclamation of memory for index rebuilds.
 
-## 3. HNSW Index
-
 ### Zero-Copy Design
 
 The HNSW graph stores only vector IDs, not data:
@@ -45,6 +43,15 @@ The HNSW graph stores only vector IDs, not data:
 1. **ID Mapping**: `Location` struct maps VectorID → BatchIndex + RowIndex
 2. **Direct Access**: Float32 slices accessed from Arena or Arrow buffers
 3. **Memory Efficiency**: ~50% RAM reduction vs standard HNSW
+4. **Product Quantization (PQ)**: Optional 64x compression for large-scale deployments.
+
+### Leveled Compaction
+
+Longbow implements an incremental "Leveled Compaction" strategy to maintain read performance during heavy ingestion:
+
+- **Incremental Merge**: Merges fragmented small batches into larger, contiguous Arrow RecordBatches.
+- **Index Preservation**: Unlike traditional systems, Longbow remaps HNSW locations in-place after compaction without requiring an index rebuild.
+- **Tombstone Cleanup**: Merges bitset tombstones across compacted batches.
 
 ### Scratch Buffer Pool
 

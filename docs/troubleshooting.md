@@ -49,3 +49,25 @@ Longbow's metrics and logs.
 
 * Decrease `LONGBOW_SNAPSHOT_INTERVAL`. A shorter interval means a smaller WAL
   to replay on startup, as older data is already in Parquet.
+
+### 4. Permission Denied on /data
+
+**Symptom**: Pod crashes with `open /data/wal.log: permission denied`.
+
+**Cause**: The application runs as a non-root user (UID 1000) while `/data` is owned by root or the filesystem is read-only.
+
+**Solution**:
+
+* Ensure `persistence.wal.enabled` is `true` in Helm values to mount a PersistentVolume.
+* Verify `podSecurityContext.fsGroup` is set to `2000` (or similar) to ensure the volume is writable by the app user.
+
+### 5. Config Parsing Errors
+
+**Symptom**: `panic: Failed to process config: converting '6.7108864e+07' to type int`.
+
+**Cause**: Helm passes large numeric values as floating-point scientific notation if not explicitly quoted.
+
+**Solution**:
+
+* Quote all large integer values in `values.yaml` (e.g., `maxRecvMsgSize: "67108864"`).
+* Avoid trailing comments on the same line as numeric values if they interfere with parsing.

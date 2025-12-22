@@ -438,6 +438,36 @@ var WalUringSubmitLatencySeconds = promauto.NewHistogram(
 )
 
 // =============================================================================
+// Global Search Metrics
+// =============================================================================
+
+// GlobalSearchDuration measures latency of scatter-gather search operations
+var GlobalSearchDuration = promauto.NewHistogram(
+	prometheus.HistogramOpts{
+		Name:    "longbow_global_search_duration_seconds",
+		Help:    "Latency of global scatter-gather search operations",
+		Buckets: prometheus.DefBuckets,
+	},
+)
+
+// GlobalSearchFanoutSize tracks the number of peers queried per global search
+var GlobalSearchFanoutSize = promauto.NewHistogram(
+	prometheus.HistogramOpts{
+		Name:    "longbow_global_search_fanout_size",
+		Help:    "Number of peers queried during global search",
+		Buckets: []float64{1, 2, 3, 5, 10, 20, 50},
+	},
+)
+
+// GlobalSearchPartialFailures counts failed peer queries
+var GlobalSearchPartialFailures = promauto.NewCounter(
+	prometheus.CounterOpts{
+		Name: "longbow_global_search_partial_failures_total",
+		Help: "Total number of failed peer queries during global search",
+	},
+)
+
+// =============================================================================
 // Comprehensive Prometheus Metrics Expansion
 // Added for enhanced observability across all components
 // =============================================================================

@@ -881,32 +881,7 @@ var CompactionOperationsTotal = promauto.NewCounterVec(
 	[]string{"dataset", "status"},
 )
 
-// CompactionDurationSeconds - Time taken for compaction
-var CompactionDurationSeconds = promauto.NewHistogramVec(
-	prometheus.HistogramOpts{
-		Name:    "longbow_compaction_duration_seconds",
-		Help:    "Duration of compaction operations",
-		Buckets: prometheus.DefBuckets,
-	},
-	[]string{"dataset"},
-)
-
-// CompactionRecordsRemovedTotal - Records removed during compaction
-var CompactionRecordsRemovedTotal = promauto.NewCounterVec(
-	prometheus.CounterOpts{
-		Name: "longbow_compaction_records_removed_total",
-		Help: "Total number of records removed during compaction",
-	},
-	[]string{"dataset"},
-)
-
-// 21. CompactionAutoTriggersTotal - Auto-triggered compaction tracking
-var CompactionAutoTriggersTotal = promauto.NewCounter(
-	prometheus.CounterOpts{
-		Name: "longbow_compaction_auto_triggers_total",
-		Help: "Total number of auto-triggered compactions when batch count exceeds threshold",
-	},
-)
+// Compaction metrics moved to metrics_observability.go
 
 // =============================================================================
 // IO_Uring Metrics

@@ -159,9 +159,14 @@ func (w *CompactionWorker) run() {
 			}
 			w.store.IterateDatasets(func(ds *Dataset) {
 				// Non-blocking attempt to compact
+				start := time.Now()
 				if err := w.store.CompactDataset(ds.Name); err == nil {
+					duration := time.Since(start).Seconds()
+					metrics.CompactionDurationSeconds.WithLabelValues(ds.Name, "periodic").Observe(duration)
 					w.compactionsRun.Add(1)
 					metrics.CompactionOperationsTotal.WithLabelValues(ds.Name, "periodic").Inc()
+				} else {
+					metrics.CompactionErrorsTotal.Inc()
 				}
 			})
 			w.lastRunTime.Store(time.Now())
@@ -170,9 +175,14 @@ func (w *CompactionWorker) run() {
 			if w.store == nil {
 				continue
 			}
+			start := time.Now()
 			if err := w.store.CompactDataset(dsName); err == nil {
+				duration := time.Since(start).Seconds()
+				metrics.CompactionDurationSeconds.WithLabelValues(dsName, "triggered").Observe(duration)
 				w.compactionsRun.Add(1)
 				metrics.CompactionOperationsTotal.WithLabelValues(dsName, "triggered").Inc()
+			} else {
+				metrics.CompactionErrorsTotal.Inc()
 			}
 			w.lastRunTime.Store(time.Now())
 		}

@@ -331,10 +331,40 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 
 	// Helper to flush batch
 	flush := func() error {
-		if err := s.flushPutBatch(ds, name, batch); err != nil {
+		if len(batch) == 0 {
+			return nil
+		}
+
+		// Optimization: Concatenate small batches into one large batch
+		// to reduce WAL overhead and lock contention.
+		var combined arrow.RecordBatch
+		if len(batch) == 1 {
+			combined = batch[0]
+			combined.Retain()
+		} else {
+			var err error
+			combined, err = s.concatenateBatches(batch)
+			if err != nil {
+				s.logger.Error("Failed to concatenate batches", zap.Error(err))
+				// Fallback to processing individually
+				if err := s.flushPutBatch(ds, name, batch); err != nil {
+					return err
+				}
+				batch = batch[:0]
+				return nil
+			}
+		}
+		defer combined.Release()
+
+		// Flush single combined batch
+		if err := s.flushPutBatch(ds, name, []arrow.RecordBatch{combined}); err != nil {
 			return err
 		}
-		// Clear batch slice (records are now owned by store)
+
+		// Clear batch slice
+		for _, b := range batch {
+			b.Release()
+		}
 		batch = batch[:0]
 		return nil
 	}
@@ -346,10 +376,6 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 
 		if len(batch) >= maxBatchSize {
 			if err := flush(); err != nil {
-				// Cleanup remaining in batch
-				for _, b := range batch {
-					b.Release()
-				}
 				return err
 			}
 		}
@@ -1251,4 +1277,45 @@ func (s *VectorStore) copyArrayWithMask(arr arrow.Array, mask *Bitset, outCount 
 		arr.Retain()
 		return arr, nil
 	}
+}
+
+// concatenateBatches merges multiple record batches into one
+func (s *VectorStore) concatenateBatches(batches []arrow.RecordBatch) (arrow.RecordBatch, error) {
+	if len(batches) == 0 {
+		return nil, fmt.Errorf("no batches to concatenate")
+	}
+	schema := batches[0].Schema()
+	numCols := int(schema.NumFields())
+	columns := make([]arrow.Array, numCols)
+	defer func() {
+		// Clean up if we fail mid-way
+		for _, col := range columns {
+			if col != nil {
+				col.Release()
+			}
+		}
+	}()
+
+	for i := 0; i < numCols; i++ {
+		// Collect arrays for this column from all batches
+		colArrays := make([]arrow.Array, len(batches))
+		for j, batch := range batches {
+			colArrays[j] = batch.Column(i)
+		}
+
+		// Use Arrow's array.Concatenate
+		concatenated, err := array.Concatenate(colArrays, s.mem)
+		if err != nil {
+			return nil, fmt.Errorf("failed to concatenate column %d: %w", i, err)
+		}
+		columns[i] = concatenated
+	}
+
+	// Calculate total rows
+	totalRows := int64(0)
+	for _, b := range batches {
+		totalRows += b.NumRows()
+	}
+
+	return array.NewRecordBatch(schema, columns, totalRows), nil
 }

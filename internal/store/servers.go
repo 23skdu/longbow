@@ -75,11 +75,13 @@ func (s *DataServer) DoAction(action *flight.Action, stream flight.FlightService
 // Embeds VectorStore to inherit base interface, overrides methods for error conversion.
 type MetaServer struct {
 	*VectorStore
+	coordinator *GlobalSearchCoordinator
 }
 
 func NewMetaServer(store *VectorStore) *MetaServer {
 	return &MetaServer{
 		VectorStore: store,
+		coordinator: NewGlobalSearchCoordinator(store.logger),
 	}
 }
 

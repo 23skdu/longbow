@@ -216,6 +216,13 @@ func (idx *AutoShardingIndex) SetIndexedColumns(cols []string) {
 	// No-op for now, or delegate if underlying supports it
 }
 
+// GetLocation retrieves the storage location for a given vector ID.
+func (idx *AutoShardingIndex) GetLocation(id VectorID) (Location, bool) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	return idx.current.GetLocation(id)
+}
+
 // Warmup delegates to the current index.
 func (idx *AutoShardingIndex) Warmup() int {
 	idx.mu.RLock()

@@ -43,12 +43,12 @@ func releaseBatches(batches []arrow.RecordBatch) {
 
 // TestCompactRecordsEmpty verifies empty input returns empty output
 func TestCompactRecordsEmpty(t *testing.T) {
-	result := compactRecords(nil, 1000)
+	result, _, _ := compactRecords(nil, 1000)
 	if len(result) != 0 {
 		t.Errorf("expected empty result, got %d batches", len(result))
 	}
 
-	result = compactRecords([]arrow.RecordBatch{}, 1000)
+	result, _, _ = compactRecords([]arrow.RecordBatch{}, 1000)
 	if len(result) != 0 {
 		t.Errorf("expected empty result, got %d batches", len(result))
 	}
@@ -64,7 +64,7 @@ func TestCompactRecordsMergesSmallBatches(t *testing.T) {
 	defer releaseBatches(batches)
 
 	// Target 500 rows per batch - should result in 2 batches
-	result := compactRecords(batches, 500)
+	result, _, _ := compactRecords(batches, 500)
 	defer releaseBatches(result)
 
 	if len(result) != 2 {
@@ -88,14 +88,12 @@ func TestCompactRecordsLargeBatchUnchanged(t *testing.T) {
 	defer batch.Release()
 
 	// Target 500 rows - but we don't split, just don't merge
-	result := compactRecords([]arrow.RecordBatch{batch}, 500)
+	result, _, _ := compactRecords([]arrow.RecordBatch{batch}, 500)
 	defer releaseBatches(result)
 
-	if len(result) != 1 {
-		t.Errorf("expected 1 batch (unchanged), got %d", len(result))
-	}
-	if result[0].NumRows() != 1000 {
-		t.Errorf("expected 1000 rows, got %d", result[0].NumRows())
+	// Since NO compaction was needed, our optimization returns nil to indicate no change.
+	if len(result) != 0 {
+		t.Errorf("expected 0 batches (no change signal), got %d", len(result))
 	}
 }
 
@@ -108,7 +106,7 @@ func TestCompactRecordsPreservesSchema(t *testing.T) {
 	defer releaseBatches(batches)
 
 	originalSchema := batches[0].Schema()
-	result := compactRecords(batches, 200)
+	result, _, _ := compactRecords(batches, 200)
 	defer releaseBatches(result)
 
 	if len(result) != 1 {
@@ -127,7 +125,7 @@ func TestCompactRecordsPreservesData(t *testing.T) {
 	batches[1] = makeTestBatch(t, 5) // ids: 0,1,2,3,4
 	defer releaseBatches(batches)
 
-	result := compactRecords(batches, 100)
+	result, _, _ := compactRecords(batches, 100)
 	defer releaseBatches(result)
 
 	if len(result) != 1 {

@@ -72,6 +72,8 @@ type CompactionWorker struct {
 	triggerChan  chan string
 	triggerCount atomic.Int64
 
+	store *VectorStore
+
 	// Statistics
 	compactionsRun atomic.Int64
 	batchesMerged  atomic.Int64
@@ -80,8 +82,9 @@ type CompactionWorker struct {
 }
 
 // NewCompactionWorker creates a new compaction worker with the given config.
-func NewCompactionWorker(cfg CompactionConfig) *CompactionWorker {
+func NewCompactionWorker(store *VectorStore, cfg CompactionConfig) *CompactionWorker {
 	w := &CompactionWorker{
+		store:       store,
 		config:      cfg,
 		triggerChan: make(chan string, 100), // Buffered to avoid blocking
 	}
@@ -150,70 +153,170 @@ func (w *CompactionWorker) run() {
 		case <-w.stopCh:
 			return
 		case <-ticker.C:
-			// Compaction logic will be integrated in Subtask 4
-			w.compactionsRun.Add(1)
-			metrics.CompactionOperationsTotal.WithLabelValues("completed").Inc()
+			// Periodic compaction check for all datasets
+			if w.store == nil {
+				continue
+			}
+			w.store.IterateDatasets(func(ds *Dataset) {
+				// Non-blocking attempt to compact
+				if err := w.store.CompactDataset(ds.Name); err == nil {
+					w.compactionsRun.Add(1)
+					metrics.CompactionOperationsTotal.WithLabelValues("periodic").Inc()
+				}
+			})
+			w.lastRunTime.Store(time.Now())
+		case dsName := <-w.triggerChan:
+			// Triggered compaction
+			if w.store == nil {
+				continue
+			}
+			if err := w.store.CompactDataset(dsName); err == nil {
+				w.compactionsRun.Add(1)
+				metrics.CompactionOperationsTotal.WithLabelValues("triggered").Inc()
+			}
 			w.lastRunTime.Store(time.Now())
 		}
 	}
 }
 
-// compactRecords merges small RecordBatches into larger ones up to targetSize rows.
-// It preserves schema, row order, and all data. Large batches are not split.
-func compactRecords(records []arrow.RecordBatch, targetSize int64) []arrow.RecordBatch {
-	if len(records) == 0 {
-		return nil
+// CompactionCandidate represents a range of batches to be merged
+type CompactionCandidate struct {
+	StartIdx int
+	EndIdx   int // Exclusive
+	TotalRow int64
+}
+
+// identifyCompactionCandidates finds contiguous runs of small batches.
+func identifyCompactionCandidates(records []arrow.RecordBatch, targetSize int64) []CompactionCandidate {
+	var candidates []CompactionCandidate
+	if len(records) < 2 {
+		return candidates
 	}
 
-	schema := records[0].Schema()
-	pool := memory.NewGoAllocator()
-	var result []arrow.RecordBatch
+	startIdx := 0
+	currentRows := int64(0)
+	count := 0
 
-	// Accumulator for current batch being built
-	accumulated := make([]arrow.RecordBatch, 0, len(records))
-	var accumulatedRows int64
-
-	flush := func() {
-		if len(accumulated) == 0 {
-			return
-		}
-		if len(accumulated) == 1 {
-			// Single batch - just retain and add
-			accumulated[0].Retain()
-			result = append(result, accumulated[0])
-		} else {
-			// Multiple batches - merge them
-			merged := mergeRecordBatches(pool, schema, accumulated)
-			result = append(result, merged)
-		}
-		accumulated = nil
-		accumulatedRows = 0
-	}
-
-	for _, rec := range records {
+	// Greedy scan
+	for i, rec := range records {
 		rows := rec.NumRows()
 
-		// If single batch is already >= target, flush accumulated and add as-is
+		// If a single batch is already large enough, it acts as a barrier
+		// Flush current accumulation if any
 		if rows >= targetSize {
-			flush()
-			rec.Retain()
-			result = append(result, rec)
+			if count > 1 {
+				candidates = append(candidates, CompactionCandidate{
+					StartIdx: startIdx,
+					EndIdx:   i,
+					TotalRow: currentRows,
+				})
+			}
+			// Reset
+			startIdx = i + 1
+			currentRows = 0
+			count = 0
 			continue
 		}
 
-		// If adding this batch would exceed target, flush first
-		if accumulatedRows+rows > targetSize && accumulatedRows > 0 {
-			flush()
-		}
+		// Accumulate
+		// Look ahead: if adding this batch exceeds target significantly, maybe split?
+		// For now simple greedy: accumulate until >= target
+		currentRows += rows
+		count++
 
-		accumulated = append(accumulated, rec)
-		accumulatedRows += rows
+		if currentRows >= targetSize {
+			// Found a group
+			if count > 1 { // Only merge if we actually combining multiple
+				candidates = append(candidates, CompactionCandidate{
+					StartIdx: startIdx,
+					EndIdx:   i + 1,
+					TotalRow: currentRows,
+				})
+			}
+			// Reset, start fresh from next
+			startIdx = i + 1
+			currentRows = 0
+			count = 0
+		}
 	}
 
-	// Flush any remaining
-	flush()
+	// Flush remaining tail if it has multiple batches
+	// Even if it's small, we merge small tails to reduce fragmentation
+	if count > 1 {
+		candidates = append(candidates, CompactionCandidate{
+			StartIdx: startIdx,
+			EndIdx:   len(records),
+			TotalRow: currentRows,
+		})
+	}
 
-	return result
+	return candidates
+}
+
+// batchRemapInfo describes how a batch ID maps to a new one
+type batchRemapInfo struct {
+	NewBatchIdx int
+	RowOffset   int // For merged batches, where does this batch start in the new one?
+}
+
+// compactRecords returns a NEW slice of RecordBatches and a remapping table.
+// It DOES NOT Modify the input slice.
+func compactRecords(records []arrow.RecordBatch, targetSize int64) ([]arrow.RecordBatch, map[int]batchRemapInfo, error) {
+	candidates := identifyCompactionCandidates(records, targetSize)
+	if len(candidates) == 0 {
+		return nil, nil, nil // Nothing to do
+	}
+
+	// We process candidates in order.
+	// Since we are building a new list, we can copy untouched batches and merge candidates.
+
+	result := make([]arrow.RecordBatch, 0, len(records))
+	remapping := make(map[int]batchRemapInfo)
+
+	currentOldIdx := 0
+	pool := memory.NewGoAllocator() // TODO: Use store allocator
+
+	for _, cand := range candidates {
+		// 1. Copy untouched batches before this candidate
+		for i := currentOldIdx; i < cand.StartIdx; i++ {
+			rec := records[i]
+			rec.Retain()
+			remapping[i] = batchRemapInfo{NewBatchIdx: len(result), RowOffset: 0}
+			result = append(result, rec)
+		}
+
+		// 2. Merge candidate batches
+		subset := records[cand.StartIdx:cand.EndIdx]
+		if len(subset) == 0 {
+			continue // Should not happen
+		}
+
+		// Check schema consistency (sanity)
+		schema := subset[0].Schema()
+		merged := mergeRecordBatches(pool, schema, subset)
+
+		newBatchIdx := len(result)
+		result = append(result, merged)
+
+		// 3. Record remapping for the merged batches
+		currentRowOffset := 0
+		for i := cand.StartIdx; i < cand.EndIdx; i++ {
+			remapping[i] = batchRemapInfo{NewBatchIdx: newBatchIdx, RowOffset: currentRowOffset}
+			currentRowOffset += int(records[i].NumRows())
+		}
+
+		currentOldIdx = cand.EndIdx
+	}
+
+	// 4. Copy remaining untouched batches
+	for i := currentOldIdx; i < len(records); i++ {
+		rec := records[i]
+		rec.Retain()
+		remapping[i] = batchRemapInfo{NewBatchIdx: len(result), RowOffset: 0}
+		result = append(result, rec)
+	}
+
+	return result, remapping, nil
 }
 
 // mergeRecordBatches combines multiple RecordBatches into one.
@@ -364,7 +467,7 @@ func NewVectorStoreWithCompaction(mem memory.Allocator, logger *zap.Logger, maxM
 	store.stopCompaction() // Stop default if started
 	store.compactionConfig = compactionCfg
 	if compactionCfg.Enabled {
-		store.compactionWorker = NewCompactionWorker(compactionCfg)
+		store.compactionWorker = NewCompactionWorker(store, compactionCfg)
 		store.compactionWorker.Start()
 	}
 	return store

@@ -23,7 +23,7 @@ func TestCompactionWorker_TriggerChannel(t *testing.T) {
 		TargetBatchSize:     1000,
 		CompactionInterval:  time.Hour, // Long interval so timer doesn't fire
 	}
-	worker := NewCompactionWorker(cfg)
+	worker := NewCompactionWorker(nil, cfg)
 	worker.Start()
 	defer worker.Stop()
 
@@ -40,7 +40,7 @@ func TestCompactionWorker_TriggerNonBlocking(t *testing.T) {
 		TargetBatchSize:     1000,
 		CompactionInterval:  time.Hour,
 	}
-	worker := NewCompactionWorker(cfg)
+	worker := NewCompactionWorker(nil, cfg)
 	worker.Start()
 	defer worker.Stop()
 
@@ -273,7 +273,7 @@ func TestCompactionWorker_GetTriggerCount(t *testing.T) {
 		TargetBatchSize:     1000,
 		CompactionInterval:  time.Hour,
 	}
-	worker := NewCompactionWorker(cfg)
+	worker := NewCompactionWorker(nil, cfg)
 	worker.Start()
 	defer worker.Stop()
 

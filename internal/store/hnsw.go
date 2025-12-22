@@ -102,6 +102,28 @@ func NewHNSWIndexWithCapacity(ds *Dataset, capacity int) *HNSWIndex {
 	return h
 }
 
+// BatchRemapInfo describes how a batch ID maps to a new one
+type BatchRemapInfo struct {
+	NewBatchIdx int
+	RowOffset   int
+}
+
+// RemapLocations safely updates vector locations after compaction.
+// It iterates over all locations and applies the remapping if the batch index matches.
+func (h *HNSWIndex) RemapLocations(remapping map[int]BatchRemapInfo) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	for i, loc := range h.locations {
+		if info, ok := remapping[loc.BatchIdx]; ok {
+			h.locations[i] = Location{
+				BatchIdx: info.NewBatchIdx,
+				RowIdx:   loc.RowIdx + info.RowOffset,
+			}
+		}
+	}
+}
+
 // SetPQEncoder enables product quantization with the provided encoder.
 func (h *HNSWIndex) SetPQEncoder(encoder *PQEncoder) {
 	h.pqCodesMu.Lock()

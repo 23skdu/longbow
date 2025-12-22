@@ -59,7 +59,7 @@ func TestHNSW_SingleVector(t *testing.T) {
 	idx := NewHNSWIndex(ds)
 
 	// Add the single vector
-	err := idx.Add(0, 0)
+	_, err := idx.Add(0, 0)
 	require.NoError(t, err)
 
 	// Search should return self
@@ -94,7 +94,8 @@ func TestHNSW_KGreaterThanTotal(t *testing.T) {
 
 	// Add all vectors
 	for i := 0; i < 3; i++ {
-		require.NoError(t, idx.Add(0, i))
+		_, err := idx.Add(0, i)
+		require.NoError(t, err)
 	}
 
 	// Search with k=10 should return at most 3
@@ -124,7 +125,8 @@ func TestHNSW_DuplicateVectors(t *testing.T) {
 
 	// Add all duplicate vectors
 	for i := 0; i < 3; i++ {
-		require.NoError(t, idx.Add(0, i))
+		_, err := idx.Add(0, i)
+		require.NoError(t, err)
 	}
 
 	// All should be searchable
@@ -162,7 +164,8 @@ func TestHNSW_HighDimensionalVectors(t *testing.T) {
 
 	// Add all vectors
 	for i := 0; i < 3; i++ {
-		require.NoError(t, idx.Add(0, i))
+		_, err := idx.Add(0, i)
+		require.NoError(t, err)
 	}
 
 	// Search should work with high dimensions
@@ -205,7 +208,7 @@ func TestHNSW_ConcurrentAdd(t *testing.T) {
 			defer wg.Done()
 			start := workerID * vectorsPerWorker
 			for i := start; i < start+vectorsPerWorker; i++ {
-				err := idx.Add(0, i)
+				_, err := idx.Add(0, i)
 				require.NoError(t, err)
 			}
 		}(w)

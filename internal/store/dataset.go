@@ -39,6 +39,9 @@ type Dataset struct {
 
 	// Anti-Entropy
 	Merkle *MerkleTree
+
+	// Hybrid Search
+	InvertedIndexes map[string]*InvertedIndex
 }
 
 // IsSharded returns true if the dataset uses ShardedHNSW.
@@ -59,14 +62,25 @@ func (d *Dataset) IndexLen() int {
 	return 0
 }
 
+// GetRecord returns the record batch at the given index in a thread-safe manner.
+func (d *Dataset) GetRecord(idx int) (arrow.RecordBatch, bool) {
+	d.dataMu.RLock()
+	defer d.dataMu.RUnlock()
+	if idx >= 0 && idx < len(d.Records) {
+		return d.Records[idx], true
+	}
+	return nil, false
+}
+
 func NewDataset(name string, schema *arrow.Schema) *Dataset {
 	return &Dataset{
-		Name:       name,
-		Records:    make([]arrow.RecordBatch, 0),
-		Schema:     schema,
-		Tombstones: make(map[int]*Bitset),
-		LWW:        NewTimestampMap(),
-		Merkle:     NewMerkleTree(),
+		Name:            name,
+		Records:         make([]arrow.RecordBatch, 0),
+		Schema:          schema,
+		Tombstones:      make(map[int]*Bitset),
+		LWW:             NewTimestampMap(),
+		Merkle:          NewMerkleTree(),
+		InvertedIndexes: make(map[string]*InvertedIndex),
 	}
 }
 
@@ -122,4 +136,11 @@ func (b *Bitset) Count() uint64 {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	return b.bitmap.GetCardinality()
+}
+
+// ToUint32Array returns the set bits as a slice of uint32.
+func (b *Bitset) ToUint32Array() []uint32 {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.bitmap.ToArray()
 }

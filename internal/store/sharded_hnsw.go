@@ -102,12 +102,12 @@ func (s *ShardedHNSW) GetShardForID(id VectorID) int {
 }
 
 // AddByLocation implements VectorIndex.
-func (s *ShardedHNSW) AddByLocation(batchIdx, rowIdx int) error {
+func (s *ShardedHNSW) AddByLocation(batchIdx, rowIdx int) (uint32, error) {
 	// Transitionary: get vector from dataset to add to graph
 	s.dataset.dataMu.RLock()
 	if batchIdx >= len(s.dataset.Records) {
 		s.dataset.dataMu.RUnlock()
-		return fmt.Errorf("invalid batch idx")
+		return 0, fmt.Errorf("invalid batch idx")
 	}
 	rec := s.dataset.Records[batchIdx]
 	s.dataset.dataMu.RUnlock()
@@ -117,17 +117,15 @@ func (s *ShardedHNSW) AddByLocation(batchIdx, rowIdx int) error {
 
 // AddSafe is an alias for AddByRecord for consistency with HNSWIndex.
 func (s *ShardedHNSW) AddSafe(rec arrow.RecordBatch, rowIdx, batchIdx int) (VectorID, error) {
-	// Allocate ID first to return it
-	id := VectorID(s.nextID.Load())
-	err := s.AddByRecord(rec, rowIdx, batchIdx)
+	id, err := s.AddByRecord(rec, rowIdx, batchIdx)
 	if err != nil {
 		return 0, err
 	}
-	return id, nil
+	return VectorID(id), nil
 }
 
 // AddByRecord implements VectorIndex.
-func (s *ShardedHNSW) AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx int) error {
+func (s *ShardedHNSW) AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32, error) {
 	// Extract vector (Simplified for brevity, following hnsw.go pattern)
 	var vecCol arrow.Array
 	for i, field := range rec.Schema().Fields() {
@@ -137,12 +135,12 @@ func (s *ShardedHNSW) AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx int) e
 		}
 	}
 	if vecCol == nil {
-		return fmt.Errorf("vector column not found")
+		return 0, fmt.Errorf("vector column not found")
 	}
 
 	listArr, ok := vecCol.(*array.FixedSizeList)
 	if !ok {
-		return fmt.Errorf("invalid vector column format")
+		return 0, fmt.Errorf("invalid vector column format")
 	}
 
 	values := listArr.Data().Children()[0]
@@ -153,7 +151,7 @@ func (s *ShardedHNSW) AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx int) e
 	start := rowIdx * width
 	end := start + width
 	if start < 0 || end > floatArr.Len() {
-		return fmt.Errorf("row index out of bounds")
+		return 0, fmt.Errorf("row index out of bounds")
 	}
 
 	vec := floatArr.Float32Values()[start:end]
@@ -182,7 +180,87 @@ func (s *ShardedHNSW) AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx int) e
 	shard.graph.Add(hnsw.MakeNode(id, vecCopy))
 
 	metrics.ShardedHnswShardSize.WithLabelValues(s.dataset.Name, fmt.Sprintf("%d", shardIdx)).Inc()
-	return nil
+	return uint32(id), nil
+}
+
+// SearchVectorsWithBitmap implements VectorIndex.
+func (s *ShardedHNSW) SearchVectorsWithBitmap(query []float32, k int, filter *Bitset) []SearchResult {
+	if k <= 0 {
+		return nil
+	}
+
+	// 1. Search all shards in parallel
+	type shardResults struct {
+		nodes []hnsw.Node[VectorID]
+	}
+	resultsByShard := make([]shardResults, len(s.shards))
+	var wg sync.WaitGroup
+
+	limit := k * 10
+	if filter != nil && filter.Count() > 0 && filter.Count() < 1000 {
+		// Use bruteforce/filter check?
+		// Sharded bruteforce?
+		// For MVP, stick to Post-Filtering.
+	}
+
+	for i, shard := range s.shards {
+		wg.Add(1)
+		go func(idx int, sh *hnswShard) {
+			defer wg.Done()
+			sh.mu.RLock()
+			resultsByShard[idx].nodes = sh.graph.Search(query, limit)
+			sh.mu.RUnlock()
+		}(i, shard)
+	}
+	wg.Wait()
+
+	merged := make([]SearchResult, 0, k*2)
+	_ = sHNSWGetDistFunc(s.config.Metric)
+
+	for _, sr := range resultsByShard {
+		for _, node := range sr.nodes {
+			id := uint32(node.Key)
+
+			// Check filters
+			if filter != nil && !filter.Contains(int(id)) {
+				continue
+			}
+
+			// Resolve Location for distance calc (or use node?)
+			// node has distance if computed by Search?
+			// Need to verify. Assume we need recompute or `hnsw` provides it.
+			// Recomputing to be safe.
+
+			s.globalMu.RLock()
+			if int(node.Key) >= len(s.globalLocs) {
+				s.globalMu.RUnlock()
+				continue
+			}
+			loc := s.globalLocs[node.Key]
+			s.globalMu.RUnlock()
+
+			// Recompute distance
+			var score float32
+			vec, err := s.getVectorFromDataset(loc)
+			if err == nil {
+				distFunc := sHNSWGetDistFunc(s.config.Metric)
+				score = distFunc(query, vec)
+			}
+
+			merged = append(merged, SearchResult{ID: node.Key, Score: score})
+		}
+	}
+
+	// Sort and limit
+	sort.Slice(merged, func(i, j int) bool {
+		return merged[i].Score < merged[j].Score
+	})
+
+	if len(merged) > k {
+		merged = merged[:k]
+	}
+
+	return merged
 }
 
 // SearchVectors implements VectorIndex.

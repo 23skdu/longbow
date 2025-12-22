@@ -3,7 +3,7 @@ replicaCount: 1
 image:
   repository: ghcr.io/23skdu/longbow
   pullPolicy: IfNotPresent
-  tag: "0.0.8"
+  tag: "0.1.0"
 
 imagePullSecrets: []
 nameOverride: ""
@@ -32,22 +32,15 @@ securityContext:
 
 # gRPC Configuration
 grpc:
-  maxRecvMsgSize: 67108864 # 64MB
-  maxSendMsgSize: 67108864 # 64MB
-  initialWindowSize: 1048576 # 1MB
-  initialConnWindowSize: 1048576 # 1MB
+  maxRecvMsgSize: "67108864" # 64MB
+  maxSendMsgSize: "67108864" # 64MB
+  initialWindowSize: "1048576" # 1MB
+  initialConnWindowSize: "1048576" # 1MB
   maxConcurrentStreams: 250
   keepAliveTime: "2h"
   keepAliveTimeout: "20s"
   keepAliveMinTime: "5m"
   keepAlivePermitWithoutStream: false
-
-# Gossip Configuration (Cluster)
-gossip:
-  enabled: false
-  port: 7946
-  interval: "200ms"
-  # advertiseAddr: "127.0.0.1" # Override if needed (e.g. status.podIP)
 
 # Storage Configuration
 storage:
@@ -86,9 +79,10 @@ gossip:
   # Port for UDP gossip communication (one per pod)
   port: 7946
   # Protocol timing parameters
-  protocolPeriod: "200ms"  # How often to probe a random member
-  ackTimeout: "100ms"      # Timeout for direct ping acknowledgment
-  suspicionTimeout: "5s"   # Time before suspect member marked dead
+  protocolPeriod: "200ms" # How often to probe a random member
+  interval: "200ms" # Added to satisfy config
+  ackTimeout: "100ms" # Timeout for direct ping acknowledgment
+  suspicionTimeout: "5s" # Time before suspect member marked dead
   # Discovery configuration
   discovery:
     # Discovery provider: static, dns, or k8s
@@ -97,16 +91,15 @@ gossip:
     # Example: "longbow-0.longbow:7946,longbow-1.longbow:7946"
     staticPeers: ""
     # For k8s discovery: namespace and label selector
-    namespace: ""  # Empty = same namespace as pod
+    namespace: "" # Empty = same namespace as pod
     labelSelector: "app.kubernetes.io/name=longbow"
     # For DNS discovery: SRV record to query
     dnsRecord: "_gossip._udp.longbow.default.svc.cluster.local"
 
-
 # Persistence configuration
 persistence:
   wal:
-    enabled: false
+    enabled: true
     storageClass: ""
     accessMode: ReadWriteOnce
     size: 5Gi

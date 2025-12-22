@@ -208,9 +208,36 @@ func (s *VectorStore) GetSchema(ctx context.Context, desc *flight.FlightDescript
 	return nil, nil
 }
 
-// DoAction handles custom actions like deletion
+// DoAction handles custom actions like deletion and status
 func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightService_DoActionServer) error {
-	if action.Type == "delete-vector" {
+	switch action.Type {
+	case "cluster-status":
+		if s.Mesh == nil {
+			return status.Error(codes.Unavailable, "gossip mesh not enabled")
+		}
+		members := s.Mesh.GetMembers()
+		// Sort by ID for consistent output
+		sort.Slice(members, func(i, j int) bool {
+			return members[i].ID < members[j].ID
+		})
+
+		resp := map[string]interface{}{
+			"self":    s.Mesh.GetIdentity(),
+			"members": members,
+			"count":   len(members),
+		}
+
+		body, err := json.Marshal(resp)
+		if err != nil {
+			return status.Errorf(codes.Internal, "failed to serialize status: %v", err)
+		}
+
+		if err := stream.Send(&flight.Result{Body: body}); err != nil {
+			return err
+		}
+		return nil
+
+	case "delete-vector":
 		var curr map[string]interface{}
 		if err := json.Unmarshal(action.Body, &curr); err != nil {
 			// Try Unmarshal as []struct? No, map is safer for now

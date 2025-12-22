@@ -138,6 +138,26 @@ def command_info(args, data_client, meta_client):
 
 
 
+def command_status(args, data_client, meta_client):
+    """Get cluster status via Meta Server DoAction."""
+    print("Getting cluster status...")
+    try:
+        action = flight.Action("cluster-status", b"")
+        results = meta_client.do_action(action)
+        for res in results:
+            status = json.loads(res.body.to_pybytes())
+            print(json.dumps(status, indent=2))
+            
+            # Print table for members if polars available
+            if HAS_POLARS and "members" in status:
+                df = pl.DataFrame(status["members"])
+                print("\nMembership Table:")
+                print(df)
+                
+    except Exception as e:
+        print(f"Error getting status: {e}")
+
+
 def command_delete(args, data_client, meta_client):
     """Delete vectors from a dataset via Meta Server DoAction."""
     name = args.dataset
@@ -386,6 +406,9 @@ def main():
     # SNAPSHOT
     subparsers.add_parser("snapshot", help="Force database snapshot")
 
+    # STATUS
+    subparsers.add_parser("status", help="Get cluster status")
+
     # EXCHANGE
     subparsers.add_parser("exchange", help="Test DoExchange")
     
@@ -412,6 +435,7 @@ def main():
             "info": command_info,
             "search": command_search,
             "snapshot": command_snapshot,
+            "status": command_status,
             "exchange": command_exchange,
             "validate": command_validate,
         }

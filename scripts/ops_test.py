@@ -320,8 +320,8 @@ def command_validate(args, data_client, meta_client):
     print(f"DoGet Filtered rows: {table.num_rows}")
     if table.num_rows == 0:
         print("FAIL: No rows returned for filter id > 50")
-    elif table.num_rows > 50: # Should be exactly 49 (51..99)
-        print("PASS: Rows returned")
+    elif table.num_rows == 49: # IDs 51..99 = 49 rows
+        print("PASS: Rows returned correctly (49)")
     else:
         print(f"WARN: Unexpected row count {table.num_rows}")
 

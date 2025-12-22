@@ -3,7 +3,6 @@ package store
 import (
 	"fmt"
 	"math"
-	"runtime"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -37,19 +36,6 @@ func (h *HNSWIndex) GetLocation(id VectorID) (Location, bool) {
 	return h.locations[id], true
 }
 
-// getLocationStriped returns the storage location using striped locking for reduced contention.
-// This is used in hot paths like SearchVectors where multiple concurrent searches need location access.
-func (h *HNSWIndex) getLocationStriped(id VectorID) (Location, bool) {
-	stripe := int(id) % h.numStripes
-	h.stripedLocks[stripe].RLock()
-	defer h.stripedLocks[stripe].RUnlock()
-
-	if int(id) >= len(h.locations) {
-		return Location{}, false
-	}
-	return h.locations[id], true
-}
-
 // HNSWIndex wraps the hnsw.Graph and manages the mapping from ID to Arrow data.
 type HNSWIndex struct {
 	Graph         *hnsw.Graph[VectorID]
@@ -63,10 +49,7 @@ type HNSWIndex struct {
 	resultPool    *resultPool   // Pool for search result slices
 	Metric        VectorMetric  // Distance metric used by this index
 
-	// Lock-Striping (Item 8)
-	stripedLocks []sync.RWMutex
-	numStripes   int
-	nextVecID    atomic.Uint32
+	nextVecID atomic.Uint32
 }
 
 // NewHNSWIndex creates a new index for the given dataset using Euclidean distance.
@@ -91,12 +74,10 @@ func NewHNSWIndexWithMetric(ds *Dataset, metric VectorMetric) *HNSWIndex {
 	// h.Graph.EfConstruction = 200
 	// h.Graph.M = 32
 
-	// Initialize striped locks
-	h.numStripes = runtime.NumCPU() * 2
-	if h.numStripes < 16 {
-		h.numStripes = 16
-	}
-	h.stripedLocks = make([]sync.RWMutex, h.numStripes)
+	// Set default HNSW parameters
+	// h.Graph.EfSearch = 100
+	// h.Graph.EfConstruction = 200
+	// h.Graph.M = 32
 
 	return h
 }
@@ -111,13 +92,6 @@ func NewHNSWIndexWithCapacity(ds *Dataset, capacity int) *HNSWIndex {
 	h.Graph = hnsw.NewGraph[VectorID]()
 	h.resultPool = newResultPool()
 	h.Graph.Distance = simd.EuclideanDistance
-
-	// Initialize striped locks
-	h.numStripes = runtime.NumCPU() * 2
-	if h.numStripes < 16 {
-		h.numStripes = 16
-	}
-	h.stripedLocks = make([]sync.RWMutex, h.numStripes)
 
 	return h
 }
@@ -284,7 +258,9 @@ func (h *HNSWIndex) SearchVectors(query []float32, k int, filters []Filter) []Se
 		// Retrieve vector/record for verification + score calc
 		// Use striped lock for location access (fine-grained locking)
 
-		loc, found := h.getLocationStriped(n.Key)
+		// Retrieve vector/record for verification + score calc
+		// Use standard thread-safe GetLocation
+		loc, found := h.GetLocation(n.Key)
 		if !found {
 			continue
 		}
@@ -300,8 +276,8 @@ func (h *HNSWIndex) SearchVectors(query []float32, k int, filters []Filter) []Se
 		// SIMD PREFETCH (Item 5): Fetch next few results data while filtering current one
 		if idx+1 < len(neighbors) {
 			nextKey := neighbors[idx+1].Key
-			if int(nextKey) < len(h.locations) {
-				nextLoc := h.locations[nextKey]
+			nextLoc, found := h.GetLocation(nextKey)
+			if found {
 				if nextLoc.BatchIdx < len(h.dataset.Records) {
 					nextRec := h.dataset.Records[nextLoc.BatchIdx]
 					if nextRec != nil && nextRec.NumCols() > 0 {
@@ -513,23 +489,18 @@ func (h *HNSWIndex) Add(batchIdx, rowIdx int) (uint32, error) {
 	// 1. Allocate ID atomically
 	id := VectorID(h.nextVecID.Add(1) - 1)
 
-	// 2. Prepare location and update locations slice under striped lock
-	stripe := int(id) % h.numStripes
-	h.stripedLocks[stripe].Lock()
-
-	// Ensure locations slice is large enough (might need a global lock or pre-allocation)
+	// 2. Prepare location and update locations slice under global lock
+	// and get vector while holding the lock to protect against slice reallocations.
 	h.mu.Lock()
 	for len(h.locations) <= int(id) {
 		h.locations = append(h.locations, Location{})
 	}
 	h.locations[id] = Location{BatchIdx: batchIdx, RowIdx: rowIdx}
-	h.mu.Unlock()
-
-	h.stripedLocks[stripe].Unlock()
 
 	// 3. Get vector (Safe to call as ID is reserved and location is set)
-	// Note: We need the dataset lock for this
 	vecRaw := h.getVectorDirectLocked(id)
+	h.mu.Unlock()
+
 	if vecRaw == nil {
 		return 0, nil
 	}
@@ -601,18 +572,13 @@ func (h *HNSWIndex) AddSafe(rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32
 
 	vec := floatArr.Float32Values()[start:end]
 
-	// 3. Update locations under striped lock
-	stripe := int(id) % h.numStripes
-	h.stripedLocks[stripe].Lock()
-
+	// 3. Update locations under global lock
 	h.mu.Lock()
 	for len(h.locations) <= int(id) {
 		h.locations = append(h.locations, Location{})
 	}
 	h.locations[id] = Location{BatchIdx: batchIdx, RowIdx: rowIdx}
 	h.mu.Unlock()
-
-	h.stripedLocks[stripe].Unlock()
 
 	// 4. Initialize dims
 	h.dimsOnce.Do(func() {
@@ -698,7 +664,9 @@ func (h *HNSWIndex) SearchVectorsWithBitmap(query []float32, k int, filter *Bits
 
 		// Valid match
 		// Re-verify existence (sanity check)
-		_, found := h.getLocationStriped(VectorID(id))
+		// Valid match
+		// Re-verify existence (sanity check)
+		_, found := h.GetLocation(VectorID(id))
 		if !found {
 			continue
 		}

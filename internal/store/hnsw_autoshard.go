@@ -48,15 +48,15 @@ func (a *AutoShardingIndex) AddByLocation(batchIdx, rowIdx int) (uint32, error) 
 	// But simply calling add is safe.
 	id, err := a.current.AddByLocation(batchIdx, rowIdx)
 	currentLen := a.current.Len()
+	sharded := a.sharded
 	a.mu.RUnlock()
 
 	if err != nil {
 		return 0, err
 	}
 
-	// Check threshold asynchronously or synchronously?
-	// Synchronous check is simpler. 20k items is small enough that cost of check (atomic load) is negligible.
-	if !a.sharded && currentLen >= a.config.ShardThreshold {
+	// Check threshold synchronously
+	if !sharded && currentLen >= a.config.ShardThreshold {
 		a.migrateToSharded()
 	}
 
@@ -68,13 +68,14 @@ func (a *AutoShardingIndex) AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx 
 	a.mu.RLock()
 	id, err := a.current.AddByRecord(rec, rowIdx, batchIdx)
 	currentLen := a.current.Len()
+	sharded := a.sharded
 	a.mu.RUnlock()
 
 	if err != nil {
 		return 0, err
 	}
 
-	if !a.sharded && currentLen >= a.config.ShardThreshold {
+	if !sharded && currentLen >= a.config.ShardThreshold {
 		a.migrateToSharded()
 	}
 	return id, nil
@@ -137,9 +138,12 @@ func (a *AutoShardingIndex) migrateToSharded() {
 	// But we are in `package store`, so we can access unexported fields of HNSWIndex!
 	// Yes, accessing `oldIndex.locations` is possible since we are in `package store`.
 
-	n := len(oldIndex.locations)
+	n := oldIndex.Len()
 	for id := 0; id < n; id++ {
-		loc := oldIndex.locations[id]
+		loc, ok := oldIndex.GetLocation(VectorID(id))
+		if !ok {
+			continue
+		}
 		// Check for empty/tombstone if applicable (Location{0,0} might be valid though).
 		// HNSWIndex initializes locations slice locs.
 		// If we support deletes later, we'd check for tombstone.

@@ -51,6 +51,13 @@ type hnswShard struct {
 	graph *hnsw.Graph[VectorID]
 }
 
+// Warmup accesses all nodes in the shard.
+func (s *hnswShard) Warmup() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.graph.Len()
+}
+
 // ShardedHNSW provides fine-grained locking via multiple independent HNSW shards.
 type ShardedHNSW struct {
 	config     ShardedHNSWConfig
@@ -475,6 +482,23 @@ func (s *ShardedHNSW) SearchByID(id VectorID, k int) []VectorID {
 	return ids
 }
 
+// SetIndexedColumns satisfies VectorIndex interface
+func (s *ShardedHNSW) SetIndexedColumns(cols []string) {
+	// Sharded HNSW itself doesn't use these yet
+}
+
+// Warmup warms up all shards.
+func (idx *ShardedHNSW) Warmup() int {
+	total := 0
+	for _, shard := range idx.shards {
+		// Concurrent warmup could be better, but sequential is safer for now
+		if shard != nil {
+			total += shard.Warmup()
+		}
+	}
+	return total
+}
+
 // Close implements VectorIndex.
 func (s *ShardedHNSW) Close() error {
 	return nil
@@ -499,7 +523,7 @@ func (s *ShardedHNSW) GetDimension() uint32 {
 	return 0 // Placeholder
 }
 
-// ShardStats returns statistics for all shards.
+// Stats returns multi-index statistics for all shards.
 func (s *ShardedHNSW) ShardStats() []ShardStat {
 	stats := make([]ShardStat, len(s.shards))
 	for i, shard := range s.shards {

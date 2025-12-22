@@ -3,7 +3,7 @@ package telemetry
 import (
 	"context"
 	"fmt"
-	"sync"
+	"os"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
@@ -11,89 +11,71 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	semconv "go.opentelemetry.io/otel/semconv/v1.17.0"
-	"go.opentelemetry.io/otel/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
-var (
-	tp   *sdktrace.TracerProvider
-	once sync.Once
-)
-
-// Config holds configuration for telemetry.
-type Config struct {
-	ServiceName    string
-	ServiceVersion string
-	Endpoint       string // OTLP endpoint (e.g. "localhost:4317")
-	UseStdout      bool   // If true, use stdout exporter (dev mode)
-	SampleRatio    float64
-}
-
-// InitTracerProvider initializes the global trace provider.
-// It returns a shutdown function that should be called when the service terminates.
-func InitTracerProvider(ctx context.Context, cfg Config) (func(context.Context) error, error) {
-	var err error
-	once.Do(func() {
-		var exporter sdktrace.SpanExporter
-
-		if cfg.UseStdout {
-			exporter, err = stdouttrace.New(
-				stdouttrace.WithPrettyPrint(),
-			)
-		} else if cfg.Endpoint != "" {
-			exporter, err = otlptracegrpc.New(ctx,
-				otlptracegrpc.WithInsecure(), // TODO: Support TLS
-				otlptracegrpc.WithEndpoint(cfg.Endpoint),
-			)
-		} else {
-			// No-op or stdout fallback if nothing specified?
-			// For now, let's default to no-op (nil exporter implies no export) unless Stdout requested.
-			// But sdktrace.NewBatchSpanProcessor panics on nil.
-			// Return no-op cleanup if no config.
-			return
-		}
-
-		if err != nil {
-			err = fmt.Errorf("failed to create exporter: %w", err)
-			return
-		}
-
-		res, rErr := resource.New(ctx,
-			resource.WithAttributes(
-				semconv.ServiceName(cfg.ServiceName),
-				semconv.ServiceVersion(cfg.ServiceVersion),
-			),
-		)
-		if rErr != nil {
-			err = fmt.Errorf("failed to create resource: %w", rErr)
-			return
-		}
-
-		tp = sdktrace.NewTracerProvider(
-			sdktrace.WithBatcher(exporter),
-			sdktrace.WithResource(res),
-			sdktrace.WithSampler(sdktrace.ParentBased(sdktrace.TraceIDRatioBased(cfg.SampleRatio))),
-		)
-
-		otel.SetTracerProvider(tp)
-		otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
-			propagation.TraceContext{},
-			propagation.Baggage{},
-		))
-	})
-
+// InitTracerProvider initializes an OTel tracer provider.
+// If OTLP endpoint is provided, it exports to that endpoint.
+// Otherwise, it falls back to stdout (if verbose) or no-op.
+func InitTracerProvider(ctx context.Context, serviceName, serviceVersion string) (*sdktrace.TracerProvider, error) {
+	res, err := resource.New(ctx,
+		resource.WithAttributes(
+			semconv.ServiceName(serviceName),
+			semconv.ServiceVersion(serviceVersion),
+		),
+	)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create resource: %w", err)
 	}
 
-	if tp == nil {
-		return func(_ context.Context) error { return nil }, nil
+	var traceExporter sdktrace.SpanExporter
+
+	otlpEndpoint := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
+	if otlpEndpoint != "" {
+		// Use OTLP gRPC exporter
+		conn, err := grpc.NewClient(otlpEndpoint, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		if err != nil {
+			return nil, fmt.Errorf("failed to create gRPC connection to collector: %w", err)
+		}
+
+		traceExporter, err = otlptracegrpc.New(ctx, otlptracegrpc.WithGRPCConn(conn))
+		if err != nil {
+			return nil, fmt.Errorf("failed to create OTLP trace exporter: %w", err)
+		}
+	} else if os.Getenv("LONGBOW_DEBUG") == "true" {
+		// Fallback to stdout for debugging
+		traceExporter, err = stdouttrace.New(
+			stdouttrace.WithPrettyPrint(),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create stdout trace exporter: %w", err)
+		}
+	} else {
+		// No exporter
+		// We implement a No-Op exporter or just return nil provider if desired,
+		// but providing a real provider with no exporter is cleaner for instrumentation code
+		// Actually sdktrace.NewTracerProvider with no batcher implies no export.
 	}
 
-	return tp.Shutdown, nil
-}
+	var tp *sdktrace.TracerProvider
+	if traceExporter != nil {
+		bsp := sdktrace.NewBatchSpanProcessor(traceExporter)
+		tp = sdktrace.NewTracerProvider(
+			sdktrace.WithSampler(sdktrace.AlwaysSample()), // For now sample everything
+			sdktrace.WithResource(res),
+			sdktrace.WithSpanProcessor(bsp),
+		)
+	} else {
+		tp = sdktrace.NewTracerProvider(
+			sdktrace.WithSampler(sdktrace.AlwaysSample()),
+			sdktrace.WithResource(res),
+		)
+	}
 
-// Tracer returns a named tracer.
-func Tracer(name string) trace.Tracer {
-	return otel.Tracer(name)
+	otel.SetTracerProvider(tp)
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}))
+
+	return tp, nil
 }

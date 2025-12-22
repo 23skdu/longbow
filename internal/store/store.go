@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"runtime"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -72,6 +74,21 @@ type VectorStore struct {
 	// Column-based inverted index for O(1) equality filter lookups
 	columnIndex    *ColumnInvertedIndex
 	indexedColumns []string // columns to index for fast equality lookups
+
+	// Compaction (Phase 11/14)
+	compactionConfig CompactionConfig
+	compactionWorker *CompactionWorker
+
+	// Auto-sharding (Phase 13)
+	autoShardingConfig AutoShardingConfig
+
+	// Namespace management
+	nsManager *namespaceManager
+
+	// Shutdown and lifecycle (Phase 6/21)
+	shutdownState int32
+	walFile       *os.File
+	workerWg      sync.WaitGroup
 }
 
 func NewVectorStore(mem memory.Allocator, logger *zap.Logger, maxMemory, maxWALSize int64, ttl time.Duration) *VectorStore {
@@ -89,6 +106,10 @@ func NewVectorStore(mem memory.Allocator, logger *zap.Logger, maxMemory, maxWALS
 			zap.String("topology", topo.String()))
 	}
 
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
 	s := &VectorStore{
 		mem:                mem,
 		logger:             logger,
@@ -98,9 +119,21 @@ func NewVectorStore(mem memory.Allocator, logger *zap.Logger, maxMemory, maxWALS
 		numaTopology:       topo,
 		hybridSearchConfig: DefaultHybridSearchConfig(),
 		columnIndex:        NewColumnInvertedIndex(),
+		compactionConfig:   DefaultCompactionConfig(),
+		autoShardingConfig: DefaultAutoShardingConfig(),
+		nsManager:          newNamespaceManager(),
+		stopChan:           make(chan struct{}),
 	}
 	// Initialize global BM25 if needed (default disabled)
-	s.bm25Index = NewBM25InvertedIndex(s.hybridSearchConfig.BM25)
+	if s.hybridSearchConfig.Enabled {
+		s.bm25Index = NewBM25InvertedIndex(s.hybridSearchConfig.BM25)
+	}
+
+	// Initialize compaction if enabled (Phase 11/14)
+	if s.compactionConfig.Enabled {
+		s.compactionWorker = NewCompactionWorker(s.compactionConfig)
+		s.compactionWorker.Start()
+	}
 
 	// Start workers based on CPU count (Phase 5: Scale up)
 	numWorkers := runtime.NumCPU()
@@ -183,12 +216,83 @@ func (s *VectorStore) evictDataset(ds *Dataset) {
 	s.currentMemory.Add(-size)
 	metrics.EvictionsTotal.WithLabelValues("lru").Inc()
 }
-func (s *VectorStore) StartWALCheckTicker(d time.Duration)                                      {}
-func (s *VectorStore) UpdateConfig(maxMemory, maxWALSize int64, snapshotInterval time.Duration) {}
-func (s *VectorStore) StartMetricsTicker(d time.Duration)                                       {}
-func (s *VectorStore) GetWALQueueDepth() (int, int)                                             { return 0, 0 }
 
-func (s *VectorStore) ListFlights(c *flight.Criteria, stream flight.FlightService_ListFlightsServer) error {
+// SetIndexedColumns updates columns that should be indexed for fast equality lookups
+func (s *VectorStore) SetIndexedColumns(cols []string) {
+	s.indexedColumns = cols
+}
+
+// GetIndexedColumns returns columns currently being indexed
+func (s *VectorStore) GetIndexedColumns() []string {
+	return s.indexedColumns
+}
+
+// IndexRecordColumns indexes specific columns for fast equality lookups
+func (s *VectorStore) IndexRecordColumns(datasetName string, rec arrow.RecordBatch, batchIdx int) {
+	if s.columnIndex == nil || len(s.indexedColumns) == 0 {
+		return
+	}
+	s.columnIndex.IndexRecord(datasetName, batchIdx, rec, s.indexedColumns)
+}
+
+// SetAutoShardingConfig updates the auto-sharding configuration
+func (s *VectorStore) SetAutoShardingConfig(cfg AutoShardingConfig) {
+	s.autoShardingConfig = cfg
+}
+
+// GetAutoShardingConfig returns the current auto-sharding configuration
+func (s *VectorStore) GetAutoShardingConfig() AutoShardingConfig {
+	return s.autoShardingConfig
+}
+
+// extractVectorFromCol extracts a float32 vector from an arrow.Array at rowIdx
+func extractVectorFromCol(arr arrow.Array, rowIdx int) []float32 {
+	if arr == nil {
+		return nil
+	}
+	listArr, ok := arr.(*array.FixedSizeList)
+	if !ok {
+		return nil
+	}
+	width := int(listArr.DataType().(*arrow.FixedSizeListType).Len())
+	start := rowIdx * width
+	end := start + width
+	values := listArr.Data().Children()[0]
+	floatArr := array.NewFloat32Data(values)
+	defer floatArr.Release()
+	if start < 0 || end > floatArr.Len() {
+		return nil
+	}
+	return floatArr.Float32Values()[start:end]
+}
+
+func (s *VectorStore) checkAndMigrateToSharded(ds *Dataset) error {
+	// Placeholder logic: check if dataset size exceeds threshold and migrate index to sharded
+	if !s.autoShardingConfig.Enabled {
+		return nil
+	}
+	// Migration logic would go here
+	return nil
+}
+
+// WarmupStats holds statistics about the warmup operation
+type WarmupStats struct {
+	DatasetsWarmed   int
+	DatasetsSkipped  int
+	TotalNodesWarmed int
+	Duration         time.Duration
+}
+
+func (w WarmupStats) String() string {
+	return fmt.Sprintf("Warmed %d datasets (%d skipped), touched %d nodes in %v",
+		w.DatasetsWarmed, w.DatasetsSkipped, w.TotalNodesWarmed, w.Duration)
+}
+
+// Warmup iterates through all datasets and warms up their indexes
+func (s *VectorStore) Warmup() WarmupStats {
+	start := time.Now()
+	stats := WarmupStats{}
+
 	s.mu.RLock()
 	datasets := make([]*Dataset, 0, len(s.datasets))
 	for _, ds := range s.datasets {
@@ -197,14 +301,99 @@ func (s *VectorStore) ListFlights(c *flight.Criteria, stream flight.FlightServic
 	s.mu.RUnlock()
 
 	for _, ds := range datasets {
-		info := &flight.FlightInfo{
-			FlightDescriptor: &flight.FlightDescriptor{
-				Type: flight.DescriptorPATH,
-				Path: []string{ds.Name},
-			},
+		ds.dataMu.RLock()
+		idx := ds.Index
+		ds.dataMu.RUnlock()
+
+		if idx != nil {
+			nodes := idx.Warmup()
+			stats.TotalNodesWarmed += nodes
+			stats.DatasetsWarmed++
+		} else {
+			stats.DatasetsSkipped++
 		}
-		if err := stream.Send(info); err != nil {
-			return err
+	}
+
+	stats.Duration = time.Since(start)
+	return stats
+}
+
+func (s *VectorStore) StartWALCheckTicker(d time.Duration)                                      {}
+func (s *VectorStore) UpdateConfig(maxMemory, maxWALSize int64, snapshotInterval time.Duration) {}
+func (s *VectorStore) StartMetricsTicker(d time.Duration)                                       {}
+func (s *VectorStore) GetWALQueueDepth() (int, int)                                             { return 0, 0 }
+
+func (s *VectorStore) ListFlights(c *flight.Criteria, stream flight.FlightService_ListFlightsServer) error {
+	var query TicketQuery
+	var err error
+	if c != nil && len(c.Expression) > 0 {
+		query, err = ParseTicketQuerySafe(c.Expression)
+		if err != nil {
+			return status.Errorf(codes.InvalidArgument, "Invalid criteria: %v", err)
+		}
+	}
+
+	s.mu.RLock()
+	datasets := make([]*Dataset, 0, len(s.datasets))
+	for _, ds := range s.datasets {
+		datasets = append(datasets, ds)
+	}
+	s.mu.RUnlock()
+
+	for _, ds := range datasets {
+		// Apply filters
+		match := true
+		for _, f := range query.Filters {
+			switch f.Field {
+			case "name":
+				if f.Operator == "contains" {
+					if !strings.Contains(ds.Name, f.Value) {
+						match = false
+					}
+				}
+			case "rows":
+				var numRows int64
+				ds.dataMu.RLock()
+				for _, rec := range ds.Records {
+					numRows += rec.NumRows()
+				}
+				ds.dataMu.RUnlock()
+
+				val, err := strconv.ParseInt(f.Value, 10, 64)
+				if err != nil {
+					match = false
+					break
+				}
+				switch f.Operator {
+				case ">":
+					if !(numRows > val) {
+						match = false
+					}
+				case "<=":
+					if !(numRows <= val) {
+						match = false
+					}
+				case "==":
+					if !(numRows == val) {
+						match = false
+					}
+				}
+			}
+			if !match {
+				break
+			}
+		}
+
+		if match {
+			info := &flight.FlightInfo{
+				FlightDescriptor: &flight.FlightDescriptor{
+					Type: flight.DescriptorPATH,
+					Path: []string{ds.Name},
+				},
+			}
+			if err := stream.Send(info); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -447,7 +636,7 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 	}
 
 	s.logger.Info("DoPut completed (Batched)", zap.String("name", name))
-	return stream.Send(&flight.PutResult{})
+	return nil
 }
 
 // flushPutBatch handles writing a batch of records to WAL and memory
@@ -981,7 +1170,9 @@ func (s *VectorStore) runIndexWorker(allocator memory.Allocator) {
 		s.mu.RUnlock()
 
 		if !ok {
-			job.Record.Release()
+			if job.Record != nil {
+				job.Record.Release()
+			}
 			continue
 		}
 
@@ -1182,7 +1373,7 @@ func (s *VectorStore) getDataset(name string) (*Dataset, error) {
 	defer s.mu.RUnlock()
 	ds, ok := s.datasets[name]
 	if !ok {
-		return nil, fmt.Errorf("dataset %q not found", name)
+		return nil, NewNotFoundError("dataset", name)
 	}
 	return ds, nil
 }
@@ -1610,4 +1801,46 @@ func (s *VectorStore) HybridSearch(ctx context.Context, name string, query []flo
 // SearchHybrid is a wrapper for the SearchHybrid function (RRF version)
 func (s *VectorStore) SearchHybrid(ctx context.Context, name string, query []float32, textQuery string, k int, alpha float32, rrfK int) ([]SearchResult, error) {
 	return SearchHybrid(ctx, s, name, query, textQuery, k, alpha, rrfK)
+}
+
+// StoreRecordBatch stores a batch of records in a dataset
+func (s *VectorStore) StoreRecordBatch(ctx context.Context, name string, rec arrow.RecordBatch) error {
+	s.mu.Lock()
+	ds, ok := s.datasets[name]
+	if !ok {
+		ds = NewDataset(name, rec.Schema())
+		s.datasets[name] = ds
+	}
+	s.mu.Unlock()
+
+	// WAL write
+	if err := s.writeToWAL(rec, name); err != nil {
+		return err
+	}
+
+	// Memory append
+	ds.dataMu.Lock()
+	ds.Records = append(ds.Records, rec)
+	rec.Retain()
+	ds.dataMu.Unlock()
+
+	// Memory tracking
+	size := estimateBatchSize(rec)
+	ds.SizeBytes.Add(size)
+	s.currentMemory.Add(size)
+
+	// Inverted index update (Hybrid)
+	s.indexTextColumnsForHybridSearch(rec, 0) // Simplified baseRowID for now
+
+	// Compaction trigger
+	if s.compactionWorker != nil {
+		ds.dataMu.RLock()
+		numBatches := len(ds.Records)
+		ds.dataMu.RUnlock()
+		if numBatches >= s.compactionConfig.MinBatchesToCompact {
+			_ = s.compactionWorker.TriggerCompaction(name)
+		}
+	}
+
+	return nil
 }

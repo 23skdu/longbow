@@ -116,29 +116,13 @@ func (w *WALBatcher) Start() error {
 	w.running = true
 
 	// Start async fsyncer if enabled
-	// Start async fsyncer if enabled
-	// Note: AsyncFsyncer expects *os.File. If we use UringBackend, we might need adjustments.
-	// However, if FSBackend is used, we can cast.
-	// For UringBackend, typical AsyncFsync logic (calling fsync in background) might overlap with uring features.
-	// Current AsyncFsyncer takes *os.File.
-	// TODO: Refactor AsyncFsyncer to use WALBackend interface or just Sync() method.
-	// For now, if backend provides Underlying() *os.File, we use it.
-	// Or we simply rely on backend.Sync() being called by flush loop?
-	// AsyncFsyncer runs a loop calling f.Sync().
-	// We should update AsyncFsyncer later. For now, let's skip AsyncFsyncer if backend !FSBackend,
-	// or assume backend.Sync() is thread safe and we can pass a wrapper?
-
-	// Simplest: Only enable AsyncFsyncer for FSBackend (fallback).
-	// UringBackend handles sync internally or via specific submit?
-	// Actually, UringBackend.Sync() is thread safe.
-	// But AsyncFsyncer takes *os.File explicitly.
-	// For this phase, if we use io_uring, we can trust the OS/kernel or use backend.Sync() manually.
-	// Let's defer AsyncFsyncer update and casting.
 	if w.asyncFsyncer != nil {
-		// Attempt to get file from backend if possible, or refactor Sync.
-		// Since we changed backend to interface, we skip explicit AsyncFsyncer start for now
-		// unless we refactor AsyncFsyncer.
-		// Ideally, backend.Sync() is what we want.
+		if f := w.backend.File(); f != nil {
+			if err := w.asyncFsyncer.Start(f); err != nil {
+				w.backend.Close()
+				return err
+			}
+		}
 	}
 
 	// Start background flusher

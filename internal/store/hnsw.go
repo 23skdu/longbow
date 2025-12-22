@@ -50,6 +50,12 @@ type HNSWIndex struct {
 	Metric        VectorMetric  // Distance metric used by this index
 
 	nextVecID atomic.Uint32
+
+	// Product Quantization
+	pqEnabled bool
+	pqEncoder *PQEncoder
+	pqCodes   [][]uint8 // Indexed by VectorID
+	pqCodesMu sync.RWMutex
 }
 
 // NewHNSWIndex creates a new index for the given dataset using Euclidean distance.
@@ -96,8 +102,128 @@ func NewHNSWIndexWithCapacity(ds *Dataset, capacity int) *HNSWIndex {
 	return h
 }
 
-// GetDistanceFunc returns the SIMD distance function for the index's metric.
+// SetPQEncoder enables product quantization with the provided encoder.
+func (h *HNSWIndex) SetPQEncoder(encoder *PQEncoder) {
+	h.pqCodesMu.Lock()
+	defer h.pqCodesMu.Unlock()
+	h.pqEncoder = encoder
+	h.pqEnabled = true
+	// Initialize code storage if needed, but typically we do this incrementally.
+	if h.pqCodes == nil {
+		h.pqCodes = make([][]uint8, 0)
+	}
+	// Update distance function in graph
+	h.Graph.Distance = h.GetDistanceFunc()
+}
+
+// TrainPQ trains a PQ encoder on the current dataset elements and enables it.
+// This is a blocking operation.
+func (h *HNSWIndex) TrainPQ(dimensions, m, ksub, iterations int) error {
+	// 1. Gather all current vectors
+	// This might be expensive for large datasets.
+	// For now, we take a sample or all.
+	// Let's assume we fit in memory for training sample.
+	count := int(h.nextVecID.Load())
+	if count == 0 {
+		return fmt.Errorf("cannot train PQ on empty index")
+	}
+
+	sampleSize := 10000
+	if count < sampleSize {
+		sampleSize = count
+	}
+
+	vectors := make([][]float32, 0, sampleSize)
+	// Sample uniformly
+	step := count / sampleSize
+	if step == 0 {
+		step = 1
+	}
+
+	for i := 0; i < count; i += step {
+		vec := h.getVector(VectorID(i))
+		if vec != nil {
+			vectors = append(vectors, vec)
+		}
+	}
+
+	cfg := &PQConfig{
+		Dim:    dimensions,
+		M:      m,
+		Ksub:   ksub,
+		SubDim: dimensions / m,
+	}
+
+	enc, err := TrainPQEncoder(cfg, vectors, iterations)
+	if err != nil {
+		return err
+	}
+
+	h.SetPQEncoder(enc)
+
+	// Encode existing vectors
+	// This needs to be done under lock or carefully managed
+	h.pqCodesMu.Lock()
+	defer h.pqCodesMu.Unlock()
+
+	// Resize codes slice
+	if cap(h.pqCodes) < count {
+		newCodes := make([][]uint8, count)
+		copy(newCodes, h.pqCodes)
+		h.pqCodes = newCodes
+	} else {
+		h.pqCodes = h.pqCodes[:count]
+	}
+
+	for i := 0; i < count; i++ {
+		vec := h.getVector(VectorID(i))
+		if vec != nil {
+			h.pqCodes[i] = enc.Encode(vec)
+		}
+	}
+
+	return nil
+}
+
+// GetDistanceFunc returns the distance function.
+// If PQ is enabled, it returns the SDC-accelerated PQ distance.
 func (h *HNSWIndex) GetDistanceFunc() func(a, b []float32) float32 {
+	h.pqCodesMu.RLock()
+	pqEnabled := h.pqEnabled
+	encoder := h.pqEncoder
+	h.pqCodesMu.RUnlock()
+
+	if pqEnabled && encoder != nil {
+		// PQ SDC Distance Function with safety check for mixed graph states.
+		packedLen := (h.pqEncoder.CodeSize() + 3) / 4
+
+		return func(a, b []float32) float32 {
+			// Fast path: both packed (common case after full indexing)
+			if len(a) == packedLen && len(b) == packedLen {
+				return h.pqEncoder.SDCDistancePacked(a, b)
+			}
+
+			// Fallback: mixed raw/packed
+			var codesA, codesB []uint8
+
+			// Process A
+			if len(a) == packedLen {
+				codesA = UnpackFloat32sToBytes(a, h.pqEncoder.CodeSize())
+			} else {
+				codesA = h.pqEncoder.Encode(a)
+			}
+
+			// Process B
+			if len(b) == packedLen {
+				codesB = UnpackFloat32sToBytes(b, h.pqEncoder.CodeSize())
+			} else {
+				codesB = h.pqEncoder.Encode(b)
+			}
+
+			return h.pqEncoder.SDCDistance(codesA, codesB)
+		}
+	}
+
 	switch h.Metric {
 	case MetricCosine:
 		return simd.CosineDistance
@@ -199,10 +325,22 @@ func (h *HNSWIndex) Search(query []float32, k int) []VectorID {
 		metrics.VectorSearchLatencySeconds.WithLabelValues(h.dataset.Name).Observe(time.Since(start).Seconds())
 	}(time.Now())
 
+	// PQ Encoding for query
+	var graphQuery []float32 = query
+	// Use RLock for config check to avoid race
+	h.pqCodesMu.RLock()
+	// Capture locals to avoid holding lock too long if encoding is slow?
+	// Encoding is fast enough.
+	if h.pqEnabled && h.pqEncoder != nil {
+		codes := h.pqEncoder.Encode(query)
+		graphQuery = PackBytesToFloat32s(codes)
+	}
+	h.pqCodesMu.RUnlock()
+
 	// coder/hnsw library requires synchronization between Search and Add
 	// Use global RLock for graph search (multiple concurrent searches OK)
 	h.mu.RLock()
-	neighbors := h.Graph.Search(query, k)
+	neighbors := h.Graph.Search(graphQuery, k)
 	h.mu.RUnlock()
 
 	res := make([]VectorID, len(neighbors))
@@ -229,10 +367,19 @@ func (h *HNSWIndex) SearchVectors(query []float32, k int, filters []Filter) []Se
 		limit = k * 10 // Oversample for filtering. TODO: Adaptive or configurable factor
 	}
 
+	// PQ Encoding for query
+	var graphQuery []float32 = query
+	h.pqCodesMu.RLock()
+	if h.pqEnabled && h.pqEncoder != nil {
+		codes := h.pqEncoder.Encode(query)
+		graphQuery = PackBytesToFloat32s(codes)
+	}
+	h.pqCodesMu.RUnlock()
+
 	// Graph search requires global lock (coder/hnsw library requirement)
 	// Multiple concurrent searches can hold RLock simultaneously
 	h.mu.RLock()
-	neighbors := h.Graph.Search(query, limit)
+	neighbors := h.Graph.Search(graphQuery, limit)
 	h.mu.RUnlock()
 
 	distFunc := h.GetDistanceFunc()
@@ -513,11 +660,45 @@ func (h *HNSWIndex) Add(batchIdx, rowIdx int) (uint32, error) {
 
 	// 5. Add to HNSW graph - serialization is unfortunately required for coder/hnsw
 	indexLockStart7 := time.Now()
+
+	// PQ Encoding
+	var nodeVec []float32 = vec
+	h.pqCodesMu.RLock()
+	pqEnabled := h.pqEnabled
+	encoder := h.pqEncoder
+	h.pqCodesMu.RUnlock()
+
+	if pqEnabled && encoder != nil {
+		codes := encoder.Encode(vec)
+		h.pqCodesMu.Lock()
+		// Resize storage if necessary
+		if int(id) >= len(h.pqCodes) {
+			// Grow slice to accommodate new ID
+			targetLen := int(id) + 1
+			if targetLen > cap(h.pqCodes) {
+				newCap := targetLen * 2
+				if newCap < 1024 {
+					newCap = 1024
+				}
+				newCodes := make([][]uint8, targetLen, newCap)
+				copy(newCodes, h.pqCodes)
+				h.pqCodes = newCodes
+			} else {
+				h.pqCodes = h.pqCodes[:targetLen]
+			}
+		}
+		h.pqCodes[id] = codes
+		h.pqCodesMu.Unlock()
+
+		// Pack codes into float32 slice for storage in Graph Node
+		nodeVec = PackBytesToFloat32s(codes)
+	}
+
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	metrics.IndexLockWaitDuration.WithLabelValues(h.dataset.Name, "write").Observe(time.Since(indexLockStart7).Seconds())
 
-	h.Graph.Add(hnsw.MakeNode(id, vec))
+	h.Graph.Add(hnsw.MakeNode(id, nodeVec))
 
 	// Track HNSW metrics
 	metrics.HnswNodeCount.WithLabelValues(h.dataset.Name).Set(float64(h.nextVecID.Load()))
@@ -587,11 +768,42 @@ func (h *HNSWIndex) AddSafe(rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32
 
 	// 5. Add to graph under global lock
 	indexLockStart7 := time.Now()
+
+	// PQ Encoding
+	var nodeVec []float32 = vec
+	h.pqCodesMu.RLock()
+	pqEnabled := h.pqEnabled
+	encoder := h.pqEncoder
+	h.pqCodesMu.RUnlock()
+
+	if pqEnabled && encoder != nil {
+		codes := encoder.Encode(vec)
+		h.pqCodesMu.Lock()
+		// Resize storage if necessary
+		if int(id) >= len(h.pqCodes) {
+			targetLen := int(id) + 1
+			if targetLen > cap(h.pqCodes) {
+				newCap := targetLen * 2
+				if newCap < 1024 {
+					newCap = 1024
+				}
+				newCodes := make([][]uint8, targetLen, newCap)
+				copy(newCodes, h.pqCodes)
+				h.pqCodes = newCodes
+			} else {
+				h.pqCodes = h.pqCodes[:targetLen]
+			}
+		}
+		h.pqCodes[id] = codes
+		h.pqCodesMu.Unlock()
+		nodeVec = PackBytesToFloat32s(codes)
+	}
+
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	metrics.IndexLockWaitDuration.WithLabelValues(h.dataset.Name, "write").Observe(time.Since(indexLockStart7).Seconds())
 
-	h.Graph.Add(hnsw.MakeNode(id, vec))
+	h.Graph.Add(hnsw.MakeNode(id, nodeVec))
 
 	// Track HNSW metrics
 	metrics.HnswNodeCount.WithLabelValues(h.dataset.Name).Set(float64(h.nextVecID.Load()))

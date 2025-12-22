@@ -18,12 +18,13 @@ func TestDiscovery_Static(t *testing.T) {
 	assert.NoError(t, err)
 	defer g1.Stop()
 
-	// Node 2 (Uses Static Provider to find Node 1)
-	provider := NewStaticProvider([]string{"127.0.0.1:12350"})
 	g2 := NewGossip(GossipConfig{
-		ID:        "joiner",
-		Port:      12351,
-		Discovery: provider,
+		ID:   "joiner",
+		Port: 12351,
+		Discovery: DiscoveryConfig{
+			Provider:    "static",
+			StaticPeers: "127.0.0.1:12350",
+		},
 	})
 	err = g2.Start()
 	assert.NoError(t, err)

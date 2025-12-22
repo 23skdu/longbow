@@ -26,7 +26,10 @@ func TestSyncWorker_Replication(t *testing.T) {
 	// 1. Setup Leader Store
 	leaderDir := t.TempDir()
 	leaderStore := store.NewVectorStore(mem, logger, 1<<30, 1<<30, 0)
-	require.NoError(t, leaderStore.InitPersistence(leaderDir, time.Hour))
+	require.NoError(t, leaderStore.InitPersistence(store.StorageConfig{
+		DataPath:         leaderDir,
+		SnapshotInterval: time.Hour,
+	}))
 	defer leaderStore.Close()
 
 	// 2. Start Leader gRPC Server
@@ -44,7 +47,10 @@ func TestSyncWorker_Replication(t *testing.T) {
 	// 3. Setup Follower Store
 	followerDir := t.TempDir()
 	followerStore := store.NewVectorStore(mem, logger, 1<<30, 1<<30, 0)
-	require.NoError(t, followerStore.InitPersistence(followerDir, time.Hour))
+	require.NoError(t, followerStore.InitPersistence(store.StorageConfig{
+		DataPath:         followerDir,
+		SnapshotInterval: time.Hour,
+	}))
 	defer followerStore.Close()
 
 	// 4. Create Record on Leader

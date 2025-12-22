@@ -24,9 +24,20 @@ except ImportError:
     HAS_POLARS = False
 
 
-def get_client(uri):
+def get_client(uri, routing_key=None):
     print(f"Connecting to {uri}...")
+    # Add generic middleware/metadata if routing_key provided
+    # However, pyarrow.flight.FlightClient doesn't take session-wide metadata easily in all versions.
+    # We will pass it per-call.
     return flight.FlightClient(uri)
+
+def get_options(args):
+    """Generate call options including routing metadata."""
+    if hasattr(args, 'routing_key') and args.routing_key:
+        return flight.FlightCallOptions(headers=[
+            (b"x-longbow-key", args.routing_key.encode("utf-8"))
+        ])
+    return flight.FlightCallOptions()
 
 
 # =============================================================================
@@ -69,7 +80,9 @@ def command_put(args, data_client, meta_client):
 
     print(f"Uploading {rows} rows to '{name}'...")
     descriptor = flight.FlightDescriptor.for_path(name)
-    writer, _ = data_client.do_put(descriptor, table.schema)
+    
+    options = get_options(args)
+    writer, _ = data_client.do_put(descriptor, table.schema, options=options)
     writer.write_table(table)
     writer.close()
     print("Upload complete.")
@@ -92,7 +105,8 @@ def command_get(args, data_client, meta_client):
     ticket = flight.Ticket(json.dumps(query).encode("utf-8"))
     
     try:
-        reader = data_client.do_get(ticket)
+        options = get_options(args)
+        reader = data_client.do_get(ticket, options=options)
         table = reader.read_all()
         print(f"Retrieved {table.num_rows} rows.")
         if HAS_POLARS:
@@ -129,7 +143,8 @@ def command_info(args, data_client, meta_client):
     print(f"Getting info for '{name}'...")
     try:
         descriptor = flight.FlightDescriptor.for_path(name)
-        info = meta_client.get_flight_info(descriptor)
+        options = get_options(args)
+        info = meta_client.get_flight_info(descriptor, options=options)
         print(f"Schema: {info.schema}")
         print(f"Total Records: {info.total_records}")
         print(f"Total Bytes: {info.total_bytes}")
@@ -143,7 +158,8 @@ def command_status(args, data_client, meta_client):
     print("Getting cluster status...")
     try:
         action = flight.Action("cluster-status", b"")
-        results = meta_client.do_action(action)
+        options = get_options(args)
+        results = meta_client.do_action(action, options=options)
         for res in results:
             status = json.loads(res.body.to_pybytes())
             print(json.dumps(status, indent=2))
@@ -236,7 +252,8 @@ def command_search(args, data_client, meta_client):
     try:
         # Search is a DoAction on Meta Server with type "VectorSearch"
         action = flight.Action("VectorSearch", payload)
-        results = meta_client.do_action(action)
+        options = get_options(args)
+        results = meta_client.do_action(action, options=options)
         
         for res in results:
             body = json.loads(res.body.to_pybytes())
@@ -427,8 +444,8 @@ def main():
     # EXCHANGE
     subparsers.add_parser("exchange", help="Test DoExchange")
     
-    # VALIDATE
-    subparsers.add_parser("validate", help="Run full validation suite")
+    # GLOBAL options
+    parser.add_argument("--routing-key", help="Explicit routing key (x-longbow-key metadata)")
 
     args = parser.parse_args()
     

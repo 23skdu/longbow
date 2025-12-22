@@ -74,6 +74,10 @@ type Config struct {
 	StorageAsyncFsync     bool `envconfig:"STORAGE_ASYNC_FSYNC" default:"true"`
 	StorageDoPutBatchSize int  `envconfig:"STORAGE_DOPUT_BATCH_SIZE" default:"100"`
 	StorageUseIOUring     bool `envconfig:"STORAGE_USE_IOURING" default:"false"`
+
+	// GPU Configuration
+	GPUEnabled  bool `envconfig:"GPU_ENABLED" default:"false"`
+	GPUDeviceID int  `envconfig:"GPU_DEVICE_ID" default:"0"`
 }
 
 func main() {
@@ -233,8 +237,9 @@ func run() error {
 		return err
 	}
 	serverOpts := cfg.BuildGRPCServerOptions()
-	// Add Partition Proxy Interceptor
+	// Add Partition Proxy Interceptors
 	serverOpts = append(serverOpts, grpc.UnaryInterceptor(sharding.PartitionProxyInterceptor(ringManager, forwarder)))
+	serverOpts = append(serverOpts, grpc.StreamInterceptor(sharding.PartitionProxyStreamInterceptor(ringManager, forwarder)))
 
 	logger.Info("gRPC server options configured",
 		zap.Int("max_recv_msg_size", cfg.GRPCMaxRecvMsgSize),

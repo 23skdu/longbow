@@ -9,6 +9,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/23skdu/longbow/internal/gpu"
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/simd"
 	"github.com/apache/arrow-go/v18/arrow"
@@ -49,6 +50,11 @@ type HNSWIndex struct {
 	resultPool    *resultPool   // Pool for search result slices
 	Metric        VectorMetric  // Distance metric used by this index
 	numaTopology  *NUMATopology // NUMA topology for cross-node tracking
+
+	// GPU acceleration (optional)
+	gpuIndex    gpu.Index
+	gpuEnabled  bool
+	gpuFallback bool // true if GPU init failed, using CPU only
 
 	nextVecID atomic.Uint32
 

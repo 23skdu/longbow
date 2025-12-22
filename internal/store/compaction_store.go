@@ -49,7 +49,7 @@ func (vs *VectorStore) GetCompactionStats() CompactionStats {
 func (vs *VectorStore) CompactDataset(name string) error {
 	start := time.Now()
 	defer func() {
-		metrics.CompactionDurationSeconds.WithLabelValues(name).Observe(time.Since(start).Seconds())
+		metrics.CompactionDurationSeconds.WithLabelValues(name, "manual").Observe(time.Since(start).Seconds())
 	}()
 	ds, err := vs.getDataset(name)
 	if err != nil || ds == nil {

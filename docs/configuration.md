@@ -34,6 +34,15 @@ Longbow is stateless and configured entirely via environment variables.
 | :--- | :--- | :--- |
 | `LONGBOW_METRICS_ADDR` | `:2112` | Address to expose Prometheus metrics (e.g., `/metrics`). |
 
+| `LONGBOW_METRICS_ADDR` | `:2112` | Address to expose Prometheus metrics (e.g., `/metrics`). |
+
+## Rate Limiting
+
+| Variable | Default | Description |
+| :--- | :--- | :--- |
+| `LONGBOW_RATE_LIMIT_RPS` | `0` | Requests Per Second limit (0 = disabled). |
+| `LONGBOW_RATE_LIMIT_BURST` | `0` | Maximum burst size allowed. |
+
 ## Feature Flags
 
 | Variable | Default | Description |

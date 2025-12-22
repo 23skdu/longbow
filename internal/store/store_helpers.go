@@ -33,24 +33,7 @@ func validateRecordBatch(rec arrow.RecordBatch) error {
 	return nil
 }
 
-// CachedRecordSize calculates the approximate size of a record batch in bytes
-func CachedRecordSize(rec arrow.RecordBatch) int64 {
-	if rec == nil {
-		return 0
-	}
-	size := int64(0)
-	for _, col := range rec.Columns() {
-		if col == nil || col.Data() == nil {
-			continue
-		}
-		for _, buf := range col.Data().Buffers() {
-			if buf != nil {
-				size += int64(buf.Len())
-			}
-		}
-	}
-	return size
-}
+// CachedRecordSize was moved to record_size_cache.go
 
 func calculateBatchNorm(arr arrow.Array) float64 {
 	listArr, ok := arr.(*array.FixedSizeList)

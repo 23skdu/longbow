@@ -100,6 +100,12 @@ func (p *HybridSearchPipeline) SetHNSWIndex(idx *HNSWIndex) {
 
 // Search performs hybrid search combining all configured indexes
 func (p *HybridSearchPipeline) Search(query *HybridSearchQuery) ([]SearchResult, error) {
+	if query == nil {
+		return nil, errors.New("query cannot be nil")
+	}
+	if err := query.Validate(); err != nil {
+		return nil, err
+	}
 	if query.K <= 0 {
 		return nil, errors.New("k must be positive")
 	}
@@ -189,14 +195,7 @@ func FuseLinear(dense, sparse []SearchResult, alpha float32, limit int) []Search
 	for id, score := range scores {
 		results = append(results, SearchResult{ID: id, Score: score})
 	}
-	sort.Slice(results, func(i, j int) bool {
-		return results[i].Score > results[j].Score
-	})
-
-	if len(results) > limit {
-		results = results[:limit]
-	}
-	return results
+	return dedupeAndSort(results, limit)
 }
 
 // FuseRRF is an alias for ReciprocalRankFusion (legacy alignment)
@@ -244,14 +243,11 @@ func FuseCascade(exact map[VectorID]struct{}, keyword, vector []SearchResult, li
 		}
 	}
 
-	sort.Slice(filtered, func(i, j int) bool {
-		return filtered[i].Score > filtered[j].Score
-	})
-
 	if len(filtered) > limit {
 		filtered = filtered[:limit]
 	}
-	return filtered
+	// Re-sort to be safe, though cascade logic might not fully guarantee order if mixed
+	return dedupeAndSort(filtered, limit)
 }
 
 // applyExactFilters applies exact match filters using column index
@@ -260,7 +256,36 @@ func (p *HybridSearchPipeline) applyExactFilters(filters []Filter) map[VectorID]
 		return nil
 	}
 
-	// For now, return nil as column index integration needs dataset context
 	// This would be implemented when integrating with VectorStore
 	return nil
+}
+
+// dedupeAndSort removes duplicates (keeping highest score) and sorts by score descending
+func dedupeAndSort(results []SearchResult, limit int) []SearchResult {
+	if len(results) == 0 {
+		return nil
+	}
+
+	seen := make(map[VectorID]int)
+	var unique []SearchResult
+
+	for _, r := range results {
+		if idx, ok := seen[r.ID]; ok {
+			if r.Score > unique[idx].Score {
+				unique[idx].Score = r.Score
+			}
+		} else {
+			seen[r.ID] = len(unique)
+			unique = append(unique, r)
+		}
+	}
+
+	sort.Slice(unique, func(i, j int) bool {
+		return unique[i].Score > unique[j].Score
+	})
+
+	if len(unique) > limit {
+		unique = unique[:limit]
+	}
+	return unique
 }

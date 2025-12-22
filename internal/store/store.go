@@ -85,6 +85,10 @@ type VectorStore struct {
 	// Namespace management
 	nsManager *namespaceManager
 
+	// GPU acceleration (optional)
+	gpuEnabled  bool
+	gpuDeviceID int
+
 	// Shutdown and lifecycle (Phase 6/21)
 	shutdownState int32
 	walFile       *os.File
@@ -545,6 +549,11 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 		s.datasets[name] = ds
 	}
 	ds = s.datasets[name]
+
+	// Initialize GPU if enabled
+	if hnswIdx, ok := ds.Index.(*HNSWIndex); ok {
+		s.initGPUIfEnabled(hnswIdx)
+	}
 	s.mu.Unlock()
 
 	// Batching configuration

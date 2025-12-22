@@ -1,4 +1,4 @@
-//go:build linux
+//go:build linux && iouring
 
 package store
 

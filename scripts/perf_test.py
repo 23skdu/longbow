@@ -78,6 +78,28 @@ class BenchmarkResult:
         return sorted_lat[min(idx, len(sorted_lat) - 1)]
 
 
+def check_cluster_health(client: flight.FlightClient) -> bool:
+    """Check cluster status before running benchmarks."""
+    print("Checking cluster health...")
+    try:
+        action = flight.Action("cluster-status", b"")
+        results = list(client.do_action(action))
+        if not results:
+            print("WARN: No status returned from cluster")
+            return False
+            
+        status = json.loads(results[0].body.to_pybytes())
+        count = status.get("count", 0)
+        print(f"Cluster Healthy: {count} active members")
+        for m in status.get("members", []):
+            print(f" - {m.get('ID')} ({m.get('Addr')}) [{m.get('Status', 'Unknown')}]")
+            
+        return count > 0
+    except Exception as e:
+        print(f"Cluster check failed: {e}")
+        return False
+
+
 # =============================================================================
 # Data Generation
 # =============================================================================
@@ -724,6 +746,7 @@ def main():
     # Output
     parser.add_argument("--json", help="Export results to JSON file")
     parser.add_argument("--all", action="store_true", help="Run all benchmarks")
+    parser.add_argument("--check-cluster", action="store_true", help="Verify cluster health before start")
 
     # Filters (legacy support)
     parser.add_argument("--filter", action="append",
@@ -754,6 +777,11 @@ def main():
     except Exception as e:
         print(f"Failed to connect: {e}")
         sys.exit(1)
+
+    if args.check_cluster:
+        if not check_cluster_health(meta_client):
+            print("Cluster check failed. Aborting.")
+            sys.exit(1)
 
     # Always run basic PUT/GET
     include_text = args.hybrid or args.all

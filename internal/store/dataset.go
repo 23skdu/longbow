@@ -28,9 +28,13 @@ type Dataset struct {
 	dataMu     sync.RWMutex // Protects Records slice (append-only)
 	Name       string
 	Schema     *arrow.Schema
+	Topo       *NUMATopology
 
 	// Tombstones map BatchIdx -> Bitset of deleted RowIdxs
 	Tombstones map[int]*Bitset
+
+	// BatchNodes tracks which NUMA node each RecordBatch is allocated on
+	BatchNodes []int
 
 	// Memory tracking
 	SizeBytes atomic.Int64
@@ -81,6 +85,7 @@ func NewDataset(name string, schema *arrow.Schema) *Dataset {
 	return &Dataset{
 		Name:            name,
 		Records:         make([]arrow.RecordBatch, 0),
+		BatchNodes:      make([]int, 0),
 		Schema:          schema,
 		Tombstones:      make(map[int]*Bitset),
 		LWW:             NewTimestampMap(),

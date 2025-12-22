@@ -2,6 +2,9 @@ package store
 
 import (
 	"errors"
+	"time"
+
+	"github.com/23skdu/longbow/internal/metrics"
 )
 
 // compactionWorker is the background worker (added to VectorStore)
@@ -44,6 +47,10 @@ func (vs *VectorStore) GetCompactionStats() CompactionStats {
 
 // CompactDataset manually triggers compaction for a specific dataset.
 func (vs *VectorStore) CompactDataset(name string) error {
+	start := time.Now()
+	defer func() {
+		metrics.CompactionDurationSeconds.WithLabelValues(name).Observe(time.Since(start).Seconds())
+	}()
 	ds, err := vs.getDataset(name)
 	if err != nil || ds == nil {
 		return errors.New("compaction: dataset not found")
@@ -58,7 +65,7 @@ func (vs *VectorStore) CompactDataset(name string) error {
 
 	// 1. Perform Incremental Compaction
 	// Returns a NEW slice of records and a remapping table
-	newRecords, remapping, err := compactRecords(ds.Records, vs.compactionConfig.TargetBatchSize)
+	newRecords, remapping, err := compactRecords(ds.Records, ds.Tombstones, vs.compactionConfig.TargetBatchSize, name)
 	if err != nil {
 		return err // e.g. nothing to compact
 	}
@@ -72,34 +79,14 @@ func (vs *VectorStore) CompactDataset(name string) error {
 	// We iterate locations and update them.
 	// We need to convert our internal remapping format to the one HNSW expects.
 	if hnsw, ok := ds.Index.(*HNSWIndex); ok {
-		// Convert compaction.go's batchRemapInfo to hnsw.go's BatchRemapInfo
-		// Currently they are identical but in different files/types if not exported.
-		// Since they are in the same package 'store', we can use the same type if we define it nicely.
-		// I defined BatchRemapInfo in hnsw.go just now. The one in compaction.go is unexported 'batchRemapInfo'.
-		// Map compaction.batchRemapInfo -> hnsw.BatchRemapInfo
-		hnswRemap := make(map[int]BatchRemapInfo, len(remapping))
-		for oldIdx, info := range remapping {
-			hnswRemap[oldIdx] = BatchRemapInfo{
-				NewBatchIdx: info.NewBatchIdx,
-				RowOffset:   info.RowOffset,
-			}
-		}
-		hnsw.RemapLocations(hnswRemap)
+		hnsw.RemapLocations(remapping)
 	}
 
 	// 3. Fix up Tombstones (Bitsets)
-	// We need to merge bitsets for merged batches and shift keys for others.
+	// Since we actively filtered tombstones, the new structure should be clean.
+	// If any rows were missed (not expected), we would re-map them here.
 	newTombstones := make(map[int]*Bitset)
 
-	// Create bitsets for new batches if needed
-	for i := range newRecords {
-		// Initialize empty bitsets for new structure
-		// Often tombstones are sparse, so we create on demand?
-		// But here we might be merging existing deletions.
-		_ = i
-	}
-
-	// Iterate over OLD batches to merge tombstones
 	for oldBatchIdx, tombstone := range ds.Tombstones {
 		if tombstone == nil || tombstone.Count() == 0 {
 			continue
@@ -107,25 +94,23 @@ func (vs *VectorStore) CompactDataset(name string) error {
 
 		info, ok := remapping[oldBatchIdx]
 		if !ok {
-			// Dropped batch? Should not happen if compactRecords keeps everything.
 			continue
 		}
 
-		// Get or create new tombstone
 		newTomb := newTombstones[info.NewBatchIdx]
-		if newTomb == nil {
-			newTomb = NewBitset()
-			newTombstones[info.NewBatchIdx] = newTomb
-		}
-
-		// Merge bits with offset
-		// Bitset is roaring wrapper. We need to iterate and add.
-		// Iterate over set bits
 		iter := tombstone.bitmap.Iterator()
 		for iter.HasNext() {
 			oldRowIdx := iter.Next()
-			newRowIdx := int(oldRowIdx) + info.RowOffset
-			newTomb.Set(newRowIdx)
+			if int(oldRowIdx) < len(info.NewRowIdxs) {
+				newRowIdx := info.NewRowIdxs[oldRowIdx]
+				if newRowIdx != -1 {
+					if newTomb == nil {
+						newTomb = NewBitset()
+						newTombstones[info.NewBatchIdx] = newTomb
+					}
+					newTomb.Set(newRowIdx)
+				}
+			}
 		}
 	}
 
@@ -144,6 +129,18 @@ func (vs *VectorStore) CompactDataset(name string) error {
 
 	ds.Records = newRecords
 	ds.Tombstones = newTombstones
+
+	// Update BatchNodes for the new record set
+	// All these records were either created or retained by this worker on the current node
+	currCPU := GetCurrentCPU()
+	currNode := -1
+	if vs.numaTopology != nil {
+		currNode = vs.numaTopology.GetNodeForCPU(currCPU)
+	}
+	ds.BatchNodes = make([]int, len(newRecords))
+	for i := range newRecords {
+		ds.BatchNodes[i] = currNode
+	}
 
 	return nil
 }

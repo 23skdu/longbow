@@ -99,9 +99,8 @@ var (
 	// ValidationFailuresTotal counts record batch validation failures
 	ValidationFailuresTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
-			Namespace: "longbow",
-			Name:      "validation_failures_total",
-			Help:      "Total number of record batch validation failures",
+			Name: "longbow_validation_failures_total",
+			Help: "Total number of record batch validation failures",
 		},
 		[]string{"source", "reason"},
 	)
@@ -879,7 +878,26 @@ var CompactionOperationsTotal = promauto.NewCounterVec(
 		Name: "longbow_compaction_operations_total",
 		Help: "Total compaction operations by status",
 	},
-	[]string{"status"},
+	[]string{"dataset", "status"},
+)
+
+// CompactionDurationSeconds - Time taken for compaction
+var CompactionDurationSeconds = promauto.NewHistogramVec(
+	prometheus.HistogramOpts{
+		Name:    "longbow_compaction_duration_seconds",
+		Help:    "Duration of compaction operations",
+		Buckets: prometheus.DefBuckets,
+	},
+	[]string{"dataset"},
+)
+
+// CompactionRecordsRemovedTotal - Records removed during compaction
+var CompactionRecordsRemovedTotal = promauto.NewCounterVec(
+	prometheus.CounterOpts{
+		Name: "longbow_compaction_records_removed_total",
+		Help: "Total number of records removed during compaction",
+	},
+	[]string{"dataset"},
 )
 
 // 21. CompactionAutoTriggersTotal - Auto-triggered compaction tracking
@@ -1178,18 +1196,16 @@ var FlightPoolWaitDuration = promauto.NewHistogramVec(
 // PipelineBatchesPerSecond tracks pipeline throughput
 var PipelineBatchesPerSecond = promauto.NewGauge(
 	prometheus.GaugeOpts{
-		Namespace: "longbow",
-		Name:      "pipeline_batches_per_second",
-		Help:      "DoGet pipeline throughput in batches per second (gauge)",
+		Name: "longbow_pipeline_batches_per_second",
+		Help: "DoGet pipeline throughput in batches per second (gauge)",
 	},
 )
 
 // PipelineBatchesTotal tracks total historical pipeline throughput
 var PipelineBatchesTotal = promauto.NewCounter(
 	prometheus.CounterOpts{
-		Namespace: "longbow",
-		Name:      "pipeline_batches_total",
-		Help:      "Total number of batches processed via DoGet pipeline",
+		Name: "longbow_pipeline_batches_total",
+		Help: "Total number of batches processed via DoGet pipeline",
 	},
 )
 
@@ -1666,5 +1682,33 @@ var (
 			Name: "longbow_bm25_documents_indexed_total",
 			Help: "Total documents added to the BM25 inverted index",
 		},
+	)
+
+	// HNSWPQEnabled tracks if PQ is enabled per dataset
+	HNSWPQEnabled = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "longbow_hnsw_pq_enabled",
+			Help: "Whether Product Quantization is enabled (1) or disabled (0) for the dataset",
+		},
+		[]string{"dataset"},
+	)
+
+	// HNSWPQTrainingDuration tracks training latency
+	HNSWPQTrainingDuration = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_hnsw_pq_training_duration_seconds",
+			Help:    "Time taken to train PQ encoder for a dataset",
+			Buckets: []float64{1, 5, 10, 30, 60, 120, 300},
+		},
+		[]string{"dataset"},
+	)
+
+	// NUMACrossNodeAccessTotal counts memory accesses across NUMA nodes
+	NUMACrossNodeAccessTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_numa_cross_node_access_total",
+			Help: "Total number of memory accesses where worker node != data node",
+		},
+		[]string{"worker_node", "data_node"},
 	)
 )

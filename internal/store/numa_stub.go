@@ -22,3 +22,11 @@ func DetectNUMATopology() (*NUMATopology, error) {
 func (t *NUMATopology) String() string {
 	return "Single NUMA node (no NUMA support on this platform)"
 }
+
+// GetNodeForCPU returns 0 for any valid CPU on single-node systems.
+func (t *NUMATopology) GetNodeForCPU(cpu int) int {
+	if cpu < 0 {
+		return -1
+	}
+	return 0
+}

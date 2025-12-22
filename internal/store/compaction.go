@@ -161,7 +161,7 @@ func (w *CompactionWorker) run() {
 				// Non-blocking attempt to compact
 				if err := w.store.CompactDataset(ds.Name); err == nil {
 					w.compactionsRun.Add(1)
-					metrics.CompactionOperationsTotal.WithLabelValues("periodic").Inc()
+					metrics.CompactionOperationsTotal.WithLabelValues(ds.Name, "periodic").Inc()
 				}
 			})
 			w.lastRunTime.Store(time.Now())
@@ -172,7 +172,7 @@ func (w *CompactionWorker) run() {
 			}
 			if err := w.store.CompactDataset(dsName); err == nil {
 				w.compactionsRun.Add(1)
-				metrics.CompactionOperationsTotal.WithLabelValues("triggered").Inc()
+				metrics.CompactionOperationsTotal.WithLabelValues(dsName, "triggered").Inc()
 			}
 			w.lastRunTime.Store(time.Now())
 		}
@@ -253,15 +253,11 @@ func identifyCompactionCandidates(records []arrow.RecordBatch, targetSize int64)
 	return candidates
 }
 
-// batchRemapInfo describes how a batch ID maps to a new one
-type batchRemapInfo struct {
-	NewBatchIdx int
-	RowOffset   int // For merged batches, where does this batch start in the new one?
-}
+// batchRemapInfo is now replaced by BatchRemapInfo in hnsw.go
 
 // compactRecords returns a NEW slice of RecordBatches and a remapping table.
 // It DOES NOT Modify the input slice.
-func compactRecords(records []arrow.RecordBatch, targetSize int64) ([]arrow.RecordBatch, map[int]batchRemapInfo, error) {
+func compactRecords(records []arrow.RecordBatch, tombstones map[int]*Bitset, targetSize int64, datasetName string) ([]arrow.RecordBatch, map[int]BatchRemapInfo, error) {
 	candidates := identifyCompactionCandidates(records, targetSize)
 	if len(candidates) == 0 {
 		return nil, nil, nil // Nothing to do
@@ -271,18 +267,33 @@ func compactRecords(records []arrow.RecordBatch, targetSize int64) ([]arrow.Reco
 	// Since we are building a new list, we can copy untouched batches and merge candidates.
 
 	result := make([]arrow.RecordBatch, 0, len(records))
-	remapping := make(map[int]batchRemapInfo)
+	remapping := make(map[int]BatchRemapInfo)
 
 	currentOldIdx := 0
 	pool := memory.NewGoAllocator() // TODO: Use store allocator
+
+	totalRemoved := int64(0)
 
 	for _, cand := range candidates {
 		// 1. Copy untouched batches before this candidate
 		for i := currentOldIdx; i < cand.StartIdx; i++ {
 			rec := records[i]
-			rec.Retain()
-			remapping[i] = batchRemapInfo{NewBatchIdx: len(result), RowOffset: 0}
-			result = append(result, rec)
+			tomb := tombstones[i]
+			if tomb != nil && tomb.Count() > 0 {
+				// We still need to filter this "untouched" batch because it has tombstones
+				filtered, rowMapping, removed := filterTombstones(pool, rec, tomb)
+				totalRemoved += removed
+				remapping[i] = BatchRemapInfo{NewBatchIdx: len(result), NewRowIdxs: rowMapping}
+				result = append(result, filtered)
+			} else {
+				rec.Retain()
+				rowMapping := make([]int, rec.NumRows())
+				for r := 0; r < int(rec.NumRows()); r++ {
+					rowMapping[r] = r
+				}
+				remapping[i] = BatchRemapInfo{NewBatchIdx: len(result), NewRowIdxs: rowMapping}
+				result = append(result, rec)
+			}
 		}
 
 		// 2. Merge candidate batches
@@ -291,18 +302,26 @@ func compactRecords(records []arrow.RecordBatch, targetSize int64) ([]arrow.Reco
 			continue // Should not happen
 		}
 
+		// Collect tombstones for this candidate group
+		candTombstones := make([]*Bitset, len(subset))
+		for i := cand.StartIdx; i < cand.EndIdx; i++ {
+			candTombstones[i-cand.StartIdx] = tombstones[i]
+		}
+
 		// Check schema consistency (sanity)
 		schema := subset[0].Schema()
-		merged := mergeRecordBatches(pool, schema, subset)
+		merged, candRowMappings, removed := mergeAndFilterRecordBatches(pool, schema, subset, candTombstones)
+		totalRemoved += removed
 
 		newBatchIdx := len(result)
 		result = append(result, merged)
 
 		// 3. Record remapping for the merged batches
-		currentRowOffset := 0
 		for i := cand.StartIdx; i < cand.EndIdx; i++ {
-			remapping[i] = batchRemapInfo{NewBatchIdx: newBatchIdx, RowOffset: currentRowOffset}
-			currentRowOffset += int(records[i].NumRows())
+			remapping[i] = BatchRemapInfo{
+				NewBatchIdx: newBatchIdx,
+				NewRowIdxs:  candRowMappings[i-cand.StartIdx],
+			}
 		}
 
 		currentOldIdx = cand.EndIdx
@@ -311,129 +330,152 @@ func compactRecords(records []arrow.RecordBatch, targetSize int64) ([]arrow.Reco
 	// 4. Copy remaining untouched batches
 	for i := currentOldIdx; i < len(records); i++ {
 		rec := records[i]
-		rec.Retain()
-		remapping[i] = batchRemapInfo{NewBatchIdx: len(result), RowOffset: 0}
-		result = append(result, rec)
+		tomb := tombstones[i]
+		if tomb != nil && tomb.Count() > 0 {
+			filtered, rowMapping, removed := filterTombstones(pool, rec, tomb)
+			totalRemoved += removed
+			remapping[i] = BatchRemapInfo{NewBatchIdx: len(result), NewRowIdxs: rowMapping}
+			result = append(result, filtered)
+		} else {
+			rec.Retain()
+			rowMapping := make([]int, rec.NumRows())
+			for r := 0; r < int(rec.NumRows()); r++ {
+				rowMapping[r] = r
+			}
+			remapping[i] = BatchRemapInfo{NewBatchIdx: len(result), NewRowIdxs: rowMapping}
+			result = append(result, rec)
+		}
+	}
+
+	if totalRemoved > 0 {
+		metrics.CompactionRecordsRemovedTotal.WithLabelValues(datasetName).Add(float64(totalRemoved))
 	}
 
 	return result, remapping, nil
 }
 
-// mergeRecordBatches combines multiple RecordBatches into one.
-func mergeRecordBatches(pool memory.Allocator, schema *arrow.Schema, batches []arrow.RecordBatch) arrow.RecordBatch {
-	builder := array.NewRecordBuilder(pool, schema)
-	defer builder.Release()
+// filterTombstones creates a new RecordBatch with deleted rows removed.
+func filterTombstones(pool memory.Allocator, rec arrow.RecordBatch, tomb *Bitset) (arrow.RecordBatch, []int, int64) {
+	numRows := int(rec.NumRows())
+	rowMapping := make([]int, numRows)
+	keepIndices := make([]int, 0, numRows)
 
-	for _, batch := range batches {
-		for colIdx := 0; colIdx < int(batch.NumCols()); colIdx++ {
-			col := batch.Column(colIdx)
-			fieldBuilder := builder.Field(colIdx)
-			appendColumn(fieldBuilder, col)
+	for i := 0; i < numRows; i++ {
+		if tomb.Contains(i) {
+			rowMapping[i] = -1
+		} else {
+			rowMapping[i] = len(keepIndices)
+			keepIndices = append(keepIndices, i)
 		}
 	}
 
-	return builder.NewRecordBatch()
+	if len(keepIndices) == numRows {
+		rec.Retain()
+		return rec, rowMapping, 0
+	}
+
+	if len(keepIndices) == 0 {
+		// All rows deleted - return empty record with same schema
+		builder := array.NewRecordBuilder(pool, rec.Schema())
+		defer builder.Release()
+		return builder.NewRecordBatch(), rowMapping, int64(numRows)
+	}
+
+	// Filter using Arrow compute or manual copy
+	// For simplicity and to avoid context overhead in background worker, use manual builder
+	builder := array.NewRecordBuilder(pool, rec.Schema())
+	defer builder.Release()
+
+	for colIdx := 0; colIdx < int(rec.NumCols()); colIdx++ {
+		col := rec.Column(colIdx)
+		fieldBuilder := builder.Field(colIdx)
+		for _, rowIdx := range keepIndices {
+			appendValue(fieldBuilder, col, rowIdx)
+		}
+	}
+
+	return builder.NewRecordBatch(), rowMapping, int64(numRows - len(keepIndices))
 }
 
-// appendColumn appends all values from an arrow.Array to a builder.
-func appendColumn(builder array.Builder, col arrow.Array) {
+// mergeAndFilterRecordBatches combines multiple RecordBatches into one while skipping tombstones.
+func mergeAndFilterRecordBatches(pool memory.Allocator, schema *arrow.Schema, batches []arrow.RecordBatch, tombstones []*Bitset) (arrow.RecordBatch, [][]int, int64) {
+	builder := array.NewRecordBuilder(pool, schema)
+	defer builder.Release()
+
+	rowMappings := make([][]int, len(batches))
+	totalRemoved := int64(0)
+	currentRowOffset := 0
+
+	for i, batch := range batches {
+		numRows := int(batch.NumRows())
+		rowMappings[i] = make([]int, numRows)
+		tomb := tombstones[i]
+
+		for rowIdx := 0; rowIdx < numRows; rowIdx++ {
+			if tomb != nil && tomb.Contains(rowIdx) {
+				rowMappings[i][rowIdx] = -1
+				totalRemoved++
+			} else {
+				rowMappings[i][rowIdx] = currentRowOffset
+				for colIdx := 0; colIdx < int(batch.NumCols()); colIdx++ {
+					col := batch.Column(colIdx)
+					fieldBuilder := builder.Field(colIdx)
+					appendValue(fieldBuilder, col, rowIdx)
+				}
+				currentRowOffset++
+			}
+		}
+	}
+
+	return builder.NewRecordBatch(), rowMappings, totalRemoved
+}
+
+// appendValue appends a single value from an arrow.Array to a builder.
+func appendValue(builder array.Builder, col arrow.Array, rowIdx int) {
+	if col.IsNull(rowIdx) {
+		builder.AppendNull()
+		return
+	}
+
 	switch b := builder.(type) {
 	case *array.Int64Builder:
-		arr := col.(*array.Int64)
-		for i := 0; i < arr.Len(); i++ {
-			if arr.IsNull(i) {
-				b.AppendNull()
-			} else {
-				b.Append(arr.Value(i))
-			}
-		}
+		b.Append(col.(*array.Int64).Value(rowIdx))
 	case *array.Float64Builder:
-		arr := col.(*array.Float64)
-		for i := 0; i < arr.Len(); i++ {
-			if arr.IsNull(i) {
-				b.AppendNull()
-			} else {
-				b.Append(arr.Value(i))
-			}
-		}
+		b.Append(col.(*array.Float64).Value(rowIdx))
 	case *array.Float32Builder:
-		arr := col.(*array.Float32)
-		for i := 0; i < arr.Len(); i++ {
-			if arr.IsNull(i) {
-				b.AppendNull()
-			} else {
-				b.Append(arr.Value(i))
-			}
-		}
+		b.Append(col.(*array.Float32).Value(rowIdx))
 	case *array.Int32Builder:
-		arr := col.(*array.Int32)
-		for i := 0; i < arr.Len(); i++ {
-			if arr.IsNull(i) {
-				b.AppendNull()
-			} else {
-				b.Append(arr.Value(i))
-			}
-		}
+		b.Append(col.(*array.Int32).Value(rowIdx))
 	case *array.StringBuilder:
-		arr := col.(*array.String)
-		for i := 0; i < arr.Len(); i++ {
-			if arr.IsNull(i) {
-				b.AppendNull()
-			} else {
-				b.Append(arr.Value(i))
-			}
-		}
+		b.Append(col.(*array.String).Value(rowIdx))
 	case *array.BooleanBuilder:
-		arr := col.(*array.Boolean)
-		for i := 0; i < arr.Len(); i++ {
-			if arr.IsNull(i) {
-				b.AppendNull()
-			} else {
-				b.Append(arr.Value(i))
-			}
-		}
+		b.Append(col.(*array.Boolean).Value(rowIdx))
 	case *array.FixedSizeBinaryBuilder:
-		arr := col.(*array.FixedSizeBinary)
-		for i := 0; i < arr.Len(); i++ {
-			if arr.IsNull(i) {
-				b.AppendNull()
-			} else {
-				b.Append(arr.Value(i))
-			}
-		}
+		b.Append(col.(*array.FixedSizeBinary).Value(rowIdx))
 	case *array.TimestampBuilder:
-		arr := col.(*array.Timestamp)
-		for i := 0; i < arr.Len(); i++ {
-			if arr.IsNull(i) {
-				b.AppendNull()
-			} else {
-				b.Append(arr.Value(i))
-			}
-		}
+		b.Append(col.(*array.Timestamp).Value(rowIdx))
 	case *array.FixedSizeListBuilder:
 		arr := col.(*array.FixedSizeList)
 		values := arr.ListValues().(*array.Float32)
 		size := int(arr.DataType().(*arrow.FixedSizeListType).Len())
 		valBldr := b.ValueBuilder().(*array.Float32Builder)
 
-		for i := 0; i < arr.Len(); i++ {
-			if arr.IsNull(i) {
-				b.AppendNull()
+		b.Append(true)
+		start := rowIdx * size
+		end := start + size
+		for j := start; j < end; j++ {
+			if values.IsNull(j) {
+				valBldr.AppendNull()
 			} else {
-				b.Append(true)
-				start := i * size
-				end := start + size
-				for j := start; j < end; j++ {
-					if values.IsNull(j) {
-						valBldr.AppendNull()
-					} else {
-						valBldr.Append(values.Value(j))
-					}
-				}
+				valBldr.Append(values.Value(j))
 			}
 		}
 	}
 }
+
+// Old mergeRecordBatches and appendColumn are no longer used by compactRecords
+// but might be used elsewhere. Keeping them unexported if needed or just removing if they were internal helpers.
+// Looking at previous state, mergeRecordBatches was unexported.
 
 // TriggerCompaction triggers compaction for a specific dataset.
 // This is non-blocking - if the channel is full, it returns without blocking.

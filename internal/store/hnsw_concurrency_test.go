@@ -69,7 +69,7 @@ func TestHNSW_Concurrency_HighContention(t *testing.T) {
 			for j := 0; j < vectorsPerGoroutine; j++ {
 				rowIdx := rand.Intn(500)
 				// AddSafe copies vector, so rowIdx reuse is fine for testing concurrency of graph
-				err := idx.AddSafe(rec, rowIdx, 0)
+				_, err := idx.AddSafe(rec, rowIdx, 0)
 				if err != nil {
 					errCount.Add(1)
 					fmt.Printf("Add error: %v\n", err)
@@ -100,7 +100,7 @@ func TestHNSW_Concurrency_Mixed(t *testing.T) {
 
 	// Pre-populate
 	for i := 0; i < 100; i++ {
-		_ = idx.AddSafe(rec, i, 0)
+		_, _ = idx.AddSafe(rec, i, 0)
 	}
 
 	var wg sync.WaitGroup
@@ -119,7 +119,7 @@ func TestHNSW_Concurrency_Mixed(t *testing.T) {
 					return
 				default:
 					rowIdx := rand.Intn(500)
-					_ = idx.AddSafe(rec, rowIdx, 0)
+					_, _ = idx.AddSafe(rec, rowIdx, 0)
 					ops.Add(1)
 					runtime.Gosched()
 				}

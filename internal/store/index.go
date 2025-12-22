@@ -25,6 +25,10 @@ type VectorIndex interface {
 	// SearchVectorsWithBitmap returns k nearest neighbors filtered by a bitset.
 	SearchVectorsWithBitmap(query []float32, k int, filter *Bitset) []SearchResult
 
+	// GetLocation retrieves the storage location for a given vector ID.
+	// Returns the location and true if found, or zero location and false if not found.
+	GetLocation(id VectorID) (Location, bool)
+
 	// Len returns the number of vectors in the index.
 	Len() int
 

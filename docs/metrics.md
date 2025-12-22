@@ -1,135 +1,493 @@
-# Longbow Metrics Documentation
+# Longbow Metrics Reference
 
-Longbow exposes comprehensive Prometheus metrics to provide visibility into system performance, resource usage, data characteristics, and distributed operations.
-These metrics are available at the `/metrics` endpoint on the configured metrics port (default: 9090).
+Complete reference for all Prometheus metrics exported by Longbow.
 
-## 1. Flight Operations
+**Metrics Endpoint**: `http://localhost:9090/metrics` (configurable via `LONGBOW_METRICS_ADDR`)
 
-Core Arrow Flight endpoint metrics.
+## Table of Contents
 
-| Metric Name | Type | Labels | Description |
-| :--- | :--- | :--- | :--- |
-| `longbow_flight_operations_total` | Counter | `method`, `status` | Total number of processed Flight operations (DoGet, DoPut, etc.). |
-| `longbow_flight_duration_seconds` | Histogram | `method` | Latency distribution of Flight operations. |
-| `longbow_flight_bytes_processed_total` | Counter | `method` | Total estimated bytes processed during operations. |
-| `longbow_flight_ticket_parse_duration_seconds` | Histogram | None | Time spent parsing Flight ticket JSON. |
-| `longbow_active_search_contexts` | Gauge | None | Number of concurrent DoGet/search operations in progress. |
+1. [Flight & RPC](#flight--rpc)
+2. [Vector Search](#vector-search)
+3. [HNSW Index](#hnsw-index)
+4. [WAL & Persistence](#wal--persistence)
+5. [Memory Management](#memory-management)
+6. [Mesh & Gossip](#mesh--gossip)
+7. [Replication & Quorum](#replication--quorum)
+8. [Sharding](#sharding)
+9. [Hybrid Search](#hybrid-search)
+10. [Performance Optimizations](#performance-optimizations)
+11. [System & Configuration](#system--configuration)
 
-## 2. Vector Store & HNSW Index
+---
 
-Metrics related to the vector storage engine and HNSW graph.
+## Flight & RPC
 
-| Metric Name | Type | Labels | Description |
-| :--- | :--- | :--- | :--- |
-| `longbow_vector_index_size` | Gauge | None | Total number of vectors in the index. |
-| `longbow_average_vector_norm` | Gauge | None | Average L2 norm of stored vectors. |
-| `longbow_index_build_latency_seconds` | Histogram | None | Latency of index build/update operations. |
-| `longbow_hnsw_nodes_visited` | Histogram | `dataset` | Number of HNSW nodes visited per search. |
-| `longbow_hnsw_distance_calculations_total` | Counter | None | Total distance calculations performed. |
-| `longbow_hnsw_active_readers` | Gauge | `dataset` | Number of active zero-copy readers per dataset. |
-| `longbow_hnsw_graph_height` | Gauge | `dataset` | Maximum layer height of the HNSW graph. |
-| `longbow_hnsw_node_count` | Gauge | `dataset` | Total nodes in the HNSW graph. |
-| `longbow_hnsw_epoch_transitions_total` | Counter | None | Total count of epoch transitions for zero-copy concurrency. |
+### longbow_flight_operations_total
 
-## 3. Persistence (WAL)
+**Type**: Counter  
+**Labels**: `method`, `status`  
+**Description**: Total number of Flight RPC operations (DoPut, DoGet, DoAction, etc.)
 
-Write-Ahead Log durability and performance metrics.
+### longbow_flight_duration_seconds
 
-| Metric Name | Type | Labels | Description |
-| :--- | :--- | :--- | :--- |
-| `longbow_wal_writes_total` | Counter | `status` | Total WAL write operations. |
-| `longbow_wal_bytes_written_total` | Counter | None | Total bytes written to WAL. |
-| `longbow_wal_replay_duration_seconds` | Histogram | None | Time taken to replay WAL on startup. |
-| `longbow_wal_fsync_duration_seconds` | Histogram | `status` | Time taken for `fsync` operations. |
-| `longbow_wal_batch_size` | Histogram | None | Number of entries flushed per batch. |
-| `longbow_wal_pending_entries` | Gauge | None | Current depth of WAL entry channel (backpressure indicator). |
-| `longbow_wal_adaptive_interval_ms` | Gauge | None | Current adaptive flush interval (ms). |
-| `longbow_wal_write_rate_per_second` | Gauge | None | Current write rate tracking. |
+**Type**: Histogram  
+**Labels**: `method`  
+**Description**: Duration of Flight RPC operations in seconds
 
-## 4. Snapshot & Persistence Backends
+### longbow_flight_rows_processed_total
 
-Metrics for data lifecycle and backends (Local/S3).
+**Type**: Counter  
+**Labels**: `method`, `status`  
+**Description**: Total number of rows processed in Flight operations
 
-| Metric Name | Type | Labels | Description |
-| :--- | :--- | :--- | :--- |
-| `longbow_snapshot_operations_total` | Counter | `status` | Total snapshot attempts. |
-| `longbow_snapshot_duration_seconds` | Histogram | None | Duration of snapshot creation. |
-| `longbow_snapshot_write_duration_seconds` | Histogram | None | Time spent writing Parquet files. |
-| `longbow_snapshot_size_bytes` | Histogram | None | Size of generated snapshots in bytes. |
-| `longbow_s3_request_duration_seconds` | Histogram | `operation` | S3 operation latency. |
-| `longbow_s3_retries_total` | Counter | `operation` | S3 operation retry counts. |
+### longbow_flight_bytes_processed_total
 
-## 5. Memory Management & Pools
+**Type**: Counter  
+**Labels**: `method`, `direction`  
+**Description**: Total bytes processed in Flight operations
 
-Detailed tracking of memory allocators and object pools.
+### longbow_flight_pool_connections_active
 
-| Metric Name | Type | Labels | Description |
-| :--- | :--- | :--- | :--- |
-| `longbow_memory_fragmentation_ratio` | Gauge | None | Ratio of `HeapAlloc` to `Sys` memory. |
-| `longbow_memory_heap_in_use_bytes` | Gauge | None | Current heap memory in use. |
-| `longbow_arrow_memory_used_bytes` | Gauge | `allocator` | Memory used by Arrow allocators. |
-| `longbow_arrow_zerocopy_reads_total` | Counter | None | Count of zero-copy buffer reads. |
-| `longbow_arrow_buffer_retained_bytes` | Gauge | None | Bytes currently retained in zero-copy buffers. |
-| `longbow_arena_alloc_bytes_total` | Counter | None | Total bytes allocated from search arenas. |
-| `longbow_wal_buffer_pool_operations_total` | Counter | `operation` | WAL buffer pool Get/Put counts. |
-| `longbow_ipc_buffer_pool_utilization` | Gauge | None | IPC buffer pool utilization ratio. |
-| `longbow_vector_scratch_pool_misses_total` | Counter | None | Scratch buffer pool misses. |
-| `longbow_memory_pressure_level` | Gauge | None | Current pressure level (0=None, 1=Soft, 2=Hard). |
+**Type**: Gauge  
+**Description**: Number of active Flight client pool connections
 
-## 6. Distributed Mesh & Replication
+### longbow_flight_pool_wait_duration_seconds
 
-Metrics for multi-node operations, replication, and split-brain detection.
+**Type**: Histogram  
+**Description**: Time spent waiting for Flight pool connections
 
-| Metric Name | Type | Labels | Description |
-| :--- | :--- | :--- | :--- |
-| `longbow_do_exchange_calls_total` | Counter | None | Total DoExchange invocations. |
-| `longbow_replication_lag_seconds` | Gauge | `peer` | Replication lag by peer. |
-| `longbow_peer_health_status` | Gauge | `peer` | Peer health (0=Down, 1=Up). |
-| `longbow_gossip_active_members` | Gauge | None | Current number of alive members in the gossip mesh. |
-| `longbow_gossip_pings_total` | Counter | `direction` | Total number of gossip pings (sent/received). |
-| `longbow_mesh_sync_deltas_total` | Counter | `status` | Total record batches replicated via mesh sync (success/error). |
-| `longbow_mesh_sync_bytes_total` | Counter | None | Total bytes replicated via mesh sync. |
-| `longbow_mesh_merkle_match_total` | Counter | `result` | Merkle root comparison results (match/mismatch). |
-| `longbow_replication_queued_total` | Counter | None | Records queued for replication. |
-| `longbow_split_brain_partitions_total` | Counter | None | Network partitions detected. |
-| `longbow_quorum_operation_duration_seconds` | Histogram | `operation`, `level` | Duration of quorum operations. |
-| `longbow_merkle_tree_builds_total` | Counter | None | Count of Merkle tree anti-entropy builds. |
-| `longbow_merkle_divergences_found_total` | Counter | None | Divergent records found via Merkle sync. |
+### longbow_flight_ticket_parse_duration_seconds
 
-## 7. Search & Filtering Pipelines
+**Type**: Histogram  
+**Description**: Duration of Flight ticket parsing operations
 
-Analysis of search performance, filtering, and query pipelines.
+### longbow_do_exchange_calls_total
 
-| Metric Name | Type | Labels | Description |
-| :--- | :--- | :--- | :--- |
-| `longbow_vector_search_action_total` | Counter | None | Count of VectorSearch DoAction calls. |
-| `longbow_filter_execution_duration_seconds` | Histogram | `dataset` | Duration of filter execution. |
-| `longbow_filter_selectivity_ratio` | Histogram | `dataset` | Ratio of output rows to input rows. |
-| `longbow_fast_path_usage_total` | Counter | `path` | Count of fast-path filter usage vs fallback. |
-| `longbow_pipeline_batches_per_second` | Gauge | None | DoGet pipeline throughput estimate. |
-| `longbow_zero_alloc_ticket_parse_total` | Counter | None | Successful zero-alloc ticket parses. |
+**Type**: Counter  
+**Labels**: `status`  
+**Description**: Total DoExchange RPC calls
 
-## 8. SIMD & Optimization
+### longbow_do_exchange_duration_seconds
 
-Hardware acceleration metrics.
+**Type**: Histogram  
+**Description**: Duration of DoExchange operations
 
-| Metric Name | Type | Labels | Description |
-| :--- | :--- | :--- | :--- |
-| `longbow_simd_dispatch_count_total` | Counter | `impl` | SIMD calls by implementation (AVX2, AVX512, NEON). |
-| `longbow_simd_fma_operations_total` | Counter | `kernel` | Total SIMD FMA operations. |
-| `longbow_simd_kernel_type` | Gauge | `operation` | Active kernel type ID. |
-| `longbow_binary_quantize_ops_total` | Counter | None | Binary quantization operations. |
-| `longbow_popcnt_distance_ops_total` | Counter | None | POPCNT-based Hamming distance calcs. |
-| `longbow_quantization_memory_saved_bytes` | Gauge | None | Memory saved via quantization. |
+### longbow_do_exchange_batches_sent_total
 
-## 9. Miscellaneous
+**Type**: Counter  
+**Description**: Total record batches sent via DoExchange
 
-System and component-specific counters.
+### longbow_do_exchange_batches_received_total
 
-| Metric Name | Type | Labels | Description |
-| :--- | :--- | :--- | :--- |
-| `longbow_evictions_total` | Counter | `reason` | Records evicted due to memory/TTL. |
-| `longbow_gc_pause_duration_seconds` | Histogram | None | Go Garbage Collector pause times. |
-| `longbow_warmup_progress_percent` | Gauge | None | Warmup completion percentage. |
-| `longbow_idx_creations_total` | Counter | `type`, `result` | Index creation attempts by type. |
-| `longbow_circuit_breaker_rejections_total` | Counter | None | Requests rejected by circuit breakers. |
+**Type**: Counter  
+**Description**: Total record batches received via DoExchange
+
+### longbow_do_exchange_errors_total
+
+**Type**: Counter  
+**Labels**: `error_type`  
+**Description**: Total DoExchange errors by type
+
+---
+
+## Vector Search
+
+### longbow_vector_search_latency_seconds
+
+**Type**: Histogram  
+**Labels**: `dataset`  
+**Description**: Vector similarity search latency
+
+### longbow_vector_search_action_requests_total
+
+**Type**: Counter  
+**Labels**: `dataset`, `status`  
+**Description**: Total vector search action requests
+
+### longbow_vector_search_action_errors_total
+
+**Type**: Counter  
+**Labels**: `dataset`, `error_type`  
+**Description**: Vector search action errors by type
+
+### longbow_vector_search_action_duration_seconds
+
+**Type**: Histogram  
+**Labels**: `dataset`  
+**Description**: Duration of vector search actions
+
+### longbow_active_search_contexts
+
+**Type**: Gauge  
+**Description**: Number of active search contexts
+
+### longbow_zero_alloc_vector_search_parse_total
+
+**Type**: Counter  
+**Description**: Total zero-allocation vector search parses
+
+### longbow_vector_search_parse_fallback_total
+
+**Type**: Counter  
+**Description**: Fallback to standard JSON parsing (not zero-alloc)
+
+---
+
+## HNSW Index
+
+### longbow_hnsw_node_count
+
+**Type**: Gauge  
+**Labels**: `dataset`  
+**Description**: Number of nodes in HNSW graph
+
+### longbow_hnsw_graph_height
+
+**Type**: Gauge  
+**Labels**: `dataset`  
+**Description**: Maximum layer height of HNSW graph
+
+### longbow_hnsw_distance_calculations_total
+
+**Type**: Counter  
+**Labels**: `dataset`  
+**Description**: Total distance calculations performed
+
+### longbow_hnsw_nodes_visited
+
+**Type**: Histogram  
+**Labels**: `dataset`  
+**Description**: Number of nodes visited during search
+
+### longbow_hnsw_searches_total
+
+**Type**: Counter  
+**Labels**: `dataset`, `type`  
+**Description**: Total HNSW searches by type (knn, filtered, etc.)
+
+### longbow_hnsw_active_readers
+
+**Type**: Gauge  
+**Labels**: `dataset`  
+**Description**: Number of active concurrent readers on HNSW graph
+
+### longbow_hnsw_epoch_transitions_total
+
+**Type**: Counter  
+**Labels**: `dataset`  
+**Description**: Total epoch-based concurrency control transitions
+
+### longbow_hnsw_graph_sync_deltas_total
+
+**Type**: Counter  
+**Labels**: `dataset`, `direction`  
+**Description**: Total graph sync delta operations
+
+### longbow_hnsw_graph_sync_exports_total
+
+**Type**: Counter  
+**Labels**: `dataset`  
+**Description**: Total graph exports for synchronization
+
+### longbow_hnsw_graph_sync_imports_total
+
+**Type**: Counter  
+**Labels**: `dataset`  
+**Description**: Total graph imports from synchronization
+
+### longbow_hnsw_graph_sync_delta_applies_total
+
+**Type**: Counter  
+**Labels**: `dataset`, `status`  
+**Description**: Total delta applications during sync
+
+### longbow_hnsw_sharding_migrations_total
+
+**Type**: Counter  
+**Labels**: `dataset`  
+**Description**: Total migrations to sharded HNSW
+
+---
+
+## WAL & Persistence
+
+### longbow_wal_writes_total
+
+**Type**: Counter  
+**Labels**: `status`  
+**Description**: Total WAL write operations
+
+### longbow_wal_bytes_written_total
+
+**Type**: Counter  
+**Description**: Total bytes written to WAL
+
+### longbow_wal_pending_entries
+
+**Type**: Gauge  
+**Description**: Number of pending WAL entries
+
+### longbow_wal_batch_size
+
+**Type**: Histogram  
+**Description**: Size of WAL write batches
+
+### longbow_wal_fsync_duration_seconds
+
+**Type**: Histogram  
+**Description**: Duration of WAL fsync operations
+
+### longbow_wal_lock_wait_duration_seconds
+
+**Type**: Histogram  
+**Description**: Time spent waiting for WAL locks
+
+### longbow_wal_replay_duration_seconds
+
+**Type**: Histogram  
+**Description**: Duration of WAL replay on startup
+
+### longbow_wal_write_rate_per_second
+
+**Type**: Gauge  
+**Description**: Current WAL write rate (entries/sec)
+
+### longbow_wal_adaptive_interval_ms
+
+**Type**: Gauge  
+**Description**: Current adaptive fsync interval in milliseconds
+
+### longbow_wal_uring_submit_latency_seconds
+
+**Type**: Histogram  
+**Description**: io_uring submission latency (Linux only)
+
+### longbow_wal_uring_sq_depth
+
+**Type**: Gauge  
+**Description**: io_uring submission queue depth
+
+### longbow_wal_uring_cq_depth
+
+**Type**: Gauge  
+**Description**: io_uring completion queue depth
+
+### longbow_wal_buffer_pool_operations_total
+
+**Type**: Counter  
+**Labels**: `operation`  
+**Description**: WAL buffer pool operations (get, put, reuse)
+
+### longbow_snapshot_operations_total
+
+**Type**: Counter  
+**Labels**: `operation`, `status`  
+**Description**: Snapshot operations (create, restore, delete)
+
+### longbow_snapshot_duration_seconds
+
+**Type**: Histogram  
+**Labels**: `operation`  
+**Description**: Duration of snapshot operations
+
+### longbow_snapshot_size_bytes
+
+**Type**: Histogram  
+**Labels**: `dataset`  
+**Description**: Size of snapshots in bytes
+
+### longbow_snapshot_write_duration_seconds
+
+**Type**: Histogram  
+**Description**: Duration of snapshot write operations
+
+---
+
+## Memory Management
+
+### longbow_memory_heap_in_use_bytes
+
+**Type**: Gauge  
+**Description**: Heap memory currently in use
+
+### longbow_arrow_memory_used_bytes
+
+**Type**: Gauge  
+**Description**: Memory used by Arrow allocator
+
+### longbow_memory_pressure_level
+
+**Type**: Gauge  
+**Description**: Current memory pressure level (0=none, 1=moderate, 2=high)
+
+### longbow_memory_fragmentation_ratio
+
+**Type**: Gauge  
+**Description**: Memory fragmentation ratio (reserved/used)
+
+### longbow_memory_backpressure_acquires_total
+
+**Type**: Counter  
+**Description**: Total memory backpressure acquire attempts
+
+### longbow_memory_backpressure_rejects_total
+
+**Type**: Counter  
+**Description**: Total memory backpressure rejections
+
+### longbow_memory_backpressure_releases_total
+
+**Type**: Counter  
+**Description**: Total memory backpressure releases
+
+### longbow_evictions_total
+
+**Type**: Counter  
+**Labels**: `reason`  
+**Description**: Total evictions by reason (memory, ttl, manual)
+
+### longbow_arena_alloc_bytes_total
+
+**Type**: Counter  
+**Description**: Total bytes allocated via arena allocator
+
+### longbow_arena_pool_gets_total
+
+**Type**: Counter  
+**Description**: Total arena gets from pool
+
+### longbow_arena_pool_puts_total
+
+**Type**: Counter  
+**Description**: Total arena puts to pool
+
+### longbow_arena_resets_total
+
+**Type**: Counter  
+**Description**: Total arena resets
+
+### longbow_arena_overflow_total
+
+**Type**: Counter  
+**Description**: Total arena overflows (allocation exceeded arena size)
+
+---
+
+## Mesh & Gossip
+
+### longbow_gossip_active_members
+
+**Type**: Gauge  
+**Description**: Number of active members in gossip cluster
+
+### longbow_gossip_pings_total
+
+**Type**: Counter  
+**Labels**: `direction`  
+**Description**: Total gossip ping operations (sent, received, failed)
+
+### longbow_mesh_sync_deltas_total
+
+**Type**: Counter  
+**Labels**: `status`  
+**Description**: Total mesh synchronization deltas
+
+### longbow_mesh_sync_bytes_total
+
+**Type**: Counter  
+**Labels**: `direction`  
+**Description**: Total bytes transferred in mesh sync
+
+### longbow_mesh_merkle_match_total
+
+**Type**: Counter  
+**Labels**: `result`  
+**Description**: Merkle tree consistency check results
+
+### longbow_split_brain_healthy_peers
+
+**Type**: Gauge  
+**Description**: Number of healthy peers (split-brain detection)
+
+### longbow_split_brain_partitions_total
+
+**Type**: Counter  
+**Description**: Total network partitions detected
+
+### longbow_split_brain_heartbeats_total
+
+**Type**: Counter  
+**Labels**: `status`  
+**Description**: Total split-brain heartbeats
+
+### longbow_split_brain_fenced_state
+
+**Type**: Gauge  
+**Description**: Current fenced state (0=active, 1=fenced)
+
+---
+
+## Replication & Quorum
+
+### longbow_replication_lag_seconds
+
+**Type**: Gauge  
+**Labels**: `node`  
+**Description**: Replication lag in seconds
+
+### longbow_replication_success_total
+
+**Type**: Counter  
+**Labels**: `node`  
+**Description**: Successful replication operations
+
+### longbow_replication_failures_total
+
+**Type**: Counter  
+**Labels**: `node`, `reason`  
+**Description**: Failed replication operations
+
+### longbow_replication_retries_total
+
+**Type**: Counter  
+**Labels**: `node`  
+**Description**: Replication retry attempts
+
+### longbow_replication_peers_total
+
+**Type**: Gauge  
+**Description**: Number of replication peers
+
+### longbow_replication_queued_total
+
+**Type**: Counter  
+**Description**: Total operations queued for replication
+
+### longbow_replication_queue_dropped_total
+
+**Type**: Counter  
+**Labels**: `reason`  
+**Description**: Operations dropped from replication queue
+
+### longbow_quorum_success_total
+
+**Type**: Counter  
+**Labels**: `consistency`  
+**Description**: Successful quorum operations
+
+### longbow_quorum_failure_total
+
+**Type**: Counter  
+**Labels**: `consistency`, `reason`  
+**Description**: Failed quorum operations
+
+### longbow_quorum_operation_duration_seconds
+
+**Type**: Histogram  
+**Labels**: `consistency`  
+**Description**: Duration of quorum operations
+
+---
+
+**Total Metrics**: 188  
+**Last Updated**: 2025-12-22

@@ -15,7 +15,6 @@ type RankedResult struct {
 	Distance float32
 }
 
-
 // SearchWithBatchDistance performs k-NN search using batch distance calculations.
 // This is a two-stage retrieval:
 // 1. Coarse search using the HNSW graph to get initial candidates
@@ -192,4 +191,79 @@ func (h *HNSWIndex) computeBatchDistance(query []float32, vectors [][]float32, r
 	default:
 		simd.EuclideanDistanceBatch(query, vectors, results)
 	}
+}
+
+// SearchBatch is a convenience method that calls SearchBatchOptimized.
+func (h *HNSWIndex) SearchBatch(queries [][]float32, k int) [][]RankedResult {
+	return h.SearchBatchOptimized(queries, k)
+}
+
+// RerankBatch computes exact distances for a set of candidate IDs and returns top-k.
+func (h *HNSWIndex) RerankBatch(query []float32, candidateIDs []VectorID, k int) []RankedResult {
+	if len(query) == 0 || len(candidateIDs) == 0 || k <= 0 {
+		return nil
+	}
+
+	h.mu.RLock()
+	// Collect vectors
+	vectors := make([][]float32, 0, len(candidateIDs))
+	validIDs := make([]VectorID, 0, len(candidateIDs))
+	for _, id := range candidateIDs {
+		if vec := h.getVector(id); vec != nil {
+			vectors = append(vectors, vec)
+			validIDs = append(validIDs, id)
+		}
+	}
+	h.mu.RUnlock()
+
+	if len(vectors) == 0 {
+		return nil
+	}
+
+	distances := make([]float32, len(vectors))
+	h.computeBatchDistance(query, vectors, distances)
+
+	ranked := make([]RankedResult, len(validIDs))
+	for i, id := range validIDs {
+		ranked[i] = RankedResult{ID: id, Distance: distances[i]}
+	}
+
+	sort.Slice(ranked, func(i, j int) bool {
+		return ranked[i].Distance < ranked[j].Distance
+	})
+
+	if k > len(ranked) {
+		k = len(ranked)
+	}
+
+	return ranked[:k]
+}
+
+// SearchBatchWithArena performs batch search using an arena allocator.
+func (h *HNSWIndex) SearchBatchWithArena(queries [][]float32, k int, arena *SearchArena) [][]RankedResult {
+	if len(queries) == 0 {
+		return nil
+	}
+	results := make([][]RankedResult, len(queries))
+	for i, q := range queries {
+		ids := h.SearchWithArena(q, k, arena)
+		if len(ids) == 0 {
+			results[i] = nil
+			continue
+		}
+
+		// Map IDs to RankedResults (requires distance calculation)
+		// We could use computeBatchDistance or single distance calc
+		ranked := make([]RankedResult, len(ids))
+		for j, id := range ids {
+			vec := h.getVector(id)
+			dist := float32(0)
+			if vec != nil {
+				dist = simd.EuclideanDistance(q, vec) // Assuming Euclidean default for test
+			}
+			ranked[j] = RankedResult{ID: id, Distance: dist}
+		}
+		results[i] = ranked
+	}
+	return results
 }

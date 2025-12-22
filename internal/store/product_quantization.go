@@ -1,10 +1,9 @@
 package store
 
 import (
-	"crypto/rand"
 	"errors"
 	"math"
-	"math/big"
+	"math/rand"
 )
 
 // =============================================================================
@@ -56,6 +55,9 @@ func (c *PQConfig) Validate() error {
 type PQEncoder struct {
 	config   *PQConfig
 	codebook [][][]float32 // [M][Ksub][SubDim] centroids
+	// SDC Table for fast Symmetric Distance Computation
+	// [M][256][256]float32
+	sdcTable [][][]float32
 }
 
 // NewPQEncoder creates encoder from pre-trained codebook.
@@ -77,7 +79,26 @@ func NewPQEncoder(cfg *PQConfig, codebook [][][]float32) (*PQEncoder, error) {
 		}
 		_ = m
 	}
-	return &PQEncoder{config: cfg, codebook: codebook}, nil
+	enc := &PQEncoder{config: cfg, codebook: codebook}
+	return enc, nil
+}
+
+// EnableSDC precomputes the centroid-to-centroid distance table for O(M) search.
+func (e *PQEncoder) EnableSDC() {
+	m := e.config.M
+	k := e.config.Ksub
+	e.sdcTable = make([][][]float32, m)
+
+	for i := 0; i < m; i++ {
+		e.sdcTable[i] = make([][]float32, k)
+		for c1 := 0; c1 < k; c1++ {
+			e.sdcTable[i][c1] = make([]float32, k)
+			for c2 := 0; c2 < k; c2++ {
+				d := squaredL2(e.codebook[i][c1], e.codebook[i][c2])
+				e.sdcTable[i][c1][c2] = d
+			}
+		}
+	}
 }
 
 // TrainPQEncoder trains codebook via k-means on sample vectors.
@@ -105,10 +126,12 @@ func TrainPQEncoder(cfg *PQConfig, vectors [][]float32, iterations int) (*PQEnco
 		// K-means clustering
 		codebook[m] = kmeansCluster(subvecs, cfg.Ksub, cfg.SubDim, iterations)
 	}
-	return &PQEncoder{config: cfg, codebook: codebook}, nil
+	enc := &PQEncoder{config: cfg, codebook: codebook}
+	// Enable SDC by default after training
+	enc.EnableSDC()
+	return enc, nil
 }
 
-// kmeansCluster performs k-means to find centroids.
 // kmeansCluster performs k-means to find centroids.
 func kmeansCluster(vectors [][]float32, k, dim, iterations int) [][]float32 {
 	if len(vectors) == 0 || k == 0 {
@@ -119,10 +142,9 @@ func kmeansCluster(vectors [][]float32, k, dim, iterations int) [][]float32 {
 	centroids := make([][]float32, k)
 	for i := 0; i < k; i++ {
 		centroids[i] = make([]float32, dim)
-		// Secure random selection
-		if idx, err := rand.Int(rand.Reader, big.NewInt(int64(len(vectors)))); err == nil {
-			copy(centroids[i], vectors[idx.Int64()])
-		}
+		// Random selection
+		idx := rand.Intn(len(vectors))
+		copy(centroids[i], vectors[idx])
 	}
 
 	assignments := make([]int, len(vectors))
@@ -251,11 +273,145 @@ func (e *PQEncoder) ADCDistance(table [][]float32, codes []uint8) float32 {
 }
 
 // SDCDistance computes Symmetric Distance between two PQ codes.
-// Uses precomputed centroid-centroid distances.
+// Uses precomputed centroid-centroid distances if EnableSDC was called.
 func (e *PQEncoder) SDCDistance(codes1, codes2 []uint8) float32 {
 	var sum float32
-	for m := 0; m < e.config.M; m++ {
-		sum += squaredL2(e.codebook[m][codes1[m]], e.codebook[m][codes2[m]])
+	if e.sdcTable != nil {
+		// O(M) Lookup
+		for m, c1 := range codes1 {
+			c2 := codes2[m]
+			sum += e.sdcTable[m][c1][c2]
+		}
+	} else {
+		// O(D) Calculation fallback
+		for m := 0; m < e.config.M; m++ {
+			sum += squaredL2(e.codebook[m][codes1[m]], e.codebook[m][codes2[m]])
+		}
+	}
+	return float32(math.Sqrt(float64(sum)))
+}
+
+// PackBytesToFloat32s packs uint8 codes into float32 slice for HNSW storage.
+// Packs 4 bytes into 1 float32.
+func PackBytesToFloat32s(codes []uint8) []float32 {
+	nFloats := (len(codes) + 3) / 4
+	res := make([]float32, nFloats)
+
+	// Re-slice float array as bytes to copy logic
+	// Note: We use manual packing to avoid unsafe pointer casting complexity in pure Go logic if possible,
+	// but math.Float32frombits is cleanest.
+
+	for i := 0; i < nFloats; i++ {
+		var b0, b1, b2, b3 uint8
+		idx := i * 4
+		if idx < len(codes) {
+			b0 = codes[idx]
+		}
+		if idx+1 < len(codes) {
+			b1 = codes[idx+1]
+		}
+		if idx+2 < len(codes) {
+			b2 = codes[idx+2]
+		}
+		if idx+3 < len(codes) {
+			b3 = codes[idx+3]
+		}
+
+		val := uint32(b0) | uint32(b1)<<8 | uint32(b2)<<16 | uint32(b3)<<24
+		res[i] = math.Float32frombits(val)
+	}
+	return res
+}
+
+// UnpackFloat32sToBytes reconstructs uint8 codes from packed float32 slice.
+func UnpackFloat32sToBytes(packed []float32, length int) []uint8 {
+	codes := make([]uint8, length)
+	for i, f := range packed {
+		val := math.Float32bits(f)
+		idx := i * 4
+		if idx < length {
+			codes[idx] = uint8(val & 0xFF)
+		}
+		if idx+1 < length {
+			codes[idx+1] = uint8((val >> 8) & 0xFF)
+		}
+		if idx+2 < length {
+			codes[idx+2] = uint8((val >> 16) & 0xFF)
+		}
+		if idx+3 < length {
+			codes[idx+3] = uint8((val >> 24) & 0xFF)
+		}
+	}
+	return codes
+}
+
+// SDCDistancePacked computes Symmetric Distance between two packed PQ codes.
+// 'a' and 'b' are float32 slices containing packed uint8 codes (4 codes per float32).
+func (e *PQEncoder) SDCDistancePacked(a, b []float32) float32 {
+	var sum float32
+	// We iterate through the floats and unpack bytes
+	// M is the total number of codes.
+	mTotal := e.config.M
+
+	// Direct access to table for speed
+	table := e.sdcTable
+	useTable := table != nil
+
+	codeIdx := 0
+	for i := 0; i < len(a) && codeIdx < mTotal; i++ {
+		// Unpack a[i] and b[i]
+		// Each float32 holds 4 bytes.
+		valA := math.Float32bits(a[i])
+		valB := math.Float32bits(b[i])
+
+		// Byte 0
+		c1 := uint8(valA & 0xFF)
+		c2 := uint8(valB & 0xFF)
+		if useTable {
+			sum += table[codeIdx][c1][c2]
+		} else {
+			sum += squaredL2(e.codebook[codeIdx][c1], e.codebook[codeIdx][c2])
+		}
+		codeIdx++
+		if codeIdx >= mTotal {
+			break
+		}
+
+		// Byte 1
+		c1 = uint8((valA >> 8) & 0xFF)
+		c2 = uint8((valB >> 8) & 0xFF)
+		if useTable {
+			sum += table[codeIdx][c1][c2]
+		} else {
+			sum += squaredL2(e.codebook[codeIdx][c1], e.codebook[codeIdx][c2])
+		}
+		codeIdx++
+		if codeIdx >= mTotal {
+			break
+		}
+
+		// Byte 2
+		c1 = uint8((valA >> 16) & 0xFF)
+		c2 = uint8((valB >> 16) & 0xFF)
+		if useTable {
+			sum += table[codeIdx][c1][c2]
+		} else {
+			sum += squaredL2(e.codebook[codeIdx][c1], e.codebook[codeIdx][c2])
+		}
+		codeIdx++
+		if codeIdx >= mTotal {
+			break
+		}
+
+		// Byte 3
+		c1 = uint8((valA >> 24) & 0xFF)
+		c2 = uint8((valB >> 24) & 0xFF)
+		if useTable {
+			sum += table[codeIdx][c1][c2]
+		} else {
+			sum += squaredL2(e.codebook[codeIdx][c1], e.codebook[codeIdx][c2])
+		}
+		codeIdx++
 	}
 	return float32(math.Sqrt(float64(sum)))
 }

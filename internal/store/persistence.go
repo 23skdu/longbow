@@ -366,6 +366,9 @@ func (s *VectorStore) runSnapshotTicker(initialInterval time.Duration) {
 
 	for {
 		select {
+		case <-s.stopChan:
+			s.logger.Info("Snapshot ticker exiting")
+			return
 		case <-getTickChan():
 			if err := s.Snapshot(); err != nil {
 				s.logger.Error("Scheduled snapshot failed", zap.Error(err))
@@ -388,33 +391,49 @@ func (s *VectorStore) runSnapshotTicker(initialInterval time.Duration) {
 
 // Close ensures the WAL is flushed and closed properly
 func (s *VectorStore) Close() error {
-	s.logger.Info("Closing VectorStore...")
+	var closeErr error
+	s.stopOnce.Do(func() {
+		s.logger.Info("Closing VectorStore...")
 
-	// Stop compaction worker
-	s.stopCompaction()
+		// Signal background tickers to stop
+		close(s.stopChan)
 
-	// Stop WAL batcher first to flush pending writes
-	if s.walBatcher != nil {
-		if err := s.walBatcher.Stop(); err != nil {
-			s.logger.Error("Failed to stop WAL batcher", zap.Error(err))
+		// Stop compaction worker
+		s.stopCompaction()
+
+		// Stop and drain indexing queue
+		if s.indexQueue != nil {
+			s.logger.Info("Stopping index queue...")
+			s.indexQueue.Stop()
 		}
-		s.walBatcher = nil
-	}
 
-	s.walMu.Lock()
-	defer s.walMu.Unlock()
+		// Wait for all indexing workers to finish
+		s.logger.Info("Waiting for indexing workers to finish...")
+		s.indexWg.Wait()
 
-	if s.wal != nil {
-		s.logger.Info("Syncing and closing WAL")
-		if err := s.wal.Sync(); err != nil {
-			s.logger.Error("Failed to sync WAL", zap.Error(err))
+		// Stop WAL batcher first to flush pending writes
+		if s.walBatcher != nil {
+			if err := s.walBatcher.Stop(); err != nil {
+				s.logger.Error("Failed to stop WAL batcher", zap.Error(err))
+			}
+			s.walBatcher = nil
 		}
-		if err := s.wal.Close(); err != nil {
-			return NewWALError("close", s.dataPath, 0, err)
+
+		s.walMu.Lock()
+		defer s.walMu.Unlock()
+
+		if s.wal != nil {
+			s.logger.Info("Syncing and closing WAL")
+			if err := s.wal.Sync(); err != nil {
+				s.logger.Error("Failed to sync WAL", zap.Error(err))
+			}
+			if err := s.wal.Close(); err != nil {
+				closeErr = NewWALError("close", s.dataPath, 0, err)
+			}
+			s.wal = nil
 		}
-		s.wal = nil
-	}
-	return nil
+	})
+	return closeErr
 }
 
 func (s *VectorStore) ApplyDelta(name string, rec arrow.RecordBatch, seq uint64, ts int64) error {

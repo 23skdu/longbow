@@ -123,6 +123,7 @@ func NewVectorStore(mem memory.Allocator, logger *zap.Logger, maxMemory, maxWALS
 		autoShardingConfig: DefaultAutoShardingConfig(),
 		nsManager:          newNamespaceManager(),
 		stopChan:           make(chan struct{}),
+		snapshotReset:      make(chan time.Duration, 1),
 	}
 	// Initialize global BM25 if needed (default disabled)
 	if s.hybridSearchConfig.Enabled {

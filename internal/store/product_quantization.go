@@ -352,6 +352,7 @@ func (e *PQEncoder) SDCDistancePacked(a, b []float32) float32 {
 	// We iterate through the floats and unpack bytes
 	// M is the total number of codes.
 	mTotal := e.config.M
+	// fmt.Printf("SDCDistancePacked: len(a)=%d, mTotal=%d\n", len(a), mTotal)
 
 	// Direct access to table for speed
 	table := e.sdcTable

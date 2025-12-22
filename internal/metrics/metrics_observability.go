@@ -68,6 +68,15 @@ var (
 		},
 	)
 
+	// RateLimitRequestsTotal counts rate limited requests
+	RateLimitRequestsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_rate_limit_requests_total",
+			Help: "Total number of requests handled by rate limiter",
+		},
+		[]string{"status"}, // "allowed", "throttled"
+	)
+
 	// ProxyRequestsForwardedTotal counts requests forwarded to other nodes
 	ProxyRequestsForwardedTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{

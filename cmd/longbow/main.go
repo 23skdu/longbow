@@ -6,12 +6,14 @@ import (
 	_ "net/http/pprof" // Register pprof handlers - REMOVED for G108
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
 	"context"
 	"strconv" // Added for hostname fallback
 
+	"github.com/23skdu/longbow/internal/limiter"
 	"github.com/23skdu/longbow/internal/logging"
 	"github.com/23skdu/longbow/internal/mesh"
 	"github.com/23skdu/longbow/internal/metrics"
@@ -78,6 +80,10 @@ type Config struct {
 	// GPU Configuration
 	GPUEnabled  bool `envconfig:"GPU_ENABLED" default:"false"`
 	GPUDeviceID int  `envconfig:"GPU_DEVICE_ID" default:"0"`
+
+	// Rate Limiting Configuration
+	RateLimitRPS   int `envconfig:"RATE_LIMIT_RPS" default:"0"` // 0 = disabled
+	RateLimitBurst int `envconfig:"RATE_LIMIT_BURST" default:"0"`
 }
 
 func main() {
@@ -237,9 +243,24 @@ func run() error {
 		return err
 	}
 	serverOpts := cfg.BuildGRPCServerOptions()
-	// Add Partition Proxy Interceptors
-	serverOpts = append(serverOpts, grpc.UnaryInterceptor(sharding.PartitionProxyInterceptor(ringManager, forwarder)))
-	serverOpts = append(serverOpts, grpc.StreamInterceptor(sharding.PartitionProxyStreamInterceptor(ringManager, forwarder)))
+
+	// Initialize Rate Limiter
+	rateLimiter := limiter.NewRateLimiter(limiter.Config{
+		RPS:   cfg.RateLimitRPS,
+		Burst: cfg.RateLimitBurst,
+	})
+
+	// Add Interceptors (Chained)
+	serverOpts = append(serverOpts,
+		grpc.ChainUnaryInterceptor(
+			rateLimiter.UnaryInterceptor(),
+			sharding.PartitionProxyInterceptor(ringManager, forwarder),
+		),
+		grpc.ChainStreamInterceptor(
+			rateLimiter.StreamInterceptor(),
+			sharding.PartitionProxyStreamInterceptor(ringManager, forwarder),
+		),
+	)
 
 	logger.Info("gRPC server options configured",
 		zap.Int("max_recv_msg_size", cfg.GRPCMaxRecvMsgSize),
@@ -281,8 +302,9 @@ func run() error {
 
 	metaLis := store.NewTCPNoDelayListener(metaLisBase.(*net.TCPListener))
 	// Handle signals for graceful shutdown and hot reload
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	// Use NotifyContext to cancel context on SIGINT/SIGTERM
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
 	// Start Data Server
 	go func() {
@@ -300,41 +322,49 @@ func run() error {
 		}
 	}()
 
-	// Event loop
-	for {
-		sig := <-sigChan
-		switch sig {
-		case syscall.SIGHUP:
-			logger.Info("Received SIGHUP, reloading configuration")
-			if err := godotenv.Overload(); err != nil {
-				logger.Error("Failed to reload .env file", zap.Error(err))
-			}
+	// Wait for signal
+	<-ctx.Done()
+	logger.Info("Received shutdown signal, initiating graceful shutdown")
 
-			var newCfg Config
-			if err := envconfig.Process("LONGBOW", &newCfg); err != nil {
-				logger.Error("Failed to process new config", zap.Error(err))
-				continue
-			}
+	// Shutdown Sequence
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 
-			vectorStore.UpdateConfig(newCfg.MaxMemory, newCfg.MaxWALSize, newCfg.SnapshotInterval)
-
-			logger.Info("Configuration reloaded",
-				zap.Int64("max_memory", newCfg.MaxMemory),
-				zap.Duration("snapshot_interval", newCfg.SnapshotInterval),
-				zap.Int64("max_wal_size", newCfg.MaxWALSize),
-			)
-
-		case os.Interrupt, syscall.SIGTERM:
-			logger.Info("Shutting down...")
+	done := make(chan struct{})
+	go func() {
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
 			dataServer.GracefulStop()
+			logger.Info("Data server stopped")
+		}()
+		go func() {
+			defer wg.Done()
 			metaServer.GracefulStop()
+			logger.Info("Meta server stopped")
+		}()
+		wg.Wait()
+		close(done)
+	}()
 
-			if err := vectorStore.Close(); err != nil {
-				logger.Error("Failed to close VectorStore", zap.Error(err))
-			}
-			return nil
-		}
+	select {
+	case <-done:
+		logger.Info("gRPC servers stopped gracefully")
+	case <-shutdownCtx.Done():
+		logger.Warn("Shutdown timed out, forcing stop")
+		dataServer.Stop()
+		metaServer.Stop()
 	}
+
+	// Close VectorStore (flushes WAL/Snapshots)
+	if err := vectorStore.Close(); err != nil {
+		logger.Error("Failed to close vector store", zap.Error(err))
+	} else {
+		logger.Info("Vector store closed successfully")
+	}
+
+	return nil
 }
 
 func initTracer() *sdktrace.TracerProvider {

@@ -587,16 +587,23 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 	var wg sync.WaitGroup
 
 	// Determine execution strategy
+	// Determine execution strategy
 	var stageChan <-chan PipelineStage
-	usePipeline := ShouldUsePipeline(len(ds.Records))
+	usePipeline := s.shouldUsePipeline(len(ds.Records))
+	var pipeline *DoGetPipeline
 
 	if usePipeline {
 		// Use prefetching pipeline
-		pipeline := NewDoGetPipeline(8, 16) // 8 workers, 16 buffer size
+		if s.doGetPipelinePool != nil {
+			pipeline = s.doGetPipelinePool.Get()
+		} else {
+			pipeline = NewDoGetPipeline(8, 16) // Fallback defaults
+		}
+
 		// ProcessRecords handles feeding safely
 		stageChan = pipeline.ProcessRecords(ctx, ds.Records, ds.Tombstones, query.Filters, nil)
 		metrics.DoGetPipelineStepsTotal.WithLabelValues("pipeline").Add(float64(len(ds.Records)))
-		s.logger.Debug("Using DoGetPipeline", zap.Int("workers", numWorkers))
+		s.logger.Debug("Using DoGetPipeline", zap.Int("workers", pipeline.NumWorkers()))
 	} else {
 		// Simple feeder for small datasets
 		metrics.DoGetPipelineStepsTotal.WithLabelValues("simple").Add(float64(len(ds.Records)))
@@ -717,6 +724,11 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 				rowsSent += batch.NumRows()
 				batch.Release()
 
+				// Track stats for test verification
+				if usePipeline {
+					s.incrementPipelineBatches(1)
+				}
+
 				if query.Limit > 0 && rowsSent >= query.Limit {
 					// Stop workers? Context cancel?
 					// Ideally we cancel context for workers logic but here we just break read loop.
@@ -741,10 +753,17 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 		}
 	}
 
+	if pipeline != nil && s.doGetPipelinePool != nil {
+		s.doGetPipelinePool.Put(pipeline)
+	}
+
 	// Normal exit
 	return nil
 
 DRAIN:
+	if pipeline != nil && s.doGetPipelinePool != nil {
+		s.doGetPipelinePool.Put(pipeline)
+	}
 	// Drain remaining results to prevent worker deadlock
 	go func() {
 		for range resultsChan {

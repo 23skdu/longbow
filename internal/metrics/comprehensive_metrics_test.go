@@ -327,9 +327,9 @@ func TestShardedHnswLoadFactor_Exists(t *testing.T) {
 		t.Fatal("ShardedHnswLoadFactor metric should not be nil")
 	}
 	// Should be GaugeVec with shard_id label (0-1 load factor)
-	ShardedHnswLoadFactor.WithLabelValues("0").Set(0.65)
-	ShardedHnswLoadFactor.WithLabelValues("1").Set(0.72)
-	ShardedHnswLoadFactor.WithLabelValues("2").Set(0.58)
+	ShardedHnswLoadFactor.WithLabelValues("test_dataset", "0").Set(0.65)
+	ShardedHnswLoadFactor.WithLabelValues("test_dataset", "1").Set(0.72)
+	ShardedHnswLoadFactor.WithLabelValues("test_dataset", "2").Set(0.58)
 }
 
 func TestShardedHnswShardSize_Exists(t *testing.T) {
@@ -337,8 +337,8 @@ func TestShardedHnswShardSize_Exists(t *testing.T) {
 		t.Fatal("ShardedHnswShardSize metric should not be nil")
 	}
 	// Should be GaugeVec with shard_id label
-	ShardedHnswShardSize.WithLabelValues("0").Set(10000)
-	ShardedHnswShardSize.WithLabelValues("1").Set(12000)
+	ShardedHnswShardSize.WithLabelValues("test_dataset", "0").Set(10000)
+	ShardedHnswShardSize.WithLabelValues("test_dataset", "1").Set(12000)
 }
 
 // -----------------------------------------------------------------------------

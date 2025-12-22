@@ -299,6 +299,13 @@ def command_validate(args, data_client, meta_client):
     """Run full validation suite."""
     print("Running full validation...")
     
+    # 0. Cleanup existing
+    try:
+        action = flight.Action("delete-dataset", json.dumps({"dataset": "validate_test"}).encode("utf-8"))
+        list(meta_client.do_action(action))
+    except:
+        pass
+
     # 1. Put
     args.dataset = "validate_test"
     args.rows = 100

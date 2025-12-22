@@ -135,7 +135,7 @@ func (h *HNSWIndex) SetPQEncoder(encoder *PQEncoder) {
 		h.pqCodes = make([][]uint8, 0)
 	}
 	// Update distance function in graph
-	h.Graph.Distance = h.GetDistanceFunc()
+	h.Graph.Distance = h.getDistanceFuncNoLock()
 }
 
 // TrainPQ trains a PQ encoder on the current dataset elements and enables it.
@@ -211,9 +211,13 @@ func (h *HNSWIndex) TrainPQ(dimensions, m, ksub, iterations int) error {
 // If PQ is enabled, it returns the SDC-accelerated PQ distance.
 func (h *HNSWIndex) GetDistanceFunc() func(a, b []float32) float32 {
 	h.pqCodesMu.RLock()
+	defer h.pqCodesMu.RUnlock()
+	return h.getDistanceFuncNoLock()
+}
+
+func (h *HNSWIndex) getDistanceFuncNoLock() func(a, b []float32) float32 {
 	pqEnabled := h.pqEnabled
 	encoder := h.pqEncoder
-	h.pqCodesMu.RUnlock()
 
 	if pqEnabled && encoder != nil {
 		// PQ SDC Distance Function with safety check for mixed graph states.

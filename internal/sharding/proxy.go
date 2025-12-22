@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"go.opentelemetry.io/otel"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -12,7 +13,11 @@ import (
 
 // PartitionProxyInterceptor creates a unary server interceptor for request routing
 func PartitionProxyInterceptor(rm *RingManager, forwarder *RequestForwarder) grpc.UnaryServerInterceptor {
+	tracer := otel.Tracer("longbow/sharding")
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		ctx, span := tracer.Start(ctx, "PartitionProxyFunc")
+		defer span.End()
+
 		// Extract routing key from metadata or request
 		// Note: This requires requests to have a common GetId() or metadata extraction
 		key, err := extractRoutingKey(ctx, req)
@@ -31,6 +36,9 @@ func PartitionProxyInterceptor(rm *RingManager, forwarder *RequestForwarder) grp
 		}
 
 		// Forwarding logic
+		// We should inject the span context into headers if not already done by auto-instrumentation.
+		// For manual forwarding, we might need manual injection.
+		// Assuming RequestForwarder handles context propagation.
 		return forwarder.Forward(ctx, owner, req, info.FullMethod)
 	}
 }

@@ -127,3 +127,7 @@ func (b *UringBackend) Close() error {
 func (b *UringBackend) Name() string {
 	return b.path
 }
+
+func (b *UringBackend) File() *os.File {
+	return b.f
+}

@@ -6,6 +6,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/apache/arrow-go/v18/arrow"
 )
 
@@ -99,6 +100,8 @@ func (p *DoGetPipeline) Process(
 		close(errCh)
 		return resultCh, errCh
 	}
+
+	metrics.PipelineUtilization.WithLabelValues("pipeline_process").Inc()
 
 	go p.run(ctx, batches, filterFn, resultCh, errCh)
 

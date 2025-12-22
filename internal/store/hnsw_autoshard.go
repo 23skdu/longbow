@@ -11,10 +11,20 @@ import (
 
 // AutoShardingConfig configures the auto-sharding behavior.
 type AutoShardingConfig struct {
+	// Enabled determines if auto-sharding is active.
+	Enabled bool
 	// ShardThreshold is the number of vectors at which to trigger sharding.
 	ShardThreshold int
 	// ShardCount is the target number of shards to create (defaults to NumCPU).
 	ShardCount int
+}
+
+// DefaultAutoShardingConfig returns a standard configuration.
+func DefaultAutoShardingConfig() AutoShardingConfig {
+	return AutoShardingConfig{
+		ShardThreshold: 10000,
+		ShardCount:     4, // Simplified default, real impl might use runtime.NumCPU()
+	}
 }
 
 // AutoShardingIndex wraps a VectorIndex and transparently upgrades it
@@ -201,9 +211,22 @@ func (a *AutoShardingIndex) GetDimension() uint32 {
 	return a.current.GetDimension()
 }
 
-// Close implements VectorIndex.
-func (a *AutoShardingIndex) Close() error {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return a.current.Close()
+// SetIndexedColumns configures which columns are indexed for fast equality lookups
+func (idx *AutoShardingIndex) SetIndexedColumns(cols []string) {
+	// No-op for now, or delegate if underlying supports it
+}
+
+// Warmup delegates to the current index.
+func (idx *AutoShardingIndex) Warmup() int {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	return idx.current.Warmup()
+}
+
+// Close closes the current index.
+
+func (idx *AutoShardingIndex) Close() error {
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+	return idx.current.Close()
 }

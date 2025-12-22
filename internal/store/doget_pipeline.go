@@ -126,5 +126,5 @@ func prefetchRecord(rec arrow.RecordBatch) {
 // ShouldUsePipeline returns true if the pipeline should be used for the given number of batches.
 // Pipeline has overhead, so only use for larger result sets.
 func ShouldUsePipeline(numBatches int) bool {
-	return numBatches >= 10
+	return numBatches >= 1000
 }

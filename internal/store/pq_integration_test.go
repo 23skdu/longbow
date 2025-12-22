@@ -26,17 +26,13 @@ func TestPQIntegration_EndToEnd(t *testing.T) {
 		vectors[i] = vec
 	}
 
+	fmt.Println("Step 2: Create Index")
 	// 2. Create Index
 	ds := &Dataset{Name: "test_pq"}
 	index := NewHNSWIndexWithCapacity(ds, count)
 
-	// 3. Add initial vectors (Raw)
-	for i := 0; i < trainSize; i++ {
-		index.Graph.Add(hnsw.MakeNode(VectorID(i), vectors[i]))
-		index.nextVecID.Add(1)
-	}
-
-	// 4. Train PQ externally
+	fmt.Println("Step 3: Train PQ")
+	// 3. Train PQ externally (before adding to graph to maintain dimension consistency)
 	cfg := &PQConfig{Dim: dim, M: 8, Ksub: 16, SubDim: dim / 8}
 	encoder, err := TrainPQEncoder(cfg, vectors[:trainSize], 2)
 	if err != nil {
@@ -44,8 +40,9 @@ func TestPQIntegration_EndToEnd(t *testing.T) {
 	}
 	index.SetPQEncoder(encoder)
 
-	// 5. Add REMAINING vectors (Packed)
-	for i := trainSize; i < count; i++ {
+	fmt.Println("Step 4: Add vectors (Packed)")
+	// 4. Add vectors (Packed)
+	for i := 0; i < count; i++ {
 		vec := vectors[i]
 		codes := encoder.Encode(vec)
 		index.pqCodesMu.Lock()
@@ -66,7 +63,8 @@ func TestPQIntegration_EndToEnd(t *testing.T) {
 		index.nextVecID.Add(1)
 	}
 
-	// 6. Search
+	fmt.Println("Step 5: Search")
+	// 5. Search
 	queryIdx := trainSize + 5
 	queryVec := vectors[queryIdx]
 	qCodes := encoder.Encode(queryVec)

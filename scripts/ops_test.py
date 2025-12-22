@@ -307,7 +307,8 @@ def command_validate(args, data_client, meta_client):
         pass
 
     # 1. Put
-    args.dataset = "validate_test"
+    unique_id = str(uuid.uuid4())[:8]
+    args.dataset = f"validate_test_{unique_id}"
     args.rows = 100
     args.dim = 4
     args.with_text = True

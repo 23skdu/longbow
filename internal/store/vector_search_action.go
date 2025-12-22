@@ -16,10 +16,11 @@ var vectorSearchParser = NewZeroAllocVectorSearchParser(768)
 
 // VectorSearchRequest defines the request format for VectorSearch action
 type VectorSearchRequest struct {
-	Dataset string    `json:"dataset"`
-	Vector  []float32 `json:"vector"`
-	K       int       `json:"k"`
-	Filters []Filter  `json:"filters"`
+	Dataset   string    `json:"dataset"`
+	Vector    []float32 `json:"vector"`
+	K         int       `json:"k"`
+	Filters   []Filter  `json:"filters"`
+	LocalOnly bool      `json:"local_only"`
 }
 
 // VectorSearchResponse defines the response format for VectorSearch action

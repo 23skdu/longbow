@@ -1,5 +1,5 @@
 groups:
-  - name: longbow_alerts
+  - name: longbow_search_alerts
     rules:
       - alert: LongbowHighSearchLatency
         expr: histogram_quantile(0.99, sum by (le, dataset) (rate(longbow_vector_search_latency_seconds_bucket[5m]))) > 1
@@ -10,15 +10,46 @@ groups:
           summary: "High search latency on {{ $labels.dataset }}"
           description: "99th percentile search latency is above 1s for more than 2 minutes."
 
-      - alert: LongbowHighIpcErrors
-        expr: rate(longbow_ipc_decode_errors_total[5m]) > 1
-        for: 1m
+      - alert: LongbowGlobalSearchSlow
+        expr: histogram_quantile(0.95, sum(rate(longbow_global_search_duration_seconds_bucket[5m])) by (le)) > 2
+        for: 3m
         labels:
           severity: warning
         annotations:
-          summary: "High IPC decoding error rate"
-          description: "Longbow is encountering more than 1 IPC error per second."
+          summary: "Slow global search performance"
+          description: "P95 global search latency exceeds 2 seconds."
 
+  - name: longbow_wal_alerts
+    rules:
+      - alert: LongbowHighWALQueueDepth
+        expr: longbow_wal_pending_entries > 5000
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High WAL queue depth"
+          description: "WAL has {{ $value }} pending entries, indicating potential write backlog."
+
+      - alert: LongbowSlowWALFsync
+        expr: histogram_quantile(0.99, sum(rate(longbow_wal_fsync_duration_seconds_bucket[5m])) by (le)) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Slow WAL fsync operations"
+          description: "P99 WAL fsync duration exceeds 500ms, may indicate disk saturation."
+
+      - alert: LongbowWALWriteErrors
+        expr: rate(longbow_wal_writes_total{status="error"}[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "WAL write errors detected"
+          description: "WAL is encountering write errors at {{ $value }} per second."
+
+  - name: longbow_index_alerts
+    rules:
       - alert: LongbowIndexingLag
         expr: longbow_index_queue_depth > 10000
         for: 5m
@@ -28,18 +59,173 @@ groups:
           summary: "High indexing queue depth"
           description: "The asynchronous indexing queue is growing faster than it can be processed."
 
-      - alert: LongbowMemoryPressure
-        expr: longbow_memory_fragmentation_ratio > 1.5
+      - alert: LongbowSlowIndexJobs
+        expr: histogram_quantile(0.95, sum(rate(longbow_index_job_latency_seconds_bucket[5m])) by (le)) > 10
         for: 5m
         labels:
           severity: warning
         annotations:
+          summary: "Slow index job processing"
+          description: "P95 index job latency exceeds 10 seconds."
+
+      - alert: LongbowIndexBuildFailures
+        expr: rate(longbow_index_creation_failures_total[5m]) > 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Index build failures detected"
+          description: "Indexes are failing to build at {{ $value }} per second."
+
+  - name: longbow_mesh_alerts
+    rules:
+      - alert: LongbowMemberFailure
+        expr: longbow_gossip_active_members < 2
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Mesh member count low"
+          description: "Only {{ $value }} active members in mesh, expected 3+."
+
+      - alert: LongbowSplitBrain
+        expr: longbow_split_brain_healthy_peers < 1
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Split brain detected"
+          description: "Cluster partition detected - healthy peer count is {{ $value }}."
+
+      - alert: LongbowHighGossipFailures
+        expr: rate(longbow_gossip_pings_total{direction="failed"}[5m]) > 1
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High gossip failure rate"
+          description: "Gossip ping failures at {{ $value }} per second."
+
+  - name: longbow_replication_alerts
+    rules:
+      - alert: LongbowHighReplicationLag
+        expr: longbow_replication_lag_seconds > 30
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High replication lag on {{ $labels.node }}"
+          description: "Replication lag is {{ $value }} seconds behind."
+
+      - alert: LongbowQuorumFailures
+        expr: rate(longbow_quorum_failure_total[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Quorum write failures"
+          description: "Quorum writes failing at {{ $value }} per second for {{ $labels.consistency }}."
+
+      - alert: LongbowReplicationStalled
+        expr: rate(longbow_replication_success_total[10m]) == 0 AND rate(longbow_replication_failure_total[10m]) == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Replication stalled"
+          description: "No replication activity detected for 10 minutes."
+
+  - name: longbow_memory_alerts
+    rules:
+      - alert: LongbowMemoryPressure
+        expr: longbow_memory_pressure_level > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory pressure"
+          description: "Memory pressure level is {{ $value }}, may cause backpressure."
+
+      - alert: LongbowFrequentBackpressure
+        expr: rate(longbow_memory_backpressure_rejects_total[5m]) > 1
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Frequent memory backpressure rejections"
+          description: "Rejecting {{ $value }} requests/sec due to memory pressure."
+
+      - alert: LongbowMemoryFragmentation
+        expr: longbow_memory_fragmentation_ratio > 1.5
+        for: 10m
+        labels:
+          severity: info
+        annotations:
           summary: "High memory fragmentation"
-          description: "System memory reserved is significantly higher than used memory."
+          description: "Memory fragmentation ratio is {{ $value }}, consider compaction."
+
+  - name: longbow_performance_alerts
+    rules:
+      - alert: LongbowHighIpcErrors
+        expr: rate(longbow_ipc_decode_errors_total[5m]) > 1
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High IPC decoding error rate"
+          description: "Encountering more than 1 IPC error per second."
+
+      - alert: LongbowSlowFlightOps
+        expr: histogram_quantile(0.99, sum(rate(longbow_flight_duration_seconds_bucket[5m])) by (le, method)) > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Slow Flight operations for {{ $labels.method }}"
+          description: "P99 latency exceeds 5 seconds."
+
+      - alert: LongbowHighLockContention
+        expr: histogram_quantile(0.95, sum(rate(longbow_dataset_lock_wait_duration_seconds_bucket[5m])) by (le, operation)) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High lock contention on {{ $labels.operation }}"
+          description: "P95 lock wait time exceeds 100ms."
+
+  - name: longbow_compaction_alerts
+    rules:
+      - alert: LongbowCompactionStalled
+        expr: rate(longbow_compaction_operations_total[10m]) == 0
+        for: 30m
+        labels:
+          severity: info
+        annotations:
+          summary: "Compaction stalled"
+          description: "No compaction activity for 30 minutes."
+
+      - alert: LongbowFrequentAutoCompaction
+        expr: rate(longbow_compaction_auto_triggers_total[5m]) > 0.1
+        for: 10m
+        labels:
+          severity: info
+        annotations:
+          summary: "Frequent auto-compaction triggers"
+          description: "Auto-compaction triggering {{ $value }} times per second."
 
   - name: longbow_recording_rules
     rules:
       - record: job:longbow_search_qps:rate5m
         expr: sum(rate(longbow_vector_search_latency_seconds_count[5m]))
+
       - record: job:longbow_put_qps:rate5m
         expr: sum(rate(longbow_flight_rows_processed_total{method="put"}[5m]))
+
+      - record: job:longbow_zero_copy_ratio:rate5m
+        expr: sum(rate(longbow_doget_zero_copy_total{type="zero_copy_retain"}[5m])) / (sum(rate(longbow_doget_zero_copy_total[5m])) + 1)
+
+      - record: job:longbow_quorum_success_rate:rate5m
+        expr: sum(rate(longbow_quorum_success_total[5m])) / (sum(rate(longbow_quorum_success_total[5m])) + sum(rate(longbow_quorum_failure_total[5m])) + 1)
+
+      - record: job:longbow_index_throughput:rate5m
+        expr: sum(rate(longbow_index_job_latency_seconds_count[5m]))

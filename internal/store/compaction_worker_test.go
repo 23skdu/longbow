@@ -8,7 +8,7 @@ import (
 // TestNewCompactionWorker verifies worker creation
 func TestNewCompactionWorker(t *testing.T) {
 	cfg := DefaultCompactionConfig()
-	worker := NewCompactionWorker(cfg)
+	worker := NewCompactionWorker(nil, cfg)
 	if worker == nil {
 		t.Fatal("expected non-nil worker")
 	}
@@ -25,7 +25,7 @@ func TestCompactionWorkerStartStop(t *testing.T) {
 		CompactionInterval:  10 * time.Millisecond,
 		Enabled:             true,
 	}
-	worker := NewCompactionWorker(cfg)
+	worker := NewCompactionWorker(nil, cfg)
 
 	// Start should not block
 	worker.Start()
@@ -44,7 +44,7 @@ func TestCompactionWorkerStartStop(t *testing.T) {
 func TestCompactionWorkerDisabled(t *testing.T) {
 	cfg := DefaultCompactionConfig()
 	cfg.Enabled = false
-	worker := NewCompactionWorker(cfg)
+	worker := NewCompactionWorker(nil, cfg)
 
 	worker.Start()
 	// Should not panic or error, just no-op
@@ -62,7 +62,7 @@ func TestCompactionWorkerMultipleStartStop(t *testing.T) {
 		CompactionInterval:  10 * time.Millisecond,
 		Enabled:             true,
 	}
-	worker := NewCompactionWorker(cfg)
+	worker := NewCompactionWorker(nil, cfg)
 
 	// Multiple starts should be safe
 	worker.Start()
@@ -82,7 +82,7 @@ func TestCompactionWorkerMultipleStartStop(t *testing.T) {
 // TestCompactionWorkerStats verifies statistics tracking
 func TestCompactionWorkerStats(t *testing.T) {
 	cfg := DefaultCompactionConfig()
-	worker := NewCompactionWorker(cfg)
+	worker := NewCompactionWorker(nil, cfg)
 
 	stats := worker.Stats()
 	if stats.CompactionsRun != 0 {

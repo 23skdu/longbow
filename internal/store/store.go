@@ -131,7 +131,7 @@ func NewVectorStore(mem memory.Allocator, logger *zap.Logger, maxMemory, maxWALS
 
 	// Initialize compaction if enabled (Phase 11/14)
 	if s.compactionConfig.Enabled {
-		s.compactionWorker = NewCompactionWorker(s.compactionConfig)
+		s.compactionWorker = NewCompactionWorker(s, s.compactionConfig)
 		s.compactionWorker.Start()
 	}
 
@@ -215,6 +215,21 @@ func (s *VectorStore) evictDataset(ds *Dataset) {
 	ds.SizeBytes.Store(0)
 	s.currentMemory.Add(-size)
 	metrics.EvictionsTotal.WithLabelValues("lru").Inc()
+}
+
+// IterateDatasets safely iterates over all datasets for background tasks.
+func (s *VectorStore) IterateDatasets(fn func(ds *Dataset)) {
+	s.mu.RLock()
+	// Copy to slice to avoid holding lock during callback
+	datasets := make([]*Dataset, 0, len(s.datasets))
+	for _, ds := range s.datasets {
+		datasets = append(datasets, ds)
+	}
+	s.mu.RUnlock()
+
+	for _, ds := range datasets {
+		fn(ds)
+	}
 }
 
 // SetIndexedColumns updates columns that should be indexed for fast equality lookups

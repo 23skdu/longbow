@@ -1214,9 +1214,13 @@ func (s *VectorStore) runIndexWorker(allocator memory.Allocator) {
 						idx.Add(text, docID)
 
 						// Also update BM25 index for all string columns (Phase 20)
-						ds.dataMu.RLock()
+						ds.dataMu.Lock()
+						if ds.BM25Index == nil {
+							// Lazy init BM25 with default config
+							ds.BM25Index = NewBM25InvertedIndex(DefaultBM25Config())
+						}
 						bm25 := ds.BM25Index
-						ds.dataMu.RUnlock()
+						ds.dataMu.Unlock()
 
 						if bm25 != nil {
 							bm25.Add(VectorID(docID), text)

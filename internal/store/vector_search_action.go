@@ -22,6 +22,9 @@ type VectorSearchRequest struct {
 	K         int       `json:"k"`
 	Filters   []Filter  `json:"filters"`
 	LocalOnly bool      `json:"local_only"`
+	// Hybrid Search Fields
+	TextQuery string  `json:"text_query"`
+	Alpha     float32 `json:"alpha"` // 0.0=sparse, 1.0=dense, 0.5=hybrid
 }
 
 // VectorSearchResponse defines the response format for VectorSearch action
@@ -55,31 +58,52 @@ func (s *MetaServer) handleVectorSearchAction(action *flight.Action, stream flig
 		return status.Error(codes.InvalidArgument, "k must be at least 1")
 	}
 
-	// Get dataset
-	ds, err := s.getDataset(req.Dataset)
-	if err != nil {
-		metrics.VectorSearchActionErrors.Inc()
-		return status.Errorf(codes.NotFound, "dataset not found: %s", req.Dataset)
+	// Determine if Hybrid Search
+	isHybrid := req.TextQuery != "" || (req.Alpha > 0 && req.Alpha < 1.0)
+	var searchResults []SearchResult
+	var err error
+
+	if isHybrid {
+		// Perform Hybrid Search
+		// Note: SearchHybrid handles dataset retrieval and validation internally
+		// We pass context for cancellation support
+		searchResults, err = s.VectorStore.SearchHybrid(stream.Context(), req.Dataset, req.Vector, req.TextQuery, req.K, req.Alpha, 60) // default RRF K=60
+		if err != nil {
+			metrics.VectorSearchActionErrors.Inc()
+			// Map store errors to grpc status
+			if status.Code(err) == codes.Unknown {
+				return status.Errorf(codes.Internal, "hybrid search failed: %v", err)
+			}
+			return err
+		}
+	} else {
+		// Standard Vector Search
+		// Get dataset
+		ds, err := s.getDataset(req.Dataset)
+		if err != nil {
+			metrics.VectorSearchActionErrors.Inc()
+			return status.Errorf(codes.NotFound, "dataset not found: %s", req.Dataset)
+		}
+
+		// Check if index exists
+		if ds.Index == nil {
+			metrics.VectorSearchActionErrors.Inc()
+			return status.Error(codes.FailedPrecondition, "dataset has no HNSW index")
+		}
+
+		// Validate vector dimension
+		expectedDim := ds.Index.GetDimension()
+		if uint32(len(req.Vector)) != expectedDim { //nolint:gosec // G115
+			metrics.VectorSearchActionErrors.Inc()
+			return status.Errorf(codes.InvalidArgument, "dimension mismatch: expected %d, got %d", expectedDim, len(req.Vector))
+		}
+
+		// Perform search using SearchVectors from Index interface
+		searchResults = ds.Index.SearchVectors(req.Vector, req.K, req.Filters)
+
+		// Map internal IDs to User IDs for local results
+		searchResults = s.VectorStore.MapInternalToUserIDs(ds, searchResults)
 	}
-
-	// Check if index exists
-	if ds.Index == nil {
-		metrics.VectorSearchActionErrors.Inc()
-		return status.Error(codes.FailedPrecondition, "dataset has no HNSW index")
-	}
-
-	// Validate vector dimension
-	expectedDim := ds.Index.GetDimension()
-	if uint32(len(req.Vector)) != expectedDim { //nolint:gosec // G115 - vector length unlikely to exceed uint32
-		metrics.VectorSearchActionErrors.Inc()
-		return status.Errorf(codes.InvalidArgument, "dimension mismatch: expected %d, got %d", expectedDim, len(req.Vector))
-	}
-
-	// Perform search using SearchVectors from Index interface
-	searchResults := ds.Index.SearchVectors(req.Vector, req.K, req.Filters)
-
-	// Map internal IDs to User IDs for local results
-	searchResults = s.VectorStore.MapInternalToUserIDs(ds, searchResults)
 
 	// Perform Global Search (Scatter-Gather) if not local-only and mesh exists
 	if !req.LocalOnly && s.Mesh != nil {

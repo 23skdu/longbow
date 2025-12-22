@@ -52,10 +52,26 @@ sequenceDiagram
     DS-->>C: FlightData (Stream)
 ```
 
-## Zero-Copy HNSW Implementation
+### Zero-Copy HNSW Implementation
 
 We utilize the [coder/hnsw](https://github.com/coder/hnsw) library to manage the
 graph structure. The graph stores **only** `VectorID` identifiers, not vector data.
+
+### Product Quantization (PQ) Compression
+
+Longbow stores vectors in compressed format using Product Quantization (PQ) to reduce memory usage by up to **64x**.
+
+* **Encoding**: Vectors are split into `M` sub-vectors and quantized to 256 centroids (1 byte each).
+* **Storage**: A 1536-dim vector (6KB) is compressed to 96 bytes (PQ96) or 24 bytes (PQ24).
+* **Search**: Uses Symmetric Distance Computation (SDC) lookup tables for fast distance approximation.
+
+### SIMD Acceleration
+
+Distance calculations are optimized using platform-specific SIMD instructions:
+
+1. **ARM64 (NEON)**: Hand-optimized assembly for dot-product and L2 distance (2.5x speedup over Go compiler).
+2. **AMD64 (AVX2/AVX512)**: Hardware-accelerated vector operations.
+3. **Fallback**: Pure Go implementation for other architectures.
 
 ### Zero-Copy Lookup
 
@@ -77,9 +93,9 @@ The distance function accesses vector data directly from Apache Arrow buffers:
 
 Semantic (vector) search excels at finding conceptually similar content but can miss:
 
-- Exact keyword matches (error codes, product IDs)
-- Rare technical terms
-- Specific names or identifiers
+* Exact keyword matches (error codes, product IDs)
+* Rare technical terms
+* Specific names or identifiers
 
 Hybrid search combines the best of both approaches.
 
@@ -104,10 +120,10 @@ results := idx.Search("error code", 10)
 
 Features:
 
-- **Tokenization**: Lowercase, alphanumeric splitting
-- **TF-IDF Scoring**: `score = TF * (1 + IDF)` where `TF = 1 + log(count)`
-- **Multi-term queries**: Scores aggregated across all query terms
-- **Deletion support**: Documents can be removed from index
+* **Tokenization**: Lowercase, alphanumeric splitting
+* **TF-IDF Scoring**: `score = TF * (1 + IDF)` where `TF = 1 + log(count)`
+* **Multi-term queries**: Scores aggregated across all query terms
+* **Deletion support**: Documents can be removed from index
 
 #### HybridSearcher
 
@@ -143,8 +159,8 @@ RRF_score(doc) = Σ 1/(k + rank(doc))
 
 Where:
 
-- `k` is a constant (default: 60) that controls rank importance
-- `rank(doc)` is the 1-based position in each result list
+* `k` is a constant (default: 60) that controls rank importance
+* `rank(doc)` is the 1-based position in each result list
 
 **Example:**
 
@@ -164,9 +180,9 @@ Fused result: [A, C, B, E, D]
 
 RRF advantages:
 
-- No score normalization needed
-- Robust to different scoring scales
-- Simple and effective in practice
+* No score normalization needed
+* Robust to different scoring scales
+* Simple and effective in practice
 
 ## Supported Distance Metrics
 
@@ -180,8 +196,8 @@ RRF advantages:
 
 ### Memory Efficiency
 
-- **Zero-copy design**: ~50% RAM reduction vs. standard HNSW
-- **Size-bucketed pools**: Reduced GC pressure via `PooledAllocator`
+* **Zero-copy design**: ~50% RAM reduction vs. standard HNSW
+* **Size-bucketed pools**: Reduced GC pressure via `PooledAllocator`
 
 ### Search Latency
 

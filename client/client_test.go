@@ -86,6 +86,21 @@ func TestSmartClient_Redirection(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, stream)
 
+		// Consume stream to trigger redirection logic (Recv() handles the error)
+		_, err = stream.Recv()
+		// Mock2 returns nil error (EOF-ish) or empty data.
+		// If it returns nil error in handler, Recv returns io.EOF?
+		// Mock handler returns nil. gRPC stream Recv returns EOF.
+		// Flight Recv returns (*FlightData, error).
+		// We expect no error or EOF.
+		if err != nil {
+			// If it's EOF, that's fine (success).
+			// But wait, io.EOF is an error.
+			// flight.Recv returns (data, err).
+			// We check that it is NOT a ForwardRequired error.
+			assert.NotContains(t, err.Error(), "FORWARD_REQUIRED")
+		}
+
 		// Verify call counts
 		time.Sleep(50 * time.Millisecond)
 		assert.Equal(t, int32(1), mock1.callCount.Load(), "Node 1 should be called once (redirect)")
@@ -127,7 +142,10 @@ func TestSmartClient_MaxRedirects(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	_, err = client.DoGet(ctx, []byte("ticket"))
+	stream, err := client.DoGet(ctx, []byte("ticket"))
+	require.NoError(t, err) // DoGet itself returns stream
+
+	_, err = stream.Recv()
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "max redirects exceeded")
 }

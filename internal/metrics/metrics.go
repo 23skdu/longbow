@@ -1148,3 +1148,11 @@ var GRPCMaxConcurrentStreams = promauto.NewGauge(
 		Help: "Configured maximum concurrent gRPC streams",
 	},
 )
+
+// InvertedIndexPostingsTotal tracks total postings in inverted indexes
+var InvertedIndexPostingsTotal = promauto.NewCounter(
+	prometheus.CounterOpts{
+		Name: "longbow_inverted_index_postings_total",
+		Help: "Total number of postings (document IDs) added to inverted indexes",
+	},
+)

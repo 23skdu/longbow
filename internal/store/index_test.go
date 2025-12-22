@@ -20,11 +20,11 @@ func NewMockIndex() *MockIndex {
 	}
 }
 
-func (m *MockIndex) Add(batchIdx, rowIdx int) error {
+func (m *MockIndex) Add(batchIdx, rowIdx int) (uint32, error) {
 	m.AddCalls++
 	id := VectorID(len(m.Vectors))
 	m.Vectors[id] = Location{BatchIdx: batchIdx, RowIdx: rowIdx}
-	return nil
+	return uint32(id), nil
 }
 
 func (m *MockIndex) SearchByID(id VectorID, k int) []VectorID {
@@ -51,11 +51,16 @@ func (m *MockIndex) SearchVectors(query []float32, k int, filters []Filter) []Se
 	return []SearchResult{}
 }
 
-func (m *MockIndex) AddByLocation(batchIdx, rowIdx int) error {
+func (m *MockIndex) SearchVectorsWithBitmap(query []float32, k int, filter *Bitset) []SearchResult {
+	m.SearchCalls++
+	return []SearchResult{}
+}
+
+func (m *MockIndex) AddByLocation(batchIdx, rowIdx int) (uint32, error) {
 	return m.Add(batchIdx, rowIdx)
 }
 
-func (m *MockIndex) AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx int) error {
+func (m *MockIndex) AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32, error) {
 	return m.Add(batchIdx, rowIdx)
 }
 

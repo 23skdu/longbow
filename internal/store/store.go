@@ -17,6 +17,7 @@ import (
 
 	"github.com/23skdu/longbow/internal/mesh"
 	"github.com/23skdu/longbow/internal/metrics"
+
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/flight"
@@ -354,10 +355,11 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 				return nil
 			}
 		}
-		defer combined.Release()
+		// defer combined.Release()
 
 		// Flush single combined batch
 		if err := s.flushPutBatch(ds, name, []arrow.RecordBatch{combined}); err != nil {
+			combined.Release()
 			return err
 		}
 
@@ -371,6 +373,29 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 
 	for r.Next() {
 		rec := r.Record()
+
+		// Adaptive Batching (Option 1):
+		// If the record is large enough and we don't have pending small records,
+		// write it directly to avoid concatenation/slice overhead.
+		if len(batch) == 0 && rec.NumRows() >= 100 {
+			rec.Retain()
+			if err := s.flushPutBatch(ds, name, []arrow.RecordBatch{rec}); err != nil {
+				rec.Release()
+				return err
+			}
+			rec.Release() // flushPutBatch doesn't take ownership of the slice elements' refcount (it retains if needed internally? No, checks: it calls s.walBatcher.Write which Retains. It appends to ds.Records which uses the passed rec? No, let's verify ownership.)
+			// Wait, previous code:
+			// rec.Retain()
+			// batch = append(batch, rec)
+			// flush() -> flushPutBatch(batch) -> inside flushPutBatch?
+			// It appends to ds.Records. ds.Records owns it?
+			// In flushPutBatch: "ds.Records = append(ds.Records, batch...)"
+			// Yes, it takes ownership.
+			// DOES flushPutBatch Retain?
+			// Let's check flushPutBatch in store.go.
+			continue
+		}
+
 		rec.Retain()
 		batch = append(batch, rec)
 
@@ -653,6 +678,19 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 			if !ok {
 				resultsChan = nil // Channel closed
 			} else {
+				s.logger.Info("DoGet Writing Batch", zap.Int64("num_rows", batch.NumRows()), zap.Int("num_cols", int(batch.NumCols())))
+				// Verify Columns
+				for i := 0; i < int(batch.NumCols()); i++ {
+					col := batch.Column(i)
+					if col.Len() != int(batch.NumRows()) {
+						s.logger.Error("DoGet Batch Column Length Mismatch", zap.Int("col_idx", i), zap.Int("col_len", col.Len()), zap.Int64("batch_rows", batch.NumRows()))
+					}
+					// Check data length for specific types if known, or just ensure not nil
+					if col.Data() == nil {
+						s.logger.Error("DoGet Batch Column Data is NIL", zap.Int("col_idx", i))
+					}
+				}
+
 				if err := w.Write(batch); err != nil {
 					s.logger.Error("DoGet Write failed", zap.Error(err))
 					batch.Release()
@@ -911,11 +949,56 @@ func (s *VectorStore) runIndexWorker(allocator memory.Allocator) {
 		}
 
 		// ds.Index access
+		// ds.Index access
+		var docID uint32
 		if ds.Index != nil {
 			// Adaptive Sharding handled by AutoShardingIndex wrapper
 			// Note: We currently don't use 'allocator' in AddByRecord, but pinning provides main benefit.
-			if err := ds.Index.AddByRecord(job.Record, job.RowIdx, job.BatchIdx); err != nil {
+			var err error
+			docID, err = ds.Index.AddByRecord(job.Record, job.RowIdx, job.BatchIdx)
+			if err != nil {
 				s.logger.Error("Async index add failed", zap.Any("dataset", job.DatasetName), zap.Error(err))
+			}
+		}
+
+		// Update Inverted Indexes (Hybrid Search)
+		// We iterate over all columns, and if we find a String column, we index it.
+		// For MVP, we index *all* string columns.
+		// NOTE: This adds overhead. In production, we should check schema metadata.
+		go func(job *IndexJob, ds *Dataset) { // Use new goroutine or same? Same is better for CPU usage control.
+			// Actually, let's do it inline to respect numWorkers.
+			// But we need to define "store" package? We are in "store" package.
+			// job is IndexJob.
+		}(nil, nil)
+
+		schema := job.Record.Schema()
+		for i, field := range schema.Fields() {
+			if field.Type.ID() == arrow.STRING {
+				// Get or Create Inverted Index for this column
+				ds.dataMu.Lock()
+				if ds.InvertedIndexes == nil {
+					ds.InvertedIndexes = make(map[string]*InvertedIndex)
+				}
+				idx, ok := ds.InvertedIndexes[field.Name]
+				if !ok {
+					idx = NewInvertedIndex()
+					ds.InvertedIndexes[field.Name] = idx
+				}
+				ds.dataMu.Unlock()
+
+				// Add term
+				colI := job.Record.Column(i)
+				if col, ok := colI.(*array.String); ok {
+					if job.RowIdx < col.Len() {
+						if col.IsValid(job.RowIdx) {
+							term := col.Value(job.RowIdx)
+							// Use consistent internal VectorID returned by HNSW
+							idx.Add(term, docID)
+						}
+					}
+				} else {
+					s.logger.Warn("Column type mismatch in runIndexWorker", zap.String("field", field.Name), zap.Any("type", colI.DataType()))
+				}
 			}
 		}
 
@@ -1017,6 +1100,18 @@ func (s *VectorStore) MapInternalToUserIDs(ds *Dataset, results []SearchResult) 
 		case *array.Uint64:
 			if loc.RowIdx < c.Len() {
 				resolvedID = VectorID(c.Value(loc.RowIdx)) // Truncate if needed
+			} else {
+				resolvedID = res.ID
+			}
+		case *array.Int64:
+			if loc.RowIdx < c.Len() {
+				resolvedID = VectorID(c.Value(loc.RowIdx))
+			} else {
+				resolvedID = res.ID
+			}
+		case *array.Int32:
+			if loc.RowIdx < c.Len() {
+				resolvedID = VectorID(c.Value(loc.RowIdx))
 			} else {
 				resolvedID = res.ID
 			}

@@ -55,18 +55,23 @@ func DetectNUMATopology() (*NUMATopology, error) {
 		}
 
 		cpuList := strings.TrimSpace(string(cpuListBytes))
-		topo.CPUs[i] = parseCPUList(cpuList)
+		cpus, err := parseCPUList(cpuList)
+		if err != nil {
+			// Skip malformed CPU lists
+			continue
+		}
+		topo.CPUs[i] = cpus
 	}
 
 	return topo, nil
 }
 
 // parseCPUList parses Linux CPU list format (e.g., "0-3,8-11" or "0,2,4,6").
-func parseCPUList(cpulist string) []int {
+func parseCPUList(cpulist string) ([]int, error) {
 	var cpus []int
 
 	if cpulist == "" {
-		return cpus
+		return cpus, nil
 	}
 
 	parts := strings.Split(cpulist, ",")
@@ -80,13 +85,13 @@ func parseCPUList(cpulist string) []int {
 			// Range format: "0-3"
 			rangeParts := strings.Split(part, "-")
 			if len(rangeParts) != 2 {
-				continue
+				return nil, fmt.Errorf("invalid range: %s", part)
 			}
 
 			start, err1 := strconv.Atoi(strings.TrimSpace(rangeParts[0]))
 			end, err2 := strconv.Atoi(strings.TrimSpace(rangeParts[1]))
 			if err1 != nil || err2 != nil {
-				continue
+				return nil, fmt.Errorf("invalid range numbers: %s", part)
 			}
 
 			for i := start; i <= end; i++ {
@@ -96,13 +101,13 @@ func parseCPUList(cpulist string) []int {
 			// Single CPU
 			cpu, err := strconv.Atoi(part)
 			if err != nil {
-				continue
+				return nil, fmt.Errorf("invalid cpu number: %s", part)
 			}
 			cpus = append(cpus, cpu)
 		}
 	}
 
-	return cpus
+	return cpus, nil
 }
 
 // String returns a human-readable representation of the topology.

@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"os"
 	"runtime"
-	"strconv"
-	"strings"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -93,36 +91,4 @@ func pinThreadToNodeLinux(node int) error {
 	}
 
 	return unix.SchedSetaffinity(0, &cpuSet)
-}
-
-// parseCPUList parses linux cpulist format "0-3,8,10-12"
-func parseCPUList(list string) ([]int, error) {
-	var cpus []int
-	parts := strings.Split(list, ",")
-	for _, part := range parts {
-		if strings.Contains(part, "-") {
-			rangeParts := strings.Split(part, "-")
-			if len(rangeParts) != 2 {
-				return nil, fmt.Errorf("invalid range: %s", part)
-			}
-			start, err := strconv.Atoi(strings.TrimSpace(rangeParts[0]))
-			if err != nil {
-				return nil, err
-			}
-			end, err := strconv.Atoi(strings.TrimSpace(rangeParts[1]))
-			if err != nil {
-				return nil, err
-			}
-			for i := start; i <= end; i++ {
-				cpus = append(cpus, i)
-			}
-		} else {
-			cpu, err := strconv.Atoi(strings.TrimSpace(part))
-			if err != nil {
-				return nil, err
-			}
-			cpus = append(cpus, cpu)
-		}
-	}
-	return cpus, nil
 }

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/23skdu/longbow/internal/mesh"
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"go.uber.org/zap"
@@ -76,6 +77,30 @@ func (s *MetaServer) handleVectorSearchAction(action *flight.Action, stream flig
 
 	// Perform search using SearchVectors from Index interface
 	searchResults := ds.Index.SearchVectors(req.Vector, req.K, req.Filters)
+
+	// Map internal IDs to User IDs for local results
+	searchResults = s.VectorStore.MapInternalToUserIDs(ds, searchResults)
+
+	// Perform Global Search (Scatter-Gather) if not local-only
+	if !req.LocalOnly {
+		peers := s.Mesh.GetMembers()
+		// Filter out self
+		var remotePeers []mesh.Member
+		selfID := s.Mesh.GetIdentity().ID
+		for _, p := range peers {
+			if p.ID != selfID {
+				remotePeers = append(remotePeers, p)
+			}
+		}
+
+		// Scatter-Gather
+		var err error
+		searchResults, err = s.coordinator.GlobalSearch(stream.Context(), searchResults, req, remotePeers)
+		if err != nil {
+			s.logger.Warn("Global search partial failure", zap.Error(err))
+			// Continue with whatever results we have
+		}
+	}
 
 	// Build response
 	resp := VectorSearchResponse{

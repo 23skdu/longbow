@@ -900,6 +900,114 @@ func (s *VectorStore) runIndexWorker(allocator memory.Allocator) {
 	}
 }
 
+// MapInternalToUserIDs maps internal HNSW IDs to user-provided IDs
+func (s *VectorStore) MapInternalToUserIDs(ds *Dataset, results []SearchResult) []SearchResult {
+	start := time.Now()
+	defer func() {
+		metrics.IDResolutionDuration.Observe(time.Since(start).Seconds())
+	}()
+
+	s.mu.RLock()
+	hnswIndex, ok := ds.Index.(*HNSWIndex)
+	s.mu.RUnlock()
+
+	if !ok || hnswIndex == nil {
+		// Fallback for AutoShardingIndex
+		s.mu.RLock()
+		autoIndex, isAuto := ds.Index.(*AutoShardingIndex)
+		s.mu.RUnlock()
+
+		if isAuto {
+			// Transparently access current index
+			// Note: We need to access it via reflection or if we are in same package (we are!).
+			// But 'current' field in AutoShardingIndex is lower case.
+			// As we are in 'store' package, we CAN access it.
+			autoIndex.mu.RLock()
+			current := autoIndex.current
+			autoIndex.mu.RUnlock()
+
+			if h, ok := current.(*HNSWIndex); ok {
+				hnswIndex = h
+			} else {
+				return results
+			}
+		} else {
+			return results
+		}
+	}
+
+	mappedResults := make([]SearchResult, 0, len(results))
+
+	// We need to access dataset records. The HNSW index locations point to Batch/Row.
+	// We'll use those to look up the ID from the "id" column of the record batch.
+	ds.dataMu.RLock()
+	defer ds.dataMu.RUnlock()
+
+	for _, res := range results {
+		// 1. Get location (Batch, Row) from HNSW internal ID
+		loc, found := hnswIndex.GetLocation(res.ID)
+		if !found {
+			// If not found in index (race condition?), skip or keep
+			continue
+		}
+
+		// 2. Access RecordBatch
+		if loc.BatchIdx >= len(ds.Records) {
+			continue
+		}
+		rec := ds.Records[loc.BatchIdx]
+
+		// 3. Find 'id' column
+		// Optimization: could cache column index if schema is consistent
+		idColIdx := -1
+		for i, f := range rec.Schema().Fields() {
+			if f.Name == "id" {
+				idColIdx = i
+				break
+			}
+		}
+
+		if idColIdx == -1 {
+			// No ID column, treat internal ID as valid
+			mappedResults = append(mappedResults, res)
+			continue
+		}
+
+		col := rec.Column(idColIdx)
+
+		// 4. Extract User ID
+		// ID column can be uint32 or uint64 (or others).
+		// VectorID is uint32. If user ID is uint64 > 2^32, we have a truncation issue.
+		// For now, cast to VectorID (uint32).
+		var resolvedID VectorID
+
+		switch c := col.(type) {
+		case *array.Uint32:
+			if loc.RowIdx < c.Len() {
+				resolvedID = VectorID(c.Value(loc.RowIdx))
+			} else {
+				resolvedID = res.ID // Fallback
+			}
+		case *array.Uint64:
+			if loc.RowIdx < c.Len() {
+				resolvedID = VectorID(c.Value(loc.RowIdx)) // Truncate if needed
+			} else {
+				resolvedID = res.ID
+			}
+		default:
+			// Unsupported ID type
+			resolvedID = res.ID
+		}
+
+		mappedResults = append(mappedResults, SearchResult{
+			ID:    resolvedID,
+			Score: res.Score,
+		})
+	}
+
+	return mappedResults
+}
+
 // GetDataset retrieves a dataset by name.
 func (s *VectorStore) GetDataset(name string) (*Dataset, error) {
 	return s.getDataset(name)

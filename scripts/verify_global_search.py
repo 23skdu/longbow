@@ -74,22 +74,21 @@ def main():
     ids = search(m1, ds, vec, local_only=False)
     print(f"Global IDs: {ids}")
     
-    # HNSW Index assigns internal IDs (0, 1, 2...), ignoring user IDs.
-    # We verify that we got 3 unique results, proving we reached all 3 nodes.
-    if len(set(ids)) == 3:
-        print("PASS: Global search found 3 unique IDs (Scatter-Gather working)")
+    # Now valid IDs should be returned due to ID resolution
+    if set(ids) == {1, 2, 3}:
+        print("PASS: Global search found all IDs: {1, 2, 3}")
     else:
-        print(f"FAIL: Expected 3 unique IDs, got {len(set(ids))}: {ids}")
+        print(f"FAIL: Expected {1, 2, 3}, got {set(ids)}")
         exit(1)
         
     print("Testing LOCAL Search on Node 1 (Meta Plane)...")
     ids = search(m1, ds, vec, local_only=True)
     print(f"Local IDs: {ids}")
     
-    if len(ids) == 1:
-        print("PASS: Local search found 1 result")
+    if len(ids) == 1 and ids[0] == 1:
+        print("PASS: Local search found correct local ID: 1")
     else:
-        print(f"FAIL: Local search expected 1 result, got {len(ids)}")
+        print(f"FAIL: Local search expected [1], got {ids}")
         exit(1)
 
 if __name__ == "__main__":

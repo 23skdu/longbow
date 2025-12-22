@@ -106,6 +106,455 @@ var (
 		[]string{"source", "reason"},
 	)
 
+	// AdaptiveIndexMigrationsTotal counts migrations from BruteForce to HNSW
+	AdaptiveIndexMigrationsTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_adaptive_index_migrations_total",
+			Help: "Total number of migrations from BruteForce to HNSW index",
+		},
+	)
+
+	// HnswSearchesTotal counts searches performed on HNSW index
+	HnswSearchesTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_hnsw_searches_total",
+			Help: "Total number of searches performed using HNSW index",
+		},
+	)
+
+	// BruteForceSearchesTotal counts searches performed using BruteForce scan
+	BruteForceSearchesTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_bruteforce_searches_total",
+			Help: "Total number of searches performed using BruteForce linear scan",
+		},
+	)
+
+	// BinaryQuantizeOpsTotal counts binary quantization operations
+	BinaryQuantizeOpsTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_binary_quantize_ops_total",
+			Help: "Total number of binary quantization operations",
+		},
+	)
+
+	// POPCNTDistanceOpsTotal counts POPCNT distance calculations
+	POPCNTDistanceOpsTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_popcnt_distance_ops_total",
+			Help: "Total number of POPCNT distance calculations",
+		},
+	)
+
+	// BitmapPoolMetrics
+	BitmapPoolGetsTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_bitmap_pool_gets_total",
+			Help: "Total number of bitmap pool get operations",
+		},
+	)
+	BitmapPoolHitsTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_bitmap_pool_hits_total",
+			Help: "Total number of bitmap pool hits",
+		},
+	)
+	BitmapPoolMissesTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_bitmap_pool_misses_total",
+			Help: "Total number of bitmap pool misses",
+		},
+	)
+	BitmapPoolPutsTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_bitmap_pool_puts_total",
+			Help: "Total number of bitmap pool put operations",
+		},
+	)
+	BitmapPoolDiscardsTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_bitmap_pool_discards_total",
+			Help: "Total number of bitmap pool discards",
+		},
+	)
+
+	// Checkpoint Metrics
+	CheckpointEpoch = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "longbow_checkpoint_epoch",
+			Help: "Current checkpoint epoch",
+		},
+	)
+	CheckpointsTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_checkpoints_total",
+			Help: "Total number of checkpoints created",
+		},
+	)
+	CheckpointBarrierReached = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_checkpoint_barrier_reached_total",
+			Help: "Total number of times checkpoint barrier was reached",
+		},
+	)
+	CheckpointTimeoutsTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_checkpoint_timeouts_total",
+			Help: "Total number of checkpoint timeouts",
+		},
+	)
+
+	// CircuitBreaker Metrics
+	CircuitBreakerStateChanges = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_circuit_breaker_state_changes_total",
+			Help: "Total number of circuit breaker state changes",
+		},
+	)
+	CircuitBreakerRejections = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_circuit_breaker_rejections_total",
+			Help: "Total number of requests rejected by circuit breaker",
+		},
+	)
+	CircuitBreakerSuccesses = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_circuit_breaker_successes_total",
+			Help: "Total number of successful circuit breaker operations",
+		},
+	)
+	CircuitBreakerFailures = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_circuit_breaker_failures_total",
+			Help: "Total number of failed circuit breaker operations",
+		},
+	)
+
+	// Pool Metrics
+	PoolLockWaitDuration = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_pool_lock_wait_duration_seconds",
+			Help:    "Time spent waiting for pool locks",
+			Buckets: []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1},
+		},
+		[]string{"pool"},
+	)
+
+	// Graph Metrics
+	GraphTraversalDurationSeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_graph_traversal_duration_seconds",
+			Help:    "Duration of graph traversal operations",
+			Buckets: prometheus.DefBuckets,
+		},
+	)
+	GraphClusteringDurationSeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_graph_clustering_duration_seconds",
+			Help:    "Duration of graph clustering operations",
+			Buckets: prometheus.DefBuckets,
+		},
+	)
+	GraphCommunitiesTotal = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "longbow_graph_communities_total",
+			Help: "Total number of detected graph communities",
+		},
+	)
+
+	// HNSW Graph Sync Metrics
+	HNSWGraphSyncExportsTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_hnsw_graph_sync_exports_total",
+			Help: "Total number of graph sync exports",
+		},
+	)
+	HNSWGraphSyncImportsTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_hnsw_graph_sync_imports_total",
+			Help: "Total number of graph sync imports",
+		},
+	)
+	HNSWGraphSyncDeltasTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_hnsw_graph_sync_deltas_total",
+			Help: "Total number of graph sync deltas generated",
+		},
+	)
+	HNSWGraphSyncDeltaAppliesTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_hnsw_graph_sync_delta_applies_total",
+			Help: "Total number of graph sync deltas applied",
+		},
+	)
+
+	// Load Balancer Metrics
+	LoadBalancerReplicasTotal = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "longbow_load_balancer_replicas_total",
+			Help: "Total number of replicas tracked by load balancer",
+		},
+	)
+	LoadBalancerUnhealthyTotal = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "longbow_load_balancer_unhealthy_total",
+			Help: "Total number of unhealthy replicas",
+		},
+	)
+	LoadBalancerSelectionsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_load_balancer_selections_total",
+			Help: "Total number of replica selections for read operations",
+		},
+		[]string{"strategy"},
+	)
+
+	// Memory Backpressure Metrics
+	MemoryPressureLevel = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "longbow_memory_pressure_level",
+			Help: "Current memory pressure level (0-100)",
+		},
+	)
+	MemoryHeapInUse = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "longbow_memory_heap_in_use_bytes",
+			Help: "Current heap memory in use",
+		},
+	)
+	MemoryBackpressureRejectsTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_memory_backpressure_rejects_total",
+			Help: "Total number of requests rejected due to memory backpressure",
+		},
+	)
+	MemoryBackpressureAcquiresTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_memory_backpressure_acquires_total",
+			Help: "Total number of memory permits acquired",
+		},
+	)
+	MemoryBackpressureReleasesTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_memory_backpressure_releases_total",
+			Help: "Total number of memory permits released",
+		},
+	)
+
+	// Namespace Metrics
+	NamespacesTotal = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "longbow_namespaces_total",
+			Help: "Total number of active namespaces",
+		},
+	)
+
+	// Replication Metrics
+	ReplicationPeersTotal = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "longbow_replication_peers_total",
+			Help: "Total number of replication peers",
+		},
+	)
+	ReplicationFailuresTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_replication_failures_total",
+			Help: "Total number of replication failures",
+		},
+	)
+	ReplicationSuccessTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_replication_success_total",
+			Help: "Total number of successful replication operations",
+		},
+	)
+	ReplicationRetriesTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_replication_retries_total",
+			Help: "Total number of replication retries",
+		},
+	)
+	ReplicationQueuedTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_replication_queued_total",
+			Help: "Total number of operations queued for replication",
+		},
+	)
+	ReplicationQueueDropped = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_replication_queue_dropped_total",
+			Help: "Total number of operations dropped from replication queue",
+		},
+	)
+
+	// Pluggable Index Metrics
+	IndexTypesRegistered = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "longbow_index_types_registered",
+			Help: "Total number of registered index types",
+		},
+	)
+	IndexCreationsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_index_creations_total",
+			Help: "Total number of index creation attempts",
+		},
+		[]string{"type", "status"},
+	)
+	IndexCreationDuration = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_index_creation_duration_seconds",
+			Help:    "Duration of index creation operations",
+			Buckets: prometheus.DefBuckets,
+		},
+		[]string{"type"},
+	)
+
+	// Quorum Metrics
+	QuorumOperationDuration = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_quorum_operation_duration_seconds",
+			Help:    "Duration of quorum operations",
+			Buckets: []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5},
+		},
+		[]string{"operation", "consistency"},
+	)
+	QuorumSuccessTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_quorum_success_total",
+			Help: "Total number of successful quorum operations",
+		},
+		[]string{"operation", "consistency"},
+	)
+	QuorumFailureTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_quorum_failure_total",
+			Help: "Total number of failed quorum operations",
+		},
+		[]string{"operation", "consistency", "reason"},
+	)
+
+	// Record Access Metrics
+	RecordAccessTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_record_access_total",
+			Help: "Total number of record accesses (LRU tracking)",
+		},
+	)
+	RecordMetadataEntries = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "longbow_record_metadata_entries",
+			Help: "Number of entries in record eviction metadata map",
+		},
+	)
+
+	// Semaphore Metrics
+	SemaphoreWaitingRequests = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "longbow_semaphore_waiting_requests",
+			Help: "Current number of requests waiting for semaphore",
+		},
+	)
+	SemaphoreActiveRequests = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "longbow_semaphore_active_requests",
+			Help: "Current number of requests holding semaphore",
+		},
+	)
+	SemaphoreAcquiredTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_semaphore_acquired_total",
+			Help: "Total number of semaphore acquisitions",
+		},
+	)
+	SemaphoreTimeoutsTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_semaphore_timeouts_total",
+			Help: "Total number of semaphore acquisition timeouts",
+		},
+	)
+	SemaphoreQueueDurationSeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_semaphore_queue_duration_seconds",
+			Help:    "Time spent waiting in semaphore queue",
+			Buckets: []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1},
+		},
+	)
+
+	// Schema Evolution Metrics
+	SchemaVersionCurrent = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "longbow_schema_version_current",
+			Help: "Current schema version for dataset",
+		},
+		[]string{"dataset"},
+	)
+	SchemaEvolutionDuration = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_schema_evolution_duration_seconds",
+			Help:    "Duration of schema evolution operations",
+			Buckets: prometheus.DefBuckets,
+		},
+	)
+	SchemaColumnsAddedTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_schema_columns_added_total",
+			Help: "Total number of columns added via schema evolution",
+		},
+	)
+	SchemaColumnsDroppedTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_schema_columns_dropped_total",
+			Help: "Total number of columns dropped via schema evolution",
+		},
+	)
+	SchemaTableDroppedTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_schema_table_dropped_total",
+			Help: "Total number of tables/datasets dropped",
+		},
+	)
+
+	// Split Brain Metrics
+	SplitBrainHeartbeatsTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_split_brain_heartbeats_total",
+			Help: "Total number of split brain detector heartbeats",
+		},
+	)
+	SplitBrainHealthyPeers = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "longbow_split_brain_healthy_peers",
+			Help: "Current number of healthy peers seen by detector",
+		},
+	)
+	SplitBrainPartitionsTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_split_brain_partitions_total",
+			Help: "Total number of partition events detected",
+		},
+	)
+	SplitBrainFenced = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "longbow_split_brain_fenced_state",
+			Help: "Whether the node is currently fenced (1=fenced, 0=normal)",
+		},
+	)
+
+	// Vector Clock Metrics
+	VectorClockMergesTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_vector_clock_merges_total",
+			Help: "Total number of vector clock merges",
+		},
+	)
+	VectorClockConflictsTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_vector_clock_conflicts_total",
+			Help: "Total number of vector clock conflicts detected",
+		},
+	)
+
 	// FlightRowsProcessed counts rows processed in Flight operations
 	FlightRowsProcessed = promauto.NewCounterVec(
 		prometheus.CounterOpts{
@@ -347,13 +796,46 @@ var ArrowMemoryUsedBytes = promauto.NewGaugeVec(
 	[]string{"allocator"},
 )
 
-// 15. SimdDispatchCount - SIMD implementation dispatch counts
-var SimdDispatchCount = promauto.NewCounterVec(
-	prometheus.CounterOpts{
-		Name: "longbow_simd_dispatch_count_total",
-		Help: "Count of SIMD dispatch calls by implementation",
-	},
-	[]string{"impl"},
+var (
+	// 15. SimdDispatchCount - SIMD implementation dispatch counts
+	SimdDispatchCount = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_simd_dispatch_total",
+			Help: "Count of SIMD implementation selections",
+		},
+		[]string{"implementation"},
+	)
+
+	// =============================================================================
+	// Phase 19: Production Observability Metrics
+	// =============================================================================
+
+	// ZeroCopyRatio tracks the ratio of zero-copy reads vs copy-based reads
+	ZeroCopyRatio = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "longbow_zero_copy_ratio",
+			Help: "Ratio of zero-copy reads to total reads (0.0-1.0)",
+		},
+		[]string{"dataset"},
+	)
+
+	// PipelineUtilization tracks usage of the DoGet pipeline vs direct path
+	PipelineUtilization = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_pipeline_utilization_total",
+			Help: "Count of operations processed via pipeline vs direct path",
+		},
+		[]string{"path"},
+	)
+
+	// TraceSpansTotal counts generated OpenTelemetry spans
+	TraceSpansTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_trace_spans_total",
+			Help: "Total number of OpenTelemetry spans generated",
+		},
+		[]string{"operation"},
+	)
 )
 
 // 16. SnapshotWriteDurationSeconds - Time to write Parquet snapshot
@@ -1150,10 +1632,10 @@ var GRPCMaxConcurrentStreams = promauto.NewGauge(
 )
 
 // InvertedIndexPostingsTotal tracks total postings in inverted indexes
-var InvertedIndexPostingsTotal = promauto.NewCounter(
-	prometheus.CounterOpts{
+var InvertedIndexPostingsTotal = promauto.NewGauge(
+	prometheus.GaugeOpts{
 		Name: "longbow_inverted_index_postings_total",
-		Help: "Total number of postings (document IDs) added to inverted indexes",
+		Help: "Total number of postings in inverted indexes",
 	},
 )
 

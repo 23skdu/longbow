@@ -390,6 +390,9 @@ func (s *VectorStore) runSnapshotTicker(initialInterval time.Duration) {
 func (s *VectorStore) Close() error {
 	s.logger.Info("Closing VectorStore...")
 
+	// Stop compaction worker
+	s.stopCompaction()
+
 	// Stop WAL batcher first to flush pending writes
 	if s.walBatcher != nil {
 		if err := s.walBatcher.Stop(); err != nil {

@@ -730,9 +730,16 @@ func (h *HNSWIndex) searchBruteForceWithBitmap(query []float32, k int, filter *B
 	return results
 }
 
-// Warmup implements Index interface.
+// SetIndexedColumns satisfies VectorIndex interface
+func (h *HNSWIndex) SetIndexedColumns(cols []string) {
+	// HNSW itself doesn't use these but the wrapper might
+}
+
+// Warmup implements VectorIndex interface.
 func (h *HNSWIndex) Warmup() int {
-	return 0
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.Graph.Len()
 }
 
 // getVectorDirectLocked retrieves the vector slice directly from Arrow memory without copy.

@@ -19,8 +19,6 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 )
 
-const testBufSize = 1024 * 1024
-
 // setupDataServerBench creates a DataServer with in-memory gRPC for benchmarking
 func setupDataServerBench(b *testing.B) flight.Client {
 	lis := bufconn.Listen(testBufSize)

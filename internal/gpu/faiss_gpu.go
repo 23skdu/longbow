@@ -1,4 +1,4 @@
-//go:build gpu
+//go:build gpu && linux
 
 package gpu
 
@@ -36,12 +36,6 @@ type FaissGPUIndex struct {
 	index     C.FaissGpuIndexFlatL2Ptr
 	mu        sync.RWMutex
 	closed    bool
-}
-
-// GPUConfig holds GPU-specific configuration
-type GPUConfig struct {
-	DeviceID  int
-	Dimension int
 }
 
 // NewFaissGPUIndex creates a new GPU-accelerated index using FAISS

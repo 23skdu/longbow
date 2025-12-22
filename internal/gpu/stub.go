@@ -12,3 +12,7 @@ var ErrGPUNotAvailable = errors.New("GPU support not enabled in this build")
 func NewIndex() (Index, error) {
 	return nil, ErrGPUNotAvailable
 }
+
+func NewIndexWithConfig(cfg GPUConfig) (Index, error) {
+	return nil, ErrGPUNotAvailable
+}

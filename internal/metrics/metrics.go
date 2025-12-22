@@ -1156,3 +1156,33 @@ var InvertedIndexPostingsTotal = promauto.NewCounter(
 		Help: "Total number of postings (document IDs) added to inverted indexes",
 	},
 )
+
+// =============================================================================
+// Hybrid Search Metrics (Phase 20)
+// =============================================================================
+
+var (
+	// HybridSearchVectorTotal counts dense vector searches in hybrid path
+	HybridSearchVectorTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_hybrid_search_vector_total",
+			Help: "Total dense vector searches in hybrid path",
+		},
+	)
+
+	// HybridSearchKeywordTotal counts sparse keyword searches in hybrid path
+	HybridSearchKeywordTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_hybrid_search_keyword_total",
+			Help: "Total sparse keyword searches in hybrid path",
+		},
+	)
+
+	// BM25DocumentsIndexedTotal counts documents added to BM25 index
+	BM25DocumentsIndexedTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_bm25_documents_indexed_total",
+			Help: "Total documents added to the BM25 inverted index",
+		},
+	)
+)

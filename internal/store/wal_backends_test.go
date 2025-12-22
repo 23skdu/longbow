@@ -54,7 +54,9 @@ func TestWALBackends_StdWAL(t *testing.T) {
 		err := stdWAL.Write("ds1", 2, 0, rec)
 		require.NoError(t, err)
 
+		store.mu.Lock()
 		store.datasets = make(map[string]*Dataset) // Clear memory
+		store.mu.Unlock()
 		err = store.replayWAL()
 		require.NoError(t, err)
 

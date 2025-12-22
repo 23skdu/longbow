@@ -16,8 +16,8 @@ ingestion and low-latency retrieval.
 
 - **Parquet Snapshots**: Immutable segments are periodically flushed to disk or
   S3 as Parquet files.
-- **Compaction**: Background processes merge small Parquet files into larger
-  ones to optimize read performance.
+- **Leveled Compaction**: Background workers automatically merge small batches (e.g., 10x100 rows) into larger optimally-sized batches (e.g., 1x1000 rows) to improve scan performance and reduce fragmentation.
+- **Async Fsync**: WAL writes are buffered and fsync'd asynchronously (default 1s interval) to maximize ingestion throughput while maintaining durability guarantees.
 - **WAL Size Limit**: A configurable limit (default 100MB) ensures that the
   Write-Ahead Log (WAL) doesn't grow indefinitely. When the limit is reached, a
   snapshot is automatically triggered to compact the data and truncate the WAL.
@@ -224,7 +224,6 @@ func main() {
 | :--------------------------------- | :-------- | :----- | :------------------------------- |
 | `longbow_flush_ops_total`          | Counter   | status | Total number of flush operations |
 | `longbow_snapshot_duration_seconds`| Histogram | -      | Duration of the snapshot process |
-
 
 ## Best Practices
 

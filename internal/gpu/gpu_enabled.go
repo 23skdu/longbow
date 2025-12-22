@@ -4,26 +4,18 @@ package gpu
 
 import "fmt"
 
-// RealIndex is a placeholder for the actual CGO implementation.
-type RealIndex struct {
-	// e.g. faissIndex *C.FaissIndex
-}
-
+// NewIndex creates a new GPU-accelerated index with default configuration
 func NewIndex() (Index, error) {
-	fmt.Println("Initializing GPU Index (Simulated/Scaffold)...")
-	return &RealIndex{}, nil
+	return NewIndexWithConfig(GPUConfig{
+		DeviceID:  0,
+		Dimension: 128,
+	})
 }
 
-func (idx *RealIndex) Add(ids []int64, vectors []float32) error {
-	// CGO calls would go here
-	return nil
-}
-
-func (idx *RealIndex) Search(vector []float32, k int) ([]int64, []float32, error) {
-	// CGO calls would go here
-	return []int64{}, []float32{}, nil
-}
-
-func (idx *RealIndex) Close() error {
-	return nil
+// NewIndexWithConfig creates a GPU index with custom configuration
+// This function is implemented in faiss_gpu.go for actual FAISS GPU binding
+func NewIndexWithConfig(cfg GPUConfig) (Index, error) {
+	fmt.Printf("Initializing FAISS GPU Index (device=%d, dim=%d)...\n", cfg.DeviceID, cfg.Dimension)
+	// Call the actual FAISS GPU implementation
+	return NewFaissGPUIndex(cfg)
 }

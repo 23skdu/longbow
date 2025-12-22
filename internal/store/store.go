@@ -20,9 +20,11 @@ import (
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
+	"github.com/apache/arrow-go/v18/arrow/compute"
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"github.com/apache/arrow-go/v18/arrow/memory"
+	"github.com/apache/arrow-go/v18/arrow/scalar"
 )
 
 // VectorStore implements flight.FlightServer with minimal logic
@@ -46,8 +48,11 @@ type VectorStore struct {
 
 	indexQueue *IndexJobQueue // Integrated HNSW
 
-	indexWg sync.WaitGroup // For background workers
-	mu      sync.RWMutex   // Protects datasets map (global lock, replaced by ShardedMap technically but kept for simple map access)
+	// Lifecycle
+	stopChan chan struct{}
+	stopOnce sync.Once
+	indexWg  sync.WaitGroup // For background workers
+	mu       sync.RWMutex   // Protects datasets map (global lock, replaced by ShardedMap technically but kept for simple map access)
 
 	// Mesh integration
 	Mesh            *mesh.Gossip
@@ -55,6 +60,18 @@ type VectorStore struct {
 
 	// NUMA integration (Phase 4/5)
 	numaTopology *NUMATopology
+
+	// Hybrid search (Phase 20)
+	hybridSearchConfig HybridSearchConfig
+	bm25Index          *BM25InvertedIndex
+
+	// DoGet pipeline subsystem
+	doGetPipelinePool *DoGetPipelinePool
+	pipelineThreshold int
+
+	// Column-based inverted index for O(1) equality filter lookups
+	columnIndex    *ColumnInvertedIndex
+	indexedColumns []string // columns to index for fast equality lookups
 }
 
 func NewVectorStore(mem memory.Allocator, logger *zap.Logger, maxMemory, maxWALSize int64, ttl time.Duration) *VectorStore {
@@ -73,13 +90,17 @@ func NewVectorStore(mem memory.Allocator, logger *zap.Logger, maxMemory, maxWALS
 	}
 
 	s := &VectorStore{
-		mem:             mem,
-		logger:          logger,
-		datasets:        make(map[string]*Dataset),
-		indexQueue:      NewIndexJobQueue(cfg),
-		meshStatusCache: NewMeshStatusCache(100 * time.Millisecond), // Cache mesh status for 100ms
-		numaTopology:    topo,
+		mem:                mem,
+		logger:             logger,
+		datasets:           make(map[string]*Dataset),
+		indexQueue:         NewIndexJobQueue(cfg),
+		meshStatusCache:    NewMeshStatusCache(100 * time.Millisecond), // Cache mesh status for 100ms
+		numaTopology:       topo,
+		hybridSearchConfig: DefaultHybridSearchConfig(),
+		columnIndex:        NewColumnInvertedIndex(),
 	}
+	// Initialize global BM25 if needed (default disabled)
+	s.bm25Index = NewBM25InvertedIndex(s.hybridSearchConfig.BM25)
 
 	// Start workers based on CPU count (Phase 5: Scale up)
 	numWorkers := runtime.NumCPU()
@@ -355,7 +376,7 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 				return nil
 			}
 		}
-		// defer combined.Release()
+		// defer combined.Release() // This was commented out, no change needed.
 
 		// Flush single combined batch
 		if err := s.flushPutBatch(ds, name, []arrow.RecordBatch{combined}); err != nil {
@@ -383,7 +404,7 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 				rec.Release()
 				return err
 			}
-			rec.Release() // flushPutBatch doesn't take ownership of the slice elements' refcount (it retains if needed internally? No, checks: it calls s.walBatcher.Write which Retains. It appends to ds.Records which uses the passed rec? No, let's verify ownership.)
+			// Transfer ownership of our Retain() to ds.Records via flushPutBatch
 			// Wait, previous code:
 			// rec.Retain()
 			// batch = append(batch, rec)
@@ -544,8 +565,6 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 	// Use first record's schema
 	schema := ds.Records[0].Schema()
 
-	s.logger.Info("DoGet starting write", zap.Int("batches", len(ds.Records)))
-
 	// Create Writer WITHOUT options first to be safe
 	w := flight.NewRecordWriter(stream, ipc.WithSchema(schema))
 	defer w.Close()
@@ -573,7 +592,7 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 
 	if usePipeline {
 		// Use prefetching pipeline
-		pipeline := NewDoGetPipeline(8) // config.PipelineDepth default
+		pipeline := NewDoGetPipeline(8, 16) // 8 workers, 16 buffer size
 		// ProcessRecords handles feeding safely
 		stageChan = pipeline.ProcessRecords(ctx, ds.Records, ds.Tombstones, query.Filters, nil)
 		metrics.DoGetPipelineStepsTotal.WithLabelValues("pipeline").Add(float64(len(ds.Records)))
@@ -678,7 +697,6 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 			if !ok {
 				resultsChan = nil // Channel closed
 			} else {
-				s.logger.Info("DoGet Writing Batch", zap.Int64("num_rows", batch.NumRows()), zap.Int("num_cols", int(batch.NumCols())))
 				// Verify Columns
 				for i := 0; i < int(batch.NumCols()); i++ {
 					col := batch.Column(i)
@@ -986,14 +1004,20 @@ func (s *VectorStore) runIndexWorker(allocator memory.Allocator) {
 				}
 				ds.dataMu.Unlock()
 
-				// Add term
 				colI := job.Record.Column(i)
 				if col, ok := colI.(*array.String); ok {
-					if job.RowIdx < col.Len() {
-						if col.IsValid(job.RowIdx) {
-							term := col.Value(job.RowIdx)
-							// Use consistent internal VectorID returned by HNSW
-							idx.Add(term, docID)
+					if job.RowIdx < col.Len() && col.IsValid(job.RowIdx) {
+						text := col.Value(job.RowIdx)
+						idx.Add(text, docID)
+
+						// Also update BM25 index for all string columns (Phase 20)
+						ds.dataMu.RLock()
+						bm25 := ds.BM25Index
+						ds.dataMu.RUnlock()
+
+						if bm25 != nil {
+							bm25.Add(VectorID(docID), text)
+							metrics.BM25DocumentsIndexedTotal.Inc()
 						}
 					}
 				} else {
@@ -1020,29 +1044,29 @@ func (s *VectorStore) MapInternalToUserIDs(ds *Dataset, results []SearchResult) 
 	hnswIndex, ok := ds.Index.(*HNSWIndex)
 	s.mu.RUnlock()
 
-	if !ok || hnswIndex == nil {
+	if ok && hnswIndex != nil {
+		// Optimization: if it's a plain HNSW index, use its built-in mapping which is faster (Phase 14)
+		// but wait, its built-in mapping might be what we are implementing here!
+		// Let's stick to the store-side mapping for now as it's more flexible with Arrow types.
+	} else {
 		// Fallback for AutoShardingIndex
 		s.mu.RLock()
 		autoIndex, isAuto := ds.Index.(*AutoShardingIndex)
 		s.mu.RUnlock()
 
 		if isAuto {
-			// Transparently access current index
-			// Note: We need to access it via reflection or if we are in same package (we are!).
-			// But 'current' field in AutoShardingIndex is lower case.
-			// As we are in 'store' package, we CAN access it.
 			autoIndex.mu.RLock()
 			current := autoIndex.current
 			autoIndex.mu.RUnlock()
 
 			if h, ok := current.(*HNSWIndex); ok {
 				hnswIndex = h
-			} else {
-				return results
 			}
-		} else {
-			return results
 		}
+	}
+
+	if hnswIndex == nil {
+		return results
 	}
 
 	mappedResults := make([]SearchResult, 0, len(results))
@@ -1413,4 +1437,158 @@ func (s *VectorStore) concatenateBatches(batches []arrow.RecordBatch) (arrow.Rec
 	}
 
 	return array.NewRecordBatch(schema, columns, totalRows), nil
+}
+
+// filterRecord applies a set of filters to a record batch using Arrow Compute.
+func (s *VectorStore) filterRecord(ctx context.Context, rec arrow.RecordBatch, filters []Filter) (arrow.RecordBatch, error) {
+	if len(filters) == 0 {
+		rec.Retain()
+		return rec, nil
+	}
+
+	var mask *array.Boolean
+
+	for _, f := range filters {
+		indices := rec.Schema().FieldIndices(f.Field)
+		if len(indices) == 0 {
+			return nil, fmt.Errorf("field %s not found in schema", f.Field)
+		}
+		colIdx := indices[0]
+		col := rec.Column(colIdx)
+
+		var valScalar scalar.Scalar
+		switch col.DataType().ID() {
+		case arrow.STRING:
+			valScalar = scalar.NewStringScalar(f.Value)
+		case arrow.INT64:
+			v, err := strconv.ParseInt(f.Value, 10, 64)
+			if err != nil {
+				return nil, fmt.Errorf("invalid int64 value for field %s: %w", f.Field, err)
+			}
+			valScalar = scalar.NewInt64Scalar(v)
+		case arrow.TIMESTAMP:
+			t, err := time.Parse(time.RFC3339, f.Value)
+			if err != nil {
+				return nil, fmt.Errorf("invalid timestamp value for field %s: %w", f.Field, err)
+			}
+			ts, _ := arrow.TimestampFromTime(t, col.DataType().(*arrow.TimestampType).Unit)
+			valScalar = scalar.NewTimestampScalar(ts, col.DataType().(*arrow.TimestampType))
+		case arrow.FLOAT32, arrow.FLOAT64:
+			v, err := strconv.ParseFloat(f.Value, 64)
+			if err != nil {
+				return nil, fmt.Errorf("invalid float value for field %s: %w", f.Field, err)
+			}
+			if col.DataType().ID() == arrow.FLOAT32 {
+				valScalar = scalar.NewFloat32Scalar(float32(v))
+			} else {
+				valScalar = scalar.NewFloat64Scalar(v)
+			}
+		default:
+			return nil, fmt.Errorf("unsupported data type %s for field %s", col.DataType().Name(), f.Field)
+		}
+
+		var fn string
+		switch f.Operator {
+		case "=":
+			fn = "equal"
+		case "!=":
+			fn = "not_equal"
+		case ">":
+			fn = "greater"
+		case "<":
+			fn = "less"
+		case ">=":
+			fn = "greater_equal"
+		case "<=":
+			fn = "less_equal"
+		default:
+			return nil, fmt.Errorf("unsupported operator %s", f.Operator)
+		}
+
+		args := []compute.Datum{
+			compute.NewDatum(col.Data()),
+			compute.NewDatum(valScalar),
+		}
+		result, err := compute.CallFunction(ctx, fn, nil, args...)
+		if err != nil {
+			return nil, fmt.Errorf("compute error on field %s: %w", f.Field, err)
+		}
+
+		resultArr := result.(*compute.ArrayDatum).MakeArray().(*array.Boolean)
+
+		if mask == nil {
+			mask = resultArr
+		} else {
+			andRes, err := compute.CallFunction(ctx, "and", nil, compute.NewDatum(mask.Data()), compute.NewDatum(resultArr.Data()))
+			mask.Release()
+			resultArr.Release()
+			if err != nil {
+				return nil, err
+			}
+			mask = andRes.(*compute.ArrayDatum).MakeArray().(*array.Boolean)
+		}
+	}
+
+	if mask == nil {
+		rec.Retain()
+		return rec, nil
+	}
+	defer mask.Release()
+
+	filterRes, err := compute.CallFunction(ctx, "filter", nil, compute.NewDatum(rec), compute.NewDatum(mask.Data()))
+	if err != nil {
+		return nil, err
+	}
+	return filterRes.(*compute.RecordDatum).Value, nil
+}
+
+// castRecordToSchema projects a record to the target schema.
+func (s *VectorStore) castRecordToSchema(rec arrow.RecordBatch, targetSchema *arrow.Schema) (arrow.RecordBatch, error) {
+	if rec.Schema().Equal(targetSchema) {
+		rec.Retain()
+		return rec, nil
+	}
+
+	cols := make([]arrow.Array, len(targetSchema.Fields()))
+
+	for i, field := range targetSchema.Fields() {
+		indices := rec.Schema().FieldIndices(field.Name)
+		if len(indices) > 0 {
+			srcCol := rec.Column(indices[0])
+			if !arrow.TypeEqual(srcCol.DataType(), field.Type) {
+				for j := 0; j < i; j++ {
+					if cols[j] != nil {
+						cols[j].Release()
+					}
+				}
+				return nil, fmt.Errorf("field %s type mismatch: expected %s, got %s", field.Name, field.Type, srcCol.DataType())
+			}
+			srcCol.Retain()
+			cols[i] = srcCol
+		} else {
+			bldr := array.NewBuilder(s.mem, field.Type)
+			bldr.AppendNulls(int(rec.NumRows()))
+			cols[i] = bldr.NewArray()
+			bldr.Release()
+		}
+	}
+
+	out := array.NewRecordBatch(targetSchema, cols, rec.NumRows())
+	for _, c := range cols {
+		if c != nil {
+			c.Release()
+		}
+	}
+
+	return out, nil
+}
+
+// HybridSearch is a wrapper for the HybridSearch function
+func (s *VectorStore) HybridSearch(ctx context.Context, name string, query []float32, k int, filters map[string]string) ([]SearchResult, error) {
+	return HybridSearch(ctx, s, name, query, k, filters)
+}
+
+// SearchHybrid is a wrapper for the SearchHybrid function (RRF version)
+func (s *VectorStore) SearchHybrid(ctx context.Context, name string, query []float32, textQuery string, k int, alpha float32, rrfK int) ([]SearchResult, error) {
+	return SearchHybrid(ctx, s, name, query, textQuery, k, alpha, rrfK)
 }

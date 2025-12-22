@@ -8,34 +8,12 @@ import (
 )
 
 // ARM64 NEON implementations
-// For now using optimized Go code; can be replaced with assembly later
+// Defined in simd_arm64.s
 
-func euclideanNEON(a, b []float32) float32 {
-	if !features.HasNEON {
-		return euclideanGeneric(a, b)
-	}
+func euclideanNEON(a, b []float32) float32
+func dotNEON(a, b []float32) float32
 
-	var sum float32
-	n := len(a)
-	i := 0
-
-	// Process 4 elements at a time (NEON: 128-bit = 4 x float32)
-	for ; i <= n-4; i += 4 {
-		d0 := a[i] - b[i]
-		d1 := a[i+1] - b[i+1]
-		d2 := a[i+2] - b[i+2]
-		d3 := a[i+3] - b[i+3]
-		sum += d0*d0 + d1*d1 + d2*d2 + d3*d3
-	}
-
-	for ; i < n; i++ {
-		d := a[i] - b[i]
-		sum += d * d
-	}
-
-	return float32(math.Sqrt(float64(sum)))
-}
-
+// Cosine is still generic for now (or combine Dot / Norms later)
 func cosineNEON(a, b []float32) float32 {
 	if !features.HasNEON {
 		return cosineGeneric(a, b)
@@ -61,26 +39,6 @@ func cosineNEON(a, b []float32) float32 {
 		return 1.0
 	}
 	return 1.0 - (dot / float32(math.Sqrt(float64(normA)*float64(normB))))
-}
-
-func dotNEON(a, b []float32) float32 {
-	if !features.HasNEON {
-		return dotGeneric(a, b)
-	}
-
-	var sum float32
-	n := len(a)
-	i := 0
-
-	for ; i <= n-4; i += 4 {
-		sum += a[i]*b[i] + a[i+1]*b[i+1] + a[i+2]*b[i+2] + a[i+3]*b[i+3]
-	}
-
-	for ; i < n; i++ {
-		sum += a[i] * b[i]
-	}
-
-	return sum
 }
 
 // AVX stubs for ARM64 (not available)

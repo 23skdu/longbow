@@ -6,25 +6,75 @@
 
 <img width="1024" height="559" alt="image" src="https://github.com/user-attachments/assets/16b4632a-f09b-42ab-9b05-9ab5a25566bf" />
 
-Longbow is a high-performance, in-memory vector cache implementing the Apache Arrow Flight protocol.
-It is designed for efficient, zero-copy transport of large datasets and vector embeddings between agents and services.
+Longbow is a distributed, high-performance vector database built for modern AI workloads. It leverages zero-copy data paths, SIMD optimizations, and advanced storage backends to deliver sub-millisecond latency.
 
-## Features
+## Key Features
 
-* **Protocol**: Apache Arrow Flight (over gRPC/HTTP2).
-* **Search**: High-performance HNSW vector search with hybrid (Dense + Sparse) support.
-* **Filtering**: Metadata-aware predicate filtering for searches and scans.
-* **Lifecycle**: Support for vector deletion via tombstones.
-* **Durable**: WAL with Apache Parquet format snapshots.
-* **Storage**: In-memory ephemeral storage for zero-copy high-speed access.
-* **Observability**: Structured JSON logging and 100+ Prometheus metrics.
+- **High Performance**: Built on Apache Arrow for zero-copy data transfer.
+- **Distributed**: Consistent hashing and gossip-based membership (SWIM protocol).
+- **Optimized Storage**: Optional `io_uring` WAL backend for high-throughput ingestion.
+- **Hardware Aware**: NUMA-aware memory allocation and SIMD vector distance calculations.
+- **Smart Client**: Resilient Go SDK that handles request routing transparently.
+
+## Architecture
+
+Longbow uses a shared-nothing architecture where every node is identical. Data is sharded across the cluster using consistent hashing.
+
+See [Architecture Guide](docs/architecture.md) for a deep dive.
+
+## Getting Started
+
+### Prerequisites
+
+- Go 1.25+
+- Linux (recommended for best performance) or macOS
+
+### Installation
+
+```bash
+git clone https://github.com/23skdu/longbow.git
+cd longbow
+go build -o bin/longbow ./cmd/longbow
+```
+
+### Running a Local Cluster
+
+```bash
+./scripts/start_local_cluster.sh
+```
+
+### Running Benchmarks
+
+Longbow includes a distributed benchmark tool:
+
+```bash
+go build -o bin/bench-tool ./cmd/bench-tool
+./bin/bench-tool --mode=ingest --concurrency=4 --duration=10s
+```
+
+## Configuration
+
+Longbow is configured via environment variables. See [Configuration](docs/configuration.md) for details.
+
+Notable flags:
+
+- `STORAGE_USE_IOURING=true` (Enable new Linux storage engine)
+- `LONGBOW_GOSSIP_ENABLED=true` (Enable distributed discovery)
+
+- **Protocol**: Apache Arrow Flight (over gRPC/HTTP2).
+- **Search**: High-performance HNSW vector search with hybrid (Dense + Sparse) support.
+- **Filtering**: Metadata-aware predicate filtering for searches and scans.
+- **Lifecycle**: Support for vector deletion via tombstones.
+- **Durable**: WAL with Apache Parquet format snapshots.
+- **Storage**: In-memory ephemeral storage for zero-copy high-speed access.
+- **Observability**: Structured JSON logging and 100+ Prometheus metrics.
 
 ## Architecture & Ports
 
 To ensure high performance under load, Longbow splits traffic into two dedicated gRPC servers:
 
-* **Data Server (Port 3000)**: Handles heavy I/O operations (`DoGet`, `DoPut`, `DoExchange`).
-* **Meta Server (Port 3001)**: Handles lightweight metadata operations (`ListFlights`, `GetFlightInfo`, `DoAction`).
+- **Data Server (Port 3000)**: Handles heavy I/O operations (`DoGet`, `DoPut`, `DoExchange`).
+- **Meta Server (Port 3001)**: Handles lightweight metadata operations (`ListFlights`, `GetFlightInfo`, `DoAction`).
 
 **Why?**
 Separating these concerns prevents long-running data transfer operations from blocking metadata requests. This ensures
@@ -35,8 +85,8 @@ that clients can always discover streams and check status even when the system i
 Longbow exposes Prometheus metrics on a dedicated port to ensure observability without impacting the main Flight
 service.
 
-* **Scrape Port**: 9090
-* **Scrape Path**: /metrics
+- **Scrape Port**: 9090
+- **Scrape Path**: /metrics
 
 ### Custom Metrics
 
@@ -78,7 +128,7 @@ docker run -p 3000:3000 -p 3001:3001 -p 9090:9090 longbow
 
 ## Documentation
 
-* [Persistence & Snapshots](docs/persistence.md)
-* [Vector Search Architecture](docs/vectorsearch.md)
-* [Troubleshooting Guide](docs/troubleshooting.md)
-* [Metrics](docs/metrics.md)
+- [Persistence & Snapshots](docs/persistence.md)
+- [Vector Search Architecture](docs/vectorsearch.md)
+- [Troubleshooting Guide](docs/troubleshooting.md)
+- [Metrics](docs/metrics.md)

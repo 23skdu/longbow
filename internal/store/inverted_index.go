@@ -42,6 +42,24 @@ func (idx *InvertedIndex) Add(term string, docID uint32) {
 	}
 }
 
+// Delete removes a term-docID pair from the index
+func (idx *InvertedIndex) Delete(term string, docID uint32) {
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+
+	if bm, ok := idx.index[term]; ok {
+		if bm.Contains(docID) {
+			bm.Remove(docID)
+			idx.totalPostings--
+			metrics.InvertedIndexPostingsTotal.Dec()
+			if bm.IsEmpty() {
+				delete(idx.index, term)
+				idx.termsCount--
+			}
+		}
+	}
+}
+
 // AddBatch adds multiple terms for a single document
 func (idx *InvertedIndex) AddBatch(terms []string, docID uint32) {
 	idx.mu.Lock()

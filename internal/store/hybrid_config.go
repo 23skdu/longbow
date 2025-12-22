@@ -67,3 +67,13 @@ func (c *HybridSearchConfig) Validate() error {
 
 	return nil
 }
+
+// IsPureVector returns true if Alpha is 1.0 (pure vector search)
+func (c *HybridSearchConfig) IsPureVector() bool {
+	return c.Alpha >= 1.0
+}
+
+// IsPureKeyword returns true if Alpha is 0.0 (pure keyword search)
+func (c *HybridSearchConfig) IsPureKeyword() bool {
+	return c.Alpha <= 0.0
+}

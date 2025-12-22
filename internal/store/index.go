@@ -31,6 +31,12 @@ type VectorIndex interface {
 	// GetDimension returns the vector dimension.
 	GetDimension() uint32
 
+	// Warmup pre-loads index data into memory
+	Warmup() int
+
+	// SetIndexedColumns updates columns that should be indexed for fast equality lookups
+	SetIndexedColumns(cols []string)
+
 	// Close releases index resources.
 	Close() error
 }

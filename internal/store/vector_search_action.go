@@ -81,8 +81,8 @@ func (s *MetaServer) handleVectorSearchAction(action *flight.Action, stream flig
 	// Map internal IDs to User IDs for local results
 	searchResults = s.VectorStore.MapInternalToUserIDs(ds, searchResults)
 
-	// Perform Global Search (Scatter-Gather) if not local-only
-	if !req.LocalOnly {
+	// Perform Global Search (Scatter-Gather) if not local-only and mesh exists
+	if !req.LocalOnly && s.Mesh != nil {
 		peers := s.Mesh.GetMembers()
 		// Filter out self
 		var remotePeers []mesh.Member
@@ -100,6 +100,8 @@ func (s *MetaServer) handleVectorSearchAction(action *flight.Action, stream flig
 			s.logger.Warn("Global search partial failure", zap.Error(err))
 			// Continue with whatever results we have
 		}
+	} else if !req.LocalOnly && s.Mesh == nil {
+		s.logger.Warn("Mesh not initialized, skipping global search")
 	}
 
 	// Build response

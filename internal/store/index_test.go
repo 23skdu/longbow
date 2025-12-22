@@ -48,7 +48,11 @@ func (m *MockIndex) Search(query []float32, k int) []VectorID {
 
 func (m *MockIndex) SearchVectors(query []float32, k int, filters []Filter) []SearchResult {
 	m.SearchCalls++
-	return []SearchResult{}
+	results := make([]SearchResult, 0, k)
+	for i := 0; i < k; i++ {
+		results = append(results, SearchResult{ID: VectorID(i), Score: 1.0 - float32(i)*0.01})
+	}
+	return results
 }
 
 func (m *MockIndex) SearchVectorsWithBitmap(query []float32, k int, filter *Bitset) []SearchResult {
@@ -62,6 +66,10 @@ func (m *MockIndex) AddByLocation(batchIdx, rowIdx int) (uint32, error) {
 
 func (m *MockIndex) AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32, error) {
 	return m.Add(batchIdx, rowIdx)
+}
+
+func (m *MockIndex) SetIndexedColumns(cols []string) {
+	// Stub for interface satisfaction
 }
 
 func (m *MockIndex) Warmup() int {

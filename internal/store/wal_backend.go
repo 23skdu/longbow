@@ -21,6 +21,9 @@ type WALBackend interface {
 
 	// Name returns the file name or identifier.
 	Name() string
+
+	// File returns the underlying *os.File if available.
+	File() *os.File
 }
 
 // FSBackend is a standard os.File backed implementation.
@@ -78,4 +81,8 @@ func (b *FSBackend) Close() error {
 
 func (b *FSBackend) Name() string {
 	return b.path
+}
+
+func (b *FSBackend) File() *os.File {
+	return b.f
 }

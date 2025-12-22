@@ -345,14 +345,6 @@ func TestShardedHnswShardSize_Exists(t *testing.T) {
 // Record Size Cache Metrics Tests
 // -----------------------------------------------------------------------------
 
-func TestRecordSizeCacheHitRate_Exists(t *testing.T) {
-	if RecordSizeCacheHitRate == nil {
-		t.Fatal("RecordSizeCacheHitRate metric should not be nil")
-	}
-	// Should be Gauge (0-1 hit rate)
-	RecordSizeCacheHitRate.Set(0.95)
-}
-
 // =============================================================================
 // Test all comprehensive metrics are registered
 // =============================================================================
@@ -405,8 +397,6 @@ func TestComprehensiveMetricsRegistered(t *testing.T) {
 		// Sharded HNSW
 		ShardedHnswLoadFactor,
 		ShardedHnswShardSize,
-		// Record Size Cache
-		RecordSizeCacheHitRate,
 	}
 
 	for i, m := range metrics {

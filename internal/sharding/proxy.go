@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"go.opentelemetry.io/otel"
@@ -12,6 +13,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+
+	"github.com/23skdu/longbow/internal/metrics"
 )
 
 // PartitionProxyInterceptor creates a unary server interceptor for request routing
@@ -38,7 +41,18 @@ func PartitionProxyInterceptor(rm *RingManager, forwarder *RequestForwarder) grp
 		}
 
 		// Forwarding logic
-		return forwarder.Forward(ctx, owner, req, info.FullMethod)
+		start := time.Now()
+		resp, err := forwarder.Forward(ctx, owner, req, info.FullMethod)
+		duration := time.Since(start).Seconds()
+
+		status := "success"
+		if err != nil {
+			status = "error"
+		}
+		metrics.ProxyRequestsForwardedTotal.WithLabelValues(info.FullMethod, status).Inc()
+		metrics.ProxyRequestLatencySeconds.WithLabelValues(info.FullMethod).Observe(duration)
+
+		return resp, err
 	}
 }
 

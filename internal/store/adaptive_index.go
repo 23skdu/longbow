@@ -249,7 +249,7 @@ func (a *AdaptiveIndex) migrateToHNSW() {
 
 	a.usingHNSW.Store(true)
 	a.migrationCount.Add(1)
-	metrics.AdaptiveIndexMigrationsTotal.Inc()
+	metrics.AdaptiveIndexMigrationsTotal.WithLabelValues("brute_force", "hnsw").Inc()
 	a.bruteForce = nil
 }
 

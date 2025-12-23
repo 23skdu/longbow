@@ -17,6 +17,7 @@ import (
 	"github.com/23skdu/longbow/internal/logging"
 	"github.com/23skdu/longbow/internal/mesh"
 	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/middleware"
 	"github.com/23skdu/longbow/internal/sharding"
 	"github.com/23skdu/longbow/internal/store"
 	"github.com/apache/arrow-go/v18/arrow/flight"
@@ -253,6 +254,7 @@ func run() error {
 	// Add Interceptors (Chained)
 	serverOpts = append(serverOpts,
 		grpc.ChainUnaryInterceptor(
+			middleware.CircuitBreakerInterceptor(),
 			rateLimiter.UnaryInterceptor(),
 			sharding.PartitionProxyInterceptor(ringManager, forwarder),
 		),

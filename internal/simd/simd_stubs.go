@@ -19,3 +19,11 @@ func matchInt64AVX512(src []int64, val int64, op CompareOp, dst []byte) {
 func matchFloat32AVX512(src []float32, val float32, op CompareOp, dst []byte) {
 	matchFloat32Generic(src, val, op, dst)
 }
+
+func adcBatchAVX2(table []float32, flatCodes []byte, m int, results []float32) {
+	adcBatchGeneric(table, flatCodes, m, results)
+}
+
+func adcBatchAVX512(table []float32, flatCodes []byte, m int, results []float32) {
+	adcBatchGeneric(table, flatCodes, m, results)
+}

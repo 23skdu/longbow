@@ -107,7 +107,7 @@ func (cb *CircuitBreaker) State() CircuitState {
 			if cb.state.CompareAndSwap(int32(CircuitOpen), int32(CircuitHalfOpen)) {
 				cb.stateChanges.Add(1)
 				cb.halfOpenSuccesses.Store(0) // Reset for half-open testing
-				metrics.CircuitBreakerStateChanges.Inc()
+				metrics.CircuitBreakerStateChanges.WithLabelValues("store", "open", "half-open").Inc()
 			}
 			return CircuitHalfOpen
 		}
@@ -153,7 +153,7 @@ func (cb *CircuitBreaker) RecordSuccess() {
 			if cb.state.CompareAndSwap(int32(CircuitHalfOpen), int32(CircuitClosed)) {
 				cb.stateChanges.Add(1)
 				cb.consecutiveFailures.Store(0) // Reset failure count
-				metrics.CircuitBreakerStateChanges.Inc()
+				metrics.CircuitBreakerStateChanges.WithLabelValues("store", "half-open", "closed").Inc()
 			}
 		}
 	case CircuitClosed:
@@ -181,7 +181,7 @@ func (cb *CircuitBreaker) RecordFailure() {
 			cb.timeMu.Lock()
 			cb.openedAt = time.Now()
 			cb.timeMu.Unlock()
-			metrics.CircuitBreakerStateChanges.Inc()
+			metrics.CircuitBreakerStateChanges.WithLabelValues("store", "half-open", "open").Inc()
 		}
 	case CircuitClosed:
 		newCount := cb.consecutiveFailures.Add(1)
@@ -192,7 +192,7 @@ func (cb *CircuitBreaker) RecordFailure() {
 				cb.timeMu.Lock()
 				cb.openedAt = time.Now()
 				cb.timeMu.Unlock()
-				metrics.CircuitBreakerStateChanges.Inc()
+				metrics.CircuitBreakerStateChanges.WithLabelValues("store", "closed", "open").Inc()
 			}
 		}
 	}

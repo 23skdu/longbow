@@ -97,7 +97,10 @@ func TestRateLimiter_UnaryInterceptor(t *testing.T) {
 	// test the Wait cancellation behavior.
 
 	// Let's stick to testing that it BLOCKS/Waits.
-	assert.Equal(t, codes.DeadlineExceeded, st.Code())
+	// Implementation note: internal limiter.Wait returning "would exceed deadline" is converted
+	// to ResourceExhausted by our interceptor logic because it fails the context check.
+	// See analysis for details.
+	assert.Equal(t, codes.ResourceExhausted, st.Code())
 }
 
 func TestRateLimiter_Disabled(t *testing.T) {

@@ -35,21 +35,36 @@ type FSBackend struct {
 
 // NewWALBackend creates a new WALBackend.
 // It attempts to use io_uring if preferAsync is true and the platform supports it.
-// Otherwise, it falls back to FSBackend.
-func NewWALBackend(path string, preferAsync bool) (WALBackend, error) {
+// If directIO is true, it attempts to use Direct I/O (O_DIRECT/F_NOCACHE).
+func NewWALBackend(path string, preferAsync bool, directIO bool) (WALBackend, error) {
 	if preferAsync {
 		// NewUringBackend depends on the platform specific file (linux or stub)
+		// For now, UringBackend handles its own opening. We might want to pass directIO hint there too eventually.
 		backend, err := NewUringBackend(path)
 		if err == nil {
 			return backend, nil
 		}
 		// Fallback to FSBackend
 	}
+	if directIO {
+		return NewFSBackendWithDirectIO(path)
+	}
 	return NewFSBackend(path)
 }
 
 func NewFSBackend(path string) (*FSBackend, error) {
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return nil, err
+	}
+	return &FSBackend{
+		f:    f,
+		path: path,
+	}, nil
+}
+
+func NewFSBackendWithDirectIO(path string) (*FSBackend, error) {
+	f, err := OpenFileDirect(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return nil, err
 	}

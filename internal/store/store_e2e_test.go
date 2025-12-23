@@ -36,7 +36,7 @@ func TestStore_EndToEnd_TDD(t *testing.T) {
 	require.NoError(t, err)
 
 	// Start Server
-	server := flight.NewFlightServer()
+	server := flight.NewServerWithMiddleware(nil)
 	server.RegisterFlightService(store)
 	ln, err := net.Listen("tcp", "localhost:0")
 	require.NoError(t, err)
@@ -103,7 +103,7 @@ func TestStore_EndToEnd_TDD(t *testing.T) {
 
 	totalRows := 0
 	for reader.Next() {
-		r := reader.Record()
+		r := reader.RecordBatch()
 		totalRows += int(r.NumRows())
 	}
 	assert.NoError(t, reader.Err())
@@ -124,7 +124,7 @@ func TestStore_EndToEnd_TDD(t *testing.T) {
 	require.NoError(t, err)
 
 	// Start new server
-	server2 := flight.NewFlightServer()
+	server2 := flight.NewServerWithMiddleware(nil)
 	server2.RegisterFlightService(store2)
 	ln2, err := net.Listen("tcp", "localhost:0")
 	require.NoError(t, err)
@@ -146,7 +146,7 @@ func TestStore_EndToEnd_TDD(t *testing.T) {
 
 	totalRows2 := 0
 	for reader2.Next() {
-		totalRows2 += int(reader2.Record().NumRows())
+		totalRows2 += int(reader2.RecordBatch().NumRows())
 	}
 	assert.NoError(t, reader2.Err())
 	assert.Equal(t, 50, totalRows2, "Data should be recovered")

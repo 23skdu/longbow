@@ -30,6 +30,7 @@ type WALBatcherConfig struct {
 	Adaptive      AdaptiveWALConfig // Adaptive batching configuration
 	AsyncFsync    AsyncFsyncConfig  // Async fsync configuration
 	UseIOUring    bool              // Use io_uring backend if available
+	UseDirectIO   bool              // Use Direct I/O if available
 }
 
 // DefaultWALBatcherConfig returns sensible defaults
@@ -107,8 +108,8 @@ func (w *WALBatcher) Start() error {
 
 	// Open WAL backend
 	walPath := filepath.Join(w.dataPath, walFileName)
-	// We pass true for preferAsync if configured.
-	backend, err := NewWALBackend(walPath, w.config.UseIOUring)
+	// We pass true for preferAsync and directIO if configured.
+	backend, err := NewWALBackend(walPath, w.config.UseIOUring, w.config.UseDirectIO)
 	if err != nil {
 		return err
 	}

@@ -134,6 +134,22 @@ func (s *ShardedHNSW) AddSafe(rec arrow.RecordBatch, rowIdx, batchIdx int) (Vect
 	return VectorID(id), nil
 }
 
+// AddBatch implements VectorIndex.
+func (s *ShardedHNSW) AddBatch(recs []arrow.RecordBatch, rowIdxs []int, batchIdxs []int) ([]uint32, error) {
+	if len(recs) == 0 {
+		return nil, nil
+	}
+	ids := make([]uint32, len(recs))
+	for i := range recs {
+		id, err := s.AddByRecord(recs[i], rowIdxs[i], batchIdxs[i])
+		if err != nil {
+			return nil, err
+		}
+		ids[i] = id
+	}
+	return ids, nil
+}
+
 // AddByRecord implements VectorIndex.
 func (s *ShardedHNSW) AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32, error) {
 	// Extract vector (Simplified for brevity, following hnsw.go pattern)

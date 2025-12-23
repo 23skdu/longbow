@@ -208,6 +208,24 @@ func euclideanBatchAVX512(query []float32, vectors [][]float32, results []float3
 	}
 }
 
+func adcBatchAVX2(table []float32, flatCodes []byte, m int, results []float32) {
+	if len(results) == 0 {
+		return
+	}
+	adcBatchAVX2Kernel(unsafe.Pointer(&table[0]), unsafe.Pointer(&flatCodes[0]), m, unsafe.Pointer(&results[0]), len(results))
+}
+
+func adcBatchAVX512(table []float32, flatCodes []byte, m int, results []float32) {
+	if !features.HasAVX512 {
+		adcBatchAVX2(table, flatCodes, m, results)
+		return
+	}
+	if len(results) == 0 {
+		return
+	}
+	adcBatchAVX512Kernel(unsafe.Pointer(&table[0]), unsafe.Pointer(&flatCodes[0]), m, unsafe.Pointer(&results[0]), len(results))
+}
+
 // AVX2 optimized Batch Dot Product
 func dotBatchAVX2(query []float32, vectors [][]float32, results []float32) {
 	if !features.HasAVX2 {
@@ -296,6 +314,10 @@ func dotBatchNEON(query []float32, vectors [][]float32, results []float32) {
 
 func cosineBatchNEON(query []float32, vectors [][]float32, results []float32) {
 	cosineBatchGeneric(query, vectors, results)
+}
+
+func adcBatchNEON(table []float32, flatCodes []byte, m int, results []float32) {
+	adcBatchGeneric(table, flatCodes, m, results)
 }
 
 // Assembly function declarations
@@ -400,3 +422,9 @@ func matchInt64AVX512Kernel(src unsafe.Pointer, val int64, op int, dst unsafe.Po
 
 //go:noescape
 func matchFloat32AVX512Kernel(src unsafe.Pointer, val float32, op int, dst unsafe.Pointer, n int)
+
+//go:noescape
+func adcBatchAVX2Kernel(table unsafe.Pointer, codes unsafe.Pointer, m int, results unsafe.Pointer, n int)
+
+//go:noescape
+func adcBatchAVX512Kernel(table unsafe.Pointer, codes unsafe.Pointer, m int, results unsafe.Pointer, n int)

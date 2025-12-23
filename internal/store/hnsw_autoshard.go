@@ -54,41 +54,52 @@ func NewAutoShardingIndex(ds *Dataset, config AutoShardingConfig) *AutoShardingI
 // AddByLocation adds a vector to the index.
 func (a *AutoShardingIndex) AddByLocation(batchIdx, rowIdx int) (uint32, error) {
 	a.mu.RLock()
-	// Optimistic check: if not sharded, we might trigger migration *after* this add.
-	// But simply calling add is safe.
 	id, err := a.current.AddByLocation(batchIdx, rowIdx)
-	currentLen := a.current.Len()
-	sharded := a.sharded
 	a.mu.RUnlock()
 
-	if err != nil {
-		return 0, err
+	if err == nil {
+		a.checkShardThreshold()
 	}
+	return id, err
+}
 
-	// Check threshold synchronously (only if enabled)
-	if a.config.Enabled && !sharded && currentLen >= a.config.ShardThreshold {
-		a.migrateToSharded()
+// AddBatch adds multiple vectors from multiple record batches efficiently.
+func (a *AutoShardingIndex) AddBatch(recs []arrow.RecordBatch, rowIdxs []int, batchIdxs []int) ([]uint32, error) {
+	a.mu.RLock()
+	ids, err := a.current.AddBatch(recs, rowIdxs, batchIdxs)
+	a.mu.RUnlock()
+
+	if err == nil {
+		a.checkShardThreshold()
 	}
-
-	return id, nil
+	return ids, err
 }
 
 // AddByRecord adds a vector from a record batch.
 func (a *AutoShardingIndex) AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32, error) {
 	a.mu.RLock()
 	id, err := a.current.AddByRecord(rec, rowIdx, batchIdx)
-	currentLen := a.current.Len()
-	sharded := a.sharded
 	a.mu.RUnlock()
 
-	if err != nil {
-		return 0, err
+	if err == nil {
+		a.checkShardThreshold()
 	}
+	return id, err
+}
 
-	if a.config.Enabled && !sharded && currentLen >= a.config.ShardThreshold {
+func (a *AutoShardingIndex) checkShardThreshold() {
+	a.mu.RLock()
+	if a.sharded || !a.config.Enabled {
+		a.mu.RUnlock()
+		return
+	}
+	currentLen := a.current.Len()
+	threshold := a.config.ShardThreshold
+	a.mu.RUnlock()
+
+	if currentLen >= threshold {
 		a.migrateToSharded()
 	}
-	return id, nil
 }
 
 // migrateToSharded performs the migration from HNSWIndex to ShardedHNSW.

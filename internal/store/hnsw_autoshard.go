@@ -118,6 +118,7 @@ func (a *AutoShardingIndex) migrateToSharded() {
 	// Create new ShardedHNSW
 	shardedConfig := DefaultShardedHNSWConfig()
 	shardedConfig.Metric = oldIndex.Metric
+	shardedConfig.Dimension = oldIndex.GetDimension()
 	if a.config.ShardCount > 0 {
 		shardedConfig.NumShards = a.config.ShardCount
 	}

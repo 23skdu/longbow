@@ -754,14 +754,30 @@ func (s *VectorStore) flushPutBatch(ds *Dataset, name string, batch []arrow.Reco
 		numRows := int(rec.NumRows())
 		for r := 0; r < numRows; r++ {
 			rec.Retain()
-			if !s.indexQueue.Send(IndexJob{
+			// Retry loop for backpressure instead of dropping
+			job := IndexJob{
 				DatasetName: name,
 				Record:      rec,
 				BatchIdx:    batchIdx,
 				RowIdx:      r,
 				CreatedAt:   time.Now(),
-			}) {
+			}
+
+			// Try to send, backing off if full
+			sent := false
+			for attempt := 0; attempt < 100; attempt++ {
+				if s.indexQueue.Send(job) {
+					sent = true
+					break
+				}
+				// Queue full - wait a bit to apply backpressure
+				time.Sleep(5 * time.Millisecond)
+			}
+
+			if !sent {
+				s.logger.Warn("Dropped index job after retries (queue full)", zap.String("dataset", name))
 				rec.Release()
+				metrics.IndexJobsDroppedTotal.Inc()
 			}
 		}
 	}

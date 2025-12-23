@@ -65,8 +65,8 @@ func (a *AutoShardingIndex) AddByLocation(batchIdx, rowIdx int) (uint32, error) 
 		return 0, err
 	}
 
-	// Check threshold synchronously
-	if !sharded && currentLen >= a.config.ShardThreshold {
+	// Check threshold synchronously (only if enabled)
+	if a.config.Enabled && !sharded && currentLen >= a.config.ShardThreshold {
 		a.migrateToSharded()
 	}
 
@@ -85,7 +85,7 @@ func (a *AutoShardingIndex) AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx 
 		return 0, err
 	}
 
-	if !sharded && currentLen >= a.config.ShardThreshold {
+	if a.config.Enabled && !sharded && currentLen >= a.config.ShardThreshold {
 		a.migrateToSharded()
 	}
 	return id, nil

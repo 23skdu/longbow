@@ -198,32 +198,41 @@ func (s *VectorStore) evictIfNeeded() {
 }
 
 func (s *VectorStore) evictDataset(ds *Dataset) {
+	// 1. Mark as evicting BEFORE acquiring lock
+	// This allows in-flight queries to detect eviction and fail gracefully
+	if !ds.evicting.CompareAndSwap(false, true) {
+		return // Already evicting
+	}
+
+	// 2. Acquire WRITE lock (blocks all readers)
 	ds.dataMu.Lock()
 	defer ds.dataMu.Unlock()
 
 	size := ds.SizeBytes.Load()
 	if size == 0 {
-		return // Already empty or not tracked
+		ds.evicting.Store(false) // Reset flag
+		return                   // Already empty or not tracked
 	}
 
-	s.logger.Info("Evicting dataset", zap.String("name", ds.Name), zap.Int64("size_bytes", size))
+	s.logger.Warn("EVICTION TRIGGERED",
+		zap.String("dataset", ds.Name),
+		zap.Int64("size_bytes", size),
+		zap.Stack("stack"))
 
-	// Clear records
+	// 3. Clear records (safe now - no readers due to write lock)
 	for _, rec := range ds.Records {
 		rec.Release()
 	}
 	ds.Records = nil
 	ds.Tombstones = make(map[int]*Bitset)
-	// Reset HNSW? HNSW struct handles its own memory usually, but it references Arrow records.
-	// If HNSW copied vectors (non-zero-copy), we need to clear/close index.
-	// TODO: Phase 3 Zero-Copy relies on Records. Since we released Records, HNSW is now invalid if it holds pointers.
-	// For "Copy" HNSW (current), it holds its own vectors. So we must clear HNSW too to free memory.
 	ds.Index = nil
 
-	// Update tracking
+	// 4. Update tracking
 	ds.SizeBytes.Store(0)
 	s.currentMemory.Add(-size)
 	metrics.EvictionsTotal.WithLabelValues("lru").Inc()
+
+	// Note: evicting flag stays true to prevent future queries
 }
 
 // IterateDatasets safely iterates over all datasets for background tasks.

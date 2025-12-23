@@ -40,6 +40,9 @@ type Dataset struct {
 	// Memory tracking
 	SizeBytes atomic.Int64
 
+	// Eviction state
+	evicting atomic.Bool // Marks dataset as being evicted
+
 	// LWW State
 	LWW *TimestampMap
 

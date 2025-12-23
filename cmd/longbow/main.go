@@ -79,6 +79,11 @@ type Config struct {
 	StorageUseIOUring     bool `envconfig:"STORAGE_USE_IOURING" default:"false"`
 	StorageUseDirectIO    bool `envconfig:"STORAGE_USE_DIRECT_IO" default:"false"`
 
+	// Memory Management Configuration
+	MemoryEvictionHeadroom float64 `envconfig:"MEMORY_EVICTION_HEADROOM" default:"0.10"`
+	MemoryEvictionPolicy   string  `envconfig:"MEMORY_EVICTION_POLICY" default:"lru"`
+	MemoryRejectWrites     bool    `envconfig:"MEMORY_REJECT_WRITES" default:"true"`
+
 	// GPU Configuration
 	GPUEnabled  bool `envconfig:"GPU_ENABLED" default:"false"`
 	GPUDeviceID int  `envconfig:"GPU_DEVICE_ID" default:"0"`
@@ -130,6 +135,14 @@ func run() error {
 
 	// Initialize vector store
 	vectorStore := store.NewVectorStore(mem, logger, cfg.MaxMemory, cfg.MaxWALSize, cfg.TTL)
+
+	// Configure memory management
+	vectorStore.SetMemoryConfig(store.MemoryConfig{
+		MaxMemory:        cfg.MaxMemory,
+		EvictionHeadroom: cfg.MemoryEvictionHeadroom,
+		EvictionPolicy:   cfg.MemoryEvictionPolicy,
+		RejectWrites:     cfg.MemoryRejectWrites,
+	})
 
 	// Start eviction ticker if TTL is enabled
 	if cfg.TTL > 0 {

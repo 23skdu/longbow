@@ -37,6 +37,7 @@ type VectorStore struct {
 	datasets      map[string]*Dataset
 	maxMemory     atomic.Int64
 	currentMemory atomic.Int64
+	memoryConfig  MemoryConfig
 
 	sequence atomic.Uint64 // Global operation sequence
 
@@ -125,7 +126,10 @@ func NewVectorStore(mem memory.Allocator, logger *zap.Logger, maxMemory, maxWALS
 		nsManager:          newNamespaceManager(),
 		stopChan:           make(chan struct{}),
 		snapshotReset:      make(chan time.Duration, 1),
+		memoryConfig:       DefaultMemoryConfig(),
 	}
+	s.maxMemory.Store(maxMemory)
+	s.memoryConfig.MaxMemory = maxMemory
 	// Initialize global BM25 if needed (default disabled)
 	if s.hybridSearchConfig.Enabled {
 		s.bm25Index = NewBM25InvertedIndex(s.hybridSearchConfig.BM25)
@@ -143,6 +147,9 @@ func NewVectorStore(mem memory.Allocator, logger *zap.Logger, maxMemory, maxWALS
 		numWorkers = 1
 	}
 	s.startNUMAWorkers(numWorkers)
+
+	// Start memory metrics updater
+	s.startMemoryMetricsUpdater()
 
 	return s
 }
@@ -690,6 +697,11 @@ func (s *VectorStore) flushPutBatch(ds *Dataset, name string, batch []arrow.Reco
 		metrics.DoPutPayloadSizeBytes.Observe(float64(batchSize))
 		// Advise Memory: Random access for HNSW
 		AdviseRecord(rec, AdviceRandom)
+	}
+
+	// Check memory limit before accepting write
+	if err := s.checkMemoryBeforeWrite(totalSize); err != nil {
+		return err
 	}
 
 	s.currentMemory.Add(totalSize)

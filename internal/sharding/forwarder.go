@@ -14,34 +14,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/proto"
 )
-
-// rawCodec is a transparent gRPC codec that passes raw bytes.
-type rawCodec struct{}
-
-func (rawCodec) Marshal(v interface{}) ([]byte, error) {
-	if b, ok := v.([]byte); ok {
-		return b, nil
-	}
-	if m, ok := v.(proto.Message); ok {
-		return proto.Marshal(m)
-	}
-	return nil, fmt.Errorf("rawCodec: unexpected type %T", v)
-}
-
-func (rawCodec) Unmarshal(data []byte, v interface{}) error {
-	if b, ok := v.(*[]byte); ok {
-		*b = data
-		return nil
-	}
-	if m, ok := v.(proto.Message); ok {
-		return proto.Unmarshal(data, m)
-	}
-	return fmt.Errorf("rawCodec: unexpected type %T", v)
-}
-
-func (rawCodec) Name() string { return "raw" }
 
 // frame is a proxy frame that carries raw bytes.
 type frame struct {

@@ -59,10 +59,12 @@ type HNSWIndex struct {
 	nextVecID atomic.Uint32
 
 	// Product Quantization
-	pqEnabled bool
-	pqEncoder *PQEncoder
-	pqCodes   [][]uint8 // Indexed by VectorID
-	pqCodesMu sync.RWMutex
+	pqEnabled           bool
+	pqTrainingEnabled   bool
+	pqTrainingThreshold int
+	pqEncoder           *PQEncoder
+	pqCodes             [][]uint8 // Indexed by VectorID
+	pqCodesMu           sync.RWMutex
 
 	// Parallel Search Configuration
 	parallelConfig ParallelSearchConfig
@@ -152,16 +154,20 @@ func (h *HNSWIndex) RemapLocations(remapping map[int]BatchRemapInfo) {
 // SetPQEncoder enables product quantization with the provided encoder.
 func (h *HNSWIndex) SetPQEncoder(encoder *PQEncoder) {
 	h.pqCodesMu.Lock()
-	defer h.pqCodesMu.Unlock()
 	h.pqEncoder = encoder
 	h.pqEnabled = true
-	metrics.HNSWPQEnabled.WithLabelValues(h.dataset.Name).Set(1)
-	// Initialize code storage if needed, but typically we do this incrementally.
+	// Initialize code storage if needed
 	if h.pqCodes == nil {
 		h.pqCodes = make([][]uint8, 0)
 	}
-	// Update distance function in graph
-	h.Graph.Distance = h.getDistanceFuncNoLock()
+	h.pqCodesMu.Unlock() // Unlock specific lock
+
+	metrics.HNSWPQEnabled.WithLabelValues(h.dataset.Name).Set(1)
+
+	// Update distance function in graph - Requires GLOBAL Lock
+	h.mu.Lock()
+	h.Graph.Distance = h.GetDistanceFunc()
+	h.mu.Unlock()
 }
 
 // TrainPQ trains a PQ encoder on the current dataset elements and enables it.
@@ -712,6 +718,22 @@ func (h *HNSWIndex) getVectorUnsafe(id VectorID) (vec []float32, release func())
 func (h *HNSWIndex) Add(batchIdx, rowIdx int) (uint32, error) {
 	// 1. Allocate ID atomically
 	id := VectorID(h.nextVecID.Add(1) - 1)
+
+	// Check if we should trigger PQ training
+	if h.pqTrainingEnabled && !h.pqEnabled && int(id) == h.pqTrainingThreshold {
+		go func() {
+			// Train with default params: M=8, K=256, Iter=10
+			if h.dims > 0 && h.dims%8 == 0 {
+				metrics.HNSWPQTrainingTriggered.WithLabelValues(h.dataset.Name).Inc()
+				start := time.Now()
+				err := h.TrainPQ(h.dims, 8, 256, 10)
+				if err != nil {
+					fmt.Printf("PQ Training failed: %v\n", err)
+				}
+				metrics.HNSWPQTrainingDuration.WithLabelValues(h.dataset.Name).Observe(time.Since(start).Seconds())
+			}
+		}()
+	}
 
 	// 2. Prepare location and update locations slice under global lock
 	// and get vector while holding the lock to protect against slice reallocations.

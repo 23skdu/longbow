@@ -5,6 +5,8 @@ import (
 	"math"
 	"math/rand"
 	"unsafe"
+
+	"github.com/23skdu/longbow/internal/simd"
 )
 
 // =============================================================================
@@ -249,15 +251,35 @@ func (e *PQEncoder) Decode(codes []uint8) []float32 {
 // ComputeDistanceTable precomputes distances from query to all centroids.
 // Returns table[m][k] = squared distance from query subvector m to centroid k.
 func (e *PQEncoder) ComputeDistanceTable(query []float32) [][]float32 {
-	table := make([][]float32, e.config.M)
-	for m := 0; m < e.config.M; m++ {
+	mTotal := e.config.M
+	ksub := e.config.Ksub
+	table := make([][]float32, mTotal)
+	for m := 0; m < mTotal; m++ {
+		table[m] = make([]float32, ksub)
+		start := m * e.config.SubDim
+		end := start + e.config.SubDim
+		subquery := query[start:end]
+		for k, centroid := range e.codebook[m] {
+			table[m][k] = squaredL2(subquery, centroid)
+		}
+	}
+	return table
+}
+
+// ComputeDistanceTableFlat precomputes distances from query to all centroids in a flat format.
+func (e *PQEncoder) ComputeDistanceTableFlat(query []float32) []float32 {
+	mTotal := e.config.M
+	ksub := e.config.Ksub
+	table := make([]float32, mTotal*ksub)
+
+	for m := 0; m < mTotal; m++ {
 		start := m * e.config.SubDim
 		end := start + e.config.SubDim
 		subquery := query[start:end]
 
-		table[m] = make([]float32, e.config.Ksub)
+		baseIdx := m * ksub
 		for k, centroid := range e.codebook[m] {
-			table[m][k] = squaredL2(subquery, centroid)
+			table[baseIdx+k] = squaredL2(subquery, centroid)
 		}
 	}
 	return table
@@ -269,6 +291,39 @@ func (e *PQEncoder) ADCDistance(table [][]float32, codes []uint8) float32 {
 	var sum float32
 	for m, code := range codes {
 		sum += table[m][code]
+	}
+	return float32(math.Sqrt(float64(sum)))
+}
+
+// ADCDistanceFlat computes Asymmetric Distance using a flat precomputed table.
+func (e *PQEncoder) ADCDistanceFlat(table []float32, codes []uint8) float32 {
+	var sum float32
+	ksub := e.config.Ksub
+	for m, code := range codes {
+		sum += table[m*ksub+int(code)]
+	}
+	return float32(math.Sqrt(float64(sum)))
+}
+
+// ADCDistanceBatch computes asymmetric distances for multiple vectors in parallel.
+// It uses SIMD-accelerated batch lookups.
+func (e *PQEncoder) ADCDistanceBatch(table []float32, flatCodes []byte, results []float32) {
+	simd.ADCDistanceBatch(table, flatCodes, e.config.M, results)
+}
+
+// ADCDistancePacked computes ADC distance from a flat table and packed float32 codes.
+func (e *PQEncoder) ADCDistancePacked(table []float32, packed []float32) float32 {
+	// Treat packed float32s as bytes using unsafe
+	if len(packed) == 0 {
+		return 0
+	}
+	ptr := unsafe.Pointer(&packed[0])
+	codes := unsafe.Slice((*byte)(ptr), e.config.M)
+
+	var sum float32
+	ksub := e.config.Ksub
+	for m, code := range codes {
+		sum += table[m*ksub+int(code)]
 	}
 	return float32(math.Sqrt(float64(sum)))
 }

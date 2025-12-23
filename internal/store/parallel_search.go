@@ -4,6 +4,7 @@ import (
 	"runtime"
 	"sort"
 	"sync"
+	"unsafe"
 
 	"github.com/23skdu/longbow/internal/simd"
 	"github.com/coder/hnsw"
@@ -161,11 +162,40 @@ func (h *HNSWIndex) processChunk(query []float32, neighbors []hnsw.Node[VectorID
 	scores := make([]float32, len(tasks))
 
 	// Use batch SIMD where possible
-	// Note: PQ distance batching is not yet implemented in simd package, so fallback for PQ
 	if h.pqEnabled && h.pqEncoder != nil {
+		table := h.pqEncoder.ComputeDistanceTableFlat(query)
+		m := h.pqEncoder.CodeSize()
+		packedLen := (m + 3) / 4
+
+		flatCodes := make([]byte, len(vecs)*m)
+		validForBatch := make([]bool, len(vecs))
+		batchCount := 0
+
 		distFunc := h.GetDistanceFunc()
 		for i, v := range vecs {
-			scores[i] = distFunc(query, v)
+			if len(v) == packedLen {
+				ptr := unsafe.Pointer(&v[0])
+				src := unsafe.Slice((*byte)(ptr), m)
+				copy(flatCodes[batchCount*m:], src)
+				validForBatch[i] = true
+				batchCount++
+			} else {
+				// Fallback for raw / mixed
+				scores[i] = distFunc(query, v)
+			}
+		}
+
+		if batchCount > 0 {
+			batchResults := make([]float32, batchCount)
+			h.pqEncoder.ADCDistanceBatch(table, flatCodes[:batchCount*m], batchResults)
+
+			bj := 0
+			for i := range vecs {
+				if validForBatch[i] {
+					scores[i] = batchResults[bj]
+					bj++
+				}
+			}
 		}
 	} else {
 		switch h.Metric {

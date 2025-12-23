@@ -21,8 +21,8 @@ type IndexJobQueueConfig struct {
 // DefaultIndexJobQueueConfig returns sensible defaults for production.
 func DefaultIndexJobQueueConfig() IndexJobQueueConfig {
 	return IndexJobQueueConfig{
-		MainChannelSize:    20000,
-		OverflowBufferSize: 200000,
+		MainChannelSize:    10000,
+		OverflowBufferSize: 50000,
 		DropOnOverflow:     true,
 		DrainInterval:      1 * time.Millisecond,
 	}

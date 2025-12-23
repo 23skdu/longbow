@@ -965,6 +965,38 @@ var (
 			Help: "Total number of parser pool returns",
 		},
 	)
+
+	// gRPC Configuration Metrics
+	GRPCMaxRecvMsgSizeBytes = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "longbow_grpc_max_recv_msg_size_bytes",
+			Help: "Configured gRPC maximum receive message size",
+		},
+	)
+	GRPCMaxSendMsgSizeBytes = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "longbow_grpc_max_send_msg_size_bytes",
+			Help: "Configured gRPC maximum send message size",
+		},
+	)
+	GRPCInitialWindowSizeBytes = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "longbow_grpc_initial_window_size_bytes",
+			Help: "Configured gRPC initial window size",
+		},
+	)
+	GRPCInitialConnWindowSizeBytes = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "longbow_grpc_initial_conn_window_size_bytes",
+			Help: "Configured gRPC initial connection window size",
+		},
+	)
+	GRPCMaxConcurrentStreams = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "longbow_grpc_max_concurrent_streams",
+			Help: "Configured gRPC maximum concurrent streams",
+		},
+	)
 )
 
 // =============================================================================

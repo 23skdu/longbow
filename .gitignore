@@ -216,6 +216,8 @@ __marimo__/
 internal/store/wal.bin
 *.txt
 *.pprof
+*.pid
+data*/
 *.test
 store.test
 longbow_bin

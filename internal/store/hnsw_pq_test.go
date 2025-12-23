@@ -43,9 +43,11 @@ func TestHNSWPQ_Integration(t *testing.T) {
 		// Let's manually populate the fields needed for the test
 		id := VectorID(i)
 		h.nextVecID.Store(uint32(i + 1))
-		h.locations = append(h.locations, Location{BatchIdx: -1, RowIdx: -1})
-
-		// Since we don't have records, we must bypass getVector?
+		// Verify storage directly
+		loc, ok := h.locationStore.Get(id)
+		if !ok || loc.BatchIdx != 1 || loc.RowIdx != 2 {
+			t.Errorf("location not set correctly")
+		} // Since we don't have records, we must bypass getVector?
 		// HNSW Add calls getVectorDirectLocked.
 		// If we can't easily mock records, checking PQ logic might be hard via Add.
 

@@ -10,7 +10,7 @@ func TestHNSWGraphSync_ExportState(t *testing.T) {
 	idx := NewHNSWIndex(ds)
 	idx.dims = 128
 	for i := 0; i < 10; i++ {
-		idx.locations = append(idx.locations, Location{BatchIdx: i / 5, RowIdx: i % 5})
+		idx.locationStore.Append(Location{BatchIdx: i / 5, RowIdx: i % 5})
 	}
 	sync := NewHNSWGraphSync(idx)
 	state, err := sync.ExportState()
@@ -27,7 +27,7 @@ func TestHNSWGraphSync_ImportState(t *testing.T) {
 	idx := NewHNSWIndex(ds)
 	idx.dims = 128
 	for i := 0; i < 10; i++ {
-		idx.locations = append(idx.locations, Location{BatchIdx: i / 5, RowIdx: i % 5})
+		idx.locationStore.Append(Location{BatchIdx: i / 5, RowIdx: i % 5})
 	}
 	sync := NewHNSWGraphSync(idx)
 	state, _ := sync.ExportState()
@@ -38,11 +38,18 @@ func TestHNSWGraphSync_ImportState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ImportState failed: %v", err)
 	}
-	if len(idx2.locations) != len(idx.locations) {
-		t.Errorf("Location count mismatch: got %d, want %d", len(idx2.locations), len(idx.locations))
+	if idx2.locationStore.Len() != idx.locationStore.Len() {
+		t.Errorf("Location count mismatch: got %d, want %d", idx2.locationStore.Len(), idx.locationStore.Len())
 	}
 	if idx2.dims != idx.dims {
 		t.Errorf("Dims mismatch: got %d, want %d", idx2.dims, idx.dims)
+	}
+	loc, ok := idx2.locationStore.Get(0)
+	if !ok {
+		t.Errorf("expected location for ID 0")
+	}
+	if loc.BatchIdx != 0 || loc.RowIdx != 0 {
+		t.Errorf("unexpected location for ID 0: %+v", loc)
 	}
 }
 
@@ -70,12 +77,12 @@ func TestHNSWGraphSync_DeltaSync(t *testing.T) {
 	idx := NewHNSWIndex(ds)
 	idx.dims = 128
 	for i := 0; i < 10; i++ {
-		idx.locations = append(idx.locations, Location{BatchIdx: 0, RowIdx: i})
+		idx.locationStore.Append(Location{BatchIdx: 0, RowIdx: i})
 	}
 	sync := NewHNSWGraphSync(idx)
 	version1 := sync.GetVersion()
 	for i := 10; i < 20; i++ {
-		idx.locations = append(idx.locations, Location{BatchIdx: 1, RowIdx: i - 10})
+		idx.locationStore.Append(Location{BatchIdx: 1, RowIdx: i - 10})
 	}
 	sync.IncrementVersion()
 	delta, err := sync.ExportDelta(version1)
@@ -95,7 +102,7 @@ func TestHNSWGraphSync_Metrics(t *testing.T) {
 	idx := NewHNSWIndex(ds)
 	idx.dims = 128
 	for i := 0; i < 10; i++ {
-		idx.locations = append(idx.locations, Location{BatchIdx: 0, RowIdx: i})
+		idx.locationStore.Append(Location{BatchIdx: 0, RowIdx: i})
 	}
 	sync := NewHNSWGraphSync(idx)
 	_, _ = sync.ExportState() //nolint:errcheck
@@ -122,7 +129,7 @@ func TestHNSWGraphSync_ConcurrentSync(t *testing.T) {
 	idx := NewHNSWIndex(ds)
 	idx.dims = 128
 	for i := 0; i < 100; i++ {
-		idx.locations = append(idx.locations, Location{BatchIdx: i / 10, RowIdx: i % 10})
+		idx.locationStore.Append(Location{BatchIdx: i / 10, RowIdx: i % 10})
 	}
 	sync := NewHNSWGraphSync(idx)
 	done := make(chan bool, 10)
@@ -145,12 +152,12 @@ func TestHNSWGraphSync_ApplyDelta(t *testing.T) {
 	idx := NewHNSWIndex(ds)
 	idx.dims = 128
 	for i := 0; i < 10; i++ {
-		idx.locations = append(idx.locations, Location{BatchIdx: 0, RowIdx: i})
+		idx.locationStore.Append(Location{BatchIdx: 0, RowIdx: i})
 	}
 	sync := NewHNSWGraphSync(idx)
 	version1 := sync.GetVersion()
 	for i := 10; i < 20; i++ {
-		idx.locations = append(idx.locations, Location{BatchIdx: 1, RowIdx: i - 10})
+		idx.locationStore.Append(Location{BatchIdx: 1, RowIdx: i - 10})
 	}
 	sync.IncrementVersion()
 	delta, _ := sync.ExportDelta(version1)
@@ -158,14 +165,22 @@ func TestHNSWGraphSync_ApplyDelta(t *testing.T) {
 	idx2 := NewHNSWIndex(ds2)
 	idx2.dims = 128
 	for i := 0; i < 10; i++ {
-		idx2.locations = append(idx2.locations, Location{BatchIdx: 0, RowIdx: i})
+		idx2.locationStore.Append(Location{BatchIdx: 0, RowIdx: i})
 	}
 	sync2 := NewHNSWGraphSync(idx2)
 	err := sync2.ApplyDelta(delta)
 	if err != nil {
 		t.Fatalf("ApplyDelta failed: %v", err)
 	}
-	if len(idx2.locations) != 20 {
-		t.Errorf("Expected 20 locations after delta, got %d", len(idx2.locations))
+	if idx2.locationStore.Len() != 20 {
+		t.Errorf("Expected 20 locations after delta, got %d", idx2.locationStore.Len())
+	}
+	_, ok := idx2.locationStore.Get(0)
+	if !ok {
+		t.Errorf("expected location for ID 0")
+	}
+	_, ok = idx2.locationStore.Get(19)
+	if !ok {
+		t.Errorf("expected location for ID 19")
 	}
 }

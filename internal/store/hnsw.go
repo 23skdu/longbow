@@ -328,9 +328,8 @@ func (h *HNSWIndex) getVector(id VectorID) []float32 {
 		return nil
 	}
 
-	// Cast to FixedSizeList
 	listArr, ok := vecCol.(*array.FixedSizeList)
-	if !ok || listArr == nil || listArr.Data() == nil || len(listArr.Data().Children()) == 0 {
+	if !ok {
 		return nil
 	}
 	values := listArr.Data().Children()[0]
@@ -557,25 +556,23 @@ func (h *HNSWIndex) SearchVectors(query []float32, k int, filters []Filter) []Se
 		validVec := false
 		if vecCol != nil {
 			if listArr, ok := vecCol.(*array.FixedSizeList); ok {
-				if listArr.Data() != nil && len(listArr.Data().Children()) > 0 {
-					values := listArr.Data().Children()[0]
-					floatArr := array.NewFloat32Data(values) // No Retain, just wrapper
-					// defer floatArr.Release() // Wrapper doesn't own buffers if we init from Data?
-					// NewFloat32Data Retains? No, it takes ArrayData.
-					// Actually we should be careful.
-					// Let's use simple access if possible or reuse getVectorDirectLocked logic WITHOUT lock?
-					// Or just re-lock.
+				values := listArr.Data().Children()[0]
+				floatArr := array.NewFloat32Data(values) // No Retain, just wrapper
+				// defer floatArr.Release() // Wrapper doesn't own buffers if we init from Data?
+				// NewFloat32Data Retains? No, it takes ArrayData.
+				// Actually we should be careful.
+				// Let's use simple access if possible or reuse getVectorDirectLocked logic WITHOUT lock?
+				// Or just re-lock.
 
-					width := int(listArr.DataType().(*arrow.FixedSizeListType).Len())
-					start := loc.RowIdx * width
-					end := start + width
-					if start >= 0 && end <= floatArr.Len() {
-						vec := floatArr.Float32Values()[start:end]
-						dist = distFunc(query, vec)
-						validVec = true
-					}
-					floatArr.Release() // Release wrapper
+				width := int(listArr.DataType().(*arrow.FixedSizeListType).Len())
+				start := loc.RowIdx * width
+				end := start + width
+				if start >= 0 && end <= floatArr.Len() {
+					vec := floatArr.Float32Values()[start:end]
+					dist = distFunc(query, vec)
+					validVec = true
 				}
+				floatArr.Release() // Release wrapper
 			}
 		}
 		h.dataset.dataMu.RUnlock() // Release lock
@@ -804,7 +801,7 @@ func (h *HNSWIndex) AddSafe(rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32
 	}
 
 	listArr, ok := vecCol.(*array.FixedSizeList)
-	if !ok || listArr == nil || listArr.Data() == nil || len(listArr.Data().Children()) == 0 {
+	if !ok {
 		return 0, fmt.Errorf("AddSafe: invalid vector column format")
 	}
 
@@ -1057,7 +1054,7 @@ func (h *HNSWIndex) getVectorDirectLocked(id VectorID) []float32 {
 	}
 
 	listArr, ok := vecCol.(*array.FixedSizeList)
-	if !ok || listArr == nil || listArr.Data() == nil || len(listArr.Data().Children()) == 0 {
+	if !ok {
 		return nil
 	}
 

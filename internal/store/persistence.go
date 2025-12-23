@@ -29,6 +29,7 @@ type StorageConfig struct {
 	AsyncFsync       bool
 	DoPutBatchSize   int
 	UseIOUring       bool
+	UseDirectIO      bool
 }
 
 // InitPersistence initializes the WAL and loads any existing data
@@ -60,6 +61,7 @@ func (s *VectorStore) InitPersistence(cfg StorageConfig) error {
 	}
 	batcherCfg.AsyncFsync.Enabled = cfg.AsyncFsync
 	batcherCfg.UseIOUring = cfg.UseIOUring
+	batcherCfg.UseDirectIO = cfg.UseDirectIO
 
 	s.walBatcher = NewWALBatcher(s.dataPath, &batcherCfg)
 	if err := s.walBatcher.Start(); err != nil {
@@ -243,6 +245,11 @@ func (s *VectorStore) Snapshot() error {
 				break
 			}
 		}
+
+		// Hint to kernel that we won't need this file in cache
+		if err := AdviseDontNeed(f); err != nil {
+			s.logger.Debug("Failed to advise DONTNEED on snapshot write", zap.Error(err))
+		}
 		_ = f.Close()
 	}
 
@@ -313,6 +320,11 @@ func (s *VectorStore) loadSnapshots() error {
 
 		// Read Parquet file
 		rec, err := readParquet(f, stat.Size(), s.mem)
+
+		// Hint kernel we are done with this file
+		if err := AdviseDontNeed(f); err != nil {
+			s.logger.Debug("Failed to advise DONTNEED on snapshot read", zap.Error(err))
+		}
 		_ = f.Close()
 		if err != nil {
 			s.logger.Error("Failed to read parquet snapshot",

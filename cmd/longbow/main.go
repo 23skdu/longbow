@@ -77,6 +77,7 @@ type Config struct {
 	StorageAsyncFsync     bool `envconfig:"STORAGE_ASYNC_FSYNC" default:"true"`
 	StorageDoPutBatchSize int  `envconfig:"STORAGE_DOPUT_BATCH_SIZE" default:"100"`
 	StorageUseIOUring     bool `envconfig:"STORAGE_USE_IOURING" default:"false"`
+	StorageUseDirectIO    bool `envconfig:"STORAGE_USE_DIRECT_IO" default:"false"`
 
 	// GPU Configuration
 	GPUEnabled  bool `envconfig:"GPU_ENABLED" default:"false"`
@@ -151,6 +152,7 @@ func run() error {
 		AsyncFsync:       cfg.StorageAsyncFsync,
 		DoPutBatchSize:   cfg.StorageDoPutBatchSize,
 		UseIOUring:       cfg.StorageUseIOUring,
+		UseDirectIO:      cfg.StorageUseDirectIO,
 	}
 	if err := vectorStore.InitPersistence(storageCfg); err != nil {
 		logger.Panic("Failed to initialize persistence", zap.Error(err))

@@ -29,36 +29,7 @@ func TestHNSWPQ_Integration(t *testing.T) {
 	}
 
 	// Add vectors to index (unquantized initially)
-	for i, vec := range vectors {
-		_ = vec
-		// Mock Add without checking records
-		// We use low-level Add logic or just use h.locations manipulation + Graph.Add
-		// HNSWIndex.Add is complex because it checks records.
-		// Let's create a simplified Add for test or mock GetVector.
-
-		// Mocking getVector is hard as it's a method on HNSWIndex.
-		// Better to use full integration: create records in dataset.
-		// But that requires Arrow complexity.
-
-		// Let's manually populate the fields needed for the test
-		id := VectorID(i)
-		h.nextVecID.Store(uint32(i + 1))
-		h.locations = append(h.locations, Location{BatchIdx: -1, RowIdx: -1})
-
-		// Since we don't have records, we must bypass getVector?
-		// HNSW Add calls getVectorDirectLocked.
-		// If we can't easily mock records, checking PQ logic might be hard via Add.
-
-		// Alternative: Test TrainPQ and internal logic without full Add.
-		// We can inject vectors into TrainPQ? No, TrainPQ calls getVector.
-
-		// We must provide a way to get vectors.
-		// Or we modify HNSW logic to allow in-memory vector storage fallback?
-		// No, let's assume we can mock the dataset.
-
-		_ = id
-	}
-
+	// Integration test skipped for now as it requires complex Arrow record setup
 	t.Skip("Skipping HSNP PQ Integration test - requires Arrow record setup")
 }
 

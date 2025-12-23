@@ -29,19 +29,16 @@ type Location struct {
 
 // GetLocation returns the storage location for a given VectorID
 func (h *HNSWIndex) GetLocation(id VectorID) (Location, bool) {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	if int(id) >= len(h.locations) {
-		return Location{}, false
-	}
-	return h.locations[id], true
+	// Optimized: No global lock needed for reading locations
+	return h.locationStore.Get(id)
 }
 
 // HNSWIndex wraps the hnsw.Graph and manages the mapping from ID to Arrow data.
 type HNSWIndex struct {
-	Graph         *hnsw.Graph[VectorID]
-	mu            sync.RWMutex
-	locations     []Location
+	Graph *hnsw.Graph[VectorID]
+	mu    sync.RWMutex
+	// locations     []Location // Removed in favor of locationStore
+	locationStore *ChunkedLocationStore
 	dataset       *Dataset
 	dims          int           // Vector dimensions
 	dimsOnce      sync.Once     // Ensures thread-safe dims initialization
@@ -68,6 +65,9 @@ type HNSWIndex struct {
 
 	// Parallel Search Configuration
 	parallelConfig ParallelSearchConfig
+
+	// Zero-copy optimizations
+	vectorColIdx atomic.Int32 // Cached index of the "vector" column
 }
 
 // NewHNSWIndex creates a new index for the given dataset using Euclidean distance.
@@ -79,7 +79,7 @@ func NewHNSWIndex(ds *Dataset) *HNSWIndex {
 func NewHNSWIndexWithMetric(ds *Dataset, metric VectorMetric) *HNSWIndex {
 	h := &HNSWIndex{
 		dataset:        ds,
-		locations:      make([]Location, 0),
+		locationStore:  NewChunkedLocationStore(),
 		Metric:         metric,
 		parallelConfig: DefaultParallelSearchConfig(),
 	}
@@ -91,15 +91,7 @@ func NewHNSWIndexWithMetric(ds *Dataset, metric VectorMetric) *HNSWIndex {
 	h.resultPool = newResultPool()
 	// Set distance function based on metric
 	h.Graph.Distance = h.GetDistanceFunc()
-	// Set default HNSW parameters
-	// h.Graph.EfSearch = 100
-	// h.Graph.EfConstruction = 200
-	// h.Graph.M = 32
-
-	// Set default HNSW parameters
-	// h.Graph.EfSearch = 100
-	// h.Graph.EfConstruction = 200
-	// h.Graph.M = 32
+	h.vectorColIdx.Store(-1)
 
 	return h
 }
@@ -107,14 +99,18 @@ func NewHNSWIndexWithMetric(ds *Dataset, metric VectorMetric) *HNSWIndex {
 // NewHNSWIndexWithCapacity creates a new index with pre-allocated locations slice.
 func NewHNSWIndexWithCapacity(ds *Dataset, capacity int) *HNSWIndex {
 	h := &HNSWIndex{
-		dataset:      ds,
-		locations:    make([]Location, 0, capacity),
-		Metric:       MetricEuclidean,
-		numaTopology: ds.Topo,
+		dataset:       ds,
+		locationStore: NewChunkedLocationStore(),
+		Metric:        MetricEuclidean,
+		numaTopology:  ds.Topo,
+	}
+	if capacity > 0 {
+		h.locationStore.Grow(capacity)
 	}
 	h.Graph = hnsw.NewGraph[VectorID]()
 	h.resultPool = newResultPool()
 	h.Graph.Distance = simd.EuclideanDistance
+	h.vectorColIdx.Store(-1)
 
 	return h
 }
@@ -127,28 +123,34 @@ type BatchRemapInfo struct {
 
 // RemapLocations safely updates vector locations after compaction.
 // It iterates over all locations and applies the remapping if the batch index matches.
+// RemapLocations safely updates vector locations after compaction.
+// It iterates over all locations and applies the remapping if the batch index matches.
 func (h *HNSWIndex) RemapLocations(remapping map[int]BatchRemapInfo) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
+	h.locationStore.IterateMutable(func(_ VectorID, val *atomic.Uint64) {
+		currentVal := val.Load()
+		loc := unpackLocation(currentVal)
 
-	for i, loc := range h.locations {
 		if info, ok := remapping[loc.BatchIdx]; ok {
 			if loc.RowIdx >= 0 && loc.RowIdx < len(info.NewRowIdxs) {
 				newRowIdx := info.NewRowIdxs[loc.RowIdx]
 				if newRowIdx == -1 {
-					h.locations[i] = Location{BatchIdx: -1, RowIdx: -1}
+					val.Store(packLocation(Location{BatchIdx: -1, RowIdx: -1}))
 				} else {
-					h.locations[i] = Location{
+					val.Store(packLocation(Location{
 						BatchIdx: info.NewBatchIdx,
 						RowIdx:   newRowIdx,
-					}
+					}))
 				}
 			} else {
-				// Out of bounds - should not happen if compaction is correct
-				h.locations[i] = Location{BatchIdx: -1, RowIdx: -1}
+				// Out of bounds
+				val.Store(packLocation(Location{BatchIdx: -1, RowIdx: -1}))
 			}
+		} else if loc.BatchIdx == -1 {
+			// Ensure consistency (no-op really as unpacking -1,-1 repacks to same)
+			// But if we want to be explicit:
+			// val.Store(packLocation(Location{BatchIdx: -1, RowIdx: -1}))
 		}
-	}
+	})
 }
 
 // SetPQEncoder enables product quantization with the provided encoder.
@@ -306,11 +308,11 @@ func (h *HNSWIndex) getVector(id VectorID) []float32 {
 	indexLockStart1 := time.Now()
 	h.mu.RLock()
 	metrics.IndexLockWaitDuration.WithLabelValues(h.dataset.Name, "read").Observe(time.Since(indexLockStart1).Seconds())
-	if int(id) >= len(h.locations) {
+	loc, ok := h.locationStore.Get(id)
+	if !ok {
 		h.mu.RUnlock()
 		return nil
 	}
-	loc := h.locations[id]
 	h.mu.RUnlock()
 
 	// Lock the dataset to safely access records
@@ -464,148 +466,110 @@ func (h *HNSWIndex) SearchVectors(query []float32, k int, filters []Filter) []Se
 
 	res := make([]SearchResult, 0, len(neighbors))
 
+	// Batch configuration
+	const batchSize = 32
+	batchIDs := make([]VectorID, batchSize)
+	batchLocs := make([]Location, batchSize)
+
+	// PQ Context: Precompute distance table once per search
+	var pqTable []float32
+	var pqFlatCodes []byte
+	var pqBatchResults []float32
+	var pqM int
+	var packedLen int
+	h.pqCodesMu.RLock()
+	if h.pqEnabled && h.pqEncoder != nil {
+		pqTable = h.pqEncoder.ComputeDistanceTableFlat(query)
+		pqM = h.pqEncoder.CodeSize()
+		pqFlatCodes = make([]byte, batchSize*pqM)
+		pqBatchResults = make([]float32, batchSize)
+		packedLen = (pqM + 3) / 4
+	}
+	h.pqCodesMu.RUnlock()
+
 	count := 0
-	for idx, n := range neighbors {
+	for i := 0; i < len(neighbors); i += batchSize {
 		if count >= k {
 			break
 		}
 
-		// Retrieve vector/record for verification + score calc
-		// Use striped lock for location access (fine-grained locking)
-
-		// Retrieve vector/record for verification + score calc
-		// Use standard thread-safe GetLocation
-		loc, found := h.GetLocation(n.Key)
-		if !found {
-			continue
+		end := i + batchSize
+		if end > len(neighbors) {
+			end = len(neighbors)
 		}
 
-		// Access Record for filtering
+		batchLen := end - i
+		for j := 0; j < batchLen; j++ {
+			batchIDs[j] = neighbors[i+j].Key
+		}
+
+		h.locationStore.GetBatch(batchIDs[:batchLen], batchLocs[:batchLen])
+
+		h.enterEpoch()
 		h.dataset.dataMu.RLock()
-		if h.dataset.Records == nil || loc.BatchIdx >= len(h.dataset.Records) {
-			h.dataset.dataMu.RUnlock()
-			continue
-		}
-		rec := h.dataset.Records[loc.BatchIdx]
 
-		// SIMD PREFETCH (Item 5): Fetch next few results data while filtering current one
-		if idx+1 < len(neighbors) {
-			nextKey := neighbors[idx+1].Key
-			nextLoc, found := h.GetLocation(nextKey)
-			if found {
-				if nextLoc.BatchIdx < len(h.dataset.Records) {
-					nextRec := h.dataset.Records[nextLoc.BatchIdx]
-					if nextRec != nil && nextRec.NumCols() > 0 {
-						// Prefetch the first buffer of the first column as a hint
-						col := nextRec.Column(0)
-						if col != nil && col.Data() != nil && len(col.Data().Buffers()) > 1 {
-							buf := col.Data().Buffers()[1] // Data buffer is usually index 1
-							if buf != nil {
-								simd.Prefetch(unsafe.Pointer(&buf.Bytes()[0]))
-							}
-						}
-					}
-
-				}
+		// Reset pqBatchResults for this batch
+		if pqTable != nil {
+			for j := 0; j < batchSize; j++ {
+				pqBatchResults[j] = -2 // Default to skipped/unprocessed
 			}
 		}
 
-		// Check Filters using optimized evaluator (Item 6)
-		if evaluator != nil {
-			if !evaluator.Matches(loc.RowIdx) {
-				h.dataset.dataMu.RUnlock()
-				continue
-			}
-		}
-
-		// Calculate distance (re-calculate or trust graph distance? Graph returns distance)
-		// coder/hnsw Item has Distance field? Yes.
-		// n.Distance is the distance computed by Graph.Search.
-		// However, it's good to sanity check or just use it.
-		// Let's use it.
-		// Wait, n (hnsw.Item) has Key (ID) and implicitly ordering?
-		// Check coder/hnsw neighbor type. It usually has Distance.
-		// If not, we have to recompute. The previous code recomputed it:
-		// "vec := h.getVectorDirectLocked(n.Key) ... dist = distFunc(query, vec)"
-		// Maybe Graph.Search returns items without distance?
-		// Let's stick to previous recompute logic to be safe/consistent.
-
-		// Get vector for distance calc (if needed, or if we trust n.Distance?)
-		// Assuming we recompute like before.
-		// We already hold dataMu RLock, so we can get vector from 'rec' directly (fast).
-
-		// Re-implement vector extraction from 'rec' to avoid releasing lock and calling getVectorDirectLocked again?
-		// Or just call getVectorDirectLocked inside lock? No, getVectorDirectLocked takes dataset lock too?
-		// getVectorDirectLocked takes dataset lock.
-		// So we cannot call it while holding dataset lock.
-		// We should extract vector from 'rec' manually or release lock and call getVectorDirectLocked (but race potential?).
-		// Safest: Extract from 'rec' manually here since we have it.
-
-		// ... logic to extract vector ...
-		// Actually, let's just use `getVectorDirectLocked` logic which does RLock internally.
-		// So we must RUnlock before calling it?
-		// Or we extract vector logic here.
-
-		// Simpler: Just rely on n (Graph Item) if it has Distance (most impls do).
-		// Looking at code: `neighbors := h.Graph.Search(query, k)`. Returns []Item.
-		// Does Item have Distance? I cannot verify.
-		// Previous code recomputed it. I will keep recomputing it to be safe.
-
-		// To avoid complex interaction with locks:
-		// 1. Check filter (needs dataMu).
-		// 2. If match, keep ID.
-		// 3. After loop, compute distances for kept IDs (or compute inside but handle locks carefully).
-
-		// Let's do:
-		// Check filter. If match, verify vector and compute distance INLINE (while holding dataMu).
-
-		var dist float32
-
-		var vecCol arrow.Array
-		// Optimization: cache col index?
-		for idx, field := range rec.Schema().Fields() {
-			if field.Name == "vector" {
-				vecCol = rec.Column(idx)
+		for j := 0; j < batchLen; j++ {
+			if count >= k {
 				break
 			}
-		}
 
-		validVec := false
-		if vecCol != nil {
-			if listArr, ok := vecCol.(*array.FixedSizeList); ok {
-				values := listArr.Data().Children()[0]
-				floatArr := array.NewFloat32Data(values) // No Retain, just wrapper
-				// defer floatArr.Release() // Wrapper doesn't own buffers if we init from Data?
-				// NewFloat32Data Retains? No, it takes ArrayData.
-				// Actually we should be careful.
-				// Let's use simple access if possible or reuse getVectorDirectLocked logic WITHOUT lock?
-				// Or just re-lock.
+			id := batchIDs[j]
+			loc := batchLocs[j]
 
-				width := int(listArr.DataType().(*arrow.FixedSizeListType).Len())
-				start := loc.RowIdx * width
-				end := start + width
-				if start >= 0 && end <= floatArr.Len() {
-					vec := floatArr.Float32Values()[start:end]
-					dist = distFunc(query, vec)
-					validVec = true
+			if loc.BatchIdx == -1 {
+				continue
+			}
+
+			if evaluator != nil {
+				if !evaluator.Matches(loc.RowIdx) {
+					continue
 				}
-				floatArr.Release() // Release wrapper
+			}
+
+			vec := h.getVectorLockedUnsafe(loc)
+			if vec != nil {
+				// Case 1: PQ Batch processing
+				if pqTable != nil && len(vec) == packedLen {
+					ptr := unsafe.Pointer(&vec[0])
+					srcCodes := unsafe.Slice((*byte)(ptr), pqM)
+					copy(pqFlatCodes[j*pqM:], srcCodes)
+					pqBatchResults[j] = -1 // Mark as needing SIMD
+				} else {
+					// Case 2: Standard distance
+					dist := distFunc(query, vec)
+					res = append(res, SearchResult{ID: id, Score: dist})
+					count++
+					if pqTable != nil {
+						pqBatchResults[j] = -2 // Mark as already processed
+					}
+				}
 			}
 		}
-		h.dataset.dataMu.RUnlock() // Release lock
 
-		if validVec {
-			res = append(res, SearchResult{
-				ID:    n.Key,
-				Score: dist,
-			})
-			count++
+		// Run batch SIMD for all marked candidates
+		if pqTable != nil {
+			h.pqEncoder.ADCDistanceBatch(pqTable, pqFlatCodes, pqBatchResults)
+
+			for j := 0; j < batchLen; j++ {
+				if pqBatchResults[j] >= 0 {
+					if count < k {
+						res = append(res, SearchResult{ID: batchIDs[j], Score: pqBatchResults[j]})
+						count++
+					}
+				}
+			}
 		}
-	}
 
-	// If we filtered, we might have fewer than K results.
-	// But we searched for K*10. So likely we have K.
-	// Also ensure we returned results.
+		h.dataset.dataMu.RUnlock()
+		h.exitEpoch()
+	}
 
 	return res
 }
@@ -620,12 +584,12 @@ func (h *HNSWIndex) getVectorUnsafe(id VectorID) (vec []float32, release func())
 	indexLockStart5 := time.Now()
 	h.mu.RLock()
 	metrics.IndexLockWaitDuration.WithLabelValues(h.dataset.Name, "read").Observe(time.Since(indexLockStart5).Seconds())
-	if int(id) >= len(h.locations) {
+	loc, ok := h.locationStore.Get(id)
+	if !ok {
 		h.mu.RUnlock()
 		h.exitEpoch()
 		return nil, nil
 	}
-	loc := h.locations[id]
 	h.mu.RUnlock()
 
 	// NUMA instrumentation: check if we are accessing data from a remote node
@@ -716,8 +680,11 @@ func (h *HNSWIndex) getVectorUnsafe(id VectorID) (vec []float32, release func())
 
 // Add inserts a new vector location into the index and adds it to the graph.
 func (h *HNSWIndex) Add(batchIdx, rowIdx int) (uint32, error) {
-	// 1. Allocate ID atomically
-	id := VectorID(h.nextVecID.Add(1) - 1)
+	// 1. Prepare location and update locations slice under global lock
+	// and get vector while holding the lock to protect against slice reallocations.
+	h.mu.Lock()
+	id := h.locationStore.Append(Location{BatchIdx: batchIdx, RowIdx: rowIdx})
+	h.mu.Unlock()
 
 	// Check if we should trigger PQ training
 	if h.pqTrainingEnabled && !h.pqEnabled && int(id) == h.pqTrainingThreshold {
@@ -735,18 +702,8 @@ func (h *HNSWIndex) Add(batchIdx, rowIdx int) (uint32, error) {
 		}()
 	}
 
-	// 2. Prepare location and update locations slice under global lock
-	// and get vector while holding the lock to protect against slice reallocations.
-	h.mu.Lock()
-	for len(h.locations) <= int(id) {
-		h.locations = append(h.locations, Location{})
-	}
-	h.locations[id] = Location{BatchIdx: batchIdx, RowIdx: rowIdx}
-
 	// 3. Get vector (Safe to call as ID is reserved and location is set)
-	vecRaw := h.getVectorDirectLocked(id)
-	h.mu.Unlock()
-
+	vecRaw := h.getVector(id) // getVector now handles its own locks
 	if vecRaw == nil {
 		return 0, nil
 	}
@@ -854,10 +811,14 @@ func (h *HNSWIndex) AddSafe(rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32
 
 	// 3. Update locations under global lock
 	h.mu.Lock()
-	for len(h.locations) <= int(id) {
-		h.locations = append(h.locations, Location{})
-	}
-	h.locations[id] = Location{BatchIdx: batchIdx, RowIdx: rowIdx}
+	// The ID is already allocated by nextVecID.Add(1)-1.
+	// We need to ensure locationStore has capacity for this ID.
+	// Append handles this by growing if needed.
+	// If we want to set a specific ID, we'd need a Set method on ChunkedLocationStore.
+	// For now, we assume AddSafe is used for sequential additions, so Append is fine.
+	// If IDs are not sequential, this needs a `Set(id, loc)` method.
+	// Given `nextVecID.Add(1)-1`, IDs are sequential.
+	h.locationStore.Append(Location{BatchIdx: batchIdx, RowIdx: rowIdx})
 	h.mu.Unlock()
 
 	// 4. Initialize dims
@@ -924,15 +885,149 @@ func (h *HNSWIndex) AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx int) (ui
 	return h.AddSafe(rec, rowIdx, batchIdx)
 }
 
+// AddBatch implements VectorIndex interface for HNSWIndex.
+func (h *HNSWIndex) AddBatch(recs []arrow.RecordBatch, rowIdxs []int, batchIdxs []int) ([]uint32, error) {
+	if len(recs) == 0 {
+		return nil, nil
+	}
+
+	n := len(recs)
+	ids := make([]uint32, n)
+	vectors := make([][]float32, n)
+
+	// 1. Extract vectors (Done outside h.mu lock)
+	for i := 0; i < n; i++ {
+		vec, err := h.extractVector(recs[i], rowIdxs[i])
+		if err != nil {
+			return nil, err
+		}
+		vectors[i] = vec
+	}
+
+	// 2. Allocate IDs and update locations under single lock
+	h.mu.Lock()
+	baseID := VectorID(h.nextVecID.Add(uint32(n)) - uint32(n))
+	for i := 0; i < n; i++ {
+		id := baseID + VectorID(i)
+		ids[i] = uint32(id)
+		h.locationStore.Append(Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
+	}
+	h.mu.Unlock()
+
+	// 3. Initialize dims once
+	if n > 0 && vectors[0] != nil {
+		h.dimsOnce.Do(func() {
+			h.dims = len(vectors[0])
+		})
+	}
+
+	// 4. PQ Encoding (Done outside h.mu lock)
+	encodedVectors := make([][]float32, n)
+	h.pqCodesMu.RLock()
+	pqEnabled := h.pqEnabled
+	encoder := h.pqEncoder
+	h.pqCodesMu.RUnlock()
+
+	for i := 0; i < n; i++ {
+		vec := vectors[i]
+		if pqEnabled && encoder != nil {
+			codes := encoder.Encode(vec)
+			id := baseID + VectorID(i)
+			h.pqCodesMu.Lock()
+			// Resize storage if necessary
+			if int(id) >= len(h.pqCodes) {
+				targetLen := int(id) + 1
+				if targetLen > cap(h.pqCodes) {
+					newCap := targetLen * 2
+					if newCap < 1024 {
+						newCap = 1024
+					}
+					newCodes := make([][]uint8, targetLen, newCap)
+					copy(newCodes, h.pqCodes)
+					h.pqCodes = newCodes
+				} else {
+					h.pqCodes = h.pqCodes[:targetLen]
+				}
+			}
+			h.pqCodes[id] = codes
+			h.pqCodesMu.Unlock()
+			encodedVectors[i] = PackBytesToFloat32s(codes)
+		} else {
+			encodedVectors[i] = vec
+		}
+	}
+
+	// 5. Add to graph (Sequential insertion Required by library)
+	for i := 0; i < n; i++ {
+		id := baseID + VectorID(i)
+		h.mu.Lock()
+		h.Graph.Add(hnsw.MakeNode(id, encodedVectors[i]))
+		h.mu.Unlock()
+	}
+
+	// Update metrics
+	metrics.HnswNodeCount.WithLabelValues(h.dataset.Name).Set(float64(h.nextVecID.Load()))
+
+	return ids, nil
+}
+
+// extractor helper to avoid code duplication
+func (h *HNSWIndex) extractVector(rec arrow.RecordBatch, rowIdx int) ([]float32, error) {
+	if rec == nil {
+		return nil, fmt.Errorf("extractVector: record is nil")
+	}
+
+	var vecCol arrow.Array
+	// Use cached vectorColIdx if available
+	colIdx := int(h.vectorColIdx.Load())
+	if colIdx >= 0 && colIdx < int(rec.NumCols()) {
+		if rec.Schema().Field(colIdx).Name == "vector" {
+			vecCol = rec.Column(colIdx)
+		}
+	}
+
+	if vecCol == nil {
+		for i, field := range rec.Schema().Fields() {
+			if field.Name == "vector" {
+				vecCol = rec.Column(i)
+				h.vectorColIdx.Store(int32(i))
+				break
+			}
+		}
+	}
+
+	if vecCol == nil {
+		return nil, fmt.Errorf("extractVector: vector column not found")
+	}
+
+	listArr, ok := vecCol.(*array.FixedSizeList)
+	if !ok {
+		return nil, fmt.Errorf("extractVector: invalid vector column format")
+	}
+
+	values := listArr.Data().Children()[0]
+	floatArr := array.NewFloat32Data(values)
+	defer floatArr.Release()
+
+	width := int(listArr.DataType().(*arrow.FixedSizeListType).Len())
+	start := rowIdx * width
+	end := start + width
+
+	if start < 0 || end > floatArr.Len() {
+		return nil, fmt.Errorf("extractVector: row index out of bounds")
+	}
+
+	// Return a copy to avoid data races with arrow buffers being released
+	// NOTE: In Search we use zero-copy because it's transient.
+	// In Add, we MUST copy because the vector is stored in HNSW graph (internal to hnsw lib).
+	vec := make([]float32, width)
+	copy(vec, floatArr.Float32Values()[start:end])
+	return vec, nil
+}
+
 // SearchVectorsWithBitmap returns k nearest neighbors filtered by a bitset.
 func (h *HNSWIndex) SearchVectorsWithBitmap(query []float32, k int, filter *Bitset) []SearchResult {
 	if filter == nil || filter.Count() == 0 {
-		// Empty filter means NO results allowed? Or all?
-		// Typically filter means "Must be in this set". Empty set = no results.
-		// If filter is nil, we assume "No filtering"?? No, caller should pass nil if no filtering.
-		// Interface signature: filter *Bitset.
-		// If it's nil, we could treat as "Allow All", but explicit method implies filtering.
-		// Let's assume filter is required.
 		return []SearchResult{}
 	}
 
@@ -940,66 +1035,177 @@ func (h *HNSWIndex) SearchVectorsWithBitmap(query []float32, k int, filter *Bits
 		metrics.VectorSearchLatencySeconds.WithLabelValues(h.dataset.Name).Observe(time.Since(start).Seconds())
 	}(time.Now())
 
-	// Heuristic: If filter is very restrictive (small count), Brute Force might be faster.
-	// Check count.
 	count := filter.Count()
 	if count < 1000 {
-		// Brute force: iterate set bits, compute distance.
 		return h.searchBruteForceWithBitmap(query, k, filter)
 	}
 
-	// HNSW Post-Filtering with Oversampling
 	limit := k * 10
 
 	h.mu.RLock()
 	neighbors := h.Graph.Search(query, limit)
 	h.mu.RUnlock()
-	fmt.Println("DEBUG HNSW NEIGHBORS:", len(neighbors))
 
+	distFunc := h.GetDistanceFunc()
 	res := make([]SearchResult, 0, k)
 	resultCount := 0
 
-	// panic(fmt.Sprintf("DEBUG HNSW: Found Neighbors=%d", len(neighbors)))
+	// Batch configuration
+	const batchSize = 32
+	batchIDs := make([]VectorID, batchSize)
+	batchLocs := make([]Location, batchSize)
 
-	for _, n := range neighbors {
+	// PQ Context: Precompute distance table once per search
+	var pqTable []float32
+	var pqFlatCodes []byte
+	var pqBatchResults []float32
+	var pqM int
+	var packedLen int
+	h.pqCodesMu.RLock()
+	if h.pqEnabled && h.pqEncoder != nil {
+		pqTable = h.pqEncoder.ComputeDistanceTableFlat(query)
+		pqM = h.pqEncoder.CodeSize()
+		pqFlatCodes = make([]byte, batchSize*pqM)
+		pqBatchResults = make([]float32, batchSize)
+		packedLen = (pqM + 3) / 4
+	}
+	h.pqCodesMu.RUnlock()
+
+	for i := 0; i < len(neighbors); i += batchSize {
 		if resultCount >= k {
 			break
 		}
 
-		id := uint32(n.Key)
-		// Check Bitmap
-		// Bitset is thread-safe wrapper around Roaring.
-		if !filter.Contains(int(id)) {
-			continue
+		end := i + batchSize
+		if end > len(neighbors) {
+			end = len(neighbors)
 		}
 
-		// Valid match
-		// Re-verify existence (sanity check)
-		// Valid match
-		// Re-verify existence (sanity check)
-		_, found := h.GetLocation(VectorID(id))
-		if !found {
-			continue
+		batchLen := end - i
+		for j := 0; j < batchLen; j++ {
+			batchIDs[j] = neighbors[i+j].Key
 		}
 
-		// Assuming n.Distance is available based on previous analysis of coder/hnsw
-		// If n (hnsw.Item) doesn't have Distance exposed, we'd need to recompute.
-		// But let's assume implementation details of coder/hnsw (which I can't see but standard impls have it).
-		// Wait, previously I recomputed distance. I should be consistent.
-		// Recomputing distance here for safety until confirmed.
+		h.locationStore.GetBatch(batchIDs[:batchLen], batchLocs[:batchLen])
 
-		// To recompute, we need vector.
-		// Use Unsafe get?
-		vec, release := h.getVectorUnsafe(VectorID(id))
-		if vec != nil {
-			distFunc := h.GetDistanceFunc()
-			dist := distFunc(query, vec)
-			res = append(res, SearchResult{ID: VectorID(id), Score: dist})
-			resultCount++
-			release()
+		h.enterEpoch()
+		h.dataset.dataMu.RLock()
+
+		// Reset pqBatchResults for this batch
+		if pqTable != nil {
+			for j := 0; j < batchSize; j++ {
+				pqBatchResults[j] = -2 // Default to skipped/unprocessed
+			}
 		}
+
+		for j := 0; j < batchLen; j++ {
+			if resultCount >= k {
+				break
+			}
+
+			id := batchIDs[j]
+			loc := batchLocs[j]
+
+			if !filter.Contains(int(id)) {
+				continue
+			}
+
+			if loc.BatchIdx == -1 {
+				continue
+			}
+
+			vec := h.getVectorLockedUnsafe(loc)
+			if vec != nil {
+				// Case 1: PQ Batch processing (if vector matches PQ state)
+				if pqTable != nil && len(vec) == packedLen {
+					// Collect codes for batch SIMD
+					ptr := unsafe.Pointer(&vec[0])
+					srcCodes := unsafe.Slice((*byte)(ptr), pqM)
+					copy(pqFlatCodes[j*pqM:], srcCodes)
+					pqBatchResults[j] = -1 // Mark as needing SIMD
+				} else {
+					// Case 2: Standard distance (or mixed raw/PQ)
+					dist := distFunc(query, vec)
+					res = append(res, SearchResult{ID: id, Score: dist})
+					resultCount++
+					if pqTable != nil {
+						pqBatchResults[j] = -2 // Mark as already processed
+					}
+				}
+			}
+		}
+
+		// Run batch SIMD for all marked candidates
+		if pqTable != nil {
+			h.pqEncoder.ADCDistanceBatch(pqTable, pqFlatCodes, pqBatchResults)
+
+			for j := 0; j < batchLen; j++ {
+				if pqBatchResults[j] >= 0 {
+					if resultCount < k {
+						res = append(res, SearchResult{ID: batchIDs[j], Score: pqBatchResults[j]})
+						resultCount++
+					}
+				}
+			}
+		}
+
+		h.dataset.dataMu.RUnlock()
+		h.exitEpoch()
 	}
 	return res
+}
+
+// getVectorLockedUnsafe returns a direct reference to the vector data.
+// Caller MUST hold h.dataset.dataMu.RLock() AND h.enterEpoch().
+// Provides true zero-copy access by bypassing Arrow array wrappers and RLock overhead.
+func (h *HNSWIndex) getVectorLockedUnsafe(loc Location) []float32 {
+	if h.dataset.Records == nil || loc.BatchIdx < 0 || loc.BatchIdx >= len(h.dataset.Records) {
+		return nil
+	}
+	rec := h.dataset.Records[loc.BatchIdx]
+	if rec == nil {
+		return nil
+	}
+
+	colIdx := h.vectorColIdx.Load()
+	if colIdx == -1 {
+		// Resolve column index
+		for i, field := range rec.Schema().Fields() {
+			if field.Name == "vector" {
+				colIdx = int32(i)
+				h.vectorColIdx.Store(colIdx)
+				break
+			}
+		}
+	}
+
+	if colIdx == -1 {
+		return nil
+	}
+
+	vecCol := rec.Column(int(colIdx))
+	listArr, ok := vecCol.(*array.FixedSizeList)
+	if !ok {
+		return nil
+	}
+
+	// Fast Path: Direct buffer access via unsafe
+	values := listArr.ListValues()
+	data := values.Data()
+	if len(data.Buffers()) < 2 || data.Buffers()[1] == nil {
+		return nil
+	}
+
+	buf := data.Buffers()[1].Bytes()
+	width := int(listArr.DataType().(*arrow.FixedSizeListType).Len())
+	offset := loc.RowIdx * width * 4
+
+	if offset+width*4 > len(buf) {
+		return nil
+	}
+
+	ptr := unsafe.Pointer(&buf[offset])
+	return unsafe.Slice((*float32)(ptr), width)
 }
 
 func (h *HNSWIndex) searchBruteForceWithBitmap(query []float32, k int, filter *Bitset) []SearchResult {
@@ -1057,56 +1263,6 @@ func (h *HNSWIndex) Warmup() int {
 // Caller MUST hold h.mu.Lock or h.mu.RLock.
 // It uses dataset.dataMu for safety but does NOT use epoch protection or return a release function,
 // because the vector reference stored in the graph is tied to the Dataset lifecycle.
-func (h *HNSWIndex) getVectorDirectLocked(id VectorID) []float32 {
-	if int(id) >= len(h.locations) {
-		return nil
-	}
-	loc := h.locations[id]
-
-	h.dataset.dataMu.RLock()
-	defer h.dataset.dataMu.RUnlock()
-
-	if h.dataset.Records == nil || loc.BatchIdx >= len(h.dataset.Records) {
-		return nil
-	}
-	rec := h.dataset.Records[loc.BatchIdx]
-
-	var vecCol arrow.Array
-	for i, field := range rec.Schema().Fields() {
-		if field.Name == "vector" {
-			if i >= int(rec.NumCols()) {
-				// Malformed record: missing column data
-				return nil
-			}
-			vecCol = rec.Column(i)
-			break
-		}
-	}
-	if vecCol == nil {
-		return nil
-	}
-
-	listArr, ok := vecCol.(*array.FixedSizeList)
-	if !ok {
-		return nil
-	}
-
-	values := listArr.Data().Children()[0]
-	// unsafe access via view
-	floatArr := array.NewFloat32Data(values)
-	defer floatArr.Release()
-
-	width := int(listArr.DataType().(*arrow.FixedSizeListType).Len())
-	start := loc.RowIdx * width
-	end := start + width
-
-	if start < 0 || end > floatArr.Len() {
-		return nil
-	}
-
-	// Return slice directly
-	return floatArr.Float32Values()[start:end]
-}
 
 // vectorData holds vector ID and data for parallel processing
 type vectorData struct {
@@ -1134,12 +1290,18 @@ func (h *HNSWIndex) AddBatchParallel(locations []Location, workers int) error {
 		workers = len(locations)
 	}
 
-	// Phase 1: Pre-allocate all locations atomically
-	indexLockStart8 := time.Now()
+	// Phase 1: Append all locations (Lock-free-ish / Reduced Lock)
+	// We use the store's Append which locks internally per chunk creation, but it's fine.
+	// Optimizing: We could implement AppendBatch.
+	// For now, loop is safer during refactor.
+	// CRITICAL: We must hold h.mu to ensure we get a contiguous block of IDs
+	// so that baseID + i corresponds to locations[i].
+	// Without this, concurrent AddBatchParallel calls would interleave IDs.
 	h.mu.Lock()
-	metrics.IndexLockWaitDuration.WithLabelValues(h.dataset.Name, "write").Observe(time.Since(indexLockStart8).Seconds())
-	baseID := VectorID(len(h.locations))
-	h.locations = append(h.locations, locations...)
+	baseID := VectorID(h.locationStore.Len())
+	for _, loc := range locations {
+		h.locationStore.Append(loc)
+	}
 	h.mu.Unlock()
 
 	// Phase 2: Parallel vector retrieval
@@ -1194,11 +1356,7 @@ func (h *HNSWIndex) AddBatchParallel(locations []Location, workers int) error {
 
 // Len returns the number of vectors in the index
 func (h *HNSWIndex) Len() int {
-	indexLockStart10 := time.Now()
-	h.mu.RLock()
-	metrics.IndexLockWaitDuration.WithLabelValues(h.dataset.Name, "read").Observe(time.Since(indexLockStart10).Seconds())
-	defer h.mu.RUnlock()
-	return len(h.locations)
+	return h.locationStore.Len()
 }
 
 func (h *HNSWIndex) SearchByID(id VectorID, k int) []VectorID {
@@ -1227,7 +1385,10 @@ func (h *HNSWIndex) SearchByID(id VectorID, k int) []VectorID {
 	res := h.resultPool.get(len(neighbors))
 	idx := 0
 	for _, n := range neighbors {
-		loc := h.locations[n.Key]
+		loc, ok := h.locationStore.Get(n.Key)
+		if !ok {
+			continue
+		}
 		if loc.BatchIdx != -1 {
 			res[idx] = n.Key
 			idx++
@@ -1253,7 +1414,7 @@ func (h *HNSWIndex) Close() error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.Graph = nil
-	h.locations = nil
+	h.locationStore.Reset() // Clear locations
 	h.resultPool = nil
 	h.dataset = nil
 	return nil
@@ -1341,7 +1502,10 @@ func (h *HNSWIndex) SearchByIDUnsafe(id VectorID, k int) []VectorID {
 	res := h.resultPool.get(len(neighbors))
 	idx := 0
 	for _, n := range neighbors {
-		loc := h.locations[n.Key]
+		loc, ok := h.locationStore.Get(n.Key)
+		if !ok {
+			return nil
+		}
 		if loc.BatchIdx != -1 {
 			res[idx] = n.Key
 			idx++

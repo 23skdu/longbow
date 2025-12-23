@@ -4,10 +4,9 @@ import (
 	"runtime"
 	"sort"
 	"sync"
+	"unsafe"
 
 	"github.com/23skdu/longbow/internal/simd"
-	"github.com/apache/arrow-go/v18/arrow"
-	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/coder/hnsw"
 )
 
@@ -97,18 +96,19 @@ func (h *HNSWIndex) processChunk(query []float32, neighbors []hnsw.Node[VectorID
 	results := make([]SearchResult, 0, len(neighbors))
 
 	// Step 1: Batch location lookup
-	// Minimize h.mu contention by holding it once for the chunk
+	// Optimized: Parallel access via ChunkedLocationStore is lock-free for reads
+	// and doesn't require global Mu RLock for the list itself.
 	locations := make([]Location, len(neighbors))
 	found := make([]bool, len(neighbors))
 
-	h.mu.RLock()
 	for i, n := range neighbors {
-		if int(n.Key) < len(h.locations) {
-			locations[i] = h.locations[n.Key]
+		nodeID := n.Key
+		loc, ok := h.locationStore.Get(nodeID)
+		if ok {
+			locations[i] = loc
 			found[i] = true
 		}
 	}
-	h.mu.RUnlock()
 
 	// Step 2: Batch record access and filtering
 	// Minimize dataset.dataMu contention
@@ -145,8 +145,8 @@ func (h *HNSWIndex) processChunk(query []float32, neighbors []hnsw.Node[VectorID
 		}
 
 		// Extract vector (copy)
-		vec := h.extractVector(rec, loc.RowIdx)
-		if vec != nil {
+		vec, err := h.extractVector(rec, loc.RowIdx)
+		if err == nil && vec != nil {
 			tasks = append(tasks, vectorTask{id: n.Key, vec: vec})
 		}
 	}
@@ -162,11 +162,40 @@ func (h *HNSWIndex) processChunk(query []float32, neighbors []hnsw.Node[VectorID
 	scores := make([]float32, len(tasks))
 
 	// Use batch SIMD where possible
-	// Note: PQ distance batching is not yet implemented in simd package, so fallback for PQ
 	if h.pqEnabled && h.pqEncoder != nil {
+		table := h.pqEncoder.ComputeDistanceTableFlat(query)
+		m := h.pqEncoder.CodeSize()
+		packedLen := (m + 3) / 4
+
+		flatCodes := make([]byte, len(vecs)*m)
+		validForBatch := make([]bool, len(vecs))
+		batchCount := 0
+
 		distFunc := h.GetDistanceFunc()
 		for i, v := range vecs {
-			scores[i] = distFunc(query, v)
+			if len(v) == packedLen {
+				ptr := unsafe.Pointer(&v[0])
+				src := unsafe.Slice((*byte)(ptr), m)
+				copy(flatCodes[batchCount*m:], src)
+				validForBatch[i] = true
+				batchCount++
+			} else {
+				// Fallback for raw / mixed
+				scores[i] = distFunc(query, v)
+			}
+		}
+
+		if batchCount > 0 {
+			batchResults := make([]float32, batchCount)
+			h.pqEncoder.ADCDistanceBatch(table, flatCodes[:batchCount*m], batchResults)
+
+			bj := 0
+			for i := range vecs {
+				if validForBatch[i] {
+					scores[i] = batchResults[bj]
+					bj++
+				}
+			}
 		}
 	} else {
 		switch h.Metric {
@@ -229,7 +258,7 @@ func (h *HNSWIndex) processResultsSerial(query []float32, neighbors []hnsw.Node[
 			continue
 		}
 
-		vec := h.extractVector(rec, loc.RowIdx)
+		vec, _ := h.extractVector(rec, loc.RowIdx)
 		h.dataset.dataMu.RUnlock()
 
 		if vec == nil {
@@ -245,42 +274,4 @@ func (h *HNSWIndex) processResultsSerial(query []float32, neighbors []hnsw.Node[
 	}
 
 	return res
-}
-
-// extractVector extracts vector from record (caller must hold dataMu RLock)
-func (h *HNSWIndex) extractVector(rec arrow.RecordBatch, rowIdx int) []float32 {
-	for i := 0; i < int(rec.NumCols()); i++ {
-		field := rec.Schema().Field(i)
-		if field.Name == "vector" {
-			col := rec.Column(i)
-			if listArr, ok := col.(*array.FixedSizeList); ok {
-				if listArr.IsNull(rowIdx) {
-					return nil
-				}
-				// FixedSizeList stores data in a single flat child array
-				values := listArr.Data().Children()[0]
-				floatArr := array.NewFloat32Data(values)
-				defer floatArr.Release()
-
-				width := int(listArr.DataType().(*arrow.FixedSizeListType).Len())
-				start := rowIdx * width
-				end := start + width
-
-				// Safety check bounds
-				if start < 0 || end > floatArr.Len() {
-					return nil
-				}
-
-				// Copy data to avoid safety issues with underlying buffer reuse
-				// (Though for search we might get away with direct slice if careful,
-				// but let's be safe as per getVector impl)
-				src := floatArr.Float32Values()[start:end]
-				dst := make([]float32, len(src))
-				copy(dst, src)
-				return dst
-			}
-			break
-		}
-	}
-	return nil
 }

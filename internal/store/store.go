@@ -1090,89 +1090,121 @@ func (s *VectorStore) startIndexingWorkers(numWorkers int) {
 }
 
 func (s *VectorStore) runIndexWorker(allocator memory.Allocator) {
-	for job := range s.indexQueue.Jobs() {
-		// Track index queue depth
-		metrics.IndexQueueDepth.Set(float64(s.indexQueue.Len()))
+	batchSize := 128
+	jobs := make([]IndexJob, 0, batchSize)
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
 
-		s.mu.RLock()
-		ds, ok := s.datasets[job.DatasetName]
-		s.mu.RUnlock()
-
-		if !ok {
-			if job.Record != nil {
-				job.Record.Release()
-			}
-			continue
+	processBatch := func(batch []IndexJob) {
+		if len(batch) == 0 {
+			return
 		}
 
-		// ds.Index access
-		// ds.Index access
-		var docID uint32
-		if ds.Index != nil {
-			// Adaptive Sharding handled by AutoShardingIndex wrapper
-			// Note: We currently don't use 'allocator' in AddByRecord, but pinning provides main benefit.
+		// Group by dataset
+		groups := make(map[string][]IndexJob)
+		for _, j := range batch {
+			groups[j.DatasetName] = append(groups[j.DatasetName], j)
+		}
+
+		for dsName, group := range groups {
+			s.mu.RLock()
+			ds, ok := s.datasets[dsName]
+			s.mu.RUnlock()
+
+			if !ok {
+				for _, j := range group {
+					if j.Record != nil {
+						j.Record.Release()
+					}
+				}
+				continue
+			}
+
+			// Prepare batch for AddBatch
+			recs := make([]arrow.RecordBatch, len(group))
+			rowIdxs := make([]int, len(group))
+			batchIdxs := make([]int, len(group))
+			for i, j := range group {
+				recs[i] = j.Record
+				rowIdxs[i] = j.RowIdx
+				batchIdxs[i] = j.BatchIdx
+			}
+
+			var docIDs []uint32
 			var err error
-			docID, err = ds.Index.AddByRecord(job.Record, job.RowIdx, job.BatchIdx)
-			if err != nil {
-				s.logger.Error("Async index add failed", zap.Any("dataset", job.DatasetName), zap.Error(err))
+			if ds.Index != nil {
+				docIDs, err = ds.Index.AddBatch(recs, rowIdxs, batchIdxs)
+				if err != nil {
+					s.logger.Error("Async batched index add failed", zap.String("dataset", dsName), zap.Error(err))
+				}
 			}
-		}
 
-		// Update Inverted Indexes (Hybrid Search)
-		// We iterate over all columns, and if we find a String column, we index it.
-		// For MVP, we index *all* string columns.
-		// NOTE: This adds overhead. In production, we should check schema metadata.
-		go func(job *IndexJob, ds *Dataset) { // Use new goroutine or same? Same is better for CPU usage control.
-			// Actually, let's do it inline to respect numWorkers.
-			// But we need to define "store" package? We are in "store" package.
-			// job is IndexJob.
-		}(nil, nil)
+			// Update Inverted Indexes (Hybrid Search)
+			// For simplicity/safety, skip inverted index if docIDs mismatch group length
+			if len(docIDs) == len(group) {
+				for i, j := range group {
+					docID := docIDs[i]
+					schema := j.Record.Schema()
+					for colIdx, field := range schema.Fields() {
+						if field.Type.ID() == arrow.STRING {
+							ds.dataMu.Lock()
+							if ds.InvertedIndexes == nil {
+								ds.InvertedIndexes = make(map[string]*InvertedIndex)
+							}
+							idx, ok := ds.InvertedIndexes[field.Name]
+							if !ok {
+								idx = NewInvertedIndex()
+								ds.InvertedIndexes[field.Name] = idx
+							}
+							ds.dataMu.Unlock()
 
-		schema := job.Record.Schema()
-		for i, field := range schema.Fields() {
-			if field.Type.ID() == arrow.STRING {
-				// Get or Create Inverted Index for this column
-				ds.dataMu.Lock()
-				if ds.InvertedIndexes == nil {
-					ds.InvertedIndexes = make(map[string]*InvertedIndex)
-				}
-				idx, ok := ds.InvertedIndexes[field.Name]
-				if !ok {
-					idx = NewInvertedIndex()
-					ds.InvertedIndexes[field.Name] = idx
-				}
-				ds.dataMu.Unlock()
+							colI := j.Record.Column(colIdx)
+							if col, ok := colI.(*array.String); ok {
+								if j.RowIdx < col.Len() && col.IsValid(j.RowIdx) {
+									text := col.Value(j.RowIdx)
+									idx.Add(text, docID)
 
-				colI := job.Record.Column(i)
-				if col, ok := colI.(*array.String); ok {
-					if job.RowIdx < col.Len() && col.IsValid(job.RowIdx) {
-						text := col.Value(job.RowIdx)
-						idx.Add(text, docID)
-
-						// Also update BM25 index for all string columns (Phase 20)
-						ds.dataMu.Lock()
-						if ds.BM25Index == nil {
-							// Lazy init BM25 with default config
-							ds.BM25Index = NewBM25InvertedIndex(DefaultBM25Config())
-						}
-						bm25 := ds.BM25Index
-						ds.dataMu.Unlock()
-
-						if bm25 != nil {
-							bm25.Add(VectorID(docID), text)
-							metrics.BM25DocumentsIndexedTotal.Inc()
+									ds.dataMu.Lock()
+									bm25 := ds.BM25Index
+									ds.dataMu.Unlock()
+									if bm25 != nil {
+										bm25.Add(VectorID(docID), text)
+										metrics.BM25DocumentsIndexedTotal.Inc()
+									}
+								}
+							}
 						}
 					}
-				} else {
-					s.logger.Warn("Column type mismatch in runIndexWorker", zap.String("field", field.Name), zap.Any("type", colI.DataType()))
 				}
 			}
-		}
 
-		// Release our reference to the record
-		job.Record.Release()
-		// Record job latency
-		metrics.IndexJobLatencySeconds.WithLabelValues(job.DatasetName).Observe(time.Since(job.CreatedAt).Seconds())
+			// Release records and record latency
+			for _, j := range group {
+				j.Record.Release()
+				metrics.IndexJobLatencySeconds.WithLabelValues(dsName).Observe(time.Since(j.CreatedAt).Seconds())
+			}
+		}
+	}
+
+	for {
+		select {
+		case job, ok := <-s.indexQueue.Jobs():
+			if !ok {
+				processBatch(jobs)
+				return
+			}
+			jobs = append(jobs, job)
+			metrics.IndexQueueDepth.Set(float64(s.indexQueue.Len()))
+			if len(jobs) >= batchSize {
+				processBatch(jobs)
+				jobs = jobs[:0]
+			}
+		case <-ticker.C:
+			if len(jobs) > 0 {
+				processBatch(jobs)
+				jobs = jobs[:0]
+			}
+		}
 	}
 }
 

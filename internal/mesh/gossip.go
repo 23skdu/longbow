@@ -164,7 +164,7 @@ func (g *Gossip) Join(peerAddr string) error {
 	// Bootstrap: Send a Ping to the known peer
 	// In a real implementation, we'd have a specific Join message to get full state sync.
 	// For this task, we assume a Ping is enough to announce presence.
-	return g.sendPing(peerAddr, g.nextSeq(), nil)
+	return g.sendPing(peerAddr, "", g.nextSeq(), nil)
 }
 
 func (g *Gossip) suspicionLoop() {
@@ -259,7 +259,30 @@ func (g *Gossip) probe() {
 	}()
 
 	// 1. Direct Ping
-	_ = g.sendPing(target.Addr, seq, nil)
+	// Use empty payload for Ping (updates are piggybacked separately)
+	// Actually sendPing handles piggybacking.
+	// _ = g.sendPacket(targetAddr, PacketPing, seq, nil)
+
+	packet := &Packet{
+		Type: PacketPing,
+		Seq:  seq,
+	}
+	udpAddr, err := net.ResolveUDPAddr("udp", target.Addr)
+	if err == nil {
+		_ = g.sendPacketStruct(packet, udpAddr)
+	}
+
+	// Send Ping with updates (The explicit sendPing logic was commented out, but we need it!)
+	// Wait, the previous code had:
+	// _ = g.sendPing(target.Addr, seq, nil)
+	// I replaced it with empty PacketPing send via sendPacketStruct.
+	// packetstruct DOES NOT piggyback updates (it only compresses payload if present).
+	// sendPing DOES piggyback.
+	// So I BROKE PROBE by removing sendPing call!!
+	// This is why Upd=0 mostly!
+
+	// Restoring sendPing call:
+	_ = g.sendPing(target.Addr, target.ID, seq, nil)
 
 	select {
 	case <-ackCh:
@@ -277,7 +300,17 @@ func (g *Gossip) probe() {
 
 		for _, other := range others {
 			payload := []byte(target.Addr)
-			_ = g.sendPacket(other.Addr, PacketPingReq, seq, payload)
+
+			packet := &Packet{
+				Type:    PacketPingReq,
+				Seq:     seq,
+				Payload: payload,
+			}
+			udpAddr, err := net.ResolveUDPAddr("udp", other.Addr)
+			if err != nil {
+				continue
+			}
+			_ = g.sendPacketStruct(packet, udpAddr)
 		}
 
 		select {
@@ -315,97 +348,6 @@ func (g *Gossip) selectNeighbors(skipID string, k int) []*Member {
 	return others[:k]
 }
 
-func (g *Gossip) sendPacket(addr string, pType PacketType, seq uint32, payload []byte) error {
-	packet := &Packet{
-		Type:    pType,
-		Seq:     seq,
-		Payload: payload,
-	}
-
-	buf := make([]byte, MaxPacketSize)
-	n, err := EncodePacket(packet, buf)
-	if err != nil {
-		return err
-	}
-
-	udpAddr, err := net.ResolveUDPAddr("udp", addr)
-	if err != nil {
-		return err
-	}
-
-	_, err = g.conn.WriteToUDP(buf[:n], udpAddr)
-	return err
-}
-
-func (g *Gossip) sendPing(addr string, seq uint32, payload []byte) error {
-	// Piggyback updates
-	g.mu.Lock()
-	updates := g.getUpdatesForPacket()
-	g.mu.Unlock()
-
-	var updatesBuf []byte
-	numUpdates := 0
-	if len(updates) > 0 {
-		tmp := make([]byte, MaxPacketSize)
-		offset := 0
-		for _, u := range updates {
-			n, err := EncodeMember(u, tmp[offset:])
-			if err != nil {
-				break
-			}
-			offset += n
-			numUpdates++
-		}
-		updatesBuf = tmp[:offset]
-	}
-
-	packet := &Packet{
-		Type:       PacketPing,
-		Seq:        seq,
-		NumUpdates: uint8(numUpdates),
-		Payload:    updatesBuf,
-	}
-
-	buf := make([]byte, MaxPacketSize)
-	n, err := EncodePacket(packet, buf)
-	if err != nil {
-		return err
-	}
-
-	udpAddr, err := net.ResolveUDPAddr("udp", addr)
-	if err != nil {
-		return err
-	}
-
-	_, err = g.conn.WriteToUDP(buf[:n], udpAddr)
-	if err == nil {
-		metrics.GossipPingsTotal.WithLabelValues("sent").Inc()
-	}
-	return err
-}
-
-func (g *Gossip) getUpdatesForPacket() []*Member {
-	maxUpdates := 5
-	res := make([]*Member, 0, maxUpdates)
-
-	// log(N) * 3 is a good rule of thumb for send count
-	limit := 5
-
-	count := 0
-	for id, item := range g.updates {
-		if count >= maxUpdates {
-			break
-		}
-		res = append(res, item.Member)
-		item.SendCount++
-		if item.SendCount >= limit {
-			delete(g.updates, id)
-		}
-		count++
-	}
-	return res
-}
-
 func (g *Gossip) listenLoop() {
 	buf := make([]byte, 65535)
 	for {
@@ -424,17 +366,35 @@ func (g *Gossip) listenLoop() {
 			metrics.GossipPingsTotal.WithLabelValues("received").Inc()
 		}
 
+		// Decompress payload if flag set
+		if packet.Flags&FlagCompressed != 0 {
+			decompressed, err := DecompressPayload(packet.Payload)
+			if err != nil {
+				// Metrics: decompression error
+				continue
+			}
+			packet.Payload = decompressed
+		}
+
 		g.handlePacket(packet, addr)
 	}
 }
 
 func (g *Gossip) handlePacket(p *Packet, addr *net.UDPAddr) {
+	// Debug Log
+	// fmt.Printf("[%s] Rx %d from %s Flags=%d Upd=%d Len=%d\n", g.Config.ID, p.Type, addr, p.Flags, p.NumUpdates, len(p.Payload))
+
 	// 1. Process Updates (Piggybacking)
 	if p.NumUpdates > 0 {
 		offset := 0
 		for i := 0; i < int(p.NumUpdates); i++ {
+			if offset >= len(p.Payload) {
+				// fmt.Printf("[%s] Error: Payload too short for updates\n", g.Config.ID)
+				break
+			}
 			m, n, err := DecodeMember(p.Payload[offset:])
 			if err != nil {
+				// fmt.Printf("[%s] DecodeMember error: %v\n", g.Config.ID, err)
 				break
 			}
 			g.UpdateMember(m)
@@ -449,9 +409,8 @@ func (g *Gossip) handlePacket(p *Packet, addr *net.UDPAddr) {
 			Type: PacketAck,
 			Seq:  p.Seq,
 		}
-		out := make([]byte, MaxPacketSize)
-		n, _ := EncodePacket(ack, out)
-		g.conn.WriteToUDP(out[:n], addr)
+		// Send Ack
+		g.sendPacketStruct(ack, addr)
 
 	case PacketAck:
 		g.ackMu.Lock()
@@ -466,12 +425,122 @@ func (g *Gossip) handlePacket(p *Packet, addr *net.UDPAddr) {
 	case PacketPingReq:
 		// Target address is in payload
 		targetAddr := string(p.Payload)
-		// Send a direct ping to the target, using the same SEQ so the original source hears the Ack
-		// Wait, SWIM specifies we should relay the Ack.
-		// For simplicity, let's just Ping target. If target responds with Ack to proxy, proxy relays to source.
-		// Actually, SWIM usually has proxy send Ping to Target, and Target sends Ack to Proxy, then Proxy sends Ack to Source.
 		go g.relayPing(targetAddr, p.Seq, addr)
 	}
+}
+
+// sendPacketStruct encodes and sends a packet structure to dst
+func (g *Gossip) sendPacketStruct(p *Packet, dst *net.UDPAddr) error {
+	// Compress payload if large enough (heuristic > 64 bytes)
+	if len(p.Payload) > 64 {
+		compressed := CompressPayload(p.Payload)
+		if len(compressed) < len(p.Payload) {
+			p.Payload = compressed
+			p.Flags |= FlagCompressed
+		}
+	}
+
+	buf := make([]byte, MaxPacketSize)
+	n, err := EncodePacket(p, buf)
+	if err != nil {
+		return err
+	}
+	_, err = g.conn.WriteToUDP(buf[:n], dst)
+	return err
+}
+
+func (g *Gossip) sendPing(addr string, targetID string, seq uint32, payload []byte) error {
+	// Piggyback updates - Dynamic size
+	// Header overhead: ~7 bytes.
+	// Max payload = MaxPacketSize - HeaderSize
+	available := MaxPacketSize - HeaderSize
+
+	g.mu.Lock()
+	updates, numUpdates := g.getUpdatesForPacket(available, targetID)
+	g.mu.Unlock()
+
+	// fmt.Printf("[%s] Tx Ping to %s Upd=%d Size=%d\n", g.Config.ID, addr, numUpdates, len(updates))
+
+	packet := &Packet{
+		Type:       PacketPing,
+		Seq:        seq,
+		NumUpdates: uint8(numUpdates),
+		Payload:    updates,
+	}
+
+	udpAddr, err := net.ResolveUDPAddr("udp", addr)
+	if err != nil {
+		return err
+	}
+
+	if err := g.sendPacketStruct(packet, udpAddr); err != nil {
+		return err
+	}
+
+	metrics.GossipPingsTotal.WithLabelValues("sent").Inc()
+	return nil
+}
+
+func (g *Gossip) getUpdatesForPacket(limitBytes int, skipID string) ([]byte, int) {
+	// Simple strategy: Iterate updates, encode, stop when full
+	// Prioritization: Sort by send count? For now, we use map iteration (randomish) which is okay-ish implementation of "Gossip"
+	// but strictly we should prioritize lower send counts.
+	// Since we iterate the map, let's just pick items until full.
+
+	// Max updates cap to fit in uint8 NumUpdates (255)
+	maxUpdates := 255
+
+	var buf []byte = make([]byte, limitBytes)
+	offset := 0
+	count := 0
+
+	// Two-pass approach (optional optimization): 1. Low send counts, 2. Higher send counts
+	// For simplicity in this step, single pass but we delete if send count high.
+
+	// Send limit
+	sendLimit := 5 // log(N) approximation hardcoded for now
+
+	toDelete := make([]string, 0)
+
+	for id, item := range g.updates {
+		if id == skipID {
+			continue
+		}
+		if count >= maxUpdates {
+			break
+		}
+
+		// Encode into temp buffer to check size
+		// We actually need to encode straight to output to be efficient, but EncodeMember is variable length.
+		// Let's use a small scratch buffer
+		tmp := make([]byte, 512) // Member struct shouldn't exceed 512 bytes
+		n, err := EncodeMember(item.Member, tmp)
+		if err != nil {
+			continue // Should not happen
+		}
+
+		if offset+n > limitBytes {
+			// Buffer full
+			break
+		}
+
+		// Copy to result buffer
+		copy(buf[offset:], tmp[:n])
+		offset += n
+		count++
+
+		item.SendCount++
+		if item.SendCount >= sendLimit {
+			toDelete = append(toDelete, id)
+		}
+	}
+
+	// Cleanup transmitted updates
+	for _, id := range toDelete {
+		delete(g.updates, id)
+	}
+
+	return buf[:offset], count
 }
 
 func (g *Gossip) relayPing(targetAddr string, seq uint32, sourceAddr *net.UDPAddr) {
@@ -486,15 +555,20 @@ func (g *Gossip) relayPing(targetAddr string, seq uint32, sourceAddr *net.UDPAdd
 		g.ackMu.Unlock()
 	}()
 
-	_ = g.sendPacket(targetAddr, PacketPing, seq, nil)
+	packet := &Packet{
+		Type: PacketPing,
+		Seq:  seq,
+	}
+	udpAddr, err := net.ResolveUDPAddr("udp", targetAddr)
+	if err == nil {
+		_ = g.sendPacketStruct(packet, udpAddr)
+	}
 
 	select {
 	case <-ackCh:
 		// Relay Ack back to source
 		ack := &Packet{Type: PacketAck, Seq: seq}
-		buf := make([]byte, MaxPacketSize)
-		n, _ := EncodePacket(ack, buf)
-		g.conn.WriteToUDP(buf[:n], sourceAddr)
+		_ = g.sendPacketStruct(ack, sourceAddr)
 	case <-time.After(g.Config.AckTimeout):
 		// Silent failure
 	}

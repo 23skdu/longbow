@@ -15,14 +15,18 @@ const (
 )
 
 const (
-	// HeaderSize: Type(1) + Seq(4) + NumUpdates(1)
-	HeaderSize = 6
+	// HeaderSize: Type(1) + Flags(1) + Seq(4) + NumUpdates(1)
+	HeaderSize = 7
+
+	// Flags
+	FlagCompressed uint8 = 0x01
 )
 
 // Packet represents a gossip message.
 // It is designed to map directly to a byte buffer.
 type Packet struct {
 	Type       PacketType
+	Flags      uint8
 	Seq        uint32
 	NumUpdates uint8
 	Payload    []byte // Remaining bytes (membership updates)
@@ -37,11 +41,12 @@ func EncodePacket(p *Packet, dst []byte) (int, error) {
 	}
 
 	dst[0] = byte(p.Type)
-	binary.BigEndian.PutUint32(dst[1:5], p.Seq)
-	dst[5] = p.NumUpdates
+	dst[1] = p.Flags
+	binary.BigEndian.PutUint32(dst[2:6], p.Seq)
+	dst[6] = p.NumUpdates
 
 	// Copy payload
-	n := copy(dst[6:], p.Payload)
+	n := copy(dst[7:], p.Payload)
 	return HeaderSize + n, nil
 }
 
@@ -54,9 +59,10 @@ func DecodePacket(src []byte) (*Packet, error) {
 
 	p := &Packet{
 		Type:       PacketType(src[0]),
-		Seq:        binary.BigEndian.Uint32(src[1:5]),
-		NumUpdates: src[5],
-		Payload:    src[6:],
+		Flags:      src[1],
+		Seq:        binary.BigEndian.Uint32(src[2:6]),
+		NumUpdates: src[6],
+		Payload:    src[7:],
 	}
 	return p, nil
 }

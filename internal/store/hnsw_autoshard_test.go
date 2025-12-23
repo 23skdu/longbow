@@ -40,6 +40,7 @@ func TestAutoSharding_Trigger(t *testing.T) {
 
 	// Config with low threshold
 	config := AutoShardingConfig{
+		Enabled:        true,
 		ShardThreshold: 5, // Should trigger after 5 items
 		ShardCount:     2,
 	}
@@ -114,6 +115,7 @@ func TestAutoSharding_Concurrency(t *testing.T) {
 	}
 
 	config := AutoShardingConfig{
+		Enabled:        true,
 		ShardThreshold: 50,
 		ShardCount:     4,
 	}
@@ -181,6 +183,7 @@ func TestAutoSharding_AddByRecord(t *testing.T) {
 	ds.Records = append(ds.Records, rec)
 
 	config := AutoShardingConfig{
+		Enabled:        true,
 		ShardThreshold: 1, // Trigger immediately after 1st
 	}
 	idx := NewAutoShardingIndex(ds, config)

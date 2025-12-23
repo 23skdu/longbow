@@ -247,13 +247,26 @@ func TestBitmapPoolStats(t *testing.T) {
 		t.Errorf("Puts should be 1, got %d", stats.Puts)
 	}
 
-	// Second get should be a hit
-	buf = pool.Get(1024)
+	// Second get - should be a hit (unless dropped by GC)
+	bm2 := pool.Get(1024)
 	stats = pool.Stats()
-	if stats.Hits != 1 {
-		t.Errorf("Second get should be a hit, got %d hits", stats.Hits)
+	if stats.Gets != 2 {
+		t.Errorf("Gets should be 2, got %d", stats.Gets)
 	}
-	pool.Put(buf)
+
+	if stats.Hits == 1 {
+		if stats.Misses != 1 {
+			t.Errorf("If hit, misses should be 1, got %d", stats.Misses)
+		}
+	} else { // Dropped by GC
+		if stats.Hits != 0 {
+			t.Errorf("If dropped, hits should be 0, got %d", stats.Hits)
+		}
+		if stats.Misses != 2 {
+			t.Errorf("If dropped, misses should be 2, got %d", stats.Misses)
+		}
+	}
+	pool.Put(bm2)
 }
 
 // =============================================================================

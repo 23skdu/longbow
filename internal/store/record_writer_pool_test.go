@@ -149,11 +149,18 @@ func TestIPCBufferPool_Stats(t *testing.T) {
 	stats = pool.Stats()
 	assert.Equal(t, int64(1), stats.Puts)
 
-	// Second get - hit
+	// Second get - hit (usually, unless sync.Pool dropped it)
 	buf2 := pool.Get()
 	stats = pool.Stats()
 	assert.Equal(t, int64(2), stats.Gets)
-	assert.Equal(t, int64(1), stats.Hits)
+
+	// sync.Pool doesn't guarantee retention, so we might get a miss
+	if stats.Hits == 1 {
+		assert.Equal(t, int64(1), stats.Misses)
+	} else {
+		assert.Equal(t, int64(0), stats.Hits)
+		assert.Equal(t, int64(2), stats.Misses)
+	}
 	pool.Put(buf2)
 }
 

@@ -467,10 +467,25 @@ func (h *HNSWIndex) SearchVectors(query []float32, k int, filters []Filter) []Se
 	res := make([]SearchResult, 0, len(neighbors))
 
 	// Batch configuration
-	// 32 seems like a good balance for instruction cache and loop overhead
 	const batchSize = 32
 	batchIDs := make([]VectorID, batchSize)
 	batchLocs := make([]Location, batchSize)
+
+	// PQ Context: Precompute distance table once per search
+	var pqTable []float32
+	var pqFlatCodes []byte
+	var pqBatchResults []float32
+	var pqM int
+	var packedLen int
+	h.pqCodesMu.RLock()
+	if h.pqEnabled && h.pqEncoder != nil {
+		pqTable = h.pqEncoder.ComputeDistanceTableFlat(query)
+		pqM = h.pqEncoder.CodeSize()
+		pqFlatCodes = make([]byte, batchSize*pqM)
+		pqBatchResults = make([]float32, batchSize)
+		packedLen = (pqM + 3) / 4
+	}
+	h.pqCodesMu.RUnlock()
 
 	count := 0
 	for i := 0; i < len(neighbors); i += batchSize {
@@ -483,18 +498,22 @@ func (h *HNSWIndex) SearchVectors(query []float32, k int, filters []Filter) []Se
 			end = len(neighbors)
 		}
 
-		// 1. Prepare Batch
 		batchLen := end - i
 		for j := 0; j < batchLen; j++ {
 			batchIDs[j] = neighbors[i+j].Key
 		}
 
-		// 2. Resolve Locations (Vectorized/Batched lookup)
 		h.locationStore.GetBatch(batchIDs[:batchLen], batchLocs[:batchLen])
 
-		// 3. Process Batch with single RLock section
 		h.enterEpoch()
 		h.dataset.dataMu.RLock()
+
+		// Reset pqBatchResults for this batch
+		if pqTable != nil {
+			for j := 0; j < batchSize; j++ {
+				pqBatchResults[j] = -2 // Default to skipped/unprocessed
+			}
+		}
 
 		for j := 0; j < batchLen; j++ {
 			if count >= k {
@@ -504,24 +523,47 @@ func (h *HNSWIndex) SearchVectors(query []float32, k int, filters []Filter) []Se
 			id := batchIDs[j]
 			loc := batchLocs[j]
 
-			// Check Location Validity
 			if loc.BatchIdx == -1 {
 				continue
 			}
 
-			// Check Filters using optimized evaluator (Item 6)
 			if evaluator != nil {
 				if !evaluator.Matches(loc.RowIdx) {
 					continue
 				}
 			}
 
-			// Recompute distance using zero-copy / zero-lock path
 			vec := h.getVectorLockedUnsafe(loc)
 			if vec != nil {
-				dist := distFunc(query, vec)
-				res = append(res, SearchResult{ID: id, Score: dist})
-				count++
+				// Case 1: PQ Batch processing
+				if pqTable != nil && len(vec) == packedLen {
+					ptr := unsafe.Pointer(&vec[0])
+					srcCodes := unsafe.Slice((*byte)(ptr), pqM)
+					copy(pqFlatCodes[j*pqM:], srcCodes)
+					pqBatchResults[j] = -1 // Mark as needing SIMD
+				} else {
+					// Case 2: Standard distance
+					dist := distFunc(query, vec)
+					res = append(res, SearchResult{ID: id, Score: dist})
+					count++
+					if pqTable != nil {
+						pqBatchResults[j] = -2 // Mark as already processed
+					}
+				}
+			}
+		}
+
+		// Run batch SIMD for all marked candidates
+		if pqTable != nil {
+			h.pqEncoder.ADCDistanceBatch(pqTable, pqFlatCodes, pqBatchResults)
+
+			for j := 0; j < batchLen; j++ {
+				if pqBatchResults[j] >= 0 {
+					if count < k {
+						res = append(res, SearchResult{ID: batchIDs[j], Score: pqBatchResults[j]})
+						count++
+					}
+				}
 			}
 		}
 
@@ -986,12 +1028,6 @@ func (h *HNSWIndex) extractVector(rec arrow.RecordBatch, rowIdx int) ([]float32,
 // SearchVectorsWithBitmap returns k nearest neighbors filtered by a bitset.
 func (h *HNSWIndex) SearchVectorsWithBitmap(query []float32, k int, filter *Bitset) []SearchResult {
 	if filter == nil || filter.Count() == 0 {
-		// Empty filter means NO results allowed? Or all?
-		// Typically filter means "Must be in this set". Empty set = no results.
-		// If filter is nil, we assume "No filtering"?? No, caller should pass nil if no filtering.
-		// Interface signature: filter *Bitset.
-		// If it's nil, we could treat as "Allow All", but explicit method implies filtering.
-		// Let's assume filter is required.
 		return []SearchResult{}
 	}
 
@@ -999,16 +1035,11 @@ func (h *HNSWIndex) SearchVectorsWithBitmap(query []float32, k int, filter *Bits
 		metrics.VectorSearchLatencySeconds.WithLabelValues(h.dataset.Name).Observe(time.Since(start).Seconds())
 	}(time.Now())
 
-	// Heuristic: If filter is very restrictive (small count), Brute Force might be faster.
-	// Check count.
 	count := filter.Count()
 	if count < 1000 {
-		// Brute force: iterate set bits, compute distance.
 		return h.searchBruteForceWithBitmap(query, k, filter)
 	}
 
-	// HNSW Post-Filtering with Oversampling
-	// HNSW Post-Filtering with Oversampling
 	limit := k * 10
 
 	h.mu.RLock()
@@ -1020,10 +1051,25 @@ func (h *HNSWIndex) SearchVectorsWithBitmap(query []float32, k int, filter *Bits
 	resultCount := 0
 
 	// Batch configuration
-	// 32 seems like a good balance for instruction cache and loop overhead
 	const batchSize = 32
 	batchIDs := make([]VectorID, batchSize)
 	batchLocs := make([]Location, batchSize)
+
+	// PQ Context: Precompute distance table once per search
+	var pqTable []float32
+	var pqFlatCodes []byte
+	var pqBatchResults []float32
+	var pqM int
+	var packedLen int
+	h.pqCodesMu.RLock()
+	if h.pqEnabled && h.pqEncoder != nil {
+		pqTable = h.pqEncoder.ComputeDistanceTableFlat(query)
+		pqM = h.pqEncoder.CodeSize()
+		pqFlatCodes = make([]byte, batchSize*pqM)
+		pqBatchResults = make([]float32, batchSize)
+		packedLen = (pqM + 3) / 4
+	}
+	h.pqCodesMu.RUnlock()
 
 	for i := 0; i < len(neighbors); i += batchSize {
 		if resultCount >= k {
@@ -1035,18 +1081,22 @@ func (h *HNSWIndex) SearchVectorsWithBitmap(query []float32, k int, filter *Bits
 			end = len(neighbors)
 		}
 
-		// 1. Prepare Batch
 		batchLen := end - i
 		for j := 0; j < batchLen; j++ {
 			batchIDs[j] = neighbors[i+j].Key
 		}
 
-		// 2. Resolve Locations (Vectorized/Batched lookup)
 		h.locationStore.GetBatch(batchIDs[:batchLen], batchLocs[:batchLen])
 
-		// 3. Process Batch with single RLock section
 		h.enterEpoch()
 		h.dataset.dataMu.RLock()
+
+		// Reset pqBatchResults for this batch
+		if pqTable != nil {
+			for j := 0; j < batchSize; j++ {
+				pqBatchResults[j] = -2 // Default to skipped/unprocessed
+			}
+		}
 
 		for j := 0; j < batchLen; j++ {
 			if resultCount >= k {
@@ -1056,22 +1106,46 @@ func (h *HNSWIndex) SearchVectorsWithBitmap(query []float32, k int, filter *Bits
 			id := batchIDs[j]
 			loc := batchLocs[j]
 
-			// Check Bitmap first (fastest rejection)
 			if !filter.Contains(int(id)) {
 				continue
 			}
 
-			// Check location validity
 			if loc.BatchIdx == -1 {
 				continue
 			}
 
-			// Recompute distance using zero-copy / zero-lock path
 			vec := h.getVectorLockedUnsafe(loc)
 			if vec != nil {
-				dist := distFunc(query, vec)
-				res = append(res, SearchResult{ID: id, Score: dist})
-				resultCount++
+				// Case 1: PQ Batch processing (if vector matches PQ state)
+				if pqTable != nil && len(vec) == packedLen {
+					// Collect codes for batch SIMD
+					ptr := unsafe.Pointer(&vec[0])
+					srcCodes := unsafe.Slice((*byte)(ptr), pqM)
+					copy(pqFlatCodes[j*pqM:], srcCodes)
+					pqBatchResults[j] = -1 // Mark as needing SIMD
+				} else {
+					// Case 2: Standard distance (or mixed raw/PQ)
+					dist := distFunc(query, vec)
+					res = append(res, SearchResult{ID: id, Score: dist})
+					resultCount++
+					if pqTable != nil {
+						pqBatchResults[j] = -2 // Mark as already processed
+					}
+				}
+			}
+		}
+
+		// Run batch SIMD for all marked candidates
+		if pqTable != nil {
+			h.pqEncoder.ADCDistanceBatch(pqTable, pqFlatCodes, pqBatchResults)
+
+			for j := 0; j < batchLen; j++ {
+				if pqBatchResults[j] >= 0 {
+					if resultCount < k {
+						res = append(res, SearchResult{ID: batchIDs[j], Score: pqBatchResults[j]})
+						resultCount++
+					}
+				}
 			}
 		}
 

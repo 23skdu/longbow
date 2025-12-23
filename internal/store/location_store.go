@@ -69,6 +69,36 @@ func (s *ChunkedLocationStore) Get(id VectorID) (Location, bool) {
 	return unpackLocation(packed), true
 }
 
+// GetBatch retrieves locations for multiple IDs efficiently.
+// results must be at least len(ids).
+// Returns the number of found locations. Locations not found are not written to results (or zeroed).
+// Actually, to keep index alignment, we should probably output found bools or use a structure.
+// For our prefetch usecase: we want to map id -> location for checking.
+// Simpler: Just fill results slice. If not found, use Location{-1, -1}.
+func (s *ChunkedLocationStore) GetBatch(ids []VectorID, results []Location) {
+	chunks := *s.chunks.Load()
+	maxSize := uint32(s.size.Load())
+
+	for i, id := range ids {
+		if uint32(id) >= maxSize {
+			results[i] = Location{BatchIdx: -1, RowIdx: -1}
+			continue
+		}
+
+		idx := int(id)
+		chunkIdx := idx / LocationChunkSize
+		offset := idx % LocationChunkSize
+
+		if chunkIdx >= len(chunks) {
+			results[i] = Location{BatchIdx: -1, RowIdx: -1}
+			continue
+		}
+
+		packed := chunks[chunkIdx].data[offset].Load()
+		results[i] = unpackLocation(packed)
+	}
+}
+
 // Set updates the location for a given ID.
 // NOTE: This does not grow the store. Use Append for new IDs.
 func (s *ChunkedLocationStore) Set(id VectorID, loc Location) {

@@ -1228,7 +1228,12 @@ func (h *HNSWIndex) RegisterReader() {
 
 // Close releases resources associated with the index.
 func (h *HNSWIndex) Close() error {
-	// Future cleanup: release pools, unregister metrics, etc.
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.Graph = nil
+	h.locations = nil
+	h.resultPool = nil
+	h.dataset = nil
 	return nil
 }
 

@@ -178,6 +178,14 @@ var (
 		[]string{"dataset"},
 	)
 
+	// IndexJobsDroppedTotal
+	IndexJobsDroppedTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_index_jobs_dropped_total",
+			Help: "Total number of index jobs dropped due to queue overflow",
+		},
+	)
+
 	// IndexMigrationDuration measures the time taken to migrate index from HNSW to Sharded
 	IndexMigrationDuration = promauto.NewHistogram(
 		prometheus.HistogramOpts{

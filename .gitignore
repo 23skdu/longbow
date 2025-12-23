@@ -217,6 +217,7 @@ internal/store/wal.bin
 *.txt
 *.pprof
 *.test
+store.test
 longbow_bin
 coverage.out
 *.out

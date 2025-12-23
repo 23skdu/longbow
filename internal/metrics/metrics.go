@@ -348,6 +348,15 @@ var (
 		},
 	)
 
+	// NamespaceDatasetsTotal counts the number of datasets per namespace
+	NamespaceDatasetsTotal = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "longbow_namespace_datasets_total",
+			Help: "Number of datasets in each namespace",
+		},
+		[]string{"namespace"},
+	)
+
 	// Replication Metrics
 	ReplicationPeersTotal = promauto.NewGauge(
 		prometheus.GaugeOpts{

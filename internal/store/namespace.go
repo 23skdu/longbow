@@ -33,14 +33,20 @@ func NewNamespace(name string) *Namespace {
 func (n *Namespace) AddDataset(name string) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	n.datasets[name] = true
+	if !n.datasets[name] {
+		n.datasets[name] = true
+		metrics.NamespaceDatasetsTotal.WithLabelValues(n.Name).Inc()
+	}
 }
 
 // RemoveDataset removes a dataset from this namespace.
 func (n *Namespace) RemoveDataset(name string) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	delete(n.datasets, name)
+	if n.datasets[name] {
+		delete(n.datasets, name)
+		metrics.NamespaceDatasetsTotal.WithLabelValues(n.Name).Dec()
+	}
 }
 
 // DatasetCount returns the number of datasets in this namespace.

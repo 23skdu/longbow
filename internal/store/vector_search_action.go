@@ -85,9 +85,27 @@ func (s *MetaServer) handleVectorSearchAction(action *flight.Action, stream flig
 			return status.Errorf(codes.NotFound, "dataset not found: %s", req.Dataset)
 		}
 
+		// Acquire read lock FIRST (will block if eviction in progress)
+		ds.dataMu.RLock()
+		defer ds.dataMu.RUnlock()
+
+		// Check if dataset is being evicted (INSIDE lock to prevent race)
+		if ds.evicting.Load() {
+			metrics.EvictionRejectedQueries.Inc()
+			s.logger.Warn("Query rejected: dataset evicting",
+				zap.String("dataset", req.Dataset))
+			return status.Errorf(codes.Unavailable,
+				"dataset %s is being evicted, please retry", req.Dataset)
+		}
+
 		// Check if index exists
 		if ds.Index == nil {
 			metrics.VectorSearchActionErrors.Inc()
+			s.logger.Error("Query failed: index is nil",
+				zap.String("dataset", req.Dataset),
+				zap.Int("num_records", len(ds.Records)),
+				zap.Int64("size_bytes", ds.SizeBytes.Load()),
+				zap.Bool("evicting", ds.evicting.Load()))
 			return status.Error(codes.FailedPrecondition, "dataset has no HNSW index")
 		}
 

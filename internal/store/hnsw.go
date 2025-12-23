@@ -29,19 +29,16 @@ type Location struct {
 
 // GetLocation returns the storage location for a given VectorID
 func (h *HNSWIndex) GetLocation(id VectorID) (Location, bool) {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	if int(id) >= len(h.locations) {
-		return Location{}, false
-	}
-	return h.locations[id], true
+	// Optimized: No global lock needed for reading locations
+	return h.locationStore.Get(id)
 }
 
 // HNSWIndex wraps the hnsw.Graph and manages the mapping from ID to Arrow data.
 type HNSWIndex struct {
-	Graph         *hnsw.Graph[VectorID]
-	mu            sync.RWMutex
-	locations     []Location
+	Graph *hnsw.Graph[VectorID]
+	mu    sync.RWMutex
+	// locations     []Location // Removed in favor of locationStore
+	locationStore *ChunkedLocationStore
 	dataset       *Dataset
 	dims          int           // Vector dimensions
 	dimsOnce      sync.Once     // Ensures thread-safe dims initialization
@@ -79,7 +76,7 @@ func NewHNSWIndex(ds *Dataset) *HNSWIndex {
 func NewHNSWIndexWithMetric(ds *Dataset, metric VectorMetric) *HNSWIndex {
 	h := &HNSWIndex{
 		dataset:        ds,
-		locations:      make([]Location, 0),
+		locationStore:  NewChunkedLocationStore(),
 		Metric:         metric,
 		parallelConfig: DefaultParallelSearchConfig(),
 	}
@@ -107,10 +104,13 @@ func NewHNSWIndexWithMetric(ds *Dataset, metric VectorMetric) *HNSWIndex {
 // NewHNSWIndexWithCapacity creates a new index with pre-allocated locations slice.
 func NewHNSWIndexWithCapacity(ds *Dataset, capacity int) *HNSWIndex {
 	h := &HNSWIndex{
-		dataset:      ds,
-		locations:    make([]Location, 0, capacity),
-		Metric:       MetricEuclidean,
-		numaTopology: ds.Topo,
+		dataset:       ds,
+		locationStore: NewChunkedLocationStore(),
+		Metric:        MetricEuclidean,
+		numaTopology:  ds.Topo,
+	}
+	if capacity > 0 {
+		h.locationStore.Grow(capacity)
 	}
 	h.Graph = hnsw.NewGraph[VectorID]()
 	h.resultPool = newResultPool()
@@ -127,28 +127,34 @@ type BatchRemapInfo struct {
 
 // RemapLocations safely updates vector locations after compaction.
 // It iterates over all locations and applies the remapping if the batch index matches.
+// RemapLocations safely updates vector locations after compaction.
+// It iterates over all locations and applies the remapping if the batch index matches.
 func (h *HNSWIndex) RemapLocations(remapping map[int]BatchRemapInfo) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
+	h.locationStore.IterateMutable(func(_ VectorID, val *atomic.Uint64) {
+		currentVal := val.Load()
+		loc := unpackLocation(currentVal)
 
-	for i, loc := range h.locations {
 		if info, ok := remapping[loc.BatchIdx]; ok {
 			if loc.RowIdx >= 0 && loc.RowIdx < len(info.NewRowIdxs) {
 				newRowIdx := info.NewRowIdxs[loc.RowIdx]
 				if newRowIdx == -1 {
-					h.locations[i] = Location{BatchIdx: -1, RowIdx: -1}
+					val.Store(packLocation(Location{BatchIdx: -1, RowIdx: -1}))
 				} else {
-					h.locations[i] = Location{
+					val.Store(packLocation(Location{
 						BatchIdx: info.NewBatchIdx,
 						RowIdx:   newRowIdx,
-					}
+					}))
 				}
 			} else {
-				// Out of bounds - should not happen if compaction is correct
-				h.locations[i] = Location{BatchIdx: -1, RowIdx: -1}
+				// Out of bounds
+				val.Store(packLocation(Location{BatchIdx: -1, RowIdx: -1}))
 			}
+		} else if loc.BatchIdx == -1 {
+			// Ensure consistency (no-op really as unpacking -1,-1 repacks to same)
+			// But if we want to be explicit:
+			// val.Store(packLocation(Location{BatchIdx: -1, RowIdx: -1}))
 		}
-	}
+	})
 }
 
 // SetPQEncoder enables product quantization with the provided encoder.
@@ -306,11 +312,11 @@ func (h *HNSWIndex) getVector(id VectorID) []float32 {
 	indexLockStart1 := time.Now()
 	h.mu.RLock()
 	metrics.IndexLockWaitDuration.WithLabelValues(h.dataset.Name, "read").Observe(time.Since(indexLockStart1).Seconds())
-	if int(id) >= len(h.locations) {
+	loc, ok := h.locationStore.Get(id)
+	if !ok {
 		h.mu.RUnlock()
 		return nil
 	}
-	loc := h.locations[id]
 	h.mu.RUnlock()
 
 	// Lock the dataset to safely access records
@@ -536,7 +542,6 @@ func (h *HNSWIndex) SearchVectors(query []float32, k int, filters []Filter) []Se
 
 		// Re-implement vector extraction from 'rec' to avoid releasing lock and calling getVectorDirectLocked again?
 		// Or just call getVectorDirectLocked inside lock? No, getVectorDirectLocked takes dataset lock too?
-		// getVectorDirectLocked takes dataset lock.
 		// So we cannot call it while holding dataset lock.
 		// We should extract vector from 'rec' manually or release lock and call getVectorDirectLocked (but race potential?).
 		// Safest: Extract from 'rec' manually here since we have it.
@@ -620,12 +625,12 @@ func (h *HNSWIndex) getVectorUnsafe(id VectorID) (vec []float32, release func())
 	indexLockStart5 := time.Now()
 	h.mu.RLock()
 	metrics.IndexLockWaitDuration.WithLabelValues(h.dataset.Name, "read").Observe(time.Since(indexLockStart5).Seconds())
-	if int(id) >= len(h.locations) {
+	loc, ok := h.locationStore.Get(id)
+	if !ok {
 		h.mu.RUnlock()
 		h.exitEpoch()
 		return nil, nil
 	}
-	loc := h.locations[id]
 	h.mu.RUnlock()
 
 	// NUMA instrumentation: check if we are accessing data from a remote node
@@ -716,8 +721,11 @@ func (h *HNSWIndex) getVectorUnsafe(id VectorID) (vec []float32, release func())
 
 // Add inserts a new vector location into the index and adds it to the graph.
 func (h *HNSWIndex) Add(batchIdx, rowIdx int) (uint32, error) {
-	// 1. Allocate ID atomically
-	id := VectorID(h.nextVecID.Add(1) - 1)
+	// 1. Prepare location and update locations slice under global lock
+	// and get vector while holding the lock to protect against slice reallocations.
+	h.mu.Lock()
+	id := h.locationStore.Append(Location{BatchIdx: batchIdx, RowIdx: rowIdx})
+	h.mu.Unlock()
 
 	// Check if we should trigger PQ training
 	if h.pqTrainingEnabled && !h.pqEnabled && int(id) == h.pqTrainingThreshold {
@@ -735,18 +743,8 @@ func (h *HNSWIndex) Add(batchIdx, rowIdx int) (uint32, error) {
 		}()
 	}
 
-	// 2. Prepare location and update locations slice under global lock
-	// and get vector while holding the lock to protect against slice reallocations.
-	h.mu.Lock()
-	for len(h.locations) <= int(id) {
-		h.locations = append(h.locations, Location{})
-	}
-	h.locations[id] = Location{BatchIdx: batchIdx, RowIdx: rowIdx}
-
 	// 3. Get vector (Safe to call as ID is reserved and location is set)
-	vecRaw := h.getVectorDirectLocked(id)
-	h.mu.Unlock()
-
+	vecRaw := h.getVector(id) // getVector now handles its own locks
 	if vecRaw == nil {
 		return 0, nil
 	}
@@ -854,10 +852,14 @@ func (h *HNSWIndex) AddSafe(rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32
 
 	// 3. Update locations under global lock
 	h.mu.Lock()
-	for len(h.locations) <= int(id) {
-		h.locations = append(h.locations, Location{})
-	}
-	h.locations[id] = Location{BatchIdx: batchIdx, RowIdx: rowIdx}
+	// The ID is already allocated by nextVecID.Add(1)-1.
+	// We need to ensure locationStore has capacity for this ID.
+	// Append handles this by growing if needed.
+	// If we want to set a specific ID, we'd need a Set method on ChunkedLocationStore.
+	// For now, we assume AddSafe is used for sequential additions, so Append is fine.
+	// If IDs are not sequential, this needs a `Set(id, loc)` method.
+	// Given `nextVecID.Add(1)-1`, IDs are sequential.
+	h.locationStore.Append(Location{BatchIdx: batchIdx, RowIdx: rowIdx})
 	h.mu.Unlock()
 
 	// 4. Initialize dims
@@ -1058,10 +1060,10 @@ func (h *HNSWIndex) Warmup() int {
 // It uses dataset.dataMu for safety but does NOT use epoch protection or return a release function,
 // because the vector reference stored in the graph is tied to the Dataset lifecycle.
 func (h *HNSWIndex) getVectorDirectLocked(id VectorID) []float32 {
-	if int(id) >= len(h.locations) {
+	loc, ok := h.locationStore.Get(id)
+	if !ok {
 		return nil
 	}
-	loc := h.locations[id]
 
 	h.dataset.dataMu.RLock()
 	defer h.dataset.dataMu.RUnlock()
@@ -1134,12 +1136,18 @@ func (h *HNSWIndex) AddBatchParallel(locations []Location, workers int) error {
 		workers = len(locations)
 	}
 
-	// Phase 1: Pre-allocate all locations atomically
-	indexLockStart8 := time.Now()
+	// Phase 1: Append all locations (Lock-free-ish / Reduced Lock)
+	// We use the store's Append which locks internally per chunk creation, but it's fine.
+	// Optimizing: We could implement AppendBatch.
+	// For now, loop is safer during refactor.
+	// CRITICAL: We must hold h.mu to ensure we get a contiguous block of IDs
+	// so that baseID + i corresponds to locations[i].
+	// Without this, concurrent AddBatchParallel calls would interleave IDs.
 	h.mu.Lock()
-	metrics.IndexLockWaitDuration.WithLabelValues(h.dataset.Name, "write").Observe(time.Since(indexLockStart8).Seconds())
-	baseID := VectorID(len(h.locations))
-	h.locations = append(h.locations, locations...)
+	baseID := VectorID(h.locationStore.Len())
+	for _, loc := range locations {
+		h.locationStore.Append(loc)
+	}
 	h.mu.Unlock()
 
 	// Phase 2: Parallel vector retrieval
@@ -1194,11 +1202,7 @@ func (h *HNSWIndex) AddBatchParallel(locations []Location, workers int) error {
 
 // Len returns the number of vectors in the index
 func (h *HNSWIndex) Len() int {
-	indexLockStart10 := time.Now()
-	h.mu.RLock()
-	metrics.IndexLockWaitDuration.WithLabelValues(h.dataset.Name, "read").Observe(time.Since(indexLockStart10).Seconds())
-	defer h.mu.RUnlock()
-	return len(h.locations)
+	return h.locationStore.Len()
 }
 
 func (h *HNSWIndex) SearchByID(id VectorID, k int) []VectorID {
@@ -1227,7 +1231,10 @@ func (h *HNSWIndex) SearchByID(id VectorID, k int) []VectorID {
 	res := h.resultPool.get(len(neighbors))
 	idx := 0
 	for _, n := range neighbors {
-		loc := h.locations[n.Key]
+		loc, ok := h.locationStore.Get(n.Key)
+		if !ok {
+			continue
+		}
 		if loc.BatchIdx != -1 {
 			res[idx] = n.Key
 			idx++
@@ -1253,7 +1260,7 @@ func (h *HNSWIndex) Close() error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.Graph = nil
-	h.locations = nil
+	h.locationStore.Reset() // Clear locations
 	h.resultPool = nil
 	h.dataset = nil
 	return nil
@@ -1341,7 +1348,10 @@ func (h *HNSWIndex) SearchByIDUnsafe(id VectorID, k int) []VectorID {
 	res := h.resultPool.get(len(neighbors))
 	idx := 0
 	for _, n := range neighbors {
-		loc := h.locations[n.Key]
+		loc, ok := h.locationStore.Get(n.Key)
+		if !ok {
+			return nil
+		}
 		if loc.BatchIdx != -1 {
 			res[idx] = n.Key
 			idx++

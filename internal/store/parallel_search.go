@@ -97,18 +97,19 @@ func (h *HNSWIndex) processChunk(query []float32, neighbors []hnsw.Node[VectorID
 	results := make([]SearchResult, 0, len(neighbors))
 
 	// Step 1: Batch location lookup
-	// Minimize h.mu contention by holding it once for the chunk
+	// Optimized: Parallel access via ChunkedLocationStore is lock-free for reads
+	// and doesn't require global Mu RLock for the list itself.
 	locations := make([]Location, len(neighbors))
 	found := make([]bool, len(neighbors))
 
-	h.mu.RLock()
 	for i, n := range neighbors {
-		if int(n.Key) < len(h.locations) {
-			locations[i] = h.locations[n.Key]
+		nodeID := n.Key
+		loc, ok := h.locationStore.Get(nodeID)
+		if ok {
+			locations[i] = loc
 			found[i] = true
 		}
 	}
-	h.mu.RUnlock()
 
 	// Step 2: Batch record access and filtering
 	// Minimize dataset.dataMu contention

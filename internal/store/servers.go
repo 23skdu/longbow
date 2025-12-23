@@ -129,6 +129,16 @@ func (s *MetaServer) DoAction(action *flight.Action, stream flight.FlightService
 		return s.handleMeshStatus(action, stream)
 	case "DiscoveryStatus":
 		return s.handleDiscoveryStatus(action, stream)
+	case "CreateNamespace":
+		return s.handleCreateNamespace(action, stream)
+	case "DeleteNamespace":
+		return s.handleDeleteNamespace(action, stream)
+	case "ListNamespaces":
+		return s.handleListNamespaces(action, stream)
+	case "GetTotalNamespaceCount":
+		return s.handleGetTotalNamespaceCount(action, stream)
+	case "GetNamespaceDatasetCount":
+		return s.handleGetNamespaceDatasetCount(action, stream)
 	default:
 		return s.VectorStore.DoAction(action, stream)
 	}
@@ -192,6 +202,81 @@ func (s *MetaServer) handleDiscoveryStatus(action *flight.Action, stream flight.
 	body, err := json.Marshal(statusInfo)
 	if err != nil {
 		return status.Errorf(codes.Internal, "failed to marshal discovery status: %v", err)
+	}
+	return stream.Send(&flight.Result{Body: body})
+}
+
+func (s *MetaServer) handleCreateNamespace(action *flight.Action, stream flight.FlightService_DoActionServer) error {
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(action.Body, &req); err != nil {
+		return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
+	}
+	if err := s.VectorStore.CreateNamespace(req.Name); err != nil {
+		return ToGRPCStatus(err)
+	}
+	// Return success
+	return stream.Send(&flight.Result{Body: []byte(`{"status": "created"}`)})
+}
+
+func (s *MetaServer) handleDeleteNamespace(action *flight.Action, stream flight.FlightService_DoActionServer) error {
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(action.Body, &req); err != nil {
+		return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
+	}
+	if err := s.VectorStore.DeleteNamespace(req.Name); err != nil {
+		return ToGRPCStatus(err)
+	}
+	return stream.Send(&flight.Result{Body: []byte(`{"status": "deleted"}`)})
+}
+
+func (s *MetaServer) handleListNamespaces(action *flight.Action, stream flight.FlightService_DoActionServer) error {
+	names := s.VectorStore.ListNamespaces()
+	resp := map[string]interface{}{
+		"namespaces": names,
+		"count":      len(names),
+	}
+	body, err := json.Marshal(resp)
+	if err != nil {
+		return status.Errorf(codes.Internal, "failed to marshal response: %v", err)
+	}
+	return stream.Send(&flight.Result{Body: body})
+}
+
+func (s *MetaServer) handleGetTotalNamespaceCount(action *flight.Action, stream flight.FlightService_DoActionServer) error {
+	count := s.VectorStore.GetTotalNamespaceCount()
+	resp := map[string]int{
+		"count": count,
+	}
+	body, err := json.Marshal(resp)
+	if err != nil {
+		return status.Errorf(codes.Internal, "failed to marshal response: %v", err)
+	}
+	return stream.Send(&flight.Result{Body: body})
+}
+
+func (s *MetaServer) handleGetNamespaceDatasetCount(action *flight.Action, stream flight.FlightService_DoActionServer) error {
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(action.Body, &req); err != nil {
+		return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
+	}
+
+	if !s.VectorStore.NamespaceExists(req.Name) {
+		return status.Errorf(codes.NotFound, "namespace not found: %s", req.Name)
+	}
+
+	count := s.VectorStore.GetNamespaceDatasetCount(req.Name)
+	resp := map[string]int{
+		"count": count,
+	}
+	body, err := json.Marshal(resp)
+	if err != nil {
+		return status.Errorf(codes.Internal, "failed to marshal response: %v", err)
 	}
 	return stream.Send(&flight.Result{Body: body})
 }

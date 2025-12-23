@@ -822,11 +822,11 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 
 		// ProcessRecords handles feeding safely
 		stageChan = pipeline.ProcessRecords(ctx, ds.Records, ds.Tombstones, query.Filters, nil)
-		metrics.DoGetPipelineStepsTotal.WithLabelValues("pipeline").Add(float64(len(ds.Records)))
+		metrics.DoGetPipelineStepsTotal.WithLabelValues("scan", "pipeline").Add(float64(len(ds.Records)))
 		s.logger.Debug("Using DoGetPipeline", zap.Int("workers", pipeline.NumWorkers()))
 	} else {
 		// Simple feeder for small datasets
-		metrics.DoGetPipelineStepsTotal.WithLabelValues("simple").Add(float64(len(ds.Records)))
+		metrics.DoGetPipelineStepsTotal.WithLabelValues("scan", "simple").Add(float64(len(ds.Records)))
 		c := make(chan PipelineStage, len(ds.Records))
 		stageChan = c
 		go func() {

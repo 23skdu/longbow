@@ -19,6 +19,10 @@ type VectorIndex interface {
 	// Returns the assigned internal Vector ID.
 	AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32, error)
 
+	// AddBatch adds multiple vectors from multiple record batches efficiently.
+	// Returns the assigned internal Vector IDs.
+	AddBatch(recs []arrow.RecordBatch, rowIdxs []int, batchIdxs []int) ([]uint32, error)
+
 	// SearchVectors returns the k nearest neighbors for the query vector with scores and optional filtering.
 	SearchVectors(query []float32, k int, filters []Filter) []SearchResult
 

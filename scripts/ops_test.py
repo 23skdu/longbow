@@ -390,6 +390,51 @@ def command_validate(args, data_client, meta_client):
     command_exchange(args, data_client, meta_client)
     print("\nValidation Complete.")
 
+def command_namespaces(args, data_client, meta_client):
+    """Test Namespace operations."""
+    print("Testing Namespace operations...")
+    ns_name = "ops-test-ns"
+    
+    # 1. Create
+    print(f"Creating namespace '{ns_name}'...")
+    try:
+        req = {"name": ns_name}
+        action = flight.Action("CreateNamespace", json.dumps(req).encode("utf-8"))
+        list(meta_client.do_action(action))
+        print("Created.")
+    except Exception as e:
+        print(f"Create failed: {e}")
+
+    # 2. List
+    print("Listing namespaces...")
+    try:
+        action = flight.Action("ListNamespaces", b"")
+        for res in meta_client.do_action(action):
+            body = json.loads(res.body.to_pybytes())
+            print(f"Namespaces: {body}")
+            if ns_name not in body.get("namespaces", []):
+                print(f"FAIL: Namespace '{ns_name}' not found in list")
+    except Exception as e:
+        print(f"List failed: {e}")
+
+    # 3. Count
+    print("Checking counts...")
+    try:
+        action = flight.Action("GetTotalNamespaceCount", b"")
+        for res in meta_client.do_action(action):
+            print(f"Total Count: {json.loads(res.body.to_pybytes())}")
+    except Exception as e:
+        print(f"Count failed: {e}")
+
+    # 4. Delete
+    print(f"Deleting namespace '{ns_name}'...")
+    try:
+        req = {"name": ns_name}
+        action = flight.Action("DeleteNamespace", json.dumps(req).encode("utf-8"))
+        list(meta_client.do_action(action))
+        print("Deleted.")
+    except Exception as e:
+        print(f"Delete failed: {e}")
 
 def main():
     parser = argparse.ArgumentParser(description="Longbow Ops Test CLI")
@@ -443,6 +488,12 @@ def main():
 
     # EXCHANGE
     subparsers.add_parser("exchange", help="Test DoExchange")
+
+    # VALIDATE
+    subparsers.add_parser("validate", help="Run full validation")
+
+    # NAMESPACES
+    subparsers.add_parser("namespaces", help="Test Namespace Operations")
     
     # GLOBAL options
     parser.add_argument("--routing-key", help="Explicit routing key (x-longbow-key metadata)")
@@ -470,6 +521,7 @@ def main():
             "status": command_status,
             "exchange": command_exchange,
             "validate": command_validate,
+            "namespaces": command_namespaces,
         }
         
         func = commands.get(args.command)

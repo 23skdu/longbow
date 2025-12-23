@@ -60,7 +60,7 @@ func TestWALBackends_StdWAL(t *testing.T) {
 		err = store.replayWAL()
 		require.NoError(t, err)
 
-		ds, _ := store.datasets["ds1"]
+		ds := store.datasets["ds1"]
 		assert.Equal(t, 2, len(ds.Records))
 	})
 }

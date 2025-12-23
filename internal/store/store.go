@@ -37,8 +37,8 @@ type VectorStore struct {
 	datasets      map[string]*Dataset
 	maxMemory     atomic.Int64
 	currentMemory atomic.Int64
-	maxWALSize    atomic.Int64  // Added for WAL
-	sequence      atomic.Uint64 // Global operation sequence
+
+	sequence atomic.Uint64 // Global operation sequence
 
 	// Persistence
 	dataPath      string
@@ -46,7 +46,6 @@ type VectorStore struct {
 	walMu         sync.Mutex  // Protects wal
 	walBatcher    *WALBatcher // For async batched writes
 	snapshotReset chan time.Duration
-	ttlDuration   time.Duration
 
 	indexQueue *IndexJobQueue // Integrated HNSW
 
@@ -86,8 +85,6 @@ type VectorStore struct {
 	nsManager *namespaceManager
 
 	// GPU acceleration (optional)
-	gpuEnabled  bool
-	gpuDeviceID int
 
 	// Shutdown and lifecycle (Phase 6/21)
 	shutdownState int32
@@ -602,7 +599,7 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 	}
 
 	for r.Next() {
-		rec := r.Record()
+		rec := r.RecordBatch()
 
 		// Adaptive Batching (Option 1):
 		// If the record is large enough and we don't have pending small records,
@@ -1002,148 +999,6 @@ DRAIN:
 	return nil
 }
 
-// deepCopyRecordBatch creates a full copy using Builders for safety
-func (s *VectorStore) deepCopyRecordBatch(rec arrow.RecordBatch) (arrow.RecordBatch, error) {
-	if rec.NumRows() == 0 {
-		rec.Retain()
-		return rec, nil
-	}
-
-	cols := make([]arrow.Array, rec.NumCols())
-	for i, col := range rec.Columns() {
-		copied, err := s.copyArray(col)
-		if err != nil {
-			// Cleanup created columns
-			for j := 0; j < i; j++ {
-				cols[j].Release()
-			}
-			return nil, fmt.Errorf("failed to copy column %d: %w", i, err)
-		}
-		cols[i] = copied
-	}
-	return array.NewRecordBatch(rec.Schema(), cols, rec.NumRows()), nil
-}
-
-func (s *VectorStore) copyArray(arr arrow.Array) (arrow.Array, error) {
-	if arr.Len() == 0 {
-		arr.Retain()
-		return arr, nil
-	}
-
-	switch arr.DataType().ID() {
-	case arrow.INT64:
-		b := array.NewInt64Builder(s.mem)
-		defer b.Release()
-		input := arr.(*array.Int64)
-		b.Reserve(input.Len())
-		for i := 0; i < input.Len(); i++ {
-			if input.IsNull(i) {
-				b.AppendNull()
-			} else {
-				b.Append(input.Value(i))
-			}
-		}
-		return b.NewArray(), nil
-
-	case arrow.FLOAT32:
-		b := array.NewFloat32Builder(s.mem)
-		defer b.Release()
-		input := arr.(*array.Float32)
-		b.Reserve(input.Len())
-		for i := 0; i < input.Len(); i++ {
-			if input.IsNull(i) {
-				b.AppendNull()
-			} else {
-				b.Append(input.Value(i))
-			}
-		}
-		return b.NewArray(), nil
-
-	case arrow.FLOAT64:
-		b := array.NewFloat64Builder(s.mem)
-		defer b.Release()
-		input := arr.(*array.Float64)
-		b.Reserve(input.Len())
-		for i := 0; i < input.Len(); i++ {
-			if input.IsNull(i) {
-				b.AppendNull()
-			} else {
-				b.Append(input.Value(i))
-			}
-		}
-		return b.NewArray(), nil
-
-	case arrow.STRING:
-		b := array.NewStringBuilder(s.mem)
-		defer b.Release()
-		input := arr.(*array.String)
-		b.Reserve(input.Len())
-		for i := 0; i < input.Len(); i++ {
-			if input.IsNull(i) {
-				b.AppendNull()
-			} else {
-				b.Append(input.Value(i))
-			}
-		}
-		return b.NewArray(), nil
-
-	case arrow.TIMESTAMP:
-		b := array.NewTimestampBuilder(s.mem, arr.DataType().(*arrow.TimestampType))
-		defer b.Release()
-		input := arr.(*array.Timestamp)
-		b.Reserve(input.Len())
-		for i := 0; i < input.Len(); i++ {
-			if input.IsNull(i) {
-				b.AppendNull()
-			} else {
-				b.Append(input.Value(i))
-			}
-		}
-		return b.NewArray(), nil
-
-	case arrow.FIXED_SIZE_LIST:
-		input := arr.(*array.FixedSizeList)
-		listSize := int(input.DataType().(*arrow.FixedSizeListType).Len())
-
-		// Create builder for the values (e.g. Float32Builder)
-		valueType := input.DataType().(*arrow.FixedSizeListType).Elem()
-
-		if valueType.ID() == arrow.FLOAT32 {
-			b := array.NewFixedSizeListBuilder(s.mem, int32(listSize), arrow.PrimitiveTypes.Float32)
-			defer b.Release()
-			valBuilder := b.ValueBuilder().(*array.Float32Builder)
-
-			b.Reserve(input.Len())
-			values := input.ListValues().(*array.Float32) // Assuming values are contiguous logic
-
-			// Iterate lists
-			for i := 0; i < input.Len(); i++ {
-				if input.IsNull(i) {
-					b.AppendNull()
-				} else {
-					b.Append(true)
-					// Append 'listSize' values
-					start := i * listSize
-					for k := 0; k < listSize; k++ {
-						val := values.Value(start + k)
-						valBuilder.Append(val)
-					}
-				}
-			}
-			return b.NewArray(), nil
-		}
-
-		// Fallback for other list types: just Retain (shallow copy) to be safe
-		arr.Retain()
-		return arr, nil
-
-	default:
-		// Fallback for types we don't explicitly handle
-		arr.Retain()
-		return arr, nil
-	}
-}
-
 func (s *VectorStore) startNUMAWorkers(numWorkers int) {
 	if s.numaTopology == nil || s.numaTopology.NumNodes <= 1 {
 		// Fallback to regular workers
@@ -1478,175 +1333,6 @@ func estimateBatchSize(rec arrow.RecordBatch) int64 {
 		}
 	}
 	return size
-}
-
-// deepCopyRecordBatchWithMask creates a copy excluding rows marked in the bitset
-func (s *VectorStore) deepCopyRecordBatchWithMask(rec arrow.RecordBatch, mask *Bitset) (arrow.RecordBatch, error) {
-	if rec.NumRows() == 0 {
-		rec.Retain()
-		return rec, nil
-	}
-
-	// Calculate output size
-	inRows := int(rec.NumRows())
-	outRows := 0
-	for i := 0; i < inRows; i++ {
-		if !mask.Contains(i) {
-			outRows++
-		}
-	}
-
-	if outRows == 0 {
-		// Return empty batch
-		cols := make([]arrow.Array, rec.NumCols())
-		for i, col := range rec.Columns() {
-			// Create empty array of same type
-			col.Retain()
-			cols[i] = array.NewSlice(col, 0, 0)
-		}
-		return array.NewRecordBatch(rec.Schema(), cols, 0), nil
-	}
-
-	cols := make([]arrow.Array, rec.NumCols())
-	for i, col := range rec.Columns() {
-		copied, err := s.copyArrayWithMask(col, mask, outRows)
-		if err != nil {
-			for j := 0; j < i; j++ {
-				cols[j].Release()
-			}
-			return nil, fmt.Errorf("failed to copy column %d: %w", i, err)
-		}
-		cols[i] = copied
-	}
-	return array.NewRecordBatch(rec.Schema(), cols, int64(outRows)), nil
-}
-
-func (s *VectorStore) copyArrayWithMask(arr arrow.Array, mask *Bitset, outCount int) (arrow.Array, error) {
-	if arr.Len() == 0 {
-		arr.Retain()
-		return arr, nil
-	}
-
-	switch arr.DataType().ID() {
-	case arrow.INT64:
-		b := array.NewInt64Builder(s.mem)
-		defer b.Release()
-		b.Reserve(outCount)
-		input := arr.(*array.Int64)
-		for i := 0; i < input.Len(); i++ {
-			if !mask.Contains(i) {
-				if input.IsNull(i) {
-					b.AppendNull()
-				} else {
-					b.Append(input.Value(i))
-				}
-			}
-		}
-		return b.NewArray(), nil
-
-	case arrow.FLOAT32:
-		b := array.NewFloat32Builder(s.mem)
-		defer b.Release()
-		b.Reserve(outCount)
-		input := arr.(*array.Float32)
-		for i := 0; i < input.Len(); i++ {
-			if !mask.Contains(i) {
-				if input.IsNull(i) {
-					b.AppendNull()
-				} else {
-					b.Append(input.Value(i))
-				}
-			}
-		}
-		return b.NewArray(), nil
-
-	case arrow.FLOAT64:
-		b := array.NewFloat64Builder(s.mem)
-		defer b.Release()
-		b.Reserve(outCount)
-		input := arr.(*array.Float64)
-		for i := 0; i < input.Len(); i++ {
-			if !mask.Contains(i) {
-				if input.IsNull(i) {
-					b.AppendNull()
-				} else {
-					b.Append(input.Value(i))
-				}
-			}
-		}
-		return b.NewArray(), nil
-
-	case arrow.STRING:
-		b := array.NewStringBuilder(s.mem)
-		defer b.Release()
-		b.Reserve(outCount)
-		input := arr.(*array.String)
-		for i := 0; i < input.Len(); i++ {
-			if !mask.Contains(i) {
-				if input.IsNull(i) {
-					b.AppendNull()
-				} else {
-					b.Append(input.Value(i))
-				}
-			}
-		}
-		return b.NewArray(), nil
-
-	case arrow.TIMESTAMP:
-		b := array.NewTimestampBuilder(s.mem, arr.DataType().(*arrow.TimestampType))
-		defer b.Release()
-		b.Reserve(outCount)
-		input := arr.(*array.Timestamp)
-		for i := 0; i < input.Len(); i++ {
-			if !mask.Contains(i) {
-				if input.IsNull(i) {
-					b.AppendNull()
-				} else {
-					b.Append(input.Value(i))
-				}
-			}
-		}
-		return b.NewArray(), nil
-
-	case arrow.FIXED_SIZE_LIST:
-		input := arr.(*array.FixedSizeList)
-		listSize := int(input.DataType().(*arrow.FixedSizeListType).Len())
-		valueType := input.DataType().(*arrow.FixedSizeListType).Elem()
-
-		if valueType.ID() == arrow.FLOAT32 {
-			b := array.NewFixedSizeListBuilder(s.mem, int32(listSize), arrow.PrimitiveTypes.Float32)
-			defer b.Release()
-			valBuilder := b.ValueBuilder().(*array.Float32Builder)
-
-			b.Reserve(outCount)
-			values := input.ListValues().(*array.Float32)
-
-			for i := 0; i < input.Len(); i++ {
-				if !mask.Contains(i) {
-					if input.IsNull(i) {
-						b.AppendNull()
-					} else {
-						b.Append(true)
-						start := i * listSize
-						for k := 0; k < listSize; k++ {
-							val := values.Value(start + k)
-							valBuilder.Append(val)
-						}
-					}
-				}
-			}
-			return b.NewArray(), nil
-		}
-
-		// Fallback: Copy all
-		arr.Retain()
-		return arr, nil
-
-	default:
-		// Fallback
-		arr.Retain()
-		return arr, nil
-	}
 }
 
 // concatenateBatches merges multiple record batches into one

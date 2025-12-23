@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"fmt"
-	"math"
 	"strconv"
 	"time"
 
@@ -34,51 +33,6 @@ func validateRecordBatch(rec arrow.RecordBatch) error {
 }
 
 // CachedRecordSize was moved to record_size_cache.go
-
-func calculateBatchNorm(arr arrow.Array) float64 {
-	listArr, ok := arr.(*array.FixedSizeList)
-	if !ok {
-		return 0
-	}
-
-	// Get list size from type
-	width := int(listArr.DataType().(*arrow.FixedSizeListType).Len())
-
-	// Access values via child data
-	if len(listArr.Data().Children()) == 0 {
-		return 0
-	}
-	valsData := listArr.Data().Children()[0]
-
-	// Create a Float32 array wrapper to access values
-	floatArr := array.NewFloat32Data(valsData)
-	defer floatArr.Release()
-
-	var totalNorm float64
-	count := 0
-
-	for i := 0; i < listArr.Len(); i++ {
-		start := i * width
-		end := start + width
-
-		if end > floatArr.Len() {
-			break
-		}
-
-		var sumSq float64
-		for j := start; j < end; j++ {
-			val := floatArr.Value(j)
-			sumSq += float64(val * val)
-		}
-		totalNorm += math.Sqrt(sumSq)
-		count++
-	}
-
-	if count == 0 {
-		return 0
-	}
-	return totalNorm / float64(count)
-}
 
 // EnsureTimestampZeroCopy ensures the record has a timestamp column, adding one if missing (zero-copy optimized)
 func EnsureTimestampZeroCopy(mem memory.Allocator, rec arrow.RecordBatch) (arrow.RecordBatch, error) {

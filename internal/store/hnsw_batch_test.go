@@ -235,14 +235,6 @@ func BenchmarkSequential_1000Candidates(b *testing.B) {
 // Helper functions
 // =============================================================================
 
-func floatClose(a, b, tolerance float32) bool {
-	diff := a - b
-	if diff < 0 {
-		diff = -diff
-	}
-	return diff <= tolerance
-}
-
 func makeTestVector(dims, seed int) []float32 {
 	v := make([]float32, dims)
 	for i := range v {

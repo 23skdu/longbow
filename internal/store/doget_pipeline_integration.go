@@ -6,11 +6,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/compute"
-	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"go.uber.org/zap"
 )
@@ -88,140 +86,6 @@ func (s *VectorStore) GetPipelineStats() PipelineStats {
 // incrementPipelineBatches safely increments processed batch count
 func (s *VectorStore) incrementPipelineBatches(count int64) {
 	globalPipelineStats.batchesProcessed.Add(count)
-}
-
-// incrementPipelineErrors safely increments error count
-func (s *VectorStore) incrementPipelineErrors() {
-	globalPipelineStats.errorsTotal.Add(1)
-}
-
-// doGetWithPipeline processes multiple batches using the pipeline for parallelism
-func (s *VectorStore) doGetWithPipeline(
-	ctx context.Context,
-	name string,
-	recs []arrow.RecordBatch,
-	query *TicketQuery,
-	w *flight.Writer,
-	targetSchema *arrow.Schema,
-	limit int64,
-) (int64, error) {
-	if s.doGetPipelinePool == nil {
-		return 0, fmt.Errorf("pipeline pool not initialized")
-	}
-
-	pipeline := s.doGetPipelinePool.Get()
-	defer s.doGetPipelinePool.Put(pipeline)
-
-	// Create filter function that wraps filterRecordOptimized
-	filterFn := func(filterCtx context.Context, rec arrow.RecordBatch) (arrow.RecordBatch, error) {
-		return s.filterRecordOptimized(filterCtx, name, rec, 0, query.Filters)
-	}
-
-	// Process batches through pipeline
-	resultCh, errCh := pipeline.Process(ctx, recs, filterFn)
-
-	rowsSent := int64(0)
-
-	// Consume results and write to stream
-	for result := range resultCh {
-		if limit > 0 && rowsSent >= limit {
-			break
-		}
-
-		if result.Record == nil {
-			continue
-		}
-
-		filteredRec := result.Record
-		if filteredRec.NumRows() == 0 {
-			filteredRec.Release()
-			continue
-		}
-
-		toWrite := filteredRec
-		sliced := false
-		if limit > 0 && rowsSent+filteredRec.NumRows() > limit {
-			remaining := limit - rowsSent
-			toWrite = filteredRec.NewSlice(0, remaining)
-			sliced = true
-		}
-
-		if err := validateRecordBatch(toWrite); err != nil {
-			metrics.ValidationFailuresTotal.WithLabelValues("pipeline", "invalid_batch").Inc()
-			if sliced {
-				toWrite.Release()
-			}
-			filteredRec.Release()
-			s.logger.Error("Invalid record batch in pipeline during DoGet",
-				zap.Error(err),
-				zap.Int64("numCols", toWrite.NumCols()),
-				zap.Int("numFields", toWrite.Schema().NumFields()),
-				zap.Int64("numRows", toWrite.NumRows()))
-			s.incrementPipelineErrors()
-			return rowsSent, fmt.Errorf("invalid record batch in pipeline: %w", err)
-		}
-
-		// Cast to target schema to handle evolution
-		castedRecRaw, err := s.castRecordToSchema(toWrite, targetSchema)
-		if err != nil {
-			if sliced {
-				toWrite.Release()
-			}
-			filteredRec.Release()
-			s.logger.Error("Failed to cast record in pipeline", zap.Error(err))
-			continue
-		}
-
-		// Deep copy for IPC safety
-		castedRec, err := s.deepCopyRecordBatch(castedRecRaw)
-		castedRecRaw.Release()
-		if err != nil {
-			if sliced {
-				toWrite.Release()
-			}
-			filteredRec.Release()
-			s.logger.Error("Failed to deep copy record in pipeline", zap.Error(err))
-			continue
-		}
-
-		if castedRec.NumRows() == 0 {
-			castedRec.Release()
-			if sliced {
-				toWrite.Release()
-			}
-			filteredRec.Release()
-			continue
-		}
-
-		if err := w.Write(castedRec); err != nil {
-			castedRec.Release()
-			if sliced {
-				toWrite.Release()
-			}
-			filteredRec.Release()
-			return rowsSent, err
-		}
-		rowsSent += toWrite.NumRows()
-		s.incrementPipelineBatches(1)
-		castedRec.Release()
-
-		if sliced {
-			toWrite.Release()
-		}
-		filteredRec.Release()
-	}
-
-	// Check for pipeline errors
-	select {
-	case err := <-errCh:
-		if err != nil {
-			s.incrementPipelineErrors()
-			return rowsSent, err
-		}
-	default:
-	}
-
-	return rowsSent, nil
 }
 
 // filterRecordOptimized uses column index for equality filters when available

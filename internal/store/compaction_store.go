@@ -10,13 +10,6 @@ import (
 // compactionWorker is the background worker (added to VectorStore)
 // This file provides the integration methods between VectorStore and CompactionWorker.
 
-// initCompaction initializes the compaction subsystem.
-func (vs *VectorStore) initCompaction(cfg CompactionConfig) {
-	vs.compactionConfig = cfg
-	vs.compactionWorker = NewCompactionWorker(vs, cfg)
-	vs.compactionWorker.Start()
-}
-
 // stopCompaction stops the compaction worker.
 func (vs *VectorStore) stopCompaction() {
 	if vs.compactionWorker != nil {

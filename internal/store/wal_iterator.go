@@ -113,7 +113,7 @@ func (it *WALIterator) Next() (uint64, int64, string, arrow.RecordBatch, error) 
 	defer r.Release()
 
 	if r.Next() {
-		rec := r.Record()
+		rec := r.RecordBatch()
 		rec.Retain()
 		return seq, ts, name, rec, nil
 	}

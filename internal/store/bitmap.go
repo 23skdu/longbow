@@ -1,6 +1,7 @@
 package store
 
 import (
+	"github.com/23skdu/longbow/internal/pool"
 	"github.com/RoaringBitmap/roaring/v2"
 )
 
@@ -10,10 +11,19 @@ type CompressedBitmap struct {
 	bitmap *roaring.Bitmap
 }
 
-// NewBitmap creates a new empty compressed bitmap.
+// NewBitmap creates a new empty compressed bitmap from the pool.
+// Caller MUST call Release() when done.
 func NewBitmap() *CompressedBitmap {
 	return &CompressedBitmap{
-		bitmap: roaring.New(),
+		bitmap: pool.GetBitmap(),
+	}
+}
+
+// Release returns the underlying bitmap to the pool.
+func (b *CompressedBitmap) Release() {
+	if b.bitmap != nil {
+		pool.PutBitmap(b.bitmap)
+		b.bitmap = nil
 	}
 }
 
@@ -38,7 +48,9 @@ func (b *CompressedBitmap) Cardinality() uint64 {
 }
 
 // Intersection returns a new bitmap containing the intersection of b and other.
+// Caller must separate Release() the result.
 func (b *CompressedBitmap) Intersection(other *CompressedBitmap) *CompressedBitmap {
+	// Roaring.And returns a new Bitmap. We can't pool it easily.
 	return &CompressedBitmap{
 		bitmap: roaring.And(b.bitmap, other.bitmap),
 	}

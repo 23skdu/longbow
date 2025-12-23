@@ -7,9 +7,10 @@ import (
 )
 
 func TestMetricsInitialization(t *testing.T) {
-	assert.NotNil(t, FlightOperationsTotal)
+	assert.NotNil(t, FlightOpsTotal)
 	assert.NotNil(t, FlightDurationSeconds)
-	assert.NotNil(t, FlightBytesProcessed)
+	assert.NotNil(t, FlightBytesReadTotal)
+	assert.NotNil(t, FlightBytesWrittenTotal)
 	assert.NotNil(t, WalWritesTotal)
 	assert.NotNil(t, WalBytesWritten)
 	assert.NotNil(t, WalReplayDurationSeconds)

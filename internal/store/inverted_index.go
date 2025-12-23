@@ -4,6 +4,7 @@ import (
 	"sync"
 
 	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/pool"
 	"github.com/RoaringBitmap/roaring/v2"
 )
 
@@ -29,7 +30,7 @@ func (idx *InvertedIndex) Add(term string, docID uint32) {
 
 	bm, ok := idx.index[term]
 	if !ok {
-		bm = roaring.NewBitmap()
+		bm = pool.GetBitmap()
 		idx.index[term] = bm
 		idx.termsCount++
 	}
@@ -68,7 +69,7 @@ func (idx *InvertedIndex) AddBatch(terms []string, docID uint32) {
 	for _, term := range terms {
 		bm, ok := idx.index[term]
 		if !ok {
-			bm = roaring.NewBitmap()
+			bm = pool.GetBitmap()
 			idx.index[term] = bm
 			idx.termsCount++
 		}
@@ -113,4 +114,17 @@ func (idx *InvertedIndex) MemoryUsage() uint64 {
 		usage += bm.GetSizeInBytes()
 	}
 	return usage
+}
+
+// Close releases all bitmaps back to the pool
+func (idx *InvertedIndex) Close() {
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+
+	for _, bm := range idx.index {
+		pool.PutBitmap(bm)
+	}
+	idx.index = make(map[string]*roaring.Bitmap)
+	idx.termsCount = 0
+	idx.totalPostings = 0
 }

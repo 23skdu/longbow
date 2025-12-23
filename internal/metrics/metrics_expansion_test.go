@@ -182,8 +182,8 @@ func TestCompactionOperationsTotal_Exists(t *testing.T) {
 		t.Fatal("CompactionOperationsTotal metric should not be nil")
 	}
 	// Verify it's a CounterVec with status label
-	CompactionOperationsTotal.WithLabelValues("success").Inc()
-	CompactionOperationsTotal.WithLabelValues("error").Inc()
+	CompactionOperationsTotal.WithLabelValues("default", "success").Inc()
+	CompactionOperationsTotal.WithLabelValues("default", "error").Inc()
 }
 
 // =============================================================================

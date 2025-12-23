@@ -6,6 +6,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/23skdu/longbow/internal/pool"
 	"github.com/RoaringBitmap/roaring/v2"
 	"github.com/apache/arrow-go/v18/arrow"
 )
@@ -111,7 +112,7 @@ type Bitset struct {
 
 func NewBitset() *Bitset {
 	return &Bitset{
-		bitmap: roaring.New(),
+		bitmap: pool.GetBitmap(),
 	}
 }
 
@@ -208,9 +209,35 @@ func (d *Dataset) MigrateToShardedIndex(cfg AutoShardingConfig) error {
 	return nil
 }
 
+// Release releases the underlying bitmap to the pool
+func (b *Bitset) Release() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.bitmap != nil {
+		pool.PutBitmap(b.bitmap)
+		b.bitmap = nil
+	}
+}
+
 // GetVectorIndex returns the current index safely
 func (d *Dataset) GetVectorIndex() VectorIndex {
 	d.dataMu.RLock()
 	defer d.dataMu.RUnlock()
 	return d.Index
+}
+
+// Close releases resources associated with the dataset
+func (d *Dataset) Close() {
+	d.dataMu.Lock()
+	defer d.dataMu.Unlock()
+
+	for _, ts := range d.Tombstones {
+		ts.Release()
+	}
+	d.Tombstones = make(map[int]*Bitset)
+
+	for _, idx := range d.InvertedIndexes {
+		idx.Close()
+	}
+	d.InvertedIndexes = make(map[string]*InvertedIndex)
 }

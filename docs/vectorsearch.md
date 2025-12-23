@@ -12,6 +12,17 @@ Longbow provides three search modes:
 3. **Hybrid Search** - Combines dense + sparse with Reciprocal Rank Fusion (RRF)
 4. **Filtered Search** - Vector similarity with metadata predicate filtering
 
+## Resilience & Stability
+
+Longbow implements a **Circuit Breaker** pattern to prevent cascading failures during high load or partial system outages.
+
+### Circuit Breaker
+
+* **Protection**: Wraps `DoGet` and `VectorSearch` operations.
+* **Threshold**: Trips after 10 consecutive failures.
+* **Cooldown**: 30-second reset timeout.
+* **Behavior**: Fast-fails requests with `Unavailable` status when open, allowing the system to recover.
+
 ## Filtered Search
 
 Longbow supports metadata filtering during vector search and data scans.

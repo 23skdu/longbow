@@ -25,7 +25,10 @@ import (
 	"fmt"
 	"runtime"
 	"sync"
+	"time"
 	"unsafe"
+
+	"github.com/23skdu/longbow/internal/metrics"
 )
 
 // FaissGPUIndex wraps FAISS GPU index for vector search
@@ -118,6 +121,7 @@ func (idx *FaissGPUIndex) Search(vector []float32, k int) ([]int64, []float32, e
 	labels := make([]int64, k)
 
 	// Perform GPU search
+	start := time.Now()
 	ret := C.faiss_gpu_index_search(
 		idx.index,
 		1, // single query
@@ -128,8 +132,13 @@ func (idx *FaissGPUIndex) Search(vector []float32, k int) ([]int64, []float32, e
 	)
 
 	if ret != 0 {
+		metrics.VectorSearchGPUOperationsTotal.WithLabelValues("search", "error").Inc()
 		return nil, nil, fmt.Errorf("GPU search failed with code %d", ret)
 	}
+
+	duration := time.Since(start).Seconds()
+	metrics.VectorSearchGPULatencySeconds.WithLabelValues("search").Observe(duration)
+	metrics.VectorSearchGPUOperationsTotal.WithLabelValues("search", "success").Inc()
 
 	return labels, distances, nil
 }

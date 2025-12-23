@@ -242,5 +242,4 @@ venv*
 *.egg-info/
 .coverage
 htmlcov/
-longbow-gpu
-longbow
+

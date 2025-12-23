@@ -234,8 +234,13 @@ def benchmark_vector_search(client: flight.FlightClient, name: str,
     print(f"\n[SEARCH] Running {num_queries:,} vector searches (k={k})...")
 
     latencies = []
-    errors = 0
+    errors = {
+        'resource_exhausted': 0,
+        'unavailable': 0,
+        'other': 0
+    }
     total_results = 0
+    backpressure_warnings = []
 
     for i, qvec in enumerate(query_vectors):
         # NOTE: Using DoAction "VectorSearch" as per server implementation
@@ -252,28 +257,60 @@ def benchmark_vector_search(client: flight.FlightClient, name: str,
         request_body = json.dumps(body).encode("utf-8")
         
         start = time.time()
-        try:
-            action = flight.Action("VectorSearch", request_body)
-            # DoAction returns an iterator of FlightResult
-            results_iter = client.do_action(action)
-            
-            # The server sends back one JSON result with "ids", "scores", etc.
-            # Example response: {"ids": [1, 2], "scores": [0.9, 0.8], "vectors": [...]}
-            for result in results_iter:
-                # Just consuming the result for benchmarking
-                payload = json.loads(result.body.to_pybytes())
-                if "ids" in payload:
-                    total_results += len(payload["ids"])
+        retry_count = 0
+        max_retries = 2
+        
+        while retry_count <= max_retries:
+            try:
+                action = flight.Action("VectorSearch", request_body)
+                # DoAction returns an iterator of FlightResult
+                results_iter = client.do_action(action)
+                
+                # The server sends back one JSON result with "ids", "scores", etc.
+                # Example response: {"ids": [1, 2], "scores": [0.9, 0.8], "vectors": [...]}
+                for result in results_iter:
+                    # Just consuming the result for benchmarking
+                    payload = json.loads(result.body.to_pybytes())
+                    if "ids" in payload:
+                        total_results += len(payload["ids"])
+                
+                # Success - break retry loop
+                break
+                        
+            except flight.FlightError as e:
+                # Check for backpressure signals
+                error_msg = str(e)
+                
+                if "RESOURCE_EXHAUSTED" in error_msg or "memory limit" in error_msg.lower():
+                    errors['resource_exhausted'] += 1
+                    if errors['resource_exhausted'] == 1:
+                        print(f"\n⚠️  [BACKPRESSURE] Server memory limit hit on query {i}")
+                        backpressure_warnings.append(f"Memory limit hit at query {i}")
+                    time.sleep(0.1)  # Back off
+                    retry_count += 1
+                    if retry_count <= max_retries:
+                        continue
                     
-        except flight.FlightError as e:
-            errors += 1
-            if errors <= 3:
-                print(f"[SEARCH] Error on query {i}: {e}")
-            continue
-        except Exception as e:
-            errors += 1
-            print(f"[SEARCH] Unexpected error on query {i}: {e}")
-            continue
+                elif "UNAVAILABLE" in error_msg or "evicting" in error_msg.lower():
+                    errors['unavailable'] += 1
+                    if errors['unavailable'] == 1:
+                        print(f"\n⚠️  [EVICTION] Dataset evicting on query {i}, retrying...")
+                        backpressure_warnings.append(f"Dataset eviction at query {i}")
+                    time.sleep(0.05)  # Shorter backoff for eviction
+                    retry_count += 1
+                    if retry_count <= max_retries:
+                        continue
+                else:
+                    errors['other'] += 1
+                    if errors['other'] <= 3:
+                        print(f"[SEARCH] Error on query {i}: {e}")
+                
+                break  # Exit retry loop on non-retryable error
+                
+            except Exception as e:
+                errors['other'] += 1
+                print(f"[SEARCH] Unexpected error on query {i}: {e}")
+                break
 
         latencies.append((time.time() - start) * 1000)  # ms
 
@@ -282,6 +319,8 @@ def benchmark_vector_search(client: flight.FlightClient, name: str,
 
     duration = sum(latencies) / 1000  # total seconds
     qps = num_queries / duration if duration > 0 else 0
+    
+    total_errors = sum(errors.values())
 
     result = BenchmarkResult(
         name="VectorSearch",
@@ -290,12 +329,18 @@ def benchmark_vector_search(client: flight.FlightClient, name: str,
         throughput_unit="queries/s",
         rows=total_results,
         latencies_ms=latencies,
-        errors=errors,
+        errors=total_errors,
     )
 
     print(f"[SEARCH] Completed: {qps:.2f} queries/s")
     print(f"[SEARCH] Latency p50={result.p50_ms:.2f}ms p95={result.p95_ms:.2f}ms p99={result.p99_ms:.2f}ms")
-    print(f"[SEARCH] Errors: {errors}")
+    print(f"[SEARCH] Errors: {total_errors}")
+    
+    # Report backpressure stats
+    if errors['resource_exhausted'] > 0:
+        print(f"\n⚠️  BACKPRESSURE DETECTED: {errors['resource_exhausted']} queries hit memory limit")
+    if errors['unavailable'] > 0:
+        print(f"\n⚠️  EVICTIONS DETECTED: {errors['unavailable']} queries hit evicting dataset")
 
     return result
 

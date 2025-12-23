@@ -63,6 +63,9 @@ type HNSWIndex struct {
 	pqEncoder *PQEncoder
 	pqCodes   [][]uint8 // Indexed by VectorID
 	pqCodesMu sync.RWMutex
+
+	// Parallel Search Configuration
+	parallelConfig ParallelSearchConfig
 }
 
 // NewHNSWIndex creates a new index for the given dataset using Euclidean distance.
@@ -73,9 +76,10 @@ func NewHNSWIndex(ds *Dataset) *HNSWIndex {
 // NewHNSWIndexWithMetric creates a new index for the given dataset with the specified metric.
 func NewHNSWIndexWithMetric(ds *Dataset, metric VectorMetric) *HNSWIndex {
 	h := &HNSWIndex{
-		dataset:   ds,
-		locations: make([]Location, 0),
-		Metric:    metric,
+		dataset:        ds,
+		locations:      make([]Location, 0),
+		Metric:         metric,
+		parallelConfig: DefaultParallelSearchConfig(),
 	}
 	if ds != nil {
 		h.numaTopology = ds.Topo
@@ -433,6 +437,13 @@ func (h *HNSWIndex) SearchVectors(query []float32, k int, filters []Filter) []Se
 	neighbors := h.Graph.Search(graphQuery, limit)
 	h.mu.RUnlock()
 
+	// Use parallel processing for large result sets
+	cfg := h.getParallelSearchConfig()
+	if cfg.Enabled && len(neighbors) >= cfg.Threshold {
+		return h.processResultsParallel(query, neighbors, k, filters)
+	}
+
+	// Fall back to serial processing for small result sets (original implementation)
 	distFunc := h.GetDistanceFunc()
 
 	// Pre-process filters once per search (Item 6)

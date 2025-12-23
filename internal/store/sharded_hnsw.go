@@ -20,6 +20,7 @@ type ShardedHNSWConfig struct {
 	M              int          // HNSW M parameter
 	EfConstruction int          // HNSW efConstruction parameter
 	Metric         VectorMetric // Distance metric for this index
+	Dimension      uint32       // Vector dimension
 }
 
 func (c ShardedHNSWConfig) Validate() error {
@@ -66,6 +67,7 @@ type ShardedHNSW struct {
 	nextID     atomic.Int64
 	globalLocs []Location
 	globalMu   sync.RWMutex
+	dimension  uint32
 }
 
 // NewShardedHNSW creates a new sharded HNSW index.
@@ -87,6 +89,7 @@ func NewShardedHNSW(config ShardedHNSWConfig, dataset *Dataset) *ShardedHNSW {
 		shards:     shards,
 		dataset:    dataset,
 		globalLocs: make([]Location, 0, 4096),
+		dimension:  config.Dimension,
 	}
 }
 
@@ -516,11 +519,7 @@ func (s *ShardedHNSW) GetLocation(id VectorID) (Location, bool) {
 
 // GetDimension implements VectorIndex.
 func (s *ShardedHNSW) GetDimension() uint32 {
-
-	// Try to find a vector dimension from any shard if not stored
-	// Assuming all vectors have the same dimension.
-	// For now, return 0 if unknown or add Dimension to config.
-	return 0 // Placeholder
+	return s.dimension
 }
 
 // Stats returns multi-index statistics for all shards.

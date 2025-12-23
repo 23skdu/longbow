@@ -88,7 +88,7 @@ func TestBruteForceIndexAddByLocation(t *testing.T) {
 
 	// Add vectors from batch 0
 	for i := 0; i < 10; i++ {
-		err := idx.AddByLocation(0, i)
+		_, err := idx.AddByLocation(0, i)
 		if err != nil {
 			t.Fatalf("AddByLocation failed: %v", err)
 		}
@@ -105,7 +105,7 @@ func TestBruteForceIndexSearchVectors(t *testing.T) {
 
 	// Add all vectors
 	for i := 0; i < 100; i++ {
-		if err := idx.AddByLocation(0, i); err != nil {
+		if _, err := idx.AddByLocation(0, i); err != nil {
 			t.Fatalf("AddByLocation failed: %v", err)
 		}
 	}
@@ -133,7 +133,7 @@ func TestBruteForceIndexSearchExact(t *testing.T) {
 	idx := NewBruteForceIndex(ds)
 
 	for i := 0; i < 5; i++ {
-		if err := idx.AddByLocation(0, i); err != nil {
+		if _, err := idx.AddByLocation(0, i); err != nil {
 			t.Fatalf("AddByLocation failed: %v", err)
 		}
 	}
@@ -188,7 +188,7 @@ func TestAdaptiveIndexSwitchesToHNSW(t *testing.T) {
 
 	// Add vectors up to threshold
 	for i := 0; i < 100; i++ {
-		if err := idx.AddByLocation(0, i); err != nil {
+		if _, err := idx.AddByLocation(0, i); err != nil {
 			t.Fatalf("AddByLocation failed at %d: %v", i, err)
 		}
 	}
@@ -207,7 +207,7 @@ func TestAdaptiveIndexSearchAfterMigration(t *testing.T) {
 
 	// Add vectors to trigger migration
 	for i := 0; i < 50; i++ {
-		if err := idx.AddByLocation(0, i); err != nil {
+		if _, err := idx.AddByLocation(0, i); err != nil {
 			t.Fatalf("AddByLocation failed: %v", err)
 		}
 	}
@@ -231,7 +231,7 @@ func TestAdaptiveIndexGetMigrationCount(t *testing.T) {
 
 	// Add vectors to trigger migration
 	for i := 0; i < 20; i++ {
-		_ = idx.AddByLocation(0, i)
+		_, _ = idx.AddByLocation(0, i)
 	}
 
 	// Migration count should have increased
@@ -251,7 +251,7 @@ func TestAdaptiveIndexConcurrentAccess(t *testing.T) {
 	for g := 0; g < 4; g++ {
 		go func(start int) {
 			for i := start; i < start+100; i++ {
-				_ = idx.AddByLocation(0, i%500)
+				_, _ = idx.AddByLocation(0, i%500)
 			}
 			done <- true
 		}(g * 100)

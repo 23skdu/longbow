@@ -6,8 +6,6 @@ import (
 	"sync"
 
 	"github.com/23skdu/longbow/internal/simd"
-	"github.com/apache/arrow-go/v18/arrow"
-	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/coder/hnsw"
 )
 
@@ -146,8 +144,8 @@ func (h *HNSWIndex) processChunk(query []float32, neighbors []hnsw.Node[VectorID
 		}
 
 		// Extract vector (copy)
-		vec := h.extractVector(rec, loc.RowIdx)
-		if vec != nil {
+		vec, err := h.extractVector(rec, loc.RowIdx)
+		if err == nil && vec != nil {
 			tasks = append(tasks, vectorTask{id: n.Key, vec: vec})
 		}
 	}
@@ -230,7 +228,7 @@ func (h *HNSWIndex) processResultsSerial(query []float32, neighbors []hnsw.Node[
 			continue
 		}
 
-		vec := h.extractVector(rec, loc.RowIdx)
+		vec, _ := h.extractVector(rec, loc.RowIdx)
 		h.dataset.dataMu.RUnlock()
 
 		if vec == nil {
@@ -246,42 +244,4 @@ func (h *HNSWIndex) processResultsSerial(query []float32, neighbors []hnsw.Node[
 	}
 
 	return res
-}
-
-// extractVector extracts vector from record (caller must hold dataMu RLock)
-func (h *HNSWIndex) extractVector(rec arrow.RecordBatch, rowIdx int) []float32 {
-	for i := 0; i < int(rec.NumCols()); i++ {
-		field := rec.Schema().Field(i)
-		if field.Name == "vector" {
-			col := rec.Column(i)
-			if listArr, ok := col.(*array.FixedSizeList); ok {
-				if listArr.IsNull(rowIdx) {
-					return nil
-				}
-				// FixedSizeList stores data in a single flat child array
-				values := listArr.Data().Children()[0]
-				floatArr := array.NewFloat32Data(values)
-				defer floatArr.Release()
-
-				width := int(listArr.DataType().(*arrow.FixedSizeListType).Len())
-				start := rowIdx * width
-				end := start + width
-
-				// Safety check bounds
-				if start < 0 || end > floatArr.Len() {
-					return nil
-				}
-
-				// Copy data to avoid safety issues with underlying buffer reuse
-				// (Though for search we might get away with direct slice if careful,
-				// but let's be safe as per getVector impl)
-				src := floatArr.Float32Values()[start:end]
-				dst := make([]float32, len(src))
-				copy(dst, src)
-				return dst
-			}
-			break
-		}
-	}
-	return nil
 }

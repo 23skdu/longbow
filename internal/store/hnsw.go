@@ -843,6 +843,146 @@ func (h *HNSWIndex) AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx int) (ui
 	return h.AddSafe(rec, rowIdx, batchIdx)
 }
 
+// AddBatch implements VectorIndex interface for HNSWIndex.
+func (h *HNSWIndex) AddBatch(recs []arrow.RecordBatch, rowIdxs []int, batchIdxs []int) ([]uint32, error) {
+	if len(recs) == 0 {
+		return nil, nil
+	}
+
+	n := len(recs)
+	ids := make([]uint32, n)
+	vectors := make([][]float32, n)
+
+	// 1. Extract vectors (Done outside h.mu lock)
+	for i := 0; i < n; i++ {
+		vec, err := h.extractVector(recs[i], rowIdxs[i])
+		if err != nil {
+			return nil, err
+		}
+		vectors[i] = vec
+	}
+
+	// 2. Allocate IDs and update locations under single lock
+	h.mu.Lock()
+	baseID := VectorID(h.nextVecID.Add(uint32(n)) - uint32(n))
+	for i := 0; i < n; i++ {
+		id := baseID + VectorID(i)
+		ids[i] = uint32(id)
+		h.locationStore.Append(Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
+	}
+	h.mu.Unlock()
+
+	// 3. Initialize dims once
+	if n > 0 && vectors[0] != nil {
+		h.dimsOnce.Do(func() {
+			h.dims = len(vectors[0])
+		})
+	}
+
+	// 4. PQ Encoding (Done outside h.mu lock)
+	encodedVectors := make([][]float32, n)
+	h.pqCodesMu.RLock()
+	pqEnabled := h.pqEnabled
+	encoder := h.pqEncoder
+	h.pqCodesMu.RUnlock()
+
+	for i := 0; i < n; i++ {
+		vec := vectors[i]
+		if pqEnabled && encoder != nil {
+			codes := encoder.Encode(vec)
+			id := baseID + VectorID(i)
+			h.pqCodesMu.Lock()
+			// Resize storage if necessary
+			if int(id) >= len(h.pqCodes) {
+				targetLen := int(id) + 1
+				if targetLen > cap(h.pqCodes) {
+					newCap := targetLen * 2
+					if newCap < 1024 {
+						newCap = 1024
+					}
+					newCodes := make([][]uint8, targetLen, newCap)
+					copy(newCodes, h.pqCodes)
+					h.pqCodes = newCodes
+				} else {
+					h.pqCodes = h.pqCodes[:targetLen]
+				}
+			}
+			h.pqCodes[id] = codes
+			h.pqCodesMu.Unlock()
+			encodedVectors[i] = PackBytesToFloat32s(codes)
+		} else {
+			encodedVectors[i] = vec
+		}
+	}
+
+	// 5. Add to graph (Sequential insertion Required by library)
+	for i := 0; i < n; i++ {
+		id := baseID + VectorID(i)
+		h.mu.Lock()
+		h.Graph.Add(hnsw.MakeNode(id, encodedVectors[i]))
+		h.mu.Unlock()
+	}
+
+	// Update metrics
+	metrics.HnswNodeCount.WithLabelValues(h.dataset.Name).Set(float64(h.nextVecID.Load()))
+
+	return ids, nil
+}
+
+// extractor helper to avoid code duplication
+func (h *HNSWIndex) extractVector(rec arrow.RecordBatch, rowIdx int) ([]float32, error) {
+	if rec == nil {
+		return nil, fmt.Errorf("extractVector: record is nil")
+	}
+
+	var vecCol arrow.Array
+	// Use cached vectorColIdx if available
+	colIdx := int(h.vectorColIdx.Load())
+	if colIdx >= 0 && colIdx < int(rec.NumCols()) {
+		if rec.Schema().Field(colIdx).Name == "vector" {
+			vecCol = rec.Column(colIdx)
+		}
+	}
+
+	if vecCol == nil {
+		for i, field := range rec.Schema().Fields() {
+			if field.Name == "vector" {
+				vecCol = rec.Column(i)
+				h.vectorColIdx.Store(int32(i))
+				break
+			}
+		}
+	}
+
+	if vecCol == nil {
+		return nil, fmt.Errorf("extractVector: vector column not found")
+	}
+
+	listArr, ok := vecCol.(*array.FixedSizeList)
+	if !ok {
+		return nil, fmt.Errorf("extractVector: invalid vector column format")
+	}
+
+	values := listArr.Data().Children()[0]
+	floatArr := array.NewFloat32Data(values)
+	defer floatArr.Release()
+
+	width := int(listArr.DataType().(*arrow.FixedSizeListType).Len())
+	start := rowIdx * width
+	end := start + width
+
+	if start < 0 || end > floatArr.Len() {
+		return nil, fmt.Errorf("extractVector: row index out of bounds")
+	}
+
+	// Return a copy to avoid data races with arrow buffers being released
+	// NOTE: In Search we use zero-copy because it's transient.
+	// In Add, we MUST copy because the vector is stored in HNSW graph (internal to hnsw lib).
+	vec := make([]float32, width)
+	copy(vec, floatArr.Float32Values()[start:end])
+	return vec, nil
+}
+
 // SearchVectorsWithBitmap returns k nearest neighbors filtered by a bitset.
 func (h *HNSWIndex) SearchVectorsWithBitmap(query []float32, k int, filter *Bitset) []SearchResult {
 	if filter == nil || filter.Count() == 0 {

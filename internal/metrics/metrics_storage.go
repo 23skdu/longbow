@@ -354,6 +354,22 @@ var (
 		[]string{"dataset"},
 	)
 
+	HNSWPQTrainingTriggered = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_hnsw_pq_training_triggered_total",
+			Help: "Total number of auto-triggered PQ training events",
+		},
+		[]string{"dataset"},
+	)
+
+	HNSWPQCompressedBytesTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_hnsw_pq_compressed_bytes_total",
+			Help: "Total number of bytes stored in PQ compressed format",
+		},
+		[]string{"dataset"},
+	)
+
 	ShardedHnswShardSize = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "longbow_sharded_hnsw_shard_size",

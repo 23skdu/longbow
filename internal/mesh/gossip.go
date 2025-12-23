@@ -239,10 +239,14 @@ func (g *Gossip) probe() {
 		return
 	}
 	targetID := g.peers[rand.Intn(len(g.peers))]
-	target := g.members[targetID]
+	targetPtr := g.members[targetID]
+	var target Member
+	if targetPtr != nil {
+		target = *targetPtr
+	}
 	g.mu.RUnlock()
 
-	if target == nil || target.Status == StatusDead {
+	if targetPtr == nil || target.Status == StatusDead {
 		return
 	}
 
@@ -294,7 +298,7 @@ func (g *Gossip) probe() {
 		g.mu.RUnlock()
 
 		if len(others) == 0 {
-			g.markSuspect(target)
+			g.markSuspect(target.ID)
 			return
 		}
 
@@ -317,14 +321,20 @@ func (g *Gossip) probe() {
 		case <-ackCh:
 			return // Success via proxy
 		case <-time.After(g.Config.AckTimeout * 2):
-			g.markSuspect(target)
+			g.markSuspect(target.ID)
 		}
 	}
 }
 
-func (g *Gossip) markSuspect(m *Member) {
+func (g *Gossip) markSuspect(id string) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
+
+	m, ok := g.members[id]
+	if !ok {
+		return
+	}
+
 	if m.Status == StatusAlive {
 		m.Status = StatusSuspect
 		m.SuspectAt = time.Now()

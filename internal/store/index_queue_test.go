@@ -17,8 +17,8 @@ import (
 func TestIndexJobQueueConfig_Defaults(t *testing.T) {
 	cfg := DefaultIndexJobQueueConfig()
 
-	assert.Equal(t, 20000, cfg.MainChannelSize, "MainChannelSize")
-	assert.Equal(t, 200000, cfg.OverflowBufferSize, "OverflowBufferSize")
+	assert.Equal(t, 10000, cfg.MainChannelSize, "MainChannelSize")
+	assert.Equal(t, 50000, cfg.OverflowBufferSize, "OverflowBufferSize")
 	assert.Equal(t, 1*time.Millisecond, cfg.DrainInterval, "DrainInterval")
 }
 

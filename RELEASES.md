@@ -14,9 +14,6 @@ This release marks a major architectural evolution, transforming Longbow from a 
 6. **Kubernetes-Native Resilience**: Validated 3-node distributed deployments on Kubernetes. The system is certified to recover automatically from pod failures, maintaining partition tolerance and service availability.
 7. **Enhanced Observability Stack**: Expanded Prometheus metrics coverage to include GPU utilization, Gossip mesh health, compaction latency, and cross-node proxy traffic, offering deep visibility into distributed system behavior.
 8. **Compaction Engine Stability**: Critical improvements to the storage compaction subsystem, enforcing strict type safety to ensure long-term data durability and preventing corruption during background maintenance tasks.
-9. **Automated Regression Suite**: Introduced a comprehensive distributed testing framework that validates end-to-end data consistency and cluster recoverability under failure conditions.
-10. **Optimized Deployment Artifacts**: Significantly improved container build processes and context optimization, resulting in leaner, more secure Docker images for production deployment.
-
 ---
 
 ## v0.1.0 (2025-12-20)

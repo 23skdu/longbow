@@ -64,14 +64,61 @@ func NewBruteForceIndex(ds *Dataset) *BruteForceIndex {
 }
 
 // AddByLocation adds a vector from the dataset using batch and row indices.
-func (b *BruteForceIndex) AddByLocation(batchIdx, rowIdx int) error {
+func (b *BruteForceIndex) AddByLocation(batchIdx, rowIdx int) (uint32, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
+	id := uint32(len(b.locations))
 	b.locations = append(b.locations, Location{
 		BatchIdx: batchIdx,
 		RowIdx:   rowIdx,
 	})
+	return id, nil
+}
+
+// AddByRecord adds a vector from a record batch.
+func (b *BruteForceIndex) AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32, error) {
+	return b.AddByLocation(batchIdx, rowIdx)
+}
+
+// AddBatch adds multiple vectors efficiently.
+func (b *BruteForceIndex) AddBatch(recs []arrow.RecordBatch, rowIdxs []int, batchIdxs []int) ([]uint32, error) {
+	ids := make([]uint32, len(recs))
+	for i := range recs {
+		id, _ := b.AddByRecord(recs[i], rowIdxs[i], batchIdxs[i])
+		ids[i] = id
+	}
+	return ids, nil
+}
+
+// SearchVectorsWithBitmap returns k nearest neighbors filtered by a bitset.
+func (b *BruteForceIndex) SearchVectorsWithBitmap(query []float32, k int, filter *Bitset) []SearchResult {
+	// Not implemented for BruteForce, but needed for interface
+	return nil
+}
+
+// GetLocation retrieves the storage location for a given vector ID.
+func (b *BruteForceIndex) GetLocation(id VectorID) (Location, bool) {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	if int(id) >= len(b.locations) {
+		return Location{}, false
+	}
+	return b.locations[id], true
+}
+
+func (b *BruteForceIndex) GetDimension() uint32 {
+	// Logic to get dim from dataset
+	return 0
+}
+
+func (b *BruteForceIndex) Warmup() int {
+	return 0
+}
+
+func (b *BruteForceIndex) SetIndexedColumns(cols []string) {}
+
+func (b *BruteForceIndex) Close() error {
 	return nil
 }
 
@@ -214,16 +261,17 @@ func NewAdaptiveIndex(ds *Dataset, cfg AdaptiveIndexConfig) *AdaptiveIndex {
 }
 
 // AddByLocation adds a vector and potentially triggers migration to HNSW.
-func (a *AdaptiveIndex) AddByLocation(batchIdx, rowIdx int) error {
+func (a *AdaptiveIndex) AddByLocation(batchIdx, rowIdx int) (uint32, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
+	var id uint32
 	var err error
 
 	if a.usingHNSW.Load() {
-		_, err = a.hnsw.AddByLocation(batchIdx, rowIdx)
+		id, err = a.hnsw.AddByLocation(batchIdx, rowIdx)
 	} else {
-		err = a.bruteForce.AddByLocation(batchIdx, rowIdx)
+		id, err = a.bruteForce.AddByLocation(batchIdx, rowIdx)
 		if err == nil {
 			newCount := a.vectorCount.Add(1)
 			if a.config.Enabled && int(newCount) >= a.config.Threshold { //nolint:gosec // G115
@@ -232,7 +280,81 @@ func (a *AdaptiveIndex) AddByLocation(batchIdx, rowIdx int) error {
 		}
 	}
 
-	return err
+	return id, err
+}
+
+// AddByRecord adds a vector from a record batch.
+func (a *AdaptiveIndex) AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32, error) {
+	return a.AddByLocation(batchIdx, rowIdx)
+}
+
+// AddBatch adds multiple vectors efficiently.
+func (a *AdaptiveIndex) AddBatch(recs []arrow.RecordBatch, rowIdxs []int, batchIdxs []int) ([]uint32, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	ids := make([]uint32, len(recs))
+	for i := range recs {
+		id, err := a.AddByLocation(batchIdxs[i], rowIdxs[i])
+		if err != nil {
+			return nil, err
+		}
+		ids[i] = id
+	}
+	return ids, nil
+}
+
+func (a *AdaptiveIndex) SearchVectorsWithBitmap(query []float32, k int, filter *Bitset) []SearchResult {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	if a.usingHNSW.Load() {
+		return a.hnsw.SearchVectorsWithBitmap(query, k, filter)
+	}
+	return nil
+}
+
+func (a *AdaptiveIndex) GetLocation(id VectorID) (Location, bool) {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	if a.usingHNSW.Load() {
+		return a.hnsw.GetLocation(id)
+	}
+	return a.bruteForce.GetLocation(id)
+}
+
+func (a *AdaptiveIndex) GetDimension() uint32 {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	if a.usingHNSW.Load() {
+		return a.hnsw.GetDimension()
+	}
+	return 0
+}
+
+func (a *AdaptiveIndex) Warmup() int {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	if a.usingHNSW.Load() {
+		return a.hnsw.Warmup()
+	}
+	return 0
+}
+
+func (a *AdaptiveIndex) SetIndexedColumns(cols []string) {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	if a.usingHNSW.Load() {
+		a.hnsw.SetIndexedColumns(cols)
+	}
+}
+
+func (a *AdaptiveIndex) Close() error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.usingHNSW.Load() {
+		return a.hnsw.Close()
+	}
+	return a.bruteForce.Close()
 }
 
 // migrateToHNSW converts from BruteForce to HNSW (must hold mu.Lock).

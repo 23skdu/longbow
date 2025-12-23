@@ -50,6 +50,9 @@ func dotAVX2(a, b []float32) float32         { return dotGeneric(a, b) }
 func dotAVX512(a, b []float32) float32       { return dotGeneric(a, b) }
 func prefetchNTA(p unsafe.Pointer)           {}
 
+func adcBatchNEON(table []float32, flatCodes []byte, m int, results []float32) {
+	adcBatchGeneric(table, flatCodes, m, results)
+}
 func euclideanBatchNEON(query []float32, vectors [][]float32, results []float32) {
 	for i, v := range vectors {
 		results[i] = euclideanNEON(query, v)

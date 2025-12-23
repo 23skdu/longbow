@@ -61,13 +61,21 @@ func (s *HNSWGraphSync) ExportState() ([]byte, error) {
 		return nil, err
 	}
 
+	// Capture locations snapshot
+	// We can't use copy on chunked store.
+	// We iterate the store to fill the slice.
+	locs := make([]Location, 0, s.index.locationStore.Len())
+	// IterateMutable gives *atomic.Uint64.
+	s.index.locationStore.IterateMutable(func(_ VectorID, val *atomic.Uint64) {
+		loc := unpackLocation(val.Load())
+		locs = append(locs, loc)
+	})
 	state := SyncState{
 		Version:   s.version.Load(),
 		Dims:      s.index.dims,
-		Locations: make([]Location, len(s.index.locations)),
+		Locations: locs,
 		GraphData: graphBuf.Bytes(),
 	}
-	copy(state.Locations, s.index.locations)
 
 	var buf bytes.Buffer
 	if err := gob.NewEncoder(&buf).Encode(state); err != nil {
@@ -98,8 +106,16 @@ func (s *HNSWGraphSync) ImportState(data []byte) error {
 	}
 
 	s.index.dims = state.Dims
-	s.index.locations = make([]Location, len(state.Locations))
-	copy(s.index.locations, state.Locations)
+	// Restore locations
+	// Assumes empty index or overwrite?
+	// NewHNSWGraphSync assumes index exists.
+	// ImportState traditionally overwrites or fills?
+	// Original used `make` and `copy` over `s.index.locations`.
+	// So it replaced the whole slice.
+	s.index.locationStore.Reset()
+	for _, loc := range state.Locations {
+		s.index.locationStore.Append(loc)
+	}
 	s.version.Store(state.Version)
 
 	s.importCount.Add(1)
@@ -147,13 +163,30 @@ func (s *HNSWGraphSync) ExportDelta(fromVersion uint64) (*DeltaSync, error) {
 		StartIndex:   0,
 	}
 
-	if currentVersion > fromVersion && len(s.index.locations) > 0 {
+	if currentVersion > fromVersion && s.index.locationStore.Len() > 0 {
 		// Export locations added after initial set
-		// Assume first half existed at fromVersion, second half is new
-		midpoint := len(s.index.locations) / 2
+		// "Initial set" definition depends on how versions work.
+		// Simply, if we have new locations since last check?
+		// Logic: If version changed, we might have added items.
+		// BUT, `delta` logic here assumes `midpoint` split?
+		// Original code: `midpoint := len(locations)/2`. Why /2?
+		// This looks like a dummy logic or specific testing logic?
+		// Real sync should track `fromVersion` to `currentVersion`.
+		// If `midpoint` logic was intentional for "partial sync test", I should simulate it?
+		// "midpoint := len(...) / 2" suggests it sends the *second half*?
+		// I will keep the logic: slice from len/2 to end.
+
+		totalLen := s.index.locationStore.Len()
+		midpoint := totalLen / 2
 		delta.StartIndex = midpoint
-		delta.NewLocations = make([]Location, len(s.index.locations)-midpoint)
-		copy(delta.NewLocations, s.index.locations[midpoint:])
+		delta.NewLocations = make([]Location, 0, totalLen-midpoint)
+
+		// Iterate from midpoint to end
+		// Accessing by ID is O(1).
+		for i := midpoint; i < totalLen; i++ {
+			loc, _ := s.index.locationStore.Get(VectorID(i))
+			delta.NewLocations = append(delta.NewLocations, loc)
+		}
 	}
 
 	metrics.HNSWGraphSyncDeltasTotal.Inc()
@@ -169,14 +202,58 @@ func (s *HNSWGraphSync) ApplyDelta(delta *DeltaSync) error {
 
 	// Ensure we have enough capacity
 	targetLen := delta.StartIndex + len(delta.NewLocations)
-	if len(s.index.locations) < targetLen {
-		newLocs := make([]Location, targetLen)
-		copy(newLocs, s.index.locations)
-		s.index.locations = newLocs
+	currentLen := s.index.locationStore.Len()
+	if targetLen > currentLen {
+		s.index.locationStore.Grow(targetLen - currentLen)
+		// We also need to update the size of the store if Grow doesn't do it (Grow in Chunked.. only allocates chunks).
+		// Wait, ChunkedLocationStore.Grow allocates *capacity*, but Append updates *Len*.
+		// Set updates only if within *capacity*? No, Set updates if within *Chunks*.
+		// But s.size (Len) is used for bounds check in Get? No, Get checks chunk existence.
+		// However, Append increments size.
+		// If we use Set for new items, we must update size manually or verify Set behavior.
+		// ChunkedLocationStore.Set does NOT update size.
+		// If we are "applying delta" which ADDS items, we should use Append if they are strictly appended.
+		// If they are random writes, we have a problem if they are past Len.
+		// GraphSync usually appends? "StartIndex".
+		// If StartIndex == Len, we Append.
+		// If StartIndex < Len, we Set (update).
+		// If StartIndex > Len, we have a gap.
 	}
 
-	// Copy delta locations at the correct position
-	copy(s.index.locations[delta.StartIndex:], delta.NewLocations)
+	// Copy delta locations
+	for i, loc := range delta.NewLocations {
+		id := VectorID(uint32(delta.StartIndex) + uint32(i))
+		// If the ID is >= Len, we should Append (if sequential) or we need a Set that extends size.
+		// Given complexity, and assuming StartIndex usually == Len in log replication:
+		// We'll use Set for simplicity but we might fail if we didn't update Size?
+		// Actually, let's look at ChunkedLocationStore again.
+		// Set: check chunkIdx < len(chunks).
+		// Grow: allocates chunks.
+		// So Set works if chunks exist.
+		// BUT, Len() will be stale if we don't increment it.
+		// Graph Sync should update the official state.
+
+		// Ideally we use Append for new items.
+		if int(id) >= s.index.locationStore.Len() {
+			// It's an append (or gap fill)
+			// Efficiently we should use Append.
+			// The existing logic used `locations = newLocs`, effectively setting length.
+
+			// We will just Append if it matches next ID.
+			if int(id) == s.index.locationStore.Len() {
+				s.index.locationStore.Append(loc)
+			} else {
+				// Gap or overwrite?
+				// If gap, we fill with empty?
+				for int(id) > s.index.locationStore.Len() {
+					s.index.locationStore.Append(Location{})
+				}
+				s.index.locationStore.Append(loc)
+			}
+		} else {
+			s.index.locationStore.Set(id, loc)
+		}
+	}
 	s.version.Store(delta.ToVersion)
 
 	metrics.HNSWGraphSyncDeltaAppliesTotal.Inc()

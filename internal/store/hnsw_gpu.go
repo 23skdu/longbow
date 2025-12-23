@@ -89,11 +89,11 @@ func (h *HNSWIndex) SearchHybrid(query []float32, k int) []SearchResult {
 
 		// Verify this is a valid vector
 		h.mu.RLock()
-		if int(vecID) >= len(h.locations) {
+		loc, ok := h.locationStore.Get(vecID)
+		if !ok {
 			h.mu.RUnlock()
 			continue
 		}
-		loc := h.locations[vecID]
 		h.mu.RUnlock()
 
 		// Skip tombstoned vectors

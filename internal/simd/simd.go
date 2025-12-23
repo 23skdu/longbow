@@ -19,8 +19,9 @@ type CPUFeatures struct {
 
 // Function pointer types for dispatch
 type (
-	distanceFunc      func(a, b []float32) float32
-	distanceBatchFunc func(query []float32, vectors [][]float32, results []float32)
+	distanceFunc         func(a, b []float32) float32
+	distanceBatchFunc    func(query []float32, vectors [][]float32, results []float32)
+	adcDistanceBatchFunc func(table []float32, flatCodes []byte, m int, results []float32)
 
 	// CompareOp represents a comparison operator for SIMD filters
 	CompareOp int
@@ -52,6 +53,8 @@ var (
 
 	matchInt64Impl   matchInt64Func
 	matchFloat32Impl matchFloat32Func
+
+	adcDistanceBatchImpl adcDistanceBatchFunc
 )
 
 func init() {
@@ -95,6 +98,7 @@ func initializeDispatch() {
 		prefetchImpl = prefetchNTA
 		matchInt64Impl = matchInt64AVX512
 		matchFloat32Impl = matchFloat32AVX512
+		adcDistanceBatchImpl = adcBatchAVX512
 	case "avx2":
 		euclideanDistanceImpl = euclideanAVX2
 		metrics.SimdDispatchCount.WithLabelValues("avx2").Inc()
@@ -106,6 +110,7 @@ func initializeDispatch() {
 		prefetchImpl = prefetchNTA
 		matchInt64Impl = matchInt64AVX2
 		matchFloat32Impl = matchFloat32AVX2
+		adcDistanceBatchImpl = adcBatchAVX2
 	case "neon":
 		euclideanDistanceImpl = euclideanNEON
 		metrics.SimdDispatchCount.WithLabelValues("neon").Inc()
@@ -117,6 +122,7 @@ func initializeDispatch() {
 		prefetchImpl = prefetchGeneric
 		matchInt64Impl = matchInt64Generic
 		matchFloat32Impl = matchFloat32Generic
+		adcDistanceBatchImpl = adcBatchNEON
 	default:
 		euclideanDistanceImpl = euclideanUnrolled4x
 		metrics.SimdDispatchCount.WithLabelValues("generic").Inc()
@@ -128,6 +134,7 @@ func initializeDispatch() {
 		prefetchImpl = prefetchGeneric
 		matchInt64Impl = matchInt64Generic
 		matchFloat32Impl = matchFloat32Generic
+		adcDistanceBatchImpl = adcBatchGeneric
 	}
 
 }
@@ -245,6 +252,27 @@ func dotBatchGeneric(query []float32, vectors [][]float32, results []float32) {
 func cosineBatchGeneric(query []float32, vectors [][]float32, results []float32) {
 	for i, v := range vectors {
 		results[i] = cosineGeneric(query, v)
+	}
+}
+
+// ADCDistanceBatch calculates asymmetric distances for multiple PQ-encoded vectors.
+// table is the precomputed distance table of size [m * 256].
+// flatCodes is a flattened byte slice of size [len(results) * m].
+func ADCDistanceBatch(table []float32, flatCodes []byte, m int, results []float32) {
+	if len(flatCodes) < len(results)*m {
+		panic("simd: flatCodes too small")
+	}
+	adcDistanceBatchImpl(table, flatCodes, m, results)
+}
+
+func adcBatchGeneric(table []float32, flatCodes []byte, m int, results []float32) {
+	for i := 0; i < len(results); i++ {
+		var sum float32
+		codes := flatCodes[i*m : (i+1)*m]
+		for jj, code := range codes {
+			sum += table[jj*256+int(code)]
+		}
+		results[i] = float32(math.Sqrt(float64(sum)))
 	}
 }
 

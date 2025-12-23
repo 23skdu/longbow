@@ -4,6 +4,9 @@ import (
 	"errors"
 	"math"
 	"math/rand"
+	"unsafe"
+
+	"github.com/23skdu/longbow/internal/simd"
 )
 
 // =============================================================================
@@ -248,15 +251,35 @@ func (e *PQEncoder) Decode(codes []uint8) []float32 {
 // ComputeDistanceTable precomputes distances from query to all centroids.
 // Returns table[m][k] = squared distance from query subvector m to centroid k.
 func (e *PQEncoder) ComputeDistanceTable(query []float32) [][]float32 {
-	table := make([][]float32, e.config.M)
-	for m := 0; m < e.config.M; m++ {
+	mTotal := e.config.M
+	ksub := e.config.Ksub
+	table := make([][]float32, mTotal)
+	for m := 0; m < mTotal; m++ {
+		table[m] = make([]float32, ksub)
+		start := m * e.config.SubDim
+		end := start + e.config.SubDim
+		subquery := query[start:end]
+		for k, centroid := range e.codebook[m] {
+			table[m][k] = squaredL2(subquery, centroid)
+		}
+	}
+	return table
+}
+
+// ComputeDistanceTableFlat precomputes distances from query to all centroids in a flat format.
+func (e *PQEncoder) ComputeDistanceTableFlat(query []float32) []float32 {
+	mTotal := e.config.M
+	ksub := e.config.Ksub
+	table := make([]float32, mTotal*ksub)
+
+	for m := 0; m < mTotal; m++ {
 		start := m * e.config.SubDim
 		end := start + e.config.SubDim
 		subquery := query[start:end]
 
-		table[m] = make([]float32, e.config.Ksub)
+		baseIdx := m * ksub
 		for k, centroid := range e.codebook[m] {
-			table[m][k] = squaredL2(subquery, centroid)
+			table[baseIdx+k] = squaredL2(subquery, centroid)
 		}
 	}
 	return table
@@ -268,6 +291,39 @@ func (e *PQEncoder) ADCDistance(table [][]float32, codes []uint8) float32 {
 	var sum float32
 	for m, code := range codes {
 		sum += table[m][code]
+	}
+	return float32(math.Sqrt(float64(sum)))
+}
+
+// ADCDistanceFlat computes Asymmetric Distance using a flat precomputed table.
+func (e *PQEncoder) ADCDistanceFlat(table []float32, codes []uint8) float32 {
+	var sum float32
+	ksub := e.config.Ksub
+	for m, code := range codes {
+		sum += table[m*ksub+int(code)]
+	}
+	return float32(math.Sqrt(float64(sum)))
+}
+
+// ADCDistanceBatch computes asymmetric distances for multiple vectors in parallel.
+// It uses SIMD-accelerated batch lookups.
+func (e *PQEncoder) ADCDistanceBatch(table []float32, flatCodes []byte, results []float32) {
+	simd.ADCDistanceBatch(table, flatCodes, e.config.M, results)
+}
+
+// ADCDistancePacked computes ADC distance from a flat table and packed float32 codes.
+func (e *PQEncoder) ADCDistancePacked(table []float32, packed []float32) float32 {
+	// Treat packed float32s as bytes using unsafe
+	if len(packed) == 0 {
+		return 0
+	}
+	ptr := unsafe.Pointer(&packed[0])
+	codes := unsafe.Slice((*byte)(ptr), e.config.M)
+
+	var sum float32
+	ksub := e.config.Ksub
+	for m, code := range codes {
+		sum += table[m*ksub+int(code)]
 	}
 	return float32(math.Sqrt(float64(sum)))
 }
@@ -348,71 +404,73 @@ func UnpackFloat32sToBytes(packed []float32, length int) []uint8 {
 // SDCDistancePacked computes Symmetric Distance between two packed PQ codes.
 // 'a' and 'b' are float32 slices containing packed uint8 codes (4 codes per float32).
 func (e *PQEncoder) SDCDistancePacked(a, b []float32) float32 {
-	var sum float32
-	// We iterate through the floats and unpack bytes
-	// M is the total number of codes.
-	mTotal := e.config.M
-	// fmt.Printf("SDCDistancePacked: len(a)=%d, mTotal=%d\n", len(a), mTotal)
+	// Optimization: Use unsafe to treat []float32 as []byte to avoid
+	// costly math.Float32bits and bitwise unpacking.
+	// This relies on the fact that PackBytesToFloat32s packs in Little Endian order (b0 first),
+	// and we are running on Little Endian hardware (standard x86/ARM).
 
-	// Direct access to table for speed
+	// Create byte slice views without copying
+	// Note: len(a)*4 because 1 float32 = 4 bytes.
+	if len(a) == 0 {
+		return 0
+	}
+
+	ptrA := unsafe.Pointer(&a[0])
+	bytesA := unsafe.Slice((*byte)(ptrA), len(a)*4)
+
+	ptrB := unsafe.Pointer(&b[0])
+	bytesB := unsafe.Slice((*byte)(ptrB), len(b)*4)
+
+	var sum float32
+	mTotal := e.config.M
+
+	// Direct access to table
 	table := e.sdcTable
 	useTable := table != nil
 
-	codeIdx := 0
-	for i := 0; i < len(a) && codeIdx < mTotal; i++ {
-		// Unpack a[i] and b[i]
-		// Each float32 holds 4 bytes.
-		valA := math.Float32bits(a[i])
-		valB := math.Float32bits(b[i])
-
-		// Byte 0
-		c1 := uint8(valA & 0xFF)
-		c2 := uint8(valB & 0xFF)
-		if useTable {
-			sum += table[codeIdx][c1][c2]
-		} else {
-			sum += squaredL2(e.codebook[codeIdx][c1], e.codebook[codeIdx][c2])
-		}
-		codeIdx++
-		if codeIdx >= mTotal {
-			break
-		}
-
-		// Byte 1
-		c1 = uint8((valA >> 8) & 0xFF)
-		c2 = uint8((valB >> 8) & 0xFF)
-		if useTable {
-			sum += table[codeIdx][c1][c2]
-		} else {
-			sum += squaredL2(e.codebook[codeIdx][c1], e.codebook[codeIdx][c2])
-		}
-		codeIdx++
-		if codeIdx >= mTotal {
-			break
-		}
-
-		// Byte 2
-		c1 = uint8((valA >> 16) & 0xFF)
-		c2 = uint8((valB >> 16) & 0xFF)
-		if useTable {
-			sum += table[codeIdx][c1][c2]
-		} else {
-			sum += squaredL2(e.codebook[codeIdx][c1], e.codebook[codeIdx][c2])
-		}
-		codeIdx++
-		if codeIdx >= mTotal {
-			break
-		}
-
-		// Byte 3
-		c1 = uint8((valA >> 24) & 0xFF)
-		c2 = uint8((valB >> 24) & 0xFF)
-		if useTable {
-			sum += table[codeIdx][c1][c2]
-		} else {
-			sum += squaredL2(e.codebook[codeIdx][c1], e.codebook[codeIdx][c2])
-		}
-		codeIdx++
+	// We only iterate up to mTotal or available bytes
+	limit := len(bytesA)
+	if len(bytesB) < limit {
+		limit = len(bytesB)
 	}
+	if mTotal < limit {
+		limit = mTotal
+	}
+
+	// Loop unrolling for speed (4x unroll)
+	i := 0
+	// 4x unroll
+	for ; i <= limit-4; i += 4 {
+		c1 := bytesA[i]
+		c2 := bytesB[i]
+		s1 := table[i][c1][c2]
+
+		c3 := bytesA[i+1]
+		c4 := bytesB[i+1]
+		s2 := table[i+1][c3][c4]
+
+		c5 := bytesA[i+2]
+		c6 := bytesB[i+2]
+		s3 := table[i+2][c5][c6]
+
+		c7 := bytesA[i+3]
+		c8 := bytesB[i+3]
+		s4 := table[i+3][c7][c8]
+
+		sum += s1 + s2 + s3 + s4
+	}
+
+	// Handle remaining
+	for ; i < limit; i++ {
+		c1 := bytesA[i]
+		c2 := bytesB[i]
+		if useTable {
+			sum += table[i][c1][c2]
+		} else {
+			// Fallback (rare)
+			sum += squaredL2(e.codebook[i][c1], e.codebook[i][c2])
+		}
+	}
+
 	return float32(math.Sqrt(float64(sum)))
 }

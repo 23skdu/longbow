@@ -317,9 +317,9 @@ func (s *ShardedHNSW) SearchVectorsWithBitmap(query []float32, k int, filter *Bi
 }
 
 // SearchVectors implements VectorIndex.
-func (s *ShardedHNSW) SearchVectors(query []float32, k int, filters []Filter) []SearchResult {
+func (s *ShardedHNSW) SearchVectors(query []float32, k int, filters []Filter) ([]SearchResult, error) {
 	if k <= 0 {
-		return nil
+		return nil, nil
 	}
 
 	// 1. Search all shards in parallel
@@ -353,7 +353,12 @@ func (s *ShardedHNSW) SearchVectors(query []float32, k int, filters []Filter) []
 	if len(filters) > 0 && s.dataset != nil {
 		s.dataset.dataMu.RLock()
 		if len(s.dataset.Records) > 0 {
-			evaluator, _ = NewFilterEvaluator(s.dataset.Records[0], filters)
+			var err error
+			evaluator, err = NewFilterEvaluator(s.dataset.Records[0], filters)
+			if err != nil {
+				s.dataset.dataMu.RUnlock()
+				return nil, fmt.Errorf("filter creation failed: %w", err)
+			}
 		}
 		s.dataset.dataMu.RUnlock()
 	}
@@ -409,7 +414,7 @@ func (s *ShardedHNSW) SearchVectors(query []float32, k int, filters []Filter) []
 		merged = merged[:k]
 	}
 
-	return merged
+	return merged, nil
 }
 
 func (s *ShardedHNSW) getVectorFromDataset(loc Location) ([]float32, error) {
@@ -523,7 +528,8 @@ func (s *ShardedHNSW) SearchByID(id VectorID, k int) []VectorID {
 	vec := floatArr.Float32Values()[start : start+width]
 
 	// Search all shards using this vector
-	results := s.SearchVectors(vec, k, nil)
+	// Search all shards using this vector
+	results, _ := s.SearchVectors(vec, k, nil) // Ignore error in this simplified lookup for now
 	ids := make([]VectorID, len(results))
 	for i, r := range results {
 		ids[i] = r.ID

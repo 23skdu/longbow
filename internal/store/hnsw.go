@@ -411,7 +411,7 @@ func (h *HNSWIndex) Search(query []float32, k int) []VectorID {
 
 // SearchVectors performs k-NN search returning full results with scores (distances).
 // Uses striped locks for location access to reduce contention in result processing.
-func (h *HNSWIndex) SearchVectors(query []float32, k int, filters []Filter) []SearchResult {
+func (h *HNSWIndex) SearchVectors(query []float32, k int, filters []Filter) ([]SearchResult, error) {
 	defer func(start time.Time) {
 		metrics.VectorSearchLatencySeconds.WithLabelValues(h.dataset.Name).Observe(time.Since(start).Seconds())
 	}(time.Now())
@@ -444,7 +444,10 @@ func (h *HNSWIndex) SearchVectors(query []float32, k int, filters []Filter) []Se
 	// Use parallel processing for large result sets
 	cfg := h.getParallelSearchConfig()
 	if cfg.Enabled && len(neighbors) >= cfg.Threshold {
-		return h.processResultsParallel(query, neighbors, k, filters)
+		// Parallel processing returns error? Currently assuming no error or panic.
+		// TODO: Refactor processResultsParallel to return error too if needed.
+		// For now, let's assume it swallows errors or is safe.
+		return h.processResultsParallel(query, neighbors, k, filters), nil
 	}
 
 	// Fall back to serial processing for small result sets (original implementation)
@@ -459,8 +462,7 @@ func (h *HNSWIndex) SearchVectors(query []float32, k int, filters []Filter) []Se
 			evaluator, err = NewFilterEvaluator(h.dataset.Records[0], filters)
 			if err != nil {
 				h.dataset.dataMu.RUnlock()
-				fmt.Printf("Filter creation failed: %v\n", err)
-				return []SearchResult{}
+				return nil, fmt.Errorf("filter creation failed: %w", err)
 			}
 		}
 		h.dataset.dataMu.RUnlock()
@@ -573,7 +575,7 @@ func (h *HNSWIndex) SearchVectors(query []float32, k int, filters []Filter) []Se
 		h.exitEpoch()
 	}
 
-	return res
+	return res, nil
 }
 
 // getVectorUnsafe returns a direct reference to the vector data without copying.

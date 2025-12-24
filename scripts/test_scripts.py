@@ -10,11 +10,22 @@ sys.modules['pyarrow.flight'] = MagicMock()
 sys.modules['pandas'] = MagicMock()
 sys.modules['polars'] = MagicMock()
 
+# Define a mock Buffer that wraps bytes
+class MockBuffer:
+    def __init__(self, data):
+        self.data = data
+    def to_pybytes(self):
+        return self.data
+
 # Define a mock Action class that behaves like the real one
 class MockAction:
     def __init__(self, action_type, body):
         self.type = action_type
-        self.body = body
+        # If body is bytes, wrap it in MockBuffer to match expected pa.Buffer interface
+        if isinstance(body, bytes):
+            self.body = MockBuffer(body)
+        else:
+            self.body = body
 
 sys.modules['pyarrow.flight'].Action = MockAction
 sys.modules['pyarrow'].flight = sys.modules['pyarrow.flight'] # Ensure consistency
@@ -46,10 +57,12 @@ class TestPerfTest(unittest.TestCase):
         mock_client = MagicMock()
         mock_result = MagicMock()
         mock_result.body.to_pybytes.return_value = json.dumps({"ids": [1, 2, 3]}).encode('utf-8')
-        mock_client.do_action.return_value = [mock_result]
+        
+        # do_action must return an iterator that yields mock_result EACH time it's called
+        # side_effect with a generator or lambda returning iterator
+        mock_client.do_action.side_effect = lambda *args, **kwargs: iter([mock_result])
         
         # Mock numpy array inputs
-        # perf_test expects query_vectors to be a numpy array like object
         query_vectors = [MagicMock()] 
         query_vectors[0].tolist.return_value = [0.1, 0.2]
         
@@ -77,7 +90,7 @@ class TestOpsTest(unittest.TestCase):
         mock_client = MagicMock()
         mock_result = MagicMock()
         mock_result.body.to_pybytes.return_value = json.dumps({"ids": [1]}).encode('utf-8')
-        mock_client.do_action.return_value = iter([mock_result])
+        mock_client.do_action.side_effect = lambda *args, **kwargs: iter([mock_result])
         
         # Setup Args
         args = MagicMock()
@@ -113,6 +126,49 @@ class TestOpsTest(unittest.TestCase):
         ops_test.command_list(None, None, mock_client)
         
         mock_client.list_flights.assert_called_once()
+
+    def test_command_graph_stats(self):
+        mock_client = MagicMock()
+        mock_result = MagicMock()
+        mock_result.body.to_pybytes.return_value = json.dumps({"edge_count": 10}).encode('utf-8')
+        mock_client.do_action.side_effect = lambda *args, **kwargs: iter([mock_result])
+
+        args = MagicMock()
+        args.dataset = "graph_ds"
+
+        ops_test.command_graph_stats(args, None, mock_client)
+
+        args_call, _ = mock_client.do_action.call_args
+        action = args_call[0]
+        self.assertEqual(action.type, "GetGraphStats")
+        payload = json.loads(action.body.to_pybytes())
+        self.assertEqual(payload['dataset'], "graph_ds")
+
+    def test_benchmark_graph_traversal(self):
+        mock_client = MagicMock()
+        mock_result = MagicMock()
+        mock_result.body.to_pybytes.return_value = json.dumps([{"Nodes": [1, 2]}]).encode('utf-8')
+        # Return unique iterator each time
+        mock_client.do_action.side_effect = lambda *args, **kwargs: iter([mock_result])
+
+        name = "graph_ds"
+        start_nodes = [1, 2]
+        hops = 2
+
+        result = perf_test.benchmark_graph_traversal(mock_client, name, start_nodes, hops)
+
+        self.assertEqual(result.name, "GraphTraversal")
+        self.assertEqual(result.rows, 2)  # 2 traversals * 1 path each = 2 total paths
+
+        args_call, _ = mock_client.do_action.call_args
+        action = args_call[0]
+        self.assertEqual(action.type, "traverse-graph")
+        payload = json.loads(action.body.to_pybytes())
+        self.assertEqual(payload['max_hops'], hops)
+
+if __name__ == '__main__':
+    unittest.main()
+
 
 if __name__ == '__main__':
     unittest.main()

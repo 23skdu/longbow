@@ -102,7 +102,8 @@ func TestShardedHNSW_MergedSearch(t *testing.T) {
 		query[i] = 50.0
 	}
 
-	results := idx.SearchVectors(query, 5, nil)
+	results, err := idx.SearchVectors(query, 5, nil)
+	require.NoError(t, err)
 	require.Len(t, results, 5)
 
 	// Range based: Shard 0 has 0-49, Shard 1 has 50-99
@@ -144,7 +145,8 @@ func TestShardedHNSW_Filtering(t *testing.T) {
 		query[i] = 50.0
 	}
 
-	results := idx.SearchVectors(query, 5, filters)
+	results, err := idx.SearchVectors(query, 5, filters)
+	require.NoError(t, err)
 	require.NotEmpty(t, results)
 
 	for _, r := range results {

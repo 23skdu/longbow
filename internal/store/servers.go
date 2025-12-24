@@ -147,6 +147,8 @@ func (s *MetaServer) DoAction(action *flight.Action, stream flight.FlightService
 		return s.handleGetTotalNamespaceCount(action, stream)
 	case "GetNamespaceDatasetCount":
 		return s.handleGetNamespaceDatasetCount(action, stream)
+	case "GetGraphStats":
+		return s.handleGetGraphStats(action.Body, stream)
 	default:
 		return s.VectorStore.DoAction(action, stream)
 	}

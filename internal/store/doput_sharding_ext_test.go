@@ -99,7 +99,7 @@ func TestExtractVectorFromCol_Success(t *testing.T) {
 func TestDatasetSearchDataset_NoIndex(t *testing.T) {
 	ds := &Dataset{Name: "test"}
 
-	results := ds.SearchDataset([]float32{1, 2, 3}, 10)
+	results, _ := ds.SearchDataset([]float32{1, 2, 3}, 10)
 	if results != nil {
 		t.Error("expected nil results with no index")
 	}
@@ -119,7 +119,7 @@ func TestDatasetSearchDataset_WithHNSW(t *testing.T) {
 	}
 
 	// Empty index should return empty results
-	results := ds.SearchDataset([]float32{1, 2, 3}, 10)
+	results, _ := ds.SearchDataset([]float32{1, 2, 3}, 10)
 	if len(results) != 0 {
 		t.Errorf("expected empty results, got %d", len(results))
 	}
@@ -130,7 +130,7 @@ func TestDatasetSearchDataset_WithSharded(t *testing.T) {
 	ds.Index = NewShardedHNSW(DefaultShardedHNSWConfig(), ds)
 
 	// Empty index should return empty results
-	results := ds.SearchDataset([]float32{1, 2, 3}, 10)
+	results, _ := ds.SearchDataset([]float32{1, 2, 3}, 10)
 	if len(results) != 0 {
 		t.Errorf("expected empty results, got %d", len(results))
 	}
@@ -289,7 +289,10 @@ func TestHNSWIndex_SearchVectors_Empty(t *testing.T) {
 	ds := &Dataset{Name: "test"}
 	hnsw := NewHNSWIndex(ds)
 
-	results := hnsw.SearchVectors([]float32{1, 2, 3}, 10, nil)
+	results, err := hnsw.SearchVectors([]float32{1, 2, 3}, 10, nil)
+	if err != nil {
+		t.Errorf("Search failed: %v", err)
+	}
 	if len(results) != 0 {
 		t.Errorf("expected empty results, got %d", len(results))
 	}
@@ -304,7 +307,10 @@ func TestShardedHNSW_SearchVectors_Empty(t *testing.T) {
 	ds := &Dataset{Name: "test"}
 	sharded := NewShardedHNSW(cfg, ds)
 
-	results := sharded.SearchVectors([]float32{1, 2, 3}, 10, nil)
+	results, err := sharded.SearchVectors([]float32{1, 2, 3}, 10, nil)
+	if err != nil {
+		t.Errorf("Search failed: %v", err)
+	}
 	if len(results) != 0 {
 		t.Errorf("expected empty results, got %d", len(results))
 	}

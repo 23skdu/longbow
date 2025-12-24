@@ -611,6 +611,63 @@ def benchmark_s3_snapshot(client: flight.FlightClient, name: str,
             throughput_unit="MB/s", errors=1
         )
 
+# =============================================================================
+# GraphRAG Benchmarks
+# =============================================================================
+
+def benchmark_graph_traversal(client: flight.FlightClient, name: str,
+                              start_nodes: list, max_hops: int) -> BenchmarkResult:
+    """Benchmark graph traversal using DoAction(traverse-graph)."""
+    print(f"\n[GRAPH] Running {len(start_nodes):,} graph traversals (hops={max_hops})...")
+
+    latencies = []
+    errors = 0
+    total_paths = 0
+
+    for i, start_node in enumerate(start_nodes):
+        req = {
+            "dataset": name,
+            "start": start_node,
+            "max_hops": max_hops
+        }
+        request_body = json.dumps(req).encode("utf-8")
+
+        start = time.time()
+        try:
+            action = flight.Action("traverse-graph", request_body)
+            results = list(client.do_action(action))
+            if results:
+                paths = json.loads(results[0].body.to_pybytes())
+                total_paths += len(paths)
+        except Exception as e:
+            errors += 1
+            if errors <= 3:
+                print(f"[GRAPH] Error on node {start_node}: {e}")
+            continue
+
+        latencies.append((time.time() - start) * 1000)
+
+        if (i + 1) % 100 == 0:
+            print(f"[GRAPH] Completed {i + 1}/{len(start_nodes)} traversals...")
+
+    duration = sum(latencies) / 1000
+    qps = len(start_nodes) / duration if duration > 0 else 0
+    
+    result = BenchmarkResult(
+        name="GraphTraversal",
+        duration_seconds=duration,
+        throughput=qps,
+        throughput_unit="ops/s",
+        rows=total_paths,
+        latencies_ms=latencies,
+        errors=errors,
+    )
+
+    print(f"[GRAPH] Completed: {qps:.2f} ops/s")
+    print(f"[GRAPH] Latency p50={result.p50_ms:.2f}ms p95={result.p95_ms:.2f}ms p99={result.p99_ms:.2f}ms")
+    
+    return result
+
 
 # =============================================================================
 # Memory Pressure Testing
@@ -793,6 +850,11 @@ def main():
     parser.add_argument("--s3", action="store_true", help="Run S3 snapshot benchmark")
     parser.add_argument("--s3-endpoint", default="localhost:9000", help="S3 endpoint")
     parser.add_argument("--s3-bucket", default="longbow-snapshots", help="S3 bucket")
+
+    # GraphRAG
+    parser.add_argument("--graph", action="store_true", help="Run graph traversal benchmark")
+    parser.add_argument("--graph-hops", default=2, type=int, help="Max hops for traversal")
+    parser.add_argument("--graph-nodes", default=100, type=int, help="Number of start nodes to query")
 
     # Output
     parser.add_argument("--json", help="Export results to JSON file")

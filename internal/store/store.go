@@ -86,6 +86,8 @@ type VectorStore struct {
 	nsManager *namespaceManager
 
 	// GPU acceleration (optional)
+	gpuEnabled  bool
+	gpuDeviceID int
 
 	// Shutdown and lifecycle (Phase 6/21)
 	shutdownState int32

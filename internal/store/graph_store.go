@@ -21,25 +21,32 @@ type Edge struct {
 }
 
 // GraphStore manages knowledge graph edges for GraphRAG workflows
+// Uses columnar storage for improved memory locality and zero-copy Arrow compatibility.
 type GraphStore struct {
-	mu sync.RWMutex
+	// Global lock for columnar data arrays (subjects, objects, predicates, weights)
+	// AddEdge takes Lock; Traverse takes RLock for data access.
+	dataMu sync.RWMutex
 
-	// All edges stored
-	edges []Edge
+	// Sharded locks for adjacency indices to reduce contention during updates/traversals
+	// Maps are protected by indexShards[hash(key) % 256]
+	indexShards [256]sync.RWMutex
 
-	// Index: subject -> edge indices
-	subjectIndex map[VectorID][]int
+	// Columnar storage
+	subjects   []VectorID
+	objects    []VectorID
+	predicates []uint16 // Index into predicateDict
+	weights    []float32
 
-	// Index: object -> edge indices
-	objectIndex map[VectorID][]int
+	// Predicate Dictionary (protected by dataMu)
+	predicateDict  []string
+	predicateToIdx map[string]uint16
 
-	// Index: predicate -> edge indices
-	predicateIndex map[string][]int
+	// Indices (Adjacency Lists) maps value -> list of edge indices
+	subjectIndex        map[VectorID][]int
+	objectIndex         map[VectorID][]int
+	predicateValueIndex map[uint16][]int
 
-	// Unique predicates (vocabulary for future Dictionary encoding)
-	predicates map[string]struct{}
-
-	// Community detection results
+	// Community detection results (protected by dataMu for now)
 	nodeCommunity map[VectorID]int
 	communities   []Community
 }
@@ -47,119 +54,193 @@ type GraphStore struct {
 // NewGraphStore creates a new empty graph store
 func NewGraphStore() *GraphStore {
 	return &GraphStore{
-		edges:          make([]Edge, 0),
-		subjectIndex:   make(map[VectorID][]int),
-		objectIndex:    make(map[VectorID][]int),
-		predicateIndex: make(map[string][]int),
-		predicates:     make(map[string]struct{}),
+		subjects:            make([]VectorID, 0),
+		objects:             make([]VectorID, 0),
+		predicates:          make([]uint16, 0),
+		weights:             make([]float32, 0),
+		predicateDict:       make([]string, 0),
+		predicateToIdx:      make(map[string]uint16),
+		subjectIndex:        make(map[VectorID][]int),
+		objectIndex:         make(map[VectorID][]int),
+		predicateValueIndex: make(map[uint16][]int),
 	}
 }
 
+// shardForVectorID returns the lock shard index for a VectorID
+func (gs *GraphStore) shardForVectorID(id VectorID) int {
+	// Simple mixing
+	h := uint64(id)
+	h ^= h >> 16
+	h *= 0x85ebca6b
+	h ^= h >> 13
+	return int(h % 256)
+}
+
+// shardForPredicate returns the lock shard index for a predicate ID
+func (gs *GraphStore) shardForPredicate(id uint16) int {
+	return int(id % 256)
+}
+
 // AddEdge adds an edge to the graph store
+// Uses Hybrid Locking: Global Data Lock -> Append Data -> Unlock -> Sharded Index Locks -> Update Indices
 func (gs *GraphStore) AddEdge(e Edge) error {
-	gs.mu.Lock()
-	defer gs.mu.Unlock()
+	// Phase 1: Append Data (Global Lock)
+	gs.dataMu.Lock()
 
-	idx := len(gs.edges)
-	gs.edges = append(gs.edges, e)
+	// Dictionary encoding for predicate
+	predIdx, ok := gs.predicateToIdx[e.Predicate]
+	if !ok {
+		if len(gs.predicateDict) >= 65535 {
+			gs.dataMu.Unlock()
+			return fmt.Errorf("too many unique predicates for Dictionary encoding")
+		}
+		predIdx = uint16(len(gs.predicateDict))
+		gs.predicateDict = append(gs.predicateDict, e.Predicate)
+		gs.predicateToIdx[e.Predicate] = predIdx
+	}
 
-	// Update subject index
+	idx := len(gs.subjects)
+	gs.subjects = append(gs.subjects, e.Subject)
+	gs.objects = append(gs.objects, e.Object)
+	gs.predicates = append(gs.predicates, predIdx)
+	gs.weights = append(gs.weights, e.Weight)
+
+	gs.dataMu.Unlock()
+
+	// Phase 2: Update Indices (Sharded Locks)
+	// Note: It's possible for concurrent reads to see data but not find it in index yet.
+	// This is acceptable eventual consistency for typical GraphRAG patterns.
+
+	// Subject Index
+	sShard := gs.shardForVectorID(e.Subject)
+	gs.indexShards[sShard].Lock()
 	gs.subjectIndex[e.Subject] = append(gs.subjectIndex[e.Subject], idx)
+	gs.indexShards[sShard].Unlock()
 
-	// Update object index
+	// Object Index
+	oShard := gs.shardForVectorID(e.Object)
+	gs.indexShards[oShard].Lock()
 	gs.objectIndex[e.Object] = append(gs.objectIndex[e.Object], idx)
+	gs.indexShards[oShard].Unlock()
 
-	// Update predicate index
-	gs.predicateIndex[e.Predicate] = append(gs.predicateIndex[e.Predicate], idx)
-
-	// Track unique predicates
-	gs.predicates[e.Predicate] = struct{}{}
+	// Predicate Index
+	pShard := gs.shardForPredicate(predIdx)
+	gs.indexShards[pShard].Lock()
+	gs.predicateValueIndex[predIdx] = append(gs.predicateValueIndex[predIdx], idx)
+	gs.indexShards[pShard].Unlock()
 
 	return nil
 }
 
 // EdgeCount returns the total number of edges
 func (gs *GraphStore) EdgeCount() int {
-	gs.mu.RLock()
-	defer gs.mu.RUnlock()
-	return len(gs.edges)
+	gs.dataMu.RLock()
+	defer gs.dataMu.RUnlock()
+	return len(gs.subjects)
+}
+
+// getEdgeAt reconstructs an Edge from columnar data at index i
+// Unsafe: caller must hold dataMu RLock
+func (gs *GraphStore) getEdgeAt(i int) Edge {
+	predIdx := gs.predicates[i]
+	return Edge{
+		Subject:   gs.subjects[i],
+		Predicate: gs.predicateDict[predIdx],
+		Object:    gs.objects[i],
+		Weight:    gs.weights[i],
+	}
 }
 
 // GetEdgesBySubject returns all edges with the given subject (outgoing edges)
 func (gs *GraphStore) GetEdgesBySubject(subject VectorID) []Edge {
-	gs.mu.RLock()
-	defer gs.mu.RUnlock()
+	// 1. Get Indices (Shard Lock)
+	shard := gs.shardForVectorID(subject)
+	gs.indexShards[shard].RLock()
+	indices := make([]int, len(gs.subjectIndex[subject]))
+	copy(indices, gs.subjectIndex[subject])
+	gs.indexShards[shard].RUnlock()
 
-	indices := gs.subjectIndex[subject]
+	// 2. Get Data (Global Data Lock)
+	gs.dataMu.RLock()
+	defer gs.dataMu.RUnlock()
+
 	result := make([]Edge, len(indices))
 	for i, idx := range indices {
-		result[i] = gs.edges[idx]
+		result[i] = gs.getEdgeAt(idx)
 	}
 	return result
 }
 
 // GetEdgesByObject returns all edges with the given object (incoming edges)
 func (gs *GraphStore) GetEdgesByObject(object VectorID) []Edge {
-	gs.mu.RLock()
-	defer gs.mu.RUnlock()
+	// 1. Get Indices (Shard Lock)
+	shard := gs.shardForVectorID(object)
+	gs.indexShards[shard].RLock()
+	indices := make([]int, len(gs.objectIndex[object]))
+	copy(indices, gs.objectIndex[object])
+	gs.indexShards[shard].RUnlock()
 
-	indices := gs.objectIndex[object]
+	// 2. Get Data (Global Data Lock)
+	gs.dataMu.RLock()
+	defer gs.dataMu.RUnlock()
+
 	result := make([]Edge, len(indices))
 	for i, idx := range indices {
-		result[i] = gs.edges[idx]
+		result[i] = gs.getEdgeAt(idx)
 	}
 	return result
 }
 
 // GetEdgesByPredicate returns all edges with the given predicate
 func (gs *GraphStore) GetEdgesByPredicate(predicate string) []Edge {
-	gs.mu.RLock()
-	defer gs.mu.RUnlock()
+	gs.dataMu.RLock()
+	predIdx, ok := gs.predicateToIdx[predicate]
+	gs.dataMu.RUnlock()
 
-	indices := gs.predicateIndex[predicate]
+	if !ok {
+		return nil
+	}
+
+	// 1. Get Indices (Shard Lock)
+	shard := gs.shardForPredicate(predIdx)
+	gs.indexShards[shard].RLock()
+	indices := make([]int, len(gs.predicateValueIndex[predIdx]))
+	copy(indices, gs.predicateValueIndex[predIdx])
+	gs.indexShards[shard].RUnlock()
+
+	// 2. Get Data (Global Data Lock)
+	gs.dataMu.RLock()
+	defer gs.dataMu.RUnlock()
+
 	result := make([]Edge, len(indices))
 	for i, idx := range indices {
-		result[i] = gs.edges[idx]
+		result[i] = gs.getEdgeAt(idx)
 	}
 	return result
 }
 
 // PredicateVocabulary returns all unique predicate types
 func (gs *GraphStore) PredicateVocabulary() []string {
-	gs.mu.RLock()
-	defer gs.mu.RUnlock()
+	gs.dataMu.RLock()
+	defer gs.dataMu.RUnlock()
 
-	result := make([]string, 0, len(gs.predicates))
-	for p := range gs.predicates {
-		result = append(result, p)
-	}
+	// Return a copy to be safe
+	result := make([]string, len(gs.predicateDict))
+	copy(result, gs.predicateDict)
 	return result
 }
 
 // ToArrowBatch converts all edges to an Arrow RecordBatch with Dictionary-encoded predicates
 func (gs *GraphStore) ToArrowBatch(mem memory.Allocator) (arrow.Record, error) { //nolint:staticcheck
-	gs.mu.RLock()
-	defer gs.mu.RUnlock()
+	gs.dataMu.RLock()
+	defer gs.dataMu.RUnlock()
 
-	n := len(gs.edges)
+	n := len(gs.subjects)
 	if n == 0 {
 		return nil, fmt.Errorf("no edges to convert")
 	}
 
-	// Build predicate dictionary (maps predicate string -> index)
-	predicateToIdx := make(map[string]int)
-	predicateList := make([]string, 0, len(gs.predicates))
-	for p := range gs.predicates {
-		if len(predicateList) >= 65535 {
-			return nil, fmt.Errorf("too many unique predicates for Dictionary encoding (max 65535)")
-		}
-		predicateToIdx[p] = len(predicateList)
-		predicateList = append(predicateList, p)
-	}
-
 	// Build schema with Dictionary-encoded predicate column
-	// Subject/Object are now Uint32 (VectorID)
-	// Add metadata to identify this as a graph batch
 	md := arrow.NewMetadata(
 		[]string{"longbow.entry_type"},
 		[]string{"graph"},
@@ -178,27 +259,28 @@ func (gs *GraphStore) ToArrowBatch(mem memory.Allocator) (arrow.Record, error) {
 	// Build subject column
 	subjectBuilder := array.NewUint32Builder(mem)
 	defer subjectBuilder.Release()
-	for _, e := range gs.edges {
-		subjectBuilder.Append(uint32(e.Subject))
-	}
+	subjectBuilder.AppendValues(func() []uint32 {
+		// Zero-copy-ish cast if possible, but safe copy for now
+		res := make([]uint32, len(gs.subjects))
+		for i, v := range gs.subjects {
+			res[i] = uint32(v)
+		}
+		return res
+	}(), nil)
 	subjectArr := subjectBuilder.NewArray()
 	defer subjectArr.Release()
 
 	// Build dictionary for predicates
 	dictBuilder := array.NewStringBuilder(mem)
 	defer dictBuilder.Release()
-	for _, p := range predicateList {
-		dictBuilder.Append(p)
-	}
+	dictBuilder.AppendValues(gs.predicateDict, nil)
 	dictArr := dictBuilder.NewArray()
 	defer dictArr.Release()
 
 	// Build predicate indices
 	indexBuilder := array.NewUint16Builder(mem)
 	defer indexBuilder.Release()
-	for _, e := range gs.edges {
-		indexBuilder.Append(uint16(predicateToIdx[e.Predicate]))
-	}
+	indexBuilder.AppendValues(gs.predicates, nil)
 	indexArr := indexBuilder.NewArray()
 	defer indexArr.Release()
 
@@ -212,18 +294,20 @@ func (gs *GraphStore) ToArrowBatch(mem memory.Allocator) (arrow.Record, error) {
 	// Build object column
 	objectBuilder := array.NewUint32Builder(mem)
 	defer objectBuilder.Release()
-	for _, e := range gs.edges {
-		objectBuilder.Append(uint32(e.Object))
-	}
+	objectBuilder.AppendValues(func() []uint32 {
+		res := make([]uint32, len(gs.objects))
+		for i, v := range gs.objects {
+			res[i] = uint32(v)
+		}
+		return res
+	}(), nil)
 	objectArr := objectBuilder.NewArray()
 	defer objectArr.Release()
 
 	// Build weight column
 	weightBuilder := array.NewFloat32Builder(mem)
 	defer weightBuilder.Release()
-	for _, e := range gs.edges {
-		weightBuilder.Append(e.Weight)
-	}
+	weightBuilder.AppendValues(gs.weights, nil)
 	weightArr := weightBuilder.NewArray()
 	defer weightArr.Release()
 
@@ -238,11 +322,12 @@ func (gs *GraphStore) ToArrowBatch(mem memory.Allocator) (arrow.Record, error) {
 
 // FromArrowBatch loads edges from an Arrow RecordBatch
 func (gs *GraphStore) FromArrowBatch(batch arrow.Record) error { //nolint:staticcheck
-	gs.mu.Lock()
-	defer gs.mu.Unlock()
+	// Phase 1: Batch Load Data (Global Lock)
+	gs.dataMu.Lock()
 
 	n := int(batch.NumRows())
 	if n == 0 {
+		gs.dataMu.Unlock()
 		return nil
 	}
 
@@ -252,27 +337,65 @@ func (gs *GraphStore) FromArrowBatch(batch arrow.Record) error { //nolint:static
 	objectCol := batch.Column(2).(*array.Uint32)
 	weightCol := batch.Column(3).(*array.Float32)
 
-	// Get predicate dictionary values
-	predicateDict := predicateCol.Dictionary().(*array.String)
+	// Sync predicate dictionary
+	predicateDictArr := predicateCol.Dictionary().(*array.String)
+	dictMapping := make(map[int]uint16) // map arrows-dict-idx -> our-dict-idx
 
-	for i := 0; i < n; i++ {
-		// Get predicate from dictionary
-		predicateIdx := predicateCol.GetValueIndex(i)
-		predicate := predicateDict.Value(predicateIdx)
-
-		edge := Edge{
-			Subject:   VectorID(subjectCol.Value(i)),
-			Predicate: predicate,
-			Object:    VectorID(objectCol.Value(i)),
-			Weight:    weightCol.Value(i),
+	for i := 0; i < predicateDictArr.Len(); i++ {
+		p := predicateDictArr.Value(i)
+		if idx, ok := gs.predicateToIdx[p]; ok {
+			dictMapping[i] = idx
+		} else {
+			newIdx := uint16(len(gs.predicateDict))
+			gs.predicateDict = append(gs.predicateDict, p)
+			gs.predicateToIdx[p] = newIdx
+			dictMapping[i] = newIdx
 		}
+	}
 
-		idx := len(gs.edges)
-		gs.edges = append(gs.edges, edge)
-		gs.subjectIndex[edge.Subject] = append(gs.subjectIndex[edge.Subject], idx)
-		gs.objectIndex[edge.Object] = append(gs.objectIndex[edge.Object], idx)
-		gs.predicateIndex[edge.Predicate] = append(gs.predicateIndex[edge.Predicate], idx)
-		gs.predicates[edge.Predicate] = struct{}{}
+	// Pre-allocate to avoid repeated appends
+	startLen := len(gs.subjects)
+
+	// Extend slices
+	for i := 0; i < n; i++ {
+		subj := VectorID(subjectCol.Value(i))
+		obj := VectorID(objectCol.Value(i))
+		weight := weightCol.Value(i)
+		arrowDictIdx := predicateCol.GetValueIndex(i)
+		predIdx := dictMapping[arrowDictIdx]
+
+		gs.subjects = append(gs.subjects, subj)
+		gs.objects = append(gs.objects, obj)
+		gs.predicates = append(gs.predicates, predIdx)
+		gs.weights = append(gs.weights, weight)
+	}
+
+	gs.dataMu.Unlock()
+
+	// Phase 2: Update Indices (Sharded Locks)
+	for i := 0; i < n; i++ {
+		subj := VectorID(subjectCol.Value(i))
+		obj := VectorID(objectCol.Value(i))
+		arrowDictIdx := predicateCol.GetValueIndex(i)
+		predIdx := dictMapping[arrowDictIdx]
+
+		idx := startLen + i
+
+		// Indices
+		sShard := gs.shardForVectorID(subj)
+		gs.indexShards[sShard].Lock()
+		gs.subjectIndex[subj] = append(gs.subjectIndex[subj], idx)
+		gs.indexShards[sShard].Unlock()
+
+		oShard := gs.shardForVectorID(obj)
+		gs.indexShards[oShard].Lock()
+		gs.objectIndex[obj] = append(gs.objectIndex[obj], idx)
+		gs.indexShards[oShard].Unlock()
+
+		pShard := gs.shardForPredicate(predIdx)
+		gs.indexShards[pShard].Lock()
+		gs.predicateValueIndex[predIdx] = append(gs.predicateValueIndex[predIdx], idx)
+		gs.indexShards[pShard].Unlock()
 	}
 
 	return nil
@@ -286,19 +409,20 @@ type Path struct {
 }
 
 // Traverse performs BFS traversal from start node up to maxHops depth
+// Holds Global Data Read Lock for duration to ensure consistent snapshot.
 func (gs *GraphStore) Traverse(start VectorID, maxHops int) []Path {
 	startTime := time.Now()
 	defer func() {
 		metrics.GraphTraversalDurationSeconds.Observe(time.Since(startTime).Seconds())
 	}()
 
-	gs.mu.RLock()
-	defer gs.mu.RUnlock()
+	gs.dataMu.RLock()
+	defer gs.dataMu.RUnlock()
 
 	var paths []Path
 	visited := make(map[VectorID]bool)
 
-	// BFS queue: each item is (current path, current depth)
+	// BFS queue
 	type queueItem struct {
 		path  Path
 		depth int
@@ -315,11 +439,17 @@ func (gs *GraphStore) Traverse(start VectorID, maxHops int) []Path {
 
 		current := item.path.Nodes[len(item.path.Nodes)-1]
 
-		// Get outgoing edges
-		indices := gs.subjectIndex[current]
+		// Get indices from Sharded Index
+		shard := gs.shardForVectorID(current)
+		gs.indexShards[shard].RLock()
+		indices := make([]int, len(gs.subjectIndex[current]))
+		copy(indices, gs.subjectIndex[current])
+		gs.indexShards[shard].RUnlock()
+
 		for _, idx := range indices {
-			edge := gs.edges[idx]
-			nextNode := edge.Object
+			// reconstruct edge values (safe since we hold dataMu.RLock)
+			nextNode := gs.objects[idx]
+			weight := gs.weights[idx]
 
 			// Skip if already visited in this path
 			if visited[nextNode] {
@@ -331,14 +461,17 @@ func (gs *GraphStore) Traverse(start VectorID, maxHops int) []Path {
 			copy(newNodes, item.path.Nodes)
 			newNodes[len(item.path.Nodes)] = nextNode
 
+			// We need to append the Edge struct for API compatibility
+			edgeStr := gs.getEdgeAt(idx)
+
 			newEdges := make([]Edge, len(item.path.Edges)+1)
 			copy(newEdges, item.path.Edges)
-			newEdges[len(item.path.Edges)] = edge
+			newEdges[len(item.path.Edges)] = edgeStr
 
 			newPath := Path{
 				Nodes:  newNodes,
 				Edges:  newEdges,
-				Weight: item.path.Weight + edge.Weight,
+				Weight: item.path.Weight + weight,
 			}
 
 			paths = append(paths, newPath)
@@ -393,14 +526,16 @@ func (gs *GraphStore) DetectCommunities() []Community {
 		metrics.GraphClusteringDurationSeconds.Observe(time.Since(startTime).Seconds())
 	}()
 
-	gs.mu.Lock()
-	defer gs.mu.Unlock()
+	gs.dataMu.Lock()
+	defer gs.dataMu.Unlock()
 
 	// Get all unique nodes
 	nodes := make(map[VectorID]bool)
-	for _, e := range gs.edges {
-		nodes[e.Subject] = true
-		nodes[e.Object] = true
+	for _, s := range gs.subjects {
+		nodes[s] = true
+	}
+	for _, o := range gs.objects {
+		nodes[o] = true
 	}
 
 	if len(nodes) == 0 {
@@ -421,11 +556,15 @@ func (gs *GraphStore) DetectCommunities() []Community {
 
 	// Build adjacency with weights
 	adj := make(map[VectorID]map[VectorID]float32)
-	for _, e := range gs.edges {
-		if adj[e.Subject] == nil {
-			adj[e.Subject] = make(map[VectorID]float32)
+	for i := 0; i < len(gs.subjects); i++ {
+		subj := gs.subjects[i]
+		obj := gs.objects[i]
+		w := gs.weights[i]
+
+		if adj[subj] == nil {
+			adj[subj] = make(map[VectorID]float32)
 		}
-		adj[e.Subject][e.Object] += e.Weight
+		adj[subj][obj] += w
 	}
 
 	// Louvain Phase 1: Local moving
@@ -481,8 +620,8 @@ func (gs *GraphStore) DetectCommunities() []Community {
 
 // GetCommunityForNode returns the community ID for a given node
 func (gs *GraphStore) GetCommunityForNode(node VectorID) int {
-	gs.mu.RLock()
-	defer gs.mu.RUnlock()
+	gs.dataMu.RLock()
+	defer gs.dataMu.RUnlock()
 
 	if gs.nodeCommunity == nil {
 		return -1
@@ -495,7 +634,7 @@ func (gs *GraphStore) GetCommunityForNode(node VectorID) int {
 
 // CommunityCount returns the number of detected communities
 func (gs *GraphStore) CommunityCount() int {
-	gs.mu.RLock()
-	defer gs.mu.RUnlock()
+	gs.dataMu.RLock()
+	defer gs.dataMu.RUnlock()
 	return len(gs.communities)
 }

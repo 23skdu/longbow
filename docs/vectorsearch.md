@@ -5,7 +5,7 @@ zero-copy HNSW implementation, hybrid search, and result fusion algorithms.
 
 ## Architecture Overview
 
-Longbow provides three search modes:
+Longbow provides four search modes:
 
 1. **Dense Search** - Vector similarity using HNSW index
 2. **Sparse Search** - Keyword matching using inverted index

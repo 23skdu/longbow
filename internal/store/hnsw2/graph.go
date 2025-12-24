@@ -39,7 +39,7 @@ func NewGraphData(capacity int) *GraphData {
 
 const (
 	MaxLayers    = 16 // Maximum number of layers in the graph
-	MaxNeighbors = 128 // Maximum neighbors per node per layer (Mmax)
+	MaxNeighbors = 144 // Maximum neighbors per node per layer (Mmax)
 )
 
 // ArrowHNSW is the main HNSW index structure with Arrow integration.
@@ -92,8 +92,8 @@ type Config struct {
 func DefaultConfig() Config {
 	return Config{
 		M:              32,
-		MMax:           64, // Layer 0
-		MMax0:          32, // Layer > 0
+		MMax:           96, // Layer 0: 3 * M (Target is 2 * M = 64)
+		MMax0:          48, // Layer > 0: 1.5 * M
 		EfConstruction: 400,
 		Ml:             1.0 / math.Log(32),
 		Alpha:          1.1,

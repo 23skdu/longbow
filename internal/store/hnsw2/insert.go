@@ -105,11 +105,20 @@ func (h *ArrowHNSW) Insert(id uint32, level int) error {
 		// Find M nearest neighbors at this layer
 		candidates := h.searchLayerForInsert(vec, ep, h.efConstruction, lc, data)
 		
-		// Select M neighbors
-		m := h.mMax
-		if lc > 0 {
-			m = h.mMax0
+		// Select M neighbors (Target)
+		m := h.m
+		if lc == 0 {
+			m = h.m * 2 // Layer 0 usually denser
 		}
+		// Ensure m <= Max capacity
+		maxCap := h.mMax
+		if lc > 0 {
+			maxCap = h.mMax0
+		}
+		if m > maxCap {
+			m = maxCap
+		}
+		
 		neighbors := h.selectNeighbors(candidates, m, data)
 		
 		// Add connections
@@ -377,11 +386,13 @@ func (h *ArrowHNSW) removeConnectionInternal(data *GraphData, source, target uin
 			
 			// Replenish connections if we're below the target (unless we're in a pruning operation)
 			if !skipReplenish {
-				maxConn := h.mMax
-				if layer > 0 {
-					maxConn = h.mMax0
+				// Target is M (soft limit), not MMax (hard limit)
+				// This creates a buffer [M, MMax] where we don't replenish or prune, preventing oscillation.
+				targetConn := h.m
+				if layer == 0 {
+					targetConn = h.m * 2
 				}
-				h.replenishConnections(data, source, maxConn, layer)
+				h.replenishConnections(data, source, targetConn, layer)
 			}
 			return
 		}

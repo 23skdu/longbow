@@ -3,6 +3,7 @@ package store_test
 import (
 	"math"
 	"math/rand"
+	"sort"
 	"testing"
 
 	"github.com/23skdu/longbow/internal/store"
@@ -134,13 +135,9 @@ func measureRecall(t *testing.T, numVectors, dim, numQueries, k int, cfg *hnsw2.
 		}
 		
 		// Sort by distance
-		for a := 0; a < len(allDistances); a++ {
-			for b := a + 1; b < len(allDistances); b++ {
-				if allDistances[b].dist < allDistances[a].dist {
-					allDistances[a], allDistances[b] = allDistances[b], allDistances[a]
-				}
-			}
-		}
+		sort.Slice(allDistances, func(i, j int) bool {
+			return allDistances[i].dist < allDistances[j].dist
+		})
 		
 		// Take top k as ground truth
 		groundTruth := make(map[uint32]bool)
@@ -149,7 +146,7 @@ func measureRecall(t *testing.T, numVectors, dim, numQueries, k int, cfg *hnsw2.
 		}
 		
 		// Get hnsw2 results
-		hnsw2Results, err := hnsw2Index.Search(query, k, k*40)
+		hnsw2Results, err := hnsw2Index.Search(query, k, k*100)
 		if err != nil {
 			t.Fatalf("hnsw2 search failed: %v", err)
 		}

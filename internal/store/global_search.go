@@ -23,7 +23,6 @@ type clientEntry struct {
 // GlobalSearchCoordinator handles scatter-gather logic
 type GlobalSearchCoordinator struct {
 	logger *zap.Logger
-	mu     sync.Mutex
 	// clients: map[string]*clientEntry
 	clients     sync.Map
 	idleTimeout time.Duration

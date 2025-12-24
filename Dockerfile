@@ -18,7 +18,6 @@ COPY . .
 # Build with CGO and GPU support
 # Note: In a real environment, FAISS shared libs would need to be present
 RUN CGO_ENABLED=1 go build \
-    -tags gpu \
     -ldflags="-s -w" \
     -o longbow ./cmd/longbow
 

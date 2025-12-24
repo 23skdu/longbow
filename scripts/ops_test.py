@@ -241,13 +241,29 @@ def command_search(args, data_client, meta_client):
         request["alpha"] = args.alpha
         print(f"Hybrid search with text='{args.text_query}' alpha={args.alpha}")
 
-    if args.local:
-        request["local_only"] = True
-        print("Performing LOCAL-ONLY search")
-    else:
-        print("Performing GLOBAL search")
-    
     payload = json.dumps(request).encode("utf-8")
+    
+    # Global Search Metadata
+    options = get_options(args)
+    if hasattr(args, 'global_search') and args.global_search:
+        print("Performing GLOBAL Distributed Search (x-longbow-global=true)")
+        # Append to existing headers if any (FlightCallOptions are immutable-ish, construct new?)
+        # pyarrow options is list of tuples.
+        # Check if get_options returned valid object or if we need to extend it.
+        # But get_options creates new FlightCallOptions. 
+        # Easier to just modify get_options or construct here.
+        # Let's inspect get_options logic: it uses args.routing_key.
+        
+        headers = []
+        if hasattr(args, 'routing_key') and args.routing_key:
+            headers.append((b"x-longbow-key", args.routing_key.encode("utf-8")))
+        
+        headers.append((b"x-longbow-global", b"true"))
+        options = flight.FlightCallOptions(headers=headers)
+    elif args.local:
+        # Local metadata logic if needed (or just request body)
+        pass # Request body handles it ("local_only": true)
+
     
     try:
         # Search is a DoAction on Meta Server with type "VectorSearch"
@@ -477,6 +493,7 @@ def main():
     search_parser.add_argument("--k", type=int, default=5, help="Top K results")
     search_parser.add_argument("--text-query", help="Text query for hybrid search")
     search_parser.add_argument("--local", action="store_true", help="Force local-only search")
+    search_parser.add_argument("--global", dest="global_search", action="store_true", help="Force GLOBAL distributed search")
     search_parser.add_argument("--alpha", type=float, default=0.5, help="Hybrid alpha (0=sparse, 1=dense)")
     search_parser.add_argument("--filter", action="append", help="Filter: field:op:value")
 

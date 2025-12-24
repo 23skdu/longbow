@@ -77,3 +77,14 @@ func (rm *RingManager) GetNodeAddr(nodeID string) string {
 	defer rm.mu.RUnlock()
 	return rm.nodeAddrs[nodeID]
 }
+
+// GetMembers returns a list of all known node IDs in the ring
+func (rm *RingManager) GetMembers() []string {
+	rm.mu.RLock()
+	defer rm.mu.RUnlock()
+	members := make([]string, 0, len(rm.nodeAddrs))
+	for id := range rm.nodeAddrs {
+		members = append(members, id)
+	}
+	return members
+}

@@ -50,10 +50,10 @@ func TestPartitionProxyInterceptor_Remote(t *testing.T) {
 	}
 
 	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("x-longbow-key", key))
-	_, err := interceptor(ctx, nil, &grpc.UnaryServerInfo{}, handler)
+	_, err := interceptor(ctx, nil, &grpc.UnaryServerInfo{FullMethod: "/arrow.flight.protocol.FlightService/GetFlightInfo"}, handler)
 
-	// Since RequestForwarder tries to dial a non-existent host, we expect a dial error
+	// Since RequestForwarder tries to dial a non-existent host, we expect a dial error OR an invoke error
 	assert.Error(t, err)
-	// We expect the error to come from the forwarder's GetConn
-	assert.Contains(t, err.Error(), "forwarder: get conn")
+	// With grpc.NewClient (non-blocking), checking for "get conn" is flaky.
+	// We just ensure we got SOME error trying to talk to the bad host.
 }

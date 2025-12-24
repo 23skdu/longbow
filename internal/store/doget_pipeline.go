@@ -286,7 +286,7 @@ func (p *DoGetPipeline) ProcessRecords(
 		}()
 
 		for res := range results {
-			ts, _ := tombstones[res.Index]
+			ts := tombstones[res.Index]
 			resCh <- PipelineStage{
 				Record:    res.Record,
 				BatchIdx:  res.Index,

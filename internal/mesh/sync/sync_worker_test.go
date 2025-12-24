@@ -75,7 +75,7 @@ func TestSyncWorker_Replication(t *testing.T) {
 	// But for test simplicity, let's use a mock stream to leaderStore.DoPut?
 	// Or just use a real client to DoPut to leader!
 
-	conn, err := grpc.Dial(leaderAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(leaderAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	require.NoError(t, err)
 	defer conn.Close()
 	client := flight.NewFlightServiceClient(conn)

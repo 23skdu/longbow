@@ -81,13 +81,11 @@ func (f *RequestForwarder) GetConn(ctx context.Context, target string) (*grpc.Cl
 	}
 
 	f.config.Logger.Info("Creating new gRPC connection", zap.String("target", target))
-	dialCtx, cancel := context.WithTimeout(ctx, f.config.DialTimeout)
-	defer cancel()
+	f.config.Logger.Info("Creating new gRPC connection", zap.String("target", target))
 
 	// We assume insecure internal traffic for now
-	conn, err := grpc.DialContext(dialCtx, target,
+	conn, err := grpc.NewClient(target,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithBlock(), // Wait for connection
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to dial target %s: %w", target, err)

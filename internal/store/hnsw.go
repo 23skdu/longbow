@@ -145,10 +145,6 @@ func (h *HNSWIndex) RemapLocations(remapping map[int]BatchRemapInfo) {
 				// Out of bounds
 				val.Store(packLocation(Location{BatchIdx: -1, RowIdx: -1}))
 			}
-		} else if loc.BatchIdx == -1 {
-			// Ensure consistency (no-op really as unpacking -1,-1 repacks to same)
-			// But if we want to be explicit:
-			// val.Store(packLocation(Location{BatchIdx: -1, RowIdx: -1}))
 		}
 	})
 }

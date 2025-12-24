@@ -43,18 +43,18 @@ func (h *ArrowHNSW) Search(query []float32, k int, ef int) ([]store.SearchResult
 	}
 	
 	// Search layer 0 with ef candidates
-	_, candidates := h.searchLayer(query, ep, ef, 0, ctx)
+	_, _ = h.searchLayer(query, ep, ef, 0, ctx)
 	
-	// Extract top k results from candidates
+	// Extract top k results from candidates in context
 	results := make([]store.SearchResult, 0, k)
-	for i := 0; i < k && candidates.Len() > 0; i++ {
-		item, ok := candidates.Pop()
+	for i := 0; i < k && ctx.candidates.Len() > 0; i++ {
+		cand, ok := ctx.candidates.Pop()
 		if !ok {
 			break
 		}
 		results = append(results, store.SearchResult{
-			ID:   uint32(item.id),
-			Rank: i,
+			ID:    store.VectorID(cand.ID),
+			Score: cand.Dist,
 		})
 	}
 	

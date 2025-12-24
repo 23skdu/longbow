@@ -16,8 +16,9 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Start Node 1 (Seed)
-echo "Starting Node 1..."
+# Start the node
+echo "Starting Longbow node..."
+GOGC=50 \
 LONGBOW_LISTEN_ADDR=0.0.0.0:3000 \
 LONGBOW_NODE_ID=node1 \
 LONGBOW_META_ADDR=0.0.0.0:3001 \

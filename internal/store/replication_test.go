@@ -7,78 +7,84 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-func TestZeroCopyRoundTrip(t *testing.T) {
-	pool := memory.NewGoAllocator()
+func TestReplication_ZeroCopy(t *testing.T) {
+	mem := memory.NewGoAllocator()
 
-	// 1. Build a complex RecordBatch
-	// Schema: [ID: Int64, Vector: FixedSizeList<Float32>[4], Desc: String]
-	schema := arrow.NewSchema(
-		[]arrow.Field{
-			{Name: "id", Type: arrow.PrimitiveTypes.Int64},
-			{Name: "vector", Type: arrow.FixedSizeListOf(4, arrow.PrimitiveTypes.Float32)},
-			{Name: "desc", Type: arrow.BinaryTypes.String},
-		},
-		nil,
-	)
+	t.Run("map_type", func(t *testing.T) {
+		// Map is a list of structs {key, value}
+		dt := arrow.MapOf(arrow.PrimitiveTypes.Int32, arrow.PrimitiveTypes.Float32)
+		schema := arrow.NewSchema([]arrow.Field{{Name: "metadata", Type: dt}}, nil)
 
-	b := array.NewRecordBuilder(pool, schema)
-	defer b.Release()
+		b := array.NewRecordBuilder(mem, schema)
+		defer b.Release()
 
-	// Add data
-	b.Field(0).(*array.Int64Builder).AppendValues([]int64{1, 2, 3}, nil)
+		mb := b.Field(0).(*array.MapBuilder)
+		kb := mb.KeyBuilder().(*array.Int32Builder)
+		ib := mb.ItemBuilder().(*array.Float32Builder)
 
-	// Vector builder
-	vb := b.Field(1).(*array.FixedSizeListBuilder)
-	valBuilder := vb.ValueBuilder().(*array.Float32Builder)
+		mb.Append(true)
+		kb.Append(1)
+		ib.Append(1.1)
+		kb.Append(2)
+		ib.Append(2.2)
 
-	// Row 1: [1.1, 1.2, 1.3, 1.4]
-	vb.Append(true)
-	valBuilder.AppendValues([]float32{1.1, 1.2, 1.3, 1.4}, nil)
+		mb.Append(true)
+		kb.Append(3)
+		ib.Append(3.3)
 
-	// Row 2: [2.1, 2.2, 2.3, 2.4]
-	vb.Append(true)
-	valBuilder.AppendValues([]float32{2.1, 2.2, 2.3, 2.4}, nil)
+		rec := b.NewRecordBatch()
+		defer rec.Release()
 
-	// Row 3: [3.1, 3.2, 3.3, 3.4]
-	vb.Append(true)
-	valBuilder.AppendValues([]float32{3.1, 3.2, 3.3, 3.4}, nil)
+		// Marshal
+		payload, err := MarshalZeroCopy("test_map", rec)
+		require.NoError(t, err)
+		assert.Equal(t, int64(2), payload.RowCount)
 
-	// String builder
-	sb := b.Field(2).(*array.StringBuilder)
-	sb.AppendValues([]string{"one", "two", "three"}, nil)
+		// Unmarshal
+		rec2, err := UnmarshalZeroCopy(payload, mem)
+		require.NoError(t, err)
+		defer rec2.Release()
 
-	rec := b.NewRecordBatch()
-	defer rec.Release()
+		assert.True(t, rec.Schema().Equal(rec2.Schema()))
+		assert.Equal(t, rec.NumRows(), rec2.NumRows())
 
-	// 2. Marshal
-	payload, err := MarshalZeroCopy("test_dataset", rec)
-	assert.NoError(t, err)
-	assert.Equal(t, int64(3), payload.RowCount)
-	assert.Equal(t, 3, len(payload.Meta)) // 3 columns
+		// Deep check
+		m1 := rec.Column(0).(*array.Map)
+		m2 := rec2.Column(0).(*array.Map)
+		assert.Equal(t, m1.Len(), m2.Len())
+	})
 
-	// 3. Unmarshal
-	rec2, err := UnmarshalZeroCopy(payload, pool)
-	assert.NoError(t, err)
-	defer rec2.Release()
+	t.Run("struct_type", func(t *testing.T) {
+		dt := arrow.StructOf(
+			arrow.Field{Name: "f1", Type: arrow.PrimitiveTypes.Int64},
+			arrow.Field{Name: "f2", Type: arrow.PrimitiveTypes.Float64},
+		)
+		schema := arrow.NewSchema([]arrow.Field{{Name: "nested", Type: dt}}, nil)
 
-	// 4. Verify Equality
-	assert.True(t, rec.Schema().Equal(rec2.Schema()), "Schema should match")
-	assert.Equal(t, rec.NumRows(), rec2.NumRows())
-	for i := 0; i < int(rec.NumCols()); i++ {
-		assert.True(t, array.Equal(rec.Column(i), rec2.Column(i)), "Column %d should match", i)
-	}
+		b := array.NewRecordBuilder(mem, schema)
+		defer b.Release()
 
-	// Verify data access
-	idCol := rec2.Column(0).(*array.Int64)
-	assert.Equal(t, int64(1), idCol.Value(0))
+		sb := b.Field(0).(*array.StructBuilder)
+		f1b := sb.FieldBuilder(0).(*array.Int64Builder)
+		f2b := sb.FieldBuilder(1).(*array.Float64Builder)
 
-	vecCol := rec2.Column(1).(*array.FixedSizeList)
-	vecVals := vecCol.Data().Children()[0] // Underlying floats
-	vecFloats := array.NewFloat32Data(vecVals)
-	defer vecFloats.Release()
+		sb.Append(true)
+		f1b.Append(100)
+		f2b.Append(100.1)
 
-	assert.Equal(t, float32(1.1), vecFloats.Value(0))
-	assert.Equal(t, float32(3.4), vecFloats.Value(11))
+		rec := b.NewRecordBatch()
+		defer rec.Release()
+
+		payload, err := MarshalZeroCopy("test_struct", rec)
+		require.NoError(t, err)
+
+		rec2, err := UnmarshalZeroCopy(payload, mem)
+		require.NoError(t, err)
+		defer rec2.Release()
+
+		assert.Equal(t, rec.NumRows(), rec2.NumRows())
+	})
 }

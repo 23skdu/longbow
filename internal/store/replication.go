@@ -162,9 +162,12 @@ func rebuildArray(mem memory.Allocator, dt arrow.DataType, meta ArrayStructure, 
 			childType = t.Elem()
 		case *arrow.FixedSizeListType:
 			childType = t.Elem()
+		case *arrow.MapType:
+			childType = t.Elem()
 		case *arrow.StructType:
 			childType = t.Field(i).Type
-		// TODO: Map, Union, etc.
+		case arrow.UnionType:
+			childType = t.Fields()[i].Type
 		default:
 			return nil, 0, fmt.Errorf("unsupported nested type: %T", dt)
 		}

@@ -67,7 +67,7 @@ func TestHNSWRaceCompaction(t *testing.T) {
 				vs.mu.Lock()
 				ds, ok := vs.datasets[datasetName]
 				if !ok {
-					newDs := &Dataset{Name: datasetName, Records: []arrow.RecordBatch{}} // Fixed struct init
+					newDs := NewDataset(datasetName, schema)
 					newDs.Index = NewHNSWIndex(newDs)
 					vs.datasets[datasetName] = newDs
 					ds = newDs

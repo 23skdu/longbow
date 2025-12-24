@@ -58,7 +58,7 @@ func (vs *VectorStore) CompactDataset(name string) error {
 
 	// 1. Perform Incremental Compaction
 	// Returns a NEW slice of records and a remapping table
-	newRecords, remapping, err := compactRecords(ds.Records, ds.Tombstones, vs.compactionConfig.TargetBatchSize, name)
+	newRecords, remapping, err := compactRecords(ds.Schema, ds.Records, ds.Tombstones, vs.compactionConfig.TargetBatchSize, name)
 	if err != nil {
 		return err // e.g. nothing to compact
 	}

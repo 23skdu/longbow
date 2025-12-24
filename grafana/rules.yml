@@ -261,3 +261,31 @@ groups:
           summary: "IPC Buffer Pool Saturated"
           description: "IPC buffer pool utilization is at {{ $value | humanizePercentage }}, risk of allocation failures."
 
+  - name: longbow_distributed_alerts
+    rules:
+      - alert: LongbowCircuitBreakerTripped
+        expr: rate(longbow_store_circuit_breaker_rejections_total[1m]) > 1
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Circuit breaker tripped"
+          description: "Store circuit breaker is rejecting {{ $value }} requests/sec."
+
+      - alert: LongbowGlobalSearchPartialFailures
+        expr: rate(longbow_global_search_partial_failures_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Global search partial failures"
+          description: "Global search is experiencing partial failures at {{ $value }}/sec."
+
+      - alert: LongbowVectorClockConflicts
+        expr: rate(longbow_vector_clock_conflicts_total[1m]) > 10
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High vector clock conflict rate"
+          description: "Vector clock conflicts exceeding 10/sec ({{ $value }})."

@@ -34,12 +34,21 @@ func extractVectorFromArrow(rec arrow.Record, rowIdx int) ([]float32, error) {
 		return nil, fmt.Errorf("record is nil")
 	}
 	
-	// Find the vector column
+	// Fast path: check for "vector" column at index 1 (common case)
+	// TODO: Store vector column index in ArrowHNSW to avoid lookup
 	var vecCol arrow.Array
-	for i, field := range rec.Schema().Fields() {
-		if field.Name == "vector" {
-			vecCol = rec.Column(i)
-			break
+	cols := rec.Columns()
+	
+	// Heuristic: usually it's the second column (id, vector)
+	if len(cols) > 1 && rec.ColumnName(1) == "vector" {
+		vecCol = cols[1]
+	} else {
+		// Fallback search
+		for i, field := range rec.Schema().Fields() {
+			if field.Name == "vector" {
+				vecCol = cols[i]
+				break
+			}
 		}
 	}
 	
@@ -55,21 +64,12 @@ func extractVectorFromArrow(rec arrow.Record, rowIdx int) ([]float32, error) {
 	
 	// Get the underlying float32 array
 	values := listArr.Data().Children()[0]
-	floatArr := array.NewFloat32Data(values)
-	defer floatArr.Release()
 	
-	// Calculate offset into the flat float32 array
+	// Calculate offset and width directly
 	width := int(listArr.DataType().(*arrow.FixedSizeListType).Len())
 	start := rowIdx * width
-	end := start + width
 	
-	if start < 0 || end > floatArr.Len() {
-		return nil, fmt.Errorf("row index %d out of bounds", rowIdx)
-	}
-	
-	// Return zero-copy slice
-	// WARNING: This slice is only valid while the RecordBatch is retained
-	return floatArr.Float32Values()[start:end], nil
+	return unsafeVectorSlice(values, start, width), nil
 }
 
 // extractVectorCopy extracts a vector and returns a copy (for when vector needs to be stored).
@@ -88,7 +88,7 @@ func extractVectorCopy(rec arrow.Record, rowIdx int) ([]float32, error) {
 
 // unsafeVectorSlice creates a zero-copy slice from Arrow data.
 // UNSAFE: The returned slice is only valid while the Arrow array is retained.
-func unsafeVectorSlice(data *array.Data, offset, length int) []float32 {
+func unsafeVectorSlice(data arrow.ArrayData, offset, length int) []float32 {
 	if data == nil || data.Len() == 0 {
 		return nil
 	}

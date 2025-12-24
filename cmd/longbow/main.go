@@ -3,7 +3,7 @@ package main
 import (
 	"net"
 	"net/http"
-	_ "net/http/pprof" // Register pprof handlers - REMOVED for G108
+	"net/http/pprof" // Register pprof handlers manually
 	"os"
 	"os/signal"
 	"strings"
@@ -236,6 +236,13 @@ func run() error {
 	go func() {
 		mux := http.NewServeMux()
 		mux.Handle("/metrics", promhttp.Handler())
+
+		// Profiling endpoints
+		mux.HandleFunc("/debug/pprof/", pprof.Index)
+		mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+		mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+		mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+		mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
 
 		srv := &http.Server{
 			Addr:         cfg.MetricsAddr,

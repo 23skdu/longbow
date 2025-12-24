@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "longbow.fullname" . }}-headless
+  labels:
+    {{- include "longbow.labels" . | nindent 4 }}
+  annotations:
+    service.alpha.kubernetes.io/tolerate-unready-endpoints: "true"
+spec:
+  type: ClusterIP
+  clusterIP: None
+  publishNotReadyAddresses: true
+  ports:
+    - port: {{ .Values.gossip.port }}
+      targetPort: {{ .Values.gossip.port }}
+      protocol: UDP
+      name: gossip
+  selector:
+    {{- include "longbow.selectorLabels" . | nindent 4 }}

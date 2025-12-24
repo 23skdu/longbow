@@ -62,6 +62,9 @@ service:
 metrics:
   enabled: true
   port: 9090
+  service:
+    type: ClusterIP
+    annotations: {}
   serviceMonitor:
     enabled: false
 

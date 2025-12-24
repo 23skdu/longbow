@@ -3,38 +3,26 @@ FROM golang:1.24-bookworm AS builder
 
 WORKDIR /app
 
-# Install build dependencies for CGO and potentially FAISS
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    pkg-config \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
-
 COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
 
-# Build with CGO and GPU support
-# Note: In a real environment, FAISS shared libs would need to be present
-RUN CGO_ENABLED=1 go build \
+# Build without CGO for scratch compatibility
+RUN CGO_ENABLED=0 go build \
     -ldflags="-s -w" \
     -o longbow ./cmd/longbow
 
-# Stage 2: Minimal runtime
-FROM debian:trixie-slim
+# Stage 2: Minimal runtime (scratch)
+FROM scratch
 
-RUN apt-get update
-RUN apt update && apt upgrade -y && rm -rf /var/lib/apt/lists/*
-
-WORKDIR /app
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
-COPY --from=builder /app/longbow /usr/local/bin/longbow
+COPY --from=builder /app/longbow /longbow
 
 # Default data directory
 VOLUME /data
 
-# Default environment for safe fallback
+# Default environment
 ENV LONGBOW_GPU_ENABLED=false
 EXPOSE 3000 3001 9090
-ENTRYPOINT ["/usr/local/bin/longbow"]
+ENTRYPOINT ["/longbow"]

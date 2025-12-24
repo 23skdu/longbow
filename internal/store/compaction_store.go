@@ -56,9 +56,28 @@ func (vs *VectorStore) CompactDataset(name string) error {
 		return nil // Nothing to compact
 	}
 
+	// Check for memory headroom
+	// Compaction requires approx 2x the size of the data being compacted (old + new) temporarily.
+	// We check if we have enough free memory (limit - current) > current_dataset_size
+	currentMem := vs.currentMemory.Load()
+	maxMem := vs.maxMemory.Load()
+	dsSize := ds.SizeBytes.Load()
+
+	if maxMem > 0 && currentMem+dsSize > maxMem {
+		// If we are already near limit, compaction might cause OOM.
+		// However, compaction is also the way to reduce fragmentation.
+		// For safety, we skip if we are dangerously close.
+		// Detailed check: headroom vs required
+		if float64(maxMem-currentMem) < float64(dsSize)*1.1 {
+			metrics.CompactionErrorsTotal.Inc()
+			return errors.New("compaction: insufficient memory headroom")
+		}
+	}
+
 	// 1. Perform Incremental Compaction
 	// Returns a NEW slice of records and a remapping table
-	newRecords, remapping, err := compactRecords(ds.Schema, ds.Records, ds.Tombstones, vs.compactionConfig.TargetBatchSize, name)
+	// We use vs.mem (the tracked allocator) instead of creating a new one
+	newRecords, remapping, err := compactRecords(vs.mem, ds.Schema, ds.Records, ds.Tombstones, vs.compactionConfig.TargetBatchSize, name)
 	if err != nil {
 		return err // e.g. nothing to compact
 	}

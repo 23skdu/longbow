@@ -102,6 +102,10 @@ func (m *MockIndex) Close() error {
 	return nil
 }
 
+func (m *MockIndex) EstimateMemory() int64 {
+	return 0
+}
+
 // TestPluggableIndex verifies that Dataset can work with any implementation of Index.
 func TestPluggableIndex(t *testing.T) {
 	// 1. Setup Mock Index

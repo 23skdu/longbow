@@ -432,3 +432,18 @@ func (idx *AutoShardingIndex) Close() error {
 	defer idx.mu.Unlock()
 	return idx.current.Close()
 }
+
+// EstimateMemory implements VectorIndex.
+func (idx *AutoShardingIndex) EstimateMemory() int64 {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	
+	size := int64(64) // Base struct overhead
+	size += idx.current.EstimateMemory()
+	
+	if idx.interimIndex != nil {
+		size += idx.interimIndex.EstimateMemory()
+	}
+	
+	return size
+}

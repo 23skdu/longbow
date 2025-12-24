@@ -196,7 +196,7 @@ func (a *AutoShardingIndex) migrateToSharded() {
 }
 
 // SearchVectors implements VectorIndex.
-func (a *AutoShardingIndex) SearchVectors(query []float32, k int, filters []Filter) []SearchResult {
+func (a *AutoShardingIndex) SearchVectors(query []float32, k int, filters []Filter) ([]SearchResult, error) {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return a.current.SearchVectors(query, k, filters)

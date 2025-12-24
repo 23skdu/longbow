@@ -61,7 +61,7 @@ func (h *HNSWIndex) SyncGPU(ids []int64, vectors []float32) error {
 
 // SearchHybrid performs GPU+CPU hybrid search
 // Uses GPU for candidate generation, then refines with CPU HNSW graph
-func (h *HNSWIndex) SearchHybrid(query []float32, k int) []SearchResult {
+func (h *HNSWIndex) SearchHybrid(query []float32, k int) ([]SearchResult, error) {
 	// If GPU not enabled or failed, use pure CPU
 	if !h.gpuEnabled || h.gpuIndex == nil {
 		// Use SearchByVector which returns []SearchResult
@@ -107,7 +107,7 @@ func (h *HNSWIndex) SearchHybrid(query []float32, k int) []SearchResult {
 		})
 	}
 
-	return results
+	return results, nil
 }
 
 // CloseGPU releases GPU resources

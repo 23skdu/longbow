@@ -165,13 +165,13 @@ func (b *Bitset) ToUint32Array() []uint32 {
 }
 
 // SearchDataset delegates to the vector index if available
-func (d *Dataset) SearchDataset(query []float32, k int) []SearchResult {
+func (d *Dataset) SearchDataset(query []float32, k int) ([]SearchResult, error) {
 	d.dataMu.RLock()
 	idx := d.Index
 	d.dataMu.RUnlock()
 
 	if idx == nil {
-		return nil
+		return nil, nil
 	}
 	// Assuming vector index interface has SearchVectors
 	return idx.SearchVectors(query, k, nil)

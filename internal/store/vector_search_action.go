@@ -118,7 +118,13 @@ func (s *MetaServer) handleVectorSearchAction(action *flight.Action, stream flig
 			}
 
 			// Perform search
-			searchResults = ds.Index.SearchVectors(queryVec, req.K, req.Filters)
+			var errSearch error
+			searchResults, errSearch = ds.Index.SearchVectors(queryVec, req.K, req.Filters)
+			if errSearch != nil {
+				ds.dataMu.RUnlock()
+				metrics.VectorSearchActionErrors.Inc()
+				return status.Errorf(codes.Internal, "vector search failed: %v", errSearch)
+			}
 
 			// Map internal IDs to User IDs
 			searchResults = s.VectorStore.MapInternalToUserIDs(ds, searchResults)

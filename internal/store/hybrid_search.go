@@ -29,7 +29,14 @@ func SearchHybrid(ctx context.Context, s *VectorStore, name string, query []floa
 	// 1. Dense (Vector) Search
 	if alpha > 0 && len(query) > 0 {
 		if ds.Index != nil {
-			denseResults = ds.Index.SearchVectors(query, k*2, nil)
+			var err error
+			denseResults, err = ds.Index.SearchVectors(query, k*2, nil)
+			if err != nil {
+				s.logger.Error("Vector search failed in hybrid search", zap.Error(err))
+				// Continue with sparse results only?
+				// For now, let's treat it as a hard failure if dense was requested but failed.
+				return nil, err
+			}
 			metrics.HybridSearchVectorTotal.Inc()
 		}
 	}
@@ -107,7 +114,11 @@ func HybridSearch(ctx context.Context, s *VectorStore, name string, query []floa
 		results = ds.Index.SearchVectorsWithBitmap(query, k, filterBitmap)
 	} else if !hasFilters {
 		// No filters, standard search
-		results = ds.Index.SearchVectors(query, k, nil)
+		var err error
+		results, err = ds.Index.SearchVectors(query, k, nil)
+		if err != nil {
+			return nil, err
+		}
 	} else {
 		// Filters yielded no results
 		return nil, nil

@@ -47,7 +47,10 @@ func TestShardedHNSW_AutoSplit(t *testing.T) {
 
 	// Verify we can search across all of them
 	query := []float32{float32(200), float32(200), float32(200)}
-	results := sharded.SearchVectors(query, 10, nil)
+	results, err := sharded.SearchVectors(query, 10, nil)
+	if err != nil {
+		t.Fatalf("Search failed: %v", err)
+	}
 	if len(results) != 10 {
 		t.Errorf("expected 10 results, got %d", len(results))
 	}

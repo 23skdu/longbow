@@ -100,3 +100,57 @@ func (s *VectorStore) handleTraverseGraph(body []byte, stream flight.FlightServi
 
 	return stream.Send(&flight.Result{Body: resp})
 }
+
+// handleGetGraphStats returns statistics about the knowledge graph
+func (s *VectorStore) handleGetGraphStats(body []byte, stream flight.FlightService_DoActionServer) error {
+	var req struct {
+		Dataset string `json:"dataset"`
+	}
+
+	if err := json.Unmarshal(body, &req); err != nil {
+		return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
+	}
+
+	if req.Dataset == "" {
+		return status.Error(codes.InvalidArgument, "missing dataset name")
+	}
+
+	ds, err := s.getDataset(req.Dataset)
+	if err != nil {
+		return status.Errorf(codes.NotFound, "dataset not found: %s", req.Dataset)
+	}
+
+	ds.dataMu.RLock()
+	var edgeCount int
+	var commCount int
+	var preds []string
+
+	if ds.Graph != nil {
+		// GraphStore methods usually take internal locks, but we need to verify if calling them is safe directly.
+		// EdgeCount() uses RLock. CommunityCount() uses RLock. PredicateVocabulary() uses RLock.
+		// So it's safe to call them without holding ds.dataMu, assuming ds.Graph pointer doesn't change
+		// (which likely doesn't happen often, or we should hold RLock to snag the pointer).
+		g := ds.Graph
+		ds.dataMu.RUnlock()
+
+		edgeCount = g.EdgeCount()
+		commCount = g.CommunityCount()
+		preds = g.PredicateVocabulary()
+	} else {
+		ds.dataMu.RUnlock()
+		preds = []string{}
+	}
+
+	resp := map[string]interface{}{
+		"edge_count":      edgeCount,
+		"community_count": commCount,
+		"predicates":      preds,
+	}
+
+	respBytes, err := json.Marshal(resp)
+	if err != nil {
+		return status.Errorf(codes.Internal, "failed to serialize stats: %v", err)
+	}
+
+	return stream.Send(&flight.Result{Body: respBytes})
+}

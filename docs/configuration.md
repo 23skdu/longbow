@@ -43,6 +43,14 @@ Longbow is stateless and configured entirely via environment variables.
 | `LONGBOW_RATE_LIMIT_RPS` | `0` | Requests Per Second limit (0 = disabled). |
 | `LONGBOW_RATE_LIMIT_BURST` | `0` | Maximum burst size allowed. |
 
+## Circuit Breaker
+
+The Global Search circuit breaker is hardcoded with the following safe defaults:
+
+- **Threshold**: 10 consecutive failures.
+- **Timeout**: 30 seconds cooldown.
+- **Scope**: Protects `DoGet` and `DoAction` endpoints.
+
 ## Feature Flags
 
 | Variable | Default | Description |

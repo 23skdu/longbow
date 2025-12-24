@@ -293,6 +293,66 @@ def command_snapshot(args, data_client, meta_client):
     except Exception as e:
         print(f"Snapshot failed: {e}")
 
+# =============================================================================
+# GraphRAG Operations
+# =============================================================================
+
+def command_graph_stats(args, data_client, meta_client):
+    """Get GraphRAG statistics via Meta Server DoAction."""
+    name = args.dataset
+    print(f"Getting graph stats for '{name}'...")
+    try:
+        req = {"dataset": name}
+        action = flight.Action("GetGraphStats", json.dumps(req).encode("utf-8"))
+        options = get_options(args)
+        results = meta_client.do_action(action, options=options)
+        for res in results:
+            print(json.dumps(json.loads(res.body.to_pybytes()), indent=2))
+    except Exception as e:
+        print(f"Error getting graph stats: {e}")
+
+def command_add_edge(args, data_client, meta_client):
+    """Add an edge to the knowledge graph."""
+    name = args.dataset
+    print(f"Adding edge to '{name}': {args.subject} -[{args.predicate}]-> {args.object} (weight={args.weight})")
+    try:
+        req = {
+            "dataset": name,
+            "subject": args.subject,
+            "predicate": args.predicate,
+            "object": args.object,
+            "weight": args.weight
+        }
+        action = flight.Action("add-edge", json.dumps(req).encode("utf-8"))
+        options = get_options(args)
+        list(meta_client.do_action(action, options=options))
+        print("Edge added.")
+    except Exception as e:
+        print(f"Error adding edge: {e}")
+
+def command_traverse(args, data_client, meta_client):
+    """Traverse the knowledge graph."""
+    name = args.dataset
+    start = args.start_node
+    hops = args.max_hops
+    print(f"Traversing graph '{name}' from node {start} (max_hops={hops})...")
+    try:
+        req = {
+            "dataset": name,
+            "start": start,
+            "max_hops": hops
+        }
+        action = flight.Action("traverse-graph", json.dumps(req).encode("utf-8"))
+        options = get_options(args)
+        results = meta_client.do_action(action, options=options)
+        for res in results:
+            paths = json.loads(res.body.to_pybytes())
+            print(f"Found {len(paths)} paths:")
+            for p in paths:
+                print(f" - Path: {p.get('Nodes')} (Weight: {p.get('Weight')})")
+    except Exception as e:
+        print(f"Error traversing graph: {e}")
+
 
 # =============================================================================
 # Main Dispatch
@@ -512,6 +572,22 @@ def main():
     # NAMESPACES
     subparsers.add_parser("namespaces", help="Test Namespace Operations")
     
+    # GraphRAG
+    graph_parser = subparsers.add_parser("graph-stats", help="Get graph stats")
+    graph_parser.add_argument("--dataset", required=True, help="Dataset name")
+
+    edge_parser = subparsers.add_parser("add-edge", help="Add graph edge")
+    edge_parser.add_argument("--dataset", required=True, help="Dataset name")
+    edge_parser.add_argument("--subject", required=True, type=int, help="Subject ID")
+    edge_parser.add_argument("--predicate", required=True, help="Predicate")
+    edge_parser.add_argument("--object", required=True, type=int, help="Object ID")
+    edge_parser.add_argument("--weight", type=float, default=1.0, help="Edge weight")
+
+    traverse_parser = subparsers.add_parser("traverse", help="Traverse graph")
+    traverse_parser.add_argument("--dataset", required=True, help="Dataset name")
+    traverse_parser.add_argument("--start-node", required=True, type=int, help="Start node ID")
+    traverse_parser.add_argument("--max-hops", type=int, default=2, help="Max hops")
+
     # GLOBAL options
     parser.add_argument("--routing-key", help="Explicit routing key (x-longbow-key metadata)")
 
@@ -539,6 +615,9 @@ def main():
             "exchange": command_exchange,
             "validate": command_validate,
             "namespaces": command_namespaces,
+            "graph-stats": command_graph_stats,
+            "add-edge": command_add_edge,
+            "traverse": command_traverse,
         }
         
         func = commands.get(args.command)

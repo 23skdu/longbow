@@ -75,7 +75,8 @@ func TestSearchVectorsCorrectness(t *testing.T) {
 	query := []float32{1, 0.1, 0, 0}
 
 	// Test SearchVectors (Batched)
-	results := hnswIdx.SearchVectors(query, 2, nil)
+	results, err := hnswIdx.SearchVectors(query, 2, nil)
+	require.NoError(t, err)
 	require.Len(t, results, 2)
 	// Closer to [1,0,0,0] (ID 0) and [1,1,0,0] (ID 4)
 	assert.Equal(t, VectorID(0), results[0].ID)

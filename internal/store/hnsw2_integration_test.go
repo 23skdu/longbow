@@ -17,8 +17,6 @@ func TestHNSW2Integration(t *testing.T) {
 	os.Setenv("LONGBOW_USE_HNSW2", "true")
 	defer os.Unsetenv("LONGBOW_USE_HNSW2")
 	
-	mem := memory.NewGoAllocator()
-	
 	// Create schema
 	schema := arrow.NewSchema(
 		[]arrow.Field{
@@ -157,7 +155,7 @@ func TestHNSW2EndToEnd(t *testing.T) {
 	
 	// Verify top result is reasonable (should be vector 50 or nearby)
 	topID := results[0].ID
-	t.Logf("  Top result: ID=%d, Distance=%.4f", topID, results[0].Distance)
+	t.Logf("  Top result: ID=%d", topID)
 	
 	// The top result should be within reasonable range of 50
 	if topID < 40 || topID > 60 {

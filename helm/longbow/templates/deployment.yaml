@@ -108,6 +108,13 @@ spec:
               value: {{ .Values.s3.secretAccessKey | quote }}
             {{- end }}
             {{- end }}
+            # Hybrid Search Configuration
+            - name: LONGBOW_HYBRID_SEARCH_ENABLED
+              value: {{ .Values.hybrid.enabled | quote }}
+            - name: LONGBOW_HYBRID_TEXT_COLUMNS
+              value: {{ .Values.hybrid.textColumns | quote }}
+            - name: LONGBOW_HYBRID_ALPHA
+              value: {{ .Values.hybrid.alpha | quote }}
             # Gossip Configuration
             - name: GOSSIP_ENABLED
               value: {{ .Values.gossip.enabled | quote }}

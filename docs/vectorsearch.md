@@ -76,7 +76,16 @@ Longbow stores vectors in compressed format using Product Quantization (PQ) to r
 
 * **Encoding**: Vectors are split into `M` sub-vectors and quantized to 256 centroids (1 byte each).
 * **Storage**: A 1536-dim vector (6KB) is compressed to 96 bytes (PQ96) or 24 bytes (PQ24).
+* **Storage**: A 1536-dim vector (6KB) is compressed to 96 bytes (PQ96) or 24 bytes (PQ24).
 * **Search**: Uses Symmetric Distance Computation (SDC) lookup tables for fast distance approximation.
+
+### Dynamic Sharding & Migration
+
+Longbow dynamically optimizes index structures based on dataset size:
+
+* **Small Datasets**: Uses standard `HNSWIndex` for low-overhead access.
+* **Large Datasets**: Automatically migrates to `ShardedHNSW` to enable parallel lock-striping.
+* **Seamless Transition**: The `AutoShardingIndex` handles this upgrade transparently, utilizing an "Interim Sharding" strategy to maintain high availability and consistency during the background migration process.
 
 ### SIMD Acceleration
 

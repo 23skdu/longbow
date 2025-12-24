@@ -51,27 +51,20 @@ python3 scripts/perf_test.py --rows 250000 --search --json result.json
 python3 scripts/perf_test.py --meta-uri grpc://localhost:3001 --rows 250000 --search --json result_cluster.json
 ```
 
-## v0.1.2-pre Optimization Results (Post-Audit)
+## v0.1.2-rc10 Optimization Results (Post-Release)
 
-Following code cleanup, zero-copy enforcement, and sharding optimizations:
+Following comprehensive lock optimization (Interim Sharding, Sharded Mutex, Fine-Grained Locking):
 
-### Micro-Benchmarks (Single Node, M3 Pro)
+### High-Dimensional Performance (Single Node, M3 Pro)
 
-| Benchmark | Ops/sec | ns/op | Relative to v0.1.1 |
-|-----------|---------|-------|-------------------|
-| HNSW Single Add | ~23,400 | 42,672 | 1.0x |
-| **HNSW Sharded Parallel Add** | **~118,900** | **8,409** | **~5.1x Speedup** |
-| HNSW Sharded Search | ~21,300 | 46,757 | ~3.3x Speedup (vs 6k QPS) |
-
-### Cluster Hybrid Search (3-Node)
-
-- **Dataset**: 10k 128d vectors
-- **Throughput**: ~1,857 QPS (Hybrid Search)
-- **Latency**: p50 0.41ms, p99 1.58ms
-- **Note**: Stability verified with Gossip optimization.
+| Benchmark | Dimensions | Write (MB/s) | Read (MB/s) | Search (QPS) | p99 Latency (ms) |
+|-----------|------------|--------------|-------------|--------------|------------------|
+| 384d (Validate) | 384 | 1335 | 1997 | **3535** | < 1ms |
+| 768d (Scale) | 768 | 1609 | 2494 | **1202** | 4.66ms |
 
 ### Key Optimizations Verified
 
-1. **Sharded Parallel Add**: Lock striping via `ShardedHNSW` provides linear scaling with cores.
-2. **Zero-Copy Access**: Validated safe access to Arrow buffers, contributing to search throughput.
-3. **Hybrid Search**: Sub-millisecond p50 latency maintained even with added filtering logic.
+1. **Interim Sharding**: Eliminated double-indexing overhead during migration, preventing stalls at scale.
+2. **Double-Checked Locking**: Optimized `InvertedIndex` access, resolving reader starvation during hybrid updates.
+3. **ShardedHNSW**: Linear scaling with cores via lock striping (5.1x micro-benchmark speedup).
+4. **Hybrid Search**: Stable performance under concurrent indexing load.

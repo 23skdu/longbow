@@ -36,6 +36,15 @@ Vectors are stored in off-heap "slabs" (1MB chunks) using `memory.SlabAllocator`
 - **Slab Allocation**: Sequential allocation reduces fragmentation.
 - **Reset Capability**: Instant reclamation of memory for index rebuilds.
 
+### Auto-Sharding Index
+
+Longbow employs a dynamic `AutoShardingIndex` that manages the transition from simple to sharded structures:
+
+1. **HNSWIndex**: Used for small datasets (<10k vectors) for minimal overhead.
+2. **Auto-Migration**: Automatically triggers strict migration to `ShardedHNSW` when thresholds are met.
+3. **Interim Sharding**: During migration, new writes are routed to a temporary `interimIndex` to prevent double-indexing and stalls.
+4. **ShardedHNSW**: A lock-striped, parallel implementation of HNSW (1-32 shards) that scales linearly with CPU cores for high-throughput insertion.
+
 ### Zero-Copy Design
 
 The HNSW graph stores only vector IDs, not data:

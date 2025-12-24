@@ -8,7 +8,11 @@ Longbow is a distributed, high-performance vector database designed for low-late
 
 ### 1. Vector Engine
 
-- **Hybrid Indexing**: Combines HNSW (Hierarchical Navigable Small World) for approximate nearest neighbor search with exact-match fallback.
+- **Hybrid Indexing**:
+  - **Dense**: HNSW (Hierarchical Navigable Small World) for approximate nearest neighbor search.
+  - **Sparse**: Inverted Index (Roaring Bitmaps) for keyword matching.
+  - **Auto-Sharding**: Transparently upgrades standard indices to **ShardedHNSW** (lock-striped) when thresholds are met.
+- **Interim Sharding**: Uses a temporary sharded index during migration to eliminate double-indexing overhead, ensuring linear scalability during resizing.
 - **Zero-Copy**: Utilizes Apache Arrow for zero-copy data representation, minimizing serialization overhead.
 - **Lock-Free**: Experimental lock-free indexing structures (skip list) for high concurrency.
 - **SIMD & NUMA**: optimized for modern CPU architectures with SIMD instructions (AVX2/AVX-512) and NUMA-aware memory allocation.

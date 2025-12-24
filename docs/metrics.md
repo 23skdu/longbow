@@ -169,6 +169,28 @@ Complete reference for all Prometheus metrics exported by Longbow.
 **Type**: Counter  
 **Description**: Total number of migrations from BruteForce to HNSW index
 
+### longbow_hnsw_parallel_search_splits_total
+
+**Type**: Counter  
+**Labels**: `dataset`
+**Description**: Total number of parallel search splits (distribution of work across workers)
+
+### longbow_hnsw_pq_compressed_bytes_total
+
+**Type**: Gauge
+**Labels**: `dataset`
+**Description**: Total bytes of memory saved/used by Product Quantization compressed vectors
+
+### longbow_vector_search_gpu_latency_seconds
+
+**Type**: Histogram
+**Description**: Latency of GPU-accelerated vector search operations
+
+### longbow_vector_search_gpu_operations_total
+
+**Type**: Counter
+**Description**: Total number of GPU-accelerated vector search operations
+
 ---
 
 ## WAL & Persistence
@@ -220,6 +242,29 @@ Complete reference for all Prometheus metrics exported by Longbow.
 **Type**: Histogram  
 **Labels**: `type`  
 **Description**: Time spent waiting for WAL locks
+
+### longbow_s3_operations_total
+
+**Type**: Counter
+**Labels**: `operation`, `status`
+**Description**: Total S3 operations (PutObject, GetObject, etc.)
+
+### longbow_s3_request_duration_seconds
+
+**Type**: Histogram
+**Labels**: `operation`
+**Description**: Latency of S3 operations
+
+### longbow_s3_retries_total
+
+**Type**: Counter
+**Labels**: `operation`
+**Description**: Total S3 operation retries
+
+### longbow_ipc_buffer_pool_utilization
+
+**Type**: Gauge
+**Description**: Current utilization of the IPC buffer pool (0-1)
 
 ---
 

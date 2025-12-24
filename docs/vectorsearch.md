@@ -33,10 +33,12 @@ Currently, Longbow uses a robust **Post-Filtering** strategy integrated with the
 
 1. **Oversampling**: The index retrieves a larger set of candidates (`k * oversample_factor`).
 2. **Deterministic Mapping**: Internal `VectorID`s are mapped to metadata row locations using a high-density mapping table.
-3. **Predicate Application**: Each candidate is checked against the provided filter criteria (e.g., `id > 100`, `category == 'news'`) using the `MatchesFilters` engine.
+3. **Predicate Application**: Each candidate is checked against the provided filter criteria
+   (e.g., `id > 100`, `category == 'news'`) using the `MatchesFilters` engine.
 4. **Result Selection**: The first `k` matching candidates that satisfy all predicates are returned to the client.
 
-This approach maintains the system's **zero-copy architecture** by accessing metadata directly from Arrow memory during the filtering phase.
+This approach maintains the system's **zero-copy architecture** by accessing metadata directly from Arrow
+memory during the filtering phase.
 
 ## Query Flow Architecture
 
@@ -136,9 +138,35 @@ Features:
 * **Multi-term queries**: Scores aggregated across all query terms
 * **Deletion support**: Documents can be removed from index
 
-#### HybridSearcher
+## GraphRAG (Retrieval Augmented Generation with Graphs)
 
-Combines HNSW graph with inverted index:
+Longbow supports Knowledge Graph integration for GraphRAG workflows, where entities and relationships are stored alongside vectors.
+
+### Functionality
+
+The `GraphStore` component maintains an adjacency list of relationships between entities (`VectorID`s). This allows for:
+
+* **Multi-hop Reasoning**: Retrieving related entities (neighbors) of search results.
+* **Relationship Filtering**: Filtering search results based on graph topology.
+* **Knowledge Retrieval**: Fetching structured relationship data to augment LLM context.
+
+### API
+
+```go
+gs := store.NewGraphStore()
+
+// Add edges (relationships)
+// Node 0 "authored" Node 1
+gs.AddEdge(VectorID(0), VectorID(1), "authored", 1.0)
+gs.AddEdge(VectorID(1), VectorID(2), "contains_topic", 0.8)
+
+// Retrieval
+// Get 1-hop neighbors of Node 0
+edges := gs.GetEdges(VectorID(0))
+// Returns [{Target: 1, Type: "authored", Weight: 1.0}]
+```
+
+#### HybridSearcher
 
 ```go
 hs := store.NewHybridSearcher()

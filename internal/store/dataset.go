@@ -170,9 +170,7 @@ func (d *Dataset) SearchDataset(query []float32, k int) []SearchResult {
 		return nil
 	}
 	// Assuming vector index interface has SearchVectors
-	if vIdx, ok := idx.(VectorIndex); ok {
-		return vIdx.SearchVectors(query, k, nil)
-	}
+	return idx.SearchVectors(query, k, nil)
 	return nil
 }
 

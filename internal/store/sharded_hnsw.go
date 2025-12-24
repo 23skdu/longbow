@@ -452,16 +452,14 @@ func (s *ShardedHNSW) SearchByID(id VectorID, k int) []VectorID {
 		return nil
 	}
 
-	shardIdx := s.GetShardForID(id)
-	shard := s.shards[shardIdx]
+	// shardIdx := s.GetShardForID(id)
+	// shard := s.shards[shardIdx]
 
-	shard.mu.RLock()
 	// Get query vector from shard if possible, or from dataset
 	// Simplified: use search by ID if HNSW supports it, or get vector first.
 	// For now, let's get vector and search.
 	// We need the query vector.
 	// We can use the dataset and location.
-	shard.mu.RUnlock()
 
 	s.dataset.dataMu.RLock()
 	if loc.BatchIdx >= len(s.dataset.Records) {

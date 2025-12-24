@@ -119,7 +119,7 @@ func (w *SyncWorker) syncAll() {
 func (w *SyncWorker) syncPeer(p *PeerState) error {
 	w.logger.Info("Syncing with peer", zap.String("addr", p.Addr), zap.Uint64("last_seq", p.LastSeenSeq))
 	// 1. Connect to peer
-	conn, err := grpc.Dial(p.Addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(p.Addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return err
 	}
@@ -223,7 +223,7 @@ func (w *SyncWorker) syncPeer(p *PeerState) error {
 }
 
 func (w *SyncWorker) fetchRemoteMerkleRoot(addr, dataset string) ([32]byte, error) {
-	conn, err := grpc.Dial(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return [32]byte{}, err
 	}

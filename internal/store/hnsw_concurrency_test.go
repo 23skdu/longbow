@@ -138,7 +138,7 @@ func TestHNSW_Concurrency_Mixed(t *testing.T) {
 				case <-done:
 					return
 				default:
-					_ = idx.Search(q, 5)
+					_, _ = idx.Search(q, 5)
 					ops.Add(1)
 					runtime.Gosched()
 				}

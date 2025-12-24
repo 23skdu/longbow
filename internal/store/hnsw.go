@@ -379,7 +379,7 @@ func (h *HNSWIndex) advanceEpoch() {
 }
 
 // Search performs k-NN search using the provided query vector.
-func (h *HNSWIndex) Search(query []float32, k int) []VectorID {
+func (h *HNSWIndex) Search(query []float32, k int) ([]VectorID, error) {
 	defer func(start time.Time) {
 		metrics.VectorSearchLatencySeconds.WithLabelValues(h.dataset.Name).Observe(time.Since(start).Seconds())
 	}(time.Now())
@@ -406,7 +406,7 @@ func (h *HNSWIndex) Search(query []float32, k int) []VectorID {
 	for i, n := range neighbors {
 		res[i] = n.Key
 	}
-	return res
+	return res, nil
 }
 
 // SearchVectors performs k-NN search returning full results with scores (distances).

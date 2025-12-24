@@ -73,7 +73,6 @@ type ShardedHNSW struct {
 
 	// Dynamic Sharding
 	activeShards atomic.Int32
-	shardMap     []int // Maps shardIdx to its ID offset? No, let's use range-based.
 	// For simplicity, we'll use a fixed-width range sharding: shardIdx = id / config.ShardSplitThreshold
 	// We dynamically append to `shards` as needed.
 	shardsMu sync.RWMutex

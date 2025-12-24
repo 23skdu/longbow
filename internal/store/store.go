@@ -526,6 +526,12 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 			return err
 		}
 		return nil
+
+	case "add-edge":
+		return s.handleAddEdge(action.Body, stream)
+
+	case "traverse-graph":
+		return s.handleTraverseGraph(action.Body, stream)
 	}
 	return status.Error(codes.Unimplemented, "unknown action type "+action.Type)
 }

@@ -160,13 +160,60 @@ func (h *ArrowHNSW) searchLayerForInsert(query []float32, entryPoint uint32, ef 
 	return results
 }
 
-// selectNeighbors selects the best M neighbors using a heuristic.
-// For now, uses simple nearest neighbor selection.
+// selectNeighbors selects the best M neighbors using the RobustPrune heuristic.
+// This maintains diversity in the graph by preferring neighbors that are not already
+// well-connected to other selected neighbors.
 func (h *ArrowHNSW) selectNeighbors(candidates []Candidate, m int) []Candidate {
 	if len(candidates) <= m {
 		return candidates
 	}
-	return candidates[:m]
+	
+	// RobustPrune heuristic: select diverse neighbors
+	selected := make([]Candidate, 0, m)
+	remaining := make([]Candidate, len(candidates))
+	copy(remaining, candidates)
+	
+	for len(selected) < m && len(remaining) > 0 {
+		// Find the closest remaining candidate
+		bestIdx := 0
+		bestDist := remaining[0].Dist
+		
+		for i := 1; i < len(remaining); i++ {
+			if remaining[i].Dist < bestDist {
+				bestDist = remaining[i].Dist
+				bestIdx = i
+			}
+		}
+		
+		// Add to selected
+		selected = append(selected, remaining[bestIdx])
+		
+		// Remove from remaining
+		remaining[bestIdx] = remaining[len(remaining)-1]
+		remaining = remaining[:len(remaining)-1]
+		
+		// Prune remaining candidates that are too close to the selected one
+		// This maintains diversity
+		if len(selected) < m && len(remaining) > 0 {
+			selectedVec := h.mustGetVector(selected[len(selected)-1].ID)
+			
+			// Filter remaining to remove candidates too close to selected
+			filtered := remaining[:0]
+			for _, cand := range remaining {
+				candVec := h.mustGetVector(cand.ID)
+				distToSelected := distanceSIMD(candVec, selectedVec)
+				
+				// Keep candidate if it's not too close to the selected neighbor
+				// (i.e., distance to selected > distance to query)
+				if distToSelected > cand.Dist {
+					filtered = append(filtered, cand)
+				}
+			}
+			remaining = filtered
+		}
+	}
+	
+	return selected
 }
 
 // addConnection adds a directed edge from source to target at the given layer.
@@ -188,8 +235,14 @@ func (h *ArrowHNSW) addConnection(source, target uint32, layer int) {
 	}
 }
 
-// pruneConnections reduces the number of connections to maxConn.
+// pruneConnections reduces the number of connections to maxConn by removing the furthest neighbor.
+// This maintains better graph quality by keeping closer neighbors.
 func (h *ArrowHNSW) pruneConnections(nodeID uint32, maxConn int, layer int) {
+	h.pruneConnectionsInternal(nodeID, maxConn, layer, false)
+}
+
+// pruneConnectionsInternal is the internal implementation with skipReplenish flag
+func (h *ArrowHNSW) pruneConnectionsInternal(nodeID uint32, maxConn int, layer int, skipReplenish bool) {
 	node := &h.nodes[nodeID]
 	count := int(node.NeighborCounts[layer])
 	
@@ -197,9 +250,127 @@ func (h *ArrowHNSW) pruneConnections(nodeID uint32, maxConn int, layer int) {
 		return
 	}
 	
-	// Simple pruning: keep first maxConn neighbors
-	// TODO: Implement heuristic pruning (keep diverse neighbors)
-	node.NeighborCounts[layer] = uint8(maxConn)
+	// Get node's vector for distance calculations
+	nodeVec := h.mustGetVector(nodeID)
+	
+	// Find the furthest neighbor
+	var worstDist float32 = -1
+	var worstIdx int = -1
+	
+	for i := 0; i < count; i++ {
+		neighborID := node.Neighbors[layer][i]
+		neighborVec := h.mustGetVector(neighborID)
+		dist := distanceSIMD(nodeVec, neighborVec)
+		
+		if dist > worstDist {
+			worstDist = dist
+			worstIdx = i
+		}
+	}
+	
+	if worstIdx == -1 {
+		// Fallback: remove last neighbor
+		worstIdx = count - 1
+	}
+	
+	// Get the worst neighbor ID before removing it
+	worstNeighborID := node.Neighbors[layer][worstIdx]
+	
+	// Remove worst neighbor by shifting array
+	for i := worstIdx; i < count-1; i++ {
+		node.Neighbors[layer][i] = node.Neighbors[layer][i+1]
+	}
+	node.NeighborCounts[layer]--
+	
+	// Delete backlink from the worst neighbor
+	h.removeConnectionInternal(worstNeighborID, nodeID, layer, skipReplenish)
+	
+	// If we still have too many neighbors, prune again
+	if int(node.NeighborCounts[layer]) > maxConn {
+		h.pruneConnectionsInternal(nodeID, maxConn, layer, skipReplenish)
+	}
+}
+
+// removeConnection removes a directed edge from source to target at the given layer.
+func (h *ArrowHNSW) removeConnection(source, target uint32, layer int) {
+	h.removeConnectionInternal(source, target, layer, false)
+}
+
+// removeConnectionInternal is the internal implementation with skipReplenish flag
+func (h *ArrowHNSW) removeConnectionInternal(source, target uint32, layer int, skipReplenish bool) {
+	node := &h.nodes[source]
+	count := int(node.NeighborCounts[layer])
+	
+	// Find and remove the connection
+	for i := 0; i < count; i++ {
+		if node.Neighbors[layer][i] == target {
+			// Shift remaining neighbors
+			for j := i; j < count-1; j++ {
+				node.Neighbors[layer][j] = node.Neighbors[layer][j+1]
+			}
+			node.NeighborCounts[layer]--
+			
+			// Replenish connections if we're below the target (unless we're in a pruning operation)
+			if !skipReplenish {
+				maxConn := h.mMax
+				if layer > 0 {
+					maxConn = h.mMax0
+				}
+				h.replenishConnections(source, maxConn, layer)
+			}
+			return
+		}
+	}
+}
+
+// replenishConnections restores connectivity by finding new neighbors through neighbors-of-neighbors.
+// This is called when a node loses a connection during pruning to maintain graph connectivity.
+func (h *ArrowHNSW) replenishConnections(nodeID uint32, maxConn int, layer int) {
+	node := &h.nodes[nodeID]
+	count := int(node.NeighborCounts[layer])
+	
+	if count >= maxConn {
+		return // Already at capacity
+	}
+	
+	// Try to find new neighbors through existing neighbors
+	// This is a simplified version of coder/hnsw's replenish
+	visited := make(map[uint32]bool)
+	visited[nodeID] = true
+	
+	// Mark existing neighbors as visited
+	for i := 0; i < count; i++ {
+		visited[node.Neighbors[layer][i]] = true
+	}
+	
+	// Explore neighbors of neighbors
+	for i := 0; i < count && int(node.NeighborCounts[layer]) < maxConn; i++ {
+		neighborID := node.Neighbors[layer][i]
+		neighborNode := &h.nodes[neighborID]
+		neighborCount := int(neighborNode.NeighborCounts[layer])
+		
+		for j := 0; j < neighborCount && int(node.NeighborCounts[layer]) < maxConn; j++ {
+			candidateID := neighborNode.Neighbors[layer][j]
+			
+			// Skip if already visited or is the node itself
+			if visited[candidateID] {
+				continue
+			}
+			visited[candidateID] = true
+			
+			// Add this candidate as a new neighbor
+			h.addConnection(nodeID, candidateID, layer)
+			
+			// Also add reverse connection
+			h.addConnection(candidateID, nodeID, layer)
+			
+			// Prune if candidate now has too many connections
+			candidateNode := &h.nodes[candidateID]
+			if int(candidateNode.NeighborCounts[layer]) > maxConn {
+				h.pruneConnectionsInternal(candidateID, maxConn, layer, true)
+			}
+		}
+	}
 }
 
 // mustGetVector is a helper that panics on error (for internal use).

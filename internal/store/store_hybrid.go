@@ -20,6 +20,16 @@ func (s *VectorStore) GetHybridSearchConfig() HybridSearchConfig {
 	return s.hybridSearchConfig
 }
 
+// SetHybridSearchConfig updates the hybrid search configuration.
+func (s *VectorStore) SetHybridSearchConfig(cfg HybridSearchConfig) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.hybridSearchConfig = cfg
+	if cfg.Enabled && s.bm25Index == nil {
+		s.bm25Index = NewBM25InvertedIndex(cfg.BM25)
+	}
+}
+
 // GetBM25Index returns the BM25 inverted index for text search.
 // Returns nil if hybrid search is not enabled.
 func (s *VectorStore) GetBM25Index() *BM25InvertedIndex {

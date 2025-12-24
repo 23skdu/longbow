@@ -203,7 +203,7 @@ func TestVectorSearchAction_MetricsEmitted(t *testing.T) {
 
 // Helper to create a test store with vectors
 // nolint:unparam
-func createTestStoreWithVectors(t *testing.T, datasetName string, numVectors, dim int) *VectorStore {
+func createTestStoreWithVectors(t *testing.T, datasetName string, numVectors, _ int) *VectorStore {
 	t.Helper()
 
 	mem := memory.NewGoAllocator()

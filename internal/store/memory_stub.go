@@ -4,14 +4,14 @@ package store
 
 import "unsafe"
 
-func pinThreadToCoreLinux(core int) error {
+func pinThreadToCoreLinux(_ int) error {
 	return nil
 }
 
-func getNumaNodeLinux(ptr unsafe.Pointer) (int, error) {
+func getNumaNodeLinux(_ unsafe.Pointer) (int, error) {
 	return -1, nil
 }
 
-func pinThreadToNodeLinux(node int) error {
+func pinThreadToNodeLinux(_ int) error {
 	return nil
 }

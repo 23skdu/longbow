@@ -1014,8 +1014,8 @@ func (h *HNSWIndex) AddBatch(recs []arrow.RecordBatch, rowIdxs []int, batchIdxs 
 	}
 
 	// 5. Add to graph (Batched Locking)
-	// We can process graph additions in chunks to reduce lock overhead while maintaining responsiveness.
-	const lockBatchSize = 100
+	// Use extremely fine-grained locking to allow Searches to interleave fairly.
+	const lockBatchSize = 1
 
 	for i := 0; i < n; i += lockBatchSize {
 		end := i + lockBatchSize
@@ -1582,5 +1582,13 @@ func (h *HNSWIndex) SearchByIDUnsafe(id VectorID, k int) []VectorID {
 
 // GetDimension returns the vector dimension for this index
 func (h *HNSWIndex) GetDimension() uint32 {
-	return uint32(h.dims)
+	d := uint32(h.dims)
+	if d == 0 {
+		// Log if dimension is 0 and we have vectors
+		if h.Len() > 0 {
+			// Cannot log easily here without logger, but we can check in caller
+			fmt.Printf("[DEBUG] HNSWIndex.GetDimension: h.dims is 0 but h.Len()=%d\n", h.Len())
+		}
+	}
+	return d
 }

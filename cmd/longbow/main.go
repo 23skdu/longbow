@@ -88,6 +88,11 @@ type Config struct {
 	MemoryEvictionPolicy   string  `envconfig:"MEMORY_EVICTION_POLICY" default:"lru"`
 	MemoryRejectWrites     bool    `envconfig:"MEMORY_REJECT_WRITES" default:"true"`
 
+	// Hybrid Search Configuration
+	HybridSearchEnabled     bool    `envconfig:"HYBRID_SEARCH_ENABLED" default:"false"`
+	HybridSearchTextColumns string  `envconfig:"HYBRID_TEXT_COLUMNS" default:""`
+	HybridSearchAlpha       float32 `envconfig:"HYBRID_ALPHA" default:"0.5"`
+
 	// GPU Configuration
 	GPUEnabled  bool `envconfig:"GPU_ENABLED" default:"false"`
 	GPUDeviceID int  `envconfig:"GPU_DEVICE_ID" default:"0"`
@@ -175,6 +180,22 @@ func run() error {
 		EvictionPolicy:   cfg.MemoryEvictionPolicy,
 		RejectWrites:     cfg.MemoryRejectWrites,
 	})
+
+	// Configure hybrid search
+	if cfg.HybridSearchEnabled {
+		var textCols []string
+		if cfg.HybridSearchTextColumns != "" {
+			textCols = strings.Split(cfg.HybridSearchTextColumns, ",")
+		}
+		vectorStore.SetHybridSearchConfig(store.HybridSearchConfig{
+			Enabled:     true,
+			TextColumns: textCols,
+			Alpha:       cfg.HybridSearchAlpha,
+			BM25:        store.DefaultBM25Config(),
+			RRFk:        60,
+		})
+		logger.Info("Hybrid search enabled", zap.Strings("columns", textCols), zap.Float32("alpha", cfg.HybridSearchAlpha))
+	}
 
 	// Start eviction ticker if TTL is enabled
 	if cfg.TTL > 0 {

@@ -266,6 +266,9 @@ func run() error {
 		Burst: cfg.RateLimitBurst,
 	})
 
+	// Initialize StreamAggregator for Global Search
+	streamAggregator := sharding.NewStreamAggregator(mem, logger)
+
 	// Add Interceptors (Chained)
 	serverOpts = append(serverOpts,
 		grpc.ChainUnaryInterceptor(
@@ -275,7 +278,7 @@ func run() error {
 		),
 		grpc.ChainStreamInterceptor(
 			rateLimiter.StreamInterceptor(),
-			sharding.PartitionProxyStreamInterceptor(ringManager, forwarder),
+			sharding.PartitionProxyStreamInterceptor(ringManager, forwarder, streamAggregator),
 		),
 	)
 

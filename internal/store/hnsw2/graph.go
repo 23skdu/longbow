@@ -21,7 +21,7 @@ type GraphNode struct {
 
 const (
 	MaxLayers = 16      // Maximum number of layers in the graph
-	MaxNeighbors = 32   // Maximum neighbors per node per layer (Mmax)
+	MaxNeighbors = 64   // Maximum neighbors per node per layer (Mmax)
 )
 
 // ArrowHNSW is the main HNSW index structure with Arrow integration.
@@ -117,7 +117,7 @@ func NewSearchContextPool() *SearchContextPool {
 		pool: sync.Pool{
 			New: func() interface{} {
 				return &SearchContext{
-					candidates: NewFixedHeap(200),
+					candidates: NewFixedHeap(2000), // Increase to 2000 for larger ef
 					visited:    NewBitset(100000),
 					results:    make([]store.SearchResult, 0, 100),
 				}

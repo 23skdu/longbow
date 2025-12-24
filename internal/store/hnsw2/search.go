@@ -3,7 +3,7 @@ package hnsw2
 import (
 	"fmt"
 	"math"
-	
+
 	"github.com/23skdu/longbow/internal/store"
 )
 
@@ -72,8 +72,9 @@ func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef int, laye
 	ctx.candidates.Push(Candidate{ID: entryPoint, Dist: entryDist})
 	ctx.visited.Set(entryPoint)
 	
-	// W: result set (for layer 0, this becomes our final candidates)
-	resultSet := NewFixedHeap(ef)
+	// W: result set (max-heap to track furthest result)
+	// Using max-heap so we can efficiently remove the worst result
+	resultSet := NewMaxHeap(ef)
 	resultSet.Push(Candidate{ID: entryPoint, Dist: entryDist})
 	
 	closest := entryPoint
@@ -81,13 +82,14 @@ func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef int, laye
 	
 	// Greedy search
 	for ctx.candidates.Len() > 0 {
-		// Get nearest candidate
+		// Get nearest candidate (min-heap)
 		curr, ok := ctx.candidates.Pop()
 		if !ok {
 			break
 		}
 		
 		// Stop if current is farther than furthest result
+		// resultSet is max-heap, so Peek() returns the furthest
 		if resultSet.Len() >= ef {
 			worst, ok := resultSet.Peek()
 			if ok && curr.Dist > worst.Dist {
@@ -126,10 +128,10 @@ func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef int, laye
 				}
 			}
 			if shouldAdd {
-				resultSet.Push(Candidate{ID: neighborID, Dist: dist})
-				if resultSet.Len() > ef {
-					resultSet.Pop() // Remove worst
+				if resultSet.Len() >= ef {
+					resultSet.Pop() // Remove worst (furthest) FIRST to make space
 				}
+				resultSet.Push(Candidate{ID: neighborID, Dist: dist})
 				
 				// Also add to candidates queue for exploration
 				ctx.candidates.Push(Candidate{ID: neighborID, Dist: dist})

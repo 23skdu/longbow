@@ -18,6 +18,7 @@ trap cleanup EXIT
 
 # Start Node 1 (Seed)
 echo "Starting Node 1..."
+GOGC=50 \
 LONGBOW_LISTEN_ADDR=0.0.0.0:3000 \
 LONGBOW_NODE_ID=node1 \
 LONGBOW_META_ADDR=0.0.0.0:3001 \
@@ -34,6 +35,7 @@ sleep 2 # Wait for seed to start
 
 # Start Node 2
 echo "Starting Node 2..."
+GOGC=50 \
 LONGBOW_LISTEN_ADDR=0.0.0.0:3010 \
 LONGBOW_NODE_ID=node2 \
 LONGBOW_META_ADDR=0.0.0.0:3011 \
@@ -48,6 +50,7 @@ LONGBOW_MAX_MEMORY=3221225472 \
 
 # Start Node 3
 echo "Starting Node 3..."
+GOGC=50 \
 LONGBOW_LISTEN_ADDR=0.0.0.0:3020 \
 LONGBOW_NODE_ID=node3 \
 LONGBOW_META_ADDR=0.0.0.0:3021 \

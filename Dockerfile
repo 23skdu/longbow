@@ -24,5 +24,6 @@ VOLUME /data
 
 # Default environment
 ENV LONGBOW_GPU_ENABLED=false
+ENV GOGC=50
 EXPOSE 3000 3001 9090
 ENTRYPOINT ["/longbow"]

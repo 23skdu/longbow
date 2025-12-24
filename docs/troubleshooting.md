@@ -70,4 +70,43 @@ Longbow's metrics and logs.
 **Solution**:
 
 * Quote all large integer values in `values.yaml` (e.g., `maxRecvMsgSize: "67108864"`).
-* Avoid trailing comments on the same line as numeric values if they interfere with parsing.
+
+### 6. Replication Lag
+
+**Symptom**: `longbow_replication_lag_seconds` is high (> 30s) on follower nodes.
+
+**Cause**: Network variance, slow disk I/O on follower, or high write throughput overwhelming replication stream.
+
+**Solution**:
+
+* Check follower disk IOPS and CPU.
+* Ensure network connectivity between Leader and Follower is stable (`longbow_gossip_pings_total{direction="failed"}`).
+* If persisting, consider scaling out with more shards to distribute write load.
+
+### 7. GPU Initialization Failure
+
+**Symptom**: Log shows `WARN GPU initialization failed, using CPU-only`.
+
+**Cause**:
+
+* **CUDA/Metal**: Missing drivers or unsupported hardware.
+* **Memory**: Insufficient GPU memory (OOM).
+* **Permissions**: Access to GPU device denied.
+
+**Solution**:
+
+* Verify NVIDIA drivers/CUDA toolkit (Linux) or macOS version (Apple Silicon).
+* Check `nvidia-smi` or `powermetrics` (macOS).
+* Ensure `GPU_ENABLED=true` is set.
+
+### 8. S3 Backup Failures
+
+**Symptom**: `longbow_s3_operations_total{status="error"}` is increasing.
+
+**Cause**: AWS Credentials expiry, bucket policy denial, or network timeouts.
+
+**Solution**:
+
+* Verify `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`.
+* Check IAM permissions for `s3:PutObject` and `s3:GetObject`.
+* Inspect logs for specific S3 error codes (e.g., `403 Forbidden`, `503 Slow Down`).

@@ -124,28 +124,18 @@ func (g *Gossip) Start() error {
 			}
 		}
 		g.discoveryProvider = NewStaticProvider(validPeers)
+	case "dns":
+		g.discoveryProvider = NewDNSProvider(g.Config.Discovery.DNSRecord, g.Config.Port)
+	case "k8s":
+		g.discoveryProvider = NewK8sProvider(g.Config.Discovery.Namespace, g.Config.Discovery.LabelSelector, g.Config.Port)
 	case "none", "":
 		// No discovery
 	default:
-		// TODO: Implement K8s/DNS/MDNS support dynamically or via injection
-		// For now we only support Static in this refactor
-		// g.discoveryProvider = ...
+		// Fallback or log error
 	}
 
 	if g.discoveryProvider != nil {
-		ctx := context.Background()
-		// Announce self
-		_ = g.discoveryProvider.Register(ctx, g.Config.ID, g.Config.Port)
-
-		// Find initial peers
-		peers, _ := g.discoveryProvider.FindPeers(ctx)
-		for _, peer := range peers {
-			// Don't join self
-			if peer == fmt.Sprintf("127.0.0.1:%d", g.Config.Port) {
-				continue
-			}
-			go g.Join(peer)
-		}
+		go g.discoveryLoop()
 	}
 
 	go g.protocolLoop()
@@ -704,7 +694,9 @@ func (g *Gossip) GetDiscoveryStatus() (string, []string) {
 
 // DiscoveryConfig holds configuration for peer discovery
 type DiscoveryConfig struct {
-	Provider    string // "static", "k8s", "dns"
-	StaticPeers string // comma separated
-	DNSRecord   string // for dns provider
+	Provider      string // "static", "k8s", "dns"
+	StaticPeers   string // comma separated
+	DNSRecord     string // for dns provider
+	Namespace     string // for k8s provider
+	LabelSelector string // for k8s provider
 }

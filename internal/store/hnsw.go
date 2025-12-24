@@ -1592,3 +1592,39 @@ func (h *HNSWIndex) GetDimension() uint32 {
 	}
 	return d
 }
+
+// EstimateMemory implements VectorIndex.
+func (h *HNSWIndex) EstimateMemory() int64 {
+	// Base
+	size := int64(256)
+
+	// LocationStore
+	// ChunkedLocationStore is essentially []Location + overhead
+	// Each location is 16 bytes.
+	// We estimate based on nextVecID
+	count := int64(h.nextVecID.Load())
+	size += count * 16
+
+	// Graph
+	// HNSW overhead
+	h.mu.RLock()
+	// Each node: vector copy (dim*4) + links
+	// Approximation: 128 bytes meta + vector
+	nodeSize := int64(h.dims*4) + 128
+	graphSize := int64(h.Graph.Len()) * nodeSize
+	h.mu.RUnlock()
+	size += graphSize
+
+	// PQ Codes
+	h.pqCodesMu.RLock()
+	if h.pqCodes != nil {
+		size += int64(len(h.pqCodes)) * 24 // slice headers
+		// Assuming codes are compact, we can estimate total bytes:
+		if len(h.pqCodes) > 0 && len(h.pqCodes[0]) > 0 {
+			size += int64(len(h.pqCodes) * len(h.pqCodes[0]))
+		}
+	}
+	h.pqCodesMu.RUnlock()
+
+	return size
+}

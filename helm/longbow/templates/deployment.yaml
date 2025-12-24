@@ -126,6 +126,10 @@ spec:
             - name: GOSSIP_ADVERTISE_ADDR
               value: {{ .Values.gossip.advertiseAddr | quote }}
             {{- end }}
+            - name: GOSSIP_STATIC_PEERS
+              value: {{ .Values.gossip.discovery.staticPeers | quote }}
+            - name: GOSSIP_DISCOVERY_PROVIDER
+              value: {{ .Values.gossip.discovery.provider | quote }}
             # Storage Configuration
             - name: STORAGE_ASYNC_FSYNC
               value: {{ .Values.storage.asyncFsync | quote }}

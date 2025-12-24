@@ -267,7 +267,7 @@ func identifyCompactionCandidates(records []arrow.RecordBatch, targetSize int64)
 
 // compactRecords returns a NEW slice of RecordBatches and a remapping table.
 // It DOES NOT Modify the input slice.
-func compactRecords(schema *arrow.Schema, records []arrow.RecordBatch, tombstones map[int]*Bitset, targetSize int64, datasetName string) ([]arrow.RecordBatch, map[int]BatchRemapInfo, error) {
+func compactRecords(pool memory.Allocator, schema *arrow.Schema, records []arrow.RecordBatch, tombstones map[int]*Bitset, targetSize int64, datasetName string) ([]arrow.RecordBatch, map[int]BatchRemapInfo, error) {
 	if schema == nil && len(records) > 0 {
 		schema = records[0].Schema()
 	}
@@ -283,8 +283,8 @@ func compactRecords(schema *arrow.Schema, records []arrow.RecordBatch, tombstone
 	remapping := make(map[int]BatchRemapInfo)
 
 	currentOldIdx := 0
-	pool := memory.NewGoAllocator() // TODO: Use store allocator
-
+	// pool := memory.NewGoAllocator() // Replaced with passed-in allocator
+	
 	totalRemoved := int64(0)
 
 	for _, cand := range candidates {

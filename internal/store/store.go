@@ -1169,6 +1169,14 @@ func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
 					if count%1000 == 0 || count < 1000 {
 						fmt.Printf("[DEBUG] Dataset %s indexed %d vectors\n", dsName, count)
 					}
+
+					// Update memory tracking for index overhead
+					newIndexSize := ds.Index.EstimateMemory()
+					oldIndexSize := ds.IndexMemoryBytes.Swap(newIndexSize)
+					delta := newIndexSize - oldIndexSize
+					if delta != 0 {
+						s.currentMemory.Add(delta)
+					}
 				}
 			} else {
 				s.logger.Warn("Dataset has no index initialized, skipping AddBatch", zap.String("dataset", dsName))

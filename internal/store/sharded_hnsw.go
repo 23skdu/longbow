@@ -597,3 +597,34 @@ type ShardStat struct {
 	ShardID int
 	Count   int
 }
+
+// EstimateMemory implements VectorIndex.
+func (s *ShardedHNSW) EstimateMemory() int64 {
+	// Base structural overhead
+	size := int64(64) // Estimate for ShardedHNSW struct itself
+
+	// Global locations
+	s.globalMu.RLock()
+	size += int64(cap(s.globalLocs) * 16) // Location is 2 ints = 16 bytes
+	s.globalMu.RUnlock()
+
+	// Shards
+	s.shardsMu.RLock()
+	for _, shard := range s.shards {
+		if shard != nil {
+			// Per-shard overhead
+			shard.mu.RLock()
+			// Graph nodes
+			count := int64(shard.graph.Len())
+			// Node: ~16 bytes + M*4(link) + Level*M*4 + Vector copy
+			// Vector copy: dim * 4 bytes
+			// HNSW overhead (conservative estimate): 128 bytes per node + vector
+			nodeSize := int64(s.dimension*4) + 128
+			size += count * nodeSize
+			shard.mu.RUnlock()
+		}
+	}
+	s.shardsMu.RUnlock()
+
+	return size
+}

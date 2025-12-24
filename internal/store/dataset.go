@@ -38,7 +38,8 @@ type Dataset struct {
 	BatchNodes []int
 
 	// Memory tracking
-	SizeBytes atomic.Int64
+	SizeBytes       atomic.Int64
+	IndexMemoryBytes atomic.Int64
 
 	// Eviction state
 	evicting atomic.Bool // Marks dataset as being evicted

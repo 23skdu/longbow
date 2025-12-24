@@ -32,7 +32,7 @@ type ArrowHNSW struct {
 	entryPoint uint32
 	maxLevel   int
 	
-	// Arrow integration
+	// Arrow integration - reference to parent dataset for vector access
 	dataset *store.Dataset
 	
 	// HNSW parameters

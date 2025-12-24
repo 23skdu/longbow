@@ -63,6 +63,7 @@ type Dataset struct {
 	// hnsw2 integration (Phase 5)
 	hnsw2Index *hnsw2.ArrowHNSW
 	useHNSW2   bool // Feature flag
+}
 
 // IsSharded returns true if the dataset uses ShardedHNSW.
 func (d *Dataset) IsSharded() bool {

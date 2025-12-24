@@ -88,8 +88,11 @@ func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef int, laye
 		}
 		
 		// Stop if current is farther than furthest result
-		if resultSet.Len() >= ef && curr.Dist > resultSet.Peek().Dist {
-			break
+		if resultSet.Len() >= ef {
+			worst, ok := resultSet.Peek()
+			if ok && curr.Dist > worst.Dist {
+				break
+			}
 		}
 		
 		// Explore neighbors
@@ -115,7 +118,14 @@ func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef int, laye
 			}
 			
 			// Add to result set if better than worst or we need more
-			if resultSet.Len() < ef || dist < resultSet.Peek().Dist {
+			shouldAdd := resultSet.Len() < ef
+			if !shouldAdd {
+				worst, ok := resultSet.Peek()
+				if ok && dist < worst.Dist {
+					shouldAdd = true
+				}
+			}
+			if shouldAdd {
 				resultSet.Push(Candidate{ID: neighborID, Dist: dist})
 				if resultSet.Len() > ef {
 					resultSet.Pop() // Remove worst

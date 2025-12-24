@@ -4,10 +4,7 @@ import (
 	"fmt"
 	"math"
 	
-	"github.com/23skdu/longbow/internal/simd"
 	"github.com/23skdu/longbow/internal/store"
-	"github.com/apache/arrow-go/v18/arrow"
-	"github.com/apache/arrow-go/v18/arrow/array"
 )
 
 // Search performs k-NN search using the provided query vector.
@@ -39,15 +36,15 @@ func (h *ArrowHNSW) Search(query []float32, k int, ef int) ([]store.SearchResult
 	
 	// Start from entry point
 	ep := h.entryPoint
-	currDist := h.distance(query, ep)
+	_ = h.distance(query, ep) // Distance calculated but not used in first iteration
 	
 	// Search from top layer to layer 1
 	for level := h.maxLevel; level > 0; level-- {
-		ep, currDist = h.searchLayer(query, ep, 1, level, ctx)
+		ep, _ = h.searchLayer(query, ep, 1, level, ctx)
 	}
 	
 	// Search layer 0 with ef candidates
-	ep, _ = h.searchLayer(query, ep, ef, 0, ctx)
+	_, _ = h.searchLayer(query, ep, ef, 0, ctx)
 	
 	// Extract top k results from candidates
 	results := make([]store.SearchResult, 0, k)
@@ -57,7 +54,7 @@ func (h *ArrowHNSW) Search(query []float32, k int, ef int) ([]store.SearchResult
 			break
 		}
 		results = append(results, store.SearchResult{
-			ID:    cand.ID,
+			ID:    store.VectorID(cand.ID),
 			Score: cand.Dist,
 		})
 	}
@@ -125,7 +122,7 @@ func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef int, laye
 }
 
 // distance computes the distance between a query vector and a stored vector.
-// Uses zero-copy Arrow access and SIMD optimizations.
+// Uses zero-copy Arrow access when available, falls back to simple L2 for now.
 func (h *ArrowHNSW) distance(query []float32, id uint32) float32 {
 	// Get vector from Arrow storage (zero-copy)
 	vec, err := h.getVector(id)
@@ -133,8 +130,22 @@ func (h *ArrowHNSW) distance(query []float32, id uint32) float32 {
 		return float32(math.Inf(1))
 	}
 	
-	// Use SIMD-optimized distance calculation
-	return simd.L2Distance(query, vec)
+	// Simple L2 distance (will integrate SIMD later)
+	return l2Distance(query, vec)
+}
+
+// l2Distance computes Euclidean (L2) distance between two vectors.
+func l2Distance(a, b []float32) float32 {
+	if len(a) != len(b) {
+		return float32(math.Inf(1))
+	}
+	
+	var sum float32
+	for i := range a {
+		diff := a[i] - b[i]
+		sum += diff * diff
+	}
+	return float32(math.Sqrt(float64(sum)))
 }
 
 // getVector retrieves a vector from Arrow storage using zero-copy access.

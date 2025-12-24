@@ -3,6 +3,7 @@ package hnsw2
 import (
 	"fmt"
 	"math"
+	"unsafe"
 
 	"github.com/23skdu/longbow/internal/store"
 )
@@ -74,7 +75,12 @@ func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef int, laye
 	
 	// W: result set (max-heap to track furthest result)
 	// Using max-heap so we can efficiently remove the worst result
-	resultSet := NewMaxHeap(ef)
+	resultSet := ctx.resultSet
+	if resultSet.cap < ef {
+		resultSet = NewMaxHeap(ef)
+		ctx.resultSet = resultSet
+	}
+	resultSet.Clear()
 	resultSet.Push(Candidate{ID: entryPoint, Dist: entryDist})
 	
 	closest := entryPoint
@@ -156,7 +162,17 @@ func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef int, laye
 // distance computes the distance between a query vector and a stored vector.
 // Uses zero-copy Arrow access and SIMD optimizations for maximum performance.
 func (h *ArrowHNSW) distance(query []float32, id uint32) float32 {
-	// Get vector from Arrow storage (zero-copy)
+	// Optimization: Check for cached vector pointer (avoids Arrow overhead)
+	// This is safe because VectorPtr is pinned to the Arrow RecordBatch which is kept alive by Dataset
+	if int(id) < len(h.nodes) {
+		node := &h.nodes[id]
+		if node.VectorPtr != nil && h.dims > 0 {
+			vec := unsafe.Slice(node.VectorPtr, h.dims)
+			return distanceSIMD(query, vec)
+		}
+	}
+
+	// Fallback: Get vector from Arrow storage (zero-copy)
 	vec, err := h.getVector(id)
 	if err != nil {
 		return float32(math.Inf(1))

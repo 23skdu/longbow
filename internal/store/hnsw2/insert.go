@@ -13,11 +13,23 @@ func (h *ArrowHNSW) Insert(id uint32, level int) error {
 	defer h.nodeMu.Unlock()
 	
 	// Ensure we have enough capacity
-	if int(id) >= len(h.nodes) {
-		// Expand nodes slice
-		newNodes := make([]GraphNode, id+1)
+	requiredLen := int(id) + 1
+	if requiredLen > cap(h.nodes) {
+		newCap := cap(h.nodes) * 2
+		if newCap == 0 {
+			newCap = 1000
+		}
+		if newCap < requiredLen {
+			newCap = requiredLen
+		}
+		newNodes := make([]GraphNode, len(h.nodes), newCap)
 		copy(newNodes, h.nodes)
 		h.nodes = newNodes
+	}
+	
+	// Extend length if needed
+	if requiredLen > len(h.nodes) {
+		h.nodes = h.nodes[:requiredLen]
 	}
 	
 	// Initialize the new node
@@ -37,6 +49,16 @@ func (h *ArrowHNSW) Insert(id uint32, level int) error {
 	vec, err := h.getVector(id)
 	if err != nil {
 		return err
+	}
+	
+	// Cache dimensions on first insert
+	if h.dims == 0 && len(vec) > 0 {
+		h.dims = len(vec)
+	}
+	
+	// Cache unsafe pointer to vector data
+	if len(vec) > 0 {
+		node.VectorPtr = &vec[0]
 	}
 	
 	// Search for nearest neighbors at each layer

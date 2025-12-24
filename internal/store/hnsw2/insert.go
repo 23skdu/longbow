@@ -219,6 +219,13 @@ func (h *ArrowHNSW) selectNeighbors(candidates []Candidate, m int, data *GraphDa
 	remaining := make([]Candidate, len(candidates))
 	copy(remaining, candidates)
 	
+	// Alpha parameter for diversity (1.0 = strict, >1.0 = relaxed)
+	// Relaxing alpha improves recall at cost of graph sparsity
+	alpha := h.config.Alpha
+	if alpha < 1.0 {
+		alpha = 1.0
+	}
+	
 	for len(selected) < m && len(remaining) > 0 {
 		// Find the closest remaining candidate
 		bestIdx := 0
@@ -249,7 +256,19 @@ func (h *ArrowHNSW) selectNeighbors(candidates []Candidate, m int, data *GraphDa
 				distToSelected := distanceSIMD(candVec, selectedVec)
 				
 				// Keep candidate if it's not too close to the selected neighbor
-				if distToSelected > cand.Dist {
+				// (i.e., distance to selected * alpha > distance to query)
+				// Using alpha < 1.0 makes it stricter? No.
+				// Condition: distToSelected > cand.Dist.
+				// If we relax: distToSelected * alpha > cand.Dist. (where alpha > 1)
+				// Example: distToSelected=0.9, cand.Dist=0.8.
+				// Strict: 0.9 > 0.8 (True, keep).
+				// Wait, if distToSelected > cand.Dist, we KEEP it?
+				// "If it's too close to selected neighbor, we discard".
+				// Too close means distToSelected is SMALL.
+				// So if distToSelected < cand.Dist, it is closer to neighbor than query -> DISCARD.
+				// if distToSelected > cand.Dist, it is closer to query -> KEEP.
+				
+				if distToSelected * alpha > cand.Dist {
 					filtered = append(filtered, cand)
 				}
 			}

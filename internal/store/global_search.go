@@ -15,16 +15,29 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
+type clientEntry struct {
+	client  flight.Client
+	lastUse time.Time
+}
+
 // GlobalSearchCoordinator handles scatter-gather logic
 type GlobalSearchCoordinator struct {
-	logger  *zap.Logger
-	clients sync.Map // map[string]*flight.Client
+	logger *zap.Logger
+	mu     sync.Mutex
+	// clients: map[string]*clientEntry
+	clients     sync.Map
+	idleTimeout time.Duration
+	stopCh      chan struct{}
 }
 
 func NewGlobalSearchCoordinator(logger *zap.Logger) *GlobalSearchCoordinator {
-	return &GlobalSearchCoordinator{
-		logger: logger,
+	c := &GlobalSearchCoordinator{
+		logger:      logger,
+		idleTimeout: 5 * time.Minute,
+		stopCh:      make(chan struct{}),
 	}
+	go c.cleanupLoop()
+	return c
 }
 
 // GlobalSearch performs scatter-gather search across the cluster
@@ -58,6 +71,10 @@ func (c *GlobalSearchCoordinator) GlobalSearch(ctx context.Context, localResults
 				c.logger.Warn("Failed to dial peer", zap.String("peer", p.ID), zap.String("addr", p.MetaAddr), zap.Error(err))
 				metrics.GlobalSearchPartialFailures.Inc()
 				return
+			}
+			// Update last use time after retrieval
+			if entry, ok := c.clients.Load(p.MetaAddr); ok {
+				entry.(*clientEntry).lastUse = time.Now()
 			}
 
 			// 2. DoAction
@@ -134,11 +151,11 @@ func (c *GlobalSearchCoordinator) GlobalSearch(ctx context.Context, localResults
 
 func (c *GlobalSearchCoordinator) getClient(addr string) (flight.Client, error) {
 	if v, ok := c.clients.Load(addr); ok {
-		return *v.(*flight.Client), nil
+		entry := v.(*clientEntry)
+		return entry.client, nil
 	}
 
 	// Dial new
-	// TODO: Handle closing clients? For now rely on internal pooling/keepalive or leak tied to process life
 	client, err := flight.NewClientWithMiddleware(addr, nil, nil,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(1024*1024*10)),
@@ -147,6 +164,46 @@ func (c *GlobalSearchCoordinator) getClient(addr string) (flight.Client, error) 
 		return nil, err
 	}
 
-	c.clients.Store(addr, &client)
+	c.clients.Store(addr, &clientEntry{
+		client:  client,
+		lastUse: time.Now(),
+	})
 	return client, nil
+}
+
+func (c *GlobalSearchCoordinator) cleanupLoop() {
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-c.stopCh:
+			return
+		case <-ticker.C:
+			c.pruneVisible()
+		}
+	}
+}
+
+func (c *GlobalSearchCoordinator) pruneVisible() {
+	c.clients.Range(func(key, value interface{}) bool {
+		entry := value.(*clientEntry)
+		if time.Since(entry.lastUse) > c.idleTimeout {
+			c.logger.Info("Pruning idle flight client", zap.String("addr", key.(string)))
+			_ = entry.client.Close()
+			c.clients.Delete(key)
+		}
+		return true
+	})
+}
+
+func (c *GlobalSearchCoordinator) Close() error {
+	close(c.stopCh)
+	c.clients.Range(func(key, value interface{}) bool {
+		entry := value.(*clientEntry)
+		_ = entry.client.Close()
+		c.clients.Delete(key)
+		return true
+	})
+	return nil
 }

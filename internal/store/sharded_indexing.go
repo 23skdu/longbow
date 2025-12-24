@@ -1,10 +1,13 @@
 package store
 
 import (
+	"fmt"
 	"hash/fnv"
 	"runtime"
 	"sync"
 	"sync/atomic"
+
+	"github.com/23skdu/longbow/internal/metrics"
 )
 
 // ShardStats holds per-shard statistics
@@ -91,7 +94,10 @@ func (sic *ShardedIndexChannel) Send(job IndexJob) bool {
 
 	// Use defer/recover to handle send on closed channel
 	defer func() {
-		_ = recover()
+		if r := recover(); r != nil {
+			fmt.Printf("Recovered from panic in ShardedIndexChannel: %v\n", r)
+			metrics.PanicTotal.WithLabelValues("sharded_index_channel").Inc()
+		}
 	}()
 
 	sic.shards[shardID] <- job

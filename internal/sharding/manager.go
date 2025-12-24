@@ -13,7 +13,8 @@ type RingManager struct {
 	ring        *ConsistentHash
 	localNodeID string
 	logger      *zap.Logger
-	nodeAddrs   map[string]string // ID -> Addr
+	nodeAddrs   map[string]string // ID -> Data Addr
+	metaAddrs   map[string]string // ID -> Meta Addr
 }
 
 // NewRingManager creates a new RingManager
@@ -23,6 +24,7 @@ func NewRingManager(localNodeID string, logger *zap.Logger) *RingManager {
 		localNodeID: localNodeID,
 		logger:      logger,
 		nodeAddrs:   make(map[string]string),
+		metaAddrs:   make(map[string]string),
 	}
 }
 
@@ -30,9 +32,10 @@ func NewRingManager(localNodeID string, logger *zap.Logger) *RingManager {
 func (rm *RingManager) NotifyJoin(member *mesh.Member) {
 	rm.mu.Lock()
 	defer rm.mu.Unlock()
-	rm.logger.Info("Node joined ring", zap.String("node", member.ID), zap.String("addr", member.Addr))
+	rm.logger.Info("Node joined ring", zap.String("node", member.ID), zap.String("grpc_addr", member.GRPCAddr), zap.String("meta_addr", member.MetaAddr))
 	rm.ring.AddNode(member.ID)
-	rm.nodeAddrs[member.ID] = member.Addr
+	rm.nodeAddrs[member.ID] = member.GRPCAddr
+	rm.metaAddrs[member.ID] = member.MetaAddr
 }
 
 // NotifyLeave is invoked when a node leaves the cluster
@@ -42,6 +45,7 @@ func (rm *RingManager) NotifyLeave(member *mesh.Member) {
 	rm.logger.Info("Node left ring", zap.String("node", member.ID))
 	rm.ring.RemoveNode(member.ID)
 	delete(rm.nodeAddrs, member.ID)
+	delete(rm.metaAddrs, member.ID)
 }
 
 // NotifyUpdate is invoked when a node is updated
@@ -71,11 +75,18 @@ func (rm *RingManager) GetPreferenceList(key string, n int) []string {
 	return rm.ring.GetPreferenceList(key, n)
 }
 
-// GetNodeAddr returns the network address for a given node ID
+// GetNodeAddr returns the data service network address for a given node ID
 func (rm *RingManager) GetNodeAddr(nodeID string) string {
 	rm.mu.RLock()
 	defer rm.mu.RUnlock()
 	return rm.nodeAddrs[nodeID]
+}
+
+// GetMetaAddr returns the metadata/search service network address for a given node ID
+func (rm *RingManager) GetMetaAddr(nodeID string) string {
+	rm.mu.RLock()
+	defer rm.mu.RUnlock()
+	return rm.metaAddrs[nodeID]
 }
 
 // GetMembers returns a list of all known node IDs in the ring

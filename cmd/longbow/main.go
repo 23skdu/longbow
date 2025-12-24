@@ -6,6 +6,7 @@ import (
 	_ "net/http/pprof" // Register pprof handlers - REMOVED for G108
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -211,7 +212,15 @@ func run() error {
 
 	ringManager := sharding.NewRingManager(nodeID, logger)
 	// Add self to ring immediately
-	ringManager.NotifyJoin(&mesh.Member{ID: nodeID, Addr: cfg.ListenAddr, Status: mesh.StatusAlive})
+	selfAddr := cfg.ListenAddr
+	metaAddr := cfg.MetaAddr
+	if strings.HasPrefix(selfAddr, "0.0.0.0:") {
+		selfAddr = "127.0.0.1" + selfAddr[7:]
+	}
+	if strings.HasPrefix(metaAddr, "0.0.0.0:") {
+		metaAddr = "127.0.0.1" + metaAddr[7:]
+	}
+	ringManager.NotifyJoin(&mesh.Member{ID: nodeID, Addr: selfAddr, GRPCAddr: selfAddr, MetaAddr: metaAddr, Status: mesh.StatusAlive})
 
 	// Start Gossip if enabled
 	if cfg.GossipEnabled {
@@ -222,6 +231,8 @@ func run() error {
 			Port:           cfg.GossipPort,
 			ProtocolPeriod: cfg.GossipInterval,
 			Addr:           "0.0.0.0", // Bind to all interfaces
+			GRPCAddr:       selfAddr,  // Advertise this for gRPC Data
+			MetaAddr:       metaAddr,  // Advertise this for gRPC Meta
 			Delegate:       ringManager,
 			Discovery: mesh.DiscoveryConfig{
 				Provider:    cfg.GossipDiscovery,

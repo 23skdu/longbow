@@ -110,6 +110,17 @@ func (e *ErrInternal) Unwrap() error {
 }
 
 // =============================================================================
+// Error Constants
+// =============================================================================
+
+var (
+	ErrDatasetNotFound       = errors.New("dataset not found")
+	ErrInvalidVectorDim      = errors.New("invalid vector dimension")
+	ErrNoVectorColumn        = errors.New("no vector column in schema")
+	ErrRowIndexOutOfBounds   = errors.New("row index out of bounds")
+)
+
+// =============================================================================
 // Error Constructors
 // =============================================================================
 

@@ -2,11 +2,13 @@ package store
 
 import (
 	"errors"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/23skdu/longbow/internal/pool"
+	"github.com/23skdu/longbow/internal/store/hnsw2"
 	"github.com/RoaringBitmap/roaring/v2"
 	"github.com/apache/arrow-go/v18/arrow"
 )

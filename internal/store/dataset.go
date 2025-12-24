@@ -126,18 +126,25 @@ func NewBitset() *Bitset {
 func (b *Bitset) Set(i int) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.bitmap.Add(uint32(i))
+	if b.bitmap != nil {
+		b.bitmap.Add(uint32(i))
+	}
 }
 
 func (b *Bitset) Clear(i int) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.bitmap.Remove(uint32(i))
+	if b.bitmap != nil {
+		b.bitmap.Remove(uint32(i))
+	}
 }
 
 func (b *Bitset) Contains(i int) bool {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
+	if b.bitmap == nil {
+		return false
+	}
 	return b.bitmap.Contains(uint32(i))
 }
 
@@ -145,6 +152,9 @@ func (b *Bitset) Contains(i int) bool {
 func (b *Bitset) Clone() *Bitset {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
+	if b.bitmap == nil {
+		return &Bitset{bitmap: nil}
+	}
 	return &Bitset{
 		bitmap: b.bitmap.Clone(),
 	}
@@ -154,6 +164,9 @@ func (b *Bitset) Clone() *Bitset {
 func (b *Bitset) Count() uint64 {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
+	if b.bitmap == nil {
+		return 0
+	}
 	return b.bitmap.GetCardinality()
 }
 

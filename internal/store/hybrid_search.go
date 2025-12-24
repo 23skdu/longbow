@@ -51,11 +51,12 @@ func SearchHybrid(ctx context.Context, s *VectorStore, name string, query []floa
 
 	// 3. Fusion logic
 	var finalResults []SearchResult
-	if alpha == 1.0 {
+	switch alpha {
+	case 1.0:
 		finalResults = denseResults
-	} else if alpha == 0.0 {
+	case 0.0:
 		finalResults = sparseResults
-	} else {
+	default:
 		// Fusion! Use RRF.
 		if rrfK <= 0 {
 			rrfK = 60 // Default

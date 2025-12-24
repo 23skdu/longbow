@@ -136,9 +136,6 @@ func TestPluggableVectorIndex_SaveLoad(t *testing.T) {
 		t.Fatalf("Load() error = %v", err)
 	}
 
-	if err != nil {
-		t.Errorf("Load returned unexpected error")
-	}
 }
 
 // TestIndexFactory_Create tests factory pattern

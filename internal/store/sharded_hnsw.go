@@ -16,11 +16,12 @@ import (
 
 // ShardedHNSWConfig configures the sharded HNSW index.
 type ShardedHNSWConfig struct {
-	NumShards      int          // Number of independent HNSW shards
-	M              int          // HNSW M parameter
-	EfConstruction int          // HNSW efConstruction parameter
-	Metric         VectorMetric // Distance metric for this index
-	Dimension      uint32       // Vector dimension
+	NumShards           int          // Initial/Currently active shards
+	M                   int          // HNSW M parameter
+	EfConstruction      int          // HNSW efConstruction parameter
+	Metric              VectorMetric // Distance metric for this index
+	Dimension           uint32       // Vector dimension
+	ShardSplitThreshold int          // Number of vectors per shard before splitting
 }
 
 func (c ShardedHNSWConfig) Validate() error {
@@ -39,10 +40,11 @@ func (c ShardedHNSWConfig) Validate() error {
 // DefaultShardedHNSWConfig returns sensible defaults.
 func DefaultShardedHNSWConfig() ShardedHNSWConfig {
 	return ShardedHNSWConfig{
-		NumShards:      runtime.NumCPU(),
-		M:              16,
-		EfConstruction: 200,
-		Metric:         MetricEuclidean,
+		NumShards:           runtime.NumCPU(),
+		M:                   16,
+		EfConstruction:      200,
+		Metric:              MetricEuclidean,
+		ShardSplitThreshold: 65536, // ~64k vectors per shard (L3 Cache Alignment)
 	}
 }
 
@@ -68,29 +70,46 @@ type ShardedHNSW struct {
 	globalLocs []Location
 	globalMu   sync.RWMutex
 	dimension  uint32
+
+	// Dynamic Sharding
+	activeShards atomic.Int32
+	shardMap     []int // Maps shardIdx to its ID offset? No, let's use range-based.
+	// For simplicity, we'll use a fixed-width range sharding: shardIdx = id / config.ShardSplitThreshold
+	// We dynamically append to `shards` as needed.
+	shardsMu sync.RWMutex
 }
 
 // NewShardedHNSW creates a new sharded HNSW index.
 func NewShardedHNSW(config ShardedHNSWConfig, dataset *Dataset) *ShardedHNSW {
 	if config.NumShards <= 0 {
-		config.NumShards = runtime.NumCPU()
+		config.NumShards = 1 // Start with at least 1 shard
+	}
+	if config.ShardSplitThreshold <= 0 {
+		config.ShardSplitThreshold = 65536
 	}
 
-	shards := make([]*hnswShard, config.NumShards)
-	for i := 0; i < config.NumShards; i++ {
-		shards[i] = &hnswShard{
-			graph: hnsw.NewGraph[VectorID](),
-		}
-		shards[i].graph.Distance = sHNSWGetDistFunc(config.Metric)
-	}
-
-	return &ShardedHNSW{
+	s := &ShardedHNSW{
 		config:     config,
-		shards:     shards,
 		dataset:    dataset,
 		globalLocs: make([]Location, 0, 4096),
 		dimension:  config.Dimension,
 	}
+	s.activeShards.Store(int32(config.NumShards))
+
+	s.shards = make([]*hnswShard, config.NumShards)
+	for i := 0; i < config.NumShards; i++ {
+		s.shards[i] = s.newShard()
+	}
+
+	return s
+}
+
+func (s *ShardedHNSW) newShard() *hnswShard {
+	shard := &hnswShard{
+		graph: hnsw.NewGraph[VectorID](),
+	}
+	shard.graph.Distance = sHNSWGetDistFunc(s.config.Metric)
+	return shard
 }
 
 func sHNSWGetDistFunc(m VectorMetric) func(a, b []float32) float32 {
@@ -108,7 +127,7 @@ func sHNSWGetDistFunc(m VectorMetric) func(a, b []float32) float32 {
 
 // GetShardForID returns the shard index for a given VectorID.
 func (s *ShardedHNSW) GetShardForID(id VectorID) int {
-	return int(uint64(id) % uint64(s.config.NumShards))
+	return int(uint64(id) / uint64(s.config.ShardSplitThreshold))
 }
 
 // AddByLocation implements VectorIndex.
@@ -195,7 +214,16 @@ func (s *ShardedHNSW) AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx int) (
 
 	// Add to shard
 	shardIdx := s.GetShardForID(id)
+
+	s.shardsMu.Lock()
+	// Dynamically grow shards if needed
+	for len(s.shards) <= shardIdx {
+		s.shards = append(s.shards, s.newShard())
+		s.activeShards.Add(1)
+		metrics.ShardedHnswShardSplitCount.WithLabelValues(s.dataset.Name).Inc()
+	}
 	shard := s.shards[shardIdx]
+	s.shardsMu.Unlock()
 
 	shard.mu.Lock()
 	defer shard.mu.Unlock()
@@ -299,10 +327,15 @@ func (s *ShardedHNSW) SearchVectors(query []float32, k int, filters []Filter) []
 	type shardResults struct {
 		nodes []hnsw.Node[VectorID]
 	}
-	resultsByShard := make([]shardResults, len(s.shards))
+
+	s.shardsMu.RLock()
+	shards := s.shards
+	s.shardsMu.RUnlock()
+
+	resultsByShard := make([]shardResults, len(shards))
 	var wg sync.WaitGroup
 
-	for i, shard := range s.shards {
+	for i, shard := range shards {
 		wg.Add(1)
 		go func(idx int, sh *hnswShard) {
 			defer wg.Done()

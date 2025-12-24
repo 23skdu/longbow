@@ -221,7 +221,15 @@ func TestIndexJobQueue_GracefulStop(t *testing.T) {
 	q.Stop()
 
 	// Wait for consumer to process (longer timeout under race detector)
-	time.Sleep(200 * time.Millisecond)
+	// We use a loop to wait for the expected count to be reached or timeout
+	deadline := time.Now().Add(1 * time.Second)
+	for time.Now().Before(deadline) {
+		if atomic.LoadInt64(&consumed) == 20 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
 	if atomic.LoadInt64(&consumed) != 20 {
 		t.Errorf("Expected 20 consumed after Stop, got %d", atomic.LoadInt64(&consumed))
 	}

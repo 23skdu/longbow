@@ -163,7 +163,14 @@ def benchmark_put(client: flight.FlightClient, table: pa.Table, name: str) -> Be
 
     start_time = time.time()
     writer, _ = client.do_put(descriptor, table.schema)
-    writer.write_table(table)
+    
+    # Write in chunks to avoid gRPC message size limits (default ~512MB or less)
+    # 10k rows * 1536 dim * 4 bytes ~= 60MB, well within limits
+    chunk_size = 10000
+    for i in range(0, table.num_rows, chunk_size):
+        chunk = table.slice(i, chunk_size)
+        writer.write_table(chunk)
+        
     writer.close()
     duration = time.time() - start_time
 

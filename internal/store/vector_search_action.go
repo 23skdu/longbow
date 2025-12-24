@@ -114,6 +114,11 @@ func (s *MetaServer) handleVectorSearchAction(action *flight.Action, stream flig
 			if uint32(len(queryVec)) != expectedDim {
 				ds.dataMu.RUnlock()
 				metrics.VectorSearchActionErrors.Inc()
+				s.logger.Warn("Dimension mismatch in VectorSearch",
+					zap.String("dataset", req.Dataset),
+					zap.Uint32("expected", expectedDim),
+					zap.Int("got", len(queryVec)),
+					zap.Int("index_len", ds.Index.Len()))
 				return status.Errorf(codes.InvalidArgument, "dimension mismatch: expected %d, got %d", expectedDim, len(queryVec))
 			}
 

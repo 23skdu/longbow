@@ -22,14 +22,13 @@ RUN CGO_ENABLED=1 go build \
     -o longbow ./cmd/longbow
 
 # Stage 2: Minimal runtime
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
+
+RUN apt-get update
+RUN apt update && apt upgrade -y && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-
-# Copy CA certificates for TLS
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
-
-# Copy binary
 COPY --from=builder /app/longbow /usr/local/bin/longbow
 
 # Default data directory
@@ -37,7 +36,5 @@ VOLUME /data
 
 # Default environment for safe fallback
 ENV LONGBOW_GPU_ENABLED=false
-
 EXPOSE 3000 3001 9090
-
 ENTRYPOINT ["/usr/local/bin/longbow"]

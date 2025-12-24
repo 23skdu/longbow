@@ -154,7 +154,7 @@ func (s *MetaServer) DoAction(action *flight.Action, stream flight.FlightService
 	}
 }
 
-func (s *MetaServer) handleMeshIdentity(action *flight.Action, stream flight.FlightService_DoActionServer) error {
+func (s *MetaServer) handleMeshIdentity(_ *flight.Action, stream flight.FlightService_DoActionServer) error {
 	if s.Mesh == nil {
 		return status.Error(codes.FailedPrecondition, "mesh is not initialized")
 	}
@@ -166,7 +166,7 @@ func (s *MetaServer) handleMeshIdentity(action *flight.Action, stream flight.Fli
 	return stream.Send(&flight.Result{Body: body})
 }
 
-func (s *MetaServer) handleMeshStatus(action *flight.Action, stream flight.FlightService_DoActionServer) error {
+func (s *MetaServer) handleMeshStatus(_ *flight.Action, stream flight.FlightService_DoActionServer) error {
 	if s.Mesh == nil {
 		return status.Error(codes.FailedPrecondition, "mesh is not initialized")
 	}
@@ -200,7 +200,7 @@ func (s *MetaServer) handleMeshStatus(action *flight.Action, stream flight.Fligh
 	return stream.Send(&flight.Result{Body: body})
 }
 
-func (s *MetaServer) handleDiscoveryStatus(action *flight.Action, stream flight.FlightService_DoActionServer) error {
+func (s *MetaServer) handleDiscoveryStatus(_ *flight.Action, stream flight.FlightService_DoActionServer) error {
 	if s.Mesh == nil {
 		return status.Error(codes.FailedPrecondition, "mesh is not initialized")
 	}
@@ -243,7 +243,7 @@ func (s *MetaServer) handleDeleteNamespace(action *flight.Action, stream flight.
 	return stream.Send(&flight.Result{Body: []byte(`{"status": "deleted"}`)})
 }
 
-func (s *MetaServer) handleListNamespaces(action *flight.Action, stream flight.FlightService_DoActionServer) error {
+func (s *MetaServer) handleListNamespaces(_ *flight.Action, stream flight.FlightService_DoActionServer) error {
 	names := s.VectorStore.ListNamespaces()
 	resp := map[string]interface{}{
 		"namespaces": names,
@@ -256,7 +256,7 @@ func (s *MetaServer) handleListNamespaces(action *flight.Action, stream flight.F
 	return stream.Send(&flight.Result{Body: body})
 }
 
-func (s *MetaServer) handleGetTotalNamespaceCount(action *flight.Action, stream flight.FlightService_DoActionServer) error {
+func (s *MetaServer) handleGetTotalNamespaceCount(_ *flight.Action, stream flight.FlightService_DoActionServer) error {
 	count := s.VectorStore.GetTotalNamespaceCount()
 	resp := map[string]int{
 		"count": count,

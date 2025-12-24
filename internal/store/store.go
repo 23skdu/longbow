@@ -86,8 +86,6 @@ type VectorStore struct {
 	nsManager *namespaceManager
 
 	// GPU acceleration (optional)
-	gpuEnabled  bool
-	gpuDeviceID int
 
 	// Shutdown and lifecycle (Phase 6/21)
 	shutdownState int32
@@ -301,7 +299,7 @@ func extractVectorFromCol(arr arrow.Array, rowIdx int) []float32 {
 	return floatArr.Float32Values()[start:end]
 }
 
-func (s *VectorStore) checkAndMigrateToSharded(ds *Dataset) error {
+func (s *VectorStore) checkAndMigrateToSharded(_ *Dataset) error {
 	// Placeholder logic: check if dataset size exceeds threshold and migrate index to sharded
 	if !s.autoShardingConfig.Enabled {
 		return nil
@@ -484,6 +482,12 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 		return nil
 
 	case "delete-vector":
+		defer func() {
+			if r := recover(); r != nil {
+				s.logger.Error("PANIC in delete-vector action", zap.Any("recover", r), zap.Stack("stack"))
+			}
+		}()
+
 		var curr map[string]interface{}
 		if err := json.Unmarshal(action.Body, &curr); err != nil {
 			// Try Unmarshal as []struct? No, map is safer for now
@@ -507,10 +511,14 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 			return err
 		}
 
+		if ds.Index == nil {
+			return status.Error(codes.FailedPrecondition, "index not initialized")
+		}
+
 		// Resolve location using interface method (works for all index types)
 		loc, found := ds.Index.GetLocation(VectorID(vid))
 		if !found {
-			return status.Error(codes.NotFound, "vector id not found")
+			return status.Errorf(codes.NotFound, "vector id %d not found in dataset %s (index len=%d)", vid, dsName, ds.Index.Len())
 		}
 
 		// set tombstone
@@ -734,8 +742,21 @@ func (s *VectorStore) flushPutBatch(ds *Dataset, name string, batch []arrow.Reco
 		config := AutoShardingConfig{
 			ShardThreshold: 10000,
 			ShardCount:     runtime.NumCPU(),
+			Enabled:        true, // Ensure it's enabled if we want sharding
 		}
-		ds.Index = NewAutoShardingIndex(ds, config)
+		aIdx := NewAutoShardingIndex(ds, config)
+
+		// Set initial dimension from the first batch to avoid race on searches
+		if len(batch) > 0 {
+			if vecCol := findVectorColumn(batch[0]); vecCol != nil {
+				if listArr, ok := vecCol.(*array.FixedSizeList); ok {
+					dim := int(listArr.DataType().(*arrow.FixedSizeListType).Len())
+					aIdx.SetInitialDimension(dim)
+				}
+			}
+		}
+
+		ds.Index = aIdx
 	}
 
 	batchStartIdx := len(ds.Records)
@@ -1097,29 +1118,28 @@ func (s *VectorStore) startIndexingWorkers(numWorkers int) {
 	s.logger.Info("Started indexing workers", zap.Int("count", numWorkers))
 }
 
-func (s *VectorStore) runIndexWorker(allocator memory.Allocator) {
+func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
 	batchSize := 128
 	jobs := make([]IndexJob, 0, batchSize)
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()
 
-	processBatch := func(batch []IndexJob) {
-		if len(batch) == 0 {
+	processBatch := func(group []IndexJob) {
+		if len(group) == 0 {
 			return
 		}
 
-		// Group by dataset
-		groups := make(map[string][]IndexJob)
-		for _, j := range batch {
-			groups[j.DatasetName] = append(groups[j.DatasetName], j)
+		// Sort by dataset to batch index additions
+		byDataset := make(map[string][]IndexJob)
+		for _, j := range group {
+			byDataset[j.DatasetName] = append(byDataset[j.DatasetName], j)
 		}
 
-		for dsName, group := range groups {
-			s.mu.RLock()
-			ds, ok := s.datasets[dsName]
-			s.mu.RUnlock()
-
-			if !ok {
+		for dsName, group := range byDataset {
+			ds, err := s.getDataset(dsName)
+			if err != nil {
+				// Log error if dataset not found, but continue processing other groups
+				s.logger.Error("Dataset not found for indexing job", zap.String("dataset", dsName), zap.Error(err))
 				for _, j := range group {
 					if j.Record != nil {
 						j.Record.Release()
@@ -1128,7 +1148,6 @@ func (s *VectorStore) runIndexWorker(allocator memory.Allocator) {
 				continue
 			}
 
-			// Prepare batch for AddBatch
 			recs := make([]arrow.RecordBatch, len(group))
 			rowIdxs := make([]int, len(group))
 			batchIdxs := make([]int, len(group))
@@ -1139,12 +1158,20 @@ func (s *VectorStore) runIndexWorker(allocator memory.Allocator) {
 			}
 
 			var docIDs []uint32
-			var err error
+			var addErr error
 			if ds.Index != nil {
-				docIDs, err = ds.Index.AddBatch(recs, rowIdxs, batchIdxs)
-				if err != nil {
-					s.logger.Error("Async batched index add failed", zap.String("dataset", dsName), zap.Error(err))
+				docIDs, addErr = ds.Index.AddBatch(recs, rowIdxs, batchIdxs)
+				if addErr != nil {
+					s.logger.Error("Async batched index add failed", zap.String("dataset", dsName), zap.Error(addErr))
+				} else {
+					// Periodically log progress for large datasets
+					count := ds.Index.Len()
+					if count%1000 == 0 || count < 1000 {
+						fmt.Printf("[DEBUG] Dataset %s indexed %d vectors\n", dsName, count)
+					}
 				}
+			} else {
+				s.logger.Warn("Dataset has no index initialized, skipping AddBatch", zap.String("dataset", dsName))
 			}
 
 			// Update Inverted Indexes (Hybrid Search)
@@ -1155,16 +1182,28 @@ func (s *VectorStore) runIndexWorker(allocator memory.Allocator) {
 					schema := j.Record.Schema()
 					for colIdx, field := range schema.Fields() {
 						if field.Type.ID() == arrow.STRING {
-							ds.dataMu.Lock()
-							if ds.InvertedIndexes == nil {
-								ds.InvertedIndexes = make(map[string]*InvertedIndex)
+							// Double-checked locking to avoid holding Lock for common case
+							ds.dataMu.RLock()
+							var idx *InvertedIndex
+							var ok bool
+							if ds.InvertedIndexes != nil {
+								idx, ok = ds.InvertedIndexes[field.Name]
 							}
-							idx, ok := ds.InvertedIndexes[field.Name]
+							ds.dataMu.RUnlock()
+
 							if !ok {
-								idx = NewInvertedIndex()
-								ds.InvertedIndexes[field.Name] = idx
+								ds.dataMu.Lock()
+								if ds.InvertedIndexes == nil {
+									ds.InvertedIndexes = make(map[string]*InvertedIndex)
+								}
+								// Re-check under lock
+								idx, ok = ds.InvertedIndexes[field.Name]
+								if !ok {
+									idx = NewInvertedIndex()
+									ds.InvertedIndexes[field.Name] = idx
+								}
+								ds.dataMu.Unlock()
 							}
-							ds.dataMu.Unlock()
 
 							colI := j.Record.Column(colIdx)
 							if col, ok := colI.(*array.String); ok {
@@ -1605,6 +1644,15 @@ func (s *VectorStore) HybridSearch(ctx context.Context, name string, query []flo
 // SearchHybrid is a wrapper for the SearchHybrid function (RRF version)
 func (s *VectorStore) SearchHybrid(ctx context.Context, name string, query []float32, textQuery string, k int, alpha float32, rrfK int) ([]SearchResult, error) {
 	return SearchHybrid(ctx, s, name, query, textQuery, k, alpha, rrfK)
+}
+
+func findVectorColumn(rec arrow.RecordBatch) arrow.Array {
+	for i, field := range rec.Schema().Fields() {
+		if field.Name == "vector" {
+			return rec.Column(i)
+		}
+	}
+	return nil
 }
 
 // StoreRecordBatch stores a batch of records in a dataset

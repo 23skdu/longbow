@@ -131,15 +131,19 @@ func (s *ShardedHNSW) GetShardForID(id VectorID) int {
 
 // AddByLocation implements VectorIndex.
 func (s *ShardedHNSW) AddByLocation(batchIdx, rowIdx int) (uint32, error) {
-	// Transitionary: get vector from dataset to add to graph
 	s.dataset.dataMu.RLock()
+	defer s.dataset.dataMu.RUnlock()
+
+	return s.AddByLocationUnsafe(batchIdx, rowIdx)
+}
+
+// AddByLocationUnsafe adds a vector from the dataset without taking dataset.dataMu.
+// The caller MUST hold at least a RLock on s.dataset.dataMu.
+func (s *ShardedHNSW) AddByLocationUnsafe(batchIdx, rowIdx int) (uint32, error) {
 	if batchIdx >= len(s.dataset.Records) {
-		s.dataset.dataMu.RUnlock()
 		return 0, fmt.Errorf("invalid batch idx")
 	}
 	rec := s.dataset.Records[batchIdx]
-	s.dataset.dataMu.RUnlock()
-
 	return s.AddByRecord(rec, rowIdx, batchIdx)
 }
 

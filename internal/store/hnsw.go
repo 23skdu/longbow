@@ -385,7 +385,7 @@ func (h *HNSWIndex) Search(query []float32, k int) []VectorID {
 	}(time.Now())
 
 	// PQ Encoding for query
-	var graphQuery []float32 = query
+	var graphQuery = query
 	// Use RLock for config check to avoid race
 	h.pqCodesMu.RLock()
 	// Capture locals to avoid holding lock too long if encoding is slow?
@@ -427,7 +427,7 @@ func (h *HNSWIndex) SearchVectors(query []float32, k int, filters []Filter) []Se
 	}
 
 	// PQ Encoding for query
-	var graphQuery []float32 = query
+	var graphQuery = query
 	h.pqCodesMu.RLock()
 	if h.pqEnabled && h.pqEncoder != nil {
 		codes := h.pqEncoder.Encode(query)
@@ -714,7 +714,7 @@ func (h *HNSWIndex) Add(batchIdx, rowIdx int) (uint32, error) {
 	indexLockStart7 := time.Now()
 
 	// PQ Encoding
-	var nodeVec []float32 = vec
+	nodeVec := vec
 	h.pqCodesMu.RLock()
 	pqEnabled := h.pqEnabled
 	encoder := h.pqEncoder
@@ -744,6 +744,8 @@ func (h *HNSWIndex) Add(batchIdx, rowIdx int) (uint32, error) {
 
 		// Pack codes into float32 slice for storage in Graph Node
 		nodeVec = PackBytesToFloat32s(codes)
+
+		metrics.HNSWPQCompressedBytesTotal.WithLabelValues(h.dataset.Name).Add(float64(len(codes)))
 	}
 
 	h.mu.Lock()

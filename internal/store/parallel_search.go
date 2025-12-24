@@ -6,6 +6,7 @@ import (
 	"sync"
 	"unsafe"
 
+	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/simd"
 	"github.com/coder/hnsw"
 )
@@ -48,6 +49,8 @@ func (h *HNSWIndex) processResultsParallel(query []float32, neighbors []hnsw.Nod
 	if chunkSize < 10 {
 		return h.processResultsSerial(query, neighbors, k, filters)
 	}
+
+	metrics.HnswParallelSearchSplits.WithLabelValues(h.dataset.Name).Inc()
 
 	resultsChan := make(chan []SearchResult, numWorkers)
 	var wg sync.WaitGroup

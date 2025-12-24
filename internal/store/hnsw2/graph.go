@@ -92,6 +92,20 @@ func (h *ArrowHNSW) Size() int {
 	return len(h.nodes)
 }
 
+// GetEntryPoint returns the current entry point ID.
+func (h *ArrowHNSW) GetEntryPoint() uint32 {
+	h.nodeMu.RLock()
+	defer h.nodeMu.RUnlock()
+	return h.entryPoint
+}
+
+// GetMaxLevel returns the maximum level in the graph.
+func (h *ArrowHNSW) GetMaxLevel() int {
+	h.nodeMu.RLock()
+	defer h.nodeMu.RUnlock()
+	return h.maxLevel
+}
+
 // SearchContextPool manages reusable search contexts.
 type SearchContextPool struct {
 	pool sync.Pool

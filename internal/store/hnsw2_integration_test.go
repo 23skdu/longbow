@@ -134,6 +134,8 @@ func TestHNSW2EndToEnd(t *testing.T) {
 	}
 	
 	t.Logf("✓ Inserted %d vectors into hnsw2", numVectors)
+	t.Logf("  Index size: %d", hnswIndex.Size())
+	t.Logf("  Entry point: %d, Max level: %d", hnswIndex.GetEntryPoint(), hnswIndex.GetMaxLevel())
 	
 	// Test search
 	queryVec := make([]float32, dim)
@@ -142,13 +144,17 @@ func TestHNSW2EndToEnd(t *testing.T) {
 		queryVec[i] = 0.1
 	}
 	
+	t.Logf("Searching with query vector[0]=%.1f", queryVec[0])
+	
 	results, err := hnswIndex.Search(queryVec, 10, 20)
 	if err != nil {
 		t.Fatalf("Search failed: %v", err)
 	}
 	
+	t.Logf("Search returned %d results", len(results))
+	
 	if len(results) == 0 {
-		t.Fatal("Search returned no results")
+		t.Fatal("Search returned no results - index may not be properly connected")
 	}
 	
 	t.Logf("✓ Search returned %d results", len(results))

@@ -353,7 +353,8 @@ func run() error {
 
 	// --- Meta Server Setup ---
 	metaServer := grpc.NewServer(serverOpts...)
-	flight.RegisterFlightServiceServer(metaServer, store.NewMetaServer(vectorStore))
+	metaService := store.NewMetaServer(vectorStore)
+	flight.RegisterFlightServiceServer(metaServer, metaService)
 
 	metaLisBase, err := net.Listen("tcp", cfg.MetaAddr)
 	if err != nil {
@@ -404,6 +405,7 @@ func run() error {
 		go func() {
 			defer wg.Done()
 			metaServer.GracefulStop()
+			_ = metaService.Close() // Clean up coordinator clients
 			logger.Info("Meta server stopped")
 		}()
 		wg.Wait()

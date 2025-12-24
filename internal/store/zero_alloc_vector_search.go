@@ -33,6 +33,7 @@ func (p *ZeroAllocVectorSearchParser) Parse(data []byte) (VectorSearchRequest, e
 	p.result.Dataset = ""
 	p.result.K = 0
 	p.result.LocalOnly = false
+	p.result.Vectors = nil // Reset new batch field
 	p.vector = p.vector[:0]
 	p.filters = p.filters[:0]
 
@@ -116,12 +117,9 @@ func (p *ZeroAllocVectorSearchParser) Parse(data []byte) (VectorSearchRequest, e
 			p.result.LocalOnly = val
 			i = newPos
 		default:
-			// Skip unknown fields
-			newPos, err := skipValue(data, i)
-			if err != nil {
-				return p.result, err
-			}
-			i = newPos
+			// Unknown field: return error to trigger fallback to json.Unmarshal
+			// This is important because the zero-alloc parser doesn't support 'vectors' yet.
+			return p.result, errors.New("unknown field: " + key)
 		}
 
 		i = skipWhitespace(data, i)

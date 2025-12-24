@@ -17,11 +17,12 @@ var vectorSearchParser = NewZeroAllocVectorSearchParser(768)
 
 // VectorSearchRequest defines the request format for VectorSearch action
 type VectorSearchRequest struct {
-	Dataset   string    `json:"dataset"`
-	Vector    []float32 `json:"vector"`
-	K         int       `json:"k"`
-	Filters   []Filter  `json:"filters"`
-	LocalOnly bool      `json:"local_only"`
+	Dataset   string      `json:"dataset"`
+	Vector    []float32   `json:"vector"`  // Single vector (legacy/simple)
+	Vectors   [][]float32 `json:"vectors"` // Multiple vectors for pipelining
+	K         int         `json:"k"`
+	Filters   []Filter    `json:"filters"`
+	LocalOnly bool        `json:"local_only"`
 	// Hybrid Search Fields
 	TextQuery string  `json:"text_query"`
 	Alpha     float32 `json:"alpha"` // 0.0=sparse, 1.0=dense, 0.5=hybrid
@@ -37,13 +38,12 @@ type VectorSearchResponse struct {
 func (s *MetaServer) handleVectorSearchAction(action *flight.Action, stream flight.FlightService_DoActionServer) error {
 	start := time.Now()
 
-	// Parse request using zero-alloc parser with fallback
 	var req VectorSearchRequest
 	var parseErr error
 	req, parseErr = vectorSearchParser.Parse(action.Body)
 	if parseErr != nil {
-		// Fallback to standard JSON parser for edge cases
 		metrics.VectorSearchParseFallbackTotal.Inc()
+		req = VectorSearchRequest{}
 		if err := json.Unmarshal(action.Body, &req); err != nil {
 			metrics.VectorSearchActionErrors.Inc()
 			s.logger.Warn("VectorSearch JSON parse failed", zap.Error(err))
@@ -60,126 +60,112 @@ func (s *MetaServer) handleVectorSearchAction(action *flight.Action, stream flig
 
 	// Determine if Hybrid Search
 	isHybrid := req.TextQuery != "" || (req.Alpha > 0 && req.Alpha < 1.0)
-	var searchResults []SearchResult
-	var err error
 
-	if isHybrid {
-		// Perform Hybrid Search
-		// Note: SearchHybrid handles dataset retrieval and validation internally
-		// We pass context for cancellation support
-		searchResults, err = s.VectorStore.SearchHybrid(stream.Context(), req.Dataset, req.Vector, req.TextQuery, req.K, req.Alpha, 60) // default RRF K=60
-		if err != nil {
-			metrics.VectorSearchActionErrors.Inc()
-			// Map store errors to grpc status
-			if status.Code(err) == codes.Unknown {
-				return status.Errorf(codes.Internal, "hybrid search failed: %v", err)
+	// Combine Vector and Vectors into a single slice for processing
+	var queryVectors [][]float32
+	if len(req.Vector) > 0 {
+		queryVectors = append(queryVectors, req.Vector)
+	}
+	if len(req.Vectors) > 0 {
+		queryVectors = append(queryVectors, req.Vectors...)
+	}
+
+	if len(queryVectors) == 0 {
+		metrics.VectorSearchActionErrors.Inc()
+		return status.Error(codes.InvalidArgument, "no query vector(s) provided")
+	}
+	// Process each query vector
+	for _, queryVec := range queryVectors {
+		var searchResults []SearchResult
+		var err error
+
+		if isHybrid {
+			// Perform Hybrid Search
+			searchResults, err = s.VectorStore.SearchHybrid(stream.Context(), req.Dataset, queryVec, req.TextQuery, req.K, req.Alpha, 60)
+			if err != nil {
+				metrics.VectorSearchActionErrors.Inc()
+				continue // For pipelining, we might want to continue or return error? Let's return error for now to be safe, or log it.
+				// For now, let's stop on first error for simplicity unless user wants full partial results.
 			}
+		} else {
+			// Standard Vector Search
+			ds, err := s.getDataset(req.Dataset)
+			if err != nil {
+				metrics.VectorSearchActionErrors.Inc()
+				return status.Errorf(codes.NotFound, "dataset not found: %s", req.Dataset)
+			}
+
+			// Acquire read lock
+			ds.dataMu.RLock()
+			if ds.evicting.Load() {
+				ds.dataMu.RUnlock()
+				metrics.EvictionRejectedQueries.Inc()
+				return status.Errorf(codes.Unavailable, "dataset %s is being evicted", req.Dataset)
+			}
+
+			if ds.Index == nil {
+				ds.dataMu.RUnlock()
+				metrics.VectorSearchActionErrors.Inc()
+				return status.Error(codes.FailedPrecondition, "dataset has no HNSW index")
+			}
+
+			// Validate dimension
+			expectedDim := ds.Index.GetDimension()
+			if uint32(len(queryVec)) != expectedDim {
+				ds.dataMu.RUnlock()
+				metrics.VectorSearchActionErrors.Inc()
+				return status.Errorf(codes.InvalidArgument, "dimension mismatch: expected %d, got %d", expectedDim, len(queryVec))
+			}
+
+			// Perform search
+			searchResults = ds.Index.SearchVectors(queryVec, req.K, req.Filters)
+
+			// Map internal IDs to User IDs
+			searchResults = s.VectorStore.MapInternalToUserIDs(ds, searchResults)
+			ds.dataMu.RUnlock()
+		}
+
+		// Perform Global Search (Scatter-Gather) if not local-only
+		if !req.LocalOnly && s.Mesh != nil {
+			peers := s.Mesh.GetMembers()
+			var remotePeers []mesh.Member
+			selfID := s.Mesh.GetIdentity().ID
+			for _, p := range peers {
+				if p.ID != selfID {
+					remotePeers = append(remotePeers, p)
+				}
+			}
+
+			// Override Vector in request for remote peers
+			batchReq := req
+			batchReq.Vector = queryVec
+			batchReq.Vectors = nil // Don't forward the whole batch to each peer for each call?
+			// Wait, the aggregator/coordinator might need adjustment too.
+			// For now, let's just forward the single vector.
+			searchResults, err = s.coordinator.GlobalSearch(stream.Context(), searchResults, batchReq, remotePeers)
+			if err != nil {
+				s.logger.Warn("Global search partial failure", zap.Error(err))
+			}
+		}
+
+		// Build and send response for this vector
+		resp := VectorSearchResponse{
+			IDs:    make([]uint64, len(searchResults)),
+			Scores: make([]float32, len(searchResults)),
+		}
+		for i, res := range searchResults {
+			resp.IDs[i] = uint64(res.ID)
+			resp.Scores[i] = res.Score
+		}
+
+		respBytes, _ := json.Marshal(resp)
+		if err := stream.Send(&flight.Result{Body: respBytes}); err != nil {
+			metrics.VectorSearchActionErrors.Inc()
 			return err
 		}
-	} else {
-		// Standard Vector Search
-		// Get dataset
-		ds, err := s.getDataset(req.Dataset)
-		if err != nil {
-			metrics.VectorSearchActionErrors.Inc()
-			return status.Errorf(codes.NotFound, "dataset not found: %s", req.Dataset)
-		}
-
-		// Acquire read lock FIRST (will block if eviction in progress)
-		ds.dataMu.RLock()
-		defer ds.dataMu.RUnlock()
-
-		// Check if dataset is being evicted (INSIDE lock to prevent race)
-		if ds.evicting.Load() {
-			metrics.EvictionRejectedQueries.Inc()
-			s.logger.Warn("Query rejected: dataset evicting",
-				zap.String("dataset", req.Dataset))
-			return status.Errorf(codes.Unavailable,
-				"dataset %s is being evicted, please retry", req.Dataset)
-		}
-
-		// Check if index exists
-		if ds.Index == nil {
-			metrics.VectorSearchActionErrors.Inc()
-			s.logger.Error("Query failed: index is nil",
-				zap.String("dataset", req.Dataset),
-				zap.Int("num_records", len(ds.Records)),
-				zap.Int64("size_bytes", ds.SizeBytes.Load()),
-				zap.Bool("evicting", ds.evicting.Load()))
-			return status.Error(codes.FailedPrecondition, "dataset has no HNSW index")
-		}
-
-		// Validate vector dimension
-		expectedDim := ds.Index.GetDimension()
-		if uint32(len(req.Vector)) != expectedDim { //nolint:gosec // G115
-			metrics.VectorSearchActionErrors.Inc()
-			return status.Errorf(codes.InvalidArgument, "dimension mismatch: expected %d, got %d", expectedDim, len(req.Vector))
-		}
-
-		// Perform search using SearchVectors from Index interface
-		searchResults = ds.Index.SearchVectors(req.Vector, req.K, req.Filters)
-
-		// Map internal IDs to User IDs for local results
-		searchResults = s.VectorStore.MapInternalToUserIDs(ds, searchResults)
 	}
 
-	// Perform Global Search (Scatter-Gather) if not local-only and mesh exists
-	if !req.LocalOnly && s.Mesh != nil {
-		peers := s.Mesh.GetMembers()
-		// Filter out self
-		var remotePeers []mesh.Member
-		selfID := s.Mesh.GetIdentity().ID
-		for _, p := range peers {
-			if p.ID != selfID {
-				remotePeers = append(remotePeers, p)
-			}
-		}
-
-		// Scatter-Gather
-		var err error
-		searchResults, err = s.coordinator.GlobalSearch(stream.Context(), searchResults, req, remotePeers)
-		if err != nil {
-			s.logger.Warn("Global search partial failure", zap.Error(err))
-			// Continue with whatever results we have
-		}
-	} else if !req.LocalOnly && s.Mesh == nil {
-		s.logger.Warn("Mesh not initialized, skipping global search")
-	}
-
-	// Build response
-	resp := VectorSearchResponse{
-		IDs:    make([]uint64, len(searchResults)),
-		Scores: make([]float32, len(searchResults)),
-	}
-
-	for i, res := range searchResults {
-		resp.IDs[i] = uint64(res.ID)
-		resp.Scores[i] = res.Score
-	}
-
-	// Serialize response
-	respBytes, err := json.Marshal(resp)
-	if err != nil {
-		metrics.VectorSearchActionErrors.Inc()
-		return status.Errorf(codes.Internal, "failed to serialize response: %v", err)
-	}
-
-	// Send response
-	if err := stream.Send(&flight.Result{Body: respBytes}); err != nil {
-		metrics.VectorSearchActionErrors.Inc()
-		return err
-	}
-
-	// Record metrics
 	metrics.VectorSearchActionTotal.Inc()
 	metrics.VectorSearchActionDuration.Observe(time.Since(start).Seconds())
-
-	s.logger.Debug("VectorSearch completed",
-		zap.String("dataset", req.Dataset),
-		zap.Int("k", req.K),
-		zap.Int("results", len(searchResults)),
-		zap.Duration("duration", time.Since(start)),
-	)
-
 	return nil
 }

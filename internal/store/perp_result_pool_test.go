@@ -284,11 +284,18 @@ func TestPerPResultPoolHitMissTracking(t *testing.T) {
 	// Put it back
 	pool.Put(slice)
 
-	// Second get should be a hit
+	// Second get should be a hit, BUT sync.Pool doesn't guarantee retention.
+	// Especially with -race, it might be dropped.
 	slice = pool.Get(10)
 	stats = pool.Stats()
 	if stats.Hits != 1 {
-		t.Errorf("Second get should be hit, got hits=%d", stats.Hits)
+		// If it wasn't a hit, it MUST be a miss
+		if stats.Misses != 2 {
+			t.Errorf("Expected either 1 hit or 2 misses (if pool dropped), got hits=%d misses=%d",
+				stats.Hits, stats.Misses)
+		} else {
+			t.Log("Note: sync.Pool dropped the item (expected behavior under stress/race)")
+		}
 	}
 	pool.Put(slice)
 }

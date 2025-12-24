@@ -120,4 +120,27 @@ func BenchmarkHNSWComparison(b *testing.B) {
 			}
 		}
 	})
+
+	// Parallel Search Benchmarks
+	b.Run("SearchParallel/Coder", func(b *testing.B) {
+		b.RunParallel(func(pb *testing.PB) {
+			for pb.Next() {
+				_, err := coderIdx.Search(query, k)
+				if err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	})
+
+	b.Run("SearchParallel/HNSW2", func(b *testing.B) {
+		b.RunParallel(func(pb *testing.PB) {
+			for pb.Next() {
+				_, err := hnsw2Idx.Search(query, k, k*10)
+				if err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	})
 }

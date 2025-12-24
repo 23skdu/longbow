@@ -11,7 +11,7 @@ import (
 // getVectorZeroCopy retrieves a vector from Arrow storage using zero-copy access.
 // This is the Arrow-native implementation that avoids allocations.
 func (h *ArrowHNSW) getVectorZeroCopy(id uint32) ([]float32, error) {
-	if int(id) >= len(h.nodes) {
+	if int(id) >= int(h.nodeCount.Load()) {
 		return nil, fmt.Errorf("vector ID %d out of bounds", id)
 	}
 	

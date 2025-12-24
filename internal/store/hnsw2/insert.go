@@ -4,44 +4,70 @@ import (
 	"math"
 	"math/rand"
 	"sync"
+	"sync/atomic"
+	"unsafe"
 )
+
+// Grow ensures the graph has enough capacity for the requested ID.
+// It uses a Copy-On-Resize strategy: a new GraphData is allocated, data copied, and atomically swapped.
+func (h *ArrowHNSW) Grow(minCap int) {
+	// Fast path: check current capacity
+	oldData := h.data.Load()
+	if oldData.Capacity > minCap {
+		return
+	}
+
+	// Calculate new capacity
+	newCap := oldData.Capacity * 2
+	if newCap < minCap {
+		newCap = minCap
+	}
+	if newCap < 1000 {
+		newCap = 1000
+	}
+
+	// Allocate new data
+	newData := NewGraphData(newCap)
+
+	// Copy existing data
+	// 1. Levels
+	copy(newData.Levels, oldData.Levels)
+	
+	// 2. VectorPtrs
+	copy(newData.VectorPtrs, oldData.VectorPtrs)
+	
+	// 3. Neighbors and Counts for each layer
+	for i := 0; i < MaxLayers; i++ {
+		copy(newData.Neighbors[i], oldData.Neighbors[i])
+		copy(newData.Counts[i], oldData.Counts[i])
+	}
+	
+	// Atomically switch to new data
+	// Note: Since this is called under writeMu, we are the only writer.
+	// Readers might be using oldData, which is fine (snapshot).
+	h.data.Store(newData)
+}
 
 // Insert adds a new vector to the HNSW graph.
 // The vector is identified by its VectorID and assigned a random level.
 func (h *ArrowHNSW) Insert(id uint32, level int) error {
-	h.nodeMu.Lock()
-	defer h.nodeMu.Unlock()
+	h.writeMu.Lock()
+	defer h.writeMu.Unlock()
 	
-	// Ensure we have enough capacity
-	requiredLen := int(id) + 1
-	if requiredLen > cap(h.nodes) {
-		newCap := cap(h.nodes) * 2
-		if newCap == 0 {
-			newCap = 1000
-		}
-		if newCap < requiredLen {
-			newCap = requiredLen
-		}
-		newNodes := make([]GraphNode, len(h.nodes), newCap)
-		copy(newNodes, h.nodes)
-		h.nodes = newNodes
-	}
+	// Ensure capacity
+	h.Grow(int(id) + 1)
 	
-	// Extend length if needed
-	if requiredLen > len(h.nodes) {
-		h.nodes = h.nodes[:requiredLen]
-	}
+	// Get current graph data
+	data := h.data.Load()
 	
 	// Initialize the new node
-	node := &h.nodes[id]
-	node.ID = id
-	node.Level = uint8(level)
+	data.Levels[id] = uint8(level)
 	
-	// If this is the first node, make it the entry point
-	if h.nodeCount == 0 {
-		h.entryPoint = id
-		h.maxLevel = level
-		h.nodeCount++
+	// Check if this is the first node
+	if h.nodeCount.Load() == 0 {
+		h.entryPoint.Store(id)
+		h.maxLevel.Store(int32(level))
+		h.nodeCount.Add(1)
 		return nil
 	}
 	
@@ -56,18 +82,19 @@ func (h *ArrowHNSW) Insert(id uint32, level int) error {
 		h.dims = len(vec)
 	}
 	
-	// Cache unsafe pointer to vector data
+	// Cache unsafe pointer
 	if len(vec) > 0 {
-		node.VectorPtr = &vec[0]
+		data.VectorPtrs[id] = unsafe.Pointer(&vec[0])
 	}
 	
 	// Search for nearest neighbors at each layer
-	ep := h.entryPoint
+	ep := h.entryPoint.Load()
+	maxL := int(h.maxLevel.Load())
 	
 	// Search from top layer down to level+1
-	for lc := h.maxLevel; lc > level; lc-- {
+	for lc := maxL; lc > level; lc-- {
 		// Find closest point at this layer
-		neighbors := h.searchLayerForInsert(vec, ep, 1, lc)
+		neighbors := h.searchLayerForInsert(vec, ep, 1, lc, data)
 		if len(neighbors) > 0 {
 			ep = neighbors[0].ID
 		}
@@ -76,58 +103,57 @@ func (h *ArrowHNSW) Insert(id uint32, level int) error {
 	// Insert at layers 0 to level
 	for lc := level; lc >= 0; lc-- {
 		// Find M nearest neighbors at this layer
-		candidates := h.searchLayerForInsert(vec, ep, h.efConstruction, lc)
+		candidates := h.searchLayerForInsert(vec, ep, h.efConstruction, lc, data)
 		
-		// Select M neighbors using heuristic
+		// Select M neighbors
 		m := h.mMax
 		if lc > 0 {
 			m = h.mMax0
 		}
-		neighbors := h.selectNeighbors(candidates, m)
+		neighbors := h.selectNeighbors(candidates, m, data)
 		
-		// Add bidirectional links
+		// Add connections
 		for _, neighbor := range neighbors {
-			// Add neighbor to new node
-			h.addConnection(id, neighbor.ID, lc)
+			h.addConnection(data, id, neighbor.ID, lc)
+			h.addConnection(data, neighbor.ID, id, lc)
 			
-			// Add new node to neighbor
-			h.addConnection(neighbor.ID, id, lc)
-			
-			// Prune neighbor's connections if needed
-			neighborNode := &h.nodes[neighbor.ID]
+			// Prune neighbor if needed
 			maxConn := h.mMax
 			if lc > 0 {
 				maxConn = h.mMax0
 			}
-			if int(neighborNode.NeighborCounts[lc]) > maxConn {
-				h.pruneConnections(neighbor.ID, maxConn, lc)
+			
+			// Read count atomically
+			count := atomic.LoadInt32(&data.Counts[lc][neighbor.ID])
+			if int(count) > maxConn {
+				h.pruneConnections(data, neighbor.ID, maxConn, lc)
 			}
 		}
 		
-		// Update entry point for next layer
+		// Update entry point
 		if len(neighbors) > 0 {
 			ep = neighbors[0].ID
 		}
 	}
 	
-	// Update entry point if new node has higher level
-	if level > h.maxLevel {
-		h.maxLevel = level
-		h.entryPoint = id
+	// Update max level if needed
+	if level > maxL {
+		h.maxLevel.Store(int32(level))
+		h.entryPoint.Store(id)
 	}
 	
-	h.nodeCount++
+	h.nodeCount.Add(1)
 	return nil
 }
 
 // searchLayerForInsert performs search during insertion.
 // Returns candidates sorted by distance.
-func (h *ArrowHNSW) searchLayerForInsert(query []float32, entryPoint uint32, ef int, layer int) []Candidate {
-	visited := NewBitset(len(h.nodes))
+func (h *ArrowHNSW) searchLayerForInsert(query []float32, entryPoint uint32, ef int, layer int, data *GraphData) []Candidate {
+	visited := NewBitset(int(h.nodeCount.Load()))
 	candidates := NewFixedHeap(ef * 2)
 	
 	// Initialize with entry point
-	entryDist := distanceSIMD(query, h.mustGetVector(entryPoint))
+	entryDist := distanceSIMD(query, h.mustGetVectorFromData(data, entryPoint))
 	candidates.Push(Candidate{ID: entryPoint, Dist: entryDist})
 	visited.Set(entryPoint)
 	
@@ -146,18 +172,18 @@ func (h *ArrowHNSW) searchLayerForInsert(query []float32, entryPoint uint32, ef 
 		}
 		
 		// Explore neighbors
-		node := &h.nodes[curr.ID]
-		neighborCount := int(node.NeighborCounts[layer])
+		neighborCount := int(atomic.LoadInt32(&data.Counts[layer][curr.ID]))
+		baseIdx := int(curr.ID) * MaxNeighbors
 		
 		for i := 0; i < neighborCount; i++ {
-			neighborID := node.Neighbors[layer][i]
+			neighborID := data.Neighbors[layer][baseIdx+i]
 			
 			if visited.IsSet(neighborID) {
 				continue
 			}
 			visited.Set(neighborID)
 			
-			dist := distanceSIMD(query, h.mustGetVector(neighborID))
+			dist := distanceSIMD(query, h.mustGetVectorFromData(data, neighborID))
 			
 			if len(results) < ef || dist < results[len(results)-1].Dist {
 				candidates.Push(Candidate{ID: neighborID, Dist: dist})
@@ -183,9 +209,7 @@ func (h *ArrowHNSW) searchLayerForInsert(query []float32, entryPoint uint32, ef 
 }
 
 // selectNeighbors selects the best M neighbors using the RobustPrune heuristic.
-// This maintains diversity in the graph by preferring neighbors that are not already
-// well-connected to other selected neighbors.
-func (h *ArrowHNSW) selectNeighbors(candidates []Candidate, m int) []Candidate {
+func (h *ArrowHNSW) selectNeighbors(candidates []Candidate, m int, data *GraphData) []Candidate {
 	if len(candidates) <= m {
 		return candidates
 	}
@@ -215,18 +239,16 @@ func (h *ArrowHNSW) selectNeighbors(candidates []Candidate, m int) []Candidate {
 		remaining = remaining[:len(remaining)-1]
 		
 		// Prune remaining candidates that are too close to the selected one
-		// This maintains diversity
 		if len(selected) < m && len(remaining) > 0 {
-			selectedVec := h.mustGetVector(selected[len(selected)-1].ID)
+			selectedVec := h.mustGetVectorFromData(data, selected[len(selected)-1].ID)
 			
 			// Filter remaining to remove candidates too close to selected
 			filtered := remaining[:0]
 			for _, cand := range remaining {
-				candVec := h.mustGetVector(cand.ID)
+				candVec := h.mustGetVectorFromData(data, cand.ID)
 				distToSelected := distanceSIMD(candVec, selectedVec)
 				
 				// Keep candidate if it's not too close to the selected neighbor
-				// (i.e., distance to selected > distance to query)
 				if distToSelected > cand.Dist {
 					filtered = append(filtered, cand)
 				}
@@ -239,49 +261,50 @@ func (h *ArrowHNSW) selectNeighbors(candidates []Candidate, m int) []Candidate {
 }
 
 // addConnection adds a directed edge from source to target at the given layer.
-func (h *ArrowHNSW) addConnection(source, target uint32, layer int) {
-	node := &h.nodes[source]
-	count := int(node.NeighborCounts[layer])
+func (h *ArrowHNSW) addConnection(data *GraphData, source, target uint32, layer int) {
+	countAddr := &data.Counts[layer][source]
+	count := int(atomic.LoadInt32(countAddr))
+	baseIdx := int(source) * MaxNeighbors
 	
 	// Check if already connected
 	for i := 0; i < count; i++ {
-		if node.Neighbors[layer][i] == target {
+		if data.Neighbors[layer][baseIdx+i] == target {
 			return // Already connected
 		}
 	}
 	
 	// Add connection if space available
 	if count < MaxNeighbors {
-		node.Neighbors[layer][count] = target
-		node.NeighborCounts[layer]++
+		data.Neighbors[layer][baseIdx+count] = target
+		atomic.StoreInt32(countAddr, int32(count+1))
 	}
 }
 
 // pruneConnections reduces the number of connections to maxConn by removing the furthest neighbor.
-// This maintains better graph quality by keeping closer neighbors.
-func (h *ArrowHNSW) pruneConnections(nodeID uint32, maxConn int, layer int) {
-	h.pruneConnectionsInternal(nodeID, maxConn, layer, false)
+func (h *ArrowHNSW) pruneConnections(data *GraphData, nodeID uint32, maxConn int, layer int) {
+	h.pruneConnectionsInternal(data, nodeID, maxConn, layer, false)
 }
 
 // pruneConnectionsInternal is the internal implementation with skipReplenish flag
-func (h *ArrowHNSW) pruneConnectionsInternal(nodeID uint32, maxConn int, layer int, skipReplenish bool) {
-	node := &h.nodes[nodeID]
-	count := int(node.NeighborCounts[layer])
+func (h *ArrowHNSW) pruneConnectionsInternal(data *GraphData, nodeID uint32, maxConn int, layer int, skipReplenish bool) {
+	countAddr := &data.Counts[layer][nodeID]
+	count := int(atomic.LoadInt32(countAddr))
 	
 	if count <= maxConn {
 		return
 	}
 	
 	// Get node's vector for distance calculations
-	nodeVec := h.mustGetVector(nodeID)
+	nodeVec := h.mustGetVectorFromData(data, nodeID)
 	
 	// Find the furthest neighbor
 	var worstDist float32 = -1
 	var worstIdx int = -1
+	baseIdx := int(nodeID) * MaxNeighbors
 	
 	for i := 0; i < count; i++ {
-		neighborID := node.Neighbors[layer][i]
-		neighborVec := h.mustGetVector(neighborID)
+		neighborID := data.Neighbors[layer][baseIdx+i]
+		neighborVec := h.mustGetVectorFromData(data, neighborID)
 		dist := distanceSIMD(nodeVec, neighborVec)
 		
 		if dist > worstDist {
@@ -296,41 +319,42 @@ func (h *ArrowHNSW) pruneConnectionsInternal(nodeID uint32, maxConn int, layer i
 	}
 	
 	// Get the worst neighbor ID before removing it
-	worstNeighborID := node.Neighbors[layer][worstIdx]
+	worstNeighborID := data.Neighbors[layer][baseIdx+worstIdx]
 	
 	// Remove worst neighbor by shifting array
 	for i := worstIdx; i < count-1; i++ {
-		node.Neighbors[layer][i] = node.Neighbors[layer][i+1]
+		data.Neighbors[layer][baseIdx+i] = data.Neighbors[layer][baseIdx+i+1]
 	}
-	node.NeighborCounts[layer]--
+	atomic.StoreInt32(countAddr, int32(count-1))
 	
 	// Delete backlink from the worst neighbor
-	h.removeConnectionInternal(worstNeighborID, nodeID, layer, skipReplenish)
+	h.removeConnectionInternal(data, worstNeighborID, nodeID, layer, skipReplenish)
 	
 	// If we still have too many neighbors, prune again
-	if int(node.NeighborCounts[layer]) > maxConn {
-		h.pruneConnectionsInternal(nodeID, maxConn, layer, skipReplenish)
+	if int(atomic.LoadInt32(countAddr)) > maxConn {
+		h.pruneConnectionsInternal(data, nodeID, maxConn, layer, skipReplenish)
 	}
 }
 
 // removeConnection removes a directed edge from source to target at the given layer.
-func (h *ArrowHNSW) removeConnection(source, target uint32, layer int) {
-	h.removeConnectionInternal(source, target, layer, false)
+func (h *ArrowHNSW) removeConnection(data *GraphData, source, target uint32, layer int) {
+	h.removeConnectionInternal(data, source, target, layer, false)
 }
 
 // removeConnectionInternal is the internal implementation with skipReplenish flag
-func (h *ArrowHNSW) removeConnectionInternal(source, target uint32, layer int, skipReplenish bool) {
-	node := &h.nodes[source]
-	count := int(node.NeighborCounts[layer])
+func (h *ArrowHNSW) removeConnectionInternal(data *GraphData, source, target uint32, layer int, skipReplenish bool) {
+	countAddr := &data.Counts[layer][source]
+	count := int(atomic.LoadInt32(countAddr))
+	baseIdx := int(source) * MaxNeighbors
 	
 	// Find and remove the connection
 	for i := 0; i < count; i++ {
-		if node.Neighbors[layer][i] == target {
+		if data.Neighbors[layer][baseIdx+i] == target {
 			// Shift remaining neighbors
 			for j := i; j < count-1; j++ {
-				node.Neighbors[layer][j] = node.Neighbors[layer][j+1]
+				data.Neighbors[layer][baseIdx+j] = data.Neighbors[layer][baseIdx+j+1]
 			}
-			node.NeighborCounts[layer]--
+			atomic.StoreInt32(countAddr, int32(count-1))
 			
 			// Replenish connections if we're below the target (unless we're in a pruning operation)
 			if !skipReplenish {
@@ -338,7 +362,7 @@ func (h *ArrowHNSW) removeConnectionInternal(source, target uint32, layer int, s
 				if layer > 0 {
 					maxConn = h.mMax0
 				}
-				h.replenishConnections(source, maxConn, layer)
+				h.replenishConnections(data, source, maxConn, layer)
 			}
 			return
 		}
@@ -346,33 +370,30 @@ func (h *ArrowHNSW) removeConnectionInternal(source, target uint32, layer int, s
 }
 
 // replenishConnections restores connectivity by finding new neighbors through neighbors-of-neighbors.
-// This is called when a node loses a connection during pruning to maintain graph connectivity.
-func (h *ArrowHNSW) replenishConnections(nodeID uint32, maxConn int, layer int) {
-	node := &h.nodes[nodeID]
-	count := int(node.NeighborCounts[layer])
+func (h *ArrowHNSW) replenishConnections(data *GraphData, nodeID uint32, maxConn int, layer int) {
+	count := int(atomic.LoadInt32(&data.Counts[layer][nodeID]))
 	
 	if count >= maxConn {
 		return // Already at capacity
 	}
 	
-	// Try to find new neighbors through existing neighbors
-	// This is a simplified version of coder/hnsw's replenish
+	baseIdx := int(nodeID) * MaxNeighbors
 	visited := make(map[uint32]bool)
 	visited[nodeID] = true
 	
 	// Mark existing neighbors as visited
 	for i := 0; i < count; i++ {
-		visited[node.Neighbors[layer][i]] = true
+		visited[data.Neighbors[layer][baseIdx+i]] = true
 	}
 	
 	// Explore neighbors of neighbors
-	for i := 0; i < count && int(node.NeighborCounts[layer]) < maxConn; i++ {
-		neighborID := node.Neighbors[layer][i]
-		neighborNode := &h.nodes[neighborID]
-		neighborCount := int(neighborNode.NeighborCounts[layer])
+	for i := 0; i < count && int(atomic.LoadInt32(&data.Counts[layer][nodeID])) < maxConn; i++ {
+		neighborID := data.Neighbors[layer][baseIdx+i]
+		neighborCount := int(atomic.LoadInt32(&data.Counts[layer][neighborID]))
+		neighborBaseIdx := int(neighborID) * MaxNeighbors
 		
-		for j := 0; j < neighborCount && int(node.NeighborCounts[layer]) < maxConn; j++ {
-			candidateID := neighborNode.Neighbors[layer][j]
+		for j := 0; j < neighborCount && int(atomic.LoadInt32(&data.Counts[layer][nodeID])) < maxConn; j++ {
+			candidateID := data.Neighbors[layer][neighborBaseIdx+j]
 			
 			// Skip if already visited or is the node itself
 			if visited[candidateID] {
@@ -381,29 +402,42 @@ func (h *ArrowHNSW) replenishConnections(nodeID uint32, maxConn int, layer int) 
 			visited[candidateID] = true
 			
 			// Add this candidate as a new neighbor
-			h.addConnection(nodeID, candidateID, layer)
+			h.addConnection(data, nodeID, candidateID, layer)
 			
 			// Also add reverse connection
-			h.addConnection(candidateID, nodeID, layer)
+			h.addConnection(data, candidateID, nodeID, layer)
 			
 			// Prune if candidate now has too many connections
-			candidateNode := &h.nodes[candidateID]
-			if int(candidateNode.NeighborCounts[layer]) > maxConn {
-				h.pruneConnectionsInternal(candidateID, maxConn, layer, true)
+			candCount := int(atomic.LoadInt32(&data.Counts[layer][candidateID]))
+			if candCount > maxConn {
+				h.pruneConnectionsInternal(data, candidateID, maxConn, layer, true)
 			}
 		}
 	}
 }
 
-// mustGetVector is a helper that panics on error (for internal use).
-func (h *ArrowHNSW) mustGetVector(id uint32) []float32 {
+// mustGetVectorFromData is a helper that uses the cached pointer from GraphData.
+func (h *ArrowHNSW) mustGetVectorFromData(data *GraphData, id uint32) []float32 {
+	// Optimization: Check for cached vector pointer
+	if int(id) < len(data.VectorPtrs) {
+		ptr := data.VectorPtrs[id]
+		if ptr != nil && h.dims > 0 {
+			return unsafe.Slice((*float32)(ptr), h.dims)
+		}
+	}
+	
+	// Fallback
 	vec, err := h.getVector(id)
 	if err != nil {
-		// For now, return empty vector
-		// TODO: Better error handling
 		return []float32{}
 	}
 	return vec
+}
+
+// mustGetVector is a helper that panics on error (for internal use).
+// TODO: Deprecate or update to use current Load()
+func (h *ArrowHNSW) mustGetVector(id uint32) []float32 {
+	return h.mustGetVectorFromData(h.data.Load(), id)
 }
 
 // LevelGenerator generates random levels for new nodes.

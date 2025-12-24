@@ -2,58 +2,70 @@ package hnsw2
 
 import (
 	"sync"
+	"sync/atomic"
+	"unsafe"
 	
 	"github.com/23skdu/longbow/internal/store"
 )
 
-// GraphNode represents a single node in the HNSW graph.
-// It uses fixed-size arrays to avoid allocations during neighbor updates.
-type GraphNode struct {
-	ID    uint32  // VectorID
-	Level uint8   // Maximum layer this node participates in
-	
-	// Direct pointer to vector data for fast access
-	// This avoids Arrow column lookups during hot search loops.
-	// WARNING: This pointer is only valid as long as the underlying Arrow batch is valid.
-	VectorPtr *float32
-	
-	// Neighbors at each layer (layer 0 to Level)
-	// Each layer has up to M neighbors (Mmax for layer 0)
-	// We use a fixed-size array to avoid allocations
-	Neighbors [MaxLayers][MaxNeighbors]uint32
-	NeighborCounts [MaxLayers]uint8
+// GraphData holds the SoA (Struct of Arrays) representation of the graph.
+// This structure is designed for lock-free snapshot access.
+type GraphData struct {
+	Capacity     int
+	// SoA Slices
+	Levels     []uint8          // [Capacity]
+	VectorPtrs []unsafe.Pointer // [Capacity]
+	// Neighbors flattened per layer: Neighbors[layer][nodeID*MaxNeighbors + index]
+	Neighbors [MaxLayers][]uint32
+	// Counts per layer and node: Counts[layer][nodeID]
+	// Accessed atomically
+	Counts [MaxLayers][]int32
+}
+
+// NewGraphData creates a new GraphData with the specified capacity.
+func NewGraphData(capacity int) *GraphData {
+	gd := &GraphData{
+		Capacity:   capacity,
+		Levels:     make([]uint8, capacity),
+		VectorPtrs: make([]unsafe.Pointer, capacity),
+	}
+	for i := 0; i < MaxLayers; i++ {
+		gd.Neighbors[i] = make([]uint32, capacity*MaxNeighbors)
+		gd.Counts[i] = make([]int32, capacity)
+	}
+	return gd
 }
 
 const (
-	MaxLayers = 16      // Maximum number of layers in the graph
-	MaxNeighbors = 64   // Maximum neighbors per node per layer (Mmax)
+	MaxLayers    = 16 // Maximum number of layers in the graph
+	MaxNeighbors = 64 // Maximum neighbors per node per layer (Mmax)
 )
 
 // ArrowHNSW is the main HNSW index structure with Arrow integration.
+// It uses atomic pointers for lock-free search and a mutex for serialized writes.
 type ArrowHNSW struct {
-	// Graph structure
-	nodes      []GraphNode
-	nodeMu     sync.RWMutex
-	entryPoint uint32
-	maxLevel   int
-	
-	// Arrow integration - reference to parent dataset for vector access
+	// Graph data snapshot (lock-free access)
+	data    atomic.Pointer[GraphData]
+	writeMu sync.Mutex
+
+	// Graph state (atomic for lock-free reads)
+	entryPoint atomic.Uint32
+	maxLevel   atomic.Int32
+	nodeCount  atomic.Uint32
+
 	// Arrow integration - reference to parent dataset for vector access
 	dataset *store.Dataset
 	dims    int // Vector dimensions, cached for unsafe operations
-	
+
 	// HNSW parameters
-	m      int     // Number of neighbors per layer
-	mMax   int     // Maximum neighbors for layer 0
-	mMax0  int     // Maximum neighbors for higher layers
-	efConstruction int // Size of dynamic candidate list during construction
-	ml     float64 // Level multiplier for exponential decay
-	
+	m              int     // Number of neighbors per layer
+	mMax           int     // Maximum neighbors for layer 0
+	mMax0          int     // Maximum neighbors for higher layers
+	efConstruction int     // Size of dynamic candidate list during construction
+	ml             float64 // Level multiplier for exponential decay
+
 	// Pooled resources
 	searchPool *SearchContextPool
-	
-	// Metrics
-	nodeCount uint32
 }
 
 // Config holds HNSW configuration parameters.
@@ -78,8 +90,7 @@ func DefaultConfig() Config {
 
 // NewArrowHNSW creates a new Arrow-native HNSW index.
 func NewArrowHNSW(dataset *store.Dataset, config Config) *ArrowHNSW {
-	return &ArrowHNSW{
-		nodes:          make([]GraphNode, 0, 1000),
+	h := &ArrowHNSW{
 		dataset:        dataset,
 		m:              config.M,
 		mMax:           config.MMax,
@@ -87,30 +98,31 @@ func NewArrowHNSW(dataset *store.Dataset, config Config) *ArrowHNSW {
 		efConstruction: config.EfConstruction,
 		ml:             config.Ml,
 		searchPool:     NewSearchContextPool(),
-		entryPoint:     0,
-		maxLevel:       -1,
 	}
+
+	// Initialize empty graph with initial capacity
+	initialCap := 1000
+	h.data.Store(NewGraphData(initialCap))
+	h.entryPoint.Store(0)
+	h.maxLevel.Store(-1)
+	h.nodeCount.Store(0)
+
+	return h
 }
 
 // Size returns the number of nodes in the index.
 func (h *ArrowHNSW) Size() int {
-	h.nodeMu.RLock()
-	defer h.nodeMu.RUnlock()
-	return len(h.nodes)
+	return int(h.nodeCount.Load())
 }
 
 // GetEntryPoint returns the current entry point ID.
 func (h *ArrowHNSW) GetEntryPoint() uint32 {
-	h.nodeMu.RLock()
-	defer h.nodeMu.RUnlock()
-	return h.entryPoint
+	return h.entryPoint.Load()
 }
 
 // GetMaxLevel returns the maximum level in the graph.
 func (h *ArrowHNSW) GetMaxLevel() int {
-	h.nodeMu.RLock()
-	defer h.nodeMu.RUnlock()
-	return h.maxLevel
+	return int(h.maxLevel.Load())
 }
 
 // SearchContextPool manages reusable search contexts.

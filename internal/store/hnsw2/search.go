@@ -3,6 +3,7 @@ package hnsw2
 import (
 	"fmt"
 	"math"
+	"sync/atomic"
 	"unsafe"
 
 	"github.com/23skdu/longbow/internal/store"
@@ -11,10 +12,9 @@ import (
 // Search performs k-NN search using the provided query vector.
 // Returns the k nearest neighbors sorted by distance.
 func (h *ArrowHNSW) Search(query []float32, k int, ef int) ([]store.SearchResult, error) {
-	h.nodeMu.RLock()
-	defer h.nodeMu.RUnlock()
-	
-	if len(h.nodes) == 0 {
+	// Lock-free access: load snapshot of graph data
+	data := h.data.Load()
+	if data == nil || h.nodeCount.Load() == 0 {
 		return []store.SearchResult{}, nil
 	}
 	
@@ -31,20 +31,22 @@ func (h *ArrowHNSW) Search(query []float32, k int, ef int) ([]store.SearchResult
 	defer h.searchPool.Put(ctx)
 	
 	// Ensure visited bitset is large enough
-	if ctx.visited.Size() < len(h.nodes) {
-		ctx.visited = NewBitset(len(h.nodes))
+	nodeCount := int(h.nodeCount.Load())
+	if ctx.visited.Size() < nodeCount {
+		ctx.visited = NewBitset(nodeCount)
 	}
 	
-	// Start from entry point
-	ep := h.entryPoint
+	// Start from entry point (atomic load)
+	ep := h.entryPoint.Load()
+	maxL := int(h.maxLevel.Load())
 	
 	// Search from top layer to layer 1
-	for level := h.maxLevel; level > 0; level-- {
-		ep, _ = h.searchLayer(query, ep, 1, level, ctx)
+	for level := maxL; level > 0; level-- {
+		ep, _ = h.searchLayer(query, ep, 1, level, ctx, data)
 	}
 	
 	// Search layer 0 with ef candidates
-	_, _ = h.searchLayer(query, ep, ef, 0, ctx)
+	_, _ = h.searchLayer(query, ep, ef, 0, ctx, data)
 	
 	// Extract top k results from candidates in context
 	results := make([]store.SearchResult, 0, k)
@@ -64,12 +66,12 @@ func (h *ArrowHNSW) Search(query []float32, k int, ef int) ([]store.SearchResult
 
 // searchLayer performs greedy search at a specific layer.
 // Returns the closest node found and its distance.
-func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef int, layer int, ctx *SearchContext) (uint32, float32) {
+func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef int, layer int, ctx *SearchContext, data *GraphData) (uint32, float32) {
 	ctx.visited.Clear()
 	ctx.candidates.Clear()
 	
 	// Initialize with entry point
-	entryDist := h.distance(query, entryPoint)
+	entryDist := h.distance(query, entryPoint, data)
 	ctx.candidates.Push(Candidate{ID: entryPoint, Dist: entryDist})
 	ctx.visited.Set(entryPoint)
 	
@@ -104,11 +106,12 @@ func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef int, laye
 		}
 		
 		// Explore neighbors
-		node := &h.nodes[curr.ID]
-		neighborCount := int(node.NeighborCounts[layer])
+		// Atomic load for neighbor count to ensure consistency
+		neighborCount := int(atomic.LoadInt32(&data.Counts[layer][curr.ID]))
+		baseIdx := int(curr.ID) * MaxNeighbors
 		
 		for i := 0; i < neighborCount; i++ {
-			neighborID := node.Neighbors[layer][i]
+			neighborID := data.Neighbors[layer][baseIdx+i]
 			
 			// Skip if already visited
 			if ctx.visited.IsSet(neighborID) {
@@ -117,7 +120,7 @@ func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef int, laye
 			ctx.visited.Set(neighborID)
 			
 			// Calculate distance to neighbor
-			dist := h.distance(query, neighborID)
+			dist := h.distance(query, neighborID, data)
 			
 			// Update closest if needed
 			if dist < closestDist {
@@ -161,13 +164,13 @@ func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef int, laye
 
 // distance computes the distance between a query vector and a stored vector.
 // Uses zero-copy Arrow access and SIMD optimizations for maximum performance.
-func (h *ArrowHNSW) distance(query []float32, id uint32) float32 {
+func (h *ArrowHNSW) distance(query []float32, id uint32, data *GraphData) float32 {
 	// Optimization: Check for cached vector pointer (avoids Arrow overhead)
 	// This is safe because VectorPtr is pinned to the Arrow RecordBatch which is kept alive by Dataset
-	if int(id) < len(h.nodes) {
-		node := &h.nodes[id]
-		if node.VectorPtr != nil && h.dims > 0 {
-			vec := unsafe.Slice(node.VectorPtr, h.dims)
+	if int(id) < len(data.VectorPtrs) {
+		ptr := data.VectorPtrs[id]
+		if ptr != nil && h.dims > 0 {
+			vec := unsafe.Slice((*float32)(ptr), h.dims)
 			return distanceSIMD(query, vec)
 		}
 	}
@@ -200,9 +203,8 @@ func l2Distance(a, b []float32) float32 {
 // getVector retrieves a vector from Arrow storage using zero-copy access.
 // This uses the Dataset's Index locationStore to map VectorID to (BatchIdx, RowIdx).
 func (h *ArrowHNSW) getVector(id uint32) ([]float32, error) {
-	if int(id) >= len(h.nodes) {
-		return nil, fmt.Errorf("vector ID %d out of bounds", id)
-	}
+	// Relaxed check: Rely on dataset to validation ID presence
+	// if int(id) >= int(h.nodeCount.Load()) { ... }
 	
 	// Get the HNSW index from dataset to access locationStore
 	hnswIdx, ok := h.dataset.Index.(*store.HNSWIndex)

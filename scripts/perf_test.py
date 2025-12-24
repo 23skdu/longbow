@@ -13,6 +13,9 @@ Comprehensive benchmarking for Longbow vector store including:
 import argparse
 import concurrent.futures
 import json
+import random
+import sys
+import time
 import os
 import statistics
 import sys
@@ -867,6 +870,9 @@ def main():
     # Global Distributed Search
     parser.add_argument("--global", dest="global_search", action="store_true", help="Force GLOBAL distributed search")
 
+    # Data Plane operations
+    parser.add_argument("--skip-data", action="store_true", help="Skip default Put/Get operations")
+
     args = parser.parse_args()
 
     print("Longbow Performance Test Suite")
@@ -898,16 +904,18 @@ def main():
             print("Cluster check failed. Aborting.")
             sys.exit(1)
 
-    # Always run basic PUT/GET
-    include_text = args.hybrid or args.all
-    table = generate_vectors(args.rows, args.dim, with_text=include_text)
+    # Use args.skip_data to control Put/Get
+    if not args.skip_data:
+        # Always run basic PUT/GET
+        include_text = args.hybrid or args.all
+        table = generate_vectors(args.rows, args.dim, with_text=include_text)
 
-    # Data Plane operations
-    results.append(benchmark_put(data_client, table, args.name))
-    results.append(benchmark_get(data_client, args.name, filters=filters if filters else None))
+        # Data Plane operations
+        results.append(benchmark_put(data_client, table, args.name))
+        results.append(benchmark_get(data_client, args.name, filters=filters if filters else None))
 
-    print("\n[INFO] Waiting 5s for async indexing...")
-    time.sleep(5)
+        print("\n[INFO] Waiting 5s for async indexing...")
+        time.sleep(5)
 
     # Meta Plane operations (Search)
     if args.search or args.all:
@@ -925,6 +933,13 @@ def main():
         # Hybrid Search goes to Meta Server
         results.append(benchmark_hybrid_search(
             meta_client, args.name, query_vectors, args.search_k, text_queries
+        ))
+
+    # Meta Plane operations (Graph Traversal)
+    if args.graph or args.all:
+        nodes_to_query = [random.randint(0, args.rows - 1) for _ in range(args.graph_nodes)]
+        results.append(benchmark_graph_traversal(
+            meta_client, args.name, nodes_to_query, args.graph_hops
         ))
 
     # Meta Plane operations (Delete)

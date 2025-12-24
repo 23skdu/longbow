@@ -57,11 +57,26 @@ func PartitionProxyInterceptor(rm *RingManager, forwarder *RequestForwarder) grp
 }
 
 // PartitionProxyStreamInterceptor creates a stream server interceptor for request routing
-func PartitionProxyStreamInterceptor(rm *RingManager, forwarder *RequestForwarder) grpc.StreamServerInterceptor {
+func PartitionProxyStreamInterceptor(rm *RingManager, forwarder *RequestForwarder, aggregator *StreamAggregator) grpc.StreamServerInterceptor {
 	tracer := otel.Tracer("longbow/sharding")
 	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		ctx, span := tracer.Start(ss.Context(), "PartitionProxyStreamFunc")
 		defer span.End()
+
+		// 1. Check for Global Search
+		// Note: Flight clients might pass this in FlightDescriptor, but Metadata is safer for middleware.
+		md, _ := metadata.FromIncomingContext(ctx)
+		if vals := md.Get("x-longbow-global"); len(vals) > 0 && vals[0] == "true" {
+			// **Distributed Global Search**
+			// We hijack the request here and act as the Coordinator.
+
+			// Note: We bypass the partitioning logic below and pass through to the handler.
+			// The handler (DataServer) will detect the global flag (x-longbow-global)
+			// and initiate the Scatter-Gather-Merge process.
+			// The Interceptor merely ensures we don't route it to a single shard.
+
+			return handler(srv, ss)
+		}
 
 		// For streams, we primarily rely on metadata for routing
 		key, _ := extractRoutingKeyFromMetadata(ctx)

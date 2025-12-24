@@ -3,7 +3,7 @@ set -e
 
 # Build the binary
 echo "Building longbow..."
-go build -o bin/longbow ./cmd/longbow
+CGO_ENABLED=0 go build -tags=nogpu -o bin/longbow ./cmd/longbow
 
 # Create data directories
 mkdir -p data/node1

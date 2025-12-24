@@ -1,9 +1,9 @@
 #!/bin/bash
 set -e
 
-# Build the binary
-echo "Building longbow..."
-CGO_ENABLED=1 go build -tags=nogpu -o bin/longbow ./cmd/longbow
+# Build the binary (Pure Go, No CGO)
+echo "Building longbow binary..."
+CGO_ENABLED=0 go build -tags=nogpu -o bin/longbow ./cmd/longbow
 
 # Create data directories
 mkdir -p data/node1 data/node2 data/node3

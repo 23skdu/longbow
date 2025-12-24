@@ -15,7 +15,8 @@ echo "---------------------------------------------"
 
 # 1. Build Binary
 echo "Building longbow binary..."
-go build -o bin/longbow ./cmd/longbow
+# Ensuring CGO_ENABLED=0 for consistency with desired local config
+CGO_ENABLED=0 go build -tags=nogpu -o bin/longbow ./cmd/longbow
 
 # 2. Start Local Cluster in Background
 echo "Starting local cluster..."

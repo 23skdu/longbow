@@ -19,6 +19,7 @@ import (
 
 	"github.com/23skdu/longbow/internal/mesh"
 	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/store/hnsw2"
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
@@ -574,6 +575,14 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 	if _, ok := s.datasets[name]; !ok {
 		// Create new dataset with schema from reader
 		ds := NewDataset(name, r.Schema())
+		
+		// Initialize hnsw2 if feature flag is enabled
+		if ds.useHNSW2 {
+			config := hnsw2.DefaultConfig()
+			ds.hnsw2Index = hnsw2.NewArrowHNSW(ds, config)
+			s.logger.Info("hnsw2 enabled for dataset", zap.String("dataset", name))
+		}
+		
 		ds.Topo = s.numaTopology
 		s.datasets[name] = ds
 	}

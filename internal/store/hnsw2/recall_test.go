@@ -1,7 +1,6 @@
 package hnsw2_test
 
 import (
-	"fmt"
 	"math/rand"
 	"testing"
 
@@ -85,21 +84,18 @@ func measureRecall(t *testing.T, numVectors, dim, numQueries, k int) float64 {
 	ds.Records = []arrow.RecordBatch{rec}
 	
 	// Build coder/hnsw index (baseline)
-	coderIndex := store.NewHNSWIndex(16, 200, store.MetricL2)
+	coderIndex := store.NewHNSWIndex(ds)
 	for i := 0; i < numVectors; i++ {
-		coderIndex.Add(store.VectorID(i), vectors[i])
+		loc := store.Location{BatchIdx: 0, RowIdx: i}
+		coderIndex.AddWithLocation(store.VectorID(i), loc)
 	}
 	
 	// Build hnsw2 index
 	config := hnsw2.DefaultConfig()
 	hnsw2Index := hnsw2.NewArrowHNSW(ds, config)
 	
-	// Initialize locationStore for hnsw2
-	hnswIdx := store.NewHNSWIndex(16, 200, store.MetricL2)
-	for i := 0; i < numVectors; i++ {
-		hnswIdx.Add(store.VectorID(i), vectors[i])
-	}
-	ds.Index = hnswIdx
+	// Set dataset index for getVector to work
+	ds.Index = coderIndex
 	
 	// Insert vectors into hnsw2
 	lg := hnsw2.NewLevelGenerator(1.44269504089)
@@ -121,10 +117,7 @@ func measureRecall(t *testing.T, numVectors, dim, numQueries, k int) float64 {
 	totalRecall := 0.0
 	for _, query := range queries {
 		// Get baseline results from coder/hnsw
-		baselineResults, err := coderIndex.Search(query, k)
-		if err != nil {
-			t.Fatalf("Baseline search failed: %v", err)
-		}
+		baselineIDs := coderIndex.Search(query, k)
 		
 		// Get hnsw2 results
 		hnsw2Results, err := hnsw2Index.Search(query, k, k*2)
@@ -133,34 +126,34 @@ func measureRecall(t *testing.T, numVectors, dim, numQueries, k int) float64 {
 		}
 		
 		// Calculate recall for this query
-		recall := calculateRecall(baselineResults, hnsw2Results, k)
+		recall := calculateRecallIDs(baselineIDs, hnsw2Results, k)
 		totalRecall += recall
 	}
 	
 	return totalRecall / float64(numQueries)
 }
 
-// calculateRecall computes recall@k between two result sets
-func calculateRecall(baseline, test []store.SearchResult, k int) float64 {
-	if len(baseline) == 0 {
+// calculateRecallIDs computes recall@k between baseline IDs and hnsw2 results
+func calculateRecallIDs(baselineIDs []store.VectorID, testResults []store.SearchResult, k int) float64 {
+	if len(baselineIDs) == 0 {
 		return 1.0
 	}
 	
 	// Create set of baseline IDs
 	baselineSet := make(map[store.VectorID]bool)
-	for i := 0; i < len(baseline) && i < k; i++ {
-		baselineSet[baseline[i].ID] = true
+	for i := 0; i < len(baselineIDs) && i < k; i++ {
+		baselineSet[baselineIDs[i]] = true
 	}
 	
 	// Count matches in test results
 	matches := 0
-	for i := 0; i < len(test) && i < k; i++ {
-		if baselineSet[store.VectorID(test[i].ID)] {
+	for i := 0; i < len(testResults) && i < k; i++ {
+		if baselineSet[store.VectorID(testResults[i].ID)] {
 			matches++
 		}
 	}
 	
-	return float64(matches) / float64(min(k, len(baseline)))
+	return float64(matches) / float64(min(k, len(baselineIDs)))
 }
 
 // generateRandomVectors creates random normalized vectors

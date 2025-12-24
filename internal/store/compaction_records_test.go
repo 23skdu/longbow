@@ -43,12 +43,12 @@ func releaseBatches(batches []arrow.RecordBatch) {
 
 // TestCompactRecordsEmpty verifies empty input returns empty output
 func TestCompactRecordsEmpty(t *testing.T) {
-	result, _, _ := compactRecords(nil, nil, 1000, "test")
+	result, _, _ := compactRecords(nil, nil, nil, 1000, "test")
 	if len(result) != 0 {
 		t.Errorf("expected empty result, got %d batches", len(result))
 	}
 
-	result, _, _ = compactRecords([]arrow.RecordBatch{}, nil, 1000, "test")
+	result, _, _ = compactRecords(nil, []arrow.RecordBatch{}, nil, 1000, "test")
 	if len(result) != 0 {
 		t.Errorf("expected empty result, got %d batches", len(result))
 	}
@@ -64,7 +64,7 @@ func TestCompactRecordsMergesSmallBatches(t *testing.T) {
 	defer releaseBatches(batches)
 
 	// Target 500 rows per batch - should result in 2 batches
-	result, _, _ := compactRecords(batches, nil, 500, "test")
+	result, _, _ := compactRecords(batches[0].Schema(), batches, nil, 500, "test")
 	defer releaseBatches(result)
 
 	if len(result) != 2 {
@@ -88,7 +88,7 @@ func TestCompactRecordsLargeBatchUnchanged(t *testing.T) {
 	defer batch.Release()
 
 	// Target 500 rows - but we don't split, just don't merge
-	result, _, _ := compactRecords([]arrow.RecordBatch{batch}, nil, 500, "test")
+	result, _, _ := compactRecords(batch.Schema(), []arrow.RecordBatch{batch}, nil, 500, "test")
 	defer releaseBatches(result)
 
 	// Since NO compaction was needed, our optimization returns nil to indicate no change.
@@ -106,7 +106,7 @@ func TestCompactRecordsPreservesSchema(t *testing.T) {
 	defer releaseBatches(batches)
 
 	originalSchema := batches[0].Schema()
-	result, _, _ := compactRecords(batches, nil, 200, "test")
+	result, _, _ := compactRecords(originalSchema, batches, nil, 200, "test")
 	defer releaseBatches(result)
 
 	if len(result) != 1 {
@@ -125,7 +125,7 @@ func TestCompactRecordsPreservesData(t *testing.T) {
 	batches[1] = makeTestBatch(t, 5) // ids: 0,1,2,3,4
 	defer releaseBatches(batches)
 
-	result, _, _ := compactRecords(batches, nil, 100, "test")
+	result, _, _ := compactRecords(batches[0].Schema(), batches, nil, 100, "test")
 	defer releaseBatches(result)
 
 	if len(result) != 1 {
@@ -163,7 +163,7 @@ func TestCompactRecordsFiltersTombstones(t *testing.T) {
 	tombstones[1] = t1
 
 	// Compacting both into one batch
-	result, remapping, err := compactRecords(batches, tombstones, 1000, "test")
+	result, remapping, err := compactRecords(batches[0].Schema(), batches, tombstones, 1000, "test")
 	if err != nil {
 		t.Fatal(err)
 	}

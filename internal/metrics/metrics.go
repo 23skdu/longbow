@@ -134,6 +134,15 @@ var (
 		},
 		[]string{"type"},
 	)
+
+	// PanicTotal counts total recovering panics in the system
+	PanicTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_panics_total",
+			Help: "Total number of recovered panics",
+		},
+		[]string{"component"},
+	)
 )
 
 // =============================================================================

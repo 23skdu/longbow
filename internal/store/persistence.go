@@ -199,22 +199,32 @@ func (s *VectorStore) Snapshot() error {
 	s.mu.RLock()
 	// Snapshot the map keys/values to avoid holding lock during I/O
 	type snapItem struct {
-		Name string
-		Recs []arrow.RecordBatch
+		Name      string
+		Recs      []arrow.RecordBatch
+		GraphRecs []arrow.RecordBatch
 	}
 	items := make([]snapItem, 0, len(s.datasets))
 	for name, ds := range s.datasets {
 		ds.dataMu.RLock()
-		if len(ds.Records) > 0 {
+
+		var graphRecs []arrow.RecordBatch
+		if ds.Graph != nil && ds.Graph.EdgeCount() > 0 {
+			gRec, err := ds.Graph.ToArrowBatch(s.mem)
+			if err == nil {
+				gRec.Retain()
+				graphRecs = append(graphRecs, gRec)
+			} else {
+				s.logger.Error("Failed to convert graph to arrow for snapshot", zap.Error(err))
+			}
+		}
+
+		if len(ds.Records) > 0 || len(graphRecs) > 0 {
 			recs := make([]arrow.RecordBatch, len(ds.Records))
-			// Retain? Parquet writer might not need retain if we write synchronously
-			// But to be safe from concurrent eviction? Eviction holds dataMu lock?
-			// ds.Evict holds dataMu. So RLock is enough.
 			copy(recs, ds.Records)
 			for _, r := range recs {
 				r.Retain()
 			}
-			items = append(items, snapItem{Name: name, Recs: recs})
+			items = append(items, snapItem{Name: name, Recs: recs, GraphRecs: graphRecs})
 		}
 		ds.dataMu.RUnlock()
 	}
@@ -226,31 +236,64 @@ func (s *VectorStore) Snapshot() error {
 				r.Release()
 			}
 		}(item.Recs)
+		defer func(grecs []arrow.RecordBatch) {
+			for _, r := range grecs {
+				r.Release()
+			}
+		}(item.GraphRecs)
 
-		path := filepath.Join(tempDir, item.Name+".parquet")
-		f, err := os.Create(path)
-		if err != nil {
-			s.logger.Error("Failed to create snapshot file",
-				zap.Any("name", item.Name),
-				zap.Error(err))
-			continue
-		}
-
-		// Write all records to the parquet file
-		for _, rec := range item.Recs {
-			if err := writeParquet(f, rec); err != nil {
-				s.logger.Error("Failed to write record to parquet snapshot",
+		// 1. Write Data Records
+		if len(item.Recs) > 0 {
+			path := filepath.Join(tempDir, item.Name+".parquet")
+			f, err := os.Create(path)
+			if err != nil {
+				s.logger.Error("Failed to create snapshot file",
 					zap.Any("name", item.Name),
 					zap.Error(err))
-				break
+				continue
 			}
+
+			// Write all records to the parquet file
+			for _, rec := range item.Recs {
+				if err := writeParquet(f, rec); err != nil {
+					s.logger.Error("Failed to write record to parquet snapshot",
+						zap.Any("name", item.Name),
+						zap.Error(err))
+					break
+				}
+			}
+
+			// Hint to kernel that we won't need this file in cache
+			if err := AdviseDontNeed(f); err != nil {
+				s.logger.Debug("Failed to advise DONTNEED on snapshot write", zap.Error(err))
+			}
+			_ = f.Close()
 		}
 
-		// Hint to kernel that we won't need this file in cache
-		if err := AdviseDontNeed(f); err != nil {
-			s.logger.Debug("Failed to advise DONTNEED on snapshot write", zap.Error(err))
+		// 2. Write Graph Records
+		if len(item.GraphRecs) > 0 {
+			path := filepath.Join(tempDir, item.Name+".graph.parquet")
+			f, err := os.Create(path)
+			if err != nil {
+				s.logger.Error("Failed to create graph snapshot file",
+					zap.Any("name", item.Name),
+					zap.Error(err))
+				continue
+			}
+
+			for _, rec := range item.GraphRecs {
+				if err := writeGraphParquet(f, rec); err != nil {
+					s.logger.Error("Failed to write graph record to parquet snapshot",
+						zap.Any("name", item.Name),
+						zap.Error(err))
+					break
+				}
+			}
+			if err := AdviseDontNeed(f); err != nil {
+				s.logger.Debug("Failed to advise DONTNEED on graph snapshot write", zap.Error(err))
+			}
+			_ = f.Close()
 		}
-		_ = f.Close()
 	}
 
 	// Atomic swap: Remove old, Rename temp to new
@@ -306,7 +349,16 @@ func (s *VectorStore) loadSnapshots() error {
 		if entry.IsDir() || filepath.Ext(entry.Name()) != ".parquet" {
 			continue
 		}
-		name := entry.Name()[:len(entry.Name())-8] // remove .parquet
+
+		fileName := entry.Name()
+		name := fileName[:len(fileName)-8] // remove .parquet
+		isGraph := false
+
+		if len(name) > 6 && name[len(name)-6:] == ".graph" {
+			name = name[:len(name)-6] // remove .graph
+			isGraph = true
+		}
+
 		path := filepath.Join(snapshotDir, entry.Name())
 
 		f, err := os.Open(path)
@@ -319,7 +371,12 @@ func (s *VectorStore) loadSnapshots() error {
 		stat, _ := f.Stat()
 
 		// Read Parquet file
-		rec, err := readParquet(f, stat.Size(), s.mem)
+		var rec arrow.RecordBatch
+		if isGraph {
+			rec, err = readGraphParquet(f, stat.Size(), s.mem)
+		} else {
+			rec, err = readParquet(f, stat.Size(), s.mem)
+		}
 
 		// Hint kernel we are done with this file
 		if err := AdviseDontNeed(f); err != nil {
@@ -349,15 +406,27 @@ func (s *VectorStore) loadSnapshots() error {
 		s.mu.Lock()
 		ds, ok := s.datasets[name]
 		if !ok {
-			ds = &Dataset{Records: []arrow.RecordBatch{}, lastAccess: time.Now().UnixNano(), Name: name}
+			// Use constructor to ensure all fields (Graph, Indexes) are initialized
+			ds = NewDataset(name, rec.Schema())
+			ds.SetLastAccess(time.Now())
 			s.datasets[name] = ds
 		}
 		s.mu.Unlock()
 
-		ds.dataMu.Lock()
-		ds.Records = append(ds.Records, rec)
-		ds.dataMu.Unlock()
-		s.currentMemory.Add(CachedRecordSize(rec))
+		if isGraph {
+			if ds.Graph == nil {
+				ds.Graph = NewGraphStore()
+			}
+			if err := ds.Graph.FromArrowBatch(rec); err != nil {
+				s.logger.Error("Failed to load graph from snapshot", zap.Error(err))
+			}
+			rec.Release()
+		} else {
+			ds.dataMu.Lock()
+			ds.Records = append(ds.Records, rec)
+			ds.dataMu.Unlock()
+			s.currentMemory.Add(CachedRecordSize(rec))
+		}
 	}
 	return nil
 }
@@ -464,6 +533,21 @@ func (s *VectorStore) ApplyDelta(name string, rec arrow.RecordBatch, seq uint64,
 		s.datasets[name] = ds
 	}
 	s.mu.Unlock()
+
+	// Check if this is a graph batch
+	if rec.Schema().Metadata().FindKey("longbow.entry_type") != -1 {
+		val, _ := rec.Schema().Metadata().GetValue("longbow.entry_type")
+		if val == "graph" {
+			// Apply to GraphStore
+			if ds.Graph == nil {
+				ds.Graph = NewGraphStore()
+			}
+			if err := ds.Graph.FromArrowBatch(rec); err != nil {
+				return fmt.Errorf("failed to apply graph batch: %w", err)
+			}
+			return nil // Done, do not proceed to vector indexing
+		}
+	}
 
 	// Ensure index exists
 	if ds.Index == nil {

@@ -53,6 +53,9 @@ type Dataset struct {
 	InvertedIndexes map[string]*InvertedIndex
 	BM25Index       *BM25InvertedIndex
 
+	// GraphRAG Store
+	Graph *GraphStore
+
 	// Per-record eviction
 	recordEviction *RecordEvictionManager
 }
@@ -96,6 +99,7 @@ func NewDataset(name string, schema *arrow.Schema) *Dataset {
 		Merkle:          NewMerkleTree(),
 		InvertedIndexes: make(map[string]*InvertedIndex),
 		BM25Index:       NewBM25InvertedIndex(DefaultBM25Config()),
+		Graph:           NewGraphStore(),
 	}
 }
 
@@ -171,7 +175,6 @@ func (d *Dataset) SearchDataset(query []float32, k int) []SearchResult {
 	}
 	// Assuming vector index interface has SearchVectors
 	return idx.SearchVectors(query, k, nil)
-	return nil
 }
 
 // AddToIndex adds a vector to the index
@@ -241,4 +244,6 @@ func (d *Dataset) Close() {
 		idx.Close()
 	}
 	d.InvertedIndexes = make(map[string]*InvertedIndex)
+
+	d.Graph = nil
 }

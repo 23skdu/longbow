@@ -122,7 +122,7 @@ func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef int, laye
 }
 
 // distance computes the distance between a query vector and a stored vector.
-// Uses zero-copy Arrow access when available, falls back to simple L2 for now.
+// Uses zero-copy Arrow access and SIMD optimizations for maximum performance.
 func (h *ArrowHNSW) distance(query []float32, id uint32) float32 {
 	// Get vector from Arrow storage (zero-copy)
 	vec, err := h.getVector(id)
@@ -130,11 +130,12 @@ func (h *ArrowHNSW) distance(query []float32, id uint32) float32 {
 		return float32(math.Inf(1))
 	}
 	
-	// Simple L2 distance (will integrate SIMD later)
-	return l2Distance(query, vec)
+	// Use SIMD-optimized distance calculation
+	return distanceSIMD(query, vec)
 }
 
 // l2Distance computes Euclidean (L2) distance between two vectors.
+// Kept for testing and as fallback.
 func l2Distance(a, b []float32) float32 {
 	if len(a) != len(b) {
 		return float32(math.Inf(1))

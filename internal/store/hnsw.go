@@ -46,6 +46,7 @@ type HNSWIndex struct {
 	activeReaders atomic.Int32  // Count of readers in current epoch
 	resultPool    *resultPool   // Pool for search result slices
 	vectorPool    *VectorPool   // Pool for vector buffers to reduce allocation churn
+	searchPool    *SearchPool   // Pool for search context buffers
 	Metric        VectorMetric  // Distance metric used by this index
 	numaTopology  *NUMATopology // NUMA topology for cross-node tracking
 
@@ -83,6 +84,7 @@ func NewHNSWIndexWithMetric(ds *Dataset, metric VectorMetric) *HNSWIndex {
 		locationStore:  NewChunkedLocationStore(),
 		resultPool:     newResultPool(),
 		vectorPool:     NewVectorPool(),
+		searchPool:     NewSearchPool(),
 		Metric:         metric,
 		parallelConfig: DefaultParallelSearchConfig(),
 	}
@@ -471,12 +473,14 @@ func (h *HNSWIndex) SearchVectors(query []float32, k int, filters []Filter) ([]S
 		h.dataset.dataMu.RUnlock()
 	}
 
-	res := make([]SearchResult, 0, len(neighbors))
-
-	// Batch configuration
-	const batchSize = 32
-	batchIDs := make([]VectorID, batchSize)
-	batchLocs := make([]Location, batchSize)
+	// Get search context from pool to reuse buffers
+	ctx := h.searchPool.Get()
+	defer h.searchPool.Put(ctx)
+	
+	// Use pooled buffers instead of allocating
+	res := ctx.results
+	batchIDs := ctx.batchIDs
+	batchLocs := ctx.batchLocs
 
 	// PQ Context: Precompute distance table once per search
 	var pqTable []float32
@@ -488,13 +492,16 @@ func (h *HNSWIndex) SearchVectors(query []float32, k int, filters []Filter) ([]S
 	if h.pqEnabled && h.pqEncoder != nil {
 		pqTable = h.pqEncoder.ComputeDistanceTableFlat(query)
 		pqM = h.pqEncoder.CodeSize()
-		pqFlatCodes = make([]byte, batchSize*pqM)
-		pqBatchResults = make([]float32, batchSize)
+		// Use pooled buffers for PQ
+		const batchSize = searchBatchSize
+		pqFlatCodes = ctx.pqFlatCodes[:batchSize*pqM]
+		pqBatchResults = ctx.pqBatchResults
 		packedLen = (pqM + 3) / 4
 	}
 	h.pqCodesMu.RUnlock()
 
 	count := 0
+	const batchSize = searchBatchSize // Use constant from search_pool.go
 	for i := 0; i < len(neighbors); i += batchSize {
 		if count >= k {
 			break

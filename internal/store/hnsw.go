@@ -45,6 +45,7 @@ type HNSWIndex struct {
 	currentEpoch  atomic.Uint64 // Current epoch for zero-copy reclamation
 	activeReaders atomic.Int32  // Count of readers in current epoch
 	resultPool    *resultPool   // Pool for search result slices
+	vectorPool    *VectorPool   // Pool for vector buffers to reduce allocation churn
 	Metric        VectorMetric  // Distance metric used by this index
 	numaTopology  *NUMATopology // NUMA topology for cross-node tracking
 
@@ -80,6 +81,8 @@ func NewHNSWIndexWithMetric(ds *Dataset, metric VectorMetric) *HNSWIndex {
 	h := &HNSWIndex{
 		dataset:        ds,
 		locationStore:  NewChunkedLocationStore(),
+		resultPool:     newResultPool(),
+		vectorPool:     NewVectorPool(),
 		Metric:         metric,
 		parallelConfig: DefaultParallelSearchConfig(),
 	}
@@ -1086,9 +1089,75 @@ func (h *HNSWIndex) extractVector(rec arrow.RecordBatch, rowIdx int) ([]float32,
 	// Return a copy to avoid data races with arrow buffers being released
 	// NOTE: In Search we use zero-copy because it's transient.
 	// In Add, we MUST copy because the vector is stored in HNSW graph (internal to hnsw lib).
+	// IMPORTANT: We do NOT use the vector pool here because these vectors are stored
+	// permanently in the HNSW graph and never released. Using the pool would cause
+	// memory leaks as vectors are never returned.
 	vec := make([]float32, width)
 	copy(vec, floatArr.Float32Values()[start:end])
+	
+	// Track HNSW allocation metrics
+	metrics.HNSWVectorAllocations.Inc()
+	metrics.HNSWVectorAllocatedBytes.Add(float64(width * 4))
+	
 	return vec, nil
+}
+
+// extractVectorNoCopy returns a zero-copy slice view of the vector
+// WARNING: Only safe for read-only operations while RecordBatch is retained
+func (h *HNSWIndex) extractVectorNoCopy(rec arrow.RecordBatch, rowIdx int) ([]float32, error) {
+	if rec == nil {
+		return nil, fmt.Errorf("extractVectorNoCopy: record is nil")
+	}
+
+	var vecCol arrow.Array
+	// Use cached vectorColIdx if available
+	colIdx := int(h.vectorColIdx.Load())
+	if colIdx >= 0 && colIdx < int(rec.NumCols()) {
+		if rec.Schema().Field(colIdx).Name == "vector" {
+			vecCol = rec.Column(colIdx)
+		}
+	}
+
+	if vecCol == nil {
+		for i, field := range rec.Schema().Fields() {
+			if field.Name == "vector" {
+				vecCol = rec.Column(i)
+				h.vectorColIdx.Store(int32(i))
+				break
+			}
+		}
+	}
+
+	if vecCol == nil {
+		return nil, fmt.Errorf("extractVectorNoCopy: vector column not found")
+	}
+
+	listArr, ok := vecCol.(*array.FixedSizeList)
+	if !ok {
+		return nil, fmt.Errorf("extractVectorNoCopy: invalid vector column format")
+	}
+
+	values := listArr.Data().Children()[0]
+	floatArr := array.NewFloat32Data(values)
+	defer floatArr.Release()
+
+	width := int(listArr.DataType().(*arrow.FixedSizeListType).Len())
+	start := rowIdx * width
+	end := start + width
+
+	if start < 0 || end > floatArr.Len() {
+		return nil, fmt.Errorf("extractVectorNoCopy: row index out of bounds")
+	}
+
+	// Return zero-copy slice (read-only!)
+	return floatArr.Float32Values()[start:end], nil
+}
+
+// releaseVector returns a vector buffer to the pool
+func (h *HNSWIndex) releaseVector(vec []float32) {
+	if vec != nil {
+		h.vectorPool.Put(vec)
+	}
 }
 
 // SearchVectorsWithBitmap returns k nearest neighbors filtered by a bitset.

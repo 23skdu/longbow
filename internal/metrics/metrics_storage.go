@@ -378,6 +378,15 @@ var (
 		[]string{"dataset", "shard"},
 	)
 
+	// ShardedHnswShardSplitCount counts shard split events
+	ShardedHnswShardSplitCount = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_sharded_hnsw_shard_split_total",
+			Help: "Total number of HNSW shard split events",
+		},
+		[]string{"dataset"},
+	)
+
 	ShardedHnswLoadFactor = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "longbow_sharded_hnsw_load_factor",

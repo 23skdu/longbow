@@ -14,6 +14,9 @@ import (
 	"context"
 	"strconv" // Added for hostname fallback
 
+	"runtime"
+	"runtime/debug"
+
 	"github.com/23skdu/longbow/internal/limiter"
 	"github.com/23skdu/longbow/internal/logging"
 	"github.com/23skdu/longbow/internal/mesh"
@@ -92,6 +95,10 @@ type Config struct {
 	// Rate Limiting Configuration
 	RateLimitRPS   int `envconfig:"RATE_LIMIT_RPS" default:"0"` // 0 = disabled
 	RateLimitBurst int `envconfig:"RATE_LIMIT_BURST" default:"0"`
+
+	// Garbage Collection Tuning
+	GCBallastG int `envconfig:"GC_BALLAST_G" default:"0"` // Ballast size in GB
+	GOGC       int `envconfig:"GOGC" default:"100"`       // Go Garbage Collector percentage
 }
 
 func main() {
@@ -129,7 +136,31 @@ func run() error {
 		zap.Duration("snapshot_interval", cfg.SnapshotInterval),
 		zap.Int64("max_wal_size", cfg.MaxWALSize),
 		zap.Duration("ttl", cfg.TTL),
+		zap.Int("gc_ballast_g", cfg.GCBallastG),
+		zap.Int("gogc", cfg.GOGC),
 	)
+
+	// Apply GC Ballast if configured
+	var ballast []byte
+	if cfg.GCBallastG > 0 {
+		ballast = make([]byte, uint64(cfg.GCBallastG)<<30)
+		logger.Info("GC Ballast initialized", zap.Int("size_gb", cfg.GCBallastG))
+	}
+
+	// Apply GOGC tuning
+	if cfg.GOGC != 100 {
+		debug.SetGCPercent(cfg.GOGC)
+		logger.Info("GOGC tuned", zap.Int("value", cfg.GOGC))
+	}
+
+	// Set Memory Limit if MaxMemory is configured (Go 1.19+)
+	if cfg.MaxMemory > 0 {
+		debug.SetMemoryLimit(cfg.MaxMemory)
+		logger.Info("Go Memory Limit set", zap.Int64("limit_bytes", cfg.MaxMemory))
+	}
+
+	// Keep ballast alive until the end of run()
+	defer runtime.KeepAlive(ballast)
 
 	// Create memory allocator
 	mem := memory.NewGoAllocator()

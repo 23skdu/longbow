@@ -556,5 +556,122 @@ Complete reference for all Prometheus metrics exported by Longbow.
 
 ---
 
+## Distributed Consistency & Failover
+
+### longbow_split_brain_heartbeats_total
+
+**Type**: Counter
+**Description**: Total number of split brain detector heartbeats
+
+### longbow_split_brain_healthy_peers
+
+**Type**: Gauge
+**Description**: Current number of healthy peers seen by detector
+
+### longbow_split_brain_partitions_total
+
+**Type**: Counter
+**Description**: Total number of partition events detected
+
+### longbow_split_brain_fenced_state
+
+**Type**: Gauge
+**Description**: Whether the node is currently fenced (1=fenced, 0=normal)
+
+### longbow_vector_clock_merges_total
+
+**Type**: Counter
+**Description**: Total number of vector clock merges
+
+### longbow_vector_clock_conflicts_total
+
+**Type**: Counter
+**Description**: Total number of vector clock conflicts detected
+
+---
+
+## Load Balancing & Routing
+
+### longbow_load_balancer_replicas_total
+
+**Type**: Gauge
+**Description**: Total number of replicas tracked by load balancer
+
+### longbow_load_balancer_unhealthy_total
+
+**Type**: Gauge
+**Description**: Total number of unhealthy replicas
+
+### longbow_load_balancer_selections_total
+
+**Type**: Counter
+**Labels**: `strategy`
+**Description**: Total number of replica selections for read operations
+
+### longbow_proxy_requests_forwarded_total
+
+**Type**: Counter
+**Labels**: `method`, `status`
+**Description**: Total number of requests forwarded to other nodes
+
+### longbow_proxy_request_latency_seconds
+
+**Type**: Histogram
+**Labels**: `method`
+**Description**: Latency of forwarded requests
+
+### longbow_global_search_duration_seconds
+
+**Type**: Histogram
+**Description**: Latency of global search operations
+
+### longbow_global_search_fanout_size
+
+**Type**: Histogram
+**Description**: Number of peers queried during global search
+
+### longbow_global_search_partial_failures_total
+
+**Type**: Counter
+**Description**: Total number of failed peer queries during global search
+
+### longbow_id_resolution_duration_seconds
+
+**Type**: Histogram
+**Description**: Latency of resolving internal IDs to user IDs
+
+---
+
+## Circuit Breakers
+
+### longbow_store_circuit_breaker_state_changes_total
+
+**Type**: Counter
+**Labels**: `name`, `from`, `to`
+**Description**: Total number of circuit breaker state changes
+
+### longbow_store_circuit_breaker_rejections_total
+
+**Type**: Counter
+**Description**: Total number of requests rejected by store circuit breaker
+
+### longbow_store_circuit_breaker_successes_total
+
+**Type**: Counter
+**Description**: Total number of successful requests passing through breaker
+
+### longbow_store_circuit_breaker_failures_total
+
+**Type**: Counter
+**Description**: Total number of failed requests passing through breaker
+
+### longbow_trace_spans_total
+
+**Type**: Counter
+**Labels**: `name`
+**Description**: Total number of trace spans created
+
+---
+
 **Total Metrics Documented**: 100+  
 **Last Updated**: 2025-12-23

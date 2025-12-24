@@ -154,6 +154,49 @@ func (s *ChunkedLocationStore) Append(loc Location) VectorID {
 	return VectorID(currentID)
 }
 
+// BatchAppend adds multiple locations efficiently, resizing chunks once.
+func (s *ChunkedLocationStore) BatchAppend(locs []Location) (startID VectorID) {
+	if len(locs) == 0 {
+		return VectorID(s.size.Load())
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	currentID := int(s.size.Load())
+	startID = VectorID(currentID)
+	targetEnd := currentID + len(locs)
+
+	oldChunksPtr := s.chunks.Load()
+	oldChunks := *oldChunksPtr
+
+	neededChunks := (targetEnd + LocationChunkSize - 1) / LocationChunkSize
+
+	// Resize if necessary
+	var currentChunks []*locationChunk
+	if neededChunks > len(oldChunks) {
+		currentChunks = make([]*locationChunk, neededChunks)
+		copy(currentChunks, oldChunks)
+		for i := len(oldChunks); i < neededChunks; i++ {
+			currentChunks[i] = &locationChunk{}
+		}
+		s.chunks.Store(&currentChunks)
+	} else {
+		currentChunks = oldChunks
+	}
+
+	// Fill data
+	for i, loc := range locs {
+		absIdx := currentID + i
+		cIdx := absIdx / LocationChunkSize
+		off := absIdx % LocationChunkSize
+		currentChunks[cIdx].data[off].Store(packLocation(loc))
+	}
+
+	s.size.Store(uint32(targetEnd))
+	return startID
+}
+
 // Len returns the number of items.
 func (s *ChunkedLocationStore) Len() int {
 	return int(s.size.Load())

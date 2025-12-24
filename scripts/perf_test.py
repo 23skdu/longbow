@@ -228,8 +228,6 @@ def benchmark_get(client: flight.FlightClient, name: str,
 
 def benchmark_vector_search(client: flight.FlightClient, name: str,
                             query_vectors: np.ndarray, k: int,
-def benchmark_vector_search(client: flight.FlightClient, name: str,
-                            query_vectors: np.ndarray, k: int,
                             filters: Optional[list] = None,
                             global_search: bool = False) -> BenchmarkResult:
     """Benchmark HNSW vector similarity search using DoAction(VectorSearch)."""

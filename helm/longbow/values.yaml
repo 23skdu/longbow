@@ -72,6 +72,12 @@ config:
   snapshotInterval: "1h"
   ttl: "0s" # 0s = disabled
 
+# Hybrid Search Configuration
+hybrid:
+  enabled: true
+  textColumns: "text" # Comma-separated list of columns to index for keyword search
+  alpha: 0.5 # Default weight (0.5 = equal dense/sparse)
+
 # Gossip Mesh Configuration
 # SWIM-based failure detection and membership protocol
 gossip:

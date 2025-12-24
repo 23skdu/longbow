@@ -64,16 +64,17 @@ func (h *ArrowHNSW) Search(query []float32, k int, ef int) ([]store.SearchResult
 // searchLayer performs greedy search at a specific layer.
 // Returns the closest node found and its distance.
 func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef int, layer int, ctx *SearchContext) (uint32, float32) {
-	// Only clear visited, keep candidates for layer 0
 	ctx.visited.Clear()
-	if layer > 0 {
-		ctx.candidates.Clear()
-	}
+	ctx.candidates.Clear()
 	
 	// Initialize with entry point
 	entryDist := h.distance(query, entryPoint)
 	ctx.candidates.Push(Candidate{ID: entryPoint, Dist: entryDist})
 	ctx.visited.Set(entryPoint)
+	
+	// W: result set (for layer 0, this becomes our final candidates)
+	resultSet := NewFixedHeap(ef)
+	resultSet.Push(Candidate{ID: entryPoint, Dist: entryDist})
 	
 	closest := entryPoint
 	closestDist := entryDist
@@ -86,12 +87,8 @@ func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef int, laye
 			break
 		}
 		
-		// Stop if we've found enough candidates and current is farther than closest
-		if curr.Dist > closestDist && ctx.candidates.Len() >= ef {
-			// Re-add current for final results at layer 0
-			if layer == 0 {
-				ctx.candidates.Push(curr)
-			}
+		// Stop if current is farther than furthest result
+		if resultSet.Len() >= ef && curr.Dist > resultSet.Peek().Dist {
 			break
 		}
 		
@@ -117,9 +114,26 @@ func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef int, laye
 				closestDist = dist
 			}
 			
-			// Add to candidates if better than worst candidate or we need more
-			if ctx.candidates.Len() < ef || dist < closestDist {
+			// Add to result set if better than worst or we need more
+			if resultSet.Len() < ef || dist < resultSet.Peek().Dist {
+				resultSet.Push(Candidate{ID: neighborID, Dist: dist})
+				if resultSet.Len() > ef {
+					resultSet.Pop() // Remove worst
+				}
+				
+				// Also add to candidates queue for exploration
 				ctx.candidates.Push(Candidate{ID: neighborID, Dist: dist})
+			}
+		}
+	}
+	
+	// For layer 0, copy result set to ctx.candidates for final extraction
+	if layer == 0 {
+		ctx.candidates.Clear()
+		for resultSet.Len() > 0 {
+			cand, ok := resultSet.Pop()
+			if ok {
+				ctx.candidates.Push(cand)
 			}
 		}
 	}

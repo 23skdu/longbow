@@ -1,6 +1,7 @@
 package store_test
 
 import (
+	"math"
 	"math/rand"
 	"testing"
 
@@ -43,7 +44,7 @@ func TestRecallValidation(t *testing.T) {
 	}
 }
 
-// measureRecall compares hnsw2 results against coder/hnsw baseline
+// measureRecall compares hnsw2 results against brute-force ground truth
 func measureRecall(t *testing.T, numVectors, dim, numQueries, k int) float64 {
 	mem := memory.NewGoAllocator()
 	
@@ -82,12 +83,12 @@ func measureRecall(t *testing.T, numVectors, dim, numQueries, k int) float64 {
 	ds := store.NewDataset("recall_test", schema)
 	ds.Records = []arrow.RecordBatch{rec}
 	
-	// Build coder/hnsw index (baseline)
-	coderIndex := store.NewHNSWIndex(ds)
+	// Create HNSW index for locationStore (needed by hnsw2)
+	hnswIdx := store.NewHNSWIndex(ds)
 	for i := 0; i < numVectors; i++ {
-		coderIndex.Add(0, i) // BatchIdx=0, RowIdx=i
+		hnswIdx.Add(0, i)
 	}
-	ds.Index = coderIndex
+	ds.Index = hnswIdx
 	
 	// Build hnsw2 index
 	config := hnsw2.DefaultConfig()
@@ -104,36 +105,65 @@ func measureRecall(t *testing.T, numVectors, dim, numQueries, k int) float64 {
 	
 	// Generate query vectors (random subset for testing)
 	queries := make([][]float32, numQueries)
-	queryIndices := make([]int, numQueries)
 	for i := 0; i < numQueries; i++ {
 		queryIdx := rand.Intn(numVectors)
-		queryIndices[i] = queryIdx
 		queries[i] = vectors[queryIdx]
 	}
 	
-	// Measure recall
+	// Measure recall against brute-force ground truth
 	totalRecall := 0.0
 	for i, query := range queries {
-		// Get baseline results from coder/hnsw
-		baselineIDs, err := coderIndex.Search(query, k)
-		if err != nil {
-			t.Fatalf("Baseline search failed: %v", err)
+		// Compute ground truth using brute force
+		type idDist struct {
+			id   uint32
+			dist float32
+		}
+		allDistances := make([]idDist, numVectors)
+		for j := 0; j < numVectors; j++ {
+			var distSq float32
+			for d := 0; d < dim; d++ {
+				diff := query[d] - vectors[j][d]
+				distSq += diff * diff
+			}
+			allDistances[j] = idDist{uint32(j), float32(math.Sqrt(float64(distSq)))}
+		}
+		
+		// Sort by distance
+		for a := 0; a < len(allDistances); a++ {
+			for b := a + 1; b < len(allDistances); b++ {
+				if allDistances[b].dist < allDistances[a].dist {
+					allDistances[a], allDistances[b] = allDistances[b], allDistances[a]
+				}
+			}
+		}
+		
+		// Take top k as ground truth
+		groundTruth := make(map[uint32]bool)
+		for j := 0; j < k && j < len(allDistances); j++ {
+			groundTruth[allDistances[j].id] = true
 		}
 		
 		// Get hnsw2 results
-		hnsw2Results, err := hnsw2Index.Search(query, k, k*2)
+		hnsw2Results, err := hnsw2Index.Search(query, k, k*10)
 		if err != nil {
 			t.Fatalf("hnsw2 search failed: %v", err)
 		}
 		
 		// Calculate recall for this query
-		recall := calculateRecall(baselineIDs, hnsw2Results, k)
+		matches := 0
+		for _, result := range hnsw2Results {
+			if groundTruth[uint32(result.ID)] {
+				matches++
+			}
+		}
+		
+		recall := float64(matches) / float64(k)
 		totalRecall += recall
 		
 		// Log first few queries for debugging
 		if i < 3 {
-			t.Logf("  Query %d (vector %d): recall=%.2f%%, baseline=%d results, hnsw2=%d results",
-				i, queryIndices[i], recall*100, len(baselineIDs), len(hnsw2Results))
+			t.Logf("  Query %d: recall=%.2f%%, hnsw2=%d results",
+				i, recall*100, len(hnsw2Results))
 		}
 	}
 	
@@ -175,7 +205,7 @@ func generateRandomVectors(n, dim int) [][]float32 {
 		}
 		// Normalize
 		if sumSq > 0 {
-			norm := float32(1.0) / float32(sumSq)
+			norm := float32(1.0) / float32(math.Sqrt(float64(sumSq)))
 			for j := 0; j < dim; j++ {
 				vec[j] *= norm
 			}

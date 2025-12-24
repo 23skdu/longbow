@@ -166,6 +166,9 @@ type MetalIndex struct {
 
 // NewMetalIndex creates a new Metal-based GPU index
 func NewMetalIndex(cfg GPUConfig) (Index, error) {
+	if cfg.Dimension <= 0 {
+		return nil, fmt.Errorf("dimension must be positive, got %d", cfg.Dimension)
+	}
 	handle := C.metal_init(C.int(cfg.Dimension))
 	if handle == nil {
 		return nil, fmt.Errorf("failed to initialize Metal device")

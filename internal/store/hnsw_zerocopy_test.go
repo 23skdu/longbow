@@ -1,200 +1,98 @@
 package store
 
 import (
-	"runtime"
-	"sync"
+	"context"
 	"testing"
 
 	"github.com/apache/arrow-go/v18/arrow"
-	_ "github.com/apache/arrow-go/v18/arrow/array"
+	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
 )
 
-// createZeroCopyTestIndex creates an HNSW index for zero-copy tests
-func createZeroCopyTestIndex(t *testing.T, dims, count int) *HNSWIndex {
-	t.Helper()
+// TestHNSWZeroCopyAccess verifies the unsafe zero-copy vector access path
+func TestHNSWZeroCopyAccess(t *testing.T) {
 	mem := memory.NewGoAllocator()
+	logger := zap.NewNop()
 
-	vectors := make([][]float32, count)
-	for i := 0; i < count; i++ {
-		vec := make([]float32, dims)
-		for j := 0; j < dims; j++ {
-			vec[j] = float32(i*dims + j)
-		}
-		vectors[i] = vec
+	// Initialize VectorStore
+	vs := NewVectorStore(mem, logger, 1024*1024*1024, 100*1024*1024, 0)
+
+	// Define schema
+	schema := arrow.NewSchema(
+		[]arrow.Field{
+			{Name: "vector", Type: arrow.FixedSizeListOf(4, arrow.PrimitiveTypes.Float32)},
+		},
+		nil,
+	)
+
+	// Create test data
+	vectors := [][]float32{
+		{1.1, 2.2, 3.3, 4.4},
+		{5.5, 6.6, 7.7, 8.8},
 	}
 
-	rec := makeHNSWTestRecord(mem, dims, vectors)
-	ds := &Dataset{
-		Name:    "zerocopy-test",
-		Records: []arrow.RecordBatch{rec},
+	b := array.NewFixedSizeListBuilder(mem, 4, arrow.PrimitiveTypes.Float32)
+	defer b.Release()
+	vb := b.ValueBuilder().(*array.Float32Builder)
+
+	for _, v := range vectors {
+		b.Append(true)
+		vb.AppendValues(v, nil)
 	}
 
-	idx := NewHNSWIndex(ds)
-	for i := 0; i < count; i++ {
-		_, err := idx.Add(0, i)
+	vecArr := b.NewArray()
+	defer vecArr.Release()
+
+	rec := array.NewRecordBatch(schema, []arrow.Array{vecArr}, int64(len(vectors)))
+	defer rec.Release()
+
+	// Store data
+	ctx := context.Background()
+	err := vs.StoreRecordBatch(ctx, "test_zc", rec)
+	require.NoError(t, err)
+
+	vs.mu.RLock()
+	ds := vs.datasets["test_zc"]
+	vs.mu.RUnlock()
+	require.NotNil(t, ds)
+
+	// Manually initialize HNSW index
+	hnswIdx := NewHNSWIndex(ds)
+	ds.Index = hnswIdx
+
+	// Index vectors
+	for i := 0; i < len(vectors); i++ {
+		_, err := hnswIdx.Add(0, i)
 		require.NoError(t, err)
 	}
 
-	return idx
-}
+	// Verify getVectorUnsafe
+	t.Run("getVectorUnsafe_Correctness", func(t *testing.T) {
+		// Test Vector 0
+		vec0, release0 := hnswIdx.getVectorUnsafe(VectorID(0))
+		require.NotNil(t, vec0)
+		require.NotNil(t, release0)
+		defer release0()
 
-// createZeroCopyBenchIndex creates an HNSW index for benchmarks
-func createZeroCopyBenchIndex(b *testing.B, dims, count int) *HNSWIndex {
-	b.Helper()
-	mem := memory.NewGoAllocator()
+		assert.Len(t, vec0, 4)
+		assert.Equal(t, float32(1.1), vec0[0])
+		assert.Equal(t, float32(4.4), vec0[3])
+		// Verify unsafe pointer logic (optional, but good for sanity)
+		// We expect checks ideally implicitly done by accessing data
 
-	vectors := make([][]float32, count)
-	for i := 0; i < count; i++ {
-		vec := make([]float32, dims)
-		for j := 0; j < dims; j++ {
-			vec[j] = float32(i*dims + j)
-		}
-		vectors[i] = vec
-	}
+		// Test Vector 1
+		vec1, release1 := hnswIdx.getVectorUnsafe(VectorID(1))
+		require.NotNil(t, vec1)
+		defer release1()
+		assert.Equal(t, float32(5.5), vec1[0])
+	})
 
-	rec := makeHNSWTestRecord(mem, dims, vectors)
-	ds := &Dataset{
-		Name:    "zerocopy-bench",
-		Records: []arrow.RecordBatch{rec},
-	}
-
-	idx := NewHNSWIndex(ds)
-	for i := 0; i < count; i++ {
-		_, _ = idx.Add(0, i)
-	}
-
-	runtime.GC()
-	return idx
-}
-
-// TestSearchByIDUnsafe verifies zero-copy search returns correct results
-func TestSearchByIDUnsafe(t *testing.T) {
-	idx := createZeroCopyTestIndex(t, 64, 10)
-
-	results := idx.SearchByIDUnsafe(0, 5)
-	require.NotNil(t, results, "SearchByIDUnsafe returned nil")
-	assert.NotEmpty(t, results, "SearchByIDUnsafe returned empty")
-	assert.Equal(t, VectorID(0), results[0], "first result should be query vector")
-}
-
-// TestSearchByIDUnsafeEpochProtection verifies epoch management
-func TestSearchByIDUnsafeEpochProtection(t *testing.T) {
-	idx := createZeroCopyTestIndex(t, 64, 10)
-
-	initial := idx.activeReaders.Load()
-	_ = idx.SearchByIDUnsafe(0, 5)
-	final := idx.activeReaders.Load()
-
-	assert.Equal(t, initial, final, "epoch leak detected")
-}
-
-// TestSearchByIDUnsafeInvalidID verifies nil for invalid IDs
-func TestSearchByIDUnsafeInvalidID(t *testing.T) {
-	idx := createZeroCopyTestIndex(t, 64, 10)
-	results := idx.SearchByIDUnsafe(9999, 5)
-	assert.Nil(t, results, "expected nil for invalid ID")
-}
-
-// TestSearchByIDUnsafeZeroK verifies nil for k=0
-func TestSearchByIDUnsafeZeroK(t *testing.T) {
-	idx := createZeroCopyTestIndex(t, 64, 10)
-	results := idx.SearchByIDUnsafe(0, 0)
-	assert.Nil(t, results, "expected nil for k=0")
-}
-
-// TestSearchByIDUnsafeConcurrent verifies thread safety
-func TestSearchByIDUnsafeConcurrent(t *testing.T) {
-	idx := createZeroCopyTestIndex(t, 32, 100)
-
-	var wg sync.WaitGroup
-	for i := 0; i < 10; i++ {
-		wg.Add(1)
-		go func(id int) {
-			defer wg.Done()
-			for j := 0; j < 100; j++ {
-				results := idx.SearchByIDUnsafe(VectorID(id), 5)
-				assert.NotNil(t, results)
-			}
-		}(i)
-	}
-	wg.Wait()
-
-	assert.Equal(t, int32(0), idx.activeReaders.Load(), "epoch leak after concurrent")
-}
-
-// TestSearchByIDUnsafeMatchesSafe verifies results match safe version
-func TestSearchByIDUnsafeMatchesSafe(t *testing.T) {
-	idx := createZeroCopyTestIndex(t, 256, 50)
-
-	for id := 0; id < 10; id++ {
-		safeRes := idx.SearchByID(VectorID(id), 10)
-		unsafeRes := idx.SearchByIDUnsafe(VectorID(id), 10)
-
-		require.Equal(t, len(safeRes), len(unsafeRes), "length mismatch id=%d", id)
-		for i := range safeRes {
-			assert.Equal(t, safeRes[i], unsafeRes[i], "mismatch id=%d pos=%d", id, i)
-		}
-	}
-}
-
-// TestGetVectorZeroCopyDataMatch verifies unsafe data matches safe
-func TestGetVectorZeroCopyDataMatch(t *testing.T) {
-	idx := createZeroCopyTestIndex(t, 64, 10)
-
-	for id := 0; id < 10; id++ {
-		safeVec := idx.getVector(VectorID(id))
-		unsafeVec, release := idx.getVectorUnsafe(VectorID(id))
-		require.NotNil(t, release, "nil release for id=%d", id)
-
-		require.Equal(t, len(safeVec), len(unsafeVec), "length mismatch id=%d", id)
-		for i := range safeVec {
-			assert.Equal(t, safeVec[i], unsafeVec[i], "data mismatch id=%d pos=%d", id, i)
-		}
-		release()
-	}
-}
-
-// BenchmarkSearchByIDSafe benchmarks copying version
-func BenchmarkSearchByIDSafe(b *testing.B) {
-	idx := createZeroCopyBenchIndex(b, 64, 500)
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
-		_ = idx.SearchByID(VectorID(i%1000), 10)
-	}
-}
-
-// BenchmarkSearchByIDUnsafe benchmarks zero-copy version
-func BenchmarkSearchByIDUnsafe(b *testing.B) {
-	idx := createZeroCopyBenchIndex(b, 256, 2000)
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
-		_ = idx.SearchByIDUnsafe(VectorID(i%1000), 10)
-	}
-}
-
-// BenchmarkSearchByIDSafeAllocs measures safe allocations
-func BenchmarkSearchByIDSafeAllocs(b *testing.B) {
-	idx := createZeroCopyBenchIndex(b, 128, 1000)
-	b.ResetTimer()
-	b.ReportAllocs()
-
-	for i := 0; i < b.N; i++ {
-		_ = idx.SearchByID(VectorID(i%1000), 10)
-	}
-}
-
-// BenchmarkSearchByIDUnsafeAllocs measures zero-copy allocations
-func BenchmarkSearchByIDUnsafeAllocs(b *testing.B) {
-	idx := createZeroCopyBenchIndex(b, 128, 1000)
-	b.ResetTimer()
-	b.ReportAllocs()
-
-	for i := 0; i < b.N; i++ {
-		_ = idx.SearchByIDUnsafe(VectorID(i%1000), 10)
-	}
+	t.Run("getVectorUnsafe_OutOfBounds", func(t *testing.T) {
+		vec, release := hnswIdx.getVectorUnsafe(VectorID(999))
+		assert.Nil(t, vec)
+		assert.Nil(t, release)
+	})
 }

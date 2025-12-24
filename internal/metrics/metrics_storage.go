@@ -440,6 +440,14 @@ var (
 			Help: "Total HNSW epoch transitions for zero-copy access",
 		},
 	)
+
+	HnswParallelSearchSplits = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_hnsw_parallel_search_splits_total",
+			Help: "Total number of parallel search splits",
+		},
+		[]string{"dataset"},
+	)
 )
 
 // =============================================================================

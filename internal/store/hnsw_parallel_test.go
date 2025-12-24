@@ -263,3 +263,36 @@ func BenchmarkAddBatchParallel(b *testing.B) {
 		})
 	}
 }
+
+// BenchmarkAddBatch benchmarks the standard batched ingestion
+func BenchmarkAddBatch(b *testing.B) {
+	mem := memory.NewGoAllocator()
+	numVectors := 1000
+	// Use smaller dims to stress the locking/alloc overhead more than distance calc
+	vectors := generateTestVectors(numVectors, 32)
+	rec := makeHNSWTestRecord(mem, 32, vectors)
+	defer rec.Release()
+
+	recs := make([]arrow.RecordBatch, numVectors)
+	rowIdxs := make([]int, numVectors)
+	batchIdxs := make([]int, numVectors)
+	for i := 0; i < numVectors; i++ {
+		recs[i] = rec
+		rowIdxs[i] = i
+		batchIdxs[i] = 0 // Mock batch index
+	}
+
+	b.SetBytes(int64(numVectors * 32 * 4))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		ds := &Dataset{
+			Records: []arrow.RecordBatch{rec},
+		}
+		idx := NewHNSWIndex(ds)
+		_, err := idx.AddBatch(recs, rowIdxs, batchIdxs)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+	b.ReportMetric(float64(numVectors*b.N)/b.Elapsed().Seconds(), "vectors/sec")
+}

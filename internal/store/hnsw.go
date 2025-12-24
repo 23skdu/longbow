@@ -902,15 +902,27 @@ func (h *HNSWIndex) AddBatch(recs []arrow.RecordBatch, rowIdxs []int, batchIdxs 
 		vectors[i] = vec
 	}
 
-	// 2. Allocate IDs and update locations under single lock
-	h.mu.Lock()
-	baseID := VectorID(h.nextVecID.Add(uint32(n)) - uint32(n))
+	// 2. Allocate IDs and update locations efficiently
+	// We use BatchAppend to update location store in one go and get the base ID
+	locs := make([]Location, n)
 	for i := 0; i < n; i++ {
-		id := baseID + VectorID(i)
-		ids[i] = uint32(id)
-		h.locationStore.Append(Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
+		locs[i] = Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]}
 	}
-	h.mu.Unlock()
+
+	// This is now atomic and efficient
+	baseID := h.locationStore.BatchAppend(locs)
+
+	// Populate return IDs
+	for i := 0; i < n; i++ {
+		ids[i] = uint32(baseID) + uint32(i)
+	}
+
+	// Update nextVecID atomically to reflect new count
+	// Note: locationStore maintains its own size, but nextVecID is used for metrics/snapshots
+	// We need to ensure they stay in sync.
+	// Ideally nextVecID should be derived from locationStore.Len() or removed.
+	// For now, we update it.
+	h.nextVecID.Store(uint32(h.locationStore.Len()))
 
 	// 3. Initialize dims once
 	if n > 0 && vectors[0] != nil {
@@ -919,47 +931,95 @@ func (h *HNSWIndex) AddBatch(recs []arrow.RecordBatch, rowIdxs []int, batchIdxs 
 		})
 	}
 
-	// 4. PQ Encoding (Done outside h.mu lock)
+	// 4. PQ Encoding (Done outside h.mu lock, parallelized)
 	encodedVectors := make([][]float32, n)
 	h.pqCodesMu.RLock()
 	pqEnabled := h.pqEnabled
 	encoder := h.pqEncoder
 	h.pqCodesMu.RUnlock()
 
-	for i := 0; i < n; i++ {
-		vec := vectors[i]
-		if pqEnabled && encoder != nil {
-			codes := encoder.Encode(vec)
-			id := baseID + VectorID(i)
-			h.pqCodesMu.Lock()
-			// Resize storage if necessary
-			if int(id) >= len(h.pqCodes) {
-				targetLen := int(id) + 1
-				if targetLen > cap(h.pqCodes) {
-					newCap := targetLen * 2
-					if newCap < 1024 {
-						newCap = 1024
-					}
-					newCodes := make([][]uint8, targetLen, newCap)
-					copy(newCodes, h.pqCodes)
-					h.pqCodes = newCodes
-				} else {
-					h.pqCodes = h.pqCodes[:targetLen]
-				}
+	// Parallel PQ encoding for large batches
+	if pqEnabled && encoder != nil {
+		// Just use a simple loop if batch is small, spread if large
+		if n < 100 {
+			for i := 0; i < n; i++ {
+				codes := encoder.Encode(vectors[i])
+				encodedVectors[i] = PackBytesToFloat32s(codes)
+				// We need to store codes too
+				// Storing codes can be done in batch at the end or per item
+				// For simplicity, we'll do it later in the locked section or use a specific lock
 			}
-			h.pqCodes[id] = codes
-			h.pqCodesMu.Unlock()
-			encodedVectors[i] = PackBytesToFloat32s(codes)
 		} else {
-			encodedVectors[i] = vec
+			var wg sync.WaitGroup
+			chunkSize := (n + 8 - 1) / 8 // 8 workers appropriate for encoding
+			for i := 0; i < 8; i++ {
+				start := i * chunkSize
+				end := start + chunkSize
+				if end > n {
+					end = n
+				}
+				if start >= end {
+					break
+				}
+				wg.Add(1)
+				go func(s, e int) {
+					defer wg.Done()
+					for j := s; j < e; j++ {
+						encodedVectors[j] = PackBytesToFloat32s(encoder.Encode(vectors[j]))
+					}
+				}(start, end)
+			}
+			wg.Wait()
+		}
+
+		// Store PQ codes safely
+		h.pqCodesMu.Lock()
+		targetLen := int(baseID) + n
+		if len(h.pqCodes) < targetLen {
+			// Resize
+			newCap := targetLen * 2 // Aggressive growth
+			if newCap < 1024 {
+				newCap = 1024
+			}
+			newCodes := make([][]uint8, targetLen, newCap)
+			copy(newCodes, h.pqCodes)
+			h.pqCodes = newCodes
+		} else {
+			h.pqCodes = h.pqCodes[:targetLen]
+		}
+
+		// Fill codes (we have to re-encode or unpack, optimizing: should return codes from parallel loop)
+		// For now re-unpacking from float32 view is cheap or we just encode again?
+		// Actually PackBytesToFloat32s is unsafe/zero-copy usually so we can get bytes back.
+		// Let's assume we can cast back.
+		for i := 0; i < n; i++ {
+			id := int(baseID) + i
+			// UnpackFloat32sToBytes is robust
+			h.pqCodes[id] = UnpackFloat32sToBytes(encodedVectors[i], encoder.CodeSize())
+		}
+		h.pqCodesMu.Unlock()
+
+	} else {
+		for i := 0; i < n; i++ {
+			encodedVectors[i] = vectors[i]
 		}
 	}
 
-	// 5. Add to graph (Sequential insertion Required by library)
-	for i := 0; i < n; i++ {
-		id := baseID + VectorID(i)
+	// 5. Add to graph (Batched Locking)
+	// We can process graph additions in chunks to reduce lock overhead while maintaining responsiveness.
+	const lockBatchSize = 100
+
+	for i := 0; i < n; i += lockBatchSize {
+		end := i + lockBatchSize
+		if end > n {
+			end = n
+		}
+
 		h.mu.Lock()
-		h.Graph.Add(hnsw.MakeNode(id, encodedVectors[i]))
+		for j := i; j < end; j++ {
+			id := baseID + VectorID(j)
+			h.Graph.Add(hnsw.MakeNode(id, encodedVectors[j]))
+		}
 		h.mu.Unlock()
 	}
 

@@ -64,8 +64,11 @@ func (h *ArrowHNSW) Search(query []float32, k int, ef int) ([]store.SearchResult
 // searchLayer performs greedy search at a specific layer.
 // Returns the closest node found and its distance.
 func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef int, layer int, ctx *SearchContext) (uint32, float32) {
+	// Only clear visited, keep candidates for layer 0
 	ctx.visited.Clear()
-	ctx.candidates.Clear()
+	if layer > 0 {
+		ctx.candidates.Clear()
+	}
 	
 	// Initialize with entry point
 	entryDist := h.distance(query, entryPoint)
@@ -85,6 +88,10 @@ func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef int, laye
 		
 		// Stop if we've found enough candidates and current is farther than closest
 		if curr.Dist > closestDist && ctx.candidates.Len() >= ef {
+			// Re-add current for final results at layer 0
+			if layer == 0 {
+				ctx.candidates.Push(curr)
+			}
 			break
 		}
 		

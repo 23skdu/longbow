@@ -85,6 +85,14 @@ func NewMetaServer(store *VectorStore) *MetaServer {
 	}
 }
 
+// Close cleans up MetaServer resources
+func (s *MetaServer) Close() error {
+	if s.coordinator != nil {
+		return s.coordinator.Close()
+	}
+	return nil
+}
+
 // ListFlights returns available datasets, converting domain errors to gRPC status.
 func (s *MetaServer) ListFlights(c *flight.Criteria, stream flight.FlightService_ListFlightsServer) error {
 	err := s.VectorStore.ListFlights(c, stream)

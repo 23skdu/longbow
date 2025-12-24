@@ -575,9 +575,10 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 		// Create new dataset with schema from reader
 		ds := NewDataset(name, r.Schema())
 		
-		// Initialize hnsw2 if feature flag is enabled
-		// Using helper function to avoid import cycle
-		initHNSW2IfEnabled(ds, s.logger)
+		// Note: hnsw2Index initialization happens in NewDataset based on
+		// LONGBOW_USE_HNSW2 environment variable. The actual hnsw2.ArrowHNSW
+		// creation must be done externally to avoid import cycles.
+		// See cmd/longbow/main.go for initialization hook.
 		
 		ds.Topo = s.numaTopology
 		s.datasets[name] = ds

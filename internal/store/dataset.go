@@ -126,6 +126,23 @@ func (d *Dataset) SetLastAccess(t time.Time) {
 	atomic.StoreInt64(&d.lastAccess, t.UnixNano())
 }
 
+// UseHNSW2 returns whether hnsw2 is enabled for this dataset.
+func (d *Dataset) UseHNSW2() bool {
+	return d.useHNSW2
+}
+
+// SetHNSW2Index sets the hnsw2 index (called from external initialization).
+// This avoids import cycles by allowing main package to initialize hnsw2.
+func (d *Dataset) SetHNSW2Index(idx interface{}) {
+	d.hnsw2Index = idx
+}
+
+// GetHNSW2Index returns the hnsw2 index.
+// Caller should type assert to *hnsw2.ArrowHNSW.
+func (d *Dataset) GetHNSW2Index() interface{} {
+	return d.hnsw2Index
+}
+
 // Bitset is a thread-safe wrapper around a Roaring Bitmap (Item 10)
 type Bitset struct {
 	bitmap *roaring.Bitmap

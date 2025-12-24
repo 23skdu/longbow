@@ -91,6 +91,10 @@ type VectorStore struct {
 	shutdownState int32
 	walFile       *os.File
 	workerWg      sync.WaitGroup
+	
+	// hnsw2 integration hook (Phase 5)
+	// Called after dataset creation to initialize hnsw2 (avoids import cycle)
+	datasetInitHook func(*Dataset)
 }
 
 func NewVectorStore(mem memory.Allocator, logger *zap.Logger, maxMemory, maxWALSize int64, ttl time.Duration) *VectorStore {
@@ -155,6 +159,13 @@ func NewVectorStore(mem memory.Allocator, logger *zap.Logger, maxMemory, maxWALS
 }
 func (s *VectorStore) SetMesh(m *mesh.Gossip) {
 	s.Mesh = m
+}
+
+// SetDatasetInitHook sets a hook function called after dataset creation.
+// This allows external initialization (e.g., hnsw2) without import cycles.
+// The hook is called from main package which can import both store and hnsw2.
+func (s *VectorStore) SetDatasetInitHook(hook func(*Dataset)) {
+	s.datasetInitHook = hook
 }
 
 // Helper methods required by other parts of the system potentially, or for interface satisfaction
@@ -575,13 +586,16 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 		// Create new dataset with schema from reader
 		ds := NewDataset(name, r.Schema())
 		
-		// Note: hnsw2Index initialization happens in NewDataset based on
-		// LONGBOW_USE_HNSW2 environment variable. The actual hnsw2.ArrowHNSW
-		// creation must be done externally to avoid import cycles.
-		// See cmd/longbow/main.go for initialization hook.
+		// Note: hnsw2Index initialization happens via hook to avoid import cycles.
+		// See cmd/longbow/main.go for initialization hook setup.
 		
 		ds.Topo = s.numaTopology
 		s.datasets[name] = ds
+		
+		// Call initialization hook if registered (for hnsw2, etc.)
+		if s.datasetInitHook != nil {
+			s.datasetInitHook(ds)
+		}
 	}
 	ds = s.datasets[name]
 

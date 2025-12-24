@@ -12,6 +12,11 @@ type GraphNode struct {
 	ID    uint32  // VectorID
 	Level uint8   // Maximum layer this node participates in
 	
+	// Direct pointer to vector data for fast access
+	// This avoids Arrow column lookups during hot search loops.
+	// WARNING: This pointer is only valid as long as the underlying Arrow batch is valid.
+	VectorPtr *float32
+	
 	// Neighbors at each layer (layer 0 to Level)
 	// Each layer has up to M neighbors (Mmax for layer 0)
 	// We use a fixed-size array to avoid allocations
@@ -33,7 +38,9 @@ type ArrowHNSW struct {
 	maxLevel   int
 	
 	// Arrow integration - reference to parent dataset for vector access
+	// Arrow integration - reference to parent dataset for vector access
 	dataset *store.Dataset
+	dims    int // Vector dimensions, cached for unsafe operations
 	
 	// HNSW parameters
 	m      int     // Number of neighbors per layer
@@ -120,6 +127,7 @@ func NewSearchContextPool() *SearchContextPool {
 					candidates: NewFixedHeap(2000), // Increase to 2000 for larger ef
 					visited:    NewBitset(100000),
 					results:    make([]store.SearchResult, 0, 100),
+					resultSet:  NewMaxHeap(2000), // Pooled result set heap
 				}
 			},
 		},
@@ -136,6 +144,7 @@ func (p *SearchContextPool) Put(ctx *SearchContext) {
 	ctx.candidates.Clear()
 	ctx.visited.Clear()
 	ctx.results = ctx.results[:0]
+	ctx.resultSet.Clear()
 	p.pool.Put(ctx)
 }
 
@@ -144,4 +153,5 @@ type SearchContext struct {
 	candidates *FixedHeap
 	visited    *Bitset
 	results    []store.SearchResult
+	resultSet  *MaxHeap
 }

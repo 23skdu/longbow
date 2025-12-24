@@ -229,3 +229,35 @@ groups:
 
       - record: job:longbow_index_throughput:rate5m
         expr: sum(rate(longbow_index_job_latency_seconds_count[5m]))
+
+  - name: longbow_s3_alerts
+    rules:
+      - alert: LongbowS3FailureRate
+        expr: rate(longbow_s3_operations_total{status="error"}[5m]) > 0.05
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High S3 operation failure rate"
+          description: "S3 operations failing at {{ $value }} per second."
+
+      - alert: LongbowS3HighLatency
+        expr: histogram_quantile(0.99, sum(rate(longbow_s3_request_duration_seconds_bucket[5m])) by (le, operation)) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Slow S3 operations"
+          description: "P99 S3 latency for {{ $labels.operation }} is above 2s."
+
+  - name: longbow_system_alerts
+    rules:
+      - alert: LongbowBufferPoolSaturation
+        expr: longbow_ipc_buffer_pool_utilization > 0.95
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "IPC Buffer Pool Saturated"
+          description: "IPC buffer pool utilization is at {{ $value | humanizePercentage }}, risk of allocation failures."
+

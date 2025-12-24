@@ -22,7 +22,7 @@ func TestGraphAPI_GetGraphStats(t *testing.T) {
 
 	// 1. Setup Dataset
 	dsName := "graph_stats_test"
-	err := s.CreateNamespace(dsName) // Implicitly creates default namespace? No, just create dataset.
+	_ = s.CreateNamespace(dsName) // Implicitly creates default namespace? No, just create dataset.
 	// Actually VectorStore.CreateNamespace creates a namespace, but datasets are created on write usually.
 	// Let's manually inject a dataset.
 	ds := &Dataset{
@@ -53,7 +53,7 @@ func TestGraphAPI_GetGraphStats(t *testing.T) {
 	}
 
 	stream := &mockFlightServer{}
-	err = meta.DoAction(action, stream)
+	err := meta.DoAction(action, stream)
 	require.NoError(t, err)
 
 	require.Len(t, stream.results, 1)

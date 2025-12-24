@@ -42,7 +42,7 @@ func (w *StdWAL) Write(name string, seq uint64, ts int64, record arrow.RecordBat
 	defer w.mu.Unlock()
 
 	path := filepath.Join(w.dir, walFileName)
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	f, err := OpenFileDirect(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		return err
 	}

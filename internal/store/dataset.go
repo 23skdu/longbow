@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/23skdu/longbow/internal/pool"
-	"github.com/23skdu/longbow/internal/store/hnsw2"
 	"github.com/RoaringBitmap/roaring/v2"
 	"github.com/apache/arrow-go/v18/arrow"
 )
@@ -63,7 +62,9 @@ type Dataset struct {
 	recordEviction *RecordEvictionManager
 	
 	// hnsw2 integration (Phase 5)
-	hnsw2Index *hnsw2.ArrowHNSW
+	// Using interface{} to avoid import cycle with hnsw2 package
+	// Actual type is *hnsw2.ArrowHNSW, initialized externally
+	hnsw2Index interface{}
 	useHNSW2   bool // Feature flag
 }
 
@@ -111,12 +112,7 @@ func NewDataset(name string, schema *arrow.Schema) *Dataset {
 		BM25Index:       NewBM25InvertedIndex(DefaultBM25Config()),
 		Graph:           NewGraphStore(),
 		useHNSW2:        useHNSW2,
-	}
-	
-	// Initialize hnsw2 if enabled
-	if useHNSW2 {
-		config := hnsw2.DefaultConfig()
-		ds.hnsw2Index = hnsw2.NewArrowHNSW(ds, config)
+		// hnsw2Index will be initialized externally to avoid import cycle
 	}
 	
 	return ds

@@ -69,6 +69,17 @@ grpc:
   keepAliveTime: "2h"
 ```
 
+### Hybrid Search
+
+Enable hybrid search to combine vector similarity with keyword matching.
+
+```yaml
+hybrid:
+  enabled: true
+  textColumns: "text" # CSV list of columns to index
+  alpha: 0.5          # 0.0=sparse only, 1.0=dense only
+```
+
 ### Persistence
 
 Longbow supports optional persistence using a Write-Ahead Log (WAL) and Snapshots.

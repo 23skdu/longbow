@@ -14,32 +14,40 @@ type DualIndexHarness struct {
 	reference *hnsw.Graph[uint32]  // coder/hnsw (ground truth)
 	candidate *ArrowHNSW            // Our implementation
 	dataset   *store.Dataset
-	vectors   [][]float32           // Test vectors
+	vectors   map[uint32][]float32  // Test vectors
+	distFunc  func([]float32, []float32) float32
 }
 
 // NewDualIndexHarness creates a new validation harness.
 func NewDualIndexHarness(dataset *store.Dataset) *DualIndexHarness {
-	return &DualIndexHarness{
+	h := &DualIndexHarness{
 		reference: hnsw.NewGraph[uint32](),
 		candidate: NewArrowHNSW(dataset, DefaultConfig()),
 		dataset:   dataset,
-		vectors:   make([][]float32, 0),
+		vectors:   make(map[uint32][]float32),
+		distFunc:  euclideanDistance,
 	}
+	
+	// Set distance function for reference index
+	h.reference.Distance = func(a, b uint32) float32 {
+		vecA, okA := h.vectors[a]
+		vecB, okB := h.vectors[b]
+		if !okA || !okB {
+			return float32(math.Inf(1))
+		}
+		return h.distFunc(vecA, vecB)
+	}
+	
+	return h
 }
 
 // AddVector adds a vector to both indexes.
 func (h *DualIndexHarness) AddVector(id uint32, vec []float32) {
-	// Store vector for later recall testing
-	if int(id) >= len(h.vectors) {
-		// Expand vectors slice
-		newVecs := make([][]float32, id+1)
-		copy(newVecs, h.vectors)
-		h.vectors = newVecs
-	}
+	// Store vector for distance calculations
 	h.vectors[id] = vec
 	
 	// Add to reference (coder/hnsw)
-	h.reference.Add(id, vec)
+	h.reference.Add(id)
 	
 	// TODO: Add to candidate when Insert is implemented
 	// h.candidate.Insert(id, vec)
@@ -47,9 +55,12 @@ func (h *DualIndexHarness) AddVector(id uint32, vec []float32) {
 
 // MeasureRecall compares search results between reference and candidate.
 // Returns recall@k (percentage of reference results found in candidate results).
-func (h *DualIndexHarness) MeasureRecall(query []float32, k int) float64 {
+func (h *DualIndexHarness) MeasureRecall(query []float32, queryID uint32, k int) float64 {
+	// Store query vector temporarily for distance calculations
+	h.vectors[queryID] = query
+	
 	// Search reference
-	refResults := h.reference.Search(query, k)
+	refResults := h.reference.Search(queryID, k)
 	
 	// TODO: Search candidate when Search is implemented
 	// candResults := h.candidate.Search(query, k)
@@ -57,29 +68,6 @@ func (h *DualIndexHarness) MeasureRecall(query []float32, k int) float64 {
 	// For now, return 0 since candidate search not implemented
 	_ = refResults
 	return 0.0
-}
-
-// recall calculates recall@k between two result sets.
-func recall(candidate, reference []hnsw.SearchResult[uint32]) float64 {
-	if len(reference) == 0 {
-		return 1.0
-	}
-	
-	// Build set of reference IDs
-	refSet := make(map[uint32]bool)
-	for _, r := range reference {
-		refSet[r.Key] = true
-	}
-	
-	// Count matches in candidate
-	matches := 0
-	for _, c := range candidate {
-		if refSet[c.Key] {
-			matches++
-		}
-	}
-	
-	return float64(matches) / float64(len(reference))
 }
 
 // euclideanDistance computes L2 distance between two vectors.
@@ -121,7 +109,7 @@ func TestDualIndexHarness_Basic(t *testing.T) {
 	
 	// Search (will return 0 recall until Search is implemented)
 	query := []float32{1.0, 0.0, 0.0}
-	recall := harness.MeasureRecall(query, 1)
+	recall := harness.MeasureRecall(query, 999, 1)
 	
 	// For now, recall should be 0 (not implemented)
 	if recall != 0.0 {

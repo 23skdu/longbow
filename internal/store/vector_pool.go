@@ -2,6 +2,7 @@ package store
 
 import (
 	"sync"
+	"sync/atomic"
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
@@ -11,6 +12,11 @@ import (
 type VectorPool struct {
 	pools map[int]*sync.Pool // keyed by vector dimension
 	mu    sync.RWMutex
+	
+	// Metrics
+	hits   atomic.Int64 // Pool hits (reused vectors)
+	misses atomic.Int64 // Pool misses (new allocations)
+	puts   atomic.Int64 // Vectors returned to pool
 }
 
 // NewVectorPool creates a new vector pool
@@ -33,6 +39,7 @@ func (vp *VectorPool) Get(dim int) []float32 {
 		if !exists {
 			pool = &sync.Pool{
 				New: func() interface{} {
+					vp.misses.Add(1)
 					return make([]float32, dim)
 				},
 			}
@@ -44,7 +51,10 @@ func (vp *VectorPool) Get(dim int) []float32 {
 	vec := pool.Get().([]float32)
 	// Ensure the slice is the correct length
 	if len(vec) != dim {
+		vp.misses.Add(1)
 		vec = make([]float32, dim)
+	} else {
+		vp.hits.Add(1)
 	}
 	return vec
 }
@@ -65,8 +75,14 @@ func (vp *VectorPool) Put(vec []float32) {
 		for i := range vec {
 			vec[i] = 0
 		}
+		vp.puts.Add(1)
 		pool.Put(vec)
 	}
+}
+
+// Stats returns pool statistics
+func (vp *VectorPool) Stats() (hits, misses, puts int64) {
+	return vp.hits.Load(), vp.misses.Load(), vp.puts.Load()
 }
 
 // vectorView provides zero-copy read-only access to a vector in an Arrow array

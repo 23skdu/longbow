@@ -455,7 +455,13 @@ func (h *HNSWIndex) SearchVectors(query []float32, k int, filters []Filter) []Se
 	if len(filters) > 0 {
 		h.dataset.dataMu.RLock()
 		if len(h.dataset.Records) > 0 {
-			evaluator, _ = NewFilterEvaluator(h.dataset.Records[0], filters)
+			var err error
+			evaluator, err = NewFilterEvaluator(h.dataset.Records[0], filters)
+			if err != nil {
+				h.dataset.dataMu.RUnlock()
+				fmt.Printf("Filter creation failed: %v\n", err)
+				return []SearchResult{}
+			}
 		}
 		h.dataset.dataMu.RUnlock()
 	}

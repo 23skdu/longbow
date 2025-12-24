@@ -24,6 +24,7 @@ import (
 	"github.com/23skdu/longbow/internal/middleware"
 	"github.com/23skdu/longbow/internal/sharding"
 	"github.com/23skdu/longbow/internal/store"
+	"github.com/23skdu/longbow/internal/store/hnsw2"
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/joho/godotenv"
@@ -106,6 +107,19 @@ type Config struct {
 	GOGC       int `envconfig:"GOGC" default:"100"`       // Go Garbage Collector percentage
 }
 
+// initializeHNSW2 is the hook function that initializes hnsw2 for datasets.
+func initializeHNSW2(ds *store.Dataset, logger *zap.Logger) {
+	if !ds.UseHNSW2() {
+		return
+	}
+	config := hnsw2.DefaultConfig()
+	hnswIndex := hnsw2.NewArrowHNSW(ds, config)
+	ds.SetHNSW2Index(hnswIndex)
+	if logger != nil {
+		logger.Info("hnsw2 initialized", zap.String("dataset", ds.Name))
+	}
+}
+
 func main() {
 	if err := run(); err != nil {
 		os.Exit(1)
@@ -172,6 +186,11 @@ func run() error {
 
 	// Initialize vector store
 	vectorStore := store.NewVectorStore(mem, logger, cfg.MaxMemory, cfg.MaxWALSize, cfg.TTL)
+
+	// Register hnsw2 initialization hook
+	vectorStore.SetDatasetInitHook(func(ds *store.Dataset) {
+		initializeHNSW2(ds, logger)
+	})
 
 	// Configure memory management
 	vectorStore.SetMemoryConfig(store.MemoryConfig{

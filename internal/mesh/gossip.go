@@ -54,6 +54,8 @@ type GossipConfig struct {
 	ProtocolPeriod   time.Duration
 	AckTimeout       time.Duration
 	SuspicionTimeout time.Duration
+	GRPCAddr         string // Public data service address
+	MetaAddr         string // Public meta service address
 
 	Delegate EventDelegate
 }
@@ -102,6 +104,8 @@ func (g *Gossip) Start() error {
 	g.UpdateMember(&Member{
 		ID:          g.Config.ID,
 		Addr:        fmt.Sprintf("127.0.0.1:%d", g.Config.Port), // Simplification for now
+		GRPCAddr:    g.Config.GRPCAddr,
+		MetaAddr:    g.Config.MetaAddr,
 		Status:      StatusAlive,
 		Incarnation: 1,
 	})
@@ -636,6 +640,8 @@ func (g *Gossip) UpdateMember(m *Member) {
 		existing.Status = m.Status
 		existing.Incarnation = m.Incarnation
 		existing.Addr = m.Addr
+		existing.GRPCAddr = m.GRPCAddr
+		existing.MetaAddr = m.MetaAddr
 		existing.LastSeen = time.Now()
 
 		if m.Status == StatusSuspect {
@@ -680,9 +686,11 @@ func (g *Gossip) GetIdentity() Member {
 		return *m
 	}
 	return Member{
-		ID:     g.Config.ID,
-		Addr:   fmt.Sprintf("127.0.0.1:%d", g.Config.Port),
-		Status: StatusAlive,
+		ID:       g.Config.ID,
+		Addr:     fmt.Sprintf("127.0.0.1:%d", g.Config.Port),
+		GRPCAddr: g.Config.GRPCAddr,
+		MetaAddr: g.Config.MetaAddr,
+		Status:   StatusAlive,
 	}
 }
 

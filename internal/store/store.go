@@ -534,6 +534,8 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 
 	case "traverse-graph":
 		return s.handleTraverseGraph(action.Body, stream)
+	case "get-edges":
+		return s.handleGetEdges(action.Body, stream)
 	}
 	return status.Error(codes.Unimplemented, "unknown action type "+action.Type)
 }
@@ -1598,8 +1600,9 @@ func (s *VectorStore) castRecordToSchema(rec arrow.RecordBatch, targetSchema *ar
 }
 
 // HybridSearch is a wrapper for the HybridSearch function
-func (s *VectorStore) HybridSearch(ctx context.Context, name string, query []float32, k int, filters map[string]string) ([]SearchResult, error) {
-	return HybridSearch(ctx, s, name, query, k, filters)
+// FilteredVectorSearch performs a filtered KNN search
+func (s *VectorStore) FilteredVectorSearch(ctx context.Context, name string, query []float32, k int, filters map[string]string) ([]SearchResult, error) {
+	return FilteredVectorSearch(ctx, s, name, query, k, filters)
 }
 
 // SearchHybrid is a wrapper for the SearchHybrid function (RRF version)

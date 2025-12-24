@@ -228,7 +228,10 @@ def benchmark_get(client: flight.FlightClient, name: str,
 
 def benchmark_vector_search(client: flight.FlightClient, name: str,
                             query_vectors: np.ndarray, k: int,
-                            filters: Optional[list] = None) -> BenchmarkResult:
+def benchmark_vector_search(client: flight.FlightClient, name: str,
+                            query_vectors: np.ndarray, k: int,
+                            filters: Optional[list] = None,
+                            global_search: bool = False) -> BenchmarkResult:
     """Benchmark HNSW vector similarity search using DoAction(VectorSearch)."""
     num_queries = len(query_vectors)
     print(f"\n[SEARCH] Running {num_queries:,} vector searches (k={k})...")
@@ -263,8 +266,13 @@ def benchmark_vector_search(client: flight.FlightClient, name: str,
         while retry_count <= max_retries:
             try:
                 action = flight.Action("VectorSearch", request_body)
+                
+                options = flight.FlightCallOptions()
+                if global_search:
+                    options = flight.FlightCallOptions(headers=[(b"x-longbow-global", b"true")])
+                    
                 # DoAction returns an iterator of FlightResult
-                results_iter = client.do_action(action)
+                results_iter = client.do_action(action, options=options)
                 
                 # The server sends back one JSON result with "ids", "scores", etc.
                 # Example response: {"ids": [1, 2], "scores": [0.9, 0.8], "vectors": [...]}
@@ -796,6 +804,8 @@ def main():
     # Filters (legacy support)
     parser.add_argument("--filter", action="append",
                         help="Filter in format field:op:value")
+    # Global Distributed Search
+    parser.add_argument("--global", dest="global_search", action="store_true", help="Force GLOBAL distributed search")
 
     args = parser.parse_args()
 
@@ -843,9 +853,10 @@ def main():
     if args.search or args.all:
         query_vectors = generate_query_vectors(args.query_count, args.dim)
         # Search goes to Meta Server
-        results.append(benchmark_vector_search(
-            meta_client, args.name, query_vectors, args.search_k, filters=filters if filters else None
-        ))
+        r_search = benchmark_vector_search(
+            meta_client, args.name, query_vectors, args.search_k, filters=filters if filters else None, global_search=args.global_search
+        )
+        results.append(r_search)
 
     # Meta Plane operations (Hybrid Search)
     if args.hybrid or args.all:

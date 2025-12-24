@@ -1390,7 +1390,141 @@
         "h": 1,
         "w": 24,
         "x": 0,
+        "y": 62
+      },
+      "id": 100,
+      "panels": [],
+      "title": "Distributed Internals",
+      "type": "row"
+    },
+    {
+      "datasource": "${datasource}",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 0,
         "y": 63
+      },
+      "id": 101,
+      "targets": [
+        {
+          "expr": "rate(longbow_store_circuit_breaker_rejections_total[1m])",
+          "legendFormat": "Rejections/s",
+          "refId": "A"
+        }
+      ],
+      "title": "Circuit Breaker Rejections",
+      "type": "stat"
+    },
+    {
+      "datasource": "${datasource}",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear"
+          },
+          "unit": "reqps"
+        }
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 6,
+        "y": 63
+      },
+      "id": 102,
+      "targets": [
+        {
+          "expr": "rate(longbow_proxy_requests_forwarded_total[1m])",
+          "legendFormat": "{{method}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Proxy Requests Forwarded",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear"
+          },
+          "unit": "s"
+        }
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 12,
+        "y": 63
+      },
+      "id": 103,
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(longbow_proxy_request_latency_seconds_bucket[5m])) by (le))",
+          "legendFormat": "P99",
+          "refId": "A"
+        }
+      ],
+      "title": "Proxy Request Latency",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line"
+          }
+        }
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 18,
+        "y": 63
+      },
+      "id": 104,
+      "targets": [
+        {
+          "expr": "rate(longbow_vector_clock_conflicts_total[1m])",
+          "legendFormat": "Conflicts/s",
+          "refId": "A"
+        }
+      ],
+      "title": "Vector Clock Conflicts",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 69
       },
       "id": 58,
       "panels": [],
@@ -1400,16 +1534,22 @@
     {
       "datasource": "${datasource}",
       "fieldConfig": {
-         "defaults": {
-           "min": 0,
-           "max": 1,
-           "thresholds": {
-             "steps": [
-               { "color": "green", "value": null },
-               { "color": "red", "value": 0.95 }
-             ]
-           }
-         }
+        "defaults": {
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 0.95
+              }
+            ]
+          }
+        }
       },
       "gridPos": {
         "h": 6,

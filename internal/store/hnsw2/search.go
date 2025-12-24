@@ -150,26 +150,29 @@ func l2Distance(a, b []float32) float32 {
 }
 
 // getVector retrieves a vector from Arrow storage using zero-copy access.
-// This uses the Dataset's locationStore to map VectorID to (BatchIdx, RowIdx).
+// This uses the Dataset's Index locationStore to map VectorID to (BatchIdx, RowIdx).
 func (h *ArrowHNSW) getVector(id uint32) ([]float32, error) {
 	if int(id) >= len(h.nodes) {
 		return nil, fmt.Errorf("vector ID %d out of bounds", id)
 	}
 	
-	// Get location from dataset's locationStore
-	loc, ok := h.dataset.locationStore.Get(store.VectorID(id))
+	// Get the HNSW index from dataset to access locationStore
+	hnswIdx, ok := h.dataset.Index.(*store.HNSWIndex)
+	if !ok {
+		return nil, fmt.Errorf("dataset index is not HNSWIndex")
+	}
+	
+	// Get location from HNSW index's locationStore
+	loc, ok := hnswIdx.GetLocation(store.VectorID(id))
 	if !ok {
 		return nil, fmt.Errorf("vector %d not found in locationStore", id)
 	}
 	
 	// Get the Arrow record batch
-	h.dataset.mu.RLock()
-	if loc.BatchIdx >= len(h.dataset.batches) {
-		h.dataset.mu.RUnlock()
+	rec, ok := h.dataset.GetRecord(loc.BatchIdx)
+	if !ok {
 		return nil, fmt.Errorf("batch index %d out of bounds", loc.BatchIdx)
 	}
-	rec := h.dataset.batches[loc.BatchIdx]
-	h.dataset.mu.RUnlock()
 	
 	// Extract vector using zero-copy Arrow access
 	return extractVectorFromArrow(rec, loc.RowIdx)

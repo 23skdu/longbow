@@ -36,7 +36,6 @@ func (h *ArrowHNSW) Search(query []float32, k int, ef int) ([]store.SearchResult
 	
 	// Start from entry point
 	ep := h.entryPoint
-	_ = h.distance(query, ep) // Distance calculated but not used in first iteration
 	
 	// Search from top layer to layer 1
 	for level := h.maxLevel; level > 0; level-- {
@@ -44,18 +43,18 @@ func (h *ArrowHNSW) Search(query []float32, k int, ef int) ([]store.SearchResult
 	}
 	
 	// Search layer 0 with ef candidates
-	_, _ = h.searchLayer(query, ep, ef, 0, ctx)
+	_, candidates := h.searchLayer(query, ep, ef, 0, ctx)
 	
 	// Extract top k results from candidates
 	results := make([]store.SearchResult, 0, k)
-	for ctx.candidates.Len() > 0 && len(results) < k {
-		cand, ok := ctx.candidates.Pop()
+	for i := 0; i < k && candidates.Len() > 0; i++ {
+		item, ok := candidates.Pop()
 		if !ok {
 			break
 		}
 		results = append(results, store.SearchResult{
-			ID:    store.VectorID(cand.ID),
-			Score: cand.Dist,
+			ID:   uint32(item.id),
+			Rank: i,
 		})
 	}
 	

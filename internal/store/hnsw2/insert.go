@@ -105,7 +105,7 @@ func (h *ArrowHNSW) searchLayerForInsert(query []float32, entryPoint uint32, ef 
 	candidates := NewFixedHeap(ef * 2)
 	
 	// Initialize with entry point
-	entryDist := l2Distance(query, h.mustGetVector(entryPoint))
+	entryDist := distanceSIMD(query, h.mustGetVector(entryPoint))
 	candidates.Push(Candidate{ID: entryPoint, Dist: entryDist})
 	visited.Set(entryPoint)
 	
@@ -135,7 +135,7 @@ func (h *ArrowHNSW) searchLayerForInsert(query []float32, entryPoint uint32, ef 
 			}
 			visited.Set(neighborID)
 			
-			dist := l2Distance(query, h.mustGetVector(neighborID))
+			dist := distanceSIMD(query, h.mustGetVector(neighborID))
 			
 			if len(results) < ef || dist < results[len(results)-1].Dist {
 				candidates.Push(Candidate{ID: neighborID, Dist: dist})

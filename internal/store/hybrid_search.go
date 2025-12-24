@@ -65,8 +65,8 @@ func SearchHybrid(ctx context.Context, s *VectorStore, name string, query []floa
 	return resolved, nil
 }
 
-// HybridSearch performs a filtered vector search using inverted indexes for pre-filtering.
-func HybridSearch(ctx context.Context, s *VectorStore, name string, query []float32, k int, filters map[string]string) ([]SearchResult, error) {
+// FilteredVectorSearch performs a filtered vector search using inverted indexes for pre-filtering.
+func FilteredVectorSearch(ctx context.Context, s *VectorStore, name string, query []float32, k int, filters map[string]string) ([]SearchResult, error) {
 	ds, err := s.getDataset(name)
 	if err != nil {
 		return nil, err

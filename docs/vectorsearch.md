@@ -182,6 +182,7 @@ denseResults := hs.SearchDense(queryVector, 10)
 sparseResults := hs.SearchSparse("error", 10)
 
 // Hybrid search with RRF
+// Note: RRF ignores raw score values and uses rank position only.
 hybridResults := hs.SearchHybrid(queryVector, "error", 10, 0.5, 60)
 
 // Weighted hybrid (alpha: 1.0=dense only, 0.0=sparse only)
@@ -275,9 +276,13 @@ func main() {
         queryEmbedding,  // dense query
         "search terms",  // sparse query
         10,              // top-k
-        0.5,             // alpha (unused in RRF mode)
+        0.5,             // alpha (unused in RRF mode; result scores are rank-based)
         60,              // RRF k parameter
     )
+    
+    // Note: When using SearchHybrid with 0 < alpha < 1, Reciprocal Rank Fusion (RRF) is used.
+    // RRF ignores the raw scores from vector and keyword search (which may have different scales)
+    // and relies solely on the rank order of results. The returned Score is the RRF score.
     
     for _, r := range results {
         fmt.Printf("ID: %d, Score: %.4f\n", r.ID, r.Score)

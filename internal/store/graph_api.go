@@ -100,3 +100,49 @@ func (s *VectorStore) handleTraverseGraph(body []byte, stream flight.FlightServi
 
 	return stream.Send(&flight.Result{Body: resp})
 }
+
+// handleGetEdges processes a get-edges action
+func (s *VectorStore) handleGetEdges(body []byte, stream flight.FlightService_DoActionServer) error {
+	var req struct {
+		Dataset   string `json:"dataset"`
+		Type      string `json:"type"`      // "subject", "object", "predicate"
+		Value     uint32 `json:"value"`     // Used for subject/object ID
+		Predicate string `json:"predicate"` // Used for type="predicate"
+	}
+
+	if err := json.Unmarshal(body, &req); err != nil {
+		return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
+	}
+
+	ds, err := s.getDataset(req.Dataset)
+	if err != nil {
+		return status.Errorf(codes.NotFound, "dataset not found: %s", req.Dataset)
+	}
+
+	ds.dataMu.RLock()
+	if ds.Graph == nil || ds.Graph.EdgeCount() == 0 {
+		ds.dataMu.RUnlock()
+		return stream.Send(&flight.Result{Body: []byte("[]")})
+	}
+	graph := ds.Graph
+	ds.dataMu.RUnlock()
+
+	var edges []Edge
+	switch req.Type {
+	case "subject":
+		edges = graph.GetEdgesBySubject(VectorID(req.Value))
+	case "object":
+		edges = graph.GetEdgesByObject(VectorID(req.Value))
+	case "predicate":
+		edges = graph.GetEdgesByPredicate(req.Predicate)
+	default:
+		return status.Errorf(codes.InvalidArgument, "invalid edge query type: %s", req.Type)
+	}
+
+	resp, err := json.Marshal(edges)
+	if err != nil {
+		return status.Errorf(codes.Internal, "failed to marshal edges: %v", err)
+	}
+
+	return stream.Send(&flight.Result{Body: resp})
+}

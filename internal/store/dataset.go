@@ -59,7 +59,10 @@ type Dataset struct {
 
 	// Per-record eviction
 	recordEviction *RecordEvictionManager
-}
+	
+	// hnsw2 integration (Phase 5)
+	hnsw2Index *hnsw2.ArrowHNSW
+	useHNSW2   bool // Feature flag
 
 // IsSharded returns true if the dataset uses ShardedHNSW.
 func (d *Dataset) IsSharded() bool {
@@ -90,7 +93,10 @@ func (d *Dataset) GetRecord(idx int) (arrow.RecordBatch, bool) {
 }
 
 func NewDataset(name string, schema *arrow.Schema) *Dataset {
-	return &Dataset{
+	// Check feature flag for hnsw2
+	useHNSW2 := os.Getenv("LONGBOW_USE_HNSW2") == "true"
+	
+	ds := &Dataset{
 		Name:            name,
 		Records:         make([]arrow.RecordBatch, 0),
 		BatchNodes:      make([]int, 0),
@@ -101,7 +107,16 @@ func NewDataset(name string, schema *arrow.Schema) *Dataset {
 		InvertedIndexes: make(map[string]*InvertedIndex),
 		BM25Index:       NewBM25InvertedIndex(DefaultBM25Config()),
 		Graph:           NewGraphStore(),
+		useHNSW2:        useHNSW2,
 	}
+	
+	// Initialize hnsw2 if enabled
+	if useHNSW2 {
+		config := hnsw2.DefaultConfig()
+		ds.hnsw2Index = hnsw2.NewArrowHNSW(ds, config)
+	}
+	
+	return ds
 }
 
 func (d *Dataset) LastAccess() time.Time {

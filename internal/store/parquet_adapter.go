@@ -121,3 +121,162 @@ func readParquet(f *os.File, size int64, mem memory.Allocator) (arrow.RecordBatc
 
 	return b.NewRecordBatch(), nil
 }
+
+// GraphEdgeRecord represents a graph edge for Parquet serialization
+type GraphEdgeRecord struct {
+	Subject   uint32  `parquet:"subject"`
+	Predicate string  `parquet:"predicate"`
+	Object    uint32  `parquet:"object"`
+	Weight    float32 `parquet:"weight"`
+}
+
+// writeGraphParquet writes a Graph Arrow record to a Parquet writer
+func writeGraphParquet(w io.Writer, rec arrow.RecordBatch) error {
+	pw := parquet.NewGenericWriter[GraphEdgeRecord](w, parquet.Compression(&parquet.Zstd))
+
+	rows := int(rec.NumRows())
+
+	// Expecting columns: subject (uint32), predicate (dictionary<string>), object (uint32), weight (float32)
+	// Indices might vary, so finding by name is safer, but assuming standard schema from GraphStore
+
+	// 0: subject
+	subjCol := rec.Column(0).(*array.Uint32)
+
+	// 1: predicate (Dictionary)
+	predCol := rec.Column(1).(*array.Dictionary)
+	predDict := predCol.Dictionary().(*array.String)
+	predIndices := predCol.Indices().(*array.Uint16)
+
+	// 2: object
+	objCol := rec.Column(2).(*array.Uint32)
+
+	// 3: weight
+	weightCol := rec.Column(3).(*array.Float32)
+
+	batch := make([]GraphEdgeRecord, rows)
+	for i := 0; i < rows; i++ {
+		predIdx := predIndices.Value(i)
+		predStr := predDict.Value(int(predIdx))
+
+		batch[i] = GraphEdgeRecord{
+			Subject:   subjCol.Value(i),
+			Predicate: predStr,
+			Object:    objCol.Value(i),
+			Weight:    weightCol.Value(i),
+		}
+	}
+
+	_, err := pw.Write(batch)
+	if err != nil {
+		return err
+	}
+	return pw.Close()
+}
+
+// readGraphParquet reads a Graph Parquet file and converts it to an Arrow record
+func readGraphParquet(f *os.File, size int64, mem memory.Allocator) (arrow.RecordBatch, error) {
+	pf, err := parquet.OpenFile(f, size)
+	if err != nil {
+		return nil, err
+	}
+
+	pr := parquet.NewGenericReader[GraphEdgeRecord](pf)
+	rows := make([]GraphEdgeRecord, pr.NumRows())
+	_, err = pr.Read(rows)
+	if err != nil && err != io.EOF {
+		return nil, err
+	}
+
+	if len(rows) == 0 {
+		return nil, nil
+	}
+
+	// Reconstruct Arrow RecordBatch
+	// Need to rebuild Dictionary encoding for predicate to match GraphStore schema
+
+	// 1. Collect unique predicates to build dictionary
+	uniquePreds := make(map[string]uint16)
+	nextIdx := uint16(0)
+	// Preserve order of appearance or alphabetical? GraphStore order is insertion based usually
+	// Let's just build it as we go
+
+	var predIndices []uint16
+	var dictValues []string
+
+	for _, row := range rows {
+		p := row.Predicate
+		if idx, ok := uniquePreds[p]; ok {
+			predIndices = append(predIndices, idx)
+		} else {
+			uniquePreds[p] = nextIdx
+			predIndices = append(predIndices, nextIdx)
+			dictValues = append(dictValues, p)
+			nextIdx++
+		}
+	}
+
+	// Schema
+	md := arrow.NewMetadata(
+		[]string{"longbow.entry_type"},
+		[]string{"graph"},
+	)
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "subject", Type: arrow.PrimitiveTypes.Uint32},
+		{Name: "predicate", Type: &arrow.DictionaryType{
+			IndexType: arrow.PrimitiveTypes.Uint16,
+			ValueType: arrow.BinaryTypes.String,
+		}},
+		{Name: "object", Type: arrow.PrimitiveTypes.Uint32},
+		{Name: "weight", Type: arrow.PrimitiveTypes.Float32},
+	}, &md)
+
+	b := array.NewRecordBuilder(mem, schema)
+	defer b.Release()
+
+	// Subject
+	subjBuilder := b.Field(0).(*array.Uint32Builder)
+	for _, row := range rows {
+		subjBuilder.Append(row.Subject)
+	}
+
+	// Predicate - Build Dictionary Array manually
+	dictBuilder := array.NewStringBuilder(mem)
+	dictBuilder.AppendValues(dictValues, nil)
+	dictArray := dictBuilder.NewStringArray()
+	defer dictArray.Release()
+
+	indicesBuilder := array.NewUint16Builder(mem)
+	indicesBuilder.AppendValues(predIndices, nil)
+	indicesArray := indicesBuilder.NewUint16Array()
+	defer indicesArray.Release()
+
+	dt := &arrow.DictionaryType{IndexType: arrow.PrimitiveTypes.Uint16, ValueType: arrow.BinaryTypes.String}
+	dictionaryArray := array.NewDictionaryArray(dt, indicesArray, dictArray)
+	defer dictionaryArray.Release()
+
+	// Object
+	objBuilder := b.Field(2).(*array.Uint32Builder)
+	for _, row := range rows {
+		objBuilder.Append(row.Object)
+	}
+
+	// Weight
+	weightBuilder := b.Field(3).(*array.Float32Builder)
+	for _, row := range rows {
+		weightBuilder.Append(row.Weight)
+	}
+
+	subjArray := subjBuilder.NewUint32Array()
+	defer subjArray.Release()
+	objArray := objBuilder.NewUint32Array()
+	defer objArray.Release()
+	weightArray := weightBuilder.NewFloat32Array()
+	defer weightArray.Release()
+
+	return array.NewRecordBatch(schema, []arrow.Array{
+		subjArray,
+		dictionaryArray,
+		objArray,
+		weightArray,
+	}, int64(len(rows))), nil
+}

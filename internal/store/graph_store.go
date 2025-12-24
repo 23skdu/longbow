@@ -14,10 +14,10 @@ import (
 
 // Edge represents a knowledge graph edge (subject -> predicate -> object)
 type Edge struct {
-	Subject   string  // Source entity (e.g., "user:alice")
-	Predicate string  // Relationship type (e.g., "owns", "likes")
-	Object    string  // Target entity (e.g., "doc:report1")
-	Weight    float32 // Edge weight for scoring
+	Subject   VectorID // Source entity
+	Predicate string   // Relationship type (e.g., "owns", "likes")
+	Object    VectorID // Target entity
+	Weight    float32  // Edge weight for scoring
 }
 
 // GraphStore manages knowledge graph edges for GraphRAG workflows
@@ -28,10 +28,10 @@ type GraphStore struct {
 	edges []Edge
 
 	// Index: subject -> edge indices
-	subjectIndex map[string][]int
+	subjectIndex map[VectorID][]int
 
 	// Index: object -> edge indices
-	objectIndex map[string][]int
+	objectIndex map[VectorID][]int
 
 	// Index: predicate -> edge indices
 	predicateIndex map[string][]int
@@ -40,7 +40,7 @@ type GraphStore struct {
 	predicates map[string]struct{}
 
 	// Community detection results
-	nodeCommunity map[string]int
+	nodeCommunity map[VectorID]int
 	communities   []Community
 }
 
@@ -48,8 +48,8 @@ type GraphStore struct {
 func NewGraphStore() *GraphStore {
 	return &GraphStore{
 		edges:          make([]Edge, 0),
-		subjectIndex:   make(map[string][]int),
-		objectIndex:    make(map[string][]int),
+		subjectIndex:   make(map[VectorID][]int),
+		objectIndex:    make(map[VectorID][]int),
 		predicateIndex: make(map[string][]int),
 		predicates:     make(map[string]struct{}),
 	}
@@ -86,7 +86,7 @@ func (gs *GraphStore) EdgeCount() int {
 }
 
 // GetEdgesBySubject returns all edges with the given subject (outgoing edges)
-func (gs *GraphStore) GetEdgesBySubject(subject string) []Edge {
+func (gs *GraphStore) GetEdgesBySubject(subject VectorID) []Edge {
 	gs.mu.RLock()
 	defer gs.mu.RUnlock()
 
@@ -99,7 +99,7 @@ func (gs *GraphStore) GetEdgesBySubject(subject string) []Edge {
 }
 
 // GetEdgesByObject returns all edges with the given object (incoming edges)
-func (gs *GraphStore) GetEdgesByObject(object string) []Edge {
+func (gs *GraphStore) GetEdgesByObject(object VectorID) []Edge {
 	gs.mu.RLock()
 	defer gs.mu.RUnlock()
 
@@ -158,21 +158,28 @@ func (gs *GraphStore) ToArrowBatch(mem memory.Allocator) (arrow.Record, error) {
 	}
 
 	// Build schema with Dictionary-encoded predicate column
+	// Subject/Object are now Uint32 (VectorID)
+	// Add metadata to identify this as a graph batch
+	md := arrow.NewMetadata(
+		[]string{"longbow.entry_type"},
+		[]string{"graph"},
+	)
+
 	schema := arrow.NewSchema([]arrow.Field{
-		{Name: "subject", Type: arrow.BinaryTypes.String},
+		{Name: "subject", Type: arrow.PrimitiveTypes.Uint32},
 		{Name: "predicate", Type: &arrow.DictionaryType{
 			IndexType: arrow.PrimitiveTypes.Uint16,
 			ValueType: arrow.BinaryTypes.String,
 		}},
-		{Name: "object", Type: arrow.BinaryTypes.String},
+		{Name: "object", Type: arrow.PrimitiveTypes.Uint32},
 		{Name: "weight", Type: arrow.PrimitiveTypes.Float32},
-	}, nil)
+	}, &md)
 
 	// Build subject column
-	subjectBuilder := array.NewStringBuilder(mem)
+	subjectBuilder := array.NewUint32Builder(mem)
 	defer subjectBuilder.Release()
 	for _, e := range gs.edges {
-		subjectBuilder.Append(e.Subject)
+		subjectBuilder.Append(uint32(e.Subject))
 	}
 	subjectArr := subjectBuilder.NewArray()
 	defer subjectArr.Release()
@@ -203,10 +210,10 @@ func (gs *GraphStore) ToArrowBatch(mem memory.Allocator) (arrow.Record, error) {
 	defer predicateArr.Release()
 
 	// Build object column
-	objectBuilder := array.NewStringBuilder(mem)
+	objectBuilder := array.NewUint32Builder(mem)
 	defer objectBuilder.Release()
 	for _, e := range gs.edges {
-		objectBuilder.Append(e.Object)
+		objectBuilder.Append(uint32(e.Object))
 	}
 	objectArr := objectBuilder.NewArray()
 	defer objectArr.Release()
@@ -240,9 +247,9 @@ func (gs *GraphStore) FromArrowBatch(batch arrow.Record) error { //nolint:static
 	}
 
 	// Extract columns
-	subjectCol := batch.Column(0).(*array.String)
+	subjectCol := batch.Column(0).(*array.Uint32)
 	predicateCol := batch.Column(1).(*array.Dictionary)
-	objectCol := batch.Column(2).(*array.String)
+	objectCol := batch.Column(2).(*array.Uint32)
 	weightCol := batch.Column(3).(*array.Float32)
 
 	// Get predicate dictionary values
@@ -254,9 +261,9 @@ func (gs *GraphStore) FromArrowBatch(batch arrow.Record) error { //nolint:static
 		predicate := predicateDict.Value(predicateIdx)
 
 		edge := Edge{
-			Subject:   subjectCol.Value(i),
+			Subject:   VectorID(subjectCol.Value(i)),
 			Predicate: predicate,
-			Object:    objectCol.Value(i),
+			Object:    VectorID(objectCol.Value(i)),
 			Weight:    weightCol.Value(i),
 		}
 
@@ -273,13 +280,13 @@ func (gs *GraphStore) FromArrowBatch(batch arrow.Record) error { //nolint:static
 
 // Path represents a traversal path through the graph
 type Path struct {
-	Nodes  []string // Sequence of nodes visited
-	Edges  []Edge   // Edges traversed
-	Weight float32  // Cumulative path weight
+	Nodes  []VectorID // Sequence of nodes visited
+	Edges  []Edge     // Edges traversed
+	Weight float32    // Cumulative path weight
 }
 
 // Traverse performs BFS traversal from start node up to maxHops depth
-func (gs *GraphStore) Traverse(start string, maxHops int) []Path {
+func (gs *GraphStore) Traverse(start VectorID, maxHops int) []Path {
 	startTime := time.Now()
 	defer func() {
 		metrics.GraphTraversalDurationSeconds.Observe(time.Since(startTime).Seconds())
@@ -289,7 +296,7 @@ func (gs *GraphStore) Traverse(start string, maxHops int) []Path {
 	defer gs.mu.RUnlock()
 
 	var paths []Path
-	visited := make(map[string]bool)
+	visited := make(map[VectorID]bool)
 
 	// BFS queue: each item is (current path, current depth)
 	type queueItem struct {
@@ -298,7 +305,7 @@ func (gs *GraphStore) Traverse(start string, maxHops int) []Path {
 	}
 
 	queue := []queueItem{{
-		path:  Path{Nodes: []string{start}, Weight: 0},
+		path:  Path{Nodes: []VectorID{start}, Weight: 0},
 		depth: 0,
 	}}
 
@@ -320,7 +327,7 @@ func (gs *GraphStore) Traverse(start string, maxHops int) []Path {
 			}
 
 			// Create new path
-			newNodes := make([]string, len(item.path.Nodes)+1)
+			newNodes := make([]VectorID, len(item.path.Nodes)+1)
 			copy(newNodes, item.path.Nodes)
 			newNodes[len(item.path.Nodes)] = nextNode
 
@@ -353,14 +360,14 @@ func (gs *GraphStore) Traverse(start string, maxHops int) []Path {
 }
 
 // TraverseParallel performs concurrent traversal from multiple starting points
-func (gs *GraphStore) TraverseParallel(starts []string, maxHops int) map[string][]Path {
-	results := make(map[string][]Path)
+func (gs *GraphStore) TraverseParallel(starts []VectorID, maxHops int) map[VectorID][]Path {
+	results := make(map[VectorID][]Path)
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 
 	for _, start := range starts {
 		wg.Add(1)
-		go func(s string) {
+		go func(s VectorID) {
 			defer wg.Done()
 			paths := gs.Traverse(s, maxHops)
 			mu.Lock()
@@ -376,7 +383,7 @@ func (gs *GraphStore) TraverseParallel(starts []string, maxHops int) map[string]
 // Community represents a detected graph community
 type Community struct {
 	ID      int
-	Members []string
+	Members []VectorID
 }
 
 // DetectCommunities runs Louvain algorithm to find communities
@@ -390,7 +397,7 @@ func (gs *GraphStore) DetectCommunities() []Community {
 	defer gs.mu.Unlock()
 
 	// Get all unique nodes
-	nodes := make(map[string]bool)
+	nodes := make(map[VectorID]bool)
 	for _, e := range gs.edges {
 		nodes[e.Subject] = true
 		nodes[e.Object] = true
@@ -401,22 +408,22 @@ func (gs *GraphStore) DetectCommunities() []Community {
 	}
 
 	// Initialize: each node in its own community
-	nodeList := make([]string, 0, len(nodes))
+	nodeList := make([]VectorID, 0, len(nodes))
 	for n := range nodes {
 		nodeList = append(nodeList, n)
 	}
 
 	// Community assignment: node -> community ID
-	community := make(map[string]int)
+	community := make(map[VectorID]int)
 	for i, n := range nodeList {
 		community[n] = i
 	}
 
 	// Build adjacency with weights
-	adj := make(map[string]map[string]float32)
+	adj := make(map[VectorID]map[VectorID]float32)
 	for _, e := range gs.edges {
 		if adj[e.Subject] == nil {
-			adj[e.Subject] = make(map[string]float32)
+			adj[e.Subject] = make(map[VectorID]float32)
 		}
 		adj[e.Subject][e.Object] += e.Weight
 	}
@@ -457,7 +464,7 @@ func (gs *GraphStore) DetectCommunities() []Community {
 	gs.nodeCommunity = community
 
 	// Build community list
-	commMembers := make(map[int][]string)
+	commMembers := make(map[int][]VectorID)
 	for node, comm := range community {
 		commMembers[comm] = append(commMembers[comm], node)
 	}
@@ -473,7 +480,7 @@ func (gs *GraphStore) DetectCommunities() []Community {
 }
 
 // GetCommunityForNode returns the community ID for a given node
-func (gs *GraphStore) GetCommunityForNode(node string) int {
+func (gs *GraphStore) GetCommunityForNode(node VectorID) int {
 	gs.mu.RLock()
 	defer gs.mu.RUnlock()
 

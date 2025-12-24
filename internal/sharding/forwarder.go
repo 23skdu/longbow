@@ -16,17 +16,6 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// frame is a proxy frame that carries raw bytes.
-type frame struct {
-	payload []byte
-}
-
-func (f *frame) Marshal() ([]byte, error) { return f.payload, nil }
-func (f *frame) Unmarshal(data []byte) error {
-	f.payload = data
-	return nil
-}
-
 // ForwarderConfig holds configuration for the forwarder
 type ForwarderConfig struct {
 	DialTimeout time.Duration

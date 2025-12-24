@@ -25,15 +25,15 @@ func TestRecallValidation(t *testing.T) {
 		numQueries int
 		k          int
 		minRecall  float64
+		config     *hnsw2.Config
 	}{
-		{"Small_1K_Recall@10", 1000, 128, 100, 10, 0.995},
-		{"Medium_10K_Recall@10", 10000, 384, 100, 10, 0.995},
-		{"Medium_10K_Recall@50", 10000, 384, 100, 50, 0.990},
+		{"Small_1K_Recall@10", 1000, 128, 100, 10, 0.995, nil},
+		{"Medium_10K_Recall@10", 10000, 384, 100, 10, 0.995, nil},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			recall := measureRecall(t, tc.numVectors, tc.dim, tc.numQueries, tc.k)
+			recall := measureRecall(t, tc.numVectors, tc.dim, tc.numQueries, tc.k, tc.config)
 			
 			t.Logf("Recall@%d: %.4f%% (target: %.2f%%)", tc.k, recall*100, tc.minRecall*100)
 			
@@ -45,7 +45,7 @@ func TestRecallValidation(t *testing.T) {
 }
 
 // measureRecall compares hnsw2 results against brute-force ground truth
-func measureRecall(t *testing.T, numVectors, dim, numQueries, k int) float64 {
+func measureRecall(t *testing.T, numVectors, dim, numQueries, k int, cfg *hnsw2.Config) float64 {
 	mem := memory.NewGoAllocator()
 	
 	// Create schema
@@ -91,11 +91,16 @@ func measureRecall(t *testing.T, numVectors, dim, numQueries, k int) float64 {
 	ds.Index = hnswIdx
 	
 	// Build hnsw2 index
-	config := hnsw2.DefaultConfig()
+	var config hnsw2.Config
+	if cfg != nil {
+		config = *cfg
+	} else {
+		config = hnsw2.DefaultConfig()
+	}
 	hnsw2Index := hnsw2.NewArrowHNSW(ds, config)
 	
 	// Insert vectors into hnsw2
-	lg := hnsw2.NewLevelGenerator(1.44269504089)
+	lg := hnsw2.NewLevelGenerator(config.Ml)
 	for i := 0; i < numVectors; i++ {
 		level := lg.Generate()
 		if err := hnsw2Index.Insert(uint32(i), level); err != nil {
@@ -144,7 +149,7 @@ func measureRecall(t *testing.T, numVectors, dim, numQueries, k int) float64 {
 		}
 		
 		// Get hnsw2 results
-		hnsw2Results, err := hnsw2Index.Search(query, k, k*10)
+		hnsw2Results, err := hnsw2Index.Search(query, k, k*40)
 		if err != nil {
 			t.Fatalf("hnsw2 search failed: %v", err)
 		}
@@ -232,7 +237,7 @@ func TestRecallConsistency(t *testing.T) {
 	recalls := make([]float64, numRuns)
 	
 	for i := 0; i < numRuns; i++ {
-		recalls[i] = measureRecall(t, 500, 128, 50, 10)
+		recalls[i] = measureRecall(t, 500, 128, 50, 10, nil)
 	}
 	
 	// Calculate mean

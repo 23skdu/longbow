@@ -209,7 +209,8 @@ func (hs *HybridSearcher) Add(id VectorID, vector []float32, text string) {
 // Defining minimal stub methods to satisfy the compiler.
 
 func (hs *HybridSearcher) SearchDense(query []float32, k int) []SearchResult {
-	return hs.hnsw.SearchVectors(query, k, nil)
+	res, _ := hs.hnsw.SearchVectors(query, k, nil)
+	return res
 }
 
 func (hs *HybridSearcher) SearchSparse(query string, k int) []SearchResult {

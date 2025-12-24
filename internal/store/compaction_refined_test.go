@@ -127,7 +127,7 @@ func TestCompaction_IndexIntegrity(t *testing.T) {
 
 	// 3. Verify Search BEFORE Compaction
 	query := []float32{55, 0, 0, 0}
-	res := ds.SearchDataset(query, 1)
+	res, _ := ds.SearchDataset(query, 1)
 	require.Len(t, res, 1)
 
 	// Verify result via Location Lookup
@@ -149,7 +149,7 @@ func TestCompaction_IndexIntegrity(t *testing.T) {
 	require.Equal(t, int64(50), ds.Records[1].NumRows())
 
 	// 5. Verify Search AFTER Compaction
-	resAfter := ds.SearchDataset(query, 1)
+	resAfter, _ := ds.SearchDataset(query, 1)
 	require.Len(t, resAfter, 1)
 
 	locAfter, foundAfter := ds.Index.GetLocation(resAfter[0].ID)

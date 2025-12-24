@@ -382,7 +382,7 @@ func (a *AdaptiveIndex) SearchVectors(query []float32, k int, filters []Filter) 
 
 	if a.usingHNSW.Load() {
 		metrics.HnswSearchesTotal.Inc()
-		return a.hnsw.SearchVectors(query, k, filters), nil
+		return a.hnsw.SearchVectors(query, k, filters)
 	}
 	metrics.BruteForceSearchesTotal.Inc()
 	// BruteForce doesn't support filters yet, ignoring them

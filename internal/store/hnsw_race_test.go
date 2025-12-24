@@ -134,7 +134,7 @@ func TestHNSWRaceCompaction(t *testing.T) {
 				ds, ok := vs.datasets[datasetName]
 				vs.mu.RUnlock()
 				if ok && ds.Index != nil {
-					_ = ds.Index.SearchVectors(query, 5, nil)
+					_, _ = ds.Index.SearchVectors(query, 5, nil)
 				}
 				time.Sleep(10 * time.Millisecond)
 			}

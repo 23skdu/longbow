@@ -24,7 +24,7 @@ type VectorIndex interface {
 	AddBatch(recs []arrow.RecordBatch, rowIdxs []int, batchIdxs []int) ([]uint32, error)
 
 	// SearchVectors returns the k nearest neighbors for the query vector with scores and optional filtering.
-	SearchVectors(query []float32, k int, filters []Filter) []SearchResult
+	SearchVectors(query []float32, k int, filters []Filter) ([]SearchResult, error)
 
 	// SearchVectorsWithBitmap returns k nearest neighbors filtered by a bitset.
 	SearchVectorsWithBitmap(query []float32, k int, filter *Bitset) []SearchResult

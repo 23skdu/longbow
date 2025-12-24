@@ -9,6 +9,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 )
 
@@ -81,7 +82,8 @@ func TestBatchedIndexing(t *testing.T) {
 	// Check search
 	query := make([]float32, 128)
 	query[0] = 50.0
-	results := ds.Index.SearchVectors(query, 5, nil)
+	results, err := ds.Index.SearchVectors(query, 5, nil)
+	require.NoError(t, err)
 	assert.NotEmpty(t, results)
 	assert.Equal(t, VectorID(50), results[0].ID)
 }

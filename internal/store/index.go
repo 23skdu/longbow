@@ -45,6 +45,9 @@ type VectorIndex interface {
 	// SetIndexedColumns updates columns that should be indexed for fast equality lookups
 	SetIndexedColumns(cols []string)
 
+	// EstimateMemory returns the estimated memory usage of the index in bytes
+	EstimateMemory() int64
+
 	// Close releases index resources.
 	Close() error
 }

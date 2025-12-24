@@ -53,9 +53,9 @@ func (c *GlobalSearchCoordinator) GlobalSearch(ctx context.Context, localResults
 			defer wg.Done()
 
 			// 1. Get Client
-			client, err := c.getClient(p.Addr)
+			client, err := c.getClient(p.MetaAddr)
 			if err != nil {
-				c.logger.Warn("Failed to dial peer", zap.String("peer", p.ID), zap.Error(err))
+				c.logger.Warn("Failed to dial peer", zap.String("peer", p.ID), zap.String("addr", p.MetaAddr), zap.Error(err))
 				metrics.GlobalSearchPartialFailures.Inc()
 				return
 			}

@@ -174,15 +174,23 @@ func (f *RequestForwarder) ForwardStream(ctx context.Context, targetNodeID strin
 		return status.Errorf(codes.Internal, "failed to create client stream: %v", err)
 	}
 
-	// Bi-directional piping of raw frames
-	// This makes it truly transparent without knowing the types
+	// Bi-directional piping of messages
 	errChan := make(chan error, 2)
 
 	// Server -> Client (Forwarding request/data)
 	go func() {
 		for {
-			var f frame
-			if err := serverStream.RecvMsg(&f); err != nil {
+			var msg interface{}
+			switch method {
+			case "/arrow.flight.protocol.FlightService/DoGet":
+				msg = &flight.Ticket{}
+			case "/arrow.flight.protocol.FlightService/DoAction":
+				msg = &flight.Action{}
+			default:
+				msg = &flight.FlightData{}
+			}
+
+			if err := serverStream.RecvMsg(msg); err != nil {
 				clientStream.CloseSend()
 				if err == io.EOF {
 					errChan <- nil
@@ -191,7 +199,7 @@ func (f *RequestForwarder) ForwardStream(ctx context.Context, targetNodeID strin
 				}
 				return
 			}
-			if err := clientStream.SendMsg(&f); err != nil {
+			if err := clientStream.SendMsg(msg); err != nil {
 				errChan <- err
 				return
 			}
@@ -201,8 +209,14 @@ func (f *RequestForwarder) ForwardStream(ctx context.Context, targetNodeID strin
 	// Client -> Server (Returning data/response)
 	go func() {
 		for {
-			var f frame
-			if err := clientStream.RecvMsg(&f); err != nil {
+			var msg interface{}
+			if method == "/arrow.flight.protocol.FlightService/DoAction" {
+				msg = &flight.Result{}
+			} else {
+				msg = &flight.FlightData{}
+			}
+
+			if err := clientStream.RecvMsg(msg); err != nil {
 				if err == io.EOF {
 					errChan <- nil
 				} else {
@@ -210,7 +224,7 @@ func (f *RequestForwarder) ForwardStream(ctx context.Context, targetNodeID strin
 				}
 				return
 			}
-			if err := serverStream.SendMsg(&f); err != nil {
+			if err := serverStream.SendMsg(msg); err != nil {
 				errChan <- err
 				return
 			}

@@ -64,6 +64,7 @@ type WALBatcher struct {
 	rateTracker  *WriteRateTracker           // Adaptive: tracks write rate
 	intervalCalc *AdaptiveIntervalCalculator // Adaptive: calculates intervals
 	asyncFsyncer *AsyncFsyncer               // Async: background fsync handler
+	flushBuf     bytes.Buffer                // Reused buffer for flush serialization
 }
 
 // NewWALBatcher creates a new batched WAL writer
@@ -218,8 +219,7 @@ func (w *WALBatcher) flush() {
 	metrics.WalBatchSize.Observe(float64(len(batch)))
 
 	// Aggregate and serialize
-	var multiBatchBuf bytes.Buffer // Using a simple buffer for aggregation. Could pool this.
-
+	w.flushBuf.Reset() // Reuse buffer
 	// We need a scratch buffer for each record serialization
 	scratchBuf := w.bufPool.Get() // Get one scratch buffer for serialization
 	defer w.bufPool.Put(scratchBuf)
@@ -229,7 +229,7 @@ func (w *WALBatcher) flush() {
 		// Or better: write directly to multiBatchBuf?
 		// IPC Writer needs seekable/writer.
 		// Let's use serializeEntry helper to append to multiBatchBuf.
-		if err := w.serializeEntry(&multiBatchBuf, entry, scratchBuf); err != nil {
+		if err := w.serializeEntry(&w.flushBuf, entry, scratchBuf); err != nil {
 			w.handleFlushError(err)
 			// release all
 			for _, e := range batch {
@@ -241,7 +241,7 @@ func (w *WALBatcher) flush() {
 		entry.Record.Release()
 	}
 
-	data := multiBatchBuf.Bytes()
+	data := w.flushBuf.Bytes()
 	if len(data) == 0 {
 		return
 	}

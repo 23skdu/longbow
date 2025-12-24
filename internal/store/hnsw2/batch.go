@@ -16,11 +16,10 @@ func BatchDistanceCompute(queries [][]float32, candidates [][]float32, results [
 // prefetchNode hints to the CPU to prefetch a node's data.
 // This can reduce cache misses during graph traversal.
 func (h *ArrowHNSW) prefetchNode(id uint32) {
-	if int(id) >= len(h.nodes) {
+	data := h.data.Load()
+	if data == nil || int(id) >= data.Capacity {
 		return
 	}
-	// Node data will be accessed soon, hint to CPU
-	// The actual prefetch is handled by the CPU's hardware prefetcher
-	// and Go's memory access patterns
-	_ = h.nodes[id].ID
+	// Touch level to hint cache
+	_ = data.Levels[id]
 }

@@ -79,34 +79,33 @@ func TestShardedHNSWConfig_Validation(t *testing.T) {
 // TestShardedHNSW_ShardRouting verifies consistent hash-based routing
 func TestShardedHNSW_ShardRouting(t *testing.T) {
 	cfg := DefaultShardedHNSWConfig()
-	cfg.NumShards = 8
+	cfg.ShardSplitThreshold = 100 // Set threshold to force splits
+	cfg.NumShards = 1             // Initial shards
 
 	ds := &Dataset{dataMu: sync.RWMutex{}}
 	sharded := NewShardedHNSW(cfg, ds)
 
-	// Same ID should always route to same shard
-	for id := VectorID(0); id < 1000; id++ {
-		shard1 := sharded.GetShardForID(id)
-		shard2 := sharded.GetShardForID(id)
-		if shard1 != shard2 {
-			t.Errorf("ID %d routed to different shards: %d vs %d", id, shard1, shard2)
-		}
-		if shard1 < 0 || shard1 >= cfg.NumShards {
-			t.Errorf("shard index %d out of range [0, %d)", shard1, cfg.NumShards)
+	// Range-based routing: shard = id / threshold
+	for id := VectorID(0); id < 400; id++ {
+		expectedShard := int(id) / cfg.ShardSplitThreshold
+		shard := sharded.GetShardForID(id)
+		if shard != expectedShard {
+			t.Errorf("ID %d: expected shard %d, got %d", id, expectedShard, shard)
 		}
 	}
 
-	// Verify distribution across shards (should be roughly even)
-	counts := make([]int, cfg.NumShards)
-	for id := VectorID(0); id < 10000; id++ {
+	// Verify distribution
+	counts := make(map[int]int)
+	for id := VectorID(0); id < 400; id++ {
 		counts[sharded.GetShardForID(id)]++
 	}
 
-	expected := 10000 / cfg.NumShards
-	for i, count := range counts {
-		// Allow 20% variance
-		if count < expected*80/100 || count > expected*120/100 {
-			t.Errorf("shard %d has %d vectors (expected ~%d)", i, count, expected)
+	if len(counts) != 4 {
+		t.Errorf("expected 4 shards populated, got %d", len(counts))
+	}
+	for i := 0; i < 4; i++ {
+		if counts[i] != 100 {
+			t.Errorf("shard %d: expected 100 vectors, got %d", i, counts[i])
 		}
 	}
 }

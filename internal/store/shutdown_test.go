@@ -61,7 +61,7 @@ func TestShutdownDrainsIndexQueue(t *testing.T) {
 
 	// Queue some index jobs
 	for i := 0; i < 100; i++ {
-		s.indexQueue.Send(IndexJob{DatasetName: "test", BatchIdx: i, RowIdx: 0})
+		s.indexQueue.Send(IndexJob{DatasetName: "test", BatchIdx: i})
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

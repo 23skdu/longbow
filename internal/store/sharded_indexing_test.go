@@ -65,7 +65,6 @@ func TestShardedIndexChannelSend(t *testing.T) {
 	job := IndexJob{
 		DatasetName: "test_dataset",
 		BatchIdx:    5,
-		RowIdx:      10,
 	}
 
 	ok := sic.Send(job)
@@ -93,7 +92,7 @@ func TestShardedIndexChannelSend(t *testing.T) {
 func TestShardedIndexChannelTrySend(t *testing.T) {
 	sic := NewShardedIndexChannel(2, 1)
 
-	job := IndexJob{DatasetName: "test", BatchIdx: 0, RowIdx: 0}
+	job := IndexJob{DatasetName: "test", BatchIdx: 0}
 
 	if !sic.TrySend(job) {
 		t.Error("First TrySend should succeed")
@@ -128,7 +127,7 @@ func TestShardedIndexChannelStats(t *testing.T) {
 	sic := NewShardedIndexChannel(4, 100)
 
 	for i := 0; i < 20; i++ {
-		sic.Send(IndexJob{DatasetName: "dataset_" + string(rune('A'+i)), BatchIdx: i, RowIdx: 0})
+		sic.Send(IndexJob{DatasetName: "dataset_" + string(rune('A'+i)), BatchIdx: i})
 	}
 
 	stats := sic.Stats()
@@ -164,7 +163,7 @@ func TestShardedIndexChannelWithWorkers(t *testing.T) {
 	}
 
 	for i := 0; i < 100; i++ {
-		sic.Send(IndexJob{DatasetName: "ds_" + string(rune('0'+i%10)), BatchIdx: i, RowIdx: 0})
+		sic.Send(IndexJob{DatasetName: "ds_" + string(rune('0'+i%10)), BatchIdx: i})
 	}
 
 	sic.Close()
@@ -208,13 +207,13 @@ found:
 
 	// Fill up ds1's shard completely
 	for i := 0; i < 5; i++ {
-		sic.Send(IndexJob{DatasetName: ds1, BatchIdx: i, RowIdx: 0})
+		sic.Send(IndexJob{DatasetName: ds1, BatchIdx: i})
 	}
 
 	// ds2 should still be able to send (different shard)
 	done := make(chan bool, 1)
 	go func() {
-		ok := sic.Send(IndexJob{DatasetName: ds2, BatchIdx: 0, RowIdx: 0})
+		ok := sic.Send(IndexJob{DatasetName: ds2, BatchIdx: 0})
 		done <- ok
 	}()
 
@@ -239,7 +238,7 @@ func BenchmarkShardedVsSingleChannel(b *testing.B) {
 
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			ch <- IndexJob{DatasetName: "ds_" + string(byte('0'+i%10)), BatchIdx: i, RowIdx: 0}
+			ch <- IndexJob{DatasetName: "ds_" + string(byte('0'+i%10)), BatchIdx: i}
 		}
 		close(ch)
 	})
@@ -255,7 +254,7 @@ func BenchmarkShardedVsSingleChannel(b *testing.B) {
 
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			sic.Send(IndexJob{DatasetName: "ds_" + string(byte('0'+i%10)), BatchIdx: i, RowIdx: 0})
+			sic.Send(IndexJob{DatasetName: "ds_" + string(byte('0'+i%10)), BatchIdx: i})
 		}
 		sic.Close()
 	})

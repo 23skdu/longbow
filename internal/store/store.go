@@ -803,34 +803,30 @@ func (s *VectorStore) flushPutBatch(ds *Dataset, name string, batch []arrow.Reco
 		s.updateLWWAndMerkle(ds, rec, ts)
 
 		batchIdx := batchStartIdx + i
-		numRows := int(rec.NumRows())
-		for r := 0; r < numRows; r++ {
-			rec.Retain()
-			// Retry loop for backpressure instead of dropping
-			job := IndexJob{
-				DatasetName: name,
-				Record:      rec,
-				BatchIdx:    batchIdx,
-				RowIdx:      r,
-				CreatedAt:   time.Now(),
-			}
+		// Dispatch batch-level indexing job
+		rec.Retain()
+		job := IndexJob{
+			DatasetName: name,
+			Record:      rec,
+			BatchIdx:    batchIdx,
+			CreatedAt:   time.Now(),
+		}
 
-			// Try to send, backing off if full
-			sent := false
-			for attempt := 0; attempt < 100; attempt++ {
-				if s.indexQueue.Send(job) {
-					sent = true
-					break
-				}
-				// Queue full - wait a bit to apply backpressure
-				time.Sleep(5 * time.Millisecond)
+		// Try to send, backing off if full
+		sent := false
+		for attempt := 0; attempt < 50; attempt++ { // Reduced retry attempts slightly for batch jobs
+			if s.indexQueue.Send(job) {
+				sent = true
+				break
 			}
+			// Queue full - wait a bit to apply backpressure
+			time.Sleep(2 * time.Millisecond)
+		}
 
-			if !sent {
-				s.logger.Warn().Str("dataset", name).Msg("Dropped index job after retries (queue full)")
-				rec.Release()
-				metrics.IndexJobsDroppedTotal.Inc()
-			}
+		if !sent {
+			s.logger.Warn().Str("dataset", name).Int("batch_idx", batchIdx).Msg("Dropped batch index job after retries (queue full)")
+			rec.Release()
+			metrics.IndexJobsDroppedTotal.Inc()
 		}
 	}
 
@@ -1170,15 +1166,14 @@ func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
 			byDataset[j.DatasetName] = append(byDataset[j.DatasetName], j)
 		}
 
-		for dsName, group := range byDataset {
+		for dsName, dsGroup := range byDataset {
 			ds, err := s.getDataset(dsName)
 			if err != nil {
-				// Log error if dataset not found, but continue processing other groups
 				s.logger.Error().
 					Str("dataset", dsName).
 					Err(err).
 					Msg("Dataset not found for indexing job")
-				for _, j := range group {
+				for _, j := range dsGroup {
 					if j.Record != nil {
 						j.Record.Release()
 					}
@@ -1186,13 +1181,22 @@ func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
 				continue
 			}
 
-			recs := make([]arrow.RecordBatch, len(group))
-			rowIdxs := make([]int, len(group))
-			batchIdxs := make([]int, len(group))
-			for i, j := range group {
-				recs[i] = j.Record
-				rowIdxs[i] = j.RowIdx
-				batchIdxs[i] = j.BatchIdx
+			// Total rows in this group for this dataset
+			totalRowsInGroup := 0
+			for _, j := range dsGroup {
+				totalRowsInGroup += int(j.Record.NumRows())
+			}
+
+			recs := make([]arrow.RecordBatch, 0, totalRowsInGroup)
+			rowIdxs := make([]int, 0, totalRowsInGroup)
+			batchIdxs := make([]int, 0, totalRowsInGroup)
+			for _, j := range dsGroup {
+				n := int(j.Record.NumRows())
+				for r := 0; r < n; r++ {
+					recs = append(recs, j.Record)
+					rowIdxs = append(rowIdxs, r)
+					batchIdxs = append(batchIdxs, j.BatchIdx)
+				}
 			}
 
 			var docIDs []uint32
@@ -1205,15 +1209,6 @@ func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
 						Err(addErr).
 						Msg("Async batched index add failed")
 				} else {
-					// Periodically log progress for large datasets
-					count := ds.Index.Len()
-					if count%1000 == 0 || count < 1000 {
-						s.logger.Debug().
-							Str("dataset", dsName).
-							Int("count", count).
-							Msg("Progress update")
-					}
-
 					// Update memory tracking for index overhead
 					newIndexSize := ds.Index.EstimateMemory()
 					oldIndexSize := ds.IndexMemoryBytes.Swap(newIndexSize)
@@ -1223,68 +1218,90 @@ func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
 					}
 				}
 			} else {
+				// No vector index, but we still need docIDs if we want to support keyword indexing?
+				// Actually, if there is no HNSW index, we usually don't have docIDs.
+				// But we can fallback to using batchIdx/rowIdx as unique ID if needed, 
+				// or just skip keyword indexing if no vector index exists.
+				// Most datasets in Longbow have at least one vector column.
 				s.logger.Warn().Str("dataset", dsName).Msg("Dataset has no index initialized, skipping AddBatch")
 			}
 
 			// Update Inverted Indexes (Hybrid Search)
-			// For simplicity/safety, skip inverted index if docIDs mismatch group length
-			if len(docIDs) == len(group) {
-				for i, j := range group {
-					docID := docIDs[i]
+			// For simplicity/safety, skip inverted index if docIDs mismatch total row length
+			if len(docIDs) == totalRowsInGroup {
+				docIDIdx := 0
+				for _, j := range dsGroup {
 					schema := j.Record.Schema()
+					numRows := int(j.Record.NumRows())
+
+					// Identify string columns once per batch
+					stringCols := make([]int, 0)
 					for colIdx, field := range schema.Fields() {
 						if field.Type.ID() == arrow.STRING {
-							// Double-checked locking to avoid holding Lock for common case
-							ds.dataMu.RLock()
-							var idx *InvertedIndex
-							var ok bool
-							if ds.InvertedIndexes != nil {
-								idx, ok = ds.InvertedIndexes[field.Name]
-							}
-							ds.dataMu.RUnlock()
+							stringCols = append(stringCols, colIdx)
+						}
+					}
 
-							if !ok {
-								ds.dataMu.Lock()
-								if ds.InvertedIndexes == nil {
-									ds.InvertedIndexes = make(map[string]*InvertedIndex)
+					if len(stringCols) > 0 {
+						// Cache BM25 index lookup
+						ds.dataMu.RLock()
+						bm25 := ds.BM25Index
+						ds.dataMu.RUnlock()
+
+						for r := 0; r < numRows; r++ {
+							docID := docIDs[docIDIdx]
+							docIDIdx++
+
+							for _, colIdx := range stringCols {
+								fieldName := schema.Field(colIdx).Name
+								
+								// Double-checked locking for per-column inverted index
+								ds.dataMu.RLock()
+								var invIdx *InvertedIndex
+								if ds.InvertedIndexes != nil {
+									invIdx = ds.InvertedIndexes[fieldName]
 								}
-								// Re-check under lock
-								idx, ok = ds.InvertedIndexes[field.Name]
-								if !ok {
-									idx = NewInvertedIndex()
-									ds.InvertedIndexes[field.Name] = idx
-								}
-								ds.dataMu.Unlock()
-							}
+								ds.dataMu.RUnlock()
 
-							colI := j.Record.Column(colIdx)
-							if col, ok := colI.(*array.String); ok {
-								if j.RowIdx < col.Len() && col.IsValid(j.RowIdx) {
-									text := col.Value(j.RowIdx)
-									idx.Add(text, docID)
-
+								if invIdx == nil {
 									ds.dataMu.Lock()
-									bm25 := ds.BM25Index
+									if ds.InvertedIndexes == nil {
+										ds.InvertedIndexes = make(map[string]*InvertedIndex)
+									}
+									invIdx = ds.InvertedIndexes[fieldName]
+									if invIdx == nil {
+										invIdx = NewInvertedIndex()
+										ds.InvertedIndexes[fieldName] = invIdx
+									}
 									ds.dataMu.Unlock()
-									if bm25 != nil {
-										bm25.Add(VectorID(docID), text)
-										metrics.BM25DocumentsIndexedTotal.Inc()
+								}
+
+								colI := j.Record.Column(colIdx)
+								if col, ok := colI.(*array.String); ok {
+									if r < col.Len() && col.IsValid(r) {
+										text := col.Value(r)
+										invIdx.Add(text, docID)
+										if bm25 != nil {
+											bm25.Add(VectorID(docID), text)
+											metrics.BM25DocumentsIndexedTotal.Inc()
+										}
 									}
 								}
 							}
 						}
+					} else {
+						docIDIdx += numRows
 					}
 				}
 			}
 
 			// Release records and record latency
-			for _, j := range group {
+			for _, j := range dsGroup {
 				j.Record.Release()
 				metrics.IndexJobLatencySeconds.WithLabelValues(dsName).Observe(time.Since(j.CreatedAt).Seconds())
 			}
 		}
 	}
-
 	for {
 		select {
 		case job, ok := <-s.indexQueue.Jobs():

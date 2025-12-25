@@ -17,7 +17,6 @@ type IndexJob struct {
 	DatasetName string
 	Record      arrow.RecordBatch
 	BatchIdx    int
-	RowIdx      int
 	CreatedAt   time.Time
 }
 

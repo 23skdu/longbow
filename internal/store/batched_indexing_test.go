@@ -65,7 +65,6 @@ func TestBatchedIndexing(t *testing.T) {
 		store.indexQueue.Send(IndexJob{
 			DatasetName: ds.Name,
 			Record:      rec,
-			RowIdx:      0,
 			BatchIdx:    i,
 			CreatedAt:   time.Now(),
 		})

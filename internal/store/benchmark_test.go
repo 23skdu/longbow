@@ -208,3 +208,58 @@ func BenchmarkE2EDoPut(b *testing.B) {
 		})
 	}
 }
+
+func BenchmarkStreamedDoPut(b *testing.B) {
+	benchmarks := []struct {
+		name string
+		cfg  StorageConfig
+	}{
+		{"Buffered", StorageConfig{}},
+		{"DirectIO", StorageConfig{UseDirectIO: true}},
+	}
+
+	for _, bm := range benchmarks {
+		b.Run(bm.name, func(b *testing.B) {
+			client := setupDataServerBench(b, bm.cfg)
+			ctx := context.Background()
+
+			schema := arrow.NewSchema(
+				[]arrow.Field{
+					{Name: "id", Type: arrow.PrimitiveTypes.Int32},
+				},
+				nil,
+			)
+
+			mem := memory.NewGoAllocator()
+			builder := array.NewRecordBuilder(mem, schema)
+			defer builder.Release()
+
+			numRows := 1000
+			ids := make([]int32, numRows)
+			for i := 0; i < numRows; i++ {
+				ids[i] = int32(i)
+			}
+			builder.Field(0).(*array.Int32Builder).AppendValues(ids, nil)
+			rec := builder.NewRecordBatch()
+			defer rec.Release()
+
+			stream, err := client.DoPut(ctx)
+			if err != nil {
+				b.Fatalf("Failed to open DoPut stream: %v", err)
+			}
+			w := flight.NewRecordWriter(stream, ipc.WithSchema(schema))
+			w.SetFlightDescriptor(&flight.FlightDescriptor{Path: []string{"bench_streamed"}})
+
+			b.ResetTimer()
+			b.SetBytes(int64(numRows * 4))
+			for i := 0; i < b.N; i++ {
+				if err := w.Write(rec); err != nil {
+					b.Fatalf("Write failed at iteration %d: %v", i, err)
+				}
+			}
+			_ = w.Close()
+			_ = stream.CloseSend()
+			_, _ = stream.Recv()
+		})
+	}
+}

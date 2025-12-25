@@ -231,6 +231,34 @@ func (e *PQEncoder) ComputeTableFlat(query []float32) []float32 {
 	return table
 }
 
+// ComputeTableFlatInto computes the distance table for ADC into the provided destination buffer.
+// If dst is nil or too small, a new buffer is allocated.
+// Returns the slice containing the table.
+func (e *PQEncoder) ComputeTableFlatInto(query []float32, dst []float32) []float32 {
+	mTotal := e.config.M
+	ksub := e.config.Ksub
+	if ksub == 0 { ksub = 256 }
+	
+	reqSize := mTotal * ksub
+	if cap(dst) < reqSize {
+		dst = make([]float32, reqSize)
+	}
+	dst = dst[:reqSize]
+
+	for m := 0; m < mTotal; m++ {
+		start := m * e.subDim
+		end := start + e.subDim
+		subquery := query[start:end]
+
+		baseIdx := m * ksub
+		for k, center := range e.codebook[m] {
+			d := squaredL2(subquery, center)
+			dst[baseIdx+k] = d
+		}
+	}
+	return dst
+}
+
 func squaredL2(a, b []float32) float32 {
 	var sum float32
 	for i := range a {

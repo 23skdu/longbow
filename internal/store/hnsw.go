@@ -1109,63 +1109,7 @@ func (h *HNSWIndex) extractVector(rec arrow.RecordBatch, rowIdx int) ([]float32,
 	return vec, nil
 }
 
-// extractVectorNoCopy returns a zero-copy slice view of the vector
-// WARNING: Only safe for read-only operations while RecordBatch is retained
-func (h *HNSWIndex) extractVectorNoCopy(rec arrow.RecordBatch, rowIdx int) ([]float32, error) {
-	if rec == nil {
-		return nil, fmt.Errorf("extractVectorNoCopy: record is nil")
-	}
 
-	var vecCol arrow.Array
-	// Use cached vectorColIdx if available
-	colIdx := int(h.vectorColIdx.Load())
-	if colIdx >= 0 && colIdx < int(rec.NumCols()) {
-		if rec.Schema().Field(colIdx).Name == "vector" {
-			vecCol = rec.Column(colIdx)
-		}
-	}
-
-	if vecCol == nil {
-		for i, field := range rec.Schema().Fields() {
-			if field.Name == "vector" {
-				vecCol = rec.Column(i)
-				h.vectorColIdx.Store(int32(i))
-				break
-			}
-		}
-	}
-
-	if vecCol == nil {
-		return nil, fmt.Errorf("extractVectorNoCopy: vector column not found")
-	}
-
-	listArr, ok := vecCol.(*array.FixedSizeList)
-	if !ok {
-		return nil, fmt.Errorf("extractVectorNoCopy: invalid vector column format")
-	}
-
-	values := listArr.Data().Children()[0]
-	floatArr := array.NewFloat32Data(values)
-	defer floatArr.Release()
-
-	width := int(listArr.DataType().(*arrow.FixedSizeListType).Len())
-	start := rowIdx * width
-	end := start + width
-
-	if start < 0 || end > floatArr.Len() {
-		return nil, fmt.Errorf("extractVectorNoCopy: row index out of bounds")
-	}
-
-	// Return zero-copy slice (read-only!)
-	return floatArr.Float32Values()[start:end], nil
-}
-
-// releaseVector returns a vector buffer to the pool
-func (h *HNSWIndex) releaseVector(vec []float32) {
-	if vec != nil {
-		h.vectorPool.Put(vec)
-	}
-}
 
 // SearchVectorsWithBitmap returns k nearest neighbors filtered by a bitset.
 func (h *HNSWIndex) SearchVectorsWithBitmap(query []float32, k int, filter *Bitset) []SearchResult {

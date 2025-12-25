@@ -1,7 +1,7 @@
 package hnsw2
 
 import (
-	"math"
+
 	"testing"
 	
 	"github.com/23skdu/longbow/internal/store"
@@ -42,19 +42,7 @@ func (h *DualIndexHarness) MeasureRecall(query []float32, k int) float64 {
 	return 0.0
 }
 
-// euclideanDistance computes L2 distance between two vectors.
-func euclideanDistance(a, b []float32) float32 {
-	if len(a) != len(b) {
-		return float32(math.Inf(1))
-	}
-	
-	var sum float32
-	for i := range a {
-		diff := a[i] - b[i]
-		sum += diff * diff
-	}
-	return float32(math.Sqrt(float64(sum)))
-}
+
 
 // TestDualIndexHarness_Basic validates the harness setup.
 func TestDualIndexHarness_Basic(t *testing.T) {

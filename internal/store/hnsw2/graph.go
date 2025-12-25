@@ -191,6 +191,7 @@ func NewSearchContextPool() *SearchContextPool {
 					// PQ Scratch
 					// M*256 floats. Max M=64 -> 16384 floats. Safe.
 					scratchPQTable: make([]float32, 16384),
+					scratchIDs:     make([]uint32, 0, 2000),
 				}
 			},
 		},
@@ -223,4 +224,5 @@ type SearchContext struct {
 	scratchDists     []float32
 	scratchDiscarded []Candidate
 	scratchPQTable   []float32 // For ADC table
+	scratchIDs       []uint32  // For batching unvisited neighbors
 }

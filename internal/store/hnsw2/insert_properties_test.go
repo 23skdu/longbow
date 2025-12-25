@@ -1,7 +1,9 @@
 package hnsw2
 
 import (
+	"sync/atomic"
 	"testing"
+	"unsafe"
 	
 	"github.com/leanovate/gopter"
 	"github.com/leanovate/gopter/gen"
@@ -37,33 +39,46 @@ func TestInsertProperties(t *testing.T) {
 			config.M = m
 			config.MMax = m * 2
 			config.MMax0 = m
+			config.Alpha = 1.0
 			
 			index := NewArrowHNSW(nil, config)
+			index.dims = 1 // use 1-dim vectors
 			
-			// Add a few nodes manually
-			index.nodes = make([]GraphNode, 5)
+			// Initialize GraphData manually
+			data := NewGraphData(10) // capacity 10
+			index.data.Store(data)
+			
+			// Setup dummy vectors
+			vec := make([]float32, 1)
 			for i := 0; i < 5; i++ {
-				index.nodes[i].ID = uint32(i)
-				index.nodes[i].Level = 0
+				data.VectorPtrs[i] = unsafe.Pointer(&vec[0])
 			}
 			
 			// Add connections
 			for i := 0; i < 5; i++ {
 				for j := 0; j < 5; j++ {
 					if i != j {
-						index.addConnection(uint32(i), uint32(j), 0)
+						index.addConnection(data, uint32(i), uint32(j), 0)
 					}
 				}
 			}
 			
 			// Prune to M
+			// Need SearchContext
+			ctx := index.searchPool.Get()
+			defer index.searchPool.Put(ctx)
+			
 			for i := 0; i < 5; i++ {
-				index.pruneConnections(uint32(i), m*2, 0)
+				// Prune to M*2 (usually MMax is the limit, but here we test pruning)
+				// Actually pruneConnections param is 'maxConn'.
+				// We used m*2 in old test.
+				index.pruneConnections(ctx, data, uint32(i), m*2, 0)
 			}
 			
 			// Check all nodes have <= M*2 neighbors
 			for i := 0; i < 5; i++ {
-				if int(index.nodes[i].NeighborCounts[0]) > m*2 {
+				count := atomic.LoadInt32(&data.Counts[0][i])
+				if int(count) > m*2 {
 					return false
 				}
 			}
@@ -76,9 +91,9 @@ func TestInsertProperties(t *testing.T) {
 	properties.TestingRun(t)
 }
 
-// TestInsertContextPooling validates insert context pool behavior.
-func TestInsertContextPooling(t *testing.T) {
-	pool := NewInsertContextPool()
+// TestSearchContextPooling validates search context pool behavior.
+func TestSearchContextPooling(t *testing.T) {
+	pool := NewSearchContextPool()
 	
 	// Get context
 	ctx1 := pool.Get()
@@ -87,7 +102,7 @@ func TestInsertContextPooling(t *testing.T) {
 	}
 	
 	// Use context
-	ctx1.neighbors = append(ctx1.neighbors, Candidate{ID: 1, Dist: 1.0})
+	ctx1.candidates.Push(Candidate{ID: 1, Dist: 1.0})
 	ctx1.visited.Set(5)
 	
 	// Return to pool
@@ -100,21 +115,15 @@ func TestInsertContextPooling(t *testing.T) {
 	}
 	
 	// Should be cleared
-	if len(ctx2.neighbors) != 0 {
-		t.Error("neighbors not cleared after Put")
+	if ctx2.candidates.Len() != 0 {
+		t.Error("candidates not cleared after Put")
 	}
 	if ctx2.visited.IsSet(5) {
 		t.Error("visited not cleared after Put")
 	}
 	
-	// Check metrics
-	gets, puts := pool.Stats()
-	if gets != 2 {
-		t.Errorf("expected 2 gets, got %d", gets)
-	}
-	if puts != 1 {
-		t.Errorf("expected 1 put, got %d", puts)
-	}
+	// Check metrics? Pool doesn't expose stats in sync.Pool wrapper safely
+	// skipping stats check
 }
 
 // TestLevelDistribution validates exponential decay of level assignment.
@@ -146,15 +155,15 @@ func TestLevelDistribution(t *testing.T) {
 	t.Logf("Level distribution (n=%d): %v", total, counts)
 }
 
-// BenchmarkInsertContextPool benchmarks pool overhead.
-func BenchmarkInsertContextPool(b *testing.B) {
-	pool := NewInsertContextPool()
+// BenchmarkSearchContextPool benchmarks pool overhead.
+func BenchmarkSearchContextPool(b *testing.B) {
+	pool := NewSearchContextPool()
 	
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		ctx := pool.Get()
 		// Simulate some work
-		ctx.neighbors = append(ctx.neighbors, Candidate{ID: uint32(i), Dist: float32(i)})
+		ctx.candidates.Push(Candidate{ID: uint32(i), Dist: float32(i)})
 		pool.Put(ctx)
 	}
 }

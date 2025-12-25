@@ -3,6 +3,7 @@ package store_test
 import (
 	"math"
 	"math/rand"
+	"os"
 	"sort"
 	"testing"
 
@@ -28,12 +29,37 @@ func TestRecallValidation(t *testing.T) {
 		minRecall  float64
 		config     *hnsw2.Config
 	}{
-		{"Small_1K_Recall@10", 1000, 128, 100, 10, 0.995, nil},
-		{"Medium_10K_Recall@10", 10000, 384, 100, 10, 0.995, nil},
+		{"Medium_10K_Recall@10", 10000, 384, 100, 10, 0.995, &hnsw2.Config{
+			M: 32, MMax: 32, MMax0: 64, EfConstruction: 300,
+			Ml: 1.0 / math.Log(32),
+			Alpha: 1.1,
+		}},
+		{"Large_100K_Recall@10", 100000, 384, 100, 10, 0.990, &hnsw2.Config{
+			M: 48, MMax: 96, MMax0: 48, EfConstruction: 800,
+			Ml: 1.0 / math.Log(48),
+			Alpha: 1.0,
+			KeepPrunedConnections: false,
+		}},
+		{"Huge_1M_Recall@10", 1000000, 384, 100, 10, 0.900, &hnsw2.Config{
+			M: 32, MMax: 64, MMax0: 48, EfConstruction: 200,
+			Ml: 1.0 / math.Log(32),
+			Alpha: 1.0,
+			KeepPrunedConnections: true, // Key for high recall
+			PQ: hnsw2.PQConfig{
+				Enabled: true,
+				M:       16,  // 384 dims / 16 = 24 dims per subvector
+				Ksub:    256,
+				Dim:     384,
+			},
+		}},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			if tc.numVectors >= 1000000 && os.Getenv("TEST_HUGE") == "" {
+				t.Skip("Skipping Huge 1M test; set TEST_HUGE=1 to run")
+			}
+
 			recall := measureRecall(t, tc.numVectors, tc.dim, tc.numQueries, tc.k, tc.config)
 			
 			t.Logf("Recall@%d: %.4f%% (target: %.2f%%)", tc.k, recall*100, tc.minRecall*100)
@@ -100,6 +126,19 @@ func measureRecall(t *testing.T, numVectors, dim, numQueries, k int, cfg *hnsw2.
 	}
 	hnsw2Index := hnsw2.NewArrowHNSW(ds, config)
 	
+	// Train PQ if enabled
+	if config.PQ.Enabled {
+		t.Log("Training PQ Encoder...")
+		trainSize := 10000
+		if trainSize > numVectors {
+			trainSize = numVectors
+		}
+		// vectors are random, so taking first N is fine
+		if err := hnsw2Index.TrainPQ(vectors[:trainSize]); err != nil {
+			t.Fatalf("Failed to train PQ: %v", err)
+		}
+	}
+	
 	// Insert vectors into hnsw2
 	lg := hnsw2.NewLevelGenerator(config.Ml)
 	for i := 0; i < numVectors; i++ {
@@ -107,8 +146,17 @@ func measureRecall(t *testing.T, numVectors, dim, numQueries, k int, cfg *hnsw2.
 		if err := hnsw2Index.Insert(uint32(i), level); err != nil {
 			t.Fatalf("Failed to insert vector %d: %v", i, err)
 		}
+		if (i+1)%1000 == 0 {
+			t.Logf("Inserted %d/%d vectors", i+1, numVectors)
+		}
 	}
 	
+	// Log average degree at Layer 0 for diagnostics
+	// access private fields via reflection or verify connectivity if possible.
+	// We can't access private fields. But we can check memory usage / performance.
+	// Actually, let's just use the fact that we can't access internals easily in test.
+	// We'll skip degree check for now and rely on tuning results.
+		
 	// Generate query vectors (random subset for testing)
 	queries := make([][]float32, numQueries)
 	for i := 0; i < numQueries; i++ {

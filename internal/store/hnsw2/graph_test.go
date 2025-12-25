@@ -1,6 +1,7 @@
 package hnsw2
 
 import (
+	"math"
 	"testing"
 	
 	"github.com/23skdu/longbow/internal/store"
@@ -30,43 +31,47 @@ func TestArrowHNSW_NewIndex(t *testing.T) {
 func TestArrowHNSW_DefaultConfig(t *testing.T) {
 	config := DefaultConfig()
 	
-	if config.M != 16 {
-		t.Errorf("default M = %d, want 16", config.M)
+	if config.M != 32 {
+		t.Errorf("default M = %d, want 32", config.M)
 	}
 	
-	if config.MMax != 32 {
-		t.Errorf("default MMax = %d, want 32", config.MMax)
+	if config.MMax != 96 {
+		t.Errorf("default MMax = %d, want 96", config.MMax)
 	}
 	
-	if config.EfConstruction != 200 {
-		t.Errorf("default EfConstruction = %d, want 200", config.EfConstruction)
+	if config.EfConstruction != 400 {
+		t.Errorf("default EfConstruction = %d, want 400", config.EfConstruction)
 	}
 	
-	// Ml should be 1/ln(2) ≈ 1.44269504089
-	expectedMl := 1.44269504089
+	// Ml should be 1/ln(32) ≈ 0.288539
+	expectedMl := 1.0 / math.Log(32)
 	if config.Ml < expectedMl-0.0001 || config.Ml > expectedMl+0.0001 {
 		t.Errorf("default Ml = %f, want %f", config.Ml, expectedMl)
 	}
 }
 
-// TestGraphNode_Initialization validates node structure.
-func TestGraphNode_Initialization(t *testing.T) {
-	var node GraphNode
-	node.ID = 42
-	node.Level = 3
+// TestGraphData_Initialization validates GraphData structure.
+func TestGraphData_Initialization(t *testing.T) {
+	capacity := 100
+	data := NewGraphData(capacity)
 	
-	if node.ID != 42 {
-		t.Errorf("node.ID = %d, want 42", node.ID)
+	if data.Capacity != capacity {
+		t.Errorf("Capacity = %d, want %d", data.Capacity, capacity)
 	}
 	
-	if node.Level != 3 {
-		t.Errorf("node.Level = %d, want 3", node.Level)
+	if len(data.Levels) != capacity {
+		t.Errorf("Levels len = %d, want %d", len(data.Levels), capacity)
 	}
 	
-	// All neighbor counts should be 0 initially
-	for layer := 0; layer < MaxLayers; layer++ {
-		if node.NeighborCounts[layer] != 0 {
-			t.Errorf("layer %d neighbor count = %d, want 0", layer, node.NeighborCounts[layer])
+	if len(data.VectorPtrs) != capacity {
+		t.Errorf("VectorPtrs len = %d, want %d", len(data.VectorPtrs), capacity)
+	}
+	
+	// Check Neighbors array allocation
+	for i := 0; i < MaxLayers; i++ {
+		expectedLen := capacity * MaxNeighbors
+		if len(data.Neighbors[i]) != expectedLen {
+			t.Errorf("Layer %d Neighbors len = %d, want %d", i, len(data.Neighbors[i]), expectedLen)
 		}
 	}
 }
@@ -89,30 +94,6 @@ func TestSearchContextPool_Stats(t *testing.T) {
 		t.Error("pool.Get() returned nil")
 	}
 	pool.Put(ctx3)
-}
-
-// TestInsertContextPool_Stats validates insert pool metrics.
-func TestInsertContextPool_Stats(t *testing.T) {
-	pool := NewInsertContextPool()
-	
-	ctx1 := pool.Get()
-	ctx2 := pool.Get()
-	
-	gets, puts := pool.Stats()
-	if gets != 2 {
-		t.Errorf("gets = %d, want 2", gets)
-	}
-	if puts != 0 {
-		t.Errorf("puts = %d, want 0", puts)
-	}
-	
-	pool.Put(ctx1)
-	pool.Put(ctx2)
-	
-	gets, puts = pool.Stats()
-	if puts != 2 {
-		t.Errorf("puts after Put = %d, want 2", puts)
-	}
 }
 
 // BenchmarkNewArrowHNSW benchmarks index creation.

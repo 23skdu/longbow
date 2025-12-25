@@ -600,19 +600,15 @@ func (s *VectorStore) ApplyDelta(name string, rec arrow.RecordBatch, seq uint64,
 	s.currentMemory.Add(CachedRecordSize(rec))
 	ds.SizeBytes.Add(CachedRecordSize(rec))
 
-	// 5. Queue for indexing
-	numRows := int(rec.NumRows())
-	for i := 0; i < numRows; i++ {
-		rec.Retain()
-		if !s.indexQueue.Send(IndexJob{
-			DatasetName: name,
-			Record:      rec,
-			BatchIdx:    batchIdx,
-			RowIdx:      i,
-			CreatedAt:   time.Now(),
-		}) {
-			rec.Release()
-		}
+	// 5. Queue for indexing (Batch-level)
+	rec.Retain()
+	if !s.indexQueue.Send(IndexJob{
+		DatasetName: name,
+		Record:      rec,
+		BatchIdx:    batchIdx,
+		CreatedAt:   time.Now(),
+	}) {
+		rec.Release()
 	}
 
 	return nil

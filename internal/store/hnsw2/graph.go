@@ -15,7 +15,15 @@ type GraphData struct {
 	Capacity     int
 	// SoA Slices
 	Levels     []uint8          // [Capacity]
+	// VectorPtrs holds unsafe pointers to the vectors in the Arrow buffers.
+	// This avoids holding references to Arrow arrays preventing GC,
+	// but requires careful management of lifetime.
 	VectorPtrs []unsafe.Pointer // [Capacity]
+	
+	// QuantizedVectors holds dense packed PQ codes for all vectors.
+	// Layout: [vec0_code0, vec0_code1... vec1_code0...]
+	// Size: Capacity * PQ_M
+	QuantizedVectors []byte
 	// Neighbors flattened per layer: Neighbors[layer][nodeID*MaxNeighbors + index]
 	Neighbors [MaxLayers][]uint32
 	// Counts per layer and node: Counts[layer][nodeID]
@@ -29,6 +37,8 @@ func NewGraphData(capacity int) *GraphData {
 		Capacity:   capacity,
 		Levels:     make([]uint8, capacity),
 		VectorPtrs: make([]unsafe.Pointer, capacity),
+		// QuantizedVectors initialized lazily or if config present?
+		// For now just empty.
 	}
 	for i := 0; i < MaxLayers; i++ {
 		gd.Neighbors[i] = make([]uint32, capacity*MaxNeighbors)
@@ -39,20 +49,31 @@ func NewGraphData(capacity int) *GraphData {
 
 const (
 	MaxLayers    = 16 // Maximum number of layers in the graph
-	MaxNeighbors = 144 // Maximum neighbors per node per layer (Mmax)
+	MaxNeighbors = 192 // Maximum neighbors per node per layer (must be > MMax to allow Add-then-Prune)
 )
 
 // ArrowHNSW is the main HNSW index structure with Arrow integration.
 // It uses atomic pointers for lock-free search and a mutex for serialized writes.
 type ArrowHNSW struct {
 	// Graph data snapshot (lock-free access)
+	// Graph data snapshot (lock-free access)
 	data    atomic.Pointer[GraphData]
-	writeMu sync.Mutex
+	
+	// Locking strategy:
+	// resizeMu protects the GraphData pointer and global changes (like Grow).
+	// Insert() takes RLock (shared), Grow() takes Lock (exclusive).
+	resizeMu sync.RWMutex
+	
+	// shardedLocks protects individual node neighbor lists during updates.
+	// lockID = nodeID % 1024
+	shardedLocks [1024]sync.Mutex
 
 	// Graph state (atomic for lock-free reads)
 	entryPoint atomic.Uint32
 	maxLevel   atomic.Int32
 	nodeCount  atomic.Uint32
+	
+	pqEncoder *PQEncoder
 
 	// Arrow integration - reference to parent dataset for vector access
 	dataset *store.Dataset
@@ -84,7 +105,17 @@ type Config struct {
 	EfConstruction int     // Size of dynamic candidate list during construction
 	Ml             float64 // Level generation multiplier
 	
-	Alpha          float32 // RobustPrune parameter (default 1.0). Higher = more edges.
+	// Alpha is the diversity factor for robust pruning (default 1.0).
+	// Values > 1.0 relax the pruning, allowing more connections.
+	Alpha float32
+
+	// KeepPrunedConnections enables the "Robust Prune" backfill strategy.
+	// If true, candidates discarded by the heuristic are used to ensure
+	// the number of connections reaches M. This improves recall but may reduce performance.
+	KeepPrunedConnections bool
+
+	// PQ specifies the Product Quantization configuration.
+	PQ PQConfig
 }
 
 // DefaultConfig returns sensible default HNSW parameters.
@@ -153,6 +184,13 @@ func NewSearchContextPool() *SearchContextPool {
 					visited:    NewBitset(100000),
 					results:    make([]store.SearchResult, 0, 100),
 					resultSet:  NewMaxHeap(2000), // Pooled result set heap
+					// Scratch buffers
+					scratchVecs:      make([][]float32, 2000), // Max capacity > efConstruction
+					scratchDists:     make([]float32, 2000),
+					scratchDiscarded: make([]Candidate, 0, 2000),
+					// PQ Scratch
+					// M*256 floats. Max M=64 -> 16384 floats. Safe.
+					scratchPQTable: make([]float32, 16384),
 				}
 			},
 		},
@@ -179,4 +217,10 @@ type SearchContext struct {
 	visited    *Bitset
 	results    []store.SearchResult
 	resultSet  *MaxHeap
+	
+	// Scratch buffers to avoid allocations in selectNeighbors/pruneConnections
+	scratchVecs      [][]float32
+	scratchDists     []float32
+	scratchDiscarded []Candidate
+	scratchPQTable   []float32 // For ADC table
 }

@@ -1,7 +1,9 @@
 package hnsw2
 
 import (
+	"sync/atomic"
 	"testing"
+	"unsafe"
 	
 	"github.com/23skdu/longbow/internal/store"
 )
@@ -29,62 +31,105 @@ func TestLevelGenerator(t *testing.T) {
 }
 
 func TestInsert_SingleNode(t *testing.T) {
-	// TODO: Implement when we have proper vector storage
+	// TODO: Implement when we have proper vector storage integration in unit tests
 	t.Skip("Skipping until vector storage is integrated")
 }
 
 func TestInsert_MultipleNodes(t *testing.T) {
-	// TODO: Implement when we have proper vector storage
+	// TODO: Implement when we have proper vector storage integration in unit tests
 	t.Skip("Skipping until vector storage is integrated")
 }
 
 func TestAddConnection(t *testing.T) {
 	dataset := &store.Dataset{Name: "test"}
-	index := NewArrowHNSW(dataset, DefaultConfig())
+	config := DefaultConfig()
+	index := NewArrowHNSW(dataset, config)
 	
-	// Add two nodes
-	index.nodes = make([]GraphNode, 2)
-	index.nodes[0].ID = 0
-	index.nodes[1].ID = 1
+	// Initialize GraphData manually
+	data := NewGraphData(10)
+	index.data.Store(data)
 	
 	// Add connection 0 -> 1 at layer 0
-	index.addConnection(0, 1, 0)
+	index.addConnection(data, 0, 1, 0)
 	
-	if index.nodes[0].NeighborCounts[0] != 1 {
-		t.Errorf("expected 1 neighbor, got %d", index.nodes[0].NeighborCounts[0])
+	// Check count
+	count := atomic.LoadInt32(&data.Counts[0][0])
+	if count != 1 {
+		t.Errorf("expected 1 neighbor, got %d", count)
 	}
 	
-	if index.nodes[0].Neighbors[0][0] != 1 {
-		t.Errorf("expected neighbor 1, got %d", index.nodes[0].Neighbors[0][0])
+	// Check neighbor
+	if data.Neighbors[0][0*MaxNeighbors] != 1 {
+		t.Errorf("expected neighbor 1, got %d", data.Neighbors[0][0])
 	}
 	
 	// Adding same connection again should be idempotent
-	index.addConnection(0, 1, 0)
+	index.addConnection(data, 0, 1, 0)
 	
-	if index.nodes[0].NeighborCounts[0] != 1 {
-		t.Errorf("expected 1 neighbor after duplicate add, got %d", index.nodes[0].NeighborCounts[0])
+	count = atomic.LoadInt32(&data.Counts[0][0])
+	if count != 1 {
+		t.Errorf("expected 1 neighbor after duplicate add, got %d", count)
 	}
 }
 
 func TestPruneConnections(t *testing.T) {
 	dataset := &store.Dataset{Name: "test"}
-	index := NewArrowHNSW(dataset, DefaultConfig())
+	config := DefaultConfig()
+	// Strict alpha to force pruning based on distance
+	config.Alpha = 1.0 
+	index := NewArrowHNSW(dataset, config)
 	
-	// Add node with many connections
-	index.nodes = make([]GraphNode, 1)
-	index.nodes[0].ID = 0
+	// Initialize GraphData manually
+	data := NewGraphData(20)
+	index.data.Store(data)
 	
-	// Add 10 connections
-	for i := 0; i < 10; i++ {
-		index.nodes[0].Neighbors[0][i] = uint32(i + 1)
+	// Setup vectors for distance calculation
+	// Node 0 at Origin [0...]
+	// Neighbors 1..10 are orthogonal unit vectors [1,0..], [0,1..]
+	// Dist(0, i) = 1.0
+	// Dist(i, j) = sqrt(2) = 1.41
+	
+	dim := 11
+	index.dims = dim
+	vecs := make([][]float32, 11)
+	
+	// Vec 0: Origin
+	vecs[0] = make([]float32, dim)
+	
+	// Vecs 1..10: Orthogonal basis
+	for i := 1; i <= 10; i++ {
+		vecs[i] = make([]float32, dim)
+		vecs[i][i-1] = 1.0 // Orthogonal
 	}
-	index.nodes[0].NeighborCounts[0] = 10
+	
+	// Point VectorPtrs to these slices
+	for i := 0; i <= 10; i++ {
+		data.VectorPtrs[i] = unsafe.Pointer(&vecs[i][0])
+	}
+	
+	// Add 10 connections to Node 0
+	// Neighbors are 1..10. All dist 1.0. Sorted by ID (impl detail).
+	baseIdx := 0 // Node 0
+	for i := 1; i <= 10; i++ {
+		idx := baseIdx + (i - 1)
+		data.Neighbors[0][idx] = uint32(i)
+	}
+	atomic.StoreInt32(&data.Counts[0][0], 10)
 	
 	// Prune to 5
-	index.pruneConnections(0, 5, 0)
+	// HNSW Heuristic:
+	// Select 1 (Dist 1).
+	// Check 2. Dist(2,1)=1.41. Dist(2,0)=1. 1.41 * 1.0 > 1. Keep!
+	// So orthogonal neighbors should be preserved up to M.
 	
-	if index.nodes[0].NeighborCounts[0] != 5 {
-		t.Errorf("expected 5 neighbors after pruning, got %d", index.nodes[0].NeighborCounts[0])
+	ctx := index.searchPool.Get()
+	defer index.searchPool.Put(ctx)
+	
+	index.pruneConnections(ctx, data, 0, 5, 0)
+	
+	count := atomic.LoadInt32(&data.Counts[0][0])
+	if count != 5 {
+		t.Errorf("expected 5 neighbors after pruning, got %d", count)
 	}
 }
 

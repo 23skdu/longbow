@@ -12,7 +12,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 )
 
 // TestCompactionWorker_TriggerChannel verifies the worker has a trigger channel
@@ -58,7 +58,7 @@ func TestCompactionWorker_TriggerNonBlocking(t *testing.T) {
 // TestAutoCompaction_ThresholdTrigger verifies compaction triggers when batch count exceeds threshold
 func TestAutoCompaction_ThresholdTrigger(t *testing.T) {
 	pool := memory.NewGoAllocator()
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 
 	// Low threshold for testing
 	compactionCfg := CompactionConfig{
@@ -101,7 +101,7 @@ func TestAutoCompaction_ThresholdTrigger(t *testing.T) {
 // TestAutoCompaction_BelowThreshold verifies no trigger when below threshold
 func TestAutoCompaction_BelowThreshold(t *testing.T) {
 	pool := memory.NewGoAllocator()
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 
 	compactionCfg := CompactionConfig{
 		Enabled:             true,
@@ -141,7 +141,7 @@ func TestAutoCompaction_BelowThreshold(t *testing.T) {
 // TestAutoCompaction_MetricsEmitted verifies Prometheus metrics are updated
 func TestAutoCompaction_MetricsEmitted(t *testing.T) {
 	pool := memory.NewGoAllocator()
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 
 	compactionCfg := CompactionConfig{
 		Enabled:             true,
@@ -179,7 +179,7 @@ func TestAutoCompaction_MetricsEmitted(t *testing.T) {
 // TestAutoCompaction_ConcurrentDoPut verifies thread safety under concurrent writes
 func TestAutoCompaction_ConcurrentDoPut(t *testing.T) {
 	pool := memory.NewGoAllocator()
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 
 	compactionCfg := CompactionConfig{
 		Enabled:             true,
@@ -230,7 +230,7 @@ func TestAutoCompaction_ConcurrentDoPut(t *testing.T) {
 // TestAutoCompaction_DisabledConfig verifies no trigger when compaction disabled
 func TestAutoCompaction_DisabledConfig(t *testing.T) {
 	pool := memory.NewGoAllocator()
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 
 	compactionCfg := CompactionConfig{
 		Enabled:             false, // Disabled

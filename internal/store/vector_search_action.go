@@ -7,7 +7,6 @@ import (
 	"github.com/23skdu/longbow/internal/mesh"
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/apache/arrow-go/v18/arrow/flight"
-	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -46,7 +45,7 @@ func (s *MetaServer) handleVectorSearchAction(action *flight.Action, stream flig
 		req = VectorSearchRequest{}
 		if err := json.Unmarshal(action.Body, &req); err != nil {
 			metrics.VectorSearchActionErrors.Inc()
-			s.logger.Warn("VectorSearch JSON parse failed", zap.Error(err))
+			s.logger.Warn().Err(err).Msg("VectorSearch JSON parse failed")
 			return status.Errorf(codes.InvalidArgument, "invalid JSON request: %v", err)
 		}
 	} else {
@@ -114,11 +113,12 @@ func (s *MetaServer) handleVectorSearchAction(action *flight.Action, stream flig
 			if uint32(len(queryVec)) != expectedDim {
 				ds.dataMu.RUnlock()
 				metrics.VectorSearchActionErrors.Inc()
-				s.logger.Warn("Dimension mismatch in VectorSearch",
-					zap.String("dataset", req.Dataset),
-					zap.Uint32("expected", expectedDim),
-					zap.Int("got", len(queryVec)),
-					zap.Int("index_len", ds.Index.Len()))
+				s.logger.Warn().
+					Str("dataset", req.Dataset).
+					Uint32("expected", expectedDim).
+					Int("got", len(queryVec)).
+					Int("index_len", ds.Index.Len()).
+					Msg("Dimension mismatch in VectorSearch")
 				return status.Errorf(codes.InvalidArgument, "dimension mismatch: expected %d, got %d", expectedDim, len(queryVec))
 			}
 
@@ -155,7 +155,7 @@ func (s *MetaServer) handleVectorSearchAction(action *flight.Action, stream flig
 			// For now, let's just forward the single vector.
 			searchResults, err = s.coordinator.GlobalSearch(stream.Context(), searchResults, batchReq, remotePeers)
 			if err != nil {
-				s.logger.Warn("Global search partial failure", zap.Error(err))
+				s.logger.Warn().Err(err).Msg("Global search partial failure")
 			}
 		}
 

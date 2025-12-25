@@ -9,13 +9,13 @@ import (
 	"testing"
 	"time"
 
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 
 	"github.com/apache/arrow-go/v18/arrow/memory"
 )
 
-func discardLogger() *zap.Logger {
-	return zap.NewNop()
+func discardLogger() zerolog.Logger {
+	return zerolog.Nop()
 }
 
 // TestShutdownCompletesWithinTimeout verifies shutdown respects context deadline

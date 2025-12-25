@@ -65,20 +65,15 @@ func BenchmarkHNSWComparison(b *testing.B) {
 	
 	// Helper to create and populate hnsw2
 	createHNSW2 := func() *hnsw2.ArrowHNSW {
-		// Need a location store for hnsw2 to work
-		dummyIdx := store.NewHNSWIndex(ds)
-		for i := 0; i < numVectors; i++ {
-			dummyIdx.Add(0, i)
-		}
-		ds.Index = dummyIdx
+		// ArrowHNSW now manages its own location store internally
 		
 		config := hnsw2.DefaultConfig()
 		idx := hnsw2.NewArrowHNSW(ds, config)
-		lg := hnsw2.NewLevelGenerator(config.Ml)
 		
 		start := time.Now()
 		for i := 0; i < numVectors; i++ {
-			idx.Insert(uint32(i), lg.Generate())
+			// AddByLocation handles ID generation and location storage
+			idx.AddByLocation(0, i)
 		}
 		b.ReportMetric(float64(time.Since(start).Milliseconds()), "hnsw2_build_ms")
 		return idx
@@ -114,7 +109,7 @@ func BenchmarkHNSWComparison(b *testing.B) {
 	
 	b.Run("Search/HNSW2", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			_, err := hnsw2Idx.Search(query, k, k*10)
+			_, err := hnsw2Idx.Search(query, k, k*10, nil)
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -136,7 +131,7 @@ func BenchmarkHNSWComparison(b *testing.B) {
 	b.Run("SearchParallel/HNSW2", func(b *testing.B) {
 		b.RunParallel(func(pb *testing.PB) {
 			for pb.Next() {
-				_, err := hnsw2Idx.Search(query, k, k*10)
+				_, err := hnsw2Idx.Search(query, k, k*10, nil)
 				if err != nil {
 					b.Fatal(err)
 				}

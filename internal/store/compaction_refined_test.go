@@ -9,7 +9,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 )
 
 // TestCompactRecords_Incremental tests the incremental compaction logic in isolation
@@ -71,7 +71,7 @@ func TestCompactRecords_Incremental(t *testing.T) {
 
 // TestCompaction_IndexIntegrity validates HNSW index updates
 func TestCompaction_IndexIntegrity(t *testing.T) {
-	s := NewVectorStore(memory.NewGoAllocator(), zap.NewNop(), 1<<30, 1<<20, time.Hour)
+	s := NewVectorStore(memory.NewGoAllocator(), zerolog.Nop(), 1<<30, 1<<20, time.Hour)
 	defer s.Close()
 
 	// 1. Create Dataset Manually
@@ -162,7 +162,7 @@ func TestCompaction_IndexIntegrity(t *testing.T) {
 
 // TestCompaction_Tombstones verifies deletion filtering during compaction
 func TestCompaction_Tombstones(t *testing.T) {
-	s := NewVectorStore(memory.NewGoAllocator(), zap.NewNop(), 1<<30, 1<<20, time.Hour)
+	s := NewVectorStore(memory.NewGoAllocator(), zerolog.Nop(), 1<<30, 1<<20, time.Hour)
 	defer s.Close()
 
 	schema := arrow.NewSchema([]arrow.Field{{Name: "id", Type: arrow.PrimitiveTypes.Int64}}, nil)

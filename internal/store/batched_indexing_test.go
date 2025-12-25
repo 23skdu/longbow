@@ -10,7 +10,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 )
 
 func TestBatchedIndexing(t *testing.T) {
@@ -31,7 +31,7 @@ func TestBatchedIndexing(t *testing.T) {
 	store := &VectorStore{
 		datasets:   make(map[string]*Dataset),
 		indexQueue: NewIndexJobQueue(DefaultIndexJobQueueConfig()),
-		logger:     zap.NewNop(),
+		logger:     zerolog.Nop(),
 	}
 	store.datasets[ds.Name] = ds
 

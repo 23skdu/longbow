@@ -7,13 +7,13 @@ import (
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 )
 
 // BenchmarkParallelSearch benchmarks parallel vs serial search
 func BenchmarkParallelSearch(b *testing.B) {
 	mem := memory.NewGoAllocator()
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 	vs := NewVectorStore(mem, logger, 1024*1024*512, 0, 0)
 
 	// Setup dataset with 10k vectors

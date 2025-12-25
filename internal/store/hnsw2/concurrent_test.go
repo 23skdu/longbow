@@ -6,6 +6,9 @@ import (
 	"time"
 	
 	"github.com/23skdu/longbow/internal/store"
+	"github.com/apache/arrow-go/v18/arrow"
+	"github.com/apache/arrow-go/v18/arrow/array"
+	"github.com/apache/arrow-go/v18/arrow/memory"
 )
 
 // TestConcurrentSearch validates thread-safe concurrent search operations.
@@ -29,7 +32,7 @@ func TestConcurrentSearch(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for j := 0; j < numSearches; j++ {
-				_, err := index.Search(query, 10, 20)
+				_, err := index.Search(query, 10, 20, nil)
 				if err != nil {
 					t.Errorf("concurrent search failed: %v", err)
 				}
@@ -40,12 +43,48 @@ func TestConcurrentSearch(t *testing.T) {
 	wg.Wait()
 }
 
-// TestConcurrentSearchAndInsert validates concurrent search during inserts.
 func TestConcurrentSearchAndInsert(t *testing.T) {
-	dataset := &store.Dataset{Name: "test"}
+	// Setup dataset with 1000 vectors
+	mem := memory.NewGoAllocator()
+	dim := 32
+	schema := arrow.NewSchema(
+		[]arrow.Field{
+			{Name: "vector", Type: arrow.FixedSizeListOf(int32(dim), arrow.PrimitiveTypes.Float32)},
+		},
+		nil,
+	)
+	
+	// Create vectors
+	numVectors := 1000
+	bldr := array.NewFixedSizeListBuilder(mem, int32(dim), arrow.PrimitiveTypes.Float32)
+	defer bldr.Release()
+	vb := bldr.ValueBuilder().(*array.Float32Builder)
+	
+	bldr.Reserve(numVectors)
+	vb.Reserve(numVectors * dim)
+	
+	// Fill with dummy data
+	for i := 0; i < numVectors; i++ {
+		bldr.Append(true)
+		for j := 0; j < dim; j++ {
+			vb.Append(float32(i + j))
+		}
+	}
+	
+	rec := bldr.NewArray()
+	defer rec.Release()
+	batch := array.NewRecordBatch(schema, []arrow.Array{rec}, int64(numVectors))
+	defer batch.Release()
+		
+	dataset := &store.Dataset{
+		Name: "test", 
+		Schema: schema,
+		Records: []arrow.RecordBatch{batch},
+	}
+	
 	index := NewArrowHNSW(dataset, DefaultConfig())
 	
-	query := []float32{1.0, 2.0, 3.0}
+	query := make([]float32, dim)
 	
 	var wg sync.WaitGroup
 	
@@ -55,22 +94,30 @@ func TestConcurrentSearchAndInsert(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for j := 0; j < 50; j++ {
-				_, _ = index.Search(query, 10, 20)
+				_, _ = index.Search(query, 10, 20, nil)
 				time.Sleep(time.Microsecond)
 			}
 		}()
 	}
 	
-	// Inserters (will fail without vector storage, but tests locking)
+	// Inserters
 	for i := 0; i < 2; i++ {
 		wg.Add(1)
-		go func(id int) {
+		// We insert distinct ranges
+		startIdx := i * 100
+		go func(start int) {
 			defer wg.Done()
-			for j := 0; j < 10; j++ {
-				_ = index.Insert(uint32(id*10+j), 0)
+			for j := 0; j < 50; j++ {
+				idx := start + j
+				// AddByLocation automatically populates location store
+				// BatchIdx 0, RowIdx = idx
+				// Assuming idx < numVectors
+				if _, err := index.AddByLocation(0, idx); err != nil {
+					t.Errorf("Insert failed: %v", err)
+				}
 				time.Sleep(time.Microsecond * 10)
 			}
-		}(i)
+		}(startIdx)
 	}
 	
 	wg.Wait()
@@ -85,7 +132,7 @@ func BenchmarkConcurrentSearch(b *testing.B) {
 	
 	b.Run("Sequential", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			_, _ = index.Search(query, 10, 20)
+			_, _ = index.Search(query, 10, 20, nil)
 		}
 	})
 	
@@ -93,7 +140,7 @@ func BenchmarkConcurrentSearch(b *testing.B) {
 		b.SetParallelism(4)
 		b.RunParallel(func(pb *testing.PB) {
 			for pb.Next() {
-				_, _ = index.Search(query, 10, 20)
+				_, _ = index.Search(query, 10, 20, nil)
 			}
 		})
 	})
@@ -102,7 +149,7 @@ func BenchmarkConcurrentSearch(b *testing.B) {
 		b.SetParallelism(8)
 		b.RunParallel(func(pb *testing.PB) {
 			for pb.Next() {
-				_, _ = index.Search(query, 10, 20)
+				_, _ = index.Search(query, 10, 20, nil)
 			}
 		})
 	})
@@ -120,7 +167,7 @@ func BenchmarkSearchLatency(b *testing.B) {
 	
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = index.Search(query, 10, 20)
+		_, _ = index.Search(query, 10, 20, nil)
 	}
 }
 

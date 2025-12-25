@@ -9,13 +9,13 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 )
 
 // TestCompactDataset_InsufficientMemory verifies that compaction aborts if there isn't enough memory headroom.
 func TestCompactDataset_InsufficientMemory(t *testing.T) {
 	mem := memory.NewGoAllocator()
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 	
 	// MaxMemory = 200MB
 	maxMem := int64(200 * 1024 * 1024)

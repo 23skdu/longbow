@@ -11,7 +11,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/apache/arrow-go/v18/arrow/memory"
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 )
 
 // StoreRecords stores arrow records in the dataset (helper for tests)
@@ -32,7 +32,7 @@ func (s *VectorStore) StoreRecords(name string, records []arrow.RecordBatch) err
 
 // TestDoGetUsesPipelineForMultiBatch verifies DoGet uses pipeline for datasets with multiple batches
 func TestDoGetUsesPipelineForMultiBatch(t *testing.T) {
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 	mem := memory.NewGoAllocator()
 
 	store := NewVectorStoreWithPipeline(mem, logger, 4, 16)
@@ -87,7 +87,7 @@ func TestDoGetUsesPipelineForMultiBatch(t *testing.T) {
 
 // TestDoGetSerialPathForSingleBatch verifies single-batch datasets use fast serial path
 func TestDoGetSerialPathForSingleBatch(t *testing.T) {
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 	mem := memory.NewGoAllocator()
 
 	store := NewVectorStoreWithPipeline(mem, logger, 4, 16)
@@ -128,7 +128,7 @@ func TestDoGetSerialPathForSingleBatch(t *testing.T) {
 
 // TestDoGetPipelinePreservesOrder verifies batch ordering is maintained
 func TestDoGetPipelinePreservesOrder(t *testing.T) {
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 	mem := memory.NewGoAllocator()
 
 	store := NewVectorStoreWithPipeline(mem, logger, 8, 32)
@@ -174,7 +174,7 @@ func TestDoGetPipelinePreservesOrder(t *testing.T) {
 
 // TestDoGetPipelineConcurrentRequests verifies pipeline handles concurrent DoGet calls
 func TestDoGetPipelineConcurrentRequests(t *testing.T) {
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 	mem := memory.NewGoAllocator()
 
 	store := NewVectorStoreWithPipeline(mem, logger, 4, 16)

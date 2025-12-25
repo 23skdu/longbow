@@ -7,7 +7,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 )
 
 // =============================================================================
@@ -227,7 +227,7 @@ func TestShardedHNSW_GetVectorFromDataset_NoVectorColumn(t *testing.T) {
 
 func TestCheckAndMigrateToSharded_Disabled(t *testing.T) {
 	mem := memory.NewGoAllocator()
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 	vs := NewVectorStore(mem, logger, 1<<30, 1<<20, 5*time.Minute)
 	defer func() { _ = vs.Close() }()
 
@@ -246,7 +246,7 @@ func TestCheckAndMigrateToSharded_Disabled(t *testing.T) {
 
 func TestCheckAndMigrateToSharded_AlreadySharded(t *testing.T) {
 	mem := memory.NewGoAllocator()
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 	vs := NewVectorStore(mem, logger, 1<<30, 1<<20, 5*time.Minute)
 	defer func() { _ = vs.Close() }()
 
@@ -263,7 +263,7 @@ func TestCheckAndMigrateToSharded_AlreadySharded(t *testing.T) {
 
 func TestCheckAndMigrateToSharded_BelowThreshold(t *testing.T) {
 	mem := memory.NewGoAllocator()
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 	vs := NewVectorStore(mem, logger, 1<<30, 1<<20, 5*time.Minute)
 	defer func() { _ = vs.Close() }()
 

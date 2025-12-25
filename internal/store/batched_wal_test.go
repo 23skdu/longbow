@@ -13,7 +13,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 )
 
 // Helper to create test records
@@ -172,7 +172,7 @@ func TestBatchedWAL_ReplayAfterBatch(t *testing.T) {
 	require.NoError(t, batcher.Stop())
 
 	// Phase 2: Create new VectorStore and replay WAL
-	store := NewVectorStore(mem, zap.NewNop(), 1<<30, 0, time.Hour)
+	store := NewVectorStore(mem, zerolog.Nop(), 1<<30, 0, time.Hour)
 	require.NoError(t, store.InitPersistence(StorageConfig{
 		DataPath:         tmpDir,
 		SnapshotInterval: time.Hour,

@@ -10,7 +10,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 
 	"github.com/23skdu/longbow/internal/metrics"
 )
@@ -18,7 +18,7 @@ import (
 // TestBM25AutoIndexingDuringDoPut verifies text columns are auto-indexed when hybrid is enabled
 func TestBM25AutoIndexingDuringDoPut(t *testing.T) {
 	mem := memory.NewGoAllocator()
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 
 	store, err := NewVectorStoreWithHybridConfig(mem, logger, HybridSearchConfig{
 		Enabled:     true,
@@ -48,7 +48,7 @@ func TestBM25AutoIndexingDuringDoPut(t *testing.T) {
 // TestBM25AutoIndexingMultipleBatches verifies incremental indexing across batches
 func TestBM25AutoIndexingMultipleBatches(t *testing.T) {
 	mem := memory.NewGoAllocator()
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 
 	store, err := NewVectorStoreWithHybridConfig(mem, logger, HybridSearchConfig{
 		Enabled:     true,
@@ -81,7 +81,7 @@ func TestBM25AutoIndexingMultipleBatches(t *testing.T) {
 // TestBM25NoIndexingWhenDisabled verifies no indexing when hybrid is disabled
 func TestBM25NoIndexingWhenDisabled(t *testing.T) {
 	mem := memory.NewGoAllocator()
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 
 	store := NewVectorStore(mem, logger, 1<<30, 0, 0)
 
@@ -98,7 +98,7 @@ func TestBM25NoIndexingWhenDisabled(t *testing.T) {
 // TestBM25MultipleTextColumns verifies multiple text columns are indexed
 func TestBM25MultipleTextColumns(t *testing.T) {
 	mem := memory.NewGoAllocator()
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 
 	store, err := NewVectorStoreWithHybridConfig(mem, logger, HybridSearchConfig{
 		Enabled:     true,
@@ -132,7 +132,7 @@ func TestBM25MultipleTextColumns(t *testing.T) {
 // TestBM25IndexingMetrics verifies Prometheus metrics are emitted
 func TestBM25IndexingMetrics(t *testing.T) {
 	mem := memory.NewGoAllocator()
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 
 	initialCount := testutil.ToFloat64(metrics.BM25DocumentsIndexedTotal)
 

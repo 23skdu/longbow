@@ -35,7 +35,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.17.0"
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 	"google.golang.org/grpc"
 )
 
@@ -108,15 +108,15 @@ type Config struct {
 }
 
 // initializeHNSW2 is the hook function that initializes hnsw2 for datasets.
-func initializeHNSW2(ds *store.Dataset, logger *zap.Logger) {
+func initializeHNSW2(ds *store.Dataset, logger zerolog.Logger) {
 	if !ds.UseHNSW2() {
 		return
 	}
 	config := hnsw2.DefaultConfig()
 	hnswIndex := hnsw2.NewArrowHNSW(ds, config)
 	ds.SetHNSW2Index(hnswIndex)
-	if logger != nil {
-		logger.Info("hnsw2 initialized", zap.String("dataset", ds.Name))
+	if logger.GetLevel() != zerolog.Disabled {
+		logger.Info().Str("dataset", ds.Name).Msg("hnsw2 initialized")
 	}
 }
 
@@ -136,7 +136,7 @@ func run() error {
 		panic("Failed to process config: " + err.Error())
 	}
 
-	// Initialize zap logger
+	// Initialize zerolog logger
 	logger, err := logging.NewLogger(logging.Config{
 		Format: cfg.LogFormat,
 		Level:  cfg.LogLevel,
@@ -144,38 +144,37 @@ func run() error {
 	if err != nil {
 		panic("Failed to initialize logger: " + err.Error())
 	}
-	defer func() { _ = logger.Sync() }()
 
-	logger.Info(">>---> Starting Longbow",
-		zap.String("listen_addr", cfg.ListenAddr),
-		zap.String("meta_addr", cfg.MetaAddr),
-		zap.String("metrics_addr", cfg.MetricsAddr),
-		zap.Int64("max_memory", cfg.MaxMemory),
-		zap.String("data_path", cfg.DataPath),
-		zap.Duration("snapshot_interval", cfg.SnapshotInterval),
-		zap.Int64("max_wal_size", cfg.MaxWALSize),
-		zap.Duration("ttl", cfg.TTL),
-		zap.Int("gc_ballast_g", cfg.GCBallastG),
-		zap.Int("gogc", cfg.GOGC),
-	)
+	logger.Info().
+		Str("listen_addr", cfg.ListenAddr).
+		Str("meta_addr", cfg.MetaAddr).
+		Str("metrics_addr", cfg.MetricsAddr).
+		Int64("max_memory", cfg.MaxMemory).
+		Str("data_path", cfg.DataPath).
+		Dur("snapshot_interval", cfg.SnapshotInterval).
+		Int64("max_wal_size", cfg.MaxWALSize).
+		Dur("ttl", cfg.TTL).
+		Int("gc_ballast_g", cfg.GCBallastG).
+		Int("gogc", cfg.GOGC).
+		Msg(">>---> Starting Longbow")
 
 	// Apply GC Ballast if configured
 	var ballast []byte
 	if cfg.GCBallastG > 0 {
 		ballast = make([]byte, uint64(cfg.GCBallastG)<<30)
-		logger.Info("GC Ballast initialized", zap.Int("size_gb", cfg.GCBallastG))
+		logger.Info().Int("size_gb", cfg.GCBallastG).Msg("GC Ballast initialized")
 	}
 
 	// Apply GOGC tuning
 	if cfg.GOGC != 100 {
 		debug.SetGCPercent(cfg.GOGC)
-		logger.Info("GOGC tuned", zap.Int("value", cfg.GOGC))
+		logger.Info().Int("value", cfg.GOGC).Msg("GOGC tuned")
 	}
 
 	// Set Memory Limit if MaxMemory is configured (Go 1.19+)
 	if cfg.MaxMemory > 0 {
 		debug.SetMemoryLimit(cfg.MaxMemory)
-		logger.Info("Go Memory Limit set", zap.Int64("limit_bytes", cfg.MaxMemory))
+		logger.Info().Int64("limit_bytes", cfg.MaxMemory).Msg("Go Memory Limit set")
 	}
 
 	// Keep ballast alive until the end of run()
@@ -213,7 +212,10 @@ func run() error {
 			BM25:        store.DefaultBM25Config(),
 			RRFk:        60,
 		})
-		logger.Info("Hybrid search enabled", zap.Strings("columns", textCols), zap.Float32("alpha", cfg.HybridSearchAlpha))
+		logger.Info().
+			Strs("columns", textCols).
+			Float32("alpha", cfg.HybridSearchAlpha).
+			Msg("Hybrid search enabled")
 	}
 
 	// Start eviction ticker if TTL is enabled
@@ -227,7 +229,7 @@ func run() error {
 		}
 		vectorStore.StartEvictionTicker(checkInterval)
 		vectorStore.StartWALCheckTicker(10 * time.Second)
-		logger.Info("Eviction ticker started", zap.Duration("interval", checkInterval))
+		logger.Info().Dur("interval", checkInterval).Msg("Eviction ticker started")
 	}
 
 	// Initialize Persistence (WAL + Snapshots)
@@ -240,14 +242,14 @@ func run() error {
 		UseDirectIO:      cfg.StorageUseDirectIO,
 	}
 	if err := vectorStore.InitPersistence(storageCfg); err != nil {
-		logger.Panic("Failed to initialize persistence", zap.Error(err))
+		logger.Panic().Err(err).Msg("Failed to initialize persistence")
 	}
 
 	// Initialize OpenTelemetry Tracer
 	tp := initTracer()
 	defer func() {
 		if err := tp.Shutdown(context.Background()); err != nil {
-			logger.Error("Error shutting down tracer provider", zap.Error(err))
+			logger.Error().Err(err).Msg("Error shutting down tracer provider")
 		}
 	}()
 
@@ -272,7 +274,7 @@ func run() error {
 		}
 
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Error("Metrics server failed", zap.Error(err))
+			logger.Error().Err(err).Msg("Metrics server failed")
 		}
 	}()
 
@@ -327,12 +329,13 @@ func run() error {
 
 		g := mesh.NewGossip(gossipCfg)
 		if err := g.Start(); err != nil {
-			logger.Error("Failed to start Gossip", zap.Error(err))
+			logger.Error().Err(err).Msg("Failed to start Gossip")
 		} else {
-			logger.Info("Gossip started",
-				zap.String("id", gossipCfg.ID),
-				zap.Int("port", gossipCfg.Port),
-				zap.Duration("interval", gossipCfg.ProtocolPeriod))
+			logger.Info().
+				Str("id", gossipCfg.ID).
+				Int("port", gossipCfg.Port).
+				Dur("interval", gossipCfg.ProtocolPeriod).
+				Msg("Gossip started")
 			vectorStore.SetMesh(g)
 			defer g.Stop()
 		}
@@ -343,8 +346,7 @@ func run() error {
 
 	// gRPC Server Options - using env-configurable message sizes and window sizes
 	if err := cfg.ValidateGRPCConfig(); err != nil {
-		logger.Error("Invalid gRPC config", zap.Error(err))
-		_ = logger.Sync()
+		logger.Error().Err(err).Msg("Invalid gRPC config")
 		return err
 	}
 	serverOpts := cfg.BuildGRPCServerOptions()
@@ -371,13 +373,13 @@ func run() error {
 		),
 	)
 
-	logger.Info("gRPC server options configured",
-		zap.Int("max_recv_msg_size", cfg.GRPCMaxRecvMsgSize),
-		zap.Int("max_send_msg_size", cfg.GRPCMaxSendMsgSize),
-		zap.Int32("initial_window_size", cfg.GRPCInitialWindowSize),
-		zap.Int32("initial_conn_window_size", cfg.GRPCInitialConnWindowSize),
-		zap.Uint32("max_concurrent_streams", cfg.GRPCMaxConcurrentStreams),
-	)
+	logger.Info().
+		Int("max_recv_msg_size", cfg.GRPCMaxRecvMsgSize).
+		Int("max_send_msg_size", cfg.GRPCMaxSendMsgSize).
+		Int32("initial_window_size", cfg.GRPCInitialWindowSize).
+		Int32("initial_conn_window_size", cfg.GRPCInitialConnWindowSize).
+		Uint32("max_concurrent_streams", cfg.GRPCMaxConcurrentStreams).
+		Msg("gRPC server options configured")
 
 	// Set Prometheus metrics for gRPC configuration
 	metrics.GRPCMaxRecvMsgSizeBytes.Set(float64(cfg.GRPCMaxRecvMsgSize))
@@ -392,8 +394,10 @@ func run() error {
 
 	dataLisBase, err := net.Listen("tcp", cfg.ListenAddr)
 	if err != nil {
-		logger.Error("Failed to listen for Data Server", zap.Error(err), zap.String("addr", cfg.ListenAddr))
-		_ = logger.Sync()
+		logger.Error().
+			Err(err).
+			Str("addr", cfg.ListenAddr).
+			Msg("Failed to listen for Data Server")
 		return err
 	}
 	dataLis := store.NewTCPNoDelayListener(dataLisBase.(*net.TCPListener))
@@ -405,8 +409,10 @@ func run() error {
 
 	metaLisBase, err := net.Listen("tcp", cfg.MetaAddr)
 	if err != nil {
-		logger.Error("Failed to listen for Meta Server", zap.Error(err), zap.String("addr", cfg.MetaAddr))
-		_ = logger.Sync()
+		logger.Error().
+			Err(err).
+			Str("addr", cfg.MetaAddr).
+			Msg("Failed to listen for Meta Server")
 		return err
 	}
 
@@ -418,23 +424,23 @@ func run() error {
 
 	// Start Data Server
 	go func() {
-		logger.Info("Listening for Data gRPC connections", zap.String("addr", cfg.ListenAddr))
+		logger.Info().Str("addr", cfg.ListenAddr).Msg("Listening for Data gRPC connections")
 		if err := dataServer.Serve(dataLis); err != nil {
-			logger.Error("Data gRPC server failed", zap.Error(err))
+			logger.Error().Err(err).Msg("Data gRPC server failed")
 		}
 	}()
 
 	// Start Meta Server
 	go func() {
-		logger.Info("Listening for Meta gRPC connections", zap.String("addr", cfg.MetaAddr))
+		logger.Info().Str("addr", cfg.MetaAddr).Msg("Listening for Meta gRPC connections")
 		if err := metaServer.Serve(metaLis); err != nil {
-			logger.Error("Meta gRPC server failed", zap.Error(err))
+			logger.Error().Err(err).Msg("Meta gRPC server failed")
 		}
 	}()
 
 	// Wait for signal
 	<-ctx.Done()
-	logger.Info("Received shutdown signal, initiating graceful shutdown")
+	logger.Info().Msg("Received shutdown signal, initiating graceful shutdown")
 
 	// Shutdown Sequence
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -447,13 +453,13 @@ func run() error {
 		go func() {
 			defer wg.Done()
 			dataServer.GracefulStop()
-			logger.Info("Data server stopped")
+			logger.Info().Msg("Data server stopped")
 		}()
 		go func() {
 			defer wg.Done()
 			metaServer.GracefulStop()
 			_ = metaService.Close() // Clean up coordinator clients
-			logger.Info("Meta server stopped")
+			logger.Info().Msg("Meta server stopped")
 		}()
 		wg.Wait()
 		close(done)
@@ -461,18 +467,18 @@ func run() error {
 
 	select {
 	case <-done:
-		logger.Info("gRPC servers stopped gracefully")
+		logger.Info().Msg("gRPC servers stopped gracefully")
 	case <-shutdownCtx.Done():
-		logger.Warn("Shutdown timed out, forcing stop")
+		logger.Warn().Msg("Shutdown timed out, forcing stop")
 		dataServer.Stop()
 		metaServer.Stop()
 	}
 
 	// Close VectorStore (flushes WAL/Snapshots)
 	if err := vectorStore.Close(); err != nil {
-		logger.Error("Failed to close vector store", zap.Error(err))
+		logger.Error().Err(err).Msg("Failed to close vector store")
 	} else {
-		logger.Info("Vector store closed successfully")
+		logger.Info().Msg("Vector store closed successfully")
 	}
 
 	return nil

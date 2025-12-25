@@ -14,7 +14,6 @@ import (
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
-	"go.uber.org/zap"
 )
 
 const (
@@ -41,13 +40,13 @@ func (s *VectorStore) InitPersistence(cfg StorageConfig) error {
 
 	// Load latest snapshot if exists
 	if err := s.loadSnapshots(); err != nil {
-		s.logger.Error("Failed to load snapshots", zap.Error(err))
+		s.logger.Error().Err(err).Msg("Failed to load snapshots")
 		// Continue, maybe partial load or fresh start
 	}
 
 	// Replay WAL
 	if err := s.replayWAL(); err != nil {
-		s.logger.Error("Failed to replay WAL", zap.Error(err))
+		s.logger.Error().Err(err).Msg("Failed to replay WAL")
 		return err
 	}
 
@@ -106,7 +105,7 @@ func (s *VectorStore) replayWAL() error {
 	}
 	defer func() { _ = f.Close() }()
 
-	s.logger.Info("Replaying WAL...")
+	s.logger.Info().Msg("Replaying WAL...")
 	count := 0
 
 	var maxSeq uint64
@@ -167,7 +166,10 @@ func (s *VectorStore) replayWAL() error {
 			rec.Retain()
 
 			if err := s.ApplyDelta(name, rec, seq, ts); err != nil {
-				s.logger.Warn("Failed to apply WAL record", zap.Error(err), zap.String("dataset", name))
+				s.logger.Warn().
+					Err(err).
+					Str("dataset", name).
+					Msg("Failed to apply WAL record")
 			}
 			count++
 		}
@@ -175,13 +177,16 @@ func (s *VectorStore) replayWAL() error {
 	}
 
 	s.sequence.Store(maxSeq)
-	s.logger.Info("WAL Replay complete", zap.Any("records_loaded", count), zap.Uint64("max_seq", maxSeq))
+	s.logger.Info().
+		Int("records_loaded", count).
+		Uint64("max_seq", maxSeq).
+		Msg("WAL Replay complete")
 	return nil
 }
 
 func (s *VectorStore) Snapshot() error {
 	start := time.Now()
-	s.logger.Info("Starting Snapshot...")
+	s.logger.Info().Msg("Starting Snapshot...")
 
 	snapshotDir := filepath.Join(s.dataPath, snapshotDirName)
 	tempDir := filepath.Join(s.dataPath, snapshotDirName+"_tmp")
@@ -214,7 +219,7 @@ func (s *VectorStore) Snapshot() error {
 				gRec.Retain()
 				graphRecs = append(graphRecs, gRec)
 			} else {
-				s.logger.Error("Failed to convert graph to arrow for snapshot", zap.Error(err))
+				s.logger.Error().Err(err).Msg("Failed to convert graph to arrow for snapshot")
 			}
 		}
 
@@ -247,25 +252,27 @@ func (s *VectorStore) Snapshot() error {
 			path := filepath.Join(tempDir, item.Name+".parquet")
 			f, err := os.Create(path)
 			if err != nil {
-				s.logger.Error("Failed to create snapshot file",
-					zap.Any("name", item.Name),
-					zap.Error(err))
+				s.logger.Error().
+					Str("name", item.Name).
+					Err(err).
+					Msg("Failed to create snapshot file")
 				continue
 			}
 
 			// Write all records to the parquet file
 			for _, rec := range item.Recs {
 				if err := writeParquet(f, rec); err != nil {
-					s.logger.Error("Failed to write record to parquet snapshot",
-						zap.Any("name", item.Name),
-						zap.Error(err))
+					s.logger.Error().
+						Str("name", item.Name).
+						Err(err).
+						Msg("Failed to write record to parquet snapshot")
 					break
 				}
 			}
 
 			// Hint to kernel that we won't need this file in cache
 			if err := AdviseDontNeed(f); err != nil {
-				s.logger.Debug("Failed to advise DONTNEED on snapshot write", zap.Error(err))
+				s.logger.Debug().Err(err).Msg("Failed to advise DONTNEED on snapshot write")
 			}
 			_ = f.Close()
 		}
@@ -275,22 +282,24 @@ func (s *VectorStore) Snapshot() error {
 			path := filepath.Join(tempDir, item.Name+".graph.parquet")
 			f, err := os.Create(path)
 			if err != nil {
-				s.logger.Error("Failed to create graph snapshot file",
-					zap.Any("name", item.Name),
-					zap.Error(err))
+				s.logger.Error().
+					Str("name", item.Name).
+					Err(err).
+					Msg("Failed to create graph snapshot file")
 				continue
 			}
 
 			for _, rec := range item.GraphRecs {
 				if err := writeGraphParquet(f, rec); err != nil {
-					s.logger.Error("Failed to write graph record to parquet snapshot",
-						zap.Any("name", item.Name),
-						zap.Error(err))
+					s.logger.Error().
+						Str("name", item.Name).
+						Err(err).
+						Msg("Failed to write graph record to parquet snapshot")
 					break
 				}
 			}
 			if err := AdviseDontNeed(f); err != nil {
-				s.logger.Debug("Failed to advise DONTNEED on graph snapshot write", zap.Error(err))
+				s.logger.Debug().Err(err).Msg("Failed to advise DONTNEED on graph snapshot write")
 			}
 			_ = f.Close()
 		}
@@ -298,7 +307,7 @@ func (s *VectorStore) Snapshot() error {
 
 	// Atomic swap: Remove old, Rename temp to new
 	if err := os.RemoveAll(snapshotDir); err != nil {
-		s.logger.Error("Failed to remove old snapshot dir", zap.Error(err))
+		s.logger.Error().Err(err).Msg("Failed to remove old snapshot dir")
 	}
 	if err := os.Rename(tempDir, snapshotDir); err != nil {
 		metrics.SnapshotTotal.WithLabelValues("error").Inc()
@@ -311,7 +320,7 @@ func (s *VectorStore) Snapshot() error {
 		_ = s.wal.Close()
 		walPath := filepath.Join(s.dataPath, walFileName)
 		if err := os.Truncate(walPath, 0); err != nil {
-			s.logger.Error("Failed to truncate WAL", zap.Error(err))
+			s.logger.Error().Err(err).Msg("Failed to truncate WAL")
 		}
 		// Reopen
 		s.wal = NewStdWAL(s.dataPath, s)
@@ -331,7 +340,7 @@ func (s *VectorStore) Snapshot() error {
 		}
 	}
 	metrics.SnapshotSizeBytes.Observe(float64(snapshotSize))
-	s.logger.Info("Snapshot complete")
+	s.logger.Info().Msg("Snapshot complete")
 	return nil
 }
 
@@ -363,9 +372,10 @@ func (s *VectorStore) loadSnapshots() error {
 
 		f, err := os.Open(path)
 		if err != nil {
-			s.logger.Error("Failed to open snapshot file",
-				zap.Any("name", name),
-				zap.Error(err))
+			s.logger.Error().
+				Str("name", name).
+				Err(err).
+				Msg("Failed to open snapshot file")
 			continue
 		}
 		stat, _ := f.Stat()
@@ -380,24 +390,26 @@ func (s *VectorStore) loadSnapshots() error {
 
 		// Hint kernel we are done with this file
 		if err := AdviseDontNeed(f); err != nil {
-			s.logger.Debug("Failed to advise DONTNEED on snapshot read", zap.Error(err))
+			s.logger.Debug().Err(err).Msg("Failed to advise DONTNEED on snapshot read")
 		}
 		_ = f.Close()
 		if err != nil {
-			s.logger.Error("Failed to read parquet snapshot",
-				zap.Any("name", name),
-				zap.Error(err))
+			s.logger.Error().
+				Str("name", name).
+				Err(err).
+				Msg("Failed to read parquet snapshot")
 			continue
 		}
 
 		// Validate record integrity
 		if err := validateRecordBatch(rec); err != nil {
 			metrics.ValidationFailuresTotal.WithLabelValues("Snapshot", "invalid_batch").Inc()
-			s.logger.Warn("Skipping corrupted record in snapshot",
-				zap.Error(err),
-				zap.String("dataset", name),
-				zap.Int64("numCols", rec.NumCols()),
-				zap.Int("numFields", rec.Schema().NumFields()))
+			s.logger.Warn().
+				Err(err).
+				Str("dataset", name).
+				Int64("numCols", rec.NumCols()).
+				Int("numFields", rec.Schema().NumFields()).
+				Msg("Skipping corrupted record in snapshot")
 			rec.Release()
 			continue
 		}
@@ -418,7 +430,7 @@ func (s *VectorStore) loadSnapshots() error {
 				ds.Graph = NewGraphStore()
 			}
 			if err := ds.Graph.FromArrowBatch(rec); err != nil {
-				s.logger.Error("Failed to load graph from snapshot", zap.Error(err))
+				s.logger.Error().Err(err).Msg("Failed to load graph from snapshot")
 			}
 			rec.Release()
 		} else {
@@ -448,16 +460,17 @@ func (s *VectorStore) runSnapshotTicker(initialInterval time.Duration) {
 	for {
 		select {
 		case <-s.stopChan:
-			s.logger.Info("Snapshot ticker exiting")
+			s.logger.Info().Msg("Snapshot ticker exiting")
 			return
 		case <-getTickChan():
 			if err := s.Snapshot(); err != nil {
-				s.logger.Error("Scheduled snapshot failed", zap.Error(err))
+				s.logger.Error().Err(err).Msg("Scheduled snapshot failed")
 			}
 		case newInterval := <-s.snapshotReset:
-			s.logger.Info("Snapshot ticker updating",
-				zap.Duration("old_interval", initialInterval),
-				zap.Duration("new_interval", newInterval))
+			s.logger.Info().
+				Dur("old_interval", initialInterval).
+				Dur("new_interval", newInterval).
+				Msg("Snapshot ticker updating")
 			if ticker != nil {
 				ticker.Stop()
 				ticker = nil
@@ -474,7 +487,7 @@ func (s *VectorStore) runSnapshotTicker(initialInterval time.Duration) {
 func (s *VectorStore) Close() error {
 	var closeErr error
 	s.stopOnce.Do(func() {
-		s.logger.Info("Closing VectorStore...")
+		s.logger.Info().Msg("Closing VectorStore...")
 
 		// Signal background tickers to stop
 		close(s.stopChan)
@@ -484,18 +497,18 @@ func (s *VectorStore) Close() error {
 
 		// Stop and drain indexing queue
 		if s.indexQueue != nil {
-			s.logger.Info("Stopping index queue...")
+			s.logger.Info().Msg("Stopping index queue...")
 			s.indexQueue.Stop()
 		}
 
 		// Wait for all indexing workers to finish
-		s.logger.Info("Waiting for indexing workers to finish...")
+		s.logger.Info().Msg("Waiting for indexing workers to finish...")
 		s.indexWg.Wait()
 
 		// Stop WAL batcher first to flush pending writes
 		if s.walBatcher != nil {
 			if err := s.walBatcher.Stop(); err != nil {
-				s.logger.Error("Failed to stop WAL batcher", zap.Error(err))
+				s.logger.Error().Err(err).Msg("Failed to stop WAL batcher")
 			}
 			s.walBatcher = nil
 		}
@@ -504,9 +517,9 @@ func (s *VectorStore) Close() error {
 		defer s.walMu.Unlock()
 
 		if s.wal != nil {
-			s.logger.Info("Syncing and closing WAL")
+			s.logger.Info().Msg("Syncing and closing WAL")
 			if err := s.wal.Sync(); err != nil {
-				s.logger.Error("Failed to sync WAL", zap.Error(err))
+				s.logger.Error().Err(err).Msg("Failed to sync WAL")
 			}
 			if err := s.wal.Close(); err != nil {
 				closeErr = NewWALError("close", s.dataPath, 0, err)

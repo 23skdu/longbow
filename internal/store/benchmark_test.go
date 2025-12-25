@@ -13,7 +13,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"github.com/apache/arrow-go/v18/arrow/memory"
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
@@ -32,7 +32,7 @@ func setupDataServerBench(b *testing.B, cfg StorageConfig) flight.Client {
 	cfg.DataPath = tmpDir
 
 	mem := memory.NewGoAllocator()
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 	// 512MB memory limit for benchmarks
 	vs := NewVectorStore(mem, logger, 1024*1024*512, 0, 0)
 

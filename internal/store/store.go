@@ -13,7 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -33,7 +33,7 @@ import (
 type VectorStore struct {
 	flight.BaseFlightServer
 	mem           memory.Allocator
-	logger        *zap.Logger
+	logger        zerolog.Logger
 	datasets      map[string]*Dataset
 	maxMemory     atomic.Int64
 	currentMemory atomic.Int64
@@ -97,23 +97,24 @@ type VectorStore struct {
 	datasetInitHook func(*Dataset)
 }
 
-func NewVectorStore(mem memory.Allocator, logger *zap.Logger, maxMemory, maxWALSize int64, ttl time.Duration) *VectorStore {
+func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemory, maxWALSize int64, ttl time.Duration) *VectorStore {
 	cfg := DefaultIndexJobQueueConfig()
 
 	// Detect NUMA topology (Phase 4/5)
 	topo, err := DetectNUMATopology()
 	if err != nil {
-		logger.Warn("Failed to detect NUMA topology", zap.Error(err))
+		logger.Warn().Err(err).Msg("Failed to detect NUMA topology")
 		topo = &NUMATopology{NumNodes: 1}
 	}
 	if topo.NumNodes > 1 {
-		logger.Info("NUMA topology detected",
-			zap.Int("nodes", topo.NumNodes),
-			zap.String("topology", topo.String()))
+		logger.Info().
+			Int("nodes", topo.NumNodes).
+			Str("topology", topo.String()).
+			Msg("NUMA topology detected")
 	}
 
-	if logger == nil {
-		logger = zap.NewNop()
+	if logger.GetLevel() == zerolog.Disabled {
+		logger = zerolog.Nop()
 	}
 
 	s := &VectorStore{
@@ -225,10 +226,10 @@ func (s *VectorStore) evictDataset(ds *Dataset) {
 		return                   // Already empty or not tracked
 	}
 
-	s.logger.Warn("EVICTION TRIGGERED",
-		zap.String("dataset", ds.Name),
-		zap.Int64("size_bytes", size),
-		zap.Stack("stack"))
+	s.logger.Warn().
+		Str("dataset", ds.Name).
+		Int64("size_bytes", size).
+		Msg("EVICTION TRIGGERED")
 
 	// 3. Clear records (safe now - no readers due to write lock)
 	for _, rec := range ds.Records {
@@ -495,7 +496,9 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 	case "delete-vector":
 		defer func() {
 			if r := recover(); r != nil {
-				s.logger.Error("PANIC in delete-vector action", zap.Any("recover", r), zap.Stack("stack"))
+				s.logger.Error().
+					Interface("recover", r).
+					Msg("PANIC in delete-vector action")
 			}
 		}()
 
@@ -562,7 +565,7 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 	r, err := flight.NewRecordReader(stream)
 	if err != nil {
-		s.logger.Error("DoPut failed to create reader", zap.Error(err))
+		s.logger.Error().Err(err).Msg("DoPut failed to create reader")
 		return err
 	}
 	defer r.Release()
@@ -579,7 +582,7 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 		return fmt.Errorf("missing flight descriptor path")
 	}
 
-	s.logger.Info("DoPut started (Batched)", zap.String("name", name))
+	s.logger.Info().Str("name", name).Msg("DoPut started (Batched)")
 
 	s.mu.Lock()
 	if _, ok := s.datasets[name]; !ok {
@@ -625,7 +628,7 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 			var err error
 			combined, err = s.concatenateBatches(batch)
 			if err != nil {
-				s.logger.Error("Failed to concatenate batches", zap.Error(err))
+				s.logger.Error().Err(err).Msg("Failed to concatenate batches")
 				// Fallback to processing individually
 				if err := s.flushPutBatch(ds, name, batch); err != nil {
 					return err
@@ -686,7 +689,7 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 	}
 
 	if r.Err() != nil {
-		s.logger.Error("DoPut stream error", zap.Error(r.Err()))
+		s.logger.Error().Err(r.Err()).Msg("DoPut stream error")
 		// Cleanup pending
 		for _, b := range batch {
 			b.Release()
@@ -704,7 +707,7 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 		}
 	}
 
-	s.logger.Info("DoPut completed (Batched)", zap.String("name", name))
+	s.logger.Info().Str("name", name).Msg("DoPut completed (Batched)")
 	return nil
 }
 
@@ -720,7 +723,7 @@ func (s *VectorStore) flushPutBatch(ds *Dataset, name string, batch []arrow.Reco
 		for _, rec := range batch {
 			seq := s.sequence.Add(1)
 			if err := s.walBatcher.Write(rec, name, seq, ts); err != nil {
-				s.logger.Error("Failed to write to WAL (batch)", zap.Error(err))
+				s.logger.Error().Err(err).Msg("Failed to write to WAL (batch)")
 				metrics.WalWritesTotal.WithLabelValues("error").Inc()
 				// Continue processing, but metrics
 			} else {
@@ -824,7 +827,7 @@ func (s *VectorStore) flushPutBatch(ds *Dataset, name string, batch []arrow.Reco
 			}
 
 			if !sent {
-				s.logger.Warn("Dropped index job after retries (queue full)", zap.String("dataset", name))
+				s.logger.Warn().Str("dataset", name).Msg("Dropped index job after retries (queue full)")
 				rec.Release()
 				metrics.IndexJobsDroppedTotal.Inc()
 			}
@@ -844,13 +847,16 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 		if len(sStr) > 0 && sStr[0] != '{' {
 			query.Name = sStr
 		} else {
-			s.logger.Error("Failed to parse ticket", zap.Error(err))
+			s.logger.Error().Err(err).Msg("Failed to parse ticket")
 			return status.Error(codes.InvalidArgument, "invalid ticket format")
 		}
 	}
 
 	name := query.Name
-	s.logger.Info("DoGet called", zap.String("name", name), zap.Int("filters", len(query.Filters)))
+	s.logger.Info().
+		Str("name", name).
+		Int("filters", len(query.Filters)).
+		Msg("DoGet called")
 
 	ds, err := s.getDataset(name)
 	if err != nil {
@@ -861,7 +867,7 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 	defer ds.dataMu.RUnlock()
 
 	if len(ds.Records) == 0 {
-		s.logger.Warn("Dataset empty")
+		s.logger.Warn().Msg("Dataset empty")
 		return nil
 	}
 
@@ -906,7 +912,7 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 		// ProcessRecords handles feeding safely
 		stageChan = pipeline.ProcessRecords(ctx, ds.Records, ds.Tombstones, query.Filters, nil)
 		metrics.DoGetPipelineStepsTotal.WithLabelValues("scan", "pipeline").Add(float64(len(ds.Records)))
-		s.logger.Debug("Using DoGetPipeline", zap.Int("workers", pipeline.NumWorkers()))
+		s.logger.Debug().Int("workers", pipeline.NumWorkers()).Msg("Using DoGetPipeline")
 	} else {
 		// Simple feeder for small datasets
 		metrics.DoGetPipelineStepsTotal.WithLabelValues("scan", "simple").Add(float64(len(ds.Records)))
@@ -1017,16 +1023,20 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 				for i := 0; i < int(batch.NumCols()); i++ {
 					col := batch.Column(i)
 					if col.Len() != int(batch.NumRows()) {
-						s.logger.Error("DoGet Batch Column Length Mismatch", zap.Int("col_idx", i), zap.Int("col_len", col.Len()), zap.Int64("batch_rows", batch.NumRows()))
+						s.logger.Error().
+							Int("col_idx", i).
+							Int("col_len", col.Len()).
+							Int64("batch_rows", batch.NumRows()).
+							Msg("DoGet Batch Column Length Mismatch")
 					}
 					// Check data length for specific types if known, or just ensure not nil
 					if col.Data() == nil {
-						s.logger.Error("DoGet Batch Column Data is NIL", zap.Int("col_idx", i))
+						s.logger.Error().Int("col_idx", i).Msg("DoGet Batch Column Data is NIL")
 					}
 				}
 
 				if err := w.Write(batch); err != nil {
-					s.logger.Error("DoGet Write failed", zap.Error(err))
+					s.logger.Error().Err(err).Msg("DoGet Write failed")
 					batch.Release()
 					return err
 				}
@@ -1080,7 +1090,7 @@ DRAIN:
 		}
 	}()
 
-	s.logger.Info("DoGet completed", zap.Int64("rows_sent", rowsSent))
+	s.logger.Info().Int64("rows_sent", rowsSent).Msg("DoGet completed")
 	metrics.FlightRowsProcessed.WithLabelValues("get", "ok").Add(float64(rowsSent))
 	return nil
 }
@@ -1110,21 +1120,26 @@ func (s *VectorStore) startNUMAWorkers(numWorkers int) {
 
 				// Pin to NUMA node
 				if err := PinToNUMANode(s.numaTopology, node); err != nil {
-					s.logger.Warn("Failed to pin to NUMA node",
-						zap.Int("node", node), zap.Error(err))
+					s.logger.Warn().
+						Int("node", node).
+						Err(err).
+						Msg("Failed to pin to NUMA node")
 				}
 
 				// Create NUMA-aware allocator (future use for allocations)
 				allocator := NewNUMAAllocator(s.numaTopology, node)
 
 				metrics.NumaWorkerDistribution.WithLabelValues(strconv.Itoa(node)).Inc()
-				s.logger.Info("Started NUMA-aware worker", zap.Int("node", node))
+				s.logger.Info().Int("node", node).Msg("Started NUMA-aware worker")
 
 				s.runIndexWorker(allocator)
 			}(nodeID)
 		}
 	}
-	s.logger.Info("Started NUMA indexing workers", zap.Int("count", totalStarted), zap.Int("nodes", s.numaTopology.NumNodes))
+	s.logger.Info().
+		Int("count", totalStarted).
+		Int("nodes", s.numaTopology.NumNodes).
+		Msg("Started NUMA indexing workers")
 }
 
 func (s *VectorStore) startIndexingWorkers(numWorkers int) {
@@ -1135,7 +1150,7 @@ func (s *VectorStore) startIndexingWorkers(numWorkers int) {
 			s.runIndexWorker(nil)
 		}()
 	}
-	s.logger.Info("Started indexing workers", zap.Int("count", numWorkers))
+	s.logger.Info().Int("count", numWorkers).Msg("Started indexing workers")
 }
 
 func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
@@ -1159,7 +1174,10 @@ func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
 			ds, err := s.getDataset(dsName)
 			if err != nil {
 				// Log error if dataset not found, but continue processing other groups
-				s.logger.Error("Dataset not found for indexing job", zap.String("dataset", dsName), zap.Error(err))
+				s.logger.Error().
+					Str("dataset", dsName).
+					Err(err).
+					Msg("Dataset not found for indexing job")
 				for _, j := range group {
 					if j.Record != nil {
 						j.Record.Release()
@@ -1182,12 +1200,18 @@ func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
 			if ds.Index != nil {
 				docIDs, addErr = ds.Index.AddBatch(recs, rowIdxs, batchIdxs)
 				if addErr != nil {
-					s.logger.Error("Async batched index add failed", zap.String("dataset", dsName), zap.Error(addErr))
+					s.logger.Error().
+						Str("dataset", dsName).
+						Err(addErr).
+						Msg("Async batched index add failed")
 				} else {
 					// Periodically log progress for large datasets
 					count := ds.Index.Len()
 					if count%1000 == 0 || count < 1000 {
-						fmt.Printf("[DEBUG] Dataset %s indexed %d vectors\n", dsName, count)
+						s.logger.Debug().
+							Str("dataset", dsName).
+							Int("count", count).
+							Msg("Progress update")
 					}
 
 					// Update memory tracking for index overhead
@@ -1199,7 +1223,7 @@ func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
 					}
 				}
 			} else {
-				s.logger.Warn("Dataset has no index initialized, skipping AddBatch", zap.String("dataset", dsName))
+				s.logger.Warn().Str("dataset", dsName).Msg("Dataset has no index initialized, skipping AddBatch")
 			}
 
 			// Update Inverted Indexes (Hybrid Search)

@@ -12,7 +12,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -207,7 +207,7 @@ func createTestStoreWithVectors(t *testing.T, datasetName string, numVectors, _ 
 	t.Helper()
 
 	mem := memory.NewGoAllocator()
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 	store := NewVectorStore(mem, logger, 1<<30, 0, time.Hour)
 
 	// Create dataset with Mock index instead of real HNSW for robust testing

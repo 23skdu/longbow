@@ -1,10 +1,14 @@
 package store_test
 
 import (
+	"fmt"
 	"math"
 	"math/rand"
 	"os"
+	"runtime"
 	"sort"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/23skdu/longbow/internal/store"
@@ -35,22 +39,40 @@ func TestRecallValidation(t *testing.T) {
 			Alpha: 1.1,
 		}},
 		{"Large_100K_Recall@10", 100000, 384, 100, 10, 0.990, &hnsw2.Config{
-			M: 48, MMax: 96, MMax0: 48, EfConstruction: 800,
+			M: 48, MMax: 96, MMax0: 96, EfConstruction: 800,
 			Ml: 1.0 / math.Log(48),
 			Alpha: 1.0,
 			KeepPrunedConnections: false,
+			SQ8Enabled:            false,
+			RefinementFactor:      1.0,
+		}},
+		{"Dim_128_100K_Recall@10", 100000, 128, 100, 10, 0.990, &hnsw2.Config{
+			M: 48, MMax: 96, MMax0: 96, EfConstruction: 800,
+			Ml: 1.0 / math.Log(48),
+			Alpha: 1.0,
+		}},
+		{"Dim_768_20K_Recall@10", 20000, 768, 100, 10, 0.990, &hnsw2.Config{
+			M: 48, MMax: 96, MMax0: 96, EfConstruction: 800,
+			Ml: 1.0 / math.Log(48),
+			Alpha: 1.0,
+		}},
+		{"Dim_1536_20K_Recall@10", 20000, 1536, 100, 10, 0.990, &hnsw2.Config{
+			M: 48, MMax: 96, MMax0: 96, EfConstruction: 800,
+			Ml: 1.0 / math.Log(48),
+			Alpha: 1.0,
+		}},
+		{"Stress_500K_128D_Recall@10", 500000, 128, 50, 10, 0.900, &hnsw2.Config{
+			M: 32, MMax: 64, MMax0: 64, EfConstruction: 200, // Reduced Ef for speed
+			Ml: 1.0 / math.Log(32),
+			Alpha: 1.0,
 		}},
 		{"Huge_1M_Recall@10", 1000000, 384, 100, 10, 0.900, &hnsw2.Config{
 			M: 32, MMax: 64, MMax0: 48, EfConstruction: 200,
 			Ml: 1.0 / math.Log(32),
 			Alpha: 1.0,
 			KeepPrunedConnections: true, // Key for high recall
-			PQ: hnsw2.PQConfig{
-				Enabled: true,
-				M:       16,  // 384 dims / 16 = 24 dims per subvector
-				Ksub:    256,
-				Dim:     384,
-			},
+			SQ8Enabled:            true,
+			RefinementFactor:      3.0,
 		}},
 	}
 
@@ -110,12 +132,7 @@ func measureRecall(t *testing.T, numVectors, dim, numQueries, k int, cfg *hnsw2.
 	ds := store.NewDataset("recall_test", schema)
 	ds.Records = []arrow.RecordBatch{rec}
 	
-	// Create HNSW index for locationStore (needed by hnsw2)
-	hnswIdx := store.NewHNSWIndex(ds)
-	for i := 0; i < numVectors; i++ {
-		hnswIdx.Add(0, i)
-	}
-	ds.Index = hnswIdx
+	// No legacy index needed. ArrowHNSW manages its own locations.
 	
 	// Build hnsw2 index
 	var config hnsw2.Config
@@ -126,34 +143,60 @@ func measureRecall(t *testing.T, numVectors, dim, numQueries, k int, cfg *hnsw2.
 	}
 	hnsw2Index := hnsw2.NewArrowHNSW(ds, config)
 	
-	// Train PQ if enabled
-	if config.PQ.Enabled {
-		t.Log("Training PQ Encoder...")
-		trainSize := 10000
-		if trainSize > numVectors {
-			trainSize = numVectors
-		}
-		// vectors are random, so taking first N is fine
-		if err := hnsw2Index.TrainPQ(vectors[:trainSize]); err != nil {
-			t.Fatalf("Failed to train PQ: %v", err)
-		}
-	}
 	
-	// Insert vectors into hnsw2
-	lg := hnsw2.NewLevelGenerator(config.Ml)
+	// Insert vectors into hnsw2 using AddByLocation concurrently
+	// Use worker pool to maximize throughput
+	t.Logf("Inserting %d vectors concurrently...", numVectors)
+	
+	concurrency := runtime.NumCPU() * 2
+	sem := make(chan struct{}, concurrency)
+	var wg sync.WaitGroup
+	var insertErr error
+	var errMu sync.Mutex
+	var insertedCount int32
+	
 	for i := 0; i < numVectors; i++ {
-		level := lg.Generate()
-		if err := hnsw2Index.Insert(uint32(i), level); err != nil {
-			t.Fatalf("Failed to insert vector %d: %v", i, err)
-		}
-		if (i+1)%1000 == 0 {
-			t.Logf("Inserted %d/%d vectors", i+1, numVectors)
-		}
+		// effective "worker pool" via semaphore
+		sem <- struct{}{}
+		wg.Add(1)
+		
+		go func(idx int) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			
+			// Stop if error occurred
+			errMu.Lock()
+			if insertErr != nil {
+				errMu.Unlock()
+				return
+			}
+			errMu.Unlock()
+			
+			if _, err := hnsw2Index.AddByLocation(0, idx); err != nil {
+				errMu.Lock()
+				if insertErr == nil {
+					insertErr = fmt.Errorf("failed to insert vector %d: %w", idx, err)
+				}
+				errMu.Unlock()
+				return
+			}
+			
+			// Progress logging
+			n := atomic.AddInt32(&insertedCount, 1)
+			if int(n)%10000 == 0 {
+				t.Logf("Inserted %d/%d vectors", n, numVectors)
+			}
+		}(i)
+	}
+	wg.Wait()
+	
+	if insertErr != nil {
+		t.Fatalf("Insertion failed: %v", insertErr)
 	}
 	
 	// Log average degree at Layer 0 for diagnostics
-	// access private fields via reflection or verify connectivity if possible.
-	// We can't access private fields. But we can check memory usage / performance.
+	metrics := hnsw2Index.AnalyzeGraph()
+	t.Logf("Graph Metrics: %s", metrics.String())
 	// Actually, let's just use the fact that we can't access internals easily in test.
 	// We'll skip degree check for now and rely on tuning results.
 		
@@ -194,7 +237,7 @@ func measureRecall(t *testing.T, numVectors, dim, numQueries, k int, cfg *hnsw2.
 		}
 		
 		// Get hnsw2 results
-		hnsw2Results, err := hnsw2Index.Search(query, k, k*100)
+		hnsw2Results, err := hnsw2Index.Search(query, k, k*100, nil)
 		if err != nil {
 			t.Fatalf("hnsw2 search failed: %v", err)
 		}

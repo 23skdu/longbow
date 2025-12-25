@@ -3,6 +3,7 @@ package hnsw2
 import (
 	"fmt"
 	"math"
+	"sort"
 	"sync/atomic"
 	"unsafe"
 
@@ -12,7 +13,7 @@ import (
 
 // Search performs k-NN search using the provided query vector.
 // Returns the k nearest neighbors sorted by distance.
-func (h *ArrowHNSW) Search(query []float32, k int, ef int) ([]store.SearchResult, error) {
+func (h *ArrowHNSW) Search(query []float32, k, ef int, filter *store.Bitset) ([]store.SearchResult, error) {
 	// Lock-free access: load snapshot of graph data
 	data := h.data.Load()
 	if data == nil || h.nodeCount.Load() == 0 {
@@ -23,18 +24,36 @@ func (h *ArrowHNSW) Search(query []float32, k int, ef int) ([]store.SearchResult
 		return []store.SearchResult{}, nil
 	}
 	
+	// Determine refinement parameters
+	targetK := k
+	useRefinement := h.config.SQ8Enabled && h.config.RefinementFactor > 1.0
+	if useRefinement {
+		targetK = int(float64(k) * h.config.RefinementFactor)
+		if targetK > h.Size() {
+			targetK = h.Size()
+		}
+	}
+
 	if ef <= 0 {
 		ef = k * 2 // Default ef to 2*k
+	}
+	// Ensure ef is at least as large as targetK
+	if ef < targetK {
+		ef = targetK
 	}
 	
 	// Get search context from pool
 	ctx := h.searchPool.Get()
 	defer h.searchPool.Put(ctx)
 	
-	// Pre-compute PQ table if needed
-	if h.pqEncoder != nil && len(data.QuantizedVectors) > 0 {
-		// Use scratch buffer for table
-		ctx.scratchPQTable = h.pqEncoder.ComputeTableFlatInto(query, ctx.scratchPQTable)
+	// Encode query if SQ8 enabled
+	if h.quantizer != nil {
+		if cap(ctx.querySQ8) < h.dims {
+			ctx.querySQ8 = make([]byte, h.dims)
+		}
+		ctx.querySQ8 = ctx.querySQ8[:h.dims]
+		encoded := h.quantizer.Encode(query)
+		copy(ctx.querySQ8, encoded)
 	}
 
 	// Ensure visited bitset is large enough
@@ -49,23 +68,47 @@ func (h *ArrowHNSW) Search(query []float32, k int, ef int) ([]store.SearchResult
 	
 	// Search from top layer to layer 1
 	for level := maxL; level > 0; level-- {
-		ep, _ = h.searchLayer(query, ep, 1, level, ctx, data)
+		ep, _ = h.searchLayer(query, ep, 1, level, ctx, data, nil)
 	}
 	
 	// Search layer 0 with ef candidates
-	_, _ = h.searchLayer(query, ep, ef, 0, ctx, data)
+	_, _ = h.searchLayer(query, ep, ef, 0, ctx, data, filter)
 	
-	// Extract top k results from candidates in context
-	results := make([]store.SearchResult, 0, k)
-	for i := 0; i < k && ctx.candidates.Len() > 0; i++ {
+	// Extract results
+	results := make([]store.SearchResult, 0, targetK)
+	extractCount := targetK
+	
+	for i := 0; i < extractCount && ctx.candidates.Len() > 0; i++ {
 		cand, ok := ctx.candidates.Pop()
 		if !ok {
 			break
 		}
+		
+		id := cand.ID
+		score := cand.Dist
+		
+		// If Rep-ranking, recompute score
+		if useRefinement {
+			vec := h.mustGetVectorFromData(data, id)
+			// Compute exact L2 distance
+			score = simd.EuclideanDistance(query, vec)
+		}
+		
 		results = append(results, store.SearchResult{
-			ID:    store.VectorID(cand.ID),
-			Score: cand.Dist,
+			ID:    store.VectorID(id),
+			Score: score,
 		})
+	}
+	
+	// If refinement used, sort and truncate
+	if useRefinement {
+		sort.Slice(results, func(i, j int) bool {
+			return results[i].Score < results[j].Score // Ascending distance (smallest first)
+		})
+		
+		if len(results) > k {
+			results = results[:k]
+		}
 	}
 	
 	return results, nil
@@ -73,7 +116,7 @@ func (h *ArrowHNSW) Search(query []float32, k int, ef int) ([]store.SearchResult
 
 // searchLayer performs greedy search at a specific layer.
 // Returns the closest node found and its distance.
-func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef int, layer int, ctx *SearchContext, data *GraphData) (uint32, float32) {
+func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef, layer int, ctx *SearchContext, data *GraphData, filter *store.Bitset) (uint32, float32) {
 	ctx.visited.Clear()
 	ctx.candidates.Clear()
 	
@@ -95,12 +138,8 @@ func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef int, laye
 	closest := entryPoint
 	closestDist := entryDist
 	
-	// PQ setup
-	usePQ := h.pqEncoder != nil && len(data.QuantizedVectors) > 0
-	pqM := 0
-	if h.pqEncoder != nil {
-		pqM = h.pqEncoder.config.M
-	}
+	// SQ8 Setup
+	useSQ8 := h.quantizer != nil && len(data.VectorsSQ8) > 0
 	
 	// Greedy search
 	for ctx.candidates.Len() > 0 {
@@ -145,21 +184,44 @@ func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef int, laye
 		}
 		dists = ctx.scratchDists[:count]
 		
-		if usePQ {
-			// PQ Path (ADC)
-			// Gather codes
-			// TODO: Use pre-allocated, aligned scratch buffer for codes if possible to avoid allocs?
-			// Ideally SearchContext has scratchBytes. For now, use make, but optimize later.
-			// Actually, let's look at doing it zero-alloc if possible.
-			// Just verify allocs later.
-			flatCodes := make([]byte, count * pqM) // Temp allocation - optimize out!
+		// Adaptive batching: Use BatchDistanceComputer for large candidate sets
+		useBatchCompute := h.batchComputer != nil && h.batchComputer.ShouldUseBatchCompute(count)
+		
+		if useSQ8 {
+			// SQ8 Path
+			// Simple loop for now
 			for i, nid := range ctx.scratchIDs {
-				offset := int(nid) * pqM
-				copy(flatCodes[i*pqM:], data.QuantizedVectors[offset:offset+pqM])
+				off := int(nid) * h.dims
+				// Bounds check
+				if off+h.dims <= len(data.VectorsSQ8) {
+					d := simd.EuclideanDistanceSQ8(ctx.querySQ8, data.VectorsSQ8[off:off+h.dims])
+					dists[i] = float32(d)
+				} else {
+					dists[i] = math.MaxFloat32
+				}
 			}
-			simd.ADCDistanceBatch(ctx.scratchPQTable, flatCodes, pqM, dists)
+		} else if useBatchCompute {
+			// Vectorized batch distance computation using Arrow compute
+			// Gather vectors for batch processing
+			if cap(ctx.scratchVecs) < count {
+				ctx.scratchVecs = make([][]float32, count*2)
+			}
+			vecs := ctx.scratchVecs[:count]
+			
+			for i, nid := range ctx.scratchIDs {
+				vecs[i] = h.mustGetVectorFromData(data, nid)
+			}
+			
+			// Use batch computer for vectorized distances
+			batchDists, err := h.batchComputer.ComputeL2Distances(query, vecs)
+			if err != nil {
+				// Fallback to SIMD on error
+				simd.EuclideanDistanceBatch(query, vecs, dists)
+			} else {
+				copy(dists, batchDists)
+			}
 		} else {
-			// Float32 Path
+			// Float32 Path (SIMD for small batches)
 			if cap(ctx.scratchVecs) < count {
 				ctx.scratchVecs = make([][]float32, count*2)
 			}
@@ -218,21 +280,19 @@ func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef int, laye
 // Uses zero-copy Arrow access and SIMD optimizations for maximum performance.
 func (h *ArrowHNSW) distance(query []float32, id uint32, data *GraphData) float32 {
 	// PQ check
-	if h.pqEncoder != nil && len(data.QuantizedVectors) > 0 {
-		// Use generic/helper or assume this is only called for entry point / single checks
-		// Ideally we use a batch context even for single usage, but here:
-		// SDC or ADC? Query is float, target is code. ADC.
-		// Need table. But 'distance' doesn't take context/table. 
-		// Fallback to on-the-fly table or standard logic?
-		// For single point, overhead is small. 
-		// Use ComputeTableFlat + ADCDistance? Costly.
-		// Fallback to "mustGetVectorFromData" (full res) if available? 
-		// If using PQ, we might not have full res loaded? 
-		// Assumption: We might have both. If PQ enabled, use PQ for speed?
-		// For consistency, if PQ enabled for graph, use PQ distance.
-		
-		// However, to avoid computing table for 1 point, maybe we stick to Full Res for initial entry point check?
-		// Or pass Context to distance().
+	// SQ8 Check
+	if h.quantizer != nil && len(data.VectorsSQ8) > 0 {
+		off := int(id) * h.dims
+		if off+h.dims <= len(data.VectorsSQ8) {
+			
+			// We need query to be quantized too.
+			// If we are in 'Search', we have ctx.querySQ8.
+			// But 'distance' doesn't take context.
+			// Just quantize on fly for single distance check (negligible for entry point).
+			qSQ8 := h.quantizer.Encode(query)
+			d := simd.EuclideanDistanceSQ8(qSQ8, data.VectorsSQ8[off:off+h.dims])
+			return float32(d)
+		}
 	}
 
 	// Optimization: Check for cached vector pointer (avoids Arrow overhead)
@@ -267,14 +327,25 @@ func (h *ArrowHNSW) getVector(id uint32) ([]float32, error) {
 	// Relaxed check: Rely on dataset to validation ID presence
 	// if int(id) >= int(h.nodeCount.Load()) { ... }
 	
-	// Get the HNSW index from dataset to access locationStore
-	hnswIdx, ok := h.dataset.Index.(*store.HNSWIndex)
-	if !ok {
-		return nil, fmt.Errorf("dataset index is not HNSWIndex")
+	// Try internal location store first (primary path for ArrowHNSW)
+	if h.locationStore != nil {
+		if loc, ok := h.locationStore.Get(store.VectorID(id)); ok {
+			rec, ok := h.dataset.GetRecord(loc.BatchIdx)
+			if !ok {
+				return nil, fmt.Errorf("batch index %d out of bounds", loc.BatchIdx)
+			}
+			return extractVectorFromArrow(rec, loc.RowIdx, h.vectorColIdx)
+		}
+	}
+
+	// Fallback to dataset index (legacy/hybrid mode)
+	idx := h.dataset.Index
+	if idx == nil {
+		return nil, fmt.Errorf("dataset index is nil and vector %d not in internal store", id)
 	}
 	
-	// Get location from HNSW index's locationStore
-	loc, ok := hnswIdx.GetLocation(store.VectorID(id))
+	// Get location from index
+	loc, ok := idx.GetLocation(store.VectorID(id))
 	if !ok {
 		return nil, fmt.Errorf("vector %d not found in locationStore", id)
 	}
@@ -286,7 +357,7 @@ func (h *ArrowHNSW) getVector(id uint32) ([]float32, error) {
 	}
 	
 	// Extract vector using zero-copy Arrow access
-	return extractVectorFromArrow(rec, loc.RowIdx)
+	return extractVectorFromArrow(rec, loc.RowIdx, h.vectorColIdx)
 }
 
 

@@ -10,7 +10,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/compute"
 	"github.com/apache/arrow-go/v18/arrow/memory"
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 )
 
 // DoGetPipelineConfig holds configuration for DoGet pipeline processing
@@ -39,12 +39,12 @@ type pipelineStats struct {
 var globalPipelineStats = &pipelineStats{}
 
 // NewVectorStoreWithPipeline creates a VectorStore with DoGet pipeline enabled
-func NewVectorStoreWithPipeline(mem memory.Allocator, logger *zap.Logger, workers, bufferSize int) *VectorStore {
+func NewVectorStoreWithPipeline(mem memory.Allocator, logger zerolog.Logger, workers, bufferSize int) *VectorStore {
 	return NewVectorStoreWithPipelineThreshold(mem, logger, workers, bufferSize, 2)
 }
 
 // NewVectorStoreWithPipelineThreshold creates a VectorStore with custom pipeline threshold
-func NewVectorStoreWithPipelineThreshold(mem memory.Allocator, logger *zap.Logger, workers, bufferSize, threshold int) *VectorStore {
+func NewVectorStoreWithPipelineThreshold(mem memory.Allocator, logger zerolog.Logger, workers, bufferSize, threshold int) *VectorStore {
 	// Create base store using existing constructor with defaults
 	store := NewVectorStore(mem, logger, 1<<30, 100<<20, 24*time.Hour) // 1GB mem, 100MB WAL, 24h TTL
 	if store == nil {
@@ -55,11 +55,11 @@ func NewVectorStoreWithPipelineThreshold(mem memory.Allocator, logger *zap.Logge
 	store.doGetPipelinePool = NewDoGetPipelinePool(workers, bufferSize)
 	store.pipelineThreshold = threshold
 
-	logger.Info("DoGet pipeline enabled",
-		zap.Int("workers", workers),
-		zap.Int("buffer_size", bufferSize),
-		zap.Int("threshold", threshold),
-	)
+	logger.Info().
+		Int("workers", workers).
+		Int("buffer_size", bufferSize).
+		Int("threshold", threshold).
+		Msg("DoGet pipeline enabled")
 
 	return store
 }

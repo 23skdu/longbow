@@ -9,7 +9,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/apache/arrow-go/v18/arrow/memory"
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 )
@@ -76,7 +76,7 @@ func TestStreamAggregator_SortAndSlice(t *testing.T) {
 	}()
 	defer b2.Release()
 
-	sa := NewStreamAggregator(mem, zap.NewNop())
+	sa := NewStreamAggregator(mem, zerolog.Nop())
 
 	// Manually construct table for test
 	tbl := array.NewTableFromRecords(schema, []arrow.RecordBatch{b1, b2})
@@ -142,7 +142,7 @@ func BenchmarkStreamAggregator_Merge(b *testing.B) {
 		batches[i] = builder.NewRecordBatch()
 	}
 
-	sa := NewStreamAggregator(mem, zap.NewNop())
+	sa := NewStreamAggregator(mem, zerolog.Nop())
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

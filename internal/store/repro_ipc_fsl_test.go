@@ -9,12 +9,12 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 )
 
 func TestCastRecordToSchema_MissingFSL(t *testing.T) {
 	mem := memory.NewGoAllocator()
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 	vs := NewVectorStore(mem, logger, 1024*1024*1024, 0, 0)
 
 	// Schema A: int64

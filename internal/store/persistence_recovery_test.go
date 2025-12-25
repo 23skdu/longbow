@@ -15,13 +15,13 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 )
 
 func TestPersistence_ReplayWAL_Corruption(t *testing.T) {
 	tmpDir := t.TempDir()
 	mem := memory.NewGoAllocator()
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 
 	// Helper to create a valid WAL entry buffer
 	createWALEntry := func(name string, rec arrow.RecordBatch) []byte {

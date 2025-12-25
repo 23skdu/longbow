@@ -1,7 +1,7 @@
 package store
 
 import (
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 	"testing"
 	"time"
 
@@ -16,7 +16,7 @@ import (
 
 func TestVectorStoreHybridSearchConfig(t *testing.T) {
 	mem := memory.NewGoAllocator()
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 
 	hybridCfg := DefaultHybridSearchConfig()
 	hybridCfg.Enabled = true
@@ -43,7 +43,7 @@ func TestVectorStoreHybridSearchConfig(t *testing.T) {
 
 func TestVectorStoreHybridSearchDisabled(t *testing.T) {
 	mem := memory.NewGoAllocator()
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 
 	store := NewVectorStore(mem, logger, 1<<30, 1<<28, 5*time.Minute)
 	defer func() { _ = store.Close() }()
@@ -56,7 +56,7 @@ func TestVectorStoreHybridSearchDisabled(t *testing.T) {
 
 func TestVectorStoreBM25IndexCreation(t *testing.T) {
 	mem := memory.NewGoAllocator()
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 
 	hybridCfg := DefaultHybridSearchConfig()
 	hybridCfg.Enabled = true
@@ -75,7 +75,7 @@ func TestVectorStoreBM25IndexCreation(t *testing.T) {
 
 func TestVectorStoreBM25IndexNilWhenDisabled(t *testing.T) {
 	mem := memory.NewGoAllocator()
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 
 	hybridCfg := DefaultHybridSearchConfig()
 	hybridCfg.Enabled = false
@@ -93,7 +93,7 @@ func TestVectorStoreBM25IndexNilWhenDisabled(t *testing.T) {
 
 func TestVectorStoreHybridConfigValidation(t *testing.T) {
 	mem := memory.NewGoAllocator()
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 
 	hybridCfg := DefaultHybridSearchConfig()
 	hybridCfg.Enabled = true
@@ -108,7 +108,7 @@ func TestVectorStoreHybridConfigValidation(t *testing.T) {
 
 func TestVectorStoreIndexTextColumns(t *testing.T) {
 	mem := memory.NewGoAllocator()
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 
 	hybridCfg := DefaultHybridSearchConfig()
 	hybridCfg.Enabled = true

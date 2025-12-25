@@ -11,7 +11,7 @@ func TestSearch_EmptyIndex(t *testing.T) {
 	index := NewArrowHNSW(dataset, DefaultConfig())
 	
 	query := []float32{1.0, 2.0, 3.0}
-	results, err := index.Search(query, 10, 20)
+	results, err := index.Search(query, 10, 20, nil)
 	
 	if err != nil {
 		t.Fatalf("Search failed: %v", err)
@@ -29,7 +29,7 @@ func TestSearch_InvalidK(t *testing.T) {
 	query := []float32{1.0, 2.0, 3.0}
 	
 	// k = 0 should return empty results
-	results, err := index.Search(query, 0, 20)
+	results, err := index.Search(query, 0, 20, nil)
 	if err != nil {
 		t.Fatalf("Search failed: %v", err)
 	}
@@ -38,7 +38,7 @@ func TestSearch_InvalidK(t *testing.T) {
 	}
 	
 	// k < 0 should return empty results
-	results, err = index.Search(query, -1, 20)
+	results, err = index.Search(query, -1, 20, nil)
 	if err != nil {
 		t.Fatalf("Search failed: %v", err)
 	}

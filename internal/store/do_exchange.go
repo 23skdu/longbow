@@ -9,7 +9,6 @@ import (
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
-	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -27,7 +26,7 @@ func (s *VectorStore) DoExchange(stream flight.FlightService_DoExchangeServer) e
 	// Track operation
 	metrics.DoExchangeCallsTotal.Inc()
 
-	s.logger.Info("DoExchange started")
+	s.logger.Info().Msg("DoExchange started")
 
 	var receivedCount int64
 	var sentCount int64
@@ -38,7 +37,7 @@ func (s *VectorStore) DoExchange(stream flight.FlightService_DoExchangeServer) e
 		// Check context cancellation
 		select {
 		case <-stream.Context().Done():
-			s.logger.Info("DoExchange cancelled", zap.Int64("received", receivedCount))
+			s.logger.Info().Int64("received", receivedCount).Msg("DoExchange cancelled")
 			metrics.DoExchangeErrorsTotal.Inc()
 			return stream.Context().Err()
 		default:
@@ -51,7 +50,7 @@ func (s *VectorStore) DoExchange(stream flight.FlightService_DoExchangeServer) e
 			break
 		}
 		if err != nil {
-			s.logger.Error("DoExchange recv error", zap.Error(err))
+			s.logger.Error().Err(err).Msg("DoExchange recv error")
 			metrics.DoExchangeErrorsTotal.Inc()
 			return err
 		}
@@ -69,10 +68,11 @@ func (s *VectorStore) DoExchange(stream flight.FlightService_DoExchangeServer) e
 			datasetName = lastDescriptor.Path[0]
 		}
 
-		s.logger.Debug("DoExchange received data",
-			zap.String("dataset", datasetName),
-			zap.Int("body_len", len(data.DataBody)),
-			zap.Int64("count", receivedCount))
+		s.logger.Debug().
+			Str("dataset", datasetName).
+			Int("body_len", len(data.DataBody)).
+			Int64("count", receivedCount).
+			Msg("DoExchange received data")
 
 		// Check for sync command - foundation for mesh replication
 		if lastDescriptor != nil && len(lastDescriptor.Cmd) > 0 {
@@ -88,18 +88,18 @@ func (s *VectorStore) DoExchange(stream flight.FlightService_DoExchangeServer) e
 					lastSeq = binary.LittleEndian.Uint64(data.DataBody[0:8])
 				}
 
-				s.logger.Info("Starting delta sync", zap.Uint64("last_seq", lastSeq))
+				s.logger.Info().Uint64("last_seq", lastSeq).Msg("Starting delta sync")
 
 				// Create Iterator
 				it, err := NewWALIterator(s.dataPath, s.mem)
 				if err != nil {
-					s.logger.Error("Failed to create WAL iterator", zap.Error(err))
+					s.logger.Error().Err(err).Msg("Failed to create WAL iterator")
 					return err
 				}
 				defer it.Close()
 
 				if err := it.Seek(lastSeq); err != nil {
-					s.logger.Error("Failed to seek WAL", zap.Error(err))
+					s.logger.Error().Err(err).Msg("Failed to seek WAL")
 					return err
 				}
 
@@ -110,7 +110,7 @@ func (s *VectorStore) DoExchange(stream flight.FlightService_DoExchangeServer) e
 						break
 					}
 					if err != nil {
-						s.logger.Error("WAL read error", zap.Error(err))
+						s.logger.Error().Err(err).Msg("WAL read error")
 						return err
 					}
 
@@ -179,7 +179,10 @@ func (s *VectorStore) DoExchange(stream flight.FlightService_DoExchangeServer) e
 					sentCount++
 					metrics.DoExchangeBatchesSentTotal.Inc()
 				}
-				s.logger.Info("Sent deltas to peer", zap.Int64("count", sentCount), zap.Uint64("last_seq", lastSeq))
+				s.logger.Info().
+					Int64("count", sentCount).
+					Uint64("last_seq", lastSeq).
+					Msg("Sent deltas to peer")
 
 				// Send "done" or just end? Client reads until EOF?
 				// Client triggered it.
@@ -222,7 +225,7 @@ func (s *VectorStore) DoExchange(stream flight.FlightService_DoExchangeServer) e
 			DataBody:         []byte("ack"),
 		}
 		if err := stream.Send(ack); err != nil {
-			s.logger.Error("DoExchange send error", zap.Error(err))
+			s.logger.Error().Err(err).Msg("DoExchange send error")
 			metrics.DoExchangeErrorsTotal.Inc()
 			return err
 		}
@@ -234,10 +237,11 @@ func (s *VectorStore) DoExchange(stream flight.FlightService_DoExchangeServer) e
 	duration := time.Since(start).Seconds()
 	metrics.DoExchangeDurationSeconds.Observe(duration)
 
-	s.logger.Info("DoExchange completed",
-		zap.Int64("received", receivedCount),
-		zap.Int64("sent", sentCount),
-		zap.Float64("duration_s", duration))
+	s.logger.Info().
+		Int64("received", receivedCount).
+		Int64("sent", sentCount).
+		Float64("duration_s", duration).
+		Msg("DoExchange completed")
 
 	return nil
 }

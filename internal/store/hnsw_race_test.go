@@ -12,11 +12,12 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/stretchr/testify/assert"
+	"github.com/rs/zerolog"
 )
 
 func TestHNSWRaceCompaction(t *testing.T) {
 	mem := memory.NewGoAllocator()
-	vs := NewVectorStore(mem, nil, 0, 0, 0)
+	vs := NewVectorStore(mem, zerolog.Nop(), 0, 0, 0)
 	vs.startIndexingWorkers(8) // More workers to increase race chance
 	// VectorStore doesn't have a public Stop, but we can close stopChan if it was exported.
 	// For this test, we'll just let it be cleaned up by GC or add a Stop method if possible.

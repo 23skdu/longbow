@@ -6,11 +6,11 @@ import (
 
 	"github.com/23skdu/longbow/internal/mesh"
 	"github.com/stretchr/testify/assert"
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 )
 
 func TestGlobalSearchCoordinator_Merge(t *testing.T) {
-	coord := NewGlobalSearchCoordinator(zap.NewNop())
+	coord := NewGlobalSearchCoordinator(zerolog.Nop())
 
 	// Local results: [1 (1.0), 3 (0.8)]
 	localRes := []SearchResult{
@@ -32,7 +32,7 @@ func TestGlobalSearchCoordinator_Merge(t *testing.T) {
 }
 
 func TestGlobalSearchCoordinator_NoPeers(t *testing.T) {
-	coord := NewGlobalSearchCoordinator(zap.NewNop())
+	coord := NewGlobalSearchCoordinator(zerolog.Nop())
 
 	req := VectorSearchRequest{K: 5}
 	res, err := coord.GlobalSearch(context.Background(), nil, req, []mesh.Member{})

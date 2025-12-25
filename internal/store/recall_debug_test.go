@@ -54,22 +54,15 @@ func TestRecallDebug(t *testing.T) {
 	ds := store.NewDataset("debug_test", schema)
 	ds.Records = []arrow.RecordBatch{rec}
 	
-	// Create HNSW index for locationStore (needed by hnsw2 to access vectors)
-	hnswIdx := store.NewHNSWIndex(ds)
-	for i := 0; i < numVectors; i++ {
-		hnswIdx.Add(0, i) // BatchIdx=0, RowIdx=i
-	}
-	ds.Index = hnswIdx
+	// ArrowHNSW manages its own location store
 	
 	// Build hnsw2 index
 	config := hnsw2.DefaultConfig()
 	hnsw2Index := hnsw2.NewArrowHNSW(ds, config)
 	
 	// Insert vectors into hnsw2
-	lg := hnsw2.NewLevelGenerator(1.44269504089)
 	for i := 0; i < numVectors; i++ {
-		level := lg.Generate()
-		if err := hnsw2Index.Insert(uint32(i), level); err != nil {
+		if _, err := hnsw2Index.AddByLocation(0, i); err != nil {
 			t.Fatalf("Failed to insert vector %d: %v", i, err)
 		}
 	}
@@ -125,7 +118,7 @@ func TestRecallDebug(t *testing.T) {
 	
 	// Get hnsw2 results with higher ef for better recall
 	ef := k * 10 // Use 10x k for better recall
-	hnsw2Results, err := hnsw2Index.Search(query, k, ef)
+	hnsw2Results, err := hnsw2Index.Search(query, k, ef, nil)
 	if err != nil {
 		t.Fatalf("hnsw2 search failed: %v", err)
 	}

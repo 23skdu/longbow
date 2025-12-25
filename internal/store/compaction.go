@@ -10,7 +10,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 )
 
 // CompactionConfig configures the background RecordBatch compaction worker.
@@ -576,7 +576,7 @@ func (w *CompactionWorker) GetTriggerCount() int64 {
 }
 
 // NewVectorStoreWithCompaction returns a VectorStore with initialized compaction
-func NewVectorStoreWithCompaction(mem memory.Allocator, logger *zap.Logger, maxMemoryBytes int64, walMaxBytes int64, ttlDuration time.Duration, compactionCfg CompactionConfig) *VectorStore {
+func NewVectorStoreWithCompaction(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes int64, walMaxBytes int64, ttlDuration time.Duration, compactionCfg CompactionConfig) *VectorStore {
 	store := NewVectorStore(mem, logger, maxMemoryBytes, walMaxBytes, ttlDuration)
 	store.stopCompaction() // Stop default if started
 	store.compactionConfig = compactionCfg

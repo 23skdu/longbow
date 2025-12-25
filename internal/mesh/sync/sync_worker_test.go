@@ -15,14 +15,14 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
 func TestSyncWorker_Replication(t *testing.T) {
 	mem := memory.NewGoAllocator()
-	logger, _ := zap.NewDevelopment()
+	logger := zerolog.Nop()
 
 	// 1. Setup Leader Store
 	leaderDir := t.TempDir()

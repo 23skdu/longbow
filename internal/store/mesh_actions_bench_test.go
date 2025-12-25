@@ -7,12 +7,12 @@ import (
 	"github.com/23skdu/longbow/internal/mesh"
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/apache/arrow-go/v18/arrow/memory"
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 )
 
 func BenchmarkMeshStatus(b *testing.B) {
 	mem := memory.NewGoAllocator()
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 	s := NewVectorStore(mem, logger, 1<<30, 1<<30, 0)
 
 	gcfg := mesh.GossipConfig{

@@ -3,7 +3,7 @@ package store
 import (
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 
 	"time"
 
@@ -37,7 +37,7 @@ func (s *VectorStore) GetBM25Index() *BM25InvertedIndex {
 }
 
 // NewVectorStoreWithHybridConfig creates a VectorStore with hybrid search enabled.
-func NewVectorStoreWithHybridConfig(mem memory.Allocator, logger *zap.Logger, cfg HybridSearchConfig) (*VectorStore, error) {
+func NewVectorStoreWithHybridConfig(mem memory.Allocator, logger zerolog.Logger, cfg HybridSearchConfig) (*VectorStore, error) {
 	if cfg.Enabled {
 		if err := cfg.Validate(); err != nil {
 			return nil, err
@@ -86,9 +86,10 @@ func (s *VectorStore) indexTextColumnsForHybridSearch(batch arrow.RecordBatch, b
 		// Must be string type
 		strArr, ok := col.(*array.String)
 		if !ok {
-			s.logger.Warn("hybrid search: text column is not string type",
-				zap.String("column", colName),
-				zap.String("actual_type", col.DataType().Name()))
+			s.logger.Warn().
+				Str("column", colName).
+				Str("actual_type", col.DataType().Name()).
+				Msg("hybrid search: text column is not string type")
 			continue
 		}
 

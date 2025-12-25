@@ -10,12 +10,12 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 )
 
 func TestGraphAPI_GetGraphStats(t *testing.T) {
 	mem := memory.NewGoAllocator()
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 	s := NewVectorStore(mem, logger, 1<<30, 0, time.Hour)
 	meta := NewMetaServer(s)
 	defer func() { _ = meta.Close() }()
@@ -72,7 +72,7 @@ func TestGraphAPI_GetGraphStats(t *testing.T) {
 
 func TestGraphAPI_GetGraphStats_NotFound(t *testing.T) {
 	mem := memory.NewGoAllocator()
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 	s := NewVectorStore(mem, logger, 1<<30, 0, time.Hour)
 	meta := NewMetaServer(s)
 

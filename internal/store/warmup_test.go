@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/coder/hnsw"
@@ -76,7 +76,7 @@ func TestHNSWIndex_Warmup(t *testing.T) {
 // TestVectorStore_Warmup tests warmup on VectorStore level
 func TestVectorStore_Warmup(t *testing.T) {
 	t.Run("warmup on empty store", func(t *testing.T) {
-		logger := zap.NewNop()
+		logger := zerolog.Nop()
 		store := NewVectorStore(memory.DefaultAllocator, logger, 1<<30, 0, time.Hour)
 		defer func() { _ = store.Close() }()
 
@@ -89,7 +89,7 @@ func TestVectorStore_Warmup(t *testing.T) {
 	})
 
 	t.Run("warmup warms all datasets with indexes", func(t *testing.T) {
-		logger := zap.NewNop()
+		logger := zerolog.Nop()
 		store := NewVectorStore(memory.DefaultAllocator, logger, 1<<30, 0, time.Hour)
 		defer func() { _ = store.Close() }()
 
@@ -117,7 +117,7 @@ func TestVectorStore_Warmup(t *testing.T) {
 	})
 
 	t.Run("warmup skips datasets without indexes", func(t *testing.T) {
-		logger := zap.NewNop()
+		logger := zerolog.Nop()
 		store := NewVectorStore(memory.DefaultAllocator, logger, 1<<30, 0, time.Hour)
 		defer func() { _ = store.Close() }()
 
@@ -146,7 +146,7 @@ func TestVectorStore_Warmup(t *testing.T) {
 	})
 
 	t.Run("warmup duration is tracked", func(t *testing.T) {
-		logger := zap.NewNop()
+		logger := zerolog.Nop()
 		store := NewVectorStore(memory.DefaultAllocator, logger, 1<<30, 0, time.Hour)
 		defer func() { _ = store.Close() }()
 

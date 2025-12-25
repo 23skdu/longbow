@@ -3,7 +3,7 @@
 package store
 
 import (
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 )
 
 // initGPUIfEnabled attempts to initialize GPU for an HNSW index if GPU is enabled
@@ -22,7 +22,8 @@ func (vs *VectorStore) initGPUIfEnabled(idx *HNSWIndex) {
 	}
 
 	// GPU successfully initialized
-	vs.logger.Info("GPU acceleration enabled for index",
-		zap.Int("device", vs.gpuDeviceID),
-		zap.Int("dimensions", idx.dims))
+	vs.logger.Info().
+		Int("device", vs.gpuDeviceID).
+		Int("dimensions", idx.dims).
+		Msg("GPU acceleration enabled for index")
 }

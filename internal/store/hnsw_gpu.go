@@ -4,11 +4,11 @@ import (
 	"fmt"
 
 	"github.com/23skdu/longbow/internal/gpu"
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 )
 
 // InitGPU attempts to initialize GPU acceleration for this index
-func (h *HNSWIndex) InitGPU(deviceID int, logger *zap.Logger) error {
+func (h *HNSWIndex) InitGPU(deviceID int, logger zerolog.Logger) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
@@ -29,10 +29,11 @@ func (h *HNSWIndex) InitGPU(deviceID int, logger *zap.Logger) error {
 	idx, err := gpu.NewIndexWithConfig(cfg)
 	if err != nil {
 		h.gpuFallback = true
-		if logger != nil {
-			logger.Warn("GPU initialization failed, using CPU-only",
-				zap.Error(err),
-				zap.Int("device", deviceID))
+		if logger.GetLevel() != zerolog.Disabled {
+			logger.Warn().
+				Err(err).
+				Int("device", deviceID).
+				Msg("GPU initialization failed, using CPU-only")
 		}
 		return fmt.Errorf("GPU init failed: %w", err)
 	}
@@ -40,10 +41,11 @@ func (h *HNSWIndex) InitGPU(deviceID int, logger *zap.Logger) error {
 	h.gpuIndex = idx
 	h.gpuEnabled = true
 
-	if logger != nil {
-		logger.Info("GPU acceleration enabled",
-			zap.Int("device", deviceID),
-			zap.Int("dimensions", h.dims))
+	if logger.GetLevel() != zerolog.Disabled {
+		logger.Info().
+			Int("device", deviceID).
+			Int("dimensions", h.dims).
+			Msg("GPU acceleration enabled")
 	}
 
 	return nil

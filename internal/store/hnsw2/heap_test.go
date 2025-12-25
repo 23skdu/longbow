@@ -105,10 +105,10 @@ func TestFixedHeap_RandomOrder(t *testing.T) {
 	h := NewFixedHeap(100)
 	
 	// Push random distances
-	rand.Seed(42)
+	rng := rand.New(rand.NewSource(42))
 	expected := make([]float32, 100)
 	for i := 0; i < 100; i++ {
-		dist := rand.Float32() * 100
+		dist := rng.Float32() * 100
 		expected[i] = dist
 		h.Push(Candidate{ID: uint32(i), Dist: dist})
 	}

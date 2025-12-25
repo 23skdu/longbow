@@ -13,7 +13,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 	"google.golang.org/grpc/metadata"
 )
 
@@ -110,7 +110,7 @@ func createTestExchangeRecord(alloc memory.Allocator, id int64, vec []float32) a
 // Test 1: Basic bidirectional exchange - DataServer has DoExchange method
 func TestDoExchange_BasicBidirectional(t *testing.T) {
 	alloc := memory.NewGoAllocator()
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 	store := NewVectorStore(alloc, logger, 1<<30, 0, time.Hour)
 	defer func() { _ = store.Close() }()
 
@@ -135,7 +135,7 @@ func TestDoExchange_BasicBidirectional(t *testing.T) {
 // Test 2: Multiple record batches in stream
 func TestDoExchange_MultipleFlightData(t *testing.T) {
 	alloc := memory.NewGoAllocator()
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 	store := NewVectorStore(alloc, logger, 1<<30, 0, time.Hour)
 	defer func() { _ = store.Close() }()
 
@@ -164,7 +164,7 @@ func TestDoExchange_MultipleFlightData(t *testing.T) {
 // Test 3: Dataset routing via descriptor
 func TestDoExchange_DatasetRouting(t *testing.T) {
 	alloc := memory.NewGoAllocator()
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 	store := NewVectorStore(alloc, logger, 1<<30, 0, time.Hour)
 	defer func() { _ = store.Close() }()
 
@@ -193,7 +193,7 @@ func TestDoExchange_DatasetRouting(t *testing.T) {
 // Test 4: Context cancellation handling
 func TestDoExchange_Cancellation(t *testing.T) {
 	alloc := memory.NewGoAllocator()
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 	store := NewVectorStore(alloc, logger, 1<<30, 0, time.Hour)
 	defer func() { _ = store.Close() }()
 
@@ -222,7 +222,7 @@ func TestDoExchange_Cancellation(t *testing.T) {
 // Test 5: Empty stream handling
 func TestDoExchange_EmptyStream(t *testing.T) {
 	alloc := memory.NewGoAllocator()
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 	store := NewVectorStore(alloc, logger, 1<<30, 0, time.Hour)
 	defer func() { _ = store.Close() }()
 
@@ -239,7 +239,7 @@ func TestDoExchange_EmptyStream(t *testing.T) {
 // Test 6: Bidirectional response - verify data sent back
 func TestDoExchange_BidirectionalResponse(t *testing.T) {
 	alloc := memory.NewGoAllocator()
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 	store := NewVectorStore(alloc, logger, 1<<30, 0, time.Hour)
 	tmpDir := t.TempDir()
 	require.NoError(t, store.InitPersistence(StorageConfig{
@@ -292,7 +292,7 @@ func TestDoExchange_BidirectionalResponse(t *testing.T) {
 // Test 7: Verify Prometheus metrics are tracked
 func TestDoExchange_Metrics(t *testing.T) {
 	alloc := memory.NewGoAllocator()
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 	store := NewVectorStore(alloc, logger, 1<<30, 0, time.Hour)
 	defer func() { _ = store.Close() }()
 

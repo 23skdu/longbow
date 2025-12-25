@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
@@ -115,7 +115,7 @@ func TestDatasetGetVectorIndex(t *testing.T) {
 func createShardingTestVectorStore(t *testing.T) *VectorStore {
 	t.Helper()
 	mem := memory.NewGoAllocator()
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 	return NewVectorStore(mem, logger, 1<<30, 1<<20, 5*time.Minute)
 }
 

@@ -8,7 +8,7 @@ import (
 	"os"
 	"testing"
 
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
@@ -34,7 +34,7 @@ func setupDataServerTest(t *testing.T) flight.Client {
 	}
 
 	mem := memory.NewGoAllocator()
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 	vs := NewVectorStore(mem, logger, 1024*1024*100, 0, 0)
 
 	if err := vs.InitPersistence(StorageConfig{DataPath: tmpDir, SnapshotInterval: 0}); err != nil {
@@ -289,7 +289,7 @@ func setupMetaServerTest(t *testing.T) (flight.Client, *VectorStore) {
 	}
 
 	mem := memory.NewGoAllocator()
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 	vs := NewVectorStore(mem, logger, 1024*1024*100, 0, 0)
 
 	if err := vs.InitPersistence(StorageConfig{DataPath: tmpDir, SnapshotInterval: 0}); err != nil {

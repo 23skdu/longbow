@@ -10,7 +10,7 @@ import (
 	"github.com/23skdu/longbow/internal/mesh"
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/apache/arrow-go/v18/arrow/flight"
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -22,14 +22,14 @@ type clientEntry struct {
 
 // GlobalSearchCoordinator handles scatter-gather logic
 type GlobalSearchCoordinator struct {
-	logger *zap.Logger
+	logger zerolog.Logger
 	// clients: map[string]*clientEntry
 	clients     sync.Map
 	idleTimeout time.Duration
 	stopCh      chan struct{}
 }
 
-func NewGlobalSearchCoordinator(logger *zap.Logger) *GlobalSearchCoordinator {
+func NewGlobalSearchCoordinator(logger zerolog.Logger) *GlobalSearchCoordinator {
 	c := &GlobalSearchCoordinator{
 		logger:      logger,
 		idleTimeout: 5 * time.Minute,
@@ -67,7 +67,11 @@ func (c *GlobalSearchCoordinator) GlobalSearch(ctx context.Context, localResults
 			// 1. Get Client
 			client, err := c.getClient(p.MetaAddr)
 			if err != nil {
-				c.logger.Warn("Failed to dial peer", zap.String("peer", p.ID), zap.String("addr", p.MetaAddr), zap.Error(err))
+				c.logger.Warn().
+					Str("peer", p.ID).
+					Str("addr", p.MetaAddr).
+					Err(err).
+					Msg("Failed to dial peer")
 				metrics.GlobalSearchPartialFailures.Inc()
 				return
 			}
@@ -88,7 +92,10 @@ func (c *GlobalSearchCoordinator) GlobalSearch(ctx context.Context, localResults
 
 			stream, err := client.DoAction(subCtx, action)
 			if err != nil {
-				c.logger.Warn("Remote search failed", zap.String("peer", p.ID), zap.Error(err))
+				c.logger.Warn().
+					Str("peer", p.ID).
+					Err(err).
+					Msg("Remote search failed")
 				metrics.GlobalSearchPartialFailures.Inc()
 				return
 			}
@@ -97,14 +104,20 @@ func (c *GlobalSearchCoordinator) GlobalSearch(ctx context.Context, localResults
 			// Expecting single result with JSON body
 			res, err := stream.Recv()
 			if err != nil {
-				c.logger.Warn("Remote search recv failed", zap.String("peer", p.ID), zap.Error(err))
+				c.logger.Warn().
+					Str("peer", p.ID).
+					Err(err).
+					Msg("Remote search recv failed")
 				metrics.GlobalSearchPartialFailures.Inc()
 				return
 			}
 
 			var resp VectorSearchResponse
 			if err := json.Unmarshal(res.Body, &resp); err != nil {
-				c.logger.Warn("Remote search parse failed", zap.String("peer", p.ID), zap.Error(err))
+				c.logger.Warn().
+					Str("peer", p.ID).
+					Err(err).
+					Msg("Remote search parse failed")
 				metrics.GlobalSearchPartialFailures.Inc()
 				return
 			}
@@ -188,7 +201,7 @@ func (c *GlobalSearchCoordinator) pruneVisible() {
 	c.clients.Range(func(key, value interface{}) bool {
 		entry := value.(*clientEntry)
 		if time.Since(entry.lastUse) > c.idleTimeout {
-			c.logger.Info("Pruning idle flight client", zap.String("addr", key.(string)))
+			c.logger.Info().Str("addr", key.(string)).Msg("Pruning idle flight client")
 			_ = entry.client.Close()
 			c.clients.Delete(key)
 		}

@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
@@ -13,7 +13,7 @@ import (
 )
 
 func TestPartitionProxyInterceptor_Local(t *testing.T) {
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 	rm := NewRingManager("local-node", logger)
 	rm.NotifyJoin(&mesh.Member{ID: "local-node", Addr: "localhost:1234", Status: mesh.StatusAlive})
 
@@ -35,7 +35,7 @@ func TestPartitionProxyInterceptor_Local(t *testing.T) {
 }
 
 func TestPartitionProxyInterceptor_Remote(t *testing.T) {
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 	rm := NewRingManager("local-node", logger)
 	rm.NotifyJoin(&mesh.Member{ID: "remote-node", Addr: "remotehost:5678", Status: mesh.StatusAlive})
 	// Make sure local-node is NOT in the ring or at least ensure the key maps to remote-node

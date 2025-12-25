@@ -9,13 +9,13 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 )
 
 // TestHNSWZeroCopyAccess verifies the unsafe zero-copy vector access path
 func TestHNSWZeroCopyAccess(t *testing.T) {
 	mem := memory.NewGoAllocator()
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 
 	// Initialize VectorStore
 	vs := NewVectorStore(mem, logger, 1024*1024*1024, 100*1024*1024, 0)

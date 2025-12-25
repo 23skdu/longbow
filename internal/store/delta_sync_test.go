@@ -13,7 +13,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 	"google.golang.org/grpc"
 )
 
@@ -46,7 +46,7 @@ func TestDeltaSync_Integration(t *testing.T) {
 	// Setup Store
 	pool := memory.NewGoAllocator()
 	dir := t.TempDir()
-	store := NewVectorStore(pool, zap.NewNop(), 1024*1024, 1024*1024, 0)
+	store := NewVectorStore(pool, zerolog.Nop(), 1024*1024, 1024*1024, 0)
 	require.NoError(t, store.InitPersistence(StorageConfig{
 		DataPath:         dir,
 		SnapshotInterval: 1 * time.Hour,

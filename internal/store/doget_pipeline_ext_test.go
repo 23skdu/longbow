@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/apache/arrow-go/v18/arrow/memory"
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 )
 
 // =============================================================================
@@ -43,7 +43,7 @@ func TestDefaultDoGetPipelineConfig_ReasonableDefaults(t *testing.T) {
 
 func TestShouldUsePipelineExt_NilPool(t *testing.T) {
 	mem := memory.NewGoAllocator()
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 
 	// Create store without pipeline
 	vs := NewVectorStore(mem, logger, 1<<30, 100<<20, 24*time.Hour)
@@ -61,7 +61,7 @@ func TestShouldUsePipelineExt_NilPool(t *testing.T) {
 
 func TestShouldUsePipelineExt_WithPool(t *testing.T) {
 	mem := memory.NewGoAllocator()
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 
 	// Create store with pipeline (threshold=2)
 	vs := NewVectorStoreWithPipelineThreshold(mem, logger, 4, 10, 2)
@@ -85,7 +85,7 @@ func TestShouldUsePipelineExt_WithPool(t *testing.T) {
 
 func TestShouldUsePipelineExt_ZeroThreshold(t *testing.T) {
 	mem := memory.NewGoAllocator()
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 
 	// Create store with threshold=0 (uses default)
 	vs := NewVectorStoreWithPipelineThreshold(mem, logger, 4, 10, 0)
@@ -103,7 +103,7 @@ func TestShouldUsePipelineExt_ZeroThreshold(t *testing.T) {
 
 func TestGetPipelineThreshold(t *testing.T) {
 	mem := memory.NewGoAllocator()
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 
 	vs := NewVectorStoreWithPipelineThreshold(mem, logger, 4, 10, 5)
 	if vs == nil {
@@ -119,7 +119,7 @@ func TestGetPipelineThreshold(t *testing.T) {
 
 func TestGetDoGetPipelinePool_Nil(t *testing.T) {
 	mem := memory.NewGoAllocator()
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 
 	vs := NewVectorStore(mem, logger, 1<<30, 100<<20, 24*time.Hour)
 	if vs == nil {
@@ -133,7 +133,7 @@ func TestGetDoGetPipelinePool_Nil(t *testing.T) {
 
 func TestGetDoGetPipelinePool_NotNil(t *testing.T) {
 	mem := memory.NewGoAllocator()
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 
 	vs := NewVectorStoreWithPipeline(mem, logger, 4, 10)
 	if vs == nil {
@@ -149,7 +149,7 @@ func TestGetDoGetPipelinePool_NotNil(t *testing.T) {
 
 func TestGetPipelineStats(t *testing.T) {
 	mem := memory.NewGoAllocator()
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 
 	vs := NewVectorStoreWithPipeline(mem, logger, 4, 10)
 	if vs == nil {

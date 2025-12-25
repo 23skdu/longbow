@@ -12,25 +12,29 @@ import (
 
 // extractVectorFromArrow extracts a vector from an Arrow record batch at the given row index.
 // This is a zero-copy operation that returns a slice pointing directly to Arrow's memory.
-func extractVectorFromArrow(rec arrow.Record, rowIdx int) ([]float32, error) {
+func extractVectorFromArrow(rec arrow.Record, rowIdx int, colIdx int) ([]float32, error) {
 	if rec == nil {
 		return nil, fmt.Errorf("record is nil")
 	}
 	
-	// Fast path: check for "vector" column at index 1 (common case)
-	// TODO: Store vector column index in ArrowHNSW to avoid lookup
 	var vecCol arrow.Array
 	cols := rec.Columns()
 	
-	// Heuristic: usually it's the second column (id, vector)
-	if len(cols) > 1 && rec.ColumnName(1) == "vector" {
-		vecCol = cols[1]
+	// Use provided index if valid
+	if colIdx >= 0 && colIdx < len(cols) {
+		vecCol = cols[colIdx]
 	} else {
-		// Fallback search
-		for i, field := range rec.Schema().Fields() {
-			if field.Name == "vector" {
-				vecCol = cols[i]
-				break
+		// Fallback search (legacy flow for tests or uninit)
+		// Fast path: check for "vector" column at index 1 (common case)
+		if len(cols) > 1 && rec.ColumnName(1) == "vector" {
+			vecCol = cols[1]
+		} else {
+			// Fallback search
+			for i, field := range rec.Schema().Fields() {
+				if field.Name == "vector" {
+					vecCol = cols[i]
+					break
+				}
 			}
 		}
 	}
@@ -56,9 +60,9 @@ func extractVectorFromArrow(rec arrow.Record, rowIdx int) ([]float32, error) {
 }
 
 // extractVectorCopy extracts a vector and returns a copy (for when vector needs to be stored).
-func extractVectorCopy(rec arrow.Record, rowIdx int) ([]float32, error) {
+func extractVectorCopy(rec arrow.Record, rowIdx int, colIdx int) ([]float32, error) {
 	// Get zero-copy slice first
-	vec, err := extractVectorFromArrow(rec, rowIdx)
+	vec, err := extractVectorFromArrow(rec, rowIdx, colIdx)
 	if err != nil {
 		return nil, err
 	}

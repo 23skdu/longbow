@@ -4,7 +4,7 @@ import (
 	"sync"
 
 	"github.com/23skdu/longbow/internal/mesh"
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 )
 
 // RingManager coordinates the consistent hash ring with the cluster membership state
@@ -12,13 +12,13 @@ type RingManager struct {
 	mu          sync.RWMutex
 	ring        *ConsistentHash
 	localNodeID string
-	logger      *zap.Logger
+	logger      zerolog.Logger
 	nodeAddrs   map[string]string // ID -> Data Addr
 	metaAddrs   map[string]string // ID -> Meta Addr
 }
 
 // NewRingManager creates a new RingManager
-func NewRingManager(localNodeID string, logger *zap.Logger) *RingManager {
+func NewRingManager(localNodeID string, logger zerolog.Logger) *RingManager {
 	return &RingManager{
 		ring:        NewConsistentHash(20), // 20 vnodes default
 		localNodeID: localNodeID,
@@ -32,7 +32,11 @@ func NewRingManager(localNodeID string, logger *zap.Logger) *RingManager {
 func (rm *RingManager) NotifyJoin(member *mesh.Member) {
 	rm.mu.Lock()
 	defer rm.mu.Unlock()
-	rm.logger.Info("Node joined ring", zap.String("node", member.ID), zap.String("grpc_addr", member.GRPCAddr), zap.String("meta_addr", member.MetaAddr))
+	rm.logger.Info().
+		Str("node", member.ID).
+		Str("grpc_addr", member.GRPCAddr).
+		Str("meta_addr", member.MetaAddr).
+		Msg("Node joined ring")
 	rm.ring.AddNode(member.ID)
 	rm.nodeAddrs[member.ID] = member.GRPCAddr
 	rm.metaAddrs[member.ID] = member.MetaAddr
@@ -42,7 +46,7 @@ func (rm *RingManager) NotifyJoin(member *mesh.Member) {
 func (rm *RingManager) NotifyLeave(member *mesh.Member) {
 	rm.mu.Lock()
 	defer rm.mu.Unlock()
-	rm.logger.Info("Node left ring", zap.String("node", member.ID))
+	rm.logger.Info().Str("node", member.ID).Msg("Node left ring")
 	rm.ring.RemoveNode(member.ID)
 	delete(rm.nodeAddrs, member.ID)
 	delete(rm.metaAddrs, member.ID)

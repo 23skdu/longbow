@@ -38,7 +38,7 @@ func (h *MaxHeap) Pop() (Candidate, bool) {
 		return Candidate{}, false
 	}
 	
-	max := h.items[0]
+	maxItem := h.items[0]
 	h.size--
 	
 	if h.size > 0 {
@@ -46,7 +46,7 @@ func (h *MaxHeap) Pop() (Candidate, bool) {
 		h.bubbleDown(0)
 	}
 	
-	return max, true
+	return maxItem, true
 }
 
 // Peek returns the maximum element without removing it.

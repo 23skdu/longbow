@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"fmt"
-	"go.uber.org/zap"
 	"os"
 	"path/filepath"
 	"sync/atomic"
@@ -22,38 +21,38 @@ const (
 func (s *VectorStore) Shutdown(ctx context.Context) error {
 	// Idempotent shutdown - only first call does work
 	if !atomic.CompareAndSwapInt32(&s.shutdownState, stateRunning, stateShutdown) {
-		s.logger.Info("Shutdown already in progress or completed")
+		s.logger.Info().Msg("Shutdown already in progress or completed")
 		return nil
 	}
 
-	s.logger.Info("Starting graceful shutdown...")
+	s.logger.Info().Msg("Starting graceful shutdown...")
 	start := time.Now()
 	var shutdownErr error
 
 	// Step 1: Signal background workers to stop
-	s.logger.Info("Signaling background workers to stop")
+	s.logger.Info().Msg("Signaling background workers to stop")
 	close(s.stopChan)
 
 	s.stopCompaction()
 	// Step 2: Drain the index queue
-	s.logger.Info("Draining index queue...")
+	s.logger.Info().Msg("Draining index queue...")
 	if err := s.drainIndexQueue(ctx); err != nil {
-		s.logger.Error("Failed to drain index queue", zap.Error(err))
+		s.logger.Error().Err(err).Msg("Failed to drain index queue")
 		shutdownErr = NewShutdownError("drain", "index_queue", err)
 	} else {
-		s.logger.Info("Index queue drained successfully")
+		s.logger.Info().Msg("Index queue drained successfully")
 	}
 
 	// Step 3: Flush and stop WAL batcher
-	s.logger.Info("Flushing WAL batcher...")
+	s.logger.Info().Msg("Flushing WAL batcher...")
 	if s.walBatcher != nil {
 		if err := s.walBatcher.Stop(); err != nil {
-			s.logger.Error("Failed to stop WAL batcher", zap.Error(err))
+			s.logger.Error().Err(err).Msg("Failed to stop WAL batcher")
 			if shutdownErr == nil {
 				shutdownErr = NewShutdownError("stop", "WAL_batcher", err)
 			}
 		} else {
-			s.logger.Info("WAL batcher stopped successfully")
+			s.logger.Info().Msg("WAL batcher stopped successfully")
 		}
 		s.walBatcher = nil
 	}
@@ -61,19 +60,19 @@ func (s *VectorStore) Shutdown(ctx context.Context) error {
 	// Step 4: Create final snapshot before closing
 	select {
 	case <-ctx.Done():
-		s.logger.Warn("Shutdown timeout, skipping final snapshot")
+		s.logger.Warn().Msg("Shutdown timeout, skipping final snapshot")
 	default:
-		s.logger.Info("Creating final snapshot...")
+		s.logger.Info().Msg("Creating final snapshot...")
 		if err := s.Snapshot(); err != nil {
-			s.logger.Error("Failed to create final snapshot", zap.Error(err))
+			s.logger.Error().Err(err).Msg("Failed to create final snapshot")
 			// Don't fail shutdown for snapshot errors
 		} else {
-			s.logger.Info("Final snapshot created successfully")
+			s.logger.Info().Msg("Final snapshot created successfully")
 			// Truncate WAL after successful snapshot
 			if err := s.TruncateWAL(); err != nil {
-				s.logger.Error("Failed to truncate WAL", zap.Error(err))
+				s.logger.Error().Err(err).Msg("Failed to truncate WAL")
 			} else {
-				s.logger.Info("WAL truncated successfully")
+				s.logger.Info().Msg("WAL truncated successfully")
 			}
 		}
 	}
@@ -81,24 +80,24 @@ func (s *VectorStore) Shutdown(ctx context.Context) error {
 	// Step 5: Close WAL file handle
 	s.walMu.Lock()
 	if s.walFile != nil {
-		s.logger.Info("Closing WAL file...")
+		s.logger.Info().Msg("Closing WAL file...")
 		if err := s.walFile.Sync(); err != nil {
-			s.logger.Error("Failed to sync WAL", zap.Error(err))
+			s.logger.Error().Err(err).Msg("Failed to sync WAL")
 		}
 		if err := s.walFile.Close(); err != nil {
-			s.logger.Error("Failed to close WAL", zap.Error(err))
+			s.logger.Error().Err(err).Msg("Failed to close WAL")
 			if shutdownErr == nil {
 				shutdownErr = NewShutdownError("close", "WAL", err)
 			}
 		} else {
-			s.logger.Info("WAL file closed successfully")
+			s.logger.Info().Msg("WAL file closed successfully")
 		}
 		s.walFile = nil
 	}
 	s.walMu.Unlock()
 
 	// Step 6: Wait for workers to finish
-	s.logger.Info("Waiting for workers to finish...")
+	s.logger.Info().Msg("Waiting for workers to finish...")
 	done := make(chan struct{})
 	go func() {
 		s.workerWg.Wait()
@@ -107,9 +106,9 @@ func (s *VectorStore) Shutdown(ctx context.Context) error {
 
 	select {
 	case <-done:
-		s.logger.Info("All workers finished")
+		s.logger.Info().Msg("All workers finished")
 	case <-ctx.Done():
-		s.logger.Warn("Shutdown timeout waiting for workers", zap.Any("error", ctx.Err()))
+		s.logger.Warn().Err(ctx.Err()).Msg("Shutdown timeout waiting for workers")
 		if shutdownErr == nil {
 			shutdownErr = ctx.Err()
 		}
@@ -117,11 +116,12 @@ func (s *VectorStore) Shutdown(ctx context.Context) error {
 
 	elapsed := time.Since(start)
 	if shutdownErr != nil {
-		s.logger.Error("Graceful shutdown completed with errors",
-			zap.Any("elapsed", elapsed),
-			zap.Any("error", shutdownErr))
+		s.logger.Error().
+			Dur("elapsed", elapsed).
+			Err(shutdownErr).
+			Msg("Graceful shutdown completed with errors")
 	} else {
-		s.logger.Info("Graceful shutdown completed successfully", zap.Any("elapsed", elapsed))
+		s.logger.Info().Dur("elapsed", elapsed).Msg("Graceful shutdown completed successfully")
 	}
 
 	return shutdownErr
@@ -175,7 +175,7 @@ func (s *VectorStore) TruncateWAL() error {
 		return NewShutdownError("truncate", "WAL", fmt.Errorf("close after truncate: %w", err))
 	}
 
-	s.logger.Info("WAL truncated", zap.Any("path", walPath))
+	s.logger.Info().Str("path", walPath).Msg("WAL truncated")
 	return nil
 }
 

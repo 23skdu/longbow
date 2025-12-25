@@ -8,11 +8,11 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/stretchr/testify/assert"
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 )
 
-func mockLogger() *zap.Logger {
-	return zap.NewNop()
+func mockLogger() zerolog.Logger {
+	return zerolog.Nop()
 }
 
 func TestPersistence_ReadSeekClose(t *testing.T) {

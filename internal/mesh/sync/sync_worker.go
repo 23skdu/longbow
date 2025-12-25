@@ -14,7 +14,7 @@ import (
 	"github.com/23skdu/longbow/internal/store"
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -31,7 +31,7 @@ const (
 // SyncWorker manages background delta replication from peers
 type SyncWorker struct {
 	store  *store.VectorStore
-	logger *zap.Logger
+	logger *zerolog.Logger
 
 	peers  map[string]*PeerState
 	mu     sync.RWMutex
@@ -44,7 +44,7 @@ type PeerState struct {
 	Priority    SyncPriority
 }
 
-func NewSyncWorker(s *store.VectorStore, logger *zap.Logger) *SyncWorker {
+func NewSyncWorker(s *store.VectorStore, logger *zerolog.Logger) *SyncWorker {
 	return &SyncWorker{
 		store:  s,
 		logger: logger,
@@ -111,13 +111,19 @@ func (w *SyncWorker) syncAll() {
 
 	for _, p := range peers {
 		if err := w.syncPeer(p); err != nil {
-			w.logger.Warn("Failed to sync with peer", zap.String("addr", p.Addr), zap.Error(err))
+			w.logger.Warn().
+				Str("addr", p.Addr).
+				Err(err).
+				Msg("Failed to sync with peer")
 		}
 	}
 }
 
 func (w *SyncWorker) syncPeer(p *PeerState) error {
-	w.logger.Info("Syncing with peer", zap.String("addr", p.Addr), zap.Uint64("last_seq", p.LastSeenSeq))
+	w.logger.Info().
+		Str("addr", p.Addr).
+		Uint64("last_seq", p.LastSeenSeq).
+		Msg("Syncing with peer")
 	// 1. Connect to peer
 	conn, err := grpc.NewClient(p.Addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
@@ -157,11 +163,11 @@ func (w *SyncWorker) syncPeer(p *PeerState) error {
 		localRoot := w.store.MerkleRoot("ds1")
 		if remoteRoot == localRoot {
 			metrics.MeshMerkleMatchTotal.WithLabelValues("match").Inc()
-			w.logger.Info("Merkle roots match, skipping sync", zap.String("peer", p.Addr))
+			w.logger.Info().Str("peer", p.Addr).Msg("Merkle roots match, skipping sync")
 			// return nil
 		} else {
 			metrics.MeshMerkleMatchTotal.WithLabelValues("mismatch").Inc()
-			w.logger.Info("Merkle roots differ, starting sync", zap.String("peer", p.Addr))
+			w.logger.Info().Str("peer", p.Addr).Msg("Merkle roots differ, starting sync")
 		}
 	}
 
@@ -173,7 +179,7 @@ func (w *SyncWorker) syncPeer(p *PeerState) error {
 		}
 		if err != nil {
 			if err != io.EOF {
-				w.logger.Error("Recv error", zap.Error(err))
+				w.logger.Error().Err(err).Msg("Recv error")
 			}
 			return err
 		}
@@ -194,7 +200,7 @@ func (w *SyncWorker) syncPeer(p *PeerState) error {
 		// Deserialize RecordBatch
 		r, err := ipc.NewReader(bytes.NewReader(resp.DataBody))
 		if err != nil {
-			w.logger.Error("Failed to decode sync record", zap.Error(err))
+			w.logger.Error().Err(err).Msg("Failed to decode sync record")
 			continue
 		}
 
@@ -205,7 +211,10 @@ func (w *SyncWorker) syncPeer(p *PeerState) error {
 			// Apply to local store
 			if err := w.store.ApplyDelta(datasetName, rec, seq, ts); err != nil {
 				metrics.MeshSyncDeltasTotal.WithLabelValues("error").Inc()
-				w.logger.Error("Failed to apply delta", zap.String("dataset", datasetName), zap.Error(err))
+				w.logger.Error().
+					Str("dataset", datasetName).
+					Err(err).
+					Msg("Failed to apply delta")
 			} else {
 				metrics.MeshSyncDeltasTotal.WithLabelValues("success").Inc()
 				metrics.MeshSyncBytesTotal.Add(float64(len(resp.DataBody)))

@@ -7,17 +7,17 @@ import (
 	"time"
 
 	"github.com/23skdu/longbow/internal/mesh"
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 )
 
 func TestScatterGather_Scatter(t *testing.T) {
 	// Setup
-	rm := NewRingManager("node-1", zap.NewNop())
+	rm := NewRingManager("node-1", zerolog.Nop())
 	rm.NotifyJoin(&mesh.Member{ID: "node-1", Addr: "127.0.0.1:9090"})
 	rm.NotifyJoin(&mesh.Member{ID: "node-2", Addr: "127.0.0.1:9091"})
 	rm.NotifyJoin(&mesh.Member{ID: "node-3", Addr: "127.0.0.1:9092"})
 
-	sg := NewScatterGather(rm, nil, zap.NewNop()) // Forwarder nil as we won't use it in mock
+	sg := NewScatterGather(rm, nil, zerolog.Nop()) // Forwarder nil as we won't use it in mock
 
 	// Mock function that returns node ID
 	fn := func(ctx context.Context, nodeID string) (interface{}, error) {
@@ -58,14 +58,14 @@ func TestScatterGather_Scatter(t *testing.T) {
 }
 
 func BenchmarkScatterGather(b *testing.B) {
-	rm := NewRingManager("node-1", zap.NewNop())
+	rm := NewRingManager("node-1", zerolog.Nop())
 	// create 100 fake nodes
 	for i := 0; i < 100; i++ {
 		id := fmt.Sprintf("node-%d", i)
 		rm.NotifyJoin(&mesh.Member{ID: id, Addr: "1.1.1.1"})
 	}
 
-	sg := NewScatterGather(rm, nil, zap.NewNop())
+	sg := NewScatterGather(rm, nil, zerolog.Nop())
 	ctx := context.Background()
 	fn := func(ctx context.Context, nodeID string) (interface{}, error) {
 		return 1, nil

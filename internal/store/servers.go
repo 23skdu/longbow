@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 
 	"github.com/apache/arrow-go/v18/arrow/flight"
-	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -33,11 +32,14 @@ func (s *DataServer) DoPut(stream flight.FlightService_DoPutServer) error {
 	depth, queueCap := s.GetWALQueueDepth()
 	if queueCap > 0 && float64(depth)/float64(queueCap) > 0.8 {
 		// Send metadata as "Warning" - client should slow down
-		s.logger.Warn("Applying backpressure", zap.Int("wal_depth", depth), zap.Int("wal_cap", queueCap))
+		s.logger.Warn().
+			Int("wal_depth", depth).
+			Int("wal_cap", queueCap).
+			Msg("Applying backpressure")
 		metadata := []byte(`{"status": "slow_down", "reason": "wal_pressure"}`)
 		if err := stream.Send(&flight.PutResult{AppMetadata: metadata}); err != nil {
 			// Log error but proceed, don't fail the whole request just because signaling failed
-			s.logger.Error("Failed to send backpressure signal", zap.Error(err))
+			s.logger.Error().Err(err).Msg("Failed to send backpressure signal")
 		}
 	}
 	err := s.VectorStore.DoPut(stream)
@@ -125,7 +127,7 @@ func (s *MetaServer) DoAction(action *flight.Action, stream flight.FlightService
 	if action == nil {
 		return status.Error(codes.InvalidArgument, "action is required")
 	}
-	s.logger.Info("MetaServer DoAction called", zap.String("type", action.Type))
+	s.logger.Info().Str("type", action.Type).Msg("MetaServer DoAction called")
 
 	// Route to specific action handlers
 	switch action.Type {

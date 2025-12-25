@@ -7,12 +7,12 @@ import (
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
+	"github.com/rs/zerolog"
 )
 
 // TestNewLogger verifies basic logger creation
 func TestNewLogger(t *testing.T) {
+	_ = zerolog.InfoLevel
 	tests := []struct {
 		name   string
 		format string
@@ -34,10 +34,8 @@ func TestNewLogger(t *testing.T) {
 			if err != nil {
 				t.Fatalf("NewLogger() error = %v", err)
 			}
-			if logger == nil {
-				t.Fatal("NewLogger() returned nil logger")
-			}
-			_ = logger.Sync()
+			// Zerolog logger is a value, check if it's usable
+			logger.Info().Msg("heartbeat")
 		})
 	}
 }
@@ -56,13 +54,12 @@ func TestNewLogger_InvalidLevel(t *testing.T) {
 // TestStructuredLogging verifies structured logging with fields
 func TestStructuredLogging(t *testing.T) {
 	var buf bytes.Buffer
-	logger := newTestLogger(&buf, zapcore.InfoLevel)
+	logger, _ := NewLogger(Config{Format: "json", Level: "info", Output: &buf})
 
-	logger.Info("test message",
-		zap.String("key1", "value1"),
-		zap.Int("key2", 42),
-	)
-	_ = logger.Sync()
+	logger.Info().
+		Str("key1", "value1").
+		Int("key2", 42).
+		Msg("test message")
 
 	output := buf.String()
 	if !strings.Contains(output, "test message") {
@@ -79,13 +76,12 @@ func TestStructuredLogging(t *testing.T) {
 // TestLogLevelFiltering verifies that log levels are properly filtered
 func TestLogLevelFiltering(t *testing.T) {
 	var buf bytes.Buffer
-	logger := newTestLogger(&buf, zapcore.WarnLevel)
+	logger, _ := NewLogger(Config{Format: "json", Level: "warn", Output: &buf})
 
-	logger.Debug("debug message")
-	logger.Info("info message")
-	logger.Warn("warn message")
-	logger.Error("error message")
-	_ = logger.Sync()
+	logger.Debug().Msg("debug message")
+	logger.Info().Msg("info message")
+	logger.Warn().Msg("warn message")
+	logger.Error().Msg("error message")
 
 	output := buf.String()
 	if strings.Contains(output, "debug message") {
@@ -105,18 +101,17 @@ func TestLogLevelFiltering(t *testing.T) {
 // TestJSONOutput verifies JSON format output
 func TestJSONOutput(t *testing.T) {
 	var buf bytes.Buffer
-	logger := newTestJSONLogger(&buf, zapcore.InfoLevel)
+	logger, _ := NewLogger(Config{Format: "json", Level: "info", Output: &buf})
 
-	logger.Info("json test", zap.String("foo", "bar"))
-	_ = logger.Sync()
+	logger.Info().Str("foo", "bar").Msg("json test")
 
 	var entry map[string]interface{}
 	if err := json.Unmarshal(buf.Bytes(), &entry); err != nil {
 		t.Fatalf("Failed to parse JSON output: %v, output: %s", err, buf.String())
 	}
 
-	if entry["msg"] != "json test" {
-		t.Errorf("Expected msg='json test', got %v", entry["msg"])
+	if entry["message"] != "json test" { // Zerolog default is "message"
+		t.Errorf("Expected message='json test', got %v", entry["message"])
 	}
 	if entry["foo"] != "bar" {
 		t.Errorf("Expected foo='bar', got %v", entry["foo"])
@@ -126,24 +121,19 @@ func TestJSONOutput(t *testing.T) {
 // TestDiscardLogger verifies the discard logger for tests
 func TestDiscardLogger(t *testing.T) {
 	logger := DiscardLogger()
-	if logger == nil {
-		t.Fatal("DiscardLogger() returned nil")
-	}
 	// Should not panic
-	logger.Info("this should be discarded")
-	logger.Error("this too")
-	_ = logger.Sync()
+	logger.Info().Msg("this should be discarded")
+	logger.Error().Msg("this too")
 }
 
 // TestLoggerWithFields verifies logger.With() for adding default fields
 func TestLoggerWithFields(t *testing.T) {
 	var buf bytes.Buffer
-	baseLogger := newTestJSONLogger(&buf, zapcore.InfoLevel)
+	baseLogger, _ := NewLogger(Config{Format: "json", Level: "info", Output: &buf})
 
 	// Create a child logger with default fields
-	childLogger := baseLogger.With(zap.String("component", "test"))
-	childLogger.Info("message with component")
-	_ = childLogger.Sync()
+	childLogger := baseLogger.With().Str("component", "test").Logger()
+	childLogger.Info().Msg("message with component")
 
 	var entry map[string]interface{}
 	if err := json.Unmarshal(buf.Bytes(), &entry); err != nil {
@@ -211,25 +201,3 @@ func TestDefaultConfig(t *testing.T) {
 	}
 }
 
-// Helper: create test logger writing to buffer (console format)
-func newTestLogger(buf *bytes.Buffer, level zapcore.Level) *zap.Logger {
-	encoderConfig := zap.NewDevelopmentEncoderConfig()
-	core := zapcore.NewCore(
-		zapcore.NewConsoleEncoder(encoderConfig),
-		zapcore.AddSync(buf),
-		level,
-	)
-	return zap.New(core)
-}
-
-// Helper: create test logger writing to buffer (JSON format)
-func newTestJSONLogger(buf *bytes.Buffer, level zapcore.Level) *zap.Logger {
-	encoderConfig := zap.NewProductionEncoderConfig()
-	encoderConfig.TimeKey = "" // Disable timestamp for easier testing
-	core := zapcore.NewCore(
-		zapcore.NewJSONEncoder(encoderConfig),
-		zapcore.AddSync(buf),
-		level,
-	)
-	return zap.New(core)
-}

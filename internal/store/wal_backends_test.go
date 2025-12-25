@@ -10,13 +10,13 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 )
 
 func TestWALBackends_StdWAL(t *testing.T) {
 	tmpDir := t.TempDir()
 	mem := memory.NewGoAllocator()
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 
 	store := NewVectorStore(mem, logger, 1<<30, 0, 0)
 	store.dataPath = tmpDir

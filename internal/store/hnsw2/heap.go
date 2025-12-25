@@ -44,7 +44,7 @@ func (h *FixedHeap) Pop() (Candidate, bool) {
 		return Candidate{}, false
 	}
 	
-	min := h.items[0]
+	minItem := h.items[0]
 	h.size--
 	
 	if h.size > 0 {
@@ -52,7 +52,7 @@ func (h *FixedHeap) Pop() (Candidate, bool) {
 		h.bubbleDown(0)
 	}
 	
-	return min, true
+	return minItem, true
 }
 
 // Peek returns the minimum element without removing it.

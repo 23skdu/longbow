@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 
 	"github.com/apache/arrow-go/v18/arrow/flight"
-	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -50,7 +49,7 @@ func (s *VectorStore) handleAddEdge(body []byte, stream flight.FlightService_DoA
 	}
 
 	if err := ds.Graph.AddEdge(edge); err != nil {
-		s.logger.Error("Failed to add edge", zap.Error(err))
+		s.logger.Error().Err(err).Msg("Failed to add edge")
 		return status.Errorf(codes.Internal, "failed to add edge: %v", err)
 	}
 

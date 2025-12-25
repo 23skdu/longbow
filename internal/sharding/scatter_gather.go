@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -12,11 +12,11 @@ import (
 type ScatterGather struct {
 	rm        *RingManager
 	forwarder *RequestForwarder
-	logger    *zap.Logger
+	logger    zerolog.Logger
 }
 
 // NewScatterGather creates a new ScatterGather coordinator
-func NewScatterGather(rm *RingManager, forwarder *RequestForwarder, logger *zap.Logger) *ScatterGather {
+func NewScatterGather(rm *RingManager, forwarder *RequestForwarder, logger zerolog.Logger) *ScatterGather {
 	return &ScatterGather{
 		rm:        rm,
 		forwarder: forwarder,
@@ -69,10 +69,11 @@ func (sg *ScatterGather) Scatter(ctx context.Context, fn ScatterFn) ([]Result, e
 			}
 
 			if err != nil {
-				sg.logger.Warn("Scatter request failed",
-					zap.String("node", nodeID),
-					zap.Error(err),
-					zap.Duration("duration", duration))
+				sg.logger.Warn().
+					Str("node", nodeID).
+					Err(err).
+					Dur("duration", duration).
+					Msg("Scatter request failed")
 				// We don't return error here if we want to collect partial failures.
 				// If we want fail-fast, return err.
 				// For distributed search, partial results are often better than none.

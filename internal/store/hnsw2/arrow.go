@@ -8,24 +8,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/array"
 )
 
-// getVectorZeroCopy retrieves a vector from Arrow storage using zero-copy access.
-// This is the Arrow-native implementation that avoids allocations.
-func (h *ArrowHNSW) getVectorZeroCopy(id uint32) ([]float32, error) {
-	if int(id) >= int(h.nodeCount.Load()) {
-		return nil, fmt.Errorf("vector ID %d out of bounds", id)
-	}
-	
-	// TODO: For now, we need a location store to map VectorID -> (BatchIdx, RowIdx)
-	// This will be implemented when we add Insert functionality
-	// For Phase 2, we'll implement the Arrow access logic assuming we have the location
-	
-	// Placeholder: In a real implementation, we would:
-	// 1. Get location from locationStore: loc := h.locationStore.Get(id)
-	// 2. Access the Arrow record batch: rec := h.dataset.Records[loc.BatchIdx]
-	// 3. Extract vector column and access the specific row
-	
-	return nil, fmt.Errorf("location store not yet integrated")
-}
+
 
 // extractVectorFromArrow extracts a vector from an Arrow record batch at the given row index.
 // This is a zero-copy operation that returns a slice pointing directly to Arrow's memory.

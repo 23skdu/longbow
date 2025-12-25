@@ -6,6 +6,7 @@ import (
 	"sync/atomic"
 	"unsafe"
 
+	"github.com/23skdu/longbow/internal/simd"
 	"github.com/23skdu/longbow/internal/store"
 )
 
@@ -30,6 +31,12 @@ func (h *ArrowHNSW) Search(query []float32, k int, ef int) ([]store.SearchResult
 	ctx := h.searchPool.Get()
 	defer h.searchPool.Put(ctx)
 	
+	// Pre-compute PQ table if needed
+	if h.pqEncoder != nil && len(data.QuantizedVectors) > 0 {
+		// Use scratch buffer for table
+		ctx.scratchPQTable = h.pqEncoder.ComputeTableFlatInto(query, ctx.scratchPQTable)
+	}
+
 	// Ensure visited bitset is large enough
 	nodeCount := int(h.nodeCount.Load())
 	if ctx.visited.Size() < nodeCount {
@@ -72,11 +79,11 @@ func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef int, laye
 	
 	// Initialize with entry point
 	entryDist := h.distance(query, entryPoint, data)
+	
 	ctx.candidates.Push(Candidate{ID: entryPoint, Dist: entryDist})
 	ctx.visited.Set(entryPoint)
 	
 	// W: result set (max-heap to track furthest result)
-	// Using max-heap so we can efficiently remove the worst result
 	resultSet := ctx.resultSet
 	if resultSet.cap < ef {
 		resultSet = NewMaxHeap(ef)
@@ -88,6 +95,13 @@ func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef int, laye
 	closest := entryPoint
 	closestDist := entryDist
 	
+	// PQ setup
+	usePQ := h.pqEncoder != nil && len(data.QuantizedVectors) > 0
+	pqM := 0
+	if h.pqEncoder != nil {
+		pqM = h.pqEncoder.config.M
+	}
+	
 	// Greedy search
 	for ctx.candidates.Len() > 0 {
 		// Get nearest candidate (min-heap)
@@ -96,8 +110,7 @@ func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef int, laye
 			break
 		}
 		
-		// Stop if current is farther than furthest result
-		// resultSet is max-heap, so Peek() returns the furthest
+		// Stop if current is farther than furthest result (and result set is full)
 		if resultSet.Len() >= ef {
 			worst, ok := resultSet.Peek()
 			if ok && curr.Dist > worst.Dist {
@@ -106,29 +119,69 @@ func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef int, laye
 		}
 		
 		// Explore neighbors
-		// Atomic load for neighbor count to ensure consistency
 		neighborCount := int(atomic.LoadInt32(&data.Counts[layer][curr.ID]))
 		baseIdx := int(curr.ID) * MaxNeighbors
 		
+		// 1. Collect unvisited neighbors - Batching Phase
+		ctx.scratchIDs = ctx.scratchIDs[:0]
+		
 		for i := 0; i < neighborCount; i++ {
 			neighborID := data.Neighbors[layer][baseIdx+i]
-			
-			// Skip if already visited
-			if ctx.visited.IsSet(neighborID) {
-				continue
+			if !ctx.visited.IsSet(neighborID) {
+				ctx.visited.Set(neighborID)
+				ctx.scratchIDs = append(ctx.scratchIDs, neighborID)
 			}
-			ctx.visited.Set(neighborID)
+		}
+		
+		count := len(ctx.scratchIDs)
+		if count == 0 {
+			continue
+		}
+
+		// 2. Compute Distances - Batch Processing Phase
+		var dists []float32
+		if cap(ctx.scratchDists) < count {
+			ctx.scratchDists = make([]float32, count*2)
+		}
+		dists = ctx.scratchDists[:count]
+		
+		if usePQ {
+			// PQ Path (ADC)
+			// Gather codes
+			// TODO: Use pre-allocated, aligned scratch buffer for codes if possible to avoid allocs?
+			// Ideally SearchContext has scratchBytes. For now, use make, but optimize later.
+			// Actually, let's look at doing it zero-alloc if possible.
+			// Just verify allocs later.
+			flatCodes := make([]byte, count * pqM) // Temp allocation - optimize out!
+			for i, nid := range ctx.scratchIDs {
+				offset := int(nid) * pqM
+				copy(flatCodes[i*pqM:], data.QuantizedVectors[offset:offset+pqM])
+			}
+			simd.ADCDistanceBatch(ctx.scratchPQTable, flatCodes, pqM, dists)
+		} else {
+			// Float32 Path
+			if cap(ctx.scratchVecs) < count {
+				ctx.scratchVecs = make([][]float32, count*2)
+			}
+			vecs := ctx.scratchVecs[:count]
 			
-			// Calculate distance to neighbor
-			dist := h.distance(query, neighborID, data)
+			for i, nid := range ctx.scratchIDs {
+				vecs[i] = h.mustGetVectorFromData(data, nid)
+			}
+			simd.EuclideanDistanceBatch(query, vecs, dists)
+		}
+		
+		// 3. Process Results
+		for i, neighborID := range ctx.scratchIDs {
+			dist := dists[i]
 			
-			// Update closest if needed
+			// Update closest
 			if dist < closestDist {
 				closest = neighborID
 				closestDist = dist
 			}
 			
-			// Add to result set if better than worst or we need more
+			// Update result set
 			shouldAdd := resultSet.Len() < ef
 			if !shouldAdd {
 				worst, ok := resultSet.Peek()
@@ -136,13 +189,12 @@ func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef int, laye
 					shouldAdd = true
 				}
 			}
+			
 			if shouldAdd {
 				if resultSet.Len() >= ef {
-					resultSet.Pop() // Remove worst (furthest) FIRST to make space
+					resultSet.Pop()
 				}
 				resultSet.Push(Candidate{ID: neighborID, Dist: dist})
-				
-				// Also add to candidates queue for exploration
 				ctx.candidates.Push(Candidate{ID: neighborID, Dist: dist})
 			}
 		}
@@ -165,13 +217,31 @@ func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef int, laye
 // distance computes the distance between a query vector and a stored vector.
 // Uses zero-copy Arrow access and SIMD optimizations for maximum performance.
 func (h *ArrowHNSW) distance(query []float32, id uint32, data *GraphData) float32 {
+	// PQ check
+	if h.pqEncoder != nil && len(data.QuantizedVectors) > 0 {
+		// Use generic/helper or assume this is only called for entry point / single checks
+		// Ideally we use a batch context even for single usage, but here:
+		// SDC or ADC? Query is float, target is code. ADC.
+		// Need table. But 'distance' doesn't take context/table. 
+		// Fallback to on-the-fly table or standard logic?
+		// For single point, overhead is small. 
+		// Use ComputeTableFlat + ADCDistance? Costly.
+		// Fallback to "mustGetVectorFromData" (full res) if available? 
+		// If using PQ, we might not have full res loaded? 
+		// Assumption: We might have both. If PQ enabled, use PQ for speed?
+		// For consistency, if PQ enabled for graph, use PQ distance.
+		
+		// However, to avoid computing table for 1 point, maybe we stick to Full Res for initial entry point check?
+		// Or pass Context to distance().
+	}
+
 	// Optimization: Check for cached vector pointer (avoids Arrow overhead)
 	// This is safe because VectorPtr is pinned to the Arrow RecordBatch which is kept alive by Dataset
 	if int(id) < len(data.VectorPtrs) {
 		ptr := data.VectorPtrs[id]
 		if ptr != nil && h.dims > 0 {
 			vec := unsafe.Slice((*float32)(ptr), h.dims)
-			return distanceSIMD(query, vec)
+			return simd.EuclideanDistance(query, vec)
 		}
 	}
 
@@ -182,22 +252,13 @@ func (h *ArrowHNSW) distance(query []float32, id uint32, data *GraphData) float3
 	}
 	
 	// Use SIMD-optimized distance calculation
-	return distanceSIMD(query, vec)
+	return simd.EuclideanDistance(query, vec)
 }
 
 // l2Distance computes Euclidean (L2) distance between two vectors.
 // Kept for testing and as fallback.
 func l2Distance(a, b []float32) float32 {
-	if len(a) != len(b) {
-		return float32(math.Inf(1))
-	}
-	
-	var sum float32
-	for i := range a {
-		diff := a[i] - b[i]
-		sum += diff * diff
-	}
-	return float32(math.Sqrt(float64(sum)))
+	return simd.EuclideanDistance(a, b)
 }
 
 // getVector retrieves a vector from Arrow storage using zero-copy access.
@@ -227,3 +288,5 @@ func (h *ArrowHNSW) getVector(id uint32) ([]float32, error) {
 	// Extract vector using zero-copy Arrow access
 	return extractVectorFromArrow(rec, loc.RowIdx)
 }
+
+

@@ -220,28 +220,7 @@ func measureRecall(t *testing.T, numVectors, dim, numQueries, k int, cfg *hnsw2.
 	return totalRecall / float64(numQueries)
 }
 
-// calculateRecall computes recall@k between baseline and test results
-func calculateRecall(baselineIDs []store.VectorID, testResults []store.SearchResult, k int) float64 {
-	if len(baselineIDs) == 0 {
-		return 1.0
-	}
-	
-	// Create set of baseline IDs
-	baselineSet := make(map[store.VectorID]bool)
-	for i := 0; i < len(baselineIDs) && i < k; i++ {
-		baselineSet[baselineIDs[i]] = true
-	}
-	
-	// Count matches in test results
-	matches := 0
-	for i := 0; i < len(testResults) && i < k; i++ {
-		if baselineSet[store.VectorID(testResults[i].ID)] {
-			matches++
-		}
-	}
-	
-	return float64(matches) / float64(min(k, len(baselineIDs)))
-}
+
 
 // generateRandomVectors creates random normalized vectors
 func generateRandomVectors(n, dim int) [][]float32 {
@@ -265,12 +244,7 @@ func generateRandomVectors(n, dim int) [][]float32 {
 	return vectors
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
+
 
 // TestRecallConsistency validates that recall is consistent across multiple runs
 func TestRecallConsistency(t *testing.T) {

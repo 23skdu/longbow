@@ -4,12 +4,12 @@ import (
 	"testing"
 
 	"github.com/apache/arrow-go/v18/arrow/memory"
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 )
 
 // TestNamespaceCreate verifies namespace creation
 func TestNamespaceCreate(t *testing.T) {
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 	mem := memory.NewGoAllocator()
 	vs := NewVectorStore(mem, logger, 1<<30, 1<<20, 0)
 	defer vs.Close() //nolint:errcheck
@@ -28,7 +28,7 @@ func TestNamespaceCreate(t *testing.T) {
 
 // TestNamespaceCreateDuplicate verifies duplicate namespace error
 func TestNamespaceCreateDuplicate(t *testing.T) {
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 	mem := memory.NewGoAllocator()
 	vs := NewVectorStore(mem, logger, 1<<30, 1<<20, 0)
 	defer vs.Close() //nolint:errcheck
@@ -48,7 +48,7 @@ func TestNamespaceCreateDuplicate(t *testing.T) {
 
 // TestNamespaceDelete verifies namespace deletion
 func TestNamespaceDelete(t *testing.T) {
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 	mem := memory.NewGoAllocator()
 	vs := NewVectorStore(mem, logger, 1<<30, 1<<20, 0)
 	defer vs.Close() //nolint:errcheck
@@ -69,7 +69,7 @@ func TestNamespaceDelete(t *testing.T) {
 
 // TestNamespaceList verifies listing namespaces
 func TestNamespaceList(t *testing.T) {
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 	mem := memory.NewGoAllocator()
 	vs := NewVectorStore(mem, logger, 1<<30, 1<<20, 0)
 	defer vs.Close() //nolint:errcheck
@@ -88,7 +88,7 @@ func TestNamespaceList(t *testing.T) {
 
 // TestNamespaceDefaultExists verifies default namespace is always present
 func TestNamespaceDefaultExists(t *testing.T) {
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 	mem := memory.NewGoAllocator()
 	vs := NewVectorStore(mem, logger, 1<<30, 1<<20, 0)
 	defer vs.Close() //nolint:errcheck
@@ -101,7 +101,7 @@ func TestNamespaceDefaultExists(t *testing.T) {
 
 // TestNamespaceCannotDeleteDefault verifies default namespace cannot be deleted
 func TestNamespaceCannotDeleteDefault(t *testing.T) {
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 	mem := memory.NewGoAllocator()
 	vs := NewVectorStore(mem, logger, 1<<30, 1<<20, 0)
 	defer vs.Close() //nolint:errcheck
@@ -114,7 +114,7 @@ func TestNamespaceCannotDeleteDefault(t *testing.T) {
 
 // TestNamespaceDatasetIsolation verifies datasets are isolated per namespace
 func TestNamespaceDatasetIsolation(t *testing.T) {
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 	mem := memory.NewGoAllocator()
 	vs := NewVectorStore(mem, logger, 1<<30, 1<<20, 0)
 	defer vs.Close() //nolint:errcheck
@@ -162,7 +162,7 @@ func TestParseNamespacedPath(t *testing.T) {
 
 // TestNamespaceMetrics verifies Prometheus metrics are emitted
 func TestNamespaceMetrics(t *testing.T) {
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 	mem := memory.NewGoAllocator()
 	vs := NewVectorStore(mem, logger, 1<<30, 1<<20, 0)
 	defer vs.Close() //nolint:errcheck

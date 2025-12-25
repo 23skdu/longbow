@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
@@ -33,7 +33,7 @@ func setupServer(t *testing.T) (store *VectorStore, dir string, dialer func(cont
 	}
 
 	mem := memory.NewGoAllocator()
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 	vs := NewVectorStore(mem, logger, 1024*1024*100, 0, 0) // 100MB limit
 
 	// Init persistence
@@ -319,7 +319,7 @@ func TestPersistence(t *testing.T) {
 
 func TestEviction(t *testing.T) {
 	mem := memory.NewGoAllocator()
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 
 	// Test LRU Eviction
 	t.Run("LRU", func(t *testing.T) {

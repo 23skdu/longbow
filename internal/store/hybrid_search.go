@@ -4,16 +4,16 @@ import (
 	"context"
 
 	"github.com/23skdu/longbow/internal/metrics"
-	"go.uber.org/zap"
 )
 
 // SearchHybrid performs a hybrid search combining dense vector search and sparse keyword search.
 func SearchHybrid(ctx context.Context, s *VectorStore, name string, query []float32, textQuery string, k int, alpha float32, rrfK int) ([]SearchResult, error) {
-	s.logger.Info("SearchHybrid called",
-		zap.String("dataset", name),
-		zap.String("text_query", textQuery),
-		zap.Float32("alpha", alpha),
-		zap.Int("k", k))
+	s.logger.Info().
+		Str("dataset", name).
+		Str("text_query", textQuery).
+		Float32("alpha", alpha).
+		Int("k", k).
+		Msg("SearchHybrid called")
 
 	ds, err := s.getDataset(name)
 	if err != nil {
@@ -32,7 +32,7 @@ func SearchHybrid(ctx context.Context, s *VectorStore, name string, query []floa
 			var err error
 			denseResults, err = ds.Index.SearchVectors(query, k*2, nil)
 			if err != nil {
-				s.logger.Error("Vector search failed in hybrid search", zap.Error(err))
+				s.logger.Error().Err(err).Msg("Vector search failed in hybrid search")
 				// Continue with sparse results only?
 				// For now, let's treat it as a hard failure if dense was requested but failed.
 				return nil, err

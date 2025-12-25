@@ -32,12 +32,12 @@ func TestMaxHeap(t *testing.T) {
 	// 9 and 10 should be evicted.
 	
 	// Peek should return the LARGEST of the smallest (i.e. 8.0)
-	max, ok := h.Peek()
+	maxVal, ok := h.Peek()
 	if !ok {
 		t.Fatal("Peek failed")
 	}
-	if max.Dist != 8.0 {
-		t.Errorf("Expected max 8.0, got %f", max.Dist)
+	if maxVal.Dist != 8.0 {
+		t.Errorf("Expected max 8.0, got %f", maxVal.Dist)
 	}
 	
 	// Pop all and verify order (should come out largest to smallest)

@@ -14,7 +14,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -23,7 +23,7 @@ import (
 func TestStore_EndToEnd_TDD(t *testing.T) {
 	tmpDir := t.TempDir()
 	mem := memory.NewGoAllocator()
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 
 	// 1. Initialize Store
 	store := NewVectorStore(mem, logger, 1<<30, 0, 0)

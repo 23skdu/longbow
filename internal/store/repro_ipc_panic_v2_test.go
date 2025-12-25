@@ -9,7 +9,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 )
 
 // Helper to access castRecordToSchema since it's unexported (test is in same package)
@@ -19,7 +19,7 @@ func castRecordToSchemaHelper(s *VectorStore, rec arrow.RecordBatch, target *arr
 
 func TestCastRecordToSchema_EdgeCases(t *testing.T) {
 	mem := memory.NewGoAllocator()
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 	vs := NewVectorStore(mem, logger, 1024*1024*1024, 0, 0)
 
 	fields := []arrow.Field{

@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/23skdu/longbow/internal/metrics"
-	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -46,10 +45,11 @@ func (s *VectorStore) checkMemoryBeforeWrite(estimatedSize int64) error {
 	threshold := s.memoryConfig.EvictionThreshold()
 	if current+estimatedSize > threshold {
 		// Proactive eviction
-		s.logger.Debug("Approaching memory limit, triggering proactive eviction",
-			zap.Int64("current", current),
-			zap.Int64("threshold", threshold),
-			zap.Int64("limit", limit))
+		s.logger.Debug().
+			Int64("current", current).
+			Int64("threshold", threshold).
+			Int64("limit", limit).
+			Msg("Approaching memory limit, triggering proactive eviction")
 
 		targetMemory := threshold - estimatedSize
 		if targetMemory < 0 {
@@ -123,10 +123,11 @@ func (s *VectorStore) evictToTarget(targetBytes int64) error {
 			s.currentMemory.Load(), s.maxMemory.Load(), targetBytes, evicted)
 	}
 
-	s.logger.Info("Evicted datasets to meet memory target",
-		zap.Int("count", evicted),
-		zap.Int64("current_memory", s.currentMemory.Load()),
-		zap.Int64("target", targetBytes))
+	s.logger.Info().
+		Int("count", evicted).
+		Int64("current_memory", s.currentMemory.Load()).
+		Int64("target", targetBytes).
+		Msg("Evicted datasets to meet memory target")
 
 	return nil
 }

@@ -2,7 +2,7 @@ package store
 
 import (
 	"context"
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 	"sync"
 	"testing"
 
@@ -15,7 +15,7 @@ import (
 func createTestStore(t *testing.T) *VectorStore {
 	t.Helper()
 	mem := memory.NewGoAllocator()
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 	return NewVectorStore(mem, logger, 1024*1024*100, 0, 0) // 100MB limit
 }
 
@@ -280,7 +280,7 @@ func TestFilterRecordsParallel_MultipleFilters(t *testing.T) {
 func createBenchStore(b *testing.B) *VectorStore {
 	b.Helper()
 	mem := memory.NewGoAllocator()
-	logger := zap.NewNop()
+	logger := zerolog.Nop()
 	return NewVectorStore(mem, logger, 1024*1024*100, 0, 0)
 }
 

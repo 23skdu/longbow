@@ -7,6 +7,8 @@ import (
 	"unsafe"
 	
 	"github.com/23skdu/longbow/internal/store"
+	"github.com/apache/arrow-go/v18/arrow"
+	"github.com/apache/arrow-go/v18/arrow/memory"
 )
 
 // GraphData holds the SoA (Struct of Arrays) representation of the graph.
@@ -20,10 +22,11 @@ type GraphData struct {
 	// but requires careful management of lifetime.
 	VectorPtrs []unsafe.Pointer // [Capacity]
 	
-	// QuantizedVectors holds dense packed PQ codes for all vectors.
-	// Layout: [vec0_code0, vec0_code1... vec1_code0...]
-	// Size: Capacity * PQ_M
-	QuantizedVectors []byte
+	// VectorsSQ8 holds dense packed uint8 vectors for Scalar Quantization.
+	// Layout: [vec0_byte0, vec0_byte1... vec1_byte0...]
+	// Size: Capacity * Dims
+	VectorsSQ8 []byte
+	
 	// Neighbors flattened per layer: Neighbors[layer][nodeID*MaxNeighbors + index]
 	Neighbors [MaxLayers][]uint32
 	// Counts per layer and node: Counts[layer][nodeID]
@@ -37,8 +40,7 @@ func NewGraphData(capacity int) *GraphData {
 		Capacity:   capacity,
 		Levels:     make([]uint8, capacity),
 		VectorPtrs: make([]unsafe.Pointer, capacity),
-		// QuantizedVectors initialized lazily or if config present?
-		// For now just empty.
+		// VectorsSQ8 initialized if quantization is enabled.
 	}
 	for i := 0; i < MaxLayers; i++ {
 		gd.Neighbors[i] = make([]uint32, capacity*MaxNeighbors)
@@ -56,7 +58,6 @@ const (
 // It uses atomic pointers for lock-free search and a mutex for serialized writes.
 type ArrowHNSW struct {
 	// Graph data snapshot (lock-free access)
-	// Graph data snapshot (lock-free access)
 	data    atomic.Pointer[GraphData]
 	
 	// Locking strategy:
@@ -70,10 +71,17 @@ type ArrowHNSW struct {
 
 	// Graph state (atomic for lock-free reads)
 	entryPoint atomic.Uint32
-	maxLevel   atomic.Int32
-	nodeCount  atomic.Uint32
+	// Maximum level in the graph
+	maxLevel      atomic.Int32
 	
-	pqEncoder *PQEncoder
+	// Total number of nodes in the graph
+	nodeCount     atomic.Uint32
+	
+	// Component dependencies
+	quantizer     *ScalarQuantizer
+	
+	// Caches
+	vectorColIdx  int // Index of the vector column in the Arrow schema
 
 	// Arrow integration - reference to parent dataset for vector access
 	dataset *store.Dataset
@@ -88,7 +96,12 @@ type ArrowHNSW struct {
 	ml             float64 // Level multiplier for exponential decay
 
 	// Pooled resources
-	searchPool *SearchContextPool
+	searchPool    *SearchContextPool
+	batchComputer *BatchDistanceComputer // Vectorized distance computation
+	
+	// Location tracking for VectorIndex implementation
+	locationStore *store.ChunkedLocationStore
+	nextVecID     atomic.Uint32
 }
 
 // Config holds HNSW configuration parameters.
@@ -113,9 +126,20 @@ type Config struct {
 	// If true, candidates discarded by the heuristic are used to ensure
 	// the number of connections reaches M. This improves recall but may reduce performance.
 	KeepPrunedConnections bool
+	
+	// RefinementFactor controls the number of candidates to re-rank.
+	// Valid only if SQ8Enabled is true.
+	// Candidates = k * RefinementFactor.
+	// Default 1.0 (no refinement, just return SQ8 results).
+	RefinementFactor float64
 
-	// PQ specifies the Product Quantization configuration.
-	PQ PQConfig
+	// SelectionHeuristicLimit caps the number of candidates checked by the RobustPrune heuristic.
+	// If 0, all candidates (up to EfConstruction) are checked.
+	// Limiting this (e.g., to 4*M) drastically improves insertion speed when Alpha > 1.0.
+	SelectionHeuristicLimit int
+	
+	// SQ8Enabled enables scalar quantization
+	SQ8Enabled bool
 }
 
 // DefaultConfig returns sensible default HNSW parameters.
@@ -128,30 +152,146 @@ func DefaultConfig() Config {
 		EfConstruction: 400,
 		Ml:             1.0 / math.Log(32),
 		Alpha:          1.1,
+		SQ8Enabled:     false,
+		RefinementFactor: 1.0,
 	}
 }
 
 // NewArrowHNSW creates a new Arrow-native HNSW index.
 func NewArrowHNSW(dataset *store.Dataset, config Config) *ArrowHNSW {
+	// Initialize HNSW
 	h := &ArrowHNSW{
-		dataset:        dataset,
-		config:         config, // Store full config
-		m:              config.M,
-		mMax:           config.MMax,
-		mMax0:          config.MMax0,
-		efConstruction: config.EfConstruction,
-		ml:             config.Ml,
-		searchPool:     NewSearchContextPool(),
+		config:        config,
+		dataset:       dataset,
+		entryPoint:    atomic.Uint32{},
+		maxLevel:      atomic.Int32{},
+		searchPool:    NewSearchContextPool(),
+		resizeMu:      sync.RWMutex{},
+		locationStore: store.NewChunkedLocationStore(),
+		vectorColIdx:  -1,
+	}
+	h.entryPoint.Store(0)
+	h.maxLevel.Store(-1)
+
+	// Determine vector column index
+	if dataset != nil && dataset.Schema != nil {
+		for i, field := range dataset.Schema.Fields() {
+			if field.Name == "vector" {
+				h.vectorColIdx = i
+				break
+			}
+		}
+		// Fallback: Use 1 if available (common convention), else 0 if list
+		if h.vectorColIdx == -1 {
+			if len(dataset.Schema.Fields()) > 1 {
+				h.vectorColIdx = 1
+			} else if len(dataset.Schema.Fields()) > 0 {
+				h.vectorColIdx = 0
+			}
+		}
+	}
+
+	// Set HNSW parameters from config
+	h.m = config.M
+	h.mMax = config.MMax
+	h.mMax0 = config.MMax0
+	h.efConstruction = config.EfConstruction
+	h.ml = config.Ml
+
+	// Initialize batch distance computer for vectorized operations
+	// Dimensions will be set when first vector is inserted
+	if dataset != nil && dataset.Schema != nil {
+		// Try to get dimensions from schema
+		for _, field := range dataset.Schema.Fields() {
+			if field.Name == "vector" {
+				if fsl, ok := field.Type.(*arrow.FixedSizeListType); ok {
+					h.dims = int(fsl.Len())
+					// Use Go allocator for batch computer
+					h.batchComputer = NewBatchDistanceComputer(memory.NewGoAllocator(), h.dims)
+					
+					// Initialize Quantizer if enabled
+					if config.SQ8Enabled {
+						h.quantizer = NewScalarQuantizer(h.dims)
+					}
+					break
+				}
+			}
+		}
 	}
 
 	// Initialize empty graph with initial capacity
 	initialCap := 1000
-	h.data.Store(NewGraphData(initialCap))
+	initData := NewGraphData(initialCap)
+	
+	// Pre-allocate SQ8 storage if enabled
+	if config.SQ8Enabled && h.dims > 0 {
+		initData.VectorsSQ8 = make([]byte, initialCap*h.dims)
+	}
+	
+	h.data.Store(initData)
 	h.entryPoint.Store(0)
 	h.maxLevel.Store(-1)
 	h.nodeCount.Store(0)
 
 	return h
+}
+
+// Grow ensures the graph has enough capacity for the requested ID.
+// It uses a Copy-On-Resize strategy: a new GraphData is allocated, data copied, and atomically swapped.
+func (h *ArrowHNSW) Grow(minCap int) {
+	// Acquire exclusive lock for resizing
+	h.resizeMu.Lock()
+	defer h.resizeMu.Unlock()
+	
+	// Double-check capacity under lock
+	oldData := h.data.Load()
+	
+	// Check if we need to grow for Capacity OR for missing SQ8 storage
+	sq8Missing := h.config.SQ8Enabled && len(oldData.VectorsSQ8) == 0 && h.dims > 0
+	
+	if oldData.Capacity > minCap && !sq8Missing {
+		return
+	}
+
+	// Calculate new capacity
+	newCap := oldData.Capacity * 2
+	if newCap < minCap {
+		newCap = minCap
+	}
+	if newCap < 1000 {
+		newCap = 1000
+	}
+
+	// Allocate new data
+	newData := NewGraphData(newCap)
+
+	// Copy existing data
+	// 1. Levels
+	copy(newData.Levels, oldData.Levels)
+	
+	// 2. VectorPtrs
+	copy(newData.VectorPtrs, oldData.VectorPtrs)
+	
+	// 2b. VectorsSQ8 (SQ8 storage)
+	// Check if we need to migrate/create SQ8 storage
+	if len(oldData.VectorsSQ8) > 0 {
+		// Existing storage, calc dim from ratio
+		dim := len(oldData.VectorsSQ8) / oldData.Capacity
+		newData.VectorsSQ8 = make([]byte, newCap*dim)
+		copy(newData.VectorsSQ8, oldData.VectorsSQ8)
+	} else if h.config.SQ8Enabled && h.dims > 0 {
+		// New storage (was missing)
+		newData.VectorsSQ8 = make([]byte, newCap*h.dims)
+	}
+	
+	// 3. Neighbors and Counts for each layer
+	for i := 0; i < MaxLayers; i++ {
+		copy(newData.Neighbors[i], oldData.Neighbors[i])
+		copy(newData.Counts[i], oldData.Counts[i])
+	}
+	
+	// Atomically switch to new data
+	h.data.Store(newData)
 }
 
 // Size returns the number of nodes in the index.
@@ -225,4 +365,5 @@ type SearchContext struct {
 	scratchDiscarded []Candidate
 	scratchPQTable   []float32 // For ADC table
 	scratchIDs       []uint32  // For batching unvisited neighbors
+	querySQ8         []byte    // SQ8 encoded query
 }

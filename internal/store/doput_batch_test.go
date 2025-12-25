@@ -8,14 +8,14 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 )
 
 func TestConcatenateBatches(t *testing.T) {
 	mem := memory.NewCheckedAllocator(memory.NewGoAllocator())
 	defer mem.AssertSize(t, 0)
 
-	logger, _ := zap.NewDevelopment()
+	logger := zerolog.Nop()
 	store := &VectorStore{
 		mem:    mem,
 		logger: logger,
@@ -89,7 +89,7 @@ func TestDoPut_AdaptiveBatching(t *testing.T) {
 	mem := memory.NewCheckedAllocator(memory.NewGoAllocator())
 	defer mem.AssertSize(t, 0)
 
-	logger, _ := zap.NewDevelopment()
+	logger := zerolog.Nop()
 	store := &VectorStore{
 		mem:    mem,
 		logger: logger,

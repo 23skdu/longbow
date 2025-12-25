@@ -1,14 +1,14 @@
 package logging
 
 import (
-	"fmt"
+
+	"io"
 	"os"
 	"strings"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
+	"github.com/rs/zerolog"
 )
 
 // Prometheus metrics for logging operations
@@ -38,7 +38,7 @@ type Config struct {
 	// Level specifies the minimum log level: "debug", "info", "warn", "error"
 	Level string
 	// Output specifies where logs are written (defaults to os.Stdout)
-	Output zapcore.WriteSyncer
+	Output io.Writer
 }
 
 // DefaultConfig returns the default logger configuration
@@ -50,12 +50,12 @@ func DefaultConfig() Config {
 	}
 }
 
-// NewLogger creates a new zap logger based on the provided configuration
-func NewLogger(cfg Config) (*zap.Logger, error) {
+// NewLogger creates a new zerolog logger based on the provided configuration
+func NewLogger(cfg Config) (zerolog.Logger, error) {
 	// Parse log level
-	level, err := parseLevel(cfg.Level)
+	level, err := zerolog.ParseLevel(strings.ToLower(cfg.Level))
 	if err != nil {
-		return nil, err
+		return zerolog.Logger{}, err
 	}
 
 	// Set default output
@@ -64,96 +64,49 @@ func NewLogger(cfg Config) (*zap.Logger, error) {
 		output = os.Stdout
 	}
 
-	// Create encoder config based on format
-	var encoder zapcore.Encoder
+	// Create writer based on format
+	var writer io.Writer
 	switch strings.ToLower(cfg.Format) {
 	case "json":
-		encoderConfig := zap.NewProductionEncoderConfig()
-		encoderConfig.TimeKey = "timestamp"
-		encoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
-		encoder = zapcore.NewJSONEncoder(encoderConfig)
+		writer = output
 	case "text", "console":
-		encoderConfig := zap.NewDevelopmentEncoderConfig()
-		encoderConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
-		encoder = zapcore.NewConsoleEncoder(encoderConfig)
+		writer = zerolog.ConsoleWriter{Out: output, TimeFormat: "2006-01-02 15:04:05"}
 	default:
-		// Default to JSON if not specified
-		encoderConfig := zap.NewProductionEncoderConfig()
-		encoderConfig.TimeKey = "timestamp"
-		encoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
-		encoder = zapcore.NewJSONEncoder(encoderConfig)
+		// Default to JSON
+		writer = output
 	}
 
-	// Create core with metrics hook
-	core := zapcore.NewCore(encoder, output, level)
-
-	// Wrap core with metrics hook
-	metricsCore := &metricsHookCore{Core: core}
-
-	// Build logger with caller info
-	logger := zap.New(metricsCore, zap.AddCaller(), zap.AddCallerSkip(0))
+	// Build logger with metrics hook
+	logger := zerolog.New(writer).
+		Level(level).
+		With().
+		Timestamp().
+		Caller().
+		Logger().
+		Hook(MetricsHook{})
 
 	return logger, nil
 }
 
 // DiscardLogger returns a logger that discards all output (useful for tests)
-func DiscardLogger() *zap.Logger {
-	return zap.NewNop()
+func DiscardLogger() zerolog.Logger {
+	return zerolog.Nop()
 }
 
-// parseLevel converts a string level to zapcore.Level
-func parseLevel(level string) (zapcore.Level, error) {
-	switch strings.ToLower(level) {
-	case "debug":
-		return zapcore.DebugLevel, nil
-	case "info":
-		return zapcore.InfoLevel, nil
-	case "warn", "warning":
-		return zapcore.WarnLevel, nil
-	case "error":
-		return zapcore.ErrorLevel, nil
-	case "dpanic":
-		return zapcore.DPanicLevel, nil
-	case "panic":
-		return zapcore.PanicLevel, nil
-	case "fatal":
-		return zapcore.FatalLevel, nil
-	default:
-		return zapcore.InfoLevel, fmt.Errorf("invalid log level: %s", level)
+// MetricsHook implements zerolog.Hook to increment Prometheus metrics
+type MetricsHook struct{}
+
+// Run increments Prometheus metrics based on the log level
+func (h MetricsHook) Run(e *zerolog.Event, level zerolog.Level, msg string) {
+	if level == zerolog.NoLevel {
+		return
 	}
-}
 
-// metricsHookCore wraps a zapcore.Core to add Prometheus metrics
-type metricsHookCore struct {
-	zapcore.Core
-}
+	levelStr := level.String()
+	LogEntriesTotal.WithLabelValues(levelStr).Inc()
 
-// Check determines whether the entry should be logged
-//
-//nolint:gocritic // hugeParam: interface requires value receiver
-func (c *metricsHookCore) Check(entry zapcore.Entry, checked *zapcore.CheckedEntry) *zapcore.CheckedEntry {
-	if c.Enabled(entry.Level) {
-		return checked.AddCore(entry, c)
-	}
-	return checked
-}
-
-// Write logs the entry and increments Prometheus metrics
-//
-//nolint:gocritic // hugeParam: interface requires value receiver
-func (c *metricsHookCore) Write(entry zapcore.Entry, fields []zapcore.Field) error {
-	// Increment level-specific counter
-	LogEntriesTotal.WithLabelValues(entry.Level.String()).Inc()
-
-	// Special counter for errors
-	if entry.Level >= zapcore.ErrorLevel {
+	if level >= zerolog.ErrorLevel {
 		LogErrorsTotal.Inc()
 	}
-
-	return c.Core.Write(entry, fields)
 }
 
-// With creates a child core with additional fields
-func (c *metricsHookCore) With(fields []zapcore.Field) zapcore.Core {
-	return &metricsHookCore{Core: c.Core.With(fields)}
-}

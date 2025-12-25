@@ -10,17 +10,17 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/apache/arrow-go/v18/arrow/memory"
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 )
 
 // StreamAggregator consolidates results from multiple Flight streams
 type StreamAggregator struct {
 	mem    memory.Allocator
-	logger *zap.Logger
+	logger zerolog.Logger
 }
 
 // NewStreamAggregator creates a new aggregator
-func NewStreamAggregator(mem memory.Allocator, logger *zap.Logger) *StreamAggregator {
+func NewStreamAggregator(mem memory.Allocator, logger zerolog.Logger) *StreamAggregator {
 	return &StreamAggregator{
 		mem:    mem,
 		logger: logger,
@@ -54,7 +54,10 @@ func (sa *StreamAggregator) Aggregate(ctx context.Context, sg *ScatterGather, k 
 	var wg sync.WaitGroup
 	for _, res := range results {
 		if res.Error != nil {
-			sa.logger.Warn("Shard failed during scatter", zap.String("node", res.NodeID), zap.Error(res.Error))
+			sa.logger.Warn().
+				Str("node", res.NodeID).
+				Err(res.Error).
+				Msg("Shard failed during scatter")
 			continue
 		}
 
@@ -64,7 +67,10 @@ func (sa *StreamAggregator) Aggregate(ctx context.Context, sg *ScatterGather, k 
 
 		stream, ok := res.Data.(flight.FlightService_DoGetClient)
 		if !ok {
-			sa.logger.Error("Unexpected result type from scatter", zap.String("node", res.NodeID), zap.String("type", fmt.Sprintf("%T", res.Data)))
+			sa.logger.Error().
+				Str("node", res.NodeID).
+				Str("type", fmt.Sprintf("%T", res.Data)).
+				Msg("Unexpected result type from scatter")
 			continue
 		}
 
@@ -73,7 +79,10 @@ func (sa *StreamAggregator) Aggregate(ctx context.Context, sg *ScatterGather, k 
 			defer wg.Done()
 			reader, err := flight.NewRecordReader(s)
 			if err != nil {
-				sa.logger.Warn("Failed to create reader for shard", zap.String("node", nodeID), zap.Error(err))
+				sa.logger.Warn().
+					Str("node", nodeID).
+					Err(err).
+					Msg("Failed to create reader for shard")
 				return
 			}
 			defer reader.Release()
@@ -89,7 +98,10 @@ func (sa *StreamAggregator) Aggregate(ctx context.Context, sg *ScatterGather, k 
 			}
 
 			if reader.Err() != nil {
-				sa.logger.Warn("Error reading stream from shard", zap.String("node", nodeID), zap.Error(reader.Err()))
+				sa.logger.Warn().
+					Str("node", nodeID).
+					Err(reader.Err()).
+					Msg("Error reading stream from shard")
 			}
 		}(res.NodeID, stream)
 	}

@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/apache/arrow-go/v18/arrow/flight"
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -19,14 +19,14 @@ import (
 // ForwarderConfig holds configuration for the forwarder
 type ForwarderConfig struct {
 	DialTimeout time.Duration
-	Logger      *zap.Logger
+	Logger      zerolog.Logger
 }
 
 // DefaultForwarderConfig returns default config
 func DefaultForwarderConfig() ForwarderConfig {
 	return ForwarderConfig{
 		DialTimeout: 5 * time.Second,
-		Logger:      zap.NewNop(),
+		Logger:      zerolog.Nop(),
 	}
 }
 
@@ -69,8 +69,7 @@ func (f *RequestForwarder) GetConn(ctx context.Context, target string) (*grpc.Cl
 		return conn, nil
 	}
 
-	f.config.Logger.Info("Creating new gRPC connection", zap.String("target", target))
-	f.config.Logger.Info("Creating new gRPC connection", zap.String("target", target))
+	f.config.Logger.Info().Str("target", target).Msg("Creating new gRPC connection")
 
 	// We assume insecure internal traffic for now
 	conn, err := grpc.NewClient(target,

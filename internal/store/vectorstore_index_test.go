@@ -2,7 +2,7 @@ package store
 
 import (
 	"context"
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 	"testing"
 
 	"github.com/apache/arrow-go/v18/arrow"
@@ -12,7 +12,7 @@ import (
 
 func TestVectorStore_IndexRecordColumns(t *testing.T) {
 	mem := memory.NewGoAllocator()
-	store := NewVectorStore(mem, zap.NewNop(), 0, 0, 0)
+	store := NewVectorStore(mem, zerolog.Nop(), 0, 0, 0)
 	defer func() { _ = store.Close() }()
 
 	// Set columns to index
@@ -49,7 +49,7 @@ func TestVectorStore_IndexRecordColumns(t *testing.T) {
 
 func TestVectorStore_IndexRecordColumns_NoIndexedColumns(t *testing.T) {
 	mem := memory.NewGoAllocator()
-	store := NewVectorStore(mem, zap.NewNop(), 0, 0, 0)
+	store := NewVectorStore(mem, zerolog.Nop(), 0, 0, 0)
 	defer func() { _ = store.Close() }()
 
 	// Don't set any indexed columns - should be a no-op
@@ -75,7 +75,7 @@ func TestVectorStore_IndexRecordColumns_NoIndexedColumns(t *testing.T) {
 
 func TestVectorStore_GetSetIndexedColumns(t *testing.T) {
 	mem := memory.NewGoAllocator()
-	store := NewVectorStore(mem, zap.NewNop(), 0, 0, 0)
+	store := NewVectorStore(mem, zerolog.Nop(), 0, 0, 0)
 	defer func() { _ = store.Close() }()
 
 	// Initially empty
@@ -93,7 +93,7 @@ func TestVectorStore_GetSetIndexedColumns(t *testing.T) {
 
 func TestVectorStore_FilterRecordOptimized_NoFilters(t *testing.T) {
 	mem := memory.NewGoAllocator()
-	store := NewVectorStore(mem, zap.NewNop(), 0, 0, 0)
+	store := NewVectorStore(mem, zerolog.Nop(), 0, 0, 0)
 	defer func() { _ = store.Close() }()
 
 	schema := arrow.NewSchema([]arrow.Field{
@@ -121,7 +121,7 @@ func TestVectorStore_FilterRecordOptimized_NoFilters(t *testing.T) {
 
 func TestVectorStore_FilterRecordOptimized_WithIndex(t *testing.T) {
 	mem := memory.NewGoAllocator()
-	store := NewVectorStore(mem, zap.NewNop(), 0, 0, 0)
+	store := NewVectorStore(mem, zerolog.Nop(), 0, 0, 0)
 	defer func() { _ = store.Close() }()
 
 	store.SetIndexedColumns([]string{"category"})
@@ -158,7 +158,7 @@ func TestVectorStore_FilterRecordOptimized_WithIndex(t *testing.T) {
 
 func TestVectorStore_FilterRecordOptimized_FallbackToCompute(t *testing.T) {
 	mem := memory.NewGoAllocator()
-	store := NewVectorStore(mem, zap.NewNop(), 0, 0, 0)
+	store := NewVectorStore(mem, zerolog.Nop(), 0, 0, 0)
 	defer func() { _ = store.Close() }()
 
 	// Don't index any columns - will fallback to Arrow compute
@@ -191,7 +191,7 @@ func TestVectorStore_FilterRecordOptimized_FallbackToCompute(t *testing.T) {
 
 func BenchmarkFilterRecordOptimized_WithIndex(b *testing.B) {
 	mem := memory.NewGoAllocator()
-	store := NewVectorStore(mem, zap.NewNop(), 0, 0, 0)
+	store := NewVectorStore(mem, zerolog.Nop(), 0, 0, 0)
 	defer func() { _ = store.Close() }()
 
 	store.SetIndexedColumns([]string{"category"})
@@ -234,7 +234,7 @@ func BenchmarkFilterRecordOptimized_WithIndex(b *testing.B) {
 
 func BenchmarkFilterRecord_WithoutIndex(b *testing.B) {
 	mem := memory.NewGoAllocator()
-	store := NewVectorStore(mem, zap.NewNop(), 0, 0, 0)
+	store := NewVectorStore(mem, zerolog.Nop(), 0, 0, 0)
 	defer func() { _ = store.Close() }()
 
 	// No indexed columns - uses full Arrow compute

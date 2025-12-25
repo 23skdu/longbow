@@ -59,7 +59,7 @@ func (e *PQEncoder) EnableSDC() {
 // codeA: [M] bytes.
 // codesB: [Count * M] bytes.
 // scratch: [M * 256] float32 buffer for the ADC table.
-func (e *PQEncoder) SDCDistanceOneBatch(codeA, codesB []byte, m int, results []float32, scratch []float32) {
+func (e *PQEncoder) SDCDistanceOneBatch(codeA, codesB []byte, m int, results, scratch []float32) {
 	// Optimization: Transform SDC (Symmetric Distance) into ADC (Asymmetric Distance)
 	// by constructing a lookup table for codeA.
 	// table[m][code] = sdcTable[m][codeA[m]][code]
@@ -234,7 +234,7 @@ func (e *PQEncoder) ComputeTableFlat(query []float32) []float32 {
 // ComputeTableFlatInto computes the distance table for ADC into the provided destination buffer.
 // If dst is nil or too small, a new buffer is allocated.
 // Returns the slice containing the table.
-func (e *PQEncoder) ComputeTableFlatInto(query []float32, dst []float32) []float32 {
+func (e *PQEncoder) ComputeTableFlatInto(query, dst []float32) []float32 {
 	mTotal := e.config.M
 	ksub := e.config.Ksub
 	if ksub == 0 { ksub = 256 }

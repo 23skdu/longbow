@@ -2,9 +2,11 @@ package hnsw2
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"math/rand"
-	
+	"sync/atomic"
+
 	"github.com/23skdu/longbow/internal/store"
 	"github.com/apache/arrow-go/v18/arrow"
 	"golang.org/x/sync/errgroup"
@@ -99,6 +101,27 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(query []float32, k int, filter *stor
 // GetLocation implements store.VectorIndex.
 func (h *ArrowHNSW) GetLocation(id store.VectorID) (store.Location, bool) {
 	return h.locationStore.Get(id)
+}
+
+// GetNeighbors returns the nearest neighbors for a given vector ID from the graph
+// at the base layer (Layer 0).
+func (h *ArrowHNSW) GetNeighbors(id store.VectorID) ([]store.VectorID, error) {
+	data := h.data.Load()
+	if int(id) >= int(h.nodeCount.Load()) {
+		return nil, fmt.Errorf("vector ID %d out of range", id)
+	}
+
+	// Layer 0 neighbors
+	layer := 0
+	count := int(atomic.LoadInt32(&data.Counts[layer][id]))
+	baseIdx := int(id) * MaxNeighbors
+
+	results := make([]store.VectorID, count)
+	for i := 0; i < count; i++ {
+		results[i] = store.VectorID(data.Neighbors[layer][baseIdx+i])
+	}
+
+	return results, nil
 }
 
 // Len implements store.VectorIndex.

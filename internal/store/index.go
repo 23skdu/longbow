@@ -33,6 +33,9 @@ type VectorIndex interface {
 	// Returns the location and true if found, or zero location and false if not found.
 	GetLocation(id VectorID) (Location, bool)
 
+	// GetNeighbors returns the nearest neighbors for a given vector ID from the graph.
+	GetNeighbors(id VectorID) ([]VectorID, error)
+
 	// Len returns the number of vectors in the index.
 	Len() int
 

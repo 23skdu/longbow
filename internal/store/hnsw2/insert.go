@@ -1,6 +1,7 @@
 package hnsw2
 
 import (
+	"fmt"
 	"math"
 	"math/rand"
 	"slices"
@@ -60,16 +61,8 @@ func (h *ArrowHNSW) Insert(id uint32, level int) error {
 	
 	// Initialize the new node
 	data.Levels[id] = uint8(level)
-	
-	// Check if this is the first node
-	if h.nodeCount.Load() == 0 {
-		h.entryPoint.Store(id)
-		h.maxLevel.Store(int32(level))
-		h.nodeCount.Add(1)
-		return nil
-	}
-	
-	// Get vector for distance calculations
+
+	// Get vector for distance calculations (and caching)
 	vec, err := h.getVector(id)
 	if err != nil {
 		return err
@@ -82,7 +75,20 @@ func (h *ArrowHNSW) Insert(id uint32, level int) error {
 	
 	// Cache unsafe pointer
 	if len(vec) > 0 {
-		data.VectorPtrs[id] = unsafe.Pointer(&vec[0])
+		atomic.StorePointer(&data.VectorPtrs[id], unsafe.Pointer(&vec[0]))
+	}
+	
+	// Check if this is the first node
+	if h.nodeCount.Load() == 0 {
+		h.initMu.Lock()
+		if h.nodeCount.Load() == 0 {
+			h.entryPoint.Store(id)
+			h.maxLevel.Store(int32(level))
+			h.nodeCount.Store(1)
+			h.initMu.Unlock()
+			return nil
+		}
+		h.initMu.Unlock()
 	}
 	
 	// SQ8 Encoding
@@ -96,11 +102,7 @@ func (h *ArrowHNSW) Insert(id uint32, level int) error {
 		// Ensure capacity
 		offset := int(id) * h.dims
 		if len(data.VectorsSQ8) < offset+h.dims {
-			// Ensure capacity
-			// This shouldn't happen if Grow works correctly, unless dims set late
-			// Just return error or skip SQ8
-			// For now, logging would require logger.
-			// Just skip.
+			return fmt.Errorf("SQ8 storage insufficient for vector %d", id)
 		}
 		if offset+h.dims <= len(data.VectorsSQ8) {
 			qVec := h.quantizer.Encode(vec)
@@ -148,16 +150,16 @@ func (h *ArrowHNSW) Insert(id uint32, level int) error {
 		neighbors := h.selectNeighbors(ctx, candidates, m, data)
 		
 		// Add connections
+		maxConn := h.mMax
+		if lc > 0 {
+			maxConn = h.mMax0
+		}
+		
 		for _, neighbor := range neighbors {
-			h.addConnection(data, id, neighbor.ID, lc)
-			h.addConnection(data, neighbor.ID, id, lc)
+			h.addConnection(ctx, data, id, neighbor.ID, lc, maxConn)
+			h.addConnection(ctx, data, neighbor.ID, id, lc, maxConn)
 			
-			// Prune neighbor if needed
-			maxConn := h.mMax
-			if lc > 0 {
-				maxConn = h.mMax0
-			}
-			
+			// Prune neighbor if needed (still useful to keep strict M_max if buffer wasn't hit)
 			// Read count atomically
 			count := atomic.LoadInt32(&data.Counts[lc][neighbor.ID])
 			if int(count) > maxConn {
@@ -188,9 +190,11 @@ func (h *ArrowHNSW) searchLayerForInsert(ctx *SearchContext, query []float32, en
 	ctx.candidates.Clear()
 	
 	// Ensure visited bitset is large enough
-	nodeCount := int(h.nodeCount.Load())
-	if ctx.visited.Size() < nodeCount {
-		ctx.visited = NewBitset(nodeCount)
+	// Use maxID from location store to cover all possible IDs, including the one currently being inserted
+	// Add safety margin
+	maxID := int(h.locationStore.MaxID()) + 1000
+	if ctx.visited.Size() < maxID {
+		ctx.visited = NewBitset(maxID)
 	}
 
 	// Ensure candidates heap is large enough
@@ -228,7 +232,17 @@ func (h *ArrowHNSW) searchLayerForInsert(ctx *SearchContext, query []float32, en
 	results := make([]Candidate, 0, ef)
 	results = append(results, Candidate{ID: entryPoint, Dist: entryDist})
 	
+	// Circuit breaker for traversal
+	iterations := 0
+	maxOps := h.nodeCount.Load() * 2 // Generous limit based on graph size
+	if maxOps < 10000 { maxOps = 10000 }
+	
 	for candidates.Len() > 0 {
+		iterations++
+		if uint32(iterations) > maxOps {
+			// Safety break to prevent infinite loops if visited set fails
+			break
+		}
 		curr, ok := candidates.Pop()
 		if !ok {
 			break
@@ -279,7 +293,10 @@ func (h *ArrowHNSW) searchLayerForInsert(ctx *SearchContext, query []float32, en
 				dists[i] = float32(d)
 			}
 		} else {
-			vecs := make([][]float32, count)
+			if cap(ctx.scratchVecs) < count {
+				ctx.scratchVecs = make([][]float32, count*2)
+			}
+			vecs := ctx.scratchVecs[:count]
 			for i, nid := range unvisitedIDs {
 				vecs[i] = h.mustGetVectorFromData(data, nid)
 			}
@@ -327,13 +344,32 @@ func (h *ArrowHNSW) selectNeighbors(ctx *SearchContext, candidates []Candidate, 
 	}
 	
 	// RobustPrune heuristic: select diverse neighbors
-	selected := make([]Candidate, 0, m)
-	remaining := make([]Candidate, len(candidates))
+	// Use scratch in context or allocate (fallback)
+	var selected []Candidate
+	var remaining []Candidate
+	
+	if ctx != nil {
+		if cap(ctx.scratchSelected) < m {
+			ctx.scratchSelected = make([]Candidate, 0, m*2)
+		}
+		selected = ctx.scratchSelected[:0]
+		
+		if cap(ctx.scratchRemaining) < len(candidates) {
+			ctx.scratchRemaining = make([]Candidate, len(candidates)*2)
+		}
+		remaining = ctx.scratchRemaining[:len(candidates)]
+	} else {
+		selected = make([]Candidate, 0, m)
+		remaining = make([]Candidate, len(candidates))
+	}
 	copy(remaining, candidates)
 	
 	// Use scratch buffer for discarded candidates
 	var discarded []Candidate
 	if ctx != nil {
+		if cap(ctx.scratchDiscarded) < len(candidates) {
+			ctx.scratchDiscarded = make([]Candidate, 0, len(candidates)*2)
+		}
 		ctx.scratchDiscarded = ctx.scratchDiscarded[:0]
 		discarded = ctx.scratchDiscarded
 	} else {
@@ -347,7 +383,16 @@ func (h *ArrowHNSW) selectNeighbors(ctx *SearchContext, candidates []Candidate, 
 		alpha = 1.0
 	}
 	
+	// Circuit breaker: prevent infinite loops
+	maxIterations := len(candidates) * 2
+	iterations := 0
+	
 	for len(selected) < m && len(remaining) > 0 {
+		iterations++
+		if iterations > maxIterations {
+			// Safety: break out if we've iterated too many times
+			break
+		}
 		// Find the closest remaining candidate
 		bestIdx := 0
 		bestDist := remaining[0].Dist
@@ -389,14 +434,21 @@ func (h *ArrowHNSW) selectNeighbors(ctx *SearchContext, candidates []Candidate, 
 				offSel := int(selID) * h.dims
 				
 				// SQ8 Vector of selected neighbor
-				// Check bounds
-				if offSel+h.dims > len(data.VectorsSQ8) { continue }
+				// Check bounds - if out of bounds, skip diversity check entirely
+				if offSel+h.dims > len(data.VectorsSQ8) {
+					// Can't compute distances, skip filtering
+					continue
+				}
 				vecSel := data.VectorsSQ8[offSel : offSel+h.dims]
 				
 				for i := range remaining {
 					// Check bounds for remaining
 					offRem := int(remaining[i].ID) * h.dims
-					if offRem+h.dims > len(data.VectorsSQ8) { continue }
+					if offRem+h.dims > len(data.VectorsSQ8) {
+						// Out of bounds, use max distance to keep candidate
+						dists[i] = math.MaxFloat32
+						continue
+					}
 					
 					d := simd.EuclideanDistanceSQ8(vecSel, data.VectorsSQ8[offRem : offRem+h.dims])
 					dists[i] = float32(d)
@@ -418,26 +470,7 @@ func (h *ArrowHNSW) selectNeighbors(ctx *SearchContext, candidates []Candidate, 
 				}
 				
 				if h.batchComputer != nil {
-					// Use Arrow Kernel if batch size is sufficient
-					if h.batchComputer.ShouldUseBatchCompute(count) {
-						// Kernel allocates its own result, copy to scratch if needed or use directly
-						// Note: Kernel allocates via Arrow allocator.
-						// We prefer to reuse 'dists' scratch if possible, but Kernel api returns new slice.
-						// For now, let's use the Kernel result and copy to 'dists' to maintain logic consistency,
-						// or just assign to dists if we don't care about scratch reuse optimization for this path 
-						// (allocating 1 tiny slice vs SIMD). 
-						// Actually, to prove "True Arrow Compute", we use the kernel.
-						kDists, err := h.batchComputer.ComputeL2DistancesKernel(selectedVec, remVecs)
-						if err == nil {
-							// Copy to scratch dists to avoid GC thrashing/mixup
-							copy(dists, kDists)
-						} else {
-							// Fallback
-							_, _ = h.batchComputer.ComputeL2DistancesInto(selectedVec, remVecs, dists)
-						}
-					} else {
-						_, _ = h.batchComputer.ComputeL2DistancesInto(selectedVec, remVecs, dists)
-					}
+					_, _ = h.batchComputer.ComputeL2DistancesInto(selectedVec, remVecs, dists)
 				} else {
 					simd.EuclideanDistanceBatch(selectedVec, remVecs, dists)
 				}
@@ -487,7 +520,7 @@ func (h *ArrowHNSW) selectNeighbors(ctx *SearchContext, candidates []Candidate, 
 }
 
 // addConnection adds a directed edge from source to target at the given layer.
-func (h *ArrowHNSW) addConnection(data *GraphData, source, target uint32, layer int) {
+func (h *ArrowHNSW) addConnection(ctx *SearchContext, data *GraphData, source, target uint32, layer int, maxConn int) {
 	// Acquire lock for the specific node (shard)
 	lockID := source % 1024
 	h.shardedLocks[lockID].Lock()
@@ -504,7 +537,13 @@ func (h *ArrowHNSW) addConnection(data *GraphData, source, target uint32, layer 
 		}
 	}
 	
-	// Add connection if space available
+	// Create space if needed
+	if count >= MaxNeighbors {
+		h.pruneConnectionsLocked(ctx, data, source, maxConn, layer)
+		count = int(atomic.LoadInt32(countAddr))
+	}
+	
+	// Add connection if space available (should be now)
 	if count < MaxNeighbors {
 		data.Neighbors[layer][baseIdx+count] = target
 		atomic.StoreInt32(countAddr, int32(count+1))
@@ -518,6 +557,11 @@ func (h *ArrowHNSW) pruneConnections(ctx *SearchContext, data *GraphData, nodeID
 	h.shardedLocks[lockID].Lock()
 	defer h.shardedLocks[lockID].Unlock()
 
+	h.pruneConnectionsLocked(ctx, data, nodeID, maxConn, layer)
+}
+
+// pruneConnectionsLocked reduces connections assuming lock is held.
+func (h *ArrowHNSW) pruneConnectionsLocked(ctx *SearchContext, data *GraphData, nodeID uint32, maxConn, layer int) {
 	countAddr := &data.Counts[layer][nodeID]
 	count := int(atomic.LoadInt32(countAddr))
 	
@@ -600,6 +644,18 @@ func (h *ArrowHNSW) pruneConnections(ctx *SearchContext, data *GraphData, nodeID
 	}
 	
 	// Run heuristic to select best M neighbors
+	// Prevent infinite recursion by limiting depth
+	if ctx != nil {
+		ctx.pruneDepth++
+		defer func() { ctx.pruneDepth-- }()
+		
+		// Circuit breaker: if we're too deep in recursion, just return current neighbors
+		if ctx.pruneDepth > 5 {
+			// Too deep, return current neighbors without pruning
+			return
+		}
+	}
+	
 	selected := h.selectNeighbors(ctx, candidates, maxConn, data)
 	
 	// Write back
@@ -613,7 +669,7 @@ func (h *ArrowHNSW) pruneConnections(ctx *SearchContext, data *GraphData, nodeID
 func (h *ArrowHNSW) mustGetVectorFromData(data *GraphData, id uint32) []float32 {
 	// Optimization: Check for cached vector pointer
 	if int(id) < len(data.VectorPtrs) {
-		ptr := data.VectorPtrs[id]
+		ptr := atomic.LoadPointer(&data.VectorPtrs[id])
 		if ptr != nil && h.dims > 0 {
 			return unsafe.Slice((*float32)(ptr), h.dims)
 		}

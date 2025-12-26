@@ -233,6 +233,10 @@ func (g *Gossip) probe() {
 		return
 	}
 	targetID := g.peers[rand.Intn(len(g.peers))]
+	if targetID == g.Config.ID {
+		g.mu.RUnlock()
+		return
+	}
 	targetPtr := g.members[targetID]
 	var target Member
 	if targetPtr != nil {
@@ -463,8 +467,6 @@ func (g *Gossip) sendPing(addr string, targetID string, seq uint32, payload []by
 	updates, numUpdates := g.getUpdatesForPacket(available, targetID)
 	g.mu.Unlock()
 
-	// fmt.Printf("[%s] Tx Ping to %s Upd=%d Size=%d\n", g.Config.ID, addr, numUpdates, len(updates))
-
 	packet := &Packet{
 		Type:       PacketPing,
 		Seq:        seq,
@@ -508,7 +510,11 @@ func (g *Gossip) getUpdatesForPacket(limitBytes int, skipID string) ([]byte, int
 
 	for id, item := range g.updates {
 		if id == skipID {
-			continue
+			// Don't send updates about target back to target, UNLESS it's a suspicion/dead update
+			// that needs refutation.
+			if item.Member.Status == StatusAlive {
+				continue
+			}
 		}
 		if count >= maxUpdates {
 			break
@@ -589,6 +595,21 @@ func (g *Gossip) UpdateMember(m *Member) {
 
 	existing, ok := g.members[m.ID]
 	isNew := !ok
+
+	// Refutation: If update is about us and claims we are Suspect/Dead
+	if m.ID == g.Config.ID && ok {
+		if m.Status == StatusSuspect || m.Status == StatusDead {
+			if m.Incarnation >= existing.Incarnation {
+				// Refute by incrementing incarnation and asserting Alive
+				existing.Incarnation = m.Incarnation + 1
+				existing.Status = StatusAlive
+				existing.SuspectAt = time.Time{}
+				existing.LastSeen = time.Now()
+				g.addUpdate(existing)
+			}
+		}
+		return
+	}
 
 	if isNew {
 		g.members[m.ID] = m

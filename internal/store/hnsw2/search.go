@@ -243,6 +243,11 @@ func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef, layer in
 				closestDist = dist
 			}
 			
+			// Check filter if provided
+			if filter != nil && !filter.Contains(int(neighborID)) {
+				continue
+			}
+			
 			// Update result set
 			shouldAdd := resultSet.Len() < ef
 			if !shouldAdd {
@@ -334,7 +339,7 @@ func (h *ArrowHNSW) getVector(id uint32) ([]float32, error) {
 			if !ok {
 				return nil, fmt.Errorf("batch index %d out of bounds", loc.BatchIdx)
 			}
-			return extractVectorFromArrow(rec, loc.RowIdx, h.vectorColIdx)
+			return ExtractVectorFromArrow(rec, loc.RowIdx, h.vectorColIdx)
 		}
 	}
 
@@ -357,7 +362,7 @@ func (h *ArrowHNSW) getVector(id uint32) ([]float32, error) {
 	}
 	
 	// Extract vector using zero-copy Arrow access
-	return extractVectorFromArrow(rec, loc.RowIdx, h.vectorColIdx)
+	return ExtractVectorFromArrow(rec, loc.RowIdx, h.vectorColIdx)
 }
 
 

@@ -413,6 +413,30 @@ func (h *HNSWIndex) Search(query []float32, k int) ([]VectorID, error) {
 	}
 	return res, nil
 }
+// GetNeighbors returns the nearest neighbors for a given vector ID from the graph.
+// Note: Since the underlying coder/hnsw library doesn't expose direct graph edges,
+// we perform a search using the node's vector to find its closest neighbors.
+func (h *HNSWIndex) GetNeighbors(id VectorID) ([]VectorID, error) {
+	vec := h.getVector(id)
+	if vec == nil {
+		return nil, fmt.Errorf("vector ID %d not found", id)
+	}
+
+	// Search for neighbors.
+	neighbors, err := h.Search(vec, 16)
+	if err != nil {
+		return nil, err
+	}
+
+	// Filter out the query ID itself
+	res := make([]VectorID, 0, len(neighbors))
+	for _, n := range neighbors {
+		if n != id {
+			res = append(res, n)
+		}
+	}
+	return res, nil
+}
 
 // SearchVectors performs k-NN search returning full results with scores (distances).
 // Uses striped locks for location access to reduce contention in result processing.

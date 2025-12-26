@@ -48,7 +48,7 @@ func TestExtractVectorFromArrow(t *testing.T) {
 	defer rec.Release()
 	
 	// Test extracting each vector
-	vec0, err := extractVectorFromArrow(rec, 0, 1) // Column 1 is vector
+	vec0, err := ExtractVectorFromArrow(rec, 0, 1) // Column 1 is vector
 	if err != nil {
 		t.Fatalf("extractVector(0) failed: %v", err)
 	}
@@ -56,7 +56,7 @@ func TestExtractVectorFromArrow(t *testing.T) {
 		t.Errorf("vec0 = %v, want [1 2 3]", vec0)
 	}
 	
-	vec1, err := extractVectorFromArrow(rec, 1, 1)
+	vec1, err := ExtractVectorFromArrow(rec, 1, 1)
 	if err != nil {
 		t.Fatalf("extractVector(1) failed: %v", err)
 	}
@@ -64,7 +64,7 @@ func TestExtractVectorFromArrow(t *testing.T) {
 		t.Errorf("vec1 = %v, want [4 5 6]", vec1)
 	}
 	
-	vec2, err := extractVectorFromArrow(rec, 2, 1)
+	vec2, err := ExtractVectorFromArrow(rec, 2, 1)
 	if err != nil {
 		t.Fatalf("extractVector(2) failed: %v", err)
 	}
@@ -105,9 +105,9 @@ func TestExtractVectorCopy(t *testing.T) {
 	vec[0] = 999.0
 	
 	// Get original again
-	original, err := extractVectorFromArrow(rec, 0, 0)
+	original, err := ExtractVectorFromArrow(rec, 0, 0)
 	if err != nil {
-		t.Fatalf("extractVectorFromArrow failed: %v", err)
+		t.Fatalf("ExtractVectorFromArrow failed: %v", err)
 	}
 	
 	if original[0] != 1.0 {
@@ -146,7 +146,7 @@ func BenchmarkExtractVectorZeroCopy(b *testing.B) {
 	
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = extractVectorFromArrow(rec, i%1000, 0)
+		_, _ = ExtractVectorFromArrow(rec, i%1000, 0)
 	}
 }
 

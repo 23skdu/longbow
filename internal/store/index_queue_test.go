@@ -37,7 +37,7 @@ func TestIndexJobQueue_NonBlockingSend(t *testing.T) {
 	done := make(chan bool)
 	go func() {
 		for i := 0; i < 50; i++ {
-			q.Send(IndexJob{DatasetName: "test", BatchIdx: 0, RowIdx: i})
+			q.Send(IndexJob{DatasetName: "test", BatchIdx: 0})
 		}
 		done <- true
 	}()
@@ -63,7 +63,7 @@ func TestIndexJobQueue_OverflowBuffer(t *testing.T) {
 
 	// Don't consume from main channel - fill it up
 	for i := 0; i < 20; i++ {
-		q.Send(IndexJob{DatasetName: "test", BatchIdx: 0, RowIdx: i})
+		q.Send(IndexJob{DatasetName: "test", BatchIdx: 0})
 	}
 
 	stats := q.Stats()
@@ -88,7 +88,7 @@ func TestIndexJobQueue_DropOnOverflow(t *testing.T) {
 
 	// Fill both main channel and overflow buffer
 	for i := 0; i < 50; i++ {
-		q.Send(IndexJob{DatasetName: "test", BatchIdx: 0, RowIdx: i})
+		q.Send(IndexJob{DatasetName: "test", BatchIdx: 0})
 	}
 
 	stats := q.Stats()
@@ -110,7 +110,7 @@ func TestIndexJobQueue_DrainToConsumer(t *testing.T) {
 
 	// Send jobs
 	for i := 0; i < 20; i++ {
-		q.Send(IndexJob{DatasetName: "test", BatchIdx: 0, RowIdx: i})
+		q.Send(IndexJob{DatasetName: "test", BatchIdx: 0})
 	}
 
 	// Consume from main channel
@@ -146,7 +146,7 @@ func TestIndexJobQueue_Stats(t *testing.T) {
 	defer q.Stop()
 
 	for i := 0; i < 25; i++ {
-		q.Send(IndexJob{DatasetName: "test", BatchIdx: 0, RowIdx: i})
+		q.Send(IndexJob{DatasetName: "test", BatchIdx: 0})
 	}
 
 	stats := q.Stats()
@@ -180,7 +180,7 @@ func TestIndexJobQueue_ConcurrentSend(t *testing.T) {
 		go func(sender int) {
 			defer wg.Done()
 			for i := 0; i < jobsPerSender; i++ {
-				q.Send(IndexJob{DatasetName: "test", BatchIdx: sender, RowIdx: i})
+				q.Send(IndexJob{DatasetName: "test", BatchIdx: sender})
 			}
 		}(s)
 	}
@@ -206,7 +206,7 @@ func TestIndexJobQueue_GracefulStop(t *testing.T) {
 
 	// Send some jobs
 	for i := 0; i < 20; i++ {
-		q.Send(IndexJob{DatasetName: "test", BatchIdx: 0, RowIdx: i})
+		q.Send(IndexJob{DatasetName: "test", BatchIdx: 0})
 	}
 
 	// Consumer goroutine
@@ -249,7 +249,7 @@ func TestIndexJobQueue_BatchSend(t *testing.T) {
 	// Create batch of jobs
 	batch := make([]IndexJob, 50)
 	for i := range batch {
-		batch[i] = IndexJob{DatasetName: "test", BatchIdx: 0, RowIdx: i}
+		batch[i] = IndexJob{DatasetName: "test", BatchIdx: 0}
 	}
 
 	// Send batch
@@ -282,7 +282,7 @@ func BenchmarkIndexJobQueue_Send(b *testing.B) {
 		}
 	}()
 
-	job := IndexJob{DatasetName: "benchmark", BatchIdx: 0, RowIdx: 0}
+	job := IndexJob{DatasetName: "benchmark", BatchIdx: 0}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -300,7 +300,7 @@ func BenchmarkIndexJobQueue_BlockingSend(b *testing.B) {
 		}
 	}()
 
-	job := IndexJob{DatasetName: "benchmark", BatchIdx: 0, RowIdx: 0}
+	job := IndexJob{DatasetName: "benchmark", BatchIdx: 0}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -328,7 +328,7 @@ func BenchmarkIndexJobQueue_BatchSend(b *testing.B) {
 
 	batch := make([]IndexJob, 100)
 	for i := range batch {
-		batch[i] = IndexJob{DatasetName: "benchmark", BatchIdx: 0, RowIdx: i}
+		batch[i] = IndexJob{DatasetName: "benchmark", BatchIdx: 0}
 	}
 
 	b.ResetTimer()

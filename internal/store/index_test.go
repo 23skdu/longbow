@@ -97,6 +97,19 @@ func (m *MockIndex) GetLocation(id VectorID) (Location, bool) {
 	return loc, ok
 }
 
+func (m *MockIndex) GetNeighbors(id VectorID) ([]VectorID, error) {
+	// Mock: return SearchByID results (self + up to 15 others)
+	neighbors := m.SearchByID(id, 16)
+	// Filter out self
+	res := make([]VectorID, 0, len(neighbors))
+	for _, n := range neighbors {
+		if n != id {
+			res = append(res, n)
+		}
+	}
+	return res, nil
+}
+
 func (m *MockIndex) Close() error {
 	m.CloseCalls++
 	return nil

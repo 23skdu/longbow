@@ -105,7 +105,18 @@ type Config struct {
 	// Garbage Collection Tuning
 	GCBallastG int `envconfig:"GC_BALLAST_G" default:"0"` // Ballast size in GB
 	GOGC       int `envconfig:"GOGC" default:"100"`       // Go Garbage Collector percentage
+
+	// HNSW2 Configuration
+	HNSW2M              int     `envconfig:"HNSW_M" default:"32"`
+	HNSW2EfConstruction int     `envconfig:"HNSW_EF_CONSTRUCTION" default:"400"`
+	HNSW2Alpha          float32 `envconfig:"HNSW_ALPHA" default:"1.0"`
+	HNSW2KeepPruned     bool    `envconfig:"HNSW_KEEP_PRUNED" default:"false"`
+	HNSW2SQ8Enabled     bool    `envconfig:"HNSW_SQ8_ENABLED" default:"false"`
+	HNSW2Refinement      float64 `envconfig:"HNSW_REFINEMENT_FACTOR" default:"1.0"`
 }
+
+// Global config instance for hook functions
+var globalCfg Config
 
 // initializeHNSW2 is the hook function that initializes hnsw2 for datasets.
 func initializeHNSW2(ds *store.Dataset, logger zerolog.Logger) {
@@ -113,10 +124,25 @@ func initializeHNSW2(ds *store.Dataset, logger zerolog.Logger) {
 		return
 	}
 	config := hnsw2.DefaultConfig()
+	config.M = globalCfg.HNSW2M
+	config.MMax = globalCfg.HNSW2M * 2
+	config.MMax0 = globalCfg.HNSW2M * 2
+	config.EfConstruction = globalCfg.HNSW2EfConstruction
+	config.Alpha = globalCfg.HNSW2Alpha
+	config.KeepPrunedConnections = globalCfg.HNSW2KeepPruned
+	config.SQ8Enabled = globalCfg.HNSW2SQ8Enabled
+	config.RefinementFactor = globalCfg.HNSW2Refinement
+
 	hnswIndex := hnsw2.NewArrowHNSW(ds, config)
 	ds.SetHNSW2Index(hnswIndex)
 	if logger.GetLevel() != zerolog.Disabled {
-		logger.Info().Str("dataset", ds.Name).Msg("hnsw2 initialized")
+		logger.Info().
+			Str("dataset", ds.Name).
+			Int("M", config.M).
+			Int("ef", config.EfConstruction).
+			Float32("alpha", config.Alpha).
+			Bool("keep_pruned", config.KeepPrunedConnections).
+			Msg("hnsw2 initialized")
 	}
 }
 
@@ -130,11 +156,11 @@ func run() error {
 	// Load .env file if it exists (do this before logger init to read LOG_* vars)
 	_ = godotenv.Load()
 
-	var cfg Config
-	if err := envconfig.Process("LONGBOW", &cfg); err != nil {
+	if err := envconfig.Process("LONGBOW", &globalCfg); err != nil {
 		// Fallback to basic logging if config fails
 		panic("Failed to process config: " + err.Error())
 	}
+	cfg := globalCfg
 
 	// Initialize zerolog logger
 	logger, err := logging.NewLogger(logging.Config{

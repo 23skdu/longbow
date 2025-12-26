@@ -578,6 +578,31 @@ func (s *ShardedHNSW) GetDimension() uint32 {
 	return s.dimension
 }
 
+// GetNeighbors returns the nearest neighbors for a given vector ID.
+func (s *ShardedHNSW) GetNeighbors(id VectorID) ([]VectorID, error) {
+	shardIdx := s.GetShardForID(id)
+	s.shardsMu.RLock()
+	if shardIdx >= len(s.shards) {
+		s.shardsMu.RUnlock()
+		return nil, fmt.Errorf("invalid shard index %d for vector ID %d", shardIdx, id)
+	}
+	shard := s.shards[shardIdx]
+	s.shardsMu.RUnlock()
+
+	shard.mu.RLock()
+	defer shard.mu.RUnlock()
+
+	// Use SearchByID for neighbors since coder/hnsw doesn't expose edges
+	neighbors := s.SearchByID(id, 16)
+	res := make([]VectorID, 0, len(neighbors))
+	for _, n := range neighbors {
+		if n != id {
+			res = append(res, n)
+		}
+	}
+	return res, nil
+}
+
 // Stats returns multi-index statistics for all shards.
 func (s *ShardedHNSW) ShardStats() []ShardStat {
 	stats := make([]ShardStat, len(s.shards))

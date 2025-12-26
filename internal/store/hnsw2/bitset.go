@@ -47,6 +47,20 @@ func (b *Bitset) Size() int {
 	return b.size
 }
 
+// Grow increases the size of the bitset to newSize.
+func (b *Bitset) Grow(newSize int) {
+	if newSize <= b.size {
+		return
+	}
+	numWords := (newSize + 63) / 64
+	if numWords > len(b.bits) {
+		newBits := make([]uint64, numWords)
+		copy(newBits, b.bits)
+		b.bits = newBits
+	}
+	b.size = newSize
+}
+
 // ClearSIMD resets all bits using SIMD instructions when available.
 // Falls back to scalar Clear() on unsupported platforms.
 func (b *Bitset) ClearSIMD() {

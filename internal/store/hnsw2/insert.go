@@ -143,10 +143,18 @@ func (h *ArrowHNSW) Insert(id uint32, level int) error {
 		}
 	}
 	
+	// Determine efConstruction for this insertion
+	// If adaptive ef is enabled, scale based on current graph size
+	ef := h.efConstruction
+	if h.config.AdaptiveEf {
+		nodeCount := int(h.nodeCount.Load())
+		ef = h.getAdaptiveEf(nodeCount)
+	}
+	
 	// Insert at layers 0 to level
 	for lc := level; lc >= 0; lc-- {
-		// Find M nearest neighbors at this layer
-		candidates := h.searchLayerForInsert(ctx, vec, ep, h.efConstruction, lc, data)
+		// Find M nearest neighbors at this layer using adaptive ef
+		candidates := h.searchLayerForInsert(ctx, vec, ep, ef, lc, data)
 		
 		// Select M neighbors (Target)
 		m := h.m
@@ -445,7 +453,7 @@ func (h *ArrowHNSW) selectNeighbors(ctx *SearchContext, candidates []Candidate, 
 	var remaining []Candidate
 	var selectedVecs [][]float32
 	var remainingVecs [][]float32
-	
+
 	if ctx != nil {
 		if cap(ctx.scratchSelected) < m {
 			ctx.scratchSelected = make([]Candidate, 0, m*2)
@@ -467,6 +475,7 @@ func (h *ArrowHNSW) selectNeighbors(ctx *SearchContext, candidates []Candidate, 
 		}
 		remainingVecs = ctx.scratchRemainingVecs[:len(candidates)]
 	} else {
+		// Fallback for tests/cases without context
 		selected = make([]Candidate, 0, m)
 		remaining = make([]Candidate, len(candidates))
 		selectedVecs = make([][]float32, 0, m)
@@ -479,7 +488,12 @@ func (h *ArrowHNSW) selectNeighbors(ctx *SearchContext, candidates []Candidate, 
 		remainingVecs[i] = h.mustGetVectorFromData(data, candidates[i].ID)
 	}
 
-	discarded := ctx.scratchDiscarded[:0]
+	var discarded []Candidate
+	if ctx != nil {
+		discarded = ctx.scratchDiscarded[:0]
+	} else {
+		discarded = make([]Candidate, 0, m)
+	}
 	
 	alpha := h.config.Alpha
 	if alpha < 1.0 {
@@ -581,7 +595,9 @@ func (h *ArrowHNSW) selectNeighbors(ctx *SearchContext, candidates []Candidate, 
 	}
 	
 	// Update context's discarded for return if needed (heuristic keepPruned)
-	ctx.scratchDiscarded = discarded
+	if ctx != nil {
+		ctx.scratchDiscarded = discarded
+	}
 	
 	// If we haven't filled M, backfill from discarded (keepPrunedConnections logic)
 	// This ensures we maintain connectivity even if heuristic prunes aggressively
@@ -680,6 +696,16 @@ func (h *ArrowHNSW) pruneConnectionsLocked(ctx *SearchContext, data *GraphData, 
 	baseIdx := int(cOff) * MaxNeighbors
 	neighborsChunk := data.Neighbors[layer][cID]
 	
+	var dists []float32
+	if ctx != nil {
+		if cap(ctx.scratchDists) < count {
+			ctx.scratchDists = make([]float32, count*2)
+		}
+		dists = ctx.scratchDists[:count]
+	} else {
+		dists = make([]float32, count)
+	}
+
 	var candidates []Candidate
 	if ctx != nil {
 		if cap(ctx.scratchRemaining) < count {
@@ -691,17 +717,6 @@ func (h *ArrowHNSW) pruneConnectionsLocked(ctx *SearchContext, data *GraphData, 
 	}
 	
 	nodeVec := h.mustGetVectorFromData(data, nodeID)
-    
-	// Batch processing optimization:
-	var dists []float32
-	if ctx != nil {
-		if cap(ctx.scratchDists) < count {
-			ctx.scratchDists = make([]float32, count*2)
-		}
-		dists = ctx.scratchDists[:count]
-	} else {
-		dists = make([]float32, count)
-	}
 
 	// Logic Switch: SQ8 vs Float32
 	if h.quantizer != nil && len(data.VectorsSQ8) > 0 {

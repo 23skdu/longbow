@@ -151,7 +151,9 @@ func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef, layer in
 		ctx.resultSet = resultSet
 	}
 	resultSet.Clear()
-	resultSet.Push(Candidate{ID: entryPoint, Dist: entryDist})
+	if !h.IsDeleted(entryPoint) {
+		resultSet.Push(Candidate{ID: entryPoint, Dist: entryDist})
+	}
 	
 	closest := entryPoint
 	closestDist := entryDist
@@ -302,9 +304,10 @@ func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef, layer in
 				continue
 			}
 			
-			// Update result set
-			shouldAdd := resultSet.Len() < ef
-			if !shouldAdd {
+			// Update result set - only add if not deleted
+			isDeleted := h.IsDeleted(neighborID)
+			shouldAdd := !isDeleted && resultSet.Len() < ef
+			if !isDeleted && !shouldAdd {
 				worst, ok := resultSet.Peek()
 				if ok && dist < worst.Dist {
 					shouldAdd = true
@@ -316,8 +319,11 @@ func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef, layer in
 					resultSet.Pop()
 				}
 				resultSet.Push(Candidate{ID: neighborID, Dist: dist})
-				ctx.candidates.Push(Candidate{ID: neighborID, Dist: dist})
 			}
+			
+			// Always add to candidates to maintain graph navigability
+			ctx.candidates.Push(Candidate{ID: neighborID, Dist: dist})
+
 		}
 	}
 	

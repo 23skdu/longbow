@@ -3,7 +3,6 @@ package hnsw2
 import (
 	"context"
 	"fmt"
-	"sort"
 	"sync"
 
 	"github.com/23skdu/longbow/internal/store"
@@ -24,6 +23,8 @@ type ShardedArrowIndex struct {
 	
 	// Routing strategy: Modulo
 	// shardIdx = GlobalID % NumShards
+
+	aggregator *ShardedResultAggregator
 }
 
 // ShardedConfig holds configuration for the sharded index.
@@ -54,6 +55,7 @@ func NewShardedArrowIndex(dataset *store.Dataset, config *ShardedConfig) *Sharde
 		dataset:       dataset,
 		locationStore: store.NewChunkedLocationStore(),
 		shards:        make([]*ArrowSham, config.NumShards),
+		aggregator:    NewShardedResultAggregator(),
 	}
 	
 	for i := 0; i < config.NumShards; i++ {
@@ -96,20 +98,21 @@ func (s *ShardedArrowIndex) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdx
 	n := len(rowIdxs)
 	ids := make([]uint32, n)
 	
+	// 1. Assign Global IDs sequentially to maintain order
+	for i := 0; i < n; i++ {
+		globalID := s.locationStore.Append(store.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
+		ids[i] = uint32(globalID)
+	}
+
+	// 2. Fan out for indexing
 	g, _ := errgroup.WithContext(context.Background())
-	// Use a semaphore to limit total concurrency across all shards if needed,
-	// but since each shard has its own locks, we can just fan out.
-	// For large batches, we might want to group by shard first.
-	
 	for i := 0; i < n; i++ {
 		i := i
 		g.Go(func() error {
-			id, err := s.AddByLocation(batchIdxs[i], rowIdxs[i])
-			if err != nil {
-				return err
-			}
-			ids[i] = id
-			return nil
+			gid := ids[i]
+			shardIdx := gid % uint32(s.config.NumShards)
+			shard := s.shards[shardIdx]
+			return shard.Add(gid, batchIdxs[i], rowIdxs[i])
 		})
 	}
 	
@@ -149,46 +152,38 @@ func (s *ShardedArrowIndex) SearchVectors(query []float32, k int, filters []stor
 	}
 	
 	// Merge
-	return s.mergeResults(results, k), nil
+	return s.aggregator.MergeKWay(results, k), nil
 }
 
-func (s *ShardedArrowIndex) mergeResults(shardResults [][]store.SearchResult, k int) []store.SearchResult {
-	// Flatten
-	totalLen := 0
-	for _, r := range shardResults {
-		totalLen += len(r)
+
+// GetNeighbors returns the nearest neighbors for a given global vector ID.
+func (s *ShardedArrowIndex) GetNeighbors(id store.VectorID) ([]store.VectorID, error) {
+	numShards := uint32(s.config.NumShards)
+	shardIdx := uint32(id) % numShards
+	localID := uint32(id) / numShards
+
+	if int(shardIdx) >= len(s.shards) {
+		return nil, fmt.Errorf("invalid shard index %d for vector ID %d", shardIdx, id)
 	}
-	
-	all := make([]store.SearchResult, 0, totalLen)
-	for _, r := range shardResults {
-		all = append(all, r...)
-	}
-	
-	// Sort by Score (Distance) Ascending
-	sort.Slice(all, func(i, j int) bool {
-		return all[i].Score < all[j].Score // euclidean distance
-	})
-	
-	// Top K
-	if len(all) > k {
-		return all[:k]
-	}
-	return all
+
+	shard := s.shards[shardIdx]
+	return shard.GetNeighbors(localID)
 }
 
 // ---- ArrowSham methods ----
 
 func (s *ArrowSham) Add(globalID uint32, batchIdx, rowIdx int) error {
 	s.mu.Lock()
-	lID := uint32(len(s.localToGlobal))
-	s.localToGlobal = append(s.localToGlobal, globalID)
-	s.mu.Unlock()
-	
+	defer s.mu.Unlock()
+
 	// Use public API which handles locationStore and Insert internally
 	localID, err := s.index.AddByLocation(batchIdx, rowIdx)
 	if err != nil {
 		return err
 	}
+	
+	lID := uint32(len(s.localToGlobal))
+	s.localToGlobal = append(s.localToGlobal, globalID)
 	
 	// Sanity check: IDs must match sequential assumption
 	if localID != lID {
@@ -220,6 +215,29 @@ func (s *ArrowSham) Search(query []float32, k int, filters []store.Filter) ([]st
 		}
 	}
 	return res, nil
+}
+
+func (s *ArrowSham) GetNeighbors(localID uint32) ([]store.VectorID, error) {
+	// 1. Get neighbors from shard index (returns LocalIDs)
+	localNeighbors, err := s.index.GetNeighbors(store.VectorID(localID))
+	if err != nil {
+		return nil, err
+	}
+
+	// 2. Map LocalIDs back to GlobalIDs
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	globalNeighbors := make([]store.VectorID, len(localNeighbors))
+	for i, lid := range localNeighbors {
+		if int(lid) < len(s.localToGlobal) {
+			globalNeighbors[i] = store.VectorID(s.localToGlobal[lid])
+		} else {
+			// Fallback: This shouldn't really happen in a well-formed index
+			globalNeighbors[i] = store.VectorID(lid)
+		}
+	}
+	return globalNeighbors, nil
 }
 
 // Implement interface methods...
@@ -267,11 +285,50 @@ func (s *ShardedArrowIndex) Close() error {
 	return nil
 }
 func (s *ShardedArrowIndex) SearchVectorsWithBitmap(query []float32, k int, filter *store.Bitset) []store.SearchResult {
-	// TODO: Implement scatter-gather for bitmap search
-	// For now, delegate to SearchVectors (ignoring bitmap) or return empty?
-	// Returning empty is safer than wrong results.
-	// Users of this index likely use SearchVectors.
-	return nil
+	if k <= 0 {
+		return nil
+	}
+	
+	// If no filter, use standard search
+	if filter == nil {
+		res, _ := s.SearchVectors(query, k, nil)
+		return res
+	}
+
+	// Scatter-Gather with oversampling to compensate for filtering
+	// We search for k*2 in each shard and filter by the global bitmap
+	g, _ := errgroup.WithContext(context.Background())
+	results := make([][]store.SearchResult, len(s.shards))
+	
+	oversampleK := k * 2
+	
+	for i, shard := range s.shards {
+		i, shard := i, shard
+		g.Go(func() error {
+			// Search shard without filtering (since bitset is global)
+			res, err := shard.Search(query, oversampleK, nil)
+			if err != nil {
+				return err
+			}
+			
+			// Filter locally-mapped results by global bitset
+			filtered := make([]store.SearchResult, 0, len(res))
+			for _, r := range res {
+				if filter.Contains(int(r.ID)) {
+					filtered = append(filtered, r)
+				}
+			}
+			results[i] = filtered
+			return nil
+		})
+	}
+	
+	if err := g.Wait(); err != nil {
+		return nil
+	}
+	
+	// Merge
+	return s.aggregator.MergeKWay(results, k)
 }
 
 // Helper to expose shards for testing?

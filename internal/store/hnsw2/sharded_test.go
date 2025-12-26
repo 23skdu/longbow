@@ -91,6 +91,19 @@ func TestShardedArrowIndex(t *testing.T) {
 	require.NotEmpty(t, res)
 	assert.Equal(t, uint32(0), uint32(res[0].ID))
 	assert.InDelta(t, 0.0, res[0].Score, 1e-5)
+
+	// Verify GetNeighbors
+	neighbors, err := idx.GetNeighbors(store.VectorID(0))
+	require.NoError(t, err)
+	assert.NotEmpty(t, neighbors)
+	t.Logf("Neighbors of ID 0: %v", neighbors)
+	
+	// Verify that neighbors are valid IDs
+	for _, nid := range neighbors {
+		assert.Less(t, uint32(nid), uint32(n))
+		// Check that neighbor is reachable from the point
+		// (In a small graph, this is mostly checking connectivity)
+	}
 }
 
 func makeRange(minVal, maxVal int) []int {

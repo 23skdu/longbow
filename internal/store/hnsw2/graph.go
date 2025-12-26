@@ -61,6 +61,9 @@ type ArrowHNSW struct {
 	data    atomic.Pointer[GraphData]
 	
 	// Locking strategy:
+	// initMu protects the initialization of the first node (entry point).
+	initMu sync.Mutex
+
 	// resizeMu protects the GraphData pointer and global changes (like Grow).
 	// Insert() takes RLock (shared), Grow() takes Lock (exclusive).
 	resizeMu sync.RWMutex
@@ -101,7 +104,6 @@ type ArrowHNSW struct {
 	
 	// Location tracking for VectorIndex implementation
 	locationStore *store.ChunkedLocationStore
-	nextVecID     atomic.Uint32
 }
 
 // Config holds HNSW configuration parameters.
@@ -328,6 +330,8 @@ func NewSearchContextPool() *SearchContextPool {
 					scratchVecs:      make([][]float32, 2000), // Max capacity > efConstruction
 					scratchDists:     make([]float32, 2000),
 					scratchDiscarded: make([]Candidate, 0, 2000),
+					scratchSelected:  make([]Candidate, 0, 200),
+					scratchRemaining: make([]Candidate, 2000),
 					// PQ Scratch
 					// M*256 floats. Max M=64 -> 16384 floats. Safe.
 					scratchPQTable: make([]float32, 16384),
@@ -363,7 +367,12 @@ type SearchContext struct {
 	scratchVecs      [][]float32
 	scratchDists     []float32
 	scratchDiscarded []Candidate
+	scratchSelected  []Candidate
+	scratchRemaining []Candidate
 	scratchPQTable   []float32 // For ADC table
 	scratchIDs       []uint32  // For batching unvisited neighbors
 	querySQ8         []byte    // SQ8 encoded query
+	
+	// Recursion depth for pruneConnections
+	pruneDepth int
 }

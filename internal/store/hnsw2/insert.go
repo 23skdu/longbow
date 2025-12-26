@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"runtime"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -254,19 +255,62 @@ func (h *ArrowHNSW) searchLayerForInsert(ctx *SearchContext, query []float32, en
 		}
 		
 		// Explore neighbors
-		neighborCount := int(atomic.LoadInt32(&data.Counts[layer][curr.ID]))
-		baseIdx := int(curr.ID) * MaxNeighbors
+		// Explore neighbors
+		// Seqlock retry loop handles loading count/neighbors
 		
 		// Batch Distance Calculation for Neighbors
-		// Collect unvisited neighbors
+		// Collect unvisited neighbors with Seqlock retry
 		unvisitedIDs := ctx.scratchIDs[:0]
-		neighbors := data.Neighbors[layer][baseIdx : baseIdx+neighborCount]
-		for _, nid := range neighbors {
-			if !visited.IsSet(nid) {
+		
+		for {
+			// Seqlock read start
+			ver := atomic.LoadUint32(&data.Versions[layer][curr.ID])
+			// If odd (dirty), wait/retry
+			if ver%2 != 0 {
+				runtime.Gosched()
+				continue
+			}
+			
+			// Load count and neighbors
+			neighborCount := int(atomic.LoadInt32(&data.Counts[layer][curr.ID]))
+			baseIdx := int(curr.ID) * MaxNeighbors
+			neighbors := data.Neighbors[layer][baseIdx : baseIdx+neighborCount]
+			
+			// Clear scratch buffer for this attempt
+			unvisitedIDs = unvisitedIDs[:0]
+			for i := 0; i < len(neighbors); i++ {
+				nid := atomic.LoadUint32(&neighbors[i])
+				if !visited.IsSet(nid) {
+					// Speculatively collect
+					unvisitedIDs = append(unvisitedIDs, nid)
+				}
+			}
+			
+			// Seqlock read end check
+			if atomic.LoadUint32(&data.Versions[layer][curr.ID]) == ver {
+				break // Success
+			}
+			// Failed, retry
+		}
+
+		// Mark visited for the successfully collected neighbors
+		finalCount := 0
+		for _, nid := range unvisitedIDs {
+			if !visited.IsSet(nid) { // Double check? No, already checked. 
+				// But between versions, visited doesn't change.
+				// Wait, inside loop we checked !visited.IsSet.
+				// So just Set.
+				// But we need to filter unvisitedIDs in place? 
+				// The previous loop appended ONLY unvisited.
 				visited.Set(nid)
-				unvisitedIDs = append(unvisitedIDs, nid)
+				// We need this ID.
+				// Wait, if duplicates in graph? (should not happen in HNSW)
+				// Anyhow, simple Set is fine.
+				unvisitedIDs[finalCount] = nid
+				finalCount++
 			}
 		}
+		unvisitedIDs = unvisitedIDs[:finalCount]
 		
 		count := len(unvisitedIDs)
 		if count == 0 {
@@ -289,7 +333,7 @@ func (h *ArrowHNSW) searchLayerForInsert(ctx *SearchContext, query []float32, en
 			for i, nid := range unvisitedIDs {
 				off := int(nid) * h.dims
 				// Bounds check?
-				d := simd.EuclideanDistanceSQ8(querySQ8, data.VectorsSQ8[off:off+h.dims])
+				d := simd.EuclideanDistanceSQ8(ctx.querySQ8, data.VectorsSQ8[off:off+h.dims])
 				dists[i] = float32(d)
 			}
 		} else {
@@ -545,8 +589,16 @@ func (h *ArrowHNSW) addConnection(ctx *SearchContext, data *GraphData, source, t
 	
 	// Add connection if space available (should be now)
 	if count < MaxNeighbors {
-		data.Neighbors[layer][baseIdx+count] = target
+		// Seqlock write: increment version (odd = dirty)
+		verAddr := &data.Versions[layer][source]
+		atomic.AddUint32(verAddr, 1)
+		
+		// Atomic store to satisfy race detector
+		atomic.StoreUint32(&data.Neighbors[layer][baseIdx+count], target)
 		atomic.StoreInt32(countAddr, int32(count+1))
+		
+		// Seqlock write: increment version (even = clean)
+		atomic.AddUint32(verAddr, 1)
 	}
 }
 
@@ -660,10 +712,18 @@ func (h *ArrowHNSW) pruneConnectionsLocked(ctx *SearchContext, data *GraphData, 
 	
 	// Write back
 	newCount := len(selected)
+	
+	// Seqlock write start
+	verAddr := &data.Versions[layer][nodeID]
+	atomic.AddUint32(verAddr, 1)
+
 	for i := 0; i < newCount; i++ {
-		data.Neighbors[layer][baseIdx+i] = selected[i].ID
+		atomic.StoreUint32(&data.Neighbors[layer][baseIdx+i], selected[i].ID)
 	}
 	atomic.StoreInt32(countAddr, int32(newCount))
+	
+	// Seqlock write end
+	atomic.AddUint32(verAddr, 1)
 }
 
 func (h *ArrowHNSW) mustGetVectorFromData(data *GraphData, id uint32) []float32 {

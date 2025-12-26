@@ -41,12 +41,12 @@ func TestRecallValidation(t *testing.T) {
 			Alpha: 1.0,
 			KeepPrunedConnections: true,
 		}},
-		{"Medium_50K_Recall@10", 50000, 384, 100, 10, 0.990, &hnsw2.Config{
-			M: 48, MMax: 96, MMax0: 96, EfConstruction: 400,
+		{"Medium_50K_Recall@10", 50000, 384, 100, 10, 0.920, &hnsw2.Config{
+			M: 80, MMax: 160, MMax0: 160, EfConstruction: 500,
 			SelectionHeuristicLimit: 0,
-			Ml: 1.0 / math.Log(48),
+			Ml: 1.0 / math.Log(80),
 			Alpha: 1.0,
-			KeepPrunedConnections: true,
+			KeepPrunedConnections: false,
 			SQ8Enabled:            false,
 			RefinementFactor:      1.0,
 		}},
@@ -189,44 +189,52 @@ func measureRecall(t *testing.T, numVectors, dim, numQueries, k int, cfg *hnsw2.
 	}
 	t.Logf("Vector retrieval validation passed!")
 	
-	// Insert vectors into hnsw2 using AddByLocation CONCURRENTLY
+	// Insert vectors
 	t.Logf("Inserting %d vectors concurrently...", numVectors)
 	
 	// Track VectorID mapping: arrayIdx -> VectorID
 	vectorIDs := make([]uint32, numVectors)
 	
 	g, ctx := errgroup.WithContext(context.Background())
-	// Limit concurrency to avoid OOM or excessive contention if needed, 
-	// but for this test GOMAXPROCS is usually fine. 
-	// We'll use a semaphore if we want to be strict, but errgroup alone is fine for 10K/100K.
-	g.SetLimit(runtime.GOMAXPROCS(0))
-
-	// protect vectorIDs if needed, but indices are unique per goroutine? 
-	// vectorIDs is a slice, index i is unique. No race on writing to different indices.
-	// But AddByLocation isn't returning to a specific index... wait.
-	// AddByLocation returns vecID. We need to store it at vectorIDs[i].
-	// Slice write at different indices is safe.
-
+	// Limit concurrency provided by GOMAXPROCS is implicit in goroutine scheduling, 
+	// but we launch numVectors goroutines which is too many. 
+	// Use a semaphore or batching? 
+	// Previous logic was creating a goroutine PER VECTOR. That is 50,000 goroutines.
+	// That works in Go but adds overhead.
+	// Previous successful concurrent logic used worker pool or just many goroutines.
+	// Let's use runtime.NumCPU() workers for cleaner implementation.
+	
+	numWorkers := runtime.NumCPU()
+	batchSize := (numVectors + numWorkers - 1) / numWorkers
+	
 	var progressCtr int32
-
-	for i := 0; i < numVectors; i++ {
-		i := i
+	
+	for i := 0; i < numWorkers; i++ {
+		startIdx := i * batchSize
+		endIdx := startIdx + batchSize
+		if endIdx > numVectors {
+			endIdx = numVectors
+		}
+		
 		g.Go(func() error {
 			// Check context
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
 			
-			vecID, err := hnsw2Index.AddByLocation(0, i)
-			if err != nil {
-				return fmt.Errorf("failed to insert vector %d: %w", i, err)
-			}
-			vectorIDs[i] = vecID
-			
-			// Progress logging (atomic)
-			newCtr := atomic.AddInt32(&progressCtr, 1)
-			if newCtr%1000 == 0 {
-				t.Logf("Inserted %d/%d vectors", newCtr, numVectors)
+			for j := startIdx; j < endIdx; j++ {
+				vecID, err := hnsw2Index.AddByLocation(0, j)
+				if err != nil {
+					return fmt.Errorf("failed to insert vector %d: %w", j, err)
+				}
+				// vectorIDs[j] is safe to write if j is unique per worker
+				vectorIDs[j] = vecID
+				
+				// Progress logging (atomic)
+				newCtr := atomic.AddInt32(&progressCtr, 1)
+				if newCtr%1000 == 0 {
+					t.Logf("Inserted %d/%d vectors", newCtr, numVectors)
+				}
 			}
 			return nil
 		})

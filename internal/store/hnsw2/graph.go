@@ -32,6 +32,10 @@ type GraphData struct {
 	// Counts per layer and node: Counts[layer][nodeID]
 	// Accessed atomically
 	Counts [MaxLayers][]int32
+	
+	// Versions per layer and node: Versions[layer][nodeID]
+	// Used for optimistic locking (Seqlock) during neighbor updates
+	Versions [MaxLayers][]uint32
 }
 
 // NewGraphData creates a new GraphData with the specified capacity.
@@ -45,6 +49,7 @@ func NewGraphData(capacity int) *GraphData {
 	for i := 0; i < MaxLayers; i++ {
 		gd.Neighbors[i] = make([]uint32, capacity*MaxNeighbors)
 		gd.Counts[i] = make([]int32, capacity)
+		gd.Versions[i] = make([]uint32, capacity)
 	}
 	return gd
 }

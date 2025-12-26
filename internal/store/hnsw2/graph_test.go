@@ -53,25 +53,22 @@ func TestArrowHNSW_DefaultConfig(t *testing.T) {
 // TestGraphData_Initialization validates GraphData structure.
 func TestGraphData_Initialization(t *testing.T) {
 	capacity := 100
-	data := NewGraphData(capacity)
+	data := NewGraphData(capacity, 0)
 	
-	if data.Capacity != capacity {
-		t.Errorf("Capacity = %d, want %d", data.Capacity, capacity)
+	if data.Capacity < capacity {
+		t.Errorf("Capacity = %d, want >= %d", data.Capacity, capacity)
 	}
 	
-	if len(data.Levels) != capacity {
-		t.Errorf("Levels len = %d, want %d", len(data.Levels), capacity)
+	// Levels is now chunked
+	expectedChunks := (capacity + ChunkSize - 1) / ChunkSize
+	if len(data.Levels) != expectedChunks {
+		t.Errorf("Levels chunks = %d, want %d", len(data.Levels), expectedChunks)
 	}
-	
-	if len(data.VectorPtrs) != capacity {
-		t.Errorf("VectorPtrs len = %d, want %d", len(data.VectorPtrs), capacity)
-	}
-	
-	// Check Neighbors array allocation
+
+	// Check Neighbors array allocation (chunked)
 	for i := 0; i < MaxLayers; i++ {
-		expectedLen := capacity * MaxNeighbors
-		if len(data.Neighbors[i]) != expectedLen {
-			t.Errorf("Layer %d Neighbors len = %d, want %d", i, len(data.Neighbors[i]), expectedLen)
+		if len(data.Neighbors[i]) != expectedChunks {
+			t.Errorf("Layer %d Neighbors chunks = %d, want %d", i, len(data.Neighbors[i]), expectedChunks)
 		}
 	}
 }

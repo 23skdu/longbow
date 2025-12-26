@@ -362,3 +362,33 @@ var (
 		[]string{"namespace"},
 	)
 )
+
+// =============================================================================
+// HNSW Graph Metrics
+// =============================================================================
+
+var (
+	HNSWInsertDurationSeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_hnsw_insert_duration_seconds",
+			Help:    "Duration of HNSW vector insertion",
+			Buckets: []float64{0.0001, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1},
+		},
+	)
+
+	HNSWNodesTotal = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "longbow_hnsw_nodes_total",
+			Help: "Total number of nodes in the HNSW graph",
+		},
+		[]string{"dataset"},
+	)
+
+	HNSWResizesTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_hnsw_resizes_total",
+			Help: "Total number of HNSW graph resizes",
+		},
+		[]string{"dataset"},
+	)
+)

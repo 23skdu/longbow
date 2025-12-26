@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"runtime"
+	"slices"
 	"sort"
 	"sync/atomic"
 	"unsafe"
@@ -53,8 +54,7 @@ func (h *ArrowHNSW) Search(query []float32, k, ef int, filter *store.Bitset) ([]
 			ctx.querySQ8 = make([]byte, h.dims)
 		}
 		ctx.querySQ8 = ctx.querySQ8[:h.dims]
-		encoded := h.quantizer.Encode(query)
-		copy(ctx.querySQ8, encoded)
+		h.quantizer.Encode(query, ctx.querySQ8)
 	}
 
 	// Ensure visited bitset is large enough
@@ -77,10 +77,13 @@ func (h *ArrowHNSW) Search(query []float32, k, ef int, filter *store.Bitset) ([]
 	
 	// Extract results
 	results := make([]store.SearchResult, 0, targetK)
-	extractCount := targetK
 	
-	for i := 0; i < extractCount && ctx.candidates.Len() > 0; i++ {
-		cand, ok := ctx.candidates.Pop()
+	// Extract results from resultSet (MaxHeap returns Worst first)
+	// We pop all, then reverse to get Best -> Worst
+	// Or if using refinement, we'll sort anyway.
+	
+	for ctx.resultSet.Len() > 0 {
+		cand, ok := ctx.resultSet.Pop()
 		if !ok {
 			break
 		}
@@ -88,17 +91,28 @@ func (h *ArrowHNSW) Search(query []float32, k, ef int, filter *store.Bitset) ([]
 		id := cand.ID
 		score := cand.Dist
 		
-		// If Rep-ranking, recompute score
+		// If Re-ranking, recompute score
 		if useRefinement {
 			vec := h.mustGetVectorFromData(data, id)
-			// Compute exact L2 distance
-			score = simd.EuclideanDistance(query, vec)
+			if len(vec) == h.dims {
+				// Compute exact L2 distance
+				score = simd.EuclideanDistance(query, vec)
+			}
 		}
 		
 		results = append(results, store.SearchResult{
 			ID:    store.VectorID(id),
 			Score: score,
 		})
+	}
+	
+	// Reverse results (since MaxHeap Pop gave Worst...Best)
+	// Unless we re-rank and sort later.
+	if !useRefinement {
+		slices.Reverse(results)
+		if len(results) > k {
+			results = results[:k]
+		}
 	}
 	
 	// If refinement used, sort and truncate
@@ -165,18 +179,28 @@ func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef, layer in
 			ctx.scratchIDs = ctx.scratchIDs[:0]
 			
 			// Seqlock read start
-			ver := atomic.LoadUint32(&data.Versions[layer][curr.ID])
+			ver := atomic.LoadUint32(&data.Versions[layer][chunkID(curr.ID)][chunkOffset(curr.ID)])
+			// If odd (dirty), wait/retry
+			// Note: ver load above might panic if chunk doesn't exist? (Should not happen if graph consistent)
+			
 			if ver%2 != 0 {
 				runtime.Gosched()
 				continue
 			}
 			
-			neighborCount := int(atomic.LoadInt32(&data.Counts[layer][curr.ID]))
-			baseIdx := int(curr.ID) * MaxNeighbors
+			// Get neighbors
+			cID := chunkID(curr.ID)
+			cOff := chunkOffset(curr.ID)
+			
+			// We already loaded version using chunkID/Off so chunks exist.
+			
+			neighborCount := int(atomic.LoadInt32(&data.Counts[layer][cID][cOff]))
+			baseIdx := int(cOff) * MaxNeighbors
+			neighborsChunk := data.Neighbors[layer][cID]
 			
 			for i := 0; i < neighborCount; i++ {
 				// Atomic load to satisfy race detector
-				neighborID := atomic.LoadUint32(&data.Neighbors[layer][baseIdx+i])
+				neighborID := atomic.LoadUint32(&neighborsChunk[baseIdx+i])
 				if !ctx.visited.IsSet(neighborID) {
 					// Speculative add - do not Set visited yet
 					ctx.scratchIDs = append(ctx.scratchIDs, neighborID)
@@ -184,7 +208,7 @@ func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef, layer in
 			}
 			
 			// Seqlock read end check
-			if atomic.LoadUint32(&data.Versions[layer][curr.ID]) == ver {
+			if atomic.LoadUint32(&data.Versions[layer][cID][cOff]) == ver {
 				break
 			}
 		}
@@ -212,13 +236,16 @@ func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef, layer in
 		if useSQ8 {
 			// Ensure querySQ8 is correctly set in context for useSQ8 path
 			if len(ctx.querySQ8) == 0 {
-				ctx.querySQ8 = h.quantizer.Encode(query)
+				ctx.querySQ8 = h.quantizer.Encode(query, nil)
 			}
 			
 			for i, nid := range ctx.scratchIDs {
-				off := int(nid) * h.dims
-				if off+h.dims <= len(data.VectorsSQ8) {
-					d := simd.EuclideanDistanceSQ8(ctx.querySQ8, data.VectorsSQ8[off:off+h.dims])
+				cID := chunkID(nid)
+				cOff := chunkOffset(nid)
+				off := int(cOff) * h.dims
+				
+				if int(cID) < len(data.VectorsSQ8) && off+h.dims <= len(data.VectorsSQ8[cID]) {
+					d := simd.EuclideanDistanceSQ8(ctx.querySQ8, data.VectorsSQ8[cID][off:off+h.dims])
 					dists[i] = float32(d)
 				} else {
 					dists[i] = math.MaxFloat32
@@ -291,16 +318,8 @@ func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef, layer in
 		}
 	}
 	
-	// For layer 0, copy result set to ctx.candidates for final extraction
-	if layer == 0 {
-		ctx.candidates.Clear()
-		for resultSet.Len() > 0 {
-			cand, ok := resultSet.Pop()
-			if ok {
-				ctx.candidates.Push(cand)
-			}
-		}
-	}
+	// For layer 0, we leave results in resultSet for the caller to extract.
+
 	
 	return closest, closestDist
 }
@@ -311,23 +330,28 @@ func (h *ArrowHNSW) distance(query []float32, id uint32, data *GraphData) float3
 	// PQ check
 	// SQ8 Check
 	if h.quantizer != nil && len(data.VectorsSQ8) > 0 {
-		off := int(id) * h.dims
-		if off+h.dims <= len(data.VectorsSQ8) {
+		cID := chunkID(id)
+		cOff := chunkOffset(id)
+		off := int(cOff) * h.dims
+		
+		if int(cID) < len(data.VectorsSQ8) && off+h.dims <= len(data.VectorsSQ8[cID]) {
 			
 			// We need query to be quantized too.
-			// If we are in 'Search', we have ctx.querySQ8.
-			// But 'distance' doesn't take context.
 			// Just quantize on fly for single distance check (negligible for entry point).
-			qSQ8 := h.quantizer.Encode(query)
-			d := simd.EuclideanDistanceSQ8(qSQ8, data.VectorsSQ8[off:off+h.dims])
+			qSQ8 := h.quantizer.Encode(query, nil)
+			d := simd.EuclideanDistanceSQ8(qSQ8, data.VectorsSQ8[cID][off:off+h.dims])
 			return float32(d)
 		}
 	}
 
 	// Optimization: Check for cached vector pointer (avoids Arrow overhead)
 	// This is safe because VectorPtr is pinned to the Arrow RecordBatch which is kept alive by Dataset
-	if int(id) < len(data.VectorPtrs) {
-		ptr := data.VectorPtrs[id]
+	// Optimization: Check for cached vector pointer (avoids Arrow overhead)
+	// This is safe because VectorPtr is pinned to the Arrow RecordBatch which is kept alive by Dataset
+	cID := chunkID(id)
+	cOff := chunkOffset(id)
+	if int(cID) < len(data.VectorPtrs) {
+		ptr := data.VectorPtrs[cID][cOff]
 		if ptr != nil && h.dims > 0 {
 			vec := unsafe.Slice((*float32)(ptr), h.dims)
 			return simd.EuclideanDistance(query, vec)

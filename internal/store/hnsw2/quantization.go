@@ -65,12 +65,15 @@ func (sq *ScalarQuantizer) Train(vectors [][]float32) {
 }
 
 // Encode converts float vector to byte vector
-func (sq *ScalarQuantizer) Encode(vec []float32) []byte {
+func (sq *ScalarQuantizer) Encode(vec []float32, dst []byte) []byte {
 	sq.mu.RLock()
 	minV, maxV := sq.minVal, sq.maxVal
 	sq.mu.RUnlock()
 	
-	dst := make([]byte, len(vec))
+	if cap(dst) < len(vec) {
+		dst = make([]byte, len(vec))
+	}
+	dst = dst[:len(vec)]
 	simd.QuantizeSQ8(vec, dst, minV, maxV)
 	return dst
 }

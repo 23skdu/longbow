@@ -56,7 +56,7 @@ func TestBatchedIndexing(t *testing.T) {
 		vValuesBuilder.AppendValues(vec, nil)
 		tBuilder.Append(fmt.Sprintf("text_%d", i))
 
-		rec := b.NewRecord()
+		rec := b.NewRecordBatch()
 		ds.dataMu.Lock()
 		ds.Records[i] = rec
 		ds.dataMu.Unlock()

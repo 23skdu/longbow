@@ -54,19 +54,18 @@ func TestInsertProperties(t *testing.T) {
 				data.VectorPtrs[i] = unsafe.Pointer(&vec[0])
 			}
 			
+			// Need SearchContext
+			ctx := index.searchPool.Get()
+			defer index.searchPool.Put(ctx)
+
 			// Add connections
 			for i := 0; i < 5; i++ {
 				for j := 0; j < 5; j++ {
 					if i != j {
-						index.addConnection(data, uint32(i), uint32(j), 0)
+						index.addConnection(ctx, data, uint32(i), uint32(j), 0, m*2)
 					}
 				}
 			}
-			
-			// Prune to M
-			// Need SearchContext
-			ctx := index.searchPool.Get()
-			defer index.searchPool.Put(ctx)
 			
 			for i := 0; i < 5; i++ {
 				// Prune to M*2 (usually MMax is the limit, but here we test pruning)

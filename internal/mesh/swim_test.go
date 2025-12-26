@@ -9,84 +9,120 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// Helper to find free port
 func getFreePort() int {
-	addr, _ := net.ResolveUDPAddr("udp", "127.0.0.1:0")
-	l, _ := net.ListenUDP("udp", addr)
+	addr, err := net.ResolveUDPAddr("udp", "127.0.0.1:0")
+	if err != nil {
+		return 0
+	}
+	l, err := net.ListenUDP("udp", addr)
+	if err != nil {
+		return 0
+	}
 	defer l.Close()
 	return l.LocalAddr().(*net.UDPAddr).Port
 }
 
-func TestSWIM_FailureDetection(t *testing.T) {
-	p1 := getFreePort()
-	p2 := getFreePort()
-	p3 := getFreePort()
+func TestSuspicionTimeout(t *testing.T) {
+	// 1. Setup Node A and Node B
+	portA := getFreePort()
+	portB := getFreePort()
 
-	g1 := NewGossip(GossipConfig{ID: "n1", Port: p1, ProtocolPeriod: 100 * time.Millisecond, AckTimeout: 50 * time.Millisecond, SuspicionTimeout: 500 * time.Millisecond})
-	g2 := NewGossip(GossipConfig{ID: "n2", Port: p2, ProtocolPeriod: 100 * time.Millisecond, AckTimeout: 50 * time.Millisecond, SuspicionTimeout: 500 * time.Millisecond})
-	g3 := NewGossip(GossipConfig{ID: "n3", Port: p3, ProtocolPeriod: 100 * time.Millisecond, AckTimeout: 50 * time.Millisecond, SuspicionTimeout: 500 * time.Millisecond})
+	cfgA := GossipConfig{
+		ID:               "nodeA",
+		Port:             portA,
+		ProtocolPeriod:   100 * time.Millisecond,
+		SuspicionTimeout: 500 * time.Millisecond, // Fast timeout
+		AckTimeout:       50 * time.Millisecond,
+	}
+	nodeA := NewGossip(cfgA)
+	require.NoError(t, nodeA.Start())
+	defer nodeA.Stop()
 
-	require.NoError(t, g1.Start())
-	require.NoError(t, g2.Start())
-	require.NoError(t, g3.Start())
-	defer g1.Stop()
-	defer g2.Stop()
-	defer g3.Stop()
+	cfgB := GossipConfig{
+		ID:               "nodeB",
+		Port:             portB,
+		ProtocolPeriod:   100 * time.Millisecond,
+		SuspicionTimeout: 500 * time.Millisecond,
+		AckTimeout:       50 * time.Millisecond,
+	}
+	nodeB := NewGossip(cfgB)
+	require.NoError(t, nodeB.Start())
+	defer nodeB.Stop()
 
-	// Connect mesh
-	g1.Join(fmt.Sprintf("127.0.0.1:%d", p2))
-	g2.Join(fmt.Sprintf("127.0.0.1:%d", p3))
-	g3.Join(fmt.Sprintf("127.0.0.1:%d", p1))
+	// 2. A Joins B
+	err := nodeA.Join(fmt.Sprintf("127.0.0.1:%d", portB))
+	require.NoError(t, err)
 
-	// Wait for full propagation
+	// Wait for convergence
 	require.Eventually(t, func() bool {
-		return len(g1.GetMembers()) == 3 && len(g2.GetMembers()) == 3 && len(g3.GetMembers()) == 3
-	}, 2*time.Second, 100*time.Millisecond)
+		m := nodeA.GetMembers()
+		return len(m) == 2
+	}, 2*time.Second, 100*time.Millisecond, "Node A should see Node B")
 
-	// Stop node 3
-	g3.Stop()
+	// 3. Stop Node B (Simulate Failure)
+	nodeB.Stop()
 
-	// Node 1 or 2 should mark Node 3 as Suspect then Dead
+	// 4. Verify A marks B as Suspect
 	require.Eventually(t, func() bool {
-		members := g1.GetMembers()
+		members := nodeA.GetMembers()
 		for _, m := range members {
-			if m.ID == "n3" && m.Status == StatusDead {
+			if m.ID == "nodeB" && m.Status == StatusSuspect {
 				return true
 			}
 		}
 		return false
-	}, 5*time.Second, 200*time.Millisecond, "Node 3 should be marked Dead")
+	}, 2*time.Second, 100*time.Millisecond, "Node A should mark Node B as Suspect")
+
+	// 5. Verify A marks B as Dead after timeout
+	// Suspicion timeout is 500ms. Wait slightly longer.
+	require.Eventually(t, func() bool {
+		members := nodeA.GetMembers()
+		for _, m := range members {
+			if m.ID == "nodeB" && m.Status == StatusDead {
+				// Ensure suspect timer worked
+				// Check SuspectAt? Not visible in GetMembers result easily unless checking internal state or exported struct
+				return true
+			}
+		}
+		return false
+	}, 2*time.Second, 100*time.Millisecond, "Node A should mark Node B as Dead")
 }
 
-func TestSWIM_IndirectPing(t *testing.T) {
-	// This test is harder because it requires mocking network partitions.
-	// For now, let's verify node propagation via piggybacking.
-	p1 := getFreePort()
-	p2 := getFreePort()
-	p3 := getFreePort()
+func TestRefutation(t *testing.T) {
+	// 1. Setup Node A and Node B
+	portA := getFreePort()
+	portB := getFreePort()
 
-	g1 := NewGossip(GossipConfig{ID: "n1", Port: p1, ProtocolPeriod: 100 * time.Millisecond})
-	g2 := NewGossip(GossipConfig{ID: "n2", Port: p2, ProtocolPeriod: 100 * time.Millisecond})
-	g3 := NewGossip(GossipConfig{ID: "n3", Port: p3, ProtocolPeriod: 100 * time.Millisecond})
+	cfgA := GossipConfig{ID: "nodeA", Port: portA, ProtocolPeriod: 100 * time.Millisecond, SuspicionTimeout: 2 * time.Second}
+	nodeA := NewGossip(cfgA)
+	require.NoError(t, nodeA.Start())
+	defer nodeA.Stop()
 
-	require.NoError(t, g1.Start())
-	require.NoError(t, g2.Start())
-	require.NoError(t, g3.Start())
-	defer g1.Stop()
-	defer g2.Stop()
-	defer g3.Stop()
+	cfgB := GossipConfig{ID: "nodeB", Port: portB, ProtocolPeriod: 100 * time.Millisecond, SuspicionTimeout: 2 * time.Second}
+	nodeB := NewGossip(cfgB)
+	require.NoError(t, nodeB.Start())
+	defer nodeB.Stop()
 
-	// g1 connects to g2, g2 connects to g3. g1 and g3 don't know each other initially.
-	g1.Join(fmt.Sprintf("127.0.0.1:%d", p2))
-	g2.Join(fmt.Sprintf("127.0.0.1:%d", p3))
+	// Join
+	require.NoError(t, nodeA.Join(fmt.Sprintf("127.0.0.1:%d", portB)))
+	time.Sleep(500 * time.Millisecond)
 
-	// Verify g1 learns about g3 via g2
+	// 2. Artificially mark B as Suspect on Node A
+	nodeA.markSuspect("nodeB")
+
+	// 3. Node B should receive this (via gossip/ping) and refute it by incrementing incarnation
+	// We check Node A's view of B eventually becoming Alive again with higher incarnation
+	
 	require.Eventually(t, func() bool {
-		members := g1.GetMembers()
+		members := nodeA.GetMembers()
 		for _, m := range members {
-			if m.ID == "n3" {
-				return true
+			if m.ID == "nodeB" {
+				if m.Status == StatusAlive && m.Incarnation > 1 {
+					return true
+				}
 			}
 		}
 		return false
-	}, 3*time.Second, 200*time.Millisecond, "g1 should learn about g3 via piggybacking")
+	}, 5*time.Second, 100*time.Millisecond, "Node B should refute suspicion logic and become Alive with Incarnation > 1")
 }

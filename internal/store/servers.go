@@ -22,12 +22,14 @@ func NewDataServer(store *VectorStore) *DataServer {
 
 // DoGet retrieves a dataset, converting domain errors to gRPC status codes.
 func (s *DataServer) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGetServer) error {
+	LogClientAction(stream.Context(), s.logger, s.Mesh, "DoGet", nil)
 	err := s.VectorStore.DoGet(tkt, stream)
 	return ToGRPCStatus(err)
 }
 
 // DoPut stores a dataset, converting domain errors to gRPC status codes.
 func (s *DataServer) DoPut(stream flight.FlightService_DoPutServer) error {
+	LogClientAction(stream.Context(), s.logger, s.Mesh, "DoPut", nil)
 	// Backpressure Check: If WAL queue is > 80% full, signal client
 	depth, queueCap := s.GetWALQueueDepth()
 	if queueCap > 0 && float64(depth)/float64(queueCap) > 0.8 {
@@ -48,9 +50,12 @@ func (s *DataServer) DoPut(stream flight.FlightService_DoPutServer) error {
 
 // DoExchange delegates to VectorStore with error conversion
 func (s *DataServer) DoExchange(stream flight.FlightService_DoExchangeServer) error {
+	LogClientAction(stream.Context(), s.logger, s.Mesh, "DoExchange", nil)
 	err := s.VectorStore.DoExchange(stream)
 	return ToGRPCStatus(err)
 }
+
+
 
 // ListFlights returns Unimplemented on DataServer
 func (s *DataServer) ListFlights(c *flight.Criteria, stream flight.FlightService_ListFlightsServer) error {
@@ -127,7 +132,9 @@ func (s *MetaServer) DoAction(action *flight.Action, stream flight.FlightService
 	if action == nil {
 		return status.Error(codes.InvalidArgument, "action is required")
 	}
-	s.logger.Info().Str("type", action.Type).Msg("MetaServer DoAction called")
+	LogClientAction(stream.Context(), s.logger, s.Mesh, "DoAction", map[string]interface{}{
+		"type": action.Type,
+	})
 
 	// Route to specific action handlers
 	switch action.Type {

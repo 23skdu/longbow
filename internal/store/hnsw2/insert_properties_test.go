@@ -51,7 +51,7 @@ func TestInsertProperties(t *testing.T) {
 			// Setup dummy vectors
 			vec := make([]float32, 1)
 			for i := 0; i < 5; i++ {
-				data.VectorPtrs[i] = unsafe.Pointer(&vec[0])
+				data.VectorPtrs[chunkID(uint32(i))][chunkOffset(uint32(i))] = unsafe.Pointer(&vec[0])
 			}
 			
 			// Need SearchContext
@@ -76,7 +76,7 @@ func TestInsertProperties(t *testing.T) {
 			
 			// Check all nodes have <= M*2 neighbors
 			for i := 0; i < 5; i++ {
-				count := atomic.LoadInt32(&data.Counts[0][i])
+				count := atomic.LoadInt32(&data.Counts[0][chunkID(uint32(i))][chunkOffset(uint32(i))])
 				if int(count) > m*2 {
 					return false
 				}

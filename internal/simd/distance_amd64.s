@@ -293,3 +293,259 @@ cos_reduce_final:
 
     VZEROUPPER
     RET
+
+// ----------------------------------------------------------------------------
+// func euclideanVertical4AVX2(q, v0, v1, v2, v3 unsafe.Pointer, n int, res unsafe.Pointer)
+// ----------------------------------------------------------------------------
+TEXT ·euclideanVertical4AVX2(SB), NOSPLIT, $0-56
+    MOVQ    q+0(FP), SI
+    MOVQ    v0+8(FP), DI
+    MOVQ    v1+16(FP), R8
+    MOVQ    v2+24(FP), R9
+    MOVQ    v3+32(FP), R10
+    MOVQ    n+40(FP), BX
+    MOVQ    res+48(FP), R11
+
+    // Accumulators
+    VXORPS  Y0, Y0, Y0 // Sum0
+    VXORPS  Y1, Y1, Y1 // Sum1
+    VXORPS  Y2, Y2, Y2 // Sum2
+    VXORPS  Y3, Y3, Y3 // Sum3
+
+    CMPQ    BX, $8
+    JL      ev2_tail
+
+ev2_loop8:
+    VMOVUPS (SI), Y4 // Query
+    
+    VMOVUPS (DI), Y5
+    VMOVUPS (R8), Y6
+    VMOVUPS (R9), Y7
+    VMOVUPS (R10), Y8
+
+    VSUBPS  Y4, Y5, Y5
+    VSUBPS  Y4, Y6, Y6
+    VSUBPS  Y4, Y7, Y7
+    VSUBPS  Y4, Y8, Y8
+
+    VFMADD231PS Y5, Y5, Y0
+    VFMADD231PS Y6, Y6, Y1
+    VFMADD231PS Y7, Y7, Y2
+    VFMADD231PS Y8, Y8, Y3
+
+    ADDQ    $32, SI
+    ADDQ    $32, DI
+    ADDQ    $32, R8
+    ADDQ    $32, R9
+    ADDQ    $32, R10
+    SUBQ    $8, BX
+    CMPQ    BX, $8
+    JGE     ev2_loop8
+
+ev2_tail:
+    CMPQ    BX, $0
+    JE      ev2_reduce
+
+ev2_tail_loop:
+    VMOVSS  (SI), X4
+    VMOVSS  (DI), X5
+    VMOVSS  (R8), X6
+    VMOVSS  (R9), X7
+    VMOVSS  (R10), X8
+
+    VSUBSS  X4, X5, X5
+    VSUBSS  X4, X6, X6
+    VSUBSS  X4, X7, X7
+    VSUBSS  X4, X8, X8
+
+    VFMADD231SS X5, X5, X0
+    VFMADD231SS X6, X6, X1
+    VFMADD231SS X7, X7, X2
+    VFMADD231SS X8, X8, X3
+
+    ADDQ    $4, SI
+    ADDQ    $4, DI
+    ADDQ    $4, R8
+    ADDQ    $4, R9
+    ADDQ    $4, R10
+    DECQ    BX
+    JNZ     ev2_tail_loop
+
+ev2_reduce:
+    // Full reduction of Y0..Y3
+    // Res0 (Y0)
+    VEXTRACTF128 $1, Y0, X4
+    VADDPS  X4, X0, X0
+    VMOVHLPS X0, X4, X4
+    VADDPS  X4, X0, X0
+    VMOVSHDUP X0, X4
+    VADDSS  X4, X0, X0
+    VSQRTSS X0, X0, X0
+    VMOVSS  X0, (R11)
+
+    // Res1 (Y1)
+    VEXTRACTF128 $1, Y1, X4
+    VADDPS  X4, X1, X1
+    VMOVHLPS X1, X4, X4
+    VADDPS  X4, X1, X1
+    VMOVSHDUP X1, X4
+    VADDSS  X4, X1, X1
+    VSQRTSS X1, X1, X1
+    VMOVSS  X1, 4(R11)
+
+    // Res2 (Y2)
+    VEXTRACTF128 $1, Y2, X4
+    VADDPS  X4, X2, X2
+    VMOVHLPS X2, X4, X4
+    VADDPS  X4, X2, X2
+    VMOVSHDUP X2, X4
+    VADDSS  X4, X2, X2
+    VSQRTSS X2, X2, X2
+    VMOVSS  X2, 8(R11)
+
+    // Res3 (Y3)
+    VEXTRACTF128 $1, Y3, X4
+    VADDPS  X4, X3, X3
+    VMOVHLPS X3, X4, X4
+    VADDPS  X4, X3, X3
+    VMOVSHDUP X3, X4
+    VADDSS  X4, X3, X3
+    VSQRTSS X3, X3, X3
+    VMOVSS  X3, 12(R11)
+
+    VZEROUPPER
+    RET
+
+
+// ----------------------------------------------------------------------------
+// func euclideanVertical4AVX512(q, v0, v1, v2, v3 unsafe.Pointer, n int, res unsafe.Pointer)
+// ----------------------------------------------------------------------------
+TEXT ·euclideanVertical4AVX512(SB), NOSPLIT, $0-56
+    MOVQ    q+0(FP), SI
+    MOVQ    v0+8(FP), DI
+    MOVQ    v1+16(FP), R8
+    MOVQ    v2+24(FP), R9
+    MOVQ    v3+32(FP), R10
+    MOVQ    n+40(FP), BX
+    MOVQ    res+48(FP), R11
+
+    // Accumulators
+    VXORPS  Z0, Z0, Z0
+    VXORPS  Z1, Z1, Z1
+    VXORPS  Z2, Z2, Z2
+    VXORPS  Z3, Z3, Z3
+
+    CMPQ    BX, $16
+    JL      ev5_tail
+
+ev5_loop16:
+    VMOVUPS (SI), Z4 // Query
+    
+    VMOVUPS (DI), Z5
+    VMOVUPS (R8), Z6
+    VMOVUPS (R9), Z7
+    VMOVUPS (R10), Z8
+
+    VSUBPS  Z4, Z5, Z5
+    VSUBPS  Z4, Z6, Z6
+    VSUBPS  Z4, Z7, Z7
+    VSUBPS  Z4, Z8, Z8
+
+    VFMADD231PS Z5, Z5, Z0
+    VFMADD231PS Z6, Z6, Z1
+    VFMADD231PS Z7, Z7, Z2
+    VFMADD231PS Z8, Z8, Z3
+
+    ADDQ    $64, SI
+    ADDQ    $64, DI
+    ADDQ    $64, R8
+    ADDQ    $64, R9
+    ADDQ    $64, R10
+    SUBQ    $16, BX
+    CMPQ    BX, $16
+    JGE     ev5_loop16
+
+ev5_tail:
+    CMPQ    BX, $0
+    JE      ev5_reduce
+
+    // Tail mask
+    MOVQ    $1, R12
+    MOVQ    BX, CX
+    SHLQ    CX, R12
+    SUBQ    $1, R12
+    KMOVQ   R12, K1
+
+    VPXORD  Z4, Z4, Z4
+    VPXORD  Z5, Z5, Z5
+    VPXORD  Z6, Z6, Z6
+    VPXORD  Z7, Z7, Z7
+    VPXORD  Z8, Z8, Z8
+
+    VMOVDQU32 (SI), K1, Z4
+    VMOVDQU32 (DI), K1, Z5
+    VMOVDQU32 (R8), K1, Z6
+    VMOVDQU32 (R9), K1, Z7
+    VMOVDQU32 (R10), K1, Z8
+
+    VSUBPS  Z4, Z5, Z5
+    VSUBPS  Z4, Z6, Z6
+    VSUBPS  Z4, Z7, Z7
+    VSUBPS  Z4, Z8, Z8
+
+    VFMADD231PS Z5, Z5, Z0
+    VFMADD231PS Z6, Z6, Z1
+    VFMADD231PS Z7, Z7, Z2
+    VFMADD231PS Z8, Z8, Z3
+
+ev5_reduce:
+    // Reduction for Z0
+    VEXTRACTF64X4 $1, Z0, Y4
+    VADDPS  Y4, Y0, Y0
+    VEXTRACTF128 $1, Y0, X4
+    VADDPS  X4, X0, X0
+    VMOVHLPS X0, X4, X4
+    VADDPS  X4, X0, X0
+    VMOVSHDUP X0, X4
+    VADDSS  X4, X0, X0
+    VSQRTSS X0, X0, X0
+    VMOVSS  X0, (R11)
+
+    // Reduction for Z1
+    VEXTRACTF64X4 $1, Z1, Y4
+    VADDPS  Y4, Y1, Y1
+    VEXTRACTF128 $1, Y1, X4
+    VADDPS  X4, X1, X1
+    VMOVHLPS X1, X4, X4
+    VADDPS  X4, X1, X1
+    VMOVSHDUP X1, X4
+    VADDSS  X4, X1, X1
+    VSQRTSS X1, X1, X1
+    VMOVSS  X1, 4(R11)
+
+    // Reduction for Z2
+    VEXTRACTF64X4 $1, Z2, Y4
+    VADDPS  Y4, Y2, Y2
+    VEXTRACTF128 $1, Y2, X4
+    VADDPS  X4, X2, X2
+    VMOVHLPS X2, X4, X4
+    VADDPS  X4, X2, X2
+    VMOVSHDUP X2, X4
+    VADDSS  X4, X2, X2
+    VSQRTSS X2, X2, X2
+    VMOVSS  X2, 8(R11)
+
+    // Reduction for Z3
+    VEXTRACTF64X4 $1, Z3, Y4
+    VADDPS  Y4, Y3, Y3
+    VEXTRACTF128 $1, Y3, X4
+    VADDPS  X4, X3, X3
+    VMOVHLPS X3, X4, X4
+    VADDPS  X4, X3, X3
+    VMOVSHDUP X3, X4
+    VADDSS  X4, X3, X3
+    VSQRTSS X3, X3, X3
+    VMOVSS  X3, 12(R11)
+
+    VZEROUPPER
+    RET

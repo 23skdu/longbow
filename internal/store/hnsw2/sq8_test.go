@@ -58,7 +58,7 @@ func TestSQ8Indexing(t *testing.T) {
 	rec.Retain()
 
 	// Add batch
-	_, err := idx.AddBatch([]arrow.RecordBatch{rec}, makeRangeHelper(0, n), make([]int, n))
+	ids, err := idx.AddBatch([]arrow.RecordBatch{rec}, makeRangeHelper(0, n), make([]int, n))
 	require.NoError(t, err)
 
 	// Verify that VectorsSQ8 is populated
@@ -71,22 +71,23 @@ func TestSQ8Indexing(t *testing.T) {
 	// Search
 	// Pick vector 10 as query
 	query := vecs[10]
+	targetID := ids[10]
 	// Approximate search
 	res, err := idx.SearchVectors(query, 10, nil)
 	require.NoError(t, err)
 	
-	// Expect vector 10 to be in top results (ID 10)
+	// Expect vector 10 to be in top results
 	found := false
 	for _, r := range res {
-		if uint32(r.ID) == 10 {
+		if uint32(r.ID) == targetID {
 			found = true
 			break
 		}
 	}
-	assert.True(t, found, "Query vector 10 should be found in search results with SQ8")
+	assert.True(t, found, "Query vector should be found in search results with SQ8")
 	
 	t.Logf("Top Result Score: %f", res[0].Score)
-	if uint32(res[0].ID) == 10 {
+	if uint32(res[0].ID) == targetID {
 		assert.Equal(t, float32(0), res[0].Score, "Distance should be 0 for exact match in SQ8")
 	}
 }
@@ -136,19 +137,20 @@ func TestSQ8Refinement(t *testing.T) {
 	rec.Retain()
 
 	// Add batch
-	_, err := idx.AddBatch([]arrow.RecordBatch{rec}, makeRangeHelper(0, n), make([]int, n))
+	ids, err := idx.AddBatch([]arrow.RecordBatch{rec}, makeRangeHelper(0, n), make([]int, n))
 	require.NoError(t, err)
 
 	// Search
 	query := vecs[10]
+	targetID := ids[10]
 	// Refined search
 	res, err := idx.SearchVectors(query, 10, nil)
 	require.NoError(t, err)
 	
-	// Expect vector 10 to be in top results (ID 10)
+	// Expect vector 10 to be in top results
 	found := false
 	for _, r := range res {
-		if uint32(r.ID) == 10 {
+		if uint32(r.ID) == targetID {
 			found = true
 			break
 		}

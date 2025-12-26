@@ -4,7 +4,6 @@ package simd
 
 import (
 	"math"
-	"unsafe"
 )
 
 // ARM64 NEON implementations
@@ -41,15 +40,6 @@ func cosineNEON(a, b []float32) float32 {
 	return 1.0 - (dot / float32(math.Sqrt(float64(normA)*float64(normB))))
 }
 
-// AVX stubs for ARM64 (not available)
-func euclideanAVX2(a, b []float32) float32   { return euclideanGeneric(a, b) }
-func euclideanAVX512(a, b []float32) float32 { return euclideanGeneric(a, b) }
-func cosineAVX2(a, b []float32) float32      { return cosineGeneric(a, b) }
-func cosineAVX512(a, b []float32) float32    { return cosineGeneric(a, b) }
-func dotAVX2(a, b []float32) float32         { return dotGeneric(a, b) }
-func dotAVX512(a, b []float32) float32       { return dotGeneric(a, b) }
-func prefetchNTA(p unsafe.Pointer)           {}
-
 func adcBatchNEON(table []float32, flatCodes []byte, m int, results []float32) {
 	adcBatchGeneric(table, flatCodes, m, results)
 }
@@ -69,23 +59,4 @@ func cosineBatchNEON(query []float32, vectors [][]float32, results []float32) {
 	for i, v := range vectors {
 		results[i] = cosineNEON(query, v)
 	}
-}
-
-func euclideanBatchAVX2(query []float32, vectors [][]float32, results []float32) {
-	euclideanBatchGeneric(query, vectors, results)
-}
-func euclideanBatchAVX512(query []float32, vectors [][]float32, results []float32) {
-	euclideanBatchGeneric(query, vectors, results)
-}
-func dotBatchAVX2(query []float32, vectors [][]float32, results []float32) {
-	dotBatchGeneric(query, vectors, results)
-}
-func dotBatchAVX512(query []float32, vectors [][]float32, results []float32) {
-	dotBatchGeneric(query, vectors, results)
-}
-func cosineBatchAVX2(query []float32, vectors [][]float32, results []float32) {
-	cosineBatchGeneric(query, vectors, results)
-}
-func cosineBatchAVX512(query []float32, vectors [][]float32, results []float32) {
-	cosineBatchGeneric(query, vectors, results)
 }

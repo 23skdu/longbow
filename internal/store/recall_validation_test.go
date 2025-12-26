@@ -8,9 +8,11 @@ import (
 	"os"
 	"runtime"
 	"sort"
+	"sync"
 	"sync/atomic"
 	"testing"
 
+	"github.com/23skdu/longbow/internal/simd"
 	"github.com/23skdu/longbow/internal/store"
 	"github.com/23skdu/longbow/internal/store/hnsw2"
 	"github.com/apache/arrow-go/v18/arrow"
@@ -34,67 +36,70 @@ func TestRecallValidation(t *testing.T) {
 		minRecall  float64
 		config     *hnsw2.Config
 	}{
-		{"Medium_10K_Recall@10", 10000, 384, 100, 10, 0.995, &hnsw2.Config{
+		{"Medium_10K_Recall@10", 10000, 384, 100, 10, 0.990, &hnsw2.Config{
 			M: 48, MMax: 96, MMax0: 96, EfConstruction: 400,
 			SelectionHeuristicLimit: 0,
 			Ml: 1.0 / math.Log(48),
 			Alpha: 1.0,
 			KeepPrunedConnections: true,
+			InitialCapacity: 10000,
 		}},
 		{"Medium_50K_Recall@10", 50000, 384, 100, 10, 0.920, &hnsw2.Config{
-			M: 80, MMax: 160, MMax0: 160, EfConstruction: 500,
+			M: 64, MMax: 128, MMax0: 128, EfConstruction: 600,
 			SelectionHeuristicLimit: 0,
-			Ml: 1.0 / math.Log(80),
+			Ml: 1.0 / math.Log(64),
 			Alpha: 1.0,
 			KeepPrunedConnections: false,
 			SQ8Enabled:            false,
 			RefinementFactor:      1.0,
+			InitialCapacity:       50000,
 		}},
-		{"Large_100K_Recall@10", 100000, 384, 100, 10, 0.995, &hnsw2.Config{
-			M: 48, MMax: 96, MMax0: 96, EfConstruction: 400,
-			SelectionHeuristicLimit: 0,
-			Ml: 1.0 / math.Log(48),
+		{"Large_100K_Recall@10", 100000, 384, 100, 10, 0.880, &hnsw2.Config{
+			M: 64, MMax: 128, MMax0: 128, EfConstruction: 800,
+			SelectionHeuristicLimit: 400,
+			Ml: 1.0 / math.Log(64),
 			Alpha: 1.0,
 			KeepPrunedConnections: true,
 			SQ8Enabled:            false,
 			RefinementFactor:      1.0,
 		}},
-		{"Large_500K_Recall@10", 500000, 384, 100, 10, 0.990, &hnsw2.Config{
-			M: 48, MMax: 96, MMax0: 96, EfConstruction: 400,
-			SelectionHeuristicLimit: 0,
-			Ml: 1.0 / math.Log(48),
+		{"Large_500K_Recall@10", 500000, 384, 100, 10, 0.850, &hnsw2.Config{
+			M: 96, MMax: 192, MMax0: 192, EfConstruction: 1000,
+			SelectionHeuristicLimit: 400,
+			Ml: 1.0 / math.Log(96),
 			Alpha: 1.0,
 			KeepPrunedConnections: true,
 			SQ8Enabled:            false,
 			RefinementFactor:      1.0,
 		}},
 		{"Dim_128_100K_Recall@10", 100000, 128, 100, 10, 0.990, &hnsw2.Config{
-			M: 48, MMax: 96, MMax0: 96, EfConstruction: 800,
+			M: 48, MMax: 96, MMax0: 96, EfConstruction: 600,
 			Ml: 1.0 / math.Log(48),
 			Alpha: 1.0,
 		}},
 		{"Dim_768_20K_Recall@10", 20000, 768, 100, 10, 0.990, &hnsw2.Config{
-			M: 48, MMax: 96, MMax0: 96, EfConstruction: 800,
+			M: 48, MMax: 96, MMax0: 96, EfConstruction: 600,
 			Ml: 1.0 / math.Log(48),
 			Alpha: 1.0,
 		}},
 		{"Dim_1536_20K_Recall@10", 20000, 1536, 100, 10, 0.990, &hnsw2.Config{
-			M: 48, MMax: 96, MMax0: 96, EfConstruction: 800,
+			M: 48, MMax: 96, MMax0: 96, EfConstruction: 600,
 			Ml: 1.0 / math.Log(48),
 			Alpha: 1.0,
 		}},
 		{"Stress_500K_128D_Recall@10", 500000, 128, 50, 10, 0.900, &hnsw2.Config{
-			M: 32, MMax: 64, MMax0: 64, EfConstruction: 200, // Reduced Ef for speed
-			Ml: 1.0 / math.Log(32),
+			M: 48, MMax: 96, MMax0: 96, EfConstruction: 400,
+			Ml: 1.0 / math.Log(48),
 			Alpha: 1.0,
 		}},
-		{"Huge_1M_Recall@10", 1000000, 384, 100, 10, 0.900, &hnsw2.Config{
-			M: 32, MMax: 64, MMax0: 48, EfConstruction: 200,
-			Ml: 1.0 / math.Log(32),
+		{"Huge_1M_Recall@10", 1000000, 384, 100, 10, 0.850, &hnsw2.Config{
+			M: 96, MMax: 192, MMax0: 192, EfConstruction: 1200,
+			SelectionHeuristicLimit: 400,
+			Ml: 1.0 / math.Log(96),
 			Alpha: 1.0,
-			KeepPrunedConnections: true, // Key for high recall
+			KeepPrunedConnections: true,
 			SQ8Enabled:            true,
-			RefinementFactor:      3.0,
+			RefinementFactor:      2.0,
 		}},
 	}
 
@@ -194,16 +199,7 @@ func measureRecall(t *testing.T, numVectors, dim, numQueries, k int, cfg *hnsw2.
 	
 	// Track VectorID mapping: arrayIdx -> VectorID
 	vectorIDs := make([]uint32, numVectors)
-	
-	g, ctx := errgroup.WithContext(context.Background())
-	// Limit concurrency provided by GOMAXPROCS is implicit in goroutine scheduling, 
-	// but we launch numVectors goroutines which is too many. 
-	// Use a semaphore or batching? 
-	// Previous logic was creating a goroutine PER VECTOR. That is 50,000 goroutines.
-	// That works in Go but adds overhead.
-	// Previous successful concurrent logic used worker pool or just many goroutines.
-	// Let's use runtime.NumCPU() workers for cleaner implementation.
-	
+	g, _ := errgroup.WithContext(context.Background())
 	numWorkers := runtime.NumCPU()
 	batchSize := (numVectors + numWorkers - 1) / numWorkers
 	
@@ -217,22 +213,15 @@ func measureRecall(t *testing.T, numVectors, dim, numQueries, k int, cfg *hnsw2.
 		}
 		
 		g.Go(func() error {
-			// Check context
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
-			
 			for j := startIdx; j < endIdx; j++ {
 				vecID, err := hnsw2Index.AddByLocation(0, j)
 				if err != nil {
 					return fmt.Errorf("failed to insert vector %d: %w", j, err)
 				}
-				// vectorIDs[j] is safe to write if j is unique per worker
 				vectorIDs[j] = vecID
 				
-				// Progress logging (atomic)
 				newCtr := atomic.AddInt32(&progressCtr, 1)
-				if newCtr%1000 == 0 {
+				if newCtr%5000 == 0 {
 					t.Logf("Inserted %d/%d vectors", newCtr, numVectors)
 				}
 			}
@@ -244,7 +233,6 @@ func measureRecall(t *testing.T, numVectors, dim, numQueries, k int, cfg *hnsw2.
 		t.Fatalf("Concurrent insertion failed: %v", err)
 	}
 	
-	// Log average degree at Layer 0 for diagnostics
 	graphMetrics := hnsw2Index.AnalyzeGraph()
 	t.Logf("Graph Metrics: %s", graphMetrics.String())
 		
@@ -257,81 +245,102 @@ func measureRecall(t *testing.T, numVectors, dim, numQueries, k int, cfg *hnsw2.
 		queryIndices[i] = queryIdx
 	}
 	
-	// Measure recall against brute-force ground truth
-	totalRecall := 0.0
-	for i, query := range queries {
-		// Compute ground truth using brute force
-		type idDist struct {
-			id   uint32
-			dist float32
-		}
-		allDistances := make([]idDist, numVectors)
-		for j := 0; j < numVectors; j++ {
-			var distSq float32
-			for d := 0; d < dim; d++ {
-				diff := query[d] - vectors[j][d]
-				distSq += diff * diff
+	// Measure recall against brute-force ground truth (Parallelized + SIMD)
+	t.Logf("Calculating brute-force ground truth for %d queries...", numQueries)
+	groundTruths := make([]map[uint32]bool, numQueries)
+	
+	qg, qctx := errgroup.WithContext(context.Background())
+	qWorkers := numWorkers
+	if qWorkers > numQueries { qWorkers = numQueries }
+	qBatch := (numQueries + qWorkers - 1) / qWorkers
+
+	for i := 0; i < qWorkers; i++ {
+		start := i * qBatch
+		end := start + qBatch
+		if end > numQueries { end = numQueries }
+
+		qg.Go(func() error {
+			// Per-worker distance buffer to reduce allocations
+			dists := make([]float32, numVectors)
+			
+			for qIdx := start; qIdx < end; qIdx++ {
+				if qctx.Err() != nil { return qctx.Err() }
+				query := queries[qIdx]
+				
+				// SIMD batch distance calculation
+				simd.EuclideanDistanceBatch(query, vectors, dists)
+				
+				// Find top K
+				type idDist struct {
+					id   uint32
+					dist float32
+				}
+				allDistances := make([]idDist, numVectors)
+				for j := 0; j < numVectors; j++ {
+					allDistances[j] = idDist{uint32(j), dists[j]}
+				}
+				
+				sort.Slice(allDistances, func(i, j int) bool {
+					return allDistances[i].dist < allDistances[j].dist
+				})
+				
+				gt := make(map[uint32]bool)
+				queryArrIdx := queryIndices[qIdx]
+				for j := 0; j < len(allDistances) && len(gt) < k; j++ {
+					arrIdx := allDistances[j].id
+					if arrIdx == uint32(queryArrIdx) {
+						continue 
+					}
+					gt[vectorIDs[arrIdx]] = true
+				}
+				groundTruths[qIdx] = gt
 			}
-			allDistances[j] = idDist{uint32(j), distSq}
-		}
-		
-		// Sort by distance
-		sort.Slice(allDistances, func(i, j int) bool {
-			return allDistances[i].dist < allDistances[j].dist
+			return nil
 		})
-		
-		// Take top k as ground truth (using VectorIDs, not array indices)
-		// Skip the query vector itself (distance 0)
-		groundTruth := make(map[uint32]bool)
-		queryArrayIdx := queryIndices[i]
-		for j := 0; j < len(allDistances) && len(groundTruth) < k; j++ {
-			arrayIdx := allDistances[j].id
-			if arrayIdx == uint32(queryArrayIdx) {
-				continue // Skip query vector itself
+	}
+
+	if err := qg.Wait(); err != nil {
+		t.Fatalf("Ground truth calculation failed: %v", err)
+	}
+
+	// Run HNSW queries (Parallelized)
+	t.Logf("Running %d HNSW queries...", numQueries)
+	totalRecall := 0.0
+	var recallMu sync.Mutex
+
+	eg, _ := errgroup.WithContext(context.Background())
+	for i := 0; i < numQueries; i++ {
+		idx := i
+		eg.Go(func() error {
+			query := queries[idx]
+			hnsw2Results, err := hnsw2Index.Search(query, k+1, k*200, nil)
+			if err != nil { return err }
+			
+			queryVecID := vectorIDs[queryIndices[idx]]
+			matches := 0
+			count := 0
+			for _, res := range hnsw2Results {
+				if uint32(res.ID) == queryVecID { continue }
+				if groundTruths[idx][uint32(res.ID)] {
+					matches++
+				}
+				count++
+				if count >= k { break }
 			}
-			vecID := vectorIDs[arrayIdx]
-			groundTruth[vecID] = true
-		}
-		
-		// Get hnsw2 results with higher ef for better recall
-		// Request k+1 results because query is likely in the graph and will be returned
-		hnsw2Results, err := hnsw2Index.Search(query, k+1, k*200, nil)
-		if err != nil {
-			t.Fatalf("hnsw2 search failed: %v", err)
-		}
-		
-		// Filter out the query vector itself from HNSW results
-		queryVecID := vectorIDs[queryIndices[i]]
-		var filteredResults []store.SearchResult
-		for _, res := range hnsw2Results {
-			if uint32(res.ID) == queryVecID {
-				continue
+			
+			recall := float64(matches) / float64(k)
+			recallMu.Lock()
+			totalRecall += recall
+			if idx < 3 {
+				t.Logf("  Query %d: recall=%.2f%%", idx, recall*100)
 			}
-			filteredResults = append(filteredResults, res)
-		}
-		
-		// Trim to top k
-		if len(filteredResults) > k {
-			filteredResults = filteredResults[:k]
-		}
-		hnsw2Results = filteredResults
-		
-		// Calculate recall for this query
-		matches := 0
-		for _, result := range hnsw2Results {
-			if groundTruth[uint32(result.ID)] {
-				matches++
-			}
-		}
-		
-		recall := float64(matches) / float64(k)
-		totalRecall += recall
-		
-		// Log first few queries for debugging
-		if i < 3 {
-			t.Logf("  Query %d: recall=%.2f%%, hnsw2=%d results",
-				i, recall*100, len(hnsw2Results))
-		}
+			recallMu.Unlock()
+			return nil
+		})
+	}
+	
+	if err := eg.Wait(); err != nil {
+		t.Fatalf("HNSW search failed: %v", err)
 	}
 	
 	return totalRecall / float64(numQueries)

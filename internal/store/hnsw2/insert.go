@@ -208,6 +208,12 @@ func (h *ArrowHNSW) searchLayerForInsert(ctx *SearchContext, query []float32, en
 	visited := ctx.visited
 	candidates := ctx.candidates
 	
+	ctx.resultSet.Clear()
+	if ctx.resultSet.cap < ef {
+		ctx.resultSet = NewMaxHeap(ef * 2)
+	}
+	resultSet := ctx.resultSet
+	
 	// Initialize with entry point
 	var entryDist float32
 	var querySQ8 []byte
@@ -228,10 +234,13 @@ func (h *ArrowHNSW) searchLayerForInsert(ctx *SearchContext, query []float32, en
 	}
 
 	candidates.Push(Candidate{ID: entryPoint, Dist: entryDist})
+	resultSet.Push(Candidate{ID: entryPoint, Dist: entryDist})
 	visited.Set(entryPoint)
 	
-	results := make([]Candidate, 0, ef)
-	results = append(results, Candidate{ID: entryPoint, Dist: entryDist})
+	// Reset results from context
+	ctx.scratchResults = ctx.scratchResults[:0]
+	ctx.scratchResults = append(ctx.scratchResults, Candidate{ID: entryPoint, Dist: entryDist})
+	results := ctx.scratchResults
 	
 	// Circuit breaker for traversal
 	iterations := 0
@@ -250,7 +259,7 @@ func (h *ArrowHNSW) searchLayerForInsert(ctx *SearchContext, query []float32, en
 		}
 		
 		// Stop if current is farther than furthest result
-		if len(results) >= ef && curr.Dist > results[len(results)-1].Dist {
+		if best, ok := resultSet.Peek(); ok && resultSet.Len() >= ef && curr.Dist > best.Dist {
 			break
 		}
 		
@@ -271,17 +280,17 @@ func (h *ArrowHNSW) searchLayerForInsert(ctx *SearchContext, query []float32, en
 				continue
 			}
 			
-			// Load count and neighbors
-			neighborCount := int(atomic.LoadInt32(&data.Counts[layer][curr.ID]))
-			baseIdx := int(curr.ID) * MaxNeighbors
-			neighbors := data.Neighbors[layer][baseIdx : baseIdx+neighborCount]
+			// Get neighbors of current node
+			count := int(atomic.LoadInt32(&data.Counts[layer][curr.ID]))
+			if count > MaxNeighbors { 
+				count = MaxNeighbors 
+			}
 			
-			// Clear scratch buffer for this attempt
-			unvisitedIDs = unvisitedIDs[:0]
-			for i := 0; i < len(neighbors); i++ {
-				nid := atomic.LoadUint32(&neighbors[i])
+			neighborhood := data.Neighbors[layer][int(curr.ID)*MaxNeighbors : int(curr.ID)*MaxNeighbors+count]
+			
+			unvisitedIDs = ctx.scratchIDs[:0]
+			for _, nid := range neighborhood {
 				if !visited.IsSet(nid) {
-					// Speculatively collect
 					unvisitedIDs = append(unvisitedIDs, nid)
 				}
 			}
@@ -317,15 +326,11 @@ func (h *ArrowHNSW) searchLayerForInsert(ctx *SearchContext, query []float32, en
 			continue
 		}
 		
-		var dists []float32
-		if ctx.candidates.cap < count {
-			// Reuse some buffer?
-			dists = make([]float32, count)
-		} else {
-			// Reuse scratch?
-			if cap(ctx.scratchDists) < count { ctx.scratchDists = make([]float32, count*2) }
-			dists = ctx.scratchDists[:count]
+		// Use scratch buffer from context
+		if cap(ctx.scratchDists) < count {
+			ctx.scratchDists = make([]float32, count*2)
 		}
+		dists := ctx.scratchDists[:count]
 		
 		if h.quantizer != nil && len(data.VectorsSQ8) > 0 {
 			// SQ8 Path
@@ -333,7 +338,7 @@ func (h *ArrowHNSW) searchLayerForInsert(ctx *SearchContext, query []float32, en
 			for i, nid := range unvisitedIDs {
 				off := int(nid) * h.dims
 				// Bounds check?
-				d := simd.EuclideanDistanceSQ8(ctx.querySQ8, data.VectorsSQ8[off:off+h.dims])
+				d := simd.EuclideanDistanceSQ8(querySQ8, data.VectorsSQ8[off:off+h.dims])
 				dists[i] = float32(d)
 			}
 		} else {
@@ -344,31 +349,39 @@ func (h *ArrowHNSW) searchLayerForInsert(ctx *SearchContext, query []float32, en
 			for i, nid := range unvisitedIDs {
 				vecs[i] = h.mustGetVectorFromData(data, nid)
 			}
-			simd.EuclideanDistanceBatch(query, vecs, dists)
+			simd.EuclideanDistanceVerticalBatch(query, vecs, dists)
 		}
 		
 		// Process results
 		for i, nid := range unvisitedIDs {
 			dist := dists[i]
-			if len(results) < ef || dist < results[len(results)-1].Dist {
-				candidates.Push(Candidate{ID: nid, Dist: dist})
-				results = append(results, Candidate{ID: nid, Dist: dist})
-				
-				if len(results) > ef {
-					// Simple bubble sort / insertion
-					for k := len(results) - 1; k > 0; k-- {
-						if results[k].Dist < results[k-1].Dist {
-							results[k], results[k-1] = results[k-1], results[k]
-						} else {
-							break
-						}
-					}
-					results = results[:ef]
+			best, _ := resultSet.Peek()
+			if resultSet.Len() < ef || dist < best.Dist {
+				resultSet.Push(Candidate{ID: nid, Dist: dist})
+				if resultSet.Len() > ef {
+					resultSet.Pop() // Remove the furthest element
 				}
+				candidates.Push(Candidate{ID: nid, Dist: dist}) // Add to candidates for further exploration
 			}
 		}
 	}
 	
+	// Sort and return results from resultSet
+	results = results[:0]
+	for resultSet.Len() > 0 {
+		cand, _ := resultSet.Pop()
+		results = append(results, cand)
+	}
+	// resultSet returns closest-at-bottom (MaxHeap), so for return, 
+	// we usually want them sorted by distance.
+	slices.SortFunc(results, func(a, b Candidate) int {
+		if a.Dist < b.Dist { return -1 }
+		if a.Dist > b.Dist { return 1 }
+		return 0
+	})
+	
+	// Sync context results
+	ctx.scratchResults = results
 	return results
 }
 
@@ -391,6 +404,8 @@ func (h *ArrowHNSW) selectNeighbors(ctx *SearchContext, candidates []Candidate, 
 	// Use scratch in context or allocate (fallback)
 	var selected []Candidate
 	var remaining []Candidate
+	var selectedVecs [][]float32
+	var remainingVecs [][]float32
 	
 	if ctx != nil {
 		if cap(ctx.scratchSelected) < m {
@@ -398,45 +413,46 @@ func (h *ArrowHNSW) selectNeighbors(ctx *SearchContext, candidates []Candidate, 
 		}
 		selected = ctx.scratchSelected[:0]
 		
+		if cap(ctx.scratchSelectedVecs) < m {
+			ctx.scratchSelectedVecs = make([][]float32, 0, m*2)
+		}
+		selectedVecs = ctx.scratchSelectedVecs[:0]
+
 		if cap(ctx.scratchRemaining) < len(candidates) {
 			ctx.scratchRemaining = make([]Candidate, len(candidates)*2)
 		}
 		remaining = ctx.scratchRemaining[:len(candidates)]
+
+		if cap(ctx.scratchRemainingVecs) < len(candidates) {
+			ctx.scratchRemainingVecs = make([][]float32, len(candidates)*2)
+		}
+		remainingVecs = ctx.scratchRemainingVecs[:len(candidates)]
 	} else {
 		selected = make([]Candidate, 0, m)
 		remaining = make([]Candidate, len(candidates))
+		selectedVecs = make([][]float32, 0, m)
+		remainingVecs = make([][]float32, len(candidates))
 	}
 	copy(remaining, candidates)
 	
-	// Use scratch buffer for discarded candidates
-	var discarded []Candidate
-	if ctx != nil {
-		if cap(ctx.scratchDiscarded) < len(candidates) {
-			ctx.scratchDiscarded = make([]Candidate, 0, len(candidates)*2)
-		}
-		ctx.scratchDiscarded = ctx.scratchDiscarded[:0]
-		discarded = ctx.scratchDiscarded
-	} else {
-		discarded = make([]Candidate, 0, len(candidates))
+	// Pre-fetch vectors once
+	for i := range candidates {
+		remainingVecs[i] = h.mustGetVectorFromData(data, candidates[i].ID)
 	}
+
+	discarded := ctx.scratchDiscarded[:0]
 	
-	// Alpha parameter for diversity (1.0 = strict, >1.0 = relaxed)
-	// Relaxing alpha improves recall at cost of graph sparsity
 	alpha := h.config.Alpha
 	if alpha < 1.0 {
 		alpha = 1.0
 	}
 	
-	// Circuit breaker: prevent infinite loops
-	maxIterations := len(candidates) * 2
-	iterations := 0
+	// Use scratchSelectedIdxs to track which candidates are still "remaining"
+	// but instead of removing from slices, we'll mark them.
+	// Actually, the current "remaining" logic is O(M * remaining).
+	// Let's keep it but ensure NO ALLOCATIONS.
 	
 	for len(selected) < m && len(remaining) > 0 {
-		iterations++
-		if iterations > maxIterations {
-			// Safety: break out if we've iterated too many times
-			break
-		}
 		// Find the closest remaining candidate
 		bestIdx := 0
 		bestDist := remaining[0].Dist
@@ -449,93 +465,78 @@ func (h *ArrowHNSW) selectNeighbors(ctx *SearchContext, candidates []Candidate, 
 		}
 		
 		// Add to selected
-		selected = append(selected, remaining[bestIdx])
+		selCand := remaining[bestIdx]
+		selVec := remainingVecs[bestIdx]
+		selected = append(selected, selCand)
+		selectedVecs = append(selectedVecs, selVec)
 		
-		// Remove from remaining
+		// Remove from remaining (O(1) swap and pop)
 		remaining[bestIdx] = remaining[len(remaining)-1]
 		remaining = remaining[:len(remaining)-1]
+		remainingVecs[bestIdx] = remainingVecs[len(remainingVecs)-1]
+		remainingVecs = remainingVecs[:len(remainingVecs)-1]
 		
 		// Prune remaining candidates that are too close to the selected one
 		if len(selected) < m && len(remaining) > 0 {
-			selectedVec := h.mustGetVectorFromData(data, selected[len(selected)-1].ID)
-			
 			// Batch optimization: Compute distances to selected neighbor
 			count := len(remaining)
-			var dists []float32
-			
-			if ctx != nil {
-				if cap(ctx.scratchDists) < count {
-					ctx.scratchDists = make([]float32, count*2)
-				}
-				dists = ctx.scratchDists[:count]
-			} else {
-				dists = make([]float32, count)
+			if cap(ctx.scratchDists) < count {
+				ctx.scratchDists = make([]float32, count*2)
 			}
+			dists := ctx.scratchDists[:count]
 			
 			if h.quantizer != nil && len(data.VectorsSQ8) > 0 {
 				// SQ8 Path
-				selID := selected[len(selected)-1].ID
-				offSel := int(selID) * h.dims
-				
-				// SQ8 Vector of selected neighbor
-				// Check bounds - if out of bounds, skip diversity check entirely
-				if offSel+h.dims > len(data.VectorsSQ8) {
-					// Can't compute distances, skip filtering
-					continue
-				}
-				vecSel := data.VectorsSQ8[offSel : offSel+h.dims]
-				
-				for i := range remaining {
-					// Check bounds for remaining
-					offRem := int(remaining[i].ID) * h.dims
-					if offRem+h.dims > len(data.VectorsSQ8) {
-						// Out of bounds, use max distance to keep candidate
-						dists[i] = math.MaxFloat32
-						continue
+				offSel := int(selCand.ID) * h.dims
+				if offSel+h.dims <= len(data.VectorsSQ8) {
+					vecSel := data.VectorsSQ8[offSel : offSel+h.dims]
+					for i := range remaining {
+						offRem := int(remaining[i].ID) * h.dims
+						if offRem+h.dims <= len(data.VectorsSQ8) {
+							d := simd.EuclideanDistanceSQ8(vecSel, data.VectorsSQ8[offRem : offRem+h.dims])
+							dists[i] = float32(d)
+						} else {
+							dists[i] = math.MaxFloat32
+						}
 					}
-					
-					d := simd.EuclideanDistanceSQ8(vecSel, data.VectorsSQ8[offRem : offRem+h.dims])
-					dists[i] = float32(d)
+				} else {
+					for i := range dists { dists[i] = math.MaxFloat32 }
 				}
 			} else {
-				// Standard Float32 Path
-				if ctx != nil && cap(ctx.scratchVecs) < count {
+				// Float32 Path
+				if cap(ctx.scratchVecs) < count {
 					ctx.scratchVecs = make([][]float32, count*2)
 				}
-				var remVecs [][]float32
-				if ctx != nil {
-					remVecs = ctx.scratchVecs[:count]
-				} else {
-					remVecs = make([][]float32, count)
-				}
-				
+				remVecs := ctx.scratchVecs[:count]
 				for i := range remaining {
-					remVecs[i] = h.mustGetVectorFromData(data, remaining[i].ID)
+					remVecs[i] = remainingVecs[i]
 				}
 				
 				if h.batchComputer != nil {
-					_, _ = h.batchComputer.ComputeL2DistancesInto(selectedVec, remVecs, dists)
+					_, _ = h.batchComputer.ComputeL2DistancesInto(selVec, remVecs, dists)
 				} else {
-					simd.EuclideanDistanceBatch(selectedVec, remVecs, dists)
+					simd.EuclideanDistanceVerticalBatch(selVec, remVecs, dists)
 				}
 			}
 			
-			// Filter remaining to remove candidates too close to selected
-			filtered := remaining[:0]
+			// Filter remaining
+			filteredCount := 0
 			for i, cand := range remaining {
-				distToSelected := dists[i]
-				
-				// Keep candidate if it's not too close to the selected neighbor
-				// (i.e., distance to selected * alpha > distance to query)
-				if distToSelected * alpha > cand.Dist {
-					filtered = append(filtered, cand)
+				if dists[i] * alpha > cand.Dist {
+					remaining[filteredCount] = cand
+					remainingVecs[filteredCount] = remainingVecs[i]
+					filteredCount++
 				} else {
 					discarded = append(discarded, cand)
 				}
 			}
-			remaining = filtered
+			remaining = remaining[:filteredCount]
+			remainingVecs = remainingVecs[:filteredCount]
 		}
 	}
+	
+	// Update context's discarded for return if needed (heuristic keepPruned)
+	ctx.scratchDiscarded = discarded
 	
 	// If we haven't filled M, backfill from discarded (keepPrunedConnections logic)
 	// This ensures we maintain connectivity even if heuristic prunes aggressively
@@ -623,7 +624,16 @@ func (h *ArrowHNSW) pruneConnectionsLocked(ctx *SearchContext, data *GraphData, 
 	
 	// Collect all current neighbors as candidates
 	baseIdx := int(nodeID) * MaxNeighbors
-	candidates := make([]Candidate, count)
+	
+	var candidates []Candidate
+	if ctx != nil {
+		if cap(ctx.scratchRemaining) < count {
+			ctx.scratchRemaining = make([]Candidate, count*2)
+		}
+		candidates = ctx.scratchRemaining[:count]
+	} else {
+		candidates = make([]Candidate, count)
+	}
 	
 	nodeVec := h.mustGetVectorFromData(data, nodeID)
     
@@ -680,16 +690,15 @@ func (h *ArrowHNSW) pruneConnectionsLocked(ctx *SearchContext, data *GraphData, 
 		
 		for i := 0; i < count; i++ {
 			neighborID := data.Neighbors[layer][baseIdx+i]
-			neighborVecs[i] = h.mustGetVectorFromData(data, neighborID)
-		}
-		
-		if h.batchComputer != nil {
-			_, _ = h.batchComputer.ComputeL2DistancesInto(nodeVec, neighborVecs, dists)
-		} else {
-			simd.EuclideanDistanceBatch(nodeVec, neighborVecs, dists)
+			vec := h.mustGetVectorFromData(data, neighborID)
+			neighborVecs[i] = vec
+			
+			// Compute distance once for initial Candidate
+			dists[i] = simd.EuclideanDistance(nodeVec, vec)
 		}
 	}
 	
+	// Populate candidates with IDs and distances
 	for i := 0; i < count; i++ {
 		neighborID := data.Neighbors[layer][baseIdx+i]
 		candidates[i] = Candidate{ID: neighborID, Dist: dists[i]}

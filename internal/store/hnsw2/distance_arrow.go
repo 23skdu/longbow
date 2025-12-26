@@ -114,7 +114,7 @@ func (b *BatchDistanceComputer) ComputeL2DistancesSIMDFallback(
 func (b *BatchDistanceComputer) ShouldUseBatchCompute(candidateCount int) bool {
 	// Threshold determined by benchmarking
 	// Arrow compute is faster for >32 candidates
-	const batchThreshold = 512
+	const batchThreshold = 32
 	return candidateCount >= batchThreshold
 }
 

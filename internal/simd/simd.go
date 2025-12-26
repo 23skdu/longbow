@@ -54,7 +54,8 @@ var (
 	matchInt64Impl   matchInt64Func
 	matchFloat32Impl matchFloat32Func
 
-	adcDistanceBatchImpl adcDistanceBatchFunc
+	adcDistanceBatchImpl               adcDistanceBatchFunc
+	euclideanDistanceVerticalBatchImpl distanceBatchFunc
 )
 
 func init() {
@@ -99,6 +100,7 @@ func initializeDispatch() {
 		matchInt64Impl = matchInt64AVX512
 		matchFloat32Impl = matchFloat32AVX512
 		adcDistanceBatchImpl = adcBatchAVX512
+		euclideanDistanceVerticalBatchImpl = euclideanVerticalBatchAVX512
 	case "avx2":
 		euclideanDistanceImpl = euclideanAVX2
 		metrics.SimdDispatchCount.WithLabelValues("avx2").Inc()
@@ -111,6 +113,7 @@ func initializeDispatch() {
 		matchInt64Impl = matchInt64AVX2
 		matchFloat32Impl = matchFloat32AVX2
 		adcDistanceBatchImpl = adcBatchAVX2
+		euclideanDistanceVerticalBatchImpl = euclideanVerticalBatchAVX2
 	case "neon":
 		euclideanDistanceImpl = euclideanNEON
 		metrics.SimdDispatchCount.WithLabelValues("neon").Inc()
@@ -123,6 +126,7 @@ func initializeDispatch() {
 		matchInt64Impl = matchInt64Generic
 		matchFloat32Impl = matchFloat32Generic
 		adcDistanceBatchImpl = adcBatchNEON
+		euclideanDistanceVerticalBatchImpl = euclideanVerticalBatchNEON
 	default:
 		euclideanDistanceImpl = euclideanUnrolled4x
 		metrics.SimdDispatchCount.WithLabelValues("generic").Inc()
@@ -135,6 +139,7 @@ func initializeDispatch() {
 		matchInt64Impl = matchInt64Generic
 		matchFloat32Impl = matchFloat32Generic
 		adcDistanceBatchImpl = adcBatchGeneric
+		euclideanDistanceVerticalBatchImpl = euclideanBatchGeneric
 	}
 
 }
@@ -234,6 +239,17 @@ func EuclideanDistanceBatch(query []float32, vectors [][]float32, results []floa
 		return
 	}
 	euclideanDistanceBatchImpl(query, vectors, results)
+}
+
+// EuclideanDistanceVerticalBatch optimally calculates distances for multiple vectors at once.
+func EuclideanDistanceVerticalBatch(query []float32, vectors [][]float32, results []float32) {
+	if len(vectors) != len(results) {
+		panic("simd: vectors and results length mismatch")
+	}
+	if len(vectors) == 0 {
+		return
+	}
+	euclideanDistanceVerticalBatchImpl(query, vectors, results)
 }
 
 // euclideanBatchGeneric is the fallback implementation

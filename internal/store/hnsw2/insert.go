@@ -206,15 +206,17 @@ func (h *ArrowHNSW) Insert(id uint32, level int) error {
 func (h *ArrowHNSW) searchLayerForInsert(ctx *SearchContext, query []float32, entryPoint uint32, ef, layer int, data *GraphData) []Candidate {
 	ctx.visited.Clear()
 	ctx.candidates.Clear()
-	
 	// Ensure visited bitset is large enough
 	// Use maxID from location store to cover all possible IDs, including the one currently being inserted
 	// Add safety margin
 	maxID := int(h.locationStore.MaxID()) + 1000
-	if ctx.visited.Size() < maxID {
+	if ctx.visited == nil || ctx.visited.Size() < maxID {
 		ctx.visited = NewBitset(maxID)
+	} else {
+		ctx.visited.ClearSIMD()
 	}
-
+	ctx.candidates.Clear()
+	
 	// Ensure candidates heap is large enough
 	if ctx.candidates.cap < ef*2 {
 		// If pool heap is too small, allocate a temporary one or resize

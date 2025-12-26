@@ -58,9 +58,12 @@ func (h *ArrowHNSW) Search(query []float32, k, ef int, filter *store.Bitset) ([]
 	}
 
 	// Ensure visited bitset is large enough
+	// Reuse or create visited bitset
 	nodeCount := int(h.nodeCount.Load())
-	if ctx.visited.Size() < nodeCount {
+	if ctx.visited == nil || ctx.visited.Size() < nodeCount {
 		ctx.visited = NewBitset(nodeCount)
+	} else {
+		ctx.visited.ClearSIMD()
 	}
 	
 	// Start from entry point (atomic load)

@@ -3,6 +3,7 @@ package hnsw2
 import (
 	"fmt"
 	"math"
+	"runtime"
 	"sort"
 	"sync/atomic"
 	"unsafe"
@@ -158,18 +159,39 @@ func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef, layer in
 		}
 		
 		// Explore neighbors
-		neighborCount := int(atomic.LoadInt32(&data.Counts[layer][curr.ID]))
-		baseIdx := int(curr.ID) * MaxNeighbors
 		
 		// 1. Collect unvisited neighbors - Batching Phase
-		ctx.scratchIDs = ctx.scratchIDs[:0]
-		
-		for i := 0; i < neighborCount; i++ {
-			neighborID := data.Neighbors[layer][baseIdx+i]
-			if !ctx.visited.IsSet(neighborID) {
-				ctx.visited.Set(neighborID)
-				ctx.scratchIDs = append(ctx.scratchIDs, neighborID)
+		for {
+			ctx.scratchIDs = ctx.scratchIDs[:0]
+			
+			// Seqlock read start
+			ver := atomic.LoadUint32(&data.Versions[layer][curr.ID])
+			if ver%2 != 0 {
+				runtime.Gosched()
+				continue
 			}
+			
+			neighborCount := int(atomic.LoadInt32(&data.Counts[layer][curr.ID]))
+			baseIdx := int(curr.ID) * MaxNeighbors
+			
+			for i := 0; i < neighborCount; i++ {
+				// Atomic load to satisfy race detector
+				neighborID := atomic.LoadUint32(&data.Neighbors[layer][baseIdx+i])
+				if !ctx.visited.IsSet(neighborID) {
+					// Speculative add - do not Set visited yet
+					ctx.scratchIDs = append(ctx.scratchIDs, neighborID)
+				}
+			}
+			
+			// Seqlock read end check
+			if atomic.LoadUint32(&data.Versions[layer][curr.ID]) == ver {
+				break
+			}
+		}
+		
+		// Commit visited state
+		for _, nid := range ctx.scratchIDs {
+			ctx.visited.Set(nid)
 		}
 		
 		count := len(ctx.scratchIDs)

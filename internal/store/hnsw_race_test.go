@@ -80,19 +80,15 @@ func TestHNSWRaceCompaction(t *testing.T) {
 				ds.Records = append(ds.Records, rec)
 				ds.dataMu.Unlock()
 
-				// Queue indexing jobs (simulating DoPut logic)
-				numRows := int(rec.NumRows())
-				for j := 0; j < numRows; j++ {
-					rec.Retain()
-					if !vs.indexQueue.Send(IndexJob{
-						DatasetName: datasetName,
-						Record:      rec,
-						BatchIdx:    batchIdx,
-						RowIdx:      j,
-						CreatedAt:   time.Now(),
-					}) {
-						rec.Release()
-					}
+				// Queue indexing jobs (simulating DoPut logic - batch level)
+				rec.Retain()
+				if !vs.indexQueue.Send(IndexJob{
+					DatasetName: datasetName,
+					Record:      rec,
+					BatchIdx:    batchIdx,
+					CreatedAt:   time.Now(),
+				}) {
+					rec.Release()
 				}
 				time.Sleep(5 * time.Millisecond)
 			}

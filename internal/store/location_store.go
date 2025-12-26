@@ -202,6 +202,12 @@ func (s *ChunkedLocationStore) Len() int {
 	return int(s.size.Load())
 }
 
+// MaxID returns the maximum VectorID currently stored (size).
+// This is useful for sizing bitsets.
+func (s *ChunkedLocationStore) MaxID() uint32 {
+	return s.size.Load()
+}
+
 // Grow ensures the store has capacity for at least n items.
 func (s *ChunkedLocationStore) Grow(n int) {
 	s.mu.Lock()

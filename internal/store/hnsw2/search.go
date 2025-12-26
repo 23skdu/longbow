@@ -210,11 +210,13 @@ func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef, layer in
 		useBatchCompute := h.batchComputer != nil && h.batchComputer.ShouldUseBatchCompute(count)
 		
 		if useSQ8 {
-			// SQ8 Path
-			// Simple loop for now
+			// Ensure querySQ8 is correctly set in context for useSQ8 path
+			if len(ctx.querySQ8) == 0 {
+				ctx.querySQ8 = h.quantizer.Encode(query)
+			}
+			
 			for i, nid := range ctx.scratchIDs {
 				off := int(nid) * h.dims
-				// Bounds check
 				if off+h.dims <= len(data.VectorsSQ8) {
 					d := simd.EuclideanDistanceSQ8(ctx.querySQ8, data.VectorsSQ8[off:off+h.dims])
 					dists[i] = float32(d)

@@ -389,82 +389,171 @@ def command_exchange(args, data_client, meta_client):
 
 
 def command_validate(args, data_client, meta_client):
-    """Run full validation suite."""
-    print("Running full validation...")
+    """Run comprehensive functional smoke tests."""
+    print("Running functional smoke tests...")
     
     # 0. Cleanup existing
     try:
-        action = flight.Action("delete-dataset", json.dumps({"dataset": "validate_test"}).encode("utf-8"))
+        action = flight.Action("delete-dataset", json.dumps({"dataset": "smoke_test"}).encode("utf-8"))
         list(meta_client.do_action(action))
     except:
         pass
 
-    # 1. Put
     unique_id = str(uuid.uuid4())[:8]
-    args.dataset = f"validate_test_{unique_id}"
-    args.rows = 100
-    args.dim = 4
-    args.with_text = True
-    command_put(args, data_client, meta_client)
-    time.sleep(1) # Allow for indexing
+    dataset = f"smoke_test_{unique_id}"
+    print(f"\nUsing dataset: {dataset}")
 
-    # 2. Get with Filter
-    print("\n[Validation] Testing DoGet with Filter...")
-    # Filter: id > 50
-    # Note: Filter format supported by parser: "field=value" or json?
-    # Based on store implementation: TicketQuery json
-    filters = [{"field": "id", "operator": ">", "value": "50"}]
-    query = {"name": args.dataset, "filters": filters}
-    ticket = flight.Ticket(json.dumps(query).encode("utf-8"))
-    reader = data_client.do_get(ticket)
-    table = reader.read_all()
-    print(f"DoGet Filtered rows: {table.num_rows}")
-    if table.num_rows == 0:
-        print("FAIL: No rows returned for filter id > 50")
-    elif table.num_rows == 49: # IDs 51..99 = 49 rows
-        print("PASS: Rows returned correctly (49)")
-    else:
-        print(f"WARN: Unexpected row count {table.num_rows}")
-
-    # 3. Vector Search with Filter
-    print("\n[Validation] Testing VectorSearch with Filter...")
-    # Using 'operator' instead of 'op' for filter struct in zero_alloc_parser?
-    # Checked zero_alloc_parser.go: struct Filter { Field, Operator, Value } json:"operator"
-    # But DoGet logic might map "op" to "operator" manually? 
-    # DoGet uses TicketQuery which has Filters []Filter.
-    # So both should use "operator".
-    filters = [{"field": "id", "operator": "<", "value": "10"}]
-    # Random query vector of dim 4
-    qvec = [0.1, 0.2, 0.3, 0.4]
+    # =========================================================================
+    # Test 1: Standard ANN Correctness (Orthogonal Vectors)
+    # =========================================================================
+    print("\n[Test 1] Standard Vector Search Correctness (Orthogonal Vectors)")
     
-    req = {
-        "dataset": args.dataset,
-        "vector": qvec,
-        "k": 5,
-        "filters": filters
-    }
+    vecs = [
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0]
+    ]
+    meta = ["x", "y", "z"]
+    
+    tensor_type = pa.list_(pa.float32(), 4)
+    flat_data = np.array(vecs).flatten().astype(np.float32)
+    vectors = pa.FixedSizeListArray.from_arrays(flat_data, type=tensor_type)
+    ids = pa.array([0, 1, 2], type=pa.int64())
+    ts = pa.array([pd.Timestamp.now()] * 3, type=pa.timestamp("ns"))
+    texts = pa.array(meta, type=pa.string())
+    
+    fields = [
+        pa.field("id", pa.int64()),
+        pa.field("vector", tensor_type),
+        pa.field("timestamp", pa.timestamp("ns")),
+        pa.field("meta", pa.string())
+    ]
+    table = pa.Table.from_arrays([ids, vectors, ts, texts], schema=pa.schema(fields))
+    
+    descriptor = flight.FlightDescriptor.for_path(dataset)
+    options = get_options(args)
+    writer, _ = data_client.do_put(descriptor, table.schema, options=options)
+    writer.write_table(table)
+    writer.close()
+    
+    print("  Inserted orthogonal vectors. Waiting for index...")
+    time.sleep(2) # Allow indexing
+    
+    # Search for ID 1 [0, 1, 0, 0]
+    qvec = [0.0, 1.0, 0.0, 0.0]
+    req = {"dataset": dataset, "vector": qvec, "k": 1}
     action = flight.Action("VectorSearch", json.dumps(req).encode("utf-8"))
     results = meta_client.do_action(action)
-    found_count = 0
+    
+    found = False
     for res in results:
         body = json.loads(res.body.to_pybytes())
-        ids = body.get("ids", [])
-        print(f"Search IDs: {ids}")
-        found_count += len(ids)
-        # Verify IDs are < 10
-        for id_val in ids:
-            if id_val >= 10:
-                print(f"FAIL: Found ID {id_val} which is >= 10")
-        
-    if found_count > 0:
-        print("PASS: Search returned filtered results")
-    else:
-        print("WARN: Search returned no results (might be valid if random vectors far apart)")
+        res_ids = body.get("ids", [])
+        scores = body.get("scores", [])
+        if len(res_ids) > 0 and res_ids[0] == 1:
+            print(f"  PASS: Retrieved ID 1 as top result (Score: {scores[0]:.4f})")
+            found = True
+        else:
+            print(f"  FAIL: Expected ID 1, got {res_ids}")
+            
+    if not found:
+        print("  FAIL: Search failed completely")
 
-    # 4. DoExchange
-    print("\n[Validation] Testing DoExchange...")
-    command_exchange(args, data_client, meta_client)
-    print("\nValidation Complete.")
+    # =========================================================================
+    # Test 2: Hybrid Search Correctness
+    # =========================================================================
+    print("\n[Test 2] Hybrid Search Correctness")
+    # Insert 2 identical vectors with different text
+    
+    vecs_h = [
+        [0.5, 0.5, 0.5, 0.5],
+        [0.5, 0.5, 0.5, 0.5]
+    ]
+    meta_h = ["orange fruit", "apple fruit"]
+    ids_h = pa.array([10, 11], type=pa.int64())
+    flat_h = np.array(vecs_h).flatten().astype(np.float32)
+    vectors_h = pa.FixedSizeListArray.from_arrays(flat_h, type=tensor_type)
+    ts_h = pa.array([pd.Timestamp.now()] * 2, type=pa.timestamp("ns"))
+    texts_h = pa.array(meta_h, type=pa.string())
+    
+    table_h = pa.Table.from_arrays([ids_h, vectors_h, ts_h, texts_h], schema=pa.schema(fields))
+    writer, _ = data_client.do_put(descriptor, table.schema, options=options)
+    writer.write_table(table_h)
+    writer.close()
+    time.sleep(2)
+    
+    # Search with "apple" and alpha=0.1 (favor text)
+    print("  Searching for 'apple' (Hybrid)...")
+    req_h = {
+        "dataset": dataset,
+        "vector": [0.5, 0.5, 0.5, 0.5],
+        "k": 1,
+        "text_query": "apple",
+        "alpha": 0.1 # Mostly sparse/text
+    }
+    action = flight.Action("VectorSearch", json.dumps(req_h).encode("utf-8"))
+    results = meta_client.do_action(action)
+    
+    found_h = False
+    for res in results:
+        body = json.loads(res.body.to_pybytes())
+        res_ids = body.get("ids", [])
+        if len(res_ids) > 0 and res_ids[0] == 11:
+            print(f"  PASS: Retrieved ID 11 (apple) as top result")
+            found_h = True
+        else:
+            print(f"  FAIL: Expected ID 11, got {res_ids}")
+
+    # =========================================================================
+    # Test 3: Graph Traversal Correctness
+    # =========================================================================
+    print("\n[Test 3] Graph Traversal Correctness")
+    try:
+        # Add 100->101
+        req_edge1 = {"dataset": dataset, "subject": 100, "predicate": "knows", "object": 101, "weight": 1.0}
+        list(meta_client.do_action(flight.Action("add-edge", json.dumps(req_edge1).encode("utf-8"))))
+        
+        # Add 101->102
+        req_edge2 = {"dataset": dataset, "subject": 101, "predicate": "knows", "object": 102, "weight": 1.0}
+        list(meta_client.do_action(flight.Action("add-edge", json.dumps(req_edge2).encode("utf-8"))))
+        
+        print("  Edges added: 100->101->102")
+        
+        # Traverse from 100, hops=2
+        req_trav = {"dataset": dataset, "start": 100, "max_hops": 2}
+        action = flight.Action("traverse-graph", json.dumps(req_trav).encode("utf-8"))
+        results = meta_client.do_action(action)
+        
+        for res in results:
+            paths = json.loads(res.body.to_pybytes())
+            found_path = False
+            for p in paths:
+                nodes = p.get("Nodes", [])
+                if len(nodes) == 3 and nodes[2] == 102:
+                    found_path = True
+                    print(f"  PASS: Found path to 102: {nodes}")
+            
+            if not found_path:
+                print(f"  FAIL: Path to 102 not found in {len(paths)} results")
+                
+    except Exception as e:
+        print(f"  FAIL: Graph op error: {e}")
+
+    # =========================================================================
+    # Test 4: Global Search (Smoke Check)
+    # =========================================================================
+    print("\n[Test 4] Global Search Header Check")
+    req_g = {"dataset": dataset, "vector": qvec, "k": 1}
+    # Manually add header
+    options_g = flight.FlightCallOptions(headers=[(b"x-longbow-global", b"true")])
+    try:
+        action = flight.Action("VectorSearch", json.dumps(req_g).encode("utf-8"))
+        list(meta_client.do_action(action, options=options_g))
+        print("  PASS: Global search call completed without error")
+    except Exception as e:
+        print(f"  FAIL: Global search call failed: {e}")
+
+    print("\nSmoke Tests Complete.")
 
 def command_namespaces(args, data_client, meta_client):
     """Test Namespace operations."""

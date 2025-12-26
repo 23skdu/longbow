@@ -55,8 +55,8 @@ func NewGraphData(capacity int) *GraphData {
 }
 
 const (
-	MaxLayers    = 16 // Maximum number of layers in the graph
-	MaxNeighbors = 192 // Maximum neighbors per node per layer (must be > MMax to allow Add-then-Prune)
+	MaxLayers    = 10 // Maximum number of layers in the graph
+	MaxNeighbors = 448 // Maximum neighbors per node per layer (sufficient for M up to 128, MMax up to 256)
 )
 
 // ArrowHNSW is the main HNSW index structure with Arrow integration.
@@ -147,6 +147,9 @@ type Config struct {
 	
 	// SQ8Enabled enables scalar quantization
 	SQ8Enabled bool
+	
+	// InitialCapacity is the starting size of the graph.
+	InitialCapacity int
 }
 
 // DefaultConfig returns sensible default HNSW parameters.
@@ -161,6 +164,7 @@ func DefaultConfig() Config {
 		Alpha:          1.1,
 		SQ8Enabled:     false,
 		RefinementFactor: 1.0,
+		InitialCapacity: 1000,
 	}
 }
 
@@ -227,7 +231,10 @@ func NewArrowHNSW(dataset *store.Dataset, config Config) *ArrowHNSW {
 	}
 
 	// Initialize empty graph with initial capacity
-	initialCap := 1000
+	initialCap := config.InitialCapacity
+	if initialCap < 1000 {
+		initialCap = 1000
+	}
 	initData := NewGraphData(initialCap)
 	
 	// Pre-allocate SQ8 storage if enabled
@@ -327,20 +334,23 @@ func NewSearchContextPool() *SearchContextPool {
 		pool: sync.Pool{
 			New: func() interface{} {
 				return &SearchContext{
-					candidates: NewFixedHeap(2000), // Increase to 2000 for larger ef
-					visited:    NewBitset(100000),
+					candidates: NewFixedHeap(8000), // Larger for high EfConstruction
+					visited:    NewBitset(2000000), // Support up to 2M vectors
 					results:    make([]store.SearchResult, 0, 100),
-					resultSet:  NewMaxHeap(2000), // Pooled result set heap
-					// Scratch buffers
-					scratchVecs:      make([][]float32, 2000), // Max capacity > efConstruction
-					scratchDists:     make([]float32, 2000),
-					scratchDiscarded: make([]Candidate, 0, 2000),
-					scratchSelected:  make([]Candidate, 0, 200),
-					scratchRemaining: make([]Candidate, 2000),
+					resultSet:  NewMaxHeap(8000), 
+					// Scratch buffers (sized for EfConstruction up to 2000+ and M up to 256)
+					scratchResults:   make([]Candidate, 0, 8000),
+					scratchVecs:      make([][]float32, 8000),
+					scratchDists:     make([]float32, 8000),
+					scratchDiscarded: make([]Candidate, 0, 8000),
+					scratchSelected:  make([]Candidate, 0, 1000),
+					scratchRemaining: make([]Candidate, 8000),
+					scratchRemainingVecs: make([][]float32, 8000),
+					scratchSelectedVecs:  make([][]float32, 0, 1000),
+					scratchSelectedIdxs:  make([]int, 0, 1000),
 					// PQ Scratch
-					// M*256 floats. Max M=64 -> 16384 floats. Safe.
-					scratchPQTable: make([]float32, 16384),
-					scratchIDs:     make([]uint32, 0, 2000),
+					scratchPQTable: make([]float32, 32768), // Increased for larger M
+					scratchIDs:     make([]uint32, 0, 8000),
 				}
 			},
 		},
@@ -358,6 +368,14 @@ func (p *SearchContextPool) Put(ctx *SearchContext) {
 	ctx.visited.Clear()
 	ctx.results = ctx.results[:0]
 	ctx.resultSet.Clear()
+	// Clear scratch slices to avoid hanging onto memory
+	for i := range ctx.scratchVecs {
+		ctx.scratchVecs[i] = nil
+	}
+	for i := range ctx.scratchRemainingVecs {
+		ctx.scratchRemainingVecs[i] = nil
+	}
+	ctx.scratchSelectedVecs = ctx.scratchSelectedVecs[:0]
 	p.pool.Put(ctx)
 }
 
@@ -369,14 +387,20 @@ type SearchContext struct {
 	resultSet  *MaxHeap
 	
 	// Scratch buffers to avoid allocations in selectNeighbors/pruneConnections
+	scratchResults   []Candidate
 	scratchVecs      [][]float32
 	scratchDists     []float32
 	scratchDiscarded []Candidate
 	scratchSelected  []Candidate
 	scratchRemaining []Candidate
+	scratchRemainingVecs [][]float32
+	scratchSelectedVecs  [][]float32
 	scratchPQTable   []float32 // For ADC table
 	scratchIDs       []uint32  // For batching unvisited neighbors
 	querySQ8         []byte    // SQ8 encoded query
+	
+	// Selection heuristic scratch
+	scratchSelectedIdxs []int     // For tracking selected indices in selectNeighbors
 	
 	// Recursion depth for pruneConnections
 	pruneDepth int

@@ -208,6 +208,56 @@ func euclideanBatchAVX512(query []float32, vectors [][]float32, results []float3
 	}
 }
 
+// EuclideanDistanceVerticalBatch implementations
+func euclideanVerticalBatchAVX2(query []float32, vectors [][]float32, results []float32) {
+	// For now, use 4-way vertical batching if possible
+	n := len(vectors)
+	i := 0
+	qPtr := unsafe.Pointer(&query[0])
+	qLen := len(query)
+
+	for ; i <= n-4; i += 4 {
+		euclideanVertical4AVX2(
+			qPtr,
+			unsafe.Pointer(&vectors[i][0]),
+			unsafe.Pointer(&vectors[i+1][0]),
+			unsafe.Pointer(&vectors[i+2][0]),
+			unsafe.Pointer(&vectors[i+3][0]),
+			qLen,
+			unsafe.Pointer(&results[i]),
+		)
+	}
+
+	// Remainder
+	for ; i < n; i++ {
+		results[i] = euclideanAVX2(query, vectors[i])
+	}
+}
+
+func euclideanVerticalBatchAVX512(query []float32, vectors [][]float32, results []float32) {
+	n := len(vectors)
+	i := 0
+	qPtr := unsafe.Pointer(&query[0])
+	qLen := len(query)
+
+	for ; i <= n-4; i += 4 {
+		euclideanVertical4AVX512(
+			qPtr,
+			unsafe.Pointer(&vectors[i][0]),
+			unsafe.Pointer(&vectors[i+1][0]),
+			unsafe.Pointer(&vectors[i+2][0]),
+			unsafe.Pointer(&vectors[i+3][0]),
+			qLen,
+			unsafe.Pointer(&results[i]),
+		)
+	}
+
+	// Remainder
+	for ; i < n; i++ {
+		results[i] = euclideanAVX512(query, vectors[i])
+	}
+}
+
 func adcBatchAVX2(table []float32, flatCodes []byte, m int, results []float32) {
 	if len(results) == 0 {
 		return
@@ -316,6 +366,10 @@ func cosineBatchNEON(query []float32, vectors [][]float32, results []float32) {
 	cosineBatchGeneric(query, vectors, results)
 }
 
+func euclideanVerticalBatchNEON(query []float32, vectors [][]float32, results []float32) {
+	euclideanBatchGeneric(query, vectors, results)
+}
+
 func adcBatchNEON(table []float32, flatCodes []byte, m int, results []float32) {
 	adcBatchGeneric(table, flatCodes, m, results)
 }
@@ -328,6 +382,12 @@ func l2SquaredAVX512(a, b unsafe.Pointer, n int) float32
 
 //go:noescape
 func cosineDotAVX512(a, b unsafe.Pointer, n int) (dot, normA, normB float32)
+
+//go:noescape
+func euclideanVertical4AVX2(q, v0, v1, v2, v3 unsafe.Pointer, n int, res unsafe.Pointer)
+
+//go:noescape
+func euclideanVertical4AVX512(q, v0, v1, v2, v3 unsafe.Pointer, n int, res unsafe.Pointer)
 
 // Existing partial-block definitions (kept for compatibility/Dot/legacy)
 //

@@ -383,7 +383,6 @@ def benchmark_hybrid_search(client: flight.FlightClient, name: str,
             "text_query": text_query,
             "k": k,
             "alpha": 0.5,
-            # NOTE: Current server implementation of "VectorSearch" action ignores "text_query" and "alpha".
         }).encode("utf-8")
 
         start = time.time()

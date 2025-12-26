@@ -33,12 +33,12 @@ func TestChunkedGrowth(t *testing.T) {
     // Check num chunks
     expectedChunks := (targetCap + ChunkSize - 1) / ChunkSize
     assert.Equal(t, expectedChunks, len(newData.Levels))
-    assert.Equal(t, expectedChunks, len(newData.VectorPtrs))
+    assert.Equal(t, expectedChunks, len(newData.Levels))
     
     // Verify Chunks are distinct and initialized
     for i := 0; i < expectedChunks; i++ {
         assert.Equal(t, ChunkSize, len(newData.Levels[i]))
-        assert.Equal(t, ChunkSize, len(newData.VectorPtrs[i]))
+        // assert.Equal(t, ChunkSize, len(newData.VectorPtrs[i])) // VectorPtrs removed
         assert.Equal(t, ChunkSize*MaxNeighbors, len(newData.Neighbors[0][i]))
     }
     

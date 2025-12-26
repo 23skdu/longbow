@@ -3,7 +3,7 @@ package hnsw2
 import (
 	"sync/atomic"
 	"testing"
-	"unsafe"
+
 	
 	"github.com/leanovate/gopter"
 	"github.com/leanovate/gopter/gen"
@@ -45,13 +45,15 @@ func TestInsertProperties(t *testing.T) {
 			index.dims = 1 // use 1-dim vectors
 			
 			// Initialize GraphData manually
-			data := NewGraphData(10) // capacity 10
+			data := NewGraphData(10, 1) // capacity 10, dim 1
 			index.data.Store(data)
 			
 			// Setup dummy vectors
 			vec := make([]float32, 1)
 			for i := 0; i < 5; i++ {
-				data.VectorPtrs[chunkID(uint32(i))][chunkOffset(uint32(i))] = unsafe.Pointer(&vec[0])
+				cID := chunkID(uint32(i))
+				cOff := chunkOffset(uint32(i))
+				copy(data.Vectors[cID][int(cOff)*1:], vec)
 			}
 			
 			// Need SearchContext

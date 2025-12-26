@@ -7,7 +7,7 @@ import (
 	"slices"
 	"sort"
 	"sync/atomic"
-	"unsafe"
+
 
 	"github.com/23skdu/longbow/internal/simd"
 	"github.com/23skdu/longbow/internal/store"
@@ -346,14 +346,13 @@ func (h *ArrowHNSW) distance(query []float32, id uint32, data *GraphData) float3
 
 	// Optimization: Check for cached vector pointer (avoids Arrow overhead)
 	// This is safe because VectorPtr is pinned to the Arrow RecordBatch which is kept alive by Dataset
-	// Optimization: Check for cached vector pointer (avoids Arrow overhead)
-	// This is safe because VectorPtr is pinned to the Arrow RecordBatch which is kept alive by Dataset
+	// Optimization: Check for dense vector storage (avoids Arrow overhead)
 	cID := chunkID(id)
 	cOff := chunkOffset(id)
-	if int(cID) < len(data.VectorPtrs) {
-		ptr := data.VectorPtrs[cID][cOff]
-		if ptr != nil && h.dims > 0 {
-			vec := unsafe.Slice((*float32)(ptr), h.dims)
+	if int(cID) < len(data.Vectors) {
+		start := int(cOff) * h.dims
+		if start+h.dims <= len(data.Vectors[cID]) {
+			vec := data.Vectors[cID][start : start+h.dims]
 			return simd.EuclideanDistance(query, vec)
 		}
 	}

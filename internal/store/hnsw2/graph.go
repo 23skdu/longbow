@@ -4,7 +4,7 @@ import (
 	"math"
 	"sync"
 	"sync/atomic"
-	"unsafe"
+
 	
 	"github.com/23skdu/longbow/internal/metrics"	
 	"github.com/23skdu/longbow/internal/store"
@@ -26,8 +26,9 @@ type GraphData struct {
 	// SoA Slices of Chunks
 	// Access: Levels[id >> ChunkShift][id & ChunkMask]
 	Levels     [][]uint8
-	// VectorPtrs holds unsafe pointers to the vectors.
-	VectorPtrs [][]unsafe.Pointer 
+	// Vectors holds dense packed float32 vectors.
+	// Layout: Vectors[chunk][offset * Dims ... (offset+1)*Dims]
+	Vectors [][]float32 
 	
 	// VectorsSQ8 holds dense packed uint8 vectors for Scalar Quantization.
 	// Layout: VectorsSQ8[chunk][offset * Dims ... (offset+1)*Dims]
@@ -44,7 +45,7 @@ type GraphData struct {
 
 // NewGraphData creates a new GraphData with the specified capacity.
 // It allocates enough chunks to hold 'capacity' elements.
-func NewGraphData(capacity int) *GraphData {
+func NewGraphData(capacity, dims int) *GraphData {
 	// Calculate number of chunks needed
 	numChunks := (capacity + ChunkSize - 1) / ChunkSize
 	if numChunks < 1 {
@@ -54,20 +55,19 @@ func NewGraphData(capacity int) *GraphData {
 	gd := &GraphData{
 		Capacity:   numChunks * ChunkSize,
 		Levels:     make([][]uint8, numChunks),
-		VectorPtrs: make([][]unsafe.Pointer, numChunks),
-		// VectorsSQ8 initialized lazily or if dims known? 
-		// Ideally we init empty slice of chunks, Grow() fills them.
-		// But for NewGraphData, we act as if we "Grew" to this size.
+		// Vectors initialized only if dims > 0
 	}
-	
-	// We need to know Dims to alloc VectorsSQ8, but NewGraphData signature doesn't have it.
-	// We'll leave VectorsSQ8 as empty slice of slices for now, Grow/Init will handle it if enabled.
-	// Actually, Grow usually handles resizing.
 	
 	// Initialize chunks
 	for i := 0; i < numChunks; i++ {
 		gd.Levels[i] = make([]uint8, ChunkSize)
-		gd.VectorPtrs[i] = make([]unsafe.Pointer, ChunkSize)
+	}
+	
+	if dims > 0 {
+		gd.Vectors = make([][]float32, numChunks)
+		for i := 0; i < numChunks; i++ {
+			gd.Vectors[i] = make([]float32, ChunkSize*dims)
+		}
 	}
 	
 	for i := 0; i < MaxLayers; i++ {
@@ -273,7 +273,7 @@ func NewArrowHNSW(dataset *store.Dataset, config Config) *ArrowHNSW {
 	if initialCap < 1000 {
 		initialCap = 1000
 	}
-	initData := NewGraphData(initialCap)
+	initData := NewGraphData(initialCap, h.dims)
 	
 	// Pre-allocate SQ8 storage if enabled
 	if config.SQ8Enabled && h.dims > 0 {
@@ -323,10 +323,11 @@ func (h *ArrowHNSW) Grow(minCap int) {
 	reqChunks := (minCap + ChunkSize - 1) / ChunkSize
 	currChunks := len(oldData.Levels)
 	
-	// Also check SQ8 initialization
+	// Also check SQ8 initialization and Dense Vectors initialization
 	sq8Missing := h.config.SQ8Enabled && len(oldData.VectorsSQ8) == 0 && h.dims > 0
+	vectorsMissing := len(oldData.Vectors) == 0 && h.dims > 0
 
-	if reqChunks <= currChunks && !sq8Missing {
+	if reqChunks <= currChunks && !sq8Missing && !vectorsMissing {
 		return
 	}
 
@@ -334,22 +335,36 @@ func (h *ArrowHNSW) Grow(minCap int) {
 	newData := &GraphData{
 		Capacity:   reqChunks * ChunkSize,
 		Levels:     make([][]uint8, len(oldData.Levels), reqChunks),
-		VectorPtrs: make([][]unsafe.Pointer, len(oldData.VectorPtrs), reqChunks),
-        VectorsSQ8: make([][]byte, len(oldData.VectorsSQ8), reqChunks),
+		Vectors:    make([][]float32, len(oldData.Vectors), reqChunks),
+		VectorsSQ8: make([][]byte, len(oldData.VectorsSQ8), reqChunks),
 	}
     
     // Copy headers
     copy(newData.Levels, oldData.Levels)
-    copy(newData.VectorPtrs, oldData.VectorPtrs)
+    copy(newData.Vectors, oldData.Vectors)
     copy(newData.VectorsSQ8, oldData.VectorsSQ8)
     
     // Grow Slices
     added := reqChunks - currChunks
-    if added < 0 { added = 0 } // Just SQ8 missing case
+    if added < 0 { added = 0 } // Just SQ8/Vectors missing case
     
     for i := 0; i < added; i++ {
         newData.Levels = append(newData.Levels, make([]uint8, ChunkSize))
-        newData.VectorPtrs = append(newData.VectorPtrs, make([]unsafe.Pointer, ChunkSize))
+    }
+
+    // Grow Vectors (Dense)
+    if h.dims > 0 {
+		if len(newData.Vectors) == 0 {
+			// Initialize completely if missing
+			for i := 0; i < reqChunks; i++ {
+				newData.Vectors = append(newData.Vectors, make([]float32, ChunkSize*h.dims))
+			}
+		} else {
+			// Append new chunks
+			for i := 0; i < added; i++ {
+				newData.Vectors = append(newData.Vectors, make([]float32, ChunkSize*h.dims))
+			}
+		}
     }
     
     // Grow SQ8

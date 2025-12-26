@@ -8,7 +8,7 @@ import (
 	"slices"
 	"sync"
 	"sync/atomic"
-	"unsafe"
+
 	
 	"time"
 	
@@ -37,14 +37,15 @@ func (h *ArrowHNSW) Insert(id uint32, level int) error {
 	// 1. Optimistic Load (Lock-Free)
 	data := h.data.Load()
 	
-	// 2. Check Capacity & SQ8 Status
+	// 2. Check Capacity & SQ8/Vectors Status
 	sq8Missing := h.config.SQ8Enabled && len(data.VectorsSQ8) == 0 && h.dims > 0
+	vectorsMissing := len(data.Vectors) == 0 && h.dims > 0
 	
-	if data.Capacity <= int(id) || sq8Missing {
+	if data.Capacity <= int(id) || sq8Missing || vectorsMissing {
 		// Need to grow. Grow() handles serialization internally via growMu.
-		// If just SQ8 missing, we pass current capacity to force check/allocation of SQ8 chunks
+		// If just SQ8/Vectors missing, we pass current capacity to force check/allocation of chunks
 		targetCap := int(id) + 1
-		if sq8Missing && targetCap < data.Capacity {
+		if (sq8Missing || vectorsMissing) && targetCap < data.Capacity {
 			targetCap = data.Capacity
 		}
 		
@@ -75,11 +76,16 @@ func (h *ArrowHNSW) Insert(id uint32, level int) error {
 		h.dims = len(vec)
 	}
 	
-	// Cache unsafe pointer
-	if len(vec) > 0 {
+	// Store Dense Vector (Copy for L2 locality)
+	if len(vec) > 0 && h.dims > 0 {
 		cID := chunkID(id)
 		cOff := chunkOffset(id)
-		atomic.StorePointer(&data.VectorPtrs[cID][cOff], unsafe.Pointer(&vec[0]))
+		
+		// Ensure vectors are allocated (should be handled by Grow above, but double check for safety)
+		if int(cID) < len(data.Vectors) {
+			dest := data.Vectors[cID][int(cOff)*h.dims : (int(cOff)+1)*h.dims]
+			copy(dest, vec)
+		}
 	}
 	
 	// Check if this is the first node
@@ -783,14 +789,14 @@ func (h *ArrowHNSW) pruneConnectionsLocked(ctx *SearchContext, data *GraphData, 
 }
 
 func (h *ArrowHNSW) mustGetVectorFromData(data *GraphData, id uint32) []float32 {
-	// Optimization: Check for cached vector pointer
-	// if int(id) < len(data.VectorPtrs) // This check is hard with chunks, assume valid
+	// Optimization: Check for dense vector storage
+	// if int(id) < len(data.Vectors) // This check is hard with chunks, assume valid
 	cID := chunkID(id)
 	cOff := chunkOffset(id)
-	if int(cID) < len(data.VectorPtrs) {
-		ptr := atomic.LoadPointer(&data.VectorPtrs[cID][cOff])
-		if ptr != nil && h.dims > 0 {
-			return unsafe.Slice((*float32)(ptr), h.dims)
+	if int(cID) < len(data.Vectors) {
+		start := int(cOff) * h.dims
+		if start+h.dims <= len(data.Vectors[cID]) {
+			return data.Vectors[cID][start : start+h.dims]
 		}
 	}
 	

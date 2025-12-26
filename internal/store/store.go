@@ -1210,11 +1210,14 @@ func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
 						Msg("Async batched index add failed")
 				} else {
 					// Update memory tracking for index overhead
-					newIndexSize := ds.Index.EstimateMemory()
-					oldIndexSize := ds.IndexMemoryBytes.Swap(newIndexSize)
-					delta := newIndexSize - oldIndexSize
-					if delta != 0 {
-						s.currentMemory.Add(delta)
+					// Check if Index is still valid (dataset might have been evicted)
+					if ds.Index != nil {
+						newIndexSize := ds.Index.EstimateMemory()
+						oldIndexSize := ds.IndexMemoryBytes.Swap(newIndexSize)
+						delta := newIndexSize - oldIndexSize
+						if delta != 0 {
+							s.currentMemory.Add(delta)
+						}
 					}
 				}
 			} else {

@@ -3,7 +3,7 @@ package hnsw2
 import (
 	"sync/atomic"
 	"testing"
-	"unsafe"
+
 	
 	"github.com/23skdu/longbow/internal/store"
 )
@@ -46,7 +46,7 @@ func TestAddConnection(t *testing.T) {
 	index := NewArrowHNSW(dataset, config)
 	
 	// Initialize GraphData manually
-	data := NewGraphData(10)
+	data := NewGraphData(10, 0)
 	index.data.Store(data)
 	
 	// Must have search context for pruning
@@ -86,7 +86,7 @@ func TestPruneConnections(t *testing.T) {
 	index := NewArrowHNSW(dataset, config)
 	
 	// Initialize GraphData manually
-	data := NewGraphData(20)
+	data := NewGraphData(20, 11)
 	index.data.Store(data)
 	
 	// Setup vectors for distance calculation
@@ -109,9 +109,11 @@ func TestPruneConnections(t *testing.T) {
 	}
 	
 	// Point VectorPtrs to these slices
-	// Point VectorPtrs to these slices
+	// Copy vectors to Dense Storage
 	for i := 0; i <= 10; i++ {
-		data.VectorPtrs[chunkID(uint32(i))][chunkOffset(uint32(i))] = unsafe.Pointer(&vecs[i][0])
+		cID := chunkID(uint32(i))
+		cOff := chunkOffset(uint32(i))
+		copy(data.Vectors[cID][int(cOff)*dim:], vecs[i])
 	}
 	
 	// Add 10 connections to Node 0

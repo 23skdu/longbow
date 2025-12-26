@@ -433,6 +433,27 @@ func (idx *AutoShardingIndex) Close() error {
 	return idx.current.Close()
 }
 
+// GetNeighbors returns the nearest neighbors for a given vector ID.
+func (idx *AutoShardingIndex) GetNeighbors(id VectorID) ([]VectorID, error) {
+	idx.mu.RLock()
+	curr := idx.current
+	interim := idx.interimIndex
+	idx.mu.RUnlock()
+
+	// Primarily check current index
+	neighbors, err := curr.GetNeighbors(id)
+	if err == nil {
+		return neighbors, nil
+	}
+
+	// If not found and merging, check interim
+	if interim != nil {
+		return interim.GetNeighbors(id)
+	}
+
+	return nil, err
+}
+
 // EstimateMemory implements VectorIndex.
 func (idx *AutoShardingIndex) EstimateMemory() int64 {
 	idx.mu.RLock()

@@ -49,8 +49,12 @@ func TestAddConnection(t *testing.T) {
 	data := NewGraphData(10)
 	index.data.Store(data)
 	
+	// Must have search context for pruning
+	ctx := index.searchPool.Get()
+	defer index.searchPool.Put(ctx)
+
 	// Add connection 0 -> 1 at layer 0
-	index.addConnection(data, 0, 1, 0)
+	index.addConnection(ctx, data, 0, 1, 0, 10)
 	
 	// Check count
 	count := atomic.LoadInt32(&data.Counts[0][0])
@@ -64,7 +68,7 @@ func TestAddConnection(t *testing.T) {
 	}
 	
 	// Adding same connection again should be idempotent
-	index.addConnection(data, 0, 1, 0)
+	index.addConnection(ctx, data, 0, 1, 0, 10)
 	
 	count = atomic.LoadInt32(&data.Counts[0][0])
 	if count != 1 {

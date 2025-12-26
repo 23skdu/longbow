@@ -31,7 +31,7 @@ const (
 // SyncWorker manages background delta replication from peers
 type SyncWorker struct {
 	store  *store.VectorStore
-	logger *zerolog.Logger
+	logger zerolog.Logger
 
 	peers  map[string]*PeerState
 	mu     sync.RWMutex
@@ -44,7 +44,7 @@ type PeerState struct {
 	Priority    SyncPriority
 }
 
-func NewSyncWorker(s *store.VectorStore, logger *zerolog.Logger) *SyncWorker {
+func NewSyncWorker(s *store.VectorStore, logger zerolog.Logger) *SyncWorker {
 	return &SyncWorker{
 		store:  s,
 		logger: logger,

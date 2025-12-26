@@ -1,13 +1,13 @@
 package store_test
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"math/rand"
 	"os"
 	"runtime"
 	"sort"
-	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -16,6 +16,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
+	"golang.org/x/sync/errgroup"
 )
 
 // TestRecallValidation validates recall of hnsw2 against coder/hnsw baseline
@@ -34,15 +35,36 @@ func TestRecallValidation(t *testing.T) {
 		config     *hnsw2.Config
 	}{
 		{"Medium_10K_Recall@10", 10000, 384, 100, 10, 0.995, &hnsw2.Config{
-			M: 32, MMax: 32, MMax0: 64, EfConstruction: 300,
-			Ml: 1.0 / math.Log(32),
-			Alpha: 1.1,
-		}},
-		{"Large_100K_Recall@10", 100000, 384, 100, 10, 0.990, &hnsw2.Config{
-			M: 48, MMax: 96, MMax0: 96, EfConstruction: 800,
+			M: 48, MMax: 96, MMax0: 96, EfConstruction: 400,
+			SelectionHeuristicLimit: 0,
 			Ml: 1.0 / math.Log(48),
 			Alpha: 1.0,
-			KeepPrunedConnections: false,
+			KeepPrunedConnections: true,
+		}},
+		{"Medium_50K_Recall@10", 50000, 384, 100, 10, 0.990, &hnsw2.Config{
+			M: 48, MMax: 96, MMax0: 96, EfConstruction: 400,
+			SelectionHeuristicLimit: 0,
+			Ml: 1.0 / math.Log(48),
+			Alpha: 1.0,
+			KeepPrunedConnections: true,
+			SQ8Enabled:            false,
+			RefinementFactor:      1.0,
+		}},
+		{"Large_100K_Recall@10", 100000, 384, 100, 10, 0.995, &hnsw2.Config{
+			M: 48, MMax: 96, MMax0: 96, EfConstruction: 400,
+			SelectionHeuristicLimit: 0,
+			Ml: 1.0 / math.Log(48),
+			Alpha: 1.0,
+			KeepPrunedConnections: true,
+			SQ8Enabled:            false,
+			RefinementFactor:      1.0,
+		}},
+		{"Large_500K_Recall@10", 500000, 384, 100, 10, 0.990, &hnsw2.Config{
+			M: 48, MMax: 96, MMax0: 96, EfConstruction: 400,
+			SelectionHeuristicLimit: 0,
+			Ml: 1.0 / math.Log(48),
+			Alpha: 1.0,
+			KeepPrunedConnections: true,
 			SQ8Enabled:            false,
 			RefinementFactor:      1.0,
 		}},
@@ -143,68 +165,88 @@ func measureRecall(t *testing.T, numVectors, dim, numQueries, k int, cfg *hnsw2.
 	}
 	hnsw2Index := hnsw2.NewArrowHNSW(ds, config)
 	
+	// Validate that vectors can be retrieved correctly from Arrow
+	// This ensures zero-copy retrieval is working
+	t.Logf("Validating vector retrieval from Arrow storage...")
+	for i := 0; i < 10 && i < numVectors; i++ {
+		// Get vector from Arrow (same path HNSW uses)
+		arrowVec, err := hnsw2.ExtractVectorFromArrow(rec, i, 1)
+		if err != nil {
+			t.Fatalf("Failed to get vector %d from Arrow: %v", i, err)
+		}
+		
+		// Compare with original
+		if len(arrowVec) != len(vectors[i]) {
+			t.Fatalf("Vector %d length mismatch: Arrow=%d, Original=%d", i, len(arrowVec), len(vectors[i]))
+		}
+		
+		for j := 0; j < len(arrowVec); j++ {
+			if arrowVec[j] != vectors[i][j] {
+				t.Fatalf("Vector %d mismatch at dim %d: Arrow=%.6f, Original=%.6f", 
+					i, j, arrowVec[j], vectors[i][j])
+			}
+		}
+	}
+	t.Logf("Vector retrieval validation passed!")
 	
-	// Insert vectors into hnsw2 using AddByLocation concurrently
-	// Use worker pool to maximize throughput
+	// Insert vectors into hnsw2 using AddByLocation CONCURRENTLY
 	t.Logf("Inserting %d vectors concurrently...", numVectors)
 	
-	concurrency := runtime.NumCPU() * 2
-	sem := make(chan struct{}, concurrency)
-	var wg sync.WaitGroup
-	var insertErr error
-	var errMu sync.Mutex
-	var insertedCount int32
+	// Track VectorID mapping: arrayIdx -> VectorID
+	vectorIDs := make([]uint32, numVectors)
 	
+	g, ctx := errgroup.WithContext(context.Background())
+	// Limit concurrency to avoid OOM or excessive contention if needed, 
+	// but for this test GOMAXPROCS is usually fine. 
+	// We'll use a semaphore if we want to be strict, but errgroup alone is fine for 10K/100K.
+	g.SetLimit(runtime.GOMAXPROCS(0))
+
+	// protect vectorIDs if needed, but indices are unique per goroutine? 
+	// vectorIDs is a slice, index i is unique. No race on writing to different indices.
+	// But AddByLocation isn't returning to a specific index... wait.
+	// AddByLocation returns vecID. We need to store it at vectorIDs[i].
+	// Slice write at different indices is safe.
+
+	var progressCtr int32
+
 	for i := 0; i < numVectors; i++ {
-		// effective "worker pool" via semaphore
-		sem <- struct{}{}
-		wg.Add(1)
-		
-		go func(idx int) {
-			defer wg.Done()
-			defer func() { <-sem }()
-			
-			// Stop if error occurred
-			errMu.Lock()
-			if insertErr != nil {
-				errMu.Unlock()
-				return
-			}
-			errMu.Unlock()
-			
-			if _, err := hnsw2Index.AddByLocation(0, idx); err != nil {
-				errMu.Lock()
-				if insertErr == nil {
-					insertErr = fmt.Errorf("failed to insert vector %d: %w", idx, err)
-				}
-				errMu.Unlock()
-				return
+		i := i
+		g.Go(func() error {
+			// Check context
+			if ctx.Err() != nil {
+				return ctx.Err()
 			}
 			
-			// Progress logging
-			n := atomic.AddInt32(&insertedCount, 1)
-			if int(n)%10000 == 0 {
-				t.Logf("Inserted %d/%d vectors", n, numVectors)
+			vecID, err := hnsw2Index.AddByLocation(0, i)
+			if err != nil {
+				return fmt.Errorf("failed to insert vector %d: %w", i, err)
 			}
-		}(i)
+			vectorIDs[i] = vecID
+			
+			// Progress logging (atomic)
+			newCtr := atomic.AddInt32(&progressCtr, 1)
+			if newCtr%1000 == 0 {
+				t.Logf("Inserted %d/%d vectors", newCtr, numVectors)
+			}
+			return nil
+		})
 	}
-	wg.Wait()
-	
-	if insertErr != nil {
-		t.Fatalf("Insertion failed: %v", insertErr)
+
+	if err := g.Wait(); err != nil {
+		t.Fatalf("Concurrent insertion failed: %v", err)
 	}
 	
 	// Log average degree at Layer 0 for diagnostics
-	metrics := hnsw2Index.AnalyzeGraph()
-	t.Logf("Graph Metrics: %s", metrics.String())
-	// Actually, let's just use the fact that we can't access internals easily in test.
-	// We'll skip degree check for now and rely on tuning results.
+	graphMetrics := hnsw2Index.AnalyzeGraph()
+	t.Logf("Graph Metrics: %s", graphMetrics.String())
 		
 	// Generate query vectors (random subset for testing)
 	queries := make([][]float32, numQueries)
+	queryIndices := make([]int, numQueries)
 	for i := 0; i < numQueries; i++ {
 		queryIdx := rand.Intn(numVectors)
 		queries[i] = vectors[queryIdx]
+		queryIndices[i] = queryIdx
 	}
 	
 	// Measure recall against brute-force ground truth
@@ -222,7 +264,7 @@ func measureRecall(t *testing.T, numVectors, dim, numQueries, k int, cfg *hnsw2.
 				diff := query[d] - vectors[j][d]
 				distSq += diff * diff
 			}
-			allDistances[j] = idDist{uint32(j), float32(math.Sqrt(float64(distSq)))}
+			allDistances[j] = idDist{uint32(j), distSq}
 		}
 		
 		// Sort by distance
@@ -230,17 +272,41 @@ func measureRecall(t *testing.T, numVectors, dim, numQueries, k int, cfg *hnsw2.
 			return allDistances[i].dist < allDistances[j].dist
 		})
 		
-		// Take top k as ground truth
+		// Take top k as ground truth (using VectorIDs, not array indices)
+		// Skip the query vector itself (distance 0)
 		groundTruth := make(map[uint32]bool)
-		for j := 0; j < k && j < len(allDistances); j++ {
-			groundTruth[allDistances[j].id] = true
+		queryArrayIdx := queryIndices[i]
+		for j := 0; j < len(allDistances) && len(groundTruth) < k; j++ {
+			arrayIdx := allDistances[j].id
+			if arrayIdx == uint32(queryArrayIdx) {
+				continue // Skip query vector itself
+			}
+			vecID := vectorIDs[arrayIdx]
+			groundTruth[vecID] = true
 		}
 		
-		// Get hnsw2 results
-		hnsw2Results, err := hnsw2Index.Search(query, k, k*100, nil)
+		// Get hnsw2 results with higher ef for better recall
+		// Request k+1 results because query is likely in the graph and will be returned
+		hnsw2Results, err := hnsw2Index.Search(query, k+1, k*200, nil)
 		if err != nil {
 			t.Fatalf("hnsw2 search failed: %v", err)
 		}
+		
+		// Filter out the query vector itself from HNSW results
+		queryVecID := vectorIDs[queryIndices[i]]
+		var filteredResults []store.SearchResult
+		for _, res := range hnsw2Results {
+			if uint32(res.ID) == queryVecID {
+				continue
+			}
+			filteredResults = append(filteredResults, res)
+		}
+		
+		// Trim to top k
+		if len(filteredResults) > k {
+			filteredResults = filteredResults[:k]
+		}
+		hnsw2Results = filteredResults
 		
 		// Calculate recall for this query
 		matches := 0

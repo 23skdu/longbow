@@ -8,14 +8,6 @@ CGO_ENABLED=0 go build -tags=nogpu -o bin/longbow ./cmd/longbow
 # Create data directories
 mkdir -p data/node1 data/node2 data/node3
 
-# Cleanup function
-cleanup() {
-    echo "Stopping cluster..."
-    kill $(jobs -p) 2>/dev/null || true
-    echo "Cluster stopped."
-}
-trap cleanup EXIT
-
 # Start Node 1 (Seed)
 echo "Starting Node 1..."
 GOGC=75 \
@@ -29,6 +21,7 @@ LONGBOW_GOSSIP_DISCOVERY_PROVIDER=static \
 LONGBOW_GOSSIP_STATIC_PEERS="" \
 LONGBOW_DATA_PATH=data/node1 \
 LONGBOW_MAX_MEMORY=3221225472 \
+LONGBOW_USE_HNSW2=true \
 ./bin/longbow > data/node1/longbow.log 2>&1 &
 
 sleep 2 # Wait for seed to start
@@ -46,6 +39,7 @@ LONGBOW_GOSSIP_DISCOVERY_PROVIDER=static \
 LONGBOW_GOSSIP_STATIC_PEERS="127.0.0.1:7946" \
 LONGBOW_DATA_PATH=data/node2 \
 LONGBOW_MAX_MEMORY=3221225472 \
+LONGBOW_USE_HNSW2=true \
 ./bin/longbow > data/node2/longbow.log 2>&1 &
 
 # Start Node 3
@@ -61,9 +55,7 @@ LONGBOW_GOSSIP_DISCOVERY_PROVIDER=static \
 LONGBOW_GOSSIP_STATIC_PEERS="127.0.0.1:7946" \
 LONGBOW_DATA_PATH=data/node3 \
 LONGBOW_MAX_MEMORY=3221225472 \
+LONGBOW_USE_HNSW2=true \
 ./bin/longbow > data/node3/longbow.log 2>&1 &
 
 echo "Cluster started! Logs in ./data/nodeX/longbow.log"
-echo "Press Ctrl+C to stop."
-
-wait

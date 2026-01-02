@@ -18,7 +18,7 @@ Longbow is a distributed, high-performance vector cache built for modern AI/Agen
 
 ## Architecture
 
-Longbow uses a shared-nothing architecture where every node is identical. Data is sharded across the cluster using consistent hashing.
+Longbow uses a shared-nothing architecture where every node is loosely coupled.
 
 See [Architecture Guide](docs/architecture.md) for a deep dive.
 

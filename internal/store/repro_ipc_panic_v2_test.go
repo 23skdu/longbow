@@ -8,13 +8,13 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"github.com/apache/arrow-go/v18/arrow/memory"
-	"github.com/stretchr/testify/require"
 	"github.com/rs/zerolog"
+	"github.com/stretchr/testify/require"
 )
 
 // Helper to access castRecordToSchema since it's unexported (test is in same package)
 func castRecordToSchemaHelper(s *VectorStore, rec arrow.RecordBatch, target *arrow.Schema) (arrow.RecordBatch, error) {
-	return s.castRecordToSchema(rec, target)
+	return castRecordToSchema(s.mem, rec, target)
 }
 
 func TestCastRecordToSchema_EdgeCases(t *testing.T) {

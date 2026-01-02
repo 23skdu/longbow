@@ -263,7 +263,11 @@ func identifyCompactionCandidates(records []arrow.RecordBatch, targetSize int64)
 	return candidates
 }
 
-// batchRemapInfo is now replaced by BatchRemapInfo in hnsw.go
+// BatchRemapInfo tracks how a batch moved during compaction
+type BatchRemapInfo struct {
+	NewBatchIdx int
+	NewRowIdxs  []int
+}
 
 // compactRecords returns a NEW slice of RecordBatches and a remapping table.
 // It DOES NOT Modify the input slice.

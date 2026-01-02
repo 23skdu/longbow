@@ -46,7 +46,9 @@ func (w *StdWAL) Write(name string, seq uint64, ts int64, record arrow.RecordBat
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() {
+		_ = f.Close()
+	}()
 
 	// Use binary format from persistence.go for compatibility
 	var buf bytes.Buffer

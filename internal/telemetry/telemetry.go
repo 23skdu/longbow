@@ -52,11 +52,6 @@ func InitTracerProvider(ctx context.Context, serviceName, serviceVersion string)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create stdout trace exporter: %w", err)
 		}
-	} else {
-		// No exporter
-		// We implement a No-Op exporter or just return nil provider if desired,
-		// but providing a real provider with no exporter is cleaner for instrumentation code
-		// Actually sdktrace.NewTracerProvider with no batcher implies no export.
 	}
 
 	var tp *sdktrace.TracerProvider

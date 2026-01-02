@@ -2,8 +2,9 @@ package store
 
 import (
 	"context"
-	"github.com/rs/zerolog"
 	"testing"
+
+	"github.com/rs/zerolog"
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
@@ -266,7 +267,7 @@ func BenchmarkFilterRecord_WithoutIndex(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		result, _ := store.filterRecord(ctx, rec, filters)
+		result, _ := filterRecord(ctx, store.mem, rec, filters)
 		result.Release()
 	}
 }

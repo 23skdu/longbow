@@ -55,7 +55,7 @@ func (s *VectorStore) filterRecordsParallel(ctx context.Context, recs []arrow.Re
 				default:
 				}
 
-				filtered, err := s.filterRecord(ctx, j.rec, filters)
+				filtered, err := filterRecord(ctx, s.mem, j.rec, filters)
 				resultsCh <- filterResult{index: j.index, rec: filtered, err: err}
 			}
 		}()

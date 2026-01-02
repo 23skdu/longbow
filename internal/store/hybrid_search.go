@@ -2,12 +2,17 @@ package store
 
 import (
 	"context"
+	"time"
 
 	"github.com/23skdu/longbow/internal/metrics"
 )
 
 // SearchHybrid performs a hybrid search combining dense vector search and sparse keyword search.
 func SearchHybrid(ctx context.Context, s *VectorStore, name string, query []float32, textQuery string, k int, alpha float32, rrfK int) ([]SearchResult, error) {
+	defer func(start time.Time) {
+		metrics.SearchLatencySeconds.WithLabelValues(name, "hybrid_rrf").Observe(time.Since(start).Seconds())
+	}(time.Now())
+
 	s.logger.Info().
 		Str("dataset", name).
 		Str("text_query", textQuery).
@@ -75,6 +80,9 @@ func SearchHybrid(ctx context.Context, s *VectorStore, name string, query []floa
 
 // HybridSearch performs a filtered vector search using inverted indexes for pre-filtering.
 func HybridSearch(ctx context.Context, s *VectorStore, name string, query []float32, k int, filters map[string]string) ([]SearchResult, error) {
+	defer func(start time.Time) {
+		metrics.SearchLatencySeconds.WithLabelValues(name, "hybrid_filtered").Observe(time.Since(start).Seconds())
+	}(time.Now())
 	ds, err := s.getDataset(name)
 	if err != nil {
 		return nil, err

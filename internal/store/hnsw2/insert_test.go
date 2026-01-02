@@ -3,7 +3,7 @@ package hnsw2
 import (
 	"sync/atomic"
 	"testing"
-	"unsafe"
+
 	
 	"github.com/23skdu/longbow/internal/store"
 )
@@ -46,7 +46,7 @@ func TestAddConnection(t *testing.T) {
 	index := NewArrowHNSW(dataset, config)
 	
 	// Initialize GraphData manually
-	data := NewGraphData(10)
+	data := NewGraphData(10, 0)
 	index.data.Store(data)
 	
 	// Must have search context for pruning
@@ -57,20 +57,22 @@ func TestAddConnection(t *testing.T) {
 	index.addConnection(ctx, data, 0, 1, 0, 10)
 	
 	// Check count
-	count := atomic.LoadInt32(&data.Counts[0][0])
+	cID := chunkID(0)
+	cOff := chunkOffset(0)
+	count := atomic.LoadInt32(&data.Counts[0][cID][cOff])
 	if count != 1 {
 		t.Errorf("expected 1 neighbor, got %d", count)
 	}
 	
 	// Check neighbor
-	if data.Neighbors[0][0*MaxNeighbors] != 1 {
-		t.Errorf("expected neighbor 1, got %d", data.Neighbors[0][0])
+	if data.Neighbors[0][cID][int(cOff)*MaxNeighbors] != 1 {
+		t.Errorf("expected neighbor 1, got %d", data.Neighbors[0][cID][int(cOff)*MaxNeighbors])
 	}
 	
 	// Adding same connection again should be idempotent
 	index.addConnection(ctx, data, 0, 1, 0, 10)
 	
-	count = atomic.LoadInt32(&data.Counts[0][0])
+	count = atomic.LoadInt32(&data.Counts[0][cID][cOff])
 	if count != 1 {
 		t.Errorf("expected 1 neighbor after duplicate add, got %d", count)
 	}
@@ -84,7 +86,7 @@ func TestPruneConnections(t *testing.T) {
 	index := NewArrowHNSW(dataset, config)
 	
 	// Initialize GraphData manually
-	data := NewGraphData(20)
+	data := NewGraphData(20, 11)
 	index.data.Store(data)
 	
 	// Setup vectors for distance calculation
@@ -107,18 +109,23 @@ func TestPruneConnections(t *testing.T) {
 	}
 	
 	// Point VectorPtrs to these slices
+	// Copy vectors to Dense Storage
 	for i := 0; i <= 10; i++ {
-		data.VectorPtrs[i] = unsafe.Pointer(&vecs[i][0])
+		cID := chunkID(uint32(i))
+		cOff := chunkOffset(uint32(i))
+		copy(data.Vectors[cID][int(cOff)*dim:], vecs[i])
 	}
 	
 	// Add 10 connections to Node 0
 	// Neighbors are 1..10. All dist 1.0. Sorted by ID (impl detail).
+	// Node 0 is at chunk 0, offset 0
 	baseIdx := 0 // Node 0
 	for i := 1; i <= 10; i++ {
 		idx := baseIdx + (i - 1)
-		data.Neighbors[0][idx] = uint32(i)
+		// Access Chunk 0 of Neighbors
+		data.Neighbors[0][0][idx] = uint32(i)
 	}
-	atomic.StoreInt32(&data.Counts[0][0], 10)
+	atomic.StoreInt32(&data.Counts[0][0][0], 10)
 	
 	// Prune to 5
 	// HNSW Heuristic:
@@ -131,7 +138,7 @@ func TestPruneConnections(t *testing.T) {
 	
 	index.pruneConnections(ctx, data, 0, 5, 0)
 	
-	count := atomic.LoadInt32(&data.Counts[0][0])
+	count := atomic.LoadInt32(&data.Counts[0][0][0])
 	if count != 5 {
 		t.Errorf("expected 5 neighbors after pruning, got %d", count)
 	}

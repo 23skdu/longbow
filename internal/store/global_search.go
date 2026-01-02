@@ -149,8 +149,8 @@ func (c *GlobalSearchCoordinator) GlobalSearch(ctx context.Context, localResults
 
 	// Sort and Top K
 	sort.Slice(allResults, func(i, j int) bool {
-		// Descending score
-		return allResults[i].Score > allResults[j].Score
+		// Ascending score (smaller distance first)
+		return allResults[i].Score < allResults[j].Score
 	})
 
 	if len(allResults) > req.K {

@@ -65,8 +65,14 @@ func TestSQ8Indexing(t *testing.T) {
 	data := idx.data.Load()
 	assert.Greater(t, len(data.VectorsSQ8), 0, "VectorsSQ8 should be populated")
 	// Capacity-based check
-	expectedBytes := data.Capacity * 16
-	assert.Equal(t, expectedBytes, len(data.VectorsSQ8))
+	// With chunked storage, VectorsSQ8 is [][]byte (number of chunks)
+	// Default capacity 1000 -> 1 chunk (if ChunkSize=65536)
+	numChunks := (data.Capacity + ChunkSize - 1) / ChunkSize
+	assert.Equal(t, numChunks, len(data.VectorsSQ8))
+	// Check size of the first chunk
+	if len(data.VectorsSQ8) > 0 {
+		assert.Equal(t, ChunkSize*16, len(data.VectorsSQ8[0]))
+	}
 
 	// Search
 	// Pick vector 10 as query

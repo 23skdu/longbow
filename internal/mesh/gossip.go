@@ -705,6 +705,52 @@ func (g *Gossip) GetIdentity() Member {
 	}
 }
 
+// GetMemberByAddr looks up a member by any of their known addresses (Gossip, GRPC, Meta).
+// It returns the Member and true if found, or nil and false otherwise.
+func (g *Gossip) GetMemberByAddr(addr string) (*Member, bool) {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	// Normalize addr (remove port if present? strict match for now)
+	// We assume addr matches one of the stored addresses exactly.
+	// For better matching, we might want to match Host only if ports differ, but let's stick to exact match first.
+	
+	// Check self first
+	if g.Config.Addr == addr || g.Config.GRPCAddr == addr || g.Config.MetaAddr == addr {
+		// Return self as member
+		self := g.GetIdentity()
+		return &self, true
+	}
+
+	for _, m := range g.members {
+		if m.Addr == addr || m.GRPCAddr == addr || m.MetaAddr == addr {
+			return m, true
+		}
+		
+		// Handle "Host:Port" matching against purely "Host" or "IP" if needed?
+		// For now, assume exact match or standard "Host:Port" format.
+		// If the input is just an IP (from peer.FromContext), we might need to match host part.
+	}
+	
+	// Fallback: Check host part only?
+	host, _, err := net.SplitHostPort(addr)
+	if err == nil {
+		for _, m := range g.members {
+			if h, _, _ := net.SplitHostPort(m.Addr); h == host {
+				return m, true
+			}
+			if h, _, _ := net.SplitHostPort(m.GRPCAddr); h == host {
+				return m, true
+			}
+			if h, _, _ := net.SplitHostPort(m.MetaAddr); h == host {
+				return m, true
+			}
+		}
+	}
+
+	return nil, false
+}
+
 func (g *Gossip) GetDiscoveryStatus() (string, []string) {
 	if g.discoveryProvider == nil {
 		return "none", nil

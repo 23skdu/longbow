@@ -554,6 +554,14 @@ def command_validate(args, data_client, meta_client):
         print(f"  FAIL: Global search call failed: {e}")
 
     print("\nSmoke Tests Complete.")
+    
+    # Cleanup
+    try:
+        action = flight.Action("delete-dataset", json.dumps({"dataset": dataset}).encode("utf-8"))
+        list(meta_client.do_action(action))
+        print(f"Cleaned up {dataset}")
+    except:
+        pass
 
 def command_namespaces(args, data_client, meta_client):
     """Test Namespace operations."""

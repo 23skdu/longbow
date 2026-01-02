@@ -413,6 +413,7 @@ func (h *HNSWIndex) Search(query []float32, k int) ([]VectorID, error) {
 	}
 	return res, nil
 }
+
 // GetNeighbors returns the nearest neighbors for a given vector ID from the graph.
 // Note: Since the underlying coder/hnsw library doesn't expose direct graph edges,
 // we perform a search using the node's vector to find its closest neighbors.
@@ -500,7 +501,7 @@ func (h *HNSWIndex) SearchVectors(query []float32, k int, filters []Filter) ([]S
 	// Get search context from pool to reuse buffers
 	ctx := h.searchPool.Get()
 	defer h.searchPool.Put(ctx)
-	
+
 	// Use pooled buffers instead of allocating
 	res := ctx.results
 	batchIDs := ctx.batchIDs
@@ -1081,14 +1082,15 @@ func (h *HNSWIndex) extractVector(rec arrow.RecordBatch, rowIdx int) ([]float32,
 	// Use cached vectorColIdx if available
 	colIdx := int(h.vectorColIdx.Load())
 	if colIdx >= 0 && colIdx < int(rec.NumCols()) {
-		if rec.Schema().Field(colIdx).Name == "vector" {
+		name := rec.Schema().Field(colIdx).Name
+		if name == "vector" || name == "embedding" {
 			vecCol = rec.Column(colIdx)
 		}
 	}
 
 	if vecCol == nil {
 		for i, field := range rec.Schema().Fields() {
-			if field.Name == "vector" {
+			if field.Name == "vector" || field.Name == "embedding" {
 				vecCol = rec.Column(i)
 				h.vectorColIdx.Store(int32(i))
 				break
@@ -1125,15 +1127,13 @@ func (h *HNSWIndex) extractVector(rec arrow.RecordBatch, rowIdx int) ([]float32,
 	// memory leaks as vectors are never returned.
 	vec := make([]float32, width)
 	copy(vec, floatArr.Float32Values()[start:end])
-	
+
 	// Track HNSW allocation metrics
 	metrics.HNSWVectorAllocations.Inc()
 	metrics.HNSWVectorAllocatedBytes.Add(float64(width * 4))
-	
+
 	return vec, nil
 }
-
-
 
 // SearchVectorsWithBitmap returns k nearest neighbors filtered by a bitset.
 func (h *HNSWIndex) SearchVectorsWithBitmap(query []float32, k int, filter *Bitset) []SearchResult {

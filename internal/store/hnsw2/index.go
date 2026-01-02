@@ -186,18 +186,32 @@ func (h *ArrowHNSW) SetIndexedColumns(cols []string) {
 
 // EstimateMemory implements store.VectorIndex.
 func (h *ArrowHNSW) EstimateMemory() int64 {
-	// Rough estimation: Nodes * (Levels * M * 4 bytes + VectorPtr + Overhead)
-	// + LocationStore
-	// + Vectors if copied (they are pointers for us)
-	
-	nodeCount := int64(h.Size())
-	// Base node overhead
-	mem := nodeCount * 64 
-	
-	// Graph edges: Average connections approx M * nodeCount * 4 bytes
-	mem += nodeCount * int64(h.m) * 4
-	
-	return mem
+	data := h.data.Load()
+	if data == nil {
+		return 0
+	}
+
+	capacity := int64(data.Capacity)
+	dims := int64(h.dims)
+
+	// memory = capacity * (Level[1] + Vector[dims*4] + Neighbors[MaxLayers*MaxNeighbors*4] + Counts[MaxLayers*4] + Versions[MaxLayers*4])
+	// Neighbors per layer: ChunkSize * MaxNeighbors * 4 bytes
+	// Neighborhood overhead for all layers
+	neighborhoodMem := capacity * MaxLayers * MaxNeighbors * 4
+
+	// Metadata: Levels (1 byte), Counts (4 bytes), Versions (4 bytes) per layer
+	metadataMem := capacity * (1 + MaxLayers*4 + MaxLayers*4)
+
+	// Vectors: dims * 4 bytes
+	vectorMem := capacity * dims * 4
+
+	// Sharded locks overhead (1024 * size of Mutex)
+	locksMem := int64(1024 * 64) // Approximation for sync.Mutex
+
+	// Bitset memory (deleted nodes)
+	bitsetMem := capacity / 8
+
+	return neighborhoodMem + metadataMem + vectorMem + locksMem + bitsetMem
 }
 
 // Close implements store.VectorIndex.

@@ -91,7 +91,7 @@ type VectorStore struct {
 	shutdownState int32
 	walFile       *os.File
 	workerWg      sync.WaitGroup
-	
+
 	// hnsw2 integration hook (Phase 5)
 	// Called after dataset creation to initialize hnsw2 (avoids import cycle)
 	datasetInitHook func(*Dataset)
@@ -493,6 +493,107 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 		}
 		return nil
 
+	case "delete":
+		var req struct {
+			Dataset string `json:"dataset"`
+			ID      string `json:"id"`
+		}
+		if err := json.Unmarshal(action.Body, &req); err != nil {
+			return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
+		}
+
+		ds, err := s.getDataset(req.Dataset)
+		if err != nil {
+			return err
+		}
+
+		found := false
+		ds.dataMu.RLock()
+		for i, rec := range ds.Records {
+			idColIdx := -1
+			for j, field := range rec.Schema().Fields() {
+				if field.Name == "id" {
+					idColIdx = j
+					break
+				}
+			}
+			if idColIdx == -1 {
+				continue
+			}
+
+			idCol, ok := rec.Column(idColIdx).(*array.String)
+			if !ok {
+				continue
+			}
+
+			for j := 0; j < idCol.Len(); j++ {
+				if idCol.Value(j) == req.ID {
+					// Check if already deleted
+					ts := ds.Tombstones[i]
+					if ts != nil && ts.Contains(j) {
+						continue
+					}
+
+					// Found it! Set tombstone
+					ds.dataMu.RUnlock()
+					ds.dataMu.Lock()
+					if ds.Tombstones[i] == nil {
+						ds.Tombstones[i] = NewBitset()
+					}
+					ds.Tombstones[i].Set(j)
+					ds.dataMu.Unlock()
+					metrics.TombstonesTotal.WithLabelValues(req.Dataset).Inc()
+					found = true
+					ds.dataMu.RLock() // Re-lock for loop continuity or exit
+					break
+				}
+			}
+			if found {
+				break
+			}
+		}
+		ds.dataMu.RUnlock()
+
+		if !found {
+			return status.Errorf(codes.NotFound, "id %s not found in dataset %s", req.ID, req.Dataset)
+		}
+
+		if err := stream.Send(&flight.Result{Body: []byte("deleted")}); err != nil {
+			return err
+		}
+		return nil
+
+	case "delete-dataset":
+		var curr map[string]interface{}
+		if err := json.Unmarshal(action.Body, &curr); err != nil {
+			return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
+		}
+
+		dsName, ok := curr["dataset"].(string)
+		if !ok {
+			return status.Error(codes.InvalidArgument, "missing dataset name")
+		}
+
+		s.mu.Lock()
+		ds, ok := s.datasets[dsName]
+		if !ok {
+			s.mu.Unlock()
+			return status.Errorf(codes.NotFound, "dataset %s not found", dsName)
+		}
+
+		// Use existing eviction logic to free memory and close resources
+		s.evictDataset(ds)
+
+		// Remove from map
+		delete(s.datasets, dsName)
+		s.mu.Unlock()
+
+		s.logger.Info().Str("dataset", dsName).Msg("Dataset deleted")
+		if err := stream.Send(&flight.Result{Body: []byte("deleted")}); err != nil {
+			return err
+		}
+		return nil
+
 	case "delete-vector":
 		defer func() {
 			if r := recover(); r != nil {
@@ -588,16 +689,30 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 	if _, ok := s.datasets[name]; !ok {
 		// Create new dataset with schema from reader
 		ds := NewDataset(name, r.Schema())
-		
+
 		// Note: hnsw2Index initialization happens via hook to avoid import cycles.
 		// See cmd/longbow/main.go for initialization hook setup.
-		
+
 		ds.Topo = s.numaTopology
 		s.datasets[name] = ds
-		
+
 		// Call initialization hook if registered (for hnsw2, etc.)
 		if s.datasetInitHook != nil {
 			s.datasetInitHook(ds)
+
+			// Account for initial index memory (e.g., hnsw2 pre-allocations)
+			if ds.Index != nil {
+				initialIndexMem := ds.Index.EstimateMemory()
+				ds.IndexMemoryBytes.Store(initialIndexMem)
+				s.currentMemory.Add(initialIndexMem)
+			} else if ds.GetHNSW2Index() != nil {
+				// Special case for hnsw2 via interface
+				if est, ok := ds.GetHNSW2Index().(interface{ EstimateMemory() int64 }); ok {
+					initialIndexMem := est.EstimateMemory()
+					ds.IndexMemoryBytes.Store(initialIndexMem)
+					s.currentMemory.Add(initialIndexMem)
+				}
+			}
 		}
 	}
 	ds = s.datasets[name]
@@ -1211,8 +1326,16 @@ func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
 				} else {
 					// Update memory tracking for index overhead
 					// Check if Index is still valid (dataset might have been evicted)
+					var newIndexSize int64
 					if ds.Index != nil {
-						newIndexSize := ds.Index.EstimateMemory()
+						newIndexSize = ds.Index.EstimateMemory()
+					} else if ds.GetHNSW2Index() != nil {
+						if est, ok := ds.GetHNSW2Index().(interface{ EstimateMemory() int64 }); ok {
+							newIndexSize = est.EstimateMemory()
+						}
+					}
+
+					if newIndexSize > 0 {
 						oldIndexSize := ds.IndexMemoryBytes.Swap(newIndexSize)
 						delta := newIndexSize - oldIndexSize
 						if delta != 0 {
@@ -1223,7 +1346,7 @@ func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
 			} else {
 				// No vector index, but we still need docIDs if we want to support keyword indexing?
 				// Actually, if there is no HNSW index, we usually don't have docIDs.
-				// But we can fallback to using batchIdx/rowIdx as unique ID if needed, 
+				// But we can fallback to using batchIdx/rowIdx as unique ID if needed,
 				// or just skip keyword indexing if no vector index exists.
 				// Most datasets in Longbow have at least one vector column.
 				s.logger.Warn().Str("dataset", dsName).Msg("Dataset has no index initialized, skipping AddBatch")
@@ -1257,7 +1380,7 @@ func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
 
 							for _, colIdx := range stringCols {
 								fieldName := schema.Field(colIdx).Name
-								
+
 								// Double-checked locking for per-column inverted index
 								ds.dataMu.RLock()
 								var invIdx *InvertedIndex
@@ -1430,6 +1553,25 @@ func (s *VectorStore) MapInternalToUserIDs(ds *Dataset, results []SearchResult) 
 		case *array.Int32:
 			if loc.RowIdx < c.Len() {
 				resolvedID = VectorID(c.Value(loc.RowIdx))
+			} else {
+				resolvedID = res.ID
+			}
+		case *array.String:
+			if loc.RowIdx < c.Len() {
+				// We can't return string IDs in the uint64 field.
+				// But we can try to parse it if it's a numeric string,
+				// or hash it if we really need a uint64.
+				// However, for archer integration, we often use numeric strings for testing,
+				// or we need a way to return the actual string.
+				val := c.Value(loc.RowIdx)
+				u, err := strconv.ParseUint(val, 10, 64)
+				if err == nil {
+					resolvedID = VectorID(u)
+				} else {
+					// If not numeric, we're stuck with internal ID for the uint64 field.
+					// A better fix would be to return StringIDs in the response.
+					resolvedID = res.ID
+				}
 			} else {
 				resolvedID = res.ID
 			}
@@ -1719,8 +1861,11 @@ func (s *VectorStore) SearchHybrid(ctx context.Context, name string, query []flo
 }
 
 func findVectorColumn(rec arrow.RecordBatch) arrow.Array {
+	if rec == nil || rec.Schema() == nil {
+		return nil
+	}
 	for i, field := range rec.Schema().Fields() {
-		if field.Name == "vector" {
+		if field.Name == "vector" || field.Name == "embedding" {
 			return rec.Column(i)
 		}
 	}

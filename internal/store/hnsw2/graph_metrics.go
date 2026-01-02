@@ -33,7 +33,9 @@ func (h *ArrowHNSW) AnalyzeGraph() GraphMetrics {
 	componentSizes := make(map[int]int)
 	
 	for i := 0; i < nodeCount; i++ {
-		count := int(atomic.LoadInt32(&data.Counts[layer][i]))
+		cID := chunkID(uint32(i))
+		cOff := chunkOffset(uint32(i))
+		count := int(atomic.LoadInt32(&data.Counts[layer][cID][cOff]))
 		metrics.TotalEdges += count
 		if count == 0 {
 			metrics.ZeroDegreeNodes++
@@ -76,10 +78,14 @@ func (h *ArrowHNSW) bfsComponentSize(data *GraphData, layer int, startNode uint3
 		count++
 		
 		// Iterate neighbors
-		neighborCount := int(atomic.LoadInt32(&data.Counts[layer][curr]))
-		baseIdx := int(curr) * MaxNeighbors
+		// Iterate neighbors
+		cID := chunkID(curr)
+		cOff := chunkOffset(curr)
+		neighborCount := int(atomic.LoadInt32(&data.Counts[layer][cID][cOff]))
+		baseIdx := int(cOff) * MaxNeighbors
+		neighborsChunk := data.Neighbors[layer][cID]
 		for i := 0; i < neighborCount; i++ {
-			neighbor := data.Neighbors[layer][baseIdx+i]
+			neighbor := neighborsChunk[baseIdx+i]
 			if !visited.IsSet(neighbor) {
 				visited.Set(neighbor)
 				queue = append(queue, neighbor)
@@ -107,10 +113,14 @@ func (h *ArrowHNSW) bfsDiameter(data *GraphData, layer int, startNode uint32) in
 			curr := queue[j]
 			
 			// Neighbors
-			neighborCount := int(atomic.LoadInt32(&data.Counts[layer][curr]))
-			baseIdx := int(curr) * MaxNeighbors
+			// Neighbors
+			cID := chunkID(curr)
+			cOff := chunkOffset(curr)
+			neighborCount := int(atomic.LoadInt32(&data.Counts[layer][cID][cOff]))
+			baseIdx := int(cOff) * MaxNeighbors
+			neighborsChunk := data.Neighbors[layer][cID]
 			for k := 0; k < neighborCount; k++ {
-				neighbor := data.Neighbors[layer][baseIdx+k]
+				neighbor := neighborsChunk[baseIdx+k]
 				if !visited.IsSet(neighbor) {
 					visited.Set(neighbor)
 					queue = append(queue, neighbor)

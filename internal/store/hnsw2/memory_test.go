@@ -117,7 +117,7 @@ func TestMemoryUsage(t *testing.T) {
 	// - Neighbors: M * 4 bytes * 2 (bidirectional approx) * layers?
 	// - Levels: 1 byte
 	// - Counts: 4 bytes * layers
-	// - VectorPtrs: 8 bytes
+	// - Vectors: 4 bytes * dims (dense storage)
 	// Approx 32 neighbors * 4 bytes = 128 bytes per layer. Avg 1 layer?
 	// 500-1000 bytes/vec expected?
 }

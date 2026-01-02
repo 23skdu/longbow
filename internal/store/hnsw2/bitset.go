@@ -46,3 +46,44 @@ func (b *Bitset) Clear() {
 func (b *Bitset) Size() int {
 	return b.size
 }
+
+// Grow increases the size of the bitset to newSize.
+func (b *Bitset) Grow(newSize int) {
+	if newSize <= b.size {
+		return
+	}
+	numWords := (newSize + 63) / 64
+	if numWords > len(b.bits) {
+		newBits := make([]uint64, numWords)
+		copy(newBits, b.bits)
+		b.bits = newBits
+	}
+	b.size = newSize
+}
+
+// ClearSIMD resets all bits using SIMD instructions when available.
+// Falls back to scalar Clear() on unsupported platforms.
+func (b *Bitset) ClearSIMD() {
+	clearSIMD(b.bits)
+}
+
+// AndNot performs bitwise AND-NOT operation: result[i] = a[i] & ~b[i]
+// This is useful for deletion filtering: activeNodes = allNodes.AndNot(deletedNodes)
+func (b *Bitset) AndNot(other *Bitset) *Bitset {
+	minSize := b.size
+	if other.size < minSize {
+		minSize = other.size
+	}
+	
+	result := NewBitset(minSize)
+	numWords := (minSize + 63) / 64
+	
+	andNotSIMD(result.bits[:numWords], b.bits[:numWords], other.bits[:numWords])
+	return result
+}
+
+// PopCount returns the number of set bits in the bitset.
+// Uses SIMD instructions when available for faster counting.
+func (b *Bitset) PopCount() int {
+	return popCountSIMD(b.bits)
+}

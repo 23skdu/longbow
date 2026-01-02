@@ -284,7 +284,7 @@ func compactRecords(pool memory.Allocator, schema *arrow.Schema, records []arrow
 
 	currentOldIdx := 0
 	// pool := memory.NewGoAllocator() // Replaced with passed-in allocator
-	
+
 	totalRemoved := int64(0)
 
 	for _, cand := range candidates {
@@ -455,6 +455,8 @@ func mergeAndFilterRecordBatches(pool memory.Allocator, schema *arrow.Schema, ba
 }
 
 // appendValue appends a single value from an arrow.Array to a builder.
+// appendValue appends a single value from an arrow.Array to a builder.
+// It handles all supported Arrow types recursively.
 func appendValue(builder array.Builder, col arrow.Array, rowIdx int) {
 	if col.IsNull(rowIdx) {
 		builder.AppendNull()
@@ -462,32 +464,91 @@ func appendValue(builder array.Builder, col arrow.Array, rowIdx int) {
 	}
 
 	switch b := builder.(type) {
-	case *array.Int64Builder:
-		if val, ok := col.(*array.Int64); ok {
+	case *array.BooleanBuilder:
+		if val, ok := col.(*array.Boolean); ok {
 			b.Append(val.Value(rowIdx))
 		} else {
 			builder.AppendNull()
 		}
-	case *array.Float64Builder:
-		if val, ok := col.(*array.Float64); ok {
+	case *array.Int8Builder:
+		switch val := col.(type) {
+		case *array.Int8:
 			b.Append(val.Value(rowIdx))
-		} else if val, ok := col.(*array.Float32); ok {
-			b.Append(float64(val.Value(rowIdx)))
-		} else {
+		default:
 			builder.AppendNull()
 		}
-	case *array.Float32Builder:
-		if val, ok := col.(*array.Float32); ok {
+	case *array.Int16Builder:
+		switch val := col.(type) {
+		case *array.Int16:
 			b.Append(val.Value(rowIdx))
-		} else if val, ok := col.(*array.Float64); ok {
-			b.Append(float32(val.Value(rowIdx)))
-		} else {
+		default:
 			builder.AppendNull()
 		}
 	case *array.Int32Builder:
-		if val, ok := col.(*array.Int32); ok {
+		switch val := col.(type) {
+		case *array.Int32:
 			b.Append(val.Value(rowIdx))
-		} else {
+		default:
+			builder.AppendNull()
+		}
+	case *array.Int64Builder:
+		switch val := col.(type) {
+		case *array.Int64:
+			b.Append(val.Value(rowIdx))
+		default:
+			builder.AppendNull()
+		}
+	case *array.Uint8Builder:
+		switch val := col.(type) {
+		case *array.Uint8:
+			b.Append(val.Value(rowIdx))
+		default:
+			builder.AppendNull()
+		}
+	case *array.Uint16Builder:
+		switch val := col.(type) {
+		case *array.Uint16:
+			b.Append(val.Value(rowIdx))
+		default:
+			builder.AppendNull()
+		}
+	case *array.Uint32Builder:
+		switch val := col.(type) {
+		case *array.Uint32:
+			b.Append(val.Value(rowIdx))
+		default:
+			builder.AppendNull()
+		}
+	case *array.Uint64Builder:
+		switch val := col.(type) {
+		case *array.Uint64:
+			b.Append(val.Value(rowIdx))
+		default:
+			builder.AppendNull()
+		}
+	case *array.Float16Builder:
+		switch val := col.(type) {
+		case *array.Float16:
+			b.Append(val.Value(rowIdx))
+		default:
+			builder.AppendNull()
+		}
+	case *array.Float32Builder:
+		switch val := col.(type) {
+		case *array.Float32:
+			b.Append(val.Value(rowIdx))
+		case *array.Float64:
+			b.Append(float32(val.Value(rowIdx)))
+		default:
+			builder.AppendNull()
+		}
+	case *array.Float64Builder:
+		switch val := col.(type) {
+		case *array.Float64:
+			b.Append(val.Value(rowIdx))
+		case *array.Float32:
+			b.Append(float64(val.Value(rowIdx)))
+		default:
 			builder.AppendNull()
 		}
 	case *array.StringBuilder:
@@ -496,8 +557,8 @@ func appendValue(builder array.Builder, col arrow.Array, rowIdx int) {
 		} else {
 			builder.AppendNull()
 		}
-	case *array.BooleanBuilder:
-		if val, ok := col.(*array.Boolean); ok {
+	case *array.BinaryBuilder:
+		if val, ok := col.(*array.Binary); ok {
 			b.Append(val.Value(rowIdx))
 		} else {
 			builder.AppendNull()
@@ -514,34 +575,97 @@ func appendValue(builder array.Builder, col arrow.Array, rowIdx int) {
 		} else {
 			builder.AppendNull()
 		}
+	case *array.Time32Builder:
+		if val, ok := col.(*array.Time32); ok {
+			b.Append(val.Value(rowIdx))
+		} else {
+			builder.AppendNull()
+		}
+	case *array.Time64Builder:
+		if val, ok := col.(*array.Time64); ok {
+			b.Append(val.Value(rowIdx))
+		} else {
+			builder.AppendNull()
+		}
+	case *array.Date32Builder:
+		if val, ok := col.(*array.Date32); ok {
+			b.Append(val.Value(rowIdx))
+		} else {
+			builder.AppendNull()
+		}
+	case *array.Date64Builder:
+		if val, ok := col.(*array.Date64); ok {
+			b.Append(val.Value(rowIdx))
+		} else {
+			builder.AppendNull()
+		}
+	case *array.DurationBuilder:
+		if val, ok := col.(*array.Duration); ok {
+			b.Append(val.Value(rowIdx))
+		} else {
+			builder.AppendNull()
+		}
 	case *array.FixedSizeListBuilder:
 		arr, ok := col.(*array.FixedSizeList)
 		if !ok {
 			builder.AppendNull()
 			return
 		}
-		values, ok := arr.ListValues().(*array.Float32)
-		if !ok {
-			builder.AppendNull()
-			return
-		}
+
+		b.Append(true)
+
+		values := arr.ListValues()
+		valBuilder := b.ValueBuilder()
+
 		size := int(arr.DataType().(*arrow.FixedSizeListType).Len())
-		valBldr, ok := b.ValueBuilder().(*array.Float32Builder)
+		start := rowIdx * size
+		end := start + size
+
+		// Recursively append inner values
+		for j := start; j < end; j++ {
+			appendValue(valBuilder, values, j)
+		}
+
+	case *array.ListBuilder:
+		arr, ok := col.(*array.List)
 		if !ok {
 			builder.AppendNull()
 			return
 		}
 
 		b.Append(true)
-		start := rowIdx * size
-		end := start + size
+
+		values := arr.ListValues()
+		valBuilder := b.ValueBuilder()
+
+		start := int(arr.Offsets()[rowIdx])
+		end := int(arr.Offsets()[rowIdx+1])
+
 		for j := start; j < end; j++ {
-			if values.IsNull(j) {
-				valBldr.AppendNull()
-			} else {
-				valBldr.Append(values.Value(j))
-			}
+			appendValue(valBuilder, values, j)
 		}
+
+	case *array.StructBuilder:
+		arr, ok := col.(*array.Struct)
+		if !ok {
+			builder.AppendNull()
+			return
+		}
+
+		b.Append(true)
+
+		numFields := arr.NumField()
+		for i := 0; i < numFields; i++ {
+			fieldBuilder := b.FieldBuilder(i)
+			fieldCol := arr.Field(i)
+			appendValue(fieldBuilder, fieldCol, rowIdx)
+		}
+
+	default:
+		// Fallback for unsupported types: append NULL to keep row counts strict
+		// This prevents "field has 0 rows" panics but may result in data loss for unsupported types.
+		// Given compaction is critical, data loss for unknown types is better than crashing.
+		builder.AppendNull()
 	}
 }
 

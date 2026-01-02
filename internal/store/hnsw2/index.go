@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"runtime"
 	"sync/atomic"
 
 	"github.com/23skdu/longbow/internal/store"
@@ -50,21 +51,53 @@ func (h *ArrowHNSW) AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx int) (ui
 // AddBatch implements store.VectorIndex.
 func (h *ArrowHNSW) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []int) ([]uint32, error) {
 	n := len(rowIdxs)
+	if n == 0 {
+		return nil, nil
+	}
+	
+	// 1. Prepare Locations and Reserve IDs
+	// Use BatchAppend to lock once and reserve a contiguous block of IDs
+	locs := make([]store.Location, n)
+	for i := 0; i < n; i++ {
+		locs[i] = store.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]}
+	}
+	
+	startID := h.locationStore.BatchAppend(locs)
+	
+	// 2. Pre-grow graph to ensure capacity for all new items
+	// This avoids "Stop-the-World" pauses during parallel insertion
+	// finalSize must accommodate (startID + n - 1)
+	finalSize := int(startID) + n
+	h.Grow(finalSize)
+	
 	ids := make([]uint32, n)
 	
-	g, _ := errgroup.WithContext(context.Background())
-	// ArrowHNSW has internal sharded locks, so we can process in parallel.
-	// For very large batches, we might want to group by lock ID, 
-	// but the OS scheduler and Go runtime should handle this reasonably well.
+	// 3. Parallel Insert
+	// We bypass AddByLocation as we already have ID and Capacity
+	g, ctx := errgroup.WithContext(context.Background())
+	g.SetLimit(runtime.GOMAXPROCS(0))
 	
 	for i := 0; i < n; i++ {
 		i := i
+		// Calculate pre-assigned ID
+		id := uint32(startID) + uint32(i)
+		ids[i] = id
+		
 		g.Go(func() error {
-			id, err := h.AddByLocation(batchIdxs[i], rowIdxs[i])
-			if err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			
+			// Generate random level for the node
+			// Note: Global rand is thread-safe but contended. 
+			// For extremely high throughput, thread-local rand is better.
+			level := h.generateLevel()
+			
+			// Insert into the graph
+			// Insert is thread-safe and now mostly lock-free (except for sharded locks)
+			if err := h.Insert(id, level); err != nil {
 				return err
 			}
-			ids[i] = id
 			return nil
 		})
 	}
@@ -112,13 +145,19 @@ func (h *ArrowHNSW) GetNeighbors(id store.VectorID) ([]store.VectorID, error) {
 	}
 
 	// Layer 0 neighbors
+	// Layer 0 neighbors
 	layer := 0
-	count := int(atomic.LoadInt32(&data.Counts[layer][id]))
-	baseIdx := int(id) * MaxNeighbors
+	
+	cID := chunkID(uint32(id))
+	cOff := chunkOffset(uint32(id))
+	
+	count := int(atomic.LoadInt32(&data.Counts[layer][cID][cOff]))
+	baseIdx := int(cOff) * MaxNeighbors
+	neighborsChunk := data.Neighbors[layer][cID]
 
 	results := make([]store.VectorID, count)
 	for i := 0; i < count; i++ {
-		results[i] = store.VectorID(data.Neighbors[layer][baseIdx+i])
+		results[i] = store.VectorID(neighborsChunk[baseIdx+i])
 	}
 
 	return results, nil
@@ -147,18 +186,32 @@ func (h *ArrowHNSW) SetIndexedColumns(cols []string) {
 
 // EstimateMemory implements store.VectorIndex.
 func (h *ArrowHNSW) EstimateMemory() int64 {
-	// Rough estimation: Nodes * (Levels * M * 4 bytes + VectorPtr + Overhead)
-	// + LocationStore
-	// + Vectors if copied (they are pointers for us)
-	
-	nodeCount := int64(h.Size())
-	// Base node overhead
-	mem := nodeCount * 64 
-	
-	// Graph edges: Average connections approx M * nodeCount * 4 bytes
-	mem += nodeCount * int64(h.m) * 4
-	
-	return mem
+	data := h.data.Load()
+	if data == nil {
+		return 0
+	}
+
+	capacity := int64(data.Capacity)
+	dims := int64(h.dims)
+
+	// memory = capacity * (Level[1] + Vector[dims*4] + Neighbors[MaxLayers*MaxNeighbors*4] + Counts[MaxLayers*4] + Versions[MaxLayers*4])
+	// Neighbors per layer: ChunkSize * MaxNeighbors * 4 bytes
+	// Neighborhood overhead for all layers
+	neighborhoodMem := capacity * MaxLayers * MaxNeighbors * 4
+
+	// Metadata: Levels (1 byte), Counts (4 bytes), Versions (4 bytes) per layer
+	metadataMem := capacity * (1 + MaxLayers*4 + MaxLayers*4)
+
+	// Vectors: dims * 4 bytes
+	vectorMem := capacity * dims * 4
+
+	// Sharded locks overhead (1024 * size of Mutex)
+	locksMem := int64(1024 * 64) // Approximation for sync.Mutex
+
+	// Bitset memory (deleted nodes)
+	bitsetMem := capacity / 8
+
+	return neighborhoodMem + metadataMem + vectorMem + locksMem + bitsetMem
 }
 
 // Close implements store.VectorIndex.

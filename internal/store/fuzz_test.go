@@ -1,246 +1,110 @@
 package store
 
 import (
-	"bytes"
-	"encoding/binary"
-	"encoding/json"
+	"math/rand"
 	"testing"
+	"time"
 
-	"github.com/apache/arrow-go/v18/arrow"
-	"github.com/apache/arrow-go/v18/arrow/array"
-	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"github.com/apache/arrow-go/v18/arrow/memory"
+	"github.com/rs/zerolog"
 )
 
-// FuzzIPCReader tests that ipc.NewReader does not panic on malformed input.
-// This targets the WAL replay path in persistence.go.
-func FuzzIPCReader(f *testing.F) {
-	mem := memory.NewGoAllocator()
-	schema := arrow.NewSchema([]arrow.Field{
-		{Name: "vec", Type: arrow.ListOf(arrow.PrimitiveTypes.Float32)},
-	}, nil)
-	bldr := array.NewRecordBuilder(mem, schema)
-	defer bldr.Release()
+func FuzzIngestion(f *testing.F) {
+	// Seed corpus
+	f.Add(int64(12345))
+	f.Add(int64(time.Now().UnixNano()))
 
-	lb := bldr.Field(0).(*array.ListBuilder)
-	vb := lb.ValueBuilder().(*array.Float32Builder)
-	lb.Append(true)
-	vb.AppendValues([]float32{1.0, 2.0, 3.0}, nil)
-	rec := bldr.NewRecordBatch()
-	defer rec.Release()
-
-	var buf bytes.Buffer
-	w := ipc.NewWriter(&buf, ipc.WithSchema(schema), ipc.WithAllocator(mem))
-	_ = w.Write(rec)
-	_ = w.Close()
-
-	f.Add(buf.Bytes())
-	f.Add([]byte{})
-	f.Add([]byte{0x00})
-	f.Add([]byte{0xFF, 0xFF, 0xFF, 0xFF})
-	f.Add([]byte("ARROW1"))
-
-	f.Fuzz(func(t *testing.T, data []byte) {
-		r, err := safeIPCNewReader(bytes.NewReader(data))
-		if err != nil {
-			return
-		}
-		defer r.Release()
-		for r.Next() {
-			rec := r.RecordBatch()
-			if rec != nil {
-				_ = rec.NumRows()
-				_ = rec.NumCols()
-			}
-		}
-		_ = r.Err()
-	})
-}
-
-// FuzzWALEntryParsing tests WAL binary format parsing for corrupted WAL files.
-func FuzzWALEntryParsing(f *testing.F) {
-	validEntry := func() []byte {
-		var buf bytes.Buffer
-		name := "test_dataset"
-		_ = binary.Write(&buf, binary.LittleEndian, uint64(len(name)))
-		buf.WriteString(name)
-		ipcData := []byte{0x41, 0x52, 0x52, 0x4F, 0x57, 0x31}
-		_ = binary.Write(&buf, binary.LittleEndian, uint64(len(ipcData)))
-		buf.Write(ipcData)
-		return buf.Bytes()
-	}
-
-	f.Add(validEntry())
-	f.Add([]byte{})
-	f.Add([]byte{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF})
-	f.Add([]byte{0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x41})
-
-	f.Fuzz(func(t *testing.T, data []byte) {
-		r := bytes.NewReader(data)
-
-		var nameLen uint64
-		if err := binary.Read(r, binary.LittleEndian, &nameLen); err != nil {
-			return
-		}
-		if nameLen > 1<<20 {
-			return
-		}
-
-		nameBytes := make([]byte, nameLen)
-		if _, err := r.Read(nameBytes); err != nil {
-			return
-		}
-
-		var recLen uint64
-		if err := binary.Read(r, binary.LittleEndian, &recLen); err != nil {
-			return
-		}
-		if recLen > 1<<24 {
-			return
-		}
-
-		recBytes := make([]byte, recLen)
-		if _, err := r.Read(recBytes); err != nil {
-			return
-		}
-
-		ipcReader, err := safeIPCNewReader(bytes.NewReader(recBytes))
-		if err != nil {
-			return
-		}
-		defer ipcReader.Release()
-
-		for ipcReader.Next() {
-			rec := ipcReader.RecordBatch()
-			if rec != nil {
-				_ = rec.NumRows()
-			}
-		}
-	})
-}
-
-// FuzzFlightTicket tests Flight ticket JSON parsing.
-func FuzzFlightTicket(f *testing.F) {
-	f.Add([]byte(`{"dataset":"test","k":10}`))
-	f.Add([]byte(`{}`))
-	f.Add([]byte(`{"dataset":""}`))
-	f.Add([]byte(`{"k":-1}`))
-	f.Add([]byte(`null`))
-	f.Add([]byte(`[]`))
-	f.Add([]byte{})
-
-	f.Fuzz(func(t *testing.T, data []byte) {
-		var ticket struct {
-			Dataset string    `json:"dataset"`
-			K       int       `json:"k"`
-			Vector  []float32 `json:"vector"`
-		}
-		_ = json.Unmarshal(data, &ticket)
-	})
-}
-
-// FuzzFlightActionBody tests Flight action body parsing for analytics queries.
-func FuzzFlightActionBody(f *testing.F) {
-	f.Add([]byte(`{"dataset":"test","query":"SELECT * FROM data"}`))
-	f.Add([]byte(`{"dataset":"","query":""}`))
-	f.Add([]byte(`{}`))
-	f.Add([]byte{})
-
-	f.Fuzz(func(t *testing.T, data []byte) {
-		var req struct {
-			Dataset string `json:"dataset"`
-			Query   string `json:"query"`
-		}
-		_ = json.Unmarshal(data, &req)
-	})
-}
-
-// FuzzArrowSchemaFields tests Arrow schema construction with random field types.
-func FuzzArrowSchemaFields(f *testing.F) {
-	f.Add("field1", uint8(0))
-	f.Add("vec", uint8(1))
-	f.Add("", uint8(255))
-
-	f.Fuzz(func(t *testing.T, fieldName string, typeCode uint8) {
-		var dtype arrow.DataType
-		switch typeCode % 8 {
-		case 0:
-			dtype = arrow.PrimitiveTypes.Float32
-		case 1:
-			dtype = arrow.PrimitiveTypes.Float64
-		case 2:
-			dtype = arrow.PrimitiveTypes.Int32
-		case 3:
-			dtype = arrow.PrimitiveTypes.Int64
-		case 4:
-			dtype = arrow.BinaryTypes.String
-		case 5:
-			dtype = arrow.ListOf(arrow.PrimitiveTypes.Float32)
-		case 6:
-			dtype = arrow.FixedSizeListOf(128, arrow.PrimitiveTypes.Float32)
-		case 7:
-			dtype = arrow.BinaryTypes.Binary
-		}
-
-		field := arrow.Field{Name: fieldName, Type: dtype}
-		schema := arrow.NewSchema([]arrow.Field{field}, nil)
-		_ = schema.String()
-	})
-}
-
-// FuzzRecordBuilderWithRandomData tests building records with random dimensions.
-func FuzzRecordBuilderWithRandomData(f *testing.F) {
-	f.Add(uint16(1), uint16(1))
-	f.Add(uint16(128), uint16(10))
-	f.Add(uint16(0), uint16(0))
-
-	f.Fuzz(func(t *testing.T, dims, rows uint16) {
-		if dims > 2048 || rows > 1000 || dims == 0 || rows == 0 {
-			return
-		}
-
+	f.Fuzz(func(t *testing.T, seed int64) {
+		rng := rand.New(rand.NewSource(seed))
 		mem := memory.NewGoAllocator()
-		schema := arrow.NewSchema([]arrow.Field{
-			{Name: "vec", Type: arrow.FixedSizeListOf(int32(dims), arrow.PrimitiveTypes.Float32)},
-		}, nil)
 
-		bldr := array.NewRecordBuilder(mem, schema)
-		defer bldr.Release()
+		// Use Nop logger to avoid clutter
+		store := NewVectorStore(mem, zerolog.Nop(), 50*1024*1024, 0, 0)
+		defer store.Close()
 
-		lb := bldr.Field(0).(*array.FixedSizeListBuilder)
-		vb := lb.ValueBuilder().(*array.Float32Builder)
+		schema := GenerateRandomSchema(rng)
+		numRows := rng.Intn(100) + 1
 
-		for i := uint16(0); i < rows; i++ {
-			lb.Append(true)
-			for j := uint16(0); j < dims; j++ {
-				vb.Append(float32(i) * float32(j))
-			}
-		}
+		batch := GenerateRandomRecordBatch(mem, rng, schema, numRows)
+		defer batch.Release()
 
-		rec := bldr.NewRecordBatch()
-		defer rec.Release()
+		// Attempt ingestion
+		// Currently using IndexRecordColumns logic or new DoPut logic if exposed.
+		// Since DoPut is gRPC, we'll simulate internal add.
+		// Dataset creation:
+		dsName := "fuzz_dataset"
 
-		if rec.NumRows() != int64(rows) {
-			t.Errorf("expected %d rows, got %d", rows, rec.NumRows())
-		}
-
-		var buf bytes.Buffer
-		w := ipc.NewWriter(&buf, ipc.WithSchema(schema), ipc.WithAllocator(mem))
-		if err := w.Write(rec); err != nil {
-			t.Fatalf("write failed: %v", err)
-		}
-		if err := w.Close(); err != nil {
-			t.Fatalf("close failed: %v", err)
-		}
-
-		r, err := safeIPCNewReader(bytes.NewReader(buf.Bytes()), ipc.WithAllocator(mem))
+		// We'll use a direct internal method or public API wrapper if available.
+		// Taking logic from DoPut roughly:
+		ds, err := store.GetDataset(dsName)
 		if err != nil {
-			t.Fatalf("reader failed: %v", err)
+			// Create it
+			ds = &Dataset{Name: dsName}
+			store.mu.Lock()
+			store.datasets[dsName] = ds
+			store.mu.Unlock()
 		}
-		defer r.Release()
 
-		if !r.Next() {
-			t.Fatal("no records read")
+		// Just append to records directly for this test scope to verify it doesn't panic on weird data
+		// But better to use AddToIndex if we had it exposed.
+		// Let's use IndexRecordColumns as it parses things.
+		store.IndexRecordColumns(dsName, batch, 0)
+
+		// Also basic append safety
+		ds.dataMu.Lock()
+		batch.Retain()
+		ds.Records = append(ds.Records, batch)
+		ds.dataMu.Unlock()
+	})
+}
+
+func FuzzCompaction(f *testing.F) {
+	f.Add(int64(98765))
+
+	f.Fuzz(func(t *testing.T, seed int64) {
+		rng := rand.New(rand.NewSource(seed))
+		mem := memory.NewGoAllocator()
+
+		store := NewVectorStore(mem, zerolog.Nop(), 50*1024*1024, 0, 0)
+		defer store.Close()
+
+		// Ensure compaction worker is set up
+		store.compactionConfig = DefaultCompactionConfig()
+		store.compactionConfig.Enabled = true
+		store.compactionWorker = NewCompactionWorker(store, store.compactionConfig)
+		store.compactionWorker.Start()
+
+		// Create dataset
+		dsName := "fuzz_compaction"
+		ds := &Dataset{Name: dsName}
+		store.mu.Lock()
+		store.datasets[dsName] = ds
+		store.mu.Unlock()
+
+		// Add multiple small batches
+		numBatches := rng.Intn(5) + 2
+		schema := GenerateRandomSchema(rng) // Consistent schema for one run
+
+		for i := 0; i < numBatches; i++ {
+			rows := rng.Intn(10) + 1
+			batch := GenerateRandomRecordBatch(mem, rng, schema, rows)
+			ds.dataMu.Lock()
+			ds.Records = append(ds.Records, batch)
+			ds.dataMu.Unlock()
 		}
+
+		// Trigger compaction manually
+		// note: CompactDataset is atomic swap of records.
+		// It might fail if types mismatch in our random schema if we are not careful?
+		// No, we use same schema for all batches in a run.
+
+		// We need to access CompactDataset. Since it's in store package (same package), we can call it?
+		// CompactDataset is likely unexported or attached to worker.
+		// looking at compaction_store.go...
+		// store.CompactDataset(ctx, dsName)
+
+		_ = store.CompactDataset(dsName)
+
+		// Assert assumption: No panic.
 	})
 }

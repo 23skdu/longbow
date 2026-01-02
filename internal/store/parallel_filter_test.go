@@ -2,9 +2,10 @@ package store
 
 import (
 	"context"
-	"github.com/rs/zerolog"
 	"sync"
 	"testing"
+
+	"github.com/rs/zerolog"
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
@@ -306,7 +307,7 @@ func BenchmarkFilterRecords_Sequential(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		for _, rec := range recs {
-			filtered, err := store.filterRecord(ctx, rec, filters)
+			filtered, err := filterRecord(ctx, store.mem, rec, filters)
 			if err == nil && filtered.NumRows() > 0 {
 				filtered.Release()
 			}

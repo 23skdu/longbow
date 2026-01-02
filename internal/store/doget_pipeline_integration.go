@@ -110,7 +110,7 @@ func (s *VectorStore) filterRecordOptimized(ctx context.Context, datasetName str
 
 	// If no indexable filters, use standard filterRecord
 	if len(indexableFilters) == 0 {
-		return s.filterRecord(ctx, rec, filters)
+		return filterRecord(ctx, s.mem, rec, filters)
 	}
 
 	// Use index to get matching row indices for each filter
@@ -123,7 +123,7 @@ func (s *VectorStore) filterRecordOptimized(ctx context.Context, datasetName str
 			if finalMask != nil {
 				finalMask.Release()
 			}
-			return s.filterRecord(ctx, rec, filters)
+			return filterRecord(ctx, s.mem, rec, filters)
 		}
 
 		if finalMask == nil {
@@ -150,7 +150,7 @@ func (s *VectorStore) filterRecordOptimized(ctx context.Context, datasetName str
 
 	// Apply remaining filters using standard method
 	if len(remainingFilters) > 0 {
-		finalRec, err := s.filterRecord(ctx, filteredRec, remainingFilters)
+		finalRec, err := filterRecord(ctx, s.mem, filteredRec, remainingFilters)
 		filteredRec.Release()
 		if err != nil {
 			return nil, err

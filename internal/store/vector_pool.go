@@ -3,15 +3,13 @@ package store
 import (
 	"sync"
 	"sync/atomic"
-
-
 )
 
 // VectorPool manages reusable float32 slices to reduce allocation churn
 type VectorPool struct {
 	pools map[int]*sync.Pool // keyed by vector dimension
 	mu    sync.RWMutex
-	
+
 	// Metrics
 	hits   atomic.Int64 // Pool hits (reused vectors)
 	misses atomic.Int64 // Pool misses (new allocations)
@@ -60,7 +58,7 @@ func (vp *VectorPool) Get(dim int) []float32 {
 
 // Put returns a vector buffer to the pool for reuse
 func (vp *VectorPool) Put(vec []float32) {
-	if vec == nil || len(vec) == 0 {
+	if len(vec) == 0 {
 		return
 	}
 
@@ -83,5 +81,3 @@ func (vp *VectorPool) Put(vec []float32) {
 func (vp *VectorPool) Stats() (hits, misses, puts int64) {
 	return vp.hits.Load(), vp.misses.Load(), vp.puts.Load()
 }
-
-

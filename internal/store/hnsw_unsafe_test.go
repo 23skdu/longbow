@@ -50,11 +50,11 @@ func TestEpochBasics(t *testing.T) {
 
 	// Enter epoch should increment active readers
 	idx.enterEpoch()
-	assert.Equal(t, int32(1), idx.activeReaders.Load())
+	assert.Equal(t, int64(1), idx.activeReaders.Load())
 
 	// Exit epoch should decrement active readers
 	idx.exitEpoch()
-	assert.Equal(t, int32(0), idx.activeReaders.Load())
+	assert.Equal(t, int64(0), idx.activeReaders.Load())
 }
 
 // TestGetVectorUnsafeReturnsDirectSlice verifies zero-copy behavior
@@ -135,7 +135,7 @@ func TestGetVectorUnsafeConcurrent(t *testing.T) {
 	wg.Wait()
 
 	// All readers should have exited
-	assert.Equal(t, int32(0), idx.activeReaders.Load())
+	assert.Equal(t, int64(0), idx.activeReaders.Load())
 }
 
 // TestEpochAdvanceWaitsForReaders tests that epoch advance waits for active readers
@@ -150,7 +150,7 @@ func TestEpochAdvanceWaitsForReaders(t *testing.T) {
 
 	// Enter epoch, verify reader count incremented
 	idx.enterEpoch()
-	assert.Equal(t, int32(1), idx.activeReaders.Load())
+	assert.Equal(t, int64(1), idx.activeReaders.Load())
 
 	// Advance epoch in separate goroutine
 	done := make(chan struct{})
@@ -165,7 +165,7 @@ func TestEpochAdvanceWaitsForReaders(t *testing.T) {
 	// Wait for advance
 	<-done
 
-	assert.Equal(t, int32(0), idx.activeReaders.Load())
+	assert.Equal(t, int64(0), idx.activeReaders.Load())
 	assert.Equal(t, uint64(1), idx.currentEpoch.Load())
 }
 

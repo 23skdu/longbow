@@ -391,4 +391,23 @@ var (
 		},
 		[]string{"dataset"},
 	)
+	// IndexBuildDurationSeconds measures the time taken to build or update the index
+	IndexBuildDurationSeconds = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_index_build_duration_seconds",
+			Help:    "Duration of index build or update operations",
+			Buckets: []float64{0.01, 0.05, 0.1, 0.5, 1, 5, 10, 30, 60},
+		},
+		[]string{"dataset"},
+	)
+
+	// SearchLatencySeconds measures the duration of search operations by query type
+	SearchLatencySeconds = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_search_latency_seconds",
+			Help:    "Latency of search operations",
+			Buckets: []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5},
+		},
+		[]string{"dataset", "query_type"}, // query_type: "vector", "hybrid", "keyword"
+	)
 )

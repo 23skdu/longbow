@@ -17,7 +17,7 @@ type DataServer struct {
 }
 
 func NewDataServer(store *VectorStore) *DataServer {
-	return &DataServer{VectorStore: store}
+	return &DataServer{store}
 }
 
 // DoGet retrieves a dataset, converting domain errors to gRPC status codes.
@@ -54,8 +54,6 @@ func (s *DataServer) DoExchange(stream flight.FlightService_DoExchangeServer) er
 	err := s.VectorStore.DoExchange(stream)
 	return ToGRPCStatus(err)
 }
-
-
 
 // ListFlights returns Unimplemented on DataServer
 func (s *DataServer) ListFlights(c *flight.Criteria, stream flight.FlightService_ListFlightsServer) error {

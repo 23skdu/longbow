@@ -12,9 +12,9 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"github.com/apache/arrow-go/v18/arrow/memory"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/rs/zerolog"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -42,7 +42,9 @@ func TestStore_EndToEnd_TDD(t *testing.T) {
 	require.NoError(t, err)
 	server.InitListener(ln)
 
-	go server.Serve()
+	go func() {
+		_ = server.Serve()
+	}()
 	defer server.Shutdown()
 
 	addr := ln.Addr().String()
@@ -50,7 +52,7 @@ func TestStore_EndToEnd_TDD(t *testing.T) {
 	// 2. Initialize Client
 	client, err := flight.NewClientWithMiddleware(addr, nil, nil, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	require.NoError(t, err)
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	ctx := context.Background()
 
@@ -111,7 +113,7 @@ func TestStore_EndToEnd_TDD(t *testing.T) {
 
 	// 6. Persistence & Reload
 	server.Shutdown()
-	store.Close()
+	_ = store.Close()
 
 	// Re-open
 	store2 := NewVectorStore(mem, logger, 1<<30, 0, 0)
@@ -129,12 +131,14 @@ func TestStore_EndToEnd_TDD(t *testing.T) {
 	ln2, err := net.Listen("tcp", "localhost:0")
 	require.NoError(t, err)
 	server2.InitListener(ln2)
-	go server2.Serve()
+	go func() {
+		_ = server2.Serve()
+	}()
 	defer server2.Shutdown()
 
 	client2, err := flight.NewClientWithMiddleware(ln2.Addr().String(), nil, nil, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	require.NoError(t, err)
-	defer client2.Close()
+	defer func() { _ = client2.Close() }()
 
 	// Verify data is back via Get
 	getStream2, err := client2.DoGet(ctx, &flight.Ticket{Ticket: ticketBytes})

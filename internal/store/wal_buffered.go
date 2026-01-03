@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"hash/crc32"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/apache/arrow-go/v18/arrow"
@@ -14,6 +15,7 @@ import (
 
 // BufferedWAL is an asynchronous WAL implementation that buffers writes in memory.
 // It trades a small window of durability (flushInterval) for high throughput.
+// It uses double-buffering to allow writes to continue while flushing.
 type BufferedWAL struct {
 	mu           sync.Mutex
 	buf          *bytes.Buffer
@@ -22,7 +24,13 @@ type BufferedWAL struct {
 	flushDelay   time.Duration
 	stopCh       chan struct{}
 	doneCh       chan struct{}
-	flushCh      chan struct{} // Signal to force flush
+
+	// Synchronization
+	currentSeq uint64        // Max sequence currently in buffer
+	flushedSeq atomic.Uint64 // Max sequence flushed to backend
+	syncCond   *sync.Cond    // Broadcasts when flushedSeq updates
+	isFlushing bool          // True if a flush is in progress
+	flushCh    chan struct{} // Signal to force flush
 }
 
 // NewBufferedWAL creates a new buffered WAL.
@@ -36,6 +44,7 @@ func NewBufferedWAL(backend WALBackend, maxBatchSize int, flushDelay time.Durati
 		doneCh:       make(chan struct{}),
 		flushCh:      make(chan struct{}, 1),
 	}
+	w.syncCond = sync.NewCond(&w.mu)
 
 	go w.runFlushLoop()
 	return w
@@ -47,15 +56,7 @@ func (w *BufferedWAL) Write(name string, seq uint64, ts int64, record arrow.Reco
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	// 1. Serialize RecordBatch to a temporary buffer (or directly to w.buf?)
-	// We need the length for the header, so we might need a separate buffer or
-	// reserve space in w.buf, write, measure, then fill header.
-	// To minimize allocs, let's write to a reuseable staging buffer or directly to w.buf.
-	// Since IPC writer needs a writer, let's use a temp buffer for the record itself
-	// to calculate CRC and Length correctly before committing to the main buffer.
-	// OPTIMIZATION: In the future we can serialize directly and backfill header,
-	// but for now let's be safe with a scratch buffer.
-
+	// 1. Serialize RecordBatch to a temporary buffer
 	var recBuf bytes.Buffer
 	writer := ipc.NewWriter(&recBuf, ipc.WithSchema(record.Schema()))
 	if err := writer.Write(record); err != nil {
@@ -97,46 +98,76 @@ func (w *BufferedWAL) Write(name string, seq uint64, ts int64, record arrow.Reco
 		return err
 	}
 
+	// Update current sequence
+	if seq > w.currentSeq {
+		w.currentSeq = seq
+	}
+
 	// 5. Trigger flush if buffer exceeds size
 	if w.buf.Len() >= w.maxBatchSize {
-		// Signal flush securely
 		select {
 		case w.flushCh <- struct{}{}:
 		default:
-			// Already signaled
 		}
 	}
 
 	return nil
 }
 
-// Sync forces a flush to disk and waits for it to complete.
-// Note: This implementation waits for *a* flush, effectively ensuring durability.
+// Sync forces a flush to disk and waits for the *current* writes to be persisted.
 func (w *BufferedWAL) Sync() error {
-	// Simple barrier: Trigger flush and wait?
-	// The problem is waiting for the *specific* flush of currently buffered data.
-	// For simplicity in MVP:
-	// 1. Lock
-	// 2. Flush synchronously (calling flushLocked)
-	// 3. Backend Sync
 	w.mu.Lock()
-	defer w.mu.Unlock()
+	targetSeq := w.currentSeq
 
-	return w.flushLocked()
+	// Optimization: if already flushed
+	if w.flushedSeq.Load() >= targetSeq {
+		w.mu.Unlock()
+		return nil
+	}
+
+	// If not flushing, we can trigger a flush on the current buffer *immediately*
+	if !w.isFlushing && w.buf.Len() > 0 {
+		wb := w.swapBufferLocked()
+		if wb != nil {
+			w.isFlushing = true
+			w.mu.Unlock()
+
+			err := w.flushBufferToBackend(wb)
+
+			w.mu.Lock()
+			w.isFlushing = false
+			if err != nil {
+				w.mu.Unlock()
+				return err
+			}
+		}
+	}
+
+	// Wait until flushedSeq >= targetSeq
+	for w.flushedSeq.Load() < targetSeq {
+		w.syncCond.Wait()
+	}
+	w.mu.Unlock()
+
+	return nil
 }
 
 // Close flushes ensuring all data is written and closes the background loop.
 func (w *BufferedWAL) Close() error {
-	// Stop loop
 	close(w.stopCh)
-	<-w.doneCh
+	<-w.doneCh // Wait for loop to exit
 
 	// Final flush
 	w.mu.Lock()
-	defer w.mu.Unlock()
-	if err := w.flushLocked(); err != nil {
-		w.backend.Close() // Ignore error on backend close if flush failed?
-		return err
+	if w.buf.Len() > 0 {
+		wb := w.swapBufferLocked()
+		w.mu.Unlock()
+		if err := w.flushBufferToBackend(wb); err != nil {
+			w.backend.Close()
+			return err
+		}
+	} else {
+		w.mu.Unlock()
 	}
 
 	return w.backend.Close()
@@ -160,32 +191,71 @@ func (w *BufferedWAL) runFlushLoop() {
 	}
 }
 
-// tryFlush builds a lock around flushLocked to be called from the loop.
+// tryFlush attempts to flush if needed.
 func (w *BufferedWAL) tryFlush() {
 	w.mu.Lock()
-	defer w.mu.Unlock()
-	_ = w.flushLocked()
+	if w.isFlushing || w.buf.Len() == 0 {
+		w.mu.Unlock()
+		return
+	}
+
+	wb := w.swapBufferLocked()
+	w.isFlushing = true
+	w.mu.Unlock()
+
+	_ = w.flushBufferToBackend(wb)
 	// TODO: Log error?
+
+	w.mu.Lock()
+	w.isFlushing = false
+	w.mu.Unlock()
 }
 
-// flushLocked writes the buffer to the backend and resets it.
-// Caller must hold w.mu.
-func (w *BufferedWAL) flushLocked() error {
+type writeBatch struct {
+	data   []byte
+	maxSeq uint64
+}
+
+// swapBufferLocked replaces the current buffer with a new one and returns the old one wrapped.
+// Must be called with w.mu held.
+func (w *BufferedWAL) swapBufferLocked() *writeBatch {
 	if w.buf.Len() == 0 {
 		return nil
 	}
 
-	// Write entire buffer to backend
-	if _, err := w.backend.Write(w.buf.Bytes()); err != nil {
+	oldBuf := w.buf
+	currentMax := w.currentSeq
+
+	// Allocate new buffer
+	// Optimization: we could pool these buffers to avoid allocs
+	// But allocating 64KB chunks is relatively cheap in Go GC compared to the I/O.
+	w.buf = bytes.NewBuffer(make([]byte, 0, w.maxBatchSize*2))
+
+	return &writeBatch{
+		data:   oldBuf.Bytes(),
+		maxSeq: currentMax,
+	}
+}
+
+// flushBufferToBackend writes the batch to disk and updates flushedSeq.
+func (w *BufferedWAL) flushBufferToBackend(wb *writeBatch) error {
+	if wb == nil || len(wb.data) == 0 {
+		return nil
+	}
+
+	if _, err := w.backend.Write(wb.data); err != nil {
 		return fmt.Errorf("wal flush write: %w", err)
 	}
 
-	// Sync backend (group commit)
 	if err := w.backend.Sync(); err != nil {
 		return fmt.Errorf("wal backend sync: %w", err)
 	}
 
-	// Reset buffer
-	w.buf.Reset()
+	// Update flushed sequence
+	w.flushedSeq.Store(wb.maxSeq)
+
+	// Broadcast to waiters
+	w.syncCond.Broadcast()
+
 	return nil
 }

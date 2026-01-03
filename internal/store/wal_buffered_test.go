@@ -1,8 +1,11 @@
 package store
 
 import (
+	"fmt"
+	"math/rand"
 	"os"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -154,4 +157,76 @@ func TestBufferedWAL_BatchSizeTrigger(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	assert.NotEmpty(t, backend.getWrites(), "Should trigger flush due to size limit")
+}
+
+func TestBufferedWAL_ConcurrentSync(t *testing.T) {
+	backend := &MockBackend{}
+	// Large buffer to allow buildup, longer flush
+	wal := NewBufferedWAL(backend, 1024*1024, 100*time.Millisecond)
+	defer wal.Close()
+
+	pool := memory.NewGoAllocator()
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "int", Type: arrow.PrimitiveTypes.Int32},
+	}, nil)
+
+	const numWriters = 10
+	const numRecords = 100
+	var totalWritten atomic.Int64
+
+	var wg sync.WaitGroup
+	wg.Add(numWriters)
+
+	start := time.Now()
+
+	for i := 0; i < numWriters; i++ {
+		go func(id int) {
+			defer wg.Done()
+			b := array.NewRecordBuilder(pool, schema)
+			defer b.Release()
+
+			for j := 0; j < numRecords; j++ {
+				b.Field(0).(*array.Int32Builder).Append(int32(j))
+				rec := b.NewRecordBatch()
+				// Write
+				seq := uint64(id*numRecords + j + 1) // logical seq
+				err := wal.Write(fmt.Sprintf("w%d", id), seq, 0, rec)
+				rec.Release()
+				assert.NoError(t, err)
+				totalWritten.Add(1)
+
+				// Random sleep to create jitter
+				time.Sleep(time.Duration(rand.Intn(100)) * time.Microsecond)
+			}
+		}(i)
+	}
+
+	// Concurrent Syncer
+	stopSync := make(chan struct{})
+	go func() {
+		for {
+			select {
+			case <-stopSync:
+				return
+			default:
+				// Call Sync frequently
+				wal.Sync()
+				time.Sleep(5 * time.Millisecond)
+			}
+		}
+	}()
+
+	wg.Wait()
+	close(stopSync)
+
+	// Final sync to ensure everything is flushed
+	wal.Sync()
+
+	duration := time.Since(start)
+	t.Logf("Write/Sync Duration: %v", duration)
+
+	// Verify backend
+	writes := backend.getWrites()
+	assert.NotEmpty(t, writes)
+	assert.True(t, backend.isSynced())
 }

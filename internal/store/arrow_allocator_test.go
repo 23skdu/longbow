@@ -12,8 +12,8 @@ import (
 // Test: ZeroCopyBuffer - Direct byte slice access without allocation
 // =============================================================================
 
-func TestZeroCopyBufferConfig_Defaults(t *testing.T) {
-	cfg := DefaultZeroCopyBufferConfig()
+func TestZeroCopyBufferArrowHNSWConfig_Defaults(t *testing.T) {
+	cfg := DefaultZeroCopyBufferArrowHNSWConfig()
 
 	if !cfg.Enabled {
 		t.Error("Expected Enabled=true by default")
@@ -26,16 +26,16 @@ func TestZeroCopyBufferConfig_Defaults(t *testing.T) {
 	}
 }
 
-func TestZeroCopyBufferConfig_Validate(t *testing.T) {
+func TestZeroCopyBufferArrowHNSWConfig_Validate(t *testing.T) {
 	tests := []struct {
 		name    string
-		cfg     ZeroCopyBufferConfig
+		cfg     ZeroCopyBufferArrowHNSWConfig
 		wantErr bool
 	}{
-		{"valid", DefaultZeroCopyBufferConfig(), false},
-		{"zero_max_buffers", ZeroCopyBufferConfig{Enabled: true, MaxRetainedBuffers: 0, MaxBufferSize: 1024}, true},
-		{"zero_max_size", ZeroCopyBufferConfig{Enabled: true, MaxRetainedBuffers: 10, MaxBufferSize: 0}, true},
-		{"disabled_valid", ZeroCopyBufferConfig{Enabled: false}, false},
+		{"valid", DefaultZeroCopyBufferArrowHNSWConfig(), false},
+		{"zero_max_buffers", ZeroCopyBufferArrowHNSWConfig{Enabled: true, MaxRetainedBuffers: 0, MaxBufferSize: 1024}, true},
+		{"zero_max_size", ZeroCopyBufferArrowHNSWConfig{Enabled: true, MaxRetainedBuffers: 10, MaxBufferSize: 0}, true},
+		{"disabled_valid", ZeroCopyBufferArrowHNSWConfig{Enabled: false}, false},
 	}
 
 	for _, tt := range tests {

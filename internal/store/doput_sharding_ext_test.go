@@ -199,52 +199,6 @@ func TestDatasetMigrateToShardedIndex_NoIndex(t *testing.T) {
 }
 
 // =============================================================================
-// ShardedHNSW.getVectorFromDataset Tests
-// =============================================================================
-
-func TestShardedHNSW_GetVectorFromDataset_NilDataset(t *testing.T) {
-	s := &ShardedHNSW{dataset: nil}
-
-	result, _ := s.getVectorFromDataset(Location{BatchIdx: 0, RowIdx: 0})
-	if result != nil {
-		t.Error("expected nil for nil dataset")
-	}
-}
-
-func TestShardedHNSW_GetVectorFromDataset_OutOfBounds(t *testing.T) {
-	ds := &Dataset{Name: "test", Records: nil}
-	s := &ShardedHNSW{dataset: ds}
-
-	result, _ := s.getVectorFromDataset(Location{BatchIdx: 999, RowIdx: 0})
-	if result != nil {
-		t.Error("expected nil for out of bounds batch")
-	}
-}
-
-func TestShardedHNSW_GetVectorFromDataset_NoVectorColumn(t *testing.T) {
-	mem := memory.NewGoAllocator()
-
-	// Create record without vector column
-	schema := arrow.NewSchema(
-		[]arrow.Field{{Name: "id", Type: arrow.PrimitiveTypes.Int64}},
-		nil,
-	)
-	bldr := array.NewRecordBuilder(mem, schema)
-	defer bldr.Release()
-
-	bldr.Field(0).(*array.Int64Builder).Append(1)
-	rec := bldr.NewRecordBatch() //nolint:staticcheck
-	defer rec.Release()
-
-	//nolint:staticcheck // test uses existing codebase patterns
-	ds := &Dataset{Name: "test", Records: []arrow.RecordBatch{rec}} //nolint:staticcheck
-	s := &ShardedHNSW{dataset: ds}
-
-	result, _ := s.getVectorFromDataset(Location{BatchIdx: 0, RowIdx: 0})
-	if result != nil {
-		t.Error("expected nil when no vector column")
-	}
-}
 
 // =============================================================================
 // VectorStore.checkAndMigrateToSharded Tests

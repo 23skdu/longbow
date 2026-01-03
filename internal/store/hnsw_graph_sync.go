@@ -111,7 +111,13 @@ func (s *HNSWGraphSync) ImportState(data []byte) error {
 	// NewHNSWGraphSync assumes index exists.
 	// ImportState traditionally overwrites or fills?
 	// Original used `make` and `copy` over `s.index.locations`.
-	// So it replaced the whole slice.
+	// Pre-allocate capacity
+	// EnsureCapacity takes an ID (index), so usage is (count - 1), but effectively ensuring capacity for count items.
+	// Since ID is 0-indexed.
+	count := len(state.Locations)
+	if count > 0 {
+		s.index.locationStore.EnsureCapacity(VectorID(count - 1))
+	}
 	s.index.locationStore.Reset()
 	for _, loc := range state.Locations {
 		s.index.locationStore.Append(loc)
@@ -204,7 +210,7 @@ func (s *HNSWGraphSync) ApplyDelta(delta *DeltaSync) error {
 	targetLen := delta.StartIndex + len(delta.NewLocations)
 	currentLen := s.index.locationStore.Len()
 	if targetLen > currentLen {
-		s.index.locationStore.Grow(targetLen - currentLen)
+		s.index.locationStore.EnsureCapacity(VectorID(targetLen - 1))
 		// We also need to update the size of the store if Grow doesn't do it (Grow in Chunked.. only allocates chunks).
 		// Wait, ChunkedLocationStore.Grow allocates *capacity*, but Append updates *Len*.
 		// Set updates only if within *capacity*? No, Set updates if within *Chunks*.

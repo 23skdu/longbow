@@ -30,12 +30,12 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/kelseyhightower/envconfig"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/rs/zerolog"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.17.0"
-	"github.com/rs/zerolog"
 	"google.golang.org/grpc"
 )
 
@@ -112,7 +112,7 @@ type Config struct {
 	HNSW2Alpha          float32 `envconfig:"HNSW_ALPHA" default:"1.0"`
 	HNSW2KeepPruned     bool    `envconfig:"HNSW_KEEP_PRUNED" default:"false"`
 	HNSW2SQ8Enabled     bool    `envconfig:"HNSW_SQ8_ENABLED" default:"false"`
-	HNSW2Refinement      float64 `envconfig:"HNSW_REFINEMENT_FACTOR" default:"1.0"`
+	HNSW2Refinement     float64 `envconfig:"HNSW_REFINEMENT_FACTOR" default:"1.0"`
 }
 
 // Global config instance for hook functions
@@ -133,7 +133,7 @@ func initializeHNSW2(ds *store.Dataset, logger zerolog.Logger) {
 	config.SQ8Enabled = globalCfg.HNSW2SQ8Enabled
 	config.RefinementFactor = globalCfg.HNSW2Refinement
 
-	hnswIndex := hnsw2.NewArrowHNSW(ds, config)
+	hnswIndex := hnsw2.NewArrowHNSW(ds, config, nil)
 	ds.SetHNSW2Index(hnswIndex)
 	if logger.GetLevel() != zerolog.Disabled {
 		logger.Info().

@@ -121,7 +121,7 @@ type ArrowHNSW struct {
 
 	// Arrow integration - reference to parent dataset for vector access
 	dataset *Dataset
-	dims    int // Vector dimensions, cached for unsafe operations
+	dims    atomic.Int32 // Vector dimensions, cached for lock-free access
 
 	// HNSW parameters
 	config         ArrowHNSWConfig // Store full config
@@ -318,14 +318,15 @@ func (h *ArrowHNSW) Grow(minCap int) {
 	// Ensure graph data chunks
 	dataPtr := h.data.Load()
 	if dataPtr == nil {
-		h.data.Store(NewGraphData(minCap, h.dims, h.config.SQ8Enabled, h.config.PQEnabled))
+		h.data.Store(NewGraphData(minCap, int(h.dims.Load()), h.config.SQ8Enabled, h.config.PQEnabled))
 		return
 	}
 
 	// Check if growth needed
 	// Capacity is numChunks * ChunkSize
 	// Also check if structure needs upgrade (lazy vectors added)
-	dimsChanged := h.dims > 0 && dataPtr.Vectors == nil
+	currentDims := int(h.dims.Load())
+	dimsChanged := currentDims > 0 && dataPtr.Vectors == nil
 	sq8Changed := h.config.SQ8Enabled && dataPtr.VectorsSQ8 == nil
 	pqChanged := h.config.PQEnabled && dataPtr.VectorsPQ == nil
 
@@ -334,7 +335,7 @@ func (h *ArrowHNSW) Grow(minCap int) {
 	}
 
 	// Clone and grow
-	newData := dataPtr.Clone(minCap, h.dims, h.config.SQ8Enabled, h.config.PQEnabled)
+	newData := dataPtr.Clone(minCap, currentDims, h.config.SQ8Enabled, h.config.PQEnabled)
 	h.data.Store(newData)
 }
 
@@ -431,6 +432,7 @@ func NewArrowSearchContextPool() *ArrowSearchContextPool {
 					scratchRemaining:     make([]Candidate, 8000),
 					scratchRemainingVecs: make([][]float32, 8000),
 					scratchSelectedVecs:  make([][]float32, 0, 1000),
+					scratchVecsSQ8:       make([][]byte, 8000),
 					scratchSelectedIdxs:  make([]int, 0, 1000),
 					// PQ Scratch
 					scratchPQTable: make([]float32, 32768), // Increased for larger M
@@ -479,6 +481,7 @@ type ArrowSearchContext struct {
 	scratchRemaining     []Candidate
 	scratchRemainingVecs [][]float32
 	scratchSelectedVecs  [][]float32
+	scratchVecsSQ8       [][]byte
 	scratchPQTable       []float32 // For ADC table
 	scratchIDs           []uint32  // For batching unvisited neighbors
 	querySQ8             []byte    // SQ8 encoded query

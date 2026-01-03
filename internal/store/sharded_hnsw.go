@@ -119,8 +119,10 @@ func (s *ShardedHNSW) newShard() *hnswShard {
 	idx := NewArrowHNSW(s.dataset, arrowConfig, nil)
 
 	// Manually set dims if not yet inferred (safe backup)
-	if s.dimension > 0 && idx.dims == 0 {
-		idx.dims = int(s.dimension)
+	// Manually set dims if not yet inferred (safe backup)
+	dims := int(s.dimension)
+	if dims > 0 && idx.dims.Load() == 0 {
+		idx.dims.Store(int32(dims))
 	}
 
 	return &hnswShard{

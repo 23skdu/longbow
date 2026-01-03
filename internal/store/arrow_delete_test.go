@@ -12,7 +12,7 @@ func TestDelete(t *testing.T) {
 
 	// Create index with dimensions set
 	index := NewArrowHNSW(nil, config, nil)
-	index.dims = 128
+	index.dims.Store(128)
 
 	// Initialize GraphData manually with dimensions
 	data := NewGraphData(100, 128, false, false)
@@ -79,7 +79,7 @@ func TestDelete(t *testing.T) {
 	ctx := index.searchPool.Get()
 	defer index.searchPool.Put(ctx)
 	for i := 1; i < 10; i++ {
-		index.addConnection(ctx, data, 0, uint32(i), 0, 16)
+		index.AddConnection(ctx, data, 0, uint32(i), 0, 16)
 	}
 
 	results, _ := index.Search(query, 10, 20, nil)

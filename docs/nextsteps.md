@@ -32,13 +32,13 @@ This document outlines the next 20 prioritized improvements for the Longbow vect
 
 ## Priority 2: Performance & Efficiency (High)
 
-### 5. Implement Product Quantization (PQ) Training
+### 5. [x] Implement Product Quantization (PQ) Training
 
 - **Location**: `internal/store/arrow_hnsw_insert.go` -> `TrainPQ`
 - **Issue**: The `TrainPQ` method is currently a stub/noop.
 - **Plan**: Implement a proper PQ training phase that clusters sample vectors to create a codebook. This will significantly reduce memory usage (e.g., 4x-10x reduction) compared to raw float32 or SQ8.
 
-### 6. SIMD Usage for SQ8 Distance Calculations
+### 6. [x] SIMD Usage for SQ8 Distance Calculations
 
 - **Location**: `internal/store/arrow_hnsw_insert.go`
 - **Issue**: The SQ8 distance calculation path in `searchLayerForInsert` currently iterates serially: `// TODO: Batch SIMD`.

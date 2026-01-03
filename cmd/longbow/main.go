@@ -24,13 +24,13 @@ import (
 	"github.com/23skdu/longbow/internal/middleware"
 	"github.com/23skdu/longbow/internal/sharding"
 	"github.com/23skdu/longbow/internal/store"
-	"github.com/23skdu/longbow/internal/store/hnsw2"
+	"github.com/rs/zerolog"
+
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/joho/godotenv"
 	"github.com/kelseyhightower/envconfig"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/rs/zerolog"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
@@ -113,6 +113,11 @@ type Config struct {
 	HNSW2KeepPruned     bool    `envconfig:"HNSW_KEEP_PRUNED" default:"false"`
 	HNSW2SQ8Enabled     bool    `envconfig:"HNSW_SQ8_ENABLED" default:"false"`
 	HNSW2Refinement     float64 `envconfig:"HNSW_REFINEMENT_FACTOR" default:"1.0"`
+
+	// Auto Sharding Configuration
+	AutoShardingEnabled        bool `envconfig:"AUTO_SHARDING_ENABLED" default:"true"`
+	AutoShardingThreshold      int  `envconfig:"AUTO_SHARDING_THRESHOLD" default:"10000"`
+	AutoShardingSplitThreshold int  `envconfig:"AUTO_SHARDING_SPLIT_THRESHOLD" default:"65536"` // Default chunk size
 }
 
 // Global config instance for hook functions
@@ -123,7 +128,7 @@ func initializeHNSW2(ds *store.Dataset, logger zerolog.Logger) {
 	if !ds.UseHNSW2() {
 		return
 	}
-	config := hnsw2.DefaultConfig()
+	config := store.DefaultArrowHNSWConfig()
 	config.M = globalCfg.HNSW2M
 	config.MMax = globalCfg.HNSW2M * 2
 	config.MMax0 = globalCfg.HNSW2M * 2
@@ -133,7 +138,7 @@ func initializeHNSW2(ds *store.Dataset, logger zerolog.Logger) {
 	config.SQ8Enabled = globalCfg.HNSW2SQ8Enabled
 	config.RefinementFactor = globalCfg.HNSW2Refinement
 
-	hnswIndex := hnsw2.NewArrowHNSW(ds, config, nil)
+	hnswIndex := store.NewArrowHNSW(ds, config, nil)
 	ds.SetHNSW2Index(hnswIndex)
 	if logger.GetLevel() != zerolog.Disabled {
 		logger.Info().
@@ -223,6 +228,14 @@ func run() error {
 		EvictionHeadroom: cfg.MemoryEvictionHeadroom,
 		EvictionPolicy:   cfg.MemoryEvictionPolicy,
 		RejectWrites:     cfg.MemoryRejectWrites,
+	})
+
+	// Configure Auto Sharding
+	vectorStore.SetAutoShardingConfig(store.AutoShardingConfig{
+		Enabled:             cfg.AutoShardingEnabled,
+		ShardThreshold:      cfg.AutoShardingThreshold,
+		ShardCount:          runtime.NumCPU(),
+		ShardSplitThreshold: cfg.AutoShardingSplitThreshold,
 	})
 
 	// Configure hybrid search

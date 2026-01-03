@@ -9,8 +9,8 @@ import (
 )
 
 const (
-	// ChunkShift determines the size of each chunk (1 << 16 = 65536).
-	ChunkShift = 16
+	// ChunkShift determines the size of each chunk (1 << 10 = 1024).
+	ChunkShift = 10
 	ChunkSize  = 1 << ChunkShift
 	ChunkMask  = ChunkSize - 1
 )

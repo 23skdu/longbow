@@ -232,6 +232,7 @@ func (s *ShardedHNSW) AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx int) (
 
 	// Route to Shard
 	shardIdx := s.GetShardForID(id)
+
 	localID := s.GetLocalID(id)
 
 	s.shardsMu.Lock()

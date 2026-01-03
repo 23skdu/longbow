@@ -33,7 +33,7 @@ func TestPQIntegration_EndToEnd(t *testing.T) {
 
 	fmt.Println("Step 3: Train PQ")
 	// 3. Train PQ externally (before adding to graph to maintain dimension consistency)
-	cfg := &PQConfig{Dim: dim, M: 8, Ksub: 16, SubDim: dim / 8}
+	cfg := &PQConfig{Dimensions: dim, NumSubVectors: 8, NumCentroids: 16}
 	encoder, err := TrainPQEncoder(cfg, vectors[:trainSize], 2)
 	if err != nil {
 		t.Fatalf("TrainPQ error: %v", err)
@@ -101,7 +101,7 @@ func BenchmarkPQSearch(b *testing.B) {
 	ds := &Dataset{Name: "bench_pq"}
 	index := NewHNSWIndexWithCapacity(ds, count)
 
-	cfg := &PQConfig{Dim: dim, M: 8, Ksub: 16, SubDim: dim / 8}
+	cfg := &PQConfig{Dimensions: dim, NumSubVectors: 8, NumCentroids: 16}
 	encoder, _ := TrainPQEncoder(cfg, vectors[:50], 2)
 	index.SetPQEncoder(encoder)
 

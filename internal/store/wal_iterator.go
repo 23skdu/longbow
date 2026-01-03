@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"hash/crc32"
 	"io"
 	"os"
 	"path/filepath"
@@ -106,6 +107,15 @@ func (it *WALIterator) Next() (uint64, int64, string, arrow.RecordBatch, error) 
 	}
 
 	// Deserialize
+	// Verify Checksum
+	crc := crc32.NewIEEE()
+	_, _ = crc.Write(nameBytes)
+	_, _ = crc.Write(recBytes)
+	expectedSum := binary.LittleEndian.Uint32(header[0:4])
+	if crc.Sum32() != expectedSum {
+		return 0, 0, "", nil, fmt.Errorf("wal crc mismatch: expected %x, got %x", expectedSum, crc.Sum32())
+	}
+
 	r, err := ipc.NewReader(bytes.NewReader(recBytes), ipc.WithAllocator(it.mem))
 	if err != nil {
 		return 0, 0, "", nil, err

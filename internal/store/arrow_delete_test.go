@@ -1,0 +1,115 @@
+package store
+
+import (
+	"testing"
+)
+
+func TestDelete(t *testing.T) {
+	config := DefaultArrowHNSWConfig()
+	config.InitialCapacity = 100
+	config.M = 16
+	config.EfConstruction = 100
+
+	// Create index with dimensions set
+	index := NewArrowHNSW(nil, config, nil)
+	index.dims = 128
+
+	// Initialize GraphData manually with dimensions
+	data := NewGraphData(100, 128, false)
+	index.data.Store(data)
+
+	// Manually allocate chunks for testing since we bypass Insert
+	numChunks := len(data.Levels)
+	for i := 0; i < numChunks; i++ {
+		// Levels
+		lChunk := make([]uint8, ChunkSize)
+		data.Levels[i] = &lChunk
+
+		// Vectors
+		vChunk := make([]float32, ChunkSize*128)
+		data.Vectors[i] = &vChunk
+
+		// Neighbors (Layer 0)
+		nChunk := make([]uint32, ChunkSize*MaxNeighbors)
+		data.Neighbors[0][i] = &nChunk
+
+		// Counts (Layer 0)
+		cChunk := make([]int32, ChunkSize)
+		data.Counts[0][i] = &cChunk
+
+		// Versions
+		vChunk2 := make([]uint32, ChunkSize)
+		data.Versions[0][i] = &vChunk2
+	}
+
+	// Insert 10 vectors
+	for i := 0; i < 10; i++ {
+		// Mock vector data in dense storage
+		cID := chunkID(uint32(i))
+		cOff := chunkOffset(uint32(i))
+		// idx := int(cOff) * 128
+		if data.Vectors[cID] != nil {
+			vec1 := (*data.Vectors[cID])[int(cOff)*128 : int(cOff+1)*128]
+			vec1[0] = float32(i) // Use first element as value
+		}
+
+		// Set level 0 for simplicity
+		(*data.Levels[cID])[cOff] = 0
+		if (*data.Levels[cID])[cOff] != 0 {
+			t.Errorf("Level should be 0")
+		}
+
+		// Normally Insert would do more, but we just want to test Search filtering
+		// Insert needs nodeCount to be updated
+		index.nodeCount.Add(1)
+	}
+
+	// Set entry point to 0
+	index.entryPoint.Store(0)
+	index.maxLevel.Store(0)
+
+	// Verify they all exist in search
+	query := make([]float32, 128)
+	query[0] = 5.0
+	_, _ = index.Search(query, 10, 20, nil)
+
+	// Wait, if neighbors are not connected, Search will only find entry point.
+	// For Delete test, we just need to verify that if a node IS found, it's filtered.
+	// Let's connect them all to node 0.
+	ctx := index.searchPool.Get()
+	defer index.searchPool.Put(ctx)
+	for i := 1; i < 10; i++ {
+		index.addConnection(ctx, data, 0, uint32(i), 0, 16)
+	}
+
+	results, _ := index.Search(query, 10, 20, nil)
+	if len(results) != 10 {
+		t.Errorf("expected 10 results, got %d", len(results))
+	}
+
+	// Delete node 5
+	index.Delete(5)
+
+	// Search again
+	results, _ = index.Search(query, 10, 20, nil)
+	// Node 5 should be missing
+	found5 := false
+	for _, res := range results {
+		if uint32(res.ID) == 5 {
+			found5 = true
+		}
+	}
+	if found5 {
+		t.Errorf("node 5 should have been deleted")
+	}
+
+	// Delete all
+	for i := 0; i < 10; i++ {
+		index.Delete(uint32(i))
+	}
+
+	results, _ = index.Search(query, 10, 20, nil)
+	if len(results) != 0 {
+		t.Errorf("expected 0 results, got %d", len(results))
+	}
+}

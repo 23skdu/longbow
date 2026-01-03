@@ -208,31 +208,79 @@ func (s *ChunkedLocationStore) MaxID() uint32 {
 	return s.size.Load()
 }
 
-// Grow ensures the store has capacity for at least n items.
-func (s *ChunkedLocationStore) Grow(n int) {
+// EnsureCapacity ensures the store can hold the given VectorID.
+// It uses an optimistic check to avoid locking if capacity is sufficient.
+func (s *ChunkedLocationStore) EnsureCapacity(id VectorID) {
+	idx := int(id)
+	chunkIdx := idx / LocationChunkSize
+
+	// Optimistic check
+	chunksPtr := s.chunks.Load()
+	if chunkIdx < len(*chunksPtr) {
+		return
+	}
+
+	// Slow path: Lock and grow
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	currentLen := int(s.size.Load())
-	targetLen := currentLen + n
-
-	currentChunksPtr := s.chunks.Load()
-	currentChunks := *currentChunksPtr
-
-	neededChunks := (targetLen + LocationChunkSize - 1) / LocationChunkSize
-	if neededChunks > len(currentChunks) {
-		newChunks := make([]*locationChunk, neededChunks)
-		copy(newChunks, currentChunks)
-		for i := len(currentChunks); i < neededChunks; i++ {
-			newChunks[i] = &locationChunk{}
-		}
-		s.chunks.Store(&newChunks)
+	// Re-check under lock
+	chunksPtr = s.chunks.Load()
+	chunks := *chunksPtr
+	if chunkIdx < len(chunks) {
+		// Someone else grew it
+		return
 	}
-	// We don't verify s.size here, assuming caller will fill them
-	// Actually, just allocating capacity doesn't change Len() semantically in a slice,
-	// but here we are mixing concepts.
-	// For HNSW 'Grow' usually means reserve capacity.
-	// We'll leave size as is, but EnsureCapacity is better naming.
+
+	// Grow
+	neededChunks := chunkIdx + 1
+	newChunks := make([]*locationChunk, neededChunks)
+	copy(newChunks, chunks)
+	for i := len(chunks); i < neededChunks; i++ {
+		newChunks[i] = &locationChunk{}
+	}
+	s.chunks.Store(&newChunks)
+
+	// We also need to ensure 'size' reflects this growth?
+	// 'size' tracks 'Len'. If we just reserve capacity, size might lag if we store sparsely?
+	// But ShardedHNSW uses sequential IDs.
+	// We'll leave 'size' management to Append or explicit SetSize if needed.
+	// For Get() to work, 'size' check is performed: `if uint32(id) >= s.size.Load()`.
+	// So we MUST update size if we intend to allow Get(id) to succeed immediately.
+	// But `Set` doesn't update size.
+	// If we use sequential allocation in ShardedHNSW, we should update size there or here.
+	// Let's allow updating size if id >= size.
+
+	currentSize := s.size.Load()
+	if uint32(id) >= currentSize {
+		// Loop to CAS loop?
+		// Since we hold lock, we can store?
+		// But size is atomic.
+		// Let's just update size strictly if we are extending.
+		// Wait, multiple threads calling EnsureCapacity(id) might race on size update.
+		// But we hold 'mu' for growth. Is 'mu' protecting size? No, size is atomic.
+		// Maybe we shouldn't couple Capacity with Size.
+		// Let Get() rely on chunk existence, removing the size check?
+		// Or update size lazily?
+		// The existing Get() implementation: `if uint32(id) >= s.size.Load() { return false }`
+		// This prevents reading "unallocated" slots.
+		// In ShardedHNSW, we assign ID -> atomic increment size -> Set Location.
+		// So we should handle size update.
+	}
+}
+
+// UpdateSize ensures size is at least id+1.
+func (s *ChunkedLocationStore) UpdateSize(id VectorID) {
+	newSize := uint32(id) + 1
+	for {
+		curr := s.size.Load()
+		if curr >= newSize {
+			return
+		}
+		if s.size.CompareAndSwap(curr, newSize) {
+			return
+		}
+	}
 }
 
 // Reset clears the store.

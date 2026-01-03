@@ -197,9 +197,13 @@ func TestShardedHNSW_Warmup(t *testing.T) {
 			vec := []float32{float32(i), float32(i), float32(i)}
 			// Manually add to shard to bypass dataset dependency
 			shardIdx := sharded.GetShardForID(VectorID(i))
-			sharded.shards[shardIdx].mu.Lock()
-			sharded.shards[shardIdx].graph.Add(hnsw.MakeNode(VectorID(i), vec))
-			sharded.shards[shardIdx].mu.Unlock()
+			localID := sharded.GetLocalID(VectorID(i))
+
+			// Use InsertWithVector on the internal ArrowHNSW index
+			err := sharded.shards[shardIdx].index.InsertWithVector(localID, vec, 0)
+			if err != nil {
+				t.Fatalf("failed to insert: %v", err)
+			}
 		}
 
 		touched := sharded.Warmup()

@@ -11,19 +11,19 @@ import (
 )
 
 // =============================================================================
-// ZeroCopyBufferConfig - Configuration for zero-copy buffer operations
+// ZeroCopyBufferArrowHNSWConfig - ArrowHNSWConfiguration for zero-copy buffer operations
 // =============================================================================
 
-// ZeroCopyBufferConfig configures zero-copy buffer behavior
-type ZeroCopyBufferConfig struct {
+// ZeroCopyBufferArrowHNSWConfig configures zero-copy buffer behavior
+type ZeroCopyBufferArrowHNSWConfig struct {
 	Enabled            bool
 	MaxRetainedBuffers int
 	MaxBufferSize      int64
 }
 
-// DefaultZeroCopyBufferConfig returns sensible defaults
-func DefaultZeroCopyBufferConfig() ZeroCopyBufferConfig {
-	return ZeroCopyBufferConfig{
+// DefaultZeroCopyBufferArrowHNSWConfig returns sensible defaults
+func DefaultZeroCopyBufferArrowHNSWConfig() ZeroCopyBufferArrowHNSWConfig {
+	return ZeroCopyBufferArrowHNSWConfig{
 		Enabled:            true,
 		MaxRetainedBuffers: 1024,
 		MaxBufferSize:      64 * 1024 * 1024, // 64MB
@@ -31,7 +31,7 @@ func DefaultZeroCopyBufferConfig() ZeroCopyBufferConfig {
 }
 
 // Validate checks configuration validity
-func (c ZeroCopyBufferConfig) Validate() error {
+func (c ZeroCopyBufferArrowHNSWConfig) Validate() error {
 	if !c.Enabled {
 		return nil // Disabled config is always valid
 	}

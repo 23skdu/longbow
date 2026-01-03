@@ -38,7 +38,7 @@ type Dataset struct {
 	BatchNodes []int
 
 	// Memory tracking
-	SizeBytes       atomic.Int64
+	SizeBytes        atomic.Int64
 	IndexMemoryBytes atomic.Int64
 
 	// Eviction state
@@ -57,9 +57,12 @@ type Dataset struct {
 	// GraphRAG Store
 	Graph *GraphStore
 
+	// Product Quantization (Persisted Codebooks)
+	PQEncoder *PQEncoder
+
 	// Per-record eviction
 	recordEviction *RecordEvictionManager
-	
+
 	// hnsw2 integration (Phase 5)
 	// Using interface{} to avoid import cycle with hnsw2 package
 	// Actual type is *hnsw2.ArrowHNSW, initialized externally
@@ -98,7 +101,7 @@ func (d *Dataset) GetRecord(idx int) (arrow.RecordBatch, bool) {
 func NewDataset(name string, schema *arrow.Schema) *Dataset {
 	// Check feature flag for hnsw2
 	useHNSW2 := os.Getenv("LONGBOW_USE_HNSW2") == "true"
-	
+
 	ds := &Dataset{
 		Name:            name,
 		Records:         make([]arrow.RecordBatch, 0),
@@ -113,7 +116,7 @@ func NewDataset(name string, schema *arrow.Schema) *Dataset {
 		useHNSW2:        useHNSW2,
 		// hnsw2Index will be initialized externally to avoid import cycle
 	}
-	
+
 	return ds
 }
 

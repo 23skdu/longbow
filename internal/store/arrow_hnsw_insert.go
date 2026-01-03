@@ -89,18 +89,18 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec []float32, level int) error 
 			h.growMu.Unlock()
 
 			// We need to re-initialize data.Vectors
-			h.initMu.Unlock() // Unlock initMu before Grow
+			// Hold initMu during Grow to ensure state consistency for other threads considering entering this block
 			h.Grow(data.Capacity)
 			data = h.data.Load()
 
 			// Re-ensure chunk with new dims
 			// cID/cOff relies on ID which hasn't changed
 			if err := h.ensureChunk(data, cID, cOff, h.dims); err != nil {
+				h.initMu.Unlock()
 				return err
 			}
-		} else {
-			h.initMu.Unlock()
 		}
+		h.initMu.Unlock()
 	}
 
 	// Recovery: If dims changed from 0 to >0 during execution, we might be unprepared (missing Vectors)

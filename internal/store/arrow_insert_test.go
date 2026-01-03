@@ -141,7 +141,7 @@ func TestAddConnection(t *testing.T) {
 	defer index.searchPool.Put(ctx)
 
 	// Add connection 0 -> 1 at layer 0
-	index.addConnection(ctx, data, 0, 1, 0, 10)
+	index.AddConnection(ctx, data, 0, 1, 0, 10)
 
 	// Check count
 	cID := chunkID(0)
@@ -157,7 +157,7 @@ func TestAddConnection(t *testing.T) {
 	}
 
 	// Adding same connection again should be idempotent
-	index.addConnection(ctx, data, 0, 1, 0, 10)
+	index.AddConnection(ctx, data, 0, 1, 0, 10)
 
 	count = atomic.LoadInt32(&(*data.Counts[0][cID])[cOff])
 	if count != 1 {
@@ -198,7 +198,7 @@ func TestPruneConnections(t *testing.T) {
 	// Dist(i, j) = sqrt(2) = 1.41
 
 	dim := 11
-	index.dims = dim
+	index.dims.Store(int32(dim))
 	vecs := make([][]float32, 11)
 
 	// Vec 0: Origin
@@ -237,7 +237,7 @@ func TestPruneConnections(t *testing.T) {
 	ctx := index.searchPool.Get()
 	defer index.searchPool.Put(ctx)
 
-	index.pruneConnections(ctx, data, 0, 5, 0)
+	index.PruneConnections(ctx, data, 0, 5, 0)
 
 	count := atomic.LoadInt32(&(*data.Counts[0][0])[0])
 	if count != 5 {
@@ -245,7 +245,7 @@ func TestPruneConnections(t *testing.T) {
 	}
 
 	// Check idempotency - count should still be 5 after pruning again
-	index.pruneConnections(ctx, data, 0, 5, 0)
+	index.PruneConnections(ctx, data, 0, 5, 0)
 	count2 := atomic.LoadInt32(&(*data.Counts[0][0])[0])
 	if count2 != 5 {
 		t.Errorf("expected 5 neighbors after idempotent pruning, got %d", count2)

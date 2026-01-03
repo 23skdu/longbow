@@ -78,11 +78,16 @@ func NewArrowHNSW(dataset *Dataset, config ArrowHNSWConfig, locStore *ChunkedLoc
 	if initialCap <= 0 {
 		initialCap = 1024
 	}
+
 	h.data.Store(NewGraphData(initialCap, 0, config.SQ8Enabled, config.PQEnabled)) // Dim 0 initially, updated on first insert
 
 	// Pre-allocate pools
 	h.searchPool = NewArrowSearchContextPool()
-	h.batchComputer = NewBatchDistanceComputer(memory.DefaultAllocator, h.dims)
+	// h.dims is 0 here usually, unless passed differently? No, NewArrowHNSW signature doesn't take dims.
+	// But it might be updated later? BatchDistanceComputer needs fixed dims?
+	// It copies dims. If dims is 0, it might need re-init later?
+	// For now, just load it.
+	h.batchComputer = NewBatchDistanceComputer(memory.DefaultAllocator, int(h.dims.Load()))
 
 	// Detect vector column index
 	if dataset != nil && dataset.Schema != nil {
@@ -219,7 +224,7 @@ func (h *ArrowHNSW) Len() int {
 
 // GetDimension implements VectorIndex.
 func (h *ArrowHNSW) GetDimension() uint32 {
-	return uint32(h.dims)
+	return uint32(h.dims.Load())
 }
 
 // Warmup implements VectorIndex.
@@ -241,7 +246,7 @@ func (h *ArrowHNSW) EstimateMemory() int64 {
 	}
 
 	capacity := int64(data.Capacity)
-	dims := int64(h.dims)
+	dims := int64(h.dims.Load())
 
 	// memory = capacity * (Level[1] + Vector[dims*4] + Neighbors[ArrowMaxLayers*MaxNeighbors*4] + Counts[ArrowMaxLayers*4] + Versions[ArrowMaxLayers*4])
 	// Neighbors per layer: ChunkSize * MaxNeighbors * 4 bytes

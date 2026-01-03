@@ -21,6 +21,7 @@ type CPUFeatures struct {
 type (
 	distanceFunc         func(a, b []float32) float32
 	distanceBatchFunc    func(query []float32, vectors [][]float32, results []float32)
+	distanceSQ8BatchFunc func(query []byte, vectors [][]byte, results []float32)
 	adcDistanceBatchFunc func(table []float32, flatCodes []byte, m int, results []float32)
 
 	// CompareOp represents a comparison operator for SIMD filters
@@ -56,6 +57,7 @@ var (
 
 	adcDistanceBatchImpl               adcDistanceBatchFunc
 	euclideanDistanceVerticalBatchImpl distanceBatchFunc
+	euclideanDistanceSQ8BatchImpl      distanceSQ8BatchFunc
 )
 
 func init() {
@@ -101,6 +103,7 @@ func initializeDispatch() {
 		matchFloat32Impl = matchFloat32AVX512
 		adcDistanceBatchImpl = adcBatchAVX512
 		euclideanDistanceVerticalBatchImpl = euclideanVerticalBatchAVX512
+		euclideanDistanceSQ8BatchImpl = euclideanSQ8BatchGeneric // Fallback to generic for now
 	case "avx2":
 		euclideanDistanceImpl = euclideanAVX2
 		metrics.SimdDispatchCount.WithLabelValues("avx2").Inc()
@@ -114,6 +117,7 @@ func initializeDispatch() {
 		matchFloat32Impl = matchFloat32AVX2
 		adcDistanceBatchImpl = adcBatchAVX2
 		euclideanDistanceVerticalBatchImpl = euclideanVerticalBatchAVX2
+		euclideanDistanceSQ8BatchImpl = euclideanSQ8BatchGeneric // Fallback to generic for now
 	case "neon":
 		euclideanDistanceImpl = euclideanNEON
 		metrics.SimdDispatchCount.WithLabelValues("neon").Inc()
@@ -127,6 +131,7 @@ func initializeDispatch() {
 		matchFloat32Impl = matchFloat32Generic
 		adcDistanceBatchImpl = adcBatchNEON
 		euclideanDistanceVerticalBatchImpl = euclideanVerticalBatchNEON
+		euclideanDistanceSQ8BatchImpl = euclideanSQ8BatchGeneric // Fallback to generic for now
 	default:
 		euclideanDistanceImpl = euclideanUnrolled4x
 		metrics.SimdDispatchCount.WithLabelValues("generic").Inc()
@@ -140,6 +145,7 @@ func initializeDispatch() {
 		matchFloat32Impl = matchFloat32Generic
 		adcDistanceBatchImpl = adcBatchGeneric
 		euclideanDistanceVerticalBatchImpl = euclideanBatchGeneric
+		euclideanDistanceSQ8BatchImpl = euclideanSQ8BatchGeneric
 	}
 
 }
@@ -250,6 +256,24 @@ func EuclideanDistanceVerticalBatch(query []float32, vectors [][]float32, result
 		return
 	}
 	euclideanDistanceVerticalBatchImpl(query, vectors, results)
+}
+
+// EuclideanDistanceSQ8Batch calculates Euclidean distance between SQ8 query and multiple SQ8 vectors.
+func EuclideanDistanceSQ8Batch(query []byte, vectors [][]byte, results []float32) {
+	if len(vectors) != len(results) {
+		panic("simd: vectors and results length mismatch")
+	}
+	if len(vectors) == 0 {
+		return
+	}
+	euclideanDistanceSQ8BatchImpl(query, vectors, results)
+}
+
+// euclideanSQ8BatchGeneric is the fallback implementation
+func euclideanSQ8BatchGeneric(query []byte, vectors [][]byte, results []float32) {
+	for i, v := range vectors {
+		results[i] = float32(EuclideanSQ8Generic(query, v))
+	}
 }
 
 // euclideanBatchGeneric is the fallback implementation

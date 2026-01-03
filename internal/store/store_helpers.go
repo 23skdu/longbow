@@ -140,17 +140,17 @@ func checkFilterRow(col arrow.Array, i int, f Filter) bool {
 		}
 		switch f.Operator {
 		case "eq", "=":
-			return int32(val) == int32(fVal)
+			return int64(val) == fVal
 		case "neq", "!=":
-			return int32(val) != int32(fVal)
+			return int64(val) != fVal
 		case ">":
-			return val > int32(fVal)
+			return int64(val) > fVal
 		case "<":
-			return val < int32(fVal)
+			return int64(val) < fVal
 		case ">=":
-			return val >= int32(fVal)
+			return int64(val) >= fVal
 		case "<=":
-			return val <= int32(fVal)
+			return int64(val) <= fVal
 		}
 	case *array.Float32:
 		val := c.Value(i)

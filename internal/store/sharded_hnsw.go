@@ -29,7 +29,7 @@ func (c ShardedHNSWConfig) Validate() error {
 		return fmt.Errorf("numShards must be > 0")
 	}
 	if c.M <= 0 {
-		return fmt.Errorf("M must be > 0")
+		return fmt.Errorf("m must be > 0")
 	}
 	if c.EfConstruction <= 0 {
 		return fmt.Errorf("efConstruction must be > 0")

@@ -78,7 +78,7 @@ func NewArrowHNSW(dataset *Dataset, config ArrowHNSWConfig, locStore *ChunkedLoc
 	if initialCap <= 0 {
 		initialCap = 1024
 	}
-	h.data.Store(NewGraphData(initialCap, 0, config.SQ8Enabled)) // Dim 0 initially, updated on first insert
+	h.data.Store(NewGraphData(initialCap, 0, config.SQ8Enabled, config.PQEnabled)) // Dim 0 initially, updated on first insert
 
 	// Pre-allocate pools
 	h.searchPool = NewArrowSearchContextPool()

@@ -203,11 +203,6 @@ func (s *VectorStore) Snapshot() error {
 	// Save each dataset to temp dir as Parquet
 	s.mu.RLock()
 	// Snapshot the map keys/values to avoid holding lock during I/O
-	type snapItem struct {
-		Name      string
-		Recs      []arrow.RecordBatch
-		GraphRecs []arrow.RecordBatch
-	}
 	items := make([]snapItem, 0, len(s.datasets))
 	for name, ds := range s.datasets {
 		ds.dataMu.RLock()
@@ -236,73 +231,7 @@ func (s *VectorStore) Snapshot() error {
 	s.mu.RUnlock()
 
 	for _, item := range items {
-		defer func(recs []arrow.RecordBatch) {
-			for _, r := range recs {
-				r.Release()
-			}
-		}(item.Recs)
-		defer func(grecs []arrow.RecordBatch) {
-			for _, r := range grecs {
-				r.Release()
-			}
-		}(item.GraphRecs)
-
-		// 1. Write Data Records
-		if len(item.Recs) > 0 {
-			path := filepath.Join(tempDir, item.Name+".parquet")
-			f, err := os.Create(path)
-			if err != nil {
-				s.logger.Error().
-					Str("name", item.Name).
-					Err(err).
-					Msg("Failed to create snapshot file")
-				continue
-			}
-
-			// Write all records to the parquet file
-			for _, rec := range item.Recs {
-				if err := writeParquet(f, rec); err != nil {
-					s.logger.Error().
-						Str("name", item.Name).
-						Err(err).
-						Msg("Failed to write record to parquet snapshot")
-					break
-				}
-			}
-
-			// Hint to kernel that we won't need this file in cache
-			if err := AdviseDontNeed(f); err != nil {
-				s.logger.Debug().Err(err).Msg("Failed to advise DONTNEED on snapshot write")
-			}
-			_ = f.Close()
-		}
-
-		// 2. Write Graph Records
-		if len(item.GraphRecs) > 0 {
-			path := filepath.Join(tempDir, item.Name+".graph.parquet")
-			f, err := os.Create(path)
-			if err != nil {
-				s.logger.Error().
-					Str("name", item.Name).
-					Err(err).
-					Msg("Failed to create graph snapshot file")
-				continue
-			}
-
-			for _, rec := range item.GraphRecs {
-				if err := writeGraphParquet(f, rec); err != nil {
-					s.logger.Error().
-						Str("name", item.Name).
-						Err(err).
-						Msg("Failed to write graph record to parquet snapshot")
-					break
-				}
-			}
-			if err := AdviseDontNeed(f); err != nil {
-				s.logger.Debug().Err(err).Msg("Failed to advise DONTNEED on graph snapshot write")
-			}
-			_ = f.Close()
-		}
+		s.writeSnapshotItem(item, tempDir)
 	}
 
 	// Atomic swap: Remove old, Rename temp to new
@@ -342,6 +271,84 @@ func (s *VectorStore) Snapshot() error {
 	metrics.SnapshotSizeBytes.Observe(float64(snapshotSize))
 	s.logger.Info().Msg("Snapshot complete")
 	return nil
+}
+
+type snapItem struct {
+	Name      string
+	Recs      []arrow.RecordBatch
+	GraphRecs []arrow.RecordBatch
+}
+
+func (s *VectorStore) writeSnapshotItem(item snapItem, tempDir string) {
+	defer func(recs []arrow.RecordBatch) {
+		for _, r := range recs {
+			r.Release()
+		}
+	}(item.Recs)
+	defer func(grecs []arrow.RecordBatch) {
+		for _, r := range grecs {
+			r.Release()
+		}
+	}(item.GraphRecs)
+
+	// 1. Write Data Records
+	if len(item.Recs) > 0 {
+		path := filepath.Join(tempDir, item.Name+".parquet")
+		f, err := os.Create(path)
+		if err != nil {
+			s.logger.Error().
+				Str("name", item.Name).
+				Err(err).
+				Msg("Failed to create snapshot file")
+			return
+		}
+
+		// Write all records to the parquet file
+		for _, rec := range item.Recs {
+			if err := writeParquet(f, rec); err != nil {
+				s.logger.Error().
+					Str("name", item.Name).
+					Err(err).
+					Msg("Failed to write record to parquet snapshot")
+				f.Close()
+				return
+			}
+		}
+
+		// Hint to kernel that we won't need this file in cache
+		if err := AdviseDontNeed(f); err != nil {
+			s.logger.Debug().Err(err).Msg("Failed to advise DONTNEED on snapshot write")
+		}
+		_ = f.Close()
+	}
+
+	// 2. Write Graph Records
+	if len(item.GraphRecs) > 0 {
+		path := filepath.Join(tempDir, item.Name+".graph.parquet")
+		f, err := os.Create(path)
+		if err != nil {
+			s.logger.Error().
+				Str("name", item.Name).
+				Err(err).
+				Msg("Failed to create graph snapshot file")
+			return
+		}
+
+		for _, rec := range item.GraphRecs {
+			if err := writeGraphParquet(f, rec); err != nil {
+				s.logger.Error().
+					Str("name", item.Name).
+					Err(err).
+					Msg("Failed to write graph record to parquet snapshot")
+				f.Close()
+				return
+			}
+		}
+		if err := AdviseDontNeed(f); err != nil {
+			s.logger.Debug().Err(err).Msg("Failed to advise DONTNEED on graph snapshot write")
+		}
+		_ = f.Close()
+	}
 }
 
 func (s *VectorStore) loadSnapshots() error {

@@ -159,7 +159,7 @@ func (h *HNSWIndex) AddSafe(rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32
 	indexLockStart7 := time.Now()
 
 	// PQ Encoding
-	var nodeVec []float32 = vec
+	var nodeVec = vec
 	h.pqCodesMu.RLock()
 	pqEnabled := h.pqEnabled
 	encoder := h.pqEncoder
@@ -545,10 +545,9 @@ func (h *HNSWIndex) TrainPQ(dimensions, m, ksub, iterations int) error {
 	}
 
 	cfg := &PQConfig{
-		Dim:    dimensions,
-		M:      m,
-		Ksub:   ksub,
-		SubDim: dimensions / m,
+		Dimensions:    dimensions,
+		NumSubVectors: m,
+		NumCentroids:  ksub,
 	}
 
 	enc, err := TrainPQEncoder(cfg, vectors, iterations)

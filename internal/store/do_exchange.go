@@ -80,8 +80,7 @@ func (s *VectorStore) DoExchange(stream flight.FlightService_DoExchangeServer) e
 			if cmd == "sync" {
 				// Parse last sequence
 				if len(data.DataBody) < 8 {
-					// Default to 0? Or error.
-					// Let's assume 0 if empty.
+					return status.Errorf(codes.InvalidArgument, "sync command requires 8-byte sequence number")
 				}
 				var lastSeq uint64
 				if len(data.DataBody) >= 8 {

@@ -26,8 +26,11 @@ type GraphData struct {
 	// Vectors holds dense packed float32 vectors.
 	Vectors []*[]float32
 
-	// VectorsSQ8 holds dense packed uint8 vectors for Scalar Quantization.
+	// VectorsSQ8 holds dense packed uint8 vectors forScalar Quantization.
 	VectorsSQ8 []*[]byte
+
+	// VectorsPQ holds dense packed byte vectors for Product Quantization.
+	VectorsPQ []*[]byte
 
 	// Neighbors flattened per layer and chunk
 	Neighbors [ArrowMaxLayers][]*[]uint32
@@ -40,7 +43,7 @@ type GraphData struct {
 
 // NewGraphData creates a new GraphData with the specified capacity.
 // It allocates slice headers for chunks but does not allocate the chunks themselves (Lazy).
-func NewGraphData(capacity, dims int, sq8Enabled bool) *GraphData {
+func NewGraphData(capacity, dims int, sq8Enabled bool, pqEnabled bool) *GraphData {
 	// Calculate number of chunks needed
 	numChunks := (capacity + ChunkSize - 1) / ChunkSize
 	if numChunks < 1 {
@@ -56,6 +59,9 @@ func NewGraphData(capacity, dims int, sq8Enabled bool) *GraphData {
 		gd.Vectors = make([]*[]float32, numChunks)
 		if sq8Enabled {
 			gd.VectorsSQ8 = make([]*[]byte, numChunks)
+		}
+		if pqEnabled {
+			gd.VectorsPQ = make([]*[]byte, numChunks)
 		}
 	}
 
@@ -108,6 +114,7 @@ type ArrowHNSW struct {
 
 	// Component dependencies
 	quantizer *ScalarQuantizer
+	pqEncoder *PQEncoder
 
 	// Caches
 	vectorColIdx int // Index of the vector column in the Arrow schema
@@ -187,6 +194,11 @@ type ArrowHNSWConfig struct {
 	// AdaptiveEfThreshold is the node count at which ef reaches full EfConstruction.
 	// Default: InitialCapacity/2. Only used when AdaptiveEf is true.
 	AdaptiveEfThreshold int
+
+	// Product Quantization
+	PQEnabled bool
+	PQM       int // Number of sub-vectors (must divide Dims)
+	PQK       int // Number of centroids (default 256)
 }
 
 // DefaultArrowHNSWConfig returns sensible default HNSW parameters.
@@ -205,6 +217,9 @@ func DefaultArrowHNSWConfig() ArrowHNSWConfig {
 		AdaptiveEf:          false, // Disabled by default (opt-in)
 		AdaptiveEfMin:       0,     // Auto-calculate as EfConstruction/4
 		AdaptiveEfThreshold: 0,     // Auto-calculate as InitialCapacity/2
+		PQEnabled:           false,
+		PQM:                 0, // Auto-calculate?
+		PQK:                 256,
 	}
 }
 
@@ -215,7 +230,7 @@ func DefaultArrowHNSWConfig() ArrowHNSWConfig {
 
 // ensureChunk ensures that the chunk for the given ID is allocated.
 // This handles the "Lazy Allocation" logic.
-func (h *ArrowHNSW) ensureChunk(data *GraphData, cID, cOff uint32, dims int) error {
+func (h *ArrowHNSW) ensureChunk(data *GraphData, cID, _ uint32, dims int) error {
 	// Optimization: check if chunks exist
 	levelsExist := data.Levels[cID] != nil
 	vectorsExist := true
@@ -223,6 +238,9 @@ func (h *ArrowHNSW) ensureChunk(data *GraphData, cID, cOff uint32, dims int) err
 		vectorsExist = data.Vectors != nil && data.Vectors[cID] != nil
 		if h.config.SQ8Enabled {
 			vectorsExist = vectorsExist && data.VectorsSQ8[cID] != nil
+		}
+		if h.config.PQEnabled {
+			vectorsExist = vectorsExist && data.VectorsPQ[cID] != nil
 		}
 	}
 
@@ -262,6 +280,18 @@ func (h *ArrowHNSW) ensureChunk(data *GraphData, cID, cOff uint32, dims int) err
 			sq8 := make([]byte, ChunkSize*dims)
 			data.VectorsSQ8[cID] = &sq8
 		}
+
+		if h.config.PQEnabled && data.VectorsPQ != nil && data.VectorsPQ[cID] == nil {
+			// PQ storage size: ChunkSize * M
+			m := h.config.PQM
+			if m == 0 && h.pqEncoder != nil {
+				m = h.pqEncoder.config.NumSubVectors
+			}
+			if m > 0 {
+				pqVecs := make([]byte, ChunkSize*m)
+				data.VectorsPQ[cID] = &pqVecs
+			}
+		}
 	}
 
 	return nil
@@ -288,7 +318,7 @@ func (h *ArrowHNSW) Grow(minCap int) {
 	// Ensure graph data chunks
 	dataPtr := h.data.Load()
 	if dataPtr == nil {
-		h.data.Store(NewGraphData(minCap, h.dims, h.config.SQ8Enabled))
+		h.data.Store(NewGraphData(minCap, h.dims, h.config.SQ8Enabled, h.config.PQEnabled))
 		return
 	}
 
@@ -297,24 +327,25 @@ func (h *ArrowHNSW) Grow(minCap int) {
 	// Also check if structure needs upgrade (lazy vectors added)
 	dimsChanged := h.dims > 0 && dataPtr.Vectors == nil
 	sq8Changed := h.config.SQ8Enabled && dataPtr.VectorsSQ8 == nil
+	pqChanged := h.config.PQEnabled && dataPtr.VectorsPQ == nil
 
-	if minCap <= dataPtr.Capacity && !dimsChanged && !sq8Changed {
+	if minCap <= dataPtr.Capacity && !dimsChanged && !sq8Changed && !pqChanged {
 		return
 	}
 
 	// Clone and grow
-	newData := dataPtr.Clone(minCap, h.dims, h.config.SQ8Enabled)
+	newData := dataPtr.Clone(minCap, h.dims, h.config.SQ8Enabled, h.config.PQEnabled)
 	h.data.Store(newData)
 }
 
 // Clone creates a new GraphData with at least the specified capacity, copying existing data.
 // This is used for "Stop-The-World" growth (rare).
-func (gd *GraphData) Clone(minCap int, targetDims int, sq8Enabled bool) *GraphData {
+func (gd *GraphData) Clone(minCap int, targetDims int, sq8Enabled bool, pqEnabled bool) *GraphData {
 	dims := targetDims
 	if dims == 0 && len(gd.Vectors) > 0 && gd.Vectors[0] != nil {
 		dims = 1 // Just needs to be > 0 to trigger vector allocation
 	}
-	newGD := NewGraphData(minCap, dims, sq8Enabled)
+	newGD := NewGraphData(minCap, dims, sq8Enabled, pqEnabled)
 
 	// Copy Levels
 	copy(newGD.Levels, gd.Levels)
@@ -325,6 +356,9 @@ func (gd *GraphData) Clone(minCap int, targetDims int, sq8Enabled bool) *GraphDa
 	}
 	if len(gd.VectorsSQ8) > 0 {
 		copy(newGD.VectorsSQ8, gd.VectorsSQ8)
+	}
+	if len(gd.VectorsPQ) > 0 {
+		copy(newGD.VectorsPQ, gd.VectorsPQ)
 	}
 
 	// Copy Layers

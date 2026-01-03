@@ -19,8 +19,58 @@ import (
 
 // TrainPQ trains the PQ encoder on the provided sample vectors and enables PQ.
 func (h *ArrowHNSW) TrainPQ(vectors [][]float32) error {
-	// Deprecated in favor of ScalarQuantizer?
-	// Leaving as no-op or TODO for now to avoid breaking existing code if any.
+	h.growMu.Lock()
+	defer h.growMu.Unlock()
+
+	if len(vectors) == 0 {
+		return fmt.Errorf("no vectors for training")
+	}
+
+	dims := len(vectors[0])
+	if dims == 0 {
+		return fmt.Errorf("vector dimension is 0")
+	}
+
+	// Default config for PQ if mostly unset
+	m := h.config.PQM
+	if m == 0 {
+		// Heuristic: M = dims / 4 or dims / 8
+		if dims%8 == 0 {
+			m = dims / 8
+		} else if dims%4 == 0 {
+			m = dims / 4
+		} else {
+			m = 1 // No split
+		}
+	}
+
+	k := h.config.PQK
+	if k == 0 {
+		k = 256
+	}
+
+	cfg := &PQConfig{
+		Dimensions:    dims,
+		NumSubVectors: m,
+		NumCentroids:  k,
+	}
+
+	encoder, err := TrainPQEncoder(cfg, vectors, 15) // 15 iterations
+	if err != nil {
+		return err
+	}
+
+	h.pqEncoder = encoder
+	// Update config to reflect enabled state
+	h.config.PQEnabled = true
+	h.config.PQM = m
+	h.config.PQK = k
+
+	// Note: We do NOT automatically re-encode existing vectors here because
+	// ArrowHNSW stores vectors in GraphData chunks which are managed by Grow/ensureChunk.
+	// If existing vectors need PQ, we would need to iterate and backfill.
+	// For now, we assume TrainPQ is called BEFORE substantial data load or we implement backfill later.
+
 	return nil
 }
 

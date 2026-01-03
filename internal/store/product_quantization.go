@@ -6,6 +6,8 @@ import (
 	"math"
 	"math/rand"
 	"sync"
+
+	"github.com/23skdu/longbow/internal/simd"
 )
 
 // =============================================================================
@@ -205,19 +207,55 @@ func (e *PQEncoder) ComputeDistanceTableFlat(query []float32) []float32 {
 // Only processes entries where results[j] == -1 (marked for processing).
 func (e *PQEncoder) ADCDistanceBatch(lut []float32, flatCodes []byte, results []float32) {
 	m := e.config.NumSubVectors
-	k := e.config.NumCentroids
 
-	// Basic implementation (can be optimized with SIMD/Assembly later)
-	for j := 0; j < len(results); j++ {
-		if results[j] == -1 {
-			offset := j * m
-			var dist float32
-			for i := 0; i < m; i++ {
-				code := flatCodes[offset+i]
-				dist += lut[i*k+int(code)]
+	// Identify indices that need processing
+	// Optimization: If all need processing (common case), skip gather/scatter
+	needsProcessing := 0
+	firstIdx := -1
+	for j, r := range results {
+		if r == -1 {
+			needsProcessing++
+			if firstIdx == -1 {
+				firstIdx = j
 			}
-			results[j] = dist
 		}
+	}
+
+	if needsProcessing == 0 {
+		return
+	}
+
+	// Case 1: Full batch or contiguous block (optimization for common dense case)
+	// If all items need processing, we can call SIMD directly on the whole slice.
+	if needsProcessing == len(results) {
+		simd.ADCDistanceBatch(lut, flatCodes, m, results)
+		return
+	}
+
+	// Case 2: Sparse/Mixed batch.
+	// We gather valid codes into a compact buffer, run SIMD, then scatter results back.
+	// This avoids "corrupting" the non-participating entries in 'results'.
+
+	// Reuse a scratch buffer if possible? For now, allocate.
+	// 32 items * 64 bytes = 2KB max usually.
+	compactCodes := make([]byte, needsProcessing*m)
+	compactResults := make([]float32, needsProcessing)
+
+	targetIdx := 0
+	indices := make([]int, needsProcessing)
+
+	for j, r := range results {
+		if r == -1 {
+			copy(compactCodes[targetIdx*m:], flatCodes[j*m:(j+1)*m])
+			indices[targetIdx] = j
+			targetIdx++
+		}
+	}
+
+	simd.ADCDistanceBatch(lut, compactCodes, m, compactResults)
+
+	for i, originalIdx := range indices {
+		results[originalIdx] = compactResults[i]
 	}
 }
 

@@ -142,7 +142,7 @@ func TestPQPersistence(t *testing.T) {
 
 	idx2 := NewArrowHNSW(ds2, DefaultArrowHNSWConfig(), nil)
 	idx2.m = 16 // Force match
-	idx2.dims = 128
+	idx2.dims.Store(128)
 
 	// Trigger "Train" ensuring it picks up
 	err = idx2.TrainPQ(vectors)

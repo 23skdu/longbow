@@ -1,7 +1,6 @@
 package store
 
 import (
-	"bytes"
 	"encoding/binary"
 	"fmt"
 	"hash/crc32"
@@ -18,7 +17,7 @@ import (
 // It uses double-buffering to allow writes to continue while flushing.
 type BufferedWAL struct {
 	mu           sync.Mutex
-	buf          *bytes.Buffer
+	buf          *PatchableBuffer
 	backend      WALBackend // Abstraction for file I/O
 	maxBatchSize int
 	flushDelay   time.Duration
@@ -36,7 +35,7 @@ type BufferedWAL struct {
 // NewBufferedWAL creates a new buffered WAL.
 func NewBufferedWAL(backend WALBackend, maxBatchSize int, flushDelay time.Duration) *BufferedWAL {
 	w := &BufferedWAL{
-		buf:          bytes.NewBuffer(make([]byte, 0, maxBatchSize*2)), // Pre-allocate
+		buf:          NewPatchableBuffer(maxBatchSize * 2), // Pre-allocate
 		backend:      backend,
 		maxBatchSize: maxBatchSize,
 		flushDelay:   flushDelay,
@@ -51,51 +50,59 @@ func NewBufferedWAL(backend WALBackend, maxBatchSize int, flushDelay time.Durati
 }
 
 // Write writes a record to the in-memory buffer.
-// It returns nil immediately unless serialization fails.
+// It buffers the write in memory, avoiding double serialization.
 func (w *BufferedWAL) Write(name string, seq uint64, ts int64, record arrow.RecordBatch) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	// 1. Serialize RecordBatch to a temporary buffer
-	var recBuf bytes.Buffer
-	writer := ipc.NewWriter(&recBuf, ipc.WithSchema(record.Schema()))
+	// Header: Checksum(4) | Seq(8) | Timestamp(8) | NameLen(4) | RecLen(8) = 32 bytes
+	const headerSize = 32
+
+	nameBytes := []byte(name)
+	nameLen := uint32(len(nameBytes))
+
+	// 1. Reserve Header Space (Write placeholder)
+	headerOffset := w.buf.Len()
+	w.buf.Grow(headerSize)
+	// Append zeroed header bytes to move cursor
+	w.buf.Write(make([]byte, headerSize))
+
+	// 2. Write Name
+	w.buf.Write(nameBytes)
+
+	// 3. Write RecordBatch directly to buffer
+	recStartOffset := w.buf.Len()
+	writer := ipc.NewWriter(w.buf, ipc.WithSchema(record.Schema()))
 	if err := writer.Write(record); err != nil {
 		return err
 	}
 	if err := writer.Close(); err != nil {
 		return err
 	}
-	recBytes := recBuf.Bytes()
+	recEndOffset := w.buf.Len()
+	recLen := uint64(recEndOffset - recStartOffset)
 
-	nameBytes := []byte(name)
-	nameLen := uint32(len(nameBytes))
-	recLen := uint64(len(recBytes))
+	// 4. Calculate Checksum (Name + RecordBytes)
+	// We can access the written bytes directly from the buffer slice
+	fullPayload := w.buf.Bytes()[headerOffset+headerSize : recEndOffset]
+	// Verify payload length matches
+	// expectedPayloadLen := int(nameLen) + int(recLen)
+	// if len(fullPayload) != expectedPayloadLen { panic("buffer mismatch") }
 
-	// 2. Calculate Checksum
 	crc := crc32.NewIEEE()
-	_, _ = crc.Write(nameBytes)
-	_, _ = crc.Write(recBytes)
+	_, _ = crc.Write(fullPayload)
 	checksum := crc.Sum32()
 
-	// 3. Serialize Header
-	// Header: Checksum(4) | Seq(8) | Timestamp(8) | NameLen(4) | RecLen(8) = 32 bytes
-	header := make([]byte, 32)
+	// 5. Patch Header
+	header := make([]byte, headerSize)
 	binary.LittleEndian.PutUint32(header[0:4], checksum)
 	binary.LittleEndian.PutUint64(header[4:12], seq)
 	binary.LittleEndian.PutUint64(header[12:20], uint64(ts))
 	binary.LittleEndian.PutUint32(header[20:24], nameLen)
 	binary.LittleEndian.PutUint64(header[24:32], recLen)
 
-	// 4. Append to logical buffer
-	// Check capacity? bytes.Buffer grows automatically.
-	if _, err := w.buf.Write(header); err != nil {
-		return err
-	}
-	if _, err := w.buf.Write(nameBytes); err != nil {
-		return err
-	}
-	if _, err := w.buf.Write(recBytes); err != nil {
-		return err
+	if _, err := w.buf.WriteAt(header, int64(headerOffset)); err != nil {
+		return fmt.Errorf("failed to patch header: %w", err)
 	}
 
 	// Update current sequence
@@ -229,7 +236,7 @@ func (w *BufferedWAL) swapBufferLocked() *writeBatch {
 	// Allocate new buffer
 	// Optimization: we could pool these buffers to avoid allocs
 	// But allocating 64KB chunks is relatively cheap in Go GC compared to the I/O.
-	w.buf = bytes.NewBuffer(make([]byte, 0, w.maxBatchSize*2))
+	w.buf = NewPatchableBuffer(w.maxBatchSize * 2)
 
 	return &writeBatch{
 		data:   oldBuf.Bytes(),

@@ -47,11 +47,13 @@ func (h *ArrowHNSW) Search(query []float32, k, ef int, filter *Bitset) ([]Search
 	defer h.searchPool.Put(ctx)
 
 	// Encode query if SQ8 enabled
+	// Encode query if SQ8 enabled
+	dims := int(h.dims.Load())
 	if h.quantizer != nil {
-		if cap(ctx.querySQ8) < h.dims {
-			ctx.querySQ8 = make([]byte, h.dims)
+		if cap(ctx.querySQ8) < dims {
+			ctx.querySQ8 = make([]byte, dims)
 		}
-		ctx.querySQ8 = ctx.querySQ8[:h.dims]
+		ctx.querySQ8 = ctx.querySQ8[:dims]
 		h.quantizer.Encode(query, ctx.querySQ8)
 	}
 
@@ -95,7 +97,7 @@ func (h *ArrowHNSW) Search(query []float32, k, ef int, filter *Bitset) ([]Search
 		// If Re-ranking, recompute score
 		if useRefinement {
 			vec := h.mustGetVectorFromData(data, id)
-			if len(vec) == h.dims {
+			if len(vec) == dims {
 				// Compute exact L2 distance
 				score = simd.EuclideanDistance(query, vec)
 			}
@@ -251,10 +253,11 @@ func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef, layer in
 			for i, nid := range ctx.scratchIDs {
 				cID := chunkID(nid)
 				cOff := chunkOffset(nid)
-				off := int(cOff) * h.dims
+				dims := int(h.dims.Load())
+				off := int(cOff) * dims
 
-				if int(cID) < len(data.VectorsSQ8) && data.VectorsSQ8[cID] != nil && off+h.dims <= len(*data.VectorsSQ8[cID]) {
-					d := simd.EuclideanDistanceSQ8(ctx.querySQ8, (*data.VectorsSQ8[cID])[off:off+h.dims])
+				if int(cID) < len(data.VectorsSQ8) && data.VectorsSQ8[cID] != nil && off+dims <= len(*data.VectorsSQ8[cID]) {
+					d := simd.EuclideanDistanceSQ8(ctx.querySQ8, (*data.VectorsSQ8[cID])[off:off+dims])
 					dists[i] = float32(d)
 				} else {
 					dists[i] = math.MaxFloat32
@@ -344,16 +347,17 @@ func (h *ArrowHNSW) distance(query []float32, id uint32, data *GraphData) float3
 	if h.quantizer != nil && len(data.VectorsSQ8) > 0 {
 		cID := chunkID(id)
 		cOff := chunkOffset(id)
-		off := int(cOff) * h.dims
+		dims := int(h.dims.Load())
+		off := int(cOff) * dims
 
-		if int(cID) < len(data.VectorsSQ8) && data.VectorsSQ8[cID] != nil && off+h.dims <= len(*data.VectorsSQ8[cID]) {
+		if int(cID) < len(data.VectorsSQ8) && data.VectorsSQ8[cID] != nil && off+dims <= len(*data.VectorsSQ8[cID]) {
 
 			// We need query to be quantized too.
 			// Just quantize on fly for single distance check (negligible for entry point).
 			// Optimization: use scratch from somewhere? No, local alloc for single dist is okay?
 			// Ideally reuse buffer.
 			qSQ8 := h.quantizer.Encode(query, nil)
-			d := simd.EuclideanDistanceSQ8(qSQ8, (*data.VectorsSQ8[cID])[off:off+h.dims])
+			d := simd.EuclideanDistanceSQ8(qSQ8, (*data.VectorsSQ8[cID])[off:off+dims])
 			return float32(d)
 		}
 	}
@@ -363,10 +367,11 @@ func (h *ArrowHNSW) distance(query []float32, id uint32, data *GraphData) float3
 	// Optimization: Check for dense vector storage (avoids Arrow overhead)
 	cID := chunkID(id)
 	cOff := chunkOffset(id)
+	dims := int(h.dims.Load())
 	if int(cID) < len(data.Vectors) && data.Vectors[cID] != nil {
-		start := int(cOff) * h.dims
-		if start+h.dims <= len(*data.Vectors[cID]) {
-			vec := (*data.Vectors[cID])[start : start+h.dims]
+		start := int(cOff) * dims
+		if start+dims <= len(*data.Vectors[cID]) {
+			vec := (*data.Vectors[cID])[start : start+dims]
 			return simd.EuclideanDistance(query, vec)
 		}
 	}

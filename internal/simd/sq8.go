@@ -1,23 +1,24 @@
 package simd
 
-
-
 // EuclideanDistanceSQ8 computes the Euclidean distance between two uint8 vectors.
 // It returns the squared Euclidean distance as an int32 to avoid overflow and expensive sqrt.
 // The actual float distance would be scale * scale * distance.
 // Arguments:
-//   a, b: Quantized vectors (uint8)
+//
+//	a, b: Quantized vectors (uint8)
+//
 // Returns:
-//   Squared L2 distance (int32)
+//
+//	Squared L2 distance (int32)
 func EuclideanDistanceSQ8(a, b []byte) int32 {
 	if len(a) != len(b) {
 		panic("simd: vector length mismatch")
 	}
 	// TODO: Add AVX2/NEON implementation
-	return euclideanSQ8Generic(a, b)
+	return EuclideanSQ8Generic(a, b)
 }
 
-func euclideanSQ8Generic(a, b []byte) int32 {
+func EuclideanSQ8Generic(a, b []byte) int32 {
 	var sum int32
 	for i := 0; i < len(a); i++ {
 		d := int32(a[i]) - int32(b[i])
@@ -33,7 +34,7 @@ func QuantizeSQ8(src []float32, dst []byte, minVal, maxVal float32) {
 	if maxVal == minVal {
 		scale = 0
 	}
-	
+
 	for i, v := range src {
 		val := (v - minVal) * scale
 		if val < 0 {

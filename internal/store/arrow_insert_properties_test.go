@@ -41,7 +41,7 @@ func TestInsertProperties(t *testing.T) {
 			config.Alpha = 1.0
 
 			index := NewArrowHNSW(nil, config, nil)
-			index.dims = 1 // use 1-dim vectors
+			index.dims.Store(1) // use 1-dim vectors
 
 			// Initialize GraphData manually
 			data := NewGraphData(10, 1, false, false) // capacity 10, dim 1
@@ -53,7 +53,7 @@ func TestInsertProperties(t *testing.T) {
 				cOff := chunkOffset(uint32(i))
 
 				// Ensure chunk is allocated
-				if err := index.ensureChunk(data, cID, cOff, index.dims); err != nil {
+				if err := index.ensureChunk(data, cID, cOff, int(index.dims.Load())); err != nil {
 					return false
 				}
 
@@ -69,7 +69,7 @@ func TestInsertProperties(t *testing.T) {
 			for i := 0; i < 5; i++ {
 				for j := 0; j < 5; j++ {
 					if i != j {
-						index.addConnection(ctx, data, uint32(i), uint32(j), 0, m*2)
+						index.AddConnection(ctx, data, uint32(i), uint32(j), 0, m*2)
 					}
 				}
 			}
@@ -78,7 +78,7 @@ func TestInsertProperties(t *testing.T) {
 				// Prune to M*2 (usually MMax is the limit, but here we test pruning)
 				// Actually pruneConnections param is 'maxConn'.
 				// We used m*2 in old test.
-				index.pruneConnections(ctx, data, uint32(i), m*2, 0)
+				index.PruneConnections(ctx, data, uint32(i), m*2, 0)
 			}
 
 			// Check all nodes have <= M*2 neighbors

@@ -24,7 +24,7 @@ func NewVectorPool() *VectorPool {
 }
 
 // Get retrieves a vector buffer of the specified dimension from the pool
-func (vp *VectorPool) Get(dim int) []float32 {
+func (vp *VectorPool) Get(dim int) *[]float32 {
 	vp.mu.RLock()
 	pool, exists := vp.pools[dim]
 	vp.mu.RUnlock()
@@ -37,7 +37,8 @@ func (vp *VectorPool) Get(dim int) []float32 {
 			pool = &sync.Pool{
 				New: func() interface{} {
 					vp.misses.Add(1)
-					return make([]float32, dim)
+					slice := make([]float32, dim)
+					return &slice
 				},
 			}
 			vp.pools[dim] = pool
@@ -45,11 +46,12 @@ func (vp *VectorPool) Get(dim int) []float32 {
 		vp.mu.Unlock()
 	}
 
-	vec := pool.Get().([]float32)
-	// Ensure the slice is the correct length
-	if len(vec) != dim {
+	vec := pool.Get().(*[]float32)
+	// Ensure the slice is the correct length (sanity check, usually guaranteed by logic)
+	if len(*vec) != dim {
 		vp.misses.Add(1)
-		vec = make([]float32, dim)
+		slice := make([]float32, dim)
+		vec = &slice
 	} else {
 		vp.hits.Add(1)
 	}
@@ -57,20 +59,21 @@ func (vp *VectorPool) Get(dim int) []float32 {
 }
 
 // Put returns a vector buffer to the pool for reuse
-func (vp *VectorPool) Put(vec []float32) {
-	if len(vec) == 0 {
+func (vp *VectorPool) Put(vec *[]float32) {
+	if vec == nil || len(*vec) == 0 {
 		return
 	}
 
-	dim := len(vec)
+	dim := len(*vec)
 	vp.mu.RLock()
 	pool, exists := vp.pools[dim]
 	vp.mu.RUnlock()
 
 	if exists {
 		// Clear the vector before returning to pool
-		for i := range vec {
-			vec[i] = 0
+		slice := *vec
+		for i := range slice {
+			slice[i] = 0
 		}
 		vp.puts.Add(1)
 		pool.Put(vec)

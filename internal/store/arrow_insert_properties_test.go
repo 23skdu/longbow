@@ -44,14 +44,20 @@ func TestInsertProperties(t *testing.T) {
 			index.dims = 1 // use 1-dim vectors
 
 			// Initialize GraphData manually
-			data := NewGraphData(10, 1, false) // capacity 10, dim 1
+			data := NewGraphData(10, 1, false, false) // capacity 10, dim 1
 			index.data.Store(data)
 
 			// Setup dummy vectors
 			for i := 0; i < 5; i++ {
-				_ = chunkID(uint32(i))
-				// cOff := chunkOffset(uint32(i)) // cOff is not used after this point
-				// Check vector
+				cID := chunkID(uint32(i))
+				cOff := chunkOffset(uint32(i))
+
+				// Ensure chunk is allocated
+				if err := index.ensureChunk(data, cID, cOff, index.dims); err != nil {
+					return false
+				}
+
+				// Check vector (optional)
 				// storedVec := (*data.Vectors[cID])[int(cOff)*index.dims : (int(cOff)+1)*index.dims]
 			}
 

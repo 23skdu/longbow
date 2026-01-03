@@ -37,10 +37,10 @@ func TestPQEncoder_Correctness(t *testing.T) {
 	// Test the Encoder logic itself with HNSW integration logic side-by-side
 	dim := 32
 	cfg := PQConfig{
-		Dim:    dim,
-		M:      8, // 4 dims per subvector
-		Ksub:   256,
-		SubDim: 4,
+		Dimensions:    dim,
+		NumSubVectors:      8, // 4 dims per subvector
+		NumCentroids:   256,
+		 
 	}
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("Config invalid: %v", err)

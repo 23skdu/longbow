@@ -224,7 +224,8 @@ func (s *VectorStore) Snapshot() error {
 			for _, r := range recs {
 				r.Retain()
 			}
-			items = append(items, snapItem{Name: name, Recs: recs, GraphRecs: graphRecs})
+			pqEnc := s.getPQEncoderLocked(ds)
+			items = append(items, snapItem{Name: name, Recs: recs, GraphRecs: graphRecs, PQEncoder: pqEnc})
 		}
 		ds.dataMu.RUnlock()
 	}
@@ -277,6 +278,7 @@ type snapItem struct {
 	Name      string
 	Recs      []arrow.RecordBatch
 	GraphRecs []arrow.RecordBatch
+	PQEncoder *PQEncoder
 }
 
 func (s *VectorStore) writeSnapshotItem(item snapItem, tempDir string) {
@@ -349,6 +351,57 @@ func (s *VectorStore) writeSnapshotItem(item snapItem, tempDir string) {
 		}
 		_ = f.Close()
 	}
+	// 3. Write PQ Codebooks Sidecar
+	// Access the index via the dataset to get the encoder?
+	// writeSnapshotItem just takes 'snapItem', which holds Records.
+	// We need access to the Dataset object itself or pass the Encoder in snapItem.
+	// We need to refactor snapItem or pass more info.
+	//
+	// Refactoring snapItem is cleaner.
+	if item.PQEncoder != nil {
+		path := filepath.Join(tempDir, item.Name+".pq")
+		data := item.PQEncoder.Serialize()
+		if err := os.WriteFile(path, data, 0644); err != nil {
+			s.logger.Error().Str("name", item.Name).Err(err).Msg("Failed to write PQ codebooks")
+		}
+	}
+}
+
+// Helper to extract encoder from index
+// getPQEncoderLocked retrieves the encoder assuming ds.dataMu is RLocked
+func (s *VectorStore) getPQEncoderLocked(ds *Dataset) *PQEncoder {
+	if ds.Index == nil {
+		return nil
+	}
+
+	idx := ds.Index
+
+	// If AutoShardingIndex, peel the wrapper
+	if as, ok := idx.(*AutoShardingIndex); ok {
+		as.mu.RLock()
+		idx = as.current // internal access allows this
+		as.mu.RUnlock()
+	}
+
+	// Try to get from supported index types
+	switch h := idx.(type) {
+	case *ArrowHNSW:
+		return h.GetPQEncoder()
+	case *HNSWIndex:
+		h.mu.RLock()
+		defer h.mu.RUnlock()
+		return h.pqEncoder // internal access allows this
+	default:
+	}
+
+	return nil
+}
+
+// Helper to extract encoder from index (acquires lock)
+func (s *VectorStore) getPQEncoder(ds *Dataset) *PQEncoder {
+	ds.dataMu.RLock()
+	defer ds.dataMu.RUnlock()
+	return s.getPQEncoderLocked(ds)
 }
 
 func (s *VectorStore) loadSnapshots() error {
@@ -361,12 +414,49 @@ func (s *VectorStore) loadSnapshots() error {
 		return err
 	}
 
+	// Map to hold PQ encoders if loaded before dataset
+	pendingPQ := make(map[string]*PQEncoder)
+
 	for _, entry := range entries {
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".parquet" {
+		fileName := entry.Name()
+		if entry.IsDir() {
 			continue
 		}
 
-		fileName := entry.Name()
+		// Handle PQ Codebooks
+		if filepath.Ext(fileName) == ".pq" {
+			name := fileName[:len(fileName)-3]
+			path := filepath.Join(snapshotDir, fileName)
+
+			data, err := os.ReadFile(path)
+			if err != nil {
+				s.logger.Error().Str("name", name).Err(err).Msg("Failed to read PQ snapshot")
+				continue
+			}
+
+			enc, err := DeserializePQEncoder(data)
+			if err != nil {
+				s.logger.Error().Str("name", name).Err(err).Msg("Failed to deserialize PQ encoder")
+				continue
+			}
+
+			s.mu.Lock()
+			ds, ok := s.datasets[name]
+			if ok {
+				ds.dataMu.Lock()
+				ds.PQEncoder = enc
+				ds.dataMu.Unlock()
+			} else {
+				pendingPQ[name] = enc
+			}
+			s.mu.Unlock()
+			continue
+		}
+
+		if filepath.Ext(fileName) != ".parquet" {
+			continue
+		}
+
 		name := fileName[:len(fileName)-8] // remove .parquet
 		isGraph := false
 
@@ -375,7 +465,7 @@ func (s *VectorStore) loadSnapshots() error {
 			isGraph = true
 		}
 
-		path := filepath.Join(snapshotDir, entry.Name())
+		path := filepath.Join(snapshotDir, fileName)
 
 		f, err := os.Open(path)
 		if err != nil {
@@ -428,6 +518,11 @@ func (s *VectorStore) loadSnapshots() error {
 			// Use constructor to ensure all fields (Graph, Indexes) are initialized
 			ds = NewDataset(name, rec.Schema())
 			ds.SetLastAccess(time.Now())
+			// Check pending PQ
+			if enc, exists := pendingPQ[name]; exists {
+				ds.PQEncoder = enc
+				delete(pendingPQ, name)
+			}
 			s.datasets[name] = ds
 		}
 		s.mu.Unlock()

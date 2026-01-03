@@ -391,6 +391,13 @@ func (h *ArrowHNSW) GetMaxLevel() int {
 	return int(h.maxLevel.Load())
 }
 
+// GetPQEncoder returns the PQ encoder if one exists.
+func (h *ArrowHNSW) GetPQEncoder() *PQEncoder {
+	// No lock needed if pqEncoder is immutable after training?
+	// It is set during TrainPQ and never changed.
+	return h.pqEncoder
+}
+
 // Helper functions for chunk calculation
 func chunkID(id uint32) uint32 {
 	return id >> ChunkShift

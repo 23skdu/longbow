@@ -419,12 +419,15 @@ func (s *VectorStore) flushPutBatch(ds *Dataset, name string, batch []arrow.Reco
 
 	// Lazy Index Initialization (moved from DoPut)
 	if ds.Index == nil {
-		// Use AutoShardingIndex by default
-		config := AutoShardingConfig{
-			ShardThreshold: 10000,
-			ShardCount:     runtime.NumCPU(),
-			Enabled:        true, // Ensure it's enabled if we want sharding
+		// Use AutoShardingIndex by default, using global store config
+		config := s.autoShardingConfig
+		// Ensure sane defaults if zero-valued (though should be set by main)
+		if config.ShardThreshold == 0 {
+			config.ShardThreshold = 10000
+			config.Enabled = true
+			config.ShardCount = runtime.NumCPU()
 		}
+
 		aIdx := NewAutoShardingIndex(ds, config)
 
 		// Set initial dimension from the first batch to avoid race on searches

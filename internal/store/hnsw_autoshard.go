@@ -20,6 +20,8 @@ type AutoShardingConfig struct {
 	ShardThreshold int
 	// ShardCount is the target number of shards to create (defaults to NumCPU).
 	ShardCount int
+	// ShardSplitThreshold is the size of each shard (defaults to 65536).
+	ShardSplitThreshold int
 }
 
 // DefaultAutoShardingConfig returns a standard configuration.
@@ -199,6 +201,9 @@ func (a *AutoShardingIndex) migrateToSharded() {
 	shardedConfig.Dimension = oldIndex.GetDimension()
 	if a.config.ShardCount > 0 {
 		shardedConfig.NumShards = a.config.ShardCount
+	}
+	if a.config.ShardSplitThreshold > 0 {
+		shardedConfig.ShardSplitThreshold = a.config.ShardSplitThreshold
 	}
 
 	// IMPORTANT: Unlock here! We have captured our snapshots (oldIndex, n, shardedConfig).
@@ -458,13 +463,13 @@ func (idx *AutoShardingIndex) GetNeighbors(id VectorID) ([]VectorID, error) {
 func (idx *AutoShardingIndex) EstimateMemory() int64 {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
-	
+
 	size := int64(64) // Base struct overhead
 	size += idx.current.EstimateMemory()
-	
+
 	if idx.interimIndex != nil {
 		size += idx.interimIndex.EstimateMemory()
 	}
-	
+
 	return size
 }

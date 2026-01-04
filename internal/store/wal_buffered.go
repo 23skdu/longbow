@@ -152,6 +152,27 @@ func (w *BufferedWAL) Sync() error {
 
 	// Wait until flushedSeq >= targetSeq
 	for w.flushedSeq.Load() < targetSeq {
+		// If we are waiting, and buffer has data, we should signal the flush loop again
+		// because the previous flush might have finished but we missed the content we needed.
+		// However, we don't want to spam the channel.
+		// The issue is that the flush loop might be idle now (waiting for ticker).
+
+		// We can try to notify the flush loop to wake up.
+		w.mu.Unlock() // Release lock to allow flush loop to proceed if it was contending? No, chan send is safe.
+
+		// Trigger flush if not empty
+		select {
+		case w.flushCh <- struct{}{}:
+		default:
+		}
+
+		w.mu.Lock()
+
+		// Check again before waiting
+		if w.flushedSeq.Load() >= targetSeq {
+			break
+		}
+
 		w.syncCond.Wait()
 	}
 	w.mu.Unlock()

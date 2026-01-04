@@ -230,7 +230,7 @@ func (hs *HybridSearcher) SearchSparse(query string, k int) []SearchResult {
 		return nil
 	}
 
-	var results []SearchResult
+	results := make([]SearchResult, 0, k)
 	it := bm.Iterator()
 	for it.HasNext() && len(results) < k {
 		id := VectorID(it.Next())

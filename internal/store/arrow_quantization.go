@@ -1,7 +1,6 @@
 package store
 
 import (
-	"fmt"
 	"sync"
 
 	"github.com/23skdu/longbow/internal/simd"
@@ -42,7 +41,7 @@ func (sq *ScalarQuantizer) IsTrained() bool {
 // NOTE: Changing bounds invalidates previously quantized vectors!
 // In a real system, we train on a sample, freeze, then index.
 func (sq *ScalarQuantizer) Train(vectors [][]float32) {
-	fmt.Println("DEBUG: ScalarQuantizer.Train called with", len(vectors), "vectors")
+	// fmt.Println("ScalarQuantizer.Train called with", len(vectors), "vectors")
 	sq.mu.Lock()
 	defer sq.mu.Unlock()
 	if sq.frozen {

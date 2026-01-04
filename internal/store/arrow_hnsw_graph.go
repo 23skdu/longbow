@@ -2,6 +2,7 @@ package store
 
 import (
 	"math"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"unsafe"
@@ -21,6 +22,7 @@ const (
 // We use pointers to chunks (*[]T) to allow atomic lazy allocation.
 type GraphData struct {
 	Capacity int
+	Dims     int
 	// SoA Slices of Chunks
 	// Access: Levels[id >> ChunkShift] is *[]uint8. If nil, chunk not allocated.
 	Levels []*[]uint8
@@ -53,6 +55,7 @@ func NewGraphData(capacity, dims int, sq8Enabled bool, pqEnabled bool) *GraphDat
 
 	gd := &GraphData{
 		Capacity: numChunks * ChunkSize,
+		Dims:     dims,
 		Levels:   make([]*[]uint8, numChunks),
 	}
 
@@ -91,7 +94,12 @@ const (
 // It uses atomic pointers for lock-free search and a mutex for serialized writes.
 type ArrowHNSW struct {
 	// Graph data snapshot (lock-free access)
+	// data holds the mutable in-memory graph. It can be nil if running in Read-Only Disk mode.
 	data atomic.Pointer[GraphData]
+
+	// backend holds the GraphBackend interface (GraphData or DiskGraph).
+	// Used for Search operations.
+	backend atomic.Value
 
 	// Locking strategy:
 	// initMu protects the initialization of the first node (entry point) and global dimension changes.
@@ -353,6 +361,7 @@ func (h *ArrowHNSW) Grow(minCap int, validDims int) {
 	h.locationStore.EnsureCapacity(VectorID(minCap - 1))
 
 	// Ensure bitset capacity
+	// h.deleted (roaring) handles capacity dynamically
 
 	// Determine dimensions to use for allocation
 	// Prefer the explicit argument if valid (>0), otherwise fallback to global
@@ -385,6 +394,7 @@ func (h *ArrowHNSW) Grow(minCap int, validDims int) {
 	// Clone and grow
 	newData := dataPtr.Clone(minCap, targetDims, h.config.SQ8Enabled, h.config.PQEnabled)
 	h.data.Store(newData)
+	h.backend.Store(newData)
 }
 
 // CleanupTombstones iterates over the graph and removes connections to deleted nodes.
@@ -592,6 +602,7 @@ func NewArrowSearchContextPool() *ArrowSearchContextPool {
 					scratchSelectedVecs:  make([][]float32, 0, 1000),
 					scratchVecsSQ8:       make([][]byte, 8000),
 					scratchSelectedIdxs:  make([]int, 0, 1000),
+					scratchNeighbors:     make([]uint32, 0, MaxNeighbors),
 					// PQ Scratch
 					scratchPQTable: make([]float32, 32768), // Increased for larger M
 					scratchIDs:     make([]uint32, 0, 8000),
@@ -640,6 +651,7 @@ type ArrowSearchContext struct {
 	scratchRemainingVecs [][]float32
 	scratchSelectedVecs  [][]float32
 	scratchVecsSQ8       [][]byte
+	scratchNeighbors     []uint32  // Raw neighbor list from backend
 	scratchPQTable       []float32 // For ADC table
 	scratchIDs           []uint32  // For batching unvisited neighbors
 	querySQ8             []byte    // SQ8 encoded query
@@ -777,4 +789,146 @@ func (g *GraphData) StoreVersionsChunk(layer int, cID uint32, chunk *[]uint32) {
 	}
 	ptr := (*unsafe.Pointer)(unsafe.Pointer(&g.Versions[layer][cID]))
 	atomic.StorePointer(ptr, unsafe.Pointer(chunk))
+}
+
+// GetNeighbors implements GraphBackend.
+// It resolves the chunk and offset to return the neighbor slice.
+// GetNeighbors implements GraphBackend.
+// It uses Seqlock logic to ensure a consistent view of the neighbors list.
+// If 'buf' is provided and has sufficient capacity, it is used to avoid allocation.
+func (gd *GraphData) GetNeighbors(layer int, nodeID uint32, buf []uint32) []uint32 {
+	if layer >= ArrowMaxLayers || layer >= len(gd.Neighbors) {
+		return nil
+	}
+	cID := chunkID(nodeID)
+	cOff := chunkOffset(nodeID)
+
+	if int(cID) >= len(gd.Neighbors[layer]) {
+		return nil
+	}
+
+	// Seqlock Loop
+	for {
+		// 1. Read Version (Start)
+		verChunk := gd.LoadVersionsChunk(layer, cID)
+		if verChunk == nil {
+			// If version chunk is missing, the node likely doesn't exist fully yet
+			return nil
+		}
+		verAddr := &(*verChunk)[cOff]
+		ver := atomic.LoadUint32(verAddr)
+
+		// If dirty (odd), wait and retry
+		if ver%2 != 0 {
+			runtime.Gosched()
+			continue
+		}
+
+		// 2. Read Data
+		// We use atomic loads for chunk pointers to ensure we see initialized chunks
+		countChunk := gd.LoadCountsChunk(layer, cID)
+		neighborsChunk := gd.LoadNeighborsChunk(layer, cID)
+
+		if countChunk == nil || neighborsChunk == nil {
+			// Inconsistent state or missing chunks, retry or return nil
+			// If we are reading a valid node, these should exist.
+			// But if we are racing with creation?
+			// Check version again?
+			if atomic.LoadUint32(verAddr) != ver {
+				continue
+			}
+			return nil
+		}
+
+		count := atomic.LoadInt32(&(*countChunk)[cOff])
+		if count <= 0 {
+			// No neighbors or empty
+			// Check version to be sure
+			if atomic.LoadUint32(verAddr) != ver {
+				continue
+			}
+			return nil
+		}
+
+		if count > MaxNeighbors {
+			count = MaxNeighbors // Safety cap
+		}
+
+		baseIdx := int(cOff) * MaxNeighbors
+
+		// 3. Copy Data
+		var res []uint32
+		if cap(buf) >= int(count) {
+			res = buf[:count]
+		} else {
+			res = make([]uint32, count)
+		}
+
+		copy(res, (*neighborsChunk)[baseIdx:baseIdx+int(count)])
+
+		// 4. Read Version (End)
+		if atomic.LoadUint32(verAddr) == ver {
+			return res
+		}
+
+		// Failed, data was modified during read, retry
+		runtime.Gosched()
+	}
+}
+
+// GetLevel returns the level of the node.
+// Currently GraphData stores levels in a separate chunked array.
+func (gd *GraphData) GetLevel(nodeID uint32) int {
+	cID := chunkID(nodeID)
+	cOff := chunkOffset(nodeID)
+
+	chunkPtr := gd.LoadLevelChunk(cID)
+	if chunkPtr == nil {
+		return -1
+	}
+	return int((*chunkPtr)[cOff])
+}
+
+func (gd *GraphData) GetVectorSQ8(nodeID uint32) []byte {
+	cID := chunkID(nodeID)
+	cOff := chunkOffset(nodeID)
+	dims := gd.Dims
+
+	if dims == 0 {
+		return nil
+	}
+
+	vecChunk := gd.LoadSQ8Chunk(cID)
+	// Check chunk existence and bounds
+	if vecChunk != nil {
+		start := int(cOff) * dims
+		end := start + dims
+		if end <= len(*vecChunk) {
+			return (*vecChunk)[start:end]
+		}
+	}
+	return nil
+}
+
+func (gd *GraphData) GetVectorPQ(nodeID uint32) []byte {
+	return nil // Same issue
+}
+
+// Implement GraphBackend.Size (?)
+// GraphData represents a snapshot of specific capacity. It doesn't track "Active Node Count".
+// ArrowHNSW tracks node count.
+// But Size() in backend context might mean Capacity or MaxNodeID?
+// Let's implement Capacity() for GraphData.
+func (gd *GraphData) GetCapacity() int {
+	return gd.Capacity
+}
+
+// Size returns Capacity for GraphData as it's a fixed-size container effectively.
+func (gd *GraphData) Size() int {
+	return gd.Capacity
+}
+
+// Close is a no-op for memory backend
+func (gd *GraphData) Close() error {
+	return nil
 }

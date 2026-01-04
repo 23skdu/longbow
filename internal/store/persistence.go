@@ -469,7 +469,7 @@ func (s *VectorStore) writeSnapshotItem(item snapItem, tempDir string) {
 	if item.PQEncoder != nil {
 		path := filepath.Join(tempDir, item.Name+".pq")
 		data := item.PQEncoder.Serialize()
-		if err := os.WriteFile(path, data, 0644); err != nil {
+		if err := os.WriteFile(path, data, 0o644); err != nil {
 			s.logger.Error().Str("name", item.Name).Err(err).Msg("Failed to write PQ codebooks")
 		}
 	}

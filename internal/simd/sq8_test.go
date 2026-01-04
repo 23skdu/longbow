@@ -1,6 +1,7 @@
 package simd
 
 import (
+	crypto_rand "crypto/rand"
 	"math/rand"
 	"testing"
 	"time"
@@ -46,8 +47,8 @@ func BenchmarkEuclideanDistanceSQ8(b *testing.B) {
 	size := 1024
 	a := make([]byte, size)
 	vecB := make([]byte, size)
-	rand.Read(a)
-	rand.Read(vecB)
+	_, _ = crypto_rand.Read(a)
+	_, _ = crypto_rand.Read(vecB)
 
 	b.Run("Generic", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {

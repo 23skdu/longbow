@@ -43,15 +43,16 @@ func writeParquet(w io.Writer, rec arrow.RecordBatch) error {
 
 	var ids []int32
 	idCol := rec.Column(idColIdx)
-	if idArr, ok := idCol.(*array.Int32); ok {
+	switch idArr := idCol.(type) {
+	case *array.Int32:
 		ids = idArr.Int32Values()
-	} else if idArr, ok := idCol.(*array.Uint32); ok {
-		// Convert Uint32 to Int32 for Parquet if needed, or change VectorRecord
+	case *array.Uint32:
+		// Convert Uint32 to Int32 for Parquet if needed
 		for i := 0; i < int(rec.NumRows()); i++ {
 			ids = append(ids, int32(idArr.Value(i)))
 		}
-	} else {
-		// fallback for other types?
+	default:
+		// fallback for other types
 		for i := 0; i < int(rec.NumRows()); i++ {
 			ids = append(ids, int32(i))
 		}

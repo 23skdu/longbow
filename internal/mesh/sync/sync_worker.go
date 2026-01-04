@@ -103,7 +103,7 @@ func (w *SyncWorker) syncAll() {
 	}
 
 	w.mu.RLock()
-	var peers []*PeerState
+	peers := make([]*PeerState, 0, len(w.peers))
 	for _, p := range w.peers {
 		peers = append(peers, p)
 	}

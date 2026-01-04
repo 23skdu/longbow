@@ -22,6 +22,8 @@ type AutoShardingConfig struct {
 	ShardCount int
 	// ShardSplitThreshold is the size of each shard (defaults to 65536).
 	ShardSplitThreshold int
+	// UseRingSharding determines if consistent hashing sharding is used.
+	UseRingSharding bool
 }
 
 // DefaultAutoShardingConfig returns a standard configuration.
@@ -205,6 +207,7 @@ func (a *AutoShardingIndex) migrateToSharded() {
 	if a.config.ShardSplitThreshold > 0 {
 		shardedConfig.ShardSplitThreshold = a.config.ShardSplitThreshold
 	}
+	shardedConfig.UseRingSharding = a.config.UseRingSharding // Propagate ring sharding setting
 
 	// IMPORTANT: Unlock here! We have captured our snapshots (oldIndex, n, shardedConfig).
 	// We can now create the new index and run the migration without holding these global locks.

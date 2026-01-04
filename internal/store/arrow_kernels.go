@@ -43,33 +43,33 @@ func RegisterHNSWKernels() {
 		ArgNames:    []string{"left", "right"},
 	}
 	l2Func := compute.NewScalarFunction(l2Name, compute.Binary(), l2Doc)
-	
+
 	// Input type matcher: FixedSizeList of Float32
 	// We match generic FixedSizeList, check type in kernel? Or specific matcher?
 	// TypeMatcher: FixedSizeListLike?
 	// Note: Generic FixedSizeList matcher might need custom implementation or use generic ID
 	// For now, let's assume we use FixedSizeList(Float32) specifically.
-	
+
 	// Kernel signature
 	// Input: Any FixedSizeList, Any FixedSizeList
 	// Output: Float32
 	// exec.NewExactInput(arrow.FixedSizeListOf(dim, arrow.PrimitiveTypes.Float32)) is too specific (dim changes).
 	// Use Matcher for ID?
 	// exec.NewIDInput(arrow.FIXED_SIZE_LIST) matches any FSL.
-	
+
 	inTypes := []exec.InputType{
 		exec.NewIDInput(arrow.FIXED_SIZE_LIST),
 		exec.NewIDInput(arrow.FIXED_SIZE_LIST),
 	}
 	outType := exec.NewOutputType(arrow.PrimitiveTypes.Float32)
-	
+
 	k := exec.NewScalarKernel(inTypes, outType, l2DistanceExec, nil)
 	if err := l2Func.AddKernel(k); err != nil {
 		fmt.Printf("Failed to add l2 kernel: %v\n", err)
 	}
-	
+
 	if added := reg.AddFunction(l2Func, false); !added {
-		// Already exists
+		_ = "already exists"
 	}
 
 	// 2. Register select_k_neighbors
@@ -77,11 +77,11 @@ func RegisterHNSWKernels() {
 	// This is a Vector Kernel (selection/sort).
 	selName := "select_k_neighbors"
 	selDoc := compute.FunctionDoc{
-		Summary: "Select top K neighbors",
+		Summary:  "Select top K neighbors",
 		ArgNames: []string{"distances", "ids"},
 	}
 	selFunc := compute.NewVectorFunction(selName, compute.Binary(), selDoc)
-	
+
 	selInTypes := []exec.InputType{
 		exec.NewExactInput(arrow.PrimitiveTypes.Float32),
 		exec.NewExactInput(arrow.PrimitiveTypes.Uint32),
@@ -100,9 +100,10 @@ func RegisterHNSWKernels() {
 	if err := selFunc.AddKernel(selK); err != nil {
 		fmt.Printf("Failed to add select_k kernel: %v\n", err)
 	}
-	
+
 	if added := reg.AddFunction(selFunc, false); !added {
 		// Ignore
+		_ = "already exists"
 	}
 
 	kernelsRegistered = true
@@ -118,7 +119,7 @@ func l2DistanceExec(ctx *exec.KernelCtx, batch *exec.ExecSpan, out *exec.ExecRes
 	var dim int
 	var leftVals, rightVals []float32
 	var leftIsScalar, rightIsScalar bool
-	
+
 	// Handle Left Input
 	if batch.Values[0].Scalar != nil {
 		leftIsScalar = true
@@ -160,27 +161,27 @@ func l2DistanceExec(ctx *exec.KernelCtx, batch *exec.ExecSpan, out *exec.ExecRes
 	}
 
 	lenBatch := batch.Len
-	
+
 	// Prepare output slice
 	// out is *ExecResult (alias ArraySpan).
 	// We need to write into out.Buffers[1].
 	// exec.GetSpanValues gives read-only slice?
 	// We can cast the buffer.
-	
+
 	// How to get mutable slice from ArraySpan?
 	// unsafe hack or proper accessor?
 	// Go slices are pointers. GetSpanValues might return a slice backing the buffer.
-	outBuf := exec.GetSpanValues[float32](out, 1) // Buffer 1 is data for Float32? 
+	outBuf := exec.GetSpanValues[float32](out, 1) // Buffer 1 is data for Float32?
 	// Wait, Float32 array: Buffer 0=Validity, Buffer 1=Values.
 	// exec.GetSpanValues implementation:
 	// return unsafe.Slice(...)
-	
+
 	// We need a Mutable slice.
 	// We'll perform unsafe cast if needed, or assume GetSpanValues returns writeable if buffer is mutable.
 	// The buffer allocated by executor should be mutable.
-	
+
 	outSlice := outBuf[:lenBatch]
-	
+
 	// Logic simplified above, removing redundant checks
 	// Iterate
 	// Note: We use dim from type, but be safe with slice bounds
@@ -191,19 +192,19 @@ func l2DistanceExec(ctx *exec.KernelCtx, batch *exec.ExecSpan, out *exec.ExecRes
 			lOff = (batch.Values[0].Array.Offset + i) * int64(dim)
 		}
 		lVec := leftVals[lOff : lOff+int64(dim)]
-		
+
 		rOff := int64(0)
 		if !rightIsScalar {
 			rOff = (batch.Values[1].Array.Offset + i) * int64(dim)
 		}
 		rVec := rightVals[rOff : rOff+int64(dim)]
-		
+
 		outSlice[i] = simd.EuclideanDistance(lVec, rVec)
 	}
 	return nil
 }
 
-// SelectKOptions 
+// SelectKOptions
 type SelectKOptions struct {
 	K int
 }
@@ -229,76 +230,76 @@ func selectKExec(ctx *exec.KernelCtx, batch *exec.ExecSpan, out *exec.ExecResult
 	// But if we passed IDs, maybe we want filtered IDs.
 	// Let's implement: Return *Indices* of the Top K smallest distances.
 	// Caller then takes from IDs and Distances.
-	
+
 	dists := exec.GetSpanValues[float32](&batch.Values[0].Array, 1)
 	n := int(batch.Len)
-	
+
 	// Create index slice
 	type item struct {
-		idx int
+		idx  int
 		dist float32
 	}
 	items := make([]item, n)
 	for i := 0; i < n; i++ {
 		items[i] = item{
-			idx: i,
+			idx:  i,
 			dist: dists[int64(i)+batch.Values[0].Array.Offset], // Handle offset!
 		}
 	}
-	
+
 	// Use standard sort for now (simpler than quickselect impl inline)
 	// For K << N, this is suboptimal but robust.
 	// For HNSW N is small (32-200), so Sort is extremely fast (< 1us).
 	// Arrow's C++ SelectKUnstable uses partition.
-	
+
 	// Custom Sort logic
 	// We want smallest distances first.
-	// Simple bubble/insertion sort might be faster for very small N? 
+	// Simple bubble/insertion sort might be faster for very small N?
 	// Go's sort is pdqsort, good enough.
-	
+
 	// Inline bubble sort for very small N? No, keep it clean.
 	// Just full sort.
-	
+
 	// We'll reimplement a simple partition-based selection if needed later.
 	// For now:
-	
-	// Selection Sort for K if K is very small? 
+
+	// Selection Sort for K if K is very small?
 	// Let's use a simple insertion-sort-like loop if K < 5?
 	// Actually, just sorting all is fine.
-	
+
 	// Wait, we need to sort `items` slice.
 	// sort.Slice vs manual implementation.
 	// Manual implementation avoids reflection overhead of sort.Slice.
-	
+
 	// Use sort.Slice for robustness
 	sort.Slice(items, func(i, j int) bool {
 		return items[i].dist < items[j].dist
 	})
-	
+
 	// VectorKernel executor might not preallocate output.
 	// We must allocate if GetSpanValues returned empty.
-	
+
 	outIndices := exec.GetSpanValues[uint32](out, 1)
 	if int64(len(outIndices)) < batch.Len {
 		// Allocate Buffer
 		nBytes := int(batch.Len) * 4 // Uint32
-		
+
 		alloc := exec.GetAllocator(ctx.Ctx)
 		buf := memory.NewResizableBuffer(alloc)
 		buf.Resize(nBytes)
-		
+
 		// Assign to output
 		// Buffer 0 is Validity, Buffer 1 is Data
 		//out.Buffers[1].Buf = buf // BufferSpan struct?
 		// BufferSpan: {Buf *memory.Buffer, Offset int64, Len int64}
 		// We need to construct BufferSpan.
-		// Actually BufferSpan uses `memory.Buffer`? 
+		// Actually BufferSpan uses `memory.Buffer`?
 		// Check BufferSpan definition.
 		// "Buffers [3]BufferSpan"
-		
+
 		// Assuming we can set it.
 		// Use unsafe or generic setter if available?
-		// ArraySpan has "GetBuffer(idx)". 
+		// ArraySpan has "GetBuffer(idx)".
 		// "SetBuffer" does not exist in ArraySpan doc (SetSlice, SetMembers).
 		// But buffers are public?
 		// [3]BufferSpan.
@@ -308,15 +309,15 @@ func selectKExec(ctx *exec.KernelCtx, batch *exec.ExecSpan, out *exec.ExecResult
 		//    Buf *memory.Buffer
 		//    ...
 		// }
-		
+
 		// Use SetBuffer wrapper
 		out.Buffers[1].SetBuffer(buf)
-		
-		// Set SelfAlloc to true so it gets managed? 
+
+		// Set SelfAlloc to true so it gets managed?
 		// SetBuffer sets Owner.
 		// SelfAlloc is true if kernel allocates its own buffer.
 		out.Buffers[1].SelfAlloc = true
-		
+
 		// Verify
 		if len(out.Buffers[1].Buf) != nBytes {
 			return fmt.Errorf("buffer size mismatch after alloc")
@@ -325,14 +326,14 @@ func selectKExec(ctx *exec.KernelCtx, batch *exec.ExecSpan, out *exec.ExecResult
 		// Re-get span values
 		outIndices = exec.GetSpanValues[uint32](out, 1)
 	}
-	
+
 	if int64(len(outIndices)) < batch.Len {
 		return fmt.Errorf("failed to allocate output buffer")
 	}
-	
+
 	for i := 0; i < n; i++ {
 		outIndices[i] = uint32(items[i].idx)
 	}
-	
+
 	return nil
 }

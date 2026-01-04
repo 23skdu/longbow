@@ -107,3 +107,28 @@ s3:
   region: "us-west-2"
   existingSecret: "my-aws-creds"
 ```
+
+### Compaction
+
+Configure background compaction to merge small record batches and reclaim space.
+
+```yaml
+compaction:
+  enabled: true
+  interval: "30s"
+  targetBatchSize: 10000
+  minBatches: 10
+```
+
+### Sharding
+
+Longbow supports auto-sharding and consistent hashing ring sharding for horizontal scalability.
+
+```yaml
+sharding:
+  auto:
+    enabled: true
+    threshold: 10000  # Number of vectors to trigger migration to sharded index
+  ring:
+    enabled: true     # Use consistent hashing ring (vnodes) for uniform distribution
+```

@@ -27,6 +27,17 @@ ingestion and low-latency retrieval.
 - **CRC32 Checksums**: All WAL entries are checksummed. The server validates integrity
   on startup (replay) and stops if corruption is detected.
 
+### Graph Compaction (Vacuum)
+
+While "Leveled Compaction" merges physical data (Arrow RecordBatches) on disk/S3, the in-memory HNSW graph requires separate maintenance to handle deletions efficiently.
+
+- **Problem**: Deleted nodes are logically hidden via a `Deleted` bitset but remain in the graph structure ("ghost nodes"), increasing traversal cost.
+- **Solution (Vacuum)**: A background process (`CleanupTombstones`) periodically scans the graph:
+  1. Identifies nodes marked as deleted.
+  2. Prunes connections to these nodes from their neighbors.
+  3. Atomically updates neighbor lists to maintain graph integrity.
+- **Config**: Controlled via `CompactionWorker` settings. Runs automatically alongside data compaction.
+
 ## Data Format
 
 Longbow stores vectors and metadata in **Apache Parquet** format. This allows

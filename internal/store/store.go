@@ -138,13 +138,12 @@ func (s *VectorStore) GetAutoShardingConfig() AutoShardingConfig {
 	return s.autoShardingConfig
 }
 
-func (s *VectorStore) checkAndMigrateToSharded(_ *Dataset) error {
+func (s *VectorStore) checkAndMigrateToSharded(_ *Dataset) {
 	// Placeholder logic: check if dataset size exceeds threshold and migrate index to sharded
 	if !s.autoShardingConfig.Enabled {
-		return nil
+		return
 	}
 	// Migration logic would go here
-	return nil
 }
 
 // WarmupStats holds statistics about the warmup operation

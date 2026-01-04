@@ -7,6 +7,7 @@ import (
 	"hash/crc32"
 	"io"
 	"os"
+
 	"path/filepath" // Added by user instruction
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
+	"github.com/golang/snappy"
 )
 
 const (
@@ -29,6 +31,7 @@ type StorageConfig struct {
 	DoPutBatchSize   int
 	UseIOUring       bool
 	UseDirectIO      bool
+	WALCompression   bool
 }
 
 // InitPersistence initializes the WAL and loads any existing data
@@ -61,6 +64,7 @@ func (s *VectorStore) InitPersistence(cfg StorageConfig) error {
 	batcherCfg.AsyncFsync.Enabled = cfg.AsyncFsync
 	batcherCfg.UseIOUring = cfg.UseIOUring
 	batcherCfg.UseDirectIO = cfg.UseDirectIO
+	batcherCfg.WALCompression = cfg.WALCompression
 
 	s.walBatcher = NewWALBatcher(s.dataPath, &batcherCfg)
 	if err := s.walBatcher.Start(); err != nil {
@@ -166,7 +170,91 @@ func (s *VectorStore) replayWAL() error {
 		crc := crc32.NewIEEE()
 		_, _ = crc.Write(nameBytes)
 		_, _ = crc.Write(recBytes)
-		if crc.Sum32() != storedChecksum {
+		calculatedCRC := crc.Sum32()
+
+		// Check for Compressed Block Sentinel
+		if storedChecksum == 0xFFFFFFFF {
+			// This is a compressed block
+			// NameLen Should be 1 (Type)
+			if nameLen != 1 {
+				s.logger.Error().Uint32("nameLen", nameLen).Msg("Compressed block header invalid nameLen. Stopping replay.")
+				break
+			}
+			// Type 1 = Snappy
+			if nameBytes[0] != 1 {
+				s.logger.Error().Uint8("type", nameBytes[0]).Msg("Unknown compression type. Stopping replay.")
+				break
+			}
+
+			// Decompress
+			decompressed, err := snappy.Decode(nil, recBytes)
+			if err != nil {
+				s.logger.Error().Err(err).Msg("Failed to decompress WAL block. Stopping replay.")
+				break
+			}
+
+			// Iterate over inner entries
+			dr := bytes.NewReader(decompressed)
+			innerHeader := make([]byte, 32)
+			for {
+				if _, err := io.ReadFull(dr, innerHeader); err != nil {
+					if err == io.EOF {
+						break
+					}
+					s.logger.Error().Err(err).Msg("Compressed inner block truncated. Stopping replay.")
+					break
+				}
+
+				inCrc := binary.LittleEndian.Uint32(innerHeader[0:4])
+				inSeq := binary.LittleEndian.Uint64(innerHeader[4:12])
+				inTs := int64(binary.LittleEndian.Uint64(innerHeader[12:20]))
+				inNameLen := binary.LittleEndian.Uint32(innerHeader[20:24])
+				inRecLen := binary.LittleEndian.Uint64(innerHeader[24:32])
+
+				if inSeq > maxSeq {
+					maxSeq = inSeq
+				}
+
+				inNameBytes := make([]byte, inNameLen)
+				if _, err := io.ReadFull(dr, inNameBytes); err != nil {
+					s.logger.Error().Err(err).Msg("Compressed inner block name truncated.")
+					break
+				}
+				inRecBytes := make([]byte, inRecLen)
+				if _, err := io.ReadFull(dr, inRecBytes); err != nil {
+					s.logger.Error().Err(err).Msg("Compressed inner block record truncated.")
+					break
+				}
+
+				// Verify inner CRC
+				innerCrc := crc32.NewIEEE()
+				_, _ = innerCrc.Write(inNameBytes)
+				_, _ = innerCrc.Write(inRecBytes)
+				if innerCrc.Sum32() != inCrc {
+					s.logger.Error().Msg("Inner entry CRC mismatch! Corrupted snapshot block.")
+					break
+				}
+
+				// Apply
+				r, err := safeIPCNewReader(bytes.NewReader(inRecBytes))
+				if err != nil {
+					s.logger.Error().Err(err).Msg("Inner IPC Decode failed")
+					break
+				}
+				if r.Next() {
+					rec := r.RecordBatch()
+					rec.Retain()
+					if err := s.ApplyDelta(string(inNameBytes), rec, inSeq, inTs); err != nil {
+						s.logger.Warn().Err(err).Str("dataset", string(inNameBytes)).Msg("Failed to apply inner WAL record")
+					}
+					count++
+				}
+				r.Release()
+			}
+			continue // Continue outer loop
+		}
+
+		if calculatedCRC != storedChecksum {
 			metrics.WalWritesTotal.WithLabelValues("corruption").Inc()
 			s.logger.Error().Msg("WAL Checksum mismatch! Corrupted entry detected. Stopping replay.")
 			break // Stop successfully, assume rest of file is garbage
@@ -415,13 +503,6 @@ func (s *VectorStore) getPQEncoderLocked(ds *Dataset) *PQEncoder {
 	}
 
 	return nil
-}
-
-// Helper to extract encoder from index (acquires lock)
-func (s *VectorStore) getPQEncoder(ds *Dataset) *PQEncoder {
-	ds.dataMu.RLock()
-	defer ds.dataMu.RUnlock()
-	return s.getPQEncoderLocked(ds)
 }
 
 func (s *VectorStore) loadSnapshots() error {

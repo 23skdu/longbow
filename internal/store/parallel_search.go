@@ -46,41 +46,45 @@ func (h *HNSWIndex) processResultsParallel(query []float32, neighbors []hnsw.Nod
 	}
 
 	chunkSize := (len(neighbors) + numWorkers - 1) / numWorkers
-	if chunkSize < 10 {
+	if chunkSize < 50 { // Increased threshold to avoid overhead for small chunks
 		return h.processResultsSerial(query, neighbors, k, filters)
 	}
 
 	metrics.HnswParallelSearchSplits.WithLabelValues(h.dataset.Name).Inc()
 
-	resultsChan := make(chan []SearchResult, numWorkers)
+	// Pre-allocate results array of arrays to avoid mutex on append
+	// simpler than shared slice with atomics since result count per chunk varies due to filtering
+	chunksResults := make([][]SearchResult, numWorkers)
 	var wg sync.WaitGroup
 
 	for i := 0; i < numWorkers; i++ {
 		start := i * chunkSize
-		end := start + chunkSize
 		if start >= len(neighbors) {
 			break
 		}
+		end := start + chunkSize
 		if end > len(neighbors) {
 			end = len(neighbors)
 		}
 
 		wg.Add(1)
-		go func(chunk []hnsw.Node[VectorID]) {
+		go func(workerID int, chunk []hnsw.Node[VectorID]) {
 			defer wg.Done()
-			results := h.processChunk(query, chunk, filters)
-			resultsChan <- results
-		}(neighbors[start:end])
+			chunksResults[workerID] = h.processChunk(query, chunk, filters)
+		}(i, neighbors[start:end])
+	}
+	wg.Wait()
+
+	// Merge results
+	// First calculate total size
+	totalLen := 0
+	for _, res := range chunksResults {
+		totalLen += len(res)
 	}
 
-	go func() {
-		wg.Wait()
-		close(resultsChan)
-	}()
-
-	allResults := make([]SearchResult, 0, len(neighbors))
-	for results := range resultsChan {
-		allResults = append(allResults, results...)
+	allResults := make([]SearchResult, 0, totalLen)
+	for _, res := range chunksResults {
+		allResults = append(allResults, res...)
 	}
 
 	sort.Slice(allResults, func(i, j int) bool {

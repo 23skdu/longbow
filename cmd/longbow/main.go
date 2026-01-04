@@ -114,10 +114,17 @@ type Config struct {
 	HNSW2SQ8Enabled     bool    `envconfig:"HNSW_SQ8_ENABLED" default:"false"`
 	HNSW2Refinement     float64 `envconfig:"HNSW_REFINEMENT_FACTOR" default:"1.0"`
 
+	// Compaction Configuration
+	CompactionEnabled         bool          `envconfig:"COMPACTION_ENABLED" default:"true"`
+	CompactionInterval        time.Duration `envconfig:"COMPACTION_INTERVAL" default:"30s"`
+	CompactionTargetBatchSize int64         `envconfig:"COMPACTION_TARGET_BATCH_SIZE" default:"10000"`
+	CompactionMinBatches      int           `envconfig:"COMPACTION_MIN_BATCHES" default:"10"`
+
 	// Auto Sharding Configuration
 	AutoShardingEnabled        bool `envconfig:"AUTO_SHARDING_ENABLED" default:"true"`
 	AutoShardingThreshold      int  `envconfig:"AUTO_SHARDING_THRESHOLD" default:"10000"`
 	AutoShardingSplitThreshold int  `envconfig:"AUTO_SHARDING_SPLIT_THRESHOLD" default:"65536"` // Default chunk size
+	RingShardingEnabled        bool `envconfig:"RING_SHARDING_ENABLED" default:"true"`
 }
 
 // Global config instance for hook functions
@@ -214,8 +221,14 @@ func run() error {
 	// Create memory allocator
 	mem := memory.NewGoAllocator()
 
-	// Initialize vector store
-	vectorStore := store.NewVectorStore(mem, logger, cfg.MaxMemory, cfg.MaxWALSize, cfg.TTL)
+	// Initialize vector store with compaction config
+	compactionCfg := store.CompactionConfig{
+		Enabled:             cfg.CompactionEnabled,
+		TargetBatchSize:     cfg.CompactionTargetBatchSize,
+		MinBatchesToCompact: cfg.CompactionMinBatches,
+		CompactionInterval:  cfg.CompactionInterval,
+	}
+	vectorStore := store.NewVectorStoreWithCompaction(mem, logger, cfg.MaxMemory, cfg.MaxWALSize, cfg.TTL, compactionCfg)
 
 	// Register hnsw2 initialization hook
 	vectorStore.SetDatasetInitHook(func(ds *store.Dataset) {
@@ -236,6 +249,7 @@ func run() error {
 		ShardThreshold:      cfg.AutoShardingThreshold,
 		ShardCount:          runtime.NumCPU(),
 		ShardSplitThreshold: cfg.AutoShardingSplitThreshold,
+		UseRingSharding:     cfg.RingShardingEnabled,
 	})
 
 	// Configure hybrid search

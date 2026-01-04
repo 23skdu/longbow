@@ -156,3 +156,39 @@ func (vs *VectorStore) CompactDataset(name string) error {
 
 	return nil
 }
+
+// VacuumDataset triggers graph vacuum (CleanupTombstones) for the named dataset.
+func (vs *VectorStore) VacuumDataset(name string) error {
+	start := time.Now()
+	// Using a new metric label "vacuum"
+	defer func() {
+		metrics.CompactionDurationSeconds.WithLabelValues(name, "vacuum").Observe(time.Since(start).Seconds())
+	}()
+
+	ds, err := vs.getDataset(name)
+	if err != nil || ds == nil {
+		return errors.New("vacuum: dataset not found")
+	}
+
+	// Lock dataset metadata to read index safely
+	ds.dataMu.RLock()
+	index := ds.Index
+	ds.dataMu.RUnlock()
+
+	if index == nil {
+		return nil
+	}
+
+	// Check if this is an ArrowHNSW which supports Vacuum
+	if hnsw, ok := index.(*ArrowHNSW); ok {
+		// Run Vacuum
+		// We pass 0 to scan all nodes. Or we could be smarter?
+		// For now, full vacuum.
+		pruned := hnsw.CleanupTombstones(0)
+		if pruned > 0 {
+			metrics.CompactionOperationsTotal.WithLabelValues(name, "vacuum_pruned").Add(float64(pruned))
+		}
+	}
+
+	return nil
+}

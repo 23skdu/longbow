@@ -129,7 +129,7 @@ func runIngest(ctx context.Context, c *client.SmartClient) error {
 		}
 	}
 
-	rec := b.NewRecord()
+	rec := b.NewRecordBatch()
 	defer rec.Release()
 
 	// DoPut
@@ -158,7 +158,7 @@ func runIngest(ctx context.Context, c *client.SmartClient) error {
 func runSearch(ctx context.Context, c *client.SmartClient) error {
 	// Simulate simple DoGet for now
 	// For vector search, we'd typically pass a serialized query in the Ticket
-	ticket := []byte(fmt.Sprintf(`{"query": "test", "k": 10}`))
+	ticket := []byte(`{"query": "test", "k": 10}`)
 	stream, err := c.DoGet(ctx, ticket)
 	if err != nil {
 		return err

@@ -205,7 +205,7 @@ func (w *SyncWorker) syncPeer(p *PeerState) error {
 		}
 
 		if r.Next() {
-			rec := r.Record()
+			rec := r.RecordBatch()
 			rec.Retain()
 
 			// Apply to local store

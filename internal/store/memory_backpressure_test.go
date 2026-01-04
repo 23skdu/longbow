@@ -5,6 +5,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestMemoryBackpressure_NewController(t *testing.T) {
@@ -154,4 +156,43 @@ func TestMemoryBackpressure_SoftPressureSlowdown(t *testing.T) {
 	if elapsed < 5*time.Millisecond {
 		t.Logf("Soft pressure should add delay, elapsed: %v", elapsed)
 	}
+}
+
+func TestMemoryBackpressure_BackgroundUpdate(t *testing.T) {
+	cfg := BackpressureConfig{
+		SoftLimitBytes: 1 << 30, // 1GB
+		HardLimitBytes: 2 << 30, // 2GB
+		CheckInterval:  10 * time.Millisecond,
+	}
+
+	ctrl := NewMemoryBackpressureController(cfg)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Start background monitoring
+	ctrl.Start(ctx)
+
+	// 1. Manually force Hard Pressure
+	ctrl.SetPressureLevel(PressureHard)
+	assert.Equal(t, PressureHard, ctrl.GetPressureLevel())
+
+	// 2. Acquire should wait, but the background ticker (CheckPressure)
+	// will see actual low memory usage and reset it to PressureNone, waking us up.
+	done := make(chan struct{})
+	go func() {
+		err := ctrl.Acquire(ctx)
+		assert.NoError(t, err)
+		close(done)
+	}()
+
+	// 3. Wait for relief
+	select {
+	case <-done:
+		// Success
+	case <-time.After(1 * time.Second):
+		t.Fatal("Acquire timed out waiting for pressure relief via ticker")
+	}
+
+	// Double check level is back to None
+	assert.NotEqual(t, PressureHard, ctrl.GetPressureLevel())
 }

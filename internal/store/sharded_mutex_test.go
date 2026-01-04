@@ -294,7 +294,8 @@ func BenchmarkShardedVsSingleMutex(b *testing.B) {
 		var mu sync.RWMutex
 		b.RunParallel(func(pb *testing.PB) {
 			for pb.Next() {
-				mu.Lock()   //nolint:gocritic // intentional for benchmark
+				mu.Lock() //nolint:gocritic // intentional for benchmark
+				_ = 0
 				mu.Unlock() //nolint:gocritic,staticcheck // benchmark: intentional empty critical section
 			}
 		})

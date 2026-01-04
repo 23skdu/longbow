@@ -253,7 +253,7 @@ func (s *ChunkedLocationStore) EnsureCapacity(id VectorID) {
 
 	currentSize := s.size.Load()
 	if uint32(id) >= currentSize {
-		// Loop to CAS loop?
+		s.UpdateSize(id)
 		// Since we hold lock, we can store?
 		// But size is atomic.
 		// Let's just update size strictly if we are extending.

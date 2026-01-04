@@ -79,6 +79,8 @@ func TestShardedHNSWConfig_Validation(t *testing.T) {
 // TestShardedHNSW_ShardRouting verifies consistent hash-based routing
 func TestShardedHNSW_ShardRouting(t *testing.T) {
 	cfg := DefaultShardedHNSWConfig()
+	// Test legacy linear sharding
+	cfg.UseRingSharding = false
 	cfg.ShardSplitThreshold = 100 // Set threshold to force splits
 	cfg.NumShards = 1             // Initial shards
 
@@ -106,6 +108,34 @@ func TestShardedHNSW_ShardRouting(t *testing.T) {
 	for i := 0; i < 4; i++ {
 		if counts[i] != 100 {
 			t.Errorf("shard %d: expected 100 vectors, got %d", i, counts[i])
+		}
+	}
+}
+
+func TestShardedHNSW_RingRouting(t *testing.T) {
+	cfg := DefaultShardedHNSWConfig()
+	cfg.NumShards = 4
+	cfg.UseRingSharding = true
+
+	ds := &Dataset{dataMu: sync.RWMutex{}}
+	sharded := NewShardedHNSW(cfg, ds)
+
+	// In Ring sharding, distribution is probabilistic but consistent
+	counts := make(map[int]int)
+	for id := VectorID(0); id < 1000; id++ {
+		shard := sharded.GetShardForID(id)
+		counts[shard]++
+
+		// Consistency check
+		if sharded.GetShardForID(id) != shard {
+			t.Errorf("ID %d: inconsistent shard mapping", id)
+		}
+	}
+
+	// Verify all shards got *some* data (at 1000 items, empty shard is statistically impossible with good hash)
+	for i := 0; i < 4; i++ {
+		if counts[i] == 0 {
+			t.Errorf("shard %d empty in ring sharding", i)
 		}
 	}
 }

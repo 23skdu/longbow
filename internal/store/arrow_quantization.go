@@ -1,7 +1,9 @@
 package store
 
 import (
+	"fmt"
 	"sync"
+
 	"github.com/23skdu/longbow/internal/simd"
 )
 
@@ -10,10 +12,10 @@ type ScalarQuantizer struct {
 	minVal float32
 	maxVal float32
 	dim    int
-	
+
 	// Lock for updating bounds (if we support dynamic bounds updates)
 	mu sync.RWMutex
-	
+
 	// If true, bounds are fixed and won't update
 	frozen bool
 }
@@ -23,27 +25,36 @@ type ScalarQuantizer struct {
 func NewScalarQuantizer(dim int) *ScalarQuantizer {
 	return &ScalarQuantizer{
 		dim:    dim,
-		minVal: -0.2, // Tight bounds for normalized high-dim vectors
+		minVal: -0.2, // Default tight bounds
 		maxVal: 0.2,
+		frozen: false, // Not trained yet
 	}
 }
 
+// IsTrained returns true if the quantizer has been trained on data.
+func (sq *ScalarQuantizer) IsTrained() bool {
+	sq.mu.RLock()
+	defer sq.mu.RUnlock()
+	return sq.frozen
+}
+
 // Train (simple online version) updates bounds based on a batch of vectors.
-// NOTE: Changing bounds invalidates previously quantized vectors! 
+// NOTE: Changing bounds invalidates previously quantized vectors!
 // In a real system, we train on a sample, freeze, then index.
 func (sq *ScalarQuantizer) Train(vectors [][]float32) {
+	fmt.Println("DEBUG: ScalarQuantizer.Train called with", len(vectors), "vectors")
 	sq.mu.Lock()
 	defer sq.mu.Unlock()
 	if sq.frozen {
 		return
 	}
-	
+
 	// Reset if first time?
 	// For now, simple min/max across batch
 	minV := sq.minVal
 	maxV := sq.maxVal
 	first := true
-	
+
 	for _, vec := range vectors {
 		lMin, lMax := simd.ComputeBounds(vec)
 		if first {
@@ -58,7 +69,7 @@ func (sq *ScalarQuantizer) Train(vectors [][]float32) {
 			}
 		}
 	}
-	
+
 	sq.minVal = minV
 	sq.maxVal = maxV
 	sq.frozen = true
@@ -69,7 +80,7 @@ func (sq *ScalarQuantizer) Encode(vec []float32, dst []byte) []byte {
 	sq.mu.RLock()
 	minV, maxV := sq.minVal, sq.maxVal
 	sq.mu.RUnlock()
-	
+
 	if cap(dst) < len(vec) {
 		dst = make([]byte, len(vec))
 	}

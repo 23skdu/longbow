@@ -13,6 +13,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"github.com/apache/arrow-go/v18/arrow/memory"
+	"github.com/golang/snappy"
 )
 
 // WALEntry represents a single entry to be written to the WAL
@@ -25,12 +26,13 @@ type WALEntry struct {
 
 // WALBatcherConfig configures the batched WAL writer
 type WALBatcherConfig struct {
-	FlushInterval time.Duration     // Time between flushes (e.g., 10ms)
-	MaxBatchSize  int               // Max entries before forced flush (e.g., 100)
-	Adaptive      AdaptiveWALConfig // Adaptive batching configuration
-	AsyncFsync    AsyncFsyncConfig  // Async fsync configuration
-	UseIOUring    bool              // Use io_uring backend if available
-	UseDirectIO   bool              // Use Direct I/O if available
+	FlushInterval  time.Duration     // Time between flushes (e.g., 10ms)
+	MaxBatchSize   int               // Max entries before forced flush (e.g., 100)
+	Adaptive       AdaptiveWALConfig // Adaptive batching configuration
+	AsyncFsync     AsyncFsyncConfig  // Async fsync configuration
+	UseIOUring     bool              // Use io_uring backend if available
+	UseDirectIO    bool              // Use Direct I/O if available
+	WALCompression bool              // Enable Snappy block compression
 }
 
 // DefaultWALBatcherConfig returns sensible defaults
@@ -218,27 +220,82 @@ func (w *WALBatcher) flush() {
 
 	metrics.WalBatchSize.Observe(float64(len(batch)))
 
-	// Aggregate and serialize
-	w.flushBuf.Reset() // Reuse buffer
-	// We need a scratch buffer for each record serialization
-	scratchBuf := w.bufPool.Get() // Get one scratch buffer for serialization
-	defer w.bufPool.Put(scratchBuf)
+	// Prepare output buffer
+	w.flushBuf.Reset()
 
-	for _, entry := range batch {
-		// Serialize entry into scratchBuf then append to multiBatchBuf
-		// Or better: write directly to multiBatchBuf?
-		// IPC Writer needs seekable/writer.
-		// Let's use serializeEntry helper to append to multiBatchBuf.
-		if err := w.serializeEntry(&w.flushBuf, entry, scratchBuf); err != nil {
-			w.handleFlushError(err)
-			// release all
-			for _, e := range batch {
-				e.Record.Release()
+	// If compression enabled, we compress the *entire payload* of the batch.
+	// But simply concatenating serialized entries is easiest for replay compatibility.
+	// We will serialize all entries into a buffer, then compress that buffer,
+	// then write a SINGLE header for the compressed block.
+
+	var payload []byte
+
+	if w.config.WALCompression {
+		// 1. Serialize all entries to a temporary buffer
+		// We can reuse w.flushBuf as the temporary buffer if we are careful,
+		// but we need a destination for compression.
+		// Let's use a separate buffer for the raw data.
+		// We can use w.bufPool for scratch space, but we need a big buffer for the whole batch.
+		// Let's allocate a buffer or use a growable one.
+		var rawBatch bytes.Buffer
+		scratchBuf := w.bufPool.Get()
+		defer w.bufPool.Put(scratchBuf)
+
+		for _, entry := range batch {
+			if err := w.serializeEntry(&rawBatch, entry, scratchBuf); err != nil {
+				w.handleFlushError(err)
+				for _, e := range batch {
+					e.Record.Release()
+				}
+				return
 			}
-			return
+			entry.Record.Release()
 		}
-		// Release retained record immediately after serialization
-		entry.Record.Release()
+
+		// 2. Compress the raw batch
+		// MaxEncodedLen ensures we have enough space
+		src := rawBatch.Bytes()
+		maxLen := snappy.MaxEncodedLen(len(src))
+		compressed := make([]byte, maxLen)
+		// TODO: recycle this buffer to reduce allocs?
+
+		dest := snappy.Encode(compressed, src) // returns slice of compressed
+		payload = dest
+
+		// 3. Construct Compressed Block Header
+		// Checksum = 0xFFFFFFFF (Sentinel)
+		// Seq = maxSeq in batch (to update flushedSeq correctly during replay if needed, though replay usually uses entry seqs)
+		// We use the LAST entry's sequence for the block header.
+		lastSeq := batch[len(batch)-1].Seq
+
+		// Header fields:
+		// Checksum: Sentinel
+		// Seq: LastSeq
+		// Ts: 0 (unused)
+		// NameLen: 1 (Compression Type: 1=Snappy)
+		// RecLen: len(payload)
+
+		header := encodeWALEntryHeader(0xFFFFFFFF, lastSeq, 0, 1, uint64(len(payload)))
+
+		w.flushBuf.Write(header)
+		w.flushBuf.Write([]byte{1}) // Name (Type=1)
+		w.flushBuf.Write(payload)   // Record (Compressed Data)
+
+	} else {
+		// Uncompressed: Serialize each entry directly to flushBuf
+		scratchBuf := w.bufPool.Get()
+		defer w.bufPool.Put(scratchBuf)
+
+		for _, entry := range batch {
+			if err := w.serializeEntry(&w.flushBuf, entry, scratchBuf); err != nil {
+				w.handleFlushError(err)
+				for _, e := range batch {
+					e.Record.Release()
+				}
+				return
+			}
+			entry.Record.Release()
+		}
 	}
 
 	data := w.flushBuf.Bytes()
@@ -259,7 +316,6 @@ func (w *WALBatcher) flush() {
 	// Logic for async/sync remains similar, but simplified: call backend.Sync() if needed.
 	// If AsyncFsyncer is managed externally/via interface, we use it.
 	// For now, blocking sync as fallback or if configured.
-
 	// TODO: Integrate AsyncFsyncer with WALBackend interface properly.
 	// Falling back to blocking Sync for correctness in this refactor.
 	if err := w.backend.Sync(); err != nil {

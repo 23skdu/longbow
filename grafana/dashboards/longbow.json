@@ -1584,6 +1584,38 @@
       ],
       "title": "S3 Failures / Sec",
       "type": "stat"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 75
+      },
+      "id": 110,
+      "title": "Lock Contention",
+      "type": "row"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 76
+      },
+      "id": 111,
+      "targets": [
+        {
+          "expr": "sum(rate(longbow_lock_contention_duration_seconds_bucket[5m])) by (le, type)",
+          "format": "heatmap",
+          "legendFormat": "{{type}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Lock Contention Heatmap",
+      "type": "heatmap"
     }
   ],
   "refresh": "5s",

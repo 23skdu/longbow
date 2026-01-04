@@ -75,6 +75,22 @@ config:
   snapshotInterval: "1h"
   ttl: "0s" # 0s = disabled
 
+# Compaction Configuration
+compaction:
+  enabled: true
+  interval: "30s"
+  targetBatchSize: 10000
+  minBatches: 10
+
+# Sharding Configuration
+sharding:
+  auto:
+    enabled: true
+    threshold: 10000
+    splitThreshold: 65536
+  ring:
+    enabled: true
+
 # Hybrid Search Configuration
 hybrid:
   enabled: true

@@ -37,4 +37,11 @@ var (
 		Name: "longbow_hnsw_graph_node_allocations_total",
 		Help: "Total number of HNSW graph node allocations",
 	})
+
+	// Lock contention metrics
+	LockContentionDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "longbow_lock_contention_duration_seconds",
+		Help:    "Time spent waiting for locks",
+		Buckets: []float64{1e-6, 1e-5, 1e-4, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1}, // 1us to 1s
+	}, []string{"type"})
 )

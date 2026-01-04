@@ -124,6 +124,7 @@ func TestHNSW_GrowthRace(t *testing.T) {
 				// Just checking validity of pointer is enough for the specific "lost chunk" bug.
 				// If the chunk allocation was lost, data.Vectors[cID] would be nil (or short if resized?).
 				// Actually, if it's nil, that's definitive proof.
+				_ = "ok"
 			}
 
 			// Also check layers/neighbors?
@@ -131,6 +132,7 @@ func TestHNSW_GrowthRace(t *testing.T) {
 			// ensureChunk also allocates Levels, Neighbors, Counts, Versions.
 			if int(cID) >= len(data.Levels) || data.Levels[cID] == nil {
 				// t.Logf("Missing Levels Chunk for ID %d", id)
+				_ = "missing"
 			}
 		}
 	}

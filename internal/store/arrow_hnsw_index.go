@@ -122,7 +122,7 @@ func (h *ArrowHNSW) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []int)
 	// This avoids "Stop-the-World" pauses during parallel insertion
 	// finalSize must accommodate (startID + n - 1)
 	finalSize := int(startID) + n
-	h.Grow(finalSize)
+	h.Grow(finalSize, 0)
 
 	ids := make([]uint32, n)
 

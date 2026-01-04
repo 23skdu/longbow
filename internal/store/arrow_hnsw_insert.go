@@ -99,22 +99,11 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec []float32, level int) error 
 
 	data := h.data.Load()
 
-	sq8Missing := h.config.SQ8Enabled && (len(data.VectorsSQ8) == 0 || data.VectorsSQ8[0] == nil) && dims > 0
-	vectorsMissing := (len(data.Vectors) == 0 || data.Vectors[0] == nil) && dims > 0
-
-	// Use Capacity from atomic snapshot if possible, but here we used data.Capacity.
-	// data is *GraphData.
-	if data.Capacity <= int(id) || sq8Missing || vectorsMissing {
-		targetCap := int(id) + 1
-		// If just missing initialization but capacity fine, force check
-		if (sq8Missing || vectorsMissing) && targetCap < data.Capacity {
-			targetCap = data.Capacity
-		}
-
-		h.Grow(targetCap)
+	// Invariant: If dims > 0, Vectors/SQ8 arrays MUST exist in data.
+	// We only check Capacity here. Structural integrity is guaranteed by Grow/Init order.
+	if data.Capacity <= int(id) {
+		h.Grow(int(id)+1, dims)
 		data = h.data.Load()
-		// Update dims after grow (in case it changed)
-		dims = int(h.dims.Load())
 	}
 
 	// Lazy Chunk Allocation
@@ -134,14 +123,18 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec []float32, level int) error 
 		h.initMu.Lock()
 		dims = int(h.dims.Load())
 		if dims == 0 {
-			// Update dimensions atomically
-			dims = len(vec)
-			h.dims.Store(int32(dims))
+			// Update dimensions atomically - CORRECT ORDER
+			newDims := len(vec)
 
-			// We need to re-initialize data.Vectors
-			// Hold initMu during Grow to ensure state consistency for other threads considering entering this block
-			h.Grow(data.Capacity)
-			data = h.data.Load()
+			// 1. Force Grow with new dimensions first.
+			// This ensures 'data' structure is upgraded (Vectors allocated) BEFORE
+			// we advertise the dimension change via h.dims.Store.
+			h.Grow(data.Capacity, newDims)
+			data = h.data.Load() // Reload updated data
+
+			// 2. Advertise dimensions
+			h.dims.Store(int32(newDims))
+			dims = newDims
 
 			// Re-ensure chunk with new dims
 			// cID/cOff relies on ID which hasn't changed
@@ -150,24 +143,16 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec []float32, level int) error 
 				h.initMu.Unlock()
 				return err
 			}
+		} else {
+			// Someone else initialized global dimensions while we waited.
+			// Our local 'data' snapshot corresponds to dims=0 (likely no vectors).
+			// We MUST reload data to get the snapshot that has the vectors allocated.
+			data = h.data.Load()
 		}
 		h.initMu.Unlock()
 	}
 
-	// Recovery: If dims changed from 0 to >0 during execution, we might be unprepared (missing Vectors)
-	// This handles the race where we skipped Grow/Ensure because local dims=0, but global h.dims became >0.
-	if dims > 0 && (data.Vectors == nil || len(data.Vectors) <= int(cID) || data.Vectors[cID] == nil) {
-		h.initMu.Lock() // Serialize fix
-		h.Grow(data.Capacity)
-		data = h.data.Load()
-		data, _ = h.ensureChunk(data, cID, cOff, dims) // Ignoring error here as we just did Grow? Safe to propagate?
-		// EnsureChunk returns error -> should handle.
-		// Retrying EnsureChunk:
-		// data, err = h.ensureChunk(data, cID, cOff, dims)
-		// if err != nil { h.initMu.Unlock(); return err }
-		// But in this recovery block, we just want to proceed.
-		h.initMu.Unlock()
-	}
+	// Recovery block removed: Invariant guarantees Vectors exist if dims > 0.
 
 	// Store Dense Vector (Copy for L2 locality)
 	if len(vec) > 0 && dims > 0 {

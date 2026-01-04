@@ -93,7 +93,7 @@ type ArrowHNSW struct {
 	data atomic.Pointer[GraphData]
 
 	// Locking strategy:
-	// initMu protects the initialization of the first node (entry point).
+	// initMu protects the initialization of the first node (entry point) and global dimension changes.
 	initMu sync.Mutex
 
 	// growMu protects the GraphData pointer and Global growth operations.
@@ -331,7 +331,9 @@ func (h *ArrowHNSW) Delete(id uint32) error {
 }
 
 // Grow ensures the graph has capacity for the given size.
-func (h *ArrowHNSW) Grow(minCap int) {
+// If validDims > 0 is provided, it forces the allocation of vector storage (Vectors, SQ8, PQ)
+// even if the global h.dims hasn't been updated yet. This supports race-free initialization.
+func (h *ArrowHNSW) Grow(minCap int, validDims int) {
 	h.growMu.Lock()
 	defer h.growMu.Unlock()
 
@@ -342,18 +344,27 @@ func (h *ArrowHNSW) Grow(minCap int) {
 
 	// Ensure bitset capacity
 
+	// Determine dimensions to use for allocation
+	// Prefer the explicit argument if valid (>0), otherwise fallback to global
+	targetDims := validDims
+	if targetDims <= 0 {
+		targetDims = int(h.dims.Load())
+	}
+
 	// Ensure graph data chunks
 	dataPtr := h.data.Load()
 	if dataPtr == nil {
-		h.data.Store(NewGraphData(minCap, int(h.dims.Load()), h.config.SQ8Enabled, h.config.PQEnabled))
+		h.data.Store(NewGraphData(minCap, targetDims, h.config.SQ8Enabled, h.config.PQEnabled))
 		return
 	}
 
-	// Check if growth needed
+	// Check if growth OR structure upgrade needed
 	// Capacity is numChunks * ChunkSize
-	// Also check if structure needs upgrade (lazy vectors added)
-	currentDims := int(h.dims.Load())
-	dimsChanged := currentDims > 0 && dataPtr.Vectors == nil
+	// Check if growth OR structure upgrade needed
+	// Capacity is numChunks * ChunkSize
+
+	// Use targetDims for the check: if targetDims > 0 and we lack Vectors, upgrades needed
+	dimsChanged := targetDims > 0 && dataPtr.Vectors == nil
 	sq8Changed := h.config.SQ8Enabled && dataPtr.VectorsSQ8 == nil
 	pqChanged := h.config.PQEnabled && dataPtr.VectorsPQ == nil
 
@@ -362,7 +373,7 @@ func (h *ArrowHNSW) Grow(minCap int) {
 	}
 
 	// Clone and grow
-	newData := dataPtr.Clone(minCap, currentDims, h.config.SQ8Enabled, h.config.PQEnabled)
+	newData := dataPtr.Clone(minCap, targetDims, h.config.SQ8Enabled, h.config.PQEnabled)
 	h.data.Store(newData)
 }
 

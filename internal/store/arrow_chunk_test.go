@@ -24,7 +24,7 @@ func TestChunkedGrowth(t *testing.T) {
 	// Let's manually manipulate capacity for testing, OR just Grow huge.
 
 	targetCap := 5000
-	h.Grow(targetCap)
+	h.Grow(targetCap, 0)
 
 	newData := h.data.Load()
 	assert.GreaterOrEqual(t, newData.Capacity, targetCap)
@@ -51,7 +51,7 @@ func TestChunkedGrowth(t *testing.T) {
 	(*newData.Neighbors[cID][0])[int(cOff)*MaxNeighbors] = 999
 
 	// Grow again
-	h.Grow(targetCap + ChunkSize) // Add one more chunk
+	h.Grow(targetCap+ChunkSize, 0) // Add one more chunk
 	grownData := h.data.Load()
 
 	// Check old data preserved

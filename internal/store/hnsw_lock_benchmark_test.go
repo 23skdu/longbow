@@ -55,6 +55,7 @@ func BenchmarkHNSW_LockContention(b *testing.B) {
 				}
 				if err := h.InsertWithVector(id, vec, int(rand.Int31n(4))); err != nil {
 					// Ignore error for bench? or panic?
+					_ = err
 				}
 			}
 		}()

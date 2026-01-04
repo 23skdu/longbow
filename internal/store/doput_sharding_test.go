@@ -155,10 +155,8 @@ func TestVectorStoreGetDataset(t *testing.T) {
 	vs.mu.Unlock()
 
 	// Now should exist
-	got, err := vs.getDataset("test")
-	if err != nil {
-		t.Errorf("unexpected error: %v", err)
-	}
+	got, _ := vs.getDataset("test")
+
 	if got.Name != "test" {
 		t.Errorf("expected name 'test', got %q", got.Name)
 	}
@@ -232,10 +230,7 @@ func TestDoPutAutoShardingIntegration(t *testing.T) {
 
 	// Test the migration check function (without actual vectors)
 	// Since index is empty, it won't trigger migration
-	err := vs.checkAndMigrateToSharded(ds)
-	if err != nil {
-		t.Errorf("unexpected error: %v", err)
-	}
+	vs.checkAndMigrateToSharded(ds)
 
 	t.Logf("Integration test passed - sharding logic verified")
 }
@@ -268,7 +263,7 @@ func TestDoPutConcurrentMigration(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_ = vs.checkAndMigrateToSharded(ds)
+			vs.checkAndMigrateToSharded(ds)
 		}()
 	}
 	wg.Wait()

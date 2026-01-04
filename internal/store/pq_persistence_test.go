@@ -158,7 +158,7 @@ func TestPQPersistence(t *testing.T) {
 	// If it successfully picked up the dataset encoder, h.pqEncoder would be set.
 }
 
-func createFloat32Record(mem memory.Allocator, vectors [][]float32, dims int) arrow.Record {
+func createFloat32Record(mem memory.Allocator, vectors [][]float32, dims int) arrow.RecordBatch {
 	schema := arrow.NewSchema([]arrow.Field{
 		{Name: "vector", Type: arrow.FixedSizeListOf(int32(dims), arrow.PrimitiveTypes.Float32)},
 		{Name: "id", Type: arrow.PrimitiveTypes.Uint32},
@@ -178,5 +178,5 @@ func createFloat32Record(mem memory.Allocator, vectors [][]float32, dims int) ar
 		idB.Append(uint32(i))
 	}
 
-	return b.NewRecord()
+	return b.NewRecordBatch()
 }

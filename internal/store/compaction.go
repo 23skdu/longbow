@@ -168,6 +168,12 @@ func (w *CompactionWorker) run() {
 				} else {
 					metrics.CompactionErrorsTotal.Inc()
 				}
+
+				// Run Vacuum (Graph Compaction)
+				// We do this separately. It handles graph edges pointing to deleted nodes.
+				if err := w.store.VacuumDataset(ds.Name); err != nil {
+					w.store.logger.Warn().Err(err).Str("dataset", ds.Name).Msg("Failed to vacuum dataset during compaction")
+				}
 			})
 			w.lastRunTime.Store(time.Now())
 		case dsName := <-w.triggerChan:

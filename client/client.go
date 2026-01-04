@@ -58,7 +58,7 @@ func (c *SmartClient) Close() error {
 }
 
 // getClient returns an existing client or creates a new one for the given address
-func (c *SmartClient) getClient(ctx context.Context, addr string) (flight.Client, error) {
+func (c *SmartClient) getClient(_ context.Context, addr string) (flight.Client, error) {
 	c.mu.RLock()
 	client, ok := c.clients[addr]
 	c.mu.RUnlock()

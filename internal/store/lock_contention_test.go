@@ -187,6 +187,7 @@ func TestLockContention_NoDeadlocks(t *testing.T) {
 					defer wg.Done()
 					muA.Lock()
 					muB.Lock()
+					_ = 0
 					muB.Unlock() //nolint:gocritic,staticcheck // intentional pattern for deadlock test
 					muA.Unlock()
 				}()

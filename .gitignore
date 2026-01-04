@@ -246,3 +246,4 @@ venv*
 .coverage
 htmlcov/
 
+*.prof

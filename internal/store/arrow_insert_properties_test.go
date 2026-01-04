@@ -53,7 +53,9 @@ func TestInsertProperties(t *testing.T) {
 				cOff := chunkOffset(uint32(i))
 
 				// Ensure chunk is allocated
-				if err := index.ensureChunk(data, cID, cOff, int(index.dims.Load())); err != nil {
+				var err error
+				data, err = index.ensureChunk(data, cID, cOff, int(index.dims.Load()))
+				if err != nil {
 					return false
 				}
 

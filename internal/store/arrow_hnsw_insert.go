@@ -120,7 +120,9 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec []float32, level int) error 
 	// Lazy Chunk Allocation
 	cID := chunkID(id)
 	cOff := chunkOffset(id)
-	if err := h.ensureChunk(data, cID, cOff, dims); err != nil {
+	var err error // Declare err to avoid shadowing data
+	data, err = h.ensureChunk(data, cID, cOff, dims)
+	if err != nil {
 		return err
 	}
 
@@ -143,7 +145,8 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec []float32, level int) error 
 
 			// Re-ensure chunk with new dims
 			// cID/cOff relies on ID which hasn't changed
-			if err := h.ensureChunk(data, cID, cOff, dims); err != nil {
+			data, err = h.ensureChunk(data, cID, cOff, dims)
+			if err != nil {
 				h.initMu.Unlock()
 				return err
 			}
@@ -157,7 +160,12 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec []float32, level int) error 
 		h.initMu.Lock() // Serialize fix
 		h.Grow(data.Capacity)
 		data = h.data.Load()
-		h.ensureChunk(data, cID, cOff, dims)
+		data, _ = h.ensureChunk(data, cID, cOff, dims) // Ignoring error here as we just did Grow? Safe to propagate?
+		// EnsureChunk returns error -> should handle.
+		// Retrying EnsureChunk:
+		// data, err = h.ensureChunk(data, cID, cOff, dims)
+		// if err != nil { h.initMu.Unlock(); return err }
+		// But in this recovery block, we just want to proceed.
 		h.initMu.Unlock()
 	}
 

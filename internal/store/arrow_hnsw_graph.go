@@ -230,7 +230,10 @@ func DefaultArrowHNSWConfig() ArrowHNSWConfig {
 
 // ensureChunk ensures that the chunk for the given ID is allocated.
 // This handles the "Lazy Allocation" logic.
-func (h *ArrowHNSW) ensureChunk(data *GraphData, cID, _ uint32, dims int) error {
+// ensureChunk ensures that the chunk for the given ID is allocated.
+// This handles the "Lazy Allocation" logic.
+// Returns the (potentially updated) GraphData pointer to ensure caller uses the valid snapshot.
+func (h *ArrowHNSW) ensureChunk(data *GraphData, cID, _ uint32, dims int) (*GraphData, error) {
 	// Optimization: check if chunks exist
 	levelsExist := data.Levels[cID] != nil
 	vectorsExist := true
@@ -245,14 +248,38 @@ func (h *ArrowHNSW) ensureChunk(data *GraphData, cID, _ uint32, dims int) error 
 	}
 
 	if levelsExist && vectorsExist {
-		return nil
+		return data, nil
 	}
 
 	// Chunk missing. Acquire lock to allocate.
 	h.growMu.Lock()
 	defer h.growMu.Unlock()
 
-	// Re-check under lock
+	// Critical Fix: Reload data to ensure we are modifying the authoritative snapshot.
+	// If Grow run while we were waiting, 'data' is stale and modifications to it are lost.
+	currentData := h.data.Load()
+
+	// If data was stale, switch to current (which Grow guaranteed is large enough)
+	if currentData != data {
+		data = currentData
+		// Re-check existence in new data
+		levelsExist = data.Levels[cID] != nil
+		vectorsExist = true
+		if dims > 0 {
+			vectorsExist = data.Vectors != nil && data.Vectors[cID] != nil
+			if h.config.SQ8Enabled {
+				vectorsExist = vectorsExist && data.VectorsSQ8[cID] != nil
+			}
+			if h.config.PQEnabled {
+				vectorsExist = vectorsExist && data.VectorsPQ[cID] != nil
+			}
+		}
+		if levelsExist && vectorsExist {
+			return data, nil
+		}
+	}
+
+	// Re-check under lock (double-checked locking)
 	if data.Levels[cID] == nil {
 		levels := make([]uint8, ChunkSize)
 		data.Levels[cID] = &levels
@@ -294,7 +321,7 @@ func (h *ArrowHNSW) ensureChunk(data *GraphData, cID, _ uint32, dims int) error 
 		}
 	}
 
-	return nil
+	return data, nil
 }
 
 // Delete marks a node as deleted in the index.

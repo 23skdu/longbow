@@ -13,9 +13,9 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"github.com/apache/arrow-go/v18/arrow/memory"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/rs/zerolog"
 )
 
 func TestPersistence_ReplayWAL_Corruption(t *testing.T) {
@@ -85,12 +85,8 @@ func TestPersistence_ReplayWAL_Corruption(t *testing.T) {
 		store.dataPath = tmpDir
 
 		err = store.replayWAL()
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "crc mismatch")
-
-		var walErr *WALError
-		assert.ErrorAs(t, err, &walErr)
-		assert.Equal(t, "read", walErr.Op)
+		// Robust behavior: Should warn and return nil (stop replay)
+		assert.NoError(t, err)
 	})
 
 	t.Run("TruncatedHeader", func(t *testing.T) {
@@ -103,8 +99,8 @@ func TestPersistence_ReplayWAL_Corruption(t *testing.T) {
 		store.dataPath = tmpDir
 
 		err = store.replayWAL()
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "header")
+		// Robust behavior: Should warn and return nil
+		assert.NoError(t, err)
 	})
 
 	t.Run("TruncatedRecord", func(t *testing.T) {
@@ -121,8 +117,7 @@ func TestPersistence_ReplayWAL_Corruption(t *testing.T) {
 		store.dataPath = tmpDir
 
 		err = store.replayWAL()
-		assert.Error(t, err)
-		// Since it checks CRC first, it will fail on CRC mismatch or io.ReadFull
-		assert.Contains(t, err.Error(), "read failed")
+		// Robust behavior: Should warn and return nil
+		assert.NoError(t, err)
 	})
 }

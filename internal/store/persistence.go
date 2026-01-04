@@ -111,9 +111,14 @@ func (s *VectorStore) replayWAL() error {
 	var maxSeq uint64
 	for {
 		header := make([]byte, 32)
+		// 1. Read Header
 		if _, err := io.ReadFull(f, header); err != nil {
 			if err == io.EOF {
-				break
+				break // Clean existing
+			}
+			if err == io.ErrUnexpectedEOF {
+				s.logger.Warn().Err(err).Msg("WAL Replay stopped: truncated header (partial write)")
+				break // Stop successfully
 			}
 			return NewWALError("read", walPath, 0, fmt.Errorf("header: %w", err))
 		}
@@ -130,36 +135,51 @@ func (s *VectorStore) replayWAL() error {
 			maxSeq = seq
 		}
 
-		// Safety checks for corrupted data
+		// Safety checks for corrupted data length
 		if nameLen > 1024*1024 || recLen > 1024*1024*1024 { // 1MB name, 1GB record
-			return NewWALError("read", walPath, 0, fmt.Errorf("invalid entry lengths: nameLen=%d, recLen=%d", nameLen, recLen))
+			s.logger.Error().Uint32("nameLen", nameLen).Uint64("recLen", recLen).Msg("WAL Entry header corrupted (invalid lengths). Stopping replay.")
+			break // Stop successfully
 		}
 
+		// 2. Read Name
 		nameBytes := make([]byte, nameLen)
 		if _, err := io.ReadFull(f, nameBytes); err != nil {
+			if err == io.EOF || err == io.ErrUnexpectedEOF {
+				s.logger.Warn().Err(err).Msg("WAL Replay stopped: truncated name (partial write)")
+				break
+			}
 			return NewWALError("read", walPath, 0, fmt.Errorf("name: %w", err))
 		}
 		name := string(nameBytes)
 
+		// 3. Read Record
 		recBytes := make([]byte, recLen)
 		if _, err := io.ReadFull(f, recBytes); err != nil {
+			if err == io.EOF || err == io.ErrUnexpectedEOF {
+				s.logger.Warn().Err(err).Msg("WAL Replay stopped: truncated record (partial write)")
+				break
+			}
 			return NewWALError("read", walPath, 0, fmt.Errorf("recBytes: %w", err))
 		}
 
-		// Verify Checksum
+		// 4. Verify Checksum
 		crc := crc32.NewIEEE()
 		_, _ = crc.Write(nameBytes)
 		_, _ = crc.Write(recBytes)
 		if crc.Sum32() != storedChecksum {
 			metrics.WalWritesTotal.WithLabelValues("corruption").Inc()
-			return NewWALError("read", walPath, 0, fmt.Errorf("crc mismatch: corrupted WAL entry"))
+			s.logger.Error().Msg("WAL Checksum mismatch! Corrupted entry detected. Stopping replay.")
+			break // Stop successfully, assume rest of file is garbage
 		}
 
 		// Deserialize Record
 		r, err := safeIPCNewReader(bytes.NewReader(recBytes))
 		if err != nil {
 			metrics.IpcDecodeErrorsTotal.WithLabelValues("wal", "error").Inc()
-			return NewWALError("read", walPath, 0, fmt.Errorf("ipc reader: %w", err))
+			// Should we stop here too? SafeIPC failure means corrupted body but valid CRC? Collisions rare.
+			// Better to warn and skip or stop. Let's Stop to be safe.
+			s.logger.Error().Err(err).Msg("WAL IPC Decode failed despite valid CRC. Stopping replay.")
+			break
 		}
 		if r.Next() {
 			rec := r.RecordBatch()

@@ -135,6 +135,24 @@ spec:
               value: {{ .Values.storage.asyncFsync | quote }}
             - name: STORAGE_DOPUT_BATCH_SIZE
               value: {{ .Values.storage.doPutBatchSize | quote }}
+            # Compaction Configuration
+            - name: COMPACTION_ENABLED
+              value: {{ .Values.compaction.enabled | quote }}
+            - name: COMPACTION_INTERVAL
+              value: {{ .Values.compaction.interval | quote }}
+            - name: COMPACTION_TARGET_BATCH_SIZE
+              value: {{ .Values.compaction.targetBatchSize | quote }}
+            - name: COMPACTION_MIN_BATCHES
+              value: {{ .Values.compaction.minBatches | quote }}
+            # Sharding Configuration
+            - name: RING_SHARDING_ENABLED
+              value: {{ .Values.sharding.ring.enabled | quote }}
+            - name: AUTO_SHARDING_ENABLED
+              value: {{ .Values.sharding.auto.enabled | quote }}
+            - name: AUTO_SHARDING_THRESHOLD
+              value: {{ .Values.sharding.auto.threshold | quote }}
+            - name: AUTO_SHARDING_SPLIT_THRESHOLD
+              value: {{ .Values.sharding.auto.splitThreshold | quote }}
 
           ports:
             - name: grpc-data

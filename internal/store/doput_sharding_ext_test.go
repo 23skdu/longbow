@@ -214,10 +214,7 @@ func TestCheckAndMigrateToSharded_Disabled(t *testing.T) {
 
 	ds := &Dataset{Name: "test", Index: NewHNSWIndex(nil)}
 
-	err := vs.checkAndMigrateToSharded(ds)
-	if err != nil {
-		t.Errorf("unexpected error: %v", err)
-	}
+	vs.checkAndMigrateToSharded(ds)
 	if ds.IsSharded() {
 		t.Error("should not shard when disabled")
 	}
@@ -234,10 +231,7 @@ func TestCheckAndMigrateToSharded_AlreadySharded(t *testing.T) {
 	ds := &Dataset{Name: "test"}
 	ds.Index = NewShardedHNSW(DefaultShardedHNSWConfig(), ds)
 
-	err := vs.checkAndMigrateToSharded(ds)
-	if err != nil {
-		t.Errorf("unexpected error: %v", err)
-	}
+	vs.checkAndMigrateToSharded(ds)
 }
 
 func TestCheckAndMigrateToSharded_BelowThreshold(t *testing.T) {
@@ -251,10 +245,7 @@ func TestCheckAndMigrateToSharded_BelowThreshold(t *testing.T) {
 	ds := &Dataset{Name: "test", Index: NewHNSWIndex(nil)}
 	ds.Index.(*HNSWIndex).dataset = ds
 
-	err := vs.checkAndMigrateToSharded(ds)
-	if err != nil {
-		t.Errorf("unexpected error: %v", err)
-	}
+	vs.checkAndMigrateToSharded(ds)
 	if ds.IsSharded() {
 		t.Error("should not shard when below threshold")
 	}

@@ -252,7 +252,8 @@ func (h *HNSWIndex) SearchVectorsWithBitmap(query []float32, k int, filter *Bits
 		return h.searchBruteForceWithBitmap(query, k, filter)
 	}
 
-	limit := k * 10
+	// Adaptive limit calculation based on filter selectivity
+	limit := calculateAdaptiveLimit(k, count, h.Len())
 
 	h.mu.RLock()
 	neighbors := h.Graph.Search(query, limit)

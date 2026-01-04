@@ -65,10 +65,21 @@ sequenceDiagram
     DS-->>C: FlightData (Stream)
 ```
 
-### Zero-Copy HNSW Implementation
+### Zero-Copy HNSW2 Implementation (Internal)
 
-We utilize the [coder/hnsw](https://github.com/coder/hnsw) library to manage the
-graph structure. The graph stores **only** `VectorID` identifiers, not vector data.
+We utilize a custom, zero-allocation, Arrow-native implementation of HNSW (`hnsw2`) designed specifically for Longbow's workload. unlike standard libraries, this implementation operates directly on Arrow buffers without object overhead.
+
+#### Key Features
+
+* **Zero-Allocation**: Eliminates allocation churn through object pooling and pre-allocated buffers.
+* **Arrow-Native**: Direct integration with Arrow record batches for zero-copy vector access.
+* **Concurrent Scale**: Multi-core graph building and search using fine-grained locking (`shardedLocks`).
+* **Hardware Acceleration**: SIMD-optimized distance calculations (AVX2/NEON) and Product Quantization (ADC).
+
+#### Concurrent Graph Building
+
+* **Locking Strategy**: Uses a hybrid approach with a global `resizeMu` for graph resizing and fine-grained `shardedLocks` ([1024]Mutex) for individual node updates.
+* **Throughput**: Scales linearly with cores. Thread safety is verified via `TestConcurrentInsert` and specific data race regression tests (lazy allocation fixes).
 
 ### Product Quantization (PQ) Compression
 

@@ -410,6 +410,9 @@ func (h *ArrowHNSW) getVector(id uint32) ([]float32, error) {
 	}
 
 	// Fallback to dataset index (legacy/hybrid mode)
+	if h.dataset == nil {
+		return nil, fmt.Errorf("dataset is nil and vector %d not in internal store", id)
+	}
 	idx := h.dataset.Index
 	if idx == nil {
 		return nil, fmt.Errorf("dataset index is nil and vector %d not in internal store", id)

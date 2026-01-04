@@ -25,7 +25,9 @@ type Edge struct {
 type GraphStore struct {
 	// Global lock for columnar data arrays (subjects, objects, predicates, weights)
 	// AddEdge takes Lock; Traverse takes RLock for data access.
-	dataMu sync.RWMutex
+	// dataMu protects the dataset reference and migration state.
+	// It is held for Reading during searches and Writing during compaction/migration.
+	dataMu MeasuredRWMutex
 
 	// Sharded locks for adjacency indices to reduce contention during updates/traversals
 	// Maps are protected by indexShards[hash(key) % 256]
@@ -63,6 +65,7 @@ func NewGraphStore() *GraphStore {
 		subjectIndex:        make(map[VectorID][]int),
 		objectIndex:         make(map[VectorID][]int),
 		predicateValueIndex: make(map[uint16][]int),
+		dataMu:              NewMeasuredRWMutex("graph_store_data"),
 	}
 }
 

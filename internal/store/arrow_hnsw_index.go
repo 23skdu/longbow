@@ -66,6 +66,11 @@ func NewArrowHNSW(dataset *Dataset, config ArrowHNSWConfig, locStore *ChunkedLoc
 		deleted:        NewBitset(), // Initial capacity, grows
 	}
 
+	// Initialize measured locks
+	for i := 0; i < len(h.shardedLocks); i++ {
+		h.shardedLocks[i] = NewMeasuredMutex("hnsw_shard")
+	}
+
 	if locStore != nil {
 		h.locationStore = locStore
 	} else {

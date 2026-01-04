@@ -4,6 +4,7 @@ import (
 	"math"
 	"sync"
 	"sync/atomic"
+	"unsafe"
 
 	"github.com/23skdu/longbow/internal/metrics"
 )
@@ -102,7 +103,7 @@ type ArrowHNSW struct {
 
 	// shardedLocks protects individual node neighbor lists during updates.
 	// lockID = nodeID % 1024
-	shardedLocks [1024]sync.Mutex
+	shardedLocks [1024]MeasuredMutex
 
 	// Graph state (atomic for lock-free reads)
 	entryPoint atomic.Uint32
@@ -115,6 +116,10 @@ type ArrowHNSW struct {
 	// Component dependencies
 	quantizer *ScalarQuantizer
 	pqEncoder *PQEncoder
+
+	// Training buffer for SQ8 auto-tuning
+	// Protected by growMu (since training is a structural change)
+	sq8TrainingBuffer [][]float32
 
 	// Caches
 	vectorColIdx int // Index of the vector column in the Arrow schema
@@ -179,6 +184,10 @@ type ArrowHNSWConfig struct {
 	// SQ8Enabled enables scalar quantization
 	SQ8Enabled bool
 
+	// SQ8TrainingThreshold is the number of vectors to accumulate before training SQ8 bounds.
+	// Default: 1000.
+	SQ8TrainingThreshold int
+
 	// InitialCapacity is the starting size of the graph.
 	InitialCapacity int
 
@@ -205,21 +214,22 @@ type ArrowHNSWConfig struct {
 // Tuned for high recall (99.5%+) on 10K+ vector datasets.
 func DefaultArrowHNSWConfig() ArrowHNSWConfig {
 	return ArrowHNSWConfig{
-		M:                   32,
-		MMax:                96, // Layer 0: 3 * M (Target is 2 * M = 64)
-		MMax0:               48, // Layer > 0: 1.5 * M
-		EfConstruction:      400,
-		Ml:                  1.0 / math.Log(32),
-		Alpha:               1.1,
-		SQ8Enabled:          false,
-		RefinementFactor:    1.0,
-		InitialCapacity:     1000,
-		AdaptiveEf:          false, // Disabled by default (opt-in)
-		AdaptiveEfMin:       0,     // Auto-calculate as EfConstruction/4
-		AdaptiveEfThreshold: 0,     // Auto-calculate as InitialCapacity/2
-		PQEnabled:           false,
-		PQM:                 0, // Auto-calculate?
-		PQK:                 256,
+		M:                    32,
+		MMax:                 96, // Layer 0: 3 * M (Target is 2 * M = 64)
+		MMax0:                48, // Layer > 0: 1.5 * M
+		EfConstruction:       400,
+		Ml:                   1.0 / math.Log(32),
+		Alpha:                1.1,
+		SQ8Enabled:           false,
+		SQ8TrainingThreshold: 1000,
+		RefinementFactor:     1.0,
+		InitialCapacity:      1000,
+		AdaptiveEf:           false, // Disabled by default (opt-in)
+		AdaptiveEfMin:        0,     // Auto-calculate as EfConstruction/4
+		AdaptiveEfThreshold:  0,     // Auto-calculate as InitialCapacity/2
+		PQEnabled:            false,
+		PQM:                  0, // Auto-calculate?
+		PQK:                  256,
 	}
 }
 
@@ -235,15 +245,15 @@ func DefaultArrowHNSWConfig() ArrowHNSWConfig {
 // Returns the (potentially updated) GraphData pointer to ensure caller uses the valid snapshot.
 func (h *ArrowHNSW) ensureChunk(data *GraphData, cID, _ uint32, dims int) (*GraphData, error) {
 	// Optimization: check if chunks exist
-	levelsExist := data.Levels[cID] != nil
+	levelsExist := data.LoadLevelChunk(cID) != nil
 	vectorsExist := true
 	if dims > 0 {
-		vectorsExist = data.Vectors != nil && data.Vectors[cID] != nil
+		vectorsExist = data.Vectors != nil && data.LoadVectorChunk(cID) != nil
 		if h.config.SQ8Enabled {
-			vectorsExist = vectorsExist && data.VectorsSQ8[cID] != nil
+			vectorsExist = vectorsExist && data.LoadSQ8Chunk(cID) != nil
 		}
 		if h.config.PQEnabled {
-			vectorsExist = vectorsExist && data.VectorsPQ[cID] != nil
+			vectorsExist = vectorsExist && data.LoadPQChunk(cID) != nil
 		}
 	}
 
@@ -263,15 +273,15 @@ func (h *ArrowHNSW) ensureChunk(data *GraphData, cID, _ uint32, dims int) (*Grap
 	if currentData != data {
 		data = currentData
 		// Re-check existence in new data
-		levelsExist = data.Levels[cID] != nil
+		levelsExist = data.LoadLevelChunk(cID) != nil
 		vectorsExist = true
 		if dims > 0 {
-			vectorsExist = data.Vectors != nil && data.Vectors[cID] != nil
+			vectorsExist = data.Vectors != nil && data.LoadVectorChunk(cID) != nil
 			if h.config.SQ8Enabled {
-				vectorsExist = vectorsExist && data.VectorsSQ8[cID] != nil
+				vectorsExist = vectorsExist && data.LoadSQ8Chunk(cID) != nil
 			}
 			if h.config.PQEnabled {
-				vectorsExist = vectorsExist && data.VectorsPQ[cID] != nil
+				vectorsExist = vectorsExist && data.LoadPQChunk(cID) != nil
 			}
 		}
 		if levelsExist && vectorsExist {
@@ -280,35 +290,35 @@ func (h *ArrowHNSW) ensureChunk(data *GraphData, cID, _ uint32, dims int) (*Grap
 	}
 
 	// Re-check under lock (double-checked locking)
-	if data.Levels[cID] == nil {
+	if data.LoadLevelChunk(cID) == nil {
 		levels := make([]uint8, ChunkSize)
-		data.Levels[cID] = &levels
+		data.StoreLevelChunk(cID, &levels)
 
 		// Allocate layers only if levels was nil (new chunk completely)
 		for i := 0; i < ArrowMaxLayers; i++ {
 			neighbors := make([]uint32, ChunkSize*MaxNeighbors)
-			data.Neighbors[i][cID] = &neighbors
+			data.StoreNeighborsChunk(i, cID, &neighbors)
 
 			counts := make([]int32, ChunkSize)
-			data.Counts[i][cID] = &counts
+			data.StoreCountsChunk(i, cID, &counts)
 
 			versions := make([]uint32, ChunkSize)
-			data.Versions[i][cID] = &versions
+			data.StoreVersionsChunk(i, cID, &versions)
 		}
 	}
 
 	if dims > 0 {
-		if data.Vectors != nil && data.Vectors[cID] == nil {
+		if data.Vectors != nil && data.LoadVectorChunk(cID) == nil {
 			vecs := make([]float32, ChunkSize*dims)
-			data.Vectors[cID] = &vecs
+			data.StoreVectorChunk(cID, &vecs)
 		}
 
-		if h.config.SQ8Enabled && data.VectorsSQ8 != nil && data.VectorsSQ8[cID] == nil {
+		if h.config.SQ8Enabled && data.LoadSQ8Chunk(cID) == nil {
 			sq8 := make([]byte, ChunkSize*dims)
-			data.VectorsSQ8[cID] = &sq8
+			data.StoreSQ8Chunk(cID, &sq8)
 		}
 
-		if h.config.PQEnabled && data.VectorsPQ != nil && data.VectorsPQ[cID] == nil {
+		if h.config.PQEnabled && data.LoadPQChunk(cID) == nil {
 			// PQ storage size: ChunkSize * M
 			m := h.config.PQM
 			if m == 0 && h.pqEncoder != nil {
@@ -316,7 +326,7 @@ func (h *ArrowHNSW) ensureChunk(data *GraphData, cID, _ uint32, dims int) (*Grap
 			}
 			if m > 0 {
 				pqVecs := make([]byte, ChunkSize*m)
-				data.VectorsPQ[cID] = &pqVecs
+				data.StorePQChunk(cID, &pqVecs)
 			}
 		}
 	}
@@ -375,6 +385,116 @@ func (h *ArrowHNSW) Grow(minCap int, validDims int) {
 	// Clone and grow
 	newData := dataPtr.Clone(minCap, targetDims, h.config.SQ8Enabled, h.config.PQEnabled)
 	h.data.Store(newData)
+}
+
+// CleanupTombstones iterates over the graph and removes connections to deleted nodes.
+// It returns the total number of connections prone.
+// maxNodes is a limit on how many nodes to scan (0 = all).
+func (h *ArrowHNSW) CleanupTombstones(maxNodes int) int {
+	totalPruned := 0
+
+	// Snapshot max node ID to iterate up to
+	maxID := int(h.nodeCount.Load())
+	if maxNodes > 0 && maxNodes < maxID {
+		maxID = maxNodes
+	}
+
+	data := h.data.Load()
+	if data == nil {
+		return 0
+	}
+
+	// Iterate all potential node IDs
+	for i := 0; i < maxID; i++ {
+		nodeID := uint32(i)
+
+		// If node itself is deleted, we don't need to clean its neighbors right now
+		// (it's unreachable from entry point eventually), OR we might want to clean them to help GC.
+		// For Search performance, we care about LIVE nodes pointing to DEAD nodes.
+		if h.deleted.Contains(int(nodeID)) {
+			continue
+		}
+
+		// Lock this node to safely modify its neighbor list
+		lockID := nodeID % 1024
+		h.shardedLocks[lockID].Lock()
+
+		// Re-check deleted status after lock? Unlikely to change from false -> true without lock?
+		// Delete() uses lock? No, Delete() typically atomic bitset.
+		// If it became deleted while we waited, we can skip.
+		if h.deleted.Contains(int(nodeID)) {
+			h.shardedLocks[lockID].Unlock()
+			continue
+		}
+
+		// Iterate Levels
+		for lvl := 0; lvl < ArrowMaxLayers; lvl++ {
+			cID := chunkID(nodeID)
+			cOff := chunkOffset(nodeID)
+
+			// Check if chunk exists
+			if lvl >= len(data.Neighbors) || int(cID) >= len(data.Neighbors[lvl]) || data.Neighbors[lvl][cID] == nil {
+				continue
+			}
+
+			countAddr := &(*data.Counts[lvl][cID])[cOff]
+			count := int(atomic.LoadInt32(countAddr))
+			if count == 0 {
+				continue
+			}
+
+			neighborsChunk := (*data.Neighbors[lvl][cID])
+			baseIdx := int(cOff) * MaxNeighbors
+
+			// 1. Scan first to see if we NEED to prune (avoid dirtying cache lines/versions if clean)
+			needsPrune := false
+			for r := 0; r < count; r++ {
+				if h.deleted.Contains(int(neighborsChunk[baseIdx+r])) {
+					needsPrune = true
+					break
+				}
+			}
+
+			if !needsPrune {
+				continue
+			}
+
+			// 2. Seqlock: Begin Write (Odd)
+			verAddr := &(*data.Versions[lvl][cID])[cOff]
+			atomic.AddUint32(verAddr, 1)
+
+			// 3. Compact the list
+			writeIdx := 0
+			prunedInLevel := 0
+			for r := 0; r < count; r++ {
+				neighborID := neighborsChunk[baseIdx+r]
+				if h.deleted.Contains(int(neighborID)) {
+					prunedInLevel++
+				} else {
+					if writeIdx != r {
+						neighborsChunk[baseIdx+writeIdx] = neighborID
+					}
+					writeIdx++
+				}
+			}
+
+			// Zero out remainder
+			for k := writeIdx; k < count; k++ {
+				neighborsChunk[baseIdx+k] = 0
+			}
+
+			// Update count
+			atomic.StoreInt32(countAddr, int32(writeIdx))
+			totalPruned += prunedInLevel
+
+			// 4. Seqlock: End Write (Even)
+			atomic.AddUint32(verAddr, 1)
+		}
+
+		h.shardedLocks[lockID].Unlock()
+	}
+
+	return totalPruned
 }
 
 // Clone creates a new GraphData with at least the specified capacity, copying existing data.
@@ -529,4 +649,132 @@ type ArrowSearchContext struct {
 
 	// Recursion depth for pruneConnections
 	pruneDepth int
+}
+
+// Atomic Accessors for GraphData chunks to prevent data races during lazy allocation.
+
+// LoadVectorChunk atomically loads the vector chunk for the given chunk ID.
+func (g *GraphData) LoadVectorChunk(cID uint32) *[]float32 {
+	if int(cID) >= len(g.Vectors) {
+		return nil
+	}
+	ptr := (*unsafe.Pointer)(unsafe.Pointer(&g.Vectors[cID]))
+	return (*[]float32)(atomic.LoadPointer(ptr))
+}
+
+// StoreVectorChunk atomically stores the vector chunk for the given chunk ID.
+func (g *GraphData) StoreVectorChunk(cID uint32, chunk *[]float32) {
+	if int(cID) >= len(g.Vectors) {
+		return
+	}
+	ptr := (*unsafe.Pointer)(unsafe.Pointer(&g.Vectors[cID]))
+	atomic.StorePointer(ptr, unsafe.Pointer(chunk))
+}
+
+// LoadSQ8Chunk atomically loads the SQ8 chunk for the given chunk ID.
+func (g *GraphData) LoadSQ8Chunk(cID uint32) *[]byte {
+	if g.VectorsSQ8 == nil || int(cID) >= len(g.VectorsSQ8) {
+		return nil
+	}
+	ptr := (*unsafe.Pointer)(unsafe.Pointer(&g.VectorsSQ8[cID]))
+	return (*[]byte)(atomic.LoadPointer(ptr))
+}
+
+// StoreSQ8Chunk atomically stores the SQ8 chunk for the given chunk ID.
+func (g *GraphData) StoreSQ8Chunk(cID uint32, chunk *[]byte) {
+	if g.VectorsSQ8 == nil || int(cID) >= len(g.VectorsSQ8) {
+		return
+	}
+	ptr := (*unsafe.Pointer)(unsafe.Pointer(&g.VectorsSQ8[cID]))
+	atomic.StorePointer(ptr, unsafe.Pointer(chunk))
+}
+
+// LoadPQChunk atomically loads the PQ chunk for the given chunk ID.
+func (g *GraphData) LoadPQChunk(cID uint32) *[]byte {
+	if g.VectorsPQ == nil || int(cID) >= len(g.VectorsPQ) {
+		return nil
+	}
+	ptr := (*unsafe.Pointer)(unsafe.Pointer(&g.VectorsPQ[cID]))
+	return (*[]byte)(atomic.LoadPointer(ptr))
+}
+
+// StorePQChunk atomically stores the PQ chunk for the given chunk ID.
+func (g *GraphData) StorePQChunk(cID uint32, chunk *[]byte) {
+	if g.VectorsPQ == nil || int(cID) >= len(g.VectorsPQ) {
+		return
+	}
+	ptr := (*unsafe.Pointer)(unsafe.Pointer(&g.VectorsPQ[cID]))
+	atomic.StorePointer(ptr, unsafe.Pointer(chunk))
+}
+
+// LoadLevelChunk atomically loads the level chunk for the given chunk ID.
+func (g *GraphData) LoadLevelChunk(cID uint32) *[]uint8 {
+	if int(cID) >= len(g.Levels) {
+		return nil
+	}
+	ptr := (*unsafe.Pointer)(unsafe.Pointer(&g.Levels[cID]))
+	return (*[]uint8)(atomic.LoadPointer(ptr))
+}
+
+// StoreLevelChunk atomically stores the level chunk for the given chunk ID.
+func (g *GraphData) StoreLevelChunk(cID uint32, chunk *[]uint8) {
+	if int(cID) >= len(g.Levels) {
+		return
+	}
+	ptr := (*unsafe.Pointer)(unsafe.Pointer(&g.Levels[cID]))
+	atomic.StorePointer(ptr, unsafe.Pointer(chunk))
+}
+
+// LoadNeighborsChunk atomically loads the neighbors chunk for the given layer and chunk ID.
+func (g *GraphData) LoadNeighborsChunk(layer int, cID uint32) *[]uint32 {
+	if layer >= len(g.Neighbors) || int(cID) >= len(g.Neighbors[layer]) {
+		return nil
+	}
+	ptr := (*unsafe.Pointer)(unsafe.Pointer(&g.Neighbors[layer][cID]))
+	return (*[]uint32)(atomic.LoadPointer(ptr))
+}
+
+// StoreNeighborsChunk atomically stores the neighbors chunk for the given layer and chunk ID.
+func (g *GraphData) StoreNeighborsChunk(layer int, cID uint32, chunk *[]uint32) {
+	if layer >= len(g.Neighbors) || int(cID) >= len(g.Neighbors[layer]) {
+		return
+	}
+	ptr := (*unsafe.Pointer)(unsafe.Pointer(&g.Neighbors[layer][cID]))
+	atomic.StorePointer(ptr, unsafe.Pointer(chunk))
+}
+
+// LoadCountsChunk atomically loads the counts chunk for the given layer and chunk ID.
+func (g *GraphData) LoadCountsChunk(layer int, cID uint32) *[]int32 {
+	if layer >= len(g.Counts) || int(cID) >= len(g.Counts[layer]) {
+		return nil
+	}
+	ptr := (*unsafe.Pointer)(unsafe.Pointer(&g.Counts[layer][cID]))
+	return (*[]int32)(atomic.LoadPointer(ptr))
+}
+
+// StoreCountsChunk atomically stores the counts chunk for the given layer and chunk ID.
+func (g *GraphData) StoreCountsChunk(layer int, cID uint32, chunk *[]int32) {
+	if layer >= len(g.Counts) || int(cID) >= len(g.Counts[layer]) {
+		return
+	}
+	ptr := (*unsafe.Pointer)(unsafe.Pointer(&g.Counts[layer][cID]))
+	atomic.StorePointer(ptr, unsafe.Pointer(chunk))
+}
+
+// LoadVersionsChunk atomically loads the versions chunk for the given layer and chunk ID.
+func (g *GraphData) LoadVersionsChunk(layer int, cID uint32) *[]uint32 {
+	if layer >= len(g.Versions) || int(cID) >= len(g.Versions[layer]) {
+		return nil
+	}
+	ptr := (*unsafe.Pointer)(unsafe.Pointer(&g.Versions[layer][cID]))
+	return (*[]uint32)(atomic.LoadPointer(ptr))
+}
+
+// StoreVersionsChunk atomically stores the versions chunk for the given layer and chunk ID.
+func (g *GraphData) StoreVersionsChunk(layer int, cID uint32, chunk *[]uint32) {
+	if layer >= len(g.Versions) || int(cID) >= len(g.Versions[layer]) {
+		return
+	}
+	ptr := (*unsafe.Pointer)(unsafe.Pointer(&g.Versions[layer][cID]))
+	atomic.StorePointer(ptr, unsafe.Pointer(chunk))
 }

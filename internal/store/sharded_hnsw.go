@@ -16,12 +16,15 @@ import (
 
 // ShardedHNSWConfig configures the sharded HNSW index.
 type ShardedHNSWConfig struct {
-	NumShards           int          // Initial/Currently active shards
-	M                   int          // HNSW M parameter
-	EfConstruction      int          // HNSW efConstruction parameter
-	Metric              VectorMetric // Distance metric for this index
-	Dimension           uint32       // Vector dimension
-	ShardSplitThreshold int          // Number of vectors per shard before splitting
+	NumShards      int          // Initial/Currently active shards
+	M              int          // HNSW M parameter
+	EfConstruction int          // HNSW efConstruction parameter
+	Metric         VectorMetric // Distance metric for this index
+	Dimension      uint32       // Vector dimension
+	// ShardSplitThreshold is deprecated in favor of Ring Sharding but kept for interface/legacy compatibility.
+	// In Ring mode, it implies the *initial capacity* of each shard.
+	ShardSplitThreshold int
+	UseRingSharding     bool // If true, use Consistent Hashing (Ring). If false, use Linear Range.
 }
 
 func (c ShardedHNSWConfig) Validate() error {
@@ -45,12 +48,52 @@ func DefaultShardedHNSWConfig() ShardedHNSWConfig {
 		EfConstruction:      400,
 		Metric:              MetricEuclidean,
 		ShardSplitThreshold: 65536, // ~64k vectors per shard (L3 Cache Alignment)
+		UseRingSharding:     true,  // Default to Ring
 	}
 }
 
 // hnswShard represents a single HNSW graph shard backed by ArrowHNSW.
 type hnswShard struct {
-	index *ArrowHNSW
+	index         *ArrowHNSW
+	mu            sync.RWMutex
+	globalToLocal map[VectorID]uint32
+	localToGlobal []VectorID
+}
+
+func newHnswShard(index *ArrowHNSW) *hnswShard {
+	return &hnswShard{
+		index:         index,
+		globalToLocal: make(map[VectorID]uint32),
+		localToGlobal: make([]VectorID, 0),
+	}
+}
+
+// mapID registers a global ID and assigns/returns a local ID.
+func (s *hnswShard) mapID(globalID VectorID) uint32 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	localID := uint32(len(s.localToGlobal))
+	s.localToGlobal = append(s.localToGlobal, globalID)
+	s.globalToLocal[globalID] = localID
+	return localID
+}
+
+// getGlobalID returns the global ID for a local ID.
+func (s *hnswShard) getGlobalID(localID uint32) (VectorID, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if int(localID) >= len(s.localToGlobal) {
+		return 0, false
+	}
+	return s.localToGlobal[localID], true
+}
+
+// getLocalID returns the local ID for a global ID.
+func (s *hnswShard) getLocalID(globalID VectorID) (uint32, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	lid, ok := s.globalToLocal[globalID]
+	return lid, ok
 }
 
 // Warmup accesses all nodes in the shard.
@@ -62,7 +105,7 @@ func (s *hnswShard) Warmup() int {
 }
 
 // ShardedHNSW provides fine-grained locking via multiple independent HNSW shards.
-// It uses Lock-Free Sharding by mapping independent global ID ranges to shards.
+// It uses Lock-Free Sharding or Ring Sharding strategies.
 type ShardedHNSW struct {
 	config  ShardedHNSWConfig
 	shards  []*hnswShard
@@ -75,8 +118,8 @@ type ShardedHNSW struct {
 	dimension uint32
 
 	// Dynamic Sharding
-	activeShards atomic.Int32
-	shardsMu     sync.RWMutex
+	sharder  ShardingStrategy
+	shardsMu sync.RWMutex
 }
 
 // NewShardedHNSW creates a new sharded HNSW index.
@@ -88,30 +131,37 @@ func NewShardedHNSW(config ShardedHNSWConfig, dataset *Dataset) *ShardedHNSW {
 		config.ShardSplitThreshold = 65536
 	}
 
+	var sharder ShardingStrategy
+	if config.UseRingSharding {
+		sharder = NewRingSharder(config.NumShards, 40) // 40 vnodes/shard
+	} else {
+		sharder = NewLinearSharding(config.ShardSplitThreshold)
+	}
+
 	s := &ShardedHNSW{
 		config:        config,
 		dataset:       dataset,
 		locationStore: NewChunkedLocationStore(),
 		dimension:     config.Dimension,
+		sharder:       sharder,
 	}
-	s.activeShards.Store(int32(config.NumShards))
 
 	s.shards = make([]*hnswShard, config.NumShards)
 	for i := 0; i < config.NumShards; i++ {
-		s.shards[i] = s.newShard()
+		s.shards[i] = s.newShard(i)
 	}
 
 	return s
 }
 
-func (s *ShardedHNSW) newShard() *hnswShard {
+func (s *ShardedHNSW) newShard(shardIdx int) *hnswShard {
 	// Map ShardedHNSWConfig to ArrowHNSWConfig
 	arrowConfig := DefaultArrowHNSWConfig()
 	arrowConfig.M = s.config.M
 	arrowConfig.MMax = s.config.M * 3
 	arrowConfig.MMax0 = s.config.M * 2
 	arrowConfig.EfConstruction = s.config.EfConstruction
-	arrowConfig.InitialCapacity = s.config.ShardSplitThreshold
+	arrowConfig.InitialCapacity = s.config.ShardSplitThreshold // Capacity hint
 	// Metric support TODO: Pass metric to ArrowHNSW once supported
 
 	// We pass nil for ChunkedLocationStore because shards use local IDs and don't manage global locations
@@ -119,30 +169,17 @@ func (s *ShardedHNSW) newShard() *hnswShard {
 	idx := NewArrowHNSW(s.dataset, arrowConfig, nil)
 
 	// Manually set dims if not yet inferred (safe backup)
-	// Manually set dims if not yet inferred (safe backup)
 	dims := int(s.dimension)
 	if dims > 0 && idx.dims.Load() == 0 {
 		idx.dims.Store(int32(dims))
 	}
 
-	return &hnswShard{
-		index: idx,
-	}
+	return newHnswShard(idx)
 }
 
 // GetShardForID returns the shard index for a given Global VectorID.
 func (s *ShardedHNSW) GetShardForID(id VectorID) int {
-	return int(uint64(id) / uint64(s.config.ShardSplitThreshold))
-}
-
-// GetLocalID converts a Global VectorID to a Shard-Local ID.
-func (s *ShardedHNSW) GetLocalID(id VectorID) uint32 {
-	return uint32(uint64(id) % uint64(s.config.ShardSplitThreshold))
-}
-
-// GetGlobalID converts a Shard-Local ID to a Global VectorID.
-func (s *ShardedHNSW) GetGlobalID(shardIdx int, localID uint32) VectorID {
-	return VectorID(uint64(shardIdx)*uint64(s.config.ShardSplitThreshold) + uint64(localID))
+	return s.sharder.GetShard(id)
 }
 
 // AddByLocation implements VectorIndex.
@@ -233,25 +270,26 @@ func (s *ShardedHNSW) AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx int) (
 	s.locationStore.UpdateSize(id)
 
 	// Route to Shard
-	shardIdx := s.GetShardForID(id)
+	shardIdx := s.sharder.GetShard(id)
 
-	localID := s.GetLocalID(id)
-
-	s.shardsMu.Lock()
-	// Dynamically grow shards if needed
-	for len(s.shards) <= shardIdx {
-		s.shards = append(s.shards, s.newShard())
-		s.activeShards.Add(1)
-		metrics.ShardedHnswShardSplitCount.WithLabelValues(s.dataset.Name).Inc()
+	s.shardsMu.RLock()
+	// Dynamic growth logic from Linear Sharding is removed for Ring Sharding (fixed shards assumed)
+	// If needed for Linear legacy, s.sharder should handle AddShard check logic here,
+	// but simplified to assume fixed shards for this implementation.
+	if shardIdx >= len(s.shards) {
+		s.shardsMu.RUnlock()
+		return 0, fmt.Errorf("shard index out of bounds (dynamic growth not supported in ring mode)")
 	}
 	shard := s.shards[shardIdx]
-	s.shardsMu.Unlock()
+	s.shardsMu.RUnlock()
+
+	// Map Global ID to Local ID in Shard
+	localID := shard.mapID(id)
 
 	// Insert into Shard
 	level := shard.index.generateLevel()
 
-	// Note: localID is used within the shard. ID mapping is handled by ShardedHNSW.
-	err := shard.index.InsertWithVector(uint32(localID), vec, level)
+	err := shard.index.InsertWithVector(localID, vec, level)
 	if err != nil {
 		return 0, fmt.Errorf("shard insert failed: %w", err)
 	}
@@ -304,9 +342,13 @@ func (s *ShardedHNSW) SearchVectors(query []float32, k int, filters []Filter) ([
 	merged := make([]SearchResult, 0, k*len(currentShards))
 
 	for sr := range ch {
+		shard := currentShards[sr.shardIdx]
 		for _, r := range sr.results {
 			// Convert LocalID to GlobalID
-			globalID := s.GetGlobalID(sr.shardIdx, uint32(r.ID))
+			globalID, ok := shard.getGlobalID(uint32(r.ID))
+			if !ok {
+				continue // Should not happen
+			}
 			r.ID = globalID
 
 			// Re-check global filters if needed
@@ -386,8 +428,12 @@ func (s *ShardedHNSW) SearchVectorsWithBitmap(query []float32, k int, filter *Bi
 
 	merged := make([]SearchResult, 0, k*2)
 	for sr := range ch {
+		shard := currentShards[sr.shardIdx]
 		for _, r := range sr.results {
-			globalID := s.GetGlobalID(sr.shardIdx, uint32(r.ID))
+			globalID, ok := shard.getGlobalID(uint32(r.ID))
+			if !ok {
+				continue
+			}
 
 			// Global Bitset Filter
 			if filter != nil && !filter.Contains(int(globalID)) {
@@ -421,16 +467,6 @@ func (s *ShardedHNSW) SearchByID(id VectorID, k int) []VectorID {
 		return nil
 	}
 
-	// Shard resolution not strictly needed if using global location store
-	// but kept if we need to ensure shard existence or locking logic.
-	// Actually, we don't strictly need shard lock to read from dataset.
-
-	// Use ArrowHNSW's vector retrieval
-	// Use global vector retrieval
-	// shard.index.getVector uses localID which won't map correctly to the shared locationStore
-	// if keys are GlobalIDs.
-	// Instead, we resolve using GlobalID directly.
-
 	loc, ok := s.locationStore.Get(id)
 	if !ok {
 		return nil
@@ -454,7 +490,6 @@ func (s *ShardedHNSW) SearchByID(id VectorID, k int) []VectorID {
 		}
 	}
 	if colIdx == -1 {
-		// Fallback to 0 if not found, though realistically this shouldn't happen in valid dataset
 		colIdx = 0
 	}
 
@@ -511,7 +546,6 @@ func (s *ShardedHNSW) GetDimension() uint32 {
 // GetNeighbors returns the nearest neighbors for a given vector ID.
 func (s *ShardedHNSW) GetNeighbors(id VectorID) ([]VectorID, error) {
 	shardIdx := s.GetShardForID(id)
-	localID := s.GetLocalID(id)
 
 	s.shardsMu.RLock()
 	if shardIdx >= len(s.shards) || s.shards[shardIdx] == nil {
@@ -520,6 +554,11 @@ func (s *ShardedHNSW) GetNeighbors(id VectorID) ([]VectorID, error) {
 	}
 	shard := s.shards[shardIdx]
 	s.shardsMu.RUnlock()
+
+	localID, ok := shard.getLocalID(id)
+	if !ok {
+		return nil, fmt.Errorf("vector id not found in shard")
+	}
 
 	// Get local neighbors
 	localNeighbors, err := shard.index.GetNeighbors(VectorID(localID))
@@ -530,7 +569,11 @@ func (s *ShardedHNSW) GetNeighbors(id VectorID) ([]VectorID, error) {
 	// Map to Global IDs
 	globalNeighbors := make([]VectorID, len(localNeighbors))
 	for i, ln := range localNeighbors {
-		globalNeighbors[i] = s.GetGlobalID(shardIdx, uint32(ln))
+		globalID, ok := shard.getGlobalID(uint32(ln))
+		if !ok {
+			continue // Should not happen
+		}
+		globalNeighbors[i] = globalID
 	}
 	return globalNeighbors, nil
 }

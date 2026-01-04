@@ -29,6 +29,73 @@ The following table lists the configurable parameters of the Longbow chart and t
 | `persistence.snapshots.size` | Size of Snapshot PVC | `10Gi` |
 | `persistence.snapshots.path` | Mount path for Snapshots | `/snapshots` |
 
+## Server Configuration (Environment Variables)
+
+When running the Longbow container directly (e.g., via Docker), you can configure the server using the following environment variables.
+
+### Core
+
+| Variable | Description | Default |
+| :--- | :--- | :--- |
+| `LONGBOW_LISTEN_ADDR` | Address for Data gRPC server | `0.0.0.0:3000` |
+| `LONGBOW_META_ADDR` | Address for Meta gRPC server | `0.0.0.0:3001` |
+| `LONGBOW_METRICS_ADDR` | Address for Prometheus metrics | `0.0.0.0:9090` |
+| `LONGBOW_MAX_MEMORY` | Max memory limit (bytes) | `1073741824` (1GB) |
+| `LONGBOW_LOG_FORMAT` | Log format (`json` or `console`) | `json` |
+| `LONGBOW_LOG_LEVEL` | Log level (`debug`, `info`, `warn`, `error`) | `info` |
+
+### Persistence
+
+| Variable | Description | Default |
+| :--- | :--- | :--- |
+| `LONGBOW_DATA_PATH` | Path for WAL storage | `./data` |
+| `LONGBOW_SNAPSHOT_INTERVAL` | Interval for snapshots | `1h` |
+| `LONGBOW_MAX_WAL_SIZE` | Max WAL size before rotation | `104857600` (100MB) |
+| `STORAGE_ASYNC_FSYNC` | Enable async fsync for WAL | `true` |
+
+### Compaction & Maintenance
+
+| Variable | Description | Default |
+| :--- | :--- | :--- |
+| `COMPACTION_ENABLED` | Enable background compaction | `true` |
+| `COMPACTION_INTERVAL` | Interval between compaction runs | `30s` |
+| `COMPACTION_TARGET_BATCH_SIZE` | Target rows per record batch | `10000` |
+| `COMPACTION_MIN_BATCHES` | Min batches to trigger compaction | `10` |
+| `LONGBOW_TTL` | Time-to-live for data (0s = disabled) | `0s` |
+
+### Sharding & Scaling
+
+| Variable | Description | Default |
+| :--- | :--- | :--- |
+| `RING_SHARDING_ENABLED` | Enable Consistent Hashing Ring | `true` |
+| `AUTO_SHARDING_ENABLED` | Enable auto-migration to sharded index | `true` |
+| `AUTO_SHARDING_THRESHOLD` | Vector count to trigger sharding | `10000` |
+| `AUTO_SHARDING_SPLIT_THRESHOLD` | Size of split shards | `65536` |
+
+### gRPC Tuning
+
+| Variable | Description | Default |
+| :--- | :--- | :--- |
+| `LONGBOW_GRPC_MAX_RECV_MSG_SIZE` | Max receive message size | `536870912` (512MB) |
+| `LONGBOW_GRPC_MAX_SEND_MSG_SIZE` | Max send message size | `536870912` (512MB) |
+| `LONGBOW_GRPC_MAX_CONCURRENT_STREAMS` | Max concurrent streams | `250` |
+
+### Hybrid Search
+
+| Variable | Description | Default |
+| :--- | :--- | :--- |
+| `LONGBOW_HYBRID_SEARCH_ENABLED` | Enable hybrid search | `false` |
+| `LONGBOW_HYBRID_TEXT_COLUMNS` | Comma-separated columns to index | `` |
+| `LONGBOW_HYBRID_ALPHA` | Weight for dense vectors (0.0-1.0) | `0.5` |
+
+### Gossip Mesh
+
+| Variable | Description | Default |
+| :--- | :--- | :--- |
+| `GOSSIP_ENABLED` | Enable gossip mesh | `false` |
+| `GOSSIP_PORT` | Port for gossip protocol | `7946` |
+| `GOSSIP_DISCOVERY_PROVIDER` | Discovery (`static`, `k8s`, `dns`) | `static` |
+
 ## CLI Tools
 
 Longbow provides a comprehensive operations script `scripts/ops_test.py` for interacting with the server.

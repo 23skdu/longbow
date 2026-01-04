@@ -4,9 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
-	"math/rand"
 	"sort"
-	"time"
 )
 
 // Ring manages consistent hashing
@@ -101,7 +99,7 @@ func (r *Ring) hash(s string) uint64 {
 }
 
 func main() {
-	rand.Seed(time.Now().UnixNano())
+	// rand.Seed(time.Now().UnixNano()) // Deprecated in Go 1.20
 
 	ring := NewRing(20) // 20 vnodes per node
 

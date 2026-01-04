@@ -230,7 +230,7 @@ func (s *MetaServer) handleCreateNamespace(action *flight.Action, stream flight.
 	if err := json.Unmarshal(action.Body, &req); err != nil {
 		return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
 	}
-	if err := s.VectorStore.CreateNamespace(req.Name); err != nil {
+	if err := s.CreateNamespace(req.Name); err != nil {
 		return ToGRPCStatus(err)
 	}
 	// Return success
@@ -244,14 +244,14 @@ func (s *MetaServer) handleDeleteNamespace(action *flight.Action, stream flight.
 	if err := json.Unmarshal(action.Body, &req); err != nil {
 		return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
 	}
-	if err := s.VectorStore.DeleteNamespace(req.Name); err != nil {
+	if err := s.DeleteNamespace(req.Name); err != nil {
 		return ToGRPCStatus(err)
 	}
 	return stream.Send(&flight.Result{Body: []byte(`{"status": "deleted"}`)})
 }
 
 func (s *MetaServer) handleListNamespaces(_ *flight.Action, stream flight.FlightService_DoActionServer) error {
-	names := s.VectorStore.ListNamespaces()
+	names := s.ListNamespaces()
 	resp := map[string]interface{}{
 		"namespaces": names,
 		"count":      len(names),
@@ -264,7 +264,7 @@ func (s *MetaServer) handleListNamespaces(_ *flight.Action, stream flight.Flight
 }
 
 func (s *MetaServer) handleGetTotalNamespaceCount(_ *flight.Action, stream flight.FlightService_DoActionServer) error {
-	count := s.VectorStore.GetTotalNamespaceCount()
+	count := s.GetTotalNamespaceCount()
 	resp := map[string]int{
 		"count": count,
 	}
@@ -283,11 +283,11 @@ func (s *MetaServer) handleGetNamespaceDatasetCount(action *flight.Action, strea
 		return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
 	}
 
-	if !s.VectorStore.NamespaceExists(req.Name) {
+	if !s.NamespaceExists(req.Name) {
 		return status.Errorf(codes.NotFound, "namespace not found: %s", req.Name)
 	}
 
-	count := s.VectorStore.GetNamespaceDatasetCount(req.Name)
+	count := s.GetNamespaceDatasetCount(req.Name)
 	resp := map[string]int{
 		"count": count,
 	}

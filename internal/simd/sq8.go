@@ -1,5 +1,27 @@
 package simd
 
+var (
+	// Function pointer for SQ8 distance
+	euclideanSQ8Impl func(a, b []byte) int32
+)
+
+func init() {
+	euclideanSQ8Impl = EuclideanSQ8Generic
+	// Architecture specific overrides will be set in their respective files or here if exported?
+	// Actually, usually we set the global variable in init() but we need to know features.
+	// features are in simd.go.
+	// We can update the pointer in a wrapper init or expose a SetUp function.
+	// Note: simd.go likely has an init() that runs. We should ensure order or do it lazily?
+	// Easier: Just let init() in this file set default, and platform specific files use init to override
+	// provided they run after features calculation.
+	// BUT features calculation is in simd.go init().
+	// Go init order is file name lexical? No.
+	// Safe way: call setup in simd.go or usage lazy load.
+	// Let's use lazy initialization or rely on simd package init.
+	// Actually simd package init calculates features.
+	// We can just use a function that checks implementation string or features struct.
+}
+
 // EuclideanDistanceSQ8 computes the Euclidean distance between two uint8 vectors.
 // It returns the squared Euclidean distance as an int32 to avoid overflow and expensive sqrt.
 // The actual float distance would be scale * scale * distance.
@@ -14,8 +36,8 @@ func EuclideanDistanceSQ8(a, b []byte) int32 {
 	if len(a) != len(b) {
 		panic("simd: vector length mismatch")
 	}
-	// TODO: Add AVX2/NEON implementation
-	return EuclideanSQ8Generic(a, b)
+	// Direct Call to function pointer
+	return euclideanSQ8Impl(a, b)
 }
 
 func EuclideanSQ8Generic(a, b []byte) int32 {

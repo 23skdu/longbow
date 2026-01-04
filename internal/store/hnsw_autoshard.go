@@ -75,21 +75,27 @@ func (a *AutoShardingIndex) SetInitialDimension(dim int) {
 
 // AddByLocation adds a vector to the index.
 func (a *AutoShardingIndex) AddByLocation(batchIdx, rowIdx int) (uint32, error) {
+	// Lock held throughout execution to prevent Close during migration
 	a.mu.RLock()
 	sharded := a.sharded
 	interim := a.interimIndex
 	curr := a.current
-	a.mu.RUnlock()
 
 	if sharded {
-		return curr.AddByLocation(batchIdx, rowIdx)
+		id, err := curr.AddByLocation(batchIdx, rowIdx)
+		a.mu.RUnlock()
+		return id, err
 	}
 
 	if interim != nil {
-		return interim.AddByLocation(batchIdx, rowIdx)
+		id, err := interim.AddByLocation(batchIdx, rowIdx)
+		a.mu.RUnlock()
+		return id, err
 	}
 
 	id, err := curr.AddByLocation(batchIdx, rowIdx)
+	a.mu.RUnlock()
+
 	if err == nil {
 		a.checkShardThreshold()
 	}
@@ -102,17 +108,22 @@ func (a *AutoShardingIndex) AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx 
 	sharded := a.sharded
 	interim := a.interimIndex
 	curr := a.current
-	a.mu.RUnlock()
 
 	if sharded {
-		return curr.AddByRecord(rec, rowIdx, batchIdx)
+		id, err := curr.AddByRecord(rec, rowIdx, batchIdx)
+		a.mu.RUnlock()
+		return id, err
 	}
 
 	if interim != nil {
-		return interim.AddByRecord(rec, rowIdx, batchIdx)
+		id, err := interim.AddByRecord(rec, rowIdx, batchIdx)
+		a.mu.RUnlock()
+		return id, err
 	}
 
 	id, err := curr.AddByRecord(rec, rowIdx, batchIdx)
+	a.mu.RUnlock()
+
 	if err == nil {
 		a.checkShardThreshold()
 	}
@@ -125,18 +136,23 @@ func (a *AutoShardingIndex) AddBatch(recs []arrow.RecordBatch, rowIdxs []int, ba
 	sharded := a.sharded
 	interim := a.interimIndex
 	curr := a.current
-	a.mu.RUnlock()
 
 	if sharded {
-		return curr.AddBatch(recs, rowIdxs, batchIdxs)
+		ids, err := curr.AddBatch(recs, rowIdxs, batchIdxs)
+		a.mu.RUnlock()
+		return ids, err
 	}
 
 	if interim != nil {
 		// During migration, add to the NEW index directly
-		return interim.AddBatch(recs, rowIdxs, batchIdxs)
+		ids, err := interim.AddBatch(recs, rowIdxs, batchIdxs)
+		a.mu.RUnlock()
+		return ids, err
 	}
 
 	ids, err := curr.AddBatch(recs, rowIdxs, batchIdxs)
+	a.mu.RUnlock()
+
 	if err == nil {
 		a.checkShardThreshold()
 	}
@@ -323,16 +339,15 @@ func (a *AutoShardingIndex) migrateToSharded() {
 // SearchVectors implements VectorIndex.
 func (a *AutoShardingIndex) SearchVectors(query []float32, k int, filters []Filter) ([]SearchResult, error) {
 	a.mu.RLock()
-	curr := a.current
-	interim := a.interimIndex
-	sharded := a.sharded
-	a.mu.RUnlock()
+	defer a.mu.RUnlock()
 
+	sharded := a.sharded
 	if sharded {
-		return curr.SearchVectors(query, k, filters)
+		return a.current.SearchVectors(query, k, filters)
 	}
 
-	res, err := curr.SearchVectors(query, k, filters)
+	interim := a.interimIndex
+	res, err := a.current.SearchVectors(query, k, filters)
 	if err != nil {
 		return nil, err
 	}
@@ -353,16 +368,15 @@ func (a *AutoShardingIndex) SearchVectors(query []float32, k int, filters []Filt
 // SearchVectorsWithBitmap implements VectorIndex.
 func (a *AutoShardingIndex) SearchVectorsWithBitmap(query []float32, k int, filter *Bitset) []SearchResult {
 	a.mu.RLock()
-	curr := a.current
-	interim := a.interimIndex
-	sharded := a.sharded
-	a.mu.RUnlock()
+	defer a.mu.RUnlock()
 
+	sharded := a.sharded
 	if sharded {
-		return curr.SearchVectorsWithBitmap(query, k, filter)
+		return a.current.SearchVectorsWithBitmap(query, k, filter)
 	}
 
-	res := curr.SearchVectorsWithBitmap(query, k, filter)
+	interim := a.interimIndex
+	res := a.current.SearchVectorsWithBitmap(query, k, filter)
 	if interim != nil {
 		res2 := interim.SearchVectorsWithBitmap(query, k, filter)
 		res = a.mergeSearchResults(res, res2, k)
@@ -444,19 +458,17 @@ func (idx *AutoShardingIndex) Close() error {
 // GetNeighbors returns the nearest neighbors for a given vector ID.
 func (idx *AutoShardingIndex) GetNeighbors(id VectorID) ([]VectorID, error) {
 	idx.mu.RLock()
-	curr := idx.current
-	interim := idx.interimIndex
-	idx.mu.RUnlock()
+	defer idx.mu.RUnlock()
 
 	// Primarily check current index
-	neighbors, err := curr.GetNeighbors(id)
+	neighbors, err := idx.current.GetNeighbors(id)
 	if err == nil {
 		return neighbors, nil
 	}
 
 	// If not found and merging, check interim
-	if interim != nil {
-		return interim.GetNeighbors(id)
+	if idx.interimIndex != nil {
+		return idx.interimIndex.GetNeighbors(id)
 	}
 
 	return nil, err

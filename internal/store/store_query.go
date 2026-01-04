@@ -122,7 +122,7 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 	if err != nil {
 		// Fallback: treat as plain string name if parse fails
 		sStr := string(tkt.Ticket)
-		if len(sStr) > 0 && sStr[0] != '{' {
+		if sStr != "" && sStr[0] != '{' {
 			query.Name = sStr
 		} else {
 			s.logger.Error().Err(err).Msg("Failed to parse ticket")

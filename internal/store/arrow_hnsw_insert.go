@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
-	"runtime"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -95,8 +94,8 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec []float32, level int) error 
 
 	// 2. Check Capacity & SQ8/Vectors Status
 	// Check dimensions lock-free
+	// Check dimensions lock-free
 	dims := int(h.dims.Load())
-	// fmt.Printf("DEBUG: InsertWithVector ID=%d, dims=%d, SQ8=%v\n", id, dims, h.config.SQ8Enabled)
 
 	data := h.data.Load()
 
@@ -201,11 +200,9 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec []float32, level int) error 
 			if threshold <= 0 {
 				threshold = 1000
 			}
-			fmt.Printf("DEBUG: ID %d Buffer len %d, threshold %d\n", id, len(h.sq8TrainingBuffer), threshold)
 
 			if len(h.sq8TrainingBuffer) >= threshold {
 				// Train!
-				fmt.Println("DEBUG: Training triggered!")
 				h.quantizer.Train(h.sq8TrainingBuffer)
 
 				// Backfill existing vectors
@@ -241,7 +238,6 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec []float32, level int) error 
 
 		// If trained (now or before), encode current vector
 		if h.quantizer.IsTrained() {
-			fmt.Printf("DEBUG: ID %d using Trained path\n", id)
 			cID := chunkID(id)
 			cOff := chunkOffset(id)
 			// Encode
@@ -253,9 +249,6 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec []float32, level int) error 
 
 		sq8Handled = true
 		h.growMu.Unlock()
-	} else {
-		// Log why skipped
-		fmt.Printf("DEBUG: Skipped SQ8 for ID %d: Enabled=%v Dims=%d\n", id, h.config.SQ8Enabled, dims)
 	}
 
 	if !sq8Handled && h.quantizer != nil {
@@ -456,66 +449,23 @@ func (h *ArrowHNSW) searchLayerForInsert(ctx *ArrowSearchContext, query []float3
 		// Seqlock retry loop handles loading count/neighbors
 
 		// Batch Distance Calculation for Neighbors
-		// Collect unvisited neighbors with Seqlock retry
+		// Collect unvisited neighbors with Seqlock retry (now handled by GetNeighbors)
 		var unvisitedIDs []uint32
 
-		for {
-			// Seqlock read start
-			cIDCurr := chunkID(curr.ID)
-			cOffCurr := chunkOffset(curr.ID)
-
-			// Versions[layer][cID] is *[]uint32.
-			verChunk := data.LoadVersionsChunk(layer, cIDCurr)
-			if verChunk == nil {
-				// We encountered a node that exists in the graph but our snapshot is stale.
-				data = h.data.Load()
-				verChunk = data.LoadVersionsChunk(layer, cIDCurr)
-				if verChunk == nil {
-					// Still nil, something is wrong, break
-					break
-				}
-			}
-			verAddr := &(*verChunk)[cOffCurr]
-			ver := atomic.LoadUint32(verAddr)
-			// If odd (dirty), wait/retry
-			if ver%2 != 0 {
-				runtime.Gosched()
-				continue
-			}
-
-			// Get neighbors of current node
-			countsChunk := data.LoadCountsChunk(layer, cIDCurr)
-			neighborsChunk := data.LoadNeighborsChunk(layer, cIDCurr)
-
-			if countsChunk == nil || neighborsChunk == nil {
-				// Should not happen if curr is valid
-				break
-			}
-
-			count := int(atomic.LoadInt32(&(*countsChunk)[cOffCurr]))
-			if count > MaxNeighbors {
-				count = MaxNeighbors
-			}
-
-			baseIdx := int(cOffCurr) * MaxNeighbors
-			neighborhood := (*neighborsChunk)[baseIdx : baseIdx+count]
-
-			unvisitedIDs = ctx.scratchIDs[:0]
-			for i := 0; i < len(neighborhood); i++ {
-				nid := atomic.LoadUint32(&neighborhood[i])
-				// Ensure nid is valid?
-				// visited bitset check is safe
-				if !visited.IsSet(nid) {
-					unvisitedIDs = append(unvisitedIDs, nid)
-				}
-			}
-
-			// Seqlock read end check
-			if atomic.LoadUint32(verAddr) == ver {
-				break // Success
-			}
-			// Failed, retry
+		if cap(ctx.scratchNeighbors) < MaxNeighbors {
+			ctx.scratchNeighbors = make([]uint32, MaxNeighbors)
 		}
+		rawNeighbors := data.GetNeighbors(layer, curr.ID, ctx.scratchNeighbors)
+
+		// Filter unvisited
+		// scratchIDs is reused for unvisited list
+		ctx.scratchIDs = ctx.scratchIDs[:0]
+		for _, nid := range rawNeighbors {
+			if !visited.IsSet(nid) {
+				ctx.scratchIDs = append(ctx.scratchIDs, nid)
+			}
+		}
+		unvisitedIDs = ctx.scratchIDs
 
 		// Mark visited for the successfully collected neighbors
 		finalCount := 0
@@ -635,6 +585,7 @@ func (h *ArrowHNSW) searchLayerForInsert(ctx *ArrowSearchContext, query []float3
 		cand, _ := resultSet.Pop()
 		results = append(results, cand)
 	}
+
 	// resultSet returns closest-at-bottom (MaxHeap), so for return,
 	// we usually want them sorted by distance.
 	slices.SortFunc(results, func(a, b Candidate) int {

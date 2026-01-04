@@ -14,9 +14,13 @@ import (
 // Search performs k-NN search using the provided query vector.
 // Returns the k nearest neighbors sorted by distance.
 func (h *ArrowHNSW) Search(query []float32, k, ef int, filter *Bitset) ([]SearchResult, error) {
-	// Lock-free access: load snapshot of graph data
-	data := h.data.Load()
-	if data == nil || h.nodeCount.Load() == 0 {
+	// Lock-free access: load backend
+	backend := h.backend.Load()
+	if backend == nil || h.nodeCount.Load() == 0 {
+		return []SearchResult{}, nil
+	}
+	graph, ok := backend.(GraphBackend)
+	if !ok || graph == nil {
 		return []SearchResult{}, nil
 	}
 
@@ -29,8 +33,8 @@ func (h *ArrowHNSW) Search(query []float32, k, ef int, filter *Bitset) ([]Search
 	useRefinement := h.config.SQ8Enabled && h.config.RefinementFactor > 1.0
 	if useRefinement {
 		targetK = int(float64(k) * h.config.RefinementFactor)
-		if targetK > h.Size() {
-			targetK = h.Size()
+		if targetK > graph.Size() {
+			targetK = graph.Size()
 		}
 	}
 
@@ -46,7 +50,12 @@ func (h *ArrowHNSW) Search(query []float32, k, ef int, filter *Bitset) ([]Search
 	ctx := h.searchPool.Get()
 	defer h.searchPool.Put(ctx)
 
-	// Encode query if SQ8 enabled
+	// SQ8 Setup
+	// Check if backend supports SQ8?
+	// We assume if config.SQ8Enabled is true, backend supports it.
+
+	// ... (Rest of setup)
+
 	// Encode query if SQ8 enabled
 	dims := int(h.dims.Load())
 	if h.quantizer != nil {
@@ -69,6 +78,7 @@ func (h *ArrowHNSW) Search(query []float32, k, ef int, filter *Bitset) ([]Search
 	// Start from entry point (atomic load)
 	ep := h.entryPoint.Load()
 	maxL := int(h.maxLevel.Load())
+	data := h.data.Load()
 
 	// Search from top layer to layer 1
 	for level := maxL; level > 0; level-- {
@@ -218,123 +228,119 @@ func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef, layer in
 				}
 			}
 
-			// Seqlock read end check
-			if atomic.LoadUint32(verAddr) == ver {
-				break
-			}
-		}
-
-		// Commit visited state
-		for _, nid := range ctx.scratchIDs {
-			ctx.visited.Set(nid)
-		}
-
-		count := len(ctx.scratchIDs)
-		if count == 0 {
-			continue
-		}
-
-		// 2. Compute Distances - Batch Processing Phase
-		var dists []float32
-		if cap(ctx.scratchDists) < count {
-			ctx.scratchDists = make([]float32, count*2)
-		}
-		dists = ctx.scratchDists[:count]
-
-		// Adaptive batching: Use BatchDistanceComputer for large candidate sets
-		useBatchCompute := h.batchComputer != nil && h.batchComputer.ShouldUseBatchCompute(count)
-
-		if useSQ8 {
-			// Ensure querySQ8 is correctly set in context for useSQ8 path
-			if len(ctx.querySQ8) == 0 {
-				ctx.querySQ8 = h.quantizer.Encode(query, nil)
+			// Commit visited state
+			for _, nid := range ctx.scratchIDs {
+				ctx.visited.Set(nid)
 			}
 
-			for i, nid := range ctx.scratchIDs {
-				cID := chunkID(nid)
-				cOff := chunkOffset(nid)
-				dims := int(h.dims.Load())
-				off := int(cOff) * dims
-
-				if int(cID) < len(data.VectorsSQ8) && data.VectorsSQ8[cID] != nil && off+dims <= len(*data.VectorsSQ8[cID]) {
-					d := simd.EuclideanDistanceSQ8(ctx.querySQ8, (*data.VectorsSQ8[cID])[off:off+dims])
-					dists[i] = float32(d)
-				} else {
-					dists[i] = math.MaxFloat32
-				}
-			}
-		} else if useBatchCompute {
-			// Vectorized batch distance computation using Arrow compute
-			// Gather vectors for batch processing
-			if cap(ctx.scratchVecs) < count {
-				ctx.scratchVecs = make([][]float32, count*2)
-			}
-			vecs := ctx.scratchVecs[:count]
-
-			for i, nid := range ctx.scratchIDs {
-				vecs[i] = h.mustGetVectorFromData(data, nid)
-			}
-
-			// Use batch computer for vectorized distances
-			batchDists, err := h.batchComputer.ComputeL2Distances(query, vecs)
-			if err != nil {
-				// Fallback to SIMD on error
-				simd.EuclideanDistanceBatch(query, vecs, dists)
-			} else {
-				copy(dists, batchDists)
-			}
-		} else {
-			// Float32 Path (SIMD for small batches)
-			if cap(ctx.scratchVecs) < count {
-				ctx.scratchVecs = make([][]float32, count*2)
-			}
-			vecs := ctx.scratchVecs[:count]
-
-			for i, nid := range ctx.scratchIDs {
-				vecs[i] = h.mustGetVectorFromData(data, nid)
-			}
-			simd.EuclideanDistanceBatch(query, vecs, dists)
-		}
-
-		// 3. Process Results
-		for i, neighborID := range ctx.scratchIDs {
-			dist := dists[i]
-
-			// Update closest
-			if dist < closestDist {
-				closest = neighborID
-				closestDist = dist
-			}
-
-			// Check filter if provided
-			if filter != nil && !filter.Contains(int(neighborID)) {
+			batchCount := len(ctx.scratchIDs)
+			if batchCount == 0 {
 				continue
 			}
 
-			// Update result set - only add if not deleted
-			isDeleted := h.IsDeleted(neighborID)
-			shouldAdd := !isDeleted && resultSet.Len() < ef
-			if !isDeleted && !shouldAdd {
-				worst, ok := resultSet.Peek()
-				if ok && dist < worst.Dist {
-					shouldAdd = true
+			// 2. Compute Distances - Batch Processing Phase
+			var dists []float32
+			if cap(ctx.scratchDists) < batchCount {
+				ctx.scratchDists = make([]float32, batchCount*2)
+			}
+			dists = ctx.scratchDists[:batchCount]
+
+			// Adaptive batching: Use BatchDistanceComputer for large candidate sets
+			useBatchCompute := h.batchComputer != nil && h.batchComputer.ShouldUseBatchCompute(batchCount)
+
+			if useSQ8 {
+				// Ensure querySQ8 is correctly set in context for useSQ8 path
+				if len(ctx.querySQ8) == 0 {
+					ctx.querySQ8 = h.quantizer.Encode(query, nil)
 				}
+
+				for i, nid := range ctx.scratchIDs {
+					cID := chunkID(nid)
+					cOff := chunkOffset(nid)
+					dims := int(h.dims.Load())
+					off := int(cOff) * dims
+
+					if int(cID) < len(data.VectorsSQ8) && data.VectorsSQ8[cID] != nil && off+dims <= len(*data.VectorsSQ8[cID]) {
+						d := simd.EuclideanDistanceSQ8(ctx.querySQ8, (*data.VectorsSQ8[cID])[off:off+dims])
+						dists[i] = float32(d)
+					} else {
+						dists[i] = math.MaxFloat32
+					}
+				}
+			} else if useBatchCompute {
+				// Vectorized batch distance computation using Arrow compute
+				// Gather vectors for batch processing
+				if cap(ctx.scratchVecs) < batchCount {
+					ctx.scratchVecs = make([][]float32, batchCount*2)
+				}
+				vecs := ctx.scratchVecs[:batchCount]
+
+				for i, nid := range ctx.scratchIDs {
+					vecs[i] = h.mustGetVectorFromData(data, nid)
+				}
+
+				// Use batch computer for vectorized distances
+				batchDists, err := h.batchComputer.ComputeL2Distances(query, vecs)
+				if err != nil {
+					// Fallback to SIMD on error
+					simd.EuclideanDistanceBatch(query, vecs, dists)
+				} else {
+					copy(dists, batchDists)
+				}
+			} else {
+				// Float32 Path (SIMD for small batches)
+				if cap(ctx.scratchVecs) < batchCount {
+					ctx.scratchVecs = make([][]float32, batchCount*2)
+				}
+				vecs := ctx.scratchVecs[:batchCount]
+
+				for i, nid := range ctx.scratchIDs {
+					vecs[i] = h.mustGetVectorFromData(data, nid)
+				}
+				simd.EuclideanDistanceBatch(query, vecs, dists)
 			}
 
-			if shouldAdd {
-				if resultSet.Len() >= ef {
-					resultSet.Pop()
+			// 3. Process Results
+			for i, neighborID := range ctx.scratchIDs {
+				dist := dists[i]
+
+				// Update closest
+				if dist < closestDist {
+					closest = neighborID
+					closestDist = dist
 				}
-				resultSet.Push(Candidate{ID: neighborID, Dist: dist})
+
+				// Check filter if provided
+				if filter != nil && !filter.Contains(int(neighborID)) {
+					continue
+				}
+
+				// Update result set - only add if not deleted
+				isDeleted := h.IsDeleted(neighborID)
+				shouldAdd := !isDeleted && resultSet.Len() < ef
+				if !isDeleted && !shouldAdd {
+					worst, ok := resultSet.Peek()
+					if ok && dist < worst.Dist {
+						shouldAdd = true
+					}
+				}
+
+				if shouldAdd {
+					if resultSet.Len() >= ef {
+						resultSet.Pop()
+					}
+					resultSet.Push(Candidate{ID: neighborID, Dist: dist})
+				}
+
+				// Always add to candidates to maintain graph navigability
+				ctx.candidates.Push(Candidate{ID: neighborID, Dist: dist})
+
 			}
-
-			// Always add to candidates to maintain graph navigability
-			ctx.candidates.Push(Candidate{ID: neighborID, Dist: dist})
-
 		}
-	}
 
-	// For layer 0, we leave results in resultSet for the caller to extract.
+		// For layer 0, we leave results in resultSet for the caller to extract.
+
+	}
 
 	return closest, closestDist
 }

@@ -496,7 +496,7 @@ func (g *Gossip) getUpdatesForPacket(limitBytes int, skipID string) ([]byte, int
 	// Max updates cap to fit in uint8 NumUpdates (255)
 	maxUpdates := 255
 
-	var buf []byte = make([]byte, limitBytes)
+	buf := make([]byte, limitBytes)
 	offset := 0
 	count := 0
 
@@ -714,7 +714,7 @@ func (g *Gossip) GetMemberByAddr(addr string) (*Member, bool) {
 	// Normalize addr (remove port if present? strict match for now)
 	// We assume addr matches one of the stored addresses exactly.
 	// For better matching, we might want to match Host only if ports differ, but let's stick to exact match first.
-	
+
 	// Check self first
 	if g.Config.Addr == addr || g.Config.GRPCAddr == addr || g.Config.MetaAddr == addr {
 		// Return self as member
@@ -726,12 +726,12 @@ func (g *Gossip) GetMemberByAddr(addr string) (*Member, bool) {
 		if m.Addr == addr || m.GRPCAddr == addr || m.MetaAddr == addr {
 			return m, true
 		}
-		
+
 		// Handle "Host:Port" matching against purely "Host" or "IP" if needed?
 		// For now, assume exact match or standard "Host:Port" format.
 		// If the input is just an IP (from peer.FromContext), we might need to match host part.
 	}
-	
+
 	// Fallback: Check host part only?
 	host, _, err := net.SplitHostPort(addr)
 	if err == nil {

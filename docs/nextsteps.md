@@ -54,3 +54,24 @@ This section tracks technical debt and minor improvements identified in code com
 
 - **`scripts/partition_test.sh`**: Use CLI or API to check member count and list instead of grep/sleep.
 - **`internal/store/arrow_insert_test.go`**: Implement skipped tests when full vector storage is ready.
+
+## Short-Term: Lint & Code Quality
+
+### 1. Critical Fixes (StaticCheck & ErrCheck)
+
+- **`internal/simd/sq8_test.go`**: Replace deprecated `math/rand.Read` with `crypto/rand` or `math/rand/v2`.
+- **`internal/store/arrow_hnsw_insert.go`**: Remove empty branch.
+- **`internal/store/hnsw_autoshard_repro_test.go`**: Remove empty branch.
+- **Global**: Fix 50+ `errcheck` issues (missing error handling).
+
+### 2. Performance (Prealloc)
+
+- **`internal/store/arrow_hnsw_insert.go`**: Pre-allocate `selected` and `selectedVecs` slices.
+- **`internal/mesh/sync/sync_worker.go`**: Pre-allocate `peers`.
+- **`internal/store/hybrid_search_test.go`**: Pre-allocate `results`.
+
+### 3. Cleanup (Unparam & GoCritic)
+
+- **`internal/store`**: Remove unused parameters or use `_` where appropriate.
+- **`internal/simd/sq8_arm64.go`**: Remove unused kernel declaration if not needed.
+- **`internal/store/store_query.go`**: Optimize string length check.

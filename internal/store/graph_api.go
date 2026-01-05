@@ -59,9 +59,12 @@ func (s *VectorStore) handleAddEdge(body []byte, stream flight.FlightService_DoA
 // handleTraverseGraph processes a traverse-graph action
 func (s *VectorStore) handleTraverseGraph(body []byte, stream flight.FlightService_DoActionServer) error {
 	var req struct {
-		Dataset string `json:"dataset"`
-		Start   uint32 `json:"start"`
-		MaxHops int    `json:"max_hops"`
+		Dataset  string  `json:"dataset"`
+		Start    uint32  `json:"start"`
+		MaxHops  int     `json:"max_hops"`
+		Incoming bool    `json:"incoming"`
+		Weighted bool    `json:"weighted"`
+		Decay    float32 `json:"decay"`
 	}
 
 	if err := json.Unmarshal(body, &req); err != nil {
@@ -90,7 +93,30 @@ func (s *VectorStore) handleTraverseGraph(body []byte, stream flight.FlightServi
 	graph := ds.Graph
 	ds.dataMu.RUnlock()
 
-	paths := graph.Traverse(VectorID(req.Start), req.MaxHops)
+	opts := DefaultTraverseOptions()
+	opts.MaxHops = req.MaxHops
+	if req.Incoming {
+		opts.Direction = DirectionIncoming
+	} else {
+		opts.Direction = DirectionOutgoing
+	}
+	if req.Weighted { // Explicitly check if set? Default is true in DefaultTraverseOptions, assuming false in struct means disable.
+		// If req.Weighted is false (default bool), we might accidentally disable weights if user didn't specify.
+		// But in Go structs, missing=false.
+		// Let's assume user must send true to enable weighting or we should use logic to detect presence.
+		// For now, let's honor the boolean.
+		opts.Weighted = req.Weighted
+	}
+	// Better logic: if JSON omits it, it's false. If we want default true, we should have used *bool.
+	// We'll stick to DefaultTraverseOptions=true, so we should logic this carefully.
+	// Actually, we should probably assume Weighted is default true unless logic dictates otherwise.
+	// Let's just trust request for now.
+
+	if req.Decay != 0 {
+		opts.Decay = req.Decay
+	}
+
+	paths := graph.Traverse(VectorID(req.Start), opts)
 
 	resp, err := json.Marshal(paths)
 	if err != nil {

@@ -81,26 +81,28 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 			}
 
 			for j := 0; j < idCol.Len(); j++ {
-				if idCol.Value(j) == req.ID {
-					// Check if already deleted
-					ts := ds.Tombstones[i]
-					if ts != nil && ts.Contains(j) {
-						continue
-					}
-
-					// Found it! Set tombstone
-					ds.dataMu.RUnlock()
-					ds.dataMu.Lock()
-					if ds.Tombstones[i] == nil {
-						ds.Tombstones[i] = NewBitset()
-					}
-					ds.Tombstones[i].Set(j)
-					ds.dataMu.Unlock()
-					metrics.TombstonesTotal.WithLabelValues(req.Dataset).Inc()
-					found = true
-					ds.dataMu.RLock() // Re-lock for loop continuity or exit
-					break
+				if idCol.Value(j) != req.ID {
+					continue
 				}
+
+				// Check if already deleted
+				ts := ds.Tombstones[i]
+				if ts != nil && ts.Contains(j) {
+					continue
+				}
+
+				// Found it! Set tombstone
+				ds.dataMu.RUnlock()
+				ds.dataMu.Lock()
+				if ds.Tombstones[i] == nil {
+					ds.Tombstones[i] = NewBitset()
+				}
+				ds.Tombstones[i].Set(j)
+				ds.dataMu.Unlock()
+				metrics.TombstonesTotal.WithLabelValues(req.Dataset).Inc()
+				found = true
+				ds.dataMu.RLock() // Re-lock for loop continuity or exit
+				break
 			}
 			if found {
 				break

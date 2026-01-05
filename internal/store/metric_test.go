@@ -29,6 +29,7 @@ func TestHNSW_Metrics(t *testing.T) {
 	ds := &Dataset{
 		Name:    "metrics_test",
 		Records: []arrow.RecordBatch{rec},
+		Schema:  rec.Schema(),
 	}
 
 	t.Run("MetricCosine", func(t *testing.T) {
@@ -90,6 +91,7 @@ func TestShardedHNSW_Metrics(t *testing.T) {
 	ds := &Dataset{
 		Name:    "sharded_metrics_test",
 		Records: []arrow.RecordBatch{rec},
+		Schema:  rec.Schema(),
 	}
 
 	t.Run("Cosine", func(t *testing.T) {

@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"sync/atomic"
 
+	"github.com/23skdu/longbow/internal/simd"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"golang.org/x/sync/errgroup"
@@ -64,7 +65,12 @@ func NewArrowHNSW(dataset *Dataset, config ArrowHNSWConfig, locStore *ChunkedLoc
 		efConstruction: config.EfConstruction,
 		ml:             1.0 / math.Log(float64(config.M)),
 		deleted:        NewBitset(), // Initial capacity, grows
+		metric:         config.Metric,
+		vectorColIdx:   -1,
 	}
+
+	h.distFunc = h.resolveDistanceFunc()
+	h.batchDistFunc = h.resolveBatchDistanceFunc()
 
 	// Initialize measured locks
 	for i := 0; i < len(h.shardedLocks); i++ {
@@ -279,4 +285,36 @@ func (h *ArrowHNSW) EstimateMemory() int64 {
 func (h *ArrowHNSW) Close() error {
 	// TODO: Clean up resources
 	return nil
+}
+
+// resolveDistanceFunc returns the distance function based on configuration.
+func (h *ArrowHNSW) resolveDistanceFunc() func(a, b []float32) float32 {
+	switch h.metric {
+	case MetricCosine:
+		return simd.CosineDistance
+	case MetricDotProduct:
+		// For HNSW minimization, negate Dot Product
+		return func(a, b []float32) float32 {
+			return -simd.DotProduct(a, b)
+		}
+	default: // Euclidean
+		return simd.EuclideanDistance
+	}
+}
+
+// resolveBatchDistanceFunc returns the batch distance function.
+func (h *ArrowHNSW) resolveBatchDistanceFunc() func(query []float32, vectors [][]float32, results []float32) {
+	switch h.metric {
+	case MetricCosine:
+		return simd.CosineDistanceBatch
+	case MetricDotProduct:
+		return func(query []float32, vectors [][]float32, results []float32) {
+			simd.DotProductBatch(query, vectors, results)
+			for i := range results {
+				results[i] = -results[i]
+			}
+		}
+	default:
+		return simd.EuclideanDistanceBatch
+	}
 }

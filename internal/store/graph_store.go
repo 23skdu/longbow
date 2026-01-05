@@ -411,9 +411,38 @@ type Path struct {
 	Weight float32    // Cumulative path weight
 }
 
-// Traverse performs BFS traversal from start node up to maxHops depth
+// Direction of graph traversal
+type Direction int
+
+const (
+	DirectionOutgoing Direction = iota
+	DirectionIncoming
+	DirectionBoth
+)
+
+// TraverseOptions configures the graph traversal
+type TraverseOptions struct {
+	Direction     Direction // Which edges to follow
+	MaxHops       int       // Maximum depth
+	Decay         float32   // Weight decay per hop (e.g., 0.9)
+	TopKNeighbors int       // Max neighbors to explore per node (0 = unlimited)
+	Weighted      bool      // Use edge weights in path calculation
+}
+
+// DefaultTraverseOptions returns sensible defaults
+func DefaultTraverseOptions() TraverseOptions {
+	return TraverseOptions{
+		Direction:     DirectionOutgoing,
+		MaxHops:       3,
+		Decay:         0.8,
+		TopKNeighbors: 0,
+		Weighted:      true,
+	}
+}
+
+// Traverse performs graph traversal with specified options
 // Holds Global Data Read Lock for duration to ensure consistent snapshot.
-func (gs *GraphStore) Traverse(start VectorID, maxHops int) []Path {
+func (gs *GraphStore) Traverse(start VectorID, opts TraverseOptions) []Path {
 	startTime := time.Now()
 	defer func() {
 		metrics.GraphTraversalDurationSeconds.Observe(time.Since(startTime).Seconds())
@@ -423,80 +452,136 @@ func (gs *GraphStore) Traverse(start VectorID, maxHops int) []Path {
 	defer gs.dataMu.RUnlock()
 
 	var paths []Path
-	visited := make(map[VectorID]bool)
+	visited := make(map[VectorID]float32) // Visit score (higher is better/earlier)
 
 	// BFS queue
-	type queueItem struct {
-		path  Path
-		depth int
-	}
-
 	queue := []queueItem{{
-		path:  Path{Nodes: []VectorID{start}, Weight: 0},
-		depth: 0,
+		path:  Path{Nodes: []VectorID{start}, Weight: 1.0},
+		score: 1.0,
 	}}
+	visited[start] = 1.0
 
 	for len(queue) > 0 {
 		item := queue[0]
 		queue = queue[1:]
 
-		current := item.path.Nodes[len(item.path.Nodes)-1]
-
-		// Get indices from Sharded Index
-		shard := gs.shardForVectorID(current)
-		gs.indexShards[shard].RLock()
-		indices := make([]int, len(gs.subjectIndex[current]))
-		copy(indices, gs.subjectIndex[current])
-		gs.indexShards[shard].RUnlock()
-
-		for _, idx := range indices {
-			// reconstruct edge values (safe since we hold dataMu.RLock)
-			nextNode := gs.objects[idx]
-			weight := gs.weights[idx]
-
-			// Skip if already visited in this path
-			if visited[nextNode] {
-				continue
-			}
-
-			// Create new path
-			newNodes := make([]VectorID, len(item.path.Nodes)+1)
-			copy(newNodes, item.path.Nodes)
-			newNodes[len(item.path.Nodes)] = nextNode
-
-			// We need to append the Edge struct for API compatibility
-			edgeStr := gs.getEdgeAt(idx)
-
-			newEdges := make([]Edge, len(item.path.Edges)+1)
-			copy(newEdges, item.path.Edges)
-			newEdges[len(item.path.Edges)] = edgeStr
-
-			newPath := Path{
-				Nodes:  newNodes,
-				Edges:  newEdges,
-				Weight: item.path.Weight + weight,
-			}
-
-			paths = append(paths, newPath)
-
-			// Continue traversal if not at max depth
-			if item.depth+1 < maxHops {
-				queue = append(queue, queueItem{
-					path:  newPath,
-					depth: item.depth + 1,
-				})
-			}
+		if len(item.path.Nodes) > opts.MaxHops+1 { // +1 because start node counts
+			continue
 		}
 
-		// Mark current as visited after processing
-		visited[current] = true
+		// Add valid paths (skip single start node path if not desired, but usually we return all sub-paths)
+		if len(item.path.Nodes) > 1 {
+			paths = append(paths, item.path)
+		}
+
+		if len(item.path.Nodes) >= opts.MaxHops+1 {
+			continue // Stop expanding
+		}
+
+		current := item.path.Nodes[len(item.path.Nodes)-1]
+
+		// Collect neighbor candidates based on direction
+		var indices []int
+
+		// Outgoing: subjectIndex[current]
+		if opts.Direction == DirectionOutgoing || opts.Direction == DirectionBoth {
+			shard := gs.shardForVectorID(current)
+			gs.indexShards[shard].RLock()
+			indices = append(indices, gs.subjectIndex[current]...)
+			gs.indexShards[shard].RUnlock()
+		}
+
+		// Incoming: objectIndex[current]
+		// For incoming, 'current' is the Object. We look for Subjects.
+		// NOTE: indices here point to the edge. The "next" node depends on edge direction.
+		var incomingIndices []int
+		if opts.Direction == DirectionIncoming || opts.Direction == DirectionBoth {
+			shard := gs.shardForVectorID(current)
+			gs.indexShards[shard].RLock()
+			incomingIndices = append(incomingIndices, gs.objectIndex[current]...)
+			gs.indexShards[shard].RUnlock()
+		}
+
+		// Process neighbors
+		for _, idx := range indices {
+			// OUTGOING: current -> next
+			nextNode := gs.objects[idx] // The Object is the target
+			edgeWeight := gs.weights[idx]
+			if !opts.Weighted {
+				edgeWeight = 1.0
+			}
+
+			gs.processNeighbor(nextNode, idx, edgeWeight, item, opts, visited, &queue)
+		}
+
+		for _, idx := range incomingIndices {
+			// INCOMING: next -> current
+			nextNode := gs.subjects[idx] // The Subject is the source (next step in reverse traversal)
+			edgeWeight := gs.weights[idx]
+			if !opts.Weighted {
+				edgeWeight = 1.0
+			}
+
+			gs.processNeighbor(nextNode, idx, edgeWeight, item, opts, visited, &queue)
+		}
 	}
 
 	return paths
 }
 
+type queueItem struct {
+	path  Path
+	score float32
+}
+
+// processNeighbor is a helper to extend paths
+func (gs *GraphStore) processNeighbor(nextNode VectorID, edgeIdx int, edgeWeight float32, item queueItem, opts TraverseOptions, visited map[VectorID]float32, queue *[]queueItem) {
+	// Decay score
+	decay := opts.Decay
+	if decay == 0 {
+		decay = 1.0
+	}
+
+	newScore := item.score * decay
+	if opts.Weighted {
+		newScore *= edgeWeight
+	}
+
+	// Cycle detection / Visited check with score
+	if prevScore, seen := visited[nextNode]; seen {
+		// If we found a significantly better path, revisit?
+		// For basic DAG/Tree traversal we don't revisit.
+		// If we want Dijkstra-like behavior, we update if newScore > prevScore.
+		if newScore <= prevScore {
+			return
+		}
+	}
+	visited[nextNode] = newScore
+
+	// Create new path
+	newNodes := make([]VectorID, len(item.path.Nodes)+1)
+	copy(newNodes, item.path.Nodes)
+	newNodes[len(item.path.Nodes)] = nextNode
+
+	edgeStr := gs.getEdgeAt(edgeIdx)
+	newEdges := make([]Edge, len(item.path.Edges)+1)
+	copy(newEdges, item.path.Edges)
+	newEdges[len(item.path.Edges)] = edgeStr
+
+	newPath := Path{
+		Nodes:  newNodes,
+		Edges:  newEdges,
+		Weight: item.path.Weight + edgeWeight,
+	}
+
+	*queue = append(*queue, queueItem{
+		path:  newPath,
+		score: newScore,
+	})
+}
+
 // TraverseParallel performs concurrent traversal from multiple starting points
-func (gs *GraphStore) TraverseParallel(starts []VectorID, maxHops int) map[VectorID][]Path {
+func (gs *GraphStore) TraverseParallel(starts []VectorID, opts TraverseOptions) map[VectorID][]Path {
 	results := make(map[VectorID][]Path)
 	var mu sync.Mutex
 	var wg sync.WaitGroup
@@ -505,7 +590,7 @@ func (gs *GraphStore) TraverseParallel(starts []VectorID, maxHops int) map[Vecto
 		wg.Add(1)
 		go func(s VectorID) {
 			defer wg.Done()
-			paths := gs.Traverse(s, maxHops)
+			paths := gs.Traverse(s, opts)
 			mu.Lock()
 			results[s] = paths
 			mu.Unlock()
@@ -640,4 +725,144 @@ func (gs *GraphStore) CommunityCount() int {
 	gs.dataMu.RLock()
 	defer gs.dataMu.RUnlock()
 	return len(gs.communities)
+}
+
+// RankWithGraph re-ranks search results using graph topology (GraphRAG).
+// It performs spreading activation from the initial results to boost connected nodes.
+// initial: vector search results
+// alpha: 0.0=vector score only, 1.0=graph score only
+// maxDepth: hops for spreading activation
+func (gs *GraphStore) RankWithGraph(initial []SearchResult, alpha float32, maxDepth int) []SearchResult {
+	if len(initial) == 0 {
+		return nil
+	}
+	if alpha <= 0 {
+		return initial
+	}
+	if alpha > 1.0 {
+		alpha = 1.0
+	}
+
+	// 1. Initialize scores
+	scores := make(map[VectorID]float32)
+	maxVecScore := float32(0.0)
+	for _, res := range initial {
+		scores[res.ID] = res.Score
+		if res.Score > maxVecScore {
+			maxVecScore = res.Score
+		}
+	}
+	if maxVecScore == 0 {
+		maxVecScore = 1.0
+	}
+
+	// Normalize vector scores
+	for id := range scores {
+		scores[id] /= maxVecScore
+	}
+
+	// 2. Spreading Activation (Graph Traversal)
+	// We spread activation from high-ranking nodes
+	graphScores := make(map[VectorID]float32)
+
+	seeds := make([]VectorID, 0, len(initial))
+	for _, res := range initial {
+		seeds = append(seeds, res.ID)
+	}
+
+	// Run parallel traversal from all seeds
+	opts := TraverseOptions{
+		Direction:     DirectionIncoming, // Spread influence from "connected to"
+		MaxHops:       maxDepth,
+		Decay:         0.5,
+		TopKNeighbors: 0,
+		Weighted:      true,
+	}
+	// For "Incoming", we effectively see which nodes point TO our result set.
+	// If many nodes point to X, X is important?
+	// Or if X points to Y?
+	// In RAG, if we find "Einstein", we want "Physics" (Subject->Object).
+	// So DirectionOutgoing might be better for "Concept Expansion".
+	// Let's use Outgoing for expansion.
+	opts.Direction = DirectionOutgoing
+
+	traversalResults := gs.TraverseParallel(seeds, opts)
+
+	// Accumulate graph scores
+	for _, paths := range traversalResults {
+		for _, path := range paths {
+			// Path: Seed -> A -> B
+			// Boost B based on Seed's original relevance * path weight
+			// Since path includes Seed, we skip index 0 in accumulation if we want pure expansion
+
+			// We give score to ALL nodes in path based on path weight?
+			// Path weight is sum of edge weights.
+			// Let's use the final node's visited score implicitly.
+			// Actually Traverse returns Path struct, but we need the 'score'.
+			// Our Traverse implementation currently calculates 'score' internally for pruning but doesn't expose it in Path struct (Path returns Weight which is sum).
+			// Path.Weight is summation.
+
+			// Simplified scoring:
+			// Score(Node) += SeedScore * (1 / (1 + Depth)) * PathWeight
+			// But Traverse returns discrete paths.
+
+			if len(path.Nodes) < 1 {
+				continue
+			}
+
+			seedID := path.Nodes[0]
+			seedScore := scores[seedID]
+
+			// Last node gets the boost
+			target := path.Nodes[len(path.Nodes)-1]
+
+			// Simple decay
+			dist := len(path.Nodes) - 1
+			decay := float32(1.0) / float32(dist+1) // 1, 0.5, 0.33
+
+			graphScores[target] += seedScore * decay * (1.0 + path.Weight) // Boost by edge weights
+		}
+	}
+
+	// Normalize graph scores
+	maxGraphScore := float32(0.0)
+	for _, s := range graphScores {
+		if s > maxGraphScore {
+			maxGraphScore = s
+		}
+	}
+	if maxGraphScore == 0 {
+		maxGraphScore = 1.0
+	}
+	for id := range graphScores {
+		graphScores[id] /= maxGraphScore
+	}
+
+	// 3. Combine Scores
+	// Final = (1-alpha)*Vec + alpha*Graph
+	finalScores := make(map[VectorID]float32)
+
+	// Collect all unique IDs involved
+	allIDs := make(map[VectorID]struct{})
+	for id := range scores {
+		allIDs[id] = struct{}{}
+	}
+	for id := range graphScores {
+		allIDs[id] = struct{}{}
+	}
+
+	for id := range allIDs {
+		vecS := scores[id]        // 0 if not in initial
+		graphS := graphScores[id] // 0 if not reached
+
+		finalScores[id] = (1.0-alpha)*vecS + alpha*graphS
+	}
+
+	// 4. Convert to SearchResult
+	results := make([]SearchResult, 0, len(finalScores))
+	for id, s := range finalScores {
+		results = append(results, SearchResult{ID: id, Score: s})
+	}
+
+	return dedupeAndSort(results, len(initial)*2) // Return expanded set
 }

@@ -11,7 +11,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 )
 
-func makeShardedTestRecord(mem memory.Allocator, dims int, numVectors int) arrow.RecordBatch {
+func makeShardedTestRecord(mem memory.Allocator, dims, numVectors int) arrow.RecordBatch {
 	schema := arrow.NewSchema([]arrow.Field{
 		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
 		{Name: "vector", Type: arrow.FixedSizeListOf(int32(dims), arrow.PrimitiveTypes.Float32)},
@@ -201,7 +201,7 @@ func TestShardedHNSW_ParallelAdds(t *testing.T) {
 
 	for g := 0; g < numGoroutines; g++ {
 		wg.Add(1)
-		go func(goroutineID int) {
+		go func() {
 			defer wg.Done()
 			mem := memory.NewGoAllocator()
 			rec := makeShardedTestRecord(mem, 3, vectorsPerGoroutine)
@@ -213,7 +213,7 @@ func TestShardedHNSW_ParallelAdds(t *testing.T) {
 					errCount.Add(1)
 				}
 			}
-		}(g)
+		}()
 	}
 
 	wg.Wait()
@@ -378,12 +378,12 @@ func TestShardedHNSW_ConcurrentAddAndSearch(t *testing.T) {
 	// Concurrent adders
 	for g := 0; g < 4; g++ {
 		wg.Add(1)
-		go func(id int) {
+		go func() {
 			defer wg.Done()
 			for i := 50; i < 100; i++ {
 				_, _ = sharded.AddSafe(rec, i, 0)
 			}
-		}(g)
+		}()
 	}
 
 	// Concurrent searchers

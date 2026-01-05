@@ -14,7 +14,7 @@ import (
 // extractVectorFromCol Tests
 // =============================================================================
 
-func wrapInBatch(mem memory.Allocator, arr arrow.Array) arrow.RecordBatch {
+func wrapInBatch(arr arrow.Array) arrow.RecordBatch {
 	// Create a schema with "vector" column
 	field := arrow.Field{Name: "vector", Type: arr.DataType()}
 	schema := arrow.NewSchema([]arrow.Field{field}, nil)
@@ -55,7 +55,7 @@ func TestExtractVectorFromCol_OutOfBounds(t *testing.T) {
 	arr := bldr.NewArray()
 	defer arr.Release()
 
-	rec := wrapInBatch(mem, arr)
+	rec := wrapInBatch(arr)
 	defer rec.Release()
 
 	// Test out of bounds
@@ -76,7 +76,7 @@ func TestExtractVectorFromCol_WrongType(t *testing.T) {
 	arr := bldr.NewArray()
 	defer arr.Release()
 
-	rec := wrapInBatch(mem, arr)
+	rec := wrapInBatch(arr)
 	defer rec.Release()
 
 	// Should return error for non-FixedSizeList
@@ -99,7 +99,7 @@ func TestExtractVectorFromCol_Success(t *testing.T) {
 	arr := bldr.NewArray()
 	defer arr.Release()
 
-	rec := wrapInBatch(mem, arr)
+	rec := wrapInBatch(arr)
 	defer rec.Release()
 
 	result, err := extractVectorFromCol(rec, 0)
@@ -325,7 +325,7 @@ func BenchmarkExtractVectorFromCol(b *testing.B) {
 	arr := bldr.NewArray()
 	defer arr.Release()
 
-	rec := wrapInBatch(mem, arr)
+	rec := wrapInBatch(arr)
 	defer rec.Release()
 
 	b.ResetTimer()

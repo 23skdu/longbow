@@ -111,7 +111,7 @@ func UnmarshalZeroCopy(payload *ZeroCopyPayload, mem memory.Allocator) (arrow.Re
 
 	bufferIdx := 0
 	for i, field := range schema.Fields() {
-		data, n, err := rebuildArray(mem, field.Type, payload.Meta[i], payload.Buffers, bufferIdx)
+		data, n, err := rebuildArray(field.Type, payload.Meta[i], payload.Buffers, bufferIdx)
 		if err != nil {
 			return nil, fmt.Errorf("rebuild column %s: %w", field.Name, err)
 		}
@@ -128,7 +128,7 @@ func UnmarshalZeroCopy(payload *ZeroCopyPayload, mem memory.Allocator) (arrow.Re
 	return array.NewRecordBatch(schema, cols, payload.RowCount), nil
 }
 
-func rebuildArray(mem memory.Allocator, dt arrow.DataType, meta ArrayStructure, allBuffers [][]byte, startIdx int) (arrow.ArrayData, int, error) {
+func rebuildArray(dt arrow.DataType, meta ArrayStructure, allBuffers [][]byte, startIdx int) (arrow.ArrayData, int, error) {
 	// Collect buffers for this node
 	nodeBuffers := make([]*memory.Buffer, meta.Buffers)
 	used := 0
@@ -172,7 +172,7 @@ func rebuildArray(mem memory.Allocator, dt arrow.DataType, meta ArrayStructure, 
 			return nil, 0, fmt.Errorf("unsupported nested type: %T", dt)
 		}
 
-		childData, n, err := rebuildArray(mem, childType, childMeta, allBuffers, startIdx+used)
+		childData, n, err := rebuildArray(childType, childMeta, allBuffers, startIdx+used)
 		if err != nil {
 			return nil, 0, err
 		}

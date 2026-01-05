@@ -45,7 +45,9 @@ func TestDiscovery_Multi(t *testing.T) {
 
 	mp := NewMultiProvider(p1, p2)
 
-	peers, err := mp.FindPeers(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	peers, err := mp.FindPeers(ctx)
 	assert.NoError(t, err)
 	assert.Contains(t, peers, "p1")
 	// MDNS stub returns empty, so len should be 1

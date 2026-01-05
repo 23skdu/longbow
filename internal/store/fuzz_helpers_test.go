@@ -73,8 +73,8 @@ func GenerateRandomRecordBatch(mem memory.Allocator, rng *rand.Rand, schema *arr
 				if rng.Intn(10) == 0 {
 					fb.AppendNull()
 				} else {
-					len := rng.Intn(20)
-					bytes := make([]byte, len)
+					length := rng.Intn(20)
+					bytes := make([]byte, length)
 					rng.Read(bytes)
 					fb.Append(string(bytes))
 				}

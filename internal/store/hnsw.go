@@ -8,6 +8,7 @@ import (
 
 	"github.com/23skdu/longbow/internal/gpu"
 	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/simd"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/coder/hnsw"
@@ -63,7 +64,9 @@ type HNSWIndex struct {
 	gpuIndex    gpu.Index
 
 	// Metric for vector distance
-	Metric VectorMetric
+	Metric        DistanceMetric
+	distFunc      func(a, b []float32) float32
+	batchDistFunc func(query []float32, vectors [][]float32, results []float32)
 }
 
 // NewHNSWIndex creates a new HNSW index for the given dataset.
@@ -84,14 +87,18 @@ func NewHNSWIndex(dataset *Dataset, opts ...*HNSWConfig) *HNSWIndex {
 		parallelConfig:      config.ParallelSearch,
 		pqTrainingEnabled:   config.PQTrainingEnabled,
 		pqTrainingThreshold: config.PQTrainingThreshold,
-		Metric:              MetricEuclidean, // Fixed constant
+		Metric:              config.Metric,
 	}
 
 	// Initialize vector column cache to -1 (unknown)
 	h.vectorColIdx.Store(-1)
 
-	// Set distance metric
-	h.Graph.Distance = h.GetDistanceFunc()
+	// Initialize distance functions
+	h.distFunc = h.resolveDistanceFunc()
+	h.batchDistFunc = h.resolveBatchDistanceFunc()
+
+	// Set distance metric for the graph
+	h.Graph.Distance = h.distFunc
 
 	return h
 }
@@ -104,6 +111,7 @@ func DefaultConfig() *HNSWConfig {
 		ParallelSearch:      ParallelSearchConfig{Enabled: true, Threshold: 1000},
 		PQTrainingEnabled:   false,
 		PQTrainingThreshold: 100000,
+		Metric:              MetricEuclidean,
 	}
 }
 
@@ -114,6 +122,7 @@ type HNSWConfig struct {
 	ParallelSearch      ParallelSearchConfig
 	PQTrainingEnabled   bool
 	PQTrainingThreshold int
+	Metric              DistanceMetric
 }
 
 // RemapLocations updates the location mapping for a set of VectorIDs.
@@ -178,36 +187,29 @@ func (h *HNSWIndex) SetIndexedColumns(cols []string) {
 	// No-op for HNSW
 }
 
-// GetDistanceFunc returns the configured distance function, accounting for PQ state.
-// If PQ is enabled, it returns SDC on packed codes. Callers (Add/Search) must ensure inputs are packed.
-func (h *HNSWIndex) GetDistanceFunc() func(a, b []float32) float32 {
+// resolveDistanceFunc returns the configured distance function, accounting for PQ state.
+func (h *HNSWIndex) resolveDistanceFunc() func(a, b []float32) float32 {
 	h.pqCodesMu.RLock()
 	defer h.pqCodesMu.RUnlock()
 
 	if h.pqEnabled && h.pqEncoder != nil {
 		// SDC (Symmetric Distance Computation) on Packed Codes
-		// Both a and b are []float32 containing packed bytes
 		return func(a, b []float32) float32 {
 			return h.pqEncoder.SDCDistancePacked(a, b)
 		}
 	}
 
-	// Standard L2 default
 	switch h.Metric {
 	case MetricCosine:
 		return hnsw.CosineDistance
 	case MetricDotProduct:
-		// Negative dot product for minimization
+		// HNSW minimizes distance. For Dot Product (simd returns dot), we return -dot.
+		// NOTE: hnsw library might not support negative distances well in some heuristics?
+		// But strictly speaking, it just does comparisons.
+		// Assuming simd.DotProduct returns dot product (sum a*b).
+		// We negate it so higher dot product = lower "distance".
 		return func(a, b []float32) float32 {
-			var sum float32
-			minLen := len(a)
-			if len(b) < minLen {
-				minLen = len(b)
-			}
-			for i := 0; i < minLen; i++ {
-				sum += a[i] * b[i]
-			}
-			return -sum
+			return -simd.DotProduct(a, b)
 		}
 	default:
 		return hnsw.EuclideanDistance
@@ -423,6 +425,39 @@ func (h *HNSWIndex) GetDimension() uint32 {
 		}
 	}
 	return d
+}
+
+// resolveBatchDistanceFunc returns the batch distance function.
+func (h *HNSWIndex) resolveBatchDistanceFunc() func(query []float32, vectors [][]float32, results []float32) {
+	// For PQ, we might need a different batch function?
+	// This function seems to be used for standard float32 vectors.
+	// If PQ enabled, usage should call specialized PQ batch functions in search path.
+	// This resolver is for *full vector* batch distance (e.g. re-ranking).
+
+	switch h.Metric {
+	case MetricCosine:
+		return simd.CosineDistanceBatch
+	case MetricDotProduct:
+		// Wrap to negate results?
+		// simd.DotProductBatch returns dot products. HNSW expects distances.
+		// If we use this for re-ranking with sorting, we need to know the score type.
+		// HNSW Search logic usually sorts by Score Ascending (Distance).
+		// If we return raw Dot Product, we should treat it as Score Descending.
+		// However, standard interface usually returns "Distance".
+		return func(query []float32, vectors [][]float32, results []float32) {
+			simd.DotProductBatch(query, vectors, results)
+			for i := range results {
+				results[i] = -results[i]
+			}
+		}
+	default:
+		return simd.EuclideanDistanceBatch
+	}
+}
+
+// GetDistanceFunc is kept for legacy/interface compatibility, returning the pre-resolved func.
+func (h *HNSWIndex) GetDistanceFunc() func(a, b []float32) float32 {
+	return h.distFunc
 }
 
 // EstimateMemory implements VectorIndex.

@@ -501,8 +501,36 @@ def command_validate(args, data_client, meta_client):
         if len(res_ids) > 0 and res_ids[0] == 11:
             print(f"  PASS: Retrieved ID 11 (apple) as top result")
             found_h = True
+            print(f"  FAIL: Expected ID 11, got {res_ids}")
+
+    # =========================================================================
+    # Test 2b: Adaptive Hybrid Search
+    # =========================================================================
+    print("\n[Test 2b] Adaptive Hybrid Search (Alpha = -1.0)")
+    # Using previous data (ID 11 is "apple fruit")
+    # Query "apple" (1 token) -> Adaptive should guess Alpha=0.3 (Sparse bias)
+    # This should still find ID 11 easily.
+    
+    req_a = {
+        "dataset": dataset,
+        "vector": [0.5, 0.5, 0.5, 0.5],
+        "k": 1,
+        "text_query": "apple",
+        "alpha": -1.0 # Adaptive
+    }
+    action = flight.Action("VectorSearch", json.dumps(req_a).encode("utf-8"))
+    results = meta_client.do_action(action)
+    
+    found_a = False
+    for res in results:
+        body = json.loads(res.body.to_pybytes())
+        res_ids = body.get("ids", [])
+        if len(res_ids) > 0 and res_ids[0] == 11:
+            print(f"  PASS: Retrieved ID 11 with Adaptive Alpha")
+            found_a = True
         else:
             print(f"  FAIL: Expected ID 11, got {res_ids}")
+            # Identify what alpha was used if possible (server logs it)
 
     # =========================================================================
     # Test 3: Graph Traversal Correctness

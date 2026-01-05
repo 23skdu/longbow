@@ -27,50 +27,70 @@ loop_8_vectors:
     VXORPS  Y0, Y0, Y0
 
     // Loop over m subspaces
+    // Optimized code loading: Precompute 8 base pointers
+    // SI is ptr0 (codes + 0*m)
+    // We use R10, R12-R15, AX, BX for ptr1-ptr7
+
+    MOVQ    SI, R10
+    ADDQ    DX, R10 // ptr1 = codes + 1*m
+
+    MOVQ    R10, R12
+    ADDQ    DX, R12 // ptr2 = codes + 2*m
+
+    MOVQ    R12, R13
+    ADDQ    DX, R13 // ptr3 = codes + 3*m
+
+    MOVQ    R13, R14
+    ADDQ    DX, R14 // ptr4 = codes + 4*m
+
+    MOVQ    R14, R15
+    ADDQ    DX, R15 // ptr5 = codes + 5*m
+
+    MOVQ    R15, AX
+    ADDQ    DX, AX  // ptr6 = codes + 6*m
+
+    MOVQ    AX, BX
+    ADDQ    DX, BX  // ptr7 = codes + 7*m
+
+    // Loop over m subspaces
     MOVQ    $0, CX // CX = j (subspace index)
+
 subspace_loop:
     CMPQ    CX, DX
     JGE     subspace_done
 
-    // We want to load 8 codes for subspace CX:
-    // codes[0*m + CX], codes[1*m + CX], ..., codes[7*m + CX]
-    // These are at SI + 0*m + CX, SI + 1*m + CX, ...
+    // Load 8 indices using precomputed base pointers + CX offset
     
-    // Load 8 indices into Y1
-    MOVQ    SI, R10
-    ADDQ    CX, R10 // R10 = &codes[CX]
-    
-    // Scalar loads for now (simplest)
-    // TODO: Optimize code loading
-    MOVZXB  (R10), R11
+    // Vector 0
+    MOVZXB  (SI)(CX*1), R11
     PINSRD  $0, R11, X1
     
-    ADDQ    DX, R10
-    MOVZXB  (R10), R11
+    // Vector 1
+    MOVZXB  (R10)(CX*1), R11
     PINSRD  $1, R11, X1
     
-    ADDQ    DX, R10
-    MOVZXB  (R10), R11
+    // Vector 2
+    MOVZXB  (R12)(CX*1), R11
     PINSRD  $2, R11, X1
     
-    ADDQ    DX, R10
-    MOVZXB  (R10), R11
+    // Vector 3
+    MOVZXB  (R13)(CX*1), R11
     PINSRD  $3, R11, X1
     
-    ADDQ    DX, R10
-    MOVZXB  (R10), R11
+    // Vector 4
+    MOVZXB  (R14)(CX*1), R11
     PINSRD  $4, R11, X1
     
-    ADDQ    DX, R10
-    MOVZXB  (R10), R11
+    // Vector 5
+    MOVZXB  (R15)(CX*1), R11
     PINSRD  $5, R11, X1
     
-    ADDQ    DX, R10
-    MOVZXB  (R10), R11
+    // Vector 6
+    MOVZXB  (AX)(CX*1), R11
     PINSRD  $6, R11, X1
     
-    ADDQ    DX, R10
-    MOVZXB  (R10), R11
+    // Vector 7
+    MOVZXB  (BX)(CX*1), R11
     PINSRD  $7, R11, X1
     
     // table_base = DI + CX * 256 * 4

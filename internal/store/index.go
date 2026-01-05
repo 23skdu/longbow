@@ -54,12 +54,3 @@ type VectorIndex interface {
 	// Close releases index resources.
 	Close() error
 }
-
-// VectorMetric defines the distance metric type.
-type VectorMetric int
-
-const (
-	MetricEuclidean VectorMetric = iota
-	MetricCosine
-	MetricDotProduct
-)

@@ -68,6 +68,9 @@ type Dataset struct {
 	// Actual type is *hnsw2.ArrowHNSW, initialized externally
 	hnsw2Index interface{}
 	useHNSW2   bool // Feature flag
+
+	// Metric defines the distance metric for this dataset
+	Metric DistanceMetric
 }
 
 // IsSharded returns true if the dataset uses ShardedHNSW.
@@ -114,7 +117,23 @@ func NewDataset(name string, schema *arrow.Schema) *Dataset {
 		BM25Index:       NewBM25InvertedIndex(DefaultBM25Config()),
 		Graph:           NewGraphStore(),
 		useHNSW2:        useHNSW2,
+		Metric:          MetricEuclidean, // Default
 		// hnsw2Index will be initialized externally to avoid import cycle
+	}
+
+	// Parse metric from metadata if present
+	if schema != nil {
+		md := schema.Metadata()
+		if val, ok := md.GetValue("longbow.metric"); ok {
+			switch val {
+			case "cosine":
+				ds.Metric = MetricCosine
+			case "dot_product":
+				ds.Metric = MetricDotProduct
+			case "euclidean":
+				ds.Metric = MetricEuclidean
+			}
+		}
 	}
 
 	return ds

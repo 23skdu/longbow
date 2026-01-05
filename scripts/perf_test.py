@@ -363,7 +363,7 @@ def benchmark_vector_search(client: flight.FlightClient, name: str,
 
 def benchmark_hybrid_search(client: flight.FlightClient, name: str,
                             query_vectors: np.ndarray, k: int,
-                            text_queries: list) -> BenchmarkResult:
+                            text_queries: list, alpha: float = 0.5) -> BenchmarkResult:
     """Benchmark hybrid search (dense vectors + sparse text) using DoAction(VectorSearch)."""
     num_queries = len(query_vectors)
     print(f"\n[HYBRID] Running {num_queries:,} hybrid searches (k={k})...")
@@ -382,7 +382,8 @@ def benchmark_hybrid_search(client: flight.FlightClient, name: str,
             "vector": qvec.tolist(),
             "text_query": text_query,
             "k": k,
-            "alpha": 0.5,
+            "k": k,
+            "alpha": alpha,
         }).encode("utf-8")
 
         start = time.time()
@@ -839,6 +840,7 @@ def main():
 
     # Hybrid search
     parser.add_argument("--hybrid", action="store_true", help="Run hybrid search benchmark")
+    parser.add_argument("--hybrid-alpha", default=0.5, type=float, help="Alpha for hybrid search (-1.0 for adaptive)")
     parser.add_argument("--text-field", default="meta", help="Text field for sparse search")
 
     # Concurrent load
@@ -937,8 +939,9 @@ def main():
         query_vectors = generate_query_vectors(args.query_count, args.dim)
         text_queries = ["machine learning neural"] * args.query_count
         # Hybrid Search goes to Meta Server
+        # Hybrid Search goes to Meta Server
         results.append(benchmark_hybrid_search(
-            meta_client, args.name, query_vectors, args.search_k, text_queries
+            meta_client, args.name, query_vectors, args.search_k, text_queries, args.hybrid_alpha
         ))
 
     # Meta Plane operations (Graph Traversal)

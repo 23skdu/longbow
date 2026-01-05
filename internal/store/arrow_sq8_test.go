@@ -58,7 +58,7 @@ func TestSQ8Indexing(t *testing.T) {
 	rec.Retain()
 
 	// Add batch
-	ids, err := idx.AddBatch([]arrow.RecordBatch{rec}, makeRangeHelper(0, n), make([]int, n))
+	ids, err := idx.AddBatch([]arrow.RecordBatch{rec}, makeRangeHelper(n), make([]int, n))
 	require.NoError(t, err)
 
 	// Verify that VectorsSQ8 is populated
@@ -149,7 +149,7 @@ func TestSQ8Refinement(t *testing.T) {
 	rec.Retain()
 
 	// Add batch
-	ids, err := idx.AddBatch([]arrow.RecordBatch{rec}, makeRangeHelper(0, n), make([]int, n))
+	ids, err := idx.AddBatch([]arrow.RecordBatch{rec}, makeRangeHelper(n), make([]int, n))
 	require.NoError(t, err)
 
 	// Search
@@ -183,10 +183,10 @@ func TestSQ8Refinement(t *testing.T) {
 	assert.True(t, hasFraction, "Results should have fractional scores indicating exact re-ranking (unless all 0)")
 }
 
-func makeRangeHelper(minVal, maxVal int) []int {
-	a := make([]int, maxVal-minVal)
+func makeRangeHelper(maxVal int) []int {
+	a := make([]int, maxVal)
 	for i := range a {
-		a[i] = minVal + i
+		a[i] = i
 	}
 	return a
 }

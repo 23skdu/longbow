@@ -104,9 +104,20 @@ func TestRefutation(t *testing.T) {
 	require.NoError(t, nodeB.Start())
 	defer nodeB.Stop()
 
-	// Join
+	// Join bidirectional to ensure both know each other
 	require.NoError(t, nodeA.Join(fmt.Sprintf("127.0.0.1:%d", portB)))
-	time.Sleep(500 * time.Millisecond)
+	require.NoError(t, nodeB.Join(fmt.Sprintf("127.0.0.1:%d", portA)))
+
+	// Wait for convergence ensuring nodeA knows nodeB
+	require.Eventually(t, func() bool {
+		m := nodeA.GetMembers()
+		for _, mem := range m {
+			if mem.ID == "nodeB" && mem.Status == StatusAlive {
+				return true
+			}
+		}
+		return false
+	}, 2*time.Second, 100*time.Millisecond, "Node A should know Node B")
 
 	// 2. Artificially mark B as Suspect on Node A
 	nodeA.markSuspect("nodeB")

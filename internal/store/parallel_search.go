@@ -205,14 +205,10 @@ func (h *HNSWIndex) processChunk(query []float32, neighbors []hnsw.Node[VectorID
 			}
 		}
 	} else {
-		switch h.Metric {
-		case MetricEuclidean:
-			simd.EuclideanDistanceBatch(query, vecs, scores)
-		case MetricCosine:
-			simd.CosineDistanceBatch(query, vecs, scores)
-		case MetricDotProduct:
-			simd.DotProductBatch(query, vecs, scores)
-		default:
+		if h.batchDistFunc != nil {
+			h.batchDistFunc(query, vecs, scores)
+		} else {
+			// Fallback if not initialized (though it should be)
 			simd.EuclideanDistanceBatch(query, vecs, scores)
 		}
 	}

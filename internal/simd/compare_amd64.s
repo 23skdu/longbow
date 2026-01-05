@@ -618,27 +618,71 @@ store_512:
     JMP     loop_int64_512
 
 tail_int64_512:
-    // Fallback to AVX2 kernel (or scalar).
-    // Since we didn't export `tail` logic separately, just JMP to global symbol?
-    // Or duplicate/jump to scalar impl.
-    // Just use VZEROUPPER and simple scalar loop?
-    // Or JMP to tail_int64_avx2? If global? No, it's local label.
-    // Just return and let scalar loop run?
-    // No, I must finish processing.
-    // Calling scalar loop logic from here is hard without duplication.
-    // I will duplicate tiny loop logic.
-    // Actually, I can use the existing AVX2 kernel by jumping there?
-    // No, ABI setup.
-    // Just run scalar loop for remainder.
-    // (Omitted for brevity, but needed).
-    // JMP loop_scalar_int64_512 
-    // ... same as AVX2 but different registers.
     VZEROUPPER
-    RET // TODO: Implement tail properly or accept 8-alignment strictness?
-    // I will accept 8-alignment for now or rely on fallback in Go if I check mod?
-    // Go wrapper splits? No.
-    // I'll assume N >= 8. Remainder lost. (Must fix later if rigorous).
-    // But implementation plan can be iterative.
+    CMPQ    CX, $0
+    JE      done_int64_512
+
+t512_int64_loop:
+    CMPQ    CX, $0
+    JE      done_int64_512
+
+    MOVQ    (SI), R9
+    MOVQ    DX, R10 // val (DX maintained)
+
+    MOVB    $0, (DI)
+
+    CMPQ    BX, $0 // Eq
+    JNE     t512_neq
+    CMPQ    R9, R10
+    JNE     t512_adv
+    MOVB    $1, (DI)
+    JMP     t512_adv
+
+t512_neq:
+    CMPQ    BX, $1
+    JNE     t512_gt
+    CMPQ    R9, R10
+    JE      t512_adv
+    MOVB    $1, (DI)
+    JMP     t512_adv
+
+t512_gt:
+    CMPQ    BX, $2
+    JNE     t512_ge
+    CMPQ    R9, R10
+    JLE     t512_adv
+    MOVB    $1, (DI)
+    JMP     t512_adv
+
+t512_ge:
+    CMPQ    BX, $3
+    JNE     t512_lt
+    CMPQ    R9, R10
+    JLT     t512_adv
+    MOVB    $1, (DI)
+    JMP     t512_adv
+
+t512_lt:
+    CMPQ    BX, $4
+    JNE     t512_le
+    CMPQ    R9, R10
+    JGE     t512_adv
+    MOVB    $1, (DI)
+    JMP     t512_adv
+
+t512_le:
+    CMPQ    R9, R10
+    JG      t512_adv
+    MOVB    $1, (DI)
+
+t512_adv:
+    ADDQ    $8, SI
+    ADDQ    $1, DI
+    DECQ    CX
+    JMP     t512_int64_loop
+
+done_int64_512:
+    RET
 
 // Float512 similar pattern...
 // Float512 Kernel
@@ -733,18 +777,72 @@ store_f_512:
 
 tail_f32_512:
     VZEROUPPER
-    // Fallback to AVX2 loop logic?
-    // Or just RET and rely on external scalar logic if I had implemented it.
-    // Since I duplicated scalar logic in AVX2, I can jump there?
-    // No, stack frame differences? Frame size 0. JMP might work.
-    // JMP tail_f32_avx2?
-    // Need to reload X0 (val) because Z0 clobbered it? No Z0 includes X0.
-    // But tail_f32_avx2 is local.
-    // I will duplicate tiny loop again? No.
-    // Just JMP scalar implementation logic.
-    // Impl scalar here:
-    // ... (omitted, assuming batch size alignment or acceptable loss for now).
-    // Correctness fix:
-    // I will write jump to a shared global/local scalar implementation if labels allow?
-    // Local labels are function-scoped.
+    CMPQ    CX, $0
+    JE      end_f32_512
+
+    // Reload val X0 (generic scalar)
+    MOVSS   val+8(FP), X0
+
+scalar_f32_512_loop:
+    CMPQ    CX, $0
+    JE      end_f32_512
+    
+    MOVSS   (SI), X1
+    MOVB    $0, (DI)
+    
+    CMPQ    BX, $0
+    JE      sc512_eq_f32
+    CMPQ    BX, $1
+    JE      sc512_neq_f32
+    CMPQ    BX, $2
+    JE      sc512_gt_f32
+    CMPQ    BX, $3
+    JE      sc512_ge_f32
+    CMPQ    BX, $4
+    JE      sc512_lt_f32
+    JMP     sc512_le_f32
+
+sc512_eq_f32:
+    UCOMISS X0, X1
+    JNE     next_f32_512
+    JP      next_f32_512
+    MOVB    $1, (DI)
+    JMP     next_f32_512
+
+sc512_neq_f32:
+    UCOMISS X0, X1
+    JNE     set_f32_512
+    JP      set_f32_512
+    JMP     next_f32_512
+
+sc512_gt_f32:
+    UCOMISS X0, X1
+    JA      set_f32_512
+    JMP     next_f32_512
+
+sc512_ge_f32:
+    UCOMISS X0, X1
+    JAE     set_f32_512
+    JMP     next_f32_512
+
+sc512_lt_f32:
+    UCOMISS X0, X1
+    JB      set_f32_512
+    JMP     next_f32_512
+
+sc512_le_f32:
+    UCOMISS X0, X1
+    JBE     set_f32_512
+    JMP     next_f32_512
+
+set_f32_512:
+    MOVB    $1, (DI)
+
+next_f32_512:
+    ADDQ    $4, SI
+    ADDQ    $1, DI
+    DECQ    CX
+    JMP     scalar_f32_512_loop
+
+end_f32_512:
     RET

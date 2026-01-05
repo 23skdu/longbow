@@ -95,7 +95,6 @@ func (s *VectorStore) DoExchange(stream flight.FlightService_DoExchangeServer) e
 					s.logger.Error().Err(err).Msg("Failed to create WAL iterator")
 					return err
 				}
-				defer func() { _ = it.Close() }()
 
 				if err := it.Seek(lastSeq); err != nil {
 					s.logger.Error().Err(err).Msg("Failed to seek WAL")
@@ -186,6 +185,8 @@ func (s *VectorStore) DoExchange(stream flight.FlightService_DoExchangeServer) e
 					Uint64("last_seq", lastSeq).
 					Msg("Sent deltas to peer")
 
+				// Make sure to close the iterator
+				_ = it.Close()
 				// Send "done" or just end? Client reads until EOF?
 				// Client triggered it.
 			} else if cmd == "merkle_node" {

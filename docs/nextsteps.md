@@ -2,76 +2,52 @@
 
 This document outlines the next prioritized improvements for the Longbow vector database.
 
-## Priority 1: Features & Architecture
+## Priority 1: Core Architecture & Features
 
-### 1. Persistent Indexing (DiskANN-style)
+### 1. Pluggable Distance Metrics
 
-- **Location**: `internal/store/hnsw_*`
-- **Issue**: Current HNSW is purely in-memory.
-- **Plan**: Research and prototype a disk-backed compressed adjacency list (PQ + Disk) to support datasets larger than RAM.
-
-### 2. Pluggable Distance Metrics
-
+- **Impact**: **High**. Enables support for varied use cases like recommendation systems (Dot Product) and text semantic search (Cosine), moving beyond just Euclidean distance.
 - **Location**: `internal/store` & `internal/simd`
-- **Issue**: System is tied to Euclidean distance.
-- **Plan**: Refactor the distance interface to easily swap Inner Product (Dot Product) or Cosine Similarity, ensuring SIMD paths exist for all.
+- **Plan**: Refactor the distance interface to dynamically swap Inner Product (Dot Product) or Cosine Similarity, ensuring SIMD paths exist for all.
 
-### 3. Hybrid Search: Adaptive Alpha
+### 2. GraphRAG Enhancements
 
-- **Location**: `internal/store/hybrid_search.go`
-- **Issue**: Users must manually specify `alpha`.
-- **Plan**: Implement a "smart" mode that estimates `alpha` based on query characteristics (e.g., if query looks like a keyword, lean sparse; if sentence, lean dense).
+- **Impact**: **High**. Strengthens Longbow's position as a multi-modal store by improving graph traversal capabilities for complex retrieval augmented generation workflows.
+- **Location**: `internal/store/graph_store.go`
+- **Plan**: Implement weighted traversal, bidirectional edge lookups, and integration with vector search results for "Graph-biased" ranking.
 
----
+## Priority 2: Performance Optimizations
 
-## Codebase TODOs
+### 1. Vectorized Filter Evaluation
 
-This section tracks technical debt and minor improvements identified in code comments.
+- **Impact**: **Medium**. significantly speeds up filtered searches (e.g., "vectors where category='news'") by processing predicates using SIMD instead of scalar comparison.
+- **Location**: `internal/store/filter_evaluator.go`
+- **Plan**: Vectorize the evaluation loop to process 16 bytes (or more) at a time.
 
-### Core Store & Indexing
+### 2. Dynamic Oversampling for Filtering
 
-- **`internal/store/index_search.go`**: Oversample for filtering - implement adaptive or configurable factor.
-- **`internal/store/filter_evaluator.go`**: Vectorize filter evaluation loop (16 bytes at a time).
-- **`internal/store/arrow_hnsw_index.go`**: Convert general filters to bitsets for performance.
-- **`internal/store/arrow_hnsw_index.go`**: Clean up resources properly.
-- **`internal/store/sharded_hnsw.go`**: Pass metric type to ArrowHNSW once supported.
-- **`internal/store/wal_buffered.go`**: improved error logging.
-- **`internal/store/batched_wal.go`**: Recycle buffers to reduce allocations.
-- **`internal/store/batched_wal.go`**: Integrate `AsyncFsyncer` with `WALBackend` interface properly.
+- **Impact**: **Medium**. Improves recall/precision balance for filtered HNSW searches without manual tuning.
+- **Location**: `internal/store/index_search.go`
+- **Plan**: Implement adaptive oversampling factor based on filter selectivity estimates.
 
-### SIMD & Optimization
+## Priority 3: Technical Debt & Cleanup
 
-- **`internal/simd/pq_amd64.s`**: Optimize code loading.
-- **`internal/simd/compare_amd64.s`**: Implement tail properly or accept 8-alignment strictness.
+### 1. Remaining Linting & Code Quality
 
-### Networking & Mesh
+- **Impact**: **Low**. Improves maintainability and reduces subtle bugs.
+- **Tasks**:
+  - Resolve remaining `unparam` (unused parameters) linter warnings.
+  - Address `gocritic` feedback for style and minor performance wins.
+  - **`internal/simd/sq8_test.go`**: Replace deprecated `math/rand` with `crypto/rand` or `math/rand/v2`.
 
-- **`internal/mesh/discovery_mdns.go`**: Implement actual mDNS using a library or raw socket.
-- **`internal/mesh/region.go`**: Replace linear scan with spatial index (VP-Tree or BK-Tree) for large routing tables.
-- **`cmd/longbow/main.go`**: Refactor advertise address logic in Gossip constructor.
+### 2. Networking & Discovery
 
-### Tests & Infrastructure
+- **Impact**: **Low**. Improves operational stability for distributed deployments.
+- **Location**: `internal/mesh`
+- **Plan**: Replace naive mDNS implementation with a robust library and optimize member list scanning.
 
-- **`scripts/partition_test.sh`**: Use CLI or API to check member count and list instead of grep/sleep.
-- **`internal/store/arrow_insert_test.go`**: Implement skipped tests when full vector storage is ready.
+### 3. SIMD Tail Handling
 
-## Short-Term: Lint & Code Quality
-
-### 1. Critical Fixes (StaticCheck & ErrCheck)
-
-- **`internal/simd/sq8_test.go`**: Replace deprecated `math/rand.Read` with `crypto/rand` or `math/rand/v2`.
-- **`internal/store/arrow_hnsw_insert.go`**: Remove empty branch.
-- **`internal/store/hnsw_autoshard_repro_test.go`**: Remove empty branch.
-- **Global**: Fix 50+ `errcheck` issues (missing error handling).
-
-### 2. Performance (Prealloc)
-
-- **`internal/store/arrow_hnsw_insert.go`**: Pre-allocate `selected` and `selectedVecs` slices.
-- **`internal/mesh/sync/sync_worker.go`**: Pre-allocate `peers`.
-- **`internal/store/hybrid_search_test.go`**: Pre-allocate `results`.
-
-### 3. Cleanup (Unparam & GoCritic)
-
-- **`internal/store`**: Remove unused parameters or use `_` where appropriate.
-- **`internal/simd/sq8_arm64.go`**: Remove unused kernel declaration if not needed.
-- **`internal/store/store_query.go`**: Optimize string length check.
+- **Impact**: **Low**. Ensures correctness for edge-case vector dimensions.
+- **Location**: `internal/simd/compare_amd64.s`
+- **Plan**: Implement proper tail handling or enforce 8-byte alignment strictness.

@@ -131,7 +131,7 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 	}
 
 	name := query.Name
-	s.logger.Info().
+	s.logger.Debug().
 		Str("name", name).
 		Int("filters", len(query.Filters)).
 		Msg("DoGet called")

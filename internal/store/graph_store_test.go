@@ -216,7 +216,10 @@ func TestGraphStore_TraverseSingleHop(t *testing.T) {
 	_ = gs.AddEdge(Edge{Subject: VectorID(2), Predicate: "owns", Object: VectorID(12), Weight: 1.0})
 
 	// Traverse 1 hop from alice (1)
-	paths := gs.Traverse(VectorID(1), 1)
+	opts := DefaultTraverseOptions()
+	opts.MaxHops = 1
+	opts.Direction = DirectionOutgoing
+	paths := gs.Traverse(VectorID(1), opts)
 	if len(paths) != 2 {
 		t.Errorf("expected 2 paths from alice, got %d", len(paths))
 	}
@@ -243,7 +246,10 @@ func TestGraphStore_TraverseMultiHop(t *testing.T) {
 	_ = gs.AddEdge(Edge{Subject: VectorID(20), Predicate: "cites", Object: VectorID(30), Weight: 1.0})
 
 	// Traverse 3 hops from alice
-	paths := gs.Traverse(VectorID(1), 3)
+	opts := DefaultTraverseOptions()
+	opts.MaxHops = 3
+	opts.Direction = DirectionOutgoing
+	paths := gs.Traverse(VectorID(1), opts)
 
 	// Should find path to paper2 (30)
 	foundPaper2 := false
@@ -269,7 +275,10 @@ func TestGraphStore_TraverseNoCycles(t *testing.T) {
 	_ = gs.AddEdge(Edge{Subject: VectorID(3), Predicate: "rel", Object: VectorID(1), Weight: 1.0})
 
 	// Traverse should not hang due to cycle
-	paths := gs.Traverse(VectorID(1), 5)
+	opts := DefaultTraverseOptions()
+	opts.MaxHops = 5
+	opts.Direction = DirectionOutgoing
+	paths := gs.Traverse(VectorID(1), opts)
 
 	// Should complete without infinite loop
 	if len(paths) == 0 {
@@ -293,7 +302,10 @@ func TestGraphStore_TraverseParallel(t *testing.T) {
 
 	// Parallel traversal from multiple nodes
 	starts := []VectorID{0, 10, 20, 30}
-	results := gs.TraverseParallel(starts, 5)
+	opts := DefaultTraverseOptions()
+	opts.MaxHops = 5
+	opts.Direction = DirectionOutgoing
+	results := gs.TraverseParallel(starts, opts)
 
 	if len(results) != 4 {
 		t.Errorf("expected 4 result sets, got %d", len(results))

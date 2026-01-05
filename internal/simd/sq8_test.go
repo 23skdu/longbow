@@ -2,14 +2,10 @@ package simd
 
 import (
 	crypto_rand "crypto/rand"
-	"math/rand"
 	"testing"
-	"time"
 )
 
 func TestEuclideanDistanceSQ8(t *testing.T) {
-	// Seed RNG
-	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 
 	tests := []struct {
 		name string
@@ -27,8 +23,8 @@ func TestEuclideanDistanceSQ8(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			a := make([]byte, tt.size)
 			b := make([]byte, tt.size)
-			rng.Read(a)
-			rng.Read(b)
+			_, _ = crypto_rand.Read(a)
+			_, _ = crypto_rand.Read(b)
 
 			// Reference
 			expected := EuclideanSQ8Generic(a, b)

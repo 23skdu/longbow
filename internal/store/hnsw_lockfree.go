@@ -162,13 +162,6 @@ func (h *LockFreeHNSW) Add(id VectorID, vec []float32) {
 	}
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 func (h *LockFreeHNSW) randomLevel() int {
 	lvl := 0
 	for rand.Float64() < ML && lvl < MaxLayers-1 {

@@ -17,7 +17,7 @@ func TestWALRecovery_CorruptedTail(t *testing.T) {
 	// Setup
 	tmpDir, err := os.MkdirTemp("", "wal_recovery_test")
 	require.NoError(t, err)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Create a valid WAL with 2 entries
 	walPath := filepath.Join(tmpDir, "wal.log")
@@ -51,7 +51,7 @@ func TestWALRecovery_CorruptedTail(t *testing.T) {
 	require.NoError(t, err)
 
 	// Close store to flush everything
-	store.wal.Close()
+	_ = store.wal.Close()
 
 	// Now, corrupt the file!
 	// 1. Truncate the file to cut off half of the second record
@@ -83,7 +83,7 @@ func TestWALRecovery_CorruptedTail(t *testing.T) {
 func TestWALRecovery_ChecksumMismatch(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "wal_chk_test")
 	require.NoError(t, err)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	walPath := filepath.Join(tmpDir, "wal.log")
 
@@ -98,10 +98,10 @@ func TestWALRecovery_ChecksumMismatch(t *testing.T) {
 	binary.LittleEndian.PutUint32(header[20:24], 4)        // NameLen
 	binary.LittleEndian.PutUint64(header[24:32], 4)        // RecLen
 
-	f.Write(header)
-	f.Write([]byte("test")) // Name
-	f.Write([]byte("test")) // Rec (garbage)
-	f.Close()
+	_, _ = f.Write(header)
+	_, _ = f.WriteString("test") // Name
+	_, _ = f.WriteString("test") // Rec (garbage)
+	_ = f.Close()
 
 	mem := memory.NewGoAllocator()
 	store := NewVectorStore(mem, zerolog.Nop(), 1024*1024, 1024*1024, 0)

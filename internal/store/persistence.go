@@ -420,7 +420,7 @@ func (s *VectorStore) writeSnapshotItem(item snapItem, tempDir string) {
 					Str("name", item.Name).
 					Err(err).
 					Msg("Failed to write record to parquet snapshot")
-				f.Close()
+				_ = f.Close()
 				return
 			}
 		}
@@ -450,7 +450,7 @@ func (s *VectorStore) writeSnapshotItem(item snapItem, tempDir string) {
 					Str("name", item.Name).
 					Err(err).
 					Msg("Failed to write graph record to parquet snapshot")
-				f.Close()
+				_ = f.Close()
 				return
 			}
 		}

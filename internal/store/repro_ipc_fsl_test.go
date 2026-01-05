@@ -8,8 +8,8 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"github.com/apache/arrow-go/v18/arrow/memory"
-	"github.com/stretchr/testify/require"
 	"github.com/rs/zerolog"
+	"github.com/stretchr/testify/require"
 )
 
 func TestCastRecordToSchema_MissingFSL(t *testing.T) {
@@ -60,6 +60,6 @@ func TestCastRecordToSchema_MissingFSL(t *testing.T) {
 	w := ipc.NewWriter(&buf, ipc.WithSchema(schemaB), ipc.WithLZ4())
 	err = w.Write(out)
 	require.NoError(t, err, "IPC Write failed - suspect FSL child array issue")
-	w.Close()
+	require.NoError(t, w.Close())
 	t.Log("IPC Write successful")
 }

@@ -78,7 +78,7 @@ func TestPersistence_ReplayWAL_Corruption(t *testing.T) {
 		// Corrupt the checksum (first 4 bytes)
 		entry[0] ^= 0xFF
 
-		err := os.WriteFile(walPath, entry, 0644)
+		err := os.WriteFile(walPath, entry, 0o644)
 		require.NoError(t, err)
 
 		store := NewVectorStore(mem, logger, 1<<30, 0, time.Hour)
@@ -92,7 +92,7 @@ func TestPersistence_ReplayWAL_Corruption(t *testing.T) {
 	t.Run("TruncatedHeader", func(t *testing.T) {
 		walPath := filepath.Join(tmpDir, walFileName)
 		// Only write 10 bytes instead of 32
-		err := os.WriteFile(walPath, make([]byte, 10), 0644)
+		err := os.WriteFile(walPath, make([]byte, 10), 0o644)
 		require.NoError(t, err)
 
 		store := NewVectorStore(mem, logger, 1<<30, 0, time.Hour)
@@ -110,7 +110,7 @@ func TestPersistence_ReplayWAL_Corruption(t *testing.T) {
 		// Truncate the record data (last few bytes)
 		truncated := entry[:len(entry)-5]
 
-		err := os.WriteFile(walPath, truncated, 0644)
+		err := os.WriteFile(walPath, truncated, 0o644)
 		require.NoError(t, err)
 
 		store := NewVectorStore(mem, logger, 1<<30, 0, time.Hour)

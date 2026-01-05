@@ -47,7 +47,7 @@ func TestAutoSharding_ConcurrentWrites_Repro(t *testing.T) {
 		rowIdxs[i] = i
 		batchIdxs[i] = 0
 	}
-	index.AddBatch([]arrow.RecordBatch{preloadBatch}, rowIdxs, batchIdxs)
+	_, _ = index.AddBatch([]arrow.RecordBatch{preloadBatch}, rowIdxs, batchIdxs)
 	fmt.Println("Pre-load complete. Starting race...")
 
 	var wg sync.WaitGroup

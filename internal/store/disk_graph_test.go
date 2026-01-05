@@ -81,7 +81,7 @@ func TestDiskGraph_RoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewDiskGraph failed: %v", err)
 	}
-	defer dg.Close()
+	defer func() { _ = dg.Close() }()
 
 	// 4. Verify
 	// Check L0, Node 0

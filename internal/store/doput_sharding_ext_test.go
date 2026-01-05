@@ -330,7 +330,7 @@ func BenchmarkExtractVectorFromCol(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		extractVectorFromCol(rec, i%100)
+		_, _ = extractVectorFromCol(rec, i%100)
 	}
 }
 
@@ -344,6 +344,6 @@ func BenchmarkDatasetSearchDataset(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		ds.SearchDataset(query, 10)
+		_, _ = ds.SearchDataset(query, 10)
 	}
 }

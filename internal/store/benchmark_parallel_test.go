@@ -62,7 +62,7 @@ func BenchmarkParallelSearch(b *testing.B) {
 
 		// Add to index
 		for j := 0; j < int(rec.NumRows()); j++ {
-			ds.Index.AddByLocation(len(ds.Records)-1, j)
+			_, _ = ds.Index.AddByLocation(len(ds.Records)-1, j)
 		}
 		bld.Release()
 	}
@@ -83,7 +83,7 @@ func BenchmarkParallelSearch(b *testing.B) {
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			// Use k=1000 to trigger meaningful work
-			ds.Index.SearchVectors(query, 1000, nil)
+			_, _ = ds.Index.SearchVectors(query, 1000, nil)
 		}
 	})
 
@@ -95,7 +95,7 @@ func BenchmarkParallelSearch(b *testing.B) {
 		})
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			ds.Index.SearchVectors(query, 1000, nil)
+			_, _ = ds.Index.SearchVectors(query, 1000, nil)
 		}
 	})
 
@@ -107,7 +107,7 @@ func BenchmarkParallelSearch(b *testing.B) {
 		})
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			ds.Index.SearchVectors(query, 1000, nil)
+			_, _ = ds.Index.SearchVectors(query, 1000, nil)
 		}
 	})
 
@@ -119,7 +119,7 @@ func BenchmarkParallelSearch(b *testing.B) {
 		})
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			ds.Index.SearchVectors(query, 1000, nil)
+			_, _ = ds.Index.SearchVectors(query, 1000, nil)
 		}
 	})
 }

@@ -208,11 +208,12 @@ func (cb *CircuitBreaker) Execute(req func() (interface{}, error)) (interface{},
 
 	if err != nil {
 		cb.counts.onFailure()
-		if cb.state == StateClosed {
+		switch cb.state {
+		case StateClosed:
 			if cb.readyToTrip(cb.counts) {
 				cb.setState(StateOpen, time.Now())
 			}
-		} else if cb.state == StateHalfOpen {
+		case StateHalfOpen:
 			cb.setState(StateOpen, time.Now())
 		}
 	} else {

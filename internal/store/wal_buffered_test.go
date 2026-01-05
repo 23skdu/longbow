@@ -100,7 +100,7 @@ func TestBufferedWAL_FlushInterval(t *testing.T) {
 	assert.NotEmpty(t, backend.getWrites(), "Backend should have received writes after flush interval")
 	assert.True(t, backend.isSynced(), "Backend should be synced")
 
-	wal.Close()
+	_ = wal.Close()
 	assert.True(t, backend.isClosed())
 }
 
@@ -108,7 +108,7 @@ func TestBufferedWAL_SyncForce(t *testing.T) {
 	backend := &MockBackend{}
 	// Long flush interval
 	wal := NewBufferedWAL(backend, 1024*1024, 1*time.Minute)
-	defer wal.Close()
+	defer func() { _ = wal.Close() }()
 
 	pool := memory.NewGoAllocator()
 	schema := arrow.NewSchema([]arrow.Field{
@@ -122,7 +122,7 @@ func TestBufferedWAL_SyncForce(t *testing.T) {
 	defer rec.Release()
 
 	// Write
-	wal.Write("sync_ds", 2, 0, rec)
+	_ = wal.Write("sync_ds", 2, 0, rec)
 
 	// Backend possibly empty immediately
 
@@ -138,7 +138,7 @@ func TestBufferedWAL_BatchSizeTrigger(t *testing.T) {
 	backend := &MockBackend{}
 	// Small batch buffer
 	wal := NewBufferedWAL(backend, 100, 1*time.Minute)
-	defer wal.Close()
+	defer func() { _ = wal.Close() }()
 
 	pool := memory.NewGoAllocator()
 	schema := arrow.NewSchema([]arrow.Field{
@@ -151,7 +151,7 @@ func TestBufferedWAL_BatchSizeTrigger(t *testing.T) {
 	defer rec.Release()
 
 	// Only 1 write needed if it exceeds 100 bytes (header 32 + name + payload)
-	wal.Write("trigger", 3, 0, rec)
+	_ = wal.Write("trigger", 3, 0, rec)
 
 	// Give loop a tiny bit of time to grab the channel signal
 	time.Sleep(50 * time.Millisecond)
@@ -163,7 +163,7 @@ func TestBufferedWAL_ConcurrentSync(t *testing.T) {
 	backend := &MockBackend{}
 	// Large buffer to allow buildup, longer flush
 	wal := NewBufferedWAL(backend, 1024*1024, 100*time.Millisecond)
-	defer wal.Close()
+	defer func() { _ = wal.Close() }()
 
 	pool := memory.NewGoAllocator()
 	schema := arrow.NewSchema([]arrow.Field{
@@ -210,7 +210,7 @@ func TestBufferedWAL_ConcurrentSync(t *testing.T) {
 				return
 			default:
 				// Call Sync frequently
-				wal.Sync()
+				_ = wal.Sync()
 				time.Sleep(5 * time.Millisecond)
 			}
 		}
@@ -220,7 +220,7 @@ func TestBufferedWAL_ConcurrentSync(t *testing.T) {
 	close(stopSync)
 
 	// Final sync to ensure everything is flushed
-	wal.Sync()
+	_ = wal.Sync()
 
 	duration := time.Since(start)
 	t.Logf("Write/Sync Duration: %v", duration)

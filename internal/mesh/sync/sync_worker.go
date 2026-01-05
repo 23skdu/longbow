@@ -129,7 +129,7 @@ func (w *SyncWorker) syncPeer(p *PeerState) error {
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	client := flight.NewFlightServiceClient(conn)
 
@@ -236,7 +236,7 @@ func (w *SyncWorker) fetchRemoteMerkleRoot(addr, dataset string) ([32]byte, erro
 	if err != nil {
 		return [32]byte{}, err
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	client := flight.NewFlightServiceClient(conn)
 	stream, err := client.DoExchange(context.Background())

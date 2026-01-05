@@ -91,7 +91,7 @@ func (vs *VectorStore) CompactDataset(name string) error {
 	// We iterate locations and update them.
 	// We need to convert our internal remapping format to the one HNSW expects.
 	if hnsw, ok := ds.Index.(*HNSWIndex); ok {
-		hnsw.RemapFromBatchInfo(remapping)
+		_ = hnsw.RemapFromBatchInfo(remapping)
 	}
 
 	// 3. Fix up Tombstones (Bitsets)

@@ -13,9 +13,9 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"github.com/apache/arrow-go/v18/arrow/memory"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/rs/zerolog"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -31,7 +31,7 @@ func TestSyncWorker_Replication(t *testing.T) {
 		DataPath:         leaderDir,
 		SnapshotInterval: time.Hour,
 	}))
-	defer leaderStore.Close()
+	defer func() { _ = leaderStore.Close() }()
 
 	// 2. Start Leader gRPC Server
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
@@ -42,7 +42,7 @@ func TestSyncWorker_Replication(t *testing.T) {
 	dataServer := store.NewDataServer(leaderStore)
 	flight.RegisterFlightServiceServer(server, dataServer)
 
-	go server.Serve(lis)
+	go func() { _ = server.Serve(lis) }()
 	defer server.Stop()
 
 	// 3. Setup Follower Store
@@ -52,7 +52,7 @@ func TestSyncWorker_Replication(t *testing.T) {
 		DataPath:         followerDir,
 		SnapshotInterval: time.Hour,
 	}))
-	defer followerStore.Close()
+	defer func() { _ = followerStore.Close() }()
 
 	// 4. Create Record on Leader
 	schema := arrow.NewSchema([]arrow.Field{
@@ -77,7 +77,7 @@ func TestSyncWorker_Replication(t *testing.T) {
 
 	conn, err := grpc.NewClient(leaderAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	require.NoError(t, err)
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	client := flight.NewFlightServiceClient(conn)
 
 	putStream, err := client.DoPut(context.Background())
@@ -87,7 +87,7 @@ func TestSyncWorker_Replication(t *testing.T) {
 	writer.SetFlightDescriptor(&flight.FlightDescriptor{Path: []string{"ds1"}})
 	err = writer.Write(rec)
 	require.NoError(t, err)
-	writer.Close()
+	_ = writer.Close()
 	require.NoError(t, putStream.CloseSend())
 	_, err = putStream.Recv() // wait for ack
 	require.Equal(t, io.EOF, err)

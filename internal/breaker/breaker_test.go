@@ -19,11 +19,11 @@ func TestCircuitBreaker_StateTransitions(t *testing.T) {
 	assert.True(t, cb.Allow())
 
 	// Failure 1
-	cb.Execute(func() (interface{}, error) { return nil, assert.AnError })
+	_, _ = cb.Execute(func() (interface{}, error) { return nil, assert.AnError })
 	assert.Equal(t, StateClosed, cb.State())
 
 	// Failure 2 (Trips)
-	cb.Execute(func() (interface{}, error) { return nil, assert.AnError })
+	_, _ = cb.Execute(func() (interface{}, error) { return nil, assert.AnError })
 	assert.Equal(t, StateOpen, cb.State())
 	assert.False(t, cb.Allow())
 
@@ -35,7 +35,7 @@ func TestCircuitBreaker_StateTransitions(t *testing.T) {
 	assert.True(t, cb.Allow())
 
 	// Success in Half-Open -> Closed
-	cb.Execute(func() (interface{}, error) { return "ok", nil })
+	_, _ = cb.Execute(func() (interface{}, error) { return "ok", nil })
 	assert.Equal(t, StateClosed, cb.State())
 }
 
@@ -48,7 +48,7 @@ func TestCircuitBreaker_HalfOpenMaxRequests(t *testing.T) {
 	})
 
 	// Trip it
-	cb.Execute(func() (interface{}, error) { return nil, assert.AnError })
+	_, _ = cb.Execute(func() (interface{}, error) { return nil, assert.AnError })
 	assert.Equal(t, StateOpen, cb.State())
 
 	// Wait for timeout

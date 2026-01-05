@@ -36,7 +36,7 @@ type FSBackend struct {
 // NewWALBackend creates a new WALBackend.
 // It attempts to use io_uring if preferAsync is true and the platform supports it.
 // If directIO is true, it attempts to use Direct I/O (O_DIRECT/F_NOCACHE).
-func NewWALBackend(path string, preferAsync bool, directIO bool) (WALBackend, error) {
+func NewWALBackend(path string, preferAsync, directIO bool) (WALBackend, error) {
 	if preferAsync {
 		// NewUringBackend depends on the platform specific file (linux or stub)
 		// For now, UringBackend handles its own opening. We might want to pass directIO hint there too eventually.

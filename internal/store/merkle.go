@@ -54,8 +54,8 @@ func (t *MerkleTree) Update(id VectorID, ts int64) {
 	// For simplicity, we hash (ID | TS) and XOR into leaf
 	// Using XOR allows commutativity and easier updates
 	h := sha256.New()
-	binary.Write(h, binary.LittleEndian, uint32(id))
-	binary.Write(h, binary.LittleEndian, ts)
+	_ = binary.Write(h, binary.LittleEndian, uint32(id))
+	_ = binary.Write(h, binary.LittleEndian, ts)
 	itemHash := h.Sum(nil)
 
 	for i := 0; i < 32; i++ {

@@ -88,7 +88,7 @@ func TestDelete(t *testing.T) {
 	}
 
 	// Delete node 5
-	index.Delete(5)
+	_ = index.Delete(5)
 
 	// Search again
 	results, _ = index.Search(query, 10, 20, nil)
@@ -105,7 +105,7 @@ func TestDelete(t *testing.T) {
 
 	// Delete all
 	for i := 0; i < 10; i++ {
-		index.Delete(uint32(i))
+		_ = index.Delete(uint32(i))
 	}
 
 	results, _ = index.Search(query, 10, 20, nil)

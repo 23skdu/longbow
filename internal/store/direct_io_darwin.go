@@ -20,7 +20,7 @@ func OpenFileDirect(path string, flags int, perm os.FileMode) (*os.File, error) 
 	// F_NOCACHE turns off data caching in the kernel.
 	_, _, errno := syscall.Syscall(syscall.SYS_FCNTL, f.Fd(), syscall.F_NOCACHE, 1)
 	if errno != 0 {
-		f.Close()
+		_ = f.Close()
 		return nil, fmt.Errorf("failed to enable F_NOCACHE: %w", errno)
 	}
 

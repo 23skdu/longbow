@@ -7,8 +7,40 @@ import (
 	"github.com/23skdu/longbow/internal/metrics"
 )
 
+// EstimateAlpha estimates the optimal alpha value based on query characteristics.
+// Heuristic:
+// - Short queries (< 3 tokens) -> Keyword heavy (Sparse) -> Alpha 0.3
+// - Long queries (> 5 tokens) -> Natural language (Dense) -> Alpha 0.8
+// - Medium queries -> Balanced -> Alpha 0.5
+func EstimateAlpha(textQuery string) float32 {
+	// Simple tokenization by space
+	tokens := 0
+	inToken := false
+	for _, r := range textQuery {
+		if r == ' ' {
+			inToken = false
+		} else if !inToken {
+			inToken = true
+			tokens++
+		}
+	}
+
+	if tokens < 3 {
+		return 0.3
+	} else if tokens > 5 {
+		return 0.8
+	}
+	return 0.5
+}
+
 // SearchHybrid performs a hybrid search combining dense vector search and sparse keyword search.
+// If alpha is < 0, it is automatically estimated using EstimateAlpha.
 func SearchHybrid(ctx context.Context, s *VectorStore, name string, query []float32, textQuery string, k int, alpha float32, rrfK int) ([]SearchResult, error) {
+	// Adaptive Alpha
+	if alpha < 0 {
+		alpha = EstimateAlpha(textQuery)
+	}
+
 	defer func(start time.Time) {
 		metrics.SearchLatencySeconds.WithLabelValues(name, "hybrid_rrf").Observe(time.Since(start).Seconds())
 	}(time.Now())

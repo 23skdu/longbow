@@ -35,6 +35,13 @@ func (h *ArrowHNSW) AnalyzeGraph() GraphMetrics {
 	for i := 0; i < nodeCount; i++ {
 		cID := chunkID(uint32(i))
 		cOff := chunkOffset(uint32(i))
+
+		// Safety check for nil chunks (lazy allocation or incomplete graph)
+		if len(data.Counts) <= layer || len(data.Counts[layer]) <= int(cID) || data.Counts[layer][cID] == nil {
+			metrics.ZeroDegreeNodes++
+			continue
+		}
+
 		count := int(atomic.LoadInt32(&(*data.Counts[layer][cID])[cOff]))
 		metrics.TotalEdges += count
 		if count == 0 {

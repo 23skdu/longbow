@@ -14,7 +14,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 )
 
-func makeConcurrencyTestRecord(mem memory.Allocator, dims int, numVectors int) arrow.RecordBatch {
+func makeConcurrencyTestRecord(mem memory.Allocator, dims, numVectors int) arrow.RecordBatch {
 	schema := arrow.NewSchema([]arrow.Field{
 		{Name: "int64", Type: arrow.PrimitiveTypes.Int64},
 		{Name: "vector", Type: arrow.FixedSizeListOf(int32(dims), arrow.PrimitiveTypes.Float32)},
@@ -64,7 +64,7 @@ func TestHNSW_Concurrency_HighContention(t *testing.T) {
 	start := time.Now()
 	for i := 0; i < numGoroutines; i++ {
 		wg.Add(1)
-		go func(gID int) {
+		go func() {
 			defer wg.Done()
 			for j := 0; j < vectorsPerGoroutine; j++ {
 				rowIdx := rand.Intn(500)
@@ -75,7 +75,7 @@ func TestHNSW_Concurrency_HighContention(t *testing.T) {
 					fmt.Printf("Add error: %v\n", err)
 				}
 			}
-		}(i)
+		}()
 	}
 	wg.Wait()
 	duration := time.Since(start)

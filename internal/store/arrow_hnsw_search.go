@@ -108,8 +108,8 @@ func (h *ArrowHNSW) Search(query []float32, k, ef int, filter *Bitset) ([]Search
 		if useRefinement {
 			vec := h.mustGetVectorFromData(data, id)
 			if len(vec) == dims {
-				// Compute exact L2 distance
-				score = simd.EuclideanDistance(query, vec)
+				// Compute exact distance using configured metric
+				score = h.distFunc(query, vec)
 			}
 		}
 
@@ -228,6 +228,11 @@ func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef, layer in
 				}
 			}
 
+			// Verify concurrency
+			if atomic.LoadUint32(verAddr) != ver {
+				continue
+			}
+
 			// Commit visited state
 			for _, nid := range ctx.scratchIDs {
 				ctx.visited.Set(nid)
@@ -235,7 +240,7 @@ func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef, layer in
 
 			batchCount := len(ctx.scratchIDs)
 			if batchCount == 0 {
-				continue
+				break
 			}
 
 			// 2. Compute Distances - Batch Processing Phase
@@ -248,7 +253,7 @@ func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef, layer in
 			// Adaptive batching: Use BatchDistanceComputer for large candidate sets
 			useBatchCompute := h.batchComputer != nil && h.batchComputer.ShouldUseBatchCompute(batchCount)
 
-			if useSQ8 {
+			if useSQ8 && h.metric == MetricEuclidean {
 				// Ensure querySQ8 is correctly set in context for useSQ8 path
 				if len(ctx.querySQ8) == 0 {
 					ctx.querySQ8 = h.quantizer.Encode(query, nil)
@@ -267,7 +272,7 @@ func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef, layer in
 						dists[i] = math.MaxFloat32
 					}
 				}
-			} else if useBatchCompute {
+			} else if useBatchCompute && h.metric == MetricEuclidean {
 				// Vectorized batch distance computation using Arrow compute
 				// Gather vectors for batch processing
 				if cap(ctx.scratchVecs) < batchCount {
@@ -297,7 +302,7 @@ func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef, layer in
 				for i, nid := range ctx.scratchIDs {
 					vecs[i] = h.mustGetVectorFromData(data, nid)
 				}
-				simd.EuclideanDistanceBatch(query, vecs, dists)
+				h.batchDistFunc(query, vecs, dists)
 			}
 
 			// 3. Process Results
@@ -350,7 +355,8 @@ func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef, layer in
 func (h *ArrowHNSW) distance(query []float32, id uint32, data *GraphData) float32 {
 	// PQ check
 	// SQ8 Check
-	if h.quantizer != nil && len(data.VectorsSQ8) > 0 {
+	// SQ8 Check
+	if h.metric == MetricEuclidean && h.quantizer != nil && len(data.VectorsSQ8) > 0 {
 		cID := chunkID(id)
 		cOff := chunkOffset(id)
 		dims := int(h.dims.Load())
@@ -378,7 +384,7 @@ func (h *ArrowHNSW) distance(query []float32, id uint32, data *GraphData) float3
 		start := int(cOff) * dims
 		if start+dims <= len(*data.Vectors[cID]) {
 			vec := (*data.Vectors[cID])[start : start+dims]
-			return simd.EuclideanDistance(query, vec)
+			return h.distFunc(query, vec)
 		}
 	}
 
@@ -389,7 +395,7 @@ func (h *ArrowHNSW) distance(query []float32, id uint32, data *GraphData) float3
 	}
 
 	// Use SIMD-optimized distance calculation
-	return simd.EuclideanDistance(query, vec)
+	return h.distFunc(query, vec)
 }
 
 // l2Distance computes Euclidean (L2) distance between two vectors.

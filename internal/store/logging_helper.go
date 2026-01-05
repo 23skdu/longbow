@@ -27,7 +27,7 @@ func LogClientAction(ctx context.Context, logger zerolog.Logger, m *mesh.Gossip,
 	}
 
 	// 3. Construct Event Log
-	evt := logger.Info().
+	evt := logger.Debug().
 		Str("action", action).
 		Str("client_ip", clientIP)
 

@@ -153,6 +153,11 @@ type ArrowHNSW struct {
 
 	// Deleted nodes tracking
 	deleted *Bitset
+
+	// Metric support
+	metric        DistanceMetric
+	distFunc      func([]float32, []float32) float32
+	batchDistFunc func([]float32, [][]float32, []float32)
 }
 
 // ArrowHNSWConfig holds HNSW configuration parameters.
@@ -216,6 +221,9 @@ type ArrowHNSWConfig struct {
 	PQEnabled bool
 	PQM       int // Number of sub-vectors (must divide Dims)
 	PQK       int // Number of centroids (default 256)
+
+	// Metric defines the distance metric
+	Metric DistanceMetric
 }
 
 // DefaultArrowHNSWConfig returns sensible default HNSW parameters.
@@ -238,6 +246,7 @@ func DefaultArrowHNSWConfig() ArrowHNSWConfig {
 		PQEnabled:            false,
 		PQM:                  0, // Auto-calculate?
 		PQK:                  256,
+		Metric:               MetricEuclidean,
 	}
 }
 

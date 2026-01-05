@@ -67,7 +67,9 @@ sequenceDiagram
 
 ### Zero-Copy HNSW2 Implementation (Internal)
 
-We utilize a custom, zero-allocation, Arrow-native implementation of HNSW (`hnsw2`) designed specifically for Longbow's workload. unlike standard libraries, this implementation operates directly on Arrow buffers without object overhead.
+We utilize a custom, zero-allocation, Arrow-native implementation of HNSW (`hnsw2`) designed specifically for Longbow's
+workload.
+Unlike standard libraries, this implementation operates directly on Arrow buffers without object overhead.
 
 #### Key Features
 
@@ -78,8 +80,10 @@ We utilize a custom, zero-allocation, Arrow-native implementation of HNSW (`hnsw
 
 #### Concurrent Graph Building
 
-* **Locking Strategy**: Uses a hybrid approach with a global `resizeMu` for graph resizing and fine-grained `shardedLocks` ([1024]Mutex) for individual node updates.
-* **Throughput**: Scales linearly with cores. Thread safety is verified via `TestConcurrentInsert` and specific data race regression tests (lazy allocation fixes).
+* **Locking Strategy**: Uses a hybrid approach with a global `resizeMu` for graph resizing and fine-grained `shardedLocks`
+  ([1024]Mutex) for individual node updates.
+* **Throughput**: Scales linearly with cores. Thread safety is verified via `TestConcurrentInsert` and specific data race
+  regression tests (lazy allocation fixes).
 
 ### Product Quantization (PQ) Compression
 
@@ -96,7 +100,8 @@ Longbow dynamically optimizes index structures based on dataset size:
 
 * **Small Datasets**: Uses standard `HNSWIndex` for low-overhead access.
 * **Large Datasets**: Automatically migrates to `ShardedHNSW` to enable parallel lock-striping.
-* **Seamless Transition**: The `AutoShardingIndex` handles this upgrade transparently, utilizing an "Interim Sharding" strategy to maintain high availability and consistency during the background migration process.
+* **Seamless Transition**: The `AutoShardingIndex` handles this upgrade transparently, utilizing an "Interim Sharding"
+  strategy to maintain high availability and consistency during the background migration process.
 
 ### SIMD Acceleration
 
@@ -160,7 +165,8 @@ Features:
 
 ## GraphRAG (Retrieval Augmented Generation with Graphs)
 
-Longbow supports Knowledge Graph integration for GraphRAG workflows, where entities and relationships are stored alongside vectors.
+Longbow supports Knowledge Graph integration for GraphRAG workflows, where entities and relationships are stored alongside
+vectors.
 
 ### Functionality
 
@@ -313,6 +319,18 @@ results := hs.SearchHybridWeighted(query, "keywords", 10, 0.8, 60)
 
 // Favor keyword matching (alpha=0.2)  
 results := hs.SearchHybridWeighted(query, "keywords", 10, 0.2, 60)
+
+### Adaptive Combination
+
+Automatically estimate alpha based on query length (keyword vs. natural language).
+
+```go
+// Auto-detect alpha (alpha=-1.0)
+// "short query" -> alpha=0.3 (Sparse bias)
+// "this is a long natural language query" -> alpha=0.8 (Dense bias)
+results := hs.SearchHybridWeighted(query, "short query", 10, -1.0, 60)
+```
+
 ```
 
 ## API Reference

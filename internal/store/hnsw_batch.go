@@ -183,14 +183,11 @@ func (h *HNSWIndex) SearchBatchOptimized(queries [][]float32, k int) [][]RankedR
 
 // computeBatchDistance computes the distance between a query and multiple vectors using the index's metric.
 func (h *HNSWIndex) computeBatchDistance(query []float32, vectors [][]float32, results []float32) {
-	switch h.Metric {
-	case MetricCosine:
-		simd.CosineDistanceBatch(query, vectors, results)
-	case MetricDotProduct:
-		simd.DotProductBatch(query, vectors, results)
-	default:
-		simd.EuclideanDistanceBatch(query, vectors, results)
+	if h.batchDistFunc != nil {
+		h.batchDistFunc(query, vectors, results)
+		return
 	}
+	simd.EuclideanDistanceBatch(query, vectors, results)
 }
 
 // SearchBatch is a convenience method that calls SearchBatchOptimized.

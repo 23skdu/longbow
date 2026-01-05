@@ -393,7 +393,7 @@ func (h *ArrowHNSW) searchLayerForInsert(ctx *ArrowSearchContext, query []float3
 	var entryDist float32
 	var querySQ8 []byte
 
-	if h.quantizer != nil && h.quantizer.IsTrained() {
+	if h.metric == MetricEuclidean && h.quantizer != nil && h.quantizer.IsTrained() {
 		querySQ8 = h.quantizer.Encode(query, nil)
 		// Access SQ8 data for entryPoint
 		cID := chunkID(entryPoint)
@@ -409,7 +409,7 @@ func (h *ArrowHNSW) searchLayerForInsert(ctx *ArrowSearchContext, query []float3
 			entryDist = 0 // Or MaxFloat
 		}
 	} else {
-		entryDist = simd.EuclideanDistance(query, h.mustGetVectorFromData(data, entryPoint))
+		entryDist = h.distFunc(query, h.mustGetVectorFromData(data, entryPoint))
 	}
 
 	candidates.Push(Candidate{ID: entryPoint, Dist: entryDist})
@@ -497,7 +497,7 @@ func (h *ArrowHNSW) searchLayerForInsert(ctx *ArrowSearchContext, query []float3
 		}
 		dists := ctx.scratchDists[:count]
 
-		if h.quantizer != nil && len(data.VectorsSQ8) > 0 {
+		if h.metric == MetricEuclidean && h.quantizer != nil && len(data.VectorsSQ8) > 0 {
 			// SQ8 Path
 			// SQ8 Path: Batch SIMD
 			if cap(ctx.scratchVecsSQ8) < count {
@@ -562,7 +562,7 @@ func (h *ArrowHNSW) searchLayerForInsert(ctx *ArrowSearchContext, query []float3
 			for i, nid := range unvisitedIDs {
 				vecs[i] = h.mustGetVectorFromData(data, nid)
 			}
-			simd.EuclideanDistanceVerticalBatch(query, vecs, dists)
+			h.batchDistFunc(query, vecs, dists)
 		}
 
 		// Process results
@@ -709,7 +709,7 @@ func (h *ArrowHNSW) selectNeighbors(ctx *ArrowSearchContext, candidates []Candid
 			}
 			dists := ctx.scratchDists[:count]
 
-			if h.quantizer != nil && h.quantizer.IsTrained() && len(data.VectorsSQ8) > 0 {
+			if h.metric == MetricEuclidean && h.quantizer != nil && h.quantizer.IsTrained() && len(data.VectorsSQ8) > 0 {
 				// SQ8 Path
 				cID := chunkID(selCand.ID)
 				cOff := chunkOffset(selCand.ID)
@@ -772,10 +772,11 @@ func (h *ArrowHNSW) selectNeighbors(ctx *ArrowSearchContext, candidates []Candid
 					remVecs[i] = remainingVecs[i]
 				}
 
-				if h.batchComputer != nil {
+				if h.batchComputer != nil && h.metric == MetricEuclidean {
+					// Use batch computer only for Euclidean if it's L2 optimized
 					_, _ = h.batchComputer.ComputeL2DistancesInto(selVec, remVecs, dists)
 				} else {
-					simd.EuclideanDistanceVerticalBatch(selVec, remVecs, dists)
+					h.batchDistFunc(selVec, remVecs, dists)
 				}
 			}
 

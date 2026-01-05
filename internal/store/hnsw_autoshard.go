@@ -53,8 +53,13 @@ func NewAutoShardingIndex(ds *Dataset, config AutoShardingConfig) *AutoShardingI
 	if config.ShardThreshold <= 0 {
 		config.ShardThreshold = 10000 // Default to 10k
 	}
+
+	// Initialize HNSW config with dataset metric
+	hnswConfig := DefaultConfig()
+	hnswConfig.Metric = ds.Metric
+
 	idx := &AutoShardingIndex{
-		current: NewHNSWIndex(ds),
+		current: NewHNSWIndex(ds, hnswConfig),
 		config:  config,
 		dataset: ds,
 		sharded: false,

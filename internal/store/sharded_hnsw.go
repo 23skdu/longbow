@@ -16,11 +16,11 @@ import (
 
 // ShardedHNSWConfig configures the sharded HNSW index.
 type ShardedHNSWConfig struct {
-	NumShards      int          // Initial/Currently active shards
-	M              int          // HNSW M parameter
-	EfConstruction int          // HNSW efConstruction parameter
-	Metric         VectorMetric // Distance metric for this index
-	Dimension      uint32       // Vector dimension
+	NumShards      int            // Initial/Currently active shards
+	M              int            // HNSW M parameter
+	EfConstruction int            // HNSW efConstruction parameter
+	Metric         DistanceMetric // Distance metric for this index
+	Dimension      uint32         // Vector dimension
 	// ShardSplitThreshold is deprecated in favor of Ring Sharding but kept for interface/legacy compatibility.
 	// In Ring mode, it implies the *initial capacity* of each shard.
 	ShardSplitThreshold int
@@ -162,7 +162,7 @@ func (s *ShardedHNSW) newShard(shardIdx int) *hnswShard {
 	arrowConfig.MMax0 = s.config.M * 2
 	arrowConfig.EfConstruction = s.config.EfConstruction
 	arrowConfig.InitialCapacity = s.config.ShardSplitThreshold // Capacity hint
-	// Metric support TODO: Pass metric to ArrowHNSW once supported
+	arrowConfig.Metric = s.config.Metric
 
 	// We pass nil for ChunkedLocationStore because shards use local IDs and don't manage global locations
 	// The ShardedHNSW manages the global location store.

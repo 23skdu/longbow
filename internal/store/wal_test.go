@@ -13,7 +13,7 @@ func BenchmarkWAL_Write(b *testing.B) {
 	// Setup temp dir
 	tmpDir, err := os.MkdirTemp("", "wal_bench")
 	require.NoError(b, err)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Create dummy VectorStore (nil is fine for NewWAL usually, but StdWAL stores it)
 	// StdWAL stores it but doesn't seem to use it in Write.
@@ -23,7 +23,7 @@ func BenchmarkWAL_Write(b *testing.B) {
 	// This uses NewWAL which picks implementation based on OS
 	wal := NewWAL(tmpDir, vs)
 	require.NotNil(b, wal)
-	defer wal.Close()
+	defer func() { _ = wal.Close() }()
 
 	// Create a record batch
 	mem := memory.NewGoAllocator()
@@ -44,12 +44,12 @@ func BenchmarkWAL_Write(b *testing.B) {
 func BenchmarkWAL_Write_Sync(b *testing.B) {
 	tmpDir, err := os.MkdirTemp("", "wal_bench_sync")
 	require.NoError(b, err)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	vs := &VectorStore{}
 	wal := NewWAL(tmpDir, vs)
 	require.NotNil(b, wal)
-	defer wal.Close()
+	defer func() { _ = wal.Close() }()
 
 	mem := memory.NewGoAllocator()
 	vectors := [][]float32{{1.0, 2.0, 3.0, 4.0}}

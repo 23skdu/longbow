@@ -16,13 +16,13 @@ func TestPQPersistence(t *testing.T) {
 	// Setup
 	tmpDir, err := os.MkdirTemp("", "pq_persistence_test")
 	require.NoError(t, err)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	logger := zerolog.New(os.Stdout)
 	mem := memory.NewGoAllocator()
 	store := NewVectorStore(mem, logger, 1024*1024*1024, 1024*1024*1024, 0) // No WAL reset
 	store.dataPath = tmpDir
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	datasetName := "pq_test"
 	dims := 128
@@ -114,11 +114,11 @@ func TestPQPersistence(t *testing.T) {
 	require.NoError(t, err, "PQ snapshot file should exist")
 
 	// 4. Close and Reopen
-	store.Close()
+	_ = store.Close()
 
 	store2 := NewVectorStore(mem, logger, 1024*1024*1024, 1024*1024*1024, 0)
 	store2.dataPath = tmpDir
-	defer store2.Close()
+	defer func() { _ = store2.Close() }()
 
 	// Force load snapshots (usually happens in NewVectorStore)
 	err = store2.loadSnapshots()

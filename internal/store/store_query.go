@@ -154,7 +154,7 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 
 	// Create Writer WITHOUT options first to be safe
 	w := flight.NewRecordWriter(stream, ipc.WithSchema(schema))
-	defer w.Close()
+	defer func() { _ = w.Close() }()
 
 	ctx := stream.Context()
 	rowsSent := int64(0)

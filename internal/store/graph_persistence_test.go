@@ -61,7 +61,7 @@ func TestGraphPersistence_SnapshotRecovery(t *testing.T) {
 		SnapshotInterval: 1 * time.Hour,
 	})
 	require.NoError(t, err)
-	defer store2.Close()
+	defer func() { _ = store2.Close() }()
 
 	// 6. Verify
 	store2.mu.Lock()

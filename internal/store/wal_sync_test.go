@@ -18,17 +18,17 @@ func TestBufferedWAL_SyncLatency(t *testing.T) {
 	// Setup
 	tmpDir, err := os.MkdirTemp("", "wal_sync_test")
 	require.NoError(t, err)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	backend, err := NewFSBackend(filepath.Join(tmpDir, "wal.log"))
 	require.NoError(t, err)
-	defer backend.Close()
+	defer func() { _ = backend.Close() }()
 
 	// Use a long flush delay to make the bug obvious
 	// If Sync works correctly, it should override this delay.
 	flushDelay := 5 * time.Second
 	wal := NewBufferedWAL(backend, 1024*1024, flushDelay)
-	defer wal.Close()
+	defer func() { _ = wal.Close() }()
 
 	pool := memory.NewGoAllocator()
 	schema := arrow.NewSchema([]arrow.Field{
@@ -61,7 +61,7 @@ func TestBufferedWAL_SyncLatency(t *testing.T) {
 		Delay:   500 * time.Millisecond,
 	}
 	walWithSlowBackend := NewBufferedWAL(slowBackend, 10*1024*1024, flushDelay) // Large buffer to avoid auto-flush
-	defer walWithSlowBackend.Close()
+	defer func() { _ = walWithSlowBackend.Close() }()
 
 	var wg sync.WaitGroup
 	wg.Add(1)

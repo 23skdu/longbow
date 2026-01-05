@@ -123,7 +123,7 @@ func (w *WALBatcher) Start() error {
 	if w.asyncFsyncer != nil {
 		if f := w.backend.File(); f != nil {
 			if err := w.asyncFsyncer.Start(f); err != nil {
-				w.backend.Close()
+				_ = w.backend.Close()
 				return err
 			}
 		}

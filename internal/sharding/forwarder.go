@@ -179,7 +179,7 @@ func (f *RequestForwarder) ForwardStream(ctx context.Context, targetNodeID strin
 			}
 
 			if err := serverStream.RecvMsg(msg); err != nil {
-				clientStream.CloseSend()
+				_ = clientStream.CloseSend()
 				if err == io.EOF {
 					errChan <- nil
 				} else {
@@ -234,7 +234,7 @@ func (f *RequestForwarder) Close() error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	for _, conn := range f.conns {
-		conn.Close()
+		_ = conn.Close()
 	}
 	f.conns = make(map[string]*grpc.ClientConn)
 	return nil

@@ -47,7 +47,7 @@ func (g *Gossip) runDiscovery() {
 		if peer == selfAddr {
 			continue
 		}
-		
+
 		// Optimization: Check if already known and alive to avoid spamming Join
 		g.mu.RLock()
 		existing := false
@@ -60,7 +60,7 @@ func (g *Gossip) runDiscovery() {
 		g.mu.RUnlock()
 
 		if !existing {
-			go g.Join(peer)
+			go func() { _ = g.Join(peer) }()
 		}
 	}
 }

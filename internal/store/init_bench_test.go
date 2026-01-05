@@ -26,7 +26,7 @@ func BenchmarkHNSW_InitializationOverhead(b *testing.B) {
 	h.Grow(1000, 0)
 	// Manually ensure chunks for 0
 	data := h.data.Load()
-	h.ensureChunk(data, 0, 0, 128)
+	_, _ = h.ensureChunk(data, 0, 0, 128)
 
 	vectorSize := 128
 	vec := make([]float32, vectorSize) // Zero vector

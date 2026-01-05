@@ -80,7 +80,7 @@ func (s *MetaServer) handleVectorSearchAction(action *flight.Action, stream flig
 
 		if isHybrid {
 			// Perform Hybrid Search
-			searchResults, err = s.VectorStore.SearchHybrid(stream.Context(), req.Dataset, queryVec, req.TextQuery, req.K, req.Alpha, 60)
+			searchResults, err = s.SearchHybrid(stream.Context(), req.Dataset, queryVec, req.TextQuery, req.K, req.Alpha, 60)
 			if err != nil {
 				metrics.VectorSearchActionErrors.Inc()
 				continue // For pipelining, we might want to continue or return error? Let's return error for now to be safe, or log it.
@@ -132,7 +132,7 @@ func (s *MetaServer) handleVectorSearchAction(action *flight.Action, stream flig
 			}
 
 			// Map internal IDs to User IDs
-			searchResults = s.VectorStore.MapInternalToUserIDs(ds, searchResults)
+			searchResults = s.MapInternalToUserIDs(ds, searchResults)
 			ds.dataMu.RUnlock()
 		}
 

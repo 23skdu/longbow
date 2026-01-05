@@ -51,7 +51,7 @@ func TestHNSW_Vacuum(t *testing.T) {
 	// 2. Delete 10% of nodes
 	deletedCount := 0
 	for i := 0; i < n; i += 10 {
-		h.Delete(uint32(i))
+		_ = h.Delete(uint32(i))
 		deletedCount++
 	}
 

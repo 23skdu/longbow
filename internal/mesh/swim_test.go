@@ -19,7 +19,7 @@ func getFreePort() int {
 	if err != nil {
 		return 0
 	}
-	defer l.Close()
+	defer func() { _ = l.Close() }()
 	return l.LocalAddr().(*net.UDPAddr).Port
 }
 
@@ -113,7 +113,7 @@ func TestRefutation(t *testing.T) {
 
 	// 3. Node B should receive this (via gossip/ping) and refute it by incrementing incarnation
 	// We check Node A's view of B eventually becoming Alive again with higher incarnation
-	
+
 	require.Eventually(t, func() bool {
 		members := nodeA.GetMembers()
 		for _, m := range members {

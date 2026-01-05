@@ -11,9 +11,9 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/apache/arrow-go/v18/arrow/memory"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/rs/zerolog"
 	"google.golang.org/grpc"
 )
 
@@ -51,7 +51,7 @@ func TestDeltaSync_Integration(t *testing.T) {
 		DataPath:         dir,
 		SnapshotInterval: 1 * time.Hour,
 	}))
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// Create Record
 	schema := arrow.NewSchema([]arrow.Field{
@@ -70,16 +70,16 @@ func TestDeltaSync_Integration(t *testing.T) {
 	// 1. Write Records (Seq 1, 2, 3)
 	ts := time.Now().UnixNano()
 	seq1 := store.sequence.Add(1)
-	store.walBatcher.Write(rec1, "dataset1", seq1, ts)
+	_ = store.walBatcher.Write(rec1, "dataset1", seq1, ts)
 
 	seq2 := store.sequence.Add(1)
-	store.walBatcher.Write(rec2, "dataset1", seq2, ts+1)
+	_ = store.walBatcher.Write(rec2, "dataset1", seq2, ts+1)
 
 	seq3 := store.sequence.Add(1)
-	store.walBatcher.Write(rec3, "dataset1", seq3, ts+2)
+	_ = store.walBatcher.Write(rec3, "dataset1", seq3, ts+2)
 
 	// Wait for async flush
-	store.walBatcher.Stop() // Flush and close
+	_ = store.walBatcher.Stop() // Flush and close
 	// Reopen for read? do_exchange uses NewWALIterator which opens file separately.
 	// WALBatcher closing it is fine as long as file exists.
 

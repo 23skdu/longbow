@@ -88,7 +88,7 @@ func TestWALBatcher_Compression_Direct(t *testing.T) {
 
 	batcher := NewWALBatcher(tmpDir, &cfg)
 	require.NoError(t, batcher.Start())
-	defer batcher.Stop()
+	defer func() { _ = batcher.Stop() }()
 
 	// Create record
 	pool := memory.NewGoAllocator()
@@ -104,7 +104,7 @@ func TestWALBatcher_Compression_Direct(t *testing.T) {
 
 	// Write enough to trigger batch flush
 	for i := 0; i < 10; i++ {
-		batcher.Write(rec, "test_ds", uint64(i), time.Now().UnixNano())
+		_ = batcher.Write(rec, "test_ds", uint64(i), time.Now().UnixNano())
 	}
 
 	// Wait for flush
@@ -151,12 +151,12 @@ func TestPersistence_ReplayCompressed(t *testing.T) {
 
 		// Write 10 entries
 		for i := 0; i < 10; i++ {
-			batcher.Write(rec, "dataset_1", uint64(i), time.Now().UnixNano())
+			_ = batcher.Write(rec, "dataset_1", uint64(i), time.Now().UnixNano())
 		}
 		rec.Release()
 		b.Release()
 
-		batcher.Stop() // Flushes everything
+		_ = batcher.Stop() // Flushes everything
 	}
 
 	// 2. Replay using VectorStore
@@ -185,5 +185,5 @@ func TestPersistence_ReplayCompressed(t *testing.T) {
 	assert.Greater(t, len(ds.Records), 0)
 	ds.dataMu.RUnlock()
 
-	store.Close()
+	_ = store.Close()
 }

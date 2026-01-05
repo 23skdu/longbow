@@ -65,10 +65,10 @@ func (w *BufferedWAL) Write(name string, seq uint64, ts int64, record arrow.Reco
 	headerOffset := w.buf.Len()
 	w.buf.Grow(headerSize)
 	// Append zeroed header bytes to move cursor
-	w.buf.Write(make([]byte, headerSize))
+	_, _ = w.buf.Write(make([]byte, headerSize))
 
 	// 2. Write Name
-	w.buf.Write(nameBytes)
+	_, _ = w.buf.Write(nameBytes)
 
 	// 3. Write RecordBatch directly to buffer
 	recStartOffset := w.buf.Len()
@@ -191,7 +191,7 @@ func (w *BufferedWAL) Close() error {
 		wb := w.swapBufferLocked()
 		w.mu.Unlock()
 		if err := w.flushBufferToBackend(wb); err != nil {
-			w.backend.Close()
+			_ = w.backend.Close()
 			return err
 		}
 	} else {

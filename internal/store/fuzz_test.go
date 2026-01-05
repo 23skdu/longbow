@@ -20,7 +20,7 @@ func FuzzIngestion(f *testing.F) {
 
 		// Use Nop logger to avoid clutter
 		store := NewVectorStore(mem, zerolog.Nop(), 50*1024*1024, 0, 0)
-		defer store.Close()
+		defer func() { _ = store.Close() }()
 
 		schema := GenerateRandomSchema(rng)
 		numRows := rng.Intn(100) + 1
@@ -66,7 +66,7 @@ func FuzzCompaction(f *testing.F) {
 		mem := memory.NewGoAllocator()
 
 		store := NewVectorStore(mem, zerolog.Nop(), 50*1024*1024, 0, 0)
-		defer store.Close()
+		defer func() { _ = store.Close() }()
 
 		// Ensure compaction worker is set up
 		store.compactionConfig = DefaultCompactionConfig()

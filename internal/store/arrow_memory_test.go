@@ -97,7 +97,7 @@ func TestMemoryUsage(t *testing.T) {
 		if i%32 == 0 {
 			level = 1
 		} // rude approx
-		idx.Insert(uint32(i), level)
+		_ = idx.Insert(uint32(i), level)
 	}
 
 	dur := time.Since(start)
@@ -108,7 +108,7 @@ func TestMemoryUsage(t *testing.T) {
 	var m3 runtime.MemStats
 	runtime.ReadMemStats(&m3)
 
-	var indexSize int64 = int64(m3.HeapAlloc) - int64(m2.HeapAlloc)
+	var indexSize = int64(m3.HeapAlloc) - int64(m2.HeapAlloc)
 	fmt.Printf("Index Overhead: %d KB\n", indexSize/1024)
 
 	overheadBytesPerVec := float64(indexSize) / float64(count)

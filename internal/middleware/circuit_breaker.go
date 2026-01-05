@@ -28,11 +28,8 @@ func CircuitBreakerInterceptor() grpc.UnaryServerInterceptor {
 
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		// Only protect expensive search operations
-		isProtected := false
-		if info.FullMethod == "/arrow.flight.protocol.FlightService/DoGet" ||
-			info.FullMethod == "/arrow.flight.protocol.FlightService/DoAction" { // Simple check, could refine for specific actions
-			isProtected = true
-		}
+		isProtected := info.FullMethod == "/arrow.flight.protocol.FlightService/DoGet" ||
+			info.FullMethod == "/arrow.flight.protocol.FlightService/DoAction" // Simple check, could refine for specific actions
 
 		if !isProtected {
 			return handler(ctx, req)

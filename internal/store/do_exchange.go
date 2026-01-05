@@ -95,7 +95,7 @@ func (s *VectorStore) DoExchange(stream flight.FlightService_DoExchangeServer) e
 					s.logger.Error().Err(err).Msg("Failed to create WAL iterator")
 					return err
 				}
-				defer it.Close()
+				defer func() { _ = it.Close() }()
 
 				if err := it.Seek(lastSeq); err != nil {
 					s.logger.Error().Err(err).Msg("Failed to seek WAL")
@@ -148,7 +148,10 @@ func (s *VectorStore) DoExchange(stream flight.FlightService_DoExchangeServer) e
 						rec.Release()
 						return err
 					}
-					writer.Close()
+					if err := writer.Close(); err != nil {
+						rec.Release()
+						return err
+					}
 
 					// Construct FlightData
 					// We send the whole IPC Payload (Schema + Record) in one blob?

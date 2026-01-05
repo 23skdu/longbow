@@ -66,7 +66,7 @@ func TestWALBatcher_FlushLogic(t *testing.T) {
 	batcher := NewWALBatcher(tmpDir, &cfg)
 	err := batcher.Start()
 	require.NoError(t, err)
-	defer batcher.Stop()
+	defer func() { _ = batcher.Stop() }()
 
 	schema := arrow.NewSchema([]arrow.Field{{Name: "f1", Type: arrow.PrimitiveTypes.Int32}}, nil)
 	b := array.NewInt32Builder(mem)

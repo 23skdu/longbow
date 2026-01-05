@@ -149,7 +149,7 @@ func (g *Gossip) Stop() {
 	g.stopOnce.Do(func() {
 		close(g.closeCh)
 		if g.conn != nil {
-			g.conn.Close()
+			_ = g.conn.Close()
 		}
 	})
 }
@@ -418,7 +418,7 @@ func (g *Gossip) handlePacket(p *Packet, addr *net.UDPAddr) {
 			Seq:  p.Seq,
 		}
 		// Send Ack
-		g.sendPacketStruct(ack, addr)
+		_ = g.sendPacketStruct(ack, addr)
 
 	case PacketAck:
 		g.ackMu.Lock()
@@ -655,11 +655,12 @@ func (g *Gossip) UpdateMember(m *Member) {
 		existing.MetaAddr = m.MetaAddr
 		existing.LastSeen = time.Now()
 
-		if m.Status == StatusSuspect {
+		switch m.Status {
+		case StatusSuspect:
 			if existing.SuspectAt.IsZero() {
 				existing.SuspectAt = time.Now()
 			}
-		} else if m.Status == StatusAlive {
+		case StatusAlive:
 			existing.SuspectAt = time.Time{}
 		}
 

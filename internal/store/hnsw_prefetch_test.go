@@ -7,9 +7,9 @@ import (
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/rs/zerolog"
 )
 
 func TestSearchVectorsCorrectness(t *testing.T) {
@@ -68,7 +68,7 @@ func TestSearchVectorsCorrectness(t *testing.T) {
 
 	// Manually index vectors
 	for i := 0; i < len(vectors); i++ {
-		_, err := hnswIdx.Add(0, i) // Batch 0, Row i
+		_, _ = hnswIdx.Add(0, i) // Batch 0, Row i
 		require.NoError(t, err)
 	}
 
@@ -136,7 +136,7 @@ func BenchmarkSearchVectorsBatched(b *testing.B) {
 	ds.dataMu.Unlock()
 
 	for i := 0; i < n; i++ {
-		idx.Add(0, i)
+		_, _ = idx.Add(0, i)
 	}
 
 	query := make([]float32, 128)
@@ -146,7 +146,7 @@ func BenchmarkSearchVectorsBatched(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		idx.SearchVectors(query, 100, nil)
+		_, _ = idx.SearchVectors(query, 100, nil)
 	}
 }
 
@@ -190,7 +190,7 @@ func BenchmarkSearchVectorsWithBitmapBatched(b *testing.B) {
 	ds.dataMu.Unlock()
 
 	for i := 0; i < n; i++ {
-		idx.Add(0, i)
+		_, _ = idx.Add(0, i)
 	}
 
 	filter := NewBitset()

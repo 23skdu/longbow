@@ -35,10 +35,10 @@ func BenchmarkWAL(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
-		defer os.RemoveAll(tmpDir)
+		defer func() { _ = os.RemoveAll(tmpDir) }()
 
 		wal := NewStdWAL(tmpDir, nil)
-		defer wal.Close()
+		defer func() { _ = wal.Close() }()
 
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
@@ -54,12 +54,12 @@ func BenchmarkWAL(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
-		defer os.RemoveAll(tmpDir)
+		defer func() { _ = os.RemoveAll(tmpDir) }()
 
 		fsBackend, _ := NewFSBackend(filepath.Join(tmpDir, "wal.log"))
 		// 1MB buffer, 50ms flush
 		wal := NewBufferedWAL(fsBackend, 1024*1024, 50*time.Millisecond)
-		defer wal.Close()
+		defer func() { _ = wal.Close() }()
 
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {

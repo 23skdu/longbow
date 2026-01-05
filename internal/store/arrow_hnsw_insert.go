@@ -184,77 +184,94 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec []float32, level int) error 
 	// SQ8 Encoding
 	sq8Handled := false
 	if h.config.SQ8Enabled && dims > 0 {
-		h.growMu.Lock()
-		if h.quantizer == nil {
-			h.quantizer = NewScalarQuantizer(dims)
-		}
+		// First check if quantizer is trained (read-only, no lock needed for atomic check)
+		needsTraining := h.quantizer == nil || !h.quantizer.IsTrained()
 
-		if !h.quantizer.IsTrained() {
-			// Buffer vector for training
-			vecCopy := make([]float32, len(vec))
-			copy(vecCopy, vec)
-			h.sq8TrainingBuffer = append(h.sq8TrainingBuffer, vecCopy)
-
-			// Check if threshold reached
-			threshold := h.config.SQ8TrainingThreshold
-			if threshold <= 0 {
-				threshold = 1000
+		if needsTraining {
+			// Need to acquire lock for initialization/training
+			h.growMu.Lock()
+			// Double-check after acquiring lock (another goroutine may have initialized)
+			if h.quantizer == nil {
+				h.quantizer = NewScalarQuantizer(dims)
 			}
 
-			if len(h.sq8TrainingBuffer) >= threshold {
-				// Train!
-				h.quantizer.Train(h.sq8TrainingBuffer)
+			if !h.quantizer.IsTrained() {
+				// Buffer vector for training
+				vecCopy := make([]float32, len(vec))
+				copy(vecCopy, vec)
+				h.sq8TrainingBuffer = append(h.sq8TrainingBuffer, vecCopy)
 
-				// Backfill existing vectors
-				currentData := h.data.Load()
-				maxID := h.locationStore.MaxID()
-				for i := uint32(0); i <= uint32(maxID); i++ {
-					cID := chunkID(i)
-					cOff := chunkOffset(i)
-
-					vecChunk := currentData.LoadVectorChunk(cID)
-					if vecChunk == nil {
-						continue
-					}
-
-					off := int(cOff) * dims
-					if off+dims > len(*vecChunk) {
-						continue
-					}
-					srcVec := (*vecChunk)[off : off+dims]
-
-					// Encode to SQ8 chunk
-					sq8Chunk := currentData.LoadSQ8Chunk(cID)
-					if sq8Chunk != nil && off+dims <= len(*sq8Chunk) {
-						dest := (*sq8Chunk)[off : off+dims]
-						h.quantizer.Encode(srcVec, dest)
-					}
+				// Check if threshold reached
+				threshold := h.config.SQ8TrainingThreshold
+				if threshold <= 0 {
+					threshold = 1000
 				}
 
-				// Clear buffer
-				h.sq8TrainingBuffer = nil
-			}
-		}
+				if len(h.sq8TrainingBuffer) >= threshold {
+					// Train!
+					h.quantizer.Train(h.sq8TrainingBuffer)
 
-		// If trained (now or before), encode current vector
-		if h.quantizer.IsTrained() {
+					// Backfill existing vectors
+					currentData := h.data.Load()
+					maxID := h.locationStore.MaxID()
+					for i := uint32(0); i <= uint32(maxID); i++ {
+						cID := chunkID(i)
+						cOff := chunkOffset(i)
+
+						vecChunk := currentData.LoadVectorChunk(cID)
+						if vecChunk == nil {
+							continue
+						}
+
+						off := int(cOff) * dims
+						if off+dims > len(*vecChunk) {
+							continue
+						}
+						srcVec := (*vecChunk)[off : off+dims]
+
+						// Encode to SQ8 chunk
+						sq8Chunk := currentData.LoadSQ8Chunk(cID)
+						if sq8Chunk != nil && off+dims <= len(*sq8Chunk) {
+							dest := (*sq8Chunk)[off : off+dims]
+							h.quantizer.Encode(srcVec, dest)
+						}
+					}
+
+					// Clear buffer
+					h.sq8TrainingBuffer = nil
+				}
+			}
+
+			// If trained (now or before), encode current vector
+			if h.quantizer.IsTrained() {
+				cID := chunkID(id)
+				cOff := chunkOffset(id)
+				// Encode
+				if data.VectorsSQ8 != nil {
+					dest := (*data.VectorsSQ8[cID])[int(cOff)*dims : int(cOff+1)*dims]
+					h.quantizer.Encode(vec, dest)
+				}
+			}
+
+			sq8Handled = true
+			h.growMu.Unlock()
+		} else {
+			// Quantizer is already trained, encode without lock
 			cID := chunkID(id)
 			cOff := chunkOffset(id)
-			// Encode
-			if data.VectorsSQ8 != nil {
+			if data.VectorsSQ8 != nil && int(cID) < len(data.VectorsSQ8) && data.VectorsSQ8[cID] != nil {
 				dest := (*data.VectorsSQ8[cID])[int(cOff)*dims : int(cOff+1)*dims]
 				h.quantizer.Encode(vec, dest)
 			}
+			sq8Handled = true
 		}
-
-		sq8Handled = true
-		h.growMu.Unlock()
 	}
 
+	// Fallback encoding if not handled above
 	if !sq8Handled && h.quantizer != nil {
 		cID := chunkID(id)
 		cOff := chunkOffset(id)
-		if data.VectorsSQ8 != nil {
+		if data.VectorsSQ8 != nil && int(cID) < len(data.VectorsSQ8) && data.VectorsSQ8[cID] != nil {
 			dest := (*data.VectorsSQ8[cID])[int(cOff)*dims : int(cOff+1)*dims]
 			h.quantizer.Encode(vec, dest)
 		}

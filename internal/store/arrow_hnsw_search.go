@@ -413,6 +413,9 @@ func (h *ArrowHNSW) getVector(id uint32) ([]float32, error) {
 	// Try internal location store first (primary path for ArrowHNSW)
 	if h.locationStore != nil {
 		if loc, ok := h.locationStore.Get(VectorID(id)); ok {
+			if h.dataset == nil {
+				return nil, fmt.Errorf("dataset is nil for vector %d", id)
+			}
 			rec, ok := h.dataset.GetRecord(loc.BatchIdx)
 			if !ok {
 				return nil, fmt.Errorf("batch index %d out of bounds", loc.BatchIdx)
@@ -425,6 +428,7 @@ func (h *ArrowHNSW) getVector(id uint32) ([]float32, error) {
 	if h.dataset == nil {
 		return nil, fmt.Errorf("dataset is nil and vector %d not in internal store", id)
 	}
+
 	idx := h.dataset.Index
 	if idx == nil {
 		return nil, fmt.Errorf("dataset index is nil and vector %d not in internal store", id)

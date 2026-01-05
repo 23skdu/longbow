@@ -67,7 +67,7 @@ func main() {
 				errors.Add(1)
 				return
 			}
-			defer c.Close()
+			defer func() { _ = c.Close() }()
 
 			endTime := start.Add(*duration)
 
@@ -145,7 +145,7 @@ func runIngest(ctx context.Context, c *client.SmartClient) error {
 	// But arrow-go Flight Writer handles this usually.
 
 	wr := flight.NewRecordWriter(stream)
-	defer wr.Close()
+	defer func() { _ = wr.Close() }()
 
 	if err := wr.Write(rec); err != nil {
 		return err

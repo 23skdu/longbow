@@ -75,7 +75,7 @@ func TestSmartClient_Redirection(t *testing.T) {
 	// Client will connect to mock1
 	client, err := NewSmartClient(mock1.addr)
 	require.NoError(t, err)
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	// 1. Test DoGet Redirection
 	t.Run("DoGet Redirection", func(t *testing.T) {
@@ -137,7 +137,7 @@ func TestSmartClient_MaxRedirects(t *testing.T) {
 
 	client, err := NewSmartClient(mock1.addr)
 	require.NoError(t, err)
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

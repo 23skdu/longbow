@@ -63,6 +63,7 @@ Notable flags:
 
 - **Protocol**: Apache Arrow Flight (over gRPC/HTTP2).
 - **Search**: High-performance HNSW vector search with hybrid (Dense + Sparse) support.
+- **Distance Metrics**: Pluggable metrics (Euclidean, Cosine, Dot Product) with SIMD optimizations.
 - **Filtering**: Metadata-aware predicate filtering for searches and scans.
 - **Lifecycle**: Support for vector deletion via tombstones.
 - **Durable**: WAL with Apache Parquet format snapshots.
@@ -128,6 +129,7 @@ docker run -p 3000:3000 -p 3001:3001 -p 9090:9090 longbow
 
 ## Documentation
 
+- [Distance Metrics](docs/distance_metrics.md)
 - [Persistence & Snapshots](docs/persistence.md)
 - [Vector Search Architecture](docs/vectorsearch.md)
 - [Troubleshooting Guide](docs/troubleshooting.md)

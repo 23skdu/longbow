@@ -4,13 +4,7 @@ This document outlines the next prioritized improvements for the Longbow vector 
 
 ## Priority 1: Core Architecture & Features
 
-### 1. Pluggable Distance Metrics
-
-- **Impact**: **High**. Enables support for varied use cases like recommendation systems (Dot Product) and text semantic search (Cosine), moving beyond just Euclidean distance.
-- **Location**: `internal/store` & `internal/simd`
-- **Plan**: Refactor the distance interface to dynamically swap Inner Product (Dot Product) or Cosine Similarity, ensuring SIMD paths exist for all.
-
-### 2. GraphRAG Enhancements
+### 1. GraphRAG Enhancements
 
 - **Impact**: **High**. Strengthens Longbow's position as a multi-modal store by improving graph traversal capabilities for complex retrieval augmented generation workflows.
 - **Location**: `internal/store/graph_store.go`

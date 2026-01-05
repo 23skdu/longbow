@@ -92,6 +92,12 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec []float32, level int) error 
 		metrics.HNSWNodesTotal.WithLabelValues("default").Set(float64(h.nodeCount.Load()))
 	}()
 
+	// Make a defensive copy of the vector to avoid race conditions
+	// when multiple goroutines are inserting concurrently and reading from shared memory
+	vecCopy := make([]float32, len(vec))
+	copy(vecCopy, vec)
+	vec = vecCopy
+
 	// 2. Check Capacity & SQ8/Vectors Status
 	// Check dimensions lock-free
 	// Check dimensions lock-free
@@ -182,7 +188,11 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec []float32, level int) error 
 	}
 
 	// SQ8 Encoding
+	// Strategy: Use local buffer for encoding, then copy to shared memory
+	// This avoids race conditions from concurrent writes to the same chunk
+	var localSQ8Buffer []byte
 	sq8Handled := false
+
 	if h.config.SQ8Enabled && dims > 0 {
 		// First check if quantizer is trained (read-only, no lock needed for atomic check)
 		needsTraining := h.quantizer == nil || !h.quantizer.IsTrained()
@@ -241,39 +251,36 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec []float32, level int) error 
 					h.sq8TrainingBuffer = nil
 				}
 			}
-
-			// If trained (now or before), encode current vector
-			if h.quantizer.IsTrained() {
-				cID := chunkID(id)
-				cOff := chunkOffset(id)
-				// Encode
-				if data.VectorsSQ8 != nil {
-					dest := (*data.VectorsSQ8[cID])[int(cOff)*dims : int(cOff+1)*dims]
-					h.quantizer.Encode(vec, dest)
-				}
-			}
-
-			sq8Handled = true
 			h.growMu.Unlock()
-		} else {
-			// Quantizer is already trained, encode without lock
+		}
+
+		// Encode to local buffer if quantizer is trained
+		if h.quantizer != nil && h.quantizer.IsTrained() {
+			// Allocate local buffer for this goroutine
+			localSQ8Buffer = make([]byte, dims)
+			h.quantizer.Encode(vec, localSQ8Buffer)
+
+			// Now copy local buffer to shared memory (single write operation)
 			cID := chunkID(id)
 			cOff := chunkOffset(id)
 			if data.VectorsSQ8 != nil && int(cID) < len(data.VectorsSQ8) && data.VectorsSQ8[cID] != nil {
 				dest := (*data.VectorsSQ8[cID])[int(cOff)*dims : int(cOff+1)*dims]
-				h.quantizer.Encode(vec, dest)
+				copy(dest, localSQ8Buffer)
 			}
 			sq8Handled = true
 		}
 	}
 
 	// Fallback encoding if not handled above
-	if !sq8Handled && h.quantizer != nil {
+	if !sq8Handled && h.quantizer != nil && h.quantizer.IsTrained() {
 		cID := chunkID(id)
 		cOff := chunkOffset(id)
 		if data.VectorsSQ8 != nil && int(cID) < len(data.VectorsSQ8) && data.VectorsSQ8[cID] != nil {
+			// Use local buffer
+			localSQ8Buffer = make([]byte, dims)
+			h.quantizer.Encode(vec, localSQ8Buffer)
 			dest := (*data.VectorsSQ8[cID])[int(cOff)*dims : int(cOff+1)*dims]
-			h.quantizer.Encode(vec, dest)
+			copy(dest, localSQ8Buffer)
 		}
 	}
 

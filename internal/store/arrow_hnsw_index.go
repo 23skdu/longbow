@@ -140,6 +140,23 @@ func (h *ArrowHNSW) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []int)
 	ids := make([]uint32, n)
 
 	// 3. Parallel Insert
+	// Note: When SQ8 is enabled, we serialize insertions to avoid race conditions
+	// on shared memory writes to the vector chunks
+	if h.config.SQ8Enabled {
+		// Serial insertion for SQ8
+		for i := 0; i < n; i++ {
+			id := uint32(startID) + uint32(i)
+			ids[i] = id
+
+			level := h.generateLevel()
+			if err := h.Insert(id, level); err != nil {
+				return nil, err
+			}
+		}
+		return ids, nil
+	}
+
+	// Parallel insertion for non-SQ8 indices
 	// We bypass AddByLocation as we already have ID and Capacity
 	g, ctx := errgroup.WithContext(context.Background())
 	g.SetLimit(runtime.GOMAXPROCS(0))

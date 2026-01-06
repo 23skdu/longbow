@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"strconv"
 	"time"
 
 	"github.com/23skdu/longbow/internal/metrics"
@@ -78,52 +77,7 @@ func (s *VectorStore) StartWALCheckTicker(d time.Duration)                      
 func (s *VectorStore) UpdateConfig(maxMemory, maxWALSize int64, snapshotInterval time.Duration) {}
 func (s *VectorStore) StartMetricsTicker(d time.Duration)                                       {}
 
-func (s *VectorStore) startNUMAWorkers(numWorkers int) {
-	if s.numaTopology == nil || s.numaTopology.NumNodes <= 1 {
-		// Fallback to regular workers
-		s.startIndexingWorkers(numWorkers)
-		return
-	}
-
-	// Distribute workers across NUMA nodes
-	workersPerNode := numWorkers / s.numaTopology.NumNodes
-	if workersPerNode < 1 {
-		workersPerNode = 1
-	}
-
-	// Adjust total to account for rounding
-	totalStarted := 0
-
-	for nodeID := 0; nodeID < s.numaTopology.NumNodes; nodeID++ {
-		for i := 0; i < workersPerNode; i++ {
-			s.indexWg.Add(1)
-			totalStarted++
-			go func(node int) {
-				defer s.indexWg.Done()
-
-				// Pin to NUMA node
-				if err := PinToNUMANode(s.numaTopology, node); err != nil {
-					s.logger.Warn().
-						Int("node", node).
-						Err(err).
-						Msg("Failed to pin to NUMA node")
-				}
-
-				// Create NUMA-aware allocator (future use for allocations)
-				allocator := NewNUMAAllocator(s.numaTopology, node)
-
-				metrics.NumaWorkerDistribution.WithLabelValues(strconv.Itoa(node)).Inc()
-				s.logger.Info().Int("node", node).Msg("Started NUMA-aware worker")
-
-				s.runIndexWorker(allocator)
-			}(nodeID)
-		}
-	}
-	s.logger.Info().
-		Int("count", totalStarted).
-		Int("nodes", s.numaTopology.NumNodes).
-		Msg("Started NUMA indexing workers")
-}
+// StartEvictionTicker is defined later
 
 func (s *VectorStore) startIndexingWorkers(numWorkers int) {
 	for i := 0; i < numWorkers; i++ {

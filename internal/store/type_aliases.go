@@ -1,6 +1,9 @@
 package store
 
-import "github.com/23skdu/longbow/internal/core"
+import (
+	"github.com/23skdu/longbow/internal/core"
+	"github.com/23skdu/longbow/internal/storage"
+)
 
 // Type Aliases to maintain backward compatibility while migrating to internal/core
 
@@ -21,6 +24,9 @@ const (
 	// MetricDotProduct is the Inner Product (higher is usually better).
 	MetricDotProduct = core.MetricDotProduct
 )
+
+// Persistence Aliases
+type StorageConfig = storage.StorageConfig
 
 // Errors (Aliased from internal/core)
 

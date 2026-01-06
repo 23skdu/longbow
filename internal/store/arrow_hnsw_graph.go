@@ -498,7 +498,7 @@ func (h *ArrowHNSW) Grow(minCap int, dims int) {
 	h.data.Store(newGD)
 }
 
-func (h *ArrowHNSW) ensureChunk(data *GraphData, cID uint32, cOff uint32, dims int) (*GraphData, error) {
+func (h *ArrowHNSW) ensureChunk(data *GraphData, cID uint32, _ uint32, dims int) (*GraphData, error) {
 	if data.Levels[cID] == nil {
 		chunk := make([]uint8, ChunkSize)
 		ptr := (*unsafe.Pointer)(unsafe.Pointer(&data.Levels[cID]))

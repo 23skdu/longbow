@@ -58,11 +58,23 @@ var (
 	adcDistanceBatchImpl               adcDistanceBatchFunc
 	euclideanDistanceVerticalBatchImpl distanceBatchFunc
 	euclideanDistanceSQ8BatchImpl      distanceSQ8BatchFunc
+
+	// Bitwise operations
+	andBytesImpl func(dst, src []byte)
 )
 
 func init() {
 	detectCPU()
 	initializeDispatch()
+}
+
+// AndBytes performs bitwise AND: dst[i] &= src[i].
+// Assumes len(dst) == len(src).
+func AndBytes(dst, src []byte) {
+	if len(dst) != len(src) {
+		panic("simd: length mismatch")
+	}
+	andBytesImpl(dst, src)
 }
 
 func detectCPU() {
@@ -104,6 +116,7 @@ func initializeDispatch() {
 		adcDistanceBatchImpl = adcBatchAVX512
 		euclideanDistanceVerticalBatchImpl = euclideanVerticalBatchAVX512
 		euclideanDistanceSQ8BatchImpl = euclideanSQ8BatchGeneric // Fallback to generic for now
+		andBytesImpl = andBytesGeneric
 	case "avx2":
 		euclideanDistanceImpl = euclideanAVX2
 		metrics.SimdDispatchCount.WithLabelValues("avx2").Inc()
@@ -118,6 +131,7 @@ func initializeDispatch() {
 		adcDistanceBatchImpl = adcBatchAVX2
 		euclideanDistanceVerticalBatchImpl = euclideanVerticalBatchAVX2
 		euclideanDistanceSQ8BatchImpl = euclideanSQ8BatchGeneric // Fallback to generic for now
+		andBytesImpl = andBytesGeneric
 	case "neon":
 		euclideanDistanceImpl = euclideanNEON
 		metrics.SimdDispatchCount.WithLabelValues("neon").Inc()
@@ -132,6 +146,7 @@ func initializeDispatch() {
 		adcDistanceBatchImpl = adcBatchNEON
 		euclideanDistanceVerticalBatchImpl = euclideanVerticalBatchNEON
 		euclideanDistanceSQ8BatchImpl = euclideanSQ8BatchGeneric // Fallback to generic for now
+		andBytesImpl = andBytesGeneric
 	default:
 		euclideanDistanceImpl = euclideanUnrolled4x
 		metrics.SimdDispatchCount.WithLabelValues("generic").Inc()
@@ -146,8 +161,8 @@ func initializeDispatch() {
 		adcDistanceBatchImpl = adcBatchGeneric
 		euclideanDistanceVerticalBatchImpl = euclideanBatchGeneric
 		euclideanDistanceSQ8BatchImpl = euclideanSQ8BatchGeneric
+		andBytesImpl = andBytesGeneric
 	}
-
 }
 
 // GetCPUFeatures returns detected CPU SIMD capabilities

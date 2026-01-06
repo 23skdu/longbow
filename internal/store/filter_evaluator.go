@@ -306,12 +306,7 @@ func (e *FilterEvaluator) MatchesAll(batchLen int) []int {
 		for i := 1; i < len(e.ops); i++ {
 			e.ops[i].MatchBitmap(tmp)
 			// Intersect (AND)
-			// TODO: Vectorize this loop too (16 bytes at a time)
-			for j := 0; j < batchLen; j++ {
-				if tmp[j] == 0 {
-					bitmap[j] = 0
-				}
-			}
+			simd.AndBytes(bitmap, tmp)
 		}
 	}
 

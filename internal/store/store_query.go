@@ -534,7 +534,8 @@ func (s *VectorStore) HybridSearch(ctx context.Context, name string, query []flo
 
 // SearchHybrid is a wrapper for the SearchHybrid function (RRF version)
 func (s *VectorStore) SearchHybrid(ctx context.Context, name string, query []float32, textQuery string, k int, alpha float32, rrfK int) ([]SearchResult, error) {
-	return SearchHybrid(ctx, s, name, query, textQuery, k, alpha, rrfK)
+	// Expose graph params in future? For now default to 0 (disabled)
+	return SearchHybrid(ctx, s, name, query, textQuery, k, alpha, rrfK, 0.0, 0)
 }
 
 func findVectorColumn(rec arrow.RecordBatch) arrow.Array {

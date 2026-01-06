@@ -807,26 +807,28 @@ func (gs *GraphStore) RankWithGraph(initial []SearchResult, alpha float32, maxDe
 		alpha = 1.0
 	}
 
-	// 1. Initialize scores
+	// 1. Initialize scores using Reciprocal Rank
+	// This standardizes metric semantics (Distance vs Similarity) by trusting the sort order.
 	scores := make(map[VectorID]float32)
 	maxVecScore := float32(0.0)
-	for _, res := range initial {
-		scores[res.ID] = res.Score
-		if res.Score > maxVecScore {
-			maxVecScore = res.Score
+
+	for i, res := range initial {
+		// 1/(rank+1) decay ensures top results have high mass
+		rankScore := float32(1.0) / float32(i+1)
+		scores[res.ID] = rankScore
+		if rankScore > maxVecScore {
+			maxVecScore = rankScore
 		}
-	}
-	if maxVecScore == 0 {
-		maxVecScore = 1.0
 	}
 
 	// Normalize vector scores
-	for id := range scores {
-		scores[id] /= maxVecScore
+	if maxVecScore > 0 {
+		for id := range scores {
+			scores[id] /= maxVecScore
+		}
 	}
 
 	// 2. Spreading Activation (Graph Traversal)
-	// We spread activation from high-ranking nodes
 	graphScores := make(map[VectorID]float32)
 
 	seeds := make([]VectorID, 0, len(initial))
@@ -836,40 +838,18 @@ func (gs *GraphStore) RankWithGraph(initial []SearchResult, alpha float32, maxDe
 
 	// Run parallel traversal from all seeds
 	opts := TraverseOptions{
-		Direction:     DirectionIncoming, // Spread influence from "connected to"
+		Direction:     DirectionOutgoing, // Promote concepts connected FROM the result
 		MaxHops:       maxDepth,
 		Decay:         0.5,
 		TopKNeighbors: 0,
 		Weighted:      true,
 	}
-	// For "Incoming", we effectively see which nodes point TO our result set.
-	// If many nodes point to X, X is important?
-	// Or if X points to Y?
-	// In RAG, if we find "Einstein", we want "Physics" (Subject->Object).
-	// So DirectionOutgoing might be better for "Concept Expansion".
-	// Let's use Outgoing for expansion.
-	opts.Direction = DirectionOutgoing
 
 	traversalResults := gs.TraverseParallel(seeds, opts)
 
 	// Accumulate graph scores
 	for _, paths := range traversalResults {
 		for _, path := range paths {
-			// Path: Seed -> A -> B
-			// Boost B based on Seed's original relevance * path weight
-			// Since path includes Seed, we skip index 0 in accumulation if we want pure expansion
-
-			// We give score to ALL nodes in path based on path weight?
-			// Path weight is sum of edge weights.
-			// Let's use the final node's visited score implicitly.
-			// Actually Traverse returns Path struct, but we need the 'score'.
-			// Our Traverse implementation currently calculates 'score' internally for pruning but doesn't expose it in Path struct (Path returns Weight which is sum).
-			// Path.Weight is summation.
-
-			// Simplified scoring:
-			// Score(Node) += SeedScore * (1 / (1 + Depth)) * PathWeight
-			// But Traverse returns discrete paths.
-
 			if len(path.Nodes) < 1 {
 				continue
 			}
@@ -880,11 +860,13 @@ func (gs *GraphStore) RankWithGraph(initial []SearchResult, alpha float32, maxDe
 			// Last node gets the boost
 			target := path.Nodes[len(path.Nodes)-1]
 
-			// Simple decay
+			// Simple decay based on path length
 			dist := len(path.Nodes) - 1
 			decay := float32(1.0) / float32(dist+1) // 1, 0.5, 0.33
 
-			graphScores[target] += seedScore * decay * (1.0 + path.Weight) // Boost by edge weights
+			// Mass accumulation
+			inc := seedScore * decay * (1.0 + path.Weight)
+			graphScores[target] += inc
 		}
 	}
 

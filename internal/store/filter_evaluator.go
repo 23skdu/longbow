@@ -242,6 +242,9 @@ func NewFilterEvaluator(rec arrow.RecordBatch, filters []Filter) (*FilterEvaluat
 			// For now, let's keep it simple and handle common types
 		}
 	}
+	if len(ops) == 0 && len(filters) > 0 {
+		return nil, fmt.Errorf("failed to bind any filters to schema fields")
+	}
 	return &FilterEvaluator{ops: ops}, nil
 }
 

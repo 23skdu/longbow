@@ -132,7 +132,11 @@ func (h *HNSWIndex) processChunk(query []float32, neighbors []hnsw.Node[VectorID
 	var evaluator *FilterEvaluator
 	if len(filters) > 0 {
 		if len(h.dataset.Records) > 0 {
-			evaluator, _ = NewFilterEvaluator(h.dataset.Records[0], filters)
+			var err error
+			evaluator, err = NewFilterEvaluator(h.dataset.Records[0], filters)
+			if err != nil {
+				// panic(fmt.Sprintf("Parallel filter error: %v", err))
+			}
 		}
 	}
 

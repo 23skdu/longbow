@@ -8,8 +8,6 @@ import (
 
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/query"
-	"github.com/apache/arrow-go/v18/arrow"
-	"github.com/apache/arrow-go/v18/arrow/array"
 )
 
 // HybridSearchRequest encapsulates parameters for hybrid search.
@@ -206,18 +204,6 @@ func RankFusion(list1, list2 []SearchResult, k int, rrfK int) []SearchResult {
 func (s *VectorStore) HybridSearchWithBitmap(ctx context.Context, req HybridSearchRequest) ([]SearchResult, error) {
 	// Placeholder
 	return nil, nil
-}
-
-// findStringColumn helper
-func findStringColumn(rec arrow.RecordBatch, name string) *array.String {
-	for i, f := range rec.Schema().Fields() {
-		if strings.EqualFold(f.Name, name) {
-			if col, ok := rec.Column(i).(*array.String); ok {
-				return col
-			}
-		}
-	}
-	return nil
 }
 
 // EstimateAlpha calculates a heuristic alpha value based on query length.

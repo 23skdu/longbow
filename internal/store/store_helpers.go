@@ -280,6 +280,9 @@ func filterRecord(ctx context.Context, _ memory.Allocator, rec arrow.RecordBatch
 		case arrow.FLOAT32:
 			v, _ := strconv.ParseFloat(f.Value, 32)
 			sc = scalar.NewFloat32Scalar(float32(v))
+		case arrow.FLOAT64:
+			v, _ := strconv.ParseFloat(f.Value, 64)
+			sc = scalar.NewFloat64Scalar(v)
 		case arrow.STRING:
 			sc = scalar.NewStringScalar(f.Value)
 		default:

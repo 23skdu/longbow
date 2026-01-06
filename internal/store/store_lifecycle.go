@@ -380,6 +380,11 @@ func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
 	}
 	for {
 		select {
+		case <-s.stopChan:
+			if len(jobs) > 0 {
+				processBatch(jobs)
+			}
+			return
 		case job, ok := <-s.indexQueue.Jobs():
 			if !ok {
 				processBatch(jobs)

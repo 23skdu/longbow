@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/query"
 )
 
 // compactionWorker is the background worker (added to VectorStore)
@@ -97,7 +98,7 @@ func (vs *VectorStore) CompactDataset(name string) error {
 	// 3. Fix up Tombstones (Bitsets)
 	// Since we actively filtered tombstones, the new structure should be clean.
 	// If any rows were missed (not expected), we would re-map them here.
-	newTombstones := make(map[int]*Bitset)
+	newTombstones := make(map[int]*query.Bitset)
 
 	for oldBatchIdx, tombstone := range ds.Tombstones {
 		if tombstone == nil || tombstone.Count() == 0 {
@@ -110,14 +111,13 @@ func (vs *VectorStore) CompactDataset(name string) error {
 		}
 
 		newTomb := newTombstones[info.NewBatchIdx]
-		iter := tombstone.bitmap.Iterator()
-		for iter.HasNext() {
-			oldRowIdx := iter.Next()
+		rows := tombstone.ToUint32Array()
+		for _, oldRowIdx := range rows {
 			if int(oldRowIdx) < len(info.NewRowIdxs) {
 				newRowIdx := info.NewRowIdxs[oldRowIdx]
 				if newRowIdx != -1 {
 					if newTomb == nil {
-						newTomb = NewBitset()
+						newTomb = query.NewBitset()
 						newTombstones[info.NewBatchIdx] = newTomb
 					}
 					newTomb.Set(newRowIdx)

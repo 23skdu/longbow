@@ -1,5 +1,6 @@
 package store
 
+
 import (
 	"context"
 	"testing"
@@ -54,7 +55,11 @@ func TestObservability_Metrics(t *testing.T) {
 			// use a default logger
 		}
 
-		_, err = store.HybridSearch(context.Background(), "observability_test", []float32{1.0, 0.0}, 1, nil)
+		_, err = store.HybridSearch(context.Background(), HybridSearchRequest{
+			Dataset:     "observability_test",
+			QueryVector: []float32{1.0, 0.0},
+			K:           1,
+		})
 		require.NoError(t, err)
 
 		_, err = store.SearchHybrid(context.Background(), "observability_test", []float32{1.0, 0.0}, "", 1, 0.5, 60)

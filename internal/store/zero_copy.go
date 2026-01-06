@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 
+	"github.com/23skdu/longbow/internal/query"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/compute"
@@ -11,7 +12,7 @@ import (
 
 // ZeroCopyRecordBatch creates a zero-copy view of a record batch with tombstone filtering.
 // Uses Arrow's compute kernels for efficient slicing without deep copies.
-func ZeroCopyRecordBatch(mem memory.Allocator, rec arrow.RecordBatch, deleted *Bitset) (arrow.RecordBatch, error) {
+func ZeroCopyRecordBatch(mem memory.Allocator, rec arrow.RecordBatch, deleted *query.Bitset) (arrow.RecordBatch, error) {
 	if deleted == nil || deleted.Count() == 0 {
 		// No filtering needed - retain and return original
 		rec.Retain()

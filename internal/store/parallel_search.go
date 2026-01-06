@@ -7,6 +7,7 @@ import (
 	"unsafe"
 
 	"github.com/23skdu/longbow/internal/metrics"
+	qry "github.com/23skdu/longbow/internal/query"
 	"github.com/23skdu/longbow/internal/simd"
 	"github.com/coder/hnsw"
 )
@@ -38,7 +39,7 @@ func (h *HNSWIndex) SetParallelSearchConfig(cfg ParallelSearchConfig) {
 }
 
 // processResultsParallel processes HNSW neighbors using worker pool
-func (h *HNSWIndex) processResultsParallel(query []float32, neighbors []hnsw.Node[VectorID], k int, filters []Filter) []SearchResult {
+func (h *HNSWIndex) processResultsParallel(query []float32, neighbors []hnsw.Node[VectorID], k int, filters []qry.Filter) []SearchResult {
 	cfg := h.getParallelSearchConfig()
 	numWorkers := cfg.Workers
 	if numWorkers <= 0 {
@@ -99,7 +100,7 @@ func (h *HNSWIndex) processResultsParallel(query []float32, neighbors []hnsw.Nod
 }
 
 // processChunk processes a chunk of HNSW neighbors
-func (h *HNSWIndex) processChunk(query []float32, neighbors []hnsw.Node[VectorID], filters []Filter) []SearchResult {
+func (h *HNSWIndex) processChunk(query []float32, neighbors []hnsw.Node[VectorID], filters []qry.Filter) []SearchResult {
 	results := make([]SearchResult, 0, len(neighbors))
 
 	// Step 1: Batch location lookup
@@ -129,10 +130,10 @@ func (h *HNSWIndex) processChunk(query []float32, neighbors []hnsw.Node[VectorID
 
 	h.dataset.dataMu.RLock()
 
-	var evaluator *FilterEvaluator
+	var evaluator *qry.FilterEvaluator
 	if len(filters) > 0 {
 		if len(h.dataset.Records) > 0 {
-			evaluator, _ = NewFilterEvaluator(h.dataset.Records[0], filters)
+			evaluator, _ = qry.NewFilterEvaluator(h.dataset.Records[0], filters)
 		}
 	}
 
@@ -224,14 +225,14 @@ func (h *HNSWIndex) processChunk(query []float32, neighbors []hnsw.Node[VectorID
 }
 
 // processResultsSerial is the fallback serial implementation
-func (h *HNSWIndex) processResultsSerial(query []float32, neighbors []hnsw.Node[VectorID], k int, filters []Filter) []SearchResult {
+func (h *HNSWIndex) processResultsSerial(query []float32, neighbors []hnsw.Node[VectorID], k int, filters []qry.Filter) []SearchResult {
 	distFunc := h.GetDistanceFunc()
 
-	var evaluator *FilterEvaluator
+	var evaluator *qry.FilterEvaluator
 	if len(filters) > 0 {
 		h.dataset.dataMu.RLock()
 		if len(h.dataset.Records) > 0 {
-			evaluator, _ = NewFilterEvaluator(h.dataset.Records[0], filters)
+			evaluator, _ = qry.NewFilterEvaluator(h.dataset.Records[0], filters)
 		}
 		h.dataset.dataMu.RUnlock()
 	}

@@ -8,12 +8,13 @@ import (
 	"sort"
 	"sync/atomic"
 
+	"github.com/23skdu/longbow/internal/query"
 	"github.com/23skdu/longbow/internal/simd"
 )
 
 // Search performs k-NN search using the provided query vector.
 // Returns the k nearest neighbors sorted by distance.
-func (h *ArrowHNSW) Search(query []float32, k, ef int, filter *Bitset) ([]SearchResult, error) {
+func (h *ArrowHNSW) Search(query []float32, k, ef int, filter *query.Bitset) ([]SearchResult, error) {
 	// Lock-free access: load backend
 	backend := h.backend.Load()
 	if backend == nil || h.nodeCount.Load() == 0 {
@@ -47,7 +48,7 @@ func (h *ArrowHNSW) Search(query []float32, k, ef int, filter *Bitset) ([]Search
 	}
 
 	// Get search context from pool
-	ctx := h.searchPool.Get()
+	ctx := h.searchPool.Get().(*ArrowSearchContext)
 	defer h.searchPool.Put(ctx)
 
 	// SQ8 Setup
@@ -87,6 +88,10 @@ func (h *ArrowHNSW) Search(query []float32, k, ef int, filter *Bitset) ([]Search
 
 	// Search layer 0 with ef candidates
 	_, _ = h.searchLayer(query, ep, ef, 0, ctx, data, filter)
+
+	if ctx.resultSet.Len() == 0 {
+		fmt.Printf("DEBUG: Search resultSet is empty! EntryPoint: %d, NodeCount: %d, Ef: %d, Filter: %v\n", ep, h.nodeCount.Load(), ef, filter)
+	}
 
 	// Extract results
 	results := make([]SearchResult, 0, targetK)
@@ -144,7 +149,7 @@ func (h *ArrowHNSW) Search(query []float32, k, ef int, filter *Bitset) ([]Search
 
 // searchLayer performs greedy search at a specific layer.
 // Returns the closest node found and its distance.
-func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef, layer int, ctx *ArrowSearchContext, data *GraphData, filter *Bitset) (uint32, float32) {
+func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef, layer int, ctx *ArrowSearchContext, data *GraphData, filter *query.Bitset) (uint32, float32) {
 	ctx.visited.Clear()
 	ctx.candidates.Clear()
 
@@ -250,8 +255,10 @@ func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef, layer in
 			}
 			dists = ctx.scratchDists[:batchCount]
 
-			// Adaptive batching: Use BatchDistanceComputer for large candidate sets
-			useBatchCompute := h.batchComputer != nil && h.batchComputer.ShouldUseBatchCompute(batchCount)
+			useBatchCompute := false
+			if bc, ok := h.batchComputer.(interface{ ShouldUseBatchCompute(int) bool }); ok {
+				useBatchCompute = bc.ShouldUseBatchCompute(batchCount)
+			}
 
 			if useSQ8 && h.metric == MetricEuclidean {
 				// Ensure querySQ8 is correctly set in context for useSQ8 path
@@ -285,12 +292,18 @@ func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef, layer in
 				}
 
 				// Use batch computer for vectorized distances
-				batchDists, err := h.batchComputer.ComputeL2Distances(query, vecs)
-				if err != nil {
-					// Fallback to SIMD on error
-					simd.EuclideanDistanceBatch(query, vecs, dists)
+				if bc, ok := h.batchComputer.(interface {
+					ComputeL2Distances(query []float32, vectors [][]float32) ([]float32, error)
+				}); ok {
+					batchDists, err := bc.ComputeL2Distances(query, vecs)
+					if err != nil {
+						// Fallback to SIMD on error
+						simd.EuclideanDistanceBatch(query, vecs, dists)
+					} else {
+						copy(dists, batchDists)
+					}
 				} else {
-					copy(dists, batchDists)
+					simd.EuclideanDistanceBatch(query, vecs, dists)
 				}
 			} else {
 				// Float32 Path (SIMD for small batches)
@@ -316,6 +329,7 @@ func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef, layer in
 				}
 
 				// Check filter if provided
+				// NOTE: We check type first as imported query.Bitset logic
 				if filter != nil && !filter.Contains(int(neighborID)) {
 					continue
 				}

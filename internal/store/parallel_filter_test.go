@@ -1,10 +1,12 @@
 package store
 
+
 import (
 	"context"
 	"sync"
 	"testing"
 
+	"github.com/23skdu/longbow/internal/query"
 	"github.com/rs/zerolog"
 
 	"github.com/apache/arrow-go/v18/arrow"
@@ -59,7 +61,7 @@ func TestFilterRecordsParallel_Basic(t *testing.T) {
 	}()
 
 	// Filter for category = "A"
-	filters := []Filter{{Field: "category", Operator: "=", Value: "A"}}
+	filters := []query.Filter{{Field: "value", Operator: ">", Value: "500"}}
 
 	ctx := context.Background()
 	resultCh := store.filterRecordsParallel(ctx, recs, filters)
@@ -151,7 +153,7 @@ func TestFilterRecordsParallel_AllFiltered(t *testing.T) {
 	}()
 
 	// Filter for non-existent category
-	filters := []Filter{{Field: "category", Operator: "=", Value: "NONE"}}
+	filters := []query.Filter{{Field: "category", Operator: "=", Value: "NONE"}}
 
 	ctx := context.Background()
 	resultCh := store.filterRecordsParallel(ctx, recs, filters)
@@ -254,7 +256,7 @@ func TestFilterRecordsParallel_MultipleFilters(t *testing.T) {
 	}()
 
 	// Filter: category = "A" AND value < 3.0 (ids 0-5 have values 0, 0.5, 1, 1.5, 2, 2.5)
-	filters := []Filter{
+	filters := []query.Filter{
 		{Field: "category", Operator: "=", Value: "A"},
 		{Field: "value", Operator: "<", Value: "3.0"},
 	}
@@ -301,7 +303,7 @@ func BenchmarkFilterRecords_Sequential(b *testing.B) {
 		}
 	}()
 
-	filters := []Filter{{Field: "value", Operator: ">", Value: "50"}}
+	filters := []query.Filter{{Field: "value", Operator: ">", Value: "500"}}
 	ctx := context.Background()
 
 	b.ResetTimer()
@@ -330,7 +332,7 @@ func BenchmarkFilterRecords_Parallel(b *testing.B) {
 		}
 	}()
 
-	filters := []Filter{{Field: "value", Operator: ">", Value: "50"}}
+	filters := []query.Filter{{Field: "value", Operator: ">", Value: "500"}}
 	ctx := context.Background()
 
 	b.ResetTimer()
@@ -357,7 +359,7 @@ func BenchmarkFilterRecords_Parallel_LargeDataset(b *testing.B) {
 		}
 	}()
 
-	filters := []Filter{{Field: "value", Operator: ">", Value: "500"}}
+	filters := []query.Filter{{Field: "value", Operator: ">", Value: "500"}}
 	ctx := context.Background()
 
 	b.ResetTimer()

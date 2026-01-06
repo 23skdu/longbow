@@ -1,8 +1,10 @@
 package store
 
+
 import (
 	"testing"
 
+	"github.com/23skdu/longbow/internal/query"
 	"github.com/apache/arrow-go/v18/arrow"
 )
 
@@ -62,7 +64,7 @@ func (m *MockIndex) Search(query []float32, k int) []VectorID {
 	return []VectorID{}
 }
 
-func (m *MockIndex) SearchVectors(query []float32, k int, filters []Filter) ([]SearchResult, error) {
+func (m *MockIndex) SearchVectors(query []float32, k int, filters []query.Filter) ([]SearchResult, error) {
 	m.SearchCalls++
 	results := make([]SearchResult, 0, k)
 	for i := 0; i < k; i++ {
@@ -71,7 +73,7 @@ func (m *MockIndex) SearchVectors(query []float32, k int, filters []Filter) ([]S
 	return results, nil
 }
 
-func (m *MockIndex) SearchVectorsWithBitmap(query []float32, k int, filter *Bitset) []SearchResult {
+func (m *MockIndex) SearchVectorsWithBitmap(query []float32, k int, filter *query.Bitset) []SearchResult {
 	m.SearchCalls++
 	return []SearchResult{}
 }

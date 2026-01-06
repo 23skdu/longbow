@@ -1,5 +1,6 @@
 package store
 
+
 import (
 	"testing"
 
@@ -8,6 +9,8 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/23skdu/longbow/internal/query"
 )
 
 func TestZeroCopyRecordBatch(t *testing.T) {
@@ -33,7 +36,7 @@ func TestZeroCopyRecordBatch(t *testing.T) {
 		b1.AppendValues(vals, nil)
 		c1 := b1.NewFloat64Array()
 		defer c1.Release()
-		
+
 		return array.NewRecordBatch(schema, []arrow.Array{c0, c1}, int64(len(ids)))
 	}
 
@@ -42,7 +45,7 @@ func TestZeroCopyRecordBatch(t *testing.T) {
 		defer rec.Release()
 
 		// Empty bitset
-		deleted := NewBitset()
+		deleted := query.NewBitset()
 
 		res, err := ZeroCopyRecordBatch(pool, rec, deleted)
 		require.NoError(t, err)
@@ -57,7 +60,7 @@ func TestZeroCopyRecordBatch(t *testing.T) {
 		defer rec.Release()
 
 		// Delete indices 1 (row2) and 3 (row4)
-		deleted := NewBitset()
+		deleted := query.NewBitset()
 		deleted.Set(1)
 		deleted.Set(3)
 
@@ -66,15 +69,15 @@ func TestZeroCopyRecordBatch(t *testing.T) {
 		defer res.Release()
 
 		assert.Equal(t, int64(3), res.NumRows())
-		
+
 		// check contents: rows 0, 2, 4 -> 1, 3, 5
 		c0 := res.Column(0).(*array.Int64)
 		c1 := res.Column(1).(*array.Float64)
-		
+
 		assert.Equal(t, int64(1), c0.Value(0))
 		assert.Equal(t, int64(3), c0.Value(1))
 		assert.Equal(t, int64(5), c0.Value(2))
-		
+
 		assert.Equal(t, 10.0, c1.Value(0))
 		assert.Equal(t, 30.0, c1.Value(1))
 		assert.Equal(t, 50.0, c1.Value(2))
@@ -84,7 +87,7 @@ func TestZeroCopyRecordBatch(t *testing.T) {
 		rec := createBatch([]int64{1, 2}, []float64{1.1, 2.2})
 		defer rec.Release()
 
-		deleted := NewBitset()
+		deleted := query.NewBitset()
 		deleted.Set(0)
 		deleted.Set(1)
 
@@ -94,7 +97,7 @@ func TestZeroCopyRecordBatch(t *testing.T) {
 
 		assert.Equal(t, int64(0), res.NumRows())
 	})
-	
+
 	t.Run("Nil Bitset", func(t *testing.T) {
 		rec := createBatch([]int64{1}, []float64{1.1})
 		defer rec.Release()
@@ -117,17 +120,17 @@ func TestRetainRecordBatch(t *testing.T) {
 	b.Append(1)
 	col := b.NewInt32Array()
 	defer col.Release()
-	
+
 	rec := array.NewRecordBatch(schema, []arrow.Array{col}, 1)
-	
+
 	// Initial Retain count is 1
 	// RetainRecordBatch calls Retain, so count becomes 2
-	
+
 	res := RetainRecordBatch(rec)
-	
+
 	// We release rec (original)
 	rec.Release()
-	
+
 	// res should still be valid/usable
 	assert.Equal(t, int64(1), res.NumRows())
 	res.Release() // Final release

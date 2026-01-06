@@ -2,48 +2,72 @@
 
 This document outlines the next prioritized improvements for the Longbow vector database.
 
-## Priority 1: Core Architecture & Features
+## Priority 1: Core Architecture & Reliability
 
-### 1. GraphRAG Enhancements
+### 1. Refactor `internal/store` Monolith
 
-- **Impact**: **High**. Strengthens Longbow's position as a multi-modal store by improving graph traversal
-  capabilities for complex retrieval augmented generation workflows.
-- **Location**: `internal/store/graph_store.go`
-- **Plan**: Implement weighted traversal, bidirectional edge lookups, and integration with vector search results for
-  "Graph-biased" ranking.
+- **Impact**: **High**. The `internal/store` package contains 360+ files, making maintenance and testing difficult.
+- **Location**: `internal/store`
+- **Plan**: Split into dedicated packages: `internal/index` (HNSW/Vector), `internal/storage` (Persistence/WAL/S3),
+  `internal/query` (Filtering/Eval).
 
-## Priority 2: Performance Optimizations
+### 2. Distributed Consensus (Raft)
 
-### 1. Vectorized Filter Evaluation
+- **Impact**: **High**. Critical for strong consistency in cluster metadata (schema changes, shard rebalancing) where
+  Gossip is insufficient.
+- **Location**: `internal/consensus` (New)
+- **Plan**: Integrate a Raft library (e.g., `hashicorp/raft`) to manage cluster state and topology configurations.
 
-- **Impact**: **Medium**. Significantly speeds up filtered searches (e.g., "vectors where category='news'") by
-  processing predicates using SIMD instead of scalar comparison.
-- **Location**: `internal/store/filter_evaluator.go`
-- **Plan**: Vectorize the evaluation loop to process 16 bytes (or more) at a time.
+### 3. Robust Node Discovery
 
-### 2. Dynamic Oversampling for Filtering
-
-- **Impact**: **Medium**. Improves recall/precision balance for filtered HNSW searches without manual tuning.
-- **Location**: `internal/store/index_search.go`
-- **Plan**: Implement adaptive oversampling factor based on filter selectivity estimates.
-
-## Priority 3: Technical Debt & Cleanup
-
-### 1. Remaining Linting & Code Quality
-
-- **Impact**: **Low**. Improves maintainability and reduces subtle bugs.
-- **Tasks**:
-  - Address `gocritic` feedback for style and minor performance wins (40+ issues).
-  - Resolve remaining `unparam` issues (5 left).
-
-### 2. Networking & Discovery
-
-- **Impact**: **Low**. Improves operational stability for distributed deployments.
+- **Impact**: **Medium**. Improves operational stability and cloud compatibility.
 - **Location**: `internal/mesh`
-- **Plan**: Replace naive mDNS implementation with a robust library and optimize member list scanning.
+- **Plan**: Replace basic mDNS with `hashicorp/memberlist` for robust, WAN-capable gossip and membership.
 
-### 3. SIMD Tail Handling
+## Priority 2: Search Performance
 
-- **Impact**: **Low**. Ensures correctness for edge-case vector dimensions.
+### 4. Dynamic/Adaptive Oversampling
+
+- **Impact**: **Medium**. Improves recall/precision balance for filtered HNSW searches.
+- **Location**: `internal/store/index_search.go`
+- **Plan**: Implement the TODO to dynamically adjust the search `ef` search factor based on filter selectivity estimates.
+
+### 5. Async S3 Checkpointing
+
+- **Impact**: **Medium**. Prevents I/O stalls during snapshot operations on large datasets.
+- **Location**: `internal/store/s3_backend.go`
+- **Plan**: Implement non-blocking, multipart uploads for snapshots to decouple persistence latency from query availability.
+
+### 6. SIMD Tail Handling
+
+- **Impact**: **Low/Correctness**. Ensures correctness for edge-case vector dimensions not divisible by SIMD register width.
 - **Location**: `internal/simd/compare_amd64.s`
 - **Plan**: Implement proper tail handling or enforce 8-byte alignment strictness.
+
+### 7. Binary Quantization (BQ)
+
+- **Impact**: **High**. Offers extreme compression (32x) and speed for suitable datasets (e.g., embeddings with large
+  dimensions).
+- **Location**: `internal/store/quantization.go`
+- **Plan**: Implement Binary Quantization support alongside existing PQ, optimizing for Hamming distance.
+
+## Priority 3: Features & Observability
+
+### 8. Structured Query Parser
+
+- **Impact**: **Medium**. Enables complex boolean logic (AND/OR/NOT/Nested) for metadata filters.
+- **Location**: `internal/query`
+- **Plan**: Implement a parser for a SQL-like subset or structured JSON DSL to replace ad-hoc filter chains.
+
+### 9. Distributed Tracing (OpenTelemetry)
+
+- **Impact**: **Medium**. Provides visibility into request latency across the distributed scatter-gather path.
+- **Location**: `internal/store/global_search.go`
+- **Plan**: Instrument the `GlobalSearch` and `ShardedHNSW` paths with OpenTelemetry spans.
+
+### 10. HNSWv2 Migration & Stabilization
+
+- **Impact**: **Medium**. Modernizes the core index structure.
+- **Location**: `internal/store/hnsw.go`
+- **Plan**: Finalize the HNSWv2 implementation, verify its performance benefits, and create a seamless migration path
+  (deprecating v1).

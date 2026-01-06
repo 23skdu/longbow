@@ -385,3 +385,64 @@ func TestLouvainClustering_CommunityCount(t *testing.T) {
 		t.Errorf("expected at least 1 community, got %d", count)
 	}
 }
+
+// TestGraphStore_TraverseWeighted tests that weighted traversal prioritizes higher edge weights
+func TestGraphStore_TraverseWeighted(t *testing.T) {
+	gs := NewGraphStore()
+
+	// Diamond graph:
+	// Start(1) -> A(2) [Weight 1.0] -> End(4) [Weight 1.0]  (Total 2.0)
+	// Start(1) -> B(3) [Weight 10.0] -> End(4) [Weight 10.0] (Total 20.0)
+	//
+	// BFS might explore A or B first arbitrarily.
+	// Weighted traversal (Max-Heap) MUST explore B first because of weight 10.0.
+
+	_ = gs.AddEdge(Edge{Subject: VectorID(1), Predicate: "rel", Object: VectorID(2), Weight: 1.0})
+	_ = gs.AddEdge(Edge{Subject: VectorID(2), Predicate: "rel", Object: VectorID(4), Weight: 1.0})
+
+	_ = gs.AddEdge(Edge{Subject: VectorID(1), Predicate: "rel", Object: VectorID(3), Weight: 10.0})
+	_ = gs.AddEdge(Edge{Subject: VectorID(3), Predicate: "rel", Object: VectorID(4), Weight: 10.0})
+
+	opts := DefaultTraverseOptions()
+	opts.MaxHops = 2
+	opts.Direction = DirectionOutgoing
+	opts.Weighted = true
+
+	paths := gs.Traverse(1, opts)
+
+	// We expect paths to be discovered in order of score.
+	// First path found (besides start) should be 1->3 (Weight 10).
+	// Path 0 is usually Start node itself (if logic allows) or first expansion.
+	// My Traverse logic:
+	// if len(item.path.Nodes) > 1 { paths = append(...) }
+	// So single node path is NOT in `paths`.
+
+	// We expect the first few paths to be the high weight ones.
+	// Path 1->3 should be before 1->2.
+
+	foundStrongPathFirst := false
+	foundWeakPath := false
+
+	for _, p := range paths {
+		if len(p.Nodes) == 2 {
+			// Check immediate neighbors
+			secondNode := p.Nodes[1]
+			switch secondNode {
+			case 3:
+				foundStrongPathFirst = true
+			case 2:
+				if !foundStrongPathFirst {
+					t.Errorf("Expected to find strong path (via node 3) before weak path (via node 2)")
+				}
+				foundWeakPath = true
+			}
+		}
+	}
+
+	if !foundStrongPathFirst {
+		t.Errorf("Did not find strong path via node 3")
+	}
+	if !foundWeakPath {
+		t.Errorf("Did not find weak path via node 2")
+	}
+}

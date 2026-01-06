@@ -256,3 +256,35 @@ func (c *SmartClient) GetFlightInfo(ctx context.Context, desc *flight.FlightDesc
 
 	return nil, fmt.Errorf("max redirects exceeded")
 }
+
+// DoAction performs a Flight DoAction with automatic redirection handling
+func (c *SmartClient) DoAction(ctx context.Context, action *flight.Action) (flight.FlightService_DoActionClient, error) {
+	currentAddr := c.primaryAddr
+	attempts := 0
+	maxAttempts := 3
+
+	for attempts < maxAttempts {
+		attempts++
+
+		client, err := c.getClient(ctx, currentAddr)
+		if err != nil {
+			return nil, err
+		}
+
+		stream, err := client.DoAction(ctx, action)
+		if err == nil {
+			return stream, nil
+		}
+
+		if forwardErr := IsForwardRequired(err); forwardErr != nil {
+			currentAddr = forwardErr.TargetAddr
+			if currentAddr == "" {
+				return nil, fmt.Errorf("redirect with empty address")
+			}
+			continue
+		}
+		return nil, err
+	}
+
+	return nil, fmt.Errorf("max redirects exceeded")
+}

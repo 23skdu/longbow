@@ -2,6 +2,7 @@ package store
 
 import (
 	"encoding/json"
+	"sync"
 	"time"
 
 	"github.com/23skdu/longbow/internal/mesh"
@@ -11,8 +12,12 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// Global zero-alloc parser for VectorSearch (reusable, pre-allocated for 768 dims)
-var vectorSearchParser = NewZeroAllocVectorSearchParser(768)
+// Global zero-alloc parser pool for VectorSearch
+var vectorSearchParserPool = sync.Pool{
+	New: func() interface{} {
+		return NewZeroAllocVectorSearchParser(768)
+	},
+}
 
 // VectorSearchRequest defines the request format for VectorSearch action
 type VectorSearchRequest struct {
@@ -34,12 +39,16 @@ type VectorSearchResponse struct {
 }
 
 // handleVectorSearchAction handles the VectorSearch DoAction request
-func (s *MetaServer) handleVectorSearchAction(action *flight.Action, stream flight.FlightService_DoActionServer) error {
+func (s *VectorStore) handleVectorSearchAction(action *flight.Action, stream flight.FlightService_DoActionServer) error {
 	start := time.Now()
 
 	var req VectorSearchRequest
 	var parseErr error
-	req, parseErr = vectorSearchParser.Parse(action.Body)
+
+	parser := vectorSearchParserPool.Get().(*ZeroAllocVectorSearchParser)
+	defer vectorSearchParserPool.Put(parser)
+
+	req, parseErr = parser.Parse(action.Body)
 	if parseErr != nil {
 		metrics.VectorSearchParseFallbackTotal.Inc()
 		req = VectorSearchRequest{}

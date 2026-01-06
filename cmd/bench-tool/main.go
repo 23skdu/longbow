@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"math/rand"
 	"strings"
@@ -15,6 +17,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/flight"
+	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/google/uuid"
 )
@@ -88,8 +91,10 @@ func main() {
 				latency.Record(dur)
 
 				if err != nil {
+					if errors.Load() == 0 {
+						log.Printf("First Error: %v", err)
+					}
 					errors.Add(1)
-					// log.Printf("Error: %v", err) // Verbose
 				} else {
 					ops.Add(1)
 				}
@@ -133,19 +138,18 @@ func runIngest(ctx context.Context, c *client.SmartClient) error {
 	defer rec.Release()
 
 	// DoPut
-	stream, err := c.DoPut(ctx, &flight.FlightDescriptor{
+	desc := &flight.FlightDescriptor{
 		Type: flight.DescriptorPATH,
 		Path: []string{"bench_collection"},
-	})
+	}
+	stream, err := c.DoPut(ctx, desc)
 	if err != nil {
 		return err
 	}
 
-	// Send Schema first (if needed by implementation, standard Flight does)
-	// But arrow-go Flight Writer handles this usually.
-
-	wr := flight.NewRecordWriter(stream)
-	defer func() { _ = wr.Close() }()
+	wr := flight.NewRecordWriter(stream, ipc.WithSchema(schema))
+	wr.SetFlightDescriptor(desc)
+	defer wr.Close()
 
 	if err := wr.Write(rec); err != nil {
 		return err
@@ -154,27 +158,45 @@ func runIngest(ctx context.Context, c *client.SmartClient) error {
 	return wr.Close()
 }
 
-// runSearch performs a DoGet/VectorSearch
+// runSearch performs a VectorSearch DoAction
 func runSearch(ctx context.Context, c *client.SmartClient) error {
-	// Simulate simple DoGet for now
-	// For vector search, we'd typically pass a serialized query in the Ticket
-	ticket := []byte(`{"query": "test", "k": 10}`)
-	stream, err := c.DoGet(ctx, ticket)
+	// Generate random query vector
+	queryVec := make([]float32, *dim)
+	for i := 0; i < *dim; i++ {
+		queryVec[i] = rand.Float32()
+	}
+
+	req := map[string]interface{}{
+		"dataset": "bench_collection",
+		"vector":  queryVec,
+		"k":       10,
+	}
+	body, err := json.Marshal(req)
 	if err != nil {
 		return err
 	}
 
-	// Drain stream
-	r, err := flight.NewRecordReader(stream)
+	action := &flight.Action{
+		Type: "VectorSearch",
+		Body: body,
+	}
+
+	stream, err := c.DoAction(ctx, action)
 	if err != nil {
 		return err
 	}
-	defer r.Release()
 
-	for r.Next() {
-		// Just consume
+	// Drain results
+	for {
+		_, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
 	}
-	return r.Err()
+	return nil
 }
 
 // Latency tracking

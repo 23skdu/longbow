@@ -71,22 +71,25 @@ func (s *DataServer) GetSchema(ctx context.Context, desc *flight.FlightDescripto
 	return result, ToGRPCStatus(err)
 }
 
-// DoAction returns Unimplemented on DataServer (data plane only)
+// DoAction handles actions on DataServer. Supports VectorSearch for data plane.
 func (s *DataServer) DoAction(action *flight.Action, stream flight.FlightService_DoActionServer) error {
+	if action != nil && action.Type == "VectorSearch" {
+		return s.handleVectorSearchAction(action, stream)
+	}
 	return status.Error(codes.Unimplemented, "DoAction not implemented on DataServer; use MetaServer")
 }
 
 // MetaServer handles control plane operations (ListFlights, GetFlightInfo)
-// Embeds VectorStore to inherit base interface, overrides methods for error conversion.
+// Embeds VectorStore to inherit base interface.
 type MetaServer struct {
 	*VectorStore
-	coordinator *GlobalSearchCoordinator
 }
 
 func NewMetaServer(store *VectorStore) *MetaServer {
+	coord := NewGlobalSearchCoordinator(store.logger)
+	store.SetCoordinator(coord)
 	return &MetaServer{
 		VectorStore: store,
-		coordinator: NewGlobalSearchCoordinator(store.logger),
 	}
 }
 

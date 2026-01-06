@@ -11,9 +11,9 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/apache/arrow-go/v18/arrow/memory"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/rs/zerolog"
 	"google.golang.org/grpc/metadata"
 )
 
@@ -72,39 +72,6 @@ func (m *mockDoExchangeStream) getSentCount() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return len(m.sentData)
-}
-
-func (m *mockDoExchangeStream) getSentData() []*flight.FlightData { //nolint:unused
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.sentData
-}
-
-// Helper to create test record batch
-func createTestExchangeRecord(alloc memory.Allocator, id int64, vec []float32) arrow.RecordBatch { //nolint:unused
-	schema := arrow.NewSchema([]arrow.Field{
-		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
-		{Name: "vector", Type: arrow.ListOf(arrow.PrimitiveTypes.Float32)},
-	}, nil)
-
-	idBuilder := array.NewInt64Builder(alloc)
-	idBuilder.Append(id)
-	idArr := idBuilder.NewArray()
-
-	listBuilder := array.NewListBuilder(alloc, arrow.PrimitiveTypes.Float32)
-	vb := listBuilder.ValueBuilder().(*array.Float32Builder)
-	listBuilder.Append(true)
-	for _, v := range vec {
-		vb.Append(v)
-	}
-	listArr := listBuilder.NewArray()
-
-	rec := array.NewRecordBatch(schema, []arrow.Array{idArr, listArr}, 1)
-
-	idBuilder.Release()
-	listBuilder.Release()
-
-	return rec
 }
 
 // Test 1: Basic bidirectional exchange - DataServer has DoExchange method

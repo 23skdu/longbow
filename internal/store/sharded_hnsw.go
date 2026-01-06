@@ -154,7 +154,7 @@ func NewShardedHNSW(config ShardedHNSWConfig, dataset *Dataset) *ShardedHNSW {
 	return s
 }
 
-func (s *ShardedHNSW) newShard(shardIdx int) *hnswShard {
+func (s *ShardedHNSW) newShard(_ int) *hnswShard {
 	// Map ShardedHNSWConfig to ArrowHNSWConfig
 	arrowConfig := DefaultArrowHNSWConfig()
 	arrowConfig.M = s.config.M

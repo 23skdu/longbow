@@ -1,5 +1,6 @@
 package store
 
+
 import (
 	"testing"
 )
@@ -76,7 +77,7 @@ func TestDelete(t *testing.T) {
 	// Wait, if neighbors are not connected, Search will only find entry point.
 	// For Delete test, we just need to verify that if a node IS found, it's filtered.
 	// Let's connect them all to node 0.
-	ctx := index.searchPool.Get()
+	ctx := index.searchPool.Get().(*ArrowSearchContext)
 	defer index.searchPool.Put(ctx)
 	for i := 1; i < 10; i++ {
 		index.AddConnection(ctx, data, 0, uint32(i), 0, 16)

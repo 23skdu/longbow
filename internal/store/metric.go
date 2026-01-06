@@ -1,22 +1,7 @@
 package store
 
-// DistanceMetric defines the distance metric used for vector comparison.
-type DistanceMetric string
-
-const (
-	// MetricEuclidean is the default L2 distance (lower is closer).
-	MetricEuclidean DistanceMetric = "euclidean"
-	// MetricCosine is the Cosine distance (1.0 - cosine_similarity).
-	MetricCosine DistanceMetric = "cosine"
-	// MetricDotProduct is the Inner Product (higher is usually better, but handling depends mostly on impl).
-	// Longbow conventionally treats lower scores as "closer" for search, so we might return negative dot product
-	// or just raw score. For HNSW, raw score is usually fine if we flip comparison.
-	// However, hnsw library assumes lower is better?
-	// Let's standardise: HNSW usually minimizes distance.
-	// For Dot Product: dist = 1 - dot ? Or just -dot.
-	// Simd implementation returns dot product.
-	MetricDotProduct DistanceMetric = "dot_product"
-)
+// DistanceMetric and constants are now aliases from internal/core
+// See internal/store/type_aliases.go
 
 // DistanceFunc is the function signature for calculating distance between two vectors.
 type DistanceFunc func(a, b []float32) float32

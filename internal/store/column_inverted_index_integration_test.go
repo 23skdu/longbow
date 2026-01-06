@@ -1,9 +1,11 @@
 package store
 
+
 import (
 	"context"
 	"testing"
 
+	"github.com/23skdu/longbow/internal/query"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
@@ -106,7 +108,7 @@ func TestColumnInvertedIndex_FilterRecordWithIndex(t *testing.T) {
 	idx.IndexRecord("ds", 0, rec, []string{"category"})
 
 	// Use FilterRecordWithIndex - should use O(1) lookup
-	filter := Filter{Field: "category", Operator: "=", Value: "X"}
+	filter := query.Filter{Field: "category", Operator: "=", Value: "X"}
 	filtered, err := idx.FilterRecordWithIndex(context.Background(), "ds", 0, rec, filter, mem)
 	if err != nil {
 		t.Fatalf("FilterRecordWithIndex failed: %v", err)
@@ -149,7 +151,7 @@ func BenchmarkColumnInvertedIndex_FilterWithIndex(b *testing.B) {
 
 	idx.IndexRecord("ds", 0, rec, []string{"category"})
 
-	filter := Filter{Field: "category", Operator: "=", Value: "cat5"}
+	filter := query.Filter{Field: "category", Operator: "=", Value: "cat5"}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

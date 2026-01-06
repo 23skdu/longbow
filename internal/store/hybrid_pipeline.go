@@ -3,6 +3,8 @@ package store
 import (
 	"errors"
 	"sort"
+
+	"github.com/23skdu/longbow/internal/query"
 )
 
 func (c *HybridPipelineConfig) Validate() error {
@@ -47,11 +49,11 @@ func DefaultHybridPipelineConfig() HybridPipelineConfig {
 
 // HybridSearchQuery extends search with vector, keyword, and filter options
 type HybridSearchQuery struct {
-	Vector        []float32 // Query vector for dense search
-	KeywordQuery  string    // Text query for BM25 search
-	K             int       // Number of results
-	AlphaOverride *float32  // Override pipeline alpha if set
-	ExactFilters  []Filter  // Exact match filters (for column index)
+	Vector        []float32      // Query vector for dense search
+	KeywordQuery  string         // Text query for BM25 search
+	K             int            // Number of results
+	AlphaOverride *float32       // Override pipeline alpha if set
+	ExactFilters  []query.Filter // Exact match filters (for column index)
 }
 
 func DefaultHybridSearchQuery() HybridSearchQuery {
@@ -251,7 +253,7 @@ func FuseCascade(exact map[VectorID]struct{}, keyword, vector []SearchResult, li
 }
 
 // applyExactFilters applies exact match filters using column index
-func (p *HybridSearchPipeline) applyExactFilters(filters []Filter) map[VectorID]struct{} {
+func (p *HybridSearchPipeline) applyExactFilters(filters []query.Filter) map[VectorID]struct{} {
 	if !p.config.UseColumnIndex || p.columnIndex == nil || len(filters) == 0 {
 		return nil
 	}

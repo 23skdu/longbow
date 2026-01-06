@@ -1,9 +1,11 @@
 package store
 
+
 import (
 	"context"
 	"testing"
 
+	"github.com/23skdu/longbow/internal/query"
 	"github.com/rs/zerolog"
 
 	"github.com/apache/arrow-go/v18/arrow"
@@ -144,7 +146,7 @@ func TestVectorStore_FilterRecordOptimized_WithIndex(t *testing.T) {
 	store.IndexRecordColumns("test-dataset", rec, 0)
 
 	// Filter using indexed column
-	filters := []Filter{{Field: "category", Operator: "=", Value: "A"}}
+	filters := []query.Filter{{Field: "category", Operator: "=", Value: "TARGET"}}
 	result, err := store.filterRecordOptimized(context.Background(), "test-dataset", rec, 0, filters)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
@@ -177,7 +179,7 @@ func TestVectorStore_FilterRecordOptimized_FallbackToCompute(t *testing.T) {
 	defer rec.Release()
 
 	// Filter on non-indexed column using non-equality operator
-	filters := []Filter{{Field: "value", Operator: ">", Value: "15"}}
+	filters := []query.Filter{{Field: "value", Operator: ">", Value: "15"}}
 	result, err := store.filterRecordOptimized(context.Background(), "test", rec, 0, filters)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
@@ -223,7 +225,7 @@ func BenchmarkFilterRecordOptimized_WithIndex(b *testing.B) {
 	// Index the record
 	store.IndexRecordColumns("benchmark", rec, 0)
 
-	filters := []Filter{{Field: "category", Operator: "=", Value: "TARGET"}}
+	filters := []query.Filter{{Field: "category", Operator: "=", Value: "TARGET"}}
 	ctx := context.Background()
 
 	b.ResetTimer()
@@ -262,7 +264,7 @@ func BenchmarkFilterRecord_WithoutIndex(b *testing.B) {
 	builder.Release()
 	defer rec.Release()
 
-	filters := []Filter{{Field: "category", Operator: "=", Value: "TARGET"}}
+	filters := []query.Filter{{Field: "category", Operator: "=", Value: "TARGET"}}
 	ctx := context.Background()
 
 	b.ResetTimer()

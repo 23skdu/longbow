@@ -1,155 +1,77 @@
 package store
 
 import (
-	"runtime"
-	"sort"
+	"context"
 	"strconv"
 	"time"
 
+	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
-	"github.com/rs/zerolog"
-
-	"github.com/23skdu/longbow/internal/metrics"
 )
 
-func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemory, maxWALSize int64, ttl time.Duration) *VectorStore {
-	cfg := DefaultIndexJobQueueConfig()
+// StoreLifecycle manages startup/shutdown of standard components
+// such as managing memory pressure, eviction, and startup.
 
-	// Detect NUMA topology (Phase 4/5)
-	topo, err := DetectNUMATopology()
-	if err != nil {
-		logger.Warn().Err(err).Msg("Failed to detect NUMA topology")
-		topo = &NUMATopology{NumNodes: 1}
-	}
-	if topo.NumNodes > 1 {
-		logger.Info().
-			Int("nodes", topo.NumNodes).
-			Str("topology", topo.String()).
-			Msg("NUMA topology detected")
+// evictDataset evicts a dataset from memory.
+func (s *VectorStore) evictDataset(name string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	ds, ok := s.datasets[name]
+	if !ok {
+		return
 	}
 
-	if logger.GetLevel() == zerolog.Disabled {
-		logger = zerolog.Nop()
+	size := ds.SizeBytes.Load()
+	s.currentMemory.Add(-size)
+
+	if ds.Index != nil {
+		ds.Index.Close()
 	}
 
-	s := &VectorStore{
-		mem:                mem,
-		logger:             logger,
-		datasets:           make(map[string]*Dataset),
-		indexQueue:         NewIndexJobQueue(cfg),
-		meshStatusCache:    NewMeshStatusCache(100 * time.Millisecond), // Cache mesh status for 100ms
-		numaTopology:       topo,
-		hybridSearchConfig: DefaultHybridSearchConfig(),
-		columnIndex:        NewColumnInvertedIndex(),
-		compactionConfig:   DefaultCompactionConfig(),
-		autoShardingConfig: DefaultAutoShardingConfig(),
-		nsManager:          newNamespaceManager(),
-		stopChan:           make(chan struct{}),
-		snapshotReset:      make(chan time.Duration, 1),
-		memoryConfig:       DefaultMemoryConfig(),
-	}
-	s.maxMemory.Store(maxMemory)
-	s.memoryConfig.MaxMemory = maxMemory
-	// Initialize global BM25 if needed (default disabled)
-	if s.hybridSearchConfig.Enabled {
-		s.bm25Index = NewBM25InvertedIndex(s.hybridSearchConfig.BM25)
+	// Release records
+	for _, r := range ds.Records {
+		r.Release()
 	}
 
-	// Initialize compaction if enabled (Phase 11/14)
-	if s.compactionConfig.Enabled {
-		s.compactionWorker = NewCompactionWorker(s, s.compactionConfig)
-		s.compactionWorker.Start()
-	}
-
-	// Start workers based on CPU count (Phase 5: Scale up)
-	numWorkers := runtime.NumCPU()
-	if numWorkers < 1 {
-		numWorkers = 1
-	}
-	s.startNUMAWorkers(numWorkers)
-
-	// Start memory metrics updater
-	s.startMemoryMetricsUpdater()
-
-	return s
+	delete(s.datasets, name)
+	// metrics.DatasetCount.Dec()
+	// metrics.EvaluatedEvictions.Inc()
 }
 
-func (s *VectorStore) StartEvictionTicker(d time.Duration) {
-	ticker := time.NewTicker(d)
+// StartLifecycleManager starts the lifecycle manager background task.
+func (s *VectorStore) StartLifecycleManager(ctx context.Context) {
+	// Simple background task placeholder
 	go func() {
-		for range ticker.C {
-			s.evictIfNeeded()
+		ticker := time.NewTicker(time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				// Perform maintenance
+				s.enforceMemoryLimits()
+			}
 		}
 	}()
 }
 
-func (s *VectorStore) evictIfNeeded() {
-	curr := s.currentMemory.Load()
+// enforceMemoryLimits checks current memory usage and triggers eviction if needed.
+func (s *VectorStore) enforceMemoryLimits() {
 	limit := s.maxMemory.Load()
-	if curr <= limit {
-		return
-	}
-
-	// Snapshot datasets list safely
-	s.mu.RLock()
-	candidates := make([]*Dataset, 0, len(s.datasets))
-	for _, ds := range s.datasets {
-		candidates = append(candidates, ds)
-	}
-	s.mu.RUnlock()
-
-	// Sort by LastAccess (Ascending = Oldest first)
-	sort.Slice(candidates, func(i, j int) bool {
-		return candidates[i].LastAccess().Before(candidates[j].LastAccess())
-	})
-
-	// Evict until memory < limit
-	for _, ds := range candidates {
-		if s.currentMemory.Load() <= limit {
-			break
-		}
-		s.evictDataset(ds)
+	current := s.currentMemory.Load()
+	if current > limit {
+		// Try to evict down to limit
+		_ = s.evictToTarget(limit)
 	}
 }
 
-func (s *VectorStore) evictDataset(ds *Dataset) {
-	// 1. Mark as evicting BEFORE acquiring lock
-	// This allows in-flight queries to detect eviction and fail gracefully
-	if !ds.evicting.CompareAndSwap(false, true) {
-		return // Already evicting
-	}
-
-	// 2. Acquire WRITE lock (blocks all readers)
-	ds.dataMu.Lock()
-	defer ds.dataMu.Unlock()
-
-	size := ds.SizeBytes.Load()
-	if size == 0 {
-		ds.evicting.Store(false) // Reset flag
-		return                   // Already empty or not tracked
-	}
-
-	s.logger.Warn().
-		Str("dataset", ds.Name).
-		Int64("size_bytes", size).
-		Msg("EVICTION TRIGGERED")
-
-	// 3. Clear records (safe now - no readers due to write lock)
-	for _, rec := range ds.Records {
-		rec.Release()
-	}
-	ds.Records = nil
-	ds.Tombstones = make(map[int]*Bitset)
-	ds.Index = nil
-
-	// 4. Update tracking
-	ds.SizeBytes.Store(0)
-	s.currentMemory.Add(-size)
-	metrics.EvictionsTotal.WithLabelValues("lru").Inc()
-
-	// Note: evicting flag stays true to prevent future queries
+// evictIfNeeded is an alias for enforceMemoryLimits (used by tests)
+func (s *VectorStore) evictIfNeeded() {
+	s.enforceMemoryLimits()
 }
 
 func (s *VectorStore) StartWALCheckTicker(d time.Duration)                                      {}
@@ -387,20 +309,35 @@ func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
 			return
 		case job, ok := <-s.indexQueue.Jobs():
 			if !ok {
-				processBatch(jobs)
+				if len(jobs) > 0 {
+					processBatch(jobs)
+				}
 				return
 			}
 			jobs = append(jobs, job)
-			metrics.IndexQueueDepth.Set(float64(s.indexQueue.Len()))
-			if len(jobs) >= batchSize {
-				processBatch(jobs)
-				jobs = jobs[:0]
-			}
-		case <-ticker.C:
-			if len(jobs) > 0 {
+			// Process batch if full
+			if len(jobs) >= 1000 { // Large batch for throughput
 				processBatch(jobs)
 				jobs = jobs[:0]
 			}
 		}
 	}
+}
+
+// StartEvictionTicker starts the background eviction ticker (used by tests/shutdown)
+func (s *VectorStore) StartEvictionTicker(interval time.Duration) {
+	s.workerWg.Add(1)
+	go func() {
+		defer s.workerWg.Done()
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-s.stopChan:
+				return
+			case <-ticker.C:
+				s.enforceMemoryLimits()
+			}
+		}
+	}()
 }

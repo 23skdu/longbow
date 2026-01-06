@@ -1,5 +1,6 @@
 package store
 
+
 import (
 	"fmt"
 	"testing"
@@ -10,6 +11,8 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
+
+	qry "github.com/23skdu/longbow/internal/query"
 )
 
 // TestCompactRecords_Incremental tests the incremental compaction logic in isolation
@@ -184,13 +187,13 @@ func TestCompaction_Tombstones(t *testing.T) {
 
 	// Delete from batch 0, row 5
 	if ds.Tombstones[0] == nil {
-		ds.Tombstones[0] = NewBitset()
+		ds.Tombstones[0] = qry.NewBitset()
 	}
 	ds.Tombstones[0].Set(5)
 
 	// Delete from batch 2, row 2
 	if ds.Tombstones[2] == nil {
-		ds.Tombstones[2] = NewBitset()
+		ds.Tombstones[2] = qry.NewBitset()
 	}
 	ds.Tombstones[2].Set(2)
 

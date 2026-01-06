@@ -1,9 +1,11 @@
 package store
 
+
 import (
 	"sync"
 	"testing"
 
+	"github.com/23skdu/longbow/internal/query"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
@@ -136,7 +138,7 @@ func TestShardedHNSW_Filtering(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	filters := []Filter{
+	filters := []query.Filter{
 		{Field: "tag", Operator: "==", Value: "odd"},
 	}
 

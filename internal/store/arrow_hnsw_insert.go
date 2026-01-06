@@ -890,22 +890,17 @@ func (h *ArrowHNSW) AddConnection(ctx *ArrowSearchContext, data *GraphData, sour
 
 	// 3a. Update metadata (Counts)
 	// Counts[level][chunkID][chunkOffset] atomic increment
-	countAddr := &(*countsChunk)[cOff]
-	newCount := atomic.AddInt32(countAddr, 1)
-
-	// Slot index is count - 1
-	slot := int(newCount) - 1
+	// 3a. Prepare for write
+	// Calculate slot using currentCount (stable under shard lock)
+	slot := int(currentCount)
 	if slot >= MaxNeighbors {
 		// Should not happen if MaxNeighbors >> maxConn and pruning works
-		// But if it does, decrement and return
-		atomic.AddInt32(countAddr, -1)
 		return
 	}
 
 	// Seqlock write start: increment version to odd
 	verChunk := data.LoadVersionsChunk(layer, cID)
 	if verChunk == nil {
-		// Should not happen if countsChunk/neighborsChunk are valid
 		return
 	}
 	verAddr := &(*verChunk)[cOff]
@@ -913,6 +908,10 @@ func (h *ArrowHNSW) AddConnection(ctx *ArrowSearchContext, data *GraphData, sour
 
 	// Atomic store to satisfy race detector
 	atomic.StoreUint32(&(*neighborsChunk)[baseIdx+slot], target)
+
+	// Update metadata (Counts) - make visible AFTER data write
+	countAddr := &(*countsChunk)[cOff]
+	newCount := atomic.AddInt32(countAddr, 1)
 
 	// Seqlock write: increment version (even = clean)
 	atomic.AddUint32(verAddr, 1)

@@ -193,17 +193,76 @@ func (h *ArrowHNSW) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []int)
 }
 
 // SearchVectors implements VectorIndex.
+// SearchVectors implements VectorIndex.
 func (h *ArrowHNSW) SearchVectors(query []float32, k int, filters []Filter) ([]SearchResult, error) {
-	// Filter support TODO: Convert general filters to bitset?
-	// For now, only basic search supported via this interface.
+	// Post-filtering with Adaptive Expansion
+	initialFactor := 10
+	retryFactor := 50
+	maxRetries := 1
 
-	ef := k + 100
-	// Use configured ef if larger (or standard search ef separation)
-	// Usually for search we might want a different dynamic ef.
-	// We'll stick to a heuristic k + 100 for now.
+	limit := k
+	if len(filters) > 0 {
+		limit = k * initialFactor
+	}
 
-	// Pass nil filter. Search signature updated in Step 2554.
-	return h.Search(query, k, ef, nil)
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		// Use ef = limit + 100 heuristic
+		ef := limit + 100
+
+		// Pass nil filter to get raw candidates from graph
+		candidates, err := h.Search(query, limit, ef, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		// Filter candidates
+		var res []SearchResult
+		if len(filters) > 0 {
+			// TODO: Handle multiple batches. Currently binding to Batch 0.
+			if h.dataset == nil || len(h.dataset.Records) == 0 {
+				return nil, fmt.Errorf("dataset empty during filter")
+			}
+
+			evaluator, err := NewFilterEvaluator(h.dataset.Records[0], filters)
+			if err != nil {
+				return nil, err
+			}
+
+			res = make([]SearchResult, 0, len(candidates))
+			for _, candle := range candidates {
+				// Resolve location to get RowIdx
+				loc, ok := h.locationStore.Get(VectorID(candle.ID))
+				if !ok || loc.BatchIdx == -1 {
+					continue
+				}
+
+				// Only support Batch 0 for now as per HNSWIndex limitations
+				if loc.BatchIdx != 0 {
+					// Skip or Error? Skip for safety.
+					continue
+				}
+
+				if evaluator.Matches(loc.RowIdx) {
+					res = append(res, candle)
+				}
+			}
+		} else {
+			res = candidates
+		}
+
+		if len(res) >= k || attempt == maxRetries || len(filters) == 0 {
+			// Truncate to k
+			if len(res) > k {
+				res = res[:k]
+			}
+			return res, nil
+		}
+
+		// Retry with larger limit
+		limit = k * retryFactor
+	}
+
+	return nil, nil
 }
 
 // SearchVectorsWithBitmap implements VectorIndex.

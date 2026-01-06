@@ -35,7 +35,7 @@ func EstimateAlpha(textQuery string) float32 {
 
 // SearchHybrid performs a hybrid search combining dense vector search and sparse keyword search.
 // If alpha is < 0, it is automatically estimated using EstimateAlpha.
-func SearchHybrid(ctx context.Context, s *VectorStore, name string, query []float32, textQuery string, k int, alpha float32, rrfK int) ([]SearchResult, error) {
+func SearchHybrid(ctx context.Context, s *VectorStore, name string, query []float32, textQuery string, k int, alpha float32, rrfK int, graphAlpha float32, graphDepth int) ([]SearchResult, error) {
 	// Adaptive Alpha
 	if alpha < 0 {
 		alpha = EstimateAlpha(textQuery)
@@ -99,6 +99,21 @@ func SearchHybrid(ctx context.Context, s *VectorStore, name string, query []floa
 			rrfK = 60 // Default
 		}
 		finalResults = ReciprocalRankFusion(denseResults, sparseResults, rrfK, k)
+	}
+
+	// 4. Graph Re-ranking (GraphRAG)
+	if graphAlpha > 0 && ds.Graph != nil {
+		if graphDepth <= 0 {
+			graphDepth = 2 // Default hop depth
+		}
+		// Rerank using graph topology
+		// We use the current finalResults as seeds
+		// Note: RankWithGraph returns expanded set, we might want to trim back to k or allow expansion
+		// Usually RAG wants context, so expansion is good. But we should probably limit result size eventually.
+		ranked := ds.Graph.RankWithGraph(finalResults, graphAlpha, graphDepth)
+		if len(ranked) > 0 {
+			finalResults = ranked
+		}
 	}
 
 	// Map internal IDs to user IDs (Phase 14 integration)

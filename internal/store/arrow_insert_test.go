@@ -253,6 +253,44 @@ func TestPruneConnections(t *testing.T) {
 }
 
 func BenchmarkInsert(b *testing.B) {
-	// TODO: Implement when vector storage is ready
-	b.Skip("Skipping until vector storage is integrated")
+	// Create dataset with enough records
+	dim := 2
+	recordCount := b.N
+
+	mem := memory.NewGoAllocator()
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "vector", Type: arrow.FixedSizeListOf(int32(dim), arrow.PrimitiveTypes.Float32)},
+	}, nil)
+
+	builder := array.NewRecordBuilder(mem, schema)
+	defer builder.Release()
+
+	listB := builder.Field(0).(*array.FixedSizeListBuilder)
+	valB := listB.ValueBuilder().(*array.Float32Builder)
+
+	// Pre-generate data to avoid benchmarking generation
+	for i := 0; i < recordCount; i++ {
+		listB.Append(true)
+		valB.AppendValues([]float32{float32(i), float32(i)}, nil)
+	}
+
+	rec := builder.NewRecordBatch()
+	defer rec.Release()
+
+	dataset := &Dataset{
+		Schema:  schema,
+		Records: []arrow.RecordBatch{rec},
+	}
+
+	config := DefaultArrowHNSWConfig()
+	index := NewArrowHNSW(dataset, config, nil)
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		_, err := index.AddByLocation(0, i)
+		if err != nil {
+			b.Fatalf("AddByLocation failed: %v", err)
+		}
+	}
 }

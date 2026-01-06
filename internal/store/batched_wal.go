@@ -313,13 +313,15 @@ func (w *WALBatcher) flush() {
 	metrics.WalBytesWritten.Add(float64(n))
 
 	// Sync
-	// Logic for async/sync remains similar, but simplified: call backend.Sync() if needed.
-	// If AsyncFsyncer is managed externally/via interface, we use it.
-	// For now, blocking sync as fallback or if configured.
-	// TODO: Integrate AsyncFsyncer with WALBackend interface properly.
-	// Falling back to blocking Sync for correctness in this refactor.
-	if err := w.backend.Sync(); err != nil {
-		w.handleFlushError(err)
+	// Use AsyncFsyncer if enabled, otherwise block
+	if w.asyncFsyncer != nil {
+		w.asyncFsyncer.AddDirtyBytes(int64(n))
+		w.asyncFsyncer.RequestFsyncIfNeeded()
+	} else {
+		// Fallback to blocking Sync
+		if err := w.backend.Sync(); err != nil {
+			w.handleFlushError(err)
+		}
 	}
 }
 

@@ -491,7 +491,8 @@ func (h *ArrowHNSW) CleanupTombstones(maxNodes int) int {
 					prunedInLevel++
 				} else {
 					if writeIdx != r {
-						neighborsChunk[baseIdx+writeIdx] = neighborID
+						// Atomic store to avoid race with readers
+						atomic.StoreUint32(&neighborsChunk[baseIdx+writeIdx], neighborID)
 					}
 					writeIdx++
 				}
@@ -499,7 +500,7 @@ func (h *ArrowHNSW) CleanupTombstones(maxNodes int) int {
 
 			// Zero out remainder
 			for k := writeIdx; k < count; k++ {
-				neighborsChunk[baseIdx+k] = 0
+				atomic.StoreUint32(&neighborsChunk[baseIdx+k], 0)
 			}
 
 			// Update count
@@ -873,7 +874,12 @@ func (gd *GraphData) GetNeighbors(layer int, nodeID uint32, buf []uint32) []uint
 			res = make([]uint32, count)
 		}
 
-		copy(res, (*neighborsChunk)[baseIdx:baseIdx+int(count)])
+		// Perform atomic loads to satisfy race detector
+		// Even though we have Seqlock, copy() executes non-atomic reads which clash with atomic stores in writers
+		srcBase := (*neighborsChunk)[baseIdx : baseIdx+int(count)]
+		for k := 0; k < int(count); k++ {
+			res[k] = atomic.LoadUint32(&srcBase[k])
+		}
 
 		// 4. Read Version (End)
 		if atomic.LoadUint32(verAddr) == ver {

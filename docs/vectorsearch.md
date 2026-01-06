@@ -190,7 +190,22 @@ gs.AddEdge(VectorID(1), VectorID(2), "contains_topic", 0.8)
 // Get 1-hop neighbors of Node 0
 edges := gs.GetEdges(VectorID(0))
 // Returns [{Target: 1, Type: "authored", Weight: 1.0}]
+
+### Graph-Biased Ranking (Spreading Activation)
+
+Longbow implements a **Rank-Based Spreading Activation** algorithm to re-rank search results based on graph topology.
+
+1.  **Initialization**: Initial vector search results are assigned a mass based on their rank (`1/rank`).
+2.  **Expansion**: Mass "spreads" to connected neighbors via weighted edges.
+3.  **Decay**: Mass decays with each hop (`1/(depth+1)`) to prioritize immediate connections.
+4.  **Combination**: Final scores are a weighted blend of Vector Relevance and Graph Centrality.
+
+```go
+// Re-rank results using graph topology (alpha=0.5) with 2-hop expansion
+results := dataset.Graph.RankWithGraph(initialResults, 0.5, 2)
 ```
+
+```go
 
 #### HybridSearcher
 
@@ -207,12 +222,13 @@ denseResults := hs.SearchDense(queryVector, 10)
 // Sparse-only search  
 sparseResults := hs.SearchSparse("error", 10)
 
-// Hybrid search with RRF
-hybridResults := hs.SearchHybrid(queryVector, "error", 10, 0.5, 60)
-
-// Weighted hybrid (alpha: 1.0=dense only, 0.0=sparse only)
-weightedResults := hs.SearchHybridWeighted(queryVector, "error", 10, 0.7, 60)
+// Hybrid search with RRF and Graph Re-ranking
+// alpha=0.5 (Dense/Sparse balance), rrfK=60
+// graphAlpha=0.3 (Graph influence), graphDepth=2 (2-hop expansion)
+hybridResults := hs.SearchHybrid(queryVector, "error", 10, 0.5, 60, 0.3, 2)
 ```
+
+```text
 
 ### Reciprocal Rank Fusion (RRF)
 
@@ -331,7 +347,7 @@ Automatically estimate alpha based on query length (keyword vs. natural language
 results := hs.SearchHybridWeighted(query, "short query", 10, -1.0, 60)
 ```
 
-```
+```text
 
 ## API Reference
 
@@ -362,8 +378,7 @@ type SearchResult struct {
 | `Delete(id)` | Remove from both |
 | `SearchDense(query, k)` | Vector-only search |
 | `SearchSparse(query, k)` | Keyword-only search |
-| `SearchHybrid(vec, text, k, α, rrfK)` | RRF hybrid search |
-| `SearchHybridWeighted(vec, text, k, α, rrfK)` | Weighted hybrid |
+| `SearchHybrid(vec, text, k, α, rrfK, gα, gDepth)` | Graph-enhanced RRF hybrid search |
 
 ### ReciprocalRankFusion
 

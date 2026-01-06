@@ -9,6 +9,8 @@ import (
 	"sync/atomic"
 
 	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/query"
+	qry "github.com/23skdu/longbow/internal/query"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"golang.org/x/sync/errgroup"
@@ -299,7 +301,7 @@ func (s *ShardedHNSW) AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx int) (
 }
 
 // SearchVectors implements VectorIndex.
-func (s *ShardedHNSW) SearchVectors(query []float32, k int, filters []Filter) ([]SearchResult, error) {
+func (s *ShardedHNSW) SearchVectors(query []float32, k int, filters []query.Filter) ([]SearchResult, error) {
 	if k <= 0 {
 		return nil, nil
 	}
@@ -368,7 +370,7 @@ func (s *ShardedHNSW) SearchVectors(query []float32, k int, filters []Filter) ([
 	if len(filters) > 0 && s.dataset != nil {
 		s.dataset.dataMu.RLock()
 		if len(s.dataset.Records) > 0 {
-			evaluator, err := NewFilterEvaluator(s.dataset.Records[0], filters)
+			evaluator, err := qry.NewFilterEvaluator(s.dataset.Records[0], filters)
 			if err == nil {
 				filtered := merged[:0]
 				for _, r := range merged {
@@ -398,7 +400,7 @@ func (s *ShardedHNSW) SearchVectors(query []float32, k int, filters []Filter) ([
 }
 
 // SearchVectorsWithBitmap implements VectorIndex.
-func (s *ShardedHNSW) SearchVectorsWithBitmap(query []float32, k int, filter *Bitset) []SearchResult {
+func (s *ShardedHNSW) SearchVectorsWithBitmap(query []float32, k int, filter *query.Bitset) []SearchResult {
 
 	type shardResult struct {
 		results  []SearchResult

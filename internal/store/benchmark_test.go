@@ -8,6 +8,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/23skdu/longbow/internal/storage"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/flight"
@@ -20,7 +21,7 @@ import (
 )
 
 // setupDataServerBench creates a DataServer with in-memory gRPC for benchmarking
-func setupDataServerBench(b *testing.B, cfg StorageConfig) flight.Client {
+func setupDataServerBench(b *testing.B, cfg storage.StorageConfig) flight.Client {
 	lis := bufconn.Listen(testBufSize)
 
 	tmpDir, err := os.MkdirTemp("", "bench_dataserver_*")
@@ -77,10 +78,10 @@ func setupDataServerBench(b *testing.B, cfg StorageConfig) flight.Client {
 func BenchmarkE2EDoGet(b *testing.B) {
 	benchmarks := []struct {
 		name string
-		cfg  StorageConfig
+		cfg  storage.StorageConfig
 	}{
-		{"Buffered", StorageConfig{}},
-		{"DirectIO", StorageConfig{UseDirectIO: true}},
+		{"Buffered", storage.StorageConfig{}},
+		{"DirectIO", storage.StorageConfig{UseDirectIO: true}},
 	}
 
 	for _, bm := range benchmarks {
@@ -160,10 +161,10 @@ func BenchmarkE2EDoGet(b *testing.B) {
 func BenchmarkE2EDoPut(b *testing.B) {
 	benchmarks := []struct {
 		name string
-		cfg  StorageConfig
+		cfg  storage.StorageConfig
 	}{
-		{"Buffered", StorageConfig{}},
-		{"DirectIO", StorageConfig{UseDirectIO: true}},
+		{"Buffered", storage.StorageConfig{}},
+		{"DirectIO", storage.StorageConfig{UseDirectIO: true}},
 	}
 
 	for _, bm := range benchmarks {
@@ -212,10 +213,10 @@ func BenchmarkE2EDoPut(b *testing.B) {
 func BenchmarkStreamedDoPut(b *testing.B) {
 	benchmarks := []struct {
 		name string
-		cfg  StorageConfig
+		cfg  storage.StorageConfig
 	}{
-		{"Buffered", StorageConfig{}},
-		{"DirectIO", StorageConfig{UseDirectIO: true}},
+		{"Buffered", storage.StorageConfig{}},
+		{"DirectIO", storage.StorageConfig{UseDirectIO: true}},
 	}
 
 	for _, bm := range benchmarks {

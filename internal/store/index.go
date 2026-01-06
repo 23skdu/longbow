@@ -1,6 +1,9 @@
 package store
 
-import "github.com/apache/arrow-go/v18/arrow"
+import (
+	"github.com/23skdu/longbow/internal/query"
+	"github.com/apache/arrow-go/v18/arrow"
+)
 
 // VectorIndex defines the interface for vector index implementations.
 // This allows for both single-threaded and sharded index implementations.
@@ -24,10 +27,10 @@ type VectorIndex interface {
 	AddBatch(recs []arrow.RecordBatch, rowIdxs []int, batchIdxs []int) ([]uint32, error)
 
 	// SearchVectors returns the k nearest neighbors for the query vector with scores and optional filtering.
-	SearchVectors(query []float32, k int, filters []Filter) ([]SearchResult, error)
+	SearchVectors(query []float32, k int, filters []query.Filter) ([]SearchResult, error)
 
 	// SearchVectorsWithBitmap returns k nearest neighbors filtered by a bitset.
-	SearchVectorsWithBitmap(query []float32, k int, filter *Bitset) []SearchResult
+	SearchVectorsWithBitmap(query []float32, k int, filter *query.Bitset) []SearchResult
 
 	// GetLocation retrieves the storage location for a given vector ID.
 	// Returns the location and true if found, or zero location and false if not found.

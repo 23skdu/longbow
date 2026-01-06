@@ -1,5 +1,6 @@
 package store
 
+
 import (
 	"context"
 	"testing"
@@ -10,6 +11,8 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	qry "github.com/23skdu/longbow/internal/query"
 )
 
 func TestSearchVectorsCorrectness(t *testing.T) {
@@ -83,7 +86,7 @@ func TestSearchVectorsCorrectness(t *testing.T) {
 	assert.Equal(t, VectorID(4), results[1].ID)
 
 	// Test SearchVectorsWithBitmap (Batched)
-	filter := NewBitset()
+	filter := qry.NewBitset()
 	filter.Set(1)
 	filter.Set(2)
 	filter.Set(3)
@@ -193,7 +196,7 @@ func BenchmarkSearchVectorsWithBitmapBatched(b *testing.B) {
 		_, _ = idx.Add(0, i)
 	}
 
-	filter := NewBitset()
+	filter := qry.NewBitset()
 	for i := 0; i < n; i += 2 {
 		filter.Set(i)
 	}

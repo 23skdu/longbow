@@ -291,7 +291,7 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec []float32, level int) error 
 	// Search from top layer down to level+1
 
 	// Use search pool to avoid allocations
-	ctx := h.searchPool.Get()
+	ctx := h.searchPool.Get().(*ArrowSearchContext)
 	defer h.searchPool.Put(ctx)
 
 	for lc := maxL; lc > level; lc-- {
@@ -454,7 +454,7 @@ func (h *ArrowHNSW) searchLayerForInsert(ctx *ArrowSearchContext, query []float3
 
 	for candidates.Len() > 0 {
 		iterations++
-		if uint32(iterations) > maxOps {
+		if int64(iterations) > maxOps {
 			// Safety break to prevent infinite loops if visited set fails
 			break
 		}
@@ -796,9 +796,10 @@ func (h *ArrowHNSW) selectNeighbors(ctx *ArrowSearchContext, candidates []Candid
 					remVecs[i] = remainingVecs[i]
 				}
 
-				if h.batchComputer != nil && h.metric == MetricEuclidean {
-					// Use batch computer only for Euclidean if it's L2 optimized
-					_, _ = h.batchComputer.ComputeL2DistancesInto(selVec, remVecs, dists)
+				if bc, ok := h.batchComputer.(interface {
+					ComputeL2DistancesInto(query []float32, vectors [][]float32, dest []float32) (int, error)
+				}); ok {
+					_, _ = bc.ComputeL2DistancesInto(selVec, remVecs, dists)
 				} else {
 					h.batchDistFunc(selVec, remVecs, dists)
 				}
@@ -854,7 +855,7 @@ func (h *ArrowHNSW) selectNeighbors(ctx *ArrowSearchContext, candidates []Candid
 // AddConnection adds a directed edge from source to target at the given layer.
 func (h *ArrowHNSW) AddConnection(ctx *ArrowSearchContext, data *GraphData, source, target uint32, layer int, maxConn int) {
 	// Acquire lock for the specific node (shard)
-	lockID := source % 1024
+	lockID := source % ShardedLockCount
 	h.shardedLocks[lockID].Lock()
 	defer h.shardedLocks[lockID].Unlock()
 
@@ -925,7 +926,7 @@ func (h *ArrowHNSW) AddConnection(ctx *ArrowSearchContext, data *GraphData, sour
 // PruneConnections reduces the number of connections to maxConn using the heuristic.
 func (h *ArrowHNSW) PruneConnections(ctx *ArrowSearchContext, data *GraphData, nodeID uint32, maxConn, layer int) {
 	// Acquire lock for the specific node
-	lockID := nodeID % 1024
+	lockID := nodeID % ShardedLockCount
 	h.shardedLocks[lockID].Lock()
 	defer h.shardedLocks[lockID].Unlock()
 

@@ -5,6 +5,7 @@ import (
 	"runtime"
 	"sync"
 
+	"github.com/23skdu/longbow/internal/query"
 	"github.com/apache/arrow-go/v18/arrow"
 )
 
@@ -17,7 +18,7 @@ type filterResult struct {
 
 // filterRecordsParallel processes records through filterRecord using a worker pool
 // while preserving original order in the output channel.
-func (s *VectorStore) filterRecordsParallel(ctx context.Context, recs []arrow.RecordBatch, filters []Filter) <-chan arrow.RecordBatch {
+func (s *VectorStore) filterRecordsParallel(ctx context.Context, recs []arrow.RecordBatch, filters []query.Filter) <-chan arrow.RecordBatch {
 	outCh := make(chan arrow.RecordBatch)
 
 	if len(recs) == 0 {

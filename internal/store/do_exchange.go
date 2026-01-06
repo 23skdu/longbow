@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/storage"
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"google.golang.org/grpc/codes"
@@ -90,7 +91,7 @@ func (s *VectorStore) DoExchange(stream flight.FlightService_DoExchangeServer) e
 				s.logger.Info().Uint64("last_seq", lastSeq).Msg("Starting delta sync")
 
 				// Create Iterator
-				it, err := NewWALIterator(s.dataPath, s.mem)
+				it, err := storage.NewWALIterator(s.dataPath, s.mem)
 				if err != nil {
 					s.logger.Error().Err(err).Msg("Failed to create WAL iterator")
 					return err

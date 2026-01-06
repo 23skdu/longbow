@@ -1,6 +1,7 @@
 package store
 
 import (
+	"container/heap"
 	"fmt"
 	"sync"
 	"time"
@@ -454,16 +455,53 @@ func (gs *GraphStore) Traverse(start VectorID, opts TraverseOptions) []Path {
 	var paths []Path
 	visited := make(map[VectorID]float32) // Visit score (higher is better/earlier)
 
-	// BFS queue
-	queue := []queueItem{{
-		path:  Path{Nodes: []VectorID{start}, Weight: 1.0},
-		score: 1.0,
-	}}
+	// Frontier management abstraction
+	var push func(queueItem)
+	var pop func() queueItem
+	var notEmpty func() bool
+
+	if opts.Weighted {
+		// Priority Queue for weighted traversal (Dijkstra/Best-First)
+		pq := &PathPriorityQueue{}
+		heap.Init(pq)
+		startItem := queueItem{
+			path:  Path{Nodes: []VectorID{start}, Weight: 1.0},
+			score: 1.0,
+		}
+		heap.Push(pq, startItem)
+
+		push = func(item queueItem) {
+			heap.Push(pq, item)
+		}
+		pop = func() queueItem {
+			return heap.Pop(pq).(queueItem)
+		}
+		notEmpty = func() bool {
+			return pq.Len() > 0
+		}
+	} else {
+		// Standard Queue for BFS
+		queue := []queueItem{{
+			path:  Path{Nodes: []VectorID{start}, Weight: 1.0},
+			score: 1.0,
+		}}
+		push = func(item queueItem) {
+			queue = append(queue, item)
+		}
+		pop = func() queueItem {
+			item := queue[0]
+			queue = queue[1:]
+			return item
+		}
+		notEmpty = func() bool {
+			return len(queue) > 0
+		}
+	}
+
 	visited[start] = 1.0
 
-	for len(queue) > 0 {
-		item := queue[0]
-		queue = queue[1:]
+	for notEmpty() {
+		item := pop()
 
 		if len(item.path.Nodes) > opts.MaxHops+1 { // +1 because start node counts
 			continue
@@ -511,7 +549,7 @@ func (gs *GraphStore) Traverse(start VectorID, opts TraverseOptions) []Path {
 				edgeWeight = 1.0
 			}
 
-			gs.processNeighbor(nextNode, idx, edgeWeight, item, opts, visited, &queue)
+			gs.processNeighbor(nextNode, idx, edgeWeight, item, opts, visited, push)
 		}
 
 		for _, idx := range incomingIndices {
@@ -522,7 +560,7 @@ func (gs *GraphStore) Traverse(start VectorID, opts TraverseOptions) []Path {
 				edgeWeight = 1.0
 			}
 
-			gs.processNeighbor(nextNode, idx, edgeWeight, item, opts, visited, &queue)
+			gs.processNeighbor(nextNode, idx, edgeWeight, item, opts, visited, push)
 		}
 	}
 
@@ -534,8 +572,34 @@ type queueItem struct {
 	score float32
 }
 
+// PathPriorityQueue implements heap.Interface for weighted traversal
+type PathPriorityQueue []queueItem
+
+func (pq PathPriorityQueue) Len() int { return len(pq) }
+
+// Less implements Max-Heap logic (higher score is better)
+func (pq PathPriorityQueue) Less(i, j int) bool {
+	return pq[i].score > pq[j].score
+}
+
+func (pq PathPriorityQueue) Swap(i, j int) {
+	pq[i], pq[j] = pq[j], pq[i]
+}
+
+func (pq *PathPriorityQueue) Push(x interface{}) {
+	*pq = append(*pq, x.(queueItem))
+}
+
+func (pq *PathPriorityQueue) Pop() interface{} {
+	old := *pq
+	n := len(old)
+	item := old[n-1]
+	*pq = old[0 : n-1]
+	return item
+}
+
 // processNeighbor is a helper to extend paths
-func (gs *GraphStore) processNeighbor(nextNode VectorID, edgeIdx int, edgeWeight float32, item queueItem, opts TraverseOptions, visited map[VectorID]float32, queue *[]queueItem) {
+func (gs *GraphStore) processNeighbor(nextNode VectorID, edgeIdx int, edgeWeight float32, item queueItem, opts TraverseOptions, visited map[VectorID]float32, push func(queueItem)) {
 	// Decay score
 	decay := opts.Decay
 	if decay == 0 {
@@ -574,7 +638,7 @@ func (gs *GraphStore) processNeighbor(nextNode VectorID, edgeIdx int, edgeWeight
 		Weight: item.path.Weight + edgeWeight,
 	}
 
-	*queue = append(*queue, queueItem{
+	push(queueItem{
 		path:  newPath,
 		score: newScore,
 	})

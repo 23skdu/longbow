@@ -81,7 +81,16 @@ type VectorStore struct {
 
 	// hnsw2 integration hook (Phase 5)
 	// Called after dataset creation to initialize hnsw2 (avoids import cycle)
+	// hnsw2 integration hook (Phase 5)
+	// Called after dataset creation to initialize hnsw2 (avoids import cycle)
 	datasetInitHook func(*Dataset)
+
+	// Distributed search coordinator (shared between Data/Meta servers)
+	coordinator *GlobalSearchCoordinator
+}
+
+func (s *VectorStore) SetCoordinator(c *GlobalSearchCoordinator) {
+	s.coordinator = c
 }
 
 func (s *VectorStore) SetMesh(m *mesh.Gossip) {

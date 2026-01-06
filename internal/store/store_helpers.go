@@ -243,7 +243,7 @@ func extractVectorFromCol(rec arrow.RecordBatch, rowIdx int) ([]float32, error) 
 }
 
 // filterRecord applies filters to a batch using Arrow Compute.
-func filterRecord(ctx context.Context, mem memory.Allocator, rec arrow.RecordBatch, filters []Filter) (arrow.RecordBatch, error) {
+func filterRecord(ctx context.Context, _ memory.Allocator, rec arrow.RecordBatch, filters []Filter) (arrow.RecordBatch, error) {
 	if len(filters) == 0 {
 		rec.Retain()
 		return rec, nil
@@ -339,7 +339,7 @@ func filterRecord(ctx context.Context, mem memory.Allocator, rec arrow.RecordBat
 
 // castRecordToSchema aligns a record batch to the target schema.
 // For now, it performs checking and basic re-ordering.
-func castRecordToSchema(mem memory.Allocator, rec arrow.RecordBatch, targetSchema *arrow.Schema) (arrow.RecordBatch, error) {
+func castRecordToSchema(_ memory.Allocator, rec arrow.RecordBatch, targetSchema *arrow.Schema) (arrow.RecordBatch, error) {
 	if rec.Schema().Equal(targetSchema) {
 		rec.Retain()
 		return rec, nil

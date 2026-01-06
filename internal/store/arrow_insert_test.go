@@ -1,5 +1,6 @@
 package store
 
+
 import (
 	"sync/atomic"
 	"testing"
@@ -137,7 +138,7 @@ func TestAddConnection(t *testing.T) {
 	}
 
 	// Must have search context for pruning
-	ctx := index.searchPool.Get()
+	ctx := index.searchPool.Get().(*ArrowSearchContext)
 	defer index.searchPool.Put(ctx)
 
 	// Add connection 0 -> 1 at layer 0
@@ -234,7 +235,7 @@ func TestPruneConnections(t *testing.T) {
 	// Check 2. Dist(2,1)=1.41. Dist(2,0)=1. 1.41 * 1.0 > 1. Keep!
 	// So orthogonal neighbors should be preserved up to M.
 
-	ctx := index.searchPool.Get()
+	ctx := index.searchPool.Get().(*ArrowSearchContext)
 	defer index.searchPool.Put(ctx)
 
 	index.PruneConnections(ctx, data, 0, 5, 0)

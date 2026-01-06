@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/23skdu/longbow/internal/storage"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/flight"
@@ -209,7 +210,7 @@ func TestDoExchange_BidirectionalResponse(t *testing.T) {
 	logger := zerolog.Nop()
 	store := NewVectorStore(alloc, logger, 1<<30, 0, time.Hour)
 	tmpDir := t.TempDir()
-	require.NoError(t, store.InitPersistence(StorageConfig{
+	require.NoError(t, store.InitPersistence(storage.StorageConfig{
 		DataPath:         tmpDir,
 		SnapshotInterval: 1 * time.Hour,
 	}))

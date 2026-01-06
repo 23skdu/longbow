@@ -1,5 +1,6 @@
 package store
 
+
 import (
 	"fmt"
 	"testing"
@@ -8,9 +9,9 @@ import (
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/rs/zerolog"
 )
 
 func TestBatchedIndexing(t *testing.T) {
@@ -36,7 +37,7 @@ func TestBatchedIndexing(t *testing.T) {
 	store.datasets[ds.Name] = ds
 
 	// Start worker
-	go store.runIndexWorker(pool)
+	go store.runIndexWorker()
 
 	// 2. Add vectors in batches
 	numVectors := 200

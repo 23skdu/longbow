@@ -1,5 +1,6 @@
 package store
 
+
 import (
 	"context"
 	"encoding/json"
@@ -10,11 +11,13 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/apache/arrow-go/v18/arrow/memory"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/rs/zerolog"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	qry "github.com/23skdu/longbow/internal/query"
 )
 
 // mockVectorSearchActionServer implements flight.FlightService_DoActionServer for testing
@@ -44,7 +47,7 @@ func TestVectorSearchAction_ValidRequest(t *testing.T) {
 	metaServer := NewMetaServer(store)
 
 	// Create VectorSearch request
-	req := VectorSearchRequest{
+	req := qry.VectorSearchRequest{
 		Dataset: "test-dataset",
 		Vector:  make([]float32, 128),
 		K:       10,
@@ -64,7 +67,7 @@ func TestVectorSearchAction_ValidRequest(t *testing.T) {
 	// Verify response
 	require.Len(t, mockStream.results, 1)
 
-	var resp VectorSearchResponse
+	var resp qry.VectorSearchResponse
 	err = json.Unmarshal(mockStream.results[0].Body, &resp)
 	require.NoError(t, err)
 
@@ -78,7 +81,7 @@ func TestVectorSearchAction_InvalidDataset(t *testing.T) {
 
 	metaServer := NewMetaServer(store)
 
-	req := VectorSearchRequest{
+	req := qry.VectorSearchRequest{
 		Dataset: "nonexistent",
 		Vector:  make([]float32, 128),
 		K:       10,
@@ -126,7 +129,7 @@ func TestVectorSearchAction_DimensionMismatch(t *testing.T) {
 	metaServer := NewMetaServer(store)
 
 	// Wrong dimension - dataset has 128, we send 64
-	req := VectorSearchRequest{
+	req := qry.VectorSearchRequest{
 		Dataset: "test-dataset",
 		Vector:  make([]float32, 64),
 		K:       10,
@@ -153,7 +156,7 @@ func TestVectorSearchAction_KLessThanOne(t *testing.T) {
 
 	metaServer := NewMetaServer(store)
 
-	req := VectorSearchRequest{
+	req := qry.VectorSearchRequest{
 		Dataset: "test-dataset",
 		Vector:  make([]float32, 128),
 		K:       0,
@@ -180,7 +183,7 @@ func TestVectorSearchAction_MetricsEmitted(t *testing.T) {
 
 	metaServer := NewMetaServer(store)
 
-	req := VectorSearchRequest{
+	req := qry.VectorSearchRequest{
 		Dataset: "test-dataset",
 		Vector:  make([]float32, 128),
 		K:       5,

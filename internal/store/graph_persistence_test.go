@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/23skdu/longbow/internal/storage"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -17,7 +18,7 @@ func TestGraphPersistence_SnapshotRecovery(t *testing.T) {
 	store := NewVectorStore(mem, logger, 1024, 0, time.Hour)
 
 	// Init Persistence
-	err := store.InitPersistence(StorageConfig{
+	err := store.InitPersistence(storage.StorageConfig{
 		DataPath:         tmpDir,
 		SnapshotInterval: 1 * time.Hour,
 	})
@@ -25,9 +26,6 @@ func TestGraphPersistence_SnapshotRecovery(t *testing.T) {
 
 	// 2. Create Dataset and Add Graph Edge
 	datasetName := "test_graph"
-	// Create dataset indirectly by getting (which creates empty if not exists? No, ApplyDelta does. GetDataset doesn't exist publicly?)
-	// store.GetDataset is not public.
-	// But I am in package store, so I can access s.datasets.
 
 	store.mu.Lock()
 	ds := NewDataset(datasetName, nil) // Schema nil for now, pure graph?
@@ -56,7 +54,7 @@ func TestGraphPersistence_SnapshotRecovery(t *testing.T) {
 
 	// 5. Reopen
 	store2 := NewVectorStore(mem, logger, 1024, 0, time.Hour)
-	err = store2.InitPersistence(StorageConfig{
+	err = store2.InitPersistence(storage.StorageConfig{
 		DataPath:         tmpDir,
 		SnapshotInterval: 1 * time.Hour,
 	})

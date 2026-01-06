@@ -1,5 +1,6 @@
 package store
 
+
 // NewHNSWIndexWithMetric creates a new index with a specific distance metric (for testing)
 func NewHNSWIndexWithMetric(ds *Dataset, metric DistanceMetric) *HNSWIndex {
 	config := DefaultConfig()

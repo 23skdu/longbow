@@ -13,15 +13,7 @@ import (
 // Domain-Specific Error Types
 // =============================================================================
 
-// ErrNotFound indicates a requested resource does not exist.
-type ErrNotFound struct {
-	Resource string
-	Name     string
-}
-
-func (e *ErrNotFound) Error() string {
-	return fmt.Sprintf("%s not found: %s", e.Resource, e.Name)
-}
+// ErrNotFound is now aliased from internal/core
 
 // ErrInvalidArgument indicates invalid input from the client.
 type ErrInvalidArgument struct {
@@ -114,20 +106,17 @@ func (e *ErrInternal) Unwrap() error {
 // =============================================================================
 
 var (
-	ErrDatasetNotFound       = errors.New("dataset not found")
-	ErrInvalidVectorDim      = errors.New("invalid vector dimension")
-	ErrNoVectorColumn        = errors.New("no vector column in schema")
-	ErrRowIndexOutOfBounds   = errors.New("row index out of bounds")
+	ErrDatasetNotFound     = errors.New("dataset not found")
+	ErrInvalidVectorDim    = errors.New("invalid vector dimension")
+	ErrNoVectorColumn      = errors.New("no vector column in schema")
+	ErrRowIndexOutOfBounds = errors.New("row index out of bounds")
 )
 
 // =============================================================================
 // Error Constructors
 // =============================================================================
 
-// NewNotFoundError creates a not found error.
-func NewNotFoundError(resource, name string) error {
-	return &ErrNotFound{Resource: resource, Name: name}
-}
+// NewNotFoundError is now aliased from internal/core
 
 // NewInvalidArgumentError creates an invalid argument error.
 func NewInvalidArgumentError(field, message string) error {
@@ -237,68 +226,6 @@ func MustToGRPCStatus(err error) error {
 // =============================================================================
 // Structured Error Types with Rich Context
 // =============================================================================
-
-// WALError provides rich context for Write-Ahead Log operations.
-type WALError struct {
-	Op        string    // Operation: "write", "read", "flush", "truncate"
-	Path      string    // WAL file path
-	Offset    int64     // Byte offset where error occurred
-	Cause     error     // Underlying error
-	Timestamp time.Time // When the error occurred
-}
-
-func (e *WALError) Error() string {
-	if e.Cause != nil {
-		return fmt.Sprintf("WAL %s failed at %s (offset %d): %v", e.Op, e.Path, e.Offset, e.Cause)
-	}
-	return fmt.Sprintf("WAL %s failed at %s (offset %d)", e.Op, e.Path, e.Offset)
-}
-
-func (e *WALError) Unwrap() error {
-	return e.Cause
-}
-
-// NewWALError creates a WAL error with timestamp.
-func NewWALError(op, path string, offset int64, cause error) error {
-	return &WALError{
-		Op:        op,
-		Path:      path,
-		Offset:    offset,
-		Cause:     cause,
-		Timestamp: time.Now(),
-	}
-}
-
-// S3Error provides rich context for S3 backend operations.
-type S3Error struct {
-	Op        string    // Operation: "upload", "download", "list", "delete"
-	Bucket    string    // S3 bucket name
-	Key       string    // S3 object key
-	Cause     error     // Underlying error
-	Timestamp time.Time // When the error occurred
-}
-
-func (e *S3Error) Error() string {
-	if e.Cause != nil {
-		return fmt.Sprintf("S3 %s failed for s3://%s/%s: %v", e.Op, e.Bucket, e.Key, e.Cause)
-	}
-	return fmt.Sprintf("S3 %s failed for s3://%s/%s", e.Op, e.Bucket, e.Key)
-}
-
-func (e *S3Error) Unwrap() error {
-	return e.Cause
-}
-
-// NewS3Error creates an S3 error with timestamp.
-func NewS3Error(op, bucket, key string, cause error) error {
-	return &S3Error{
-		Op:        op,
-		Bucket:    bucket,
-		Key:       key,
-		Cause:     cause,
-		Timestamp: time.Now(),
-	}
-}
 
 // ReplicationError provides rich context for replication operations.
 type ReplicationError struct {

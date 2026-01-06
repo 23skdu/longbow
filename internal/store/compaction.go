@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/23skdu/longbow/internal/metrics"
+	qry "github.com/23skdu/longbow/internal/query"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
@@ -277,7 +278,7 @@ type BatchRemapInfo struct {
 
 // compactRecords returns a NEW slice of RecordBatches and a remapping table.
 // It DOES NOT Modify the input slice.
-func compactRecords(pool memory.Allocator, schema *arrow.Schema, records []arrow.RecordBatch, tombstones map[int]*Bitset, targetSize int64, datasetName string) ([]arrow.RecordBatch, map[int]BatchRemapInfo, error) {
+func compactRecords(pool memory.Allocator, schema *arrow.Schema, records []arrow.RecordBatch, tombstones map[int]*qry.Bitset, targetSize int64, datasetName string) ([]arrow.RecordBatch, map[int]BatchRemapInfo, error) {
 	if schema == nil && len(records) > 0 {
 		schema = records[0].Schema()
 	}
@@ -326,7 +327,7 @@ func compactRecords(pool memory.Allocator, schema *arrow.Schema, records []arrow
 		}
 
 		// Collect tombstones for this candidate group
-		candTombstones := make([]*Bitset, len(subset))
+		candTombstones := make([]*qry.Bitset, len(subset))
 		for i := cand.StartIdx; i < cand.EndIdx; i++ {
 			candTombstones[i-cand.StartIdx] = tombstones[i]
 		}
@@ -376,7 +377,7 @@ func compactRecords(pool memory.Allocator, schema *arrow.Schema, records []arrow
 }
 
 // filterTombstones creates a new RecordBatch with deleted rows removed.
-func filterTombstones(pool memory.Allocator, schema *arrow.Schema, rec arrow.RecordBatch, tomb *Bitset) (arrow.RecordBatch, []int, int64) {
+func filterTombstones(pool memory.Allocator, schema *arrow.Schema, rec arrow.RecordBatch, tomb *qry.Bitset) (arrow.RecordBatch, []int, int64) {
 	numRows := int(rec.NumRows())
 	rowMapping := make([]int, numRows)
 	keepIndices := make([]int, 0, numRows)
@@ -427,8 +428,8 @@ func filterTombstones(pool memory.Allocator, schema *arrow.Schema, rec arrow.Rec
 	return builder.NewRecordBatch(), rowMapping, int64(numRows - len(keepIndices))
 }
 
-// mergeAndFilterRecordBatches combines multiple RecordBatches into one while skipping tombstones.
-func mergeAndFilterRecordBatches(pool memory.Allocator, schema *arrow.Schema, batches []arrow.RecordBatch, tombstones []*Bitset) (arrow.RecordBatch, [][]int, int64) {
+// mergeAndFilterRecordBatches combines multiple record batches into one while skipping tombstones.
+func mergeAndFilterRecordBatches(pool memory.Allocator, schema *arrow.Schema, batches []arrow.RecordBatch, tombstones []*qry.Bitset) (arrow.RecordBatch, [][]int, int64) {
 	builder := array.NewRecordBuilder(pool, schema)
 	defer builder.Release()
 

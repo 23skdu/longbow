@@ -6,6 +6,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/23skdu/longbow/internal/query"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/compute"
@@ -90,15 +91,15 @@ func (s *VectorStore) incrementPipelineBatches(count int64) {
 
 // filterRecordOptimized uses column index for equality filters when available
 // Falls back to Arrow compute for non-indexed columns or non-equality operators
-func (s *VectorStore) filterRecordOptimized(ctx context.Context, datasetName string, rec arrow.RecordBatch, batchIdx int, filters []Filter) (arrow.RecordBatch, error) {
+func (s *VectorStore) filterRecordOptimized(ctx context.Context, datasetName string, rec arrow.RecordBatch, batchIdx int, filters []query.Filter) (arrow.RecordBatch, error) {
 	if len(filters) == 0 {
 		rec.Retain()
 		return rec, nil
 	}
 
 	// Check if we can use index for any equality filters
-	var indexableFilters []Filter
-	var remainingFilters []Filter
+	var indexableFilters []query.Filter
+	var remainingFilters []query.Filter
 
 	for _, f := range filters {
 		if f.Operator == "=" && s.columnIndex != nil && s.columnIndex.HasIndex(datasetName, f.Field) {

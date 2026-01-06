@@ -13,23 +13,6 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/scalar"
 )
 
-// validateRecordBatch checks for common internal inconsistencies in a record batch
-func validateRecordBatch(rec arrow.RecordBatch) error {
-	if int64(rec.NumCols()) != int64(rec.Schema().NumFields()) {
-		return fmt.Errorf("columns/fields mismatch: cols=%d, fields=%d", rec.NumCols(), rec.Schema().NumFields())
-	}
-	rows := rec.NumRows()
-	for i, col := range rec.Columns() {
-		if col == nil {
-			return fmt.Errorf("column %d is nil", i)
-		}
-		if int64(col.Len()) != rows {
-			return fmt.Errorf("column %d length mismatch: expected %d, got %d", i, rows, col.Len())
-		}
-	}
-	return nil
-}
-
 // EnsureTimestampZeroCopy ensures the record has a timestamp column, adding one if missing (zero-copy optimized)
 func EnsureTimestampZeroCopy(mem memory.Allocator, rec arrow.RecordBatch) (arrow.RecordBatch, error) {
 	schema := rec.Schema()

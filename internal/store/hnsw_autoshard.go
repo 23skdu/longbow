@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/query"
 	"github.com/apache/arrow-go/v18/arrow"
 )
 
@@ -342,7 +343,7 @@ func (a *AutoShardingIndex) migrateToSharded() {
 }
 
 // SearchVectors implements VectorIndex.
-func (a *AutoShardingIndex) SearchVectors(query []float32, k int, filters []Filter) ([]SearchResult, error) {
+func (a *AutoShardingIndex) SearchVectors(query []float32, k int, filters []query.Filter) ([]SearchResult, error) {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 
@@ -371,7 +372,7 @@ func (a *AutoShardingIndex) SearchVectors(query []float32, k int, filters []Filt
 }
 
 // SearchVectorsWithBitmap implements VectorIndex.
-func (a *AutoShardingIndex) SearchVectorsWithBitmap(query []float32, k int, filter *Bitset) []SearchResult {
+func (a *AutoShardingIndex) SearchVectorsWithBitmap(query []float32, k int, filter *query.Bitset) []SearchResult {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 

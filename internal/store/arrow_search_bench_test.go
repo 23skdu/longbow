@@ -1,7 +1,9 @@
 package store
 
+
 import (
 	"fmt"
+	"math"
 	"math/rand"
 	"testing"
 
@@ -53,7 +55,8 @@ func BenchmarkSearchWithBatchCompute(b *testing.B) {
 	ds.Records = []arrow.RecordBatch{rec}
 
 	// Create level generator
-	levelGen := NewLevelGenerator(config.Ml)
+	ml := 1.0 / math.Log(float64(config.M))
+	levelGen := NewLevelGenerator(ml)
 
 	// Insert vectors into HNSW
 	for i := 0; i < numVectors; i++ {
@@ -136,7 +139,8 @@ func BenchmarkSearchScaling(b *testing.B) {
 			ds.Records = []arrow.RecordBatch{rec}
 
 			// Create level generator
-			levelGen := NewLevelGenerator(config.Ml)
+			ml := 1.0 / math.Log(float64(config.M))
+			levelGen := NewLevelGenerator(ml)
 
 			// Insert vectors
 			for i := 0; i < numVectors; i++ {

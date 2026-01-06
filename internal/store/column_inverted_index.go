@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/23skdu/longbow/internal/query"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/compute"
@@ -281,7 +282,7 @@ func (idx *ColumnInvertedIndex) BuildFilterMask(datasetName string, recordIdx in
 
 // FilterRecordWithIndex applies an equality filter using the index for O(1) lookup
 // Falls back to compute.Filter if no index exists
-func (idx *ColumnInvertedIndex) FilterRecordWithIndex(ctx context.Context, datasetName string, recordIdx int, rec arrow.RecordBatch, filter Filter, mem memory.Allocator) (arrow.RecordBatch, error) {
+func (idx *ColumnInvertedIndex) FilterRecordWithIndex(ctx context.Context, datasetName string, recordIdx int, rec arrow.RecordBatch, filter query.Filter, mem memory.Allocator) (arrow.RecordBatch, error) {
 	// Only optimize equality filters
 	if filter.Operator != "=" {
 		return nil, fmt.Errorf("FilterRecordWithIndex only supports equality filters")

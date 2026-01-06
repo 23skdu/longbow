@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/23skdu/longbow/internal/query"
+	"github.com/23skdu/longbow/internal/storage"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/flight"
@@ -29,7 +31,7 @@ func TestStore_EndToEnd_TDD(t *testing.T) {
 	store := NewVectorStore(mem, logger, 1<<30, 0, 0)
 	store.dataPath = tmpDir
 	// Start WAL/Persistence subsystem
-	err := store.InitPersistence(StorageConfig{
+	err := store.InitPersistence(storage.StorageConfig{
 		DataPath:         tmpDir,
 		SnapshotInterval: 1 * time.Hour,
 	})
@@ -92,7 +94,7 @@ func TestStore_EndToEnd_TDD(t *testing.T) {
 
 	// 4. DoGet (Ticket Query)
 	// "Get all products"
-	ticket := TicketQuery{Name: "products", Limit: 100}
+	ticket := query.TicketQuery{Name: "products", Limit: 100}
 	ticketBytes, _ := json.Marshal(ticket)
 
 	// Flight Client DoGet
@@ -119,7 +121,7 @@ func TestStore_EndToEnd_TDD(t *testing.T) {
 	store2 := NewVectorStore(mem, logger, 1<<30, 0, 0)
 	store2.dataPath = tmpDir
 	// InitPersistence requires path and interval
-	err = store2.InitPersistence(StorageConfig{
+	err = store2.InitPersistence(storage.StorageConfig{
 		DataPath:         tmpDir,
 		SnapshotInterval: 1 * time.Hour,
 	})

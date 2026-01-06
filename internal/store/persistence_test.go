@@ -4,11 +4,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/23skdu/longbow/internal/storage"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
-	"github.com/stretchr/testify/assert"
 	"github.com/rs/zerolog"
+	"github.com/stretchr/testify/assert"
 )
 
 func mockLogger() zerolog.Logger {
@@ -21,7 +22,7 @@ func TestPersistence_ReadSeekClose(t *testing.T) {
 	logger := mockLogger()
 	store := NewVectorStore(mem, logger, 1024, 0, time.Hour)
 
-	err := store.InitPersistence(StorageConfig{
+	err := store.InitPersistence(storage.StorageConfig{
 		DataPath:         tmpDir,
 		SnapshotInterval: 1 * time.Hour,
 	})
@@ -30,7 +31,6 @@ func TestPersistence_ReadSeekClose(t *testing.T) {
 	// Test Close
 	err = store.Close()
 	assert.NoError(t, err)
-	assert.Nil(t, store.wal)
 }
 
 func TestPersistence_WriteToWAL_NoFile(t *testing.T) {
@@ -38,9 +38,16 @@ func TestPersistence_WriteToWAL_NoFile(t *testing.T) {
 	logger := mockLogger()
 	store := NewVectorStore(mem, logger, 1024, 0, time.Hour)
 
-	// Should not error if persistence not initialized (wal is nil)
+	// Should not error if persistence not initialized (returns nil)
+	// But writeToWAL signature takes record. If record is nil, it might panic/error inside writeToWAL before checking engine?
+	// Checking `writeToWAL` implementation:
+	// func (s *VectorStore) writeToWAL(rec arrow.RecordBatch, name string) error {
+	// 	if s.engine == nil { return nil } ...
+	// }
+	// So it returns nil.
+	// But if record is nil, it's ignored if engine is nil.
 	err := store.writeToWAL(nil, "test")
-	assert.Error(t, err) // record is nil
+	assert.NoError(t, err)
 
 	schema := arrow.NewSchema([]arrow.Field{{Name: "f", Type: arrow.PrimitiveTypes.Int64}}, nil)
 	b := array.NewRecordBuilder(mem, schema)
@@ -49,5 +56,5 @@ func TestPersistence_WriteToWAL_NoFile(t *testing.T) {
 	defer rec.Release()
 
 	err = store.writeToWAL(rec, "test")
-	assert.NoError(t, err) // Should return nil if wal is nil
+	assert.NoError(t, err) // Should return nil if engine is nil
 }

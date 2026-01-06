@@ -7,6 +7,7 @@ import (
 	"unsafe"
 
 	"github.com/23skdu/longbow/internal/metrics"
+	qry "github.com/23skdu/longbow/internal/query"
 )
 
 // Search performs k-NN search using the provided query vector.
@@ -67,7 +68,7 @@ func (h *HNSWIndex) GetNeighbors(id VectorID) ([]VectorID, error) {
 
 // SearchVectors performs k-NN search returning full results with scores (distances).
 // Uses striped locks for location access to reduce contention in result processing.
-func (h *HNSWIndex) SearchVectors(query []float32, k int, filters []Filter) ([]SearchResult, error) {
+func (h *HNSWIndex) SearchVectors(query []float32, k int, filters []qry.Filter) ([]SearchResult, error) {
 	defer func(start time.Time) {
 		metrics.SearchLatencySeconds.WithLabelValues(h.dataset.Name, "vector").Observe(time.Since(start).Seconds())
 	}(time.Now())
@@ -108,12 +109,12 @@ func (h *HNSWIndex) SearchVectors(query []float32, k int, filters []Filter) ([]S
 	distFunc := h.GetDistanceFunc()
 
 	// Pre-process filters once per search (Item 6)
-	var evaluator *FilterEvaluator
+	var evaluator *qry.FilterEvaluator
 	if len(filters) > 0 {
 		h.dataset.dataMu.RLock()
 		if len(h.dataset.Records) > 0 {
 			var err error
-			evaluator, err = NewFilterEvaluator(h.dataset.Records[0], filters)
+			evaluator, err = qry.NewFilterEvaluator(h.dataset.Records[0], filters)
 			if err != nil {
 				h.dataset.dataMu.RUnlock()
 				return nil, fmt.Errorf("filter creation failed: %w", err)
@@ -238,7 +239,7 @@ func (h *HNSWIndex) SearchVectors(query []float32, k int, filters []Filter) ([]S
 }
 
 // SearchVectorsWithBitmap returns k nearest neighbors filtered by a bitset.
-func (h *HNSWIndex) SearchVectorsWithBitmap(query []float32, k int, filter *Bitset) []SearchResult {
+func (h *HNSWIndex) SearchVectorsWithBitmap(query []float32, k int, filter *qry.Bitset) []SearchResult {
 	if filter == nil || filter.Count() == 0 {
 		return []SearchResult{}
 	}
@@ -367,7 +368,7 @@ func (h *HNSWIndex) SearchVectorsWithBitmap(query []float32, k int, filter *Bits
 	return res
 }
 
-func (h *HNSWIndex) searchBruteForceWithBitmap(query []float32, k int, filter *Bitset) []SearchResult {
+func (h *HNSWIndex) searchBruteForceWithBitmap(query []float32, k int, filter *qry.Bitset) []SearchResult {
 	// 1. Get all IDs from filter
 	ids := filter.ToUint32Array()
 	if len(ids) == 0 {
@@ -477,6 +478,7 @@ func (h *HNSWIndex) SearchWithArena(query []float32, k int, arena *SearchArena) 
 	}
 
 	return res
+
 }
 
 // SearchByIDUnsafe performs k-NN search using zero-copy vector access.

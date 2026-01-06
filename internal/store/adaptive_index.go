@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 
 	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/query"
 	"github.com/23skdu/longbow/internal/simd"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
@@ -92,7 +93,7 @@ func (b *BruteForceIndex) AddBatch(recs []arrow.RecordBatch, rowIdxs []int, batc
 }
 
 // SearchVectorsWithBitmap returns k nearest neighbors filtered by a bitset.
-func (b *BruteForceIndex) SearchVectorsWithBitmap(query []float32, k int, filter *Bitset) []SearchResult {
+func (b *BruteForceIndex) SearchVectorsWithBitmap(query []float32, k int, filter *query.Bitset) []SearchResult {
 	// Not implemented for BruteForce, but needed for interface
 	return nil
 }
@@ -123,7 +124,7 @@ func (b *BruteForceIndex) Close() error {
 }
 
 // SearchVectors returns the k nearest neighbors using linear scan.
-func (b *BruteForceIndex) SearchVectors(query []float32, k int, filters []Filter) ([]SearchResult, error) {
+func (b *BruteForceIndex) SearchVectors(query []float32, k int, filters []query.Filter) ([]SearchResult, error) {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 
@@ -304,7 +305,7 @@ func (a *AdaptiveIndex) AddBatch(recs []arrow.RecordBatch, rowIdxs []int, batchI
 	return ids, nil
 }
 
-func (a *AdaptiveIndex) SearchVectorsWithBitmap(query []float32, k int, filter *Bitset) []SearchResult {
+func (a *AdaptiveIndex) SearchVectorsWithBitmap(query []float32, k int, filter *query.Bitset) []SearchResult {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	if a.usingHNSW.Load() {
@@ -376,7 +377,7 @@ func (a *AdaptiveIndex) migrateToHNSW() {
 }
 
 // SearchVectors delegates to the active index.
-func (a *AdaptiveIndex) SearchVectors(query []float32, k int, filters []Filter) ([]SearchResult, error) {
+func (a *AdaptiveIndex) SearchVectors(query []float32, k int, filters []query.Filter) ([]SearchResult, error) {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 

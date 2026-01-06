@@ -3,6 +3,8 @@ package store
 import (
 	"sync"
 	"sync/atomic"
+
+	"github.com/23skdu/longbow/internal/core"
 )
 
 const (
@@ -19,15 +21,12 @@ type locationChunk struct {
 // packLocation packs a Location into a uint64.
 // Assumes BatchIdx and RowIdx fit in int32.
 func packLocation(loc Location) uint64 {
-	return uint64(uint32(loc.BatchIdx))<<32 | uint64(uint32(loc.RowIdx))
+	return core.PackLocation(loc)
 }
 
 // unpackLocation unpacks a uint64 into a Location.
 func unpackLocation(val uint64) Location {
-	return Location{
-		BatchIdx: int(int32(val >> 32)),
-		RowIdx:   int(int32(val)),
-	}
+	return core.UnpackLocation(val)
 }
 
 // ChunkedLocationStore manages vector locations using chunks to avoid

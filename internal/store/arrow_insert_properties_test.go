@@ -1,5 +1,6 @@
 package store
 
+
 import (
 	"sync/atomic"
 	"testing"
@@ -64,7 +65,7 @@ func TestInsertProperties(t *testing.T) {
 			}
 
 			// Need ArrowSearchContext
-			ctx := index.searchPool.Get()
+			ctx := index.searchPool.Get().(*ArrowSearchContext)
 			defer index.searchPool.Put(ctx)
 
 			// Add connections
@@ -106,7 +107,7 @@ func TestArrowSearchContextPooling(t *testing.T) {
 	pool := NewArrowSearchContextPool()
 
 	// Get context
-	ctx1 := pool.Get()
+	ctx1 := pool.Get().(*ArrowSearchContext)
 	if ctx1 == nil {
 		t.Fatal("pool.Get() returned nil")
 	}
@@ -119,7 +120,7 @@ func TestArrowSearchContextPooling(t *testing.T) {
 	pool.Put(ctx1)
 
 	// Get again - should be reused
-	ctx2 := pool.Get()
+	ctx2 := pool.Get().(*ArrowSearchContext)
 	if ctx2 == nil {
 		t.Fatal("pool.Get() returned nil on second call")
 	}
@@ -171,7 +172,7 @@ func BenchmarkArrowSearchContextPool(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		ctx := pool.Get()
+		ctx := pool.Get().(*ArrowSearchContext)
 		// Simulate some work
 		ctx.candidates.Push(Candidate{ID: uint32(i), Dist: float32(i)})
 		pool.Put(ctx)

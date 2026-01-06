@@ -1,7 +1,10 @@
 package store
 
+
 import (
 	"testing"
+
+	"github.com/23skdu/longbow/internal/query"
 )
 
 // ========== Search Method Tests ==========
@@ -316,7 +319,7 @@ func TestApplyExactFilters_Empty(t *testing.T) {
 		t.Error("expected empty result for nil filters")
 	}
 
-	result = p.applyExactFilters([]Filter{})
+	result = p.applyExactFilters([]query.Filter{})
 	if len(result) != 0 {
 		t.Error("expected empty result for empty filters")
 	}

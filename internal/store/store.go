@@ -2,7 +2,6 @@ package store
 
 import (
 	"fmt"
-	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -14,6 +13,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/23skdu/longbow/internal/mesh"
+	"github.com/23skdu/longbow/internal/storage"
 )
 
 // VectorStore implements flight.FlightServer with minimal logic
@@ -30,9 +30,7 @@ type VectorStore struct {
 
 	// Persistence
 	dataPath      string
-	wal           WAL         // For synchronous writes/snapshots
-	walMu         sync.Mutex  // Protects wal
-	walBatcher    *WALBatcher // For async batched writes
+	engine        *storage.StorageEngine // Manages WAL and Snapshots
 	snapshotReset chan time.Duration
 
 	indexQueue *IndexJobQueue // Integrated HNSW
@@ -76,7 +74,6 @@ type VectorStore struct {
 
 	// Shutdown and lifecycle (Phase 6/21)
 	shutdownState int32
-	walFile       *os.File
 	workerWg      sync.WaitGroup
 
 	// hnsw2 integration hook (Phase 5)
@@ -87,6 +84,24 @@ type VectorStore struct {
 
 	// Distributed search coordinator (shared between Data/Meta servers)
 	coordinator *GlobalSearchCoordinator
+}
+
+func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes int64, _ int64, _ time.Duration) *VectorStore {
+	memCfg := DefaultMemoryConfig()
+	memCfg.MaxMemory = maxMemoryBytes
+
+	s := &VectorStore{
+		mem:          mem,
+		logger:       logger,
+		memoryConfig: memCfg,
+		datasets:     make(map[string]*Dataset),
+		stopChan:     make(chan struct{}),
+	}
+	s.maxMemory.Store(maxMemoryBytes)
+	s.indexQueue = NewIndexJobQueue(DefaultIndexJobQueueConfig())
+	s.nsManager = newNamespaceManager()
+	s.columnIndex = NewColumnInvertedIndex()
+	return s
 }
 
 func (s *VectorStore) SetCoordinator(c *GlobalSearchCoordinator) {
@@ -198,7 +213,12 @@ func (s *VectorStore) Warmup() WarmupStats {
 	return stats
 }
 
-func (s *VectorStore) GetWALQueueDepth() (int, int) { return 0, 0 }
+func (s *VectorStore) GetWALQueueDepth() (int, int) {
+	if s.engine == nil {
+		return 0, 0
+	}
+	return s.engine.GetWALQueueDepth()
+}
 
 func (s *VectorStore) updateLWWAndMerkle(ds *Dataset, rec arrow.RecordBatch, ts int64) {
 	idColIdx := -1
@@ -230,4 +250,55 @@ func (s *VectorStore) MerkleRoot(name string) [32]byte {
 		return [32]byte{}
 	}
 	return ds.Merkle.RootHash()
+}
+
+// IndexJob is defined in dataset.go
+
+func (s *VectorStore) startIndexingWorkers(count int) {
+	for i := 0; i < count; i++ {
+		s.indexWg.Add(1)
+		go s.runIndexWorker()
+	}
+}
+
+func (s *VectorStore) runIndexWorker() {
+	defer s.indexWg.Done()
+
+	// If indexQueue.Jobs() exists
+	for job := range s.indexQueue.Jobs() {
+		s.processIndexJob(job)
+	}
+}
+
+func (s *VectorStore) processIndexJob(job IndexJob) {
+	defer job.Record.Release()
+
+	ds, err := s.getDataset(job.DatasetName)
+	if err != nil {
+		s.logger.Error().Err(err).Str("dataset", job.DatasetName).Msg("Indexing job failed: dataset not found")
+		return
+	}
+
+	ds.dataMu.RLock()
+	idx := ds.Index
+	ds.dataMu.RUnlock()
+
+	if idx == nil {
+		// Index not initialized
+		return
+	}
+
+	// Assuming HNSWIndex or similar implementing AddSafe or AddByRecord
+	if hnswIdx, ok := idx.(*HNSWIndex); ok {
+		numRows := int(job.Record.NumRows())
+		for r := 0; r < numRows; r++ {
+			_, err := hnswIdx.AddSafe(job.Record, r, job.BatchIdx)
+			if err != nil {
+				s.logger.Error().Err(err).Int("row", r).Msg("Indexing failed for row")
+			}
+		}
+	} else {
+		// Try VectorIndex generic AddByRecord?
+		// idx.AddByRecord(job.Record, 0, job.BatchIdx)
+	}
 }

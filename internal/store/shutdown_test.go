@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/23skdu/longbow/internal/storage"
 	"github.com/rs/zerolog"
 
 	"github.com/apache/arrow-go/v18/arrow/memory"
@@ -27,7 +28,7 @@ func TestShutdownCompletesWithinTimeout(t *testing.T) {
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	s := NewVectorStore(memory.NewGoAllocator(), discardLogger(), 1<<30, 1<<20, time.Hour)
-	if err := s.InitPersistence(StorageConfig{DataPath: tmpDir, SnapshotInterval: time.Hour}); err != nil {
+	if err := s.InitPersistence(storage.StorageConfig{DataPath: tmpDir, SnapshotInterval: time.Hour}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -55,7 +56,7 @@ func TestShutdownDrainsIndexQueue(t *testing.T) {
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	s := NewVectorStore(memory.NewGoAllocator(), discardLogger(), 1<<30, 1<<20, time.Hour)
-	if err := s.InitPersistence(StorageConfig{DataPath: tmpDir, SnapshotInterval: time.Hour}); err != nil {
+	if err := s.InitPersistence(storage.StorageConfig{DataPath: tmpDir, SnapshotInterval: time.Hour}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -81,7 +82,7 @@ func TestShutdownFlushesWAL(t *testing.T) {
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	s := NewVectorStore(memory.NewGoAllocator(), discardLogger(), 1<<30, 1<<20, time.Hour)
-	if err := s.InitPersistence(StorageConfig{DataPath: tmpDir, SnapshotInterval: time.Hour}); err != nil {
+	if err := s.InitPersistence(storage.StorageConfig{DataPath: tmpDir, SnapshotInterval: time.Hour}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -89,9 +90,7 @@ func TestShutdownFlushesWAL(t *testing.T) {
 	rec := makeTestRecord(s.mem, 1)
 	defer rec.Release()
 
-	seq := s.sequence.Add(1)
-	ts := time.Now().UnixNano()
-	if err := s.walBatcher.Write(rec, "flush-test", seq, ts); err != nil {
+	if err := s.writeToWAL(rec, "flush-test"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -120,7 +119,7 @@ func TestShutdownStopsBackgroundWorkers(t *testing.T) {
 
 	s := NewVectorStore(memory.NewGoAllocator(), discardLogger(), 1<<30, 1<<20, time.Hour)
 	s.StartEvictionTicker(100 * time.Millisecond)
-	if err := s.InitPersistence(StorageConfig{DataPath: tmpDir, SnapshotInterval: 10 * time.Millisecond}); err != nil {
+	if err := s.InitPersistence(storage.StorageConfig{DataPath: tmpDir, SnapshotInterval: 10 * time.Millisecond}); err != nil {
 		t.Fatalf("InitPersistence failed: %v", err)
 	}
 
@@ -147,7 +146,7 @@ func TestWALTruncationAfterSnapshot(t *testing.T) {
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	s := NewVectorStore(memory.NewGoAllocator(), discardLogger(), 1<<30, 1<<20, time.Hour)
-	if err := s.InitPersistence(StorageConfig{DataPath: tmpDir, SnapshotInterval: time.Hour}); err != nil {
+	if err := s.InitPersistence(storage.StorageConfig{DataPath: tmpDir, SnapshotInterval: time.Hour}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -155,12 +154,7 @@ func TestWALTruncationAfterSnapshot(t *testing.T) {
 	rec := makeTestRecord(s.mem, 1)
 	defer rec.Release()
 
-	seq := s.sequence.Add(1)
-	ts := time.Now().UnixNano()
-	if err := s.walBatcher.Write(rec, "truncate-test", seq, ts); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.walBatcher.Stop(); err != nil {
+	if err := s.writeToWAL(rec, "truncate-test"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -195,7 +189,7 @@ func TestShutdownIdempotent(t *testing.T) {
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	s := NewVectorStore(memory.NewGoAllocator(), discardLogger(), 1<<30, 1<<20, time.Hour)
-	if err := s.InitPersistence(StorageConfig{DataPath: tmpDir, SnapshotInterval: time.Hour}); err != nil {
+	if err := s.InitPersistence(storage.StorageConfig{DataPath: tmpDir, SnapshotInterval: time.Hour}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -223,7 +217,7 @@ func TestConcurrentShutdown(t *testing.T) {
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	s := NewVectorStore(memory.NewGoAllocator(), discardLogger(), 1<<30, 1<<20, time.Hour)
-	if err := s.InitPersistence(StorageConfig{DataPath: tmpDir, SnapshotInterval: time.Hour}); err != nil {
+	if err := s.InitPersistence(storage.StorageConfig{DataPath: tmpDir, SnapshotInterval: time.Hour}); err != nil {
 		t.Fatal(err)
 	}
 

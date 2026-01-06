@@ -6,8 +6,10 @@ import (
 	"math"
 	"math/rand"
 	"runtime"
+	"sync"
 	"sync/atomic"
 
+	"github.com/23skdu/longbow/internal/query"
 	"github.com/23skdu/longbow/internal/simd"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/memory"
@@ -64,7 +66,7 @@ func NewArrowHNSW(dataset *Dataset, config ArrowHNSWConfig, locStore *ChunkedLoc
 		mMax0:          config.MMax0,
 		efConstruction: config.EfConstruction,
 		ml:             1.0 / math.Log(float64(config.M)),
-		deleted:        NewBitset(), // Initial capacity, grows
+		deleted:        query.NewBitset(), // Initial capacity, grows
 		metric:         config.Metric,
 		vectorColIdx:   -1,
 	}
@@ -72,9 +74,9 @@ func NewArrowHNSW(dataset *Dataset, config ArrowHNSWConfig, locStore *ChunkedLoc
 	h.distFunc = h.resolveDistanceFunc()
 	h.batchDistFunc = h.resolveBatchDistanceFunc()
 
-	// Initialize measured locks
+	h.shardedLocks = make([]sync.Mutex, ShardedLockCount)
 	for i := 0; i < len(h.shardedLocks); i++ {
-		h.shardedLocks[i] = NewMeasuredMutex("hnsw_shard")
+		h.shardedLocks[i] = sync.Mutex{}
 	}
 
 	if locStore != nil {
@@ -193,7 +195,7 @@ func (h *ArrowHNSW) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []int)
 }
 
 // SearchVectors implements VectorIndex.
-func (h *ArrowHNSW) SearchVectors(query []float32, k int, filters []Filter) ([]SearchResult, error) {
+func (h *ArrowHNSW) SearchVectors(query []float32, k int, filters []query.Filter) ([]SearchResult, error) {
 	// Filter support TODO: Convert general filters to bitset?
 	// For now, only basic search supported via this interface.
 
@@ -207,7 +209,7 @@ func (h *ArrowHNSW) SearchVectors(query []float32, k int, filters []Filter) ([]S
 }
 
 // SearchVectorsWithBitmap implements VectorIndex.
-func (h *ArrowHNSW) SearchVectorsWithBitmap(query []float32, k int, filter *Bitset) []SearchResult {
+func (h *ArrowHNSW) SearchVectorsWithBitmap(query []float32, k int, filter *query.Bitset) []SearchResult {
 	ef := k + 100
 	// Calls h.Search which returns ([]SearchResult, error)
 	// The interface signature returns only []SearchResult

@@ -1,5 +1,6 @@
 package store_test
 
+
 import (
 	"context"
 	"fmt"
@@ -38,7 +39,6 @@ func TestRecallValidation(t *testing.T) {
 		{"Medium_10K_Recall@10", 10000, 384, 100, 10, 0.990, &store.ArrowHNSWConfig{
 			M: 48, MMax: 96, MMax0: 96, EfConstruction: 400,
 			SelectionHeuristicLimit: 0,
-			Ml:                      1.0 / math.Log(48),
 			Alpha:                   1.0,
 			KeepPrunedConnections:   true,
 			InitialCapacity:         10000,
@@ -46,7 +46,6 @@ func TestRecallValidation(t *testing.T) {
 		{"Medium_50K_Recall@10", 50000, 384, 100, 10, 0.920, &store.ArrowHNSWConfig{
 			M: 64, MMax: 128, MMax0: 128, EfConstruction: 600,
 			SelectionHeuristicLimit: 0,
-			Ml:                      1.0 / math.Log(64),
 			Alpha:                   1.0,
 			KeepPrunedConnections:   false,
 			SQ8Enabled:              false,
@@ -56,7 +55,6 @@ func TestRecallValidation(t *testing.T) {
 		{"Large_100K_Recall@10", 100000, 384, 100, 10, 0.880, &store.ArrowHNSWConfig{
 			M: 64, MMax: 128, MMax0: 128, EfConstruction: 800,
 			SelectionHeuristicLimit: 400,
-			Ml:                      1.0 / math.Log(64),
 			Alpha:                   1.0,
 			KeepPrunedConnections:   true,
 			SQ8Enabled:              false,
@@ -65,7 +63,6 @@ func TestRecallValidation(t *testing.T) {
 		{"Large_500K_Recall@10", 500000, 384, 100, 10, 0.850, &store.ArrowHNSWConfig{
 			M: 96, MMax: 192, MMax0: 192, EfConstruction: 1000,
 			SelectionHeuristicLimit: 400,
-			Ml:                      1.0 / math.Log(96),
 			Alpha:                   1.0,
 			KeepPrunedConnections:   true,
 			SQ8Enabled:              false,
@@ -73,28 +70,23 @@ func TestRecallValidation(t *testing.T) {
 		}},
 		{"Dim_128_100K_Recall@10", 100000, 128, 100, 10, 0.990, &store.ArrowHNSWConfig{
 			M: 48, MMax: 96, MMax0: 96, EfConstruction: 600,
-			Ml:    1.0 / math.Log(48),
 			Alpha: 1.0,
 		}},
 		{"Dim_768_20K_Recall@10", 20000, 768, 100, 10, 0.990, &store.ArrowHNSWConfig{
 			M: 48, MMax: 96, MMax0: 96, EfConstruction: 600,
-			Ml:    1.0 / math.Log(48),
 			Alpha: 1.0,
 		}},
 		{"Dim_1536_20K_Recall@10", 20000, 1536, 100, 10, 0.990, &store.ArrowHNSWConfig{
 			M: 48, MMax: 96, MMax0: 96, EfConstruction: 600,
-			Ml:    1.0 / math.Log(48),
 			Alpha: 1.0,
 		}},
 		{"Stress_500K_128D_Recall@10", 500000, 128, 50, 10, 0.900, &store.ArrowHNSWConfig{
 			M: 48, MMax: 96, MMax0: 96, EfConstruction: 400,
-			Ml:    1.0 / math.Log(48),
 			Alpha: 1.0,
 		}},
 		{"Huge_1M_Recall@10", 1000000, 384, 100, 10, 0.850, &store.ArrowHNSWConfig{
 			M: 96, MMax: 192, MMax0: 192, EfConstruction: 1200,
 			SelectionHeuristicLimit: 400,
-			Ml:                      1.0 / math.Log(96),
 			Alpha:                   1.0,
 			KeepPrunedConnections:   true,
 			SQ8Enabled:              true,

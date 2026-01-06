@@ -7,6 +7,7 @@ import (
 
 	"github.com/23skdu/longbow/internal/mesh"
 	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/query"
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -15,43 +16,24 @@ import (
 // Global zero-alloc parser pool for VectorSearch
 var vectorSearchParserPool = sync.Pool{
 	New: func() interface{} {
-		return NewZeroAllocVectorSearchParser(768)
+		return query.NewZeroAllocVectorSearchParser(768)
 	},
-}
-
-// VectorSearchRequest defines the request format for VectorSearch action
-type VectorSearchRequest struct {
-	Dataset   string      `json:"dataset"`
-	Vector    []float32   `json:"vector"`  // Single vector (legacy/simple)
-	Vectors   [][]float32 `json:"vectors"` // Multiple vectors for pipelining
-	K         int         `json:"k"`
-	Filters   []Filter    `json:"filters"`
-	LocalOnly bool        `json:"local_only"`
-	// Hybrid Search Fields
-	TextQuery string  `json:"text_query"`
-	Alpha     float32 `json:"alpha"` // 0.0=sparse, 1.0=dense, 0.5=hybrid
-}
-
-// VectorSearchResponse defines the response format for VectorSearch action
-type VectorSearchResponse struct {
-	IDs    []uint64  `json:"ids"`
-	Scores []float32 `json:"scores"`
 }
 
 // handleVectorSearchAction handles the VectorSearch DoAction request
 func (s *VectorStore) handleVectorSearchAction(action *flight.Action, stream flight.FlightService_DoActionServer) error {
 	start := time.Now()
 
-	var req VectorSearchRequest
+	var req query.VectorSearchRequest
 	var parseErr error
 
-	parser := vectorSearchParserPool.Get().(*ZeroAllocVectorSearchParser)
+	parser := vectorSearchParserPool.Get().(*query.ZeroAllocVectorSearchParser)
 	defer vectorSearchParserPool.Put(parser)
 
 	req, parseErr = parser.Parse(action.Body)
 	if parseErr != nil {
 		metrics.VectorSearchParseFallbackTotal.Inc()
-		req = VectorSearchRequest{}
+		req = query.VectorSearchRequest{}
 		if err := json.Unmarshal(action.Body, &req); err != nil {
 			metrics.VectorSearchActionErrors.Inc()
 			s.logger.Warn().Err(err).Msg("VectorSearch JSON parse failed")
@@ -169,7 +151,7 @@ func (s *VectorStore) handleVectorSearchAction(action *flight.Action, stream fli
 		}
 
 		// Build and send response for this vector
-		resp := VectorSearchResponse{
+		resp := query.VectorSearchResponse{
 			IDs:    make([]uint64, len(searchResults)),
 			Scores: make([]float32, len(searchResults)),
 		}

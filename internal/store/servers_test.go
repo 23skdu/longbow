@@ -10,6 +10,7 @@ import (
 
 	"github.com/rs/zerolog"
 
+	"github.com/23skdu/longbow/internal/storage"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/flight"
@@ -37,7 +38,7 @@ func setupDataServerTest(t *testing.T) flight.Client {
 	logger := zerolog.Nop()
 	vs := NewVectorStore(mem, logger, 1024*1024*100, 0, 0)
 
-	if err := vs.InitPersistence(StorageConfig{DataPath: tmpDir, SnapshotInterval: 0}); err != nil {
+	if err := vs.InitPersistence(storage.StorageConfig{DataPath: tmpDir, SnapshotInterval: 0}); err != nil {
 		t.Fatalf("Failed to init persistence: %v", err)
 	}
 
@@ -292,7 +293,7 @@ func setupMetaServerTest(t *testing.T) (flight.Client, *VectorStore) {
 	logger := zerolog.Nop()
 	vs := NewVectorStore(mem, logger, 1024*1024*100, 0, 0)
 
-	if err := vs.InitPersistence(StorageConfig{DataPath: tmpDir, SnapshotInterval: 0}); err != nil {
+	if err := vs.InitPersistence(storage.StorageConfig{DataPath: tmpDir, SnapshotInterval: 0}); err != nil {
 		t.Fatalf("Failed to init persistence: %v", err)
 	}
 

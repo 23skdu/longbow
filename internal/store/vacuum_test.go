@@ -1,5 +1,6 @@
 package store
 
+
 import (
 	"testing"
 	"time"
@@ -43,7 +44,7 @@ func TestHNSW_Vacuum(t *testing.T) {
 
 	// Force connection from 1 to 0 ensuring a ghost reference exists
 	data := h.data.Load()
-	ctx := h.searchPool.Get()
+	ctx := h.searchPool.Get().(*ArrowSearchContext)
 	defer h.searchPool.Put(ctx)
 	h.AddConnection(ctx, data, 1, 0, 0, 16)
 	t.Log("Forced connection 1 -> 0")

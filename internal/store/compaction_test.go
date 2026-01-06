@@ -1,5 +1,6 @@
 package store
 
+
 import (
 	"testing"
 
@@ -8,6 +9,8 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	qry "github.com/23skdu/longbow/internal/query"
 )
 
 func TestIdentifyCompactionCandidates(t *testing.T) {
@@ -122,13 +125,13 @@ func TestCompactRecords_Basic(t *testing.T) {
 	compacted[0].Release()
 
 	// 2. Test with tombstones
-	tombstones := make(map[int]*Bitset)
-	tomb1 := NewBitset()
+	tombstones := make(map[int]*qry.Bitset)
+	tomb1 := qry.NewBitset()
 	tomb1.Set(0) // Delete ID 0
 	tomb1.Set(5) // Delete ID 5
 	tombstones[0] = tomb1
 
-	tomb3 := NewBitset()
+	tomb3 := qry.NewBitset()
 	tomb3.Set(9) // Delete ID 29 (last row of b3)
 	tombstones[2] = tomb3
 
@@ -160,7 +163,7 @@ func TestFilterTombstones(t *testing.T) {
 	defer rec.Release()
 	defer b.Release()
 
-	tomb := NewBitset()
+	tomb := qry.NewBitset()
 	tomb.Set(2)
 	tomb.Set(8)
 

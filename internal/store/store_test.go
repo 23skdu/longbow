@@ -11,6 +11,7 @@ import (
 
 	"github.com/rs/zerolog"
 
+	"github.com/23skdu/longbow/internal/storage"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/flight"
@@ -38,7 +39,7 @@ func setupServer(t *testing.T) (store *VectorStore, dir string, dialer func(cont
 
 	// Init persistence
 	// Init persistence
-	if err := vs.InitPersistence(StorageConfig{DataPath: tmpDir, SnapshotInterval: 0}); err != nil {
+	if err := vs.InitPersistence(storage.StorageConfig{DataPath: tmpDir, SnapshotInterval: 0}); err != nil {
 		t.Fatalf("Failed to init persistence: %v", err)
 	}
 

@@ -9,6 +9,7 @@ import (
 
 	"github.com/23skdu/longbow/internal/mesh"
 	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/query"
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/rs/zerolog"
 	"google.golang.org/grpc"
@@ -40,7 +41,7 @@ func NewGlobalSearchCoordinator(logger zerolog.Logger) *GlobalSearchCoordinator 
 }
 
 // GlobalSearch performs scatter-gather search across the cluster
-func (c *GlobalSearchCoordinator) GlobalSearch(ctx context.Context, localResults []SearchResult, req VectorSearchRequest, peers []mesh.Member) ([]SearchResult, error) {
+func (c *GlobalSearchCoordinator) GlobalSearch(ctx context.Context, localResults []SearchResult, req query.VectorSearchRequest, peers []mesh.Member) ([]SearchResult, error) {
 	start := time.Now()
 
 	// If no peers, just return local
@@ -112,7 +113,7 @@ func (c *GlobalSearchCoordinator) GlobalSearch(ctx context.Context, localResults
 				return
 			}
 
-			var resp VectorSearchResponse
+			var resp query.VectorSearchResponse
 			if err := json.Unmarshal(res.Body, &resp); err != nil {
 				c.logger.Warn().
 					Str("peer", p.ID).

@@ -14,13 +14,8 @@ import (
 	"github.com/coder/hnsw"
 )
 
-type VectorID uint32
-
-// Location maps a VectorID to a physical location in a Dataset (Batch + Row).
-type Location struct {
-	BatchIdx int
-	RowIdx   int
-}
+// VectorID and Location are now aliases from internal/core
+// See internal/store/type_aliases.go
 
 // HNSWIndex implements VectorIndex using hierarchical navigable small world graphs.
 // It supports concurrent reads and writes, zero-copy vector access, and SIMD optimizations.
@@ -177,9 +172,8 @@ func (h *HNSWIndex) GetLocation(id VectorID) (Location, bool) {
 
 // Warmup implements VectorIndex (stub for now).
 func (h *HNSWIndex) Warmup() int {
-	// Basic warmup: iterate nodes?
-	// For now return 0 to satisfy interface
-	return 0
+	// Return the graph size as approximation of warmed up nodes
+	return h.Graph.Len()
 }
 
 // SetIndexedColumns implements VectorIndex (stub for now).

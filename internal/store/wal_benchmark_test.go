@@ -2,10 +2,10 @@ package store
 
 import (
 	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/23skdu/longbow/internal/storage"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
@@ -37,7 +37,7 @@ func BenchmarkWAL(b *testing.B) {
 		}
 		defer func() { _ = os.RemoveAll(tmpDir) }()
 
-		wal := NewStdWAL(tmpDir, nil)
+		wal := storage.NewStdWAL(tmpDir)
 		defer func() { _ = wal.Close() }()
 
 		b.ResetTimer()
@@ -56,14 +56,34 @@ func BenchmarkWAL(b *testing.B) {
 		}
 		defer func() { _ = os.RemoveAll(tmpDir) }()
 
-		fsBackend, _ := NewFSBackend(filepath.Join(tmpDir, "wal.log"))
-		// 1MB buffer, 50ms flush
-		wal := NewBufferedWAL(fsBackend, 1024*1024, 50*time.Millisecond)
-		defer func() { _ = wal.Close() }()
+		// Use new storage types
+		// Requires direct access to FSBackend or similar if exposed
+		// But in storage, we usually use NewWALBatcher which uses BufferedWAL underneath or manages batching differently
+
+		// If BufferedWAL is private in storage, we can't benchmark it here directly unless exported
+		// wal_buffered.go has BufferedWAL?
+
+		// Assuming exposed as storage.NewBufferedWAL for now
+		// If not, we skip this benchmark or use batcher.
+
+		// fsBackend := storage.NewFSBackend(...) ??
+
+		// If BufferedWAL is not exposed, we probably should benchmark WALBatcher
+		// WALBatcher wraps everything.
+
+		cfg := &storage.WALBatcherConfig{
+			FlushInterval: 50 * time.Millisecond,
+			MaxBatchSize:  1024 * 1024,
+		}
+		batcher := storage.NewWALBatcher(tmpDir, cfg)
+		if err := batcher.Start(); err != nil {
+			b.Fatal(err)
+		}
+		defer func() { _ = batcher.Stop() }()
 
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			if err := wal.Write("bench", uint64(i), 0, rec); err != nil {
+			if err := batcher.Write(rec, "bench", uint64(i), 0); err != nil {
 				b.Fatal(err)
 			}
 		}

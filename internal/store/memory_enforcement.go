@@ -113,7 +113,7 @@ func (s *VectorStore) evictToTarget(targetBytes int64) error {
 		if s.currentMemory.Load() <= targetBytes {
 			break
 		}
-		s.evictDataset(ds)
+		s.evictDataset(ds.Name)
 		evicted++
 	}
 

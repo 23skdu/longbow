@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/query"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
@@ -444,7 +445,7 @@ func (p *FlightClientPool) Close() error {
 // =============================================================================
 
 // DoGetFromPeer retrieves Arrow RecordBatches from a peer via Flight DoGet.
-func (p *FlightClientPool) DoGetFromPeer(ctx context.Context, host, dataset string, filters []Filter) ([]arrow.RecordBatch, error) {
+func (p *FlightClientPool) DoGetFromPeer(ctx context.Context, host, dataset string, filters []query.Filter) ([]arrow.RecordBatch, error) {
 	conn, err := p.Get(ctx, host)
 	if err != nil {
 		return nil, err
@@ -452,7 +453,7 @@ func (p *FlightClientPool) DoGetFromPeer(ctx context.Context, host, dataset stri
 	defer p.Put(conn)
 
 	// Build ticket
-	ticket := TicketQuery{
+	ticket := query.TicketQuery{
 		Name:    dataset,
 		Filters: filters,
 	}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/23skdu/longbow/internal/query"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/compute"
@@ -72,7 +73,7 @@ func EnsureTimestampZeroCopy(mem memory.Allocator, rec arrow.RecordBatch) (arrow
 }
 
 // MatchesFilters checks if a specific row satisfies the filters.
-func MatchesFilters(rec arrow.RecordBatch, rowIdx int, filters []Filter) (bool, error) {
+func MatchesFilters(rec arrow.RecordBatch, rowIdx int, filters []query.Filter) (bool, error) {
 	if len(filters) == 0 {
 		return true, nil
 	}
@@ -96,7 +97,7 @@ func MatchesFilters(rec arrow.RecordBatch, rowIdx int, filters []Filter) (bool, 
 	return true, nil
 }
 
-func checkFilterRow(col arrow.Array, i int, f Filter) bool {
+func checkFilterRow(col arrow.Array, i int, f query.Filter) bool {
 	if col.IsNull(i) {
 		return false
 	}
@@ -243,7 +244,7 @@ func extractVectorFromCol(rec arrow.RecordBatch, rowIdx int) ([]float32, error) 
 }
 
 // filterRecord applies filters to a batch using Arrow Compute.
-func filterRecord(ctx context.Context, _ memory.Allocator, rec arrow.RecordBatch, filters []Filter) (arrow.RecordBatch, error) {
+func filterRecord(ctx context.Context, _ memory.Allocator, rec arrow.RecordBatch, filters []query.Filter) (arrow.RecordBatch, error) {
 	if len(filters) == 0 {
 		rec.Retain()
 		return rec, nil

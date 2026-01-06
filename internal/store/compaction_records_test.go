@@ -1,11 +1,14 @@
 package store
 
+
 import (
 	"testing"
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
+
+	qry "github.com/23skdu/longbow/internal/query"
 )
 
 // Helper to create a test RecordBatch with n rows
@@ -157,13 +160,13 @@ func TestCompactRecordsFiltersTombstones(t *testing.T) {
 	batches[1] = makeTestBatch(t, 10) // 0..9
 	defer releaseBatches(batches)
 
-	tombstones := make(map[int]*Bitset)
-	t0 := NewBitset()
+	tombstones := make(map[int]*qry.Bitset)
+	t0 := qry.NewBitset()
 	t0.Set(0) // Remove id 0 from first batch
 	t0.Set(5) // Remove id 5 from first batch
 	tombstones[0] = t0
 
-	t1 := NewBitset()
+	t1 := qry.NewBitset()
 	t1.Set(9) // Remove id 9 from second batch
 	tombstones[1] = t1
 

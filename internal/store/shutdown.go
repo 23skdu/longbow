@@ -2,9 +2,6 @@ package store
 
 import (
 	"context"
-	"fmt"
-	"os"
-	"path/filepath"
 	"sync/atomic"
 	"time"
 )
@@ -14,6 +11,14 @@ const (
 	stateRunning  int32 = 0
 	stateShutdown int32 = 1
 )
+
+// Close performs a graceful shutdown with a default timeout.
+// It is an alias for Shutdown(context.Background()) but handy for defer.
+func (s *VectorStore) Close() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	return s.Shutdown(ctx)
+}
 
 // Shutdown performs a graceful shutdown of the VectorStore.
 // It stops accepting new requests, drains the index queue, flushes the WAL,
@@ -43,18 +48,10 @@ func (s *VectorStore) Shutdown(ctx context.Context) error {
 		s.logger.Info().Msg("Index queue drained successfully")
 	}
 
-	// Step 3: Flush and stop WAL batcher
-	s.logger.Info().Msg("Flushing WAL batcher...")
-	if s.walBatcher != nil {
-		if err := s.walBatcher.Stop(); err != nil {
-			s.logger.Error().Err(err).Msg("Failed to stop WAL batcher")
-			if shutdownErr == nil {
-				shutdownErr = NewShutdownError("stop", "WAL_batcher", err)
-			}
-		} else {
-			s.logger.Info().Msg("WAL batcher stopped successfully")
-		}
-		s.walBatcher = nil
+	// 2. Stop WAL Batcher and Persistence
+	if err := s.ClosePersistence(); err != nil {
+		shutdownErr = NewShutdownError("close", "persistence", err)
+		s.logger.Error().Err(err).Msg("Failed to close persistence")
 	}
 
 	// Step 4: Create final snapshot before closing
@@ -68,33 +65,14 @@ func (s *VectorStore) Shutdown(ctx context.Context) error {
 			// Don't fail shutdown for snapshot errors
 		} else {
 			s.logger.Info().Msg("Final snapshot created successfully")
-			// Truncate WAL after successful snapshot
-			if err := s.TruncateWAL(); err != nil {
-				s.logger.Error().Err(err).Msg("Failed to truncate WAL")
-			} else {
-				s.logger.Info().Msg("WAL truncated successfully")
-			}
+			// Truncate logic is handled by Snapshot/Engine
 		}
 	}
 
 	// Step 5: Close WAL file handle
-	s.walMu.Lock()
-	if s.walFile != nil {
-		s.logger.Info().Msg("Closing WAL file...")
-		if err := s.walFile.Sync(); err != nil {
-			s.logger.Error().Err(err).Msg("Failed to sync WAL")
-		}
-		if err := s.walFile.Close(); err != nil {
-			s.logger.Error().Err(err).Msg("Failed to close WAL")
-			if shutdownErr == nil {
-				shutdownErr = NewShutdownError("close", "WAL", err)
-			}
-		} else {
-			s.logger.Info().Msg("WAL file closed successfully")
-		}
-		s.walFile = nil
-	}
-	s.walMu.Unlock()
+	// Handled by ClosePersistence
+	// Step 5: Close WAL file handle
+	// Handled by engine
 
 	// Step 6: Wait for workers to finish
 	s.logger.Info().Msg("Waiting for workers to finish...")
@@ -145,38 +123,6 @@ func (s *VectorStore) drainIndexQueue(ctx context.Context) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
-}
-
-// TruncateWAL truncates the WAL file after a successful snapshot.
-// This should only be called after SaveSnapshot completes successfully.
-func (s *VectorStore) TruncateWAL() error {
-	s.walMu.Lock()
-	defer s.walMu.Unlock()
-
-	walPath := filepath.Join(s.dataPath, "wal.bin")
-
-	// If WAL file is open, close it first
-	if s.walFile != nil {
-		if err := s.walFile.Sync(); err != nil {
-			return NewShutdownError("truncate", "WAL", fmt.Errorf("sync: %w", err))
-		}
-		if err := s.walFile.Close(); err != nil {
-			return NewShutdownError("truncate", "WAL", fmt.Errorf("close: %w", err))
-		}
-		s.walFile = nil
-	}
-
-	// Truncate by creating empty file
-	f, err := os.OpenFile(walPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
-	if err != nil {
-		return NewShutdownError("truncate", "WAL", err)
-	}
-	if err := f.Close(); err != nil {
-		return NewShutdownError("truncate", "WAL", fmt.Errorf("close after truncate: %w", err))
-	}
-
-	s.logger.Info().Str("path", walPath).Msg("WAL truncated")
-	return nil
 }
 
 // isShutdown returns true if Shutdown has been called

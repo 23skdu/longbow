@@ -1,15 +1,17 @@
 package store
 
+
 import (
 	"encoding/json"
 	"testing"
 
+	qry "github.com/23skdu/longbow/internal/query"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestZeroAllocVectorSearchParser_Parse(t *testing.T) {
-	parser := NewZeroAllocVectorSearchParser(128)
+	parser := qry.NewZeroAllocVectorSearchParser(128)
 
 	t.Run("BasicValid", func(t *testing.T) {
 		data := []byte(`{"dataset": "movies", "k": 10, "vector": [0.1, 0.2, 0.3]}`)
@@ -70,14 +72,14 @@ func BenchmarkVectorSearchParser(b *testing.B) {
 	for i := range vec {
 		vec[i] = 0.5
 	}
-	req := VectorSearchRequest{
+	req := qry.VectorSearchRequest{
 		Dataset: "test",
 		K:       10,
 		Vector:  vec,
 	}
 	data, _ := json.Marshal(req)
 
-	parser := NewZeroAllocVectorSearchParser(128)
+	parser := qry.NewZeroAllocVectorSearchParser(128)
 
 	b.Run("ZeroAlloc", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
@@ -87,7 +89,7 @@ func BenchmarkVectorSearchParser(b *testing.B) {
 
 	b.Run("StandardJSON", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			var r VectorSearchRequest
+			var r qry.VectorSearchRequest
 			_ = json.Unmarshal(data, &r)
 		}
 	})

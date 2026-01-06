@@ -1,5 +1,6 @@
 package store
 
+
 import (
 	"testing"
 
@@ -53,7 +54,7 @@ func TestArrowSearchContext_Pooling(t *testing.T) {
 	pool := NewArrowSearchContextPool()
 
 	// Get context
-	ctx1 := pool.Get()
+	ctx1 := pool.Get().(*ArrowSearchContext)
 	if ctx1 == nil {
 		t.Fatal("pool.Get() returned nil")
 	}
@@ -66,7 +67,7 @@ func TestArrowSearchContext_Pooling(t *testing.T) {
 	pool.Put(ctx1)
 
 	// Get again - should be reused
-	ctx2 := pool.Get()
+	ctx2 := pool.Get().(*ArrowSearchContext)
 	if ctx2 == nil {
 		t.Fatal("pool.Get() returned nil on second call")
 	}

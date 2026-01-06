@@ -10,11 +10,13 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/apache/arrow-go/v18/arrow/memory"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/rs/zerolog"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	qry "github.com/23skdu/longbow/internal/query"
 )
 
 // mockVectorSearchActionServer implements flight.FlightService_DoActionServer for testing
@@ -44,7 +46,7 @@ func TestVectorSearchAction_ValidRequest(t *testing.T) {
 	metaServer := NewMetaServer(store)
 
 	// Create VectorSearch request
-	req := VectorSearchRequest{
+	req := qry.VectorSearchRequest{
 		Dataset: "test-dataset",
 		Vector:  make([]float32, 128),
 		K:       10,
@@ -64,7 +66,7 @@ func TestVectorSearchAction_ValidRequest(t *testing.T) {
 	// Verify response
 	require.Len(t, mockStream.results, 1)
 
-	var resp VectorSearchResponse
+	var resp qry.VectorSearchResponse
 	err = json.Unmarshal(mockStream.results[0].Body, &resp)
 	require.NoError(t, err)
 
@@ -78,7 +80,7 @@ func TestVectorSearchAction_InvalidDataset(t *testing.T) {
 
 	metaServer := NewMetaServer(store)
 
-	req := VectorSearchRequest{
+	req := qry.VectorSearchRequest{
 		Dataset: "nonexistent",
 		Vector:  make([]float32, 128),
 		K:       10,
@@ -126,7 +128,7 @@ func TestVectorSearchAction_DimensionMismatch(t *testing.T) {
 	metaServer := NewMetaServer(store)
 
 	// Wrong dimension - dataset has 128, we send 64
-	req := VectorSearchRequest{
+	req := qry.VectorSearchRequest{
 		Dataset: "test-dataset",
 		Vector:  make([]float32, 64),
 		K:       10,
@@ -153,7 +155,7 @@ func TestVectorSearchAction_KLessThanOne(t *testing.T) {
 
 	metaServer := NewMetaServer(store)
 
-	req := VectorSearchRequest{
+	req := qry.VectorSearchRequest{
 		Dataset: "test-dataset",
 		Vector:  make([]float32, 128),
 		K:       0,
@@ -180,7 +182,7 @@ func TestVectorSearchAction_MetricsEmitted(t *testing.T) {
 
 	metaServer := NewMetaServer(store)
 
-	req := VectorSearchRequest{
+	req := qry.VectorSearchRequest{
 		Dataset: "test-dataset",
 		Vector:  make([]float32, 128),
 		K:       5,
@@ -237,4 +239,71 @@ func createTestStoreWithVectors(t *testing.T, datasetName string, numVectors, _ 
 	store.datasets[datasetName] = ds
 	store.mu.Unlock()
 	return store
+}
+
+func TestVectorSearchByIDAction_Success(t *testing.T) {
+	// Custom setup to include "vector" column
+	store := createTestStoreWithVectors(t, "test-dataset", 10, 128)
+	defer func() { _ = store.Close() }()
+
+	// Replace the record batch with one that has "vector" column for extraction
+	ds := store.datasets["test-dataset"]
+	oldRec := ds.Records[0]
+	mem := memory.NewGoAllocator()
+
+	// Create schema with ID (Uint64) and Vector (FixedSizeList)
+	vecType := arrow.FixedSizeListOf(128, arrow.PrimitiveTypes.Float32)
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "id", Type: arrow.PrimitiveTypes.Uint64},
+		{Name: "vector", Type: vecType},
+	}, nil)
+
+	// Build IDs
+	idBldr := array.NewUint64Builder(mem)
+	defer idBldr.Release()
+	for i := 0; i < 10; i++ {
+		idBldr.Append(uint64(i * 100))
+	}
+	idArr := idBldr.NewArray()
+	defer idArr.Release()
+
+	// Build Vectors
+	vecBldr := array.NewFixedSizeListBuilder(mem, 128, arrow.PrimitiveTypes.Float32)
+	defer vecBldr.Release()
+	valBldr := vecBldr.ValueBuilder().(*array.Float32Builder)
+	for i := 0; i < 10; i++ {
+		vecBldr.Append(true)
+		for j := 0; j < 128; j++ {
+			valBldr.Append(0.1) // Dummy vector
+		}
+	}
+	vecArr := vecBldr.NewArray()
+	defer vecArr.Release()
+
+	newRec := array.NewRecordBatch(schema, []arrow.Array{idArr, vecArr}, 10)
+	ds.Records[0] = newRec // Replace
+	oldRec.Release()
+
+	metaServer := NewMetaServer(store)
+
+	// Test: Find ID "100" (Index 1)
+	req := qry.VectorSearchByIDRequest{
+		Dataset: "test-dataset",
+		ID:      "100",
+		K:       5,
+	}
+	reqBytes, _ := json.Marshal(req)
+
+	action := &flight.Action{Type: "VectorSearchByID", Body: reqBytes}
+	mockStream := &mockVectorSearchActionServer{}
+
+	err := metaServer.DoAction(action, mockStream)
+	require.NoError(t, err)
+
+	require.Len(t, mockStream.results, 1)
+	var resp qry.VectorSearchResponse
+	json.Unmarshal(mockStream.results[0].Body, &resp)
+
+	// Check we got results (MockIndex returns top K)
+	assert.Len(t, resp.IDs, 5)
 }

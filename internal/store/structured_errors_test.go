@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/23skdu/longbow/internal/storage"
 )
 
 // =============================================================================
@@ -14,7 +16,7 @@ import (
 func TestWALError(t *testing.T) {
 	t.Run("creates error with full context", func(t *testing.T) {
 		cause := errors.New("disk full")
-		err := &WALError{
+		err := &storage.WALError{
 			Op:        "write",
 			Path:      "/data/wal.log",
 			Offset:    1024,
@@ -34,7 +36,7 @@ func TestWALError(t *testing.T) {
 	})
 
 	t.Run("error string contains context", func(t *testing.T) {
-		err := &WALError{
+		err := &storage.WALError{
 			Op:        "read",
 			Path:      "/data/wal.log",
 			Offset:    512,
@@ -56,7 +58,7 @@ func TestWALError(t *testing.T) {
 
 	t.Run("unwrap returns cause", func(t *testing.T) {
 		cause := errors.New("underlying error")
-		err := &WALError{Op: "write", Cause: cause}
+		err := &storage.WALError{Op: "write", Cause: cause}
 
 		if !errors.Is(err, cause) {
 			t.Error("Unwrap should return cause")
@@ -64,9 +66,9 @@ func TestWALError(t *testing.T) {
 	})
 
 	t.Run("constructor creates valid error", func(t *testing.T) {
-		err := NewWALError("flush", "/data/wal", 2048, errors.New("sync failed"))
+		err := storage.NewWALError("flush", "/data/wal", 2048, errors.New("sync failed"))
 
-		var walErr *WALError
+		var walErr *storage.WALError
 		if !errors.As(err, &walErr) {
 			t.Fatal("expected WALError type")
 		}
@@ -85,7 +87,7 @@ func TestWALError(t *testing.T) {
 
 func TestS3Error(t *testing.T) {
 	t.Run("creates error with full context", func(t *testing.T) {
-		err := &S3Error{
+		err := &storage.S3Error{
 			Op:        "upload",
 			Bucket:    "my-bucket",
 			Key:       "snapshots/2024/data.parquet",
@@ -102,7 +104,7 @@ func TestS3Error(t *testing.T) {
 	})
 
 	t.Run("error string contains S3 context", func(t *testing.T) {
-		err := &S3Error{
+		err := &storage.S3Error{
 			Op:     "download",
 			Bucket: "data-bucket",
 			Key:    "file.parquet",
@@ -122,9 +124,9 @@ func TestS3Error(t *testing.T) {
 	})
 
 	t.Run("constructor creates valid error", func(t *testing.T) {
-		err := NewS3Error("list", "bucket", "prefix/", errors.New("timeout"))
+		err := storage.NewS3Error("list", "bucket", "prefix/", errors.New("timeout"))
 
-		var s3Err *S3Error
+		var s3Err *storage.S3Error
 		if !errors.As(err, &s3Err) {
 			t.Fatal("expected S3Error type")
 		}
@@ -288,7 +290,7 @@ func TestShutdownError(t *testing.T) {
 
 func TestToGRPCStatus_NewErrorTypes(t *testing.T) {
 	t.Run("WALError maps to Unavailable", func(t *testing.T) {
-		err := NewWALError("write", "/data/wal", 0, errors.New("disk full"))
+		err := storage.NewWALError("write", "/data/wal", 0, errors.New("disk full"))
 		grpcErr := ToGRPCStatus(err)
 
 		if grpcErr == nil {
@@ -297,7 +299,7 @@ func TestToGRPCStatus_NewErrorTypes(t *testing.T) {
 	})
 
 	t.Run("S3Error maps to Unavailable", func(t *testing.T) {
-		err := NewS3Error("upload", "bucket", "key", errors.New("timeout"))
+		err := storage.NewS3Error("upload", "bucket", "key", errors.New("timeout"))
 		grpcErr := ToGRPCStatus(err)
 
 		if grpcErr == nil {

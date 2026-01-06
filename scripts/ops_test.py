@@ -335,12 +335,19 @@ def command_traverse(args, data_client, meta_client):
     name = args.dataset
     start = args.start_node
     hops = args.max_hops
-    print(f"Traversing graph '{name}' from node {start} (max_hops={hops})...")
+    incoming = args.incoming
+    weighted = not args.no_weighted  # Default to true unless --no-weighted
+    decay = args.decay
+
+    print(f"Traversing graph '{name}' from node {start} (max_hops={hops}, incoming={incoming}, weighted={weighted}, decay={decay})...")
     try:
         req = {
             "dataset": name,
             "start": start,
-            "max_hops": hops
+            "max_hops": hops,
+            "incoming": incoming,
+            "weighted": weighted,
+            "decay": decay
         }
         action = flight.Action("traverse-graph", json.dumps(req).encode("utf-8"))
         options = get_options(args)
@@ -352,6 +359,31 @@ def command_traverse(args, data_client, meta_client):
                 print(f" - Path: {p.get('Nodes')} (Weight: {p.get('Weight')})")
     except Exception as e:
         print(f"Error traversing graph: {e}")
+
+def command_similar(args, data_client, meta_client):
+    """Find similar vectors by ID."""
+    name = args.dataset
+    target_id = args.id
+    k = args.k
+    print(f"Searching for vectors similar to ID '{target_id}' in '{name}' (k={k})...")
+    try:
+        req = {
+            "dataset": name,
+            "id": target_id,
+            "k": k
+        }
+        action = flight.Action("VectorSearchByID", json.dumps(req).encode("utf-8"))
+        options = get_options(args)
+        results = meta_client.do_action(action, options=options)
+        for res in results:
+            body = json.loads(res.body.to_pybytes())
+            ids = body.get("ids", [])
+            scores = body.get("scores", [])
+            print(f"Found {len(ids)} similar vectors:")
+            for i, vid in enumerate(ids):
+                print(f" - ID: {vid} (Score: {scores[i]:.4f})")
+    except Exception as e:
+        print(f"Error finding similar vectors: {e}")
 
 
 # =============================================================================
@@ -712,6 +744,14 @@ def main():
     traverse_parser.add_argument("--dataset", required=True, help="Dataset name")
     traverse_parser.add_argument("--start-node", required=True, type=int, help="Start node ID")
     traverse_parser.add_argument("--max-hops", type=int, default=2, help="Max hops")
+    traverse_parser.add_argument("--incoming", action="store_true", help="Traverse incoming edges (default: outgoing)")
+    traverse_parser.add_argument("--no-weighted", action="store_true", help="Disable weighted traversal")
+    traverse_parser.add_argument("--decay", type=float, default=0.0, help="Decay factor (0.0 to disable)")
+
+    similar_parser = subparsers.add_parser("similar", help="Find similar vectors by ID")
+    similar_parser.add_argument("--dataset", required=True, help="Dataset name")
+    similar_parser.add_argument("--id", required=True, help="Target Vector ID")
+    similar_parser.add_argument("--k", type=int, default=5, help="Number of results")
 
     # GLOBAL options
     parser.add_argument("--routing-key", help="Explicit routing key (x-longbow-key metadata)")
@@ -743,6 +783,7 @@ def main():
             "graph-stats": command_graph_stats,
             "add-edge": command_add_edge,
             "traverse": command_traverse,
+            "similar": command_similar,
         }
         
         func = commands.get(args.command)

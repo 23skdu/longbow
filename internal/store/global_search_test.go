@@ -1,12 +1,14 @@
 package store
 
+
 import (
 	"context"
 	"testing"
 
 	"github.com/23skdu/longbow/internal/mesh"
-	"github.com/stretchr/testify/assert"
+	qry "github.com/23skdu/longbow/internal/query"
 	"github.com/rs/zerolog"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestGlobalSearchCoordinator_Merge(t *testing.T) {
@@ -23,7 +25,7 @@ func TestGlobalSearchCoordinator_Merge(t *testing.T) {
 	// For now, we tested the merge logic logic essentially by looking at the code,
 	// but let's at least test that if no peers, it returns local results.
 
-	req := VectorSearchRequest{K: 5}
+	req := qry.VectorSearchRequest{K: 5}
 
 	res, err := coord.GlobalSearch(context.Background(), localRes, req, nil)
 	assert.NoError(t, err)
@@ -34,7 +36,7 @@ func TestGlobalSearchCoordinator_Merge(t *testing.T) {
 func TestGlobalSearchCoordinator_NoPeers(t *testing.T) {
 	coord := NewGlobalSearchCoordinator(zerolog.Nop())
 
-	req := VectorSearchRequest{K: 5}
+	req := qry.VectorSearchRequest{K: 5}
 	res, err := coord.GlobalSearch(context.Background(), nil, req, []mesh.Member{})
 	assert.NoError(t, err)
 	assert.Len(t, res, 0)

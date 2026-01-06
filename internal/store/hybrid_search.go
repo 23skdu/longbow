@@ -2,40 +2,30 @@ package store
 
 import (
 	"context"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/query"
+	"github.com/apache/arrow-go/v18/arrow"
+	"github.com/apache/arrow-go/v18/arrow/array"
 )
 
-// EstimateAlpha estimates the optimal alpha value based on query characteristics.
-// Heuristic:
-// - Short queries (< 3 tokens) -> Keyword heavy (Sparse) -> Alpha 0.3
-// - Long queries (> 5 tokens) -> Natural language (Dense) -> Alpha 0.8
-// - Medium queries -> Balanced -> Alpha 0.5
-func EstimateAlpha(textQuery string) float32 {
-	// Simple tokenization by space
-	tokens := 0
-	inToken := false
-	for _, r := range textQuery {
-		if r == ' ' {
-			inToken = false
-		} else if !inToken {
-			inToken = true
-			tokens++
-		}
-	}
-
-	if tokens < 3 {
-		return 0.3
-	} else if tokens > 5 {
-		return 0.8
-	}
-	return 0.5
+// HybridSearchRequest encapsulates parameters for hybrid search.
+type HybridSearchRequest struct {
+	Dataset     string
+	QueryVector []float32
+	QueryText   string
+	K           int
+	Alpha       float32 // Weight for vector score (0-1)
+	Filters     []query.Filter
+	Bitset      *query.Bitset
 }
 
 // SearchHybrid performs a hybrid search combining dense vector search and sparse keyword search.
 // If alpha is < 0, it is automatically estimated using EstimateAlpha.
-func SearchHybrid(ctx context.Context, s *VectorStore, name string, query []float32, textQuery string, k int, alpha float32, rrfK int, graphAlpha float32, graphDepth int) ([]SearchResult, error) {
+func SearchHybrid(ctx context.Context, s *VectorStore, name string, queryVec []float32, textQuery string, k int, alpha float32, rrfK int, graphAlpha float32, graphDepth int) ([]SearchResult, error) {
 	// Adaptive Alpha
 	if alpha < 0 {
 		alpha = EstimateAlpha(textQuery)
@@ -64,10 +54,10 @@ func SearchHybrid(ctx context.Context, s *VectorStore, name string, query []floa
 	var sparseResults []SearchResult
 
 	// 1. Dense (Vector) Search
-	if alpha > 0 && len(query) > 0 {
+	if alpha > 0 && len(queryVec) > 0 {
 		if ds.Index != nil {
 			var err error
-			denseResults, err = ds.Index.SearchVectors(query, k*2, nil)
+			denseResults, err = ds.Index.SearchVectors(queryVec, k*2, nil)
 			if err != nil {
 				s.logger.Error().Err(err).Msg("Vector search failed in hybrid search")
 				// Continue with sparse results only?
@@ -126,7 +116,7 @@ func SearchHybrid(ctx context.Context, s *VectorStore, name string, query []floa
 }
 
 // HybridSearch performs a filtered vector search using inverted indexes for pre-filtering.
-func HybridSearch(ctx context.Context, s *VectorStore, name string, query []float32, k int, filters map[string]string) ([]SearchResult, error) {
+func HybridSearch(ctx context.Context, s *VectorStore, name string, queryVec []float32, k int, filters map[string]string) ([]SearchResult, error) {
 	defer func(start time.Time) {
 		metrics.SearchLatencySeconds.WithLabelValues(name, "hybrid_filtered").Observe(time.Since(start).Seconds())
 	}(time.Now())
@@ -138,7 +128,7 @@ func HybridSearch(ctx context.Context, s *VectorStore, name string, query []floa
 	ds.dataMu.RLock()
 	defer ds.dataMu.RUnlock()
 
-	var filterBitmap *Bitset
+	var filterBitmap *query.Bitset
 	hasFilters := len(filters) > 0
 
 	if hasFilters {
@@ -155,11 +145,9 @@ func HybridSearch(ctx context.Context, s *VectorStore, name string, query []floa
 			}
 
 			if filterBitmap == nil {
-				filterBitmap = &Bitset{bitmap: bm}
+				filterBitmap = query.NewBitsetFromRoaring(bm)
 			} else {
-				filterBitmap.mu.Lock()
-				filterBitmap.bitmap.And(bm)
-				filterBitmap.mu.Unlock()
+				filterBitmap.And(bm)
 			}
 		}
 	}
@@ -167,11 +155,11 @@ func HybridSearch(ctx context.Context, s *VectorStore, name string, query []floa
 	var results []SearchResult
 	if filterBitmap != nil && filterBitmap.Count() > 0 {
 		// Perform filtered search
-		results = ds.Index.SearchVectorsWithBitmap(query, k, filterBitmap)
+		results = ds.Index.SearchVectorsWithBitmap(queryVec, k, filterBitmap)
 	} else if !hasFilters {
 		// No filters, standard search
 		var err error
-		results, err = ds.Index.SearchVectors(query, k, nil)
+		results, err = ds.Index.SearchVectors(queryVec, k, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -179,8 +167,68 @@ func HybridSearch(ctx context.Context, s *VectorStore, name string, query []floa
 		// Filters yielded no results
 		return nil, nil
 	}
+	return results, nil
+}
 
-	// Map internal IDs to user IDs
-	resolved := s.MapInternalToUserIDs(ds, results)
-	return resolved, nil
+// RankFusion performs Reciprocal Rank Fusion.
+func RankFusion(list1, list2 []SearchResult, k int, rrfK int) []SearchResult {
+	scores := make(map[uint32]float32) // Use VectorID (uint32)
+
+	// Helper to add scores
+	add := func(list []SearchResult) {
+		for rank, item := range list {
+			// RRF score = 1 / (k + rank)
+			score := float32(1.0) / float32(rrfK+rank+1)
+			scores[uint32(item.ID)] += score
+		}
+	}
+
+	add(list1)
+	add(list2)
+
+	// Sort
+	final := make([]SearchResult, 0, len(scores))
+	for id, score := range scores {
+		final = append(final, SearchResult{ID: VectorID(id), Score: score})
+	}
+
+	sort.Slice(final, func(i, j int) bool {
+		return final[i].Score > final[j].Score
+	})
+
+	if len(final) > k {
+		final = final[:k]
+	}
+	return final
+}
+
+// HybridSearchWithBitmap performs hybrid search using a pre-computed bitmap for filtering.
+func (s *VectorStore) HybridSearchWithBitmap(ctx context.Context, req HybridSearchRequest) ([]SearchResult, error) {
+	// Placeholder
+	return nil, nil
+}
+
+// findStringColumn helper
+func findStringColumn(rec arrow.RecordBatch, name string) *array.String {
+	for i, f := range rec.Schema().Fields() {
+		if strings.EqualFold(f.Name, name) {
+			if col, ok := rec.Column(i).(*array.String); ok {
+				return col
+			}
+		}
+	}
+	return nil
+}
+
+// EstimateAlpha calculates a heuristic alpha value based on query length.
+func EstimateAlpha(query string) float32 {
+	tokens := strings.Fields(query)
+	n := len(tokens)
+	if n < 3 {
+		return 0.3
+	}
+	if n <= 5 {
+		return 0.5
+	}
+	return 0.8
 }

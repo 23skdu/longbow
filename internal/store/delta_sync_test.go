@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/23skdu/longbow/internal/storage"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/flight"
@@ -47,7 +48,7 @@ func TestDeltaSync_Integration(t *testing.T) {
 	pool := memory.NewGoAllocator()
 	dir := t.TempDir()
 	store := NewVectorStore(pool, zerolog.Nop(), 1024*1024, 1024*1024, 0)
-	require.NoError(t, store.InitPersistence(StorageConfig{
+	require.NoError(t, store.InitPersistence(storage.StorageConfig{
 		DataPath:         dir,
 		SnapshotInterval: 1 * time.Hour,
 	}))
@@ -68,18 +69,14 @@ func TestDeltaSync_Integration(t *testing.T) {
 	rec3 := b.NewRecordBatch()
 
 	// 1. Write Records (Seq 1, 2, 3)
-	ts := time.Now().UnixNano()
-	seq1 := store.sequence.Add(1)
-	_ = store.walBatcher.Write(rec1, "dataset1", seq1, ts)
+	startTs := time.Now().UnixNano()
+	_ = store.writeToWAL(rec1, "dataset1")
+	_ = store.writeToWAL(rec2, "dataset1")
+	_ = store.writeToWAL(rec3, "dataset1")
 
-	seq2 := store.sequence.Add(1)
-	_ = store.walBatcher.Write(rec2, "dataset1", seq2, ts+1)
-
-	seq3 := store.sequence.Add(1)
-	_ = store.walBatcher.Write(rec3, "dataset1", seq3, ts+2)
-
-	// Wait for async flush
-	_ = store.walBatcher.Stop() // Flush and close
+	// Wait for flush
+	err := store.FlushWAL()
+	require.NoError(t, err)
 	// Reopen for read? do_exchange uses NewWALIterator which opens file separately.
 	// WALBatcher closing it is fine as long as file exists.
 
@@ -105,7 +102,7 @@ func TestDeltaSync_Integration(t *testing.T) {
 	close(recv) // End client stream
 
 	// Run DoExchange
-	err := store.DoExchange(stream)
+	err = store.DoExchange(stream)
 	if err != nil && err != io.EOF {
 		// DoExchange returns nil on success (client EOF)
 		require.NoError(t, err)
@@ -135,7 +132,7 @@ func TestDeltaSync_Integration(t *testing.T) {
 
 		assert.Equal(t, uint64(2), seqA)
 		assert.Equal(t, uint64(3), seqB)
-		assert.Equal(t, ts+1, tsA)
-		assert.Equal(t, ts+2, tsB)
+		assert.GreaterOrEqual(t, tsA, startTs)
+		assert.GreaterOrEqual(t, tsB, startTs)
 	}
 }

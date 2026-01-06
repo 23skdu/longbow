@@ -16,6 +16,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/flight"
 
 	"github.com/23skdu/longbow/internal/metrics"
+	qry "github.com/23skdu/longbow/internal/query"
 )
 
 // DoAction handles custom actions like deletion and status
@@ -95,7 +96,7 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 				ds.dataMu.RUnlock()
 				ds.dataMu.Lock()
 				if ds.Tombstones[i] == nil {
-					ds.Tombstones[i] = NewBitset()
+					ds.Tombstones[i] = qry.NewBitset()
 				}
 				ds.Tombstones[i].Set(j)
 				ds.dataMu.Unlock()
@@ -138,7 +139,7 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 		}
 
 		// Use existing eviction logic to free memory and close resources
-		s.evictDataset(ds)
+		s.evictDataset(ds.Name)
 
 		// Remove from map
 		delete(s.datasets, dsName)
@@ -195,7 +196,7 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 		// set tombstone
 		ds.dataMu.Lock()
 		if ds.Tombstones[loc.BatchIdx] == nil {
-			ds.Tombstones[loc.BatchIdx] = NewBitset()
+			ds.Tombstones[loc.BatchIdx] = qry.NewBitset()
 		}
 		ts := ds.Tombstones[loc.BatchIdx]
 		ds.dataMu.Unlock()
@@ -211,8 +212,14 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 	case "add-edge":
 		return s.handleAddEdge(action.Body, stream)
 
+	case "VectorSearchByID":
+		return s.handleVectorSearchByIDAction(action, stream)
+
 	case "traverse-graph":
 		return s.handleTraverseGraph(action.Body, stream)
+
+	case "GetGraphStats":
+		return s.handleGetGraphStats(action.Body, stream)
 	}
 	return status.Error(codes.Unimplemented, "unknown action type "+action.Type)
 }
@@ -377,18 +384,14 @@ func (s *VectorStore) flushPutBatch(ds *Dataset, name string, batch []arrow.Reco
 		return nil
 	}
 
-	// 1. Write to WAL (Iterate)
+	// 1. Write to WAL (Async/Batched)
+	// We use the helper which delegates to engine
 	ts := time.Now().UnixNano()
-	if s.walBatcher != nil {
-		for _, rec := range batch {
-			seq := s.sequence.Add(1)
-			if err := s.walBatcher.Write(rec, name, seq, ts); err != nil {
-				s.logger.Error().Err(err).Msg("Failed to write to WAL (batch)")
-				metrics.WalWritesTotal.WithLabelValues("error").Inc()
-				// Continue processing, but metrics
-			} else {
-				metrics.WalWritesTotal.WithLabelValues("ok").Inc()
-			}
+	for _, rec := range batch {
+		if err := s.writeToWAL(rec, name); err != nil {
+			// Log the error but continue processing the rest of the batch
+			s.logger.Error().Err(err).Str("dataset", name).Msg("Failed to write record to WAL during flushPutBatch")
+			// The s.writeToWAL function already handles metrics for success/failure
 		}
 	}
 

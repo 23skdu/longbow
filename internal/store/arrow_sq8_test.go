@@ -1,5 +1,6 @@
 package store
 
+
 import (
 	"math/rand"
 	"testing"
@@ -87,6 +88,7 @@ func TestSQ8Indexing(t *testing.T) {
 	// Approximate search
 	res, err := idx.SearchVectors(query, 10, nil)
 	require.NoError(t, err)
+	require.NotEmpty(t, res, "Search results should not be empty")
 
 	// Expect vector 10 to be in top results
 	found := false

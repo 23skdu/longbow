@@ -7,8 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/23skdu/longbow/internal/pool"
-	"github.com/RoaringBitmap/roaring/v2"
+	qry "github.com/23skdu/longbow/internal/query"
 	"github.com/apache/arrow-go/v18/arrow"
 )
 
@@ -32,7 +31,7 @@ type Dataset struct {
 	Topo       *NUMATopology
 
 	// Tombstones map BatchIdx -> Bitset of deleted RowIdxs
-	Tombstones map[int]*Bitset
+	Tombstones map[int]*qry.Bitset
 
 	// BatchNodes tracks which NUMA node each RecordBatch is allocated on
 	BatchNodes []int
@@ -110,7 +109,7 @@ func NewDataset(name string, schema *arrow.Schema) *Dataset {
 		Records:         make([]arrow.RecordBatch, 0),
 		BatchNodes:      make([]int, 0),
 		Schema:          schema,
-		Tombstones:      make(map[int]*Bitset),
+		Tombstones:      make(map[int]*qry.Bitset),
 		LWW:             NewTimestampMap(),
 		Merkle:          NewMerkleTree(),
 		InvertedIndexes: make(map[string]*InvertedIndex),
@@ -164,72 +163,6 @@ func (d *Dataset) GetHNSW2Index() interface{} {
 	return d.hnsw2Index
 }
 
-// Bitset is a thread-safe wrapper around a Roaring Bitmap (Item 10)
-type Bitset struct {
-	bitmap *roaring.Bitmap
-	mu     sync.RWMutex
-}
-
-func NewBitset() *Bitset {
-	return &Bitset{
-		bitmap: pool.GetBitmap(),
-	}
-}
-
-func (b *Bitset) Set(i int) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if b.bitmap != nil {
-		b.bitmap.Add(uint32(i))
-	}
-}
-
-func (b *Bitset) Clear(i int) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if b.bitmap != nil {
-		b.bitmap.Remove(uint32(i))
-	}
-}
-
-func (b *Bitset) Contains(i int) bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	if b.bitmap == nil {
-		return false
-	}
-	return b.bitmap.Contains(uint32(i))
-}
-
-// Clone creates a thread-safe copy of the bitset.
-func (b *Bitset) Clone() *Bitset {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	if b.bitmap == nil {
-		return &Bitset{bitmap: nil}
-	}
-	return &Bitset{
-		bitmap: b.bitmap.Clone(),
-	}
-}
-
-// Count returns the number of set bits.
-func (b *Bitset) Count() uint64 {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	if b.bitmap == nil {
-		return 0
-	}
-	return b.bitmap.GetCardinality()
-}
-
-// ToUint32Array returns the set bits as a slice of uint32.
-func (b *Bitset) ToUint32Array() []uint32 {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.bitmap.ToArray()
-}
-
 // SearchDataset delegates to the vector index if available
 func (d *Dataset) SearchDataset(query []float32, k int) ([]SearchResult, error) {
 	d.dataMu.RLock()
@@ -279,16 +212,6 @@ func (d *Dataset) MigrateToShardedIndex(cfg AutoShardingConfig) error {
 	return nil
 }
 
-// Release releases the underlying bitmap to the pool
-func (b *Bitset) Release() {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if b.bitmap != nil {
-		pool.PutBitmap(b.bitmap)
-		b.bitmap = nil
-	}
-}
-
 // GetVectorIndex returns the current index safely
 func (d *Dataset) GetVectorIndex() VectorIndex {
 	d.dataMu.RLock()
@@ -304,7 +227,7 @@ func (d *Dataset) Close() {
 	for _, ts := range d.Tombstones {
 		ts.Release()
 	}
-	d.Tombstones = make(map[int]*Bitset)
+	d.Tombstones = make(map[int]*qry.Bitset)
 
 	for _, idx := range d.InvertedIndexes {
 		idx.Close()

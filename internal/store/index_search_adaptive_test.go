@@ -3,6 +3,7 @@ package store
 import (
 	"testing"
 
+	"github.com/23skdu/longbow/internal/query"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
@@ -57,7 +58,7 @@ func TestAdaptiveSearch_RetryLogic(t *testing.T) {
 	}
 
 	// Query for vector [0, 0]. Nearest neighbors are 0, 1, 2, ...
-	query := []float32{0, 0}
+	q := []float32{0, 0}
 	k := 5
 
 	// Filter: id_col == 95
@@ -65,11 +66,11 @@ func TestAdaptiveSearch_RetryLogic(t *testing.T) {
 	// Initial limit 50 (k*10). 95 is not in 0-49 neighbors.
 	// Retry limit 250. 95 SHOULD be found (neighbors are 0,1,2...). 95 is 95th neighbor.
 
-	filters := []Filter{
+	filters := []query.Filter{
 		{Field: "id_col", Operator: "=", Value: "95"},
 	}
 
-	results, err := index.SearchVectors(query, k, filters)
+	results, err := index.SearchVectors(q, k, filters)
 	require.NoError(t, err)
 
 	// Verify we got 1 result

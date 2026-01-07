@@ -20,8 +20,8 @@ func (h *ArrowHNSW) Search(query []float32, k, ef int, filter *query.Bitset) ([]
 	if backend == nil || h.nodeCount.Load() == 0 {
 		return []SearchResult{}, nil
 	}
-	graph, ok := backend.(GraphBackend)
-	if !ok || graph == nil {
+	graph := backend
+	if graph == nil {
 		return []SearchResult{}, nil
 	}
 

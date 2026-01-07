@@ -9,8 +9,9 @@ Longbow provides four search modes:
 
 1. **Dense Search** - Vector similarity using HNSW index
 2. **Sparse Search** - Keyword matching using inverted index
-3. **Hybrid Search** - Combines dense + sparse with Reciprocal Rank Fusion (RRF)
-4. **Filtered Search** - Vector similarity with metadata predicate filtering
+3. **Filtered Search** - Exact match pre-filtering using Column Inverted Index
+4. **Hybrid Search** - Combines dense + sparse with Reciprocal Rank Fusion (RRF)
+5. **Re-ranking** - Cross-Encoder refinement of fused results
 
 ## Resilience & Stability
 
@@ -125,7 +126,58 @@ The distance function accesses vector data directly from Apache Arrow buffers:
 2. **Job Queue**: Indexing jobs pushed to buffered channel
 3. **Worker Pool**: Background workers (`runtime.NumCPU()`) update HNSW graph
 
-## Hybrid Search (Dense + Sparse)
+## Hybrid Search Pipeline
+
+The `HybridSearchPipeline` orchestrates the entire search flow, integrating filtering, retrieval, fusion, and re-ranking.
+
+### Pipeline Stages
+
+1. **Exact Filtering** (Optional): Prunes the search space using `ColumnInvertedIndex` for O(1) attribute lookups.
+2. **Retrieval**:
+   * **Dense**: Parallel HNSW search.
+   * **Sparse**: Parallel BM25 inverted index search.
+3. **Fusion**: Combines results using Reciprocal Rank Fusion (RRF) or Linear Weights.
+4. **Re-ranking** (Optional): Refines the top candidates using a Cross-Encoder model.
+5. **Limit**: Truncates to final `k`.
+
+```mermaid
+graph TD
+    A[Query] --> B{Exact Filters?}
+    B -- Yes --> C[Column Index Lookup]
+    B -- No --> D
+    C --> D[Candidate Set]
+    D --> E{Retrieval}
+    E --> F[HNSW Vector Search]
+    E --> G[BM25 Keyword Search]
+    F --> H[Dense Results]
+    G --> I[Sparse Results]
+    H --> J[Fusion (RRF/Linear)]
+    I --> J
+    J --> K{Re-ranker?}
+    K -- Yes --> L[Cross-Encoder]
+    K -- No --> M[Final Results]
+    L --> M
+```
+
+### Exact Match Filtering
+
+Longbow uses a `ColumnInvertedIndex` to support efficient pre-filtering for exact matches (e.g., `category="electronics"`).
+This index maps attribute values directly to physical `RowPosition`s, which are then mapped to internal `VectorID`s.
+This approach avoids scanning the entire dataset for metadata predicates.
+
+### Re-ranking Interface
+
+A second-stage re-ranker can be attached to the pipeline to improve precision.
+
+```go
+type Reranker interface {
+    Rerank(ctx context.Context, query string, results []SearchResult) ([]SearchResult, error)
+}
+```
+
+Longbow provides a `CrossEncoderReranker` (currently a stub) to integrate deep learning models that score query-document pairs.
+
+## Hybrid Search (Legacy Concepts)
 
 ### Why Hybrid Search?
 

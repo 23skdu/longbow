@@ -288,3 +288,19 @@ func tokenize(text string) []string {
 	}
 	return tokens
 }
+
+// Close releases resources associated with the BM25 index.
+func (idx *BM25InvertedIndex) Close() error {
+	for i := 0; i < invertedIndexShards; i++ {
+		idx.termShards[i].mu.Lock()
+		idx.termShards[i].index = nil
+		idx.termShards[i].mu.Unlock()
+
+		idx.docShards[i].mu.Lock()
+		idx.docShards[i].terms = nil
+		idx.docShards[i].length = nil
+		idx.docShards[i].mu.Unlock()
+	}
+	idx.scorer = nil
+	return nil
+}

@@ -43,6 +43,7 @@ type ArrowHNSWConfig struct {
 	Alpha                   float32
 	RefinementFactor        float64 // Changed to float64 to match usage
 	KeepPrunedConnections   bool
+	BQEnabled               bool
 }
 
 func DefaultArrowHNSWConfig() ArrowHNSWConfig {
@@ -75,6 +76,7 @@ type ArrowSearchContext struct {
 	scratchVecsSQ8       [][]byte
 
 	querySQ8   []byte
+	queryBQ    []uint64
 	pruneDepth int
 }
 
@@ -117,6 +119,7 @@ type ArrowHNSW struct {
 	quantizer         *ScalarQuantizer
 	sq8TrainingBuffer [][]float32
 	pqEncoder         *PQEncoder
+	bqEncoder         *BQEncoder
 
 	locationStore *ChunkedLocationStore
 
@@ -141,6 +144,7 @@ type GraphData struct {
 	Vectors    []*[]float32
 	VectorsSQ8 []*[]byte
 	VectorsPQ  []*[]byte
+	VectorsBQ  []*[]uint64
 
 	Neighbors [ArrowMaxLayers][]*[]uint32
 	Counts    [ArrowMaxLayers][]*[]int32
@@ -152,7 +156,7 @@ const (
 	MaxNeighbors   = 448
 )
 
-func NewGraphData(capacity, dims int, sq8Enabled, pqEnabled bool) *GraphData {
+func NewGraphData(capacity, dims int, sq8Enabled, pqEnabled, bqEnabled bool) *GraphData {
 	numChunks := (capacity + ChunkSize - 1) / ChunkSize
 	if numChunks < 1 {
 		numChunks = 1
@@ -169,6 +173,9 @@ func NewGraphData(capacity, dims int, sq8Enabled, pqEnabled bool) *GraphData {
 		}
 		if pqEnabled {
 			gd.VectorsPQ = make([]*[]byte, numChunks)
+		}
+		if bqEnabled {
+			gd.VectorsBQ = make([]*[]uint64, numChunks)
 		}
 	}
 	for i := 0; i < ArrowMaxLayers; i++ {
@@ -226,6 +233,21 @@ func (g *GraphData) GetVectorPQ(id uint32) []byte {
 		return nil
 	}
 	return nil
+}
+
+func (g *GraphData) GetVectorBQ(id uint32) []uint64 {
+	cID := chunkID(id)
+	cOff := chunkOffset(id)
+	bqChunk := g.LoadBQChunk(cID)
+	if bqChunk == nil {
+		return nil
+	}
+	// BQ uses (dims+63)/64 uint64s per vector
+	numWords := (g.Dims + 63) / 64
+	baseIdx := int(cOff) * numWords
+	res := make([]uint64, numWords)
+	copy(res, (*bqChunk)[baseIdx:baseIdx+numWords])
+	return res
 }
 
 func (g *GraphData) GetLevel(id uint32) int {
@@ -403,6 +425,20 @@ func (g *GraphData) StorePQChunk(cID uint32, chunk *[]byte) {
 	ptr := (*unsafe.Pointer)(unsafe.Pointer(&g.VectorsPQ[cID]))
 	atomic.StorePointer(ptr, unsafe.Pointer(chunk))
 }
+func (g *GraphData) LoadBQChunk(cID uint32) *[]uint64 {
+	if g.VectorsBQ == nil || int(cID) >= len(g.VectorsBQ) {
+		return nil
+	}
+	ptr := (*unsafe.Pointer)(unsafe.Pointer(&g.VectorsBQ[cID]))
+	return (*[]uint64)(atomic.LoadPointer(ptr))
+}
+func (g *GraphData) StoreBQChunk(cID uint32, chunk *[]uint64) {
+	if g.VectorsBQ == nil || int(cID) >= len(g.VectorsBQ) {
+		return
+	}
+	ptr := (*unsafe.Pointer)(unsafe.Pointer(&g.VectorsBQ[cID]))
+	atomic.StorePointer(ptr, unsafe.Pointer(chunk))
+}
 func (g *GraphData) LoadLevelChunk(cID uint32) *[]uint8 {
 	if int(cID) >= len(g.Levels) {
 		return nil
@@ -460,8 +496,8 @@ func (g *GraphData) StoreVersionsChunk(layer int, cID uint32, chunk *[]uint32) {
 	atomic.StorePointer(ptr, unsafe.Pointer(chunk))
 }
 
-func (gd *GraphData) Clone(minCap, targetDims int, sq8Enabled, pqEnabled bool) *GraphData {
-	newGD := NewGraphData(minCap, targetDims, sq8Enabled, pqEnabled)
+func (gd *GraphData) Clone(minCap, targetDims int, sq8Enabled, pqEnabled, bqEnabled bool) *GraphData {
+	newGD := NewGraphData(minCap, targetDims, sq8Enabled, pqEnabled, bqEnabled)
 	copy(newGD.Levels, gd.Levels)
 	if len(gd.Vectors) > 0 {
 		copy(newGD.Vectors, gd.Vectors)
@@ -471,6 +507,9 @@ func (gd *GraphData) Clone(minCap, targetDims int, sq8Enabled, pqEnabled bool) *
 	}
 	if len(gd.VectorsPQ) > 0 {
 		copy(newGD.VectorsPQ, gd.VectorsPQ)
+	}
+	if len(gd.VectorsBQ) > 0 {
+		copy(newGD.VectorsBQ, gd.VectorsBQ)
 	}
 	for i := 0; i < ArrowMaxLayers; i++ {
 		copy(newGD.Neighbors[i], gd.Neighbors[i])
@@ -494,7 +533,7 @@ func (h *ArrowHNSW) Grow(minCap, dims int) {
 			newCap = ((newCap / ChunkSize) + 1) * ChunkSize
 		}
 	}
-	newGD := data.Clone(newCap, dims, h.config.SQ8Enabled, h.config.PQEnabled)
+	newGD := data.Clone(newCap, dims, h.config.SQ8Enabled, h.config.PQEnabled, h.config.BQEnabled) // fixed config
 	h.data.Store(newGD)
 }
 
@@ -511,6 +550,11 @@ func (h *ArrowHNSW) ensureChunk(data *GraphData, cID, _ uint32, dims int) *Graph
 	if h.config.SQ8Enabled && dims > 0 && data.VectorsSQ8 != nil && data.VectorsSQ8[cID] == nil {
 		chunk := make([]byte, ChunkSize*dims)
 		data.StoreSQ8Chunk(cID, &chunk)
+	}
+	if h.config.BQEnabled && dims > 0 && data.VectorsBQ != nil && data.VectorsBQ[cID] == nil {
+		numWords := (dims + 63) / 64
+		chunk := make([]uint64, ChunkSize*numWords)
+		data.StoreBQChunk(cID, &chunk)
 	}
 	// Allocate metadata chunks for all layers
 	for i := 0; i < ArrowMaxLayers; i++ {

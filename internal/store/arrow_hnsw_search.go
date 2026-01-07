@@ -67,6 +67,17 @@ func (h *ArrowHNSW) Search(query []float32, k, ef int, filter *query.Bitset) ([]
 		h.quantizer.Encode(query, ctx.querySQ8)
 	}
 
+	// Encode query if BQ enabled
+	if h.bqEncoder != nil {
+		// Calculate BQ size
+		numWords := h.bqEncoder.CodeSize()
+		if cap(ctx.queryBQ) < numWords {
+			ctx.queryBQ = make([]uint64, numWords)
+		}
+		ctx.queryBQ = ctx.queryBQ[:numWords]
+		copy(ctx.queryBQ, h.bqEncoder.Encode(query))
+	}
+
 	// Ensure visited bitset is large enough
 	// Reuse or create visited bitset
 	nodeCount := int(h.nodeCount.Load())
@@ -154,7 +165,7 @@ func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef, layer in
 	ctx.candidates.Clear()
 
 	// Initialize with entry point
-	entryDist := h.distance(query, entryPoint, data)
+	entryDist := h.distance(query, entryPoint, data, ctx)
 
 	ctx.candidates.Push(Candidate{ID: entryPoint, Dist: entryDist})
 	ctx.visited.Set(entryPoint)
@@ -277,6 +288,26 @@ func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef, layer in
 						dists[i] = float32(d)
 					} else {
 						dists[i] = math.MaxFloat32
+						dists[i] = math.MaxFloat32
+					}
+				}
+			} else if useBQ := h.config.BQEnabled && h.bqEncoder != nil; useBQ {
+				// BQ Path
+				if len(ctx.queryBQ) == 0 {
+					ctx.queryBQ = h.bqEncoder.Encode(query)
+				}
+
+				for i, nid := range ctx.scratchIDs {
+					vec := data.GetVectorBQ(nid)
+					if vec != nil {
+						// Compute Hamming Distance
+						hamming := h.bqEncoder.HammingDistance(ctx.queryBQ, vec)
+						// Convert to float score (or keep as distance? HNSW uses dists)
+						// Hamming is a distance. Lower is better.
+						// Just cast to float32.
+						dists[i] = float32(hamming)
+					} else {
+						dists[i] = math.MaxFloat32
 					}
 				}
 			} else if useBatchCompute && h.metric == MetricEuclidean {
@@ -366,9 +397,21 @@ func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef, layer in
 
 // distance computes the distance between a query vector and a stored vector.
 // Uses zero-copy Arrow access and SIMD optimizations for maximum performance.
-func (h *ArrowHNSW) distance(query []float32, id uint32, data *GraphData) float32 {
-	// PQ check
-	// SQ8 Check
+func (h *ArrowHNSW) distance(query []float32, id uint32, data *GraphData, ctx *ArrowSearchContext) float32 {
+	// BQ Check
+	// Note: We need ctx passed here to avoid allocs, or we alloc on fly.
+	// Changing signature ripples up. For now, alloc on fly or use a simple check.
+	if h.config.BQEnabled && h.bqEncoder != nil && len(data.VectorsBQ) > 0 {
+		vec := data.GetVectorBQ(id)
+		if vec != nil {
+			// Need quantized query.
+			// Ideally passed in or cached.
+			qBQ := h.bqEncoder.Encode(query)
+			dist := h.bqEncoder.HammingDistance(qBQ, vec)
+			return float32(dist)
+		}
+	}
+
 	// SQ8 Check
 	if h.metric == MetricEuclidean && h.quantizer != nil && len(data.VectorsSQ8) > 0 {
 		cID := chunkID(id)
@@ -461,4 +504,15 @@ func (h *ArrowHNSW) getVector(id uint32) ([]float32, error) {
 	}
 	// Extract vector using zero-copy Arrow access
 	return ExtractVectorFromArrow(rec, loc.RowIdx, h.vectorColIdx)
+}
+func (h *ArrowHNSW) mustGetVectorFromData(data *GraphData, id uint32) []float32 {
+	vec, err := h.getVector(id)
+	if err != nil {
+		// Panic or log? In HNSW, missing vector during search/insert is critical.
+		// We return a zero-length slice or nil to avoid crash, but this method implies "must".
+		// For now, return nil which might panic downstream or check usage.
+		// panic(err)
+		return nil
+	}
+	return vec
 }

@@ -9,9 +9,10 @@ import (
 )
 
 type TicketQuery struct {
-	Name    string   `json:"name"`
-	Limit   int64    `json:"limit"`
-	Filters []Filter `json:"filters"`
+	Name    string               `json:"name"`
+	Limit   int64                `json:"limit"`
+	Filters []Filter             `json:"filters"`
+	Search  *VectorSearchRequest `json:"search,omitempty"`
 }
 
 type Filter struct {
@@ -23,14 +24,16 @@ type Filter struct {
 // ZeroAllocTicketParser parses TicketQuery JSON with zero allocations
 // for the common case (no escape sequences).
 type ZeroAllocTicketParser struct {
-	result  TicketQuery
-	filters []Filter
+	result       TicketQuery
+	filters      []Filter
+	searchParser *ZeroAllocVectorSearchParser
 }
 
 // NewZeroAllocTicketParser creates a new reusable parser
 func NewZeroAllocTicketParser() *ZeroAllocTicketParser {
 	return &ZeroAllocTicketParser{
-		filters: make([]Filter, 0, 16),
+		filters:      make([]Filter, 0, 16),
+		searchParser: NewZeroAllocVectorSearchParser(768), // Default max dims
 	}
 }
 
@@ -38,6 +41,7 @@ func NewZeroAllocTicketParser() *ZeroAllocTicketParser {
 func (p *ZeroAllocTicketParser) Parse(data []byte) (TicketQuery, error) {
 	p.result.Name = ""
 	p.result.Limit = 0
+	p.result.Search = nil
 	p.filters = p.filters[:0]
 
 	if len(data) == 0 {
@@ -103,6 +107,20 @@ func (p *ZeroAllocTicketParser) Parse(data []byte) (TicketQuery, error) {
 			if err != nil {
 				return p.result, err
 			}
+			i = newPos
+		case "search":
+			// Extract object slice
+			start := i
+			newPos, err := skipObject(data, i)
+			if err != nil {
+				return p.result, err
+			}
+			// Parse nested
+			searchReq, err := p.searchParser.Parse(data[start:newPos])
+			if err != nil {
+				return p.result, err
+			}
+			p.result.Search = &searchReq
 			i = newPos
 		default:
 			newPos, err := skipValue(data, i)

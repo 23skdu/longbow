@@ -49,13 +49,7 @@ reliability, architecture refactoring, and advanced indexing features.
 - **Location**: `internal/store/hybrid_pipeline.go`
 - **Plan**: Add a reverse index map to `HNSWIndex` or `ChunkedLocationStore` for O(1) lookups.
 
-### 8. WAL Buffer Recycling
-
-- **Impact**: **Low/Medium**. `batched_wal.go` TODO suggests recycling buffers.
-- **Location**: `internal/storage/batched_wal.go`
-- **Plan**: Use `sync.Pool` for WAL buffers to reduce GC pressure during high write load.
-
-### 10. ID Resolution Optimization
+### 9. ID Resolution Optimization
 
 - **Impact**: **Medium**. `vector_search_action.go` uses a linear scan for ID lookups.
 - **Location**: `internal/store/vector_search_action.go`
@@ -87,6 +81,7 @@ reliability, architecture refactoring, and advanced indexing features.
 - **Hybrid Search Pipeline Enhancements**: Completed implementation of pipeline stages, including exact match filtering
   via `ColumnInvertedIndex` and a second-stage re-ranking interface with cross-encoder stubs.
 - **Spatial Index for Mesh Routing**: Replaced linear scan in `Region` router with VP-Tree for scalable lookups.
+- **WAL Buffer Recycling**: Implemented buffer reusing for WAL batch compression to reduce GC pressure.
 - **Query Coordinator Path Optimization**: Implemented Streaming Merge (Min-Heap), Replica Hedging, and Arrow Serialization.
 - **Adaptive Search Limits**: Implemented auto-expansion of search limits based on filter selectivity.
 - **WAL Synchronization & Durability**: Integrated `AsyncFsyncer`.

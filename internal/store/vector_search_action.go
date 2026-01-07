@@ -1,6 +1,7 @@
 package store
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"sync"
@@ -9,8 +10,11 @@ import (
 	"github.com/23skdu/longbow/internal/mesh"
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/query"
+	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/flight"
+	"github.com/apache/arrow-go/v18/arrow/ipc"
+	"github.com/apache/arrow-go/v18/arrow/memory"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -73,11 +77,10 @@ func (s *VectorStore) handleVectorSearchAction(action *flight.Action, stream fli
 
 		if isHybrid {
 			// Perform Hybrid Search
-			searchResults, err = s.SearchHybrid(stream.Context(), req.Dataset, queryVec, req.TextQuery, req.K, req.Alpha, 60)
+			searchResults, err = s.SearchHybrid(stream.Context(), req.Dataset, queryVec, req.TextQuery, req.K, req.Alpha, 60, req.GraphAlpha, 2)
 			if err != nil {
 				metrics.VectorSearchActionErrors.Inc()
-				continue // For pipelining, we might want to continue or return error? Let's return error for now to be safe, or log it.
-				// For now, let's stop on first error for simplicity unless user wants full partial results.
+				continue
 			}
 		} else {
 			// Standard Vector Search
@@ -87,7 +90,7 @@ func (s *VectorStore) handleVectorSearchAction(action *flight.Action, stream fli
 				return status.Errorf(codes.NotFound, "dataset not found: %s", req.Dataset)
 			}
 
-			// Acquire read lock
+			// Acquire read lock (SearchHybrid manages its own locks, but here we do it manually)
 			ds.dataMu.RLock()
 			if ds.evicting.Load() {
 				ds.dataMu.RUnlock()
@@ -106,12 +109,6 @@ func (s *VectorStore) handleVectorSearchAction(action *flight.Action, stream fli
 			if uint32(len(queryVec)) != expectedDim {
 				ds.dataMu.RUnlock()
 				metrics.VectorSearchActionErrors.Inc()
-				s.logger.Warn().
-					Str("dataset", req.Dataset).
-					Uint32("expected", expectedDim).
-					Int("got", len(queryVec)).
-					Int("index_len", ds.Index.Len()).
-					Msg("Dimension mismatch in VectorSearch")
 				return status.Errorf(codes.InvalidArgument, "dimension mismatch: expected %d, got %d", expectedDim, len(queryVec))
 			}
 
@@ -122,6 +119,24 @@ func (s *VectorStore) handleVectorSearchAction(action *flight.Action, stream fli
 				ds.dataMu.RUnlock()
 				metrics.VectorSearchActionErrors.Inc()
 				return status.Errorf(codes.Internal, "vector search failed: %v", errSearch)
+			}
+
+			// Graph Re-ranking (Standard Path)
+			if req.GraphAlpha > 0 && ds.Graph != nil {
+				// RankWithGraph expects VectorID (internal) which we have here.
+				// It returns expanded set, we might keep it or trim?
+				// SearchHybrid trims at the end. Here we just return what RankWithGraph gives?
+				// But we should probably clamp to K?
+				// RankWithGraph already dedupes.
+				// Note: ds.dataMu is RLocked here, which RankWithGraph expects?
+				// RankWithGraph calls TraverseParallel -> Traverse -> gs.dataMu.RLock().
+				// gs (GraphStore) has its OWN lock. ds.Graph is just a pointer.
+				// So calling it while holding ds.dataMu RLock is safe (assuming no lock inversion).
+				graphDepth := 2
+				ranked := ds.Graph.RankWithGraph(searchResults, req.GraphAlpha, graphDepth)
+				if len(ranked) > 0 {
+					searchResults = ranked
+				}
 			}
 
 			// Map internal IDs to User IDs
@@ -146,25 +161,62 @@ func (s *VectorStore) handleVectorSearchAction(action *flight.Action, stream fli
 			batchReq.Vectors = nil // Don't forward the whole batch to each peer for each call?
 			// Wait, the aggregator/coordinator might need adjustment too.
 			// For now, let's just forward the single vector.
-			searchResults, err = s.coordinator.GlobalSearch(stream.Context(), searchResults, batchReq, remotePeers)
+			searchResults, err = s.coordinator.GlobalSearch(stream.Context(), searchResults, &batchReq, remotePeers)
 			if err != nil {
 				s.logger.Warn().Err(err).Msg("Global search partial failure")
 			}
 		}
 
-		// Build and send response for this vector
-		resp := query.VectorSearchResponse{
-			IDs:    make([]uint64, len(searchResults)),
-			Scores: make([]float32, len(searchResults)),
-		}
-		for i, res := range searchResults {
-			resp.IDs[i] = uint64(res.ID)
-			resp.Scores[i] = res.Score
+		// Build Arrow RecordBatch
+		pool := memory.NewGoAllocator()
+		schema := arrow.NewSchema(
+			[]arrow.Field{
+				{Name: "id", Type: arrow.PrimitiveTypes.Uint64},
+				{Name: "score", Type: arrow.PrimitiveTypes.Float32},
+			},
+			nil,
+		)
+
+		builder := array.NewRecordBuilder(pool, schema)
+		// deferred release removed to avoid accumulation in loop
+
+		idBuilder := builder.Field(0).(*array.Uint64Builder)
+		scoreBuilder := builder.Field(1).(*array.Float32Builder)
+
+		idBuilder.Reserve(len(searchResults))
+		scoreBuilder.Reserve(len(searchResults))
+
+		for _, res := range searchResults {
+			idBuilder.Append(uint64(res.ID))
+			scoreBuilder.Append(res.Score)
 		}
 
-		respBytes, _ := json.Marshal(resp)
-		if err := stream.Send(&flight.Result{Body: respBytes}); err != nil {
+		rec := builder.NewRecordBatch()
+		// deferred release removed to avoid accumulation in loop
+
+		// Serialize to IPC buffer
+		var buf bytes.Buffer
+		writer := ipc.NewWriter(&buf, ipc.WithSchema(schema))
+		if err := writer.Write(rec); err != nil {
 			metrics.VectorSearchActionErrors.Inc()
+			// Release resources before returning
+			rec.Release()
+			builder.Release()
+			return status.Errorf(codes.Internal, "failed to write arrow batch: %v", err)
+		}
+		if err := writer.Close(); err != nil {
+			metrics.VectorSearchActionErrors.Inc()
+			// Release resources before returning
+			rec.Release()
+			builder.Release()
+			return status.Errorf(codes.Internal, "failed to close arrow writer: %v", err)
+		}
+
+		if err := stream.Send(&flight.Result{Body: buf.Bytes()}); err != nil {
+			metrics.VectorSearchActionErrors.Inc()
+			// Release resources before returning
+			rec.Release()
+			builder.Release()
 			return err
 		}
 	}
@@ -249,25 +301,30 @@ func (s *VectorStore) handleVectorSearchByIDAction(action *flight.Action, stream
 
 		// Fallback: Check using String() formatted representation if specific type match failed or wasn't covered
 		if rowIdx == -1 {
-			for j := 0; j < col.Len(); j++ {
-				if i64Arr, ok := col.(*array.Int64); ok {
-					var val int64
-					if n, _ := fmt.Sscanf(req.ID, "%d", &val); n == 1 {
-						if i64Arr.Value(j) == val {
+			switch arr := col.(type) {
+			case *array.Int64:
+				var val int64
+				if n, _ := fmt.Sscanf(req.ID, "%d", &val); n == 1 {
+					for j := 0; j < arr.Len(); j++ {
+						if arr.Value(j) == val {
 							rowIdx = j
 							break
 						}
 					}
-				} else if u64Arr, ok := col.(*array.Uint64); ok {
-					var val uint64
-					if n, _ := fmt.Sscanf(req.ID, "%d", &val); n == 1 {
-						if u64Arr.Value(j) == val {
+				}
+			case *array.Uint64:
+				var val uint64
+				if n, _ := fmt.Sscanf(req.ID, "%d", &val); n == 1 {
+					for j := 0; j < arr.Len(); j++ {
+						if arr.Value(j) == val {
 							rowIdx = j
 							break
 						}
 					}
-				} else if strArr, ok := col.(*array.String); ok {
-					if strArr.Value(j) == req.ID {
+				}
+			case *array.String:
+				for j := 0; j < arr.Len(); j++ {
+					if arr.Value(j) == req.ID {
 						rowIdx = j
 						break
 					}

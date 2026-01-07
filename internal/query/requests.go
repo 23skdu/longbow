@@ -11,6 +11,8 @@ type VectorSearchRequest struct {
 	// Hybrid Search Fields
 	TextQuery string  `json:"text_query"`
 	Alpha     float32 `json:"alpha"` // 0.0=sparse, 1.0=dense, 0.5=hybrid
+	// GraphRAG Fields
+	GraphAlpha float32 `json:"graph_alpha"` // 0.0=disabled, >0 blends graph score
 }
 
 // VectorSearchResponse defines the response format for VectorSearch action

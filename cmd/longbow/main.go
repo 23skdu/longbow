@@ -298,6 +298,9 @@ func run() error {
 		logger.Panic().Err(err).Msg("Failed to initialize persistence")
 	}
 
+	// Start background indexing workers
+	vectorStore.StartIndexingWorkers(runtime.NumCPU())
+
 	// Initialize OpenTelemetry Tracer
 	tp := initTracer()
 	defer func() {

@@ -1,6 +1,5 @@
 package store
 
-
 import (
 	"context"
 	"testing"
@@ -27,7 +26,7 @@ func TestGlobalSearchCoordinator_Merge(t *testing.T) {
 
 	req := qry.VectorSearchRequest{K: 5}
 
-	res, err := coord.GlobalSearch(context.Background(), localRes, req, nil)
+	res, err := coord.GlobalSearch(context.Background(), localRes, &req, nil)
 	assert.NoError(t, err)
 	assert.Len(t, res, 2)
 	assert.Equal(t, uint64(1), uint64(res[0].ID))
@@ -37,7 +36,7 @@ func TestGlobalSearchCoordinator_NoPeers(t *testing.T) {
 	coord := NewGlobalSearchCoordinator(zerolog.Nop())
 
 	req := qry.VectorSearchRequest{K: 5}
-	res, err := coord.GlobalSearch(context.Background(), nil, req, []mesh.Member{})
+	res, err := coord.GlobalSearch(context.Background(), nil, &req, []mesh.Member{})
 	assert.NoError(t, err)
 	assert.Len(t, res, 0)
 }

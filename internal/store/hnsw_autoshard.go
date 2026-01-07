@@ -137,7 +137,7 @@ func (a *AutoShardingIndex) AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx 
 }
 
 // AddBatch adds multiple vectors from multiple record batches efficiently.
-func (a *AutoShardingIndex) AddBatch(recs []arrow.RecordBatch, rowIdxs []int, batchIdxs []int) ([]uint32, error) {
+func (a *AutoShardingIndex) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []int) ([]uint32, error) {
 	a.mu.RLock()
 	sharded := a.sharded
 	interim := a.interimIndex

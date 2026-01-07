@@ -1,6 +1,5 @@
 package store
 
-
 import (
 	"fmt"
 	"math/rand"
@@ -61,8 +60,13 @@ func TestAutoSharding_ConcurrentWrites_Repro(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		b := createMockBatch(mem, 10, 4) // 10 rows, 4 dims
 		batches = append(batches, b)
-		defer b.Release()
 	}
+
+	defer func() {
+		for _, b := range batches {
+			b.Release()
+		}
+	}()
 
 	// Flag to detect panic or error
 	var panicCount atomic.Int32

@@ -137,11 +137,7 @@ func TestInsertProperties(t *testing.T) {
 				cOff := chunkOffset(uint32(i))
 
 				// Ensure chunk is allocated
-				var err error
-				data, err = index.ensureChunk(data, cID, cOff, int(index.dims.Load()))
-				if err != nil {
-					return false
-				}
+				data = index.ensureChunk(data, cID, cOff, int(index.dims.Load()))
 
 				// Check vector (optional)
 				// storedVec := (*data.Vectors[cID])[int(cOff)*index.dims : (int(cOff)+1)*index.dims]

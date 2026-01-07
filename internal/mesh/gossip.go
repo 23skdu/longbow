@@ -702,6 +702,7 @@ func (g *Gossip) GetIdentity() Member {
 		Addr:     fmt.Sprintf("127.0.0.1:%d", g.Config.Port),
 		GRPCAddr: g.Config.GRPCAddr,
 		MetaAddr: g.Config.MetaAddr,
+		Tags:     make(map[string]string),
 		Status:   StatusAlive,
 	}
 }

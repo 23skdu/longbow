@@ -79,7 +79,8 @@ func (s *VectorStore) StartMetricsTicker(d time.Duration)                       
 
 // StartEvictionTicker is defined later
 
-func (s *VectorStore) startIndexingWorkers(numWorkers int) {
+// StartIndexingWorkers starts the background indexing workers
+func (s *VectorStore) StartIndexingWorkers(numWorkers int) {
 	for i := 0; i < numWorkers; i++ {
 		s.indexWg.Add(1)
 		go func() {
@@ -271,6 +272,11 @@ func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
 			jobs = append(jobs, job)
 			// Process batch if full
 			if len(jobs) >= 1000 { // Large batch for throughput
+				processBatch(jobs)
+				jobs = jobs[:0]
+			}
+		case <-ticker.C:
+			if len(jobs) > 0 {
 				processBatch(jobs)
 				jobs = jobs[:0]
 			}

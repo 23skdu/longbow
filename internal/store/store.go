@@ -37,7 +37,6 @@ type VectorStore struct {
 
 	// Lifecycle
 	stopChan chan struct{}
-	stopOnce sync.Once
 	indexWg  sync.WaitGroup // For background workers
 	mu       sync.RWMutex   // Protects datasets map (global lock, replaced by ShardedMap technically but kept for simple map access)
 

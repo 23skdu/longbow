@@ -61,11 +61,7 @@ func (m *MDNSProvider) FindPeers(ctx context.Context) ([]string, error) {
 		// Prefer IPv4
 		port := entry.Port
 		for _, ip := range entry.AddrIPv4 {
-			if ip.IsLoopback() {
-				// Optional: filter loopback if mesh should be external?
-				// But for local dev loopback is useful.
-				// Keep it.
-			}
+			// We allow loopback addresses for local development.
 			peers = append(peers, fmt.Sprintf("%s:%d", ip.String(), port))
 		}
 	}

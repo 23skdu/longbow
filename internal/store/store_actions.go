@@ -457,8 +457,9 @@ func (s *VectorStore) flushPutBatch(ds *Dataset, name string, batch []arrow.Reco
 	if s.numaTopology != nil {
 		currNode = s.numaTopology.GetNodeForCPU(currCPU)
 	}
-	for range batch {
+	for i, rec := range batch {
 		ds.BatchNodes = append(ds.BatchNodes, currNode)
+		ds.UpdatePrimaryIndex(batchStartIdx+i, rec)
 	}
 
 	ds.dataMu.Unlock()
@@ -539,6 +540,7 @@ func (s *VectorStore) StoreRecordBatch(ctx context.Context, name string, rec arr
 	batchIdx := len(ds.Records)
 	ds.Records = append(ds.Records, rec)
 	rec.Retain()
+	ds.UpdatePrimaryIndex(batchIdx, rec)
 	ds.dataMu.Unlock()
 
 	// Dispatch Index Job

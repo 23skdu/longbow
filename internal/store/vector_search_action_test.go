@@ -324,7 +324,9 @@ func TestVectorSearchByIDAction_Success(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Len(t, mockStream.results, 1)
-	resp := readArrowResponse(t, mockStream.results[0].Body)
+	var resp qry.VectorSearchResponse
+	err = json.Unmarshal(mockStream.results[0].Body, &resp)
+	require.NoError(t, err)
 
 	// Check we got results (MockIndex returns top K)
 	assert.Len(t, resp.IDs, 5)

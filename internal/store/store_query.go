@@ -15,7 +15,9 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
+	"github.com/apache/arrow-go/v18/arrow/memory"
 
+	"github.com/23skdu/longbow/internal/mesh"
 	"github.com/23skdu/longbow/internal/metrics"
 	qry "github.com/23skdu/longbow/internal/query"
 )
@@ -131,6 +133,12 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 		}
 	}
 
+	// Handle Search Request via DoGet (Native Arrow Streaming)
+	if query.Search != nil {
+		return s.handleDoGetSearch(query.Search, stream)
+	}
+
+	// Existing Dataset Fetch Logic
 	name := query.Name
 	s.logger.Debug().
 		Str("name", name).
@@ -586,5 +594,152 @@ func findVectorColumn(rec arrow.RecordBatch) arrow.Array {
 			return rec.Column(i)
 		}
 	}
+	return nil
+}
+
+// handleDoGetSearch executes a search request and streams results as Arrow Records
+func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, stream flight.FlightService_DoGetServer) error {
+	// 1. Validate Request
+	if req.K < 1 {
+		return status.Error(codes.InvalidArgument, "k must be at least 1")
+	}
+
+	// 2. Determine Search Mode
+	isHybrid := req.TextQuery != "" || (req.Alpha > 0 && req.Alpha < 1.0)
+	var queryVectors [][]float32
+	if len(req.Vector) > 0 {
+		queryVectors = append(queryVectors, req.Vector)
+	}
+	// Note: Ticket parser doesn't support 'Vectors' (batch) yet, but request struct has it.
+	// If we added support, we'd handle it here.
+
+	if len(queryVectors) == 0 && !isHybrid {
+		return status.Error(codes.InvalidArgument, "no query vector provided")
+	}
+
+	var searchResults []SearchResult
+	var err error
+
+	// 3. Execute Search (Local or Distributed)
+	// For simplicity, we assume single vector search for now in DoGet
+	// (matching current GlobalSearch usage).
+	// If batch provided, we'd loop.
+
+	// Use the first vector if available
+	var queryVec []float32
+	if len(queryVectors) > 0 {
+		queryVec = queryVectors[0]
+	}
+
+	if isHybrid {
+		searchResults, err = s.SearchHybrid(stream.Context(), req.Dataset, queryVec, req.TextQuery, req.K, req.Alpha, 60, req.GraphAlpha, 2)
+	} else {
+		// Standard Vector Search
+		ds, err := s.getDataset(req.Dataset)
+		if err != nil {
+			return err // getDataset returns correct error type
+		}
+
+		ds.dataMu.RLock()
+		if ds.Index == nil {
+			ds.dataMu.RUnlock()
+			return status.Error(codes.FailedPrecondition, "index not initialized")
+		}
+
+		// Validate dimension
+		if len(queryVec) > 0 && uint32(len(queryVec)) != ds.Index.GetDimension() {
+			expected := ds.Index.GetDimension()
+			ds.dataMu.RUnlock()
+			return status.Errorf(codes.InvalidArgument, "dimension mismatch: expected %d, got %d", expected, len(queryVec))
+		}
+
+		searchResults, err = ds.Index.SearchVectors(queryVec, req.K, req.Filters)
+		if err != nil {
+			ds.dataMu.RUnlock()
+			return status.Errorf(codes.Internal, "search failed: %v", err)
+		}
+
+		// Graph Re-ranking
+		if req.GraphAlpha > 0 && ds.Graph != nil {
+			ranked := ds.Graph.RankWithGraph(searchResults, req.GraphAlpha, 2)
+			if len(ranked) > 0 {
+				searchResults = ranked
+			}
+		}
+
+		// Map IDs
+		searchResults = s.MapInternalToUserIDs(ds, searchResults)
+		ds.dataMu.RUnlock()
+	}
+
+	if err != nil {
+		return err
+	}
+
+	// 4. Global Scatter-Gather (if not local-only)
+	if !req.LocalOnly && s.Mesh != nil {
+		peers := s.Mesh.GetMembers()
+		var remotePeers []mesh.Member //nolint:prealloc // Unknown size
+		selfID := s.Mesh.GetIdentity().ID
+		for _, p := range peers {
+			if p.ID != selfID {
+				remotePeers = append(remotePeers, p)
+			}
+		}
+
+		// This will call GlobalSearch on coordinator, which currently uses DoAction.
+		// We will update it to use DoGet in the next step.
+		// This recursion is fine, as long as coordinator handles the transport switch correctly.
+		searchResults, err = s.coordinator.GlobalSearch(stream.Context(), searchResults, req, remotePeers)
+		if err != nil {
+			s.logger.Warn().Err(err).Msg("DoGet GlobalSearch partial failure")
+		}
+	}
+
+	// 5. Stream Results (Arrow)
+	// Schema: id (uint64), score (float32)
+	pool := memory.NewGoAllocator()
+	schema := arrow.NewSchema(
+		[]arrow.Field{
+			{Name: "id", Type: arrow.PrimitiveTypes.Uint64},
+			{Name: "score", Type: arrow.PrimitiveTypes.Float32},
+		},
+		nil,
+	)
+
+	w := flight.NewRecordWriter(stream, ipc.WithSchema(schema))
+	defer func() { _ = w.Close() }()
+
+	builder := array.NewRecordBuilder(pool, schema)
+	defer builder.Release()
+
+	idBuilder := builder.Field(0).(*array.Uint64Builder)
+	scoreBuilder := builder.Field(1).(*array.Float32Builder)
+
+	// Chunk results if necessary (e.g. > 64k) to stream effectively
+	// For K usually < 1000, single batch is fine.
+	chunkSize := 4096
+	for i := 0; i < len(searchResults); i += chunkSize {
+		end := i + chunkSize
+		if end > len(searchResults) {
+			end = len(searchResults)
+		}
+
+		idBuilder.Reserve(end - i)
+		scoreBuilder.Reserve(end - i)
+
+		for j := i; j < end; j++ {
+			idBuilder.Append(uint64(searchResults[j].ID))
+			scoreBuilder.Append(searchResults[j].Score)
+		}
+
+		rec := builder.NewRecordBatch()
+		if err := w.Write(rec); err != nil {
+			rec.Release()
+			return status.Errorf(codes.Internal, "failed to write arrow batch: %v", err)
+		}
+		rec.Release()
+	}
+
 	return nil
 }

@@ -113,6 +113,7 @@ func (s *VectorStore) loadSnapshotItem(item *storage.SnapshotItem) error {
 		ds.dataMu.Lock()
 		ds.Records = append(ds.Records, rec)
 		batchIdx := len(ds.Records) - 1
+		ds.UpdatePrimaryIndex(batchIdx, rec)
 		s.currentMemory.Add(CachedRecordSize(rec))
 		ds.dataMu.Unlock() // Unlock before indexing to avoid potential deadlocks
 
@@ -200,6 +201,7 @@ func (s *VectorStore) ApplyDelta(name string, rec arrow.RecordBatch, seq uint64,
 	ds.dataMu.Lock()
 	ds.Records = append(ds.Records, rec)
 	batchIdx := len(ds.Records) - 1
+	ds.UpdatePrimaryIndex(batchIdx, rec)
 	// Capture records slice for AddBatch to ensure we pass a valid view
 	// Capture records slice for AddBatch to ensure we pass a valid view (Now handled by recs slice below)
 	ds.dataMu.Unlock()

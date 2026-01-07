@@ -245,83 +245,56 @@ func (s *VectorStore) handleVectorSearchByIDAction(action *flight.Action, stream
 		return status.Error(codes.FailedPrecondition, "dataset has no index")
 	}
 
-	// 1. Find the vector by User ID (Scan)
-	// TODO: Optimize with an inverted index or map if available
+	// 1. Find the vector by User ID
 	var targetVec []float32
 	found := false
 
-	for i, rec := range ds.Records {
-		// Check for "id" column
-		idColIdx := -1
-		for j, field := range rec.Schema().Fields() {
-			if field.Name == "id" {
-				idColIdx = j
-				break
+	// Try Primary Index first (O(1))
+	if ds.PrimaryIndex != nil {
+		if loc, ok := ds.PrimaryIndex[req.ID]; ok {
+			// Check if deleted
+			isDeleted := false
+			if ts, ok := ds.Tombstones[loc.BatchIdx]; ok && ts != nil && ts.Contains(loc.RowIdx) {
+				isDeleted = true
+			}
+
+			if !isDeleted {
+				if loc.BatchIdx < len(ds.Records) {
+					rec := ds.Records[loc.BatchIdx]
+					vec, err := ExtractVectorFromArrow(rec, loc.RowIdx, -1)
+					if err != nil {
+						return status.Errorf(codes.Internal, "failed to extract vector: %v", err)
+					}
+					targetVec = vec
+					found = true
+				}
 			}
 		}
-		if idColIdx == -1 {
-			continue // No ID column in this batch
-		}
+	}
 
-		// Support String and Int64 IDs
-		// Comparison logic to match req.ID (which is string)
-		// If column is Int64, we parse req.ID
-		col := rec.Column(idColIdx)
-		rowIdx := -1
-
-		switch arr := col.(type) {
-		case *array.String:
-			for j := 0; j < arr.Len(); j++ {
-				if arr.Value(j) == req.ID {
-					rowIdx = j
+	// Fallback to linear scan if index miss (shouldn't happen if index is fully populated)
+	// or if PrimaryIndex wasn't initialized.
+	if !found && ds.PrimaryIndex == nil {
+		for i, rec := range ds.Records {
+			// Check for "id" column
+			idColIdx := -1
+			for j, field := range rec.Schema().Fields() {
+				if field.Name == "id" {
+					idColIdx = j
 					break
 				}
 			}
-		case *array.Int64:
-			var intID int64
-			if n, _ := fmt.Sscanf(req.ID, "%d", &intID); n == 1 {
-				for j := 0; j < arr.Len(); j++ {
-					if arr.Value(j) == intID {
-						rowIdx = j
-						break
-					}
-				}
+			if idColIdx == -1 {
+				continue // No ID column in this batch
 			}
-		case *array.Uint64:
-			var uintID uint64
-			if n, _ := fmt.Sscanf(req.ID, "%d", &uintID); n == 1 {
-				for j := 0; j < arr.Len(); j++ {
-					if arr.Value(j) == uintID {
-						rowIdx = j
-						break
-					}
-				}
-			}
-		}
 
-		// Fallback: Check using String() formatted representation if specific type match failed or wasn't covered
-		if rowIdx == -1 {
+			// Support String and Int64 IDs
+			// Comparison logic to match req.ID (which is string)
+			// If column is Int64, we parse req.ID
+			col := rec.Column(idColIdx)
+			rowIdx := -1
+
 			switch arr := col.(type) {
-			case *array.Int64:
-				var val int64
-				if n, _ := fmt.Sscanf(req.ID, "%d", &val); n == 1 {
-					for j := 0; j < arr.Len(); j++ {
-						if arr.Value(j) == val {
-							rowIdx = j
-							break
-						}
-					}
-				}
-			case *array.Uint64:
-				var val uint64
-				if n, _ := fmt.Sscanf(req.ID, "%d", &val); n == 1 {
-					for j := 0; j < arr.Len(); j++ {
-						if arr.Value(j) == val {
-							rowIdx = j
-							break
-						}
-					}
-				}
 			case *array.String:
 				for j := 0; j < arr.Len(); j++ {
 					if arr.Value(j) == req.ID {
@@ -329,24 +302,77 @@ func (s *VectorStore) handleVectorSearchByIDAction(action *flight.Action, stream
 						break
 					}
 				}
+			case *array.Int64:
+				var intID int64
+				if n, _ := fmt.Sscanf(req.ID, "%d", &intID); n == 1 {
+					for j := 0; j < arr.Len(); j++ {
+						if arr.Value(j) == intID {
+							rowIdx = j
+							break
+						}
+					}
+				}
+			case *array.Uint64:
+				var uintID uint64
+				if n, _ := fmt.Sscanf(req.ID, "%d", &uintID); n == 1 {
+					for j := 0; j < arr.Len(); j++ {
+						if arr.Value(j) == uintID {
+							rowIdx = j
+							break
+						}
+					}
+				}
 			}
-		}
 
-		if rowIdx != -1 {
-			// Found it! Check if deleted.
-			ts := ds.Tombstones[i]
-			if ts != nil && ts.Contains(rowIdx) {
-				continue // Deleted
+			// Fallback: Check using String() formatted representation if specific type match failed or wasn't covered
+			if rowIdx == -1 {
+				switch arr := col.(type) {
+				case *array.Int64:
+					var val int64
+					if n, _ := fmt.Sscanf(req.ID, "%d", &val); n == 1 {
+						for j := 0; j < arr.Len(); j++ {
+							if arr.Value(j) == val {
+								rowIdx = j
+								break
+							}
+						}
+					}
+				case *array.Uint64:
+					var val uint64
+					if n, _ := fmt.Sscanf(req.ID, "%d", &val); n == 1 {
+						for j := 0; j < arr.Len(); j++ {
+							if arr.Value(j) == val {
+								rowIdx = j
+								break
+							}
+						}
+					}
+				case *array.String:
+					for j := 0; j < arr.Len(); j++ {
+						if arr.Value(j) == req.ID {
+							rowIdx = j
+							break
+						}
+					}
+				}
 			}
 
-			// Extract Vector
-			vec, err := ExtractVectorFromArrow(rec, rowIdx, -1) // -1 auto-detects vector column
-			if err != nil {
-				return status.Errorf(codes.Internal, "failed to extract vector: %v", err)
+			if rowIdx != -1 {
+				// Found it! Check if deleted.
+				ts := ds.Tombstones[i]
+				if ts != nil && ts.Contains(rowIdx) {
+					continue // Deleted
+				}
+
+				// Extract Vector
+				vec, err := ExtractVectorFromArrow(rec, rowIdx, -1) // -1 auto-detects vector column
+				if err != nil {
+					return status.Errorf(codes.Internal, "failed to extract vector: %v", err)
+				}
+				targetVec = vec
+				found = true
+				break
 			}
-			targetVec = vec
-			found = true
-			break
 		}
 	}
 

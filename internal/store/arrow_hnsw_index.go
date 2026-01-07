@@ -380,7 +380,28 @@ func (h *ArrowHNSW) EstimateMemory() int64 {
 
 // Close implements VectorIndex.
 func (h *ArrowHNSW) Close() error {
-	// TODO: Clean up resources
+	// Release GraphData
+	if data := h.data.Swap(nil); data != nil {
+		_ = data.Close()
+	}
+	if backend := h.backend.Swap(nil); backend != nil {
+		_ = backend.Close()
+	}
+
+	// Release Bitsets (Roaring Bitmaps are pooled)
+	if h.deleted != nil {
+		h.deleted.Release()
+		h.deleted = nil
+	}
+
+	// Clear pools and stores
+	h.searchPool = nil
+	h.batchComputer = nil
+
+	// Break references to dataset and locationStore
+	h.dataset = nil
+	h.locationStore = nil
+
 	return nil
 }
 

@@ -134,7 +134,7 @@ type ArrowHNSW struct {
 	mMax0          int
 	efConstruction int
 
-	backend      atomic.Value
+	backend      atomic.Pointer[GraphData]
 	vectorColIdx int
 }
 
@@ -409,6 +409,18 @@ func (g *GraphData) GetCapacity() int {
 }
 
 func (g *GraphData) Close() error {
+	// Nil out all chunks to help GC even if GraphData persists in other references
+	g.Levels = nil
+	g.Vectors = nil
+	g.VectorsSQ8 = nil
+	g.VectorsPQ = nil
+	g.VectorsBQ = nil
+
+	for i := 0; i < ArrowMaxLayers; i++ {
+		g.Neighbors[i] = nil
+		g.Counts[i] = nil
+		g.Versions[i] = nil
+	}
 	return nil
 }
 

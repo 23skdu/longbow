@@ -13,6 +13,7 @@ import (
 type filterOp interface {
 	Match(rowIdx int) bool
 	MatchBitmap(dst []byte)
+	FilterBatch(indices []int) []int
 }
 
 // int64FilterOp avoids string conversion for int64 columns
@@ -82,6 +83,57 @@ func (o *int64FilterOp) MatchBitmap(dst []byte) {
 	}
 }
 
+func (o *int64FilterOp) FilterBatch(indices []int) []int {
+	if len(indices) == 0 {
+		return nil
+	}
+
+	values := make([]int64, len(indices))
+	for i, idx := range indices {
+		values[i] = o.col.Value(idx)
+	}
+
+	var op simd.CompareOp
+	switch o.operator {
+	case "=", "eq", "==":
+		op = simd.CompareEq
+	case "!=", "neq":
+		op = simd.CompareNeq
+	case ">":
+		op = simd.CompareGt
+	case ">=":
+		op = simd.CompareGe
+	case "<":
+		op = simd.CompareLt
+	case "<=":
+		op = simd.CompareLe
+	default:
+		result := make([]int, 0, len(indices))
+		for _, idx := range indices {
+			if o.Match(idx) {
+				result = append(result, idx)
+			}
+		}
+		return result
+	}
+
+	bitmap := make([]byte, len(indices))
+	simd.MatchInt64(values, o.val, op, bitmap)
+
+	result := make([]int, 0, len(indices))
+	hasNulls := o.col.NullN() > 0
+
+	for i, b := range bitmap {
+		if b == 1 {
+			idx := indices[i]
+			if !hasNulls || !o.col.IsNull(idx) {
+				result = append(result, idx)
+			}
+		}
+	}
+	return result
+}
+
 // float32FilterOp avoids string conversion for float32 columns
 type float32FilterOp struct {
 	col      *array.Float32
@@ -149,6 +201,57 @@ func (o *float32FilterOp) MatchBitmap(dst []byte) {
 	}
 }
 
+func (o *float32FilterOp) FilterBatch(indices []int) []int {
+	if len(indices) == 0 {
+		return nil
+	}
+
+	values := make([]float32, len(indices))
+	for i, idx := range indices {
+		values[i] = o.col.Value(idx)
+	}
+
+	var op simd.CompareOp
+	switch o.operator {
+	case "=", "eq", "==":
+		op = simd.CompareEq
+	case "!=", "neq":
+		op = simd.CompareNeq
+	case ">":
+		op = simd.CompareGt
+	case ">=":
+		op = simd.CompareGe
+	case "<":
+		op = simd.CompareLt
+	case "<=":
+		op = simd.CompareLe
+	default:
+		result := make([]int, 0, len(indices))
+		for _, idx := range indices {
+			if o.Match(idx) {
+				result = append(result, idx)
+			}
+		}
+		return result
+	}
+
+	bitmap := make([]byte, len(indices))
+	simd.MatchFloat32(values, o.val, op, bitmap)
+
+	result := make([]int, 0, len(indices))
+	hasNulls := o.col.NullN() > 0
+
+	for i, b := range bitmap {
+		if b == 1 {
+			idx := indices[i]
+			if !hasNulls || !o.col.IsNull(idx) {
+				result = append(result, idx)
+			}
+		}
+	}
+	return result
+}
+
 // stringFilterOp optimizes string comparisons
 type stringFilterOp struct {
 	col      *array.String
@@ -186,6 +289,18 @@ func (o *stringFilterOp) MatchBitmap(dst []byte) {
 			dst[i] = 0
 		}
 	}
+}
+
+func (o *stringFilterOp) FilterBatch(indices []int) []int {
+	// String comparison is hard to vectorize without fancy SIMD (PCMPESTRM) or fixed width.
+	// Fallback to loop for now.
+	result := make([]int, 0, len(indices))
+	for _, idx := range indices {
+		if o.Match(idx) {
+			result = append(result, idx)
+		}
+	}
+	return result
 }
 
 // FilterEvaluator pre-processes filters for a specific RecordBatch to enable fast scanning
@@ -260,26 +375,22 @@ func (e *FilterEvaluator) Matches(rowIdx int) bool {
 }
 
 // MatchesBatch evaluates filters for a slice of row indices and returns a subset of matching indices.
-// This is the "SIMD-friendly" entry point for batch processing.
+// This uses vectorized FilterBatch operations for improved performance.
 func (e *FilterEvaluator) MatchesBatch(rowIndices []int) []int {
 	if len(e.ops) == 0 {
 		return rowIndices
 	}
 
-	filtered := make([]int, 0, len(rowIndices))
-	for _, idx := range rowIndices {
-		match := true
-		for i := 0; i < len(e.ops); i++ {
-			if !e.ops[i].Match(idx) {
-				match = false
-				break
-			}
-		}
-		if match {
-			filtered = append(filtered, idx)
+	result := rowIndices
+	// Chain filters: output of one is input to next
+	// This reduces the working set size progressively
+	for _, op := range e.ops {
+		result = op.FilterBatch(result)
+		if len(result) == 0 {
+			return nil
 		}
 	}
-	return filtered
+	return result
 }
 
 // MatchesAll evaluates all filters on the entire batch using SIMD and returns matching row indices.

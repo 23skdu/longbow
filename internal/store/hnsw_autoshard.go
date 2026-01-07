@@ -25,6 +25,10 @@ type AutoShardingConfig struct {
 	ShardSplitThreshold int
 	// UseRingSharding determines if consistent hashing sharding is used.
 	UseRingSharding bool
+
+	// IndexConfig holds the configuration for the underlying HNSW index (optional).
+	// If set, NewAutoShardingIndex will generic ArrowHNSW with this config.
+	IndexConfig *ArrowHNSWConfig
 }
 
 // DefaultAutoShardingConfig returns a standard configuration.
@@ -55,17 +59,22 @@ func NewAutoShardingIndex(ds *Dataset, config AutoShardingConfig) *AutoShardingI
 		config.ShardThreshold = 10000 // Default to 10k
 	}
 
-	// Initialize HNSW config with dataset metric
-	hnswConfig := DefaultConfig()
-	hnswConfig.Metric = ds.Metric
+	var idx VectorIndex
+	if config.IndexConfig != nil {
+		idx = NewArrowHNSW(ds, *config.IndexConfig, nil)
+	} else {
+		// Initialize HNSW config with dataset metric
+		hnswConfig := DefaultConfig()
+		hnswConfig.Metric = ds.Metric
+		idx = NewHNSWIndex(ds, hnswConfig)
+	}
 
-	idx := &AutoShardingIndex{
-		current: NewHNSWIndex(ds, hnswConfig),
+	return &AutoShardingIndex{
+		current: idx,
 		config:  config,
 		dataset: ds,
 		sharded: false,
 	}
-	return idx
 }
 
 // SetInitialDimension sets the dimension for the underlying index if not yet set.

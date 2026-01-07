@@ -267,6 +267,7 @@ type SnapshotItem struct {
 	Records      []arrow.RecordBatch
 	GraphRecords []arrow.RecordBatch
 	PQCodebook   []byte
+	IndexConfig  []byte
 }
 
 type SnapshotSource interface {
@@ -373,6 +374,12 @@ func (e *StorageEngine) writeSnapshotItem(item SnapshotItem, tempDir string) {
 		path := filepath.Join(tempDir, item.Name+".pq")
 		_ = os.WriteFile(path, item.PQCodebook, 0o644)
 	}
+
+	// Write Config
+	if len(item.IndexConfig) > 0 {
+		path := filepath.Join(tempDir, item.Name+".config")
+		_ = os.WriteFile(path, item.IndexConfig, 0o644)
+	}
 }
 
 // LoadSnapshots reads all snapshots and calls loader for each item.
@@ -427,6 +434,11 @@ func (e *StorageEngine) LoadSnapshots(loader func(SnapshotItem) error) error {
 			data, err := os.ReadFile(fullPath)
 			if err == nil {
 				item.PQCodebook = data
+			}
+		case name + ".config":
+			data, err := os.ReadFile(fullPath)
+			if err == nil {
+				item.IndexConfig = data
 			}
 		}
 		f.Close()

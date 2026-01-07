@@ -92,7 +92,7 @@ func NewArrowHNSW(dataset *Dataset, config ArrowHNSWConfig, locStore *ChunkedLoc
 		initialCap = 1024
 	}
 
-	gd := NewGraphData(initialCap, 0, config.SQ8Enabled, config.PQEnabled)
+	gd := NewGraphData(initialCap, 0, config.SQ8Enabled, config.PQEnabled, config.BQEnabled)
 	h.data.Store(gd) // Dim 0 initially, updated on first insert
 	h.backend.Store(gd)
 
@@ -144,8 +144,11 @@ func (h *ArrowHNSW) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []int)
 	// 3. Parallel Insert
 	// Note: When SQ8 is enabled, we serialize insertions to avoid race conditions
 	// on shared memory writes to the vector chunks
-	if h.config.SQ8Enabled {
-		// Serial insertion for SQ8
+	// 3. Parallel Insert
+	// Note: When SQ8 or BQ is enabled, we serialize insertions to avoid race conditions
+	// on shared memory writes to the vector chunks
+	if h.config.SQ8Enabled || h.config.BQEnabled {
+		// Serial insertion for SQ8/BQ to ensure chunks are safely written
 		for i := 0; i < n; i++ {
 			id := uint32(startID) + uint32(i)
 			ids[i] = id
@@ -235,21 +238,33 @@ func (h *ArrowHNSW) SearchVectors(queryVec []float32, k int, filters []query.Fil
 			}
 
 			res = make([]SearchResult, 0, len(candidates))
+
+			// 1. Gather valid candidates and their row indices for batch processing
+			// We only filter candidates that are in Batch 0 (current limit)
+			validCandidates := make([]SearchResult, 0, len(candidates))
+			rowIndices := make([]int, 0, len(candidates))
+
 			for _, candle := range candidates {
-				// Resolve location to get RowIdx
 				loc, ok := h.locationStore.Get(VectorID(candle.ID))
-				if !ok || loc.BatchIdx == -1 {
+				if !ok || loc.BatchIdx != 0 {
 					continue
 				}
+				rowIndices = append(rowIndices, loc.RowIdx)
+				validCandidates = append(validCandidates, candle)
+			}
 
-				// Only support Batch 0 for now as per HNSWIndex limitations
-				if loc.BatchIdx != 0 {
-					// Skip or Error? Skip for safety.
-					continue
-				}
+			// 2. Vectorized Filter Evaluation
+			// MatchesBatch uses SIMD/Gather where possible to filter indices efficiently
+			matchedIndices := evaluator.MatchesBatch(rowIndices)
 
-				if evaluator.Matches(loc.RowIdx) {
-					res = append(res, candle)
+			// 3. Reconstruct Results
+			// matchedIndices is a subsequence of rowIndices. validCandidates aligns with rowIndices.
+			// We match them up.
+			matchIdx := 0
+			for i, rowIdx := range rowIndices {
+				if matchIdx < len(matchedIndices) && rowIdx == matchedIndices[matchIdx] {
+					res = append(res, validCandidates[i])
+					matchIdx++
 				}
 			}
 		} else {

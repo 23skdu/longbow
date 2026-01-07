@@ -167,6 +167,26 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec []float32, level int) error 
 		copy(dest, vec)
 	}
 
+	// Store Binary Quantized Vector
+	if h.config.BQEnabled && dims > 0 {
+		// Initialize Encoder if needed (lazy)
+		if h.bqEncoder == nil {
+			h.initMu.Lock()
+			if h.bqEncoder == nil {
+				h.bqEncoder = NewBQEncoder(dims)
+			}
+			h.initMu.Unlock()
+		}
+
+		encoded := h.bqEncoder.Encode(vec)
+		encodedChunk := data.LoadBQChunk(cID)
+		if encodedChunk != nil {
+			numWords := len(encoded)
+			baseIdx := int(cOff) * numWords
+			copy((*encodedChunk)[baseIdx:baseIdx+numWords], encoded)
+		}
+	}
+
 	// Check if this is the first node
 	if h.nodeCount.Load() == 0 {
 		h.initMu.Lock()
@@ -967,12 +987,7 @@ func (h *ArrowHNSW) pruneConnectionsLocked(ctx *ArrowSearchContext, data *GraphD
 		if cap(ctx.scratchRemaining) < count {
 			ctx.scratchRemaining = make([]Candidate, count*2)
 		}
-		candidates = ctx.scratchRemaining[:count]
-	} else {
-		candidates = make([]Candidate, count)
 	}
-
-	nodeVec := h.mustGetVectorFromData(data, nodeID)
 
 	// Logic Switch: SQ8 vs Float32
 	if h.quantizer != nil && len(data.VectorsSQ8) > 0 {
@@ -1019,6 +1034,9 @@ func (h *ArrowHNSW) pruneConnectionsLocked(ctx *ArrowSearchContext, data *GraphD
 		} else {
 			neighborVecs = make([][]float32, count)
 		}
+
+		// nodeVec needed for distance calc
+		nodeVec := h.mustGetVectorFromData(data, nodeID)
 
 		for i := 0; i < count; i++ {
 			neighborID := (*neighborsChunk)[baseIdx+i]
@@ -1069,30 +1087,6 @@ func (h *ArrowHNSW) pruneConnectionsLocked(ctx *ArrowSearchContext, data *GraphD
 
 	// Seqlock write end
 	atomic.AddUint32(verAddr, 1)
-}
-
-func (h *ArrowHNSW) mustGetVectorFromData(data *GraphData, id uint32) []float32 {
-	// Optimization: Check for dense vector storage
-	// if int(id) < len(data.Vectors) // This check is hard with chunks, assume valid
-	cID := chunkID(id)
-	cOff := chunkOffset(id)
-	// Check if we can store in dense vector storage
-	if vecChunk := data.LoadVectorChunk(cID); vecChunk != nil {
-		start := int(cOff) * int(h.dims.Load())
-		dims := int(h.dims.Load())
-		if start+dims <= len(*vecChunk) {
-			return (*vecChunk)[start : start+dims]
-		}
-	}
-
-	// Fallback
-	vec, err := h.getVector(id)
-	if err != nil {
-		// Return zero vector to avoid panic in distance calc
-		dims := int(h.dims.Load())
-		return make([]float32, dims)
-	}
-	return vec
 }
 
 // LevelGenerator generates random levels for new nodes.

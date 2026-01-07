@@ -107,8 +107,8 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec []float32, level int) error 
 	data := h.data.Load()
 
 	// Invariant: If dims > 0, Vectors/SQ8 arrays MUST exist in data.
-	// We only check Capacity here. Structural integrity is guaranteed by Grow/Init order.
-	if data.Capacity <= int(id) {
+	// We check both Capacity and existence of structures.
+	if data.Capacity <= int(id) || (dims > 0 && data.Vectors == nil) {
 		h.Grow(int(id)+1, dims)
 		data = h.data.Load()
 	}
@@ -445,7 +445,12 @@ func (h *ArrowHNSW) searchLayerForInsert(ctx *ArrowSearchContext, query []float3
 			entryDist = 0 // Or MaxFloat
 		}
 	} else {
-		entryDist = h.distFunc(query, h.mustGetVectorFromData(data, entryPoint))
+		v := h.mustGetVectorFromData(data, entryPoint)
+		if v == nil {
+			entryDist = math.MaxFloat32
+		} else {
+			entryDist = h.distFunc(query, v)
+		}
 	}
 
 	candidates.Push(Candidate{ID: entryPoint, Dist: entryDist})
@@ -590,15 +595,32 @@ func (h *ArrowHNSW) searchLayerForInsert(ctx *ArrowSearchContext, query []float3
 					}
 				}
 			}
-		} else {
 			if cap(ctx.scratchVecs) < count {
 				ctx.scratchVecs = make([][]float32, count*2)
 			}
 			vecs := ctx.scratchVecs[:count]
+
+			allValid := true
 			for i, nid := range unvisitedIDs {
-				vecs[i] = h.mustGetVectorFromData(data, nid)
+				v := h.mustGetVectorFromData(data, nid)
+				if v == nil {
+					dists[i] = math.MaxFloat32
+					vecs[i] = nil
+					allValid = false
+				} else {
+					vecs[i] = v
+				}
 			}
-			h.batchDistFunc(query, vecs, dists)
+
+			if allValid {
+				h.batchDistFunc(query, vecs, dists)
+			} else {
+				for i := 0; i < len(unvisitedIDs); i++ {
+					if vecs[i] != nil {
+						h.batchDistFunc(query, vecs[i:i+1], dists[i:i+1])
+					}
+				}
+			}
 		}
 
 		// Process results
@@ -804,16 +826,31 @@ func (h *ArrowHNSW) selectNeighbors(ctx *ArrowSearchContext, candidates []Candid
 					ctx.scratchVecs = make([][]float32, count*2)
 				}
 				remVecs := ctx.scratchVecs[:count]
+				allValid := true
 				for i := range remaining {
-					remVecs[i] = remainingVecs[i]
+					if remainingVecs[i] == nil {
+						dists[i] = math.MaxFloat32
+						remVecs[i] = nil
+						allValid = false
+					} else {
+						remVecs[i] = remainingVecs[i]
+					}
 				}
 
-				if bc, ok := h.batchComputer.(interface {
-					ComputeL2DistancesInto(query []float32, vectors [][]float32, dest []float32) (int, error)
-				}); ok {
-					_, _ = bc.ComputeL2DistancesInto(selVec, remVecs, dists)
+				if allValid {
+					if bc, ok := h.batchComputer.(interface {
+						ComputeL2DistancesInto(query []float32, vectors [][]float32, dest []float32) (int, error)
+					}); ok {
+						_, _ = bc.ComputeL2DistancesInto(selVec, remVecs, dists)
+					} else {
+						h.batchDistFunc(selVec, remVecs, dists)
+					}
 				} else {
-					h.batchDistFunc(selVec, remVecs, dists)
+					for i := range remaining {
+						if remVecs[i] != nil {
+							h.batchDistFunc(selVec, remVecs[i:i+1], dists[i:i+1])
+						}
+					}
 				}
 			}
 
@@ -896,7 +933,7 @@ func (h *ArrowHNSW) AddConnection(ctx *ArrowSearchContext, data *GraphData, sour
 	baseIdx := int(cOff) * MaxNeighbors
 
 	for i := 0; i < int(currentCount); i++ {
-		if (*neighborsChunk)[baseIdx+i] == target {
+		if atomic.LoadUint32(&(*neighborsChunk)[baseIdx+i]) == target {
 			return // Already connected
 		}
 	}
@@ -987,6 +1024,9 @@ func (h *ArrowHNSW) pruneConnectionsLocked(ctx *ArrowSearchContext, data *GraphD
 		if cap(ctx.scratchRemaining) < count {
 			ctx.scratchRemaining = make([]Candidate, count*2)
 		}
+		candidates = ctx.scratchRemaining[:count]
+	} else {
+		candidates = make([]Candidate, count)
 	}
 
 	// Logic Switch: SQ8 vs Float32

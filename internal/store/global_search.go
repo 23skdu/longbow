@@ -9,6 +9,7 @@ import (
 	"github.com/23skdu/longbow/internal/mesh"
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/query"
+	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/rs/zerolog"
 	"google.golang.org/grpc"
@@ -80,9 +81,8 @@ func (c *GlobalSearchCoordinator) GlobalSearch(ctx context.Context, localResults
 	groupChs := make([]chan []SearchResult, len(peerGroups))
 
 	// Request Body
-	remoteReq := req
+	remoteReq := *req // Copy struct
 	remoteReq.LocalOnly = true
-	remoteReqBody, _ := json.Marshal(remoteReq)
 
 	var wg sync.WaitGroup
 	configTimeout := 2 * time.Second
@@ -129,29 +129,44 @@ func (c *GlobalSearchCoordinator) GlobalSearch(ctx context.Context, localResults
 						entry.(*clientEntry).lastUse = time.Now()
 					}
 
-					action := &flight.Action{
-						Type: "VectorSearch",
-						Body: remoteReqBody,
+					// DoGet with Search Ticket
+					ticketQuery := query.TicketQuery{
+						Search: &remoteReq,
+					}
+					ticketBytes, err := json.Marshal(ticketQuery)
+					if err != nil {
+						return
 					}
 
-					stream, err := client.DoAction(subCtx, action)
+					stream, err := client.DoGet(subCtx, &flight.Ticket{Ticket: ticketBytes})
 					if err != nil {
 						return
 					}
-					res, err := stream.Recv()
+
+					reader, err := flight.NewRecordReader(stream)
 					if err != nil {
 						return
 					}
-					var resp query.VectorSearchResponse
-					if err := json.Unmarshal(res.Body, &resp); err != nil {
-						return
-					}
-					results := make([]SearchResult, len(resp.IDs))
-					for j := range resp.IDs {
-						results[j] = SearchResult{
-							ID:    VectorID(resp.IDs[j]),
-							Score: resp.Scores[j],
+					defer reader.Release()
+
+					var results []SearchResult
+					for reader.Next() {
+						rec := reader.RecordBatch()
+						col0 := rec.Column(0)
+						col1 := rec.Column(1)
+
+						ids := col0.(*array.Uint64).Uint64Values()
+						scores := col1.(*array.Float32).Float32Values()
+
+						for k := 0; k < len(ids); k++ {
+							results = append(results, SearchResult{
+								ID:    VectorID(ids[k]),
+								Score: scores[k],
+							})
 						}
+					}
+					if reader.Err() != nil {
+						return
 					}
 
 					// Submit

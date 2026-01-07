@@ -282,6 +282,8 @@ func (sa *StreamAggregator) sortAndSlice(tbl arrow.Table, colIdx int, k int, asc
 
 // fallback slicing (just first k)
 func (sa *StreamAggregator) sliceTable(tbl arrow.Table, k int) ([]arrow.RecordBatch, error) {
+	_ = tbl
+	_ = k
 	// Not implemented perfectly, simplified
 	return nil, nil
 }

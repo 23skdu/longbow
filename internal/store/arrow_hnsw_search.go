@@ -100,10 +100,6 @@ func (h *ArrowHNSW) Search(query []float32, k, ef int, filter *query.Bitset) ([]
 	// Search layer 0 with ef candidates
 	_, _ = h.searchLayer(query, ep, ef, 0, ctx, data, filter)
 
-	if ctx.resultSet.Len() == 0 {
-		fmt.Printf("DEBUG: Search resultSet is empty! EntryPoint: %d, NodeCount: %d, Ef: %d, Filter: %v\n", ep, h.nodeCount.Load(), ef, filter)
-	}
-
 	// Extract results
 	results := make([]SearchResult, 0, targetK)
 
@@ -318,23 +314,40 @@ func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef, layer in
 				}
 				vecs := ctx.scratchVecs[:batchCount]
 
+				allValid := true
 				for i, nid := range ctx.scratchIDs {
-					vecs[i] = h.mustGetVectorFromData(data, nid)
+					v := h.mustGetVectorFromData(data, nid)
+					if v == nil {
+						dists[i] = math.MaxFloat32
+						vecs[i] = nil
+						allValid = false
+					} else {
+						vecs[i] = v
+					}
 				}
 
-				// Use batch computer for vectorized distances
-				if bc, ok := h.batchComputer.(interface {
-					ComputeL2Distances(query []float32, vectors [][]float32) ([]float32, error)
-				}); ok {
-					batchDists, err := bc.ComputeL2Distances(query, vecs)
-					if err != nil {
-						// Fallback to SIMD on error
-						simd.EuclideanDistanceBatch(query, vecs, dists)
+				if allValid {
+					// Use batch computer for vectorized distances
+					if bc, ok := h.batchComputer.(interface {
+						ComputeL2Distances(query []float32, vectors [][]float32) ([]float32, error)
+					}); ok {
+						batchDists, err := bc.ComputeL2Distances(query, vecs)
+						if err != nil {
+							// Fallback to SIMD on error
+							simd.EuclideanDistanceBatch(query, vecs, dists)
+						} else {
+							copy(dists, batchDists)
+						}
 					} else {
-						copy(dists, batchDists)
+						simd.EuclideanDistanceBatch(query, vecs, dists)
 					}
 				} else {
-					simd.EuclideanDistanceBatch(query, vecs, dists)
+					// Handle nil vectors by computing individually for non-nil
+					for i := 0; i < batchCount; i++ {
+						if vecs[i] != nil {
+							h.batchDistFunc(query, vecs[i:i+1], dists[i:i+1])
+						}
+					}
 				}
 			} else {
 				// Float32 Path (SIMD for small batches)
@@ -343,10 +356,26 @@ func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef, layer in
 				}
 				vecs := ctx.scratchVecs[:batchCount]
 
+				allValid := true
 				for i, nid := range ctx.scratchIDs {
-					vecs[i] = h.mustGetVectorFromData(data, nid)
+					v := h.mustGetVectorFromData(data, nid)
+					if v == nil {
+						dists[i] = math.MaxFloat32
+						vecs[i] = nil
+						allValid = false
+					} else {
+						vecs[i] = v
+					}
 				}
-				h.batchDistFunc(query, vecs, dists)
+				if allValid {
+					h.batchDistFunc(query, vecs, dists)
+				} else {
+					for i := 0; i < batchCount; i++ {
+						if vecs[i] != nil {
+							h.batchDistFunc(query, vecs[i:i+1], dists[i:i+1])
+						}
+					}
+				}
 			}
 
 			// 3. Process Results
@@ -398,6 +427,7 @@ func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef, layer in
 // distance computes the distance between a query vector and a stored vector.
 // Uses zero-copy Arrow access and SIMD optimizations for maximum performance.
 func (h *ArrowHNSW) distance(query []float32, id uint32, data *GraphData, ctx *ArrowSearchContext) float32 {
+	_ = ctx
 	// BQ Check
 	// Note: We need ctx passed here to avoid allocs, or we alloc on fly.
 	// Changing signature ripples up. For now, alloc on fly or use a simple check.
@@ -506,6 +536,7 @@ func (h *ArrowHNSW) getVector(id uint32) ([]float32, error) {
 	return ExtractVectorFromArrow(rec, loc.RowIdx, h.vectorColIdx)
 }
 func (h *ArrowHNSW) mustGetVectorFromData(data *GraphData, id uint32) []float32 {
+	_ = data
 	vec, err := h.getVector(id)
 	if err != nil {
 		// Panic or log? In HNSW, missing vector during search/insert is critical.

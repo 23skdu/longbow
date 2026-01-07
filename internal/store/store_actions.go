@@ -517,9 +517,53 @@ func (s *VectorStore) StoreRecordBatch(ctx context.Context, name string, rec arr
 
 	// Memory append
 	ds.dataMu.Lock()
+
+	// Lazy Index Init
+	if ds.Index == nil {
+		config := s.autoShardingConfig
+		if config.ShardThreshold == 0 {
+			config.ShardThreshold = 10000
+			config.Enabled = true
+			config.ShardCount = runtime.NumCPU()
+		}
+		aIdx := NewAutoShardingIndex(ds, config)
+		if vecCol := findVectorColumn(rec); vecCol != nil {
+			if listArr, ok := vecCol.(*array.FixedSizeList); ok {
+				dim := int(listArr.DataType().(*arrow.FixedSizeListType).Len())
+				aIdx.SetInitialDimension(dim)
+			}
+		}
+		ds.Index = aIdx
+	}
+
+	batchIdx := len(ds.Records)
 	ds.Records = append(ds.Records, rec)
 	rec.Retain()
 	ds.dataMu.Unlock()
+
+	// Dispatch Index Job
+	s.updateLWWAndMerkle(ds, rec, time.Now().UnixNano()) // timestamp approx
+	rec.Retain()
+	job := IndexJob{
+		DatasetName: name,
+		Record:      rec,
+		BatchIdx:    batchIdx,
+		CreatedAt:   time.Now(),
+	}
+	// Try to send, backing off if full
+	sent := false
+	for attempt := 0; attempt < 50; attempt++ {
+		if s.indexQueue.Send(job) {
+			sent = true
+			break
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	if !sent {
+		s.logger.Warn().Str("dataset", name).Msg("Index queue full, dropping (sync store)")
+		metrics.IndexJobsDroppedTotal.Inc()
+		rec.Release()
+	}
 
 	// Memory tracking
 	size := estimateBatchSize(rec)

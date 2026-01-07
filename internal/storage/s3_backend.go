@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"path"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -38,6 +39,14 @@ type SnapshotBackend interface {
 	ListSnapshots(ctx context.Context) ([]string, error)
 	// DeleteSnapshot removes a snapshot
 	DeleteSnapshot(ctx context.Context, name string) error
+	// WriteSnapshotAsync performs a non-blocking upload
+	WriteSnapshotAsync(name string, data []byte)
+
+	// Expose properties for testing/coordination
+	Bucket() string
+	Prefix() string
+	GetHTTPTransport() *http.Transport
+	GetHTTPClient() *http.Client
 }
 
 // NotFoundError indicates a snapshot was not found
@@ -69,6 +78,12 @@ type S3BackendConfig struct {
 	MaxIdleConns        int           // Maximum idle connections (0 = use default)
 	MaxIdleConnsPerHost int           // Maximum idle connections per host (0 = use default)
 	IdleConnTimeout     time.Duration // Idle connection timeout (0 = use default)
+
+	// Async settings
+	AsyncEnabled   bool // Enable background uploads
+	WorkerCount    int  // Number of parallel upload workers
+	QueueSize      int  // Buffer size for pending uploads
+	AsyncMultipart bool // Use multipart upload for large files
 }
 
 // Validate checks the configuration for required fields
@@ -91,8 +106,22 @@ type S3Backend struct {
 	httpClient *http.Client
 }
 
+// AsyncS3Backend wraps S3Backend for background execution
+type AsyncS3Backend struct {
+	*S3Backend
+	jobs   chan asyncJob
+	wg     sync.WaitGroup
+	ctx    context.Context
+	cancel context.CancelFunc
+}
+
+type asyncJob struct {
+	name string
+	data []byte
+}
+
 // NewS3Backend creates a new S3 backend from configuration
-func NewS3Backend(cfg *S3BackendConfig) (*S3Backend, error) {
+func NewS3Backend(cfg *S3BackendConfig) (SnapshotBackend, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid S3 config: %w", err)
 	}
@@ -154,14 +183,47 @@ func NewS3Backend(cfg *S3BackendConfig) (*S3Backend, error) {
 
 	client := s3.NewFromConfig(awsCfg, opts)
 
-	return &S3Backend{
+	backend := &S3Backend{
 		client:     client,
 		bucket:     cfg.Bucket,
 		prefix:     strings.TrimSuffix(cfg.Prefix, "/"),
 		transport:  transport,
 		httpClient: httpClient,
-	}, nil
+	}
+
+	if cfg.AsyncEnabled {
+		workerCount := cfg.WorkerCount
+		if workerCount <= 0 {
+			workerCount = 4
+		}
+		queueSize := cfg.QueueSize
+		if queueSize <= 0 {
+			queueSize = 100
+		}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		asb := &AsyncS3Backend{
+			S3Backend: backend,
+			jobs:      make(chan asyncJob, queueSize),
+			ctx:       ctx,
+			cancel:    cancel,
+		}
+
+		for i := 0; i < workerCount; i++ {
+			asb.wg.Add(1)
+			go asb.worker()
+		}
+		return asb, nil
+	}
+
+	return backend, nil
 }
+
+// Bucket returns the S3 bucket name
+func (b *S3Backend) Bucket() string { return b.bucket }
+
+// Prefix returns the S3 key prefix
+func (b *S3Backend) Prefix() string { return b.prefix }
 
 // GetHTTPTransport returns the underlying HTTP transport used for connection pooling
 func (b *S3Backend) GetHTTPTransport() *http.Transport {
@@ -171,6 +233,27 @@ func (b *S3Backend) GetHTTPTransport() *http.Transport {
 // GetHTTPClient returns the HTTP client used by this S3 backend
 func (b *S3Backend) GetHTTPClient() *http.Client {
 	return b.httpClient
+}
+
+func (b *AsyncS3Backend) Bucket() string                    { return b.S3Backend.Bucket() }
+func (b *AsyncS3Backend) Prefix() string                    { return b.S3Backend.Prefix() }
+func (b *AsyncS3Backend) GetHTTPTransport() *http.Transport { return b.S3Backend.GetHTTPTransport() }
+func (b *AsyncS3Backend) GetHTTPClient() *http.Client       { return b.S3Backend.GetHTTPClient() }
+
+func (b *AsyncS3Backend) WriteSnapshot(ctx context.Context, name string, data []byte) error {
+	return b.S3Backend.WriteSnapshot(ctx, name, data)
+}
+
+func (b *AsyncS3Backend) ReadSnapshot(ctx context.Context, name string) (io.ReadCloser, error) {
+	return b.S3Backend.ReadSnapshot(ctx, name)
+}
+
+func (b *AsyncS3Backend) ListSnapshots(ctx context.Context) ([]string, error) {
+	return b.S3Backend.ListSnapshots(ctx)
+}
+
+func (b *AsyncS3Backend) DeleteSnapshot(ctx context.Context, name string) error {
+	return b.S3Backend.DeleteSnapshot(ctx, name)
 }
 
 // buildS3Key constructs the S3 key for a snapshot
@@ -187,6 +270,11 @@ func buildS3Key(prefix, name string) string {
 func (b *S3Backend) WriteSnapshot(ctx context.Context, name string, data []byte) error {
 	key := buildS3Key(b.prefix, name)
 
+	const minMultipartSize = 5 * 1024 * 1024 // 5MB
+	if len(data) >= minMultipartSize {
+		return b.writeMultipart(ctx, key, data)
+	}
+
 	_, err := b.client.PutObject(ctx, &s3.PutObjectInput{
 		Bucket:      aws.String(b.bucket),
 		Key:         aws.String(key),
@@ -198,6 +286,95 @@ func (b *S3Backend) WriteSnapshot(ctx context.Context, name string, data []byte)
 	}
 
 	return nil
+}
+
+func (b *S3Backend) writeMultipart(ctx context.Context, key string, data []byte) error {
+	createOut, err := b.client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
+		Bucket:      aws.String(b.bucket),
+		Key:         aws.String(key),
+		ContentType: aws.String("application/vnd.apache.parquet"),
+	})
+	if err != nil {
+		return err
+	}
+	uploadID := createOut.UploadId
+
+	var completedParts []types.CompletedPart
+	const partSize = 5 * 1024 * 1024
+	partNumber := int32(1)
+
+	for start := 0; start < len(data); start += partSize {
+		end := start + partSize
+		if end > len(data) {
+			end = len(data)
+		}
+
+		partOut, err := b.client.UploadPart(ctx, &s3.UploadPartInput{
+			Bucket:     aws.String(b.bucket),
+			Key:        aws.String(key),
+			UploadId:   uploadID,
+			PartNumber: aws.Int32(partNumber),
+			Body:       bytes.NewReader(data[start:end]),
+		})
+		if err != nil {
+			_, _ = b.client.AbortMultipartUpload(ctx, &s3.AbortMultipartUploadInput{
+				Bucket:   aws.String(b.bucket),
+				Key:      aws.String(key),
+				UploadId: uploadID,
+			})
+			return err
+		}
+
+		completedParts = append(completedParts, types.CompletedPart{
+			ETag:       partOut.ETag,
+			PartNumber: aws.Int32(partNumber),
+		})
+		partNumber++
+	}
+
+	_, err = b.client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+		Bucket:   aws.String(b.bucket),
+		Key:      aws.String(key),
+		UploadId: uploadID,
+		MultipartUpload: &types.CompletedMultipartUpload{
+			Parts: completedParts,
+		},
+	})
+	return err
+}
+
+// WriteSnapshotAsync queues a snapshot for background upload
+func (b *AsyncS3Backend) WriteSnapshotAsync(name string, data []byte) {
+	select {
+	case b.jobs <- asyncJob{name: name, data: data}:
+	default:
+		// Drop if full
+	}
+}
+
+func (b *AsyncS3Backend) worker() {
+	defer b.wg.Done()
+	for {
+		select {
+		case <-b.ctx.Done():
+			return
+		case job := <-b.jobs:
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+			_ = b.WriteSnapshot(ctx, job.name, job.data)
+			cancel()
+		}
+	}
+}
+
+// WriteSnapshotAsync on sync backend is just a wrapper
+func (b *S3Backend) WriteSnapshotAsync(name string, data []byte) {
+	_ = b.WriteSnapshot(context.Background(), name, data)
+}
+
+// Close gracefully shuts down workers
+func (b *AsyncS3Backend) Close() {
+	b.cancel()
+	b.wg.Wait()
 }
 
 // ReadSnapshot downloads snapshot data from S3

@@ -32,6 +32,8 @@ func TestS3ConnectionPoolConfig_Defaults(t *testing.T) {
 		t.Fatal("Transport is nil - connection pooling not configured")
 	}
 
+	_ = http.MethodGet // Silences "unused" lint
+
 	// Check default pool values
 	if transport.MaxIdleConns != DefaultMaxIdleConns {
 		t.Errorf("MaxIdleConns = %d, want %d", transport.MaxIdleConns, DefaultMaxIdleConns)

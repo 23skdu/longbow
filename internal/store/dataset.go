@@ -234,5 +234,20 @@ func (d *Dataset) Close() {
 	}
 	d.InvertedIndexes = make(map[string]*InvertedIndex)
 
-	d.Graph = nil
+	if d.Index != nil {
+		_ = d.Index.Close()
+		d.Index = nil
+	}
+
+	if d.BM25Index != nil {
+		_ = d.BM25Index.Close()
+		d.BM25Index = nil
+	}
+
+	if d.Graph != nil {
+		_ = d.Graph.Close()
+		d.Graph = nil
+	}
+
+	d.recordEviction = nil
 }

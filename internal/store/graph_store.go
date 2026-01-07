@@ -912,3 +912,30 @@ func (gs *GraphStore) RankWithGraph(initial []SearchResult, alpha float32, maxDe
 
 	return dedupeAndSort(results, len(initial)*2) // Return expanded set
 }
+
+// Close releases resources associated with the graph store.
+func (gs *GraphStore) Close() error {
+	gs.dataMu.Lock()
+	defer gs.dataMu.Unlock()
+
+	gs.subjects = nil
+	gs.objects = nil
+	gs.predicates = nil
+	gs.weights = nil
+	gs.predicateDict = nil
+	gs.predicateToIdx = nil
+
+	for i := 0; i < 256; i++ {
+		gs.indexShards[i].Lock()
+		// We can't nil the shard itself as it's an array element, but we can nil the maps it protects
+		gs.indexShards[i].Unlock()
+	}
+
+	gs.subjectIndex = nil
+	gs.objectIndex = nil
+	gs.predicateValueIndex = nil
+	gs.nodeCommunity = nil
+	gs.communities = nil
+
+	return nil
+}

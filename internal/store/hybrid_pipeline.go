@@ -4,6 +4,8 @@ import (
 	"errors"
 	"sort"
 
+	"context"
+
 	"github.com/23skdu/longbow/internal/query"
 )
 
@@ -76,6 +78,8 @@ type HybridSearchPipeline struct {
 	columnIndex *ColumnInvertedIndex
 	bm25Index   *BM25InvertedIndex
 	hnswIndex   *HNSWIndex
+	reranker    Reranker
+	dataset     *Dataset
 }
 
 // NewHybridSearchPipeline creates a new hybrid search pipeline
@@ -98,6 +102,16 @@ func (p *HybridSearchPipeline) SetBM25Index(idx *BM25InvertedIndex) {
 // SetHNSWIndex sets the HNSW index for vector search
 func (p *HybridSearchPipeline) SetHNSWIndex(idx *HNSWIndex) {
 	p.hnswIndex = idx
+}
+
+// SetReranker sets the second-stage reranker
+func (p *HybridSearchPipeline) SetReranker(r Reranker) {
+	p.reranker = r
+}
+
+// SetDataset sets the dataset for content lookups
+func (p *HybridSearchPipeline) SetDataset(ds *Dataset) {
+	p.dataset = ds
 }
 
 // Search performs hybrid search combining all configured indexes
@@ -158,7 +172,17 @@ func (p *HybridSearchPipeline) Search(query *HybridSearchQuery) ([]SearchResult,
 		fused = ReciprocalRankFusion(denseResults, sparseResults, p.config.RRFk, query.K)
 	}
 
-	// 5. Limit to K
+	// 5. Re-ranking stage (Stage 2)
+	// We re-rank the fused results using a more expensive model if available
+	// Usually we re-rank more than K and then truncate
+	if p.reranker != nil {
+		reranked, err := p.reranker.Rerank(context.Background(), query.KeywordQuery, fused)
+		if err == nil {
+			fused = reranked
+		}
+	}
+
+	// 6. Limit to K
 	if len(fused) > query.K {
 		fused = fused[:query.K]
 	}
@@ -253,12 +277,102 @@ func FuseCascade(exact map[VectorID]struct{}, keyword, vector []SearchResult, li
 }
 
 // applyExactFilters applies exact match filters using column index
-func (p *HybridSearchPipeline) applyExactFilters(filters []query.Filter) map[VectorID]struct{} { //nolint:unparam
-	if len(filters) == 0 {
+func (p *HybridSearchPipeline) applyExactFilters(filters []query.Filter) map[VectorID]struct{} {
+	if len(filters) == 0 || p.columnIndex == nil || p.dataset == nil {
 		return nil
 	}
-	// TODO: Implement exact filter application using column index
-	return nil
+
+	// For now, we take the intersection of all filters
+	var result map[VectorID]struct{}
+
+	for i, f := range filters {
+		if f.Operator != "=" {
+			continue // Only exact matches supported for now
+		}
+
+		positions := p.columnIndex.Lookup(p.dataset.Name, f.Field, f.Value)
+		if len(positions) == 0 {
+			return make(map[VectorID]struct{}) // Empty intersection
+		}
+
+		// Convert RowPositions to VectorIDs
+		// This is a naive implementation: we need a way to map RowPosition back to VectorID.
+		// Since HybridSearchPipeline is integrated with Dataset, we can ideally use
+		// Dataset's own inverted indexes if available.
+
+		currentIDs := make(map[VectorID]struct{})
+		for _, pos := range positions {
+			// Naive: scan or heuristic?
+			// In HNSWIndex, VectorID matches index in locationStore.
+			// Let's use a helper if possible.
+			id, ok := p.findVectorID(pos)
+			if ok {
+				currentIDs[id] = struct{}{}
+			}
+		}
+
+		if i == 0 {
+			result = currentIDs
+		} else {
+			// Intersection
+			for id := range result {
+				if _, ok := currentIDs[id]; !ok {
+					delete(result, id)
+				}
+			}
+		}
+
+		if len(result) == 0 {
+			break
+		}
+	}
+
+	return result
+}
+
+// findVectorID maps RowPosition back to internal VectorID
+func (p *HybridSearchPipeline) findVectorID(pos RowPosition) (VectorID, bool) {
+	if p.hnswIndex == nil {
+		return 0, false
+	}
+	// Heuristic: Check if the ID in locationStore matches the target position
+	// Since VectorIDs are often sequential, we can try to guess or use a full scan (slow fallback)
+
+	// Fast Path: Check if VectorID == RowIdx (for single-batch datasets)
+	if pos.RecordIdx == 0 {
+		loc, ok := p.hnswIndex.locationStore.Get(VectorID(pos.RowIdx))
+		if ok && loc.BatchIdx == 0 && loc.RowIdx == pos.RowIdx {
+			return VectorID(pos.RowIdx), true
+		}
+	}
+
+	// Fallback: Full scan of location store (Expensive!)
+	// TODO: Replace with a reverse index mapping Location -> VectorID
+	count := p.hnswIndex.locationStore.Len()
+	for i := 0; i < count; i++ {
+		loc, ok := p.hnswIndex.locationStore.Get(VectorID(i))
+		if ok && loc.BatchIdx == pos.RecordIdx && loc.RowIdx == pos.RowIdx {
+			return VectorID(i), true
+		}
+	}
+
+	return 0, false
+}
+
+// Reranker defines the interface for the second-stage re-ranking
+type Reranker interface {
+	Rerank(ctx context.Context, query string, results []SearchResult) ([]SearchResult, error)
+}
+
+// CrossEncoderReranker is a stub implementation of a cross-encoder model re-ranker
+type CrossEncoderReranker struct {
+	ModelName string
+}
+
+func (r *CrossEncoderReranker) Rerank(ctx context.Context, query string, results []SearchResult) ([]SearchResult, error) {
+	// TODO: Implement actual cross-encoder scoring
+	// For now, this is a stub that keeps results as-is
+	return results, nil
 }
 
 // dedupeAndSort removes duplicates (keeping highest score) and sorts by score descending

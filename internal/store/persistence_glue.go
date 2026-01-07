@@ -1,6 +1,7 @@
 package store
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -84,8 +85,25 @@ func (s *VectorStore) loadSnapshotItem(item *storage.SnapshotItem) error {
 
 	// Initialize Index if missing (Critical for restoration)
 	if ds.Index == nil {
-		// Use default config for now, ideally persisted in snapshot metadata
-		ds.Index = NewAutoShardingIndex(ds, DefaultAutoShardingConfig())
+		// Try to load persisted config
+		var asConfig AutoShardingConfig
+
+		if len(item.IndexConfig) > 0 {
+			var arrowConfig ArrowHNSWConfig
+			if err := json.Unmarshal(item.IndexConfig, &arrowConfig); err != nil {
+				s.logger.Error().Err(err).Str("dataset", ds.Name).Msg("Failed to unmarshal index config")
+				asConfig = DefaultAutoShardingConfig()
+			} else {
+				// We have a config!
+				s.logger.Info().Str("dataset", ds.Name).Bool("bq_enabled", arrowConfig.BQEnabled).Msg("Restoring index with persisted config")
+				asConfig = DefaultAutoShardingConfig()
+				asConfig.IndexConfig = &arrowConfig
+			}
+		} else {
+			asConfig = DefaultAutoShardingConfig()
+		}
+
+		ds.Index = NewAutoShardingIndex(ds, asConfig)
 	}
 
 	// Load Records and Rebuild Index
@@ -269,6 +287,23 @@ func (src *storeSnapshotSource) Iterate(fn func(storage.SnapshotItem) error) err
 		// PQ
 		if ds.PQEncoder != nil {
 			item.PQCodebook = ds.PQEncoder.Serialize()
+		}
+
+		// Serialize Index Config (JSON)
+		if ds.Index != nil {
+			if asi, ok := ds.Index.(*AutoShardingIndex); ok {
+				asi.mu.RLock()
+				// access current index
+				// Since we are in same package, we can access generic current
+				// But we need to check if it's ArrowHNSW
+				if ahnsw, ok := asi.current.(*ArrowHNSW); ok {
+					cfg := ahnsw.config
+					if data, err := json.Marshal(cfg); err == nil {
+						item.IndexConfig = data
+					}
+				}
+				asi.mu.RUnlock()
+			}
 		}
 
 		ds.dataMu.RUnlock()

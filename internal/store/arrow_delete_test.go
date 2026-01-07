@@ -1,6 +1,5 @@
 package store
 
-
 import (
 	"testing"
 )
@@ -16,7 +15,7 @@ func TestDelete(t *testing.T) {
 	index.dims.Store(128)
 
 	// Initialize GraphData manually with dimensions
-	data := NewGraphData(100, 128, false, false)
+	data := NewGraphData(0, 64, false, false, false)
 	index.data.Store(data)
 
 	// Manually allocate chunks for testing since we bypass Insert

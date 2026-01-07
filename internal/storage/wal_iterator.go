@@ -25,8 +25,7 @@ type WALIterator struct {
 	mu     sync.Mutex
 
 	// Support for compressed blocks
-	inner      *bytes.Reader
-	compressed bool
+	inner *bytes.Reader
 }
 
 func NewWALIterator(dir string, mem memory.Allocator) (*WALIterator, error) {

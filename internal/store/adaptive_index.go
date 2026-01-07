@@ -290,7 +290,7 @@ func (a *AdaptiveIndex) AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx int)
 }
 
 // AddBatch adds multiple vectors efficiently.
-func (a *AdaptiveIndex) AddBatch(recs []arrow.RecordBatch, rowIdxs []int, batchIdxs []int) ([]uint32, error) {
+func (a *AdaptiveIndex) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []int) ([]uint32, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 

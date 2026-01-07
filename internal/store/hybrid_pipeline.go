@@ -7,6 +7,14 @@ import (
 	"github.com/23skdu/longbow/internal/query"
 )
 
+// HybridPipelineConfig configures the hybrid search pipeline
+type HybridPipelineConfig struct {
+	Alpha          float32    // 0.0=pure keyword, 1.0=pure vector, 0.5=balanced
+	RRFk           int        // RRF parameter k (typically 60)
+	FusionMode     FusionMode // How to combine results
+	UseColumnIndex bool       // Use column index for exact filters
+}
+
 func (c *HybridPipelineConfig) Validate() error {
 	if c.Alpha < 0 || c.Alpha > 1 {
 		return errors.New("alpha must be between 0 and 1")
@@ -28,14 +36,6 @@ const (
 	FusionModeLinear                    // Linear weighted combination
 	FusionModeCascade                   // Cascade: filters -> keyword -> vector
 )
-
-// HybridPipelineConfig configures the hybrid search pipeline
-type HybridPipelineConfig struct {
-	Alpha          float32    // 0.0=pure keyword, 1.0=pure vector, 0.5=balanced
-	RRFk           int        // RRF parameter k (typically 60)
-	FusionMode     FusionMode // How to combine results
-	UseColumnIndex bool       // Use column index for exact filters
-}
 
 // DefaultHybridPipelineConfig returns sensible defaults
 func DefaultHybridPipelineConfig() HybridPipelineConfig {
@@ -253,12 +253,11 @@ func FuseCascade(exact map[VectorID]struct{}, keyword, vector []SearchResult, li
 }
 
 // applyExactFilters applies exact match filters using column index
-func (p *HybridSearchPipeline) applyExactFilters(filters []query.Filter) map[VectorID]struct{} {
-	if !p.config.UseColumnIndex || p.columnIndex == nil || len(filters) == 0 {
+func (p *HybridSearchPipeline) applyExactFilters(filters []query.Filter) map[VectorID]struct{} { //nolint:unparam
+	if len(filters) == 0 {
 		return nil
 	}
-
-	// This would be implemented when integrating with VectorStore
+	// TODO: Implement exact filter application using column index
 	return nil
 }
 

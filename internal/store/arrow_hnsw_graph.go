@@ -152,7 +152,7 @@ const (
 	MaxNeighbors   = 448
 )
 
-func NewGraphData(capacity, dims int, sq8Enabled bool, pqEnabled bool) *GraphData {
+func NewGraphData(capacity, dims int, sq8Enabled, pqEnabled bool) *GraphData {
 	numChunks := (capacity + ChunkSize - 1) / ChunkSize
 	if numChunks < 1 {
 		numChunks = 1
@@ -460,7 +460,7 @@ func (g *GraphData) StoreVersionsChunk(layer int, cID uint32, chunk *[]uint32) {
 	atomic.StorePointer(ptr, unsafe.Pointer(chunk))
 }
 
-func (gd *GraphData) Clone(minCap int, targetDims int, sq8Enabled bool, pqEnabled bool) *GraphData {
+func (gd *GraphData) Clone(minCap, targetDims int, sq8Enabled, pqEnabled bool) *GraphData {
 	newGD := NewGraphData(minCap, targetDims, sq8Enabled, pqEnabled)
 	copy(newGD.Levels, gd.Levels)
 	if len(gd.Vectors) > 0 {
@@ -480,7 +480,7 @@ func (gd *GraphData) Clone(minCap int, targetDims int, sq8Enabled bool, pqEnable
 	return newGD
 }
 
-func (h *ArrowHNSW) Grow(minCap int, dims int) {
+func (h *ArrowHNSW) Grow(minCap, dims int) {
 	h.growMu.Lock()
 	defer h.growMu.Unlock()
 	data := h.data.Load()
@@ -498,7 +498,7 @@ func (h *ArrowHNSW) Grow(minCap int, dims int) {
 	h.data.Store(newGD)
 }
 
-func (h *ArrowHNSW) ensureChunk(data *GraphData, cID uint32, _ uint32, dims int) (*GraphData, error) {
+func (h *ArrowHNSW) ensureChunk(data *GraphData, cID, _ uint32, dims int) *GraphData {
 	if data.Levels[cID] == nil {
 		chunk := make([]uint8, ChunkSize)
 		ptr := (*unsafe.Pointer)(unsafe.Pointer(&data.Levels[cID]))
@@ -527,7 +527,7 @@ func (h *ArrowHNSW) ensureChunk(data *GraphData, cID uint32, _ uint32, dims int)
 			data.StoreVersionsChunk(i, cID, &chunk)
 		}
 	}
-	return data, nil
+	return data
 }
 
 // GetPQEncoder returns the PQ encoder if one exists.

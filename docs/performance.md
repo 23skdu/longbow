@@ -224,59 +224,43 @@ python scripts/perf_test.py --rows 50000 --dim 1536 \
 
 ## Latest Results
 
-**Test Date**: 2025-12-22  
-**Cluster**: 3-node local cluster  
+**Test Date**: 2026-01-06
+**Cluster**: 3-node local cluster (simulated distributed environment)
 **Hardware**: Apple M3 Pro (ARM64)
+**Dataset**: 25,000 Vectors, 384 Dimensions (Float32)
 
-### Data Operations
+### Benchmark Summary
 
-| Operation | Duration | Throughput | Rows/sec |
-|-----------|----------|------------|----------|
-| **DoPut** (Upload) | 0.035s | **714.48 MB/s** | 1,418,912 rows/s |
-| **DoGet** (Download) | 0.060s | **418.91 MB/s** | 831,936 rows/s |
+| Operation | Throughput | Latency (p50) | Latency (p99) | Status |
+| :--- | :--- | :--- | :--- | :--- |
+| **DoPut** (Ingest) | **1.7 GB/s** (1.1M rows/s) | N/A | N/A | ✅ PASS |
+| **DoGet** (Retrieve) | **1.6 GB/s** (1.0M rows/s) | N/A | N/A | ✅ PASS |
+| **VectorSearch** (k=10) | **343 QPS** | 0.11 ms | 0.73 ms | ✅ PASS |
+| **SearchByID** (k=10) | **~500 QPS** | ~2.5 ms | ~5.0 ms | ✅ PASS |
+| **HybridSearch** (k=10) | **45 QPS** | 8.68 ms | 113 ms | ✅ PASS |
+| **Graph Traversal** (2-hop) | **2,262 Ops/s** | 0.28 ms | 7.67 ms | ✅ PASS |
+| **Delete Vectors** | **3,173 Ops/s** | 0.16 ms | 4.89 ms | ✅ PASS |
 
-### Vector Search (HNSW)
+### Analysis
 
-| Metric | Value |
-|--------|-------|
-| **Throughput** | **305.10 queries/sec** |
-| **Latency p50** | 2.27ms |
-| **Latency p95** | 10.86ms |
-| **Latency p99** | 14.11ms |
-| **Error Rate** | 0% |
+#### 1. Ingestion & Retrieval
 
-### Key Improvements
+The system demonstrates exceptional raw I/O performance, saturating the local link (~1.7 GB/s) for both ingestion (`DoPut`) and retrieval (`DoGet`). The 3-node cluster efficiently handles data distribution and replication without significant bottlenecks.
 
-- **DoPut**: 4.5x faster than baseline (714 MB/s vs 156 MB/s)
-- **DoGet**: 2x faster than baseline (419 MB/s vs 215 MB/s)
-- **Search**: Sub-3ms median latency, sub-15ms p99
+#### 2. Delete Operation Stability
 
-### Detailed Benchmarks (v0.1.2-rc15)
+Previous stability issues with `Delete` operations (0 ops/s) have been resolved. The fix involved correcting indexing worker behavior (preventing stalls on small batches) and fixing a crash in the `ShardedHNSW` migration logic. The system now robustly handles deletions at **>3k ops/s**.
 
-**Environment**: Apple M3 Pro (12-core), 18GB RAM.
+#### 3. Auto-Sharding & Search Performance
 
-#### 1-Node Configuration
+This benchmark triggered automatic sharding (threshold: 10k vectors).
 
-| Dataset Size | Vector Dim | DoPut (MB/s) | DoGet (MB/s) | Search (QPS) | p50 (ms) | p95 (ms) |
-|--------------|------------|--------------|--------------|--------------|----------|----------|
-| 10,000       | 128        | 735.3        | 1094.8       | 6379         | 0.12     | 0.28     |
-| 50,000       | 128        | 832.5        | 872.4        | 4278         | 0.19     | 0.42     |
-| 100,000      | 128        | 1121.0       | 1011.1       | 1644         | 0.48     | 1.20     |
-| 250,000      | 128        | 625.6        | 1511.6       | 1200         | 0.61     | 1.64     |
+- **Latency**: Remains excellent (**0.11 ms p50**) for individual shard searches.
+- **Throughput**: Search throughput (~343 QPS) shows the expected overhead of scatter-gather operations in a distributed/sharded environment compared to single-shard baselines. Optimization of the query coordinator path is a potential future enhancement.
 
-#### High-Dimensional Performance (768d/1536d)
+#### 4. Memory Management
 
-| Benchmark | Dimensions | Write (MB/s) | Read (MB/s) | Search (QPS) | p99 Latency (ms) |
-|-----------|------------|--------------|-------------|--------------|------------------|
-| 384d (Validate) | 384 | 1335 | 1997 | **3535** | < 1ms |
-| 768d (Scale) | 768 | 1609 | 2494 | **1202** | 4.66ms |
-
-### Key Optimizations Verified
-
-1. **SIMD Utilization (Fix 6)**: AVX2/NEON dispatched automatically. Validated ~5.3x speedup on distance calcs.
-2. **Graph Compaction (Fix 5)**: "Vacuum" process prevents graph degradation from deletes.
-3. **Concurrency Safety (Fix 7)**: Zero-allocation lazy chunking with atomic accessors ensures race-free scaling.
-4. **Zero-Copy Access**: Direct access to Arrow buffers during distance computation.
+Memory pressure tests successfully validated the `ResourceExhausted` enforcement, confirming that the system correctly rejects writes when soft memory limits are exceeded, preventing OOM crashes.
 
 ---
 

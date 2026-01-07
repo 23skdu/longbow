@@ -169,7 +169,7 @@ func HybridSearch(ctx context.Context, s *VectorStore, name string, queryVec []f
 }
 
 // RankFusion performs Reciprocal Rank Fusion.
-func RankFusion(list1, list2 []SearchResult, k int, rrfK int) []SearchResult {
+func RankFusion(list1, list2 []SearchResult, k, rrfK int) []SearchResult {
 	scores := make(map[uint32]float32) // Use VectorID (uint32)
 
 	// Helper to add scores
@@ -201,7 +201,7 @@ func RankFusion(list1, list2 []SearchResult, k int, rrfK int) []SearchResult {
 }
 
 // HybridSearchWithBitmap performs hybrid search using a pre-computed bitmap for filtering.
-func (s *VectorStore) HybridSearchWithBitmap(ctx context.Context, req HybridSearchRequest) ([]SearchResult, error) {
+func (s *VectorStore) HybridSearchWithBitmap(ctx context.Context, req *HybridSearchRequest) ([]SearchResult, error) {
 	// Placeholder
 	return nil, nil
 }

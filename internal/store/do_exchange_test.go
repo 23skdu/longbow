@@ -219,11 +219,21 @@ func TestDoExchange_BidirectionalResponse(t *testing.T) {
 	// Pre-populate store with data for response
 	schema := arrow.NewSchema([]arrow.Field{
 		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
+		{Name: "vector", Type: arrow.FixedSizeListOf(2, arrow.PrimitiveTypes.Float32)},
 	}, nil)
 	idBuilder := array.NewInt64Builder(alloc)
 	idBuilder.AppendValues([]int64{100, 200, 300}, nil)
 	idArr := idBuilder.NewArray()
-	prepopRec := array.NewRecordBatch(schema, []arrow.Array{idArr}, 3)
+
+	vecBuilder := array.NewFixedSizeListBuilder(alloc, 2, arrow.PrimitiveTypes.Float32)
+	vecValBuilder := vecBuilder.ValueBuilder().(*array.Float32Builder)
+	for i := 0; i < 3; i++ {
+		vecBuilder.Append(true)
+		vecValBuilder.AppendValues([]float32{1.0, 2.0}, nil)
+	}
+	vecArr := vecBuilder.NewArray()
+
+	prepopRec := array.NewRecordBatch(schema, []arrow.Array{idArr, vecArr}, 3)
 
 	ds := &Dataset{Records: []arrow.RecordBatch{prepopRec}, Name: "exchange-source"}
 	ds.SetLastAccess(time.Now())
@@ -245,7 +255,7 @@ func TestDoExchange_BidirectionalResponse(t *testing.T) {
 	}
 	mockStream.addFlightData(&flight.FlightData{
 		FlightDescriptor: desc,
-		DataBody:         []byte("request"),
+		DataBody:         make([]byte, 8), // 8-byte sequence number
 	})
 
 	err := dataServer.DoExchange(mockStream)
@@ -255,6 +265,8 @@ func TestDoExchange_BidirectionalResponse(t *testing.T) {
 	assert.GreaterOrEqual(t, mockStream.getSentCount(), 0, "Should handle bidirectional flow")
 
 	idBuilder.Release()
+	vecArr.Release()
+	vecBuilder.Release()
 }
 
 // Test 7: Verify Prometheus metrics are tracked

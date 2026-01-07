@@ -91,7 +91,7 @@ func (s *VectorStore) incrementPipelineBatches(count int64) {
 
 // filterRecordOptimized uses column index for equality filters when available
 // Falls back to Arrow compute for non-indexed columns or non-equality operators
-func (s *VectorStore) filterRecordOptimized(ctx context.Context, datasetName string, rec arrow.RecordBatch, batchIdx int, filters []query.Filter) (arrow.RecordBatch, error) {
+func (s *VectorStore) filterRecordOptimized(ctx context.Context, datasetName string, rec arrow.RecordBatch, batchIdx int, filters []query.Filter) (arrow.RecordBatch, error) { //nolint:unparam
 	if len(filters) == 0 {
 		rec.Retain()
 		return rec, nil

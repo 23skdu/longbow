@@ -49,12 +49,6 @@ reliability, architecture refactoring, and advanced indexing features.
 - **Location**: `internal/store/hybrid_pipeline.go`
 - **Plan**: Add a reverse index map to `HNSWIndex` or `ChunkedLocationStore` for O(1) lookups.
 
-### 9. ID Resolution Optimization
-
-- **Impact**: **Medium**. `vector_search_action.go` uses a linear scan for ID lookups.
-- **Location**: `internal/store/vector_search_action.go`
-- **Plan**: Use an inverted index or hash map for `SearchByID` operations.
-
 ---
 
 ## Additional Technical Debt & TODOs
@@ -88,3 +82,4 @@ reliability, architecture refactoring, and advanced indexing features.
 - **Async S3 Checkpointing**: Implemented non-blocking, multipart uploads.
 - **Arrow HNSW Resource Cleanup**: Fully implemented `Close()` methods.
 - **HNSW Stability**: Resolved critical data races in `ensureChunk` and safeguards for SIMD.
+- **ID Resolution Optimization**: Replaced linear scan with O(1) PrimaryIndex lookup for `SearchByID` operations.

@@ -34,11 +34,12 @@ func (h *ArrowHNSW) TrainPQ(vectors [][]float32) error {
 	m := h.config.PQM
 	if m == 0 {
 		// Heuristic: M = dims / 4 or dims / 8
-		if dims%8 == 0 {
+		switch {
+		case dims%8 == 0:
 			m = dims / 8
-		} else if dims%4 == 0 {
+		case dims%4 == 0:
 			m = dims / 4
-		} else {
+		default:
 			m = 1 // No split
 		}
 	}
@@ -115,11 +116,7 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec []float32, level int) error 
 	// Lazy Chunk Allocation
 	cID := chunkID(id)
 	cOff := chunkOffset(id)
-	var err error // Declare err to avoid shadowing data
-	data, err = h.ensureChunk(data, cID, cOff, dims)
-	if err != nil {
-		return err
-	}
+	data = h.ensureChunk(data, cID, cOff, dims)
 
 	// Initialize the new node
 	(*data.Levels[cID])[cOff] = uint8(level)
@@ -144,11 +141,7 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec []float32, level int) error 
 
 			// Re-ensure chunk with new dims
 			// cID/cOff relies on ID which hasn't changed
-			data, err = h.ensureChunk(data, cID, cOff, dims)
-			if err != nil {
-				h.initMu.Unlock()
-				return err
-			}
+			data = h.ensureChunk(data, cID, cOff, dims)
 		} else {
 			// Someone else initialized global dimensions while we waited.
 			// Our local 'data' snapshot corresponds to dims=0 (likely no vectors).
@@ -387,9 +380,8 @@ func (h *ArrowHNSW) searchLayerForInsert(ctx *ArrowSearchContext, query []float3
 	ctx.visited.Clear()
 	ctx.candidates.Clear()
 	// Ensure visited bitset is large enough
-	// Use maxID from location store to cover all possible IDs, including the one currently being inserted
-	// Add safety margin
-	maxID := int(h.locationStore.MaxID()) + 1000
+	// Use capacity from graph data as it tracks the actual max possible ID
+	maxID := data.Capacity + 1000
 	if ctx.visited == nil || ctx.visited.Size() < maxID {
 		ctx.visited = NewArrowBitset(maxID)
 	} else {
@@ -853,7 +845,7 @@ func (h *ArrowHNSW) selectNeighbors(ctx *ArrowSearchContext, candidates []Candid
 }
 
 // AddConnection adds a directed edge from source to target at the given layer.
-func (h *ArrowHNSW) AddConnection(ctx *ArrowSearchContext, data *GraphData, source, target uint32, layer int, maxConn int) {
+func (h *ArrowHNSW) AddConnection(ctx *ArrowSearchContext, data *GraphData, source, target uint32, layer, maxConn int) {
 	// Acquire lock for the specific node (shard)
 	lockID := source % ShardedLockCount
 	h.shardedLocks[lockID].Lock()

@@ -20,6 +20,7 @@ type Member struct {
 	Addr        string // Gossip Host:Port (UDP)
 	GRPCAddr    string // Service Host:Port (gRPC Data)
 	MetaAddr    string // Service Host:Port (gRPC Meta)
+	Tags        map[string]string
 	Status      MemberStatus
 	Incarnation uint32
 	LastSeen    time.Time
@@ -28,7 +29,7 @@ type Member struct {
 
 // EncodeMember serializes a member update into a compact binary format.
 // Format:
-// ID Len (1) | ID | Addr Len (1) | Addr | GRPCAddr Len (1) | GRPCAddr | MetaAddr Len (1) | MetaAddr | Status (1) | Incarnation (4)
+// ID Len (1) | ID | Addr Len (1) | Addr | GRPCAddr Len (1) | GRPCAddr | MetaAddr Len (1) | MetaAddr | Status (1) | Incarnation (4) | NumTags (1) | [KeyLen(1)|Key|ValLen(1)|Val]...
 func EncodeMember(m *Member, dst []byte) (int, error) {
 	offset := 0
 
@@ -93,6 +94,36 @@ func EncodeMember(m *Member, dst []byte) (int, error) {
 	binary.BigEndian.PutUint32(dst[offset:], m.Incarnation)
 	offset += 4
 
+	// Tags
+	if len(m.Tags) > 255 {
+		return 0, errors.New("too many tags")
+	}
+	if len(dst) < offset+1 {
+		return 0, errors.New("buffer too small")
+	}
+	dst[offset] = byte(len(m.Tags))
+	offset++
+
+	for k, v := range m.Tags {
+		kLen := len(k)
+		vLen := len(v)
+		if kLen > 255 || vLen > 255 {
+			return 0, errors.New("tag key/val too long")
+		}
+		if len(dst) < offset+1+kLen+1+vLen {
+			return 0, errors.New("buffer too small")
+		}
+		dst[offset] = byte(kLen)
+		offset++
+		copy(dst[offset:], k)
+		offset += kLen
+
+		dst[offset] = byte(vLen)
+		offset++
+		copy(dst[offset:], v)
+		offset += vLen
+	}
+
 	return offset, nil
 }
 
@@ -153,11 +184,44 @@ func DecodeMember(src []byte) (*Member, int, error) {
 	inc := binary.BigEndian.Uint32(src[offset:])
 	offset += 4
 
+	// Tags
+	tags := make(map[string]string)
+	if len(src) > offset {
+		numTags := int(src[offset])
+		offset++
+		for i := 0; i < numTags; i++ {
+			if len(src) < offset+1 {
+				return nil, 0, errors.New("packet too short for tags")
+			}
+			kLen := int(src[offset])
+			offset++
+			if len(src) < offset+kLen {
+				return nil, 0, errors.New("packet too short for tags")
+			}
+			key := string(src[offset : offset+kLen])
+			offset += kLen
+
+			if len(src) < offset+1 {
+				return nil, 0, errors.New("packet too short for tags")
+			}
+			vLen := int(src[offset])
+			offset++
+			if len(src) < offset+vLen {
+				return nil, 0, errors.New("packet too short for tags")
+			}
+			val := string(src[offset : offset+vLen])
+			offset += vLen
+
+			tags[key] = val
+		}
+	}
+
 	return &Member{
 		ID:          id,
 		Addr:        addr,
 		GRPCAddr:    grpcAddr,
 		MetaAddr:    metaAddr,
+		Tags:        tags,
 		Status:      status,
 		Incarnation: inc,
 	}, offset, nil

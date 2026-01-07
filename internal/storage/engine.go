@@ -294,22 +294,50 @@ func (e *StorageEngine) Snapshot(source SnapshotSource) error {
 		return err
 	}
 
-	if err := os.RemoveAll(snapshotDir); err != nil {
-		// log error?
-	}
+	_ = os.RemoveAll(snapshotDir)
 	if err := os.Rename(tempDir, snapshotDir); err != nil {
 		return fmt.Errorf("failed to rename snapshot dir: %w", err)
 	}
 
 	// Truncate WAL
+	// Truncate WAL and Restart Batcher
 	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	hadBatcher := e.walBatcher != nil
+
+	// 1. Stop Batcher
+	if hadBatcher {
+		if err := e.walBatcher.Stop(); err != nil {
+			return fmt.Errorf("failed to stop wal batcher for snapshot: %w", err)
+		}
+		e.walBatcher = nil
+	}
+
+	// 2. Truncate WAL
 	if e.wal != nil {
 		_ = e.wal.Close()
 		walPath := filepath.Join(e.dataPath, walFileName)
 		_ = os.Truncate(walPath, 0)
 		e.wal = NewWAL(e.dataPath)
 	}
-	e.mu.Unlock()
+
+	// 3. Restart Batcher
+	if hadBatcher {
+		batcherCfg := DefaultWALBatcherConfig()
+		if e.config.DoPutBatchSize > 0 {
+			batcherCfg.MaxBatchSize = e.config.DoPutBatchSize
+		}
+		batcherCfg.AsyncFsync.Enabled = e.config.AsyncFsync
+		batcherCfg.UseIOUring = e.config.UseIOUring
+		batcherCfg.UseDirectIO = e.config.UseDirectIO
+		batcherCfg.WALCompression = e.config.WALCompression
+
+		e.walBatcher = NewWALBatcher(e.dataPath, &batcherCfg)
+		if err := e.walBatcher.Start(); err != nil {
+			return fmt.Errorf("failed to restart wal batcher: %w", err)
+		}
+	}
 
 	metrics.SnapshotDurationSeconds.Observe(time.Since(start).Seconds())
 	return nil

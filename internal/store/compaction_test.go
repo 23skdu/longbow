@@ -1,6 +1,5 @@
 package store
 
-
 import (
 	"testing"
 
@@ -8,7 +7,6 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 
 	qry "github.com/23skdu/longbow/internal/query"
 )
@@ -111,8 +109,8 @@ func TestCompactRecords_Basic(t *testing.T) {
 	defer b3.Release()
 
 	// 1. Test standard merge (no tombstones)
-	compacted, remapping, err := compactRecords(mem, schema, batches, nil, 100, "test")
-	require.NoError(t, err)
+	compacted, remapping := compactRecords(mem, schema, batches, nil, 100, "test")
+
 	assert.Len(t, compacted, 1)
 	assert.Equal(t, int64(30), compacted[0].NumRows())
 	assert.Len(t, remapping, 3)
@@ -135,8 +133,8 @@ func TestCompactRecords_Basic(t *testing.T) {
 	tomb3.Set(9) // Delete ID 29 (last row of b3)
 	tombstones[2] = tomb3
 
-	compacted, remapping, err = compactRecords(mem, schema, batches, tombstones, 100, "test")
-	require.NoError(t, err)
+	compacted, remapping = compactRecords(mem, schema, batches, tombstones, 100, "test")
+
 	assert.Len(t, compacted, 1)
 	assert.Equal(t, int64(27), compacted[0].NumRows()) // 30 - 3 = 27
 

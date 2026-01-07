@@ -32,8 +32,9 @@ func (p *ZeroAllocVectorSearchParser) Parse(data []byte) (VectorSearchRequest, e
 	// Reset state
 	p.result.Dataset = ""
 	p.result.K = 0
-	p.result.LocalOnly = false
-	p.result.Vectors = nil // Reset new batch field
+	p.result.TextQuery = ""
+	p.result.Alpha = 0
+	p.result.GraphAlpha = 0 // Reset
 	p.vector = p.vector[:0]
 	p.filters = p.filters[:0]
 
@@ -115,6 +116,27 @@ func (p *ZeroAllocVectorSearchParser) Parse(data []byte) (VectorSearchRequest, e
 				return p.result, err
 			}
 			p.result.LocalOnly = val
+			i = newPos
+		case "text_query":
+			val, newPos, err := parseString(data, i)
+			if err != nil {
+				return p.result, err
+			}
+			p.result.TextQuery = val
+			i = newPos
+		case "alpha":
+			val, newPos, err := parseFloat32(data, i)
+			if err != nil {
+				return p.result, err
+			}
+			p.result.Alpha = val
+			i = newPos
+		case "graph_alpha":
+			val, newPos, err := parseFloat32(data, i)
+			if err != nil {
+				return p.result, err
+			}
+			p.result.GraphAlpha = val
 			i = newPos
 		default:
 			// Unknown field: return error to trigger fallback to json.Unmarshal

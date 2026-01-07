@@ -53,7 +53,7 @@ func (h *ArrowHNSW) AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx int) (ui
 
 // NewArrowHNSW creates a new HNSW index backed by Arrow records.
 // If locationStore is nil, a new one is created.
-func NewArrowHNSW(dataset *Dataset, config ArrowHNSWConfig, locStore *ChunkedLocationStore) *ArrowHNSW {
+func NewArrowHNSW(dataset *Dataset, config ArrowHNSWConfig, locStore *ChunkedLocationStore) *ArrowHNSW { //nolint:gocritic
 	if config.M == 0 {
 		config = DefaultArrowHNSWConfig()
 	}

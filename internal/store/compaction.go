@@ -278,13 +278,13 @@ type BatchRemapInfo struct {
 
 // compactRecords returns a NEW slice of RecordBatches and a remapping table.
 // It DOES NOT Modify the input slice.
-func compactRecords(pool memory.Allocator, schema *arrow.Schema, records []arrow.RecordBatch, tombstones map[int]*qry.Bitset, targetSize int64, datasetName string) ([]arrow.RecordBatch, map[int]BatchRemapInfo, error) {
+func compactRecords(pool memory.Allocator, schema *arrow.Schema, records []arrow.RecordBatch, tombstones map[int]*qry.Bitset, targetSize int64, datasetName string) ([]arrow.RecordBatch, map[int]BatchRemapInfo) {
 	if schema == nil && len(records) > 0 {
 		schema = records[0].Schema()
 	}
 	candidates := identifyCompactionCandidates(records, targetSize)
 	if len(candidates) == 0 {
-		return nil, nil, nil // Nothing to do
+		return nil, nil // Nothing to do
 	}
 
 	// We process candidates in order.
@@ -373,7 +373,7 @@ func compactRecords(pool memory.Allocator, schema *arrow.Schema, records []arrow
 		metrics.CompactionRecordsRemovedTotal.WithLabelValues(datasetName).Add(float64(totalRemoved))
 	}
 
-	return result, remapping, nil
+	return result, remapping
 }
 
 // filterTombstones creates a new RecordBatch with deleted rows removed.

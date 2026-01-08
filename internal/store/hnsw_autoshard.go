@@ -62,11 +62,16 @@ func NewAutoShardingIndex(ds *Dataset, config AutoShardingConfig) *AutoShardingI
 	var idx VectorIndex
 	if config.IndexConfig != nil {
 		idx = NewArrowHNSW(ds, *config.IndexConfig, nil)
-	} else {
-		// Use HNSW2 default config if enabled (Forced for RC3 verification)
+	} else if ds.UseHNSW2() {
+		// Use HNSW2 default config if enabled
 		hnswConfig := DefaultArrowHNSWConfig()
 		hnswConfig.Metric = ds.Metric
 		idx = NewArrowHNSW(ds, hnswConfig, nil)
+	} else {
+		// Initialize HNSW config with dataset metric
+		hnswConfig := DefaultConfig()
+		hnswConfig.Metric = ds.Metric
+		idx = NewHNSWIndex(ds, hnswConfig)
 	}
 
 	return &AutoShardingIndex{
@@ -257,8 +262,6 @@ func (a *AutoShardingIndex) migrateToSharded() {
 	// Migrate data in batches, releasing locks between items
 	batchSize := 50
 	lastMigrated := 0
-
-	fmt.Printf("Migration started: %d vectors to move...\n", n)
 
 	fmt.Printf("Migration started: %d vectors to move...\n", n)
 

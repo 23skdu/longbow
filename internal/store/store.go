@@ -2,6 +2,7 @@ package store
 
 import (
 	"fmt"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -21,7 +22,6 @@ type VectorStore struct {
 	flight.BaseFlightServer
 	mem           memory.Allocator
 	logger        zerolog.Logger
-	datasets      map[string]*Dataset
 	maxMemory     atomic.Int64
 	currentMemory atomic.Int64
 	memoryConfig  MemoryConfig
@@ -38,7 +38,11 @@ type VectorStore struct {
 	// Lifecycle
 	stopChan chan struct{}
 	indexWg  sync.WaitGroup // For background workers
-	mu       sync.RWMutex   // Protects datasets map (global lock, replaced by ShardedMap technically but kept for simple map access)
+	// mu       sync.RWMutex   // DEPRECATED: Replaced by RCU
+	datasets atomic.Pointer[map[string]*Dataset]
+
+	// configMu protects configuration fields
+	configMu sync.RWMutex
 
 	// Mesh integration
 	Mesh            *mesh.Gossip
@@ -77,8 +81,6 @@ type VectorStore struct {
 
 	// hnsw2 integration hook (Phase 5)
 	// Called after dataset creation to initialize hnsw2 (avoids import cycle)
-	// hnsw2 integration hook (Phase 5)
-	// Called after dataset creation to initialize hnsw2 (avoids import cycle)
 	datasetInitHook func(*Dataset)
 
 	// Distributed search coordinator (shared between Data/Meta servers)
@@ -93,14 +95,108 @@ func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes 
 		mem:          mem,
 		logger:       logger,
 		memoryConfig: memCfg,
-		datasets:     make(map[string]*Dataset),
 		stopChan:     make(chan struct{}),
 	}
+	// Initialize empty datasets map
+	emptyMap := make(map[string]*Dataset)
+	s.datasets.Store(&emptyMap)
+
 	s.maxMemory.Store(maxMemoryBytes)
 	s.indexQueue = NewIndexJobQueue(DefaultIndexJobQueueConfig())
+
 	s.nsManager = newNamespaceManager()
 	s.columnIndex = NewColumnInvertedIndex()
 	return s
+}
+
+// TrackMemory adds delta to current usage and logs if large
+func (s *VectorStore) TrackMemory(delta int64) {
+	if delta > 100*1024*1024 {
+		s.logger.Warn().
+			Int64("delta", delta).
+			Int64("current", s.currentMemory.Load()).
+			Str("stack", stackTrace()).
+			Msg("Large memory addition detected")
+	}
+	s.currentMemory.Add(delta)
+}
+
+func stackTrace() string {
+	buf := make([]byte, 1024)
+	n := runtime.Stack(buf, false)
+	return string(buf[:n])
+}
+
+// RCU Helpers
+
+func (s *VectorStore) loadDatasets() map[string]*Dataset {
+	return *s.datasets.Load()
+}
+
+func (s *VectorStore) getDataset(name string) (*Dataset, bool) {
+	m := s.loadDatasets()
+	ds, ok := m[name]
+	return ds, ok
+}
+
+// updateDatasets executes a CAS loop to update the map.
+// fn receives a COPY of the map to modify.
+func (s *VectorStore) updateDatasets(fn func(map[string]*Dataset)) {
+	for {
+		oldPtr := s.datasets.Load()
+		oldMap := *oldPtr
+
+		newMap := make(map[string]*Dataset, len(oldMap)+1)
+		for k, v := range oldMap {
+			newMap[k] = v
+		}
+
+		fn(newMap)
+
+		if s.datasets.CompareAndSwap(oldPtr, &newMap) {
+			return
+		}
+		// Contention, retry
+		// time.Sleep(time.Nanosecond) // optional
+		runtime.Gosched()
+	}
+}
+
+// IterateDatasets safely iterates over all datasets.
+func (s *VectorStore) IterateDatasets(fn func(string, *Dataset)) {
+	m := s.loadDatasets()
+	for name, ds := range m {
+		fn(name, ds)
+	}
+}
+
+// getOrCreateDataset atomically gets an existing dataset or creates a new one using the provider.
+// The provider is only called if creation is needed (lazy).
+func (s *VectorStore) getOrCreateDataset(name string, createFn func() *Dataset) (*Dataset, bool) {
+	// 1. Optimistic Read
+	if ds, ok := s.getDataset(name); ok {
+		return ds, false
+	}
+
+	// 2. CAS Loop
+	var result *Dataset
+	var created bool
+	s.updateDatasets(func(m map[string]*Dataset) {
+		// Double-check existence in the new copy
+		if ds, ok := m[name]; ok {
+			result = ds
+			created = false
+			return
+		}
+
+		// Create
+		newDs := createFn()
+		m[name] = newDs
+		result = newDs
+		created = true
+	})
+
+	return result, created
 }
 
 func (s *VectorStore) SetCoordinator(c *GlobalSearchCoordinator) {
@@ -116,21 +212,6 @@ func (s *VectorStore) SetMesh(m *mesh.Gossip) {
 // The hook is called from main package which can import both store and hnsw2.
 func (s *VectorStore) SetDatasetInitHook(hook func(*Dataset)) {
 	s.datasetInitHook = hook
-}
-
-// IterateDatasets safely iterates over all datasets for background tasks.
-func (s *VectorStore) IterateDatasets(fn func(ds *Dataset)) {
-	s.mu.RLock()
-	// Copy to slice to avoid holding lock during callback
-	datasets := make([]*Dataset, 0, len(s.datasets))
-	for _, ds := range s.datasets {
-		datasets = append(datasets, ds)
-	}
-	s.mu.RUnlock()
-
-	for _, ds := range datasets {
-		fn(ds)
-	}
 }
 
 // SetIndexedColumns updates columns that should be indexed for fast equality lookups
@@ -186,13 +267,10 @@ func (w WarmupStats) String() string {
 func (s *VectorStore) Warmup() WarmupStats {
 	start := time.Now()
 	stats := WarmupStats{}
-
-	s.mu.RLock()
-	datasets := make([]*Dataset, 0, len(s.datasets))
-	for _, ds := range s.datasets {
+	datasets := make([]*Dataset, 0)
+	s.IterateDatasets(func(_ string, ds *Dataset) {
 		datasets = append(datasets, ds)
-	}
-	s.mu.RUnlock()
+	})
 
 	for _, ds := range datasets {
 		ds.dataMu.RLock()
@@ -244,8 +322,8 @@ func (s *VectorStore) updateLWWAndMerkle(ds *Dataset, rec arrow.RecordBatch, ts 
 }
 
 func (s *VectorStore) MerkleRoot(name string) [32]byte {
-	ds, err := s.getDataset(name)
-	if err != nil {
+	ds, ok := s.getDataset(name)
+	if !ok {
 		return [32]byte{}
 	}
 	return ds.Merkle.RootHash()

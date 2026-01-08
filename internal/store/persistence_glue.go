@@ -52,9 +52,7 @@ func (s *VectorStore) InitPersistence(cfg storage.StorageConfig) error {
 }
 
 func (s *VectorStore) loadSnapshotItem(item *storage.SnapshotItem) error {
-	s.mu.Lock()
-	ds, ok := s.datasets[item.Name]
-	if !ok {
+	ds, _ := s.getOrCreateDataset(item.Name, func() *Dataset {
 		// Infer schema from first record
 		var schema *arrow.Schema
 		if len(item.Records) > 0 {
@@ -63,11 +61,10 @@ func (s *VectorStore) loadSnapshotItem(item *storage.SnapshotItem) error {
 			schema = item.GraphRecords[0].Schema()
 		}
 		if schema == nil {
-			s.mu.Unlock()
-			return nil // Empty snapshot item?
+			return nil // Should handle this better?
 		}
 
-		ds = NewDataset(item.Name, schema)
+		ds := NewDataset(item.Name, schema)
 		ds.SetLastAccess(time.Now())
 
 		// Load PQ
@@ -79,10 +76,12 @@ func (s *VectorStore) loadSnapshotItem(item *storage.SnapshotItem) error {
 				s.logger.Error().Err(err).Str("dataset", item.Name).Msg("Failed to deserialize PQ encoder")
 			}
 		}
+		return ds
+	})
 
-		s.datasets[item.Name] = ds
+	if ds == nil {
+		return nil // Could happen if schema inference failed
 	}
-	s.mu.Unlock()
 
 	// Initialize Index if missing (Critical for restoration)
 	if ds.Index == nil {
@@ -161,13 +160,10 @@ func (s *VectorStore) ApplyDelta(name string, rec arrow.RecordBatch, seq uint64,
 	}
 
 	// 2. Get or create dataset
-	s.mu.Lock()
-	ds, ok := s.datasets[name]
-	if !ok {
-		ds = NewDataset(name, rec.Schema())
-		s.datasets[name] = ds
-	}
-	s.mu.Unlock()
+	// 2. Get or create dataset
+	ds, _ := s.getOrCreateDataset(name, func() *Dataset {
+		return NewDataset(name, rec.Schema())
+	})
 
 	// Check if this is a graph batch
 	if rec.Schema().Metadata().FindKey("longbow.entry_type") != -1 {
@@ -258,12 +254,10 @@ type storeSnapshotSource struct {
 }
 
 func (src *storeSnapshotSource) Iterate(fn func(storage.SnapshotItem) error) error {
-	src.s.mu.RLock()
-	datasets := make([]*Dataset, 0, len(src.s.datasets))
-	for _, ds := range src.s.datasets {
+	datasets := make([]*Dataset, 0)
+	src.s.IterateDatasets(func(_ string, ds *Dataset) {
 		datasets = append(datasets, ds)
-	}
-	src.s.mu.RUnlock()
+	})
 
 	for _, ds := range datasets {
 		ds.dataMu.RLock()

@@ -1,6 +1,5 @@
 package store
 
-
 import (
 	"testing"
 
@@ -36,7 +35,7 @@ func (m *MockIndex) AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx int) (ui
 	return uint32(id), nil
 }
 
-func (m *MockIndex) AddBatch(recs []arrow.RecordBatch, rowIdxs []int, batchIdxs []int) ([]uint32, error) {
+func (m *MockIndex) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []int) ([]uint32, error) {
 	ids := make([]uint32, len(recs))
 	for i := range recs {
 		id, _ := m.AddByRecord(recs[i], rowIdxs[i], batchIdxs[i])

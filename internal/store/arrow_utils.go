@@ -10,7 +10,7 @@ import (
 
 // ExtractVectorFromArrow extracts a vector from an Arrow record batch at the given row index.
 // This is a zero-copy operation that returns a slice pointing directly to Arrow's memory.
-func ExtractVectorFromArrow(rec arrow.Record, rowIdx int, colIdx int) ([]float32, error) {
+func ExtractVectorFromArrow(rec arrow.RecordBatch, rowIdx, colIdx int) ([]float32, error) {
 	if rec == nil {
 		return nil, fmt.Errorf("record is nil")
 	}
@@ -58,7 +58,7 @@ func ExtractVectorFromArrow(rec arrow.Record, rowIdx int, colIdx int) ([]float32
 }
 
 // extractVectorCopy extracts a vector and returns a copy (for when vector needs to be stored).
-func extractVectorCopy(rec arrow.Record, rowIdx int, colIdx int) ([]float32, error) {
+func extractVectorCopy(rec arrow.RecordBatch, rowIdx, colIdx int) ([]float32, error) {
 	// Get zero-copy slice first
 	vec, err := ExtractVectorFromArrow(rec, rowIdx, colIdx)
 	if err != nil {

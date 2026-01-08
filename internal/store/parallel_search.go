@@ -133,7 +133,10 @@ func (h *HNSWIndex) processChunk(query []float32, neighbors []hnsw.Node[VectorID
 	var evaluator *qry.FilterEvaluator
 	if len(filters) > 0 {
 		if len(h.dataset.Records) > 0 {
-			evaluator, _ = qry.NewFilterEvaluator(h.dataset.Records[0], filters)
+			var err error
+			// If error occurs, evaluator stays nil, which is handled gracefully later
+			evaluator, err = qry.NewFilterEvaluator(h.dataset.Records[0], filters)
+			_ = err // Explicitly ignore error
 		}
 	}
 

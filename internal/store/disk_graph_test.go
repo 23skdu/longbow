@@ -1,6 +1,5 @@
 package store
 
-
 import (
 	"path/filepath"
 	"reflect"
@@ -10,8 +9,8 @@ import (
 func TestDiskGraph_RoundTrip(t *testing.T) {
 	// 1. Create a dummy GraphData
 	capacity := 1024 // Use ChunkSize alignment to be safe
-	dims := 4
-	gd := NewGraphData(capacity, dims, true, true)
+	dims := 128
+	gd := NewGraphData(capacity, dims, false, false, false)
 
 	// Populate neighbors
 	// We must allocate full chunks for GraphData to work

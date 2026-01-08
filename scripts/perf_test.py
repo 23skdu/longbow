@@ -361,6 +361,65 @@ def benchmark_vector_search(client: flight.FlightClient, name: str,
     return result
 
 
+def benchmark_search_by_id(client: flight.FlightClient, name: str,
+                           ids: list, k: int) -> BenchmarkResult:
+    """Benchmark VectorSearchByID operation."""
+    num_queries = len(ids)
+    print(f"\n[SEARCH-ID] Running {num_queries:,} ID searches (k={k})...")
+
+    latencies = []
+    errors = 0
+    total_results = 0
+
+    for i, query_id in enumerate(ids):
+        # Payload: {"dataset": "name", "id": "id_val", "k": k}
+        body = {
+            "dataset": name,
+            "id": str(query_id),
+            "k": k,
+        }
+        request_body = json.dumps(body).encode("utf-8")
+
+        start = time.time()
+        try:
+            action = flight.Action("VectorSearchByID", request_body)
+            results_iter = client.do_action(action)
+            
+            for result in results_iter:
+                payload = json.loads(result.body.to_pybytes())
+                if "ids" in payload:
+                    total_results += len(payload["ids"])
+
+        except Exception as e:
+            errors += 1
+            if errors <= 3:
+                print(f"[SEARCH-ID] Error on ID {query_id}: {e}")
+            continue
+
+        latencies.append((time.time() - start) * 1000)
+
+        if (i + 1) % 100 == 0:
+            print(f"[SEARCH-ID] Completed {i + 1}/{num_queries} queries...")
+
+    duration = sum(latencies) / 1000
+    qps = num_queries / duration if duration > 0 else 0
+
+    result = BenchmarkResult(
+        name="SearchByID",
+        duration_seconds=duration,
+        throughput=qps,
+        throughput_unit="queries/s",
+        rows=total_results,
+        latencies_ms=latencies,
+        errors=errors,
+    )
+
+    print(f"[SEARCH-ID] Completed: {qps:.2f} queries/s")
+    print(f"[SEARCH-ID] Latency p50={result.p50_ms:.2f}ms p95={result.p95_ms:.2f}ms p99={result.p99_ms:.2f}ms")
+
+    return result
+
+
 def benchmark_hybrid_search(client: flight.FlightClient, name: str,
                             query_vectors: np.ndarray, k: int,
                             text_queries: list, alpha: float = 0.5) -> BenchmarkResult:
@@ -834,6 +893,9 @@ def main():
     parser.add_argument("--search-k", default=10, type=int, help="Top-k results")
     parser.add_argument("--query-count", default=1000, type=int, help="Number of queries")
 
+    # Search By ID
+    parser.add_argument("--search-id", action="store_true", help="Run Search By ID benchmark")
+
     # Vector delete
     parser.add_argument("--delete", action="store_true", help="Run vector delete benchmark")
     parser.add_argument("--delete-count", default=1000, type=int, help="Number of deletions")
@@ -933,6 +995,13 @@ def main():
             meta_client, args.name, query_vectors, args.search_k, filters=filters if filters else None, global_search=args.global_search
         )
         results.append(r_search)
+
+    # Meta Plane operations (Search By ID)
+    if args.search_id or args.all:
+        ids_to_query = [random.randint(0, args.rows - 1) for _ in range(args.query_count)]
+        results.append(benchmark_search_by_id(
+            meta_client, args.name, ids_to_query, args.search_k
+        ))
 
     # Meta Plane operations (Hybrid Search)
     if args.hybrid or args.all:

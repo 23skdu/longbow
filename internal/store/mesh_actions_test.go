@@ -1,6 +1,5 @@
 package store
 
-
 import (
 	"context"
 	"encoding/json"
@@ -9,9 +8,9 @@ import (
 	"github.com/23skdu/longbow/internal/mesh"
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/apache/arrow-go/v18/arrow/memory"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/rs/zerolog"
 )
 
 func TestMeshActions(t *testing.T) {
@@ -24,7 +23,7 @@ func TestMeshActions(t *testing.T) {
 		ID:   "node-1",
 		Port: 9999,
 	}
-	g := mesh.NewGossip(gcfg)
+	g := mesh.NewGossip(&gcfg)
 	s.SetMesh(g)
 
 	meta := NewMetaServer(s)

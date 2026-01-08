@@ -189,7 +189,7 @@ func TestNewS3Backend_DefaultRegion(t *testing.T) {
 	backend, err := NewS3Backend(cfg)
 	require.NoError(t, err)
 	assert.NotNil(t, backend)
-	assert.Equal(t, "test-bucket", backend.bucket)
+	assert.Equal(t, "test-bucket", backend.Bucket())
 }
 
 func TestNewS3Backend_CustomRegion(t *testing.T) {
@@ -215,7 +215,7 @@ func TestNewS3Backend_WithPrefix(t *testing.T) {
 	}
 	backend, err := NewS3Backend(cfg)
 	require.NoError(t, err)
-	assert.Equal(t, "tenant1", backend.prefix)
+	assert.Equal(t, "tenant1", backend.Prefix())
 }
 
 func TestNewS3Backend_ConnectionPoolSettings(t *testing.T) {
@@ -272,5 +272,7 @@ func TestS3Backend_ImplementsSnapshotBackend(t *testing.T) {
 	backend, err := NewS3Backend(cfg)
 	require.NoError(t, err)
 
-	var _ SnapshotBackend = backend
+	// Verify implementation
+	var _ SnapshotBackend = (*S3Backend)(nil)
+	_ = backend // Keep compiler happy about unused variable
 }

@@ -93,7 +93,7 @@ func BenchmarkE2EDoGet(b *testing.B) {
 			schema := arrow.NewSchema(
 				[]arrow.Field{
 					{Name: "id", Type: arrow.PrimitiveTypes.Int32},
-					{Name: "val", Type: arrow.PrimitiveTypes.Float64},
+					{Name: "vector", Type: arrow.FixedSizeListOf(1, arrow.PrimitiveTypes.Float32)},
 				},
 				nil,
 			)
@@ -104,13 +104,23 @@ func BenchmarkE2EDoGet(b *testing.B) {
 
 			numRows := 10000
 			ids := make([]int32, numRows)
-			vals := make([]float64, numRows)
+			// Flattened vector data for FixedSizeList(1)
+			vals := make([]float32, numRows)
 			for i := 0; i < numRows; i++ {
 				ids[i] = int32(i)
-				vals[i] = float64(i) * 1.1
+				vals[i] = float32(i) * 1.1
 			}
 			builder.Field(0).(*array.Int32Builder).AppendValues(ids, nil)
-			builder.Field(1).(*array.Float64Builder).AppendValues(vals, nil)
+
+			vecBuilder := builder.Field(1).(*array.FixedSizeListBuilder)
+			vecValBuilder := vecBuilder.ValueBuilder().(*array.Float32Builder)
+
+			// Easier loop for FixedSizeListBuilder:
+			for i := 0; i < numRows; i++ {
+				vecBuilder.Append(true)
+				vecValBuilder.Append(vals[i])
+			}
+
 			rec := builder.NewRecordBatch()
 			defer rec.Release()
 

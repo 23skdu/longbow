@@ -27,7 +27,7 @@ func TestWALRecovery_CorruptedTail(t *testing.T) {
 
 	require.NoError(t, wal.Write("ds1", 1, 0, rec))
 	require.NoError(t, wal.Write("ds1", 2, 0, rec))
-	wal.Close()
+	_ = wal.Close()
 
 	// 2. Corrupt tail
 	info, err := os.Stat(walPath)
@@ -38,7 +38,7 @@ func TestWALRecovery_CorruptedTail(t *testing.T) {
 	// 3. Replay
 	it, err := NewWALIterator(tmpDir, mem)
 	require.NoError(t, err)
-	defer it.Close()
+	defer func() { _ = it.Close() }()
 
 	// First should be ok
 	seq, _, _, r, err := it.Next()
@@ -69,11 +69,11 @@ func TestWALRecovery_ChecksumMismatch(t *testing.T) {
 	_, _ = f.Write(header)
 	_, _ = f.WriteString("test")
 	_, _ = f.WriteString("test")
-	f.Close()
+	_ = f.Close()
 
 	it, err := NewWALIterator(tmpDir, mem)
 	require.NoError(t, err)
-	defer it.Close()
+	defer func() { _ = it.Close() }()
 
 	_, _, _, _, err = it.Next()
 	require.Error(t, err, "Should fail on CRC mismatch")

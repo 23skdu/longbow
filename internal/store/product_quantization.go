@@ -300,7 +300,7 @@ func UnpackFloat32sToBytes(floats []float32, length int) []byte {
 // Simple K-Means Implementation
 // =============================================================================
 
-func kMeans(data [][]float32, k int, maxIter int, tol float32) [][]float32 {
+func kMeans(data [][]float32, k, maxIter int, tol float32) [][]float32 {
 	if len(data) < k {
 		// Not enough data points, just return data as centroids (padded if needed?)
 		// Or duplicate. For now, strict check or just duplicate.

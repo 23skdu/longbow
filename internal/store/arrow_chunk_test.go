@@ -1,6 +1,5 @@
 package store
 
-
 import (
 	"testing"
 
@@ -31,7 +30,12 @@ func TestChunkedGrowth(t *testing.T) {
 	assert.GreaterOrEqual(t, newData.Capacity, targetCap)
 
 	// Check num chunks
-	expectedChunks := (targetCap + ChunkSize - 1) / ChunkSize
+	// Grow adds ChunkSize headroom and then rounds up
+	expectedCap := targetCap + ChunkSize
+	if expectedCap%ChunkSize != 0 {
+		expectedCap = ((expectedCap / ChunkSize) + 1) * ChunkSize
+	}
+	expectedChunks := expectedCap / ChunkSize
 	assert.Equal(t, expectedChunks, len(newData.Levels))
 
 	// Ensure Chunk 0 is allocated for testing

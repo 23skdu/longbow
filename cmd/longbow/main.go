@@ -298,6 +298,9 @@ func run() error {
 		logger.Panic().Err(err).Msg("Failed to initialize persistence")
 	}
 
+	// Start background indexing workers
+	vectorStore.StartIndexingWorkers(runtime.NumCPU())
+
 	// Initialize OpenTelemetry Tracer
 	tp := initTracer()
 	defer func() {
@@ -380,7 +383,7 @@ func run() error {
 		// Wait, NewGossip takes GossipConfig but g.Start() uses "127.0.0.1". I should fix gossip.go too!
 		// Proceeding with initialization.
 
-		g := mesh.NewGossip(gossipCfg)
+		g := mesh.NewGossip(&gossipCfg)
 		if err := g.Start(); err != nil {
 			logger.Error().Err(err).Msg("Failed to start Gossip")
 		} else {
@@ -395,7 +398,8 @@ func run() error {
 	}
 
 	// Initialize Request Forwarder with RingManager for address resolution
-	forwarder := sharding.NewRequestForwarder(sharding.DefaultForwarderConfig(), ringManager)
+	fwdCfg := sharding.DefaultForwarderConfig()
+	forwarder := sharding.NewRequestForwarder(&fwdCfg, ringManager)
 
 	// gRPC Server Options - using env-configurable message sizes and window sizes
 	if err := cfg.ValidateGRPCConfig(); err != nil {

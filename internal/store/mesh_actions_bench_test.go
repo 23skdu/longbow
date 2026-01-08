@@ -1,6 +1,5 @@
 package store
 
-
 import (
 	"fmt"
 	"testing"
@@ -20,7 +19,7 @@ func BenchmarkMeshStatus(b *testing.B) {
 		ID:   "node-master",
 		Port: 9999,
 	}
-	g := mesh.NewGossip(gcfg)
+	g := mesh.NewGossip(&gcfg)
 	s.SetMesh(g)
 
 	meta := NewMetaServer(s)

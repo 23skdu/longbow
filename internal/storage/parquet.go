@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"time"
@@ -34,10 +35,18 @@ func writeParquet(w io.Writer, rec arrow.RecordBatch) error {
 		}
 	}
 
-	if idColIdx == -1 || vecColIdx == -1 {
+	if idColIdx == -1 {
 		idColIdx = 0
+	}
+	if vecColIdx == -1 {
 		vecColIdx = 1
 	}
+
+	if idColIdx >= int(rec.NumCols()) {
+		return fmt.Errorf("id column index %d out of bounds (cols=%d)", idColIdx, rec.NumCols())
+	}
+	// Vector column is optional-ish, but if we need it for VectorRecord, we must check
+	hasVec := vecColIdx < int(rec.NumCols())
 
 	var ids []int32
 	idCol := rec.Column(idColIdx)
@@ -56,17 +65,27 @@ func writeParquet(w io.Writer, rec arrow.RecordBatch) error {
 		}
 	}
 
-	vecCol := rec.Column(vecColIdx).(*array.FixedSizeList)
-	vecData := vecCol.ListValues().(*array.Float32)
-	vecLen := int(vecCol.DataType().(*arrow.FixedSizeListType).Len())
+	var vecData *array.Float32
+	var vecLen int
+
+	if hasVec {
+		vecCol := rec.Column(vecColIdx).(*array.FixedSizeList)
+		vecData = vecCol.ListValues().(*array.Float32)
+		vecLen = int(vecCol.DataType().(*arrow.FixedSizeListType).Len())
+	}
 
 	records := make([]VectorRecord, rows)
 	for i := int64(0); i < rows; i++ {
-		start := int(i) * vecLen
-		end := start + vecLen
+		var vec []float32
+		if hasVec && vecData != nil {
+			start := int(i) * vecLen
+			end := start + vecLen
+			vec = vecData.Float32Values()[start:end]
+		}
+
 		records[i] = VectorRecord{
 			ID:     ids[i],
-			Vector: vecData.Float32Values()[start:end],
+			Vector: vec,
 		}
 	}
 

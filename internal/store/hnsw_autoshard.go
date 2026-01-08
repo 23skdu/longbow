@@ -25,6 +25,10 @@ type AutoShardingConfig struct {
 	ShardSplitThreshold int
 	// UseRingSharding determines if consistent hashing sharding is used.
 	UseRingSharding bool
+
+	// IndexConfig holds the configuration for the underlying HNSW index (optional).
+	// If set, NewAutoShardingIndex will generic ArrowHNSW with this config.
+	IndexConfig *ArrowHNSWConfig
 }
 
 // DefaultAutoShardingConfig returns a standard configuration.
@@ -55,17 +59,22 @@ func NewAutoShardingIndex(ds *Dataset, config AutoShardingConfig) *AutoShardingI
 		config.ShardThreshold = 10000 // Default to 10k
 	}
 
-	// Initialize HNSW config with dataset metric
-	hnswConfig := DefaultConfig()
-	hnswConfig.Metric = ds.Metric
+	var idx VectorIndex
+	if config.IndexConfig != nil {
+		idx = NewArrowHNSW(ds, *config.IndexConfig, nil)
+	} else {
+		// Initialize HNSW config with dataset metric
+		hnswConfig := DefaultConfig()
+		hnswConfig.Metric = ds.Metric
+		idx = NewHNSWIndex(ds, hnswConfig)
+	}
 
-	idx := &AutoShardingIndex{
-		current: NewHNSWIndex(ds, hnswConfig),
+	return &AutoShardingIndex{
+		current: idx,
 		config:  config,
 		dataset: ds,
 		sharded: false,
 	}
-	return idx
 }
 
 // SetInitialDimension sets the dimension for the underlying index if not yet set.
@@ -137,7 +146,7 @@ func (a *AutoShardingIndex) AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx 
 }
 
 // AddBatch adds multiple vectors from multiple record batches efficiently.
-func (a *AutoShardingIndex) AddBatch(recs []arrow.RecordBatch, rowIdxs []int, batchIdxs []int) ([]uint32, error) {
+func (a *AutoShardingIndex) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []int) ([]uint32, error) {
 	a.mu.RLock()
 	sharded := a.sharded
 	interim := a.interimIndex
@@ -343,23 +352,23 @@ func (a *AutoShardingIndex) migrateToSharded() {
 }
 
 // SearchVectors implements VectorIndex.
-func (a *AutoShardingIndex) SearchVectors(query []float32, k int, filters []query.Filter) ([]SearchResult, error) {
+func (a *AutoShardingIndex) SearchVectors(q []float32, k int, filters []query.Filter) ([]SearchResult, error) {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 
 	sharded := a.sharded
 	if sharded {
-		return a.current.SearchVectors(query, k, filters)
+		return a.current.SearchVectors(q, k, filters)
 	}
 
 	interim := a.interimIndex
-	res, err := a.current.SearchVectors(query, k, filters)
+	res, err := a.current.SearchVectors(q, k, filters)
 	if err != nil {
 		return nil, err
 	}
 
 	if interim != nil {
-		res2, err := interim.SearchVectors(query, k, filters)
+		res2, err := interim.SearchVectors(q, k, filters)
 		if err != nil {
 			// Log error but return what we have
 			fmt.Printf("Error searching interim index: %v\n", err)
@@ -372,19 +381,19 @@ func (a *AutoShardingIndex) SearchVectors(query []float32, k int, filters []quer
 }
 
 // SearchVectorsWithBitmap implements VectorIndex.
-func (a *AutoShardingIndex) SearchVectorsWithBitmap(query []float32, k int, filter *query.Bitset) []SearchResult {
+func (a *AutoShardingIndex) SearchVectorsWithBitmap(q []float32, k int, filter *query.Bitset) []SearchResult {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 
 	sharded := a.sharded
 	if sharded {
-		return a.current.SearchVectorsWithBitmap(query, k, filter)
+		return a.current.SearchVectorsWithBitmap(q, k, filter)
 	}
 
 	interim := a.interimIndex
-	res := a.current.SearchVectorsWithBitmap(query, k, filter)
+	res := a.current.SearchVectorsWithBitmap(q, k, filter)
 	if interim != nil {
-		res2 := interim.SearchVectorsWithBitmap(query, k, filter)
+		res2 := interim.SearchVectorsWithBitmap(q, k, filter)
 		res = a.mergeSearchResults(res, res2, k)
 	}
 

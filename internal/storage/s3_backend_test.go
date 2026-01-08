@@ -263,6 +263,67 @@ func TestS3BackendConcurrentWrites(t *testing.T) {
 	}
 }
 
+// TestAsyncS3Backend tests the background upload functionality
+func TestAsyncS3Backend(t *testing.T) {
+	if os.Getenv("S3_TEST_ENDPOINT") == "" {
+		t.Skip("Skipping S3 integration test: S3_TEST_ENDPOINT not set")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	config := S3BackendConfig{
+		Endpoint:        os.Getenv("S3_TEST_ENDPOINT"),
+		Bucket:          os.Getenv("S3_TEST_BUCKET"),
+		AccessKeyID:     os.Getenv("S3_TEST_ACCESS_KEY"),
+		SecretAccessKey: os.Getenv("S3_TEST_SECRET_KEY"),
+		Region:          os.Getenv("S3_TEST_REGION"),
+		UsePathStyle:    os.Getenv("S3_TEST_PATH_STYLE") == "true",
+		AsyncEnabled:    true,
+		WorkerCount:     2,
+	}
+
+	backend, err := NewS3Backend(&config)
+	if err != nil {
+		t.Fatalf("Failed to create AsyncS3Backend: %v", err)
+	}
+	// Defer close if it's an AsyncS3Backend
+	if asb, ok := backend.(interface{ Close() }); ok {
+		defer asb.Close()
+	}
+
+	testName := "async_test_snapshot"
+	testData := []byte("async data content")
+
+	backend.WriteSnapshotAsync(testName, testData)
+
+	// We need to wait a bit for the async worker to pick it up
+	// or implement a way to flush/wait in the test.
+	// For now, poll with ReadSnapshot
+	var readData []byte
+	var readErr error
+	for i := 0; i < 20; i++ {
+		time.Sleep(500 * time.Millisecond)
+		reader, err := backend.ReadSnapshot(ctx, testName)
+		if err == nil {
+			readData, readErr = io.ReadAll(reader)
+			_ = reader.Close()
+			if readErr == nil && bytes.Equal(readData, testData) {
+				break
+			}
+		}
+	}
+
+	if readData == nil {
+		t.Errorf("Async upload did not complete in time")
+	} else if !bytes.Equal(readData, testData) {
+		t.Errorf("Read data mismatch: got %d bytes, want %d bytes", len(readData), len(testData))
+	}
+
+	// Cleanup
+	_ = backend.DeleteSnapshot(ctx, testName)
+}
+
 // TestS3BackendLargeSnapshot tests writing larger snapshots
 func TestS3BackendLargeSnapshot(t *testing.T) {
 	if os.Getenv("S3_TEST_ENDPOINT") == "" {
@@ -302,7 +363,7 @@ func TestS3BackendLargeSnapshot(t *testing.T) {
 }
 
 // Helper to create test backend from environment
-func newTestS3Backend(t *testing.T) *S3Backend {
+func newTestS3Backend(t *testing.T) SnapshotBackend {
 	t.Helper()
 
 	config := S3BackendConfig{

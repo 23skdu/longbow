@@ -4,8 +4,18 @@ import (
 	"errors"
 	"sort"
 
+	"context"
+
 	"github.com/23skdu/longbow/internal/query"
 )
+
+// HybridPipelineConfig configures the hybrid search pipeline
+type HybridPipelineConfig struct {
+	Alpha          float32    // 0.0=pure keyword, 1.0=pure vector, 0.5=balanced
+	RRFk           int        // RRF parameter k (typically 60)
+	FusionMode     FusionMode // How to combine results
+	UseColumnIndex bool       // Use column index for exact filters
+}
 
 func (c *HybridPipelineConfig) Validate() error {
 	if c.Alpha < 0 || c.Alpha > 1 {
@@ -28,14 +38,6 @@ const (
 	FusionModeLinear                    // Linear weighted combination
 	FusionModeCascade                   // Cascade: filters -> keyword -> vector
 )
-
-// HybridPipelineConfig configures the hybrid search pipeline
-type HybridPipelineConfig struct {
-	Alpha          float32    // 0.0=pure keyword, 1.0=pure vector, 0.5=balanced
-	RRFk           int        // RRF parameter k (typically 60)
-	FusionMode     FusionMode // How to combine results
-	UseColumnIndex bool       // Use column index for exact filters
-}
 
 // DefaultHybridPipelineConfig returns sensible defaults
 func DefaultHybridPipelineConfig() HybridPipelineConfig {
@@ -76,6 +78,8 @@ type HybridSearchPipeline struct {
 	columnIndex *ColumnInvertedIndex
 	bm25Index   *BM25InvertedIndex
 	hnswIndex   *HNSWIndex
+	reranker    Reranker
+	dataset     *Dataset
 }
 
 // NewHybridSearchPipeline creates a new hybrid search pipeline
@@ -100,35 +104,45 @@ func (p *HybridSearchPipeline) SetHNSWIndex(idx *HNSWIndex) {
 	p.hnswIndex = idx
 }
 
+// SetReranker sets the second-stage reranker
+func (p *HybridSearchPipeline) SetReranker(r Reranker) {
+	p.reranker = r
+}
+
+// SetDataset sets the dataset for content lookups
+func (p *HybridSearchPipeline) SetDataset(ds *Dataset) {
+	p.dataset = ds
+}
+
 // Search performs hybrid search combining all configured indexes
-func (p *HybridSearchPipeline) Search(query *HybridSearchQuery) ([]SearchResult, error) {
-	if query == nil {
+func (p *HybridSearchPipeline) Search(q *HybridSearchQuery) ([]SearchResult, error) {
+	if q == nil {
 		return nil, errors.New("query cannot be nil")
 	}
-	if err := query.Validate(); err != nil {
+	if err := q.Validate(); err != nil {
 		return nil, err
 	}
-	if query.K <= 0 {
+	if q.K <= 0 {
 		return nil, errors.New("k must be positive")
 	}
 
 	alpha := p.config.Alpha
-	if query.AlphaOverride != nil {
-		alpha = *query.AlphaOverride
+	if q.AlphaOverride != nil {
+		alpha = *q.AlphaOverride
 	}
 
 	// 1. Get exact filter IDs if column index enabled
-	exactIDs := p.applyExactFilters(query.ExactFilters)
+	exactIDs := p.applyExactFilters(q.ExactFilters)
 
 	// 2. Vector search (dense) using HNSW
 	var denseResults []SearchResult
-	if len(query.Vector) > 0 && p.hnswIndex != nil && alpha > 0 {
+	if len(q.Vector) > 0 && p.hnswIndex != nil && alpha > 0 {
 		// Use SearchWithArena if available (restored from bak logic)
 		arena := GetArena()
 		defer PutArena(arena)
 
 		// SearchWithArena returns []uint32 (internal IDs)
-		ids := p.hnswIndex.SearchWithArena(query.Vector, query.K*2, arena)
+		ids := p.hnswIndex.SearchWithArena(q.Vector, q.K*2, arena)
 		for rank, id := range ids {
 			// Convert rank to score (higher rank = lower score)
 			score := 1.0 / float32(rank+1)
@@ -141,26 +155,36 @@ func (p *HybridSearchPipeline) Search(query *HybridSearchQuery) ([]SearchResult,
 
 	// 3. Keyword search (sparse) using BM25
 	var sparseResults []SearchResult
-	if query.KeywordQuery != "" && p.bm25Index != nil && alpha < 1 {
-		sparseResults = p.bm25Index.SearchBM25(query.KeywordQuery, query.K*2)
+	if q.KeywordQuery != "" && p.bm25Index != nil && alpha < 1 {
+		sparseResults = p.bm25Index.SearchBM25(q.KeywordQuery, q.K*2)
 	}
 
 	// 4. Fuse results based on mode
 	var fused []SearchResult
 	switch p.config.FusionMode {
 	case FusionModeRRF:
-		fused = ReciprocalRankFusion(denseResults, sparseResults, p.config.RRFk, query.K)
+		fused = ReciprocalRankFusion(denseResults, sparseResults, p.config.RRFk, q.K)
 	case FusionModeLinear:
-		fused = FuseLinear(denseResults, sparseResults, alpha, query.K)
+		fused = FuseLinear(denseResults, sparseResults, alpha, q.K)
 	case FusionModeCascade:
-		fused = FuseCascade(exactIDs, sparseResults, denseResults, query.K)
+		fused = FuseCascade(exactIDs, sparseResults, denseResults, q.K)
 	default:
-		fused = ReciprocalRankFusion(denseResults, sparseResults, p.config.RRFk, query.K)
+		fused = ReciprocalRankFusion(denseResults, sparseResults, p.config.RRFk, q.K)
 	}
 
-	// 5. Limit to K
-	if len(fused) > query.K {
-		fused = fused[:query.K]
+	// 5. Re-ranking stage (Stage 2)
+	// We re-rank the fused results using a more expensive model if available
+	// Usually we re-rank more than K and then truncate
+	if p.reranker != nil {
+		reranked, err := p.reranker.Rerank(context.Background(), q.KeywordQuery, fused)
+		if err == nil {
+			fused = reranked
+		}
+	}
+
+	// 6. Limit to K
+	if len(fused) > q.K {
+		fused = fused[:q.K]
 	}
 
 	return fused, nil
@@ -254,12 +278,81 @@ func FuseCascade(exact map[VectorID]struct{}, keyword, vector []SearchResult, li
 
 // applyExactFilters applies exact match filters using column index
 func (p *HybridSearchPipeline) applyExactFilters(filters []query.Filter) map[VectorID]struct{} {
-	if !p.config.UseColumnIndex || p.columnIndex == nil || len(filters) == 0 {
+	if len(filters) == 0 || p.columnIndex == nil || p.dataset == nil {
 		return nil
 	}
 
-	// This would be implemented when integrating with VectorStore
-	return nil
+	// For now, we take the intersection of all filters
+	var result map[VectorID]struct{}
+
+	for i, f := range filters {
+		if f.Operator != "=" {
+			continue // Only exact matches supported for now
+		}
+
+		positions := p.columnIndex.Lookup(p.dataset.Name, f.Field, f.Value)
+		if len(positions) == 0 {
+			return make(map[VectorID]struct{}) // Empty intersection
+		}
+
+		// Convert RowPositions to VectorIDs
+		// This is a naive implementation: we need a way to map RowPosition back to VectorID.
+		// Since HybridSearchPipeline is integrated with Dataset, we can ideally use
+		// Dataset's own inverted indexes if available.
+
+		currentIDs := make(map[VectorID]struct{})
+		for _, pos := range positions {
+			// Naive: scan or heuristic?
+			// In HNSWIndex, VectorID matches index in locationStore.
+			// Let's use a helper if possible.
+			id, ok := p.findVectorID(pos)
+			if ok {
+				currentIDs[id] = struct{}{}
+			}
+		}
+
+		if i == 0 {
+			result = currentIDs
+		} else {
+			// Intersection
+			for id := range result {
+				if _, ok := currentIDs[id]; !ok {
+					delete(result, id)
+				}
+			}
+		}
+
+		if len(result) == 0 {
+			break
+		}
+	}
+
+	return result
+}
+
+// findVectorID maps RowPosition back to internal VectorID
+func (p *HybridSearchPipeline) findVectorID(pos RowPosition) (VectorID, bool) {
+	if p.hnswIndex == nil {
+		return 0, false
+	}
+	// O(1) Reverse Lookup relying on reverseMap in ChunkedLocationStore
+	return p.hnswIndex.GetVectorID(Location{BatchIdx: pos.RecordIdx, RowIdx: pos.RowIdx})
+}
+
+// Reranker defines the interface for the second-stage re-ranking
+type Reranker interface {
+	Rerank(ctx context.Context, query string, results []SearchResult) ([]SearchResult, error)
+}
+
+// CrossEncoderReranker is a stub implementation of a cross-encoder model re-ranker
+type CrossEncoderReranker struct {
+	ModelName string
+}
+
+func (r *CrossEncoderReranker) Rerank(ctx context.Context, q string, results []SearchResult) ([]SearchResult, error) {
+	// TODO: Implement actual cross-encoder scoring
+	// For now, this is a stub that keeps results as-is
+	return results, nil
 }
 
 // dedupeAndSort removes duplicates (keeping highest score) and sorts by score descending

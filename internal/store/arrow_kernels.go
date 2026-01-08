@@ -290,7 +290,7 @@ func selectKExec(ctx *exec.KernelCtx, batch *exec.ExecSpan, out *exec.ExecResult
 
 		// Assign to output
 		// Buffer 0 is Validity, Buffer 1 is Data
-		//out.Buffers[1].Buf = buf // BufferSpan struct?
+		// out.Buffers[1].Buf = buf // BufferSpan struct?
 		// BufferSpan: {Buf *memory.Buffer, Offset int64, Len int64}
 		// We need to construct BufferSpan.
 		// Actually BufferSpan uses `memory.Buffer`?

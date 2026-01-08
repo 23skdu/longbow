@@ -113,7 +113,7 @@ func (e *StorageEngine) SyncWAL() error {
 }
 
 // GetWALQueueDepth returns the current pending and capacity of the WAL queue.
-func (e *StorageEngine) GetWALQueueDepth() (int, int) {
+func (e *StorageEngine) GetWALQueueDepth() (pending, capacity int) {
 	if e.walBatcher == nil {
 		return 0, 0
 	}
@@ -139,7 +139,7 @@ func (e *StorageEngine) ReplayWAL(applier ApplierFunc) (uint64, error) {
 	if err != nil {
 		return 0, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	// Logic copied from previous implementation
 	var maxSeq uint64
@@ -267,6 +267,7 @@ type SnapshotItem struct {
 	Records      []arrow.RecordBatch
 	GraphRecords []arrow.RecordBatch
 	PQCodebook   []byte
+	IndexConfig  []byte
 }
 
 type SnapshotSource interface {
@@ -287,35 +288,63 @@ func (e *StorageEngine) Snapshot(source SnapshotSource) error {
 	}
 
 	err := source.Iterate(func(item SnapshotItem) error {
-		e.writeSnapshotItem(item, tempDir)
+		e.writeSnapshotItem(&item, tempDir)
 		return nil
 	})
 	if err != nil {
 		return err
 	}
 
-	if err := os.RemoveAll(snapshotDir); err != nil {
-		// log error?
-	}
+	_ = os.RemoveAll(snapshotDir)
 	if err := os.Rename(tempDir, snapshotDir); err != nil {
 		return fmt.Errorf("failed to rename snapshot dir: %w", err)
 	}
 
 	// Truncate WAL
+	// Truncate WAL and Restart Batcher
 	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	hadBatcher := e.walBatcher != nil
+
+	// 1. Stop Batcher
+	if hadBatcher {
+		if err := e.walBatcher.Stop(); err != nil {
+			return fmt.Errorf("failed to stop wal batcher for snapshot: %w", err)
+		}
+		e.walBatcher = nil
+	}
+
+	// 2. Truncate WAL
 	if e.wal != nil {
 		_ = e.wal.Close()
 		walPath := filepath.Join(e.dataPath, walFileName)
 		_ = os.Truncate(walPath, 0)
 		e.wal = NewWAL(e.dataPath)
 	}
-	e.mu.Unlock()
+
+	// 3. Restart Batcher
+	if hadBatcher {
+		batcherCfg := DefaultWALBatcherConfig()
+		if e.config.DoPutBatchSize > 0 {
+			batcherCfg.MaxBatchSize = e.config.DoPutBatchSize
+		}
+		batcherCfg.AsyncFsync.Enabled = e.config.AsyncFsync
+		batcherCfg.UseIOUring = e.config.UseIOUring
+		batcherCfg.UseDirectIO = e.config.UseDirectIO
+		batcherCfg.WALCompression = e.config.WALCompression
+
+		e.walBatcher = NewWALBatcher(e.dataPath, &batcherCfg)
+		if err := e.walBatcher.Start(); err != nil {
+			return fmt.Errorf("failed to restart wal batcher: %w", err)
+		}
+	}
 
 	metrics.SnapshotDurationSeconds.Observe(time.Since(start).Seconds())
 	return nil
 }
 
-func (e *StorageEngine) writeSnapshotItem(item SnapshotItem, tempDir string) {
+func (e *StorageEngine) writeSnapshotItem(item *SnapshotItem, tempDir string) {
 	// Write Data Records
 	if len(item.Records) > 0 {
 		path := filepath.Join(tempDir, item.Name+".parquet")
@@ -324,7 +353,7 @@ func (e *StorageEngine) writeSnapshotItem(item SnapshotItem, tempDir string) {
 			for _, rec := range item.Records {
 				_ = writeParquet(f, rec)
 			}
-			f.Close()
+			_ = f.Close()
 		}
 	}
 
@@ -336,7 +365,7 @@ func (e *StorageEngine) writeSnapshotItem(item SnapshotItem, tempDir string) {
 			for _, rec := range item.GraphRecords {
 				_ = writeGraphParquet(f, rec)
 			}
-			f.Close()
+			_ = f.Close()
 		}
 	}
 
@@ -344,6 +373,12 @@ func (e *StorageEngine) writeSnapshotItem(item SnapshotItem, tempDir string) {
 	if len(item.PQCodebook) > 0 {
 		path := filepath.Join(tempDir, item.Name+".pq")
 		_ = os.WriteFile(path, item.PQCodebook, 0o644)
+	}
+
+	// Write Config
+	if len(item.IndexConfig) > 0 {
+		path := filepath.Join(tempDir, item.Name+".config")
+		_ = os.WriteFile(path, item.IndexConfig, 0o644)
 	}
 }
 
@@ -400,8 +435,13 @@ func (e *StorageEngine) LoadSnapshots(loader func(SnapshotItem) error) error {
 			if err == nil {
 				item.PQCodebook = data
 			}
+		case name + ".config":
+			data, err := os.ReadFile(fullPath)
+			if err == nil {
+				item.IndexConfig = data
+			}
 		}
-		f.Close()
+		_ = f.Close()
 	}
 
 	for _, item := range partials {

@@ -47,7 +47,7 @@ type RingSharder struct {
 }
 
 // NewRingSharder creates a new RingSharder with the specified number of shards and vnodes per shard.
-func NewRingSharder(numShards int, vnodes int) *RingSharder {
+func NewRingSharder(numShards, vnodes int) *RingSharder {
 	if vnodes <= 0 {
 		vnodes = 20
 	}

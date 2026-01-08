@@ -44,9 +44,9 @@ type RequestForwarder struct {
 }
 
 // NewRequestForwarder creates a new forwarder
-func NewRequestForwarder(cfg ForwarderConfig, resolver NodeResolver) *RequestForwarder {
+func NewRequestForwarder(cfg *ForwarderConfig, resolver NodeResolver) *RequestForwarder {
 	return &RequestForwarder{
-		config:   cfg,
+		config:   *cfg,
 		resolver: resolver,
 		conns:    make(map[string]*grpc.ClientConn),
 	}

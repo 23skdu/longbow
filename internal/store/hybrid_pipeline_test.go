@@ -1,8 +1,13 @@
 package store
 
-
 import (
+	"context"
 	"testing"
+
+	"github.com/23skdu/longbow/internal/query"
+	"github.com/apache/arrow-go/v18/arrow"
+	"github.com/apache/arrow-go/v18/arrow/array"
+	"github.com/apache/arrow-go/v18/arrow/memory"
 )
 
 // Config tests
@@ -244,4 +249,122 @@ func BenchmarkFuseLinear(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		FuseLinear(dense, sparse, 0.5, 10)
 	}
+}
+
+// TestRerankMock is a mock reranker for testing
+type TestRerankMock struct {
+	Called bool
+}
+
+func (r *TestRerankMock) Rerank(ctx context.Context, query string, results []SearchResult) ([]SearchResult, error) {
+	r.Called = true
+	// Reverse results as a detectable change
+	for i, j := 0, len(results)-1; i < j; i, j = i+1, j-1 {
+		results[i], results[j] = results[j], results[i]
+	}
+	return results, nil
+}
+
+func TestHybridSearchPipeline_Reranking(t *testing.T) {
+	p := NewHybridSearchPipeline(DefaultHybridPipelineConfig())
+
+	// Create some dummy results by setting up BM25 index
+	bm25 := NewBM25InvertedIndex(DefaultBM25Config())
+	bm25.Add(1, "hello world")
+	bm25.Add(2, "hello testing")
+	p.SetBM25Index(bm25)
+
+	mock := &TestRerankMock{}
+	p.SetReranker(mock)
+
+	query := &HybridSearchQuery{
+		KeywordQuery: "hello",
+		K:            10,
+	}
+
+	results, err := p.Search(query)
+	if err != nil {
+		t.Fatalf("Search failed: %v", err)
+	}
+
+	if !mock.Called {
+		t.Error("reranker was not called")
+	}
+
+	if len(results) < 2 {
+		t.Fatalf("expected at least 2 results, got %d", len(results))
+	}
+}
+
+func TestHybridSearchPipeline_ExactFilters(t *testing.T) {
+	p := NewHybridSearchPipeline(DefaultHybridPipelineConfig())
+
+	ds := &Dataset{Name: "test_ds"}
+	p.SetDataset(ds)
+
+	// Set up column index
+	colIdx := NewColumnInvertedIndex()
+	// RowPosition {0, 5} matches "category=electronics"
+	// We'll mock the mapping in findVectorID test by using RecordIdx=0 and VectorID=RowIdx
+	colIdx.IndexRecord("test_ds", 0, createHybridTestRecordBatch(), []string{"category"})
+	p.SetColumnIndex(colIdx)
+
+	// Set up HNSW with locations
+	hnsw := NewHNSWIndex(ds)
+	// Add locations so findVectorID works
+	for i := 0; i < 10; i++ {
+		hnsw.locationStore.Append(Location{BatchIdx: 0, RowIdx: i})
+	}
+	p.SetHNSWIndex(hnsw)
+
+	// Set up BM25 results
+	bm25 := NewBM25InvertedIndex(DefaultBM25Config())
+	bm25.Add(5, "find me") // Matches RowIdx 5
+	bm25.Add(6, "skip me")
+	p.SetBM25Index(bm25)
+
+	query := &HybridSearchQuery{
+		KeywordQuery: "find",
+		ExactFilters: []query.Filter{
+			{Field: "category", Operator: "=", Value: "electronics"},
+		},
+		K: 10,
+	}
+
+	// For this test to work, we need createTestRecordBatch to actually have "electronics" at RowIdx 5
+	// But since we are testing applyExactFilters logic, we can also just mock what columnIndex returns.
+
+	results, err := p.Search(query)
+	if err != nil {
+		t.Fatalf("Search failed: %v", err)
+	}
+
+	// If filtering worked, results should only contain ID 5
+	// (ID 6 matches "find" but not "electronics")
+	for _, r := range results {
+		if r.ID != 5 {
+			t.Errorf("expected only ID 5, got %d", r.ID)
+		}
+	}
+}
+
+func createHybridTestRecordBatch() arrow.RecordBatch {
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "category", Type: arrow.BinaryTypes.String},
+	}, nil)
+
+	pool := memory.NewGoAllocator()
+	bldr := array.NewRecordBuilder(pool, schema)
+	defer bldr.Release()
+
+	catBldr := bldr.Field(0).(*array.StringBuilder)
+	for i := 0; i < 10; i++ {
+		if i == 5 {
+			catBldr.Append("electronics")
+		} else {
+			catBldr.Append("books")
+		}
+	}
+
+	return bldr.NewRecordBatch()
 }

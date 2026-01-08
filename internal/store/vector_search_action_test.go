@@ -1,7 +1,7 @@
 package store
 
-
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"testing"
@@ -10,6 +10,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/flight"
+	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
@@ -19,6 +20,29 @@ import (
 
 	qry "github.com/23skdu/longbow/internal/query"
 )
+
+// Helper to decode Arrow IPC response
+func readArrowResponse(t *testing.T, body []byte) qry.VectorSearchResponse {
+	if len(body) == 0 {
+		return qry.VectorSearchResponse{}
+	}
+	rdr, err := ipc.NewReader(bytes.NewReader(body))
+	require.NoError(t, err)
+	defer rdr.Release()
+
+	var resp qry.VectorSearchResponse
+	if rdr.Next() {
+		rec := rdr.RecordBatch()
+		ids := rec.Column(0).(*array.Uint64)
+		scores := rec.Column(1).(*array.Float32)
+		for i := 0; i < ids.Len(); i++ {
+			resp.IDs = append(resp.IDs, ids.Value(i))
+			resp.Scores = append(resp.Scores, scores.Value(i))
+		}
+	}
+	require.NoError(t, rdr.Err())
+	return resp
+}
 
 // mockVectorSearchActionServer implements flight.FlightService_DoActionServer for testing
 type mockVectorSearchActionServer struct {
@@ -67,9 +91,7 @@ func TestVectorSearchAction_ValidRequest(t *testing.T) {
 	// Verify response
 	require.Len(t, mockStream.results, 1)
 
-	var resp qry.VectorSearchResponse
-	err = json.Unmarshal(mockStream.results[0].Body, &resp)
-	require.NoError(t, err)
+	resp := readArrowResponse(t, mockStream.results[0].Body)
 
 	assert.Len(t, resp.IDs, 10)
 	assert.Len(t, resp.Scores, 10)
@@ -240,4 +262,114 @@ func createTestStoreWithVectors(t *testing.T, datasetName string, numVectors, _ 
 	store.datasets[datasetName] = ds
 	store.mu.Unlock()
 	return store
+}
+
+func TestVectorSearchByIDAction_Success(t *testing.T) {
+	// Custom setup to include "vector" column
+	store := createTestStoreWithVectors(t, "test-dataset", 10, 128)
+	defer func() { _ = store.Close() }()
+
+	// Replace the record batch with one that has "vector" column for extraction
+	ds := store.datasets["test-dataset"]
+	oldRec := ds.Records[0]
+	mem := memory.NewGoAllocator()
+
+	// Create schema with ID (Uint64) and Vector (FixedSizeList)
+	vecType := arrow.FixedSizeListOf(128, arrow.PrimitiveTypes.Float32)
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "id", Type: arrow.PrimitiveTypes.Uint64},
+		{Name: "vector", Type: vecType},
+	}, nil)
+
+	// Build IDs
+	idBldr := array.NewUint64Builder(mem)
+	defer idBldr.Release()
+	for i := 0; i < 10; i++ {
+		idBldr.Append(uint64(i * 100))
+	}
+	idArr := idBldr.NewArray()
+	defer idArr.Release()
+
+	// Build Vectors
+	vecBldr := array.NewFixedSizeListBuilder(mem, 128, arrow.PrimitiveTypes.Float32)
+	defer vecBldr.Release()
+	valBldr := vecBldr.ValueBuilder().(*array.Float32Builder)
+	for i := 0; i < 10; i++ {
+		vecBldr.Append(true)
+		for j := 0; j < 128; j++ {
+			valBldr.Append(0.1) // Dummy vector
+		}
+	}
+	vecArr := vecBldr.NewArray()
+	defer vecArr.Release()
+
+	newRec := array.NewRecordBatch(schema, []arrow.Array{idArr, vecArr}, 10)
+	ds.Records[0] = newRec // Replace
+	oldRec.Release()
+
+	metaServer := NewMetaServer(store)
+
+	// Test: Find ID "100" (Index 1)
+	req := qry.VectorSearchByIDRequest{
+		Dataset: "test-dataset",
+		ID:      "100",
+		K:       5,
+	}
+	reqBytes, _ := json.Marshal(req)
+
+	action := &flight.Action{Type: "VectorSearchByID", Body: reqBytes}
+	mockStream := &mockVectorSearchActionServer{}
+
+	err := metaServer.DoAction(action, mockStream)
+	require.NoError(t, err)
+
+	require.Len(t, mockStream.results, 1)
+	var resp qry.VectorSearchResponse
+	err = json.Unmarshal(mockStream.results[0].Body, &resp)
+	require.NoError(t, err)
+
+	// Check we got results (MockIndex returns top K)
+	assert.Len(t, resp.IDs, 5)
+}
+
+func TestVectorSearchAction_GraphBias(t *testing.T) {
+	// Setup store with 3 vectors: 0(ID=10), 1(ID=20), 2(ID=30)
+	store := createTestStoreWithVectors(t, "graph-dataset", 3, 128)
+	defer func() { _ = store.Close() }()
+
+	metaServer := NewMetaServer(store)
+	ds := store.datasets["graph-dataset"]
+
+	// Setup Graph: Connect 0(ID=10) <-> 1(ID=20)
+	// 2(ID=30) is isolated.
+	ds.dataMu.Lock()
+	ds.Graph = NewGraphStore()
+	_ = ds.Graph.AddEdge(Edge{Subject: VectorID(0), Predicate: "link", Object: VectorID(1), Weight: 1.0})
+	_ = ds.Graph.AddEdge(Edge{Subject: VectorID(1), Predicate: "link", Object: VectorID(0), Weight: 1.0})
+	ds.dataMu.Unlock()
+
+	req := qry.VectorSearchRequest{
+		Dataset:    "graph-dataset",
+		Vector:     make([]float32, 128),
+		K:          3,
+		GraphAlpha: 0.8, // Heavy graph bias
+	}
+	reqBytes, err := json.Marshal(req)
+	require.NoError(t, err)
+
+	action := &flight.Action{
+		Type: "VectorSearch",
+		Body: reqBytes,
+	}
+
+	mockStream := &mockVectorSearchActionServer{}
+	err = metaServer.DoAction(action, mockStream)
+	require.NoError(t, err)
+
+	// Verify response structure
+	require.Len(t, mockStream.results, 1)
+	resp := readArrowResponse(t, mockStream.results[0].Body)
+
+	// We can't easily check exact ranking without a real HNSW, but verify we got result IDs
+	assert.Len(t, resp.IDs, 3)
 }

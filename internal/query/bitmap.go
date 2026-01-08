@@ -19,6 +19,20 @@ func NewBitset() *Bitset {
 	}
 }
 
+func NewBitsetFromRoaring(bm *roaring.Bitmap) *Bitset {
+	return &Bitset{
+		bitmap: bm,
+	}
+}
+
+func (b *Bitset) And(other *roaring.Bitmap) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.bitmap != nil && other != nil {
+		b.bitmap.And(other)
+	}
+}
+
 func (b *Bitset) Set(i int) {
 	b.mu.Lock()
 	defer b.mu.Unlock()

@@ -70,12 +70,12 @@ func QuantizeSQ8(src []float32, dst []byte, minVal, maxVal float32) {
 }
 
 // ComputeBounds calculates min and max values of a vector.
-func ComputeBounds(vec []float32) (float32, float32) {
+func ComputeBounds(vec []float32) (minVal, maxVal float32) {
 	if len(vec) == 0 {
 		return 0, 0
 	}
-	minVal := vec[0]
-	maxVal := vec[0]
+	minVal = vec[0]
+	maxVal = vec[0]
 	for _, v := range vec[1:] {
 		if v < minVal {
 			minVal = v

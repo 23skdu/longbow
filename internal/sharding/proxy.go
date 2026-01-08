@@ -45,11 +45,11 @@ func PartitionProxyInterceptor(rm *RingManager, forwarder *RequestForwarder) grp
 		resp, err := forwarder.Forward(ctx, owner, req, info.FullMethod)
 		duration := time.Since(start).Seconds()
 
-		status := "success"
+		st := "success"
 		if err != nil {
-			status = "error"
+			st = "error"
 		}
-		metrics.ProxyRequestsForwardedTotal.WithLabelValues(info.FullMethod, status).Inc()
+		metrics.ProxyRequestsForwardedTotal.WithLabelValues(info.FullMethod, st).Inc()
 		metrics.ProxyRequestLatencySeconds.WithLabelValues(info.FullMethod).Observe(duration)
 
 		return resp, err

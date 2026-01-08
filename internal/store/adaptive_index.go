@@ -83,7 +83,7 @@ func (b *BruteForceIndex) AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx in
 }
 
 // AddBatch adds multiple vectors efficiently.
-func (b *BruteForceIndex) AddBatch(recs []arrow.RecordBatch, rowIdxs []int, batchIdxs []int) ([]uint32, error) {
+func (b *BruteForceIndex) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []int) ([]uint32, error) {
 	ids := make([]uint32, len(recs))
 	for i := range recs {
 		id, _ := b.AddByRecord(recs[i], rowIdxs[i], batchIdxs[i])
@@ -93,7 +93,7 @@ func (b *BruteForceIndex) AddBatch(recs []arrow.RecordBatch, rowIdxs []int, batc
 }
 
 // SearchVectorsWithBitmap returns k nearest neighbors filtered by a bitset.
-func (b *BruteForceIndex) SearchVectorsWithBitmap(query []float32, k int, filter *query.Bitset) []SearchResult {
+func (b *BruteForceIndex) SearchVectorsWithBitmap(q []float32, k int, filter *query.Bitset) []SearchResult {
 	// Not implemented for BruteForce, but needed for interface
 	return nil
 }
@@ -124,7 +124,7 @@ func (b *BruteForceIndex) Close() error {
 }
 
 // SearchVectors returns the k nearest neighbors using linear scan.
-func (b *BruteForceIndex) SearchVectors(query []float32, k int, filters []query.Filter) ([]SearchResult, error) {
+func (b *BruteForceIndex) SearchVectors(q []float32, k int, filters []query.Filter) ([]SearchResult, error) {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 
@@ -142,7 +142,7 @@ func (b *BruteForceIndex) SearchVectors(query []float32, k int, filters []query.
 			continue
 		}
 
-		dist := simd.EuclideanDistance(query, vec)
+		dist := simd.EuclideanDistance(q, vec)
 
 		if h.Len() < k {
 			heap.Push(h, bfHeapItem{
@@ -290,7 +290,7 @@ func (a *AdaptiveIndex) AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx int)
 }
 
 // AddBatch adds multiple vectors efficiently.
-func (a *AdaptiveIndex) AddBatch(recs []arrow.RecordBatch, rowIdxs []int, batchIdxs []int) ([]uint32, error) {
+func (a *AdaptiveIndex) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []int) ([]uint32, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
@@ -305,11 +305,11 @@ func (a *AdaptiveIndex) AddBatch(recs []arrow.RecordBatch, rowIdxs []int, batchI
 	return ids, nil
 }
 
-func (a *AdaptiveIndex) SearchVectorsWithBitmap(query []float32, k int, filter *query.Bitset) []SearchResult {
+func (a *AdaptiveIndex) SearchVectorsWithBitmap(q []float32, k int, filter *query.Bitset) []SearchResult {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	if a.usingHNSW.Load() {
-		return a.hnsw.SearchVectorsWithBitmap(query, k, filter)
+		return a.hnsw.SearchVectorsWithBitmap(q, k, filter)
 	}
 	return nil
 }
@@ -377,17 +377,17 @@ func (a *AdaptiveIndex) migrateToHNSW() {
 }
 
 // SearchVectors delegates to the active index.
-func (a *AdaptiveIndex) SearchVectors(query []float32, k int, filters []query.Filter) ([]SearchResult, error) {
+func (a *AdaptiveIndex) SearchVectors(q []float32, k int, filters []query.Filter) ([]SearchResult, error) {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 
 	if a.usingHNSW.Load() {
 		metrics.HnswSearchesTotal.Inc()
-		return a.hnsw.SearchVectors(query, k, filters)
+		return a.hnsw.SearchVectors(q, k, filters)
 	}
 	metrics.BruteForceSearchesTotal.Inc()
 	// BruteForce doesn't support filters yet, ignoring them
-	return a.bruteForce.SearchVectors(query, k, filters)
+	return a.bruteForce.SearchVectors(q, k, filters)
 }
 
 // GetIndexType returns the current index type.

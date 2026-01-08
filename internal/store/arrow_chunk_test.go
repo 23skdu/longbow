@@ -39,31 +39,33 @@ func TestChunkedGrowth(t *testing.T) {
 	assert.Equal(t, expectedChunks, len(newData.Levels))
 
 	// Ensure Chunk 0 is allocated for testing
-	if newData.Levels[0] == nil {
-		chunk := make([]uint8, ChunkSize)
-		newData.Levels[0] = &chunk
-
-		// Also Neighbors
-		nChunk := make([]uint32, ChunkSize*MaxNeighbors)
-		newData.Neighbors[0][0] = &nChunk
-	}
+	// Use ensureChunk which handles Arena allocation
+	newData = h.ensureChunk(newData, 0, 0, 128)
 
 	// Test Data Persistence across Grow
 	// Write something to chunk 0
 	cID := chunkID(0)
 	cOff := chunkOffset(0)
-	(*newData.Levels[cID])[cOff] = 99
-	(*newData.Neighbors[cID][0])[int(cOff)*MaxNeighbors] = 999
+	levels := newData.GetLevelsChunk(cID)
+	if levels != nil {
+		(*levels)[cOff] = 99
+	}
+	neighbors := newData.GetNeighborsChunk(0, cID)
+	if neighbors != nil {
+		(*neighbors)[int(cOff)*MaxNeighbors] = 999
+	}
 
 	// Grow again
 	h.Grow(targetCap+ChunkSize, 0) // Add one more chunk
 	grownData := h.data.Load()
 
 	// Check old data preserved
-	if (*grownData.Levels[0])[cOff] != 99 {
+	gLevels2 := grownData.GetLevelsChunk(0)
+	if gLevels2 == nil || (*gLevels2)[cOff] != 99 {
 		t.Error("Level data lost after grow")
 	}
-	if (*grownData.Neighbors[0][0])[int(cOff)*MaxNeighbors] != 999 {
+	gNeighbors2 := grownData.GetNeighborsChunk(0, 0)
+	if gNeighbors2 == nil || (*gNeighbors2)[int(cOff)*MaxNeighbors] != 999 {
 		t.Error("Neighbor data lost after grow")
 	}
 }

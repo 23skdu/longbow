@@ -323,19 +323,30 @@ func (h *ArrowHNSW) GetNeighbors(id VectorID) ([]VectorID, error) {
 	}
 
 	// Layer 0 neighbors
-	// Layer 0 neighbors
 	layer := 0
 
 	cID := chunkID(uint32(id))
 	cOff := chunkOffset(uint32(id))
 
-	count := int(atomic.LoadInt32(&(*data.Counts[layer][cID])[cOff]))
+	countsChunk := data.GetCountsChunk(layer, cID)
+	if countsChunk == nil {
+		return nil, fmt.Errorf("chunk %d not allocated", cID)
+	}
+	count := int(atomic.LoadInt32(&(*countsChunk)[cOff]))
+	if count == 0 {
+		return []VectorID{}, nil
+	}
+
+	neighborsChunk := data.GetNeighborsChunk(layer, cID)
+	if neighborsChunk == nil {
+		return nil, fmt.Errorf("neighbors chunk %d missing", cID)
+	}
 	baseIdx := int(cOff) * MaxNeighbors
-	neighborsChunk := (*data.Neighbors[layer][cID])
 
 	results := make([]VectorID, count)
+	chunk := *neighborsChunk
 	for i := 0; i < count; i++ {
-		results[i] = VectorID(neighborsChunk[baseIdx+i])
+		results[i] = VectorID(chunk[baseIdx+i])
 	}
 
 	return results, nil

@@ -63,10 +63,10 @@ func NewAutoShardingIndex(ds *Dataset, config AutoShardingConfig) *AutoShardingI
 	if config.IndexConfig != nil {
 		idx = NewArrowHNSW(ds, *config.IndexConfig, nil)
 	} else {
-		// Initialize HNSW config with dataset metric
-		hnswConfig := DefaultConfig()
+		// Use HNSW2 default config if enabled (Forced for RC3 verification)
+		hnswConfig := DefaultArrowHNSWConfig()
 		hnswConfig.Metric = ds.Metric
-		idx = NewHNSWIndex(ds, hnswConfig)
+		idx = NewArrowHNSW(ds, hnswConfig, nil)
 	}
 
 	return &AutoShardingIndex{
@@ -85,6 +85,8 @@ func (a *AutoShardingIndex) SetInitialDimension(dim int) {
 		h.dimsOnce.Do(func() {
 			h.dims = dim
 		})
+	} else if h, ok := a.current.(*ArrowHNSW); ok {
+		h.SetDimension(dim)
 	}
 }
 

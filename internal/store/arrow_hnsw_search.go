@@ -203,8 +203,13 @@ func (h *ArrowHNSW) searchLayer(q []float32, entryPoint uint32, ef, layer int, c
 			ctx.scratchIDs = ctx.scratchIDs[:0]
 
 			// Seqlock read start
-			// Versions[layer][cID] is *[]uint32.
-			verAddr := &(*data.Versions[layer][chunkID(curr.ID)])[chunkOffset(curr.ID)]
+			versionsChunk := data.GetVersionsChunk(layer, chunkID(curr.ID))
+			if versionsChunk == nil {
+				// Should not happen, but safeguard
+				runtime.Gosched()
+				continue
+			}
+			verAddr := &(*versionsChunk)[chunkOffset(curr.ID)]
 			ver := atomic.LoadUint32(verAddr)
 
 			if ver%2 != 0 {
@@ -217,16 +222,21 @@ func (h *ArrowHNSW) searchLayer(q []float32, entryPoint uint32, ef, layer int, c
 			cOff := chunkOffset(curr.ID)
 
 			// Check if chunk exists
-			if data.Counts[layer][cID] == nil {
-				// Should not happen for visited nodes, but safe to skip
+			countsChunk := data.GetCountsChunk(layer, cID)
+			if countsChunk == nil {
 				continue
 			}
 
 			// 1. Get number of neighbors
-			count := atomic.LoadInt32(&(*data.Counts[layer][cID])[cOff])
+			count := atomic.LoadInt32(&(*countsChunk)[cOff])
 			neighborCount := int(count)
 			baseIdx := int(cOff) * MaxNeighbors
-			neighborsChunk := (*data.Neighbors[layer][cID])
+
+			neighborsChunkPtr := data.GetNeighborsChunk(layer, cID)
+			if neighborsChunkPtr == nil {
+				continue
+			}
+			neighborsChunk := *neighborsChunkPtr
 
 			for i := 0; i < neighborCount; i++ {
 				// Atomic load to satisfy race detector
@@ -276,8 +286,9 @@ func (h *ArrowHNSW) searchLayer(q []float32, entryPoint uint32, ef, layer int, c
 					dims := int(h.dims.Load())
 					off := int(cOff) * dims
 
-					if int(cID) < len(data.VectorsSQ8) && data.VectorsSQ8[cID] != nil && off+dims <= len(*data.VectorsSQ8[cID]) {
-						d := simd.EuclideanDistanceSQ8(ctx.querySQ8, (*data.VectorsSQ8[cID])[off:off+dims])
+					vecSQ8Chunk := data.GetVectorsSQ8Chunk(cID)
+					if vecSQ8Chunk != nil && off+dims <= len(*vecSQ8Chunk) {
+						d := simd.EuclideanDistanceSQ8(ctx.querySQ8, (*vecSQ8Chunk)[off:off+dims])
 						dists[i] = float32(d)
 					} else {
 						dists[i] = math.MaxFloat32
@@ -446,14 +457,13 @@ func (h *ArrowHNSW) distance(q []float32, id uint32, data *GraphData, ctx *Arrow
 		dims := int(h.dims.Load())
 		off := int(cOff) * dims
 
-		if int(cID) < len(data.VectorsSQ8) && data.VectorsSQ8[cID] != nil && off+dims <= len(*data.VectorsSQ8[cID]) {
-
+		// Helper handles nil/bounds
+		sq8Chunk := data.GetVectorsSQ8Chunk(cID)
+		if sq8Chunk != nil && off+dims <= len(*sq8Chunk) {
 			// We need query to be quantized too.
 			// Just quantize on fly for single distance check (negligible for entry point).
-			// Optimization: use scratch from somewhere? No, local alloc for single dist is okay?
-			// Ideally reuse buffer.
 			qSQ8 := h.quantizer.Encode(q, nil)
-			d := simd.EuclideanDistanceSQ8(qSQ8, (*data.VectorsSQ8[cID])[off:off+dims])
+			d := simd.EuclideanDistanceSQ8(qSQ8, (*sq8Chunk)[off:off+dims])
 			return float32(d)
 		}
 	}
@@ -462,12 +472,14 @@ func (h *ArrowHNSW) distance(q []float32, id uint32, data *GraphData, ctx *Arrow
 	// This is safe because VectorPtr is pinned to the Arrow RecordBatch which is kept alive by Dataset
 	// Optimization: Check for dense vector storage (avoids Arrow overhead)
 	cID := chunkID(id)
-	cOff := chunkOffset(id)
-	dims := int(h.dims.Load())
-	if int(cID) < len(data.Vectors) && data.Vectors[cID] != nil {
+
+	vecChunk := data.GetVectorsChunk(cID)
+	if vecChunk != nil {
+		cOff := chunkOffset(id)
+		dims := int(h.dims.Load())
 		start := int(cOff) * dims
-		if start+dims <= len(*data.Vectors[cID]) {
-			vec := (*data.Vectors[cID])[start : start+dims]
+		if start+dims <= len(*vecChunk) {
+			vec := (*vecChunk)[start : start+dims]
 			return h.distFunc(q, vec)
 		}
 	}

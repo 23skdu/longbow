@@ -1,6 +1,5 @@
 package store
 
-
 import (
 	"context"
 	"encoding/json"
@@ -110,11 +109,11 @@ func TestFiltering(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			query := query.TicketQuery{
+			q := query.TicketQuery{
 				Name:    "filter_test",
 				Filters: tc.filters,
 			}
-			ticketBytes, _ := json.Marshal(query)
+			ticketBytes, _ := json.Marshal(q)
 			ticket := &flight.Ticket{Ticket: ticketBytes}
 
 			rStream, err := client.DoGet(ctx, ticket)
@@ -236,10 +235,10 @@ func TestListFlightsFiltering(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			query := query.TicketQuery{
+			q := query.TicketQuery{
 				Filters: tc.filters,
 			}
-			criteriaBytes, _ := json.Marshal(query)
+			criteriaBytes, _ := json.Marshal(q)
 			criteria := &flight.Criteria{Expression: criteriaBytes}
 
 			stream, err := client.ListFlights(ctx, criteria)

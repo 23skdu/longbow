@@ -37,8 +37,8 @@ func (s *VectorStore) Shutdown(ctx context.Context) error {
 	// Step 1: Signal background workers to stop
 	s.logger.Info().Msg("Signaling background workers to stop")
 	close(s.stopChan)
-
 	s.stopCompaction()
+
 	// Step 2: Drain the index queue
 	s.logger.Info().Msg("Draining index queue...")
 	if err := s.drainIndexQueue(ctx); err != nil {
@@ -48,33 +48,9 @@ func (s *VectorStore) Shutdown(ctx context.Context) error {
 		s.logger.Info().Msg("Index queue drained successfully")
 	}
 
-	// 2. Stop WAL Batcher and Persistence
-	if err := s.ClosePersistence(); err != nil {
-		shutdownErr = NewShutdownError("close", "persistence", err)
-		s.logger.Error().Err(err).Msg("Failed to close persistence")
-	}
-
-	// Step 4: Create final snapshot before closing
-	select {
-	case <-ctx.Done():
-		s.logger.Warn().Msg("Shutdown timeout, skipping final snapshot")
-	default:
-		s.logger.Info().Msg("Creating final snapshot...")
-		if err := s.Snapshot(); err != nil {
-			s.logger.Error().Err(err).Msg("Failed to create final snapshot")
-			// Don't fail shutdown for snapshot errors
-		} else {
-			s.logger.Info().Msg("Final snapshot created successfully")
-			// Truncate logic is handled by Snapshot/Engine
-		}
-	}
-
-	// Step 5: Close WAL file handle
-	// Handled by ClosePersistence
-	// Step 5: Close WAL file handle
-	// Handled by engine
-
-	// Step 6: Wait for workers to finish
+	// Step 3: Wait for workers to finish (tickers, etc.)
+	// This ensures no background usage of persistence (e.g. Snapshot Ticker) occurs
+	// before we close it.
 	s.logger.Info().Msg("Waiting for workers to finish...")
 	done := make(chan struct{})
 	go func() {
@@ -90,6 +66,29 @@ func (s *VectorStore) Shutdown(ctx context.Context) error {
 		if shutdownErr == nil {
 			shutdownErr = ctx.Err()
 		}
+	}
+
+	// Step 4: Create final snapshot
+	// Safe now as workers are stopped.
+	select {
+	case <-ctx.Done():
+		s.logger.Warn().Msg("Shutdown timeout, skipping final snapshot")
+	default:
+		s.logger.Info().Msg("Creating final snapshot...")
+		if err := s.Snapshot(); err != nil {
+			s.logger.Error().Err(err).Msg("Failed to create final snapshot")
+			// Don't fail shutdown for snapshot errors
+		} else {
+			s.logger.Info().Msg("Final snapshot created successfully")
+		}
+	}
+
+	// Step 5: Close Persistence (WAL Batcher, Engine)
+	if err := s.ClosePersistence(); err != nil {
+		shutdownErr = NewShutdownError("close", "persistence", err)
+		s.logger.Error().Err(err).Msg("Failed to close persistence")
+	} else {
+		s.logger.Info().Msg("Persistence closed successfully")
 	}
 
 	elapsed := time.Since(start)

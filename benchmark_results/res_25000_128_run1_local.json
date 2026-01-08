@@ -1,0 +1,50 @@
+[
+  {
+    "name": "DoPut",
+    "duration_seconds": 0.0191500186920166,
+    "throughput": 755.7405908790976,
+    "throughput_unit": "MB/s",
+    "rows": 25000,
+    "bytes_processed": 15175460,
+    "p50_ms": 0.0,
+    "p95_ms": 0.0,
+    "p99_ms": 0.0,
+    "errors": 0
+  },
+  {
+    "name": "DoGet",
+    "duration_seconds": 0.0075070858001708984,
+    "throughput": 1927.8381554292248,
+    "throughput_unit": "MB/s",
+    "rows": 25000,
+    "bytes_processed": 15175460,
+    "p50_ms": 0.0,
+    "p95_ms": 0.0,
+    "p99_ms": 0.0,
+    "errors": 0
+  },
+  {
+    "name": "VectorSearch",
+    "duration_seconds": 1.6669442653656006,
+    "throughput": 599.900081110796,
+    "throughput_unit": "queries/s",
+    "rows": 10000,
+    "bytes_processed": 0,
+    "p50_ms": 1.649022102355957,
+    "p95_ms": 1.940011978149414,
+    "p99_ms": 2.6769638061523438,
+    "errors": 0
+  },
+  {
+    "name": "HybridSearch",
+    "duration_seconds": 10.386629343032837,
+    "throughput": 96.2776245279978,
+    "throughput_unit": "queries/s",
+    "rows": 10000,
+    "bytes_processed": 0,
+    "p50_ms": 10.206937789916992,
+    "p95_ms": 10.907173156738281,
+    "p99_ms": 17.76885986328125,
+    "errors": 0
+  }
+]

@@ -1,6 +1,5 @@
 package store
 
-
 import (
 	"context"
 	"fmt"
@@ -25,9 +24,9 @@ func (s *VectorStore) StoreRecords(name string, records []arrow.RecordBatch) err
 		rec.Retain()
 		ds.Records = append(ds.Records, rec)
 	}
-	s.mu.Lock()
-	s.datasets[name] = ds
-	s.mu.Unlock()
+	s.updateDatasets(func(m map[string]*Dataset) {
+		m[name] = ds
+	})
 	return nil
 }
 

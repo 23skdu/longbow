@@ -1,73 +1,59 @@
-# Longbow Optimization Roadmap
+# Longbow Optimization & Stability Roadmap
 
-This document outlines the next prioritized improvements for the Longbow vector database.
+This document outlines the prioritized improvements for the Longbow vector database, focusing on distributed
+reliability, architecture refactoring, and advanced indexing features.
 
-## Priority 1: Core Architecture & Reliability
+## Top 10 Priority Items
 
-### 1. Refactor `internal/store` Monolith
+### 3. Distributed Consensus (Raft)
 
-- **Impact**: **High**. The `internal/store` package contains 360+ files, making maintenance and testing difficult.
-- **Location**: `internal/store`
-- **Plan**: Split into dedicated packages: `internal/index` (HNSW/Vector), `internal/storage` (Persistence/WAL/S3),
-  `internal/query` (Filtering/Eval).
-
-### 2. Distributed Consensus (Raft)
-
-- **Impact**: **High**. Critical for strong consistency in cluster metadata (schema changes, shard rebalancing) where
-  Gossip is insufficient.
+- **Impact**: **High**. Critical for strong consistency in cluster metadata, shard mapping, and automated failover.
 - **Location**: `internal/consensus` (New)
-- **Plan**: Integrate a Raft library (e.g., `hashicorp/raft`) to manage cluster state and topology configurations.
+- **Plan**: Integrate a Raft library (e.g., `hashicorp/raft`) to manage cluster state.
 
-### 3. Robust Node Discovery
+### 4. Refactor `internal/store` Monolith
 
-- **Impact**: **Medium**. Improves operational stability and cloud compatibility.
-- **Location**: `internal/mesh`
-- **Plan**: Replace basic mDNS with `hashicorp/memberlist` for robust, WAN-capable gossip and membership.
+- **Impact**: **High**. The `internal/store` package has grown excessively, hindering maintainability.
+- **Location**: `internal/store`
+- **Plan**: Split into `internal/index`, `internal/storage`, and `internal/query`.
 
-## Priority 2: Search Performance
+### 6. Cross-Encoder Re-ranking Implementation
 
-### 4. Dynamic/Adaptive Oversampling
+- **Impact**: **Medium**. We currently have a stub `CrossEncoderReranker`.
+- **Location**: `internal/store/hybrid_pipeline.go`
+- **Plan**: Integrate a real model (e.g., via ONNX or external service) to provide high-quality re-ranking.
 
-- **Impact**: **Medium**. Improves recall/precision balance for filtered HNSW searches.
-- **Location**: `internal/store/index_search.go`
-- **Plan**: Implement the TODO to dynamically adjust the search `ef` search factor based on filter selectivity estimates.
+### 7. Reverse Location Index (Location -> VectorID)
 
-### 5. Async S3 Checkpointing
+- **Impact**: **Medium**. Exact filter mapping currently uses a heuristic or slow scan.
+- **Location**: `internal/store/hybrid_pipeline.go`
+- **Plan**: Add a reverse index map to `HNSWIndex` or `ChunkedLocationStore` for O(1) lookups.
 
-- **Impact**: **Medium**. Prevents I/O stalls during snapshot operations on large datasets.
-- **Location**: `internal/store/s3_backend.go`
-- **Plan**: Implement non-blocking, multipart uploads for snapshots to decouple persistence latency from query availability.
+---
 
-### 6. SIMD Tail Handling
+## Additional Technical Debt & TODOs
 
-- **Impact**: **Low/Correctness**. Ensures correctness for edge-case vector dimensions not divisible by SIMD register width.
-- **Location**: `internal/simd/compare_amd64.s`
-- **Plan**: Implement proper tail handling or enforce 8-byte alignment strictness.
+### Distributed Tracing (OpenTelemetry)
 
-### 7. Binary Quantization (BQ)
-
-- **Impact**: **High**. Offers extreme compression (32x) and speed for suitable datasets (e.g., embeddings with large
-  dimensions).
-- **Location**: `internal/store/quantization.go`
-- **Plan**: Implement Binary Quantization support alongside existing PQ, optimizing for Hamming distance.
-
-## Priority 3: Features & Observability
-
-### 8. Structured Query Parser
-
-- **Impact**: **Medium**. Enables complex boolean logic (AND/OR/NOT/Nested) for metadata filters.
-- **Location**: `internal/query`
-- **Plan**: Implement a parser for a SQL-like subset or structured JSON DSL to replace ad-hoc filter chains.
-
-### 9. Distributed Tracing (OpenTelemetry)
-
-- **Impact**: **Medium**. Provides visibility into request latency across the distributed scatter-gather path.
 - **Location**: `internal/store/global_search.go`
-- **Plan**: Instrument the `GlobalSearch` and `ShardedHNSW` paths with OpenTelemetry spans.
+- **Plan**: Instrument critical paths with OpenTelemetry spans.
 
-### 10. HNSWv2 Migration & Stabilization
+---
 
-- **Impact**: **Medium**. Modernizes the core index structure.
-- **Location**: `internal/store/hnsw.go`
-- **Plan**: Finalize the HNSWv2 implementation, verify its performance benefits, and create a seamless migration path
-  (deprecating v1).
+## Recently Completed
+
+- **Hybrid Search Pipeline Enhancements**: Completed implementation of pipeline stages, including exact match filtering
+  via `ColumnInvertedIndex` and a second-stage re-ranking interface with cross-encoder stubs.
+- **Spatial Index for Mesh Routing**: Replaced linear scan in `Region` router with VP-Tree for scalable lookups.
+- **WAL Buffer Recycling**: Implemented buffer reusing for WAL batch compression to reduce GC pressure.
+- **Query Coordinator Path Optimization**: Implemented Streaming Merge (Min-Heap), Replica Hedging, and Arrow Serialization.
+- **Adaptive Search Limits**: Implemented auto-expansion of search limits based on filter selectivity.
+- **WAL Synchronization & Durability**: Integrated `AsyncFsyncer`.
+- **Async S3 Checkpointing**: Implemented non-blocking, multipart uploads.
+- **Arrow HNSW Resource Cleanup**: Fully implemented `Close()` methods.
+- **HNSW Stability**: Resolved critical data races in `ensureChunk` and safeguards for SIMD.
+- **ID Resolution Optimization**: Replaced linear scan with O(1) PrimaryIndex lookup for `SearchByID` operations.
+- **Multi-Batch HNSW Support**: Added support for sequential and concurrent batch insertions in `ArrowHNSW` with proper test coverage.
+- **Filter Evaluator Reuse**: Implemented object pooling for `FilterEvaluator` and vectorized filter application in `DoGet`.
+- **SQ8 SIMD Fix**: Fixed `euclideanSQ8NEONKernel` linking and verified correctness with `TestEuclideanDistanceSQ8`.
+- **Testing & Benchmarks**: Added HNSW batch modification tests and `ColumnInvertedIndex` high-cardinality benchmarks.

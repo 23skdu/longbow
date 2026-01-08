@@ -4,10 +4,10 @@ import (
 	"context"
 	"sort"
 	"strings"
+	"time"
 
+	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/query"
-	"github.com/apache/arrow-go/v18/arrow"
-	"github.com/apache/arrow-go/v18/arrow/array"
 )
 
 // HybridSearchRequest encapsulates parameters for hybrid search.
@@ -21,69 +21,156 @@ type HybridSearchRequest struct {
 	Bitset      *query.Bitset
 }
 
-// HybridSearch performs a hybrid search (placeholder implementation).
-func (s *VectorStore) HybridSearch(ctx context.Context, req HybridSearchRequest) ([]SearchResult, error) {
-	// 1. Vector Search
-	if len(req.QueryVector) > 0 {
-		// Call internal vector search
-		// Assuming we can find the index by some means or iterate datasets?
-		// But this method on VectorStore usually iterates datasets?
-		// Or is it for a specific dataset?
-		// The params doesn't distinguish dataset.
-		// Usually HybridSearch is per dataset or global?
-		// In `vector_search_action.go`, it calls `s.SearchHybrid(..., req.Dataset, ...)`
-		// So `SearchHybrid` takes dataset name.
-		return nil, nil
+// SearchHybrid performs a hybrid search combining dense vector search and sparse keyword search.
+// If alpha is < 0, it is automatically estimated using EstimateAlpha.
+func SearchHybrid(ctx context.Context, s *VectorStore, name string, queryVec []float32, textQuery string, k int, alpha float32, rrfK int, graphAlpha float32, graphDepth int) ([]SearchResult, error) {
+	// Adaptive Alpha
+	if alpha < 0 {
+		alpha = EstimateAlpha(textQuery)
 	}
-	return nil, nil
-}
 
-// SearchHybrid is the method called by vector_search_action.go
-// It performs Reciprocal Rank Fusion (RRF) or similar combination.
-func (s *VectorStore) SearchHybrid(ctx context.Context, datasetName string, queryVec []float32, textQuery string, k int, alpha float32, rrfK int) ([]SearchResult, error) {
-	ds, err := s.getDataset(datasetName)
+	defer func(start time.Time) {
+		metrics.SearchLatencySeconds.WithLabelValues(name, "hybrid_rrf").Observe(time.Since(start).Seconds())
+	}(time.Now())
+
+	s.logger.Info().
+		Str("dataset", name).
+		Str("text_query", textQuery).
+		Float32("alpha", alpha).
+		Int("k", k).
+		Msg("SearchHybrid called")
+
+	ds, err := s.getDataset(name)
 	if err != nil {
 		return nil, err
 	}
 
-	// 1. Vector Search
-	var vecResults []SearchResult
-	if len(queryVec) > 0 {
-		ds.dataMu.RLock()
+	ds.dataMu.RLock()
+	defer ds.dataMu.RUnlock()
+
+	var denseResults []SearchResult
+	var sparseResults []SearchResult
+
+	// 1. Dense (Vector) Search
+	if alpha > 0 && len(queryVec) > 0 {
 		if ds.Index != nil {
-			vecResults, _ = ds.Index.SearchVectors(queryVec, k*2, nil) // Get more for re-ranking
-			// Map IDs
-			vecResults = s.MapInternalToUserIDs(ds, vecResults)
+			var err error
+			denseResults, err = ds.Index.SearchVectors(queryVec, k*2, nil)
+			if err != nil {
+				s.logger.Error().Err(err).Msg("Vector search failed in hybrid search")
+				// Continue with sparse results only?
+				// For now, let's treat it as a hard failure if dense was requested but failed.
+				return nil, err
+			}
+			metrics.HybridSearchVectorTotal.Inc()
 		}
-		ds.dataMu.RUnlock()
 	}
 
-	// 2. Text Search (BM25) - Placeholder
-	// Ideally we have an inverted index.
-	var textResults []SearchResult
-	if textQuery != "" {
-		// Mock BM25 search or call actual if available
-		// s.invertedIndex.Search(textQuery) ...
-	}
-
-	// 3. Fusion (RRF or Alpha-weighted)
-	// For simplicity, if we have both, we use RRF.
-	if len(vecResults) > 0 && len(textResults) > 0 {
-		return RankFusion(vecResults, textResults, k, rrfK), nil
-	} else if len(vecResults) > 0 {
-		if len(vecResults) > k {
-			vecResults = vecResults[:k]
+	// 2. Sparse (Keyword) Search
+	if alpha < 1.0 && textQuery != "" {
+		if ds.BM25Index != nil {
+			sparseResults = ds.BM25Index.SearchBM25(textQuery, k*2)
+			metrics.HybridSearchKeywordTotal.Inc()
 		}
-		return vecResults, nil
-	} else if len(textResults) > 0 {
-		return textResults, nil
 	}
 
-	return []SearchResult{}, nil
+	// 3. Fusion logic
+	var finalResults []SearchResult
+	switch alpha {
+	case 1.0:
+		finalResults = denseResults
+	case 0.0:
+		finalResults = sparseResults
+	default:
+		// Fusion! Use RRF.
+		if rrfK <= 0 {
+			rrfK = 60 // Default
+		}
+		finalResults = ReciprocalRankFusion(denseResults, sparseResults, rrfK, k)
+	}
+
+	// 4. Graph Re-ranking (GraphRAG)
+	if graphAlpha > 0 && ds.Graph != nil {
+		if graphDepth <= 0 {
+			graphDepth = 2 // Default hop depth
+		}
+		// Rerank using graph topology
+		// We use the current finalResults as seeds
+		// Note: RankWithGraph returns expanded set, we might want to trim back to k or allow expansion
+		// Usually RAG wants context, so expansion is good. But we should probably limit result size eventually.
+		ranked := ds.Graph.RankWithGraph(finalResults, graphAlpha, graphDepth)
+		if len(ranked) > 0 {
+			finalResults = ranked
+		}
+	}
+
+	// Map internal IDs to user IDs (Phase 14 integration)
+	resolved := s.MapInternalToUserIDs(ds, finalResults)
+	if len(resolved) > k {
+		resolved = resolved[:k]
+	}
+
+	return resolved, nil
+}
+
+// HybridSearch performs a filtered vector search using inverted indexes for pre-filtering.
+func HybridSearch(ctx context.Context, s *VectorStore, name string, queryVec []float32, k int, filters map[string]string) ([]SearchResult, error) {
+	defer func(start time.Time) {
+		metrics.SearchLatencySeconds.WithLabelValues(name, "hybrid_filtered").Observe(time.Since(start).Seconds())
+	}(time.Now())
+	ds, err := s.getDataset(name)
+	if err != nil {
+		return nil, err
+	}
+
+	ds.dataMu.RLock()
+	defer ds.dataMu.RUnlock()
+
+	var filterBitmap *query.Bitset
+	hasFilters := len(filters) > 0
+
+	if hasFilters {
+		for col, val := range filters {
+			idx, ok := ds.InvertedIndexes[col]
+			if !ok {
+				continue
+			}
+
+			bm := idx.Get(val)
+			if bm == nil {
+				// Term not found in this column, empty result
+				return nil, nil
+			}
+
+			if filterBitmap == nil {
+				filterBitmap = query.NewBitsetFromRoaring(bm)
+			} else {
+				filterBitmap.And(bm)
+			}
+		}
+	}
+
+	var results []SearchResult
+	switch {
+	case filterBitmap != nil && filterBitmap.Count() > 0:
+		// Perform filtered search
+		results = ds.Index.SearchVectorsWithBitmap(queryVec, k, filterBitmap)
+	case !hasFilters:
+		// No filters, standard search
+		var err error
+		results, err = ds.Index.SearchVectors(queryVec, k, nil)
+		if err != nil {
+			return nil, err
+		}
+	default:
+		// Filters yielded no results
+		return nil, nil
+	}
+	return results, nil
 }
 
 // RankFusion performs Reciprocal Rank Fusion.
-func RankFusion(list1, list2 []SearchResult, k int, rrfK int) []SearchResult {
+func RankFusion(list1, list2 []SearchResult, k, rrfK int) []SearchResult {
 	scores := make(map[uint32]float32) // Use VectorID (uint32)
 
 	// Helper to add scores
@@ -115,26 +202,14 @@ func RankFusion(list1, list2 []SearchResult, k int, rrfK int) []SearchResult {
 }
 
 // HybridSearchWithBitmap performs hybrid search using a pre-computed bitmap for filtering.
-func (s *VectorStore) HybridSearchWithBitmap(ctx context.Context, req HybridSearchRequest) ([]SearchResult, error) {
+func (s *VectorStore) HybridSearchWithBitmap(ctx context.Context, req *HybridSearchRequest) ([]SearchResult, error) {
 	// Placeholder
 	return nil, nil
 }
 
-// findStringColumn helper
-func findStringColumn(rec arrow.RecordBatch, name string) *array.String {
-	for i, f := range rec.Schema().Fields() {
-		if strings.EqualFold(f.Name, name) {
-			if col, ok := rec.Column(i).(*array.String); ok {
-				return col
-			}
-		}
-	}
-	return nil
-}
-
 // EstimateAlpha calculates a heuristic alpha value based on query length.
-func EstimateAlpha(query string) float32 {
-	tokens := strings.Fields(query)
+func EstimateAlpha(q string) float32 {
+	tokens := strings.Fields(q)
 	n := len(tokens)
 	if n < 3 {
 		return 0.3

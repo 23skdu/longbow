@@ -1,7 +1,7 @@
 package store
 
-
 import (
+	"fmt"
 	"sync"
 	"testing"
 
@@ -350,5 +350,41 @@ func BenchmarkColumnInvertedIndex_Lookup(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = idx.Lookup("ds", "category", "cat5")
+	}
+}
+
+// BenchmarkColumnInvertedIndex_HighCardinality_Lookup benchmarks lookup with high cardinality data
+func BenchmarkColumnInvertedIndex_HighCardinality_Lookup(b *testing.B) {
+	idx := NewColumnInvertedIndex()
+	mem := memory.NewGoAllocator()
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "uuid", Type: arrow.BinaryTypes.String},
+	}, nil)
+
+	// Create 100k unique values
+	// We'll split into 100 batches of 1000
+	numBatches := 100
+	batchSize := 1000
+
+	for i := 0; i < numBatches; i++ {
+		bldr := array.NewRecordBuilder(mem, schema)
+		values := make([]string, batchSize)
+		for j := 0; j < batchSize; j++ {
+			// Generate unique string
+			val := fmt.Sprintf("uuid-%d-%d", i, j)
+			values[j] = val
+		}
+		bldr.Field(0).(*array.StringBuilder).AppendValues(values, nil)
+		rec := bldr.NewRecordBatch()
+		idx.IndexRecord("high_card_ds", i, rec, []string{"uuid"})
+		rec.Release()
+		bldr.Release()
+	}
+
+	searchKey := "uuid-50-500" // Corresponds to middle batch, middle row
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = idx.Lookup("high_card_ds", "uuid", searchKey)
 	}
 }

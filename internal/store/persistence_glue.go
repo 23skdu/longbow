@@ -1,6 +1,7 @@
 package store
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -22,7 +23,7 @@ func (s *VectorStore) InitPersistence(cfg storage.StorageConfig) error {
 
 	// Load Snapshots
 	if err := s.engine.LoadSnapshots(func(item storage.SnapshotItem) error {
-		return s.loadSnapshotItem(item)
+		return s.loadSnapshotItem(&item)
 	}); err != nil {
 		s.logger.Error().Err(err).Msg("Failed to load snapshots")
 	}
@@ -44,12 +45,13 @@ func (s *VectorStore) InitPersistence(cfg storage.StorageConfig) error {
 	}
 
 	// Start snapshot ticker
+	s.workerWg.Add(1)
 	go s.runSnapshotTicker(cfg.SnapshotInterval)
 
 	return nil
 }
 
-func (s *VectorStore) loadSnapshotItem(item storage.SnapshotItem) error {
+func (s *VectorStore) loadSnapshotItem(item *storage.SnapshotItem) error {
 	s.mu.Lock()
 	ds, ok := s.datasets[item.Name]
 	if !ok {
@@ -82,14 +84,59 @@ func (s *VectorStore) loadSnapshotItem(item storage.SnapshotItem) error {
 	}
 	s.mu.Unlock()
 
-	// Load Records
-	ds.dataMu.Lock()
-	defer ds.dataMu.Unlock()
+	// Initialize Index if missing (Critical for restoration)
+	if ds.Index == nil {
+		// Try to load persisted config
+		var asConfig AutoShardingConfig
 
+		if len(item.IndexConfig) > 0 {
+			var arrowConfig ArrowHNSWConfig
+			if err := json.Unmarshal(item.IndexConfig, &arrowConfig); err != nil {
+				s.logger.Error().Err(err).Str("dataset", ds.Name).Msg("Failed to unmarshal index config")
+				asConfig = DefaultAutoShardingConfig()
+			} else {
+				// We have a config!
+				s.logger.Info().Str("dataset", ds.Name).Bool("bq_enabled", arrowConfig.BQEnabled).Msg("Restoring index with persisted config")
+				asConfig = DefaultAutoShardingConfig()
+				asConfig.IndexConfig = &arrowConfig
+			}
+		} else {
+			asConfig = DefaultAutoShardingConfig()
+		}
+
+		ds.Index = NewAutoShardingIndex(ds, asConfig)
+	}
+
+	// Load Records and Rebuild Index
 	for _, rec := range item.Records {
 		rec.Retain()
+
+		ds.dataMu.Lock()
 		ds.Records = append(ds.Records, rec)
+		batchIdx := len(ds.Records) - 1
+		ds.UpdatePrimaryIndex(batchIdx, rec)
 		s.currentMemory.Add(CachedRecordSize(rec))
+		ds.dataMu.Unlock() // Unlock before indexing to avoid potential deadlocks
+
+		// Rebuild Index entry for this batch
+		numRows := int(rec.NumRows())
+		if numRows > 0 {
+			rowIdxs := make([]int, numRows)
+			batchIdxs := make([]int, numRows)
+			recs := make([]arrow.RecordBatch, numRows)
+			for i := 0; i < numRows; i++ {
+				rowIdxs[i] = i
+				batchIdxs[i] = batchIdx
+				recs[i] = rec
+			}
+
+			// We ignore errors here? Or log them?
+			// If indexing fails, we have data but no search.
+			if _, err := ds.Index.AddBatch(recs, rowIdxs, batchIdxs); err != nil {
+				s.logger.Error().Err(err).Str("dataset", ds.Name).Msg("Failed to rebuild index from snapshot")
+				// Proceeding, but data might be unsearchable
+			}
+		}
 	}
 
 	// Load Graph
@@ -154,7 +201,35 @@ func (s *VectorStore) ApplyDelta(name string, rec arrow.RecordBatch, seq uint64,
 	// 4. Append to dataset
 	ds.dataMu.Lock()
 	ds.Records = append(ds.Records, rec)
+	batchIdx := len(ds.Records) - 1
+	ds.UpdatePrimaryIndex(batchIdx, rec)
+	// Capture records slice for AddBatch to ensure we pass a valid view
+	// Capture records slice for AddBatch to ensure we pass a valid view (Now handled by recs slice below)
 	ds.dataMu.Unlock()
+
+	// 5. Update Index (CRITICAL: SyncWorker relies on this)
+	// We must index the batch so it's searchable and visible to IndexLen()
+	numRows := int(rec.NumRows())
+	rowIdxs := make([]int, numRows)
+	batchIdxs := make([]int, numRows)
+
+	// Prepare separate slice of records for AddBatch as it expects 1:1 mapping if used this way
+	// Or better, use AddSafe in a loop if AddBatch is strictly for scatter-gather?
+	// AddBatch implementation: loops i < len(recs), calls extractVector(recs[i], rowIdxs[i]).
+	// So we need recs[i] to be the batch for rowIdxs[i].
+	recs := make([]arrow.RecordBatch, numRows)
+
+	for i := 0; i < numRows; i++ {
+		rowIdxs[i] = i
+		batchIdxs[i] = batchIdx
+		recs[i] = rec // All point to the same batch
+	}
+
+	if ds.Index != nil {
+		if _, err := ds.Index.AddBatch(recs, rowIdxs, batchIdxs); err != nil {
+			return fmt.Errorf("failed to index delta: %w", err)
+		}
+	}
 
 	return nil
 }
@@ -217,21 +292,38 @@ func (src *storeSnapshotSource) Iterate(fn func(storage.SnapshotItem) error) err
 			item.PQCodebook = ds.PQEncoder.Serialize()
 		}
 
+		// Serialize Index Config (JSON)
+		if ds.Index != nil {
+			if asi, ok := ds.Index.(*AutoShardingIndex); ok {
+				asi.mu.RLock()
+				// access current index
+				// Since we are in same package, we can access generic current
+				// But we need to check if it's ArrowHNSW
+				if ahnsw, ok := asi.current.(*ArrowHNSW); ok {
+					cfg := ahnsw.config
+					if data, err := json.Marshal(cfg); err == nil {
+						item.IndexConfig = data
+					}
+				}
+				asi.mu.RUnlock()
+			}
+		}
+
 		ds.dataMu.RUnlock()
 
 		// Call callback
 		if err := fn(item); err != nil {
-			releaseItem(item)
+			releaseItem(&item)
 			return err
 		}
 
 		// Release retained
-		releaseItem(item)
+		releaseItem(&item)
 	}
 	return nil
 }
 
-func releaseItem(item storage.SnapshotItem) {
+func releaseItem(item *storage.SnapshotItem) {
 	for _, r := range item.Records {
 		r.Release()
 	}
@@ -241,6 +333,7 @@ func releaseItem(item storage.SnapshotItem) {
 }
 
 func (s *VectorStore) runSnapshotTicker(interval time.Duration) {
+	defer s.workerWg.Done()
 	if interval <= 0 {
 		return
 	}

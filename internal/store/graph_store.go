@@ -45,9 +45,10 @@ type GraphStore struct {
 	predicateToIdx map[string]uint16
 
 	// Indices (Adjacency Lists) maps value -> list of edge indices
-	subjectIndex        map[VectorID][]int
-	objectIndex         map[VectorID][]int
-	predicateValueIndex map[uint16][]int
+	// Sharded by [hash(key) % 256] matching indexShards
+	subjectIndex        [256]map[VectorID][]int
+	objectIndex         [256]map[VectorID][]int
+	predicateValueIndex [256]map[uint16][]int
 
 	// Community detection results (protected by dataMu for now)
 	nodeCommunity map[VectorID]int
@@ -56,18 +57,23 @@ type GraphStore struct {
 
 // NewGraphStore creates a new empty graph store
 func NewGraphStore() *GraphStore {
-	return &GraphStore{
-		subjects:            make([]VectorID, 0),
-		objects:             make([]VectorID, 0),
-		predicates:          make([]uint16, 0),
-		weights:             make([]float32, 0),
-		predicateDict:       make([]string, 0),
-		predicateToIdx:      make(map[string]uint16),
-		subjectIndex:        make(map[VectorID][]int),
-		objectIndex:         make(map[VectorID][]int),
-		predicateValueIndex: make(map[uint16][]int),
-		dataMu:              NewMeasuredRWMutex("graph_store_data"),
+	gs := &GraphStore{
+		subjects:       make([]VectorID, 0),
+		objects:        make([]VectorID, 0),
+		predicates:     make([]uint16, 0),
+		weights:        make([]float32, 0),
+		predicateDict:  make([]string, 0),
+		predicateToIdx: make(map[string]uint16),
+		dataMu:         NewMeasuredRWMutex("graph_store_data"),
 	}
+
+	for i := 0; i < 256; i++ {
+		gs.subjectIndex[i] = make(map[VectorID][]int)
+		gs.objectIndex[i] = make(map[VectorID][]int)
+		gs.predicateValueIndex[i] = make(map[uint16][]int)
+	}
+
+	return gs
 }
 
 // shardForVectorID returns the lock shard index for a VectorID
@@ -118,19 +124,19 @@ func (gs *GraphStore) AddEdge(e Edge) error {
 	// Subject Index
 	sShard := gs.shardForVectorID(e.Subject)
 	gs.indexShards[sShard].Lock()
-	gs.subjectIndex[e.Subject] = append(gs.subjectIndex[e.Subject], idx)
+	gs.subjectIndex[sShard][e.Subject] = append(gs.subjectIndex[sShard][e.Subject], idx)
 	gs.indexShards[sShard].Unlock()
 
 	// Object Index
 	oShard := gs.shardForVectorID(e.Object)
 	gs.indexShards[oShard].Lock()
-	gs.objectIndex[e.Object] = append(gs.objectIndex[e.Object], idx)
+	gs.objectIndex[oShard][e.Object] = append(gs.objectIndex[oShard][e.Object], idx)
 	gs.indexShards[oShard].Unlock()
 
 	// Predicate Index
 	pShard := gs.shardForPredicate(predIdx)
 	gs.indexShards[pShard].Lock()
-	gs.predicateValueIndex[predIdx] = append(gs.predicateValueIndex[predIdx], idx)
+	gs.predicateValueIndex[pShard][predIdx] = append(gs.predicateValueIndex[pShard][predIdx], idx)
 	gs.indexShards[pShard].Unlock()
 
 	return nil
@@ -160,8 +166,8 @@ func (gs *GraphStore) GetEdgesBySubject(subject VectorID) []Edge {
 	// 1. Get Indices (Shard Lock)
 	shard := gs.shardForVectorID(subject)
 	gs.indexShards[shard].RLock()
-	indices := make([]int, len(gs.subjectIndex[subject]))
-	copy(indices, gs.subjectIndex[subject])
+	indices := make([]int, len(gs.subjectIndex[shard][subject]))
+	copy(indices, gs.subjectIndex[shard][subject])
 	gs.indexShards[shard].RUnlock()
 
 	// 2. Get Data (Global Data Lock)
@@ -180,8 +186,8 @@ func (gs *GraphStore) GetEdgesByObject(object VectorID) []Edge {
 	// 1. Get Indices (Shard Lock)
 	shard := gs.shardForVectorID(object)
 	gs.indexShards[shard].RLock()
-	indices := make([]int, len(gs.objectIndex[object]))
-	copy(indices, gs.objectIndex[object])
+	indices := make([]int, len(gs.objectIndex[shard][object]))
+	copy(indices, gs.objectIndex[shard][object])
 	gs.indexShards[shard].RUnlock()
 
 	// 2. Get Data (Global Data Lock)
@@ -208,8 +214,8 @@ func (gs *GraphStore) GetEdgesByPredicate(predicate string) []Edge {
 	// 1. Get Indices (Shard Lock)
 	shard := gs.shardForPredicate(predIdx)
 	gs.indexShards[shard].RLock()
-	indices := make([]int, len(gs.predicateValueIndex[predIdx]))
-	copy(indices, gs.predicateValueIndex[predIdx])
+	indices := make([]int, len(gs.predicateValueIndex[shard][predIdx]))
+	copy(indices, gs.predicateValueIndex[shard][predIdx])
 	gs.indexShards[shard].RUnlock()
 
 	// 2. Get Data (Global Data Lock)
@@ -388,17 +394,17 @@ func (gs *GraphStore) FromArrowBatch(batch arrow.Record) error { //nolint:static
 		// Indices
 		sShard := gs.shardForVectorID(subj)
 		gs.indexShards[sShard].Lock()
-		gs.subjectIndex[subj] = append(gs.subjectIndex[subj], idx)
+		gs.subjectIndex[sShard][subj] = append(gs.subjectIndex[sShard][subj], idx)
 		gs.indexShards[sShard].Unlock()
 
 		oShard := gs.shardForVectorID(obj)
 		gs.indexShards[oShard].Lock()
-		gs.objectIndex[obj] = append(gs.objectIndex[obj], idx)
+		gs.objectIndex[oShard][obj] = append(gs.objectIndex[oShard][obj], idx)
 		gs.indexShards[oShard].Unlock()
 
 		pShard := gs.shardForPredicate(predIdx)
 		gs.indexShards[pShard].Lock()
-		gs.predicateValueIndex[predIdx] = append(gs.predicateValueIndex[predIdx], idx)
+		gs.predicateValueIndex[pShard][predIdx] = append(gs.predicateValueIndex[pShard][predIdx], idx)
 		gs.indexShards[pShard].Unlock()
 	}
 
@@ -525,7 +531,7 @@ func (gs *GraphStore) Traverse(start VectorID, opts TraverseOptions) []Path {
 		if opts.Direction == DirectionOutgoing || opts.Direction == DirectionBoth {
 			shard := gs.shardForVectorID(current)
 			gs.indexShards[shard].RLock()
-			indices = append(indices, gs.subjectIndex[current]...)
+			indices = append(indices, gs.subjectIndex[shard][current]...)
 			gs.indexShards[shard].RUnlock()
 		}
 
@@ -536,7 +542,7 @@ func (gs *GraphStore) Traverse(start VectorID, opts TraverseOptions) []Path {
 		if opts.Direction == DirectionIncoming || opts.Direction == DirectionBoth {
 			shard := gs.shardForVectorID(current)
 			gs.indexShards[shard].RLock()
-			incomingIndices = append(incomingIndices, gs.objectIndex[current]...)
+			incomingIndices = append(incomingIndices, gs.objectIndex[shard][current]...)
 			gs.indexShards[shard].RUnlock()
 		}
 
@@ -807,26 +813,28 @@ func (gs *GraphStore) RankWithGraph(initial []SearchResult, alpha float32, maxDe
 		alpha = 1.0
 	}
 
-	// 1. Initialize scores
+	// 1. Initialize scores using Reciprocal Rank
+	// This standardizes metric semantics (Distance vs Similarity) by trusting the sort order.
 	scores := make(map[VectorID]float32)
 	maxVecScore := float32(0.0)
-	for _, res := range initial {
-		scores[res.ID] = res.Score
-		if res.Score > maxVecScore {
-			maxVecScore = res.Score
+
+	for i, res := range initial {
+		// 1/(rank+1) decay ensures top results have high mass
+		rankScore := float32(1.0) / float32(i+1)
+		scores[res.ID] = rankScore
+		if rankScore > maxVecScore {
+			maxVecScore = rankScore
 		}
-	}
-	if maxVecScore == 0 {
-		maxVecScore = 1.0
 	}
 
 	// Normalize vector scores
-	for id := range scores {
-		scores[id] /= maxVecScore
+	if maxVecScore > 0 {
+		for id := range scores {
+			scores[id] /= maxVecScore
+		}
 	}
 
 	// 2. Spreading Activation (Graph Traversal)
-	// We spread activation from high-ranking nodes
 	graphScores := make(map[VectorID]float32)
 
 	seeds := make([]VectorID, 0, len(initial))
@@ -836,40 +844,18 @@ func (gs *GraphStore) RankWithGraph(initial []SearchResult, alpha float32, maxDe
 
 	// Run parallel traversal from all seeds
 	opts := TraverseOptions{
-		Direction:     DirectionIncoming, // Spread influence from "connected to"
+		Direction:     DirectionOutgoing, // Promote concepts connected FROM the result
 		MaxHops:       maxDepth,
 		Decay:         0.5,
 		TopKNeighbors: 0,
 		Weighted:      true,
 	}
-	// For "Incoming", we effectively see which nodes point TO our result set.
-	// If many nodes point to X, X is important?
-	// Or if X points to Y?
-	// In RAG, if we find "Einstein", we want "Physics" (Subject->Object).
-	// So DirectionOutgoing might be better for "Concept Expansion".
-	// Let's use Outgoing for expansion.
-	opts.Direction = DirectionOutgoing
 
 	traversalResults := gs.TraverseParallel(seeds, opts)
 
 	// Accumulate graph scores
 	for _, paths := range traversalResults {
 		for _, path := range paths {
-			// Path: Seed -> A -> B
-			// Boost B based on Seed's original relevance * path weight
-			// Since path includes Seed, we skip index 0 in accumulation if we want pure expansion
-
-			// We give score to ALL nodes in path based on path weight?
-			// Path weight is sum of edge weights.
-			// Let's use the final node's visited score implicitly.
-			// Actually Traverse returns Path struct, but we need the 'score'.
-			// Our Traverse implementation currently calculates 'score' internally for pruning but doesn't expose it in Path struct (Path returns Weight which is sum).
-			// Path.Weight is summation.
-
-			// Simplified scoring:
-			// Score(Node) += SeedScore * (1 / (1 + Depth)) * PathWeight
-			// But Traverse returns discrete paths.
-
 			if len(path.Nodes) < 1 {
 				continue
 			}
@@ -880,11 +866,13 @@ func (gs *GraphStore) RankWithGraph(initial []SearchResult, alpha float32, maxDe
 			// Last node gets the boost
 			target := path.Nodes[len(path.Nodes)-1]
 
-			// Simple decay
+			// Simple decay based on path length
 			dist := len(path.Nodes) - 1
 			decay := float32(1.0) / float32(dist+1) // 1, 0.5, 0.33
 
-			graphScores[target] += seedScore * decay * (1.0 + path.Weight) // Boost by edge weights
+			// Mass accumulation
+			inc := seedScore * decay * (1.0 + path.Weight)
+			graphScores[target] += inc
 		}
 	}
 
@@ -929,4 +917,30 @@ func (gs *GraphStore) RankWithGraph(initial []SearchResult, alpha float32, maxDe
 	}
 
 	return dedupeAndSort(results, len(initial)*2) // Return expanded set
+}
+
+// Close releases resources associated with the graph store.
+func (gs *GraphStore) Close() error {
+	gs.dataMu.Lock()
+	defer gs.dataMu.Unlock()
+
+	gs.subjects = nil
+	gs.objects = nil
+	gs.predicates = nil
+	gs.weights = nil
+	gs.predicateDict = nil
+	gs.predicateToIdx = nil
+
+	for i := 0; i < 256; i++ {
+		gs.indexShards[i].Lock()
+		gs.subjectIndex[i] = nil
+		gs.objectIndex[i] = nil
+		gs.predicateValueIndex[i] = nil
+		gs.indexShards[i].Unlock()
+	}
+
+	gs.nodeCommunity = nil
+	gs.communities = nil
+
+	return nil
 }

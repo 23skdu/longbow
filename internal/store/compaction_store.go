@@ -78,10 +78,8 @@ func (vs *VectorStore) CompactDataset(name string) error {
 	// 1. Perform Incremental Compaction
 	// Returns a NEW slice of records and a remapping table
 	// We use vs.mem (the tracked allocator) instead of creating a new one
-	newRecords, remapping, err := compactRecords(vs.mem, ds.Schema, ds.Records, ds.Tombstones, vs.compactionConfig.TargetBatchSize, name)
-	if err != nil {
-		return err // e.g. nothing to compact
-	}
+	newRecords, remapping := compactRecords(vs.mem, ds.Schema, ds.Records, ds.Tombstones, vs.compactionConfig.TargetBatchSize, name)
+
 	if newRecords == nil {
 		return nil // No changes needed
 	}
@@ -91,8 +89,11 @@ func (vs *VectorStore) CompactDataset(name string) error {
 	// HNSWIndex stores locations in a slice indexed by VectorID.
 	// We iterate locations and update them.
 	// We need to convert our internal remapping format to the one HNSW expects.
-	if hnsw, ok := ds.Index.(*HNSWIndex); ok {
-		_ = hnsw.RemapFromBatchInfo(remapping)
+	switch idx := ds.Index.(type) {
+	case *HNSWIndex:
+		_ = idx.RemapFromBatchInfo(remapping)
+	case *ShardedHNSW:
+		_ = idx.RemapFromBatchInfo(remapping)
 	}
 
 	// 3. Fix up Tombstones (Bitsets)
@@ -180,11 +181,17 @@ func (vs *VectorStore) VacuumDataset(name string) error {
 	}
 
 	// Check if this is an ArrowHNSW which supports Vacuum
-	if hnsw, ok := index.(*ArrowHNSW); ok {
+	switch idx := index.(type) {
+	case *ArrowHNSW:
 		// Run Vacuum
 		// We pass 0 to scan all nodes. Or we could be smarter?
 		// For now, full vacuum.
-		pruned := hnsw.CleanupTombstones(0)
+		pruned := idx.CleanupTombstones(0)
+		if pruned > 0 {
+			metrics.CompactionOperationsTotal.WithLabelValues(name, "vacuum_pruned").Add(float64(pruned))
+		}
+	case *ShardedHNSW:
+		pruned := idx.CleanupTombstones(0)
 		if pruned > 0 {
 			metrics.CompactionOperationsTotal.WithLabelValues(name, "vacuum_pruned").Add(float64(pruned))
 		}

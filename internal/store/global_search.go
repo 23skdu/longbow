@@ -3,13 +3,13 @@ package store
 import (
 	"context"
 	"encoding/json"
-	"sort"
 	"sync"
 	"time"
 
 	"github.com/23skdu/longbow/internal/mesh"
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/query"
+	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/rs/zerolog"
 	"google.golang.org/grpc"
@@ -41,7 +41,7 @@ func NewGlobalSearchCoordinator(logger zerolog.Logger) *GlobalSearchCoordinator 
 }
 
 // GlobalSearch performs scatter-gather search across the cluster
-func (c *GlobalSearchCoordinator) GlobalSearch(ctx context.Context, localResults []SearchResult, req query.VectorSearchRequest, peers []mesh.Member) ([]SearchResult, error) {
+func (c *GlobalSearchCoordinator) GlobalSearch(ctx context.Context, localResults []SearchResult, req *query.VectorSearchRequest, peers []mesh.Member) ([]SearchResult, error) {
 	start := time.Now()
 
 	// If no peers, just return local
@@ -51,115 +51,187 @@ func (c *GlobalSearchCoordinator) GlobalSearch(ctx context.Context, localResults
 
 	metrics.GlobalSearchFanoutSize.Observe(float64(len(peers)))
 
-	resultsCh := make(chan []SearchResult, len(peers))
-	errCh := make(chan error, len(peers))
-	var wg sync.WaitGroup
+	// Streaming Merge with Replica Hedging
+	// We treat local results as one stream.
+	// For remote peers, we group them by "shard" tag (or ID if no tag).
+	// For each group, we hedge: send to all replicas, accept FIRST success.
 
-	// Prepare remote request (LocalOnly = true to prevent recursion)
-	remoteReq := req
+	// Group peers
+	peerGroups := make(map[string][]mesh.Member)
+	for i := range peers {
+		p := peers[i]
+		groupID := p.ID // Default to distinct if no shared tag
+		if shard, ok := p.Tags["shard"]; ok {
+			groupID = "shard:" + shard
+		}
+		peerGroups[groupID] = append(peerGroups[groupID], p)
+	}
+
+	numStreams := 1 + len(peerGroups)
+	channels := make([]<-chan []SearchResult, numStreams)
+
+	// 1. Local Stream
+	localCh := make(chan []SearchResult, 1)
+	localCh <- localResults
+	close(localCh)
+	channels[0] = localCh
+
+	// 2. Peer Streams (Hedged)
+	// We map each group to one output channel
+	groupChs := make([]chan []SearchResult, len(peerGroups))
+
+	// Request Body
+	remoteReq := *req // Copy struct
 	remoteReq.LocalOnly = true
-	remoteReqBody, _ := json.Marshal(remoteReq) // Should not fail if original parsed ok
 
-	for _, peer := range peers {
+	var wg sync.WaitGroup
+	configTimeout := 2 * time.Second
+
+	groupIdx := 0
+	for _, members := range peerGroups {
+		// Output channel for this group
+		ch := make(chan []SearchResult, 1)
+		groupChs[groupIdx] = ch
+		channels[groupIdx+1] = ch
+		groupIdx++
+
 		wg.Add(1)
-		go func(p mesh.Member) {
+		go func(replicas []mesh.Member, outCh chan []SearchResult) {
 			defer wg.Done()
+			defer close(outCh)
 
-			// 1. Get Client
-			client, err := c.getClient(p.MetaAddr)
-			if err != nil {
-				c.logger.Warn().
-					Str("peer", p.ID).
-					Str("addr", p.MetaAddr).
-					Err(err).
-					Msg("Failed to dial peer")
+			// Hedging:
+			// Launch requests to ALL replicas concurrently.
+			// First one to return success writes to outCh and cancels others.
+			// If all fail, we write nothing (or log error).
+
+			ctxHedge, cancelHedge := context.WithCancel(ctx)
+			defer cancelHedge()
+
+			resultHedge := make(chan []SearchResult, 1) // First winner
+			var wgReplicas sync.WaitGroup
+
+			subCtx, cancelTimeout := context.WithTimeout(ctxHedge, configTimeout)
+			defer cancelTimeout()
+
+			for i := range replicas {
+				rp := replicas[i]
+				wgReplicas.Add(1)
+				go func(p mesh.Member) {
+					defer wgReplicas.Done()
+
+					client, err := c.getClient(p.MetaAddr)
+					if err != nil {
+						return
+					}
+					// Mark used
+					if entry, ok := c.clients.Load(p.MetaAddr); ok {
+						entry.(*clientEntry).lastUse = time.Now()
+					}
+
+					// DoGet with Search Ticket
+					ticketQuery := query.TicketQuery{
+						Search: &remoteReq,
+					}
+					ticketBytes, err := json.Marshal(ticketQuery)
+					if err != nil {
+						return
+					}
+
+					stream, err := client.DoGet(subCtx, &flight.Ticket{Ticket: ticketBytes})
+					if err != nil {
+						return
+					}
+
+					reader, err := flight.NewRecordReader(stream)
+					if err != nil {
+						return
+					}
+					defer reader.Release()
+
+					var results []SearchResult
+					for reader.Next() {
+						rec := reader.RecordBatch()
+						col0 := rec.Column(0)
+						col1 := rec.Column(1)
+
+						ids := col0.(*array.Uint64).Uint64Values()
+						scores := col1.(*array.Float32).Float32Values()
+
+						for k := 0; k < len(ids); k++ {
+							results = append(results, SearchResult{
+								ID:    VectorID(ids[k]),
+								Score: scores[k],
+							})
+						}
+					}
+					if reader.Err() != nil {
+						return
+					}
+
+					// Submit
+					select {
+					case resultHedge <- results:
+						cancelHedge() // Cancel others
+					case <-subCtx.Done():
+					}
+				}(rp)
+			}
+
+			// Wait for one success or timeout
+			select {
+			case res := <-resultHedge:
+				outCh <- res
+			case <-subCtx.Done():
 				metrics.GlobalSearchPartialFailures.Inc()
-				return
-			}
-			// Update last use time after retrieval
-			if entry, ok := c.clients.Load(p.MetaAddr); ok {
-				entry.(*clientEntry).lastUse = time.Now()
 			}
 
-			// 2. DoAction
-			action := &flight.Action{
-				Type: "VectorSearch",
-				Body: remoteReqBody,
-			}
-
-			// Add timeout for remote calls
-			subCtx, cancel := context.WithTimeout(ctx, 2*time.Second) // configurable?
-			defer cancel()
-
-			stream, err := client.DoAction(subCtx, action)
-			if err != nil {
-				c.logger.Warn().
-					Str("peer", p.ID).
-					Err(err).
-					Msg("Remote search failed")
-				metrics.GlobalSearchPartialFailures.Inc()
-				return
-			}
-
-			// 3. Read Response
-			// Expecting single result with JSON body
-			res, err := stream.Recv()
-			if err != nil {
-				c.logger.Warn().
-					Str("peer", p.ID).
-					Err(err).
-					Msg("Remote search recv failed")
-				metrics.GlobalSearchPartialFailures.Inc()
-				return
-			}
-
-			var resp query.VectorSearchResponse
-			if err := json.Unmarshal(res.Body, &resp); err != nil {
-				c.logger.Warn().
-					Str("peer", p.ID).
-					Err(err).
-					Msg("Remote search parse failed")
-				metrics.GlobalSearchPartialFailures.Inc()
-				return
-			}
-
-			// Convert to internal SearchResult
-			results := make([]SearchResult, len(resp.IDs))
-			for i := range resp.IDs {
-				results[i] = SearchResult{
-					ID:    VectorID(resp.IDs[i]),
-					Score: resp.Scores[i],
-				}
-			}
-
-			resultsCh <- results
-		}(peer)
+			wgReplicas.Wait()
+		}(members, ch)
 	}
 
-	wg.Wait()
-	close(resultsCh)
-	close(errCh)
+	// Wait for all groups to finish (they run independently)
+	// Actually we don't need to wait here if we rely on channels closing?
+	// But wg covers the Group goroutines.
+	// We need to wait for them to ensure they launch.
+	// Wait, the previous code didn't wait *here*. It launched a goroutine to wait.
+	// But here I'm setting up channels. It's fine.
 
-	// Gather results
-	allResults := make([]SearchResult, 0, len(localResults)+len(peers)*req.K)
-	allResults = append(allResults, localResults...) // Add local
+	// 3. Launch Merger
+	// Merger runs concurrently and consumes from channels as they become available
+	mergedCh := MergeSortedStreams(channels, req.K)
 
-	for remoteRes := range resultsCh {
-		allResults = append(allResults, remoteRes...)
+	// 4. Collect Final Results
+	finalResults := make([]SearchResult, 0, req.K)
+	for r := range mergedCh {
+		finalResults = append(finalResults, r)
 	}
 
-	// Sort and Top K
-	sort.Slice(allResults, func(i, j int) bool {
-		// Ascending score (smaller distance first)
-		return allResults[i].Score < allResults[j].Score
-	})
+	// Ensure peer goroutines finish (they should have closed their channels)
+	// Actually we don't strictly need to wait for WG if we only want Top K and Merger closes early?
+	// MergeSortedStreams drain logic: it closes output when it has K items or all inputs closed.
+	// If it hits K, it closes output. But peer goroutines might still be running/blocked on write?
+	// The peerChs are buffered (size 1). If peer writes 1 batch, it unblocks.
+	// Peer goroutine then closes channel and exits.
+	// So we don't leak goroutines even if we return early.
+	// However, for cleanliness, we might want to ensure they are done or cancel context?
+	// DoAction context `subCtx` will timeout anyway.
 
-	if len(allResults) > req.K {
-		allResults = allResults[:req.K]
-	}
+	// Wait for peers to cleanup if needed, but not strictly required for correctness of result
+	// Let's run Wait in background to avoid blocking return if K is satisfied early?
+	// But `mergedCh` only closes when K items yielded OR all sources exhausted.
+	// If K satisfied, `MergeSortedStreams` loop yields K and returns (closing output).
+	// But it does NOT close input channels. Peer goroutines close input channels.
+	// The merger logic itself is:
+	// "for h.Len() > 0 && count < k"
+	// If count < k is hit, merger exits and closes `out`.
+	// Peer goroutines are independent.
+	go func() {
+		wg.Wait()
+	}()
 
 	metrics.GlobalSearchDuration.Observe(time.Since(start).Seconds())
-	return allResults, nil
+	return finalResults, nil
 }
 
 func (c *GlobalSearchCoordinator) getClient(addr string) (flight.Client, error) {

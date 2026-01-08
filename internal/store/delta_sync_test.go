@@ -110,7 +110,7 @@ func TestDeltaSync_Integration(t *testing.T) {
 
 	// Read responses
 	close(send)
-	var responses []*flight.FlightData
+	responses := make([]*flight.FlightData, 0, 10)
 	for fd := range send {
 		if string(fd.DataBody) == "ack" {
 			continue // ignore ack

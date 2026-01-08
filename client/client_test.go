@@ -41,7 +41,7 @@ func (s *MockFlightServer) GetFlightInfo(ctx context.Context, desc *flight.Fligh
 	return &flight.FlightInfo{}, nil
 }
 
-func startMockServer(t *testing.T) (*MockFlightServer, *grpc.Server, net.Listener) {
+func startMockServer(t *testing.T) (*MockFlightServer, *grpc.Server) {
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 
@@ -55,16 +55,16 @@ func startMockServer(t *testing.T) (*MockFlightServer, *grpc.Server, net.Listene
 
 	// Wait a tiny bit for server to be ready? Usually Listen is enough.
 	time.Sleep(10 * time.Millisecond)
-	return mock, s, lis
+	return mock, s
 }
 
 func TestSmartClient_Redirection(t *testing.T) {
 	// Setup Node 1 (Redirects)
-	mock1, s1, _ := startMockServer(t)
+	mock1, s1 := startMockServer(t)
 	defer s1.Stop()
 
 	// Setup Node 2 (Success)
-	mock2, s2, _ := startMockServer(t)
+	mock2, s2 := startMockServer(t)
 	defer s2.Stop()
 
 	// Configure mock1 to redirect to mock2
@@ -129,7 +129,7 @@ func TestSmartClient_Redirection(t *testing.T) {
 
 func TestSmartClient_MaxRedirects(t *testing.T) {
 	// Setup Node 1 (Redirects loop)
-	mock1, s1, _ := startMockServer(t)
+	mock1, s1 := startMockServer(t)
 	defer s1.Stop()
 
 	mock1.shouldError = true

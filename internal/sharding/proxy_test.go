@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/rs/zerolog"
+	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
@@ -21,7 +21,8 @@ func TestPartitionProxyInterceptor_Local(t *testing.T) {
 	// Since we only have one node, all keys land on it
 	key := "some-key"
 
-	forwarder := NewRequestForwarder(DefaultForwarderConfig(), rm)
+	fwdCfg := DefaultForwarderConfig()
+	forwarder := NewRequestForwarder(&fwdCfg, rm)
 	interceptor := PartitionProxyInterceptor(rm, forwarder)
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return "success", nil
@@ -43,7 +44,8 @@ func TestPartitionProxyInterceptor_Remote(t *testing.T) {
 	// So consistent hash has only "remote-node". All keys go there.
 
 	key := "some-key"
-	forwarder := NewRequestForwarder(DefaultForwarderConfig(), rm)
+	fwdCfg := DefaultForwarderConfig()
+	forwarder := NewRequestForwarder(&fwdCfg, rm)
 	interceptor := PartitionProxyInterceptor(rm, forwarder)
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return "should-not-be-called", nil

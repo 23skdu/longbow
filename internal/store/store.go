@@ -37,7 +37,6 @@ type VectorStore struct {
 
 	// Lifecycle
 	stopChan chan struct{}
-	stopOnce sync.Once
 	indexWg  sync.WaitGroup // For background workers
 	mu       sync.RWMutex   // Protects datasets map (global lock, replaced by ShardedMap technically but kept for simple map access)
 
@@ -253,52 +252,3 @@ func (s *VectorStore) MerkleRoot(name string) [32]byte {
 }
 
 // IndexJob is defined in dataset.go
-
-func (s *VectorStore) startIndexingWorkers(count int) {
-	for i := 0; i < count; i++ {
-		s.indexWg.Add(1)
-		go s.runIndexWorker()
-	}
-}
-
-func (s *VectorStore) runIndexWorker() {
-	defer s.indexWg.Done()
-
-	// If indexQueue.Jobs() exists
-	for job := range s.indexQueue.Jobs() {
-		s.processIndexJob(job)
-	}
-}
-
-func (s *VectorStore) processIndexJob(job IndexJob) {
-	defer job.Record.Release()
-
-	ds, err := s.getDataset(job.DatasetName)
-	if err != nil {
-		s.logger.Error().Err(err).Str("dataset", job.DatasetName).Msg("Indexing job failed: dataset not found")
-		return
-	}
-
-	ds.dataMu.RLock()
-	idx := ds.Index
-	ds.dataMu.RUnlock()
-
-	if idx == nil {
-		// Index not initialized
-		return
-	}
-
-	// Assuming HNSWIndex or similar implementing AddSafe or AddByRecord
-	if hnswIdx, ok := idx.(*HNSWIndex); ok {
-		numRows := int(job.Record.NumRows())
-		for r := 0; r < numRows; r++ {
-			_, err := hnswIdx.AddSafe(job.Record, r, job.BatchIdx)
-			if err != nil {
-				s.logger.Error().Err(err).Int("row", r).Msg("Indexing failed for row")
-			}
-		}
-	} else {
-		// Try VectorIndex generic AddByRecord?
-		// idx.AddByRecord(job.Record, 0, job.BatchIdx)
-	}
-}

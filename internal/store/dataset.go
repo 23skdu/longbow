@@ -3,12 +3,15 @@ package store
 import (
 	"errors"
 	"os"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	qry "github.com/23skdu/longbow/internal/query"
+
 	"github.com/apache/arrow-go/v18/arrow"
+	"github.com/apache/arrow-go/v18/arrow/array"
 )
 
 // IndexJob represents a job for the indexing worker
@@ -17,6 +20,12 @@ type IndexJob struct {
 	Record      arrow.RecordBatch
 	BatchIdx    int
 	CreatedAt   time.Time
+}
+
+// RowLocation represents a physical location of a row
+type RowLocation struct {
+	BatchIdx int
+	RowIdx   int
 }
 
 // Dataset wraps records with metadata for eviction and tombstones
@@ -35,6 +44,9 @@ type Dataset struct {
 
 	// BatchNodes tracks which NUMA node each RecordBatch is allocated on
 	BatchNodes []int
+
+	// PrimaryIndex maps ID -> Physical Location (O(1) lookup)
+	PrimaryIndex map[string]RowLocation
 
 	// Memory tracking
 	SizeBytes        atomic.Int64
@@ -110,6 +122,7 @@ func NewDataset(name string, schema *arrow.Schema) *Dataset {
 		BatchNodes:      make([]int, 0),
 		Schema:          schema,
 		Tombstones:      make(map[int]*qry.Bitset),
+		PrimaryIndex:    make(map[string]RowLocation),
 		LWW:             NewTimestampMap(),
 		Merkle:          NewMerkleTree(),
 		InvertedIndexes: make(map[string]*InvertedIndex),
@@ -234,5 +247,71 @@ func (d *Dataset) Close() {
 	}
 	d.InvertedIndexes = make(map[string]*InvertedIndex)
 
-	d.Graph = nil
+	if d.Index != nil {
+		_ = d.Index.Close()
+		d.Index = nil
+	}
+
+	if d.BM25Index != nil {
+		_ = d.BM25Index.Close()
+		d.BM25Index = nil
+	}
+
+	if d.Graph != nil {
+		_ = d.Graph.Close()
+		d.Graph = nil
+	}
+
+	d.PrimaryIndex = nil
+	d.recordEviction = nil
+}
+
+// UpdatePrimaryIndex updates the ID mapping for a given batch
+// The caller must hold dataMu lock.
+func (d *Dataset) UpdatePrimaryIndex(batchIdx int, rec arrow.RecordBatch) {
+	if d.PrimaryIndex == nil {
+		d.PrimaryIndex = make(map[string]RowLocation)
+	}
+
+	idColIdx := -1
+	for i, f := range rec.Schema().Fields() {
+		if f.Name == "id" {
+			idColIdx = i
+			break
+		}
+	}
+
+	if idColIdx == -1 {
+		return
+	}
+
+	col := rec.Column(idColIdx)
+	numRows := int(rec.NumRows())
+
+	switch arr := col.(type) {
+	case *array.String:
+		for i := 0; i < numRows; i++ {
+			if arr.IsValid(i) {
+				d.PrimaryIndex[arr.Value(i)] = RowLocation{BatchIdx: batchIdx, RowIdx: i}
+			}
+		}
+	case *array.Int64:
+		for i := 0; i < numRows; i++ {
+			if arr.IsValid(i) {
+				idStr := strconv.FormatInt(arr.Value(i), 10)
+				d.PrimaryIndex[idStr] = RowLocation{BatchIdx: batchIdx, RowIdx: i}
+			}
+		}
+	case *array.Uint64:
+		for i := 0; i < numRows; i++ {
+			if arr.IsValid(i) {
+				idStr := strconv.FormatUint(arr.Value(i), 10)
+				d.PrimaryIndex[idStr] = RowLocation{BatchIdx: batchIdx, RowIdx: i}
+			}
+		}
+	default:
+		// Fallback to string representation?
+		// For consistency with vector value checks, we typically require specific types.
+		// Ignoring unsupported types for primary index for now.
+	}
 }

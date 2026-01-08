@@ -35,11 +35,15 @@ type ChunkedLocationStore struct {
 	mu     sync.RWMutex // Protects growth (appending chunks)
 	chunks atomic.Pointer[[]*locationChunk]
 	size   atomic.Uint32 // Total number of locations (simulates len)
+	// reverseMap maps packed location (uint64) to VectorID for O(1) reverse lookup.
+	reverseMap map[uint64]VectorID
 }
 
 // NewChunkedLocationStore creates a new store.
 func NewChunkedLocationStore() *ChunkedLocationStore {
-	s := &ChunkedLocationStore{}
+	s := &ChunkedLocationStore{
+		reverseMap: make(map[uint64]VectorID),
+	}
 	// Initialize with empty slice
 	empty := make([]*locationChunk, 0)
 	s.chunks.Store(&empty)
@@ -66,6 +70,15 @@ func (s *ChunkedLocationStore) Get(id VectorID) (Location, bool) {
 	// but VectorID allocation is unique.
 	packed := chunks[chunkIdx].data[offset].Load()
 	return unpackLocation(packed), true
+}
+
+// GetID returns the ID for a given location using the reverse index.
+// Returns (id, true) if found, (0, false) otherwise.
+func (s *ChunkedLocationStore) GetID(loc Location) (VectorID, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	id, ok := s.reverseMap[packLocation(loc)]
+	return id, ok
 }
 
 // GetBatch retrieves locations for multiple IDs efficiently.
@@ -106,8 +119,19 @@ func (s *ChunkedLocationStore) Set(id VectorID, loc Location) {
 	chunkIdx := idx / LocationChunkSize
 	offset := idx % LocationChunkSize
 
+	packed := packLocation(loc)
+
 	if chunkIdx < len(chunks) {
-		chunks[chunkIdx].data[offset].Store(packLocation(loc))
+		// Update reverse map
+		// We need to know previous location to remove it?
+		// Or just set strict mapping.
+		// If we overwrite, the old reverse mapping becomes stale.
+		// To keep reverse map clean, ideally we remove the old mapping.
+		// For performance, acquiring lock is necessary.
+		s.mu.Lock()
+		chunks[chunkIdx].data[offset].Store(packed)
+		s.reverseMap[packed] = id
+		s.mu.Unlock()
 	}
 }
 
@@ -148,7 +172,9 @@ func (s *ChunkedLocationStore) Append(loc Location) VectorID {
 		currentChunk = oldChunks[chunkIdx]
 	}
 
-	currentChunk.data[offset].Store(packLocation(loc))
+	packed := packLocation(loc)
+	currentChunk.data[offset].Store(packed)
+	s.reverseMap[packed] = VectorID(currentID) // Update reverse map
 	s.size.Add(1)
 	return VectorID(currentID)
 }
@@ -189,7 +215,9 @@ func (s *ChunkedLocationStore) BatchAppend(locs []Location) (startID VectorID) {
 		absIdx := currentID + i
 		cIdx := absIdx / LocationChunkSize
 		off := absIdx % LocationChunkSize
-		currentChunks[cIdx].data[off].Store(packLocation(loc))
+		packed := packLocation(loc)
+		currentChunks[cIdx].data[off].Store(packed)
+		s.reverseMap[packed] = VectorID(absIdx) // Update reverse map
 	}
 
 	s.size.Store(uint32(targetEnd))
@@ -240,31 +268,9 @@ func (s *ChunkedLocationStore) EnsureCapacity(id VectorID) {
 	}
 	s.chunks.Store(&newChunks)
 
-	// We also need to ensure 'size' reflects this growth?
-	// 'size' tracks 'Len'. If we just reserve capacity, size might lag if we store sparsely?
-	// But ShardedHNSW uses sequential IDs.
-	// We'll leave 'size' management to Append or explicit SetSize if needed.
-	// For Get() to work, 'size' check is performed: `if uint32(id) >= s.size.Load()`.
-	// So we MUST update size if we intend to allow Get(id) to succeed immediately.
-	// But `Set` doesn't update size.
-	// If we use sequential allocation in ShardedHNSW, we should update size there or here.
-	// Let's allow updating size if id >= size.
-
 	currentSize := s.size.Load()
 	if uint32(id) >= currentSize {
 		s.UpdateSize(id)
-		// Since we hold lock, we can store?
-		// But size is atomic.
-		// Let's just update size strictly if we are extending.
-		// Wait, multiple threads calling EnsureCapacity(id) might race on size update.
-		// But we hold 'mu' for growth. Is 'mu' protecting size? No, size is atomic.
-		// Maybe we shouldn't couple Capacity with Size.
-		// Let Get() rely on chunk existence, removing the size check?
-		// Or update size lazily?
-		// The existing Get() implementation: `if uint32(id) >= s.size.Load() { return false }`
-		// This prevents reading "unallocated" slots.
-		// In ShardedHNSW, we assign ID -> atomic increment size -> Set Location.
-		// So we should handle size update.
 	}
 }
 
@@ -289,6 +295,8 @@ func (s *ChunkedLocationStore) Reset() {
 	s.size.Store(0)
 	empty := make([]*locationChunk, 0)
 	s.chunks.Store(&empty)
+	// Clear map
+	s.reverseMap = make(map[uint64]VectorID)
 }
 
 // IterateMutable iterates over all locations, allowing atomic modification.

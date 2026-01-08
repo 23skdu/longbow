@@ -13,23 +13,6 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/scalar"
 )
 
-// validateRecordBatch checks for common internal inconsistencies in a record batch
-func validateRecordBatch(rec arrow.RecordBatch) error {
-	if int64(rec.NumCols()) != int64(rec.Schema().NumFields()) {
-		return fmt.Errorf("columns/fields mismatch: cols=%d, fields=%d", rec.NumCols(), rec.Schema().NumFields())
-	}
-	rows := rec.NumRows()
-	for i, col := range rec.Columns() {
-		if col == nil {
-			return fmt.Errorf("column %d is nil", i)
-		}
-		if int64(col.Len()) != rows {
-			return fmt.Errorf("column %d length mismatch: expected %d, got %d", i, rows, col.Len())
-		}
-	}
-	return nil
-}
-
 // EnsureTimestampZeroCopy ensures the record has a timestamp column, adding one if missing (zero-copy optimized)
 func EnsureTimestampZeroCopy(mem memory.Allocator, rec arrow.RecordBatch) (arrow.RecordBatch, error) {
 	schema := rec.Schema()
@@ -281,6 +264,9 @@ func filterRecord(ctx context.Context, _ memory.Allocator, rec arrow.RecordBatch
 		case arrow.FLOAT32:
 			v, _ := strconv.ParseFloat(f.Value, 32)
 			sc = scalar.NewFloat32Scalar(float32(v))
+		case arrow.FLOAT64:
+			v, _ := strconv.ParseFloat(f.Value, 64)
+			sc = scalar.NewFloat64Scalar(v)
 		case arrow.STRING:
 			sc = scalar.NewStringScalar(f.Value)
 		default:
@@ -332,6 +318,21 @@ func filterRecord(ctx context.Context, _ memory.Allocator, rec arrow.RecordBatch
 	}
 
 	filterRes, err := compute.CallFunction(ctx, "filter", nil, compute.NewDatum(rec), compute.NewDatum(mask.Data()))
+	if err != nil {
+		return nil, err
+	}
+	return filterRes.(*compute.RecordDatum).Value, nil
+}
+
+// filterRecordWithMask applies a pre-computed boolean mask to filter the record batch.
+func filterRecordWithMask(ctx context.Context, _ memory.Allocator, rec arrow.RecordBatch, mask *array.Boolean) (arrow.RecordBatch, error) {
+	if mask == nil {
+		rec.Retain()
+		return rec, nil
+	}
+	// compute.Filter expects a Datum for the selection
+	maskDatum := compute.NewDatum(mask.Data())
+	filterRes, err := compute.CallFunction(ctx, "filter", nil, compute.NewDatum(rec), maskDatum)
 	if err != nil {
 		return nil, err
 	}

@@ -1,6 +1,5 @@
 package store
 
-
 import (
 	"context"
 	"testing"
@@ -146,7 +145,7 @@ func TestVectorStore_FilterRecordOptimized_WithIndex(t *testing.T) {
 	store.IndexRecordColumns("test-dataset", rec, 0)
 
 	// Filter using indexed column
-	filters := []query.Filter{{Field: "category", Operator: "=", Value: "TARGET"}}
+	filters := []query.Filter{{Field: "category", Operator: "=", Value: "A"}}
 	result, err := store.filterRecordOptimized(context.Background(), "test-dataset", rec, 0, filters)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)

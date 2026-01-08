@@ -97,6 +97,21 @@ func NewArrowSearchContextPool() *sync.Pool {
 	}
 }
 
+func (c *ArrowSearchContext) Reset() {
+	if c.visited != nil {
+		c.visited.Clear()
+	}
+	if c.candidates != nil {
+		c.candidates.Clear()
+	}
+	if c.resultSet != nil {
+		c.resultSet.Clear()
+	}
+	c.scratchIDs = c.scratchIDs[:0]
+	c.scratchDists = c.scratchDists[:0]
+	c.scratchNeighbors = c.scratchNeighbors[:0]
+}
+
 type ArrowHNSW struct {
 	config  ArrowHNSWConfig
 	dataset *Dataset

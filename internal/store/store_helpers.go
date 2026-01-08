@@ -341,7 +341,7 @@ func filterRecordWithMask(ctx context.Context, _ memory.Allocator, rec arrow.Rec
 
 // castRecordToSchema aligns a record batch to the target schema.
 // For now, it performs checking and basic re-ordering.
-func castRecordToSchema(_ memory.Allocator, rec arrow.RecordBatch, targetSchema *arrow.Schema) (arrow.RecordBatch, error) {
+func castRecordToSchema(mem memory.Allocator, rec arrow.RecordBatch, targetSchema *arrow.Schema) (arrow.RecordBatch, error) {
 	if rec.Schema().Equal(targetSchema) {
 		rec.Retain()
 		return rec, nil
@@ -351,7 +351,9 @@ func castRecordToSchema(_ memory.Allocator, rec arrow.RecordBatch, targetSchema 
 	for i, field := range targetSchema.Fields() {
 		indices := rec.Schema().FieldIndices(field.Name)
 		if len(indices) == 0 {
-			return nil, fmt.Errorf("missing field %s in record batch", field.Name)
+			// Field missing in record, fill with nulls
+			cols[i] = createNullArray(mem, field.Type, int(rec.NumRows()))
+			continue
 		}
 		col := rec.Column(indices[0])
 
@@ -365,4 +367,14 @@ func castRecordToSchema(_ memory.Allocator, rec arrow.RecordBatch, targetSchema 
 	}
 
 	return array.NewRecordBatch(targetSchema, cols, rec.NumRows()), nil
+}
+
+func createNullArray(mem memory.Allocator, dt arrow.DataType, length int) arrow.Array {
+	b := array.NewBuilder(mem, dt)
+	defer b.Release()
+	b.Reserve(length)
+	for i := 0; i < length; i++ {
+		b.AppendNull()
+	}
+	return b.NewArray()
 }

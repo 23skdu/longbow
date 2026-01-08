@@ -4,6 +4,8 @@ import (
 	"errors"
 	"sync"
 	"unsafe"
+
+	"github.com/23skdu/longbow/internal/metrics"
 )
 
 // Common errors
@@ -38,6 +40,8 @@ func NewSlabArena(slabSize int) *SlabArena {
 	if slabSize <= 0 {
 		slabSize = 16 * 1024 * 1024 // 16MB default
 	}
+	metrics.ArenaSlabsTotal.Inc()
+	metrics.ArenaAllocatedBytes.WithLabelValues("slab_init").Add(float64(slabSize))
 	return &SlabArena{
 		slabSize: slabSize,
 		slabs:    [][]byte{make([]byte, slabSize)},
@@ -69,6 +73,8 @@ func (a *SlabArena) Alloc(size int) (uint64, error) {
 		a.slabs = append(a.slabs, newSlab)
 		a.currentSlabIdx++
 		a.currentOffset = 0
+		metrics.ArenaSlabsTotal.Inc()
+		metrics.ArenaAllocatedBytes.WithLabelValues("slab_grow").Add(float64(a.slabSize))
 	}
 
 	// Alloc

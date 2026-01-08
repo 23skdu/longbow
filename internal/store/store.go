@@ -14,6 +14,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/23skdu/longbow/internal/mesh"
+	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/storage"
 )
 
@@ -157,6 +158,7 @@ func (s *VectorStore) updateDatasets(fn func(map[string]*Dataset)) {
 			return
 		}
 		// Contention, retry
+		metrics.DatasetUpdateRetriesTotal.Inc()
 		// time.Sleep(time.Nanosecond) // optional
 		runtime.Gosched()
 	}

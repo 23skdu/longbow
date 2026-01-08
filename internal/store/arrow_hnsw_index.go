@@ -300,6 +300,12 @@ func (h *ArrowHNSW) GetLocation(id VectorID) (Location, bool) {
 	return h.locationStore.Get(id)
 }
 
+// GetVectorID implements VectorIndex.
+// It returns the ID for a given location using the reverse index.
+func (h *ArrowHNSW) GetVectorID(loc Location) (VectorID, bool) {
+	return h.locationStore.GetID(loc)
+}
+
 // SetLocation allows manually setting the location for a vector ID.
 // This is used by ShardedHNSW to populate shard-local location stores for filtering.
 func (h *ArrowHNSW) SetLocation(id VectorID, loc Location) {

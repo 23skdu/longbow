@@ -7,6 +7,7 @@ import (
 	"slices"
 	"sync"
 	"sync/atomic"
+	"unsafe"
 
 	"time"
 
@@ -119,7 +120,11 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec []float32, level int) error 
 	data = h.ensureChunk(data, cID, cOff, dims)
 
 	// Initialize the new node
-	(*data.Levels[cID])[cOff] = uint8(level)
+	// Initialize the new node
+	// Access the chunk pointer atomically as it might have been set by ensureChunk via CAS
+	levelsPtr := atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&data.Levels[cID])))
+	levelsChunk := (*[]uint8)(levelsPtr)
+	(*levelsChunk)[cOff] = uint8(level)
 
 	// Cache dimensions on first insert
 	if dims == 0 && len(vec) > 0 {

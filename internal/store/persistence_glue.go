@@ -45,6 +45,7 @@ func (s *VectorStore) InitPersistence(cfg storage.StorageConfig) error {
 	}
 
 	// Start snapshot ticker
+	s.workerWg.Add(1)
 	go s.runSnapshotTicker(cfg.SnapshotInterval)
 
 	return nil
@@ -332,6 +333,7 @@ func releaseItem(item *storage.SnapshotItem) {
 }
 
 func (s *VectorStore) runSnapshotTicker(interval time.Duration) {
+	defer s.workerWg.Done()
 	if interval <= 0 {
 		return
 	}

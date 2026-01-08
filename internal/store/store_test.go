@@ -361,7 +361,6 @@ func TestEviction(t *testing.T) {
 		ds2.SizeBytes.Store(calculateRecordSize(rec))
 		store.datasets["ds2"] = ds2
 		store.currentMemory.Add(calculateRecordSize(rec))
-		store.currentMemory.Add(calculateRecordSize(rec))
 		store.mu.Unlock()
 
 		// Dataset 3 (Triggers eviction of ds1)

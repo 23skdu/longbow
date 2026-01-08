@@ -45,9 +45,10 @@ type GraphStore struct {
 	predicateToIdx map[string]uint16
 
 	// Indices (Adjacency Lists) maps value -> list of edge indices
-	subjectIndex        map[VectorID][]int
-	objectIndex         map[VectorID][]int
-	predicateValueIndex map[uint16][]int
+	// Sharded by [hash(key) % 256] matching indexShards
+	subjectIndex        [256]map[VectorID][]int
+	objectIndex         [256]map[VectorID][]int
+	predicateValueIndex [256]map[uint16][]int
 
 	// Community detection results (protected by dataMu for now)
 	nodeCommunity map[VectorID]int
@@ -56,18 +57,23 @@ type GraphStore struct {
 
 // NewGraphStore creates a new empty graph store
 func NewGraphStore() *GraphStore {
-	return &GraphStore{
-		subjects:            make([]VectorID, 0),
-		objects:             make([]VectorID, 0),
-		predicates:          make([]uint16, 0),
-		weights:             make([]float32, 0),
-		predicateDict:       make([]string, 0),
-		predicateToIdx:      make(map[string]uint16),
-		subjectIndex:        make(map[VectorID][]int),
-		objectIndex:         make(map[VectorID][]int),
-		predicateValueIndex: make(map[uint16][]int),
-		dataMu:              NewMeasuredRWMutex("graph_store_data"),
+	gs := &GraphStore{
+		subjects:       make([]VectorID, 0),
+		objects:        make([]VectorID, 0),
+		predicates:     make([]uint16, 0),
+		weights:        make([]float32, 0),
+		predicateDict:  make([]string, 0),
+		predicateToIdx: make(map[string]uint16),
+		dataMu:         NewMeasuredRWMutex("graph_store_data"),
 	}
+
+	for i := 0; i < 256; i++ {
+		gs.subjectIndex[i] = make(map[VectorID][]int)
+		gs.objectIndex[i] = make(map[VectorID][]int)
+		gs.predicateValueIndex[i] = make(map[uint16][]int)
+	}
+
+	return gs
 }
 
 // shardForVectorID returns the lock shard index for a VectorID
@@ -118,19 +124,19 @@ func (gs *GraphStore) AddEdge(e Edge) error {
 	// Subject Index
 	sShard := gs.shardForVectorID(e.Subject)
 	gs.indexShards[sShard].Lock()
-	gs.subjectIndex[e.Subject] = append(gs.subjectIndex[e.Subject], idx)
+	gs.subjectIndex[sShard][e.Subject] = append(gs.subjectIndex[sShard][e.Subject], idx)
 	gs.indexShards[sShard].Unlock()
 
 	// Object Index
 	oShard := gs.shardForVectorID(e.Object)
 	gs.indexShards[oShard].Lock()
-	gs.objectIndex[e.Object] = append(gs.objectIndex[e.Object], idx)
+	gs.objectIndex[oShard][e.Object] = append(gs.objectIndex[oShard][e.Object], idx)
 	gs.indexShards[oShard].Unlock()
 
 	// Predicate Index
 	pShard := gs.shardForPredicate(predIdx)
 	gs.indexShards[pShard].Lock()
-	gs.predicateValueIndex[predIdx] = append(gs.predicateValueIndex[predIdx], idx)
+	gs.predicateValueIndex[pShard][predIdx] = append(gs.predicateValueIndex[pShard][predIdx], idx)
 	gs.indexShards[pShard].Unlock()
 
 	return nil
@@ -160,8 +166,8 @@ func (gs *GraphStore) GetEdgesBySubject(subject VectorID) []Edge {
 	// 1. Get Indices (Shard Lock)
 	shard := gs.shardForVectorID(subject)
 	gs.indexShards[shard].RLock()
-	indices := make([]int, len(gs.subjectIndex[subject]))
-	copy(indices, gs.subjectIndex[subject])
+	indices := make([]int, len(gs.subjectIndex[shard][subject]))
+	copy(indices, gs.subjectIndex[shard][subject])
 	gs.indexShards[shard].RUnlock()
 
 	// 2. Get Data (Global Data Lock)
@@ -180,8 +186,8 @@ func (gs *GraphStore) GetEdgesByObject(object VectorID) []Edge {
 	// 1. Get Indices (Shard Lock)
 	shard := gs.shardForVectorID(object)
 	gs.indexShards[shard].RLock()
-	indices := make([]int, len(gs.objectIndex[object]))
-	copy(indices, gs.objectIndex[object])
+	indices := make([]int, len(gs.objectIndex[shard][object]))
+	copy(indices, gs.objectIndex[shard][object])
 	gs.indexShards[shard].RUnlock()
 
 	// 2. Get Data (Global Data Lock)
@@ -208,8 +214,8 @@ func (gs *GraphStore) GetEdgesByPredicate(predicate string) []Edge {
 	// 1. Get Indices (Shard Lock)
 	shard := gs.shardForPredicate(predIdx)
 	gs.indexShards[shard].RLock()
-	indices := make([]int, len(gs.predicateValueIndex[predIdx]))
-	copy(indices, gs.predicateValueIndex[predIdx])
+	indices := make([]int, len(gs.predicateValueIndex[shard][predIdx]))
+	copy(indices, gs.predicateValueIndex[shard][predIdx])
 	gs.indexShards[shard].RUnlock()
 
 	// 2. Get Data (Global Data Lock)
@@ -388,17 +394,17 @@ func (gs *GraphStore) FromArrowBatch(batch arrow.Record) error { //nolint:static
 		// Indices
 		sShard := gs.shardForVectorID(subj)
 		gs.indexShards[sShard].Lock()
-		gs.subjectIndex[subj] = append(gs.subjectIndex[subj], idx)
+		gs.subjectIndex[sShard][subj] = append(gs.subjectIndex[sShard][subj], idx)
 		gs.indexShards[sShard].Unlock()
 
 		oShard := gs.shardForVectorID(obj)
 		gs.indexShards[oShard].Lock()
-		gs.objectIndex[obj] = append(gs.objectIndex[obj], idx)
+		gs.objectIndex[oShard][obj] = append(gs.objectIndex[oShard][obj], idx)
 		gs.indexShards[oShard].Unlock()
 
 		pShard := gs.shardForPredicate(predIdx)
 		gs.indexShards[pShard].Lock()
-		gs.predicateValueIndex[predIdx] = append(gs.predicateValueIndex[predIdx], idx)
+		gs.predicateValueIndex[pShard][predIdx] = append(gs.predicateValueIndex[pShard][predIdx], idx)
 		gs.indexShards[pShard].Unlock()
 	}
 
@@ -525,7 +531,7 @@ func (gs *GraphStore) Traverse(start VectorID, opts TraverseOptions) []Path {
 		if opts.Direction == DirectionOutgoing || opts.Direction == DirectionBoth {
 			shard := gs.shardForVectorID(current)
 			gs.indexShards[shard].RLock()
-			indices = append(indices, gs.subjectIndex[current]...)
+			indices = append(indices, gs.subjectIndex[shard][current]...)
 			gs.indexShards[shard].RUnlock()
 		}
 
@@ -536,7 +542,7 @@ func (gs *GraphStore) Traverse(start VectorID, opts TraverseOptions) []Path {
 		if opts.Direction == DirectionIncoming || opts.Direction == DirectionBoth {
 			shard := gs.shardForVectorID(current)
 			gs.indexShards[shard].RLock()
-			incomingIndices = append(incomingIndices, gs.objectIndex[current]...)
+			incomingIndices = append(incomingIndices, gs.objectIndex[shard][current]...)
 			gs.indexShards[shard].RUnlock()
 		}
 
@@ -926,16 +932,13 @@ func (gs *GraphStore) Close() error {
 	gs.predicateToIdx = nil
 
 	for i := 0; i < 256; i++ {
-		// We can't nil the shard itself as it's an array element, but we can nil the maps it protects
-		// No need to lock here if we are closing; if concurrency exists, defer unlock is needed.
-		// Assuming Close is exclusive. If not, missing defer.
 		gs.indexShards[i].Lock()
-		gs.indexShards[i].Unlock() //nolint:staticcheck // barrier behavior
+		gs.subjectIndex[i] = nil
+		gs.objectIndex[i] = nil
+		gs.predicateValueIndex[i] = nil
+		gs.indexShards[i].Unlock()
 	}
 
-	gs.subjectIndex = nil
-	gs.objectIndex = nil
-	gs.predicateValueIndex = nil
 	gs.nodeCommunity = nil
 	gs.communities = nil
 

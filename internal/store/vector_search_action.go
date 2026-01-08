@@ -84,8 +84,8 @@ func (s *VectorStore) handleVectorSearchAction(action *flight.Action, stream fli
 			}
 		} else {
 			// Standard Vector Search
-			ds, err := s.getDataset(req.Dataset)
-			if err != nil {
+			ds, ok := s.getDataset(req.Dataset)
+			if !ok {
 				metrics.VectorSearchActionErrors.Inc()
 				return status.Errorf(codes.NotFound, "dataset not found: %s", req.Dataset)
 			}
@@ -234,9 +234,9 @@ func (s *VectorStore) handleVectorSearchByIDAction(action *flight.Action, stream
 		return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
 	}
 
-	ds, err := s.getDataset(req.Dataset)
-	if err != nil {
-		return err
+	ds, ok := s.getDataset(req.Dataset)
+	if !ok {
+		return status.Errorf(codes.NotFound, "dataset not found: %s", req.Dataset)
 	}
 
 	ds.dataMu.RLock()

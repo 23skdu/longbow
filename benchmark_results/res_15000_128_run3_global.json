@@ -1,0 +1,14 @@
+[
+  {
+    "name": "VectorSearch",
+    "duration_seconds": 1.0864417552947998,
+    "throughput": 920.4359047564917,
+    "throughput_unit": "queries/s",
+    "rows": 10000,
+    "bytes_processed": 0,
+    "p50_ms": 1.0405778884887695,
+    "p95_ms": 1.4951229095458984,
+    "p99_ms": 2.233743667602539,
+    "errors": 0
+  }
+]

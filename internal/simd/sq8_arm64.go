@@ -12,7 +12,8 @@ func init() {
 }
 
 //go:noescape
-func euclideanSQ8NEONKernel(a, b unsafe.Pointer, n int) int32
+//nolint:unused
+func euclideanSQ8NEONKernel(a, b unsafe.Pointer, len int) int32
 
 // func euclideanSQ8NEON(a, b []byte) int32 {
 // 	if len(a) != len(b) || len(a) == 0 {

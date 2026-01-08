@@ -22,8 +22,8 @@ func (s *VectorStore) GetHybridSearchConfig() HybridSearchConfig {
 
 // SetHybridSearchConfig updates the hybrid search configuration.
 func (s *VectorStore) SetHybridSearchConfig(cfg HybridSearchConfig) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.configMu.Lock()
+	defer s.configMu.Unlock()
 	s.hybridSearchConfig = cfg
 	if cfg.Enabled && s.bm25Index == nil {
 		s.bm25Index = NewBM25InvertedIndex(cfg.BM25)

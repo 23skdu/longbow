@@ -1,6 +1,5 @@
 package store
 
-
 import (
 	"context"
 	"encoding/json"
@@ -9,9 +8,9 @@ import (
 
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/apache/arrow-go/v18/arrow/memory"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/rs/zerolog"
 )
 
 func TestGraphAPI_GetGraphStats(t *testing.T) {
@@ -30,9 +29,9 @@ func TestGraphAPI_GetGraphStats(t *testing.T) {
 		Name:  dsName,
 		Graph: NewGraphStore(),
 	}
-	s.mu.Lock()
-	s.datasets[dsName] = ds
-	s.mu.Unlock()
+	s.updateDatasets(func(m map[string]*Dataset) {
+		m[dsName] = ds
+	})
 
 	// 2. Add some data
 	_ = ds.Graph.AddEdge(Edge{Subject: 1, Predicate: "knows", Object: 2, Weight: 1.0})

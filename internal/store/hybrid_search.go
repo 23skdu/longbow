@@ -8,6 +8,8 @@ import (
 
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/query"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // HybridSearchRequest encapsulates parameters for hybrid search.
@@ -40,9 +42,9 @@ func SearchHybrid(ctx context.Context, s *VectorStore, name string, queryVec []f
 		Int("k", k).
 		Msg("SearchHybrid called")
 
-	ds, err := s.getDataset(name)
-	if err != nil {
-		return nil, err
+	ds, ok := s.getDataset(name)
+	if !ok {
+		return nil, status.Errorf(codes.NotFound, "dataset %s not found", name)
 	}
 
 	ds.dataMu.RLock()
@@ -118,9 +120,9 @@ func HybridSearch(ctx context.Context, s *VectorStore, name string, queryVec []f
 	defer func(start time.Time) {
 		metrics.SearchLatencySeconds.WithLabelValues(name, "hybrid_filtered").Observe(time.Since(start).Seconds())
 	}(time.Now())
-	ds, err := s.getDataset(name)
-	if err != nil {
-		return nil, err
+	ds, ok := s.getDataset(name)
+	if !ok {
+		return nil, status.Errorf(codes.NotFound, "dataset %s not found", name)
 	}
 
 	ds.dataMu.RLock()

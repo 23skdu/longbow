@@ -51,9 +51,8 @@ func TestPQPersistence(t *testing.T) {
 	// 2. Train PQ
 	time.Sleep(500 * time.Millisecond) // Allow async indexing
 
-	store.mu.RLock()
-	ds := store.datasets[datasetName]
-	store.mu.RUnlock()
+	ds, ok := store.getDataset(datasetName)
+	require.True(t, ok)
 	require.NotNil(t, ds)
 
 	// Manually inject PQ Config and Train
@@ -111,9 +110,7 @@ func TestPQPersistence(t *testing.T) {
 	err = store2.InitPersistence(storage.StorageConfig{DataPath: tmpDir})
 	require.NoError(t, err)
 
-	store2.mu.RLock()
-	ds2, ok := store2.datasets[datasetName]
-	store2.mu.RUnlock()
+	ds2, ok := store2.getDataset(datasetName)
 	require.True(t, ok)
 	require.NotNil(t, ds2.PQEncoder, "PQEncoder should be restored in Dataset")
 

@@ -13,7 +13,9 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/rs/zerolog"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 )
 
 type clientEntry struct {
@@ -109,6 +111,7 @@ func (c *GlobalSearchCoordinator) GlobalSearch(ctx context.Context, localResults
 			defer cancelHedge()
 
 			resultHedge := make(chan []SearchResult, 1) // First winner
+			failSignal := make(chan struct{}, len(replicas))
 			var wgReplicas sync.WaitGroup
 
 			subCtx, cancelTimeout := context.WithTimeout(ctxHedge, configTimeout)
@@ -122,6 +125,7 @@ func (c *GlobalSearchCoordinator) GlobalSearch(ctx context.Context, localResults
 
 					client, err := c.getClient(p.MetaAddr)
 					if err != nil {
+						failSignal <- struct{}{}
 						return
 					}
 					// Mark used
@@ -129,22 +133,34 @@ func (c *GlobalSearchCoordinator) GlobalSearch(ctx context.Context, localResults
 						entry.(*clientEntry).lastUse = time.Now()
 					}
 
+					c.logger.Debug().Str("peer", p.ID).Str("addr", p.MetaAddr).Msg("Sending DoGet to peer")
+
 					// DoGet with Search Ticket
 					ticketQuery := query.TicketQuery{
 						Search: &remoteReq,
 					}
 					ticketBytes, err := json.Marshal(ticketQuery)
 					if err != nil {
+						failSignal <- struct{}{}
 						return
 					}
 
 					stream, err := client.DoGet(subCtx, &flight.Ticket{Ticket: ticketBytes})
 					if err != nil {
+						// Only log at Debug level for NotFound as it happens when Sharding skips a node
+						if status.Code(err) == codes.NotFound {
+							c.logger.Debug().Err(err).Str("peer", p.ID).Msg("Peer does not have dataset")
+						} else {
+							c.logger.Warn().Err(err).Str("peer", p.ID).Msg("DoGet failed")
+						}
+						failSignal <- struct{}{}
 						return
 					}
 
 					reader, err := flight.NewRecordReader(stream)
 					if err != nil {
+						c.logger.Warn().Err(err).Str("peer", p.ID).Msg("NewRecordReader failed")
+						failSignal <- struct{}{}
 						return
 					}
 					defer reader.Release()
@@ -166,6 +182,7 @@ func (c *GlobalSearchCoordinator) GlobalSearch(ctx context.Context, localResults
 						}
 					}
 					if reader.Err() != nil {
+						failSignal <- struct{}{}
 						return
 					}
 
@@ -178,15 +195,35 @@ func (c *GlobalSearchCoordinator) GlobalSearch(ctx context.Context, localResults
 				}(rp)
 			}
 
-			// Wait for one success or timeout
-			select {
-			case res := <-resultHedge:
-				outCh <- res
-			case <-subCtx.Done():
-				metrics.GlobalSearchPartialFailures.Inc()
-			}
+			// Goroutine to signal when all failed
+			finishedAll := make(chan struct{})
+			go func() {
+				wgReplicas.Wait()
+				close(finishedAll)
+			}()
 
-			wgReplicas.Wait()
+			// Wait for one success, all failure, or timeout
+			failedCount := 0
+			for {
+				select {
+				case res := <-resultHedge:
+					outCh <- res
+					return
+				case <-failSignal:
+					failedCount++
+					if failedCount == len(replicas) {
+						// All replicas in this group failed, return early
+						metrics.GlobalSearchPartialFailures.Inc()
+						return
+					}
+				case <-finishedAll:
+					// Double check if we missed a result? theoretically shouldn't happen with resultHedge
+					return
+				case <-subCtx.Done():
+					metrics.GlobalSearchPartialFailures.Inc()
+					return
+				}
+			}
 		}(members, ch)
 	}
 

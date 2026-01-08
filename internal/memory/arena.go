@@ -118,16 +118,16 @@ func NewTypedArena[T any](arena *SlabArena) *TypedArena[T] {
 }
 
 // AllocSlice allocates space for 'len' elements of type T.
-func (t *TypedArena[T]) AllocSlice(len int) (SliceRef, error) {
-	sizeBytes := len * t.elemSize
+func (t *TypedArena[T]) AllocSlice(length int) (SliceRef, error) {
+	sizeBytes := length * t.elemSize
 	offset, err := t.arena.Alloc(sizeBytes)
 	if err != nil {
 		return SliceRef{}, err
 	}
 	return SliceRef{
 		Offset: offset,
-		Len:    uint32(len),
-		Cap:    uint32(len),
+		Len:    uint32(length),
+		Cap:    uint32(length),
 	}, nil
 }
 

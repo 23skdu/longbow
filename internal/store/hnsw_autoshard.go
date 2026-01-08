@@ -321,10 +321,12 @@ func (a *AutoShardingIndex) migrateToSharded() {
 
 	// Final swap
 	fmt.Printf("[DEBUG] migrateToSharded: Starting final swap at %d, n=%d\n", totalMigrated, n)
-	fmt.Println("[DEBUG] migrateToSharded: Acquiring a.mu.Lock for final swap...")
-	a.mu.Lock()
+
+	// LOCK ORDER: ds.dataMu MUST be locked before a.mu to avoid deadlock with Search
 	fmt.Println("[DEBUG] migrateToSharded: Acquiring a.dataset.dataMu.RLock for final swap...")
 	a.dataset.dataMu.RLock()
+	fmt.Println("[DEBUG] migrateToSharded: Acquiring a.mu.Lock for final swap...")
+	a.mu.Lock()
 	fmt.Println("[DEBUG] migrateToSharded: Locks acquired for final swap.")
 
 	if a.sharded {

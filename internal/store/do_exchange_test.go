@@ -239,9 +239,9 @@ func TestDoExchange_BidirectionalResponse(t *testing.T) {
 	ds.SetLastAccess(time.Now())
 	ds.Index = NewHNSWIndex(ds)
 
-	store.mu.Lock()
-	store.datasets["exchange-source"] = ds
-	store.mu.Unlock()
+	store.updateDatasets(func(m map[string]*Dataset) {
+		m["exchange-source"] = ds
+	})
 
 	dataServer := NewDataServer(store)
 

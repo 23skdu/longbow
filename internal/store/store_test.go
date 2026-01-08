@@ -344,43 +344,44 @@ func TestEviction(t *testing.T) {
 
 		// Add 3 datasets. 3rd one should force eviction of the 1st one.
 		// Dataset 1
-		store.mu.Lock()
+
 		ds1 := &Dataset{Name: "ds1", Records: []arrow.RecordBatch{rec}}
 		ds1.SetLastAccess(time.Now().Add(-time.Minute))
 		rec.Retain()
 		ds1.SizeBytes.Store(calculateRecordSize(rec))
-		store.datasets["ds1"] = ds1
+		rec.Retain()
+		ds1.SizeBytes.Store(calculateRecordSize(rec))
+		store.updateDatasets(func(m map[string]*Dataset) {
+			m["ds1"] = ds1
+		})
 		store.currentMemory.Add(calculateRecordSize(rec))
-		store.mu.Unlock()
 
 		// Dataset 2
-		store.mu.Lock()
 		ds2 := &Dataset{Name: "ds2", Records: []arrow.RecordBatch{rec}}
 		ds2.SetLastAccess(time.Now())
 		rec.Retain()
 		ds2.SizeBytes.Store(calculateRecordSize(rec))
-		store.datasets["ds2"] = ds2
+		store.updateDatasets(func(m map[string]*Dataset) {
+			m["ds2"] = ds2
+		})
 		store.currentMemory.Add(calculateRecordSize(rec))
-		store.mu.Unlock()
 
 		// Dataset 3 (Triggers eviction of ds1)
-		store.mu.Lock()
 		ds3 := &Dataset{Name: "ds3", Records: []arrow.RecordBatch{rec}}
 		ds3.SetLastAccess(time.Now())
 		rec.Retain()
 		ds3.SizeBytes.Store(calculateRecordSize(rec))
-		store.datasets["ds3"] = ds3
+		store.updateDatasets(func(m map[string]*Dataset) {
+			m["ds3"] = ds3
+		})
 		store.currentMemory.Add(calculateRecordSize(rec))
-		store.mu.Unlock()
 
 		// Now force eviction
 		store.evictIfNeeded()
 
 		// Check if ds1 is gone
-		store.mu.RLock()
-		ds1Res, ok1 := store.datasets["ds1"]
-		_, ok2 := store.datasets["ds2"]
-		store.mu.RUnlock()
+		ds1Res, ok1 := store.getDataset("ds1")
+		_, ok2 := store.getDataset("ds2")
 
 		if ok1 && len(ds1Res.Records) > 0 {
 			t.Error("ds1 records should have been evicted")

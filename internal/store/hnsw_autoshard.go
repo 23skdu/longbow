@@ -63,10 +63,10 @@ func NewAutoShardingIndex(ds *Dataset, config AutoShardingConfig) *AutoShardingI
 	if config.IndexConfig != nil {
 		idx = NewArrowHNSW(ds, *config.IndexConfig, nil)
 	} else {
-		// Initialize HNSW config with dataset metric
-		hnswConfig := DefaultConfig()
+		// Use HNSW2 default config if enabled (Forced for RC3 verification)
+		hnswConfig := DefaultArrowHNSWConfig()
 		hnswConfig.Metric = ds.Metric
-		idx = NewHNSWIndex(ds, hnswConfig)
+		idx = NewArrowHNSW(ds, hnswConfig, nil)
 	}
 
 	return &AutoShardingIndex{
@@ -85,6 +85,8 @@ func (a *AutoShardingIndex) SetInitialDimension(dim int) {
 		h.dimsOnce.Do(func() {
 			h.dims = dim
 		})
+	} else if h, ok := a.current.(*ArrowHNSW); ok {
+		h.SetDimension(dim)
 	}
 }
 
@@ -321,10 +323,12 @@ func (a *AutoShardingIndex) migrateToSharded() {
 
 	// Final swap
 	fmt.Printf("[DEBUG] migrateToSharded: Starting final swap at %d, n=%d\n", totalMigrated, n)
-	fmt.Println("[DEBUG] migrateToSharded: Acquiring a.mu.Lock for final swap...")
-	a.mu.Lock()
+
+	// LOCK ORDER: ds.dataMu MUST be locked before a.mu to avoid deadlock with Search
 	fmt.Println("[DEBUG] migrateToSharded: Acquiring a.dataset.dataMu.RLock for final swap...")
 	a.dataset.dataMu.RLock()
+	fmt.Println("[DEBUG] migrateToSharded: Acquiring a.mu.Lock for final swap...")
+	a.mu.Lock()
 	fmt.Println("[DEBUG] migrateToSharded: Locks acquired for final swap.")
 
 	if a.sharded {

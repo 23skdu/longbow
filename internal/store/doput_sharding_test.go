@@ -1,6 +1,5 @@
 package store
 
-
 import (
 	"sync"
 	"testing"
@@ -144,16 +143,16 @@ func TestVectorStoreGetDataset(t *testing.T) {
 	defer func() { _ = vs.Close() }()
 
 	// Should not exist yet
-	_, err := vs.getDataset("nonexistent")
-	if err == nil {
-		t.Error("expected error for nonexistent dataset")
+	_, ok := vs.getDataset("nonexistent")
+	if ok {
+		t.Error("expected missing dataset")
 	}
 
 	// Create dataset
 	ds := &Dataset{Name: "test"}
-	vs.mu.Lock()
-	vs.datasets["test"] = ds
-	vs.mu.Unlock()
+	vs.updateDatasets(func(m map[string]*Dataset) {
+		m["test"] = ds
+	})
 
 	// Now should exist
 	got, _ := vs.getDataset("test")
@@ -214,9 +213,10 @@ func TestDoPutAutoShardingIntegration(t *testing.T) {
 		Index: NewHNSWIndex(nil),
 	}
 	ds.Index.(*HNSWIndex).dataset = ds
-	vs.mu.Lock()
-	vs.datasets["test"] = ds
-	vs.mu.Unlock()
+	ds.Index.(*HNSWIndex).dataset = ds
+	vs.updateDatasets(func(m map[string]*Dataset) {
+		m["test"] = ds
+	})
 
 	// Verify not sharded initially
 	if ds.IsSharded() {
@@ -247,9 +247,10 @@ func TestDoPutConcurrentMigration(t *testing.T) {
 		Index: NewHNSWIndex(nil),
 	}
 	ds.Index.(*HNSWIndex).dataset = ds
-	vs.mu.Lock()
-	vs.datasets["concurrent"] = ds
-	vs.mu.Unlock()
+	ds.Index.(*HNSWIndex).dataset = ds
+	vs.updateDatasets(func(m map[string]*Dataset) {
+		m["concurrent"] = ds
+	})
 
 	// Enable auto-sharding
 	vs.SetAutoShardingConfig(AutoShardingConfig{

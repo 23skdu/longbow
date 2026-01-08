@@ -86,9 +86,9 @@ func TestCompaction_IndexIntegrity(t *testing.T) {
 	ds := NewDataset("test_compaction", schema)
 	ds.Index = NewHNSWIndex(ds)
 
-	s.mu.Lock()
-	s.datasets["test_compaction"] = ds
-	s.mu.Unlock()
+	s.updateDatasets(func(m map[string]*Dataset) {
+		m["test_compaction"] = ds
+	})
 
 	// 2. Add Vectors in small batches
 	for i := 0; i < 10; i++ {
@@ -168,9 +168,9 @@ func TestCompaction_Tombstones(t *testing.T) {
 
 	schema := arrow.NewSchema([]arrow.Field{{Name: "id", Type: arrow.PrimitiveTypes.Int64}}, nil)
 	ds := NewDataset("tombstone_test", schema)
-	s.mu.Lock()
-	s.datasets["tombstone_test"] = ds
-	s.mu.Unlock()
+	s.updateDatasets(func(m map[string]*Dataset) {
+		m["tombstone_test"] = ds
+	})
 
 	// Add 4 batches of 10
 	for i := 0; i < 4; i++ {

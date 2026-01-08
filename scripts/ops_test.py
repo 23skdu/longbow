@@ -266,14 +266,28 @@ def command_search(args, data_client, meta_client):
 
     
     try:
-        # Search is a DoAction on Meta Server with type "VectorSearch"
-        action = flight.Action("VectorSearch", payload)
-        options = get_options(args)
-        results = meta_client.do_action(action, options=options)
+        # Search via DoGet (Native Arrow Streaming)
+        # Construct Ticket with "search" wrapper
+        ticket_payload = {"search": request}
+        ticket = flight.Ticket(json.dumps(ticket_payload).encode("utf-8"))
         
-        for res in results:
-            body = json.loads(res.body.to_pybytes())
-            print(json.dumps(body, indent=2))
+        options = get_options(args)
+        if hasattr(args, 'global_search') and args.global_search:
+            headers = []
+            if hasattr(args, 'routing_key') and args.routing_key:
+                headers.append((b"x-longbow-key", args.routing_key.encode("utf-8")))
+            
+            headers.append((b"x-longbow-global", b"true"))
+            options = flight.FlightCallOptions(headers=headers)
+
+        reader = meta_client.do_get(ticket, options=options)
+        table = reader.read_all()
+        
+        # Print results
+        if HAS_POLARS:
+            print(pl.from_arrow(table))
+        else:
+            print(table.to_pandas())
             
     except flight.FlightError as e:
         print(f"Search failed: {e}")
@@ -469,24 +483,28 @@ def command_validate(args, data_client, meta_client):
     writer.close()
     
     print("  Inserted orthogonal vectors. Waiting for index...")
-    time.sleep(2) # Allow indexing
+    time.sleep(20) # Allow indexing
     
     # Search for ID 1 [0, 1, 0, 0]
     qvec = [0.0, 1.0, 0.0, 0.0]
     req = {"dataset": dataset, "vector": qvec, "k": 1}
-    action = flight.Action("VectorSearch", json.dumps(req).encode("utf-8"))
-    results = meta_client.do_action(action)
     
+    # Use DoGet
+    ticket_payload = {"search": req}
+    ticket = flight.Ticket(json.dumps(ticket_payload).encode("utf-8"))
+    
+    reader = meta_client.do_get(ticket, options=options)
     found = False
-    for res in results:
-        body = json.loads(res.body.to_pybytes())
-        res_ids = body.get("ids", [])
-        scores = body.get("scores", [])
-        if len(res_ids) > 0 and res_ids[0] == 1:
-            print(f"  PASS: Retrieved ID 1 as top result (Score: {scores[0]:.4f})")
-            found = True
+    try:
+        table = reader.read_all()
+        df = table.to_pandas()
+        if len(df) > 0 and df.iloc[0]['id'] == 1:
+             print(f"  PASS: Retrieved ID 1 as top result (Score: {df.iloc[0]['score']:.4f})")
+             found = True
         else:
-            print(f"  FAIL: Expected ID 1, got {res_ids}")
+             print(f"  FAIL: Expected ID 1, got {df['id'].tolist() if len(df) > 0 else 'None'}")
+    except Exception as e:
+        print(f"  FAIL: Search error: {e}")
             
     if not found:
         print("  FAIL: Search failed completely")
@@ -509,10 +527,10 @@ def command_validate(args, data_client, meta_client):
     texts_h = pa.array(meta_h, type=pa.string())
     
     table_h = pa.Table.from_arrays([ids_h, vectors_h, ts_h, texts_h], schema=pa.schema(fields))
-    writer, _ = data_client.do_put(descriptor, table.schema, options=options)
+    writer, _ = data_client.do_put(descriptor, table_h.schema, options=options)
     writer.write_table(table_h)
     writer.close()
-    time.sleep(2)
+    time.sleep(15)
     
     # Search with "apple" and alpha=0.1 (favor text)
     print("  Searching for 'apple' (Hybrid)...")
@@ -523,17 +541,19 @@ def command_validate(args, data_client, meta_client):
         "text_query": "apple",
         "alpha": 0.1 # Mostly sparse/text
     }
-    action = flight.Action("VectorSearch", json.dumps(req_h).encode("utf-8"))
-    results = meta_client.do_action(action)
     
-    found_h = False
-    for res in results:
-        body = json.loads(res.body.to_pybytes())
-        res_ids = body.get("ids", [])
-        if len(res_ids) > 0 and res_ids[0] == 11:
+    ticket_h = flight.Ticket(json.dumps({"search": req_h}).encode("utf-8"))
+    reader_h = meta_client.do_get(ticket_h, options=options)
+    try:
+        table_h = reader_h.read_all()
+        df_h = table_h.to_pandas()
+        if len(df_h) > 0 and df_h.iloc[0]['id'] == 11:
             print(f"  PASS: Retrieved ID 11 (apple) as top result")
             found_h = True
-            print(f"  FAIL: Expected ID 11, got {res_ids}")
+        else:
+             print(f"  FAIL: Expected ID 11, got {df_h['id'].tolist() if len(df_h) > 0 else 'None'}")
+    except Exception as e:
+        print(f"  FAIL: Hybrid search error: {e}")
 
     # =========================================================================
     # Test 2b: Adaptive Hybrid Search
@@ -550,19 +570,21 @@ def command_validate(args, data_client, meta_client):
         "text_query": "apple",
         "alpha": -1.0 # Adaptive
     }
-    action = flight.Action("VectorSearch", json.dumps(req_a).encode("utf-8"))
-    results = meta_client.do_action(action)
+    
+    ticket_a = flight.Ticket(json.dumps({"search": req_a}).encode("utf-8"))
+    reader_a = meta_client.do_get(ticket_a, options=options)
     
     found_a = False
-    for res in results:
-        body = json.loads(res.body.to_pybytes())
-        res_ids = body.get("ids", [])
-        if len(res_ids) > 0 and res_ids[0] == 11:
+    try:
+        table_a = reader_a.read_all()
+        df_a = table_a.to_pandas()
+        if len(df_a) > 0 and df_a.iloc[0]['id'] == 11:
             print(f"  PASS: Retrieved ID 11 with Adaptive Alpha")
             found_a = True
         else:
-            print(f"  FAIL: Expected ID 11, got {res_ids}")
-            # Identify what alpha was used if possible (server logs it)
+            print(f"  FAIL: Expected ID 11, got {df_a['id'].tolist() if len(df_a) > 0 else 'None'}")
+    except Exception as e:
+        print(f"  FAIL: Adaptive search error: {e}")
 
     # =========================================================================
     # Test 3: Graph Traversal Correctness
@@ -607,8 +629,10 @@ def command_validate(args, data_client, meta_client):
     # Manually add header
     options_g = flight.FlightCallOptions(headers=[(b"x-longbow-global", b"true")])
     try:
-        action = flight.Action("VectorSearch", json.dumps(req_g).encode("utf-8"))
-        list(meta_client.do_action(action, options=options_g))
+        # DoGet
+        ticket_g = flight.Ticket(json.dumps({"search": req_g}).encode("utf-8"))
+        reader_g = meta_client.do_get(ticket_g, options=options_g)
+        _ = reader_g.read_all()
         print("  PASS: Global search call completed without error")
     except Exception as e:
         print(f"  FAIL: Global search call failed: {e}")

@@ -256,7 +256,7 @@ type TestRerankMock struct {
 	Called bool
 }
 
-func (r *TestRerankMock) Rerank(ctx context.Context, query string, results []SearchResult) ([]SearchResult, error) {
+func (r *TestRerankMock) Rerank(ctx context.Context, text string, results []SearchResult) ([]SearchResult, error) {
 	r.Called = true
 	// Reverse results as a detectable change
 	for i, j := 0, len(results)-1; i < j; i, j = i+1, j-1 {
@@ -277,12 +277,12 @@ func TestHybridSearchPipeline_Reranking(t *testing.T) {
 	mock := &TestRerankMock{}
 	p.SetReranker(mock)
 
-	query := &HybridSearchQuery{
+	q := &HybridSearchQuery{
 		KeywordQuery: "hello",
 		K:            10,
 	}
 
-	results, err := p.Search(query)
+	results, err := p.Search(q)
 	if err != nil {
 		t.Fatalf("Search failed: %v", err)
 	}
@@ -323,7 +323,7 @@ func TestHybridSearchPipeline_ExactFilters(t *testing.T) {
 	bm25.Add(6, "skip me")
 	p.SetBM25Index(bm25)
 
-	query := &HybridSearchQuery{
+	q := &HybridSearchQuery{
 		KeywordQuery: "find",
 		ExactFilters: []query.Filter{
 			{Field: "category", Operator: "=", Value: "electronics"},
@@ -334,7 +334,7 @@ func TestHybridSearchPipeline_ExactFilters(t *testing.T) {
 	// For this test to work, we need createTestRecordBatch to actually have "electronics" at RowIdx 5
 	// But since we are testing applyExactFilters logic, we can also just mock what columnIndex returns.
 
-	results, err := p.Search(query)
+	results, err := p.Search(q)
 	if err != nil {
 		t.Fatalf("Search failed: %v", err)
 	}

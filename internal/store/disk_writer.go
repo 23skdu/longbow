@@ -19,14 +19,16 @@ func WriteDiskGraph(gd *GraphData, path string, maxNodeID int) error {
 	w := bufio.NewWriter(f)
 
 	// 1. Calculate Schema
-	// Find actual max level
+	// Find actual max level (and max node ID implicitly handled by caller via maxNodeID)
 	maxLayer := 0
 	for l := ArrowMaxLayers - 1; l >= 0; l-- {
 		// check if any node exists at this layer
 		hasNode := false
 		if l < len(gd.Neighbors) {
+			// Iterate efficiently: chunks are allocated sparsely?
+			// Actually gd.Neighbors[l] is a slice of chunk offsets.
 			for cID := 0; cID < len(gd.Neighbors[l]); cID++ {
-				if gd.Neighbors[l][cID] != nil {
+				if gd.Neighbors[l][cID] != 0 {
 					hasNode = true
 					break
 				}
@@ -43,28 +45,7 @@ func WriteDiskGraph(gd *GraphData, path string, maxNodeID int) error {
 	}
 
 	// PQ Dims Check
-	pqDims := 0
-	if gd.VectorsPQ != nil {
-		// Find first non-nil chunk to determine dims
-		for _, chunkPtr := range gd.VectorsPQ {
-			if chunkPtr != nil {
-				chunk := *chunkPtr
-				if len(chunk) > 0 {
-					// Chunk size is usually ChunkSize * PQDims
-					// But chunk might be partially filled? No, chunks are fixed size allocations.
-					// However, NewGraphData allocates slice headers, Grow allocates chunks.
-					// ChunkSize is 1024.
-					// We need to know PQ M.
-					// GraphData doesn't store PQ M explicitly?
-					// It stores Dims.
-					// Let's rely on config if available? But WriteDiskGraph only takes gd.
-					// We can infer: len(chunk) / ChunkSize = pqDims.
-					pqDims = len(chunk) / ChunkSize
-					break
-				}
-			}
-		}
-	}
+	pqDims := gd.PQDims
 
 	numNodes := uint32(maxNodeID)
 
@@ -101,7 +82,8 @@ func WriteDiskGraph(gd *GraphData, path string, maxNodeID int) error {
 		var offsets []uint64
 
 		for id := uint32(0); id < numNodes; id++ {
-			neighbors := gd.GetNeighbors(l, id, nil)
+			// GetNeighbors is safe:
+			neighbors := gd.GetNeighbors(l, id, nil) // buffer nil is okay? signature allows.
 			if neighbors == nil {
 				continue
 			}
@@ -123,6 +105,7 @@ func WriteDiskGraph(gd *GraphData, path string, maxNodeID int) error {
 			currentOffset += 4
 
 			// Write Neighbors
+			// Check byte order - little endian for disk format
 			byteLen := int(count) * 4
 			buf := make([]byte, byteLen)
 			for i, n := range neighbors {
@@ -198,18 +181,15 @@ func WriteDiskGraph(gd *GraphData, path string, maxNodeID int) error {
 	// 5. Write SQ8 Vectors
 	sq8Offset := uint64(0)
 	if gd.Dims > 0 {
-		// Align to 64 bytes?
-		// currentOffset check.
 		sq8Offset = uint64(currentOffset)
 		dims := gd.Dims
-
-		// We stream vectors sequentially for 0..NumNodes-1
-		// If a node is missing (GetVectorSQ8 returns nil), we must write Zeros?
-		// Disk format for SQ8 is dense (NumNodes * Dims).
-		// Access is O(1) via arithmetic.
 		zeros := make([]byte, dims)
 
 		for id := uint32(0); id < numNodes; id++ {
+			// GetVectorSQ8 helper
+			// Note: GetVectorSQ8 returns []byte copy or slice?
+			// Refactor: GetVectorSQ8 in arrow_hnsw_graph.go returns []byte (copy).
+			// Efficient enough for disk writing.
 			vec := gd.GetVectorSQ8(id)
 			if vec == nil {
 				if _, err := w.Write(zeros); err != nil {
@@ -235,37 +215,17 @@ func WriteDiskGraph(gd *GraphData, path string, maxNodeID int) error {
 		zeros := make([]byte, pqDims)
 
 		for id := uint32(0); id < numNodes; id++ {
-
-			// GetVectorPQ on GraphData is not implemented in the snippet I saw earlier?
-			// Wait, GraphData in arrow_hnsw_graph.go has VectorsPQ []*[]byte.
-			// But does it have a helper GetVectorPQ?
-			// Checking available methods... I don't recall seeing it.
-			// I might need to implement the accessor logic inline here or add it to GraphData.
-			// Implementing inline:
-			cID := id >> ChunkShift
-			cOff := id & ChunkMask
-			var val []byte
-			if gd.VectorsPQ != nil && int(cID) < len(gd.VectorsPQ) {
-				chunkPtr := gd.VectorsPQ[cID]
-				if chunkPtr != nil {
-					chunk := *chunkPtr
-					start := int(cOff) * pqDims
-					end := start + pqDims
-					if end <= len(chunk) {
-						val = chunk[start:end]
-					}
-				}
-			}
-
-			if val == nil {
+			// New Helper: GetVectorPQ(id, pqDims)
+			vec := gd.GetVectorPQ(id, pqDims)
+			if vec == nil {
 				if _, err := w.Write(zeros); err != nil {
 					return err
 				}
 			} else {
-				if len(val) != pqDims {
-					return fmt.Errorf("pq vector dim mismatch at %d: got %d want %d", id, len(val), pqDims)
+				if len(vec) != pqDims {
+					return fmt.Errorf("pq vector dim mismatch at %d: got %d want %d", id, len(vec), pqDims)
 				}
-				if _, err := w.Write(val); err != nil {
+				if _, err := w.Write(vec); err != nil {
 					return err
 				}
 			}

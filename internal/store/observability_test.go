@@ -49,10 +49,8 @@ func TestObservability_Metrics(t *testing.T) {
 
 		// Hybrid Search
 		// Needs store context for HybridSearch wrapper
-		store := &VectorStore{
-			datasets: map[string]*Dataset{"observability_test": ds},
-			// use a default logger
-		}
+		store := &VectorStore{}
+		store.datasets.Store(&map[string]*Dataset{"observability_test": ds})
 
 		_, err = store.HybridSearch(context.Background(), "observability_test", []float32{1.0, 0.0}, 1, nil)
 		require.NoError(t, err)

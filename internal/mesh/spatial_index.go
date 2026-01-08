@@ -36,8 +36,8 @@ type vpNode struct {
 // NewVPTree builds a static VP-Tree from items.
 func NewVPTree(items []RegionItem) *VPTree {
 	// Clone items to avoid external mutation affecting tree
-	max := len(items)
-	clone := make([]RegionItem, max)
+	numItems := len(items)
+	clone := make([]RegionItem, numItems)
 	copy(clone, items)
 
 	root := buildVPTree(clone)

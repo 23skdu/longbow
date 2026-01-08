@@ -42,10 +42,40 @@ grpc:
   keepAliveMinTime: "5m"
   keepAlivePermitWithoutStream: false
 
+# Rate Limiting Configuration
+rateLimit:
+  rps: 0 # 0 = disabled
+  burst: 0
+
+# HNSW Index Configuration (Performance Tuning)
+hnsw:
+  m: 32
+  efConstruction: 400
+  alpha: 1.0
+  keepPruned: false
+  sq8Enabled: false
+  refinementFactor: 1.0
+  useHNSW2: true
+
+# Memory & GC Configuration
+memory:
+  evictionHeadroom: 0.10
+  evictionPolicy: "lru"
+  rejectWrites: true
+  gcBallastGB: 0
+  gogc: 100
+
+# GPU Configuration
+gpu:
+  enabled: false
+  deviceId: 0
+
 # Storage Configuration
 storage:
   asyncFsync: true
   doPutBatchSize: 100
+  useIOUring: false
+  useDirectIO: false
 
 service:
   data:

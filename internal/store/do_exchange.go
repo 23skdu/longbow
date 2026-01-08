@@ -197,9 +197,9 @@ func (s *VectorStore) DoExchange(stream flight.FlightService_DoExchangeServer) e
 					path[i] = int(binary.LittleEndian.Uint32(data.DataBody[i*4 : (i+1)*4]))
 				}
 
-				ds, err := s.getDataset(datasetName)
-				if err != nil {
-					return err
+				ds, ok := s.getDataset(datasetName)
+				if !ok {
+					return status.Errorf(codes.NotFound, "dataset %s not found", datasetName)
 				}
 
 				hash, children, ok := ds.Merkle.GetNode(path)

@@ -1,6 +1,5 @@
 package store
 
-
 import (
 	"context"
 	"testing"
@@ -8,9 +7,9 @@ import (
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/rs/zerolog"
 )
 
 // TestHNSWZeroCopyAccess verifies the unsafe zero-copy vector access path
@@ -55,9 +54,8 @@ func TestHNSWZeroCopyAccess(t *testing.T) {
 	err := vs.StoreRecordBatch(ctx, "test_zc", rec)
 	require.NoError(t, err)
 
-	vs.mu.RLock()
-	ds := vs.datasets["test_zc"]
-	vs.mu.RUnlock()
+	ds, ok := vs.getDataset("test_zc")
+	require.True(t, ok)
 	require.NotNil(t, ds)
 
 	// Manually initialize HNSW index

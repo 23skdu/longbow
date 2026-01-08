@@ -18,28 +18,13 @@ func TestDelete(t *testing.T) {
 	data := NewGraphData(0, 64, false, false, false)
 	index.data.Store(data)
 
-	// Manually allocate chunks for testing since we bypass Insert
-	numChunks := len(data.Levels)
+	// Manually allocate chunks for testing using ensureChunk
+	// We need to ensure chunks exist for the capacity we created (64 => 1 chunk if ChunkSize=1024)
+	numChunks := (64 + ChunkSize - 1) / ChunkSize
 	for i := 0; i < numChunks; i++ {
-		// Levels
-		lChunk := make([]uint8, ChunkSize)
-		data.Levels[i] = &lChunk
-
-		// Vectors
-		vChunk := make([]float32, ChunkSize*128)
-		data.Vectors[i] = &vChunk
-
-		// Neighbors (Layer 0)
-		nChunk := make([]uint32, ChunkSize*MaxNeighbors)
-		data.Neighbors[0][i] = &nChunk
-
-		// Counts (Layer 0)
-		cChunk := make([]int32, ChunkSize)
-		data.Counts[0][i] = &cChunk
-
-		// Versions
-		vChunk2 := make([]uint32, ChunkSize)
-		data.Versions[0][i] = &vChunk2
+		// Mock dimensions
+		dims := 128
+		data = index.ensureChunk(data, uint32(i), 0, dims)
 	}
 
 	// Insert 10 vectors
@@ -47,16 +32,20 @@ func TestDelete(t *testing.T) {
 		// Mock vector data in dense storage
 		cID := chunkID(uint32(i))
 		cOff := chunkOffset(uint32(i))
-		// idx := int(cOff) * 128
-		if data.Vectors[cID] != nil {
-			vec1 := (*data.Vectors[cID])[int(cOff)*128 : int(cOff+1)*128]
+
+		vecChunk := data.GetVectorsChunk(cID)
+		if vecChunk != nil {
+			vec1 := (*vecChunk)[int(cOff)*128 : int(cOff+1)*128]
 			vec1[0] = float32(i) // Use first element as value
 		}
 
 		// Set level 0 for simplicity
-		(*data.Levels[cID])[cOff] = 0
-		if (*data.Levels[cID])[cOff] != 0 {
-			t.Errorf("Level should be 0")
+		lvlChunk := data.GetLevelsChunk(cID)
+		if lvlChunk != nil {
+			(*lvlChunk)[cOff] = 0
+			if (*lvlChunk)[cOff] != 0 {
+				t.Errorf("Level should be 0")
+			}
 		}
 
 		// Normally Insert would do more, but we just want to test Search filtering

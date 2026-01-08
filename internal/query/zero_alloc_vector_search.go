@@ -239,6 +239,9 @@ func parseFloat32(data []byte, pos int) (float32, int, error) { //nolint:gocriti
 }
 
 func (p *ZeroAllocVectorSearchParser) parseFilters(data []byte, pos int) (int, error) {
+	if pos+4 <= len(data) && string(data[pos:pos+4]) == "null" {
+		return pos + 4, nil
+	}
 	if pos >= len(data) || data[pos] != '[' {
 		return pos, errors.New("expected opening bracket")
 	}

@@ -100,12 +100,12 @@ func TestShardedHNSW_MergedSearch(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	query := make([]float32, 16)
-	for i := range query {
-		query[i] = 50.0
+	q := make([]float32, 16)
+	for i := range q {
+		q[i] = 50.0
 	}
 
-	results, err := idx.SearchVectors(query, 5, nil)
+	results, err := idx.SearchVectors(q, 5, nil)
 	require.NoError(t, err)
 	require.Len(t, results, 5)
 
@@ -143,12 +143,12 @@ func TestShardedHNSW_Filtering(t *testing.T) {
 		{Field: "tag", Operator: "==", Value: "odd"},
 	}
 
-	query := make([]float32, 16)
-	for i := range query {
-		query[i] = 50.0
+	q := make([]float32, 16)
+	for i := range q {
+		q[i] = 50.0
 	}
 
-	results, err := idx.SearchVectors(query, 5, filters)
+	results, err := idx.SearchVectors(q, 5, filters)
 	require.NoError(t, err)
 	require.NotEmpty(t, results)
 

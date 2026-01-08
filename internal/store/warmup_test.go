@@ -1,6 +1,5 @@
 package store
 
-
 import (
 	"fmt"
 	"sync"
@@ -102,9 +101,9 @@ func TestVectorStore_Warmup(t *testing.T) {
 				vec := []float32{float32(j), float32(j + 1), float32(j + 2), float32(j + 3)}
 				ds.Index.(*HNSWIndex).Graph.Add(hnsw.MakeNode(VectorID(j), vec))
 			}
-			store.mu.Lock()
-			store.datasets[ds.Name] = ds
-			store.mu.Unlock()
+			store.updateDatasets(func(m map[string]*Dataset) {
+				m[ds.Name] = ds
+			})
 		}
 
 		warmupStats := store.Warmup()
@@ -126,15 +125,15 @@ func TestVectorStore_Warmup(t *testing.T) {
 		ds1 := &Dataset{Name: "with_index"}
 		ds1.Index = NewHNSWIndex(ds1)
 		ds1.Index.(*HNSWIndex).Graph.Add(hnsw.MakeNode(VectorID(0), []float32{1, 2, 3, 4}))
-		store.mu.Lock()
-		store.datasets[ds1.Name] = ds1
-		store.mu.Unlock()
+		store.updateDatasets(func(m map[string]*Dataset) {
+			m[ds1.Name] = ds1
+		})
 
 		// Dataset without index
 		ds2 := &Dataset{Name: "without_index"}
-		store.mu.Lock()
-		store.datasets[ds2.Name] = ds2
-		store.mu.Unlock()
+		store.updateDatasets(func(m map[string]*Dataset) {
+			m[ds2.Name] = ds2
+		})
 
 		warmupStats := store.Warmup()
 
@@ -157,9 +156,9 @@ func TestVectorStore_Warmup(t *testing.T) {
 			vec := []float32{float32(i), float32(i + 1), float32(i + 2), float32(i + 3)}
 			ds.Index.(*HNSWIndex).Graph.Add(hnsw.MakeNode(VectorID(i), vec))
 		}
-		store.mu.Lock()
-		store.datasets[ds.Name] = ds
-		store.mu.Unlock()
+		store.updateDatasets(func(m map[string]*Dataset) {
+			m[ds.Name] = ds
+		})
 
 		warmupStats := store.Warmup()
 

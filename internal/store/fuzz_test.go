@@ -1,6 +1,5 @@
 package store
 
-
 import (
 	"math/rand"
 	"testing"
@@ -37,13 +36,12 @@ func FuzzIngestion(f *testing.F) {
 
 		// We'll use a direct internal method or public API wrapper if available.
 		// Taking logic from DoPut roughly:
-		ds, err := store.GetDataset(dsName)
-		if err != nil {
+		ds, ok := store.getDataset(dsName)
+		if !ok {
 			// Create it
-			ds = &Dataset{Name: dsName}
-			store.mu.Lock()
-			store.datasets[dsName] = ds
-			store.mu.Unlock()
+			ds, _ = store.getOrCreateDataset(dsName, func() *Dataset {
+				return &Dataset{Name: dsName}
+			})
 		}
 
 		// Just append to records directly for this test scope to verify it doesn't panic on weird data
@@ -77,10 +75,9 @@ func FuzzCompaction(f *testing.F) {
 
 		// Create dataset
 		dsName := "fuzz_compaction"
-		ds := &Dataset{Name: dsName}
-		store.mu.Lock()
-		store.datasets[dsName] = ds
-		store.mu.Unlock()
+		ds, _ := store.getOrCreateDataset(dsName, func() *Dataset {
+			return &Dataset{Name: dsName}
+		})
 
 		// Add multiple small batches
 		numBatches := rng.Intn(5) + 2

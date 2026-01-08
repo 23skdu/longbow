@@ -508,7 +508,7 @@ func (s *VectorStore) flushPutBatch(ds *Dataset, name string, batch []arrow.Reco
 
 // StoreRecordBatch stores a batch of records in a dataset
 func (s *VectorStore) StoreRecordBatch(ctx context.Context, name string, rec arrow.RecordBatch) error {
-	ds, created := s.getOrCreateDataset(name, func() *Dataset {
+	ds, _ := s.getOrCreateDataset(name, func() *Dataset {
 		ds := NewDataset(name, rec.Schema())
 		ds.Topo = s.numaTopology
 		return ds
@@ -516,16 +516,8 @@ func (s *VectorStore) StoreRecordBatch(ctx context.Context, name string, rec arr
 
 	// No initial memory side-effects in StoreRecordBatch createFn currently?
 	// But to be consistent/safe given main initialization flow:
-	if created && s.datasetInitHook != nil {
-		// StoreRecordBatch didn't use datasetInitHook before?
-		// Checking previous code:
-		// ds := s.getOrCreateDataset(name, func() *Dataset {
-		//    ds := NewDataset(name, rec.Schema())
-		//    ds.Topo = s.numaTopology
-		//    return ds
-		// })
-		// No hook called here in original code. So just handle return.
-	}
+	// No initial memory side-effects in StoreRecordBatch createFn currently.
+	// We proceed without specific hook logic here as per design.
 
 	// WAL write
 	if err := s.writeToWAL(rec, name); err != nil {

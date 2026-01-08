@@ -170,6 +170,11 @@ func (h *HNSWIndex) GetLocation(id VectorID) (Location, bool) {
 	return h.locationStore.Get(id)
 }
 
+// GetVectorID implements VectorIndex.
+func (h *HNSWIndex) GetVectorID(loc Location) (VectorID, bool) {
+	return h.locationStore.GetID(loc)
+}
+
 // Warmup implements VectorIndex (stub for now).
 func (h *HNSWIndex) Warmup() int {
 	// Return the graph size as approximation of warmed up nodes

@@ -335,28 +335,8 @@ func (p *HybridSearchPipeline) findVectorID(pos RowPosition) (VectorID, bool) {
 	if p.hnswIndex == nil {
 		return 0, false
 	}
-	// Heuristic: Check if the ID in locationStore matches the target position
-	// Since VectorIDs are often sequential, we can try to guess or use a full scan (slow fallback)
-
-	// Fast Path: Check if VectorID == RowIdx (for single-batch datasets)
-	if pos.RecordIdx == 0 {
-		loc, ok := p.hnswIndex.locationStore.Get(VectorID(pos.RowIdx))
-		if ok && loc.BatchIdx == 0 && loc.RowIdx == pos.RowIdx {
-			return VectorID(pos.RowIdx), true
-		}
-	}
-
-	// Fallback: Full scan of location store (Expensive!)
-	// TODO: Replace with a reverse index mapping Location -> VectorID
-	count := p.hnswIndex.locationStore.Len()
-	for i := 0; i < count; i++ {
-		loc, ok := p.hnswIndex.locationStore.Get(VectorID(i))
-		if ok && loc.BatchIdx == pos.RecordIdx && loc.RowIdx == pos.RowIdx {
-			return VectorID(i), true
-		}
-	}
-
-	return 0, false
+	// O(1) Reverse Lookup relying on reverseMap in ChunkedLocationStore
+	return p.hnswIndex.GetVectorID(Location{BatchIdx: pos.RecordIdx, RowIdx: pos.RowIdx})
 }
 
 // Reranker defines the interface for the second-stage re-ranking

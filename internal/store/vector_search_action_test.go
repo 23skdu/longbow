@@ -258,9 +258,10 @@ func createTestStoreWithVectors(t *testing.T, datasetName string, numVectors, _ 
 	rec := array.NewRecordBatch(schema, []arrow.Array{idArr}, int64(numVectors))
 	ds.Records = []arrow.RecordBatch{rec}
 
-	store.mu.Lock()
-	store.datasets[datasetName] = ds
-	store.mu.Unlock()
+	store.getOrCreateDataset(datasetName, func() *Dataset {
+		return ds
+	})
+
 	return store
 }
 
@@ -270,7 +271,7 @@ func TestVectorSearchByIDAction_Success(t *testing.T) {
 	defer func() { _ = store.Close() }()
 
 	// Replace the record batch with one that has "vector" column for extraction
-	ds := store.datasets["test-dataset"]
+	ds, _ := store.getDataset("test-dataset")
 	oldRec := ds.Records[0]
 	mem := memory.NewGoAllocator()
 
@@ -338,7 +339,7 @@ func TestVectorSearchAction_GraphBias(t *testing.T) {
 	defer func() { _ = store.Close() }()
 
 	metaServer := NewMetaServer(store)
-	ds := store.datasets["graph-dataset"]
+	ds, _ := store.getDataset("graph-dataset")
 
 	// Setup Graph: Connect 0(ID=10) <-> 1(ID=20)
 	// 2(ID=30) is isolated.

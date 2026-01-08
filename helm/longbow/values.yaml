@@ -115,7 +115,7 @@ compaction:
 # Sharding Configuration
 sharding:
   auto:
-    enabled: true
+    enabled: false
     threshold: 10000
     splitThreshold: 65536
   ring:

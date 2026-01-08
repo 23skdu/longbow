@@ -1,15 +1,14 @@
 package store
 
-
 import (
 	"testing"
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/rs/zerolog"
 )
 
 func TestConcatenateBatches(t *testing.T) {
@@ -28,7 +27,7 @@ func TestConcatenateBatches(t *testing.T) {
 		{Name: "val", Type: arrow.PrimitiveTypes.Float64},
 	}, nil)
 
-	var batches []arrow.RecordBatch
+	batches := make([]arrow.RecordBatch, 0, 3)
 	totalRows := 0
 
 	for i := 0; i < 3; i++ {

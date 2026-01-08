@@ -63,11 +63,12 @@ func TestPQPersistence(t *testing.T) {
 	// We need to access AutoShardingIndex internals but we can't easily without helpers or reflection if fields private.
 	// Since we are in `package store`, if fields are unexported we can see them.
 	// Assuming structure from original test.
-	if as, ok := ds.Index.(*AutoShardingIndex); ok {
-		// as.current is private field?
+	switch idx := ds.Index.(type) {
+	case *AutoShardingIndex:
+		// idx.current is private field?
 		// We use NewIndex usually.
 		// If we can't access, we skip training validation or rely on test structure being valid in this package.
-		if hnswIdx, ok := as.current.(*HNSWIndex); ok {
+		if hnswIdx, ok := idx.current.(*HNSWIndex); ok {
 			hnswIdx.pqEnabled = true
 			cfg := PQConfig{Dimensions: dims, NumSubVectors: 16, NumCentroids: 256}
 			enc, _ := NewPQEncoder(cfg)
@@ -81,7 +82,7 @@ func TestPQPersistence(t *testing.T) {
 			ds.PQEncoder = enc
 			trained = true
 		}
-	} else if idx, ok := ds.Index.(*HNSWIndex); ok {
+	case *HNSWIndex:
 		cfg := PQConfig{Dimensions: dims, NumSubVectors: 16, NumCentroids: 256}
 		enc, _ := NewPQEncoder(cfg)
 		idx.pqEncoder = enc

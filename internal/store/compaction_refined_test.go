@@ -1,6 +1,5 @@
 package store
 
-
 import (
 	"fmt"
 	"testing"
@@ -47,8 +46,7 @@ func TestCompactRecords_Incremental(t *testing.T) {
 	records := []arrow.RecordBatch{b1, b2, b3, b4, b5}
 	target := int64(300)
 
-	compacted, remapping, err := compactRecords(pool, schema, records, nil, target, "test")
-	require.NoError(t, err)
+	compacted, remapping := compactRecords(pool, schema, records, nil, target, "test")
 
 	require.Len(t, compacted, 3)
 	require.Equal(t, int64(200), compacted[0].NumRows())

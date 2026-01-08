@@ -7,6 +7,7 @@ import (
 	"slices"
 	"sync"
 	"sync/atomic"
+	"unsafe"
 
 	"time"
 
@@ -34,11 +35,12 @@ func (h *ArrowHNSW) TrainPQ(vectors [][]float32) error {
 	m := h.config.PQM
 	if m == 0 {
 		// Heuristic: M = dims / 4 or dims / 8
-		if dims%8 == 0 {
+		switch {
+		case dims%8 == 0:
 			m = dims / 8
-		} else if dims%4 == 0 {
+		case dims%4 == 0:
 			m = dims / 4
-		} else {
+		default:
 			m = 1 // No split
 		}
 	}
@@ -106,8 +108,8 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec []float32, level int) error 
 	data := h.data.Load()
 
 	// Invariant: If dims > 0, Vectors/SQ8 arrays MUST exist in data.
-	// We only check Capacity here. Structural integrity is guaranteed by Grow/Init order.
-	if data.Capacity <= int(id) {
+	// We check both Capacity and existence of structures.
+	if data.Capacity <= int(id) || (dims > 0 && data.Vectors == nil) {
 		h.Grow(int(id)+1, dims)
 		data = h.data.Load()
 	}
@@ -115,14 +117,14 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec []float32, level int) error 
 	// Lazy Chunk Allocation
 	cID := chunkID(id)
 	cOff := chunkOffset(id)
-	var err error // Declare err to avoid shadowing data
-	data, err = h.ensureChunk(data, cID, cOff, dims)
-	if err != nil {
-		return err
-	}
+	data = h.ensureChunk(data, cID, cOff, dims)
 
 	// Initialize the new node
-	(*data.Levels[cID])[cOff] = uint8(level)
+	// Initialize the new node
+	// Access the chunk pointer atomically as it might have been set by ensureChunk via CAS
+	levelsPtr := atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&data.Levels[cID])))
+	levelsChunk := (*[]uint8)(levelsPtr)
+	(*levelsChunk)[cOff] = uint8(level)
 
 	// Cache dimensions on first insert
 	if dims == 0 && len(vec) > 0 {
@@ -144,11 +146,7 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec []float32, level int) error 
 
 			// Re-ensure chunk with new dims
 			// cID/cOff relies on ID which hasn't changed
-			data, err = h.ensureChunk(data, cID, cOff, dims)
-			if err != nil {
-				h.initMu.Unlock()
-				return err
-			}
+			data = h.ensureChunk(data, cID, cOff, dims)
 		} else {
 			// Someone else initialized global dimensions while we waited.
 			// Our local 'data' snapshot corresponds to dims=0 (likely no vectors).
@@ -172,6 +170,26 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec []float32, level int) error 
 
 		dest := (*vecChunk)[int(cOff)*dims : (int(cOff)+1)*dims]
 		copy(dest, vec)
+	}
+
+	// Store Binary Quantized Vector
+	if h.config.BQEnabled && dims > 0 {
+		// Initialize Encoder if needed (lazy)
+		if h.bqEncoder == nil {
+			h.initMu.Lock()
+			if h.bqEncoder == nil {
+				h.bqEncoder = NewBQEncoder(dims)
+			}
+			h.initMu.Unlock()
+		}
+
+		encoded := h.bqEncoder.Encode(vec)
+		encodedChunk := data.LoadBQChunk(cID)
+		if encodedChunk != nil {
+			numWords := len(encoded)
+			baseIdx := int(cOff) * numWords
+			copy((*encodedChunk)[baseIdx:baseIdx+numWords], encoded)
+		}
 	}
 
 	// Check if this is the first node
@@ -387,9 +405,8 @@ func (h *ArrowHNSW) searchLayerForInsert(ctx *ArrowSearchContext, query []float3
 	ctx.visited.Clear()
 	ctx.candidates.Clear()
 	// Ensure visited bitset is large enough
-	// Use maxID from location store to cover all possible IDs, including the one currently being inserted
-	// Add safety margin
-	maxID := int(h.locationStore.MaxID()) + 1000
+	// Use capacity from graph data as it tracks the actual max possible ID
+	maxID := data.Capacity + 1000
 	if ctx.visited == nil || ctx.visited.Size() < maxID {
 		ctx.visited = NewArrowBitset(maxID)
 	} else {
@@ -433,7 +450,12 @@ func (h *ArrowHNSW) searchLayerForInsert(ctx *ArrowSearchContext, query []float3
 			entryDist = 0 // Or MaxFloat
 		}
 	} else {
-		entryDist = h.distFunc(query, h.mustGetVectorFromData(data, entryPoint))
+		v := h.mustGetVectorFromData(data, entryPoint)
+		if v == nil {
+			entryDist = math.MaxFloat32
+		} else {
+			entryDist = h.distFunc(query, v)
+		}
 	}
 
 	candidates.Push(Candidate{ID: entryPoint, Dist: entryDist})
@@ -578,15 +600,32 @@ func (h *ArrowHNSW) searchLayerForInsert(ctx *ArrowSearchContext, query []float3
 					}
 				}
 			}
-		} else {
 			if cap(ctx.scratchVecs) < count {
 				ctx.scratchVecs = make([][]float32, count*2)
 			}
 			vecs := ctx.scratchVecs[:count]
+
+			allValid := true
 			for i, nid := range unvisitedIDs {
-				vecs[i] = h.mustGetVectorFromData(data, nid)
+				v := h.mustGetVectorFromData(data, nid)
+				if v == nil {
+					dists[i] = math.MaxFloat32
+					vecs[i] = nil
+					allValid = false
+				} else {
+					vecs[i] = v
+				}
 			}
-			h.batchDistFunc(query, vecs, dists)
+
+			if allValid {
+				h.batchDistFunc(query, vecs, dists)
+			} else {
+				for i := 0; i < len(unvisitedIDs); i++ {
+					if vecs[i] != nil {
+						h.batchDistFunc(query, vecs[i:i+1], dists[i:i+1])
+					}
+				}
+			}
 		}
 
 		// Process results
@@ -644,9 +683,9 @@ func (h *ArrowHNSW) selectNeighbors(ctx *ArrowSearchContext, candidates []Candid
 
 	// RobustPrune heuristic: select diverse neighbors
 	// Use scratch in context or allocate (fallback)
-	var selected []Candidate
+	var selected []Candidate     //nolint:prealloc // conditional allocation
+	var selectedVecs [][]float32 //nolint:prealloc // conditional allocation
 	var remaining []Candidate
-	var selectedVecs [][]float32
 	var remainingVecs [][]float32
 
 	if ctx != nil {
@@ -792,16 +831,31 @@ func (h *ArrowHNSW) selectNeighbors(ctx *ArrowSearchContext, candidates []Candid
 					ctx.scratchVecs = make([][]float32, count*2)
 				}
 				remVecs := ctx.scratchVecs[:count]
+				allValid := true
 				for i := range remaining {
-					remVecs[i] = remainingVecs[i]
+					if remainingVecs[i] == nil {
+						dists[i] = math.MaxFloat32
+						remVecs[i] = nil
+						allValid = false
+					} else {
+						remVecs[i] = remainingVecs[i]
+					}
 				}
 
-				if bc, ok := h.batchComputer.(interface {
-					ComputeL2DistancesInto(query []float32, vectors [][]float32, dest []float32) (int, error)
-				}); ok {
-					_, _ = bc.ComputeL2DistancesInto(selVec, remVecs, dists)
+				if allValid {
+					if bc, ok := h.batchComputer.(interface {
+						ComputeL2DistancesInto(query []float32, vectors [][]float32, dest []float32) (int, error)
+					}); ok {
+						_, _ = bc.ComputeL2DistancesInto(selVec, remVecs, dists)
+					} else {
+						h.batchDistFunc(selVec, remVecs, dists)
+					}
 				} else {
-					h.batchDistFunc(selVec, remVecs, dists)
+					for i := range remaining {
+						if remVecs[i] != nil {
+							h.batchDistFunc(selVec, remVecs[i:i+1], dists[i:i+1])
+						}
+					}
 				}
 			}
 
@@ -853,7 +907,7 @@ func (h *ArrowHNSW) selectNeighbors(ctx *ArrowSearchContext, candidates []Candid
 }
 
 // AddConnection adds a directed edge from source to target at the given layer.
-func (h *ArrowHNSW) AddConnection(ctx *ArrowSearchContext, data *GraphData, source, target uint32, layer int, maxConn int) {
+func (h *ArrowHNSW) AddConnection(ctx *ArrowSearchContext, data *GraphData, source, target uint32, layer, maxConn int) {
 	// Acquire lock for the specific node (shard)
 	lockID := source % ShardedLockCount
 	h.shardedLocks[lockID].Lock()
@@ -884,29 +938,24 @@ func (h *ArrowHNSW) AddConnection(ctx *ArrowSearchContext, data *GraphData, sour
 	baseIdx := int(cOff) * MaxNeighbors
 
 	for i := 0; i < int(currentCount); i++ {
-		if (*neighborsChunk)[baseIdx+i] == target {
+		if atomic.LoadUint32(&(*neighborsChunk)[baseIdx+i]) == target {
 			return // Already connected
 		}
 	}
 
 	// 3a. Update metadata (Counts)
 	// Counts[level][chunkID][chunkOffset] atomic increment
-	countAddr := &(*countsChunk)[cOff]
-	newCount := atomic.AddInt32(countAddr, 1)
-
-	// Slot index is count - 1
-	slot := int(newCount) - 1
+	// 3a. Prepare for write
+	// Calculate slot using currentCount (stable under shard lock)
+	slot := int(currentCount)
 	if slot >= MaxNeighbors {
 		// Should not happen if MaxNeighbors >> maxConn and pruning works
-		// But if it does, decrement and return
-		atomic.AddInt32(countAddr, -1)
 		return
 	}
 
 	// Seqlock write start: increment version to odd
 	verChunk := data.LoadVersionsChunk(layer, cID)
 	if verChunk == nil {
-		// Should not happen if countsChunk/neighborsChunk are valid
 		return
 	}
 	verAddr := &(*verChunk)[cOff]
@@ -914,6 +963,10 @@ func (h *ArrowHNSW) AddConnection(ctx *ArrowSearchContext, data *GraphData, sour
 
 	// Atomic store to satisfy race detector
 	atomic.StoreUint32(&(*neighborsChunk)[baseIdx+slot], target)
+
+	// Update metadata (Counts) - make visible AFTER data write
+	countAddr := &(*countsChunk)[cOff]
+	newCount := atomic.AddInt32(countAddr, 1)
 
 	// Seqlock write: increment version (even = clean)
 	atomic.AddUint32(verAddr, 1)
@@ -981,8 +1034,6 @@ func (h *ArrowHNSW) pruneConnectionsLocked(ctx *ArrowSearchContext, data *GraphD
 		candidates = make([]Candidate, count)
 	}
 
-	nodeVec := h.mustGetVectorFromData(data, nodeID)
-
 	// Logic Switch: SQ8 vs Float32
 	if h.quantizer != nil && len(data.VectorsSQ8) > 0 {
 		// SQ8 Path
@@ -1028,6 +1079,9 @@ func (h *ArrowHNSW) pruneConnectionsLocked(ctx *ArrowSearchContext, data *GraphD
 		} else {
 			neighborVecs = make([][]float32, count)
 		}
+
+		// nodeVec needed for distance calc
+		nodeVec := h.mustGetVectorFromData(data, nodeID)
 
 		for i := 0; i < count; i++ {
 			neighborID := (*neighborsChunk)[baseIdx+i]
@@ -1078,30 +1132,6 @@ func (h *ArrowHNSW) pruneConnectionsLocked(ctx *ArrowSearchContext, data *GraphD
 
 	// Seqlock write end
 	atomic.AddUint32(verAddr, 1)
-}
-
-func (h *ArrowHNSW) mustGetVectorFromData(data *GraphData, id uint32) []float32 {
-	// Optimization: Check for dense vector storage
-	// if int(id) < len(data.Vectors) // This check is hard with chunks, assume valid
-	cID := chunkID(id)
-	cOff := chunkOffset(id)
-	// Check if we can store in dense vector storage
-	if vecChunk := data.LoadVectorChunk(cID); vecChunk != nil {
-		start := int(cOff) * int(h.dims.Load())
-		dims := int(h.dims.Load())
-		if start+dims <= len(*vecChunk) {
-			return (*vecChunk)[start : start+dims]
-		}
-	}
-
-	// Fallback
-	vec, err := h.getVector(id)
-	if err != nil {
-		// Return zero vector to avoid panic in distance calc
-		dims := int(h.dims.Load())
-		return make([]float32, dims)
-	}
-	return vec
 }
 
 // LevelGenerator generates random levels for new nodes.

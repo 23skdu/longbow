@@ -69,6 +69,7 @@ type WALBatcher struct {
 	intervalCalc *AdaptiveIntervalCalculator // Adaptive: calculates intervals
 	asyncFsyncer *AsyncFsyncer               // Async: background fsync handler
 	flushBuf     bytes.Buffer                // Reused buffer for flush serialization
+	compressBuf  []byte                      // Reused buffer for compression
 }
 
 // NewWALBatcher creates a new batched WAL writer
@@ -234,17 +235,15 @@ func (w *WALBatcher) flush() {
 
 	if w.config.WALCompression {
 		// 1. Serialize all entries to a temporary buffer
-		// We can reuse w.flushBuf as the temporary buffer if we are careful,
-		// but we need a destination for compression.
-		// Let's use a separate buffer for the raw data.
-		// We can use w.bufPool for scratch space, but we need a big buffer for the whole batch.
-		// Let's allocate a buffer or use a growable one.
-		var rawBatch bytes.Buffer
+		// Reuse a buffer from the pool for the raw batch
+		rawBatch := w.bufPool.Get()
+		defer w.bufPool.Put(rawBatch)
+
 		scratchBuf := w.bufPool.Get()
 		defer w.bufPool.Put(scratchBuf)
 
 		for _, entry := range batch {
-			if err := w.serializeEntry(&rawBatch, entry, scratchBuf); err != nil {
+			if err := w.serializeEntry(rawBatch, entry, scratchBuf); err != nil {
 				w.handleFlushError(err)
 				for _, e := range batch {
 					e.Record.Release()
@@ -258,10 +257,24 @@ func (w *WALBatcher) flush() {
 		// MaxEncodedLen ensures we have enough space
 		src := rawBatch.Bytes()
 		maxLen := snappy.MaxEncodedLen(len(src))
-		compressed := make([]byte, maxLen)
-		// TODO: recycle this buffer to reduce allocs?
 
-		dest := snappy.Encode(compressed, src) // returns slice of compressed
+		// Ensure compressBuf is large enough
+		if cap(w.compressBuf) < maxLen {
+			w.compressBuf = make([]byte, maxLen)
+		}
+
+		// Use the slice with correct length but backed by the reused array
+		// snappy.Encode uses dst[:cap] basically, so we pass a slice with sufficient capacity.
+		// Note: passing explicit slice to reuse capacity.
+		// The returned slice is a sub-slice of the argument if it fits.
+
+		// Reset length to 0 but keep cap? Snappy Encode docs say:
+		// "Encode returns the encoded form of src. The returned slice may be a sub-slice of dst if dst was large enough."
+		// We pass w.compressBuf[:maxLen] as dst to be safe? Or w.compressBuf[:0]?
+		// Go snappy implementation usually appends or overwrites.
+		// Safe pattern:
+		dest := snappy.Encode(w.compressBuf[:0], src)
+		w.compressBuf = dest // Updates length, keeps underlying array if same
 		payload = dest
 
 		// 3. Construct Compressed Block Header
@@ -315,13 +328,15 @@ func (w *WALBatcher) flush() {
 	metrics.WalBytesWritten.Add(float64(n))
 
 	// Sync
-	// Logic for async/sync remains similar, but simplified: call backend.Sync() if needed.
-	// If AsyncFsyncer is managed externally/via interface, we use it.
-	// For now, blocking sync as fallback or if configured.
-	// TODO: Integrate AsyncFsyncer with WALBackend interface properly.
-	// Falling back to blocking Sync for correctness in this refactor.
-	if err := w.backend.Sync(); err != nil {
-		w.handleFlushError(err)
+	// Use AsyncFsyncer if enabled, otherwise block
+	if w.asyncFsyncer != nil {
+		w.asyncFsyncer.AddDirtyBytes(int64(n))
+		w.asyncFsyncer.RequestFsyncIfNeeded()
+	} else {
+		// Fallback to blocking Sync
+		if err := w.backend.Sync(); err != nil {
+			w.handleFlushError(err)
+		}
 	}
 }
 
@@ -481,6 +496,6 @@ func (w *WALBatcher) GetCurrentInterval() time.Duration {
 }
 
 // QueueDepth returns the current number of pending entries and the capacity.
-func (w *WALBatcher) QueueStatus() (int, int) {
+func (w *WALBatcher) QueueStatus() (pending, batchSize int) {
 	return len(w.entries), cap(w.entries)
 }

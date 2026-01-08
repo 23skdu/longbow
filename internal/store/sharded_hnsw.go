@@ -10,7 +10,6 @@ import (
 
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/query"
-	qry "github.com/23skdu/longbow/internal/query"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"golang.org/x/sync/errgroup"
@@ -214,7 +213,7 @@ func (s *ShardedHNSW) AddSafe(rec arrow.RecordBatch, rowIdx, batchIdx int) (Vect
 }
 
 // AddBatch implements VectorIndex.
-func (s *ShardedHNSW) AddBatch(recs []arrow.RecordBatch, rowIdxs []int, batchIdxs []int) ([]uint32, error) {
+func (s *ShardedHNSW) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []int) ([]uint32, error) {
 	if len(recs) == 0 {
 		return nil, nil
 	}
@@ -275,22 +274,64 @@ func (s *ShardedHNSW) AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx int) (
 	shardIdx := s.sharder.GetShard(id)
 
 	s.shardsMu.RLock()
-	// Dynamic growth logic from Linear Sharding is removed for Ring Sharding (fixed shards assumed)
-	// If needed for Linear legacy, s.sharder should handle AddShard check logic here,
-	// but simplified to assume fixed shards for this implementation.
-	if shardIdx >= len(s.shards) {
+	if shardIdx < len(s.shards) {
+		shard := s.shards[shardIdx]
 		s.shardsMu.RUnlock()
-		return 0, fmt.Errorf("shard index out of bounds (dynamic growth not supported in ring mode)")
+		// Common path: existing shard
+		// Map Global ID to Local ID in Shard
+		localID := shard.mapID(id)
+		// Store location in shard index to support filtering
+		shard.index.SetLocation(VectorID(localID), Location{BatchIdx: batchIdx, RowIdx: rowIdx})
+
+		level := shard.index.generateLevel()
+		err := shard.index.InsertWithVector(localID, vec, level)
+		if err != nil {
+			return 0, fmt.Errorf("shard insert failed: %w", err)
+		}
+		metrics.ShardedHnswShardSize.WithLabelValues(s.dataset.Name, fmt.Sprintf("%d", shardIdx)).Inc()
+		return uint32(id), nil
 	}
-	shard := s.shards[shardIdx]
 	s.shardsMu.RUnlock()
 
-	// Map Global ID to Local ID in Shard
+	// If we are here, we might need to grow.
+	// Only linear sharding supports growth.
+	if s.config.UseRingSharding {
+		return 0, fmt.Errorf("shard index out of bounds (dynamic growth not supported in ring mode)")
+	}
+
+	// Dynamic Growth (Double-checked locking)
+	s.shardsMu.Lock()
+	if shardIdx < len(s.shards) {
+		// Someone else created it
+		shard := s.shards[shardIdx]
+		s.shardsMu.Unlock()
+		localID := shard.mapID(id)
+		// Store location in shard index to support filtering
+		shard.index.SetLocation(VectorID(localID), Location{BatchIdx: batchIdx, RowIdx: rowIdx})
+
+		level := shard.index.generateLevel()
+		err := shard.index.InsertWithVector(localID, vec, level)
+		if err != nil {
+			return 0, fmt.Errorf("shard insert failed: %w", err)
+		}
+		metrics.ShardedHnswShardSize.WithLabelValues(s.dataset.Name, fmt.Sprintf("%d", shardIdx)).Inc()
+		return uint32(id), nil
+	}
+
+	// Grow
+	// We fill potential gaps if shardIdx skips (e.g. if batch added many IDs at once)
+	for i := len(s.shards); i <= shardIdx; i++ {
+		s.shards = append(s.shards, s.newShard(i))
+	}
+	shard := s.shards[shardIdx]
+	s.shardsMu.Unlock()
+
+	// Insert
 	localID := shard.mapID(id)
+	// Store location in shard index to support filtering
+	shard.index.SetLocation(VectorID(localID), Location{BatchIdx: batchIdx, RowIdx: rowIdx})
 
-	// Insert into Shard
 	level := shard.index.generateLevel()
-
 	err := shard.index.InsertWithVector(localID, vec, level)
 	if err != nil {
 		return 0, fmt.Errorf("shard insert failed: %w", err)
@@ -301,7 +342,7 @@ func (s *ShardedHNSW) AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx int) (
 }
 
 // SearchVectors implements VectorIndex.
-func (s *ShardedHNSW) SearchVectors(query []float32, k int, filters []query.Filter) ([]SearchResult, error) {
+func (s *ShardedHNSW) SearchVectors(queryVec []float32, k int, filters []query.Filter) ([]SearchResult, error) {
 	if k <= 0 {
 		return nil, nil
 	}
@@ -326,7 +367,7 @@ func (s *ShardedHNSW) SearchVectors(query []float32, k int, filters []query.Filt
 		i := i
 		shard := shard
 		g.Go(func() error {
-			res, err := shard.index.SearchVectors(query, k*2, filters) // Oversample
+			res, err := shard.index.SearchVectors(queryVec, k*2, filters) // Oversample
 			if err != nil {
 				return err
 			}
@@ -370,7 +411,7 @@ func (s *ShardedHNSW) SearchVectors(query []float32, k int, filters []query.Filt
 	if len(filters) > 0 && s.dataset != nil {
 		s.dataset.dataMu.RLock()
 		if len(s.dataset.Records) > 0 {
-			evaluator, err := qry.NewFilterEvaluator(s.dataset.Records[0], filters)
+			evaluator, err := query.NewFilterEvaluator(s.dataset.Records[0], filters)
 			if err == nil {
 				filtered := merged[:0]
 				for _, r := range merged {
@@ -400,7 +441,7 @@ func (s *ShardedHNSW) SearchVectors(query []float32, k int, filters []query.Filt
 }
 
 // SearchVectorsWithBitmap implements VectorIndex.
-func (s *ShardedHNSW) SearchVectorsWithBitmap(query []float32, k int, filter *query.Bitset) []SearchResult {
+func (s *ShardedHNSW) SearchVectorsWithBitmap(queryVec []float32, k int, filter *query.Bitset) []SearchResult {
 
 	type shardResult struct {
 		results  []SearchResult
@@ -421,7 +462,7 @@ func (s *ShardedHNSW) SearchVectorsWithBitmap(query []float32, k int, filter *qu
 		go func(idx int, sh *hnswShard) {
 			defer wg.Done()
 			// Pass nil filter to shard, filter globally
-			res := sh.index.SearchVectorsWithBitmap(query, k*2, nil)
+			res := sh.index.SearchVectorsWithBitmap(queryVec, k*2, nil)
 			ch <- shardResult{results: res, shardIdx: idx}
 		}(i, shard)
 	}
@@ -616,4 +657,68 @@ func (s *ShardedHNSW) EstimateMemory() int64 {
 	}
 
 	return size
+}
+
+// RemapFromBatchInfo updates locations based on compaction remapping.
+func (s *ShardedHNSW) RemapFromBatchInfo(remapping map[int]BatchRemapInfo) error {
+	// ShardedHNSW locationStore (ChunkedLocationStore) holds global locations.
+	// We need to iterate all locations and update them.
+	// This is potentially expensive but necessary for compaction.
+	// Since ChunkedLocationStore is sharded by ID, we can iterate efficiently if it exposes iteration.
+	// Currently it does not expose iteration. We might need to modify ChunkedLocationStore
+	// or iterate via the NextID if it's contiguous.
+
+	maxID := int(s.nextID.Load())
+	for id := 0; id < maxID; id++ {
+		vid := VectorID(id)
+		loc, ok := s.locationStore.Get(vid)
+		if !ok {
+			continue
+		}
+
+		info, ok := remapping[loc.BatchIdx]
+		if ok {
+			// This batch was compacted
+			if loc.RowIdx < len(info.NewRowIdxs) {
+				newRowIdx := info.NewRowIdxs[loc.RowIdx]
+				if newRowIdx != -1 {
+					// Update location
+					s.locationStore.Set(vid, Location{
+						BatchIdx: info.NewBatchIdx,
+						RowIdx:   newRowIdx,
+					})
+				}
+				// If newRowIdx == -1, it was deleted (tombstone). Leave as is.
+			}
+		}
+	}
+	return nil
+}
+
+// CleanupTombstones removes deleted nodes from the graph (Vacuum).
+func (s *ShardedHNSW) CleanupTombstones(threshold int) int {
+	totalPruned := 0
+	s.shardsMu.RLock()
+	currentShards := s.shards
+	s.shardsMu.RUnlock()
+
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+
+	for _, shard := range currentShards {
+		if shard == nil || shard.index == nil {
+			continue
+		}
+		wg.Add(1)
+		go func(sh *hnswShard) {
+			defer wg.Done()
+			// Forward to underlying ArrowHNSW
+			pruned := sh.index.CleanupTombstones(threshold)
+			mu.Lock()
+			totalPruned += pruned
+			mu.Unlock()
+		}(shard)
+	}
+	wg.Wait()
+	return totalPruned
 }

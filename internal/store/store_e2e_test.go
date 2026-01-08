@@ -158,7 +158,7 @@ func TestStore_EndToEnd_TDD(t *testing.T) {
 	assert.Equal(t, 50, totalRows2, "Data should be recovered")
 }
 
-func makeE2ETestRecord(mem memory.Allocator, dims int, numVectors int) arrow.RecordBatch {
+func makeE2ETestRecord(mem memory.Allocator, dims, numVectors int) arrow.RecordBatch {
 	schema := arrow.NewSchema([]arrow.Field{
 		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
 		{Name: "category", Type: arrow.BinaryTypes.String},

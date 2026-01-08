@@ -53,7 +53,7 @@ func (h *ArrowHNSW) AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx int) (ui
 
 // NewArrowHNSW creates a new HNSW index backed by Arrow records.
 // If locationStore is nil, a new one is created.
-func NewArrowHNSW(dataset *Dataset, config ArrowHNSWConfig, locStore *ChunkedLocationStore) *ArrowHNSW {
+func NewArrowHNSW(dataset *Dataset, config ArrowHNSWConfig, locStore *ChunkedLocationStore) *ArrowHNSW { //nolint:gocritic
 	if config.M == 0 {
 		config = DefaultArrowHNSWConfig()
 	}
@@ -92,7 +92,7 @@ func NewArrowHNSW(dataset *Dataset, config ArrowHNSWConfig, locStore *ChunkedLoc
 		initialCap = 1024
 	}
 
-	gd := NewGraphData(initialCap, 0, config.SQ8Enabled, config.PQEnabled)
+	gd := NewGraphData(initialCap, 0, config.SQ8Enabled, config.PQEnabled, config.BQEnabled)
 	h.data.Store(gd) // Dim 0 initially, updated on first insert
 	h.backend.Store(gd)
 
@@ -144,8 +144,11 @@ func (h *ArrowHNSW) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []int)
 	// 3. Parallel Insert
 	// Note: When SQ8 is enabled, we serialize insertions to avoid race conditions
 	// on shared memory writes to the vector chunks
-	if h.config.SQ8Enabled {
-		// Serial insertion for SQ8
+	// 3. Parallel Insert
+	// Note: When SQ8 or BQ is enabled, we serialize insertions to avoid race conditions
+	// on shared memory writes to the vector chunks
+	if h.config.SQ8Enabled || h.config.BQEnabled {
+		// Serial insertion for SQ8/BQ to ensure chunks are safely written
 		for i := 0; i < n; i++ {
 			id := uint32(startID) + uint32(i)
 			ids[i] = id
@@ -195,31 +198,120 @@ func (h *ArrowHNSW) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []int)
 }
 
 // SearchVectors implements VectorIndex.
-func (h *ArrowHNSW) SearchVectors(query []float32, k int, filters []query.Filter) ([]SearchResult, error) {
-	// Filter support TODO: Convert general filters to bitset?
-	// For now, only basic search supported via this interface.
+// SearchVectors implements VectorIndex.
+func (h *ArrowHNSW) SearchVectors(queryVec []float32, k int, filters []query.Filter) ([]SearchResult, error) {
+	// Post-filtering with Adaptive Expansion
+	initialFactor := 10
+	retryFactor := 50
+	maxRetries := 1
 
-	ef := k + 100
-	// Use configured ef if larger (or standard search ef separation)
-	// Usually for search we might want a different dynamic ef.
-	// We'll stick to a heuristic k + 100 for now.
+	q := queryVec // Alias to avoid shadowing package query
 
-	// Pass nil filter. Search signature updated in Step 2554.
-	return h.Search(query, k, ef, nil)
+	limit := k
+	if len(filters) > 0 {
+		limit = k * initialFactor
+	}
+
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		// Use ef = limit + 100 heuristic
+		ef := limit + 100
+
+		// Pass nil filter to get raw candidates from graph
+		candidates, err := h.Search(q, limit, ef, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		// Filter candidates
+		var res []SearchResult
+		if len(filters) > 0 {
+			// TODO: Handle multiple batches. Currently binding to Batch 0.
+			if h.dataset == nil || len(h.dataset.Records) == 0 {
+				return nil, fmt.Errorf("dataset empty during filter")
+			}
+
+			var evaluator *query.FilterEvaluator
+			var err error
+			evaluator, err = query.NewFilterEvaluator(h.dataset.Records[0], filters)
+			if err != nil {
+				return nil, err
+			}
+
+			res = make([]SearchResult, 0, len(candidates))
+
+			// 1. Gather valid candidates and their row indices for batch processing
+			// We only filter candidates that are in Batch 0 (current limit)
+			validCandidates := make([]SearchResult, 0, len(candidates))
+			rowIndices := make([]int, 0, len(candidates))
+
+			for _, candle := range candidates {
+				loc, ok := h.locationStore.Get(VectorID(candle.ID))
+				if !ok || loc.BatchIdx != 0 {
+					continue
+				}
+				rowIndices = append(rowIndices, loc.RowIdx)
+				validCandidates = append(validCandidates, candle)
+			}
+
+			// 2. Vectorized Filter Evaluation
+			// MatchesBatch uses SIMD/Gather where possible to filter indices efficiently
+			matchedIndices := evaluator.MatchesBatch(rowIndices)
+
+			// 3. Reconstruct Results
+			// matchedIndices is a subsequence of rowIndices. validCandidates aligns with rowIndices.
+			// We match them up.
+			matchIdx := 0
+			for i, rowIdx := range rowIndices {
+				if matchIdx < len(matchedIndices) && rowIdx == matchedIndices[matchIdx] {
+					res = append(res, validCandidates[i])
+					matchIdx++
+				}
+			}
+		} else {
+			res = candidates
+		}
+
+		if len(res) >= k || attempt == maxRetries || len(filters) == 0 {
+			// Truncate to k
+			if len(res) > k {
+				res = res[:k]
+			}
+			return res, nil
+		}
+
+		// Retry with larger limit
+		limit = k * retryFactor
+	}
+
+	return nil, nil
 }
 
 // SearchVectorsWithBitmap implements VectorIndex.
-func (h *ArrowHNSW) SearchVectorsWithBitmap(query []float32, k int, filter *query.Bitset) []SearchResult {
+func (h *ArrowHNSW) SearchVectorsWithBitmap(q []float32, k int, filter *query.Bitset) []SearchResult {
 	ef := k + 100
 	// Calls h.Search which returns ([]SearchResult, error)
 	// The interface signature returns only []SearchResult
-	res, _ := h.Search(query, k, ef, filter)
+	res, _ := h.Search(q, k, ef, filter)
 	return res
 }
 
 // GetLocation implements VectorIndex.
 func (h *ArrowHNSW) GetLocation(id VectorID) (Location, bool) {
 	return h.locationStore.Get(id)
+}
+
+// GetVectorID implements VectorIndex.
+// It returns the ID for a given location using the reverse index.
+func (h *ArrowHNSW) GetVectorID(loc Location) (VectorID, bool) {
+	return h.locationStore.GetID(loc)
+}
+
+// SetLocation allows manually setting the location for a vector ID.
+// This is used by ShardedHNSW to populate shard-local location stores for filtering.
+func (h *ArrowHNSW) SetLocation(id VectorID, loc Location) {
+	h.locationStore.EnsureCapacity(id)
+	h.locationStore.Set(id, loc)
+	h.locationStore.UpdateSize(id)
 }
 
 // GetNeighbors returns the nearest neighbors for a given vector ID from the graph
@@ -302,7 +394,28 @@ func (h *ArrowHNSW) EstimateMemory() int64 {
 
 // Close implements VectorIndex.
 func (h *ArrowHNSW) Close() error {
-	// TODO: Clean up resources
+	// Release GraphData
+	if data := h.data.Swap(nil); data != nil {
+		_ = data.Close()
+	}
+	if backend := h.backend.Swap(nil); backend != nil {
+		_ = backend.Close()
+	}
+
+	// Release Bitsets (Roaring Bitmaps are pooled)
+	if h.deleted != nil {
+		h.deleted.Release()
+		h.deleted = nil
+	}
+
+	// Clear pools and stores
+	h.searchPool = nil
+	h.batchComputer = nil
+
+	// Break references to dataset and locationStore
+	h.dataset = nil
+	h.locationStore = nil
+
 	return nil
 }
 

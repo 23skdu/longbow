@@ -9,8 +9,9 @@ Longbow provides four search modes:
 
 1. **Dense Search** - Vector similarity using HNSW index
 2. **Sparse Search** - Keyword matching using inverted index
-3. **Hybrid Search** - Combines dense + sparse with Reciprocal Rank Fusion (RRF)
-4. **Filtered Search** - Vector similarity with metadata predicate filtering
+3. **Filtered Search** - Exact match pre-filtering using Column Inverted Index
+4. **Hybrid Search** - Combines dense + sparse with Reciprocal Rank Fusion (RRF)
+5. **Re-ranking** - Cross-Encoder refinement of fused results
 
 ## Resilience & Stability
 
@@ -125,7 +126,58 @@ The distance function accesses vector data directly from Apache Arrow buffers:
 2. **Job Queue**: Indexing jobs pushed to buffered channel
 3. **Worker Pool**: Background workers (`runtime.NumCPU()`) update HNSW graph
 
-## Hybrid Search (Dense + Sparse)
+## Hybrid Search Pipeline
+
+The `HybridSearchPipeline` orchestrates the entire search flow, integrating filtering, retrieval, fusion, and re-ranking.
+
+### Pipeline Stages
+
+1. **Exact Filtering** (Optional): Prunes the search space using `ColumnInvertedIndex` for O(1) attribute lookups.
+2. **Retrieval**:
+   * **Dense**: Parallel HNSW search.
+   * **Sparse**: Parallel BM25 inverted index search.
+3. **Fusion**: Combines results using Reciprocal Rank Fusion (RRF) or Linear Weights.
+4. **Re-ranking** (Optional): Refines the top candidates using a Cross-Encoder model.
+5. **Limit**: Truncates to final `k`.
+
+```mermaid
+graph TD
+    A[Query] --> B{Exact Filters?}
+    B -- Yes --> C[Column Index Lookup]
+    B -- No --> D
+    C --> D[Candidate Set]
+    D --> E{Retrieval}
+    E --> F[HNSW Vector Search]
+    E --> G[BM25 Keyword Search]
+    F --> H[Dense Results]
+    G --> I[Sparse Results]
+    H --> J[Fusion (RRF/Linear)]
+    I --> J
+    J --> K{Re-ranker?}
+    K -- Yes --> L[Cross-Encoder]
+    K -- No --> M[Final Results]
+    L --> M
+```
+
+### Exact Match Filtering
+
+Longbow uses a `ColumnInvertedIndex` to support efficient pre-filtering for exact matches (e.g., `category="electronics"`).
+This index maps attribute values directly to physical `RowPosition`s, which are then mapped to internal `VectorID`s.
+This approach avoids scanning the entire dataset for metadata predicates.
+
+### Re-ranking Interface
+
+A second-stage re-ranker can be attached to the pipeline to improve precision.
+
+```go
+type Reranker interface {
+    Rerank(ctx context.Context, query string, results []SearchResult) ([]SearchResult, error)
+}
+```
+
+Longbow provides a `CrossEncoderReranker` (currently a stub) to integrate deep learning models that score query-document pairs.
+
+## Hybrid Search (Legacy Concepts)
 
 ### Why Hybrid Search?
 
@@ -190,7 +242,22 @@ gs.AddEdge(VectorID(1), VectorID(2), "contains_topic", 0.8)
 // Get 1-hop neighbors of Node 0
 edges := gs.GetEdges(VectorID(0))
 // Returns [{Target: 1, Type: "authored", Weight: 1.0}]
+
+### Graph-Biased Ranking (Spreading Activation)
+
+Longbow implements a **Rank-Based Spreading Activation** algorithm to re-rank search results based on graph topology.
+
+1.  **Initialization**: Initial vector search results are assigned a mass based on their rank (`1/rank`).
+2.  **Expansion**: Mass "spreads" to connected neighbors via weighted edges.
+3.  **Decay**: Mass decays with each hop (`1/(depth+1)`) to prioritize immediate connections.
+4.  **Combination**: Final scores are a weighted blend of Vector Relevance and Graph Centrality.
+
+```go
+// Re-rank results using graph topology (alpha=0.5) with 2-hop expansion
+results := dataset.Graph.RankWithGraph(initialResults, 0.5, 2)
 ```
+
+```go
 
 #### HybridSearcher
 
@@ -207,12 +274,13 @@ denseResults := hs.SearchDense(queryVector, 10)
 // Sparse-only search  
 sparseResults := hs.SearchSparse("error", 10)
 
-// Hybrid search with RRF
-hybridResults := hs.SearchHybrid(queryVector, "error", 10, 0.5, 60)
-
-// Weighted hybrid (alpha: 1.0=dense only, 0.0=sparse only)
-weightedResults := hs.SearchHybridWeighted(queryVector, "error", 10, 0.7, 60)
+// Hybrid search with RRF and Graph Re-ranking
+// alpha=0.5 (Dense/Sparse balance), rrfK=60
+// graphAlpha=0.3 (Graph influence), graphDepth=2 (2-hop expansion)
+hybridResults := hs.SearchHybrid(queryVector, "error", 10, 0.5, 60, 0.3, 2)
 ```
+
+```text
 
 ### Reciprocal Rank Fusion (RRF)
 
@@ -331,7 +399,7 @@ Automatically estimate alpha based on query length (keyword vs. natural language
 results := hs.SearchHybridWeighted(query, "short query", 10, -1.0, 60)
 ```
 
-```
+```text
 
 ## API Reference
 
@@ -362,8 +430,7 @@ type SearchResult struct {
 | `Delete(id)` | Remove from both |
 | `SearchDense(query, k)` | Vector-only search |
 | `SearchSparse(query, k)` | Keyword-only search |
-| `SearchHybrid(vec, text, k, α, rrfK)` | RRF hybrid search |
-| `SearchHybridWeighted(vec, text, k, α, rrfK)` | Weighted hybrid |
+| `SearchHybrid(vec, text, k, α, rrfK, gα, gDepth)` | Graph-enhanced RRF hybrid search |
 
 ### ReciprocalRankFusion
 

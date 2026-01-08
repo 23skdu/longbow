@@ -1,6 +1,5 @@
 package store
 
-
 import (
 	"testing"
 )
@@ -46,7 +45,7 @@ func TestArrowHNSW_DefaultArrowHNSWConfig(t *testing.T) {
 // TestGraphData_Initialization validates GraphData structure.
 func TestGraphData_Initialization(t *testing.T) {
 	capacity := 100
-	data := NewGraphData(capacity, 0, false, false)
+	data := NewGraphData(100, 10, false, false, false)
 
 	if data.Capacity < capacity {
 		t.Errorf("Capacity = %d, want >= %d", data.Capacity, capacity)

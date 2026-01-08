@@ -1,6 +1,5 @@
 package store
 
-
 import (
 	"fmt"
 	"testing"
@@ -37,7 +36,7 @@ func TestBatchedIndexing(t *testing.T) {
 	store.datasets[ds.Name] = ds
 
 	// Start worker
-	go store.runIndexWorker()
+	go store.runIndexWorker(nil)
 
 	// 2. Add vectors in batches
 	numVectors := 200

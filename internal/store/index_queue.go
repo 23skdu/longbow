@@ -192,7 +192,8 @@ func (q *IndexJobQueue) drainRemaining() {
 
 	// Try to send each job with a short timeout to allow consumers to clear capacity
 	// This helps avoid dropping data during graceful shutdown if consumers are just slightly behind.
-	timeout := 50 * time.Millisecond
+	// This helps avoid dropping data during graceful shutdown if consumers are just slightly behind.
+	timeout := 5 * time.Millisecond
 
 	for _, job := range batch {
 		select {

@@ -78,11 +78,12 @@ func main() {
 				t0 := time.Now()
 				var err error
 
-				if *mode == "ingest" {
+				switch *mode {
+				case "ingest":
 					err = runIngest(ctx, c)
-				} else if *mode == "search" {
+				case "search":
 					err = runSearch(ctx, c)
-				} else {
+				default:
 					log.Printf("Unknown mode: %s", *mode)
 					return
 				}
@@ -149,7 +150,7 @@ func runIngest(ctx context.Context, c *client.SmartClient) error {
 
 	wr := flight.NewRecordWriter(stream, ipc.WithSchema(schema))
 	wr.SetFlightDescriptor(desc)
-	defer wr.Close()
+	defer func() { _ = wr.Close() }()
 
 	if err := wr.Write(rec); err != nil {
 		return err
@@ -223,7 +224,7 @@ func (l *sumLatency) Record(d time.Duration) {
 	}
 }
 
-func printResults(d time.Duration, ops int64, errs int64, l *sumLatency) {
+func printResults(d time.Duration, ops, errs int64, l *sumLatency) {
 	seconds := d.Seconds()
 	throughput := float64(ops) / seconds
 

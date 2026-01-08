@@ -91,7 +91,8 @@ func (w *SyncWorker) syncAll() {
 	// 1. Discover peers from Gossip if available
 	if w.store.Mesh != nil {
 		members := w.store.Mesh.GetMembers()
-		for _, m := range members {
+		for i := range members {
+			m := &members[i]
 			// Skip self and non-alive nodes
 			if m.ID != w.store.Mesh.Config.ID && m.Status == mesh.StatusAlive {
 				// Gossip address might be UDP, but SyncWorker needs gRPC (TCP).

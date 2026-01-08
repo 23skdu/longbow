@@ -117,7 +117,7 @@ func TestAutoSharding_ConcurrentWrites_Repro(t *testing.T) {
 	}
 }
 
-func createMockBatch(mem memory.Allocator, rows int, dim int) arrow.RecordBatch {
+func createMockBatch(mem memory.Allocator, rows, dim int) arrow.RecordBatch {
 	schema := arrow.NewSchema(
 		[]arrow.Field{
 			{Name: "vector", Type: arrow.FixedSizeListOf(int32(dim), arrow.PrimitiveTypes.Float32)},

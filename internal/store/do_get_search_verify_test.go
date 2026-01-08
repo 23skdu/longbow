@@ -26,7 +26,7 @@ func TestDoGetSearch_Integration(t *testing.T) {
 	lis, err := net.Listen("tcp", "localhost:0")
 	require.NoError(t, err)
 	addr := lis.Addr().String()
-	defer lis.Close()
+	defer func() { _ = lis.Close() }()
 
 	logger := zerolog.Nop()
 	// NewVectorStore args: allocator, logger, maxMemory, walBytes(unused), checkInterval(unused)
@@ -97,7 +97,7 @@ func TestDoGetSearch_Integration(t *testing.T) {
 
 	// 2. Setup Client (GlobalSearchCoordinator)
 	coord := NewGlobalSearchCoordinator(logger)
-	defer coord.Close()
+	defer func() { _ = coord.Close() }()
 
 	// 3. Execute Search
 	// Query: [1, 0] (Should match ID 10 best)

@@ -151,17 +151,18 @@ func HybridSearch(ctx context.Context, s *VectorStore, name string, queryVec []f
 	}
 
 	var results []SearchResult
-	if filterBitmap != nil && filterBitmap.Count() > 0 {
+	switch {
+	case filterBitmap != nil && filterBitmap.Count() > 0:
 		// Perform filtered search
 		results = ds.Index.SearchVectorsWithBitmap(queryVec, k, filterBitmap)
-	} else if !hasFilters {
+	case !hasFilters:
 		// No filters, standard search
 		var err error
 		results, err = ds.Index.SearchVectors(queryVec, k, nil)
 		if err != nil {
 			return nil, err
 		}
-	} else {
+	default:
 		// Filters yielded no results
 		return nil, nil
 	}
@@ -207,8 +208,8 @@ func (s *VectorStore) HybridSearchWithBitmap(ctx context.Context, req *HybridSea
 }
 
 // EstimateAlpha calculates a heuristic alpha value based on query length.
-func EstimateAlpha(query string) float32 {
-	tokens := strings.Fields(query)
+func EstimateAlpha(q string) float32 {
+	tokens := strings.Fields(q)
 	n := len(tokens)
 	if n < 3 {
 		return 0.3

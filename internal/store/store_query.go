@@ -231,6 +231,7 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			var evaluator *qry.FilterEvaluator
 			for stage := range stageChan {
 				rec := stage.Record
 				deleted := stage.Tombstone
@@ -241,12 +242,26 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 
 				if len(query.Filters) > 0 {
 					filterStart := time.Now()
-					// Create evaluator
-					// TODO: Reuse evaluator?
-					// For now Create new per batch.
-					// Note: qry.NewFilterEvaluator(rec, ...)
-					// This logic should be moved to filterRecord helper or similar.
-					filtered, err := filterRecord(ctx, s.mem, rec, query.Filters)
+
+					// Reusing evaluator
+					if evaluator == nil {
+						evaluator, err = qry.NewFilterEvaluator(rec, query.Filters)
+					} else {
+						err = evaluator.Reset(rec)
+					}
+
+					var mask *array.Boolean
+					if err == nil {
+						mask, err = evaluator.EvaluateToArrowBoolean(s.mem, int(rec.NumRows()))
+					}
+
+					var filtered arrow.RecordBatch
+					if err == nil {
+						filtered, err = filterRecordWithMask(ctx, s.mem, rec, mask)
+					}
+					if mask != nil {
+						mask.Release()
+					}
 					metrics.FilterExecutionDurationSeconds.WithLabelValues(name).Observe(time.Since(filterStart).Seconds())
 					if err != nil {
 						select {
@@ -681,9 +696,10 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, stream fli
 		peers := s.Mesh.GetMembers()
 		var remotePeers []mesh.Member //nolint:prealloc // Unknown size
 		selfID := s.Mesh.GetIdentity().ID
-		for _, p := range peers {
+		for i := range peers {
+			p := &peers[i]
 			if p.ID != selfID {
-				remotePeers = append(remotePeers, p)
+				remotePeers = append(remotePeers, *p)
 			}
 		}
 

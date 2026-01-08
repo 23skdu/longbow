@@ -22,7 +22,7 @@ func createDurabilityTestSchema() *arrow.Schema {
 }
 
 // Helper to create batch
-func createDurabilityTestBatch(mem memory.Allocator, startID int, count int) arrow.RecordBatch {
+func createDurabilityTestBatch(mem memory.Allocator, startID, count int) arrow.RecordBatch {
 	schema := createDurabilityTestSchema()
 	b := array.NewRecordBuilder(mem, schema)
 	defer b.Release()
@@ -67,7 +67,7 @@ func TestDurability_EndToEnd(t *testing.T) {
 	// 3. Recover Store 2
 	store2 := NewVectorStore(mem, logger, 1<<30, 1<<30, 0)
 	require.NoError(t, store2.InitPersistence(cfg1))
-	defer store2.ClosePersistence()
+	defer func() { _ = store2.ClosePersistence() }()
 
 	// 4. Verify
 	ds, err := store2.GetDataset("test_ds")
@@ -111,12 +111,12 @@ func TestDurability_SnapshotAndWAL(t *testing.T) {
 	require.NoError(t, store1.ApplyDelta("ds_mixed", recB, 2, time.Now().UnixNano()))
 
 	require.NoError(t, store1.FlushWAL())
-	store1.ClosePersistence()
+	_ = store1.ClosePersistence()
 
 	// 5. Recover Store 2
 	store2 := NewVectorStore(mem, logger, 1<<30, 1<<30, 0)
 	require.NoError(t, store2.InitPersistence(cfg1))
-	defer store2.ClosePersistence()
+	defer func() { _ = store2.ClosePersistence() }()
 
 	// 6. Verify
 	ds, err := store2.GetDataset("ds_mixed")
@@ -167,13 +167,13 @@ func TestDurability_IndexRebuild(t *testing.T) {
 
 	require.NoError(t, store1.writeToWAL(rec, "ds_vec"))
 	require.NoError(t, store1.ApplyDelta("ds_vec", rec, 1, time.Now().UnixNano()))
-	store1.FlushWAL()
-	store1.ClosePersistence()
+	require.NoError(t, store1.FlushWAL())
+	_ = store1.ClosePersistence()
 
 	// Recover
 	store2 := NewVectorStore(mem, logger, 1<<30, 1<<30, 0)
 	require.NoError(t, store2.InitPersistence(cfg1))
-	defer store2.ClosePersistence()
+	defer func() { _ = store2.ClosePersistence() }()
 
 	// Search
 	// Query [1.0, 0.0] should confirm ID 0 is top match
@@ -225,20 +225,20 @@ func TestDurability_WALTruncation(t *testing.T) {
 	rec := createDurabilityTestBatch(mem, 100, 1) // 1 record
 	defer rec.Release()
 
-	store1.writeToWAL(rec, "ds_dup")
-	store1.ApplyDelta("ds_dup", rec, 1, 0)
+	require.NoError(t, store1.writeToWAL(rec, "ds_dup"))
+	require.NoError(t, store1.ApplyDelta("ds_dup", rec, 1, 0))
 
 	// Snapshot
 	require.NoError(t, store1.Snapshot())
 
 	// Wait for any async truncate if it exists (StorageEngine might do it inline in Snapshot though)
 
-	store1.ClosePersistence()
+	_ = store1.ClosePersistence()
 
 	// Recover
 	store2 := NewVectorStore(mem, logger, 1<<30, 1<<30, 0)
 	require.NoError(t, store2.InitPersistence(cfg1))
-	defer store2.ClosePersistence()
+	defer func() { _ = store2.ClosePersistence() }()
 
 	ds, _ := store2.GetDataset("ds_dup")
 	// If WAL wasn't truncated/checkpointed, we'd have 1 (Snapshot) + 1 (WAL) = 2 records?

@@ -115,34 +115,34 @@ func (p *HybridSearchPipeline) SetDataset(ds *Dataset) {
 }
 
 // Search performs hybrid search combining all configured indexes
-func (p *HybridSearchPipeline) Search(query *HybridSearchQuery) ([]SearchResult, error) {
-	if query == nil {
+func (p *HybridSearchPipeline) Search(q *HybridSearchQuery) ([]SearchResult, error) {
+	if q == nil {
 		return nil, errors.New("query cannot be nil")
 	}
-	if err := query.Validate(); err != nil {
+	if err := q.Validate(); err != nil {
 		return nil, err
 	}
-	if query.K <= 0 {
+	if q.K <= 0 {
 		return nil, errors.New("k must be positive")
 	}
 
 	alpha := p.config.Alpha
-	if query.AlphaOverride != nil {
-		alpha = *query.AlphaOverride
+	if q.AlphaOverride != nil {
+		alpha = *q.AlphaOverride
 	}
 
 	// 1. Get exact filter IDs if column index enabled
-	exactIDs := p.applyExactFilters(query.ExactFilters)
+	exactIDs := p.applyExactFilters(q.ExactFilters)
 
 	// 2. Vector search (dense) using HNSW
 	var denseResults []SearchResult
-	if len(query.Vector) > 0 && p.hnswIndex != nil && alpha > 0 {
+	if len(q.Vector) > 0 && p.hnswIndex != nil && alpha > 0 {
 		// Use SearchWithArena if available (restored from bak logic)
 		arena := GetArena()
 		defer PutArena(arena)
 
 		// SearchWithArena returns []uint32 (internal IDs)
-		ids := p.hnswIndex.SearchWithArena(query.Vector, query.K*2, arena)
+		ids := p.hnswIndex.SearchWithArena(q.Vector, q.K*2, arena)
 		for rank, id := range ids {
 			// Convert rank to score (higher rank = lower score)
 			score := 1.0 / float32(rank+1)
@@ -155,36 +155,36 @@ func (p *HybridSearchPipeline) Search(query *HybridSearchQuery) ([]SearchResult,
 
 	// 3. Keyword search (sparse) using BM25
 	var sparseResults []SearchResult
-	if query.KeywordQuery != "" && p.bm25Index != nil && alpha < 1 {
-		sparseResults = p.bm25Index.SearchBM25(query.KeywordQuery, query.K*2)
+	if q.KeywordQuery != "" && p.bm25Index != nil && alpha < 1 {
+		sparseResults = p.bm25Index.SearchBM25(q.KeywordQuery, q.K*2)
 	}
 
 	// 4. Fuse results based on mode
 	var fused []SearchResult
 	switch p.config.FusionMode {
 	case FusionModeRRF:
-		fused = ReciprocalRankFusion(denseResults, sparseResults, p.config.RRFk, query.K)
+		fused = ReciprocalRankFusion(denseResults, sparseResults, p.config.RRFk, q.K)
 	case FusionModeLinear:
-		fused = FuseLinear(denseResults, sparseResults, alpha, query.K)
+		fused = FuseLinear(denseResults, sparseResults, alpha, q.K)
 	case FusionModeCascade:
-		fused = FuseCascade(exactIDs, sparseResults, denseResults, query.K)
+		fused = FuseCascade(exactIDs, sparseResults, denseResults, q.K)
 	default:
-		fused = ReciprocalRankFusion(denseResults, sparseResults, p.config.RRFk, query.K)
+		fused = ReciprocalRankFusion(denseResults, sparseResults, p.config.RRFk, q.K)
 	}
 
 	// 5. Re-ranking stage (Stage 2)
 	// We re-rank the fused results using a more expensive model if available
 	// Usually we re-rank more than K and then truncate
 	if p.reranker != nil {
-		reranked, err := p.reranker.Rerank(context.Background(), query.KeywordQuery, fused)
+		reranked, err := p.reranker.Rerank(context.Background(), q.KeywordQuery, fused)
 		if err == nil {
 			fused = reranked
 		}
 	}
 
 	// 6. Limit to K
-	if len(fused) > query.K {
-		fused = fused[:query.K]
+	if len(fused) > q.K {
+		fused = fused[:q.K]
 	}
 
 	return fused, nil
@@ -369,7 +369,7 @@ type CrossEncoderReranker struct {
 	ModelName string
 }
 
-func (r *CrossEncoderReranker) Rerank(ctx context.Context, query string, results []SearchResult) ([]SearchResult, error) {
+func (r *CrossEncoderReranker) Rerank(ctx context.Context, q string, results []SearchResult) ([]SearchResult, error) {
 	// TODO: Implement actual cross-encoder scoring
 	// For now, this is a stub that keeps results as-is
 	return results, nil

@@ -14,16 +14,13 @@ import (
 
 // Search performs k-NN search using the provided query vector.
 // Returns the k nearest neighbors sorted by distance.
-func (h *ArrowHNSW) Search(query []float32, k, ef int, filter *query.Bitset) ([]SearchResult, error) {
+func (h *ArrowHNSW) Search(q []float32, k, ef int, filter *query.Bitset) ([]SearchResult, error) {
 	// Lock-free access: load backend
 	backend := h.backend.Load()
 	if backend == nil || h.nodeCount.Load() == 0 {
 		return []SearchResult{}, nil
 	}
 	graph := backend
-	if graph == nil {
-		return []SearchResult{}, nil
-	}
 
 	if k <= 0 {
 		return []SearchResult{}, nil
@@ -64,7 +61,7 @@ func (h *ArrowHNSW) Search(query []float32, k, ef int, filter *query.Bitset) ([]
 			ctx.querySQ8 = make([]byte, dims)
 		}
 		ctx.querySQ8 = ctx.querySQ8[:dims]
-		h.quantizer.Encode(query, ctx.querySQ8)
+		h.quantizer.Encode(q, ctx.querySQ8)
 	}
 
 	// Encode query if BQ enabled
@@ -75,7 +72,7 @@ func (h *ArrowHNSW) Search(query []float32, k, ef int, filter *query.Bitset) ([]
 			ctx.queryBQ = make([]uint64, numWords)
 		}
 		ctx.queryBQ = ctx.queryBQ[:numWords]
-		copy(ctx.queryBQ, h.bqEncoder.Encode(query))
+		copy(ctx.queryBQ, h.bqEncoder.Encode(q))
 	}
 
 	// Ensure visited bitset is large enough
@@ -94,11 +91,11 @@ func (h *ArrowHNSW) Search(query []float32, k, ef int, filter *query.Bitset) ([]
 
 	// Search from top layer to layer 1
 	for level := maxL; level > 0; level-- {
-		ep, _ = h.searchLayer(query, ep, 1, level, ctx, data, nil)
+		ep, _ = h.searchLayer(q, ep, 1, level, ctx, data, nil)
 	}
 
 	// Search layer 0 with ef candidates
-	_, _ = h.searchLayer(query, ep, ef, 0, ctx, data, filter)
+	_, _ = h.searchLayer(q, ep, ef, 0, ctx, data, filter)
 
 	// Extract results
 	results := make([]SearchResult, 0, targetK)
@@ -121,7 +118,7 @@ func (h *ArrowHNSW) Search(query []float32, k, ef int, filter *query.Bitset) ([]
 			vec := h.mustGetVectorFromData(data, id)
 			if len(vec) == dims {
 				// Compute exact distance using configured metric
-				score = h.distFunc(query, vec)
+				score = h.distFunc(q, vec)
 			}
 		}
 
@@ -156,12 +153,12 @@ func (h *ArrowHNSW) Search(query []float32, k, ef int, filter *query.Bitset) ([]
 
 // searchLayer performs greedy search at a specific layer.
 // Returns the closest node found and its distance.
-func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef, layer int, ctx *ArrowSearchContext, data *GraphData, filter *query.Bitset) (uint32, float32) {
+func (h *ArrowHNSW) searchLayer(q []float32, entryPoint uint32, ef, layer int, ctx *ArrowSearchContext, data *GraphData, filter *query.Bitset) (uint32, float32) {
 	ctx.visited.Clear()
 	ctx.candidates.Clear()
 
 	// Initialize with entry point
-	entryDist := h.distance(query, entryPoint, data, ctx)
+	entryDist := h.distance(q, entryPoint, data, ctx)
 
 	ctx.candidates.Push(Candidate{ID: entryPoint, Dist: entryDist})
 	ctx.visited.Set(entryPoint)
@@ -270,7 +267,7 @@ func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef, layer in
 			if useSQ8 && h.metric == MetricEuclidean {
 				// Ensure querySQ8 is correctly set in context for useSQ8 path
 				if len(ctx.querySQ8) == 0 {
-					ctx.querySQ8 = h.quantizer.Encode(query, nil)
+					ctx.querySQ8 = h.quantizer.Encode(q, nil)
 				}
 
 				for i, nid := range ctx.scratchIDs {
@@ -290,7 +287,7 @@ func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef, layer in
 			} else if useBQ := h.config.BQEnabled && h.bqEncoder != nil; useBQ {
 				// BQ Path
 				if len(ctx.queryBQ) == 0 {
-					ctx.queryBQ = h.bqEncoder.Encode(query)
+					ctx.queryBQ = h.bqEncoder.Encode(q)
 				}
 
 				for i, nid := range ctx.scratchIDs {
@@ -331,21 +328,21 @@ func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef, layer in
 					if bc, ok := h.batchComputer.(interface {
 						ComputeL2Distances(query []float32, vectors [][]float32) ([]float32, error)
 					}); ok {
-						batchDists, err := bc.ComputeL2Distances(query, vecs)
+						batchDists, err := bc.ComputeL2Distances(q, vecs)
 						if err != nil {
 							// Fallback to SIMD on error
-							simd.EuclideanDistanceBatch(query, vecs, dists)
+							simd.EuclideanDistanceBatch(q, vecs, dists)
 						} else {
 							copy(dists, batchDists)
 						}
 					} else {
-						simd.EuclideanDistanceBatch(query, vecs, dists)
+						simd.EuclideanDistanceBatch(q, vecs, dists)
 					}
 				} else {
 					// Handle nil vectors by computing individually for non-nil
 					for i := 0; i < batchCount; i++ {
 						if vecs[i] != nil {
-							h.batchDistFunc(query, vecs[i:i+1], dists[i:i+1])
+							h.batchDistFunc(q, vecs[i:i+1], dists[i:i+1])
 						}
 					}
 				}
@@ -368,11 +365,11 @@ func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef, layer in
 					}
 				}
 				if allValid {
-					h.batchDistFunc(query, vecs, dists)
+					h.batchDistFunc(q, vecs, dists)
 				} else {
 					for i := 0; i < batchCount; i++ {
 						if vecs[i] != nil {
-							h.batchDistFunc(query, vecs[i:i+1], dists[i:i+1])
+							h.batchDistFunc(q, vecs[i:i+1], dists[i:i+1])
 						}
 					}
 				}
@@ -426,7 +423,7 @@ func (h *ArrowHNSW) searchLayer(query []float32, entryPoint uint32, ef, layer in
 
 // distance computes the distance between a query vector and a stored vector.
 // Uses zero-copy Arrow access and SIMD optimizations for maximum performance.
-func (h *ArrowHNSW) distance(query []float32, id uint32, data *GraphData, ctx *ArrowSearchContext) float32 {
+func (h *ArrowHNSW) distance(q []float32, id uint32, data *GraphData, ctx *ArrowSearchContext) float32 {
 	_ = ctx
 	// BQ Check
 	// Note: We need ctx passed here to avoid allocs, or we alloc on fly.
@@ -436,7 +433,7 @@ func (h *ArrowHNSW) distance(query []float32, id uint32, data *GraphData, ctx *A
 		if vec != nil {
 			// Need quantized query.
 			// Ideally passed in or cached.
-			qBQ := h.bqEncoder.Encode(query)
+			qBQ := h.bqEncoder.Encode(q)
 			dist := h.bqEncoder.HammingDistance(qBQ, vec)
 			return float32(dist)
 		}
@@ -455,7 +452,7 @@ func (h *ArrowHNSW) distance(query []float32, id uint32, data *GraphData, ctx *A
 			// Just quantize on fly for single distance check (negligible for entry point).
 			// Optimization: use scratch from somewhere? No, local alloc for single dist is okay?
 			// Ideally reuse buffer.
-			qSQ8 := h.quantizer.Encode(query, nil)
+			qSQ8 := h.quantizer.Encode(q, nil)
 			d := simd.EuclideanDistanceSQ8(qSQ8, (*data.VectorsSQ8[cID])[off:off+dims])
 			return float32(d)
 		}
@@ -471,7 +468,7 @@ func (h *ArrowHNSW) distance(query []float32, id uint32, data *GraphData, ctx *A
 		start := int(cOff) * dims
 		if start+dims <= len(*data.Vectors[cID]) {
 			vec := (*data.Vectors[cID])[start : start+dims]
-			return h.distFunc(query, vec)
+			return h.distFunc(q, vec)
 		}
 	}
 
@@ -482,7 +479,7 @@ func (h *ArrowHNSW) distance(query []float32, id uint32, data *GraphData, ctx *A
 	}
 
 	// Use SIMD-optimized distance calculation
-	return h.distFunc(query, vec)
+	return h.distFunc(q, vec)
 }
 
 // l2Distance computes Euclidean (L2) distance between two vectors.

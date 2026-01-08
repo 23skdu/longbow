@@ -18,7 +18,7 @@ import (
 func TestArrowHNSW_VectorizedFilter(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "filter_test")
 	require.NoError(t, err)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	config := storage.StorageConfig{
 		DataPath:         tmpDir,
@@ -31,7 +31,7 @@ func TestArrowHNSW_VectorizedFilter(t *testing.T) {
 	store := NewVectorStore(mem, logger, 1024*1024*1024, 0, 0)
 	err = store.InitPersistence(config)
 	require.NoError(t, err)
-	defer store.ClosePersistence()
+	defer func() { _ = store.ClosePersistence() }()
 
 	// 1. Create Dataset with Metadata
 	schemaName := "filter_dataset"

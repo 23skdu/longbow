@@ -678,9 +678,9 @@ func (h *ArrowHNSW) selectNeighbors(ctx *ArrowSearchContext, candidates []Candid
 
 	// RobustPrune heuristic: select diverse neighbors
 	// Use scratch in context or allocate (fallback)
-	var selected []Candidate
+	var selected []Candidate     //nolint:prealloc // conditional allocation
+	var selectedVecs [][]float32 //nolint:prealloc // conditional allocation
 	var remaining []Candidate
-	var selectedVecs [][]float32
 	var remainingVecs [][]float32
 
 	if ctx != nil {

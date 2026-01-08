@@ -16,7 +16,7 @@ func TestArrowHNSW_BinaryQuantization_Integration(t *testing.T) {
 	// Setup
 	dim := 128
 	count := 1000
-	rand.Seed(time.Now().UnixNano())
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 
 	// Create Config with BQ Enabled
 	config := DefaultArrowHNSWConfig()
@@ -46,7 +46,7 @@ func TestArrowHNSW_BinaryQuantization_Integration(t *testing.T) {
 
 		cluster := i % 5
 		for d := 0; d < dim; d++ {
-			noise := rand.Float32()*0.2 - 0.1
+			noise := rng.Float32()*0.2 - 0.1
 			switch cluster {
 			case 0:
 				vec[d] = 1.0 + noise
@@ -59,7 +59,7 @@ func TestArrowHNSW_BinaryQuantization_Integration(t *testing.T) {
 					vec[d] = -1.0 + noise
 				}
 			default:
-				vec[d] = rand.Float32()*2 - 1
+				vec[d] = rng.Float32()*2 - 1
 			}
 		}
 		valB.AppendValues(vec, nil)

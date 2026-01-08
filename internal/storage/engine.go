@@ -113,7 +113,7 @@ func (e *StorageEngine) SyncWAL() error {
 }
 
 // GetWALQueueDepth returns the current pending and capacity of the WAL queue.
-func (e *StorageEngine) GetWALQueueDepth() (int, int) {
+func (e *StorageEngine) GetWALQueueDepth() (pending, capacity int) {
 	if e.walBatcher == nil {
 		return 0, 0
 	}
@@ -139,7 +139,7 @@ func (e *StorageEngine) ReplayWAL(applier ApplierFunc) (uint64, error) {
 	if err != nil {
 		return 0, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	// Logic copied from previous implementation
 	var maxSeq uint64
@@ -288,7 +288,7 @@ func (e *StorageEngine) Snapshot(source SnapshotSource) error {
 	}
 
 	err := source.Iterate(func(item SnapshotItem) error {
-		e.writeSnapshotItem(item, tempDir)
+		e.writeSnapshotItem(&item, tempDir)
 		return nil
 	})
 	if err != nil {
@@ -344,7 +344,7 @@ func (e *StorageEngine) Snapshot(source SnapshotSource) error {
 	return nil
 }
 
-func (e *StorageEngine) writeSnapshotItem(item SnapshotItem, tempDir string) {
+func (e *StorageEngine) writeSnapshotItem(item *SnapshotItem, tempDir string) {
 	// Write Data Records
 	if len(item.Records) > 0 {
 		path := filepath.Join(tempDir, item.Name+".parquet")
@@ -353,7 +353,7 @@ func (e *StorageEngine) writeSnapshotItem(item SnapshotItem, tempDir string) {
 			for _, rec := range item.Records {
 				_ = writeParquet(f, rec)
 			}
-			f.Close()
+			_ = f.Close()
 		}
 	}
 
@@ -365,7 +365,7 @@ func (e *StorageEngine) writeSnapshotItem(item SnapshotItem, tempDir string) {
 			for _, rec := range item.GraphRecords {
 				_ = writeGraphParquet(f, rec)
 			}
-			f.Close()
+			_ = f.Close()
 		}
 	}
 
@@ -441,7 +441,7 @@ func (e *StorageEngine) LoadSnapshots(loader func(SnapshotItem) error) error {
 				item.IndexConfig = data
 			}
 		}
-		f.Close()
+		_ = f.Close()
 	}
 
 	for _, item := range partials {

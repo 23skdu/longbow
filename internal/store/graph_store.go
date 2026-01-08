@@ -926,9 +926,11 @@ func (gs *GraphStore) Close() error {
 	gs.predicateToIdx = nil
 
 	for i := 0; i < 256; i++ {
-		gs.indexShards[i].Lock()
 		// We can't nil the shard itself as it's an array element, but we can nil the maps it protects
-		gs.indexShards[i].Unlock()
+		// No need to lock here if we are closing; if concurrency exists, defer unlock is needed.
+		// Assuming Close is exclusive. If not, missing defer.
+		gs.indexShards[i].Lock()
+		gs.indexShards[i].Unlock() //nolint:staticcheck // barrier behavior
 	}
 
 	gs.subjectIndex = nil

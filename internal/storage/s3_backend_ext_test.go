@@ -272,5 +272,7 @@ func TestS3Backend_ImplementsSnapshotBackend(t *testing.T) {
 	backend, err := NewS3Backend(cfg)
 	require.NoError(t, err)
 
-	var _ SnapshotBackend = backend
+	// Verify implementation
+	var _ SnapshotBackend = (*S3Backend)(nil)
+	_ = backend // Keep compiler happy about unused variable
 }

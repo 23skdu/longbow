@@ -162,7 +162,7 @@ func (sa *StreamAggregator) mergeAndSort(inputs []arrow.RecordBatch, k int) ([]a
 	return sa.sortAndSlice(tbl, scoreIdx[0], k, false)
 }
 
-func (sa *StreamAggregator) sortAndSlice(tbl arrow.Table, colIdx int, k int, ascending bool) ([]arrow.RecordBatch, error) {
+func (sa *StreamAggregator) sortAndSlice(tbl arrow.Table, colIdx, k int, ascending bool) ([]arrow.RecordBatch, error) {
 	// Consolidate table to get contiguous arrays for sorting
 	// This might involve copy if multiple chunks exist, which is inevitable for global sort.
 	// But Arrow's CombineChunks attempts to be smart.

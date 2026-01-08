@@ -695,12 +695,9 @@ func (p *ArrowSearchContextPool) Put(ctx *ArrowSearchContext) {
 	p.pool.Put(ctx)
 }
 
-// Size returns the index capacity.
+// Size returns the number of vectors in the index.
 func (h *ArrowHNSW) Size() int {
-	if data := h.data.Load(); data != nil {
-		return data.Size()
-	}
-	return 0
+	return int(h.nodeCount.Load())
 }
 
 // IsDeleted checks if a node ID is marked as deleted.

@@ -18,7 +18,7 @@ func TestArrowHNSW_BQ_Persistence(t *testing.T) {
 	// 1. Setup Storage
 	tmpDir, err := os.MkdirTemp("", "bq_persistence_test")
 	require.NoError(t, err)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	config := storage.StorageConfig{
 		DataPath:         tmpDir,
@@ -75,7 +75,8 @@ func TestArrowHNSW_BQ_Persistence(t *testing.T) {
 	arrowIndex := NewArrowHNSW(ds, bqConfig, nil)
 
 	// Re-add data to this new index
-	arrowIndex.AddByRecord(rec, 0, 0)
+	_, err = arrowIndex.AddByRecord(rec, 0, 0)
+	require.NoError(t, err)
 
 	// Replace in AutoShardingIndex via reflection or if accessible?
 	// ASI.current is unexported but we are in package store
@@ -94,13 +95,13 @@ func TestArrowHNSW_BQ_Persistence(t *testing.T) {
 	require.NoError(t, err)
 
 	// 5. Close and Reopen
-	store.ClosePersistence()
+	_ = store.ClosePersistence()
 
 	// Creating new store to verify restore
 	store2 := NewVectorStore(mem, logger, 1024*1024*1024, 0, 0)
 	err = store2.InitPersistence(config)
 	require.NoError(t, err)
-	defer store2.ClosePersistence()
+	defer func() { _ = store2.ClosePersistence() }()
 
 	// 6. Verify Restore
 	ds2, err := store2.GetDataset(schemaName)

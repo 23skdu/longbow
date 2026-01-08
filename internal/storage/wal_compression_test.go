@@ -66,7 +66,7 @@ func TestWALBatcher_Compression_Direct(t *testing.T) {
 	// Now try to replay it
 	it, err := NewWALIterator(tmpDir, pool)
 	require.NoError(t, err)
-	defer it.Close()
+	defer func() { _ = it.Close() }()
 
 	count := 0
 	for {

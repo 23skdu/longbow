@@ -67,7 +67,7 @@ type EventDelegate interface {
 	NotifyUpdate(member *Member)
 }
 
-func NewGossip(cfg GossipConfig) *Gossip {
+func NewGossip(cfg *GossipConfig) *Gossip {
 	if cfg.ProtocolPeriod == 0 {
 		cfg.ProtocolPeriod = ProtocolPeriod
 	}
@@ -79,7 +79,7 @@ func NewGossip(cfg GossipConfig) *Gossip {
 	}
 
 	return &Gossip{
-		Config:      cfg,
+		Config:      *cfg,
 		members:     make(map[string]*Member),
 		peers:       make([]string, 0),
 		pendingAcks: make(map[uint32]chan struct{}),
@@ -457,7 +457,7 @@ func (g *Gossip) sendPacketStruct(p *Packet, dst *net.UDPAddr) error {
 	return err
 }
 
-func (g *Gossip) sendPing(addr string, targetID string, seq uint32, payload []byte) error {
+func (g *Gossip) sendPing(addr, targetID string, seq uint32, payload []byte) error {
 	// Piggyback updates - Dynamic size
 	// Header overhead: ~7 bytes.
 	// Max payload = MaxPacketSize - HeaderSize

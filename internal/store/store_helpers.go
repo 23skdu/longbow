@@ -324,6 +324,21 @@ func filterRecord(ctx context.Context, _ memory.Allocator, rec arrow.RecordBatch
 	return filterRes.(*compute.RecordDatum).Value, nil
 }
 
+// filterRecordWithMask applies a pre-computed boolean mask to filter the record batch.
+func filterRecordWithMask(ctx context.Context, _ memory.Allocator, rec arrow.RecordBatch, mask *array.Boolean) (arrow.RecordBatch, error) {
+	if mask == nil {
+		rec.Retain()
+		return rec, nil
+	}
+	// compute.Filter expects a Datum for the selection
+	maskDatum := compute.NewDatum(mask.Data())
+	filterRes, err := compute.CallFunction(ctx, "filter", nil, compute.NewDatum(rec), maskDatum)
+	if err != nil {
+		return nil, err
+	}
+	return filterRes.(*compute.RecordDatum).Value, nil
+}
+
 // castRecordToSchema aligns a record batch to the target schema.
 // For now, it performs checking and basic re-ordering.
 func castRecordToSchema(_ memory.Allocator, rec arrow.RecordBatch, targetSchema *arrow.Schema) (arrow.RecordBatch, error) {

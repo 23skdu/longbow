@@ -270,7 +270,7 @@ func (p *ZeroAllocVectorSearchParser) parseFilters(data []byte, pos int) (int, e
 	return pos, errors.New("unexpected end in filters")
 }
 
-func parseBool(data []byte, pos int) (bool, int, error) {
+func parseBool(data []byte, pos int) (val bool, newPos int, err error) {
 	if pos+4 <= len(data) && string(data[pos:pos+4]) == "true" {
 		return true, pos + 4, nil
 	}

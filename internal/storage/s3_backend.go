@@ -299,7 +299,7 @@ func (b *S3Backend) writeMultipart(ctx context.Context, key string, data []byte)
 	}
 	uploadID := createOut.UploadId
 
-	var completedParts []types.CompletedPart
+	completedParts := make([]types.CompletedPart, 0, len(data)/(5*1024*1024)+1)
 	const partSize = 5 * 1024 * 1024
 	partNumber := int32(1)
 

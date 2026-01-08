@@ -121,7 +121,7 @@ func (cb *CircuitBreaker) State() State {
 	return cb.state
 }
 
-func (cb *CircuitBreaker) currentState(now time.Time) (State, uint64) {
+func (cb *CircuitBreaker) currentState(now time.Time) (s State, gen uint64) {
 	switch cb.state {
 	case StateClosed:
 		if cb.interval > 0 && !cb.expiry.IsZero() && cb.expiry.Before(now) {

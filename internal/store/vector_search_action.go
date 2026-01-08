@@ -149,9 +149,10 @@ func (s *VectorStore) handleVectorSearchAction(action *flight.Action, stream fli
 			peers := s.Mesh.GetMembers()
 			var remotePeers []mesh.Member
 			selfID := s.Mesh.GetIdentity().ID
-			for _, p := range peers {
+			for i := range peers {
+				p := &peers[i]
 				if p.ID != selfID {
-					remotePeers = append(remotePeers, p)
+					remotePeers = append(remotePeers, *p)
 				}
 			}
 

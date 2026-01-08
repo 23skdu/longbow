@@ -35,7 +35,7 @@ func TestSuspicionTimeout(t *testing.T) {
 		SuspicionTimeout: 500 * time.Millisecond, // Fast timeout
 		AckTimeout:       50 * time.Millisecond,
 	}
-	nodeA := NewGossip(cfgA)
+	nodeA := NewGossip(&cfgA)
 	require.NoError(t, nodeA.Start())
 	defer nodeA.Stop()
 
@@ -46,7 +46,7 @@ func TestSuspicionTimeout(t *testing.T) {
 		SuspicionTimeout: 500 * time.Millisecond,
 		AckTimeout:       50 * time.Millisecond,
 	}
-	nodeB := NewGossip(cfgB)
+	nodeB := NewGossip(&cfgB)
 	require.NoError(t, nodeB.Start())
 	defer nodeB.Stop()
 
@@ -95,12 +95,12 @@ func TestRefutation(t *testing.T) {
 	portB := getFreePort()
 
 	cfgA := GossipConfig{ID: "nodeA", Port: portA, ProtocolPeriod: 100 * time.Millisecond, SuspicionTimeout: 2 * time.Second}
-	nodeA := NewGossip(cfgA)
+	nodeA := NewGossip(&cfgA)
 	require.NoError(t, nodeA.Start())
 	defer nodeA.Stop()
 
 	cfgB := GossipConfig{ID: "nodeB", Port: portB, ProtocolPeriod: 100 * time.Millisecond, SuspicionTimeout: 2 * time.Second}
-	nodeB := NewGossip(cfgB)
+	nodeB := NewGossip(&cfgB)
 	require.NoError(t, nodeB.Start())
 	defer nodeB.Stop()
 

@@ -23,12 +23,6 @@ reliability, architecture refactoring, and advanced indexing features.
 - **Location**: `internal/store/hybrid_pipeline.go`
 - **Plan**: Integrate a real model (e.g., via ONNX or external service) to provide high-quality re-ranking.
 
-### 7. Reverse Location Index (Location -> VectorID)
-
-- **Impact**: **Medium**. Exact filter mapping currently uses a heuristic or slow scan.
-- **Location**: `internal/store/hybrid_pipeline.go`
-- **Plan**: Add a reverse index map to `HNSWIndex` or `ChunkedLocationStore` for O(1) lookups.
-
 ---
 
 ## Additional Technical Debt & TODOs
@@ -53,7 +47,10 @@ reliability, architecture refactoring, and advanced indexing features.
 - **Arrow HNSW Resource Cleanup**: Fully implemented `Close()` methods.
 - **HNSW Stability**: Resolved critical data races in `ensureChunk` and safeguards for SIMD.
 - **ID Resolution Optimization**: Replaced linear scan with O(1) PrimaryIndex lookup for `SearchByID` operations.
-- **Multi-Batch HNSW Support**: Added support for sequential and concurrent batch insertions in `ArrowHNSW` with proper test coverage.
+- **Multi-Batch HNSW Support**: Added support for sequential and concurrent batch insertions in `ArrowHNSW` with
+  proper test coverage.
 - **Filter Evaluator Reuse**: Implemented object pooling for `FilterEvaluator` and vectorized filter application in `DoGet`.
 - **SQ8 SIMD Fix**: Fixed `euclideanSQ8NEONKernel` linking and verified correctness with `TestEuclideanDistanceSQ8`.
 - **Testing & Benchmarks**: Added HNSW batch modification tests and `ColumnInvertedIndex` high-cardinality benchmarks.
+- **Reverse Location Index**: Implemented O(1) `Location` to `VectorID` mapping in `ChunkedLocationStore` and
+  `ArrowHNSW`, optimizing exact filter application in Hybrid Search.

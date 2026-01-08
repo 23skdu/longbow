@@ -287,17 +287,25 @@ func (h *ArrowHNSW) SearchVectors(queryVec []float32, k int, filters []query.Fil
 }
 
 // SearchVectorsWithBitmap implements VectorIndex.
-func (h *ArrowHNSW) SearchVectorsWithBitmap(query []float32, k int, filter *query.Bitset) []SearchResult {
+func (h *ArrowHNSW) SearchVectorsWithBitmap(q []float32, k int, filter *query.Bitset) []SearchResult {
 	ef := k + 100
 	// Calls h.Search which returns ([]SearchResult, error)
 	// The interface signature returns only []SearchResult
-	res, _ := h.Search(query, k, ef, filter)
+	res, _ := h.Search(q, k, ef, filter)
 	return res
 }
 
 // GetLocation implements VectorIndex.
 func (h *ArrowHNSW) GetLocation(id VectorID) (Location, bool) {
 	return h.locationStore.Get(id)
+}
+
+// SetLocation allows manually setting the location for a vector ID.
+// This is used by ShardedHNSW to populate shard-local location stores for filtering.
+func (h *ArrowHNSW) SetLocation(id VectorID, loc Location) {
+	h.locationStore.EnsureCapacity(id)
+	h.locationStore.Set(id, loc)
+	h.locationStore.UpdateSize(id)
 }
 
 // GetNeighbors returns the nearest neighbors for a given vector ID from the graph

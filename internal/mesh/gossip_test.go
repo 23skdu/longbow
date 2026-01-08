@@ -30,7 +30,7 @@ func TestPacket_EncodeDecode(t *testing.T) {
 
 func TestGossip_BasicConnectivity(t *testing.T) {
 	// Node 1
-	g1 := NewGossip(GossipConfig{
+	g1 := NewGossip(&GossipConfig{
 		ID:   "node1",
 		Port: 12345,
 	})
@@ -39,7 +39,7 @@ func TestGossip_BasicConnectivity(t *testing.T) {
 	defer g1.Stop()
 
 	// Node 2
-	g2 := NewGossip(GossipConfig{
+	g2 := NewGossip(&GossipConfig{
 		ID:   "node2",
 		Port: 12346,
 	})

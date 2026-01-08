@@ -10,7 +10,7 @@ import (
 
 func TestDiscovery_Static(t *testing.T) {
 	// Node 1 (Seeds Node 2)
-	g1 := NewGossip(GossipConfig{
+	g1 := NewGossip(&GossipConfig{
 		ID:   "seed",
 		Port: 12350,
 	})
@@ -18,7 +18,7 @@ func TestDiscovery_Static(t *testing.T) {
 	assert.NoError(t, err)
 	defer g1.Stop()
 
-	g2 := NewGossip(GossipConfig{
+	g2 := NewGossip(&GossipConfig{
 		ID:   "joiner",
 		Port: 12351,
 		Discovery: DiscoveryConfig{

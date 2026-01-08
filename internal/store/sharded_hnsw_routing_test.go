@@ -1,6 +1,5 @@
 package store
 
-
 import (
 	"sync"
 	"testing"
@@ -13,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func makeRoutingTestRecord(mem memory.Allocator, dims int, numVectors int) arrow.RecordBatch {
+func makeRoutingTestRecord(mem memory.Allocator, dims, numVectors int) arrow.RecordBatch {
 	schema := arrow.NewSchema([]arrow.Field{
 		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
 		{Name: "vector", Type: arrow.FixedSizeListOf(int32(dims), arrow.PrimitiveTypes.Float32)},
@@ -55,6 +54,7 @@ func TestShardedHNSW_Routing(t *testing.T) {
 	cfg := DefaultShardedHNSWConfig()
 	cfg.ShardSplitThreshold = 25 // 4 shards for 100 vectors
 	cfg.NumShards = 1
+	cfg.UseRingSharding = false
 
 	ds := &Dataset{Name: "routing_test", dataMu: sync.RWMutex{}}
 	idx := NewShardedHNSW(cfg, ds)
@@ -86,6 +86,7 @@ func TestShardedHNSW_MergedSearch(t *testing.T) {
 	cfg := DefaultShardedHNSWConfig()
 	cfg.ShardSplitThreshold = 50 // 2 shards for 100 vectors
 	cfg.NumShards = 1
+	cfg.UseRingSharding = false
 
 	ds := &Dataset{Name: "merged_search_test", dataMu: sync.RWMutex{}}
 	idx := NewShardedHNSW(cfg, ds)

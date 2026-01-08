@@ -7,6 +7,7 @@ import (
 	"github.com/23skdu/longbow/internal/simd"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
+	"github.com/apache/arrow-go/v18/arrow/memory"
 )
 
 // filterOp represents a typed operation on a specific column
@@ -14,13 +15,22 @@ type filterOp interface {
 	Match(rowIdx int) bool
 	MatchBitmap(dst []byte)
 	FilterBatch(indices []int) []int
-}
+	Bind(col arrow.Array) error
+} //nolint:interfacebloat
 
-// int64FilterOp avoids string conversion for int64 columns
 type int64FilterOp struct {
 	col      *array.Int64
 	val      int64
 	operator string
+	colIdx   int
+}
+
+func (o *int64FilterOp) Bind(col arrow.Array) error {
+	if col.DataType().ID() != arrow.INT64 {
+		return fmt.Errorf("expected int64 column, got %s", col.DataType())
+	}
+	o.col = col.(*array.Int64)
+	return nil
 }
 
 func (o *int64FilterOp) Match(rowIdx int) bool {
@@ -134,11 +144,19 @@ func (o *int64FilterOp) FilterBatch(indices []int) []int {
 	return result
 }
 
-// float32FilterOp avoids string conversion for float32 columns
 type float32FilterOp struct {
 	col      *array.Float32
 	val      float32
 	operator string
+	colIdx   int
+}
+
+func (o *float32FilterOp) Bind(col arrow.Array) error {
+	if col.DataType().ID() != arrow.FLOAT32 {
+		return fmt.Errorf("expected float32 column, got %s", col.DataType())
+	}
+	o.col = col.(*array.Float32)
+	return nil
 }
 
 func (o *float32FilterOp) Match(rowIdx int) bool {
@@ -252,11 +270,19 @@ func (o *float32FilterOp) FilterBatch(indices []int) []int {
 	return result
 }
 
-// stringFilterOp optimizes string comparisons
 type stringFilterOp struct {
 	col      *array.String
 	val      string
 	operator string
+	colIdx   int
+}
+
+func (o *stringFilterOp) Bind(col arrow.Array) error {
+	if col.DataType().ID() != arrow.STRING {
+		return fmt.Errorf("expected string column, got %s", col.DataType())
+	}
+	o.col = col.(*array.String)
+	return nil
 }
 
 func (o *stringFilterOp) Match(rowIdx int) bool {
@@ -335,6 +361,7 @@ func NewFilterEvaluator(rec arrow.RecordBatch, filters []Filter) (*FilterEvaluat
 				col:      col.(*array.Int64),
 				val:      val,
 				operator: f.Operator,
+				colIdx:   colIdx,
 			})
 		case arrow.FLOAT32:
 			val, err := strconv.ParseFloat(f.Value, 32)
@@ -345,12 +372,14 @@ func NewFilterEvaluator(rec arrow.RecordBatch, filters []Filter) (*FilterEvaluat
 				col:      col.(*array.Float32),
 				val:      float32(val),
 				operator: f.Operator,
+				colIdx:   colIdx,
 			})
 		case arrow.STRING:
 			ops = append(ops, &stringFilterOp{
 				col:      col.(*array.String),
 				val:      f.Value,
 				operator: f.Operator,
+				colIdx:   colIdx,
 			})
 		default:
 			// Fallback to slow evaluator or error
@@ -432,4 +461,81 @@ func (e *FilterEvaluator) MatchesAll(batchLen int) []int {
 		}
 	}
 	return indices
+}
+
+// Reset binds the evaluator to a new record batch, reusing the existing filter operations.
+func (e *FilterEvaluator) Reset(rec arrow.RecordBatch) error {
+	if len(e.ops) == 0 {
+		return nil
+	}
+
+	for _, op := range e.ops {
+		var colIdx int
+		// We need to access colIdx from the op. Since it's stored in the struct, we type switch.
+		// Alternatively, we could add ColIdx() to the interface, but that exposes implementation detail.
+		// Or we can just store colIdx in FilterEvaluator alongside ops?
+		// FilterEvaluator currently has `ops []filterOp`.
+		// Let's modify FilterEvaluator to store indices mapping ops to columns.
+
+		// Actually, let's just stick to the plan:
+		// We need to retrieve the column from the batch using the stored index.
+		switch o := op.(type) {
+		case *int64FilterOp:
+			colIdx = o.colIdx
+		case *float32FilterOp:
+			colIdx = o.colIdx
+		case *stringFilterOp:
+			colIdx = o.colIdx
+		default:
+			return fmt.Errorf("unknown filter op type")
+		}
+
+		if colIdx < 0 || colIdx >= int(rec.NumCols()) {
+			return fmt.Errorf("column index %d out of bounds", colIdx)
+		}
+
+		col := rec.Column(colIdx)
+		if err := op.Bind(col); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// EvaluateToArrowBoolean returns an Arrow Boolean Array mask for the batch.
+func (e *FilterEvaluator) EvaluateToArrowBoolean(mem memory.Allocator, rows int) (*array.Boolean, error) {
+	if len(e.ops) == 0 {
+		// All match
+		b := array.NewBooleanBuilder(mem)
+		b.Reserve(rows)
+		for i := 0; i < rows; i++ {
+			b.Append(true)
+		}
+		return b.NewBooleanArray(), nil
+	}
+
+	// Use temporary byte bitmap
+	bitmap := make([]byte, rows)
+	e.ops[0].MatchBitmap(bitmap)
+
+	if len(e.ops) > 1 {
+		tmp := make([]byte, rows)
+		for i := 1; i < len(e.ops); i++ {
+			e.ops[i].MatchBitmap(tmp)
+			simd.AndBytes(bitmap, tmp)
+		}
+	}
+
+	// Pack to Arrow Boolean
+	// Arrow booleans are bit-packed.
+	// We can't just pass []byte (0/1).
+	// We use builder for safety, though slowish.
+	// Optimization: Manual bit packing.
+	b := array.NewBooleanBuilder(mem)
+	b.Reserve(rows)
+	// Optimize this later with direct bit packing if needed
+	for _, v := range bitmap {
+		b.Append(v != 0)
+	}
+	return b.NewBooleanArray(), nil
 }

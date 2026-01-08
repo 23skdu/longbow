@@ -18,7 +18,7 @@ func TestGraphRAG_Scoring(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	logger := zerolog.New(zerolog.NewConsoleWriter())
 	s := NewVectorStore(mem, logger, 1024*1024, 1024*1024, 0)
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	datasetName := "graph_rag_test"
 	dims := 4
@@ -72,8 +72,8 @@ func TestGraphRAG_Scoring(t *testing.T) {
 	if ds.Graph == nil {
 		ds.Graph = NewGraphStore()
 	}
-	ds.Graph.AddEdge(Edge{Subject: 0, Predicate: "related", Object: 1, Weight: 1.0})
-	ds.Graph.AddEdge(Edge{Subject: 0, Predicate: "related", Object: 2, Weight: 0.5})
+	_ = ds.Graph.AddEdge(Edge{Subject: 0, Predicate: "related", Object: 1, Weight: 1.0})
+	_ = ds.Graph.AddEdge(Edge{Subject: 0, Predicate: "related", Object: 2, Weight: 0.5})
 	ds.dataMu.Unlock()
 
 	// 1. Standard Vector Search (Alpha=1.0, GraphAlpha=0.0)

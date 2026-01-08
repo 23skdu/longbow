@@ -27,7 +27,7 @@ func (s *VectorStore) evictDataset(name string) {
 	s.currentMemory.Add(-size)
 
 	if ds.Index != nil {
-		ds.Index.Close()
+		_ = ds.Index.Close()
 	}
 
 	// Release records

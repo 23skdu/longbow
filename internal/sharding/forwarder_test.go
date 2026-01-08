@@ -22,7 +22,7 @@ func (m *MockResolver) GetNodeAddr(nodeID string) string {
 func TestRequestForwarder_GetConn(t *testing.T) {
 	resolver := new(MockResolver)
 	config := DefaultForwarderConfig()
-	fwd := NewRequestForwarder(config, resolver)
+	fwd := NewRequestForwarder(&config, resolver)
 	defer func() { _ = fwd.Close() }()
 
 	ctx := context.Background()
@@ -44,7 +44,7 @@ func TestRequestForwarder_Forward_UnknownNode(t *testing.T) {
 	resolver.On("GetNodeAddr", "unknown").Return("")
 
 	config := DefaultForwarderConfig()
-	fwd := NewRequestForwarder(config, resolver)
+	fwd := NewRequestForwarder(&config, resolver)
 	defer func() { _ = fwd.Close() }()
 
 	_, err := fwd.Forward(context.Background(), "unknown", nil, "method")
@@ -60,7 +60,7 @@ func TestRequestForwarder_Forward_Connection(t *testing.T) {
 	config := DefaultForwarderConfig()
 	// Short timeout
 	config.DialTimeout = 100 * time.Millisecond
-	fwd := NewRequestForwarder(config, resolver)
+	fwd := NewRequestForwarder(&config, resolver)
 	defer func() { _ = fwd.Close() }()
 
 	// Assuming grpc.NewClient doesn't connect immediately (it's non-blocking).

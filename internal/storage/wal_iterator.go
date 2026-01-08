@@ -77,7 +77,9 @@ func (it *WALIterator) Seek(seq uint64) error {
 			// For simplicity during refactor, we decompress.
 			// In production, we'd add maxSeq to the header.
 
-			it.f.Seek(startPos, 0)
+			if _, err := it.f.Seek(startPos, 0); err != nil {
+				return err
+			}
 			// We can't use Next() here easily because it returns values.
 			// Let's just decompress and check.
 			_, _, _, r, err := it.nextLocked()
@@ -108,7 +110,7 @@ func (it *WALIterator) Seek(seq uint64) error {
 }
 
 // Next reads the next entry. Returns io.EOF if done.
-func (it *WALIterator) Next() (uint64, int64, string, arrow.RecordBatch, error) {
+func (it *WALIterator) Next() (seq uint64, ts int64, name string, rec arrow.RecordBatch, err error) {
 	it.mu.Lock()
 	defer it.mu.Unlock()
 	return it.nextLocked()

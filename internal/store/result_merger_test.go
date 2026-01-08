@@ -32,7 +32,7 @@ func TestMergeSortedStreams(t *testing.T) {
 
 	merged := MergeSortedStreams([]<-chan []SearchResult{ch1, ch2, ch3}, 10)
 
-	var results []SearchResult
+	results := make([]SearchResult, 0, 6)
 	for r := range merged {
 		results = append(results, r)
 	}
@@ -54,7 +54,7 @@ func TestMergeSortedStreams_EmptyChannels(t *testing.T) {
 
 	merged := MergeSortedStreams([]<-chan []SearchResult{ch1, ch2}, 5)
 
-	var results []SearchResult
+	results := make([]SearchResult, 0, 4)
 	for r := range merged {
 		results = append(results, r)
 	}
@@ -101,7 +101,7 @@ func TestMergeSortedStreams_InterleavedDelays(t *testing.T) {
 
 	merged := MergeSortedStreams([]<-chan []SearchResult{ch1, ch2}, 10)
 
-	var results []SearchResult
+	results := make([]SearchResult, 0, 4)
 	for r := range merged {
 		results = append(results, r)
 	}

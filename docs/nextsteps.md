@@ -5,20 +5,6 @@ reliability, architecture refactoring, and advanced indexing features.
 
 ## Top 10 Priority Items
 
-### 1. Fix SQ8 SIMD Distance Calculation
-
-- **Impact**: **Critical**. `TestEuclideanDistanceSQ8` is currently failing (returning 0). This indicates broken SIMD
-  or fallback logic for quantized vectors.
-- **Location**: `internal/simd/sq8_test.go`, `internal/simd`
-- **Plan**: Debug and fix the SQ8 distance implementation immediately.
-
-### 2. Multi-Batch HNSW Support
-
-- **Impact**: **High**. `arrow_hnsw_index.go` contains a TODO: "Handle multiple batches. Currently binding to Batch 0."
-  This prevents the index from scaling beyond a single Arrow RecordBatch.
-- **Location**: `internal/store/arrow_hnsw_index.go`
-- **Plan**: Update logic to iterate through multiple batches in `dataset` or flatten/virtualize the view.
-
 ### 3. Distributed Consensus (Raft)
 
 - **Impact**: **High**. Critical for strong consistency in cluster metadata, shard mapping, and automated failover.
@@ -30,12 +16,6 @@ reliability, architecture refactoring, and advanced indexing features.
 - **Impact**: **High**. The `internal/store` package has grown excessively, hindering maintainability.
 - **Location**: `internal/store`
 - **Plan**: Split into `internal/index`, `internal/storage`, and `internal/query`.
-
-### 5. Filter Evaluator Reuse
-
-- **Impact**: **Medium/High**. `store_query.go` TODO notes that we create a new filter evaluator for every batch.
-- **Location**: `internal/store/store_query.go`
-- **Plan**: Implement object pooling for evaluators or make them stateless/reusable.
 
 ### 6. Cross-Encoder Re-ranking Implementation
 
@@ -53,20 +33,10 @@ reliability, architecture refactoring, and advanced indexing features.
 
 ## Additional Technical Debt & TODOs
 
-### Sharded HNSW Index Management
-
-- **Location**: `internal/store/sharded_hnsw.go`
-- **Plan**: Address shard lifecycle TODOs, including dynamic shard resizing and background compaction.
-
 ### Distributed Tracing (OpenTelemetry)
 
 - **Location**: `internal/store/global_search.go`
 - **Plan**: Instrument critical paths with OpenTelemetry spans.
-
-### Testing
-
-- **Coverage**: Add tests for multi-batch modifications in HNSW.
-- **Benchmarks**: Benchmark `ColumnInvertedIndex` for high-cardinality columns.
 
 ---
 
@@ -83,3 +53,7 @@ reliability, architecture refactoring, and advanced indexing features.
 - **Arrow HNSW Resource Cleanup**: Fully implemented `Close()` methods.
 - **HNSW Stability**: Resolved critical data races in `ensureChunk` and safeguards for SIMD.
 - **ID Resolution Optimization**: Replaced linear scan with O(1) PrimaryIndex lookup for `SearchByID` operations.
+- **Multi-Batch HNSW Support**: Added support for sequential and concurrent batch insertions in `ArrowHNSW` with proper test coverage.
+- **Filter Evaluator Reuse**: Implemented object pooling for `FilterEvaluator` and vectorized filter application in `DoGet`.
+- **SQ8 SIMD Fix**: Fixed `euclideanSQ8NEONKernel` linking and verified correctness with `TestEuclideanDistanceSQ8`.
+- **Testing & Benchmarks**: Added HNSW batch modification tests and `ColumnInvertedIndex` high-cardinality benchmarks.

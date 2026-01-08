@@ -18,7 +18,7 @@ func TestWALBackends_StdWAL(t *testing.T) {
 	mem := memory.NewGoAllocator()
 
 	stdWAL := NewStdWAL(tmpDir)
-	defer stdWAL.Close()
+	defer func() { _ = stdWAL.Close() }()
 
 	schema := arrow.NewSchema([]arrow.Field{{Name: "f1", Type: arrow.PrimitiveTypes.Int32}}, nil)
 	b := array.NewInt32Builder(mem)
@@ -41,7 +41,7 @@ func TestWALBackends_StdWAL(t *testing.T) {
 		// Replay using WALIterator
 		it, err := NewWALIterator(tmpDir, mem)
 		require.NoError(t, err)
-		defer it.Close()
+		defer func() { _ = it.Close() }()
 
 		seq, ts, name, r, err := it.Next()
 		require.NoError(t, err)
@@ -62,7 +62,7 @@ func TestWALBackends_StdWAL(t *testing.T) {
 
 		it, err := NewWALIterator(tmpDir, mem)
 		require.NoError(t, err)
-		defer it.Close()
+		defer func() { _ = it.Close() }()
 
 		// Skip first
 		seq1, _, _, r1, err := it.Next()

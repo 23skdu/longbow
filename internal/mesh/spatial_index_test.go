@@ -12,7 +12,7 @@ import (
 func TestVPTree_BuildAndSearch(t *testing.T) {
 	// 1. Create random points
 	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
-	var items []RegionItem
+	items := make([]RegionItem, 0, 100)
 	for i := 0; i < 100; i++ {
 		vec := make([]float32, 2)
 		vec[0] = rnd.Float32() * 100

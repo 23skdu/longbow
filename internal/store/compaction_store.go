@@ -45,8 +45,8 @@ func (vs *VectorStore) CompactDataset(name string) error {
 	defer func() {
 		metrics.CompactionDurationSeconds.WithLabelValues(name, "manual").Observe(time.Since(start).Seconds())
 	}()
-	ds, err := vs.getDataset(name)
-	if err != nil || ds == nil {
+	ds, ok := vs.getDataset(name)
+	if !ok {
 		return errors.New("compaction: dataset not found")
 	}
 
@@ -166,8 +166,8 @@ func (vs *VectorStore) VacuumDataset(name string) error {
 		metrics.CompactionDurationSeconds.WithLabelValues(name, "vacuum").Observe(time.Since(start).Seconds())
 	}()
 
-	ds, err := vs.getDataset(name)
-	if err != nil || ds == nil {
+	ds, ok := vs.getDataset(name)
+	if !ok {
 		return errors.New("vacuum: dataset not found")
 	}
 

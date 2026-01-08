@@ -71,6 +71,42 @@ spec:
               value: {{ .Values.grpc.keepAliveMinTime | quote }}
             - name: LONGBOW_GRPC_KEEPALIVE_PERMIT_WITHOUT_STREAM
               value: {{ .Values.grpc.keepAlivePermitWithoutStream | quote }}
+            # Rate Limiting
+            - name: RATE_LIMIT_RPS
+              value: {{ .Values.rateLimit.rps | quote }}
+            - name: RATE_LIMIT_BURST
+              value: {{ .Values.rateLimit.burst | quote }}
+            # HNSW Configuration
+            - name: HNSW_M
+              value: {{ .Values.hnsw.m | quote }}
+            - name: HNSW_EF_CONSTRUCTION
+              value: {{ .Values.hnsw.efConstruction | quote }}
+            - name: HNSW_ALPHA
+              value: {{ .Values.hnsw.alpha | quote }}
+            - name: HNSW_KEEP_PRUNED
+              value: {{ .Values.hnsw.keepPruned | quote }}
+            - name: HNSW_SQ8_ENABLED
+              value: {{ .Values.hnsw.sq8Enabled | quote }}
+            - name: HNSW_REFINEMENT_FACTOR
+              value: {{ .Values.hnsw.refinementFactor | quote }}
+            - name: LONGBOW_USE_HNSW2
+              value: {{ .Values.hnsw.useHNSW2 | quote }}
+            # Memory & GC
+            - name: MEMORY_EVICTION_HEADROOM
+              value: {{ .Values.memory.evictionHeadroom | quote }}
+            - name: MEMORY_EVICTION_POLICY
+              value: {{ .Values.memory.evictionPolicy | quote }}
+            - name: MEMORY_REJECT_WRITES
+              value: {{ .Values.memory.rejectWrites | quote }}
+            - name: GC_BALLAST_G
+              value: {{ .Values.memory.gcBallastGB | quote }}
+            - name: GOGC
+              value: {{ .Values.memory.gogc | quote }}
+            # GPU Configuration
+            - name: GPU_ENABLED
+              value: {{ .Values.gpu.enabled | quote }}
+            - name: GPU_DEVICE_ID
+              value: {{ .Values.gpu.deviceId | quote }}
             {{- if .Values.s3.enabled }}
             - name: LONGBOW_S3_ENABLED
               value: "true"
@@ -135,6 +171,10 @@ spec:
               value: {{ .Values.storage.asyncFsync | quote }}
             - name: STORAGE_DOPUT_BATCH_SIZE
               value: {{ .Values.storage.doPutBatchSize | quote }}
+            - name: STORAGE_USE_IOURING
+              value: {{ .Values.storage.useIOUring | quote }}
+            - name: STORAGE_USE_DIRECT_IO
+              value: {{ .Values.storage.useDirectIO | quote }}
             # Compaction Configuration
             - name: COMPACTION_ENABLED
               value: {{ .Values.compaction.enabled | quote }}

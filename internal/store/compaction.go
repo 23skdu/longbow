@@ -158,7 +158,7 @@ func (w *CompactionWorker) run() {
 			if w.store == nil {
 				continue
 			}
-			w.store.IterateDatasets(func(ds *Dataset) {
+			w.store.IterateDatasets(func(name string, ds *Dataset) {
 				// Non-blocking attempt to compact
 				start := time.Now()
 				if err := w.store.CompactDataset(ds.Name); err == nil {

@@ -247,3 +247,4 @@ venv*
 htmlcov/
 
 *.prof
+benchmark_results/

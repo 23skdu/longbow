@@ -29,8 +29,8 @@ func (s *VectorStore) handleAddEdge(body []byte, stream flight.FlightService_DoA
 		return status.Error(codes.InvalidArgument, "missing predicate")
 	}
 
-	ds, err := s.getDataset(req.Dataset)
-	if err != nil {
+	ds, ok := s.getDataset(req.Dataset)
+	if !ok {
 		return status.Errorf(codes.NotFound, "dataset not found: %s", req.Dataset)
 	}
 
@@ -78,8 +78,8 @@ func (s *VectorStore) handleTraverseGraph(body []byte, stream flight.FlightServi
 		req.MaxHops = 2 // Default depth
 	}
 
-	ds, err := s.getDataset(req.Dataset)
-	if err != nil {
+	ds, ok := s.getDataset(req.Dataset)
+	if !ok {
 		return status.Errorf(codes.NotFound, "dataset not found: %s", req.Dataset)
 	}
 
@@ -140,8 +140,8 @@ func (s *VectorStore) handleGetGraphStats(body []byte, stream flight.FlightServi
 		return status.Error(codes.InvalidArgument, "missing dataset name")
 	}
 
-	ds, err := s.getDataset(req.Dataset)
-	if err != nil {
+	ds, ok := s.getDataset(req.Dataset)
+	if !ok {
 		return status.Errorf(codes.NotFound, "dataset not found: %s", req.Dataset)
 	}
 

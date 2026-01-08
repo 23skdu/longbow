@@ -65,15 +65,11 @@ func TestHNSWRaceCompaction(t *testing.T) {
 			default:
 				rec := createRecord(20)
 				// We need to simulate DoPut behavior
-				vs.mu.Lock()
-				ds, ok := vs.datasets[datasetName]
-				if !ok {
+				ds, _ := vs.getOrCreateDataset(datasetName, func() *Dataset {
 					newDs := NewDataset(datasetName, schema)
 					newDs.Index = NewHNSWIndex(newDs)
-					vs.datasets[datasetName] = newDs
-					ds = newDs
-				}
-				vs.mu.Unlock()
+					return newDs
+				})
 
 				ds.dataMu.Lock()
 				batchIdx := len(ds.Records)
@@ -127,9 +123,7 @@ func TestHNSWRaceCompaction(t *testing.T) {
 			case <-ctx.Done():
 				return
 			default:
-				vs.mu.RLock()
-				ds, ok := vs.datasets[datasetName]
-				vs.mu.RUnlock()
+				ds, ok := vs.getDataset(datasetName)
 				if ok && ds.Index != nil {
 					_, _ = ds.Index.SearchVectors(query, 5, nil)
 				}
@@ -144,9 +138,7 @@ func TestHNSWRaceCompaction(t *testing.T) {
 	wg.Wait()
 
 	// Final check
-	vs.mu.RLock()
-	ds, ok := vs.datasets[datasetName]
-	vs.mu.RUnlock()
+	ds, ok := vs.getDataset(datasetName)
 	assert.True(t, ok)
 	assert.NotNil(t, ds.Index)
 	fmt.Printf("Final index size: %d\n", ds.Index.Len())

@@ -162,16 +162,21 @@ def benchmark_put(client: flight.FlightClient, table: pa.Table, name: str) -> Be
     descriptor = flight.FlightDescriptor.for_path(name)
 
     start_time = time.time()
-    writer, _ = client.do_put(descriptor, table.schema)
     
-    # Write in chunks to avoid gRPC message size limits (default ~512MB or less)
-    # 10k rows * 1536 dim * 4 bytes ~= 60MB, well within limits
-    chunk_size = 10000
+    # To distribute data in a cluster, we send multiple PUTs with different routing keys
+    # The PartitionProxyInterceptor will forward these to different nodes.
+    num_shards = 15 # More shards ensure better distribution across nodes
+    chunk_size = max(1, table.num_rows // num_shards)
+    
     for i in range(0, table.num_rows, chunk_size):
         chunk = table.slice(i, chunk_size)
-        writer.write_table(chunk)
+        routing_key = f"shard-{i//chunk_size}".encode("utf-8")
+        options = flight.FlightCallOptions(headers=[(b"x-longbow-key", routing_key)])
         
-    writer.close()
+        writer, _ = client.do_put(descriptor, chunk.schema, options=options)
+        writer.write_table(chunk)
+        writer.close()
+        
     duration = time.time() - start_time
 
     mb = table.nbytes / 1024 / 1024
@@ -273,22 +278,28 @@ def benchmark_vector_search(client: flight.FlightClient, name: str,
         
         while retry_count <= max_retries:
             try:
-                action = flight.Action("VectorSearch", request_body)
+                # Use DoGet with Search Ticket
+                ticket_payload = {
+                    "search": {
+                        "dataset": name,
+                        "vector": qvec.tolist(),
+                        "k": k,
+                        "filters": filters,
+                        "local_only": False # Search benchmark tests distributed by default
+                    }
+                }
+                ticket = flight.Ticket(json.dumps(ticket_payload).encode("utf-8"))
                 
                 options = flight.FlightCallOptions()
                 if global_search:
-                    options = flight.FlightCallOptions(headers=[(b"x-longbow-global", b"true")])
+                    headers = [(b"x-longbow-global", b"true")]
+                    # Include routing key so load balancer can hit the owner node as coordinator
+                    headers.append((b"x-longbow-key", name.encode("utf-8")))
+                    options = flight.FlightCallOptions(headers=headers)
                     
-                # DoAction returns an iterator of FlightResult
-                results_iter = client.do_action(action, options=options)
-                
-                # The server sends back one JSON result with "ids", "scores", etc.
-                # Example response: {"ids": [1, 2], "scores": [0.9, 0.8], "vectors": [...]}
-                for result in results_iter:
-                    # Just consuming the result for benchmarking
-                    payload = json.loads(result.body.to_pybytes())
-                    if "ids" in payload:
-                        total_results += len(payload["ids"])
+                reader = client.do_get(ticket, options=options)
+                table = reader.read_all()
+                total_results += table.num_rows
                 
                 # Success - break retry loop
                 break
@@ -422,7 +433,8 @@ def benchmark_search_by_id(client: flight.FlightClient, name: str,
 
 def benchmark_hybrid_search(client: flight.FlightClient, name: str,
                             query_vectors: np.ndarray, k: int,
-                            text_queries: list, alpha: float = 0.5) -> BenchmarkResult:
+                            text_queries: list, alpha: float = 0.5,
+                            global_search: bool = False) -> BenchmarkResult:
     """Benchmark hybrid search (dense vectors + sparse text) using DoAction(VectorSearch)."""
     num_queries = len(query_vectors)
     print(f"\n[HYBRID] Running {num_queries:,} hybrid searches (k={k})...")
@@ -432,31 +444,28 @@ def benchmark_hybrid_search(client: flight.FlightClient, name: str,
     total_results = 0
 
     for i, (qvec, text_query) in enumerate(zip(query_vectors, text_queries)):
-        # NOTE: Check if server supports "HybridSearch" action or if it's integrated into "VectorSearch"
-        # Since this is a stress test, we'll try "VectorSearch" with extra fields if supported,
-        # otherwise, this benchmarking function might need server-side support adjustment.
-        # Assuming typical JSON payload extension:
-        request_body = json.dumps({
-            "dataset": name,
-            "vector": qvec.tolist(),
-            "text_query": text_query,
-            "k": k,
-            "k": k,
-            "alpha": alpha,
-        }).encode("utf-8")
+        ticket_payload = {
+            "search": {
+                "dataset": name,
+                "vector": qvec.tolist(),
+                "text_query": text_query,
+                "k": k,
+                "alpha": alpha
+            }
+        }
+        ticket = flight.Ticket(json.dumps(ticket_payload).encode("utf-8"))
 
         start = time.time()
         try:
-            # Note: Changed from "hybrid_search" to "VectorSearch" to match standard pattern
-            # If a separate action type is needed, it should be defined in valid server actions.
-            # Here we assume "VectorSearch" handles optional hybrid fields.
-            action = flight.Action("VectorSearch", request_body)
-            results_iter = client.do_action(action)
+            headers = []
+            if global_search:
+                headers.append((b"x-longbow-global", b"true"))
+                headers.append((b"x-longbow-key", name.encode("utf-8")))
             
-            for result in results_iter:
-                payload = json.loads(result.body.to_pybytes())
-                if "ids" in payload:
-                    total_results += len(payload["ids"])
+            options = flight.FlightCallOptions(headers=headers)
+            reader = client.do_get(ticket, options=options)
+            table = reader.read_all()
+            total_results += table.num_rows
 
         except flight.FlightError as e:
             errors += 1
@@ -589,8 +598,10 @@ def benchmark_concurrent_load(data_uri: str, meta_uri: str, name: str, dim: int,
 
                 local_latencies.append((time.time() - start) * 1000)
                 local_ops += 1
-            except Exception:
+            except Exception as e:
                 local_errors += 1
+                if local_errors == 1:
+                    print(f"Worker {worker_id} Error: {e}")
                 # Small sleep on error to avoid tight spin loop
                 time.sleep(0.01)
 
@@ -1010,7 +1021,8 @@ def main():
         # Hybrid Search goes to Meta Server
         # Hybrid Search goes to Meta Server
         results.append(benchmark_hybrid_search(
-            meta_client, args.name, query_vectors, args.search_k, text_queries, args.hybrid_alpha
+            meta_client, args.name, query_vectors, args.search_k, text_queries, args.hybrid_alpha,
+            global_search=args.global_search
         ))
 
     # Meta Plane operations (Graph Traversal)

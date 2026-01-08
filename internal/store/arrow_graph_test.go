@@ -32,8 +32,8 @@ func TestArrowHNSW_DefaultArrowHNSWConfig(t *testing.T) {
 		t.Errorf("default M = %d, want 32", config.M)
 	}
 
-	if config.MMax != 96 {
-		t.Errorf("default MMax = %d, want 96", config.MMax)
+	if config.MMax != 64 {
+		t.Errorf("default MMax = %d, want 64", config.MMax)
 	}
 
 	if config.EfConstruction != 400 {

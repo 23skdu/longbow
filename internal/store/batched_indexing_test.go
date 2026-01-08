@@ -29,11 +29,10 @@ func TestBatchedIndexing(t *testing.T) {
 	ds.Index = NewHNSWIndex(ds)
 
 	store := &VectorStore{
-		datasets:   make(map[string]*Dataset),
 		indexQueue: NewIndexJobQueue(DefaultIndexJobQueueConfig()),
 		logger:     zerolog.Nop(),
 	}
-	store.datasets[ds.Name] = ds
+	store.datasets.Store(&map[string]*Dataset{ds.Name: ds})
 
 	// Start worker
 	go store.runIndexWorker(nil)

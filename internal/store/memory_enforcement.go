@@ -64,12 +64,10 @@ func (s *VectorStore) checkMemoryBeforeWrite(estimatedSize int64) error {
 // evictToTarget evicts datasets until currentMemory <= targetBytes.
 // Returns error if unable to free enough space.
 func (s *VectorStore) evictToTarget(targetBytes int64) error {
-	s.mu.RLock()
-	candidates := make([]*Dataset, 0, len(s.datasets))
-	for _, ds := range s.datasets {
+	candidates := make([]*Dataset, 0)
+	s.IterateDatasets(func(name string, ds *Dataset) {
 		candidates = append(candidates, ds)
-	}
-	s.mu.RUnlock()
+	})
 
 	if len(candidates) == 0 {
 		return fmt.Errorf("no datasets available for eviction")

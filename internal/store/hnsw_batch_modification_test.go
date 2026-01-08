@@ -32,7 +32,6 @@ func TestArrowHNSW_AddBatch_Sequential(t *testing.T) {
 			vecs[i] = makeTestVector(dims, b*batchSize+i)
 		}
 		rec := makeBatchTestRecord(mem, dims, vecs)
-		defer rec.Release()
 
 		// Append to Dataset
 		// Note: Dataset owns the record, so we should Retain if we plan to keep using `rec` locally or if Dataset closes it.
@@ -50,6 +49,7 @@ func TestArrowHNSW_AddBatch_Sequential(t *testing.T) {
 		ids, err := idx.AddBatch([]arrow.RecordBatch{rec}, rowIdxs, batchIdxs)
 		require.NoError(t, err)
 		require.Len(t, ids, batchSize)
+		rec.Release()
 	}
 
 	// 3. Verify Count

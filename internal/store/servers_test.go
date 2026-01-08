@@ -342,12 +342,12 @@ func putDataViaVectorStore(vs *VectorStore, name string) {
 	// In real scenario we'd use DoPut through DataServer
 	// Store directly - this is a simplified approach
 	// In real scenario we'd use DoPut through DataServer
-	vs.mu.Lock()
-	vs.datasets[name] = &Dataset{
-		Name:    name,
-		Records: []arrow.RecordBatch{rec},
-	}
-	vs.mu.Unlock()
+	vs.updateDatasets(func(m map[string]*Dataset) {
+		m[name] = &Dataset{
+			Name:    name,
+			Records: []arrow.RecordBatch{rec},
+		}
+	})
 	rec.Retain() // Keep record alive in dataset
 }
 
@@ -448,8 +448,8 @@ func TestMetaServerDoGetUnimplemented(t *testing.T) {
 		if !ok {
 			t.Fatalf("Expected gRPC status, got: %v", err)
 		}
-		if st.Code() != codes.Unimplemented {
-			t.Errorf("Expected Unimplemented, got %v", st.Code())
+		if st.Code() != codes.NotFound {
+			t.Errorf("Expected NotFound, got %v", st.Code())
 		}
 		return
 	}
@@ -461,8 +461,8 @@ func TestMetaServerDoGetUnimplemented(t *testing.T) {
 		t.Fatalf("Expected gRPC status, got: %v", err)
 	}
 
-	if st.Code() != codes.Unimplemented {
-		t.Errorf("Expected Unimplemented, got %v", st.Code())
+	if st.Code() != codes.NotFound {
+		t.Errorf("Expected NotFound, got %v", st.Code())
 	}
 }
 

@@ -37,12 +37,13 @@ func (h *ArrowHNSW) AnalyzeGraph() GraphMetrics {
 		cOff := chunkOffset(uint32(i))
 
 		// Safety check for nil chunks (lazy allocation or incomplete graph)
-		if len(data.Counts) <= layer || len(data.Counts[layer]) <= int(cID) || data.Counts[layer][cID] == nil {
+		countsChunk := data.GetCountsChunk(layer, cID)
+		if countsChunk == nil {
 			metrics.ZeroDegreeNodes++
 			continue
 		}
 
-		count := int(atomic.LoadInt32(&(*data.Counts[layer][cID])[cOff]))
+		count := int(atomic.LoadInt32(&(*countsChunk)[cOff]))
 		metrics.TotalEdges += count
 		if count == 0 {
 			metrics.ZeroDegreeNodes++
@@ -87,18 +88,22 @@ func (h *ArrowHNSW) bfsComponentSize(data *GraphData, layer int, startNode uint3
 		// Iterate neighbors
 		cID := chunkID(curr)
 		cOff := chunkOffset(curr)
-		// Access via pointer
-		// count is unused here? No, we iterate count.
 
-		countsPtr := data.Counts[layer][cID]
-		neighborCount := atomic.LoadInt32(&(*countsPtr)[cOff])
+		countsChunk := data.GetCountsChunk(layer, cID)
+		if countsChunk == nil {
+			continue
+		}
+		neighborCount := atomic.LoadInt32(&(*countsChunk)[cOff])
 
 		baseIdx := int(cOff) * MaxNeighbors
-		neighborsChunk := data.Neighbors[layer][cID]
-		// neighbors := (*neighborsChunk)[baseIdx : baseIdx+int(neighborCount)]
+		neighborsChunkPtr := data.GetNeighborsChunk(layer, cID)
+		if neighborsChunkPtr == nil {
+			continue
+		}
+		neighborsChunk := *neighborsChunkPtr
 
 		for i := 0; i < int(neighborCount); i++ {
-			neighbor := (*neighborsChunk)[baseIdx+i]
+			neighbor := neighborsChunk[baseIdx+i]
 			if !visited.IsSet(neighbor) {
 				visited.Set(neighbor)
 				queue = append(queue, neighbor)
@@ -126,14 +131,24 @@ func (h *ArrowHNSW) bfsDiameter(data *GraphData, layer int, startNode uint32) in
 			curr := queue[j]
 
 			// Neighbors
-			// Neighbors
 			cID := chunkID(curr)
 			cOff := chunkOffset(curr)
-			neighborCount := int(atomic.LoadInt32(&(*data.Counts[layer][cID])[cOff])) // Corrected pointer access
+
+			countsChunk := data.GetCountsChunk(layer, cID)
+			if countsChunk == nil {
+				continue
+			}
+			neighborCount := int(atomic.LoadInt32(&(*countsChunk)[cOff]))
+
+			neighborsChunkPtr := data.GetNeighborsChunk(layer, cID)
+			if neighborsChunkPtr == nil {
+				continue
+			}
+			neighborsChunk := *neighborsChunkPtr
+
 			baseIdx := int(cOff) * MaxNeighbors
-			neighborsChunk := data.Neighbors[layer][cID]
 			for k := 0; k < neighborCount; k++ {
-				neighbor := (*neighborsChunk)[baseIdx+k]
+				neighbor := neighborsChunk[baseIdx+k]
 				if !visited.IsSet(neighbor) {
 					visited.Set(neighbor)
 					queue = append(queue, neighbor)

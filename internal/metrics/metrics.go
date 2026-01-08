@@ -411,3 +411,23 @@ var (
 		[]string{"dataset", "query_type"}, // query_type: "vector", "hybrid", "keyword"
 	)
 )
+
+// =============================================================================
+// BQ & RCU Metrics
+// =============================================================================
+var (
+	BQVectorsTotal = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "longbow_bq_vectors_total",
+			Help: "Total number of vectors indexed with Binary Quantization",
+		},
+		[]string{"dataset"},
+	)
+
+	DatasetUpdateRetriesTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_dataset_update_retries_total",
+			Help: "Total number of retries during lock-free dataset map updates (CAS failures)",
+		},
+	)
+)

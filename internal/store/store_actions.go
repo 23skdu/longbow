@@ -57,9 +57,12 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 			return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
 		}
 
-		ds, err := s.getDataset(req.Dataset)
-		if err != nil {
-			return err
+		ds, ok := s.getDataset(req.Dataset)
+		if !ok {
+			// This was err return in old code, assuming err != nil check implies not found or error
+			// The original code: ds, err := s.getDataset... if err != nil return err
+			// Our helper returns (ds, bool). So if !ok return error.
+			return status.Errorf(codes.NotFound, "dataset %s not found", req.Dataset)
 		}
 
 		found := false
@@ -131,19 +134,23 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 			return status.Error(codes.InvalidArgument, "missing dataset name")
 		}
 
-		s.mu.Lock()
-		ds, ok := s.datasets[dsName]
-		if !ok {
-			s.mu.Unlock()
+		// Use RCU to delete
+		var ds *Dataset
+		var deleted bool
+		s.updateDatasets(func(m map[string]*Dataset) {
+			if d, ok := m[dsName]; ok {
+				ds = d
+				delete(m, dsName)
+				deleted = true
+			}
+		})
+
+		if !deleted {
 			return status.Errorf(codes.NotFound, "dataset %s not found", dsName)
 		}
 
 		// Use existing eviction logic to free memory and close resources
 		s.evictDataset(ds.Name)
-
-		// Remove from map
-		delete(s.datasets, dsName)
-		s.mu.Unlock()
 
 		s.logger.Info().Str("dataset", dsName).Msg("Dataset deleted")
 		if err := stream.Send(&flight.Result{Body: []byte("deleted")}); err != nil {
@@ -162,7 +169,6 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 
 		var curr map[string]interface{}
 		if err := json.Unmarshal(action.Body, &curr); err != nil {
-			// Try Unmarshal as []struct? No, map is safer for now
 			return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
 		}
 
@@ -178,9 +184,9 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 			return status.Error(codes.InvalidArgument, "missing or invalid vector_id")
 		}
 
-		ds, err := s.getDataset(dsName)
-		if err != nil {
-			return err
+		ds, ok := s.getDataset(dsName)
+		if !ok {
+			return status.Errorf(codes.NotFound, "dataset %s not found", dsName)
 		}
 
 		if ds.Index == nil {
@@ -234,56 +240,53 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 	defer r.Release()
 
 	var name string
-	var ds *Dataset
 
 	// Check descriptor immediately (sent with Schema)
 	fd := r.LatestFlightDescriptor()
 	if fd != nil && len(fd.Path) > 0 {
 		name = fd.Path[0]
 	} else {
-		// Fallback or error
 		return fmt.Errorf("missing flight descriptor path")
 	}
 
 	s.logger.Info().Str("name", name).Msg("DoPut started (Batched)")
 
-	s.mu.Lock()
-	if _, ok := s.datasets[name]; !ok {
-		// Create new dataset with schema from reader
+	// Use RCU helper for create
+	ds, created := s.getOrCreateDataset(name, func() *Dataset {
 		ds := NewDataset(name, r.Schema())
-
-		// Note: hnsw2Index initialization happens via hook to avoid import cycle.
-		// See cmd/longbow/main.go for initialization hook setup.
-
 		ds.Topo = s.numaTopology
-		s.datasets[name] = ds
-
 		// Call initialization hook if registered (for hnsw2, etc.)
 		if s.datasetInitHook != nil {
 			s.datasetInitHook(ds)
-
-			// Account for initial index memory (e.g., hnsw2 pre-allocations)
+			// Account for initial index memory
 			if ds.Index != nil {
 				initialIndexMem := ds.Index.EstimateMemory()
 				ds.IndexMemoryBytes.Store(initialIndexMem)
-				s.currentMemory.Add(initialIndexMem)
 			} else if ds.GetHNSW2Index() != nil {
-				// Special case for hnsw2 via interface
 				if est, ok := ds.GetHNSW2Index().(interface{ EstimateMemory() int64 }); ok {
 					initialIndexMem := est.EstimateMemory()
 					ds.IndexMemoryBytes.Store(initialIndexMem)
-					s.currentMemory.Add(initialIndexMem)
 				}
 			}
 		}
+		return ds
+	})
+
+	if created {
+		mem := ds.IndexMemoryBytes.Load()
+		if mem > 100*1024*1024 {
+			s.logger.Warn().
+				Str("dataset", name).
+				Int64("mem", mem).
+				Msg("Huge initial memory for dataset")
+		}
+		s.currentMemory.Add(mem)
 	}
-	ds = s.datasets[name]
 
 	// Initialize GPU if enabled
 	if hnswIdx, ok := ds.Index.(*HNSWIndex); ok {
 		s.initGPUIfEnabled(hnswIdx)
 	}
-	s.mu.Unlock()
 
 	// Batching configuration
 	const maxBatchSize = 100
@@ -415,6 +418,9 @@ func (s *VectorStore) flushPutBatch(ds *Dataset, name string, batch []arrow.Reco
 		return err
 	}
 
+	if totalSize > 100*1024*1024 {
+		s.logger.Warn().Int64("size", totalSize).Msg("Large memory addition in DoPut")
+	}
 	s.currentMemory.Add(totalSize)
 	ds.SizeBytes.Add(totalSize)
 	metrics.FlightRowsProcessed.WithLabelValues("put", "ok").Add(float64(totalRows))
@@ -502,14 +508,16 @@ func (s *VectorStore) flushPutBatch(ds *Dataset, name string, batch []arrow.Reco
 
 // StoreRecordBatch stores a batch of records in a dataset
 func (s *VectorStore) StoreRecordBatch(ctx context.Context, name string, rec arrow.RecordBatch) error {
-	s.mu.Lock()
-	ds, ok := s.datasets[name]
-	if !ok {
-		ds = NewDataset(name, rec.Schema())
+	ds, _ := s.getOrCreateDataset(name, func() *Dataset {
+		ds := NewDataset(name, rec.Schema())
 		ds.Topo = s.numaTopology
-		s.datasets[name] = ds
-	}
-	s.mu.Unlock()
+		return ds
+	})
+
+	// No initial memory side-effects in StoreRecordBatch createFn currently?
+	// But to be consistent/safe given main initialization flow:
+	// No initial memory side-effects in StoreRecordBatch createFn currently.
+	// We proceed without specific hook logic here as per design.
 
 	// WAL write
 	if err := s.writeToWAL(rec, name); err != nil {

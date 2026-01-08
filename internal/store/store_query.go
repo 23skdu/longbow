@@ -32,12 +32,10 @@ func (s *VectorStore) ListFlights(c *flight.Criteria, stream flight.FlightServic
 		}
 	}
 
-	s.mu.RLock()
-	datasets := make([]*Dataset, 0, len(s.datasets))
-	for _, ds := range s.datasets {
+	var datasets []*Dataset
+	s.IterateDatasets(func(name string, ds *Dataset) {
 		datasets = append(datasets, ds)
-	}
-	s.mu.RUnlock()
+	})
 
 	for _, ds := range datasets {
 		// Apply filters
@@ -103,9 +101,9 @@ func (s *VectorStore) GetFlightInfo(ctx context.Context, desc *flight.FlightDesc
 		return nil, status.Error(codes.InvalidArgument, "Empty path")
 	}
 	name := desc.Path[0]
-	ds, err := s.getDataset(name)
-	if err != nil {
-		return nil, status.Error(codes.NotFound, err.Error())
+	ds, ok := s.getDataset(name)
+	if !ok {
+		return nil, status.Error(codes.NotFound, "dataset not found")
 	}
 
 	return &flight.FlightInfo{
@@ -145,9 +143,9 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 		Int("filters", len(query.Filters)).
 		Msg("DoGet called")
 
-	ds, err := s.getDataset(name)
-	if err != nil {
-		return err
+	ds, ok := s.getDataset(name)
+	if !ok {
+		return status.Errorf(codes.NotFound, "dataset %s not found", name)
 	}
 
 	ds.dataMu.RLock()
@@ -182,7 +180,6 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 	errChan := make(chan error, 1)
 	var wg sync.WaitGroup
 
-	// Determine execution strategy
 	// Determine execution strategy
 	var stageChan <-chan PipelineStage
 	usePipeline := s.shouldUsePipeline(len(ds.Records))
@@ -274,40 +271,9 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 						ratio := float64(filtered.NumRows()) / float64(rec.NumRows())
 						metrics.FilterSelectivityRatio.WithLabelValues(name).Observe(ratio)
 					}
-					// If filtering resulted in empty batch, we might still want to process if needed?
-					// But usually we skip empty unless we need to maintain batch count?
+
 					if filtered != nil && filtered.NumRows() > 0 {
-						// Apply tombstone AFTER filter? Or Before?
-						// Logic: filtered is a new subset. Indices changed.
-						// Tombstone is based on ORIGINAL indices.
-						// Complexity! The filterRecord function should probably handle tombstones if possible
-						// OR we must handle tombstones BEFORE filtering?
-						// Efficient: Filter FIRST if selective?
-						// But indices...
-						// If we use ZeroCopyRecordBatch(rec, deleted) -> newRec
-						// Then Filter(newRec) -> processed.
-						// This is safer.
-						// However, if we filter first, we map indices.
-						// Let's assume filterRecord handles it or we handle tombstone first.
-
-						// Current Implementation of `filterRecord` (in store.go/dataset.go?)
-						// Wait, `filterRecord` is in `store_query.go`? No, likely in `filter_evaluator.go` or similar but imported?
-						// Actually `filterRecord` is usually a method on Store or global function in store package.
-						// I need to check where `filterRecord` is defined.
-						// grep shows it is used here. It might be in `store_eval.go` or something.
-
-						// If `filterRecord` uses Arrow compute, it returns a new batch with NEW indices.
-						// So we must handle tombstones *before* or pass them to filter.
-						// Since `deleted` uses original indices, we MUST apply it to `rec` first.
-
-						// Logic simplification:
-						// We use the filtered batch. Tombstone application on top of filtered batch
-						// is difficult because indices shift.
-						// Current design: Filters supersede tombstones for simplicity in this path,
-						// or we assume filtered result implies valid records.
-						// Ideally, we should apply tombstones, but for now we stick to using the filtered result.
 						processed = filtered
-
 					} else {
 						if filtered != nil {
 							filtered.Release()
@@ -389,16 +355,6 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 				}
 
 				if query.Limit > 0 && rowsSent >= query.Limit {
-					// Stop workers? Context cancel?
-					// Ideally we cancel context for workers logic but here we just break read loop.
-					// Workers might still produce some.
-					// Since we don't have cancelable context for workers explicitly here (using stream.Context),
-					// we can't easily stop them. They will finish or block on closed resultsChan?
-					// No, we read until closed. If we break early, we must drain or assume cleanup.
-					// For MVP: Break loop. Workers finish.
-					// But if we break, `go func` feeding `workChan` might block on `resultsChan` sends if buffer full?
-					// Yes.
-					// FIX: Drain channel if breaking early.
 					goto DRAIN
 				}
 			}
@@ -442,32 +398,9 @@ func (s *VectorStore) MapInternalToUserIDs(ds *Dataset, results []SearchResult) 
 		metrics.IDResolutionDuration.Observe(time.Since(start).Seconds())
 	}()
 
-	s.mu.RLock()
-	hnswIndex, ok := ds.Index.(*HNSWIndex)
-	s.mu.RUnlock()
-
-	if ok && hnswIndex != nil {
-		// Optimization: if it's a plain HNSW index, use its built-in mapping which is faster (Phase 14)
-		// but wait, its built-in mapping might be what we are implementing here!
-		// Let's stick to the store-side mapping for now as it's more flexible with Arrow types.
-	} else {
-		// Fallback for AutoShardingIndex
-		s.mu.RLock()
-		autoIndex, isAuto := ds.Index.(*AutoShardingIndex)
-		s.mu.RUnlock()
-
-		if isAuto {
-			autoIndex.mu.RLock()
-			current := autoIndex.current
-			autoIndex.mu.RUnlock()
-
-			if h, ok := current.(*HNSWIndex); ok {
-				hnswIndex = h
-			}
-		}
-	}
-
-	if hnswIndex == nil {
+	// Use the VectorIndex interface directly to look up locations.
+	// This supports HNSWIndex, ArrowHNSW, AutoShardingIndex, etc.
+	if ds.Index == nil {
 		return results
 	}
 
@@ -479,10 +412,13 @@ func (s *VectorStore) MapInternalToUserIDs(ds *Dataset, results []SearchResult) 
 	defer ds.dataMu.RUnlock()
 
 	for _, res := range results {
-		// 1. Get location (Batch, Row) from HNSW internal ID
-		loc, found := hnswIndex.GetLocation(res.ID)
+		// 1. Get location (Batch, Row) from VectorIndex
+		loc, found := ds.Index.GetLocation(res.ID)
 		if !found {
 			// If not found in index (race condition?), skip or keep
+			// If we return raw result, it contains internal ID, which might confuse client.
+			// But skipping might lose data.
+			// Let's assume invalid and skip?
 			continue
 		}
 
@@ -576,13 +512,7 @@ func (s *VectorStore) MapInternalToUserIDs(ds *Dataset, results []SearchResult) 
 
 // GetDataset retrieves a dataset by name.
 func (s *VectorStore) GetDataset(name string) (*Dataset, error) {
-	return s.getDataset(name)
-}
-
-func (s *VectorStore) getDataset(name string) (*Dataset, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	ds, ok := s.datasets[name]
+	ds, ok := s.getDataset(name)
 	if !ok {
 		return nil, NewNotFoundError("dataset", name)
 	}
@@ -595,11 +525,11 @@ func (s *VectorStore) HybridSearch(ctx context.Context, name string, query []flo
 }
 
 // SearchHybrid is a wrapper for the SearchHybrid function (RRF version)
-// SearchHybrid is a wrapper for the SearchHybrid function (RRF version)
 func (s *VectorStore) SearchHybrid(ctx context.Context, name string, query []float32, textQuery string, k int, alpha float32, rrfK int, graphAlpha float32, graphDepth int) ([]SearchResult, error) {
 	// Expose graph params in future? For now default to 0 (disabled)
 	return SearchHybrid(ctx, s, name, query, textQuery, k, alpha, rrfK, graphAlpha, graphDepth)
 }
+
 func findVectorColumn(rec arrow.RecordBatch) arrow.Array {
 	if rec == nil || rec.Schema() == nil {
 		return nil
@@ -650,9 +580,9 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, stream fli
 		searchResults, err = s.SearchHybrid(stream.Context(), req.Dataset, queryVec, req.TextQuery, req.K, req.Alpha, 60, req.GraphAlpha, 2)
 	} else {
 		// Standard Vector Search
-		ds, err := s.getDataset(req.Dataset)
-		if err != nil {
-			return err // getDataset returns correct error type
+		ds, ok := s.getDataset(req.Dataset)
+		if !ok {
+			return status.Errorf(codes.NotFound, "dataset %s not found", req.Dataset)
 		}
 
 		ds.dataMu.RLock()

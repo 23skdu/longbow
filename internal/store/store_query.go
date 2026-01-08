@@ -398,29 +398,9 @@ func (s *VectorStore) MapInternalToUserIDs(ds *Dataset, results []SearchResult) 
 		metrics.IDResolutionDuration.Observe(time.Since(start).Seconds())
 	}()
 
-	// No global lock needed for index type check
-	hnswIndex, ok := ds.Index.(*HNSWIndex)
-
-	if ok && hnswIndex != nil {
-		// Optimization: if it's a plain HNSW index, use its built-in mapping which is faster (Phase 14)
-		// but wait, its built-in mapping might be what we are implementing here!
-		// Let's stick to the store-side mapping for now as it's more flexible with Arrow types.
-	} else {
-		// Fallback for AutoShardingIndex
-		autoIndex, isAuto := ds.Index.(*AutoShardingIndex)
-
-		if isAuto {
-			autoIndex.mu.RLock()
-			current := autoIndex.current
-			autoIndex.mu.RUnlock()
-
-			if h, ok := current.(*HNSWIndex); ok {
-				hnswIndex = h
-			}
-		}
-	}
-
-	if hnswIndex == nil {
+	// Use the VectorIndex interface directly to look up locations.
+	// This supports HNSWIndex, ArrowHNSW, AutoShardingIndex, etc.
+	if ds.Index == nil {
 		return results
 	}
 
@@ -432,10 +412,13 @@ func (s *VectorStore) MapInternalToUserIDs(ds *Dataset, results []SearchResult) 
 	defer ds.dataMu.RUnlock()
 
 	for _, res := range results {
-		// 1. Get location (Batch, Row) from HNSW internal ID
-		loc, found := hnswIndex.GetLocation(res.ID)
+		// 1. Get location (Batch, Row) from VectorIndex
+		loc, found := ds.Index.GetLocation(res.ID)
 		if !found {
 			// If not found in index (race condition?), skip or keep
+			// If we return raw result, it contains internal ID, which might confuse client.
+			// But skipping might lose data.
+			// Let's assume invalid and skip?
 			continue
 		}
 

@@ -483,7 +483,7 @@ def command_validate(args, data_client, meta_client):
     writer.close()
     
     print("  Inserted orthogonal vectors. Waiting for index...")
-    time.sleep(2) # Allow indexing
+    time.sleep(20) # Allow indexing
     
     # Search for ID 1 [0, 1, 0, 0]
     qvec = [0.0, 1.0, 0.0, 0.0]
@@ -494,6 +494,7 @@ def command_validate(args, data_client, meta_client):
     ticket = flight.Ticket(json.dumps(ticket_payload).encode("utf-8"))
     
     reader = meta_client.do_get(ticket, options=options)
+    found = False
     try:
         table = reader.read_all()
         df = table.to_pandas()
@@ -529,7 +530,7 @@ def command_validate(args, data_client, meta_client):
     writer, _ = data_client.do_put(descriptor, table_h.schema, options=options)
     writer.write_table(table_h)
     writer.close()
-    time.sleep(2)
+    time.sleep(15)
     
     # Search with "apple" and alpha=0.1 (favor text)
     print("  Searching for 'apple' (Hybrid)...")

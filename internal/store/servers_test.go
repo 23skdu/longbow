@@ -448,8 +448,8 @@ func TestMetaServerDoGetUnimplemented(t *testing.T) {
 		if !ok {
 			t.Fatalf("Expected gRPC status, got: %v", err)
 		}
-		if st.Code() != codes.Unimplemented {
-			t.Errorf("Expected Unimplemented, got %v", st.Code())
+		if st.Code() != codes.NotFound {
+			t.Errorf("Expected NotFound, got %v", st.Code())
 		}
 		return
 	}
@@ -461,8 +461,8 @@ func TestMetaServerDoGetUnimplemented(t *testing.T) {
 		t.Fatalf("Expected gRPC status, got: %v", err)
 	}
 
-	if st.Code() != codes.Unimplemented {
-		t.Errorf("Expected Unimplemented, got %v", st.Code())
+	if st.Code() != codes.NotFound {
+		t.Errorf("Expected NotFound, got %v", st.Code())
 	}
 }
 

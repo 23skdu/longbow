@@ -55,6 +55,7 @@ hnsw:
   keepPruned: false
   sq8Enabled: false
   refinementFactor: 1.0
+  useHNSW2: true
 
 # Memory & GC Configuration
 memory:

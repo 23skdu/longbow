@@ -137,7 +137,7 @@ func (h *ArrowHNSW) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []int)
 	// This avoids "Stop-the-World" pauses during parallel insertion
 	// finalSize must accommodate (startID + n - 1)
 	finalSize := int(startID) + n
-	h.Grow(finalSize, 0)
+	h.Grow(finalSize, int(h.dims.Load()))
 
 	ids := make([]uint32, n)
 
@@ -360,6 +360,19 @@ func (h *ArrowHNSW) Len() int {
 // GetDimension implements VectorIndex.
 func (h *ArrowHNSW) GetDimension() uint32 {
 	return uint32(h.dims.Load())
+}
+
+// SetDimension updates the dimension and re-initializes the batch computer.
+func (h *ArrowHNSW) SetDimension(dim int) {
+	if dim <= 0 {
+		return
+	}
+	// Only set if not already set, or force update?
+	// Use CompareAndSwap to only set if 0
+	if h.dims.CompareAndSwap(0, int32(dim)) {
+		// Re-initialize batch computer with correct dimension
+		h.batchComputer = NewBatchDistanceComputer(memory.DefaultAllocator, dim)
+	}
 }
 
 // Warmup implements VectorIndex.

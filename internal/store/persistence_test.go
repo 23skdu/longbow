@@ -46,7 +46,7 @@ func TestPersistence_WriteToWAL_NoFile(t *testing.T) {
 	// }
 	// So it returns nil.
 	// But if record is nil, it's ignored if engine is nil.
-	err := store.writeToWAL(nil, "test")
+	err := store.writeToWAL(nil, "test", time.Now().UnixNano())
 	assert.NoError(t, err)
 
 	schema := arrow.NewSchema([]arrow.Field{{Name: "f", Type: arrow.PrimitiveTypes.Int64}}, nil)
@@ -55,6 +55,6 @@ func TestPersistence_WriteToWAL_NoFile(t *testing.T) {
 	rec := b.NewRecordBatch()
 	defer rec.Release()
 
-	err = store.writeToWAL(rec, "test")
+	err = store.writeToWAL(rec, "test", time.Now().UnixNano())
 	assert.NoError(t, err) // Should return nil if engine is nil
 }

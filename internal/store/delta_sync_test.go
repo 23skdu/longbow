@@ -70,9 +70,9 @@ func TestDeltaSync_Integration(t *testing.T) {
 
 	// 1. Write Records (Seq 1, 2, 3)
 	startTs := time.Now().UnixNano()
-	_ = store.writeToWAL(rec1, "dataset1")
-	_ = store.writeToWAL(rec2, "dataset1")
-	_ = store.writeToWAL(rec3, "dataset1")
+	_ = store.writeToWAL(rec1, "dataset1", time.Now().UnixNano())
+	_ = store.writeToWAL(rec2, "dataset1", time.Now().UnixNano())
+	_ = store.writeToWAL(rec3, "dataset1", time.Now().UnixNano())
 
 	// Wait for flush
 	err := store.FlushWAL()

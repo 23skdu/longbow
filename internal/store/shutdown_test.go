@@ -90,7 +90,7 @@ func TestShutdownFlushesWAL(t *testing.T) {
 	rec := makeTestRecord(s.mem, 1)
 	defer rec.Release()
 
-	if err := s.writeToWAL(rec, "flush-test"); err != nil {
+	if err := s.writeToWAL(rec, "flush-test", time.Now().UnixNano()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -154,7 +154,7 @@ func TestWALTruncationAfterSnapshot(t *testing.T) {
 	rec := makeTestRecord(s.mem, 1)
 	defer rec.Release()
 
-	if err := s.writeToWAL(rec, "truncate-test"); err != nil {
+	if err := s.writeToWAL(rec, "truncate-test", time.Now().UnixNano()); err != nil {
 		t.Fatal(err)
 	}
 

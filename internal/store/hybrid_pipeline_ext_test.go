@@ -1,6 +1,5 @@
 package store
 
-
 import (
 	"testing"
 
@@ -13,8 +12,8 @@ func TestHybridSearchPipeline_SearchInvalidQuery(t *testing.T) {
 	p := NewHybridSearchPipeline(DefaultHybridPipelineConfig())
 
 	// Invalid query - no vector or keyword
-	query := &HybridSearchQuery{K: 10}
-	_, err := p.Search(query)
+	q := &HybridSearchQuery{K: 10}
+	_, err := p.Search(q)
 	if err == nil {
 		t.Error("expected error for invalid query")
 	}
@@ -23,14 +22,14 @@ func TestHybridSearchPipeline_SearchInvalidQuery(t *testing.T) {
 func TestHybridSearchPipeline_SearchEmptyIndexes(t *testing.T) {
 	p := NewHybridSearchPipeline(DefaultHybridPipelineConfig())
 
-	query := &HybridSearchQuery{
+	q := &HybridSearchQuery{
 		Vector:       []float32{1.0, 2.0, 3.0},
 		KeywordQuery: "test",
 		K:            10,
 	}
 
 	// Should return empty results when no indexes set
-	results, err := p.Search(query)
+	results, err := p.Search(q)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -46,13 +45,13 @@ func TestHybridSearchPipeline_AlphaOverride(t *testing.T) {
 
 	// With override
 	var override float32 = 0.98
-	query := &HybridSearchQuery{
+	q := &HybridSearchQuery{
 		Vector:        []float32{1.0, 2.0, 3.0},
 		K:             10,
 		AlphaOverride: &override,
 	}
 
-	_, err := p.Search(query)
+	_, err := p.Search(q)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -64,12 +63,12 @@ func TestHybridSearchPipeline_SearchVectorOnly(t *testing.T) {
 	cfg.Alpha = 1.0 // Pure vector
 	p := NewHybridSearchPipeline(cfg)
 
-	query := &HybridSearchQuery{
+	q := &HybridSearchQuery{
 		Vector: []float32{1.0, 2.0, 3.0},
 		K:      10,
 	}
 
-	_, err := p.Search(query)
+	_, err := p.Search(q)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -80,12 +79,12 @@ func TestHybridSearchPipeline_SearchKeywordOnly(t *testing.T) {
 	cfg.Alpha = 0.0 // Pure keyword
 	p := NewHybridSearchPipeline(cfg)
 
-	query := &HybridSearchQuery{
+	q := &HybridSearchQuery{
 		KeywordQuery: "hello world",
 		K:            10,
 	}
 
-	_, err := p.Search(query)
+	_, err := p.Search(q)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -100,13 +99,13 @@ func TestHybridSearchPipeline_FusionModes(t *testing.T) {
 			cfg.FusionMode = mode
 			p := NewHybridSearchPipeline(cfg)
 
-			query := &HybridSearchQuery{
+			q := &HybridSearchQuery{
 				Vector:       []float32{1.0, 2.0},
 				KeywordQuery: "test",
 				K:            5,
 			}
 
-			_, err := p.Search(query)
+			_, err := p.Search(q)
 			if err != nil {
 				t.Fatalf("unexpected error for mode %d: %v", mode, err)
 			}

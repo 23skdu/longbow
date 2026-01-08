@@ -97,7 +97,6 @@
           "color": {
             "mode": "thresholds"
           },
-          "unit": "short",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -106,7 +105,8 @@
                 "value": null
               }
             ]
-          }
+          },
+          "unit": "short"
         },
         "overrides": []
       },
@@ -133,6 +133,8 @@
           "color": {
             "mode": "thresholds"
           },
+          "max": 2,
+          "min": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -149,9 +151,7 @@
                 "value": 2
               }
             ]
-          },
-          "min": 0,
-          "max": 2
+          }
         }
       },
       "gridPos": {
@@ -214,7 +214,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 5
+        "y": 7
       },
       "id": 6,
       "title": "Flight & Search Performance",
@@ -225,10 +225,10 @@
       "fieldConfig": {
         "defaults": {
           "custom": {
+            "axisLabel": "Ops/sec",
             "drawStyle": "line",
             "lineInterpolation": "linear",
-            "showPoints": "auto",
-            "axisLabel": "Ops/sec"
+            "showPoints": "auto"
           }
         }
       },
@@ -236,7 +236,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 6
+        "y": 8
       },
       "id": 7,
       "targets": [
@@ -255,7 +255,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 6
+        "y": 8
       },
       "id": 8,
       "targets": [
@@ -337,12 +337,47 @@
       "type": "stat"
     },
     {
+      "datasource": "${datasource}",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 0,
+        "y": 21
+      },
+      "id": 115,
+      "targets": [
+        {
+          "expr": "longbow_bq_vectors_total",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "title": "BQ Vectors",
+      "type": "stat"
+    },
+    {
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 21
+        "y": 27
       },
       "id": 13,
       "title": "Pipeline & Filtering",
@@ -359,7 +394,7 @@
         "h": 6,
         "w": 12,
         "x": 0,
-        "y": 22
+        "y": 28
       },
       "id": 14,
       "targets": [
@@ -378,7 +413,7 @@
         "h": 6,
         "w": 12,
         "x": 12,
-        "y": 22
+        "y": 28
       },
       "id": 15,
       "targets": [
@@ -392,12 +427,120 @@
       "type": "timeseries"
     },
     {
+      "datasource": "${datasource}",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line"
+          },
+          "unit": "ops"
+        }
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 34
+      },
+      "id": 116,
+      "targets": [
+        {
+          "expr": "rate(longbow_pipeline_operations_total[1m])",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "title": "Pipeline Ops/sec",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line"
+          },
+          "unit": "s"
+        }
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 8,
+        "y": 34
+      },
+      "id": 117,
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(longbow_pipeline_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "title": "Pipeline Duration P99",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line"
+          },
+          "unit": "ops"
+        }
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 34
+      },
+      "id": 118,
+      "targets": [
+        {
+          "expr": "longbow_pipeline_batches_per_second",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "title": "Pipeline Throughput",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line"
+          },
+          "unit": "percentunit"
+        }
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 40
+      },
+      "id": 119,
+      "targets": [
+        {
+          "expr": "longbow_pipeline_worker_utilization",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "title": "Worker Util",
+      "type": "timeseries"
+    },
+    {
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 28
+        "y": 46
       },
       "id": 16,
       "title": "Memory & Systems",
@@ -414,7 +557,7 @@
         "h": 6,
         "w": 8,
         "x": 0,
-        "y": 29
+        "y": 47
       },
       "id": 17,
       "targets": [
@@ -438,7 +581,7 @@
         "h": 6,
         "w": 8,
         "x": 8,
-        "y": 29
+        "y": 47
       },
       "id": 18,
       "targets": [
@@ -456,7 +599,7 @@
         "h": 6,
         "w": 8,
         "x": 16,
-        "y": 29
+        "y": 47
       },
       "id": 19,
       "targets": [
@@ -470,12 +613,101 @@
       "type": "timeseries"
     },
     {
+      "datasource": "${datasource}",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line"
+          },
+          "unit": "bytes"
+        }
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 53
+      },
+      "id": 112,
+      "targets": [
+        {
+          "expr": "longbow_arena_allocated_bytes",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "title": "Arena Memory",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 8,
+        "y": 53
+      },
+      "id": 113,
+      "targets": [
+        {
+          "expr": "longbow_arena_slabs_total",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "title": "Total Slabs",
+      "type": "stat"
+    },
+    {
+      "datasource": "${datasource}",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line"
+          },
+          "unit": "ops"
+        }
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 14,
+        "y": 53
+      },
+      "id": 114,
+      "targets": [
+        {
+          "expr": "rate(longbow_eviction_rejected_queries_total[1m])",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "title": "Eviction Rejections/s",
+      "type": "timeseries"
+    },
+    {
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 35
+        "y": 59
       },
       "id": 20,
       "title": "Mesh & Gossip",
@@ -487,7 +719,7 @@
         "h": 6,
         "w": 4,
         "x": 0,
-        "y": 36
+        "y": 60
       },
       "id": 21,
       "targets": [
@@ -505,7 +737,7 @@
         "h": 6,
         "w": 6,
         "x": 4,
-        "y": 36
+        "y": 60
       },
       "id": 22,
       "targets": [
@@ -524,7 +756,7 @@
         "h": 6,
         "w": 7,
         "x": 10,
-        "y": 36
+        "y": 60
       },
       "id": 23,
       "targets": [
@@ -543,7 +775,7 @@
         "h": 6,
         "w": 7,
         "x": 17,
-        "y": 36
+        "y": 60
       },
       "id": 24,
       "targets": [
@@ -562,7 +794,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 42
+        "y": 66
       },
       "id": 25,
       "panels": [],
@@ -585,7 +817,7 @@
         "h": 6,
         "w": 6,
         "x": 0,
-        "y": 43
+        "y": 67
       },
       "id": 26,
       "targets": [
@@ -614,7 +846,7 @@
         "h": 6,
         "w": 6,
         "x": 6,
-        "y": 43
+        "y": 67
       },
       "id": 27,
       "targets": [
@@ -643,7 +875,7 @@
         "h": 6,
         "w": 6,
         "x": 12,
-        "y": 43
+        "y": 67
       },
       "id": 28,
       "targets": [
@@ -663,7 +895,6 @@
           "color": {
             "mode": "thresholds"
           },
-          "unit": "short",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -672,14 +903,15 @@
                 "value": null
               }
             ]
-          }
+          },
+          "unit": "short"
         }
       },
       "gridPos": {
         "h": 6,
         "w": 6,
         "x": 18,
-        "y": 43
+        "y": 67
       },
       "id": 29,
       "targets": [
@@ -697,7 +929,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 49
+        "y": 73
       },
       "id": 30,
       "panels": [],
@@ -720,7 +952,7 @@
         "h": 6,
         "w": 6,
         "x": 0,
-        "y": 50
+        "y": 74
       },
       "id": 31,
       "targets": [
@@ -740,7 +972,6 @@
           "color": {
             "mode": "thresholds"
           },
-          "unit": "short",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -749,14 +980,15 @@
                 "value": null
               }
             ]
-          }
+          },
+          "unit": "short"
         }
       },
       "gridPos": {
         "h": 6,
         "w": 6,
         "x": 6,
-        "y": 50
+        "y": 74
       },
       "id": 32,
       "targets": [
@@ -784,7 +1016,7 @@
         "h": 6,
         "w": 6,
         "x": 12,
-        "y": 50
+        "y": 74
       },
       "id": 33,
       "targets": [
@@ -813,7 +1045,7 @@
         "h": 6,
         "w": 6,
         "x": 18,
-        "y": 50
+        "y": 74
       },
       "id": 34,
       "targets": [
@@ -832,7 +1064,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 56
+        "y": 80
       },
       "id": 35,
       "panels": [],
@@ -855,7 +1087,7 @@
         "h": 6,
         "w": 8,
         "x": 0,
-        "y": 57
+        "y": 81
       },
       "id": 36,
       "targets": [
@@ -884,7 +1116,7 @@
         "h": 6,
         "w": 8,
         "x": 8,
-        "y": 57
+        "y": 81
       },
       "id": 37,
       "targets": [
@@ -904,7 +1136,6 @@
           "color": {
             "mode": "thresholds"
           },
-          "unit": "short",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -913,14 +1144,15 @@
                 "value": null
               }
             ]
-          }
+          },
+          "unit": "short"
         }
       },
       "gridPos": {
         "h": 6,
         "w": 8,
         "x": 16,
-        "y": 57
+        "y": 81
       },
       "id": 38,
       "targets": [
@@ -938,7 +1170,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 63
+        "y": 87
       },
       "id": 39,
       "panels": [],
@@ -961,7 +1193,7 @@
         "h": 6,
         "w": 8,
         "x": 0,
-        "y": 64
+        "y": 88
       },
       "id": 40,
       "targets": [
@@ -990,7 +1222,7 @@
         "h": 6,
         "w": 8,
         "x": 8,
-        "y": 64
+        "y": 88
       },
       "id": 41,
       "targets": [
@@ -1019,7 +1251,7 @@
         "h": 6,
         "w": 8,
         "x": 16,
-        "y": 64
+        "y": 88
       },
       "id": 42,
       "targets": [
@@ -1038,7 +1270,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 70
+        "y": 94
       },
       "id": 43,
       "panels": [],
@@ -1052,7 +1284,6 @@
           "color": {
             "mode": "thresholds"
           },
-          "unit": "short",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -1061,14 +1292,15 @@
                 "value": null
               }
             ]
-          }
+          },
+          "unit": "short"
         }
       },
       "gridPos": {
         "h": 6,
         "w": 6,
         "x": 0,
-        "y": 71
+        "y": 95
       },
       "id": 44,
       "targets": [
@@ -1096,7 +1328,7 @@
         "h": 6,
         "w": 9,
         "x": 6,
-        "y": 71
+        "y": 95
       },
       "id": 45,
       "targets": [
@@ -1125,7 +1357,7 @@
         "h": 6,
         "w": 9,
         "x": 15,
-        "y": 71
+        "y": 95
       },
       "id": 46,
       "targets": [
@@ -1144,7 +1376,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 77
+        "y": 101
       },
       "id": 47,
       "panels": [],
@@ -1167,7 +1399,7 @@
         "h": 6,
         "w": 8,
         "x": 0,
-        "y": 78
+        "y": 102
       },
       "id": 48,
       "targets": [
@@ -1196,7 +1428,7 @@
         "h": 6,
         "w": 8,
         "x": 8,
-        "y": 78
+        "y": 102
       },
       "id": 49,
       "targets": [
@@ -1225,7 +1457,7 @@
         "h": 6,
         "w": 8,
         "x": 16,
-        "y": 78
+        "y": 102
       },
       "id": 50,
       "targets": [
@@ -1244,7 +1476,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 84
+        "y": 108
       },
       "id": 51,
       "panels": [],
@@ -1267,7 +1499,7 @@
         "h": 6,
         "w": 12,
         "x": 0,
-        "y": 85
+        "y": 109
       },
       "id": 52,
       "targets": [
@@ -1296,7 +1528,7 @@
         "h": 6,
         "w": 12,
         "x": 12,
-        "y": 85
+        "y": 109
       },
       "id": 53,
       "targets": [
@@ -1315,7 +1547,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 56
+        "y": 115
       },
       "id": 54,
       "panels": [],
@@ -1328,7 +1560,7 @@
         "h": 6,
         "w": 8,
         "x": 0,
-        "y": 57
+        "y": 116
       },
       "id": 55,
       "targets": [
@@ -1352,7 +1584,7 @@
         "h": 6,
         "w": 8,
         "x": 8,
-        "y": 57
+        "y": 116
       },
       "id": 56,
       "targets": [
@@ -1371,7 +1603,7 @@
         "h": 6,
         "w": 8,
         "x": 16,
-        "y": 57
+        "y": 116
       },
       "id": 57,
       "targets": [
@@ -1385,12 +1617,93 @@
       "type": "timeseries"
     },
     {
+      "datasource": "${datasource}",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line"
+          },
+          "unit": "ops"
+        }
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 122
+      },
+      "id": 122,
+      "targets": [
+        {
+          "expr": "rate(longbow_simd_dispatch_count[1m])",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "title": "SIMD Dispatches/s",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line"
+          },
+          "unit": "ops"
+        }
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 8,
+        "y": 122
+      },
+      "id": 123,
+      "targets": [
+        {
+          "expr": "rate(longbow_simd_cosine_batch_calls_total[1m])",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "title": "Cosine Batch Calls/s",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line"
+          },
+          "unit": "ops"
+        }
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 122
+      },
+      "id": 124,
+      "targets": [
+        {
+          "expr": "rate(longbow_simd_dot_product_batch_calls_total[1m])",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "title": "DotProduct Batch Calls/s",
+      "type": "timeseries"
+    },
+    {
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 62
+        "y": 128
       },
       "id": 100,
       "panels": [],
@@ -1423,7 +1736,7 @@
         "h": 6,
         "w": 6,
         "x": 0,
-        "y": 63
+        "y": 129
       },
       "id": 101,
       "targets": [
@@ -1451,7 +1764,7 @@
         "h": 6,
         "w": 6,
         "x": 6,
-        "y": 63
+        "y": 129
       },
       "id": 102,
       "targets": [
@@ -1479,7 +1792,7 @@
         "h": 6,
         "w": 6,
         "x": 12,
-        "y": 63
+        "y": 129
       },
       "id": 103,
       "targets": [
@@ -1505,7 +1818,7 @@
         "h": 6,
         "w": 6,
         "x": 18,
-        "y": 63
+        "y": 129
       },
       "id": 104,
       "targets": [
@@ -1519,12 +1832,74 @@
       "type": "timeseries"
     },
     {
+      "datasource": "${datasource}",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line"
+          },
+          "unit": "ops"
+        }
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 135
+      },
+      "id": 120,
+      "targets": [
+        {
+          "expr": "rate(longbow_dataset_update_retries_total[1m])",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "title": "Dataset CAS Retries/s",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 8,
+        "y": 135
+      },
+      "id": 121,
+      "targets": [
+        {
+          "expr": "longbow_namespace_datasets_total",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "title": "Namespace Datasets",
+      "type": "stat"
+    },
+    {
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 69
+        "y": 141
       },
       "id": 58,
       "panels": [],
@@ -1535,8 +1910,8 @@
       "datasource": "${datasource}",
       "fieldConfig": {
         "defaults": {
-          "min": 0,
           "max": 1,
+          "min": 0,
           "thresholds": {
             "steps": [
               {
@@ -1555,7 +1930,7 @@
         "h": 6,
         "w": 8,
         "x": 0,
-        "y": 64
+        "y": 142
       },
       "id": 59,
       "targets": [
@@ -1573,7 +1948,7 @@
         "h": 6,
         "w": 8,
         "x": 8,
-        "y": 64
+        "y": 142
       },
       "id": 60,
       "targets": [
@@ -1591,7 +1966,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 75
+        "y": 148
       },
       "id": 110,
       "title": "Lock Contention",
@@ -1603,7 +1978,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 76
+        "y": 149
       },
       "id": 111,
       "targets": [
@@ -1616,6 +1991,89 @@
       ],
       "title": "Lock Contention Heatmap",
       "type": "heatmap"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 155
+      },
+      "id": 125,
+      "panels": [],
+      "title": "Warmup Status",
+      "type": "row"
+    },
+    {
+      "datasource": "${datasource}",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 0,
+        "y": 156
+      },
+      "id": 126,
+      "targets": [
+        {
+          "expr": "longbow_warmup_progress_percent",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "title": "Warmup Progress",
+      "type": "stat"
+    },
+    {
+      "datasource": "${datasource}",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 6,
+        "y": 156
+      },
+      "id": 127,
+      "targets": [
+        {
+          "expr": "longbow_warmup_datasets_completed",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "title": "Datasets Warmed",
+      "type": "stat"
     }
   ],
   "refresh": "5s",

@@ -90,7 +90,11 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec []float32, level int) error 
 	start := time.Now()
 	defer func() {
 		metrics.HNSWInsertDurationSeconds.Observe(time.Since(start).Seconds())
-		metrics.HNSWNodesTotal.WithLabelValues("default").Set(float64(h.nodeCount.Load()))
+		nodeCount := float64(h.nodeCount.Load())
+		metrics.HNSWNodesTotal.WithLabelValues("default").Set(nodeCount)
+		if h.config.BQEnabled {
+			metrics.BQVectorsTotal.WithLabelValues("default").Set(nodeCount)
+		}
 	}()
 
 	// Make a defensive copy of the vector to avoid race conditions

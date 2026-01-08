@@ -6,8 +6,11 @@ import (
 	"encoding/json"
 
 	"github.com/apache/arrow-go/v18/arrow/flight"
+	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	"github.com/23skdu/longbow/internal/metrics"
 )
 
 // DataServer handles data plane operations (DoGet, DoPut)
@@ -23,7 +26,16 @@ func NewDataServer(store *VectorStore) *DataServer {
 // DoGet retrieves a dataset, converting domain errors to gRPC status codes.
 func (s *DataServer) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGetServer) error {
 	LogClientAction(stream.Context(), s.logger, s.Mesh, "DoGet", nil)
+	timer := prometheus.NewTimer(metrics.FlightDurationSeconds.WithLabelValues("do_get"))
+	defer timer.ObserveDuration()
+	metrics.FlightOpsTotal.WithLabelValues("do_get", "start").Inc()
+
 	err := s.VectorStore.DoGet(tkt, stream)
+	if err != nil {
+		metrics.FlightOpsTotal.WithLabelValues("do_get", "error").Inc()
+	} else {
+		metrics.FlightOpsTotal.WithLabelValues("do_get", "success").Inc()
+	}
 	return ToGRPCStatus(err)
 }
 
@@ -116,7 +128,16 @@ func (s *MetaServer) GetFlightInfo(ctx context.Context, desc *flight.FlightDescr
 // DoGet retrieves a dataset or executes search, converting domain errors to gRPC status codes.
 func (s *MetaServer) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGetServer) error {
 	LogClientAction(stream.Context(), s.logger, s.Mesh, "DoGet", nil)
+	timer := prometheus.NewTimer(metrics.FlightDurationSeconds.WithLabelValues("do_get"))
+	defer timer.ObserveDuration()
+	metrics.FlightOpsTotal.WithLabelValues("do_get", "start").Inc()
+
 	err := s.VectorStore.DoGet(tkt, stream)
+	if err != nil {
+		metrics.FlightOpsTotal.WithLabelValues("do_get", "error").Inc()
+	} else {
+		metrics.FlightOpsTotal.WithLabelValues("do_get", "success").Inc()
+	}
 	return ToGRPCStatus(err)
 }
 

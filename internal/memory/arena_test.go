@@ -121,8 +121,7 @@ func TestSliceHeader_Safety(t *testing.T) {
 	// Ideally SliceRef is just uint64 if we can assume max size?
 	// Or we keep it 16 bytes.
 
-	ref := SliceRef{Offset: 12345, Len: 100}
-	if unsafe.Sizeof(ref) > 16 {
-		t.Errorf("SliceRef too large: %d", unsafe.Sizeof(ref))
+	if unsafe.Sizeof(SliceRef{}) > 16 {
+		t.Errorf("SliceRef too large: %d", unsafe.Sizeof(SliceRef{}))
 	}
 }

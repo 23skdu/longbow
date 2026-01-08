@@ -1,6 +1,5 @@
 package store
 
-
 import (
 	"sync"
 	"testing"
@@ -40,7 +39,7 @@ func BenchmarkParallelSearch(b *testing.B) {
 		dataMu:  sync.RWMutex{},
 	}
 	ds.Index = NewHNSWIndex(ds)
-	vs.datasets["bench_parallel"] = ds
+	vs.datasets.Store(&map[string]*Dataset{"bench_parallel": ds})
 
 	// Insert data
 	batchSize := 1000

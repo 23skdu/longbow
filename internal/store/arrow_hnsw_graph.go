@@ -385,24 +385,90 @@ func (gd *GraphData) Clone(minCap, targetDims int, sq8Enabled, pqEnabled, bqEnab
 	// So we just copy the slice headers (Vectors, Neighbors) which contain Arena Offsets.
 
 	// Copy Directory Arrays
-	copy(newGD.Levels, gd.Levels)
-	if len(gd.Vectors) > 0 {
-		copy(newGD.Vectors, gd.Vectors)
+	// Use atomic load to avoid race with concurrent ensureChunk (which uses CAS)
+	// We simulate copy() semantics by iterating up to min(len(src), len(dst))
+
+	// Levels
+	limit := len(gd.Levels)
+	if len(newGD.Levels) < limit {
+		limit = len(newGD.Levels)
 	}
-	if len(gd.VectorsSQ8) > 0 {
-		copy(newGD.VectorsSQ8, gd.VectorsSQ8)
-	}
-	if len(gd.VectorsPQ) > 0 {
-		copy(newGD.VectorsPQ, gd.VectorsPQ)
-	}
-	if len(gd.VectorsBQ) > 0 {
-		copy(newGD.VectorsBQ, gd.VectorsBQ)
+	for i := 0; i < limit; i++ {
+		newGD.Levels[i] = atomic.LoadUint64(&gd.Levels[i])
 	}
 
+	// Vectors
+	if len(gd.Vectors) > 0 {
+		limit = len(gd.Vectors)
+		if len(newGD.Vectors) < limit {
+			limit = len(newGD.Vectors)
+		}
+		for i := 0; i < limit; i++ {
+			newGD.Vectors[i] = atomic.LoadUint64(&gd.Vectors[i])
+		}
+	}
+
+	// SQ8
+	if len(gd.VectorsSQ8) > 0 {
+		limit = len(gd.VectorsSQ8)
+		if len(newGD.VectorsSQ8) < limit {
+			limit = len(newGD.VectorsSQ8)
+		}
+		for i := 0; i < limit; i++ {
+			newGD.VectorsSQ8[i] = atomic.LoadUint64(&gd.VectorsSQ8[i])
+		}
+	}
+
+	// PQ
+	if len(gd.VectorsPQ) > 0 {
+		limit = len(gd.VectorsPQ)
+		if len(newGD.VectorsPQ) < limit {
+			limit = len(newGD.VectorsPQ)
+		}
+		for i := 0; i < limit; i++ {
+			newGD.VectorsPQ[i] = atomic.LoadUint64(&gd.VectorsPQ[i])
+		}
+	}
+
+	// BQ
+	if len(gd.VectorsBQ) > 0 {
+		limit = len(gd.VectorsBQ)
+		if len(newGD.VectorsBQ) < limit {
+			limit = len(newGD.VectorsBQ)
+		}
+		for i := 0; i < limit; i++ {
+			newGD.VectorsBQ[i] = atomic.LoadUint64(&gd.VectorsBQ[i])
+		}
+	}
+
+	// Neighbors / Counts / Versions
 	for i := 0; i < ArrowMaxLayers; i++ {
-		copy(newGD.Neighbors[i], gd.Neighbors[i])
-		copy(newGD.Counts[i], gd.Counts[i])
-		copy(newGD.Versions[i], gd.Versions[i])
+		// Neighbors
+		limit = len(gd.Neighbors[i])
+		if len(newGD.Neighbors[i]) < limit {
+			limit = len(newGD.Neighbors[i])
+		}
+		for j := 0; j < limit; j++ {
+			newGD.Neighbors[i][j] = atomic.LoadUint64(&gd.Neighbors[i][j])
+		}
+
+		// Counts
+		limit = len(gd.Counts[i])
+		if len(newGD.Counts[i]) < limit {
+			limit = len(newGD.Counts[i])
+		}
+		for j := 0; j < limit; j++ {
+			newGD.Counts[i][j] = atomic.LoadUint64(&gd.Counts[i][j])
+		}
+
+		// Versions
+		limit = len(gd.Versions[i])
+		if len(newGD.Versions[i]) < limit {
+			limit = len(newGD.Versions[i])
+		}
+		for j := 0; j < limit; j++ {
+			newGD.Versions[i][j] = atomic.LoadUint64(&gd.Versions[i][j])
+		}
 	}
 
 	// Transfer Arena ownership?

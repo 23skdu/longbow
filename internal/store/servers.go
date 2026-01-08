@@ -113,9 +113,11 @@ func (s *MetaServer) GetFlightInfo(ctx context.Context, desc *flight.FlightDescr
 	return info, ToGRPCStatus(err)
 }
 
-// DoGet returns Unimplemented on MetaServer
+// DoGet retrieves a dataset or executes search, converting domain errors to gRPC status codes.
 func (s *MetaServer) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGetServer) error {
-	return status.Error(codes.Unimplemented, "DoGet not implemented on MetaServer; use DataServer")
+	LogClientAction(stream.Context(), s.logger, s.Mesh, "DoGet", nil)
+	err := s.VectorStore.DoGet(tkt, stream)
+	return ToGRPCStatus(err)
 }
 
 // DoPut returns Unimplemented on MetaServer

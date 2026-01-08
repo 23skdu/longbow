@@ -14,12 +14,17 @@ import (
 // such as managing memory pressure, eviction, and startup.
 
 // evictDataset evicts a dataset from memory.
+// evictDataset evicts a dataset from memory.
 func (s *VectorStore) evictDataset(name string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	var ds *Dataset
+	s.updateDatasets(func(m map[string]*Dataset) {
+		if d, ok := m[name]; ok {
+			ds = d
+			delete(m, name)
+		}
+	})
 
-	ds, ok := s.datasets[name]
-	if !ok {
+	if ds == nil {
 		return
 	}
 
@@ -31,11 +36,17 @@ func (s *VectorStore) evictDataset(name string) {
 	}
 
 	// Release records
+	// Note: We need lock to safely read records?
+	// The dataset is removed from map, but other readers might still hold a pointer.
+	// We can't immediately release if RCU readers are active.
+	// But Arrow Release() decrements refcount. If readers retained, it's fine.
+	// If store owns the "base" refcount, we release it here.
+	ds.dataMu.Lock()
+	defer ds.dataMu.Unlock()
 	for _, r := range ds.Records {
 		r.Release()
 	}
 
-	delete(s.datasets, name)
 	// metrics.DatasetCount.Dec()
 	// metrics.EvaluatedEvictions.Inc()
 }
@@ -109,11 +120,10 @@ func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
 		}
 
 		for dsName, dsGroup := range byDataset {
-			ds, err := s.getDataset(dsName)
-			if err != nil {
+			ds, ok := s.getDataset(dsName)
+			if !ok {
 				s.logger.Error().
 					Str("dataset", dsName).
-					Err(err).
 					Msg("Dataset not found for indexing job")
 				for _, j := range dsGroup {
 					if j.Record != nil {

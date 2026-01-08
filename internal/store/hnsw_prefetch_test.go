@@ -1,6 +1,5 @@
 package store
 
-
 import (
 	"context"
 	"testing"
@@ -60,9 +59,8 @@ func TestSearchVectorsCorrectness(t *testing.T) {
 	err := vs.StoreRecordBatch(ctx, "test", rec)
 	require.NoError(t, err)
 
-	vs.mu.RLock()
-	ds := vs.datasets["test"]
-	vs.mu.RUnlock()
+	ds, ok := vs.getDataset("test")
+	require.True(t, ok)
 	require.NotNil(t, ds)
 
 	// Manually initialize HNSW index

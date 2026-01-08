@@ -27,10 +27,10 @@ func TestGraphPersistence_SnapshotRecovery(t *testing.T) {
 	// 2. Create Dataset and Add Graph Edge
 	datasetName := "test_graph"
 
-	store.mu.Lock()
 	ds := NewDataset(datasetName, nil) // Schema nil for now, pure graph?
-	store.datasets[datasetName] = ds
-	store.mu.Unlock()
+	store.updateDatasets(func(m map[string]*Dataset) {
+		m[datasetName] = ds
+	})
 
 	// Add Edge to Graph
 	edge := Edge{
@@ -62,9 +62,7 @@ func TestGraphPersistence_SnapshotRecovery(t *testing.T) {
 	defer func() { _ = store2.Close() }()
 
 	// 6. Verify
-	store2.mu.Lock()
-	ds2, ok := store2.datasets[datasetName]
-	store2.mu.Unlock()
+	ds2, ok := store2.getDataset(datasetName)
 
 	require.True(t, ok, "Dataset should exist after recovery")
 	require.NotNil(t, ds2.Graph, "GraphStore should be initialized")

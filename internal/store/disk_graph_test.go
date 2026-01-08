@@ -9,8 +9,9 @@ import (
 func TestDiskGraph_RoundTrip(t *testing.T) {
 	// 1. Create a dummy GraphData
 	capacity := 1024 // Use ChunkSize alignment to be safe
-	dims := 128
-	gd := NewGraphData(capacity, dims, false, false, false)
+	dims := 4
+	gd := NewGraphData(capacity, dims, true, true, false)
+	gd.PQDims = 2
 
 	// Populate neighbors
 	// We must allocate full chunks for GraphData to work

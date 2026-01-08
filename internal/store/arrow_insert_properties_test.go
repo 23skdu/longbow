@@ -49,7 +49,7 @@ func TestInsertProperties(t *testing.T) {
 				// But the property is about Insert maintaining connectivity.
 				// Let's create a minimal vector set.
 				off := int(cOff) * 2
-				vecchunk := index.data.Load().Vectors[cID]
+				vecchunk := index.data.Load().GetVectorsChunk(cID)
 				if vecchunk != nil {
 					(*vecchunk)[off] = float32(id)
 					(*vecchunk)[off+1] = float32(id)
@@ -167,7 +167,11 @@ func TestInsertProperties(t *testing.T) {
 			for i := 0; i < 5; i++ {
 				cID := chunkID(uint32(i))
 				cOff := chunkOffset(uint32(i))
-				count := atomic.LoadInt32(&(*data.Counts[0][cID])[cOff])
+				counts := data.GetCountsChunk(0, cID)
+				if counts == nil {
+					return false
+				}
+				count := atomic.LoadInt32(&(*counts)[cOff])
 				if int(count) > m*2 {
 					return false
 				}

@@ -1,6 +1,5 @@
 package store
 
-
 import (
 	"math/rand"
 	"testing"
@@ -58,7 +57,7 @@ func TestSQ8AutoTuning(t *testing.T) {
 
 	// Verify SQ8 data is ENCODED
 	data := idx.data.Load()
-	sq8Chunk := data.LoadSQ8Chunk(chunkID(ids1[0]))
+	sq8Chunk := data.GetVectorsSQ8Chunk(chunkID(ids1[0]))
 	// We expect NON-ZERO bytes now
 	cOff := chunkOffset(ids1[0])
 	dims := 16

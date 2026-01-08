@@ -1,6 +1,5 @@
 package store
 
-
 import (
 	"math/rand"
 	"runtime"
@@ -111,35 +110,20 @@ func TestHNSW_GrowthRace(t *testing.T) {
 			cOff := chunkOffset(id)
 			_ = cOff // Only checking chunk existence for now
 
-			// Check if chunk exists
-			if int(cID) >= len(data.Vectors) || data.Vectors[cID] == nil {
+			// Check if chunk exists (Levels/Neighbors)
+			// Vectors are not stored in GraphData anymore (unless SQ8/PQ).
+			// So checking Levels/Neighbors is the correct way to verify allocation.
+			if data.GetLevelsChunk(cID) == nil {
 				missingCount++
-				// First few failures are interesting
 				if missingCount < 5 {
-					t.Logf("Missing Vector Chunk for ID %d (Chunk %d)", id, cID)
+					t.Logf("Missing Levels Chunk for ID %d", id)
 				}
-			} else {
-				// Check if vector is actually there?
-				// The code does: copy(dest, vec).
-				// We initialized dummyVec with non-zero?
-				// Just checking validity of pointer is enough for the specific "lost chunk" bug.
-				// If the chunk allocation was lost, data.Vectors[cID] would be nil (or short if resized?).
-				// Actually, if it's nil, that's definitive proof.
-				_ = "ok"
-			}
-
-			// Also check layers/neighbors?
-			// The bug mostly affects Vectors array because that's where ensures happen?
-			// ensureChunk also allocates Levels, Neighbors, Counts, Versions.
-			if int(cID) >= len(data.Levels) || data.Levels[cID] == nil {
-				// t.Logf("Missing Levels Chunk for ID %d", id)
-				_ = "missing"
 			}
 		}
 	}
 
 	if missingCount > 0 {
-		t.Fatalf("Consistency Check Failed: Stuck/Lost allocations for %d vectors", missingCount)
+		t.Fatalf("Consistency Check Failed: Stuck/Lost allocations for %d items", missingCount)
 	}
 
 	// Also require no failures during insert

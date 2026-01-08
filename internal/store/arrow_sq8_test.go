@@ -1,6 +1,5 @@
 package store
 
-
 import (
 	"math/rand"
 	"testing"
@@ -64,21 +63,26 @@ func TestSQ8Indexing(t *testing.T) {
 
 	// Verify that VectorsSQ8 is populated
 	data := idx.data.Load()
+	// Length check on VectorsSQ8 slice doesn't work directly if it's sparse/atomic?
+	// But it is []uint64 so len works.
 	assert.Greater(t, len(data.VectorsSQ8), 0, "VectorsSQ8 should be populated")
 	if len(data.VectorsSQ8) > 0 {
-		chunk := *data.VectorsSQ8[0]
-		if len(chunk) == 0 {
+		chunk := data.GetVectorsSQ8Chunk(0)
+		if chunk == nil || len(*chunk) == 0 {
 			t.Error("SQ8 vectors not encoded")
 		}
 	}
 	// Capacity-based check
-	// With chunked storage, VectorsSQ8 is [][]byte (number of chunks)
+	// With chunked storage, VectorsSQ8 is []uint64 (number of chunks)
 	// Default capacity 1000 -> 1 chunk (if ChunkSize=65536)
 	numChunks := (data.Capacity + ChunkSize - 1) / ChunkSize
 	assert.Equal(t, numChunks, len(data.VectorsSQ8))
 	// Check size of the first chunk
 	if len(data.VectorsSQ8) > 0 {
-		assert.Equal(t, ChunkSize*16, len(*data.VectorsSQ8[0]))
+		chunk := data.GetVectorsSQ8Chunk(0)
+		if chunk != nil {
+			assert.Equal(t, ChunkSize*16, len(*chunk))
+		}
 	}
 
 	// Search

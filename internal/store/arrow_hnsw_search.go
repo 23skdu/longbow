@@ -153,7 +153,7 @@ func (h *ArrowHNSW) Search(q []float32, k, ef int, filter *query.Bitset) ([]Sear
 
 // searchLayer performs greedy search at a specific layer.
 // Returns the closest node found and its distance.
-func (h *ArrowHNSW) searchLayer(q []float32, entryPoint uint32, ef, layer int, ctx *ArrowSearchContext, data *GraphData, filter *query.Bitset) (uint32, float32) {
+func (h *ArrowHNSW) searchLayer(q []float32, entryPoint uint32, ef, layer int, ctx *ArrowSearchContext, data *GraphData, filter *query.Bitset) (candidate uint32, _ float32) {
 	ctx.visited.Clear()
 	ctx.candidates.Clear()
 

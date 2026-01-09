@@ -278,7 +278,7 @@ func (h *HNSWIndex) getVector(id VectorID) []float32 {
 // getVectorUnsafe retrieves a zero-copy view of the vector.
 // Returns the vector slice and a release function.
 // The release function MUST be called to exit the epoch.
-func (h *HNSWIndex) getVectorUnsafe(id VectorID) ([]float32, func()) {
+func (h *HNSWIndex) getVectorUnsafe(id VectorID) (vec []float32, release func()) {
 	loc, ok := h.locationStore.Get(id)
 	if !ok || loc.BatchIdx == -1 {
 		return nil, nil // Not found or deleted
@@ -300,7 +300,7 @@ func (h *HNSWIndex) getVectorUnsafe(id VectorID) ([]float32, func()) {
 	// we use loc directly in helper.
 
 	// Use internal helper
-	vec := h.getVectorLockedUnsafe(loc)
+	vec = h.getVectorLockedUnsafe(loc)
 	h.dataset.dataMu.RUnlock() // Release lock immediately, rely on epoch
 
 	if vec == nil {

@@ -54,8 +54,6 @@ func WriteDiskGraph(gd *GraphData, path string, maxNodeID int) error {
 	// Padded/Packed to align, let's keep it compact 40.
 	// Followed by Meta Offsets (MaxLayers * 8).
 
-	// metaStart := 40
-
 	// Write Placeholder Header
 	// We need 16 + 24 = 40 bytes for fields + MaxLayers*8
 	headerBaseSize := 40

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -283,6 +284,33 @@ func (src *storeSnapshotSource) Iterate(fn func(storage.SnapshotItem) error) err
 		// PQ
 		if ds.PQEncoder != nil {
 			item.PQCodebook = ds.PQEncoder.Serialize()
+		}
+
+		// Rate Limit (Snapshot)
+		// Estimate size:
+		// Records: 0 (retained, pointer) - but we will write them.
+		// We should account for them.
+		// records size + graph records size + pq size
+		// This iteration yields the item which will then be serialized.
+		// So we are throttling the *production* of items.
+		// Approximate size.
+		var approxSize int
+		for _, r := range item.Records {
+			// Arrow RecordBatch GetRecordBatchInMemorySize is not available directly on interface?
+			// Allow approximation: rows * cols * 8?
+			// Let's use a helper if available, or just ignore for now and assume 1MB overhead?
+			// Actually we can sum up buffer sizes.
+			approxSize += int(r.NumRows() * int64(r.NumCols()) * 8) // Very rough
+		}
+		for _, r := range item.GraphRecords {
+			approxSize += int(r.NumRows() * int64(r.NumCols()) * 8)
+		}
+		approxSize += len(item.PQCodebook)
+
+		if src.s.rateLimiter != nil {
+			startWait := time.Now()
+			_ = src.s.rateLimiter.Wait(context.Background(), approxSize)
+			metrics.SnapshotRateLimitWaitSeconds.Observe(time.Since(startWait).Seconds())
 		}
 
 		// Serialize Index Config (JSON)

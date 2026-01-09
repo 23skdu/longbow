@@ -1,6 +1,5 @@
 package store
 
-
 import (
 	"bytes"
 	"testing"
@@ -29,7 +28,7 @@ func TestCastRecordToSchema_EdgeCases(t *testing.T) {
 	schema := arrow.NewSchema(fields, nil)
 
 	// Target schema with an extra column
-	fieldsTarget := make([]arrow.Field, len(fields))
+	fieldsTarget := make([]arrow.Field, len(fields), len(fields)+1)
 	copy(fieldsTarget, fields)
 	fieldsTarget = append(fieldsTarget, arrow.Field{Name: "new_col", Type: arrow.PrimitiveTypes.Int64})
 	targetSchema := arrow.NewSchema(fieldsTarget, nil)

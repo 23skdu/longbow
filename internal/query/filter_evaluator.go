@@ -270,6 +270,63 @@ func (o *float32FilterOp) FilterBatch(indices []int) []int {
 	return result
 }
 
+type float64FilterOp struct {
+	col      *array.Float64
+	val      float64
+	operator string
+	colIdx   int
+}
+
+func (o *float64FilterOp) Bind(col arrow.Array) error {
+	if col.DataType().ID() != arrow.FLOAT64 {
+		return fmt.Errorf("expected float64 column, got %s", col.DataType())
+	}
+	o.col = col.(*array.Float64)
+	return nil
+}
+
+func (o *float64FilterOp) Match(rowIdx int) bool {
+	if o.col.IsNull(rowIdx) {
+		return false
+	}
+	v := o.col.Value(rowIdx)
+	switch o.operator {
+	case "=", "eq", "==":
+		return v == o.val
+	case "!=", "neq":
+		return v != o.val
+	case ">":
+		return v > o.val
+	case "<":
+		return v < o.val
+	case ">=":
+		return v >= o.val
+	case "<=":
+		return v <= o.val
+	}
+	return false
+}
+
+func (o *float64FilterOp) MatchBitmap(dst []byte) {
+	for i := 0; i < len(dst); i++ {
+		if o.Match(i) {
+			dst[i] = 1
+		} else {
+			dst[i] = 0
+		}
+	}
+}
+
+func (o *float64FilterOp) FilterBatch(indices []int) []int {
+	result := make([]int, 0, len(indices))
+	for _, idx := range indices {
+		if o.Match(idx) {
+			result = append(result, idx)
+		}
+	}
+	return result
+}
+
 type stringFilterOp struct {
 	col      *array.String
 	val      string
@@ -371,6 +428,17 @@ func NewFilterEvaluator(rec arrow.RecordBatch, filters []Filter) (*FilterEvaluat
 			ops = append(ops, &float32FilterOp{
 				col:      col.(*array.Float32),
 				val:      float32(val),
+				operator: f.Operator,
+				colIdx:   colIdx,
+			})
+		case arrow.FLOAT64:
+			val, err := strconv.ParseFloat(f.Value, 64)
+			if err != nil {
+				return nil, fmt.Errorf("invalid float64 value %q for field %s", f.Value, f.Field)
+			}
+			ops = append(ops, &float64FilterOp{
+				col:      col.(*array.Float64),
+				val:      val,
 				operator: f.Operator,
 				colIdx:   colIdx,
 			})
@@ -483,6 +551,8 @@ func (e *FilterEvaluator) Reset(rec arrow.RecordBatch) error {
 		case *int64FilterOp:
 			colIdx = o.colIdx
 		case *float32FilterOp:
+			colIdx = o.colIdx
+		case *float64FilterOp:
 			colIdx = o.colIdx
 		case *stringFilterOp:
 			colIdx = o.colIdx

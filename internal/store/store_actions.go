@@ -391,7 +391,7 @@ func (s *VectorStore) flushPutBatch(ds *Dataset, name string, batch []arrow.Reco
 	// We use the helper which delegates to engine
 	ts := time.Now().UnixNano()
 	for _, rec := range batch {
-		if err := s.writeToWAL(rec, name); err != nil {
+		if err := s.writeToWAL(rec, name, ts); err != nil {
 			// Log the error but continue processing the rest of the batch
 			s.logger.Error().Err(err).Str("dataset", name).Msg("Failed to write record to WAL during flushPutBatch")
 			// The s.writeToWAL function already handles metrics for success/failure
@@ -519,8 +519,10 @@ func (s *VectorStore) StoreRecordBatch(ctx context.Context, name string, rec arr
 	// No initial memory side-effects in StoreRecordBatch createFn currently.
 	// We proceed without specific hook logic here as per design.
 
+	ts := time.Now().UnixNano()
+
 	// WAL write
-	if err := s.writeToWAL(rec, name); err != nil {
+	if err := s.writeToWAL(rec, name, ts); err != nil {
 		return err
 	}
 
@@ -552,7 +554,7 @@ func (s *VectorStore) StoreRecordBatch(ctx context.Context, name string, rec arr
 	ds.dataMu.Unlock()
 
 	// Dispatch Index Job
-	s.updateLWWAndMerkle(ds, rec, time.Now().UnixNano()) // timestamp approx
+	s.updateLWWAndMerkle(ds, rec, ts)
 	rec.Retain()
 	job := IndexJob{
 		DatasetName: name,

@@ -3,29 +3,76 @@
 This document outlines the prioritized improvements for the Longbow vector database, focusing on distributed
 reliability, architecture refactoring, and advanced indexing features.
 
-## Top 10 Priority Items
+## Top 10 Priority Items (Performance & Scalability)
 
-### 3. Distributed Consensus (Raft)
+### 1. IO_URING for WAL (Linux)
 
-- **Impact**: **High**. Critical for strong consistency in cluster metadata, shard mapping, and automated failover.
-- **Location**: `internal/consensus` (New)
-- **Plan**: Integrate a Raft library (e.g., `hashicorp/raft`) to manage cluster state.
+- **Impact**: **High**. Current profiling shows heavy `syscall` usage during writes.
+- **Plan**: Implement `io_uring` backend for the Write Ahead Log (WAL) to batch I/O operations and strictly reduce syscall overhead on Linux.
 
-### 4. Refactor `internal/store` Monolith
+### 2. HNSW Search Context Pooling
 
-- **Impact**: **High**. The `internal/store` package has grown excessively, hindering maintainability.
-- **Location**: `internal/store`
-- **Plan**: Split into `internal/index`, `internal/storage`, and `internal/query`.
+- **Impact**: **High**. Profiling revealed ~400MB allocations in `InsertWithVector` due to `visited` sets and queues.
+- **Plan**: Implement aggression `sync.Pool` usage for `searchCtx` (visited bitsets, candidate queues) to achieve near-zero allocation inserts.
 
-### 6. Cross-Encoder Re-ranking Implementation
+### 3. Product Quantization (PQ)
 
-- **Impact**: **Medium**. We currently have a stub `CrossEncoderReranker`.
-- **Location**: `internal/store/hybrid_pipeline.go`
-- **Plan**: Integrate a real model (e.g., via ONNX or external service) to provide high-quality re-ranking.
+- **Impact**: **High**. Reduces memory footprint and bandwidth by 4x-8x.
+- **Plan**: Implement Product Quantization compression for the main vector index, allowing much larger datasets to fit in RAM.
+
+### 4. Software Prefetching for Graph Search
+
+- **Impact**: **Medium/High**. Search latency is dominated by random memory access.
+- **Plan**: Use assembly or unsafe directives to prefetch HNSW neighbor nodes into CPU cache during graph traversal (pipelined lookup).
+
+### 5. Zero-Copy Flight `DoGet`
+
+- **Impact**: **Medium**.
+- **Plan**: Optimize the `DoGet` read path to stream internal Arrow RecordBatches directly to the wire without re-serialization/copying.
+
+### 6. GOGC Auto-Tuning (Memory Ballast)
+
+- **Impact**: **High**. Prevents OOMs and optimizes GC CPU usage.
+- **Plan**: Implement a memory ballast or dynamic GOGC tuner that adjusts based on `GOMEMLIMIT` and current heap usage.
+
+### 7. Sharded Graph Locks
+
+- **Impact**: **Medium**. Reduces contention during high concurrency.
+- **Plan**: Replace global `GraphData` RWMutex with fine-grained sharded locks or atomic/RCU patterns for adjacency list updates.
+
+### 8. Optimized Delete (Atomic Tombstones)
+
+- **Impact**: **Medium**.
+- **Plan**: Enhance the deletion mechanism to use a high-performance, lock-free global atomic bitset (RoaringBitmap) for tombstones, checked efficiently during traversal.
+
+### 9. Vectorized Metadata Filtering
+
+- **Impact**: **Medium**.
+- **Plan**: Utilize Arrow Compute or custom SIMD kernels to evaluate complex metadata filters (AND/OR/NOT) over columns, rather than row-by-row checks.
+
+### 10. Compaction Rate Limiting
+
+- **Impact**: **Low/Medium**. Improves tail latency.
+- **Plan**: Implement token-bucket rate limiting for background compaction and snapshotting to prevent I/O saturation from affecting foreground latency.
 
 ---
 
-## Additional Technical Debt & TODOs
+## Technical Debt & Architecture
+
+### Distributed Consensus (Raft)
+
+- **Location**: `internal/consensus`
+- **Plan**: Integrate a Raft library (e.g., `hashicorp/raft`) to manage cluster state.
+
+### Refactor `internal/store` Monolith
+
+- **Location**: `internal/store`
+- **Plan**: Split into `internal/index`, `internal/storage`, and `internal/query`.
+
+### Cross-Encoder Re-ranking
+
+- **Location**: `internal/store/hybrid_pipeline.go`
+- **Plan**: Integrate a real model (e.g., via ONNX or external service).
 
 ### Distributed Tracing (OpenTelemetry)
 
@@ -36,21 +83,9 @@ reliability, architecture refactoring, and advanced indexing features.
 
 ## Recently Completed
 
-- **Hybrid Search Pipeline Enhancements**: Completed implementation of pipeline stages, including exact match filtering
-  via `ColumnInvertedIndex` and a second-stage re-ranking interface with cross-encoder stubs.
-- **Spatial Index for Mesh Routing**: Replaced linear scan in `Region` router with VP-Tree for scalable lookups.
-- **WAL Buffer Recycling**: Implemented buffer reusing for WAL batch compression to reduce GC pressure.
-- **Query Coordinator Path Optimization**: Implemented Streaming Merge (Min-Heap), Replica Hedging, and Arrow Serialization.
-- **Adaptive Search Limits**: Implemented auto-expansion of search limits based on filter selectivity.
-- **WAL Synchronization & Durability**: Integrated `AsyncFsyncer`.
-- **Async S3 Checkpointing**: Implemented non-blocking, multipart uploads.
-- **Arrow HNSW Resource Cleanup**: Fully implemented `Close()` methods.
-- **HNSW Stability**: Resolved critical data races in `ensureChunk` and safeguards for SIMD.
-- **ID Resolution Optimization**: Replaced linear scan with O(1) PrimaryIndex lookup for `SearchByID` operations.
-- **Multi-Batch HNSW Support**: Added support for sequential and concurrent batch insertions in `ArrowHNSW` with
-  proper test coverage.
-- **Filter Evaluator Reuse**: Implemented object pooling for `FilterEvaluator` and vectorized filter application in `DoGet`.
-- **SQ8 SIMD Fix**: Fixed `euclideanSQ8NEONKernel` linking and verified correctness with `TestEuclideanDistanceSQ8`.
-- **Testing & Benchmarks**: Added HNSW batch modification tests and `ColumnInvertedIndex` high-cardinality benchmarks.
-- **Reverse Location Index**: Implemented O(1) `Location` to `VectorID` mapping in `ChunkedLocationStore` and
-  `ArrowHNSW`, optimizing exact filter application in Hybrid Search.
+- **Auto-Sharding Control**: Implemented `LONGBOW_AUTO_SHARDING_ENABLED` to prevent memory instability during benchmarks.
+- **Performance Benchmarking**: Comprehensive 5k-25k vector benchmarks with pprof analysis.
+- **Hybrid Search Pipeline Enhancements**: Completed implementation of pipeline stages.
+- **Spatial Index for Mesh Routing**: Replaced linear scan with VP-Tree.
+- **WAL Buffer Recycling**: Implemented buffer reusing.
+- **Async Fsync**: Integrated `AsyncFsyncer`.

@@ -1,6 +1,5 @@
 package store
 
-
 import (
 	"context"
 	"sync"
@@ -294,7 +293,7 @@ func TestHostPool_ConnectionLimit(t *testing.T) {
 	hp := newHostPool("test:8815", 2, 0) // max 2 connections
 
 	// Track created connections
-	conns := make([]*PooledFlightClient, 0)
+	conns := make([]*PooledFlightClient, 0, 2)
 
 	// Create up to max
 	for i := 0; i < 2; i++ {

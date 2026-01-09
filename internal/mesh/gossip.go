@@ -389,20 +389,18 @@ func (g *Gossip) listenLoop() {
 }
 
 func (g *Gossip) handlePacket(p *Packet, addr *net.UDPAddr) {
-	// Debug Log
-	// fmt.Printf("[%s] Rx %d from %s Flags=%d Upd=%d Len=%d\n", g.Config.ID, p.Type, addr, p.Flags, p.NumUpdates, len(p.Payload))
 
 	// 1. Process Updates (Piggybacking)
 	if p.NumUpdates > 0 {
 		offset := 0
 		for i := 0; i < int(p.NumUpdates); i++ {
 			if offset >= len(p.Payload) {
-				// fmt.Printf("[%s] Error: Payload too short for updates\n", g.Config.ID)
+
 				break
 			}
 			m, n, err := DecodeMember(p.Payload[offset:])
 			if err != nil {
-				// fmt.Printf("[%s] DecodeMember error: %v\n", g.Config.ID, err)
+
 				break
 			}
 			g.UpdateMember(m)

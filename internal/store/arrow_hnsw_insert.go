@@ -313,6 +313,25 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec []float32, level int) error 
 	ep := h.entryPoint.Load()
 	maxL := int(h.maxLevel.Load())
 
+	// Fix for Growth Race:
+	// If the entry point 'ep' was inserted by another thread that forced a Grow(),
+	// our local 'data' snapshot might be too small (stale) to contain 'ep'.
+	// We must reload 'data' to avoid out-of-bounds access during search.
+	if int(ep) >= data.Capacity {
+		// Reload latest data which matches current entry point
+		data = h.data.Load()
+
+		// Validate again - if it fails now, something is very wrong (corruption)
+		if int(ep) >= data.Capacity {
+			return fmt.Errorf("entry point %d beyond capacity %d even after reload", ep, data.Capacity)
+		}
+
+		// Re-ensure OUR chunk exists in this new data view for safety
+		// (though likely it does if Grow copied it, or we allocate it again)
+		// We need to ensure we can write links to our node later.
+		data = h.ensureChunk(data, cID, cOff, dims)
+	}
+
 	// Search from top layer down to level+1
 
 	// Use search pool to avoid allocations

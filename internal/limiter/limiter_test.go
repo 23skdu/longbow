@@ -72,15 +72,6 @@ func TestRateLimiter_UnaryInterceptor(t *testing.T) {
 	// If `Wait()` fails (e.g. deadline), I return the error.
 
 	// Let's re-read implementation in `limiter.go`.
-	/*
-		if err := l.limiter.Wait(ctx); err != nil {
-			if err == context.Canceled || err == context.DeadlineExceeded {
-				return nil, status.FromContextError(err).Err()
-			}
-			metrics.RateLimitRequestsTotal.WithLabelValues("throttled").Inc()
-			return nil, status.Error(codes.ResourceExhausted, "rate limit exceeded")
-		}
-	*/
 
 	// Wait() returns error if:
 	// 1. Context canceled/deadline.

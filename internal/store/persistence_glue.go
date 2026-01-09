@@ -230,12 +230,11 @@ func (s *VectorStore) ApplyDelta(name string, rec arrow.RecordBatch, seq uint64,
 	return nil
 }
 
-func (s *VectorStore) writeToWAL(rec arrow.RecordBatch, name string) error {
+func (s *VectorStore) writeToWAL(rec arrow.RecordBatch, name string, ts int64) error {
 	if s.engine == nil {
 		return nil
 	}
 	seq := s.sequence.Add(1)
-	ts := time.Now().UnixNano()
 	return s.engine.WriteToWAL(name, rec, seq, ts)
 }
 

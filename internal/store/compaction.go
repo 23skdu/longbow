@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"errors"
 	"sync"
 	"sync/atomic"
@@ -24,15 +25,19 @@ type CompactionConfig struct {
 	CompactionInterval time.Duration
 	// Enabled controls whether background compaction runs.
 	Enabled bool
+	// RateLimitBytesPerSec limits the speed of compaction/snapshotting (bytes/sec).
+	// Default: 50MB/s (52428800). 0 means unlimited.
+	RateLimitBytesPerSec int64
 }
 
 // DefaultCompactionConfig returns sensible defaults for compaction.
 func DefaultCompactionConfig() CompactionConfig {
 	return CompactionConfig{
-		TargetBatchSize:     10000,
-		MinBatchesToCompact: 10,
-		CompactionInterval:  30 * time.Second,
-		Enabled:             true,
+		TargetBatchSize:      10000,
+		MinBatchesToCompact:  10,
+		CompactionInterval:   30 * time.Second,
+		Enabled:              true,
+		RateLimitBytesPerSec: 50 * 1024 * 1024, // 50MB/s
 	}
 }
 
@@ -278,7 +283,7 @@ type BatchRemapInfo struct {
 
 // compactRecords returns a NEW slice of RecordBatches and a remapping table.
 // It DOES NOT Modify the input slice.
-func compactRecords(pool memory.Allocator, schema *arrow.Schema, records []arrow.RecordBatch, tombstones map[int]*qry.Bitset, targetSize int64, datasetName string) (compacted []arrow.RecordBatch, remap map[int]BatchRemapInfo) {
+func compactRecords(pool memory.Allocator, schema *arrow.Schema, records []arrow.RecordBatch, tombstones map[int]*qry.Bitset, targetSize int64, datasetName string, limiter *RateLimiter) (compacted []arrow.RecordBatch, remap map[int]BatchRemapInfo) {
 	if schema == nil && len(records) > 0 {
 		schema = records[0].Schema()
 	}
@@ -298,6 +303,25 @@ func compactRecords(pool memory.Allocator, schema *arrow.Schema, records []arrow
 	totalRemoved := int64(0)
 
 	for _, cand := range candidates {
+		// Rate Limit: Throttling merging speed
+		if limiter != nil {
+			// Estimate batch size: targetSize * row_width?
+			// For simply throttling, assume a fixed size or row count.
+			// Ideally we have bytes.
+			// Let's use targetSize (rows) * 1KB estimate if we don't have better.
+			// Or just use targetSize as "quasi-bytes" if the limiter is configured that way.
+			// But the config says BytesPerSec.
+			// Let's approximate 100 bytes per row for now, or just limit based on candidate size.
+			// Better: calculate actual size of batches being merged?
+			// That might be expensive.
+			// Let's treat targetSize as rows and assume 100 bytes/row.
+			bytesEstimate := int(cand.TotalRow * 100)
+
+			startWait := time.Now()
+			_ = limiter.Wait(context.Background(), bytesEstimate)
+			metrics.CompactionRateLimitWaitSeconds.Observe(time.Since(startWait).Seconds())
+		}
+
 		// 1. Copy untouched batches before this candidate
 		for i := currentOldIdx; i < cand.StartIdx; i++ {
 			rec := records[i]
@@ -716,6 +740,7 @@ func NewVectorStoreWithCompaction(mem memory.Allocator, logger zerolog.Logger, m
 	store := NewVectorStore(mem, logger, maxMemoryBytes, walMaxBytes, ttlDuration)
 	store.stopCompaction() // Stop default if started
 	store.compactionConfig = compactionCfg
+	store.rateLimiter = NewRateLimiter(compactionCfg.RateLimitBytesPerSec)
 	if compactionCfg.Enabled {
 		store.compactionWorker = NewCompactionWorker(store, compactionCfg)
 		store.compactionWorker.Start()

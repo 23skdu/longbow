@@ -67,6 +67,7 @@ type VectorStore struct {
 	// Compaction (Phase 11/14)
 	compactionConfig CompactionConfig
 	compactionWorker *CompactionWorker
+	rateLimiter      *RateLimiter
 
 	// Auto-sharding (Phase 13)
 	autoShardingConfig AutoShardingConfig

@@ -7,7 +7,9 @@ import (
 	"slices"
 	"sort"
 	"sync/atomic"
+	"unsafe"
 
+	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/query"
 	"github.com/23skdu/longbow/internal/simd"
 )
@@ -244,6 +246,40 @@ func (h *ArrowHNSW) searchLayer(q []float32, entryPoint uint32, ef, layer int, c
 				if !ctx.visited.IsSet(neighborID) {
 					// Speculative add - do not Set visited yet
 					ctx.scratchIDs = append(ctx.scratchIDs, neighborID)
+
+					// Software Prefetching: Hint CPU to fetch neighbor's vector data
+					// Determine address based on configuration (SQ8, BQ, or Float32)
+					// This is best-effort optimization.
+					if useSQ8 {
+						cID := chunkID(neighborID)
+						if vecSQ8Chunk := data.GetVectorsSQ8Chunk(cID); vecSQ8Chunk != nil {
+							cOff := chunkOffset(neighborID)
+							dims := int(h.dims.Load())
+							off := int(cOff) * dims
+							if off < len(*vecSQ8Chunk) {
+								simd.Prefetch(unsafe.Pointer(&(*vecSQ8Chunk)[off]))
+								metrics.PrefetchOperationsTotal.Inc()
+							}
+						}
+					} else if h.config.BQEnabled && h.bqEncoder != nil {
+						// BQ Prefetch
+						if vecBQ := data.GetVectorBQ(neighborID); vecBQ != nil && len(vecBQ) > 0 {
+							simd.Prefetch(unsafe.Pointer(&vecBQ[0]))
+							metrics.PrefetchOperationsTotal.Inc()
+						}
+					} else {
+						// Float32 Prefetch (Chunked)
+						cID := chunkID(neighborID)
+						if vecChunk := data.GetVectorsChunk(cID); vecChunk != nil {
+							cOff := chunkOffset(neighborID)
+							dims := int(h.dims.Load())
+							off := int(cOff) * dims
+							if off < len(*vecChunk) {
+								simd.Prefetch(unsafe.Pointer(&(*vecChunk)[off]))
+								metrics.PrefetchOperationsTotal.Inc()
+							}
+						}
+					}
 				}
 			}
 

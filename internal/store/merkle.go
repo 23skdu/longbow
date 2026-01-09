@@ -83,7 +83,7 @@ func (t *MerkleTree) RootHash() [32]byte {
 	return t.root.Hash
 }
 
-func (t *MerkleTree) GetNode(path []int) ([32]byte, [][32]byte, bool) {
+func (t *MerkleTree) GetNode(path []int) (hash [32]byte, children [][32]byte, found bool) {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 

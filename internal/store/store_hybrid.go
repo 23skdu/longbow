@@ -37,6 +37,8 @@ func (s *VectorStore) GetBM25Index() *BM25InvertedIndex {
 }
 
 // NewVectorStoreWithHybridConfig creates a VectorStore with hybrid search enabled.
+//
+//nolint:gocritic // Logger passed by value for simplicity
 func NewVectorStoreWithHybridConfig(mem memory.Allocator, logger zerolog.Logger, cfg HybridSearchConfig) (*VectorStore, error) {
 	if cfg.Enabled {
 		if err := cfg.Validate(); err != nil {

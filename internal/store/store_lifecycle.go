@@ -47,7 +47,7 @@ func (s *VectorStore) evictDataset(name string) {
 		r.Release()
 	}
 
-	// metrics.EvaluatedEvictions.Inc()
+	// Metrics updated elsewhere
 }
 
 // StartLifecycleManager starts the lifecycle manager background task.

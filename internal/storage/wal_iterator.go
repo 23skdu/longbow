@@ -116,10 +116,10 @@ func (it *WALIterator) Next() (seq uint64, ts int64, name string, rec arrow.Reco
 	return it.nextLocked()
 }
 
-func (it *WALIterator) nextLocked() (uint64, int64, string, arrow.RecordBatch, error) {
+func (it *WALIterator) nextLocked() (seq uint64, ts int64, name string, rec arrow.RecordBatch, err error) {
 	// 1. Check if we are inside a compressed block
 	if it.inner != nil {
-		seq, ts, name, rec, err := it.readEntry(it.inner)
+		seq, ts, name, rec, err = it.readEntry(it.inner)
 		if err == nil {
 			return seq, ts, name, rec, nil
 		}
@@ -138,8 +138,8 @@ func (it *WALIterator) nextLocked() (uint64, int64, string, arrow.RecordBatch, e
 	}
 
 	storedSum := binary.LittleEndian.Uint32(header[0:4])
-	seq := binary.LittleEndian.Uint64(header[4:12])
-	ts := int64(binary.LittleEndian.Uint64(header[12:20]))
+	seq = binary.LittleEndian.Uint64(header[4:12])
+	ts = int64(binary.LittleEndian.Uint64(header[12:20]))
 	nameLen := binary.LittleEndian.Uint32(header[20:24])
 	recLen := binary.LittleEndian.Uint64(header[24:32])
 
@@ -179,14 +179,14 @@ func (it *WALIterator) nextLocked() (uint64, int64, string, arrow.RecordBatch, e
 	return seq, ts, string(nameBytes), r, nil
 }
 
-func (it *WALIterator) readEntry(r io.Reader) (uint64, int64, string, arrow.RecordBatch, error) {
+func (it *WALIterator) readEntry(r io.Reader) (seq uint64, ts int64, name string, rec arrow.RecordBatch, err error) {
 	header := make([]byte, 32)
 	if _, err := io.ReadFull(r, header); err != nil {
 		return 0, 0, "", nil, err
 	}
 
-	seq := binary.LittleEndian.Uint64(header[4:12])
-	ts := int64(binary.LittleEndian.Uint64(header[12:20]))
+	seq = binary.LittleEndian.Uint64(header[4:12])
+	ts = int64(binary.LittleEndian.Uint64(header[12:20]))
 	nameLen := binary.LittleEndian.Uint32(header[20:24])
 	recLen := binary.LittleEndian.Uint64(header[24:32])
 
@@ -200,7 +200,7 @@ func (it *WALIterator) readEntry(r io.Reader) (uint64, int64, string, arrow.Reco
 		return 0, 0, "", nil, err
 	}
 
-	rec, err := it.deserialize(recBytes)
+	rec, err = it.deserialize(recBytes)
 	if err != nil {
 		return 0, 0, "", nil, err
 	}

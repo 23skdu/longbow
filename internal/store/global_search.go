@@ -32,6 +32,7 @@ type GlobalSearchCoordinator struct {
 	stopCh      chan struct{}
 }
 
+//nolint:gocritic // Logger passed by value for simplicity
 func NewGlobalSearchCoordinator(logger zerolog.Logger) *GlobalSearchCoordinator {
 	c := &GlobalSearchCoordinator{
 		logger:      logger,

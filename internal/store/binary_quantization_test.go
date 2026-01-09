@@ -46,13 +46,11 @@ func TestBQEncoder_Encode(t *testing.T) {
 func TestBQEncoder_HammingDistance(t *testing.T) {
 	enc := NewBQEncoder(64)
 
-	// dist(All0, All1) = 64
 	a := []uint64{0}
 	b := []uint64{0xFFFFFFFFFFFFFFFF}
 	dist := enc.HammingDistance(a, b)
 	assert.Equal(t, 64, dist)
 
-	// dist(All0, 1) = 1
 	c := []uint64{1}
 	dist2 := enc.HammingDistance(a, c)
 	assert.Equal(t, 1, dist2)

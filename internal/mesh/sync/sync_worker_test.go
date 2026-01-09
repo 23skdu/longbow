@@ -96,7 +96,7 @@ func TestSyncWorker_Replication(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	// 5. Start SyncWorker on Follower
-	worker := NewSyncWorker(followerStore, logger)
+	worker := NewSyncWorker(followerStore, &logger)
 	worker.AddPeer(leaderAddr)
 	worker.Start()
 	defer worker.Stop()

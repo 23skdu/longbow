@@ -158,7 +158,7 @@ func (g *Gossip) Join(peerAddr string) error {
 	// Bootstrap: Send a Ping to the known peer
 	// In a real implementation, we'd have a specific Join message to get full state sync.
 	// For this task, we assume a Ping is enough to announce presence.
-	return g.sendPing(peerAddr, "", g.nextSeq(), nil)
+	return g.sendPing(peerAddr, "", g.nextSeq())
 }
 
 func (g *Gossip) suspicionLoop() {
@@ -283,8 +283,7 @@ func (g *Gossip) probe() {
 	// So I BROKE PROBE by removing sendPing call!!
 	// This is why Upd=0 mostly!
 
-	// Restoring sendPing call:
-	_ = g.sendPing(target.Addr, target.ID, seq, nil)
+	_ = g.sendPing(target.Addr, target.ID, seq)
 
 	select {
 	case <-ackCh:
@@ -455,7 +454,7 @@ func (g *Gossip) sendPacketStruct(p *Packet, dst *net.UDPAddr) error {
 	return err
 }
 
-func (g *Gossip) sendPing(addr, targetID string, seq uint32, payload []byte) error {
+func (g *Gossip) sendPing(addr, targetID string, seq uint32) error {
 	// Piggyback updates - Dynamic size
 	// Header overhead: ~7 bytes.
 	// Max payload = MaxPacketSize - HeaderSize
@@ -485,7 +484,7 @@ func (g *Gossip) sendPing(addr, targetID string, seq uint32, payload []byte) err
 	return nil
 }
 
-func (g *Gossip) getUpdatesForPacket(limitBytes int, skipID string) ([]byte, int) {
+func (g *Gossip) getUpdatesForPacket(limitBytes int, skipID string) (updates []byte, count int) {
 	// Simple strategy: Iterate updates, encode, stop when full
 	// Prioritization: Sort by send count? For now, we use map iteration (randomish) which is okay-ish implementation of "Gossip"
 	// but strictly we should prioritize lower send counts.
@@ -496,7 +495,7 @@ func (g *Gossip) getUpdatesForPacket(limitBytes int, skipID string) ([]byte, int
 
 	buf := make([]byte, limitBytes)
 	offset := 0
-	count := 0
+	count = 0
 
 	// Two-pass approach (optional optimization): 1. Low send counts, 2. Higher send counts
 	// For simplicity in this step, single pass but we delete if send count high.
@@ -751,11 +750,11 @@ func (g *Gossip) GetMemberByAddr(addr string) (*Member, bool) {
 	return nil, false
 }
 
-func (g *Gossip) GetDiscoveryStatus() (string, []string) {
+func (g *Gossip) GetDiscoveryStatus() (provider string, peers []string) {
 	if g.discoveryProvider == nil {
 		return "none", nil
 	}
-	peers, _ := g.discoveryProvider.FindPeers(context.Background())
+	peers, _ = g.discoveryProvider.FindPeers(context.Background())
 	return fmt.Sprintf("%T", g.discoveryProvider), peers
 }
 

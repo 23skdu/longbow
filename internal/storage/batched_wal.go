@@ -3,6 +3,7 @@ package storage
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"hash/crc32"
 	"os"
 	"path/filepath"
@@ -64,6 +65,7 @@ type WALBatcher struct {
 	bufPool      *pool.BytePool // pooled buffers for IPC serialization
 	stopCh       chan struct{}
 	doneCh       chan struct{}
+	flushCh      chan chan error // Channel for synchronous flush requests
 	flushErr     error
 	rateTracker  *WriteRateTracker           // Adaptive: tracks write rate
 	intervalCalc *AdaptiveIntervalCalculator // Adaptive: calculates intervals
@@ -84,6 +86,7 @@ func NewWALBatcher(dataPath string, config *WALBatcherConfig) *WALBatcher {
 		bufPool:   pool.NewBytePool(),
 		stopCh:    make(chan struct{}),
 		doneCh:    make(chan struct{}),
+		flushCh:   make(chan chan error),
 	}
 	if config.Adaptive.Enabled {
 		w.rateTracker = NewWriteRateTracker(1 * time.Second)
@@ -196,6 +199,20 @@ func (w *WALBatcher) flushLoop() {
 
 		case <-ticker.C:
 			w.flush()
+
+		case ch := <-w.flushCh:
+			// Synchronous flush request
+			// Drain any pending entries first (optional but good for consistency)
+			// Actually select prefers this case? No, random.
+			// Best effort drain?
+			// Let's just flush what we have in batch.
+			// If user wants to ensure previous writes are flushed, they should rely on ordering.
+			// But entries channel is buffered. Writers might have written to channel.
+			// To strictly flush all *written* items, we need to drain entries channel?
+			// Yes, for Sync semantics: "everything written before Sync returns".
+			w.drainChannelNonBlocking()
+			w.flush()
+			ch <- w.flushErr
 
 		case <-w.stopCh:
 			// Drain remaining entries
@@ -498,4 +515,32 @@ func (w *WALBatcher) GetCurrentInterval() time.Duration {
 // QueueDepth returns the current number of pending entries and the capacity.
 func (w *WALBatcher) QueueStatus() (pending, batchSize int) {
 	return len(w.entries), cap(w.entries)
+}
+
+// Flush synchronously flushes all pending writes to disk
+func (w *WALBatcher) Flush() error {
+	if !w.running {
+		return nil
+	}
+	ch := make(chan error, 1)
+	select {
+	case w.flushCh <- ch:
+		return <-ch
+	case <-w.doneCh:
+		return fmt.Errorf("batcher stopped")
+	}
+}
+
+// drainChannelNonBlocking drains pending items from channel into batch
+func (w *WALBatcher) drainChannelNonBlocking() {
+	for {
+		select {
+		case entry := <-w.entries:
+			w.mu.Lock()
+			w.batch = append(w.batch, entry)
+			w.mu.Unlock()
+		default:
+			return
+		}
+	}
 }

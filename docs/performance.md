@@ -51,6 +51,12 @@ Longbow groups vector distance calculations into batches (default 4096) to lever
 
 To prevent global lock contention during concurrent writes, HNSW graphs use striped locks based on vector ID. This allows simultaneous updates to different parts of the graph.
 
+### 4. Atomic Tombstones (Lock-Free Deletion)
+
+Deletions are handled using a Copy-On-Write (COW) `AtomicBitset`. The `IsDeleted` check—the hottest path in
+vector search—is strictly wait-free (atomic pointer load), incurring zero mutex overhead. Writes are optimistic
+(CAS loop), ensuring correctness without blocking readers.
+
 ---
 
 ## Performance Testing
@@ -224,7 +230,7 @@ python scripts/perf_test.py --rows 50000 --dim 1536 \
 
 ## Latest Results
 
-**Test Date**: 2026-01-06
+**Test Date**: 2026-01-08
 **Cluster**: 3-node local cluster (simulated distributed environment)
 **Hardware**: Apple M3 Pro (ARM64)
 **Dataset**: 25,000 Vectors, 384 Dimensions (Float32)
@@ -239,7 +245,7 @@ python scripts/perf_test.py --rows 50000 --dim 1536 \
 | **SearchByID** (k=10) | **~500 QPS** | ~2.5 ms | ~5.0 ms | ✅ PASS |
 | **HybridSearch** (k=10) | **45 QPS** | 8.68 ms | 113 ms | ✅ PASS |
 | **Graph Traversal** (2-hop) | **2,262 Ops/s** | 0.28 ms | 7.67 ms | ✅ PASS |
-| **Delete Vectors** | **3,173 Ops/s** | 0.16 ms | 4.89 ms | ✅ PASS |
+| **Delete Vectors** | **4,015 Ops/s** | 0.20 ms | 1.10 ms | ✅ PASS |
 
 ### Analysis
 
@@ -247,9 +253,11 @@ python scripts/perf_test.py --rows 50000 --dim 1536 \
 
 The system demonstrates exceptional raw I/O performance, saturating the local link (~1.7 GB/s) for both ingestion (`DoPut`) and retrieval (`DoGet`). The 3-node cluster efficiently handles data distribution and replication without significant bottlenecks.
 
-#### 2. Delete Operation Stability
+#### 2. Delete Operation Stability (Atomic Tombstones)
 
-Previous stability issues with `Delete` operations (0 ops/s) have been resolved. The fix involved correcting indexing worker behavior (preventing stalls on small batches) and fixing a crash in the `ShardedHNSW` migration logic. The system now robustly handles deletions at **>3k ops/s**.
+We introduced `AtomicBitset` (atomic pointer to RoaringBitmap with Copy-On-Write) in v0.1.3-rc6 to eliminate
+mutex contention during `IsDeleted` checks. This lock-free read path enables extremely high throughput for
+concurrent deletions (**>4k ops/s**) while maintaining negligible impact on search latency (0 wait time for readers).
 
 #### 3. Auto-Sharding & Search Performance
 

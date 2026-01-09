@@ -99,8 +99,6 @@ func (r *Ring) hash(s string) uint64 {
 }
 
 func main() {
-	// rand.Seed(time.Now().UnixNano()) // Deprecated in Go 1.20
-
 	ring := NewRing(20) // 20 vnodes per node
 
 	nodes := []string{"node1", "node2", "node3", "node4", "node5"}

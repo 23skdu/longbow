@@ -1,6 +1,5 @@
 package store
 
-
 import (
 	"context"
 	"sync"
@@ -61,7 +60,7 @@ func TestFilterRecordsParallel_Basic(t *testing.T) {
 	}()
 
 	// Filter for category = "A"
-	filters := []query.Filter{{Field: "value", Operator: ">", Value: "500"}}
+	filters := []query.Filter{{Field: "category", Operator: "=", Value: "A"}}
 
 	ctx := context.Background()
 	resultCh := store.filterRecordsParallel(ctx, recs, filters)

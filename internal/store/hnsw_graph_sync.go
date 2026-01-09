@@ -8,13 +8,13 @@ import (
 	"sync/atomic"
 
 	"github.com/23skdu/longbow/internal/metrics"
-	"github.com/23skdu/longbow/internal/simd"
 	"github.com/coder/hnsw"
 )
 
 func init() {
 	// Register distance function for graph serialization
-	hnsw.RegisterDistanceFunc("euclidean", simd.EuclideanDistance)
+	hnsw.RegisterDistanceFunc("euclidean", hnsw.EuclideanDistance)
+	hnsw.RegisterDistanceFunc("cosine", hnsw.CosineDistance)
 }
 
 // HNSWGraphSync manages HNSW index synchronization between peers.

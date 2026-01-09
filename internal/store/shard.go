@@ -142,7 +142,7 @@ func (sm *ShardedMap) RangeWithLock(fn func(name string, ds *Dataset, deleteFn f
 
 // Keys returns all dataset names
 func (sm *ShardedMap) Keys() []string {
-	var keys []string
+	keys := make([]string, 0, numShards*100)
 	for i := 0; i < numShards; i++ {
 		sm.shards[i].mu.RLock()
 		for name := range sm.shards[i].data {

@@ -35,7 +35,7 @@ func (b *BatchDistanceComputer) SelectTopKNeighbors(
 	distBuilder.AppendValues(distances, nil)
 	distArr := distBuilder.NewFloat32Array()
 	defer distArr.Release()
-	
+
 	idBuilder := array.NewUint32Builder(b.mem)
 	defer idBuilder.Release()
 	idBuilder.AppendValues(ids, nil)
@@ -47,44 +47,43 @@ func (b *BatchDistanceComputer) SelectTopKNeighbors(
 	// 2. Call Custom Kernel "select_k_neighbors"
 	// Inputs: [Dists, IDs] -> Output: Indices (Uint32)
 	// Note: We return indices into the input arrays.
-	// Our kernel implementation currently ignores K logic and sorts fully, 
+	// Our kernel implementation currently ignores K logic and sorts fully,
 	// but places smallest elements first.
 	// So we take the first K indices.
-	
-	// Option: We could pass K as an option if we implemented Options handling.
+
 	// We did: selectKInit handles SelectKOptions.
 	opts := &SelectKOptions{K: k}
-	
+
 	datumDists := compute.NewDatum(distArr)
 	datumIDs := compute.NewDatum(idArr) // Passed but currently unused by kernel (it sorts indices by dists)
-	
+
 	// CallFunction(ctx, name, opts, args...)
 	indicesDatum, err := compute.CallFunction(ctx, "select_k_neighbors", opts, datumDists, datumIDs)
 	if err != nil {
 		return nil, nil, fmt.Errorf("select_k_neighbors failed: %w", err)
 	}
 	defer indicesDatum.Release()
-	
+
 	indicesArr := indicesDatum.(*compute.ArrayDatum).MakeArray().(*array.Uint32)
 	defer indicesArr.Release()
-	
+
 	// 3. Take Top K
 	// The kernel returns sorted indices [0..N]. We only need [0..K].
 	// Slice the indices array.
-	
+
 	limit := k
 	if indicesArr.Len() < limit {
 		limit = indicesArr.Len()
 	}
-	
+
 	// Use NewSlice provided by Arrow Array (returns Interface)
 	topKIndices := array.NewSlice(indicesArr, 0, int64(limit))
 	defer topKIndices.Release()
-	
+
 	// 4. Take (Gather) IDs and Distances using the top K indices
 	takeOpts := compute.DefaultTakeOptions()
 	takeOpts.BoundsCheck = false // Indices guaranteed valid by kernel
-	
+
 	takenIDsDatum, err := compute.Take(ctx, *takeOpts, datumIDs, compute.NewDatum(topKIndices))
 	if err != nil {
 		return nil, nil, fmt.Errorf("take ids failed: %w", err)
@@ -100,13 +99,13 @@ func (b *BatchDistanceComputer) SelectTopKNeighbors(
 	defer takenDistsDatum.Release()
 	takenDists := takenDistsDatum.(*compute.ArrayDatum).MakeArray().(*array.Float32)
 	defer takenDists.Release()
-	
+
 	// 5. Convert back to Go slices
 	resIDs := make([]uint32, limit)
 	copy(resIDs, takenIDs.Uint32Values())
-	
+
 	resDists := make([]float32, limit)
 	copy(resDists, takenDists.Float32Values())
-	
+
 	return resIDs, resDists, nil
 }

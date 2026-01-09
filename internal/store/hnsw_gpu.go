@@ -8,6 +8,8 @@ import (
 )
 
 // InitGPU attempts to initialize GPU acceleration for this index
+//
+//nolint:gocritic // Logger passed by value for simplicity
 func (h *HNSWIndex) InitGPU(deviceID int, logger zerolog.Logger) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()

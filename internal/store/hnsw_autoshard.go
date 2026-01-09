@@ -86,11 +86,13 @@ func NewAutoShardingIndex(ds *Dataset, config AutoShardingConfig) *AutoShardingI
 func (a *AutoShardingIndex) SetInitialDimension(dim int) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if h, ok := a.current.(*HNSWIndex); ok {
+
+	switch h := a.current.(type) {
+	case *HNSWIndex:
 		h.dimsOnce.Do(func() {
 			h.dims = dim
 		})
-	} else if h, ok := a.current.(*ArrowHNSW); ok {
+	case *ArrowHNSW:
 		h.SetDimension(dim)
 	}
 }

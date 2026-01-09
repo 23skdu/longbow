@@ -336,6 +336,7 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec []float32, level int) error 
 
 	// Use search pool to avoid allocations
 	ctx := h.searchPool.Get().(*ArrowSearchContext)
+	ctx.Reset() // Enforce reset before usage
 	defer h.searchPool.Put(ctx)
 
 	for lc := maxL; lc > level; lc-- {
@@ -428,31 +429,32 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec []float32, level int) error 
 // searchLayerForInsert performs search during insertion.
 // Returns candidates sorted by distance.
 func (h *ArrowHNSW) searchLayerForInsert(ctx *ArrowSearchContext, query []float32, entryPoint uint32, ef, layer int, data *GraphData) []Candidate {
-	ctx.visited.Clear()
-	ctx.candidates.Clear()
-	// Ensure visited bitset is large enough
-	// Use capacity from graph data as it tracks the actual max possible ID
+	// Reuse visited bitset
 	maxID := data.Capacity + 1000
-	if ctx.visited == nil || ctx.visited.Size() < maxID {
+	if ctx.visited == nil {
 		ctx.visited = NewArrowBitset(maxID)
 	} else {
+		ctx.visited.Grow(maxID)
 		ctx.visited.ClearSIMD()
 	}
-	ctx.candidates.Clear()
 
-	// Ensure candidates heap is large enough
-	if ctx.candidates.cap < ef*2 {
-		// If pool heap is too small, allocate a temporary one or resize
-		// For now, just allocate a new one to be safe, though pool should usually suffice
+	// Reuse candidates heap
+	if ctx.candidates == nil {
 		ctx.candidates = NewFixedHeap(ef * 2)
+	} else {
+		ctx.candidates.Grow(ef * 2)
+		ctx.candidates.Clear()
 	}
 
 	visited := ctx.visited
 	candidates := ctx.candidates
 
-	ctx.resultSet.Clear()
-	if ctx.resultSet.cap < ef {
+	// Reuse result set heap
+	if ctx.resultSet == nil {
 		ctx.resultSet = NewMaxHeap(ef * 2)
+	} else {
+		ctx.resultSet.Grow(ef * 2)
+		ctx.resultSet.Clear()
 	}
 	resultSet := ctx.resultSet
 

@@ -23,16 +23,28 @@ func NewFixedHeap(capacity int) *FixedHeap {
 	}
 }
 
+// Grow ensures the heap has at least newCap capacity.
+func (h *FixedHeap) Grow(newCap int) {
+	if newCap <= h.cap {
+		return
+	}
+	// Resize
+	newItems := make([]Candidate, newCap)
+	copy(newItems, h.items[:h.size])
+	h.items = newItems
+	h.cap = newCap
+}
+
 // Push adds a candidate to the heap. Returns false if heap is full.
 func (h *FixedHeap) Push(c Candidate) bool {
 	if h.size >= h.cap {
 		return false
 	}
-	
+
 	// Add to end
 	h.items[h.size] = c
 	h.size++
-	
+
 	// Bubble up
 	h.bubbleUp(h.size - 1)
 	return true
@@ -43,15 +55,15 @@ func (h *FixedHeap) Pop() (Candidate, bool) {
 	if h.size == 0 {
 		return Candidate{}, false
 	}
-	
+
 	minItem := h.items[0]
 	h.size--
-	
+
 	if h.size > 0 {
 		h.items[0] = h.items[h.size]
 		h.bubbleDown(0)
 	}
-	
+
 	return minItem, true
 }
 
@@ -94,18 +106,18 @@ func (h *FixedHeap) bubbleDown(idx int) {
 		left := 2*idx + 1
 		right := 2*idx + 2
 		smallest := idx
-		
+
 		if left < h.size && h.items[left].Dist < h.items[smallest].Dist {
 			smallest = left
 		}
 		if right < h.size && h.items[right].Dist < h.items[smallest].Dist {
 			smallest = right
 		}
-		
+
 		if smallest == idx {
 			break
 		}
-		
+
 		h.items[idx], h.items[smallest] = h.items[smallest], h.items[idx]
 		idx = smallest
 	}

@@ -121,7 +121,7 @@ func (cb *CircuitBreaker) State() State {
 	return cb.state
 }
 
-func (cb *CircuitBreaker) currentState(now time.Time) (s State, gen uint64) {
+func (cb *CircuitBreaker) currentState(now time.Time) (s State) {
 	switch cb.state {
 	case StateClosed:
 		if cb.interval > 0 && !cb.expiry.IsZero() && cb.expiry.Before(now) {
@@ -132,7 +132,7 @@ func (cb *CircuitBreaker) currentState(now time.Time) (s State, gen uint64) {
 			cb.setState(StateHalfOpen, now)
 		}
 	}
-	return cb.state, cb.generation
+	return cb.state
 }
 
 func (cb *CircuitBreaker) setState(newState State, now time.Time) {
@@ -177,7 +177,7 @@ func (cb *CircuitBreaker) Allow() bool {
 	defer cb.mutex.Unlock()
 
 	now := time.Now()
-	state, _ := cb.currentState(now)
+	state := cb.currentState(now)
 
 	if state == StateOpen {
 		return false

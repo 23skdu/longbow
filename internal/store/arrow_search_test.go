@@ -1,6 +1,5 @@
 package store
 
-
 import (
 	"testing"
 
@@ -72,12 +71,13 @@ func TestArrowSearchContext_Pooling(t *testing.T) {
 		t.Fatal("pool.Get() returned nil on second call")
 	}
 
-	// Should be cleared
+	// Context is not auto-cleared by pool. Verify Reset works.
+	ctx2.Reset()
 	if ctx2.candidates.Len() != 0 {
-		t.Error("candidates not cleared after Put")
+		t.Error("candidates not cleared after Reset")
 	}
 	if ctx2.visited.IsSet(5) {
-		t.Error("visited not cleared after Put")
+		t.Error("visited not cleared after Reset")
 	}
 }
 

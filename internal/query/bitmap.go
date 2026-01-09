@@ -3,6 +3,8 @@ package query
 import (
 	"sync"
 
+	"sync/atomic"
+
 	"github.com/23skdu/longbow/internal/pool"
 	"github.com/RoaringBitmap/roaring/v2"
 )
@@ -95,4 +97,96 @@ func (b *Bitset) Release() {
 		pool.PutBitmap(b.bitmap)
 		b.bitmap = nil
 	}
+}
+
+// AtomicBitset implements a lock-free (for readers) bitset using Copy-On-Write logic.
+// It is optimized for scenarios with frequent reads (Contains) and infrequent writes (Set/Delete).
+type AtomicBitset struct {
+	bitmap atomic.Pointer[roaring.Bitmap]
+	// We use a mutex to serialize writers to avoid excessive CAS retries under high contention,
+	// effectively making it Wait-Free for Readers and Blocking for Writers.
+	// Pure CAS loop without mutex is possible but might livelock under heavy write pressure.
+	// Given this is for Tombstones (deletes), write throughput is likely lower than read.
+	writeMu sync.Mutex
+}
+
+func NewAtomicBitset() *AtomicBitset {
+	ab := &AtomicBitset{}
+	// Initialize with empty bitmap
+	ab.bitmap.Store(roaring.New())
+	return ab
+}
+
+func (b *AtomicBitset) Contains(i int) bool {
+	bm := b.bitmap.Load()
+	if bm == nil {
+		return false
+	}
+	return bm.Contains(uint32(i))
+}
+
+func (b *AtomicBitset) Set(i int) {
+	b.writeMu.Lock()
+	defer b.writeMu.Unlock()
+
+	oldBm := b.bitmap.Load()
+	var newBm *roaring.Bitmap
+	if oldBm == nil {
+		newBm = roaring.New()
+	} else {
+		newBm = oldBm.Clone()
+	}
+	newBm.Add(uint32(i))
+	b.bitmap.Store(newBm)
+}
+
+func (b *AtomicBitset) Clear(i int) {
+	b.writeMu.Lock()
+	defer b.writeMu.Unlock()
+
+	oldBm := b.bitmap.Load()
+	if oldBm == nil {
+		return
+	}
+	if !oldBm.Contains(uint32(i)) {
+		return
+	}
+
+	newBm := oldBm.Clone()
+	newBm.Remove(uint32(i))
+	b.bitmap.Store(newBm)
+}
+
+func (b *AtomicBitset) Count() uint64 {
+	bm := b.bitmap.Load()
+	if bm == nil {
+		return 0
+	}
+	return bm.GetCardinality()
+}
+
+func (b *AtomicBitset) ToUint32Array() []uint32 {
+	bm := b.bitmap.Load()
+	if bm == nil {
+		return nil
+	}
+	return bm.ToArray()
+}
+
+func (b *AtomicBitset) Clone() *AtomicBitset {
+	bm := b.bitmap.Load()
+	newAb := NewAtomicBitset()
+	if bm != nil {
+		newAb.bitmap.Store(bm.Clone())
+	}
+	return newAb
+}
+
+func (b *AtomicBitset) Release() {
+	b.writeMu.Lock()
+	defer b.writeMu.Unlock()
+
+	_ = b.bitmap.Swap(nil)
+	// We rely on GC to collect the old bitmap since we can't safely pool it
+	// without knowing if other readers have a reference.
 }

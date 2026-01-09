@@ -1,6 +1,5 @@
 package store
 
-
 import (
 	"testing"
 	"time"
@@ -106,13 +105,13 @@ func TestGetPipelineThreshold(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()
 
-	vs := NewVectorStoreWithPipelineThreshold(mem, logger, 4, 10, 5)
-	if vs == nil {
+	store := NewVectorStoreWithPipelineThreshold(mem, logger, 2, 10, 5)
+	if store == nil {
 		t.Fatal("Failed to create VectorStore")
 	}
 
-	if vs.GetPipelineThreshold() != 5 {
-		t.Errorf("Expected threshold 5, got %d", vs.GetPipelineThreshold())
+	if store.GetPipelineThreshold() != 5 {
+		t.Errorf("Expected threshold 5, got %d", store.GetPipelineThreshold())
 	}
 }
 

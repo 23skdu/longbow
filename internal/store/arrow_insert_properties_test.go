@@ -200,6 +200,8 @@ func TestArrowSearchContextPooling(t *testing.T) {
 	ctx1.visited.Set(5)
 
 	// Return to pool
+	// Reset before returning to pool (mimic correct usage)
+	ctx1.Reset()
 	pool.Put(ctx1)
 
 	// Get again - should be reused

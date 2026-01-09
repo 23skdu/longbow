@@ -317,7 +317,6 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 				return nil
 			}
 		}
-		// defer combined.Release() // This was commented out, no change needed.
 
 		// Flush single combined batch
 		if err := s.flushPutBatch(ds, name, []arrow.RecordBatch{combined}); err != nil {

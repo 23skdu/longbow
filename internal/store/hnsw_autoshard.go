@@ -60,14 +60,15 @@ func NewAutoShardingIndex(ds *Dataset, config AutoShardingConfig) *AutoShardingI
 	}
 
 	var idx VectorIndex
-	if config.IndexConfig != nil {
+	switch {
+	case config.IndexConfig != nil:
 		idx = NewArrowHNSW(ds, *config.IndexConfig, nil)
-	} else if ds.UseHNSW2() {
+	case ds.UseHNSW2():
 		// Use HNSW2 default config if enabled
 		hnswConfig := DefaultArrowHNSWConfig()
 		hnswConfig.Metric = ds.Metric
 		idx = NewArrowHNSW(ds, hnswConfig, nil)
-	} else {
+	default:
 		// Initialize HNSW config with dataset metric
 		hnswConfig := DefaultConfig()
 		hnswConfig.Metric = ds.Metric

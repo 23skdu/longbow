@@ -159,7 +159,7 @@ func (s *VectorStore) updateDatasets(fn func(map[string]*Dataset)) {
 		}
 		// Contention, retry
 		metrics.DatasetUpdateRetriesTotal.Inc()
-		// time.Sleep(time.Nanosecond) // optional
+
 		runtime.Gosched()
 	}
 }

@@ -91,11 +91,11 @@ func (h *ArrowHNSW) Search(q []float32, k, ef int, filter *query.Bitset) ([]Sear
 
 	// Search from top layer to layer 1
 	for level := maxL; level > 0; level-- {
-		ep, _ = h.searchLayer(q, ep, 1, level, ctx, data, nil)
+		ep = h.searchLayer(q, ep, 1, level, ctx, data, nil)
 	}
 
 	// Search layer 0 with ef candidates
-	_, _ = h.searchLayer(q, ep, ef, 0, ctx, data, filter)
+	h.searchLayer(q, ep, ef, 0, ctx, data, filter)
 
 	// Extract results
 	results := make([]SearchResult, 0, targetK)
@@ -152,8 +152,8 @@ func (h *ArrowHNSW) Search(q []float32, k, ef int, filter *query.Bitset) ([]Sear
 }
 
 // searchLayer performs greedy search at a specific layer.
-// Returns the closest node found and its distance.
-func (h *ArrowHNSW) searchLayer(q []float32, entryPoint uint32, ef, layer int, ctx *ArrowSearchContext, data *GraphData, filter *query.Bitset) (candidate uint32, _ float32) {
+// Returns the closest node found.
+func (h *ArrowHNSW) searchLayer(q []float32, entryPoint uint32, ef, layer int, ctx *ArrowSearchContext, data *GraphData, filter *query.Bitset) (candidate uint32) {
 	ctx.visited.Clear()
 	ctx.candidates.Clear()
 
@@ -429,7 +429,7 @@ func (h *ArrowHNSW) searchLayer(q []float32, entryPoint uint32, ef, layer int, c
 
 	}
 
-	return closest, closestDist
+	return closest
 }
 
 // distance computes the distance between a query vector and a stored vector.

@@ -98,7 +98,7 @@ func (idx *InvertedIndex) Get(term string) *roaring.Bitmap {
 }
 
 // Stats returns basic stats about the index
-func (idx *InvertedIndex) Stats() (int, uint64) {
+func (idx *InvertedIndex) Stats() (termCount int, postingsCount uint64) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 	return idx.termsCount, idx.totalPostings

@@ -1,6 +1,5 @@
 package store
 
-
 import (
 	"testing"
 	"time"
@@ -97,7 +96,7 @@ func TestHNSW_Vacuum(t *testing.T) {
 
 		if !found {
 			t.Logf("Warning: Node %d reachable before vacuum, unreachable after. Graph connectivity degraded.", i)
-			// assert.True(t, found, "Graph should remain navigable")
+
 		}
 	}
 }

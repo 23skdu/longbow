@@ -260,6 +260,69 @@ func TestVectorizedFilter(t *testing.T) {
 			t.Errorf("expected 2 rows, got %d", result.NumRows())
 		}
 	})
+	// ... existing tests ...
+
+	t.Run("filters with recursive logic (AND/OR/NOT)", func(t *testing.T) {
+		rec := createTestRecord(
+			[]string{"Alice", "Bob", "Charlie", "Diana", "Eve"},
+			[]int64{25, 30, 35, 25, 40},
+			[]string{"NYC", "NYC", "Chicago", "LA", "NYC"},
+		)
+		defer rec.Release()
+
+		vf := NewVectorizedFilter(alloc)
+
+		// Logic: (Age >= 30) OR (City = "LA")
+		// Should match: Bob (30, NYC), Charlie (35, Chi), Eve (40, NYC), Diana (25, LA)
+		// Should NOT match: Alice (25, NYC)
+		filters := []Filter{{
+			Logic: "OR",
+			Filters: []Filter{
+				{Field: "age", Operator: ">=", Value: "30"},
+				{Field: "city", Operator: "=", Value: "LA"},
+			},
+		}}
+
+		result, err := vf.Apply(ctx, rec, filters)
+		if err != nil {
+			t.Fatalf("Apply error: %v", err)
+		}
+		defer result.Release()
+
+		if result.NumRows() != 4 {
+			t.Errorf("expected 4 rows, got %d", result.NumRows())
+		}
+	})
+
+	t.Run("filters with NOT logic", func(t *testing.T) {
+		rec := createTestRecord(
+			[]string{"Alice", "Bob", "Charlie"},
+			[]int64{25, 30, 35},
+			[]string{"NYC", "LA", "Chicago"},
+		)
+		defer rec.Release()
+
+		vf := NewVectorizedFilter(alloc)
+
+		// Logic: NOT (City = "NYC")
+		// Should match: Bob, Charlie
+		filters := []Filter{{
+			Logic: "NOT",
+			Filters: []Filter{
+				{Field: "city", Operator: "=", Value: "NYC"},
+			},
+		}}
+
+		result, err := vf.Apply(ctx, rec, filters)
+		if err != nil {
+			t.Fatalf("Apply error: %v", err)
+		}
+		defer result.Release()
+
+		if result.NumRows() != 2 {
+			t.Errorf("expected 2 rows, got %d", result.NumRows())
+		}
+	})
 }
 
 func TestVectorizedFilterFloat64(t *testing.T) {

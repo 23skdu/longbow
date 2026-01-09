@@ -155,6 +155,11 @@ func (vf *VectorizedFilter) Apply(ctx context.Context, rec arrow.RecordBatch, fi
 
 // applyFilter applies a single filter and returns a boolean mask
 func (vf *VectorizedFilter) applyFilter(ctx context.Context, rec arrow.RecordBatch, f Filter) (arrow.Array, error) {
+	// Check for composite filter
+	if f.Logic != "" {
+		return vf.applyCompositeFilter(ctx, rec, f)
+	}
+
 	// Find column
 	indices := rec.Schema().FieldIndices(f.Field)
 	if len(indices) == 0 {
@@ -179,6 +184,76 @@ func (vf *VectorizedFilter) applyFilter(ctx context.Context, rec arrow.RecordBat
 	default:
 		return vf.applyComparisonFilter(ctx, col, op, f.Value)
 	}
+}
+
+// applyCompositeFilter applies complex logic (AND/OR/NOT) to child filters
+func (vf *VectorizedFilter) applyCompositeFilter(ctx context.Context, rec arrow.RecordBatch, f Filter) (arrow.Array, error) {
+	logic := strings.ToUpper(f.Logic)
+
+	// Handle NOT logic - expects exactly one child (or we treat multiple as implicit AND then NOT?)
+	// Usually NOT applies to a single condition or a block.
+	if logic == "NOT" {
+		if len(f.Filters) != 1 {
+			return nil, fmt.Errorf("NOT filter requires exactly one child")
+		}
+		mask, err := vf.applyFilter(ctx, rec, f.Filters[0])
+		if err != nil {
+			return nil, err
+		}
+		if mask == nil {
+			// If child missing, what is NOT(missing)?
+			// If missing = true (all rows), then NOT = false (empty)?
+			// If missing = false (no filter), then NOT = true?
+			// Let's assume missing child means no filter = true.
+			// So NOT(true) = false.
+			b := array.NewBooleanBuilder(vf.alloc)
+			defer b.Release()
+			b.Resize(int(rec.NumRows()))
+			for i := 0; i < int(rec.NumRows()); i++ {
+				b.Append(false)
+			}
+			return b.NewArray(), nil
+		}
+		defer mask.Release()
+
+		// Invert mask
+		result, err := compute.CallFunction(ctx, "not", nil, compute.NewDatum(mask.Data()))
+		if err != nil {
+			return nil, fmt.Errorf("not compute error: %w", err)
+		}
+		return result.(*compute.ArrayDatum).MakeArray(), nil
+	}
+
+	// Gather masks for children
+	masks := make([]arrow.Array, 0, len(f.Filters))
+	defer func() {
+		for _, m := range masks {
+			if m != nil {
+				m.Release()
+			}
+		}
+	}()
+
+	for _, child := range f.Filters {
+		m, err := vf.applyFilter(ctx, rec, child)
+		if err != nil {
+			return nil, err
+		}
+		if m != nil {
+			masks = append(masks, m)
+		}
+	}
+
+	if len(masks) == 0 {
+		return nil, nil
+	}
+
+	// Combine masks
+	if logic == "OR" {
+		return vf.combineMasksOp(ctx, masks, "or_kleene")
+	}
+	// Default to AND
+	return vf.combineMasksOp(ctx, masks, "and_kleene")
 }
 
 // applyComparisonFilter applies comparison operators.
@@ -358,6 +433,11 @@ func (vf *VectorizedFilter) createScalar(dt arrow.DataType, value string) (scala
 
 // combineMasks combines multiple boolean masks with AND
 func (vf *VectorizedFilter) combineMasks(ctx context.Context, masks []arrow.Array) (arrow.Array, error) {
+	return vf.combineMasksOp(ctx, masks, "and_kleene")
+}
+
+// combineMasksOp combines masks using specific compute function (and_kleene, or_kleene)
+func (vf *VectorizedFilter) combineMasksOp(ctx context.Context, masks []arrow.Array, opName string) (arrow.Array, error) {
 	if len(masks) == 0 {
 		return nil, nil
 	}
@@ -366,20 +446,19 @@ func (vf *VectorizedFilter) combineMasks(ctx context.Context, masks []arrow.Arra
 		return masks[0], nil
 	}
 
-	// Combine all masks using and_kleene for null handling
 	result := masks[0]
 	result.Retain()
 
 	for i := 1; i < len(masks); i++ {
-		andResult, err := compute.CallFunction(ctx, "and_kleene", nil,
+		res, err := compute.CallFunction(ctx, opName, nil,
 			compute.NewDatum(result.Data()),
 			compute.NewDatum(masks[i].Data()),
 		)
 		result.Release()
 		if err != nil {
-			return nil, fmt.Errorf("and_kleene compute error: %w", err)
+			return nil, fmt.Errorf("%s compute error: %w", opName, err)
 		}
-		result = andResult.(*compute.ArrayDatum).MakeArray()
+		result = res.(*compute.ArrayDatum).MakeArray()
 	}
 
 	return result, nil

@@ -20,6 +20,8 @@ type StreamAggregator struct {
 }
 
 // NewStreamAggregator creates a new aggregator
+//
+//nolint:gocritic // Logger passed by value for constructor simplicity
 func NewStreamAggregator(mem memory.Allocator, logger zerolog.Logger) *StreamAggregator {
 	return &StreamAggregator{
 		mem:    mem,

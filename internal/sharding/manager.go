@@ -18,6 +18,8 @@ type RingManager struct {
 }
 
 // NewRingManager creates a new RingManager
+//
+//nolint:gocritic // Logger passed by value for constructor simplicity
 func NewRingManager(localNodeID string, logger zerolog.Logger) *RingManager {
 	return &RingManager{
 		ring:        NewConsistentHash(20), // 20 vnodes default

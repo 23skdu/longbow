@@ -44,10 +44,10 @@ type PeerState struct {
 	Priority    SyncPriority
 }
 
-func NewSyncWorker(s *store.VectorStore, logger zerolog.Logger) *SyncWorker {
+func NewSyncWorker(s *store.VectorStore, logger *zerolog.Logger) *SyncWorker {
 	return &SyncWorker{
 		store:  s,
-		logger: logger,
+		logger: *logger,
 		peers:  make(map[string]*PeerState),
 		stopCh: make(chan struct{}),
 	}

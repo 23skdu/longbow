@@ -83,7 +83,6 @@ func TestArrowHNSW_AddBatch_Concurrent(t *testing.T) {
 	batchesPerWorker := 5
 
 	ds := &Dataset{Name: "batch_mod_conc"}
-	var dsMu sync.Mutex
 
 	cfg := DefaultArrowHNSWConfig()
 	cfg.M = 16
@@ -107,10 +106,10 @@ func TestArrowHNSW_AddBatch_Concurrent(t *testing.T) {
 
 				// Safely append to dataset
 				rec.Retain()
-				dsMu.Lock()
+				ds.dataMu.Lock()
 				ds.Records = append(ds.Records, rec)
 				currentBatchIdx := len(ds.Records) - 1
-				dsMu.Unlock()
+				ds.dataMu.Unlock()
 
 				rowIdxs := make([]int, batchSize)
 				batchIdxs := make([]int, batchSize)

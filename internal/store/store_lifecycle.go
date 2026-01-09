@@ -47,7 +47,6 @@ func (s *VectorStore) evictDataset(name string) {
 		r.Release()
 	}
 
-	// metrics.DatasetCount.Dec()
 	// metrics.EvaluatedEvictions.Inc()
 }
 

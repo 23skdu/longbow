@@ -14,7 +14,7 @@ func (b *BatchDistanceComputer) SelectTopKNeighbors(
 	distances []float32,
 	ids []uint32,
 	k int,
-) ([]uint32, []float32, error) {
+) (indices []uint32, dists []float32, err error) {
 	if k <= 0 {
 		return nil, nil, nil
 	}
@@ -57,7 +57,6 @@ func (b *BatchDistanceComputer) SelectTopKNeighbors(
 	datumDists := compute.NewDatum(distArr)
 	datumIDs := compute.NewDatum(idArr) // Passed but currently unused by kernel (it sorts indices by dists)
 
-	// CallFunction(ctx, name, opts, args...)
 	indicesDatum, err := compute.CallFunction(ctx, "select_k_neighbors", opts, datumDists, datumIDs)
 	if err != nil {
 		return nil, nil, fmt.Errorf("select_k_neighbors failed: %w", err)

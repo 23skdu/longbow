@@ -66,7 +66,7 @@ func NewArrowHNSW(dataset *Dataset, config ArrowHNSWConfig, locStore *ChunkedLoc
 		mMax0:          config.MMax0,
 		efConstruction: config.EfConstruction,
 		ml:             1.0 / math.Log(float64(config.M)),
-		deleted:        query.NewBitset(), // Initial capacity, grows
+		deleted:        query.NewAtomicBitset(), // Initial capacity, grows
 		metric:         config.Metric,
 		vectorColIdx:   -1,
 	}

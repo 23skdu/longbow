@@ -127,9 +127,8 @@ type ArrowHNSW struct {
 
 	shardedLocks []sync.Mutex
 
-	data    atomic.Pointer[GraphData]
-	deleted *query.Bitset
-
+	data       atomic.Pointer[GraphData]
+	deleted    *query.AtomicBitset
 	searchPool *sync.Pool
 
 	quantizer         *ScalarQuantizer
@@ -896,7 +895,6 @@ func (h *ArrowHNSW) Size() int {
 
 // IsDeleted checks if a node ID is marked as deleted.
 
-// IsDeleted checks if a node ID is marked as deleted.
 func (h *ArrowHNSW) IsDeleted(id uint32) bool {
 	return h.deleted.Contains(int(id))
 }

@@ -40,11 +40,15 @@ type pipelineStats struct {
 var globalPipelineStats = &pipelineStats{}
 
 // NewVectorStoreWithPipeline creates a VectorStore with DoGet pipeline enabled
+//
+//nolint:gocritic // Logger passed by value for constructor simplicity
 func NewVectorStoreWithPipeline(mem memory.Allocator, logger zerolog.Logger, workers, bufferSize int) *VectorStore {
 	return NewVectorStoreWithPipelineThreshold(mem, logger, workers, bufferSize, 2)
 }
 
 // NewVectorStoreWithPipelineThreshold creates a VectorStore with custom pipeline threshold
+//
+//nolint:gocritic // Logger passed by value for constructor simplicity
 func NewVectorStoreWithPipelineThreshold(mem memory.Allocator, logger zerolog.Logger, workers, bufferSize, threshold int) *VectorStore {
 	// Create base store using existing constructor with defaults
 	store := NewVectorStore(mem, logger, 1<<30, 100<<20, 24*time.Hour) // 1GB mem, 100MB WAL, 24h TTL

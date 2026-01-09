@@ -46,12 +46,12 @@ func releaseBatches(batches []arrow.RecordBatch) {
 // TestCompactRecordsEmpty verifies empty input returns empty output
 func TestCompactRecordsEmpty(t *testing.T) {
 	pool := memory.NewGoAllocator()
-	result, _ := compactRecords(pool, nil, nil, nil, 1000, "test")
+	result, _ := compactRecords(pool, nil, nil, nil, 1000, "test", nil)
 	if len(result) != 0 {
 		t.Errorf("expected empty result, got %d batches", len(result))
 	}
 
-	result, _ = compactRecords(pool, nil, []arrow.RecordBatch{}, nil, 1000, "test")
+	result, _ = compactRecords(pool, nil, []arrow.RecordBatch{}, nil, 1000, "test", nil)
 	if len(result) != 0 {
 		t.Errorf("expected empty result, got %d batches", len(result))
 	}
@@ -68,7 +68,7 @@ func TestCompactRecordsMergesSmallBatches(t *testing.T) {
 
 	// Target 500 rows per batch - should result in 2 batches
 	pool := memory.NewGoAllocator()
-	result, _ := compactRecords(pool, batches[0].Schema(), batches, nil, 500, "test")
+	result, _ := compactRecords(pool, batches[0].Schema(), batches, nil, 500, "test", nil)
 	defer releaseBatches(result)
 
 	if len(result) != 2 {
@@ -93,7 +93,7 @@ func TestCompactRecordsLargeBatchUnchanged(t *testing.T) {
 
 	// Target 500 rows - but we don't split, just don't merge
 	pool := memory.NewGoAllocator()
-	result, _ := compactRecords(pool, batch.Schema(), []arrow.RecordBatch{batch}, nil, 500, "test")
+	result, _ := compactRecords(pool, batch.Schema(), []arrow.RecordBatch{batch}, nil, 500, "test", nil)
 	defer releaseBatches(result)
 
 	// Since NO compaction was needed, our optimization returns nil to indicate no change.
@@ -112,7 +112,7 @@ func TestCompactRecordsPreservesSchema(t *testing.T) {
 
 	originalSchema := batches[0].Schema()
 	pool := memory.NewGoAllocator()
-	result, _ := compactRecords(pool, originalSchema, batches, nil, 200, "test")
+	result, _ := compactRecords(pool, originalSchema, batches, nil, 200, "test", nil)
 	defer releaseBatches(result)
 
 	if len(result) != 1 {
@@ -132,7 +132,7 @@ func TestCompactRecordsPreservesData(t *testing.T) {
 	defer releaseBatches(batches)
 
 	pool := memory.NewGoAllocator()
-	result, _ := compactRecords(pool, batches[0].Schema(), batches, nil, 100, "test")
+	result, _ := compactRecords(pool, batches[0].Schema(), batches, nil, 100, "test", nil)
 	defer releaseBatches(result)
 
 	if len(result) != 1 {
@@ -171,7 +171,7 @@ func TestCompactRecordsFiltersTombstones(t *testing.T) {
 
 	// Compacting both into one batch
 	pool := memory.NewGoAllocator()
-	result, remapping := compactRecords(pool, batches[0].Schema(), batches, tombstones, 1000, "test")
+	result, remapping := compactRecords(pool, batches[0].Schema(), batches, tombstones, 1000, "test", nil)
 
 	defer releaseBatches(result)
 

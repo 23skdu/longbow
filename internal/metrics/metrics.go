@@ -143,6 +143,22 @@ var (
 		},
 		[]string{"component"},
 	)
+
+	// Rate Limit Metrics
+	CompactionRateLimitWaitSeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_compaction_rate_limit_wait_seconds",
+			Help:    "Time spent waiting for compaction rate limiter",
+			Buckets: []float64{0.001, 0.01, 0.1, 0.5, 1, 5},
+		},
+	)
+	SnapshotRateLimitWaitSeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_snapshot_rate_limit_wait_seconds",
+			Help:    "Time spent waiting for snapshot rate limiter",
+			Buckets: []float64{0.001, 0.01, 0.1, 0.5, 1, 5},
+		},
+	)
 )
 
 // =============================================================================
@@ -208,6 +224,14 @@ var (
 		},
 	)
 
+	// PrefetchOperationsTotal tracks software prefetch instructions issued
+	PrefetchOperationsTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_prefetch_operations_total",
+			Help: "Total number of software prefetch instructions issued during search",
+		},
+	)
+
 	TraceSpansTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_trace_spans_total",
@@ -253,6 +277,25 @@ var (
 		prometheus.GaugeOpts{
 			Name: "longbow_warmup_datasets_completed",
 			Help: "Total number of datasets where warmup is completed",
+		},
+	)
+)
+
+// =============================================================================
+// GOGC Auto-Tuning Metrics
+// =============================================================================
+var (
+	GCTunerTargetGOGC = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "longbow_gc_tuner_target_gogc",
+			Help: "Current target GOGC value set by the tuner",
+		},
+	)
+
+	GCTunerHeapUtilization = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "longbow_gc_tuner_heap_utilization",
+			Help: "Current heap utilization ratio (heap_inuse / limit)",
 		},
 	)
 )

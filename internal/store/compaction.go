@@ -278,7 +278,7 @@ type BatchRemapInfo struct {
 
 // compactRecords returns a NEW slice of RecordBatches and a remapping table.
 // It DOES NOT Modify the input slice.
-func compactRecords(pool memory.Allocator, schema *arrow.Schema, records []arrow.RecordBatch, tombstones map[int]*qry.Bitset, targetSize int64, datasetName string) ([]arrow.RecordBatch, map[int]BatchRemapInfo) {
+func compactRecords(pool memory.Allocator, schema *arrow.Schema, records []arrow.RecordBatch, tombstones map[int]*qry.Bitset, targetSize int64, datasetName string) (compacted []arrow.RecordBatch, remap map[int]BatchRemapInfo) {
 	if schema == nil && len(records) > 0 {
 		schema = records[0].Schema()
 	}
@@ -294,7 +294,6 @@ func compactRecords(pool memory.Allocator, schema *arrow.Schema, records []arrow
 	remapping := make(map[int]BatchRemapInfo)
 
 	currentOldIdx := 0
-	// pool := memory.NewGoAllocator() // Replaced with passed-in allocator
 
 	totalRemoved := int64(0)
 
@@ -377,7 +376,7 @@ func compactRecords(pool memory.Allocator, schema *arrow.Schema, records []arrow
 }
 
 // filterTombstones creates a new RecordBatch with deleted rows removed.
-func filterTombstones(pool memory.Allocator, schema *arrow.Schema, rec arrow.RecordBatch, tomb *qry.Bitset) (arrow.RecordBatch, []int, int64) {
+func filterTombstones(pool memory.Allocator, schema *arrow.Schema, rec arrow.RecordBatch, tomb *qry.Bitset) (filtered arrow.RecordBatch, mapping []int, removed int64) {
 	numRows := int(rec.NumRows())
 	rowMapping := make([]int, numRows)
 	keepIndices := make([]int, 0, numRows)
@@ -429,7 +428,7 @@ func filterTombstones(pool memory.Allocator, schema *arrow.Schema, rec arrow.Rec
 }
 
 // mergeAndFilterRecordBatches combines multiple record batches into one while skipping tombstones.
-func mergeAndFilterRecordBatches(pool memory.Allocator, schema *arrow.Schema, batches []arrow.RecordBatch, tombstones []*qry.Bitset) (arrow.RecordBatch, [][]int, int64) {
+func mergeAndFilterRecordBatches(pool memory.Allocator, schema *arrow.Schema, batches []arrow.RecordBatch, tombstones []*qry.Bitset) (merged arrow.RecordBatch, mapping [][]int, removed int64) {
 	builder := array.NewRecordBuilder(pool, schema)
 	defer builder.Release()
 
@@ -711,6 +710,8 @@ func (w *CompactionWorker) GetTriggerCount() int64 {
 }
 
 // NewVectorStoreWithCompaction returns a VectorStore with initialized compaction
+//
+//nolint:gocritic // Logger passed by value for constructor simplicity
 func NewVectorStoreWithCompaction(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes int64, walMaxBytes int64, ttlDuration time.Duration, compactionCfg CompactionConfig) *VectorStore {
 	store := NewVectorStore(mem, logger, maxMemoryBytes, walMaxBytes, ttlDuration)
 	store.stopCompaction() // Stop default if started

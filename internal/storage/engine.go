@@ -103,8 +103,7 @@ func (e *StorageEngine) WriteToWAL(name string, rec arrow.RecordBatch, seq uint6
 // SyncWAL forces WAL to flush to disk
 func (e *StorageEngine) SyncWAL() error {
 	if e.walBatcher != nil {
-		// WALBatcher is naturally async, Sync is best-effort or requires implementing a wait
-		return nil
+		return e.walBatcher.Flush()
 	}
 	if e.wal != nil {
 		return e.wal.Sync()

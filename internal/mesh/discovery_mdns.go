@@ -25,7 +25,7 @@ func NewMDNSProvider(service string) *MDNSProvider {
 		service = "_" + service
 	}
 	if !strings.Contains(service, "._tcp") && !strings.Contains(service, "._udp") {
-		service = service + "._tcp"
+		service += "._tcp"
 	}
 
 	return &MDNSProvider{

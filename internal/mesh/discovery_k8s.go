@@ -112,7 +112,7 @@ func (k *K8sProvider) FindPeers(ctx context.Context) ([]string, error) {
 	}
 
 	url := fmt.Sprintf("https://%s/api/v1/namespaces/%s/pods?labelSelector=%s", apiHost, k.Namespace, k.LabelSelector)
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, http.NoBody)
 	if err != nil {
 		return nil, err
 	}

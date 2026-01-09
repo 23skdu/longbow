@@ -45,7 +45,7 @@ func NewSchemaEvolutionManager(initialSchema *arrow.Schema, datasetName string) 
 
 	if initialSchema != nil {
 		mgr.currentVer.Store(1)
-		var fields []arrow.Field
+		fields := make([]arrow.Field, 0, len(initialSchema.Fields()))
 		for _, field := range initialSchema.Fields() {
 			mgr.columns[field.Name] = &ColumnMetadata{
 				Name:    field.Name,

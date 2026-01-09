@@ -232,7 +232,6 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 			for stage := range stageChan {
 				rec := stage.Record
 				deleted := stage.Tombstone
-				// batchIdx := stage.BatchIdx
 
 				var processed arrow.RecordBatch
 				var err error

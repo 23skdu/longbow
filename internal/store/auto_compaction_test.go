@@ -1,6 +1,5 @@
 package store
 
-
 import (
 	"context"
 	"sync"
@@ -11,9 +10,9 @@ import (
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/rs/zerolog"
 )
 
 // TestCompactionWorker_TriggerChannel verifies the worker has a trigger channel

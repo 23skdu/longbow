@@ -41,7 +41,6 @@ func (sq *ScalarQuantizer) IsTrained() bool {
 // NOTE: Changing bounds invalidates previously quantized vectors!
 // In a real system, we train on a sample, freeze, then index.
 func (sq *ScalarQuantizer) Train(vectors [][]float32) {
-	// fmt.Println("ScalarQuantizer.Train called with", len(vectors), "vectors")
 	sq.mu.Lock()
 	defer sq.mu.Unlock()
 	if sq.frozen {

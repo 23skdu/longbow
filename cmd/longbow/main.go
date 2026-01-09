@@ -131,7 +131,7 @@ type Config struct {
 var globalCfg Config
 
 // initializeHNSW2 is the hook function that initializes hnsw2 for datasets.
-func initializeHNSW2(ds *store.Dataset, logger zerolog.Logger) {
+func initializeHNSW2(ds *store.Dataset, logger *zerolog.Logger) {
 	if !ds.UseHNSW2() {
 		return
 	}
@@ -232,7 +232,7 @@ func run() error {
 
 	// Register hnsw2 initialization hook
 	vectorStore.SetDatasetInitHook(func(ds *store.Dataset) {
-		initializeHNSW2(ds, logger)
+		initializeHNSW2(ds, &logger)
 	})
 
 	// Configure memory management

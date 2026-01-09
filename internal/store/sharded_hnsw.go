@@ -664,9 +664,9 @@ func (s *ShardedHNSW) RemapFromBatchInfo(remapping map[int]BatchRemapInfo) error
 	// ShardedHNSW locationStore (ChunkedLocationStore) holds global locations.
 	// We need to iterate all locations and update them.
 	// This is potentially expensive but necessary for compaction.
-	// Since ChunkedLocationStore is sharded by ID, we can iterate efficiently if it exposes iteration.
-	// Currently it does not expose iteration. We might need to modify ChunkedLocationStore
-	// or iterate via the NextID if it's contiguous.
+
+	s.shardsMu.RLock()
+	defer s.shardsMu.RUnlock()
 
 	maxID := int(s.nextID.Load())
 	for id := 0; id < maxID; id++ {
@@ -682,13 +682,24 @@ func (s *ShardedHNSW) RemapFromBatchInfo(remapping map[int]BatchRemapInfo) error
 			if loc.RowIdx < len(info.NewRowIdxs) {
 				newRowIdx := info.NewRowIdxs[loc.RowIdx]
 				if newRowIdx != -1 {
-					// Update location
-					s.locationStore.Set(vid, Location{
+					newLoc := Location{
 						BatchIdx: info.NewBatchIdx,
 						RowIdx:   newRowIdx,
-					})
+					}
+					// Update global location
+					s.locationStore.Set(vid, newLoc)
+
+					// Update shard location
+					shardIdx := s.sharder.GetShard(vid)
+					if shardIdx < len(s.shards) {
+						shard := s.shards[shardIdx]
+						if shard != nil {
+							if localID, ok := shard.getLocalID(vid); ok {
+								shard.index.SetLocation(VectorID(localID), newLoc)
+							}
+						}
+					}
 				}
-				// If newRowIdx == -1, it was deleted (tombstone). Leave as is.
 			}
 		}
 	}

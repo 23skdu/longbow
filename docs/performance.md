@@ -239,13 +239,12 @@ python scripts/perf_test.py --rows 50000 --dim 1536 \
 
 | Operation | Throughput | Latency (p50) | Latency (p99) | Status |
 | :--- | :--- | :--- | :--- | :--- |
-| **DoPut** (Ingest) | **1.7 GB/s** (1.1M rows/s) | N/A | N/A | ✅ PASS |
-| **DoGet** (Retrieve) | **1.6 GB/s** (1.0M rows/s) | N/A | N/A | ✅ PASS |
-| **VectorSearch** (k=10) | **343 QPS** | 0.11 ms | 0.73 ms | ✅ PASS |
-| **SearchByID** (k=10) | **~500 QPS** | ~2.5 ms | ~5.0 ms | ✅ PASS |
-| **HybridSearch** (k=10) | **45 QPS** | 8.68 ms | 113 ms | ✅ PASS |
-| **Graph Traversal** (2-hop) | **2,262 Ops/s** | 0.28 ms | 7.67 ms | ✅ PASS |
-| **Delete Vectors** | **4,015 Ops/s** | 0.20 ms | 1.10 ms | ✅ PASS |
+| **DoPut** (Ingest) | **~742 MB/s** | N/A | N/A | ✅ PASS |
+| **DoGet** (Retrieve) | **~1.7 GB/s** | N/A | N/A | ✅ PASS |
+| **VectorSearch** (k=10) | **~7,340 QPS** | 0.13 ms | 0.15 ms | ✅ PASS (Local) |
+| **Global Search** (k=10) | **~2,151 QPS** (3k rows) | 0.43 ms | 1.14 ms | ⚠️ UNSTABLE (>3k) |
+| **HybridSearch** | **N/A** | N/A | N/A | ⚠️ FAIL |
+| **Delete Vectors** | **~4,015 Ops/s** | 0.20 ms | 1.10 ms | ✅ PASS |
 
 ### Analysis
 

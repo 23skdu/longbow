@@ -62,6 +62,40 @@ func TestZeroAllocTicketParser_Parse(t *testing.T) {
 		assert.Equal(t, "test", query.Name)
 		assert.Equal(t, int64(10), query.Limit)
 	})
+
+	t.Run("NestedFilters", func(t *testing.T) {
+		data := []byte(`{
+			"name": "complex",
+			"filters": [
+				{
+					"logic": "OR",
+					"filters": [
+						{"field": "age", "operator": ">", "value": "50"},
+						{"logic": "AND", "filters": [
+							{"field": "city", "operator": "=", "value": "NYC"},
+							{"field": "active", "operator": "=", "value": "true"}
+						]}
+					]
+				}
+			]
+		}`)
+		query, err := parser.Parse(data)
+		require.NoError(t, err)
+		require.Equal(t, 1, len(query.Filters))
+
+		root := query.Filters[0]
+		assert.Equal(t, "OR", root.Logic)
+		require.Equal(t, 2, len(root.Filters))
+
+		assert.Equal(t, "age", root.Filters[0].Field)
+		assert.Equal(t, "50", root.Filters[0].Value)
+
+		nested := root.Filters[1]
+		assert.Equal(t, "AND", nested.Logic)
+		require.Equal(t, 2, len(nested.Filters))
+		assert.Equal(t, "city", nested.Filters[0].Field)
+		assert.Equal(t, "NYC", nested.Filters[0].Value)
+	})
 }
 
 func TestParseTicketQuerySafe(t *testing.T) {

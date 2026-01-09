@@ -88,6 +88,7 @@ type VectorStore struct {
 	coordinator *GlobalSearchCoordinator
 }
 
+//nolint:gocritic // Logger passed by value for simplicity
 func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes int64, _ int64, _ time.Duration) *VectorStore {
 	memCfg := DefaultMemoryConfig()
 	memCfg.MaxMemory = maxMemoryBytes
@@ -292,7 +293,7 @@ func (s *VectorStore) Warmup() WarmupStats {
 	return stats
 }
 
-func (s *VectorStore) GetWALQueueDepth() (int, int) {
+func (s *VectorStore) GetWALQueueDepth() (count, size int) {
 	if s.engine == nil {
 		return 0, 0
 	}

@@ -23,7 +23,7 @@ func TestRequestForwarder_GetConn(t *testing.T) {
 	resolver := new(MockResolver)
 	config := DefaultForwarderConfig()
 	fwd := NewRequestForwarder(&config, resolver)
-	defer fwd.Close()
+	defer func() { _ = fwd.Close() }()
 
 	ctx := context.Background()
 	target := "127.0.0.1:0" // Dummy address
@@ -45,7 +45,7 @@ func TestRequestForwarder_Forward_UnknownNode(t *testing.T) {
 
 	config := DefaultForwarderConfig()
 	fwd := NewRequestForwarder(&config, resolver)
-	defer fwd.Close()
+	defer func() { _ = fwd.Close() }()
 
 	_, err := fwd.Forward(context.Background(), "unknown", nil, "method")
 	assert.Error(t, err)
@@ -61,7 +61,7 @@ func TestRequestForwarder_Forward_Connection(t *testing.T) {
 	// Short timeout
 	config.DialTimeout = 100 * time.Millisecond
 	fwd := NewRequestForwarder(&config, resolver)
-	defer fwd.Close()
+	_ = fwd.Close()
 
 	// Assuming grpc.NewClient doesn't connect immediately (it's non-blocking).
 	// But Invoke will fail.

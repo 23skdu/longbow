@@ -16,6 +16,8 @@ type ScatterGather struct {
 }
 
 // NewScatterGather creates a new ScatterGather coordinator
+//
+//nolint:gocritic // Logger passed by value for constructor simplicity
 func NewScatterGather(rm *RingManager, forwarder *RequestForwarder, logger zerolog.Logger) *ScatterGather {
 	return &ScatterGather{
 		rm:        rm,

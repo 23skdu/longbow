@@ -995,8 +995,8 @@ def main():
         results.append(benchmark_put(data_client, table, args.name))
         results.append(benchmark_get(data_client, args.name, filters=filters if filters else None))
 
-        print("\n[INFO] Waiting 5s for async indexing...")
-        time.sleep(5)
+        print("\n[INFO] Waiting 20s for async indexing...")
+        time.sleep(20)
 
     # Meta Plane operations (Search)
     if args.search or args.all:

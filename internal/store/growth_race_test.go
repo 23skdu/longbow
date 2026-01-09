@@ -69,7 +69,7 @@ func TestHNSW_GrowthRace(t *testing.T) {
 				if err != nil {
 					// We might expect some errors if alloc fails, but ideally nil
 					failures.Add(1)
-					// t.Errorf("Insert failed: %v", err) // Don't log from goroutine
+
 				} else {
 					successCount.Add(1)
 				}

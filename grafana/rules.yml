@@ -77,6 +77,24 @@ groups:
           summary: "Index build failures detected"
           description: "Indexes are failing to build at {{ $value }} per second."
 
+      - alert: LongbowHighHNSWRepairDuration
+        expr: histogram_quantile(0.99, sum(rate(longbow_hnsw_repair_duration_seconds_bucket[5m])) by (le)) > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Slow HNSW repair cycles"
+          description: "P99 HNSW repair duration exceeds 5 seconds."
+
+      - alert: LongbowFrequentAdaptiveAdjustments
+        expr: rate(longbow_hnsw_adaptive_adjustments_total[5m]) > 0.5
+        for: 10m
+        labels:
+          severity: info
+        annotations:
+          summary: "High frequency of adaptive HNSW adjustments"
+          description: "Adaptive HNSW parameters are changing frequently (> 0.5/sec)."
+
   - name: longbow_mesh_alerts
     rules:
       - alert: LongbowMemberFailure

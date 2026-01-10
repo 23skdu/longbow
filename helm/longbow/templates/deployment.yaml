@@ -90,8 +90,7 @@ spec:
             - name: HNSW_FLOAT16_ENABLED
               value: {{ .Values.hnsw.float16Enabled | quote }}
 
-            - name: HNSW_FLOAT16_ENABLED
-              value: {{ .Values.hnsw.float16Enabled | quote }}
+
             - name: HNSW_REFINEMENT_FACTOR
               value: {{ .Values.hnsw.refinementFactor | quote }}
             - name: LONGBOW_USE_HNSW2

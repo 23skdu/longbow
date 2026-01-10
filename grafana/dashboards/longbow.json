@@ -338,6 +338,131 @@
     },
     {
       "datasource": "${datasource}",
+      "gridPos": {
+        "h": 6,
+        "w": 4,
+        "x": 0,
+        "y": 21
+      },
+      "id": 200,
+      "targets": [
+        {
+          "expr": "longbow_hnsw_graph_height",
+          "legendFormat": "{{dataset}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Graph Height",
+      "type": "stat"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {
+        "h": 6,
+        "w": 4,
+        "x": 4,
+        "y": 21
+      },
+      "id": 201,
+      "targets": [
+        {
+          "expr": "longbow_store_active_datasets",
+          "refId": "A"
+        }
+      ],
+      "title": "Active Datasets",
+      "type": "stat"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 22
+      },
+      "id": 210,
+      "title": "HNSW Adaptive & Repair",
+      "type": "row"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 0,
+        "y": 23
+      },
+      "id": 211,
+      "targets": [
+        {
+          "expr": "longbow_hnsw_adaptive_m_value",
+          "legendFormat": "{{index_name}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Adaptive M Value",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 6,
+        "y": 23
+      },
+      "id": 212,
+      "targets": [
+        {
+          "expr": "longbow_hnsw_intrinsic_dimensionality",
+          "legendFormat": "{{index_name}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Intrinsic Dimensionality",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 12,
+        "y": 23
+      },
+      "id": 213,
+      "targets": [
+        {
+          "expr": "rate(longbow_hnsw_repair_total[5m])",
+          "legendFormat": "Repairs/s",
+          "refId": "A"
+        }
+      ],
+      "title": "Repair Rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 18,
+        "y": 23
+      },
+      "id": 214,
+      "targets": [
+        {
+          "expr": "rate(longbow_hnsw_repaired_connections_total[5m])",
+          "legendFormat": "Connections/s",
+          "refId": "A"
+        }
+      ],
+      "title": "Repaired Connections/s",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -373,9 +498,20 @@
     },
     {
       "datasource": "",
-      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 21 },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 6,
+        "y": 21
+      },
       "id": 120,
-      "targets": [ { "expr": "rate(longbow_hnsw_vector_allocations_total[5m])", "legendFormat": "Alloc/s", "refId": "A" } ],
+      "targets": [
+        {
+          "expr": "rate(longbow_hnsw_vector_allocations_total[5m])",
+          "legendFormat": "Alloc/s",
+          "refId": "A"
+        }
+      ],
       "title": "HNSW Vec Alloc/s",
       "type": "timeseries"
     },

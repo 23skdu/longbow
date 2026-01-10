@@ -240,13 +240,43 @@ var (
 		},
 	)
 
-	// ParallelReductionVectorsProcessed counts vectors processed via parallel reduction
-	ParallelReductionVectorsProcessed = promauto.NewCounter(
-		prometheus.CounterOpts{
-			Name: "longbow_simd_parallel_reduction_vectors_processed",
-			Help: "Total number of vectors processed using parallel reduction",
-		},
-	)
+	// ParallelReductionVectorsProcessed tracks the number of vectors processed using parallel reduction
+	ParallelReductionVectorsProcessed = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "longbow_parallel_reduction_vectors_processed_total",
+		Help: "Total number of vectors processed using parallel reduction optimizations",
+	})
+
+	// SimdF16OpsTotal tracks the number of FP16 SIMD operations performed
+	SimdF16OpsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "longbow_simd_f16_ops_total",
+		Help: "Total number of FP16 SIMD operations explicitly dispatched",
+	}, []string{"operation", "impl"})
+
+	// IngestionQueueDepth tracks the current number of batches in the ingestion queue
+	IngestionQueueDepth = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "longbow_ingestion_queue_depth",
+		Help: "Current number of batches waiting in the ingestion queue",
+	})
+
+	// IngestionQueueLatency tracks time spent in the ingestion queue
+	IngestionQueueLatency = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "longbow_ingestion_queue_latency_seconds",
+		Help:    "Time spent in the ingestion queue before processing",
+		Buckets: prometheus.DefBuckets,
+	})
+
+	// IngestionLagCount tracks the total items (rows) waiting to be ingested
+	IngestionLagCount = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "longbow_ingestion_lag_count",
+		Help: "Total number of records waiting to be ingested",
+	})
+
+	// HNSWVisitedResetDuration tracks the time spent resetting the visited bitset/list
+	HNSWVisitedResetDuration = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "longbow_hnsw_visited_reset_duration_seconds",
+		Help:    "Time spent resetting HNSW visited set",
+		Buckets: []float64{0.000001, 0.00001, 0.0001, 0.001, 0.01}, // tailored for fast ops
+	})
 
 	// PrefetchOperationsTotal tracks software prefetch instructions issued
 	PrefetchOperationsTotal = promauto.NewCounter(
@@ -295,6 +325,20 @@ var (
 		prometheus.CounterOpts{
 			Name: "longbow_flight_doput_zerocopy_path_total",
 			Help: "Total number of batches processed via Zero-Copy (direct) path",
+		},
+	)
+
+	VectorCastF16ToF32Total = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_vector_cast_f16_to_f32_total",
+			Help: "Total number of vector casts from Float16 to Float32",
+		},
+	)
+
+	VectorCastF32ToF16Total = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_vector_cast_f32_to_f16_total",
+			Help: "Total number of vector casts from Float32 to Float16",
 		},
 	)
 

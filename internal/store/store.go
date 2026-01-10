@@ -7,13 +7,14 @@ import (
 	"sync/atomic"
 	"time"
 
+	"context"
+	"errors"
+
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/rs/zerolog"
-	"context"
-	"errors"
 
 	"github.com/23skdu/longbow/internal/mesh"
 	"github.com/23skdu/longbow/internal/metrics"
@@ -36,7 +37,8 @@ type VectorStore struct {
 	engine        *storage.StorageEngine // Manages WAL and Snapshots
 	snapshotReset chan time.Duration
 
-	indexQueue *IndexJobQueue // Integrated HNSW
+	indexQueue     *IndexJobQueue    // Integrated HNSW
+	ingestionQueue chan ingestionJob // Decoupled ingestion pipeline
 
 	// Lifecycle
 	stopChan chan struct{}
@@ -91,6 +93,12 @@ type VectorStore struct {
 	coordinator *GlobalSearchCoordinator
 }
 
+type ingestionJob struct {
+	datasetName string
+	batch       arrow.RecordBatch
+	// We might add more metadata here (e.g. span context)
+}
+
 //nolint:gocritic // Logger passed by value for simplicity
 func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes int64, _ int64, _ time.Duration) *VectorStore {
 	memCfg := DefaultMemoryConfig()
@@ -108,9 +116,14 @@ func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes 
 
 	s.maxMemory.Store(maxMemoryBytes)
 	s.indexQueue = NewIndexJobQueue(DefaultIndexJobQueueConfig())
+	s.ingestionQueue = make(chan ingestionJob, 100) // Buffer 100 batches
 
 	s.nsManager = newNamespaceManager()
 	s.columnIndex = NewColumnInvertedIndex()
+
+	s.workerWg.Add(1)
+	go s.runIngestionWorker()
+
 	return s
 }
 
@@ -345,12 +358,12 @@ func (s *VectorStore) DropDataset(ctx context.Context, name string) error {
 		if oldMapPtr == nil {
 			return errors.New("store not initialized")
 		}
-		
+
 		oldMap := *oldMapPtr
 		if _, ok := oldMap[name]; !ok {
 			return fmt.Errorf("dataset %s not found", name)
 		}
-		
+
 		// Copy-On-Write
 		newMap := make(map[string]*Dataset, len(oldMap)-1)
 		for k, v := range oldMap {
@@ -358,14 +371,14 @@ func (s *VectorStore) DropDataset(ctx context.Context, name string) error {
 				newMap[k] = v
 			}
 		}
-		
+
 		if s.datasets.CompareAndSwap(oldMapPtr, &newMap) {
 			// Unlink successful - Resource is ostensibly "gone" from new readers.
 			// Schedule Async Cleanup
 			droppedDS := oldMap[name]
 			metrics.StoreDroppedDatasets.Inc()
 			metrics.StoreActiveDatasets.Set(float64(len(newMap)))
-			
+
 			go func() {
 				// Defer cleanup to background to avoid blocking DropDataset call (Fast Path)
 				defer func() {
@@ -373,17 +386,17 @@ func (s *VectorStore) DropDataset(ctx context.Context, name string) error {
 						s.logger.Error().Msgf("Panic during dataset cleanup: %v", r)
 					}
 				}()
-				
+
 				// Ensure no active readers? RCU guarantees new readers won't see it.
-				// Old readers might still hold the reference. 
+				// Old readers might still hold the reference.
 				// Closing immediately *might* panic concurrent readers if not careful,
-				// but usually Dataset struct uses locks or is robust. 
+				// but usually Dataset struct uses locks or is robust.
 				// Ideally we wait for refcount or just close underlying resources which are safe to close.
 				// Dataset.Close() typically releases Arrow memory.
 				droppedDS.Close()
 				s.logger.Info().Str("dataset", name).Msg("Dataset dropped and resources released (async)")
 			}()
-			
+
 			return nil
 		}
 		// CAS failed, retry

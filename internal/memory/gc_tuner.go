@@ -29,7 +29,7 @@ type GCTuner struct {
 	lowGOGC    int
 
 	reader MemStatsReader
-	logger zerolog.Logger
+	logger *zerolog.Logger
 
 	// State to avoid thrashing
 	currentGOGC int
@@ -37,7 +37,7 @@ type GCTuner struct {
 }
 
 // NewGCTuner creates a tuner. limitBytes should be close to container memory limit.
-func NewGCTuner(limitBytes int64, highGOGC, lowGOGC int, logger zerolog.Logger) *GCTuner {
+func NewGCTuner(limitBytes int64, highGOGC, lowGOGC int, logger *zerolog.Logger) *GCTuner {
 	if highGOGC <= 0 {
 		highGOGC = 100
 	}
@@ -94,15 +94,15 @@ func (t *GCTuner) tune(heapInUse uint64) {
 	// < 50% usage -> HighGOGC (Relaxed GC)
 	// > 90% usage -> LowGOGC (Aggressive GC)
 	// In-between  -> Linear interpolation
-	if ratio < 0.5 {
+	switch {
+	case ratio < 0.5:
 		targetGOGC = t.highGOGC
-	} else if ratio > 0.9 {
+	case ratio > 0.9:
 		targetGOGC = t.lowGOGC
-	} else {
+	default:
 		// Interpolate: 0.5 -> High, 0.9 -> Low
 		// Slope = (Low - High) / (0.9 - 0.5)
 		slope := float64(t.lowGOGC-t.highGOGC) / 0.4
-		// GOGC = High + slope * (ratio - 0.5)
 		targetGOGC = t.highGOGC + int(slope*(ratio-0.5))
 	}
 
@@ -122,7 +122,6 @@ func (t *GCTuner) tune(heapInUse uint64) {
 			debug.SetGCPercent(targetGOGC)
 			t.currentGOGC = targetGOGC
 			metrics.GCTunerTargetGOGC.Set(float64(targetGOGC))
-			// t.logger.Debug().Int("gogc", targetGOGC).Float64("utilization", ratio).Msg("Tuned GOGC")
 		}
 	}
 	t.mu.Unlock()

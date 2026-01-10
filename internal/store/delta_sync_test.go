@@ -122,13 +122,27 @@ func TestDeltaSync_Integration(t *testing.T) {
 	assert.Len(t, responses, 2)
 
 	if len(responses) >= 2 {
-		// Verify Seq and TS in AppMetadata (16 bytes)
-		assert.Len(t, responses[0].AppMetadata, 16)
-		seqA := binary.LittleEndian.Uint64(responses[0].AppMetadata[0:8])
-		tsA := int64(binary.LittleEndian.Uint64(responses[0].AppMetadata[8:16]))
+		// Verify Seq and TS.
+		// New Protocol: Check Descriptor.Cmd first, else AppMetadata
 
-		seqB := binary.LittleEndian.Uint64(responses[1].AppMetadata[0:8])
-		tsB := int64(binary.LittleEndian.Uint64(responses[1].AppMetadata[8:16]))
+		getMeta := func(fd *flight.FlightData) (uint64, int64) {
+			var meta []byte
+			if len(fd.AppMetadata) >= 16 {
+				meta = fd.AppMetadata
+			} else if fd.FlightDescriptor != nil && len(fd.FlightDescriptor.Cmd) >= 16 {
+				meta = fd.FlightDescriptor.Cmd
+			}
+
+			if len(meta) >= 16 {
+				seq := binary.LittleEndian.Uint64(meta[0:8])
+				ts := int64(binary.LittleEndian.Uint64(meta[8:16]))
+				return seq, ts
+			}
+			return 0, 0
+		}
+
+		seqA, tsA := getMeta(responses[0])
+		seqB, tsB := getMeta(responses[1])
 
 		assert.Equal(t, uint64(2), seqA)
 		assert.Equal(t, uint64(3), seqB)

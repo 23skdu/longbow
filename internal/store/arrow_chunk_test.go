@@ -48,11 +48,11 @@ func TestChunkedGrowth(t *testing.T) {
 	cOff := chunkOffset(0)
 	levels := newData.GetLevelsChunk(cID)
 	if levels != nil {
-		(*levels)[cOff] = 99
+		levels[cOff] = 99
 	}
 	neighbors := newData.GetNeighborsChunk(0, cID)
 	if neighbors != nil {
-		(*neighbors)[int(cOff)*MaxNeighbors] = 999
+		neighbors[int(cOff)*MaxNeighbors] = 999
 	}
 
 	// Grow again
@@ -61,11 +61,11 @@ func TestChunkedGrowth(t *testing.T) {
 
 	// Check old data preserved
 	gLevels2 := grownData.GetLevelsChunk(0)
-	if gLevels2 == nil || (*gLevels2)[cOff] != 99 {
+	if gLevels2 == nil || len(gLevels2) <= int(cOff) || gLevels2[cOff] != 99 {
 		t.Error("Level data lost after grow")
 	}
 	gNeighbors2 := grownData.GetNeighborsChunk(0, 0)
-	if gNeighbors2 == nil || (*gNeighbors2)[int(cOff)*MaxNeighbors] != 999 {
+	if gNeighbors2 == nil || len(gNeighbors2) <= int(cOff)*MaxNeighbors || gNeighbors2[int(cOff)*MaxNeighbors] != 999 {
 		t.Error("Neighbor data lost after grow")
 	}
 }

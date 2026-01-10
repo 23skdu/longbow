@@ -8,11 +8,14 @@ func TestGraphData_ArenaNeighbors(t *testing.T) {
 	// Initialize GraphData with Arena enabled
 	// Since we are refactoring, we might need a flag or just defaults.
 	// NewGraphData signature: func NewGraphData(capacity, dims int, sq8, pq, bq bool) *GraphData
-	gd := NewGraphData(100, 128, false, false, false)
+	// The new signature is likely: func NewGraphData(capacity, dims int, sq8, pq bool, pqDims int, bq bool) *GraphData
+	initialCapacity := 100
+	dims := 128
+	data := NewGraphData(initialCapacity, dims, false, false, 0, false)
 
 	// Simulate node allocation
 	// We need to ensure chunks are allocated for ID 0
-	gd.EnsureChunk(0, 128)
+	data.EnsureChunk(0, 128)
 
 	// Simulate adding neighbors for Node 0 at Layer 0
 	// We expect a new method or modified usage.
@@ -30,9 +33,9 @@ func TestGraphData_ArenaNeighbors(t *testing.T) {
 
 	// This method doesn't exist yet, it will fail compilation if run.
 	// That's fine for TDD step 1.
-	gd.SetNeighbors(layer, nodeID, targets)
+	data.SetNeighbors(layer, nodeID, targets)
 
-	readBack := gd.GetNeighbors(layer, nodeID, nil)
+	readBack := data.GetNeighbors(layer, nodeID, nil)
 	if len(readBack) != len(targets) {
 		t.Fatalf("Expected len %d, got %d", len(targets), len(readBack))
 	}
@@ -46,7 +49,7 @@ func TestGraphData_ArenaNeighbors(t *testing.T) {
 
 func TestGraphData_ArenaGrowth(t *testing.T) {
 	// Verify that we can store widespread IDs (triggering multiple chunks/slabs)
-	gd := NewGraphData(10000, 16, false, false, false)
+	gd := NewGraphData(10000, 16, false, false, 0, false)
 
 	// Add neighbors for node 5000
 	id := uint32(5000)

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/pq"
 	"github.com/23skdu/longbow/internal/storage"
 	"github.com/apache/arrow-go/v18/arrow"
 )
@@ -70,7 +71,7 @@ func (s *VectorStore) loadSnapshotItem(item *storage.SnapshotItem) error {
 
 		// Load PQ
 		if len(item.PQCodebook) > 0 {
-			enc, err := DeserializePQEncoder(item.PQCodebook)
+			enc, err := pq.DeserializePQEncoder(item.PQCodebook)
 			if err == nil {
 				ds.PQEncoder = enc
 			} else {
@@ -187,8 +188,12 @@ func (s *VectorStore) ApplyDelta(name string, rec arrow.RecordBatch, seq uint64,
 	// Ensure index exists
 	ds.dataMu.Lock()
 	if ds.Index == nil {
-		config := AutoShardingConfig{ShardThreshold: 10000}
-		ds.Index = NewAutoShardingIndex(ds, config)
+		if s.datasetInitHook != nil {
+			s.datasetInitHook(ds)
+		} else {
+			config := AutoShardingConfig{ShardThreshold: 10000}
+			ds.Index = NewAutoShardingIndex(ds, config)
+		}
 	}
 	ds.dataMu.Unlock()
 
@@ -281,7 +286,7 @@ func (src *storeSnapshotSource) Iterate(fn func(storage.SnapshotItem) error) err
 			}
 		}
 
-		// PQ
+		// 4. PQ Codebook
 		if ds.PQEncoder != nil {
 			item.PQCodebook = ds.PQEncoder.Serialize()
 		}

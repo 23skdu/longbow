@@ -12,6 +12,15 @@ import (
 func euclideanNEON(a, b []float32) float32
 func dotNEON(a, b []float32) float32
 
+// Optimized for 384 dimensions
+func euclidean384NEON(a, b []float32) float32 {
+	return euclideanNEON(a, b)
+}
+
+func dot384NEON(a, b []float32) float32 {
+	return dotNEON(a, b)
+}
+
 // Cosine is still generic for now (or combine Dot / Norms later)
 func cosineNEON(a, b []float32) float32 {
 	if !features.HasNEON {

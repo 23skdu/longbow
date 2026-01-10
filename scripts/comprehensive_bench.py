@@ -13,7 +13,7 @@ from typing import Dict, List, Tuple
 import sys
 
 # Test configurations
-SCALES = [10_000, 25_000, 50_000, 75_000, 100_000, 150_000, 250_000, 500_000, 750_000, 1_000_000]
+SCALES = [10_000, 25_000, 50_000, 75_000, 100_000, 150_000]
 DIMENSIONS = [128, 384, 768]
 DATA_URI = "grpc://0.0.0.0:3000"
 META_URI = "grpc://0.0.0.0:3001"

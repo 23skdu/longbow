@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/pq"
 	"github.com/23skdu/longbow/internal/query"
 	"github.com/apache/arrow-go/v18/arrow"
 )
@@ -196,6 +197,11 @@ func (a *AutoShardingIndex) checkShardThreshold() {
 
 	if currentLen >= threshold {
 		// Only trigger migration if not already sharded and not already migrating
+		// AND if the current index is of a type that supports migration (HNSWIndex only for now)
+		if _, ok := a.current.(*HNSWIndex); !ok {
+			return
+		}
+
 		if !a.sharded && a.migrating.CompareAndSwap(false, true) {
 			go a.migrateToSharded()
 		}
@@ -451,6 +457,18 @@ func (a *AutoShardingIndex) GetDimension() uint32 {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return a.current.GetDimension()
+}
+
+func (a *AutoShardingIndex) TrainPQ(vectors [][]float32) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.current.TrainPQ(vectors)
+}
+
+func (a *AutoShardingIndex) GetPQEncoder() *pq.PQEncoder {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.current.GetPQEncoder()
 }
 
 // SetIndexedColumns configures which columns are indexed for fast equality lookups

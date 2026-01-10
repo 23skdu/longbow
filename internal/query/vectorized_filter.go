@@ -128,7 +128,7 @@ func (vf *VectorizedFilter) Apply(ctx context.Context, rec arrow.RecordBatch, fi
 	}()
 
 	for _, f := range filters {
-		mask, err := vf.applyFilter(ctx, rec, f)
+		mask, err := vf.applyFilter(ctx, rec, &f)
 		if err != nil {
 			return nil, err
 		}
@@ -154,7 +154,7 @@ func (vf *VectorizedFilter) Apply(ctx context.Context, rec arrow.RecordBatch, fi
 }
 
 // applyFilter applies a single filter and returns a boolean mask
-func (vf *VectorizedFilter) applyFilter(ctx context.Context, rec arrow.RecordBatch, f Filter) (arrow.Array, error) {
+func (vf *VectorizedFilter) applyFilter(ctx context.Context, rec arrow.RecordBatch, f *Filter) (arrow.Array, error) {
 	// Check for composite filter
 	if f.Logic != "" {
 		return vf.applyCompositeFilter(ctx, rec, f)
@@ -187,7 +187,7 @@ func (vf *VectorizedFilter) applyFilter(ctx context.Context, rec arrow.RecordBat
 }
 
 // applyCompositeFilter applies complex logic (AND/OR/NOT) to child filters
-func (vf *VectorizedFilter) applyCompositeFilter(ctx context.Context, rec arrow.RecordBatch, f Filter) (arrow.Array, error) {
+func (vf *VectorizedFilter) applyCompositeFilter(ctx context.Context, rec arrow.RecordBatch, f *Filter) (arrow.Array, error) {
 	logic := strings.ToUpper(f.Logic)
 
 	// Handle NOT logic - expects exactly one child (or we treat multiple as implicit AND then NOT?)
@@ -196,7 +196,7 @@ func (vf *VectorizedFilter) applyCompositeFilter(ctx context.Context, rec arrow.
 		if len(f.Filters) != 1 {
 			return nil, fmt.Errorf("NOT filter requires exactly one child")
 		}
-		mask, err := vf.applyFilter(ctx, rec, f.Filters[0])
+		mask, err := vf.applyFilter(ctx, rec, &f.Filters[0])
 		if err != nil {
 			return nil, err
 		}
@@ -235,7 +235,8 @@ func (vf *VectorizedFilter) applyCompositeFilter(ctx context.Context, rec arrow.
 	}()
 
 	for _, child := range f.Filters {
-		m, err := vf.applyFilter(ctx, rec, child)
+		child := child // Capture loop variable
+		m, err := vf.applyFilter(ctx, rec, &child)
 		if err != nil {
 			return nil, err
 		}

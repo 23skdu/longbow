@@ -62,7 +62,7 @@ func TestSQ8AutoTuning(t *testing.T) {
 	cOff := chunkOffset(ids1[0])
 	dims := 16
 	off := int(cOff) * dims
-	firstVecSQ8 := (*sq8Chunk)[off : off+dims]
+	firstVecSQ8 := sq8Chunk[off : off+dims]
 	allZero := true
 	for _, b := range firstVecSQ8 {
 		if b != 0 {
@@ -106,7 +106,7 @@ func TestSQ8AutoTuning(t *testing.T) {
 	assert.True(t, idx.quantizer.IsTrained(), "Quantizer should be trained now")
 
 	// Verify Backfill (First vector should now be encoded)
-	firstVecSQ8 = (*sq8Chunk)[off : off+dims]
+	firstVecSQ8 = sq8Chunk[off : off+dims]
 	allZero = true
 	for _, b := range firstVecSQ8 {
 		if b != 0 {
@@ -120,7 +120,7 @@ func TestSQ8AutoTuning(t *testing.T) {
 	cOff2 := chunkOffset(ids2[0])
 	off2 := int(cOff2) * dims
 	// ids2[0] might be in same chunk or next. 50+0 = 50. Same chunk.
-	secondVecSQ8 := (*sq8Chunk)[off2 : off2+dims]
+	secondVecSQ8 := sq8Chunk[off2 : off2+dims]
 	allZero2 := true
 	for _, b := range secondVecSQ8 {
 		if b != 0 {

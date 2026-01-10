@@ -1,115 +1,129 @@
 # Longbow Deep Analysis & Performance Roadmap
 
-**Date:** January 7, 2026
-**Version:** 0.1.3-rc3
+**Date:** January 9, 2026
+**Version:** 0.1.4
 
-## 1. System State & Architectural Analysis
+## 1. Deep Analysis: 6GB Cluster Benchmark (384 Dimensions)
 
-Longbow has evolved from a simple vector store into a sophisticated distributed engine. The current architecture (0.1.3-rc3) reflects a transition phase:
+Recent benchmarking of 384-dimensional vectors (typical PyTorch embedding size) on a 3-node cluster (6GB RAM/node) revealed critical insights:
 
-* **Core Engine (`internal/store`)**:
-  * **Strengths**: The `ArrowHNSW` implementation is robust, featuring concurrent reads, sharded locking, and SIMD-accelerated distance metrics (SQ8/BQ). The new `ChunkedLocationStore` provides efficient O(1) reversibility.
-  * **Weaknesses**: The `VectorStore` struct remains a monolithic entry point. The global `mu` mutex protects the dataset map, creating a contention point for operations spanning multiple datasets (e.g., federation, stats aggregation).
-  * **Bottleneck**: In high-throughput concurrent ingestion with SQ8/BQ enabled, `AddBatch` falls back to serial insertion to protect shared quantization buffers/chunks. This negates parallelism gains.
+### Performance Characteristics
 
-* **Persistence (`storage`)**:
-  * **Strengths**: `AsyncFsyncer` and `WALBatcher` with buffer recycling provide high write throughput. Snapshotting is asynchronous.
-  * **Weaknesses**: Snapshotting creates a large memory spike as `Arrow` records are retained. Replay time scales linearly with WAL size.
+1. **Ingestion Throughput Instability**:
+    * We observed a "Performance Cliff" at ~75k vectors where `DoPut` throughput dropped to **7.07 MB/s** before recovering to **24 MB/s** at 150k.
+    * **Diagnosis**: This indicates **Garbage Collection (GC) thrashing**. 384-dim vectors occupy ~1.5KB each. With overhead (HNSW graph nodes, Go interface wrappers), 75k vectors generates substantial pointer pressure. The dip corresponds to a GC cycle effectively pausing the world to reclaim memory from temporary batch allocations.
 
-* **GraphRAG (`GraphStore`)**:
-  * **Strengths**: Newly refactored sharded map architecture (`[256]map[...]`) eliminates global lock contention.
-  * **Weaknesses**: Go's GC struggles with massive maps containing millions of small objects (pointers, slices). Large graphs will likely trigger significant GC pause times.
+2. **Dataset Eviction Thrashing**:
+    * Prior to the recent fix, the "Dataset not found" error confirmed that **Memory Backpressure** was triggering naive eviction of the *active* dataset.
+    * **Implication**: The system operates near the memory red-line. For "several thousand" vector batches, the *burst* memory usage (New Alloc + Old Index + Graph overhead) momentarily exceeds `GOMEMLIMIT`, triggering aggressive, often self-destructive, cleanup.
 
-## 2. Identified Bottlenecks
+3. **Search Latency at Scale**:
+    * P95 Latency spiked to **60ms** at 25k but dropped to **17ms** at 150k.
+    * **Anomaly**: Inverted latency scaling (faster at higher scale) suggests **Amortized Indexing cost** leaking into search threads or efficient caching warming up over time. It implies the initial graph construction is inefficient but the resulting structure is sound.
 
-1. **Go GC Pressure**: pointer-heavy structures (`GraphStore`, `HNSW` node layers) place immense pressure on the Garbage Collector.
-2. **SQ8/BQ Write Serialization**: Parallel ingestion is effectively disabled when quantization is on.
-3. **Global Lock Contention**: `VectorStore.mu` limits scaling number of datasets.
-4. **Arrow FFI Overhead**: Crossing the CGO boundary (if we move to C++ kernels later) or simple reflection overhead in purely Go Arrow handling.
+4. **Dimensionality Specifics (384d)**:
+    * 384 is a " awkward" size. It handles 6 cache lines (64 *6 = 384 bytes? No, 384 float32s* 4 bytes = 1536 bytes = 24 cache lines).
+    * It fits perfectly into 24 cache lines, which is efficient for streaming reads but "large" for random access, causing significant cache eviction of neighbor nodes during traversal.
 
-## 3. 15 Creative Performance Enhancements (Brainstorm)
+## 2. 15 Targeted Improvements for 384-Dim PyTorch Vectors
 
-### System Core & Memory Management
+To optimize specifically for **reading/writing/deleting datasets of several thousand 384-dim vectors at a time**, we propose the following architectural enhancements:
 
-1. **Off-Heap Vector Storage (Unsafe/Mmap)**
-    * **Idea**: Move raw vector data (`float32`, `uint8`, `uint64`) out of the Go GC heap entirely using manual memory management (`mmap` or `libc.malloc`).
-    * **Benefit**: Zero GC scan overhead for the bulk of data. Massive reduction in GC pause times for large datasets (100M+ vectors).
+### Memory & Ingestion (Batch Performance)
 
-2. **Arena Allocation for Graph Nodes**
-    * **Idea**: Instead of allocating individual slices for HNSW neighbors/levels, allocate large "slabs" (Arenas) of memory and hand out offsets.
-    * **Benefit**: Reduces 100M allocations to ~100. drastically improving data locality and killing GC overhead.
+1. **Slab Allocation for Fixed 384-Dim Vectors**
+    * **Context**: We know the vector size (1536 bytes).
+    * **Improvement**: Implement a custom `Arena` allocator that reserves massive "Slabs" (e.g., 2MB pages) and slots vectors linearly.
+    * **Benefit**: Eliminates billions of small allocations; reduces GC pointer scan overhead to near zero for vector data.
 
-3. **Read-Copy-Update (RCU) for Dataset Map**
-    * **Idea**: Replace `VectorStore.mu` (RWMutex) with an atomic `Pointer` to an immutable map. On update, copy-and-swap.
-    * **Benefit**: Zero lock contention on reads (99% of ops). `IterateDatasets` becomes Wait-Free.
+2. **Zero-Copy `DoPut` Protocol**
+    * **Context**: Currently, Arrow `DoPut` involves serialization/deserialization copies.
+    * **Improvement**: Implement `Arrow Flight` optimizations to map the underlying byte buffer directly from the network frame to the in-memory store (requires using `release` callbacks effectively).
+    * **Benefit**: Removes the memory bandwidth bottleneck during high-throughput ingestion.
 
-### Indexing & Algorithms
+3. **Parallel "Bulk Load" HNSW Indexing**
+    * **Context**: Inserting one-by-one into HNSW is efficient for latency but suboptimal for throughput.
+    * **Improvement**: For batches > 1000 vectors, use a "Parallel Bulk Insert" strategy:
+        1. Compute all pairwise distances for the batch in parallel (Blocked Matrix Multiply).
+        2. Update graph connectivity in a single synchronized phase.
+    * **Benefit**: drastically drastically ingestion time for large batches.
 
-1. **Adaptive Quantization Segments**
-    * **Idea**: Don't enforce SQ8/BQ globally. Detect "simple" subspaces (clusters) and use aggressive BQ, while keeping "complex" boundaries in Float32.
-    * **Benefit**: Maximum compression with minimal recall loss.
+4. **Native Float16 (Half-Precision) Storage**
+    * **Context**: PyTorch models often output FP32, but embeddings rarely need >FP16 precision.
+    * **Improvement**: Auto-detect or config option to store 384 dims as `float16` (768 bytes/vector).
+    * **Benefit**: **50% RAM reduction**, 2x effective capacity, 2x cache density.
 
-2. **Speculative HNSW Traversal**
-    * **Idea**: When searching, speculatively fetch the neighbors of the *next likely* candidates into L1 cache (prefetching) before the distance calculation finishes.
-    * **Benefit**: Hides memory latency, especially useful when vectors are in RAM but not L3 cache.
+5. **Sharded Ingestion Routing**
+    * **Context**: Global lock contention hurts multi-node setups.
+    * **Improvement**: Client-side (or Proxy-side) deterministic routing. Split a batch of 5000 vectors into `N` sub-batches based on `Hash(ID) % ShardCount` *before* sending.
+    * **Benefit**: Lock-free parallel ingestion across all cluster nodes.
 
-3. **"Vamana" Hybrid Layout (Disk + RAM)**
-    * **Idea**: Implement the Vamana algorithm (from DiskANN) which is designed for SSD-resident graphs, allowing datasets larger than RAM.
-    * **Benefit**: Orders of magnitude cost reduction for massive datasets.
+### Deletion & Management
 
-4. **Auto-Tuning `efConstruction` via Control Theory**
-    * **Idea**: Use a PID controller to dynamically adjust `efConstruction` during ingestion based on "Recall vs. Latency" feedback loop.
-    * **Benefit**: No manual tuning; optimal throughput at all times.
+1. **LSM-Tree Style Deletions (Lazy Bitmap Merging)**
+    * **Context**: "Deleting" thousands of vectors updates the tombstone bitmap repeatedly.
+    * **Improvement**: Write deletes to a "Delete Buffer" (small log). Merge into the main `RoaringBitmap` only during read-time or background compaction.
+    * **Benefit**: O(1) delete acknowledgement for large batches.
 
-5. **Atomic Bitwise Locks for SQ8/BQ Chunks**
-    * **Idea**: Replace the coarse serialization in `AddBatch` with per-chunk atomic bitmasks or spinlocks.
-    * **Benefit**: Re-enables massive parallelism for Quantized Vector ingestion.
+2. **Tombstone-Aware HNSW Repair**
+    * **Context**: Deleting a node leaves a "hole" in the graph, degrading navigating.
+    * **Improvement**: Background worker that scans tombstones and locally "wires around" deleted nodes (connecting neighbors to each other) without full rebuild.
+    * **Benefit**: Maintains search quality (Recall) without specific re-indexing ops.
 
-### Query Engine & Execution
+3. **Explicit "Drop Dataset" Fast Path**
+    * **Context**: Deleting a whole dataset should be instant.
+    * **Improvement**: Ensure `DeleteDataset` simply unlinks the pointer (RCU) and schedules async resource cleanup, rather than iterating rows.
+    * **Benefit**: Instant release of resources for new workloads.
 
-1. **JIT Compiled Expression Filters (Wazero)**
-    * **Idea**: Compile user filters (`WHERE age > 10 AND tag IN (...)`) into WebAssembly instructions at runtime and execute with `wazero` (JIT).
-    * **Benefit**: 10x-50x faster filter evaluation compared to Go interpreter/reflection.
+### Search & Compute (384-Dim Specifics)
 
-2. **Vectorized Bloom Filters for Metadata**
-    * **Idea**: Maintain small SIMD-friendly Bloom Filters for high-cardinality metadata columns.
-    * **Benefit**: Early rejection of candidates during extensive hybrid search without touching the string index.
+1. **AVX-512 Optimized L2 Kernel (24-Loop)**
+    * **Context**: 384 is divisible by 16 (AVX-512 width).
+    * **Improvement**: Write a hand-tuned Assembly kernel that unrolls the loop exactly 24 times (384/16).
+    * **Benefit**: Removes all loop overhead and branch prediction misses in the hot path distance calculation.
 
-3. **Semantic Query Caching**
-    * **Idea**: Cache search results not by exact query string, but by query *embedding*. Return cached results if `Distance(new_query, cached_query) < epsilon`.
-    * **Benefit**: Instant results for semantically identical queries ("red shoes" vs "shoes red").
+2. **Pre-Computed "Medoids" for Routing**
+    * **Context**: Navigating huge graphs starts at random or fixed enter points.
+    * **Improvement**: Maintain ~100 "Medoids" (centroids) for the dataset. Start search from the closest medoid.
+    * **Benefit**: Skips the top ~5 layers of HNSW, jumping close to the target immediately. Optimized for clustered embedding spaces.
 
-### Network, I/O, & Operations
+3. **Super-Scalar Prefetching**
+    * **Context**: Visiting a node incurs a cache miss.
+    * **Improvement**: When evaluating node `A`, issue `prefetch` instructions for its neighbors `N1, N2...` immediately.
+    * **Benefit**: Overlaps Memory Access with ALU computation of the current distance.
 
-1. **IO_URING for WAL (Linux)**
-    * **Idea**: Replace standard `os.File` writes with `io_uring` submission queues for WAL persistence.
-    * **Benefit**: Asynchronous, zero-syscall-overhead writes pushing disk IOPS to hardware limits.
+### Storage & Persistence
 
-2. **QUIC / HTTP3 Mesh Transport**
-    * **Idea**: Replace gRPC/TCP with QUIC for internode communication.
-    * **Benefit**: Eliminates Head-of-Line blocking in multiplexed streams; faster localized packet loss recovery on lossy networks.
+1. **Zstd Dictionary Compression for Vectors**
+    * **Context**: Embeddings from the same model share distribution characteristics.
+    * **Improvement**: Train a Zstd dictionary on the first 10k vectors. Compress subsequent vectors using this dictionary for WAL storage.
+    * **Benefit**: Significant reduction in disk usage and IOPS for durability.
 
-3. **Predictive Auto-Sharding (AI-Ops)**
-    * **Idea**: Train a lightweight internal time-series model (ARIMA or simple regression) on ingestion rates to split shards *before* they fill up.
-    * **Benefit**: Prevention of latency spikes during reactive shard splitting.
+2. **Io_uring Buffered WAL**
+    * **Context**: `write()` syscalls blocking ingestion.
+    * **Improvement**: Use `io_uring` to submit WAL buffers asynchronously.
+    * **Benefit**: Decouples write latency from disk mechanics.
 
-4. **GPU-Accelerated Re-ranking (Cuda/Metal Integration)**
-    * **Idea**: Keep all vectors in host RAM, but stream the top-k candidates + Full Precision Vectors to GPU for exact re-ranking.
-    * **Benefit**: "Infinite" precision at scale; offloads expensive FP32 calculations from CPU.
+3. **Memory-Mapped "Read-Only" Mode**
+    * **Context**: Some datasets are static after loading.
+    * **Improvement**: "Freeze" a dataset to a compact mmap-friendly file format and `mmap` it back.
+    * **Benefit**: OS manages memory; zero heap usage; dataset can be > RAM size.
 
-## Roadmap Recommendation
+4. **Adaptive HNSW Construction (Auto-M)**
+    * **Context**: Fixed `M=32` is a guess.
+    * **Improvement**: Dynamically adjust `M` (max connections) based on the "intrinsic dimensionality" of the first 1k vectors. 384-dim might need higher connectivity than 128.
+    * **Benefit**: Optimal graph density for specific model outputs without user tuning.
 
-**Short Term (Stability & easy wins)**:
+## 3. Roadmap for Implementation
 
-* Implement #3 (RCU for Datasets)
-* Implement #8 (Atomic Locks for SQ8/BQ)
+**Phase 1: Ingestion Efficiency (Weeks 1-2)**
+* Implement #1 (Slab Allocation) and #3 (Parallel Indexing).
+* *Goal*: Stabilize 150k+ ingestion rate.
 
-**Medium Term (Performance scaling)**:
+**Phase 2: Compute Optimization (Weeks 3-4)**
+* Implement #9 (AVX-512 Kernel) and #4 (Float16).
+* *Goal*: Double search QPS.
 
-* Implement #2 (Arena Allocation) - *Highest Impact*
-* Implement #9 (JIT Filters)
-
-**Long Term (Architecture evolution)**:
-
-* Implement #6 (Vamana/DiskANN)
-* Implement #1 (Off-Heap vectors)
+**Phase 3: Lifecycle Management (Weeks 5-6)**
+* Implement #6 (LSM Deletes) and #7 (HNSW Repair).
+* *Goal*: robust "CRUD" operations at scale.

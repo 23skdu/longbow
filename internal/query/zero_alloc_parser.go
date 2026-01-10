@@ -98,6 +98,13 @@ func (p *ZeroAllocTicketParser) Parse(data []byte) (TicketQuery, error) {
 			}
 			p.result.Name = val
 			i = newPos
+		case "dataset": // Alias for name
+			val, newPos, err := parseString(data, i)
+			if err != nil {
+				return p.result, err
+			}
+			p.result.Name = val
+			i = newPos
 		case "limit":
 			val, newPos, err := parseInt64(data, i)
 			if err != nil {

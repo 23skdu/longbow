@@ -11,6 +11,7 @@ import (
 
 	qry "github.com/23skdu/longbow/internal/query"
 
+	"github.com/23skdu/longbow/internal/pq"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 )
@@ -70,7 +71,7 @@ type Dataset struct {
 	Graph *GraphStore
 
 	// Product Quantization (Persisted Codebooks)
-	PQEncoder *PQEncoder
+	PQEncoder *pq.PQEncoder
 
 	// Per-record eviction
 	recordEviction *RecordEvictionManager

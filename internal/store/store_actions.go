@@ -413,7 +413,7 @@ func (s *VectorStore) flushPutBatch(ds *Dataset, name string, batch []arrow.Reco
 	}
 
 	// Check memory limit before accepting write
-	if err := s.checkMemoryBeforeWrite(totalSize); err != nil {
+	if err := s.checkMemoryBeforeWrite(totalSize, name); err != nil {
 		return err
 	}
 

@@ -5,45 +5,63 @@ reliability, architecture refactoring, and advanced indexing features.
 
 ## Top 10 Priority Items (Performance & Scalability)
 
-### 1. IO_URING for WAL (Linux)
+### 1. "Network-to-Memory" Zero-Copy Integration (Allocators)
+
+- **Impact**: **High**. Eliminates the initial copy from network buffer to application memory,
+  critical for 10GbE+ throughput.
+- **Plan**:
+    1. **Reproduction & Benchmark**: Write unit tests (`TestFlight_ZeroCopyAllocator`) to establish baseline allocation/copy metrics for current Flight `DoPut`.
+    2. **Custom Allocator Prototype**: Implement a custom `memory.Allocator` that tracks buffer sources and
+       allows lifecycle hooking.
+    3. **IPC Reader Injection**: Modify `DoPut`/`DoExchange` to inject this custom allocator into
+       `flight.NewRecordReader` (requires `ipc.WithAllocator`).
+    4. **Buffer Lifecycle validation**: Implement strict checks for `Retain`/`Release` cycles to ensure
+       network buffers aren't prematurely reclaimed or leaked.
+    5. **Integration**: Wire the zero-copy reader into the main `VectorStore` ingestion pipeline,
+       ensuring safety with async indexing.
+    6. **Validation**: Benchmark memory bandwidth utilization and GC pressure to confirm "true"
+       zero-copy behavior.
+
+### 2. IO_URING for WAL (Linux)
 
 - **Impact**: **High**. Current profiling shows heavy `syscall` usage during writes.
-- **Plan**: Implement `io_uring` backend for the Write Ahead Log (WAL) to batch I/O operations and strictly reduce syscall overhead on Linux.
+- **Plan**: Implement `io_uring` backend for the Write Ahead Log (WAL) to batch I/O operations and
+  strictly reduce syscall overhead on Linux.
 
-### 2. HNSW Search Context Pooling
+### 3. HNSW Search Context Pooling
 
 - **Impact**: **High**. Profiling revealed ~400MB allocations in `InsertWithVector` due to `visited` sets and queues.
-- **Plan**: Implement aggression `sync.Pool` usage for `searchCtx` (visited bitsets, candidate queues) to achieve near-zero allocation inserts.
+- **Plan**: Implement aggression `sync.Pool` usage for `searchCtx` (visited bitsets, candidate queues)
+  to achieve near-zero allocation inserts.
 
-### 3. Product Quantization (PQ)
+### 4. GOGC Auto-Tuning (Memory Ballast)
 
-- **Impact**: **High**. Reduces memory footprint and bandwidth by 4x-8x.
-- **Plan**: Implement Product Quantization compression for the main vector index, allowing much larger datasets to fit in RAM.
+- **Impact**: **High**. Prevents OOMs and optimizes GC CPU usage.
+- **Plan**: Implement a memory ballast or dynamic GOGC tuner that adjusts based on `GOMEMLIMIT` and
+  current heap usage.
 
-### 4. Software Prefetching for Graph Search
+### 5. Software Prefetching for Graph Search
 
 - **Impact**: **Medium/High**. Search latency is dominated by random memory access.
-- **Plan**: Use assembly or unsafe directives to prefetch HNSW neighbor nodes into CPU cache during graph traversal (pipelined lookup).
+- **Plan**: Use assembly or unsafe directives to prefetch HNSW neighbor nodes into CPU cache during
+  graph traversal (pipelined lookup).
 
-### 5. Zero-Copy Flight `DoGet`
+### 6. Zero-Copy Flight `DoGet`
 
 - **Impact**: **Medium**.
 - **Plan**: Optimize the `DoGet` read path to stream internal Arrow RecordBatches directly to the wire without re-serialization/copying.
 
-### 6. GOGC Auto-Tuning (Memory Ballast)
-
-- **Impact**: **High**. Prevents OOMs and optimizes GC CPU usage.
-- **Plan**: Implement a memory ballast or dynamic GOGC tuner that adjusts based on `GOMEMLIMIT` and current heap usage.
-
 ### 7. Sharded Graph Locks
 
 - **Impact**: **Medium**. Reduces contention during high concurrency.
-- **Plan**: Replace global `GraphData` RWMutex with fine-grained sharded locks or atomic/RCU patterns for adjacency list updates.
+- **Plan**: Replace global `GraphData` RWMutex with fine-grained sharded locks or atomic/RCU patterns
+  for adjacency list updates.
 
 ### 8. Optimized Delete (Atomic Tombstones)
 
 - **Impact**: **Medium**.
-- **Plan**: Enhance the deletion mechanism to use a high-performance, lock-free global atomic bitset (RoaringBitmap) for tombstones, checked efficiently during traversal.
+- **Plan**: Enhance the deletion mechanism to use a high-performance, lock-free global atomic bitset (RoaringBitmap)
+  for tombstones, checked efficiently during traversal.
 
 ### 9. Vectorized Metadata Filtering
 
@@ -53,7 +71,8 @@ reliability, architecture refactoring, and advanced indexing features.
 ### 10. Compaction Rate Limiting
 
 - **Impact**: **Low/Medium**. Improves tail latency.
-- **Plan**: Implement token-bucket rate limiting for background compaction and snapshotting to prevent I/O saturation from affecting foreground latency.
+- **Plan**: Implement token-bucket rate limiting for background compaction and snapshotting to prevent I/O
+  saturation from affecting foreground latency.
 
 ---
 
@@ -83,9 +102,10 @@ reliability, architecture refactoring, and advanced indexing features.
 
 ## Recently Completed
 
-- **Auto-Sharding Control**: Implemented `LONGBOW_AUTO_SHARDING_ENABLED` to prevent memory instability during benchmarks.
-- **Performance Benchmarking**: Comprehensive 5k-25k vector benchmarks with pprof analysis.
-- **Hybrid Search Pipeline Enhancements**: Completed implementation of pipeline stages.
-- **Spatial Index for Mesh Routing**: Replaced linear scan with VP-Tree.
-- **WAL Buffer Recycling**: Implemented buffer reusing.
-- **Async Fsync**: Integrated `AsyncFsyncer`.
+- **HNSW Parallel Bulk Load**: Optimized ingestion for large batches (>1k) using parallel layer generation
+  and graph updates.
+- **Auto-Sharding Control**: Implemented `LONGBOW_AUTO_SHARDING_ENABLED`.
+- **Performance Benchmarking**: Comprehensive 5k-25k vector benchmarks.
+- **Hybrid Search Pipeline**: Added Reranking and Fusion stages.
+- **Spatial Index**: VP-Tree for Mesh Routing.
+- **WAL Buffer Recycling**: Optimized write path.

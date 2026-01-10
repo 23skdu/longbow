@@ -673,5 +673,60 @@ Complete reference for all Prometheus metrics exported by Longbow.
 
 ---
 
+## Dataset Metrics
+
+### longbow_store_dropped_datasets_total
+
+**Type**: Counter
+**Description**: Total number of datasets explicitly dropped
+
+### longbow_store_active_datasets
+
+**Type**: Gauge
+**Description**: Current number of active datasets in memory
+
+---
+
+## HNSW Adaptive Metrics
+
+### longbow_hnsw_adaptive_m_value
+
+**Type**: GaugeVec
+**Labels**: `index_name`
+**Description**: Current value of M parameter in HNSW graph
+
+### longbow_hnsw_intrinsic_dimensionality
+
+**Type**: GaugeVec
+**Labels**: `index_name`
+**Description**: Estimated intrinsic dimensionality of the data
+
+### longbow_hnsw_adaptive_adjustments_total
+
+**Type**: CounterVec
+**Labels**: `index_name`
+**Description**: Total number of times M has been adjusted dynamically
+
+---
+
+## HNSW Repair Metrics
+
+### longbow_hnsw_repair_total
+
+**Type**: Counter
+**Description**: Total number of tombstone repairs performed
+
+### longbow_hnsw_repair_duration_seconds
+
+**Type**: Histogram
+**Description**: Duration of tombstone repair cycles
+
+### longbow_hnsw_repaired_connections_total
+
+**Type**: Counter
+**Description**: Number of connections re-wired from tombstones to valid nodes
+
+---
+
 **Total Metrics Documented**: 100+  
 **Last Updated**: 2025-12-23

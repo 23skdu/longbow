@@ -112,7 +112,10 @@ type Config struct {
 	HNSW2Alpha          float32 `envconfig:"HNSW_ALPHA" default:"1.0"`
 	HNSW2KeepPruned     bool    `envconfig:"HNSW_KEEP_PRUNED" default:"false"`
 	HNSW2SQ8Enabled     bool    `envconfig:"HNSW_SQ8_ENABLED" default:"false"`
+	HNSW2PQEnabled      bool    `envconfig:"HNSW_PQ_ENABLED" default:"false"`
 	HNSW2Refinement     float64 `envconfig:"HNSW_REFINEMENT_FACTOR" default:"1.0"`
+	HNSW2Float16Enabled bool    `envconfig:"HNSW_FLOAT16_ENABLED" default:"false"`
+
 
 	// Compaction Configuration
 	CompactionEnabled         bool          `envconfig:"COMPACTION_ENABLED" default:"true"`
@@ -143,7 +146,10 @@ func initializeHNSW2(ds *store.Dataset, logger *zerolog.Logger) {
 	config.Alpha = globalCfg.HNSW2Alpha
 	config.KeepPrunedConnections = globalCfg.HNSW2KeepPruned
 	config.SQ8Enabled = globalCfg.HNSW2SQ8Enabled
+	config.PQEnabled = globalCfg.HNSW2PQEnabled
 	config.RefinementFactor = globalCfg.HNSW2Refinement
+	config.Float16Enabled = globalCfg.HNSW2Float16Enabled
+
 
 	hnswIndex := store.NewArrowHNSW(ds, config, nil)
 	ds.SetHNSW2Index(hnswIndex)

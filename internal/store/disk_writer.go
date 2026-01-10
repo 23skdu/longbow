@@ -214,7 +214,7 @@ func WriteDiskGraph(gd *GraphData, path string, maxNodeID int) error {
 
 		for id := uint32(0); id < numNodes; id++ {
 			// New Helper: GetVectorPQ(id, pqDims)
-			vec := gd.GetVectorPQ(id, pqDims)
+			vec := gd.GetVectorPQ(id)
 			if vec == nil {
 				if _, err := w.Write(zeros); err != nil {
 					return err

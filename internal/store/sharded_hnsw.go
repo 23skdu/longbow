@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 
 	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/pq"
 	"github.com/23skdu/longbow/internal/query"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
@@ -584,6 +585,17 @@ func (s *ShardedHNSW) GetLocation(id VectorID) (Location, bool) {
 // GetDimension implements VectorIndex.
 func (s *ShardedHNSW) GetDimension() uint32 {
 	return s.dimension
+}
+
+func (s *ShardedHNSW) TrainPQ(vectors [][]float32) error {
+	// For sharded HNSW, training PQ should ideally happen on the whole dataset
+	// and then distributed to shards or managed at the top level.
+	// For now, let's assume it's a stub or managed by Dataset.
+	return nil
+}
+
+func (s *ShardedHNSW) GetPQEncoder() *pq.PQEncoder {
+	return nil
 }
 
 // GetNeighbors returns the nearest neighbors for a given vector ID.

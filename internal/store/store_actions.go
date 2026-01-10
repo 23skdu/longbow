@@ -14,7 +14,10 @@ import (
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/flight"
+	"github.com/apache/arrow-go/v18/arrow/ipc"
+	"github.com/apache/arrow-go/v18/arrow/memory"
 
+	lmem "github.com/23skdu/longbow/internal/memory"
 	"github.com/23skdu/longbow/internal/metrics"
 	qry "github.com/23skdu/longbow/internal/query"
 )
@@ -232,7 +235,10 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 
 // DoPut - Optimized implementation with batching
 func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
-	r, err := flight.NewRecordReader(stream)
+	// Use TrackingAllocator to monitor zero-copy behavior (expecting low allocations)
+	// and track metadata overhead.
+	trackAlloc := lmem.NewTrackingAllocator(memory.DefaultAllocator)
+	r, err := flight.NewRecordReader(stream, ipc.WithAllocator(trackAlloc))
 	if err != nil {
 		s.logger.Error().Err(err).Msg("DoPut failed to create reader")
 		return err
@@ -413,7 +419,7 @@ func (s *VectorStore) flushPutBatch(ds *Dataset, name string, batch []arrow.Reco
 	}
 
 	// Check memory limit before accepting write
-	if err := s.checkMemoryBeforeWrite(totalSize); err != nil {
+	if err := s.checkMemoryBeforeWrite(totalSize, name); err != nil {
 		return err
 	}
 

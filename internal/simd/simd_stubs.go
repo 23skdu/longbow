@@ -2,7 +2,9 @@
 
 package simd
 
-import "unsafe"
+import (
+	"unsafe"
+)
 
 // Stubs for non-AMD64 architectures to satisfy simd.go references
 
@@ -30,12 +32,14 @@ func adcBatchAVX512(table []float32, flatCodes []byte, m int, results []float32)
 	adcBatchGeneric(table, flatCodes, m, results)
 }
 
-func euclideanAVX2(a, b []float32) float32   { return euclideanGeneric(a, b) }
-func euclideanAVX512(a, b []float32) float32 { return euclideanGeneric(a, b) }
-func cosineAVX2(a, b []float32) float32      { return cosineGeneric(a, b) }
-func cosineAVX512(a, b []float32) float32    { return cosineGeneric(a, b) }
-func dotAVX2(a, b []float32) float32         { return dotGeneric(a, b) }
-func dotAVX512(a, b []float32) float32       { return dotGeneric(a, b) }
+func euclideanAVX2(a, b []float32) float32      { return euclideanGeneric(a, b) }
+func euclideanAVX512(a, b []float32) float32    { return euclideanGeneric(a, b) }
+func cosineAVX2(a, b []float32) float32         { return cosineGeneric(a, b) }
+func cosineAVX512(a, b []float32) float32       { return cosineGeneric(a, b) }
+func dotAVX2(a, b []float32) float32            { return dotGeneric(a, b) }
+func dotAVX512(a, b []float32) float32          { return dotGeneric(a, b) }
+func euclidean384AVX512(a, b []float32) float32 { return euclideanGeneric(a, b) }
+func dot384AVX512(a, b []float32) float32       { return dotGeneric(a, b) }
 
 func euclideanBatchAVX2(query []float32, vectors [][]float32, results []float32) {
 	euclideanBatchGeneric(query, vectors, results)

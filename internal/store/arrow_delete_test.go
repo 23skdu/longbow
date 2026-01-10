@@ -15,7 +15,7 @@ func TestDelete(t *testing.T) {
 	index.dims.Store(128)
 
 	// Initialize GraphData manually with dimensions
-	data := NewGraphData(0, 64, false, false, false)
+	data := NewGraphData(100, 32, false, false, 0, false, false)
 	index.data.Store(data)
 
 	// Manually allocate chunks for testing using ensureChunk
@@ -35,15 +35,15 @@ func TestDelete(t *testing.T) {
 
 		vecChunk := data.GetVectorsChunk(cID)
 		if vecChunk != nil {
-			vec1 := (*vecChunk)[int(cOff)*128 : int(cOff+1)*128]
+			vec1 := vecChunk[int(cOff)*128 : int(cOff+1)*128]
 			vec1[0] = float32(i) // Use first element as value
 		}
 
 		// Set level 0 for simplicity
 		lvlChunk := data.GetLevelsChunk(cID)
 		if lvlChunk != nil {
-			(*lvlChunk)[cOff] = 0
-			if (*lvlChunk)[cOff] != 0 {
+			lvlChunk[cOff] = 0
+			if lvlChunk[cOff] != 0 {
 				t.Errorf("Level should be 0")
 			}
 		}

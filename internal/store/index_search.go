@@ -7,6 +7,7 @@ import (
 	"unsafe"
 
 	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/pq"
 	qry "github.com/23skdu/longbow/internal/query"
 )
 
@@ -23,8 +24,8 @@ func (h *HNSWIndex) Search(query []float32, k int) ([]VectorID, error) {
 	// Capture locals to avoid holding lock too long if encoding is slow?
 	// Encoding is fast enough.
 	if h.pqEnabled && h.pqEncoder != nil {
-		codes := h.pqEncoder.Encode(query)
-		graphQuery = PackBytesToFloat32s(codes)
+		codes, _ := h.pqEncoder.Encode(query)
+		graphQuery = pq.PackBytesToFloat32s(codes)
 	}
 	h.pqCodesMu.RUnlock()
 
@@ -98,8 +99,8 @@ func (h *HNSWIndex) SearchVectors(query []float32, k int, filters []qry.Filter) 
 		var graphQuery = query
 		h.pqCodesMu.RLock()
 		if h.pqEnabled && h.pqEncoder != nil {
-			codes := h.pqEncoder.Encode(query)
-			graphQuery = PackBytesToFloat32s(codes)
+			codes, _ := h.pqEncoder.Encode(query)
+			graphQuery = pq.PackBytesToFloat32s(codes)
 		}
 		h.pqCodesMu.RUnlock()
 
@@ -239,7 +240,13 @@ func (h *HNSWIndex) SearchVectors(query []float32, k int, filters []qry.Filter) 
 			}
 
 			if pqTable != nil {
-				h.pqEncoder.ADCDistanceBatch(pqTable, pqFlatCodes, pqBatchResults)
+				if err := h.pqEncoder.ADCDistanceBatch(pqTable, pqFlatCodes, pqBatchResults); err != nil {
+					// Handle error by skipping batch or marking as fail?
+					// For search durability, we skip this batch or mark them as invalid.
+					for j := 0; j < batchLen; j++ {
+						pqBatchResults[j] = -2
+					}
+				}
 				for j := 0; j < batchLen; j++ {
 					if pqBatchResults[j] >= 0 {
 						if count < k {
@@ -380,7 +387,11 @@ func (h *HNSWIndex) SearchVectorsWithBitmap(query []float32, k int, filter *qry.
 
 		// Run batch SIMD for all marked candidates
 		if pqTable != nil {
-			h.pqEncoder.ADCDistanceBatch(pqTable, pqFlatCodes, pqBatchResults)
+			if err := h.pqEncoder.ADCDistanceBatch(pqTable, pqFlatCodes, pqBatchResults); err != nil {
+				for j := 0; j < batchLen; j++ {
+					pqBatchResults[j] = -2
+				}
+			}
 
 			for j := 0; j < batchLen; j++ {
 				if pqBatchResults[j] >= 0 {

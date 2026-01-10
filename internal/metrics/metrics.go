@@ -96,6 +96,30 @@ var (
 		},
 		[]string{"allocator"},
 	)
+
+	// AllocatorBytesAllocatedTotal tracks cumulative bytes allocated
+	AllocatorBytesAllocatedTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_allocator_bytes_allocated_total",
+			Help: "Total bytes allocated by the custom allocator",
+		},
+	)
+
+	// AllocatorBytesFreedTotal tracks cumulative bytes freed
+	AllocatorBytesFreedTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_allocator_bytes_freed_total",
+			Help: "Total bytes freed by the custom allocator",
+		},
+	)
+
+	// AllocatorAllocationsActive tracks number of active allocation objects
+	AllocatorAllocationsActive = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "longbow_allocator_allocations_active",
+			Help: "Number of currently active memory allocations",
+		},
+	)
 )
 
 // =============================================================================
@@ -142,6 +166,22 @@ var (
 			Help: "Total number of recovered panics",
 		},
 		[]string{"component"},
+	)
+
+	// Rate Limit Metrics
+	CompactionRateLimitWaitSeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_compaction_rate_limit_wait_seconds",
+			Help:    "Time spent waiting for compaction rate limiter",
+			Buckets: []float64{0.001, 0.01, 0.1, 0.5, 1, 5},
+		},
+	)
+	SnapshotRateLimitWaitSeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_snapshot_rate_limit_wait_seconds",
+			Help:    "Time spent waiting for snapshot rate limiter",
+			Buckets: []float64{0.001, 0.01, 0.1, 0.5, 1, 5},
+		},
 	)
 )
 
@@ -208,6 +248,14 @@ var (
 		},
 	)
 
+	// PrefetchOperationsTotal tracks software prefetch instructions issued
+	PrefetchOperationsTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_prefetch_operations_total",
+			Help: "Total number of software prefetch instructions issued during search",
+		},
+	)
+
 	TraceSpansTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_trace_spans_total",
@@ -236,6 +284,20 @@ var (
 		},
 	)
 
+	FlightZeroCopyBytesTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_flight_zero_copy_bytes_total",
+			Help: "Total bytes sent via zero-copy optimization",
+		},
+	)
+
+	DoPutZeroCopyPathTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_flight_doput_zerocopy_path_total",
+			Help: "Total number of batches processed via Zero-Copy (direct) path",
+		},
+	)
+
 	// Warmup Metrics
 	WarmupProgressPercent = promauto.NewGauge(
 		prometheus.GaugeOpts{
@@ -253,6 +315,25 @@ var (
 		prometheus.GaugeOpts{
 			Name: "longbow_warmup_datasets_completed",
 			Help: "Total number of datasets where warmup is completed",
+		},
+	)
+)
+
+// =============================================================================
+// GOGC Auto-Tuning Metrics
+// =============================================================================
+var (
+	GCTunerTargetGOGC = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "longbow_gc_tuner_target_gogc",
+			Help: "Current target GOGC value set by the tuner",
+		},
+	)
+
+	GCTunerHeapUtilization = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "longbow_gc_tuner_heap_utilization",
+			Help: "Current heap utilization ratio (heap_inuse / limit)",
 		},
 	)
 )
@@ -376,6 +457,21 @@ var (
 		},
 	)
 
+	HNSWBulkInsertDurationSeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_hnsw_bulk_insert_duration_seconds",
+			Help:    "Duration of HNSW bulk vector insertion",
+			Buckets: []float64{0.001, 0.01, 0.1, 0.5, 1, 5, 10, 30},
+		},
+	)
+
+	HNSWBulkVectorsProcessedTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_hnsw_bulk_vectors_processed_total",
+			Help: "Total number of vectors processed using bulk insert path",
+		},
+	)
+
 	HNSWNodesTotal = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "longbow_hnsw_nodes_total",
@@ -409,6 +505,62 @@ var (
 			Buckets: []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5},
 		},
 		[]string{"dataset", "query_type"}, // query_type: "vector", "hybrid", "keyword"
+	)
+
+	HNSWSearchPoolGetTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_hnsw_search_pool_get_total",
+			Help: "Total number of search contexts retrieved from the pool",
+		},
+	)
+
+	HNSWSearchPoolNewTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_hnsw_search_pool_new_total",
+			Help: "Total number of new search contexts allocated (cache misses)",
+		},
+	)
+
+	HNSWSearchPoolPutTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_hnsw_search_pool_put_total",
+			Help: "Total number of search contexts returned to the pool",
+		},
+	)
+
+	HNSWInsertPoolGetTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_hnsw_insert_pool_get_total",
+			Help: "Total number of insert contexts retrieved from the pool",
+		},
+	)
+
+	HNSWInsertPoolNewTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_hnsw_insert_pool_new_total",
+			Help: "Total number of new insert contexts allocated (cache misses)",
+		},
+	)
+
+	HNSWInsertPoolPutTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_hnsw_insert_pool_put_total",
+			Help: "Total number of insert contexts returned to the pool",
+		},
+	)
+
+	HNSWBitsetGrowTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_hnsw_bitset_grow_total",
+			Help: "Total number of times a bitset was grown/reallocated",
+		},
+	)
+
+	HNSWDistanceCalculationsF16Total = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_hnsw_distance_calculations_f16_total",
+			Help: "Total number of native FP16 distance calculations performed",
+		},
 	)
 )
 

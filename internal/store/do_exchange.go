@@ -1,7 +1,6 @@
 package store
 
 import (
-	"bytes"
 	"encoding/binary"
 	"io"
 	"time"
@@ -9,7 +8,6 @@ import (
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/storage"
 	"github.com/apache/arrow-go/v18/arrow/flight"
-	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -104,7 +102,7 @@ func (s *VectorStore) DoExchange(stream flight.FlightService_DoExchangeServer) e
 
 				// Stream deltas
 				for {
-					seq, ts, name, rec, err := it.Next()
+					seq, ts, name, recBytes, err := it.NextRaw()
 					if err == io.EOF {
 						break
 					}
@@ -113,70 +111,22 @@ func (s *VectorStore) DoExchange(stream flight.FlightService_DoExchangeServer) e
 						return err
 					}
 
-					// Serialize record using existing helper from DoGet or manually
-					// We need to send FlightData.
-					// Use flight.Writer? No, directly constructing FlightData is complex for Records (header+body).
-					// Better to use `flight.NewRecordWriter(stream)`.
-					// But we are sharing the stream? `DoExchange` is bidirectional.
-					// Can we create a Writer on the stream?
-
-					// Yes: `w := flight.NewRecordWriter(stream, ipc.WithSchema(rec.Schema()))`.
-					// BUT schema might change between records in WAL (different datasets!).
-					// Flight stream usually expects CONSTANT schema.
-					// If strictly streaming ONE dataset, fine.
-					// But WAL has mixed datasets.
-					// Mixed schema stream is tricky in Arrow Flight (requires dictionary batches etc or schema messages).
-					// Workaround: Send purely raw bytes as `FlightData.Body` if client can parse?
-					// Or simpler: Only sync ONE dataset? The plan implied generic sync.
-					// "Delta transfer".
-
-					// If we mix schemas, `flight.NewRecordWriter` will complain or we need to recreate it for each record if schema differs.
-					// Recreating writer sends Schema message each time. That effectively works as concatenation of valid Arrow streams.
-					// Let's try that.
-					// Send Header: Metadata with Seq, Name.
-
-					// To transmit metadata (Name, Seq) we can use FlightDescriptor on the write.
-					// `w.SetFlightDescriptor(...)` before writing? `RecordWriter` abstraction might hide this.
-					// Actually `DoExchange` stream allows raw `Send(*FlightData)`.
-					// We can serialize record to bytes (what WAL has) and wrap in FlightData.
-					// Client (Peer) needs to deserialize.
-
-					// Let's serialize manually to ensure controlling metadata.
-					var buf bytes.Buffer
-					writer := ipc.NewWriter(&buf, ipc.WithSchema(rec.Schema()))
-					if err := writer.Write(rec); err != nil {
-						rec.Release()
-						return err
-					}
-					if err := writer.Close(); err != nil {
-						rec.Release()
-						return err
-					}
-
-					// Construct FlightData
-					// We send the whole IPC Payload (Schema + Record) in one blob?
-					// Or valid IPC stream.
-					// Let's send raw bytes of IPC stream.
-
 					metaBuf := make([]byte, 16)
 					binary.LittleEndian.PutUint64(metaBuf[0:8], seq)
 					binary.LittleEndian.PutUint64(metaBuf[8:16], uint64(ts))
 
-					// Using explicit FlightData construction
-					fd := &flight.FlightData{
+					// Send as a single FlightData packet to ensure metadata is attached
+					// and to avoid IPC stream overhead for single records.
+					if err := stream.Send(&flight.FlightData{
 						FlightDescriptor: &flight.FlightDescriptor{
 							Type: flight.DescriptorPATH,
 							Path: []string{name},
 						},
-						AppMetadata: metaBuf, // Pass consistency tokens (Seq | TS)
-						DataBody:    buf.Bytes(),
-					}
-
-					if err := stream.Send(fd); err != nil {
-						rec.Release()
+						AppMetadata: metaBuf,
+						DataBody:    recBytes,
+					}); err != nil {
 						return err
 					}
-					rec.Release() // Release after send
 
 					sentCount++
 					metrics.DoExchangeBatchesSentTotal.Inc()

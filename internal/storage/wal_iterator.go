@@ -116,6 +116,13 @@ func (it *WALIterator) Next() (seq uint64, ts int64, name string, rec arrow.Reco
 	return it.nextLocked()
 }
 
+// NextRaw returns the raw IPC record bytes without full deserialization where possible.
+func (it *WALIterator) NextRaw() (seq uint64, ts int64, name string, recBytes []byte, err error) {
+	it.mu.Lock()
+	defer it.mu.Unlock()
+	return it.nextRawLocked()
+}
+
 func (it *WALIterator) nextLocked() (seq uint64, ts int64, name string, rec arrow.RecordBatch, err error) {
 	// 1. Check if we are inside a compressed block
 	if it.inner != nil {
@@ -179,6 +186,64 @@ func (it *WALIterator) nextLocked() (seq uint64, ts int64, name string, rec arro
 	return seq, ts, string(nameBytes), r, nil
 }
 
+func (it *WALIterator) nextRawLocked() (seq uint64, ts int64, name string, recBytes []byte, err error) {
+	// 1. Check if we are inside a compressed block
+	if it.inner != nil {
+		seq, ts, name, recBytes, err = it.readEntryRaw(it.inner)
+		if err == nil {
+			return seq, ts, name, recBytes, nil
+		}
+		if err == io.EOF {
+			it.inner = nil
+			// Fallthrough to read next block from file
+		} else {
+			return 0, 0, "", nil, err
+		}
+	}
+
+	// 2. Read next from file
+	header := make([]byte, 32)
+	if _, err := io.ReadFull(it.f, header); err != nil {
+		return 0, 0, "", nil, err
+	}
+
+	storedSum := binary.LittleEndian.Uint32(header[0:4])
+	seq = binary.LittleEndian.Uint64(header[4:12])
+	ts = int64(binary.LittleEndian.Uint64(header[12:20]))
+	nameLen := binary.LittleEndian.Uint32(header[20:24])
+	recLen := binary.LittleEndian.Uint64(header[24:32])
+
+	nameBytes := make([]byte, nameLen)
+	if _, err := io.ReadFull(it.f, nameBytes); err != nil {
+		return 0, 0, "", nil, err
+	}
+
+	recBytes = make([]byte, recLen)
+	if _, err := io.ReadFull(it.f, recBytes); err != nil {
+		return 0, 0, "", nil, err
+	}
+
+	// 3. Handle Compression Sentinel
+	if storedSum == 0xFFFFFFFF {
+		decompressed, err := snappy.Decode(nil, recBytes)
+		if err != nil {
+			return 0, 0, "", nil, fmt.Errorf("snappy decode: %w", err)
+		}
+		it.inner = bytes.NewReader(decompressed)
+		return it.nextRawLocked() // Recursive call
+	}
+
+	// 4. Verify Standard CRC
+	crc := crc32.NewIEEE()
+	_, _ = crc.Write(nameBytes)
+	_, _ = crc.Write(recBytes)
+	if crc.Sum32() != storedSum {
+		return 0, 0, "", nil, fmt.Errorf("wal crc mismatch: expected %x, got %x", storedSum, crc.Sum32())
+	}
+
+	return seq, ts, string(nameBytes), recBytes, nil
+}
+
 func (it *WALIterator) readEntry(r io.Reader) (seq uint64, ts int64, name string, rec arrow.RecordBatch, err error) {
 	header := make([]byte, 32)
 	if _, err := io.ReadFull(r, header); err != nil {
@@ -205,6 +270,30 @@ func (it *WALIterator) readEntry(r io.Reader) (seq uint64, ts int64, name string
 		return 0, 0, "", nil, err
 	}
 	return seq, ts, string(nameBytes), rec, nil
+}
+
+func (it *WALIterator) readEntryRaw(r io.Reader) (seq uint64, ts int64, name string, recBytes []byte, err error) {
+	header := make([]byte, 32)
+	if _, err := io.ReadFull(r, header); err != nil {
+		return 0, 0, "", nil, err
+	}
+
+	seq = binary.LittleEndian.Uint64(header[4:12])
+	ts = int64(binary.LittleEndian.Uint64(header[12:20]))
+	nameLen := binary.LittleEndian.Uint32(header[20:24])
+	recLen := binary.LittleEndian.Uint64(header[24:32])
+
+	nameBytes := make([]byte, nameLen)
+	if _, err := io.ReadFull(r, nameBytes); err != nil {
+		return 0, 0, "", nil, err
+	}
+
+	recBytes = make([]byte, recLen)
+	if _, err := io.ReadFull(r, recBytes); err != nil {
+		return 0, 0, "", nil, err
+	}
+
+	return seq, ts, string(nameBytes), recBytes, nil
 }
 
 func (it *WALIterator) deserialize(data []byte) (arrow.RecordBatch, error) {

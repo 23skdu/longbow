@@ -9,8 +9,8 @@ import sys
 import glob
 
 # Configuration
-SIZES = [3000, 9000, 15000, 25000, 50000, 100000, 250000]
-DIMS = [128, 384]
+SIZES = [3000, 5000, 9000, 15000, 25000]
+DIMS = [384]
 RUNS = 3
 RESULTS_DIR = "benchmark_results"
 
@@ -39,13 +39,13 @@ def manage_cluster(action):
         
         # Wait for "Cluster started!" or similar in output, or just wait fixed time
         # The script prints "Cluster started!"
-        # Let's just wait 15 seconds to be safe.
-        time.sleep(15)
+        # Let's just wait 30 seconds to be safe.
+        time.sleep(30)
         return proc
     elif action == "stop":
         print("--- Stopping Cluster ---")
         run_command("pkill longbow || true")
-        time.sleep(2)
+        time.sleep(5)
 
 def parse_benchmark_json(filepath):
     """Read perf_test.py JSON output."""

@@ -5,6 +5,8 @@ package simd
 import (
 	"math"
 	"unsafe"
+
+	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
 // AVX2 optimized Euclidean distance
@@ -45,6 +47,11 @@ func euclideanAVX512(a, b []float32) float32 {
 	}
 	sum := l2SquaredAVX512(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a))
 	return float32(math.Sqrt(float64(sum)))
+}
+
+// AVX512 optimized Euclidean distance for 384 dims
+func euclidean384AVX512(a, b []float32) float32 {
+	return euclidean384AVX512Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]))
 }
 
 // AVX2 optimized Cosine distance
@@ -150,6 +157,11 @@ func dotAVX512(a, b []float32) float32 {
 	}
 
 	return sum
+}
+
+// AVX512 optimized dot product for 384 dims
+func dot384AVX512(a, b []float32) float32 {
+	return dot384AVX512Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]))
 }
 
 // AVX2 optimized Batch Euclidean distance
@@ -354,6 +366,14 @@ func dotNEON(a, b []float32) float32 {
 	return dotGeneric(a, b)
 }
 
+func euclidean384NEON(a, b []float32) float32 {
+	return euclideanGeneric(a, b)
+}
+
+func dot384NEON(a, b []float32) float32 {
+	return dotGeneric(a, b)
+}
+
 func euclideanBatchNEON(query []float32, vectors [][]float32, results []float32) {
 	euclideanBatchGeneric(query, vectors, results)
 }
@@ -488,3 +508,82 @@ func adcBatchAVX2Kernel(table unsafe.Pointer, codes unsafe.Pointer, m int, resul
 
 //go:noescape
 func adcBatchAVX512Kernel(table unsafe.Pointer, codes unsafe.Pointer, m int, results unsafe.Pointer, n int)
+
+//go:noescape
+func euclidean384AVX512Kernel(a, b unsafe.Pointer) float32
+
+//go:noescape
+func dot384AVX512Kernel(a, b unsafe.Pointer) float32
+
+// FP16 AVX implementations
+func euclideanF16AVX2(a, b []float16.Num) float32 {
+	if !features.HasAVX2 {
+		return euclideanF16Unrolled4x(a, b)
+	}
+	if len(a) == 0 {
+		return 0
+	}
+	return euclideanF16AVX2Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a))
+}
+
+func euclideanF16AVX512(a, b []float16.Num) float32 {
+	if !features.HasAVX512 {
+		return euclideanF16AVX2(a, b)
+	}
+	if len(a) == 0 {
+		return 0
+	}
+	return euclideanF16AVX512Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a))
+}
+
+func dotF16AVX2(a, b []float16.Num) float32 {
+	if !features.HasAVX2 {
+		return dotF16Unrolled4x(a, b)
+	}
+	if len(a) == 0 {
+		return 0
+	}
+	return dotF16AVX2Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a))
+}
+
+func dotF16AVX512(a, b []float16.Num) float32 {
+	if !features.HasAVX512 {
+		return dotF16AVX2(a, b)
+	}
+	if len(a) == 0 {
+		return 0
+	}
+	return dotF16AVX512Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a))
+}
+
+func cosineF16AVX2(a, b []float16.Num) float32 {
+	dot := dotF16AVX2(a, b)
+	normA := dotF16AVX2(a, a)
+	normB := dotF16AVX2(b, b)
+	if normA <= 0 || normB <= 0 {
+		return 1.0
+	}
+	return 1.0 - (dot / float32(math.Sqrt(float64(normA)*float64(normB))))
+}
+
+func cosineF16AVX512(a, b []float16.Num) float32 {
+	dot := dotF16AVX512(a, b)
+	normA := dotF16AVX512(a, a)
+	normB := dotF16AVX512(b, b)
+	if normA <= 0 || normB <= 0 {
+		return 1.0
+	}
+	return 1.0 - (dot / float32(math.Sqrt(float64(normA)*float64(normB))))
+}
+
+//go:noescape
+func euclideanF16AVX2Kernel(a, b unsafe.Pointer, n int) float32
+
+//go:noescape
+func euclideanF16AVX512Kernel(a, b unsafe.Pointer, n int) float32
+
+//go:noescape
+func dotF16AVX2Kernel(a, b unsafe.Pointer, n int) float32
+
+//go:noescape
+func dotF16AVX512Kernel(a, b unsafe.Pointer, n int) float32

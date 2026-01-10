@@ -1,129 +1,151 @@
 package store
 
-
 import (
-	"fmt"
 	"math/rand"
 	"testing"
-	"time"
 
-	"github.com/coder/hnsw"
+	"github.com/23skdu/longbow/internal/simd"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-func TestPQIntegration_EndToEnd(t *testing.T) {
-	fmt.Println("Step 1: Setup Data")
-	dim := 128
-	count := 50 // Minimal
-	trainSize := 20
+// TestPQ_EndToEnd verifies the full lifecycle of Product Quantization:
+// 1. Initial ingestion (uncompressed)
+// 2. Training PQ and backfilling
+// 3. New ingestion (compressed on the fly)
+// 4. Search accuracy (Recall vs Exact)
+func TestPQ_EndToEnd(t *testing.T) {
+	// 1. Setup
+	dims := 128
+	pqM := 16 // 16 subspaces -> 8 dim per subspace
+	pqK := 256
+	numVecs := 1000
+	trainVecs := 500
 
-	vectors := make([][]float32, count)
-	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+	config := DefaultArrowHNSWConfig()
+	config.PQM = pqM
+	config.PQK = pqK
+	config.Dims = dims
+	// Start disabled, enable later via TrainPQ
+	config.PQEnabled = false
 
-	for i := 0; i < count; i++ {
-		vec := make([]float32, dim)
-		for j := 0; j < dim; j++ {
-			vec[j] = rng.Float32()
-		}
-		vectors[i] = vec
-	}
+	// Mock Dataset/LocationStore setup
+	locStore := NewChunkedLocationStore()
+	// Dataset is used for GetVector fallback, but since we verified InsertWithVector stores data
+	// in GraphData (VectorsChunk), we might get away with nil Dataset for HNSW operations
+	// IF the vectors are present in GraphData.
+	// However, getVector checks locationStore then dataset.
+	// Let's rely on GraphData being populated by InsertWithVector.
+	hnsw := NewArrowHNSW(nil, config, locStore)
 
-	fmt.Println("Step 2: Create Index")
-	// 2. Create Index
-	ds := &Dataset{Name: "test_pq"}
-	index := NewHNSWIndexWithCapacity(ds, count)
-
-	fmt.Println("Step 3: Train PQ")
-	// 3. Train PQ externally (before adding to graph to maintain dimension consistency)
-	cfg := &PQConfig{Dimensions: dim, NumSubVectors: 8, NumCentroids: 16}
-	encoder, err := TrainPQEncoder(cfg, vectors[:trainSize], 2)
-	if err != nil {
-		t.Fatalf("TrainPQ error: %v", err)
-	}
-	index.SetPQEncoder(encoder)
-
-	fmt.Println("Step 4: Add vectors (Packed)")
-	// 4. Add vectors (Packed)
-	for i := 0; i < count; i++ {
-		vec := vectors[i]
-		codes := encoder.Encode(vec)
-		index.pqCodesMu.Lock()
-		if index.pqCodes == nil {
-			index.pqCodes = make([][]uint8, 0)
-		}
-		if int(i) >= len(index.pqCodes) {
-			targetLen := int(i) + 1
-			newCodeSlice := make([][]uint8, targetLen)
-			copy(newCodeSlice, index.pqCodes)
-			index.pqCodes = newCodeSlice
-		}
-		index.pqCodes[i] = codes
-		index.pqCodesMu.Unlock()
-
-		packed := PackBytesToFloat32s(codes)
-		index.Graph.Add(hnsw.MakeNode(VectorID(i), packed))
-		index.nextVecID.Add(1)
-	}
-
-	fmt.Println("Step 5: Search")
-	// 5. Search
-	queryIdx := trainSize + 5
-	queryVec := vectors[queryIdx]
-	qCodes := encoder.Encode(queryVec)
-	qPacked := PackBytesToFloat32s(qCodes)
-
-	results := index.Graph.Search(qPacked, 5)
-	found := false
-	for _, res := range results {
-		if int(res.Key) == queryIdx {
-			found = true
-			break
+	// 2. Generate Random Data
+	rng := rand.New(rand.NewSource(42)) // Fixed seed for reproducibility
+	vectors := make([][]float32, numVecs)
+	for i := 0; i < numVecs; i++ {
+		vectors[i] = make([]float32, dims)
+		for j := 0; j < dims; j++ {
+			vectors[i][j] = float32(rng.NormFloat64())
 		}
 	}
-	if !found {
-		t.Logf("PQ Search failed to find exact match for vector %d (Might happen with low Ksub/N, acceptable for integration check)", queryIdx)
-	}
-}
 
-func BenchmarkPQSearch(b *testing.B) {
-	dim := 128
-	count := 100 // Minimal
+	// 3. Initial Ingestion (0 to trainVecs)
+	for i := 0; i < trainVecs; i++ {
+		err := hnsw.InsertWithVector(uint32(i), vectors[i], int(rng.Int31n(4)))
+		require.NoError(t, err)
+	}
+
+	// Verify not yet quantized
+	gd := hnsw.data.Load()
+	require.NotNil(t, gd)
+	assert.Nil(t, gd.VectorsPQ, "VectorsPQ should be nil before training")
+
+	// 4. Train PQ
+	// We use the first batch as training data
+	err := hnsw.TrainPQ(vectors[:trainVecs])
+	require.NoError(t, err, "TrainPQ failed")
+
+	// Verify Configuration Updated
+	assert.True(t, hnsw.config.PQEnabled, "PQEnabled should be true after training")
+	assert.NotNil(t, hnsw.pqEncoder, "PQEncoder should be initialized")
+
+	// Verify Backfill
+	gd = hnsw.data.Load()
+	require.NotNil(t, gd.VectorsPQ, "VectorsPQ should be allocated after training")
+
+	// Check a few existing vectors
+	for i := 0; i < trainVecs; i++ {
+		code := gd.GetVectorPQ(uint32(i))
+		require.NotNil(t, code, "Backfilled vector %d should have PQ code", i)
+		assert.Equal(t, pqM, len(code), "PQ code length mismatch")
+	}
+
+	// 5. New Ingestion (trainVecs to numVecs)
+	for i := trainVecs; i < numVecs; i++ {
+		err := hnsw.InsertWithVector(uint32(i), vectors[i], int(rng.Int31n(4)))
+		require.NoError(t, err)
+
+		// Verify Quantized immediately
+		gd = hnsw.data.Load()
+		code := gd.GetVectorPQ(uint32(i))
+		require.NotNil(t, code, "New vector %d should have PQ code", i)
+	}
+
+	// 6. Search Verification
+	// We search for random vectors from the dataset and expect the ID to be in top results
+	// Recall checks
+	successCount := 0
+	numQueries := 50
 	k := 10
 
-	vectors := make([][]float32, count)
-	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
-	for i := 0; i < count; i++ {
-		vec := make([]float32, dim)
-		for j := 0; j < dim; j++ {
-			vec[j] = rng.Float32()
+	for i := 0; i < numQueries; i++ {
+		queryIdx := rng.Intn(numVecs)
+		queryVec := vectors[queryIdx]
+
+		// Perform Search
+		results, err := hnsw.Search(queryVec, k, 100, nil)
+		require.NoError(t, err)
+
+		// Check if queryIdx is in results
+		found := false
+		for _, res := range results {
+			if uint32(res.ID) == uint32(queryIdx) {
+				found = true
+				break
+			}
 		}
-		vectors[i] = vec
+		if found {
+			successCount++
+		}
 	}
 
-	ds := &Dataset{Name: "bench_pq"}
-	index := NewHNSWIndexWithCapacity(ds, count)
+	// PQ is lossy, but retrieving the exact vector itself with HNSW and adequate M should have high recall.
+	recall := float64(successCount) / float64(numQueries)
+	t.Logf("PQ Recall@%d (Self-Search): %.2f", k, recall)
+	assert.Greater(t, recall, 0.5, "Recall should be decent even with PQ")
 
-	cfg := &PQConfig{Dimensions: dim, NumSubVectors: 8, NumCentroids: 16}
-	encoder, _ := TrainPQEncoder(cfg, vectors[:50], 2)
-	index.SetPQEncoder(encoder)
+	// 7. Verify Distance Approximation
+	// Pick a vector and calculate exact L2 vs ADC result
+	testID := uint32(0)
+	testVec := vectors[0]
+	code := gd.GetVectorPQ(testID)
+	// We need another vector to compute distance FROM
+	queryVec := vectors[1]
 
-	index.pqCodesMu.Lock()
-	index.pqCodes = make([][]uint8, count)
-	index.pqCodesMu.Unlock()
+	// Exact Distance
+	exactDist := simd.EuclideanDistance(queryVec, testVec)
+	exactDistSq := exactDist * exactDist
 
-	for i := 0; i < count; i++ {
-		codes := encoder.Encode(vectors[i])
-		index.pqCodes[i] = codes
-		packed := PackBytesToFloat32s(codes)
-		index.Graph.Add(hnsw.MakeNode(VectorID(i), packed))
-		index.nextVecID.Add(1)
-	}
+	// ADC Distance
+	table, err := hnsw.pqEncoder.BuildADCTable(queryVec)
+	require.NoError(t, err)
+	pqDist, err := hnsw.pqEncoder.ADCDistance(table, code)
+	require.NoError(t, err)
 
-	qVec := vectors[0]
-	qCodes := encoder.Encode(qVec)
-	qPacked := PackBytesToFloat32s(qCodes)
+	t.Logf("Exact DistSq: %.4f, PQ ADC Dist: %.4f", exactDistSq, pqDist)
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		index.Graph.Search(qPacked, k)
+	// They should be somewhat close, but hard to assert strictly without loose tolerance.
+	// Just asserting no error and non-zero (unless identical).
+	if exactDistSq > 0.0001 {
+		assert.Greater(t, pqDist, float32(0.0))
 	}
 }

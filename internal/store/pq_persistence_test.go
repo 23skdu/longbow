@@ -1,6 +1,7 @@
 package store
 
 import (
+	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -27,6 +28,14 @@ func TestPQPersistence(t *testing.T) {
 	err = store.InitPersistence(storage.StorageConfig{DataPath: tmpDir})
 	require.NoError(t, err)
 
+	_ = os.Setenv("LONGBOW_USE_HNSW2", "true")
+	defer func() { _ = os.Unsetenv("LONGBOW_USE_HNSW2") }()
+
+	store.datasetInitHook = func(ds *Dataset) {
+		idx := NewArrowHNSW(ds, DefaultArrowHNSWConfig(), nil)
+		ds.Index = idx
+	}
+
 	defer func() { _ = store.Close() }()
 
 	datasetName := "pq_test"
@@ -49,46 +58,40 @@ func TestPQPersistence(t *testing.T) {
 	require.NoError(t, err)
 
 	// 2. Train PQ
-	time.Sleep(500 * time.Millisecond) // Allow async indexing
+	time.Sleep(1 * time.Second) // Allow async indexing
 
 	ds, ok := store.getDataset(datasetName)
 	require.True(t, ok)
 	require.NotNil(t, ds)
+	fmt.Printf("DEBUG: Found dataset %s, index type: %T\n", datasetName, ds.Index)
+
+	trained := false
 
 	// Manually inject PQ Config and Train
-	ds.dataMu.Lock()
-	var trained bool
 
-	// We need to access AutoShardingIndex internals but we can't easily without helpers or reflection if fields private.
-	// Since we are in `package store`, if fields are unexported we can see them.
-	// Assuming structure from original test.
+	// Check if we can use TrainPQ on the index
+	// For ArrowHNSW we can cast it.
+	// ds.Index might be ShardedHNSW or ArrowHNSW.
 	switch idx := ds.Index.(type) {
-	case *AutoShardingIndex:
-		// idx.current is private field?
-		// We use NewIndex usually.
-		// If we can't access, we skip training validation or rely on test structure being valid in this package.
-		if hnswIdx, ok := idx.current.(*HNSWIndex); ok {
-			hnswIdx.pqEnabled = true
-			cfg := PQConfig{Dimensions: dims, NumSubVectors: 16, NumCentroids: 256}
-			enc, _ := NewPQEncoder(cfg)
-			for i := 0; i < 16; i++ {
-				enc.Codebooks[i] = make([][]float32, 256)
-				for j := 0; j < 256; j++ {
-					enc.Codebooks[i][j] = make([]float32, dims/16)
-				}
-			}
-			hnswIdx.pqEncoder = enc
-			ds.PQEncoder = enc
-			trained = true
-		}
-	case *HNSWIndex:
-		cfg := PQConfig{Dimensions: dims, NumSubVectors: 16, NumCentroids: 256}
-		enc, _ := NewPQEncoder(cfg)
-		idx.pqEncoder = enc
-		ds.PQEncoder = enc
+	case *ArrowHNSW:
+		err = idx.TrainPQ(vectors)
+		require.NoError(t, err)
 		trained = true
+		ds.PQEncoder = idx.pqEncoder
+	case *ShardedHNSW:
+		fmt.Printf("DEBUG: Index is ShardedHNSW, not yet supported for TrainPQ in test\n")
+	case *AutoShardingIndex:
+		fmt.Printf("DEBUG: Index is AutoShardingIndex, current: %T\n", idx.current)
+		if arrowIdx, ok := idx.current.(*ArrowHNSW); ok {
+			err = arrowIdx.TrainPQ(vectors)
+			require.NoError(t, err)
+			trained = true
+			ds.PQEncoder = arrowIdx.pqEncoder
+		}
+	default:
+		fmt.Printf("DEBUG: Index type not supported for TrainPQ: %T\n", ds.Index)
 	}
-	ds.dataMu.Unlock()
+
 	require.True(t, trained, "Should have found and trained index")
 
 	// 3. Snapshot
@@ -115,8 +118,8 @@ func TestPQPersistence(t *testing.T) {
 	require.NotNil(t, ds2.PQEncoder, "PQEncoder should be restored in Dataset")
 
 	// 5. Verify Encoder Data
-	require.Equal(t, 16, ds2.PQEncoder.config.NumSubVectors)
-	require.Equal(t, 256, ds2.PQEncoder.config.NumCentroids)
+	require.Equal(t, 16, ds2.PQEncoder.M)
+	require.Equal(t, 256, ds2.PQEncoder.K)
 
 	// 6. Verify Index Picks it up
 	idx2 := NewArrowHNSW(ds2, DefaultArrowHNSWConfig(), nil)

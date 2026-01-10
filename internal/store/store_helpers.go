@@ -10,7 +10,6 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/compute"
 	"github.com/apache/arrow-go/v18/arrow/memory"
-	"github.com/apache/arrow-go/v18/arrow/scalar"
 )
 
 // EnsureTimestampZeroCopy ensures the record has a timestamp column, adding one if missing (zero-copy optimized)
@@ -72,7 +71,7 @@ func MatchesFilters(rec arrow.RecordBatch, rowIdx int, filters []query.Filter) (
 		colIdx := indices[0]
 		col := rec.Column(colIdx)
 
-		match := checkFilterRow(col, rowIdx, f)
+		match := checkFilterRow(col, rowIdx, &f)
 		if !match {
 			return false, nil
 		}
@@ -80,7 +79,7 @@ func MatchesFilters(rec arrow.RecordBatch, rowIdx int, filters []query.Filter) (
 	return true, nil
 }
 
-func checkFilterRow(col arrow.Array, i int, f query.Filter) bool {
+func checkFilterRow(col arrow.Array, i int, f *query.Filter) bool {
 	if col.IsNull(i) {
 		return false
 	}
@@ -226,102 +225,15 @@ func extractVectorFromCol(rec arrow.RecordBatch, rowIdx int) ([]float32, error) 
 	return vec, nil
 }
 
-// filterRecord applies filters to a batch using Arrow Compute.
-func filterRecord(ctx context.Context, _ memory.Allocator, rec arrow.RecordBatch, filters []query.Filter) (arrow.RecordBatch, error) {
+// filterRecord applies filters to a batch using query.VectorizedFilter.
+func filterRecord(ctx context.Context, mem memory.Allocator, rec arrow.RecordBatch, filters []query.Filter) (arrow.RecordBatch, error) {
 	if len(filters) == 0 {
 		rec.Retain()
 		return rec, nil
 	}
 
-	var mask *array.Boolean
-	defer func() {
-		if mask != nil {
-			mask.Release()
-		}
-	}()
-
-	for _, f := range filters {
-		// Find column index
-		indices := rec.Schema().FieldIndices(f.Field)
-		if len(indices) == 0 {
-			return nil, fmt.Errorf("field %s not found", f.Field)
-		}
-		col := rec.Column(indices[0])
-
-		// Create Datum for column and value
-		colDatum := compute.NewDatum(col)
-
-		var valDatum compute.Datum
-		var sc scalar.Scalar
-
-		switch col.DataType().ID() {
-		case arrow.INT64:
-			v, _ := strconv.ParseInt(f.Value, 10, 64)
-			sc = scalar.NewInt64Scalar(v)
-		case arrow.INT32:
-			v, _ := strconv.ParseInt(f.Value, 10, 32)
-			sc = scalar.NewInt32Scalar(int32(v))
-		case arrow.FLOAT32:
-			v, _ := strconv.ParseFloat(f.Value, 32)
-			sc = scalar.NewFloat32Scalar(float32(v))
-		case arrow.FLOAT64:
-			v, _ := strconv.ParseFloat(f.Value, 64)
-			sc = scalar.NewFloat64Scalar(v)
-		case arrow.STRING:
-			sc = scalar.NewStringScalar(f.Value)
-		default:
-			return nil, fmt.Errorf("unsupported filter type: %s", col.DataType())
-		}
-
-		valDatum = compute.NewDatum(sc)
-		// scalar does not need release if it's just Go value wrapper usually, but arrow scalars might.
-		// Checking scalar interface... typically yes if it holds buffers.
-		// For simple types it might be fine, but safe to not manually release unless we know.
-		// Actually sc should be kept alive for valDatum?
-		// compute.NewDatum takes interface{}.
-
-		op := "equal"
-		switch f.Operator {
-		case "=":
-			op = "equal"
-		case "!=":
-			op = "not_equal"
-		case ">":
-			op = "greater"
-		case ">=":
-			op = "greater_equal"
-		case "<":
-			op = "less"
-		case "<=":
-			op = "less_equal"
-		}
-
-		res, err := compute.CallFunction(ctx, op, nil, colDatum, valDatum)
-		if err != nil {
-			return nil, err
-		}
-		currentMask := res.(*compute.ArrayDatum).MakeArray().(*array.Boolean)
-
-		if mask == nil {
-			mask = currentMask
-		} else {
-			// AND with previous mask
-			andRes, err := compute.CallFunction(ctx, "and", nil, compute.NewDatum(mask.Data()), compute.NewDatum(currentMask.Data()))
-			currentMask.Release()
-			if err != nil {
-				return nil, err
-			}
-			oldMask := mask
-			mask = andRes.(*compute.ArrayDatum).MakeArray().(*array.Boolean)
-			oldMask.Release()
-		}
-	}
-
-	filterRes, err := compute.CallFunction(ctx, "filter", nil, compute.NewDatum(rec), compute.NewDatum(mask.Data()))
-	if err != nil {
-		return nil, err
-	}
-	return filterRes.(*compute.RecordDatum).Value, nil
+	vf := query.NewVectorizedFilter(mem)
+	return vf.Apply(ctx, rec, filters)
 }
 
 // filterRecordWithMask applies a pre-computed boolean mask to filter the record batch.

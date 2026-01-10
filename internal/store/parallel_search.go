@@ -198,13 +198,23 @@ func (h *HNSWIndex) processChunk(query []float32, neighbors []hnsw.Node[VectorID
 
 		if batchCount > 0 {
 			batchResults := make([]float32, batchCount)
-			h.pqEncoder.ADCDistanceBatch(table, flatCodes[:batchCount*m], batchResults)
-
-			bj := 0
-			for i := range vecs {
-				if validForBatch[i] {
-					scores[i] = batchResults[bj]
-					bj++
+			if err := h.pqEncoder.ADCDistanceBatch(table, flatCodes[:batchCount*m], batchResults); err != nil {
+				// Fallback
+				distFunc := h.GetDistanceFunc()
+				bj := 0
+				for i := range vecs {
+					if validForBatch[i] {
+						scores[i] = distFunc(query, vecs[i])
+						bj++
+					}
+				}
+			} else {
+				bj := 0
+				for i := range vecs {
+					if validForBatch[i] {
+						scores[i] = batchResults[bj]
+						bj++
+					}
 				}
 			}
 		}

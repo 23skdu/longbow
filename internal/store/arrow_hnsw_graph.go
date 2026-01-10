@@ -6,6 +6,8 @@ import (
 	"sync/atomic"
 
 	"github.com/23skdu/longbow/internal/memory"
+	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/pq"
 	"github.com/23skdu/longbow/internal/query"
 )
 
@@ -45,6 +47,7 @@ type ArrowHNSWConfig struct {
 	RefinementFactor        float64 // Changed to float64 to match usage
 	KeepPrunedConnections   bool
 	BQEnabled               bool
+	Dims                    int // Explicit dimension size if known
 }
 
 func DefaultArrowHNSWConfig() ArrowHNSWConfig {
@@ -76,22 +79,34 @@ type ArrowSearchContext struct {
 	scratchVecs          [][]float32
 	scratchVecsSQ8       [][]byte
 
-	querySQ8   []byte
-	queryBQ    []uint64
-	pruneDepth int
+	querySQ8       []byte
+	queryBQ        []uint64
+	adcTable       []float32
+	scratchPQCodes []byte
+	pruneDepth     int
 }
 
 func NewArrowSearchContext() *ArrowSearchContext {
 	return &ArrowSearchContext{
-		visited:    NewArrowBitset(10000),
-		candidates: NewFixedHeap(100),
-		resultSet:  NewMaxHeap(100),
+		visited:          NewArrowBitset(10000),
+		candidates:       NewFixedHeap(400),
+		resultSet:        NewMaxHeap(400),
+		scratchIDs:       make([]uint32, 0, MaxNeighbors),
+		scratchDists:     make([]float32, 0, MaxNeighbors),
+		scratchNeighbors: make([]uint32, 0, MaxNeighbors),
+		scratchResults:   make([]Candidate, 0, 400),
+		scratchSelected:  make([]Candidate, 0, 100),
+		scratchDiscarded: make([]Candidate, 0, 100),
+		scratchVecs:      make([][]float32, 0, MaxNeighbors),
+		scratchVecsSQ8:   make([][]byte, 0, MaxNeighbors),
+		querySQ8:         make([]byte, 0, 1536), // Common high-dim size
 	}
 }
 
 func NewArrowSearchContextPool() *sync.Pool {
 	return &sync.Pool{
 		New: func() interface{} {
+			metrics.HNSWSearchPoolNewTotal.Inc()
 			return NewArrowSearchContext()
 		},
 	}
@@ -99,7 +114,7 @@ func NewArrowSearchContextPool() *sync.Pool {
 
 func (c *ArrowSearchContext) Reset() {
 	if c.visited != nil {
-		c.visited.Clear()
+		c.visited.ClearSIMD()
 	}
 	if c.candidates != nil {
 		c.candidates.Clear()
@@ -107,9 +122,25 @@ func (c *ArrowSearchContext) Reset() {
 	if c.resultSet != nil {
 		c.resultSet.Clear()
 	}
+	c.results = c.results[:0]
 	c.scratchIDs = c.scratchIDs[:0]
 	c.scratchDists = c.scratchDists[:0]
 	c.scratchNeighbors = c.scratchNeighbors[:0]
+	c.scratchResults = c.scratchResults[:0]
+	c.scratchSelected = c.scratchSelected[:0]
+	c.scratchRemaining = c.scratchRemaining[:0]
+	// 2D slices: Reset length to 0. NOTE: Inner slices are not reclaimed, but we overwrite them anyway
+	c.scratchSelectedVecs = c.scratchSelectedVecs[:0]
+	c.scratchRemainingVecs = c.scratchRemainingVecs[:0]
+	c.scratchDiscarded = c.scratchDiscarded[:0]
+	c.scratchVecs = c.scratchVecs[:0]
+	c.scratchVecsSQ8 = c.scratchVecsSQ8[:0]
+
+	c.querySQ8 = c.querySQ8[:0]
+	c.queryBQ = c.queryBQ[:0]
+	c.adcTable = c.adcTable[:0]
+	c.scratchPQCodes = c.scratchPQCodes[:0]
+	c.pruneDepth = 0
 }
 
 type ArrowHNSW struct {
@@ -133,8 +164,9 @@ type ArrowHNSW struct {
 
 	quantizer         *ScalarQuantizer
 	sq8TrainingBuffer [][]float32
-	pqEncoder         *PQEncoder
+	pqEncoder         *pq.PQEncoder
 	bqEncoder         *BQEncoder
+	sq8Ready          atomic.Bool
 
 	locationStore *ChunkedLocationStore
 
@@ -186,7 +218,7 @@ const (
 	MaxNeighbors   = 448
 )
 
-func NewGraphData(capacity, dims int, sq8Enabled, pqEnabled, bqEnabled bool) *GraphData {
+func NewGraphData(capacity, dims int, sq8Enabled, pqEnabled bool, pqDims int, bqEnabled bool) *GraphData {
 	numChunks := (capacity + ChunkSize - 1) / ChunkSize
 	if numChunks < 1 {
 		numChunks = 1
@@ -202,6 +234,7 @@ func NewGraphData(capacity, dims int, sq8Enabled, pqEnabled, bqEnabled bool) *Gr
 	gd := &GraphData{
 		Capacity:     numChunks * ChunkSize,
 		Dims:         dims,
+		PQDims:       pqDims,
 		SlabArena:    slab,
 		Uint8Arena:   memory.NewTypedArena[uint8](slab),
 		Float32Arena: memory.NewTypedArena[float32](slab),
@@ -216,7 +249,7 @@ func NewGraphData(capacity, dims int, sq8Enabled, pqEnabled, bqEnabled bool) *Gr
 		if sq8Enabled {
 			gd.VectorsSQ8 = make([]uint64, numChunks)
 		}
-		if pqEnabled {
+		if pqEnabled && pqDims > 0 {
 			gd.VectorsPQ = make([]uint64, numChunks)
 		}
 		if bqEnabled {
@@ -286,17 +319,16 @@ func (h *ArrowHNSW) CleanupTombstones(maxNodes int) int {
 			if countsChunk == nil {
 				continue
 			}
-			countAddr := &(*countsChunk)[cOff]
+			countAddr := &countsChunk[cOff]
 			count := int(atomic.LoadInt32(countAddr))
 			if count == 0 {
 				continue
 			}
 
-			neighborsChunkPtr := data.GetNeighborsChunk(lvl, cID)
-			if neighborsChunkPtr == nil {
+			neighborsChunk := data.GetNeighborsChunk(lvl, cID)
+			if neighborsChunk == nil {
 				continue
 			}
-			neighborsChunk := *neighborsChunkPtr
 
 			baseIdx := int(cOff) * MaxNeighbors
 
@@ -319,7 +351,7 @@ func (h *ArrowHNSW) CleanupTombstones(maxNodes int) int {
 			}
 
 			// 2. Seqlock: Begin Write (Odd)
-			verAddr := &(*versionsChunk)[cOff]
+			verAddr := &versionsChunk[cOff]
 			atomic.AddUint32(verAddr, 1)
 
 			// 3. Compact the list
@@ -384,23 +416,49 @@ func (g *GraphData) Close() error {
 // Clone creates a deep copy of GraphData with new capacity.
 // Note: This is expensive and involves full Arena copy or re-allocation.
 // For SlabArena, we might just create new Arena and copy active data.
-func (gd *GraphData) Clone(minCap, targetDims int, sq8Enabled, pqEnabled, bqEnabled bool) *GraphData {
-	// Refactored Clone for Arena:
-	// Allocating new GraphData implies new Arena.
-	newGD := NewGraphData(minCap, targetDims, sq8Enabled, pqEnabled, bqEnabled)
+func (gd *GraphData) Clone(minCap, targetDims int, sq8Enabled, pqEnabled bool, pqDims int, bqEnabled bool) *GraphData {
+	// Reuse the same arenas to keep offsets valid
+	// gd.SlabArena.AddRef() // SlabArena is simple struct/pointer, no ref counting needed exposed.
+	// Actually SlabArena is a pointer. Reusing it is fine.
+	// We do NOT use NewGraphData because it creates a new SlabArena.
 
-	// Copy data from old arenas to new arenas?
-	// This is complex. For now, Grow() strategy might be:
-	// 1. New GraphData struct
-	// 2. Share same SlabArena? No, Resize implies larger arrays (Levels, Neighbors).
-	// But Arenas are append-only.
-	// We only need to grow the 'Directory' arrays (Levels, Neighbors, Vectors).
-	// The Chunks themselves stay valid in the SAME Arena.
-	// So we just copy the slice headers (Vectors, Neighbors) which contain Arena Offsets.
+	numChunks := (minCap + ChunkSize - 1) / ChunkSize
+	if numChunks < 1 {
+		numChunks = 1
+	}
 
-	// Copy Directory Arrays
-	// Use atomic load to avoid race with concurrent ensureChunk (which uses CAS)
-	// We simulate copy() semantics by iterating up to min(len(src), len(dst))
+	newGD := &GraphData{
+		Capacity:     numChunks * ChunkSize,
+		Dims:         targetDims,
+		PQDims:       pqDims,
+		SlabArena:    gd.SlabArena,
+		Uint8Arena:   gd.Uint8Arena,
+		Float32Arena: gd.Float32Arena,
+		Uint32Arena:  gd.Uint32Arena,
+		Int32Arena:   gd.Int32Arena,
+		Uint64Arena:  gd.Uint64Arena,
+
+		Levels: make([]uint64, numChunks),
+	}
+
+	if targetDims > 0 {
+		newGD.Vectors = make([]uint64, numChunks)
+		if sq8Enabled {
+			newGD.VectorsSQ8 = make([]uint64, numChunks)
+		}
+		if pqEnabled && pqDims > 0 {
+			newGD.VectorsPQ = make([]uint64, numChunks)
+		}
+		if bqEnabled {
+			newGD.VectorsBQ = make([]uint64, numChunks)
+		}
+	}
+
+	for i := 0; i < ArrowMaxLayers; i++ {
+		newGD.Neighbors[i] = make([]uint64, numChunks)
+		newGD.Counts[i] = make([]uint64, numChunks)
+		newGD.Versions[i] = make([]uint64, numChunks)
+	}
 
 	// Levels
 	limit := len(gd.Levels)
@@ -503,8 +561,17 @@ func (gd *GraphData) Clone(minCap, targetDims int, sq8Enabled, pqEnabled, bqEnab
 func (h *ArrowHNSW) Grow(minCap, dims int) {
 	h.growMu.Lock()
 	defer h.growMu.Unlock()
+	h.growNoLock(minCap, dims)
+}
+
+func (h *ArrowHNSW) growNoLock(minCap, dims int) {
 	data := h.data.Load()
-	if data.Capacity >= minCap && data.Dims == dims {
+	// Check if we need to upgrade schema (enable PQ/SQ8/BQ)
+	needsUpgrade := (h.config.PQEnabled && data.VectorsPQ == nil) ||
+		(h.config.SQ8Enabled && data.VectorsSQ8 == nil) ||
+		(h.config.BQEnabled && data.VectorsBQ == nil)
+
+	if !needsUpgrade && data.Capacity >= minCap && data.Dims == dims && data.PQDims == h.config.PQM {
 		return
 	}
 	newCap := data.Capacity
@@ -514,30 +581,32 @@ func (h *ArrowHNSW) Grow(minCap, dims int) {
 			newCap = ((newCap / ChunkSize) + 1) * ChunkSize
 		}
 	}
-	newGD := data.Clone(newCap, dims, h.config.SQ8Enabled, h.config.PQEnabled, h.config.BQEnabled) // fixed config
+	newGD := data.Clone(newCap, dims, h.config.SQ8Enabled, h.config.PQEnabled, h.config.PQM, h.config.BQEnabled) // fixed config
 	h.data.Store(newGD)
 }
 
 // Helper to safely get a pointer to the slice header for a chunk.
 // WARNING: The returned slice is only valid until the arena is reallocated/moved (though SlabArena handles stability).
-func (gd *GraphData) GetNeighborsChunk(layer int, chunkID uint32) *[]uint32 {
+func (gd *GraphData) GetNeighborsChunk(layer int, chunkID uint32) []uint32 {
+	if layer >= len(gd.Neighbors) || int(chunkID) >= len(gd.Neighbors[layer]) {
+		return nil
+	}
 	offset := atomic.LoadUint64(&gd.Neighbors[layer][chunkID])
 	if offset == 0 {
 		return nil
 	}
-	// Reconstruct slice: ChunkSize * MaxNeighbors
-	// Note: We use Unsafe Get from TypedArena.
-	// We construct a SliceRef.
 	ref := memory.SliceRef{
 		Offset: offset,
 		Len:    ChunkSize * MaxNeighbors,
 		Cap:    ChunkSize * MaxNeighbors,
 	}
-	slice := gd.Uint32Arena.Get(ref)
-	return &slice
+	return gd.Uint32Arena.Get(ref)
 }
 
-func (gd *GraphData) GetCountsChunk(layer int, chunkID uint32) *[]int32 {
+func (gd *GraphData) GetCountsChunk(layer int, chunkID uint32) []int32 {
+	if layer >= len(gd.Counts) || int(chunkID) >= len(gd.Counts[layer]) {
+		return nil
+	}
 	offset := atomic.LoadUint64(&gd.Counts[layer][chunkID])
 	if offset == 0 {
 		return nil
@@ -547,11 +616,13 @@ func (gd *GraphData) GetCountsChunk(layer int, chunkID uint32) *[]int32 {
 		Len:    ChunkSize,
 		Cap:    ChunkSize,
 	}
-	slice := gd.Int32Arena.Get(ref)
-	return &slice
+	return gd.Int32Arena.Get(ref)
 }
 
-func (gd *GraphData) GetVersionsChunk(layer int, chunkID uint32) *[]uint32 {
+func (gd *GraphData) GetVersionsChunk(layer int, chunkID uint32) []uint32 {
+	if layer >= len(gd.Versions) || int(chunkID) >= len(gd.Versions[layer]) {
+		return nil
+	}
 	offset := atomic.LoadUint64(&gd.Versions[layer][chunkID])
 	if offset == 0 {
 		return nil
@@ -561,11 +632,13 @@ func (gd *GraphData) GetVersionsChunk(layer int, chunkID uint32) *[]uint32 {
 		Len:    ChunkSize,
 		Cap:    ChunkSize,
 	}
-	slice := gd.Uint32Arena.Get(ref)
-	return &slice
+	return gd.Uint32Arena.Get(ref)
 }
 
-func (gd *GraphData) GetLevelsChunk(chunkID uint32) *[]uint8 {
+func (gd *GraphData) GetLevelsChunk(chunkID uint32) []uint8 {
+	if int(chunkID) >= len(gd.Levels) {
+		return nil
+	}
 	offset := atomic.LoadUint64(&gd.Levels[chunkID])
 	if offset == 0 {
 		return nil
@@ -575,11 +648,13 @@ func (gd *GraphData) GetLevelsChunk(chunkID uint32) *[]uint8 {
 		Len:    ChunkSize,
 		Cap:    ChunkSize,
 	}
-	slice := gd.Uint8Arena.Get(ref)
-	return &slice
+	return gd.Uint8Arena.Get(ref)
 }
 
-func (gd *GraphData) GetVectorsChunk(chunkID uint32) *[]float32 {
+func (gd *GraphData) GetVectorsChunk(chunkID uint32) []float32 {
+	if int(chunkID) >= len(gd.Vectors) {
+		return nil
+	}
 	offset := atomic.LoadUint64(&gd.Vectors[chunkID])
 	if offset == 0 {
 		return nil
@@ -589,11 +664,13 @@ func (gd *GraphData) GetVectorsChunk(chunkID uint32) *[]float32 {
 		Len:    uint32(ChunkSize * gd.Dims),
 		Cap:    uint32(ChunkSize * gd.Dims),
 	}
-	slice := gd.Float32Arena.Get(ref)
-	return &slice
+	return gd.Float32Arena.Get(ref)
 }
 
-func (gd *GraphData) GetVectorsSQ8Chunk(chunkID uint32) *[]byte {
+func (gd *GraphData) GetVectorsSQ8Chunk(chunkID uint32) []byte {
+	if int(chunkID) >= len(gd.VectorsSQ8) {
+		return nil
+	}
 	offset := atomic.LoadUint64(&gd.VectorsSQ8[chunkID])
 	if offset == 0 {
 		return nil
@@ -603,16 +680,17 @@ func (gd *GraphData) GetVectorsSQ8Chunk(chunkID uint32) *[]byte {
 		Len:    uint32(ChunkSize * gd.Dims),
 		Cap:    uint32(ChunkSize * gd.Dims),
 	}
-	slice := gd.Uint8Arena.Get(ref)
-	return &slice
+	return gd.Uint8Arena.Get(ref)
 }
 
-func (gd *GraphData) GetVectorsPQChunk(chunkID uint32) *[]byte {
+func (gd *GraphData) GetVectorsPQChunk(chunkID uint32) []byte {
+	if int(chunkID) >= len(gd.VectorsPQ) {
+		return nil
+	}
 	offset := atomic.LoadUint64(&gd.VectorsPQ[chunkID])
 	if offset == 0 {
 		return nil
 	}
-	// We use stored PQDims
 	if gd.PQDims == 0 {
 		return nil
 	}
@@ -621,25 +699,7 @@ func (gd *GraphData) GetVectorsPQChunk(chunkID uint32) *[]byte {
 		Len:    uint32(ChunkSize * gd.PQDims),
 		Cap:    uint32(ChunkSize * gd.PQDims),
 	}
-	slice := gd.Uint8Arena.Get(ref)
-	return &slice
-}
-
-// GetVectorPQ returns the PQ encoded vector for the given node ID.
-func (gd *GraphData) GetVectorPQ(id uint32, pqDims int) []byte {
-	cID := chunkID(id)
-	chunk := gd.GetVectorsPQChunk(cID)
-	if chunk == nil {
-		return nil
-	}
-
-	cOff := chunkOffset(id)
-	off := int(cOff) * pqDims
-	// Should check against actual chunk length if available or trust math
-	if off+pqDims > len(*chunk) {
-		return nil
-	}
-	return (*chunk)[off : off+pqDims]
+	return gd.Uint8Arena.Get(ref)
 }
 
 // GraphData doesn't track PQ metadata explicitly except Dims (which is vector dims).
@@ -659,22 +719,10 @@ func (gd *GraphData) GetVectorPQ(id uint32, pqDims int) []byte {
 // For Neighbors, it is ChunkSize * MaxNeighbors. Known.
 // For Levels, ChunkSize. Known.
 
-func (gd *GraphData) GetVectorSQ8(id uint32) []byte {
-	cID := chunkID(id)
-	chunk := gd.GetVectorsSQ8Chunk(cID)
-	if chunk == nil {
+func (gd *GraphData) GetVectorsBQChunk(chunkID uint32) []uint64 {
+	if int(chunkID) >= len(gd.VectorsBQ) {
 		return nil
 	}
-	cOff := chunkOffset(id)
-	dims := gd.Dims
-	start := int(cOff) * dims
-	if start+dims > len(*chunk) {
-		return nil
-	}
-	return (*chunk)[start : start+dims]
-}
-
-func (gd *GraphData) GetVectorsBQChunk(chunkID uint32) *[]uint64 {
 	offset := atomic.LoadUint64(&gd.VectorsBQ[chunkID])
 	if offset == 0 {
 		return nil
@@ -685,8 +733,7 @@ func (gd *GraphData) GetVectorsBQChunk(chunkID uint32) *[]uint64 {
 		Len:    uint32(ChunkSize * numWords),
 		Cap:    uint32(ChunkSize * numWords),
 	}
-	slice := gd.Uint64Arena.Get(ref)
-	return &slice
+	return gd.Uint64Arena.Get(ref)
 }
 
 // New API for tests
@@ -706,12 +753,12 @@ func (gd *GraphData) SetNeighbors(layer int, id uint32, neighbors []uint32) {
 		count = MaxNeighbors
 	}
 
-	copy((*chunk)[base:base+count], neighbors)
+	copy(chunk[base:base+count], neighbors)
 
 	// Update Count
 	cChunk := gd.GetCountsChunk(layer, cID)
 	if cChunk != nil {
-		atomic.StoreInt32(&(*cChunk)[cOff], int32(count))
+		atomic.StoreInt32(&cChunk[cOff], int32(count))
 	}
 }
 
@@ -728,8 +775,8 @@ func (gd *GraphData) GetNeighbors(layer int, id uint32, buffer []uint32) []uint3
 		return nil
 	}
 
-	verAddr := &(*versionsChunk)[cOff]
-	countAddr := &(*countsChunk)[cOff]
+	verAddr := &versionsChunk[cOff]
+	countAddr := &countsChunk[cOff]
 	baseIdx := int(cOff) * MaxNeighbors
 
 	for {
@@ -752,7 +799,7 @@ func (gd *GraphData) GetNeighbors(layer int, id uint32, buffer []uint32) []uint3
 
 		// Atomic copy
 		for i := 0; i < need; i++ {
-			res[i] = atomic.LoadUint32(&(*neighborsChunk)[baseIdx+i])
+			res[i] = atomic.LoadUint32(&neighborsChunk[baseIdx+i])
 		}
 
 		v2 := atomic.LoadUint32(verAddr)
@@ -771,12 +818,46 @@ func (gd *GraphData) GetVectorBQ(id uint32) []uint64 {
 	cOff := chunkOffset(id)
 	numWords := (gd.Dims + 63) / 64
 	start := int(cOff) * numWords
-	if start+numWords > len(*chunk) {
+	if start+numWords > len(chunk) {
 		return nil
 	}
 	// Return copy
 	res := make([]uint64, numWords)
-	copy(res, (*chunk)[start:start+numWords])
+	copy(res, chunk[start:start+numWords])
+	return res
+}
+
+func (gd *GraphData) GetVectorPQ(id uint32) []byte {
+	cID := chunkID(id)
+	chunk := gd.GetVectorsPQChunk(cID)
+	if chunk == nil {
+		return nil
+	}
+	cOff := chunkOffset(id)
+	m := gd.PQDims
+	start := int(cOff) * m
+	if start+m > len(chunk) {
+		return nil
+	}
+	res := make([]byte, m)
+	copy(res, chunk[start:start+m])
+	return res
+}
+
+func (gd *GraphData) GetVectorSQ8(id uint32) []byte {
+	cID := chunkID(id)
+	chunk := gd.GetVectorsSQ8Chunk(cID)
+	if chunk == nil {
+		return nil
+	}
+	cOff := chunkOffset(id)
+	dims := gd.Dims
+	start := int(cOff) * dims
+	if start+dims > len(chunk) {
+		return nil
+	}
+	res := make([]byte, dims)
+	copy(res, chunk[start:start+dims])
 	return res
 }
 
@@ -787,7 +868,7 @@ func (gd *GraphData) GetLevel(id uint32) int {
 		return -1
 	}
 	cOff := chunkOffset(id)
-	return int((*chunk)[cOff])
+	return int(chunk[cOff])
 }
 func (h *ArrowHNSW) ensureChunk(data *GraphData, cID, _ uint32, dims int) *GraphData {
 	// Use Double-Check Locking pattern with atomic CAS
@@ -813,6 +894,14 @@ func (h *ArrowHNSW) ensureChunk(data *GraphData, cID, _ uint32, dims int) *Graph
 		ref, err := data.Uint8Arena.AllocSlice(ChunkSize * dims)
 		if err == nil {
 			atomic.CompareAndSwapUint64(&data.VectorsSQ8[cID], 0, ref.Offset)
+		}
+	}
+
+	// PQ
+	if h.config.PQEnabled && data.PQDims > 0 && len(data.VectorsPQ) > int(cID) && atomic.LoadUint64(&data.VectorsPQ[cID]) == 0 {
+		ref, err := data.Uint8Arena.AllocSlice(ChunkSize * data.PQDims)
+		if err == nil {
+			atomic.CompareAndSwapUint64(&data.VectorsPQ[cID], 0, ref.Offset)
 		}
 	}
 
@@ -850,7 +939,7 @@ func (h *ArrowHNSW) ensureChunk(data *GraphData, cID, _ uint32, dims int) *Graph
 }
 
 // GetPQEncoder returns the PQ encoder if one exists.
-func (h *ArrowHNSW) GetPQEncoder() *PQEncoder {
+func (h *ArrowHNSW) GetPQEncoder() *pq.PQEncoder {
 	// No lock needed if pqEncoder is immutable after training?
 	// It is set during TrainPQ and never changed.
 	return h.pqEncoder

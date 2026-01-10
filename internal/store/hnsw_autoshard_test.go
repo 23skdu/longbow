@@ -1,6 +1,5 @@
 package store
 
-
 import (
 	"fmt"
 	"sync"
@@ -13,6 +12,7 @@ func TestShardedHNSW_AutoSplit(t *testing.T) {
 	cfg := DefaultShardedHNSWConfig()
 	cfg.NumShards = 1
 	cfg.ShardSplitThreshold = 100 // Small threshold for testing
+	cfg.UseRingSharding = false   // Force linear sharding for deterministic auto-split testing
 
 	ds := &Dataset{dataMu: sync.RWMutex{}, Name: "test_autosplit"}
 	sharded := NewShardedHNSW(cfg, ds)

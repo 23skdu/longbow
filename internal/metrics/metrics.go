@@ -260,6 +260,20 @@ var (
 		},
 	)
 
+	FlightZeroCopyBytesTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_flight_zero_copy_bytes_total",
+			Help: "Total bytes sent via zero-copy optimization",
+		},
+	)
+
+	DoPutZeroCopyPathTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_flight_doput_zerocopy_path_total",
+			Help: "Total number of batches processed via Zero-Copy (direct) path",
+		},
+	)
+
 	// Warmup Metrics
 	WarmupProgressPercent = promauto.NewGauge(
 		prometheus.GaugeOpts{
@@ -419,6 +433,21 @@ var (
 		},
 	)
 
+	HNSWBulkInsertDurationSeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_hnsw_bulk_insert_duration_seconds",
+			Help:    "Duration of HNSW bulk vector insertion",
+			Buckets: []float64{0.001, 0.01, 0.1, 0.5, 1, 5, 10, 30},
+		},
+	)
+
+	HNSWBulkVectorsProcessedTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_hnsw_bulk_vectors_processed_total",
+			Help: "Total number of vectors processed using bulk insert path",
+		},
+	)
+
 	HNSWNodesTotal = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "longbow_hnsw_nodes_total",
@@ -452,6 +481,55 @@ var (
 			Buckets: []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5},
 		},
 		[]string{"dataset", "query_type"}, // query_type: "vector", "hybrid", "keyword"
+	)
+
+	HNSWSearchPoolGetTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_hnsw_search_pool_get_total",
+			Help: "Total number of search contexts retrieved from the pool",
+		},
+	)
+
+	HNSWSearchPoolNewTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_hnsw_search_pool_new_total",
+			Help: "Total number of new search contexts allocated (cache misses)",
+		},
+	)
+
+	HNSWSearchPoolPutTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_hnsw_search_pool_put_total",
+			Help: "Total number of search contexts returned to the pool",
+		},
+	)
+
+	HNSWInsertPoolGetTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_hnsw_insert_pool_get_total",
+			Help: "Total number of insert contexts retrieved from the pool",
+		},
+	)
+
+	HNSWInsertPoolNewTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_hnsw_insert_pool_new_total",
+			Help: "Total number of new insert contexts allocated (cache misses)",
+		},
+	)
+
+	HNSWInsertPoolPutTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_hnsw_insert_pool_put_total",
+			Help: "Total number of insert contexts returned to the pool",
+		},
+	)
+
+	HNSWBitsetGrowTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_hnsw_bitset_grow_total",
+			Help: "Total number of times a bitset was grown/reallocated",
+		},
 	)
 )
 

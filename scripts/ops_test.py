@@ -15,6 +15,7 @@ import numpy as np
 import pyarrow as pa
 import pyarrow.flight as flight
 import pandas as pd
+import urllib.request
 
 # Optional: Polars for nice table printing
 try:
@@ -693,12 +694,88 @@ def command_namespaces(args, data_client, meta_client):
     except Exception as e:
         print(f"Delete failed: {e}")
 
+def get_metric(url, name):
+    try:
+        with urllib.request.urlopen(url) as response:
+            data = response.read().decode('utf-8')
+            for line in data.split('\n'):
+                if line.startswith(name) and not line.startswith('#'):
+                     # longbow_hnsw_search_pool_new_total 123
+                     parts = line.split()
+                     if len(parts) >= 2:
+                         return float(parts[1])
+    except Exception as e:
+        print(f"Failed to fetch metrics: {e}")
+    return 0.0
+
+def command_pool_verify(args, data_client, meta_client):
+    """Verify Search Context Pooling efficacy via metrics."""
+    metrics_url = args.metrics_url
+    dataset = args.dataset
+    print(f"Verifying Pooling on '{dataset}' (Metrics: {metrics_url})...")
+
+    # 1. Warmup / Initial load
+    print("Fetching baseline metrics...")
+    new_start = get_metric(metrics_url, "longbow_hnsw_search_pool_new_total")
+    get_start = get_metric(metrics_url, "longbow_hnsw_search_pool_get_total")
+    print(f"Baseline: New={new_start}, Get={get_start}")
+
+    # 2. Run Batched Search
+    print("Running 100 fast searches...")
+    dim = 128 # assumption
+    # Try to fetch actual dim? or just use random 128 which will invoke search layer
+    # If dataset has other dim, search might fail or error, but we just need to exercise the pool.
+    
+    qvec = np.random.rand(dim).astype(np.float32).tolist()
+    req = {"dataset": dataset, "vector": qvec, "k": 1}
+    ticket = flight.Ticket(json.dumps({"search": req}).encode("utf-8"))
+    options = get_options(args)
+    
+    success = 0
+    for _ in range(100):
+        try:
+            reader = meta_client.do_get(ticket, options=options)
+            _ = reader.read_all()
+            success += 1
+        except Exception:
+            pass
+            
+    print(f"Executed {success} searches.")
+
+    # 3. Check Metrics
+    new_end = get_metric(metrics_url, "longbow_hnsw_search_pool_new_total")
+    get_end = get_metric(metrics_url, "longbow_hnsw_search_pool_get_total")
+    
+    delta_new = new_end - new_start
+    delta_get = get_end - get_start
+    
+    print(f"End: New={new_end}, Get={get_end}")
+    print(f"Delta: New={delta_new}, Get={delta_get}")
+    
+    if delta_get > 0:
+        MISS_RATE_THRESHOLD = 0.5 # Allow 50% misses/eviction in worst case, but ideally ~0
+        # In a stable system with high throughput, new allocations should be minimal.
+        # But in a script doing 100 sequential requests, we might reuse the SAME object 100 times?
+        # Yes, standard pool reuse.
+        
+        # If delta_new is high, pooling is ineffective.
+        ratio = delta_new / delta_get
+        print(f"New/Get Ratio: {ratio:.4f}")
+        
+        if ratio < 0.2:
+            print("PASS: Pooling is effective (Reuse > 80%)")
+        else:
+            print("WARN: Pooling might be ineffective or cold start (Reuse < 80%)")
+    else:
+        print("WARN: No searches recorded in metrics??")
+
 def main():
     parser = argparse.ArgumentParser(description="Longbow Ops Test CLI")
     
     # Global Connections
     parser.add_argument("--data-uri", default="grpc://0.0.0.0:3000", help="Data Server URI")
     parser.add_argument("--meta-uri", default="grpc://0.0.0.0:3001", help="Meta Server URI")
+    parser.add_argument("--metrics-url", default="http://localhost:9090/metrics", help="Prometheus Metrics URL")
     
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
     
@@ -750,9 +827,13 @@ def main():
     # VALIDATE
     subparsers.add_parser("validate", help="Run full validation")
 
-    # NAMESPACES
+    # Namespaces
     subparsers.add_parser("namespaces", help="Test Namespace Operations")
-    
+
+    # Pooling Verification
+    pool_parser = subparsers.add_parser("pool-verify", help="Verify context pooling")
+    pool_parser.add_argument("--dataset", required=True, help="Dataset name")
+
     # GraphRAG
     graph_parser = subparsers.add_parser("graph-stats", help="Get graph stats")
     graph_parser.add_argument("--dataset", required=True, help="Dataset name")
@@ -798,6 +879,7 @@ def main():
             "delete": command_delete,
             "list": command_list,
             "info": command_info,
+            "pool-verify": command_pool_verify,
             "search": command_search,
             "snapshot": command_snapshot,
             "status": command_status,

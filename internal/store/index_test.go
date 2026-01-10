@@ -3,6 +3,7 @@ package store
 import (
 	"testing"
 
+	"github.com/23skdu/longbow/internal/pq"
 	"github.com/23skdu/longbow/internal/query"
 	"github.com/apache/arrow-go/v18/arrow"
 )
@@ -113,6 +114,14 @@ func (m *MockIndex) GetNeighbors(id VectorID) ([]VectorID, error) {
 
 func (m *MockIndex) Close() error {
 	m.CloseCalls++
+	return nil
+}
+
+func (m *MockIndex) TrainPQ(vectors [][]float32) error {
+	return nil
+}
+
+func (m *MockIndex) GetPQEncoder() *pq.PQEncoder {
 	return nil
 }
 

@@ -68,7 +68,7 @@ func TestSQ8Indexing(t *testing.T) {
 	assert.Greater(t, len(data.VectorsSQ8), 0, "VectorsSQ8 should be populated")
 	if len(data.VectorsSQ8) > 0 {
 		chunk := data.GetVectorsSQ8Chunk(0)
-		if chunk == nil || len(*chunk) == 0 {
+		if len(chunk) == 0 {
 			t.Error("SQ8 vectors not encoded")
 		}
 	}
@@ -81,7 +81,7 @@ func TestSQ8Indexing(t *testing.T) {
 	if len(data.VectorsSQ8) > 0 {
 		chunk := data.GetVectorsSQ8Chunk(0)
 		if chunk != nil {
-			assert.Equal(t, ChunkSize*16, len(*chunk))
+			assert.Equal(t, ChunkSize*16, len(chunk))
 		}
 	}
 

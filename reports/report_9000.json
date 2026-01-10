@@ -1,0 +1,122 @@
+[
+  {
+    "name": "DoPut",
+    "duration_seconds": 0.15371990203857422,
+    "throughput": 91.06674855912698,
+    "throughput_unit": "MB/s",
+    "rows": 9000,
+    "bytes_processed": 14678776,
+    "p50_ms": 0.0,
+    "p95_ms": 0.0,
+    "p99_ms": 0.0,
+    "errors": 0
+  },
+  {
+    "name": "DoGet",
+    "duration_seconds": 0.005118846893310547,
+    "throughput": 1093.986399627387,
+    "throughput_unit": "MB/s",
+    "rows": 3600,
+    "bytes_processed": 5871972,
+    "p50_ms": 0.0,
+    "p95_ms": 0.0,
+    "p99_ms": 0.0,
+    "errors": 0
+  },
+  {
+    "name": "VectorSearch",
+    "duration_seconds": 0.1833646297454834,
+    "throughput": 5453.614480546414,
+    "throughput_unit": "queries/s",
+    "rows": 0,
+    "bytes_processed": 0,
+    "p50_ms": 0.13709068298339844,
+    "p95_ms": 0.4391670227050781,
+    "p99_ms": 0.6380081176757812,
+    "errors": 1000
+  },
+  {
+    "name": "SearchByID",
+    "duration_seconds": 0.0,
+    "throughput": 0,
+    "throughput_unit": "queries/s",
+    "rows": 0,
+    "bytes_processed": 0,
+    "p50_ms": 0.0,
+    "p95_ms": 0.0,
+    "p99_ms": 0.0,
+    "errors": 1000
+  },
+  {
+    "name": "HybridSearch",
+    "duration_seconds": 0.0,
+    "throughput": 0,
+    "throughput_unit": "queries/s",
+    "rows": 0,
+    "bytes_processed": 0,
+    "p50_ms": 0.0,
+    "p95_ms": 0.0,
+    "p99_ms": 0.0,
+    "errors": 1000
+  },
+  {
+    "name": "GraphTraversal",
+    "duration_seconds": 0.0,
+    "throughput": 0,
+    "throughput_unit": "ops/s",
+    "rows": 0,
+    "bytes_processed": 0,
+    "p50_ms": 0.0,
+    "p95_ms": 0.0,
+    "p99_ms": 0.0,
+    "errors": 100
+  },
+  {
+    "name": "Delete",
+    "duration_seconds": 0.022218942642211914,
+    "throughput": 0.0,
+    "throughput_unit": "ops/s",
+    "rows": 0,
+    "bytes_processed": 0,
+    "p50_ms": 0.0,
+    "p95_ms": 0.0,
+    "p99_ms": 0.0,
+    "errors": 1000
+  },
+  {
+    "name": "Concurrent_mixed",
+    "duration_seconds": 60,
+    "throughput": 0.0,
+    "throughput_unit": "ops/s",
+    "rows": 0,
+    "bytes_processed": 0,
+    "p50_ms": 0.0,
+    "p95_ms": 0.0,
+    "p99_ms": 0.0,
+    "errors": 40636
+  },
+  {
+    "name": "S3Snapshot",
+    "duration_seconds": 0,
+    "throughput": 0,
+    "throughput_unit": "MB/s",
+    "rows": 0,
+    "bytes_processed": 0,
+    "p50_ms": 0.0,
+    "p95_ms": 0.0,
+    "p99_ms": 0.0,
+    "errors": 1
+  },
+  {
+    "name": "MemoryPressure",
+    "duration_seconds": 101.11380219459534,
+    "throughput": 6910.2138860855475,
+    "throughput_unit": "rows/s",
+    "rows": 698718,
+    "bytes_processed": 0,
+    "p50_ms": 153.20920944213867,
+    "p95_ms": 310.93358993530273,
+    "p99_ms": 402.2998809814453,
+    "errors": 2998
+  }
+]

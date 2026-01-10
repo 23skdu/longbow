@@ -1,6 +1,7 @@
 package store
 
 import (
+	"math"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/23skdu/longbow/internal/gpu"
 	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/pq"
 	"github.com/23skdu/longbow/internal/simd"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
@@ -45,7 +47,7 @@ type HNSWIndex struct {
 	pqEnabled           bool
 	pqTrainingEnabled   bool
 	pqTrainingThreshold int // Count at which to trigger training
-	pqEncoder           *PQEncoder
+	pqEncoder           *pq.PQEncoder
 	pqCodes             [][]uint8    // Compact storage for encoded vectors (indexed by VectorID)
 	pqCodesMu           sync.RWMutex // Protects PQ codes resizing/access
 
@@ -192,9 +194,31 @@ func (h *HNSWIndex) resolveDistanceFunc() func(a, b []float32) float32 {
 	defer h.pqCodesMu.RUnlock()
 
 	if h.pqEnabled && h.pqEncoder != nil {
-		// SDC (Symmetric Distance Computation) on Packed Codes
+		encoder := h.pqEncoder
 		return func(a, b []float32) float32 {
-			return h.pqEncoder.SDCDistancePacked(a, b)
+			codesA := pq.UnpackFloat32sToBytes(a, encoder.M)
+			codesB := pq.UnpackFloat32sToBytes(b, encoder.M)
+
+			var dist float32
+			for m := 0; m < encoder.M; m++ {
+				idxA := int(codesA[m])
+				idxB := int(codesB[m])
+				if idxA == idxB {
+					continue
+				}
+				// Compute distance between centroids[m][idxA] and centroids[m][idxB]
+				subA := encoder.Codebooks[m][idxA*encoder.SubDim : (idxA+1)*encoder.SubDim]
+				subB := encoder.Codebooks[m][idxB*encoder.SubDim : (idxB+1)*encoder.SubDim]
+
+				// L2 Distance (consistent with codebase)
+				var subDist float32
+				for i := range subA {
+					d := subA[i] - subB[i]
+					subDist += d * d
+				}
+				dist += subDist
+			}
+			return float32(math.Sqrt(float64(dist)))
 		}
 	}
 

@@ -71,7 +71,7 @@ func MatchesFilters(rec arrow.RecordBatch, rowIdx int, filters []query.Filter) (
 		colIdx := indices[0]
 		col := rec.Column(colIdx)
 
-		match := checkFilterRow(col, rowIdx, f)
+		match := checkFilterRow(col, rowIdx, &f)
 		if !match {
 			return false, nil
 		}
@@ -79,7 +79,7 @@ func MatchesFilters(rec arrow.RecordBatch, rowIdx int, filters []query.Filter) (
 	return true, nil
 }
 
-func checkFilterRow(col arrow.Array, i int, f query.Filter) bool {
+func checkFilterRow(col arrow.Array, i int, f *query.Filter) bool {
 	if col.IsNull(i) {
 		return false
 	}

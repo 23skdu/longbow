@@ -3,6 +3,7 @@ package memory
 import (
 	"errors"
 	"sync"
+	"sync/atomic"
 	"unsafe"
 
 	"github.com/23skdu/longbow/internal/metrics"
@@ -25,10 +26,15 @@ type SliceRef struct {
 // For now, we stick to struct for clarity.
 
 // SlabArena manages a list of large byte slices (slabs) to reduce allocation count.
+// It uses a fixed-size array of atomic pointers to allow lock-free reads.
+const MaxSlabs = 65536
+
 type SlabArena struct {
 	slabSize int
-	slabs    [][]byte
-	mu       sync.RWMutex
+	// slabs stores pointers to []byte. We use atomic.Pointer for lock-free Get().
+	slabs [MaxSlabs]atomic.Pointer[[]byte]
+
+	mu sync.Mutex // Protects allocation (writing new slabs)
 
 	// Current slab allocation pointer
 	currentSlabIdx int
@@ -42,19 +48,22 @@ func NewSlabArena(slabSize int) *SlabArena {
 	}
 	metrics.ArenaSlabsTotal.Inc()
 	metrics.ArenaAllocatedBytes.WithLabelValues("slab_init").Add(float64(slabSize))
-	return &SlabArena{
-		slabSize: slabSize,
-		slabs:    [][]byte{make([]byte, slabSize)},
-		// Start offset at 16 to ensure 0 is reserved as NULL and keep alignment (16 bytes)
-		currentOffset: 16,
+
+	a := &SlabArena{
+		slabSize:       slabSize,
+		currentOffset:  16, // Reserve 0-15
+		currentSlabIdx: 0,
 	}
+
+	// Initialize first slab
+	firstSlab := make([]byte, slabSize)
+	a.slabs[0].Store(&firstSlab)
+
+	return a
 }
 
 // Alloc reserves 'size' bytes and returns a global offset handle.
-// The handle is opaque: high bits might be slab index, low bits offset.
-// For simplicity, let's use a virtual address space model or simple packing.
 // GlobalOffset = (SlabIndex << 32) | SlabOffset.
-// This supports 4 billion slabs of 4GB each.
 func (a *SlabArena) Alloc(size int) (uint64, error) {
 	if size > a.slabSize {
 		return 0, errors.New("allocation larger than slab size")
@@ -63,25 +72,39 @@ func (a *SlabArena) Alloc(size int) (uint64, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	// Check if fits in current
-	slab := a.slabs[a.currentSlabIdx]
-	needed := uint64(size)
-
-	if a.currentOffset+needed > uint64(len(slab)) {
-		// Alloc new slab
+	// 1. Get current slab
+	// We can access directly via Load() or assume consistency since we hold Lock()
+	// and are the only writer.
+	currentSlabPtr := a.slabs[a.currentSlabIdx].Load()
+	if currentSlabPtr == nil {
+		// Should not happen if initialized correctly, but handle safety
 		newSlab := make([]byte, a.slabSize)
-		a.slabs = append(a.slabs, newSlab)
+		a.slabs[a.currentSlabIdx].Store(&newSlab)
+		currentSlabPtr = &newSlab
+	}
+
+	// 2. Check fit
+	needed := uint64(size)
+	if a.currentOffset+needed > uint64(len(*currentSlabPtr)) {
+		// 3. Alloc new slab
+		if a.currentSlabIdx >= MaxSlabs-1 {
+			return 0, ErrOOM
+		}
+
+		newSlab := make([]byte, a.slabSize)
 		a.currentSlabIdx++
-		a.currentOffset = 0
+		a.slabs[a.currentSlabIdx].Store(&newSlab)
+		a.currentOffset = 0 // Reset offset for new slab
+
 		metrics.ArenaSlabsTotal.Inc()
 		metrics.ArenaAllocatedBytes.WithLabelValues("slab_grow").Add(float64(a.slabSize))
 	}
 
-	// Alloc
+	// 4. Alloc
 	offset := a.currentOffset
 	a.currentOffset += needed
 
-	// Pack Global Offset
+	// 5. Pack Global Offset
 	idx := uint64(a.currentSlabIdx)
 	globalOffset := (idx << 32) | offset
 
@@ -89,21 +112,24 @@ func (a *SlabArena) Alloc(size int) (uint64, error) {
 }
 
 // Get returns the byte slice for a given global offset and length.
-// This is unsafe if the caller guesses the offset or size wrong, but that's typical for arenas.
+// Lock-Free (Wait-Free) implementation.
 func (a *SlabArena) Get(globalOffset uint64, size int) []byte {
 	slabIdx := int(globalOffset >> 32)
 	slabOffset := int(globalOffset & 0xFFFFFFFF)
 
-	a.mu.RLock()
-	defer a.mu.RUnlock()
-
-	if slabIdx >= len(a.slabs) {
-		return nil // Panic or return nil?
+	if slabIdx >= MaxSlabs {
+		return nil
 	}
-	slab := a.slabs[slabIdx]
 
+	// Atomic Load - No Lock!
+	slabPtr := a.slabs[slabIdx].Load()
+	if slabPtr == nil {
+		return nil
+	}
+
+	slab := *slabPtr
 	if slabOffset+size > len(slab) {
-		return nil // Out of bounds
+		return nil
 	}
 
 	return slab[slabOffset : slabOffset+size]

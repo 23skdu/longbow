@@ -372,6 +372,14 @@
       "type": "stat"
     },
     {
+      "datasource": "",
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 21 },
+      "id": 120,
+      "targets": [ { "expr": "rate(longbow_hnsw_vector_allocations_total[5m])", "legendFormat": "Alloc/s", "refId": "A" } ],
+      "title": "HNSW Vec Alloc/s",
+      "type": "timeseries"
+    },
+    {
       "collapsed": false,
       "gridPos": {
         "h": 1,

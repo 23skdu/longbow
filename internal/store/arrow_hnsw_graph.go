@@ -11,6 +11,7 @@ import (
 	"github.com/23skdu/longbow/internal/pq"
 	"github.com/23skdu/longbow/internal/query"
 	"github.com/apache/arrow-go/v18/arrow/float16"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 const (
@@ -218,6 +219,17 @@ type ArrowHNSW struct {
 
 	backend      atomic.Pointer[GraphData]
 	vectorColIdx int
+
+	// Cached Metrics (Curried)
+	metricInsertDuration prometheus.Observer
+	metricNodeCount      prometheus.Gauge
+	metricGraphHeight    prometheus.Gauge
+	metricActiveReaders  prometheus.Gauge
+	metricLockWait       prometheus.ObserverVec
+	// Bulk path metrics
+	metricBulkInsertDuration prometheus.Observer
+	metricBulkVectors        prometheus.Counter
+	metricBQVectors          prometheus.Gauge
 }
 
 type GraphData struct {

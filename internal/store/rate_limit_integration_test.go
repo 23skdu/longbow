@@ -27,7 +27,7 @@ func TestCompaction_RateLimit(t *testing.T) {
 
 	mem := memory.NewGoAllocator()
 	store := NewVectorStoreWithCompaction(mem, zerolog.Nop(), 1<<30, 1<<20, time.Hour, compactionCfg)
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// Create dataset
 	dsName := "test_rate_limit"
@@ -56,7 +56,7 @@ func TestCompaction_RateLimit(t *testing.T) {
 	// Total expected wait: ~2s.
 	for i := 0; i < 30; i++ {
 		b := array.NewRecordBuilder(mem, schema)
-		defer b.Release()
+		// Check manual release at end of loop
 
 		for j := 0; j < 100; j++ {
 			b.Field(0).(*array.Uint32Builder).Append(uint32(i*100 + j))
@@ -71,6 +71,7 @@ func TestCompaction_RateLimit(t *testing.T) {
 		err := store.ApplyDelta(dsName, rec, uint64(i), time.Now().UnixNano())
 		require.NoError(t, err)
 		rec.Release()
+		b.Release()
 	}
 
 	// Trigger compaction

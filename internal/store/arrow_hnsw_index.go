@@ -12,6 +12,7 @@ import (
 	"github.com/23skdu/longbow/internal/query"
 	"github.com/23skdu/longbow/internal/simd"
 	"github.com/apache/arrow-go/v18/arrow"
+	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"golang.org/x/sync/errgroup"
 )
@@ -92,7 +93,7 @@ func NewArrowHNSW(dataset *Dataset, config ArrowHNSWConfig, locStore *ChunkedLoc
 		initialCap = 1024
 	}
 
-	gd := NewGraphData(initialCap, 0, config.SQ8Enabled, config.PQEnabled, config.BQEnabled)
+	gd := NewGraphData(initialCap, config.Dims, config.SQ8Enabled, config.PQEnabled, config.PQM, config.BQEnabled)
 	h.data.Store(gd) // Dim 0 initially, updated on first insert
 	h.backend.Store(gd)
 
@@ -141,25 +142,86 @@ func (h *ArrowHNSW) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []int)
 
 	ids := make([]uint32, n)
 
-	// 3. Parallel Insert
-	// Note: When SQ8 is enabled, we serialize insertions to avoid race conditions
-	// on shared memory writes to the vector chunks
-	// 3. Parallel Insert
-	// Note: When SQ8 or BQ is enabled, we serialize insertions to avoid race conditions
-	// on shared memory writes to the vector chunks
-	if h.config.SQ8Enabled || h.config.BQEnabled {
-		// Serial insertion for SQ8/BQ to ensure chunks are safely written
+	// Check for Bulk Optimized Path
+	// If batch is large enough, use parallel bulk insert which computes
+	// intra-batch distances and updates graph layer-by-layer.
+	if n >= BULK_INSERT_THRESHOLD {
+		if err := h.AddBatchBulk(context.Background(), uint32(startID), n, rowIdxs); err != nil {
+			return nil, err
+		}
+		// Populate returned IDs
 		for i := 0; i < n; i++ {
-			id := uint32(startID) + uint32(i)
-			ids[i] = id
-
-			level := h.generateLevel()
-			if err := h.Insert(id, level); err != nil {
-				return nil, err
-			}
+			ids[i] = uint32(startID) + uint32(i)
 		}
 		return ids, nil
 	}
+
+	// 3. Preemptively Train SQ8 if needed
+	// This avoids race conditions and lock contention during parallel insert.
+	if h.config.SQ8Enabled && !h.sq8Ready.Load() {
+		threshold := h.config.SQ8TrainingThreshold
+		if threshold <= 0 {
+			threshold = 1000
+		}
+
+		var samples [][]float32
+		count := 0
+
+		// Extract samples from the batch
+		for _, rec := range recs {
+			idx := h.vectorColIdx
+			if idx < 0 {
+				indices := rec.Schema().FieldIndices("vector")
+				if len(indices) > 0 {
+					idx = indices[0]
+					// Cache it? No, unsafe to write concurrently without lock if h is shared.
+					// But we are in AddBatch.
+				}
+			}
+
+			if int64(idx) < 0 || int64(idx) >= rec.NumCols() {
+				continue
+			}
+			col := rec.Column(idx)
+			// Assuming FixedSizeList of Float32
+			if listArr, ok := col.(*array.FixedSizeList); ok {
+				if floatArr, ok := listArr.ListValues().(*array.Float32); ok {
+					dims := int(listArr.DataType().(*arrow.FixedSizeListType).Len())
+					rawValues := floatArr.Float32Values()
+
+					for i := 0; i < listArr.Len(); i++ {
+						if listArr.IsValid(i) {
+							off := i * dims
+							if off+dims <= len(rawValues) {
+								vec := make([]float32, dims)
+								copy(vec, rawValues[off:off+dims])
+								samples = append(samples, vec)
+								count++
+								if count >= threshold {
+									break
+								}
+							}
+						}
+					}
+				}
+			}
+			if count >= threshold {
+				break
+			}
+		}
+
+		// Train and backfill up to startID-1
+		// Existing vectors (0 to startID-1) will be backfilled.
+		// New vectors (startID to end) will be inserted by workers using the trained quantizer.
+		if len(samples) > 0 {
+			h.ensureTrained(int(startID)-1, samples)
+		}
+	}
+
+	// 4. Parallel Insert
+	// Writes to vector chunks are disjoint based on ID, so parallel execution is safe.
+	// Chunk allocation (ensureChunk) handles concurrency via atomic CAS.
+	// SQ8/BQ race conditions avoided by preemptive training (above) or thread-local buffers.
 
 	// Parallel insertion for non-SQ8 indices
 	// We bypass AddByLocation as we already have ID and Capacity
@@ -332,7 +394,7 @@ func (h *ArrowHNSW) GetNeighbors(id VectorID) ([]VectorID, error) {
 	if countsChunk == nil {
 		return nil, fmt.Errorf("chunk %d not allocated", cID)
 	}
-	count := int(atomic.LoadInt32(&(*countsChunk)[cOff]))
+	count := int(atomic.LoadInt32(&countsChunk[cOff]))
 	if count == 0 {
 		return []VectorID{}, nil
 	}
@@ -344,7 +406,7 @@ func (h *ArrowHNSW) GetNeighbors(id VectorID) ([]VectorID, error) {
 	baseIdx := int(cOff) * MaxNeighbors
 
 	results := make([]VectorID, count)
-	chunk := *neighborsChunk
+	chunk := neighborsChunk
 	for i := 0; i < count; i++ {
 		results[i] = VectorID(chunk[baseIdx+i])
 	}

@@ -43,7 +43,7 @@ func (h *ArrowHNSW) AnalyzeGraph() GraphMetrics {
 			continue
 		}
 
-		count := int(atomic.LoadInt32(&(*countsChunk)[cOff]))
+		count := int(atomic.LoadInt32(&countsChunk[cOff]))
 		metrics.TotalEdges += count
 		if count == 0 {
 			metrics.ZeroDegreeNodes++
@@ -93,14 +93,13 @@ func (h *ArrowHNSW) bfsComponentSize(data *GraphData, layer int, startNode uint3
 		if countsChunk == nil {
 			continue
 		}
-		neighborCount := atomic.LoadInt32(&(*countsChunk)[cOff])
+		neighborCount := atomic.LoadInt32(&countsChunk[cOff])
 
 		baseIdx := int(cOff) * MaxNeighbors
-		neighborsChunkPtr := data.GetNeighborsChunk(layer, cID)
-		if neighborsChunkPtr == nil {
+		neighborsChunk := data.GetNeighborsChunk(layer, cID)
+		if neighborsChunk == nil {
 			continue
 		}
-		neighborsChunk := *neighborsChunkPtr
 
 		for i := 0; i < int(neighborCount); i++ {
 			neighbor := neighborsChunk[baseIdx+i]
@@ -138,13 +137,12 @@ func (h *ArrowHNSW) bfsDiameter(data *GraphData, layer int, startNode uint32) in
 			if countsChunk == nil {
 				continue
 			}
-			neighborCount := int(atomic.LoadInt32(&(*countsChunk)[cOff]))
+			neighborCount := int(atomic.LoadInt32(&countsChunk[cOff]))
 
-			neighborsChunkPtr := data.GetNeighborsChunk(layer, cID)
-			if neighborsChunkPtr == nil {
+			neighborsChunk := data.GetNeighborsChunk(layer, cID)
+			if neighborsChunk == nil {
 				continue
 			}
-			neighborsChunk := *neighborsChunkPtr
 
 			baseIdx := int(cOff) * MaxNeighbors
 			for k := 0; k < neighborCount; k++ {

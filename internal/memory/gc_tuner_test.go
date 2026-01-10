@@ -23,7 +23,7 @@ func TestGCTuner_Logic(t *testing.T) {
 	low := 10
 	logger := zerolog.Nop()
 
-	tuner := NewGCTuner(limit, high, low, logger)
+	tuner := NewGCTuner(limit, high, low, &logger)
 	mockReader := &mockMemStatsReader{}
 	tuner.reader = mockReader
 

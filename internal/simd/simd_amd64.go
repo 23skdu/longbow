@@ -47,6 +47,11 @@ func euclideanAVX512(a, b []float32) float32 {
 	return float32(math.Sqrt(float64(sum)))
 }
 
+// AVX512 optimized Euclidean distance for 384 dims
+func euclidean384AVX512(a, b []float32) float32 {
+	return euclidean384AVX512Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]))
+}
+
 // AVX2 optimized Cosine distance
 func cosineAVX2(a, b []float32) float32 {
 	if !features.HasAVX2 {
@@ -150,6 +155,11 @@ func dotAVX512(a, b []float32) float32 {
 	}
 
 	return sum
+}
+
+// AVX512 optimized dot product for 384 dims
+func dot384AVX512(a, b []float32) float32 {
+	return dot384AVX512Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]))
 }
 
 // AVX2 optimized Batch Euclidean distance
@@ -354,6 +364,14 @@ func dotNEON(a, b []float32) float32 {
 	return dotGeneric(a, b)
 }
 
+func euclidean384NEON(a, b []float32) float32 {
+	return euclideanGeneric(a, b)
+}
+
+func dot384NEON(a, b []float32) float32 {
+	return dotGeneric(a, b)
+}
+
 func euclideanBatchNEON(query []float32, vectors [][]float32, results []float32) {
 	euclideanBatchGeneric(query, vectors, results)
 }
@@ -488,3 +506,9 @@ func adcBatchAVX2Kernel(table unsafe.Pointer, codes unsafe.Pointer, m int, resul
 
 //go:noescape
 func adcBatchAVX512Kernel(table unsafe.Pointer, codes unsafe.Pointer, m int, results unsafe.Pointer, n int)
+
+//go:noescape
+func euclidean384AVX512Kernel(a, b unsafe.Pointer) float32
+
+//go:noescape
+func dot384AVX512Kernel(a, b unsafe.Pointer) float32

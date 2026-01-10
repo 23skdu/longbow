@@ -769,6 +769,80 @@ def command_pool_verify(args, data_client, meta_client):
     else:
         print("WARN: No searches recorded in metrics??")
 
+def command_validate_fp16(args, data_client, meta_client):
+    """Validate Zero-Copy FP16 Ingestion."""
+    print("Validating FP16 Ingestion...")
+    dataset = args.dataset
+    if not dataset:
+        dataset = f"test_fp16_{uuid.uuid4().hex[:8]}"
+    
+    rows = 100
+    dim = args.dim
+    
+    print(f"Generating {rows} FP16 vectors (dim={dim}) for '{dataset}'...")
+    
+    try:
+        # Generate F16 data using numpy and pyarrow
+        data_np = np.random.rand(rows, dim).astype(np.float16)
+        
+        # Flatten and create Arrow Array
+        flat_data = data_np.flatten()
+        
+        # PyArrow Float16 array often requires viewing raw bytes or specific construction
+        # Direct generation from numpy float16 works in recent pyarrow
+        flat_arr = pa.array(flat_data, type=pa.float16())
+        
+        tensor_type = pa.list_(pa.float16(), dim)
+        vectors = pa.FixedSizeListArray.from_arrays(flat_arr, type=tensor_type)
+        
+        ids = pa.array(np.arange(rows), type=pa.int64())
+        ts = pa.array([pd.Timestamp.now()] * rows, type=pa.timestamp("ns"))
+        
+        fields = [
+            pa.field("id", pa.int64()),
+            pa.field("vector", tensor_type),
+            pa.field("timestamp", pa.timestamp("ns"))
+        ]
+        
+        table = pa.Table.from_arrays([ids, vectors, ts], schema=pa.schema(fields))
+        
+        # Upload
+        print("Uploading FP16 data (DoPut)...")
+        descriptor = flight.FlightDescriptor.for_path(dataset)
+        options = get_options(args)
+        
+        writer, _ = data_client.do_put(descriptor, table.schema, options=options)
+        writer.write_table(table)
+        writer.close()
+        print("Upload success.")
+        
+        # Verify via Search (DoGet)
+        print("Waiting for indexing...")
+        time.sleep(5)
+        
+        # Search with F32 query
+        # ID 0 should be perfectly retrieved
+        q_np = data_np[0].astype(np.float32)
+        qvec = q_np.tolist()
+        
+        print("Searching for ID 0 using F32 query...")
+        req = {"dataset": dataset, "vector": qvec, "k": 1}
+        ticket = flight.Ticket(json.dumps({"search": req}).encode("utf-8"))
+        
+        reader = meta_client.do_get(ticket, options=options)
+        table_res = reader.read_all()
+        df = table_res.to_pandas()
+        
+        if len(df) > 0 and df.iloc[0]['id'] == 0:
+            print(f"PASS: Retrieved ID 0. Score: {df.iloc[0]['score']:.6f}")
+        else:
+            print(f"FAIL: Expected ID 0. Got: {df}")
+            
+    except Exception as e:
+        print(f"Test Failed: {e}")
+        import traceback
+        traceback.print_exc()
+
 def main():
     parser = argparse.ArgumentParser(description="Longbow Ops Test CLI")
     
@@ -826,6 +900,11 @@ def main():
 
     # VALIDATE
     subparsers.add_parser("validate", help="Run full validation")
+
+    # VALIDATE FP16
+    val_fp16_parser = subparsers.add_parser("validate-fp16", help="Validate Zero-Copy FP16 Ingestion")
+    val_fp16_parser.add_argument("--dataset", help="Dataset name (optional)")
+    val_fp16_parser.add_argument("--dim", type=int, default=128, help="Dimension")
 
     # Namespaces
     subparsers.add_parser("namespaces", help="Test Namespace Operations")
@@ -885,6 +964,7 @@ def main():
             "status": command_status,
             "exchange": command_exchange,
             "validate": command_validate,
+            "validate-fp16": command_validate_fp16,
             "namespaces": command_namespaces,
             "graph-stats": command_graph_stats,
             "add-edge": command_add_edge,

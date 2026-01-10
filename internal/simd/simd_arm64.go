@@ -16,6 +16,7 @@ func dotNEON(a, b []float32) float32
 
 func euclideanF16NEON(a, b []float16.Num) float32
 func dotF16NEON(a, b []float16.Num) float32
+func cosineF16NEON(a, b []float16.Num) float32
 
 // Optimized for 384 dimensions
 func euclidean384NEON(a, b []float32) float32 {

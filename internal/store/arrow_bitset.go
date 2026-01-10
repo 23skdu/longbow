@@ -28,6 +28,15 @@ func (b *ArrowBitset) Set(i uint32) {
 	b.data[idx/64] |= 1 << (idx % 64)
 }
 
+// Unset clears the bit at index i.
+func (b *ArrowBitset) Unset(i uint32) {
+	idx := int(i)
+	if idx >= b.size {
+		return
+	}
+	b.data[idx/64] &^= 1 << (idx % 64)
+}
+
 // IsSet checks if the bit at index i is set.
 func (b *ArrowBitset) IsSet(i uint32) bool {
 	idx := int(i)

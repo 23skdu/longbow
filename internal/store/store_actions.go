@@ -392,119 +392,33 @@ func (s *VectorStore) flushPutBatch(ds *Dataset, name string, batch []arrow.Reco
 		return nil
 	}
 
-	// 1. Write to WAL (Async/Batched)
-	// We use the helper which delegates to engine
+	// 1. Write to WAL (Sync)
 	ts := time.Now().UnixNano()
 	for _, rec := range batch {
 		if err := s.writeToWAL(rec, name, ts); err != nil {
-			// Log the error but continue processing the rest of the batch
 			s.logger.Error().Err(err).Str("dataset", name).Msg("Failed to write record to WAL during flushPutBatch")
-			// The s.writeToWAL function already handles metrics for success/failure
+			// Depending on strictness, we might return error here.
+			// For now, we follow existing behavior: log and proceed (though skipping WAL is dangerous for durability).
+			// Ideally we should return err if WAL is mandatory.
+			// Let's return error to be safe.
+			return fmt.Errorf("WAL write failed: %w", err)
 		}
 	}
 
-	// 2. Append to Memory AND Initialize Index if needed (Batch Lock)
-	totalSize := int64(0)
-	totalRows := int64(0)
-
-	// Calculate size and prep metrics first (outside lock)
+	// 2. Enqueue to Ingestion Pipeline (Async)
 	for _, rec := range batch {
-		batchSize := estimateBatchSize(rec)
-		totalSize += batchSize
-		totalRows += int64(rec.NumRows())
+		rec.Retain() // Retain for the worker (which will Release)
 
-		metrics.DoPutPayloadSizeBytes.Observe(float64(batchSize))
-		// Advise Memory: Random access for HNSW
-		AdviseRecord(rec, AdviceRandom)
-	}
+		// Update lag metric
+		metrics.IngestionLagCount.Add(float64(rec.NumRows()))
 
-	// Check memory limit before accepting write
-	if err := s.checkMemoryBeforeWrite(totalSize, name); err != nil {
-		return err
-	}
-
-	if totalSize > 100*1024*1024 {
-		s.logger.Warn().Int64("size", totalSize).Msg("Large memory addition in DoPut")
-	}
-	s.currentMemory.Add(totalSize)
-	ds.SizeBytes.Add(totalSize)
-	metrics.FlightRowsProcessed.WithLabelValues("put", "ok").Add(float64(totalRows))
-
-	ds.dataMu.Lock()
-	dsLockStart := time.Now()
-
-	// Lazy Index Initialization (moved from DoPut)
-	if ds.Index == nil {
-		// Use AutoShardingIndex by default, using global store config
-		config := s.autoShardingConfig
-		// Ensure sane defaults if zero-valued (though should be set by main)
-		if config.ShardThreshold == 0 {
-			config.ShardThreshold = 10000
-			config.Enabled = true
-			config.ShardCount = runtime.NumCPU()
-		}
-
-		aIdx := NewAutoShardingIndex(ds, config)
-
-		// Set initial dimension from the first batch to avoid race on searches
-		if len(batch) > 0 {
-			if vecCol := findVectorColumn(batch[0]); vecCol != nil {
-				if listArr, ok := vecCol.(*array.FixedSizeList); ok {
-					dim := int(listArr.DataType().(*arrow.FixedSizeListType).Len())
-					aIdx.SetInitialDimension(dim)
-				}
-			}
-		}
-
-		ds.Index = aIdx
-	}
-
-	batchStartIdx := len(ds.Records)
-	ds.Records = append(ds.Records, batch...)
-
-	// Record NUMA node for these batches
-	currCPU := GetCurrentCPU()
-	currNode := -1
-	if s.numaTopology != nil {
-		currNode = s.numaTopology.GetNodeForCPU(currCPU)
-	}
-	for i, rec := range batch {
-		ds.BatchNodes = append(ds.BatchNodes, currNode)
-		ds.UpdatePrimaryIndex(batchStartIdx+i, rec)
-	}
-
-	ds.dataMu.Unlock()
-	metrics.DatasetLockWaitDurationSeconds.WithLabelValues("put").Observe(time.Since(dsLockStart).Seconds())
-
-	// 3. Update LWW/Merkle and Queue Indexing
-	for i, rec := range batch {
-		s.updateLWWAndMerkle(ds, rec, ts)
-
-		batchIdx := batchStartIdx + i
-		// Dispatch batch-level indexing job
-		rec.Retain()
-		job := IndexJob{
-			DatasetName: name,
-			Record:      rec,
-			BatchIdx:    batchIdx,
-			CreatedAt:   time.Now(),
-		}
-
-		// Try to send, backing off if full
-		sent := false
-		for attempt := 0; attempt < 50; attempt++ { // Reduced retry attempts slightly for batch jobs
-			if s.indexQueue.Send(job) {
-				sent = true
-				break
-			}
-			// Queue full - wait a bit to apply backpressure
-			time.Sleep(2 * time.Millisecond)
-		}
-
-		if !sent {
-			s.logger.Warn().Str("dataset", name).Int("batch_idx", batchIdx).Msg("Dropped batch index job after retries (queue full)")
-			rec.Release()
-			metrics.IndexJobsDroppedTotal.Inc()
+		select {
+		case s.ingestionQueue <- ingestionJob{datasetName: name, batch: rec}:
+			// Enqueued
+		default:
+			// Backpressure: if queue full, block or fail.
+			// Ideally block to slow down client.
+			s.ingestionQueue <- ingestionJob{datasetName: name, batch: rec}
 		}
 	}
 
@@ -513,92 +427,17 @@ func (s *VectorStore) flushPutBatch(ds *Dataset, name string, batch []arrow.Reco
 
 // StoreRecordBatch stores a batch of records in a dataset
 func (s *VectorStore) StoreRecordBatch(ctx context.Context, name string, rec arrow.RecordBatch) error {
-	ds, _ := s.getOrCreateDataset(name, func() *Dataset {
-		ds := NewDataset(name, rec.Schema())
-		ds.Topo = s.numaTopology
-		return ds
-	})
-
-	// No initial memory side-effects in StoreRecordBatch createFn currently?
-	// But to be consistent/safe given main initialization flow:
-	// No initial memory side-effects in StoreRecordBatch createFn currently.
-	// We proceed without specific hook logic here as per design.
-
+	// 1. Write to WAL (Sync)
 	ts := time.Now().UnixNano()
-
-	// WAL write
 	if err := s.writeToWAL(rec, name, ts); err != nil {
 		return err
 	}
 
-	// Memory append
-	ds.dataMu.Lock()
+	// 2. Enqueue to Ingestion Pipeline (Async)
+	rec.Retain() // Retain for worker
+	metrics.IngestionLagCount.Add(float64(rec.NumRows()))
 
-	// Lazy Index Init
-	if ds.Index == nil {
-		config := s.autoShardingConfig
-		if config.ShardThreshold == 0 {
-			config.ShardThreshold = 10000
-			config.Enabled = true
-			config.ShardCount = runtime.NumCPU()
-		}
-		aIdx := NewAutoShardingIndex(ds, config)
-		if vecCol := findVectorColumn(rec); vecCol != nil {
-			if listArr, ok := vecCol.(*array.FixedSizeList); ok {
-				dim := int(listArr.DataType().(*arrow.FixedSizeListType).Len())
-				aIdx.SetInitialDimension(dim)
-			}
-		}
-		ds.Index = aIdx
-	}
-
-	batchIdx := len(ds.Records)
-	ds.Records = append(ds.Records, rec)
-	rec.Retain()
-	ds.UpdatePrimaryIndex(batchIdx, rec)
-	ds.dataMu.Unlock()
-
-	// Dispatch Index Job
-	s.updateLWWAndMerkle(ds, rec, ts)
-	rec.Retain()
-	job := IndexJob{
-		DatasetName: name,
-		Record:      rec,
-		BatchIdx:    batchIdx,
-		CreatedAt:   time.Now(),
-	}
-	// Try to send, backing off if full
-	sent := false
-	for attempt := 0; attempt < 50; attempt++ {
-		if s.indexQueue.Send(job) {
-			sent = true
-			break
-		}
-		time.Sleep(2 * time.Millisecond)
-	}
-	if !sent {
-		s.logger.Warn().Str("dataset", name).Msg("Index queue full, dropping (sync store)")
-		metrics.IndexJobsDroppedTotal.Inc()
-		rec.Release()
-	}
-
-	// Memory tracking
-	size := estimateBatchSize(rec)
-	ds.SizeBytes.Add(size)
-	s.currentMemory.Add(size)
-
-	// Inverted index update (Hybrid)
-	s.indexTextColumnsForHybridSearch(rec, 0) // Simplified baseRowID for now
-
-	// Compaction trigger
-	if s.compactionWorker != nil {
-		ds.dataMu.RLock()
-		numBatches := len(ds.Records)
-		ds.dataMu.RUnlock()
-		if numBatches >= s.compactionConfig.MinBatchesToCompact {
-			_ = s.compactionWorker.TriggerCompaction(name)
-		}
-	}
+	s.ingestionQueue <- ingestionJob{datasetName: name, batch: rec}
 
 	return nil
 }
@@ -671,4 +510,116 @@ func (s *VectorStore) concatenateBatches(batches []arrow.RecordBatch) (arrow.Rec
 	}
 
 	return array.NewRecordBatch(schema, columns, totalRows), nil
+}
+
+// applyBatchToMemory applies a batch to the in-memory dataset and dispatches indexing
+func (s *VectorStore) applyBatchToMemory(name string, rec arrow.RecordBatch) error {
+	ds, _ := s.getOrCreateDataset(name, func() *Dataset {
+		ds := NewDataset(name, rec.Schema())
+		ds.Topo = s.numaTopology
+		return ds
+	})
+
+	// Memory tracking
+	batchSize := estimateBatchSize(rec)
+	// Check memory limit
+	if err := s.checkMemoryBeforeWrite(batchSize, name); err != nil {
+		return err
+	}
+
+	metrics.DoPutPayloadSizeBytes.Observe(float64(batchSize))
+	AdviseRecord(rec, AdviceRandom)
+
+	if batchSize > 100*1024*1024 {
+		s.logger.Warn().Int64("size", batchSize).Msg("Large memory addition in DoPut")
+	}
+	s.currentMemory.Add(batchSize)
+	ds.SizeBytes.Add(batchSize)
+	metrics.FlightRowsProcessed.WithLabelValues("put", "ok").Add(float64(rec.NumRows()))
+
+	ts := time.Now().UnixNano()
+
+	ds.dataMu.Lock()
+	dsLockStart := time.Now()
+
+	// Lazy Index Initialization
+	if ds.Index == nil {
+		config := s.autoShardingConfig
+		if config.ShardThreshold == 0 {
+			config.ShardThreshold = 10000
+			config.Enabled = true
+			config.ShardCount = runtime.NumCPU()
+		}
+
+		aIdx := NewAutoShardingIndex(ds, config)
+		if vecCol := findVectorColumn(rec); vecCol != nil {
+			if listArr, ok := vecCol.(*array.FixedSizeList); ok {
+				dim := int(listArr.DataType().(*arrow.FixedSizeListType).Len())
+				aIdx.SetInitialDimension(dim)
+			}
+		}
+		ds.Index = aIdx
+	}
+
+	batchIdx := len(ds.Records)
+	ds.Records = append(ds.Records, rec)
+	rec.Retain() // Dataset holds a reference
+
+	// Record NUMA node
+	currCPU := GetCurrentCPU()
+	currNode := -1
+	if s.numaTopology != nil {
+		currNode = s.numaTopology.GetNodeForCPU(currCPU)
+	}
+	ds.BatchNodes = append(ds.BatchNodes, currNode)
+	ds.UpdatePrimaryIndex(batchIdx, rec)
+
+	ds.dataMu.Unlock()
+	metrics.DatasetLockWaitDurationSeconds.WithLabelValues("put").Observe(time.Since(dsLockStart).Seconds())
+
+	// Update LWW/Merkle and Queue Indexing
+	s.updateLWWAndMerkle(ds, rec, ts)
+
+	// Dispatch batch-level indexing job
+	rec.Retain() // IndexJob holds ref
+	job := IndexJob{
+		DatasetName: name,
+		Record:      rec,
+		BatchIdx:    batchIdx,
+		CreatedAt:   time.Now(),
+	}
+
+	// Try to send, backing off if full
+	sent := false
+	for attempt := 0; attempt < 50; attempt++ {
+		if s.indexQueue.Send(job) {
+			sent = true
+			break
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+
+	if !sent {
+		s.logger.Warn().Str("dataset", name).Int("batch_idx", batchIdx).Msg("Dropped batch index job after retries (queue full)")
+		rec.Release()
+		metrics.IndexJobsDroppedTotal.Inc()
+	}
+
+	// Inverted index update (Hybrid)
+	s.indexTextColumnsForHybridSearch(rec, 0)
+
+	// Compaction trigger
+	if s.compactionWorker != nil {
+		shouldCompact := false
+		ds.dataMu.RLock()
+		if len(ds.Records) >= s.compactionConfig.MinBatchesToCompact {
+			shouldCompact = true
+		}
+		ds.dataMu.RUnlock()
+		if shouldCompact {
+			_ = s.compactionWorker.TriggerCompaction(name)
+		}
+	}
+
+	return nil
 }

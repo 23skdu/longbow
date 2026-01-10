@@ -1,6 +1,5 @@
 package store
 
-
 import (
 	"context"
 	"testing"
@@ -109,7 +108,7 @@ func TestColumnInvertedIndex_FilterRecordWithIndex(t *testing.T) {
 
 	// Use FilterRecordWithIndex - should use O(1) lookup
 	filter := query.Filter{Field: "category", Operator: "=", Value: "X"}
-	filtered, err := idx.FilterRecordWithIndex(context.Background(), "ds", 0, rec, filter, mem)
+	filtered, err := idx.FilterRecordWithIndex(context.Background(), "ds", 0, rec, &filter, mem)
 	if err != nil {
 		t.Fatalf("FilterRecordWithIndex failed: %v", err)
 	}
@@ -155,7 +154,7 @@ func BenchmarkColumnInvertedIndex_FilterWithIndex(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		filtered, _ := idx.FilterRecordWithIndex(context.Background(), "ds", 0, rec, filter, mem)
+		filtered, _ := idx.FilterRecordWithIndex(context.Background(), "ds", 0, rec, &filter, mem)
 		filtered.Release()
 	}
 }

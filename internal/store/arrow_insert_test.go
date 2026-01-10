@@ -121,7 +121,7 @@ func TestAddConnection(t *testing.T) {
 	index := NewArrowHNSW(dataset, config, nil)
 
 	// Initialize GraphData manually
-	data := NewGraphData(0, 64, false, false, false)
+	data := NewGraphData(0, 64, false, false, 0, false, false)
 	index.data.Store(data)
 
 	// Allocate chunks
@@ -145,7 +145,7 @@ func TestAddConnection(t *testing.T) {
 	counts := data.GetCountsChunk(0, cID)
 	count := int32(0)
 	if counts != nil {
-		count = atomic.LoadInt32(&(*counts)[cOff])
+		count = atomic.LoadInt32(&counts[cOff])
 	}
 	if count != 1 {
 		t.Errorf("expected 1 neighbor, got %d", count)
@@ -153,15 +153,15 @@ func TestAddConnection(t *testing.T) {
 
 	// Check neighbor
 	neighbors := data.GetNeighborsChunk(0, 0)
-	if neighbors != nil && (*neighbors)[0] != 1 {
-		t.Errorf("expected neighbor 1, got %d", (*neighbors)[0])
+	if len(neighbors) > 0 && neighbors[0] != 1 {
+		t.Errorf("expected neighbor 1, got %d", neighbors[0])
 	}
 
 	// Adding same connection again should be idempotent
 	index.AddConnection(ctx, data, 0, 1, 0, 10)
 
 	if counts != nil {
-		count = atomic.LoadInt32(&(*counts)[cOff])
+		count = atomic.LoadInt32(&counts[cOff])
 	}
 	if count != 1 {
 		t.Errorf("expected 1 neighbor after duplicate add, got %d", count)
@@ -176,7 +176,7 @@ func TestPruneConnections(t *testing.T) {
 	index := NewArrowHNSW(dataset, config, nil)
 
 	// Initialize GraphData manually
-	data := NewGraphData(20, 11, false, false, false)
+	data := NewGraphData(20, 11, false, false, 0, false, false)
 	index.data.Store(data)
 
 	// Allocate chunks
@@ -212,7 +212,7 @@ func TestPruneConnections(t *testing.T) {
 		cOff := chunkOffset(uint32(i))
 		vecChunk := data.GetVectorsChunk(cID)
 		if vecChunk != nil {
-			copy((*vecChunk)[int(cOff)*dim:], vecs[i])
+			copy(vecChunk[int(cOff)*dim:], vecs[i])
 		}
 	}
 	// Add 10 connections to Node 0
@@ -224,13 +224,13 @@ func TestPruneConnections(t *testing.T) {
 		for i := 1; i <= 10; i++ {
 			idx := baseIdx + (i - 1)
 			// Access Chunk 0 of Neighbors
-			(*neighbors)[idx] = uint32(i)
+			neighbors[idx] = uint32(i)
 		}
 	}
 
 	counts := data.GetCountsChunk(0, 0)
 	if counts != nil {
-		atomic.StoreInt32(&(*counts)[0], 10)
+		atomic.StoreInt32(&counts[0], 10)
 	}
 
 	// Prune to 5
@@ -246,7 +246,7 @@ func TestPruneConnections(t *testing.T) {
 
 	count := int32(0)
 	if counts != nil {
-		count = atomic.LoadInt32(&(*counts)[0])
+		count = atomic.LoadInt32(&counts[0])
 	}
 	if count != 5 {
 		t.Errorf("expected 5 neighbors after pruning, got %d", count)
@@ -256,7 +256,7 @@ func TestPruneConnections(t *testing.T) {
 	index.PruneConnections(ctx, data, 0, 5, 0)
 	count2 := int32(0)
 	if counts != nil {
-		count2 = atomic.LoadInt32(&(*counts)[0])
+		count2 = atomic.LoadInt32(&counts[0])
 	}
 	if count2 != 5 {
 		t.Errorf("expected 5 neighbors after idempotent pruning, got %d", count2)

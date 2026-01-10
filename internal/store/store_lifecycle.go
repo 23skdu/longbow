@@ -74,7 +74,7 @@ func (s *VectorStore) enforceMemoryLimits() {
 	current := s.currentMemory.Load()
 	if current > limit {
 		// Try to evict down to limit
-		_ = s.evictToTarget(limit)
+		_ = s.evictToTarget(limit, "")
 	}
 }
 

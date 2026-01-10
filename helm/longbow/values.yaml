@@ -54,6 +54,8 @@ hnsw:
   alpha: 1.0
   keepPruned: false
   sq8Enabled: false
+  float16Enabled: false
+
   refinementFactor: 1.0
   useHNSW2: true
 
@@ -223,4 +225,3 @@ nodeSelector: {}
 
 tolerations: []
 
-affinity: {}

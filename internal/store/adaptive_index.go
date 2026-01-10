@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 
 	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/pq"
 	"github.com/23skdu/longbow/internal/query"
 	"github.com/23skdu/longbow/internal/simd"
 	"github.com/apache/arrow-go/v18/arrow"
@@ -121,6 +122,19 @@ func (b *BruteForceIndex) SetIndexedColumns(cols []string) {}
 
 func (b *BruteForceIndex) Close() error {
 	return nil
+}
+
+func (b *BruteForceIndex) TrainPQ(vectors [][]float32) error {
+	// Not implemented for BruteForce
+	return nil
+}
+
+func (b *BruteForceIndex) GetPQEncoder() *pq.PQEncoder {
+	return nil
+}
+
+func (b *BruteForceIndex) EstimateMemory() int64 {
+	return int64(len(b.locations) * 8)
 }
 
 // SearchVectors returns the k nearest neighbors using linear scan.
@@ -356,6 +370,33 @@ func (a *AdaptiveIndex) Close() error {
 		return a.hnsw.Close()
 	}
 	return a.bruteForce.Close()
+}
+
+func (a *AdaptiveIndex) TrainPQ(vectors [][]float32) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.usingHNSW.Load() {
+		return a.hnsw.TrainPQ(vectors)
+	}
+	return a.bruteForce.TrainPQ(vectors)
+}
+
+func (a *AdaptiveIndex) GetPQEncoder() *pq.PQEncoder {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	if a.usingHNSW.Load() {
+		return a.hnsw.GetPQEncoder()
+	}
+	return a.bruteForce.GetPQEncoder()
+}
+
+func (a *AdaptiveIndex) EstimateMemory() int64 {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	if a.usingHNSW.Load() {
+		return a.hnsw.EstimateMemory()
+	}
+	return a.bruteForce.EstimateMemory()
 }
 
 // migrateToHNSW converts from BruteForce to HNSW (must hold mu.Lock).

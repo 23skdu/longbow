@@ -8,10 +8,9 @@ import (
 
 func TestDiskGraph_RoundTrip(t *testing.T) {
 	// 1. Create a dummy GraphData
-	capacity := 1024 // Use ChunkSize alignment to be safe
+	capacity := 1024
 	dims := 4
-	gd := NewGraphData(capacity, dims, true, true, false)
-	gd.PQDims = 2
+	gd := NewGraphData(capacity, dims, true, true, 2, false, false)
 
 	// Populate neighbors
 	// We must allocate full chunks for GraphData to work
@@ -27,8 +26,8 @@ func TestDiskGraph_RoundTrip(t *testing.T) {
 	counts[1] = 1
 	neighbors[1*MaxNeighbors] = 3
 
-	gd.StoreNeighborsChunk(0, 0, &neighbors) // Chunk 0
-	gd.StoreCountsChunk(0, 0, &counts)
+	gd.StoreNeighborsChunk(0, 0, neighbors) // Chunk 0
+	gd.StoreCountsChunk(0, 0, counts)
 
 	// Populate SQ8 Vectors
 	// Node 0: [10, 10, 10, 10]
@@ -38,7 +37,7 @@ func TestDiskGraph_RoundTrip(t *testing.T) {
 		sq8[0*dims+i] = 10
 		sq8[1*dims+i] = 20
 	}
-	gd.StoreSQ8Chunk(0, &sq8)
+	gd.StoreSQ8Chunk(0, sq8)
 
 	// Populate PQ Vectors
 	// PQ M=2. Node 0: [100, 101], Node 1: [200, 201]
@@ -48,11 +47,11 @@ func TestDiskGraph_RoundTrip(t *testing.T) {
 	pqVecs[0*pqM+1] = 101
 	pqVecs[1*pqM+0] = 200
 	pqVecs[1*pqM+1] = 201
-	gd.StorePQChunk(0, &pqVecs)
+	gd.StorePQChunk(0, pqVecs)
 
 	// Allocate Versions chunks (Required for GetNeighbors)
 	vers := make([]uint32, ChunkSize)
-	gd.StoreVersionsChunk(0, 0, &vers)
+	gd.StoreVersionsChunk(0, 0, vers)
 
 	// L1 Setup
 	// Just one node (Node 0 connects to Node 1)
@@ -62,11 +61,11 @@ func TestDiskGraph_RoundTrip(t *testing.T) {
 	countsL1[0] = 1
 	neighborsL1[0] = 1
 
-	gd.StoreNeighborsChunk(1, 0, &neighborsL1)
-	gd.StoreCountsChunk(1, 0, &countsL1)
+	gd.StoreNeighborsChunk(1, 0, neighborsL1)
+	gd.StoreCountsChunk(1, 0, countsL1)
 
 	versL1 := make([]uint32, ChunkSize)
-	gd.StoreVersionsChunk(1, 0, &versL1)
+	gd.StoreVersionsChunk(1, 0, versL1)
 
 	// 2. Persist to Disk
 	tmpDir := t.TempDir()

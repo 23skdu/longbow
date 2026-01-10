@@ -41,6 +41,9 @@ try:
 except ImportError:
     HAS_BOTO3 = False
 
+# Global timeout default
+DEFAULT_TIMEOUT = 30.0
+
 
 # =============================================================================
 # Data Classes
@@ -85,8 +88,9 @@ def check_cluster_health(client: flight.FlightClient) -> bool:
     """Check cluster status before running benchmarks."""
     print("Checking cluster health...")
     try:
+        options = flight.FlightCallOptions(timeout=5.0)
         action = flight.Action("cluster-status", b"")
-        results = list(client.do_action(action))
+        results = list(client.do_action(action, options=options))
         if not results:
             print("WARN: No status returned from cluster")
             return False
@@ -171,7 +175,7 @@ def benchmark_put(client: flight.FlightClient, table: pa.Table, name: str) -> Be
     for i in range(0, table.num_rows, chunk_size):
         chunk = table.slice(i, chunk_size)
         routing_key = f"shard-{i//chunk_size}".encode("utf-8")
-        options = flight.FlightCallOptions(headers=[(b"x-longbow-key", routing_key)])
+        options = flight.FlightCallOptions(headers=[(b"x-longbow-key", routing_key)], timeout=DEFAULT_TIMEOUT)
         
         writer, _ = client.do_put(descriptor, chunk.schema, options=options)
         writer.write_table(chunk)
@@ -207,10 +211,11 @@ def benchmark_get(client: flight.FlightClient, name: str,
         query["filters"] = filters
 
     ticket = flight.Ticket(json.dumps(query).encode("utf-8"))
+    options = flight.FlightCallOptions(timeout=DEFAULT_TIMEOUT)
 
     start_time = time.time()
     try:
-        reader = client.do_get(ticket)
+        reader = client.do_get(ticket, options=options)
         table = reader.read_all()
     except flight.FlightError as e:
         print(f"[GET] Error: {e}")
@@ -290,12 +295,13 @@ def benchmark_vector_search(client: flight.FlightClient, name: str,
                 }
                 ticket = flight.Ticket(json.dumps(ticket_payload).encode("utf-8"))
                 
-                options = flight.FlightCallOptions()
+                # Default options
+                headers = []
                 if global_search:
-                    headers = [(b"x-longbow-global", b"true")]
-                    # Include routing key so load balancer can hit the owner node as coordinator
+                    headers.append((b"x-longbow-global", b"true"))
                     headers.append((b"x-longbow-key", name.encode("utf-8")))
-                    options = flight.FlightCallOptions(headers=headers)
+                
+                options = flight.FlightCallOptions(headers=headers, timeout=10.0)
                     
                 reader = client.do_get(ticket, options=options)
                 table = reader.read_all()
@@ -393,8 +399,9 @@ def benchmark_search_by_id(client: flight.FlightClient, name: str,
 
         start = time.time()
         try:
+            options = flight.FlightCallOptions(timeout=10.0)
             action = flight.Action("VectorSearchByID", request_body)
-            results_iter = client.do_action(action)
+            results_iter = client.do_action(action, options=options)
             
             for result in results_iter:
                 payload = json.loads(result.body.to_pybytes())
@@ -462,7 +469,7 @@ def benchmark_hybrid_search(client: flight.FlightClient, name: str,
                 headers.append((b"x-longbow-global", b"true"))
                 headers.append((b"x-longbow-key", name.encode("utf-8")))
             
-            options = flight.FlightCallOptions(headers=headers)
+            options = flight.FlightCallOptions(headers=headers, timeout=10.0)
             reader = client.do_get(ticket, options=options)
             table = reader.read_all()
             total_results += table.num_rows
@@ -516,9 +523,10 @@ def benchmark_delete(client: flight.FlightClient, name: str, ids: list) -> Bench
         
         start = time.time()
         try:
+            options = flight.FlightCallOptions(timeout=DEFAULT_TIMEOUT)
             action = flight.Action("delete-vector", request_body)
             # Fetch results to ensure completion
-            list(client.do_action(action))
+            list(client.do_action(action, options=options))
             success += 1
         except Exception as e:
             errors += 1
@@ -587,13 +595,15 @@ def benchmark_concurrent_load(data_uri: str, meta_uri: str, name: str, dim: int,
             try:
                 if operation == "put" or (operation == "mixed" and local_ops % 2 == 0):
                     descriptor = flight.FlightDescriptor.for_path(worker_name)
-                    writer, _ = data_client.do_put(descriptor, small_table.schema)
+                    options = flight.FlightCallOptions(timeout=DEFAULT_TIMEOUT)
+                    writer, _ = data_client.do_put(descriptor, small_table.schema, options=options)
                     writer.write_table(small_table)
                     writer.close()
                 else:
                     query = {"name": worker_name}
                     ticket = flight.Ticket(json.dumps(query).encode("utf-8"))
-                    reader = data_client.do_get(ticket)
+                    options = flight.FlightCallOptions(timeout=DEFAULT_TIMEOUT)
+                    reader = data_client.do_get(ticket, options=options)
                     _ = reader.read_all()
 
                 local_latencies.append((time.time() - start) * 1000)
@@ -666,7 +676,8 @@ def benchmark_s3_snapshot(client: flight.FlightClient, name: str,
         # Use simple "snapshot" or "force_snapshot" based on server impl. 
         # Server code shows "force_snapshot" in DoAction switch (store.go)
         action = flight.Action("force_snapshot", snapshot_request)
-        results = list(client.do_action(action))
+        options = flight.FlightCallOptions(timeout=DEFAULT_TIMEOUT)
+        results = list(client.do_action(action, options=options))
         duration = time.time() - start
 
         # Parse response for bytes written
@@ -714,8 +725,9 @@ def benchmark_graph_traversal(client: flight.FlightClient, name: str,
 
         start = time.time()
         try:
+            options = flight.FlightCallOptions(timeout=DEFAULT_TIMEOUT)
             action = flight.Action("traverse-graph", request_body)
-            results = list(client.do_action(action))
+            results = list(client.do_action(action, options=options))
             if results:
                 paths = json.loads(results[0].body.to_pybytes())
                 total_paths += len(paths)
@@ -954,6 +966,8 @@ def main():
     # Data Plane operations
     parser.add_argument("--skip-data", action="store_true", help="Skip default Put/Get operations")
 
+    parser.add_argument("--skip-id-search", action="store_true", help="Skip ID search benchmark (useful for sharded setups)")
+    
     args = parser.parse_args()
 
     print("Longbow Performance Test Suite")
@@ -988,7 +1002,7 @@ def main():
     # Use args.skip_data to control Put/Get
     if not args.skip_data:
         # Always run basic PUT/GET
-        include_text = args.hybrid or args.all
+        include_text = args.hybrid or args.all or args.filter
         table = generate_vectors(args.rows, args.dim, with_text=include_text)
 
         # Data Plane operations
@@ -1008,7 +1022,7 @@ def main():
         results.append(r_search)
 
     # Meta Plane operations (Search By ID)
-    if args.search_id or args.all:
+    if (args.search_id or args.all) and not args.skip_id_search:
         ids_to_query = [random.randint(0, args.rows - 1) for _ in range(args.query_count)]
         results.append(benchmark_search_by_id(
             meta_client, args.name, ids_to_query, args.search_k

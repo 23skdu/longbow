@@ -5,6 +5,7 @@ import (
 	"unsafe"
 
 	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/apache/arrow-go/v18/arrow/float16"
 
 	"github.com/klauspost/cpuid/v2"
 )
@@ -23,6 +24,8 @@ type (
 	distanceBatchFunc    func(query []float32, vectors [][]float32, results []float32)
 	distanceSQ8BatchFunc func(query []byte, vectors [][]byte, results []float32)
 	adcDistanceBatchFunc func(table []float32, flatCodes []byte, m int, results []float32)
+
+	distanceF16Func func(a, b []float16.Num) float32
 
 	// CompareOp represents a comparison operator for SIMD filters
 	CompareOp int
@@ -48,8 +51,10 @@ var (
 
 	// Function pointers initialized at startup - eliminates switch overhead in hot path
 	euclideanDistanceImpl      distanceFunc
+	euclideanDistance384Impl   distanceFunc // optimized for dimensions=384
 	cosineDistanceImpl         distanceFunc
 	dotProductImpl             distanceFunc
+	dotProduct384Impl          distanceFunc // optimized for dimensions=384
 	euclideanDistanceBatchImpl distanceBatchFunc
 
 	matchInt64Impl   matchInt64Func
@@ -61,6 +66,10 @@ var (
 
 	// Bitwise operations
 	andBytesImpl func(dst, src []byte)
+
+	euclideanDistanceF16Impl distanceF16Func
+	cosineDistanceF16Impl    distanceF16Func
+	dotProductF16Impl        distanceF16Func
 )
 
 func init() {
@@ -104,9 +113,11 @@ func initializeDispatch() {
 	switch implementation {
 	case "avx512":
 		euclideanDistanceImpl = euclideanAVX512
+		euclideanDistance384Impl = euclidean384AVX512
 		metrics.SimdDispatchCount.WithLabelValues("avx512").Inc()
 		cosineDistanceImpl = cosineAVX512
 		dotProductImpl = dotAVX512
+		dotProduct384Impl = dot384AVX512
 		euclideanDistanceBatchImpl = euclideanBatchAVX512
 		cosineDistanceBatchImpl = cosineBatchAVX512
 		dotProductBatchImpl = dotBatchAVX512
@@ -117,11 +128,16 @@ func initializeDispatch() {
 		euclideanDistanceVerticalBatchImpl = euclideanVerticalBatchAVX512
 		euclideanDistanceSQ8BatchImpl = euclideanSQ8BatchGeneric // Fallback to generic for now
 		andBytesImpl = andBytesGeneric
+		euclideanDistanceF16Impl = euclideanF16AVX512
+		cosineDistanceF16Impl = cosineF16AVX512
+		dotProductF16Impl = dotF16AVX512
 	case "avx2":
 		euclideanDistanceImpl = euclideanAVX2
+		euclideanDistance384Impl = euclideanGeneric // AVX2 384-dim not implemented yet, fallback
 		metrics.SimdDispatchCount.WithLabelValues("avx2").Inc()
 		cosineDistanceImpl = cosineAVX2
 		dotProductImpl = dotAVX2
+		dotProduct384Impl = dotGeneric
 		euclideanDistanceBatchImpl = euclideanBatchAVX2
 		cosineDistanceBatchImpl = cosineBatchAVX2
 		dotProductBatchImpl = dotBatchAVX2
@@ -132,11 +148,16 @@ func initializeDispatch() {
 		euclideanDistanceVerticalBatchImpl = euclideanVerticalBatchAVX2
 		euclideanDistanceSQ8BatchImpl = euclideanSQ8BatchGeneric // Fallback to generic for now
 		andBytesImpl = andBytesGeneric
+		euclideanDistanceF16Impl = euclideanF16AVX2
+		cosineDistanceF16Impl = cosineF16AVX2
+		dotProductF16Impl = dotF16AVX2
 	case "neon":
 		euclideanDistanceImpl = euclideanNEON
+		euclideanDistance384Impl = euclidean384NEON
 		metrics.SimdDispatchCount.WithLabelValues("neon").Inc()
 		cosineDistanceImpl = cosineNEON
 		dotProductImpl = dotNEON
+		dotProduct384Impl = dot384NEON
 		euclideanDistanceBatchImpl = euclideanBatchNEON
 		cosineDistanceBatchImpl = cosineBatchNEON
 		dotProductBatchImpl = dotBatchNEON
@@ -147,11 +168,16 @@ func initializeDispatch() {
 		euclideanDistanceVerticalBatchImpl = euclideanVerticalBatchNEON
 		euclideanDistanceSQ8BatchImpl = euclideanSQ8BatchGeneric // Fallback to generic for now
 		andBytesImpl = andBytesGeneric
+		euclideanDistanceF16Impl = euclideanF16NEON
+		cosineDistanceF16Impl = cosineF16Unrolled4x // TODO: Implement cosineF16NEON
+		dotProductF16Impl = dotF16NEON
 	default:
 		euclideanDistanceImpl = euclideanUnrolled4x
+		euclideanDistance384Impl = euclideanUnrolled4x
 		metrics.SimdDispatchCount.WithLabelValues("generic").Inc()
 		cosineDistanceImpl = cosineUnrolled4x
 		dotProductImpl = dotUnrolled4x
+		dotProduct384Impl = dotUnrolled4x
 		euclideanDistanceBatchImpl = euclideanBatchUnrolled4x
 		cosineDistanceBatchImpl = cosineBatchUnrolled4x
 		dotProductBatchImpl = dotBatchUnrolled4x
@@ -162,6 +188,9 @@ func initializeDispatch() {
 		euclideanDistanceVerticalBatchImpl = euclideanBatchGeneric
 		euclideanDistanceSQ8BatchImpl = euclideanSQ8BatchGeneric
 		andBytesImpl = andBytesGeneric
+		euclideanDistanceF16Impl = euclideanF16Unrolled4x
+		cosineDistanceF16Impl = cosineF16Unrolled4x
+		dotProductF16Impl = dotF16Unrolled4x
 	}
 }
 
@@ -183,6 +212,9 @@ func EuclideanDistance(a, b []float32) float32 {
 	}
 	if len(a) == 0 {
 		return 0
+	}
+	if len(a) == 384 {
+		return euclideanDistance384Impl(a, b)
 	}
 	return euclideanDistanceImpl(a, b)
 }
@@ -208,7 +240,43 @@ func DotProduct(a, b []float32) float32 {
 	if len(a) == 0 {
 		return 0
 	}
+	if len(a) == 384 {
+		return dotProduct384Impl(a, b)
+	}
 	return dotProductImpl(a, b)
+}
+
+// EuclideanDistanceF16 calculates the Euclidean distance between two FP16 vectors.
+func EuclideanDistanceF16(a, b []float16.Num) float32 {
+	if len(a) != len(b) {
+		panic("simd: vector length mismatch")
+	}
+	if len(a) == 0 {
+		return 0
+	}
+	return euclideanDistanceF16Impl(a, b)
+}
+
+// CosineDistanceF16 calculates the cosine distance between two FP16 vectors.
+func CosineDistanceF16(a, b []float16.Num) float32 {
+	if len(a) != len(b) {
+		panic("simd: vector length mismatch")
+	}
+	if len(a) == 0 {
+		return 1.0
+	}
+	return cosineDistanceF16Impl(a, b)
+}
+
+// DotProductF16 calculates the dot product of two FP16 vectors.
+func DotProductF16(a, b []float16.Num) float32 {
+	if len(a) != len(b) {
+		panic("simd: vector length mismatch")
+	}
+	if len(a) == 0 {
+		return 0
+	}
+	return dotProductF16Impl(a, b)
 }
 
 // Prefetch hints to the CPU to fetch data into cache for future use.
@@ -634,4 +702,82 @@ func matchFloat32Generic(src []float32, val float32, op CompareOp, dst []byte) {
 			}
 		}
 	}
+}
+
+// =============================================================================
+// FP16 Generic Implementations (Unrolled 4x)
+// =============================================================================
+
+func euclideanF16Unrolled4x(a, b []float16.Num) float32 {
+	var sum0, sum1, sum2, sum3 float32
+	n := len(a)
+	i := 0
+	for ; i <= n-4; i += 4 {
+		d0 := a[i].Float32() - b[i].Float32()
+		d1 := a[i+1].Float32() - b[i+1].Float32()
+		d2 := a[i+2].Float32() - b[i+2].Float32()
+		d3 := a[i+3].Float32() - b[i+3].Float32()
+		sum0 += d0 * d0
+		sum1 += d1 * d1
+		sum2 += d2 * d2
+		sum3 += d3 * d3
+	}
+	for ; i < n; i++ {
+		d := a[i].Float32() - b[i].Float32()
+		sum0 += d * d
+	}
+	return float32(math.Sqrt(float64(sum0 + sum1 + sum2 + sum3)))
+}
+
+func dotF16Unrolled4x(a, b []float16.Num) float32 {
+	var sum0, sum1, sum2, sum3 float32
+	n := len(a)
+	i := 0
+	for ; i <= n-4; i += 4 {
+		sum0 += a[i].Float32() * b[i].Float32()
+		sum1 += a[i+1].Float32() * b[i+1].Float32()
+		sum2 += a[i+2].Float32() * b[i+2].Float32()
+		sum3 += a[i+3].Float32() * b[i+3].Float32()
+	}
+	for ; i < n; i++ {
+		sum0 += a[i].Float32() * b[i].Float32()
+	}
+	return sum0 + sum1 + sum2 + sum3
+}
+
+func cosineF16Unrolled4x(a, b []float16.Num) float32 {
+	var dot0, dot1, dot2, dot3 float32
+	var normA0, normA1, normA2, normA3 float32
+	var normB0, normB1, normB2, normB3 float32
+	n := len(a)
+	i := 0
+	for ; i <= n-4; i += 4 {
+		va0, va1, va2, va3 := a[i].Float32(), a[i+1].Float32(), a[i+2].Float32(), a[i+3].Float32()
+		vb0, vb1, vb2, vb3 := b[i].Float32(), b[i+1].Float32(), b[i+2].Float32(), b[i+3].Float32()
+		dot0 += va0 * vb0
+		dot1 += va1 * vb1
+		dot2 += va2 * vb2
+		dot3 += va3 * vb3
+		normA0 += va0 * va0
+		normA1 += va1 * va1
+		normA2 += va2 * va2
+		normA3 += va3 * va3
+		normB0 += vb0 * vb0
+		normB1 += vb1 * vb1
+		normB2 += vb2 * vb2
+		normB3 += vb3 * vb3
+	}
+	for ; i < n; i++ {
+		va, vb := a[i].Float32(), b[i].Float32()
+		dot0 += va * vb
+		normA0 += va * va
+		normB0 += vb * vb
+	}
+	dot := dot0 + dot1 + dot2 + dot3
+	normA := normA0 + normA1 + normA2 + normA3
+	normB := normB0 + normB1 + normB2 + normB3
+	if normA == 0 || normB == 0 {
+		return 1.0
+	}
+	return 1.0 - (dot / float32(math.Sqrt(float64(normA)*float64(normB))))
 }

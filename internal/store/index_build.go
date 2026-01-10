@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/pq"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/coder/hnsw"
@@ -27,7 +28,25 @@ func (h *HNSWIndex) Add(batchIdx, rowIdx int) (uint32, error) {
 			if h.dims > 0 && h.dims%8 == 0 {
 				metrics.HNSWPQTrainingTriggered.WithLabelValues(h.dataset.Name).Inc()
 				start := time.Now()
-				err := h.TrainPQ(h.dims, 8, 256, 10)
+
+				// Sample vectors for training
+				sampleSize := 10000
+				if int(id) < sampleSize {
+					sampleSize = int(id)
+				}
+				sample := make([][]float32, 0, sampleSize)
+				step := int(id) / sampleSize
+				if step == 0 {
+					step = 1
+				}
+				for i := 0; i < int(id); i += step {
+					v := h.getVector(VectorID(i))
+					if v != nil {
+						sample = append(sample, v)
+					}
+				}
+
+				err := h.TrainPQ(sample)
 				if err != nil {
 					fmt.Printf("PQ Training failed: %v\n", err)
 				}
@@ -59,7 +78,7 @@ func (h *HNSWIndex) Add(batchIdx, rowIdx int) (uint32, error) {
 	h.pqCodesMu.RUnlock()
 
 	if pqEnabled && encoder != nil {
-		codes := encoder.Encode(vec)
+		codes, _ := encoder.Encode(vec)
 		h.pqCodesMu.Lock()
 		// Resize storage if necessary
 		if int(id) >= len(h.pqCodes) {
@@ -81,7 +100,7 @@ func (h *HNSWIndex) Add(batchIdx, rowIdx int) (uint32, error) {
 		h.pqCodesMu.Unlock()
 
 		// Pack codes into float32 slice for storage in Graph Node
-		nodeVec = PackBytesToFloat32s(codes)
+		nodeVec = pq.PackBytesToFloat32s(codes)
 
 		metrics.HNSWPQCompressedBytesTotal.WithLabelValues(h.dataset.Name).Add(float64(len(codes)))
 	}
@@ -166,7 +185,7 @@ func (h *HNSWIndex) AddSafe(rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32
 	h.pqCodesMu.RUnlock()
 
 	if pqEnabled && encoder != nil {
-		codes := encoder.Encode(vec)
+		codes, _ := encoder.Encode(vec)
 		h.pqCodesMu.Lock()
 		// Resize storage if necessary
 		if int(id) >= len(h.pqCodes) {
@@ -185,7 +204,7 @@ func (h *HNSWIndex) AddSafe(rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32
 		}
 		h.pqCodes[id] = codes
 		h.pqCodesMu.Unlock()
-		nodeVec = PackBytesToFloat32s(codes)
+		nodeVec = pq.PackBytesToFloat32s(codes)
 	}
 
 	h.mu.Lock()
@@ -275,8 +294,8 @@ func (h *HNSWIndex) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []int)
 		// Just use a simple loop if batch is small, spread if large
 		if n < 100 {
 			for i := 0; i < n; i++ {
-				codes := encoder.Encode(vectors[i])
-				encodedVectors[i] = PackBytesToFloat32s(codes)
+				codes, _ := encoder.Encode(vectors[i])
+				encodedVectors[i] = pq.PackBytesToFloat32s(codes)
 			}
 		} else {
 			var wg sync.WaitGroup
@@ -294,7 +313,8 @@ func (h *HNSWIndex) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []int)
 				go func(s, e int) {
 					defer wg.Done()
 					for j := s; j < e; j++ {
-						encodedVectors[j] = PackBytesToFloat32s(encoder.Encode(vectors[j]))
+						codes, _ := encoder.Encode(vectors[j])
+						encodedVectors[j] = pq.PackBytesToFloat32s(codes)
 					}
 				}(start, end)
 			}
@@ -321,7 +341,7 @@ func (h *HNSWIndex) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []int)
 		for i := 0; i < n; i++ {
 			id := int(baseID) + i
 			// UnpackFloat32sToBytes is robust
-			h.pqCodes[id] = UnpackFloat32sToBytes(encodedVectors[i], encoder.CodeSize())
+			h.pqCodes[id] = pq.UnpackFloat32sToBytes(encodedVectors[i], encoder.CodeSize())
 		}
 		h.pqCodesMu.Unlock()
 
@@ -494,7 +514,7 @@ func (h *HNSWIndex) AddBatchParallel(locations []Location, workers int) error {
 }
 
 // SetPQEncoder enables product quantization with the provided encoder.
-func (h *HNSWIndex) SetPQEncoder(encoder *PQEncoder) {
+func (h *HNSWIndex) SetPQEncoder(encoder *pq.PQEncoder) {
 	h.pqCodesMu.Lock()
 	h.pqEncoder = encoder
 	h.pqEnabled = true
@@ -514,55 +534,42 @@ func (h *HNSWIndex) SetPQEncoder(encoder *PQEncoder) {
 
 // TrainPQ trains a PQ encoder on the current dataset elements and enables it.
 // This is a blocking operation.
-func (h *HNSWIndex) TrainPQ(dimensions, m, ksub, iterations int) error {
+func (h *HNSWIndex) TrainPQ(vectors [][]float32) error {
 	start := time.Now()
 	defer func() {
 		metrics.HNSWPQTrainingDuration.WithLabelValues(h.dataset.Name).Observe(time.Since(start).Seconds())
 	}()
 
-	count := int(h.nextVecID.Load())
-	if count == 0 {
-		return fmt.Errorf("cannot train PQ on empty index")
+	if len(vectors) == 0 {
+		return fmt.Errorf("empty training vectors")
 	}
 
-	sampleSize := 10000
-	if count < sampleSize {
-		sampleSize = count
-	}
-
-	vectors := make([][]float32, 0, sampleSize)
-	// Sample uniformly
-	step := count / sampleSize
-	if step == 0 {
-		step = 1
-	}
-
-	for i := 0; i < count; i += step {
-		vec := h.getVector(VectorID(i))
-		if vec != nil {
-			vectors = append(vectors, vec)
+	dims := len(vectors[0])
+	m := 8 // Default
+	if dims%8 != 0 {
+		m = 4 // Fallback
+		if dims%4 != 0 {
+			m = 1
 		}
 	}
+	k := 256
 
-	cfg := &PQConfig{
-		Dimensions:    dimensions,
-		NumSubVectors: m,
-		NumCentroids:  ksub,
+	enc, err := pq.NewPQEncoder(dims, m, k)
+	if err != nil {
+		return err
 	}
 
-	enc, err := TrainPQEncoder(cfg, vectors, iterations)
-	if err != nil {
+	if err := enc.Train(vectors); err != nil {
 		return err
 	}
 
 	h.SetPQEncoder(enc)
 
 	// Encode existing vectors
-	// This needs to be done under lock or carefully managed
+	count := int(h.nextVecID.Load())
 	h.pqCodesMu.Lock()
 	defer h.pqCodesMu.Unlock()
 
-	// Resize codes slice
 	if cap(h.pqCodes) < count {
 		newCodes := make([][]uint8, count)
 		copy(newCodes, h.pqCodes)
@@ -574,9 +581,16 @@ func (h *HNSWIndex) TrainPQ(dimensions, m, ksub, iterations int) error {
 	for i := 0; i < count; i++ {
 		vec := h.getVector(VectorID(i))
 		if vec != nil {
-			h.pqCodes[i] = enc.Encode(vec)
+			codes, _ := enc.Encode(vec)
+			h.pqCodes[i] = codes
 		}
 	}
 
 	return nil
+}
+
+func (h *HNSWIndex) GetPQEncoder() *pq.PQEncoder {
+	h.pqCodesMu.RLock()
+	defer h.pqCodesMu.RUnlock()
+	return h.pqEncoder
 }

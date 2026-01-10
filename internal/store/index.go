@@ -1,6 +1,7 @@
 package store
 
 import (
+	"github.com/23skdu/longbow/internal/pq"
 	"github.com/23skdu/longbow/internal/query"
 	"github.com/apache/arrow-go/v18/arrow"
 )
@@ -53,6 +54,11 @@ type VectorIndex interface {
 
 	// EstimateMemory returns the estimated memory usage of the index in bytes
 	EstimateMemory() int64
+
+	// TrainPQ trains the PQ encoder with provided sample vectors.
+	TrainPQ(vectors [][]float32) error
+	// GetPQEncoder returns the current PQ encoder, if any.
+	GetPQEncoder() *pq.PQEncoder
 
 	// Close releases index resources.
 	Close() error

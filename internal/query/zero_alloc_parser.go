@@ -16,9 +16,12 @@ type TicketQuery struct {
 }
 
 type Filter struct {
-	Field    string `json:"field"`
-	Operator string `json:"operator"`
-	Value    string `json:"value"`
+	Field    string `json:"field,omitempty"`
+	Operator string `json:"operator,omitempty"`
+	Value    string `json:"value,omitempty"`
+	// Logic combines multiple filters: "AND", "OR", "NOT"
+	Logic   string   `json:"logic,omitempty"`
+	Filters []Filter `json:"filters,omitempty"`
 }
 
 // ZeroAllocTicketParser parses TicketQuery JSON with zero allocations
@@ -89,6 +92,13 @@ func (p *ZeroAllocTicketParser) Parse(data []byte) (TicketQuery, error) {
 
 		switch key {
 		case "name":
+			val, newPos, err := parseString(data, i)
+			if err != nil {
+				return p.result, err
+			}
+			p.result.Name = val
+			i = newPos
+		case "dataset": // Alias for name
 			val, newPos, err := parseString(data, i)
 			if err != nil {
 				return p.result, err
@@ -244,6 +254,29 @@ func parseFilter(data []byte, pos int) (Filter, int, error) {
 				}
 				f.Value = safeString(data[start:pos])
 			}
+		case "logic":
+			logicVal, newPos, err := parseString(data, pos)
+			if err != nil {
+				return f, pos, err
+			}
+			f.Logic = logicVal
+			pos = newPos
+		case "filters":
+			// Recursive parsing of filters list
+			// We need a temporary zeroParser-like logic or extract a list
+			// Reusing ZeroAllocTicketParser.parseFilters logic but detached?
+			// The existing parseFilters method is attached to ZeroAllocTicketParser and appends to p.filters.
+			// Currently, TicketParser flattens top-level filters.
+			// For recursive filters, we should support nested parsing.
+			// Let's implement a standalone parseFilterList helper or reuse parseFilters by creating a new context?
+			// Simpler: Just implement array parsing here loop.
+			newFilters := make([]Filter, 0, 4)
+			newPos, err := parseFilterArray(data, pos, &newFilters)
+			if err != nil {
+				return f, pos, err
+			}
+			f.Filters = newFilters
+			pos = newPos
 		default:
 			newPos, err := skipValue(data, pos)
 			if err != nil {
@@ -259,6 +292,41 @@ func parseFilter(data []byte, pos int) (Filter, int, error) {
 	}
 
 	return f, pos, errors.New("unexpected end in filter")
+}
+
+func parseFilterArray(data []byte, pos int, filters *[]Filter) (int, error) {
+	if pos+4 <= len(data) && string(data[pos:pos+4]) == "null" {
+		return pos + 4, nil
+	}
+	if pos >= len(data) || data[pos] != '[' {
+		return pos, errors.New("expected opening bracket for filters")
+	}
+	pos++
+
+	for pos < len(data) {
+		pos = skipWhitespace(data, pos)
+		if pos >= len(data) {
+			return pos, errors.New("unexpected end in nested filters")
+		}
+
+		if data[pos] == ']' {
+			return pos + 1, nil
+		}
+
+		f, newPos, err := parseFilter(data, pos)
+		if err != nil {
+			return pos, err
+		}
+		*filters = append(*filters, f)
+		pos = newPos
+
+		pos = skipWhitespace(data, pos)
+		if pos < len(data) && data[pos] == ',' {
+			pos++
+		}
+	}
+
+	return pos, errors.New("unexpected end in nested filters")
 }
 
 // ... Primitives ...
@@ -440,7 +508,7 @@ func skipValue(data []byte, pos int) (int, error) {
 }
 
 func skipObject(data []byte, pos int) (int, error) {
-	if data[pos] != '{' {
+	if pos >= len(data) || data[pos] != '{' {
 		return pos, errors.New("expected opening brace")
 	}
 	depth := 1
@@ -468,7 +536,7 @@ func skipObject(data []byte, pos int) (int, error) {
 }
 
 func skipArray(data []byte, pos int) (int, error) {
-	if data[pos] != '[' {
+	if pos >= len(data) || data[pos] != '[' {
 		return pos, errors.New("expected opening bracket")
 	}
 	depth := 1

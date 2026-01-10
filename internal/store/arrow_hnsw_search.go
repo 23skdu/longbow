@@ -3,6 +3,7 @@ package store
 import (
 	"fmt"
 	"math"
+
 	"runtime"
 	"slices"
 	"sort"
@@ -669,6 +670,24 @@ func (h *ArrowHNSW) getVector(id uint32) ([]float32, error) {
 func (h *ArrowHNSW) mustGetVectorFromData(data *GraphData, id uint32) []float32 {
 	// Try getting from GraphData (hot storage) first if available
 	if data != nil && data.Dims > 0 {
+		if h.config.Float16Enabled { 
+			cID := chunkID(id) 
+
+			chunk := data.GetVectorsF16Chunk(cID) 
+			if chunk != nil { 
+				cOff := chunkOffset(id) 
+				start := int(cOff) * data.Dims 
+				if start+data.Dims <= len(chunk) { 
+					res := make([]float32, data.Dims) 
+					src := chunk[start : start+data.Dims] 
+					for i := range res { 
+						res[i] = src[i].Float32() 
+					} 
+					return res 
+				} 
+			} 
+		} 
+
 		cID := chunkID(id)
 		chunk := data.GetVectorsChunk(cID)
 		if chunk != nil {

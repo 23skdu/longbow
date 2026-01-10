@@ -36,6 +36,8 @@ These parameters control the HNSW graph construction and search behavior.
 | `LONGBOW_HNSW_ALPHA` | `1.0` | **Pragma**: Diversity parameter for neighbor selection. Set to `1.2` for better connectivity at scale. |
 | `LONGBOW_HNSW_KEEP_PRUNED` | `false` | **Pragma**: If true, ensures nodes always reach `M` connections by backfilling pruned edges. |
 | `LONGBOW_HNSW_SQ8_ENABLED` | `false` | Enable SQ8 scalar quantization for 4x memory reduction. |
+| `LONGBOW_HNSW_FLOAT16_ENABLED` | `false` | Enable native Float16 storage for 2x memory reduction. |
+
 | `LONGBOW_HNSW_REFINEMENT_FACTOR` | `1.0` | Refinement factor for SQ8 search. `2.0-4.0` recommended for high recall. |
 | `LONGBOW_USE_HNSW2` | `false` | Enable the new Arrow-native HNSW implementation. |
 | `LONGBOW_AUTO_SHARDING_THRESHOLD` | `10000` | Number of vectors per shard before triggering a split. |

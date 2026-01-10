@@ -9,6 +9,7 @@ import (
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/pq"
 	"github.com/23skdu/longbow/internal/query"
+	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
 const (
@@ -47,6 +48,8 @@ type ArrowHNSWConfig struct {
 	RefinementFactor        float64 // Changed to float64 to match usage
 	KeepPrunedConnections   bool
 	BQEnabled               bool
+	Float16Enabled          bool // Enable native float16 storage
+
 	Dims                    int // Explicit dimension size if known
 }
 
@@ -196,6 +199,7 @@ type GraphData struct {
 	SlabArena    *memory.SlabArena
 	Uint8Arena   *memory.TypedArena[uint8]
 	Float32Arena *memory.TypedArena[float32]
+	Float16Arena *memory.TypedArena[float16.Num]
 	Uint32Arena  *memory.TypedArena[uint32]
 	Int32Arena   *memory.TypedArena[int32]
 	Uint64Arena  *memory.TypedArena[uint64]
@@ -204,6 +208,7 @@ type GraphData struct {
 	// 0 means unallocated (nil).
 	Levels     []uint64 // []*[]uint8 -> []offset
 	Vectors    []uint64 // []*[]float32 -> []offset
+	VectorsF16 []uint64 // []*[]float16.Num -> []offset
 	VectorsSQ8 []uint64 // []*[]byte -> []offset
 	VectorsPQ  []uint64 // []*[]byte -> []offset
 	VectorsBQ  []uint64 // []*[]uint64 -> []offset
@@ -218,7 +223,7 @@ const (
 	MaxNeighbors   = 448
 )
 
-func NewGraphData(capacity, dims int, sq8Enabled, pqEnabled bool, pqDims int, bqEnabled bool) *GraphData {
+func NewGraphData(capacity, dims int, sq8Enabled, pqEnabled bool, pqDims int, bqEnabled bool, float16Enabled bool) *GraphData {
 	numChunks := (capacity + ChunkSize - 1) / ChunkSize
 	if numChunks < 1 {
 		numChunks = 1
@@ -231,6 +236,11 @@ func NewGraphData(capacity, dims int, sq8Enabled, pqEnabled bool, pqDims int, bq
 
 	slab := memory.NewSlabArena(estSize)
 
+	var f16Arena *memory.TypedArena[float16.Num] 
+	if float16Enabled { 
+		f16Arena = memory.NewTypedArena[float16.Num](slab) 
+	} 
+
 	gd := &GraphData{
 		Capacity:     numChunks * ChunkSize,
 		Dims:         dims,
@@ -238,6 +248,8 @@ func NewGraphData(capacity, dims int, sq8Enabled, pqEnabled bool, pqDims int, bq
 		SlabArena:    slab,
 		Uint8Arena:   memory.NewTypedArena[uint8](slab),
 		Float32Arena: memory.NewTypedArena[float32](slab),
+		Float16Arena: f16Arena, 
+
 		Uint32Arena:  memory.NewTypedArena[uint32](slab),
 		Int32Arena:   memory.NewTypedArena[int32](slab),
 		Uint64Arena:  memory.NewTypedArena[uint64](slab),
@@ -246,6 +258,10 @@ func NewGraphData(capacity, dims int, sq8Enabled, pqEnabled bool, pqDims int, bq
 	}
 	if dims > 0 {
 		gd.Vectors = make([]uint64, numChunks)
+		if float16Enabled { 
+			gd.VectorsF16 = make([]uint64, numChunks) 
+		} 
+
 		if sq8Enabled {
 			gd.VectorsSQ8 = make([]uint64, numChunks)
 		}
@@ -434,6 +450,8 @@ func (gd *GraphData) Clone(minCap, targetDims int, sq8Enabled, pqEnabled bool, p
 		SlabArena:    gd.SlabArena,
 		Uint8Arena:   gd.Uint8Arena,
 		Float32Arena: gd.Float32Arena,
+		Float16Arena: gd.Float16Arena, 
+
 		Uint32Arena:  gd.Uint32Arena,
 		Int32Arena:   gd.Int32Arena,
 		Uint64Arena:  gd.Uint64Arena,
@@ -513,6 +531,28 @@ func (gd *GraphData) Clone(minCap, targetDims int, sq8Enabled, pqEnabled bool, p
 		}
 	}
 
+	// Float16 
+	if len(gd.VectorsF16) > 0 { 
+		limit = len(gd.VectorsF16) 
+		if len(newGD.VectorsF16) < limit { 
+			limit = len(newGD.VectorsF16) 
+		} 
+		for i := 0; i < limit; i++ { 
+			newGD.VectorsF16[i] = atomic.LoadUint64(&gd.VectorsF16[i]) 
+		} 
+	} 
+
+	// Float16 
+	if len(gd.VectorsF16) > 0 { 
+		limit = len(gd.VectorsF16) 
+		if len(newGD.VectorsF16) < limit { 
+			limit = len(newGD.VectorsF16) 
+		} 
+		for i := 0; i < limit; i++ { 
+			newGD.VectorsF16[i] = atomic.LoadUint64(&gd.VectorsF16[i]) 
+		} 
+	} 
+
 	// Neighbors / Counts / Versions
 	for i := 0; i < ArrowMaxLayers; i++ {
 		// Neighbors
@@ -569,7 +609,8 @@ func (h *ArrowHNSW) growNoLock(minCap, dims int) {
 	// Check if we need to upgrade schema (enable PQ/SQ8/BQ)
 	needsUpgrade := (h.config.PQEnabled && data.VectorsPQ == nil) ||
 		(h.config.SQ8Enabled && data.VectorsSQ8 == nil) ||
-		(h.config.BQEnabled && data.VectorsBQ == nil)
+		(h.config.BQEnabled && data.VectorsBQ == nil) || (h.config.Float16Enabled && data.VectorsF16 == nil)
+
 
 	if !needsUpgrade && data.Capacity >= minCap && data.Dims == dims && data.PQDims == h.config.PQM {
 		return
@@ -582,6 +623,7 @@ func (h *ArrowHNSW) growNoLock(minCap, dims int) {
 		}
 	}
 	newGD := data.Clone(newCap, dims, h.config.SQ8Enabled, h.config.PQEnabled, h.config.PQM, h.config.BQEnabled) // fixed config
+
 	h.data.Store(newGD)
 }
 
@@ -882,7 +924,7 @@ func (h *ArrowHNSW) ensureChunk(data *GraphData, cID, _ uint32, dims int) *Graph
 	}
 
 	// Vectors
-	if dims > 0 && len(data.Vectors) > int(cID) && atomic.LoadUint64(&data.Vectors[cID]) == 0 {
+	if !h.config.Float16Enabled && dims > 0 && len(data.Vectors) > int(cID) && atomic.LoadUint64(&data.Vectors[cID]) == 0 {
 		ref, err := data.Float32Arena.AllocSlice(ChunkSize * dims)
 		if err == nil {
 			atomic.CompareAndSwapUint64(&data.Vectors[cID], 0, ref.Offset)
@@ -903,16 +945,33 @@ func (h *ArrowHNSW) ensureChunk(data *GraphData, cID, _ uint32, dims int) *Graph
 		if err == nil {
 			atomic.CompareAndSwapUint64(&data.VectorsPQ[cID], 0, ref.Offset)
 		}
+	// Float16 
+	if h.config.Float16Enabled && dims > 0 && len(data.VectorsF16) > int(cID) && atomic.LoadUint64(&data.VectorsF16[cID]) == 0 { 
+		ref, err := data.Float16Arena.AllocSlice(ChunkSize * dims) 
+		if err == nil { 
+			atomic.CompareAndSwapUint64(&data.VectorsF16[cID], 0, ref.Offset) 
+		} 
+	} 
+
 	}
 
 	// BQ
 	if h.config.BQEnabled && dims > 0 && len(data.VectorsBQ) > int(cID) && atomic.LoadUint64(&data.VectorsBQ[cID]) == 0 {
+
 		numWords := (dims + 63) / 64
 		ref, err := data.Uint64Arena.AllocSlice(ChunkSize * numWords)
 		if err == nil {
 			atomic.CompareAndSwapUint64(&data.VectorsBQ[cID], 0, ref.Offset)
 		}
 	}
+
+	// Float16 
+	if h.config.Float16Enabled && dims > 0 && len(data.VectorsF16) > int(cID) && atomic.LoadUint64(&data.VectorsF16[cID]) == 0 { 
+		ref, err := data.Float16Arena.AllocSlice(ChunkSize * dims) 
+		if err == nil { 
+			atomic.CompareAndSwapUint64(&data.VectorsF16[cID], 0, ref.Offset) 
+		} 
+	} 
 
 	// Neighbors context
 	for i := 0; i < ArrowMaxLayers; i++ {
@@ -1004,4 +1063,20 @@ func (h *ArrowHNSW) GetEntryPoint() uint32 {
 // GetMaxLevel returns the current maximum level in the graph.
 func (h *ArrowHNSW) GetMaxLevel() int {
 	return int(h.maxLevel.Load())
+}
+
+func (gd *GraphData) GetVectorsF16Chunk(chunkID uint32) []float16.Num {
+	if gd.VectorsF16 == nil || int(chunkID) >= len(gd.VectorsF16) {
+		return nil
+	}
+	offset := atomic.LoadUint64(&gd.VectorsF16[chunkID])
+	if offset == 0 {
+		return nil
+	}
+	ref := memory.SliceRef{
+		Offset: offset,
+		Len:    uint32(ChunkSize * gd.Dims),
+		Cap:    uint32(ChunkSize * gd.Dims),
+	}
+	return gd.Float16Arena.Get(ref)
 }

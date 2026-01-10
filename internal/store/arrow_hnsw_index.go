@@ -9,12 +9,14 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/query"
 	"github.com/23skdu/longbow/internal/simd"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/float16"
 	"github.com/apache/arrow-go/v18/arrow/memory"
+	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -60,6 +62,11 @@ func NewArrowHNSW(dataset *Dataset, config ArrowHNSWConfig, locStore *ChunkedLoc
 		config = DefaultArrowHNSWConfig()
 	}
 
+	dsName := "default"
+	if dataset != nil {
+		dsName = dataset.Name
+	}
+
 	h := &ArrowHNSW{
 		dataset:        dataset,
 		config:         config,
@@ -71,6 +78,16 @@ func NewArrowHNSW(dataset *Dataset, config ArrowHNSWConfig, locStore *ChunkedLoc
 		deleted:        query.NewAtomicBitset(), // Initial capacity, grows
 		metric:         config.Metric,
 		vectorColIdx:   -1,
+
+		// Initialize Cached Metrics
+		metricInsertDuration:     metrics.HNSWInsertDurationSeconds,
+		metricNodeCount:          metrics.HNSWNodesTotal.WithLabelValues(dsName),
+		metricGraphHeight:        metrics.HnswGraphHeight.WithLabelValues(dsName),
+		metricActiveReaders:      metrics.HnswActiveReaders.WithLabelValues(dsName),
+		metricLockWait:           metrics.IndexLockWaitDuration.MustCurryWith(prometheus.Labels{"dataset": dsName}),
+		metricBulkInsertDuration: metrics.HNSWBulkInsertDurationSeconds,
+		metricBulkVectors:        metrics.HNSWBulkVectorsProcessedTotal,
+		metricBQVectors:          metrics.BQVectorsTotal.WithLabelValues(dsName),
 	}
 
 	h.distFunc = h.resolveDistanceFunc()

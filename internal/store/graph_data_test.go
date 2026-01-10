@@ -15,7 +15,7 @@ func TestGraphData_Accessors(t *testing.T) {
 
 	// Test GetNeighborsChunk
 	t.Run("GetNeighborsChunk", func(t *testing.T) {
-		gd := NewGraphData(capacity, dims, false, false, 0, false)
+		gd := NewGraphData(capacity, dims, false, false, 0, false, false)
 		defer func() { _ = gd.Close() }()
 		layer := 0
 		chunkID := uint32(0)
@@ -38,7 +38,7 @@ func TestGraphData_Accessors(t *testing.T) {
 
 	// Test GetCountsChunk
 	t.Run("GetCountsChunk", func(t *testing.T) {
-		gd := NewGraphData(capacity, dims, false, false, 0, false)
+		gd := NewGraphData(capacity, dims, false, false, 0, false, false)
 		defer func() { _ = gd.Close() }()
 		layer := 0
 		chunkID := uint32(0)
@@ -59,7 +59,7 @@ func TestGraphData_Accessors(t *testing.T) {
 
 	// Test GetVersionsChunk
 	t.Run("GetVersionsChunk", func(t *testing.T) {
-		gd := NewGraphData(capacity, dims, false, false, 0, false)
+		gd := NewGraphData(capacity, dims, false, false, 0, false, false)
 		defer func() { _ = gd.Close() }()
 		layer := 0
 
@@ -80,7 +80,7 @@ func TestGraphData_Accessors(t *testing.T) {
 
 	// Test GetVectorsChunk
 	t.Run("GetVectorsChunk", func(t *testing.T) {
-		gd := NewGraphData(capacity, dims, false, false, 0, false)
+		gd := NewGraphData(capacity, dims, false, false, 0, false, false)
 		defer func() { _ = gd.Close() }()
 		chunkID := uint32(0)
 		// Vectors array is allocated in NewGraphData if dims > 0
@@ -115,7 +115,7 @@ func TestGraphData_Accessors(t *testing.T) {
 
 	// Test Bounds Checking
 	t.Run("BoundsChecking", func(t *testing.T) {
-		gd := NewGraphData(capacity, dims, false, false, 0, false)
+		gd := NewGraphData(capacity, dims, false, false, 0, false, false)
 		defer func() { _ = gd.Close() }()
 		// Out of bounds layer
 		assert.Nil(t, gd.GetNeighborsChunk(999, 0))
@@ -126,7 +126,7 @@ func TestGraphData_Accessors(t *testing.T) {
 
 	// Test Arena Direct
 	t.Run("ArenaDirect", func(t *testing.T) {
-		gd := NewGraphData(capacity, dims, false, false, 0, false)
+		gd := NewGraphData(capacity, dims, false, false, 0, false, false)
 		defer func() { _ = gd.Close() }()
 		// Alloc
 		numWords := ChunkSize
@@ -155,7 +155,7 @@ func TestGraphData_Accessors(t *testing.T) {
 // Test Refactoring Correctness - ensure no "pointers to slices"
 func TestGraphData_Signatures(t *testing.T) {
 	// This uses reflection or just static typing in the test to prove we get slices
-	gd := NewGraphData(100, 128, false, false, 0, false)
+	gd := NewGraphData(100, 128, false, false, 0, false, false)
 	defer func() { _ = gd.Close() }()
 
 	chunks := gd.GetNeighborsChunk(0, 0)

@@ -121,7 +121,7 @@ func TestAddConnection(t *testing.T) {
 	index := NewArrowHNSW(dataset, config, nil)
 
 	// Initialize GraphData manually
-	data := NewGraphData(0, 64, false, false, 0, false)
+	data := NewGraphData(0, 64, false, false, 0, false, false)
 	index.data.Store(data)
 
 	// Allocate chunks
@@ -176,7 +176,7 @@ func TestPruneConnections(t *testing.T) {
 	index := NewArrowHNSW(dataset, config, nil)
 
 	// Initialize GraphData manually
-	data := NewGraphData(20, 11, false, false, 0, false)
+	data := NewGraphData(20, 11, false, false, 0, false, false)
 	index.data.Store(data)
 
 	// Allocate chunks

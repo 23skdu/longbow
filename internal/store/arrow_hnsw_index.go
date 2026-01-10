@@ -13,6 +13,7 @@ import (
 	"github.com/23skdu/longbow/internal/simd"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
+	"github.com/apache/arrow-go/v18/arrow/float16"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"golang.org/x/sync/errgroup"
 )
@@ -73,6 +74,7 @@ func NewArrowHNSW(dataset *Dataset, config ArrowHNSWConfig, locStore *ChunkedLoc
 	}
 
 	h.distFunc = h.resolveDistanceFunc()
+	h.distFuncF16 = h.resolveDistanceFuncF16()
 	h.batchDistFunc = h.resolveBatchDistanceFunc()
 
 	h.shardedLocks = make([]sync.Mutex, ShardedLockCount)
@@ -517,6 +519,20 @@ func (h *ArrowHNSW) resolveDistanceFunc() func(a, b []float32) float32 {
 		}
 	default: // Euclidean
 		return simd.EuclideanDistance
+	}
+}
+
+// resolveDistanceFuncF16 returns the FP16 distance function.
+func (h *ArrowHNSW) resolveDistanceFuncF16() func(a, b []float16.Num) float32 {
+	switch h.metric {
+	case MetricCosine:
+		return simd.CosineDistanceF16
+	case MetricDotProduct:
+		return func(a, b []float16.Num) float32 {
+			return -simd.DotProductF16(a, b)
+		}
+	default: // Euclidean
+		return simd.EuclideanDistanceF16
 	}
 }
 

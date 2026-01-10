@@ -96,6 +96,30 @@ var (
 		},
 		[]string{"allocator"},
 	)
+
+	// AllocatorBytesAllocatedTotal tracks cumulative bytes allocated
+	AllocatorBytesAllocatedTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_allocator_bytes_allocated_total",
+			Help: "Total bytes allocated by the custom allocator",
+		},
+	)
+
+	// AllocatorBytesFreedTotal tracks cumulative bytes freed
+	AllocatorBytesFreedTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_allocator_bytes_freed_total",
+			Help: "Total bytes freed by the custom allocator",
+		},
+	)
+
+	// AllocatorAllocationsActive tracks number of active allocation objects
+	AllocatorAllocationsActive = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "longbow_allocator_allocations_active",
+			Help: "Number of currently active memory allocations",
+		},
+	)
 )
 
 // =============================================================================
@@ -529,6 +553,13 @@ var (
 		prometheus.CounterOpts{
 			Name: "longbow_hnsw_bitset_grow_total",
 			Help: "Total number of times a bitset was grown/reallocated",
+		},
+	)
+
+	HNSWDistanceCalculationsF16Total = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_hnsw_distance_calculations_f16_total",
+			Help: "Total number of native FP16 distance calculations performed",
 		},
 	)
 )

@@ -69,6 +69,18 @@ func (h *ArrowHNSW) TrainPQ(vectors [][]float32) error {
 
 	// Backfill existing vectors
 	data := h.data.Load()
+
+	if h.config.AdaptiveMEnabled && !h.adaptiveMTriggered.Load() {
+		count := int(h.nodeCount.Load())
+		threshold := h.config.AdaptiveMThreshold
+		if threshold <= 0 {
+			threshold = 100
+		}
+
+		if count == threshold {
+			h.adjustMParameter(data, threshold)
+		}
+	}
 	if data != nil {
 		// If data doesn't have VectorsPQ allocated, we need to upgrade it
 		// Grow will check PQDims and PQEnabled
@@ -133,6 +145,18 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec []float32, level int) error 
 	dims := int(h.dims.Load())
 
 	data := h.data.Load()
+
+	if h.config.AdaptiveMEnabled && !h.adaptiveMTriggered.Load() {
+		count := int(h.nodeCount.Load())
+		threshold := h.config.AdaptiveMThreshold
+		if threshold <= 0 {
+			threshold = 100
+		}
+
+		if count == threshold {
+			h.adjustMParameter(data, threshold)
+		}
+	}
 
 	// Invariant: If dims > 0, Vectors/SQ8 arrays MUST exist in data.
 	// We check both Capacity and existence of structures.

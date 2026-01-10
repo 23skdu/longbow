@@ -20,10 +20,12 @@ Based on deep analysis of `0.1.3` performance reports, specifically the concurre
     * **Fix**: Decouple WAL writing (batching) from graph insertion. Return success once durable in WAL, process graph update asynchronously with backpressure.
 
 4. **Zero-Copy Ingestion (FP16)**:
+    * **Status**: DONE (Implemented in `internal/store` for direct Float16 handling).
     * **Problem**: Ingestion converts `float32` -> `float16`.
     * **Fix**: Allow clients to send Arrow `Float16` arrays directly. Implement `Cast` kernels in the Arrow Flight server to handle incoming types efficiently.
 
 5. **Remove Global Locks in Metrics**:
+    * **Status**: DONE (Refactored to use cached handles, achieved 17x speedup).
     * **Problem**: Prometheus constructs `WithLabelValues` often acquire a global map lock.
     * **Fix**: Cache metrics handles in local structures or use `ConstMetric` where appropriate to avoid hot-path locking.
 

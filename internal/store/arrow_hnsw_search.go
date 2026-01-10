@@ -109,11 +109,13 @@ func (h *ArrowHNSW) Search(q []float32, k, ef int, filter *query.Bitset) ([]Sear
 	// Ensure visited bitset is large enough
 	// Reuse or create visited bitset
 	nodeCount := int(h.nodeCount.Load())
-	if ctx.visited == nil || ctx.visited.Size() < nodeCount {
-		ctx.visited = NewArrowBitset(nodeCount)
-	} else {
-		ctx.visited.ClearSIMD()
+	if ctx.visited == nil {
+		ctx.visited = NewArrowBitset(nodeCount + 1000)
+	} else if ctx.visited.Size() < nodeCount {
+		ctx.visited.Grow(nodeCount + 1000)
+		// Grow clears new bits, ResetVisited handles old ones
 	}
+	// We do NOT clear set here, because searchLayer calls ResetVisited()
 
 	// Start from entry point (atomic load)
 	ep := h.entryPoint.Load()
@@ -185,7 +187,8 @@ func (h *ArrowHNSW) Search(q []float32, k, ef int, filter *query.Bitset) ([]Sear
 // searchLayer performs greedy search at a specific layer.
 // Returns the closest node found.
 func (h *ArrowHNSW) searchLayer(q []float32, entryPoint uint32, ef, layer int, ctx *ArrowSearchContext, data *GraphData, filter *query.Bitset) (candidate uint32) {
-	ctx.visited.Clear()
+	// Optimistic Clearing: Use sparse list instead of O(N) memset
+	ctx.ResetVisited()
 	ctx.candidates.Clear()
 
 	// Initialize with entry point
@@ -195,7 +198,7 @@ func (h *ArrowHNSW) searchLayer(q []float32, entryPoint uint32, ef, layer int, c
 	}
 
 	ctx.candidates.Push(Candidate{ID: entryPoint, Dist: entryDist})
-	ctx.visited.Set(entryPoint)
+	ctx.Visit(entryPoint)
 
 	// W: result set (max-heap to track furthest result)
 	resultSet := ctx.resultSet
@@ -340,7 +343,7 @@ func (h *ArrowHNSW) searchLayer(q []float32, entryPoint uint32, ef, layer int, c
 
 			// Commit visited state
 			for _, nid := range ctx.scratchIDs {
-				ctx.visited.Set(nid)
+				ctx.Visit(nid)
 			}
 
 			batchCount := len(ctx.scratchIDs)
@@ -710,6 +713,36 @@ func (h *ArrowHNSW) getVector(id uint32) ([]float32, error) {
 	}
 	// Extract vector using zero-copy Arrow access
 	return ExtractVectorFromArrow(rec, loc.RowIdx, h.vectorColIdx)
+}
+
+// getVectorF16 retrieves a vector from Arrow storage as Float16 (Zero-Copy).
+func (h *ArrowHNSW) getVectorF16(id uint32) ([]float16.Num, error) {
+	if h.locationStore != nil {
+		if loc, ok := h.locationStore.Get(VectorID(id)); ok {
+			if h.dataset == nil {
+				return nil, fmt.Errorf("dataset is nil for vector %d", id)
+			}
+			rec, ok := h.dataset.GetRecord(loc.BatchIdx)
+			if !ok {
+				return nil, fmt.Errorf("batch index %d out of bounds", loc.BatchIdx)
+			}
+			return ExtractVectorF16FromArrow(rec, loc.RowIdx, h.vectorColIdx)
+		}
+	}
+
+	// Fallback to dataset index
+	if h.dataset == nil || h.dataset.Index == nil {
+		return nil, fmt.Errorf("dataset index is nil and vector %d not in internal store", id)
+	}
+	loc, ok := h.dataset.Index.GetLocation(VectorID(id))
+	if !ok {
+		return nil, fmt.Errorf("vector %d not found in locationStore", id)
+	}
+	rec, ok := h.dataset.GetRecord(loc.BatchIdx)
+	if !ok {
+		return nil, fmt.Errorf("batch index %d out of bounds", loc.BatchIdx)
+	}
+	return ExtractVectorF16FromArrow(rec, loc.RowIdx, h.vectorColIdx)
 }
 func (h *ArrowHNSW) mustGetVectorFromData(data *GraphData, id uint32) []float32 {
 	// Try getting from GraphData (hot storage) first if available

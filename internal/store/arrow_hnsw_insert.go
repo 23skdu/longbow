@@ -3,6 +3,8 @@ package store
 import (
 	"fmt"
 	"math"
+	"github.com/apache/arrow-go/v18/arrow/float16" 
+
 	"math/rand"
 	"slices"
 	"sync"
@@ -193,19 +195,26 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec []float32, level int) error 
 	// Recovery block removed: Invariant guarantees Vectors exist if dims > 0.
 
 	// Store Dense Vector (Copy for L2 locality)
-	if len(vec) > 0 && dims > 0 {
-		// ensureChunk guarantees allocation (or recovery above)
-		vecChunk := data.GetVectorsChunk(cID)
-		if data.Vectors == nil || int(cID) >= len(data.Vectors) || vecChunk == nil {
-			// This path indicates a critical synchronization failure or logic error in ensureChunk/Grow
-			// Instead of panicking, return error to allow caller to handle/retry
-			return fmt.Errorf("vector allocation failure for ID %d (dims=%d): inconsistent state", id, dims)
-		}
+	if len(vec) > 0 && dims > 0 { 
+		if h.config.Float16Enabled { 
+			f16Chunk := data.GetVectorsF16Chunk(cID) 
+			if f16Chunk != nil { 
+				dest := f16Chunk[int(cOff)*dims : (int(cOff)+1)*dims] 
+				for i, v := range vec { 
+					dest[i] = float16.New(v) 
+				} 
+			} 
+		} else { 
+			vecChunk := data.GetVectorsChunk(cID) 
+			if data.Vectors == nil || int(cID) >= len(data.Vectors) || vecChunk == nil { 
+				return fmt.Errorf("vector allocation failure for ID %d (dims=%d): inconsistent state", id, dims) 
+			} 
+			dest := vecChunk[int(cOff)*dims : (int(cOff)+1)*dims] 
+			copy(dest, vec) 
+			vec = dest 
+		} 
+	} 
 
-		dest := vecChunk[int(cOff)*dims : (int(cOff)+1)*dims]
-		copy(dest, vec)
-		vec = dest // Use stable reference from GraphData
-	}
 
 	// Store Binary Quantized Vector
 	if h.config.BQEnabled && dims > 0 {

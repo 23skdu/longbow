@@ -10,7 +10,7 @@ func TestDiskGraph_RoundTrip(t *testing.T) {
 	// 1. Create a dummy GraphData
 	capacity := 1024
 	dims := 4
-	gd := NewGraphData(capacity, dims, true, true, 2, false)
+	gd := NewGraphData(capacity, dims, true, true, 2, false, false)
 
 	// Populate neighbors
 	// We must allocate full chunks for GraphData to work

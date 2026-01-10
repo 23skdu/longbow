@@ -31,7 +31,7 @@ func TestInsertProperties(t *testing.T) {
 			index.dims.Store(2)
 
 			// Init data
-			data := NewGraphData(nodeCount+10, 2, false, false, 0, false)
+			data := NewGraphData(nodeCount+10, 2, false, false, 0, false, false)
 			index.data.Store(data)
 
 			// Helper to add fake vector chunk
@@ -128,7 +128,7 @@ func TestInsertProperties(t *testing.T) {
 			index.dims.Store(1) // use 1-dim vectors
 
 			// Initialize GraphData manually
-			data := NewGraphData(1000, 64, false, false, 0, false) // capacity 10, dim 1
+			data := NewGraphData(1000, 64, false, false, 0, false, false) // capacity 10, dim 1
 			index.data.Store(data)
 
 			// Setup dummy vectors

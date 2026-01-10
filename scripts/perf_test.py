@@ -1002,7 +1002,7 @@ def main():
     # Use args.skip_data to control Put/Get
     if not args.skip_data:
         # Always run basic PUT/GET
-        include_text = args.hybrid or args.all
+        include_text = args.hybrid or args.all or args.filter
         table = generate_vectors(args.rows, args.dim, with_text=include_text)
 
         # Data Plane operations

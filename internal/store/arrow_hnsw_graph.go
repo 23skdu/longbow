@@ -4,6 +4,7 @@ import (
 	"runtime"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/23skdu/longbow/internal/memory"
 	"github.com/23skdu/longbow/internal/metrics"
@@ -43,6 +44,10 @@ type ArrowHNSWConfig struct {
 	AdaptiveEf              bool
 	AdaptiveEfMin           int
 	AdaptiveEfThreshold     int
+	AdaptiveMEnabled        bool
+	AdaptiveMThreshold      int
+	RepairInterval          time.Duration
+	RepairBatchSize         int
 	SelectionHeuristicLimit int
 	Alpha                   float32
 	RefinementFactor        float64 // Changed to float64 to match usage
@@ -50,7 +55,7 @@ type ArrowHNSWConfig struct {
 	BQEnabled               bool
 	Float16Enabled          bool // Enable native float16 storage
 
-	Dims                    int // Explicit dimension size if known
+	Dims int // Explicit dimension size if known
 }
 
 func DefaultArrowHNSWConfig() ArrowHNSWConfig {
@@ -84,6 +89,7 @@ type ArrowSearchContext struct {
 
 	querySQ8       []byte
 	queryBQ        []uint64
+	queryF16       []float16.Num
 	adcTable       []float32
 	scratchPQCodes []byte
 	pruneDepth     int
@@ -103,6 +109,7 @@ func NewArrowSearchContext() *ArrowSearchContext {
 		scratchVecs:      make([][]float32, 0, MaxNeighbors),
 		scratchVecsSQ8:   make([][]byte, 0, MaxNeighbors),
 		querySQ8:         make([]byte, 0, 1536), // Common high-dim size
+		queryF16:         make([]float16.Num, 0, 1536),
 	}
 }
 
@@ -141,6 +148,7 @@ func (c *ArrowSearchContext) Reset() {
 
 	c.querySQ8 = c.querySQ8[:0]
 	c.queryBQ = c.queryBQ[:0]
+	c.queryF16 = c.queryF16[:0]
 	c.adcTable = c.adcTable[:0]
 	c.scratchPQCodes = c.scratchPQCodes[:0]
 	c.pruneDepth = 0
@@ -165,16 +173,18 @@ type ArrowHNSW struct {
 	deleted    *query.AtomicBitset
 	searchPool *sync.Pool
 
-	quantizer         *ScalarQuantizer
-	sq8TrainingBuffer [][]float32
-	pqEncoder         *pq.PQEncoder
-	bqEncoder         *BQEncoder
-	sq8Ready          atomic.Bool
+	quantizer          *ScalarQuantizer
+	sq8TrainingBuffer  [][]float32
+	pqEncoder          *pq.PQEncoder
+	bqEncoder          *BQEncoder
+	adaptiveMTriggered atomic.Bool
+	sq8Ready           atomic.Bool
 
 	locationStore *ChunkedLocationStore
 
 	metric        DistanceMetric
 	distFunc      func([]float32, []float32) float32
+	distFuncF16   func([]float16.Num, []float16.Num) float32
 	batchDistFunc func([]float32, [][]float32, []float32)
 	batchComputer interface{}
 
@@ -236,10 +246,10 @@ func NewGraphData(capacity, dims int, sq8Enabled, pqEnabled bool, pqDims int, bq
 
 	slab := memory.NewSlabArena(estSize)
 
-	var f16Arena *memory.TypedArena[float16.Num] 
-	if float16Enabled { 
-		f16Arena = memory.NewTypedArena[float16.Num](slab) 
-	} 
+	var f16Arena *memory.TypedArena[float16.Num]
+	if float16Enabled {
+		f16Arena = memory.NewTypedArena[float16.Num](slab)
+	}
 
 	gd := &GraphData{
 		Capacity:     numChunks * ChunkSize,
@@ -248,19 +258,19 @@ func NewGraphData(capacity, dims int, sq8Enabled, pqEnabled bool, pqDims int, bq
 		SlabArena:    slab,
 		Uint8Arena:   memory.NewTypedArena[uint8](slab),
 		Float32Arena: memory.NewTypedArena[float32](slab),
-		Float16Arena: f16Arena, 
+		Float16Arena: f16Arena,
 
-		Uint32Arena:  memory.NewTypedArena[uint32](slab),
-		Int32Arena:   memory.NewTypedArena[int32](slab),
-		Uint64Arena:  memory.NewTypedArena[uint64](slab),
+		Uint32Arena: memory.NewTypedArena[uint32](slab),
+		Int32Arena:  memory.NewTypedArena[int32](slab),
+		Uint64Arena: memory.NewTypedArena[uint64](slab),
 
 		Levels: make([]uint64, numChunks),
 	}
 	if dims > 0 {
 		gd.Vectors = make([]uint64, numChunks)
-		if float16Enabled { 
-			gd.VectorsF16 = make([]uint64, numChunks) 
-		} 
+		if float16Enabled {
+			gd.VectorsF16 = make([]uint64, numChunks)
+		}
 
 		if sq8Enabled {
 			gd.VectorsSQ8 = make([]uint64, numChunks)
@@ -450,11 +460,11 @@ func (gd *GraphData) Clone(minCap, targetDims int, sq8Enabled, pqEnabled bool, p
 		SlabArena:    gd.SlabArena,
 		Uint8Arena:   gd.Uint8Arena,
 		Float32Arena: gd.Float32Arena,
-		Float16Arena: gd.Float16Arena, 
+		Float16Arena: gd.Float16Arena,
 
-		Uint32Arena:  gd.Uint32Arena,
-		Int32Arena:   gd.Int32Arena,
-		Uint64Arena:  gd.Uint64Arena,
+		Uint32Arena: gd.Uint32Arena,
+		Int32Arena:  gd.Int32Arena,
+		Uint64Arena: gd.Uint64Arena,
 
 		Levels: make([]uint64, numChunks),
 	}
@@ -531,27 +541,16 @@ func (gd *GraphData) Clone(minCap, targetDims int, sq8Enabled, pqEnabled bool, p
 		}
 	}
 
-	// Float16 
-	if len(gd.VectorsF16) > 0 { 
-		limit = len(gd.VectorsF16) 
-		if len(newGD.VectorsF16) < limit { 
-			limit = len(newGD.VectorsF16) 
-		} 
-		for i := 0; i < limit; i++ { 
-			newGD.VectorsF16[i] = atomic.LoadUint64(&gd.VectorsF16[i]) 
-		} 
-	} 
-
-	// Float16 
-	if len(gd.VectorsF16) > 0 { 
-		limit = len(gd.VectorsF16) 
-		if len(newGD.VectorsF16) < limit { 
-			limit = len(newGD.VectorsF16) 
-		} 
-		for i := 0; i < limit; i++ { 
-			newGD.VectorsF16[i] = atomic.LoadUint64(&gd.VectorsF16[i]) 
-		} 
-	} 
+	// Float16
+	if len(gd.VectorsF16) > 0 {
+		limit = len(gd.VectorsF16)
+		if len(newGD.VectorsF16) < limit {
+			limit = len(newGD.VectorsF16)
+		}
+		for i := 0; i < limit; i++ {
+			newGD.VectorsF16[i] = atomic.LoadUint64(&gd.VectorsF16[i])
+		}
+	}
 
 	// Neighbors / Counts / Versions
 	for i := 0; i < ArrowMaxLayers; i++ {
@@ -594,6 +593,7 @@ func (gd *GraphData) Clone(minCap, targetDims int, sq8Enabled, pqEnabled bool, p
 	newGD.Uint32Arena = gd.Uint32Arena
 	newGD.Int32Arena = gd.Int32Arena
 	newGD.Uint64Arena = gd.Uint64Arena
+	newGD.Float16Arena = gd.Float16Arena
 
 	return newGD
 }
@@ -610,7 +610,6 @@ func (h *ArrowHNSW) growNoLock(minCap, dims int) {
 	needsUpgrade := (h.config.PQEnabled && data.VectorsPQ == nil) ||
 		(h.config.SQ8Enabled && data.VectorsSQ8 == nil) ||
 		(h.config.BQEnabled && data.VectorsBQ == nil) || (h.config.Float16Enabled && data.VectorsF16 == nil)
-
 
 	if !needsUpgrade && data.Capacity >= minCap && data.Dims == dims && data.PQDims == h.config.PQM {
 		return
@@ -945,14 +944,6 @@ func (h *ArrowHNSW) ensureChunk(data *GraphData, cID, _ uint32, dims int) *Graph
 		if err == nil {
 			atomic.CompareAndSwapUint64(&data.VectorsPQ[cID], 0, ref.Offset)
 		}
-	// Float16 
-	if h.config.Float16Enabled && dims > 0 && len(data.VectorsF16) > int(cID) && atomic.LoadUint64(&data.VectorsF16[cID]) == 0 { 
-		ref, err := data.Float16Arena.AllocSlice(ChunkSize * dims) 
-		if err == nil { 
-			atomic.CompareAndSwapUint64(&data.VectorsF16[cID], 0, ref.Offset) 
-		} 
-	} 
-
 	}
 
 	// BQ
@@ -965,13 +956,13 @@ func (h *ArrowHNSW) ensureChunk(data *GraphData, cID, _ uint32, dims int) *Graph
 		}
 	}
 
-	// Float16 
-	if h.config.Float16Enabled && dims > 0 && len(data.VectorsF16) > int(cID) && atomic.LoadUint64(&data.VectorsF16[cID]) == 0 { 
-		ref, err := data.Float16Arena.AllocSlice(ChunkSize * dims) 
-		if err == nil { 
-			atomic.CompareAndSwapUint64(&data.VectorsF16[cID], 0, ref.Offset) 
-		} 
-	} 
+	// Float16
+	if h.config.Float16Enabled && dims > 0 && len(data.VectorsF16) > int(cID) && atomic.LoadUint64(&data.VectorsF16[cID]) == 0 {
+		ref, err := data.Float16Arena.AllocSlice(ChunkSize * dims)
+		if err == nil {
+			atomic.CompareAndSwapUint64(&data.VectorsF16[cID], 0, ref.Offset)
+		}
+	}
 
 	// Neighbors context
 	for i := 0; i < ArrowMaxLayers; i++ {
@@ -1079,4 +1070,18 @@ func (gd *GraphData) GetVectorsF16Chunk(chunkID uint32) []float16.Num {
 		Cap:    uint32(ChunkSize * gd.Dims),
 	}
 	return gd.Float16Arena.Get(ref)
+}
+
+func (gd *GraphData) GetVectorF16(id uint32) []float16.Num {
+	cID := chunkID(id)
+	cOff := chunkOffset(id)
+	vecF16Chunk := gd.GetVectorsF16Chunk(cID)
+	if vecF16Chunk == nil {
+		return nil
+	}
+	off := int(cOff) * gd.Dims
+	if off+gd.Dims > len(vecF16Chunk) {
+		return nil
+	}
+	return vecF16Chunk[off : off+gd.Dims]
 }

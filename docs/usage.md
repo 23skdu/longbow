@@ -80,6 +80,18 @@ When running the Longbow container directly (e.g., via Docker), you can configur
 | `LONGBOW_GRPC_MAX_SEND_MSG_SIZE` | Max send message size | `536870912` (512MB) |
 | `LONGBOW_GRPC_MAX_CONCURRENT_STREAMS` | Max concurrent streams | `250` |
 
+### HNSW Configuration
+
+| Variable | Description | Default |
+| :--- | :--- | :--- |
+| `HNSW_M` | Max connections per node | `32` |
+| `HNSW_EF_CONSTRUCTION` | Size of dynamic candidate list | `400` |
+| `HNSW_ALPHA` | Graph density factor | `1.0` |
+| `HNSW_KEEP_PRUNED` | Keep pruned connections | `false` |
+| `HNSW_SQ8_ENABLED` | Enable 8-bit quantization | `false` |
+| `HNSW_FLOAT16_ENABLED` | Enable Float16 storage | `false` |
+| `HNSW_REFINEMENT_FACTOR` | Re-ranking refinement multiple | `1.0` |
+
 ### Hybrid Search
 
 | Variable | Description | Default |

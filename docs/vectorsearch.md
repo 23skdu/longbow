@@ -126,6 +126,17 @@ The distance function accesses vector data directly from Apache Arrow buffers:
 2. **Job Queue**: Indexing jobs pushed to buffered channel
 3. **Worker Pool**: Background workers (`runtime.NumCPU()`) update HNSW graph
 
+### FP16 Vector Storage
+
+Longbow supports native **Float16 (Half-Precision)** vector storage to reduce memory bandwidth requirements and improve cache locality.
+
+* **Storage Ratio**: 2 bytes per dimension vs 4 bytes (FP32). 50% memory reduction for raw vectors.
+* **Performance**:
+  * **Search**: ~1.4x higher QPS significantly lower latency (p99) due to reduced memory usage.
+  * **Ingestion**: ~20% slower due to conversion overhead (Float32 -> Float16).
+* **Accuracy**: Negligible loss in recall for most embedding models (e.g., OpenAI, Cohere).
+* **Enabling**: Set `HNSW_FLOAT16_ENABLED=true`.
+
 ## Hybrid Search Pipeline
 
 The `HybridSearchPipeline` orchestrates the entire search flow, integrating filtering, retrieval, fusion, and re-ranking.

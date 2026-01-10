@@ -14,6 +14,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/coder/hnsw"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // VectorID and Location are now aliases from internal/core
@@ -64,6 +65,16 @@ type HNSWIndex struct {
 	Metric        DistanceMetric
 	distFunc      func(a, b []float32) float32
 	batchDistFunc func(query []float32, vectors [][]float32, results []float32)
+
+	// Cached Metrics (Curried)
+	metricInsertDuration       prometheus.Observer
+	metricIndexBuildDuration   prometheus.Observer
+	metricNodeCount            prometheus.Gauge
+	metricGraphHeight          prometheus.Gauge
+	metricVectorAllocations    prometheus.Counter
+	metricVectorAllocatedBytes prometheus.Counter
+	metricActiveReaders        prometheus.Gauge
+	metricLockWait             prometheus.ObserverVec // Needs label "type"
 }
 
 // NewHNSWIndex creates a new HNSW index for the given dataset.
@@ -72,6 +83,11 @@ func NewHNSWIndex(dataset *Dataset, opts ...*HNSWConfig) *HNSWIndex {
 	config := DefaultConfig()
 	if len(opts) > 0 && opts[0] != nil {
 		config = opts[0]
+	}
+
+	dsName := "default"
+	if dataset != nil {
+		dsName = dataset.Name
 	}
 
 	h := &HNSWIndex{
@@ -84,7 +100,17 @@ func NewHNSWIndex(dataset *Dataset, opts ...*HNSWConfig) *HNSWIndex {
 		parallelConfig:      config.ParallelSearch,
 		pqTrainingEnabled:   config.PQTrainingEnabled,
 		pqTrainingThreshold: config.PQTrainingThreshold,
-		Metric:              config.Metric,
+		Metric:              config.Metric, // Line 88
+
+		// Initialize Cached Metrics
+		metricInsertDuration:       metrics.HNSWInsertDurationSeconds, // Use global as base, observe will label
+		metricIndexBuildDuration:   metrics.IndexBuildDurationSeconds.WithLabelValues(dsName),
+		metricNodeCount:            metrics.HNSWNodesTotal.WithLabelValues(dsName),
+		metricGraphHeight:          metrics.HnswGraphHeight.WithLabelValues(dsName),
+		metricVectorAllocations:    metrics.HNSWVectorAllocations,
+		metricVectorAllocatedBytes: metrics.HNSWVectorAllocatedBytes,
+		metricActiveReaders:        metrics.HnswActiveReaders.WithLabelValues(dsName),
+		metricLockWait:             metrics.IndexLockWaitDuration.MustCurryWith(prometheus.Labels{"dataset": dsName}),
 	}
 
 	// Initialize vector column cache to -1 (unknown)

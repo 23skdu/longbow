@@ -8,7 +8,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/23skdu/longbow/internal/metrics"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -20,8 +19,8 @@ const BULK_INSERT_THRESHOLD = 1000
 func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, rowIdxs []int) error {
 	start := time.Now()
 	defer func() {
-		metrics.HNSWBulkInsertDurationSeconds.Observe(time.Since(start).Seconds())
-		metrics.HNSWBulkVectorsProcessedTotal.Add(float64(n))
+		h.metricBulkInsertDuration.Observe(time.Since(start).Seconds())
+		h.metricBulkVectors.Add(float64(n))
 	}()
 
 	// 1. Prepare Active Set

@@ -107,15 +107,15 @@ func (h *HNSWIndex) Add(batchIdx, rowIdx int) (uint32, error) {
 
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	metrics.IndexLockWaitDuration.WithLabelValues(h.dataset.Name, "write").Observe(time.Since(indexLockStart7).Seconds())
+	h.metricLockWait.WithLabelValues("write").Observe(time.Since(indexLockStart7).Seconds())
 
 	h.Graph.Add(hnsw.MakeNode(id, nodeVec))
 
 	// Track HNSW metrics
-	metrics.HnswNodeCount.WithLabelValues(h.dataset.Name).Set(float64(h.nextVecID.Load()))
+	h.metricNodeCount.Set(float64(h.nextVecID.Load()))
 	nodeCount := float64(h.nextVecID.Load())
 	if nodeCount > 1 {
-		metrics.HnswGraphHeight.WithLabelValues(h.dataset.Name).Set(math.Log(nodeCount) / math.Log(4))
+		h.metricGraphHeight.Set(math.Log(nodeCount) / math.Log(4))
 	}
 	return uint32(id), nil
 }
@@ -214,10 +214,10 @@ func (h *HNSWIndex) AddSafe(rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32
 	h.Graph.Add(hnsw.MakeNode(id, nodeVec))
 
 	// Track HNSW metrics
-	metrics.HnswNodeCount.WithLabelValues(h.dataset.Name).Set(float64(h.nextVecID.Load()))
+	h.metricNodeCount.Set(float64(h.nextVecID.Load()))
 	nodeCount := float64(h.nextVecID.Load())
 	if nodeCount > 1 {
-		metrics.HnswGraphHeight.WithLabelValues(h.dataset.Name).Set(math.Log(nodeCount) / math.Log(4))
+		h.metricGraphHeight.Set(math.Log(nodeCount) / math.Log(4))
 	}
 
 	return uint32(id), nil
@@ -241,7 +241,7 @@ func (h *HNSWIndex) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []int)
 
 	start := time.Now()
 	defer func() {
-		metrics.IndexBuildDurationSeconds.WithLabelValues(h.dataset.Name).Observe(time.Since(start).Seconds())
+		h.metricIndexBuildDuration.Observe(time.Since(start).Seconds())
 	}()
 
 	n := len(recs)
@@ -370,7 +370,7 @@ func (h *HNSWIndex) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []int)
 	}
 
 	// Update metrics
-	metrics.HnswNodeCount.WithLabelValues(h.dataset.Name).Set(float64(h.nextVecID.Load()))
+	h.metricNodeCount.Set(float64(h.nextVecID.Load()))
 
 	return ids, nil
 }
@@ -420,8 +420,8 @@ func (h *HNSWIndex) extractVector(rec arrow.RecordBatch, rowIdx int) ([]float32,
 	copy(vec, vecView)
 
 	// Track HNSW allocation metrics
-	metrics.HNSWVectorAllocations.Inc()
-	metrics.HNSWVectorAllocatedBytes.Add(float64(len(vec) * 4))
+	h.metricVectorAllocations.Inc()
+	h.metricVectorAllocatedBytes.Add(float64(len(vec) * 4))
 
 	return vec, nil
 }
@@ -496,7 +496,7 @@ func (h *HNSWIndex) AddBatchParallel(locations []Location, workers int) error {
 		}
 		indexLockStart9 := time.Now()
 		h.mu.Lock()
-		metrics.IndexLockWaitDuration.WithLabelValues(h.dataset.Name, "write").Observe(time.Since(indexLockStart9).Seconds())
+		h.metricLockWait.WithLabelValues("write").Observe(time.Since(indexLockStart9).Seconds())
 		h.Graph.Add(hnsw.MakeNode(vd.id, vd.vec))
 		h.mu.Unlock()
 	}

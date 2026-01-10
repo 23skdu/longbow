@@ -2,7 +2,9 @@
 
 package simd
 
-import "unsafe"
+import (
+	"unsafe"
+)
 
 // Stubs for non-AMD64 architectures to satisfy simd.go references
 

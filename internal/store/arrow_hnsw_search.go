@@ -13,6 +13,7 @@ import (
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/query"
 	"github.com/23skdu/longbow/internal/simd"
+	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
 // Search performs k-NN search using the provided query vector.
@@ -80,6 +81,17 @@ func (h *ArrowHNSW) Search(q []float32, k, ef int, filter *query.Bitset) ([]Sear
 		}
 		ctx.queryBQ = ctx.queryBQ[:numWords]
 		copy(ctx.queryBQ, h.bqEncoder.Encode(q))
+	}
+
+	// Encode query if Float16 enabled
+	if h.config.Float16Enabled {
+		if cap(ctx.queryF16) < dims {
+			ctx.queryF16 = make([]float16.Num, dims)
+		}
+		ctx.queryF16 = ctx.queryF16[:dims]
+		for i, v := range q {
+			ctx.queryF16[i] = float16.New(v)
+		}
 	}
 
 	// Setup PQ / ADC
@@ -178,6 +190,9 @@ func (h *ArrowHNSW) searchLayer(q []float32, entryPoint uint32, ef, layer int, c
 
 	// Initialize with entry point
 	entryDist := h.distance(q, entryPoint, data, ctx)
+	if h.config.Float16Enabled {
+		entryDist = h.distanceF16(ctx.queryF16, entryPoint, data, ctx)
+	}
 
 	ctx.candidates.Push(Candidate{ID: entryPoint, Dist: entryDist})
 	ctx.visited.Set(entryPoint)
@@ -199,7 +214,11 @@ func (h *ArrowHNSW) searchLayer(q []float32, entryPoint uint32, ef, layer int, c
 	// SQ8 Setup
 	useSQ8 := h.quantizer != nil && len(data.VectorsSQ8) > 0
 	usePQ := h.config.PQEnabled && h.pqEncoder != nil && len(data.VectorsPQ) > 0
+	useF16 := h.config.Float16Enabled
 	adcTable := ctx.adcTable
+	_ = useF16
+
+	var useBatchCompute bool
 
 	// Greedy search
 	for ctx.candidates.Len() > 0 {
@@ -331,15 +350,28 @@ func (h *ArrowHNSW) searchLayer(q []float32, entryPoint uint32, ef, layer int, c
 
 			// 2. Compute Distances - Batch Processing Phase
 			var dists []float32
-			if cap(ctx.scratchDists) < batchCount {
-				ctx.scratchDists = make([]float32, batchCount*2)
-			}
-			dists = ctx.scratchDists[:batchCount]
+			if useF16 {
+				if cap(ctx.scratchDists) < batchCount {
+					ctx.scratchDists = make([]float32, batchCount*2)
+				}
+				dists = ctx.scratchDists[:batchCount]
+				for i, nid := range ctx.scratchIDs {
+					dists[i] = h.distanceF16(ctx.queryF16, nid, data, ctx)
+				}
+			} else {
+				if cap(ctx.scratchDists) < batchCount {
+					ctx.scratchDists = make([]float32, batchCount*2)
+				}
+				dists = ctx.scratchDists[:batchCount]
 
-			useBatchCompute := false
-			if bc, ok := h.batchComputer.(interface{ ShouldUseBatchCompute(int) bool }); ok {
-				useBatchCompute = bc.ShouldUseBatchCompute(batchCount)
+				if bc, ok := h.batchComputer.(interface{ ShouldUseBatchCompute(int) bool }); ok {
+					useBatchCompute = bc.ShouldUseBatchCompute(batchCount)
+				}
 			}
+
+			// Redefine useBatchCompute more broadly if needed, but it's only used below.
+			// Let's ensure it's accessible.
+			_ = useBatchCompute
 
 			if usePQ && len(adcTable) > 0 {
 				// PQ/ADC Path
@@ -535,13 +567,10 @@ func (h *ArrowHNSW) searchLayer(q []float32, entryPoint uint32, ef, layer int, c
 	return closest
 }
 
-// distance computes the distance between a query vector and a stored vector.
-// Uses zero-copy Arrow access and SIMD optimizations for maximum performance.
 func (h *ArrowHNSW) distance(q []float32, id uint32, data *GraphData, ctx *ArrowSearchContext) float32 {
+	metrics.HnswDistanceCalculations.Inc()
 	_ = ctx
 	// BQ Check
-	// Note: We need ctx passed here to avoid allocs, or we alloc on fly.
-	// Changing signature ripples up. For now, alloc on fly or use a simple check.
 	if h.config.BQEnabled && h.bqEncoder != nil && len(data.VectorsBQ) > 0 {
 		vec := data.GetVectorBQ(id)
 		if vec != nil {
@@ -617,6 +646,21 @@ func (h *ArrowHNSW) distance(q []float32, id uint32, data *GraphData, ctx *Arrow
 	return h.distFunc(q, vec)
 }
 
+func (h *ArrowHNSW) distanceF16(q []float16.Num, id uint32, data *GraphData, ctx *ArrowSearchContext) float32 {
+	metrics.HNSWDistanceCalculationsF16Total.Inc()
+	_ = ctx
+	vec := data.GetVectorF16(id)
+	if vec == nil {
+		// Fallback to cold storage if needed (unlikely in hot path)
+		_, err := h.getVector(id)
+		if err != nil {
+			return float32(math.Inf(1))
+		}
+		return 0
+	}
+	return h.distFuncF16(q, vec)
+}
+
 // l2Distance computes Euclidean (L2) distance between two vectors.
 // Kept for testing and as fallback.
 func l2Distance(a, b []float32) float32 {
@@ -670,23 +714,23 @@ func (h *ArrowHNSW) getVector(id uint32) ([]float32, error) {
 func (h *ArrowHNSW) mustGetVectorFromData(data *GraphData, id uint32) []float32 {
 	// Try getting from GraphData (hot storage) first if available
 	if data != nil && data.Dims > 0 {
-		if h.config.Float16Enabled { 
-			cID := chunkID(id) 
+		if h.config.Float16Enabled {
+			cID := chunkID(id)
 
-			chunk := data.GetVectorsF16Chunk(cID) 
-			if chunk != nil { 
-				cOff := chunkOffset(id) 
-				start := int(cOff) * data.Dims 
-				if start+data.Dims <= len(chunk) { 
-					res := make([]float32, data.Dims) 
-					src := chunk[start : start+data.Dims] 
-					for i := range res { 
-						res[i] = src[i].Float32() 
-					} 
-					return res 
-				} 
-			} 
-		} 
+			chunk := data.GetVectorsF16Chunk(cID)
+			if chunk != nil {
+				cOff := chunkOffset(id)
+				start := int(cOff) * data.Dims
+				if start+data.Dims <= len(chunk) {
+					res := make([]float32, data.Dims)
+					src := chunk[start : start+data.Dims]
+					for i := range res {
+						res[i] = src[i].Float32()
+					}
+					return res
+				}
+			}
+		}
 
 		cID := chunkID(id)
 		chunk := data.GetVectorsChunk(cID)

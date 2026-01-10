@@ -7,11 +7,11 @@ import (
 func TestGraphData_ArenaNeighbors(t *testing.T) {
 	// Initialize GraphData with Arena enabled
 	// Since we are refactoring, we might need a flag or just defaults.
-	// NewGraphData signature: func NewGraphData(capacity, dims int, sq8, pq, bq bool) *GraphData
-	// The new signature is likely: func NewGraphData(capacity, dims int, sq8, pq bool, pqDims int, bq bool) *GraphData
+	// NewGraphData signature: func NewGraphData(capacity, dims int, sq8, pq, bq bool, false) *GraphData
+	// The new signature is likely: func NewGraphData(capacity, dims int, sq8, pq bool, pqDims int, bq bool, false) *GraphData
 	initialCapacity := 100
 	dims := 128
-	data := NewGraphData(initialCapacity, dims, false, false, 0, false)
+	data := NewGraphData(initialCapacity, dims, false, false, 0, false, false)
 
 	// Simulate node allocation
 	// We need to ensure chunks are allocated for ID 0
@@ -49,7 +49,7 @@ func TestGraphData_ArenaNeighbors(t *testing.T) {
 
 func TestGraphData_ArenaGrowth(t *testing.T) {
 	// Verify that we can store widespread IDs (triggering multiple chunks/slabs)
-	gd := NewGraphData(10000, 16, false, false, 0, false)
+	gd := NewGraphData(10000, 16, false, false, 0, false, false)
 
 	// Add neighbors for node 5000
 	id := uint32(5000)

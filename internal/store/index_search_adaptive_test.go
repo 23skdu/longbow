@@ -9,6 +9,8 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"math/rand"
+	"time"
 )
 
 // TestAdaptiveSearch_RetryLogic tests that search expands its limit when initial candidates are filtered out
@@ -81,4 +83,44 @@ func TestAdaptiveSearch_RetryLogic(t *testing.T) {
 		id := int(res.ID)
 		assert.Equal(t, 95, id, "Result ID should be 95")
 	}
+}
+
+func TestAdaptiveHNSW_AdjustsM(t *testing.T) {
+	// 1. Setup Config with AdaptiveM enabled
+	cfg := DefaultArrowHNSWConfig()
+	cfg.M = 16 
+	cfg.MMax = 32
+	cfg.AdaptiveMEnabled = true 
+	cfg.AdaptiveMThreshold = 100 
+	cfg.Dims = 128
+
+	// 2. Create Index
+	idx := NewArrowHNSW(nil, cfg, nil)
+
+	// 3. Generate structured data (high intrinsic dimensionality)
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+	dims := 128
+	n := 150
+	vecs := make([][]float32, n)
+	for i := 0; i < n; i++ {
+		vecs[i] = make([]float32, dims)
+		for j := 0; j < dims; j++ {
+			vecs[i][j] = rng.Float32() 
+		}
+	}
+
+	// 4. Insert vectors
+	for i := 0; i < n; i++ {
+		err := idx.InsertWithVector(uint32(i+1), vecs[i], 0)
+		require.NoError(t, err)
+	}
+
+	// 5. Assert M has changed
+    // We access the config directly from the struct (internal test)
+	currentM := idx.config.M
+	t.Logf("Initial M: %d, Current M: %d", 16, currentM)
+	
+	// With 128D uniform noise, intrinsic dimensionality is high.
+	// Adaptive strategy should INCREASE M to maintain connectivity/recall.
+	assert.Greater(t, currentM, 16, "M should have increased due to high dimensionality")
 }

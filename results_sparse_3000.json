@@ -1,0 +1,14 @@
+[
+  {
+    "name": "HybridSearch",
+    "duration_seconds": 0.4692716598510742,
+    "throughput": 213.09618405623624,
+    "throughput_unit": "queries/s",
+    "rows": 1000,
+    "bytes_processed": 0,
+    "p50_ms": 4.3555498123168945,
+    "p95_ms": 5.689144134521484,
+    "p99_ms": 16.635894775390625,
+    "errors": 0
+  }
+]

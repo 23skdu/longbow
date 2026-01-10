@@ -1,127 +1,127 @@
 package store
 
 import (
-	"context"
-	"net"
-	"os"
+	"sync"
+	"sync/atomic"
 	"testing"
-	"unsafe"
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"github.com/apache/arrow-go/v18/arrow/memory"
-	"github.com/rs/zerolog"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/test/bufconn"
 )
 
-// CheckBufferAddresses verifies if the store holding the records has the same buffer pointers as the input
-func TestDoPut_ZeroCopy_Investigation(t *testing.T) {
-	t.Skip("Skipping investigation test (manual verification only) due to bufconn hangs")
-	// Setup via bufconn
-	lis := bufconn.Listen(1024 * 1024)
-	mem := memory.NewCheckedAllocator(memory.NewGoAllocator())
-	defer mem.AssertSize(t, 0)
+// Mocks are now in mock_flight_streams_test.go
 
-	tmpDir, err := os.MkdirTemp("", "zerocopy_test_*")
-	require.NoError(t, err)
-	defer func() { _ = os.RemoveAll(tmpDir) }()
+func TestFlight_ZeroCopyAllocator(t *testing.T) {
+	// 1. Setup Allocator
+	baseAlloc := memory.NewGoAllocator()
+	mockAlloc := &MockAllocator{Allocator: baseAlloc}
 
-	store := NewVectorStore(mem, zerolog.Nop(), 1024*1024*100, 0, 0)
-	// persistence not needed for checking memory pointers
-	defer func() { _ = store.Close() }()
-
-	server := NewDataServer(store)
-	s := grpc.NewServer()
-	flight.RegisterFlightServiceServer(s, server)
-	go func() { _ = s.Serve(lis) }()
-	defer s.Stop()
-
-	// Client
-	dialer := func(ctx context.Context, address string) (net.Conn, error) {
-		return lis.Dial()
-	}
-	client, err := flight.NewClientWithMiddleware(
-		"passthrough:///bufnet", nil, nil,
-		grpc.WithContextDialer(dialer),
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	// 2. Create a RecordBatch to send
+	schema := arrow.NewSchema(
+		[]arrow.Field{
+			{Name: "int64s", Type: arrow.PrimitiveTypes.Int64},
+			{Name: "f64s", Type: arrow.PrimitiveTypes.Float64},
+		},
+		nil,
 	)
+
+	// Create decent sized batch (e.g. ~10MB)
+	// 10MB ~ 640k rows (16 bytes per row)
+	count := 640 * 1024
+	b := array.NewRecordBuilder(baseAlloc, schema)
+	defer b.Release()
+
+	i64b := b.Field(0).(*array.Int64Builder)
+	f64b := b.Field(1).(*array.Float64Builder)
+
+	i64b.Reserve(count)
+	f64b.Reserve(count)
+
+	for i := 0; i < count; i++ {
+		i64b.Append(int64(i))
+		f64b.Append(float64(i))
+	}
+
+	rec := b.NewRecordBatch()
+	defer rec.Release()
+
+	expectedDataSize := int64(count * 16)
+	t.Logf("Batch Data Size: %d bytes (%.2f MB)", expectedDataSize, float64(expectedDataSize)/1024/1024)
+
+	// 3. Serialize to Flight Data frames
+	chunkChan := make(chan *flight.FlightData, 100)
+	mockClient := &mockClientStream{recvChunks: chunkChan}
+
+	var chunks []*flight.FlightData
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for d := range chunkChan {
+			chunks = append(chunks, d)
+		}
+	}()
+
+	w := flight.NewRecordWriter(mockClient, ipc.WithSchema(schema))
+	require.NoError(t, w.Write(rec))
+	w.Close()
+	mockClient.CloseSend()
+
+	wg.Wait()
+	t.Logf("Generated %d chunks", len(chunks))
+	for i, c := range chunks {
+		t.Logf("Chunk %d: HeaderLen=%d, BodyLen=%d", i, len(c.DataHeader), len(c.DataBody))
+	}
+
+	// 4. Server Side: Read using Custom Allocator
+	mockServer := &mockPutStream{chunks: chunks}
+
+	// Baseline: Using Mock Allocator
+	r, err := flight.NewRecordReader(mockServer, ipc.WithAllocator(mockAlloc))
 	require.NoError(t, err)
-	defer func() { _ = client.Close() }()
+	defer r.Release()
 
-	// Create Data
-	schema := arrow.NewSchema([]arrow.Field{
-		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
-	}, nil)
+	totalRead := 0
+	for r.Next() {
+		readRec := r.Record()
+		totalRead++
+		assert.Equal(t, count, int(readRec.NumRows()))
 
-	bId := array.NewInt64Builder(mem)
-	// Make it small enough to be fast, but logic treats single batch as direct
-	for i := 0; i < 10; i++ {
-		bId.Append(int64(i))
+		// Verify allocator usage
+		allocated := atomic.LoadInt64(&mockAlloc.Allocated)
+		t.Logf("Allocated so far: %d", allocated)
 	}
-	arr := bId.NewArray()
-	bId.Release()
+	require.NoError(t, r.Err())
 
-	batch := array.NewRecordBatch(schema, []arrow.Array{arr}, 10)
-	arr.Release()
-	defer batch.Release()
+	finalAlloc := atomic.LoadInt64(&mockAlloc.Allocated)
+	t.Logf("Total Allocated by Reader: %d", finalAlloc)
 
-	// Capture input buffer address
-	// Column 0 is "id" (Int64). Data buffer is at index 1 (validity bitmap is 0).
-	inputBuf := batch.Column(0).Data().Buffers()[1]
-	inputAddr := uintptr(unsafe.Pointer(&inputBuf.Bytes()[0]))
-	t.Logf("Input Buffer Address: %x", inputAddr)
+	// Expectation:
+	// In this in-memory test setup, Arrow Flight Reader defaults to Zero-Copy (buffer slicing).
+	// We verify this by ensuring allocated bytes are minimal.
 
-	// Send via DoPut
-	ctx := context.Background()
-	stream, err := client.DoPut(ctx)
-	require.NoError(t, err)
+	// Sanity verify mockAlloc works
+	m := mockAlloc.Allocate(100)
+	mockAlloc.Free(m)
+	assert.GreaterOrEqual(t, atomic.LoadInt64(&mockAlloc.Allocated), int64(100))
 
-	desc := &flight.FlightDescriptor{
-		Type: flight.DescriptorPATH,
-		Path: []string{"test_dataset"},
-	}
-	// Note: Flight Descriptor is usually sent in the first message or handled by the writer implicitly if set?
-	// In arrow-go flight writer, we need to set it on the writer usually or descriptor is part of message.
-	// writer.SetFlightDescriptor writes a descriptor message.
+	t.Logf("Total Allocated by Reader: %d (Expected Data if copied: %d)", finalAlloc, expectedDataSize)
 
-	wr := flight.NewRecordWriter(stream, ipc.WithSchema(schema))
-	wr.SetFlightDescriptor(desc)
-	require.NoError(t, wr.Write(batch))
-	require.NoError(t, wr.Close()) // Sends EOF
-
-	// Receive final result (important to wait for this)
-	_, err = stream.Recv()
-	// It's normal to get EOF or nil here after server closes
-	if err != nil && err.Error() != "EOF" {
-		t.Logf("DoPut Recv unexpected error: %v", err)
-	}
-
-	// Explicit close of stream client side not always needed if Recv returns error, but good practice
-	_ = stream.CloseSend()
-
-	// Verify Store
-	ds, ok := store.getDataset("test_dataset")
-	require.True(t, ok)
-
-	ds.dataMu.RLock()
-	require.Len(t, ds.Records, 1)
-	storedBatch := ds.Records[0]
-	storedBuf := storedBatch.Column(0).Data().Buffers()[1]
-	storedAddr := uintptr(unsafe.Pointer(&storedBuf.Bytes()[0]))
-	ds.dataMu.RUnlock()
-
-	t.Logf("Stored Buffer Address: %x", storedAddr)
-
-	if inputAddr == storedAddr {
-		t.Log("SUCCESS: Zero-Copy achieved (Addresses Match)")
+	if finalAlloc < expectedDataSize/2 {
+		t.Log("SUCCESS: Reader performed Zero-Copy.")
 	} else {
-		t.Log("FAILURE: Addresses differ (Copy occurred)")
-		// Fail if we expect it to be zero-copy, but for now we expect failure so we just log it.
-		// assert.Equal(t, inputAddr, storedAddr)
+		t.Log("INFO: Reader performed copy.")
+	}
+
+	// We asserting that it DOES Zero Copy in this scenario.
+	assert.Less(t, finalAlloc, expectedDataSize, "Reader performed zero-copy slicing, saving memory")
+
+	if finalAlloc < expectedDataSize/2 {
+		t.Log("WARNING: Allocations seem unexpectedly low. Is Zero-Copy already active?")
 	}
 }

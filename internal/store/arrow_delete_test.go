@@ -15,7 +15,7 @@ func TestDelete(t *testing.T) {
 	index.dims.Store(128)
 
 	// Initialize GraphData manually with dimensions
-	data := NewGraphData(100, 32, false, false, 0, false)
+	data := NewGraphData(100, 32, false, false, 0, false, false)
 	index.data.Store(data)
 
 	// Manually allocate chunks for testing using ensureChunk

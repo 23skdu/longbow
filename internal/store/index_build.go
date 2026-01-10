@@ -381,56 +381,47 @@ func (h *HNSWIndex) extractVector(rec arrow.RecordBatch, rowIdx int) ([]float32,
 		return nil, fmt.Errorf("extractVector: record is nil")
 	}
 
-	var vecCol arrow.Array
 	// Use cached vectorColIdx if available
 	colIdx := int(h.vectorColIdx.Load())
+	// Verify if cached index is valid and points to correct column
+	valid := false
 	if colIdx >= 0 && colIdx < int(rec.NumCols()) {
 		name := rec.Schema().Field(colIdx).Name
 		if name == "vector" || name == "embedding" {
-			vecCol = rec.Column(colIdx)
+			valid = true
 		}
 	}
 
-	if vecCol == nil {
+	if !valid {
+		// Scan for vector column
+		found := false
 		for i, field := range rec.Schema().Fields() {
 			if field.Name == "vector" || field.Name == "embedding" {
-				vecCol = rec.Column(i)
+				colIdx = i
 				h.vectorColIdx.Store(int32(i))
+				found = true
 				break
 			}
 		}
+		if !found {
+			return nil, fmt.Errorf("extractVector: vector column not found")
+		}
 	}
 
-	if vecCol == nil {
-		return nil, fmt.Errorf("extractVector: vector column not found")
+	// Extract using shared helper (handles Float16/Float32 conversions)
+	// ExtractVectorFromArrow returns a zero-copy slice (or converted slice).
+	vecView, err := ExtractVectorFromArrow(rec, rowIdx, colIdx)
+	if err != nil {
+		return nil, fmt.Errorf("extractVector: %v", err)
 	}
 
-	listArr, ok := vecCol.(*array.FixedSizeList)
-	if !ok {
-		return nil, fmt.Errorf("extractVector: invalid vector column format")
-	}
-
-	values := listArr.Data().Children()[0]
-	floatArr := array.NewFloat32Data(values)
-	defer floatArr.Release()
-
-	width := int(listArr.DataType().(*arrow.FixedSizeListType).Len())
-	start := rowIdx * width
-	end := start + width
-
-	if start < 0 || end > floatArr.Len() {
-		return nil, fmt.Errorf("extractVector: row index out of bounds")
-	}
-
-	// Return a copy to avoid data races with arrow buffers being released
-	// NOTE: In Search we use zero-copy because it's transient.
-	// In Add, we MUST copy because the vector is stored in HNSW graph (internal to hnsw lib).
-	vec := make([]float32, width)
-	copy(vec, floatArr.Float32Values()[start:end])
+	// Must copy because HNSW (legacy) might outlive record batch and we need stable memory
+	vec := make([]float32, len(vecView))
+	copy(vec, vecView)
 
 	// Track HNSW allocation metrics
 	metrics.HNSWVectorAllocations.Inc()
-	metrics.HNSWVectorAllocatedBytes.Add(float64(width * 4))
+	metrics.HNSWVectorAllocatedBytes.Add(float64(len(vec) * 4))
 
 	return vec, nil
 }

@@ -169,7 +169,7 @@ func initializeDispatch() {
 		euclideanDistanceSQ8BatchImpl = euclideanSQ8BatchGeneric // Fallback to generic for now
 		andBytesImpl = andBytesGeneric
 		euclideanDistanceF16Impl = euclideanF16NEON
-		cosineDistanceF16Impl = cosineF16Unrolled4x // TODO: Implement cosineF16NEON
+		cosineDistanceF16Impl = cosineF16NEON
 		dotProductF16Impl = dotF16NEON
 	default:
 		euclideanDistanceImpl = euclideanUnrolled4x
@@ -254,6 +254,7 @@ func EuclideanDistanceF16(a, b []float16.Num) float32 {
 	if len(a) == 0 {
 		return 0
 	}
+	metrics.SimdF16OpsTotal.WithLabelValues("euclidean", implementation).Inc()
 	return euclideanDistanceF16Impl(a, b)
 }
 
@@ -265,6 +266,7 @@ func CosineDistanceF16(a, b []float16.Num) float32 {
 	if len(a) == 0 {
 		return 1.0
 	}
+	metrics.SimdF16OpsTotal.WithLabelValues("cosine", implementation).Inc()
 	return cosineDistanceF16Impl(a, b)
 }
 
@@ -276,6 +278,7 @@ func DotProductF16(a, b []float16.Num) float32 {
 	if len(a) == 0 {
 		return 0
 	}
+	metrics.SimdF16OpsTotal.WithLabelValues("dot", implementation).Inc()
 	return dotProductF16Impl(a, b)
 }
 

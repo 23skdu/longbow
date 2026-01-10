@@ -66,21 +66,40 @@ func writeParquet(w io.Writer, rec arrow.RecordBatch) error {
 	}
 
 	var vecData *array.Float32
+	var vecDataF16 *array.Float16
 	var vecLen int
 
 	if hasVec {
 		vecCol := rec.Column(vecColIdx).(*array.FixedSizeList)
-		vecData = vecCol.ListValues().(*array.Float32)
+
+		// Check inner type
+		elemType := vecCol.DataType().(*arrow.FixedSizeListType).Elem()
 		vecLen = int(vecCol.DataType().(*arrow.FixedSizeListType).Len())
+
+		if elemType.ID() == arrow.FLOAT16 {
+			vecDataF16 = vecCol.ListValues().(*array.Float16)
+		} else {
+			vecData = vecCol.ListValues().(*array.Float32)
+		}
 	}
 
 	records := make([]VectorRecord, rows)
 	for i := int64(0); i < rows; i++ {
 		var vec []float32
-		if hasVec && vecData != nil {
+		if hasVec {
 			start := int(i) * vecLen
 			end := start + vecLen
-			vec = vecData.Float32Values()[start:end]
+
+			if vecDataF16 != nil {
+				// Convert F16 -> F32
+				vals := vecDataF16.Values()[start:end]
+				vec = make([]float32, vecLen)
+				for k, v := range vals {
+					vec[k] = v.Float32()
+				}
+			} else if vecData != nil {
+				vec = vecData.Float32Values()[start:end]
+			}
 		}
 
 		records[i] = VectorRecord{

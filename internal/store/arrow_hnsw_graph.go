@@ -93,6 +93,7 @@ type ArrowSearchContext struct {
 	adcTable       []float32
 	scratchPQCodes []byte
 	pruneDepth     int
+	visitedList    []uint32 // Track visited IDs for sparse clearing
 }
 
 func NewArrowSearchContext() *ArrowSearchContext {
@@ -110,6 +111,7 @@ func NewArrowSearchContext() *ArrowSearchContext {
 		scratchVecsSQ8:   make([][]byte, 0, MaxNeighbors),
 		querySQ8:         make([]byte, 0, 1536), // Common high-dim size
 		queryF16:         make([]float16.Num, 0, 1536),
+		visitedList:      make([]uint32, 0, 2048),
 	}
 }
 
@@ -152,6 +154,27 @@ func (c *ArrowSearchContext) Reset() {
 	c.adcTable = c.adcTable[:0]
 	c.scratchPQCodes = c.scratchPQCodes[:0]
 	c.pruneDepth = 0
+}
+
+// ResetVisited performs a sparse clear of the visited bitset.
+func (c *ArrowSearchContext) ResetVisited() {
+	if len(c.visitedList) == 0 {
+		return // Already clean
+	}
+
+	// Sparse clear: only unset bits that were set
+	for _, id := range c.visitedList {
+		c.visited.Unset(id)
+	}
+	c.visitedList = c.visitedList[:0]
+}
+
+// Visit marks an ID as visited and tracks it for sparse clearing.
+func (c *ArrowSearchContext) Visit(id uint32) {
+	if !c.visited.IsSet(id) {
+		c.visited.Set(id)
+		c.visitedList = append(c.visitedList, id)
+	}
 }
 
 type ArrowHNSW struct {

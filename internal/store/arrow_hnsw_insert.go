@@ -141,11 +141,11 @@ func (h *ArrowHNSW) Insert(id uint32, level int) error {
 func (h *ArrowHNSW) InsertWithVector(id uint32, vec []float32, level int) error {
 	start := time.Now()
 	defer func() {
-		metrics.HNSWInsertDurationSeconds.Observe(time.Since(start).Seconds())
+		h.metricInsertDuration.Observe(time.Since(start).Seconds())
 		nodeCount := float64(h.nodeCount.Load())
-		metrics.HNSWNodesTotal.WithLabelValues("default").Set(nodeCount)
+		h.metricNodeCount.Set(nodeCount)
 		if h.config.BQEnabled {
-			metrics.BQVectorsTotal.WithLabelValues("default").Set(nodeCount)
+			h.metricBQVectors.Set(nodeCount)
 		}
 	}()
 

@@ -16,6 +16,7 @@ Longbow is a distributed, high-performance vector database designed for low-late
 - **Zero-Copy**: Utilizes Apache Arrow for zero-copy data representation, minimizing serialization overhead.
 - **Lock-Free**: Experimental lock-free indexing structures (skip list) for high concurrency.
 - **SIMD & NUMA**: optimized for modern CPU architectures with SIMD instructions (AVX2/AVX-512) and NUMA-aware memory allocation.
+- **FP16 Storage**: Native Float16 support for reduced memory bandwidth and improved cache efficiency.
 
 ### 2. Storage Layer
 

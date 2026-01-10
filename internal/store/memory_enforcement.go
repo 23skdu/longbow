@@ -10,7 +10,7 @@ import (
 
 // checkMemoryBeforeWrite verifies memory is available before accepting a write.
 // Returns error if memory limit would be exceeded.
-func (s *VectorStore) checkMemoryBeforeWrite(estimatedSize int64) error {
+func (s *VectorStore) checkMemoryBeforeWrite(estimatedSize int64, excludeDataset string) error {
 	current := s.currentMemory.Load()
 	limit := s.maxMemory.Load()
 
@@ -23,7 +23,7 @@ func (s *VectorStore) checkMemoryBeforeWrite(estimatedSize int64) error {
 				targetMemory = 0
 			}
 
-			err := s.evictToTarget(targetMemory)
+			err := s.evictToTarget(targetMemory, excludeDataset)
 			if err != nil {
 				metrics.MemoryLimitRejects.Inc()
 				return status.Errorf(codes.ResourceExhausted,
@@ -55,7 +55,7 @@ func (s *VectorStore) checkMemoryBeforeWrite(estimatedSize int64) error {
 		if targetMemory < 0 {
 			targetMemory = 0
 		}
-		_ = s.evictToTarget(targetMemory) // Best effort
+		_ = s.evictToTarget(targetMemory, excludeDataset) // Best effort
 	}
 
 	return nil
@@ -63,14 +63,19 @@ func (s *VectorStore) checkMemoryBeforeWrite(estimatedSize int64) error {
 
 // evictToTarget evicts datasets until currentMemory <= targetBytes.
 // Returns error if unable to free enough space.
-func (s *VectorStore) evictToTarget(targetBytes int64) error {
+func (s *VectorStore) evictToTarget(targetBytes int64, excludeDataset string) error {
 	candidates := make([]*Dataset, 0)
 	s.IterateDatasets(func(name string, ds *Dataset) {
-		candidates = append(candidates, ds)
+		if name != excludeDataset {
+			candidates = append(candidates, ds)
+		}
 	})
 
 	if len(candidates) == 0 {
-		return fmt.Errorf("no datasets available for eviction")
+		if s.currentMemory.Load() > targetBytes {
+			return fmt.Errorf("no datasets available for eviction (active excluded), need to free %d bytes", s.currentMemory.Load()-targetBytes)
+		}
+		return nil
 	}
 
 	// Sort by eviction policy

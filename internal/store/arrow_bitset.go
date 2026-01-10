@@ -1,5 +1,7 @@
 package store
 
+import "github.com/23skdu/longbow/internal/metrics"
+
 // ArrowBitset is a fast, fixed-size bitset for HNSW search visited tracking.
 // It is NOT thread-safe (intended for thread-local use in SearchContext).
 // It supports uint32 logic natively to match HNSW IDs.
@@ -54,16 +56,25 @@ func (b *ArrowBitset) Grow(newCap int) {
 	}
 	n := (newCap + 63) / 64
 	if n > cap(b.data) {
-		newData := make([]uint64, n)
+		metrics.HNSWBitsetGrowTotal.Inc()
+		// Calculate new capacity: double existing or use required if much larger
+		newAlloc := cap(b.data) * 2
+		if newAlloc < n {
+			newAlloc = n
+		}
+		newData := make([]uint64, newAlloc)
 		copy(newData, b.data)
 		b.data = newData
-	} else {
-		b.data = b.data[:n]
-		startWord := (b.size + 63) / 64
-		for i := startWord; i < n; i++ {
-			b.data[i] = 0
-		}
 	}
+	// Re-slice to new required word count
+	b.data = b.data[:n]
+
+	// Clear the newly added bits (from old size to new size)
+	startWord := (b.size + 63) / 64
+	for i := startWord; i < n; i++ {
+		b.data[i] = 0
+	}
+
 	b.size = newCap
 }
 

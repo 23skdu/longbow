@@ -91,3 +91,18 @@ func (sq *ScalarQuantizer) Encode(vec []float32, dst []byte) []byte {
 func (sq *ScalarQuantizer) Distance(a, b []byte) int32 {
 	return simd.EuclideanDistanceSQ8(a, b)
 }
+
+// Decode converts byte vector to float vector
+func (sq *ScalarQuantizer) Decode(src []byte) []float32 {
+	sq.mu.RLock()
+	minV, maxV := sq.minVal, sq.maxVal
+	sq.mu.RUnlock()
+
+	dst := make([]float32, len(src))
+	scale := (maxV - minV) / 255.0
+
+	for i, b := range src {
+		dst[i] = minV + float32(b)*scale
+	}
+	return dst
+}

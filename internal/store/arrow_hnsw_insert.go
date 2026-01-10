@@ -3,6 +3,8 @@ package store
 import (
 	"fmt"
 	"math"
+	"github.com/apache/arrow-go/v18/arrow/float16" 
+
 	"math/rand"
 	"slices"
 	"sync"
@@ -11,6 +13,7 @@ import (
 	"time"
 
 	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/pq"
 	"github.com/23skdu/longbow/internal/simd"
 )
 
@@ -49,14 +52,12 @@ func (h *ArrowHNSW) TrainPQ(vectors [][]float32) error {
 		k = 256
 	}
 
-	cfg := &PQConfig{
-		Dimensions:    dims,
-		NumSubVectors: m,
-		NumCentroids:  k,
+	encoder, err := pq.NewPQEncoder(dims, m, k)
+	if err != nil {
+		return err
 	}
 
-	encoder, err := TrainPQEncoder(cfg, vectors, 15) // 15 iterations
-	if err != nil {
+	if err := encoder.Train(vectors); err != nil {
 		return err
 	}
 
@@ -66,10 +67,49 @@ func (h *ArrowHNSW) TrainPQ(vectors [][]float32) error {
 	h.config.PQM = m
 	h.config.PQK = k
 
-	// Note: We do NOT automatically re-encode existing vectors here because
-	// ArrowHNSW stores vectors in GraphData chunks which are managed by Grow/ensureChunk.
-	// If existing vectors need PQ, we would need to iterate and backfill.
-	// For now, we assume TrainPQ is called BEFORE substantial data load or we implement backfill later.
+	// Backfill existing vectors
+	data := h.data.Load()
+
+	if h.config.AdaptiveMEnabled && !h.adaptiveMTriggered.Load() {
+		count := int(h.nodeCount.Load())
+		threshold := h.config.AdaptiveMThreshold
+		if threshold <= 0 {
+			threshold = 100
+		}
+
+		if count == threshold {
+			h.adjustMParameter(data, threshold)
+		}
+	}
+	if data != nil {
+		// If data doesn't have VectorsPQ allocated, we need to upgrade it
+		// Grow will check PQDims and PQEnabled
+		h.growNoLock(data.Capacity, data.Dims)
+		data = h.data.Load()
+
+		if data.VectorsPQ != nil {
+			nodeCount := int(h.nodeCount.Load())
+			for i := uint32(0); i < uint32(nodeCount); i++ {
+				v := h.mustGetVectorFromData(data, i)
+				if v == nil {
+					continue
+				}
+				code, err := encoder.Encode(v)
+				if err != nil {
+					continue
+				}
+				cID := chunkID(i)
+				cOff := chunkOffset(i)
+
+				// Ensure PQ chunk exists (lazily allocated)
+				data = h.ensureChunk(data, cID, cOff, data.Dims)
+
+				if chunk := data.GetVectorsPQChunk(cID); chunk != nil {
+					copy(chunk[int(cOff)*m:(int(cOff)+1)*m], code)
+				}
+			}
+		}
+	}
 
 	return nil
 }
@@ -97,18 +137,26 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec []float32, level int) error 
 		}
 	}()
 
-	// Make a defensive copy of the vector to avoid race conditions
-	// when multiple goroutines are inserting concurrently and reading from shared memory
-	vecCopy := make([]float32, len(vec))
-	copy(vecCopy, vec)
-	vec = vecCopy
+	// Make a defensive copy of the vector is avoided by copying into GraphData first.
+	// We rely on the copy at line 200 to provide a stable reference.
 
 	// 2. Check Capacity & SQ8/Vectors Status
-	// Check dimensions lock-free
 	// Check dimensions lock-free
 	dims := int(h.dims.Load())
 
 	data := h.data.Load()
+
+	if h.config.AdaptiveMEnabled && !h.adaptiveMTriggered.Load() {
+		count := int(h.nodeCount.Load())
+		threshold := h.config.AdaptiveMThreshold
+		if threshold <= 0 {
+			threshold = 100
+		}
+
+		if count == threshold {
+			h.adjustMParameter(data, threshold)
+		}
+	}
 
 	// Invariant: If dims > 0, Vectors/SQ8 arrays MUST exist in data.
 	// We check both Capacity and existence of structures.
@@ -122,14 +170,21 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec []float32, level int) error 
 	cOff := chunkOffset(id)
 	data = h.ensureChunk(data, cID, cOff, dims)
 
-	// Initialize the new node
+	// Acquire search context from pool early to use its scratch buffers
+	metrics.HNSWInsertPoolGetTotal.Inc()
+	ctx := h.searchPool.Get().(*ArrowSearchContext)
+	ctx.Reset()
+	defer func() {
+		metrics.HNSWInsertPoolPutTotal.Inc()
+		h.searchPool.Put(ctx)
+	}()
+
 	// Initialize the new node
 	// Access the chunk pointer atomically
 	levelsChunk := data.GetLevelsChunk(cID)
 	// We ensured chunk exists, so levelsChunk should not be nil.
-	// Note: GetLevelsChunk returns *[]uint8 (header pointer).
-	// We can trust it points to valid memory.
-	(*levelsChunk)[cOff] = uint8(level)
+	// We ensured chunk exists, so levelsChunk should not be nil.
+	levelsChunk[cOff] = uint8(level)
 
 	// Cache dimensions on first insert
 	if dims == 0 && len(vec) > 0 {
@@ -164,18 +219,26 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec []float32, level int) error 
 	// Recovery block removed: Invariant guarantees Vectors exist if dims > 0.
 
 	// Store Dense Vector (Copy for L2 locality)
-	if len(vec) > 0 && dims > 0 {
-		// ensureChunk guarantees allocation (or recovery above)
-		vecChunk := data.GetVectorsChunk(cID)
-		if data.Vectors == nil || int(cID) >= len(data.Vectors) || vecChunk == nil {
-			// This path indicates a critical synchronization failure or logic error in ensureChunk/Grow
-			// Instead of panicking, return error to allow caller to handle/retry
-			return fmt.Errorf("vector allocation failure for ID %d (dims=%d): inconsistent state", id, dims)
-		}
+	if len(vec) > 0 && dims > 0 { 
+		if h.config.Float16Enabled { 
+			f16Chunk := data.GetVectorsF16Chunk(cID) 
+			if f16Chunk != nil { 
+				dest := f16Chunk[int(cOff)*dims : (int(cOff)+1)*dims] 
+				for i, v := range vec { 
+					dest[i] = float16.New(v) 
+				} 
+			} 
+		} else { 
+			vecChunk := data.GetVectorsChunk(cID) 
+			if data.Vectors == nil || int(cID) >= len(data.Vectors) || vecChunk == nil { 
+				return fmt.Errorf("vector allocation failure for ID %d (dims=%d): inconsistent state", id, dims) 
+			} 
+			dest := vecChunk[int(cOff)*dims : (int(cOff)+1)*dims] 
+			copy(dest, vec) 
+			vec = dest 
+		} 
+	} 
 
-		dest := (*vecChunk)[int(cOff)*dims : (int(cOff)+1)*dims]
-		copy(dest, vec)
-	}
 
 	// Store Binary Quantized Vector
 	if h.config.BQEnabled && dims > 0 {
@@ -193,7 +256,22 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec []float32, level int) error 
 		if encodedChunk != nil {
 			numWords := len(encoded)
 			baseIdx := int(cOff) * numWords
-			copy((*encodedChunk)[baseIdx:baseIdx+numWords], encoded)
+			copy(encodedChunk[baseIdx:baseIdx+numWords], encoded)
+		}
+	}
+
+	// Store PQ Vector
+	if h.config.PQEnabled && h.pqEncoder != nil && dims > 0 {
+		code, err := h.pqEncoder.Encode(vec)
+		if err == nil {
+			encodedChunk := data.GetVectorsPQChunk(cID)
+			if encodedChunk != nil {
+				pqM := data.PQDims
+				if pqM > 0 {
+					baseIdx := int(cOff) * pqM
+					copy(encodedChunk[baseIdx:baseIdx+pqM], code)
+				}
+			}
 		}
 	}
 
@@ -217,94 +295,44 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec []float32, level int) error 
 	sq8Handled := false
 
 	if h.config.SQ8Enabled && dims > 0 {
-		// First check if quantizer is trained (read-only, no lock needed for atomic check)
-		needsTraining := h.quantizer == nil || !h.quantizer.IsTrained()
+		h.ensureTrained(int(h.locationStore.MaxID()), [][]float32{vec})
+	}
 
-		if needsTraining {
-			// Need to acquire lock for initialization/training
-			h.growMu.Lock()
-			// Double-check after acquiring lock (another goroutine may have initialized)
-			if h.quantizer == nil {
-				h.quantizer = NewScalarQuantizer(dims)
-			}
-
-			if !h.quantizer.IsTrained() {
-				// Buffer vector for training
-				vecCopy := make([]float32, len(vec))
-				copy(vecCopy, vec)
-				h.sq8TrainingBuffer = append(h.sq8TrainingBuffer, vecCopy)
-
-				// Check if threshold reached
-				threshold := h.config.SQ8TrainingThreshold
-				if threshold <= 0 {
-					threshold = 1000
-				}
-
-				if len(h.sq8TrainingBuffer) >= threshold {
-					// Train!
-					h.quantizer.Train(h.sq8TrainingBuffer)
-
-					// Backfill existing vectors
-					currentData := h.data.Load()
-					maxID := h.locationStore.MaxID()
-					for i := uint32(0); i <= uint32(maxID); i++ {
-						cID := chunkID(i)
-						cOff := chunkOffset(i)
-
-						vecChunk := currentData.GetVectorsChunk(cID)
-						if vecChunk == nil {
-							continue
-						}
-
-						off := int(cOff) * dims
-						if off+dims > len(*vecChunk) {
-							continue
-						}
-						srcVec := (*vecChunk)[off : off+dims]
-
-						// Encode to SQ8 chunk
-						sq8Chunk := currentData.GetVectorsSQ8Chunk(cID)
-						if sq8Chunk != nil && off+dims <= len(*sq8Chunk) {
-							dest := (*sq8Chunk)[off : off+dims]
-							h.quantizer.Encode(srcVec, dest)
-						}
-					}
-
-					// Clear buffer
-					h.sq8TrainingBuffer = nil
-				}
-			}
-			h.growMu.Unlock()
+	// Encode to local buffer if quantizer is trained (and ready)
+	if h.sq8Ready.Load() {
+		if cap(ctx.querySQ8) < dims {
+			ctx.querySQ8 = make([]byte, dims)
 		}
+		ctx.querySQ8 = ctx.querySQ8[:dims]
+		h.quantizer.Encode(vec, ctx.querySQ8)
+		localSQ8Buffer = ctx.querySQ8
 
-		// Encode to local buffer if quantizer is trained
-		if h.quantizer != nil && h.quantizer.IsTrained() {
-			// Allocate local buffer for this goroutine
-			localSQ8Buffer = make([]byte, dims)
-			h.quantizer.Encode(vec, localSQ8Buffer)
-
-			// Now copy local buffer to shared memory (single write operation)
-			cID := chunkID(id)
-			cOff := chunkOffset(id)
-			// Check if SQ8 vector array is allocated for this chunk
-			if chunk := data.GetVectorsSQ8Chunk(cID); chunk != nil {
-				dest := (*chunk)[int(cOff)*dims : int(cOff+1)*dims]
-				copy(dest, localSQ8Buffer)
-			}
-			sq8Handled = true
+		// Now copy local buffer to shared memory (single write operation)
+		cID := chunkID(id)
+		cOff := chunkOffset(id)
+		// Check if SQ8 vector array is allocated for this chunk
+		if chunk := data.GetVectorsSQ8Chunk(cID); chunk != nil {
+			dest := chunk[int(cOff)*dims : int(cOff+1)*dims]
+			copy(dest, localSQ8Buffer)
 		}
+		sq8Handled = true
 	}
 
 	// Fallback encoding if not handled above
-	if !sq8Handled && h.quantizer != nil && h.quantizer.IsTrained() {
+	if !sq8Handled && h.sq8Ready.Load() {
 		cID := chunkID(id)
 		cOff := chunkOffset(id)
 
 		if chunk := data.GetVectorsSQ8Chunk(cID); chunk != nil {
 			// Use local buffer
-			localSQ8Buffer = make([]byte, dims)
-			h.quantizer.Encode(vec, localSQ8Buffer)
-			dest := (*chunk)[int(cOff)*dims : int(cOff+1)*dims]
+			if cap(ctx.querySQ8) < dims {
+				ctx.querySQ8 = make([]byte, dims)
+			}
+			ctx.querySQ8 = ctx.querySQ8[:dims]
+			h.quantizer.Encode(vec, ctx.querySQ8)
+			localSQ8Buffer = ctx.querySQ8
+
+			dest := chunk[int(cOff)*dims : int(cOff+1)*dims]
 			copy(dest, localSQ8Buffer)
 		}
 	}
@@ -333,11 +361,6 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec []float32, level int) error 
 	}
 
 	// Search from top layer down to level+1
-
-	// Use search pool to avoid allocations
-	ctx := h.searchPool.Get().(*ArrowSearchContext)
-	ctx.Reset() // Enforce reset before usage
-	defer h.searchPool.Put(ctx)
 
 	for lc := maxL; lc > level; lc-- {
 		// Find closest point at this layer
@@ -388,8 +411,6 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec []float32, level int) error 
 
 			// Prune neighbor if needed (still useful to keep strict M_max if buffer wasn't hit)
 			// Read count atomically
-			// Read count atomically
-			// Read count atomically
 			cID := chunkID(neighbor.ID)
 			cOff := chunkOffset(neighbor.ID)
 
@@ -404,7 +425,7 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec []float32, level int) error 
 				}
 			}
 
-			count := atomic.LoadInt32(&(*countsChunk)[cOff])
+			count := atomic.LoadInt32(&countsChunk[cOff])
 			if int(count) > maxConn {
 				h.PruneConnections(ctx, data, neighbor.ID, maxConn, lc)
 			}
@@ -424,6 +445,82 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec []float32, level int) error 
 
 	h.nodeCount.Add(1)
 	return nil
+}
+
+// ensureTrained checks if SQ8 training is needed and performs it if sufficient data is accumulated.
+// limitID specifies the max ID to backfill (inclusive).
+func (h *ArrowHNSW) ensureTrained(limitID int, extraSamples [][]float32) {
+	if h.sq8Ready.Load() {
+		return
+	}
+
+	h.growMu.Lock()
+	defer h.growMu.Unlock()
+
+	if h.sq8Ready.Load() {
+		return
+	}
+
+	dims := int(h.dims.Load())
+	if h.quantizer == nil {
+		h.quantizer = NewScalarQuantizer(dims)
+	}
+
+	if h.quantizer.IsTrained() {
+		h.sq8Ready.Store(true)
+		return
+	}
+
+	// Buffer vectors for training
+	for _, v := range extraSamples {
+		vecCopy := make([]float32, len(v))
+		copy(vecCopy, v)
+		h.sq8TrainingBuffer = append(h.sq8TrainingBuffer, vecCopy)
+	}
+
+	// Check if threshold reached
+	threshold := h.config.SQ8TrainingThreshold
+	if threshold <= 0 {
+		threshold = 1000
+	}
+
+	if len(h.sq8TrainingBuffer) >= threshold {
+		// Train!
+		h.quantizer.Train(h.sq8TrainingBuffer)
+
+		// Backfill existing vectors
+		if limitID >= 0 {
+			currentData := h.data.Load()
+			for i := uint32(0); i <= uint32(limitID); i++ {
+				cID := chunkID(i)
+				cOff := chunkOffset(i)
+
+				vecChunk := currentData.GetVectorsChunk(cID)
+				if vecChunk == nil {
+					continue
+				}
+
+				off := int(cOff) * dims
+				if off+dims > len(vecChunk) {
+					continue
+				}
+				srcVec := vecChunk[off : off+dims]
+
+				// Encode to SQ8 chunk
+				// We MUST check if chunk exists, if not, we can't write.
+				// But ensureChunk should have allocated it if we have SQ8Enabled.
+				sq8Chunk := currentData.GetVectorsSQ8Chunk(cID)
+				if sq8Chunk != nil && off+dims <= len(sq8Chunk) {
+					dest := sq8Chunk[off : off+dims]
+					h.quantizer.Encode(srcVec, dest)
+				}
+			}
+		}
+
+		// Clear buffer
+		h.sq8TrainingBuffer = nil
+		h.sq8Ready.Store(true)
+	}
 }
 
 // searchLayerForInsert performs search during insertion.
@@ -462,16 +559,23 @@ func (h *ArrowHNSW) searchLayerForInsert(ctx *ArrowSearchContext, query []float3
 	var entryDist float32
 	var querySQ8 []byte
 
-	if h.metric == MetricEuclidean && h.quantizer != nil && h.quantizer.IsTrained() {
-		querySQ8 = h.quantizer.Encode(query, nil)
+	// Use sq8Ready to avoid race with backfill
+	if h.metric == MetricEuclidean && h.sq8Ready.Load() {
+		if cap(ctx.querySQ8) < len(query) {
+			ctx.querySQ8 = make([]byte, len(query))
+		}
+		ctx.querySQ8 = ctx.querySQ8[:len(query)]
+		h.quantizer.Encode(query, ctx.querySQ8)
+		querySQ8 = ctx.querySQ8
+
 		// Access SQ8 data for entryPoint
 		cID := chunkID(entryPoint)
 		cOff := chunkOffset(entryPoint)
 		off := int(cOff) * int(h.dims.Load())
 		dims := int(h.dims.Load())
 		vecSQ8Chunk := data.GetVectorsSQ8Chunk(cID)
-		if vecSQ8Chunk != nil && off+dims <= len(*vecSQ8Chunk) {
-			dSQ8 := simd.EuclideanDistanceSQ8(querySQ8, (*vecSQ8Chunk)[off:off+dims])
+		if vecSQ8Chunk != nil && off+dims <= len(vecSQ8Chunk) {
+			dSQ8 := simd.EuclideanDistanceSQ8(querySQ8, vecSQ8Chunk[off:off+dims])
 			entryDist = float32(dSQ8)
 		} else {
 			// Fallback if not quantized yet? Should not happen if strictly maintained.
@@ -590,8 +694,8 @@ func (h *ArrowHNSW) searchLayerForInsert(ctx *ArrowSearchContext, query []float3
 				dims := int(h.dims.Load())
 
 				vecSQ8Chunk := data.GetVectorsSQ8Chunk(cID)
-				if vecSQ8Chunk != nil && off+dims <= len(*vecSQ8Chunk) {
-					vecsSQ8[i] = (*vecSQ8Chunk)[off : off+dims]
+				if vecSQ8Chunk != nil && off+dims <= len(vecSQ8Chunk) {
+					vecsSQ8[i] = vecSQ8Chunk[off : off+dims]
 				} else {
 					// Invalid/Missing vector: use query as safe dummy (dist=0)
 					vecsSQ8[i] = querySQ8
@@ -623,7 +727,7 @@ func (h *ArrowHNSW) searchLayerForInsert(ctx *ArrowSearchContext, query []float3
 					cOff := chunkOffset(nid)
 					dims := int(h.dims.Load())
 					off := int(cOff) * dims
-					if off+dims > len(*vecSQ8Chunk) {
+					if off+dims > len(vecSQ8Chunk) {
 						dists[i] = math.MaxFloat32
 					}
 				}
@@ -808,8 +912,8 @@ func (h *ArrowHNSW) selectNeighbors(ctx *ArrowSearchContext, candidates []Candid
 				offSel := int(cOff) * dims
 
 				vecSQ8Chunk := data.GetVectorsSQ8Chunk(cID)
-				if vecSQ8Chunk != nil && offSel+dims <= len(*vecSQ8Chunk) {
-					vecSel := (*vecSQ8Chunk)[offSel : offSel+dims]
+				if vecSQ8Chunk != nil && offSel+dims <= len(vecSQ8Chunk) {
+					vecSel := vecSQ8Chunk[offSel : offSel+dims]
 					// Batch SIMD
 					if cap(ctx.scratchVecsSQ8) < count {
 						ctx.scratchVecsSQ8 = make([][]byte, count*2)
@@ -823,8 +927,8 @@ func (h *ArrowHNSW) selectNeighbors(ctx *ArrowSearchContext, candidates []Candid
 						offRem := int(nCOff) * dims
 
 						nVecSQ8Chunk := data.GetVectorsSQ8Chunk(nCID)
-						if nVecSQ8Chunk != nil && offRem+dims <= len(*nVecSQ8Chunk) {
-							vecsSQ8[i] = (*nVecSQ8Chunk)[offRem : offRem+dims]
+						if nVecSQ8Chunk != nil && offRem+dims <= len(nVecSQ8Chunk) {
+							vecsSQ8[i] = nVecSQ8Chunk[offRem : offRem+dims]
 						} else {
 							vecsSQ8[i] = vecSel // Safe dummy
 							hasInvalid = true
@@ -843,7 +947,7 @@ func (h *ArrowHNSW) selectNeighbors(ctx *ArrowSearchContext, candidates []Candid
 							}
 							nCOff := chunkOffset(remaining[i].ID)
 							offRem := int(nCOff) * dims
-							if offRem+dims > len(*nVecSQ8Chunk) {
+							if offRem+dims > len(nVecSQ8Chunk) {
 								dists[i] = math.MaxFloat32
 							}
 						}
@@ -962,11 +1066,11 @@ func (h *ArrowHNSW) AddConnection(ctx *ArrowSearchContext, data *GraphData, sour
 
 	// Check for duplicates first to ensure idempotency
 	// This requires reading current neighbors
-	currentCount := atomic.LoadInt32(&(*countsChunk)[cOff])
+	currentCount := atomic.LoadInt32(&countsChunk[cOff])
 	baseIdx := int(cOff) * MaxNeighbors
 
 	for i := 0; i < int(currentCount); i++ {
-		if atomic.LoadUint32(&(*neighborsChunk)[baseIdx+i]) == target {
+		if atomic.LoadUint32(&neighborsChunk[baseIdx+i]) == target {
 			return // Already connected
 		}
 	}
@@ -986,14 +1090,14 @@ func (h *ArrowHNSW) AddConnection(ctx *ArrowSearchContext, data *GraphData, sour
 	if verChunk == nil {
 		return
 	}
-	verAddr := &(*verChunk)[cOff]
+	verAddr := &verChunk[cOff]
 	atomic.AddUint32(verAddr, 1)
 
 	// Atomic store to satisfy race detector
-	atomic.StoreUint32(&(*neighborsChunk)[baseIdx+slot], target)
+	atomic.StoreUint32(&neighborsChunk[baseIdx+slot], target)
 
 	// Update metadata (Counts) - make visible AFTER data write
-	countAddr := &(*countsChunk)[cOff]
+	countAddr := &countsChunk[cOff]
 	newCount := atomic.AddInt32(countAddr, 1)
 
 	// Seqlock write: increment version (even = clean)
@@ -1032,7 +1136,7 @@ func (h *ArrowHNSW) pruneConnectionsLocked(ctx *ArrowSearchContext, data *GraphD
 		}
 	}
 
-	countAddr := &(*countsChunk)[cOff]
+	countAddr := &countsChunk[cOff]
 	count := int(atomic.LoadInt32(countAddr))
 
 	if count <= maxConn {
@@ -1069,11 +1173,11 @@ func (h *ArrowHNSW) pruneConnectionsLocked(ctx *ArrowSearchContext, data *GraphD
 		dims := int(h.dims.Load())
 		offNode := int(cOff) * dims
 		nodeSQ8Chunk := data.GetVectorsSQ8Chunk(cID)
-		if nodeSQ8Chunk != nil && offNode+dims <= len(*nodeSQ8Chunk) {
-			nodeSQ8 := (*nodeSQ8Chunk)[offNode : offNode+dims]
+		if nodeSQ8Chunk != nil && offNode+dims <= len(nodeSQ8Chunk) {
+			nodeSQ8 := nodeSQ8Chunk[offNode : offNode+dims]
 
 			for i := 0; i < count; i++ {
-				neighborID := (*neighborsChunk)[baseIdx+i]
+				neighborID := neighborsChunk[baseIdx+i]
 
 				// Neighbor chunk access
 				nCID := chunkID(neighborID)
@@ -1081,8 +1185,8 @@ func (h *ArrowHNSW) pruneConnectionsLocked(ctx *ArrowSearchContext, data *GraphD
 				offRem := int(nCOff) * dims
 
 				nVecSQ8Chunk := data.GetVectorsSQ8Chunk(nCID)
-				if nVecSQ8Chunk != nil && offRem+dims <= len(*nVecSQ8Chunk) {
-					d := simd.EuclideanDistanceSQ8(nodeSQ8, (*nVecSQ8Chunk)[offRem:offRem+dims])
+				if nVecSQ8Chunk != nil && offRem+dims <= len(nVecSQ8Chunk) {
+					d := simd.EuclideanDistanceSQ8(nodeSQ8, nVecSQ8Chunk[offRem:offRem+dims])
 					dists[i] = float32(d)
 				} else {
 					dists[i] = math.MaxFloat32
@@ -1112,7 +1216,7 @@ func (h *ArrowHNSW) pruneConnectionsLocked(ctx *ArrowSearchContext, data *GraphD
 		nodeVec := h.mustGetVectorFromData(data, nodeID)
 
 		for i := 0; i < count; i++ {
-			neighborID := (*neighborsChunk)[baseIdx+i]
+			neighborID := neighborsChunk[baseIdx+i]
 			vec := h.mustGetVectorFromData(data, neighborID)
 			neighborVecs[i] = vec
 
@@ -1123,7 +1227,7 @@ func (h *ArrowHNSW) pruneConnectionsLocked(ctx *ArrowSearchContext, data *GraphD
 
 	// Populate candidates with IDs and distances
 	for i := 0; i < count; i++ {
-		candidates[i] = Candidate{ID: (*neighborsChunk)[baseIdx+i], Dist: dists[i]}
+		candidates[i] = Candidate{ID: neighborsChunk[baseIdx+i], Dist: dists[i]}
 	}
 
 	// Run heuristic to select best M neighbors
@@ -1150,11 +1254,11 @@ func (h *ArrowHNSW) pruneConnectionsLocked(ctx *ArrowSearchContext, data *GraphD
 		// Should not happen if other chunks exist
 		return
 	}
-	verAddr := &(*verChunk)[cOff]
+	verAddr := &verChunk[cOff]
 	atomic.AddUint32(verAddr, 1)
 
 	for i := 0; i < newCount; i++ {
-		atomic.StoreUint32(&(*neighborsChunk)[baseIdx+i], selected[i].ID)
+		atomic.StoreUint32(&neighborsChunk[baseIdx+i], selected[i].ID)
 	}
 	atomic.StoreInt32(countAddr, int32(newCount))
 

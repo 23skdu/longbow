@@ -165,7 +165,7 @@ func (w *SyncWorker) syncPeer(p *PeerState) error {
 		if remoteRoot == localRoot {
 			metrics.MeshMerkleMatchTotal.WithLabelValues("match").Inc()
 			w.logger.Info().Str("peer", p.Addr).Msg("Merkle roots match, skipping sync")
-			// return nil
+			return nil
 		} else {
 			metrics.MeshMerkleMatchTotal.WithLabelValues("mismatch").Inc()
 			w.logger.Info().Str("peer", p.Addr).Msg("Merkle roots differ, starting sync")

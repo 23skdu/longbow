@@ -66,6 +66,7 @@ type Dataset struct {
 	// Hybrid Search
 	InvertedIndexes map[string]*InvertedIndex
 	BM25Index       *BM25InvertedIndex
+	BM25ArenaIndex  *BM25ArenaIndex // Arena-based BM25 index (optimization)
 
 	// GraphRAG Store
 	Graph *GraphStore

@@ -1,6 +1,5 @@
 package store
 
-
 import (
 	"os"
 	"path/filepath"
@@ -372,7 +371,7 @@ func (m *mockPluggableIndex) AddByLocation(batchIdx, rowIdx int) error {
 	return nil
 }
 
-func (m *mockPluggableIndex) SearchVectors(query []float32, k int) []SearchResult {
+func (m *mockPluggableIndex) SearchVectors(query []float32, k int, options SearchOptions) []SearchResult {
 	results, _ := m.Search(query, k)
 	searchResults := make([]SearchResult, len(results))
 	for i, r := range results {

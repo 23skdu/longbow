@@ -217,6 +217,9 @@ def command_delete(args, data_client, meta_client):
 def command_search(args, data_client, meta_client):
     """Perform vector search via Meta Server DoAction."""
     name = args.dataset
+    if hasattr(args, 'seed') and args.seed is not None:
+        np.random.seed(args.seed)
+    
     k = args.k
     query_vector = np.random.rand(args.dim).astype(np.float32).tolist()
     
@@ -235,6 +238,11 @@ def command_search(args, data_client, meta_client):
             if len(parts) == 3:
                 filters.append({"field": parts[0], "operator": parts[1], "value": parts[2]})
         request["filters"] = filters
+    
+    if args.include_vectors:
+        request["include_vectors"] = True
+        request["vector_format"] = args.vector_format
+        print(f"Including vectors in output (format={args.vector_format})")
     
     # Add text query for hybrid search
     if args.text_query:
@@ -638,6 +646,48 @@ def command_validate(args, data_client, meta_client):
     except Exception as e:
         print(f"  FAIL: Global search call failed: {e}")
 
+    # =========================================================================
+    # Test 5: Compressed Vector Transport Validation
+    # =========================================================================
+    print("\n[Test 5] Compressed Vector Transport (F16/SQ8)")
+    try:
+        # We use the existing 'dataset' which has data (Test 1 data: orthogonal vecs)
+        # ID 1 is [0, 1, 0, 0]
+        qvec = [0.0, 1.0, 0.0, 0.0]
+        
+        for fmt in ["f16", "f32"]:
+             print(f"  Testing format='{fmt}'...")
+             req_c = {
+                 "dataset": dataset, 
+                 "vector": qvec, 
+                 "k": 1,
+                 "include_vectors": True,
+                 "vector_format": fmt
+             }
+             
+             ticket_c = flight.Ticket(json.dumps({"search": req_c}).encode("utf-8"))
+             reader_c = meta_client.do_get(ticket_c, options=get_options(args))
+             table_c = reader_c.read_all()
+             
+             # Verify schema contains 'vector'
+             if "vector" in table_c.column_names:
+                 # Check content roughly
+                 df_c = table_c.to_pandas()
+                 if len(df_c) > 0:
+                      vec_val = df_c.iloc[0]['vector']
+                      # Just ensure it's a list/array of length 4
+                      if len(vec_val) == 4:
+                          print(f"  PASS: Received vectors in '{fmt}' format (Len: 4)")
+                      else:
+                          print(f"  FAIL: Vector length mismatch for '{fmt}': {len(vec_val)}")
+                 else:
+                      print(f"  FAIL: No results returned for '{fmt}'")
+             else:
+                 print(f"  FAIL: 'vector' column missing from response for '{fmt}'")
+
+    except Exception as e:
+        print(f"  FAIL: Compressed transport test error: {e}")
+
     print("\nSmoke Tests Complete.")
     
     # Cleanup
@@ -886,8 +936,11 @@ def main():
     search_parser.add_argument("--text-query", help="Text query for hybrid search")
     search_parser.add_argument("--local", action="store_true", help="Force local-only search")
     search_parser.add_argument("--global", dest="global_search", action="store_true", help="Force GLOBAL distributed search")
+    search_parser.add_argument("--include-vectors", action="store_true", help="Include vectors in search results")
+    search_parser.add_argument("--vector-format", default="f32", help="Vector format (f32, quantized, f16)")
     search_parser.add_argument("--alpha", type=float, default=0.5, help="Hybrid alpha (0=sparse, 1=dense)")
     search_parser.add_argument("--filter", action="append", help="Filter: field:op:value")
+    search_parser.add_argument("--seed", type=int, help="Random seed for deterministic vector generation")
 
     # SNAPSHOT
     subparsers.add_parser("snapshot", help="Force database snapshot")

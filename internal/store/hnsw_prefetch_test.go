@@ -76,7 +76,7 @@ func TestSearchVectorsCorrectness(t *testing.T) {
 	query := []float32{1, 0.1, 0, 0}
 
 	// Test SearchVectors (Batched)
-	results, err := hnswIdx.SearchVectors(query, 2, nil)
+	results, err := hnswIdx.SearchVectors(query, 2, nil, SearchOptions{})
 	require.NoError(t, err)
 	require.Len(t, results, 2)
 	// Closer to [1,0,0,0] (ID 0) and [1,1,0,0] (ID 4)
@@ -89,7 +89,7 @@ func TestSearchVectorsCorrectness(t *testing.T) {
 	filter.Set(2)
 	filter.Set(3)
 
-	resultsBitmap := hnswIdx.SearchVectorsWithBitmap(query, 2, filter)
+	resultsBitmap := hnswIdx.SearchVectorsWithBitmap(query, 2, filter, SearchOptions{})
 	require.Len(t, resultsBitmap, 2)
 	// ID 1 and 2 are closest among filtered {1, 2, 3}
 	assert.Equal(t, VectorID(1), resultsBitmap[0].ID)
@@ -147,7 +147,7 @@ func BenchmarkSearchVectorsBatched(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = idx.SearchVectors(query, 100, nil)
+		_, _ = idx.SearchVectors(query, 100, nil, SearchOptions{})
 	}
 }
 
@@ -206,6 +206,6 @@ func BenchmarkSearchVectorsWithBitmapBatched(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		idx.SearchVectorsWithBitmap(query, 100, filter)
+		idx.SearchVectorsWithBitmap(query, 100, filter, SearchOptions{})
 	}
 }

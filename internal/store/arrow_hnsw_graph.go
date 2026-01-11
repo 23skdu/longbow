@@ -57,6 +57,12 @@ type ArrowHNSWConfig struct {
 	Float16Enabled          bool // Enable native float16 storage
 
 	Dims int // Explicit dimension size if known
+
+	IndexedColumns []string // Columns to build bitmap index for
+
+	QueryCacheEnabled  bool
+	QueryCacheCapacity int
+	QueryCacheTTL      time.Duration
 }
 
 func DefaultArrowHNSWConfig() ArrowHNSWConfig {
@@ -230,6 +236,13 @@ type ArrowHNSW struct {
 	metricBulkInsertDuration prometheus.Observer
 	metricBulkVectors        prometheus.Counter
 	metricBQVectors          prometheus.Gauge
+	metricBitmapEntries      prometheus.Gauge
+	metricBitmapFilterDelta  prometheus.Observer
+	metricEarlyTermination   *prometheus.CounterVec
+
+	bitmapIndex *BitmapIndex
+	queryCache  *QueryCache
+	// ... (rest of fields)
 }
 
 type GraphData struct {
@@ -257,6 +270,9 @@ type GraphData struct {
 	VectorsSQ8 []uint64 // []*[]byte -> []offset
 	VectorsPQ  []uint64 // []*[]byte -> []offset
 	VectorsBQ  []uint64 // []*[]uint64 -> []offset
+
+	// Disk Storage (Phase 6)
+	DiskStore *DiskVectorStore
 
 	Neighbors [ArrowMaxLayers][]uint64 // [][]*[]uint32 -> [][]offset
 	Counts    [ArrowMaxLayers][]uint64 // [][]*[]int32 -> [][]offset

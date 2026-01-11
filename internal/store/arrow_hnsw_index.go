@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/query"
@@ -88,6 +89,24 @@ func NewArrowHNSW(dataset *Dataset, config ArrowHNSWConfig, locStore *ChunkedLoc
 		metricBulkInsertDuration: metrics.HNSWBulkInsertDurationSeconds,
 		metricBulkVectors:        metrics.HNSWBulkVectorsProcessedTotal,
 		metricBQVectors:          metrics.BQVectorsTotal.WithLabelValues(dsName),
+		metricBitmapEntries:      metrics.HNSWBitmapIndexEntriesTotal.WithLabelValues(dsName),
+		metricBitmapFilterDelta:  metrics.HNSWBitmapFilterDurationSeconds.WithLabelValues(dsName),
+		metricEarlyTermination:   metrics.HNSWSearchEarlyTerminationsTotal,
+
+		bitmapIndex: NewBitmapIndex(),
+	}
+
+	if config.QueryCacheEnabled {
+		capacity := config.QueryCacheCapacity
+		if capacity <= 0 {
+			capacity = 1000 // Default
+		}
+		ttl := config.QueryCacheTTL
+		if ttl <= 0 {
+			ttl = 5 * time.Minute // Default
+		}
+		h.queryCache = NewQueryCache(capacity, ttl)
+		h.queryCache.SetDatasetName(dsName)
 	}
 
 	h.distFunc = h.resolveDistanceFunc()
@@ -113,6 +132,9 @@ func NewArrowHNSW(dataset *Dataset, config ArrowHNSWConfig, locStore *ChunkedLoc
 	}
 
 	gd := NewGraphData(initialCap, config.Dims, config.SQ8Enabled, config.PQEnabled, config.PQM, config.BQEnabled, config.Float16Enabled)
+	if dataset != nil && dataset.DiskStore != nil {
+		gd.DiskStore = dataset.DiskStore
+	}
 	h.data.Store(gd) // Dim 0 initially, updated on first insert
 	h.backend.Store(gd)
 
@@ -253,6 +275,16 @@ func (h *ArrowHNSW) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []int)
 		id := uint32(startID) + uint32(i)
 		ids[i] = id
 
+		// 5. Index Metadata (if enabled)
+		if len(h.config.IndexedColumns) > 0 {
+			// Find record and row offset
+			// recs might be multiple batches. rowIdxs are absolute into those batches?
+			// Actually, AddBatch documentation says rowIdxs and batchIdxs are provided.
+			// The loop uses startID, which is contiguous.
+			// Let's assume h.indexMetadata handles everything.
+			h.indexMetadata(id, recs, i, rowIdxs, batchIdxs)
+		}
+
 		g.Go(func() error {
 			if ctx.Err() != nil {
 				return ctx.Err()
@@ -280,16 +312,50 @@ func (h *ArrowHNSW) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []int)
 
 // SearchVectors implements VectorIndex.
 // SearchVectors implements VectorIndex.
-func (h *ArrowHNSW) SearchVectors(queryVec []float32, k int, filters []query.Filter) ([]SearchResult, error) {
+func (h *ArrowHNSW) SearchVectors(queryVec []float32, k int, filters []query.Filter, options SearchOptions) ([]SearchResult, error) {
 	// Post-filtering with Adaptive Expansion
 	initialFactor := 10
 	retryFactor := 50
 	maxRetries := 1
-
 	q := queryVec // Alias to avoid shadowing package query
 
+	paramsKey := fmt.Sprintf("k=%d,filters=%v", k, filters)
+	if h.queryCache != nil {
+		if res, ok := h.queryCache.Get(q, paramsKey); ok {
+			return res, nil
+		}
+	}
+
 	limit := k
-	if len(filters) > 0 {
+	qBitset := (*query.Bitset)(nil)
+
+	if len(filters) > 0 && h.bitmapIndex != nil {
+		// Try to build a pre-filter bitset from the bitmap index
+		criteria := make(map[string]string)
+		allSimple := true
+		for _, f := range filters {
+			if f.Operator == "=" || f.Operator == "==" {
+				criteria[f.Field] = f.Value
+			} else {
+				allSimple = false
+				break
+			}
+		}
+
+		if allSimple {
+			startFilter := time.Now()
+			bm, err := h.bitmapIndex.Filter(criteria)
+			if err == nil && bm != nil {
+				h.metricBitmapFilterDelta.Observe(time.Since(startFilter).Seconds())
+				qBitset = query.NewBitsetFromRoaring(bm)
+				defer qBitset.Release()
+				// If we have a bitset, we can skip post-filtering if we trust the bitset completely.
+				// For HNSW, we pass it to Search which applies it during traversal.
+			}
+		}
+	}
+
+	if len(filters) > 0 && qBitset == nil {
 		limit = k * initialFactor
 	}
 
@@ -297,15 +363,16 @@ func (h *ArrowHNSW) SearchVectors(queryVec []float32, k int, filters []query.Fil
 		// Use ef = limit + 100 heuristic
 		ef := limit + 100
 
-		// Pass nil filter to get raw candidates from graph
-		candidates, err := h.Search(q, limit, ef, nil)
+		// Pass qBitset if we matched simple criteria
+		candidates, err := h.Search(q, limit, ef, qBitset)
 		if err != nil {
 			return nil, err
 		}
 
-		// Filter candidates
+		// Filter candidates (only if we didn't use qBitset or if there's complex logic)
 		var res []SearchResult
-		if len(filters) > 0 {
+		if len(filters) > 0 && qBitset == nil {
+			// (Existing post-filtering logic)
 			// TODO: Handle multiple batches. Currently binding to Batch 0.
 			if h.dataset == nil || len(h.dataset.Records) == 0 {
 				return nil, fmt.Errorf("dataset empty during filter")
@@ -357,6 +424,12 @@ func (h *ArrowHNSW) SearchVectors(queryVec []float32, k int, filters []query.Fil
 			if len(res) > k {
 				res = res[:k]
 			}
+			if h.queryCache != nil {
+				h.queryCache.Set(q, paramsKey, res)
+			}
+			if options.IncludeVectors {
+				h.extractVectors(res, options.VectorFormat)
+			}
 			return res, nil
 		}
 
@@ -368,7 +441,7 @@ func (h *ArrowHNSW) SearchVectors(queryVec []float32, k int, filters []query.Fil
 }
 
 // SearchVectorsWithBitmap implements VectorIndex.
-func (h *ArrowHNSW) SearchVectorsWithBitmap(q []float32, k int, filter *query.Bitset) []SearchResult {
+func (h *ArrowHNSW) SearchVectorsWithBitmap(q []float32, k int, filter *query.Bitset, options SearchOptions) []SearchResult {
 	ef := k + 100
 	// Calls h.Search which returns ([]SearchResult, error)
 	// The interface signature returns only []SearchResult
@@ -524,6 +597,62 @@ func (h *ArrowHNSW) Close() error {
 	return nil
 }
 
+func (h *ArrowHNSW) indexMetadata(id uint32, recs []arrow.RecordBatch, i int, rowIdxs, batchIdxs []int) {
+	if h.bitmapIndex == nil {
+		return
+	}
+
+	// Determine which record and row to use
+	// For small batches, all recs might be the same or distributed.
+	// We use the batchIdxs[i] to pick the record.
+	bIdx := batchIdxs[i]
+	if bIdx < 0 || bIdx >= len(recs) {
+		return
+	}
+	rec := recs[bIdx]
+	rowIdx := rowIdxs[i]
+
+	schema := rec.Schema()
+	for _, colName := range h.config.IndexedColumns {
+		indices := schema.FieldIndices(colName)
+		if len(indices) == 0 {
+			continue
+		}
+		colIdx := indices[0]
+		col := rec.Column(colIdx)
+
+		if col.IsNull(rowIdx) {
+			continue
+		}
+
+		// Extract value as string (simplest for generic bitmap index)
+		var valStr string
+		switch arr := col.(type) {
+		case *array.Int64:
+			valStr = fmt.Sprintf("%d", arr.Value(rowIdx))
+		case *array.String:
+			valStr = arr.Value(rowIdx)
+		case *array.Float32:
+			valStr = fmt.Sprintf("%f", arr.Value(rowIdx))
+		default:
+			// Fallback to slow string conversion for other types
+			valStr = col.ValueStr(rowIdx)
+		}
+
+		if valStr != "" {
+			_ = h.bitmapIndex.Add(id, colName, valStr)
+		}
+	}
+	h.metricBitmapEntries.Set(float64(h.bitmapIndex.Count()))
+}
+
+func (h *ArrowHNSW) getDatasetName() string {
+	if h.dataset != nil {
+		return h.dataset.Name
+	}
+	return "default"
+}
+
 // resolveDistanceFunc returns the distance function based on configuration.
 func (h *ArrowHNSW) resolveDistanceFunc() func(a, b []float32) float32 {
 	switch h.metric {
@@ -567,5 +696,92 @@ func (h *ArrowHNSW) resolveBatchDistanceFunc() func(query []float32, vectors [][
 		}
 	default:
 		return simd.EuclideanDistanceBatch
+	}
+}
+func (h *ArrowHNSW) extractVectors(results []SearchResult, format string) {
+	data := h.data.Load()
+	if data == nil {
+		return
+	}
+
+	for i := range results {
+		id := uint32(results[i].ID)
+		cID := chunkID(id)
+		cOff := chunkOffset(id)
+
+		if format == "quantized" {
+			// Check SQ8
+			if data.VectorsSQ8 != nil && int(cID) < len(data.VectorsSQ8) {
+				chunk := data.GetVectorsSQ8Chunk(cID)
+				if chunk != nil {
+					dims := data.Dims
+					off := int(cOff) * dims
+					if off+dims <= len(chunk) {
+						// Need to make a copy since SearchResult.Vector is []byte (and we might reuse chunks?)
+						// Actually chunk is in Arena. It's safe to point if we retain?
+						// But SearchResult might outlive the query.
+						res := make([]byte, dims)
+						copy(res, chunk[off:off+dims])
+						results[i].Vector = res
+						continue
+					}
+				}
+			}
+			// Check PQ
+			if data.VectorsPQ != nil && int(cID) < len(data.VectorsPQ) {
+				chunk := data.GetVectorsPQChunk(cID)
+				if chunk != nil {
+					pqDims := data.PQDims
+					off := int(cOff) * pqDims
+					if off+pqDims <= len(chunk) {
+						res := make([]byte, pqDims)
+						copy(res, chunk[off:off+pqDims])
+						results[i].Vector = res
+						continue
+					}
+				}
+			}
+		}
+
+		// Fallback: Extract from Arrow record if SQ8/PQ not available or different format requested
+		if h.dataset == nil {
+			continue
+		}
+		loc, ok := h.locationStore.Get(VectorID(id))
+		if !ok || loc.BatchIdx == -1 {
+			continue
+		}
+
+		h.dataset.dataMu.RLock()
+		if loc.BatchIdx >= len(h.dataset.Records) {
+			h.dataset.dataMu.RUnlock()
+			continue
+		}
+		rec := h.dataset.Records[loc.BatchIdx]
+		h.dataset.dataMu.RUnlock()
+
+		colIdx := h.vectorColIdx
+		if colIdx == -1 {
+			// Resolve column index
+			for j, field := range rec.Schema().Fields() {
+				if field.Name == "vector" {
+					colIdx = j
+					h.vectorColIdx = colIdx
+					break
+				}
+			}
+		}
+
+		vec, err := ExtractVectorFromArrow(rec, loc.RowIdx, colIdx)
+		if err == nil {
+			switch format {
+			case "f16":
+				results[i].Vector = float32SliceToF16Bytes(vec)
+			case "f32", "quantized", "":
+				// Fallback to f32 for quantized if encoding failed/missing
+				results[i].Vector = make([]byte, len(vec)*4)
+				copy(results[i].Vector, float32SliceToBytes(vec))
+			}
+		}
 	}
 }

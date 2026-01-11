@@ -44,7 +44,7 @@ func TestObservability_Metrics(t *testing.T) {
 
 	t.Run("SearchLatency", func(t *testing.T) {
 		// Vector Search
-		_, err := idx.SearchVectors([]float32{1.0, 0.0}, 1, nil)
+		_, err := idx.SearchVectors([]float32{1.0, 0.0}, 1, nil, SearchOptions{})
 		require.NoError(t, err)
 
 		// Hybrid Search

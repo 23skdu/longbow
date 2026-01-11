@@ -13,6 +13,10 @@ type VectorSearchRequest struct {
 	Alpha     float32 `json:"alpha,omitempty"` // 0.0=sparse, 1.0=dense, 0.5=hybrid
 	// GraphRAG Fields
 	GraphAlpha float32 `json:"graph_alpha,omitempty"` // 0.0=disabled, >0 blends graph score
+
+	// Vector Transport
+	IncludeVectors bool   `json:"include_vectors,omitempty"`
+	VectorFormat   string `json:"vector_format,omitempty"` // "quantized", "f32", "f16"
 }
 
 // VectorSearchResponse defines the response format for VectorSearch action
@@ -23,7 +27,9 @@ type VectorSearchResponse struct {
 
 // VectorSearchByIDRequest defines the request format for searching by User ID
 type VectorSearchByIDRequest struct {
-	Dataset string `json:"dataset"`
-	ID      string `json:"id"` // User ID (stringified)
-	K       int    `json:"k"`
+	Dataset        string `json:"dataset"`
+	ID             string `json:"id"` // User ID (stringified)
+	K              int    `json:"k"`
+	IncludeVectors bool   `json:"include_vectors,omitempty"`
+	VectorFormat   string `json:"vector_format,omitempty"`
 }

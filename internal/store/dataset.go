@@ -73,6 +73,9 @@ type Dataset struct {
 	// Product Quantization (Persisted Codebooks)
 	PQEncoder *pq.PQEncoder
 
+	// Disk Storage (Phase 6)
+	DiskStore *DiskVectorStore
+
 	// Per-record eviction
 	recordEviction *RecordEvictionManager
 
@@ -190,7 +193,7 @@ func (d *Dataset) SearchDataset(query []float32, k int) ([]SearchResult, error) 
 		return nil, nil
 	}
 	// Assuming vector index interface has SearchVectors
-	return idx.SearchVectors(query, k, nil)
+	return idx.SearchVectors(query, k, nil, SearchOptions{})
 }
 
 // AddToIndex adds a vector to the index

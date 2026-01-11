@@ -194,7 +194,7 @@ func TestDurability_IndexRebuild(t *testing.T) {
 	// VectorIndex interface: Search(query []float32, k int, ef int, filter *query.Bitset) ([]Candidate, error)
 
 	qVec := []float32{1.0, 0.0}
-	results, err := ds.Index.SearchVectors(qVec, 1, nil)
+	results, err := ds.Index.SearchVectors(qVec, 1, nil, SearchOptions{})
 	require.NoError(t, err)
 	require.Len(t, results, 1)
 	require.Equal(t, uint32(0), uint32(results[0].ID))

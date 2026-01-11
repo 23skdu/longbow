@@ -106,7 +106,7 @@ func TestHNSW_BulkInsert(t *testing.T) {
 	// Verify Search (Recall Check)
 	// We expect to find the exact vector we inserted (distance ~0)
 	t.Logf("Starting Search for target")
-	results, err := idx.SearchVectors(queryVec, 10, nil)
+	results, err := idx.SearchVectors(queryVec, 10, nil, SearchOptions{})
 	t.Logf("Finished Search, err=%v, len=%d", err, len(results))
 	require.NoError(t, err)
 	require.NotEmpty(t, results)

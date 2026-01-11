@@ -1,6 +1,5 @@
 package store
 
-
 import (
 	"testing"
 
@@ -48,7 +47,7 @@ func TestArrowHNSW_Metrics(t *testing.T) {
 		require.NoError(t, err)
 
 		// Search for [1.0, 0.0]
-		res, err := idx.SearchVectors([]float32{1.0, 0.0}, 2, nil)
+		res, err := idx.SearchVectors([]float32{1.0, 0.0}, 2, nil, SearchOptions{})
 		require.NoError(t, err)
 		require.Len(t, res, 2)
 

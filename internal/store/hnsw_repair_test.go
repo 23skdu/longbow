@@ -106,7 +106,7 @@ func TestHNSW_TombstoneRepair_WiresAround(t *testing.T) {
 
 	// 6. Verify Reachability
 	for i := deletedCnt; i < count; i++ {
-		res, err := idx.SearchVectors(vecs[i], 1, nil)
+		res, err := idx.SearchVectors(vecs[i], 1, nil, SearchOptions{})
 		require.NoError(t, err)
 		if len(res) == 0 {
 			t.Errorf("Node %d unreachable", i)

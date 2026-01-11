@@ -1,6 +1,5 @@
 package store
 
-
 import (
 	"testing"
 	"time"
@@ -24,8 +23,8 @@ func TestGRPCConfigDefaults(t *testing.T) {
 	assert.Equal(t, uint32(250), cfg.MaxConcurrentStreams, "default max concurrent streams should be 250")
 
 	// Window sizes (HTTP/2 flow control)
-	assert.Equal(t, int32(1<<20), cfg.InitialWindowSize, "default initial window size should be 1MB")
-	assert.Equal(t, int32(1<<20), cfg.InitialConnWindowSize, "default initial conn window size should be 1MB")
+	assert.Equal(t, int32(4<<20), cfg.InitialWindowSize, "default initial window size should be 4MB")
+	assert.Equal(t, int32(4<<20), cfg.InitialConnWindowSize, "default initial conn window size should be 4MB")
 
 	// Message sizes
 	assert.Equal(t, 64*1024*1024, cfg.MaxRecvMsgSize, "default max recv msg size should be 64MB")

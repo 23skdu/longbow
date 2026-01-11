@@ -271,6 +271,16 @@ func (src *storeSnapshotSource) Iterate(fn func(storage.SnapshotItem) error) err
 			Name: ds.Name,
 		}
 
+		// Wire up DiskStore snapshot if available
+		if ds.DiskStore != nil {
+			// We need to capture ds and name for the closure
+			dsName := ds.Name
+			diskStore := ds.DiskStore
+			item.OnSnapshot = func(backend storage.SnapshotBackend) error {
+				return diskStore.SnapshotTo(context.Background(), backend, dsName)
+			}
+		}
+
 		// Data Records
 		for _, r := range ds.Records {
 			r.Retain()

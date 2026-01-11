@@ -69,7 +69,7 @@ func (h *HNSWIndex) SearchHybrid(query []float32, k int) ([]SearchResult, error)
 	// If GPU not enabled or failed, use pure CPU
 	if !h.gpuEnabled || h.gpuIndex == nil {
 		// Use SearchByVector which returns []SearchResult
-		return h.SearchVectors(query, k, nil)
+		return h.SearchVectors(query, k, nil, SearchOptions{})
 	}
 
 	// Step 1: GPU generates candidates (k * 10 for better recall)
@@ -81,7 +81,7 @@ func (h *HNSWIndex) SearchHybrid(query []float32, k int) ([]SearchResult, error)
 	candidateIDs, distances, err := h.gpuIndex.Search(query, candidateCount)
 	if err != nil {
 		// GPU search failed, fallback to CPU
-		return h.SearchVectors(query, k, nil)
+		return h.SearchVectors(query, k, nil, SearchOptions{})
 	}
 
 	// Step 2: Refine with HNSW graph

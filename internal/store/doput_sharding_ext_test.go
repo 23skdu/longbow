@@ -1,6 +1,5 @@
 package store
 
-
 import (
 	"testing"
 	"time"
@@ -260,7 +259,7 @@ func TestHNSWIndex_SearchVectors_Empty(t *testing.T) {
 	ds := &Dataset{Name: "test"}
 	hnsw := NewHNSWIndex(ds)
 
-	results, err := hnsw.SearchVectors([]float32{1, 2, 3}, 10, nil)
+	results, err := hnsw.SearchVectors([]float32{1, 2, 3}, 10, nil, SearchOptions{})
 	if err != nil {
 		t.Errorf("Search failed: %v", err)
 	}
@@ -278,7 +277,7 @@ func TestShardedHNSW_SearchVectors_Empty(t *testing.T) {
 	ds := &Dataset{Name: "test"}
 	sharded := NewShardedHNSW(cfg, ds)
 
-	results, err := sharded.SearchVectors([]float32{1, 2, 3}, 10, nil)
+	results, err := sharded.SearchVectors([]float32{1, 2, 3}, 10, nil, SearchOptions{})
 	if err != nil {
 		t.Errorf("Search failed: %v", err)
 	}

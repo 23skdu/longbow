@@ -223,12 +223,34 @@ func (h *ArrowHNSW) searchLayer(q []float32, entryPoint uint32, ef, layer int, c
 
 	var useBatchCompute bool
 
+	noImprovementIterations := 0
+	maxNoImprovement := ef * 3 // More conservative threshold
+	const epsilon = 1e-5
+
 	// Greedy search
 	for ctx.candidates.Len() > 0 {
+		// Adaptive Early Termination: Stop if we are not improving significantly
+		if h.config.AdaptiveEf && noImprovementIterations >= maxNoImprovement {
+			if h.metricEarlyTermination != nil {
+				h.metricEarlyTermination.WithLabelValues(h.getDatasetName(), "convergence").Inc()
+			}
+			break
+		}
+
 		// Get nearest candidate (min-heap)
 		curr, ok := ctx.candidates.Pop()
 		if !ok {
 			break
+		}
+
+		if curr.Dist < closestDist {
+			if curr.Dist < closestDist-epsilon {
+				noImprovementIterations = 0
+			}
+			closestDist = curr.Dist
+			closest = curr.ID
+		} else {
+			noImprovementIterations++
 		}
 
 		// Stop if current is farther than furthest result (and result set is full)
@@ -773,6 +795,24 @@ func (h *ArrowHNSW) mustGetVectorFromData(data *GraphData, id uint32) []float32 
 			if start+data.Dims <= len(chunk) {
 				return chunk[start : start+data.Dims]
 			}
+		}
+	}
+
+	// Check Disk Store
+	if data != nil && data.DiskStore != nil {
+		metrics.DiskStoreReadBytesTotal.WithLabelValues(h.getDatasetName()).Add(float64(data.Dims * 4))
+		vec, err := data.DiskStore.Get(id)
+		if err == nil {
+			return vec
+		}
+	}
+
+	// Check Disk Store
+	if data != nil && data.DiskStore != nil {
+		metrics.DiskStoreReadBytesTotal.WithLabelValues(h.getDatasetName()).Add(float64(data.Dims * 4))
+		vec, err := data.DiskStore.Get(id)
+		if err == nil {
+			return vec
 		}
 	}
 

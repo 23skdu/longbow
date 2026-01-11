@@ -94,7 +94,7 @@ func (b *BruteForceIndex) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs 
 }
 
 // SearchVectorsWithBitmap returns k nearest neighbors filtered by a bitset.
-func (b *BruteForceIndex) SearchVectorsWithBitmap(q []float32, k int, filter *query.Bitset) []SearchResult {
+func (b *BruteForceIndex) SearchVectorsWithBitmap(q []float32, k int, filter *query.Bitset, options SearchOptions) []SearchResult {
 	// Not implemented for BruteForce, but needed for interface
 	return nil
 }
@@ -138,7 +138,7 @@ func (b *BruteForceIndex) EstimateMemory() int64 {
 }
 
 // SearchVectors returns the k nearest neighbors using linear scan.
-func (b *BruteForceIndex) SearchVectors(q []float32, k int, filters []query.Filter) ([]SearchResult, error) {
+func (b *BruteForceIndex) SearchVectors(q []float32, k int, filters []query.Filter, options SearchOptions) ([]SearchResult, error) {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 
@@ -319,11 +319,11 @@ func (a *AdaptiveIndex) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []
 	return ids, nil
 }
 
-func (a *AdaptiveIndex) SearchVectorsWithBitmap(q []float32, k int, filter *query.Bitset) []SearchResult {
+func (a *AdaptiveIndex) SearchVectorsWithBitmap(q []float32, k int, filter *query.Bitset, options SearchOptions) []SearchResult {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	if a.usingHNSW.Load() {
-		return a.hnsw.SearchVectorsWithBitmap(q, k, filter)
+		return a.hnsw.SearchVectorsWithBitmap(q, k, filter, options)
 	}
 	return nil
 }
@@ -418,17 +418,17 @@ func (a *AdaptiveIndex) migrateToHNSW() {
 }
 
 // SearchVectors delegates to the active index.
-func (a *AdaptiveIndex) SearchVectors(q []float32, k int, filters []query.Filter) ([]SearchResult, error) {
+func (a *AdaptiveIndex) SearchVectors(q []float32, k int, filters []query.Filter, options SearchOptions) ([]SearchResult, error) {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 
 	if a.usingHNSW.Load() {
 		metrics.HnswSearchesTotal.Inc()
-		return a.hnsw.SearchVectors(q, k, filters)
+		return a.hnsw.SearchVectors(q, k, filters, options)
 	}
 	metrics.BruteForceSearchesTotal.Inc()
 	// BruteForce doesn't support filters yet, ignoring them
-	return a.bruteForce.SearchVectors(q, k, filters)
+	return a.bruteForce.SearchVectors(q, k, filters, options)
 }
 
 // GetIndexType returns the current index type.

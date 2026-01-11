@@ -106,3 +106,20 @@ func (sq *ScalarQuantizer) Decode(src []byte) []float32 {
 	}
 	return dst
 }
+
+// L2Scale returns the scaling factor (scale^2) to convert SQ8 integer L2 to float32 L2.
+func (sq *ScalarQuantizer) L2Scale() float32 {
+	sq.mu.RLock()
+	minV, maxV := sq.minVal, sq.maxVal
+	sq.mu.RUnlock()
+
+	scale := (maxV - minV) / 255.0
+	return scale * scale
+}
+
+// Params returns the current min/max values.
+func (sq *ScalarQuantizer) Params() (float32, float32) {
+	sq.mu.RLock()
+	defer sq.mu.RUnlock()
+	return sq.minVal, sq.maxVal
+}

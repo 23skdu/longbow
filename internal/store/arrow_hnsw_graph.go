@@ -55,6 +55,7 @@ type ArrowHNSWConfig struct {
 	KeepPrunedConnections   bool
 	BQEnabled               bool
 	Float16Enabled          bool // Enable native float16 storage
+	PackedAdjacencyEnabled  bool // Enable optimized packed adjacency storage
 
 	Dims int // Explicit dimension size if known
 
@@ -67,13 +68,14 @@ type ArrowHNSWConfig struct {
 
 func DefaultArrowHNSWConfig() ArrowHNSWConfig {
 	return ArrowHNSWConfig{
-		M:                32,
-		MMax:             64,
-		MMax0:            128,
-		EfConstruction:   400,
-		Metric:           MetricEuclidean,
-		Alpha:            1.0,
-		RefinementFactor: 1.0,
+		M:                      32,
+		MMax:                   64,
+		MMax0:                  128,
+		EfConstruction:         400,
+		Metric:                 MetricEuclidean,
+		Alpha:                  1.0,
+		RefinementFactor:       2.0,
+		PackedAdjacencyEnabled: true,
 	}
 }
 
@@ -154,11 +156,10 @@ func (c *ArrowSearchContext) Reset() {
 	c.scratchDiscarded = c.scratchDiscarded[:0]
 	c.scratchVecs = c.scratchVecs[:0]
 	c.scratchVecsSQ8 = c.scratchVecsSQ8[:0]
+	// Note: query fields (querySQ8, queryBQ, queryF16, adcTable) are NOT cleared here
+	// because Reset() is called between layers during the same search.
+	// They are overwritten/resized at the start of Search() if needed.
 
-	c.querySQ8 = c.querySQ8[:0]
-	c.queryBQ = c.queryBQ[:0]
-	c.queryF16 = c.queryF16[:0]
-	c.adcTable = c.adcTable[:0]
 	c.scratchPQCodes = c.scratchPQCodes[:0]
 	c.pruneDepth = 0
 }
@@ -277,6 +278,9 @@ type GraphData struct {
 	Neighbors [ArrowMaxLayers][]uint64 // [][]*[]uint32 -> [][]offset
 	Counts    [ArrowMaxLayers][]uint64 // [][]*[]int32 -> [][]offset
 	Versions  [ArrowMaxLayers][]uint64 // [][]*[]uint32 -> [][]offset
+
+	// Packed Neighbors (v0.1.4-rc1 optimization)
+	PackedNeighbors [ArrowMaxLayers]*PackedAdjacency
 }
 
 const (
@@ -284,7 +288,7 @@ const (
 	MaxNeighbors   = 448
 )
 
-func NewGraphData(capacity, dims int, sq8Enabled, pqEnabled bool, pqDims int, bqEnabled bool, float16Enabled bool) *GraphData {
+func NewGraphData(capacity, dims int, sq8Enabled, pqEnabled bool, pqDims int, bqEnabled, float16Enabled, packedAdjacencyEnabled bool) *GraphData {
 	numChunks := (capacity + ChunkSize - 1) / ChunkSize
 	if numChunks < 1 {
 		numChunks = 1
@@ -338,6 +342,10 @@ func NewGraphData(capacity, dims int, sq8Enabled, pqEnabled bool, pqDims int, bq
 		gd.Neighbors[i] = make([]uint64, numChunks)
 		gd.Counts[i] = make([]uint64, numChunks)
 		gd.Versions[i] = make([]uint64, numChunks)
+
+		if packedAdjacencyEnabled {
+			gd.PackedNeighbors[i] = NewPackedAdjacency(slab, capacity)
+		}
 	}
 	return gd
 }
@@ -603,6 +611,11 @@ func (gd *GraphData) Clone(minCap, targetDims int, sq8Enabled, pqEnabled bool, p
 		}
 	}
 
+	// Packed Neighbors (v0.1.4-rc1)
+	for i := 0; i < ArrowMaxLayers; i++ {
+		newGD.PackedNeighbors[i] = gd.PackedNeighbors[i]
+	}
+
 	// Neighbors / Counts / Versions
 	for i := 0; i < ArrowMaxLayers; i++ {
 		// Neighbors
@@ -675,6 +688,7 @@ func (h *ArrowHNSW) growNoLock(minCap, dims int) {
 	newGD := data.Clone(newCap, dims, h.config.SQ8Enabled, h.config.PQEnabled, h.config.PQM, h.config.BQEnabled) // fixed config
 
 	h.data.Store(newGD)
+	h.backend.Store(newGD)
 }
 
 // Helper to safely get a pointer to the slice header for a chunk.

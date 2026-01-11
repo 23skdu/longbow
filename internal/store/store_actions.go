@@ -254,6 +254,8 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 	fd := r.LatestFlightDescriptor()
 	if fd != nil && len(fd.Path) > 0 {
 		name = fd.Path[0]
+		// Pre-warm dataset with schema to avoid lazy init overhead in first batch
+		s.PrewarmDataset(name, r.Schema())
 	} else {
 		return fmt.Errorf("missing flight descriptor path")
 	}

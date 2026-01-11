@@ -5,7 +5,7 @@ import json
 import logging
 from typing import Union, List, Dict, Any, Optional
 
-from .models import Vector, SearchResult, IndexStats
+# from .models import Vector, SearchResult, IndexStats # Unused internally for now
 from .exceptions import LongbowConnectionError, LongbowQueryError
 from .ingest import to_arrow_table
 
@@ -184,7 +184,7 @@ class LongbowClient:
             
         action_body = json.dumps({"name": name, "overwrite": force}).encode("utf-8")
         action = flight.Action("CreateNamespace", action_body)
-        results = list(self._meta_client.do_action(action, options=self._get_call_options()))
+        list(self._meta_client.do_action(action, options=self._get_call_options()))
         # Check results if needed
 
     def list_namespaces(self) -> List[str]:

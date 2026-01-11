@@ -9,8 +9,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("verify_sdk")
 
 try:
-    import longbow
-    from longbow import LongbowClient, Vector
+    from longbow import LongbowClient
     logger.info("Successfully imported longbow package.")
 except ImportError as e:
     logger.error(f"Failed to import longbow: {e}")
@@ -32,7 +31,7 @@ def verify_dask_ingestion():
     # Mock upload by intercepting the client (since we might not have a running server or want to isolate)
     # Actually, let's just use the ingest helper directly to verify conversion logic
     from longbow.ingest import to_arrow_table
-    import pyarrow as pa
+    # import pyarrow as pa
     
     try:
         # Test converting pandas

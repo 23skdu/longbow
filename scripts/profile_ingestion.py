@@ -6,7 +6,7 @@ using the Longbow Python SDK.
 import time
 import numpy as np
 import pyarrow as pa
-import json
+
 import sys
 from collections import defaultdict
 

@@ -243,6 +243,9 @@ type ArrowHNSW struct {
 
 	bitmapIndex *BitmapIndex
 	queryCache  *QueryCache
+
+	// Connectivity Repair Agent (optional)
+	repairAgent *RepairAgent
 	// ... (rest of fields)
 }
 

@@ -1026,7 +1026,7 @@ func (h *ArrowHNSW) pruneConnectionsLocked(ctx *ArrowSearchContext, data *GraphD
 			neighborVecs[i] = vec
 
 			// Compute distance once for initial Candidate
-			dists[i] = simd.EuclideanDistance(nodeVec, vec)
+			dists[i] = simd.DistFunc(nodeVec, vec)
 		}
 	}
 

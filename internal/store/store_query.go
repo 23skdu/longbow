@@ -18,6 +18,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 
 	"github.com/23skdu/longbow/internal/cache"
+	lbmem "github.com/23skdu/longbow/internal/memory"
 	"github.com/23skdu/longbow/internal/mesh"
 	"github.com/23skdu/longbow/internal/metrics"
 	qry "github.com/23skdu/longbow/internal/query"
@@ -132,9 +133,14 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 		}
 	}
 
+	// Create Request-Scoped Arena Allocator
+	// This reduces GC pressure for transient buffers (masks, filtered batches, serialized records)
+	mem := lbmem.NewArenaAllocator()
+	defer mem.Release()
+
 	// Handle Search Request via DoGet (Native Arrow Streaming)
 	if query.Search != nil {
-		return s.handleDoGetSearch(query.Search, stream)
+		return s.handleDoGetSearch(query.Search, stream, mem)
 	}
 
 	// Existing Dataset Fetch Logic
@@ -249,12 +255,12 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 
 					var mask *array.Boolean
 					if err == nil {
-						mask, err = evaluator.EvaluateToArrowBoolean(s.mem, int(rec.NumRows()))
+						mask, err = evaluator.EvaluateToArrowBoolean(mem, int(rec.NumRows()))
 					}
 
 					var filtered arrow.RecordBatch
 					if err == nil {
-						filtered, err = filterRecordWithMask(ctx, s.mem, rec, mask)
+						filtered, err = filterRecordWithMask(ctx, mem, rec, mask)
 					}
 					if mask != nil {
 						mask.Release()
@@ -283,7 +289,7 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 				} else {
 					// Use zero-copy with tombstone filtering (Phase 5)
 					if deleted != nil && deleted.Count() > 0 {
-						processed, err = ZeroCopyRecordBatch(s.mem, rec, deleted)
+						processed, err = ZeroCopyRecordBatch(mem, rec, deleted)
 						metrics.DoGetZeroCopyTotal.WithLabelValues("zero_copy_mask").Inc()
 					} else {
 						// No tombstones - just retain (zero-copy!)
@@ -553,7 +559,7 @@ func findVectorColumn(rec arrow.RecordBatch) arrow.Array {
 }
 
 // handleDoGetSearch executes a search request and streams results as Arrow Records
-func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, stream flight.FlightService_DoGetServer) error {
+func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, stream flight.FlightService_DoGetServer, mem memory.Allocator) error {
 	// 1. Validate Request
 	if req.K < 1 {
 		return status.Error(codes.InvalidArgument, "k must be at least 1")
@@ -671,7 +677,7 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, stream fli
 
 	// 5. Stream Results (Arrow)
 	// Schema: id (uint64), score (float32)
-	pool := memory.NewGoAllocator()
+	pool := mem
 	fields := []arrow.Field{
 		{Name: "id", Type: arrow.PrimitiveTypes.Uint64},
 		{Name: "score", Type: arrow.PrimitiveTypes.Float32},

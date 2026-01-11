@@ -77,6 +77,11 @@ func (s *VectorStore) PrewarmDataset(name string, schema *arrow.Schema) {
 				}
 			}
 		}
+
+		// Pre-warm to mitigate cold start latency
+		// We use a reasonable default batch size (4096 fits in 4 chunks)
+		aIdx.PreWarm(4096)
+
 		ds.Index = aIdx
 
 		return ds

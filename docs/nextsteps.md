@@ -1,6 +1,62 @@
 # Next Steps: Performance & Reliability Roadmap
 
-Based on the [0.1.4-rc1] soak test analysis (3-node cluster, 15k vectors, mixed read/write/delete workload), the following 10 steps identify the highest impact areas for improvement.
+## High-Priority: Python SDK Development
+
+To improve developer experience and ease of use, we will create a dedicated `longbow` Python library.
+
+### 1. Project Initialization & Packaging
+
+**Goal**: Set up a professional Python project structure.
+**Actions**: Create `longbow-python` directory. Initialize `pyproject.toml` (using Poetry or Hatch). Configure build system, versioning, and dependencies (`pyarrow`, `numpy`, `dask[dataframe]`, `pydantic`, `grpcio`).
+
+### 2. Core Client Abstraction
+
+**Goal**: Simplify connection management.
+**Actions**: Implement `LongbowClient` class that wraps `pyarrow.flight.FlightClient`. Support dual-connection (Data/Meta ports) transparently. Implement context manager support (`with LongbowClient(...) as client:`).
+
+### 3. Data Modeling & Validation
+
+**Goal**: Type safety and validation.
+**Actions**: Create Pydantic models for domain objects: `Vector`, `Record`, `SearchResult`, `IndexStats`. Enforce type safety for inputs to catch errors before network requests.
+
+### 4. Data Ingestion Wrappers (`put`)
+
+**Goal**: Easy data loading from common formats.
+**Actions**: Implement high-level `insert` method accepting Python Dicts, List of Dicts, Dask DataFrame, and Numpy Arrays. Handle Arrow conversion, serialization, and schema inference automatically.
+
+### 5. Query Interface (`search/get`)
+
+**Goal**: Intuitive search API.
+**Actions**: Implement `search(vector=..., k=..., filter=...)` and `get(ids=...)`. Support returning results as Pydantic objects or Dask DataFrames based on user preference. `search_by_id` convenience method.
+
+### 6. Index Management API
+
+**Goal**: Admin operations.
+**Actions**: Wrappers for `DoAction` to handle `create_namespace`, `snapshot`, `list_namespaces`, `get_info`. Abstract away raw JSON command construction.
+
+### 7. Error Handling & Retry Logic
+
+**Goal**: Robustness.
+**Actions**: Map low-level Flight/gRPC errors to a custom `LongbowError` hierarchy (e.g., `LongbowConnectionError`, `LongbowQueryError`). Implement automatic retries for transient failures (with exponential backoff).
+
+### 8. Connection Pooling & Concurrency
+
+**Goal**: High throughput for scripts.
+**Actions**: Implement a thread-safe connection pool (similar to `perf_test.py`) or AsyncIO wrappers (if feasible with Flight) to allow concurrent operations for bulk loading or high-QPS querying.
+
+### 9. Integration Testing Suite
+
+**Goal**: Reliability.
+**Actions**: Create a `pytest` suite that spins up a local Longbow instance (subprocess or docker) and verifies the full lifecycle (Create -> Insert -> Search -> Delete).
+
+### 10. Documentation & Publishing
+
+**Goal**: Adoption.
+**Actions**: Write comprehensive documentation (Sphinx/MkDocs). Generate API reference. Create "Getting Started" notebooks. Set up CI/CD pipelines to publish to PyPI.
+
+---
+
+Based on the [0.1.4-rc1] soak test analysis (3-node cluster, 15k vectors, mixed read/write/delete workload), the following 10 steps identify the highest impact areas for improvement in the core engine.
 
 ## 1. Hot-Path Vector Access Optimization
 

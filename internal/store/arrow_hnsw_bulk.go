@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"runtime"
 	"slices"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -393,6 +394,20 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 		// Requires locking?
 		// AddConnection uses Sharded Locks. Secure.
 
+		// 3c. Linkage (Connections)
+		// Multi-phase approach:
+		// 1. Forward Connections (Parallel): Connect source -> neighbors. New nodes are local/owned, so safe.
+		// 2. Reverse Connections (Batched): Collect all neighbor -> source edges, then apply in batches.
+
+		// deferredUpdates maps TargetNode -> []Candidate (Source, Dist)
+		// We use an array of maps to shard accumulation and reduce mutex contention during collection
+		const numShards = 16
+		deferredUpdates := make([]map[uint32][]Candidate, numShards)
+		for i := 0; i < numShards; i++ {
+			deferredUpdates[i] = make(map[uint32][]Candidate)
+		}
+		var deferredMu [numShards]sync.Mutex
+
 		gLink, _ := errgroup.WithContext(ctx)
 		gLink.SetLimit(runtime.GOMAXPROCS(0))
 
@@ -404,7 +419,7 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 			indices := activeIndices[i:end]
 
 			gLink.Go(func() error {
-				ctxSearch := h.searchPool.Get().(*ArrowSearchContext) // Need ctx for SelectNeighbors
+				ctxSearch := h.searchPool.Get().(*ArrowSearchContext)
 				ctxSearch.Reset()
 				defer h.searchPool.Put(ctxSearch)
 
@@ -413,7 +428,7 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 					// Only connect if insertion phase
 					if lc > node.level {
 						continue
-					} // Descent phase only
+					}
 
 					candidates := graphCandidates[idx]
 
@@ -424,11 +439,11 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 						m = h.m * 2
 						maxConn = h.mMax0
 					}
+					if m > maxConn {
+						m = maxConn
+					}
 
 					// Select Neighbors (Robust Prune)
-					// Need to sort candidates first if we just appended?
-					// Yes, "candidates are already sorted" comment in selectNeighbors.
-					// So we must sort mixed candidates.
 					slices.SortFunc(candidates, func(a, b Candidate) int {
 						if a.Dist < b.Dist {
 							return -1
@@ -439,29 +454,111 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 						return 0
 					})
 
-					// Filter for M
 					neighbors := h.selectNeighbors(ctxSearch, candidates, m, data)
 
-					// Connect bidirectional
-					// Since other nodes in batch are also connecting, does this double connect?
-					// AddConnection checks for duplicates.
-					id := node.id
+					// 1. Forward Connections
+					// We are the owner of 'node', so we can write to it without lock (or with local lock).
+					// But AddConnection acquires lock. Since it's a new node, it maps to a lock bucket.
+					// Multiple new nodes might map to the same bucket.
+					// Ideally we used AddConnectionsBatch here too for the source?
+					// But AddConnection does "add one".
+					// Since we have the whole list 'neighbors', we can just write them directly?
+					// No, pruning logic is complex.
+					// Let's use AddConnectionsBatch for FORWARD connections too!
+					// source = node.id, targets = neighbors
 
-					// Parallel additions
+					fwdTargets := make([]uint32, len(neighbors))
+					fwdDists := make([]float32, len(neighbors))
+					for j, nb := range neighbors {
+						fwdTargets[j] = nb.ID
+						fwdDists[j] = nb.Dist
+					}
+					h.AddConnectionsBatch(ctxSearch, data, node.id, fwdTargets, fwdDists, lc, maxConn)
+
+					// 2. Collect Reverse Connections
 					for _, neighbor := range neighbors {
-						h.AddConnection(ctxSearch, data, id, neighbor.ID, lc, maxConn, neighbor.Dist)
-						// Reverse connection
-						// If neighbor is in batch, it will also try to add connection to us.
-						// Duplicate checks handle this.
-						h.AddConnection(ctxSearch, data, neighbor.ID, id, lc, maxConn, neighbor.Dist)
+						// We want to add edge: neighbor -> node
+						targetID := neighbor.ID
+						shard := targetID % uint32(numShards)
 
-						h.pruneIfNecessary(ctxSearch, data, neighbor.ID, lc, maxConn)
+						deferredMu[shard].Lock()
+						deferredUpdates[shard][targetID] = append(deferredUpdates[shard][targetID], Candidate{ID: node.id, Dist: neighbor.Dist})
+						deferredMu[shard].Unlock()
 					}
 				}
 				return nil
 			})
 		}
 		if err := gLink.Wait(); err != nil {
+			return err
+		}
+
+		// 3. Process Reverse Connections (Batched)
+		// We iterate over the collected maps.
+		// We can parallelize this processing too.
+		// Note: We should ideally group by ShardedLock to maximize parallelism and avoid contention inside AddConnectionsBatch.
+		// AddConnectionsBatch locks `target % ShardedLockCount`.
+
+		// Flatten and Group by LockID
+		updatesByLock := make([][]struct {
+			target  uint32
+			sources []uint32
+			dists   []float32
+		}, ShardedLockCount)
+
+		for s := 0; s < numShards; s++ {
+			for target, sources := range deferredUpdates[s] {
+				lockID := target % ShardedLockCount
+
+				srcs := make([]uint32, len(sources))
+				dists := make([]float32, len(sources))
+				for j, c := range sources {
+					srcs[j] = c.ID
+					dists[j] = c.Dist
+				}
+
+				updatesByLock[lockID] = append(updatesByLock[lockID], struct {
+					target  uint32
+					sources []uint32
+					dists   []float32
+				}{target, srcs, dists})
+			}
+		}
+
+		// Execute updates parallelized by LockID
+		gRev, _ := errgroup.WithContext(ctx)
+		gRev.SetLimit(runtime.GOMAXPROCS(0))
+
+		for l := 0; l < ShardedLockCount; l++ {
+			l := l
+			updates := updatesByLock[l]
+			if len(updates) == 0 {
+				continue
+			}
+
+			gRev.Go(func() error {
+				ctxSearch := h.searchPool.Get().(*ArrowSearchContext)
+				ctxSearch.Reset()
+				defer h.searchPool.Put(ctxSearch)
+
+				maxConn := h.mMax
+				if lc == 0 {
+					maxConn = h.mMax0
+				}
+
+				for _, up := range updates {
+					// AddConnectionsBatch acquires the lock.
+					// Since we grouped by lock, we strictly serialize updates to the same lock in this thread.
+					// This avoids invalid contention, but means we acquire/release lock many times.
+					// Optimization: We COULD acquire lock once for all updates in this bucket?
+					// But AddConnectionsBatch encapsulates locking.
+					// Given we are singly threaded per lock bucket, the contention is 0 (except from readers).
+					h.AddConnectionsBatch(ctxSearch, data, up.target, up.sources, up.dists, lc, maxConn)
+				}
+				return nil
+			})
+		}
+		if err := gRev.Wait(); err != nil {
 			return err
 		}
 

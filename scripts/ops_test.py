@@ -744,6 +744,9 @@ def command_namespaces(args, data_client, meta_client):
     except Exception as e:
         print(f"Delete failed: {e}")
 
+
+
+
 def get_metric(url, name):
     try:
         with urllib.request.urlopen(url) as response:
@@ -988,7 +991,10 @@ def main():
     similar_parser = subparsers.add_parser("similar", help="Find similar vectors by ID")
     similar_parser.add_argument("--dataset", required=True, help="Dataset name")
     similar_parser.add_argument("--id", required=True, help="Target Vector ID")
+    similar_parser.add_argument("--id", required=True, help="Target Vector ID")
     similar_parser.add_argument("--k", type=int, default=5, help="Number of results")
+
+
 
     # GLOBAL options
     parser.add_argument("--routing-key", help="Explicit routing key (x-longbow-key metadata)")
@@ -1023,6 +1029,9 @@ def main():
             "add-edge": command_add_edge,
             "traverse": command_traverse,
             "similar": command_similar,
+            "traverse": command_traverse,
+            "similar": command_similar,
+
         }
         
         func = commands.get(args.command)

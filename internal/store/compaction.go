@@ -164,6 +164,9 @@ func (w *CompactionWorker) run() {
 				continue
 			}
 			w.store.IterateDatasets(func(name string, ds *Dataset) {
+				if ds == nil {
+					return
+				}
 				// Non-blocking attempt to compact
 				start := time.Now()
 				if err := w.store.CompactDataset(ds.Name); err == nil {

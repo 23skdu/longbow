@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	lbmem "github.com/23skdu/longbow/internal/memory"
 	"github.com/23skdu/longbow/internal/mesh"
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/query"
@@ -14,7 +15,6 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
-	"github.com/apache/arrow-go/v18/arrow/memory"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -29,6 +29,10 @@ var vectorSearchParserPool = sync.Pool{
 // handleVectorSearchAction handles the VectorSearch DoAction request
 func (s *VectorStore) handleVectorSearchAction(action *flight.Action, stream flight.FlightService_DoActionServer) error {
 	start := time.Now()
+
+	// Use ArenaAllocator for Arrow records
+	mem := lbmem.NewArenaAllocator()
+	defer mem.Release()
 
 	var req query.VectorSearchRequest
 	var parseErr error
@@ -172,7 +176,7 @@ func (s *VectorStore) handleVectorSearchAction(action *flight.Action, stream fli
 		}
 
 		// Build Arrow RecordBatch
-		pool := memory.NewGoAllocator()
+		pool := mem
 		schema := arrow.NewSchema(
 			[]arrow.Field{
 				{Name: "id", Type: arrow.PrimitiveTypes.Uint64},

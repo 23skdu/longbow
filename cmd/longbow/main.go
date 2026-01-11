@@ -469,8 +469,9 @@ func run() error {
 	metrics.GRPCMaxConcurrentStreams.Set(float64(cfg.GRPCMaxConcurrentStreams))
 
 	// --- Data Server Setup ---
+	dataService := store.NewDataServer(vectorStore)
 	dataServer := grpc.NewServer(serverOpts...)
-	flight.RegisterFlightServiceServer(dataServer, store.NewDataServer(vectorStore))
+	flight.RegisterFlightServiceServer(dataServer, dataService)
 
 	dataLisBase, err := net.Listen("tcp", cfg.ListenAddr)
 	if err != nil {
@@ -505,6 +506,8 @@ func run() error {
 		}
 	}()
 
+	// Start UDS Data Server if configured
+
 	// Start Meta Server
 	go func() {
 		logger.Info().Str("addr", cfg.MetaAddr).Msg("Listening for Meta gRPC connections")
@@ -528,6 +531,7 @@ func run() error {
 		go func() {
 			defer wg.Done()
 			dataServer.GracefulStop()
+
 			logger.Info().Msg("Data server stopped")
 		}()
 		go func() {

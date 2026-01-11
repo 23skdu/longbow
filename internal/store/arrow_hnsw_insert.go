@@ -914,6 +914,179 @@ func (h *ArrowHNSW) AddConnection(ctx *ArrowSearchContext, data *GraphData, sour
 	}
 }
 
+// AddConnectionsBatch adds multiple directed edges to a single target node at the given layer.
+// This is an optimized version of AddConnection for batch scenarios to reduce lock contention.
+func (h *ArrowHNSW) AddConnectionsBatch(ctx *ArrowSearchContext, data *GraphData, target uint32, sources []uint32, dists []float32, layer, maxConn int) {
+	if len(sources) == 0 {
+		return
+	}
+
+	// Acquire lock for the target node
+	lockID := target % ShardedLockCount
+	h.shardedLocks[lockID].Lock()
+	defer h.shardedLocks[lockID].Unlock()
+
+	cID := chunkID(target)
+	cOff := chunkOffset(target)
+
+	// Ensure chunk exists
+	countsChunk := data.GetCountsChunk(layer, cID)
+	neighborsChunk := data.GetNeighborsChunk(layer, cID)
+
+	if countsChunk == nil || neighborsChunk == nil {
+		data = h.data.Load()
+		countsChunk = data.GetCountsChunk(layer, cID)
+		neighborsChunk = data.GetNeighborsChunk(layer, cID)
+		if countsChunk == nil || neighborsChunk == nil {
+			return
+		}
+	}
+
+	// Read current state
+	countAddr := &countsChunk[cOff]
+	currentCount := atomic.LoadInt32(countAddr)
+
+	// Collect actual additions (filter duplicates)
+	// We read current neighbors to check against incoming sources.
+	// Since duplicates are rare in HNSW construction (unless duplicate vectors),
+	// we can do a simple check.
+	baseIdx := int(cOff) * MaxNeighbors
+
+	// Identify distinct new sources that are NOT already connected
+	// Optimization: Use a small stack map or simple loop if small.
+	var toAddIdxs []int
+
+	for i, src := range sources {
+		found := false
+		for j := 0; j < int(currentCount); j++ {
+			if atomic.LoadUint32(&neighborsChunk[baseIdx+j]) == src {
+				found = true
+				break
+			}
+		}
+		if !found {
+			toAddIdxs = append(toAddIdxs, i)
+		}
+	}
+
+	if len(toAddIdxs) == 0 {
+		return
+	}
+
+	// Double check capacity
+	// In extremely rare cases (huge batch), we might exceed MaxNeighbors even before pruning?
+	// MaxNeighbors is usually 64-128. If we add 100, we overflow.
+	// HNSW paper allows temporary overflow or hard cap.
+	// Our storage is fixed size `MaxNeighbors`. We CANNOT exceed it.
+	// So we must bound `toAddIdxs` to fit available space OR implement a "pre-prune" strategy.
+	// A simpler safe approach: Cap at MaxNeighbors - currentCount
+
+	available := MaxNeighbors - int(currentCount)
+	if available < 0 {
+		available = 0
+	}
+
+	// If we have more new edges than space, we should prioritize?
+	// But we haven't computed distances of *existing* edges here to compare.
+	// Standard HNSW connects and then prunes. If we can't fit, we have a problem with fixed storage.
+	// Longbow `MaxNeighbors` should be `M_max * 2` or similar to allow overflow.
+	// If `mMax` ~= 32 and `MaxNeighbors` ~= 64, we have room for 32 additions.
+	if len(toAddIdxs) > available {
+		// Just take the first N that fit.
+		// Or better: Pre-sort incoming by distance and take best?
+		// Assuming sources/dists are correlated.
+		// Let's implement pre-sorting if we are overflowing.
+		// For now simple truncation to avoid buffer overflow panic.
+		toAddIdxs = toAddIdxs[:available]
+	}
+
+	if len(toAddIdxs) == 0 {
+		return
+	}
+
+	// Perform Writes
+	verChunk := data.GetVersionsChunk(layer, cID)
+	var verAddr *uint32
+	if verChunk != nil {
+		verAddr = &verChunk[cOff]
+		atomic.AddUint32(verAddr, 1) // Odd = dirty
+	}
+
+	for _, idx := range toAddIdxs {
+		slot := int(currentCount)
+		src := sources[idx]
+
+		atomic.StoreUint32(&neighborsChunk[baseIdx+slot], src)
+		currentCount++
+		// We don't update atomic count yet, we do it at once or incrementally?
+		// Incrementally is safer if we crash? No, batch write.
+	}
+
+	// Update Count Atomically
+	atomic.StoreInt32(countAddr, currentCount)
+
+	if verAddr != nil {
+		atomic.AddUint32(verAddr, 1) // Even = clean
+	}
+
+	// Packed Neighbors Updates
+	if layer < len(data.PackedNeighbors) && data.PackedNeighbors[layer] != nil {
+		pn := data.PackedNeighbors[layer]
+		// This is expensive: Read-Modify-Write Packed Neighbors
+		// But AddConnection does it per edge. Here we batch.
+		// "SetNeighbors" implements replacement or merge?
+		// Looking at usage in AddConnection, it seems to be "Set" (overwrite) or manual merge?
+		// AddConnection logic: "Get existing... if !found copy... SetNeighbors".
+		// We can optimize: Get existing once, append all new, Set.
+
+		existing, ok := pn.GetNeighbors(target)
+		// We already filtered duplicates against *Arrow* chunks. Should match.
+		// Construct new list.
+		// Careful: `existing` might be reused buffer? No, usually copy.
+
+		var newNeighbors []uint32
+		if ok {
+			newNeighbors = make([]uint32, len(existing)+len(toAddIdxs))
+			copy(newNeighbors, existing)
+		} else {
+			newNeighbors = make([]uint32, len(toAddIdxs))
+		}
+
+		offset := 0
+		if ok {
+			offset = len(existing)
+		}
+		for i, idx := range toAddIdxs {
+			newNeighbors[offset+i] = sources[idx]
+		}
+
+		if h.config.Float16Enabled {
+			// Handle distances
+			var newF16Dists []float16.Num
+			if ok {
+				_, existingDists, _ := pn.GetNeighborsF16(target)
+				// If existingDists missing but existing present (rare sync issue), pad.
+				newF16Dists = make([]float16.Num, len(existing)+len(toAddIdxs))
+				copy(newF16Dists, existingDists)
+			} else {
+				newF16Dists = make([]float16.Num, len(toAddIdxs))
+			}
+
+			for i, idx := range toAddIdxs {
+				newF16Dists[offset+i] = float16.New(dists[idx])
+			}
+			pn.SetNeighborsF16(target, newNeighbors, newF16Dists)
+		} else {
+			pn.SetNeighbors(target, newNeighbors)
+		}
+	}
+
+	// Prune if needed
+	if int(currentCount) > maxConn {
+		h.pruneConnectionsLocked(ctx, data, target, maxConn, layer)
+	}
+}
+
 // PruneConnections reduces the number of connections to maxConn using the heuristic.
 func (h *ArrowHNSW) PruneConnections(ctx *ArrowSearchContext, data *GraphData, nodeID uint32, maxConn, layer int) {
 	// Acquire lock for the specific node

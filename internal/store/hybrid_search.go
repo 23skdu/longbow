@@ -57,7 +57,7 @@ func SearchHybrid(ctx context.Context, s *VectorStore, name string, queryVec []f
 	if alpha > 0 && len(queryVec) > 0 {
 		if ds.Index != nil {
 			var err error
-			denseResults, err = ds.Index.SearchVectors(queryVec, k*2, nil)
+			denseResults, err = ds.Index.SearchVectors(queryVec, k*2, nil, SearchOptions{})
 			if err != nil {
 				s.logger.Error().Err(err).Msg("Vector search failed in hybrid search")
 				// Continue with sparse results only?
@@ -156,11 +156,11 @@ func HybridSearch(ctx context.Context, s *VectorStore, name string, queryVec []f
 	switch {
 	case filterBitmap != nil && filterBitmap.Count() > 0:
 		// Perform filtered search
-		results = ds.Index.SearchVectorsWithBitmap(queryVec, k, filterBitmap)
+		results = ds.Index.SearchVectorsWithBitmap(queryVec, k, filterBitmap, SearchOptions{})
 	case !hasFilters:
 		// No filters, standard search
 		var err error
-		results, err = ds.Index.SearchVectors(queryVec, k, nil)
+		results, err = ds.Index.SearchVectors(queryVec, k, nil, SearchOptions{})
 		if err != nil {
 			return nil, err
 		}

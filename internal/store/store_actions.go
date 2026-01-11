@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"runtime"
 	"sort"
+	"strings"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -261,6 +264,32 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 	ds, created := s.getOrCreateDataset(name, func() *Dataset {
 		ds := NewDataset(name, r.Schema())
 		ds.Topo = s.numaTopology
+
+		// Disk Store Initialization (Phase 6)
+		if strings.HasPrefix(name, "test_disk") || os.Getenv("LONGBOW_USE_DISK") == "1" {
+			path := filepath.Join(s.dataPath, name+"_vectors.bin")
+			dim := 0
+			// Manual find vector column from schema
+			for _, f := range r.Schema().Fields() {
+				if f.Name == "vector" {
+					if fst, ok := f.Type.(*arrow.FixedSizeListType); ok {
+						dim = int(fst.Len())
+						break
+					}
+				}
+			}
+
+			if dim > 0 {
+				dvs, err := NewDiskVectorStore(path, dim)
+				if err != nil {
+					s.logger.Error().Err(err).Msg("Failed to create DiskVectorStore")
+				} else {
+					ds.DiskStore = dvs
+					s.logger.Info().Str("path", path).Int("dim", dim).Msg("DiskVectorStore initialized (DoPut)")
+				}
+			}
+		}
+
 		// Call initialization hook if registered (for hnsw2, etc.)
 		if s.datasetInitHook != nil {
 			s.datasetInitHook(ds)
@@ -278,6 +307,10 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 		return ds
 	})
 
+	if ds == nil {
+		return status.Errorf(codes.Internal, "failed to retrieve or create dataset %s", name)
+	}
+
 	if created {
 		mem := ds.IndexMemoryBytes.Load()
 		if mem > 100*1024*1024 {
@@ -290,7 +323,10 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 	}
 
 	// Initialize GPU if enabled
-	if hnswIdx, ok := ds.Index.(*HNSWIndex); ok {
+	ds.dataMu.RLock()
+	idx := ds.Index
+	ds.dataMu.RUnlock()
+	if hnswIdx, ok := idx.(*HNSWIndex); ok {
 		s.initGPUIfEnabled(hnswIdx)
 	}
 
@@ -316,7 +352,7 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 			if err != nil {
 				s.logger.Error().Err(err).Msg("Failed to concatenate batches")
 				// Fallback to processing individually
-				if err := s.flushPutBatch(ds, name, batch); err != nil {
+				if err := s.flushPutBatch(name, batch); err != nil {
 					return err
 				}
 				batch = batch[:0]
@@ -325,7 +361,7 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 		}
 
 		// Flush single combined batch
-		if err := s.flushPutBatch(ds, name, []arrow.RecordBatch{combined}); err != nil {
+		if err := s.flushPutBatch(name, []arrow.RecordBatch{combined}); err != nil {
 			combined.Release()
 			return err
 		}
@@ -346,7 +382,7 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 		// write it directly to avoid concatenation/slice overhead.
 		if len(batch) == 0 && rec.NumRows() >= 100 {
 			rec.Retain()
-			if err := s.flushPutBatch(ds, name, []arrow.RecordBatch{rec}); err != nil {
+			if err := s.flushPutBatch(name, []arrow.RecordBatch{rec}); err != nil {
 				rec.Release()
 				return err
 			}
@@ -387,7 +423,7 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 }
 
 // flushPutBatch handles writing a batch of records to WAL and memory
-func (s *VectorStore) flushPutBatch(ds *Dataset, name string, batch []arrow.RecordBatch) error {
+func (s *VectorStore) flushPutBatch(name string, batch []arrow.RecordBatch) error {
 	if len(batch) == 0 {
 		return nil
 	}
@@ -517,6 +553,35 @@ func (s *VectorStore) applyBatchToMemory(name string, rec arrow.RecordBatch) err
 	ds, _ := s.getOrCreateDataset(name, func() *Dataset {
 		ds := NewDataset(name, rec.Schema())
 		ds.Topo = s.numaTopology
+
+		// Disk Store Initialization (Phase 6)
+		fmt.Printf("CRITICAL DEBUG: Checking DiskStore for %s\n", name)
+		s.logger.Info().Str("name", name).Msg("Checking DiskStore init condition")
+		if strings.HasPrefix(name, "test_disk") || os.Getenv("LONGBOW_USE_DISK") == "1" {
+			path := filepath.Join(s.dataPath, name+"_vectors.bin")
+			// Determine dim from schema
+			dim := 0
+			if vecCol := findVectorColumn(rec); vecCol != nil {
+				if listArr, ok := vecCol.(*array.FixedSizeList); ok {
+					dim = int(listArr.DataType().(*arrow.FixedSizeListType).Len())
+				} else {
+					s.logger.Warn().Msg("Vector column found but not FixedSizeList")
+				}
+			} else {
+				s.logger.Warn().Msg("Vector column not found in schema")
+			}
+			s.logger.Info().Int("dim", dim).Str("path", path).Msg("DiskStore resolved dim")
+
+			if dim > 0 {
+				dvs, err := NewDiskVectorStore(path, dim)
+				if err != nil {
+					s.logger.Error().Err(err).Msg("Failed to create DiskVectorStore")
+				} else {
+					ds.DiskStore = dvs
+					s.logger.Info().Str("path", path).Int("dim", dim).Msg("DiskVectorStore initialized")
+				}
+			}
+		}
 		return ds
 	})
 
@@ -573,6 +638,33 @@ func (s *VectorStore) applyBatchToMemory(name string, rec arrow.RecordBatch) err
 	}
 	ds.BatchNodes = append(ds.BatchNodes, currNode)
 	ds.UpdatePrimaryIndex(batchIdx, rec)
+
+	// Append to DiskStore if enabled
+	if ds.DiskStore != nil {
+		vecColIdx := -1
+		// Find vector col idx (cache this?)
+		for i, f := range rec.Schema().Fields() {
+			if f.Name == "vector" { // Convention
+				vecColIdx = i
+				break
+			}
+		}
+
+		if vecColIdx != -1 {
+			n := int(rec.NumRows())
+			for i := 0; i < n; i++ {
+				vec, err := ExtractVectorFromArrow(rec, i, vecColIdx)
+				if err == nil {
+					_, err := ds.DiskStore.Append(vec)
+					if err != nil {
+						s.logger.Error().Err(err).Msg("Failed to append to DiskStore")
+					} else {
+						metrics.DiskStoreWriteBytesTotal.WithLabelValues(name).Add(float64(len(vec) * 4))
+					}
+				}
+			}
+		}
+	}
 
 	ds.dataMu.Unlock()
 	metrics.DatasetLockWaitDurationSeconds.WithLabelValues("put").Observe(time.Since(dsLockStart).Seconds())

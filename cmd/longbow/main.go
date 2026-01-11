@@ -19,6 +19,7 @@ import (
 
 	"github.com/23skdu/longbow/internal/limiter"
 	"github.com/23skdu/longbow/internal/logging"
+	lbmem "github.com/23skdu/longbow/internal/memory"
 	"github.com/23skdu/longbow/internal/mesh"
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/middleware"
@@ -116,7 +117,6 @@ type Config struct {
 	HNSW2Refinement     float64 `envconfig:"HNSW_REFINEMENT_FACTOR" default:"1.0"`
 	HNSW2Float16Enabled bool    `envconfig:"HNSW_FLOAT16_ENABLED" default:"false"`
 
-
 	// Compaction Configuration
 	CompactionEnabled         bool          `envconfig:"COMPACTION_ENABLED" default:"true"`
 	CompactionInterval        time.Duration `envconfig:"COMPACTION_INTERVAL" default:"30s"`
@@ -150,7 +150,6 @@ func initializeHNSW2(ds *store.Dataset, logger *zerolog.Logger) {
 	config.RefinementFactor = globalCfg.HNSW2Refinement
 	config.Float16Enabled = globalCfg.HNSW2Float16Enabled
 
-
 	hnswIndex := store.NewArrowHNSW(ds, config, nil)
 	ds.SetHNSW2Index(hnswIndex)
 	if logger.GetLevel() != zerolog.Disabled {
@@ -173,6 +172,11 @@ func main() {
 func run() error {
 	// Load .env file if it exists (do this before logger init to read LOG_* vars)
 	_ = godotenv.Load()
+
+	// Handle signals for graceful shutdown and hot reload
+	// Use NotifyContext to cancel context on SIGINT/SIGTERM
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
 	if err := envconfig.Process("LONGBOW", &globalCfg); err != nil {
 		// Fallback to basic logging if config fails
@@ -209,16 +213,18 @@ func run() error {
 		logger.Info().Int("size_gb", cfg.GCBallastG).Msg("GC Ballast initialized")
 	}
 
-	// Apply GOGC tuning
-	if cfg.GOGC != 100 {
-		debug.SetGCPercent(cfg.GOGC)
-		logger.Info().Int("value", cfg.GOGC).Msg("GOGC tuned")
-	}
-
-	// Set Memory Limit if MaxMemory is configured (Go 1.19+)
+	// Dynamic GOGC Tuning
 	if cfg.MaxMemory > 0 {
-		debug.SetMemoryLimit(cfg.MaxMemory)
-		logger.Info().Int64("limit_bytes", cfg.MaxMemory).Msg("Go Memory Limit set")
+		tuner := lbmem.NewGCTuner(cfg.MaxMemory, cfg.GOGC, 10, &logger)
+		// Run in background, tied to ctx (stops on signal)
+		go tuner.Start(ctx, 2*time.Second)
+		logger.Info().
+			Int64("limit_bytes", cfg.MaxMemory).
+			Int("high_gogc", cfg.GOGC).
+			Msg("Dynamic GOGC Tuner started")
+	} else if cfg.GOGC != 100 {
+		debug.SetGCPercent(cfg.GOGC)
+		logger.Info().Int("value", cfg.GOGC).Msg("GOGC tuned (static)")
 	}
 
 	// Keep ballast alive until the end of run()
@@ -480,11 +486,6 @@ func run() error {
 	}
 
 	metaLis := store.NewTCPNoDelayListener(metaLisBase.(*net.TCPListener))
-	// Handle signals for graceful shutdown and hot reload
-	// Use NotifyContext to cancel context on SIGINT/SIGTERM
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
 	// Start Data Server
 	go func() {
 		logger.Info().Str("addr", cfg.ListenAddr).Msg("Listening for Data gRPC connections")

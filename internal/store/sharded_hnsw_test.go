@@ -1,6 +1,5 @@
 package store
 
-
 import (
 	"runtime"
 	"sync"
@@ -256,7 +255,7 @@ func TestShardedHNSW_Search(t *testing.T) {
 
 	// Search
 	query := []float32{50.0, 50.0, 50.0}
-	results, _ := sharded.SearchVectors(query, 10, nil)
+	results, _ := sharded.SearchVectors(query, 10, nil, SearchOptions{})
 
 	if len(results) == 0 {
 		t.Fatal("expected search results, got none")
@@ -272,7 +271,7 @@ func TestShardedHNSW_SearchEmpty(t *testing.T) {
 	sharded := NewShardedHNSW(cfg, ds)
 
 	query := []float32{1.0, 2.0, 3.0}
-	results, _ := sharded.SearchVectors(query, 10, nil)
+	results, _ := sharded.SearchVectors(query, 10, nil, SearchOptions{})
 
 	if len(results) != 0 {
 		t.Errorf("expected 0 results on empty index, got %d", len(results))
@@ -394,7 +393,7 @@ func TestShardedHNSW_ConcurrentAddAndSearch(t *testing.T) {
 			defer wg.Done()
 			for i := 0; i < 50; i++ {
 				query := []float32{float32(i), float32(i), float32(i)}
-				_, _ = sharded.SearchVectors(query, 5, nil)
+				_, _ = sharded.SearchVectors(query, 5, nil, SearchOptions{})
 			}
 		}()
 	}
@@ -452,7 +451,7 @@ func BenchmarkHNSW_ShardedSearch(b *testing.B) {
 	query := make([]float32, 128)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = sharded.SearchVectors(query, 10, nil)
+		_, _ = sharded.SearchVectors(query, 10, nil, SearchOptions{})
 	}
 }
 

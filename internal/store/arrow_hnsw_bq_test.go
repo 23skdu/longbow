@@ -102,7 +102,7 @@ func TestArrowHNSW_BinaryQuantization_Integration(t *testing.T) {
 	}
 
 	// Standard Search
-	results, err := index.SearchVectors(queryVec, 10, nil)
+	results, err := index.SearchVectors(queryVec, 10, nil, SearchOptions{})
 	require.NoError(t, err)
 	require.Len(t, results, 10)
 

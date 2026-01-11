@@ -10,8 +10,14 @@ import (
 // This allows for both single-threaded and sharded index implementations.
 
 type SearchResult struct {
-	ID    VectorID
-	Score float32
+	ID     VectorID
+	Score  float32
+	Vector []byte
+}
+
+type SearchOptions struct {
+	IncludeVectors bool
+	VectorFormat   string // "quantized", "f32", "f16"
 }
 
 type VectorIndex interface {
@@ -28,10 +34,10 @@ type VectorIndex interface {
 	AddBatch(recs []arrow.RecordBatch, rowIdxs []int, batchIdxs []int) ([]uint32, error)
 
 	// SearchVectors returns the k nearest neighbors for the query vector with scores and optional filtering.
-	SearchVectors(query []float32, k int, filters []query.Filter) ([]SearchResult, error)
+	SearchVectors(query []float32, k int, filters []query.Filter, options SearchOptions) ([]SearchResult, error)
 
 	// SearchVectorsWithBitmap returns k nearest neighbors filtered by a bitset.
-	SearchVectorsWithBitmap(query []float32, k int, filter *query.Bitset) []SearchResult
+	SearchVectorsWithBitmap(query []float32, k int, filter *query.Bitset, options SearchOptions) []SearchResult
 
 	// GetLocation retrieves the storage location for a given vector ID.
 	// Returns the location and true if found, or zero location and false if not found.

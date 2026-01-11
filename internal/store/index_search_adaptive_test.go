@@ -3,14 +3,15 @@ package store
 import (
 	"testing"
 
+	"math/rand"
+	"time"
+
 	"github.com/23skdu/longbow/internal/query"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"math/rand"
-	"time"
 )
 
 // TestAdaptiveSearch_RetryLogic tests that search expands its limit when initial candidates are filtered out
@@ -72,7 +73,7 @@ func TestAdaptiveSearch_RetryLogic(t *testing.T) {
 		{Field: "id_col", Operator: "=", Value: "95"},
 	}
 
-	results, err := index.SearchVectors(q, k, filters)
+	results, err := index.SearchVectors(q, k, filters, SearchOptions{})
 	require.NoError(t, err)
 
 	// Verify we got 1 result
@@ -88,10 +89,10 @@ func TestAdaptiveSearch_RetryLogic(t *testing.T) {
 func TestAdaptiveHNSW_AdjustsM(t *testing.T) {
 	// 1. Setup Config with AdaptiveM enabled
 	cfg := DefaultArrowHNSWConfig()
-	cfg.M = 16 
+	cfg.M = 16
 	cfg.MMax = 32
-	cfg.AdaptiveMEnabled = true 
-	cfg.AdaptiveMThreshold = 100 
+	cfg.AdaptiveMEnabled = true
+	cfg.AdaptiveMThreshold = 100
 	cfg.Dims = 128
 
 	// 2. Create Index
@@ -105,7 +106,7 @@ func TestAdaptiveHNSW_AdjustsM(t *testing.T) {
 	for i := 0; i < n; i++ {
 		vecs[i] = make([]float32, dims)
 		for j := 0; j < dims; j++ {
-			vecs[i][j] = rng.Float32() 
+			vecs[i][j] = rng.Float32()
 		}
 	}
 
@@ -116,10 +117,10 @@ func TestAdaptiveHNSW_AdjustsM(t *testing.T) {
 	}
 
 	// 5. Assert M has changed
-    // We access the config directly from the struct (internal test)
+	// We access the config directly from the struct (internal test)
 	currentM := idx.config.M
 	t.Logf("Initial M: %d, Current M: %d", 16, currentM)
-	
+
 	// With 128D uniform noise, intrinsic dimensionality is high.
 	// Adaptive strategy should INCREASE M to maintain connectivity/recall.
 	assert.Greater(t, currentM, 16, "M should have increased due to high dimensionality")

@@ -368,23 +368,23 @@ func (a *AutoShardingIndex) migrateToSharded() {
 }
 
 // SearchVectors implements VectorIndex.
-func (a *AutoShardingIndex) SearchVectors(q []float32, k int, filters []query.Filter) ([]SearchResult, error) {
+func (a *AutoShardingIndex) SearchVectors(q []float32, k int, filters []query.Filter, options SearchOptions) ([]SearchResult, error) {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 
 	sharded := a.sharded
 	if sharded {
-		return a.current.SearchVectors(q, k, filters)
+		return a.current.SearchVectors(q, k, filters, options)
 	}
 
 	interim := a.interimIndex
-	res, err := a.current.SearchVectors(q, k, filters)
+	res, err := a.current.SearchVectors(q, k, filters, options)
 	if err != nil {
 		return nil, err
 	}
 
 	if interim != nil {
-		res2, err := interim.SearchVectors(q, k, filters)
+		res2, err := interim.SearchVectors(q, k, filters, options)
 		if err != nil {
 			// Log error but return what we have
 			fmt.Printf("Error searching interim index: %v\n", err)
@@ -397,19 +397,19 @@ func (a *AutoShardingIndex) SearchVectors(q []float32, k int, filters []query.Fi
 }
 
 // SearchVectorsWithBitmap implements VectorIndex.
-func (a *AutoShardingIndex) SearchVectorsWithBitmap(q []float32, k int, filter *query.Bitset) []SearchResult {
+func (a *AutoShardingIndex) SearchVectorsWithBitmap(q []float32, k int, filter *query.Bitset, options SearchOptions) []SearchResult {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 
 	sharded := a.sharded
 	if sharded {
-		return a.current.SearchVectorsWithBitmap(q, k, filter)
+		return a.current.SearchVectorsWithBitmap(q, k, filter, options)
 	}
 
 	interim := a.interimIndex
-	res := a.current.SearchVectorsWithBitmap(q, k, filter)
+	res := a.current.SearchVectorsWithBitmap(q, k, filter, options)
 	if interim != nil {
-		res2 := interim.SearchVectorsWithBitmap(q, k, filter)
+		res2 := interim.SearchVectorsWithBitmap(q, k, filter, options)
 		res = a.mergeSearchResults(res, res2, k)
 	}
 

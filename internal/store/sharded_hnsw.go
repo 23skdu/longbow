@@ -343,7 +343,7 @@ func (s *ShardedHNSW) AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx int) (
 }
 
 // SearchVectors implements VectorIndex.
-func (s *ShardedHNSW) SearchVectors(queryVec []float32, k int, filters []query.Filter) ([]SearchResult, error) {
+func (s *ShardedHNSW) SearchVectors(queryVec []float32, k int, filters []query.Filter, options SearchOptions) ([]SearchResult, error) {
 	if k <= 0 {
 		return nil, nil
 	}
@@ -368,7 +368,7 @@ func (s *ShardedHNSW) SearchVectors(queryVec []float32, k int, filters []query.F
 		i := i
 		shard := shard
 		g.Go(func() error {
-			res, err := shard.index.SearchVectors(queryVec, k*2, filters) // Oversample
+			res, err := shard.index.SearchVectors(queryVec, k*2, filters, options) // Oversample
 			if err != nil {
 				return err
 			}
@@ -442,7 +442,7 @@ func (s *ShardedHNSW) SearchVectors(queryVec []float32, k int, filters []query.F
 }
 
 // SearchVectorsWithBitmap implements VectorIndex.
-func (s *ShardedHNSW) SearchVectorsWithBitmap(queryVec []float32, k int, filter *query.Bitset) []SearchResult {
+func (s *ShardedHNSW) SearchVectorsWithBitmap(queryVec []float32, k int, filter *query.Bitset, options SearchOptions) []SearchResult {
 
 	type shardResult struct {
 		results  []SearchResult
@@ -463,7 +463,7 @@ func (s *ShardedHNSW) SearchVectorsWithBitmap(queryVec []float32, k int, filter 
 		go func(idx int, sh *hnswShard) {
 			defer wg.Done()
 			// Pass nil filter to shard, filter globally
-			res := sh.index.SearchVectorsWithBitmap(queryVec, k*2, nil)
+			res := sh.index.SearchVectorsWithBitmap(queryVec, k*2, nil, options)
 			ch <- shardResult{results: res, shardIdx: idx}
 		}(i, shard)
 	}
@@ -543,7 +543,7 @@ func (s *ShardedHNSW) SearchByID(id VectorID, k int) []VectorID {
 	}
 
 	// Perform global search
-	results, err := s.SearchVectors(vec, k, nil)
+	results, err := s.SearchVectors(vec, k, nil, SearchOptions{})
 	if err != nil {
 		return nil
 	}

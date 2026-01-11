@@ -42,6 +42,11 @@ type SnapshotBackend interface {
 	// WriteSnapshotAsync performs a non-blocking upload
 	WriteSnapshotAsync(name string, data []byte)
 
+	// WriteSnapshotFile writes a snapshot file with a custom extension
+	WriteSnapshotFile(ctx context.Context, name, ext string, r io.Reader) error
+	// ReadSnapshotFile reads a snapshot file with a custom extension
+	ReadSnapshotFile(ctx context.Context, name, ext string) (io.ReadCloser, error)
+
 	// Expose properties for testing/coordination
 	Bucket() string
 	Prefix() string
@@ -248,6 +253,14 @@ func (b *AsyncS3Backend) ReadSnapshot(ctx context.Context, name string) (io.Read
 	return b.S3Backend.ReadSnapshot(ctx, name)
 }
 
+func (b *AsyncS3Backend) WriteSnapshotFile(ctx context.Context, name, ext string, r io.Reader) error {
+	return b.S3Backend.WriteSnapshotFile(ctx, name, ext, r)
+}
+
+func (b *AsyncS3Backend) ReadSnapshotFile(ctx context.Context, name, ext string) (io.ReadCloser, error) {
+	return b.S3Backend.ReadSnapshotFile(ctx, name, ext)
+}
+
 func (b *AsyncS3Backend) ListSnapshots(ctx context.Context) ([]string, error) {
 	return b.S3Backend.ListSnapshots(ctx)
 }
@@ -258,7 +271,11 @@ func (b *AsyncS3Backend) DeleteSnapshot(ctx context.Context, name string) error 
 
 // buildS3Key constructs the S3 key for a snapshot
 func buildS3Key(prefix, name string) string {
-	key := path.Join("snapshots", name+".parquet")
+	return buildS3KeyWithExt(prefix, name, ".parquet")
+}
+
+func buildS3KeyWithExt(prefix, name, ext string) string {
+	key := path.Join("snapshots", name+ext)
 	if prefix != "" {
 		prefix = strings.TrimSuffix(prefix, "/")
 		key = path.Join(prefix, key)
@@ -268,18 +285,30 @@ func buildS3Key(prefix, name string) string {
 
 // WriteSnapshot uploads snapshot data to S3
 func (b *S3Backend) WriteSnapshot(ctx context.Context, name string, data []byte) error {
-	key := buildS3Key(b.prefix, name)
+	return b.WriteSnapshotFile(ctx, name, ".parquet", bytes.NewReader(data))
+}
 
-	const minMultipartSize = 5 * 1024 * 1024 // 5MB
-	if len(data) >= minMultipartSize {
-		return b.writeMultipart(ctx, key, data)
+// WriteSnapshotFile writes a snapshot file with a custom extension
+func (b *S3Backend) WriteSnapshotFile(ctx context.Context, name, ext string, r io.Reader) error {
+	key := buildS3KeyWithExt(b.prefix, name, ext)
+
+	// For generic readers, we may not know the size easily for multipart optimization
+	// unless r is bytes.Reader/Buffer or *os.File
+	// AWS SDK PutObject can take io.Reader.
+	// Determine content type based on extension?
+	contentType := "application/octet-stream"
+	if ext == ".parquet" {
+		contentType = "application/vnd.apache.parquet"
 	}
+
+	// Simple upload for now. For large files (multipart), we'd need size or Manager.
+	// Assuming io.Reader is streamable.
 
 	_, err := b.client.PutObject(ctx, &s3.PutObjectInput{
 		Bucket:      aws.String(b.bucket),
 		Key:         aws.String(key),
-		Body:        bytes.NewReader(data),
-		ContentType: aws.String("application/vnd.apache.parquet"),
+		Body:        r,
+		ContentType: aws.String(contentType),
 	})
 	if err != nil {
 		return NewS3Error("upload", b.bucket, name, err)
@@ -379,7 +408,12 @@ func (b *AsyncS3Backend) Close() {
 
 // ReadSnapshot downloads snapshot data from S3
 func (b *S3Backend) ReadSnapshot(ctx context.Context, name string) (io.ReadCloser, error) {
-	key := buildS3Key(b.prefix, name)
+	return b.ReadSnapshotFile(ctx, name, ".parquet")
+}
+
+// ReadSnapshotFile downloads snapshot data with custom extension from S3
+func (b *S3Backend) ReadSnapshotFile(ctx context.Context, name, ext string) (io.ReadCloser, error) {
+	key := buildS3KeyWithExt(b.prefix, name, ext)
 
 	result, err := b.client.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(b.bucket),

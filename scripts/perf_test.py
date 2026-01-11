@@ -249,7 +249,9 @@ def benchmark_get(client: flight.FlightClient, name: str,
 def benchmark_vector_search(client: flight.FlightClient, name: str,
                             query_vectors: np.ndarray, k: int,
                             filters: Optional[list] = None,
-                            global_search: bool = False) -> BenchmarkResult:
+                            global_search: bool = False,
+                            include_vectors: bool = False,
+                            vector_format: str = "f32") -> BenchmarkResult:
     """Benchmark HNSW vector similarity search using DoAction(VectorSearch)."""
     num_queries = len(query_vectors)
     print(f"\n[SEARCH] Running {num_queries:,} vector searches (k={k})...")
@@ -290,7 +292,9 @@ def benchmark_vector_search(client: flight.FlightClient, name: str,
                         "vector": qvec.tolist(),
                         "k": k,
                         "filters": filters,
-                        "local_only": False # Search benchmark tests distributed by default
+                        "local_only": False, # Search benchmark tests distributed by default
+                        "include_vectors": include_vectors,
+                        "vector_format": vector_format
                     }
                 }
                 ticket = flight.Ticket(json.dumps(ticket_payload).encode("utf-8"))
@@ -356,7 +360,7 @@ def benchmark_vector_search(client: flight.FlightClient, name: str,
     total_errors = sum(errors.values())
 
     result = BenchmarkResult(
-        name="VectorSearch",
+        name=f"VectorSearch_{vector_format}",
         duration_seconds=duration,
         throughput=qps,
         throughput_unit="queries/s",
@@ -962,6 +966,8 @@ def main():
                         help="Filter in format field:op:value")
     # Global Distributed Search
     parser.add_argument("--global", dest="global_search", action="store_true", help="Force GLOBAL distributed search")
+    parser.add_argument("--include-vectors", action="store_true", help="Include vectors in search results")
+    parser.add_argument("--vector-format", default="f32", help="Vector format (f32, quantized, f16)")
 
     # Data Plane operations
     parser.add_argument("--skip-data", action="store_true", help="Skip default Put/Get operations")
@@ -1017,7 +1023,10 @@ def main():
         query_vectors = generate_query_vectors(args.query_count, args.dim)
         # Search goes to Meta Server
         r_search = benchmark_vector_search(
-            meta_client, args.name, query_vectors, args.search_k, filters=filters if filters else None, global_search=args.global_search
+            meta_client, args.name, query_vectors, args.search_k, filters=filters if filters else None, 
+            global_search=args.global_search,
+            include_vectors=args.include_vectors,
+            vector_format=args.vector_format
         )
         results.append(r_search)
 

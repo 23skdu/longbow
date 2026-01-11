@@ -1,74 +1,46 @@
-# Next Steps: Optimization Roadmap (v0.1.4+)
+# Next Steps: Optimization Roadmap (v0.1.5+)
 
-Based on deep analysis of `0.1.3` performance reports, specifically the concurrency bottleneck in FP16 storage and ingestion overhead, here is the prioritized 15-point optimization plan.
+## Phase 4: Reliability & Advanced System Tuning (Current Priority)
 
-## Phase 1: Critical Concurrency & FP16 (v0.1.4 Goal)
+1. **IO_URING for WAL (Linux)**:
+    * **Problem**: Heavy `syscall` overhead during synchronous WAL writes, especially at high throughput.
+    * **Solution**: Implement `io_uring` backend for batching I/O operations and reducing context switches on Linux kernels.
 
-1. **[CRITICAL] SIMD-Native FP16 Distance**:
-    * **Status**: DONE (Implemented NEON Assembly ~3.3x speedup for Cosine).
-    * **Problem**: Current FP16 search implementation converts `float16` to `float32` on-the-fly for every distance calculation, causing massive CPU overhead and 20x slowdown under concurrent load.
-    * **Fix**: Implement `L2` and `Cosine` distance functions directly in Assembly (AVX-512/NEON) that operate on `float16` buffers without upcasting.
+2. **Slab Allocation / Custom Arena**:
+    * **Problem**: High GC pressure from billions of small vector allocations (slices).
+    * **Solution**: Implement a custom `Arena` allocator that reserves large "Slabs" (e.g., 2MB) and slots vectors linearly.
 
-2. **[CRITICAL] Optimistic Locking for HNSW**:
-    * **Status**: DONE (Implemented Sparse Clearing).
-    * **Problem**: High lock contention on `Visited` bitsets and Node locks during concurrent searches.
-    * **Fix**: Implemented sparse clearing for visited sets (`O(ef)` vs `O(N)`) and verified `ArrowHNSW` already uses optimistic node locking.
+3. **GOGC Auto-Tuning (Memory Ballast)**:
+    * **Problem**: Static GOGC settings can lead to either OOMs or excessive CPU usage during garbage collection.
+    * **Solution**: Implement a dynamic tuner that adjusts GOGC based on `GOMEMLIMIT` and current heap usage.
 
-3. **[CRITICAL] Ingestion Pipelining**:
-    * **Status**: DONE (Decoupled WAL from Memory, added Backpressure).
-    * **Problem**: `DoPut` is blocked by synchronous WAL writes and graph updates.
-    * **Fix**: Decouple WAL writing (batching) from graph insertion. Return success once durable in WAL, process graph update asynchronously with backpressure.
+4. **Distributed Consensus (Raft)**:
+    * **Problem**: Current coordinator logic relies on simple health checks; no strong consistency for cluster state changes.
+    * **Solution**: Integrate a Raft library (e.g., `hashicorp/raft`) to manage cluster membership and metadata consistently.
 
-4. **Zero-Copy Ingestion (FP16)**:
-    * **Status**: DONE (Implemented in `internal/store` for direct Float16 handling).
-    * **Problem**: Ingestion converts `float32` -> `float16`.
-    * **Fix**: Allow clients to send Arrow `Float16` arrays directly. Implement `Cast` kernels in the Arrow Flight server to handle incoming types efficiently.
+5. **Graph Layout Optimization (CSR-like)**:
+    * **Problem**: Pointer chasing in HNSW graph (linked lists) causes cache misses.
+    * **Solution**: Store neighbor lists as contiguous arrays to improve CPU cache prefetching and reduce TLB misses.
 
-5. **Remove Global Locks in Metrics**:
-    * **Status**: DONE (Refactored to use cached handles, achieved 17x speedup).
-    * **Problem**: Prometheus constructs `WithLabelValues` often acquire a global map lock.
-    * **Fix**: Cache metrics handles in local structures or use `ConstMetric` where appropriate to avoid hot-path locking.
+---
 
-## Phase 2: Search Throughput & Memory
+## Completed (v0.1.4 - Performance & Features)
 
-1. **Disk-Based Vector Storage (DiskANN-lite)**:
-    * **Problem**: RAM limit caps dataset size.
-    * **Fix**: Offload vector data to NVMe SSD (mmap) while keeping the HNSW graph in memory. Use `madvise` to hint OS about access patterns.
+**Critical Concurrency & FP16**
+* [x] **SIMD-Native FP16 Distance**: Implemented AVX-512/NEON Assembly kernels (~3.3x speedup).
+* [x] **Optimistic Locking for HNSW**: Implemented sparse clearing and lock-free traversal patterns.
+* [x] **Ingestion Pipelining**: Decoupled WAL writing from graph insertion with async backpressure.
+* [x] **Zero-Copy Ingestion (FP16)**: Direct Arrow `Float16` array support in Flight server.
+* [x] **Remove Global Locks in Metrics**: Cached high-cardinality label handles (17x speedup).
 
-2. **Bitset-based Filtering w/ SIMD**:
-    * **Problem**: Metadata filtering checks each ID individually.
-    * **Fix**: Construct roaring bitmaps for low-cardinality metadata fields. Use SIMD `AND/OR` operations to pre-filter candidate lists before traversing the graph.
+**Search Throughput & Memory**
+* [x] **Disk-Based Vector Storage (DiskANN-lite)**: DiskVectorStore with mmap, S3 snapshots, and `madvise`.
+* [x] **Bitset-based Filtering w/ SIMD**: Roaring bitmaps for metadata pre-filtering.
+* [x] **Early Termination Strategies**: Adaptive `efSearch` based on convergence.
+* [x] **Query Caching (LRU)**: Thread-safe LRU cache for embedding results.
+* [x] **JIT Compilation**: `wazero`-based JIT for runtime kernel selection (AVX-VNNI).
 
-3. **Graph Layout Optimization**:
-    * **Problem**: Pointer chasing in HNSW graph (linked list of neighbors).
-    * **Fix**: Store neighbor lists as contiguous arrays (CSR-like) to improve CPU cache prefetching and reduce TLB misses.
-
-4. **Early Termination Strategies**:
-    * **Problem**: Search inspects too many candidates (`efSearch`).
-    * **Fix**: Implement adaptive `efSearch` that stops early if distance distribution indicates convergence or sufficient recall.
-
-5. **Query Caching (LRU)**:
-    * **Problem**: Repeated queries for popular terms re-execute full search.
-    * **Fix**: Implement a small LRU cache for query embeddings -> result lists key-value store, with TTL validity.
-
-## Phase 3: Distributed & Network
-
-1. **gRPC/Flight Flow Control Tuning**:
-    * **Problem**: `DoGet` stream stalling or buffering.
-    * **Fix**: Tune gRPC flow control windows (`InitialWindowSize`, `InitialConnWindowSize`) to match high-bandwidth scenarios (10GbE+).
-
-2. **Scatter-Gather Optimization**:
-    * **Problem**: Coordinator waits for the slowest node (tail latency).
-    * **Fix**: Implement speculative execution (send to replica) if primary is slow, and dynamic timeout adjustments.
-
-3. **Compressed Vector Transport**:
-    * **Problem**: Network bandwidth bottleneck.
-    * **Fix**: Return SQ8 (8-bit quantized) vectors in search results by default, only returning full float32 if explicitly requested.
-
-4. **Batch Search API**:
-    * **Problem**: Single-vector search overhead.
-    * **Fix**: Expose a batched search API allowing clients to send N query vectors in one request, amortizing network and dispatch initialization costs.
-
-5. **JIT Compilation for Distance Kernels**:
-    * **Problem**: Static dispatch misses runtime-specific optimizations.
-    * **Fix**: Use `wazero` or similar logic to select/generate kernels at runtime based on exact CPU flags (e.g., AVX-VNNI) detected at startup.
+**Distributed & Network**
+* [x] **gRPC/Flight Flow Control**: Dynamic window sizing for high-bandwidth networks.
+* [x] **Compressed Vector Transport**: Support for F16/SQ8 vector return formats to save bandwidth.
+* [x] **Metrics Optimization & Tuning**: Comprehensive Prometheus coverage and lock reduction.

@@ -2,6 +2,7 @@ package query
 
 import (
 	"errors"
+	"fmt"
 	"math"
 	"strconv"
 )
@@ -138,9 +139,24 @@ func (p *ZeroAllocVectorSearchParser) Parse(data []byte) (VectorSearchRequest, e
 			}
 			p.result.GraphAlpha = val
 			i = newPos
+		case "include_vectors":
+			val, newPos, err := parseBool(data, i)
+			if err != nil {
+				return p.result, err
+			}
+			p.result.IncludeVectors = val
+			i = newPos
+		case "vector_format":
+			val, newPos, err := parseString(data, i)
+			if err != nil {
+				return p.result, err
+			}
+			p.result.VectorFormat = val
+			i = newPos
 		default:
 			// Unknown field: return error to trigger fallback to json.Unmarshal
 			// This is important because the zero-alloc parser doesn't support 'vectors' yet.
+			fmt.Printf("DEBUG: Unknown key in VectorSearchRequest: %s\n", key)
 			return p.result, errors.New("unknown field: " + key)
 		}
 

@@ -472,6 +472,23 @@ var (
 			Help: "Configured max send message size for gRPC",
 		},
 	)
+
+	// GRPCStreamStallTotal counts total number of detected stream stalls
+	GRPCStreamStallTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_grpc_stream_stall_total",
+			Help: "Total number of gRPC stream stalling events detected",
+		},
+	)
+
+	// GRPCStreamSendLatencySeconds measures the latency of gRPC SendMsg calls
+	GRPCStreamSendLatencySeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_grpc_stream_send_latency_seconds",
+			Help:    "Latency of gRPC SendMsg calls (used to detect flow control stalling)",
+			Buckets: []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5},
+		},
+	)
 )
 
 // =============================================================================
@@ -485,6 +502,22 @@ var (
 			Help: "Total number of datasets in a namespace",
 		},
 		[]string{"namespace"},
+	)
+
+	// CompressedVectorsSentTotal counts total number of quantized vectors sent in search results
+	CompressedVectorsSentTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_compressed_vectors_sent_total",
+			Help: "Total number of quantized (SQ8/PQ) vectors sent in search results",
+		},
+	)
+
+	// RawVectorsSentTotal counts total number of full-precision vectors sent in search results
+	RawVectorsSentTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_raw_vectors_sent_total",
+			Help: "Total number of raw (F32/F16) vectors sent in search results",
+		},
 	)
 )
 
@@ -606,6 +639,91 @@ var (
 			Help: "Total number of native FP16 distance calculations performed",
 		},
 	)
+
+	// HNSWBitmapIndexEntriesTotal tracks number of entries in metadata bitmap index
+	HNSWBitmapIndexEntriesTotal = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "longbow_hnsw_bitmap_index_entries_total",
+			Help: "Total number of unique field:value pairs in the bitmap index",
+		},
+		[]string{"dataset"},
+	)
+
+	// HNSWBitmapFilterDurationSeconds measures time to evaluate bitset filters
+	HNSWBitmapFilterDurationSeconds = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_hnsw_bitmap_filter_duration_seconds",
+			Help:    "Time taken to evaluate metadata bitset filters",
+			Buckets: []float64{0.00001, 0.0001, 0.001, 0.01, 0.1},
+		},
+		[]string{"dataset"},
+	)
+
+	// HNSWSearchEarlyTerminationsTotal counts number of searches that terminated early
+	HNSWSearchEarlyTerminationsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_hnsw_search_early_terminations_total",
+			Help: "Total number of searches that terminated early due to convergence",
+		},
+		[]string{"dataset", "reason"},
+	)
+
+	// QueryCacheOpsTotal counts query cache operations (hit, miss, evict)
+	QueryCacheOpsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_query_cache_ops_total",
+			Help: "Total number of query cache operations",
+		},
+		[]string{"dataset", "type"}, // "hit", "miss", "evict", "set"
+	)
+
+	QueryCacheSize = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "longbow_query_cache_size",
+			Help: "Current number of entries in query cache",
+		},
+		[]string{"dataset"},
+	)
+
+	QueryCacheHitsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_query_cache_hits_total",
+			Help: "Total number of query cache hits",
+		},
+		[]string{"dataset"},
+	)
+
+	QueryCacheMissesTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_query_cache_misses_total",
+			Help: "Total number of query cache misses",
+		},
+		[]string{"dataset"},
+	)
+
+	DiskStoreReadBytesTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_disk_store_read_bytes_total",
+			Help: "Total bytes read from disk vector store",
+		},
+		[]string{"dataset"},
+	)
+
+	DiskStoreWriteBytesTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_disk_store_write_bytes_total",
+			Help: "Total bytes written to disk vector store",
+		},
+		[]string{"dataset"},
+	)
+
+	QueryCacheEvictionsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_query_cache_evictions_total",
+			Help: "Total number of query cache evictions",
+		},
+		[]string{"dataset"},
+	)
 )
 
 // =============================================================================
@@ -624,6 +742,34 @@ var (
 		prometheus.CounterOpts{
 			Name: "longbow_dataset_update_retries_total",
 			Help: "Total number of retries during lock-free dataset map updates (CAS failures)",
+		},
+	)
+)
+
+// =============================================================================
+// JIT Metrics
+// =============================================================================
+var (
+	JitCompilationDurationSeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_jit_compilation_duration_seconds",
+			Help:    "Time spent compiling JIT kernels",
+			Buckets: []float64{0.0001, 0.001, 0.01, 0.1, 1},
+		},
+	)
+
+	JitKernelCallsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_jit_kernel_calls_total",
+			Help: "Total number of JIT kernel function calls",
+		},
+		[]string{"kernel"},
+	)
+
+	JitKernelErrorsTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_jit_kernel_errors_total",
+			Help: "Total number of JIT kernel execution errors",
 		},
 	)
 )

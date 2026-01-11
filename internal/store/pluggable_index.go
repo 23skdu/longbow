@@ -78,7 +78,7 @@ type PluggableVectorIndex interface {
 
 	// Legacy interface compatibility
 	AddByLocation(batchIdx, rowIdx int) error
-	SearchVectors(query []float32, k int) []SearchResult
+	SearchVectors(query []float32, k int, options SearchOptions) []SearchResult
 	Len() int
 }
 

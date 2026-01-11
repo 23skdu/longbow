@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"runtime"
 	"time"
 
 	"github.com/23skdu/longbow/internal/metrics"
@@ -48,6 +49,42 @@ func (s *VectorStore) evictDataset(name string) {
 	}
 
 	// Metrics updated elsewhere
+}
+
+// PrewarmDataset initializes a dataset and its index before first data ingestion
+func (s *VectorStore) PrewarmDataset(name string, schema *arrow.Schema) {
+	_, created := s.getOrCreateDataset(name, func() *Dataset {
+		ds := NewDataset(name, schema)
+		ds.Topo = s.numaTopology
+
+		// Initialize index immediately used default config or a simplified one
+		config := s.autoShardingConfig
+		if config.ShardThreshold == 0 {
+			// Fallback default
+			config.ShardThreshold = 10000
+			config.Enabled = true
+			config.ShardCount = runtime.NumCPU()
+		}
+
+		aIdx := NewAutoShardingIndex(ds, config)
+
+		// Try to find vector dimension
+		// We'll copy the logic from applyBatchToMemory or extract it
+		for _, f := range schema.Fields() {
+			if f.Name == "vector" {
+				if fst, ok := f.Type.(*arrow.FixedSizeListType); ok {
+					aIdx.SetInitialDimension(int(fst.Len()))
+				}
+			}
+		}
+		ds.Index = aIdx
+
+		return ds
+	})
+
+	if created {
+		s.logger.Info().Str("dataset", name).Msg("Pre-warmed dataset with index")
+	}
 }
 
 // StartLifecycleManager starts the lifecycle manager background task.

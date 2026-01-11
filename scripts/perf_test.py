@@ -908,6 +908,7 @@ def main():
     # Connection
     parser.add_argument("--data-uri", default="grpc://0.0.0.0:3000", help="Data Server URI")
     parser.add_argument("--meta-uri", default="grpc://0.0.0.0:3001", help="Meta Server URI")
+    parser.add_argument("--meta-uri", default="grpc://0.0.0.0:3001", help="Meta Server URI")
 
     # Data generation
     parser.add_argument("--rows", default=10000, type=int, help="Number of rows")
@@ -982,8 +983,8 @@ def main():
     print(f"Meta Server: {args.meta_uri}")
     print(f"Vector Dimension: {args.dim}")
     print(f"Rows: {args.rows:,}")
+    
 
-    # Parse filters
     filters = []
     if args.filter:
         for f in args.filter:

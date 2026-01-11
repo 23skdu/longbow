@@ -490,6 +490,16 @@ func (idx *AutoShardingIndex) Warmup() int {
 	return idx.current.Warmup()
 }
 
+// PreWarm explicitly warms up the underlying index to a target size.
+func (idx *AutoShardingIndex) PreWarm(targetSize int) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	if h, ok := idx.current.(*ArrowHNSW); ok {
+		h.PreWarm(targetSize)
+	}
+}
+
 // Close closes the current index.
 
 func (idx *AutoShardingIndex) Close() error {

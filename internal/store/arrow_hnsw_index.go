@@ -550,10 +550,41 @@ func (h *ArrowHNSW) SetDimension(dim int) {
 	}
 }
 
+// PreWarm ensures the index has capacity and allocated chunks for targetSize vectors.
+// This reduces "cold start" latency during initial ingestion by avoiding lazy allocation.
+func (h *ArrowHNSW) PreWarm(targetSize int) {
+	if targetSize <= 0 {
+		return
+	}
+
+	dims := int(h.dims.Load())
+	h.Grow(targetSize, dims)
+
+	data := h.data.Load()
+	if data == nil {
+		return
+	}
+
+	// Calculate number of chunks needed
+	// ChunkSize is constant (1024)
+	numChunks := (targetSize + ChunkSize - 1) / ChunkSize
+
+	// Pre-allocate all chunks
+	// We iterate up to numChunks. ensureChunk handles double-checked locking.
+	for i := 0; i < numChunks; i++ {
+		// cID is uint32
+		h.ensureChunk(data, uint32(i), 0, dims)
+	}
+}
+
 // Warmup implements VectorIndex.
 func (h *ArrowHNSW) Warmup() int {
-	// Could implement pre-fetching of all pages/nodes
-	return h.Size()
+	// Defaults to current size, just ensuring all are allocated
+	size := int(h.nodeCount.Load())
+	if size > 0 {
+		h.PreWarm(size)
+	}
+	return size
 }
 
 // SetIndexedColumns implements VectorIndex.

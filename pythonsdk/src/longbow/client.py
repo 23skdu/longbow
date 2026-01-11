@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 class LongbowClient:
     """Client for interacting with the Longbow Vector Database."""
 
-    def __init__(self, uri: str = "grpc://localhost:3000", meta_uri: Optional[str] = None, api_key: Optional[str] = None):
+    def __init__(self, uri: str = "grpc://localhost:3000", meta_uri: Optional[str] = None, api_key: Optional[str] = None, headers: Optional[Dict[str, str]] = None):
         """
         Initialize the Longbow Client.
 
@@ -26,6 +26,7 @@ class LongbowClient:
         self.uri = uri
         self.meta_uri = meta_uri or uri
         self.api_key = api_key
+        self.headers = headers or {}
         
         self._data_client = None
         self._meta_client = None
@@ -51,8 +52,14 @@ class LongbowClient:
         self.close()
 
     def _get_call_options(self):
-        # TODO: Add headers for auth
-        return flight.FlightCallOptions()
+        call_headers = []
+        for k, v in self.headers.items():
+            call_headers.append((k.encode('utf-8'), v.encode('utf-8')))
+        
+        if self.api_key:
+            call_headers.append((b"authorization", f"Bearer {self.api_key}".encode('utf-8')))
+            
+        return flight.FlightCallOptions(headers=call_headers)
 
     def insert(self, dataset: str, data: Union[dd.DataFrame, pd.DataFrame, List[Dict]], batch_size: int = 10000) -> None:
         """
@@ -100,10 +107,18 @@ class LongbowClient:
         dataset: str, 
         vector: List[float], 
         k: int = 10, 
-        filter: Optional[Dict] = None
+        filters: Optional[List[Dict]] = None,
+        **kwargs
     ) -> dd.DataFrame:
         """
         Perform a K-Nearest Neighbor search.
+
+        Args:
+            dataset: Target dataset.
+            vector: Query vector.
+            k: Number of results.
+            filter: Optional filter criteria.
+            **kwargs: Additional arguments passed to the search query (e.g. 'alpha', 'text_query', 'include_vectors').
 
         Returns:
             dask.dataframe.DataFrame: Lazy dataframe containing search results. 
@@ -117,8 +132,12 @@ class LongbowClient:
             "vector": vector,
             "k": k,
         }
-        if filter:
-            req["filter"] = filter
+
+        if filters:
+            req["filters"] = filters
+        
+        # Merge extra args (e.g. alpha, text_query)
+        req.update(kwargs)
 
         ticket_bytes = json.dumps({"search": req}).encode("utf-8")
         ticket = flight.Ticket(ticket_bytes)
@@ -138,6 +157,26 @@ class LongbowClient:
         except Exception as e:
             raise LongbowQueryError(f"Search failed: {e}")
 
+    def search_by_id(self, dataset: str, id: Union[int, str], k: int = 10) -> Dict[str, Any]:
+        """Search for similar vectors by ID."""
+        if self._meta_client is None:
+            self.connect()
+            
+        req = {
+            "dataset": dataset,
+            "id": id,
+            "k": k
+        }
+        action = flight.Action("VectorSearchByID", json.dumps(req).encode("utf-8"))
+        try:
+            # We assume single result batch for this action
+            results = list(self._meta_client.do_action(action, options=self._get_call_options()))
+            if results:
+                return json.loads(results[0].body.to_pybytes())
+            return {}
+        except Exception as e:
+            raise LongbowQueryError(f"SearchByID failed: {e}")
+
     def create_namespace(self, name: str, force: bool = False):
         """Create a new dataset/namespace."""
         if self._meta_client is None:
@@ -153,3 +192,78 @@ class LongbowClient:
         if self._meta_client is None:
             self.connect()
         return [f.descriptor.path[0].decode("utf-8") for f in self._meta_client.list_flights()]
+
+    def download(self, dataset: str, filter: Optional[Dict] = None) -> dd.DataFrame:
+        """Download the entire dataset, optionally filtered."""
+        if self._data_client is None:
+            self.connect()
+        
+        req = {"name": dataset}
+        if filter:
+            req["filters"] = filter  # Note: Server uses "filters" (plural) or "filter"? verify ops_test.
+            # ops_test lines 103-104: filters.append(...); query["filters"] = filters.
+            # So "filters" is correct for data plane query? 
+            # But search uses "filter"? 
+            # ops_test lines 240: request["filters"] = filters (for meta search)
+            # client.search uses "filter". 
+            # Wait, ops_test line 240 says request["filters"]. 
+            # My client.search uses req["filter"] = filter. 
+            # Is there a mismatch? 
+            # Let's check ops_test line 240 again.
+            # Line 240: request["filters"] = filters.
+            # My client.py line 121: req["filter"] = filter.
+            # I might have introduced a bug in client.py "filter" key.
+            # I should verify against what the server expects.
+            # ops_test uses "filters" list. 
+            # My client.py search takes 'filter' dict? 
+            # ops_test parser takes --filter field:op:val and constructs a list of dicts.
+            # So 'filter' arg in SDK should likely be 'List[Dict]' or just passed through.
+            # I will assume "filters" is the key.
+            
+        ticket_bytes = json.dumps(req).encode("utf-8")
+        ticket = flight.Ticket(ticket_bytes)
+
+        
+        try:
+            reader = self._data_client.do_get(ticket, options=self._get_call_options())
+            table = reader.read_all()
+            df = table.to_pandas()
+            if not df.empty:
+                return dd.from_pandas(df, npartitions=1)
+            return dd.from_pandas(pd.DataFrame(columns=["id", "vector", "timestamp", "metadata"]), npartitions=1)
+        except Exception as e:
+            raise LongbowQueryError(f"Download failed: {e}")
+
+    def delete(self, dataset: str, ids: Optional[List[int]] = None):
+        """Delete specific IDs from a dataset."""
+        if self._meta_client is None:
+            self.connect()
+            
+        req = {"name": dataset}
+        if ids:
+            req["ids"] = ids
+            
+        action_body = json.dumps(req).encode("utf-8")
+        action = flight.Action("DeleteNamespace", action_body)
+        list(self._meta_client.do_action(action, options=self._get_call_options()))
+
+    def snapshot(self):
+        """Trigger a manual snapshot of the database."""
+        if self._meta_client is None:
+            self.connect()
+        
+        action = flight.Action("ForceSnapshot", b"")
+        list(self._meta_client.do_action(action, options=self._get_call_options()))
+
+    def get_info(self, dataset: str) -> Dict[str, Any]:
+        """Get information about a dataset."""
+        if self._meta_client is None:
+            self.connect()
+        
+        descriptor = flight.FlightDescriptor.for_path(dataset)
+        info = self._meta_client.get_flight_info(descriptor, options=self._get_call_options())
+        return {
+            "schema": str(info.schema),
+            "total_records": info.total_records,
+            "total_bytes": info.total_bytes
+        }

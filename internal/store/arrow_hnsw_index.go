@@ -131,7 +131,7 @@ func NewArrowHNSW(dataset *Dataset, config ArrowHNSWConfig, locStore *ChunkedLoc
 		initialCap = 1024
 	}
 
-	gd := NewGraphData(initialCap, config.Dims, config.SQ8Enabled, config.PQEnabled, config.PQM, config.BQEnabled, config.Float16Enabled)
+	gd := NewGraphData(initialCap, config.Dims, config.SQ8Enabled, config.PQEnabled, config.PQM, config.BQEnabled, config.Float16Enabled, config.PackedAdjacencyEnabled)
 	if dataset != nil && dataset.DiskStore != nil {
 		gd.DiskStore = dataset.DiskStore
 	}
@@ -177,17 +177,35 @@ func (h *ArrowHNSW) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []int)
 
 	// 2. Pre-grow graph to ensure capacity for all new items
 	// This avoids "Stop-the-World" pauses during parallel insertion
-	// finalSize must accommodate (startID + n - 1)
+	dims := int(h.dims.Load())
+	if dims == 0 && n > 0 {
+		// Resolve dimensions from first vector in the batch
+		v, err := ExtractVectorFromArrow(recs[batchIdxs[0]], rowIdxs[0], h.vectorColIdx)
+		if err == nil && v != nil {
+			dims = len(v)
+			h.dims.Store(int32(dims))
+		}
+	}
+
 	finalSize := int(startID) + n
-	h.Grow(finalSize, int(h.dims.Load()))
+	h.Grow(finalSize, dims)
 
 	ids := make([]uint32, n)
 
 	// Check for Bulk Optimized Path
-	// If batch is large enough, use parallel bulk insert which computes
-	// intra-batch distances and updates graph layer-by-layer.
 	if n >= BULK_INSERT_THRESHOLD {
-		if err := h.AddBatchBulk(context.Background(), uint32(startID), n, rowIdxs); err != nil {
+		// Extract all vectors for bulk insert
+		allVecs := make([][]float32, n)
+		for i := 0; i < n; i++ {
+			rec := recs[batchIdxs[i]]
+			v, err := ExtractVectorFromArrow(rec, rowIdxs[i], h.vectorColIdx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to extract vector for bulk insert: %w", err)
+			}
+			allVecs[i] = v
+		}
+
+		if err := h.AddBatchBulk(context.Background(), uint32(startID), n, allVecs); err != nil {
 			return nil, err
 		}
 		// Populate returned IDs
@@ -644,13 +662,6 @@ func (h *ArrowHNSW) indexMetadata(id uint32, recs []arrow.RecordBatch, i int, ro
 		}
 	}
 	h.metricBitmapEntries.Set(float64(h.bitmapIndex.Count()))
-}
-
-func (h *ArrowHNSW) getDatasetName() string {
-	if h.dataset != nil {
-		return h.dataset.Name
-	}
-	return "default"
 }
 
 // resolveDistanceFunc returns the distance function based on configuration.

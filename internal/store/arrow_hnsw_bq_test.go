@@ -21,6 +21,7 @@ func TestArrowHNSW_BinaryQuantization_Integration(t *testing.T) {
 	// Create Config with BQ Enabled
 	config := DefaultArrowHNSWConfig()
 	config.BQEnabled = true
+	config.PackedAdjacencyEnabled = false // Isolate regression
 	config.M = 16
 	config.EfConstruction = 100
 

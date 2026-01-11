@@ -31,7 +31,7 @@ func TestInsertProperties(t *testing.T) {
 			index.dims.Store(2)
 
 			// Init data
-			data := NewGraphData(nodeCount+10, 2, false, false, 0, false, false)
+			data := NewGraphData(nodeCount+10, 2, false, false, 0, false, false, false)
 			index.data.Store(data)
 
 			// Helper to add fake vector chunk
@@ -78,8 +78,8 @@ func TestInsertProperties(t *testing.T) {
 				// index.Insert(id, 0) // This would require full distance metric setup
 
 				// Manually connect to i-1
-				index.AddConnection(ctx, data, id, uint32(i-1), 0, config.MMax)
-				index.AddConnection(ctx, data, uint32(i-1), id, 0, config.MMax)
+				index.AddConnection(ctx, data, id, uint32(i-1), 0, config.MMax, 0.0)
+				index.AddConnection(ctx, data, uint32(i-1), id, 0, config.MMax, 0.0)
 
 				index.nodeCount.Add(1)
 			}
@@ -128,7 +128,7 @@ func TestInsertProperties(t *testing.T) {
 			index.dims.Store(1) // use 1-dim vectors
 
 			// Initialize GraphData manually
-			data := NewGraphData(1000, 64, false, false, 0, false, false) // capacity 10, dim 1
+			data := NewGraphData(1000, 64, false, false, 0, false, false, false) // capacity 10, dim 1
 			index.data.Store(data)
 
 			// Setup dummy vectors
@@ -151,7 +151,7 @@ func TestInsertProperties(t *testing.T) {
 			for i := 0; i < 5; i++ {
 				for j := 0; j < 5; j++ {
 					if i != j {
-						index.AddConnection(ctx, data, uint32(i), uint32(j), 0, m*2)
+						index.AddConnection(ctx, data, uint32(i), uint32(j), 0, m*2, 0.0)
 					}
 				}
 			}

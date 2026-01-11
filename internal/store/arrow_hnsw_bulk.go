@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/apache/arrow-go/v18/arrow/float16"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -16,7 +17,7 @@ const BULK_INSERT_THRESHOLD = 1000
 
 // AddBatchBulk attempts to insert a batch of vectors in parallel using a bulk strategy.
 // It assumes IDs, locations, and capacity have already been prepared/reserved.
-func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, rowIdxs []int) error {
+func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vecs [][]float32) error {
 	start := time.Now()
 	defer func() {
 		h.metricBulkInsertDuration.Observe(time.Since(start).Seconds())
@@ -69,11 +70,60 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, row
 				// Level generation
 				level := h.generateLevel()
 
-				// Vector Retrieval
-				// We can access 'data' directly since we ensured it's grown.
-				v := h.mustGetVectorFromData(data, id) // Use internal helper
+				// Vector Ingestion (Zero-Copy from passed batch)
+				v := vecs[j]
 				if v == nil {
 					return fmt.Errorf("vector missing for bulk insert ID %d", id)
+				}
+
+				// Always ingest into hot storage for bulk path to ensure searchability during construction.
+				if h.config.Float16Enabled {
+					f16Chunk := data.GetVectorsF16Chunk(cID)
+					if f16Chunk != nil {
+						dest := f16Chunk[int(cOff)*dims : (int(cOff)+1)*dims]
+						for i, val := range v {
+							dest[i] = float16.New(val)
+						}
+					}
+				} else {
+					hotVec := data.GetVectorsChunk(cID)
+					if hotVec != nil {
+						dest := hotVec[int(cOff)*dims : (int(cOff)+1)*dims]
+						copy(dest, v)
+					}
+				}
+
+				// 2. SQ8 Ingestion
+				if h.config.SQ8Enabled && h.quantizer != nil && h.sq8Ready.Load() {
+					sq8Chunk := data.GetVectorsSQ8Chunk(cID)
+					if sq8Chunk != nil {
+						dest := sq8Chunk[int(cOff)*dims : (int(cOff)+1)*dims]
+						h.quantizer.Encode(v, dest)
+					}
+				}
+
+				// 3. BQ Ingestion
+				if h.config.BQEnabled && h.bqEncoder != nil {
+					bqChunk := data.GetVectorsBQChunk(cID)
+					if bqChunk != nil {
+						code := h.bqEncoder.Encode(v)
+						numWords := h.bqEncoder.CodeSize()
+						dest := bqChunk[int(cOff)*numWords : (int(cOff)+1)*numWords]
+						copy(dest, code)
+					}
+				}
+
+				// 4. PQ Ingestion
+				if h.config.PQEnabled && h.pqEncoder != nil {
+					pqChunk := data.GetVectorsPQChunk(cID)
+					if pqChunk != nil {
+						code, err := h.pqEncoder.Encode(v)
+						if err == nil {
+							pqM := h.config.PQM
+							dest := pqChunk[int(cOff)*pqM : (int(cOff)+1)*pqM]
+							copy(dest, code)
+						}
+					}
 				}
 
 				activeNodes[j] = activeNode{
@@ -273,11 +323,38 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, row
 				resultsMatrix[i] = make([]float32, len(insertingIndices))
 
 				gIntra.Go(func() error {
-					// Compute distances from i to all others
-					// h.batchComputer uses optimized batch func
-					if bc, ok := h.batchComputer.(*BatchDistanceComputer); ok {
-						if _, err := bc.ComputeL2DistancesInto(flatVecs[i], flatVecs, resultsMatrix[i]); err != nil {
-							return err
+					qVec := flatVecs[i]
+					useSQ8 := h.config.SQ8Enabled && h.quantizer != nil && h.sq8Ready.Load()
+					useBQ := h.config.BQEnabled && h.bqEncoder != nil
+
+					if useBQ {
+						qBQ := h.bqEncoder.Encode(qVec)
+						for j, tIdx := range insertingIndices {
+							if i == j {
+								continue
+							}
+							tBQ := h.bqEncoder.Encode(activeNodes[tIdx].vec)
+							resultsMatrix[i][j] = float32(h.bqEncoder.HammingDistance(qBQ, tBQ))
+						}
+					} else if useSQ8 {
+						qSQ8 := make([]byte, len(qVec))
+						h.quantizer.Encode(qVec, qSQ8)
+						tSQ8 := make([]byte, len(qVec))
+						scale := h.quantizer.L2Scale()
+						for j, tIdx := range insertingIndices {
+							if i == j {
+								continue
+							}
+							h.quantizer.Encode(activeNodes[tIdx].vec, tSQ8)
+							resultsMatrix[i][j] = float32(h.quantizer.Distance(qSQ8, tSQ8)) * scale
+						}
+					} else {
+						// Fallback to dense
+						for j, tIdx := range insertingIndices {
+							if i == j {
+								continue
+							}
+							resultsMatrix[i][j] = h.distance(qVec, activeNodes[tIdx].id, data, nil) // Safe dense distance
 						}
 					}
 					return nil
@@ -372,11 +449,11 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, row
 
 					// Parallel additions
 					for _, neighbor := range neighbors {
-						h.AddConnection(ctxSearch, data, id, neighbor.ID, lc, maxConn)
+						h.AddConnection(ctxSearch, data, id, neighbor.ID, lc, maxConn, neighbor.Dist)
 						// Reverse connection
 						// If neighbor is in batch, it will also try to add connection to us.
 						// Duplicate checks handle this.
-						h.AddConnection(ctxSearch, data, neighbor.ID, id, lc, maxConn)
+						h.AddConnection(ctxSearch, data, neighbor.ID, id, lc, maxConn, neighbor.Dist)
 
 						h.pruneIfNecessary(ctxSearch, data, neighbor.ID, lc, maxConn)
 					}

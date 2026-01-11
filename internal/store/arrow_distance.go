@@ -74,7 +74,7 @@ func (b *BatchDistanceComputer) ComputeL2DistancesInto(
 	if n == 0 {
 		return out[:0], nil
 	}
-	
+
 	if cap(out) < n {
 		out = make([]float32, n)
 	} else {
@@ -86,7 +86,7 @@ func (b *BatchDistanceComputer) ComputeL2DistancesInto(
 	// Use serial loop fallback.
 	if n < 32 {
 		for i, vec := range candidateVectors {
-			out[i] = l2Distance(query, vec) // Ensure l2Distance is available or use simd.EuclideanDistance
+			out[i] = simd.EuclideanDistance(query, vec)
 		}
 		return out, nil
 	}
@@ -104,7 +104,7 @@ func (b *BatchDistanceComputer) ComputeL2DistancesSIMDFallback(
 ) []float32 {
 	distances := make([]float32, len(candidateVectors))
 	for i, candidate := range candidateVectors {
-		distances[i] = l2Distance(query, candidate)
+		distances[i] = simd.EuclideanDistance(query, candidate)
 	}
 	return distances
 }
@@ -132,16 +132,16 @@ func (b *BatchDistanceComputer) ComputeL2DistancesKernel(
 	// Candidates: List<Float32>
 	// Query: Scalar? Or broadcasted?
 	// Our kernel expects [FixedSizeList, FixedSizeList].
-	
+
 	// Build Candidates Array (List of FixedSize of dim)
 	pool := b.mem
-	
+
 	// Use FixedSizeListBuilder
 	bldr := array.NewFixedSizeListBuilder(pool, int32(b.dim), arrow.PrimitiveTypes.Float32)
 	defer bldr.Release()
-	
+
 	valBldr := bldr.ValueBuilder().(*array.Float32Builder)
-	
+
 	for _, vec := range candidateVectors {
 		if len(vec) != b.dim {
 			return nil, fmt.Errorf("dim mismatch")
@@ -151,7 +151,7 @@ func (b *BatchDistanceComputer) ComputeL2DistancesKernel(
 	}
 	candidatesArr := bldr.NewArray()
 	defer candidatesArr.Release()
-	
+
 	// Build Query Scalar (Broadcasted by kernel)
 	// We wrap the query in a FixedSizeListScalar
 	qBldr := array.NewFloat32Builder(pool)
@@ -159,25 +159,25 @@ func (b *BatchDistanceComputer) ComputeL2DistancesKernel(
 	qBldr.AppendValues(query, nil)
 	qInnerArr := qBldr.NewArray()
 	defer qInnerArr.Release()
-	
+
 	qScalar := scalar.NewFixedSizeListScalar(qInnerArr)
-	
+
 	// 2. Call Kernel
-	ctx := context.Background() 
-	
+	ctx := context.Background()
+
 	resDatum, err := compute.CallFunction(ctx, "l2_distance", nil, compute.NewDatum(qScalar), compute.NewDatum(candidatesArr))
 	if err != nil {
 		return nil, err
 	}
 	defer resDatum.Release()
-	
+
 	// 3. Extract Result
 	resArr := resDatum.(*compute.ArrayDatum).MakeArray().(*array.Float32)
 	defer resArr.Release()
-	
+
 	n := len(candidateVectors) // n is still needed here
 	out := make([]float32, n)
 	copy(out, resArr.Float32Values())
-	
+
 	return out, nil
 }

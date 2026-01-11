@@ -16,7 +16,7 @@ def _infer_schema(dim: int, with_meta: bool = False) -> pa.Schema:
     return pa.schema(fields)
 
 def to_arrow_table(
-    data: Union[List[Dict[str, Any]], pd.DataFrame, dd.DataFrame, Dict[str, Any]],
+    data: Union[List[Dict[str, Any]], pd.DataFrame, dd.DataFrame, Dict[str, Any], pa.Table],
     dim: Optional[int] = None
 ) -> pa.Table:
     """
@@ -30,6 +30,10 @@ def to_arrow_table(
         pa.Table: Arrow table ready for flight.
     """
     
+    # 0. Handle Arrow Table (Pass-through)
+    if isinstance(data, pa.Table):
+        return data
+
     # 1. Handle Dask DataFrame
     if isinstance(data, dd.DataFrame):
         # Materialize to Pandas for now as flight requires a Table.

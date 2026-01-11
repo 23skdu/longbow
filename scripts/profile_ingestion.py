@@ -1,21 +1,23 @@
 #!/usr/bin/env python3
 """
-Detailed ingestion profiling script to identify slow ingestion bottlenecks.
-Measures timing at each stage of the ingestion pipeline.
+Detailed ingestion profiling script to identify slow ingestion bottlenecks
+using the Longbow Python SDK.
 """
 import time
 import numpy as np
 import pyarrow as pa
-import pyarrow.flight as flight
 import json
 import sys
 from collections import defaultdict
 
+try:
+    from longbow import LongbowClient
+except ImportError:
+    print("Error: 'longbow' SDK not found. Install it via 'pip install ./pythonsdk'")
+    sys.exit(1)
+
 DATASET = "profile_test"
 DIM = 384
-
-def get_client(uri):
-    return flight.FlightClient(uri)
 
 def generate_batch(start_id, count, dim):
     ids = pa.array(np.arange(start_id, start_id + count), type=pa.int64())
@@ -23,7 +25,7 @@ def generate_batch(start_id, count, dim):
     tensor_type = pa.list_(pa.float32(), dim)
     flat_data = data.flatten()
     vectors = pa.FixedSizeListArray.from_arrays(flat_data, type=tensor_type)
-    ts = pa.array([time.time_ns()] * count, type=pa.timestamp("ns"))
+    ts = pa.array([int(time.time_ns())] * count, type=pa.timestamp("ns"))
     
     schema = pa.schema([
         pa.field("id", pa.int64()),
@@ -33,7 +35,7 @@ def generate_batch(start_id, count, dim):
     return pa.Table.from_arrays([ids, vectors, ts], schema=schema)
 
 def profile_ingestion(client, batch_sizes, iterations=3):
-    """Profile ingestion with different batch sizes"""
+    """Profile ingestion with different batch sizes using SDK insert"""
     results = defaultdict(list)
     
     for batch_size in batch_sizes:
@@ -50,26 +52,14 @@ def profile_ingestion(client, batch_sizes, iterations=3):
             gen_time = time.time() - gen_start
             print(f"    Batch generation: {gen_time*1000:.2f}ms")
             
-            # Create descriptor and writer
-            descriptor = flight.FlightDescriptor.for_path(f"{DATASET}_{batch_size}_{iteration}")
+            dataset_name = f"{DATASET}_{batch_size}_{iteration}"
             
-            # Measure DoPut stream creation
-            stream_start = time.time()
-            writer, _ = client.do_put(descriptor, batch.schema)
-            stream_time = time.time() - stream_start
-            print(f"    Stream creation: {stream_time*1000:.2f}ms")
-            
-            # Measure write_table
-            write_start = time.time()
-            writer.write_table(batch)
-            write_time = time.time() - write_start
-            print(f"    Write table: {write_time*1000:.2f}ms")
-            
-            # Measure close
-            close_start = time.time()
-            writer.close()
-            close_time = time.time() - close_start
-            print(f"    Close stream: {close_time*1000:.2f}ms")
+            # Measure SDK insert
+            # SDK abstract stream/write/close, so we measure total SDK time.
+            insert_start = time.time()
+            client.insert(dataset_name, batch)
+            insert_time = time.time() - insert_start
+            print(f"    SDK Insert Time: {insert_time*1000:.2f}ms")
             
             total_time = time.time() - gen_start
             throughput = batch_size / total_time
@@ -80,9 +70,7 @@ def profile_ingestion(client, batch_sizes, iterations=3):
             
             results[batch_size].append({
                 'gen_time': gen_time,
-                'stream_time': stream_time,
-                'write_time': write_time,
-                'close_time': close_time,
+                'insert_time': insert_time,
                 'total_time': total_time,
                 'throughput': throughput,
                 'bandwidth_mbs': bandwidth_mbs
@@ -104,47 +92,45 @@ def print_summary(results):
         avg_throughput = np.mean([r['throughput'] for r in iterations])
         avg_bandwidth = np.mean([r['bandwidth_mbs'] for r in iterations])
         avg_gen = np.mean([r['gen_time'] for r in iterations]) * 1000
-        avg_stream = np.mean([r['stream_time'] for r in iterations]) * 1000
-        avg_write = np.mean([r['write_time'] for r in iterations]) * 1000
-        avg_close = np.mean([r['close_time'] for r in iterations]) * 1000
+        avg_insert = np.mean([r['insert_time'] for r in iterations]) * 1000
         avg_total = np.mean([r['total_time'] for r in iterations]) * 1000
         
         print(f"Batch Size: {batch_size}")
         print(f"  Avg Throughput: {avg_throughput:.0f} vectors/s ({avg_bandwidth:.1f} MB/s)")
         print(f"  Avg Timings:")
         print(f"    Generation:  {avg_gen:7.2f}ms ({avg_gen/avg_total*100:5.1f}%)")
-        print(f"    Stream:      {avg_stream:7.2f}ms ({avg_stream/avg_total*100:5.1f}%)")
-        print(f"    Write:       {avg_write:7.2f}ms ({avg_write/avg_total*100:5.1f}%)")
-        print(f"    Close:       {avg_close:7.2f}ms ({avg_close/avg_total*100:5.1f}%)")
+        print(f"    SDK Insert:  {avg_insert:7.2f}ms ({avg_insert/avg_total*100:5.1f}%)")
         print(f"    Total:       {avg_total:7.2f}ms")
         print()
 
 def check_index_status(client, dataset_name):
     """Check if dataset has been indexed"""
     try:
-        req = json.dumps({"dataset": dataset_name}).encode("utf-8")
-        action = flight.Action("Status", req)
-        results = list(client.do_action(action))
-        if results:
-            status = json.loads(results[0].body.to_pybytes())
-            print(f"  Dataset: {dataset_name}")
-            print(f"    Records: {status.get('record_count', 'N/A')}")
-            print(f"    Index size: {status.get('index_size', 'N/A')}")
+        # Use get_info from SDK
+        info = client.get_info(dataset_name)
+        # client.get_info return dict with total_records
+        print(f"  Dataset: {dataset_name}")
+        print(f"    Records: {info.get('total_records', 'N/A')}")
+        print(f"    Total Bytes: {info.get('total_bytes', 'N/A')}")
     except Exception as e:
         print(f"  Status check failed: {e}")
 
 if __name__ == "__main__":
-    uri = "grpc://localhost:3000"
-    if len(sys.argv) > 1:
-        uri = sys.argv[1]
+    import argparse
+    parser = argparse.ArgumentParser(description="Profile Ingestion (SDK)")
+    parser.add_argument("--uri", default="grpc://localhost:3000", help="Longbow Data URI")
+    parser.add_argument("--batch-sizes", type=str, default="100,500,1000,3000,5000", help="Comma-sep batch sizes")
+    args = parser.parse_args()
     
+    uri = args.uri
     print(f"Connecting to {uri}")
-    client = get_client(uri)
+    # Infer meta uri
+    meta_uri = uri.replace("3000", "3001")
+    client = LongbowClient(uri=uri, meta_uri=meta_uri)
     
-    # Test with progressively larger batches
-    batch_sizes = [100, 500, 1000, 3000, 5000]
+    batch_sizes = [int(x) for x in args.batch_sizes.split(",")]
     
-    print("\nStarting ingestion profiling...")
+    print("\nStarting ingestion profiling (SDK)...")
     results = profile_ingestion(client, batch_sizes, iterations=3)
     
     print_summary(results)

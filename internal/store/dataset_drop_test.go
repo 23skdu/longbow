@@ -32,7 +32,6 @@ func TestStore_DropDataset_FastPath(t *testing.T) {
 	})
 
 	// Verify it exists
-	d, err := s.GetDataset(dsName) // Public GetDataset? or getDataset?
 	// TestEviction uses getDataset (private).
 	d, ok := s.getDataset(dsName)
 	require.True(t, ok)
@@ -40,7 +39,7 @@ func TestStore_DropDataset_FastPath(t *testing.T) {
 
 	// 3. Measure Drop Time
 	start := time.Now()
-	err = s.DropDataset(ctx, dsName)
+	err := s.DropDataset(ctx, dsName)
 	require.NoError(t, err)
 	duration := time.Since(start)
 

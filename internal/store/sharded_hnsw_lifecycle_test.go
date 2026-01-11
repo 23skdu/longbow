@@ -55,7 +55,7 @@ func TestShardedHNSW_Compaction(t *testing.T) {
 	}
 
 	// Verify lookups
-	res, err := idx.SearchVectors([]float32{0, 0, 0, 0}, 1, nil)
+	res, err := idx.SearchVectors([]float32{0, 0, 0, 0}, 1, nil, SearchOptions{})
 	require.NoError(t, err)
 	require.Len(t, res, 1)
 	assert.Equal(t, VectorID(0), res[0].ID) // ID 0 is closest to 0,0,0,0

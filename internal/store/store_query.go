@@ -17,6 +17,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 
+	"github.com/23skdu/longbow/internal/cache"
 	"github.com/23skdu/longbow/internal/mesh"
 	"github.com/23skdu/longbow/internal/metrics"
 	qry "github.com/23skdu/longbow/internal/query"
@@ -340,11 +341,21 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 					}
 				}
 
+				startWrite := time.Now()
 				if err := w.Write(batch); err != nil {
 					s.logger.Error().Err(err).Msg("DoGet Write failed")
 					batch.Release()
 					return err
 				}
+				writeDuration := time.Since(startWrite)
+				metrics.GRPCStreamSendLatencySeconds.Observe(writeDuration.Seconds())
+
+				// If write takes more than 50ms, consider it a potential flow-control stall
+				if writeDuration > 50*time.Millisecond {
+					metrics.GRPCStreamStallTotal.Inc()
+					s.logger.Trace().Dur("duration", writeDuration).Msg("Detected stream stall (flow control)")
+				}
+
 				rowsSent += batch.NumRows()
 				batch.Release()
 
@@ -564,93 +575,113 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, stream fli
 	var searchResults []SearchResult
 	var err error
 
-	// 3. Execute Search (Local or Distributed)
-	// For simplicity, we assume single vector search for now in DoGet
-	// (matching current GlobalSearch usage).
-	// If batch provided, we'd loop.
-
-	// Use the first vector if available
-	var queryVec []float32
-	if len(queryVectors) > 0 {
-		queryVec = queryVectors[0]
-	}
-
-	if isHybrid {
-		searchResults, err = s.SearchHybrid(stream.Context(), req.Dataset, queryVec, req.TextQuery, req.K, req.Alpha, 60, req.GraphAlpha, 2)
+	// 2.5 Query Cache Check
+	// We cache the FINAL result (after potential global scatter-gather if applicable)
+	cacheKey := cache.HashQuery(req)
+	if cached, hit := s.queryCache.Get(cacheKey); hit {
+		searchResults = cached
 	} else {
-		// Standard Vector Search
-		ds, ok := s.getDataset(req.Dataset)
-		if !ok {
-			return status.Errorf(codes.NotFound, "dataset %s not found", req.Dataset)
+
+		// 3. Execute Search (Local or Distributed)
+		// For simplicity, we assume single vector search for now in DoGet
+		// (matching current GlobalSearch usage).
+		// If batch provided, we'd loop.
+
+		// Use the first vector if available
+		var queryVec []float32
+		if len(queryVectors) > 0 {
+			queryVec = queryVectors[0]
 		}
 
-		ds.dataMu.RLock()
-		if ds.Index == nil {
+		if isHybrid {
+			searchResults, err = s.SearchHybrid(stream.Context(), req.Dataset, queryVec, req.TextQuery, req.K, req.Alpha, 60, req.GraphAlpha, 2)
+		} else {
+			// Standard Vector Search
+			ds, ok := s.getDataset(req.Dataset)
+			if !ok {
+				return status.Errorf(codes.NotFound, "dataset %s not found", req.Dataset)
+			}
+
+			ds.dataMu.RLock()
+			if ds.Index == nil {
+				ds.dataMu.RUnlock()
+				return status.Error(codes.FailedPrecondition, "index not initialized")
+			}
+
+			// Validate dimension
+			if len(queryVec) > 0 && uint32(len(queryVec)) != ds.Index.GetDimension() {
+				expected := ds.Index.GetDimension()
+				ds.dataMu.RUnlock()
+				return status.Errorf(codes.InvalidArgument, "dimension mismatch: expected %d, got %d", expected, len(queryVec))
+			}
+
+			searchResults, err = ds.Index.SearchVectors(queryVec, req.K, req.Filters, SearchOptions{
+				IncludeVectors: req.IncludeVectors,
+				VectorFormat:   req.VectorFormat,
+			})
+			if err != nil {
+				ds.dataMu.RUnlock()
+				return status.Errorf(codes.Internal, "search failed: %v", err)
+			}
+
+			// Graph Re-ranking
+			if req.GraphAlpha > 0 && ds.Graph != nil {
+				ranked := ds.Graph.RankWithGraph(searchResults, req.GraphAlpha, 2)
+				if len(ranked) > 0 {
+					searchResults = ranked
+				}
+			}
+
+			// Map IDs
+			searchResults = s.MapInternalToUserIDs(ds, searchResults)
 			ds.dataMu.RUnlock()
-			return status.Error(codes.FailedPrecondition, "index not initialized")
 		}
 
-		// Validate dimension
-		if len(queryVec) > 0 && uint32(len(queryVec)) != ds.Index.GetDimension() {
-			expected := ds.Index.GetDimension()
-			ds.dataMu.RUnlock()
-			return status.Errorf(codes.InvalidArgument, "dimension mismatch: expected %d, got %d", expected, len(queryVec))
-		}
-
-		searchResults, err = ds.Index.SearchVectors(queryVec, req.K, req.Filters)
 		if err != nil {
-			ds.dataMu.RUnlock()
-			return status.Errorf(codes.Internal, "search failed: %v", err)
+			return err
 		}
 
-		// Graph Re-ranking
-		if req.GraphAlpha > 0 && ds.Graph != nil {
-			ranked := ds.Graph.RankWithGraph(searchResults, req.GraphAlpha, 2)
-			if len(ranked) > 0 {
-				searchResults = ranked
+		// 4. Global Scatter-Gather (if not local-only)
+		if !req.LocalOnly && s.Mesh != nil {
+			peers := s.Mesh.GetMembers()
+			var remotePeers []mesh.Member //nolint:prealloc // Unknown size
+			selfID := s.Mesh.GetIdentity().ID
+			for i := range peers {
+				p := &peers[i]
+				if p.ID != selfID {
+					remotePeers = append(remotePeers, *p)
+				}
+			}
+
+			// This will call GlobalSearch on coordinator, which currently uses DoAction.
+			// We will update it to use DoGet in the next step.
+			// This recursion is fine, as long as coordinator handles the transport switch correctly.
+			// Global search across remote peers
+			var globalErr error
+			searchResults, globalErr = s.coordinator.GlobalSearch(stream.Context(), searchResults, req, remotePeers)
+			// Note: partial failures are logged but don't fail the entire search
+			if globalErr != nil {
+				s.logger.Warn().Err(globalErr).Msg("DoGet GlobalSearch partial failure")
 			}
 		}
 
-		// Map IDs
-		searchResults = s.MapInternalToUserIDs(ds, searchResults)
-		ds.dataMu.RUnlock()
-	}
-
-	if err != nil {
-		return err
-	}
-
-	// 4. Global Scatter-Gather (if not local-only)
-	if !req.LocalOnly && s.Mesh != nil {
-		peers := s.Mesh.GetMembers()
-		var remotePeers []mesh.Member //nolint:prealloc // Unknown size
-		selfID := s.Mesh.GetIdentity().ID
-		for i := range peers {
-			p := &peers[i]
-			if p.ID != selfID {
-				remotePeers = append(remotePeers, *p)
-			}
+		if err == nil {
+			s.queryCache.Put(cacheKey, searchResults)
 		}
 
-		// This will call GlobalSearch on coordinator, which currently uses DoAction.
-		// We will update it to use DoGet in the next step.
-		// This recursion is fine, as long as coordinator handles the transport switch correctly.
-		searchResults, err = s.coordinator.GlobalSearch(stream.Context(), searchResults, req, remotePeers)
-		if err != nil {
-			s.logger.Warn().Err(err).Msg("DoGet GlobalSearch partial failure")
-		}
-	}
+	} // End of Cache Miss block
 
 	// 5. Stream Results (Arrow)
 	// Schema: id (uint64), score (float32)
 	pool := memory.NewGoAllocator()
-	schema := arrow.NewSchema(
-		[]arrow.Field{
-			{Name: "id", Type: arrow.PrimitiveTypes.Uint64},
-			{Name: "score", Type: arrow.PrimitiveTypes.Float32},
-		},
-		nil,
-	)
+	fields := []arrow.Field{
+		{Name: "id", Type: arrow.PrimitiveTypes.Uint64},
+		{Name: "score", Type: arrow.PrimitiveTypes.Float32},
+	}
+	if req.IncludeVectors {
+		fields = append(fields, arrow.Field{Name: "vector", Type: arrow.BinaryTypes.Binary})
+	}
+	schema := arrow.NewSchema(fields, nil)
 
 	w := flight.NewRecordWriter(stream, ipc.WithSchema(schema))
 	defer func() { _ = w.Close() }()
@@ -660,6 +691,10 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, stream fli
 
 	idBuilder := builder.Field(0).(*array.Uint64Builder)
 	scoreBuilder := builder.Field(1).(*array.Float32Builder)
+	var vectorBuilder *array.BinaryBuilder
+	if req.IncludeVectors {
+		vectorBuilder = builder.Field(2).(*array.BinaryBuilder)
+	}
 
 	// Chunk results if necessary (e.g. > 64k) to stream effectively
 	// For K usually < 1000, single batch is fine.
@@ -676,13 +711,29 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, stream fli
 		for j := i; j < end; j++ {
 			idBuilder.Append(uint64(searchResults[j].ID))
 			scoreBuilder.Append(searchResults[j].Score)
+			if req.IncludeVectors && vectorBuilder != nil {
+				if searchResults[j].Vector != nil {
+					vectorBuilder.Append(searchResults[j].Vector)
+				} else {
+					vectorBuilder.AppendNull()
+				}
+			}
 		}
 
 		rec := builder.NewRecordBatch()
+		startWrite := time.Now()
 		if err := w.Write(rec); err != nil {
 			rec.Release()
 			return status.Errorf(codes.Internal, "failed to write arrow batch: %v", err)
 		}
+		writeDuration := time.Since(startWrite)
+		metrics.GRPCStreamSendLatencySeconds.Observe(writeDuration.Seconds())
+
+		// If write takes more than 50ms, consider it a potential flow-control stall
+		if writeDuration > 50*time.Millisecond {
+			metrics.GRPCStreamStallTotal.Inc()
+		}
+
 		rec.Release()
 	}
 

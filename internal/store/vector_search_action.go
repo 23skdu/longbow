@@ -114,7 +114,10 @@ func (s *VectorStore) handleVectorSearchAction(action *flight.Action, stream fli
 
 			// Perform search
 			var errSearch error
-			searchResults, errSearch = ds.Index.SearchVectors(queryVec, req.K, req.Filters)
+			searchResults, errSearch = ds.Index.SearchVectors(queryVec, req.K, req.Filters, SearchOptions{
+				IncludeVectors: req.IncludeVectors,
+				VectorFormat:   req.VectorFormat,
+			})
 			if errSearch != nil {
 				ds.dataMu.RUnlock()
 				metrics.VectorSearchActionErrors.Inc()
@@ -382,7 +385,10 @@ func (s *VectorStore) handleVectorSearchByIDAction(action *flight.Action, stream
 	}
 
 	// 2. Perform Search
-	results, err := ds.Index.SearchVectors(targetVec, req.K, nil)
+	results, err := ds.Index.SearchVectors(targetVec, req.K, nil, SearchOptions{
+		IncludeVectors: req.IncludeVectors,
+		VectorFormat:   req.VectorFormat,
+	})
 	if err != nil {
 		return status.Errorf(codes.Internal, "search failed: %v", err)
 	}

@@ -16,6 +16,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/rs/zerolog"
 
+	"github.com/23skdu/longbow/internal/cache"
 	"github.com/23skdu/longbow/internal/mesh"
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/storage"
@@ -90,7 +91,11 @@ type VectorStore struct {
 	datasetInitHook func(*Dataset)
 
 	// Distributed search coordinator (shared between Data/Meta servers)
+	// Distributed search coordinator (shared between Data/Meta servers)
 	coordinator *GlobalSearchCoordinator
+
+	// Query Cache (Phase 23)
+	queryCache *cache.QueryCache[[]SearchResult]
 }
 
 type ingestionJob struct {
@@ -119,7 +124,12 @@ func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes 
 	s.ingestionQueue = make(chan ingestionJob, 100) // Buffer 100 batches
 
 	s.nsManager = newNamespaceManager()
+	s.nsManager = newNamespaceManager()
 	s.columnIndex = NewColumnInvertedIndex()
+
+	// Default Cache: 1024 entries, 60s TTL
+	// In future, make this configurable per dataset or global
+	s.queryCache = cache.NewQueryCache[[]SearchResult](1024, 60*time.Second, "global")
 
 	s.workerWg.Add(1)
 	go s.runIngestionWorker()
@@ -193,7 +203,7 @@ func (s *VectorStore) IterateDatasets(fn func(string, *Dataset)) {
 // The provider is only called if creation is needed (lazy).
 func (s *VectorStore) getOrCreateDataset(name string, createFn func() *Dataset) (*Dataset, bool) {
 	// 1. Optimistic Read
-	if ds, ok := s.getDataset(name); ok {
+	if ds, ok := s.getDataset(name); ok && ds != nil {
 		return ds, false
 	}
 
@@ -202,7 +212,7 @@ func (s *VectorStore) getOrCreateDataset(name string, createFn func() *Dataset) 
 	var created bool
 	s.updateDatasets(func(m map[string]*Dataset) {
 		// Double-check existence in the new copy
-		if ds, ok := m[name]; ok {
+		if ds, ok := m[name]; ok && ds != nil {
 			result = ds
 			created = false
 			return

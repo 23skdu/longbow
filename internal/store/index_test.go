@@ -64,7 +64,7 @@ func (m *MockIndex) Search(q []float32, k int) []VectorID {
 	return []VectorID{}
 }
 
-func (m *MockIndex) SearchVectors(q []float32, k int, filters []query.Filter) ([]SearchResult, error) {
+func (m *MockIndex) SearchVectors(q []float32, k int, filters []query.Filter, options SearchOptions) ([]SearchResult, error) {
 	m.SearchCalls++
 	results := make([]SearchResult, 0, k)
 	for i := 0; i < k; i++ {
@@ -73,7 +73,7 @@ func (m *MockIndex) SearchVectors(q []float32, k int, filters []query.Filter) ([
 	return results, nil
 }
 
-func (m *MockIndex) SearchVectorsWithBitmap(q []float32, k int, filter *query.Bitset) []SearchResult {
+func (m *MockIndex) SearchVectorsWithBitmap(q []float32, k int, filter *query.Bitset, options SearchOptions) []SearchResult {
 	m.SearchCalls++
 	return []SearchResult{}
 }

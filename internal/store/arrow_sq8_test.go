@@ -90,7 +90,7 @@ func TestSQ8Indexing(t *testing.T) {
 	query := vecs[10]
 	targetID := ids[10]
 	// Approximate search
-	res, err := idx.SearchVectors(query, 10, nil)
+	res, err := idx.SearchVectors(query, 10, nil, SearchOptions{})
 	require.NoError(t, err)
 	require.NotEmpty(t, res, "Search results should not be empty")
 
@@ -162,7 +162,7 @@ func TestSQ8Refinement(t *testing.T) {
 	query := vecs[10]
 	targetID := ids[10]
 	// Refined search
-	res, err := idx.SearchVectors(query, 10, nil)
+	res, err := idx.SearchVectors(query, 10, nil, SearchOptions{})
 	require.NoError(t, err)
 
 	// Expect vector 10 to be in top results

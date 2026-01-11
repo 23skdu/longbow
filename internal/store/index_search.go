@@ -8,7 +8,9 @@ import (
 
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/pq"
+	"github.com/23skdu/longbow/internal/query"
 	qry "github.com/23skdu/longbow/internal/query"
+	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
 // Search performs k-NN search using the provided query vector.
@@ -69,7 +71,7 @@ func (h *HNSWIndex) GetNeighbors(id VectorID) ([]VectorID, error) {
 
 // SearchVectors performs k-NN search returning full results with scores (distances).
 // Uses striped locks for location access to reduce contention in result processing.
-func (h *HNSWIndex) SearchVectors(query []float32, k int, filters []qry.Filter) ([]SearchResult, error) {
+func (h *HNSWIndex) SearchVectors(queryVec []float32, k int, filters []query.Filter, options SearchOptions) ([]SearchResult, error) {
 	defer func(start time.Time) {
 		metrics.SearchLatencySeconds.WithLabelValues(h.dataset.Name, "vector").Observe(time.Since(start).Seconds())
 	}(time.Now())
@@ -96,10 +98,10 @@ func (h *HNSWIndex) SearchVectors(query []float32, k int, filters []qry.Filter) 
 
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		// PQ Encoding for query
-		var graphQuery = query
+		var graphQuery = queryVec
 		h.pqCodesMu.RLock()
 		if h.pqEnabled && h.pqEncoder != nil {
-			codes, _ := h.pqEncoder.Encode(query)
+			codes, _ := h.pqEncoder.Encode(queryVec)
 			graphQuery = pq.PackBytesToFloat32s(codes)
 		}
 		h.pqCodesMu.RUnlock()
@@ -112,7 +114,7 @@ func (h *HNSWIndex) SearchVectors(query []float32, k int, filters []qry.Filter) 
 		// Use parallel processing for large result sets
 		cfg := h.getParallelSearchConfig()
 		if cfg.Enabled && len(neighbors) >= cfg.Threshold {
-			res := h.processResultsParallel(query, neighbors, k, filters)
+			res := h.processResultsParallel(queryVec, neighbors, k, filters)
 			// If we found enough, or it's the last attempt, return
 			if len(res) >= k || attempt == maxRetries || len(filters) == 0 {
 				return res, nil
@@ -126,12 +128,12 @@ func (h *HNSWIndex) SearchVectors(query []float32, k int, filters []qry.Filter) 
 		distFunc := h.GetDistanceFunc()
 
 		// Pre-process filters once per search
-		var evaluator *qry.FilterEvaluator
+		var evaluator *query.FilterEvaluator
 		if len(filters) > 0 {
 			h.dataset.dataMu.RLock()
 			if len(h.dataset.Records) > 0 {
 				var err error
-				evaluator, err = qry.NewFilterEvaluator(h.dataset.Records[0], filters)
+				evaluator, err = query.NewFilterEvaluator(h.dataset.Records[0], filters)
 				if err != nil {
 					h.dataset.dataMu.RUnlock()
 					return nil, fmt.Errorf("filter creation failed: %w", err)
@@ -166,7 +168,7 @@ func (h *HNSWIndex) SearchVectors(query []float32, k int, filters []qry.Filter) 
 		var packedLen int
 		h.pqCodesMu.RLock()
 		if h.pqEnabled && h.pqEncoder != nil {
-			pqTable = h.pqEncoder.ComputeDistanceTableFlat(query)
+			pqTable = h.pqEncoder.ComputeDistanceTableFlat(queryVec)
 			pqM = h.pqEncoder.CodeSize()
 			const batchSize = searchBatchSize
 			pqFlatCodes = ctx.pqFlatCodes[:batchSize*pqM]
@@ -229,7 +231,7 @@ func (h *HNSWIndex) SearchVectors(query []float32, k int, filters []qry.Filter) 
 						copy(pqFlatCodes[j*pqM:], srcCodes)
 						pqBatchResults[j] = -1
 					} else {
-						dist := distFunc(query, vec)
+						dist := distFunc(queryVec, vec)
 						res = append(res, SearchResult{ID: id, Score: dist})
 						count++
 						if pqTable != nil {
@@ -265,6 +267,10 @@ func (h *HNSWIndex) SearchVectors(query []float32, k int, filters []qry.Filter) 
 
 		// Check if we satisfied K
 		if len(res) >= k || attempt == maxRetries || len(filters) == 0 {
+			// Extract vectors if requested
+			if options.IncludeVectors {
+				h.extractVectors(res, options.VectorFormat)
+			}
 			return res, nil
 		}
 
@@ -276,7 +282,7 @@ func (h *HNSWIndex) SearchVectors(query []float32, k int, filters []qry.Filter) 
 }
 
 // SearchVectorsWithBitmap returns k nearest neighbors filtered by a bitset.
-func (h *HNSWIndex) SearchVectorsWithBitmap(query []float32, k int, filter *qry.Bitset) []SearchResult {
+func (h *HNSWIndex) SearchVectorsWithBitmap(queryVec []float32, k int, filter *query.Bitset, options SearchOptions) []SearchResult {
 	if filter == nil || filter.Count() == 0 {
 		return []SearchResult{}
 	}
@@ -287,14 +293,14 @@ func (h *HNSWIndex) SearchVectorsWithBitmap(query []float32, k int, filter *qry.
 
 	count := filter.Count()
 	if count < 1000 {
-		return h.searchBruteForceWithBitmap(query, k, filter)
+		return h.searchBruteForceWithBitmap(queryVec, k, filter)
 	}
 
 	// Adaptive limit calculation based on filter selectivity
 	limit := calculateAdaptiveLimit(k, count, h.Len())
 
 	h.mu.RLock()
-	neighbors := h.Graph.Search(query, limit)
+	neighbors := h.Graph.Search(queryVec, limit)
 	h.mu.RUnlock()
 
 	distFunc := h.GetDistanceFunc()
@@ -314,7 +320,7 @@ func (h *HNSWIndex) SearchVectorsWithBitmap(query []float32, k int, filter *qry.
 	var packedLen int
 	h.pqCodesMu.RLock()
 	if h.pqEnabled && h.pqEncoder != nil {
-		pqTable = h.pqEncoder.ComputeDistanceTableFlat(query)
+		pqTable = h.pqEncoder.ComputeDistanceTableFlat(queryVec)
 		pqM = h.pqEncoder.CodeSize()
 		pqFlatCodes = make([]byte, batchSize*pqM)
 		pqBatchResults = make([]float32, batchSize)
@@ -375,7 +381,7 @@ func (h *HNSWIndex) SearchVectorsWithBitmap(query []float32, k int, filter *qry.
 					pqBatchResults[j] = -1 // Mark as needing SIMD
 				} else {
 					// Case 2: Standard distance
-					dist := distFunc(query, vec)
+					dist := distFunc(queryVec, vec)
 					res = append(res, SearchResult{ID: id, Score: dist})
 					resultCount++
 					if pqTable != nil {
@@ -563,4 +569,87 @@ func (h *HNSWIndex) SearchByIDUnsafe(id VectorID, k int) []VectorID {
 		}
 	}
 	return res[:idx]
+}
+
+func (h *HNSWIndex) extractVectors(results []SearchResult, format string) {
+	if h.dataset == nil {
+		return
+	}
+	h.dataset.dataMu.RLock()
+	defer h.dataset.dataMu.RUnlock()
+
+	for i := range results {
+		id := results[i].ID
+
+		// Priority 1: Check format and local PQ storage
+		if format == "quantized" {
+			h.pqCodesMu.RLock()
+			if h.pqEnabled && int(id) < len(h.pqCodes) && len(h.pqCodes[id]) > 0 {
+				results[i].Vector = h.pqCodes[id]
+				h.pqCodesMu.RUnlock()
+				continue
+			}
+			h.pqCodesMu.RUnlock()
+		}
+
+		// Priority 2: Extract from Arrow
+		loc, ok := h.locationStore.Get(id)
+		if !ok || loc.BatchIdx == -1 {
+			continue
+		}
+
+		if loc.BatchIdx >= len(h.dataset.Records) {
+			continue
+		}
+
+		rec := h.dataset.Records[loc.BatchIdx]
+		colIdx := h.vectorColIdx.Load()
+		if colIdx == -1 {
+			// Resolve column index if not cached
+			for j, field := range rec.Schema().Fields() {
+				if field.Name == "vector" || field.Name == "embedding" {
+					colIdx = int32(j)
+					h.vectorColIdx.Store(colIdx)
+					break
+				}
+			}
+		}
+
+		vec, err := ExtractVectorFromArrow(rec, loc.RowIdx, int(colIdx))
+		if err == nil {
+			switch format {
+			case "quantized":
+				// If we expected quantized but didn't have PQ codes, we might want to encode on the fly?
+				// For now, return f32 as fallback
+				results[i].Vector = float32SliceToBytes(vec)
+			case "f16":
+				// In-place conversion for throughput saving
+				results[i].Vector = float32SliceToF16Bytes(vec)
+			case "f32", "":
+				results[i].Vector = float32SliceToBytes(vec)
+			}
+		}
+	}
+}
+
+func float32SliceToBytes(vec []float32) []byte {
+	if len(vec) == 0 {
+		return nil
+	}
+	size := len(vec) * 4
+	ptr := unsafe.Pointer(&vec[0])
+	return unsafe.Slice((*byte)(ptr), size)
+}
+
+func float32SliceToF16Bytes(vec []float32) []byte {
+	if len(vec) == 0 {
+		return nil
+	}
+	res := make([]byte, len(vec)*2)
+	ptr := unsafe.Pointer(&res[0])
+	f16s := unsafe.Slice((*float16.Num)(ptr), len(vec))
+	for i, v := range vec {
+		f16s[i] = float16.New(v)
+	}
+	return res
 }

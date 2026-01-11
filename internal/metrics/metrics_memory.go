@@ -46,4 +46,12 @@ var (
 			Help: "Memory utilization (currentMemory / maxMemory)",
 		},
 	)
+
+	// StoreVectorsManagedCount tracks number of vectors stored in managed arenas
+	StoreVectorsManagedCount = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "longbow_store_vectors_managed_count",
+			Help: "Total number of vectors stored in managed arenas (SlabArena)",
+		},
+	)
 )

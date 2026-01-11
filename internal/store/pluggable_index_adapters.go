@@ -96,7 +96,7 @@ func (h *HNSWPluggableAdapter) AddByLocation(batchIdx, rowIdx int) error {
 	return nil
 }
 
-func (h *HNSWPluggableAdapter) SearchVectors(query []float32, k int) []SearchResult {
+func (h *HNSWPluggableAdapter) SearchVectors(query []float32, k int, options SearchOptions) []SearchResult {
 	results, _ := h.Search(query, k)
 	searchResults := make([]SearchResult, len(results))
 	for i, r := range results {
@@ -205,7 +205,7 @@ func (ivf *IVFFlatIndex) AddByLocation(batchIdx, rowIdx int) error {
 	return nil
 }
 
-func (ivf *IVFFlatIndex) SearchVectors(query []float32, k int) []SearchResult {
+func (ivf *IVFFlatIndex) SearchVectors(query []float32, k int, options SearchOptions) []SearchResult {
 	results, _ := ivf.Search(query, k)
 	searchResults := make([]SearchResult, len(results))
 	for i, r := range results {
@@ -314,7 +314,7 @@ func (d *DiskANNIndex) AddByLocation(batchIdx, rowIdx int) error {
 	return nil
 }
 
-func (d *DiskANNIndex) SearchVectors(query []float32, k int) []SearchResult {
+func (d *DiskANNIndex) SearchVectors(query []float32, k int, options SearchOptions) []SearchResult {
 	results, _ := d.Search(query, k)
 	searchResults := make([]SearchResult, len(results))
 	for i, r := range results {

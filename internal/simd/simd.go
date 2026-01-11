@@ -1,7 +1,9 @@
 package simd
 
 import (
+	"fmt"
 	"math"
+	"os"
 	"unsafe"
 
 	"github.com/23skdu/longbow/internal/metrics"
@@ -75,6 +77,16 @@ var (
 func init() {
 	detectCPU()
 	initializeDispatch()
+
+	if os.Getenv("LONGBOW_JIT") == "1" {
+		if err := initJIT(); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to init JIT: %v\n", err)
+		} else {
+			// Override with JIT implementation
+			euclideanDistanceBatchImpl = jitRT.EuclideanBatchInto
+			fmt.Println("JIT SIMD Enabled for Euclidean Batch")
+		}
+	}
 }
 
 // AndBytes performs bitwise AND: dst[i] &= src[i].
@@ -286,6 +298,15 @@ func DotProductF16(a, b []float16.Num) float32 {
 // It uses the PREFETCHNTA instruction on x86 for non-temporal access.
 func Prefetch(p unsafe.Pointer) {
 	prefetchImpl(p)
+}
+
+func float32SliceToBytes(vec []float32) []byte {
+	if len(vec) == 0 {
+		return nil
+	}
+	size := len(vec) * 4
+	ptr := unsafe.Pointer(&vec[0])
+	return unsafe.Slice((*byte)(ptr), size)
 }
 
 // Generic implementations (fallback)

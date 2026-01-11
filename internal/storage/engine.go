@@ -36,13 +36,14 @@ type StorageConfig struct {
 
 // StorageEngine manages the persistence layer (WAL and Snapshots).
 type StorageEngine struct {
-	config     StorageConfig
-	dataPath   string
-	mem        memory.Allocator
-	wal        WAL
-	walBatcher *WALBatcher
-	mu         sync.RWMutex // Protects reconfiguration
-	stopChan   chan struct{}
+	config          StorageConfig
+	dataPath        string
+	mem             memory.Allocator
+	wal             WAL
+	walBatcher      *WALBatcher
+	mu              sync.RWMutex // Protects reconfiguration
+	stopChan        chan struct{}
+	snapshotBackend SnapshotBackend
 }
 
 // NewStorageEngine creates and initializes a new storage engine.
@@ -143,6 +144,9 @@ func (e *StorageEngine) ReplayWAL(applier ApplierFunc) (uint64, error) {
 	// Logic copied from previous implementation
 	var maxSeq uint64
 	count := 0
+
+	// Buffer for reading
+	// Reuse a buffer pool for inner decompression if needed?
 
 	// Buffer for reading
 	// Reuse a buffer pool for inner decompression if needed?
@@ -267,6 +271,10 @@ type SnapshotItem struct {
 	GraphRecords []arrow.RecordBatch
 	PQCodebook   []byte
 	IndexConfig  []byte
+
+	// OnSnapshot is a callback to handle custom snapshot logic (e.g. large file streaming)
+	// It is called with the active snapshot backend if one is configured.
+	OnSnapshot func(backend SnapshotBackend) error
 }
 
 type SnapshotSource interface {
@@ -287,6 +295,11 @@ func (e *StorageEngine) Snapshot(source SnapshotSource) error {
 	}
 
 	err := source.Iterate(func(item SnapshotItem) error {
+		if e.snapshotBackend != nil && item.OnSnapshot != nil {
+			if err := item.OnSnapshot(e.snapshotBackend); err != nil {
+				return err
+			}
+		}
 		e.writeSnapshotItem(&item, tempDir)
 		return nil
 	})
@@ -383,6 +396,10 @@ func (e *StorageEngine) writeSnapshotItem(item *SnapshotItem, tempDir string) {
 
 // LoadSnapshots reads all snapshots and calls loader for each item.
 func (e *StorageEngine) LoadSnapshots(loader func(SnapshotItem) error) error {
+	// If backend is present, we might want to list from backend first?
+	// For now, load from local as snapshots are typically local first.
+	// If S3 restoration is needed, it should be explicit 'Restore' command or Init logic.
+
 	snapshotDir := filepath.Join(e.dataPath, snapshotDirName)
 	entries, err := os.ReadDir(snapshotDir)
 	if os.IsNotExist(err) {
@@ -471,4 +488,8 @@ func (e *StorageEngine) Close() error {
 		_ = e.wal.Close()
 	}
 	return nil
+}
+
+func (e *StorageEngine) SetSnapshotBackend(backend SnapshotBackend) {
+	e.snapshotBackend = backend
 }

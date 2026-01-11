@@ -2,185 +2,178 @@ package memory
 
 import (
 	"errors"
+	"fmt"
 	"sync"
-	"sync/atomic"
 	"unsafe"
 
 	"github.com/23skdu/longbow/internal/metrics"
 )
 
-// Common errors
-var (
-	ErrOOM = errors.New("arena out of memory")
-)
-
-// SliceRef is a lightweight handle to a slice allocated in the arena.
-// It replaces standard []T headers to save memory (16 bytes vs 24 bytes).
+// SliceRef is a handle to a slice in the arena.
+// It is used by TypedArena and external consumers.
 type SliceRef struct {
 	Offset uint64
 	Len    uint32
 	Cap    uint32
 }
 
-// SliceRef64 is a compact handle (just 8 bytes) if we assume smaller lengths or encoded offsets.
-// For now, we stick to struct for clarity.
+func (r SliceRef) IsNil() bool {
+	return r.Offset == 0 && r.Len == 0
+}
 
-// SlabArena manages a list of large byte slices (slabs) to reduce allocation count.
-// It uses a fixed-size array of atomic pointers to allow lock-free reads.
-const MaxSlabs = 65536
+type slab struct {
+	id     uint32
+	data   []byte
+	offset uint32 // current allocation pointer (relative to slab)
+}
 
+// SlabArena manages large blocks of memory.
 type SlabArena struct {
-	slabSize int
-	// slabs stores pointers to []byte. We use atomic.Pointer for lock-free Get().
-	slabs [MaxSlabs]atomic.Pointer[[]byte]
-
-	mu sync.Mutex // Protects allocation (writing new slabs)
-
-	// Current slab allocation pointer
-	currentSlabIdx int
-	currentOffset  uint64 // Offset within the current slab
+	mu      sync.RWMutex
+	slabs   []*slab
+	slabCap uint32 // capacity in BYTES
 }
 
-// NewSlabArena creates a new arena with the given slab size (e.g., 16*1024*1024).
-func NewSlabArena(slabSize int) *SlabArena {
-	if slabSize <= 0 {
-		slabSize = 16 * 1024 * 1024 // 16MB default
+// NewSlabArena creates a new arena with specified slab byte size.
+func NewSlabArena(slabSizeBytes int) *SlabArena {
+	if slabSizeBytes < 1024 {
+		slabSizeBytes = 1024
 	}
-	metrics.ArenaSlabsTotal.Inc()
-	metrics.ArenaAllocatedBytes.WithLabelValues("slab_init").Add(float64(slabSize))
-
-	a := &SlabArena{
-		slabSize:       slabSize,
-		currentOffset:  16, // Reserve 0-15
-		currentSlabIdx: 0,
+	// Ensure alignment? For now, we assume simple byte allocation.
+	// 4KB or 2MB alignment is good.
+	return &SlabArena{
+		slabCap: uint32(slabSizeBytes),
 	}
-
-	// Initialize first slab
-	firstSlab := make([]byte, slabSize)
-	a.slabs[0].Store(&firstSlab)
-
-	return a
 }
 
-// Alloc reserves 'size' bytes and returns a global offset handle.
-// GlobalOffset = (SlabIndex << 32) | SlabOffset.
+// Alloc reserves space for 'size' bytes.
+// Returns a GLOBAL offset.
 func (a *SlabArena) Alloc(size int) (uint64, error) {
-	if size > a.slabSize {
-		return 0, errors.New("allocation larger than slab size")
+	if size <= 0 {
+		return 0, errors.New("alloc size must be positive")
+	}
+	needed := uint32(size)
+	if needed > a.slabCap {
+		// For huge allocations, we strictly might fail or support header-based huge slabs.
+		// For now fail.
+		return 0, fmt.Errorf("alloc request %d exceeds slab capacity %d", size, a.slabCap)
 	}
 
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	// 1. Get current slab
-	// We can access directly via Load() or assume consistency since we hold Lock()
-	// and are the only writer.
-	currentSlabPtr := a.slabs[a.currentSlabIdx].Load()
-	if currentSlabPtr == nil {
-		// Should not happen if initialized correctly, but handle safety
-		newSlab := make([]byte, a.slabSize)
-		a.slabs[a.currentSlabIdx].Store(&newSlab)
-		currentSlabPtr = &newSlab
+	var active *slab
+	if len(a.slabs) > 0 {
+		active = a.slabs[len(a.slabs)-1]
 	}
 
-	// 2. Check fit
-	needed := uint64(size)
-	if a.currentOffset+needed > uint64(len(*currentSlabPtr)) {
-		// 3. Alloc new slab
-		if a.currentSlabIdx >= MaxSlabs-1 {
-			return 0, ErrOOM
-		}
+	// Simple bump allocator within slab
+	// TODO: Alignment padding? (e.g. 8-byte align)
+	// Let's force 8-byte alignment for safety of typed access
+	const align = 8
 
-		newSlab := make([]byte, a.slabSize)
-		a.currentSlabIdx++
-		a.slabs[a.currentSlabIdx].Store(&newSlab)
-		a.currentOffset = 0 // Reset offset for new slab
+	if active != nil {
+		pad := (align - (active.offset % align)) % align
+		if active.offset+pad+needed <= uint32(len(active.data)) {
+			active.offset += pad // consume padding
+		}
+		// If won't fit, skip to next slab
+	}
+
+	// Check fit
+	if active == nil || !canFit(active, needed, align) {
+		newSlab := &slab{
+			id:     uint32(len(a.slabs) + 1), // ID starts at 1
+			data:   make([]byte, a.slabCap),
+			offset: 0,
+		}
+		a.slabs = append(a.slabs, newSlab)
+		active = newSlab
 
 		metrics.ArenaSlabsTotal.Inc()
-		metrics.ArenaAllocatedBytes.WithLabelValues("slab_grow").Add(float64(a.slabSize))
+		metrics.ArenaAllocatedBytes.WithLabelValues("slab").Add(float64(a.slabCap))
 	}
 
-	// 4. Alloc
-	offset := a.currentOffset
-	a.currentOffset += needed
+	// Calc aligned offset
+	pad := (align - (active.offset % align)) % align
+	active.offset += pad
 
-	// 5. Pack Global Offset
-	idx := uint64(a.currentSlabIdx)
-	globalOffset := (idx << 32) | offset
+	start := active.offset
+	active.offset += needed
+
+	// Result = (SlabIndex * SlabCap) + LocalOffset
+	// Slab index is (ID-1).
+	slabIdx := uint64(active.id - 1)
+	globalOffset := (slabIdx * uint64(a.slabCap)) + uint64(start)
+
+	// Offset 0 is reserved for nil, so strict usage requires start > 0?
+	// Or we make sure Slab 1 starts at Offset 1?
+	// If GlobalOffset == 0, is it nil?
+	// Slab 1, Offset 0 -> Global 0.
+	// We should offset by specific base or treat 0 as nil.
+	// Let's add +1 to global offset or something?
+	// Existing code checks `offset == 0` as nil.
+	// So valid offsets must be > 0.
+	// Since Slab 1, Offset 0 is 0. We should introduce `offsetBase = 1`.
+	// Or just verify we never return 0.
+	if globalOffset == 0 {
+		// This happens if Slab 1, Offset 0.
+		// We can burn the first byte of Slab 1.
+		if active.id == 1 && start == 0 {
+			active.offset++ // burn byte 0
+			globalOffset++
+		}
+	}
 
 	return globalOffset, nil
 }
 
-// Get returns the byte slice for a given global offset and length.
-// Lock-Free (Wait-Free) implementation.
-func (a *SlabArena) Get(globalOffset uint64, size int) []byte {
-	slabIdx := int(globalOffset >> 32)
-	slabOffset := int(globalOffset & 0xFFFFFFFF)
-
-	if slabIdx >= MaxSlabs {
-		return nil
-	}
-
-	// Atomic Load - No Lock!
-	slabPtr := a.slabs[slabIdx].Load()
-	if slabPtr == nil {
-		return nil
-	}
-
-	slab := *slabPtr
-	if slabOffset+size > len(slab) {
-		return nil
-	}
-
-	return slab[slabOffset : slabOffset+size]
+func canFit(s *slab, needed, align uint32) bool {
+	pad := (align - (s.offset % align)) % align
+	return s.offset+pad+needed <= uint32(len(s.data))
 }
 
-// TypedArena wraps SlabArena for a specific type T.
-type TypedArena[T any] struct {
-	arena    *SlabArena
-	elemSize int
-}
-
-func NewTypedArena[T any](arena *SlabArena) *TypedArena[T] {
-	var zero T
-	return &TypedArena[T]{
-		arena:    arena,
-		elemSize: int(unsafe.Sizeof(zero)),
-	}
-}
-
-// AllocSlice allocates space for 'len' elements of type T.
-func (t *TypedArena[T]) AllocSlice(length int) (SliceRef, error) {
-	sizeBytes := length * t.elemSize
-	offset, err := t.arena.Alloc(sizeBytes)
-	if err != nil {
-		return SliceRef{}, err
-	}
-	return SliceRef{
-		Offset: offset,
-		Len:    uint32(length),
-		Cap:    uint32(length),
-	}, nil
-}
-
-// Get returns a Go slice []T mapped to the arena memory.
-// WARNING: The returned slice is valid only as long as the arena is valid.
-func (t *TypedArena[T]) Get(ref SliceRef) []T {
-	if ref.Len == 0 {
-		return nil
-	}
-	sizeBytes := int(ref.Len) * t.elemSize
-	bytes := t.arena.Get(ref.Offset, sizeBytes)
-	if bytes == nil {
+// Get returns the byte slice.
+func (a *SlabArena) Get(offset uint64, length uint32) []byte {
+	if offset == 0 || length == 0 {
 		return nil
 	}
 
-	// Unsafe cast []byte -> []T
-	// Only safe if alignment matches.
-	// For float32/uint32 (4 bytes), alignment is usually fine if slab is aligned?
-	// make([]byte) usually returns pointer aligned to 8 or 16 bytes.
-	// Offsets might be unaligned if we mixed types.
-	// But our Alloc is sequential. If we always alloc 4-byte multiples, we stay aligned.
+	slabIdx := offset / uint64(a.slabCap)
+	localOffset := uint32(offset % uint64(a.slabCap))
 
-	return unsafe.Slice((*T)(unsafe.Pointer(&bytes[0])), ref.Len)
+	a.mu.RLock() // Lock needed for slabs slice access? Yes if it grows?
+	// Slabs append-only. Reading existing pointer safe?
+	// Generally safe if we have memory barrier, but lock is safer.
+	defer a.mu.RUnlock()
+
+	if int(slabIdx) >= len(a.slabs) {
+		return nil
+	}
+
+	s := a.slabs[slabIdx]
+	if uint64(localOffset)+uint64(length) > uint64(len(s.data)) {
+		return nil
+	}
+
+	return s.data[localOffset : localOffset+length]
+}
+
+// GetPointer returns unsafe.Pointer to the data.
+// Use with caution.
+func (a *SlabArena) GetPointer(offset uint64) unsafe.Pointer {
+	if offset == 0 {
+		return nil
+	}
+	slabIdx := offset / uint64(a.slabCap)
+	localOffset := uint32(offset % uint64(a.slabCap))
+
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	if int(slabIdx) >= len(a.slabs) {
+		return nil
+	}
+	s := a.slabs[slabIdx]
+	return unsafe.Pointer(&s.data[localOffset])
 }

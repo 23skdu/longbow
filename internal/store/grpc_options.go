@@ -13,6 +13,14 @@ import (
 
 // GRPCConfig holds all gRPC server/client tuning parameters for optimal throughput.
 // Configuring these parameters can yield 5-10% improvement in sustained throughput.
+type FlowControlPolicy int
+
+const (
+	PolicyDefault       FlowControlPolicy = iota // 4MB windows
+	PolicyHighBandwidth                          // 16MB windows (10GbE+)
+	PolicyAuto                                   // Reserved for auto-tuning
+)
+
 type GRPCConfig struct {
 	// Keepalive parameters
 	KeepAliveTime                time.Duration // Time between keepalive pings (server sends to client)
@@ -26,6 +34,9 @@ type GRPCConfig struct {
 	// HTTP/2 flow control window sizes
 	InitialWindowSize     int32 // Initial window size for a stream
 	InitialConnWindowSize int32 // Initial window size for a connection
+
+	// Policy selection for flow control
+	Policy FlowControlPolicy
 
 	// Message size limits
 	MaxRecvMsgSize int // Maximum message size the server can receive
@@ -48,9 +59,11 @@ func DefaultGRPCConfig() GRPCConfig {
 		// Allow 250 concurrent streams per connection (up from default 100)
 		MaxConcurrentStreams: 250,
 
-		// 1MB window sizes (up from default 64KB) for better throughput
-		InitialWindowSize:     1 << 20, // 1MB
-		InitialConnWindowSize: 1 << 20, // 1MB
+		// 4MB window sizes (up from default 64KB) for better throughput
+		InitialWindowSize:     4 << 20, // 4MB
+		InitialConnWindowSize: 4 << 20, // 4MB
+
+		Policy: PolicyDefault,
 
 		// 64MB message limits for large vector batches
 		MaxRecvMsgSize: 64 * 1024 * 1024, // 64MB
@@ -77,6 +90,9 @@ func (c GRPCConfig) Validate() error {
 	}
 	if c.MaxSendMsgSize < 0 {
 		return errors.New("max_send_msg_size must be >= 0")
+	}
+	if c.Policy < PolicyDefault || c.Policy > PolicyAuto {
+		return errors.New("invalid flow_control_policy")
 	}
 	return nil
 }
@@ -106,12 +122,30 @@ func (c GRPCConfig) ClientKeepaliveParams() keepalive.ClientParameters {
 	}
 }
 
+// ApplyPolicy updates window sizes based on the selected FlowControlPolicy.
+func (c *GRPCConfig) ApplyPolicy() {
+	switch c.Policy {
+	case PolicyHighBandwidth:
+		c.InitialWindowSize = 16 << 20     // 16MB
+		c.InitialConnWindowSize = 16 << 20 // 16MB
+	case PolicyDefault:
+		c.InitialWindowSize = 4 << 20     // 4MB
+		c.InitialConnWindowSize = 4 << 20 // 4MB
+	case PolicyAuto:
+		// Logic for auto-detection can go here (e.g. check env or net interface)
+		// For now, default to 4MB but allow future growth
+		c.InitialWindowSize = 4 << 20
+		c.InitialConnWindowSize = 4 << 20
+	}
+}
+
 // BuildServerOptions returns a slice of grpc.ServerOption configured from this GRPCConfig.
 // These options optimize gRPC server performance for sustained throughput.
 // Note: Server-side compression is automatically available when the gzip encoding
 // package is imported - no explicit server option needed. The server will
 // respond with compressed data when clients request it via UseCompressor.
 func (c GRPCConfig) BuildServerOptions() []grpc.ServerOption {
+	c.ApplyPolicy()
 	return []grpc.ServerOption{
 		// Keepalive configuration
 		grpc.KeepaliveParams(c.ServerKeepaliveParams()),
@@ -137,6 +171,7 @@ func (c GRPCConfig) BuildServerOptions() []grpc.ServerOption {
 // When CompressionEnabled is true, all calls will use gzip compression for
 // 50-70% bandwidth reduction on vector data.
 func (c GRPCConfig) BuildClientOptions() []grpc.DialOption {
+	c.ApplyPolicy()
 	callOpts := []grpc.CallOption{
 		grpc.MaxCallRecvMsgSize(c.MaxRecvMsgSize),
 		grpc.MaxCallSendMsgSize(c.MaxSendMsgSize),
@@ -171,7 +206,7 @@ func (c GRPCConfig) String() string {
 		"GRPCConfig{keepalive_time=%v, keepalive_timeout=%v, keepalive_min_time=%v, "+
 			"permit_without_stream=%v, max_concurrent_streams=%d, "+
 			"initial_window_size=%d, initial_conn_window_size=%d, "+
-			"max_recv_msg_size=%d, max_send_msg_size=%d, compression_enabled=%v}",
+			"max_recv_msg_size=%d, max_send_msg_size=%d, compression_enabled=%v, policy=%v}",
 		c.KeepAliveTime,
 		c.KeepAliveTimeout,
 		c.KeepAliveMinTime,
@@ -182,5 +217,6 @@ func (c GRPCConfig) String() string {
 		c.MaxRecvMsgSize,
 		c.MaxSendMsgSize,
 		c.CompressionEnabled,
+		c.Policy,
 	)
 }

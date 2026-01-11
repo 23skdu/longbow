@@ -115,7 +115,7 @@ def to_arrow_table(
         
         # If 'metadata' column exists
         if 'metadata' in data.columns or 'meta' in data.columns:
-            meta_col = 'metadata' if 'metadata' in data.columns else 'meta'
+            # meta_col = 'metadata' if 'metadata' in data.columns else 'meta'
             # Serialize if needed
             # ... implementation detail ...
             pass

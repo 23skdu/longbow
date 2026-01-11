@@ -9,11 +9,10 @@ import json
 import random
 import sys
 import time
-import os
 import statistics
 import threading
 from dataclasses import dataclass, field
-from typing import Optional, List, Dict, Any
+from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -27,7 +26,7 @@ except ImportError:
 
 # Import SDK
 try:
-    from longbow import LongbowClient, LongbowError, LongbowQueryError
+    from longbow import LongbowClient
 except ImportError:
     print("Error: 'longbow' SDK not found. Install it via 'pip install ./longbowclientsdk'")
     sys.exit(1)

@@ -404,7 +404,8 @@ func (h *ArrowHNSW) distance(q []float32, id uint32, data *GraphData, _ *ArrowSe
 	if v == nil {
 		return math.MaxFloat32
 	}
-	return simd.EuclideanDistance(q, v)
+	// Use static dispatch function
+	return simd.DistFunc(q, v)
 }
 
 func (h *ArrowHNSW) distanceF16(q []float16.Num, id uint32, data *GraphData, _ *ArrowSearchContext) float32 {
@@ -518,7 +519,22 @@ func (h *ArrowHNSW) mustGetVectorFromData(data *GraphData, id uint32) []float32 
 		}
 	}
 
-	return nil
+	// 6. Sentinel Fallback (Data Miss / Race Condition)
+	// If we reached here, the vector ID is valid in the graph but data is missing.
+	// This can happen during high-concurrency ingestion where the graph link is
+	// visible before the data is fully committed/copied.
+	// Returning a sentinel avoids panics in the hot path.
+	metrics.VectorSentinelHitTotal.Inc()
+	return h.getSentinelVector(dims)
+}
+
+// getSentinelVector returns a zero-filled vector of the correct dimension.
+// It uses a cached slice if available or allocates one.
+// Since this is an error path fallback, allocation is acceptable, but we try to be cheap.
+func (h *ArrowHNSW) getSentinelVector(dims int) []float32 {
+	// TODO: Use a pool or pre-allocated global if this happens frequently.
+	// For now, simple allocation is fine as this should be rare (0 in steady state).
+	return make([]float32, dims)
 }
 
 func (h *ArrowHNSW) prefetchNode(id uint32, data *GraphData, useSQ8, usePQ bool) {

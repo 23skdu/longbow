@@ -52,9 +52,14 @@ var (
 	implementation string
 
 	// Function pointers initialized at startup - eliminates switch overhead in hot path
-	euclideanDistanceImpl      distanceFunc
-	euclideanDistance384Impl   distanceFunc // optimized for dimensions=384
-	cosineDistanceImpl         distanceFunc
+	euclideanDistanceImpl    distanceFunc
+	euclideanDistance384Impl distanceFunc // optimized for dimensions=384
+	cosineDistanceImpl       distanceFunc
+
+	// DistFunc is the best available Euclidean distance implementation for the current CPU.
+	// It is initialized at start time to allow direct function calls without runtime dispatch checks.
+	DistFunc distanceFunc
+
 	dotProductImpl             distanceFunc
 	dotProduct384Impl          distanceFunc // optimized for dimensions=384
 	euclideanDistanceBatchImpl distanceBatchFunc
@@ -77,6 +82,9 @@ var (
 func init() {
 	detectCPU()
 	initializeDispatch()
+
+	// Expose the resolved implementation
+	DistFunc = euclideanDistanceImpl
 
 	if os.Getenv("LONGBOW_JIT") == "1" {
 		if err := initJIT(); err != nil {
@@ -127,6 +135,7 @@ func initializeDispatch() {
 		euclideanDistanceImpl = euclideanAVX512
 		euclideanDistance384Impl = euclidean384AVX512
 		metrics.SimdDispatchCount.WithLabelValues("avx512").Inc()
+		metrics.SimdStaticDispatchType.Set(3)
 		cosineDistanceImpl = cosineAVX512
 		dotProductImpl = dotAVX512
 		dotProduct384Impl = dot384AVX512
@@ -147,6 +156,7 @@ func initializeDispatch() {
 		euclideanDistanceImpl = euclideanAVX2
 		euclideanDistance384Impl = euclideanGeneric // AVX2 384-dim not implemented yet, fallback
 		metrics.SimdDispatchCount.WithLabelValues("avx2").Inc()
+		metrics.SimdStaticDispatchType.Set(2)
 		cosineDistanceImpl = cosineAVX2
 		dotProductImpl = dotAVX2
 		dotProduct384Impl = dotGeneric
@@ -167,6 +177,7 @@ func initializeDispatch() {
 		euclideanDistanceImpl = euclideanNEON
 		euclideanDistance384Impl = euclidean384NEON
 		metrics.SimdDispatchCount.WithLabelValues("neon").Inc()
+		metrics.SimdStaticDispatchType.Set(1)
 		cosineDistanceImpl = cosineNEON
 		dotProductImpl = dotNEON
 		dotProduct384Impl = dot384NEON
@@ -187,6 +198,7 @@ func initializeDispatch() {
 		euclideanDistanceImpl = euclideanUnrolled4x
 		euclideanDistance384Impl = euclideanUnrolled4x
 		metrics.SimdDispatchCount.WithLabelValues("generic").Inc()
+		metrics.SimdStaticDispatchType.Set(0)
 		cosineDistanceImpl = cosineUnrolled4x
 		dotProductImpl = dotUnrolled4x
 		dotProduct384Impl = dotUnrolled4x

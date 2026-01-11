@@ -156,6 +156,9 @@ func NewArrowHNSW(dataset *Dataset, config ArrowHNSWConfig, locStore *ChunkedLoc
 		}
 	}
 
+	// Initialize Repair Agent (disabled by default)
+	h.repairAgent = NewRepairAgent(h, DefaultRepairAgentConfig())
+
 	return h
 }
 

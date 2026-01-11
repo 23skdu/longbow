@@ -168,6 +168,19 @@ var (
 		[]string{"component"},
 	)
 
+	// DoExchangeSearchTotal counts total number of searches via DoExchange
+	DoExchangeSearchTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "longbow_do_exchange_search_total",
+		Help: "Total number of searches performed via Arrow Flight DoExchange binary protocol",
+	})
+
+	// DoExchangeSearchDuration measures latency of DoExchange search operations
+	DoExchangeSearchDuration = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "longbow_do_exchange_search_duration_seconds",
+		Help:    "Latency of DoExchange search operations",
+		Buckets: []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5},
+	})
+
 	// Rate Limit Metrics
 	CompactionRateLimitWaitSeconds = promauto.NewHistogram(
 		prometheus.HistogramOpts{
@@ -251,6 +264,77 @@ var (
 		Name: "longbow_simd_f16_ops_total",
 		Help: "Total number of FP16 SIMD operations explicitly dispatched",
 	}, []string{"operation", "impl"})
+
+	// SimdStaticDispatchType tracks the currently active SIMD implementation type
+	// 0=Generic, 1=NEON, 2=AVX2, 3=AVX512
+	SimdStaticDispatchType = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "longbow_simd_static_dispatch_type",
+		Help: "Type of SIMD implementation statically dispatched (0=Generic, 1=NEON, 2=AVX2, 3=AVX512)",
+	})
+
+	// Adaptive GC Metrics
+	AdaptiveGCCurrentGOGC = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "longbow_adaptive_gc_current_gogc",
+		Help: "Current GOGC value set by adaptive GC controller",
+	})
+
+	AdaptiveGCAdjustmentsTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "longbow_adaptive_gc_adjustments_total",
+		Help: "Total number of GOGC adjustments made by adaptive controller",
+	})
+
+	AdaptiveGCAllocationRate = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "longbow_adaptive_gc_allocation_rate_bytes_per_sec",
+		Help: "Current memory allocation rate in bytes per second",
+	})
+
+	AdaptiveGCMemoryPressure = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "longbow_adaptive_gc_memory_pressure_ratio",
+		Help: "Current memory pressure ratio (0-1, where 1 is maximum pressure)",
+	})
+
+	// HNSW Repair Agent Metrics
+	HNSWRepairOrphansDetected = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "longbow_hnsw_repair_orphans_detected_total",
+		Help: "Total number of orphaned nodes detected by repair agent",
+	}, []string{"dataset"})
+
+	HNSWRepairOrphansRepaired = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "longbow_hnsw_repair_orphans_repaired_total",
+		Help: "Total number of orphaned nodes repaired by repair agent",
+	}, []string{"dataset"})
+
+	HNSWRepairScanDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "longbow_hnsw_repair_scan_duration_seconds",
+		Help:    "Duration of repair agent scan cycles",
+		Buckets: prometheus.ExponentialBuckets(0.001, 2, 12), // 1ms to ~4s
+	}, []string{"dataset"})
+
+	HNSWRepairLastScanTime = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "longbow_hnsw_repair_last_scan_timestamp_seconds",
+		Help: "Unix timestamp of last repair scan",
+	}, []string{"dataset"})
+
+	// Fragmentation-Aware Compaction Metrics
+	CompactionTombstoneDensity = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "longbow_compaction_tombstone_density_ratio",
+		Help: "Current tombstone density per batch (0-1)",
+	}, []string{"dataset", "batch"})
+
+	CompactionFragmentedBatches = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "longbow_compaction_fragmented_batches_total",
+		Help: "Number of batches exceeding fragmentation threshold",
+	}, []string{"dataset"})
+
+	CompactionTriggersTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "longbow_compaction_triggers_total",
+		Help: "Total number of compaction triggers by reason",
+	}, []string{"dataset", "reason"})
+
+	CompactionBatchesMerged = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "longbow_compaction_batches_merged_total",
+		Help: "Total number of batches merged during compaction",
+	}, []string{"dataset"})
 
 	// IngestionQueueDepth tracks the current number of batches in the ingestion queue
 	IngestionQueueDepth = promauto.NewGauge(prometheus.GaugeOpts{
@@ -637,6 +721,14 @@ var (
 		prometheus.CounterOpts{
 			Name: "longbow_hnsw_distance_calculations_f16_total",
 			Help: "Total number of native FP16 distance calculations performed",
+		},
+	)
+
+	// VectorSentinelHitTotal counts number of times a sentinel zero-vector was returned
+	VectorSentinelHitTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_vector_sentinel_hit_total",
+			Help: "Total number of times a sentinel vector was used due to missing data",
 		},
 	)
 

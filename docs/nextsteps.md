@@ -1,139 +1,63 @@
-# Longbow Optimization & Stability Roadmap
+# Next Steps: Performance & Reliability Roadmap
 
-This document outlines the prioritized improvements for the Longbow vector database, focusing on distributed
-reliability, architecture refactoring, and advanced indexing features.
+Based on the [0.1.4-rc1] soak test analysis (3-node cluster, 15k vectors, mixed read/write/delete workload), the following 10 steps identify the highest impact areas for improvement.
 
-## Top Priority Items (Performance & Scalability)
+## 1. Hot-Path Vector Access Optimization
 
-### 1. IO_URING for WAL (Linux)
+**Problem**: The `pruneConnectionsLocked` loop—the hottest CPU path in HNSW construction—now includes safety checks (`if vec == nil`) to prevent panics. This adds branch prediction pressure.
+**Solution**: Guarantee data presence by pre-allocating "Sentinel Vectors" for all referenced IDs during the `AddBatch` phase, or enforce strict transactional boundaries so checks can be removed.
+**Expected Impact**: 10-15% reduction in index construction CPU time.
 
-- **Impact**: **High**. Current profiling shows heavy `syscall` usage during writes.
-- **Plan**: Implement `io_uring` backend for the Write Ahead Log (WAL) to batch I/O operations and
-  strictly reduce syscall overhead on Linux.
+## 2. Static SIMD Dispatch
 
-### 2. HNSW Search Context Pooling
+**Problem**: `simd.EuclideanDistance` performs dynamic dispatch (checking CPU capabilities) or relies on compiler inlining that may not perfectly resolve overhead for every single distance matching call (millions per second).
+**Solution**: Use a global function pointer initialized at startup (`var DistFunc = resolveDistFunc()`) to pay the dispatch cost only once, ensuring the inner loop is a direct assembly call.
+**Expected Impact**: 5-10% improvement in search latency and indexing speed.
 
-- **Impact**: **High**. Profiling revealed ~400MB allocations in `InsertWithVector` due to `visited` sets and queues.
-- **Plan**: Implement aggression `sync.Pool` usage for `searchCtx` (visited bitsets, candidate queues)
-  to achieve near-zero allocation inserts.
+## 3. Binary Search Protocol (DoExchange)
 
-### 3. GOGC Auto-Tuning (Memory Ballast)
+**Problem**: The current `VectorSearch` implementation uses Flight `DoAction` with JSON payloads. JSON serialization/deserialization consumes CPU and bloats network traffic (~2x overhead vs binary).
+**Solution**: Migrate the search path to `DoExchange` using a defined Arrow Schema (or internal binary format) for the query vector and parameters.
+**Expected Impact**: >20% reduction in query latency, especially for high QPS.
 
-- **Impact**: **High**. Prevents OOMs and optimizes GC CPU usage.
-- **Plan**: Implement a memory ballast or dynamic GOGC tuner that adjusts based on `GOMEMLIMIT` and
-  current heap usage.
+## 4. Parallel Distributed Scatter-Gather
 
-### 4. Software Prefetching for Graph Search
+**Problem**: `Coordinator.GlobalSearch` fans out interactions to peers. Optimizing this concurrency model (e.g., using a specialized `errgroup` with bounded concurrency and context propagation) can reduce tail latency (P99).
+**Solution**: Refine the scatter-gather logic to use a persistent connection pool with speculative execution (query fastest duplicates) if replication is enabled.
+**Expected Impact**: Reduced P99 latency in distributed setups.
 
-- **Impact**: **Medium/High**. Search latency is dominated by random memory access.
-- **Plan**: Use assembly or unsafe directives to prefetch HNSW neighbor nodes into CPU cache during
-  graph traversal (pipelined lookup).
+## 5. Async DiskStore Reads (io_uring)
 
-### 5. Zero-Copy Flight `DoGet`
+**Problem**: While WAL uses `io_uring`, the `DiskStore` (used for larger-than-memory datasets) relies on mmap or standard syscalls which can stall the go runtime thread on page faults.
+**Solution**: Implement `io_uring` for random reads in `DiskStore`, allowing the Go runtime to continue scheduling other goroutines during disk I/O.
+**Expected Impact**: Higher throughput for disk-resident workloads; unblocked search threads.
 
-- **Impact**: **Medium**.
-- **Plan**: Optimize the `DoGet` read path to stream internal Arrow RecordBatches directly to the wire without re-serialization/copying.
+## 6. Adaptive Garbage Collection (GOGC)
 
-### 6. Sharded Graph Locks
+**Problem**: Soak tests showed ~28k vectors/s ingestion, which generates massive garbage. Static `GOGC` (e.g. 75) might trigger too frequently or too late.
+**Solution**: Implement a feedback-loop controller that adjusts `GOGC` dynamically based on allocation rate and free memory, maximizing throughput during ingest and minimizing latency during search.
+**Expected Impact**: Smoother latency profile (reduced GC pause outliers).
 
-- **Impact**: **Medium**. Reduces contention during high concurrency.
-- **Plan**: Replace global `GraphData` RWMutex with fine-grained sharded locks or atomic/RCU patterns
-  for adjacency list updates.
+## 7. Fragmentation-Aware Compaction
 
-### 7. Optimized Delete (Atomic Tombstones)
+**Problem**: Deletion is currently fast (bitset flip), but leaves gaps. Current compaction runs periodically or by batch count.
+**Solution**: Track "Tombstone Density" per batch. Trigger compaction specifically for batches where deleted records exceed a threshold (e.g., 20%), optimizing merge efficiency.
+**Expected Impact**: Reduced detailed memory usage and improved cache locality.
 
-- **Impact**: **Medium**.
-- **Plan**: Enhance the deletion mechanism to use a high-performance, lock-free global atomic bitset (RoaringBitmap)
-  for tombstones, checked efficiently during traversal.
+## 8. HNSW Connectivity Repair Agent
 
-### 8. Vectorized Metadata Filtering
+**Problem**: High-concurrency deletions and pruning can theoretically create disconnected sub-graphs ("islands") in HNSW, hurting recall.
+**Solution**: Run a background "Repair Agent" that randomly traversing the graph from entry points to ensure reachability, re-linking orphans if found.
+**Expected Impact**: Long-term recall stability (99.9%+) without full re-indexing.
 
-- **Impact**: **Medium**.
-- **Plan**: Utilize Arrow Compute or custom SIMD kernels to evaluate complex metadata filters (AND/OR/NOT) over columns, rather than row-by-row checks.
+## 9. Thread Pinning & NUMA Awareness
 
-### 9. Compaction Rate Limiting
+**Problem**: Vectors and Graph Data allocated on one NUMA node might be accessed by threads on another, causing QPI/interconnect traffic.
+**Solution**: Explicitly pin ingest/search worker pools to specific CPU cores and allocate memory from local nodes where possible (using `unix.Mbind` or similar concepts via CGO/assembly if needed).
+**Expected Impact**: Reduced L3 cache misses; linear scaling on high-core-count servers.
 
-- **Impact**: **Low/Medium**. Improves tail latency.
-- **Plan**: Implement token-bucket rate limiting for background compaction and snapshotting to prevent I/O
-  saturation from affecting foreground latency.
+## 10. eBPF Network Profiling
 
-### 10. Slab Allocation for Fixed 384-Dim Vectors
-
-- **Impact**: **High**. reduces GC pressure.
-- **Plan**: Implement a custom `Arena` allocator that reserves massive "Slabs" (e.g., 2MB pages) and slots vectors linearly to eliminate billions of small allocations.
-
-### 11. Native Float16 Read-Path Optimization (SIMD)
-
-- **Impact**: **High**. Current FP16 storage is 20x slower in concurrent workloads due to CPU conversion costs.
-- **Plan**: Implement SIMD kernels that operate directly on `float16` buffers for L2 and Cosine distance calculations, eliminating the need for f16->f32 conversion during graph traversal.
-
-### 12. AVX-512 Optimized L2 Kernel
-
-- **Impact**: **High**.
-- **Plan**: Write a hand-tuned Assembly kernel that unrolls the loop exactly 24 times (384/16) for 384-dim vectors.
-
----
-
-## Future Optimizations (Backlog)
-
-### Sharded Ingestion Routing
-
-- Client-side deterministic routing to split batches based on `Hash(ID) % ShardCount` to reduce lock contention.
-
-### Tombstone-Aware HNSW Repair
-
-- Background worker that scans tombstones and locally "wires around" deleted nodes to maintain graph quality without full rebuilds.
-
-### Explicit "Drop Dataset" Fast Path
-
-- Ensure `DeleteDataset` simply unlinks the pointer (RCU) and schedules async cleanup for instant resource release.
-
-### Pre-Computed "Medoids" for Routing
-
-- Maintain ~100 centroids to skip top HNSW layers and jump close to the target immediately.
-
-### Zstd Dictionary Compression
-
-- Train a Zstd dictionary on the first 10k vectors to compress subsequent vectors for efficient WAL storage.
-
-### Memory-Mapped "Read-Only" Mode
-
-- "Freeze" a dataset to a compact mmap-friendly file format for zero-heap usage on static datasets.
-
-### Adaptive HNSW Construction
-
-- Dynamically adjust `M` (max connections) based on intrinsice dimensionality of initial vectors.
-
-## Technical Debt & Architecture
-
-### Distributed Consensus (Raft)
-
-- **Location**: `internal/consensus`
-- **Plan**: Integrate a Raft library (e.g., `hashicorp/raft`) to manage cluster state.
-
-### Refactor `internal/store` Monolith
-
-- **Location**: `internal/store`
-- **Plan**: Split into `internal/index`, `internal/storage`, and `internal/query`.
-
-### Cross-Encoder Re-ranking
-
-- **Location**: `internal/store/hybrid_pipeline.go`
-- **Plan**: Integrate a real model (e.g., via ONNX or external service).
-
-### Distributed Tracing (OpenTelemetry)
-
-- **Location**: `internal/store/global_search.go`
-- **Plan**: Instrument critical paths with OpenTelemetry spans.
-
----
-
-## Recently Completed
-
-- **Zero-Copy Flight Ingestion (Allocators)**: Implemented `TrackingAllocator` and injected it into `DoPut` to enable zero-copy "network-to-memory" ingestion and verified leak-free buffer lifecycle.
-- **12GB Scalability Benchmarks**: Verified performance and scaling behavior for up to 25k 384d vectors on a single node with strict memory limits.
-- **HNSW Parallel Bulk Load**: Optimized ingestion for large batches (>1k) using parallel layer generation and graph updates.
-- **Auto-Sharding Control**: Implemented `LONGBOW_AUTO_SHARDING_ENABLED`.
-- **Hybrid Search Pipeline**: Added Reranking and Fusion stages.
-- **Spatial Index**: VP-Tree for Mesh Routing.
-- **WAL Buffer Recycling**: Optimized write path.
+**Problem**: "Connection refused" and network saturation issues are hard to debug from application logs alone.
+**Solution**: Integrate eBPF hooks (via Cilium or generic tools) to expose TCP window metrics, retransmits, and socket queue depths as Prometheus metrics.
+**Expected Impact**: Instant visibility into network bottlenecks and capacity limits.

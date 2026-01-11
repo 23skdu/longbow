@@ -15,7 +15,7 @@ func TestDelete(t *testing.T) {
 	index.dims.Store(128)
 
 	// Initialize GraphData manually with dimensions
-	data := NewGraphData(100, 32, false, false, 0, false, false)
+	data := NewGraphData(100, 32, false, false, 0, false, false, false)
 	index.data.Store(data)
 
 	// Manually allocate chunks for testing using ensureChunk
@@ -68,7 +68,7 @@ func TestDelete(t *testing.T) {
 	ctx := index.searchPool.Get().(*ArrowSearchContext)
 	defer index.searchPool.Put(ctx)
 	for i := 1; i < 10; i++ {
-		index.AddConnection(ctx, data, 0, uint32(i), 0, 16)
+		index.AddConnection(ctx, data, 0, uint32(i), 0, 16, 0.0)
 	}
 
 	results, _ := index.Search(query, 10, 20, nil)

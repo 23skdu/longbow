@@ -58,7 +58,6 @@ func ExtractVectorFromArrow(rec arrow.RecordBatch, rowIdx, colIdx int) ([]float3
 
 	// Check Element Type
 	elemType := listArr.DataType().(*arrow.FixedSizeListType).Elem()
-
 	if elemType.ID() == arrow.FLOAT16 {
 		// FP16 -> FP32 Conversion (Allocates)
 		// We cannot return zero-copy slice because types differ.
@@ -90,6 +89,7 @@ func ExtractVectorFromArrow(rec arrow.RecordBatch, rowIdx, colIdx int) ([]float3
 		return res, nil
 	}
 
+	// Float32 Case (Zero Copy)
 	// Float32 Case (Zero Copy)
 	return unsafeVectorSlice(values, start, width), nil
 }

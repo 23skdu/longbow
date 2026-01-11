@@ -45,7 +45,7 @@ func TestHNSW_Vacuum(t *testing.T) {
 	data := h.data.Load()
 	ctx := h.searchPool.Get().(*ArrowSearchContext)
 	defer h.searchPool.Put(ctx)
-	h.AddConnection(ctx, data, 1, 0, 0, 16)
+	h.AddConnection(ctx, data, 1, 0, 0, 16, 0.0)
 	t.Log("Forced connection 1 -> 0")
 
 	// 2. Delete 10% of nodes

@@ -5,6 +5,7 @@ package storage
 import (
 	"os"
 	"sync"
+	"time"
 
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/iceber/iouring-go"
@@ -50,32 +51,22 @@ func (b *UringBackend) Write(p []byte) (int, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
+	// Metrics
+	start := time.Now()
+
 	// Prepare Pwrite request
-	// Note: We use Pwrite to be explicit about offset, though file is opened O_APPEND.
-	// io_uring Pwrite is async.
-
-	// Copy data? iouring-go might need buffer to stay valid until completion.
-	// The p passed from WALBatcher is valid until writeEntryBytes returns?
-	// In WALBatcher refactor, we will ensure p is valid.
-	// Wait, if we use SubmitRequest, we wait for result?
-	// If we want fully async batching, we should submit and NOT wait immediately?
-	// BUT WALBatcher flush() expects synchronous completion of the batch write (it handles consistency).
-	// So we will Wait() here. This gives us syscall avoidance (submission batching) benefit if we used Link,
-	// but here we are just doing one Write call per batch (after refactor).
-	// The main benefit is io_uring internal efficiency and potential for async fsync chaining.
-
-	// For simple integration, we submit and wait.
-
-	// IMPORTANT: iouring-go SubmitRequest takes a pointer. We must ensure p lives long enough.
-	// If we wait, it does.
-
+	// Note: We use Pwrite to be explicit about offset.
 	req, err := b.ring.SubmitRequest(iouring.Pwrite(int(b.f.Fd()), p, uint64(b.offset)), nil)
 	if err != nil {
+		metrics.WalUringSubmitLatencySeconds.Observe(time.Since(start).Seconds())
 		return 0, err
 	}
 
 	// Wait for completion
 	<-req.Done()
+
+	duration := time.Since(start).Seconds()
+	metrics.WalUringSubmitLatencySeconds.Observe(duration)
 
 	n, err := req.ReturnInt()
 	if err != nil {
@@ -96,11 +87,14 @@ func (b *UringBackend) Sync() error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
+	start := time.Now()
 	req, err := b.ring.SubmitRequest(iouring.Fsync(int(b.f.Fd())), nil)
 	if err != nil {
+		metrics.WalFsyncDurationSeconds.WithLabelValues("uring_error").Observe(time.Since(start).Seconds())
 		return err
 	}
 	<-req.Done()
+	metrics.WalFsyncDurationSeconds.WithLabelValues("uring_ok").Observe(time.Since(start).Seconds())
 
 	if err := req.Err(); err != nil {
 		return err

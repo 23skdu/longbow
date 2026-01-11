@@ -665,9 +665,7 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, stream fli
 			}
 		}
 
-		if err == nil {
-			s.queryCache.Put(cacheKey, searchResults)
-		}
+		s.queryCache.Put(cacheKey, searchResults)
 
 	} // End of Cache Miss block
 

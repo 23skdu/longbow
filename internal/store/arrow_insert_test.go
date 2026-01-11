@@ -121,7 +121,7 @@ func TestAddConnection(t *testing.T) {
 	index := NewArrowHNSW(dataset, config, nil)
 
 	// Initialize GraphData manually
-	data := NewGraphData(0, 64, false, false, 0, false, false)
+	data := NewGraphData(0, 64, false, false, 0, false, false, false)
 	index.data.Store(data)
 
 	// Allocate chunks
@@ -137,7 +137,7 @@ func TestAddConnection(t *testing.T) {
 	defer index.searchPool.Put(ctx)
 
 	// Add connection 0 -> 1 at layer 0
-	index.AddConnection(ctx, data, 0, 1, 0, 10)
+	index.AddConnection(ctx, data, 0, 1, 0, 10, 0.0)
 
 	// Check count
 	cID := chunkID(0)
@@ -158,7 +158,7 @@ func TestAddConnection(t *testing.T) {
 	}
 
 	// Adding same connection again should be idempotent
-	index.AddConnection(ctx, data, 0, 1, 0, 10)
+	index.AddConnection(ctx, data, 0, 1, 0, 10, 0.0)
 
 	if counts != nil {
 		count = atomic.LoadInt32(&counts[cOff])
@@ -176,7 +176,7 @@ func TestPruneConnections(t *testing.T) {
 	index := NewArrowHNSW(dataset, config, nil)
 
 	// Initialize GraphData manually
-	data := NewGraphData(20, 11, false, false, 0, false, false)
+	data := NewGraphData(20, 11, false, false, 0, false, false, false)
 	index.data.Store(data)
 
 	// Allocate chunks

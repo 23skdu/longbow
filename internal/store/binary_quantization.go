@@ -74,3 +74,19 @@ func (e *BQEncoder) ScoreToFloat32(hamming int) float32 {
 func (e *BQEncoder) Float32ToHamming(score float32) int {
 	return int(math.Floor(float64(e.Dimensions) * (1.0 - float64(score))))
 }
+
+// Decode reconstructs a float32 vector from binary codes.
+// It maps 1 -> 1.0 and 0 -> -1.0.
+func (e *BQEncoder) Decode(codes []uint64) []float32 {
+	res := make([]float32, e.Dimensions)
+	for i := 0; i < e.Dimensions; i++ {
+		wordIdx := i / 64
+		bitIdx := uint(i % 64)
+		if (codes[wordIdx] & (1 << bitIdx)) != 0 {
+			res[i] = 1.0
+		} else {
+			res[i] = -1.0
+		}
+	}
+	return res
+}

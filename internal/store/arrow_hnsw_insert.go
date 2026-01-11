@@ -269,6 +269,14 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec []float32, level int) error 
 			baseIdx := int(cOff) * numWords
 			copy(encodedChunk[baseIdx:baseIdx+numWords], encoded)
 		}
+
+		// Also populate search context for insertion search phase
+		numWords := len(encoded)
+		if cap(ctx.queryBQ) < numWords {
+			ctx.queryBQ = make([]uint64, numWords)
+		}
+		ctx.queryBQ = ctx.queryBQ[:numWords]
+		copy(ctx.queryBQ, encoded)
 	}
 
 	// Store PQ Vector
@@ -417,8 +425,8 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec []float32, level int) error 
 		}
 
 		for _, neighbor := range neighbors {
-			h.AddConnection(ctx, data, id, neighbor.ID, lc, maxConn)
-			h.AddConnection(ctx, data, neighbor.ID, id, lc, maxConn)
+			h.AddConnection(ctx, data, id, neighbor.ID, lc, maxConn, neighbor.Dist)
+			h.AddConnection(ctx, data, neighbor.ID, id, lc, maxConn, neighbor.Dist)
 
 			// Prune neighbor if needed (still useful to keep strict M_max if buffer wasn't hit)
 			// Read count atomically
@@ -537,277 +545,15 @@ func (h *ArrowHNSW) ensureTrained(limitID int, extraSamples [][]float32) {
 // searchLayerForInsert performs search during insertion.
 // Returns candidates sorted by distance.
 func (h *ArrowHNSW) searchLayerForInsert(ctx *ArrowSearchContext, query []float32, entryPoint uint32, ef, layer int, data *GraphData) []Candidate {
-	// Reuse visited bitset
-	maxID := data.Capacity + 1000
-	if ctx.visited == nil {
-		ctx.visited = NewArrowBitset(maxID)
-	} else if ctx.visited.Size() < maxID {
-		ctx.visited.Grow(maxID)
+	_ = h.searchLayer(query, entryPoint, ef, layer, ctx, data, nil)
+
+	// Transfer results from resultSet to a slice
+	res := make([]Candidate, ctx.resultSet.Len())
+	for i := len(res) - 1; i >= 0; i-- {
+		c, _ := ctx.resultSet.Pop()
+		res[i] = c
 	}
-	// Sparse Clear
-	ctx.ResetVisited()
-
-	// Reuse candidates heap
-	if ctx.candidates == nil {
-		ctx.candidates = NewFixedHeap(ef * 2)
-	} else {
-		ctx.candidates.Grow(ef * 2)
-		ctx.candidates.Clear()
-	}
-
-	visited := ctx.visited
-	candidates := ctx.candidates
-
-	// Reuse result set heap
-	if ctx.resultSet == nil {
-		ctx.resultSet = NewMaxHeap(ef * 2)
-	} else {
-		ctx.resultSet.Grow(ef * 2)
-		ctx.resultSet.Clear()
-	}
-	resultSet := ctx.resultSet
-
-	// Initialize with entry point
-	var entryDist float32
-	var querySQ8 []byte
-
-	// Use sq8Ready to avoid race with backfill
-	if h.metric == MetricEuclidean && h.sq8Ready.Load() {
-		if cap(ctx.querySQ8) < len(query) {
-			ctx.querySQ8 = make([]byte, len(query))
-		}
-		ctx.querySQ8 = ctx.querySQ8[:len(query)]
-		h.quantizer.Encode(query, ctx.querySQ8)
-		querySQ8 = ctx.querySQ8
-
-		// Access SQ8 data for entryPoint
-		cID := chunkID(entryPoint)
-		cOff := chunkOffset(entryPoint)
-		off := int(cOff) * int(h.dims.Load())
-		dims := int(h.dims.Load())
-		vecSQ8Chunk := data.GetVectorsSQ8Chunk(cID)
-		if vecSQ8Chunk != nil && off+dims <= len(vecSQ8Chunk) {
-			dSQ8 := simd.EuclideanDistanceSQ8(querySQ8, vecSQ8Chunk[off:off+dims])
-			entryDist = float32(dSQ8)
-		} else {
-			// Fallback if not quantized yet? Should not happen if strictly maintained.
-			entryDist = 0 // Or MaxFloat
-		}
-	} else {
-		v := h.mustGetVectorFromData(data, entryPoint)
-		if v == nil {
-			entryDist = math.MaxFloat32
-		} else {
-			entryDist = h.distFunc(query, v)
-		}
-	}
-
-	candidates.Push(Candidate{ID: entryPoint, Dist: entryDist})
-	resultSet.Push(Candidate{ID: entryPoint, Dist: entryDist})
-	ctx.Visit(entryPoint)
-
-	// Reset results from context
-	ctx.scratchResults = ctx.scratchResults[:0]
-	ctx.scratchResults = append(ctx.scratchResults, Candidate{ID: entryPoint, Dist: entryDist})
-	results := ctx.scratchResults
-
-	// Circuit breaker for traversal
-	iterations := 0
-	maxOps := h.nodeCount.Load() * 2 // Generous limit based on graph size
-	if maxOps < 10000 {
-		maxOps = 10000
-	}
-
-	for candidates.Len() > 0 {
-		iterations++
-		if int64(iterations) > maxOps {
-			// Safety break to prevent infinite loops if visited set fails
-			break
-		}
-		curr, ok := candidates.Pop()
-		if !ok {
-			break
-		}
-
-		// Stop if current is farther than furthest result
-		if best, ok := resultSet.Peek(); ok && resultSet.Len() >= ef && curr.Dist > best.Dist {
-			break
-		}
-
-		// Explore neighbors
-		// Explore neighbors
-		// Seqlock retry loop handles loading count/neighbors
-
-		// Batch Distance Calculation for Neighbors
-		// Collect unvisited neighbors with Seqlock retry (now handled by GetNeighbors)
-		var unvisitedIDs []uint32
-
-		if cap(ctx.scratchNeighbors) < MaxNeighbors {
-			ctx.scratchNeighbors = make([]uint32, MaxNeighbors)
-		}
-		rawNeighbors := data.GetNeighbors(layer, curr.ID, ctx.scratchNeighbors)
-
-		// Filter unvisited
-		// scratchIDs is reused for unvisited list
-		ctx.scratchIDs = ctx.scratchIDs[:0]
-		for _, nid := range rawNeighbors {
-			if !visited.IsSet(nid) {
-				ctx.scratchIDs = append(ctx.scratchIDs, nid)
-			}
-		}
-		unvisitedIDs = ctx.scratchIDs
-
-		// Mark visited for the successfully collected neighbors
-		finalCount := 0
-		for _, nid := range unvisitedIDs {
-			if !visited.IsSet(nid) { // Double check? No, already checked.
-				// But between versions, visited doesn't change.
-				// Wait, inside loop we checked !visited.IsSet.
-				// So just Set.
-				// But we need to filter unvisitedIDs in place?
-				// The previous loop appended ONLY unvisited.
-				ctx.Visit(nid)
-				// We need this ID.
-				// Wait, if duplicates in graph? (should not happen in HNSW)
-				// Anyhow, simple Set is fine.
-				unvisitedIDs[finalCount] = nid
-				finalCount++
-			}
-		}
-		unvisitedIDs = unvisitedIDs[:finalCount]
-
-		count := len(unvisitedIDs)
-		if count == 0 {
-			continue
-		}
-
-		// Use scratch buffer from context
-		if cap(ctx.scratchDists) < count {
-			ctx.scratchDists = make([]float32, count*2)
-		}
-		dists := ctx.scratchDists[:count]
-
-		if h.metric == MetricEuclidean && h.quantizer != nil && len(data.VectorsSQ8) > 0 {
-			// SQ8 Path
-			// SQ8 Path: Batch SIMD
-			if cap(ctx.scratchVecsSQ8) < count {
-				ctx.scratchVecsSQ8 = make([][]byte, count*2)
-			}
-			vecsSQ8 := ctx.scratchVecsSQ8[:count]
-
-			// Collect vectors
-			// We track invalid indices to overwrite their distance later
-			hasInvalid := false
-
-			for i, nid := range unvisitedIDs {
-				cID := chunkID(nid)
-				cOff := chunkOffset(nid)
-				off := int(cOff) * int(h.dims.Load())
-				dims := int(h.dims.Load())
-
-				vecSQ8Chunk := data.GetVectorsSQ8Chunk(cID)
-				if vecSQ8Chunk != nil && off+dims <= len(vecSQ8Chunk) {
-					vecsSQ8[i] = vecSQ8Chunk[off : off+dims]
-				} else {
-					// Invalid/Missing vector: use query as safe dummy (dist=0)
-					vecsSQ8[i] = querySQ8
-					hasInvalid = true
-					// We'll mark this as MaxFloat AFTER batch calc.
-					// To avoid another loop or allocation, we could use bitset,
-					// but simply checking validity again is fast (cached pointers).
-					// Actually, simpler: write MaxFloat to 'dists' now?
-					// No, batch function overwrites 'dists'.
-					// We need to fixup later.
-				}
-			}
-
-			simd.EuclideanDistanceSQ8Batch(querySQ8, vecsSQ8, dists)
-
-			if hasInvalid {
-				// Fixup invalid entries
-				for i, nid := range unvisitedIDs {
-					cID := chunkID(nid)
-					// Quick re-check or logic?
-					// Since we don't want to re-calculate offsets, maybe just re-check nil?
-					// Re-calculating bounds is cheap.
-					vecSQ8Chunk := data.GetVectorsSQ8Chunk(cID)
-					if vecSQ8Chunk == nil {
-						dists[i] = math.MaxFloat32
-						continue
-					}
-					// If we are here, chunk exists. Check offset.
-					cOff := chunkOffset(nid)
-					dims := int(h.dims.Load())
-					off := int(cOff) * dims
-					if off+dims > len(vecSQ8Chunk) {
-						dists[i] = math.MaxFloat32
-					}
-				}
-			}
-			if cap(ctx.scratchVecs) < count {
-				ctx.scratchVecs = make([][]float32, count*2)
-			}
-			vecs := ctx.scratchVecs[:count]
-
-			allValid := true
-			for i, nid := range unvisitedIDs {
-				v := h.mustGetVectorFromData(data, nid)
-				if v == nil {
-					dists[i] = math.MaxFloat32
-					vecs[i] = nil
-					allValid = false
-				} else {
-					vecs[i] = v
-				}
-			}
-
-			if allValid {
-				h.batchDistFunc(query, vecs, dists)
-			} else {
-				for i := 0; i < len(unvisitedIDs); i++ {
-					if vecs[i] != nil {
-						h.batchDistFunc(query, vecs[i:i+1], dists[i:i+1])
-					}
-				}
-			}
-		}
-
-		// Process results
-		for i, nid := range unvisitedIDs {
-			dist := dists[i]
-			best, _ := resultSet.Peek()
-			if resultSet.Len() < ef || dist < best.Dist {
-				resultSet.Push(Candidate{ID: nid, Dist: dist})
-				if resultSet.Len() > ef {
-					resultSet.Pop() // Remove the furthest element
-				}
-				candidates.Push(Candidate{ID: nid, Dist: dist}) // Add to candidates for further exploration
-			}
-		}
-	}
-
-	// Sort and return results from resultSet
-	results = results[:0]
-	for resultSet.Len() > 0 {
-		cand, _ := resultSet.Pop()
-		results = append(results, cand)
-	}
-
-	// resultSet returns closest-at-bottom (MaxHeap), so for return,
-	// we usually want them sorted by distance.
-	slices.SortFunc(results, func(a, b Candidate) int {
-		if a.Dist < b.Dist {
-			return -1
-		}
-		if a.Dist > b.Dist {
-			return 1
-		}
-		return 0
-	})
-
-	// Sync context results
-	ctx.scratchResults = results
-	return results
+	return res
 }
 
 // selectNeighbors selects the best M neighbors using the RobustPrune heuristic.
@@ -1051,7 +797,7 @@ func (h *ArrowHNSW) selectNeighbors(ctx *ArrowSearchContext, candidates []Candid
 }
 
 // AddConnection adds a directed edge from source to target at the given layer.
-func (h *ArrowHNSW) AddConnection(ctx *ArrowSearchContext, data *GraphData, source, target uint32, layer, maxConn int) {
+func (h *ArrowHNSW) AddConnection(ctx *ArrowSearchContext, data *GraphData, source, target uint32, layer, maxConn int, dist float32) {
 	// Acquire lock for the specific node (shard)
 	lockID := source % ShardedLockCount
 	h.shardedLocks[lockID].Lock()
@@ -1114,6 +860,53 @@ func (h *ArrowHNSW) AddConnection(ctx *ArrowSearchContext, data *GraphData, sour
 
 	// Seqlock write: increment version (even = clean)
 	atomic.AddUint32(verAddr, 1)
+
+	// --- Packed Neighbors Integration (v0.1.4-rc1) ---
+	if layer < len(data.PackedNeighbors) && data.PackedNeighbors[layer] != nil {
+		pn := data.PackedNeighbors[layer]
+		// Get existing neighbors from packed to check for duplicates (though we checked above)
+		existing, ok := pn.GetNeighbors(source)
+		if !ok || len(existing) == 0 {
+			if h.config.Float16Enabled {
+				pn.SetNeighborsF16(source, []uint32{target}, []float16.Num{float16.New(dist)})
+			} else {
+				pn.SetNeighbors(source, []uint32{target})
+			}
+		} else {
+			// Check if already present in packed
+			found := false
+			for _, nid := range existing {
+				if nid == target {
+					found = true
+					break
+				}
+			}
+			if !found {
+				newNeighbors := make([]uint32, len(existing)+1)
+				copy(newNeighbors, existing)
+				newNeighbors[len(existing)] = target
+
+				// Optional: Store distances if Float16 enabled
+				if h.config.Float16Enabled {
+					// We need to manage distances too
+					_, existingDists, f16ok := pn.GetNeighborsF16(source)
+					newDists := make([]float16.Num, len(existing)+1)
+					if f16ok && len(existingDists) == len(existing) {
+						copy(newDists, existingDists)
+					} else {
+						// Create dummy distances if missing
+						for i := range existing {
+							newDists[i] = float16.New(0)
+						}
+					}
+					newDists[len(existing)] = float16.New(dist)
+					pn.SetNeighborsF16(source, newNeighbors, newDists)
+				} else {
+					pn.SetNeighbors(source, newNeighbors)
+				}
+			}
+		}
+	}
 
 	// Prune if needed
 	if int(newCount) > maxConn {
@@ -1258,7 +1051,6 @@ func (h *ArrowHNSW) pruneConnectionsLocked(ctx *ArrowSearchContext, data *GraphD
 	selected := h.selectNeighbors(ctx, candidates, maxConn, data)
 
 	// Write back
-	newCount := len(selected)
 
 	// Seqlock write start
 	verChunk := data.GetVersionsChunk(layer, cID)
@@ -1269,13 +1061,26 @@ func (h *ArrowHNSW) pruneConnectionsLocked(ctx *ArrowSearchContext, data *GraphD
 	verAddr := &verChunk[cOff]
 	atomic.AddUint32(verAddr, 1)
 
-	for i := 0; i < newCount; i++ {
-		atomic.StoreUint32(&neighborsChunk[baseIdx+i], selected[i].ID)
-	}
-	atomic.StoreInt32(countAddr, int32(newCount))
-
 	// Seqlock write end
 	atomic.AddUint32(verAddr, 1)
+
+	// --- Packed Neighbors Integration (v0.1.4-rc1) ---
+	if layer < len(data.PackedNeighbors) && data.PackedNeighbors[layer] != nil {
+		pn := data.PackedNeighbors[layer]
+		ids := make([]uint32, len(selected))
+		for i, cand := range selected {
+			ids[i] = cand.ID
+		}
+		if h.config.Float16Enabled {
+			f16Dists := make([]float16.Num, len(selected))
+			for i, cand := range selected {
+				f16Dists[i] = float16.New(cand.Dist)
+			}
+			pn.SetNeighborsF16(nodeID, ids, f16Dists)
+		} else {
+			pn.SetNeighbors(nodeID, ids)
+		}
+	}
 }
 
 // LevelGenerator generates random levels for new nodes.
@@ -1421,8 +1226,8 @@ func (h *ArrowHNSW) InsertWithVectorF16(id uint32, vec []float16.Num, level int)
 		neighbors := h.selectNeighbors(ctx, candidates, m, data)
 
 		for _, neighbor := range neighbors {
-			h.AddConnection(ctx, data, id, neighbor.ID, lc, maxConn)
-			h.AddConnection(ctx, data, neighbor.ID, id, lc, maxConn)
+			h.AddConnection(ctx, data, id, neighbor.ID, lc, maxConn, neighbor.Dist)
+			h.AddConnection(ctx, data, neighbor.ID, id, lc, maxConn, neighbor.Dist)
 			h.pruneIfNecessary(ctx, data, neighbor.ID, lc, maxConn)
 		}
 

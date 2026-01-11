@@ -1,11 +1,11 @@
 package store
 
-
 import (
 	"fmt"
 	"math/rand"
 	"testing"
 
+	"github.com/23skdu/longbow/internal/simd"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -38,7 +38,7 @@ func TestBatchDistanceComputer_ComputeL2Distances(t *testing.T) {
 
 	// Verify against reference implementation
 	for i, candidate := range candidates {
-		expected := l2Distance(query, candidate)
+		expected := simd.EuclideanDistance(query, candidate)
 		assert.InDelta(t, expected, distances[i], 1e-5, "Distance mismatch for candidate %d", i)
 	}
 }

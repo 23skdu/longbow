@@ -91,8 +91,9 @@ def benchmark_do_put(clients, start_id, count, batch_size=1000):
     
     duration = time.time() - start
     throughput = total / duration if duration > 0 else 0
-    print(f"    DoPut: {total} vectors in {duration:.2f}s ({throughput:.0f} vectors/s)")
-    return throughput, duration
+    bandwidth_mb = (throughput * DIM * 4) / (1024 * 1024)
+    print(f"    DoPut: {total} vectors in {duration:.2f}s ({throughput:.0f} vectors/s, {bandwidth_mb:.2f} MB/s)")
+    return throughput, bandwidth_mb, duration
 
 def benchmark_do_get(clients, num_queries=1000):
     """Benchmark DoGet throughput"""
@@ -113,8 +114,9 @@ def benchmark_do_get(clients, num_queries=1000):
     
     duration = time.time() - start
     throughput = total_records / duration if duration > 0 else 0
-    print(f"    DoGet: {total_records} records in {duration:.2f}s ({throughput:.0f} records/s), Errors: {errors}")
-    return throughput, duration, errors
+    bandwidth_gb = (throughput * DIM * 4) / (1024 * 1024 * 1024)
+    print(f"    DoGet: {total_records} records in {duration:.2f}s ({throughput:.0f} records/s, {bandwidth_gb:.2f} GB/s), Errors: {errors}")
+    return throughput, bandwidth_gb, duration, errors
 
 def benchmark_do_exchange(clients, num_queries=500):
     """Benchmark DoExchange (binary search protocol)"""
@@ -361,16 +363,18 @@ def main():
         
         # 1. DoPut
         if needed > 0:
-            throughput, duration = benchmark_do_put(clients, current_count, needed)
+            throughput, bandwidth, duration = benchmark_do_put(clients, current_count, needed)
             results.add(phase, "DoPut Throughput (vectors/s)", f"{throughput:.0f}")
+            results.add(phase, "DoPut Bandwidth (MB/s)", f"{bandwidth:.2f}")
             results.add(phase, "DoPut Duration (s)", f"{duration:.2f}")
             current_count = target
         
         time.sleep(2)  # Settling time
         
         # 2. DoGet
-        get_throughput, get_duration, get_errors = benchmark_do_get(clients)
+        get_throughput, get_bandwidth, get_duration, get_errors = benchmark_do_get(clients)
         results.add(phase, "DoGet Throughput (records/s)", f"{get_throughput:.0f}")
+        results.add(phase, "DoGet Bandwidth (GB/s)", f"{get_bandwidth:.2f}")
         results.add(phase, "DoGet Errors", str(get_errors))
         
         # 3. DoExchange

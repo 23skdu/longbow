@@ -42,7 +42,21 @@ func EuclideanDistanceSQ8(a, b []byte) int32 {
 
 func EuclideanSQ8Generic(a, b []byte) int32 {
 	var sum int32
-	for i := 0; i < len(a); i++ {
+	i := 0
+	// Unroll 8x
+	for ; i <= len(a)-8; i += 8 {
+		d0 := int32(a[i+0]) - int32(b[i+0])
+		d1 := int32(a[i+1]) - int32(b[i+1])
+		d2 := int32(a[i+2]) - int32(b[i+2])
+		d3 := int32(a[i+3]) - int32(b[i+3])
+		d4 := int32(a[i+4]) - int32(b[i+4])
+		d5 := int32(a[i+5]) - int32(b[i+5])
+		d6 := int32(a[i+6]) - int32(b[i+6])
+		d7 := int32(a[i+7]) - int32(b[i+7])
+		sum += d0*d0 + d1*d1 + d2*d2 + d3*d3 + d4*d4 + d5*d5 + d6*d6 + d7*d7
+	}
+	// Tail
+	for ; i < len(a); i++ {
 		d := int32(a[i]) - int32(b[i])
 		sum += d * d
 	}

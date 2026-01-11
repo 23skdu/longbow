@@ -1,6 +1,50 @@
 # Performance Benchmarks
 
-## Latest Run (v0.1.5 - Optimization Phase)
+## Latest Run (v0.1.4-rc1 - Soak Test & Stability)
+
+**Date**: 2026-01-10
+**Version**: 0.1.4-rc1 (Fix: HNSW Insert Race/Panic)
+**Configuration**:
+
+- **Cluster**: 3 Nodes (Local/Mac)
+- **Vector Dim**: 384
+- **Dataset Size**: Progressive (3k, 5k, 9k, 15k vectors)
+- **Workload**: Mixed (Ingest + Search + Deletion)
+- **Features**: Distributed Scatter-Gather, PartitionProxy, HNSW
+
+### Results Summary (3-Node Cluster - 15k Vectors)
+
+| Metric | v0.1.4-rc1 (Cluster) | Notes |
+| :--- | :--- | :--- |
+| **Ingestion Speed** | **~28,000 - 40,000 vec/s** | Very high throughput |
+| **Search Latency (P50)**| **~1.4 ms** | |
+| **Search Latency (P99)**| **~2.6 ms** | Excellent tail latency |
+| **Deletion Speed** | **20,000 ops/s** | 1000 IDs in 0.05s |
+| **Stability** | **PASSED** | Fixed `vector length mismatch` panic |
+
+### Analysis
+
+#### ✅ Stability Fix (Critical)
+
+- A race condition causing `simd: vector length mismatch` panic in `pruneConnectionsLocked` was identified and fixed.
+- The system now robustly handles high-concurrency ingestion without crashing nodes.
+
+#### ✅ Distributed Performance
+
+- **Ingestion**: The system sustained high ingestion rates (~28k/s on regular phases, bursting to 40k/s) across 3 nodes.
+- **Search**: Distributed search latency (P99 < 3ms) is comparable to single-node performance, indicating efficient
+  scatter-gather implementation.
+- **Scalability**: Successfully scaled from 3k to 15k vectors with linear checks.
+
+### Profiling Insights (CPU)
+
+- **Hotspots**: `runtime.mcall`, `runtime.park_m` (scheduler) dominate, indicating the workload is I/O or
+  lock-contention bound, not CPU-bound on vector math.
+- **SIMD**: Vector operations are efficient, not appearing as top CPU consumers in the profile.
+
+---
+
+## v0.1.5 (Optimization Phase - Previous Run)
 
 **Date**: 2026-01-10  
 **Version**: 0.1.5 (Slab Allocation + GOGC Auto-Tuning + Graph Layout)  
@@ -33,7 +77,7 @@ The GOGC Auto-Tuner is actively managing memory:
 - **Target GOGC**: 75 (dynamically adjusted from default 100)
 - **GC Pause Count**: 0 during test (excellent!)
 
-### Analysis
+### Analysis (v0.1.5)
 
 #### ✅ Wins (Optimization Goals Achieved)
 
@@ -82,7 +126,7 @@ The GOGC Auto-Tuner is actively managing memory:
 
 ### Detailed Metrics
 
-```
+```text
 Benchmark              Duration      Throughput      p50      p95      p99
 ----------------------------------------------------------------------
 DoPut                     0.09s     245.84 MB/s         N/A      N/A      N/A

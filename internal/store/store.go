@@ -17,6 +17,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/23skdu/longbow/internal/cache"
+	"github.com/23skdu/longbow/internal/gc"
 	"github.com/23skdu/longbow/internal/mesh"
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/storage"
@@ -96,6 +97,9 @@ type VectorStore struct {
 
 	// Query Cache (Phase 23)
 	queryCache *cache.QueryCache[[]SearchResult]
+
+	// Adaptive GC Controller (optional)
+	gcController *gc.AdaptiveGCController
 }
 
 type ingestionJob struct {
@@ -130,6 +134,9 @@ func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes 
 	// Default Cache: 1024 entries, 60s TTL
 	// In future, make this configurable per dataset or global
 	s.queryCache = cache.NewQueryCache[[]SearchResult](1024, 60*time.Second, "global")
+
+	// Initialize Adaptive GC Controller (disabled by default)
+	s.gcController = gc.NewAdaptiveGCController(gc.DefaultAdaptiveGCConfig())
 
 	s.workerWg.Add(1)
 	go s.runIngestionWorker()
@@ -246,6 +253,33 @@ func (s *VectorStore) SetDatasetInitHook(hook func(*Dataset)) {
 // SetIndexedColumns updates columns that should be indexed for fast equality lookups
 func (s *VectorStore) SetIndexedColumns(cols []string) {
 	s.indexedColumns = cols
+}
+
+// EnableAdaptiveGC starts the adaptive GC controller with the given configuration.
+// This is optional and disabled by default. Call this after NewVectorStore if you want
+// dynamic GOGC adjustment based on allocation rate and memory pressure.
+func (s *VectorStore) EnableAdaptiveGC(config gc.AdaptiveGCConfig) {
+	if s.gcController != nil {
+		s.gcController.Stop() // Stop existing controller if any
+	}
+
+	config.Enabled = true // Force enabled
+	s.gcController = gc.NewAdaptiveGCController(config)
+	s.gcController.Start()
+
+	s.logger.Info().
+		Int("min_gogc", config.MinGOGC).
+		Int("max_gogc", config.MaxGOGC).
+		Dur("adjust_interval", config.AdjustInterval).
+		Msg("Adaptive GC controller enabled")
+}
+
+// DisableAdaptiveGC stops the adaptive GC controller
+func (s *VectorStore) DisableAdaptiveGC() {
+	if s.gcController != nil {
+		s.gcController.Stop()
+		s.logger.Info().Msg("Adaptive GC controller disabled")
+	}
 }
 
 // GetIndexedColumns returns columns currently being indexed

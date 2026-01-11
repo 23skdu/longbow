@@ -31,31 +31,53 @@ func (s *VectorStore) DoExchange(stream flight.FlightService_DoExchangeServer) e
 	var sentCount int64
 	var lastDescriptor *flight.FlightDescriptor
 
+	// Parse first message to determine protocol
+	firstMsg, err := stream.Recv()
+	if err == io.EOF {
+		return nil
+	}
+	if err != nil {
+		s.logger.Error().Err(err).Msg("DoExchange recv error")
+		return err
+	}
+
+	// Check if this is a Vector Search request
+	if firstMsg.FlightDescriptor != nil && string(firstMsg.FlightDescriptor.Cmd) == "VectorSearch" {
+		return s.handleVectorSearchExchange(stream, firstMsg)
+	}
+
+	// Otherwise, assume standard replication/ingest protocol
+	// Reuse loop, injecting firstMsg
+	receivedCount = 1
+	metrics.DoExchangeBatchesReceivedTotal.Inc()
+
+	// Initial processing of first message
+	if firstMsg.FlightDescriptor != nil {
+		lastDescriptor = firstMsg.FlightDescriptor
+	}
+	// (Reuse logic from loop for first msg? simpler to just jump into loop with a 'feed' mechanism or distinct handling)
+	// Let's iterate using an approach where we process 'data' variable which starts as firstMsg
+
+	data := firstMsg
+	isFirst := true
+
 	// Process incoming stream
 	for {
-		// Check context cancellation
-		select {
-		case <-stream.Context().Done():
-			s.logger.Info().Int64("received", receivedCount).Msg("DoExchange cancelled")
-			metrics.DoExchangeErrorsTotal.Inc()
-			return stream.Context().Err()
-		default:
+		if !isFirst {
+			var err error
+			data, err = stream.Recv()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				s.logger.Error().Err(err).Msg("DoExchange recv error")
+				metrics.DoExchangeErrorsTotal.Inc()
+				return err
+			}
+			receivedCount++
+			metrics.DoExchangeBatchesReceivedTotal.Inc()
 		}
-
-		// Receive next FlightData
-		data, err := stream.Recv()
-		if err == io.EOF {
-			// Client finished sending
-			break
-		}
-		if err != nil {
-			s.logger.Error().Err(err).Msg("DoExchange recv error")
-			metrics.DoExchangeErrorsTotal.Inc()
-			return err
-		}
-
-		receivedCount++
-		metrics.DoExchangeBatchesReceivedTotal.Inc()
+		isFirst = false
 
 		// Track descriptor for routing
 		if data.FlightDescriptor != nil {

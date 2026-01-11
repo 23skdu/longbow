@@ -88,6 +88,9 @@ type Dataset struct {
 
 	// Metric defines the distance metric for this dataset
 	Metric DistanceMetric
+
+	// Fragmentation-Aware Compaction
+	fragmentationTracker *FragmentationTracker
 }
 
 // IsSharded returns true if the dataset uses ShardedHNSW.
@@ -140,6 +143,10 @@ func NewDataset(name string, schema *arrow.Schema) *Dataset {
 		Metric:          MetricEuclidean, // Default
 		// hnsw2Index will be initialized externally to avoid import cycle
 	}
+
+	// Initialize fragmentation tracker
+	ds.fragmentationTracker = NewFragmentationTracker()
+	ds.fragmentationTracker.SetDatasetName(name)
 
 	// Parse metric from metadata if present
 	if schema != nil {

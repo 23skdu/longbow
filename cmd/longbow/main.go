@@ -38,6 +38,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.17.0"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/keepalive"
 )
 
 // Config holds the application configuration
@@ -414,11 +415,21 @@ func run() error {
 	forwarder := sharding.NewRequestForwarder(&fwdCfg, ringManager)
 
 	// gRPC Server Options - using env-configurable message sizes and window sizes
-	if err := cfg.ValidateGRPCConfig(); err != nil {
-		logger.Error().Err(err).Msg("Invalid gRPC config")
-		return err
+	serverOpts := []grpc.ServerOption{
+		grpc.MaxRecvMsgSize(cfg.GRPCMaxRecvMsgSize),
+		grpc.MaxSendMsgSize(cfg.GRPCMaxSendMsgSize),
+		grpc.InitialWindowSize(cfg.GRPCInitialWindowSize),
+		grpc.InitialConnWindowSize(cfg.GRPCInitialConnWindowSize),
+		grpc.MaxConcurrentStreams(cfg.GRPCMaxConcurrentStreams),
+		grpc.KeepaliveParams(keepalive.ServerParameters{
+			Time:    cfg.KeepAliveTime,
+			Timeout: cfg.KeepAliveTimeout,
+		}),
+		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
+			MinTime:             cfg.KeepAliveMinTime,
+			PermitWithoutStream: cfg.KeepAlivePermitWithoutStream,
+		}),
 	}
-	serverOpts := cfg.BuildGRPCServerOptions()
 
 	// Initialize Rate Limiter
 	rateLimiter := limiter.NewRateLimiter(limiter.Config{

@@ -391,11 +391,11 @@ def command_validate(args, client):
     ddf = client.search(dataset, qvec, k=1)
     df = ddf.compute()
     
-    found = False
+    # found = False
     if not df.empty:
         if df.iloc[0]['id'] == 1:
             print(f"  PASS: Retrieved ID 1 as top result (Score: {df.iloc[0]['score']:.4f})")
-            found = True
+            # found = True
         else:
             print(f"  FAIL: Expected ID 1, got {df.iloc[0]['id']}")
     else:

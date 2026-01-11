@@ -29,7 +29,7 @@ except ImportError:
 try:
     from longbow import LongbowClient, LongbowError, LongbowQueryError
 except ImportError:
-    print("Error: 'longbow' SDK not found. Install it via 'pip install ./pythonsdk'")
+    print("Error: 'longbow' SDK not found. Install it via 'pip install ./longbowclientsdk'")
     sys.exit(1)
 
 # Global timeout default

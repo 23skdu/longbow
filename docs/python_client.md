@@ -4,12 +4,12 @@ Longbow now includes a dedicated Python SDK for easier interaction, capable of h
 
 ## Installation
 
-The SDK is located in `pythonsdk/`. You can install it directly:
+The SDK is located in `longbowclientsdk/`. You can install it directly:
 
 ```bash
-pip install ./pythonsdk
+pip install ./longbowclientsdk
 # OR
-pip install -e ./pythonsdk  # Editable mode
+pip install -e ./longbowclientsdk  # Editable mode
 ```
 
 ## Features
@@ -37,4 +37,4 @@ results = client.search("my_dataset", vector=[0.1, ...], k=10)
 print(results.compute())
 ```
 
-See [pythonsdk/README.md](../pythonsdk/README.md) for full details.
+See [longbowclientsdk/README.md](../longbowclientsdk/README.md) for full details.

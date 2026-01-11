@@ -23,7 +23,7 @@ except ImportError:
 try:
     from longbow import LongbowClient
 except ImportError:
-    print("Error: 'longbow' SDK not found. Install it via 'pip install ./pythonsdk'")
+    print("Error: 'longbow' SDK not found. Install it via 'pip install ./longbowclientsdk'")
     sys.exit(1)
 
 logging.basicConfig(level=logging.INFO, format='%(message)s')

@@ -217,11 +217,20 @@ func TestHNSW_HighDimensionGrowth_MemoryPressure(t *testing.T) {
 	// Verify reasonable memory usage
 	// Theoretical minimum: numVectors * dims * 4 bytes (float32)
 	theoreticalMinMB := float64(numVectors*dims*4) / (1024 * 1024)
-	actualUsedMB := float64(samples[len(samples)-1].heapMB - samples[0].heapMB)
+
+	// Use max heap seen to avoid GC-induced negative deltas
+	var maxHeap uint64
+	for _, sample := range samples {
+		if sample.heapMB > maxHeap {
+			maxHeap = sample.heapMB
+		}
+	}
+
+	actualUsedMB := float64(maxHeap - samples[0].heapMB)
 	overhead := actualUsedMB / theoreticalMinMB
 
 	t.Logf("Theoretical minimum: %.2f MB", theoreticalMinMB)
-	t.Logf("Actual used: %.2f MB", actualUsedMB)
+	t.Logf("Actual used (max heap): %.2f MB", actualUsedMB)
 	t.Logf("Overhead factor: %.2fx", overhead)
 
 	// Allow up to 6x overhead for graph structure, arenas, etc.

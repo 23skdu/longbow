@@ -1,11 +1,11 @@
 [
   {
     "name": "DoPut",
-    "duration_seconds": 0.0032529830932617188,
-    "throughput": 239.2260334212841,
+    "duration_seconds": 0.006799221038818359,
+    "throughput": 653.0612244897959,
     "throughput_unit": "MB/s",
     "rows": 3000,
-    "bytes_processed": 816000,
+    "bytes_processed": 4656000,
     "p50_ms": 0.0,
     "p95_ms": 0.0,
     "p99_ms": 0.0,
@@ -13,8 +13,8 @@
   },
   {
     "name": "DoGet",
-    "duration_seconds": 1.4385509490966797,
-    "throughput": 2.281553005442745,
+    "duration_seconds": 58.347381830215454,
+    "throughput": 0.235044456150112,
     "throughput_unit": "MB/s",
     "rows": 3000,
     "bytes_processed": 

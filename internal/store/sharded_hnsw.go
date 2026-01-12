@@ -348,7 +348,19 @@ func (s *ShardedHNSW) SearchVectors(queryVec []float32, k int, filters []query.F
 		return nil, nil
 	}
 
-	// 1. Search all shards in parallel
+	// 1. Optimization: Try bitmap-based filtering
+	if len(filters) > 0 && s.dataset != nil {
+		bitset, err := s.dataset.GenerateFilterBitset(filters)
+		if err == nil && bitset != nil {
+			defer bitset.Release()
+			res := s.SearchVectorsWithBitmap(queryVec, k, bitset, options)
+			// Sharded SearchVectorsWithBitmap already handles Local->Global mapping
+			// and global bitset filtering.
+			return res, nil
+		}
+	}
+
+	// 2. Parallel Search across all shards (Fallback path)
 	type shardResult struct {
 		results  []SearchResult
 		shardIdx int
@@ -591,6 +603,11 @@ func (s *ShardedHNSW) Close() error {
 // GetLocation returns the storage location for a given VectorID
 func (s *ShardedHNSW) GetLocation(id VectorID) (Location, bool) {
 	return s.locationStore.Get(id)
+}
+
+// GetVectorID returns the VectorID for a given storage location
+func (s *ShardedHNSW) GetVectorID(loc Location) (VectorID, bool) {
+	return s.locationStore.GetID(loc)
 }
 
 // GetDimension implements VectorIndex.

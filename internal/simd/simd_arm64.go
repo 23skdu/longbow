@@ -23,7 +23,15 @@ func euclidean384NEON(a, b []float32) float32 {
 	return euclideanNEON(a, b)
 }
 
+func euclidean128NEON(a, b []float32) float32 {
+	return euclideanNEON(a, b)
+}
+
 func dot384NEON(a, b []float32) float32 {
+	return dotNEON(a, b)
+}
+
+func dot128NEON(a, b []float32) float32 {
 	return dotNEON(a, b)
 }
 

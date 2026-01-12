@@ -102,13 +102,16 @@ def check_cluster_health(client: LongbowClient) -> bool:
 # Data Generation
 # =============================================================================
 
-def generate_vectors(num_rows: int, dim: int, with_text: bool = False) -> pa.Table:
+def generate_vectors(num_rows: int, dim: int, with_text: bool = False, fp16: bool = False) -> pa.Table:
     """Generate random vectors (keep returning Table for efficiency)."""
     print(f"Generating {num_rows:,} vectors of dimension {dim}...")
 
     # Vector data
-    data = np.random.rand(num_rows, dim).astype(np.float32)
-    tensor_type = pa.list_(pa.float32(), dim)
+    dtype = np.float16 if fp16 else np.float32
+    pa_dtype = pa.float16() if fp16 else pa.float32()
+    
+    data = np.random.rand(num_rows, dim).astype(dtype)
+    tensor_type = pa.list_(pa_dtype, dim)
     flat_data = data.flatten()
     vectors = pa.FixedSizeListArray.from_arrays(flat_data, type=tensor_type)
 
@@ -243,7 +246,9 @@ def benchmark_vector_search(client: LongbowClient, name: str,
                             filters: Optional[list] = None,
                             global_search: bool = False,
                             include_vectors: bool = False,
-                            vector_format: str = "f32") -> BenchmarkResult:
+                            vector_format: str = "f32",
+                            text_query: Optional[str] = None,
+                            alpha: float = 0.0) -> BenchmarkResult:
     """Benchmark Vector Search using SDK search()."""
     num_queries = len(query_vectors)
     print(f"\n[SEARCH] Running {num_queries:,} vector searches (k={k})...")
@@ -270,7 +275,8 @@ def benchmark_vector_search(client: LongbowClient, name: str,
                 ddf = client.search(
                     name, q_list, k=k, filters=filters, 
                     include_vectors=include_vectors, 
-                    vector_format=vector_format
+                    vector_format=vector_format,
+                    text_query=text_query, alpha=alpha
                 )
                 df = ddf.compute()
                 total_results += len(df)
@@ -579,7 +585,9 @@ def main():
     parser.add_argument("--dim", type=int, default=128)
     parser.add_argument("--k", type=int, default=10)
     parser.add_argument("--queries", type=int, default=1000)
-    
+    parser.add_argument("--json", help="Path to save results as JSON")
+    parser.add_argument("--search", action="store_true", help="Run vector search")
+    parser.add_argument("--hybrid", action="store_true", help="Run hybrid search")
     parser.add_argument("--skip-put", action="store_true")
     parser.add_argument("--skip-search", action="store_true")
     parser.add_argument("--skip-get", action="store_true")
@@ -589,15 +597,33 @@ def main():
     
     parser.add_argument("--global", dest="global_search", action="store_true")
     parser.add_argument("--with-text", action="store_true", help="Hybrid search test")
+    parser.add_argument("--alpha", type=float, default=0.5, help="Hybrid search alpha (1.0 = text only/sparse, 0.0 = vector only)")
     parser.add_argument("--s3-bucket", help="S3 Bucket for snapshot checks")
     
     parser.add_argument("--test-delete", action="store_true")
     parser.add_argument("--test-id-search", action="store_true")
+    parser.add_argument("--filter", help="JSON string for filters or 'field:op:val'")
 
     args = parser.parse_args()
 
     # Init
     client = LongbowClient(uri=args.data_uri, meta_uri=args.meta_uri)
+    
+    # Check for FP16 in dataset name or flag
+    is_fp16 = "fp16" in args.dataset.lower() or "float16" in args.dataset.lower()
+    
+    # Process Filter
+    filters = None
+    if args.filter:
+        if args.filter.startswith("["):
+            filters = json.loads(args.filter)
+        else:
+            parts = args.filter.split(":")
+            if len(parts) == 3:
+                filters = [{"field": parts[0], "op": parts[1], "value": parts[2]}]
+            else:
+                print(f"Error: Invalid filter format '{args.filter}'. Use 'field:op:val' or JSON array.")
+                sys.exit(1)
     
     # Check health
     if not check_cluster_health(client):
@@ -609,7 +635,7 @@ def main():
     try:
         # PUT
         if not args.skip_put:
-            table = generate_vectors(args.rows, args.dim, with_text=args.with_text)
+            table = generate_vectors(args.rows, args.dim, with_text=args.with_text, fp16=is_fp16)
             res = benchmark_put(client, table, args.dataset)
             results.append(res)
             
@@ -624,8 +650,13 @@ def main():
         # SEARCH
         if not args.skip_search:
             q_vecs = generate_query_vectors(args.queries, args.dim)
+            text_query = "data model" if args.with_text else None
             res_s = benchmark_vector_search(
-                client, args.dataset, q_vecs, k=args.k, global_search=args.global_search
+                client, args.dataset, q_vecs, k=args.k, 
+                filters=filters,
+                global_search=args.global_search,
+                text_query=text_query,
+                alpha=args.alpha
             )
             results.append(res_s)
 
@@ -634,7 +665,8 @@ def main():
                 texts = ["data model"] * args.queries
                 res_h = benchmark_hybrid_search(
                     client, args.dataset, q_vecs, k=args.k, 
-                    text_queries=texts, global_search=args.global_search
+                    text_queries=texts, alpha=args.alpha,
+                    global_search=args.global_search
                 )
                 results.append(res_h)
 
@@ -667,15 +699,36 @@ def main():
         traceback.print_exc()
 
     # Summary
-    print("\n" + "="*80)
+    print("\n" + "="*95)
     print("BENCHMARK SUMMARY")
-    print("="*80)
-    print(f"{'Name':<25} | {'Throughput':<20} | {'p50 (ms)':<10} | {'p99 (ms)':<10} | {'Errors':<8}")
-    print("-" * 80)
+    print("="*95)
+    print(f"{'Name':<25} | {'Throughput':<20} | {'p50 (ms)':<10} | {'p95 (ms)':<10} | {'p99 (ms)':<10} | {'Errors':<8}")
+    print("-" * 95)
     for r in results:
         t_str = f"{r.throughput:.2f} {r.throughput_unit}"
-        print(f"{r.name:<25} | {t_str:<20} | {r.p50_ms:<10.2f} | {r.p99_ms:<10.2f} | {r.errors:<8}")
-    print("="*80)
+        print(f"{r.name:<25} | {t_str:<20} | {r.p50_ms:<10.2f} | {r.p95_ms:<10.2f} | {r.p99_ms:<10.2f} | {r.errors:<8}")
+    print("="*95)
+
+    # Save JSON if requested
+    if args.json:
+        with open(args.json, "w") as f:
+            # Convert BenchmarkResult objects to serializable dicts
+            json_results = []
+            for r in results:
+                json_results.append({
+                    "name": r.name,
+                    "duration_seconds": r.duration_seconds,
+                    "throughput": r.throughput,
+                    "throughput_unit": r.throughput_unit,
+                    "rows": r.rows,
+                    "bytes_processed": r.bytes_processed,
+                    "p50_ms": r.p50_ms,
+                    "p95_ms": r.p95_ms,
+                    "p99_ms": r.p99_ms,
+                    "errors": r.errors
+                })
+            json.dump(json_results, f, indent=2)
+            print(f"Results saved to {args.json}")
 
 if __name__ == "__main__":
     main()

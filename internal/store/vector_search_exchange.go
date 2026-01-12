@@ -53,7 +53,7 @@ func (s *VectorStore) handleVectorSearchExchange(stream flight.FlightService_DoE
 		return status.Error(codes.InvalidArgument, "empty search request")
 	}
 
-	rec := reader.Record()
+	rec := reader.RecordBatch()
 
 	// 2. Parse Parameters
 	if rec.NumRows() == 0 {
@@ -203,7 +203,7 @@ func (s *VectorStore) handleVectorSearchExchange(stream flight.FlightService_DoE
 		scoreBuilder.Append(res.Score)
 	}
 
-	resRec := b.NewRecord()
+	resRec := b.NewRecordBatch()
 	defer resRec.Release()
 
 	// 5. Write Response

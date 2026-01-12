@@ -44,4 +44,11 @@ var (
 		Help:    "Time spent waiting for locks",
 		Buckets: []float64{1e-6, 1e-5, 1e-4, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1}, // 1us to 1s
 	}, []string{"type"})
+
+	// Index growth metrics
+	HNSWIndexGrowthDuration = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "longbow_hnsw_index_growth_duration_seconds",
+		Help:    "Time spent growing the HNSW index capacity",
+		Buckets: prometheus.DefBuckets,
+	})
 )

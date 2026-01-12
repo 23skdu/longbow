@@ -30,10 +30,13 @@ func (s *VectorStore) SetHybridSearchConfig(cfg HybridSearchConfig) {
 	}
 }
 
-// GetBM25Index returns the BM25 inverted index for text search.
-// Returns nil if hybrid search is not enabled.
-func (s *VectorStore) GetBM25Index() *BM25InvertedIndex {
-	return s.bm25Index
+// GetBM25Index returns the BM25 inverted index for text search for a dataset.
+func (s *VectorStore) GetBM25Index(datasetName string) *BM25InvertedIndex {
+	ds, ok := s.getDataset(datasetName)
+	if !ok {
+		return nil
+	}
+	return ds.BM25Index
 }
 
 // NewVectorStoreWithHybridConfig creates a VectorStore with hybrid search enabled.
@@ -58,9 +61,8 @@ func NewVectorStoreWithHybridConfig(mem memory.Allocator, logger zerolog.Logger,
 }
 
 // indexTextColumnsForHybridSearch indexes text columns in a RecordBatch for BM25 search.
-// This is called during DoPut when hybrid search is enabled.
-func (s *VectorStore) indexTextColumnsForHybridSearch(batch arrow.RecordBatch, baseRowID uint32) {
-	if !s.hybridSearchConfig.Enabled || s.bm25Index == nil {
+func (s *VectorStore) indexTextColumnsForHybridSearch(ds *Dataset, batch arrow.RecordBatch, baseRowID uint32) {
+	if !s.hybridSearchConfig.Enabled || ds.BM25Index == nil {
 		return
 	}
 
@@ -96,7 +98,6 @@ func (s *VectorStore) indexTextColumnsForHybridSearch(batch arrow.RecordBatch, b
 		}
 
 		// Index each row
-		// Index each row
 		for row := 0; row < int(numRows); row++ {
 			if strArr.IsNull(row) {
 				continue
@@ -108,9 +109,8 @@ func (s *VectorStore) indexTextColumnsForHybridSearch(batch arrow.RecordBatch, b
 			}
 
 			// Use baseRowID + row as the VectorID
-			// BM25InvertedIndex.Add will tokenize the text internally
-			vecID := VectorID(baseRowID + uint32(row)) //nolint:gosec // G115 - row offset safe
-			s.bm25Index.Add(vecID, text)
+			vecID := VectorID(baseRowID + uint32(row)) //nolint:gosec
+			ds.BM25Index.Add(vecID, text)
 			metrics.BM25DocumentsIndexedTotal.Inc()
 		}
 	}

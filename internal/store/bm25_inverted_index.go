@@ -278,6 +278,7 @@ func (idx *BM25InvertedIndex) SearchBM25(query string, limit int) []SearchResult
 
 // tokenize is a simple whitespace tokenizer with basic cleaning
 func tokenize(text string) []string {
+	// Use Fields to split by any whitespace
 	fields := strings.Fields(strings.ToLower(text))
 	tokens := make([]string, 0, len(fields))
 	for _, f := range fields {

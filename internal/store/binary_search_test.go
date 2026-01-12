@@ -102,7 +102,7 @@ func TestDoExchange_VectorSearch(t *testing.T) {
 	b.Field(2).(*array.Int32Builder).Append(10) // ef=10
 	b.Field(3).(*array.StringBuilder).Append("test-data")
 
-	reqRec := b.NewRecord()
+	reqRec := b.NewRecordBatch()
 	defer reqRec.Release()
 
 	// 3. Serialise Request to FlightData (Mocking Client)
@@ -112,7 +112,7 @@ func TestDoExchange_VectorSearch(t *testing.T) {
 	writer := flight.NewRecordWriter(clientAdapter, ipc.WithSchema(reqSchema))
 
 	require.NoError(t, writer.Write(reqRec))
-	writer.Close() // Flushes
+	_ = writer.Close() // Flushes
 
 	// 4. Exec DoExchange Handler Directly
 	// Simulate DoExchange logic reading first message
@@ -156,7 +156,7 @@ func setupTestDataset(t *testing.T, s *VectorStore, name string) {
 	vb.Append(true)
 	vb.ValueBuilder().(*array.Float32Builder).AppendValues([]float32{1.0, 1.0}, nil)
 
-	rec := b.NewRecord()
+	rec := b.NewRecordBatch()
 	// Don't release - dataset owns this record
 
 	ds := &Dataset{
@@ -210,26 +210,3 @@ func (c *clientStreamAdapter) Send(data *flight.FlightData) error {
 	c.stream.addFlightData(cp)
 	return nil
 }
-
-type responseStreamAdapter struct {
-	data []*flight.FlightData
-	idx  int
-}
-
-func (r *responseStreamAdapter) Recv() (*flight.FlightData, error) {
-	if r.idx >= len(r.data) {
-		return nil, io.EOF
-	}
-	d := r.data[r.idx]
-	r.idx++
-	return d, nil
-}
-
-// Stubs for interface compliance
-func (r *responseStreamAdapter) Send(*flight.FlightData) error { return nil }
-func (r *responseStreamAdapter) Context() context.Context      { return context.Background() }
-func (r *responseStreamAdapter) SetHeader(metadata.MD) error   { return nil }
-func (r *responseStreamAdapter) SendHeader(metadata.MD) error  { return nil }
-func (r *responseStreamAdapter) SetTrailer(metadata.MD)        {}
-func (r *responseStreamAdapter) SendMsg(interface{}) error     { return nil }
-func (r *responseStreamAdapter) RecvMsg(interface{}) error     { return nil }

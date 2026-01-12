@@ -1,119 +1,148 @@
-# Next Steps: Performance & Reliability Roadmap
+# Roadmap: Polymorphic Vector Index & 3072-Dim Support
 
-## High-Priority: Python SDK Development
+This roadmap details the 12 steps required to generalize the `ArrowHNSW` index to support 12 different data types (Int8...Complex128) and optimize for high-dimensional vectors (up to 3072).
 
-To improve developer experience and ease of use, we will create a dedicated `longbow` Python library.
+## Step 1: Polymorphic Vector Type System
 
-### 1. Project Initialization & Packaging
+Introduce a formal type system to identify and validate vector contents.
 
-**Goal**: Set up a professional Python project structure.
-**Actions**: Create `longbow-python` directory. Initialize `pyproject.toml` (using Poetry or Hatch). Configure build system, versioning, and dependencies (`pyarrow`, `numpy`, `dask[dataframe]`, `pydantic`, `grpcio`).
+- **Subtasks**:
+  - Define `VectorDataType` enum in `internal/store/index.go`.
+  - Update `SearchOptions` and `SearchResult` to handle polymorphic buffers.
+  - Implement type-validation logic in `NewArrowHNSW`.
+- **Testing**:
+  - Unit: Type serialization and error handling for invalid types.
+  - Fuzz: Recursive parsing of complex configuration schemas.
+- **Metrics**: `ahnsw_index_type_count` (Counter per type).
 
-### 2. Core Client Abstraction
+## Step 2: Generalized GraphData Memory Management
 
-**Goal**: Simplify connection management.
-**Actions**: Implement `LongbowClient` class that wraps `pyarrow.flight.FlightClient`. Support dual-connection (Data/Meta ports) transparently. Implement context manager support (`with LongbowClient(...) as client:`).
+Refactor the internal storage to handle variable-width elements dynamically.
 
-### 3. Data Modeling & Validation
+- **Subtasks**:
+  - Implement type-parameterized arenas in `GraphData`.
+  - Update chunk offset calculations to use `ElementSize` from Step 1.
+  - Add support for tiered memory allocation per type.
+- **Testing**:
+  - Unit: Alignment verification for all 12 types.
+  - Fuzz: Stress test rapid allocation under memory pressure.
+- **Metrics**: `ahnsw_arena_allocation_bytes_total` (Counter per type).
 
-**Goal**: Type safety and validation.
-**Actions**: Create Pydantic models for domain objects: `Vector`, `Record`, `SearchResult`, `IndexStats`. Enforce type safety for inputs to catch errors before network requests.
+## Step 3: Expanded Arrow Extraction Logic
 
-### 4. Data Ingestion Wrappers (`put`)
+Ensure data can flow from any Arrow RecordBatch into the index regardless of precision.
 
-**Goal**: Easy data loading from common formats.
-**Actions**: Implement high-level `insert` method accepting Python Dicts, List of Dicts, Dask DataFrame, and Numpy Arrays. Handle Arrow conversion, serialization, and schema inference automatically.
+- **Subtasks**:
+  - Refactor `ExtractVectorFromArrow` for all integral and floating-point types.
+  - Implement optimized zero-copy paths for aligned Arrow buffers.
+- **Testing**:
+  - Unit: Extraction accuracy from `FixedSizeList` of all types.
+  - Fuzz: Random Arrow schema generation with varying column orders.
+- **Metrics**: `ahnsw_arrow_extraction_errors_total` (Counter).
 
-### 5. Query Interface (`search/get`)
+## Step 4: Redesign SIMD Dispatcher Framework
 
-**Goal**: Intuitive search API.
-**Actions**: Implement `search(vector=..., k=..., filter=...)` and `get(ids=...)`. Support returning results as Pydantic objects or Dask DataFrames based on user preference. `search_by_id` convenience method.
+Move beyond static dispatch to a dynamic registry capable of handling the type/dimension matrix.
 
-### 6. Index Management API
+- **Subtasks**:
+  - Create a kernel registry in `internal/simd`.
+  - Implement multi-key dispatching (Metric, Type, Dimension).
+- **Testing**:
+  - Unit: Dispatch consistency (ensure the right kernel is called).
+  - Fuzz: Dispatcher routing with large/odd dimensions.
+- **Metrics**: `ahnsw_simd_dispatch_latency_seconds` (Histogram).
 
-**Goal**: Admin operations.
-**Actions**: Wrappers for `DoAction` to handle `create_namespace`, `snapshot`, `list_namespaces`, `get_info`. Abstract away raw JSON command construction.
+## Step 5: Optimized Baseline Kernels
 
-### 7. Error Handling & Retry Logic
+Provide high-performance Go-fallback kernels for all types to ensure universal compatibility.
 
-**Goal**: Robustness.
-**Actions**: Map low-level Flight/gRPC errors to a custom `LongbowError` hierarchy (e.g., `LongbowConnectionError`, `LongbowQueryError`). Implement automatic retries for transient failures (with exponential backoff).
+- **Subtasks**:
+  - Implement unrolled (4x/8x) Go kernels for all 12 types.
+  - Optimize for Go compiler auto-vectorization.
+- **Testing**:
+  - Unit: Numerical correctness checks against reference scalar implementation.
+  - Fuzz: Overflow/Underflow stability with extreme integer ranges.
+- **Metrics**: `ahnsw_kernel_execution_total` (Counter per type).
 
-### 8. Connection Pooling & Concurrency
+## Step 6: 128-3072 Dimension Layout Optimization
 
-**Goal**: High throughput for scripts.
-**Actions**: Implement a thread-safe connection pool (similar to `perf_test.py`) or AsyncIO wrappers (if feasible with Flight) to allow concurrent operations for bulk loading or high-QPS querying.
+Specialized optimizations for the requested dimension power-points.
 
-### 9. Integration Testing Suite
+- **Subtasks**:
+  - Implement cache-line padding for specific widths.
+  - Add block-based SIMD processing for vectors > 1024 dims.
+- **Testing**:
+  - Unit: Throughput benchmarks for 128, 384, 768, 1536, 3072 dims.
+  - Fuzz: Memory boundary checks for odd dimensions.
+- **Metrics**: `ahnsw_search_throughput_dims` (Gauge).
 
-**Goal**: Reliability.
-**Actions**: Create a `pytest` suite that spins up a local Longbow instance (subprocess or docker) and verifies the full lifecycle (Create -> Insert -> Search -> Delete).
+## Step 7: Complex Number Support
 
-### 10. Documentation & Publishing
+Native support for Complex64 and Complex128 vector indexing.
 
-**Goal**: Adoption.
-**Actions**: Write comprehensive documentation (Sphinx/MkDocs). Generate API reference. Create "Getting Started" notebooks. Set up CI/CD pipelines to publish to PyPI.
+- **Subtasks**:
+  - Implement Euclidean distance for complex vectors (L2 of real+imag parts).
+  - Update indexing paths to treat complex values as paired floats.
+- **Testing**:
+  - Unit: Distance accuracy for complex search queries.
+  - Fuzz: Stability with large magnitude complex numbers.
+- **Metrics**: `ahnsw_complex_ops_total` (Counter).
 
----
+## Step 8: Refactor HNSW search-and-insert for polymorphism
 
-Based on the [0.1.4-rc1] soak test analysis (3-node cluster, 15k vectors, mixed read/write/delete workload), the following 10 steps identify the highest impact areas for improvement in the core engine.
+Decouple the graph traversal logic from the underlying float32 assumptions.
 
-## 1. Hot-Path Vector Access Optimization
+- **Subtasks**:
+  - Refactor `mustGetVectorFromData` to use generic views.
+  - Update `Search` and `Insert` to use the dynamic dispatcher.
+- **Testing**:
+  - Unit: End-to-end flow validation for non-float32 types (e.g., Int8 search).
+  - Fuzz: HNSW graph connectivity stability with mixed precision insertions.
+- **Metrics**: `ahnsw_polymorphic_search_count` (Counter).
 
-**Problem**: The `pruneConnectionsLocked` loop—the hottest CPU path in HNSW construction—now includes safety checks (`if vec == nil`) to prevent panics. This adds branch prediction pressure.
-**Solution**: Guarantee data presence by pre-allocating "Sentinel Vectors" for all referenced IDs during the `AddBatch` phase, or enforce strict transactional boundaries so checks can be removed.
-**Expected Impact**: 10-15% reduction in index construction CPU time.
+## Step 9: Enhanced Observability
 
-## 2. Static SIMD Dispatch
+Expose the matrix of performance across all types and dimensions.
 
-**Problem**: `simd.EuclideanDistance` performs dynamic dispatch (checking CPU capabilities) or relies on compiler inlining that may not perfectly resolve overhead for every single distance matching call (millions per second).
-**Solution**: Use a global function pointer initialized at startup (`var DistFunc = resolveDistFunc()`) to pay the dispatch cost only once, ensuring the inner loop is a direct assembly call.
-**Expected Impact**: 5-10% improvement in search latency and indexing speed.
+- **Subtasks**:
+  - Add granular Prometheus metrics for per-type latency.
+  - Implement dimension-bucketed performance tracking.
+- **Testing**:
+  - Unit: Metric registration validation.
+  - Fuzz: High-frequency metric updates under thread contention.
+- **Metrics**: Full Prometheus registry exposure.
 
-## 3. Binary Search Protocol (DoExchange)
+## Step 10: Multi-Type Fuzz Testing Suite
 
-**Problem**: The current `VectorSearch` implementation uses Flight `DoAction` with JSON payloads. JSON serialization/deserialization consumes CPU and bloats network traffic (~2x overhead vs binary).
-**Solution**: Migrate the search path to `DoExchange` using a defined Arrow Schema (or internal binary format) for the query vector and parameters.
-**Expected Impact**: >20% reduction in query latency, especially for high QPS.
+A dedicated harness for identifying edge cases in polymorphic ingestion.
 
-## 4. Parallel Distributed Scatter-Gather
+- **Subtasks**:
+  - Create randomized ingestion fuzzer covering all 12 types.
+  - Implement persistence-roundtrip fuzzing.
+- **Testing**:
+  - Fuzz: Run long-soak fuzzers for 30+ minutes.
+- **Metrics**: `ahnsw_fuzz_crash_recovered_total` (Counter).
 
-**Problem**: `Coordinator.GlobalSearch` fans out interactions to peers. Optimizing this concurrency model (e.g., using a specialized `errgroup` with bounded concurrency and context propagation) can reduce tail latency (P99).
-**Solution**: Refine the scatter-gather logic to use a persistent connection pool with speculative execution (query fastest duplicates) if replication is enabled.
-**Expected Impact**: Reduced P99 latency in distributed setups.
+## Step 11: High-Dimension Growth Stability
 
-## 5. Async DiskStore Reads (io_uring)
+Ensure the system remains stable and fast during growth of extremely large vectors.
 
-**Problem**: While WAL uses `io_uring`, the `DiskStore` (used for larger-than-memory datasets) relies on mmap or standard syscalls which can stall the go runtime thread on page faults.
-**Solution**: Implement `io_uring` for random reads in `DiskStore`, allowing the Go runtime to continue scheduling other goroutines during disk I/O.
-**Expected Impact**: Higher throughput for disk-resident workloads; unblocked search threads.
+- **Subtasks**:
+  - Optimize `Grow` and `Clone` for 3072-dim vector pre-allocation.
+  - Implement slab-aware memory reclamation for large vectors.
+- **Testing**:
+  - Unit: Index growth from 0 to 10M 3072-dim vectors.
+  - Fuzz: Concurrent growth triggered by multiple types.
+- **Metrics**: `ahnsw_index_growth_duration_seconds` (Histogram).
 
-## 6. Adaptive Garbage Collection (GOGC)
+## Step 12: Final Integration & Regression
 
-**Problem**: Soak tests showed ~28k vectors/s ingestion, which generates massive garbage. Static `GOGC` (e.g. 75) might trigger too frequently or too late.
-**Solution**: Implement a feedback-loop controller that adjusts `GOGC` dynamically based on allocation rate and free memory, maximizing throughput during ingest and minimizing latency during search.
-**Expected Impact**: Smoother latency profile (reduced GC pause outliers).
+Address legacy test technical debt and perform final validation.
 
-## 7. Fragmentation-Aware Compaction
-
-**Problem**: Deletion is currently fast (bitset flip), but leaves gaps. Current compaction runs periodically or by batch count.
-**Solution**: Track "Tombstone Density" per batch. Trigger compaction specifically for batches where deleted records exceed a threshold (e.g., 20%), optimizing merge efficiency.
-**Expected Impact**: Reduced detailed memory usage and improved cache locality.
-
-## 8. HNSW Connectivity Repair Agent
-
-**Problem**: High-concurrency deletions and pruning can theoretically create disconnected sub-graphs ("islands") in HNSW, hurting recall.
-**Solution**: Run a background "Repair Agent" that randomly traversing the graph from entry points to ensure reachability, re-linking orphans if found.
-**Expected Impact**: Long-term recall stability (99.9%+) without full re-indexing.
-
-## 9. Thread Pinning & NUMA Awareness
-
-**Problem**: Vectors and Graph Data allocated on one NUMA node might be accessed by threads on another, causing QPI/interconnect traffic.
-**Solution**: Explicitly pin ingest/search worker pools to specific CPU cores and allocate memory from local nodes where possible (using `unix.Mbind` or similar concepts via CGO/assembly if needed).
-**Expected Impact**: Reduced L3 cache misses; linear scaling on high-core-count servers.
-
-## 10. eBPF Network Profiling
-
-**Problem**: "Connection refused" and network saturation issues are hard to debug from application logs alone.
-**Solution**: Integrate eBPF hooks (via Cilium or generic tools) to expose TCP window metrics, retransmits, and socket queue depths as Prometheus metrics.
-**Expected Impact**: Instant visibility into network bottlenecks and capacity limits.
+- **Subtasks**:
+  - Fix dimension mismatches in existing HNSW tests.
+  - Final sharded/multi-node validation across all types.
+- **Testing**:
+  - Unit: Pass full project test suite with `-race`.
+  - Fuzz: Cross-architecture consistency fuzzing.
+- **Metrics**: `ahnsw_total_vectors_indexed` (Counter).

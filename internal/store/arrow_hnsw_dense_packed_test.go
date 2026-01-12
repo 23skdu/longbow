@@ -38,10 +38,10 @@ func TestArrowHNSW_AddBatch_Parallel_Dense_Packed(t *testing.T) {
 	defer vecArray.Release()
 
 	schema := arrow.NewSchema([]arrow.Field{{Name: "vector", Type: vecArray.DataType(), Nullable: true}}, nil)
-	rec := array.NewRecord(schema, []arrow.Array{vecArray}, int64(numVectors))
+	rec := array.NewRecordBatch(schema, []arrow.Array{vecArray}, int64(numVectors))
 	defer rec.Release()
 
-	recs := []arrow.Record{rec}
+	recs := []arrow.RecordBatch{rec}
 	rowIdxs := make([]int, numVectors)
 	batchIdxs := make([]int, numVectors)
 	for i := 0; i < numVectors; i++ {

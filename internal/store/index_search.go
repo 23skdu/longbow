@@ -108,6 +108,7 @@ func (h *HNSWIndex) SearchVectors(queryVec []float32, k int, filters []query.Fil
 
 		// Graph search requires global lock
 		h.mu.RLock()
+		h.Graph.Search(graphQuery, limit)
 		neighbors := h.Graph.Search(graphQuery, limit)
 		h.mu.RUnlock()
 
@@ -127,17 +128,17 @@ func (h *HNSWIndex) SearchVectors(queryVec []float32, k int, filters []query.Fil
 		// Fall back to serial processing
 		distFunc := h.GetDistanceFunc()
 
-		// Pre-process filters once per search
-		var evaluator *query.FilterEvaluator
+		// Pre-process filters with multi-batch support
+		evaluators := make(map[int]*query.FilterEvaluator)
 		if len(filters) > 0 {
 			h.dataset.dataMu.RLock()
 			if len(h.dataset.Records) > 0 {
-				var err error
-				evaluator, err = query.NewFilterEvaluator(h.dataset.Records[0], filters)
+				ev, err := query.NewFilterEvaluator(h.dataset.Records[0], filters)
 				if err != nil {
 					h.dataset.dataMu.RUnlock()
 					return nil, fmt.Errorf("filter creation failed: %w", err)
 				}
+				evaluators[0] = ev
 			}
 			h.dataset.dataMu.RUnlock()
 		}
@@ -217,8 +218,21 @@ func (h *HNSWIndex) SearchVectors(queryVec []float32, k int, filters []query.Fil
 					continue
 				}
 
-				if evaluator != nil {
-					if !evaluator.Matches(loc.RowIdx) {
+				if len(evaluators) > 0 {
+					ev, ok := evaluators[loc.BatchIdx]
+					if !ok {
+						if loc.BatchIdx >= len(h.dataset.Records) {
+							continue
+						}
+						sourceRec := h.dataset.Records[loc.BatchIdx]
+						var err error
+						ev, err = query.NewFilterEvaluator(sourceRec, filters)
+						if err != nil {
+							continue
+						}
+						evaluators[loc.BatchIdx] = ev
+					}
+					if !ev.Matches(loc.RowIdx) {
 						continue
 					}
 				}

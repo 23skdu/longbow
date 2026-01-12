@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"fmt"
+	"log"
 	"math"
 	"math/rand"
 	"runtime"
@@ -332,7 +333,6 @@ func (h *ArrowHNSW) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []int)
 }
 
 // SearchVectors implements VectorIndex.
-// SearchVectors implements VectorIndex.
 func (h *ArrowHNSW) SearchVectors(queryVec []float32, k int, filters []query.Filter, options SearchOptions) ([]SearchResult, error) {
 	// Post-filtering with Adaptive Expansion
 	initialFactor := 10
@@ -355,7 +355,15 @@ func (h *ArrowHNSW) SearchVectors(queryVec []float32, k int, filters []query.Fil
 		criteria := make(map[string]string)
 		allSimple := true
 		for _, f := range filters {
-			if f.Operator == "=" || f.Operator == "==" {
+			isIndexed := false
+			for _, col := range h.config.IndexedColumns {
+				if col == f.Field {
+					isIndexed = true
+					break
+				}
+			}
+
+			if (f.Operator == "=" || f.Operator == "==") && isIndexed {
 				criteria[f.Field] = f.Value
 			} else {
 				allSimple = false
@@ -390,6 +398,11 @@ func (h *ArrowHNSW) SearchVectors(queryVec []float32, k int, filters []query.Fil
 			return nil, err
 		}
 
+		log.Printf("[DEBUG] ArrowHNSW.Search returned %d candidates", len(candidates))
+
+		log.Printf("[DEBUG] HNSW Search returned %d candidates (limit=%d, ef=%d, has_qBitset=%v, num_filters=%d)\\n",
+			len(candidates), limit, ef, qBitset != nil, len(filters))
+
 		// Filter candidates (only if we didn't use qBitset or if there's complex logic)
 		var res []SearchResult
 		if len(filters) > 0 && qBitset == nil {
@@ -399,43 +412,62 @@ func (h *ArrowHNSW) SearchVectors(queryVec []float32, k int, filters []query.Fil
 				return nil, fmt.Errorf("dataset empty during filter")
 			}
 
-			var evaluator *query.FilterEvaluator
-			var err error
-			evaluator, err = query.NewFilterEvaluator(h.dataset.Records[0], filters)
+			log.Printf("[DEBUG] Starting post-filtering: candidates=%d, filters=%d, batches=%d\n",
+				len(candidates), len(filters), len(h.dataset.Records))
+
+			evaluator, err := query.NewFilterEvaluator(h.dataset.Records[0], filters)
 			if err != nil {
+				log.Printf("[DEBUG] Failed to create evaluator for batch 0: %v\n", err)
 				return nil, err
 			}
 
 			res = make([]SearchResult, 0, len(candidates))
 
-			// 1. Gather valid candidates and their row indices for batch processing
-			// We only filter candidates that are in Batch 0 (current limit)
-			validCandidates := make([]SearchResult, 0, len(candidates))
-			rowIndices := make([]int, 0, len(candidates))
+			// Support filtering across multiple batches
+			evaluators := make(map[int]*query.FilterEvaluator)
+			evaluators[0] = evaluator
 
-			for _, candle := range candidates {
+			matchCount := 0
+			for i, candle := range candidates {
 				loc, ok := h.locationStore.Get(VectorID(candle.ID))
-				if !ok || loc.BatchIdx != 0 {
+				if !ok {
+					log.Printf("[DEBUG] Candidate %d (ID=%d): location not found\n", i, candle.ID)
 					continue
 				}
-				rowIndices = append(rowIndices, loc.RowIdx)
-				validCandidates = append(validCandidates, candle)
-			}
 
-			// 2. Vectorized Filter Evaluation
-			// MatchesBatch uses SIMD/Gather where possible to filter indices efficiently
-			matchedIndices := evaluator.MatchesBatch(rowIndices)
+				if i < 3 {
+					log.Printf("[DEBUG] Candidate %d: ID=%d, BatchIdx=%d, RowIdx=%d\n",
+						i, candle.ID, loc.BatchIdx, loc.RowIdx)
+				}
 
-			// 3. Reconstruct Results
-			// matchedIndices is a subsequence of rowIndices. validCandidates aligns with rowIndices.
-			// We match them up.
-			matchIdx := 0
-			for i, rowIdx := range rowIndices {
-				if matchIdx < len(matchedIndices) && rowIdx == matchedIndices[matchIdx] {
-					res = append(res, validCandidates[i])
-					matchIdx++
+				// Get or create evaluator for this batch
+				ev, ok := evaluators[loc.BatchIdx]
+				if !ok {
+					if loc.BatchIdx >= len(h.dataset.Records) {
+						log.Printf("[DEBUG] Candidate %d: BatchIdx %d out of range (max %d)\n",
+							i, loc.BatchIdx, len(h.dataset.Records)-1)
+						continue
+					}
+					ev, err = query.NewFilterEvaluator(h.dataset.Records[loc.BatchIdx], filters)
+					if err != nil {
+						log.Printf("[DEBUG] Failed to create evaluator for batch %d: %v\n",
+							loc.BatchIdx, err)
+						continue
+					}
+					evaluators[loc.BatchIdx] = ev
+				}
+
+				matches := ev.Matches(loc.RowIdx)
+				if i < 3 {
+					log.Printf("[DEBUG] Candidate %d: Matches=%v\n", i, matches)
+				}
+				if matches {
+					matchCount++
+					res = append(res, candle)
 				}
 			}
+			log.Printf("[DEBUG] Post-filtering complete: matched=%d, total=%d\n",
+				matchCount, len(candidates))
 		} else {
 			res = candidates
 		}
@@ -542,11 +574,13 @@ func (h *ArrowHNSW) SetDimension(dim int) {
 	if dim <= 0 {
 		return
 	}
-	// Only set if not already set, or force update?
-	// Use CompareAndSwap to only set if 0
 	if h.dims.CompareAndSwap(0, int32(dim)) {
-		// Re-initialize batch computer with correct dimension
 		h.batchComputer = NewBatchDistanceComputer(memory.DefaultAllocator, dim)
+		// Ensure backend data also has the correct dimension set
+		data := h.data.Load()
+		if data.Dims == 0 {
+			h.Grow(data.Capacity, dim)
+		}
 	}
 }
 

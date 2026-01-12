@@ -214,11 +214,8 @@ func (a *AutoShardingIndex) migrateToSharded() {
 	start := time.Now()
 
 	// LOCK ORDER: ds.dataMu MUST be locked before a.mu to avoid deadlock with Search
-	fmt.Println("[DEBUG] migrateToSharded: Acquiring dataMu.RLock...")
 	a.dataset.dataMu.RLock()
-	fmt.Println("[DEBUG] migrateToSharded: Acquiring a.mu.Lock...")
 	a.mu.Lock()
-	fmt.Println("[DEBUG] migrateToSharded: Locks acquired.")
 	if a.sharded {
 		a.mu.Unlock()
 		a.dataset.dataMu.RUnlock()
@@ -334,19 +331,13 @@ func (a *AutoShardingIndex) migrateToSharded() {
 	totalMigrated := lastMigrated // For logging accuracy
 
 	// Final swap
-	fmt.Printf("[DEBUG] migrateToSharded: Starting final swap at %d, n=%d\n", totalMigrated, n)
 
 	// LOCK ORDER: ds.dataMu MUST be locked before a.mu to avoid deadlock with Search
-	fmt.Println("[DEBUG] migrateToSharded: Acquiring a.dataset.dataMu.RLock for final swap...")
 	a.dataset.dataMu.RLock()
-	fmt.Println("[DEBUG] migrateToSharded: Acquiring a.mu.Lock for final swap...")
 	a.mu.Lock()
-	fmt.Println("[DEBUG] migrateToSharded: Locks acquired for final swap.")
 
 	if a.sharded {
-		fmt.Println("[DEBUG] migrateToSharded: Releasing a.dataset.dataMu.RUnlock for final swap (already sharded).")
 		a.dataset.dataMu.RUnlock()
-		fmt.Println("[DEBUG] migrateToSharded: Releasing a.mu.Unlock for final swap (already sharded).")
 		a.mu.Unlock()
 		return
 	}

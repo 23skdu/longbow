@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -261,6 +262,7 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 	}
 
 	s.logger.Info().Str("name", name).Msg("DoPut started (Batched)")
+	s.logger.Info().Str("schema", r.Schema().String()).Msg("DoPut Schema")
 
 	// Use RCU helper for create
 	ds, created := s.getOrCreateDataset(name, func() *Dataset {
@@ -685,6 +687,7 @@ func (s *VectorStore) applyBatchToMemory(name string, rec arrow.RecordBatch) err
 
 	// Try to send, backing off if full
 	sent := false
+	log.Printf("[DEBUG] Enqueueing IndexJob for %s (batchIdx=%d) to indexQueue", name, batchIdx)
 	for attempt := 0; attempt < 50; attempt++ {
 		if s.indexQueue.Send(job) {
 			sent = true

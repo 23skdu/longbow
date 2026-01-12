@@ -1222,8 +1222,12 @@ func (h *ArrowHNSW) pruneConnectionsLocked(ctx *ArrowSearchContext, data *GraphD
 	}
 
 	selected := h.selectNeighbors(ctx, candidates, maxConn, data)
-
 	// Write back
+	for i, cand := range selected {
+		atomic.StoreUint32(&neighborsChunk[baseIdx+i], cand.ID)
+	}
+	// Update count
+	atomic.StoreInt32(countAddr, int32(len(selected)))
 
 	// Seqlock write start
 	verChunk := data.GetVersionsChunk(layer, cID)

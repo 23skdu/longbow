@@ -130,13 +130,12 @@ func (h *HNSWIndex) processChunk(query []float32, neighbors []hnsw.Node[VectorID
 
 	h.dataset.dataMu.RLock()
 
-	var evaluator *qry.FilterEvaluator
-	if len(filters) > 0 {
-		if len(h.dataset.Records) > 0 {
-			var err error
-			// If error occurs, evaluator stays nil, which is handled gracefully later
-			evaluator, err = qry.NewFilterEvaluator(h.dataset.Records[0], filters)
-			_ = err // Explicitly ignore error
+	evaluators := make(map[int]*qry.FilterEvaluator)
+	if len(filters) > 0 && len(h.dataset.Records) > 0 {
+		// Pre-bind batch 0 if it exists
+		ev, err := qry.NewFilterEvaluator(h.dataset.Records[0], filters)
+		if err == nil {
+			evaluators[0] = ev
 		}
 	}
 
@@ -151,8 +150,22 @@ func (h *HNSWIndex) processChunk(query []float32, neighbors []hnsw.Node[VectorID
 		}
 		rec := h.dataset.Records[loc.BatchIdx]
 
-		if evaluator != nil && !evaluator.Matches(loc.RowIdx) {
-			continue
+		if len(evaluators) > 0 {
+			ev, ok := evaluators[loc.BatchIdx]
+			if !ok {
+				if loc.BatchIdx >= len(h.dataset.Records) {
+					continue
+				}
+				var err error
+				ev, err = qry.NewFilterEvaluator(h.dataset.Records[loc.BatchIdx], filters)
+				if err != nil {
+					continue
+				}
+				evaluators[loc.BatchIdx] = ev
+			}
+			if !ev.Matches(loc.RowIdx) {
+				continue
+			}
 		}
 
 		// Extract vector (copy)
@@ -241,13 +254,12 @@ func (h *HNSWIndex) processChunk(query []float32, neighbors []hnsw.Node[VectorID
 func (h *HNSWIndex) processResultsSerial(query []float32, neighbors []hnsw.Node[VectorID], k int, filters []qry.Filter) []SearchResult {
 	distFunc := h.GetDistanceFunc()
 
-	var evaluator *qry.FilterEvaluator
-	if len(filters) > 0 {
-		h.dataset.dataMu.RLock()
-		if len(h.dataset.Records) > 0 {
-			evaluator, _ = qry.NewFilterEvaluator(h.dataset.Records[0], filters)
+	evaluators := make(map[int]*qry.FilterEvaluator)
+	if len(filters) > 0 && len(h.dataset.Records) > 0 {
+		ev, err := qry.NewFilterEvaluator(h.dataset.Records[0], filters)
+		if err == nil {
+			evaluators[0] = ev
 		}
-		h.dataset.dataMu.RUnlock()
 	}
 
 	res := make([]SearchResult, 0, len(neighbors))
@@ -270,9 +282,25 @@ func (h *HNSWIndex) processResultsSerial(query []float32, neighbors []hnsw.Node[
 		}
 		rec := h.dataset.Records[loc.BatchIdx]
 
-		if evaluator != nil && !evaluator.Matches(loc.RowIdx) {
-			h.dataset.dataMu.RUnlock()
-			continue
+		if len(evaluators) > 0 {
+			ev, ok := evaluators[loc.BatchIdx]
+			if !ok {
+				if loc.BatchIdx >= len(h.dataset.Records) {
+					h.dataset.dataMu.RUnlock()
+					continue
+				}
+				var err error
+				ev, err = qry.NewFilterEvaluator(h.dataset.Records[loc.BatchIdx], filters)
+				if err != nil {
+					h.dataset.dataMu.RUnlock()
+					continue
+				}
+				evaluators[loc.BatchIdx] = ev
+			}
+			if !ev.Matches(loc.RowIdx) {
+				h.dataset.dataMu.RUnlock()
+				continue
+			}
 		}
 
 		vec, _ := h.extractVector(rec, loc.RowIdx)

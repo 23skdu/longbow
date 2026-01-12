@@ -25,8 +25,9 @@ type ShardedHNSWConfig struct {
 	Dimension      uint32         // Vector dimension
 	// ShardSplitThreshold is deprecated in favor of Ring Sharding but kept for interface/legacy compatibility.
 	// In Ring mode, it implies the *initial capacity* of each shard.
-	ShardSplitThreshold int
-	UseRingSharding     bool // If true, use Consistent Hashing (Ring). If false, use Linear Range.
+	ShardSplitThreshold    int
+	UseRingSharding        bool // If true, use Consistent Hashing (Ring). If false, use Linear Range.
+	PackedAdjacencyEnabled bool // If true, use thread-safe packed neighbor storage (v0.1.4)
 }
 
 func (c ShardedHNSWConfig) Validate() error {
@@ -45,12 +46,13 @@ func (c ShardedHNSWConfig) Validate() error {
 // DefaultShardedHNSWConfig returns sensible defaults.
 func DefaultShardedHNSWConfig() ShardedHNSWConfig {
 	return ShardedHNSWConfig{
-		NumShards:           runtime.NumCPU(),
-		M:                   32,
-		EfConstruction:      400,
-		Metric:              MetricEuclidean,
-		ShardSplitThreshold: 65536, // ~64k vectors per shard (L3 Cache Alignment)
-		UseRingSharding:     true,  // Default to Ring
+		NumShards:              runtime.NumCPU(),
+		M:                      32,
+		EfConstruction:         400,
+		Metric:                 MetricEuclidean,
+		ShardSplitThreshold:    65536, // ~64k vectors per shard (L3 Cache Alignment)
+		UseRingSharding:        true,  // Default to Ring
+		PackedAdjacencyEnabled: true,
 	}
 }
 
@@ -165,16 +167,14 @@ func (s *ShardedHNSW) newShard(_ int) *hnswShard {
 	arrowConfig.EfConstruction = s.config.EfConstruction
 	arrowConfig.InitialCapacity = s.config.ShardSplitThreshold // Capacity hint
 	arrowConfig.Metric = s.config.Metric
+	arrowConfig.PackedAdjacencyEnabled = s.config.PackedAdjacencyEnabled
 
 	// We pass nil for ChunkedLocationStore because shards use local IDs and don't manage global locations
 	// The ShardedHNSW manages the global location store.
 	idx := NewArrowHNSW(s.dataset, arrowConfig, nil)
 
-	// Manually set dims if not yet inferred (safe backup)
-	dims := int(s.dimension)
-	if dims > 0 && idx.dims.Load() == 0 {
-		idx.dims.Store(int32(dims))
-	}
+	// Correct dimension initialization
+	idx.SetDimension(int(s.dimension))
 
 	return newHnswShard(idx)
 }
@@ -380,6 +380,7 @@ func (s *ShardedHNSW) SearchVectors(queryVec []float32, k int, filters []query.F
 	if err := g.Wait(); err != nil {
 		return nil, err
 	}
+
 	close(ch)
 
 	// 2. Merge Results
@@ -408,23 +409,33 @@ func (s *ShardedHNSW) SearchVectors(queryVec []float32, k int, filters []query.F
 		}
 	}
 
-	// Filter Block
+	// Filter Block (Redundant if shards filtered, but kept for safety/fallback)
 	if len(filters) > 0 && s.dataset != nil {
 		s.dataset.dataMu.RLock()
 		if len(s.dataset.Records) > 0 {
-			evaluator, err := query.NewFilterEvaluator(s.dataset.Records[0], filters)
-			if err == nil {
-				filtered := merged[:0]
-				for _, r := range merged {
-					loc, ok := s.locationStore.Get(r.ID)
-					if ok && loc.BatchIdx < len(s.dataset.Records) {
-						if evaluator.Matches(loc.RowIdx) {
-							filtered = append(filtered, r)
-						}
-					}
+			evaluators := make(map[int]*query.FilterEvaluator)
+			filtered := merged[:0]
+			for _, r := range merged {
+				loc, ok := s.locationStore.Get(r.ID)
+				if !ok || loc.BatchIdx >= len(s.dataset.Records) {
+					continue
 				}
-				merged = filtered
+
+				ev, ok := evaluators[loc.BatchIdx]
+				if !ok {
+					var err error
+					ev, err = query.NewFilterEvaluator(s.dataset.Records[loc.BatchIdx], filters)
+					if err != nil {
+						continue
+					}
+					evaluators[loc.BatchIdx] = ev
+				}
+
+				if ev.Matches(loc.RowIdx) {
+					filtered = append(filtered, r)
+				}
 			}
+			merged = filtered
 		}
 		s.dataset.dataMu.RUnlock()
 	}

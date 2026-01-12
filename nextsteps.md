@@ -94,3 +94,7 @@ Based on deep analysis of `bench_9k` and `final` pprof data, we have identified 
 - **Pre-Warm HNSW Index** (Implemented)
 - **Pipelined HNSW Insertion** (Implemented)
 - **Simd Optimizations** (Implemented)
+- **Index Pipeline Debugging** (Completed 2026-01-11)
+  - Fixed negative caching of empty search results
+  - Added "op" alias support for filter operator field
+  - Implemented case-insensitive operator matching

@@ -301,19 +301,28 @@ func (h *ArrowHNSW) searchLayer(q []float32, entryPoint uint32, ef, layer int, c
 				if countsChunk == nil || neighborsChunk == nil {
 					break
 				}
-				count := atomic.LoadInt32(&countsChunk[chunkOffset(curr.ID)])
+				count := int(atomic.LoadInt32(&countsChunk[chunkOffset(curr.ID)]))
+				if count > MaxNeighbors {
+					count = MaxNeighbors
+				}
 				baseIdx := int(chunkOffset(curr.ID)) * MaxNeighbors
 
-				for i := 0; i < int(count); i++ {
-					nid := atomic.LoadUint32(&neighborsChunk[baseIdx+i])
-					if !ctx.visited.IsSet(nid) {
-						ctx.Visit(nid)
-						ctx.scratchIDs = append(ctx.scratchIDs, nid)
-						h.prefetchNode(nid, data, useSQ8, usePQ)
-					}
+				// Collect neighbors into a temporary local buffer to avoid contaminating visited set
+				var localNeighbors [MaxNeighbors]uint32
+				for i := 0; i < count; i++ {
+					localNeighbors[i] = atomic.LoadUint32(&neighborsChunk[baseIdx+i])
 				}
 
 				if atomic.LoadUint32(verAddr) == ver {
+					// Consistency check passed, now we can safely Visit and append
+					for i := 0; i < count; i++ {
+						nid := localNeighbors[i]
+						if !ctx.visited.IsSet(nid) {
+							ctx.Visit(nid)
+							ctx.scratchIDs = append(ctx.scratchIDs, nid)
+							h.prefetchNode(nid, data, useSQ8, usePQ)
+						}
+					}
 					collected = true
 					break
 				}

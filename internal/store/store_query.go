@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"fmt"
+	"log"
 	"runtime"
 	"strconv"
 	"strings"
@@ -36,7 +38,9 @@ func (s *VectorStore) ListFlights(c *flight.Criteria, stream flight.FlightServic
 
 	var datasets []*Dataset
 	s.IterateDatasets(func(name string, ds *Dataset) {
-		datasets = append(datasets, ds)
+		if ds != nil {
+			datasets = append(datasets, ds)
+		}
 	})
 
 	for _, ds := range datasets {
@@ -120,6 +124,8 @@ func (s *VectorStore) GetSchema(ctx context.Context, desc *flight.FlightDescript
 
 // DoGet - Minimal implementation
 func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGetServer) error {
+	fmt.Printf("[DEBUG] DoGet received ticket len=%d\n", len(tkt.Ticket))
+	log.Printf("[DEBUG] DoGet received ticket (len=%d): %q", len(tkt.Ticket), string(tkt.Ticket))
 	// Parse ticket
 	query, err := qry.ParseTicketQuerySafe(tkt.Ticket)
 	if err != nil {
@@ -132,6 +138,7 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 			return status.Error(codes.InvalidArgument, "invalid ticket format")
 		}
 	}
+	log.Printf("[DEBUG] Parsed query: Search=%v Name=%s", query.Search, query.Name)
 
 	// Create Request-Scoped Arena Allocator
 	// This reduces GC pressure for transient buffers (masks, filtered batches, serialized records)
@@ -145,9 +152,10 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 
 	// Existing Dataset Fetch Logic
 	name := query.Name
-	s.logger.Debug().
+	s.logger.Info().
 		Str("name", name).
 		Int("filters", len(query.Filters)).
+		Interface("parsed_filters", query.Filters).
 		Msg("DoGet called")
 
 	ds, ok := s.getDataset(name)
@@ -165,6 +173,7 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 
 	// Use first record's schema
 	schema := ds.Records[0].Schema()
+	s.logger.Info().Msgf("DoGet Schema: %v", schema.String())
 
 	// Create Writer WITHOUT options first to be safe
 	w := flight.NewRecordWriter(stream, ipc.WithSchema(schema))
@@ -435,11 +444,13 @@ func (s *VectorStore) MapInternalToUserIDs(ds *Dataset, results []SearchResult) 
 			// If we return raw result, it contains internal ID, which might confuse client.
 			// But skipping might lose data.
 			// Let's assume invalid and skip?
+			log.Printf("[DEBUG] MapInternalToUserIDs: ID %d not found in Index location store", res.ID)
 			continue
 		}
 
 		// 2. Access RecordBatch
 		if loc.BatchIdx >= len(ds.Records) {
+			log.Printf("[DEBUG] MapInternalToUserIDs: dropping ID %d. BatchIdx %d >= Records %d", res.ID, loc.BatchIdx, len(ds.Records))
 			continue
 		}
 		rec := ds.Records[loc.BatchIdx]
@@ -607,8 +618,14 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, stream fli
 			if !ok {
 				return status.Errorf(codes.NotFound, "dataset %s not found", req.Dataset)
 			}
+			if ds.Index != nil {
+				log.Printf("[DEBUG] handleDoGetSearch Index Type: %T", ds.Index)
+			} else {
+				log.Printf("[DEBUG] handleDoGetSearch Index is NIL")
+			}
 
 			ds.dataMu.RLock()
+			log.Printf("[DEBUG] handleDoGetSearch: index exists=%v", ds.Index != nil)
 			if ds.Index == nil {
 				ds.dataMu.RUnlock()
 				return status.Error(codes.FailedPrecondition, "index not initialized")
@@ -671,9 +688,14 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, stream fli
 			}
 		}
 
-		s.queryCache.Put(cacheKey, searchResults)
+		if len(searchResults) > 0 {
+			s.queryCache.Put(cacheKey, searchResults)
+		} else {
+			log.Printf("[DEBUG] Not caching empty results for %s", req.Dataset)
+		}
 
 	} // End of Cache Miss block
+	log.Printf("[DEBUG] handleDoGetSearch: Sending %d results", len(searchResults))
 
 	// 5. Stream Results (Arrow)
 	// Schema: id (uint64), score (float32)

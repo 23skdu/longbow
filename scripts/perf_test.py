@@ -593,11 +593,25 @@ def main():
     
     parser.add_argument("--test-delete", action="store_true")
     parser.add_argument("--test-id-search", action="store_true")
+    parser.add_argument("--filter", help="JSON string for filters or 'field:op:val'")
 
     args = parser.parse_args()
 
     # Init
     client = LongbowClient(uri=args.data_uri, meta_uri=args.meta_uri)
+    
+    # Process Filter
+    filters = None
+    if args.filter:
+        if args.filter.startswith("["):
+            filters = json.loads(args.filter)
+        else:
+            parts = args.filter.split(":")
+            if len(parts) == 3:
+                filters = [{"field": parts[0], "op": parts[1], "value": parts[2]}]
+            else:
+                print(f"Error: Invalid filter format '{args.filter}'. Use 'field:op:val' or JSON array.")
+                sys.exit(1)
     
     # Check health
     if not check_cluster_health(client):
@@ -625,7 +639,9 @@ def main():
         if not args.skip_search:
             q_vecs = generate_query_vectors(args.queries, args.dim)
             res_s = benchmark_vector_search(
-                client, args.dataset, q_vecs, k=args.k, global_search=args.global_search
+                client, args.dataset, q_vecs, k=args.k, 
+                filters=filters,
+                global_search=args.global_search
             )
             results.append(res_s)
 

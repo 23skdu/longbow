@@ -8,25 +8,24 @@ import (
 
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/pq"
-	"github.com/23skdu/longbow/internal/query"
 	qry "github.com/23skdu/longbow/internal/query"
 	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
 // Search performs k-NN search using the provided query vector.
-func (h *HNSWIndex) Search(query []float32, k int) ([]VectorID, error) {
+func (h *HNSWIndex) Search(queryVec []float32, k int) ([]VectorID, error) {
 	defer func(start time.Time) {
 		metrics.VectorSearchLatencySeconds.WithLabelValues(h.dataset.Name).Observe(time.Since(start).Seconds())
 	}(time.Now())
 
 	// PQ Encoding for query
-	var graphQuery = query
+	var graphQuery = queryVec
 	// Use RLock for config check to avoid race
 	h.pqCodesMu.RLock()
 	// Capture locals to avoid holding lock too long if encoding is slow?
 	// Encoding is fast enough.
 	if h.pqEnabled && h.pqEncoder != nil {
-		codes, _ := h.pqEncoder.Encode(query)
+		codes, _ := h.pqEncoder.Encode(queryVec)
 		graphQuery = pq.PackBytesToFloat32s(codes)
 	}
 	h.pqCodesMu.RUnlock()
@@ -71,7 +70,7 @@ func (h *HNSWIndex) GetNeighbors(id VectorID) ([]VectorID, error) {
 
 // SearchVectors performs k-NN search returning full results with scores (distances).
 // Uses striped locks for location access to reduce contention in result processing.
-func (h *HNSWIndex) SearchVectors(queryVec []float32, k int, filters []query.Filter, options SearchOptions) ([]SearchResult, error) {
+func (h *HNSWIndex) SearchVectors(queryVec []float32, k int, filters []qry.Filter, options SearchOptions) ([]SearchResult, error) {
 	defer func(start time.Time) {
 		metrics.SearchLatencySeconds.WithLabelValues(h.dataset.Name, "vector").Observe(time.Since(start).Seconds())
 	}(time.Now())
@@ -93,6 +92,18 @@ func (h *HNSWIndex) SearchVectors(queryVec []float32, k int, filters []query.Fil
 
 	limit := k
 	if len(filters) > 0 {
+		// Optimization: Try bitmap-based filtering
+		bitset, err := h.dataset.GenerateFilterBitset(filters)
+		if err == nil && bitset != nil {
+			defer bitset.Release()
+			res := h.SearchVectorsWithBitmap(queryVec, k, bitset, options)
+			// Extract vectors if requested (SearchVectorsWithBitmap doesn't do this)
+			if options.IncludeVectors {
+				h.extractVectors(res, options.VectorFormat)
+			}
+			return res, nil
+		}
+		// Fallback to post-filtering if bitmap generation fails or is not possible
 		limit = k * initialFactor
 	}
 
@@ -129,11 +140,11 @@ func (h *HNSWIndex) SearchVectors(queryVec []float32, k int, filters []query.Fil
 		distFunc := h.GetDistanceFunc()
 
 		// Pre-process filters with multi-batch support
-		evaluators := make(map[int]*query.FilterEvaluator)
+		evaluators := make(map[int]*qry.FilterEvaluator)
 		if len(filters) > 0 {
 			h.dataset.dataMu.RLock()
 			if len(h.dataset.Records) > 0 {
-				ev, err := query.NewFilterEvaluator(h.dataset.Records[0], filters)
+				ev, err := qry.NewFilterEvaluator(h.dataset.Records[0], filters)
 				if err != nil {
 					h.dataset.dataMu.RUnlock()
 					return nil, fmt.Errorf("filter creation failed: %w", err)
@@ -226,7 +237,7 @@ func (h *HNSWIndex) SearchVectors(queryVec []float32, k int, filters []query.Fil
 						}
 						sourceRec := h.dataset.Records[loc.BatchIdx]
 						var err error
-						ev, err = query.NewFilterEvaluator(sourceRec, filters)
+						ev, err = qry.NewFilterEvaluator(sourceRec, filters)
 						if err != nil {
 							continue
 						}
@@ -296,7 +307,7 @@ func (h *HNSWIndex) SearchVectors(queryVec []float32, k int, filters []query.Fil
 }
 
 // SearchVectorsWithBitmap returns k nearest neighbors filtered by a bitset.
-func (h *HNSWIndex) SearchVectorsWithBitmap(queryVec []float32, k int, filter *query.Bitset, options SearchOptions) []SearchResult {
+func (h *HNSWIndex) SearchVectorsWithBitmap(queryVec []float32, k int, filter *qry.Bitset, options SearchOptions) []SearchResult {
 	if filter == nil || filter.Count() == 0 {
 		return []SearchResult{}
 	}
@@ -429,7 +440,7 @@ func (h *HNSWIndex) SearchVectorsWithBitmap(queryVec []float32, k int, filter *q
 	return res
 }
 
-func (h *HNSWIndex) searchBruteForceWithBitmap(query []float32, k int, filter *qry.Bitset) []SearchResult {
+func (h *HNSWIndex) searchBruteForceWithBitmap(queryVec []float32, k int, filter *qry.Bitset) []SearchResult {
 	// 1. Get all IDs from filter
 	ids := filter.ToUint32Array()
 	if len(ids) == 0 {
@@ -446,7 +457,7 @@ func (h *HNSWIndex) searchBruteForceWithBitmap(query []float32, k int, filter *q
 			continue
 		}
 
-		dist := distFunc(query, vec)
+		dist := distFunc(queryVec, vec)
 		results = append(results, SearchResult{
 			ID:    VectorID(id),
 			Score: dist,
@@ -507,17 +518,17 @@ func (h *HNSWIndex) PutResults(results []VectorID) {
 }
 
 // SearchWithArena performs k-NN search using the provided arena for allocations.
-func (h *HNSWIndex) SearchWithArena(query []float32, k int, arena *SearchArena) []VectorID {
+func (h *HNSWIndex) SearchWithArena(queryVec []float32, k int, arena *SearchArena) []VectorID {
 	defer func(start time.Time) {
 		metrics.VectorSearchLatencySeconds.WithLabelValues(h.dataset.Name).Observe(time.Since(start).Seconds())
 	}(time.Now())
 
-	if len(query) == 0 || k <= 0 {
+	if len(queryVec) == 0 || k <= 0 {
 		return nil
 	}
 
 	h.mu.RLock()
-	neighbors := h.Graph.Search(query, k)
+	neighbors := h.Graph.Search(queryVec, k)
 	h.mu.RUnlock()
 
 	if len(neighbors) == 0 {

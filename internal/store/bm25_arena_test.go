@@ -33,9 +33,9 @@ func TestBM25Arena_PostingLists(t *testing.T) {
 	idx := NewBM25ArenaIndex(arena, 100)
 
 	// Index multiple documents with overlapping tokens
-	idx.IndexDocument(1, []string{"hello", "world"})
-	idx.IndexDocument(2, []string{"hello", "test"})
-	idx.IndexDocument(3, []string{"world", "test"})
+	_ = idx.IndexDocument(1, []string{"hello", "world"})
+	_ = idx.IndexDocument(2, []string{"hello", "test"})
+	_ = idx.IndexDocument(3, []string{"world", "test"})
 
 	// Verify posting lists
 	tokenID, _ := idx.GetTokenID("hello")

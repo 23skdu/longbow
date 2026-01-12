@@ -56,6 +56,9 @@ type Dataset struct {
 	// Eviction state
 	evicting atomic.Bool // Marks dataset as being evicted
 
+	// In-flight Indexing Tracking (Compaction Safety)
+	PendingIndexJobs atomic.Int64
+
 	// LWW State
 	LWW *TimestampMap
 
@@ -90,6 +93,10 @@ type Dataset struct {
 
 	// Fragmentation-Aware Compaction
 	fragmentationTracker *FragmentationTracker
+
+	// Filter Cache: maps filter hash -> Bitset
+	filterCache map[string]*qry.Bitset
+	filterMu    sync.RWMutex
 }
 
 // IsSharded returns true if the dataset uses ShardedHNSW.
@@ -121,9 +128,9 @@ func (d *Dataset) GetRecord(idx int) (arrow.RecordBatch, bool) {
 }
 
 func NewDataset(name string, schema *arrow.Schema) *Dataset {
-	// Check feature flag for hnsw2
+	// Check feature flag for hnsw2 (default to true)
 	envVal := os.Getenv("LONGBOW_USE_HNSW2")
-	useHNSW2 := envVal == "true"
+	useHNSW2 := envVal != "false"
 
 	ds := &Dataset{
 		Name:            name,
@@ -138,6 +145,7 @@ func NewDataset(name string, schema *arrow.Schema) *Dataset {
 		BM25Index:       NewBM25InvertedIndex(DefaultBM25Config()),
 		Graph:           NewGraphStore(),
 		useHNSW2:        useHNSW2,
+		filterCache:     make(map[string]*qry.Bitset),
 		Metric:          MetricEuclidean, // Default
 		// hnsw2Index will be initialized externally to avoid import cycle
 	}
@@ -216,6 +224,69 @@ func (d *Dataset) AddToIndex(batchIdx, rowIdx int) error {
 	return err
 }
 
+// GenerateFilterBitset pre-calculates a bitset of VectorIDs that match the filters.
+func (d *Dataset) GenerateFilterBitset(filters []qry.Filter) (*qry.Bitset, error) {
+	// Generate hash
+	var hash string
+	for _, f := range filters {
+		hash += f.Hash() + ";"
+	}
+
+	d.filterMu.RLock()
+	if bs, ok := d.filterCache[hash]; ok {
+		d.filterMu.RUnlock()
+		return bs.Clone(), nil
+	}
+	d.filterMu.RUnlock()
+
+	d.dataMu.RLock()
+	defer d.dataMu.RUnlock()
+
+	if len(d.Records) == 0 || d.Index == nil {
+		return nil, nil
+	}
+
+	bitset := qry.NewBitset()
+
+	// Dataset records must have the same schema.
+	eval, err := qry.NewFilterEvaluator(d.Records[0], filters)
+	if err != nil {
+		bitset.Release()
+		return nil, err
+	}
+
+	idx := d.Index
+	for batchIdx, rec := range d.Records {
+		if err := eval.Reset(rec); err != nil {
+			continue // Should not happen with consistent schema
+		}
+
+		matches := eval.MatchesAll(int(rec.NumRows()))
+		for _, rowIdx := range matches {
+			loc := Location{BatchIdx: batchIdx, RowIdx: rowIdx}
+			if vid, ok := idx.GetVectorID(loc); ok {
+				bitset.Set(int(vid))
+			}
+		}
+	}
+
+	// Cache a clone so the original can be released/modified if needed elsewhere
+	// and the cached one stays safe.
+	d.filterMu.Lock()
+	if len(d.filterCache) > 100 {
+		// Evict first element (pseudo-LRU since map iteration is random)
+		for k, v := range d.filterCache {
+			v.Release()
+			delete(d.filterCache, k)
+			break
+		}
+	}
+	d.filterCache[hash] = bitset.Clone()
+	d.filterMu.Unlock()
+
+	return bitset, nil
+}
+
 // MigrateToShardedIndex migrates the current index to a sharded index
 func (d *Dataset) MigrateToShardedIndex(cfg AutoShardingConfig) error {
 	d.dataMu.Lock()
@@ -279,13 +350,9 @@ func (d *Dataset) Close() {
 	d.recordEviction = nil
 }
 
-// UpdatePrimaryIndex updates the ID mapping for a given batch
-// The caller must hold dataMu lock.
-func (d *Dataset) UpdatePrimaryIndex(batchIdx int, rec arrow.RecordBatch) {
-	if d.PrimaryIndex == nil {
-		d.PrimaryIndex = make(map[string]RowLocation)
-	}
-
+// ExtractIDs extracts primary IDs from a record batch into a map of ID -> RowIdx.
+// This can be called outside of dataMu lock to prepare for a bulk update.
+func (d *Dataset) ExtractIDs(rec arrow.RecordBatch) map[string]int {
 	idColIdx := -1
 	for i, f := range rec.Schema().Fields() {
 		if f.Name == "id" {
@@ -295,36 +362,50 @@ func (d *Dataset) UpdatePrimaryIndex(batchIdx int, rec arrow.RecordBatch) {
 	}
 
 	if idColIdx == -1 {
-		return
+		return nil
 	}
 
 	col := rec.Column(idColIdx)
 	numRows := int(rec.NumRows())
+	idMap := make(map[string]int, numRows)
 
 	switch arr := col.(type) {
 	case *array.String:
 		for i := 0; i < numRows; i++ {
 			if arr.IsValid(i) {
-				d.PrimaryIndex[arr.Value(i)] = RowLocation{BatchIdx: batchIdx, RowIdx: i}
+				idMap[arr.Value(i)] = i
 			}
 		}
 	case *array.Int64:
 		for i := 0; i < numRows; i++ {
 			if arr.IsValid(i) {
 				idStr := strconv.FormatInt(arr.Value(i), 10)
-				d.PrimaryIndex[idStr] = RowLocation{BatchIdx: batchIdx, RowIdx: i}
+				idMap[idStr] = i
 			}
 		}
 	case *array.Uint64:
 		for i := 0; i < numRows; i++ {
 			if arr.IsValid(i) {
 				idStr := strconv.FormatUint(arr.Value(i), 10)
-				d.PrimaryIndex[idStr] = RowLocation{BatchIdx: batchIdx, RowIdx: i}
+				idMap[idStr] = i
 			}
 		}
-	default:
-		// Fallback to string representation?
-		// For consistency with vector value checks, we typically require specific types.
-		// Ignoring unsupported types for primary index for now.
+	}
+	return idMap
+}
+
+// UpdatePrimaryIndex updates the ID mapping for a given batch.
+// Note: This is now a convenience wrapper around ExtractIDs.
+// The caller must hold dataMu lock.
+func (d *Dataset) UpdatePrimaryIndex(batchIdx int, rec arrow.RecordBatch) {
+	idMap := d.ExtractIDs(rec)
+	if idMap == nil {
+		return
+	}
+	if d.PrimaryIndex == nil {
+		d.PrimaryIndex = make(map[string]RowLocation)
+	}
+	for id, rowIdx := range idMap {
+		d.PrimaryIndex[id] = RowLocation{BatchIdx: batchIdx, RowIdx: rowIdx}
 	}
 }

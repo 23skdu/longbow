@@ -73,14 +73,14 @@ func TestHybridSearch_ConcurrentLifecycle(t *testing.T) {
 
 	// Create multiple BM25 indexes concurrently
 	for i := 0; i < 5; i++ {
-		go func(id int) {
+		go func() {
 			arena := memory.NewSlabArena(1024 * 1024)
 			bm25 := NewBM25ArenaIndex(arena, 100)
 
 			// Index documents
 			for j := 0; j < 100; j++ {
 				tokens := []string{"concurrent", "test", "document"}
-				bm25.IndexDocument(uint32(j), tokens)
+				_ = bm25.IndexDocument(uint32(j), tokens)
 			}
 
 			// Search
@@ -89,7 +89,7 @@ func TestHybridSearch_ConcurrentLifecycle(t *testing.T) {
 			assert.Greater(t, scores[0], float32(0.0))
 
 			done <- true
-		}(i)
+		}()
 	}
 
 	// Wait for all goroutines
@@ -109,10 +109,10 @@ func TestHybridSearch_UpdateDocument(t *testing.T) {
 	bm25 := NewBM25ArenaIndex(arena, 100)
 
 	// Index initial document
-	bm25.IndexDocument(1, []string{"initial", "content"})
+	_ = bm25.IndexDocument(1, []string{"initial", "content"})
 
 	// Update document
-	bm25.IndexDocument(1, []string{"updated", "content", "new"})
+	_ = bm25.IndexDocument(1, []string{"updated", "content", "new"})
 
 	// Verify updated content is searchable
 	query := []string{"updated", "new"}

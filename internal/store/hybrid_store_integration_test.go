@@ -1,10 +1,10 @@
 package store
 
-
 import (
-	"github.com/rs/zerolog"
 	"testing"
 	"time"
+
+	"github.com/rs/zerolog"
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
@@ -69,7 +69,7 @@ func TestVectorStoreBM25IndexCreation(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 
-	if store.GetBM25Index() == nil {
+	if store.GetBM25Index("test_ds") == nil {
 		t.Error("expected BM25 index to be created when hybrid search is enabled")
 	}
 }
@@ -87,7 +87,7 @@ func TestVectorStoreBM25IndexNilWhenDisabled(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 
-	if store.GetBM25Index() != nil {
+	if store.GetBM25Index("test_ds") != nil {
 		t.Error("expected BM25 index to be nil when hybrid search is disabled")
 	}
 }
@@ -124,9 +124,14 @@ func TestVectorStoreIndexTextColumns(t *testing.T) {
 	batch := buildTestRecordBatchWithText(mem, []string{"hello world test"}, "description")
 	defer batch.Release()
 
-	store.indexTextColumnsForHybridSearch(batch, 0)
+	// Must create dataset first so it has its own BM25 index
+	datasetName := "test_ds"
+	store.PrewarmDataset(datasetName, batch.Schema())
+	ds, _ := store.getDataset(datasetName)
 
-	bm25 := store.GetBM25Index()
+	store.indexTextColumnsForHybridSearch(ds, batch, 0)
+
+	bm25 := store.GetBM25Index(datasetName)
 	if bm25 == nil {
 		t.Fatal("BM25 index is nil")
 	}

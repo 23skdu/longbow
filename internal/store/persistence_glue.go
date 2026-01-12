@@ -114,6 +114,7 @@ func (s *VectorStore) loadSnapshotItem(item *storage.SnapshotItem) error {
 
 		ds.dataMu.Lock()
 		ds.Records = append(ds.Records, rec)
+		fmt.Printf("loadSnapshotItem: Appended batch to ds %p. Total batches: %d\n", ds, len(ds.Records))
 		batchIdx := len(ds.Records) - 1
 		ds.UpdatePrimaryIndex(batchIdx, rec)
 		s.currentMemory.Add(CachedRecordSize(rec))
@@ -135,6 +136,7 @@ func (s *VectorStore) loadSnapshotItem(item *storage.SnapshotItem) error {
 			// If indexing fails, we have data but no search.
 			if _, err := ds.Index.AddBatch(recs, rowIdxs, batchIdxs); err != nil {
 				s.logger.Error().Err(err).Str("dataset", ds.Name).Msg("Failed to rebuild index from snapshot")
+				fmt.Printf("loadSnapshotItem: Failed to rebuild index: %v\n", err)
 				// Proceeding, but data might be unsearchable
 			}
 		}
@@ -156,6 +158,7 @@ func (s *VectorStore) loadSnapshotItem(item *storage.SnapshotItem) error {
 }
 
 func (s *VectorStore) ApplyDelta(name string, rec arrow.RecordBatch, seq uint64, ts int64) error {
+	s.logger.Info().Str("dataset", name).Uint64("seq", seq).Int64("ts", ts).Int64("rows", rec.NumRows()).Msg("ApplyDelta called")
 	// 1. Validate
 	if rec.NumRows() == 0 {
 		return nil
@@ -202,14 +205,19 @@ func (s *VectorStore) ApplyDelta(name string, rec arrow.RecordBatch, seq uint64,
 
 	// 4. Append to dataset
 	ds.dataMu.Lock()
+	var baseRowID uint32
+	for _, r := range ds.Records {
+		baseRowID += uint32(r.NumRows())
+	}
 	ds.Records = append(ds.Records, rec)
 	batchIdx := len(ds.Records) - 1
 	ds.UpdatePrimaryIndex(batchIdx, rec)
-	// Capture records slice for AddBatch to ensure we pass a valid view
-	// Capture records slice for AddBatch to ensure we pass a valid view (Now handled by recs slice below)
 	ds.dataMu.Unlock()
 
-	// 5. Update Index (CRITICAL: SyncWorker relies on this)
+	// 5. Index text columns for Hybrid Search (Phase 13)
+	s.indexTextColumnsForHybridSearch(ds, rec, baseRowID)
+
+	// 6. Update Vector Index (CRITICAL: SyncWorker relies on this)
 	// We must index the batch so it's searchable and visible to IndexLen()
 	numRows := int(rec.NumRows())
 	rowIdxs := make([]int, numRows)
@@ -228,7 +236,8 @@ func (s *VectorStore) ApplyDelta(name string, rec arrow.RecordBatch, seq uint64,
 	}
 
 	if ds.Index != nil {
-		if _, err := ds.Index.AddBatch(recs, rowIdxs, batchIdxs); err != nil {
+		_, err := ds.Index.AddBatch(recs, rowIdxs, batchIdxs)
+		if err != nil {
 			return fmt.Errorf("failed to index delta: %w", err)
 		}
 	}
@@ -265,6 +274,9 @@ func (src *storeSnapshotSource) Iterate(fn func(storage.SnapshotItem) error) err
 	})
 
 	for _, ds := range datasets {
+		if ds == nil {
+			continue
+		}
 		ds.dataMu.RLock()
 
 		item := storage.SnapshotItem{

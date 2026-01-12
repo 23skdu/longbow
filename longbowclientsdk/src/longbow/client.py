@@ -4,7 +4,8 @@ import dask.dataframe as dd
 import pandas as pd
 import json
 import logging
-from typing import Union, List, Dict, Any, Optional
+import warnings
+from typing import Union, List, Dict, Any, Optional, Iterator
 
 # from .models import Vector, SearchResult, IndexStats # Unused internally for now
 from .exceptions import LongbowConnectionError, LongbowQueryError
@@ -198,46 +199,91 @@ class LongbowClient:
             self.connect()
         return [f.descriptor.path[0].decode("utf-8") for f in self._meta_client.list_flights()]
 
-    def download(self, dataset: str, filter: Optional[Dict] = None) -> dd.DataFrame:
-        """Download the entire dataset, optionally filtered."""
+    def download_arrow(self, dataset: str, filter: Optional[List[Dict]] = None) -> pa.Table:
+        """Download dataset as Arrow Table (zero-copy, high performance).
+        
+        Args:
+            dataset: Name of the dataset to download
+            filter: Optional list of filter dictionaries [{"field": "...", "op": "...", "value": "..."}]
+            
+        Returns:
+            pyarrow.Table: The complete dataset as an Arrow Table
+            
+        Example:
+            >>> table = client.download_arrow("my_dataset")
+            >>> print(f"Downloaded {table.num_rows} rows")
+        """
         if self._data_client is None:
             self.connect()
         
         req = {"name": dataset}
         if filter:
-            req["filters"] = filter  # Note: Server uses "filters" (plural) or "filter"? verify ops_test.
-            # ops_test lines 103-104: filters.append(...); query["filters"] = filters.
-            # So "filters" is correct for data plane query? 
-            # But search uses "filter"? 
-            # ops_test lines 240: request["filters"] = filters (for meta search)
-            # client.search uses "filter". 
-            # Wait, ops_test line 240 says request["filters"]. 
-            # My client.search uses req["filter"] = filter. 
-            # Is there a mismatch? 
-            # Let's check ops_test line 240 again.
-            # Line 240: request["filters"] = filters.
-            # My client.py line 121: req["filter"] = filter.
-            # I might have introduced a bug in client.py "filter" key.
-            # I should verify against what the server expects.
-            # ops_test uses "filters" list. 
-            # My client.py search takes 'filter' dict? 
-            # ops_test parser takes --filter field:op:val and constructs a list of dicts.
-            # So 'filter' arg in SDK should likely be 'List[Dict]' or just passed through.
-            # I will assume "filters" is the key.
+            req["filters"] = filter
             
         ticket_bytes = json.dumps(req).encode("utf-8")
         ticket = flight.Ticket(ticket_bytes)
-
         
         try:
             reader = self._data_client.do_get(ticket, options=self._get_call_options())
-            table = reader.read_all()
-            df = table.to_pandas()
-            if not df.empty:
-                return dd.from_pandas(df, npartitions=1)
-            return dd.from_pandas(pd.DataFrame(columns=["id", "vector", "timestamp", "metadata"]), npartitions=1)
+            # Zero-copy: read all batches into single Arrow Table
+            return reader.read_all()
         except Exception as e:
             raise LongbowQueryError(f"Download failed: {e}")
+    
+    def download_stream(self, dataset: str, filter: Optional[List[Dict]] = None) -> Iterator[pa.RecordBatch]:
+        """Stream dataset as Arrow RecordBatches (memory-efficient for large datasets).
+        
+        Args:
+            dataset: Name of the dataset to download
+            filter: Optional list of filter dictionaries
+            
+        Yields:
+            pyarrow.RecordBatch: Individual batches of data
+            
+        Example:
+            >>> for batch in client.download_stream("large_dataset"):
+            ...     print(f"Processing batch with {batch.num_rows} rows")
+            ...     # Process batch without loading entire dataset into memory
+        """
+        if self._data_client is None:
+            self.connect()
+        
+        req = {"name": dataset}
+        if filter:
+            req["filters"] = filter
+            
+        ticket_bytes = json.dumps(req).encode("utf-8")
+        ticket = flight.Ticket(ticket_bytes)
+        
+        try:
+            reader = self._data_client.do_get(ticket, options=self._get_call_options())
+            # Stream batches one at a time (memory-efficient)
+            for chunk in reader:
+                yield chunk.data
+        except Exception as e:
+            raise LongbowQueryError(f"Download stream failed: {e}")
+    
+    def download(self, dataset: str, filter: Optional[List[Dict]] = None) -> pa.Table:
+        """Download dataset as Arrow Table.
+        
+        DEPRECATED: This method now returns pa.Table instead of dd.DataFrame.
+        Use download_arrow() for explicit Arrow Table return.
+        Use download_stream() for memory-efficient streaming.
+        
+        Args:
+            dataset: Name of the dataset to download
+            filter: Optional list of filter dictionaries
+            
+        Returns:
+            pyarrow.Table: The complete dataset (changed from dd.DataFrame)
+        """
+        warnings.warn(
+            "download() now returns pa.Table instead of dd.DataFrame. "
+            "Use download_arrow() explicitly or download_stream() for streaming.",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        return self.download_arrow(dataset, filter)
 
     def delete(self, dataset: str, ids: Optional[List[int]] = None):
         """Delete specific IDs from a dataset."""

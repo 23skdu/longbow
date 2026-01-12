@@ -28,7 +28,39 @@ Standard `localhost` TCP configuration.
 
 *Status*: Stable. Correctly handles backpressure.
 
-## Analysis
+## Vector Search Performance (100k Scale)
+
+Benchmarked on a single node with 100,000 vectors (128-dim f32) using `scripts/perf_test.py`.
+
+| Search Type | Throughput | p50 Latency | p99 Latency |
+|---|---|---|---|
+| **Base Search** | 62.1 queries/s | 14.0 ms | 45.4 ms |
+| **Filtered Search** | **77.4 queries/s** | **12.3 ms** | **17.6 ms** |
+
+### Analysis: Bitmap-Based Filtering
+
+The introduction of Bitmap-Based Filtering provides significant latency improvements, particularly for tail latencies (P99):
+
+- **Throughput**: ~25% increase at 100k scale.
+- **P99 Latency**: ~61% reduction (from 45ms to 17ms).
+- **Benefit**: Pre-calculating the filter bitset and using it during HNSW traversal minimizes evaluator overhead and prevents "post-filtering" stalls where HNSW visits many nodes that are eventually filtered out.
+
+## Ingestion Performance (Jan 2026)
+
+Optimizations implemented to resolve `DoPut` throughput regression:
+
+1. **ArrowHNSW by Default**: Replaced legacy `HNSWIndex` with parallelized `ArrowHNSW` (HNSW2).
+2. **Lock Optimization**: Moved ID extraction and DiskStore appends outside global lock.
+3. **Bulk Updates**: Implemented bulk updates for PrimaryIndex.
+4. **Async Hybrid Indexing**: Offloaded text indexing to background worker.
+
+| Scale | Throughput (MB/s) | Throughput (Rows/s) |
+|---|---|---|
+| **3k Vectors** | 129.2 MB/s | 256k rows/s |
+| **100k Vectors** | 246.9 MB/s | 489k rows/s |
+| **1M Vectors** | **523.2 MB/s** | **1.04M rows/s** |
+
+## Transport & Stability Analysis
 
 - **TCP Loopback** on macOS is highly optimized and currently superior for high-throughput Arrow Flight transfer.
 - **UDS** requires further investigation into buffer sizing and flow control to match TCP stability and performance.

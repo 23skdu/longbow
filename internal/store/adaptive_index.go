@@ -259,7 +259,7 @@ type AdaptiveIndex struct {
 	dataset        *Dataset
 	config         AdaptiveIndexConfig
 	bruteForce     *BruteForceIndex
-	hnsw           *HNSWIndex
+	hnsw           VectorIndex
 	usingHNSW      atomic.Bool
 	migrationCount atomic.Int64
 	vectorCount    atomic.Int64
@@ -405,7 +405,9 @@ func (a *AdaptiveIndex) migrateToHNSW() {
 		return
 	}
 
-	a.hnsw = NewHNSWIndex(a.dataset)
+	config := DefaultArrowHNSWConfig()
+	config.Metric = a.dataset.Metric
+	a.hnsw = NewArrowHNSW(a.dataset, config, nil)
 
 	for _, loc := range a.bruteForce.locations {
 		_, _ = a.hnsw.AddByLocation(loc.BatchIdx, loc.RowIdx)

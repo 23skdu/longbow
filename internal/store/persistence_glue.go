@@ -265,6 +265,9 @@ func (src *storeSnapshotSource) Iterate(fn func(storage.SnapshotItem) error) err
 	})
 
 	for _, ds := range datasets {
+		if ds == nil {
+			continue
+		}
 		ds.dataMu.RLock()
 
 		item := storage.SnapshotItem{

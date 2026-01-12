@@ -227,9 +227,11 @@ func (s *VectorStore) getOrCreateDataset(name string, createFn func() *Dataset) 
 
 		// Create
 		newDs := createFn()
-		m[name] = newDs
-		result = newDs
-		created = true
+		if newDs != nil {
+			m[name] = newDs
+			result = newDs
+			created = true
+		}
 	})
 
 	return result, created

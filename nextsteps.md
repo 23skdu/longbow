@@ -28,11 +28,9 @@ Based on deep analysis of `bench_9k` and `final` pprof data, we have identified 
 **Solution**: For ARM64 (M-series), hardcode the NEON path using Go assembly or intrinsics to skip the runtime dispatch check for `L2Distance` and `Cosine`.
 **Expected Impact**: 10-15% reduction in search latency.
 
-### 5. Bitmap-Based Filtering
+### [DONE] 5. Bitmap-Based Filtering
 
-**Problem**: Filtered search iterates over metadata rows.
-**Solution**: Use `roaring bitmaps` or `simd-bitmaps` to pre-calculate filter masks for commonly queried categories. Apply bitwise AND with HNSW adjacency lists.
-**Expected Impact**: O(1) filtering overhead instead of O(N).
+**Problem**: Filtered search iterates over- [x] **Bitmap-Based Filtering**: Integrated `query.Bitset` into search path for O(1) filtering overhead. Added `GenerateFilterBitset` with caching in `Dataset`.
 
 ### 6. Adaptive gRPC Buffer Tuning
 

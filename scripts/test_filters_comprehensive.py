@@ -65,7 +65,7 @@ def test_filter_operators(client, dataset_name):
     
     print(f"\nInserting {len(docs)} documents...")
     client.insert(dataset_name, df)
-    time.sleep(3)  # Wait for indexing
+    time.sleep(10)  # Wait for indexing
     
     # Test 1: No filter
     print("\n1. Testing search without filters...")

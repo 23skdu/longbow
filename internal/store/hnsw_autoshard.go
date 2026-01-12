@@ -70,10 +70,10 @@ func NewAutoShardingIndex(ds *Dataset, config AutoShardingConfig) *AutoShardingI
 		hnswConfig.Metric = ds.Metric
 		idx = NewArrowHNSW(ds, hnswConfig, nil)
 	default:
-		// Initialize HNSW config with dataset metric
-		hnswConfig := DefaultConfig()
+		// Use ArrowHNSW as default for better performance (parallelism, batching)
+		hnswConfig := DefaultArrowHNSWConfig()
 		hnswConfig.Metric = ds.Metric
-		idx = NewHNSWIndex(ds, hnswConfig)
+		idx = NewArrowHNSW(ds, hnswConfig, nil)
 	}
 
 	return &AutoShardingIndex{
@@ -472,6 +472,13 @@ func (idx *AutoShardingIndex) GetLocation(id VectorID) (Location, bool) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 	return idx.current.GetLocation(id)
+}
+
+// GetVectorID retrieves the vector ID for a given storage location.
+func (idx *AutoShardingIndex) GetVectorID(loc Location) (VectorID, bool) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	return idx.current.GetVectorID(loc)
 }
 
 // Warmup delegates to the current index.

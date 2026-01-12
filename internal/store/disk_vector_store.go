@@ -154,15 +154,30 @@ func (d *DiskVectorStore) Size() int {
 
 // Append adds a vector to the end of the file and returns its ID (index).
 func (d *DiskVectorStore) Append(vec []float32) (uint32, error) {
-	if len(vec) != d.dim {
-		return 0, fmt.Errorf("vector dimension mismatch: got %d, want %d", len(vec), d.dim)
+	ids, err := d.BatchAppend([][]float32{vec})
+	if err != nil {
+		return 0, err
+	}
+	return ids[0], nil
+}
+
+// BatchAppend adds multiple vectors to the end of the file efficiently.
+func (d *DiskVectorStore) BatchAppend(vecs [][]float32) ([]uint32, error) {
+	if len(vecs) == 0 {
+		return nil, nil
+	}
+
+	for _, vec := range vecs {
+		if len(vec) != d.dim {
+			return nil, fmt.Errorf("vector dimension mismatch: got %d, want %d", len(vec), d.dim)
+		}
 	}
 
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	// Calculate new ID
 	bytesPerVec := d.dim * 4
+	totalBytes := int64(len(vecs) * bytesPerVec)
 	currentSize := int64(0)
 	if d.data != nil {
 		currentSize = int64(len(d.data))
@@ -171,30 +186,35 @@ func (d *DiskVectorStore) Append(vec []float32) (uint32, error) {
 	// Unmap old
 	if d.data != nil {
 		if err := syscall.Munmap(d.data); err != nil {
-			return 0, fmt.Errorf("unmap failed: %w", err)
+			return nil, fmt.Errorf("unmap failed: %w", err)
 		}
 		d.data = nil
 	}
 
-	// Write (Little Endian)
-	// Create a buffer to write at once
-	buf := make([]byte, bytesPerVec)
-	for i, v := range vec {
-		binary.LittleEndian.PutUint32(buf[i*4:], *(*uint32)(unsafe.Pointer(&v)))
+	// Write all vectors at once
+	buf := make([]byte, totalBytes)
+	for i, vec := range vecs {
+		offset := i * bytesPerVec
+		for j, v := range vec {
+			binary.LittleEndian.PutUint32(buf[offset+j*4:], *(*uint32)(unsafe.Pointer(&v)))
+		}
 	}
 
 	if _, err := d.f.WriteAt(buf, currentSize); err != nil {
-		return 0, fmt.Errorf("write failed: %w", err)
+		return nil, fmt.Errorf("write failed: %w", err)
 	}
 
 	// Re-map with new size
-	newSize := currentSize + int64(bytesPerVec)
+	newSize := currentSize + totalBytes
 	if err := d.mmap(newSize); err != nil {
-		return 0, err
+		return nil, err
 	}
 
-	id := uint32(currentSize / int64(bytesPerVec))
-	return id, nil
+	ids := make([]uint32, len(vecs))
+	for i := range vecs {
+		ids[i] = uint32((currentSize + int64(i*bytesPerVec)) / int64(bytesPerVec))
+	}
+	return ids, nil
 }
 
 // Get retrieves a vector by ID.

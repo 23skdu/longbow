@@ -99,6 +99,15 @@ func (m *MockIndex) GetLocation(id VectorID) (Location, bool) {
 	return loc, ok
 }
 
+func (m *MockIndex) GetVectorID(loc Location) (VectorID, bool) {
+	for id, l := range m.Vectors {
+		if l == loc {
+			return id, true
+		}
+	}
+	return 0, false
+}
+
 func (m *MockIndex) GetNeighbors(id VectorID) ([]VectorID, error) {
 	// Mock: return SearchByID results (self + up to 15 others)
 	neighbors := m.SearchByID(id, 16)

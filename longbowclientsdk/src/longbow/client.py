@@ -93,7 +93,6 @@ class LongbowClient:
 
         # Handle other types
         table = to_arrow_table(data)
-        print("DEBUG CLIENT: Table Schema:", table.schema)
         self._upload_batch(dataset, table)
 
     def _upload_batch(self, dataset: str, data: Union[pd.DataFrame, List[Dict], pa.Table]):
@@ -144,9 +143,6 @@ class LongbowClient:
         
         # Merge extra args (e.g. alpha, text_query)
         req.update(kwargs)
-        print(f"DEBUG CLIENT: Search Request Keys: {list(req.keys())}")
-        if "filters" in req:
-             print(f"DEBUG CLIENT: Filters: {req['filters']}")
 
         ticket_bytes = json.dumps({"search": req}).encode("utf-8")
         ticket = flight.Ticket(ticket_bytes)

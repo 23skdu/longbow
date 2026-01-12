@@ -29,7 +29,7 @@ func (s *VectorStore) runIngestionWorker() {
 			metrics.IngestionLagCount.Sub(float64(job.batch.NumRows()))
 
 			// Apply to memory
-			if err := s.applyBatchToMemory(job.datasetName, job.batch); err != nil {
+			if err := s.applyBatchToMemory(job.datasetName, job.batch, job.ts); err != nil {
 				s.logger.Error().Err(err).Str("dataset", job.datasetName).Msg("Failed to apply batch from ingestion queue")
 			}
 

@@ -35,12 +35,13 @@ func SearchHybrid(ctx context.Context, s *VectorStore, name string, queryVec []f
 		metrics.SearchLatencySeconds.WithLabelValues(name, "hybrid_rrf").Observe(time.Since(start).Seconds())
 	}(time.Now())
 
+	start := time.Now()
 	s.logger.Info().
 		Str("dataset", name).
 		Str("text_query", textQuery).
 		Float32("alpha", alpha).
 		Int("k", k).
-		Msg("SearchHybrid called")
+		Msg("SearchHybrid started")
 
 	ds, ok := s.getDataset(name)
 	if !ok {
@@ -121,6 +122,12 @@ func SearchHybrid(ctx context.Context, s *VectorStore, name string, queryVec []f
 	if len(resolved) > k {
 		resolved = resolved[:k]
 	}
+
+	s.logger.Info().
+		Str("dataset", name).
+		Dur("duration", time.Since(start)).
+		Int("count", len(resolved)).
+		Msg("SearchHybrid completed")
 
 	return resolved, nil
 }

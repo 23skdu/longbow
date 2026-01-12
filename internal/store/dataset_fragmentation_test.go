@@ -32,7 +32,7 @@ func TestDataset_FragmentationTracking(t *testing.T) {
 		vb.ValueBuilder().(*array.Float32Builder).AppendValues([]float32{float32(i), float32(i)}, nil)
 	}
 
-	rec := b.NewRecord()
+	rec := b.NewRecordBatch()
 	ds.Records = append(ds.Records, rec)
 
 	// Update batch size
@@ -72,7 +72,7 @@ func TestDataset_FragmentationMultipleBatches(t *testing.T) {
 			b.Field(0).(*array.Int64Builder).Append(int64(i))
 		}
 
-		rec := b.NewRecord()
+		rec := b.NewRecordBatch()
 		ds.Records = append(ds.Records, rec)
 		b.Release()
 

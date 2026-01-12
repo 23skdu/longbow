@@ -75,7 +75,7 @@ func FuzzRepairAgent_DeletionPattern(f *testing.F) {
 
 		// Delete nodes
 		for i := 0; i < deleteCount; i++ {
-			idx.Delete(uint32(i))
+			_ = idx.Delete(uint32(i))
 		}
 
 		agent := NewRepairAgent(idx, config)
@@ -112,7 +112,7 @@ func FuzzRepairAgent_MaxRepairs(f *testing.F) {
 
 		// Delete some
 		for i := 0; i < 10; i++ {
-			idx.Delete(uint32(i))
+			_ = idx.Delete(uint32(i))
 		}
 
 		agent := NewRepairAgent(idx, config)

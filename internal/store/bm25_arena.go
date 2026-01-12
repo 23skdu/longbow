@@ -102,7 +102,7 @@ func (idx *BM25ArenaIndex) IndexDocument(docID uint32, tokens []string) error {
 		if !found {
 			postings = append(postings, docID)
 			idx.postings.EnsureCapacity(tokenID)
-			idx.postings.SetNeighbors(tokenID, postings)
+			_ = idx.postings.SetNeighbors(tokenID, postings)
 
 			// Update document frequency
 			idx.ensureDocFreqCapacity(tokenID)

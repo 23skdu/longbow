@@ -15,7 +15,7 @@ func TestDelete(t *testing.T) {
 	index.dims.Store(128)
 
 	// Initialize GraphData manually with dimensions
-	data := NewGraphData(100, 32, false, false, 0, false, false, false)
+	data := NewGraphData(100, 128, false, false, 0, false, false, false, VectorTypeFloat32)
 	index.data.Store(data)
 	index.backend.Store(data) // Sync backend pointer
 

@@ -123,9 +123,8 @@ func (r *RepairAgent) runRepairCycle() int {
 			break
 		}
 
-		if r.repairOrphan(orphan, 0) == nil {
-			repaired++
-		}
+		r.repairOrphan(orphan, 0)
+		repaired++
 	}
 
 	if repaired > 0 {
@@ -203,20 +202,20 @@ func (r *RepairAgent) detectOrphans() []uint32 {
 }
 
 // repairOrphan re-links an orphaned node to the graph
-func (r *RepairAgent) repairOrphan(orphan uint32, layer int) error {
+func (r *RepairAgent) repairOrphan(orphan uint32, layer int) {
 	if r.index == nil {
-		return nil
+		return
 	}
 
 	data := r.index.data.Load()
 	if data == nil {
-		return nil
+		return
 	}
 
 	// Get orphan's vector
 	orphanVec := r.index.mustGetVectorFromData(data, orphan)
 	if orphanVec == nil {
-		return nil // Can't repair without vector
+		return // Can't repair without vector
 	}
 
 	// Find K nearest neighbors in the reachable set
@@ -275,7 +274,6 @@ func (r *RepairAgent) repairOrphan(orphan uint32, layer int) error {
 		r.addEdge(c.id, orphan, layer, data)
 	}
 
-	return nil
 }
 
 // getNeighbors retrieves neighbors of a node at a given layer

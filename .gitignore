@@ -213,6 +213,8 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 /longbow
+longbow_server
+longbow-server
 internal/store/wal.bin
 *.txt
 *.pprof

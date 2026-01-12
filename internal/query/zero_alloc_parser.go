@@ -227,7 +227,7 @@ func parseFilter(data []byte, pos int) (Filter, int, error) {
 			}
 			f.Field = fieldVal
 			pos = newPos
-		case "operator":
+		case "operator", "op":
 			opVal, newPos, err := parseString(data, pos)
 			if err != nil {
 				return f, pos, err

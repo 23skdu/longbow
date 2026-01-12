@@ -3,6 +3,7 @@ package query
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/23skdu/longbow/internal/simd"
 	"github.com/apache/arrow-go/v18/arrow"
@@ -407,6 +408,7 @@ func NewFilterEvaluator(rec arrow.RecordBatch, filters []Filter) (*FilterEvaluat
 		}
 		colIdx := indices[0]
 		col := rec.Column(colIdx)
+		opStr := strings.ToLower(f.Operator)
 
 		switch col.DataType().ID() {
 		case arrow.INT64:
@@ -417,7 +419,7 @@ func NewFilterEvaluator(rec arrow.RecordBatch, filters []Filter) (*FilterEvaluat
 			ops = append(ops, &int64FilterOp{
 				col:      col.(*array.Int64),
 				val:      val,
-				operator: f.Operator,
+				operator: opStr,
 				colIdx:   colIdx,
 			})
 		case arrow.FLOAT32:
@@ -428,7 +430,7 @@ func NewFilterEvaluator(rec arrow.RecordBatch, filters []Filter) (*FilterEvaluat
 			ops = append(ops, &float32FilterOp{
 				col:      col.(*array.Float32),
 				val:      float32(val),
-				operator: f.Operator,
+				operator: opStr,
 				colIdx:   colIdx,
 			})
 		case arrow.FLOAT64:
@@ -439,14 +441,14 @@ func NewFilterEvaluator(rec arrow.RecordBatch, filters []Filter) (*FilterEvaluat
 			ops = append(ops, &float64FilterOp{
 				col:      col.(*array.Float64),
 				val:      val,
-				operator: f.Operator,
+				operator: opStr,
 				colIdx:   colIdx,
 			})
 		case arrow.STRING:
 			ops = append(ops, &stringFilterOp{
 				col:      col.(*array.String),
 				val:      f.Value,
-				operator: f.Operator,
+				operator: opStr,
 				colIdx:   colIdx,
 			})
 		default:

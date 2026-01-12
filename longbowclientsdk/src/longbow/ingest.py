@@ -145,12 +145,22 @@ def to_arrow_table(
         arrays = [arrow_ids, arrow_vecs, arrow_ts]
         names = ['id', 'vector', 'timestamp']
         
-        # Handle metadata
-        # If users passed extra columns, pack them into json?
-        # For v1, let's strictly look for 'metadata' str column for simplicity
-        if 'metadata' in data.columns:
-             arrays.append(pa.array(data['metadata'].astype(str)))
-             names.append('metadata')
+        # Handle metadata/extra columns
+        reserved = {'id', 'vector', 'timestamp'}
+        for col in data.columns:
+            if col in reserved:
+                continue
+            
+            # Simple type mapping: Convert to string mostly, or let Arrow infer
+            # For this demo/SDK, we rely on pyarrow inference but careful with object types
+            col_data = data[col]
+            if pd.api.types.is_object_dtype(col_data) and not isinstance(col_data.iloc[0], (str, bytes)):
+                 # JSON serialize dictionaries/lists if found in object column
+                 import json
+                 col_data = col_data.apply(lambda x: json.dumps(x) if isinstance(x, (dict, list)) else str(x))
+                 
+            arrays.append(pa.array(col_data))
+            names.append(col)
              
         return pa.Table.from_arrays(arrays, names=names)
 

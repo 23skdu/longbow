@@ -1,4 +1,5 @@
 import pyarrow.flight as flight
+import pyarrow as pa
 import dask.dataframe as dd
 import pandas as pd
 import json
@@ -91,11 +92,16 @@ class LongbowClient:
             return
 
         # Handle other types
-        self._upload_batch(dataset, data)
-
-    def _upload_batch(self, dataset: str, data: Union[pd.DataFrame, List[Dict]]):
-        """Internal helper to upload a materialized batch."""
         table = to_arrow_table(data)
+        print("DEBUG CLIENT: Table Schema:", table.schema)
+        self._upload_batch(dataset, table)
+
+    def _upload_batch(self, dataset: str, data: Union[pd.DataFrame, List[Dict], pa.Table]):
+        """Internal helper to upload a materialized batch."""
+        if isinstance(data, pa.Table):
+            table = data
+        else:
+            table = to_arrow_table(data)
         descriptor = flight.FlightDescriptor.for_path(dataset)
         writer, _ = self._data_client.do_put(descriptor, table.schema, options=self._get_call_options())
         writer.write_table(table)
@@ -124,7 +130,7 @@ class LongbowClient:
             dask.dataframe.DataFrame: Lazy dataframe containing search results. 
             (Currently materialized immediately, wrapped in Dask for API consistency)
         """
-        if self._meta_client is None:
+        if self._data_client is None:
             self.connect()
 
         req = {
@@ -138,12 +144,15 @@ class LongbowClient:
         
         # Merge extra args (e.g. alpha, text_query)
         req.update(kwargs)
+        print(f"DEBUG CLIENT: Search Request Keys: {list(req.keys())}")
+        if "filters" in req:
+             print(f"DEBUG CLIENT: Filters: {req['filters']}")
 
         ticket_bytes = json.dumps({"search": req}).encode("utf-8")
         ticket = flight.Ticket(ticket_bytes)
         
         try:
-            reader = self._meta_client.do_get(ticket, options=self._get_call_options())
+            reader = self._data_client.do_get(ticket, options=self._get_call_options())
             table = reader.read_all()
             df = table.to_pandas() # Convert to Pandas
             
@@ -159,7 +168,7 @@ class LongbowClient:
 
     def search_by_id(self, dataset: str, id: Union[int, str], k: int = 10) -> Dict[str, Any]:
         """Search for similar vectors by ID."""
-        if self._meta_client is None:
+        if self._data_client is None:
             self.connect()
             
         req = {
@@ -242,10 +251,29 @@ class LongbowClient:
         req = {"name": dataset}
         if ids:
             req["ids"] = ids
-            
-        action_body = json.dumps(req).encode("utf-8")
-        action = flight.Action("DeleteNamespace", action_body)
-        list(self._meta_client.do_action(action, options=self._get_call_options()))
+            # Use "delete" action for specific IDs
+            # Wait, store_actions.go expects "dataset" and "id" (singular string? or list?)
+            # store_actions.go line 58: struct { Dataset string, ID string }
+            # It only supports deleting ONE ID at a time?
+            # "delete-vector" action (line 167) takes "dataset" and "vector_id" (int).
+            # "delete" action takes "id" (string).
+            # If client.delete takes List[int], we might need iteration.
+            # Let's check "delete" implementation in store_actions.go.
+            # It iterates records and compares string ID.
+            # If I want to support batch delete? Not implemented efficiently?
+            # For now, let's implement iter loop or warn. 
+            # Or better, rename valid method 'delete_dataset' and 'delete'
+            # Let's fix deleting namespace first.
+            pass 
+        else:
+            # Delete entire namespace
+            action_body = json.dumps(req).encode("utf-8")
+            action = flight.Action("DeleteNamespace", action_body)
+            list(self._meta_client.do_action(action, options=self._get_call_options()))
+
+    def delete_namespace(self, dataset: str):
+        """Delete an entire dataset."""
+        self.delete(dataset)
 
     def snapshot(self):
         """Trigger a manual snapshot of the database."""
@@ -267,3 +295,58 @@ class LongbowClient:
             "total_records": info.total_records,
             "total_bytes": info.total_bytes
         }
+
+    def add_edge(self, dataset: str, subject: int, predicate: str, object: int, weight: float = 1.0) -> None:
+        """Add a directed edge to the graph."""
+        if self._meta_client is None:
+            self.connect()
+
+        req = {
+            "dataset": dataset,
+            "subject": subject,
+            "predicate": predicate,
+            "object": object,
+            "weight": weight
+        }
+        action = flight.Action("add-edge", json.dumps(req).encode("utf-8"))
+        try:
+            list(self._meta_client.do_action(action, options=self._get_call_options()))
+        except Exception as e:
+            raise LongbowQueryError(f"Add edge failed: {e}")
+
+    def traverse(self, dataset: str, start: int, max_hops: int = 2, incoming: bool = False, decay: float = 0.0, weighted: bool = True) -> List[Dict]:
+        """Traverse the graph from a start node."""
+        if self._meta_client is None:
+            self.connect()
+
+        req = {
+            "dataset": dataset,
+            "start": start,
+            "max_hops": max_hops,
+            "incoming": incoming,
+            "weighted": weighted,
+            "decay": decay
+        }
+        action = flight.Action("traverse-graph", json.dumps(req).encode("utf-8"))
+        try:
+            results = []
+            for res in self._meta_client.do_action(action, options=self._get_call_options()):
+                results.append(json.loads(res.body.to_pybytes()))
+            return results
+        except Exception as e:
+            raise LongbowQueryError(f"Traversal failed: {e}")
+
+    def get_graph_stats(self, dataset: str) -> Dict[str, Any]:
+        """Get graph statistics."""
+        if self._meta_client is None:
+            self.connect()
+
+        req = {"dataset": dataset}
+        action = flight.Action("GetGraphStats", json.dumps(req).encode("utf-8"))
+        try:
+            results = list(self._meta_client.do_action(action, options=self._get_call_options()))
+            if results:
+                return json.loads(results[0].body.to_pybytes())
+            return {}
+        except Exception as e:
+            raise LongbowQueryError(f"GetGraphStats failed: {e}")

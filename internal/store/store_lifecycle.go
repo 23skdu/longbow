@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"log"
 	"runtime"
 	"time"
 
@@ -153,6 +154,7 @@ func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
 		if len(group) == 0 {
 			return
 		}
+		log.Printf("[DEBUG] processBatch processing %d jobs", len(group))
 
 		// Sort by dataset to batch index additions
 		byDataset := make(map[string][]IndexJob)
@@ -196,6 +198,7 @@ func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
 			var addErr error
 			if ds.Index != nil {
 				docIDs, addErr = ds.Index.AddBatch(recs, rowIdxs, batchIdxs)
+				log.Printf("[DEBUG] AddBatch result: docIDs=%d, err=%v", len(docIDs), addErr)
 				if addErr != nil {
 					s.logger.Error().
 						Str("dataset", dsName).

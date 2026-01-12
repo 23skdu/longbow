@@ -157,12 +157,12 @@ def benchmark_put(client: LongbowClient, table: pa.Table, name: str) -> Benchmar
     
     start_time = time.time()
     
-    # Distribute data manually by setting routing key headers
-    num_shards = 15
-    chunk_size = max(1, table.num_rows // num_shards)
+    # Use larger batch sizes for better throughput (2000-5000 rows per batch)
+    # This reduces network overhead and improves ingestion performance
+    chunk_size = min(5000, max(2000, table.num_rows // 3))  # 2k-5k rows per batch
     
     for i in range(0, table.num_rows, chunk_size):
-        chunk = table.slice(i, chunk_size)
+        chunk = table.slice(i, min(chunk_size, table.num_rows - i))
         routing_key = f"shard-{i//chunk_size}"
         
         # Mutate client headers directly to force routing

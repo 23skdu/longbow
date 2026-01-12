@@ -44,13 +44,13 @@ func (o *int64FilterOp) Match(rowIdx int) bool {
 		return v == o.val
 	case "!=", "neq":
 		return v != o.val
-	case ">":
+	case ">", "gt":
 		return v > o.val
-	case "<":
+	case "<", "lt":
 		return v < o.val
-	case ">=":
+	case ">=", "ge":
 		return v >= o.val
-	case "<=":
+	case "<=", "le":
 		return v <= o.val
 	}
 	return false
@@ -63,13 +63,13 @@ func (o *int64FilterOp) MatchBitmap(dst []byte) {
 		op = simd.CompareEq
 	case "!=", "neq":
 		op = simd.CompareNeq
-	case ">":
+	case ">", "gt":
 		op = simd.CompareGt
-	case ">=":
+	case ">=", "ge":
 		op = simd.CompareGe
-	case "<":
+	case "<", "lt":
 		op = simd.CompareLt
-	case "<=":
+	case "<=", "le":
 		op = simd.CompareLe
 	default:
 		for i := 0; i < len(dst); i++ {
@@ -110,13 +110,13 @@ func (o *int64FilterOp) FilterBatch(indices []int) []int {
 		op = simd.CompareEq
 	case "!=", "neq":
 		op = simd.CompareNeq
-	case ">":
+	case ">", "gt":
 		op = simd.CompareGt
-	case ">=":
+	case ">=", "ge":
 		op = simd.CompareGe
-	case "<":
+	case "<", "lt":
 		op = simd.CompareLt
-	case "<=":
+	case "<=", "le":
 		op = simd.CompareLe
 	default:
 		result := make([]int, 0, len(indices))
@@ -170,13 +170,13 @@ func (o *float32FilterOp) Match(rowIdx int) bool {
 		return v == o.val
 	case "!=", "neq":
 		return v != o.val
-	case ">":
+	case ">", "gt":
 		return v > o.val
-	case "<":
+	case "<", "lt":
 		return v < o.val
-	case ">=":
+	case ">=", "ge":
 		return v >= o.val
-	case "<=":
+	case "<=", "le":
 		return v <= o.val
 	}
 	return false
@@ -189,13 +189,13 @@ func (o *float32FilterOp) MatchBitmap(dst []byte) {
 		op = simd.CompareEq
 	case "!=", "neq":
 		op = simd.CompareNeq
-	case ">":
+	case ">", "gt":
 		op = simd.CompareGt
-	case ">=":
+	case ">=", "ge":
 		op = simd.CompareGe
-	case "<":
+	case "<", "lt":
 		op = simd.CompareLt
-	case "<=":
+	case "<=", "le":
 		op = simd.CompareLe
 	default:
 		for i := 0; i < len(dst); i++ {
@@ -236,13 +236,13 @@ func (o *float32FilterOp) FilterBatch(indices []int) []int {
 		op = simd.CompareEq
 	case "!=", "neq":
 		op = simd.CompareNeq
-	case ">":
+	case ">", "gt":
 		op = simd.CompareGt
-	case ">=":
+	case ">=", "ge":
 		op = simd.CompareGe
-	case "<":
+	case "<", "lt":
 		op = simd.CompareLt
-	case "<=":
+	case "<=", "le":
 		op = simd.CompareLe
 	default:
 		result := make([]int, 0, len(indices))
@@ -296,13 +296,13 @@ func (o *float64FilterOp) Match(rowIdx int) bool {
 		return v == o.val
 	case "!=", "neq":
 		return v != o.val
-	case ">":
+	case ">", "gt":
 		return v > o.val
-	case "<":
+	case "<", "lt":
 		return v < o.val
-	case ">=":
+	case ">=", "ge":
 		return v >= o.val
-	case "<=":
+	case "<=", "le":
 		return v <= o.val
 	}
 	return false
@@ -353,13 +353,13 @@ func (o *stringFilterOp) Match(rowIdx int) bool {
 		return v == o.val
 	case "!=", "neq":
 		return v != o.val
-	case ">":
+	case ">", "gt":
 		return v > o.val
-	case "<":
+	case "<", "lt":
 		return v < o.val
-	case ">=":
+	case ">=", "ge":
 		return v >= o.val
-	case "<=":
+	case "<=", "le":
 		return v <= o.val
 	}
 	return false

@@ -43,6 +43,10 @@ type VectorIndex interface {
 	// Returns the location and true if found, or zero location and false if not found.
 	GetLocation(id VectorID) (Location, bool)
 
+	// GetVectorID retrieves the vector ID for a given storage location.
+	// Returns the ID and true if found, or 0 and false if not found.
+	GetVectorID(loc Location) (VectorID, bool)
+
 	// GetNeighbors returns the nearest neighbors for a given vector ID from the graph.
 	GetNeighbors(id VectorID) ([]VectorID, error)
 

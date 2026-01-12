@@ -17,6 +17,7 @@ func TestDelete(t *testing.T) {
 	// Initialize GraphData manually with dimensions
 	data := NewGraphData(100, 32, false, false, 0, false, false, false)
 	index.data.Store(data)
+	index.backend.Store(data) // Sync backend pointer
 
 	// Manually allocate chunks for testing using ensureChunk
 	// We need to ensure chunks exist for the capacity we created (64 => 1 chunk if ChunkSize=1024)

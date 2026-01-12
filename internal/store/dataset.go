@@ -2,7 +2,6 @@ package store
 
 import (
 	"errors"
-	"fmt"
 	"os"
 	"strconv"
 	"sync"
@@ -125,7 +124,6 @@ func NewDataset(name string, schema *arrow.Schema) *Dataset {
 	// Check feature flag for hnsw2
 	envVal := os.Getenv("LONGBOW_USE_HNSW2")
 	useHNSW2 := envVal == "true"
-	fmt.Printf("[DEBUG] NewDataset: name=%s, LONGBOW_USE_HNSW2=%q, useHNSW2=%v\n", name, envVal, useHNSW2)
 
 	ds := &Dataset{
 		Name:            name,

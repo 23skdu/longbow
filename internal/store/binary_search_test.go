@@ -112,7 +112,7 @@ func TestDoExchange_VectorSearch(t *testing.T) {
 	writer := flight.NewRecordWriter(clientAdapter, ipc.WithSchema(reqSchema))
 
 	require.NoError(t, writer.Write(reqRec))
-	writer.Close() // Flushes
+	_ = writer.Close() // Flushes
 
 	// 4. Exec DoExchange Handler Directly
 	// Simulate DoExchange logic reading first message

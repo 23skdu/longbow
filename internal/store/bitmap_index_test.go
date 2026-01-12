@@ -62,8 +62,8 @@ func TestBitmapIndex_AddAndFilter(t *testing.T) {
 
 func TestBitmapIndex_Remove(t *testing.T) {
 	idx := NewBitmapIndex()
-	idx.Add(1, "cat", "A")
-	idx.Add(2, "cat", "A")
+	_ = idx.Add(1, "cat", "A")
+	_ = idx.Add(2, "cat", "A")
 
 	bm, _ := idx.Filter(map[string]string{"cat": "A"})
 	assert.Equal(t, uint64(2), bm.GetCardinality())
@@ -106,14 +106,14 @@ func BenchmarkBitmapIndex_Filter(b *testing.B) {
 	// Setup: 10k docs, 50% cat=A, 50% cat=B. 50% tag=X, 50% tag=Y.
 	for i := uint32(0); i < 10000; i++ {
 		if i%2 == 0 {
-			idx.Add(i, "cat", "A")
+			_ = idx.Add(i, "cat", "A")
 		} else {
-			idx.Add(i, "cat", "B")
+			_ = idx.Add(i, "cat", "B")
 		}
 		if i%2 == 0 {
-			idx.Add(i, "tag", "X")
+			_ = idx.Add(i, "tag", "X")
 		} else {
-			idx.Add(i, "tag", "Y")
+			_ = idx.Add(i, "tag", "Y")
 		}
 	}
 

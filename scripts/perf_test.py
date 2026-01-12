@@ -193,28 +193,16 @@ def benchmark_put(client: LongbowClient, table: pa.Table, name: str) -> Benchmar
 
 
 def benchmark_get(client: LongbowClient, name: str, filters: Optional[list] = None) -> BenchmarkResult:
-    """Benchmark DoGet using SDK."""
-    filter_data = None
-    if filters:
-        # Convert list of filter strings "field:op:val" to dict list if needed by SDK
-        # SDK expects list of dicts.
-        # But ops_test passes "filters" as list of dicts or list of strings?
-        # ops_test parses strings. perf_test passes them as is?
-        # perf_test passes `filters` directly to query["filters"].
-        # If filters is list of strings, server apparently handles it? 
-        # Or perf_test caller assumes filters is list of dicts?
-        # Let's assume filters is correct format for SDK.
-        filter_data = filters
-    
+    """Benchmark DoGet using SDK with zero-copy Arrow streaming."""
     filter_desc = f"with filters: {filters}" if filters else "(full scan)"
     print(f"\n[GET] Downloading dataset '{name}' {filter_desc}...")
 
     start_time = time.time()
     try:
-        ddf = client.download(name, filter=filter_data)
-        table = ddf.compute() # Materialize
-        row_count = len(table)
-        nbytes = table.memory_usage(deep=True).sum() if hasattr(table, 'memory_usage') else 0
+        # Use zero-copy Arrow Table download (no Dask overhead)
+        table = client.download_arrow(name, filter=filters)
+        row_count = table.num_rows
+        nbytes = table.nbytes
     except Exception as e:
         print(f"[GET] Error: {e}")
         return BenchmarkResult(name="DoGet", duration_seconds=0, throughput=0, throughput_unit="MB/s", errors=1)

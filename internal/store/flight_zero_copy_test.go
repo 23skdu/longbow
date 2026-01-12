@@ -88,7 +88,7 @@ func TestFlight_ZeroCopyAllocator(t *testing.T) {
 
 	totalRead := 0
 	for r.Next() {
-		readRec := r.Record()
+		readRec := r.RecordBatch()
 		totalRead++
 		assert.Equal(t, count, int(readRec.NumRows()))
 

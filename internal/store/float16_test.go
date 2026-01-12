@@ -3,7 +3,7 @@ package store
 import (
 	"math"
 	"math/rand"
-	"sync/atomic" 
+	"sync/atomic"
 
 	"testing"
 
@@ -21,7 +21,7 @@ func TestFloat16_RoundTrip(t *testing.T) {
 
 	// Create GraphData with Float16 enabled
 	// NewGraphData(capacity, dims, sq8, pq, pqDims, bq, float16, false)
-	gd := NewGraphData(capacity, dims, false, false, 0, false, true, false)
+	gd := NewGraphData(capacity, dims, false, false, 0, false, true, false, VectorTypeFloat16)
 
 	require.NotNil(t, gd.Float16Arena)
 	require.NotNil(t, gd.VectorsF16)
@@ -90,16 +90,16 @@ func TestFloat16_RoundTrip(t *testing.T) {
 
 func TestArrowHNSW_Float16_Integration(t *testing.T) {
 	// Goal: Verify end-to-end usage via ArrowHNSW
-	
+
 	dims := 128
 	cfg := DefaultArrowHNSWConfig()
 	cfg.Dims = dims
 	cfg.Float16Enabled = true
 	cfg.InitialCapacity = 100
-	
+
 	// Create HNSW
 	hnsw := NewArrowHNSW(nil, cfg, nil)
-	
+
 	// Insert 10 vectors
 	n := 10
 	vecs := make([][]float32, n)
@@ -109,20 +109,20 @@ func TestArrowHNSW_Float16_Integration(t *testing.T) {
 			vecs[i][j] = rand.Float32()*2 - 1
 		}
 	}
-	
+
 	// Use manual insertion bypass? No, use AddByLocation would be best but it requires LocationStore logic.
 	// But InsertWithVector is internal.
 	// AddByLocation calls Insert(id, level) which calls InsertWithVector(id, vector, level).
 	// But AddByLocation doesn't provide vector?
 	// Ah, AddByLocation READS vector from Dataset.
 	// We didn't provide dataset.
-	
+
 	// We can use internal Insert method directly if we mock vector retrieval?
 	// Or we create a Dataset.
 	// Creating Dataset is heavy.
-	// What did other tests do? 
+	// What did other tests do?
 	// TestArrowHNSW_AddBatch uses AddBatch.
-	
+
 	// Let's assume we can call an internal helper or just create a mock logical flow.
 	// InsertWithVector signature?
 	// It's in arrow_hnsw_insert.go? No, func (h *ArrowHNSW) InsertWithVector(id uint32, vec []float32, level int) error
@@ -130,17 +130,17 @@ func TestArrowHNSW_Float16_Integration(t *testing.T) {
 	// Is it exported? No (capital I means exported? No, struct method).
 	// Yes, InsertWithVector starts with Capital I.
 	// So we can call it!
-	
+
 	for i := 0; i < n; i++ {
 		id := uint32(i + 1)
 		err := hnsw.InsertWithVector(id, vecs[i], 0) // Level 0 for simplicity
 		require.NoError(t, err)
 	}
-	
+
 	// Verify
 	gd := hnsw.data.Load()
 	require.NotNil(t, gd.VectorsF16)
-	
+
 	// Check internal state
 	// F32 Vectors should be empty (offsets 0)
 	// Actually, we need to check if chunk allocated.
@@ -148,11 +148,11 @@ func TestArrowHNSW_Float16_Integration(t *testing.T) {
 	// gd.Vectors[0] should be 0.
 	chunkVal := atomic.LoadUint64(&gd.Vectors[0])
 	assert.Equal(t, uint64(0), chunkVal, "Float32 vector storage (Vectors) should be empty/zero when Float16 is enabled")
-	
+
 	// F16 Vectors should be populated
 	chunkValF16 := atomic.LoadUint64(&gd.VectorsF16[0])
 	assert.NotEqual(t, uint64(0), chunkValF16, "Float16 vector storage (VectorsF16) should have allocated chunk")
-	
+
 	// Retrieve and Check Precision
 	for i := 0; i < n; i++ {
 		id := uint32(i + 1)
@@ -160,9 +160,9 @@ func TestArrowHNSW_Float16_Integration(t *testing.T) {
 		// But maybe there is exported GetVector?
 		// We'll use mustGetVectorFromData if we can (internals test).
 		// Since we are in package store, we can access unexported methods.
-		
+
 		retrieved := hnsw.mustGetVectorFromData(gd, id)
-		
+
 		for j := 0; j < dims; j++ {
 			diff := math.Abs(float64(vecs[i][j] - retrieved[j]))
 			assert.Less(t, diff, 0.01)

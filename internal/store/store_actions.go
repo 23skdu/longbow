@@ -453,12 +453,11 @@ func (s *VectorStore) flushPutBatch(name string, batch []arrow.RecordBatch) erro
 		metrics.IngestionLagCount.Add(float64(rec.NumRows()))
 
 		select {
-		case s.ingestionQueue <- ingestionJob{datasetName: name, batch: rec}:
-			// Enqueued
+		case s.ingestionQueue <- ingestionJob{datasetName: name, batch: rec, ts: ts}:
 		default:
 			// Backpressure: if queue full, block or fail.
 			// Ideally block to slow down client.
-			s.ingestionQueue <- ingestionJob{datasetName: name, batch: rec}
+			s.ingestionQueue <- ingestionJob{datasetName: name, batch: rec, ts: ts}
 		}
 	}
 
@@ -477,7 +476,7 @@ func (s *VectorStore) StoreRecordBatch(ctx context.Context, name string, rec arr
 	rec.Retain() // Retain for worker
 	metrics.IngestionLagCount.Add(float64(rec.NumRows()))
 
-	s.ingestionQueue <- ingestionJob{datasetName: name, batch: rec}
+	s.ingestionQueue <- ingestionJob{datasetName: name, batch: rec, ts: ts}
 
 	return nil
 }
@@ -553,7 +552,7 @@ func (s *VectorStore) concatenateBatches(batches []arrow.RecordBatch) (arrow.Rec
 }
 
 // applyBatchToMemory applies a batch to the in-memory dataset and dispatches indexing
-func (s *VectorStore) applyBatchToMemory(name string, rec arrow.RecordBatch) error {
+func (s *VectorStore) applyBatchToMemory(name string, rec arrow.RecordBatch, ts int64) error {
 	ds, _ := s.getOrCreateDataset(name, func() *Dataset {
 		ds := NewDataset(name, rec.Schema())
 		ds.Topo = s.numaTopology
@@ -606,8 +605,6 @@ func (s *VectorStore) applyBatchToMemory(name string, rec arrow.RecordBatch) err
 	ds.SizeBytes.Add(batchSize)
 	metrics.FlightRowsProcessed.WithLabelValues("put", "ok").Add(float64(rec.NumRows()))
 
-	ts := time.Now().UnixNano()
-
 	// Extract IDs and Vectors outside lock for better concurrency
 	idMap := ds.ExtractIDs(rec)
 
@@ -657,6 +654,9 @@ func (s *VectorStore) applyBatchToMemory(name string, rec arrow.RecordBatch) err
 	batchIdx := len(ds.Records)
 	ds.Records = append(ds.Records, rec)
 	rec.Retain() // Dataset holds a reference
+
+	// Increment pending jobs count while holding lock to ensure compaction sees it
+	ds.PendingIndexJobs.Add(1)
 
 	// Record NUMA node
 	currCPU := GetCurrentCPU()
@@ -714,6 +714,7 @@ func (s *VectorStore) applyBatchToMemory(name string, rec arrow.RecordBatch) err
 	if !sent {
 		s.logger.Warn().Str("dataset", name).Int("batch_idx", batchIdx).Msg("Dropped batch index job after retries (queue full)")
 		rec.Release()
+		ds.PendingIndexJobs.Add(-1) // Revert pending count since job was dropped
 		metrics.IndexJobsDroppedTotal.Inc()
 	}
 

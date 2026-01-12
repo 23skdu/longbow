@@ -29,6 +29,9 @@ type (
 
 	distanceF16Func func(a, b []float16.Num) float32
 
+	distanceComplex64Func  func(a, b []complex64) float32
+	distanceComplex128Func func(a, b []complex128) float32
+
 	// CompareOp represents a comparison operator for SIMD filters
 	CompareOp int
 )
@@ -53,16 +56,19 @@ var (
 
 	// Function pointers initialized at startup - eliminates switch overhead in hot path
 	euclideanDistanceImpl    distanceFunc
-	euclideanDistance384Impl distanceFunc // optimized for dimensions=384
+	euclideanDistance384Impl distanceFunc
+	euclideanDistance128Impl distanceFunc // optimized for dimensions=128
 	cosineDistanceImpl       distanceFunc
 
-	// DistFunc is the best available Euclidean distance implementation for the current CPU.
-	// It is initialized at start time to allow direct function calls without runtime dispatch checks.
+	// DistFunc is the best available Euclidean distance implementation
 	DistFunc distanceFunc
 
 	dotProductImpl             distanceFunc
-	dotProduct384Impl          distanceFunc // optimized for dimensions=384
+	dotProduct384Impl          distanceFunc
+	dotProduct128Impl          distanceFunc // optimized for dimensions=128
 	euclideanDistanceBatchImpl distanceBatchFunc
+	cosineDistanceBatchImpl    distanceBatchFunc
+	dotProductBatchImpl        distanceBatchFunc
 
 	matchInt64Impl   matchInt64Func
 	matchFloat32Impl matchFloat32Func
@@ -77,6 +83,9 @@ var (
 	euclideanDistanceF16Impl distanceF16Func
 	cosineDistanceF16Impl    distanceF16Func
 	dotProductF16Impl        distanceF16Func
+
+	euclideanDistanceComplex64Impl  distanceComplex64Func
+	euclideanDistanceComplex128Impl distanceComplex128Func
 )
 
 func init() {
@@ -134,11 +143,13 @@ func initializeDispatch() {
 	case "avx512":
 		euclideanDistanceImpl = euclideanAVX512
 		euclideanDistance384Impl = euclidean384AVX512
+		euclideanDistance128Impl = euclidean128Unrolled4x // Fallback to unrolled Go (efficient enough for 128)
 		metrics.SimdDispatchCount.WithLabelValues("avx512").Inc()
 		metrics.SimdStaticDispatchType.Set(3)
 		cosineDistanceImpl = cosineAVX512
 		dotProductImpl = dotAVX512
 		dotProduct384Impl = dot384AVX512
+		dotProduct128Impl = dot128Unrolled4x // Fallback to unrolled Go
 		euclideanDistanceBatchImpl = euclideanBatchAVX512
 		cosineDistanceBatchImpl = cosineBatchAVX512
 		dotProductBatchImpl = dotBatchAVX512
@@ -152,14 +163,18 @@ func initializeDispatch() {
 		euclideanDistanceF16Impl = euclideanF16AVX512
 		cosineDistanceF16Impl = cosineF16AVX512
 		dotProductF16Impl = dotF16AVX512
+		euclideanDistanceComplex64Impl = euclideanComplex64Unrolled
+		euclideanDistanceComplex128Impl = euclideanComplex128Unrolled
 	case "avx2":
 		euclideanDistanceImpl = euclideanAVX2
 		euclideanDistance384Impl = euclideanGeneric // AVX2 384-dim not implemented yet, fallback
+		euclideanDistance128Impl = euclidean128Unrolled4x
 		metrics.SimdDispatchCount.WithLabelValues("avx2").Inc()
 		metrics.SimdStaticDispatchType.Set(2)
 		cosineDistanceImpl = cosineAVX2
 		dotProductImpl = dotAVX2
 		dotProduct384Impl = dotGeneric
+		dotProduct128Impl = dot128Unrolled4x
 		euclideanDistanceBatchImpl = euclideanBatchAVX2
 		cosineDistanceBatchImpl = cosineBatchAVX2
 		dotProductBatchImpl = dotBatchAVX2
@@ -173,14 +188,18 @@ func initializeDispatch() {
 		euclideanDistanceF16Impl = euclideanF16AVX2
 		cosineDistanceF16Impl = cosineF16AVX2
 		dotProductF16Impl = dotF16AVX2
+		euclideanDistanceComplex64Impl = euclideanComplex64Unrolled   // Fallback
+		euclideanDistanceComplex128Impl = euclideanComplex128Unrolled // Fallback
 	case "neon":
 		euclideanDistanceImpl = euclideanNEON
 		euclideanDistance384Impl = euclidean384NEON
+		euclideanDistance128Impl = euclidean128NEON
 		metrics.SimdDispatchCount.WithLabelValues("neon").Inc()
 		metrics.SimdStaticDispatchType.Set(1)
 		cosineDistanceImpl = cosineNEON
 		dotProductImpl = dotNEON
 		dotProduct384Impl = dot384NEON
+		dotProduct128Impl = dot128NEON
 		euclideanDistanceBatchImpl = euclideanBatchNEON
 		cosineDistanceBatchImpl = cosineBatchNEON
 		dotProductBatchImpl = dotBatchNEON
@@ -194,14 +213,18 @@ func initializeDispatch() {
 		euclideanDistanceF16Impl = euclideanF16NEON
 		cosineDistanceF16Impl = cosineF16NEON
 		dotProductF16Impl = dotF16NEON
+		euclideanDistanceComplex64Impl = euclideanComplex64Unrolled   // Fallback
+		euclideanDistanceComplex128Impl = euclideanComplex128Unrolled // Fallback
 	default:
 		euclideanDistanceImpl = euclideanUnrolled4x
 		euclideanDistance384Impl = euclideanUnrolled4x
+		euclideanDistance128Impl = euclidean128Unrolled4x
 		metrics.SimdDispatchCount.WithLabelValues("generic").Inc()
 		metrics.SimdStaticDispatchType.Set(0)
 		cosineDistanceImpl = cosineUnrolled4x
 		dotProductImpl = dotUnrolled4x
 		dotProduct384Impl = dotUnrolled4x
+		dotProduct128Impl = dot128Unrolled4x
 		euclideanDistanceBatchImpl = euclideanBatchUnrolled4x
 		cosineDistanceBatchImpl = cosineBatchUnrolled4x
 		dotProductBatchImpl = dotBatchUnrolled4x
@@ -215,7 +238,55 @@ func initializeDispatch() {
 		euclideanDistanceF16Impl = euclideanF16Unrolled4x
 		cosineDistanceF16Impl = cosineF16Unrolled4x
 		dotProductF16Impl = dotF16Unrolled4x
+		euclideanDistanceComplex64Impl = euclideanComplex64Unrolled
+		euclideanDistanceComplex128Impl = euclideanComplex128Unrolled
 	}
+
+	// Register current implementations into the new dynamic registry.
+	// This enables the transition to polymorphic indexing while preserving
+	// existing high-performance paths.
+
+	// Float32 Euclidean
+	Registry.Register(MetricEuclidean, DataTypeFloat32, 0, euclideanDistanceImpl)
+	Registry.Register(MetricEuclidean, DataTypeFloat32, 128, euclideanDistance128Impl)
+	Registry.Register(MetricEuclidean, DataTypeFloat32, 384, euclideanDistance384Impl)
+
+	// Float32 Cosine & Dot Product
+	Registry.Register(MetricCosine, DataTypeFloat32, 0, cosineDistanceImpl)
+	Registry.Register(MetricDotProduct, DataTypeFloat32, 0, dotProductImpl)
+	Registry.Register(MetricDotProduct, DataTypeFloat32, 128, dotProduct128Impl)
+	Registry.Register(MetricDotProduct, DataTypeFloat32, 384, dotProduct384Impl)
+
+	// Float16 (Support both native and unrolled paths)
+	Registry.Register(MetricEuclidean, DataTypeFloat16, 0, euclideanDistanceF16Impl)
+	Registry.Register(MetricCosine, DataTypeFloat16, 0, cosineDistanceF16Impl)
+	Registry.Register(MetricDotProduct, DataTypeFloat16, 0, dotProductF16Impl)
+
+	// Complex Numbers (Unrolled Baselines)
+	Registry.Register(MetricEuclidean, DataTypeComplex64, 0, euclideanDistanceComplex64Impl)
+	Registry.Register(MetricEuclidean, DataTypeComplex128, 0, euclideanDistanceComplex128Impl)
+
+	// Baseline Fallbacks for all other types
+	Registry.Register(MetricEuclidean, DataTypeInt8, 0, euclideanInt8Unrolled4x)
+	Registry.Register(MetricDotProduct, DataTypeInt8, 0, dotInt8Unrolled4x)
+
+	Registry.Register(MetricEuclidean, DataTypeInt16, 0, euclideanInt16Unrolled4x)
+	Registry.Register(MetricDotProduct, DataTypeInt16, 0, dotInt16Unrolled4x)
+
+	Registry.Register(MetricEuclidean, DataTypeInt32, 0, euclideanInt32Unrolled4x)
+	Registry.Register(MetricEuclidean, DataTypeInt64, 0, euclideanInt64Unrolled4x)
+
+	Registry.Register(MetricEuclidean, DataTypeUint8, 0, euclideanUint8Unrolled4x)
+	Registry.Register(MetricEuclidean, DataTypeUint16, 0, euclideanUint16Unrolled4x)
+	Registry.Register(MetricEuclidean, DataTypeUint32, 0, euclideanUint32Unrolled4x)
+	Registry.Register(MetricEuclidean, DataTypeUint64, 0, euclideanUint64Unrolled4x)
+
+	Registry.Register(MetricEuclidean, DataTypeFloat64, 0, euclideanFloat64Unrolled4x)
+	Registry.Register(MetricDotProduct, DataTypeFloat64, 0, dotFloat64Unrolled4x)
+
+	Registry.Register(MetricEuclidean, DataTypeComplex64, 0, euclideanComplex64Unrolled)
+	Registry.Register(MetricDotProduct, DataTypeComplex64, 0, dotComplex64Unrolled)
+	Registry.Register(MetricEuclidean, DataTypeComplex128, 0, euclideanComplex128Unrolled)
 }
 
 // GetCPUFeatures returns detected CPU SIMD capabilities
@@ -239,6 +310,9 @@ func EuclideanDistance(a, b []float32) float32 {
 	}
 	if len(a) == 384 {
 		return euclideanDistance384Impl(a, b)
+	}
+	if len(a) == 128 {
+		return euclideanDistance128Impl(a, b)
 	}
 	return euclideanDistanceImpl(a, b)
 }
@@ -266,6 +340,9 @@ func DotProduct(a, b []float32) float32 {
 	}
 	if len(a) == 384 {
 		return dotProduct384Impl(a, b)
+	}
+	if len(a) == 128 {
+		return dotProduct128Impl(a, b)
 	}
 	return dotProductImpl(a, b)
 }
@@ -558,15 +635,63 @@ func euclideanBatchUnrolled4x(query []float32, vectors [][]float32, results []fl
 	}
 }
 
+// cosineBatchUnrolled4x computes batch cosine distances using unrolled inner loop
+// with 4 independent accumulators per dot/norm calculation (12 total accumulators).
+func cosineBatchUnrolled4x(query []float32, vectors [][]float32, results []float32) {
+	for i, v := range vectors {
+		results[i] = cosineUnrolled4x(query, v)
+	}
+}
+
+// dotBatchUnrolled4x computes batch dot products using unrolled inner loop
+// with 4 independent accumulators to break loop-carried dependencies.
+func dotBatchUnrolled4x(query []float32, vectors [][]float32, results []float32) {
+	for i, v := range vectors {
+		results[i] = dotUnrolled4x(query, v)
+	}
+}
+
+// euclidean128Unrolled4x calculates Euclidean distance for fixed 128 dimension.
+// Relies on compiler loop unrolling and bound check elimination.
+func euclidean128Unrolled4x(a, b []float32) float32 {
+	// Bounds check elimination hint
+	_ = a[127]
+	_ = b[127]
+
+	var sum0, sum1, sum2, sum3 float32
+	// 128 is divisible by 4, so no remainder loop
+	for i := 0; i < 128; i += 4 {
+		d0 := a[i] - b[i]
+		d1 := a[i+1] - b[i+1]
+		d2 := a[i+2] - b[i+2]
+		d3 := a[i+3] - b[i+3]
+		sum0 += d0 * d0
+		sum1 += d1 * d1
+		sum2 += d2 * d2
+		sum3 += d3 * d3
+	}
+	return float32(math.Sqrt(float64(sum0 + sum1 + sum2 + sum3)))
+}
+
+func dot128Unrolled4x(a, b []float32) float32 {
+	_ = a[127]
+	_ = b[127]
+
+	var sum0, sum1, sum2, sum3 float32
+	for i := 0; i < 128; i += 4 {
+		sum0 += a[i] * b[i]
+		sum1 += a[i+1] * b[i+1]
+		sum2 += a[i+2] * b[i+2]
+		sum3 += a[i+3] * b[i+3]
+	}
+	return sum0 + sum1 + sum2 + sum3
+}
+
 // =============================================================================
 // Parallel Sum Reduction with Multiple Accumulators - Batch Operations
 // =============================================================================
 
 // Batch function type for cosine and dot distance
-var (
-	cosineDistanceBatchImpl distanceBatchFunc
-	dotProductBatchImpl     distanceBatchFunc
-)
 
 // CosineDistanceBatch calculates cosine distance between query and multiple vectors.
 // Uses parallel sum reduction with multiple accumulators for ILP optimization.
@@ -594,22 +719,6 @@ func DotProductBatch(query []float32, vectors [][]float32, results []float32) {
 	metrics.DotProductBatchCallsTotal.Inc()
 	metrics.ParallelReductionVectorsProcessed.Add(float64(len(vectors)))
 	dotProductBatchImpl(query, vectors, results)
-}
-
-// cosineBatchUnrolled4x computes batch cosine distances using unrolled inner loop
-// with 4 independent accumulators per dot/norm calculation (12 total accumulators).
-func cosineBatchUnrolled4x(query []float32, vectors [][]float32, results []float32) {
-	for i, v := range vectors {
-		results[i] = cosineUnrolled4x(query, v)
-	}
-}
-
-// dotBatchUnrolled4x computes batch dot products using unrolled inner loop
-// with 4 independent accumulators to break loop-carried dependencies.
-func dotBatchUnrolled4x(query []float32, vectors [][]float32, results []float32) {
-	for i, v := range vectors {
-		results[i] = dotUnrolled4x(query, v)
-	}
 }
 
 // Internal implementation pointers
@@ -678,7 +787,6 @@ func matchInt64Generic(src []int64, val int64, op CompareOp, dst []byte) {
 	case CompareLe:
 		for i, v := range src {
 			if v <= val {
-				dst[i] = 0 // Wait, logic error in original paste? No, v <= val means 1.
 				dst[i] = 1
 			} else {
 				dst[i] = 0
@@ -816,4 +924,14 @@ func cosineF16Unrolled4x(a, b []float16.Num) float32 {
 		return 1.0
 	}
 	return 1.0 - (dot / float32(math.Sqrt(float64(normA)*float64(normB))))
+}
+
+// EuclideanDistanceComplex64 calculates Euclidean distance for Complex64 vectors
+func EuclideanDistanceComplex64(a, b []complex64) float32 {
+	return euclideanDistanceComplex64Impl(a, b)
+}
+
+// EuclideanDistanceComplex128 calculates Euclidean distance for Complex128 vectors
+func EuclideanDistanceComplex128(a, b []complex128) float32 {
+	return euclideanDistanceComplex128Impl(a, b)
 }

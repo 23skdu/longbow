@@ -307,6 +307,9 @@ func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
 				j.Record.Release()
 				metrics.IndexJobLatencySeconds.WithLabelValues(dsName).Observe(time.Since(j.CreatedAt).Seconds())
 			}
+
+			// Decrement pending jobs count
+			ds.PendingIndexJobs.Add(int64(-len(dsGroup)))
 		}
 	}
 	for {

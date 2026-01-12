@@ -163,6 +163,12 @@ func (w *CompactionWorker) run() {
 			if w.store == nil {
 				continue
 			}
+			// Check if index queue has backlog. If so, skip compaction to prioritize indexing
+			// and avoid race conditions with pending stale batch indices.
+			if w.store != nil && w.store.indexQueue != nil && w.store.indexQueue.Len() > 0 {
+				continue
+			}
+
 			w.store.IterateDatasets(func(name string, ds *Dataset) {
 				if ds == nil {
 					return

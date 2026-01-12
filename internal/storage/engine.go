@@ -253,6 +253,7 @@ func (e *StorageEngine) ReplayWAL(applier ApplierFunc) (uint64, error) {
 			if r.Next() {
 				rec := r.RecordBatch()
 				rec.Retain()
+				fmt.Printf("ReplayWAL: Applying seq=%d name=%s rows=%d\n", seq, name, rec.NumRows())
 				_ = applier(name, rec, seq, ts)
 				count++
 			}
@@ -412,6 +413,7 @@ func (e *StorageEngine) LoadSnapshots(loader func(SnapshotItem) error) error {
 	partials := make(map[string]*SnapshotItem)
 
 	for _, entry := range entries {
+		fmt.Printf("LoadSnapshots: Found entry %s\n", entry.Name())
 		ext := filepath.Ext(entry.Name())
 		name := entry.Name()[:len(entry.Name())-len(ext)]
 		fullPath := filepath.Join(snapshotDir, entry.Name())
@@ -439,7 +441,10 @@ func (e *StorageEngine) LoadSnapshots(loader func(SnapshotItem) error) error {
 		case name + ".parquet":
 			rec, err := readParquet(f, info.Size(), e.mem)
 			if err == nil && rec != nil {
+				fmt.Printf("LoadSnapshots: Loaded records for %s, rows=%d\n", name, rec.NumRows())
 				item.Records = append(item.Records, rec)
+			} else {
+				fmt.Printf("LoadSnapshots: Failed to read parquet for %s: %v\n", name, err)
 			}
 		case name + ".graph.parquet":
 			rec, err := readGraphParquet(f, info.Size(), e.mem)

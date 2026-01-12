@@ -27,7 +27,7 @@ func TestFilterEvaluator_BindingReproduction(t *testing.T) {
 
 	b.Field(0).(*array.Int64Builder).AppendValues([]int64{1, 2}, nil)
 	b.Field(1).(*array.StringBuilder).AppendValues([]string{"A", "B"}, nil)
-	rec := b.NewRecord()
+	rec := b.NewRecordBatch()
 	defer rec.Release()
 
 	// Test successful binding

@@ -105,6 +105,7 @@ type VectorStore struct {
 type ingestionJob struct {
 	datasetName string
 	batch       arrow.RecordBatch
+	ts          int64
 	// We might add more metadata here (e.g. span context)
 }
 
@@ -138,8 +139,18 @@ func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes 
 	// Initialize Adaptive GC Controller (disabled by default)
 	s.gcController = gc.NewAdaptiveGCController(gc.DefaultAdaptiveGCConfig())
 
+	// Initialize Compaction
+	s.compactionConfig = DefaultCompactionConfig()
+	s.compactionWorker = NewCompactionWorker(s, s.compactionConfig)
+	if s.compactionConfig.Enabled {
+		s.compactionWorker.Start()
+	}
+
 	s.workerWg.Add(1)
 	go s.runIngestionWorker()
+
+	// Start default index worker (1 thread)
+	s.StartIndexingWorkers(1)
 
 	return s
 }

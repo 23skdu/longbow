@@ -1,17 +1,17 @@
 package store
 
-
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/rs/zerolog"
 
 	"github.com/23skdu/longbow/internal/metrics"
 )
@@ -39,11 +39,16 @@ func TestBM25AutoIndexingDuringDoPut(t *testing.T) {
 	err = store.StoreRecordBatch(context.Background(), "test-dataset", batch)
 	require.NoError(t, err)
 
-	bm25 := store.GetBM25Index()
-	require.NotNil(t, bm25, "BM25 index should exist")
+	var bm25 *BM25InvertedIndex
+	assert.Eventually(t, func() bool {
+		bm25 = store.GetBM25Index("test-dataset")
+		return bm25 != nil
+	}, 2*time.Second, 100*time.Millisecond, "BM25 index should eventually exist")
 
-	results := bm25.SearchBM25("fox", 10)
-	assert.NotEmpty(t, results, "BM25 search should return results for indexed term 'fox'")
+	assert.Eventually(t, func() bool {
+		results := bm25.SearchBM25("fox", 10)
+		return len(results) > 0
+	}, 2*time.Second, 100*time.Millisecond, "BM25 search should return results for indexed term 'fox'")
 }
 
 // TestBM25AutoIndexingMultipleBatches verifies incremental indexing across batches
@@ -69,14 +74,19 @@ func TestBM25AutoIndexingMultipleBatches(t *testing.T) {
 	err = store.StoreRecordBatch(context.Background(), "ds", batch2)
 	require.NoError(t, err)
 
-	bm25 := store.GetBM25Index()
-	require.NotNil(t, bm25)
+	var bm25 *BM25InvertedIndex
+	assert.Eventually(t, func() bool {
+		bm25 = store.GetBM25Index("ds")
+		return bm25 != nil
+	}, 2*time.Second, 100*time.Millisecond)
 
-	resultsAlpha := bm25.SearchBM25("alpha", 10)
-	resultsDelta := bm25.SearchBM25("delta", 10)
+	assert.Eventually(t, func() bool {
+		return len(bm25.SearchBM25("alpha", 10)) > 0
+	}, 2*time.Second, 100*time.Millisecond, "First batch term should be searchable")
 
-	assert.NotEmpty(t, resultsAlpha, "First batch term should be searchable")
-	assert.NotEmpty(t, resultsDelta, "Second batch term should be searchable")
+	assert.Eventually(t, func() bool {
+		return len(bm25.SearchBM25("delta", 10)) > 0
+	}, 2*time.Second, 100*time.Millisecond, "Second batch term should be searchable")
 }
 
 // TestBM25NoIndexingWhenDisabled verifies no indexing when hybrid is disabled
@@ -92,7 +102,7 @@ func TestBM25NoIndexingWhenDisabled(t *testing.T) {
 	err := store.StoreRecordBatch(context.Background(), "ds", batch)
 	require.NoError(t, err)
 
-	bm25 := store.GetBM25Index()
+	bm25 := store.GetBM25Index("ds")
 	assert.Nil(t, bm25, "BM25 index should be nil when hybrid disabled")
 }
 
@@ -120,14 +130,19 @@ func TestBM25MultipleTextColumns(t *testing.T) {
 	err = store.StoreRecordBatch(context.Background(), "ds", batch)
 	require.NoError(t, err)
 
-	bm25 := store.GetBM25Index()
-	require.NotNil(t, bm25)
+	var bm25 *BM25InvertedIndex
+	assert.Eventually(t, func() bool {
+		bm25 = store.GetBM25Index("ds")
+		return bm25 != nil
+	}, 2*time.Second, 100*time.Millisecond)
 
-	resultsTitle := bm25.SearchBM25("uniquetitleterm", 10)
-	resultsBody := bm25.SearchBM25("uniquebodyterm", 10)
+	assert.Eventually(t, func() bool {
+		return len(bm25.SearchBM25("uniquetitleterm", 10)) > 0
+	}, 2*time.Second, 100*time.Millisecond, "Title column should be indexed")
 
-	assert.NotEmpty(t, resultsTitle, "Title column should be indexed")
-	assert.NotEmpty(t, resultsBody, "Body column should be indexed")
+	assert.Eventually(t, func() bool {
+		return len(bm25.SearchBM25("uniquebodyterm", 10)) > 0
+	}, 2*time.Second, 100*time.Millisecond, "Body column should be indexed")
 }
 
 // TestBM25IndexingMetrics verifies Prometheus metrics are emitted
@@ -151,56 +166,77 @@ func TestBM25IndexingMetrics(t *testing.T) {
 	err = store.StoreRecordBatch(context.Background(), "ds", batch)
 	require.NoError(t, err)
 
-	finalCount := testutil.ToFloat64(metrics.BM25DocumentsIndexedTotal)
-	assert.Equal(t, initialCount+3, finalCount, "Should have indexed 3 documents")
+	assert.Eventually(t, func() bool {
+		finalCount := testutil.ToFloat64(metrics.BM25DocumentsIndexedTotal)
+		return finalCount == initialCount+3
+	}, 2*time.Second, 100*time.Millisecond, "Should have indexed 3 documents")
 }
 
 // nolint:unparam
 func createBM25TestBatch(t *testing.T, mem memory.Allocator, colName string, texts []string) arrow.RecordBatch {
 	t.Helper()
 
+	dim := 4
 	schema := arrow.NewSchema([]arrow.Field{
 		{Name: colName, Type: arrow.BinaryTypes.String},
+		{Name: "vector", Type: arrow.FixedSizeListOf(int32(dim), arrow.PrimitiveTypes.Float32)},
 	}, nil)
 
-	builder := array.NewStringBuilder(mem)
-	defer builder.Release()
+	bld := array.NewRecordBuilder(mem, schema)
+	defer bld.Release()
 
+	// Text
+	textBld := bld.Field(0).(*array.StringBuilder)
 	for _, text := range texts {
-		builder.Append(text)
+		textBld.Append(text)
 	}
 
-	arr := builder.NewArray()
-	defer arr.Release()
+	// Vector
+	vecBld := bld.Field(1).(*array.FixedSizeListBuilder)
+	valBld := vecBld.ValueBuilder().(*array.Float32Builder)
+	for range texts {
+		vecBld.Append(true)
+		for i := 0; i < dim; i++ {
+			valBld.Append(0.0)
+		}
+	}
 
-	return array.NewRecordBatch(schema, []arrow.Array{arr}, int64(len(texts)))
+	return bld.NewRecordBatch()
 }
 
 func createBM25MultiColBatch(t *testing.T, mem memory.Allocator, colNames []string, textsPerCol [][]string) arrow.RecordBatch {
 	t.Helper()
 
-	fields := make([]arrow.Field, len(colNames))
+	dim := 4
+	fields := make([]arrow.Field, len(colNames)+1)
 	for i, name := range colNames {
 		fields[i] = arrow.Field{Name: name, Type: arrow.BinaryTypes.String}
 	}
+	fields[len(colNames)] = arrow.Field{Name: "vector", Type: arrow.FixedSizeListOf(int32(dim), arrow.PrimitiveTypes.Float32)}
 	schema := arrow.NewSchema(fields, nil)
 
-	arrays := make([]arrow.Array, len(colNames))
+	bld := array.NewRecordBuilder(mem, schema)
+	defer bld.Release()
+
+	numRows := len(textsPerCol[0])
+
+	// Text columns
 	for i, texts := range textsPerCol {
-		builder := array.NewStringBuilder(mem)
+		textBld := bld.Field(i).(*array.StringBuilder)
 		for _, text := range texts {
-			builder.Append(text)
+			textBld.Append(text)
 		}
-		arrays[i] = builder.NewArray()
-		builder.Release()
 	}
 
-	numRows := int64(len(textsPerCol[0]))
-	batch := array.NewRecordBatch(schema, arrays, numRows)
-
-	for _, arr := range arrays {
-		arr.Release()
+	// Vector column
+	vecBld := bld.Field(len(colNames)).(*array.FixedSizeListBuilder)
+	valBld := vecBld.ValueBuilder().(*array.Float32Builder)
+	for i := 0; i < numRows; i++ {
+		vecBld.Append(true)
+		for j := 0; j < dim; j++ {
+			valBld.Append(0.0)
+		}
 	}
 
-	return batch
+	return bld.NewRecordBatch()
 }

@@ -56,6 +56,9 @@ type Dataset struct {
 	// Eviction state
 	evicting atomic.Bool // Marks dataset as being evicted
 
+	// In-flight Indexing Tracking (Compaction Safety)
+	PendingIndexJobs atomic.Int64
+
 	// LWW State
 	LWW *TimestampMap
 

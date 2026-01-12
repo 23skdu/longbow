@@ -132,12 +132,15 @@ func NewArrowHNSW(dataset *Dataset, config ArrowHNSWConfig, locStore *ChunkedLoc
 		initialCap = 1024
 	}
 
-	gd := NewGraphData(initialCap, config.Dims, config.SQ8Enabled, config.PQEnabled, config.PQM, config.BQEnabled, config.Float16Enabled, config.PackedAdjacencyEnabled)
+	gd := NewGraphData(initialCap, config.Dims, config.SQ8Enabled, config.PQEnabled, config.PQM, config.BQEnabled, config.Float16Enabled, config.PackedAdjacencyEnabled, config.DataType)
 	if dataset != nil && dataset.DiskStore != nil {
 		gd.DiskStore = dataset.DiskStore
 	}
-	h.data.Store(gd) // Dim 0 initially, updated on first insert
+	h.data.Store(gd)
 	h.backend.Store(gd)
+	if config.Dims > 0 {
+		h.dims.Store(int32(config.Dims))
+	}
 
 	// Pre-allocate pools
 	h.searchPool = NewArrowSearchContextPool()
@@ -624,6 +627,36 @@ func (h *ArrowHNSW) Warmup() int {
 // SetIndexedColumns implements VectorIndex.
 func (h *ArrowHNSW) SetIndexedColumns(cols []string) {
 	// No-op for now
+}
+
+// RemapFromBatchInfo efficiently updates locations based on batch movements.
+// It iterates all locations in the store and updates them if they belong to moved batches.
+func (h *ArrowHNSW) RemapFromBatchInfo(remapping map[int]BatchRemapInfo) error {
+	// Iterate mutable allows us to update atomic entries directly
+	h.locationStore.IterateMutable(func(id VectorID, val *atomic.Uint64) {
+		currentVal := val.Load()
+		loc := unpackLocation(currentVal)
+
+		if info, ok := remapping[loc.BatchIdx]; ok {
+			// This location was in a moved/modified batch
+			if loc.RowIdx < len(info.NewRowIdxs) {
+				newRowIdx := info.NewRowIdxs[loc.RowIdx]
+				if newRowIdx != -1 {
+					// Update location
+					newLoc := Location{
+						BatchIdx: info.NewBatchIdx,
+						RowIdx:   newRowIdx,
+					}
+					val.Store(packLocation(newLoc))
+				} else {
+					// Row deleted. We mark it as tombstoned in location store
+					tombstone := Location{BatchIdx: -1, RowIdx: -1}
+					val.Store(packLocation(tombstone))
+				}
+			}
+		}
+	})
+	return nil
 }
 
 // EstimateMemory implements VectorIndex.

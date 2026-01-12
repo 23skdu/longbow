@@ -88,7 +88,7 @@ func (c *GlobalSearchCoordinator) GlobalSearch(ctx context.Context, localResults
 	remoteReq.LocalOnly = true
 
 	var wg sync.WaitGroup
-	configTimeout := 2 * time.Second
+	configTimeout := 30 * time.Second
 
 	groupIdx := 0
 	for _, members := range peerGroups {

@@ -1,6 +1,8 @@
 package store
 
 import (
+	"fmt"
+
 	"github.com/23skdu/longbow/internal/pq"
 	"github.com/23skdu/longbow/internal/query"
 	"github.com/apache/arrow-go/v18/arrow"
@@ -9,15 +11,87 @@ import (
 // VectorIndex defines the interface for vector index implementations.
 // This allows for both single-threaded and sharded index implementations.
 
+// VectorDataType represents the underlying numerical type of vector elements.
+type VectorDataType int
+
+const (
+	VectorTypeInt8 VectorDataType = iota
+	VectorTypeUint8
+	VectorTypeInt16
+	VectorTypeUint16
+	VectorTypeInt32
+	VectorTypeUint32
+	VectorTypeInt64
+	VectorTypeUint64
+	VectorTypeFloat16
+	VectorTypeFloat32
+	VectorTypeFloat64
+	VectorTypeComplex64
+	VectorTypeComplex128
+)
+
+func (t VectorDataType) String() string {
+	switch t {
+	case VectorTypeInt8:
+		return "int8"
+	case VectorTypeUint8:
+		return "uint8"
+	case VectorTypeInt16:
+		return "int16"
+	case VectorTypeUint16:
+		return "uint16"
+	case VectorTypeInt32:
+		return "int32"
+	case VectorTypeUint32:
+		return "uint32"
+	case VectorTypeInt64:
+		return "int64"
+	case VectorTypeUint64:
+		return "uint64"
+	case VectorTypeFloat16:
+		return "float16"
+	case VectorTypeFloat32:
+		return "float32"
+	case VectorTypeFloat64:
+		return "float64"
+	case VectorTypeComplex64:
+		return "complex64"
+	case VectorTypeComplex128:
+		return "complex128"
+	default:
+		return fmt.Sprintf("unknown(%d)", t)
+	}
+}
+
+// ElementSize returns the size of a single element of this type in bytes.
+func (t VectorDataType) ElementSize() int {
+	switch t {
+	case VectorTypeInt8, VectorTypeUint8:
+		return 1
+	case VectorTypeInt16, VectorTypeUint16, VectorTypeFloat16:
+		return 2
+	case VectorTypeInt32, VectorTypeUint32, VectorTypeFloat32:
+		return 4
+	case VectorTypeInt64, VectorTypeUint64, VectorTypeFloat64, VectorTypeComplex64:
+		return 8
+	case VectorTypeComplex128:
+		return 16
+	default:
+		return 0
+	}
+}
+
 type SearchResult struct {
 	ID     VectorID
 	Score  float32
 	Vector []byte
+	Type   VectorDataType
 }
 
 type SearchOptions struct {
 	IncludeVectors bool
-	VectorFormat   string // "quantized", "f32", "f16"
+	VectorFormat   string         // "quantized", "raw"
+	TargetType     VectorDataType // Desired type if conversion is requested
 }
 
 type VectorIndex interface {

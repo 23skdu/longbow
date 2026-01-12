@@ -58,11 +58,11 @@ func TestFlight_Lifecycle(t *testing.T) {
 	initialAllocated := trackAlloc.BytesAllocated.Load() // Should be 0 if clean start
 	// Note: NewRecordReader might allocate some internal verify buffers? usually minimal.
 
-	records := []arrow.Record{}
+	records := []arrow.RecordBatch{}
 
 	for r.Next() {
 		// New Record
-		rec := r.Record()
+		rec := r.RecordBatch()
 		rec.Retain() // Keep it alive
 		records = append(records, rec)
 	}

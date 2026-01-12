@@ -57,6 +57,20 @@ func (vs *VectorStore) CompactDataset(name string) error {
 		return nil // Nothing to compact
 	}
 
+	// Race Condition Fix: Check for pending index jobs.
+	// If there are pending jobs, they might reference BatchIdxs that will become invalid
+	// after compaction. We must wait for them to finish.
+	if pending := ds.PendingIndexJobs.Load(); pending > 0 {
+		// Log at debug level to avoid spamming if it happens often under load
+		// But maybe Info is better to explain why compaction isn't happening?
+		// Stick to debug/warn if we have a logger available?
+		// We don't have logger in method signature (vs has s.logger).
+		// vs.logger.Warn()...
+		// But Helper methods usually don't log much.
+		// Let's return nil to skip this cycle.
+		return nil
+	}
+
 	// Check for memory headroom
 	// Compaction requires approx 2x the size of the data being compacted (old + new) temporarily.
 	// We check if we have enough free memory (limit - current) > current_dataset_size
@@ -93,6 +107,8 @@ func (vs *VectorStore) CompactDataset(name string) error {
 	case *HNSWIndex:
 		_ = idx.RemapFromBatchInfo(remapping)
 	case *ShardedHNSW:
+		_ = idx.RemapFromBatchInfo(remapping)
+	case *ArrowHNSW:
 		_ = idx.RemapFromBatchInfo(remapping)
 	}
 

@@ -9,7 +9,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/apache/arrow-go/v18/arrow/float16"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -78,27 +77,18 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 				}
 
 				// Always ingest into hot storage for bulk path to ensure searchability during construction.
-				if h.config.Float16Enabled {
-					f16Chunk := data.GetVectorsF16Chunk(cID)
-					if f16Chunk != nil {
-						dest := f16Chunk[int(cOff)*dims : (int(cOff)+1)*dims]
-						for i, val := range v {
-							dest[i] = float16.New(val)
-						}
-					}
-				} else {
-					hotVec := data.GetVectorsChunk(cID)
-					if hotVec != nil {
-						dest := hotVec[int(cOff)*dims : (int(cOff)+1)*dims]
-						copy(dest, v)
-					}
+				// Always ingest into hot storage for bulk path to ensure searchability during construction.
+				if err := data.SetVectorFromFloat32(id, v); err != nil {
+					return err
 				}
 
 				// 2. SQ8 Ingestion
 				if h.config.SQ8Enabled && h.quantizer != nil && h.sq8Ready.Load() {
 					sq8Chunk := data.GetVectorsSQ8Chunk(cID)
 					if sq8Chunk != nil {
-						dest := sq8Chunk[int(cOff)*dims : (int(cOff)+1)*dims]
+						sq8Stride := (dims + 63) & ^63
+						start := int(cOff) * sq8Stride
+						dest := sq8Chunk[start : start+dims]
 						h.quantizer.Encode(v, dest)
 					}
 				}

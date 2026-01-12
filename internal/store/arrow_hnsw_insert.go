@@ -232,22 +232,8 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec []float32, level int) error 
 
 	// Store Dense Vector (Copy for L2 locality)
 	if len(vec) > 0 && dims > 0 {
-		if h.config.Float16Enabled {
-			f16Chunk := data.GetVectorsF16Chunk(cID)
-			if f16Chunk != nil {
-				dest := f16Chunk[int(cOff)*dims : (int(cOff)+1)*dims]
-				for i, v := range vec {
-					dest[i] = float16.New(v)
-				}
-			}
-		} else {
-			vecChunk := data.GetVectorsChunk(cID)
-			if data.Vectors == nil || int(cID) >= len(data.Vectors) || vecChunk == nil {
-				return fmt.Errorf("vector allocation failure for ID %d (dims=%d): inconsistent state", id, dims)
-			}
-			dest := vecChunk[int(cOff)*dims : (int(cOff)+1)*dims]
-			copy(dest, vec)
-			vec = dest
+		if err := data.SetVectorFromFloat32(id, vec); err != nil {
+			return err
 		}
 	}
 
@@ -545,7 +531,8 @@ func (h *ArrowHNSW) ensureTrained(limitID int, extraSamples [][]float32) {
 // searchLayerForInsert performs search during insertion.
 // Returns candidates sorted by distance.
 func (h *ArrowHNSW) searchLayerForInsert(ctx *ArrowSearchContext, query []float32, entryPoint uint32, ef, layer int, data *GraphData) []Candidate {
-	_ = h.searchLayer(query, entryPoint, ef, layer, ctx, data, nil)
+	computer := h.resolveHNSWComputer(data, ctx, query)
+	_ = h.searchLayer(computer, entryPoint, ef, layer, ctx, data, nil)
 
 	// Transfer results from resultSet to a slice
 	res := make([]Candidate, ctx.resultSet.Len())

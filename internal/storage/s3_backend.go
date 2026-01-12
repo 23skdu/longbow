@@ -317,61 +317,6 @@ func (b *S3Backend) WriteSnapshotFile(ctx context.Context, name, ext string, r i
 	return nil
 }
 
-func (b *S3Backend) writeMultipart(ctx context.Context, key string, data []byte) error {
-	createOut, err := b.client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
-		Bucket:      aws.String(b.bucket),
-		Key:         aws.String(key),
-		ContentType: aws.String("application/vnd.apache.parquet"),
-	})
-	if err != nil {
-		return err
-	}
-	uploadID := createOut.UploadId
-
-	completedParts := make([]types.CompletedPart, 0, len(data)/(5*1024*1024)+1)
-	const partSize = 5 * 1024 * 1024
-	partNumber := int32(1)
-
-	for start := 0; start < len(data); start += partSize {
-		end := start + partSize
-		if end > len(data) {
-			end = len(data)
-		}
-
-		partOut, err := b.client.UploadPart(ctx, &s3.UploadPartInput{
-			Bucket:     aws.String(b.bucket),
-			Key:        aws.String(key),
-			UploadId:   uploadID,
-			PartNumber: aws.Int32(partNumber),
-			Body:       bytes.NewReader(data[start:end]),
-		})
-		if err != nil {
-			_, _ = b.client.AbortMultipartUpload(ctx, &s3.AbortMultipartUploadInput{
-				Bucket:   aws.String(b.bucket),
-				Key:      aws.String(key),
-				UploadId: uploadID,
-			})
-			return err
-		}
-
-		completedParts = append(completedParts, types.CompletedPart{
-			ETag:       partOut.ETag,
-			PartNumber: aws.Int32(partNumber),
-		})
-		partNumber++
-	}
-
-	_, err = b.client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
-		Bucket:   aws.String(b.bucket),
-		Key:      aws.String(key),
-		UploadId: uploadID,
-		MultipartUpload: &types.CompletedMultipartUpload{
-			Parts: completedParts,
-		},
-	})
-	return err
-}
-
 // WriteSnapshotAsync queues a snapshot for background upload
 func (b *AsyncS3Backend) WriteSnapshotAsync(name string, data []byte) {
 	select {

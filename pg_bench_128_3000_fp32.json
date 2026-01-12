@@ -1,0 +1,20 @@
+[
+  {
+    "name": "DoPut",
+    "duration_seconds": 0.10945510864257812,
+    "throughput": 15.866831631408358,
+    "throughput_unit": "MB/s",
+    "rows": 3000,
+    "bytes_processed": 1821068,
+    "p50_ms": 0.0,
+    "p95_ms": 0.0,
+    "p99_ms": 0.0,
+    "errors": 0
+  },
+  {
+    "name": "DoGet",
+    "duration_seconds": 2.452275037765503,
+    "throughput": 2.9584559442256433,
+    "throughput_unit": "MB/s",
+    "rows": 4800,
+    "bytes_processed": 

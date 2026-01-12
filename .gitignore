@@ -259,3 +259,7 @@ scripts/**/results_*.json
 scripts/**/benchmark_*.json
 scripts/**/profiles_*/
 
+# Benchmark artifacts
+bench_*
+benchmark_results.json
+benchmark_results.log

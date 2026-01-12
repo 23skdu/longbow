@@ -28,59 +28,37 @@ Based on deep analysis of `bench_9k` and `final` pprof data, we have identified 
 **Solution**: For ARM64 (M-series), hardcode the NEON path using Go assembly or intrinsics to skip the runtime dispatch check for `L2Distance` and `Cosine`.
 **Expected Impact**: 10-15% reduction in search latency.
 
-### [DONE] 5. Bitmap-Based Filtering
-
-**Problem**: Filtered search iterates over- [x] **Bitmap-Based Filtering**: Integrated `query.Bitset` into search path for O(1) filtering overhead. Added `GenerateFilterBitset` with caching in `Dataset`.
-
-### 6. Adaptive gRPC Buffer Tuning
+### 5. Adaptive gRPC Buffer Tuning
 
 **Problem**: `google.golang.org/grpc/mem.(*simpleBufferPool)` is a significant allocator.
 **Solution**: Tune `grpc.ReadBufferSize` and `grpc.WriteBufferSize` based on observed payload sizes (typically 4KB-16KB for search, 1MB+ for bulk loads).
 **Expected Impact**: Reduced memory churn.
 
-### 7. Dictionary Encoding for Metadata
+### 6. Dictionary Encoding for Metadata
 
 **Problem**: Repeating string values ("cat_1", "cat_2") consume bandwidth and memory.
 **Solution**: Automatically dictionary-encode string columns with low cardinality (<1000 unique values).
 **Expected Impact**: 50-70% reduction in metadata storage and bandwidth.
 
-### 8. Query Result Caching
-
-**Problem**: Identical queries (e.g., from dashboards) re-execute full search.
-**Solution**: Implement an LRU cache keyed by `hash(query_vector + k + filter)`. Cache only the top-K IDs.
-**Expected Impact**: Near-zero latency for repeated queries.
-
-### 9. Batched Tombstone Compaction
-
-**Problem**: Real-time compaction fights for lock contention.
-**Solution**: Accumulate tombstones in a lock-free bitset and schedule "Stop-the-World" (milliseconds) compaction only when deleted ratio > 10% or system is idle.
-**Expected Impact**: Smoother tail latency (P99) during heavy writes.
-
-### 10. Request Hedging
+### 7. Request Hedging
 
 **Problem**: Tail latency (P99) spikes to 5ms+ at load.
 **Solution**: Send search requests to 2 replicas (if available) and take the first response. Cancel the second request.
 **Expected Impact**: P99 latency approaches P50.
 
-### 11. Tiered Storage (SSD offloading)
+### 8. Tiered Storage (SSD offloading)
 
 **Problem**: Memory limit (6GB) restricts dataset size.
 **Solution**: Move older or less-accessed graph layers to MMap'd SSD storage (`DiskANN` style), keeping only Level 0 and Entry Point in RAM.
 **Expected Impact**: Support 10x larger datasets on same hardware.
 
-### 12. Topic-Sharding for Hybrid Search
+### 9. Topic-Sharding for Hybrid Search
 
 **Problem**: Hybrid search broadcasts to all nodes.
 **Solution**: Use a consistent hash ring on the "text query" terms to route specific topics to specific shards, reducing scatter-gather fanout.
 **Expected Impact**: Linear scaling for hybrid search throughput.
 
-### 13. Fast-Path SearchByID
-
-**Problem**: `SearchByID` currently may trigger a scan or graph search if ID mapping is slow.
-**Solution**: Maintain a dense `[]offset` lookup table for numeric IDs to jump directly to the vector location.
-**Expected Impact**: O(1) ID lookups.
-
-### 14. Dynamic Batch Sizing
+### 10. Dynamic Batch Sizing
 
 **Problem**: Fixed batch size (1000) is suboptimal for varying network conditions.
 **Solution**: Client-side adaptive batching that increases batch size as long as latency stays within an SLA (e.g., 50ms).
@@ -93,6 +71,7 @@ Based on deep analysis of `bench_9k` and `final` pprof data, we have identified 
 - **Pipelined HNSW Insertion** (Implemented)
 - **Simd Optimizations** (Implemented)
 - **Index Pipeline Debugging** (Completed 2026-01-11)
-  - Fixed negative caching of empty search results
-  - Added "op" alias support for filter operator field
-  - Implemented case-insensitive operator matching
+- **Bitmap-Based Filtering**: Integrated `query.Bitset` into search path for O(1) filtering overhead.
+- **Query Result Caching**: Implemented `QueryCache` with LRU eviction and TTL.
+- **Batched Tombstone Compaction**: Implemented `CompactionWorker` with lock-free candidate identification and rate limiting.
+- **Fast-Path SearchByID**: Implemented `ChunkedLocationStore` for O(1) lock-free ID lookups.

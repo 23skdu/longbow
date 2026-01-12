@@ -2,6 +2,8 @@ package simd
 
 import (
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 // TestDispatchInitialization verifies function pointers are initialized at startup
@@ -97,6 +99,42 @@ func TestDispatchCorrectness(t *testing.T) {
 		if abs(results[1]) > 0.0001 {
 			t.Errorf("batch result[1] = %v, want 0.0", results[1])
 		}
+	})
+
+	t.Run("dynamic_dispatch_float32", func(t *testing.T) {
+		a := []float32{1.0, 2.0, 3.0, 4.0}
+		b := []float32{5.0, 6.0, 7.0, 8.0}
+		res, err := DispatchDistance(MetricEuclidean, a, b)
+		assert.NoError(t, err)
+		assert.InDelta(t, float32(8.0), res, 0.0001)
+	})
+
+	t.Run("dynamic_dispatch_float32_128", func(t *testing.T) {
+		a := make([]float32, 128)
+		b := make([]float32, 128)
+		a[0] = 1.0
+		b[0] = 2.0
+		res, err := DispatchDistance(MetricEuclidean, a, b)
+		assert.NoError(t, err)
+		assert.InDelta(t, float32(1.0), res, 0.0001)
+	})
+
+	t.Run("dynamic_dispatch_int8", func(t *testing.T) {
+		a := []int8{10, 20}
+		b := []int8{10, 30}
+		// Dist = sqrt(0^2 + 10^2) = 10
+		res, err := DispatchDistance(MetricEuclidean, a, b)
+		assert.NoError(t, err)
+		assert.InDelta(t, float32(10.0), res, 0.0001)
+	})
+
+	t.Run("dynamic_dispatch_float64", func(t *testing.T) {
+		a := []float64{1.0, 2.0}
+		b := []float64{4.0, 6.0}
+		// Dist = sqrt(3^2 + 4^2) = 5
+		res, err := DispatchDistance(MetricEuclidean, a, b)
+		assert.NoError(t, err)
+		assert.InDelta(t, float32(5.0), res, 0.0001)
 	})
 }
 

@@ -54,11 +54,21 @@ Optimizations implemented to resolve `DoPut` throughput regression:
 3. **Bulk Updates**: Implemented bulk updates for PrimaryIndex.
 4. **Async Hybrid Indexing**: Offloaded text indexing to background worker.
 
-| Scale | Throughput (MB/s) | Throughput (Rows/s) |
-|---|---|---|
-| **3k Vectors** | 129.2 MB/s | 256k rows/s |
-| **100k Vectors** | 246.9 MB/s | 489k rows/s |
-| **1M Vectors** | **523.2 MB/s** | **1.04M rows/s** |
+### 128-Dimension Vectors (Float32)
+
+| Scale | Throughput (MB/s) | Throughput (Rows/s) | P99 Latency (Hybrid) |
+|---|---|---|---|
+| **3k Vectors** | 209.6 MB/s | 362k rows/s | 5.83 ms |
+| **15k Vectors** | **541.5 MB/s** | **935k rows/s** | 19.69 ms |
+| **50k Vectors** | 450.1 MB/s | 777k rows/s | 5.78 ms |
+
+### 384-Dimension Vectors (Float32)
+
+| Scale | Throughput (MB/s) | Throughput (Rows/s) | P99 Latency (Hybrid) |
+|---|---|---|---|
+| **3k Vectors** | 223.1 MB/s | 143k rows/s | 6.15 ms |
+| **15k Vectors** | 107.0 MB/s | 69k rows/s | 6.12 ms |
+| **50k Vectors** | **314.2 MB/s** | **202k rows/s** | 6.90 ms |
 
 ## Transport & Stability Analysis
 

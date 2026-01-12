@@ -250,3 +250,12 @@ htmlcov/
 
 *.prof
 benchmark_results/
+
+# Scripts directory generated files
+scripts/**/*.log
+scripts/**/*.prof
+scripts/**/__pycache__/
+scripts/**/results_*.json
+scripts/**/benchmark_*.json
+scripts/**/profiles_*/
+

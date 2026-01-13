@@ -1,6 +1,5 @@
 import pyarrow.flight as flight
 import pyarrow as pa
-import dask.dataframe as dd
 import pandas as pd
 import json
 import logging
@@ -63,34 +62,17 @@ class LongbowClient:
             
         return flight.FlightCallOptions(headers=call_headers)
 
-    def insert(self, dataset: str, data: Union[dd.DataFrame, pd.DataFrame, List[Dict]], batch_size: int = 10000) -> None:
+    def insert(self, dataset: str, data: Union[pd.DataFrame, List[Dict]], batch_size: int = 10000) -> None:
         """
         Insert vectors into a dataset.
         
         Args:
             dataset: Name of the target dataset.
-            data: Data to insert (Dask DataFrame, Pandas DataFrame, or List of Dicts).
+            data: Data to insert (Pandas DataFrame or List of Dicts).
             batch_size: Batch size for upload chunks.
         """
         if self._data_client is None:
             self.connect()
-
-        # Handle Dask DataFrame by iterating partitions
-        if isinstance(data, dd.DataFrame):
-            # Process partitions sequentially (client-side) to avoid overwhelming server
-            # or parallel if we implement parallel connections.
-            # Simple approach: map_partitions with a custom function that computes and calls internal _upload
-            # But we can't pickle the client easily for distributed workers.
-            # Best pattern for Dask: iterate partitions on the driver (client) if data is local-ish, 
-            # OR assume client is running on driver and use `.partitions` iterator.
-            
-            logger.info("Processing Dask DataFrame partitions...")
-            for partition in data.partitions:
-                # Compute partition to Pandas
-                df_part = partition.compute()
-                if not df_part.empty:
-                    self._upload_batch(dataset, df_part)
-            return
 
         # Handle other types
         table = to_arrow_table(data)
@@ -115,7 +97,7 @@ class LongbowClient:
         k: int = 10, 
         filters: Optional[List[Dict]] = None,
         **kwargs
-    ) -> dd.DataFrame:
+    ) -> pd.DataFrame:
         """
         Perform a K-Nearest Neighbor search.
 
@@ -127,8 +109,7 @@ class LongbowClient:
             **kwargs: Additional arguments passed to the search query (e.g. 'alpha', 'text_query', 'include_vectors').
 
         Returns:
-            dask.dataframe.DataFrame: Lazy dataframe containing search results. 
-            (Currently materialized immediately, wrapped in Dask for API consistency)
+            pandas.DataFrame: Dataframe containing search results.
         """
         if self._data_client is None:
             self.connect()
@@ -151,14 +132,7 @@ class LongbowClient:
         try:
             reader = self._data_client.do_get(ticket, options=self._get_call_options())
             table = reader.read_all()
-            df = table.to_pandas() # Convert to Pandas
-            
-            # Wrap in Dask for consistency
-            if not df.empty:
-                return dd.from_pandas(df, npartitions=1)
-            else:
-                # Empty structure
-                return dd.from_pandas(pd.DataFrame(columns=["id", "score", "vector", "metadata"]), npartitions=1)
+            return table.to_pandas() # Convert to Pandas
                 
         except Exception as e:
             raise LongbowQueryError(f"Search failed: {e}")

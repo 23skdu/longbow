@@ -15,22 +15,22 @@ This document details the performance characteristics of Longbow running on a 3-
 
 Longbow demonstrates extreme throughput for data ingestion and retrieval following async indexing and logging path optimizations.
 
-- **Ingestion (DoPut):** **>1,000 MB/sec** (Peak observed: 1,028 MB/s)
-- **Retrieval (DoGet):** **>1,700 MB/sec** (Peak observed: 1,725 MB/s)
-- **Search Throughput:** ~570 QPS (Mixed load p50 ~3.4ms)
+- **Ingestion (DoPut):** **>90 MB/sec** (Peak observed: 93.90 MB/s)
+- **Retrieval (DoGet):** **>270 MB/sec** (Peak observed: 274.57 MB/s)
+- **Search Throughput:** ~940 QPS (Small dataset p50 ~0.97ms)
 - **Latency:** Sub-millisecond for small datasets.
 
-## Polymorphic Refactor Verification (Single Node) - 2026-01-13
+## Polymorphic Refactor Verification (Single Node) - 2026-01-13 (Updated)
 
 **Scenario:** Single Node, 384 dimensions, Float32. Validating HNSW Polymorphic Refactor.
 
 | Dataset Size | DoPut (MB/s) | DoGet (MB/s) | Dense QPS | Dense p95 (ms) |
 | :--- | :--- | :--- | :--- | :--- |
-| **3,000** | 352.94 | 1047.47 | 386.19 | 7.50 |
-| **5,000** | 465.70 | 1222.10 | 408.48 | 5.03 |
-| **9,000** | 438.15 | 1078.79 | 364.39 | 6.21 |
-| **15,000** | 579.00 | 985.18 | 376.82 | 5.38 |
-| **25,000** | 406.17 | 1725.74 | 570.82 | 3.42 |
+| **3,000** | 93.90 | 274.57 | 943.89 | 1.45 |
+| **5,000** | 10.22 | 258.91 | 651.67 | 2.02 |
+| **9,000** | 48.11 | 132.34 | 131.73 | 22.80 |
+| **15,000** | 48.34 | 160.29 | 72.39 | 43.92 |
+| **25,000** | 88.94 | 185.02 | 42.78 | 44.13 |
 
 *Note: Hybrid search not configured for this run.*
 

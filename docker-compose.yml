@@ -41,7 +41,8 @@ x-common-env: &common-env
 services:
   # Single Instance / Primary Node
   longbow:
-    image: ghcr.io/23skdu/longbow:latest
+    build: .
+    # image: ghcr.io/23skdu/longbow:latest
     container_name: longbow
     environment:
       <<: *common-env

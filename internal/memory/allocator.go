@@ -23,7 +23,7 @@ type ArenaAllocator struct {
 	currentChunk []byte
 	offset       int
 	allocated    int64
-	chunks       [][]byte
+	chunks       []*[]byte
 	pool         *sync.Pool
 }
 
@@ -37,7 +37,8 @@ func NewArenaAllocator() *ArenaAllocator {
 var globalChunkPool = &sync.Pool{
 	New: func() interface{} {
 		// Allocate a big chunk
-		return make([]byte, DefaultArenaChunkSize)
+		b := make([]byte, DefaultArenaChunkSize)
+		return &b
 	},
 }
 
@@ -61,8 +62,9 @@ func (a *ArenaAllocator) Allocate(size int) []byte {
 	}
 
 	// Need new chunk
-	newChunk := a.pool.Get().([]byte)
-	a.chunks = append(a.chunks, newChunk)
+	newChunkPtr := a.pool.Get().(*[]byte)
+	newChunk := *newChunkPtr
+	a.chunks = append(a.chunks, newChunkPtr)
 	a.currentChunk = newChunk
 	a.offset = size
 	return newChunk[:size]
@@ -96,11 +98,11 @@ func (a *ArenaAllocator) Release() {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	for _, chunk := range a.chunks {
+	for _, chunkPtr := range a.chunks {
 		// Reset chunk for next user?
 		// Actually, standard sync.Pool behavior relies on the user to re-initialize or overwrite.
 		// Since we append to it, we don't zero it out (expensive). DO NOT Assume zeroed memory.
-		a.pool.Put(chunk)
+		a.pool.Put(chunkPtr)
 	}
 	a.chunks = nil
 	a.currentChunk = nil

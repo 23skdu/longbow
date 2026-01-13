@@ -122,12 +122,18 @@ func (p *ZeroAllocVectorSearchParser) Parse(data []byte) (VectorSearchRequest, e
 			p.result.LocalOnly = val
 			i = newPos
 		case "text_query":
-			val, newPos, err := parseString(data, i)
-			if err != nil {
-				return p.result, err
+			// Handle null
+			if i+4 <= len(data) && string(data[i:i+4]) == "null" {
+				p.result.TextQuery = ""
+				i += 4
+			} else {
+				val, newPos, err := parseString(data, i)
+				if err != nil {
+					return p.result, err
+				}
+				p.result.TextQuery = val
+				i = newPos
 			}
-			p.result.TextQuery = val
-			i = newPos
 		case "alpha":
 			val, newPos, err := parseFloat32(data, i)
 			if err != nil {
@@ -150,12 +156,18 @@ func (p *ZeroAllocVectorSearchParser) Parse(data []byte) (VectorSearchRequest, e
 			p.result.IncludeVectors = val
 			i = newPos
 		case "vector_format":
-			val, newPos, err := parseString(data, i)
-			if err != nil {
-				return p.result, err
+			// Handle null
+			if i+4 <= len(data) && string(data[i:i+4]) == "null" {
+				p.result.VectorFormat = ""
+				i += 4
+			} else {
+				val, newPos, err := parseString(data, i)
+				if err != nil {
+					return p.result, err
+				}
+				p.result.VectorFormat = val
+				i = newPos
 			}
-			p.result.VectorFormat = val
-			i = newPos
 		default:
 			// Unknown field: return error to trigger fallback to json.Unmarshal
 			// This is important because the zero-alloc parser doesn't support 'vectors' yet.

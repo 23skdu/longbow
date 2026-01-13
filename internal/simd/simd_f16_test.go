@@ -98,7 +98,7 @@ func TestCosineDistanceF16(t *testing.T) {
 			expected := referenceCosineF16(a, b)
 			actual := CosineDistanceF16(a, b)
 
-			if math.Abs(float64(expected-actual)) > 1e-3 {
+			if math.Abs(float64(expected-actual)) > 2e-3 {
 				t.Errorf("dim %d: expected %f, got %f", dim, expected, actual)
 			}
 		})

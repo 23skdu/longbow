@@ -16,11 +16,25 @@ This document details the performance characteristics of Longbow running on a 3-
 Longbow demonstrates extreme throughput for data ingestion and retrieval following async indexing and logging path optimizations.
 
 - **Ingestion (DoPut):** **>1,000 MB/sec** (Peak observed: 1,028 MB/s)
-- **Retrieval (DoGet):** **>660 MB/sec** (Peak observed: 668 MB/s)
-- **Search Throughput:** ~250 QPS (Mixed load p50 ~3.1ms)
+- **Retrieval (DoGet):** **>1,700 MB/sec** (Peak observed: 1,725 MB/s)
+- **Search Throughput:** ~570 QPS (Mixed load p50 ~3.4ms)
 - **Latency:** Sub-millisecond for small datasets.
 
-## Latest Optimization Benchmark (10,000 Vectors)
+## Polymorphic Refactor Verification (Single Node) - 2026-01-13
+
+**Scenario:** Single Node, 384 dimensions, Float32. Validating HNSW Polymorphic Refactor.
+
+| Dataset Size | DoPut (MB/s) | DoGet (MB/s) | Dense QPS | Dense p95 (ms) |
+| :--- | :--- | :--- | :--- | :--- |
+| **3,000** | 352.94 | 1047.47 | 386.19 | 7.50 |
+| **5,000** | 465.70 | 1222.10 | 408.48 | 5.03 |
+| **9,000** | 438.15 | 1078.79 | 364.39 | 6.21 |
+| **15,000** | 579.00 | 985.18 | 376.82 | 5.38 |
+| **25,000** | 406.17 | 1725.74 | 570.82 | 3.42 |
+
+*Note: Hybrid search not configured for this run.*
+
+## Previous Optimization Benchmark (10,000 Vectors)
 
 **Scenario:** 10,000 vectors, 384 dimensions, Float32.
 

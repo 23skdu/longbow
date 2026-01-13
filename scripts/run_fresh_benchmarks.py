@@ -25,13 +25,13 @@ def main():
             PYTHON_EXE, "scripts/perf_test.py",
             "--rows", str(scale),
             "--dim", str(DIM),
-            "--name", f"bench_{scale}",
+            "--dataset", f"bench_{scale}",
             "--search",           # Dense Search
             "--hybrid",           # Hybrid Search
             "--json", output_file,
-            "--search-k", "10",
-            "--query-count", "100", # Fast enough for average
-            "--hybrid-alpha", "0.5"
+            "--k", "10",
+            "--queries", "100",   # Fast enough for average
+            "--alpha", "0.5"
         ]
         
         try:
@@ -42,10 +42,12 @@ def main():
                 with open(output_file, 'r') as f:
                     data = json.load(f)
                     # Filter for relevant results
-                    doput = next((r for r in data if r['name'] == 'DoPut'), None)
-                    doget = next((r for r in data if r['name'] == 'DoGet'), None)
-                    dense = next((r for r in data if r['name'] == 'VectorSearch'), None)
-                    hybrid = next((r for r in data if r['name'] == 'HybridSearch'), None)
+                    # Names in perf_test are like "DoPut @ 3000"
+                    suffix = f" @ {scale}"
+                    doput = next((r for r in data if r['name'] == f'DoPut{suffix}'), None)
+                    doget = next((r for r in data if r['name'] == f'DoGet{suffix}'), None)
+                    dense = next((r for r in data if r['name'].startswith('VectorSearch') and r['name'].endswith(suffix)), None)
+                    hybrid = next((r for r in data if r['name'].startswith('HybridSearch') and r['name'].endswith(suffix)), None)
                     
                     results.append({
                         "scale": scale,

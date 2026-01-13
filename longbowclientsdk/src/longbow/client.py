@@ -1,10 +1,10 @@
 import pyarrow.flight as flight
 import pyarrow as pa
-import dask.dataframe as dd
 import pandas as pd
 import json
 import logging
-from typing import Union, List, Dict, Any, Optional
+import warnings
+from typing import Union, List, Dict, Any, Optional, Iterator
 
 # from .models import Vector, SearchResult, IndexStats # Unused internally for now
 from .exceptions import LongbowConnectionError, LongbowQueryError
@@ -35,8 +35,13 @@ class LongbowClient:
     def connect(self):
         """Establish connections to the server."""
         try:
-            self._data_client = flight.FlightClient(self.uri)
-            self._meta_client = flight.FlightClient(self.meta_uri)
+            # Set high limits (1GB) to support large batch transfers
+            options = [
+                ("grpc.max_receive_message_length", 1024 * 1024 * 1024),
+                ("grpc.max_send_message_length", 1024 * 1024 * 1024),
+            ]
+            self._data_client = flight.FlightClient(self.uri, generic_options=options)
+            self._meta_client = flight.FlightClient(self.meta_uri, generic_options=options)
         except Exception as e:
             raise LongbowConnectionError(f"Failed to connect: {e}")
 
@@ -62,34 +67,17 @@ class LongbowClient:
             
         return flight.FlightCallOptions(headers=call_headers)
 
-    def insert(self, dataset: str, data: Union[dd.DataFrame, pd.DataFrame, List[Dict]], batch_size: int = 10000) -> None:
+    def insert(self, dataset: str, data: Union[pd.DataFrame, List[Dict]], batch_size: int = 10000) -> None:
         """
         Insert vectors into a dataset.
         
         Args:
             dataset: Name of the target dataset.
-            data: Data to insert (Dask DataFrame, Pandas DataFrame, or List of Dicts).
+            data: Data to insert (Pandas DataFrame or List of Dicts).
             batch_size: Batch size for upload chunks.
         """
         if self._data_client is None:
             self.connect()
-
-        # Handle Dask DataFrame by iterating partitions
-        if isinstance(data, dd.DataFrame):
-            # Process partitions sequentially (client-side) to avoid overwhelming server
-            # or parallel if we implement parallel connections.
-            # Simple approach: map_partitions with a custom function that computes and calls internal _upload
-            # But we can't pickle the client easily for distributed workers.
-            # Best pattern for Dask: iterate partitions on the driver (client) if data is local-ish, 
-            # OR assume client is running on driver and use `.partitions` iterator.
-            
-            logger.info("Processing Dask DataFrame partitions...")
-            for partition in data.partitions:
-                # Compute partition to Pandas
-                df_part = partition.compute()
-                if not df_part.empty:
-                    self._upload_batch(dataset, df_part)
-            return
 
         # Handle other types
         table = to_arrow_table(data)
@@ -114,7 +102,7 @@ class LongbowClient:
         k: int = 10, 
         filters: Optional[List[Dict]] = None,
         **kwargs
-    ) -> dd.DataFrame:
+    ) -> pd.DataFrame:
         """
         Perform a K-Nearest Neighbor search.
 
@@ -126,8 +114,7 @@ class LongbowClient:
             **kwargs: Additional arguments passed to the search query (e.g. 'alpha', 'text_query', 'include_vectors').
 
         Returns:
-            dask.dataframe.DataFrame: Lazy dataframe containing search results. 
-            (Currently materialized immediately, wrapped in Dask for API consistency)
+            pandas.DataFrame: Dataframe containing search results.
         """
         if self._data_client is None:
             self.connect()
@@ -142,7 +129,9 @@ class LongbowClient:
             req["filters"] = filters
         
         # Merge extra args (e.g. alpha, text_query)
-        req.update(kwargs)
+        for k, v in kwargs.items():
+            if v is not None:
+                req[k] = v
 
         ticket_bytes = json.dumps({"search": req}).encode("utf-8")
         ticket = flight.Ticket(ticket_bytes)
@@ -150,14 +139,7 @@ class LongbowClient:
         try:
             reader = self._data_client.do_get(ticket, options=self._get_call_options())
             table = reader.read_all()
-            df = table.to_pandas() # Convert to Pandas
-            
-            # Wrap in Dask for consistency
-            if not df.empty:
-                return dd.from_pandas(df, npartitions=1)
-            else:
-                # Empty structure
-                return dd.from_pandas(pd.DataFrame(columns=["id", "score", "vector", "metadata"]), npartitions=1)
+            return table.to_pandas() # Convert to Pandas
                 
         except Exception as e:
             raise LongbowQueryError(f"Search failed: {e}")
@@ -198,46 +180,91 @@ class LongbowClient:
             self.connect()
         return [f.descriptor.path[0].decode("utf-8") for f in self._meta_client.list_flights()]
 
-    def download(self, dataset: str, filter: Optional[Dict] = None) -> dd.DataFrame:
-        """Download the entire dataset, optionally filtered."""
+    def download_arrow(self, dataset: str, filter: Optional[List[Dict]] = None) -> pa.Table:
+        """Download dataset as Arrow Table (zero-copy, high performance).
+        
+        Args:
+            dataset: Name of the dataset to download
+            filter: Optional list of filter dictionaries [{"field": "...", "op": "...", "value": "..."}]
+            
+        Returns:
+            pyarrow.Table: The complete dataset as an Arrow Table
+            
+        Example:
+            >>> table = client.download_arrow("my_dataset")
+            >>> print(f"Downloaded {table.num_rows} rows")
+        """
         if self._data_client is None:
             self.connect()
         
         req = {"name": dataset}
         if filter:
-            req["filters"] = filter  # Note: Server uses "filters" (plural) or "filter"? verify ops_test.
-            # ops_test lines 103-104: filters.append(...); query["filters"] = filters.
-            # So "filters" is correct for data plane query? 
-            # But search uses "filter"? 
-            # ops_test lines 240: request["filters"] = filters (for meta search)
-            # client.search uses "filter". 
-            # Wait, ops_test line 240 says request["filters"]. 
-            # My client.search uses req["filter"] = filter. 
-            # Is there a mismatch? 
-            # Let's check ops_test line 240 again.
-            # Line 240: request["filters"] = filters.
-            # My client.py line 121: req["filter"] = filter.
-            # I might have introduced a bug in client.py "filter" key.
-            # I should verify against what the server expects.
-            # ops_test uses "filters" list. 
-            # My client.py search takes 'filter' dict? 
-            # ops_test parser takes --filter field:op:val and constructs a list of dicts.
-            # So 'filter' arg in SDK should likely be 'List[Dict]' or just passed through.
-            # I will assume "filters" is the key.
+            req["filters"] = filter
             
         ticket_bytes = json.dumps(req).encode("utf-8")
         ticket = flight.Ticket(ticket_bytes)
-
         
         try:
             reader = self._data_client.do_get(ticket, options=self._get_call_options())
-            table = reader.read_all()
-            df = table.to_pandas()
-            if not df.empty:
-                return dd.from_pandas(df, npartitions=1)
-            return dd.from_pandas(pd.DataFrame(columns=["id", "vector", "timestamp", "metadata"]), npartitions=1)
+            # Zero-copy: read all batches into single Arrow Table
+            return reader.read_all()
         except Exception as e:
             raise LongbowQueryError(f"Download failed: {e}")
+    
+    def download_stream(self, dataset: str, filter: Optional[List[Dict]] = None) -> Iterator[pa.RecordBatch]:
+        """Stream dataset as Arrow RecordBatches (memory-efficient for large datasets).
+        
+        Args:
+            dataset: Name of the dataset to download
+            filter: Optional list of filter dictionaries
+            
+        Yields:
+            pyarrow.RecordBatch: Individual batches of data
+            
+        Example:
+            >>> for batch in client.download_stream("large_dataset"):
+            ...     print(f"Processing batch with {batch.num_rows} rows")
+            ...     # Process batch without loading entire dataset into memory
+        """
+        if self._data_client is None:
+            self.connect()
+        
+        req = {"name": dataset}
+        if filter:
+            req["filters"] = filter
+            
+        ticket_bytes = json.dumps(req).encode("utf-8")
+        ticket = flight.Ticket(ticket_bytes)
+        
+        try:
+            reader = self._data_client.do_get(ticket, options=self._get_call_options())
+            # Stream batches one at a time (memory-efficient)
+            for chunk in reader:
+                yield chunk.data
+        except Exception as e:
+            raise LongbowQueryError(f"Download stream failed: {e}")
+    
+    def download(self, dataset: str, filter: Optional[List[Dict]] = None) -> pa.Table:
+        """Download dataset as Arrow Table.
+        
+        DEPRECATED: This method now returns pa.Table instead of dd.DataFrame.
+        Use download_arrow() for explicit Arrow Table return.
+        Use download_stream() for memory-efficient streaming.
+        
+        Args:
+            dataset: Name of the dataset to download
+            filter: Optional list of filter dictionaries
+            
+        Returns:
+            pyarrow.Table: The complete dataset (changed from dd.DataFrame)
+        """
+        warnings.warn(
+            "download() now returns pa.Table instead of dd.DataFrame. "
+            "Use download_arrow() explicitly or download_stream() for streaming.",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        return self.download_arrow(dataset, filter)
 
     def delete(self, dataset: str, ids: Optional[List[int]] = None):
         """Delete specific IDs from a dataset."""

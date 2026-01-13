@@ -125,7 +125,7 @@ func (s *VectorStore) GetSchema(ctx context.Context, desc *flight.FlightDescript
 // DoGet - Minimal implementation
 func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGetServer) error {
 	fmt.Printf("[DEBUG] DoGet received ticket len=%d\n", len(tkt.Ticket))
-	log.Printf("[DEBUG] DoGet received ticket (len=%d): %q", len(tkt.Ticket), string(tkt.Ticket))
+	// log.Printf("[DEBUG] DoGet received ticket (len=%d): %q", len(tkt.Ticket), string(tkt.Ticket))
 	// Parse ticket
 	query, err := qry.ParseTicketQuerySafe(tkt.Ticket)
 	if err != nil {
@@ -138,7 +138,7 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 			return status.Error(codes.InvalidArgument, "invalid ticket format")
 		}
 	}
-	log.Printf("[DEBUG] Parsed query: Search=%v Name=%s", query.Search, query.Name)
+	// log.Printf("[DEBUG] Parsed query: Search=%v Name=%s", query.Search, query.Name)
 
 	// Create Request-Scoped Arena Allocator
 	// This reduces GC pressure for transient buffers (masks, filtered batches, serialized records)
@@ -619,13 +619,13 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, stream fli
 				return status.Errorf(codes.NotFound, "dataset %s not found", req.Dataset)
 			}
 			if ds.Index != nil {
-				log.Printf("[DEBUG] handleDoGetSearch Index Type: %T", ds.Index)
+				// log.Printf("[DEBUG] handleDoGetSearch Index Type: %T", ds.Index)
 			} else {
-				log.Printf("[DEBUG] handleDoGetSearch Index is NIL")
+				// log.Printf("[DEBUG] handleDoGetSearch Index is NIL")
 			}
 
 			ds.dataMu.RLock()
-			log.Printf("[DEBUG] handleDoGetSearch: index exists=%v", ds.Index != nil)
+			// log.Printf("[DEBUG] handleDoGetSearch: index exists=%v", ds.Index != nil)
 			if ds.Index == nil {
 				ds.dataMu.RUnlock()
 				return status.Error(codes.FailedPrecondition, "index not initialized")
@@ -695,7 +695,7 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, stream fli
 		}
 
 	} // End of Cache Miss block
-	log.Printf("[DEBUG] handleDoGetSearch: Sending %d results", len(searchResults))
+	// log.Printf("[DEBUG] handleDoGetSearch: Sending %d results", len(searchResults))
 
 	// 5. Stream Results (Arrow)
 	// Schema: id (uint64), score (float32)

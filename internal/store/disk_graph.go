@@ -3,6 +3,7 @@ package store
 import (
 	"encoding/binary"
 	"fmt"
+	"math"
 	"os"
 	"sort"
 	"syscall"
@@ -11,7 +12,7 @@ import (
 
 const (
 	DiskGraphMagic   = 0x484E5357 // "HNSW"
-	DiskGraphVersion = 2
+	DiskGraphVersion = 4
 )
 
 // DiskGraph implements a read-only GraphBackend backed by a file (via mmap).
@@ -45,6 +46,15 @@ type DiskGraphHeader struct {
 	SQ8Offset uint64 // Offset to SQ8 Data start (if > 0)
 	PQOffset  uint64 // Offset to PQ Data start (if > 0)
 	PQDims    uint32 // Number of bytes per PQ vector (M)
+
+	// SQ8 Quantization Params (Version 3)
+	SQ8Min float32
+	SQ8Max float32
+
+	// Graph Entry Point (Version 3)
+	EntryPoint    uint32
+	GraphMaxLevel int32
+
 	// Followed by:
 	// - Layer 0 Index Offset (uint64)
 	// - Layer 1..N Info Offset (uint64)
@@ -89,7 +99,9 @@ func NewDiskGraph(path string) (*DiskGraph, error) {
 }
 
 func (dg *DiskGraph) parse() error {
-	if len(dg.data) < 48 { // Header size increased
+	// Header size check: Base was 40, added 2 floats (8 bytes) = 48.
+	minHeader := 48
+	if len(dg.data) < minHeader {
 		return fmt.Errorf("invalid header")
 	}
 
@@ -98,7 +110,7 @@ func (dg *DiskGraph) parse() error {
 		return fmt.Errorf("invalid magic: %x", magic)
 	}
 	version := binary.LittleEndian.Uint32(dg.data[4:8])
-	if version != DiskGraphVersion {
+	if version < 2 || version > DiskGraphVersion {
 		return fmt.Errorf("unsupported version: %d", version)
 	}
 
@@ -113,11 +125,17 @@ func (dg *DiskGraph) parse() error {
 		PQDims:    binary.LittleEndian.Uint32(dg.data[36:40]),
 	}
 
+	metaStart := 40
+	if version >= 3 {
+		dg.header.SQ8Min = math.Float32frombits(binary.LittleEndian.Uint32(dg.data[40:44]))
+		dg.header.SQ8Max = math.Float32frombits(binary.LittleEndian.Uint32(dg.data[44:48]))
+		dg.header.EntryPoint = binary.LittleEndian.Uint32(dg.data[48:52])
+		dg.header.GraphMaxLevel = int32(binary.LittleEndian.Uint32(dg.data[52:56]))
+		metaStart = 56 // 48 + 4 + 4
+	}
+
 	// Read Layer Meta offsets
 	// Followed by MaxLayers * 8 bytes (offsets to indexes)
-	// Base Header Size = 40 bytes.
-	// 4+4+4+4 (16) + 4 (20) + 8 (28) + 8 (36) + 4 (40) = 40 bytes.
-	metaStart := 40
 	metaEnd := metaStart + int(dg.header.MaxLayers)*8
 	if len(dg.data) < metaEnd {
 		return fmt.Errorf("truncated layer meta")
@@ -224,37 +242,79 @@ func (dg *DiskGraph) GetNeighbors(layer int, nodeID uint32, buf []uint32) []uint
 		return nil
 	}
 
-	// Read Data: [Count: 4b][N1][N2]...
-	if int(dataOffset)+4 > len(dg.data) {
-		return nil
-	}
-	count := binary.LittleEndian.Uint32(dg.data[dataOffset : dataOffset+4])
-	if count == 0 {
+	// Read Data
+	if int(dataOffset)+1 > len(dg.data) {
 		return nil
 	}
 
-	// Check bounds
-	start := int(dataOffset) + 4
-	end := start + int(count)*4
-	if end > len(dg.data) {
-		return nil
-	}
+	var count uint32
+	var start int
 
-	// Copy to buf
-	var res []uint32
-	if cap(buf) >= int(count) {
-		res = buf[:count]
+	if dg.header.Version >= 4 {
+		// Varint Encoding
+		// Decode count
+		// binary.Uvarint requires a byte slice.
+		// We safely slice from dataOffset to end of data?
+		// Or limit it? Uvarint stops when it sees a byte < 0x80.
+		// Safe to slice until end of data for reading.
+		slice := dg.data[dataOffset:]
+		c, n := binary.Uvarint(slice)
+		if n <= 0 {
+			return nil
+		}
+		count = uint32(c)
+		start = int(dataOffset) + n
+
+		// Decode Deltas
+		var res []uint32
+		if cap(buf) >= int(count) {
+			res = buf[:count]
+		} else {
+			res = make([]uint32, count)
+		}
+
+		last := uint32(0)
+		offset := start
+		for i := 0; i < int(count); i++ {
+			if offset >= len(dg.data) {
+				return nil
+			}
+			d, n := binary.Uvarint(dg.data[offset:])
+			if n <= 0 {
+				return nil
+			}
+			val := last + uint32(d)
+			res[i] = val
+			last = val
+			offset += n
+		}
+		return res
+
 	} else {
-		res = make([]uint32, count)
+		// V3: Fixed Layout [Count:4b][N...:4b]
+		if int(dataOffset)+4 > len(dg.data) {
+			return nil
+		}
+		count = binary.LittleEndian.Uint32(dg.data[dataOffset : dataOffset+4])
+		start = int(dataOffset) + 4
+		// Check bounds
+		end := start + int(count)*4
+		if end > len(dg.data) {
+			return nil
+		}
+
+		// Copy to buf
+		var res []uint32
+		if cap(buf) >= int(count) {
+			res = buf[:count]
+		} else {
+			res = make([]uint32, count)
+		}
+
+		src := unsafe.Slice((*uint32)(unsafe.Pointer(&dg.data[start])), int(count))
+		copy(res, src)
+		return res
 	}
-
-	// Unsafe cast to avoid binary.Read loop?
-	// Little Endian assumption: on same arch, direct memory casting is fine.
-	// Longbow runs on AMD64/ARM64 (Little Endian).
-	src := unsafe.Slice((*uint32)(unsafe.Pointer(&dg.data[start])), int(count))
-	copy(res, src)
-
-	return res
 }
 
 func (dg *DiskGraph) GetVectorSQ8(nodeID uint32) []byte {

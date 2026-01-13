@@ -43,8 +43,9 @@ type VectorStore struct {
 	ingestionQueue chan ingestionJob // Decoupled ingestion pipeline
 
 	// Lifecycle
-	stopChan chan struct{}
-	indexWg  sync.WaitGroup // For background workers
+	stopChan          chan struct{}
+	indexWg           sync.WaitGroup // For background workers
+	startIndexingOnce sync.Once      // Ensure background workers start only once
 	// mu       sync.RWMutex   // DEPRECATED: Replaced by RCU
 	datasets atomic.Pointer[map[string]*Dataset]
 
@@ -458,5 +459,12 @@ func (s *VectorStore) DropDataset(ctx context.Context, name string) error {
 		}
 		// CAS failed, retry
 		runtime.Gosched()
+	}
+}
+
+// WaitForIndexing blocks until all pending indexing jobs for the given dataset are complete.
+func (s *VectorStore) WaitForIndexing(name string) {
+	if ds, ok := s.getDataset(name); ok {
+		ds.WaitForIndexing()
 	}
 }

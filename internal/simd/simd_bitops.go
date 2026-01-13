@@ -37,9 +37,16 @@ func Popcount(x uint64) int {
 	return onesCount64(x)
 }
 
+var hammingImpl = HammingDistanceGeneric
+
 // HammingDistance computes the Hamming distance between two packed bit vectors.
 // a and b must have the same length.
 func HammingDistance(a, b []uint64) int {
+	return hammingImpl(a, b)
+}
+
+// HammingDistanceGeneric is the pure-Go implementation.
+func HammingDistanceGeneric(a, b []uint64) int {
 	dist := 0
 	for i := 0; i < len(a); i++ {
 		dist += onesCount64(a[i] ^ b[i])

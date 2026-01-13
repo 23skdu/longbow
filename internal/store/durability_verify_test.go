@@ -60,6 +60,7 @@ func TestDurability_EndToEnd(t *testing.T) {
 
 	require.NoError(t, store1.writeToWAL(rec1, "test_ds", time.Now().UnixNano()))
 	require.NoError(t, store1.ApplyDelta("test_ds", rec1, 1, time.Now().UnixNano()))
+	store1.WaitForIndexing("test_ds")
 
 	// Force WAL Sync
 	require.NoError(t, store1.FlushWAL())
@@ -101,6 +102,7 @@ func TestDurability_SnapshotAndWAL(t *testing.T) {
 	defer recA.Release()
 	require.NoError(t, store1.writeToWAL(recA, "ds_mixed", time.Now().UnixNano()))
 	require.NoError(t, store1.ApplyDelta("ds_mixed", recA, 1, time.Now().UnixNano()))
+	store1.WaitForIndexing("ds_mixed")
 
 	// 3. Trigger Snapshot
 	require.NoError(t, store1.Snapshot())
@@ -110,6 +112,7 @@ func TestDurability_SnapshotAndWAL(t *testing.T) {
 	defer recB.Release()
 	require.NoError(t, store1.writeToWAL(recB, "ds_mixed", time.Now().UnixNano()))
 	require.NoError(t, store1.ApplyDelta("ds_mixed", recB, 2, time.Now().UnixNano()))
+	store1.WaitForIndexing("ds_mixed")
 
 	require.NoError(t, store1.FlushWAL())
 	_ = store1.ClosePersistence()
@@ -173,6 +176,7 @@ func TestDurability_IndexRebuild(t *testing.T) {
 
 	require.NoError(t, store1.writeToWAL(rec, "ds_vec", time.Now().UnixNano()))
 	require.NoError(t, store1.ApplyDelta("ds_vec", rec, 1, time.Now().UnixNano()))
+	store1.WaitForIndexing("ds_vec")
 	require.NoError(t, store1.FlushWAL())
 	_ = store1.ClosePersistence()
 

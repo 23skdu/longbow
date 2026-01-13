@@ -386,12 +386,32 @@ func cosineBatchNEON(query []float32, vectors [][]float32, results []float32) {
 	cosineBatchGeneric(query, vectors, results)
 }
 
+func euclidean128NEON(a, b []float32) float32 {
+	return euclidean128Unrolled4x(a, b)
+}
+
+func dot128NEON(a, b []float32) float32 {
+	return dot128Unrolled4x(a, b)
+}
+
 func euclideanVerticalBatchNEON(query []float32, vectors [][]float32, results []float32) {
 	euclideanBatchGeneric(query, vectors, results)
 }
 
 func adcBatchNEON(table []float32, flatCodes []byte, m int, results []float32) {
 	adcBatchGeneric(table, flatCodes, m, results)
+}
+
+func euclideanF16NEON(a, b []float16.Num) float32 {
+	return euclideanF16Unrolled4x(a, b)
+}
+
+func dotF16NEON(a, b []float16.Num) float32 {
+	return dotF16Unrolled4x(a, b)
+}
+
+func cosineF16NEON(a, b []float16.Num) float32 {
+	return cosineF16Unrolled4x(a, b)
 }
 
 // Assembly function declarations

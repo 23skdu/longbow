@@ -409,3 +409,10 @@ func (d *Dataset) UpdatePrimaryIndex(batchIdx int, rec arrow.RecordBatch) {
 		d.PrimaryIndex[id] = RowLocation{BatchIdx: batchIdx, RowIdx: rowIdx}
 	}
 }
+
+// WaitForIndexing blocks until all pending indexing jobs for this dataset are complete.
+func (d *Dataset) WaitForIndexing() {
+	for d.PendingIndexJobs.Load() > 0 {
+		time.Sleep(5 * time.Millisecond)
+	}
+}

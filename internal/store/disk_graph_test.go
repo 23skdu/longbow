@@ -72,7 +72,7 @@ func TestDiskGraph_RoundTrip(t *testing.T) {
 	path := filepath.Join(tmpDir, "graph.bin")
 
 	// MaxNodeID 5
-	if err := WriteDiskGraph(gd, path, 5); err != nil {
+	if err := WriteDiskGraph(gd, path, 5, 0, 0, 0, 0); err != nil {
 		t.Fatalf("WriteDiskGraph failed: %v", err)
 	}
 

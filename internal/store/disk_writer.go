@@ -4,12 +4,14 @@ import (
 	"bufio"
 	"encoding/binary"
 	"fmt"
+	"math"
 	"os"
+	"sort"
 )
 
 // WriteDiskGraph serializes the in-memory GraphData to a DiskGraph file.
 // Includes Adjacency and SQ8 Compressed vectors.
-func WriteDiskGraph(gd *GraphData, path string, maxNodeID int) error {
+func WriteDiskGraph(gd *GraphData, path string, maxNodeID int, sqMin, sqMax float32, entryPoint uint32, maxLevel int) error {
 	f, err := os.Create(path)
 	if err != nil {
 		return err
@@ -50,13 +52,8 @@ func WriteDiskGraph(gd *GraphData, path string, maxNodeID int) error {
 	numNodes := uint32(maxNodeID)
 
 	// 2. Prepare Headers
-	// Main Header: 4 (Magic) + 4 (Ver) + 4 (Num) + 4 (Layers) + 4 (Dims) + 8 (SQ8) + 8 (PQ) + 4 (PQDims) = 40 bytes.
-	// Padded/Packed to align, let's keep it compact 40.
-	// Followed by Meta Offsets (MaxLayers * 8).
-
-	// Write Placeholder Header
-	// We need 16 + 24 = 40 bytes for fields + MaxLayers*8
-	headerBaseSize := 40
+	// Main Header: 40 bytes (Base) + 8 (SQ8) + 8 (EP/MaxL) = 56 bytes.
+	headerBaseSize := 56
 	metaSectionSize := int(fileMaxLayers) * 8
 	totalHeaderSize := headerBaseSize + metaSectionSize
 
@@ -66,6 +63,7 @@ func WriteDiskGraph(gd *GraphData, path string, maxNodeID int) error {
 	}
 
 	currentOffset := int64(totalHeaderSize)
+	// ... (skipping unchanged lines)
 
 	// Arrays to track data offsets
 	l0Offsets := make([]uint64, numNodes)
@@ -94,25 +92,38 @@ func WriteDiskGraph(gd *GraphData, path string, maxNodeID int) error {
 				offsets = append(offsets, uint64(currentOffset))
 			}
 
-			// Write Count
-			count := uint32(len(neighbors))
-			binary.LittleEndian.PutUint32(scratch4, count)
-			if _, err := w.Write(scratch4); err != nil {
-				return err
-			}
-			currentOffset += 4
+			// Sort neighbors for delta encoding
+			// We need a copy to not mutate the original graph if it's being used?
+			// GetNeighbors returns a copy usually (slice view from atomic load, but data is in arena).
+			// Wait, GetNeighbors (Memory) returns a copy?
+			// GraphData.GetNeighbors returns a slice `res` from buffer or made.
+			// It copies from neighborsChunk.
+			// So `neighbors` here is a safe copy.
+			// Sort in place.
+			sort.Slice(neighbors, func(i, j int) bool { return neighbors[i] < neighbors[j] })
 
-			// Write Neighbors
-			// Check byte order - little endian for disk format
-			byteLen := int(count) * 4
-			buf := make([]byte, byteLen)
-			for i, n := range neighbors {
-				binary.LittleEndian.PutUint32(buf[i*4:], n)
-			}
-			if _, err := w.Write(buf); err != nil {
+			// Encode Count (Uvarint)
+			count := uint64(len(neighbors))
+			n := binary.PutUvarint(scratch4[:], count) // scratch4 might be too small? max varint64 is 10 bytes.
+			// Re-allocate scratch buffer to be safe for up to 10 bytes
+			var scratchVarint [10]byte
+			n = binary.PutUvarint(scratchVarint[:], count)
+			if _, err := w.Write(scratchVarint[:n]); err != nil {
 				return err
 			}
-			currentOffset += int64(byteLen)
+			currentOffset += int64(n)
+
+			// Encode Neighbors (Delta Varint)
+			last := uint32(0)
+			for _, nodeID := range neighbors {
+				delta := nodeID - last
+				n := binary.PutUvarint(scratchVarint[:], uint64(delta))
+				if _, err := w.Write(scratchVarint[:n]); err != nil {
+					return err
+				}
+				currentOffset += int64(n)
+				last = nodeID
+			}
 		}
 
 		if l > 0 {
@@ -255,9 +266,17 @@ func WriteDiskGraph(gd *GraphData, path string, maxNodeID int) error {
 	// PQ Dims
 	binary.LittleEndian.PutUint32(headerBuf[36:], uint32(pqDims))
 
+	// SQ8 Params (Version 3)
+	binary.LittleEndian.PutUint32(headerBuf[40:], math.Float32bits(sqMin))
+	binary.LittleEndian.PutUint32(headerBuf[44:], math.Float32bits(sqMax))
+
+	// Entry Point & Max Level (Version 3)
+	binary.LittleEndian.PutUint32(headerBuf[48:], entryPoint)
+	binary.LittleEndian.PutUint32(headerBuf[52:], uint32(int32(maxLevel)))
+
 	// Offsets
 	for i := 0; i < int(fileMaxLayers); i++ {
-		binary.LittleEndian.PutUint64(headerBuf[40+i*8:], layerIndexOffsets[i])
+		binary.LittleEndian.PutUint64(headerBuf[56+i*8:], layerIndexOffsets[i])
 	}
 
 	if _, err := f.Write(headerBuf); err != nil {

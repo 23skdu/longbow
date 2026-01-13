@@ -68,8 +68,4 @@ func euclideanVerticalBatchAVX512(query []float32, vectors [][]float32, results 
 	euclideanBatchGeneric(query, vectors, results)
 }
 
-func euclideanVerticalBatchNEON(query []float32, vectors [][]float32, results []float32) {
-	euclideanBatchGeneric(query, vectors, results)
-}
-
 func prefetchNTA(p unsafe.Pointer) {}

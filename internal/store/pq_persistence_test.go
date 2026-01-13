@@ -27,6 +27,7 @@ func TestPQPersistence(t *testing.T) {
 	// Use InitPersistence
 	err = store.InitPersistence(storage.StorageConfig{DataPath: tmpDir})
 	require.NoError(t, err)
+	store.StartIndexingWorkers(1)
 
 	_ = os.Setenv("LONGBOW_USE_HNSW2", "true")
 	defer func() { _ = os.Unsetenv("LONGBOW_USE_HNSW2") }()
@@ -58,7 +59,7 @@ func TestPQPersistence(t *testing.T) {
 	require.NoError(t, err)
 
 	// 2. Train PQ
-	time.Sleep(1 * time.Second) // Allow async indexing
+	store.WaitForIndexing(datasetName)
 
 	ds, ok := store.getDataset(datasetName)
 	require.True(t, ok)

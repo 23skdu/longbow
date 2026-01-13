@@ -74,7 +74,7 @@ func TestSQ8Indexing(t *testing.T) {
 	}
 	// Capacity-based check
 	// With chunked storage, VectorsSQ8 is []uint64 (number of chunks)
-	// Default capacity 1000 -> 1 chunk (if ChunkSize=65536)
+	// Default capacity 1000 -> 1 chunk
 	numChunks := (data.Capacity + ChunkSize - 1) / ChunkSize
 	assert.Equal(t, numChunks, len(data.VectorsSQ8))
 	// Check size of the first chunk

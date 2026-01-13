@@ -133,14 +133,16 @@ func (s *VectorStore) StartMetricsTicker(d time.Duration)                       
 
 // StartIndexingWorkers starts the background indexing workers
 func (s *VectorStore) StartIndexingWorkers(numWorkers int) {
-	for i := 0; i < numWorkers; i++ {
-		s.indexWg.Add(1)
-		go func() {
-			defer s.indexWg.Done()
-			s.runIndexWorker(nil)
-		}()
-	}
-	s.logger.Info().Int("count", numWorkers).Msg("Started indexing workers")
+	s.startIndexingOnce.Do(func() {
+		for i := 0; i < numWorkers; i++ {
+			s.indexWg.Add(1)
+			go func() {
+				defer s.indexWg.Done()
+				s.runIndexWorker(nil)
+			}()
+		}
+		s.logger.Info().Int("count", numWorkers).Msg("Started indexing workers")
+	})
 }
 
 func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
@@ -167,154 +169,171 @@ func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
 		}
 
 		for dsName, dsGroup := range byDataset {
-			ds, ok := s.getDataset(dsName)
-			if !ok {
-				s.logger.Error().
-					Str("dataset", dsName).
-					Msg("Dataset not found for indexing job")
-				for _, j := range dsGroup {
-					if j.Record != nil {
-						j.Record.Release()
+			func() {
+				// Defer recovery to ensure pending count is decremented on panic
+				defer func() {
+					if r := recover(); r != nil {
+						s.logger.Error().Msgf("Panic in index worker for %s: %v", dsName, r)
+						// Try to decrement pending jobs if dataset is available
+						if ds, ok := s.getDataset(dsName); ok {
+							ds.PendingIndexJobs.Add(int64(-len(dsGroup)))
+						}
 					}
-				}
-				continue
-			}
+				}()
 
-			// Total rows in this group for this dataset
-			totalRowsInGroup := 0
-			for _, j := range dsGroup {
-				totalRowsInGroup += int(j.Record.NumRows())
-			}
-
-			recs := make([]arrow.RecordBatch, 0, totalRowsInGroup)
-			rowIdxs := make([]int, 0, totalRowsInGroup)
-			batchIdxs := make([]int, 0, totalRowsInGroup)
-			for _, j := range dsGroup {
-				n := int(j.Record.NumRows())
-				for r := 0; r < n; r++ {
-					recs = append(recs, j.Record)
-					rowIdxs = append(rowIdxs, r)
-					batchIdxs = append(batchIdxs, j.BatchIdx)
-				}
-			}
-
-			var docIDs []uint32
-			var addErr error
-			if ds.Index != nil {
-				docIDs, addErr = ds.Index.AddBatch(recs, rowIdxs, batchIdxs)
-				if addErr != nil {
+				ds, ok := s.getDataset(dsName)
+				if !ok {
 					s.logger.Error().
 						Str("dataset", dsName).
-						Err(addErr).
-						Msg("Async batched index add failed")
-				} else {
-					// Update memory tracking for index overhead
-					// Check if Index is still valid (dataset might have been evicted)
-					var newIndexSize int64
-					if ds.Index != nil {
-						newIndexSize = ds.Index.EstimateMemory()
-					} else if ds.GetHNSW2Index() != nil {
-						if est, ok := ds.GetHNSW2Index().(interface{ EstimateMemory() int64 }); ok {
-							newIndexSize = est.EstimateMemory()
+						Msg("Dataset not found for indexing job")
+					for _, j := range dsGroup {
+						if j.Record != nil {
+							j.Record.Release()
 						}
 					}
+					return
+				}
 
-					if newIndexSize > 0 {
-						oldIndexSize := ds.IndexMemoryBytes.Swap(newIndexSize)
-						delta := newIndexSize - oldIndexSize
-						if delta != 0 {
-							s.currentMemory.Add(delta)
-						}
+				// Log start
+				s.logger.Debug().Str("dataset", dsName).Int("jobs", len(dsGroup)).Msg("Processing batch starting")
+
+				// Total rows in this group for this dataset
+				totalRowsInGroup := 0
+				for _, j := range dsGroup {
+					totalRowsInGroup += int(j.Record.NumRows())
+				}
+
+				recs := make([]arrow.RecordBatch, 0, totalRowsInGroup)
+				rowIdxs := make([]int, 0, totalRowsInGroup)
+				batchIdxs := make([]int, 0, totalRowsInGroup)
+				for _, j := range dsGroup {
+					n := int(j.Record.NumRows())
+					for r := 0; r < n; r++ {
+						recs = append(recs, j.Record)
+						rowIdxs = append(rowIdxs, r)
+						batchIdxs = append(batchIdxs, j.BatchIdx)
 					}
 				}
-			} else {
-				s.logger.Warn().Str("dataset", dsName).Msg("Dataset has no index initialized, skipping AddBatch")
-			}
 
-			// Update Inverted Indexes (Hybrid Search)
-			if len(docIDs) == totalRowsInGroup {
-				docIDIdx := 0
-				for _, j := range dsGroup {
-					schema := j.Record.Schema()
-					numRows := int(j.Record.NumRows())
+				var docIDs []uint32
+				var addErr error
+				if ds.Index != nil {
+					docIDs, addErr = ds.Index.AddBatch(recs, rowIdxs, batchIdxs)
+					if addErr != nil {
+						s.logger.Error().
+							Str("dataset", dsName).
+							Err(addErr).
+							Msg("Async batched index add failed")
+					} else {
+						// Update memory tracking for index overhead
+						// Check if Index is still valid (dataset might have been evicted)
+						var newIndexSize int64
+						if ds.Index != nil {
+							newIndexSize = ds.Index.EstimateMemory()
+						} else if ds.GetHNSW2Index() != nil {
+							if est, ok := ds.GetHNSW2Index().(interface{ EstimateMemory() int64 }); ok {
+								newIndexSize = est.EstimateMemory()
+							}
+						}
 
-					// Identify string columns once per batch
-					stringCols := make([]int, 0)
-					for colIdx, field := range schema.Fields() {
-						if field.Type.ID() == arrow.STRING {
-							stringCols = append(stringCols, colIdx)
+						if newIndexSize > 0 {
+							oldIndexSize := ds.IndexMemoryBytes.Swap(newIndexSize)
+							delta := newIndexSize - oldIndexSize
+							if delta != 0 {
+								s.currentMemory.Add(delta)
+							}
 						}
 					}
+				} else {
+					s.logger.Warn().Str("dataset", dsName).Msg("Dataset has no index initialized, skipping AddBatch")
+				}
 
-					if len(stringCols) > 0 {
-						// Cache BM25 index lookup
-						ds.dataMu.RLock()
-						bm25 := ds.BM25Index
-						ds.dataMu.RUnlock()
+				// Update Inverted Indexes (Hybrid Search)
+				if len(docIDs) == totalRowsInGroup {
+					docIDIdx := 0
+					for _, j := range dsGroup {
+						schema := j.Record.Schema()
+						numRows := int(j.Record.NumRows())
 
-						for r := 0; r < numRows; r++ {
-							docID := docIDs[docIDIdx]
-							docIDIdx++
+						// Identify string columns once per batch
+						stringCols := make([]int, 0)
+						for colIdx, field := range schema.Fields() {
+							if field.Type.ID() == arrow.STRING {
+								stringCols = append(stringCols, colIdx)
+							}
+						}
 
-							for _, colIdx := range stringCols {
-								fieldName := schema.Field(colIdx).Name
+						if len(stringCols) > 0 {
+							// Cache BM25 index lookup
+							ds.dataMu.RLock()
+							bm25 := ds.BM25Index
+							ds.dataMu.RUnlock()
 
-								// Double-checked locking avoidance: Use RLock first, verify, then Lock?
-								// Optimizing for Phase 1: Keep logical structure but potentially minimize critical section?
-								// For now keeping existing logic to avoid regression, focusing on Index Worker structure.
+							for r := 0; r < numRows; r++ {
+								docID := docIDs[docIDIdx]
+								docIDIdx++
 
-								ds.dataMu.RLock()
-								var invIdx *InvertedIndex
-								if ds.InvertedIndexes != nil {
-									invIdx = ds.InvertedIndexes[fieldName]
-								}
-								ds.dataMu.RUnlock()
+								for _, colIdx := range stringCols {
+									fieldName := schema.Field(colIdx).Name
 
-								if invIdx == nil {
-									ds.dataMu.Lock()
-									if ds.InvertedIndexes == nil {
-										ds.InvertedIndexes = make(map[string]*InvertedIndex)
+									// Double-checked locking avoidance: Use RLock first, verify, then Lock?
+									// Optimizing for Phase 1: Keep logical structure but potentially minimize critical section?
+									// For now keeping existing logic to avoid regression, focusing on Index Worker structure.
+
+									ds.dataMu.RLock()
+									var invIdx *InvertedIndex
+									if ds.InvertedIndexes != nil {
+										invIdx = ds.InvertedIndexes[fieldName]
 									}
-									invIdx = ds.InvertedIndexes[fieldName]
+									ds.dataMu.RUnlock()
+
 									if invIdx == nil {
-										invIdx = NewInvertedIndex()
-										ds.InvertedIndexes[fieldName] = invIdx
+										ds.dataMu.Lock()
+										if ds.InvertedIndexes == nil {
+											ds.InvertedIndexes = make(map[string]*InvertedIndex)
+										}
+										invIdx = ds.InvertedIndexes[fieldName]
+										if invIdx == nil {
+											invIdx = NewInvertedIndex()
+											ds.InvertedIndexes[fieldName] = invIdx
+										}
+										ds.dataMu.Unlock()
 									}
-									ds.dataMu.Unlock()
-								}
 
-								colI := j.Record.Column(colIdx)
-								if col, ok := colI.(*array.String); ok {
-									if r < col.Len() && col.IsValid(r) {
-										text := col.Value(r)
-										invIdx.Add(text, docID)
-										if bm25 != nil {
-											bm25.Add(VectorID(docID), text)
-											metrics.BM25DocumentsIndexedTotal.Inc()
+									colI := j.Record.Column(colIdx)
+									if col, ok := colI.(*array.String); ok {
+										if r < col.Len() && col.IsValid(r) {
+											text := col.Value(r)
+											invIdx.Add(text, docID)
+											if bm25 != nil {
+												bm25.Add(VectorID(docID), text)
+												metrics.BM25DocumentsIndexedTotal.Inc()
+											}
 										}
 									}
 								}
 							}
+						} else {
+							docIDIdx += numRows
 						}
-					} else {
-						docIDIdx += numRows
 					}
 				}
-			}
 
-			// Release records and record latency
-			for _, j := range dsGroup {
-				j.Record.Release()
-				metrics.IndexJobLatencySeconds.WithLabelValues(dsName).Observe(time.Since(j.CreatedAt).Seconds())
+				// Release records and record latency
+				for _, j := range dsGroup {
+					j.Record.Release()
+					metrics.IndexJobLatencySeconds.WithLabelValues(dsName).Observe(time.Since(j.CreatedAt).Seconds())
 
-				// Update Memory Pressure on Queue
-				// Approximate size calculation matching Send()
-				size := int64(j.Record.NumRows() * int64(j.Record.NumCols()) * 8)
-				s.indexQueue.DecreaseEstimatedBytes(size)
-			}
+					// Update Memory Pressure on Queue
+					// Approximate size calculation matching Send()
+					size := int64(j.Record.NumRows() * int64(j.Record.NumCols()) * 8)
+					s.indexQueue.DecreaseEstimatedBytes(size)
+				}
 
-			// Decrement pending jobs count
-			ds.PendingIndexJobs.Add(int64(-len(dsGroup)))
+				// Decrement pending jobs count
+				ds.PendingIndexJobs.Add(int64(-len(dsGroup)))
+				s.logger.Debug().Str("dataset", dsName).Msg("Processing batch finished")
+			}()
 		}
 	}
 

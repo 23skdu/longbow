@@ -1,0 +1,93 @@
+version: '3.8'
+
+services:
+  node1:
+    image: longbow:latest
+    container_name: node1
+    environment:
+      - NODE_ID=node1
+      - LISTEN_ADDR=node1:3000
+      - META_ADDR=node1:3001
+      - METRICS_ADDR=0.0.0.0:9090
+      - GOSSIP_ENABLED=true
+      - GOSSIP_PORT=7946
+      - GOSSIP_ADVERTISE_ADDR=node1
+      - GOSSIP_STATIC_PEERS=node2:7946,node3:7946
+      - MAX_MEMORY=8589934592 # 8GB
+      - AUTO_SHARDING_ENABLED=true
+      - DATA_PATH=/data
+      - LOG_LEVEL=debug
+    ports:
+      - "4000:3000"
+      - "4001:3001"
+      - "9190:9090"
+    volumes:
+      - ./data/node1:/data
+    networks:
+      - longbow-net
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+
+  node2:
+    image: longbow:latest
+    container_name: node2
+    environment:
+      - NODE_ID=node2
+      - LISTEN_ADDR=node2:3000
+      - META_ADDR=node2:3001
+      - METRICS_ADDR=0.0.0.0:9090
+      - GOSSIP_ENABLED=true
+      - GOSSIP_PORT=7946
+      - GOSSIP_ADVERTISE_ADDR=node2
+      - GOSSIP_STATIC_PEERS=node1:7946,node3:7946
+      - MAX_MEMORY=8589934592 # 8GB
+      - AUTO_SHARDING_ENABLED=true
+      - DATA_PATH=/data
+      - LOG_LEVEL=debug
+    ports:
+      - "4002:3000"
+      - "4003:3001"
+      - "9191:9090"
+    volumes:
+      - ./data/node2:/data
+    networks:
+      - longbow-net
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+
+  node3:
+    image: longbow:latest
+    container_name: node3
+    environment:
+      - NODE_ID=node3
+      - LISTEN_ADDR=node3:3000
+      - META_ADDR=node3:3001
+      - METRICS_ADDR=0.0.0.0:9090
+      - GOSSIP_ENABLED=true
+      - GOSSIP_PORT=7946
+      - GOSSIP_ADVERTISE_ADDR=node3
+      - GOSSIP_STATIC_PEERS=node1:7946,node2:7946
+      - MAX_MEMORY=8589934592 # 8GB
+      - AUTO_SHARDING_ENABLED=true
+      - DATA_PATH=/data
+      - LOG_LEVEL=debug
+    ports:
+      - "4004:3000"
+      - "4005:3001"
+      - "9192:9090"
+    volumes:
+      - ./data/node3:/data
+    networks:
+      - longbow-net
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+
+networks:
+  longbow-net:
+    driver: bridge

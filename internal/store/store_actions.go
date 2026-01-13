@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -691,7 +690,7 @@ func (s *VectorStore) applyBatchToMemory(name string, rec arrow.RecordBatch, ts 
 	// Update LWW/Merkle and Queue Indexing
 	s.updateLWWAndMerkle(ds, rec, ts)
 
-	// Dispatch batch-level indexing job
+	// Dispatch batch-level indexing job asynchronously to avoid blocking DoPut
 	rec.Retain() // IndexJob holds ref
 	job := IndexJob{
 		DatasetName: name,
@@ -700,22 +699,26 @@ func (s *VectorStore) applyBatchToMemory(name string, rec arrow.RecordBatch, ts 
 		CreatedAt:   time.Now(),
 	}
 
-	// Try to send, backing off if full
-	sent := false
-	log.Printf("[DEBUG] Enqueueing IndexJob for %s (batchIdx=%d) to indexQueue", name, batchIdx)
-	for attempt := 0; attempt < 50; attempt++ {
-		if s.indexQueue.Send(job) {
-			sent = true
-			break
-		}
-		time.Sleep(2 * time.Millisecond)
-	}
-
-	if !sent {
-		s.logger.Warn().Str("dataset", name).Int("batch_idx", batchIdx).Msg("Dropped batch index job after retries (queue full)")
-		rec.Release()
-		ds.PendingIndexJobs.Add(-1) // Revert pending count since job was dropped
-		metrics.IndexJobsDroppedTotal.Inc()
+	// Try non-blocking send first
+	if !s.indexQueue.Send(job) {
+		// Queue full: dispatch in goroutine to unblock DoPut latency
+		// Note: This relies on WAL for durability if the process crashes before this goroutine finishes.
+		metrics.IndexJobsOverflowTotal.Inc()
+		go func() {
+			// Spin-wait until space is available.
+			// Ideally we would have a blocking Send, but the Queue doesn't expose one.
+			// This is a tradeoff for extreme ingestion throughput.
+			backoff := 10 * time.Millisecond
+			for {
+				time.Sleep(backoff)
+				if s.indexQueue.Send(job) {
+					return
+				}
+				if backoff < 500*time.Millisecond {
+					backoff *= 2
+				}
+			}
+		}()
 	}
 
 	// Inverted index update removed from here - now handled by runIndexWorker asynchronously

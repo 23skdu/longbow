@@ -129,7 +129,9 @@ class LongbowClient:
             req["filters"] = filters
         
         # Merge extra args (e.g. alpha, text_query)
-        req.update(kwargs)
+        for k, v in kwargs.items():
+            if v is not None:
+                req[k] = v
 
         ticket_bytes = json.dumps({"search": req}).encode("utf-8")
         ticket = flight.Ticket(ticket_bytes)

@@ -204,8 +204,7 @@ func (c *sq8Computer) ComputeSingle(id uint32) float32 {
 	cID := chunkID(id)
 	chunk := c.data.GetVectorsSQ8Chunk(cID)
 	if chunk != nil {
-		sq8Stride := (c.dims + 63) & ^63
-		start := int(chunkOffset(id)) * sq8Stride
+		start := int(chunkOffset(id)) * c.dims
 		if start+c.dims <= len(chunk) {
 			v := chunk[start : start+c.dims]
 			return float32(simd.EuclideanDistanceSQ8(c.querySQ8, v)) * c.scale
@@ -225,8 +224,7 @@ func (c *sq8Computer) Prefetch(id uint32) {
 	cID := chunkID(id)
 	chunk := c.data.GetVectorsSQ8Chunk(cID)
 	if chunk != nil {
-		sq8Stride := (c.dims + 63) & ^63
-		start := int(chunkOffset(id)) * sq8Stride
+		start := int(chunkOffset(id)) * c.dims
 		if start < len(chunk) {
 			simd.Prefetch(unsafe.Pointer(&chunk[start]))
 		}

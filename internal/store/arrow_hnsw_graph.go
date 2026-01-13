@@ -1055,11 +1055,10 @@ func (gd *GraphData) GetVectorsSQ8Chunk(chunkID uint32) []byte {
 		return nil
 	}
 	// SQ8 is always padded to 64 bytes
-	sq8Padded := (gd.Dims + 63) & ^63
 	ref := memory.SliceRef{
 		Offset: offset,
-		Len:    uint32(ChunkSize * sq8Padded),
-		Cap:    uint32(ChunkSize * sq8Padded),
+		Len:    uint32(ChunkSize * gd.Dims),
+		Cap:    uint32(ChunkSize * gd.Dims),
 	}
 	return gd.Uint8Arena.Get(ref)
 }
@@ -1341,9 +1340,7 @@ func (h *ArrowHNSW) ensureChunk(data *GraphData, cID, _ uint32, dims int) *Graph
 
 	// SQ8
 	if h.config.SQ8Enabled && dims > 0 && len(data.VectorsSQ8) > int(cID) && atomic.LoadUint64(&data.VectorsSQ8[cID]) == 0 {
-		// SQ8 is 1 byte per dim. Align to 64 bytes.
-		sq8Padded := (dims + 63) & ^63
-		ref, err := data.Uint8Arena.AllocSlice(ChunkSize * sq8Padded)
+		ref, err := data.Uint8Arena.AllocSlice(ChunkSize * dims)
 		if err == nil {
 			if atomic.CompareAndSwapUint64(&data.VectorsSQ8[cID], 0, ref.Offset) {
 				// Copy-On-Write: If we have a backing graph, copy existing vectors into this new chunk
@@ -1359,9 +1356,11 @@ func (h *ArrowHNSW) ensureChunk(data *GraphData, cID, _ uint32, dims int) *Graph
 					for id := startID; id < endID; id++ {
 						vecBytes := data.BackingGraph.GetVectorSQ8(uint32(id))
 						if vecBytes != nil && len(vecBytes) == dims {
-							idx := id - startID
-							offset := idx * sq8Padded
-							copy(chunk[offset:offset+dims], vecBytes)
+							if len(vecBytes) > 0 {
+								start := uint32(id-startID) * uint32(dims)
+								dest := chunk[start : start+uint32(dims)]
+								copy(dest, vecBytes)
+							}
 						}
 					}
 				}

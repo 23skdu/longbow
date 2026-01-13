@@ -34,6 +34,9 @@ except ImportError:
 # Global timeout default
 DEFAULT_TIMEOUT = 30.0
 
+# Benchmark Configuration
+BENCHMARK_SIZES = [3000, 5000, 7000, 13000, 20000, 35000]
+
 # =============================================================================
 # Data Classes
 # =============================================================================
@@ -129,6 +132,7 @@ def generate_vectors(num_rows: int, dim: int, with_text: bool = False, fp16: boo
     ]
     arrays = [ids, vectors, ts_array]
 
+
     # Optional text field for hybrid search
     if with_text:
         words = ["machine", "learning", "vector", "database", "search",
@@ -137,6 +141,12 @@ def generate_vectors(num_rows: int, dim: int, with_text: bool = False, fp16: boo
         text_array = pa.array(texts, type=pa.string())
         fields.append(pa.field("meta", pa.string()))
         arrays.append(text_array)
+        
+        # Add category for filtered search
+        cats = ["A" if i % 2 == 0 else "B" for i in range(num_rows)]
+        cat_array = pa.array(cats, type=pa.string())
+        fields.append(pa.field("category", pa.string()))
+        arrays.append(cat_array)
 
     schema = pa.schema(fields)
     return pa.Table.from_arrays(arrays, schema=schema)
@@ -236,7 +246,8 @@ def benchmark_vector_search(client: LongbowClient, name: str,
                             include_vectors: bool = False,
                             vector_format: str = "f32",
                             text_query: Optional[str] = None,
-                            alpha: float = 0.0) -> BenchmarkResult:
+                            alpha: float = 0.0,
+                            **kwargs) -> BenchmarkResult:
     """Benchmark Vector Search using SDK search()."""
     num_queries = len(query_vectors)
     print(f"\n[SEARCH] Running {num_queries:,} vector searches (k={k})...")
@@ -260,13 +271,18 @@ def benchmark_vector_search(client: LongbowClient, name: str,
         while retry_count <= max_retries:
             try:
                 # SDK search
-                ddf = client.search(
+                df = client.search(
                     name, q_list, k=k, filters=filters, 
                     include_vectors=include_vectors, 
                     vector_format=vector_format,
-                    text_query=text_query, alpha=alpha
+                    text_query=text_query, 
+                    alpha=alpha,
+                    **kwargs
                 )
-                df = ddf.compute()
+                
+                # Check for errors in the DataFrame if any column indicates error?
+                # SDK search raises exception on RPC error.
+                # If search returns empty DF, handled below.
                 total_results += len(df)
                 break
             except Exception as e:
@@ -377,11 +393,11 @@ def benchmark_hybrid_search(client: LongbowClient, name: str,
     for i, (qvec, text_query) in enumerate(zip(query_vectors, text_queries)):
         start = time.time()
         try:
-            ddf = client.search(
+            df = client.search(
                 name, qvec.tolist(), k=k, 
                 text_query=text_query, alpha=alpha
             )
-            df = ddf.compute()
+            # df = ddf.compute() # removed
             total_results += len(df)
         except Exception as e:
             errors += 1
@@ -512,7 +528,8 @@ def benchmark_concurrent_load(data_uri: str, meta_uri: str, name: str, dim: int,
                     # Search
                     vec = np.random.rand(dim).tolist()
                     ddf = client.search(name, vec, k=5)
-                    _ = ddf.compute()
+                    # ddf is already a pandas DataFrame
+                    _ = ddf
                 
                 local_ops += 1
                 local_latencies.append((time.time() - start) * 1000)
@@ -591,6 +608,7 @@ def main():
     parser.add_argument("--test-delete", action="store_true")
     parser.add_argument("--test-id-search", action="store_true")
     parser.add_argument("--filter", help="JSON string for filters or 'field:op:val'")
+    parser.add_argument("--run-suite", action="store_true", help="Run full benchmark suite with standard sizes")
 
     args = parser.parse_args()
 
@@ -618,83 +636,125 @@ def main():
         print("Cluster not ready. Exiting.")
         sys.exit(1)
 
-    results = []
+    all_results = []
     
-    try:
-        # PUT
-        if not args.skip_put:
-            table = generate_vectors(args.rows, args.dim, with_text=args.with_text, fp16=is_fp16)
-            res = benchmark_put(client, table, args.dataset)
-            results.append(res)
-            
-            print("Waiting for indexing...")
-            time.sleep(5)
+    sizes_to_run = BENCHMARK_SIZES if args.run_suite else [args.rows]
+    
+    for size in sizes_to_run:
+        print(f"\n" + "="*80)
+        print(f"BENCHMARK RUN: {size:,} Vectors")
+        print("="*80)
+        
+        current_dataset = f"{args.dataset}_{size}" if args.run_suite else args.dataset
+        results = []
+    
+        try:
+            # PUT
+            if not args.skip_put:
+                table = generate_vectors(size, args.dim, with_text=args.with_text, fp16=is_fp16)
+                res = benchmark_put(client, table, current_dataset)
+                results.append(res)
+                
+                print("Waiting for indexing...")
+                time.sleep(5)
 
-        # GET
-        if not args.skip_get:
-            res = benchmark_get(client, args.dataset)
-            results.append(res)
+            # GET
+            if not args.skip_get:
+                res = benchmark_get(client, current_dataset)
+                results.append(res)
 
-        # SEARCH
-        if not args.skip_search:
-            q_vecs = generate_query_vectors(args.queries, args.dim)
-            text_query = "data model" if args.with_text else None
-            res_s = benchmark_vector_search(
-                client, args.dataset, q_vecs, k=args.k, 
-                filters=filters,
-                global_search=args.global_search,
-                text_query=text_query,
-                alpha=args.alpha
-            )
-            results.append(res_s)
-
-            # Hybrid
-            if args.with_text:
-                texts = ["data model"] * args.queries
-                res_h = benchmark_hybrid_search(
-                    client, args.dataset, q_vecs, k=args.k, 
-                    text_queries=texts, alpha=args.alpha,
-                    global_search=args.global_search
+            # SEARCH
+            if not args.skip_search:
+                q_vecs = generate_query_vectors(args.queries, args.dim)
+                
+                # 1. Dense Search
+                print("\n--> Running Dense Search")
+                res_s = benchmark_vector_search(
+                    client, current_dataset, q_vecs, k=args.k, 
+                    filters=filters,
+                    global_search=args.global_search,
+                    alpha=0.0 # pure vector
                 )
-                results.append(res_h)
+                results.append(res_s)
 
-        # Search By ID
-        if args.test_id_search:
-            # query IDs 0..100
-            q_ids = list(range(min(100, args.rows)))
-            res_id = benchmark_search_by_id(client, args.dataset, q_ids, k=args.k)
-            results.append(res_id)
+                if args.with_text:
+                    # 2. Sparse Search (Alpha 1.0)
+                    print("\n--> Running Sparse Search")
+                    texts = ["data model"] * args.queries
+                    res_sparse = benchmark_vector_search(
+                        client, current_dataset, q_vecs, k=args.k,
+                        filters=filters,
+                        global_search=args.global_search,
+                        text_query="data model",
+                        alpha=1.0 # pure text
+                    )
+                    res_sparse.name = "SparseSearch"
+                    results.append(res_sparse)
 
-        # Delete
-        if args.test_delete:
-            del_ids = list(range(0, min(100, args.rows)))
-            res_del = benchmark_delete(client, args.dataset, del_ids)
-            results.append(res_del)
+                    # 3. Hybrid Search (Alpha 0.5)
+                    print("\n--> Running Hybrid Search")
+                    res_h = benchmark_hybrid_search(
+                        client, current_dataset, q_vecs, k=args.k, 
+                        text_queries=texts, alpha=args.alpha,
+                        global_search=args.global_search
+                    )
+                    results.append(res_h)
 
-        # Concurrent
-        if args.concurrent > 0:
-            res_c = benchmark_concurrent_load(
-                args.data_uri, args.meta_uri, args.dataset, args.dim,
-                args.concurrent, args.duration
-            )
-            results.append(res_c)
+                    # 4. Filtered Search (Dense + Filter)
+                    print("\n--> Running Filtered Search")
+                    filtered_filters = [{"field": "category", "op": "Eq", "value": "A"}]
+                    res_f = benchmark_vector_search(
+                        client, current_dataset, q_vecs, k=args.k,
+                        filters=filtered_filters,
+                        global_search=args.global_search,
+                        alpha=0.0
+                    )
+                    res_f.name = "FilteredSearch"
+                    results.append(res_f)
 
-    except KeyboardInterrupt:
-        print("Interrupted.")
-    except Exception as e:
-        print(f"Fatal Error: {e}")
-        import traceback
-        traceback.print_exc()
+            # Search By ID
+            if args.test_id_search:
+                # query IDs 0..100
+                q_ids = list(range(min(100, size)))
+                res_id = benchmark_search_by_id(client, current_dataset, q_ids, k=args.k)
+                results.append(res_id)
+
+            # Delete
+            if args.test_delete:
+                del_ids = list(range(0, min(100, size)))
+                res_del = benchmark_delete(client, current_dataset, del_ids)
+                results.append(res_del)
+
+            # Concurrent
+            if args.concurrent > 0:
+                res_c = benchmark_concurrent_load(
+                    args.data_uri, args.meta_uri, current_dataset, args.dim,
+                    args.concurrent, args.duration
+                )
+                results.append(res_c)
+
+        except KeyboardInterrupt:
+            print("Interrupted.")
+            break
+        except Exception as e:
+            print(f"Fatal Error during run for size {size}: {e}")
+            import traceback
+            traceback.print_exc()
+        
+        # Append to all results with modified names for specific size
+        for r in results:
+            r.name = f"{r.name} @ {size}"
+            all_results.append(r)
 
     # Summary
     print("\n" + "="*95)
-    print("BENCHMARK SUMMARY")
+    print("BENCHMARK SUITE SUMMARY")
     print("="*95)
-    print(f"{'Name':<25} | {'Throughput':<20} | {'p50 (ms)':<10} | {'p95 (ms)':<10} | {'p99 (ms)':<10} | {'Errors':<8}")
+    print(f"{'Name':<35} | {'Throughput':<20} | {'p50 (ms)':<10} | {'p95 (ms)':<10} | {'p99 (ms)':<10} | {'Errors':<8}")
     print("-" * 95)
-    for r in results:
+    for r in all_results:
         t_str = f"{r.throughput:.2f} {r.throughput_unit}"
-        print(f"{r.name:<25} | {t_str:<20} | {r.p50_ms:<10.2f} | {r.p95_ms:<10.2f} | {r.p99_ms:<10.2f} | {r.errors:<8}")
+        print(f"{r.name:<35} | {t_str:<20} | {r.p50_ms:<10.2f} | {r.p95_ms:<10.2f} | {r.p99_ms:<10.2f} | {r.errors:<8}")
     print("="*95)
 
     # Save JSON if requested
@@ -702,7 +762,7 @@ def main():
         with open(args.json, "w") as f:
             # Convert BenchmarkResult objects to serializable dicts
             json_results = []
-            for r in results:
+            for r in all_results:
                 json_results.append({
                     "name": r.name,
                     "duration_seconds": r.duration_seconds,

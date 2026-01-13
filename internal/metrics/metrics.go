@@ -355,6 +355,12 @@ var (
 		Help: "Total number of records waiting to be ingested",
 	})
 
+	// IndexJobsOverflowTotal tracks number of jobs sent to overflow queue
+	IndexJobsOverflowTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "longbow_index_jobs_overflow_total",
+		Help: "Total number of index jobs sent to overflow buffer or retried asynchronously",
+	})
+
 	// HNSWVisitedResetDuration tracks the time spent resetting the visited bitset/list
 	HNSWVisitedResetDuration = promauto.NewHistogram(prometheus.HistogramOpts{
 		Name:    "longbow_hnsw_visited_reset_duration_seconds",

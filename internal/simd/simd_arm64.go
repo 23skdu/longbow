@@ -83,3 +83,7 @@ func cosineBatchNEON(query []float32, vectors [][]float32, results []float32) {
 		results[i] = cosineNEON(query, v)
 	}
 }
+
+func euclideanVerticalBatchNEON(query []float32, vectors [][]float32, results []float32) {
+	euclideanBatchNEON(query, vectors, results)
+}

@@ -68,6 +68,7 @@ func TestArrowHNSW_VectorizedFilter(t *testing.T) {
 
 	err = store.ApplyDelta(schemaName, rec, 1, time.Now().UnixNano())
 	require.NoError(t, err)
+	store.WaitForIndexing(schemaName)
 
 	// Get Index
 	ds, err := store.GetDataset(schemaName)

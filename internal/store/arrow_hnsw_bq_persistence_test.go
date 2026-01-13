@@ -59,6 +59,10 @@ func TestArrowHNSW_BQ_Persistence(t *testing.T) {
 	err = store.ApplyDelta(schemaName, rec, 1, time.Now().UnixNano())
 	require.NoError(t, err)
 
+	// Wait for background indexing to complete before potentially modifying the index state or releasing rec
+	// Although rec.Release is deferred, ApplyDelta starts an ingestion worker.
+	store.WaitForIndexing(schemaName)
+
 	// 3. Enable BQ Manually on the Index
 	ds, err := store.GetDataset(schemaName)
 	require.NoError(t, err)

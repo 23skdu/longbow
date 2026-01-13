@@ -1,0 +1,38 @@
+[
+  {
+    "name": "DoPut @ 20000",
+    "duration_seconds": 0.8075482845306396,
+    "throughput": 36.65669452626625,
+    "throughput_unit": "MB/s",
+    "rows": 20000,
+    "bytes_processed": 31040000,
+    "p50_ms": 0.0,
+    "p95_ms": 0.0,
+    "p99_ms": 0.0,
+    "errors": 0
+  },
+  {
+    "name": "DoGet @ 20000",
+    "duration_seconds": 0.21166777610778809,
+    "throughput": 69.92573769513145,
+    "throughput_unit": "MB/s",
+    "rows": 10000,
+    "bytes_processed": 15520000,
+    "p50_ms": 0.0,
+    "p95_ms": 0.0,
+    "p99_ms": 0.0,
+    "errors": 0
+  },
+  {
+    "name": "VectorSearch_f32 @ 20000",
+    "duration_seconds": 4.0740203857421875,
+    "throughput": 245.45778010824174,
+    "throughput_unit": "queries/s",
+    "rows": 9050,
+    "bytes_processed": 0,
+    "p50_ms": 3.197908401489258,
+    "p95_ms": 9.656190872192383,
+    "p99_ms": 18.268823623657227,
+    "errors": 0
+  }
+]

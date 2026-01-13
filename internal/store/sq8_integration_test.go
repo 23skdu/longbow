@@ -167,7 +167,7 @@ func TestSQ8_Persistence(t *testing.T) {
 	idxPath := filepath.Join(tmpDir, "index.bin")
 
 	data := h.data.Load()
-	err := WriteDiskGraph(data, idxPath, int(h.nodeCount.Load()))
+	err := WriteDiskGraph(data, idxPath, int(h.nodeCount.Load()), 0, 0, 0, 0)
 	require.NoError(t, err)
 
 	// Load from Disk

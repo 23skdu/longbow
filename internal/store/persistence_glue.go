@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"runtime"
 	"time"
 
 	"github.com/23skdu/longbow/internal/metrics"
@@ -22,6 +23,10 @@ func (s *VectorStore) InitPersistence(cfg storage.StorageConfig) error {
 		return err
 	}
 	s.engine = engine
+
+	// Start indexing workers early to process streaming snapshots
+	// This prevents memory bloat by processing/indexing chunks as they arrive
+	s.StartIndexingWorkers(runtime.NumCPU())
 
 	// Load Snapshots
 	if err := s.engine.LoadSnapshots(func(item storage.SnapshotItem) error {
@@ -108,7 +113,9 @@ func (s *VectorStore) loadSnapshotItem(item *storage.SnapshotItem) error {
 		ds.Index = NewAutoShardingIndex(ds, asConfig)
 	}
 
-	// Load Records and Rebuild Index
+	// Load Records and Queue for Indexing
+	const maxQueueBytes = 100 * 1024 * 1024 // 100MB backpressure limit during restore
+
 	for _, rec := range item.Records {
 		rec.Retain()
 
@@ -118,26 +125,26 @@ func (s *VectorStore) loadSnapshotItem(item *storage.SnapshotItem) error {
 		batchIdx := len(ds.Records) - 1
 		ds.UpdatePrimaryIndex(batchIdx, rec)
 		s.currentMemory.Add(CachedRecordSize(rec))
-		ds.dataMu.Unlock() // Unlock before indexing to avoid potential deadlocks
+		ds.dataMu.Unlock()
 
-		// Rebuild Index entry for this batch
+		// Rebuild Index Async with Backpressure
+		// Apply Backpressure if queue is too full
+		for s.indexQueue.EstimatedBytes() > maxQueueBytes {
+			time.Sleep(10 * time.Millisecond)
+		}
+
 		numRows := int(rec.NumRows())
 		if numRows > 0 {
-			rowIdxs := make([]int, numRows)
-			batchIdxs := make([]int, numRows)
-			recs := make([]arrow.RecordBatch, numRows)
-			for i := 0; i < numRows; i++ {
-				rowIdxs[i] = i
-				batchIdxs[i] = batchIdx
-				recs[i] = rec
-			}
-
-			// We ignore errors here? Or log them?
-			// If indexing fails, we have data but no search.
-			if _, err := ds.Index.AddBatch(recs, rowIdxs, batchIdxs); err != nil {
-				s.logger.Error().Err(err).Str("dataset", ds.Name).Msg("Failed to rebuild index from snapshot")
-				fmt.Printf("loadSnapshotItem: Failed to rebuild index: %v\n", err)
-				// Proceeding, but data might be unsearchable
+			if ds.Index != nil {
+				rec.Retain()
+				job := IndexJob{
+					DatasetName: item.Name,
+					Record:      rec,
+					BatchIdx:    batchIdx,
+					CreatedAt:   time.Now(),
+				}
+				s.indexQueue.Send(job) // Buffer should be large enough, or overflow
+				ds.PendingIndexJobs.Add(int64(numRows))
 			}
 		}
 	}
@@ -217,29 +224,25 @@ func (s *VectorStore) ApplyDelta(name string, rec arrow.RecordBatch, seq uint64,
 	// 5. Index text columns for Hybrid Search (Phase 13)
 	s.indexTextColumnsForHybridSearch(ds, rec, baseRowID)
 
-	// 6. Update Vector Index (CRITICAL: SyncWorker relies on this)
-	// We must index the batch so it's searchable and visible to IndexLen()
-	numRows := int(rec.NumRows())
-	rowIdxs := make([]int, numRows)
-	batchIdxs := make([]int, numRows)
-
-	// Prepare separate slice of records for AddBatch as it expects 1:1 mapping if used this way
-	// Or better, use AddSafe in a loop if AddBatch is strictly for scatter-gather?
-	// AddBatch implementation: loops i < len(recs), calls extractVector(recs[i], rowIdxs[i]).
-	// So we need recs[i] to be the batch for rowIdxs[i].
-	recs := make([]arrow.RecordBatch, numRows)
-
-	for i := 0; i < numRows; i++ {
-		rowIdxs[i] = i
-		batchIdxs[i] = batchIdx
-		recs[i] = rec // All point to the same batch
-	}
-
 	if ds.Index != nil {
-		_, err := ds.Index.AddBatch(recs, rowIdxs, batchIdxs)
-		if err != nil {
-			return fmt.Errorf("failed to index delta: %w", err)
+		numRows := int(rec.NumRows())
+		rec.Retain()
+		job := IndexJob{
+			DatasetName: name,
+			Record:      rec,
+			BatchIdx:    batchIdx,
+			CreatedAt:   time.Now(),
 		}
+
+		// Send with simple backpressure policy (Spin/Wait)
+		// This ensures we never drop data, but propagate backpressure to caller (WAL or Network)
+		for {
+			if s.indexQueue.Send(job) {
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		ds.PendingIndexJobs.Add(int64(numRows))
 	}
 
 	return nil

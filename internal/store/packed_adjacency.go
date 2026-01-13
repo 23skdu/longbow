@@ -2,6 +2,7 @@ package store
 
 import (
 	"errors"
+	"sync"
 	"sync/atomic"
 	"unsafe"
 
@@ -36,6 +37,7 @@ type PackedAdjacency struct {
 	// Index = NodeID / ChunkSize.
 	// Value = Offset to Page (in pageArena).
 	chunks atomic.Pointer[[]uint64]
+	mu     sync.Mutex // Protects chunks growth
 }
 
 func NewPackedAdjacency(arena *memory.SlabArena, initialCapacity int) *PackedAdjacency {
@@ -71,11 +73,21 @@ func NewPackedAdjacencyWithArenas(arena *memory.SlabArena,
 }
 
 // EnsureCapacity resizes the directory if needed.
-// This is NOT thread-safe against concurrent EnsureCapacity, but safe against specific readers.
+// thread-safe across multiple concurrent writers.
 func (pa *PackedAdjacency) EnsureCapacity(nodeID uint32) {
 	chunkIdx := int(nodeID) / AdjacencyChunkSize
 
+	// Quick check without lock
 	curPtr := pa.chunks.Load()
+	if curPtr != nil && chunkIdx < len(*curPtr) {
+		return
+	}
+
+	pa.mu.Lock()
+	defer pa.mu.Unlock()
+
+	// Re-check after acquiring lock
+	curPtr = pa.chunks.Load()
 	if curPtr != nil && chunkIdx < len(*curPtr) {
 		return
 	}

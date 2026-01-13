@@ -2,7 +2,8 @@
 
 ## Overview
 
-Longbow uses a **SWIM (Scalable Weakly-consistent Infection-style Process Group Membership)** gossip protocol for distributed mesh networking. This enables:
+Longbow uses a **SWIM (Scalable Weakly-consistent Infection-style Process Group Membership)** gossip
+protocol for distributed mesh networking. This enables:
 
 - **Failure Detection**: Automatically detect and handle node failures
 - **Membership Management**: Maintain consistent view of cluster members
@@ -14,7 +15,7 @@ Longbow uses a **SWIM (Scalable Weakly-consistent Infection-style Process Group 
 
 ### Protocol Components
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │                    Gossip Protocol (UDP)                     │
 ├─────────────────────────────────────────────────────────────┤
@@ -177,7 +178,7 @@ spec:
 
 Gossip protocol exposes Prometheus metrics:
 
-```
+```text
 # Active cluster members
 gossip_active_members{} 
 

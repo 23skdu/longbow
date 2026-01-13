@@ -686,6 +686,85 @@
         "x": 0,
         "y": 46
       },
+      "id": 105,
+      "panels": [],
+      "title": "Hybrid & Keyword Search",
+      "type": "row"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 47
+      },
+      "id": 106,
+      "targets": [
+        {
+          "expr": "rate(longbow_hybrid_search_vector_total[1m])",
+          "legendFormat": "Dense Search",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(longbow_hybrid_search_keyword_total[1m])",
+          "legendFormat": "Sparse Search",
+          "refId": "B"
+        }
+      ],
+      "title": "Hybrid Search Rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 8,
+        "y": 47
+      },
+      "id": 107,
+      "targets": [
+        {
+          "expr": "longbow_bm25_documents_indexed_total",
+          "refId": "A"
+        }
+      ],
+      "title": "BM25 Documents Indexed",
+      "type": "stat"
+    },
+    {
+      "datasource": "${datasource}",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit"
+        }
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 47
+      },
+      "id": 108,
+      "targets": [
+        {
+          "expr": "rate(longbow_hybrid_search_vector_total[1m]) / (rate(longbow_hybrid_search_vector_total[1m]) + rate(longbow_hybrid_search_keyword_total[1m]) + 1)",
+          "legendFormat": "Vector Bias",
+          "refId": "A"
+        }
+      ],
+      "title": "Hybrid Search Vector/Keyword Ratio",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 53
+      },
       "id": 16,
       "title": "Memory & Systems",
       "type": "row"
@@ -1779,7 +1858,7 @@
       "id": 122,
       "targets": [
         {
-          "expr": "rate(longbow_simd_dispatch_count[1m])",
+          "expr": "rate(longbow_simd_dispatch_total[1m])",
           "legendFormat": "",
           "refId": "A"
         }
@@ -1848,6 +1927,56 @@
         "w": 24,
         "x": 0,
         "y": 128
+      },
+      "id": 130,
+      "panels": [],
+      "title": "GPU Acceleration",
+      "type": "row"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 0,
+        "y": 129
+      },
+      "id": 131,
+      "targets": [
+        {
+          "expr": "rate(longbow_vector_search_gpu_operations_total[1m])",
+          "refId": "A"
+        }
+      ],
+      "title": "GPU Search Operations/s",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 12,
+        "y": 129
+      },
+      "id": 132,
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(longbow_vector_search_gpu_latency_seconds_bucket[5m])) by (le))",
+          "legendFormat": "GPU P99",
+          "refId": "A"
+        }
+      ],
+      "title": "GPU Search Latency P99",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 135
       },
       "id": 100,
       "panels": [],
@@ -2036,6 +2165,68 @@
       ],
       "title": "Namespace Datasets",
       "type": "stat"
+    },
+    {
+      "datasource": "${datasource}",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 14,
+        "y": 135
+      },
+      "id": 133,
+      "targets": [
+        {
+          "expr": "longbow_split_brain_fenced_state",
+          "refId": "A"
+        }
+      ],
+      "title": "Fenced State",
+      "type": "gauge"
+    },
+    {
+      "datasource": "${datasource}",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line"
+          },
+          "unit": "ops"
+        }
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 4,
+        "x": 20,
+        "y": 135
+      },
+      "id": 134,
+      "targets": [
+        {
+          "expr": "rate(longbow_vector_clock_merges_total[1m])",
+          "legendFormat": "Merges/s",
+          "refId": "A"
+        }
+      ],
+      "title": "Vector Clock Merges",
+      "type": "timeseries"
     },
     {
       "collapsed": false,

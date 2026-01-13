@@ -130,3 +130,17 @@ Remaining high-priority optimizations for the ingestion pipeline.
 - Skip validation for known schema fingerprints.
 - Parallelize field type checking.
 **Expected Impact**: 5-10% faster ingestion.
+
+### 14. Automated Schema Evolution & Validation
+
+**Goal**: Fully implement robust, automated schema evolution with comprehensive unit tests as
+documented in `schema_evolution.md`.
+
+- **Subtasks**:
+  - [ ] Implement automated `Version` incrementing in `ApplyDelta` upon detection of additive
+        schema changes.
+  - [ ] Add strict validation logic to ensure incoming `RecordBatch` schemas are backward-compatible (additive only).
+  - [ ] Develop a suite of unit and integration tests covering various evolution scenarios
+        (adding columns, reordering, type mismatches).
+  - [ ] Implement schema fingerprinting to skip validation for identical schemas in the ingestion hot path.
+**Expected Impact**: Improved data integrity and developer experience during application evolution.

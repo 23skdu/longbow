@@ -4,6 +4,8 @@ Complete reference for all Prometheus metrics exported by Longbow.
 
 **Metrics Endpoint**: `http://localhost:9090/metrics` (configurable via `LONGBOW_METRICS_ADDR`)
 
+Last Updated: 2026-01-13
+
 ## Table of Contents
 
 1. [Flight & RPC](#flight--rpc)

@@ -1,6 +1,7 @@
 # Longbow Helm Chart Documentation
 
-The Longbow Helm chart deploys the Longbow distributed vector store on a Kubernetes cluster. It supports flexible configuration for services, ingress, gRPC tuning, and persistence.
+The Longbow Helm chart deploys the Longbow distributed vector store on a Kubernetes cluster.
+It supports flexible configuration for services, ingress, gRPC tuning, and persistence.
 
 ## Installation
 
@@ -20,7 +21,8 @@ Longbow exposes two main services and a metrics endpoint:
 - **Meta Server**: Handles metadata and coordination (future use).
 - **Metrics**: Exposes Prometheus metrics (port 9090 default).
 
-You can configure the Data and Meta services independently. This allows you to expose the Data Server via a LoadBalancer while keeping the Meta Server internal, for example.
+You can configure the Data and Meta services independently. This allows you to expose the Data Server
+via a LoadBalancer while keeping the Meta Server internal, for example.
 
 ```yaml
 service:
@@ -36,11 +38,13 @@ service:
     port: 3001
 ```
 
-The metrics endpoint is exposed on the pod but does not have a dedicated Service by default. You can use standard Prometheus service discovery annotations on the Pod (enabled by default).
+The metrics endpoint is exposed on the pod but does not have a dedicated Service by default. You can
+use standard Prometheus service discovery annotations on the Pod (enabled by default).
 
 ### Ingress
 
-Ingress can also be configured separately for Data and Meta services. This is useful if you want to route traffic via different hostnames or paths.
+Ingress can also be configured separately for Data and Meta services. This is useful if you want to
+route traffic via different hostnames or paths.
 
 ```yaml
 ingress:
@@ -57,7 +61,8 @@ ingress:
 
 ### gRPC Tuning
 
-You can fine-tune gRPC performance settings for the internal Arrow Flight servers. This is critical for handling large datasets and high-throughput vector search.
+You can fine-tune gRPC performance settings for the internal Arrow Flight servers. This is critical
+for handling large datasets and high-throughput vector search.
 
 ```yaml
 grpc:

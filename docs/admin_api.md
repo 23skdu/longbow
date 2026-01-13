@@ -1,48 +1,76 @@
 # Admin API
 
-Longbow provides management capabilities via the **Meta Server** (`DoAction`).
+Longbow provides management capabilities via the **Meta Server** (`DoAction` and `ListFlights`).
 
 ## Operations
 
-Operations are performed by sending a `DoAction` request with a JSON body (if applicable).
+Operations are performed by sending a `DoAction` request with a JSON body.
 
-### `force_snapshot`
+### Namespace Management
 
-Triggers an immediate snapshot of all in-memory data to the configured persistence backend (Local or S3).
+#### `CreateNamespace`
 
-- **Type**: `force_snapshot`
+Creates a new namespace for vector data.
+
+- **Type**: `CreateNamespace`
+- **Body**: `{"name": "my_namespace"}`
+- **Response**: `{"status": "created"}`
+
+#### `DeleteNamespace`
+
+Deletes an entire namespace and its associated datasets.
+
+- **Type**: `DeleteNamespace`
+- **Body**: `{"name": "my_namespace"}`
+- **Response**: `{"status": "deleted"}`
+
+#### `ListNamespaces`
+
+Returns a list of all active namespaces.
+
+- **Type**: `ListNamespaces`
 - **Body**: (empty)
-- **Response**: `{"status": "ok", "message": "snapshot created"}` or error.
+- **Response**: `{"namespaces": ["ns1", "ns2"], "count": 2}`
 
-### `drop_dataset`
+### Dataset Management
 
-Removes a dataset from memory. Does **not** delete snapshots from S3/Disk immediately 
-(snapshots are immutable, but future replays won't load it if the WAL drop entry is processed - *Note: Drop persistence depends on implementation specifics*).
+#### `delete-dataset`
 
-- **Type**: `drop_dataset`
-- **Body**: `[dataset_name]` (string)
-- **Response**: `{"status": "ok", "message": "dataset dropped"}`
+Removes a dataset from memory.
 
-### `get_stats`
+- **Type**: `delete-dataset`
+- **Body**: `{"dataset": "my_dataset"}`
+- **Response**: `"deleted"` (string)
 
-Retrieves internal server statistics.
+#### `delete-vector`
 
-- **Type**: `get_stats`
-- **Body**: (empty)
-- **Response**:
-  ```json
-  {
-    "datasets": 12,
-    "current_memory": 104857600,
-    "max_memory": 1073741824
-  }
-  ```
+Deletes a specific vector by its internal `VectorID`.
+
+- **Type**: `delete-vector`
+- **Body**: `{"dataset": "my_dataset", "vector_id": 123}`
+- **Response**: `"deleted"` (string)
+
+### Mesh & Cluster Status
+
+#### `MeshStatus`
+
+Retrieves the status of the gossip mesh and connected members.
+
+- **Type**: `MeshStatus`
+- **Response**: List of member objects including ID, Addr, and Status.
+
+#### `cluster-status`
+
+Retrieves cluster-level health and member identity.
+
+- **Type**: `cluster-status`
+- **Response**: JSON object containing `self` identity and `members` list.
 
 ## Backpressure Monitoring
 
-The Data Server (`DoPut`) monitors the WAL queue depth. If the queue exceeds 80% capacity:
+The Data Server (`DoPut`) monitors the Write-Ahead Log (WAL) queue depth. If the queue exceeds **80% capacity**, the server applies backpressure:
 
-1. Server logs a warning.
-2. `DoPut` response includes metadata: `{"status": "slow_down", "reason": "wal_pressure"}`.
+1. Server logs a `wal_pressure` warning.
+2. `DoPut` responses include metadata: `{"status": "slow_down", "reason": "wal_pressure"}`.
 
-Clients should monitor this metadata and implement exponential backoff.
+Clients (including the Python SDK) monitor this metadata and should implement backoff or throttling to avoid overloading the persistence layer.

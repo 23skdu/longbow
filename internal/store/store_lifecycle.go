@@ -146,7 +146,7 @@ func (s *VectorStore) StartIndexingWorkers(numWorkers int) {
 func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
 	minBatch := 128
 	maxBatch := 1000
-	currentBatch := minBatch
+	var currentBatch int
 
 	jobs := make([]IndexJob, 0, maxBatch)
 

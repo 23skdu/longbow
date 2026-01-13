@@ -1,7 +1,6 @@
 import pyarrow as pa
 import pandas as pd
 import numpy as np
-import dask.dataframe as dd
 from typing import Union, List, Dict, Any, Optional
 
 def _infer_schema(dim: int, with_meta: bool = False) -> pa.Schema:
@@ -16,14 +15,14 @@ def _infer_schema(dim: int, with_meta: bool = False) -> pa.Schema:
     return pa.schema(fields)
 
 def to_arrow_table(
-    data: Union[List[Dict[str, Any]], pd.DataFrame, dd.DataFrame, Dict[str, Any], pa.Table],
+    data: Union[List[Dict[str, Any]], pd.DataFrame, Dict[str, Any], pa.Table],
     dim: Optional[int] = None
 ) -> pa.Table:
     """
     Converts various input formats to a PyArrow Table suitable for Longbow ingestion.
     
     Args:
-        data: Input data (List of Dicts, Pandas DataFrame, Dask DataFrame).
+        data: Input data (List of Dicts, Pandas DataFrame).
         dim: Vector dimension (optional if can be inferred).
         
     Returns:
@@ -33,22 +32,6 @@ def to_arrow_table(
     # 0. Handle Arrow Table (Pass-through)
     if isinstance(data, pa.Table):
         return data
-
-    # 1. Handle Dask DataFrame
-    if isinstance(data, dd.DataFrame):
-        # Materialize to Pandas for now as flight requires a Table.
-        # Ideally we stream partitions, but that requires logic in Client.insert
-        # to iterate partitions. For this helper, we assume small-ish partitions
-        # or the client handles partitioning.
-        # Let's verify if client handles it.
-        # Actually, let's materialize here for v0.1 simplification unless it's HUGE.
-        # User should partition manually if calling this lower level function.
-        # BUT `LongbowClient` will use this.
-        # Better strategy: return Pandas DF if input is Dask, let Client loop.
-        # For this function, let's assume it receives a materialized chunk (Pandas)
-        # or a raw list.
-        # If Dask is passed here, we compute().
-        return to_arrow_table(data.compute(), dim)
 
     # 2. Handle List of Dicts
     if isinstance(data, list):

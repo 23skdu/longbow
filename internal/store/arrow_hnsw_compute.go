@@ -2,6 +2,7 @@ package store
 
 import (
 	"math"
+	"unsafe"
 
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/pq"
@@ -186,6 +187,7 @@ func (c *complex128Computer) Prefetch(id uint32) {
 // sq8Computer handles SQ8 quantized vectors.
 type sq8Computer struct {
 	data      *GraphData
+	disk      *DiskGraph // Optional fallback
 	querySQ8  []byte
 	quantizer *ScalarQuantizer
 	dims      int
@@ -209,6 +211,13 @@ func (c *sq8Computer) ComputeSingle(id uint32) float32 {
 			return float32(simd.EuclideanDistanceSQ8(c.querySQ8, v)) * c.scale
 		}
 	}
+	// Fallback to Disk
+	if c.disk != nil && int(id) < c.disk.Size() {
+		v := c.disk.GetVectorSQ8(id)
+		if v != nil && len(v) == c.dims {
+			return float32(simd.EuclideanDistanceSQ8(c.querySQ8, v)) * c.scale
+		}
+	}
 	return math.MaxFloat32
 }
 
@@ -219,7 +228,7 @@ func (c *sq8Computer) Prefetch(id uint32) {
 		sq8Stride := (c.dims + 63) & ^63
 		start := int(chunkOffset(id)) * sq8Stride
 		if start < len(chunk) {
-			// simd.Prefetch not available
+			simd.Prefetch(unsafe.Pointer(&chunk[start]))
 		}
 	}
 }
@@ -227,6 +236,7 @@ func (c *sq8Computer) Prefetch(id uint32) {
 // pqComputer handles Product Quantization (ADC).
 type pqComputer struct {
 	data         *GraphData
+	disk         *DiskGraph // Optional fallback
 	adcTable     []float32
 	pqEncoder    *pq.PQEncoder
 	scratchCodes []byte
@@ -243,6 +253,10 @@ func (c *pqComputer) Compute(ids []uint32, dists []float32) {
 
 	for i, id := range ids {
 		v := c.data.GetVectorPQ(id)
+		if v == nil && c.disk != nil && int(id) < c.disk.Size() {
+			v = c.disk.GetVectorPQ(id)
+		}
+
 		if v != nil {
 			copy(codes[i*c.pqM:(i+1)*c.pqM], v)
 		} else {
@@ -257,6 +271,9 @@ func (c *pqComputer) Compute(ids []uint32, dists []float32) {
 
 func (c *pqComputer) ComputeSingle(id uint32) float32 {
 	v := c.data.GetVectorPQ(id)
+	if v == nil && c.disk != nil && int(id) < c.disk.Size() {
+		v = c.disk.GetVectorPQ(id)
+	}
 	if v != nil {
 		d, _ := c.pqEncoder.ADCDistance(c.adcTable, v)
 		return d
@@ -271,73 +288,19 @@ func (c *pqComputer) Prefetch(id uint32) {
 		pqM := c.pqM
 		start := int(chunkOffset(id)) * pqM
 		if start < len(chunk) {
-			// prefetch
+			simd.Prefetch(unsafe.Pointer(&chunk[start]))
 		}
 	}
 }
 
 // resolveHNSWComputer selects the appropriate computer and encodes the query if necessary.
 func (h *ArrowHNSW) resolveHNSWComputer(data *GraphData, ctx *ArrowSearchContext, q []float32) HNSWDistanceComputer {
-	dims := len(q) // Use query dims, assume matches data dims (or verified earlier)
+	dims := len(q)
+	disk := h.diskGraph.Load() // Load disk backend
 
-	// 1. Float16
-	if h.config.Float16Enabled {
-		metrics.HNSWPolymorphicSearchCount.WithLabelValues("float16").Inc()
-		// Encode if needed (always encode because ctx is reused)
-		if cap(ctx.queryF16) < dims {
-			ctx.queryF16 = make([]float16.Num, dims)
-		}
-		ctx.queryF16 = ctx.queryF16[:dims]
-		for i, v := range q {
-			ctx.queryF16[i] = float16.New(v)
-		}
-		return &float16Computer{
-			data:       data,
-			q:          ctx.queryF16,
-			dims:       data.Dims,
-			paddedDims: data.GetPaddedDims(),
-		}
-	}
-
-	// 2. Complex Numbers
-	if data.Type == VectorTypeComplex64 {
-		metrics.HNSWPolymorphicSearchCount.WithLabelValues("complex64").Inc()
-		if cap(ctx.queryC64) < dims/2 {
-			ctx.queryC64 = make([]complex64, dims/2)
-		}
-		ctx.queryC64 = ctx.queryC64[:dims/2]
-		for i := 0; i < dims/2; i++ {
-			ctx.queryC64[i] = complex(q[2*i], q[2*i+1])
-		}
-		return &complex64Computer{
-			data:       data,
-			q:          ctx.queryC64,
-			dims:       data.Dims,
-			paddedDims: data.GetPaddedDims(),
-		}
-	}
-	if data.Type == VectorTypeComplex128 {
-		metrics.HNSWPolymorphicSearchCount.WithLabelValues("complex128").Inc()
-		if cap(ctx.queryC128) < dims/2 {
-			ctx.queryC128 = make([]complex128, dims/2)
-		}
-		ctx.queryC128 = ctx.queryC128[:dims/2]
-		for i := 0; i < dims/2; i++ {
-			ctx.queryC128[i] = complex(float64(q[2*i]), float64(q[2*i+1]))
-		}
-		return &complex128Computer{
-			data:       data,
-			q:          ctx.queryC128,
-			dims:       data.Dims,
-			paddedDims: data.GetPaddedDims(),
-		}
-	}
+	// ...
 
 	// 3. PQ
-	// Check adcTable presence or build it?
-	// Search previously built adcTable before calling searchLayer.
-	// But insert path doesn't!
-	// So we should build ADC table here if needed.
 	if h.config.PQEnabled && h.pqEncoder != nil {
 		// Prepare ADC table
 		table, err := h.pqEncoder.BuildADCTable(q)
@@ -346,13 +309,13 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *GraphData, ctx *ArrowSearchContext
 			ctx.adcTable = table
 			return &pqComputer{
 				data:         data,
+				disk:         disk,
 				adcTable:     ctx.adcTable,
 				pqEncoder:    h.pqEncoder,
 				scratchCodes: ctx.scratchPQCodes,
 				pqM:          data.PQDims, // Use data.PQDims (loaded from graph)
 			}
 		}
-		// If error (e.g. not trained), fall back to float32
 	}
 
 	// 4. SQ8
@@ -366,6 +329,7 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *GraphData, ctx *ArrowSearchContext
 
 		return &sq8Computer{
 			data:      data,
+			disk:      disk,
 			querySQ8:  ctx.querySQ8,
 			quantizer: h.quantizer,
 			dims:      data.Dims,

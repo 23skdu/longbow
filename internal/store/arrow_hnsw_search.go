@@ -250,53 +250,96 @@ func (h *ArrowHNSW) searchLayer(computer HNSWDistanceComputer, entryPoint uint32
 			}
 		}
 
-		// Fallback: Legacy Chunked Storage (Seqlock protected)
+		// Fallback: Legacy Chunked Storage (Seqlock protected) or DiskGraph
 		if !collected {
-			for {
-				ctx.scratchIDs = ctx.scratchIDs[:0]
-				versionsChunk := data.GetVersionsChunk(layer, chunkID(curr.ID))
-				if versionsChunk == nil {
-					break
-				}
-				verAddr := &versionsChunk[chunkOffset(curr.ID)]
-				ver := atomic.LoadUint32(verAddr)
-				if ver%2 != 0 {
-					runtime.Gosched()
-					continue
-				}
+			// Hybrid Strategy: Check Mutable GraphData first, then DiskGraph
+			usedDisk := false
 
-				countsChunk := data.GetCountsChunk(layer, chunkID(curr.ID))
-				neighborsChunk := data.GetNeighborsChunk(layer, chunkID(curr.ID))
-				if countsChunk == nil || neighborsChunk == nil {
-					break
-				}
-				count := int(atomic.LoadInt32(&countsChunk[chunkOffset(curr.ID)]))
-				if count > MaxNeighbors {
-					count = MaxNeighbors
-				}
-				baseIdx := int(chunkOffset(curr.ID)) * MaxNeighbors
+			// 1. Check Mutable GraphData
+			// We optimize by checking if chunk exists AND has neighbors
+			var neighborsChunk []uint32
+			var count int
+			var verAddr *uint32
+			var ver uint32
 
-				// Collect neighbors into a temporary local buffer to avoid contaminating visited set
-				var localNeighbors [MaxNeighbors]uint32
-				for i := 0; i < count; i++ {
-					localNeighbors[i] = atomic.LoadUint32(&neighborsChunk[baseIdx+i])
-				}
+			cID := chunkID(curr.ID)
+			cOff := chunkOffset(curr.ID)
+			versionsChunk := data.GetVersionsChunk(layer, cID)
 
-				if atomic.LoadUint32(verAddr) == ver {
-					// Consistency check passed, now we can safely Visit and append
-					for i := 0; i < count; i++ {
-						nid := localNeighbors[i]
-						if !ctx.visited.IsSet(nid) {
-							ctx.Visit(nid)
-							ctx.scratchIDs = append(ctx.scratchIDs, nid)
-							ctx.scratchIDs = append(ctx.scratchIDs, nid)
-							computer.Prefetch(nid)
-						}
+			if versionsChunk != nil {
+				countsChunk := data.GetCountsChunk(layer, cID)
+				neighborsChunk = data.GetNeighborsChunk(layer, cID)
+
+				if countsChunk != nil && neighborsChunk != nil {
+					// Check count to see if populated
+					count = int(atomic.LoadInt32(&countsChunk[cOff]))
+					if count > 0 {
+						// Mutable version exists
+						verAddr = &versionsChunk[cOff]
 					}
-					collected = true
-					break
 				}
-				runtime.Gosched()
+			}
+
+			// 2. If not in Mutable, Check DiskGraph
+			if count == 0 {
+				disk := h.diskGraph.Load()
+				if disk != nil && int(curr.ID) < disk.Size() {
+					// Retrieve from Disk
+					// reuse scratchNeighbors from context to avoid allocation
+					// We need to cast or copy? GetNeighbors returns []uint32
+					// DiskGraph.GetNeighbors takes buffer
+					diskNeighbors := disk.GetNeighbors(layer, curr.ID, ctx.scratchNeighbors[:0])
+					if len(diskNeighbors) > 0 {
+						for _, nid := range diskNeighbors {
+							if !ctx.visited.IsSet(nid) {
+								ctx.Visit(nid)
+								ctx.scratchIDs = append(ctx.scratchIDs, nid)
+								computer.Prefetch(nid)
+							}
+						}
+						collected = true
+						usedDisk = true
+					}
+				}
+			}
+
+			// 3. Process Mutable Neighbors (if found and not using disk)
+			if !usedDisk && count > 0 {
+				// Retry loop for seqlock
+				for {
+					ver = atomic.LoadUint32(verAddr)
+					if ver%2 != 0 {
+						runtime.Gosched()
+						continue
+					}
+
+					if count > MaxNeighbors {
+						count = MaxNeighbors
+					}
+					baseIdx := int(cOff) * MaxNeighbors
+
+					// Collect neighbors into a temporary local buffer
+					var localNeighbors [MaxNeighbors]uint32
+					for i := 0; i < count; i++ {
+						localNeighbors[i] = atomic.LoadUint32(&neighborsChunk[baseIdx+i])
+					}
+
+					if atomic.LoadUint32(verAddr) == ver {
+						for i := 0; i < count; i++ {
+							nid := localNeighbors[i]
+							if !ctx.visited.IsSet(nid) {
+								ctx.Visit(nid)
+								ctx.scratchIDs = append(ctx.scratchIDs, nid)
+								computer.Prefetch(nid)
+							}
+						}
+						collected = true
+						break
+					}
+					// If failed, reload count/chunk? Usually stable within Search call scope.
+					// Just retry verify.
+					runtime.Gosched()
+				}
 			}
 		}
 
@@ -481,6 +524,27 @@ func (h *ArrowHNSW) mustGetVectorFromData(data *GraphData, id uint32) []float32 
 			vec, err := h.pqEncoder.Decode(pqChunk[off : off+pqM])
 			if err == nil {
 				return vec
+			}
+		}
+	}
+
+	// 5. DiskGraph Fallback
+	if disk := h.diskGraph.Load(); disk != nil && int(id) < disk.Size() {
+		// Try SQ8 from Disk
+		if h.config.SQ8Enabled && h.quantizer != nil {
+			if vecBytes := disk.GetVectorSQ8(id); vecBytes != nil {
+				if len(vecBytes) == dims {
+					return h.quantizer.Decode(vecBytes)
+				}
+			}
+		}
+
+		// Try PQ from Disk
+		if h.config.PQEnabled && h.pqEncoder != nil {
+			if vecBytes := disk.GetVectorPQ(id); vecBytes != nil {
+				if vec, err := h.pqEncoder.Decode(vecBytes); err == nil {
+					return vec
+				}
 			}
 		}
 	}

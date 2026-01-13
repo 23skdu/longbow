@@ -64,7 +64,7 @@ func FuzzArrow_Extraction(f *testing.F) {
 		defer arr.Release()
 
 		schema := arrow.NewSchema([]arrow.Field{{Name: "vector", Type: arr.DataType()}}, nil)
-		rec := array.NewRecord(schema, []arrow.Array{arr}, 1)
+		rec := array.NewRecordBatch(schema, []arrow.Array{arr}, 1)
 		defer rec.Release()
 
 		// Test extraction

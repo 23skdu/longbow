@@ -41,7 +41,7 @@ func (ta *TypedArena[T]) Get(ref SliceRef) []T {
 	var zero T
 	elemSize := uint32(unsafe.Sizeof(zero))
 	byteSlice := ta.arena.Get(ref.Offset, ref.Len*elemSize)
-	if byteSlice == nil || len(byteSlice) == 0 {
+	if len(byteSlice) == 0 {
 		return nil
 	}
 

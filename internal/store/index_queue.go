@@ -193,12 +193,11 @@ func (q *IndexJobQueue) drainBatch() {
 		q.overflowMu.Lock()
 		q.overflow = append(remaining, q.overflow...)
 		q.overflowMu.Unlock()
-	} else {
-		// All overflowed jobs were moved to main or dropped (wait, drainBatch doesn't drop)
-		// Wait, if we moved to main, estimatedBytes doesn't change (still in system)
-		// If we dropped, we should decrease. But drainBatch logic here moves chunks.
-		// No dropping here.
 	}
+	// All overflowed jobs were moved to main or dropped (wait, drainBatch doesn't drop)
+	// Wait, if we moved to main, estimatedBytes doesn't change (still in system)
+	// If we dropped, we should decrease. But drainBatch logic here moves chunks.
+	// No dropping here.
 }
 
 // drainRemaining drains overflow jobs with timeout to prevent deadlock.

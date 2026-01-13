@@ -205,5 +205,9 @@ func (h *ArrowHNSW) RepairTombstones(ctx context.Context, batchSize int) int {
 }
 
 func getVec(h *ArrowHNSW, data *GraphData, id uint32) []float32 {
-	return h.mustGetVectorFromData(data, id)
+	v := h.mustGetVectorFromData(data, id)
+	if vf32, ok := v.([]float32); ok {
+		return vf32
+	}
+	return nil
 }

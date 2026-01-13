@@ -75,16 +75,10 @@ func (h *ArrowHNSW) promoteNode(data *GraphData, id uint32) *GraphData {
 
 	// Check if already promoted (chunk exists and count > 0)
 	// We check L0 as indicator.
-	if data.GetNeighborsChunk(0, cID) != nil {
-		// Potentially already promoted.
-		// Optimized check: If we trust that existence implies promotion.
-		// But in hybrid mode, ensureChunk might allocate empty chunk.
-		// We need to know if we *copied* data from disk.
-		// We can check a bitset or special flag.
-		// For now, we check if count is 0 (empty).
-		// If 0, it might be truly empty (new node) or not promoted (disk node).
-		// If disk has neighbors, we must copy.
-	}
+	// Check if already promoted (chunk exists and count > 0)
+	// We check L0 as indicator.
+	// Optimally we would check here, but for now we fall through to ensure safety.
+	// TODO: Implement optimized check if data.GetNeighborsChunk(0, cID) != nil
 
 	dg := h.diskGraph.Load()
 	if dg == nil {

@@ -83,27 +83,27 @@ func DefaultArrowHNSWConfig() ArrowHNSWConfig {
 }
 
 type ArrowSearchContext struct {
-	visited              *ArrowBitset
-	candidates           *FixedHeap
-	resultSet            *MaxHeap
-	results              []SearchResult // Added for compatibility
-	scratchIDs           []uint32
-	scratchDists         []float32
-	scratchNeighbors     []uint32
-	scratchResults       []Candidate
-	scratchSelected      []Candidate
-	scratchRemaining     []Candidate
-	scratchSelectedVecs  [][]float32
-	scratchRemainingVecs [][]float32
-	scratchDiscarded     []Candidate
-	scratchVecs          [][]float32
-	scratchVecsSQ8       [][]byte
+	visited          *ArrowBitset
+	candidates       *FixedHeap
+	resultSet        *MaxHeap
+	results          []SearchResult // Added for compatibility
+	scratchIDs       []uint32
+	scratchDists     []float32
+	scratchNeighbors []uint32
+	scratchResults   []Candidate
+	scratchSelected  []Candidate
+	scratchRemaining []Candidate
+	// scratchSelectedVecs  [][]float32 // Replaced by selectedBatch
+	// scratchRemainingVecs [][]float32 // Replaced by remainingBatch
+	selectedBatch    VectorBatch
+	remainingBatch   VectorBatch
+	scratchDiscarded []Candidate
+	scratchVecs      [][]float32
+	scratchVecsSQ8   [][]byte
 
 	querySQ8       []byte
 	queryBQ        []uint64
 	queryF16       []float16.Num
-	queryC64       []complex64
-	queryC128      []complex128
 	adcTable       []float32
 	scratchPQCodes []byte
 	pruneDepth     int
@@ -156,8 +156,16 @@ func (c *ArrowSearchContext) Reset() {
 	c.scratchSelected = c.scratchSelected[:0]
 	c.scratchRemaining = c.scratchRemaining[:0]
 	// 2D slices: Reset length to 0. NOTE: Inner slices are not reclaimed, but we overwrite them anyway
-	c.scratchSelectedVecs = c.scratchSelectedVecs[:0]
-	c.scratchRemainingVecs = c.scratchRemainingVecs[:0]
+	c.scratchRemaining = c.scratchRemaining[:0]
+
+	// Reset batches if they exist
+	if c.selectedBatch != nil {
+		c.selectedBatch.Reset()
+	}
+	if c.remainingBatch != nil {
+		c.remainingBatch.Reset()
+	}
+
 	c.scratchDiscarded = c.scratchDiscarded[:0]
 	c.scratchVecs = c.scratchVecs[:0]
 	c.scratchVecsSQ8 = c.scratchVecsSQ8[:0]
@@ -1312,28 +1320,8 @@ func (h *ArrowHNSW) ensureChunk(data *GraphData, cID, _ uint32, dims int) *Graph
 		}
 
 		if err == nil && ref.Offset != 0 {
-			if atomic.CompareAndSwapUint64(&data.Vectors[cID], 0, ref.Offset) {
-				// Copy-On-Write for Float32 (Primary)
-				// Note: DiskGraph GetVector (generic)? DiskGraph mostly supports SQ8/PQ/Compressed.
-				// Phase 6 DiskVectorStore supports raw vectors?
-				// DiskGraph Mmap stores raw vectors if not quantized?
-				// Currently DiskGraph (Phase 3 spec) focused on compressed.
-				// But TestArrowHNSW_MmapPersistence implies raw vectors persisted?
-				// Let's check if BackingGraph gives raw vectors.
-				// If BackingGraph.GetVector(id) returns []float32?
-				// DiskGraph usually assumes specialized read.
-				// If we can't get raw vectors from Mmap, we can't CoW them!
-				// BUT the test expects them.
-				// Assuming DiskGraph stores everything.
-				// For now, I will omit Float32 CoW if I can't easily implement it without BackingGraph support.
-				// AND FIX THE TEST to use SQ8 or acknowledge limitation.
-				// BUT `TestArrowHNSW_MmapPersistence` (No SQ8) FAILED.
-				// This implies we DO need it.
-
-				// Wait, if BackingGraph has GetVector(id) []float32?
-				// I'll check DiskGraph API later.
-				// For now cleaning up SQ8 debugs.
-			}
+			// Try to set the vector offset. If we fail, it means someone else already set it.
+			atomic.CompareAndSwapUint64(&data.Vectors[cID], 0, ref.Offset)
 			metrics.HNSWArenaAllocationBytes.WithLabelValues(data.Type.String()).Add(float64(count * data.Type.ElementSize()))
 		}
 	}
@@ -1447,9 +1435,6 @@ func (p *ArrowSearchContextPool) Put(ctx *ArrowSearchContext) {
 	// Clear scratch slices to avoid hanging onto memory
 	for i := range ctx.scratchVecs {
 		ctx.scratchVecs[i] = nil
-	}
-	for i := range ctx.scratchRemainingVecs {
-		ctx.scratchRemainingVecs[i] = nil
 	}
 	ctx.querySQ8 = nil
 	ctx.queryBQ = nil

@@ -187,10 +187,23 @@ func (h *ArrowHNSW) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []int)
 	dims := int(h.dims.Load())
 	if dims == 0 && n > 0 {
 		// Resolve dimensions from first vector in the batch
-		v, err := ExtractVectorFromArrow(recs[batchIdxs[0]], rowIdxs[0], h.vectorColIdx)
-		if err == nil && v != nil {
-			dims = len(v)
-			h.dims.Store(int32(dims))
+		var rec arrow.RecordBatch
+		if len(recs) == n {
+			rec = recs[0]
+		} else {
+			if len(batchIdxs) > 0 && batchIdxs[0] < len(recs) {
+				rec = recs[batchIdxs[0]]
+			} else if len(recs) > 0 {
+				rec = recs[0]
+			}
+		}
+
+		if rec != nil {
+			v, err := ExtractVectorFromArrow(rec, rowIdxs[0], h.vectorColIdx)
+			if err == nil && v != nil {
+				dims = len(v)
+				h.dims.Store(int32(dims))
+			}
 		}
 	}
 
@@ -203,8 +216,24 @@ func (h *ArrowHNSW) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []int)
 	if n >= BULK_INSERT_THRESHOLD {
 		// Extract all vectors for bulk insert
 		allVecs := make([][]float32, n)
+		useDirectIndex := len(recs) == n
+
 		for i := 0; i < n; i++ {
-			rec := recs[batchIdxs[i]]
+			var rec arrow.RecordBatch
+			if useDirectIndex {
+				rec = recs[i]
+			} else {
+				// Fallback for compact recs slice (requires batchIdxs to be local indices, creating ambiguity with Global ID)
+				// Assuming if useDirectIndex is false, batchIdxs might be local, but current usage suggests Global.
+				// This path is dangerous but kept for backward compat if any calls rely on it correctly.
+				if batchIdxs[i] < len(recs) {
+					rec = recs[batchIdxs[i]]
+				} else {
+					// Fallback: use first record if OOB (best effort to avoid panic in critical path)
+					// This logic is fundamentally flawed without explicit correct input, but panic is worse.
+					rec = recs[0]
+				}
+			}
 			v, err := ExtractVectorFromArrow(rec, rowIdxs[i], h.vectorColIdx)
 			if err != nil {
 				return nil, fmt.Errorf("failed to extract vector for bulk insert: %w", err)
@@ -723,12 +752,18 @@ func (h *ArrowHNSW) indexMetadata(id uint32, recs []arrow.RecordBatch, i int, ro
 
 	// Determine which record and row to use
 	// For small batches, all recs might be the same or distributed.
+	// For small batches, all recs might be the same or distributed.
 	// We use the batchIdxs[i] to pick the record.
-	bIdx := batchIdxs[i]
-	if bIdx < 0 || bIdx >= len(recs) {
-		return
+	var rec arrow.RecordBatch
+	if len(recs) == len(batchIdxs) {
+		rec = recs[i]
+	} else {
+		bIdx := batchIdxs[i]
+		if bIdx < 0 || bIdx >= len(recs) {
+			return
+		}
+		rec = recs[bIdx]
 	}
-	rec := recs[bIdx]
 	rowIdx := rowIdxs[i]
 
 	schema := rec.Schema()

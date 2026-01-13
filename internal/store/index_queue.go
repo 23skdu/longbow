@@ -60,6 +60,9 @@ type IndexJobQueue struct {
 	stopped  int32
 	stopOnce sync.Once
 	wg       sync.WaitGroup
+
+	// Memory Pressure
+	estimatedBytes int64 // Atomic
 }
 
 // NewIndexJobQueue creates a new non-blocking index job queue.
@@ -85,16 +88,27 @@ func (q *IndexJobQueue) Send(job IndexJob) bool {
 		return false
 	}
 
+	size := int64(0)
+	if job.Record != nil {
+		// Approximate size: rows * cols * 8 (assuming 64-bit types/pointers mixed)
+		size = int64(job.Record.NumRows() * int64(job.Record.NumCols()) * 8)
+	}
+
 	atomic.AddUint64(&q.totalSent, 1)
 
 	// Try non-blocking send to main channel
 	select {
 	case q.mainChan <- job:
 		atomic.AddUint64(&q.directSent, 1)
+		atomic.AddInt64(&q.estimatedBytes, size)
 		return true
 	default:
 		// Main channel full, try overflow buffer
-		return q.sendToOverflow(job)
+		if q.sendToOverflow(job) {
+			atomic.AddInt64(&q.estimatedBytes, size)
+			return true
+		}
+		return false
 	}
 }
 
@@ -179,6 +193,11 @@ func (q *IndexJobQueue) drainBatch() {
 		q.overflowMu.Lock()
 		q.overflow = append(remaining, q.overflow...)
 		q.overflowMu.Unlock()
+	} else {
+		// All overflowed jobs were moved to main or dropped (wait, drainBatch doesn't drop)
+		// Wait, if we moved to main, estimatedBytes doesn't change (still in system)
+		// If we dropped, we should decrease. But drainBatch logic here moves chunks.
+		// No dropping here.
 	}
 }
 
@@ -239,4 +258,14 @@ func (q *IndexJobQueue) Len() int {
 	overflowLen := len(q.overflow)
 	q.overflowMu.Unlock()
 	return len(q.mainChan) + overflowLen
+}
+
+// EstimatedBytes returns approximate memory usage of queued jobs in bytes.
+func (q *IndexJobQueue) EstimatedBytes() int64 {
+	return atomic.LoadInt64(&q.estimatedBytes)
+}
+
+// DecreaseEstimatedBytes decreases the estimated bytes (called by consumer).
+func (q *IndexJobQueue) DecreaseEstimatedBytes(amount int64) {
+	atomic.AddInt64(&q.estimatedBytes, -amount)
 }

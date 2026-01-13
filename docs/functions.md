@@ -1,6 +1,7 @@
 # Longbow Arrow Flight API Functions
 
-This document details the Arrow Flight operations supported by Longbow's **Data** and **Meta** servers, including `DoPut`, `DoGet`, `DoExchange`, and specific `DoAction` commands.
+This document details the Arrow Flight operations supported by Longbow's **Data** and **Meta**
+servers, including `DoPut`, `DoGet`, `DoExchange`, and specific `DoAction` commands.
 
 It also maps these functions to the `scripts/ops_test.py` CLI tool, which serves as the primary functional testing utility.
 
@@ -111,7 +112,8 @@ Executes specific control commands.
 | `CreateNamespace` | Create a new namespace. | `python3 scripts/ops_test.py namespaces` |
 | `DeleteNamespace` | Delete a namespace. | `python3 scripts/ops_test.py namespaces` |
 | `ListNamespaces` | List all namespaces. | `python3 scripts/ops_test.py namespaces` |
-| `GetTotalNamespaceCount` | Count total namespaces. | `python3 scripts/ops_test.py namespaces` |
+| `GetTotalNamespaceCount`| Count total namespaces. | `python3 scripts/ops_test.py namespaces` |
+| `GetNamespaceDatasetCount`| Count datasets in a namespace. | `python3 scripts/ops_test.py namespaces` |
 
 #### GraphRAG (Knowledge Graph)
 
@@ -125,7 +127,8 @@ Executes specific control commands.
 
 | Action Type | Description | CLI Command |
 | :--- | :--- | :--- |
-| `force_snapshot` | Force database snapshot to disk. | `python3 scripts/ops_test.py snapshot` |
+| `ForceSnapshot` | Force database snapshot to disk (Reserved/Planned). | `python3 scripts/ops_test.py snapshot` |
+| `VectorSearch` | Unary vector search (alternative to DoGet). | (Internal) |
 
 ---
 

@@ -188,7 +188,7 @@ go test -tags=gpu -bench=. ./internal/gpu/...
 
 ### GPU Initialization Failed
 
-```
+```text
 WARN  GPU initialization failed, using CPU-only  error="failed to initialize GPU resources"
 ```
 
@@ -203,7 +203,7 @@ WARN  GPU initialization failed, using CPU-only  error="failed to initialize GPU
 
 ### Build Errors
 
-```
+```text
 undefined: gpu.NewIndexWithConfig
 ```
 
@@ -213,7 +213,7 @@ undefined: gpu.NewIndexWithConfig
 
 ### CUDA Version Mismatch
 
-```
+```text
 version `CUDA_X.Y' not found
 ```
 
@@ -227,13 +227,13 @@ version `CUDA_X.Y' not found
 
 GPU status is logged during startup:
 
-```
+```text
 INFO  GPU acceleration enabled  device=0 dimensions=128
 ```
 
 Or if GPU fails:
 
-```
+```text
 WARN  GPU initialization failed, using CPU-only  error="..."
 ```
 
@@ -270,7 +270,6 @@ err := hnswIndex.CloseGPU()
 
 ## Future Enhancements
 
-- [ ] Apple Silicon Metal support via MLX or MPS
 - [ ] GPU memory management and limits
 - [ ] Multi-GPU support for large indexes
 - [ ] GPU-accelerated index building

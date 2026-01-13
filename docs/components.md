@@ -28,9 +28,9 @@ Handles metadata and control plane operations:
 
 ## 2. In-Memory Vector Store
 
-### Arena Allocation (SlabAllocator)
+### Arena Allocation (SlabArena)
 
-Vectors are stored in off-heap "slabs" (1MB chunks) using `memory.SlabAllocator`:
+Vectors are stored in off-heap "slabs" (1MB chunks) using `memory.SlabArena`:
 
 - **Zero-GC Overhead**: Vectors are not scanned by Go's GC.
 - **Slab Allocation**: Sequential allocation reduces fragmentation.
@@ -41,17 +41,17 @@ Vectors are stored in off-heap "slabs" (1MB chunks) using `memory.SlabAllocator`
 Longbow employs a dynamic `AutoShardingIndex` that manages the transition from simple to sharded structures:
 
 1. **HNSWIndex**: Used for small datasets (<10k vectors) for minimal overhead.
-2. **Auto-Migration**: Automatically triggers strict migration to `ShardedHNSW` when thresholds are met.
+2. **Auto-Migration**: Automatically triggers migration to `ShardedHNSW` when thresholds are met.
 3. **Interim Sharding**: During migration, new writes are routed to a temporary `interimIndex` to prevent double-indexing and stalls.
-4. **ShardedHNSW**: A lock-striped, parallel implementation of HNSW (1-32 shards) that scales linearly with CPU cores for high-throughput insertion.
+4. **ShardedHNSW**: A lock-striped, parallel implementation of HNSW that scales with CPU cores (NumCPU shards) for high-throughput insertion.
 
 ### Zero-Copy Design
 
 The HNSW graph stores only vector IDs, not data:
 
 1. **ID Mapping**: `Location` struct maps VectorID → BatchIndex + RowIndex
-2. **Direct Access**: Float32 slices accessed from Arena or Arrow buffers
-3. **Memory Efficiency**: ~50% RAM reduction vs standard HNSW
+2. **Polymorphic Access**: Supports Float32, FP16, SQ8, PQ, BQ, and Int8 from SlabArena or Arrow buffers.
+3. **Memory Efficiency**: ~50% RAM reduction vs standard HNSW.
 4. **Product Quantization (PQ)**: Optional 64x compression for large-scale deployments.
 
 ### Leveled Compaction
@@ -82,11 +82,10 @@ Vector distance calculations use CPU-specific SIMD instructions:
 
 | Architecture | Instructions | Functions |
 | :----------- | :----------- | :--------------------------------------- |
-| AMD64        | AVX2         | euclideanAVX2, cosineAVX2, dotProductAVX2 |
-| AMD64        | AVX-512      | euclideanAVX512, cosineAVX512, dotAVX512 |
-| ARM64        | NEON         | euclideanNEON, cosineNEON, dotProductNEON |
+| AMD64        | AVX2/AVX-512 | euclidean, cosine, dotProduct, and **blocked** kernels for >1024 dims. |
+| ARM64        | NEON         | euclidean, cosine, dotProduct. |
 
-Runtime detection via `CPUFeatures` struct selects optimal implementation.
+Runtime detection via `CPUFeatures` struct or dynamic dispatch selects the optimal implementation.
 
 ## 5. Write-Ahead Log (WAL)
 

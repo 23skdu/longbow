@@ -95,7 +95,11 @@ func (h *ArrowHNSW) TrainPQ(vectors [][]float32) error {
 				if v == nil {
 					continue
 				}
-				code, err := encoder.Encode(v)
+				vf32, ok := v.([]float32)
+				if !ok {
+					continue
+				}
+				code, err := encoder.Encode(vf32)
 				if err != nil {
 					continue
 				}
@@ -567,10 +571,8 @@ func (h *ArrowHNSW) selectNeighbors(ctx *ArrowSearchContext, candidates []Candid
 
 	// RobustPrune heuristic: select diverse neighbors
 	// Use scratch in context or allocate (fallback)
-	var selected []Candidate     //nolint:prealloc // conditional allocation
-	var selectedVecs [][]float32 //nolint:prealloc // conditional allocation
+	var selected []Candidate //nolint:prealloc // conditional allocation
 	var remaining []Candidate
-	var remainingVecs [][]float32
 
 	if ctx != nil {
 		if cap(ctx.scratchSelected) < m {
@@ -578,32 +580,59 @@ func (h *ArrowHNSW) selectNeighbors(ctx *ArrowSearchContext, candidates []Candid
 		}
 		selected = ctx.scratchSelected[:0]
 
-		if cap(ctx.scratchSelectedVecs) < m {
-			ctx.scratchSelectedVecs = make([][]float32, 0, m*2)
-		}
-		selectedVecs = ctx.scratchSelectedVecs[:0]
-
 		if cap(ctx.scratchRemaining) < len(candidates) {
 			ctx.scratchRemaining = make([]Candidate, len(candidates)*2)
 		}
 		remaining = ctx.scratchRemaining[:len(candidates)]
 
-		if cap(ctx.scratchRemainingVecs) < len(candidates) {
-			ctx.scratchRemainingVecs = make([][]float32, len(candidates)*2)
+		// Initialize/Reset Request Batches
+		if ctx.selectedBatch == nil {
+			ctx.selectedBatch = h.newVectorBatch(data)
+		} else {
+			ctx.selectedBatch.Reset()
 		}
-		remainingVecs = ctx.scratchRemainingVecs[:len(candidates)]
+		if ctx.remainingBatch == nil {
+			ctx.remainingBatch = h.newVectorBatch(data)
+		} else {
+			ctx.remainingBatch.Reset()
+		}
+
+		// Map variables to batches for clarity (optional, or just use ctx.X)
 	} else {
 		// Fallback for tests/cases without context
 		selected = make([]Candidate, 0, m)
 		remaining = make([]Candidate, len(candidates))
-		selectedVecs = make([][]float32, 0, m)
-		remainingVecs = make([][]float32, len(candidates))
+		// We need transient batches here too.
+		// Since we don't have context, we creating new batches implies allocation.
+		// This path is for tests mostly.
+		ctx = &ArrowSearchContext{
+			selectedBatch:  h.newVectorBatch(data),
+			remainingBatch: h.newVectorBatch(data),
+		}
 	}
 	copy(remaining, candidates)
 
 	// Pre-fetch vectors once
 	for i := range candidates {
-		remainingVecs[i] = h.mustGetVectorFromData(data, candidates[i].ID)
+		// Add returns bool, but here we just want to ensure it's added.
+		// If fetch fails, we might just have nil inside the batch (handled by implementation)
+		// but VectorBatch interface `Add` returns false on failure.
+		// How to handle partial failure in batch?
+		// float32VectorBatch.Add appends. If it fails (nil), it returns false and DOES NOT append.
+		// So batch size < candidates size.
+		// This will desync `remaining` (Candidates) and `remainingBatch` (Vectors).
+		// We must ensure sync.
+		added := ctx.remainingBatch.Add(candidates[i].ID)
+		if !added {
+			// If we fail to get vector, we should probably treat it as a "nil" vector
+			// or remove the candidate?
+			// Existing logic set `remainingVecs[i] = nil`.
+			// To maintain sync with `remaining` index, `VectorBatch` should probably support adding nil?
+			// Or we manually add "nil" or "zero" representation?
+			// My `Add` implementation doesn't support adding nil.
+			// Let's modify `Add` to append nil placehoder or simply use AddVec(nil)?
+			ctx.remainingBatch.AddVec(nil)
+		}
 	}
 
 	var discarded []Candidate
@@ -637,15 +666,17 @@ func (h *ArrowHNSW) selectNeighbors(ctx *ArrowSearchContext, candidates []Candid
 
 		// Add to selected
 		selCand := remaining[bestIdx]
-		selVec := remainingVecs[bestIdx]
+		selVecAny := ctx.remainingBatch.Get(bestIdx)
+
 		selected = append(selected, selCand)
-		selectedVecs = append(selectedVecs, selVec)
+		ctx.selectedBatch.AddVec(selVecAny)
 
 		// Remove from remaining (O(1) swap and pop)
-		remaining[bestIdx] = remaining[len(remaining)-1]
-		remaining = remaining[:len(remaining)-1]
-		remainingVecs[bestIdx] = remainingVecs[len(remainingVecs)-1]
-		remainingVecs = remainingVecs[:len(remainingVecs)-1]
+		lastIdx := len(remaining) - 1
+		remaining[bestIdx] = remaining[lastIdx]
+		remaining = remaining[:lastIdx]
+		ctx.remainingBatch.Swap(bestIdx, lastIdx)
+		ctx.remainingBatch.Pop()
 
 		// Prune remaining candidates that are too close to the selected one
 		if len(selected) < m && len(remaining) > 0 {
@@ -710,52 +741,30 @@ func (h *ArrowHNSW) selectNeighbors(ctx *ArrowSearchContext, candidates []Candid
 					}
 				}
 			} else {
-				// Float32 Path
-				if cap(ctx.scratchVecs) < count {
-					ctx.scratchVecs = make([][]float32, count*2)
-				}
-				remVecs := ctx.scratchVecs[:count]
-				allValid := true
-				for i := range remaining {
-					if remainingVecs[i] == nil {
-						dists[i] = math.MaxFloat32
-						remVecs[i] = nil
-						allValid = false
-					} else {
-						remVecs[i] = remainingVecs[i]
-					}
-				}
-
-				if allValid {
-					if bc, ok := h.batchComputer.(interface {
-						ComputeL2DistancesInto(query []float32, vectors [][]float32, dest []float32) (int, error)
-					}); ok {
-						_, _ = bc.ComputeL2DistancesInto(selVec, remVecs, dists)
-					} else {
-						h.batchDistFunc(selVec, remVecs, dists)
-					}
-				} else {
-					for i := range remaining {
-						if remVecs[i] != nil {
-							h.batchDistFunc(selVec, remVecs[i:i+1], dists[i:i+1])
-						}
-					}
-				}
+				// Float32 Path / Default Path
+				// Replaced h.batchComputer / h.batchDistFunc with VectorBatch.ComputeDistances
+				ctx.remainingBatch.ComputeDistances(selVecAny, dists)
 			}
 
 			// Filter remaining
 			filteredCount := 0
 			for i, cand := range remaining {
 				if dists[i]*alpha > cand.Dist {
-					remaining[filteredCount] = cand
-					remainingVecs[filteredCount] = remainingVecs[i]
+					if i != filteredCount {
+						remaining[filteredCount] = cand
+						ctx.remainingBatch.Swap(i, filteredCount)
+					}
 					filteredCount++
 				} else {
 					discarded = append(discarded, cand)
 				}
 			}
 			remaining = remaining[:filteredCount]
-			remainingVecs = remainingVecs[:filteredCount]
+			// Pop truncated elements from batch
+			currentBatchLen := ctx.remainingBatch.Len()
+			for k := 0; k < currentBatchLen-filteredCount; k++ {
+				ctx.remainingBatch.Pop()
+			}
 		}
 	}
 
@@ -1190,15 +1199,28 @@ func (h *ArrowHNSW) pruneConnectionsLocked(ctx *ArrowSearchContext, data *GraphD
 		}
 
 		// nodeVec needed for distance calc
-		nodeVec := h.mustGetVectorFromData(data, nodeID)
+		// nodeVec needed for distance calc
+		// Note: for now we assume float32. Future refactor will make DistFunc polymorphic.
+		nodeVecAny := h.mustGetVectorFromData(data, nodeID)
+		nodeVec, okNode := nodeVecAny.([]float32)
 
 		for i := 0; i < count; i++ {
 			neighborID := neighborsChunk[baseIdx+i]
-			vec := h.mustGetVectorFromData(data, neighborID)
-			neighborVecs[i] = vec
+			vecAny := h.mustGetVectorFromData(data, neighborID)
+			vec, okVec := vecAny.([]float32)
+
+			if okVec {
+				neighborVecs[i] = vec
+			} else {
+				neighborVecs[i] = nil
+			}
 
 			// Compute distance once for initial Candidate
-			dists[i] = simd.DistFunc(nodeVec, vec)
+			if okNode && okVec {
+				dists[i] = simd.DistFunc(nodeVec, vec)
+			} else {
+				dists[i] = math.MaxFloat32 // Push to bottom if invalid type
+			}
 		}
 	}
 

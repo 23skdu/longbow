@@ -162,9 +162,11 @@ func TestArrowHNSW_Float16_Integration(t *testing.T) {
 		// Since we are in package store, we can access unexported methods.
 
 		retrieved := hnsw.mustGetVectorFromData(gd, id)
+		retrievedF32, ok := retrieved.([]float32)
+		require.True(t, ok, "Expected float32 vector")
 
 		for j := 0; j < dims; j++ {
-			diff := math.Abs(float64(vecs[i][j] - retrieved[j]))
+			diff := math.Abs(float64(vecs[i][j] - retrievedF32[j]))
 			assert.Less(t, diff, 0.01)
 		}
 	}

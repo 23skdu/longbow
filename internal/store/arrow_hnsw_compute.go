@@ -60,130 +60,6 @@ func (c *float32Computer) ComputeSingle(id uint32) float32 {
 func (c *float32Computer) Prefetch(id uint32) {
 }
 
-// float16Computer handles Float16 vectors.
-type float16Computer struct {
-	data       *GraphData
-	q          []float16.Num
-	dims       int
-	paddedDims int
-}
-
-func (c *float16Computer) Compute(ids []uint32, dists []float32) {
-	for i, id := range ids {
-		cID := chunkID(id)
-		chunk := c.data.GetVectorsF16Chunk(cID)
-		if chunk != nil {
-			start := int(chunkOffset(id)) * c.paddedDims
-			if start+c.dims <= len(chunk) {
-				v := chunk[start : start+c.dims]
-				dists[i] = simd.EuclideanDistanceF16(c.q, v)
-				continue
-			}
-		}
-		dists[i] = math.MaxFloat32
-	}
-}
-
-func (c *float16Computer) ComputeSingle(id uint32) float32 {
-	cID := chunkID(id)
-	chunk := c.data.GetVectorsF16Chunk(cID)
-	if chunk != nil {
-		start := int(chunkOffset(id)) * c.paddedDims
-		if start+c.dims <= len(chunk) {
-			v := chunk[start : start+c.dims]
-			return simd.EuclideanDistanceF16(c.q, v)
-		}
-	}
-	return math.MaxFloat32
-}
-
-func (c *float16Computer) Prefetch(id uint32) {
-}
-
-// complex64Computer handles Complex64 vectors.
-type complex64Computer struct {
-	data       *GraphData
-	q          []complex64
-	dims       int
-	paddedDims int
-}
-
-func (c *complex64Computer) Compute(ids []uint32, dists []float32) {
-	for i, id := range ids {
-		cID := chunkID(id)
-		chunk := c.data.GetVectorsComplex64Chunk(cID)
-		if chunk != nil {
-			start := int(chunkOffset(id)) * c.paddedDims
-			if start+c.dims <= len(chunk) {
-				v := chunk[start : start+c.dims]
-				dists[i] = simd.EuclideanDistanceComplex64(c.q, v)
-				metrics.HNSWComplexOpsTotal.WithLabelValues("complex64").Inc()
-				continue
-			}
-		}
-		dists[i] = math.MaxFloat32
-	}
-}
-
-func (c *complex64Computer) ComputeSingle(id uint32) float32 {
-	cID := chunkID(id)
-	chunk := c.data.GetVectorsComplex64Chunk(cID)
-	if chunk != nil {
-		start := int(chunkOffset(id)) * c.paddedDims
-		if start+c.dims <= len(chunk) {
-			v := chunk[start : start+c.dims]
-			metrics.HNSWComplexOpsTotal.WithLabelValues("complex64").Inc()
-			return simd.EuclideanDistanceComplex64(c.q, v)
-		}
-	}
-	return math.MaxFloat32
-}
-
-func (c *complex64Computer) Prefetch(id uint32) {
-}
-
-// complex128Computer handles Complex128 vectors.
-type complex128Computer struct {
-	data       *GraphData
-	q          []complex128
-	dims       int
-	paddedDims int
-}
-
-func (c *complex128Computer) Compute(ids []uint32, dists []float32) {
-	for i, id := range ids {
-		cID := chunkID(id)
-		chunk := c.data.GetVectorsComplex128Chunk(cID)
-		if chunk != nil {
-			start := int(chunkOffset(id)) * c.paddedDims
-			if start+c.dims <= len(chunk) {
-				v := chunk[start : start+c.dims]
-				dists[i] = simd.EuclideanDistanceComplex128(c.q, v)
-				metrics.HNSWComplexOpsTotal.WithLabelValues("complex128").Inc()
-				continue
-			}
-		}
-		dists[i] = math.MaxFloat32
-	}
-}
-
-func (c *complex128Computer) ComputeSingle(id uint32) float32 {
-	cID := chunkID(id)
-	chunk := c.data.GetVectorsComplex128Chunk(cID)
-	if chunk != nil {
-		start := int(chunkOffset(id)) * c.paddedDims
-		if start+c.dims <= len(chunk) {
-			v := chunk[start : start+c.dims]
-			metrics.HNSWComplexOpsTotal.WithLabelValues("complex128").Inc()
-			return simd.EuclideanDistanceComplex128(c.q, v)
-		}
-	}
-	return math.MaxFloat32
-}
-
-func (c *complex128Computer) Prefetch(id uint32) {
-}
-
 // sq8Computer handles SQ8 quantized vectors.
 type sq8Computer struct {
 	data      *GraphData
@@ -291,14 +167,71 @@ func (c *pqComputer) Prefetch(id uint32) {
 	}
 }
 
+// float16Computer handles Float16 vectors.
+type float16Computer struct {
+	data *GraphData
+	q    []float16.Num
+	dims int
+}
+
+func (c *float16Computer) Compute(ids []uint32, dists []float32) {
+	for i, id := range ids {
+		dists[i] = c.ComputeSingle(id)
+	}
+}
+
+func (c *float16Computer) ComputeSingle(id uint32) float32 {
+	cID := chunkID(id)
+	chunk := c.data.GetVectorsF16Chunk(cID)
+	if chunk != nil {
+		start := int(chunkOffset(id)) * c.dims
+		if start+c.dims <= len(chunk) {
+			v := chunk[start : start+c.dims]
+			return simd.EuclideanDistanceF16(c.q, v)
+		}
+	}
+	return math.MaxFloat32
+}
+
+func (c *float16Computer) Prefetch(id uint32) {
+	cID := chunkID(id)
+	chunk := c.data.GetVectorsF16Chunk(cID)
+	if chunk != nil {
+		start := int(chunkOffset(id)) * c.dims
+		if start < len(chunk) {
+			simd.Prefetch(unsafe.Pointer(&chunk[start]))
+		}
+	}
+}
+
 // resolveHNSWComputer selects the appropriate computer and encodes the query if necessary.
 func (h *ArrowHNSW) resolveHNSWComputer(data *GraphData, ctx *ArrowSearchContext, q []float32) HNSWDistanceComputer {
 	dims := len(q)
 	disk := h.diskGraph.Load() // Load disk backend
 
-	// ...
+	// 1. Float16 Native
+	if h.config.Float16Enabled || data.Type == VectorTypeFloat16 {
+		if cap(ctx.queryF16) < dims {
+			ctx.queryF16 = make([]float16.Num, dims)
+		}
+		ctx.queryF16 = ctx.queryF16[:dims]
 
-	// 3. PQ
+		// Convert query: float32 -> float16
+		for i, v := range q {
+			ctx.queryF16[i] = float16.New(v)
+		}
+
+		metrics.HNSWPolymorphicSearchCount.WithLabelValues("float16").Inc()
+		return &float16Computer{
+			data: data,
+			q:    ctx.queryF16,
+			dims: data.Dims,
+		}
+	}
+
+	// ... continue with existing logic ...
+
+	// 3. PQ (reordered index for diff)
 	if h.config.PQEnabled && h.pqEncoder != nil {
 		// Prepare ADC table
 		table, err := h.pqEncoder.BuildADCTable(q)

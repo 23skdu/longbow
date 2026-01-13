@@ -213,9 +213,13 @@ func (r *RepairAgent) repairOrphan(orphan uint32, layer int) {
 	}
 
 	// Get orphan's vector
-	orphanVec := r.index.mustGetVectorFromData(data, orphan)
-	if orphanVec == nil {
+	orphanVecAny := r.index.mustGetVectorFromData(data, orphan)
+	if orphanVecAny == nil {
 		return // Can't repair without vector
+	}
+	orphanVec, okOrphan := orphanVecAny.([]float32)
+	if !okOrphan {
+		return // Only support float32 for now
 	}
 
 	// Find K nearest neighbors in the reachable set
@@ -238,8 +242,12 @@ func (r *RepairAgent) repairOrphan(orphan uint32, layer int) {
 			continue
 		}
 
-		nodeVec := r.index.mustGetVectorFromData(data, nodeID)
-		if nodeVec == nil {
+		nodeVecAny := r.index.mustGetVectorFromData(data, nodeID)
+		if nodeVecAny == nil {
+			continue
+		}
+		nodeVec, okNode := nodeVecAny.([]float32)
+		if !okNode {
 			continue
 		}
 

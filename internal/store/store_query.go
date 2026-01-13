@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"runtime"
 	"strconv"
@@ -124,8 +123,8 @@ func (s *VectorStore) GetSchema(ctx context.Context, desc *flight.FlightDescript
 
 // DoGet - Minimal implementation
 func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGetServer) error {
-	fmt.Printf("[DEBUG] DoGet received ticket len=%d\n", len(tkt.Ticket))
-	// log.Printf("[DEBUG] DoGet received ticket (len=%d): %q", len(tkt.Ticket), string(tkt.Ticket))
+	// fmt.Printf("[DEBUG] DoGet received ticket len=%d\n", len(tkt.Ticket))
+	log.Printf("[DEBUG] DoGet received ticket (len=%d): %q", len(tkt.Ticket), string(tkt.Ticket))
 	// Parse ticket
 	query, err := qry.ParseTicketQuerySafe(tkt.Ticket)
 	if err != nil {
@@ -617,11 +616,6 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, stream fli
 			ds, ok := s.getDataset(req.Dataset)
 			if !ok {
 				return status.Errorf(codes.NotFound, "dataset %s not found", req.Dataset)
-			}
-			if ds.Index != nil {
-				// log.Printf("[DEBUG] handleDoGetSearch Index Type: %T", ds.Index)
-			} else {
-				// log.Printf("[DEBUG] handleDoGetSearch Index is NIL")
 			}
 
 			ds.dataMu.RLock()

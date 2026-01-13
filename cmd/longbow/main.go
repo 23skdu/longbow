@@ -415,7 +415,8 @@ func run() error {
 	forwarder := sharding.NewRequestForwarder(&fwdCfg, ringManager)
 
 	// gRPC Server Options - using env-configurable message sizes and window sizes
-	serverOpts := []grpc.ServerOption{
+	serverOpts := make([]grpc.ServerOption, 0, 9)
+	serverOpts = append(serverOpts,
 		grpc.MaxRecvMsgSize(cfg.GRPCMaxRecvMsgSize),
 		grpc.MaxSendMsgSize(cfg.GRPCMaxSendMsgSize),
 		grpc.InitialWindowSize(cfg.GRPCInitialWindowSize),
@@ -429,7 +430,7 @@ func run() error {
 			MinTime:             cfg.KeepAliveMinTime,
 			PermitWithoutStream: cfg.KeepAlivePermitWithoutStream,
 		}),
-	}
+	)
 
 	// Initialize Rate Limiter
 	rateLimiter := limiter.NewRateLimiter(limiter.Config{

@@ -104,10 +104,9 @@ func WriteDiskGraph(gd *GraphData, path string, maxNodeID int, sqMin, sqMax floa
 
 			// Encode Count (Uvarint)
 			count := uint64(len(neighbors))
-			n := binary.PutUvarint(scratch4[:], count) // scratch4 might be too small? max varint64 is 10 bytes.
 			// Re-allocate scratch buffer to be safe for up to 10 bytes
 			var scratchVarint [10]byte
-			n = binary.PutUvarint(scratchVarint[:], count)
+			n := binary.PutUvarint(scratchVarint[:], count)
 			if _, err := w.Write(scratchVarint[:n]); err != nil {
 				return err
 			}

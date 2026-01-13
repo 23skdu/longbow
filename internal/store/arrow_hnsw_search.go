@@ -9,7 +9,6 @@ import (
 	"runtime"
 	"sort"
 	"sync/atomic"
-	"unsafe"
 
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/query"
@@ -157,11 +156,9 @@ func (h *ArrowHNSW) Search(q []float32, k, ef int, filter *query.Bitset) ([]Sear
 	// 3. Post-Refinement
 	if useRefinement && len(results) > 0 {
 		for i := range results {
-			// Compute exact distance
-			vec := h.mustGetVectorFromData(data, uint32(results[i].ID))
-			if vec != nil {
-				results[i].Score = simd.EuclideanDistance(q, vec)
-			}
+			// Polymorphic refinement using the computer
+			// This handles SQ8, Float16, etc. automatically without manual conversion
+			results[i].Score = computer.ComputeSingle(uint32(results[i].ID))
 		}
 		// Resort
 		sort.Slice(results, func(i, j int) bool {
@@ -386,39 +383,12 @@ func (h *ArrowHNSW) searchLayer(computer HNSWDistanceComputer, entryPoint uint32
 	return closest
 }
 
-func (h *ArrowHNSW) distance(q []float32, id uint32, data *GraphData, _ *ArrowSearchContext) float32 {
-	v := h.mustGetVectorFromData(data, id)
-	if v == nil {
-		return math.MaxFloat32
-	}
-	// Use static dispatch function
-	return simd.DistFunc(q, v)
-}
-
 func (h *ArrowHNSW) distanceF16(q []float16.Num, id uint32, data *GraphData, _ *ArrowSearchContext) float32 {
 	v := data.GetVectorF16(id)
 	if v == nil {
 		return math.MaxFloat32
 	}
 	return simd.EuclideanDistanceF16(q, v)
-}
-
-func (h *ArrowHNSW) distanceComplex64(q []complex64, id uint32, data *GraphData, _ *ArrowSearchContext) float32 {
-	v := data.GetVectorComplex64(id)
-	if v == nil {
-		return math.MaxFloat32
-	}
-	metrics.HNSWComplexOpsTotal.WithLabelValues("complex64").Inc()
-	return simd.EuclideanDistanceComplex64(q, v)
-}
-
-func (h *ArrowHNSW) distanceComplex128(q []complex128, id uint32, data *GraphData, _ *ArrowSearchContext) float32 {
-	v := data.GetVectorComplex128(id)
-	if v == nil {
-		return math.MaxFloat32
-	}
-	metrics.HNSWComplexOpsTotal.WithLabelValues("complex128").Inc()
-	return simd.EuclideanDistanceComplex128(q, v)
 }
 
 func (h *ArrowHNSW) getVectorF16(id uint32) ([]float16.Num, error) {
@@ -457,7 +427,12 @@ func (h *ArrowHNSW) getVector(id uint32) ([]float32, error) {
 	if int64(id) < h.nodeCount.Load() {
 		v := h.mustGetVectorFromData(data, id)
 		if v != nil {
-			return v, nil
+			if vf32, ok := v.([]float32); ok {
+				return vf32, nil
+			}
+			// If not float32 (e.g. float16 native), we should probably fail or convert?
+			// For now, getVector implies float32 return.
+			return nil, fmt.Errorf("vector type mismatch: expected []float32 for id %d", id)
 		}
 	}
 
@@ -482,7 +457,7 @@ func (h *ArrowHNSW) getVector(id uint32) ([]float32, error) {
 	return ExtractVectorFromArrow(rec, loc.RowIdx, h.vectorColIdx)
 }
 
-func (h *ArrowHNSW) mustGetVectorFromData(data *GraphData, id uint32) []float32 {
+func (h *ArrowHNSW) mustGetVectorFromData(data *GraphData, id uint32) any {
 	cID := chunkID(id)
 	cOff := chunkOffset(id)
 	dims := data.Dims
@@ -565,42 +540,4 @@ func (h *ArrowHNSW) getSentinelVector(dims int) []float32 {
 	// TODO: Use a pool or pre-allocated global if this happens frequently.
 	// For now, simple allocation is fine as this should be rare (0 in steady state).
 	return make([]float32, dims)
-}
-
-func (h *ArrowHNSW) prefetchNode(id uint32, data *GraphData, useSQ8, usePQ bool) {
-	switch {
-	case useSQ8:
-		cID := chunkID(id)
-		if vecSQ8Chunk := data.GetVectorsSQ8Chunk(cID); vecSQ8Chunk != nil {
-			cOff := chunkOffset(id)
-			dims := int(h.dims.Load())
-			off := int(cOff) * dims
-			if off < len(vecSQ8Chunk) {
-				simd.Prefetch(unsafe.Pointer(&vecSQ8Chunk[off]))
-				metrics.PrefetchOperationsTotal.Inc()
-			}
-		}
-	case usePQ:
-		cID := chunkID(id)
-		if vecPQChunk := data.GetVectorsPQChunk(cID); vecPQChunk != nil {
-			cOff := chunkOffset(id)
-			pqM := data.PQDims
-			off := int(cOff) * pqM
-			if off < len(vecPQChunk) {
-				simd.Prefetch(unsafe.Pointer(&vecPQChunk[off]))
-				metrics.PrefetchOperationsTotal.Inc()
-			}
-		}
-	default:
-		cID := chunkID(id)
-		if vecChunk := data.GetVectorsChunk(cID); vecChunk != nil {
-			cOff := chunkOffset(id)
-			dims := int(h.dims.Load())
-			off := int(cOff) * dims
-			if off < len(vecChunk) {
-				simd.Prefetch(unsafe.Pointer(&vecChunk[off]))
-				metrics.PrefetchOperationsTotal.Inc()
-			}
-		}
-	}
 }

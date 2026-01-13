@@ -236,10 +236,7 @@ func (s *VectorStore) ApplyDelta(name string, rec arrow.RecordBatch, seq uint64,
 
 		// Send with simple backpressure policy (Spin/Wait)
 		// This ensures we never drop data, but propagate backpressure to caller (WAL or Network)
-		for {
-			if s.indexQueue.Send(job) {
-				break
-			}
+		for !s.indexQueue.Send(job) {
 			time.Sleep(10 * time.Millisecond)
 		}
 		ds.PendingIndexJobs.Add(int64(numRows))

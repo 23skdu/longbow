@@ -28,7 +28,7 @@ func TestExtractVectorAny(t *testing.T) {
 		defer arr.Release()
 
 		schema := arrow.NewSchema([]arrow.Field{{Name: "vector", Type: arr.DataType()}}, nil)
-		rec := array.NewRecord(schema, []arrow.Array{arr}, 2)
+		rec := array.NewRecordBatch(schema, []arrow.Array{arr}, 2)
 		defer rec.Release()
 
 		// Extract first row
@@ -59,7 +59,7 @@ func TestExtractVectorAny(t *testing.T) {
 		defer arr.Release()
 
 		schema := arrow.NewSchema([]arrow.Field{{Name: "vector", Type: arr.DataType()}}, nil)
-		rec := array.NewRecord(schema, []arrow.Array{arr}, 1)
+		rec := array.NewRecordBatch(schema, []arrow.Array{arr}, 1)
 		defer rec.Release()
 
 		anyVec, err := ExtractVectorAny(rec, 0, 0)
@@ -82,7 +82,7 @@ func TestExtractVectorAny(t *testing.T) {
 		defer arr.Release()
 
 		schema := arrow.NewSchema([]arrow.Field{{Name: "vector", Type: arr.DataType()}}, nil)
-		rec := array.NewRecord(schema, []arrow.Array{arr}, 1)
+		rec := array.NewRecordBatch(schema, []arrow.Array{arr}, 1)
 		defer rec.Release()
 
 		// Call the regular ExtractVectorFromArrow which should cast

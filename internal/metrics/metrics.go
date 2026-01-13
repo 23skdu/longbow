@@ -639,6 +639,15 @@ var (
 		},
 	)
 
+	// HnswSearchThroughputDims counts search operations bucketed by dimension
+	HnswSearchThroughputDims = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_ahnsw_search_throughput_dims",
+			Help: "Total number of search operations bucketed by vector dimension",
+		},
+		[]string{"dims"},
+	)
+
 	HNSWNodesTotal = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "longbow_hnsw_nodes_total",

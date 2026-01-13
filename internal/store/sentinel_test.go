@@ -30,7 +30,9 @@ func TestSentinelVector_Fallback(t *testing.T) {
 	// but usually unit tests run sequentially or we check delta).
 	initialCount := testutil.ToFloat64(metrics.VectorSentinelHitTotal)
 
-	vec := hnsw.mustGetVectorFromData(gd, missingID)
+	vecAny := hnsw.mustGetVectorFromData(gd, missingID)
+	vec, ok := vecAny.([]float32)
+	assert.True(t, ok, "Expected []float32 return from mustGetVectorFromData")
 
 	// 4. Assertions
 	assert.NotNil(t, vec, "Sentinel vector should not be nil")

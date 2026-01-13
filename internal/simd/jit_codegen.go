@@ -380,7 +380,6 @@ func GenerateBatchBodySIMD() []byte {
 		OpI32GtU,
 		OpBrIf, 1, // break to scalar tail handling
 
-		// q_vec = v128.load(q_ptr + d_idx * 4)
 		OpLocalGet, 0,
 		OpLocalGet, 6,
 		OpI32Const, 2,

@@ -176,7 +176,11 @@ func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
 						s.logger.Error().Msgf("Panic in index worker for %s: %v", dsName, r)
 						// Try to decrement pending jobs if dataset is available
 						if ds, ok := s.getDataset(dsName); ok {
-							ds.PendingIndexJobs.Add(int64(-len(dsGroup)))
+							var totalRows int64
+							for _, j := range dsGroup {
+								totalRows += j.Record.NumRows()
+							}
+							ds.PendingIndexJobs.Add(-totalRows)
 						}
 					}
 				}()
@@ -331,7 +335,8 @@ func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
 				}
 
 				// Decrement pending jobs count
-				ds.PendingIndexJobs.Add(int64(-len(dsGroup)))
+				// Decrement pending jobs count
+				ds.PendingIndexJobs.Add(int64(-totalRowsInGroup))
 				s.logger.Debug().Str("dataset", dsName).Msg("Processing batch finished")
 			}()
 		}

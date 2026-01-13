@@ -372,6 +372,16 @@ func (h *ArrowHNSW) SearchVectors(queryVec []float32, k int, filters []query.Fil
 	maxRetries := 1
 	q := queryVec // Alias to avoid shadowing package query
 
+	// Track throughput by dimension
+	dim := len(q)
+	dimBucket := "other"
+	if dim == 128 || dim == 256 || dim == 384 || dim == 768 || dim == 1024 || dim == 1536 || dim == 3072 {
+		dimBucket = fmt.Sprintf("%d", dim)
+	} else if dim > 3072 {
+		dimBucket = ">3072"
+	}
+	metrics.HnswSearchThroughputDims.WithLabelValues(dimBucket).Inc()
+
 	paramsKey := fmt.Sprintf("k=%d,filters=%v", k, filters)
 	if h.queryCache != nil {
 		if res, ok := h.queryCache.Get(q, paramsKey); ok {

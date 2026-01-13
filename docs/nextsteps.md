@@ -7,13 +7,13 @@ Completed items have been verified and archived.
 
 Remaining tasks to support 12 data types and 3072 dimensions.
 
-### 1. 128-3072 Dimension Layout Optimization
+### 1. 128-3072 Dimension Layout Optimization [x]
 
 **Goal**: Specialized optimizations for power-of-two dimension points.
 
 - **Subtasks**:
-  - Implement cache-line padding for specific widths.
-  - Add block-based SIMD processing for vectors > 1024 dims.
+  - [x] Implement cache-line padding for specific widths.
+  - [x] Add block-based SIMD processing for vectors > 1024 dims.
 - **Metrics**: `ahnsw_search_throughput_dims` (Gauge).
 
 ### 2. Refactor HNSW Search for Native Polymorphism (Completed)

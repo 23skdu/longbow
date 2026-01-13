@@ -648,6 +648,35 @@ var (
 		[]string{"dims"},
 	)
 
+	// HNSWSearchLatencyByType measures search latency per vector data type
+	HNSWSearchLatencyByType = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_hnsw_search_latency_by_type_seconds",
+			Help:    "Latency of HNSW search operations bucketed by vector type",
+			Buckets: prometheus.DefBuckets,
+		},
+		[]string{"type"},
+	)
+
+	// HNSWSearchLatencyByDim measures search latency per vector dimension
+	HNSWSearchLatencyByDim = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_hnsw_search_latency_by_dim_seconds",
+			Help:    "Latency of HNSW search operations bucketed by dimension",
+			Buckets: prometheus.DefBuckets,
+		},
+		[]string{"dim"},
+	)
+
+	// HNSWRefineThroughput counts vectors refined per type
+	HNSWRefineThroughput = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_hnsw_refine_throughput_total",
+			Help: "Total vectors processed through refinement layer",
+		},
+		[]string{"type"},
+	)
+
 	HNSWNodesTotal = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "longbow_hnsw_nodes_total",

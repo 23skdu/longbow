@@ -1,64 +1,65 @@
 package store
 
 import (
-	"context"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-
+	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/memory"
+	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-func TestObservability_Metrics(t *testing.T) {
-	// Initialize store
+func TestHNSW_ObservabilityMetrics(t *testing.T) {
 	mem := memory.NewGoAllocator()
-	vectors := [][]float32{
-		{1.0, 0.0},
-		{0.0, 1.0},
-	}
-	rec := makeHNSWTestRecord(mem, 2, vectors)
+	vectors := [][]float32{{1.0, 0.0}, {0.0, 1.0}}
+	dims := 2
+	rec := makeHNSWTestRecord(mem, dims, vectors)
 	defer rec.Release()
 
 	ds := &Dataset{
 		Name:    "observability_test",
-		Records: nil, // Will add via IndexRecordColumns or similar if we want full integration, but testing components directly is easier
+		Records: []arrow.RecordBatch{rec},
+		Schema:  rec.Schema(),
 	}
-	// Manually set up index for direct component testing
-	idx := NewHNSWIndex(ds)
-	ds.Index = idx
 
-	// 1. Test Index Build Metric
-	// We call AddBatch manually
-	// Note: We need a valid record to add.
+	config := DefaultArrowHNSWConfig()
+	// Enable something that triggers the 'useRefinement' flag if we want to test refinement throughput
+	// useRefinement := (h.config.SQ8Enabled || h.config.PQEnabled || h.config.BQEnabled) && h.config.RefinementFactor > 1.0
+	config.SQ8Enabled = true
+	config.RefinementFactor = 2.0
 
-	// Create a fresh store context for integration-like testing
-	// We can't easily use global metrics verification if they are cumulative,
-	// but we can check if they are non-zero.
+	idx := NewArrowHNSW(ds, config, NewChunkedLocationStore())
 
-	t.Run("IndexBuildDuration", func(t *testing.T) {
-		_, err := idx.AddBatch([]arrow.RecordBatch{rec}, []int{0, 1}, []int{0, 0})
-		require.NoError(t, err)
-	})
+	// Add vectors
+	_, err := idx.AddByLocation(0, 0)
+	require.NoError(t, err)
+	_, err = idx.AddByLocation(0, 1)
+	require.NoError(t, err)
 
-	t.Run("SearchLatency", func(t *testing.T) {
-		// Vector Search
-		_, err := idx.SearchVectors([]float32{1.0, 0.0}, 1, nil, SearchOptions{})
-		require.NoError(t, err)
+	// Reset metrics before search
+	metrics.HNSWSearchLatencyByType.Reset()
+	metrics.HNSWSearchLatencyByDim.Reset()
+	metrics.HNSWRefineThroughput.Reset()
 
-		// Hybrid Search
-		// Needs store context for HybridSearch wrapper
-		store := &VectorStore{}
-		store.datasets.Store(&map[string]*Dataset{"observability_test": ds})
+	// Search
+	q := []float32{1.0, 0.0}
+	_, err = idx.Search(q, 1, 10, nil)
+	require.NoError(t, err)
 
-		_, err = store.HybridSearch(context.Background(), "observability_test", []float32{1.0, 0.0}, 1, nil)
-		require.NoError(t, err)
+	// Verify Metrics
+	typeLabel := "sq8" // Based on config.SQ8Enabled
+	// Latency metrics are histograms, we can check if they were collected
+	countByType := testutil.CollectAndCount(metrics.HNSWSearchLatencyByType)
+	assert.GreaterOrEqual(t, countByType, 1, "Should record search latency by type")
 
-		_, err = store.SearchHybrid(context.Background(), "observability_test", []float32{1.0, 0.0}, "", 1, 0.5, 60, 0, 0)
-		require.NoError(t, err)
-	})
+	countByDim := testutil.CollectAndCount(metrics.HNSWSearchLatencyByDim)
+	assert.GreaterOrEqual(t, countByDim, 1, "Should record search latency by dim")
 
-	// If we reached here, instrumentation didn't panic.
-	assert.True(t, true)
+	// Refine throughput
+	refineCount := testutil.ToFloat64(metrics.HNSWRefineThroughput.WithLabelValues(typeLabel))
+	// targetK = k * RefinementFactor = 1 * 2 = 2. But we only have 2 points total.
+	// So results should be at most 2.
+	assert.Greater(t, refineCount, 0.0, "Should record refinement throughput")
 }

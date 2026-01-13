@@ -59,6 +59,7 @@ func (h *ArrowHNSW) Search(q []float32, k, ef int, filter *query.Bitset) ([]Sear
 	// Encode query if SQ8 enabled
 	dims := int(h.dims.Load())
 	metrics.HNSWSearchQueriesTotal.WithLabelValues(strconv.Itoa(dims)).Inc()
+	metrics.HnswSearchThroughputDims.WithLabelValues(strconv.Itoa(dims)).Inc()
 
 	// 1. Finding entry points in upper layers
 	data := graph
@@ -107,6 +108,8 @@ func (h *ArrowHNSW) Search(q []float32, k, ef int, filter *query.Bitset) ([]Sear
 	defer func() {
 		duration := time.Since(start).Seconds()
 		metrics.HNSWPolymorphicLatency.WithLabelValues(typeLabel).Observe(duration)
+		metrics.HNSWSearchLatencyByType.WithLabelValues(typeLabel).Observe(duration)
+		metrics.HNSWSearchLatencyByDim.WithLabelValues(strconv.Itoa(dims)).Observe(duration)
 
 		// Throughput: total bytes processed
 		totalBytes := float64(totalVisited) * float64(vecBytes)
@@ -155,6 +158,7 @@ func (h *ArrowHNSW) Search(q []float32, k, ef int, filter *query.Bitset) ([]Sear
 
 	// 3. Post-Refinement
 	if useRefinement && len(results) > 0 {
+		metrics.HNSWRefineThroughput.WithLabelValues(typeLabel).Add(float64(len(results)))
 		for i := range results {
 			// Polymorphic refinement using the computer
 			// This handles SQ8, Float16, etc. automatically without manual conversion

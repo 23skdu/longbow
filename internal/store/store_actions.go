@@ -704,12 +704,17 @@ func (s *VectorStore) applyBatchToMemory(name string, rec arrow.RecordBatch, ts 
 		// Queue full: dispatch in goroutine to unblock DoPut latency
 		// Note: This relies on WAL for durability if the process crashes before this goroutine finishes.
 		metrics.IndexJobsOverflowTotal.Inc()
+		s.pendingOverflowJobs.Add(1)
 		go func() {
+			defer s.pendingOverflowJobs.Add(-1)
 			// Spin-wait until space is available.
 			// Ideally we would have a blocking Send, but the Queue doesn't expose one.
 			// This is a tradeoff for extreme ingestion throughput.
 			backoff := 10 * time.Millisecond
 			for {
+				if s.indexQueue.IsStopped() {
+					return
+				}
 				time.Sleep(backoff)
 				if s.indexQueue.Send(job) {
 					return

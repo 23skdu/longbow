@@ -60,6 +60,7 @@ type IndexJobQueue struct {
 	stopped  int32
 	stopOnce sync.Once
 	wg       sync.WaitGroup
+	sendMu   sync.RWMutex // Protects mainChan close vs send
 
 	// Memory Pressure
 	estimatedBytes int64 // Atomic
@@ -83,7 +84,12 @@ func NewIndexJobQueue(cfg IndexJobQueueConfig) *IndexJobQueue {
 
 // Send submits a job without blocking. Returns true if accepted, false if dropped.
 func (q *IndexJobQueue) Send(job IndexJob) bool {
-	// Check if stopped
+	// Protect against send on closed channel
+	q.sendMu.RLock()
+	defer q.sendMu.RUnlock()
+
+	// Check if stopped (must be checked under lock or atomic is fine,
+	// but lock ensures we don't race with close)
 	if atomic.LoadInt32(&q.stopped) == 1 {
 		return false
 	}
@@ -241,12 +247,25 @@ func (q *IndexJobQueue) Stats() IndexJobQueueStats {
 	}
 }
 
+// IsStopped returns true if the queue is stopped.
+func (q *IndexJobQueue) IsStopped() bool {
+	return atomic.LoadInt32(&q.stopped) == 1
+}
+
 // Stop gracefully stops the queue.
 func (q *IndexJobQueue) Stop() {
 	q.stopOnce.Do(func() {
+		// Take write lock to prohibit further sends
+		q.sendMu.Lock()
 		atomic.StoreInt32(&q.stopped, 1)
+		// Signal drainLoop to stop
 		close(q.stopChan)
+		q.sendMu.Unlock()
+
+		// Wait for drainLoop to finish (which calls drainRemaining)
 		q.wg.Wait()
+
+		// NOW close mainChan, after all sends (including drainRemaining) are done
 		close(q.mainChan)
 	})
 }

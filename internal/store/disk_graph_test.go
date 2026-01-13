@@ -32,12 +32,10 @@ func TestDiskGraph_RoundTrip(t *testing.T) {
 	// Populate SQ8 Vectors
 	// Node 0: [10, 10, 10, 10]
 	// Node 1: [20, 20, 20, 20]
-	// SQ8 is now padded to 64 bytes
-	sq8Padded := (dims + 63) & ^63
-	sq8 := make([]byte, ChunkSize*sq8Padded)
+	sq8 := make([]byte, ChunkSize*dims)
 	for i := 0; i < dims; i++ {
-		sq8[0*sq8Padded+i] = 10
-		sq8[1*sq8Padded+i] = 20
+		sq8[0*dims+i] = 10
+		sq8[1*dims+i] = 20
 	}
 	gd.StoreSQ8Chunk(0, sq8)
 

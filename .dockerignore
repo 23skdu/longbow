@@ -18,3 +18,9 @@ longbow-gpu
 tmp/
 .venv/
 __pycache__/
+
+profiles_*/
+reports/
+.sdk_venv/
+.perf_venv/
+*.txt

@@ -317,8 +317,7 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec []float32, level int) error 
 		cOff := chunkOffset(id)
 		// Check if SQ8 vector array is allocated for this chunk
 		if chunk := data.GetVectorsSQ8Chunk(cID); chunk != nil {
-			stride := (dims + 63) & ^63
-			offset := int(cOff) * stride
+			offset := int(cOff) * dims
 			// Bounds check (though ensureChunk should guarantee size)
 			if offset+dims <= len(chunk) {
 				dest := chunk[offset : offset+dims]
@@ -342,8 +341,7 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec []float32, level int) error 
 			h.quantizer.Encode(vec, ctx.querySQ8)
 			localSQ8Buffer = ctx.querySQ8
 
-			stride := (dims + 63) & ^63
-			offset := int(cOff) * stride
+			offset := int(cOff) * dims
 			if offset+dims <= len(chunk) {
 				dest := chunk[offset : offset+dims]
 				copy(dest, localSQ8Buffer)

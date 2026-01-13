@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"log"
 	"runtime"
 	"time"
 
@@ -145,8 +144,13 @@ func (s *VectorStore) StartIndexingWorkers(numWorkers int) {
 }
 
 func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
-	batchSize := 128
-	jobs := make([]IndexJob, 0, batchSize)
+	minBatch := 128
+	maxBatch := 1000
+	currentBatch := minBatch
+
+	jobs := make([]IndexJob, 0, maxBatch)
+
+	// Dynamic ticker: start standard
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()
 
@@ -154,7 +158,7 @@ func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
 		if len(group) == 0 {
 			return
 		}
-		log.Printf("[DEBUG] processBatch processing %d jobs", len(group))
+		// log.Printf("[DEBUG] processBatch processing %d jobs", len(group))
 
 		// Sort by dataset to batch index additions
 		byDataset := make(map[string][]IndexJob)
@@ -198,7 +202,6 @@ func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
 			var addErr error
 			if ds.Index != nil {
 				docIDs, addErr = ds.Index.AddBatch(recs, rowIdxs, batchIdxs)
-				log.Printf("[DEBUG] AddBatch result: docIDs=%d, err=%v", len(docIDs), addErr)
 				if addErr != nil {
 					s.logger.Error().
 						Str("dataset", dsName).
@@ -225,16 +228,10 @@ func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
 					}
 				}
 			} else {
-				// No vector index, but we still need docIDs if we want to support keyword indexing?
-				// Actually, if there is no HNSW index, we usually don't have docIDs.
-				// But we can fallback to using batchIdx/rowIdx as unique ID if needed,
-				// or just skip keyword indexing if no vector index exists.
-				// Most datasets in Longbow have at least one vector column.
 				s.logger.Warn().Str("dataset", dsName).Msg("Dataset has no index initialized, skipping AddBatch")
 			}
 
 			// Update Inverted Indexes (Hybrid Search)
-			// For simplicity/safety, skip inverted index if docIDs mismatch total row length
 			if len(docIDs) == totalRowsInGroup {
 				docIDIdx := 0
 				for _, j := range dsGroup {
@@ -262,7 +259,10 @@ func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
 							for _, colIdx := range stringCols {
 								fieldName := schema.Field(colIdx).Name
 
-								// Double-checked locking for per-column inverted index
+								// Double-checked locking avoidance: Use RLock first, verify, then Lock?
+								// Optimizing for Phase 1: Keep logical structure but potentially minimize critical section?
+								// For now keeping existing logic to avoid regression, focusing on Index Worker structure.
+
 								ds.dataMu.RLock()
 								var invIdx *InvertedIndex
 								if ds.InvertedIndexes != nil {
@@ -306,13 +306,33 @@ func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
 			for _, j := range dsGroup {
 				j.Record.Release()
 				metrics.IndexJobLatencySeconds.WithLabelValues(dsName).Observe(time.Since(j.CreatedAt).Seconds())
+
+				// Update Memory Pressure on Queue
+				// Approximate size calculation matching Send()
+				size := int64(j.Record.NumRows() * int64(j.Record.NumCols()) * 8)
+				s.indexQueue.DecreaseEstimatedBytes(size)
 			}
 
 			// Decrement pending jobs count
 			ds.PendingIndexJobs.Add(int64(-len(dsGroup)))
 		}
 	}
+
 	for {
+		// Adaptive logic
+		queueDepth := s.indexQueue.Len()
+
+		if queueDepth > 100 {
+			ticker.Reset(1 * time.Millisecond)
+			currentBatch = maxBatch
+		} else if queueDepth > 10 {
+			ticker.Reset(5 * time.Millisecond)
+			currentBatch = 500
+		} else {
+			ticker.Reset(10 * time.Millisecond)
+			currentBatch = minBatch
+		}
+
 		select {
 		case <-s.stopChan:
 			if len(jobs) > 0 {
@@ -328,12 +348,13 @@ func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
 			}
 			jobs = append(jobs, job)
 			// Process batch if full
-			if len(jobs) >= 1000 { // Large batch for throughput
+			if len(jobs) >= currentBatch {
 				processBatch(jobs)
 				jobs = jobs[:0]
 			}
 		case <-ticker.C:
 			if len(jobs) > 0 {
+				// Process whatever we have
 				processBatch(jobs)
 				jobs = jobs[:0]
 			}

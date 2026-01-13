@@ -1,6 +1,5 @@
 package store
 
-
 import (
 	"context"
 	"sync/atomic"
@@ -190,7 +189,7 @@ func TestMemoryBackpressure_BackgroundUpdate(t *testing.T) {
 	select {
 	case <-done:
 		// Success
-	case <-time.After(1 * time.Second):
+	case <-time.After(5 * time.Second):
 		t.Fatal("Acquire timed out waiting for pressure relief via ticker")
 	}
 

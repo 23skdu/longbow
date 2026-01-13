@@ -39,8 +39,9 @@ type VectorStore struct {
 	engine        *storage.StorageEngine // Manages WAL and Snapshots
 	snapshotReset chan time.Duration
 
-	indexQueue     *IndexJobQueue    // Integrated HNSW
-	ingestionQueue chan ingestionJob // Decoupled ingestion pipeline
+	indexQueue          *IndexJobQueue    // Integrated HNSW
+	ingestionQueue      chan ingestionJob // Decoupled ingestion pipeline
+	pendingOverflowJobs atomic.Int64      // Jobs spinning in applyBatchToMemory
 
 	// Lifecycle
 	stopChan          chan struct{}
@@ -464,6 +465,17 @@ func (s *VectorStore) DropDataset(ctx context.Context, name string) error {
 
 // WaitForIndexing blocks until all pending indexing jobs for the given dataset are complete.
 func (s *VectorStore) WaitForIndexing(name string) {
+	// First wait for any global congestion to clear
+	start := time.Now()
+	for s.pendingOverflowJobs.Load() > 0 {
+		if time.Since(start) > 5*time.Second {
+			// Don't block forever if something is stuck, let dataset check proceed
+			s.logger.Warn().Msg("WaitForIndexing timed out waiting for global overflow jobs")
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
 	if ds, ok := s.getDataset(name); ok {
 		ds.WaitForIndexing()
 	}

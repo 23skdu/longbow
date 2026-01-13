@@ -39,6 +39,17 @@ func (s *VectorStore) Shutdown(ctx context.Context) error {
 	close(s.stopChan)
 	s.stopCompaction()
 
+	// Step 1.5: Wait for pending overflow jobs (spinners) to enqueue
+	s.logger.Info().Msg("Waiting for pending overflow jobs...")
+	waitStart := time.Now()
+	for s.pendingOverflowJobs.Load() > 0 {
+		if time.Since(waitStart) > 10*time.Second {
+			s.logger.Warn().Int64("count", s.pendingOverflowJobs.Load()).Msg("Timeout waiting for overflow jobs")
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
 	// Step 2: Drain the index queue
 	s.logger.Info().Msg("Draining index queue...")
 	if err := s.drainIndexQueue(ctx); err != nil {

@@ -69,6 +69,13 @@ func TestVectorStoreBM25IndexCreation(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 
+	// Must create dataset first
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "title", Type: arrow.BinaryTypes.String},
+		{Name: "body", Type: arrow.BinaryTypes.String},
+	}, nil)
+	store.PrewarmDataset("test_ds", schema)
+
 	if store.GetBM25Index("test_ds") == nil {
 		t.Error("expected BM25 index to be created when hybrid search is enabled")
 	}

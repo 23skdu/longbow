@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"unsafe"
 
 	"github.com/23skdu/longbow/internal/metrics"
@@ -29,9 +30,9 @@ type slab struct {
 
 // SlabArena manages large blocks of memory.
 type SlabArena struct {
-	mu      sync.RWMutex
-	slabs   []*slab
-	slabCap uint32 // capacity in BYTES
+	mu      sync.Mutex              // Only guards Alloc (writes)
+	slabs   atomic.Pointer[[]*slab] // Lock-free access to slabs slice
+	slabCap uint32                  // capacity in BYTES
 }
 
 // NewSlabArena creates a new arena with specified slab byte size.
@@ -41,9 +42,13 @@ func NewSlabArena(slabSizeBytes int) *SlabArena {
 	}
 	// Ensure alignment? For now, we assume simple byte allocation.
 	// 4KB or 2MB alignment is good.
-	return &SlabArena{
+	s := &SlabArena{
 		slabCap: uint32(slabSizeBytes),
 	}
+	// Initialize with empty slice
+	empty := make([]*slab, 0)
+	s.slabs.Store(&empty)
+	return s
 }
 
 // Alloc reserves space for 'size' bytes.
@@ -62,9 +67,13 @@ func (a *SlabArena) Alloc(size int) (uint64, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
+	// Load current state
+	currentSlabsPtr := a.slabs.Load()
+	currentSlabs := *currentSlabsPtr
+
 	var active *slab
-	if len(a.slabs) > 0 {
-		active = a.slabs[len(a.slabs)-1]
+	if len(currentSlabs) > 0 {
+		active = currentSlabs[len(currentSlabs)-1]
 	}
 
 	// Simple bump allocator within slab
@@ -83,11 +92,18 @@ func (a *SlabArena) Alloc(size int) (uint64, error) {
 	// Check fit
 	if active == nil || !canFit(active, needed, align) {
 		newSlab := &slab{
-			id:     uint32(len(a.slabs) + 1), // ID starts at 1
+			id:     uint32(len(currentSlabs) + 1), // ID starts at 1
 			data:   make([]byte, a.slabCap),
 			offset: 0,
 		}
-		a.slabs = append(a.slabs, newSlab)
+		// Copy-On-Write for lock-free readers
+		newSlabs := make([]*slab, len(currentSlabs)+1)
+		copy(newSlabs, currentSlabs)
+		newSlabs[len(currentSlabs)] = newSlab
+
+		// Publish new state
+		a.slabs.Store(&newSlabs)
+
 		active = newSlab
 
 		metrics.ArenaSlabsTotal.Inc()
@@ -142,16 +158,15 @@ func (a *SlabArena) Get(offset uint64, length uint32) []byte {
 	slabIdx := offset / uint64(a.slabCap)
 	localOffset := uint32(offset % uint64(a.slabCap))
 
-	a.mu.RLock() // Lock needed for slabs slice access? Yes if it grows?
-	// Slabs append-only. Reading existing pointer safe?
-	// Generally safe if we have memory barrier, but lock is safer.
-	defer a.mu.RUnlock()
+	// Lock-free read
+	slabsPtr := a.slabs.Load()
+	slabs := *slabsPtr
 
-	if int(slabIdx) >= len(a.slabs) {
+	if int(slabIdx) >= len(slabs) {
 		return nil
 	}
 
-	s := a.slabs[slabIdx]
+	s := slabs[slabIdx]
 	if uint64(localOffset)+uint64(length) > uint64(len(s.data)) {
 		return nil
 	}
@@ -161,6 +176,8 @@ func (a *SlabArena) Get(offset uint64, length uint32) []byte {
 
 // GetPointer returns unsafe.Pointer to the data.
 // Use with caution.
+// GetPointer returns unsafe.Pointer to the data.
+// Use with caution.
 func (a *SlabArena) GetPointer(offset uint64) unsafe.Pointer {
 	if offset == 0 {
 		return nil
@@ -168,12 +185,13 @@ func (a *SlabArena) GetPointer(offset uint64) unsafe.Pointer {
 	slabIdx := offset / uint64(a.slabCap)
 	localOffset := uint32(offset % uint64(a.slabCap))
 
-	a.mu.RLock()
-	defer a.mu.RUnlock()
+	// Lock-free read
+	slabsPtr := a.slabs.Load()
+	slabs := *slabsPtr
 
-	if int(slabIdx) >= len(a.slabs) {
+	if int(slabIdx) >= len(slabs) {
 		return nil
 	}
-	s := a.slabs[slabIdx]
+	s := slabs[slabIdx]
 	return unsafe.Pointer(&s.data[localOffset])
 }

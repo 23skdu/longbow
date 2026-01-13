@@ -32,10 +32,12 @@ func TestDiskGraph_RoundTrip(t *testing.T) {
 	// Populate SQ8 Vectors
 	// Node 0: [10, 10, 10, 10]
 	// Node 1: [20, 20, 20, 20]
-	sq8 := make([]byte, ChunkSize*dims)
+	// SQ8 is now padded to 64 bytes
+	sq8Padded := (dims + 63) & ^63
+	sq8 := make([]byte, ChunkSize*sq8Padded)
 	for i := 0; i < dims; i++ {
-		sq8[0*dims+i] = 10
-		sq8[1*dims+i] = 20
+		sq8[0*sq8Padded+i] = 10
+		sq8[1*sq8Padded+i] = 20
 	}
 	gd.StoreSQ8Chunk(0, sq8)
 
@@ -72,7 +74,7 @@ func TestDiskGraph_RoundTrip(t *testing.T) {
 	path := filepath.Join(tmpDir, "graph.bin")
 
 	// MaxNodeID 5
-	if err := WriteDiskGraph(gd, path, 5); err != nil {
+	if err := WriteDiskGraph(gd, path, 5, 0, 0, 0, 0); err != nil {
 		t.Fatalf("WriteDiskGraph failed: %v", err)
 	}
 

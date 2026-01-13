@@ -30,6 +30,16 @@ func NewScalarQuantizer(dim int) *ScalarQuantizer {
 	}
 }
 
+// NewScalarQuantizerFromParams restores a trained quantizer.
+func NewScalarQuantizerFromParams(dim int, minVal, maxVal float32) *ScalarQuantizer {
+	return &ScalarQuantizer{
+		dim:    dim,
+		minVal: minVal,
+		maxVal: maxVal,
+		frozen: true, // Marked as trained
+	}
+}
+
 // IsTrained returns true if the quantizer has been trained on data.
 func (sq *ScalarQuantizer) IsTrained() bool {
 	sq.mu.RLock()

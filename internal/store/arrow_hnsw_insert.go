@@ -317,8 +317,13 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec []float32, level int) error 
 		cOff := chunkOffset(id)
 		// Check if SQ8 vector array is allocated for this chunk
 		if chunk := data.GetVectorsSQ8Chunk(cID); chunk != nil {
-			dest := chunk[int(cOff)*dims : int(cOff+1)*dims]
-			copy(dest, localSQ8Buffer)
+			stride := (dims + 63) & ^63
+			offset := int(cOff) * stride
+			// Bounds check (though ensureChunk should guarantee size)
+			if offset+dims <= len(chunk) {
+				dest := chunk[offset : offset+dims]
+				copy(dest, localSQ8Buffer)
+			}
 		}
 		sq8Handled = true
 	}
@@ -337,8 +342,12 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec []float32, level int) error 
 			h.quantizer.Encode(vec, ctx.querySQ8)
 			localSQ8Buffer = ctx.querySQ8
 
-			dest := chunk[int(cOff)*dims : int(cOff+1)*dims]
-			copy(dest, localSQ8Buffer)
+			stride := (dims + 63) & ^63
+			offset := int(cOff) * stride
+			if offset+dims <= len(chunk) {
+				dest := chunk[offset : offset+dims]
+				copy(dest, localSQ8Buffer)
+			}
 		}
 	}
 
@@ -794,6 +803,9 @@ func (h *ArrowHNSW) AddConnection(ctx *ArrowSearchContext, data *GraphData, sour
 	cOff := chunkOffset(source)
 
 	// Ensure chunk exists (it should, as we resized before insert)
+	// Promote node from Disk if needed (Copy-On-Write)
+	data = h.promoteNode(data, source)
+
 	countsChunk := data.GetCountsChunk(layer, cID)
 	neighborsChunk := data.GetNeighborsChunk(layer, cID)
 
@@ -1074,14 +1086,16 @@ func (h *ArrowHNSW) AddConnectionsBatch(ctx *ArrowSearchContext, data *GraphData
 	}
 }
 
-// PruneConnections reduces the number of connections to maxConn using the heuristic.
-func (h *ArrowHNSW) PruneConnections(ctx *ArrowSearchContext, data *GraphData, nodeID uint32, maxConn, layer int) {
-	// Acquire lock for the specific node
-	lockID := nodeID % ShardedLockCount
+// PruneConnections removes excess connections from a node's neighbor list.
+func (h *ArrowHNSW) PruneConnections(ctx *ArrowSearchContext, data *GraphData, id uint32, maxConn, layer int) {
+	lockID := id % ShardedLockCount
 	h.shardedLocks[lockID].Lock()
 	defer h.shardedLocks[lockID].Unlock()
 
-	h.pruneConnectionsLocked(ctx, data, nodeID, maxConn, layer)
+	// COW Promotion
+	data = h.promoteNode(data, id)
+
+	h.pruneConnectionsLocked(ctx, data, id, maxConn, layer)
 }
 
 // pruneConnectionsLocked reduces connections assuming lock is held.

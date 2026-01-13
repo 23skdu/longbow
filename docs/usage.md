@@ -51,26 +51,26 @@ When running the Longbow container directly (e.g., via Docker), you can configur
 | `LONGBOW_DATA_PATH` | Path for WAL storage | `./data` |
 | `LONGBOW_SNAPSHOT_INTERVAL` | Interval for snapshots | `1h` |
 | `LONGBOW_MAX_WAL_SIZE` | Max WAL size before rotation | `104857600` (100MB) |
-| `STORAGE_ASYNC_FSYNC` | Enable async fsync for WAL | `true` |
+| `LONGBOW_STORAGE_ASYNC_FSYNC` | Enable async fsync for WAL | `true` |
 
 ### Compaction & Maintenance
 
 | Variable | Description | Default |
 | :--- | :--- | :--- |
-| `COMPACTION_ENABLED` | Enable background compaction | `true` |
-| `COMPACTION_INTERVAL` | Interval between compaction runs | `30s` |
-| `COMPACTION_TARGET_BATCH_SIZE` | Target rows per record batch | `10000` |
-| `COMPACTION_MIN_BATCHES` | Min batches to trigger compaction | `10` |
+| `LONGBOW_COMPACTION_ENABLED` | Enable background compaction | `true` |
+| `LONGBOW_COMPACTION_INTERVAL` | Interval between compaction runs | `30s` |
+| `LONGBOW_COMPACTION_TARGET_BATCH_SIZE` | Target rows per record batch | `10000` |
+| `LONGBOW_COMPACTION_MIN_BATCHES` | Min batches to trigger compaction | `10` |
 | `LONGBOW_TTL` | Time-to-live for data (0s = disabled) | `0s` |
 
 ### Sharding & Scaling
 
 | Variable | Description | Default |
 | :--- | :--- | :--- |
-| `RING_SHARDING_ENABLED` | Enable Consistent Hashing Ring | `true` |
-| `AUTO_SHARDING_ENABLED` | Enable auto-migration to sharded index | `true` |
-| `AUTO_SHARDING_THRESHOLD` | Vector count to trigger sharding | `10000` |
-| `AUTO_SHARDING_SPLIT_THRESHOLD` | Size of split shards | `65536` |
+| `LONGBOW_RING_SHARDING_ENABLED` | Enable Consistent Hashing Ring | `true` |
+| `LONGBOW_AUTO_SHARDING_ENABLED` | Enable auto-migration to sharded index | `true` |
+| `LONGBOW_AUTO_SHARDING_THRESHOLD` | Vector count to trigger sharding | `10000` |
+| `LONGBOW_AUTO_SHARDING_SPLIT_THRESHOLD` | Size of split shards | `65536` |
 
 ### gRPC Tuning
 
@@ -84,13 +84,13 @@ When running the Longbow container directly (e.g., via Docker), you can configur
 
 | Variable | Description | Default |
 | :--- | :--- | :--- |
-| `HNSW_M` | Max connections per node | `32` |
-| `HNSW_EF_CONSTRUCTION` | Size of dynamic candidate list | `400` |
-| `HNSW_ALPHA` | Graph density factor | `1.0` |
-| `HNSW_KEEP_PRUNED` | Keep pruned connections | `false` |
-| `HNSW_SQ8_ENABLED` | Enable 8-bit quantization | `false` |
-| `HNSW_FLOAT16_ENABLED` | Enable Float16 storage | `false` |
-| `HNSW_REFINEMENT_FACTOR` | Re-ranking refinement multiple | `1.0` |
+| `LONGBOW_HNSW_M` | Max connections per node | `32` |
+| `LONGBOW_HNSW_EF_CONSTRUCTION` | Size of dynamic candidate list | `400` |
+| `LONGBOW_HNSW_ALPHA` | Graph density factor | `1.0` |
+| `LONGBOW_HNSW_KEEP_PRUNED` | Keep pruned connections | `false` |
+| `LONGBOW_HNSW_SQ8_ENABLED` | Enable 8-bit quantization | `false` |
+| `LONGBOW_HNSW_FLOAT16_ENABLED` | Enable Float16 storage | `false` |
+| `LONGBOW_HNSW_REFINEMENT_FACTOR` | Re-ranking refinement multiple | `1.0` |
 
 ### Hybrid Search
 
@@ -104,9 +104,9 @@ When running the Longbow container directly (e.g., via Docker), you can configur
 
 | Variable | Description | Default |
 | :--- | :--- | :--- |
-| `GOSSIP_ENABLED` | Enable gossip mesh | `false` |
-| `GOSSIP_PORT` | Port for gossip protocol | `7946` |
-| `GOSSIP_DISCOVERY_PROVIDER` | Discovery (`static`, `k8s`, `dns`) | `static` |
+| `LONGBOW_GOSSIP_ENABLED` | Enable gossip mesh | `false` |
+| `LONGBOW_GOSSIP_PORT` | Port for gossip protocol | `7946` |
+| `LONGBOW_GOSSIP_DISCOVERY_PROVIDER` | Discovery (`static`, `k8s`, `dns`) | `static` |
 
 ## CLI Tools
 

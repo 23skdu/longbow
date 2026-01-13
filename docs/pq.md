@@ -2,7 +2,9 @@
 
 ## Overview
 
-Product Quantization (PQ) compresses high-dimension vectors into compact codes by splitting them into sub-vectors and quantizing each part separately. This significantly reduces memory usage and speeds up distance calculations using lookup tables (ADC).
+Product Quantization (PQ) compresses high-dimension vectors into compact codes by splitting them into
+sub-vectors and quantizing each part separately. This significantly reduces memory usage and speeds up
+distance calculations using lookup tables (ADC).
 
 ## Goals
 
@@ -21,7 +23,8 @@ Product Quantization (PQ) compresses high-dimension vectors into compact codes b
 
 - Modify `ArrowHNSW` to support a `Quantized` mode.
 - In `Quantized` mode, the graph traversal uses PQ distance (ADC) instead of full L2/Cosine.
-- Full vectors are still stored (optionally on disk) for re-ranking or eventual consistency, but the in-memory index uses PQ codes.
+- Full vectors are still stored (optionally on disk) for re-ranking or eventual consistency,
+  but the in-memory index uses PQ codes.
 
 ### Configuration
 

@@ -35,8 +35,13 @@ class LongbowClient:
     def connect(self):
         """Establish connections to the server."""
         try:
-            self._data_client = flight.FlightClient(self.uri)
-            self._meta_client = flight.FlightClient(self.meta_uri)
+            # Set high limits (1GB) to support large batch transfers
+            options = [
+                ("grpc.max_receive_message_length", 1024 * 1024 * 1024),
+                ("grpc.max_send_message_length", 1024 * 1024 * 1024),
+            ]
+            self._data_client = flight.FlightClient(self.uri, generic_options=options)
+            self._meta_client = flight.FlightClient(self.meta_uri, generic_options=options)
         except Exception as e:
             raise LongbowConnectionError(f"Failed to connect: {e}")
 

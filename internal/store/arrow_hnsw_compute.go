@@ -23,6 +23,7 @@ type float32Computer struct {
 	q          []float32
 	dims       int
 	paddedDims int
+	distFunc   func([]float32, []float32) float32 // Dynamic dispatch for blocked/aligned optimizations
 }
 
 func (c *float32Computer) Compute(ids []uint32, dists []float32) {
@@ -35,7 +36,7 @@ func (c *float32Computer) Compute(ids []uint32, dists []float32) {
 				start := int(chunkOffset(id)) * c.paddedDims
 				if start+c.dims <= len(chunk) {
 					v := chunk[start : start+c.dims]
-					dists[i] = simd.DistFunc(c.q, v)
+					dists[i] = c.distFunc(c.q, v)
 					continue
 				}
 			}
@@ -51,7 +52,7 @@ func (c *float32Computer) ComputeSingle(id uint32) float32 {
 		start := int(chunkOffset(id)) * c.paddedDims
 		if start+c.dims <= len(chunk) {
 			v := chunk[start : start+c.dims]
-			return simd.DistFunc(c.q, v)
+			return c.distFunc(c.q, v)
 		}
 	}
 	return math.MaxFloat32
@@ -270,10 +271,33 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *GraphData, ctx *ArrowSearchContext
 
 	// 5. Default Float32
 	metrics.HNSWPolymorphicSearchCount.WithLabelValues("float32").Inc()
+
+	// Select distance function with potential blocked optimization
+	var distFunc func([]float32, []float32) float32
+	switch h.metric {
+	case MetricDotProduct:
+		if dims > 1024 {
+			distFunc = simd.DotProductFloat32Blocked
+		} else {
+			distFunc = simd.DotProduct
+		}
+	case MetricCosine:
+		// Potential: CosineBlocked (Not already implemented, fallback)
+		distFunc = simd.CosineDistance
+	default:
+		// Euclidean
+		if dims > 1024 {
+			distFunc = simd.L2Float32Blocked
+		} else {
+			distFunc = simd.DistFunc // Uses initialized function pointer
+		}
+	}
+
 	return &float32Computer{
 		data:       data,
 		q:          q,
 		dims:       data.Dims,
 		paddedDims: data.GetPaddedDims(),
+		distFunc:   distFunc,
 	}
 }

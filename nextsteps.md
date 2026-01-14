@@ -7,7 +7,7 @@ This document outlines a 15-point plan to further optimize Longbow's ingestion a
 1. **[WAL] Reduce Flush Contention**: The `WALBatcher.flushLoop` still acquires locks frequently. Implement ring-buffer batching.
 2. **[DoGet] Adaptive Chunking**: Implement dynamic chunk sizing (start small, grow to 64k) to handle both low-latency and high-throughput clients.
 3. [x] **[Ingest] Async Persistence**: Move `ApplyDelta` persistence to a dedicated background worker to unblock `DoPut` critical path completely.
-4. **[Memory] CompressBuf Pool**: Fix `WALBatcher.compressBuf` unlimited growth by using a `sync.Pool` of fixed-size large buffers.
+4. [x] **[Memory] CompressBuf Pool**: Fix `WALBatcher.compressBuf` unlimited growth by using a `sync.Pool` of fixed-size large buffers.
 5. **[SIMD] AVX-512 Support**: Implement `euclideanAVX512` for x86 architectures (currently only AVX2/NEON supported).
 
 ## Medium-Term (Architecture)

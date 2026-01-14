@@ -32,6 +32,25 @@ func (ta *TypedArena[T]) AllocSlice(count int) (SliceRef, error) {
 	}, nil
 }
 
+// AllocSliceDirty allocates a slice but DOES NOT guarantee zero initialization.
+// Use this only if you intend to overwrite the entire slice immediately.
+func (ta *TypedArena[T]) AllocSliceDirty(count int) (SliceRef, error) {
+	var zero T
+	elemSize := int(unsafe.Sizeof(zero))
+	totalBytes := count * elemSize
+
+	offset, err := ta.arena.AllocDirty(totalBytes)
+	if err != nil {
+		return SliceRef{}, err
+	}
+
+	return SliceRef{
+		Offset: offset,
+		Len:    uint32(count),
+		Cap:    uint32(count),
+	}, nil
+}
+
 // Get retrieves a typed slice from the arena using a SliceRef.
 func (ta *TypedArena[T]) Get(ref SliceRef) []T {
 	if ref.Offset == 0 || ref.Len == 0 {

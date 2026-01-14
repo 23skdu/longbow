@@ -3,7 +3,6 @@ package store
 import (
 	"bytes"
 	"context"
-	"encoding/binary"
 	"fmt"
 	"sync"
 
@@ -22,7 +21,7 @@ var bufferPool = sync.Pool{
 }
 
 type SerializedBatch struct {
-	FD  *flight.FlightData
+	FDs []*flight.FlightData
 	Buf *bytes.Buffer
 }
 
@@ -65,118 +64,73 @@ func (s *swappableBuffer) Write(p []byte) (n int, err error) {
 	return s.target.Write(p)
 }
 
+// capturingStream implements flight.DataStreamWriter to capture serialized data
+type capturingStream struct {
+	chunks []*flight.FlightData
+}
+
+func (c *capturingStream) Send(d *flight.FlightData) error {
+	// We must copy the data because the writer reuses buffers.
+	// Deep copy header and body.
+	dCopy := &flight.FlightData{}
+	if len(d.DataHeader) > 0 {
+		dCopy.DataHeader = make([]byte, len(d.DataHeader))
+		copy(dCopy.DataHeader, d.DataHeader)
+	}
+	if len(d.DataBody) > 0 {
+		dCopy.DataBody = make([]byte, len(d.DataBody))
+		copy(dCopy.DataBody, d.DataBody)
+	}
+	// Copy metadata if needed (app_metadata) - usually empty for RecordWriter
+	if len(d.AppMetadata) > 0 {
+		dCopy.AppMetadata = make([]byte, len(d.AppMetadata))
+		copy(dCopy.AppMetadata, d.AppMetadata)
+	}
+
+	c.chunks = append(c.chunks, dCopy)
+	return nil
+}
+
 type StatefulSerializerV2 struct {
-	sw      *swappableBuffer
-	w       *ipc.Writer
-	isFirst bool
+	schema *arrow.Schema
 }
 
 func NewStatefulSerializer(schema *arrow.Schema) (*StatefulSerializerV2, error) {
-	buf := bufferPool.Get().(*bytes.Buffer)
-	sw := &swappableBuffer{target: buf}
-
-	// Create writer writing to our swappable wrapper
-	w := ipc.NewWriter(sw, ipc.WithSchema(schema))
-
-	// Discard schema from buf
-	buf.Reset()
-
 	return &StatefulSerializerV2{
-		sw:      sw,
-		w:       w,
-		isFirst: true,
+		schema: schema,
 	}, nil
 }
 
 func (s *StatefulSerializerV2) Serialize(rec arrow.RecordBatch) (*SerializedBatch, error) {
-	// 1. Reset current buffer (it should be empty if we swapped? No, we reset after discard schema)
-	// We assume buffer is ready to write.
+	// Use flight.NewRecordWriter to ensure correct serialization
+	cs := &capturingStream{chunks: make([]*flight.FlightData, 0, 2)}
 
-	if err := s.w.Write(rec); err != nil {
+	// Create writer. This immediately Sends Schema.
+	w := flight.NewRecordWriter(cs, ipc.WithSchema(s.schema))
+	// We don't control when Schema is sent, usually first.
+
+	// Write Record
+	if err := w.Write(rec); err != nil {
+		w.Close()
 		return nil, err
 	}
+	w.Close()
 
-	// Buffer now contains the message.
-	// We want to SHIP this buffer.
-	fullBuf := s.sw.target
-
-	// Create NEW buffer for next time
-	newBuf := bufferPool.Get().(*bytes.Buffer)
-	s.sw.target = newBuf
-
-	// Process fullBuf to extract FlightData
-	data := fullBuf.Bytes()
-
-	// If this is the first write, the buffer contains [Schema] [Batch].
-	// We want to Strip [Schema].
-	// Assumption: Schema has no body (BodyLen=0).
-	if s.isFirst {
-		if len(data) >= 4 {
-			schemaLen := int32(binary.LittleEndian.Uint32(data[0:4]))
-			offset := 4
-			if schemaLen == -1 {
-				offset = 8
-				if len(data) >= 8 {
-					schemaLen = int32(binary.LittleEndian.Uint32(data[4:8]))
-				}
-			}
-			// Skip schema (header + metadata). Body is 0.
-			messageEnd := offset + int(schemaLen)
-			if len(data) > messageEnd {
-				// We have more data! Slice it.
-				data = data[messageEnd:]
-			}
-		}
-		s.isFirst = false
+	if len(cs.chunks) == 0 {
+		return nil, fmt.Errorf("no flight data produced")
 	}
 
-	// Decode IPC length manually (same logic)
-	// [int32 len] [meta] [body]
-	if len(data) < 4 {
-		// Should release fullBuf
-		fullBuf.Reset()
-		bufferPool.Put(fullBuf)
-		return nil, fmt.Errorf("invalid ipc message length")
-	}
-
-	msgLen := int32(binary.LittleEndian.Uint32(data[0:4]))
-	offset := 4
-	if msgLen == -1 {
-		if len(data) < 8 {
-			fullBuf.Reset()
-			bufferPool.Put(fullBuf)
-			return nil, fmt.Errorf("invalid ipc continuation")
-		}
-		msgLen = int32(binary.LittleEndian.Uint32(data[4:8]))
-		offset = 8
-	}
-
-	if int(msgLen) > len(data)-offset {
-		fullBuf.Reset()
-		bufferPool.Put(fullBuf)
-		return nil, fmt.Errorf("buffer too short")
-	}
-
-	metaBytes := data[offset : offset+int(msgLen)]
-	bodyBytes := data[offset+int(msgLen):]
-
-	// Zero-Copy: metaBytes and bodyBytes are slices of fullBuf.Bytes()
-
-	fd := &flight.FlightData{
-		DataHeader: metaBytes,
-		DataBody:   bodyBytes,
-	}
+	// Return ALL chunks (typically [Schema, Batch]).
+	// This ensures the stream is self-contained and valid.
 
 	return &SerializedBatch{
-		FD:  fd,
-		Buf: fullBuf, // Main thread will Release this
+		FDs: cs.chunks,
 	}, nil
 }
 
 func (s *StatefulSerializerV2) Close() error {
-	s.sw.target.Reset()
-	bufferPool.Put(s.sw.target)
-	return s.w.Close()
+	// No resources to close for this implementation
+	return nil
 }
 
 // flightDataRecorder stubs (keep for compatibility if referenced elsewhere)

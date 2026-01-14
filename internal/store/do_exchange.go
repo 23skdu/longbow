@@ -3,14 +3,37 @@ package store
 import (
 	"encoding/binary"
 	"io"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
+	lmem "github.com/23skdu/longbow/internal/memory"
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/storage"
+	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/flight"
+	"github.com/apache/arrow-go/v18/arrow/ipc"
+	arrowmem "github.com/apache/arrow-go/v18/arrow/memory"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
+
+// peekedStream wraps the DoExchange stream to replay the first message
+// so that NewRecordReader can consume the schema from the first message.
+type peekedStream struct {
+	flight.FlightService_DoExchangeServer
+	firstMsg *flight.FlightData
+	used     bool
+}
+
+func (p *peekedStream) Recv() (*flight.FlightData, error) {
+	if !p.used {
+		p.used = true
+		return p.firstMsg, nil
+	}
+	return p.FlightService_DoExchangeServer.Recv()
+}
 
 // DoExchange implements bidirectional Arrow Flight streaming for mesh replication.
 // This provides the foundation for peer-to-peer Arrow stream transfer.
@@ -41,12 +64,31 @@ func (s *VectorStore) DoExchange(stream flight.FlightService_DoExchangeServer) e
 		return err
 	}
 
-	// Check if this is a Vector Search request
-	if firstMsg.FlightDescriptor != nil && string(firstMsg.FlightDescriptor.Cmd) == "VectorSearch" {
-		return s.handleVectorSearchExchange(stream, firstMsg)
+	// Route based on descriptor
+	if firstMsg.FlightDescriptor != nil {
+		// 1. Vector Search
+		if string(firstMsg.FlightDescriptor.Cmd) == "VectorSearch" {
+			return s.handleVectorSearchExchange(stream, firstMsg)
+		}
+
+		// 2. Ingest (Zero-Copy)
+		// Protocol: Path=["ingest", dataset_name]
+		if len(firstMsg.FlightDescriptor.Path) > 0 && firstMsg.FlightDescriptor.Path[0] == "ingest" {
+			if len(firstMsg.FlightDescriptor.Path) < 2 {
+				return status.Error(codes.InvalidArgument, "DoExchange ingest requires dataset name in path")
+			}
+			datasetName := firstMsg.FlightDescriptor.Path[1]
+
+			// Use peeked stream to allow RecordReader to see the schema (first msg)
+			wrappedStream := &peekedStream{
+				FlightService_DoExchangeServer: stream,
+				firstMsg:                       firstMsg,
+			}
+			return s.handleDoExchangeIngest(datasetName, wrappedStream, stream)
+		}
 	}
 
-	// Otherwise, assume standard replication/ingest protocol
+	// Otherwise, assume standard replication/ingest protocol (Legacy/Replication)
 	// Reuse loop, injecting firstMsg
 	receivedCount = 1
 	metrics.DoExchangeBatchesReceivedTotal.Inc()
@@ -55,8 +97,6 @@ func (s *VectorStore) DoExchange(stream flight.FlightService_DoExchangeServer) e
 	if firstMsg.FlightDescriptor != nil {
 		lastDescriptor = firstMsg.FlightDescriptor
 	}
-	// (Reuse logic from loop for first msg? simpler to just jump into loop with a 'feed' mechanism or distinct handling)
-	// Let's iterate using an approach where we process 'data' variable which starts as firstMsg
 
 	data := firstMsg
 	isFirst := true
@@ -192,6 +232,9 @@ func (s *VectorStore) DoExchange(stream flight.FlightService_DoExchangeServer) e
 					return err
 				}
 				continue // Skip the final ack for this command
+			} else if cmd == "VectorSearch" {
+				// Fallback if checked late
+				return s.handleVectorSearchExchange(stream, data)
 			}
 		}
 
@@ -219,5 +262,88 @@ func (s *VectorStore) DoExchange(stream flight.FlightService_DoExchangeServer) e
 		Float64("duration_s", duration).
 		Msg("DoExchange completed")
 
+	return nil
+}
+
+// handleDoExchangeIngest processes valid record batches and sends ACKs back.
+func (s *VectorStore) handleDoExchangeIngest(
+	name string,
+	readerSource interface {
+		Recv() (*flight.FlightData, error)
+	},
+	stream flight.FlightService_DoExchangeServer,
+) error {
+	trackAlloc := lmem.NewTrackingAllocator(arrowmem.DefaultAllocator)
+	r, err := flight.NewRecordReader(readerSource, ipc.WithAllocator(trackAlloc))
+	if err != nil {
+		s.logger.Error().Err(err).Msg("DoExchange ingest failed to create reader")
+		return err
+	}
+	defer r.Release()
+
+	s.PrewarmDataset(name, r.Schema())
+	s.logger.Info().Str("dataset", name).Msg("DoExchange Ingest Started")
+
+	// Create/Get Dataset logic (mirroring DoPut)
+	ds, created := s.getOrCreateDataset(name, func() *Dataset {
+		ds := NewDataset(name, r.Schema())
+		ds.Topo = s.numaTopology
+		if s.datasetInitHook != nil {
+			s.datasetInitHook(ds)
+		}
+
+		// Disk vector store support
+		if strings.HasPrefix(name, "test_disk") || os.Getenv("LONGBOW_USE_DISK") == "1" {
+			path := filepath.Join(s.dataPath, name+"_vectors.bin")
+			dim := 0
+			for _, f := range r.Schema().Fields() {
+				if f.Name == "vector" {
+					if fst, ok := f.Type.(*arrow.FixedSizeListType); ok {
+						dim = int(fst.Len())
+						break
+					}
+				}
+			}
+			if dim > 0 {
+				dvs, err := NewDiskVectorStore(path, dim)
+				if err != nil {
+					s.logger.Error().Err(err).Msg("Failed to create DiskVectorStore")
+				} else {
+					ds.DiskStore = dvs
+				}
+			}
+		}
+
+		if ds.Index != nil {
+			ds.IndexMemoryBytes.Store(ds.Index.EstimateMemory())
+		}
+		return ds
+	})
+
+	if ds == nil {
+		return status.Errorf(codes.Internal, "failed to get/create dataset %s", name)
+	}
+	if created {
+		s.currentMemory.Add(ds.IndexMemoryBytes.Load())
+	}
+
+	batchID := 0
+	for r.Next() {
+		rec := r.Record()
+		// fmt.Println("DEBUG: Got batch")
+
+		// Ingest
+		if err := s.flushPutBatch(name, []arrow.Record{rec}); err != nil {
+			return status.Errorf(codes.Internal, "flush failed: %v", err)
+		}
+
+		batchID++
+	}
+
+	if r.Err() != nil {
+		s.logger.Error().Err(r.Err()).Msg("DoExchange ingest stream error")
+		return r.Err()
+	}
+	s.logger.Info().Str("dataset", name).Int("batches", batchID).Msg("DoExchange Ingest Completed")
 	return nil
 }

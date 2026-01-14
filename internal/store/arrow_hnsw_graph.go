@@ -330,12 +330,9 @@ func NewGraphData(capacity, dims int, sq8Enabled, pqEnabled bool, pqDims int, bq
 		numChunks = 1
 	}
 
-	estSize := capacity * dims * 4
-	if estSize < 16*1024*1024 {
-		estSize = 16 * 1024 * 1024
-	}
-
-	slab := memory.NewSlabArena(estSize)
+	// Use standard 4MB slabs to enable pooling and fast allocation
+	const slabSize = 4 * 1024 * 1024
+	slab := memory.NewSlabArena(slabSize)
 
 	var f16Arena *memory.TypedArena[float16.Num]
 	if float16Enabled {
@@ -1288,35 +1285,36 @@ func (h *ArrowHNSW) ensureChunk(data *GraphData, cID, _ uint32, dims int) *Graph
 		// For now we focus on Float32 as it's the default and failing test case.
 		case VectorTypeFloat32:
 			if !h.config.Float16Enabled {
-				ref, err = data.Float32Arena.AllocSlice(count)
+				// OPTIMIZATION: Use Dirty allocation (no zeroing) for Vectors
+				ref, err = data.Float32Arena.AllocSliceDirty(count)
 			}
 		default:
 			// Fallback generic allocator switch from original code
 			switch data.Type {
 			case VectorTypeFloat16:
-				ref, err = data.Float16Arena.AllocSlice(count)
+				ref, err = data.Float16Arena.AllocSliceDirty(count)
 			case VectorTypeInt8:
-				ref, err = data.Int8Arena.AllocSlice(count)
+				ref, err = data.Int8Arena.AllocSliceDirty(count)
 			case VectorTypeUint8:
-				ref, err = data.Uint8Arena.AllocSlice(count)
+				ref, err = data.Uint8Arena.AllocSliceDirty(count)
 			case VectorTypeInt16:
-				ref, err = data.Int16Arena.AllocSlice(count)
+				ref, err = data.Int16Arena.AllocSliceDirty(count)
 			case VectorTypeUint16:
-				ref, err = data.Uint16Arena.AllocSlice(count)
+				ref, err = data.Uint16Arena.AllocSliceDirty(count)
 			case VectorTypeInt32:
-				ref, err = data.Int32Arena.AllocSlice(count)
+				ref, err = data.Int32Arena.AllocSliceDirty(count)
 			case VectorTypeUint32:
-				ref, err = data.Uint32Arena.AllocSlice(count)
+				ref, err = data.Uint32Arena.AllocSliceDirty(count)
 			case VectorTypeInt64:
-				ref, err = data.Int64Arena.AllocSlice(count)
+				ref, err = data.Int64Arena.AllocSliceDirty(count)
 			case VectorTypeUint64:
-				ref, err = data.Uint64Arena.AllocSlice(count)
+				ref, err = data.Uint64Arena.AllocSliceDirty(count)
 			case VectorTypeFloat64:
-				ref, err = data.Float64Arena.AllocSlice(count)
+				ref, err = data.Float64Arena.AllocSliceDirty(count)
 			case VectorTypeComplex64:
-				ref, err = data.Complex64Arena.AllocSlice(count)
+				ref, err = data.Complex64Arena.AllocSliceDirty(count)
 			case VectorTypeComplex128:
-				ref, err = data.Complex128Arena.AllocSlice(count)
+				ref, err = data.Complex128Arena.AllocSliceDirty(count)
 			}
 		}
 
@@ -1331,9 +1329,11 @@ func (h *ArrowHNSW) ensureChunk(data *GraphData, cID, _ uint32, dims int) *Graph
 	if h.config.SQ8Enabled && dims > 0 && len(data.VectorsSQ8) > int(cID) && atomic.LoadUint64(&data.VectorsSQ8[cID]) == 0 {
 		// SQ8 is always padded to 64 bytes
 		paddedDims := (dims + 63) & ^63
-		ref, err := data.Uint8Arena.AllocSlice(ChunkSize * paddedDims)
+		// SQ8 vectors are overwritten entirely
+		ref, err := data.Uint8Arena.AllocSliceDirty(ChunkSize * paddedDims)
 		if err == nil {
 			if atomic.CompareAndSwapUint64(&data.VectorsSQ8[cID], 0, ref.Offset) {
+				// Copy-On-Write logic remains same...
 				// Copy-On-Write: If we have a backing graph, copy existing vectors into this new chunk
 				if data.BackingGraph != nil {
 					chunk := data.Uint8Arena.Get(ref)
@@ -1363,7 +1363,7 @@ func (h *ArrowHNSW) ensureChunk(data *GraphData, cID, _ uint32, dims int) *Graph
 
 	// PQ
 	if h.config.PQEnabled && data.PQDims > 0 && len(data.VectorsPQ) > int(cID) && atomic.LoadUint64(&data.VectorsPQ[cID]) == 0 {
-		ref, err := data.Uint8Arena.AllocSlice(ChunkSize * data.PQDims)
+		ref, err := data.Uint8Arena.AllocSliceDirty(ChunkSize * data.PQDims)
 		if err == nil {
 			atomic.CompareAndSwapUint64(&data.VectorsPQ[cID], 0, ref.Offset)
 		}
@@ -1372,7 +1372,7 @@ func (h *ArrowHNSW) ensureChunk(data *GraphData, cID, _ uint32, dims int) *Graph
 	// BQ
 	if h.config.BQEnabled && dims > 0 && len(data.VectorsBQ) > int(cID) && atomic.LoadUint64(&data.VectorsBQ[cID]) == 0 {
 		numWords := (dims + 63) / 64
-		ref, err := data.Uint64Arena.AllocSlice(ChunkSize * numWords)
+		ref, err := data.Uint64Arena.AllocSliceDirty(ChunkSize * numWords)
 		if err == nil {
 			atomic.CompareAndSwapUint64(&data.VectorsBQ[cID], 0, ref.Offset)
 		}
@@ -1380,7 +1380,7 @@ func (h *ArrowHNSW) ensureChunk(data *GraphData, cID, _ uint32, dims int) *Graph
 
 	// Float16 (Legacy/Special path)
 	if h.config.Float16Enabled && dims > 0 && len(data.VectorsF16) > int(cID) && atomic.LoadUint64(&data.VectorsF16[cID]) == 0 {
-		ref, err := data.Float16Arena.AllocSlice(ChunkSize * dims)
+		ref, err := data.Float16Arena.AllocSliceDirty(ChunkSize * dims)
 		if err == nil {
 			atomic.CompareAndSwapUint64(&data.VectorsF16[cID], 0, ref.Offset)
 		}
@@ -1389,18 +1389,21 @@ func (h *ArrowHNSW) ensureChunk(data *GraphData, cID, _ uint32, dims int) *Graph
 	// Neighbors context
 	for i := 0; i < ArrowMaxLayers; i++ {
 		if atomic.LoadUint64(&data.Neighbors[i][cID]) == 0 {
-			ref, err := data.Uint32Arena.AllocSlice(ChunkSize * MaxNeighbors)
+			// Neighbors can be dirty (we rely on Counts)
+			ref, err := data.Uint32Arena.AllocSliceDirty(ChunkSize * MaxNeighbors)
 			if err == nil {
 				atomic.CompareAndSwapUint64(&data.Neighbors[i][cID], 0, ref.Offset)
 			}
 		}
 		if atomic.LoadUint64(&data.Counts[i][cID]) == 0 {
+			// Counts MUST be zeroed
 			ref, err := data.Int32Arena.AllocSlice(ChunkSize)
 			if err == nil {
 				atomic.CompareAndSwapUint64(&data.Counts[i][cID], 0, ref.Offset)
 			}
 		}
 		if atomic.LoadUint64(&data.Versions[i][cID]) == 0 {
+			// Versions MUST be zeroed
 			ref, err := data.Uint32Arena.AllocSlice(ChunkSize)
 			if err == nil {
 				atomic.CompareAndSwapUint64(&data.Versions[i][cID], 0, ref.Offset)

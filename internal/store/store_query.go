@@ -19,6 +19,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 
 	"github.com/23skdu/longbow/internal/cache"
+	lbflight "github.com/23skdu/longbow/internal/flight"
 	lbmem "github.com/23skdu/longbow/internal/memory"
 	"github.com/23skdu/longbow/internal/mesh"
 	"github.com/23skdu/longbow/internal/metrics"
@@ -123,6 +124,7 @@ func (s *VectorStore) GetSchema(ctx context.Context, desc *flight.FlightDescript
 
 // DoGet - Minimal implementation
 func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGetServer) error {
+	startDoGet := time.Now()
 	// fmt.Printf("[DEBUG] DoGet received ticket len=%d\n", len(tkt.Ticket))
 	log.Printf("[DEBUG] DoGet received ticket (len=%d): %q", len(tkt.Ticket), string(tkt.Ticket))
 	// Parse ticket
@@ -197,10 +199,21 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 	ctx := stream.Context()
 	rowsSent := int64(0)
 
+	// Adaptive Chunking (Optimized for TTFB)
+	// We slice the records into smaller chunks to improve time-to-first-byte and flow control.
+	chunkStrategy := lbflight.NewAdaptiveChunkStrategy(4096, 65536, 2.0)
+	recordsToProcess, tombstonesToProcess := AdaptivelySliceBatches(ds.Records, ds.Tombstones, chunkStrategy)
+	defer func() {
+		for _, r := range recordsToProcess {
+			r.Release()
+		}
+	}()
+
 	// Parallel Processing with Pipeline Support (Phase 5)
+	// Recalculate workers based on chunked records
 	numWorkers := runtime.NumCPU()
-	if numWorkers > len(ds.Records) {
-		numWorkers = len(ds.Records)
+	if numWorkers > len(recordsToProcess) {
+		numWorkers = len(recordsToProcess)
 	}
 	if numWorkers < 1 {
 		numWorkers = 1
@@ -213,7 +226,7 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 
 	// Determine execution strategy
 	var stageChan <-chan PipelineStage
-	usePipeline := s.shouldUsePipeline(len(ds.Records))
+	usePipeline := s.shouldUsePipeline(len(recordsToProcess))
 	var pipeline *DoGetPipeline
 
 	if usePipeline {
@@ -225,20 +238,20 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 		}
 
 		// ProcessRecords handles feeding safely
-		stageChan = pipeline.ProcessRecords(ctx, ds.Records, ds.Tombstones, query.Filters, nil)
-		metrics.DoGetPipelineStepsTotal.WithLabelValues("scan", "pipeline").Add(float64(len(ds.Records)))
+		stageChan = pipeline.ProcessRecords(ctx, recordsToProcess, tombstonesToProcess, query.Filters, nil)
+		metrics.DoGetPipelineStepsTotal.WithLabelValues("scan", "pipeline").Add(float64(len(recordsToProcess)))
 		s.logger.Debug().Int("workers", pipeline.NumWorkers()).Msg("Using DoGetPipeline")
 	} else {
 		// Simple feeder for small datasets
-		metrics.DoGetPipelineStepsTotal.WithLabelValues("scan", "simple").Add(float64(len(ds.Records)))
-		c := make(chan PipelineStage, len(ds.Records))
+		metrics.DoGetPipelineStepsTotal.WithLabelValues("scan", "simple").Add(float64(len(recordsToProcess)))
+		c := make(chan PipelineStage, len(recordsToProcess))
 		stageChan = c
 		go func() {
 			defer close(c)
-			for i, rec := range ds.Records {
+			for i, rec := range recordsToProcess {
 				var ts *qry.Bitset
 				// Map access is safe under RLock
-				if t, ok := ds.Tombstones[i]; ok {
+				if t, ok := tombstonesToProcess[i]; ok {
 					ts = t
 				}
 				select {
@@ -387,6 +400,10 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 				if err := stream.Send(fd.FD); err != nil {
 					s.logger.Error().Err(err).Msg("DoGet Send failed")
 					return err
+				}
+
+				if rowsSent == 0 {
+					metrics.DoGetTimeToFirstChunk.Observe(time.Since(startDoGet).Seconds())
 				}
 
 				// We assume FlightData body ownership is transferred or needs no release if it uses Go bytes?

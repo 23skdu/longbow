@@ -431,31 +431,30 @@ func (s *VectorStore) flushPutBatch(name string, batch []arrow.RecordBatch) erro
 		return nil
 	}
 
-	// 1. Write to WAL (Sync)
-	ts := time.Now().UnixNano()
-	for _, rec := range batch {
-		if err := s.writeToWAL(rec, name, ts); err != nil {
-			s.logger.Error().Err(err).Str("dataset", name).Msg("Failed to write record to WAL during flushPutBatch")
-			// Depending on strictness, we might return error here.
-			// For now, we follow existing behavior: log and proceed (though skipping WAL is dangerous for durability).
-			// Ideally we should return err if WAL is mandatory.
-			// Let's return error to be safe.
-			return fmt.Errorf("WAL write failed: %w", err)
-		}
-	}
+	// 1. Enqueue to Persistence Queue (Async WAL) & Ingestion Queue (Async Indexing)
+	// We do this in parallel or sequentially.
+	// Since both are async queues now, the latency is just channel send.
 
-	// 2. Enqueue to Ingestion Pipeline (Async)
+	ts := time.Now().UnixNano()
+
 	for _, rec := range batch {
-		rec.Retain() // Retain for the worker (which will Release)
+		rec.Retain() // Retain for Persistence Worker
+		rec.Retain() // Retain for Ingestion Worker (applyBatchToMemory triggers release)
+
+		// Note: We retain twice because two different workers will Release() it.
 
 		// Update lag metric
 		metrics.IngestionLagCount.Add(float64(rec.NumRows()))
 
+		// 1. Send to Persistence (Backpressure if full to ensure durability logic isn't overrun)
+		// If queue is full, we block. This throttles client if disk is slow.
+		s.persistenceQueue <- persistenceJob{datasetName: name, batch: rec, ts: ts}
+
+		// 2. Send to Ingestion
 		select {
 		case s.ingestionQueue <- ingestionJob{datasetName: name, batch: rec, ts: ts}:
 		default:
-			// Backpressure: if queue full, block or fail.
-			// Ideally block to slow down client.
+			// Backpressure logic for ingestion
 			s.ingestionQueue <- ingestionJob{datasetName: name, batch: rec, ts: ts}
 		}
 	}
@@ -465,16 +464,13 @@ func (s *VectorStore) flushPutBatch(name string, batch []arrow.RecordBatch) erro
 
 // StoreRecordBatch stores a batch of records in a dataset
 func (s *VectorStore) StoreRecordBatch(ctx context.Context, name string, rec arrow.RecordBatch) error {
-	// 1. Write to WAL (Sync)
 	ts := time.Now().UnixNano()
-	if err := s.writeToWAL(rec, name, ts); err != nil {
-		return err
-	}
 
-	// 2. Enqueue to Ingestion Pipeline (Async)
-	rec.Retain() // Retain for worker
+	rec.Retain() // For Persistence
+	rec.Retain() // For Ingestion
 	metrics.IngestionLagCount.Add(float64(rec.NumRows()))
 
+	s.persistenceQueue <- persistenceJob{datasetName: name, batch: rec, ts: ts}
 	s.ingestionQueue <- ingestionJob{datasetName: name, batch: rec, ts: ts}
 
 	return nil

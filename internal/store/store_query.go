@@ -387,7 +387,13 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 		close(errChan)
 	}()
 
+	// Manual Schema Transmission Removed:
+	// Serialize() now returns [Schema, Batch] for each batch.
+	// This adds overhead (schema sent per batch) but guarantees correctness.
+	// Future optimization: Serialize() could skip schema if stateful.
+
 	// Consume Results (Sequential Write)
+	firstBatchSent := false
 	for {
 		select {
 		case fd, ok := <-resultsChan:
@@ -396,11 +402,22 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 			} else {
 				startWrite := time.Now()
 
-				// Write the pre-serialized FlightData directly
-				if err := stream.Send(fd.FD); err != nil {
-					s.logger.Error().Err(err).Msg("DoGet Send failed")
-					return err
+				// Write the pre-serialized FlightData chunks
+				for i, chunk := range fd.FDs {
+					// Optimization: The Serializer produces [Schema, Batch].
+					// We must send Schema ONLY for the very first batch.
+					// For subsequent batches, we skip chunks[0] (Schema).
+					if firstBatchSent && i == 0 {
+						continue
+					}
+
+					if err := stream.Send(chunk); err != nil {
+						s.logger.Error().Err(err).Msg("DoGet Send failed")
+						return err
+					}
 				}
+
+				firstBatchSent = true
 
 				if rowsSent == 0 {
 					metrics.DoGetTimeToFirstChunk.Observe(time.Since(startDoGet).Seconds())

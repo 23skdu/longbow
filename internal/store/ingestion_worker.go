@@ -1,7 +1,6 @@
 package store
 
 import (
-	"log"
 	"time"
 
 	"github.com/23skdu/longbow/internal/metrics"
@@ -16,7 +15,7 @@ func (s *VectorStore) runIngestionWorker() {
 		case <-s.stopChan:
 			return
 		case job := <-s.ingestionQueue:
-			log.Printf("[DEBUG] IngestionWorker picked up job for %s (batch rows=%d)", job.datasetName, job.batch.NumRows())
+			s.logger.Debug().Str("dataset", job.datasetName).Int64("rows", job.batch.NumRows()).Msg("IngestionWorker picked up job")
 			start := time.Now()
 
 			// Update metrics

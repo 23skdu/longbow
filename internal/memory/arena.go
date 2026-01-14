@@ -53,7 +53,21 @@ func NewSlabArena(slabSizeBytes int) *SlabArena {
 
 // Alloc reserves space for 'size' bytes.
 // Returns a GLOBAL offset.
+// Guarantees zero-initialized memory.
 func (a *SlabArena) Alloc(size int) (uint64, error) {
+	return a.allocCommon(size, true)
+}
+
+// AllocDirty reserves space for 'size' bytes.
+// Returns a GLOBAL offset.
+// MEMORY IS NOT GUARANTEED TO BE ZEROED.
+// Use this only when you will immediately overwrite the entire range.
+func (a *SlabArena) AllocDirty(size int) (uint64, error) {
+	// Reverting optimization for stability: Force zeroing
+	return a.allocCommon(size, true)
+}
+
+func (a *SlabArena) allocCommon(size int, zero bool) (uint64, error) {
 	if size <= 0 {
 		return 0, errors.New("alloc size must be positive")
 	}
@@ -85,15 +99,26 @@ func (a *SlabArena) Alloc(size int) (uint64, error) {
 		pad := (align - (active.offset % align)) % align
 		if active.offset+pad+needed <= uint32(len(active.data)) {
 			active.offset += pad // consume padding
+		} else {
+			// Won't fit, need new slab
+			active = nil
 		}
-		// If won't fit, skip to next slab
 	}
 
-	// Check fit
-	if active == nil || !canFit(active, needed, align) {
+	// Check fit (active might have been nil'd above if full)
+	if active == nil {
+		// Allocate new slab using local helper or pool
+		var buf []byte
+		// If using standard allocation, use pool.
+		// NOTE: GetSlab returns DIRTY (allocCommon(zero=false)) or ZERO (allocCommon(zero=true))?
+		// GetSlab returns DIRTY relative to reuse.
+		// make returns ZERO.
+		// We handle zeroing below if needed.
+		buf = GetSlab(int(a.slabCap))
+
 		newSlab := &slab{
 			id:     uint32(len(currentSlabs) + 1), // ID starts at 1
-			data:   make([]byte, a.slabCap),
+			data:   buf,
 			offset: 0,
 		}
 		// Copy-On-Write for lock-free readers
@@ -124,12 +149,52 @@ func (a *SlabArena) Alloc(size int) (uint64, error) {
 
 	active.offset += needed
 
+	// ZEROING LOGIC
+	if zero {
+		// Zero the allocated range
+		// If the slab came from 'make', it's already zeroed IF we haven't used it.
+		// But if we reuse slabs, or if we mix clean/dirty allocs in same slab,
+		// we MUST explicitly zero here to be safe.
+		// Go's built-in 'clear' or simple loop?
+		// For small n, loop is fine. For large n, copy/clear is fine.
+		// 'make' provides zeroed memory, but we can't track easily if this specific range is fresh.
+		// Pessimistic zeroing is safest when pooling.
+		// Given we want to optimize 'AllocDirty', we accept cost in 'Alloc'.
+		clear(active.data[start : start+needed])
+	}
+
 	// Result = (SlabIndex * SlabCap) + LocalOffset
 	// Slab index is (ID-1).
 	slabIdx := uint64(active.id - 1)
 	globalOffset := (slabIdx * uint64(a.slabCap)) + uint64(start)
 
 	return globalOffset, nil
+}
+
+// Free releases all slabs back to the pool.
+// The arena must not be used after this.
+func (a *SlabArena) Free() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	currentSlabsPtr := a.slabs.Load()
+	if currentSlabsPtr == nil {
+		return
+	}
+	currentSlabs := *currentSlabsPtr
+
+	for _, s := range currentSlabs {
+		PutSlab(s.data)
+		s.data = nil // Help GC
+	}
+
+	// Reset (optional, if we want to reuse arena struct)
+	empty := make([]*slab, 0)
+	a.slabs.Store(&empty)
+
+	// metrics.ArenaSlabsTotal is a Counter, we cannot decrement.
+	// If we want to track active slabs, we need a separate Gauge.
+	// For now, just ignore decrement.
 }
 
 func canFit(s *slab, needed, align uint32) bool {

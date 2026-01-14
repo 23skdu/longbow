@@ -591,7 +591,7 @@ func (s *VectorStore) applyBatchToMemory(name string, rec arrow.RecordBatch, ts 
 	}
 
 	metrics.DoPutPayloadSizeBytes.Observe(float64(batchSize))
-	AdviseRecord(rec, AdviceRandom)
+	// AdviseRecord(rec, AdviceRandom) // Disabled for performance
 
 	if batchSize > 100*1024*1024 {
 		s.logger.Warn().Int64("size", batchSize).Msg("Large memory addition in DoPut")

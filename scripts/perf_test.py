@@ -517,7 +517,7 @@ def benchmark_concurrent_load(data_uri: str, meta_uri: str, name: str, dim: int,
         local_errors = 0
 
         # Small batch for load
-        small_table = generate_vectors(100, dim)
+        small_table = generate_vectors(2000, dim)
 
         while not stop_event.is_set():
             start = time.time()

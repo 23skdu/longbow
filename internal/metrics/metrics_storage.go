@@ -97,6 +97,38 @@ var (
 		},
 		[]string{"type"}, // "data", "cond"
 	)
+
+	// WalRingBufferUtilization tracks ring buffer usage (0-1)
+	WalRingBufferUtilization = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "longbow_wal_ring_buffer_utilization",
+			Help: "Current utilization of WAL ring buffer (0-1)",
+		},
+	)
+
+	// WalRingBufferPushesTotal counts successful ring buffer pushes
+	WalRingBufferPushesTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_wal_ring_buffer_pushes_total",
+			Help: "Total number of successful ring buffer push operations",
+		},
+	)
+
+	// WalRingBufferDrainsTotal counts ring buffer drain operations
+	WalRingBufferDrainsTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_wal_ring_buffer_drains_total",
+			Help: "Total number of ring buffer drain operations",
+		},
+	)
+
+	// WalRingBufferFullTotal counts times buffer was full
+	WalRingBufferFullTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_wal_ring_buffer_full_total",
+			Help: "Total number of times ring buffer was full (backpressure)",
+		},
+	)
 )
 
 // =============================================================================

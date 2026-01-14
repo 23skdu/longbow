@@ -57,10 +57,9 @@ type WALBatcher struct {
 	entries chan WALEntry
 
 	// Internal state
-	mu           sync.Mutex
+	mu           sync.Mutex // Only for backend I/O, not for batching
 	backend      WALBackend
-	batch        []WALEntry
-	backBatch    []WALEntry // double-buffer: swap on flush to avoid allocation
+	ringBuffer   *WALRingBuffer // Lock-free ring buffer for batching
 	running      bool
 	bufPool      *pool.BytePool // pooled buffers for IPC serialization
 	stopCh       chan struct{}
@@ -85,17 +84,18 @@ var compressBufPool = sync.Pool{
 
 // NewWALBatcher creates a new batched WAL writer
 func NewWALBatcher(dataPath string, config *WALBatcherConfig) *WALBatcher {
+	// Use ring buffer capacity = MaxBatchSize * 2 for headroom
+	ringCapacity := config.MaxBatchSize * 2
 	w := &WALBatcher{
-		dataPath:  dataPath,
-		config:    *config,
-		mem:       memory.NewGoAllocator(),
-		entries:   make(chan WALEntry, config.MaxBatchSize*100), // Increased capacity (10k by default) to handle bursts
-		batch:     make([]WALEntry, 0, config.MaxBatchSize),
-		backBatch: make([]WALEntry, 0, config.MaxBatchSize),
-		bufPool:   pool.NewBytePool(),
-		stopCh:    make(chan struct{}),
-		doneCh:    make(chan struct{}),
-		flushCh:   make(chan chan error),
+		dataPath:   dataPath,
+		config:     *config,
+		mem:        memory.NewGoAllocator(),
+		entries:    make(chan WALEntry, config.MaxBatchSize*100), // Increased capacity (10k by default) to handle bursts
+		ringBuffer: NewWALRingBuffer(ringCapacity),
+		bufPool:    pool.NewBytePool(),
+		stopCh:     make(chan struct{}),
+		doneCh:     make(chan struct{}),
+		flushCh:    make(chan chan error),
 	}
 	if config.Adaptive.Enabled {
 		w.rateTracker = NewWriteRateTracker(1 * time.Second)
@@ -212,21 +212,30 @@ func (w *WALBatcher) flushLoop() {
 				}
 			}
 
-			// 2. Batch Append with Single Lock
-			walLockStart2 := time.Now()
-			w.mu.Lock()
-			metrics.WALLockWaitDuration.WithLabelValues("flush_check").Observe(time.Since(walLockStart2).Seconds())
-
+			// 2. Push to ring buffer (lock-free)
 			// Track pending entries (backpressure indicator)
 			metrics.WalPendingEntries.Set(float64(len(w.entries)))
 
-			w.batch = append(w.batch, localBatch...)
-			shoudFlush := len(w.batch) >= w.config.MaxBatchSize
-			w.mu.Unlock()
+			// Push entries to ring buffer
+			pushCount := 0
+			for _, e := range localBatch {
+				if w.ringBuffer.Push(e) {
+					pushCount++
+					metrics.WalRingBufferPushesTotal.Inc()
+				} else {
+					// Buffer full - flush immediately
+					metrics.WalRingBufferFullTotal.Inc()
+					break
+				}
+			}
 
-			if shoudFlush {
-				// We might have accumulated more than MaxBatchSize if w.batch was not empty.
-				// flush() handles the whole w.batch.
+			// Update ring buffer utilization metric
+			utilization := float64(w.ringBuffer.Len()) / float64(w.ringBuffer.Cap())
+			metrics.WalRingBufferUtilization.Set(utilization)
+
+			// Flush if buffer is getting full or we hit capacity
+			shouldFlush := w.ringBuffer.Len() >= w.config.MaxBatchSize || pushCount < len(localBatch)
+			if shouldFlush {
 				w.flush()
 			}
 
@@ -249,21 +258,20 @@ func (w *WALBatcher) flushLoop() {
 
 // flush writes all batched entries to disk
 func (w *WALBatcher) flush() {
-	walLockStart3 := time.Now()
-	w.mu.Lock()
-	metrics.WALLockWaitDuration.WithLabelValues("flush").Observe(time.Since(walLockStart3).Seconds())
-	if len(w.batch) == 0 {
-		w.mu.Unlock()
+	// Drain entries from ring buffer
+	batch := make([]WALEntry, 0, w.config.MaxBatchSize)
+	count := w.ringBuffer.Drain(&batch)
+
+	if count == 0 {
 		return
 	}
 
-	// Swap batch to avoid holding lock during serialization/IO
-	batch := w.batch
-	w.batch = w.backBatch[:0]
-	w.backBatch = batch // double-buffer swap
-	w.mu.Unlock()
+	metrics.WalRingBufferDrainsTotal.Inc()
+	metrics.WalBatchSize.Observe(float64(count))
 
-	metrics.WalBatchSize.Observe(float64(len(batch)))
+	// Update utilization after drain
+	utilization := float64(w.ringBuffer.Len()) / float64(w.ringBuffer.Cap())
+	metrics.WalRingBufferUtilization.Set(utilization)
 
 	// Prepare output buffer
 	w.flushBuf.Reset()
@@ -394,11 +402,8 @@ func (w *WALBatcher) drainAndFlush() {
 	for {
 		select {
 		case entry := <-w.entries:
-			walLockStart6 := time.Now()
-			w.mu.Lock()
-			metrics.WALLockWaitDuration.WithLabelValues("sync_complete").Observe(time.Since(walLockStart6).Seconds())
-			w.batch = append(w.batch, entry)
-			w.mu.Unlock()
+			// Push to ring buffer
+			w.ringBuffer.Push(entry)
 		default:
 			// Channel empty
 			w.flush()
@@ -570,9 +575,7 @@ func (w *WALBatcher) drainChannelNonBlocking() {
 	for {
 		select {
 		case entry := <-w.entries:
-			w.mu.Lock()
-			w.batch = append(w.batch, entry)
-			w.mu.Unlock()
+			w.ringBuffer.Push(entry)
 		default:
 			return
 		}

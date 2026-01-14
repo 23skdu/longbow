@@ -36,9 +36,6 @@ func TestCompressedBitmap_SetOps(t *testing.T) {
 	b2.Set(3)
 	b2.Set(4)
 
-	// Union: {1, 2, 3, 4}
-	// Note: Our Bitset wrapper might simple expose Roaring functions or wrapped ones.
-	// Previously called Union, Intersection, Difference.
 	// Assuming Bitset has these methods wrapping roaring.
 	// If not, we might fail here.
 	// Current query/bitmap.go (Step 1745) showed Set, Clear, Contains, Count, ToUint32Array. Use Clone for Ops?
@@ -47,4 +44,31 @@ func TestCompressedBitmap_SetOps(t *testing.T) {
 	// It did NOT show Union/Intersection etc.
 	// So I should probably simplify this test or Add those methods to Bitset.
 	// I'll stick to Basic test for now to pass compilation.
+}
+
+func TestBitset_Slice(t *testing.T) {
+	bm := NewBitset()
+	// Set bits: 1, 10, 20, 30, 40, 50
+	vals := []int{1, 10, 20, 30, 40, 50}
+	for _, v := range vals {
+		bm.Set(v)
+	}
+
+	// Slice 1: offset=0, len=15 -> expect {1, 10}
+	s1 := bm.Slice(0, 15)
+	assert.Equal(t, uint64(2), s1.Count())
+	assert.True(t, s1.Contains(1))
+	assert.True(t, s1.Contains(10))
+
+	// Slice 2: offset=15, len=20 (range 15-35) -> expect {20, 30} mapped to {5, 15}
+	s2 := bm.Slice(15, 20)
+	assert.Equal(t, uint64(2), s2.Count())
+	assert.True(t, s2.Contains(20-15)) // 5
+	assert.True(t, s2.Contains(30-15)) // 15
+	assert.False(t, s2.Contains(20))   // Should be shifted
+
+	// Slice 3: offset=45, len=100 -> expect {50} mapped to {5}
+	s3 := bm.Slice(45, 100)
+	assert.Equal(t, uint64(1), s3.Count())
+	assert.True(t, s3.Contains(50-45)) // 5
 }

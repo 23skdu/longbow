@@ -71,7 +71,16 @@ type WALBatcher struct {
 	intervalCalc *AdaptiveIntervalCalculator // Adaptive: calculates intervals
 	asyncFsyncer *AsyncFsyncer               // Async: background fsync handler
 	flushBuf     bytes.Buffer                // Reused buffer for flush serialization
-	compressBuf  []byte                      // Reused buffer for compression
+	compressPool *sync.Pool                  // Pool for compression buffers
+}
+
+// compressBufPool is a global pool for compression buffers
+var compressBufPool = sync.Pool{
+	New: func() interface{} {
+		// Start with 64KB, will grow as needed
+		buf := make([]byte, 0, 64*1024)
+		return &buf
+	},
 }
 
 // NewWALBatcher creates a new batched WAL writer
@@ -291,24 +300,22 @@ func (w *WALBatcher) flush() {
 		src := rawBatch.Bytes()
 		maxLen := snappy.MaxEncodedLen(len(src))
 
-		// Ensure compressBuf is large enough
-		if cap(w.compressBuf) < maxLen {
-			w.compressBuf = make([]byte, maxLen)
+		// Get a buffer from the pool
+		compressBufPtr := compressBufPool.Get().(*[]byte)
+		compressBuf := *compressBufPtr
+
+		// Ensure buffer is large enough
+		if cap(compressBuf) < maxLen {
+			compressBuf = make([]byte, 0, maxLen)
 		}
 
-		// Use the slice with correct length but backed by the reused array
-		// snappy.Encode uses dst[:cap] basically, so we pass a slice with sufficient capacity.
-		// Note: passing explicit slice to reuse capacity.
-		// The returned slice is a sub-slice of the argument if it fits.
-
-		// Reset length to 0 but keep cap? Snappy Encode docs say:
-		// "Encode returns the encoded form of src. The returned slice may be a sub-slice of dst if dst was large enough."
-		// We pass w.compressBuf[:maxLen] as dst to be safe? Or w.compressBuf[:0]?
-		// Go snappy implementation usually appends or overwrites.
-		// Safe pattern:
-		dest := snappy.Encode(w.compressBuf[:0], src)
-		w.compressBuf = dest // Updates length, keeps underlying array if same
+		// Compress into the buffer
+		dest := snappy.Encode(compressBuf[:0], src)
 		payload = dest
+
+		// Return buffer to pool (store the potentially grown buffer)
+		*compressBufPtr = dest
+		defer compressBufPool.Put(compressBufPtr)
 
 		// 3. Construct Compressed Block Header
 		// Checksum = 0xFFFFFFFF (Sentinel)

@@ -151,6 +151,15 @@ func (h *HNSWIndex) AddSafe(rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32
 	}
 
 	values := listArr.Data().Children()[0]
+	// Validate buffer capacity to prevent panics in NewFloat32Data
+	if len(values.Buffers()) > 1 && values.Buffers()[1] != nil {
+		bufLen := values.Buffers()[1].Len()
+		// NewFloat32Data expects buffer to hold values.Len() floats
+		needed := values.Len() * 4
+		if bufLen < needed {
+			return 0, fmt.Errorf("AddSafe: vector data buffer truncated (len=%d, needed=%d)", bufLen, needed)
+		}
+	}
 	floatArr := array.NewFloat32Data(values)
 	defer floatArr.Release()
 

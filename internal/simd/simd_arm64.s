@@ -244,6 +244,10 @@ TEXT ·cosineF16NEON(SB), NOSPLIT, $0-52
     VEOR    V0.B16, V0.B16, V0.B16 // Dot
     VEOR    V10.B16, V10.B16, V10.B16 // NormA
     VEOR    V11.B16, V11.B16, V11.B16 // NormB
+    
+    // Initialize scalar accumulators for tail case (Dim < 8)
+    FMOVS   $0.0, F1
+    FMOVS   $0.0, F2
 
     CMP     $8, R1
     BLT     cos_f16_tail

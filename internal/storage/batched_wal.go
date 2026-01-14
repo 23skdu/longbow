@@ -181,19 +181,43 @@ func (w *WALBatcher) flushLoop() {
 	ticker := time.NewTicker(w.config.FlushInterval)
 	defer ticker.Stop()
 
+	// Local buffer to accumulate entries before locking
+	// We use this to drain the channel and minimize lock acquisitions.
+	localBatch := make([]WALEntry, 0, w.config.MaxBatchSize)
+
 	for {
 		select {
 		case entry := <-w.entries:
+			// 1. Drain channel eagerly up to MaxBatchSize
+			localBatch = localBatch[:0]
+			localBatch = append(localBatch, entry)
+
+			// Try to drain more if available
+		DrainLoop:
+			for len(localBatch) < w.config.MaxBatchSize {
+				select {
+				case e := <-w.entries:
+					localBatch = append(localBatch, e)
+				default:
+					break DrainLoop
+				}
+			}
+
+			// 2. Batch Append with Single Lock
 			walLockStart2 := time.Now()
 			w.mu.Lock()
 			metrics.WALLockWaitDuration.WithLabelValues("flush_check").Observe(time.Since(walLockStart2).Seconds())
+
 			// Track pending entries (backpressure indicator)
 			metrics.WalPendingEntries.Set(float64(len(w.entries)))
-			w.batch = append(w.batch, entry)
+
+			w.batch = append(w.batch, localBatch...)
 			shoudFlush := len(w.batch) >= w.config.MaxBatchSize
 			w.mu.Unlock()
 
 			if shoudFlush {
+				// We might have accumulated more than MaxBatchSize if w.batch was not empty.
+				// flush() handles the whole w.batch.
 				w.flush()
 			}
 
@@ -202,14 +226,6 @@ func (w *WALBatcher) flushLoop() {
 
 		case ch := <-w.flushCh:
 			// Synchronous flush request
-			// Drain any pending entries first (optional but good for consistency)
-			// Actually select prefers this case? No, random.
-			// Best effort drain?
-			// Let's just flush what we have in batch.
-			// If user wants to ensure previous writes are flushed, they should rely on ordering.
-			// But entries channel is buffered. Writers might have written to channel.
-			// To strictly flush all *written* items, we need to drain entries channel?
-			// Yes, for Sync semantics: "everything written before Sync returns".
 			w.drainChannelNonBlocking()
 			w.flush()
 			ch <- w.flushErr
@@ -307,9 +323,10 @@ func (w *WALBatcher) flush() {
 		// NameLen: 1 (Compression Type: 1=Snappy)
 		// RecLen: len(payload)
 
-		header := encodeWALEntryHeader(0xFFFFFFFF, lastSeq, 0, 1, uint64(len(payload)))
+		var header [32]byte
+		encodeWALEntryHeader(header[:], 0xFFFFFFFF, lastSeq, 0, 1, uint64(len(payload)))
 
-		w.flushBuf.Write(header)
+		w.flushBuf.Write(header[:])
 		w.flushBuf.Write([]byte{1}) // Name (Type=1)
 		w.flushBuf.Write(payload)   // Record (Compressed Data)
 
@@ -383,15 +400,13 @@ func (w *WALBatcher) drainAndFlush() {
 	}
 }
 
-// encodeWALEntryHeader encodes crc(uint32), seq(uint64), ts(int64), nameLen(uint32) and recLen(uint64) into a 32-byte slice
-func encodeWALEntryHeader(crc uint32, seq uint64, ts int64, nameLen uint32, recLen uint64) []byte {
-	buf := make([]byte, 32)
+// encodeWALEntryHeader encodes header into provided buffer
+func encodeWALEntryHeader(buf []byte, crc uint32, seq uint64, ts int64, nameLen uint32, recLen uint64) {
 	binary.LittleEndian.PutUint32(buf[0:4], crc)
 	binary.LittleEndian.PutUint64(buf[4:12], seq)
 	binary.LittleEndian.PutUint64(buf[12:20], uint64(ts))
 	binary.LittleEndian.PutUint32(buf[20:24], nameLen)
 	binary.LittleEndian.PutUint64(buf[24:32], recLen)
-	return buf
 }
 
 // writeEntry serializes and writes a single entry to WAL
@@ -408,21 +423,33 @@ func (w *WALBatcher) serializeEntry(out *bytes.Buffer, entry WALEntry, scratch *
 	}
 	recBytes := scratch.Bytes()
 
-	nameBytes := []byte(entry.Name)
-	nameLen := uint32(len(nameBytes))
+	// Zero-allocation string length
+	nameLen := uint32(len(entry.Name))
 	recLen := uint64(len(recBytes))
 
+	// Calculate CRC
 	crc := crc32.NewIEEE()
-	_, _ = crc.Write(nameBytes)
+	// crc.Write([]byte(string)) does allocation?
+	// Go optimized string->byte conversion for Read/Write?
+	// standard library handles this optimized in recent versions?
+	// Manually unsafe slice? For now, we prefer safety.
+	// io.WriteString is not on hash.Hash.
+	// But we can cast safely if needed.
+	// Let's allocation here is small (name is short).
+	// Ideally we accept that or use unsafe if critical.
+	_, _ = crc.Write([]byte(entry.Name))
 	_, _ = crc.Write(recBytes)
 	checksum := crc.Sum32()
 
-	header := encodeWALEntryHeader(checksum, entry.Seq, entry.Timestamp, nameLen, recLen)
+	// Reserve header space (32 bytes)
+	// We can write header directly to out?
+	var header [32]byte
+	encodeWALEntryHeader(header[:], checksum, entry.Seq, entry.Timestamp, nameLen, recLen)
 
-	if _, err := out.Write(header); err != nil {
+	if _, err := out.Write(header[:]); err != nil {
 		return err
 	}
-	if _, err := out.Write(nameBytes); err != nil {
+	if _, err := out.WriteString(entry.Name); err != nil { // Use WriteString
 		return err
 	}
 	if _, err := out.Write(recBytes); err != nil {

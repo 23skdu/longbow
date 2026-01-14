@@ -39,9 +39,10 @@ type VectorStore struct {
 	engine        *storage.StorageEngine // Manages WAL and Snapshots
 	snapshotReset chan time.Duration
 
-	indexQueue          *IndexJobQueue    // Integrated HNSW
-	ingestionQueue      chan ingestionJob // Decoupled ingestion pipeline
-	pendingOverflowJobs atomic.Int64      // Jobs spinning in applyBatchToMemory
+	indexQueue          *IndexJobQueue      // Integrated HNSW
+	ingestionQueue      chan ingestionJob   // Decoupled ingestion pipeline
+	persistenceQueue    chan persistenceJob // Async persistence queue
+	pendingOverflowJobs atomic.Int64        // Jobs spinning in applyBatchToMemory
 
 	// Lifecycle
 	stopChan          chan struct{}
@@ -111,6 +112,12 @@ type ingestionJob struct {
 	// We might add more metadata here (e.g. span context)
 }
 
+type persistenceJob struct {
+	datasetName string
+	batch       arrow.RecordBatch
+	ts          int64
+}
+
 //nolint:gocritic // Logger passed by value for simplicity
 func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes int64, _ int64, _ time.Duration) *VectorStore {
 	memCfg := DefaultMemoryConfig()
@@ -128,7 +135,8 @@ func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes 
 
 	s.maxMemory.Store(maxMemoryBytes)
 	s.indexQueue = NewIndexJobQueue(DefaultIndexJobQueueConfig())
-	s.ingestionQueue = make(chan ingestionJob, 100) // Buffer 100 batches
+	s.ingestionQueue = make(chan ingestionJob, 64)     // Buffer 64 batches
+	s.persistenceQueue = make(chan persistenceJob, 64) // Buffer 64 batches for persistence
 
 	s.nsManager = newNamespaceManager()
 	s.nsManager = newNamespaceManager()
@@ -150,6 +158,7 @@ func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes 
 
 	s.workerWg.Add(1)
 	go s.runIngestionWorker()
+	go s.runPersistenceWorker()
 
 	// Start default index worker (1 thread)
 	s.StartIndexingWorkers(1)

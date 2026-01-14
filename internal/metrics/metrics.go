@@ -908,4 +908,20 @@ var (
 			Help: "Total number of JIT kernel execution errors",
 		},
 	)
+
+	// WAL Metrics
+	WALWriteErrors = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_wal_write_errors_total",
+			Help: "Total number of WAL write errors",
+		},
+	)
+
+	WALWriteDuration = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_wal_write_duration_seconds",
+			Help:    "Duration of WAL writes",
+			Buckets: []float64{0.0001, 0.001, 0.005, 0.01, 0.05},
+		},
+	)
 )

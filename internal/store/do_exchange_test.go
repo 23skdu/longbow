@@ -2,8 +2,9 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"io"
-	"sync"
+	"net"
 	"testing"
 	"time"
 
@@ -11,283 +12,221 @@ import (
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/flight"
+	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
-// mockDoExchangeStream implements flight.FlightService_DoExchangeServer for testing
-type mockDoExchangeStream struct {
-	ctx       context.Context
-	recvQueue []*flight.FlightData
-	recvIdx   int
-	sentData  []*flight.FlightData
-	mu        sync.Mutex
-}
-
-func newMockDoExchangeStream(ctx context.Context) *mockDoExchangeStream {
-	return &mockDoExchangeStream{
-		ctx:       ctx,
-		recvQueue: make([]*flight.FlightData, 0),
-		sentData:  make([]*flight.FlightData, 0),
-	}
-}
-
-func (m *mockDoExchangeStream) Send(data *flight.FlightData) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.sentData = append(m.sentData, data)
-	return nil
-}
-
-func (m *mockDoExchangeStream) Recv() (*flight.FlightData, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.recvIdx >= len(m.recvQueue) {
-		return nil, io.EOF
-	}
-	data := m.recvQueue[m.recvIdx]
-	m.recvIdx++
-	return data, nil
-}
-
-func (m *mockDoExchangeStream) Context() context.Context {
-	return m.ctx
-}
-
-func (m *mockDoExchangeStream) SetHeader(metadata.MD) error  { return nil }
-func (m *mockDoExchangeStream) SendHeader(metadata.MD) error { return nil }
-func (m *mockDoExchangeStream) SetTrailer(metadata.MD)       {}
-func (m *mockDoExchangeStream) SendMsg(interface{}) error    { return nil }
-func (m *mockDoExchangeStream) RecvMsg(interface{}) error    { return nil }
-
-func (m *mockDoExchangeStream) addFlightData(data *flight.FlightData) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.recvQueue = append(m.recvQueue, data)
-}
-
-func (m *mockDoExchangeStream) getSentCount() int {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return len(m.sentData)
-}
-
-// Test 1: Basic bidirectional exchange - DataServer has DoExchange method
-func TestDoExchange_BasicBidirectional(t *testing.T) {
-	alloc := memory.NewGoAllocator()
+func TestDoExchange_Ingest(t *testing.T) {
+	// Setup Server
+	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()
-	store := NewVectorStore(alloc, logger, 1<<30, 0, time.Hour)
-	defer func() { _ = store.Close() }()
+	s := NewVectorStore(mem, logger, 1024*1024*100, 0, 0)
 
-	dataServer := NewDataServer(store)
-
-	// Create mock stream
-	ctx := context.Background()
-	mockStream := newMockDoExchangeStream(ctx)
-
-	// Add flight data with descriptor
-	desc := &flight.FlightDescriptor{Path: []string{"test-exchange-dataset"}}
-	mockStream.addFlightData(&flight.FlightData{
-		FlightDescriptor: desc,
-		DataBody:         []byte("test-payload"),
-	})
-
-	// Execute DoExchange - should not return unimplemented
-	err := dataServer.DoExchange(mockStream)
-	require.NoError(t, err)
-}
-
-// Test 2: Multiple record batches in stream
-func TestDoExchange_MultipleFlightData(t *testing.T) {
-	alloc := memory.NewGoAllocator()
-	logger := zerolog.Nop()
-	store := NewVectorStore(alloc, logger, 1<<30, 0, time.Hour)
-	defer func() { _ = store.Close() }()
-
-	dataServer := NewDataServer(store)
-
-	ctx := context.Background()
-	mockStream := newMockDoExchangeStream(ctx)
-
-	desc := &flight.FlightDescriptor{Path: []string{"multi-data-dataset"}}
-
-	// Add 3 flight data messages
-	for i := 0; i < 3; i++ {
-		mockStream.addFlightData(&flight.FlightData{
-			FlightDescriptor: desc,
-			DataBody:         []byte("payload"),
-		})
-	}
-
-	err := dataServer.DoExchange(mockStream)
-	require.NoError(t, err)
-
-	// Verify acknowledgments sent
-	assert.GreaterOrEqual(t, mockStream.getSentCount(), 1, "Should send acknowledgments")
-}
-
-// Test 3: Dataset routing via descriptor
-func TestDoExchange_DatasetRouting(t *testing.T) {
-	alloc := memory.NewGoAllocator()
-	logger := zerolog.Nop()
-	store := NewVectorStore(alloc, logger, 1<<30, 0, time.Hour)
-	defer func() { _ = store.Close() }()
-
-	dataServer := NewDataServer(store)
-
-	ctx := context.Background()
-	mockStream := newMockDoExchangeStream(ctx)
-
-	// Two different datasets via descriptor paths
-	desc1 := &flight.FlightDescriptor{Path: []string{"dataset-alpha"}}
-	desc2 := &flight.FlightDescriptor{Path: []string{"dataset-beta"}}
-
-	mockStream.addFlightData(&flight.FlightData{
-		FlightDescriptor: desc1,
-		DataBody:         []byte("alpha-data"),
-	})
-	mockStream.addFlightData(&flight.FlightData{
-		FlightDescriptor: desc2,
-		DataBody:         []byte("beta-data"),
-	})
-
-	err := dataServer.DoExchange(mockStream)
-	require.NoError(t, err)
-}
-
-// Test 4: Context cancellation handling
-func TestDoExchange_Cancellation(t *testing.T) {
-	alloc := memory.NewGoAllocator()
-	logger := zerolog.Nop()
-	store := NewVectorStore(alloc, logger, 1<<30, 0, time.Hour)
-	defer func() { _ = store.Close() }()
-
-	dataServer := NewDataServer(store)
-
-	// Create cancelled context
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel() // Cancel immediately
-
-	mockStream := newMockDoExchangeStream(ctx)
-
-	desc := &flight.FlightDescriptor{Path: []string{"cancel-test"}}
-	mockStream.addFlightData(&flight.FlightData{
-		FlightDescriptor: desc,
-		DataBody:         []byte("data"),
-	})
-
-	// Should handle cancellation gracefully
-	err := dataServer.DoExchange(mockStream)
-	// Either returns error or handles gracefully
-	if err != nil {
-		assert.Contains(t, err.Error(), "cancel")
-	}
-}
-
-// Test 5: Empty stream handling
-func TestDoExchange_EmptyStream(t *testing.T) {
-	alloc := memory.NewGoAllocator()
-	logger := zerolog.Nop()
-	store := NewVectorStore(alloc, logger, 1<<30, 0, time.Hour)
-	defer func() { _ = store.Close() }()
-
-	dataServer := NewDataServer(store)
-
-	ctx := context.Background()
-	mockStream := newMockDoExchangeStream(ctx)
-	// No data added - empty stream
-
-	err := dataServer.DoExchange(mockStream)
-	assert.NoError(t, err, "Empty stream should be handled gracefully")
-}
-
-// Test 6: Bidirectional response - verify data sent back
-func TestDoExchange_BidirectionalResponse(t *testing.T) {
-	alloc := memory.NewGoAllocator()
-	logger := zerolog.Nop()
-	store := NewVectorStore(alloc, logger, 1<<30, 0, time.Hour)
 	tmpDir := t.TempDir()
-	require.NoError(t, store.InitPersistence(storage.StorageConfig{
-		DataPath:         tmpDir,
-		SnapshotInterval: 1 * time.Hour,
+	require.NoError(t, s.InitPersistence(storage.StorageConfig{
+		DataPath: tmpDir,
 	}))
-	defer func() { _ = store.Close() }()
+	defer s.Close()
 
-	// Pre-populate store with data for response
+	lis, err := net.Listen("tcp", "localhost:0")
+	require.NoError(t, err)
+
+	srv := grpc.NewServer()
+	flight.RegisterFlightServiceServer(srv, s)
+	go srv.Serve(lis)
+	defer srv.Stop()
+
+	addr := lis.Addr().String()
+
+	// Client
+	conn, err := grpc.Dial(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	require.NoError(t, err)
+	defer conn.Close()
+
+	client := flight.NewClientFromConn(conn, nil)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Start DoExchange
+	stream, err := client.DoExchange(ctx)
+	require.NoError(t, err)
+
+	// Create Descriptor
+	desc := &flight.FlightDescriptor{
+		Type: flight.DescriptorPATH,
+		Path: []string{"ingest", "test_exchange_ingest"},
+	}
+
+	// Create Record Batch
 	schema := arrow.NewSchema([]arrow.Field{
 		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
 		{Name: "vector", Type: arrow.FixedSizeListOf(2, arrow.PrimitiveTypes.Float32)},
 	}, nil)
-	idBuilder := array.NewInt64Builder(alloc)
-	idBuilder.AppendValues([]int64{100, 200, 300}, nil)
-	idArr := idBuilder.NewArray()
 
-	vecBuilder := array.NewFixedSizeListBuilder(alloc, 2, arrow.PrimitiveTypes.Float32)
-	vecValBuilder := vecBuilder.ValueBuilder().(*array.Float32Builder)
-	for i := 0; i < 3; i++ {
-		vecBuilder.Append(true)
-		vecValBuilder.AppendValues([]float32{1.0, 2.0}, nil)
-	}
-	vecArr := vecBuilder.NewArray()
+	b := array.NewRecordBuilder(mem, schema)
+	defer b.Release()
 
-	prepopRec := array.NewRecordBatch(schema, []arrow.Array{idArr, vecArr}, 3)
+	b.Field(0).(*array.Int64Builder).AppendValues([]int64{1, 2}, nil)
+	vecBuilder := b.Field(1).(*array.FixedSizeListBuilder)
+	valBuilder := vecBuilder.ValueBuilder().(*array.Float32Builder)
+	valBuilder.AppendValues([]float32{0.1, 0.2, 0.3, 0.4}, nil) // 2 vectors of dim 2
+	vecBuilder.Append(true)
+	vecBuilder.Append(true)
 
-	ds := &Dataset{Records: []arrow.RecordBatch{prepopRec}, Name: "exchange-source"}
-	ds.SetLastAccess(time.Now())
-	ds.Index = NewHNSWIndex(ds)
+	rec := b.NewRecordBatch()
+	defer rec.Release()
 
-	store.updateDatasets(func(m map[string]*Dataset) {
-		m["exchange-source"] = ds
-	})
+	// Writer to stream
+	wr := flight.NewRecordWriter(stream, ipc.WithSchema(schema))
+	wr.SetFlightDescriptor(desc)
 
-	dataServer := NewDataServer(store)
-
-	ctx := context.Background()
-	mockStream := newMockDoExchangeStream(ctx)
-
-	// Request data exchange from source dataset
-	desc := &flight.FlightDescriptor{
-		Path: []string{"exchange-source"},
-		Cmd:  []byte("sync"), // Sync command for mesh replication
-	}
-	mockStream.addFlightData(&flight.FlightData{
-		FlightDescriptor: desc,
-		DataBody:         make([]byte, 8), // 8-byte sequence number
-	})
-
-	err := dataServer.DoExchange(mockStream)
+	// Write Batch
+	err = wr.Write(rec)
 	require.NoError(t, err)
 
-	// Verify response was sent (foundation for mesh replication)
-	assert.GreaterOrEqual(t, mockStream.getSentCount(), 0, "Should handle bidirectional flow")
+	// Read ACK from server
+	data, err := stream.Recv()
+	require.NoError(t, err)
+	require.NotNil(t, data)
+	require.NotEmpty(t, data.AppMetadata)
 
-	idBuilder.Release()
-	vecArr.Release()
-	vecBuilder.Release()
+	var ack map[string]interface{}
+	err = json.Unmarshal(data.AppMetadata, &ack)
+	require.NoError(t, err)
+
+	assert.Equal(t, "acked", ack["status"])
+	assert.Equal(t, float64(1), ack["batch_id"]) // float64 due to json unmarshal
+	assert.Equal(t, float64(2), ack["rows"])
+
+	// Done
+	wr.Close()
+	stream.CloseSend()
+
+	// Check store has data (poll for async ingestion)
+	ds, ok := s.getDataset("test_exchange_ingest")
+	assert.True(t, ok)
+
+	assert.Eventually(t, func() bool {
+		ds.dataMu.RLock()
+		defer ds.dataMu.RUnlock()
+		return len(ds.Records) == 1
+	}, 1*time.Second, 10*time.Millisecond, "dataset should have 1 record batch")
+
+	ds.dataMu.RLock()
+	defer ds.dataMu.RUnlock()
+	assert.Equal(t, int64(2), ds.Records[0].NumRows())
 }
 
-// Test 7: Verify Prometheus metrics are tracked
-func TestDoExchange_Metrics(t *testing.T) {
-	alloc := memory.NewGoAllocator()
+// BenchmarkDoExchange_Ingest measures throughput of DoExchange ingestion.
+func BenchmarkDoExchange_Ingest(b *testing.B) {
+	// Setup Server
+	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()
-	store := NewVectorStore(alloc, logger, 1<<30, 0, time.Hour)
-	defer func() { _ = store.Close() }()
+	s := NewVectorStore(mem, logger, 1024*1024*1024, 0, 0)
+	tmpDir := b.TempDir()
+	require.NoError(b, s.InitPersistence(storage.StorageConfig{DataPath: tmpDir}))
+	defer s.Close()
 
-	dataServer := NewDataServer(store)
+	lis, err := net.Listen("tcp", "localhost:0")
+	require.NoError(b, err)
+
+	srv := grpc.NewServer()
+	flight.RegisterFlightServiceServer(srv, s)
+	go srv.Serve(lis)
+	defer srv.Stop()
+
+	// Client
+	conn, err := grpc.Dial(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	require.NoError(b, err)
+	defer conn.Close()
+
+	client := flight.NewClientFromConn(conn, nil)
+	defer client.Close()
 
 	ctx := context.Background()
-	mockStream := newMockDoExchangeStream(ctx)
 
-	desc := &flight.FlightDescriptor{Path: []string{"metrics-test"}}
-	mockStream.addFlightData(&flight.FlightData{
-		FlightDescriptor: desc,
-		DataBody:         []byte("test"),
-	})
+	// Prepare Record Batch (1000 rows, 384 dim)
+	rows := 1000
+	dim := 384
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
+		{Name: "vector", Type: arrow.FixedSizeListOf(int32(dim), arrow.PrimitiveTypes.Float32)},
+	}, nil)
 
-	// Execute - metrics should be recorded without panic
-	err := dataServer.DoExchange(mockStream)
-	require.NoError(t, err)
+	b.ResetTimer()
+
+	// We stream N batches per b.N loop?
+	// Or we do b.N iterations where each is one call?
+	// Usually strict benchmarks stream many batches in one call.
+
+	// Let's emulate a stream of b.N batches.
+	stream, err := client.DoExchange(ctx)
+	require.NoError(b, err)
+
+	desc := &flight.FlightDescriptor{
+		Type: flight.DescriptorPATH,
+		Path: []string{"ingest", "bench_exchange"},
+	}
+
+	wr := flight.NewRecordWriter(stream, ipc.WithSchema(schema))
+	wr.SetFlightDescriptor(desc)
+
+	// Create reusable batch
+	recBuilder := array.NewRecordBuilder(mem, schema)
+	idB := recBuilder.Field(0).(*array.Int64Builder)
+	vecB := recBuilder.Field(1).(*array.FixedSizeListBuilder)
+	valB := vecB.ValueBuilder().(*array.Float32Builder)
+
+	ids := make([]int64, rows)
+	vals := make([]float32, rows*dim)
+	for i := 0; i < rows; i++ {
+		ids[i] = int64(i)
+	}
+	idB.AppendValues(ids, nil)
+	valB.AppendValues(vals, nil)
+	for i := 0; i < rows; i++ {
+		vecB.Append(true)
+	}
+	rec := recBuilder.NewRecordBatch()
+	defer rec.Release()
+	defer recBuilder.Release()
+
+	// Consume ACKs asynchronously
+	errChan := make(chan error, 1)
+	go func() {
+		for {
+			_, err := stream.Recv()
+			if err == io.EOF {
+				errChan <- nil
+				return
+			}
+			if err != nil {
+				errChan <- err
+				return
+			}
+		}
+	}()
+
+	b.SetBytes(int64(rows * dim * 4))
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		if err := wr.Write(rec); err != nil {
+			b.Fatalf("Write failed: %v", err)
+		}
+	}
+
+	wr.Close()
+	stream.CloseSend()
+
+	if err := <-errChan; err != nil {
+		b.Fatalf("Recv failed: %v", err)
+	}
 }

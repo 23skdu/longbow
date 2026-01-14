@@ -88,6 +88,40 @@ var (
 		},
 	)
 
+	// DoGetTimeToFirstChunk measures time from request to first chunk sent
+	DoGetTimeToFirstChunk = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_doget_time_to_first_chunk_seconds",
+			Help:    "Time from DoGet request to first chunk sent (latency indicator)",
+			Buckets: []float64{0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1},
+		},
+	)
+
+	// DoGetChunkSizeHistogram tracks chunk sizes used in DoGet operations
+	DoGetChunkSizeHistogram = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_doget_chunk_size_rows",
+			Help:    "Distribution of chunk sizes (in rows) used in DoGet operations",
+			Buckets: []float64{1000, 2000, 4096, 8192, 16384, 32768, 65536, 131072},
+		},
+	)
+
+	// DoGetAdaptiveChunksTotal counts chunks sent with adaptive sizing
+	DoGetAdaptiveChunksTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_doget_adaptive_chunks_total",
+			Help: "Total number of chunks sent using adaptive chunk sizing",
+		},
+	)
+
+	// DoGetChunkGrowthRate tracks current growth multiplier
+	DoGetChunkGrowthRate = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "longbow_doget_chunk_growth_rate",
+			Help: "Current chunk size growth rate (multiplier)",
+		},
+	)
+
 	// ArrowMemoryUsedBytes tracks memory used by Arrow allocators
 	ArrowMemoryUsedBytes = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{

@@ -50,6 +50,7 @@ func TestShouldUsePipelineExt_NilPool(t *testing.T) {
 	if vs == nil {
 		t.Fatal("Failed to create VectorStore")
 	}
+	defer func() { _ = vs.Close() }()
 	// Note: No explicit shutdown needed as NewVectorStore doesn't start everything
 	// until more methods are called, and this is a unit test.
 
@@ -68,6 +69,7 @@ func TestShouldUsePipelineExt_WithPool(t *testing.T) {
 	if vs == nil {
 		t.Fatal("Failed to create VectorStore with pipeline")
 	}
+	defer func() { _ = vs.Close() }()
 
 	// Batch count <= threshold should not use pipeline
 	if vs.shouldUsePipeline(1) {
@@ -92,6 +94,7 @@ func TestShouldUsePipelineExt_ZeroThreshold(t *testing.T) {
 	if vs == nil {
 		t.Fatal("Failed to create VectorStore")
 	}
+	defer func() { _ = vs.Close() }()
 
 	// With threshold 0, should use default (2)
 	if vs.shouldUsePipeline(1) {
@@ -125,6 +128,7 @@ func TestGetDoGetPipelinePool_Nil(t *testing.T) {
 	if vs == nil {
 		t.Fatal("Failed to create VectorStore")
 	}
+	defer func() { _ = vs.Close() }()
 
 	if vs.GetDoGetPipelinePool() != nil {
 		t.Error("Pool should be nil for basic VectorStore")
@@ -139,6 +143,7 @@ func TestGetDoGetPipelinePool_NotNil(t *testing.T) {
 	if vs == nil {
 		t.Fatal("Failed to create VectorStore with pipeline")
 	}
+	defer func() { _ = vs.Close() }()
 
 	if vs.GetDoGetPipelinePool() == nil {
 		t.Error("Pool should not be nil for pipeline-enabled VectorStore")
@@ -155,6 +160,7 @@ func TestGetPipelineStats(t *testing.T) {
 	if vs == nil {
 		t.Fatal("Failed to create VectorStore")
 	}
+	defer func() { _ = vs.Close() }()
 
 	stats := vs.GetPipelineStats()
 

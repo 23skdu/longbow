@@ -174,9 +174,25 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 	schema := ds.Records[0].Schema()
 	s.logger.Info().Msgf("DoGet Schema: %v", schema.String())
 
-	// Create Writer WITHOUT options first to be safe
+	// Create Writer
 	w := flight.NewRecordWriter(stream, ipc.WithSchema(schema))
 	defer func() { _ = w.Close() }()
+
+	// Force write schema by writing an empty record batch
+	firstRec := ds.Records[0]
+	cols := make([]arrow.Array, firstRec.NumCols())
+	for i, col := range firstRec.Columns() {
+		// NewSlice returns a new Array interface
+		sliced := array.NewSlice(col, 0, 0)
+		cols[i] = sliced
+		defer sliced.Release()
+	}
+	emptyRec := array.NewRecordBatch(schema, cols, 0)
+	defer emptyRec.Release()
+
+	if err := w.Write(emptyRec); err != nil {
+		return err
+	}
 
 	ctx := stream.Context()
 	rowsSent := int64(0)

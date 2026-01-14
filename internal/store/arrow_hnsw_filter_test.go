@@ -31,7 +31,7 @@ func TestArrowHNSW_VectorizedFilter(t *testing.T) {
 	store := NewVectorStore(mem, logger, 1024*1024*1024, 0, 0)
 	err = store.InitPersistence(config)
 	require.NoError(t, err)
-	defer func() { _ = store.ClosePersistence() }()
+	defer func() { _ = store.Close() }()
 
 	// 1. Create Dataset with Metadata
 	schemaName := "filter_dataset"

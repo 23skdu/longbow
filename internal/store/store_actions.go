@@ -364,8 +364,9 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 		}
 
 		// Flush single combined batch
-		if err := s.flushPutBatch(name, []arrow.RecordBatch{combined}); err != nil {
-			combined.Release()
+		err := s.flushPutBatch(name, []arrow.RecordBatch{combined})
+		combined.Release()
+		if err != nil {
 			return err
 		}
 
@@ -703,22 +704,8 @@ func (s *VectorStore) applyBatchToMemory(name string, rec arrow.RecordBatch, ts 
 		s.pendingOverflowJobs.Add(1)
 		go func() {
 			defer s.pendingOverflowJobs.Add(-1)
-			// Spin-wait until space is available.
-			// Ideally we would have a blocking Send, but the Queue doesn't expose one.
-			// This is a tradeoff for extreme ingestion throughput.
-			backoff := 10 * time.Millisecond
-			for {
-				if s.indexQueue.IsStopped() {
-					return
-				}
-				time.Sleep(backoff)
-				if s.indexQueue.Send(job) {
-					return
-				}
-				if backoff < 500*time.Millisecond {
-					backoff *= 2
-				}
-			}
+			// Block efficiently until space is available
+			s.indexQueue.Block(job)
 		}()
 	}
 

@@ -174,26 +174,20 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 
 	// Use first record's schema
 	schema := ds.Records[0].Schema()
-	s.logger.Info().Msgf("DoGet Schema: %v", schema.String())
-
-	// Create Writer
+	s.logger.Info().Msgf("DoGet Schema: %v", schema.String()) // Create Writer to send initial Schema
 	w := flight.NewRecordWriter(stream, ipc.WithSchema(schema))
 	defer func() { _ = w.Close() }()
 
 	// Force write schema by writing an empty record batch
-	firstRec := ds.Records[0]
-	cols := make([]arrow.Array, firstRec.NumCols())
-	for i, col := range firstRec.Columns() {
-		// NewSlice returns a new Array interface
-		sliced := array.NewSlice(col, 0, 0)
-		cols[i] = sliced
-		defer sliced.Release()
-	}
-	emptyRec := array.NewRecordBatch(schema, cols, 0)
-	defer emptyRec.Release()
-
-	if err := w.Write(emptyRec); err != nil {
-		return err
+	// flight.RecordWriter is lazy, so we must write something to trigger Schema transmission.
+	if len(ds.Records) > 0 {
+		emptyBatch := ds.Records[0].NewSlice(0, 0)
+		if err := w.Write(emptyBatch); err != nil {
+			s.logger.Error().Err(err).Msg("Failed to write empty batch for schema")
+			emptyBatch.Release()
+			return err
+		}
+		emptyBatch.Release()
 	}
 
 	ctx := stream.Context()
@@ -393,7 +387,6 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 	// Future optimization: Serialize() could skip schema if stateful.
 
 	// Consume Results (Sequential Write)
-	firstBatchSent := false
 	for {
 		select {
 		case fd, ok := <-resultsChan:
@@ -403,21 +396,12 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 				startWrite := time.Now()
 
 				// Write the pre-serialized FlightData chunks
-				for i, chunk := range fd.FDs {
-					// Optimization: The Serializer produces [Schema, Batch].
-					// We must send Schema ONLY for the very first batch.
-					// For subsequent batches, we skip chunks[0] (Schema).
-					if firstBatchSent && i == 0 {
-						continue
-					}
-
+				for _, chunk := range fd.FDs {
 					if err := stream.Send(chunk); err != nil {
 						s.logger.Error().Err(err).Msg("DoGet Send failed")
 						return err
 					}
 				}
-
-				firstBatchSent = true
 
 				if rowsSent == 0 {
 					metrics.DoGetTimeToFirstChunk.Observe(time.Since(startDoGet).Seconds())

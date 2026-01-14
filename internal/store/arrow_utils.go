@@ -142,6 +142,17 @@ func ExtractVectorGeneric[T any](rec arrow.RecordBatch, rowIdx, colIdx int) ([]T
 	start := (listOffset + rowIdx) * width
 	values := listArr.Data().Children()[0]
 
+	// Validate bounds
+	if len(values.Buffers()) > 1 && values.Buffers()[1] != nil {
+		bufLen := values.Buffers()[1].Len()
+		var zero T
+		elemSize := int(unsafe.Sizeof(zero))
+		needed := (start + width) * elemSize
+		if bufLen < needed {
+			return nil, fmt.Errorf("ExtractVectorGeneric: buffer out of bounds (len=%d, needed=%d)", bufLen, needed)
+		}
+	}
+
 	// Zero-copy extraction
 	return unsafeVectorSliceGeneric[T](values, start, width), nil
 }

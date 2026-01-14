@@ -12,6 +12,7 @@ import (
 
 func TestGlobalSearchCoordinator_Merge(t *testing.T) {
 	coord := NewGlobalSearchCoordinator(zerolog.Nop())
+	defer func() { _ = coord.Close() }()
 
 	// Local results: [1 (1.0), 3 (0.8)]
 	localRes := []SearchResult{
@@ -34,6 +35,7 @@ func TestGlobalSearchCoordinator_Merge(t *testing.T) {
 
 func TestGlobalSearchCoordinator_NoPeers(t *testing.T) {
 	coord := NewGlobalSearchCoordinator(zerolog.Nop())
+	defer func() { _ = coord.Close() }()
 
 	req := qry.VectorSearchRequest{K: 5}
 	res, err := coord.GlobalSearch(context.Background(), nil, &req, []mesh.Member{})

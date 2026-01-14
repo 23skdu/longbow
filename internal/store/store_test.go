@@ -59,6 +59,7 @@ func setupServer(t *testing.T) (store *VectorStore, dir string, dialer func(cont
 
 	t.Cleanup(func() {
 		s.Stop()
+		_ = vs.Close()
 		_ = lis.Close()
 		_ = os.RemoveAll(tmpDir)
 	})
@@ -327,6 +328,7 @@ func TestEviction(t *testing.T) {
 		// Max memory small enough to force eviction
 		// Create a store with 1KB limit
 		store := NewVectorStore(mem, logger, 500, 0, 0)
+		defer func() { _ = store.Close() }()
 
 		// Create a record that takes up ~400 bytes
 		schema := arrow.NewSchema([]arrow.Field{

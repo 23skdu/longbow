@@ -126,6 +126,7 @@ func TestStore_EndToEnd_TDD(t *testing.T) {
 		SnapshotInterval: 1 * time.Hour,
 	})
 	require.NoError(t, err)
+	defer func() { _ = store2.Close() }()
 
 	// Start new server
 	server2 := flight.NewServerWithMiddleware(nil)

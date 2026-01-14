@@ -115,31 +115,19 @@ func (a *SlabArena) Alloc(size int) (uint64, error) {
 	active.offset += pad
 
 	start := active.offset
+	// Offset 0 is reserved for nil. For the very first slab and very first allocation,
+	// we burn 'align' bytes to ensure we move away from 0 while maintaining alignment.
+	if start == 0 && active.id == 1 {
+		active.offset += uint32(align)
+		start = active.offset
+	}
+
 	active.offset += needed
 
 	// Result = (SlabIndex * SlabCap) + LocalOffset
 	// Slab index is (ID-1).
 	slabIdx := uint64(active.id - 1)
 	globalOffset := (slabIdx * uint64(a.slabCap)) + uint64(start)
-
-	// Offset 0 is reserved for nil, so strict usage requires start > 0?
-	// Or we make sure Slab 1 starts at Offset 1?
-	// If GlobalOffset == 0, is it nil?
-	// Slab 1, Offset 0 -> Global 0.
-	// We should offset by specific base or treat 0 as nil.
-	// Let's add +1 to global offset or something?
-	// Existing code checks `offset == 0` as nil.
-	// So valid offsets must be > 0.
-	// Since Slab 1, Offset 0 is 0. We should introduce `offsetBase = 1`.
-	// Or just verify we never return 0.
-	if globalOffset == 0 {
-		// This happens if Slab 1, Offset 0.
-		// We can burn the first byte of Slab 1.
-		if active.id == 1 && start == 0 {
-			active.offset++ // burn byte 0
-			globalOffset++
-		}
-	}
 
 	return globalOffset, nil
 }

@@ -1,6 +1,5 @@
 package store_test
 
-
 import (
 	"context"
 	"fmt"
@@ -59,6 +58,7 @@ func TestRecallValidation(t *testing.T) {
 			KeepPrunedConnections:   true,
 			SQ8Enabled:              false,
 			RefinementFactor:        1.0,
+			DataType:                store.VectorTypeFloat32,
 		}},
 		{"Large_500K_Recall@10", 500000, 384, 100, 10, 0.850, &store.ArrowHNSWConfig{
 			M: 96, MMax: 192, MMax0: 192, EfConstruction: 1000,
@@ -67,22 +67,27 @@ func TestRecallValidation(t *testing.T) {
 			KeepPrunedConnections:   true,
 			SQ8Enabled:              false,
 			RefinementFactor:        1.0,
+			DataType:                store.VectorTypeFloat32,
 		}},
 		{"Dim_128_100K_Recall@10", 100000, 128, 100, 10, 0.990, &store.ArrowHNSWConfig{
 			M: 48, MMax: 96, MMax0: 96, EfConstruction: 600,
-			Alpha: 1.0,
+			Alpha:    1.0,
+			DataType: store.VectorTypeFloat32,
 		}},
 		{"Dim_768_20K_Recall@10", 20000, 768, 100, 10, 0.990, &store.ArrowHNSWConfig{
 			M: 48, MMax: 96, MMax0: 96, EfConstruction: 600,
-			Alpha: 1.0,
+			Alpha:    1.0,
+			DataType: store.VectorTypeFloat32,
 		}},
 		{"Dim_1536_20K_Recall@10", 20000, 1536, 100, 10, 0.990, &store.ArrowHNSWConfig{
 			M: 48, MMax: 96, MMax0: 96, EfConstruction: 600,
-			Alpha: 1.0,
+			Alpha:    1.0,
+			DataType: store.VectorTypeFloat32,
 		}},
 		{"Stress_500K_128D_Recall@10", 500000, 128, 50, 10, 0.900, &store.ArrowHNSWConfig{
 			M: 48, MMax: 96, MMax0: 96, EfConstruction: 400,
-			Alpha: 1.0,
+			Alpha:    1.0,
+			DataType: store.VectorTypeFloat32,
 		}},
 		{"Huge_1M_Recall@10", 1000000, 384, 100, 10, 0.850, &store.ArrowHNSWConfig{
 			M: 96, MMax: 192, MMax0: 192, EfConstruction: 1200,
@@ -324,6 +329,7 @@ func measureRecall(t *testing.T, numVectors, dim, numQueries, k int, cfg *store.
 			matches := 0
 			count := 0
 			for _, res := range hnsw2Results {
+				// Skip if result is the query vector itself
 				if uint32(res.ID) == queryVecID {
 					continue
 				}

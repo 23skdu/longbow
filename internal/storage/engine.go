@@ -363,9 +363,7 @@ func (e *StorageEngine) writeSnapshotItem(item *SnapshotItem, tempDir string) {
 		path := filepath.Join(tempDir, item.Name+".parquet")
 		f, err := os.Create(path)
 		if err == nil {
-			for _, rec := range item.Records {
-				_ = writeParquet(f, rec)
-			}
+			_ = writeParquet(f, item.Records...)
 			_ = f.Close()
 		}
 	}

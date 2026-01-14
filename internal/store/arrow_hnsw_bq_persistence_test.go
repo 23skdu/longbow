@@ -99,13 +99,13 @@ func TestArrowHNSW_BQ_Persistence(t *testing.T) {
 	require.NoError(t, err)
 
 	// 5. Close and Reopen
-	_ = store.ClosePersistence()
+	_ = store.Close()
 
 	// Creating new store to verify restore
 	store2 := NewVectorStore(mem, logger, 1024*1024*1024, 0, 0)
 	err = store2.InitPersistence(config)
 	require.NoError(t, err)
-	defer func() { _ = store2.ClosePersistence() }()
+	defer func() { _ = store2.Close() }()
 
 	// 6. Verify Restore
 	ds2, err := store2.GetDataset(schemaName)

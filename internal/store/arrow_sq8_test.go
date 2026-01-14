@@ -81,7 +81,9 @@ func TestSQ8Indexing(t *testing.T) {
 	if len(data.VectorsSQ8) > 0 {
 		chunk := data.GetVectorsSQ8Chunk(0)
 		if chunk != nil {
-			assert.Equal(t, ChunkSize*16, len(chunk))
+			// SQ8 is padded to 64 bytes
+			// 16 dims -> 64 bytes stride
+			assert.Equal(t, ChunkSize*64, len(chunk))
 		}
 	}
 
@@ -122,6 +124,7 @@ func TestSQ8Refinement(t *testing.T) {
 	cfg.M = 16
 	cfg.EfConstruction = 50
 	cfg.SQ8Enabled = true
+	cfg.SQ8TrainingThreshold = 100
 	cfg.RefinementFactor = 5.0 // Fetch 5x candidates and re-rank
 
 	idx := NewArrowHNSW(ds, cfg, nil)

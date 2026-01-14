@@ -118,6 +118,36 @@ func (q *IndexJobQueue) Send(job IndexJob) bool {
 	}
 }
 
+// Block submits a job, blocking until space is available or queue stopped.
+// This is more efficient than spin-waiting for backpressure.
+func (q *IndexJobQueue) Block(job IndexJob) bool {
+	// 1. Try non-blocking existing path (fills overflow if available)
+	if q.Send(job) {
+		return true
+	}
+
+	// 2. Both main and overflow are full. Block on mainChan.
+	// We do not hold lock here to allow Stop() to proceed.
+	// Stop() will close stopChan, which unblocks us.
+
+	size := int64(0)
+	if job.Record != nil {
+		size = int64(job.Record.NumRows() * int64(job.Record.NumCols()) * 8)
+	}
+
+	select {
+	case q.mainChan <- job:
+		// Succeeded after blocking
+		atomic.AddUint64(&q.directSent, 1)
+		atomic.AddInt64(&q.estimatedBytes, size)
+		return true
+	case <-q.stopChan:
+		// Stopped while waiting
+		atomic.AddUint64(&q.droppedCount, 1)
+		return false
+	}
+}
+
 // SendBatch submits multiple jobs efficiently.
 func (q *IndexJobQueue) SendBatch(jobs []IndexJob) int {
 	accepted := 0

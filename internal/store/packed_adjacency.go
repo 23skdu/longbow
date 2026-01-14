@@ -37,7 +37,7 @@ type PackedAdjacency struct {
 	// Index = NodeID / ChunkSize.
 	// Value = Offset to Page (in pageArena).
 	chunks atomic.Pointer[[]uint64]
-	mu     sync.Mutex // Protects chunks growth
+	mu     sync.RWMutex // Protects chunks growth
 }
 
 func NewPackedAdjacency(arena *memory.SlabArena, initialCapacity int) *PackedAdjacency {
@@ -169,6 +169,10 @@ func (pa *PackedAdjacency) updatePage(id uint32, packed uint64) error {
 	if chunksPtr == nil || chunkIdx >= len(*chunksPtr) {
 		pa.EnsureCapacity(id)
 	}
+
+	// Take Read Lock to protect against resizing while we update
+	pa.mu.RLock()
+	defer pa.mu.RUnlock()
 
 	// Reload chunks after possible growth
 	chunks := *pa.chunks.Load()

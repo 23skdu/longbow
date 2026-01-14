@@ -2,7 +2,6 @@ package store
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"sync"
 
@@ -91,54 +90,68 @@ func (c *capturingStream) Send(d *flight.FlightData) error {
 	return nil
 }
 
+// Clear returns existing chunks and resets internal slice
+func (c *capturingStream) Clear() []*flight.FlightData {
+	ret := c.chunks
+	c.chunks = make([]*flight.FlightData, 0, 2)
+	return ret
+}
+
 type StatefulSerializerV2 struct {
-	schema *arrow.Schema
+	schema  *arrow.Schema
+	cs      *capturingStream
+	w       *flight.Writer
+	isFirst bool
 }
 
 func NewStatefulSerializer(schema *arrow.Schema) (*StatefulSerializerV2, error) {
+	cs := &capturingStream{chunks: make([]*flight.FlightData, 0, 2)}
+	w := flight.NewRecordWriter(cs, ipc.WithSchema(schema))
+
+	// flight.RecordWriter is lazy; it writes Schema on first Write.
+	// We cannot drain here. We will strip it in Serialize.
+
 	return &StatefulSerializerV2{
-		schema: schema,
+		schema:  schema,
+		cs:      cs,
+		w:       w,
+		isFirst: true,
 	}, nil
 }
 
 func (s *StatefulSerializerV2) Serialize(rec arrow.RecordBatch) (*SerializedBatch, error) {
-	// Use flight.NewRecordWriter to ensure correct serialization
-	cs := &capturingStream{chunks: make([]*flight.FlightData, 0, 2)}
-
-	// Create writer. This immediately Sends Schema.
-	w := flight.NewRecordWriter(cs, ipc.WithSchema(s.schema))
-	// We don't control when Schema is sent, usually first.
-
-	// Write Record
-	if err := w.Write(rec); err != nil {
-		w.Close()
+	// Reuse existing writer.
+	if err := s.w.Write(rec); err != nil {
 		return nil, err
 	}
-	w.Close()
 
-	if len(cs.chunks) == 0 {
-		return nil, fmt.Errorf("no flight data produced")
+	// Capture chunks
+	chunks := s.cs.Clear()
+
+	if s.isFirst {
+		s.isFirst = false
+		// The first write includes the Schema as the first chunk.
+		// We expect the caller (DoGet) to have already sent the Schema.
+		// So we strip it here to return ONLY the RecordBatch (and potentially Dictionaries).
+		if len(chunks) > 0 {
+			chunks = chunks[1:]
+		}
 	}
 
-	// Return ALL chunks (typically [Schema, Batch]).
-	// This ensures the stream is self-contained and valid.
+	if len(chunks) == 0 {
+		return nil, fmt.Errorf("no flight data produced (or filtered out)")
+	}
 
 	return &SerializedBatch{
-		FDs: cs.chunks,
+		FDs: chunks,
 	}, nil
 }
 
 func (s *StatefulSerializerV2) Close() error {
-	// No resources to close for this implementation
+	if s.w != nil {
+		err := s.w.Close()
+		s.w = nil
+		return err
+	}
 	return nil
 }
-
-// flightDataRecorder stubs (keep for compatibility if referenced elsewhere)
-type flightDataRecorder struct{}
-
-func (f *flightDataRecorder) Send(fd *flight.FlightData) error             { return nil }
-func (f *flightDataRecorder) SetHeader(metadata *flight.FlightData) error  { return nil }
-func (f *flightDataRecorder) SetTrailer(metadata *flight.FlightData) error { return nil }
-func (f *flightDataRecorder) Context() context.Context                     { return context.Background() }
-func (f *flightDataRecorder) RecvMsg(m interface{}) error                  { return nil }
-func (f *flightDataRecorder) SendMsg(m interface{}) error                  { return nil }

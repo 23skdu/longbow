@@ -164,47 +164,31 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 	// 3. Layer-by-Layer Insertion (Top Down)
 	// We iterate max(maxL, batchMaxLevel) down to 0.
 
+	// 3. Layer-by-Layer Insertion (Top Down)
+	// We iterate max(maxL, batchMaxLevel) down to 0.
+
 	topL := maxL
 	if batchMaxLevel > topL {
 		topL = batchMaxLevel
 	}
 
 	// Current entry points for all active nodes. Initially global EP.
-	// For nodes higher than current global maxL, they conceptually start at their level?
-	// No, HNSW structure implies strictly hierarchical.
-	// If a new node is higher than global max, it becomes the new EP for layers above old max.
-	// But effectively we can just treat them as having "no neighbors" until they reach maxL?
-	// Or we just link them to each other?
-	// Simplification: Standard insertion searches from MaxL down to node.level + 1 to find ep.
-	// Then inserts from node.level down to 0.
-
-	// We track 'currentEp' for each active node.
 	currentEps := make([]uint32, n)
 	for i := range currentEps {
 		currentEps[i] = ep
 	}
 
-	// Search Phase 1: Descent to element level (Finding entry point)
-	// For each active node, we need to bring its 'currentEp' down to level+1.
-	// We can do this in parallel batches.
-
-	// But we can optimize: We process layers.
-	// For layer L:
-	//   For each active node:
-	//     If L > node.level: We just SearchLayer(beam=1) to update currentEp.
-	//     If L <= node.level: We SearchLayer(ef) -> SelectNeighbors -> Connect.
-
-	// Issue: Concurrency. If multiple nodes are at same level, they should see each other?
-	// Standard HNSW insert is sequential. Parallel insert usually locks or assumes disjointness.
-	// "Bulk" strategy:
-	// At layer L, all nodes that exist at this level (node.level >= L) participate.
-	// They search against the *existing* graph.
-	// AND they compute distances to *each other* (Intra-batch).
+	// Struct for batched reverse updates
+	type ReverseUpdate struct {
+		target uint32
+		source uint32
+		dist   float32
+	}
 
 	for lc := topL; lc >= 0; lc-- {
 
 		// Identify nodes active at this layer
-		var activeIndices []int
+		activeIndices := make([]int, 0, n)
 		for i, node := range activeNodes {
 			if node.level >= lc {
 				activeIndices = append(activeIndices, i)
@@ -216,9 +200,7 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 		}
 
 		// 3a. Search against Graph (Parallel)
-		// Update currentEps for all active nodes using the graph
-		// If L > node.level, we search with ef=1 to find next EP.
-		// If L <= node.level, we search with efConstruction to find candidates.
+		// ... (Same logic as before) ...
 
 		// Outputs
 		graphCandidates := make([][]Candidate, n) // Only for activeIndices
@@ -267,7 +249,7 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 						res := h.searchLayerForInsert(ctxSearch, node.vec, currEp, ef, lc, data)
 						// Store candidates (make copy as ctx is reused)
 						// searchLayerForInsert returns slice from ctx.scratchResults
-						cp := make([]Candidate, len(res))
+						cp := make([]Candidate, len(res), len(res)+16) // Pre-alloc extra cap for intra-batch
 						copy(cp, res)
 						graphCandidates[idx] = cp
 
@@ -285,12 +267,15 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 		}
 
 		// 3b. Intra-Batch Matching (Blocked Matrix Multiplication)
+		// ... (Same logic, relying on graphCandidates pre-alloc) ...
+
+		// 3b. Intra-Batch Matching (Blocked Matrix Multiplication)
 		// For nodes inserting at this layer (lc <= node.level), they should see other inserting nodes.
 		// We compute pairwise distances between all inserting nodes at this layer.
 		// We add them to 'graphCandidates' if they are closer.
 
 		// Optimization: Only do this for L <= node.level
-		var insertingIndices []int
+		insertingIndices := make([]int, 0, len(activeIndices))
 		for _, idx := range activeIndices {
 			if activeNodes[idx].level >= lc {
 				insertingIndices = append(insertingIndices, idx)
@@ -421,24 +406,14 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 		}
 
 		// 3c. Linkage (Connections)
-		// For all inserting nodes, select best M and connect.
-		// Requires locking?
-		// AddConnection uses Sharded Locks. Secure.
-
-		// 3c. Linkage (Connections)
-
 		// Multi-phase approach:
 		// 1. Forward Connections (Parallel): Connect source -> neighbors. New nodes are local/owned, so safe.
 		// 2. Reverse Connections (Batched): Collect all neighbor -> source edges, then apply in batches.
 
-		// deferredUpdates maps TargetNode -> []Candidate (Source, Dist)
-		// We use an array of maps to shard accumulation and reduce mutex contention during collection
-		const numShards = 16
-		deferredUpdates := make([]map[uint32][]Candidate, numShards)
-		for i := 0; i < numShards; i++ {
-			deferredUpdates[i] = make(map[uint32][]Candidate)
-		}
-		var deferredMu [numShards]sync.Mutex
+		// direct updatesByLock array to avoid map overhead
+		updatesByLock := make([][]ReverseUpdate, ShardedLockCount)
+		updatesMu := make([]sync.Mutex, ShardedLockCount)
+
 		gLink, _ := errgroup.WithContext(ctx)
 		gLink.SetLimit(runtime.GOMAXPROCS(0))
 
@@ -500,13 +475,12 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 
 					// 2. Collect Reverse Connections
 					for _, neighbor := range neighbors {
-						// We want to add edge: neighbor -> node
 						targetID := neighbor.ID
-						shard := targetID % uint32(numShards)
+						lockID := targetID % ShardedLockCount
 
-						deferredMu[shard].Lock()
-						deferredUpdates[shard][targetID] = append(deferredUpdates[shard][targetID], Candidate{ID: node.id, Dist: neighbor.Dist})
-						deferredMu[shard].Unlock()
+						updatesMu[lockID].Lock()
+						updatesByLock[lockID] = append(updatesByLock[lockID], ReverseUpdate{target: targetID, source: node.id, dist: neighbor.Dist})
+						updatesMu[lockID].Unlock()
 					}
 				}
 				return nil
@@ -517,36 +491,6 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 		}
 
 		// 3. Process Reverse Connections (Batched)
-		// We iterate over the collected maps.
-		// We can parallelize this processing too.
-		// Note: We should ideally group by ShardedLock to maximize parallelism and avoid contention inside AddConnectionsBatch.
-		// AddConnectionsBatch locks `target % ShardedLockCount`.
-
-		// Flatten and Group by LockID
-		updatesByLock := make([][]struct {
-			target  uint32
-			sources []uint32
-			dists   []float32
-		}, ShardedLockCount)
-
-		for s := 0; s < numShards; s++ {
-			for target, sources := range deferredUpdates[s] {
-				lockID := target % ShardedLockCount
-
-				srcs := make([]uint32, len(sources))
-				dists := make([]float32, len(sources))
-				for j, c := range sources {
-					srcs[j] = c.ID
-					dists[j] = c.Dist
-				}
-
-				updatesByLock[lockID] = append(updatesByLock[lockID], struct {
-					target  uint32
-					sources []uint32
-					dists   []float32
-				}{target, srcs, dists})
-			}
-		}
 
 		// Execute updates parallelized by LockID
 		gRev, _ := errgroup.WithContext(ctx)
@@ -569,18 +513,45 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 					maxConn = h.mMax0
 				}
 
-				for _, up := range updates {
-					// AddConnectionsBatch acquires the lock.
-					// Since we grouped by lock, we strictly serialize updates to the same lock in this thread.
-					// This avoids invalid contention, but means we acquire/release lock many times.
-					// Optimization: We COULD acquire lock once for all updates in this bucket?
-					// But AddConnectionsBatch encapsulates locking.
-					// Given we are singly threaded per lock bucket, the contention is 0 (except from readers).
-					h.AddConnectionsBatch(ctxSearch, data, up.target, up.sources, up.dists, lc, maxConn)
+				// Sort by target to group batch updates
+				// Since all targets hash to the same lock, we can process them sequentially safely.
+				slices.SortFunc(updates, func(a, b ReverseUpdate) int {
+					if a.target < b.target {
+						return -1
+					}
+					if a.target > b.target {
+						return 1
+					}
+					return 0
+				})
+
+				var curTarget uint32
+				// Reuse buffers
+				curSources := make([]uint32, 0, 16)
+				curDists := make([]float32, 0, 16)
+
+				flush := func() {
+					if len(curSources) > 0 {
+						h.AddConnectionsBatch(ctxSearch, data, curTarget, curSources, curDists, lc, maxConn)
+						curSources = curSources[:0]
+						curDists = curDists[:0]
+					}
 				}
+
+				for _, up := range updates {
+					if len(curSources) > 0 && up.target != curTarget {
+						flush()
+					}
+					curTarget = up.target
+					curSources = append(curSources, up.source)
+					curDists = append(curDists, up.dist)
+				}
+				flush()
+
 				return nil
 			})
 		}
+
 		if err := gRev.Wait(); err != nil {
 			return err
 		}

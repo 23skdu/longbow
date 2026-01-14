@@ -36,8 +36,7 @@ func (s *VectorStore) Shutdown(ctx context.Context) error {
 
 	// Step 1: Signal background workers to stop
 	s.logger.Info().Msg("Signaling background workers to stop")
-	close(s.stopChan)
-	s.stopCompaction()
+	s.stopWorkers()
 
 	// Step 1.5: Wait for pending overflow jobs (spinners) to enqueue
 	s.logger.Info().Msg("Waiting for pending overflow jobs...")

@@ -207,12 +207,13 @@ func TestPruneConnections(t *testing.T) {
 
 	// Point VectorPtrs to these slices
 	// Copy vectors to Dense Storage
+	paddedDims := data.GetPaddedDims()
 	for i := 0; i <= 10; i++ {
 		cID := chunkID(uint32(i))
 		cOff := chunkOffset(uint32(i))
 		vecChunk := data.GetVectorsChunk(cID)
 		if vecChunk != nil {
-			copy(vecChunk[int(cOff)*dim:], vecs[i])
+			copy(vecChunk[int(cOff)*paddedDims:], vecs[i])
 		}
 	}
 	// Add 10 connections to Node 0

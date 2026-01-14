@@ -20,6 +20,7 @@ func TestCompactDataset_InsufficientMemory(t *testing.T) {
 	// MaxMemory = 200MB
 	maxMem := int64(200 * 1024 * 1024)
 	s := NewVectorStore(mem, logger, maxMem, 1024, time.Hour)
+	defer func() { _ = s.Close() }()
 
 	// Create dummy dataset
 	schema := arrow.NewSchema([]arrow.Field{{Name: "id", Type: arrow.PrimitiveTypes.Int64}}, nil)

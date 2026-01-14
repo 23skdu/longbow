@@ -60,8 +60,25 @@ func (h *ArrowHNSW) AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx int) (ui
 // NewArrowHNSW creates a new HNSW index backed by Arrow records.
 // If locationStore is nil, a new one is created.
 func NewArrowHNSW(dataset *Dataset, config ArrowHNSWConfig, locStore *ChunkedLocationStore) *ArrowHNSW { //nolint:gocritic
+	// Merge with defaults if partially initialized
+	defaults := DefaultArrowHNSWConfig()
 	if config.M == 0 {
-		config = DefaultArrowHNSWConfig()
+		config.M = defaults.M
+	}
+	if config.MMax == 0 {
+		config.MMax = defaults.MMax
+	}
+	if config.MMax0 == 0 {
+		config.MMax0 = defaults.MMax0
+	}
+	if config.EfConstruction == 0 {
+		config.EfConstruction = defaults.EfConstruction
+	}
+	if config.Metric == "" {
+		config.Metric = defaults.Metric
+	}
+	if config.DataType == 0 {
+		config.DataType = defaults.DataType
 	}
 
 	dsName := "default"

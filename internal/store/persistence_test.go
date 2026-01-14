@@ -37,6 +37,7 @@ func TestPersistence_WriteToWAL_NoFile(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	logger := mockLogger()
 	store := NewVectorStore(mem, logger, 1024, 0, time.Hour)
+	defer func() { _ = store.Close() }()
 
 	// Should not error if persistence not initialized (returns nil)
 	// But writeToWAL signature takes record. If record is nil, it might panic/error inside writeToWAL before checking engine?

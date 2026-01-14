@@ -15,6 +15,7 @@ func BenchmarkParallelSearch(b *testing.B) {
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()
 	vs := NewVectorStore(mem, logger, 1024*1024*512, 0, 0)
+	defer func() { _ = vs.Close() }()
 
 	// Setup dataset with 10k vectors
 	dim := 128

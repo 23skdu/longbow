@@ -159,10 +159,28 @@ func (h *ArrowHNSW) Search(q []float32, k, ef int, filter *query.Bitset) ([]Sear
 	// 3. Post-Refinement
 	if useRefinement && len(results) > 0 {
 		metrics.HNSWRefineThroughput.WithLabelValues(typeLabel).Add(float64(len(results)))
+
+		// Create a high-precision computer for refinement (usually Float32)
+		// We use the same context but ignore SQ8/PQ/BQ settings
+		refineComputer := h.resolveHNSWComputer(data, ctx, q)
+		// If refineComputer is SQ8, we need to force it to Float32/Primary
+		// Actually resolveHNSWComputer uses h.config.SQ8Enabled.
+		// For refinement, we want to bypass quantized computers.
+
+		// TODO: Refactor resolveHNSWComputer to accept a 'forceFullPrecision' flag.
+		// For now, let's manually build a float32 computer if possible.
+		if _, isSQ8 := refineComputer.(*sq8Computer); isSQ8 {
+			refineComputer = &float32Computer{
+				data:       data,
+				q:          q,
+				dims:       data.Dims,
+				paddedDims: data.GetPaddedDims(),
+				distFunc:   h.distFunc,
+			}
+		}
+
 		for i := range results {
-			// Polymorphic refinement using the computer
-			// This handles SQ8, Float16, etc. automatically without manual conversion
-			results[i].Score = computer.ComputeSingle(uint32(results[i].ID))
+			results[i].Score = refineComputer.ComputeSingle(uint32(results[i].ID))
 		}
 		// Resort
 		sort.Slice(results, func(i, j int) bool {
@@ -190,15 +208,21 @@ func (h *ArrowHNSW) searchLayer(computer HNSWDistanceComputer, entryPoint uint32
 	// Calculate entry point distance
 	entryDist := computer.ComputeSingle(entryPoint)
 
-	ctx.candidates.Push(Candidate{ID: entryPoint, Dist: entryDist})
-	ctx.Visit(entryPoint)
-
+	// Ensure heaps are large enough for this ef
+	if ctx.candidates.cap < ef {
+		ctx.candidates.Grow(ef)
+	}
 	resultSet := ctx.resultSet
 	if resultSet.cap < ef {
 		resultSet = NewMaxHeap(ef)
 		ctx.resultSet = resultSet
 	}
 	resultSet.Clear()
+
+	ctx.candidates.Clear()
+	ctx.candidates.Push(Candidate{ID: entryPoint, Dist: entryDist})
+	ctx.Visit(entryPoint)
+
 	if !h.IsDeleted(entryPoint) {
 		resultSet.Push(Candidate{ID: entryPoint, Dist: entryDist})
 	}

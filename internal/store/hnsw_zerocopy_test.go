@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
@@ -19,6 +20,7 @@ func TestHNSWZeroCopyAccess(t *testing.T) {
 
 	// Initialize VectorStore
 	vs := NewVectorStore(mem, logger, 1024*1024*1024, 100*1024*1024, 0)
+	defer func() { _ = vs.Close() }()
 
 	// Define schema
 	schema := arrow.NewSchema(
@@ -54,9 +56,18 @@ func TestHNSWZeroCopyAccess(t *testing.T) {
 	err := vs.StoreRecordBatch(ctx, "test_zc", rec)
 	require.NoError(t, err)
 
-	ds, ok := vs.getDataset("test_zc")
-	require.True(t, ok)
-	require.NotNil(t, ds)
+	// Wait for data to become visible (Async Ingestion)
+	var ds *Dataset
+	require.Eventually(t, func() bool {
+		var ok bool
+		ds, ok = vs.getDataset("test_zc")
+		if !ok {
+			return false
+		}
+		ds.dataMu.RLock()
+		defer ds.dataMu.RUnlock()
+		return len(ds.Records) > 0
+	}, 5*time.Second, 10*time.Millisecond, "Dataset should eventually have records")
 
 	// Manually initialize HNSW index
 	hnswIdx := NewHNSWIndex(ds)

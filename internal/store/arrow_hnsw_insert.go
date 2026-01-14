@@ -321,7 +321,8 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec []float32, level int) error 
 		cOff := chunkOffset(id)
 		// Check if SQ8 vector array is allocated for this chunk
 		if chunk := data.GetVectorsSQ8Chunk(cID); chunk != nil {
-			offset := int(cOff) * dims
+			paddedDims := (dims + 63) & ^63
+			offset := int(cOff) * paddedDims
 			// Bounds check (though ensureChunk should guarantee size)
 			if offset+dims <= len(chunk) {
 				dest := chunk[offset : offset+dims]
@@ -345,7 +346,8 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec []float32, level int) error 
 			h.quantizer.Encode(vec, ctx.querySQ8)
 			localSQ8Buffer = ctx.querySQ8
 
-			offset := int(cOff) * dims
+			paddedDims := (dims + 63) & ^63
+			offset := int(cOff) * paddedDims
 			if offset+dims <= len(chunk) {
 				dest := chunk[offset : offset+dims]
 				copy(dest, localSQ8Buffer)
@@ -516,19 +518,23 @@ func (h *ArrowHNSW) ensureTrained(limitID int, extraSamples [][]float32) {
 					continue
 				}
 
-				off := int(cOff) * dims
-				if off+dims > len(vecChunk) {
+				f32Stride := currentData.GetPaddedDims()
+				sq8Stride := (dims + 63) & ^63
+
+				f32Off := int(cOff) * f32Stride
+				if f32Off+dims > len(vecChunk) {
 					continue
 				}
-				srcVec := vecChunk[off : off+dims]
+				srcVec := vecChunk[f32Off : f32Off+dims]
 
 				// Encode to SQ8 chunk
-				// We MUST check if chunk exists, if not, we can't write.
-				// But ensureChunk should have allocated it if we have SQ8Enabled.
 				sq8Chunk := currentData.GetVectorsSQ8Chunk(cID)
-				if sq8Chunk != nil && off+dims <= len(sq8Chunk) {
-					dest := sq8Chunk[off : off+dims]
-					h.quantizer.Encode(srcVec, dest)
+				if sq8Chunk != nil {
+					sq8Off := int(cOff) * sq8Stride
+					if sq8Off+dims <= len(sq8Chunk) {
+						dest := sq8Chunk[sq8Off : sq8Off+dims]
+						h.quantizer.Encode(srcVec, dest)
+					}
 				}
 			}
 		}
@@ -692,7 +698,8 @@ func (h *ArrowHNSW) selectNeighbors(ctx *ArrowSearchContext, candidates []Candid
 				cID := chunkID(selCand.ID)
 				cOff := chunkOffset(selCand.ID)
 				dims := int(h.dims.Load())
-				offSel := int(cOff) * dims
+				paddedDims := (dims + 63) & ^63
+				offSel := int(cOff) * paddedDims
 
 				vecSQ8Chunk := data.GetVectorsSQ8Chunk(cID)
 				if vecSQ8Chunk != nil && offSel+dims <= len(vecSQ8Chunk) {
@@ -707,7 +714,7 @@ func (h *ArrowHNSW) selectNeighbors(ctx *ArrowSearchContext, candidates []Candid
 					for i := range remaining {
 						nCID := chunkID(remaining[i].ID)
 						nCOff := chunkOffset(remaining[i].ID)
-						offRem := int(nCOff) * dims
+						offRem := int(nCOff) * paddedDims
 
 						nVecSQ8Chunk := data.GetVectorsSQ8Chunk(nCID)
 						if nVecSQ8Chunk != nil && offRem+dims <= len(nVecSQ8Chunk) {
@@ -729,7 +736,7 @@ func (h *ArrowHNSW) selectNeighbors(ctx *ArrowSearchContext, candidates []Candid
 								continue
 							}
 							nCOff := chunkOffset(remaining[i].ID)
-							offRem := int(nCOff) * dims
+							offRem := int(nCOff) * paddedDims
 							if offRem+dims > len(nVecSQ8Chunk) {
 								dists[i] = math.MaxFloat32
 							}
@@ -1157,7 +1164,8 @@ func (h *ArrowHNSW) pruneConnectionsLocked(ctx *ArrowSearchContext, data *GraphD
 		// SQ8 Path
 		// Node itself is in VectorsSQ8
 		dims := int(h.dims.Load())
-		offNode := int(cOff) * dims
+		paddedDims := (dims + 63) & ^63
+		offNode := int(cOff) * paddedDims
 		nodeSQ8Chunk := data.GetVectorsSQ8Chunk(cID)
 		if nodeSQ8Chunk != nil && offNode+dims <= len(nodeSQ8Chunk) {
 			nodeSQ8 := nodeSQ8Chunk[offNode : offNode+dims]
@@ -1168,7 +1176,7 @@ func (h *ArrowHNSW) pruneConnectionsLocked(ctx *ArrowSearchContext, data *GraphD
 				// Neighbor chunk access
 				nCID := chunkID(neighborID)
 				nCOff := chunkOffset(neighborID)
-				offRem := int(nCOff) * dims
+				offRem := int(nCOff) * paddedDims
 
 				nVecSQ8Chunk := data.GetVectorsSQ8Chunk(nCID)
 				if nVecSQ8Chunk != nil && offRem+dims <= len(nVecSQ8Chunk) {

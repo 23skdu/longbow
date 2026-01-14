@@ -144,3 +144,134 @@ documented in `schema_evolution.md`.
         (adding columns, reordering, type mismatches).
   - [ ] Implement schema fingerprinting to skip validation for identical schemas in the ingestion hot path.
 **Expected Impact**: Improved data integrity and developer experience during application evolution.
+
+---
+
+## Performance Sprint: 800MB/s Ingest & 1.7GB/s Retrieval
+
+Focused optimization plan to double throughput for 10k-50k vector datasets (128-dim).
+
+### 1. Zero-Copy Flight Retrieval Optimization (Target: 1.7GB/s)
+
+**Problem**: Current DoGet likely incurs serialization overhead or redundant copying.
+**Solution**:
+
+- Implement `FlightData` zero-copy path for `DoGet`.
+- Use `Arrow IPC` file format streaming directly from memory without re-serialization.
+- Bypass `RecordBatch` builder if data is already in Arrow format.
+
+### 2. SIMD-Accelerated Distance Calculations (Target: Ingest)
+
+**Problem**: 128-dim vectors might miss optimized SIMD paths or fall back to generic implementations.
+**Solution**:
+
+- Audit `internal/simd` for `AVX2/NEON` utilization on 128-dim.
+- Implement specialized `Assembly` kernels for 128-dim L2/Cosine distance.
+- Force `runtime.KeepAlive` on pointers to prevent GC overhead during SIMD calls.
+
+### 3. Bulk HNSW Insertion with Parallelism (Target: Ingest)
+
+**Problem**: `AddBatchBulk` efficiency drops at 25k if parallelism isn't fully exploited.
+**Solution**:
+
+- Implement `ParallelFor` for `AddBatchBulk` vector insertion.
+- Tune `efConstruction` dynamically based on dataset size (lower for initial build, higher for refinement).
+- Use `Goroutine Pool` to reduce scheduler overhead for small batches.
+
+### 4. WAL Write Optimization (Target: Ingest)
+
+**Problem**: Synchronous WAL writes can be a bottleneck.
+**Solution**:
+
+- Implement `Group Commit` for WAL writes (batching multiple `ApplyDelta` calls).
+- Use `O_DIRECT` or `fdatasync` optimization for WAL file interaction.
+- Asynchronous WAL writer with ring buffer.
+
+### 5. Lock Contention Reduction in VectorStore
+
+**Problem**: `RWMutex` on `VectorStore` or `Dataset` might be contended during concurrent Ingest/Get.
+**Solution**:
+
+- Shard locks: Use `Partitioned Mutex` for `Dataset` map users.
+- `Rcu` (Read-Copy-Update) or `Cow` (Copy-On-Write) for dataset list.
+
+### 6. Memory Allocator Tuning (SlabArena)
+
+**Problem**: `SlabArena` might still have overhead or fragmentation.
+**Solution**:
+
+- Implement Thread-Local Allocation Buffers (TLAB) for `SlabArena`.
+- Pre-allocate larger slabs (2MB -> 4MB) for 10k+ vector batches.
+
+### 7. Arrow RecordBatch Construction Optimization
+
+**Problem**: Building `RecordBatch` in SDK and Server adds overhead.
+**Solution**:
+
+- Reuse `RecordBuilder` instances (sync.Pool).
+- Optimize `AppendValues` to use `SetValues` with direct memory copy where possible.
+
+### 8. Disable/Defer Auto-Compaction
+
+**Problem**: Compaction triggering during high-load ingestion steals cycles.
+**Solution**:
+
+- Disable auto-compaction during "Bulk Load" mode.
+- Trigger compaction only after ingestion idle time.
+
+### 9. Optimize `id` Lookups in Index
+
+**Problem**: Checking for existing IDs during insert (`seen` check) is costly.
+**Solution**:
+
+- Use `Bloom Filter` for rapid negative existence checks.
+- Optimize `Bitmap` or `RoaringBitmap` for ID tracking.
+
+### 10. GRPC & Network Tuning
+
+**Problem**: Default GRPC settings might cap throughput.
+**Solution**:
+
+- Tune `MaxSendMsgSize` and `MaxRecvMsgSize`.
+- Enable `LZ4` compression for Flight streams if network limited (CPU tradeoff).
+- Increase `InitialWindowSize` for flow control.
+
+### 11. Reference Locality in HNSW Graph
+
+**Problem**: Random graph traversal causes L1/L2 cache misses.
+**Solution**:
+
+- Reorder graph nodes (Hilbert curve or BFS) periodically to improve locality.
+- Use `Prefetch` instructions (already in plan #10, enforce for 128-dim).
+
+### 12. Eliminate Interface Conversions
+
+**Problem**: `arrow.Array` interface assertions in hot loops.
+**Solution**:
+
+- Use concrete types (`*array.Float32`, `*array.FixedSizeList`) in critical paths.
+- Generate specialized code for `128` dim to avoid slice headers.
+
+### 13. Tuning Garbage Collector (GOGC)
+
+**Problem**: Frequent GC sweeps stop the world.
+**Solution**:
+
+- Set `GOGC=200` or higher during bulk ingest.
+- Use `Ballast` allocation to stabilize heap size.
+
+### 14. Efficient Bitset for Filtered Search
+
+**Problem**: Bitset creation/iteration overhead in HNSW search.
+**Solution**:
+
+- Optimize `Bitset` intersection/union operations with SIMD.
+- Cache common filter bitsets.
+
+### 15. Profile-Guided Optimization (PGO)
+
+**Problem**: Generic Go compile.
+**Solution**:
+
+- Collect CPU profiles from `perf_test.py`.
+- Recompile Longbow server with `-pgo=default.pgo` using the profile.

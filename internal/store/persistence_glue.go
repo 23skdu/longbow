@@ -424,6 +424,15 @@ func (s *VectorStore) FlushWAL() error {
 	return nil
 }
 
+// stopWorkers signals all background workers to stop.
+// It is idempotent and safe to call multiple times.
+func (s *VectorStore) stopWorkers() {
+	s.stopOnce.Do(func() {
+		close(s.stopChan)
+		s.stopCompaction()
+	})
+}
+
 // TruncateWAL wrapper for backward compatibility or testing.
 // In new engine, Snapshot calls handle rollback/truncate. This might be no-op.
 func (s *VectorStore) TruncateWAL() error {

@@ -45,6 +45,7 @@ func FuzzPolymorphicIngestion(f *testing.F) {
 		// 1. Initialize Store
 		logger := zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr}).With().Timestamp().Logger()
 		store := NewVectorStore(mem, logger, 50*1024*1024, 0, 0)
+		defer func() { _ = store.Close() }()
 
 		// Init persistence to ensure we can persist
 		cfg := storage.StorageConfig{
@@ -54,7 +55,6 @@ func FuzzPolymorphicIngestion(f *testing.F) {
 		}
 		err = store.InitPersistence(cfg)
 		if err != nil {
-			store.Close()
 			t.Skipf("failed to init persistence: %v", err)
 		}
 

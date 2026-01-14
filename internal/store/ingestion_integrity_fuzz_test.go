@@ -40,6 +40,7 @@ func FuzzIngestionIntegrity_Concurrent(f *testing.F) {
 
 		// Setup store with fast indexing
 		store := NewVectorStore(mem, zerolog.Nop(), 1024*1024*100, 1024*1024*100, 1*time.Hour)
+		defer func() { _ = store.Close() }()
 
 		// Force HNSW2 (ArrowHNSW) usage and fast Indexing
 		// store.DatasetInitHook or similar?

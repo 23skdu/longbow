@@ -17,6 +17,7 @@ func TestMeshActions(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()
 	s := NewVectorStore(mem, logger, 1024*1024, 1024*1024, 0)
+	defer func() { _ = s.Close() }()
 
 	// Initialize Mesh
 	gcfg := mesh.GossipConfig{
@@ -24,6 +25,7 @@ func TestMeshActions(t *testing.T) {
 		Port: 9999,
 	}
 	g := mesh.NewGossip(&gcfg)
+	defer g.Stop()
 	s.SetMesh(g)
 
 	meta := NewMetaServer(s)

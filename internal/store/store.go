@@ -46,6 +46,7 @@ type VectorStore struct {
 
 	// Lifecycle
 	stopChan          chan struct{}
+	stopOnce          sync.Once      // Protects stopChan closure
 	indexWg           sync.WaitGroup // For background workers
 	startIndexingOnce sync.Once      // Ensure background workers start only once
 	// mu       sync.RWMutex   // DEPRECATED: Replaced by RCU
@@ -156,7 +157,7 @@ func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes 
 		s.compactionWorker.Start()
 	}
 
-	s.workerWg.Add(1)
+	s.workerWg.Add(2)
 	go s.runIngestionWorker()
 	go s.runPersistenceWorker()
 

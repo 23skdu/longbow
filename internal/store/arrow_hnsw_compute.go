@@ -63,12 +63,13 @@ func (c *float32Computer) Prefetch(id uint32) {
 
 // sq8Computer handles SQ8 quantized vectors.
 type sq8Computer struct {
-	data      *GraphData
-	disk      *DiskGraph // Optional fallback
-	querySQ8  []byte
-	quantizer *ScalarQuantizer
-	dims      int
-	scale     float32
+	data       *GraphData
+	disk       *DiskGraph // Optional fallback
+	querySQ8   []byte
+	quantizer  *ScalarQuantizer
+	dims       int
+	paddedDims int
+	scale      float32
 }
 
 func (c *sq8Computer) Compute(ids []uint32, dists []float32) {
@@ -81,7 +82,7 @@ func (c *sq8Computer) ComputeSingle(id uint32) float32 {
 	cID := chunkID(id)
 	chunk := c.data.GetVectorsSQ8Chunk(cID)
 	if chunk != nil {
-		start := int(chunkOffset(id)) * c.dims
+		start := int(chunkOffset(id)) * c.paddedDims
 		if start+c.dims <= len(chunk) {
 			v := chunk[start : start+c.dims]
 			return float32(simd.EuclideanDistanceSQ8(c.querySQ8, v)) * c.scale
@@ -101,7 +102,7 @@ func (c *sq8Computer) Prefetch(id uint32) {
 	cID := chunkID(id)
 	chunk := c.data.GetVectorsSQ8Chunk(cID)
 	if chunk != nil {
-		start := int(chunkOffset(id)) * c.dims
+		start := int(chunkOffset(id)) * c.paddedDims
 		if start < len(chunk) {
 			simd.Prefetch(unsafe.Pointer(&chunk[start]))
 		}
@@ -211,6 +212,7 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *GraphData, ctx *ArrowSearchContext
 	disk := h.diskGraph.Load() // Load disk backend
 
 	// 1. Float16 Native
+	// 1. Float16 Native
 	if h.config.Float16Enabled || data.Type == VectorTypeFloat16 {
 		if cap(ctx.queryF16) < dims {
 			ctx.queryF16 = make([]float16.Num, dims)
@@ -226,6 +228,32 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *GraphData, ctx *ArrowSearchContext
 		return &float16Computer{
 			data: data,
 			q:    ctx.queryF16,
+			dims: data.Dims,
+		}
+	}
+
+	// 2. Complex Types
+	if data.Type == VectorTypeComplex64 {
+		// Convert Query slice q (float32 interleaved) to complex64
+		// q is [re, im, re, im...]
+		qC := make([]complex64, dims/2)
+		for i := 0; i < dims/2; i++ {
+			qC[i] = complex(q[2*i], q[2*i+1])
+		}
+		return &complex64Computer{
+			data: data,
+			q:    qC,
+			dims: data.Dims,
+		}
+	}
+	if data.Type == VectorTypeComplex128 {
+		qC := make([]complex128, dims/2)
+		for i := 0; i < dims/2; i++ {
+			qC[i] = complex(float64(q[2*i]), float64(q[2*i+1]))
+		}
+		return &complex128Computer{
+			data: data,
+			q:    qC,
 			dims: data.Dims,
 		}
 	}
@@ -260,12 +288,13 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *GraphData, ctx *ArrowSearchContext
 		h.quantizer.Encode(q, ctx.querySQ8)
 
 		return &sq8Computer{
-			data:      data,
-			disk:      disk,
-			querySQ8:  ctx.querySQ8,
-			quantizer: h.quantizer,
-			dims:      data.Dims,
-			scale:     h.quantizer.L2Scale(),
+			data:       data,
+			disk:       disk,
+			querySQ8:   ctx.querySQ8,
+			quantizer:  h.quantizer,
+			dims:       data.Dims,
+			paddedDims: (data.Dims + 63) & ^63,
+			scale:      h.quantizer.L2Scale(),
 		}
 	}
 

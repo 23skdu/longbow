@@ -51,7 +51,7 @@ func euclideanAVX512(a, b []float32) float32 {
 
 // AVX512 optimized Euclidean distance for 384 dims
 func euclidean384AVX512(a, b []float32) float32 {
-	return euclidean384AVX512Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]))
+	return float32(math.Sqrt(float64(euclidean384AVX512Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0])))))
 }
 
 // AVX2 optimized Cosine distance

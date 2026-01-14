@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
@@ -20,6 +21,7 @@ func TestSearchVectorsCorrectness(t *testing.T) {
 
 	// Initialize VectorStore
 	vs := NewVectorStore(mem, logger, 1024*1024*1024, 100*1024*1024, 0)
+	defer func() { _ = vs.Close() }()
 
 	// Define schema
 	schema := arrow.NewSchema(
@@ -59,9 +61,18 @@ func TestSearchVectorsCorrectness(t *testing.T) {
 	err := vs.StoreRecordBatch(ctx, "test", rec)
 	require.NoError(t, err)
 
-	ds, ok := vs.getDataset("test")
-	require.True(t, ok)
-	require.NotNil(t, ds)
+	// Wait for data to become visible (Async Ingestion)
+	var ds *Dataset
+	require.Eventually(t, func() bool {
+		var ok bool
+		ds, ok = vs.getDataset("test")
+		if !ok {
+			return false
+		}
+		ds.dataMu.RLock()
+		defer ds.dataMu.RUnlock()
+		return len(ds.Records) > 0 && ds.Index != nil
+	}, 5*time.Second, 10*time.Millisecond, "Dataset should eventually have records and index")
 
 	// Manually initialize HNSW index
 	hnswIdx := NewHNSWIndex(ds)

@@ -17,6 +17,7 @@ func TestIngestionPipeline_AsyncDecoupling(t *testing.T) {
 	// Setup Store with Ingestion Pipelining Enabled
 	mem := memory.NewGoAllocator()
 	store := NewVectorStore(mem, zerolog.Nop(), 1024*1024*1024, 1024*1024*100, 1*time.Hour)
+	defer func() { _ = store.Close() }()
 
 	// Create a dummy record batch
 	rec := createTestRecordBatch(t, 100) // 100 rows
@@ -57,6 +58,7 @@ func TestIngestionPipeline_AsyncDecoupling(t *testing.T) {
 func TestIngestionPipeline_Backpressure(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	store := NewVectorStore(mem, zerolog.Nop(), 1024*1024*1024, 1024*1024*100, 1*time.Hour)
+	defer func() { _ = store.Close() }()
 	dsName := "test_backpressure"
 
 	// Fill the queue (buffer size 100)
@@ -73,8 +75,8 @@ func TestIngestionPipeline_Backpressure(t *testing.T) {
 	// Let's create a store where we don't start the worker?
 	// NewVectorStore starts it.
 
-	// We can manually close stopChan to stop worker?
-	close(store.stopChan)
+	// We can manually call stopWorkers to stop worker safely
+	store.stopWorkers()
 	// Wait for worker to exit?
 	store.workerWg.Wait() // This blocks until all workers done.
 

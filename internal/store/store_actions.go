@@ -232,6 +232,52 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 
 	case "GetGraphStats":
 		return s.handleGetGraphStats(action.Body, stream)
+
+	case "HybridSearch":
+		var req struct {
+			Dataset   string                 `json:"dataset"`
+			Vector    []float32              `json:"vector"`
+			K         int                    `json:"k"`
+			TextQuery string                 `json:"text_query"`
+			Alpha     float32                `json:"alpha"`
+			Filters   map[string]interface{} `json:"filters"`
+		}
+		if err := json.Unmarshal(action.Body, &req); err != nil {
+			return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
+		}
+
+		// Convert generic dictionary filters to string map if needed, or update HybridSearch sig
+		// s.HybridSearch signature: (ctx, name, query []float32, k int, filters map[string]string)
+		// We'll coerce filters to map[string]string for now
+		strFilters := make(map[string]string)
+		for k, v := range req.Filters {
+			strFilters[k] = fmt.Sprintf("%v", v)
+		}
+
+		// Use SearchHybrid for text+vector search
+		// Signature: (ctx, name, query, textQuery, k, alpha, rrfK, graphAlpha, graphDepth)
+		// Filters are currently not supported in this pipeline path
+		results, err := s.SearchHybrid(
+			stream.Context(),
+			req.Dataset,
+			req.Vector,
+			req.TextQuery,
+			req.K,
+			req.Alpha,
+			60,  // Default RRF k
+			0.0, // Default Graph Alpha
+			0,   // Default Graph Depth
+		)
+		if err != nil {
+			return ToGRPCStatus(err)
+		}
+
+		// Serialize results
+		body, err := json.Marshal(results)
+		if err != nil {
+			return status.Errorf(codes.Internal, "failed to marshal hybrid results: %v", err)
+		}
+		return stream.Send(&flight.Result{Body: body})
 	}
 	return status.Error(codes.Unimplemented, "unknown action type "+action.Type)
 }

@@ -70,7 +70,6 @@ type WALBatcher struct {
 	intervalCalc *AdaptiveIntervalCalculator // Adaptive: calculates intervals
 	asyncFsyncer *AsyncFsyncer               // Async: background fsync handler
 	flushBuf     bytes.Buffer                // Reused buffer for flush serialization
-	compressPool *sync.Pool                  // Pool for compression buffers
 }
 
 // compressBufPool is a global pool for compression buffers

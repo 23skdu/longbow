@@ -18,7 +18,8 @@ var (
 		size: 4 * 1024 * 1024,
 		pool: sync.Pool{
 			New: func() any {
-				return make([]byte, 4*1024*1024)
+				b := make([]byte, 4*1024*1024)
+				return &b
 			},
 		},
 	}
@@ -44,12 +45,12 @@ func PutSlab(b []byte) {
 }
 
 func (p *SlabPool) Get() []byte {
-	return p.pool.Get().([]byte)
+	return *p.pool.Get().(*[]byte)
 }
 
 func (p *SlabPool) Put(b []byte) {
 	if cap(b) != p.size {
 		return
 	}
-	p.pool.Put(b)
+	p.pool.Put(&b)
 }

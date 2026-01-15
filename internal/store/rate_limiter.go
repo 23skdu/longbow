@@ -31,6 +31,11 @@ func (rl *RateLimiter) Wait(ctx context.Context, n int) error {
 	if rl.limiter == nil {
 		return nil
 	}
+	// If the request exceeds the burst, WaitN would normally error out immediately.
+	// We want to force it to wait anyway.
+	if n > rl.limiter.Burst() {
+		rl.limiter.SetBurst(n)
+	}
 	return rl.limiter.WaitN(ctx, n)
 }
 

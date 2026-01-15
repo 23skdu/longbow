@@ -44,7 +44,7 @@ func TestDoExchange_Ingest(t *testing.T) {
 	addr := lis.Addr().String()
 
 	// Client
-	conn, err := grpc.Dial(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	require.NoError(t, err)
 	defer conn.Close()
 
@@ -143,7 +143,7 @@ func BenchmarkDoExchange_Ingest(b *testing.B) {
 	defer srv.Stop()
 
 	// Client
-	conn, err := grpc.Dial(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	require.NoError(b, err)
 	defer conn.Close()
 
@@ -224,7 +224,9 @@ func BenchmarkDoExchange_Ingest(b *testing.B) {
 	}
 
 	wr.Close()
-	stream.CloseSend()
+	if err := stream.CloseSend(); err != nil {
+		b.Logf("CloseSend failed: %v", err)
+	}
 
 	if err := <-errChan; err != nil {
 		b.Fatalf("Recv failed: %v", err)

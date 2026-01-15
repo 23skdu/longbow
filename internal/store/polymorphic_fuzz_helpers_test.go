@@ -6,7 +6,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/float16"
-	"github.com/apache/arrow-go/v18/arrow/memory"
+	arrowmem "github.com/apache/arrow-go/v18/arrow/memory"
 )
 
 // Polymorphic types for fuzzing
@@ -18,7 +18,7 @@ const (
 )
 
 // GenerateRandomPolymorphicSchema creates a schema with a specific vector type
-func GenerateRandomPolymorphicSchema(rng *rand.Rand, vecType int, dims int) *arrow.Schema {
+func GenerateRandomPolymorphicSchema(rng *rand.Rand, vecType, dims int) *arrow.Schema {
 	fields := make([]arrow.Field, 2)
 	fields[0] = arrow.Field{Name: "id", Type: arrow.PrimitiveTypes.Int64}
 
@@ -44,7 +44,7 @@ func GenerateRandomPolymorphicSchema(rng *rand.Rand, vecType int, dims int) *arr
 }
 
 // GenerateRandomPolymorphicBatch creates a batch for the given type
-func GenerateRandomPolymorphicBatch(mem memory.Allocator, rng *rand.Rand, vecType int, dims int, numRows int) arrow.RecordBatch {
+func GenerateRandomPolymorphicBatch(mem arrowmem.Allocator, rng *rand.Rand, vecType, dims, numRows int) arrow.RecordBatch {
 	schema := GenerateRandomPolymorphicSchema(rng, vecType, dims)
 	bldr := array.NewRecordBuilder(mem, schema)
 	defer bldr.Release()

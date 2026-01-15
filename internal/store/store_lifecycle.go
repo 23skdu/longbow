@@ -146,7 +146,6 @@ func (s *VectorStore) StartIndexingWorkers(numWorkers int) {
 }
 
 func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
-	minBatch := 128
 	maxBatch := 1000
 	var currentBatch int
 
@@ -160,7 +159,6 @@ func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
 		if len(group) == 0 {
 			return
 		}
-		// log.Printf("[DEBUG] processBatch processing %d jobs", len(group))
 
 		// Sort by dataset to batch index additions
 		byDataset := make(map[string][]IndexJob)
@@ -221,8 +219,12 @@ func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
 
 				var docIDs []uint32
 				var addErr error
-				if ds.Index != nil {
-					docIDs, addErr = ds.Index.AddBatch(recs, rowIdxs, batchIdxs)
+				ds.dataMu.RLock()
+				idx := ds.Index
+				ds.dataMu.RUnlock()
+
+				if idx != nil {
+					docIDs, addErr = idx.AddBatch(recs, rowIdxs, batchIdxs)
 					if addErr != nil {
 						s.logger.Error().
 							Str("dataset", dsName).
@@ -259,7 +261,7 @@ func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
 						schema := j.Record.Schema()
 						numRows := int(j.Record.NumRows())
 
-						// Identify string columns once per batch
+						// Identify string columns
 						stringCols := make([]int, 0)
 						for colIdx, field := range schema.Fields() {
 							if field.Type.ID() == arrow.STRING {
@@ -268,40 +270,39 @@ func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
 						}
 
 						if len(stringCols) > 0 {
-							// Cache BM25 index lookup
-							ds.dataMu.RLock()
-							bm25 := ds.BM25Index
-							ds.dataMu.RUnlock()
+							// 1. Prepare Inverted Indexes (Batch Lock)
+							// Map from colIdx -> *InvertedIndex
+							invIndexes := make(map[int]*InvertedIndex)
+							var bm25 *BM25InvertedIndex
 
+							ds.dataMu.Lock()
+							if ds.InvertedIndexes == nil {
+								ds.InvertedIndexes = make(map[string]*InvertedIndex)
+							}
+							for _, colIdx := range stringCols {
+								fieldName := schema.Field(colIdx).Name
+								invIdx := ds.InvertedIndexes[fieldName]
+								if invIdx == nil {
+									invIdx = NewInvertedIndex()
+									ds.InvertedIndexes[fieldName] = invIdx
+								}
+								invIndexes[colIdx] = invIdx
+							}
+							bm25 = ds.BM25Index
+							ds.dataMu.Unlock()
+
+							// 2. Add Documents (No Lock on DS)
+							// InvertedIndex.Add must be thread-safe or we are the only writer for this batch.
+							// Since we are inside the Index Worker (single-threaded per batch), and InvertedIndex
+							// usually protects itself or is only accessed here, it should be safe.
 							for r := 0; r < numRows; r++ {
 								docID := docIDs[docIDIdx]
 								docIDIdx++
 
 								for _, colIdx := range stringCols {
-									fieldName := schema.Field(colIdx).Name
-
-									// Double-checked locking avoidance: Use RLock first, verify, then Lock?
-									// Optimizing for Phase 1: Keep logical structure but potentially minimize critical section?
-									// For now keeping existing logic to avoid regression, focusing on Index Worker structure.
-
-									ds.dataMu.RLock()
-									var invIdx *InvertedIndex
-									if ds.InvertedIndexes != nil {
-										invIdx = ds.InvertedIndexes[fieldName]
-									}
-									ds.dataMu.RUnlock()
-
+									invIdx := invIndexes[colIdx]
 									if invIdx == nil {
-										ds.dataMu.Lock()
-										if ds.InvertedIndexes == nil {
-											ds.InvertedIndexes = make(map[string]*InvertedIndex)
-										}
-										invIdx = ds.InvertedIndexes[fieldName]
-										if invIdx == nil {
-											invIdx = NewInvertedIndex()
-											ds.InvertedIndexes[fieldName] = invIdx
-										}
-										ds.dataMu.Unlock()
+										continue
 									}
 
 									colI := j.Record.Column(colIdx)
@@ -346,15 +347,18 @@ func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
 		// Adaptive logic
 		queueDepth := s.indexQueue.Len()
 
-		if queueDepth > 100 {
+		switch {
+		case queueDepth > 100:
+			s.logger.Warn().Int("depth", queueDepth).Msg("Ingestion queue is BACKPRESSURED")
 			ticker.Reset(1 * time.Millisecond)
-			currentBatch = maxBatch
-		} else if queueDepth > 10 {
-			ticker.Reset(5 * time.Millisecond)
-			currentBatch = 500
-		} else {
+			currentBatch = maxBatch // 1000
+		case queueDepth > 50:
+			s.logger.Info().Int("depth", queueDepth).Msg("Ingestion queue is filling up")
 			ticker.Reset(10 * time.Millisecond)
-			currentBatch = minBatch
+			currentBatch = 500
+		default:
+			ticker.Reset(100 * time.Millisecond)
+			currentBatch = 100
 		}
 
 		select {

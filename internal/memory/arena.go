@@ -108,13 +108,7 @@ func (a *SlabArena) allocCommon(size int, zero bool) (uint64, error) {
 	// Check fit (active might have been nil'd above if full)
 	if active == nil {
 		// Allocate new slab using local helper or pool
-		var buf []byte
-		// If using standard allocation, use pool.
-		// NOTE: GetSlab returns DIRTY (allocCommon(zero=false)) or ZERO (allocCommon(zero=true))?
-		// GetSlab returns DIRTY relative to reuse.
-		// make returns ZERO.
-		// We handle zeroing below if needed.
-		buf = GetSlab(int(a.slabCap))
+		buf := GetSlab(int(a.slabCap))
 
 		newSlab := &slab{
 			id:     uint32(len(currentSlabs) + 1), // ID starts at 1
@@ -195,11 +189,6 @@ func (a *SlabArena) Free() {
 	// metrics.ArenaSlabsTotal is a Counter, we cannot decrement.
 	// If we want to track active slabs, we need a separate Gauge.
 	// For now, just ignore decrement.
-}
-
-func canFit(s *slab, needed, align uint32) bool {
-	pad := (align - (s.offset % align)) % align
-	return s.offset+pad+needed <= uint32(len(s.data))
 }
 
 // Get returns the byte slice.

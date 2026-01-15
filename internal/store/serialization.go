@@ -35,32 +35,6 @@ func (s *SerializedBatch) Release() {
 
 // StatefulSerializer reuses an IPC writer for efficient serialization
 type StatefulSerializer struct {
-	buf    *bytes.Buffer
-	w      *ipc.Writer
-	schema *arrow.Schema // needed to recreate writer if we swap buffer?
-	// ipc.Writer wraps an io.Writer. If we swap underlying buffer, we might need to reset writer.
-	// ipc.NewWriter takes w io.Writer.
-	// If we change s.buf pointer, `s.w` still points to OLD buffer struct?
-	// bytes.Buffer is a struct. internal slice changes.
-	// If we assume `s.w` holds pointer to `s.buf`, we cannot just swap `s.buf`.
-
-	// Issue: ipc.Writer holds reference to the `io.Writer` interface.
-	// If we pass `s.buf` (pointer), it holds that pointer.
-	// If we want to swap the buffer, we need to creating a NEW ipc.Writer?
-	// Creating ipc.Writer writes Schema!
-
-	// Workaround:
-	// We need a "SwappableWriter" wrapper?
-	// type SwappableWriter struct { target io.Writer }
-
-}
-
-type swappableBuffer struct {
-	target *bytes.Buffer
-}
-
-func (s *swappableBuffer) Write(p []byte) (n int, err error) {
-	return s.target.Write(p)
 }
 
 // capturingStream implements flight.DataStreamWriter to capture serialized data

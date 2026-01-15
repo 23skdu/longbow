@@ -119,6 +119,16 @@ class LongbowClient:
         if self._data_client is None:
             self.connect()
 
+        # Handle complex query vectors
+        import numpy as np
+        if hasattr(vector, "dtype") and (vector.dtype == np.complex64 or vector.dtype == np.complex128):
+            if vector.dtype == np.complex64:
+                vector = vector.view(np.float32).flatten().tolist()
+            else:
+                vector = vector.view(np.float64).flatten().tolist()
+        elif isinstance(vector, np.ndarray):
+            vector = vector.tolist()
+
         req = {
             "dataset": dataset,
             "vector": vector,

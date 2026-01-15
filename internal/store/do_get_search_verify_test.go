@@ -93,7 +93,7 @@ func TestDoGetSearch_Integration(t *testing.T) {
 	ds, err := store.GetDataset("test_ds")
 	require.NoError(t, err)
 	require.Eventually(t, func() bool {
-		return ds.Index.Len() == 3
+		return ds.IndexLen() == 3
 	}, 5*time.Second, 100*time.Millisecond, "Index should reach 3 records")
 
 	// 2. Setup Client (GlobalSearchCoordinator)

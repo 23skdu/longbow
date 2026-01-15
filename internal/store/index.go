@@ -15,7 +15,8 @@ import (
 type VectorDataType int
 
 const (
-	VectorTypeInt8 VectorDataType = iota
+	VectorTypeUnknown VectorDataType = iota
+	VectorTypeInt8
 	VectorTypeUint8
 	VectorTypeInt16
 	VectorTypeUint16
@@ -32,6 +33,8 @@ const (
 
 func (t VectorDataType) String() string {
 	switch t {
+	case VectorTypeUnknown:
+		return "unknown"
 	case VectorTypeInt8:
 		return "int8"
 	case VectorTypeUint8:
@@ -66,6 +69,8 @@ func (t VectorDataType) String() string {
 // ElementSize returns the size of a single element of this type in bytes.
 func (t VectorDataType) ElementSize() int {
 	switch t {
+	case VectorTypeUnknown:
+		return 0
 	case VectorTypeInt8, VectorTypeUint8:
 		return 1
 	case VectorTypeInt16, VectorTypeUint16, VectorTypeFloat16:

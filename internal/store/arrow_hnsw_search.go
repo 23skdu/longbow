@@ -58,6 +58,7 @@ func (h *ArrowHNSW) Search(q []float32, k, ef int, filter *query.Bitset) ([]Sear
 
 	// Encode query if SQ8 enabled
 	dims := int(h.dims.Load())
+
 	metrics.HNSWSearchQueriesTotal.WithLabelValues(strconv.Itoa(dims)).Inc()
 	metrics.HnswSearchThroughputDims.WithLabelValues(strconv.Itoa(dims)).Inc()
 
@@ -65,12 +66,11 @@ func (h *ArrowHNSW) Search(q []float32, k, ef int, filter *query.Bitset) ([]Sear
 	data := graph
 	ep := h.entryPoint.Load()
 	maxL := int(h.maxLevel.Load())
-
-	totalVisited := 0
-
 	// Start timer for polymorphic latency
 	start := time.Now()
 	typeLabel := "float32"
+
+	totalVisited := 0
 	vecBytes := dims * 4 // Default float32
 
 	if h.config.Float16Enabled {
@@ -331,14 +331,7 @@ func (h *ArrowHNSW) searchLayer(computer HNSWDistanceComputer, entryPoint uint32
 			// 3. Process Mutable Neighbors (if found and not using disk)
 			if !usedDisk && count > 0 {
 				// Retry loop for seqlock
-				retries := 0
-				for {
-					if retries > 1000 {
-						// Break to avoid infinite hang if writer is paused/crashed
-						break
-					}
-					retries++
-
+				for retries := 0; retries <= 1000; retries++ {
 					ver = atomic.LoadUint32(verAddr)
 					if ver%2 != 0 {
 						runtime.Gosched()

@@ -115,12 +115,33 @@ def to_arrow_table(
              data['vector'] = data['vector'].apply(json.loads)
 
         vecs = np.stack(data['vector'].values) # matrix [N, dim]
-        if vecs.dtype != np.float32:
+        
+        # Support various dtypes without forced float32 cast if compatible
+        # Supported: float32, float64, int8/16/32/64, complex64/128
+        # We only cast if it's an unsupported type or 'object' (e.g. list of floats)
+        
+        orig_dtype = str(vecs.dtype)
+        is_complex = False
+        
+        if vecs.dtype == np.complex64:
+            # view as float32: (N, dim) -> (N, 2*dim)
+            vecs = vecs.view(np.float32).reshape(vecs.shape[0], -1)
+            is_complex = True
+        elif vecs.dtype == np.complex128:
+            # view as float64: (N, dim) -> (N, 2*dim)
+            vecs = vecs.view(np.float64).reshape(vecs.shape[0], -1)
+            is_complex = True
+        elif vecs.dtype == np.object_:
             vecs = vecs.astype(np.float32)
+            
+        # Update dim if it's complex (physical dim is 2x logical dim)
+        current_dim = vecs.shape[1]
             
         # Create FixedSizeListArray
         flat_vecs = vecs.flatten()
-        arrow_vecs = pa.FixedSizeListArray.from_arrays(flat_vecs, dim)
+        # Create the value array with appropriate type
+        value_arr = pa.array(flat_vecs)
+        arrow_vecs = pa.FixedSizeListArray.from_arrays(value_arr, current_dim)
         
         # arrow_ids = pa.array(data['id'].values, type=pa.int64())
         # Allow string IDs for test compatibility
@@ -147,6 +168,15 @@ def to_arrow_table(
             arrays.append(pa.array(col_data))
             names.append(col)
              
-        return pa.Table.from_arrays(arrays, names=names)
+        table = pa.Table.from_arrays(arrays, names=names)
+        
+        # Add metadata for type inference
+        meta = table.schema.metadata or {}
+        typed_meta = meta.copy()
+        typed_meta[b"longbow.vector_type"] = orig_dtype.encode()
+        if is_complex:
+             typed_meta[b"longbow.complex"] = b"true"
+        
+        return table.replace_schema_metadata(typed_meta)
 
     raise TypeError(f"Unsupported data type: {type(data)}")

@@ -638,7 +638,6 @@ func (s *VectorStore) applyBatchToMemory(name string, rec arrow.RecordBatch, ts 
 	}
 
 	metrics.DoPutPayloadSizeBytes.Observe(float64(batchSize))
-	// AdviseRecord(rec, AdviceRandom) // Disabled for performance
 
 	if batchSize > 100*1024*1024 {
 		s.logger.Warn().Int64("size", batchSize).Msg("Large memory addition in DoPut")
@@ -698,10 +697,10 @@ func (s *VectorStore) applyBatchToMemory(name string, rec arrow.RecordBatch, ts 
 		if vecCol := findVectorColumn(rec); vecCol != nil {
 			if listArr, ok := vecCol.(*array.FixedSizeList); ok {
 				dim := int(listArr.DataType().(*arrow.FixedSizeListType).Len())
-				// If it's complex, the logical dimension is half the physical dimension
-				if dataType == VectorTypeComplex64 || dataType == VectorTypeComplex128 {
-					dim = dim / 2
-				}
+				// Use physical dimension for ArrowHNSW (it operates on flattened floats)
+				// if dataType == VectorTypeComplex64 || dataType == VectorTypeComplex128 {
+				// 	dim = dim / 2
+				// }
 				aIdx.SetInitialDimension(dim)
 			}
 		}

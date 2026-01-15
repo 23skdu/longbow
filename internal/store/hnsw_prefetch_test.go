@@ -76,7 +76,9 @@ func TestSearchVectorsCorrectness(t *testing.T) {
 
 	// Manually initialize HNSW index
 	hnswIdx := NewHNSWIndex(ds)
+	ds.dataMu.Lock()
 	ds.Index = hnswIdx
+	ds.dataMu.Unlock()
 
 	// Manually index vectors
 	for i := 0; i < len(vectors); i++ {

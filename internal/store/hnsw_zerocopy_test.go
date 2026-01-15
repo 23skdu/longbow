@@ -71,7 +71,9 @@ func TestHNSWZeroCopyAccess(t *testing.T) {
 
 	// Manually initialize HNSW index
 	hnswIdx := NewHNSWIndex(ds)
+	ds.dataMu.Lock()
 	ds.Index = hnswIdx
+	ds.dataMu.Unlock()
 
 	// Index vectors
 	for i := 0; i < len(vectors); i++ {

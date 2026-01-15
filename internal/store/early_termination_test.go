@@ -17,7 +17,9 @@ func TestHNSW_SearchEarlyTermination(t *testing.T) {
 	// Add 100 identical vectors (should converge extremely fast)
 	vec := []float32{1.0, 1.0, 1.0, 1.0}
 	for i := 0; i < 100; i++ {
-		h.InsertWithVector(uint32(i), vec, 0)
+		if err := h.InsertWithVector(uint32(i), vec, 0); err != nil {
+			t.Fatalf("Insert failed: %v", err)
+		}
 	}
 
 	// Search with long ef but should terminate early because all distances are 0
@@ -39,7 +41,9 @@ func FuzzHNSW_SearchEarlyTermination(f *testing.F) {
 		}
 		h := NewArrowHNSW(nil, DefaultArrowHNSWConfig(), nil)
 		h.SetDimension(1)
-		h.InsertWithVector(1, []float32{val}, 0)
+		if err := h.InsertWithVector(1, []float32{val}, 0); err != nil {
+			t.Fatalf("Insert failed: %v", err)
+		}
 
 		q := []float32{val}
 		_, err := h.Search(q, 1, ef, nil)

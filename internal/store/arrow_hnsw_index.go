@@ -77,7 +77,7 @@ func NewArrowHNSW(dataset *Dataset, config ArrowHNSWConfig, locStore *ChunkedLoc
 	if config.Metric == "" {
 		config.Metric = defaults.Metric
 	}
-	if config.DataType == 0 {
+	if config.DataType == VectorTypeUnknown {
 		config.DataType = defaults.DataType
 	}
 
@@ -258,9 +258,25 @@ func (h *ArrowHNSW) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []int)
 			allVecs[i] = v
 		}
 
-		if err := h.AddBatchBulk(context.Background(), uint32(startID), n, allVecs); err != nil {
-			return nil, err
+		// Chunking for Bulk Insert to avoid O(N^2) memory explosion
+		const bulkChunkSize = 2500 // Limit to ~25MB matrix (2500^2 * 4) + overhead
+
+		for chunkStart := 0; chunkStart < n; chunkStart += bulkChunkSize {
+			chunkEnd := chunkStart + bulkChunkSize
+			if chunkEnd > n {
+				chunkEnd = n
+			}
+			chunkN := chunkEnd - chunkStart
+			chunkVecs := allVecs[chunkStart:chunkEnd]
+
+			// Calculate chunk startID
+			chunkStartID := uint32(startID) + uint32(chunkStart)
+
+			if err := h.AddBatchBulk(context.Background(), chunkStartID, chunkN, chunkVecs); err != nil {
+				return nil, err
+			}
 		}
+
 		// Populate returned IDs
 		for i := 0; i < n; i++ {
 			ids[i] = uint32(startID) + uint32(i)
@@ -748,11 +764,16 @@ func (h *ArrowHNSW) EstimateMemory() int64 {
 // Close implements VectorIndex.
 func (h *ArrowHNSW) Close() error {
 	// Release GraphData
+	var firstErr error
 	if data := h.data.Swap(nil); data != nil {
-		_ = data.Close()
+		if err := data.Close(); err != nil {
+			firstErr = err
+		}
 	}
 	if backend := h.backend.Swap(nil); backend != nil {
-		_ = backend.Close()
+		if err := backend.Close(); err != nil && firstErr == nil {
+			firstErr = err
+		}
 	}
 
 	// Release Bitsets (Roaring Bitmaps are pooled)
@@ -769,7 +790,7 @@ func (h *ArrowHNSW) Close() error {
 	h.dataset = nil
 	h.locationStore = nil
 
-	return nil
+	return firstErr
 }
 
 func (h *ArrowHNSW) indexMetadata(id uint32, recs []arrow.RecordBatch, i int, rowIdxs, batchIdxs []int) {

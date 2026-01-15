@@ -133,9 +133,10 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 		if sStr != "" && sStr[0] != '{' {
 			query.Name = sStr
 		} else {
-			s.logger.Error().Err(err).Msg("Failed to parse ticket")
+			s.logger.Error().Err(err).Str("ticket_preview", string(tkt.Ticket)).Msg("Failed to parse ticket")
 			return status.Error(codes.InvalidArgument, "invalid ticket format")
 		}
+		err = nil // Clear error after fallback
 	}
 	// log.Printf("[DEBUG] Parsed query: Search=%v Name=%s", query.Search, query.Name)
 
@@ -636,6 +637,13 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, stream fli
 				return status.Errorf(codes.InvalidArgument, "dimension mismatch: expected %d, got %d", expected, len(queryVec))
 			}
 
+			// Re-lock for search
+			ds.dataMu.RLock()
+			if ds.Index == nil {
+				ds.dataMu.RUnlock()
+				return status.Error(codes.FailedPrecondition, "index not initialized")
+			}
+
 			searchResults, err = ds.Index.SearchVectors(queryVec, req.K, req.Filters, SearchOptions{
 				IncludeVectors: req.IncludeVectors,
 				VectorFormat:   req.VectorFormat,
@@ -688,8 +696,6 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, stream fli
 
 		if len(searchResults) > 0 {
 			s.queryCache.Put(cacheKey, searchResults)
-		} else {
-			// log.Printf("[DEBUG] Not caching empty results for %s", req.Dataset)
 		}
 
 	} // End of Cache Miss block

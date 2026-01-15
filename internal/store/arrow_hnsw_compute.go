@@ -121,11 +121,12 @@ type pqComputer struct {
 
 func (c *pqComputer) Compute(ids []uint32, dists []float32) {
 	batchSize := len(ids)
-	if len(c.scratchCodes) < batchSize*c.pqM {
-		dists[0] = math.MaxFloat32
-		return
+	requiredSize := batchSize * c.pqM
+	if cap(c.scratchCodes) < requiredSize {
+		// This should be rare as the pool context should eventually stabilize
+		c.scratchCodes = make([]byte, requiredSize)
 	}
-	codes := c.scratchCodes[:batchSize*c.pqM]
+	codes := c.scratchCodes[:requiredSize]
 
 	for i, id := range ids {
 		v := c.data.GetVectorPQ(id)

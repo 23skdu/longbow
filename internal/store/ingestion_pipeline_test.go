@@ -61,8 +61,9 @@ func TestIngestionPipeline_Backpressure(t *testing.T) {
 	defer func() { _ = store.Close() }()
 	dsName := "test_backpressure"
 
-	// Fill the queue (buffer size 100)
-	// We need to stop the worker first to strictly fill the queue?
+	// Fill the queue
+	queueCap := cap(store.ingestionQueue)
+	// We need to stop the worker first to strictly fill the queue.
 	// The worker starts automatically in NewVectorStore.
 	// We can't stop it easily. But we can flood it faster than it consumes?
 	// Or we can just rely on the fact that if we send 101 items, the 101st *might* block if worker is slow.
@@ -85,8 +86,8 @@ func TestIngestionPipeline_Backpressure(t *testing.T) {
 	rec := createTestRecordBatch(t, 10)
 	defer rec.Release()
 
-	// Buffer is 100.
-	for i := 0; i < 100; i++ {
+	// Fill it.
+	for i := 0; i < queueCap; i++ {
 		// We manually inject into channel to avoid WAL overhead/checks if we want pure queue test,
 		// but using StoreRecordBatch is better integration test.
 		// However StoreRecordBatch writes WAL. We better mock or just accept it (file I/O might be slow but fine).

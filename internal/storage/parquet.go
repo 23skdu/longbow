@@ -27,7 +27,10 @@ func writeParquet(w io.Writer, records ...arrow.RecordBatch) error {
 	}
 
 	pw := parquet.NewGenericWriter[VectorRecord](w, parquet.Compression(&parquet.Zstd))
-	defer pw.Close()
+	defer func() {
+		// Best effort close on early return
+		_ = pw.Close()
+	}()
 
 	for _, rec := range records {
 		rows := rec.NumRows()

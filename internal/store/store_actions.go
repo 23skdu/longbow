@@ -54,7 +54,7 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 		}
 		return nil
 
-	case "delete":
+	case "delete", "Delete":
 		var req struct {
 			Dataset string `json:"dataset"`
 			ID      string `json:"id"`
@@ -637,10 +637,25 @@ func (s *VectorStore) applyBatchToMemory(name string, rec arrow.RecordBatch, ts 
 			config.ShardCount = runtime.NumCPU()
 		}
 
+		// Infer DataType from the FIRST record
+		dataType := InferVectorDataType(rec.Schema(), "vector")
+		if config.IndexConfig == nil {
+			hnswCfg := DefaultArrowHNSWConfig()
+			hnswCfg.Metric = ds.Metric
+			hnswCfg.DataType = dataType
+			config.IndexConfig = &hnswCfg
+		} else {
+			config.IndexConfig.DataType = dataType
+		}
+
 		aIdx := NewAutoShardingIndex(ds, config)
 		if vecCol := findVectorColumn(rec); vecCol != nil {
 			if listArr, ok := vecCol.(*array.FixedSizeList); ok {
 				dim := int(listArr.DataType().(*arrow.FixedSizeListType).Len())
+				// If it's complex, the logical dimension is half the physical dimension
+				if dataType == VectorTypeComplex64 || dataType == VectorTypeComplex128 {
+					dim = dim / 2
+				}
 				aIdx.SetInitialDimension(dim)
 			}
 		}

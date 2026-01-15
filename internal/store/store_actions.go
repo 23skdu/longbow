@@ -384,7 +384,7 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 		// Adaptive Batching (Option 1):
 		// If the record is large enough and we don't have pending small records,
 		// write it directly to avoid concatenation/slice overhead.
-		if len(batch) == 0 && rec.NumRows() >= 100 {
+		if len(batch) == 0 && rec.NumRows() >= 25000 {
 			rec.Retain()
 			if err := s.flushPutBatch(name, []arrow.RecordBatch{rec}); err != nil {
 				rec.Release()

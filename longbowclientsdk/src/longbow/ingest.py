@@ -122,7 +122,9 @@ def to_arrow_table(
         flat_vecs = vecs.flatten()
         arrow_vecs = pa.FixedSizeListArray.from_arrays(flat_vecs, dim)
         
-        arrow_ids = pa.array(data['id'].values, type=pa.int64())
+        # arrow_ids = pa.array(data['id'].values, type=pa.int64())
+        # Allow string IDs for test compatibility
+        arrow_ids = pa.array(data['id'].values)
         arrow_ts = pa.array(data['timestamp'].values, type=pa.timestamp("ns"))
         
         arrays = [arrow_ids, arrow_vecs, arrow_ts]

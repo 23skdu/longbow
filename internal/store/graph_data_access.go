@@ -12,10 +12,7 @@ import (
 func (gd *GraphData) SetVectorFromFloat32(id uint32, vec []float32) error {
 	cID := chunkID(id)
 	cOff := chunkOffset(id)
-	dims := gd.Dims                  // logical dims
-	paddedDims := gd.GetPaddedDims() // physical stride
-
-	start := int(cOff) * paddedDims
+	dims := gd.Dims // logical dims
 
 	// 1. Try Float16 (Auxiliary or Primary)
 	// We check this first because if VectorsF16 exists (Aux), we prefer it for storage if enabled.
@@ -24,6 +21,8 @@ func (gd *GraphData) SetVectorFromFloat32(id uint32, vec []float32) error {
 	if (gd.VectorsF16 != nil && int(cID) < len(gd.VectorsF16)) || gd.Type == VectorTypeFloat16 {
 		f16Chunk := gd.GetVectorsF16Chunk(cID)
 		if f16Chunk != nil {
+			stride := gd.GetPaddedDimsForType(VectorTypeFloat16)
+			start := int(cOff) * stride
 			dest := f16Chunk[start : start+dims]
 			for i, v := range vec {
 				dest[i] = float16.New(v)
@@ -33,6 +32,8 @@ func (gd *GraphData) SetVectorFromFloat32(id uint32, vec []float32) error {
 	}
 
 	// 2. Switch on Primary Type
+	paddedDims := gd.GetPaddedDims() // physical stride for primary type
+	start := int(cOff) * paddedDims
 	switch gd.Type {
 	case VectorTypeFloat32:
 		chunk := gd.GetVectorsChunk(cID)
@@ -108,7 +109,8 @@ func (gd *GraphData) GetVectorAsFloat32(id uint32) ([]float32, error) {
 	if (gd.VectorsF16 != nil && int(cID) < len(gd.VectorsF16)) || gd.Type == VectorTypeFloat16 {
 		chunk := gd.GetVectorsF16Chunk(cID)
 		if chunk != nil {
-			start := int(cOff) * paddedDims
+			stride := gd.GetPaddedDimsForType(VectorTypeFloat16)
+			start := int(cOff) * stride
 			f16s := chunk[start : start+dims]
 			res := make([]float32, dims)
 			for i, v := range f16s {

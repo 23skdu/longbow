@@ -66,13 +66,5 @@ func AdaptivelySliceBatches(
 	}
 
 	metrics.DoGetAdaptiveChunksTotal.Add(float64(chunkCount))
-
-	// Record current growth rate
-	if strategy != nil {
-		// Just an approximation or we can expose it in strategy
-		// For now we skip tricky math, maybe just current size
-		// metrics.DoGetChunkGrowthRate.Set(float64(strategy.CurrentSize()))
-	}
-
 	return outRecords, outTombstones
 }

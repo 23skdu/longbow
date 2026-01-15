@@ -2,6 +2,7 @@ package store
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
@@ -137,8 +138,8 @@ func (s *VectorStore) DoExchange(stream flight.FlightService_DoExchangeServer) e
 
 		// Check for sync command - foundation for mesh replication
 		if lastDescriptor != nil && len(lastDescriptor.Cmd) > 0 {
-			cmd := string(lastDescriptor.Cmd)
-			if cmd == "sync" {
+			switch cmd := string(lastDescriptor.Cmd); cmd {
+			case "sync":
 				// Parse last sequence
 				if len(data.DataBody) < 8 {
 					return status.Errorf(codes.InvalidArgument, "sync command requires 8-byte sequence number")
@@ -202,7 +203,7 @@ func (s *VectorStore) DoExchange(stream flight.FlightService_DoExchangeServer) e
 				_ = it.Close()
 				// Send "done" or just end? Client reads until EOF?
 				// Client triggered it.
-			} else if cmd == "merkle_node" {
+			case "merkle_node":
 				pathLen := len(data.DataBody) / 4
 				path := make([]int, pathLen)
 				for i := 0; i < pathLen; i++ {
@@ -232,7 +233,7 @@ func (s *VectorStore) DoExchange(stream flight.FlightService_DoExchangeServer) e
 					return err
 				}
 				continue // Skip the final ack for this command
-			} else if cmd == "VectorSearch" {
+			case "VectorSearch":
 				// Fallback if checked late
 				return s.handleVectorSearchExchange(stream, data)
 			}
@@ -270,6 +271,7 @@ func (s *VectorStore) handleDoExchangeIngest(
 	name string,
 	readerSource interface {
 		Recv() (*flight.FlightData, error)
+		Send(*flight.FlightData) error
 	},
 ) error {
 	trackAlloc := lmem.NewTrackingAllocator(arrowmem.DefaultAllocator)
@@ -328,15 +330,28 @@ func (s *VectorStore) handleDoExchangeIngest(
 
 	batchID := 0
 	for r.Next() {
-		rec := r.Record()
+		rec := r.RecordBatch()
 		// fmt.Println("DEBUG: Got batch")
 
 		// Ingest
-		if err := s.flushPutBatch(name, []arrow.Record{rec}); err != nil {
+		if err := s.flushPutBatch(name, []arrow.RecordBatch{rec}); err != nil {
 			return status.Errorf(codes.Internal, "flush failed: %v", err)
 		}
 
 		batchID++
+		// Send ACK back to client (required by protocol and tests)
+		ack := map[string]interface{}{
+			"status":   "acked",
+			"batch_id": batchID,
+			"rows":     rec.NumRows(),
+		}
+		ackBuf, _ := json.Marshal(ack)
+		if err := readerSource.Send(&flight.FlightData{
+			AppMetadata: ackBuf,
+		}); err != nil {
+			s.logger.Error().Err(err).Msg("Failed to send DoExchange ingestion ACK")
+			return err
+		}
 	}
 
 	if r.Err() != nil {

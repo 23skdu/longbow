@@ -56,11 +56,12 @@ type IndexJobQueue struct {
 	droppedCount  uint64
 
 	// Lifecycle
-	stopChan chan struct{}
-	stopped  int32
-	stopOnce sync.Once
-	wg       sync.WaitGroup
-	sendMu   sync.RWMutex // Protects mainChan close vs send
+	stopChan   chan struct{}
+	stopped    int32
+	stopOnce   sync.Once
+	wg         sync.WaitGroup
+	blockersWg sync.WaitGroup // Waits for blocked producers
+	sendMu     sync.RWMutex   // Protects mainChan close vs send
 
 	// Memory Pressure
 	estimatedBytes int64 // Atomic
@@ -129,6 +130,18 @@ func (q *IndexJobQueue) Block(job IndexJob) bool {
 	// 2. Both main and overflow are full. Block on mainChan.
 	// We do not hold lock here to allow Stop() to proceed.
 	// Stop() will close stopChan, which unblocks us.
+
+	if atomic.LoadInt32(&q.stopped) == 1 {
+		return false
+	}
+
+	q.blockersWg.Add(1)
+	defer q.blockersWg.Done()
+
+	// Re-check after adding to WG to avoid race
+	if atomic.LoadInt32(&q.stopped) == 1 {
+		return false
+	}
 
 	size := int64(0)
 	if job.Record != nil {
@@ -294,6 +307,8 @@ func (q *IndexJobQueue) Stop() {
 
 		// Wait for drainLoop to finish (which calls drainRemaining)
 		q.wg.Wait()
+		// Wait for blocked producers to finish or abort
+		q.blockersWg.Wait()
 
 		// NOW close mainChan, after all sends (including drainRemaining) are done
 		close(q.mainChan)

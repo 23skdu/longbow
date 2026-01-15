@@ -147,7 +147,7 @@ func (s *VectorStore) handleVectorSearchAction(action *flight.Action, stream fli
 			}
 
 			// Map internal IDs to User IDs
-			searchResults = s.MapInternalToUserIDs(ds, searchResults)
+			searchResults = s.mapInternalToUserIDsLocked(ds, searchResults)
 			ds.dataMu.RUnlock()
 		}
 
@@ -398,7 +398,7 @@ func (s *VectorStore) handleVectorSearchByIDAction(action *flight.Action, stream
 	}
 
 	// 3. Map Results
-	results = s.MapInternalToUserIDs(ds, results)
+	results = s.mapInternalToUserIDsLocked(ds, results)
 
 	resp := query.VectorSearchResponse{
 		IDs:    make([]uint64, len(results)),

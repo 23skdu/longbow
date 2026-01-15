@@ -84,7 +84,7 @@ func (s *VectorStore) DoExchange(stream flight.FlightService_DoExchangeServer) e
 				FlightService_DoExchangeServer: stream,
 				firstMsg:                       firstMsg,
 			}
-			return s.handleDoExchangeIngest(datasetName, wrappedStream, stream)
+			return s.handleDoExchangeIngest(datasetName, wrappedStream)
 		}
 	}
 
@@ -271,7 +271,6 @@ func (s *VectorStore) handleDoExchangeIngest(
 	readerSource interface {
 		Recv() (*flight.FlightData, error)
 	},
-	stream flight.FlightService_DoExchangeServer,
 ) error {
 	trackAlloc := lmem.NewTrackingAllocator(arrowmem.DefaultAllocator)
 	r, err := flight.NewRecordReader(readerSource, ipc.WithAllocator(trackAlloc))

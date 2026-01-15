@@ -136,10 +136,9 @@ func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes 
 
 	s.maxMemory.Store(maxMemoryBytes)
 	s.indexQueue = NewIndexJobQueue(DefaultIndexJobQueueConfig())
-	s.ingestionQueue = make(chan ingestionJob, 64)     // Buffer 64 batches
-	s.persistenceQueue = make(chan persistenceJob, 64) // Buffer 64 batches for persistence
+	s.ingestionQueue = make(chan ingestionJob, 10000)     // Increased buffer for high throughput
+	s.persistenceQueue = make(chan persistenceJob, 10000) // Increased buffer for persistence
 
-	s.nsManager = newNamespaceManager()
 	s.nsManager = newNamespaceManager()
 	s.columnIndex = NewColumnInvertedIndex()
 
@@ -157,9 +156,12 @@ func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes 
 		s.compactionWorker.Start()
 	}
 
-	s.workerWg.Add(2)
-	go s.runIngestionWorker()
+	numRunners := runtime.NumCPU()
+	s.workerWg.Add(1 + numRunners)
 	go s.runPersistenceWorker()
+	for i := 0; i < numRunners; i++ {
+		go s.runIngestionWorker()
+	}
 
 	// Start default index worker (1 thread)
 	s.StartIndexingWorkers(1)

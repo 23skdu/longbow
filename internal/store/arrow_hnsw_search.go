@@ -331,7 +331,14 @@ func (h *ArrowHNSW) searchLayer(computer HNSWDistanceComputer, entryPoint uint32
 			// 3. Process Mutable Neighbors (if found and not using disk)
 			if !usedDisk && count > 0 {
 				// Retry loop for seqlock
+				retries := 0
 				for {
+					if retries > 1000 {
+						// Break to avoid infinite hang if writer is paused/crashed
+						break
+					}
+					retries++
+
 					ver = atomic.LoadUint32(verAddr)
 					if ver%2 != 0 {
 						runtime.Gosched()

@@ -88,7 +88,8 @@ func (s *DataServer) DoAction(action *flight.Action, stream flight.FlightService
 	if action != nil && action.Type == "VectorSearch" {
 		return s.handleVectorSearchAction(action, stream)
 	}
-	return status.Error(codes.Unimplemented, "DoAction not implemented on DataServer; use MetaServer")
+	// Delegate to base VectorStore for other actions (like "delete", "cluster-status")
+	return s.VectorStore.DoAction(action, stream)
 }
 
 // MetaServer handles control plane operations (ListFlights, GetFlightInfo)

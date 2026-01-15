@@ -65,7 +65,7 @@ func FuzzIngestionIntegrity_Concurrent(f *testing.F) {
 				defer wg.Done()
 				for b := 0; b < batchesPerWriter; b++ {
 					// Create batch
-					rec := createIntegrityTestBatch(t, mem, rowsPerBatch, writerID, b)
+					rec := createIntegrityTestBatch(mem, rowsPerBatch, writerID, b)
 					err := store.StoreRecordBatch(context.Background(), dsName, rec)
 					rec.Release()
 					if err != nil {
@@ -124,7 +124,7 @@ func FuzzIngestionIntegrity_Concurrent(f *testing.F) {
 		randWriter := rand.Intn(numWriters)
 		randBatch := rand.Intn(batchesPerWriter)
 		// We re-create that batch
-		targetRec := createIntegrityTestBatch(t, mem, rowsPerBatch, randWriter, randBatch)
+		targetRec := createIntegrityTestBatch(mem, rowsPerBatch, randWriter, randBatch)
 		defer targetRec.Release()
 
 		// Pick random row in batch
@@ -148,7 +148,7 @@ func FuzzIngestionIntegrity_Concurrent(f *testing.F) {
 	})
 }
 
-func createIntegrityTestBatch(t *testing.T, mem memory.Allocator, rows int, wID, bID int) arrow.RecordBatch {
+func createIntegrityTestBatch(mem memory.Allocator, rows int, wID, bID int) arrow.RecordBatch {
 	// Schema: id (string), vector (float32[128])
 	dims := 128
 	schema := arrow.NewSchema([]arrow.Field{

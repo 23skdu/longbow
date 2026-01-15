@@ -118,7 +118,7 @@ func SearchHybrid(ctx context.Context, s *VectorStore, name string, queryVec []f
 	}
 
 	// Map internal IDs to user IDs (Phase 14 integration)
-	resolved := s.MapInternalToUserIDs(ds, finalResults)
+	resolved := s.mapInternalToUserIDsLocked(ds, finalResults)
 	if len(resolved) > k {
 		resolved = resolved[:k]
 	}

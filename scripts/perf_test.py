@@ -105,18 +105,53 @@ def check_cluster_health(client: LongbowClient) -> bool:
 # Data Generation
 # =============================================================================
 
-def generate_vectors(num_rows: int, dim: int, with_text: bool = False, fp16: bool = False) -> pa.Table:
+def generate_vectors(num_rows: int, dim: int, with_text: bool = False, dtype_str: str = "float32") -> pa.Table:
     """Generate random vectors (keep returning Table for efficiency)."""
-    print(f"Generating {num_rows:,} vectors of dimension {dim}...")
+    print(f"Generating {num_rows:,} vectors of dimension {dim} (type={dtype_str})...")
 
-    # Vector data
-    dtype = np.float16 if fp16 else np.float32
-    pa_dtype = pa.float16() if fp16 else pa.float32()
-    
-    data = np.random.rand(num_rows, dim).astype(dtype)
-    tensor_type = pa.list_(pa_dtype, dim)
-    flat_data = data.flatten()
-    vectors = pa.FixedSizeListArray.from_arrays(flat_data, type=tensor_type)
+    # Map string to numpy/arrow types
+    type_map = {
+        "float32": (np.float32, pa.float32()),
+        "float16": (np.float16, pa.float16()),
+        "float64": (np.float64, pa.float64()),
+        "int8": (np.int8, pa.int8()),
+        "int16": (np.int16, pa.int16()),
+        "int32": (np.int32, pa.int32()),
+        "int64": (np.int64, pa.int64()),
+        "complex64": (np.complex64, pa.float32()),  # Stored as list of floats (2x dim)
+        "complex128": (np.complex128, pa.float64()), # Stored as list of floats (2x dim)
+    }
+
+    if dtype_str not in type_map:
+        raise ValueError(f"Unsupported dtype: {dtype_str}. Options: {list(type_map.keys())}")
+
+    np_dtype, pa_subtype = type_map[dtype_str]
+    is_complex = "complex" in dtype_str
+
+    if is_complex:
+        # Complex numbers simulated as 2 * dim floats
+        real_dim = dim * 2
+        # Generate complex numbers then view as floats
+        data = np.random.rand(num_rows, dim).astype(np_dtype) + 1j * np.random.rand(num_rows, dim).astype(np_dtype)
+        # Flatten and view as real components
+        # e.g. [1+2j, 3+4j] -> [1, 2, 3, 4]
+        if dtype_str == "complex64":
+            flat_view = data.view(np.float32).flatten()
+        else:
+            flat_view = data.view(np.float64).flatten()
+        
+        tensor_type = pa.list_(pa_subtype, real_dim)
+        vectors = pa.FixedSizeListArray.from_arrays(flat_view, type=tensor_type)
+    else:
+        # Standard numeric types
+        if "int" in dtype_str:
+            data = np.random.randint(-100, 100, size=(num_rows, dim)).astype(np_dtype)
+        else:
+            data = np.random.rand(num_rows, dim).astype(np_dtype)
+            
+        flat_data = data.flatten()
+        tensor_type = pa.list_(pa_subtype, dim)
+        vectors = pa.FixedSizeListArray.from_arrays(flat_data, type=tensor_type)
 
     # IDs
     ids = pa.array(np.arange(num_rows), type=pa.int64())
@@ -517,7 +552,7 @@ def benchmark_concurrent_load(data_uri: str, meta_uri: str, name: str, dim: int,
         local_errors = 0
 
         # Small batch for load
-        small_table = generate_vectors(2000, dim)
+        small_table = generate_vectors(2000, dim, dtype_str="float32")
 
         while not stop_event.is_set():
             start = time.time()
@@ -588,6 +623,9 @@ def main():
     parser.add_argument("--dataset", required=True)
     parser.add_argument("--rows", type=int, default=10_000)
     parser.add_argument("--dim", type=int, default=128)
+    parser.add_argument("--dtype", default="float32", 
+                        choices=["float32", "float16", "float64", "int8", "int16", "int32", "int64", "complex64", "complex128"],
+                        help="Data type for vectors")
     parser.add_argument("--k", type=int, default=10)
     parser.add_argument("--queries", type=int, default=1000)
     parser.add_argument("--json", help="Path to save results as JSON")
@@ -615,8 +653,9 @@ def main():
     # Init
     client = LongbowClient(uri=args.data_uri, meta_uri=args.meta_uri)
     
-    # Check for FP16 in dataset name or flag
-    is_fp16 = "fp16" in args.dataset.lower() or "float16" in args.dataset.lower()
+    # Auto-detect fp16 from dataset name if dtype not specified (legacy compat)
+    if args.dtype == "float32" and ("fp16" in args.dataset.lower() or "float16" in args.dataset.lower()):
+        args.dtype = "float16"
     
     # Process Filter
     filters = None
@@ -642,7 +681,7 @@ def main():
     
     for size in sizes_to_run:
         print(f"\n" + "="*80)
-        print(f"BENCHMARK RUN: {size:,} Vectors")
+        print(f"BENCHMARK RUN: {size:,} Vectors ({args.dtype})")
         print("="*80)
         
         current_dataset = f"{args.dataset}_{size}" if args.run_suite else args.dataset
@@ -651,7 +690,7 @@ def main():
         try:
             # PUT
             if not args.skip_put:
-                table = generate_vectors(size, args.dim, with_text=args.with_text, fp16=is_fp16)
+                table = generate_vectors(size, args.dim, with_text=args.with_text, dtype_str=args.dtype)
                 res = benchmark_put(client, table, current_dataset)
                 results.append(res)
                 

@@ -176,7 +176,7 @@ func (s *VectorStore) handleVectorSearchExchange(stream flight.FlightService_DoE
 	// Let's re-acquire RLock or keep it held.
 
 	ds.dataMu.RLock()
-	searchResults = s.MapInternalToUserIDs(ds, searchResults)
+	searchResults = s.mapInternalToUserIDsLocked(ds, searchResults)
 	ds.dataMu.RUnlock()
 
 	// 4. Serialize Results

@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"log"
 	"runtime"
 	"strconv"
 	"strings"
@@ -125,8 +124,7 @@ func (s *VectorStore) GetSchema(ctx context.Context, desc *flight.FlightDescript
 // DoGet - Minimal implementation
 func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGetServer) error {
 	startDoGet := time.Now()
-	// fmt.Printf("[DEBUG] DoGet received ticket len=%d\n", len(tkt.Ticket))
-	log.Printf("[DEBUG] DoGet received ticket (len=%d): %q", len(tkt.Ticket), string(tkt.Ticket))
+	// log.Printf("[DEBUG] DoGet received ticket (len=%d): %q", len(tkt.Ticket), string(tkt.Ticket))
 	// Parse ticket
 	query, err := qry.ParseTicketQuerySafe(tkt.Ticket)
 	if err != nil {
@@ -174,21 +172,10 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 
 	// Use first record's schema
 	schema := ds.Records[0].Schema()
-	s.logger.Info().Msgf("DoGet Schema: %v", schema.String()) // Create Writer to send initial Schema
-	w := flight.NewRecordWriter(stream, ipc.WithSchema(schema))
-	defer func() { _ = w.Close() }()
+	s.logger.Info().Msgf("DoGet Schema: %v", schema.String())
 
-	// Force write schema by writing an empty record batch
-	// flight.RecordWriter is lazy, so we must write something to trigger Schema transmission.
-	if len(ds.Records) > 0 {
-		emptyBatch := ds.Records[0].NewSlice(0, 0)
-		if err := w.Write(emptyBatch); err != nil {
-			s.logger.Error().Err(err).Msg("Failed to write empty batch for schema")
-			emptyBatch.Release()
-			return err
-		}
-		emptyBatch.Release()
-	}
+	// Note: We initialize the Flight RecordWriter later in the consumption loop
+	// to ensure ZERO-COPY streaming from the results channel.
 
 	ctx := stream.Context()
 	rowsSent := int64(0)
@@ -213,7 +200,7 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 		numWorkers = 1
 	}
 
-	resultsChan := make(chan *SerializedBatch, numWorkers*2)
+	resultsChan := make(chan arrow.RecordBatch, numWorkers*2)
 	// Buffer 1 to prevent blocking on first error check
 	errChan := make(chan error, 1)
 	var wg sync.WaitGroup
@@ -234,7 +221,7 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 		// ProcessRecords handles feeding safely
 		stageChan = pipeline.ProcessRecords(ctx, recordsToProcess, tombstonesToProcess, query.Filters, nil)
 		metrics.DoGetPipelineStepsTotal.WithLabelValues("scan", "pipeline").Add(float64(len(recordsToProcess)))
-		s.logger.Debug().Int("workers", pipeline.NumWorkers()).Msg("Using DoGetPipeline")
+		// s.logger.Debug().Int("workers", pipeline.NumWorkers()).Msg("Using DoGetPipeline")
 	} else {
 		// Simple feeder for small datasets
 		metrics.DoGetPipelineStepsTotal.WithLabelValues("scan", "simple").Add(float64(len(recordsToProcess)))
@@ -267,17 +254,6 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 		go func() {
 			defer wg.Done()
 			var evaluator *qry.FilterEvaluator
-
-			// Create Stateful Serializer
-			serializer, err := NewStatefulSerializer(schema)
-			if err != nil {
-				select {
-				case errChan <- err:
-				default:
-				}
-				return
-			}
-			defer serializer.Close()
 
 			for stage := range stageChan {
 				rec := stage.Record
@@ -349,24 +325,9 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 					}
 				}
 
-				// Parallel Serialization Optimization (Stateful)
-				fd, err := serializer.Serialize(processed)
-				if err != nil {
-					processed.Release()
-					// log.Printf("[ERROR] Serialize failed: %v", err)
-					select {
-					case errChan <- err:
-					default:
-					}
-					return
-				}
-
-				// We can release the batch locally now, as we have the serialized data
-				processed.Release()
-
 				// Send to results
 				select {
-				case resultsChan <- fd:
+				case resultsChan <- processed:
 				case <-ctx.Done():
 					return
 				}
@@ -381,62 +342,62 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 		close(errChan)
 	}()
 
-	// Manual Schema Transmission Removed:
-	// Serialize() now returns [Schema, Batch] for each batch.
-	// This adds overhead (schema sent per batch) but guarantees correctness.
-	// Future optimization: Serialize() could skip schema if stateful.
+	// Use standard Flight RecordWriter to stream results
+	// This efficiently handles schema (first message) and subsequent batches
+	// without intermediate copying or manual chunk management.
+	writer := flight.NewRecordWriter(stream, ipc.WithSchema(schema))
+	defer writer.Close()
 
 	// Consume Results (Sequential Write)
 	for {
-		select {
-		case fd, ok := <-resultsChan:
-			if !ok {
-				resultsChan = nil // Channel closed
-			} else {
-				startWrite := time.Now()
+		rec, ok := <-resultsChan
+		if !ok {
+			resultsChan = nil // Channel closed
+		} else {
+			startWrite := time.Now()
 
-				// Write the pre-serialized FlightData chunks
-				for _, chunk := range fd.FDs {
-					if err := stream.Send(chunk); err != nil {
-						s.logger.Error().Err(err).Msg("DoGet Send failed")
-						return err
-					}
+			// Write batch directly to stream
+			// Ensure schema strictly matches writer (e.g. metadata from compute kernels)
+			if !rec.Schema().Equal(schema) {
+				// Use helper to safely cast/align (avoiding panics if types mismatch)
+				aligned, err := castRecordToSchema(mem, rec, schema)
+				if err != nil {
+					s.logger.Error().Err(err).Msg("Failed to align record batch schema")
+					rec.Release()
+					return err
 				}
-
-				if rowsSent == 0 {
-					metrics.DoGetTimeToFirstChunk.Observe(time.Since(startDoGet).Seconds())
-				}
-
-				// We assume FlightData body ownership is transferred or needs no release if it uses Go bytes?
-				// FlightData.Body is []byte.
-
-				writeDuration := time.Since(startWrite)
-				metrics.GRPCStreamSendLatencySeconds.Observe(writeDuration.Seconds())
-
-				// If write takes more than 50ms, consider it a potential flow-control stall
-				if writeDuration > 50*time.Millisecond {
-					metrics.GRPCStreamStallTotal.Inc()
-					s.logger.Trace().Dur("duration", writeDuration).Msg("Detected stream stall (flow control)")
-				}
-
-				// Note: We lost the row count in FlightData (it's in the header bytes).
-				// We could pass a struct {FD *FlightData, Rows int64} to track stats correctly.
-				// For now, approximate or we need the wrapper.
-
-				// rowsSent += ... // Can't easily count without decoding
-
-				// Track stats for test verification
-				if usePipeline {
-					s.incrementPipelineBatches(1)
-				}
-
-				// Limit check currently disabled with this optimization (or need to pass count)
-				// if query.Limit > 0 && rowsSent >= query.Limit { goto DRAIN }
+				rec.Release() // Release old wrapper
+				rec = aligned
 			}
-		case err, ok := <-errChan:
-			if ok && err != nil {
+
+			if err := writer.Write(rec); err != nil {
+				s.logger.Error().Err(err).Msg("DoGet Send failed")
+				rec.Release()
 				return err
 			}
+
+			if rowsSent == 0 {
+				metrics.DoGetTimeToFirstChunk.Observe(time.Since(startDoGet).Seconds())
+			}
+
+			rec.Release()
+
+			writeDuration := time.Since(startWrite)
+			metrics.GRPCStreamSendLatencySeconds.Observe(writeDuration.Seconds())
+
+			if writeDuration > 50*time.Millisecond {
+				metrics.GRPCStreamStallTotal.Inc()
+				// s.logger.Trace().Dur("duration", writeDuration).Msg("Detected stream stall (flow control)")
+			}
+
+			// Track stats for test verification
+			if usePipeline {
+				s.incrementPipelineBatches(1)
+			}
+		}
+		if ok && err != nil {
+			// s.logger.Error().Err(err).Msg("DoGet worker reported error")
+			return err
 		}
 		if resultsChan == nil {
 			break
@@ -454,12 +415,22 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 }
 
 // MapInternalToUserIDs maps internal HNSW IDs to user-provided IDs
+// MapInternalToUserIDs maps internal HNSW IDs to user-provided IDs
+// This is the public wrapper that acquires a read lock.
 func (s *VectorStore) MapInternalToUserIDs(ds *Dataset, results []SearchResult) []SearchResult {
 	start := time.Now()
 	defer func() {
 		metrics.IDResolutionDuration.Observe(time.Since(start).Seconds())
 	}()
 
+	ds.dataMu.RLock()
+	defer ds.dataMu.RUnlock()
+	return s.mapInternalToUserIDsLocked(ds, results)
+}
+
+// mapInternalToUserIDsLocked maps internal HNSW IDs to user-provided IDs.
+// Caller MUST hold ds.dataMu.RLock (or Lock).
+func (s *VectorStore) mapInternalToUserIDsLocked(ds *Dataset, results []SearchResult) []SearchResult {
 	// Use the VectorIndex interface directly to look up locations.
 	// This supports HNSWIndex, ArrowHNSW, AutoShardingIndex, etc.
 	if ds.Index == nil {
@@ -467,11 +438,6 @@ func (s *VectorStore) MapInternalToUserIDs(ds *Dataset, results []SearchResult) 
 	}
 
 	mappedResults := make([]SearchResult, 0, len(results))
-
-	// We need to access dataset records. The HNSW index locations point to Batch/Row.
-	// We'll use those to look up the ID from the "id" column of the record batch.
-	ds.dataMu.RLock()
-	defer ds.dataMu.RUnlock()
 
 	for _, res := range results {
 		// 1. Get location (Batch, Row) from VectorIndex
@@ -481,13 +447,13 @@ func (s *VectorStore) MapInternalToUserIDs(ds *Dataset, results []SearchResult) 
 			// If we return raw result, it contains internal ID, which might confuse client.
 			// But skipping might lose data.
 			// Let's assume invalid and skip?
-			log.Printf("[DEBUG] MapInternalToUserIDs: ID %d not found in Index location store", res.ID)
+			// log.Printf("[DEBUG] MapInternalToUserIDs: ID %d not found in Index location store", res.ID)
 			continue
 		}
 
 		// 2. Access RecordBatch
 		if loc.BatchIdx >= len(ds.Records) {
-			log.Printf("[DEBUG] MapInternalToUserIDs: dropping ID %d. BatchIdx %d >= Records %d", res.ID, loc.BatchIdx, len(ds.Records))
+			// log.Printf("[DEBUG] MapInternalToUserIDs: dropping ID %d. BatchIdx %d >= Records %d", res.ID, loc.BatchIdx, len(ds.Records))
 			continue
 		}
 		rec := ds.Records[loc.BatchIdx]
@@ -688,7 +654,7 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, stream fli
 			}
 
 			// Map IDs
-			searchResults = s.MapInternalToUserIDs(ds, searchResults)
+			searchResults = s.mapInternalToUserIDsLocked(ds, searchResults)
 			ds.dataMu.RUnlock()
 		}
 
@@ -723,7 +689,7 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, stream fli
 		if len(searchResults) > 0 {
 			s.queryCache.Put(cacheKey, searchResults)
 		} else {
-			log.Printf("[DEBUG] Not caching empty results for %s", req.Dataset)
+			// log.Printf("[DEBUG] Not caching empty results for %s", req.Dataset)
 		}
 
 	} // End of Cache Miss block

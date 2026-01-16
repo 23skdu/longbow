@@ -36,6 +36,12 @@ func TestArrowHNSW_MmapPersistence(t *testing.T) {
 		require.NoError(t, err)
 	}
 
+	// Verify vectors match
+	for i := 0; i < h1.Size(); i++ {
+		v1, _ := h1.getVectorAny(uint32(i))
+		assert.NotNil(t, v1)
+	}
+
 	// 2. Persist to Disk
 	gd := h1.data.Load()
 	t.Logf("Persisting graph with %d nodes", h1.Size())
@@ -77,7 +83,7 @@ func TestArrowHNSW_MmapPersistence(t *testing.T) {
 	t.Logf("EP: %d, MaxLevel: %d", h2.entryPoint.Load(), h2.maxLevel.Load())
 
 	// Debug: Check vector 5 directly
-	v5, err := h2.getVector(5)
+	v5, err := h2.getVectorAny(5)
 	t.Logf("Vector 5: %v, Err: %v", v5, err)
 
 	res, err := h2.Search(q, 1, 20, nil)

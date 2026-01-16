@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/apache/arrow-go/v18/arrow/float16"
 	"github.com/cespare/xxhash/v2"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -53,7 +54,7 @@ func (c *QueryCache) SetDatasetName(name string) {
 }
 
 // Get retrieves results from the cache if they exist and haven't expired.
-func (c *QueryCache) Get(query []float32, params string) ([]SearchResult, bool) {
+func (c *QueryCache) Get(query any, params string) ([]SearchResult, bool) {
 	key := c.hashQuery(query, params)
 
 	c.mu.Lock()
@@ -76,7 +77,7 @@ func (c *QueryCache) Get(query []float32, params string) ([]SearchResult, bool) 
 }
 
 // Set adds or updates results in the cache.
-func (c *QueryCache) Set(query []float32, params string, results []SearchResult) {
+func (c *QueryCache) Set(query any, params string, results []SearchResult) {
 	key := c.hashQuery(query, params)
 
 	c.mu.Lock()
@@ -121,18 +122,31 @@ func (c *QueryCache) removeElement(e *list.Element) {
 	c.metricSize.Set(float64(c.evictList.Len()))
 }
 
-func (c *QueryCache) hashQuery(query []float32, params string) string {
+func (c *QueryCache) hashQuery(query any, params string) string {
 	h := xxhash.New()
-	// Convert float32 slice to byte slice for hashing (not ultra-safe but fast for this)
-	// We'll just write the float values to the hash.
-	for _, v := range query {
-		// Manual float32 to bits to bytes?
-		// Actually, xxhash.New().Write is better.
-		// We'll use fmt.Fprintf or similar if unsure, but let's be more direct.
-		// xxhash has sum64, but we need to feed it data.
-		// For simplicity in this task, let's use a string representation or a binary write.
-		fmt.Fprintf(h, "%f", v)
+
+	switch v := query.(type) {
+	case []float32:
+		for _, val := range v {
+			fmt.Fprintf(h, "%f,", val)
+		}
+	case []float16.Num:
+		for _, val := range v {
+			fmt.Fprintf(h, "%d,", val) // uint16 representation
+		}
+	case []complex64:
+		for _, val := range v {
+			fmt.Fprintf(h, "%f+%fi,", real(val), imag(val))
+		}
+	case []complex128:
+		for _, val := range v {
+			fmt.Fprintf(h, "%f+%fi,", real(val), imag(val))
+		}
+	default:
+		// Fallback or ignore? Ideally predictable
+		fmt.Fprintf(h, "%v", v)
 	}
+
 	h.WriteString(params)
 	return fmt.Sprintf("%x", h.Sum64())
 }

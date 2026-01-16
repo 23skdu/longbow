@@ -5,3 +5,13 @@
 3. **Fix Client-Side Vector Flattening**: Modify `longbowclientsdk/src/longbow/client.py` to ensure `complex128` vectors are correctly flattened to standard Python `float` lists before JSON serialization, avoiding numpy types that might break JSON.
 4. **Investigate Zero Results (Dense Search)**: Analyze `DataServer` logs to determine if `DoGet` is silently dropping requests due to dimension mismatch (128 vs 256) or if `Index.SearchVectors` is returning empty results due to distance metric issues.
 5. **Verify Fix**: Re-run `scripts/validate_datatypes.py` specifically for `complex128` to confirm both Dense and Filtered search return correct results.
+
+# Branchless Optimizations
+
+1. **SIMD Comparisons**: Replace `if/else` in `matchInt64Generic` and `matchFloat32Generic` with branchless bitwise operations.
+   - **Target**: `internal/simd/simd_baseline.go`
+   - **Reason**: Branch mispredictions inside tight loops destroy throughput.
+   - **Plan**: Implement branchless logic (e.g., `res = ((a ^ b) - 1) >> 63` or similar) and benchmark.
+2. **HNSW Search Min/Max**: Replace conditional updates for `closest` and `closestDist` in `searchLayer`.
+   - **Target**: `internal/store/arrow_hnsw_search.go`
+   - **Plan**: Use arithmetic min/max or `math.Min` if inlined/intrinsics are faster (Go's `min` built-in might be branchless).

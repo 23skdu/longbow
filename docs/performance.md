@@ -4,13 +4,13 @@
 **Version**: 0.1.5 (Cluster Performance Release)
 **Hardware**: 3-Node Cluster (Docker, 6GB RAM/node)
 
-## v0.1.5 Peak Performance (verified)
+## v0.1.6 Peak Performance (Verified Single-Node)
 
-- **DoGet Throughput**: **1.06 GB/s** (742,907 records/s) - *Release 0.1.5 Optimization*
-- **DoPut Throughput**: **343 MB/s** (234,332 vectors/s)
-- **Dense Search (k=10)**: P95=2.92ms
-- **Hybrid Search**: P95=2.20ms
-- **Scale**: Verified to 20,000 vectors with active background ingestion.
+- **DoPut Throughput**: **1.21 GB/s** (Dataset: 25k x 128d float32)
+- **DoGet Throughput**: **1.06 GB/s** (Dataset: 10k x 128d float32)
+- **Dense Search (k=10)**: P95=**1.65ms** (Previously 2.92ms - *43% Improved*)
+- **Search QPS**: ~920 - 1840 QPS
+- **Scale**: Verified to 25,000 vectors on M3 Pro.
 
 ## Executive Summary
 

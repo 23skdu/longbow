@@ -110,6 +110,8 @@ func (h *ArrowHNSW) Search(q any, k, ef int, filter *query.Bitset) ([]SearchResu
 	metrics.HNSWSearchQueriesTotal.WithLabelValues(strconv.Itoa(dims)).Inc()
 	metrics.HnswSearchThroughputDims.WithLabelValues(strconv.Itoa(dims)).Inc()
 
+	dsName := h.dataset.Name
+
 	// 1. Finding entry points in upper layers
 	data := graph
 	ep := h.entryPoint.Load()
@@ -167,17 +169,21 @@ func (h *ArrowHNSW) Search(q any, k, ef int, filter *query.Bitset) ([]SearchResu
 	// Resolve Distance Computer
 	computer := h.resolveHNSWComputer(data, ctx, q, false)
 
+	traversalStart := time.Now()
 	for l := maxL; l > 0; l-- {
 		ctx.Reset()
 		ep = h.searchLayer(computer, ep, 1, l, ctx, data, nil)
 		totalVisited += ctx.VisitedCount()
 	}
+	metrics.HNSWSearchPhaseDurationSeconds.WithLabelValues(dsName, "traversal").Observe(time.Since(traversalStart).Seconds())
 
 	// 2. Final Search at Layer 0
 	ctx.Reset()
 
+	layer0Start := time.Now()
 	_ = h.searchLayer(computer, ep, ef, 0, ctx, data, filter)
 	totalVisited += ctx.VisitedCount()
+	metrics.HNSWSearchPhaseDurationSeconds.WithLabelValues(dsName, "layer0").Observe(time.Since(layer0Start).Seconds())
 
 	// Results are in resultSet
 	resultSet := ctx.resultSet
@@ -206,6 +212,7 @@ func (h *ArrowHNSW) Search(q any, k, ef int, filter *query.Bitset) ([]SearchResu
 
 	// 3. Post-Refinement
 	if useRefinement && len(results) > 0 {
+		refineStart := time.Now()
 		metrics.HNSWRefineThroughput.WithLabelValues(typeLabel).Add(float64(len(results)))
 
 		// Create a high-precision computer for refinement (usually Float32)
@@ -240,6 +247,7 @@ func (h *ArrowHNSW) Search(q any, k, ef int, filter *query.Bitset) ([]SearchResu
 		if len(results) > k {
 			results = results[:k]
 		}
+		metrics.HNSWSearchPhaseDurationSeconds.WithLabelValues(dsName, "refinement").Observe(time.Since(refineStart).Seconds())
 	}
 
 	return results, nil
@@ -476,38 +484,6 @@ func (h *ArrowHNSW) distanceF16(q []float16.Num, id uint32, data *GraphData, _ *
 		return math.MaxFloat32
 	}
 	return simd.EuclideanDistanceF16(q, v)
-}
-
-func (h *ArrowHNSW) getVectorF16(id uint32) ([]float16.Num, error) {
-	data := h.data.Load()
-	if data == nil {
-		return nil, fmt.Errorf("no graph data loaded")
-	}
-	v := data.GetVectorF16(id)
-	if v != nil {
-		return v, nil
-	}
-
-	// Fallback to dataset (cold storage)
-	vAny, err := h.getVectorAny(id)
-	if err != nil {
-		return nil, fmt.Errorf("vector f16 not found (and fallback failed: %v): %d", err, id)
-	}
-
-	if vF16, ok := vAny.([]float16.Num); ok {
-		return vF16, nil
-	}
-
-	if vF32, ok := vAny.([]float32); ok {
-		// Convert F32 -> F16
-		v16 := make([]float16.Num, len(vF32))
-		for i, f := range vF32 {
-			v16[i] = float16.New(f)
-		}
-		return v16, nil
-	}
-
-	return nil, fmt.Errorf("cannot convert vector type %T to float16 for id %d", vAny, id)
 }
 
 func (h *ArrowHNSW) getVectorAny(id uint32) (any, error) {

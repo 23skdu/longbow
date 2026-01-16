@@ -3,6 +3,8 @@ package store
 import (
 	"fmt"
 	"sync/atomic"
+
+	prommetrics "github.com/23skdu/longbow/internal/metrics"
 )
 
 // GraphMetrics holds statistics about the HNSW graph quality.
@@ -70,6 +72,14 @@ func (h *ArrowHNSW) AnalyzeGraph() GraphMetrics {
 	if nodeCount > 0 {
 		metrics.EstimatedDiameter = h.bfsDiameter(data, layer, ep)
 	}
+
+	// 3. Report Metrics to Prometheus
+	dsName := h.dataset.Name
+	prommetrics.HNSWDisconnectedComponents.WithLabelValues(dsName).Set(float64(metrics.ConnectedComponents))
+	prommetrics.HNSWOrphanNodes.WithLabelValues(dsName).Set(float64(metrics.ZeroDegreeNodes))
+	prommetrics.HNSWAverageDegree.WithLabelValues(dsName).Set(metrics.AverageDegree)
+	prommetrics.HNSWMaxComponentSize.WithLabelValues(dsName).Set(float64(metrics.MaxComponentSize))
+	prommetrics.HNSWEstimatedDiameter.WithLabelValues(dsName).Set(float64(metrics.EstimatedDiameter))
 
 	return metrics
 }

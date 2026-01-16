@@ -944,6 +944,21 @@ var (
 	)
 
 	// WAL Metrics
+	WALQueueDepth = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "longbow_wal_queue_depth",
+			Help: "Current number of batches waiting in the WAL persistence queue",
+		},
+	)
+
+	WALQueueLatency = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_wal_queue_latency_seconds",
+			Help:    "Time spent in the persistence queue before processing",
+			Buckets: []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5},
+		},
+	)
+
 	WALWriteErrors = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_wal_write_errors_total",
@@ -957,5 +972,82 @@ var (
 			Help:    "Duration of WAL writes",
 			Buckets: []float64{0.0001, 0.001, 0.005, 0.01, 0.05},
 		},
+	)
+
+	// =============================================================================
+	// HNSW Advanced & Health Metrics
+	// =============================================================================
+
+	// HNSWSearchPhaseDurationSeconds measures time spent in different phases of HNSW search
+	HNSWSearchPhaseDurationSeconds = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_hnsw_search_phase_duration_seconds",
+			Help:    "Duration of HNSW search phases",
+			Buckets: []float64{0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1},
+		},
+		[]string{"dataset", "phase"}, // phase: "candidate_selection", "pruning", "distance_calc", "refinement"
+	)
+
+	// HNSWDisconnectedComponents tracks the number of disconnected components in the HNSW graph
+	HNSWDisconnectedComponents = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "longbow_hnsw_disconnected_components",
+			Help: "Number of disconnected components in the HNSW graph",
+		},
+		[]string{"dataset"},
+	)
+
+	// HNSWOrphanNodes tracks the number of nodes with zero degree in the HNSW graph
+	HNSWOrphanNodes = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "longbow_hnsw_orphan_nodes",
+			Help: "Number of orphan nodes (degree 0) in the HNSW graph",
+		},
+		[]string{"dataset"},
+	)
+
+	// HNSWAverageDegree tracks the average degree of nodes in the HNSW graph
+	HNSWAverageDegree = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "longbow_hnsw_avg_degree",
+			Help: "Average degree of nodes in the HNSW graph",
+		},
+		[]string{"dataset"},
+	)
+
+	// HNSWMaxComponentSize tracks the size of the largest connected component
+	HNSWMaxComponentSize = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "longbow_hnsw_max_component_size",
+			Help: "Size of the largest connected component in the HNSW graph",
+		},
+		[]string{"dataset"},
+	)
+
+	// HNSWEstimatedDiameter tracks the estimated diameter of the HNSW graph
+	HNSWEstimatedDiameter = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "longbow_hnsw_estimated_diameter",
+			Help: "Estimated diameter (max BFS depth) of the HNSW graph",
+		},
+		[]string{"dataset"},
+	)
+
+	// HNSWAvgLevelDistribution tracks the distribution of nodes across HNSW levels
+	HNSWAvgLevelDistribution = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "longbow_hnsw_level_distribution",
+			Help: "Number of nodes at each level of the HNSW graph",
+		},
+		[]string{"dataset", "level"},
+	)
+
+	// HNSWMemoryUsageBytes tracks memory usage broken down by component
+	HNSWMemoryUsageBytes = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "longbow_hnsw_memory_usage_bytes",
+			Help: "Memory usage of HNSW index components",
+		},
+		[]string{"dataset", "component"}, // component: "graph", "vectors", "metadata", "id_map"
 	)
 )

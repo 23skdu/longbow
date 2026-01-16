@@ -29,11 +29,12 @@ var (
 // If cap matches standard sizes, it returns a pooled slice.
 // The returned slice has len=cap (fully usable buffer).
 // NOTE: buffer content is DIRTY (not zeroed) if reused.
-func GetSlab(cap int) []byte {
-	if cap == 4*1024*1024 {
+func GetSlab(capacity int) []byte {
+	if capacity == 4*1024*1024 {
 		return global4MBPool.Get()
 	}
-	return make([]byte, cap)
+	// Fallback to make (or add more pools logic here)
+	return make([]byte, capacity)
 }
 
 // PutSlab returns a slab to the pool for reuse.

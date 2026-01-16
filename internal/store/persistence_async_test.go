@@ -32,7 +32,7 @@ func TestApplyDelta_AsyncIndexing(t *testing.T) {
 		0,
 		0,
 	)
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// Create a record batch
 	b := array.NewRecordBuilder(mem, schema)

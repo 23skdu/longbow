@@ -1,0 +1,146 @@
+[
+  {
+    "type": "int8",
+    "dim": 128,
+    "put_mb": 143.7986818454164,
+    "get_mb": 346.9879518072289,
+    "search_qps": 757.2197857985183,
+    "status": "Stable"
+  },
+  {
+    "type": "int16",
+    "dim": 128,
+    "put_mb": 329.1251562941153,
+    "get_mb": 890.9999181066252,
+    "search_qps": 722.8196263186538,
+    "status": "Stable"
+  },
+  {
+    "type": "int32",
+    "dim": 128,
+    "put_mb": 626.4088266698303,
+    "get_mb": 1032.1067292185896,
+    "search_qps": 580.9484868732333,
+    "status": "Stable"
+  },
+  {
+    "type": "int64",
+    "dim": 128,
+    "put_mb": 1104.9723756906078,
+    "get_mb": 1627.0337922403003,
+    "search_qps": 733.4720195634321,
+    "status": "Stable"
+  },
+  {
+    "type": "float32",
+    "dim": 128,
+    "put_mb": 631.4782331366608,
+    "get_mb": 1463.0091438071488,
+    "search_qps": 751.566635870317,
+    "status": "Stable"
+  },
+  {
+    "type": "float16",
+    "dim": 128,
+    "put_mb": 267.09436679650423,
+    "get_mb": 850.4650981005237,
+    "search_qps": 611.2231913389219,
+    "status": "Stable"
+  },
+  {
+    "type": "float64",
+    "dim": 128,
+    "put_mb": 614.5845644722846,
+    "get_mb": 1807.9096045197741,
+    "search_qps": 678.4291346886698,
+    "status": "Stable"
+  },
+  {
+    "type": "complex64",
+    "dim": 128,
+    "put_mb": 805.837153741848,
+    "get_mb": 1307.0663273321393,
+    "search_qps": 5967.141840944658,
+    "status": "Stable"
+  },
+  {
+    "type": "complex128",
+    "dim": 128,
+    "put_mb": 1222.9540898452544,
+    "get_mb": 1836.3806219137862,
+    "search_qps": 5938.3498417121145,
+    "status": "Stable"
+  },
+  {
+    "type": "int8",
+    "dim": 384,
+    "put_mb": 504.01108824394134,
+    "get_mb": 1025.3781081773905,
+    "search_qps": 308.7005136098061,
+    "status": "Stable"
+  },
+  {
+    "type": "int16",
+    "dim": 384,
+    "put_mb": 645.6926371273266,
+    "get_mb": 1381.071916149205,
+    "search_qps": 264.2511718759352,
+    "status": "Stable"
+  },
+  {
+    "type": "int32",
+    "dim": 384,
+    "put_mb": 336.01558835203696,
+    "get_mb": 1190.1612315714806,
+    "search_qps": 259.3761003669467,
+    "status": "Stable"
+  },
+  {
+    "type": "int64",
+    "dim": 384,
+    "put_mb": 867.0950350759784,
+    "get_mb": 1463.3337282312523,
+    "search_qps": 146.5234059939869,
+    "status": "Stable"
+  },
+  {
+    "type": "float32",
+    "dim": 384,
+    "put_mb": 771.4548452036751,
+    "get_mb": 1531.2137730311028,
+    "search_qps": 84.71945511361805,
+    "status": "Stable"
+  },
+  {
+    "type": "float16",
+    "dim": 384,
+    "put_mb": 347.6101800124147,
+    "get_mb": 1142.06635347245,
+    "search_qps": 83.85090622185805,
+    "status": "Stable"
+  },
+  {
+    "type": "float64",
+    "dim": 384,
+    "put_mb": 562.1052248360223,
+    "get_mb": 1236.2879333813755,
+    "search_qps": 73.63762534782215,
+    "status": "Stable"
+  },
+  {
+    "type": "complex64",
+    "dim": 384,
+    "put_mb": 602.6757397643033,
+    "get_mb": 266.6338555056912,
+    "search_qps": 143.90062368199293,
+    "status": "Stable"
+  },
+  {
+    "type": "complex128",
+    "dim": 384,
+    "put_mb": 514.241827228103,
+    "get_mb": 0,
+    "search_qps": 1300.090943976155,
+    "status": "Stable"
+  }
+]

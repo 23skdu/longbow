@@ -21,7 +21,7 @@ func TestArrowHNSW_Float16_ZeroCopy(t *testing.T) {
 	config.DataType = VectorTypeFloat16 // Explicitly use native Float16 storage
 
 	idx := NewArrowHNSW(nil, config, nil)
-	defer idx.Close()
+	defer func() { _ = idx.Close() }()
 
 	count := 100
 	vecsF16 := make([][]float16.Num, count)

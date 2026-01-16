@@ -128,25 +128,25 @@ func (c *QueryCache) hashQuery(query any, params string) string {
 	switch v := query.(type) {
 	case []float32:
 		for _, val := range v {
-			fmt.Fprintf(h, "%f,", val)
+			_, _ = fmt.Fprintf(h, "%f,", val)
 		}
 	case []float16.Num:
 		for _, val := range v {
-			fmt.Fprintf(h, "%d,", val) // uint16 representation
+			_, _ = fmt.Fprintf(h, "%d,", val) // uint16 representation
 		}
 	case []complex64:
 		for _, val := range v {
-			fmt.Fprintf(h, "%f+%fi,", real(val), imag(val))
+			_, _ = fmt.Fprintf(h, "%f+%fi,", real(val), imag(val))
 		}
 	case []complex128:
 		for _, val := range v {
-			fmt.Fprintf(h, "%f+%fi,", real(val), imag(val))
+			_, _ = fmt.Fprintf(h, "%f+%fi,", real(val), imag(val))
 		}
 	default:
 		// Fallback or ignore? Ideally predictable
-		fmt.Fprintf(h, "%v", v)
+		_, _ = fmt.Fprintf(h, "%v", v)
 	}
 
-	h.WriteString(params)
+	_, _ = h.WriteString(params)
 	return fmt.Sprintf("%x", h.Sum64())
 }

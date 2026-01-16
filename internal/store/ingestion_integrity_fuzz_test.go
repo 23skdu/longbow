@@ -11,7 +11,6 @@ import (
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
-	arrowmem "github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 )
@@ -149,7 +148,7 @@ func FuzzIngestionIntegrity_Concurrent(f *testing.F) {
 	})
 }
 
-func createIntegrityTestBatch(mem arrowmem.Allocator, rows, wID, bID int) arrow.RecordBatch {
+func createIntegrityTestBatch(mem memory.Allocator, rows, wID, bID int) arrow.RecordBatch {
 	// Schema: id (string), vector (float32[128])
 	dims := 128
 	schema := arrow.NewSchema([]arrow.Field{

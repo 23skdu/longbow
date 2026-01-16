@@ -43,7 +43,7 @@ func BenchmarkHNSW_ZeroCopy_Float16(b *testing.B) {
 	start := time.Now()
 	for i := 0; i < numVectors; i++ {
 		// Use InsertWithVector generic
-		idx.InsertWithVector(uint32(i), vecsF16[i], -1)
+		_ = idx.InsertWithVector(uint32(i), vecsF16[i], -1)
 	}
 	b.Logf("Inserted %d vectors in %v", numVectors, time.Since(start))
 

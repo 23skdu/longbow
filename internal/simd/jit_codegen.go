@@ -52,8 +52,7 @@ func (g *wasmGen) writeU32(v uint32) {
 }
 
 func (g *wasmGen) writeHeader() {
-	g.buf = append(g.buf, 0x00, 0x61, 0x73, 0x6d)
-	g.buf = append(g.buf, 0x01, 0x00, 0x00, 0x00)
+	g.buf = append(g.buf, 0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00)
 }
 
 func (g *wasmGen) writeSectionHeader(id byte, size int) {
@@ -241,7 +240,7 @@ func GenerateBatchBody() []byte {
 		OpI32GeU,
 		OpBrIf, 1,
 
-		// curr_vec_ptr = vecs_ptr + v_idx * dim * 4
+		// curr_vec_ptr calculation: vecs_ptr + v_idx * dim * 4
 		OpLocalGet, 1,
 		OpLocalGet, 5,
 		OpLocalGet, 3, // dim
@@ -351,7 +350,7 @@ func GenerateBatchBodySIMD() []byte {
 		OpI32GeU,
 		OpBrIf, 1,
 
-		// curr_vec_ptr = vecs_ptr + v_idx * dim * 4
+		// curr_vec_ptr calculation: vecs_ptr + v_idx * dim * 4
 		OpLocalGet, 1,
 		OpLocalGet, 5,
 		OpLocalGet, 3, // dim
@@ -387,7 +386,7 @@ func GenerateBatchBodySIMD() []byte {
 		OpI32Add,
 		OpSIMDPrefix, OpV128Load, 0x02, 0x00,
 
-		// db_vec = v128.load(curr_vec_ptr + d_idx * 4)
+		// Load db_vec: v128.load(curr_vec_ptr + d_idx * 4)
 		OpLocalGet, 9,
 		OpLocalGet, 6,
 		OpI32Const, 2,

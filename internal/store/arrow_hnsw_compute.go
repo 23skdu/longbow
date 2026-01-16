@@ -143,7 +143,7 @@ func (c *pqComputer) Compute(ids []uint32, dists []float32) {
 			}
 		}
 	}
-	c.pqEncoder.ADCDistanceBatch(c.adcTable, codes, dists)
+	_ = c.pqEncoder.ADCDistanceBatch(c.adcTable, codes, dists)
 }
 
 func (c *pqComputer) ComputeSingle(id uint32) float32 {
@@ -209,9 +209,10 @@ func (c *float16Computer) Prefetch(id uint32) {
 }
 
 // resolveHNSWComputer selects the appropriate computer and encodes the query if necessary.
-func (h *ArrowHNSW) resolveHNSWComputer(data *GraphData, ctx *ArrowSearchContext, queryVec any, approx bool) HNSWDistanceComputer {
+func (h *ArrowHNSW) resolveHNSWComputer(data *GraphData, ctx *ArrowSearchContext, queryVec any, _ bool) HNSWDistanceComputer {
 	// Defaults if we can't determine dimensions from query logic below (fallback)
-	dims := int(h.dims.Load())
+	// Defaults if we can't determine dimensions from query logic below (fallback)
+	// dims := int(h.dims.Load()) // Unused
 	disk := h.diskGraph.Load() // Load disk backend
 
 	// 1. Float16 Native
@@ -348,6 +349,7 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *GraphData, ctx *ArrowSearchContext
 
 	// Handle Float32 input
 	var qF32 []float32
+	var dims int // Declare dims
 	if q, ok := queryVec.([]float32); ok {
 		qF32 = q
 		dims = len(q) // Correct dims for blocking

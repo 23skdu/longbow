@@ -65,7 +65,7 @@ func TestArrowHNSW_RepairAgent_AfterDeletions(t *testing.T) {
 
 	// Delete some nodes
 	for i := 5; i < 10; i++ {
-		idx.Delete(uint32(i))
+		_ = idx.Delete(uint32(i))
 	}
 
 	// Enable repair agent

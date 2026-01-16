@@ -23,27 +23,27 @@ func HashQuery(req *qry.VectorSearchRequest) uint64 {
 	h := fnv.New64a()
 
 	// Dataset
-	h.Write([]byte(req.Dataset))
+	_, _ = h.Write([]byte(req.Dataset))
 
 	// Vector
 	// Optimization: writing byte slice or elements?
 	// FNV write is cheap.
 	for _, v := range req.Vector {
 		bits := math.Float32bits(v)
-		binary.Write(h, binary.LittleEndian, bits)
+		_ = binary.Write(h, binary.LittleEndian, bits)
 	}
 
 	// K
-	binary.Write(h, binary.LittleEndian, int64(req.K))
+	_ = binary.Write(h, binary.LittleEndian, int64(req.K))
 
 	// TextQuery
-	h.Write([]byte(req.TextQuery))
+	_, _ = h.Write([]byte(req.TextQuery))
 
 	// Alpha
-	binary.Write(h, binary.LittleEndian, math.Float32bits(req.Alpha))
+	_ = binary.Write(h, binary.LittleEndian, math.Float32bits(req.Alpha))
 
 	// GraphAlpha
-	binary.Write(h, binary.LittleEndian, math.Float32bits(req.GraphAlpha))
+	_ = binary.Write(h, binary.LittleEndian, math.Float32bits(req.GraphAlpha))
 
 	// Filters
 	if len(req.Filters) > 0 {
@@ -52,9 +52,9 @@ func HashQuery(req *qry.VectorSearchRequest) uint64 {
 
 	// LocalOnly? If local vs global changes result set (it might), then yes.
 	if req.LocalOnly {
-		h.Write([]byte{1})
+		_, _ = h.Write([]byte{1})
 	} else {
-		h.Write([]byte{0})
+		_, _ = h.Write([]byte{0})
 	}
 
 	return h.Sum64()
@@ -62,10 +62,10 @@ func HashQuery(req *qry.VectorSearchRequest) uint64 {
 
 func hashFilters(h hash.Hash64, filters []qry.Filter) {
 	for _, f := range filters {
-		h.Write([]byte(f.Field))
-		h.Write([]byte(f.Operator))
-		h.Write([]byte(f.Value))
-		h.Write([]byte(f.Logic))
+		_, _ = h.Write([]byte(f.Field))
+		_, _ = h.Write([]byte(f.Operator))
+		_, _ = h.Write([]byte(f.Value))
+		_, _ = h.Write([]byte(f.Logic))
 		if len(f.Filters) > 0 {
 			hashFilters(h, f.Filters)
 		}

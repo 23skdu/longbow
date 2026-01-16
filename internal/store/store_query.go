@@ -138,7 +138,6 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 		}
 		err = nil // Clear error after fallback
 	}
-	// log.Printf("[DEBUG] Parsed query: Search=%v Name=%s", query.Search, query.Name)
 
 	// Create Request-Scoped Arena Allocator
 	// This reduces GC pressure for transient buffers (masks, filtered batches, serialized records)
@@ -222,7 +221,7 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 		// ProcessRecords handles feeding safely
 		stageChan = pipeline.ProcessRecords(ctx, recordsToProcess, tombstonesToProcess, query.Filters, nil)
 		metrics.DoGetPipelineStepsTotal.WithLabelValues("scan", "pipeline").Add(float64(len(recordsToProcess)))
-		// s.logger.Debug().Int("workers", pipeline.NumWorkers()).Msg("Using DoGetPipeline")
+
 	} else {
 		// Simple feeder for small datasets
 		metrics.DoGetPipelineStepsTotal.WithLabelValues("scan", "simple").Add(float64(len(recordsToProcess)))
@@ -347,7 +346,7 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 	// This efficiently handles schema (first message) and subsequent batches
 	// without intermediate copying or manual chunk management.
 	writer := flight.NewRecordWriter(stream, ipc.WithSchema(schema))
-	defer writer.Close()
+	defer func() { _ = writer.Close() }()
 
 	// Consume Results (Sequential Write)
 	for {
@@ -388,7 +387,7 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 
 			if writeDuration > 50*time.Millisecond {
 				metrics.GRPCStreamStallTotal.Inc()
-				// s.logger.Trace().Dur("duration", writeDuration).Msg("Detected stream stall (flow control)")
+
 			}
 
 			// Track stats for test verification
@@ -397,7 +396,7 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 			}
 		}
 		if ok && err != nil {
-			// s.logger.Error().Err(err).Msg("DoGet worker reported error")
+
 			return err
 		}
 		if resultsChan == nil {
@@ -454,7 +453,7 @@ func (s *VectorStore) mapInternalToUserIDsLocked(ds *Dataset, results []SearchRe
 
 		// 2. Access RecordBatch
 		if loc.BatchIdx >= len(ds.Records) {
-			// log.Printf("[DEBUG] MapInternalToUserIDs: dropping ID %d. BatchIdx %d >= Records %d", res.ID, loc.BatchIdx, len(ds.Records))
+
 			continue
 		}
 		rec := ds.Records[loc.BatchIdx]
@@ -624,7 +623,7 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, stream fli
 			}
 
 			ds.dataMu.RLock()
-			// log.Printf("[DEBUG] handleDoGetSearch: index exists=%v", ds.Index != nil)
+
 			if ds.Index == nil {
 				ds.dataMu.RUnlock()
 				return status.Error(codes.FailedPrecondition, "index not initialized")
@@ -699,7 +698,6 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, stream fli
 		}
 
 	} // End of Cache Miss block
-	// log.Printf("[DEBUG] handleDoGetSearch: Sending %d results", len(searchResults))
 
 	// 5. Stream Results (Arrow)
 	// Schema: id (uint64), score (float32)

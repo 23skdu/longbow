@@ -31,14 +31,14 @@ func TestDoExchange_Ingest(t *testing.T) {
 	require.NoError(t, s.InitPersistence(storage.StorageConfig{
 		DataPath: tmpDir,
 	}))
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	lis, err := net.Listen("tcp", "localhost:0")
 	require.NoError(t, err)
 
 	srv := grpc.NewServer()
 	flight.RegisterFlightServiceServer(srv, s)
-	go srv.Serve(lis)
+	go func() { _ = srv.Serve(lis) }()
 	defer srv.Stop()
 
 	addr := lis.Addr().String()
@@ -46,10 +46,10 @@ func TestDoExchange_Ingest(t *testing.T) {
 	// Client
 	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	require.NoError(t, err)
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	client := flight.NewClientFromConn(conn, nil)
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -106,8 +106,8 @@ func TestDoExchange_Ingest(t *testing.T) {
 	assert.Equal(t, float64(2), ack["rows"])
 
 	// Done
-	wr.Close()
-	stream.CloseSend()
+	_ = wr.Close()
+	_ = stream.CloseSend()
 
 	// Check store has data (poll for async ingestion)
 	ds, ok := s.getDataset("test_exchange_ingest")
@@ -132,23 +132,23 @@ func BenchmarkDoExchange_Ingest(b *testing.B) {
 	s := NewVectorStore(mem, logger, 1024*1024*1024, 0, 0)
 	tmpDir := b.TempDir()
 	require.NoError(b, s.InitPersistence(storage.StorageConfig{DataPath: tmpDir}))
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	lis, err := net.Listen("tcp", "localhost:0")
 	require.NoError(b, err)
 
 	srv := grpc.NewServer()
 	flight.RegisterFlightServiceServer(srv, s)
-	go srv.Serve(lis)
+	go func() { _ = srv.Serve(lis) }()
 	defer srv.Stop()
 
 	// Client
 	conn, err := grpc.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	require.NoError(b, err)
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	client := flight.NewClientFromConn(conn, nil)
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	ctx := context.Background()
 
@@ -223,7 +223,7 @@ func BenchmarkDoExchange_Ingest(b *testing.B) {
 		}
 	}
 
-	wr.Close()
+	_ = wr.Close()
 	if err := stream.CloseSend(); err != nil {
 		b.Logf("CloseSend failed: %v", err)
 	}

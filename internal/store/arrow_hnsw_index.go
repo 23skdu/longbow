@@ -480,10 +480,6 @@ func (h *ArrowHNSW) SearchVectors(queryVec any, k int, filters []query.Filter, o
 			return nil, err
 		}
 
-		// log.Printf("[DEBUG] ArrowHNSW.Search returned %d candidates", len(candidates))
-		// log.Printf("[DEBUG] HNSW Search returned %d candidates (limit=%d, ef=%d, has_qBitset=%v, num_filters=%d)\\n",
-		// 	len(candidates), limit, ef, qBitset != nil, len(filters))
-
 		// Filter candidates (only if we didn't use qBitset or if there's complex logic)
 		var res []SearchResult
 		if len(filters) > 0 && qBitset == nil {
@@ -493,12 +489,9 @@ func (h *ArrowHNSW) SearchVectors(queryVec any, k int, filters []query.Filter, o
 				return nil, fmt.Errorf("dataset empty during filter")
 			}
 
-			// log.Printf("[DEBUG] Starting post-filtering: candidates=%d, filters=%d, batches=%d\n",
-			// 	len(candidates), len(filters), len(h.dataset.Records))
-
 			evaluator, err := query.NewFilterEvaluator(h.dataset.Records[0], filters)
 			if err != nil {
-				// log.Printf("[DEBUG] Failed to create evaluator for batch 0: %v\n", err)
+
 				return nil, err
 			}
 
@@ -508,47 +501,36 @@ func (h *ArrowHNSW) SearchVectors(queryVec any, k int, filters []query.Filter, o
 			evaluators := make(map[int]*query.FilterEvaluator)
 			evaluators[0] = evaluator
 
-			// matchCount := 0
 			for _, candle := range candidates {
 				loc, ok := h.locationStore.Get(VectorID(candle.ID))
 				if !ok {
-					// log.Printf("[DEBUG] Candidate %d (ID=%d): location not found\n", i, candle.ID)
+
 					continue
 				}
-
-				// if i < 3 {
-				// 	log.Printf("[DEBUG] Candidate %d: ID=%d, BatchIdx=%d, RowIdx=%d\n",
-				// 		i, candle.ID, loc.BatchIdx, loc.RowIdx)
-				// }
 
 				// Get or create evaluator for this batch
 				ev, ok := evaluators[loc.BatchIdx]
 				if !ok {
 					if loc.BatchIdx >= len(h.dataset.Records) {
-						// log.Printf("[DEBUG] Candidate %d: BatchIdx %d out of range (max %d)\n",
-						// 	i, loc.BatchIdx, len(h.dataset.Records)-1)
+
 						continue
 					}
 					ev, err = query.NewFilterEvaluator(h.dataset.Records[loc.BatchIdx], filters)
 					if err != nil {
-						// log.Printf("[DEBUG] Failed to create evaluator for batch %d: %v\n",
-						// 	loc.BatchIdx, err)
+
 						continue
 					}
 					evaluators[loc.BatchIdx] = ev
 				}
 
 				matches := ev.Matches(loc.RowIdx)
-				// if i < 3 {
-				// 	log.Printf("[DEBUG] Candidate %d: Matches=%v\n", i, matches)
-				// }
+
 				if matches {
-					// matchCount++
+
 					res = append(res, candle)
 				}
 			}
-			// log.Printf("[DEBUG] Post-filtering complete: matched=%d, total=%d\n",
-			// 	matchCount, len(candidates))
+
 		} else {
 			res = candidates
 		}

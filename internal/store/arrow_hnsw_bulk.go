@@ -339,9 +339,10 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 						qIdx := insertingIndices[row]
 						qVec := activeNodes[qIdx].vec
 
-						if useBQ {
+						switch {
+						case useBQ:
 							qBQ = h.bqEncoder.Encode(qVec)
-						} else if useSQ8 {
+						case useSQ8:
 							h.quantizer.Encode(qVec, qSQ8)
 						}
 
@@ -365,13 +366,14 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 								tVec := activeNodes[tIdx].vec
 
 								var dist float32
-								if useBQ {
+								switch {
+								case useBQ:
 									tBQ = h.bqEncoder.Encode(tVec)
 									dist = float32(h.bqEncoder.HammingDistance(qBQ, tBQ))
-								} else if useSQ8 {
+								case useSQ8:
 									h.quantizer.Encode(tVec, tSQ8)
 									dist = float32(h.quantizer.Distance(qSQ8, tSQ8)) * scale
-								} else {
+								default:
 									// Dense - call distance func directly to avoid overhead
 									// h.distFunc is resolved in NewArrowHNSW
 									dist = h.distFunc(qVec, tVec)

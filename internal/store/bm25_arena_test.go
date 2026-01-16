@@ -56,7 +56,7 @@ func TestBM25Arena_TermFrequency(t *testing.T) {
 
 	// Index document with repeated tokens
 	tokens := []string{"hello", "hello", "world", "hello"}
-	idx.IndexDocument(1, tokens)
+	_ = idx.IndexDocument(1, tokens)
 
 	// Verify term frequencies
 	helloID, _ := idx.GetTokenID("hello")
@@ -74,9 +74,9 @@ func TestBM25Arena_DocumentFrequency(t *testing.T) {
 	idx := NewBM25ArenaIndex(arena, 100)
 
 	// Index multiple documents
-	idx.IndexDocument(1, []string{"hello", "world"})
-	idx.IndexDocument(2, []string{"hello", "test"})
-	idx.IndexDocument(3, []string{"test", "data"})
+	_ = idx.IndexDocument(1, []string{"hello", "world"})
+	_ = idx.IndexDocument(2, []string{"hello", "test"})
+	_ = idx.IndexDocument(3, []string{"test", "data"})
 
 	// Verify document frequencies
 	helloID, _ := idx.GetTokenID("hello")
@@ -94,9 +94,9 @@ func TestBM25Arena_Scoring(t *testing.T) {
 	idx := NewBM25ArenaIndex(arena, 100)
 
 	// Index documents
-	idx.IndexDocument(1, []string{"machine", "learning", "algorithms"})
-	idx.IndexDocument(2, []string{"deep", "learning", "neural", "networks"})
-	idx.IndexDocument(3, []string{"machine", "learning", "models"})
+	_ = idx.IndexDocument(1, []string{"machine", "learning", "algorithms"})
+	_ = idx.IndexDocument(2, []string{"deep", "learning", "neural", "networks"})
+	_ = idx.IndexDocument(3, []string{"machine", "learning", "models"})
 
 	// Search for "machine learning"
 	query := []string{"machine", "learning"}
@@ -122,7 +122,7 @@ func TestBM25Arena_ConcurrentAccess(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		go func(docID uint32) {
 			tokens := []string{"concurrent", "test", "document"}
-			idx.IndexDocument(docID, tokens)
+			_ = idx.IndexDocument(docID, tokens)
 			done <- true
 		}(uint32(i))
 	}
@@ -147,7 +147,7 @@ func TestBM25Arena_Memory(t *testing.T) {
 	// Index many documents
 	for i := 0; i < 1000; i++ {
 		tokens := []string{"token", "document", "test", "data"}
-		idx.IndexDocument(uint32(i), tokens)
+		_ = idx.IndexDocument(uint32(i), tokens)
 	}
 
 	// Verify arena usage is reasonable

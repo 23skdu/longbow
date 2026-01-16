@@ -39,8 +39,8 @@ func TestFlight_Lifecycle(t *testing.T) {
 
 	w := flight.NewRecordWriter(mockClient, ipc.WithSchema(schema))
 	require.NoError(t, w.Write(rec))
-	w.Close()
-	mockClient.CloseSend() // explicit close
+	_ = w.Close()
+	_ = mockClient.CloseSend() // explicit close
 
 	var chunks []*flight.FlightData
 	for d := range chunkChan {

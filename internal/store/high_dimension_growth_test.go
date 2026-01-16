@@ -48,7 +48,7 @@ func TestHNSW_HighDimensionGrowth(t *testing.T) {
 	t.Logf("Initial heap alloc: %d MB", m1.HeapAlloc/(1024*1024))
 
 	// Reset growth metric
-	metrics.HNSWIndexGrowthDuration.Write(&dto.Metric{})
+	_ = metrics.HNSWIndexGrowthDuration.Write(&dto.Metric{})
 
 	// Add vectors in batches to trigger multiple growth operations
 	batchSize := 500

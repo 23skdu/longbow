@@ -18,7 +18,7 @@ func TestStore_DropDataset_FastPath(t *testing.T) {
 	// If shutdown.go shows Shutdown(ctx), use it.
 	// Using defer with best guess, will correct if needed based on view_file
 	// For now, assuming Shutdown(ctx) based on error message "want (context.Context)"
-	defer s.Shutdown(context.Background())
+	defer func() { _ = s.Shutdown(context.Background()) }()
 
 	ctx := context.Background()
 

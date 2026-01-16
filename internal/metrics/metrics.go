@@ -1037,12 +1037,21 @@ var (
 	HNSWAvgLevelDistribution = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "longbow_hnsw_level_distribution",
-			Help: "Number of nodes at each level of the HNSW graph",
+			Help: "Average number of nodes at each HNSW level",
 		},
 		[]string{"dataset", "level"},
 	)
 
-	// HNSWMemoryUsageBytes tracks memory usage broken down by component
+	// HNSWIngestionThroughputVectorsPerSecond measures ingestion rate
+	HNSWIngestionThroughputVectorsPerSecond = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_hnsw_ingestion_throughput_vectors_total",
+			Help: "Total number of vectors ingested, used to calculate throughput",
+		},
+		[]string{"dataset", "vector_type"},
+	)
+
+	// HNSWMemoryUsageBytes tracks memory consumption of HNSW structures
 	HNSWMemoryUsageBytes = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "longbow_hnsw_memory_usage_bytes",

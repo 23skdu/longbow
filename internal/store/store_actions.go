@@ -54,6 +54,52 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 		}
 		return nil
 
+	case "check_readiness":
+		var req struct {
+			Dataset string `json:"dataset"`
+		}
+		// Body is optional
+		if len(action.Body) > 0 {
+			if err := json.Unmarshal(action.Body, &req); err != nil {
+				return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
+			}
+		}
+
+		resp := map[string]interface{}{
+			"status": "READY",
+		}
+
+		// 1. Check Global Queue
+		qLen := s.indexQueue.Len()
+		if qLen > 0 {
+			resp["status"] = "BUSY"
+			resp["reason"] = fmt.Sprintf("global index queue has %d jobs", qLen)
+		} else if req.Dataset != "" {
+			// 2. Check Specific Dataset
+			ds, ok := s.getDataset(req.Dataset)
+			if !ok {
+				resp["status"] = "NOT_FOUND"
+				resp["reason"] = "dataset not found"
+			} else {
+				pending := ds.PendingIndexJobs.Load()
+				pendingIngestion := ds.PendingIngestion.Load()
+				if pending > 0 || pendingIngestion > 0 {
+					resp["status"] = "BUSY"
+					resp["reason"] = fmt.Sprintf("dataset has %d pending index jobs, %d pending ingestion jobs", pending, pendingIngestion)
+				} else if ds.Index == nil {
+					resp["status"] = "BUSY"
+					resp["reason"] = "index not initialized"
+				}
+				resp["index_len"] = ds.IndexLen()
+			}
+		}
+
+		body, err := json.Marshal(resp)
+		if err != nil {
+			return status.Errorf(codes.Internal, "failed to serialize status: %v", err)
+		}
+		return stream.Send(&flight.Result{Body: body})
+
 	case "delete", "Delete":
 		var req struct {
 			Dataset string `json:"dataset"`
@@ -467,7 +513,7 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 			if err != nil {
 				s.logger.Error().Err(err).Msg("Failed to concatenate batches")
 				// Fallback to processing individually
-				if err := s.flushPutBatch(name, batch); err != nil {
+				if err := s.flushPutBatch(ds, batch); err != nil {
 					return err
 				}
 				batch = batch[:0]
@@ -476,7 +522,7 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 		}
 
 		// Flush single combined batch
-		err := s.flushPutBatch(name, []arrow.RecordBatch{combined})
+		err := s.flushPutBatch(ds, []arrow.RecordBatch{combined})
 		combined.Release()
 		if err != nil {
 			return err
@@ -498,7 +544,7 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 		// write it directly to avoid concatenation/slice overhead.
 		if len(batch) == 0 && rec.NumRows() >= 25000 {
 			rec.Retain()
-			if err := s.flushPutBatch(name, []arrow.RecordBatch{rec}); err != nil {
+			if err := s.flushPutBatch(ds, []arrow.RecordBatch{rec}); err != nil {
 				rec.Release()
 				return err
 			}
@@ -539,10 +585,11 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 }
 
 // flushPutBatch handles writing a batch of records to WAL and memory
-func (s *VectorStore) flushPutBatch(name string, batch []arrow.RecordBatch) error {
+func (s *VectorStore) flushPutBatch(ds *Dataset, batch []arrow.RecordBatch) error {
 	if len(batch) == 0 {
 		return nil
 	}
+	name := ds.Name
 
 	// 1. Enqueue to Persistence Queue (Async WAL) & Ingestion Queue (Async Indexing)
 	// We do this in parallel or sequentially.
@@ -564,6 +611,9 @@ func (s *VectorStore) flushPutBatch(name string, batch []arrow.RecordBatch) erro
 		s.persistenceQueue <- persistenceJob{datasetName: name, batch: rec, ts: ts}
 
 		// 2. Send to Ingestion
+		// Increment pending ingestion count
+		ds.PendingIngestion.Add(1)
+
 		select {
 		case s.ingestionQueue <- ingestionJob{datasetName: name, batch: rec, ts: ts}:
 		default:

@@ -69,11 +69,15 @@ func (s *VectorStore) PrewarmDataset(name string, schema *arrow.Schema) {
 		aIdx := NewAutoShardingIndex(ds, config)
 
 		// Try to find vector dimension
-		// We'll copy the logic from applyBatchToMemory or extract it
 		for _, f := range schema.Fields() {
 			if f.Name == "vector" {
 				if fst, ok := f.Type.(*arrow.FixedSizeListType); ok {
-					aIdx.SetInitialDimension(int(fst.Len()))
+					dim := int(fst.Len())
+					dataType := InferVectorDataType(schema, "vector")
+					if dataType == VectorTypeComplex64 || dataType == VectorTypeComplex128 {
+						dim /= 2
+					}
+					aIdx.SetInitialDimension(dim)
 				}
 			}
 		}

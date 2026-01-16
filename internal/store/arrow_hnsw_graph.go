@@ -234,6 +234,9 @@ type ArrowHNSW struct {
 	metric        DistanceMetric
 	distFunc      func([]float32, []float32) float32
 	distFuncF16   func([]float16.Num, []float16.Num) float32
+	distFuncF64   func([]float64, []float64) float32
+	distFuncC64   func([]complex64, []complex64) float32
+	distFuncC128  func([]complex128, []complex128) float32
 	batchDistFunc func([]float32, [][]float32, []float32)
 	batchComputer interface{}
 
@@ -359,7 +362,7 @@ func NewGraphData(capacity, dims int, sq8Enabled, pqEnabled bool, pqDims int, bq
 	slab := memory.NewSlabArena(slabSize)
 
 	var f16Arena *memory.TypedArena[float16.Num]
-	if float16Enabled {
+	if float16Enabled || dataType == VectorTypeFloat16 {
 		f16Arena = memory.NewTypedArena[float16.Num](slab)
 	}
 

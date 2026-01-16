@@ -15,11 +15,12 @@ type complex64Computer struct {
 }
 
 func (c *complex64Computer) Compute(ids []uint32, dists []float32) {
+	stride := c.data.GetPaddedDimsForType(VectorTypeComplex64)
 	for i, id := range ids {
 		cID := chunkID(id)
 		chunk := c.data.GetVectorsComplex64Chunk(cID)
 		if chunk != nil {
-			start := int(chunkOffset(id)) * c.data.GetPaddedDims()
+			start := int(chunkOffset(id)) * stride
 			if start+c.dims <= len(chunk) {
 				v := chunk[start : start+c.dims]
 				dists[i] = simd.EuclideanDistanceComplex64(c.q, v)
@@ -31,10 +32,11 @@ func (c *complex64Computer) Compute(ids []uint32, dists []float32) {
 }
 
 func (c *complex64Computer) ComputeSingle(id uint32) float32 {
+	stride := c.data.GetPaddedDimsForType(VectorTypeComplex64)
 	cID := chunkID(id)
 	chunk := c.data.GetVectorsComplex64Chunk(cID)
 	if chunk != nil {
-		start := int(chunkOffset(id)) * c.data.GetPaddedDims()
+		start := int(chunkOffset(id)) * stride
 		if start+c.dims <= len(chunk) {
 			v := chunk[start : start+c.dims]
 			return simd.EuclideanDistanceComplex64(c.q, v)
@@ -44,10 +46,11 @@ func (c *complex64Computer) ComputeSingle(id uint32) float32 {
 }
 
 func (c *complex64Computer) Prefetch(id uint32) {
+	stride := c.data.GetPaddedDimsForType(VectorTypeComplex64)
 	cID := chunkID(id)
 	chunk := c.data.GetVectorsComplex64Chunk(cID)
 	if chunk != nil {
-		start := int(chunkOffset(id)) * c.data.GetPaddedDims()
+		start := int(chunkOffset(id)) * stride
 		if start < len(chunk) {
 			simd.Prefetch(unsafe.Pointer(&chunk[start]))
 		}
@@ -62,11 +65,12 @@ type complex128Computer struct {
 }
 
 func (c *complex128Computer) Compute(ids []uint32, dists []float32) {
+	stride := c.data.GetPaddedDimsForType(VectorTypeComplex128)
 	for i, id := range ids {
 		cID := chunkID(id)
 		chunk := c.data.GetVectorsComplex128Chunk(cID)
 		if chunk != nil {
-			start := int(chunkOffset(id)) * c.data.GetPaddedDims()
+			start := int(chunkOffset(id)) * stride
 			if start+c.dims <= len(chunk) {
 				v := chunk[start : start+c.dims]
 				dists[i] = simd.EuclideanDistanceComplex128(c.q, v)
@@ -78,10 +82,11 @@ func (c *complex128Computer) Compute(ids []uint32, dists []float32) {
 }
 
 func (c *complex128Computer) ComputeSingle(id uint32) float32 {
+	stride := c.data.GetPaddedDimsForType(VectorTypeComplex128)
 	cID := chunkID(id)
 	chunk := c.data.GetVectorsComplex128Chunk(cID)
 	if chunk != nil {
-		start := int(chunkOffset(id)) * c.data.GetPaddedDims()
+		start := int(chunkOffset(id)) * stride
 		if start+c.dims <= len(chunk) {
 			v := chunk[start : start+c.dims]
 			return simd.EuclideanDistanceComplex128(c.q, v)
@@ -91,10 +96,11 @@ func (c *complex128Computer) ComputeSingle(id uint32) float32 {
 }
 
 func (c *complex128Computer) Prefetch(id uint32) {
+	stride := c.data.GetPaddedDimsForType(VectorTypeComplex128)
 	cID := chunkID(id)
 	chunk := c.data.GetVectorsComplex128Chunk(cID)
 	if chunk != nil {
-		start := int(chunkOffset(id)) * c.data.GetPaddedDims()
+		start := int(chunkOffset(id)) * stride
 		if start < len(chunk) {
 			simd.Prefetch(unsafe.Pointer(&chunk[start]))
 		}

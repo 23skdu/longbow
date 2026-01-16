@@ -95,7 +95,7 @@ def benchmark_do_put(clients, start_id, count, batch_size=1000):
     print(f"    DoPut: {total} vectors in {duration:.2f}s ({throughput:.0f} vectors/s, {bandwidth_mb:.2f} MB/s)")
     return throughput, bandwidth_mb, duration
 
-def benchmark_do_get(clients, num_queries=1000):
+def benchmark_do_get(clients, num_queries=100):
     """Benchmark DoGet throughput"""
     print(f"  DoGet: Retrieving {num_queries} batches...")
     start = time.time()
@@ -124,24 +124,44 @@ def benchmark_do_exchange(clients, num_queries=500):
     latencies = []
     errors = 0
     
+    # Pre-build schema
+    tensor_type = pa.list_(pa.float32(), DIM)
+    query_schema = pa.schema([
+        pa.field("query_vector", tensor_type),
+        pa.field("k", pa.int32()),
+        pa.field("dataset", pa.string()),
+    ])
+    
     for i in range(num_queries):
         client = clients[i % len(clients)]
         try:
             # Create query batch
-            vec = np.random.rand(DIM).astype(np.float32)
-            query_schema = pa.schema([
-                pa.field("query_vector", pa.list_(pa.float32(), DIM)),
-                pa.field("k", pa.int32()),
-                pa.field("ef", pa.int32()),
-                pa.field("dataset", pa.string()),
-            ])
+            vec_data = np.random.rand(1, DIM).astype(np.float32).flatten()
+            vectors = pa.FixedSizeListArray.from_arrays(vec_data, type=tensor_type)
+            
+            table = pa.Table.from_arrays([
+                vectors,
+                pa.array([10], type=pa.int32()),
+                pa.array([DATASET], type=pa.string())
+            ], schema=query_schema)
             
             t0 = time.time()
-            # Note: DoExchange implementation may vary
-            # This is a placeholder for the actual implementation
+            descriptor = flight.FlightDescriptor.for_command(b"search")
+            writer, reader = client.do_exchange(descriptor)
+            
+            writer.begin(query_schema)
+            writer.write_table(table)
+            writer.done_writing()
+            
+            # Read results
+            for chunk in reader:
+                pass
+                
             latencies.append((time.time() - t0) * 1000)
         except Exception as e:
             errors += 1
+            if errors <= 1:
+                print(f"    DoExchange error: {e}")
     
     if latencies:
         p50 = np.percentile(latencies, 50)

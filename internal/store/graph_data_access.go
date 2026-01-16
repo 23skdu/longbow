@@ -67,6 +67,16 @@ func (gd *GraphData) SetVectorFromFloat32(id uint32, vec []float32) error {
 			return nil
 		}
 
+	case VectorTypeFloat64:
+		chunk := gd.GetVectorsFloat64Chunk(cID)
+		if chunk != nil {
+			dest := chunk[start : start+dims]
+			for i, v := range vec {
+				dest[i] = float64(v)
+			}
+			return nil
+		}
+
 	case VectorTypeInt8:
 		chunk := gd.GetVectorsInt8Chunk(cID)
 		if chunk != nil {
@@ -191,8 +201,12 @@ func (gd *GraphData) SetVector(id uint32, vec any) error {
 			if chunk != nil {
 				start := int(cOff) * gd.GetPaddedDims()
 				dest := chunk[start : start+dims]
-				for i, val := range v {
-					dest[i] = val.Float32()
+				limit := dims
+				if len(v) < limit {
+					limit = len(v)
+				}
+				for i := 0; i < limit; i++ {
+					dest[i] = v[i].Float32()
 				}
 				return nil
 			}
@@ -201,7 +215,7 @@ func (gd *GraphData) SetVector(id uint32, vec any) error {
 		if gd.Type == VectorTypeComplex64 {
 			chunk := gd.GetVectorsComplex64Chunk(cID)
 			if chunk != nil {
-				start := int(cOff) * gd.GetPaddedDims()
+				start := int(cOff) * gd.GetPaddedDimsForType(VectorTypeComplex64)
 				copy(chunk[start:start+dims], v)
 				return nil
 			}
@@ -210,7 +224,7 @@ func (gd *GraphData) SetVector(id uint32, vec any) error {
 		if gd.Type == VectorTypeComplex128 {
 			chunk := gd.GetVectorsComplex128Chunk(cID)
 			if chunk != nil {
-				start := int(cOff) * gd.GetPaddedDims()
+				start := int(cOff) * gd.GetPaddedDimsForType(VectorTypeComplex128)
 				copy(chunk[start:start+dims], v)
 				return nil
 			}
@@ -221,7 +235,7 @@ func (gd *GraphData) SetVector(id uint32, vec any) error {
 		case VectorTypeFloat64:
 			chunk := gd.GetVectorsFloat64Chunk(cID)
 			if chunk != nil {
-				start := int(cOff) * gd.GetPaddedDims()
+				start := int(cOff) * gd.GetPaddedDimsForType(VectorTypeFloat64)
 				copy(chunk[start:start+dims], v)
 				return nil
 			}
@@ -229,7 +243,7 @@ func (gd *GraphData) SetVector(id uint32, vec any) error {
 			// Treat []float64 as interleaved real/imag
 			chunk := gd.GetVectorsComplex128Chunk(cID)
 			if chunk != nil {
-				start := int(cOff) * gd.GetPaddedDims()
+				start := int(cOff) * gd.GetPaddedDimsForType(VectorTypeComplex128)
 				dest := chunk[start : start+dims]
 				for i := 0; i < dims; i++ {
 					if 2*i+1 < len(v) {
@@ -243,15 +257,19 @@ func (gd *GraphData) SetVector(id uint32, vec any) error {
 			if chunk != nil {
 				start := int(cOff) * gd.GetPaddedDims()
 				dest := chunk[start : start+dims]
-				for i, val := range v {
-					dest[i] = float32(val)
+				limit := dims
+				if len(v) < limit {
+					limit = len(v)
+				}
+				for i := 0; i < limit; i++ {
+					dest[i] = float32(v[i])
 				}
 				return nil
 			}
 		case VectorTypeComplex64:
 			chunk := gd.GetVectorsComplex64Chunk(cID)
 			if chunk != nil {
-				start := int(cOff) * gd.GetPaddedDims()
+				start := int(cOff) * gd.GetPaddedDimsForType(VectorTypeComplex64)
 				dest := chunk[start : start+dims]
 				for i := 0; i < dims; i++ {
 					if 2*i+1 < len(v) {
@@ -295,17 +313,24 @@ func (gd *GraphData) GetVector(id uint32) (any, error) {
 			return chunk[start : start+dims], nil
 		}
 
+	case VectorTypeFloat64:
+		chunk := gd.GetVectorsFloat64Chunk(cID)
+		if chunk != nil {
+			start := int(cOff) * gd.GetPaddedDimsForType(VectorTypeFloat64)
+			return chunk[start : start+dims], nil
+		}
+
 	case VectorTypeComplex64:
 		chunk := gd.GetVectorsComplex64Chunk(cID)
 		if chunk != nil {
-			start := int(cOff) * gd.GetPaddedDims() // Complex64 uses standard padding logic for itself if primary
+			start := int(cOff) * gd.GetPaddedDimsForType(VectorTypeComplex64)
 			return chunk[start : start+dims], nil
 		}
 
 	case VectorTypeComplex128:
 		chunk := gd.GetVectorsComplex128Chunk(cID)
 		if chunk != nil {
-			start := int(cOff) * gd.GetPaddedDims()
+			start := int(cOff) * gd.GetPaddedDimsForType(VectorTypeComplex128)
 			return chunk[start : start+dims], nil
 		}
 

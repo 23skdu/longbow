@@ -51,3 +51,26 @@ func BenchmarkMatchInt64(b *testing.B) {
 		}
 	})
 }
+
+func TestMatchInt64Correctness(t *testing.T) {
+	src := []int64{0, 1, -1, 42, -9223372036854775808, 9223372036854775807}
+	dst := make([]byte, len(src))
+
+	// Test Eq
+	matchInt64Generic(src, 42, CompareEq, dst)
+	expected := []byte{0, 0, 0, 1, 0, 0}
+	for i, v := range expected {
+		if dst[i] != v {
+			t.Errorf("Eq[%d]: got %d want %d", i, dst[i], v)
+		}
+	}
+
+	// Test Neq
+	matchInt64Generic(src, 42, CompareNeq, dst)
+	expectedNeq := []byte{1, 1, 1, 0, 1, 1}
+	for i, v := range expectedNeq {
+		if dst[i] != v {
+			t.Errorf("Neq[%d]: got %d want %d", i, dst[i], v)
+		}
+	}
+}

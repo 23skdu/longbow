@@ -132,20 +132,41 @@ func euclideanInt64Unrolled4x(a, b []int64) float32 {
 
 // Complex64 Baseline
 func euclideanComplex64Unrolled(a, b []complex64) float32 {
-	var sum float32
-	for i := 0; i < len(a); i++ {
-		d := a[i] - b[i]
-		sum += real(d)*real(d) + imag(d)*imag(d)
+	var sum0, sum1, sum2, sum3 float32
+	n := len(a)
+	i := 0
+	for ; i <= n-4; i += 4 {
+		d0 := a[i] - b[i]
+		d1 := a[i+1] - b[i+1]
+		d2 := a[i+2] - b[i+2]
+		d3 := a[i+3] - b[i+3]
+
+		sum0 += real(d0)*real(d0) + imag(d0)*imag(d0)
+		sum1 += real(d1)*real(d1) + imag(d1)*imag(d1)
+		sum2 += real(d2)*real(d2) + imag(d2)*imag(d2)
+		sum3 += real(d3)*real(d3) + imag(d3)*imag(d3)
 	}
-	return float32(math.Sqrt(float64(sum)))
+	for ; i < n; i++ {
+		d := a[i] - b[i]
+		sum0 += real(d)*real(d) + imag(d)*imag(d)
+	}
+	return float32(math.Sqrt(float64(sum0 + sum1 + sum2 + sum3)))
 }
 
 func dotComplex64Unrolled(a, b []complex64) float32 {
-	var dot complex64
-	for i := 0; i < len(a); i++ {
-		dot += a[i] * b[i]
+	var dot0, dot1, dot2, dot3 complex64
+	n := len(a)
+	i := 0
+	for ; i <= n-4; i += 4 {
+		dot0 += a[i] * b[i]
+		dot1 += a[i+1] * b[i+1]
+		dot2 += a[i+2] * b[i+2]
+		dot3 += a[i+3] * b[i+3]
 	}
-	return real(dot)
+	for ; i < n; i++ {
+		dot0 += a[i] * b[i]
+	}
+	return real(dot0 + dot1 + dot2 + dot3)
 }
 
 // Uint Baseline (Mapping to float32 to prevent overflow)
@@ -235,12 +256,25 @@ func euclideanUint64Unrolled4x(a, b []uint64) float32 {
 
 // Complex128 Baseline
 func euclideanComplex128Unrolled(a, b []complex128) float32 {
-	var sum float64
-	for i := 0; i < len(a); i++ {
-		d := a[i] - b[i]
-		sum += real(d)*real(d) + imag(d)*imag(d)
+	var sum0, sum1, sum2, sum3 float64
+	n := len(a)
+	i := 0
+	for ; i <= n-4; i += 4 {
+		d0 := a[i] - b[i]
+		d1 := a[i+1] - b[i+1]
+		d2 := a[i+2] - b[i+2]
+		d3 := a[i+3] - b[i+3]
+
+		sum0 += real(d0)*real(d0) + imag(d0)*imag(d0)
+		sum1 += real(d1)*real(d1) + imag(d1)*imag(d1)
+		sum2 += real(d2)*real(d2) + imag(d2)*imag(d2)
+		sum3 += real(d3)*real(d3) + imag(d3)*imag(d3)
 	}
-	return float32(math.Sqrt(sum))
+	for ; i < n; i++ {
+		d := a[i] - b[i]
+		sum0 += real(d)*real(d) + imag(d)*imag(d)
+	}
+	return float32(math.Sqrt(sum0 + sum1 + sum2 + sum3))
 }
 
 // Float64 Kernels

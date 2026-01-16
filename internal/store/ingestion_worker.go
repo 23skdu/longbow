@@ -32,6 +32,11 @@ func (s *VectorStore) runIngestionWorker() {
 				s.logger.Error().Err(err).Str("dataset", job.datasetName).Msg("Failed to apply batch from ingestion queue")
 			}
 
+			// Decrement PendingIngestion counter
+			if ds, ok := s.getDataset(job.datasetName); ok {
+				ds.PendingIngestion.Add(-1)
+			}
+
 			// Release the retained batch from DoPut
 			job.batch.Release()
 		}

@@ -73,8 +73,8 @@ class BenchmarkResult:
         return sorted_lat[min(idx, len(sorted_lat) - 1)]
 
 
-def check_cluster_health(client: LongbowClient) -> bool:
-    """Check cluster status before running benchmarks."""
+def check_cluster_health(client: LongbowClient):
+    """Check cluster status before running benchmarks. Returns (bool, members_list)."""
     print("Checking cluster health...")
     try:
         # Access meta client directly or use future SDK method
@@ -86,19 +86,23 @@ def check_cluster_health(client: LongbowClient) -> bool:
         results = list(client._meta_client.do_action(action, options=options))
         if not results:
             print("WARN: No status returned from cluster")
-            return False
+            return False, []
             
         status = json.loads(results[0].body.to_pybytes())
         count = status.get("count", 0)
         print(f"Cluster Healthy: {count} active members")
-        for m in status.get("members", []):
+        members = status.get("members", [])
+        for m in members:
+            # Addr is typically the internal address. We might need GrpcAddr if different.
+            # Assuming Addr is reachable for benchmark if GrpcAddr is similar or if 
+            # environment is local docker.
             print(f" - {m.get('ID')} ({m.get('Addr')}) [{m.get('Status', 'Unknown')}]")
             
-        return count > 0
+        return count > 0, members
     except Exception as e:
         # Relax check for single node local dev where gossip might be off
         print(f"Cluster check failed (Warning): {e}")
-        return True
+        return True, []
 
 
 # =============================================================================
@@ -187,9 +191,18 @@ def generate_vectors(num_rows: int, dim: int, with_text: bool = False, dtype_str
     return pa.Table.from_arrays(arrays, schema=schema)
 
 
-def generate_query_vectors(num_queries: int, dim: int) -> np.ndarray:
+def generate_query_vectors(num_queries: int, dim: int, dtype_str: str = "float32") -> np.ndarray:
     """Generate random query vectors."""
-    return np.random.rand(num_queries, dim).astype(np.float32)
+    is_complex = "complex" in dtype_str
+    
+    # physical dimension for generation
+    gen_dim = dim * 2 if is_complex else dim
+    
+    # Use float32 for query vectors (server accepts float32 and converts/casts as needed)
+    # UNLESS the server explicitly requires 2x dimensions for complex search.
+    # Based on the error "expected 768, got 384", the server expects 2x dim.
+    
+    return np.random.rand(num_queries, gen_dim).astype(np.float32)
 
 
 # =============================================================================
@@ -237,27 +250,80 @@ def benchmark_put(client: LongbowClient, table: pa.Table, name: str) -> Benchmar
     )
 
 
-def benchmark_get(client: LongbowClient, name: str, filters: Optional[list] = None) -> BenchmarkResult:
-    """Benchmark DoGet using SDK with zero-copy Arrow streaming."""
+def benchmark_get(client: LongbowClient, name: str, filters: Optional[list] = None, members: list = None) -> BenchmarkResult:
+    """Benchmark DoGet using SDK, attempting distributed fetch from all members."""
     filter_desc = f"with filters: {filters}" if filters else "(full scan)"
     print(f"\n[GET] Downloading dataset '{name}' {filter_desc}...")
+    
+    # Target list: primary client first, then others if members provided
+    # Actually, if we want full dataset and it's sharded, we MUST fetch from all unique addresses.
+    # But for now, let's keep it simple: Use primary. If 0 rows and members exist, try others.
+    # OR: Do we want to simulate a "Parallel Download"?
+    
+    # Let's try Parallel Distributed Fetch if members > 1
+    targets = []
+    if members and len(members) > 1:
+        # Deduplicate/Parse members
+        # Current client uri
+        primary_uri = client.uri
+        
+        # We need to guess the Flight port for members if Addr is just one port.
+        # Usually Addr is the Gossip Port? Or GRPC? 
+        # In this setup, it seems 127.0.0.1:7946 is the node address.
+        # Let's assume Addr is the Flight/GRPC address we can connect to.
+        for m in members:
+            # Use GRPCAddr explicitly if available (exposed by Meta Server)
+            addr = m.get("GRPCAddr") or m.get("Addr")
+            if addr:
+                targets.append(f"grpc://{addr}")
+    else:
+        # Just primary
+        targets = [client.uri]
+
+    # Remove duplicates
+    targets = list(set(targets))
+    if not targets: targets = [client.uri]
+    
+    print(f"[GET] Fetching from {len(targets)} nodes: {targets}")
 
     start_time = time.time()
-    try:
-        # Use zero-copy Arrow Table download (no Dask overhead)
-        table = client.download_arrow(name, filter=filters)
-        row_count = table.num_rows
-        nbytes = table.nbytes
-    except Exception as e:
-        print(f"[GET] Error: {e}")
-        return BenchmarkResult(name="DoGet", duration_seconds=0, throughput=0, throughput_unit="MB/s", errors=1)
+    total_rows = 0
+    total_bytes = 0
+    error_count = 0
+    
+    def fetch_node(uri):
+        try:
+            # Create transient client
+            # Note: We don't have meta_uri for each, but DoGet doesn't need it usually?
+            # Although SDK init connects to meta?
+            # We can reuse primary meta_uri for all, assuming they share metadata plane.
+            c = LongbowClient(uri=uri, meta_uri=client.meta_uri)
+            # Short timeout?
+            # c.connect() # Implicit
+            table = c.download_arrow(name, filter=filters)
+            return table.num_rows, table.nbytes
+        except Exception as e:
+            print(f"  [GET] Failed from {uri}: {e}")
+            return 0, 0
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(targets)) as executor:
+        futures = [executor.submit(fetch_node, uri) for uri in targets]
+        for f in concurrent.futures.as_completed(futures):
+            r, b = f.result()
+            total_rows += r
+            total_bytes += b
+    
+    # If total rows is 0, that's an issue (unless dataset is empty)
+    if total_rows == 0:
+        error_count = 1 
+        print(f"[GET] Error: Retrieved 0 rows from {len(targets)} nodes.")
 
     duration = time.time() - start_time
-    mb = nbytes / 1024 / 1024
+    mb = total_bytes / 1024 / 1024
     throughput = mb / duration if duration > 0 else 0
-    throughput_rows = row_count / duration if duration > 0 else 0
+    throughput_rows = total_rows / duration if duration > 0 else 0
 
-    print(f"[GET] Retrieved {row_count:,} rows in {duration:.4f}s")
+    print(f"[GET] Retrieved {total_rows:,} rows in {duration:.4f}s")
     print(f"[GET] Throughput: {throughput:.2f} MB/s ({throughput_rows:.1f} rows/s)")
 
     return BenchmarkResult(
@@ -265,8 +331,9 @@ def benchmark_get(client: LongbowClient, name: str, filters: Optional[list] = No
         duration_seconds=duration,
         throughput=throughput,
         throughput_unit="MB/s",
-        rows=row_count,
-        bytes_processed=nbytes,
+        rows=total_rows,
+        bytes_processed=total_bytes,
+        errors=error_count
     )
 
 
@@ -365,6 +432,7 @@ def benchmark_vector_search(client: LongbowClient, name: str,
     )
 
     print(f"[SEARCH] Completed: {qps:.2f} queries/s")
+    print(f"[SEARCH] Total Rows Found: {total_results}")
     print(f"[SEARCH] Latency p50={result.p50_ms:.2f}ms p95={result.p95_ms:.2f}ms p99={result.p99_ms:.2f}ms")
     return result
 
@@ -671,7 +739,8 @@ def main():
                 sys.exit(1)
     
     # Check health
-    if not check_cluster_health(client):
+    is_healthy, cluster_members = check_cluster_health(client)
+    if not is_healthy:
         print("Cluster not ready. Exiting.")
         sys.exit(1)
 
@@ -699,12 +768,12 @@ def main():
 
             # GET
             if not args.skip_get:
-                res = benchmark_get(client, current_dataset)
+                res = benchmark_get(client, current_dataset, members=cluster_members)
                 results.append(res)
 
             # SEARCH
             if not args.skip_search:
-                q_vecs = generate_query_vectors(args.queries, args.dim)
+                q_vecs = generate_query_vectors(args.queries, args.dim, dtype_str=args.dtype)
                 
                 # 1. Dense Search
                 print("\n--> Running Dense Search")

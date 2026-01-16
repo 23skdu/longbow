@@ -3,6 +3,22 @@
 This document tracks the remaining work for Performance Optimization and Polymorphic Vector Support.
 Completed items have been verified and archived.
 
+## Critical: Data Integrity & Search Correctness (Top Priority)
+
+**Goal**: Fix massive `DoGet` failures (0 MB/s) and `VectorSearch` errors (dimension mismatch).
+
+### 1. 10-Part Fix Plan
+
+- **Analyze Logs**: Pinpoint error sources in server logs.
+- **Reproduce Issues**: Create targeted repros for `float32` DoGet (25k) and `complex128` Search.
+- **Fix Flight Streaming**: Repair `DoGet` logic to ensure data is returned.
+- **Fix Complex Dimensions**: Map logical (N) vs physical (2N) dimensions correctly.
+- **Verify Recall**: Ensure search returns semantically correct results.
+- **Integrity Checks**: Add verify step to benchmarks (random read-back).
+- **Unit Testing**: Expand coverage for complex types and large batches.
+- **Stress Testing**: Verify reliability under load.
+- **Final Validation**: Clean pass of full benchmark suite.
+
 ## Polymorphic & High-Dimensionality Support
 
 Remaining tasks to support 12 data types and 3072 dimensions.

@@ -19,6 +19,57 @@ import (
 // Search performs k-NN search using the provided query vector.
 // Returns the k nearest neighbors sorted by distance.
 func (h *ArrowHNSW) Search(q any, k, ef int, filter *query.Bitset) ([]SearchResult, error) {
+	// Encode query if SQ8 enabled
+	dims := int(h.dims.Load())
+
+	// Validate Query Dimensions
+	if dims > 0 {
+		var qLen, expectedLen int
+		var qType string
+		// Lock-free access: load backend for Type check
+		backend := h.backend.Load()
+		// If backend is nil, we can't check Type properly unless configs are used.
+		// h.config.DataType is available.
+		targetType := h.config.DataType
+		if backend != nil {
+			targetType = backend.Type
+		}
+
+		switch v := q.(type) {
+		case []float32:
+			qLen = len(v)
+			qType = "float32"
+			expectedLen = dims
+			if targetType == VectorTypeComplex64 || targetType == VectorTypeComplex128 {
+				expectedLen = dims * 2
+			}
+		case []float64:
+			qLen = len(v)
+			qType = "float64"
+			expectedLen = dims
+			if targetType == VectorTypeComplex128 {
+				expectedLen = dims * 2
+			}
+		case []complex128:
+			qLen = len(v)
+			qType = "complex128"
+			expectedLen = dims
+		case []complex64:
+			qLen = len(v)
+			qType = "complex64"
+			expectedLen = dims
+		case []float16.Num:
+			qLen = len(v)
+			qType = "float16"
+			expectedLen = dims
+		}
+
+		if qLen > 0 && qLen != expectedLen {
+			return nil, fmt.Errorf("dimension mismatch: index expects %d elements (logical dims=%d), got query len %d (type=%s, index_type=%s)",
+				expectedLen, dims, qLen, qType, targetType)
+		}
+	}
+
 	// Lock-free access: load backend
 	backend := h.backend.Load()
 	if backend == nil || h.nodeCount.Load() == 0 {
@@ -55,9 +106,6 @@ func (h *ArrowHNSW) Search(q any, k, ef int, filter *query.Bitset) ([]SearchResu
 		metrics.HNSWSearchPoolPutTotal.Inc()
 		h.searchPool.Put(ctx)
 	}()
-
-	// Encode query if SQ8 enabled
-	dims := int(h.dims.Load())
 
 	metrics.HNSWSearchQueriesTotal.WithLabelValues(strconv.Itoa(dims)).Inc()
 	metrics.HnswSearchThroughputDims.WithLabelValues(strconv.Itoa(dims)).Inc()

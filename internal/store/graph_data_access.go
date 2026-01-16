@@ -215,6 +215,52 @@ func (gd *GraphData) SetVector(id uint32, vec any) error {
 				return nil
 			}
 		}
+	case []float64:
+		// Convert Float64 input to storage type
+		switch gd.Type {
+		case VectorTypeFloat64:
+			chunk := gd.GetVectorsFloat64Chunk(cID)
+			if chunk != nil {
+				start := int(cOff) * gd.GetPaddedDims()
+				copy(chunk[start:start+dims], v)
+				return nil
+			}
+		case VectorTypeComplex128:
+			// Treat []float64 as interleaved real/imag
+			chunk := gd.GetVectorsComplex128Chunk(cID)
+			if chunk != nil {
+				start := int(cOff) * gd.GetPaddedDims()
+				dest := chunk[start : start+dims]
+				for i := 0; i < dims; i++ {
+					if 2*i+1 < len(v) {
+						dest[i] = complex(v[2*i], v[2*i+1])
+					}
+				}
+				return nil
+			}
+		case VectorTypeFloat32:
+			chunk := gd.GetVectorsChunk(cID)
+			if chunk != nil {
+				start := int(cOff) * gd.GetPaddedDims()
+				dest := chunk[start : start+dims]
+				for i, val := range v {
+					dest[i] = float32(val)
+				}
+				return nil
+			}
+		case VectorTypeComplex64:
+			chunk := gd.GetVectorsComplex64Chunk(cID)
+			if chunk != nil {
+				start := int(cOff) * gd.GetPaddedDims()
+				dest := chunk[start : start+dims]
+				for i := 0; i < dims; i++ {
+					if 2*i+1 < len(v) {
+						dest[i] = complex(float32(v[2*i]), float32(v[2*i+1]))
+					}
+				}
+				return nil
+			}
+		}
 	}
 
 	return fmt.Errorf("storage not available or type mismatch for SetVector: ID=%d Type=%s Input=%T", id, gd.Type, vec)

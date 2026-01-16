@@ -142,6 +142,13 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 		if h.config.BQEnabled {
 			h.metricBQVectors.Set(nodeCount)
 		}
+
+		// Update ingestion throughput metric
+		dsName := "unknown"
+		if h.dataset != nil {
+			dsName = h.dataset.Name
+		}
+		metrics.HNSWIngestionThroughputVectorsPerSecond.WithLabelValues(dsName, h.config.DataType.String()).Inc()
 	}()
 
 	// Make a defensive copy of the vector is avoided by copying into GraphData first.
@@ -290,7 +297,9 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 
 	// Check if this is the first node
 	if h.nodeCount.Load() == 0 {
+		lockStart := time.Now()
 		h.initMu.Lock()
+		h.metricLockWait.WithLabelValues("init").Observe(time.Since(lockStart).Seconds())
 		if h.nodeCount.Load() == 0 {
 			h.entryPoint.Store(id)
 			h.maxLevel.Store(int32(level))
@@ -820,7 +829,9 @@ func (h *ArrowHNSW) selectNeighbors(ctx *ArrowSearchContext, candidates []Candid
 func (h *ArrowHNSW) AddConnection(ctx *ArrowSearchContext, data *GraphData, source, target uint32, layer, maxConn int, dist float32) {
 	// Acquire lock for the specific node (shard)
 	lockID := source % ShardedLockCount
+	lockStart := time.Now()
 	h.shardedLocks[lockID].Lock()
+	h.metricLockWait.WithLabelValues("sharded").Observe(time.Since(lockStart).Seconds())
 	defer h.shardedLocks[lockID].Unlock()
 
 	cID := chunkID(source)
@@ -891,9 +902,9 @@ func (h *ArrowHNSW) AddConnection(ctx *ArrowSearchContext, data *GraphData, sour
 		existing, ok := pn.GetNeighbors(source)
 		if !ok || len(existing) == 0 {
 			if h.config.Float16Enabled {
-				pn.SetNeighborsF16(source, []uint32{target}, []float16.Num{float16.New(dist)})
+				_ = pn.SetNeighborsF16(source, []uint32{target}, []float16.Num{float16.New(dist)})
 			} else {
-				pn.SetNeighbors(source, []uint32{target})
+				_ = pn.SetNeighbors(source, []uint32{target})
 			}
 		} else {
 			// Check if already present in packed
@@ -923,9 +934,9 @@ func (h *ArrowHNSW) AddConnection(ctx *ArrowSearchContext, data *GraphData, sour
 						}
 					}
 					newDists[len(existing)] = float16.New(dist)
-					pn.SetNeighborsF16(source, newNeighbors, newDists)
+					_ = pn.SetNeighborsF16(source, newNeighbors, newDists)
 				} else {
-					pn.SetNeighbors(source, newNeighbors)
+					_ = pn.SetNeighbors(source, newNeighbors)
 				}
 			}
 		}
@@ -1098,9 +1109,9 @@ func (h *ArrowHNSW) AddConnectionsBatch(ctx *ArrowSearchContext, data *GraphData
 			for i, idx := range toAddIdxs {
 				newF16Dists[offset+i] = float16.New(dists[idx])
 			}
-			pn.SetNeighborsF16(target, newNeighbors, newF16Dists)
+			_ = pn.SetNeighborsF16(target, newNeighbors, newF16Dists)
 		} else {
-			pn.SetNeighbors(target, newNeighbors)
+			_ = pn.SetNeighbors(target, newNeighbors)
 		}
 	}
 
@@ -1292,9 +1303,9 @@ func (h *ArrowHNSW) pruneConnectionsLocked(ctx *ArrowSearchContext, data *GraphD
 			for i, cand := range selected {
 				f16Dists[i] = float16.New(cand.Dist)
 			}
-			pn.SetNeighborsF16(nodeID, ids, f16Dists)
+			_ = pn.SetNeighborsF16(nodeID, ids, f16Dists)
 		} else {
-			pn.SetNeighbors(nodeID, ids)
+			_ = pn.SetNeighbors(nodeID, ids)
 		}
 	}
 }
@@ -1373,6 +1384,18 @@ func (h *ArrowHNSW) InsertWithVectorF16(id uint32, vec []float16.Num, level int)
 			newDims := len(vec)
 			h.Grow(data.Capacity, newDims)
 			data = h.data.Load()
+			if int(id) >= data.Capacity {
+				lockStart := time.Now()
+				h.growMu.Lock()
+				h.metricLockWait.WithLabelValues("grow").Observe(time.Since(lockStart).Seconds())
+				// Double check capacity under lock
+				data = h.data.Load()
+				if int(id) >= data.Capacity {
+					h.Grow(int(id)+1, dims)
+					data = h.data.Load()
+				}
+				h.growMu.Unlock()
+			}
 			h.dims.Store(int32(newDims))
 			dims = newDims
 			data = h.ensureChunk(data, cID, cOff, dims)

@@ -2,6 +2,7 @@ package store
 
 import (
 	"fmt"
+	"strconv"
 	"sync/atomic"
 
 	prommetrics "github.com/23skdu/longbow/internal/metrics"
@@ -15,7 +16,8 @@ type GraphMetrics struct {
 	ZeroDegreeNodes     int
 	ConnectedComponents int
 	MaxComponentSize    int
-	EstimatedDiameter   int // BFS depth from entry point
+	EstimatedDiameter   int         // BFS depth from entry point
+	LevelDistribution   map[int]int // Nodes per level
 }
 
 // AnalyzeGraph computes quality metrics for the graph.
@@ -25,7 +27,8 @@ func (h *ArrowHNSW) AnalyzeGraph() GraphMetrics {
 	nodeCount := int(h.nodeCount.Load())
 
 	metrics := GraphMetrics{
-		TotalNodes: nodeCount,
+		TotalNodes:        nodeCount,
+		LevelDistribution: make(map[int]int),
 	}
 
 	// 1. Degree Distribution (Layer 0)
@@ -37,6 +40,13 @@ func (h *ArrowHNSW) AnalyzeGraph() GraphMetrics {
 	for i := 0; i < nodeCount; i++ {
 		cID := chunkID(uint32(i))
 		cOff := chunkOffset(uint32(i))
+
+		// Level Distribution
+		levelsChunk := data.GetLevelsChunk(cID)
+		if levelsChunk != nil {
+			lvl := int(levelsChunk[cOff])
+			metrics.LevelDistribution[lvl]++
+		}
 
 		// Safety check for nil chunks (lazy allocation or incomplete graph)
 		countsChunk := data.GetCountsChunk(layer, cID)
@@ -74,12 +84,23 @@ func (h *ArrowHNSW) AnalyzeGraph() GraphMetrics {
 	}
 
 	// 3. Report Metrics to Prometheus
-	dsName := h.dataset.Name
+	dsName := "default"
+	if h.dataset != nil {
+		dsName = h.dataset.Name
+	}
 	prommetrics.HNSWDisconnectedComponents.WithLabelValues(dsName).Set(float64(metrics.ConnectedComponents))
 	prommetrics.HNSWOrphanNodes.WithLabelValues(dsName).Set(float64(metrics.ZeroDegreeNodes))
 	prommetrics.HNSWAverageDegree.WithLabelValues(dsName).Set(metrics.AverageDegree)
 	prommetrics.HNSWMaxComponentSize.WithLabelValues(dsName).Set(float64(metrics.MaxComponentSize))
 	prommetrics.HNSWEstimatedDiameter.WithLabelValues(dsName).Set(float64(metrics.EstimatedDiameter))
+
+	// 4. Memory Attribution (Step 9)
+	totalBytes := h.EstimateMemory()
+	prommetrics.HNSWMemoryUsageBytes.WithLabelValues(dsName, "total").Set(float64(totalBytes))
+
+	for lvl, count := range metrics.LevelDistribution {
+		prommetrics.HNSWAvgLevelDistribution.WithLabelValues(dsName, strconv.Itoa(lvl)).Set(float64(count))
+	}
 
 	return metrics
 }

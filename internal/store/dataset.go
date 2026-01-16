@@ -243,6 +243,11 @@ func (d *Dataset) GenerateFilterBitset(filters []qry.Filter) (*qry.Bitset, error
 	d.dataMu.RLock()
 	defer d.dataMu.RUnlock()
 
+	return d.GenerateFilterBitsetLocked(filters, hash)
+}
+
+// GenerateFilterBitsetLocked is the variant that assumes d.dataMu is already held.
+func (d *Dataset) GenerateFilterBitsetLocked(filters []qry.Filter, hash string) (*qry.Bitset, error) {
 	if len(d.Records) == 0 || d.Index == nil {
 		return nil, nil
 	}

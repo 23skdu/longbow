@@ -250,52 +250,33 @@ func ExtractVectorFromArrow(rec arrow.RecordBatch, rowIdx, colIdx int) ([]float3
 	}
 }
 
-// InferVectorDataType determines the internal VectorDataType from an Arrow schema or field.
 func InferVectorDataType(schema *arrow.Schema, fieldName string) VectorDataType {
 	if schema == nil {
 		return VectorTypeFloat32
 	}
 
-	// 1. Check Metadata Priority
-	md := schema.Metadata()
-	if val, ok := md.GetValue("longbow.vector_type"); ok {
-		switch val {
-		case "complex64":
-			return VectorTypeComplex64
-		case "complex128":
-			return VectorTypeComplex128
-		case "float16":
-			return VectorTypeFloat16
-		case "float32":
-			return VectorTypeFloat32
-		case "float64":
-			return VectorTypeFloat64
-		case "int8":
-			return VectorTypeInt8
-		case "uint8":
-			return VectorTypeUint8
-		case "int16":
-			return VectorTypeInt16
-		case "uint16":
-			return VectorTypeUint16
-		case "int32":
-			return VectorTypeInt32
-		case "uint32":
-			return VectorTypeUint32
-		case "int64":
-			return VectorTypeInt64
-		case "uint64":
-			return VectorTypeUint64
-		}
-	}
-
-	// 2. Fallback to physical type inspection
 	idx := schema.FieldIndices(fieldName)
 	if len(idx) == 0 {
+		// Try default metadata check if field not found
+		md := schema.Metadata()
+		if val, ok := md.GetValue("longbow.vector_type"); ok {
+			return parseVectorType(val)
+		}
 		return VectorTypeFloat32
 	}
 
 	f := schema.Field(idx[0])
+
+	// 1. Check Field Metadata (Preferred)
+	fmd := f.Metadata
+	if val, ok := fmd.GetValue("longbow.vector_type"); ok {
+		return parseVectorType(val)
+	}
+	if val, ok := fmd.GetValue("longbow.type"); ok {
+		return parseVectorType(val)
+	}
+
+	// 2. Fallback to physical type inspection
 	listType, ok := f.Type.(*arrow.FixedSizeListType)
 	if !ok {
 		return VectorTypeFloat32
@@ -305,12 +286,12 @@ func InferVectorDataType(schema *arrow.Schema, fieldName string) VectorDataType 
 	switch elemType.ID() {
 	case arrow.FLOAT32:
 		// Check for complex marker in metadata if it was sent as interleaved F32
-		if val, _ := md.GetValue("longbow.complex"); val == "true" {
+		if val, _ := fmd.GetValue("longbow.complex"); val == "true" {
 			return VectorTypeComplex64
 		}
 		return VectorTypeFloat32
 	case arrow.FLOAT64:
-		if val, _ := md.GetValue("longbow.complex"); val == "true" {
+		if val, _ := fmd.GetValue("longbow.complex"); val == "true" {
 			return VectorTypeComplex128
 		}
 		return VectorTypeFloat64
@@ -335,4 +316,37 @@ func InferVectorDataType(schema *arrow.Schema, fieldName string) VectorDataType 
 	}
 
 	return VectorTypeFloat32
+}
+
+func parseVectorType(val string) VectorDataType {
+	switch val {
+	case "complex64":
+		return VectorTypeComplex64
+	case "complex128":
+		return VectorTypeComplex128
+	case "float16":
+		return VectorTypeFloat16
+	case "float32":
+		return VectorTypeFloat32
+	case "float64":
+		return VectorTypeFloat64
+	case "int8":
+		return VectorTypeInt8
+	case "uint8":
+		return VectorTypeUint8
+	case "int16":
+		return VectorTypeInt16
+	case "uint16":
+		return VectorTypeUint16
+	case "int32":
+		return VectorTypeInt32
+	case "uint32":
+		return VectorTypeUint32
+	case "int64":
+		return VectorTypeInt64
+	case "uint64":
+		return VectorTypeUint64
+	default:
+		return VectorTypeFloat32
+	}
 }

@@ -787,6 +787,7 @@ func (s *VectorStore) applyBatchToMemory(name string, rec arrow.RecordBatch, ts 
 	}
 
 	ds.dataMu.Lock()
+	defer ds.dataMu.Unlock()
 	dsLockStart := time.Now()
 
 	// Lazy Index Initialization
@@ -813,10 +814,10 @@ func (s *VectorStore) applyBatchToMemory(name string, rec arrow.RecordBatch, ts 
 		if vecCol := findVectorColumn(rec); vecCol != nil {
 			if listArr, ok := vecCol.(*array.FixedSizeList); ok {
 				dim := int(listArr.DataType().(*arrow.FixedSizeListType).Len())
-				// Use physical dimension for ArrowHNSW (it operates on flattened floats)
-				// if dataType == VectorTypeComplex64 || dataType == VectorTypeComplex128 {
-				// 	dim = dim / 2
-				// }
+				// Use logical dimension for ArrowHNSW
+				if dataType == VectorTypeComplex64 || dataType == VectorTypeComplex128 {
+					dim /= 2
+				}
 				aIdx.SetInitialDimension(dim)
 			}
 		}
@@ -848,7 +849,6 @@ func (s *VectorStore) applyBatchToMemory(name string, rec arrow.RecordBatch, ts 
 		}
 	}
 
-	ds.dataMu.Unlock()
 	metrics.DatasetLockWaitDurationSeconds.WithLabelValues("put").Observe(time.Since(dsLockStart).Seconds())
 
 	// Batch append to DiskStore outside main dataset lock
@@ -887,15 +887,9 @@ func (s *VectorStore) applyBatchToMemory(name string, rec arrow.RecordBatch, ts 
 
 	// Inverted index update removed from here - now handled by runIndexWorker asynchronously
 
-	// Compaction trigger
+	// Compaction trigger check (now integrated into the primary lock section or performed without re-locking)
 	if s.compactionWorker != nil {
-		shouldCompact := false
-		ds.dataMu.RLock()
 		if len(ds.Records) >= s.compactionConfig.MinBatchesToCompact {
-			shouldCompact = true
-		}
-		ds.dataMu.RUnlock()
-		if shouldCompact {
 			_ = s.compactionWorker.TriggerCompaction(name)
 		}
 	}

@@ -128,6 +128,9 @@ func NewArrowHNSW(dataset *Dataset, config ArrowHNSWConfig, locStore *ChunkedLoc
 
 	h.distFunc = h.resolveDistanceFunc()
 	h.distFuncF16 = h.resolveDistanceFuncF16()
+	h.distFuncF64 = h.resolveDistanceFuncF64()
+	h.distFuncC64 = h.resolveDistanceFuncC64()
+	h.distFuncC128 = h.resolveDistanceFuncC128()
 	h.batchDistFunc = h.resolveBatchDistanceFunc()
 
 	h.shardedLocks = make([]sync.Mutex, ShardedLockCount)
@@ -139,6 +142,30 @@ func NewArrowHNSW(dataset *Dataset, config ArrowHNSWConfig, locStore *ChunkedLoc
 		h.locationStore = locStore
 	} else {
 		h.locationStore = NewChunkedLocationStore()
+	}
+
+	// NEW: Auto-infer DataType and Dims if they are unknown or 0 and dataset is available
+	if dataset != nil && dataset.Schema != nil {
+		if config.DataType == VectorTypeUnknown || config.DataType == VectorTypeFloat32 {
+			colName := "vector"
+			config.DataType = InferVectorDataType(dataset.Schema, colName)
+		}
+		if config.Dims == 0 {
+			// Extract Dims from schema
+			for _, field := range dataset.Schema.Fields() {
+				colName := "vector"
+				if field.Name == colName {
+					if listType, ok := field.Type.(*arrow.FixedSizeListType); ok {
+						config.Dims = int(listType.Len())
+						if config.DataType == VectorTypeComplex64 || config.DataType == VectorTypeComplex128 {
+							// For complex types, the logical dimension is half the physical dimension
+							config.Dims /= 2
+						}
+						break
+					}
+				}
+			}
+		}
 	}
 
 	// Initialize with empty graph data
@@ -228,8 +255,8 @@ func (h *ArrowHNSW) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []int)
 
 	ids := make([]uint32, n)
 
-	// Check for Bulk Optimized Path
-	if n >= BULK_INSERT_THRESHOLD {
+	// Check for Bulk Optimized Path (Float32 only for now)
+	if n >= BULK_INSERT_THRESHOLD && h.config.DataType == VectorTypeFloat32 {
 		// Extract all vectors for bulk insert
 		allVecs := make([][]float32, n)
 		useDirectIndex := len(recs) == n
@@ -863,6 +890,33 @@ func (h *ArrowHNSW) resolveDistanceFuncF16() func(a, b []float16.Num) float32 {
 	default: // Euclidean
 		return simd.EuclideanDistanceF16
 	}
+}
+
+// resolveDistanceFuncF64 returns the Float64 distance function.
+func (h *ArrowHNSW) resolveDistanceFuncF64() func(a, b []float64) float32 {
+	switch h.metric {
+	case MetricCosine:
+		return func(a, b []float64) float32 {
+			// Fallback since we don't have CosineDistanceF64 in simd yet
+			return simd.CosineDistance(simd.ToFloat32(a), simd.ToFloat32(b))
+		}
+	case MetricDotProduct:
+		return func(a, b []float64) float32 {
+			return -float32(simd.DotProductF64(a, b))
+		}
+	default: // Euclidean
+		return simd.EuclideanDistanceFloat64
+	}
+}
+
+// resolveDistanceFuncC64 returns the Complex64 distance function.
+func (h *ArrowHNSW) resolveDistanceFuncC64() func(a, b []complex64) float32 {
+	return simd.EuclideanDistanceComplex64
+}
+
+// resolveDistanceFuncC128 returns the Complex128 distance function.
+func (h *ArrowHNSW) resolveDistanceFuncC128() func(a, b []complex128) float32 {
+	return simd.EuclideanDistanceComplex128
 }
 
 // resolveBatchDistanceFunc returns the batch distance function.

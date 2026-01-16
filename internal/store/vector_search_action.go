@@ -110,10 +110,17 @@ func (s *VectorStore) handleVectorSearchAction(action *flight.Action, stream fli
 
 			// Validate dimension
 			expectedDim := ds.Index.GetDimension()
-			if uint32(len(queryVec)) != expectedDim {
+			actualDim := uint32(len(queryVec))
+			dsType := InferVectorDataType(ds.Schema, "vector")
+			if dsType == VectorTypeComplex64 || dsType == VectorTypeComplex128 {
+				// Interleaved float32s -> logical complex dimension is half
+				actualDim /= 2
+			}
+
+			if actualDim != expectedDim {
 				ds.dataMu.RUnlock()
 				metrics.VectorSearchActionErrors.Inc()
-				return status.Errorf(codes.InvalidArgument, "dimension mismatch: expected %d, got %d", expectedDim, len(queryVec))
+				return status.Errorf(codes.InvalidArgument, "dimension mismatch: expected %d, got %d", expectedDim, actualDim)
 			}
 
 			// Perform search

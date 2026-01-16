@@ -3,43 +3,9 @@
 This document tracks the remaining work for Performance Optimization and Polymorphic Vector Support.
 Completed items have been verified and archived.
 
-## Critical: Data Integrity & Search Correctness (Top Priority)
-
-**Goal**: Fix massive `DoGet` failures (0 MB/s) and `VectorSearch` errors (dimension mismatch).
-
-### 1. 10-Part Fix Plan
-
-- **Analyze Logs**: Pinpoint error sources in server logs.
-- **Reproduce Issues**: Create targeted repros for `float32` DoGet (25k) and `complex128` Search.
-- **Fix Flight Streaming**: Repair `DoGet` logic to ensure data is returned.
-- **Fix Complex Dimensions**: Map logical (N) vs physical (2N) dimensions correctly.
-- **Verify Recall**: Ensure search returns semantically correct results.
-- **Integrity Checks**: Add verify step to benchmarks (random read-back).
-- **Unit Testing**: Expand coverage for complex types and large batches.
-- **Stress Testing**: Verify reliability under load.
-- **Final Validation**: Clean pass of full benchmark suite.
-
 ## Polymorphic & High-Dimensionality Support
 
 Remaining tasks to support 12 data types and 3072 dimensions.
-
-### 1. 128-3072 Dimension Layout Optimization [x]
-
-**Goal**: Specialized optimizations for power-of-two dimension points.
-
-- **Subtasks**:
-  - [x] Implement cache-line padding for specific widths.
-  - [x] Add block-based SIMD processing for vectors > 1024 dims.
-- **Metrics**: `ahnsw_search_throughput_dims` (Gauge).
-
-### 2. Refactor HNSW Search for Native Polymorphism (Completed)
-
-**Goal**: Decouple graph traversal from float32 assumptions.
-
-- **Subtasks**:
-  - [x] Refactor `mustGetVectorFromData` to use generic views without casting.
-  - [x] Update `Search` and `Insert` implementation to use the dynamic dispatcher directly for non-float types (e.g. Int8).
-- **Metrics**: `ahnsw_polymorphic_search_count` (Counter).
 
 ### 3. Enhanced Observability
 
@@ -167,15 +133,6 @@ documented in `schema_evolution.md`.
 
 Focused optimization plan to double throughput for 10k-50k vector datasets (128-dim).
 
-### 1. Zero-Copy Flight Retrieval Optimization (Target: 1.7GB/s)
-
-**Problem**: Current DoGet likely incurs serialization overhead or redundant copying.
-**Solution**:
-
-- Implement `FlightData` zero-copy path for `DoGet`.
-- Use `Arrow IPC` file format streaming directly from memory without re-serialization.
-- Bypass `RecordBatch` builder if data is already in Arrow format.
-
 ### 2. SIMD-Accelerated Distance Calculations (Target: Ingest)
 
 **Problem**: 128-dim vectors might miss optimized SIMD paths or fall back to generic implementations.
@@ -193,15 +150,6 @@ Focused optimization plan to double throughput for 10k-50k vector datasets (128-
 - Implement `ParallelFor` for `AddBatchBulk` vector insertion.
 - Tune `efConstruction` dynamically based on dataset size (lower for initial build, higher for refinement).
 - Use `Goroutine Pool` to reduce scheduler overhead for small batches.
-
-### 4. WAL Write Optimization (Target: Ingest)
-
-**Problem**: Synchronous WAL writes can be a bottleneck.
-**Solution**:
-
-- Implement `Group Commit` for WAL writes (batching multiple `ApplyDelta` calls).
-- Use `O_DIRECT` or `fdatasync` optimization for WAL file interaction.
-- Asynchronous WAL writer with ring buffer.
 
 ### 5. Lock Contention Reduction in VectorStore
 
@@ -291,3 +239,13 @@ Focused optimization plan to double throughput for 10k-50k vector datasets (128-
 
 - Collect CPU profiles from `perf_test.py`.
 - Recompile Longbow server with `-pgo=default.pgo` using the profile.
+
+### 16. Branchless Optimizations
+
+1. **SIMD Comparisons**: Replace `if/else` in `matchInt64Generic` and `matchFloat32Generic` with branchless bitwise operations.
+   - **Target**: `internal/simd/simd_baseline.go`
+   - **Reason**: Branch mispredictions inside tight loops destroy throughput.
+   - **Plan**: Implement branchless logic (e.g., `res = ((a ^ b) - 1) >> 63` or similar) and benchmark.
+2. **HNSW Search Min/Max**: Replace conditional updates for `closest` and `closestDist` in `searchLayer`.
+   - **Target**: `internal/store/arrow_hnsw_search.go`
+   - **Plan**: Use arithmetic min/max or `math.Min` if inlined/intrinsics are faster (Go's `min` built-in might be branchless).

@@ -209,19 +209,230 @@ func (b *float16VectorBatch) Pop() {
 	b.vecs = b.vecs[:len(b.vecs)-1]
 }
 
+// float64VectorBatch implements VectorBatch for float64 vectors.
+type float64VectorBatch struct {
+	h    *ArrowHNSW
+	data *GraphData
+	vecs [][]float64
+}
+
+func (b *float64VectorBatch) Add(id uint32) bool {
+	v := b.h.mustGetVectorFromData(b.data, id)
+	if v == nil {
+		return false
+	}
+	if vf64, ok := v.([]float64); ok {
+		b.vecs = append(b.vecs, vf64)
+		return true
+	}
+	return false
+}
+
+func (b *float64VectorBatch) AddVec(vec any) bool {
+	if vec == nil {
+		b.vecs = append(b.vecs, nil)
+		return true
+	}
+	if vf64, ok := vec.([]float64); ok {
+		b.vecs = append(b.vecs, vf64)
+		return true
+	}
+	return false
+}
+
+func (b *float64VectorBatch) Len() int { return len(b.vecs) }
+
+func (b *float64VectorBatch) ComputeDistances(query any, dists []float32) {
+	q, ok := query.([]float64)
+	if !ok {
+		for i := range b.vecs {
+			dists[i] = math.MaxFloat32
+		}
+		return
+	}
+	for i, v := range b.vecs {
+		if v == nil {
+			dists[i] = math.MaxFloat32
+		} else {
+			dists[i] = b.h.distFuncF64(q, v)
+		}
+	}
+}
+
+func (b *float64VectorBatch) Reset() {
+	for i := range b.vecs {
+		b.vecs[i] = nil
+	}
+	b.vecs = b.vecs[:0]
+}
+
+func (b *float64VectorBatch) Get(i int) any { return b.vecs[i] }
+func (b *float64VectorBatch) Swap(i, j int) { b.vecs[i], b.vecs[j] = b.vecs[j], b.vecs[i] }
+func (b *float64VectorBatch) Pop() {
+	b.vecs[len(b.vecs)-1] = nil
+	b.vecs = b.vecs[:len(b.vecs)-1]
+}
+
+// complex64VectorBatch implements VectorBatch for complex64 vectors.
+type complex64VectorBatch struct {
+	h    *ArrowHNSW
+	data *GraphData
+	vecs [][]complex64
+}
+
+func (b *complex64VectorBatch) Add(id uint32) bool {
+	v := b.h.mustGetVectorFromData(b.data, id)
+	if v == nil {
+		return false
+	}
+	if vc64, ok := v.([]complex64); ok {
+		b.vecs = append(b.vecs, vc64)
+		return true
+	}
+	return false
+}
+
+func (b *complex64VectorBatch) AddVec(vec any) bool {
+	if vec == nil {
+		b.vecs = append(b.vecs, nil)
+		return true
+	}
+	if vc64, ok := vec.([]complex64); ok {
+		b.vecs = append(b.vecs, vc64)
+		return true
+	}
+	return false
+}
+
+func (b *complex64VectorBatch) Len() int { return len(b.vecs) }
+
+func (b *complex64VectorBatch) ComputeDistances(query any, dists []float32) {
+	q, ok := query.([]complex64)
+	if !ok {
+		for i := range b.vecs {
+			dists[i] = math.MaxFloat32
+		}
+		return
+	}
+	for i, v := range b.vecs {
+		if v == nil {
+			dists[i] = math.MaxFloat32
+		} else {
+			dists[i] = b.h.distFuncC64(q, v)
+		}
+	}
+}
+
+func (b *complex64VectorBatch) Reset() {
+	for i := range b.vecs {
+		b.vecs[i] = nil
+	}
+	b.vecs = b.vecs[:0]
+}
+
+func (b *complex64VectorBatch) Get(i int) any { return b.vecs[i] }
+func (b *complex64VectorBatch) Swap(i, j int) { b.vecs[i], b.vecs[j] = b.vecs[j], b.vecs[i] }
+func (b *complex64VectorBatch) Pop() {
+	b.vecs[len(b.vecs)-1] = nil
+	b.vecs = b.vecs[:len(b.vecs)-1]
+}
+
+// complex128VectorBatch implements VectorBatch for complex128 vectors.
+type complex128VectorBatch struct {
+	h    *ArrowHNSW
+	data *GraphData
+	vecs [][]complex128
+}
+
+func (b *complex128VectorBatch) Add(id uint32) bool {
+	v := b.h.mustGetVectorFromData(b.data, id)
+	if v == nil {
+		return false
+	}
+	if vc128, ok := v.([]complex128); ok {
+		b.vecs = append(b.vecs, vc128)
+		return true
+	}
+	return false
+}
+
+func (b *complex128VectorBatch) AddVec(vec any) bool {
+	if vec == nil {
+		b.vecs = append(b.vecs, nil)
+		return true
+	}
+	if vc128, ok := vec.([]complex128); ok {
+		b.vecs = append(b.vecs, vc128)
+		return true
+	}
+	return false
+}
+
+func (b *complex128VectorBatch) Len() int { return len(b.vecs) }
+
+func (b *complex128VectorBatch) ComputeDistances(query any, dists []float32) {
+	q, ok := query.([]complex128)
+	if !ok {
+		for i := range b.vecs {
+			dists[i] = math.MaxFloat32
+		}
+		return
+	}
+	for i, v := range b.vecs {
+		if v == nil {
+			dists[i] = math.MaxFloat32
+		} else {
+			dists[i] = b.h.distFuncC128(q, v)
+		}
+	}
+}
+
+func (b *complex128VectorBatch) Reset() {
+	for i := range b.vecs {
+		b.vecs[i] = nil
+	}
+	b.vecs = b.vecs[:0]
+}
+
+func (b *complex128VectorBatch) Get(i int) any { return b.vecs[i] }
+func (b *complex128VectorBatch) Swap(i, j int) { b.vecs[i], b.vecs[j] = b.vecs[j], b.vecs[i] }
+func (b *complex128VectorBatch) Pop() {
+	b.vecs[len(b.vecs)-1] = nil
+	b.vecs = b.vecs[:len(b.vecs)-1]
+}
+
 // newVectorBatch creates a VectorBatch appropriate for the data type.
 func (h *ArrowHNSW) newVectorBatch(data *GraphData) VectorBatch {
-	if h.config.Float16Enabled || data.Type == VectorTypeFloat16 {
+	switch data.Type {
+	case VectorTypeFloat16:
 		return &float16VectorBatch{
 			h:    h,
 			data: data,
 			vecs: make([][]float16.Num, 0, h.mMax0),
 		}
-	}
-	// Current default: float32 batch which handles float32 data.
-	return &float32VectorBatch{
-		h:    h,
-		data: data,
-		vecs: make([][]float32, 0, h.mMax0),
+	case VectorTypeFloat64:
+		return &float64VectorBatch{
+			h:    h,
+			data: data,
+			vecs: make([][]float64, 0, h.mMax0),
+		}
+	case VectorTypeComplex64:
+		return &complex64VectorBatch{
+			h:    h,
+			data: data,
+			vecs: make([][]complex64, 0, h.mMax0),
+		}
+	case VectorTypeComplex128:
+		return &complex128VectorBatch{
+			h:    h,
+			data: data,
+			vecs: make([][]complex128, 0, h.mMax0),
+		}
+	default:
+		return &float32VectorBatch{
+			h:    h,
+			data: data,
+			vecs: make([][]float32, 0, h.mMax0),
+		}
 	}
 }

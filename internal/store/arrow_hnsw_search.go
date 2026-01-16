@@ -43,6 +43,13 @@ func (h *ArrowHNSW) Search(q any, k, ef int, filter *query.Bitset) ([]SearchResu
 			if targetType == VectorTypeComplex64 || targetType == VectorTypeComplex128 {
 				expectedLen = dims * 2
 			}
+			// Pad if necessary for safe SIMD usage
+			paddedCap := (len(v) + 15) & ^15
+			if paddedCap > len(v) && cap(v) < paddedCap {
+				newV := make([]float32, len(v), paddedCap)
+				copy(newV, v)
+				q = newV
+			}
 		case []float64:
 			qLen = len(v)
 			qType = "float64"
@@ -110,7 +117,10 @@ func (h *ArrowHNSW) Search(q any, k, ef int, filter *query.Bitset) ([]SearchResu
 	metrics.HNSWSearchQueriesTotal.WithLabelValues(strconv.Itoa(dims)).Inc()
 	metrics.HnswSearchThroughputDims.WithLabelValues(strconv.Itoa(dims)).Inc()
 
-	dsName := h.dataset.Name
+	dsName := "default"
+	if h.dataset != nil {
+		dsName = h.dataset.Name
+	}
 
 	// 1. Finding entry points in upper layers
 	data := graph
@@ -253,15 +263,6 @@ func (h *ArrowHNSW) Search(q any, k, ef int, filter *query.Bitset) ([]SearchResu
 	return results, nil
 }
 
-// minCandidate returns the candidate with the smaller distance.
-// This small function encourages the compiler to use CMOV instructions.
-func minCandidate(a, b Candidate) Candidate {
-	if b.Dist < a.Dist {
-		return b
-	}
-	return a
-}
-
 func (h *ArrowHNSW) searchLayer(computer HNSWDistanceComputer, entryPoint uint32, ef, layer int, ctx *ArrowSearchContext, data *GraphData, filter *query.Bitset) (candidate uint32) {
 	ctx.ResetVisited()
 	ctx.candidates.Clear()
@@ -310,10 +311,11 @@ func (h *ArrowHNSW) searchLayer(computer HNSWDistanceComputer, entryPoint uint32
 			}
 		}
 
-		// Optimize closest update with potentially branchless minCandidate
-		best := minCandidate(Candidate{ID: closest, Dist: closestDist}, curr)
-		closest = best.ID
-		closestDist = best.Dist
+		// Optimize closest update (inlined)
+		if curr.Dist < closestDist {
+			closest = curr.ID
+			closestDist = curr.Dist
+		}
 
 		// 1. Collect unvisited neighbors
 		ctx.scratchIDs = ctx.scratchIDs[:0]

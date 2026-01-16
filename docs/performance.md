@@ -1,8 +1,16 @@
 # Performance Benchmarks
 
-**Date**: 2026-01-14
-**Version**: 0.1.4-rc4
+**Date**: 2026-01-16
+**Version**: 0.1.5 (Cluster Performance Release)
 **Hardware**: 3-Node Cluster (Docker, 6GB RAM/node)
+
+## v0.1.5 Peak Performance (verified)
+
+- **DoGet Throughput**: **1.06 GB/s** (742,907 records/s) - *Release 0.1.5 Optimization*
+- **DoPut Throughput**: **343 MB/s** (234,332 vectors/s)
+- **Dense Search (k=10)**: P95=2.92ms
+- **Hybrid Search**: P95=2.20ms
+- **Scale**: Verified to 20,000 vectors with active background ingestion.
 
 ## Executive Summary
 
@@ -47,11 +55,11 @@ The following matrix aggregates performance for `DoPut` (Ingestion), `DoGet` (Re
 
 Search QPS varies significantly by type and dimension. Integers and Complex types generally showed higher QPS than raw Floats in this benchmark run, likely due to backend optimization or dataset characteristics.
 
-* **Dense Search**: 1000 - 1800 QPS (Complex/Int/Float64)
-* **Sparse/Hybrid**: Supported on all tested types (via text metadata).
+- **Dense Search**: 1000 - 1800 QPS (Complex/Int/Float64)
+- **Sparse/Hybrid**: Supported on all tested types (via text metadata).
 
 ## Recommendations
 
-* **Production**: Use `float32` or `int*` types.
-* **Experimental**: `complex128` offers extremely high throughput but warrants further stability validation.
-* **Avoid**: `float16` at 128 dimensions until timeout is resolved.
+- **Production**: Use `float32` or `int*` types.
+- **Experimental**: `complex128` offers extremely high throughput but warrants further stability validation.
+- **Avoid**: `float16` at 128 dimensions until timeout is resolved.

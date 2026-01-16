@@ -163,32 +163,32 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 	}
 
 	ds.dataMu.RLock()
-	defer ds.dataMu.RUnlock()
-
+	// Check if dataset is already empty or if we have records
 	if len(ds.Records) == 0 {
+		ds.dataMu.RUnlock()
 		s.logger.Warn().Msg("Dataset empty")
 		return nil
 	}
 
-	// Use first record's schema
+	// Use first record's schema (all records in a dataset must share schema)
 	schema := ds.Records[0].Schema()
-	s.logger.Info().Msgf("DoGet Schema: %v", schema.String())
-
-	// Note: We initialize the Flight RecordWriter later in the consumption loop
-	// to ensure ZERO-COPY streaming from the results channel.
-
-	ctx := stream.Context()
-	rowsSent := int64(0)
 
 	// Adaptive Chunking (Optimized for TTFB)
 	// We slice the records into smaller chunks to improve time-to-first-byte and flow control.
 	chunkStrategy := lbflight.NewAdaptiveChunkStrategy(4096, 65536, 2.0)
 	recordsToProcess, tombstonesToProcess := AdaptivelySliceBatches(ds.Records, ds.Tombstones, chunkStrategy)
+	ds.dataMu.RUnlock() // RELEASE LOCK IMMEDIATELY AFTER CLONING REFERENCES
+
+	s.logger.Info().Str("name", name).Int("batches", len(recordsToProcess)).Msg("DoGet streaming started")
+
 	defer func() {
 		for _, r := range recordsToProcess {
 			r.Release()
 		}
 	}()
+
+	ctx := stream.Context()
+	rowsSent := int64(0)
 
 	// Parallel Processing with Pipeline Support (Phase 5)
 	// Recalculate workers based on chunked records
@@ -380,6 +380,7 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 				metrics.DoGetTimeToFirstChunk.Observe(time.Since(startDoGet).Seconds())
 			}
 
+			rowsSent += rec.NumRows()
 			rec.Release()
 
 			writeDuration := time.Since(startWrite)
@@ -623,44 +624,41 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, stream fli
 			}
 
 			ds.dataMu.RLock()
-
-			if ds.Index == nil {
+			index := ds.Index
+			graph := ds.Graph
+			if index == nil {
 				ds.dataMu.RUnlock()
 				return status.Error(codes.FailedPrecondition, "index not initialized")
 			}
 
-			// Validate dimension
-			if len(queryVec) > 0 && uint32(len(queryVec)) != ds.Index.GetDimension() {
-				expected := ds.Index.GetDimension()
+			// Validate dimension under lock
+			if len(queryVec) > 0 && uint32(len(queryVec)) != index.GetDimension() {
+				expected := index.GetDimension()
 				ds.dataMu.RUnlock()
 				return status.Errorf(codes.InvalidArgument, "dimension mismatch: expected %d, got %d", expected, len(queryVec))
 			}
+			ds.dataMu.RUnlock() // RELEASE BEFORE SEARCH
 
-			// Re-lock for search
-			ds.dataMu.RLock()
-			if ds.Index == nil {
-				ds.dataMu.RUnlock()
-				return status.Error(codes.FailedPrecondition, "index not initialized")
-			}
-
-			searchResults, err = ds.Index.SearchVectors(queryVec, req.K, req.Filters, SearchOptions{
+			// Core Search (No dataset lock held)
+			searchResults, err = index.SearchVectors(queryVec, req.K, req.Filters, SearchOptions{
 				IncludeVectors: req.IncludeVectors,
 				VectorFormat:   req.VectorFormat,
 			})
 			if err != nil {
-				ds.dataMu.RUnlock()
 				return status.Errorf(codes.Internal, "search failed: %v", err)
 			}
 
+			// Capture data for mapping/re-ranking
+			ds.dataMu.RLock()
 			// Graph Re-ranking
-			if req.GraphAlpha > 0 && ds.Graph != nil {
-				ranked := ds.Graph.RankWithGraph(searchResults, req.GraphAlpha, 2)
+			if req.GraphAlpha > 0 && graph != nil {
+				ranked := graph.RankWithGraph(searchResults, req.GraphAlpha, 2)
 				if len(ranked) > 0 {
 					searchResults = ranked
 				}
 			}
 
-			// Map IDs
+			// Map internal IDs to user IDs
 			searchResults = s.mapInternalToUserIDsLocked(ds, searchResults)
 			ds.dataMu.RUnlock()
 		}

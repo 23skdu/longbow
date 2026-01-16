@@ -100,7 +100,7 @@ func TestRecallValidation(t *testing.T) {
 	for _, tc := range testCases {
 		tc := tc // capture range variable
 		t.Run(tc.name, func(t *testing.T) {
-			// t.Parallel() // Temporarily disabled to debug recall drop
+
 			if tc.numVectors >= 1000000 && os.Getenv("TEST_HUGE") == "" {
 				t.Skip("Skipping Huge 1M test; set TEST_HUGE=1 to run")
 			}

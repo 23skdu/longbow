@@ -252,8 +252,32 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *GraphData, ctx *ArrowSearchContext
 		}
 	}
 
-	// 2. Complex Types
-	// 2. Complex Types
+	// 2. Float64 Native
+	if data.Type == VectorTypeFloat64 {
+		if qF64, ok := queryVec.([]float64); ok {
+			metrics.HNSWPolymorphicSearchCount.WithLabelValues("float64").Inc()
+			return &float64Computer{
+				data: data,
+				q:    qF64,
+				dims: data.Dims,
+			}
+		}
+		if qF32, ok := queryVec.([]float32); ok {
+			// Convert query: float32 -> float64
+			qF64 := make([]float64, len(qF32))
+			for i, v := range qF32 {
+				qF64[i] = float64(v)
+			}
+			metrics.HNSWPolymorphicSearchCount.WithLabelValues("float64").Inc()
+			return &float64Computer{
+				data: data,
+				q:    qF64,
+				dims: data.Dims,
+			}
+		}
+	}
+
+	// 3. Complex Types
 	if data.Type == VectorTypeComplex64 {
 		if qC64, ok := queryVec.([]complex64); ok {
 			return &complex64Computer{

@@ -113,10 +113,11 @@ type VectorIndex interface {
 	AddBatch(recs []arrow.RecordBatch, rowIdxs []int, batchIdxs []int) ([]uint32, error)
 
 	// SearchVectors returns the k nearest neighbors for the query vector with scores and optional filtering.
-	SearchVectors(query []float32, k int, filters []query.Filter, options SearchOptions) ([]SearchResult, error)
+	// query can be []float32, []float16.Num, []complex64, []complex128, etc.
+	SearchVectors(query any, k int, filters []query.Filter, options SearchOptions) ([]SearchResult, error)
 
 	// SearchVectorsWithBitmap returns k nearest neighbors filtered by a bitset.
-	SearchVectorsWithBitmap(query []float32, k int, filter *query.Bitset, options SearchOptions) []SearchResult
+	SearchVectorsWithBitmap(query any, k int, filter *query.Bitset, options SearchOptions) []SearchResult
 
 	// GetLocation retrieves the storage location for a given vector ID.
 	// Returns the location and true if found, or zero location and false if not found.

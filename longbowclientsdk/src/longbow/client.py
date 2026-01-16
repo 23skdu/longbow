@@ -119,15 +119,35 @@ class LongbowClient:
         if self._data_client is None:
             self.connect()
 
-        # Handle complex query vectors
-        import numpy as np
-        if hasattr(vector, "dtype") and (vector.dtype == np.complex64 or vector.dtype == np.complex128):
-            if vector.dtype == np.complex64:
-                vector = vector.view(np.float32).flatten().tolist()
-            else:
-                vector = vector.view(np.float64).flatten().tolist()
-        elif isinstance(vector, np.ndarray):
-            vector = vector.tolist()
+        # Handle complex query vectors and sanitization for JSON
+        try:
+            import numpy as np
+            has_numpy = True
+        except ImportError:
+            has_numpy = False
+
+        if has_numpy and hasattr(vector, "dtype"):
+            if np.issubdtype(vector.dtype, np.complexfloating):
+                # Flatten complex to [real, imag, real, imag...]
+                # Use correct float type matching the complex precision
+                target_dtype = np.float32 if vector.dtype == np.complex64 else np.float64
+                vector = vector.view(target_dtype).flatten().tolist()
+            elif isinstance(vector, np.ndarray):
+                vector = vector.tolist()
+        
+        # Handle Python list of complex numbers (e.g. [1+1j, 2+2j])
+        if isinstance(vector, list) and len(vector) > 0 and isinstance(vector[0], complex):
+            flat_vector = []
+            for v in vector:
+                flat_vector.append(float(v.real))
+                flat_vector.append(float(v.imag))
+            vector = flat_vector
+
+        # Sanitize: Ensure no NaN/Inf which breaks server JSON parsing
+        import math
+        for i, v in enumerate(vector):
+            if isinstance(v, (int, float)) and not math.isfinite(v):
+                raise ValueError(f"Query vector contains invalid value (NaN or Inf) at index {i}")
 
         req = {
             "dataset": dataset,

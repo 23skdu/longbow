@@ -122,19 +122,10 @@ func (h *ArrowHNSW) TrainPQ(vectors [][]float32) error {
 // Insert adds a new vector to the HNSW graph.
 // The vector is identified by its VectorID and assigned a random level.
 func (h *ArrowHNSW) Insert(id uint32, level int) error {
-	// Zero-Copy FP16 Ingestion Path
-	if h.config.Float16Enabled {
-		vecF16, err := h.getVectorF16(id)
-		if err == nil {
-			return h.InsertWithVectorF16(id, vecF16, level)
-		}
-		// If error (e.g. not found), we could return error or fall through?
-		// getVectorF16 handles F32->F16 conversion too.
-		return err
-	}
-
+	// Zero-Copy Ingestion Path
 	// Get vector for distance calculations (and caching)
-	vec, err := h.getVector(id)
+	// We use generic getVectorAny to support all types.
+	vec, err := h.getVectorAny(id)
 	if err != nil {
 		return err
 	}
@@ -142,7 +133,7 @@ func (h *ArrowHNSW) Insert(id uint32, level int) error {
 }
 
 // InsertWithVector inserts a vector that has already been retrieved.
-func (h *ArrowHNSW) InsertWithVector(id uint32, vec []float32, level int) error {
+func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 	start := time.Now()
 	defer func() {
 		h.metricInsertDuration.Observe(time.Since(start).Seconds())
@@ -203,82 +194,95 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec []float32, level int) error 
 	levelsChunk[cOff] = uint8(level)
 
 	// Cache dimensions on first insert
-	if dims == 0 && len(vec) > 0 {
-		h.initMu.Lock()
-		dims = int(h.dims.Load())
-		if dims == 0 {
-			// Update dimensions atomically - CORRECT ORDER
-			newDims := len(vec)
-
-			// 1. Force Grow with new dimensions first.
-			// This ensures 'data' structure is upgraded (Vectors allocated) BEFORE
-			// we advertise the dimension change via h.dims.Store.
-			h.Grow(data.Capacity, newDims)
-			data = h.data.Load() // Reload updated data
-
-			// 2. Advertise dimensions
-			h.dims.Store(int32(newDims))
-			dims = newDims
-
-			// Re-ensure chunk with new dims
-			// cID/cOff relies on ID which hasn't changed
-			data = h.ensureChunk(data, cID, cOff, dims)
-		} else {
-			// Someone else initialized global dimensions while we waited.
-			// Our local 'data' snapshot corresponds to dims=0 (likely no vectors).
-			// We MUST reload data to get the snapshot that has the vectors allocated.
-			data = h.data.Load()
+	if dims == 0 {
+		// Determine dims from input vector
+		// This is tricky with 'any', we need to check type.
+		inputDims := 0
+		switch v := vec.(type) {
+		case []float32:
+			inputDims = len(v)
+		case []float16.Num:
+			inputDims = len(v)
+		case []complex64:
+			inputDims = len(v)
+		case []complex128:
+			inputDims = len(v)
+			// TODO: Handler other types
 		}
-		h.initMu.Unlock()
+
+		if inputDims > 0 {
+			h.initMu.Lock()
+			dims = int(h.dims.Load())
+			if dims == 0 {
+				newDims := inputDims
+				// 1. Force Grow with new dimensions first.
+				h.Grow(data.Capacity, newDims)
+				data = h.data.Load() // Reload updated data
+
+				// 2. Advertise dimensions
+				h.dims.Store(int32(newDims))
+				dims = newDims
+
+				// Re-ensure chunk with new dims
+				data = h.ensureChunk(data, cID, cOff, dims)
+			} else {
+				data = h.data.Load()
+			}
+			h.initMu.Unlock()
+		}
 	}
 
 	// Recovery block removed: Invariant guarantees Vectors exist if dims > 0.
 
-	// Store Dense Vector (Copy for L2 locality)
-	if len(vec) > 0 && dims > 0 {
-		if err := data.SetVectorFromFloat32(id, vec); err != nil {
+	// Store Vector (Copy for L2 locality)
+	if dims > 0 {
+		if err := data.SetVector(id, vec); err != nil {
 			return err
 		}
 	}
 
 	// Store Binary Quantized Vector
 	if h.config.BQEnabled && dims > 0 {
-		// Initialize Encoder if needed (lazy)
-		if h.bqEncoder == nil {
-			h.initMu.Lock()
+		if vecF32, ok := vec.([]float32); ok {
+			// Initialize Encoder if needed (lazy)
 			if h.bqEncoder == nil {
-				h.bqEncoder = NewBQEncoder(dims)
+				h.initMu.Lock()
+				if h.bqEncoder == nil {
+					h.bqEncoder = NewBQEncoder(dims)
+				}
+				h.initMu.Unlock()
 			}
-			h.initMu.Unlock()
-		}
 
-		encoded := h.bqEncoder.Encode(vec)
-		encodedChunk := data.GetVectorsBQChunk(cID)
-		if encodedChunk != nil {
+			encoded := h.bqEncoder.Encode(vecF32)
+			encodedChunk := data.GetVectorsBQChunk(cID)
+			if encodedChunk != nil {
+				numWords := len(encoded)
+				baseIdx := int(cOff) * numWords
+				copy(encodedChunk[baseIdx:baseIdx+numWords], encoded)
+			}
+
+			// Also populate search context for insertion search phase
 			numWords := len(encoded)
-			baseIdx := int(cOff) * numWords
-			copy(encodedChunk[baseIdx:baseIdx+numWords], encoded)
+			if cap(ctx.queryBQ) < numWords {
+				ctx.queryBQ = make([]uint64, numWords)
+			}
+			ctx.queryBQ = ctx.queryBQ[:numWords]
+			copy(ctx.queryBQ, encoded)
 		}
-
-		// Also populate search context for insertion search phase
-		numWords := len(encoded)
-		if cap(ctx.queryBQ) < numWords {
-			ctx.queryBQ = make([]uint64, numWords)
-		}
-		ctx.queryBQ = ctx.queryBQ[:numWords]
-		copy(ctx.queryBQ, encoded)
 	}
 
 	// Store PQ Vector
 	if h.config.PQEnabled && h.pqEncoder != nil && dims > 0 {
-		code, err := h.pqEncoder.Encode(vec)
-		if err == nil {
-			encodedChunk := data.GetVectorsPQChunk(cID)
-			if encodedChunk != nil {
-				pqM := data.PQDims
-				if pqM > 0 {
-					baseIdx := int(cOff) * pqM
-					copy(encodedChunk[baseIdx:baseIdx+pqM], code)
+		if vecF32, ok := vec.([]float32); ok {
+			code, err := h.pqEncoder.Encode(vecF32)
+			if err == nil {
+				encodedChunk := data.GetVectorsPQChunk(cID)
+				if encodedChunk != nil {
+					pqM := data.PQDims
+					if pqM > 0 {
+						baseIdx := int(cOff) * pqM
+						copy(encodedChunk[baseIdx:baseIdx+pqM], code)
+					}
 				}
 			}
 		}
@@ -304,32 +308,36 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec []float32, level int) error 
 	sq8Handled := false
 
 	if h.config.SQ8Enabled && dims > 0 {
-		h.ensureTrained(int(h.locationStore.MaxID()), [][]float32{vec})
+		if vecF32, ok := vec.([]float32); ok {
+			h.ensureTrained(int(h.locationStore.MaxID()), [][]float32{vecF32})
+		}
 	}
 
 	// Encode to local buffer if quantizer is trained (and ready)
 	if h.sq8Ready.Load() {
-		if cap(ctx.querySQ8) < dims {
-			ctx.querySQ8 = make([]byte, dims)
-		}
-		ctx.querySQ8 = ctx.querySQ8[:dims]
-		h.quantizer.Encode(vec, ctx.querySQ8)
-		localSQ8Buffer = ctx.querySQ8
-
-		// Now copy local buffer to shared memory (single write operation)
-		cID := chunkID(id)
-		cOff := chunkOffset(id)
-		// Check if SQ8 vector array is allocated for this chunk
-		if chunk := data.GetVectorsSQ8Chunk(cID); chunk != nil {
-			paddedDims := (dims + 63) & ^63
-			offset := int(cOff) * paddedDims
-			// Bounds check (though ensureChunk should guarantee size)
-			if offset+dims <= len(chunk) {
-				dest := chunk[offset : offset+dims]
-				copy(dest, localSQ8Buffer)
+		if vecF32, ok := vec.([]float32); ok {
+			if cap(ctx.querySQ8) < dims {
+				ctx.querySQ8 = make([]byte, dims)
 			}
+			ctx.querySQ8 = ctx.querySQ8[:dims]
+			h.quantizer.Encode(vecF32, ctx.querySQ8)
+			localSQ8Buffer = ctx.querySQ8
+
+			// Now copy local buffer to shared memory (single write operation)
+			cID := chunkID(id)
+			cOff := chunkOffset(id)
+			// Check if SQ8 vector array is allocated for this chunk
+			if chunk := data.GetVectorsSQ8Chunk(cID); chunk != nil {
+				paddedDims := (dims + 63) & ^63
+				offset := int(cOff) * paddedDims
+				// Bounds check (though ensureChunk should guarantee size)
+				if offset+dims <= len(chunk) {
+					dest := chunk[offset : offset+dims]
+					copy(dest, localSQ8Buffer)
+				}
+			}
+			sq8Handled = true
 		}
-		sq8Handled = true
 	}
 
 	// Fallback encoding if not handled above
@@ -338,19 +346,21 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec []float32, level int) error 
 		cOff := chunkOffset(id)
 
 		if chunk := data.GetVectorsSQ8Chunk(cID); chunk != nil {
-			// Use local buffer
-			if cap(ctx.querySQ8) < dims {
-				ctx.querySQ8 = make([]byte, dims)
-			}
-			ctx.querySQ8 = ctx.querySQ8[:dims]
-			h.quantizer.Encode(vec, ctx.querySQ8)
-			localSQ8Buffer = ctx.querySQ8
+			if vecF32, ok := vec.([]float32); ok {
+				// Use local buffer
+				if cap(ctx.querySQ8) < dims {
+					ctx.querySQ8 = make([]byte, dims)
+				}
+				ctx.querySQ8 = ctx.querySQ8[:dims]
+				h.quantizer.Encode(vecF32, ctx.querySQ8)
+				localSQ8Buffer = ctx.querySQ8
 
-			paddedDims := (dims + 63) & ^63
-			offset := int(cOff) * paddedDims
-			if offset+dims <= len(chunk) {
-				dest := chunk[offset : offset+dims]
-				copy(dest, localSQ8Buffer)
+				paddedDims := (dims + 63) & ^63
+				offset := int(cOff) * paddedDims
+				if offset+dims <= len(chunk) {
+					dest := chunk[offset : offset+dims]
+					copy(dest, localSQ8Buffer)
+				}
 			}
 		}
 	}
@@ -547,8 +557,8 @@ func (h *ArrowHNSW) ensureTrained(limitID int, extraSamples [][]float32) {
 
 // searchLayerForInsert performs search during insertion.
 // Returns candidates sorted by distance.
-func (h *ArrowHNSW) searchLayerForInsert(ctx *ArrowSearchContext, query []float32, entryPoint uint32, ef, layer int, data *GraphData) []Candidate {
-	computer := h.resolveHNSWComputer(data, ctx, query)
+func (h *ArrowHNSW) searchLayerForInsert(ctx *ArrowSearchContext, query any, entryPoint uint32, ef, layer int, data *GraphData) []Candidate {
+	computer := h.resolveHNSWComputer(data, ctx, query, false)
 	_ = h.searchLayer(computer, entryPoint, ef, layer, ctx, data, nil)
 
 	// Transfer results from resultSet to a slice

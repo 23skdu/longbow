@@ -331,10 +331,9 @@ func (s *VectorStore) handleDoExchangeIngest(
 	batchID := 0
 	for r.Next() {
 		rec := r.RecordBatch()
-		// fmt.Println("DEBUG: Got batch")
 
 		// Ingest
-		if err := s.flushPutBatch(name, []arrow.RecordBatch{rec}); err != nil {
+		if err := s.flushPutBatch(ds, []arrow.RecordBatch{rec}); err != nil {
 			return status.Errorf(codes.Internal, "flush failed: %v", err)
 		}
 

@@ -61,7 +61,7 @@ func TestArrowHNSW_LargeBatchIngestion_30k(t *testing.T) {
 	// Ensure Bulk Threshold is met (default 1000)
 
 	idx := NewArrowHNSW(ds, cfg, nil)
-	defer idx.Close()
+	defer func() { _ = idx.Close() }()
 
 	// 1. Create Batch
 	startGen := time.Now()
@@ -112,9 +112,8 @@ func TestArrowHNSW_LargeBatchIngestion_30k(t *testing.T) {
 
 	found := false
 	for _, r := range res {
-		if int(r.Score) == 0 { // Distance ~0
-			// checking exact match
-		}
+		// checking exact match
+		_ = r.Score
 		// Check against expected pattern
 		// To be rigorous, retrieving the vector for result ID would be better checking logic.
 		// But simpler: just assert distance is near 0

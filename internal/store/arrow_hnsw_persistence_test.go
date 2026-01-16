@@ -53,7 +53,7 @@ func TestArrowHNSW_MmapPersistence(t *testing.T) {
 	}
 	err := WriteDiskGraph(gd, graphPath, h1.Size(), minV, maxV, h1.entryPoint.Load(), int(h1.maxLevel.Load()))
 	require.NoError(t, err)
-	h1.Close()
+	_ = h1.Close()
 
 	// 3. Load from Mmap (New Instance)
 	// Must use same config (especially SQ8 enabled)

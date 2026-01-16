@@ -40,7 +40,7 @@ func FuzzPolymorphicIngestion(f *testing.F) {
 		if err != nil {
 			t.Skip("failed to create temp dir")
 		}
-		defer os.RemoveAll(tmpDir)
+		defer func() { _ = os.RemoveAll(tmpDir) }()
 
 		// 1. Initialize Store
 		logger := zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr}).With().Timestamp().Logger()
@@ -112,11 +112,11 @@ func FuzzPolymorphicIngestion(f *testing.F) {
 		err = store.Snapshot()
 		require.NoError(t, err)
 
-		store.Close()
+		_ = store.Close()
 
 		// Re-open
 		store2 := NewVectorStore(mem, logger, 50*1024*1024, 0, 0)
-		defer store2.Close()
+		defer func() { _ = store2.Close() }()
 
 		err = store2.InitPersistence(cfg)
 		require.NoError(t, err)

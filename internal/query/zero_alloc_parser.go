@@ -25,7 +25,7 @@ type Filter struct {
 }
 
 // Hash returns a unique string representation of the filter for caching purposes.
-func (f Filter) Hash() string {
+func (f *Filter) Hash() string {
 	h := f.Field + ":" + f.Operator + ":" + f.Value + ":" + f.Logic
 	if len(f.Filters) > 0 {
 		h += "("

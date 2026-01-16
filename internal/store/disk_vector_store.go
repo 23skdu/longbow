@@ -109,7 +109,7 @@ func (d *DiskVectorStore) SnapshotTo(ctx context.Context, backend storage.Snapsh
 	if err != nil {
 		return fmt.Errorf("failed to open file for snapshot reading: %w", err)
 	}
-	defer fRaw.Close()
+	defer func() { _ = fRaw.Close() }()
 
 	return backend.WriteSnapshotFile(ctx, name, ".bin", fRaw)
 }
@@ -121,7 +121,7 @@ func RestoreDiskVectorStore(ctx context.Context, backend storage.SnapshotBackend
 	if err != nil {
 		return err
 	}
-	defer r.Close()
+	defer func() { _ = r.Close() }()
 
 	// Ensure dir exists
 	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
@@ -132,7 +132,7 @@ func RestoreDiskVectorStore(ctx context.Context, backend storage.SnapshotBackend
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	if _, err := io.Copy(f, r); err != nil {
 		return err

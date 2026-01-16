@@ -38,7 +38,7 @@ func TestHNSW_TombstoneRepair_WiresAround(t *testing.T) {
 	// 3. Mark "Hub" nodes as deleted
 	deletedCnt := 20
 	for i := 0; i < deletedCnt; i++ {
-		idx.Delete(uint32(i))
+		_ = idx.Delete(uint32(i))
 	}
 
 	// Verify they are tombstones

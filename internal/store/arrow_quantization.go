@@ -128,7 +128,7 @@ func (sq *ScalarQuantizer) L2Scale() float32 {
 }
 
 // Params returns the current min/max values.
-func (sq *ScalarQuantizer) Params() (float32, float32) {
+func (sq *ScalarQuantizer) Params() (minVal, maxVal float32) {
 	sq.mu.RLock()
 	defer sq.mu.RUnlock()
 	return sq.minVal, sq.maxVal

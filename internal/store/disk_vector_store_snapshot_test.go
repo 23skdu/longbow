@@ -63,7 +63,7 @@ func TestDiskVectorStore_Advise(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "vectors.bin")
 	dvs, err := NewDiskVectorStore(path, 128)
 	assert.NoError(t, err)
-	defer dvs.Close()
+	defer func() { _ = dvs.Close() }()
 
 	vec := make([]float32, 128)
 	_, err = dvs.Append(vec)
@@ -84,7 +84,7 @@ func TestDiskVectorStore_SnapshotTo(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "source_vectors.bin")
 	dvs, err := NewDiskVectorStore(path, 4)
 	assert.NoError(t, err)
-	defer dvs.Close()
+	defer func() { _ = dvs.Close() }()
 
 	// Append some data
 	vec := []float32{1.0, 2.0, 3.0, 4.0}

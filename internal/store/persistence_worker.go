@@ -23,6 +23,11 @@ func (s *VectorStore) runPersistenceWorker() {
 			return
 
 		case job := <-s.persistenceQueue:
+			metrics.WALQueueDepth.Set(float64(len(s.persistenceQueue)))
+			if job.ts > 0 {
+				start := time.Unix(0, job.ts)
+				metrics.WALQueueLatency.Observe(time.Since(start).Seconds())
+			}
 			s.handlePersistenceJob(job)
 		}
 	}

@@ -14,7 +14,6 @@ import (
 // TestComplex128_DimensionCheck verifies that the server correctly handles
 // the physical vs logical dimension mismatch for complex numbers (N vs 2N floats).
 func TestComplex128_DimensionCheck(t *testing.T) {
-	// mem := memory.NewGoAllocator() // Unused
 
 	// Create a dataset with complex128 vectors (logical dim=4, physical dim=8 floats)
 	logicalDim := 4
@@ -29,7 +28,7 @@ func TestComplex128_DimensionCheck(t *testing.T) {
 
 	// Initialize Index
 	idx := NewArrowHNSW(ds, cfg, nil)
-	defer idx.Close()
+	defer func() { _ = idx.Close() }()
 
 	// During initialization/first insert, HNSW learns the dimension.
 	// We set the LOGICAL dimension (4 complex numbers).
@@ -70,7 +69,7 @@ func TestComplex_SearchCorrectness(t *testing.T) {
 	cfg.DataType = VectorTypeComplex128
 
 	idx := NewArrowHNSW(ds, cfg, nil)
-	defer idx.Close()
+	defer func() { _ = idx.Close() }()
 
 	// Insert 3 Vectors
 	// V1: [1+0i, 0+0i] -> [1, 0, 0, 0]
@@ -138,5 +137,6 @@ func TestComplex_SearchCorrectness(t *testing.T) {
 	// Query: [0.1, 0, 1.1, 0] (Close to V2)
 	query2 := []float32{0.1, 0, 1.1, 0}
 	res2, err := idx.SearchVectors(query2, 5, nil, SearchOptions{})
+	require.NoError(t, err)
 	require.Equal(t, VectorID(1), res2[0].ID)
 }

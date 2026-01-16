@@ -65,7 +65,7 @@ func TestDiskVectorStore_Lifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to re-open store: %v", err)
 	}
-	defer store2.Close()
+	defer func() { _ = store2.Close() }()
 
 	if store2.Size() != count {
 		t.Errorf("Re-opened size mismatch: want %d, got %d", count, store2.Size())
@@ -93,7 +93,7 @@ func TestDiskVectorStore_Bounds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// Append one
 	_, _ = store.Append([]float32{1, 2, 3, 4})
@@ -116,20 +116,20 @@ func TestDiskVectorStore_Persistence(t *testing.T) {
 
 	// Round 1
 	store, _ := NewDiskVectorStore(path, dim)
-	store.Append([]float32{1.0, 2.0})
-	store.Close()
+	_, _ = store.Append([]float32{1.0, 2.0})
+	_ = store.Close()
 
 	// Round 2 (Append more)
 	store, _ = NewDiskVectorStore(path, dim)
 	if store.Size() != 1 {
 		t.Fatalf("Expected size 1, got %d", store.Size())
 	}
-	store.Append([]float32{3.0, 4.0})
-	store.Close()
+	_, _ = store.Append([]float32{3.0, 4.0})
+	_ = store.Close()
 
 	// Round 3 (Verify all)
 	store, _ = NewDiskVectorStore(path, dim)
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	if store.Size() != 2 {
 		t.Fatalf("Expected size 2, got %d", store.Size())
 	}

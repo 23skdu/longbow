@@ -98,7 +98,7 @@ func TestArrowHNSW_DataTypes(t *testing.T) {
 
 			locStore := NewChunkedLocationStore()
 			idx := NewArrowHNSW(ds, config, locStore)
-			defer idx.Close()
+			defer func() { _ = idx.Close() }()
 
 			// 2. Ingestion (AddBatch)
 			// rowIdxs: 0..count-1

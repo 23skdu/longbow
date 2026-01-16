@@ -17,9 +17,8 @@ func AdaptivelySliceBatches(
 	records []arrow.RecordBatch,
 	tombstones map[int]*query.Bitset,
 	strategy *flight.AdaptiveChunkStrategy,
-) ([]arrow.RecordBatch, map[int]*query.Bitset) {
-	var outRecords []arrow.RecordBatch
-	outTombstones := make(map[int]*query.Bitset)
+) (outRecords []arrow.RecordBatch, outTombstones map[int]*query.Bitset) {
+	outTombstones = make(map[int]*query.Bitset)
 	nextIdx := 0
 
 	// Track total adaptive chunks for metrics

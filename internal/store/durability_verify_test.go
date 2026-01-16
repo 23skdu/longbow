@@ -128,14 +128,13 @@ func TestDurability_SnapshotAndWAL(t *testing.T) {
 	ds, err := store2.GetDataset("ds_mixed")
 	require.NoError(t, err)
 
-	// ds.dataMu.RLock() // Not strictly needed in single thread test but good practice
 	fmt.Printf("Verify: Checking ds %p\n", ds)
 	totalRows := 0
 	for i, r := range ds.Records {
 		fmt.Printf("Verify: Batch %d rows: %d\n", i, r.NumRows())
 		totalRows += int(r.NumRows())
 	}
-	// ds.dataMu.RUnlock()
+
 	fmt.Printf("Verify: Total rows: %d\n", totalRows)
 	require.Equal(t, 10, totalRows)
 	require.Equal(t, 10, ds.IndexLen())

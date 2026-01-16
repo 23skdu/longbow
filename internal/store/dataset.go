@@ -58,6 +58,7 @@ type Dataset struct {
 
 	// In-flight Indexing Tracking (Compaction Safety)
 	PendingIndexJobs atomic.Int64
+	PendingIngestion atomic.Int64
 
 	// LWW State
 	LWW *TimestampMap

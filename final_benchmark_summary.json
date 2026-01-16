@@ -1,0 +1,202 @@
+[
+  {
+    "scale": 3000,
+    "doput": {
+      "name": "DoPut @ 3000",
+      "duration_seconds": 0.01933002471923828,
+      "throughput": 229.7103951847649,
+      "throughput_unit": "MB/s",
+      "rows": 3000,
+      "bytes_processed": 4656000,
+      "p50_ms": 0.0,
+      "p95_ms": 0.0,
+      "p99_ms": 0.0,
+      "errors": 0
+    },
+    "doget": {
+      "name": "DoGet @ 3000",
+      "duration_seconds": 0,
+      "throughput": 0,
+      "throughput_unit": "MB/s",
+      "rows": 0,
+      "bytes_processed": 0,
+      "p50_ms": 0.0,
+      "p95_ms": 0.0,
+      "p99_ms": 0.0,
+      "errors": 1
+    },
+    "dense": {
+      "name": "VectorSearch_f32 @ 3000",
+      "duration_seconds": 0.8145408630371094,
+      "throughput": 122.76854917645075,
+      "throughput_unit": "queries/s",
+      "rows": 1000,
+      "bytes_processed": 0,
+      "p50_ms": 7.858395576477051,
+      "p95_ms": 13.848066329956055,
+      "p99_ms": 19.28234100341797,
+      "errors": 0
+    },
+    "hybrid": null
+  },
+  {
+    "scale": 5000,
+    "doput": {
+      "name": "DoPut @ 5000",
+      "duration_seconds": 0.024806737899780273,
+      "throughput": 298.32671773333203,
+      "throughput_unit": "MB/s",
+      "rows": 5000,
+      "bytes_processed": 7760000,
+      "p50_ms": 0.0,
+      "p95_ms": 0.0,
+      "p99_ms": 0.0,
+      "errors": 0
+    },
+    "doget": {
+      "name": "DoGet @ 5000",
+      "duration_seconds": 0.03208112716674805,
+      "throughput": 138.40871594405385,
+      "throughput_unit": "MB/s",
+      "rows": 3000,
+      "bytes_processed": 4656000,
+      "p50_ms": 0.0,
+      "p95_ms": 0.0,
+      "p99_ms": 0.0,
+      "errors": 0
+    },
+    "dense": {
+      "name": "VectorSearch_f32 @ 5000",
+      "duration_seconds": 1.0096731185913086,
+      "throughput": 99.04195541971005,
+      "throughput_unit": "queries/s",
+      "rows": 1000,
+      "bytes_processed": 0,
+      "p50_ms": 9.528040885925293,
+      "p95_ms": 17.364025115966797,
+      "p99_ms": 20.409107208251953,
+      "errors": 0
+    },
+    "hybrid": null
+  },
+  {
+    "scale": 9000,
+    "doput": {
+      "name": "DoPut @ 9000",
+      "duration_seconds": 0.030716896057128906,
+      "throughput": 433.6676084324257,
+      "throughput_unit": "MB/s",
+      "rows": 9000,
+      "bytes_processed": 13968000,
+      "p50_ms": 0.0,
+      "p95_ms": 0.0,
+      "p99_ms": 0.0,
+      "errors": 0
+    },
+    "doget": {
+      "name": "DoGet @ 9000",
+      "duration_seconds": 0,
+      "throughput": 0,
+      "throughput_unit": "MB/s",
+      "rows": 0,
+      "bytes_processed": 0,
+      "p50_ms": 0.0,
+      "p95_ms": 0.0,
+      "p99_ms": 0.0,
+      "errors": 1
+    },
+    "dense": {
+      "name": "VectorSearch_f32 @ 9000",
+      "duration_seconds": 0.19000935554504395,
+      "throughput": 526.2898751124591,
+      "throughput_unit": "queries/s",
+      "rows": 1000,
+      "bytes_processed": 0,
+      "p50_ms": 1.298666000366211,
+      "p95_ms": 6.951808929443359,
+      "p99_ms": 19.717931747436523,
+      "errors": 0
+    },
+    "hybrid": null
+  },
+  {
+    "scale": 15000,
+    "doput": {
+      "name": "DoPut @ 15000",
+      "duration_seconds": 0.023888826370239258,
+      "throughput": 929.3691427887062,
+      "throughput_unit": "MB/s",
+      "rows": 15000,
+      "bytes_processed": 23280000,
+      "p50_ms": 0.0,
+      "p95_ms": 0.0,
+      "p99_ms": 0.0,
+      "errors": 0
+    },
+    "doget": {
+      "name": "DoGet @ 15000",
+      "duration_seconds": 0,
+      "throughput": 0,
+      "throughput_unit": "MB/s",
+      "rows": 0,
+      "bytes_processed": 0,
+      "p50_ms": 0.0,
+      "p95_ms": 0.0,
+      "p99_ms": 0.0,
+      "errors": 1
+    },
+    "dense": {
+      "name": "VectorSearch_f32 @ 15000",
+      "duration_seconds": 0.20056557655334473,
+      "throughput": 498.5900458018171,
+      "throughput_unit": "queries/s",
+      "rows": 1000,
+      "bytes_processed": 0,
+      "p50_ms": 1.9115209579467773,
+      "p95_ms": 3.288745880126953,
+      "p99_ms": 5.254030227661133,
+      "errors": 0
+    },
+    "hybrid": null
+  },
+  {
+    "scale": 25000,
+    "doput": {
+      "name": "DoPut @ 25000",
+      "duration_seconds": 0.07144927978515625,
+      "throughput": 517.8857447944474,
+      "throughput_unit": "MB/s",
+      "rows": 25000,
+      "bytes_processed": 38800000,
+      "p50_ms": 0.0,
+      "p95_ms": 0.0,
+      "p99_ms": 0.0,
+      "errors": 0
+    },
+    "doget": {
+      "name": "DoGet @ 25000",
+      "duration_seconds": 0,
+      "throughput": 0,
+      "throughput_unit": "MB/s",
+      "rows": 0,
+      "bytes_processed": 0,
+      "p50_ms": 0.0,
+      "p95_ms": 0.0,
+      "p99_ms": 0.0,
+      "errors": 1
+    },
+    "dense": {
+      "name": "VectorSearch_f32 @ 25000",
+      "duration_seconds": 0.3411250114440918,
+      "throughput": 293.1476633058006,
+      "throughput_unit": "queries/s",
+      "rows": 1000,
+      "bytes_processed": 0,
+      "p50_ms": 2.7840137481689453,
+      "p95_ms": 5.187273025512695,
+      "p99_ms": 13.355016708374023,
+      "errors": 0
+    },
+    "hybrid": null
+  }
+]

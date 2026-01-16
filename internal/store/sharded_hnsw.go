@@ -343,7 +343,7 @@ func (s *ShardedHNSW) AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx int) (
 }
 
 // SearchVectors implements VectorIndex.
-func (s *ShardedHNSW) SearchVectors(queryVec []float32, k int, filters []query.Filter, options SearchOptions) ([]SearchResult, error) {
+func (s *ShardedHNSW) SearchVectors(queryVec any, k int, filters []query.Filter, options SearchOptions) ([]SearchResult, error) {
 	if k <= 0 {
 		return nil, nil
 	}
@@ -465,7 +465,7 @@ func (s *ShardedHNSW) SearchVectors(queryVec []float32, k int, filters []query.F
 }
 
 // SearchVectorsWithBitmap implements VectorIndex.
-func (s *ShardedHNSW) SearchVectorsWithBitmap(queryVec []float32, k int, filter *query.Bitset, options SearchOptions) []SearchResult {
+func (s *ShardedHNSW) SearchVectorsWithBitmap(queryVec any, k int, filter *query.Bitset, options SearchOptions) []SearchResult {
 
 	type shardResult struct {
 		results  []SearchResult

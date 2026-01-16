@@ -210,9 +210,10 @@ func initializeDispatch() {
 		euclideanDistanceVerticalBatchImpl = euclideanVerticalBatchNEON
 		euclideanDistanceSQ8BatchImpl = euclideanSQ8BatchGeneric // Fallback to generic for now
 		andBytesImpl = andBytesGeneric
-		euclideanDistanceF16Impl = euclideanF16NEON
-		cosineDistanceF16Impl = cosineF16NEON
-		dotProductF16Impl = dotF16NEON
+		// F16 Kernels: Use generic unrolled implementation due to potential alignment issues with NEON assembly
+		euclideanDistanceF16Impl = euclideanF16Unrolled4x
+		cosineDistanceF16Impl = cosineF16Unrolled4x
+		dotProductF16Impl = dotF16Unrolled4x
 		euclideanDistanceComplex64Impl = euclideanComplex64Unrolled   // Fallback
 		euclideanDistanceComplex128Impl = euclideanComplex128Unrolled // Fallback
 	default:
@@ -773,51 +774,51 @@ func matchInt64Generic(src []int64, val int64, op CompareOp, dst []byte) {
 	switch op {
 	case CompareEq:
 		for i, v := range src {
+			var res byte = 0
 			if v == val {
-				dst[i] = 1
-			} else {
-				dst[i] = 0
+				res = 1
 			}
+			dst[i] = res
 		}
 	case CompareNeq:
 		for i, v := range src {
+			var res byte = 0
 			if v != val {
-				dst[i] = 1
-			} else {
-				dst[i] = 0
+				res = 1
 			}
+			dst[i] = res
 		}
 	case CompareGt:
 		for i, v := range src {
+			var res byte = 0
 			if v > val {
-				dst[i] = 1
-			} else {
-				dst[i] = 0
+				res = 1
 			}
+			dst[i] = res
 		}
 	case CompareGe:
 		for i, v := range src {
+			var res byte = 0
 			if v >= val {
-				dst[i] = 1
-			} else {
-				dst[i] = 0
+				res = 1
 			}
+			dst[i] = res
 		}
 	case CompareLt:
 		for i, v := range src {
+			var res byte = 0
 			if v < val {
-				dst[i] = 1
-			} else {
-				dst[i] = 0
+				res = 1
 			}
+			dst[i] = res
 		}
 	case CompareLe:
 		for i, v := range src {
+			var res byte = 0
 			if v <= val {
-				dst[i] = 1
-			} else {
-				dst[i] = 0
+				res = 1
 			}
+			dst[i] = res
 		}
 	}
 }
@@ -826,51 +827,51 @@ func matchFloat32Generic(src []float32, val float32, op CompareOp, dst []byte) {
 	switch op {
 	case CompareEq:
 		for i, v := range src {
+			var res byte = 0
 			if v == val {
-				dst[i] = 1
-			} else {
-				dst[i] = 0
+				res = 1
 			}
+			dst[i] = res
 		}
 	case CompareNeq:
 		for i, v := range src {
+			var res byte = 0
 			if v != val {
-				dst[i] = 1
-			} else {
-				dst[i] = 0
+				res = 1
 			}
+			dst[i] = res
 		}
 	case CompareGt:
 		for i, v := range src {
+			var res byte = 0
 			if v > val {
-				dst[i] = 1
-			} else {
-				dst[i] = 0
+				res = 1
 			}
+			dst[i] = res
 		}
 	case CompareGe:
 		for i, v := range src {
+			var res byte = 0
 			if v >= val {
-				dst[i] = 1
-			} else {
-				dst[i] = 0
+				res = 1
 			}
+			dst[i] = res
 		}
 	case CompareLt:
 		for i, v := range src {
+			var res byte = 0
 			if v < val {
-				dst[i] = 1
-			} else {
-				dst[i] = 0
+				res = 1
 			}
+			dst[i] = res
 		}
 	case CompareLe:
 		for i, v := range src {
+			var res byte = 0
 			if v <= val {
-				dst[i] = 1
-			} else {
-				dst[i] = 0
+				res = 1
 			}
+			dst[i] = res
 		}
 	}
 }

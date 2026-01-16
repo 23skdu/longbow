@@ -73,49 +73,115 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 
 		found := false
 		ds.dataMu.RLock()
-		for i, rec := range ds.Records {
-			idColIdx := -1
-			for j, field := range rec.Schema().Fields() {
-				if field.Name == "id" {
-					idColIdx = j
+
+		// Use PrimaryIndex for O(1) lookup
+		if ds.PrimaryIndex != nil {
+			if loc, ok := ds.PrimaryIndex[req.ID]; ok {
+				// We found the location!
+
+				// Optimization: Check if already deleted inside the read lock first
+				// to avoid Upgrade to Write Lock if not needed.
+				if ts, ok := ds.Tombstones[loc.BatchIdx]; ok && ts != nil && ts.Contains(loc.RowIdx) {
+					// Already deleted, treat as success
+					found = true
+				} else {
+					// Need to set tombstone. Upgrade to write lock.
+					// Note: Upgrading RLock to Lock is not atomic. We must RUnlock then Lock.
+					ds.dataMu.RUnlock()
+					ds.dataMu.Lock()
+
+					// Re-verify location after re-lock (though PrimaryIndex is append-only for IDs usually)
+					// Verify tombstone again
+					if ds.Tombstones[loc.BatchIdx] == nil {
+						ds.Tombstones[loc.BatchIdx] = qry.NewBitset()
+					}
+					ds.Tombstones[loc.BatchIdx].Set(loc.RowIdx)
+					// Also update global 'deleted' set in HNSW if needed?
+					// Currently HNSW relies on dataset Tombstones or its own bitset.
+					// HNSW has 'deleted' bitset, synced via CleanupTombstones usually.
+					// But we should probably mark it here too if HNSW is tightly coupled?
+					// The architecture seems to be: Dataset Tombstones are source of truth.
+
+					metrics.TombstonesTotal.WithLabelValues(req.Dataset).Inc()
+
+					// Re-acquire read lock for remaining logic if needed (e.g., if we were in a loop)
+					// But we are effectively done.
+					// To match surrounding code flow:
+					ds.dataMu.Unlock()
+					ds.dataMu.RLock() // Re-lock to match defer RUnlock()
+					found = true
+				}
+			}
+		}
+
+		// Fallback Linear Scan (only if PrimaryIndex failed or nil)
+		if !found && ds.PrimaryIndex == nil {
+			for i, rec := range ds.Records {
+				idColIdx := -1
+				for j, field := range rec.Schema().Fields() {
+					if field.Name == "id" {
+						idColIdx = j
+						break
+					}
+				}
+				if idColIdx == -1 {
+					continue
+				}
+
+				col := rec.Column(idColIdx)
+				rowIdx := -1
+
+				// Handle different ID types
+				switch arr := col.(type) {
+				case *array.String:
+					for j := 0; j < arr.Len(); j++ {
+						if arr.Value(j) == req.ID {
+							rowIdx = j
+							break
+						}
+					}
+				case *array.Int64:
+					var intID int64
+					if n, _ := fmt.Sscanf(req.ID, "%d", &intID); n == 1 {
+						for j := 0; j < arr.Len(); j++ {
+							if arr.Value(j) == intID {
+								rowIdx = j
+								break
+							}
+						}
+					}
+				case *array.Uint64:
+					var uintID uint64
+					if n, _ := fmt.Sscanf(req.ID, "%d", &uintID); n == 1 {
+						for j := 0; j < arr.Len(); j++ {
+							if arr.Value(j) == uintID {
+								rowIdx = j
+								break
+							}
+						}
+					}
+				}
+
+				if rowIdx != -1 {
+					// Check if already deleted
+					ts := ds.Tombstones[i]
+					if ts != nil && ts.Contains(rowIdx) {
+						found = true // Already deleted
+						break
+					}
+
+					ds.dataMu.RUnlock()
+					ds.dataMu.Lock()
+					if ds.Tombstones[i] == nil {
+						ds.Tombstones[i] = qry.NewBitset()
+					}
+					ds.Tombstones[i].Set(rowIdx)
+					ds.dataMu.Unlock()
+					metrics.TombstonesTotal.WithLabelValues(req.Dataset).Inc()
+					found = true
+					ds.dataMu.RLock()
 					break
 				}
-			}
-			if idColIdx == -1 {
-				continue
-			}
-
-			idCol, ok := rec.Column(idColIdx).(*array.String)
-			if !ok {
-				continue
-			}
-
-			for j := 0; j < idCol.Len(); j++ {
-				if idCol.Value(j) != req.ID {
-					continue
-				}
-
-				// Check if already deleted
-				ts := ds.Tombstones[i]
-				if ts != nil && ts.Contains(j) {
-					continue
-				}
-
-				// Found it! Set tombstone
-				ds.dataMu.RUnlock()
-				ds.dataMu.Lock()
-				if ds.Tombstones[i] == nil {
-					ds.Tombstones[i] = qry.NewBitset()
-				}
-				ds.Tombstones[i].Set(j)
-				ds.dataMu.Unlock()
-				metrics.TombstonesTotal.WithLabelValues(req.Dataset).Inc()
-				found = true
-				ds.dataMu.RLock() // Re-lock for loop continuity or exit
-				break
-			}
-			if found {
-				break
 			}
 		}
 		ds.dataMu.RUnlock()

@@ -18,7 +18,7 @@ from concurrent.futures import ThreadPoolExecutor
 from collections import defaultdict
 
 # Config
-DATASET = "perf_test"
+DATASET = "perf_test_v4"
 DIM = 384
 SIZES = [3000, 5000, 7000, 9000, 15000, 20000]
 PROFILES_DIR = "profiles_comprehensive"
@@ -45,7 +45,7 @@ def get_client(uri):
 
 def generate_batch(start_id, count, dim, include_metadata=False):
     """Generate Arrow batch with optional metadata for filtered/hybrid search"""
-    ids = pa.array(np.arange(start_id, start_id + count), type=pa.int64())
+    ids = pa.array([str(i) for i in range(start_id, start_id + count)], type=pa.string())
     data = np.random.rand(count, dim).astype(np.float32)
     tensor_type = pa.list_(pa.float32(), dim)
     flat_data = data.flatten()
@@ -202,7 +202,7 @@ def benchmark_sparse_search(clients, k=10, num_queries=500):
                 "dataset": DATASET,
                 "vector": vec,
                 "k": k,
-                "filter": {"category": f"cat_{i % 10}"}
+                "filters": [{"field": "category", "operator": "==", "value": f"cat_{i % 10}"}]
             }).encode("utf-8")
             
             client = clients[i % len(clients)]
@@ -234,7 +234,7 @@ def benchmark_filtered_search(clients, k=10, num_queries=500):
                 "dataset": DATASET,
                 "vector": vec,
                 "k": k,
-                "filter": {"category": f"cat_{i % 3}"}  # Filter to 30% of data
+                "filters": [{"field": "category", "operator": "==", "value": f"cat_{i % 3}"}]  # Filter to 30% of data
             }).encode("utf-8")
             
             client = clients[i % len(clients)]
@@ -295,7 +295,7 @@ def benchmark_tombstone_deletion(clients, ids_to_delete):
     def del_one(id_val):
         nonlocal errors
         try:
-            req = json.dumps({"dataset": DATASET, "id": id_val}).encode("utf-8")
+            req = json.dumps({"dataset": DATASET, "id": str(id_val)}).encode("utf-8")
             action = flight.Action("Delete", req)
             list(clients[0].do_action(action))
         except Exception as e:

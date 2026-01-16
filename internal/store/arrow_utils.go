@@ -209,6 +209,42 @@ func ExtractVectorFromArrow(rec arrow.RecordBatch, rowIdx, colIdx int) ([]float3
 			res[i] = float32(val)
 		}
 		return res, nil
+	case []int16:
+		res := make([]float32, len(v))
+		for i, val := range v {
+			res[i] = float32(val)
+		}
+		return res, nil
+	case []uint16:
+		res := make([]float32, len(v))
+		for i, val := range v {
+			res[i] = float32(val)
+		}
+		return res, nil
+	case []int32:
+		res := make([]float32, len(v))
+		for i, val := range v {
+			res[i] = float32(val)
+		}
+		return res, nil
+	case []uint32:
+		res := make([]float32, len(v))
+		for i, val := range v {
+			res[i] = float32(val)
+		}
+		return res, nil
+	case []int64:
+		res := make([]float32, len(v))
+		for i, val := range v {
+			res[i] = float32(val)
+		}
+		return res, nil
+	case []uint64:
+		res := make([]float32, len(v))
+		for i, val := range v {
+			res[i] = float32(val)
+		}
+		return res, nil
 	default:
 		return nil, fmt.Errorf("ExtractVectorFromArrow: casting from %T to []float32 not implemented", anyVec)
 	}

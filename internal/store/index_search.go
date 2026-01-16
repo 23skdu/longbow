@@ -70,7 +70,12 @@ func (h *HNSWIndex) GetNeighbors(id VectorID) ([]VectorID, error) {
 
 // SearchVectors performs k-NN search returning full results with scores (distances).
 // Uses striped locks for location access to reduce contention in result processing.
-func (h *HNSWIndex) SearchVectors(queryVec []float32, k int, filters []qry.Filter, options SearchOptions) ([]SearchResult, error) {
+func (h *HNSWIndex) SearchVectors(queryVec any, k int, filters []qry.Filter, options SearchOptions) ([]SearchResult, error) {
+	q, ok := queryVec.([]float32)
+	if !ok {
+		return nil, fmt.Errorf("HNSWIndex only supports []float32, got %T", queryVec)
+	}
+
 	defer func(start time.Time) {
 		metrics.SearchLatencySeconds.WithLabelValues(h.dataset.Name, "vector").Observe(time.Since(start).Seconds())
 	}(time.Now())
@@ -109,10 +114,10 @@ func (h *HNSWIndex) SearchVectors(queryVec []float32, k int, filters []qry.Filte
 
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		// PQ Encoding for query
-		var graphQuery = queryVec
+		var graphQuery = q
 		h.pqCodesMu.RLock()
 		if h.pqEnabled && h.pqEncoder != nil {
-			codes, _ := h.pqEncoder.Encode(queryVec)
+			codes, _ := h.pqEncoder.Encode(q)
 			graphQuery = pq.PackBytesToFloat32s(codes)
 		}
 		h.pqCodesMu.RUnlock()
@@ -126,7 +131,7 @@ func (h *HNSWIndex) SearchVectors(queryVec []float32, k int, filters []qry.Filte
 		// Use parallel processing for large result sets
 		cfg := h.getParallelSearchConfig()
 		if cfg.Enabled && len(neighbors) >= cfg.Threshold {
-			res := h.processResultsParallel(queryVec, neighbors, k, filters)
+			res := h.processResultsParallel(q, neighbors, k, filters)
 			// If we found enough, or it's the last attempt, return
 			if len(res) >= k || attempt == maxRetries || len(filters) == 0 {
 				return res, nil
@@ -180,7 +185,7 @@ func (h *HNSWIndex) SearchVectors(queryVec []float32, k int, filters []qry.Filte
 		var packedLen int
 		h.pqCodesMu.RLock()
 		if h.pqEnabled && h.pqEncoder != nil {
-			pqTable = h.pqEncoder.ComputeDistanceTableFlat(queryVec)
+			pqTable = h.pqEncoder.ComputeDistanceTableFlat(q)
 			pqM = h.pqEncoder.CodeSize()
 			const batchSize = searchBatchSize
 			pqFlatCodes = ctx.pqFlatCodes[:batchSize*pqM]
@@ -256,7 +261,7 @@ func (h *HNSWIndex) SearchVectors(queryVec []float32, k int, filters []qry.Filte
 						copy(pqFlatCodes[j*pqM:], srcCodes)
 						pqBatchResults[j] = -1
 					} else {
-						dist := distFunc(queryVec, vec)
+						dist := distFunc(q, vec)
 						res = append(res, SearchResult{ID: id, Score: dist})
 						count++
 						if pqTable != nil {
@@ -307,7 +312,12 @@ func (h *HNSWIndex) SearchVectors(queryVec []float32, k int, filters []qry.Filte
 }
 
 // SearchVectorsWithBitmap returns k nearest neighbors filtered by a bitset.
-func (h *HNSWIndex) SearchVectorsWithBitmap(queryVec []float32, k int, filter *qry.Bitset, options SearchOptions) []SearchResult {
+func (h *HNSWIndex) SearchVectorsWithBitmap(queryVec any, k int, filter *qry.Bitset, options SearchOptions) []SearchResult {
+	q, ok := queryVec.([]float32)
+	if !ok {
+		return []SearchResult{}
+	}
+
 	if filter == nil || filter.Count() == 0 {
 		return []SearchResult{}
 	}
@@ -318,14 +328,14 @@ func (h *HNSWIndex) SearchVectorsWithBitmap(queryVec []float32, k int, filter *q
 
 	count := filter.Count()
 	if count < 1000 {
-		return h.searchBruteForceWithBitmap(queryVec, k, filter)
+		return h.searchBruteForceWithBitmap(q, k, filter)
 	}
 
 	// Adaptive limit calculation based on filter selectivity
 	limit := calculateAdaptiveLimit(k, count, h.Len())
 
 	h.mu.RLock()
-	neighbors := h.Graph.Search(queryVec, limit)
+	neighbors := h.Graph.Search(q, limit)
 	h.mu.RUnlock()
 
 	distFunc := h.GetDistanceFunc()
@@ -345,7 +355,7 @@ func (h *HNSWIndex) SearchVectorsWithBitmap(queryVec []float32, k int, filter *q
 	var packedLen int
 	h.pqCodesMu.RLock()
 	if h.pqEnabled && h.pqEncoder != nil {
-		pqTable = h.pqEncoder.ComputeDistanceTableFlat(queryVec)
+		pqTable = h.pqEncoder.ComputeDistanceTableFlat(q)
 		pqM = h.pqEncoder.CodeSize()
 		pqFlatCodes = make([]byte, batchSize*pqM)
 		pqBatchResults = make([]float32, batchSize)
@@ -406,7 +416,7 @@ func (h *HNSWIndex) SearchVectorsWithBitmap(queryVec []float32, k int, filter *q
 					pqBatchResults[j] = -1 // Mark as needing SIMD
 				} else {
 					// Case 2: Standard distance
-					dist := distFunc(queryVec, vec)
+					dist := distFunc(q, vec)
 					res = append(res, SearchResult{ID: id, Score: dist})
 					resultCount++
 					if pqTable != nil {

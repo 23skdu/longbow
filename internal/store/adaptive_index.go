@@ -94,7 +94,7 @@ func (b *BruteForceIndex) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs 
 }
 
 // SearchVectorsWithBitmap returns k nearest neighbors filtered by a bitset.
-func (b *BruteForceIndex) SearchVectorsWithBitmap(q []float32, k int, filter *query.Bitset, options SearchOptions) []SearchResult {
+func (b *BruteForceIndex) SearchVectorsWithBitmap(q any, k int, filter *query.Bitset, options SearchOptions) []SearchResult {
 	// Not implemented for BruteForce, but needed for interface
 	return nil
 }
@@ -138,7 +138,12 @@ func (b *BruteForceIndex) EstimateMemory() int64 {
 }
 
 // SearchVectors returns the k nearest neighbors using linear scan.
-func (b *BruteForceIndex) SearchVectors(q []float32, k int, filters []query.Filter, options SearchOptions) ([]SearchResult, error) {
+func (b *BruteForceIndex) SearchVectors(q any, k int, filters []query.Filter, options SearchOptions) ([]SearchResult, error) {
+	qF32, ok := q.([]float32)
+	if !ok {
+		// BruteForce currently only supports float32
+		return nil, errors.New("BruteForceIndex only supports []float32 queries")
+	}
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 
@@ -156,7 +161,7 @@ func (b *BruteForceIndex) SearchVectors(q []float32, k int, filters []query.Filt
 			continue
 		}
 
-		dist := simd.EuclideanDistance(q, vec)
+		dist := simd.EuclideanDistance(qF32, vec)
 
 		if h.Len() < k {
 			heap.Push(h, bfHeapItem{
@@ -319,7 +324,7 @@ func (a *AdaptiveIndex) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []
 	return ids, nil
 }
 
-func (a *AdaptiveIndex) SearchVectorsWithBitmap(q []float32, k int, filter *query.Bitset, options SearchOptions) []SearchResult {
+func (a *AdaptiveIndex) SearchVectorsWithBitmap(q any, k int, filter *query.Bitset, options SearchOptions) []SearchResult {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	if a.usingHNSW.Load() {
@@ -420,7 +425,7 @@ func (a *AdaptiveIndex) migrateToHNSW() {
 }
 
 // SearchVectors delegates to the active index.
-func (a *AdaptiveIndex) SearchVectors(q []float32, k int, filters []query.Filter, options SearchOptions) ([]SearchResult, error) {
+func (a *AdaptiveIndex) SearchVectors(q any, k int, filters []query.Filter, options SearchOptions) ([]SearchResult, error) {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 

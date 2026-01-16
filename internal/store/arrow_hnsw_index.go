@@ -398,7 +398,7 @@ func (h *ArrowHNSW) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []int)
 }
 
 // SearchVectors implements VectorIndex.
-func (h *ArrowHNSW) SearchVectors(queryVec []float32, k int, filters []query.Filter, options SearchOptions) ([]SearchResult, error) {
+func (h *ArrowHNSW) SearchVectors(queryVec any, k int, filters []query.Filter, options SearchOptions) ([]SearchResult, error) {
 	// Post-filtering with Adaptive Expansion
 	initialFactor := 10
 	retryFactor := 50
@@ -406,7 +406,16 @@ func (h *ArrowHNSW) SearchVectors(queryVec []float32, k int, filters []query.Fil
 	q := queryVec // Alias to avoid shadowing package query
 
 	// Track throughput by dimension
-	dim := len(q)
+	dim := 0
+	switch v := q.(type) {
+	case []float32:
+		dim = len(v)
+	case []float16.Num:
+		dim = len(v)
+	case []complex64, []complex128:
+		// approximations
+		dim = 0 // handled inside resolveHNSWComputer
+	}
 	dimBucket := "other"
 	if dim == 128 || dim == 256 || dim == 384 || dim == 768 || dim == 1024 || dim == 1536 || dim == 3072 {
 		dimBucket = fmt.Sprintf("%d", dim)
@@ -569,7 +578,7 @@ func (h *ArrowHNSW) SearchVectors(queryVec []float32, k int, filters []query.Fil
 }
 
 // SearchVectorsWithBitmap implements VectorIndex.
-func (h *ArrowHNSW) SearchVectorsWithBitmap(q []float32, k int, filter *query.Bitset, options SearchOptions) []SearchResult {
+func (h *ArrowHNSW) SearchVectorsWithBitmap(q any, k int, filter *query.Bitset, options SearchOptions) []SearchResult {
 	ef := k + 100
 	// Calls h.Search which returns ([]SearchResult, error)
 	// The interface signature returns only []SearchResult

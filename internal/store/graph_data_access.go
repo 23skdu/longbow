@@ -163,3 +163,114 @@ func (gd *GraphData) GetVectorAsFloat32(id uint32) ([]float32, error) {
 
 	return nil, fmt.Errorf("vector data unavailable for ID %d", id)
 }
+
+// SetVector sets the vector at the given ID using the provided generic input.
+// It handles type conversion and storage selection.
+func (gd *GraphData) SetVector(id uint32, vec any) error {
+	cID := chunkID(id)
+	cOff := chunkOffset(id)
+	dims := gd.Dims
+
+	// 1. Switch on Input Type
+	switch v := vec.(type) {
+	case []float32:
+		return gd.SetVectorFromFloat32(id, v)
+	case []float16.Num:
+		// Native Float16 storage
+		if (gd.VectorsF16 != nil && int(cID) < len(gd.VectorsF16)) || gd.Type == VectorTypeFloat16 {
+			f16Chunk := gd.GetVectorsF16Chunk(cID)
+			if f16Chunk != nil {
+				start := int(cOff) * gd.GetPaddedDimsForType(VectorTypeFloat16)
+				copy(f16Chunk[start:start+dims], v)
+				return nil
+			}
+		}
+		// If main storage is Float32, convert?
+		if gd.Type == VectorTypeFloat32 {
+			chunk := gd.GetVectorsChunk(cID)
+			if chunk != nil {
+				start := int(cOff) * gd.GetPaddedDims()
+				dest := chunk[start : start+dims]
+				for i, val := range v {
+					dest[i] = val.Float32()
+				}
+				return nil
+			}
+		}
+	case []complex64:
+		if gd.Type == VectorTypeComplex64 {
+			chunk := gd.GetVectorsComplex64Chunk(cID)
+			if chunk != nil {
+				start := int(cOff) * gd.GetPaddedDims()
+				copy(chunk[start:start+dims], v)
+				return nil
+			}
+		}
+	case []complex128:
+		if gd.Type == VectorTypeComplex128 {
+			chunk := gd.GetVectorsComplex128Chunk(cID)
+			if chunk != nil {
+				start := int(cOff) * gd.GetPaddedDims()
+				copy(chunk[start:start+dims], v)
+				return nil
+			}
+		}
+	}
+
+	return fmt.Errorf("storage not available or type mismatch for SetVector: ID=%d Type=%s Input=%T", id, gd.Type, vec)
+}
+
+// GetVector retrieves the vector at ID in its native format (any).
+// It switches on the GraphData type to return the correct slice type.
+func (gd *GraphData) GetVector(id uint32) (any, error) {
+	cID := chunkID(id)
+	cOff := chunkOffset(id)
+	dims := gd.Dims
+
+	if dims <= 0 {
+		return nil, fmt.Errorf("invalid dimensions 0")
+	}
+
+	switch gd.Type {
+	case VectorTypeFloat32:
+		chunk := gd.GetVectorsChunk(cID)
+		if chunk != nil {
+			start := int(cOff) * gd.GetPaddedDims()
+			// Return a copy or slice? Search usually wants to use it directly.
+			// Let's return slice. Caller should handle safety (epoch/lock).
+			return chunk[start : start+dims], nil
+		}
+
+	case VectorTypeFloat16:
+		// Check F16 arena
+		chunk := gd.GetVectorsF16Chunk(cID)
+		if chunk != nil {
+			start := int(cOff) * gd.GetPaddedDimsForType(VectorTypeFloat16)
+			return chunk[start : start+dims], nil
+		}
+
+	case VectorTypeComplex64:
+		chunk := gd.GetVectorsComplex64Chunk(cID)
+		if chunk != nil {
+			start := int(cOff) * gd.GetPaddedDims() // Complex64 uses standard padding logic for itself if primary
+			return chunk[start : start+dims], nil
+		}
+
+	case VectorTypeComplex128:
+		chunk := gd.GetVectorsComplex128Chunk(cID)
+		if chunk != nil {
+			start := int(cOff) * gd.GetPaddedDims()
+			return chunk[start : start+dims], nil
+		}
+
+	case VectorTypeInt8:
+		chunk := gd.GetVectorsInt8Chunk(cID)
+		if chunk != nil {
+			start := int(cOff) * gd.GetPaddedDims()
+			return chunk[start : start+dims], nil
+		}
+	}
+
+	// Fallback or error
+	return nil, fmt.Errorf("vector data unavailable for ID %d (Type=%s)", id, gd.Type)
+}

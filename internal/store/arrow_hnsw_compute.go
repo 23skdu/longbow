@@ -172,9 +172,10 @@ func (c *pqComputer) Prefetch(id uint32) {
 
 // float16Computer handles Float16 vectors.
 type float16Computer struct {
-	data *GraphData
-	q    []float16.Num
-	dims int
+	data       *GraphData
+	q          []float16.Num
+	dims       int
+	paddedDims int
 }
 
 func (c *float16Computer) Compute(ids []uint32, dists []float32) {
@@ -187,7 +188,7 @@ func (c *float16Computer) ComputeSingle(id uint32) float32 {
 	cID := chunkID(id)
 	chunk := c.data.GetVectorsF16Chunk(cID)
 	if chunk != nil {
-		start := int(chunkOffset(id)) * c.dims
+		start := int(chunkOffset(id)) * c.paddedDims
 		if start+c.dims <= len(chunk) {
 			v := chunk[start : start+c.dims]
 			return simd.EuclideanDistanceF16(c.q, v)
@@ -200,7 +201,7 @@ func (c *float16Computer) Prefetch(id uint32) {
 	cID := chunkID(id)
 	chunk := c.data.GetVectorsF16Chunk(cID)
 	if chunk != nil {
-		start := int(chunkOffset(id)) * c.dims
+		start := int(chunkOffset(id)) * c.paddedDims
 		if start < len(chunk) {
 			simd.Prefetch(unsafe.Pointer(&chunk[start]))
 		}
@@ -208,54 +209,91 @@ func (c *float16Computer) Prefetch(id uint32) {
 }
 
 // resolveHNSWComputer selects the appropriate computer and encodes the query if necessary.
-func (h *ArrowHNSW) resolveHNSWComputer(data *GraphData, ctx *ArrowSearchContext, q []float32) HNSWDistanceComputer {
-	dims := len(q)
+func (h *ArrowHNSW) resolveHNSWComputer(data *GraphData, ctx *ArrowSearchContext, queryVec any, approx bool) HNSWDistanceComputer {
+	// Defaults if we can't determine dimensions from query logic below (fallback)
+	dims := int(h.dims.Load())
 	disk := h.diskGraph.Load() // Load disk backend
 
 	// 1. Float16 Native
 	// 1. Float16 Native
-	if h.config.Float16Enabled || data.Type == VectorTypeFloat16 {
-		if cap(ctx.queryF16) < dims {
-			ctx.queryF16 = make([]float16.Num, dims)
-		}
-		ctx.queryF16 = ctx.queryF16[:dims]
-
-		// Convert query: float32 -> float16
-		for i, v := range q {
-			ctx.queryF16[i] = float16.New(v)
-		}
-
+	if qF16, ok := queryVec.([]float16.Num); ok {
+		// Native Float16 query
 		metrics.HNSWPolymorphicSearchCount.WithLabelValues("float16").Inc()
 		return &float16Computer{
-			data: data,
-			q:    ctx.queryF16,
-			dims: data.Dims,
+			data:       data,
+			q:          qF16,
+			dims:       data.Dims,
+			paddedDims: data.GetPaddedDimsForType(VectorTypeFloat16),
+		}
+	}
+
+	// Float16 Enabled but using Float32 query (conversion required)
+	if h.config.Float16Enabled || data.Type == VectorTypeFloat16 {
+		if qF32, ok := queryVec.([]float32); ok {
+			dims := len(qF32)
+			if cap(ctx.queryF16) < dims {
+				ctx.queryF16 = make([]float16.Num, dims)
+			}
+			ctx.queryF16 = ctx.queryF16[:dims]
+
+			// Convert query: float32 -> float16
+			for i, v := range qF32 {
+				ctx.queryF16[i] = float16.New(v)
+			}
+
+			metrics.HNSWPolymorphicSearchCount.WithLabelValues("float16").Inc()
+			return &float16Computer{
+				data:       data,
+				q:          ctx.queryF16,
+				dims:       data.Dims,
+				paddedDims: data.GetPaddedDimsForType(VectorTypeFloat16),
+			}
 		}
 	}
 
 	// 2. Complex Types
+	// 2. Complex Types
 	if data.Type == VectorTypeComplex64 {
-		// Convert Query slice q (float32 interleaved) to complex64
-		// q is [re, im, re, im...]
-		qC := make([]complex64, dims/2)
-		for i := 0; i < dims/2; i++ {
-			qC[i] = complex(q[2*i], q[2*i+1])
+		if qC64, ok := queryVec.([]complex64); ok {
+			return &complex64Computer{
+				data: data,
+				q:    qC64,
+				dims: data.Dims,
+			}
 		}
-		return &complex64Computer{
-			data: data,
-			q:    qC,
-			dims: data.Dims,
+		if qF32, ok := queryVec.([]float32); ok {
+			dims := len(qF32)
+			// Convert Query slice qF32 (float32 interleaved) to complex64
+			qC := make([]complex64, dims/2)
+			for i := 0; i < dims/2; i++ {
+				qC[i] = complex(qF32[2*i], qF32[2*i+1])
+			}
+			return &complex64Computer{
+				data: data,
+				q:    qC,
+				dims: data.Dims,
+			}
 		}
 	}
 	if data.Type == VectorTypeComplex128 {
-		qC := make([]complex128, dims/2)
-		for i := 0; i < dims/2; i++ {
-			qC[i] = complex(float64(q[2*i]), float64(q[2*i+1]))
+		if qC128, ok := queryVec.([]complex128); ok {
+			return &complex128Computer{
+				data: data,
+				q:    qC128,
+				dims: data.Dims,
+			}
 		}
-		return &complex128Computer{
-			data: data,
-			q:    qC,
-			dims: data.Dims,
+		if qF32, ok := queryVec.([]float32); ok {
+			dims := len(qF32)
+			qC := make([]complex128, dims/2)
+			for i := 0; i < dims/2; i++ {
+				qC[i] = complex(float64(qF32[2*i]), float64(qF32[2*i+1]))
+			}
+			return &complex128Computer{
+				data: data,
+				q:    qC,
+				dims: data.Dims,
+			}
 		}
 	}
 
@@ -263,44 +301,63 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *GraphData, ctx *ArrowSearchContext
 
 	// 3. PQ (reordered index for diff)
 	if h.config.PQEnabled && h.pqEncoder != nil {
-		// Prepare ADC table
-		table, err := h.pqEncoder.BuildADCTable(q)
-		if err == nil {
-			metrics.HNSWPolymorphicSearchCount.WithLabelValues("pq").Inc()
-			ctx.adcTable = table
-			return &pqComputer{
-				data:         data,
-				disk:         disk,
-				adcTable:     ctx.adcTable,
-				pqEncoder:    h.pqEncoder,
-				scratchCodes: ctx.scratchPQCodes,
-				pqM:          data.PQDims, // Use data.PQDims (loaded from graph)
+		if qF32, ok := queryVec.([]float32); ok {
+			// Prepare ADC table
+			table, err := h.pqEncoder.BuildADCTable(qF32)
+			if err == nil {
+				metrics.HNSWPolymorphicSearchCount.WithLabelValues("pq").Inc()
+				ctx.adcTable = table
+				return &pqComputer{
+					data:         data,
+					disk:         disk,
+					adcTable:     ctx.adcTable,
+					pqEncoder:    h.pqEncoder,
+					scratchCodes: ctx.scratchPQCodes,
+					pqM:          data.PQDims, // Use data.PQDims (loaded from graph)
+				}
 			}
 		}
-	}
 
-	// 4. SQ8
-	if h.config.SQ8Enabled && h.quantizer != nil && h.metric == MetricEuclidean {
-		metrics.HNSWPolymorphicSearchCount.WithLabelValues("sq8").Inc()
-		if cap(ctx.querySQ8) < dims {
-			ctx.querySQ8 = make([]byte, dims)
-		}
-		ctx.querySQ8 = ctx.querySQ8[:dims]
-		h.quantizer.Encode(q, ctx.querySQ8)
+		// 4. SQ8
+		// Only supports float32 input for now as SQ8 encoding expects float32
+		if h.config.SQ8Enabled && h.quantizer != nil && h.metric == MetricEuclidean {
+			if qF32, ok := queryVec.([]float32); ok {
+				dims := len(qF32)
+				metrics.HNSWPolymorphicSearchCount.WithLabelValues("sq8").Inc()
+				if cap(ctx.querySQ8) < dims {
+					ctx.querySQ8 = make([]byte, dims)
+				}
+				ctx.querySQ8 = ctx.querySQ8[:dims]
+				h.quantizer.Encode(qF32, ctx.querySQ8)
 
-		return &sq8Computer{
-			data:       data,
-			disk:       disk,
-			querySQ8:   ctx.querySQ8,
-			quantizer:  h.quantizer,
-			dims:       data.Dims,
-			paddedDims: (data.Dims + 63) & ^63,
-			scale:      h.quantizer.L2Scale(),
+				return &sq8Computer{
+					data:       data,
+					disk:       disk,
+					querySQ8:   ctx.querySQ8,
+					quantizer:  h.quantizer,
+					dims:       data.Dims,
+					paddedDims: (data.Dims + 63) & ^63,
+					scale:      h.quantizer.L2Scale(),
+				}
+			}
 		}
 	}
 
 	// 5. Default Float32
 	metrics.HNSWPolymorphicSearchCount.WithLabelValues("float32").Inc()
+
+	// Handle Float32 input
+	var qF32 []float32
+	if q, ok := queryVec.([]float32); ok {
+		qF32 = q
+		dims = len(q) // Correct dims for blocking
+	} else {
+		// If using approximate search (approx=true) we might accept other types or panic.
+		// For now, if we reach here with non-float32 and no other handler matched, return a fallback or panic.
+		// However, return a float32Computer with nil query might panic later.
+		// It's safer to ensure we handle the type or convert.
+		return &float32Computer{data: data, dims: data.Dims} // Or panic("unsupported type")
+	}
 
 	// Select distance function with potential blocked optimization
 	var distFunc func([]float32, []float32) float32
@@ -325,7 +382,7 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *GraphData, ctx *ArrowSearchContext
 
 	return &float32Computer{
 		data:       data,
-		q:          q,
+		q:          qF32,
 		dims:       data.Dims,
 		paddedDims: data.GetPaddedDims(),
 		distFunc:   distFunc,

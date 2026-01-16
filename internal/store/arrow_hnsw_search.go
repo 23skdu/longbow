@@ -18,7 +18,7 @@ import (
 
 // Search performs k-NN search using the provided query vector.
 // Returns the k nearest neighbors sorted by distance.
-func (h *ArrowHNSW) Search(q []float32, k, ef int, filter *query.Bitset) ([]SearchResult, error) {
+func (h *ArrowHNSW) Search(q any, k, ef int, filter *query.Bitset) ([]SearchResult, error) {
 	// Lock-free access: load backend
 	backend := h.backend.Load()
 	if backend == nil || h.nodeCount.Load() == 0 {
@@ -117,7 +117,7 @@ func (h *ArrowHNSW) Search(q []float32, k, ef int, filter *query.Bitset) ([]Sear
 	}()
 
 	// Resolve Distance Computer
-	computer := h.resolveHNSWComputer(data, ctx, q)
+	computer := h.resolveHNSWComputer(data, ctx, q, false)
 
 	for l := maxL; l > 0; l-- {
 		ctx.Reset()
@@ -162,7 +162,7 @@ func (h *ArrowHNSW) Search(q []float32, k, ef int, filter *query.Bitset) ([]Sear
 
 		// Create a high-precision computer for refinement (usually Float32)
 		// We use the same context but ignore SQ8/PQ/BQ settings
-		refineComputer := h.resolveHNSWComputer(data, ctx, q)
+		refineComputer := h.resolveHNSWComputer(data, ctx, q, false)
 		// If refineComputer is SQ8, we need to force it to Float32/Primary
 		// Actually resolveHNSWComputer uses h.config.SQ8Enabled.
 		// For refinement, we want to bypass quantized computers.
@@ -170,12 +170,14 @@ func (h *ArrowHNSW) Search(q []float32, k, ef int, filter *query.Bitset) ([]Sear
 		// TODO: Refactor resolveHNSWComputer to accept a 'forceFullPrecision' flag.
 		// For now, let's manually build a float32 computer if possible.
 		if _, isSQ8 := refineComputer.(*sq8Computer); isSQ8 {
-			refineComputer = &float32Computer{
-				data:       data,
-				q:          q,
-				dims:       data.Dims,
-				paddedDims: data.GetPaddedDims(),
-				distFunc:   h.distFunc,
+			if qF32, ok := q.([]float32); ok {
+				refineComputer = &float32Computer{
+					data:       data,
+					q:          qF32,
+					dims:       data.Dims,
+					paddedDims: data.GetPaddedDims(),
+					distFunc:   h.distFunc,
+				}
 			}
 		}
 
@@ -193,6 +195,15 @@ func (h *ArrowHNSW) Search(q []float32, k, ef int, filter *query.Bitset) ([]Sear
 	}
 
 	return results, nil
+}
+
+// minCandidate returns the candidate with the smaller distance.
+// This small function encourages the compiler to use CMOV instructions.
+func minCandidate(a, b Candidate) Candidate {
+	if b.Dist < a.Dist {
+		return b
+	}
+	return a
 }
 
 func (h *ArrowHNSW) searchLayer(computer HNSWDistanceComputer, entryPoint uint32, ef, layer int, ctx *ArrowSearchContext, data *GraphData, filter *query.Bitset) (candidate uint32) {
@@ -243,10 +254,10 @@ func (h *ArrowHNSW) searchLayer(computer HNSWDistanceComputer, entryPoint uint32
 			}
 		}
 
-		if curr.Dist < closestDist {
-			closest = curr.ID
-			closestDist = curr.Dist
-		}
+		// Optimize closest update with potentially branchless minCandidate
+		best := minCandidate(Candidate{ID: closest, Dist: closestDist}, curr)
+		closest = best.ID
+		closestDist = best.Dist
 
 		// 1. Collect unvisited neighbors
 		ctx.scratchIDs = ctx.scratchIDs[:0]
@@ -430,37 +441,39 @@ func (h *ArrowHNSW) getVectorF16(id uint32) ([]float16.Num, error) {
 	}
 
 	// Fallback to dataset (cold storage)
-	v32, err := h.getVector(id)
+	vAny, err := h.getVectorAny(id)
 	if err != nil {
 		return nil, fmt.Errorf("vector f16 not found (and fallback failed: %v): %d", err, id)
 	}
 
-	// Convert F32 -> F16
-	v16 := make([]float16.Num, len(v32))
-	for i, f := range v32 {
-		v16[i] = float16.New(f)
+	if vF16, ok := vAny.([]float16.Num); ok {
+		return vF16, nil
 	}
-	return v16, nil
+
+	if vF32, ok := vAny.([]float32); ok {
+		// Convert F32 -> F16
+		v16 := make([]float16.Num, len(vF32))
+		for i, f := range vF32 {
+			v16[i] = float16.New(f)
+		}
+		return v16, nil
+	}
+
+	return nil, fmt.Errorf("cannot convert vector type %T to float16 for id %d", vAny, id)
 }
 
-func (h *ArrowHNSW) getVector(id uint32) ([]float32, error) {
+func (h *ArrowHNSW) getVectorAny(id uint32) (any, error) {
 	data := h.data.Load()
 	if data == nil {
 		return nil, fmt.Errorf("no graph data loaded")
 	}
 
 	// 1. Check Hot Storage (GraphData)
-	// Only return from GraphData if the ID is already committed ( < nodeCount ).
-	// Memory might be allocated (capacity) for future IDs (pre-grown) but contain zeros.
 	if int64(id) < h.nodeCount.Load() {
+		// mustGetVectorFromData returns 'any'
 		v := h.mustGetVectorFromData(data, id)
 		if v != nil {
-			if vf32, ok := v.([]float32); ok {
-				return vf32, nil
-			}
-			// If not float32 (e.g. float16 native), we should probably fail or convert?
-			// For now, getVector implies float32 return.
-			return nil, fmt.Errorf("vector type mismatch: expected []float32 for id %d", id)
+			return v, nil
 		}
 	}
 
@@ -482,7 +495,7 @@ func (h *ArrowHNSW) getVector(id uint32) ([]float32, error) {
 	}
 
 	rec := h.dataset.Records[loc.BatchIdx]
-	return ExtractVectorFromArrow(rec, loc.RowIdx, h.vectorColIdx)
+	return ExtractVectorAny(rec, loc.RowIdx, h.vectorColIdx)
 }
 
 func (h *ArrowHNSW) mustGetVectorFromData(data *GraphData, id uint32) any {
@@ -496,7 +509,13 @@ func (h *ArrowHNSW) mustGetVectorFromData(data *GraphData, id uint32) any {
 	}
 
 	// 1. Try Generic Accessor (F32, F16, Complex)
-	// This handles all exact-representation or simple-cast types.
+	// This handles all exact-representation types natively.
+	if vec, err := data.GetVector(id); err == nil {
+		return vec
+	}
+
+	// 1b. Try Float32 (Legacy / Conversion path)
+	// If GetVector failed (maybe type mismatch?), try generic float32 conversion.
 	if vec, err := data.GetVectorAsFloat32(id); err == nil {
 		return vec
 	}

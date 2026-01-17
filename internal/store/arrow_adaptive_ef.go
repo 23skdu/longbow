@@ -5,13 +5,13 @@ package store
 // When AdaptiveEf is enabled, this implements a linear ramp from AdaptiveEfMin
 // to full EfConstruction as the graph grows.
 func (h *ArrowHNSW) getAdaptiveEf(nodeCount int) int {
-	baseEf := h.efConstruction
-	
+	baseEf := int(h.efConstruction.Load())
+
 	// If adaptive ef is disabled, return base value
 	if !h.config.AdaptiveEf {
 		return baseEf
 	}
-	
+
 	// Determine minimum ef (default: baseEf / 4)
 	minEf := h.config.AdaptiveEfMin
 	if minEf == 0 {
@@ -20,7 +20,7 @@ func (h *ArrowHNSW) getAdaptiveEf(nodeCount int) int {
 			minEf = 50 // Absolute minimum for quality
 		}
 	}
-	
+
 	// Determine threshold (default: InitialCapacity / 2)
 	threshold := h.config.AdaptiveEfThreshold
 	if threshold == 0 {
@@ -29,14 +29,14 @@ func (h *ArrowHNSW) getAdaptiveEf(nodeCount int) int {
 			threshold = 1000 // Minimum threshold
 		}
 	}
-	
+
 	// Linear ramp: minEf -> baseEf over [0, threshold]
 	if nodeCount < threshold {
 		progress := float64(nodeCount) / float64(threshold)
 		currentEf := minEf + int(progress*float64(baseEf-minEf))
 		return currentEf
 	}
-	
+
 	// Past threshold, use full efConstruction
 	return baseEf
 }

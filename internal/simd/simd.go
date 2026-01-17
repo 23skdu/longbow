@@ -942,6 +942,14 @@ func matchInt64Generic(src []int64, val int64, op CompareOp, dst []byte) {
 				dst[i] = 0
 			}
 		}
+	case CompareLe:
+		for i, v := range src {
+			if v <= val {
+				dst[i] = 1
+			} else {
+				dst[i] = 0
+			}
+		}
 	default:
 		// Fallback for others
 		for i, v := range src {

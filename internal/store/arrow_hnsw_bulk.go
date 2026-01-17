@@ -5,23 +5,39 @@ import (
 	"fmt"
 	"runtime"
 	"slices"
-	"sync"
+	"strconv"
 	"sync/atomic"
 	"time"
 
 	"golang.org/x/sync/errgroup"
+
+	"github.com/23skdu/longbow/internal/metrics"
 )
 
 // BULK_INSERT_THRESHOLD defines the minimum batch size to trigger parallel bulk insert
 const BULK_INSERT_THRESHOLD = 1000
+
+// reverseUpdate tracks a reverse connection to be added.
+type reverseUpdate struct {
+	target uint32
+	source uint32
+	dist   float32
+}
 
 // AddBatchBulk attempts to insert a batch of vectors in parallel using a bulk strategy.
 // It assumes IDs, locations, and capacity have already been prepared/reserved.
 func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vecs [][]float32) error {
 	start := time.Now()
 	defer func() {
-		h.metricBulkInsertDuration.Observe(time.Since(start).Seconds())
+		duration := time.Since(start).Seconds()
+		h.metricBulkInsertDuration.Observe(duration)
 		h.metricBulkVectors.Add(float64(n))
+
+		// Enhanced Observability
+		typeStr := h.config.DataType.String()
+		dims := int(h.dims.Load())
+		metrics.HNSWBulkInsertLatencyByType.WithLabelValues(typeStr).Observe(duration)
+		metrics.HNSWBulkInsertLatencyByDim.WithLabelValues(strconv.Itoa(dims)).Observe(duration)
 	}()
 
 	// 1. Prepare Active Set
@@ -164,9 +180,6 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 	// 3. Layer-by-Layer Insertion (Top Down)
 	// We iterate max(maxL, batchMaxLevel) down to 0.
 
-	// 3. Layer-by-Layer Insertion (Top Down)
-	// We iterate max(maxL, batchMaxLevel) down to 0.
-
 	topL := maxL
 	if batchMaxLevel > topL {
 		topL = batchMaxLevel
@@ -178,11 +191,21 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 		currentEps[i] = ep
 	}
 
-	// Struct for batched reverse updates
-	type ReverseUpdate struct {
-		target uint32
-		source uint32
-		dist   float32
+	// Deferred Connection Pipeline (Phase 15 Implementation)
+	// ----------------------------------------------------
+	// We replace the phased approach (Link -> Wait -> Reverse) with a fully parallel pipeline.
+	// Producers (gLink) compute neighbors and add Forward connections immediately.
+	// They also Push Reverse connections to Sharded Lock-Free Ring Buffers.
+	// Consumers (gRev) drain the rings and apply Reverse connections concurrently.
+
+	// Constants
+	numShards := ShardedLockCount
+	ringSize := uint64(4096) // Capacity per shard ring
+
+	// Initialize Rings
+	rings := make([]*LockFreeRingBuffer[reverseUpdate], numShards)
+	for i := 0; i < numShards; i++ {
+		rings[i] = NewLockFreeRingBuffer[reverseUpdate](ringSize)
 	}
 
 	for lc := topL; lc >= 0; lc-- {
@@ -208,7 +231,7 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 		gLayer, _ := errgroup.WithContext(ctx)
 		gLayer.SetLimit(runtime.GOMAXPROCS(0))
 
-		// Batch active indices
+		// Batch active activeIndices
 		chunkSize = (len(activeIndices) + runtime.NumCPU() - 1) / runtime.NumCPU()
 		if chunkSize < 50 {
 			chunkSize = 50
@@ -241,7 +264,7 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 					} else {
 						// Insertion phase
 						// Use adaptive EF
-						ef := h.efConstruction
+						ef := int(h.efConstruction.Load())
 						if h.config.AdaptiveEf {
 							ef = h.getAdaptiveEf(int(h.nodeCount.Load()))
 						}
@@ -268,11 +291,6 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 
 		// 3b. Intra-Batch Matching (Blocked Matrix Multiplication)
 		// ... (Same logic, relying on graphCandidates pre-alloc) ...
-
-		// 3b. Intra-Batch Matching (Blocked Matrix Multiplication)
-		// For nodes inserting at this layer (lc <= node.level), they should see other inserting nodes.
-		// We compute pairwise distances between all inserting nodes at this layer.
-		// We add them to 'graphCandidates' if they are closer.
 
 		// Optimization: Only do this for L <= node.level
 		insertingIndices := make([]int, 0, len(activeIndices))
@@ -321,13 +339,7 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 
 					// Pre-allocation for reuse within this tile's worker
 					if useBQ {
-						// BQ encodes to slice, allocation unavoidable unless pooled or pre-extracted?
-						// We can use activeNodes[].vec directly but encoding is per-query.
-						// Actually activeNodes[].vec is float32.
-						// Optimize: Pre-encode BQ/SQ8 for all inserting nodes *before* matrix mult?
-						// Yes, but let's stick to blocked logic first. Optimization 10 covers mapped codebooks.
-						// Current bulk prep handles pre-encoding into storage chunks but not memory cache.
-						// We'll compute on fly or usage storage chunks? Memory cache (activeNodes) is float32.
+						// ...
 					} else if useSQ8 {
 						dims := int(h.dims.Load())
 						qSQ8 = make([]byte, dims)
@@ -358,10 +370,6 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 									continue
 								}
 
-								// Symmetric check: if row > col, we might have computed it?
-								// But we need full matrix for simple aggregation.
-								// Double work is fine for parallel simplicity vs synchronization.
-
 								tIdx := insertingIndices[col]
 								tVec := activeNodes[tIdx].vec
 
@@ -374,8 +382,6 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 									h.quantizer.Encode(tVec, tSQ8)
 									dist = float32(h.quantizer.Distance(qSQ8, tSQ8)) * scale
 								default:
-									// Dense - call distance func directly to avoid overhead
-									// h.distFunc is resolved in NewArrowHNSW
 									dist = h.distFunc(qVec, tVec)
 								}
 								resultsMatrix[row][col] = dist
@@ -407,17 +413,101 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 			}
 		}
 
-		// 3c. Linkage (Connections)
-		// Multi-phase approach:
-		// 1. Forward Connections (Parallel): Connect source -> neighbors. New nodes are local/owned, so safe.
-		// 2. Reverse Connections (Batched): Collect all neighbor -> source edges, then apply in batches.
+		// 3c. Linkage (Pipeline)
+		// Launch Consumers First
+		producersDone := atomic.Bool{}
+		producersDone.Store(false)
 
-		// direct updatesByLock array to avoid map overhead
-		updatesByLock := make([][]ReverseUpdate, ShardedLockCount)
-		updatesMu := make([]sync.Mutex, ShardedLockCount)
+		gRev, _ := errgroup.WithContext(ctx)
+		// Consumers: 1 per CPU core, processing shards of rings
+		numConsumers := runtime.NumCPU()
+		gRev.SetLimit(numConsumers)
 
+		for workerID := 0; workerID < numConsumers; workerID++ {
+			workerID := workerID
+			gRev.Go(func() error {
+				// Each worker handles slices: i, i+numConsumers, i+2*numConsumers...
+				// Efficient sharding
+
+				ctxSearch := h.searchPool.Get().(*ArrowSearchContext)
+				ctxSearch.Reset()
+				defer h.searchPool.Put(ctxSearch)
+
+				maxConn := h.mMax
+				if lc == 0 {
+					maxConn = h.mMax0
+				}
+
+				// Reusable batch buffers
+				const batchSize = 64
+				var curTarget uint32
+				curSources := make([]uint32, 0, batchSize)
+				curDists := make([]float32, 0, batchSize)
+
+				flush := func() {
+					if len(curSources) > 0 {
+						h.AddConnectionsBatch(ctxSearch, data, curTarget, curSources, curDists, lc, maxConn)
+						curSources = curSources[:0]
+						curDists = curDists[:0]
+					}
+				}
+
+				// Loop until completed
+				for {
+					anyWork := false
+
+					// Iterate assigned rings
+					for rIdx := workerID; rIdx < numShards; rIdx += numConsumers {
+						ring := rings[rIdx]
+
+						// Drain ring completely
+						for {
+							up, ok := ring.Pop()
+							if !ok {
+								break
+							}
+							anyWork = true
+
+							// Batch logic
+							if len(curSources) > 0 {
+								if up.target != curTarget || len(curSources) >= batchSize {
+									flush()
+								}
+							}
+							curTarget = up.target
+							curSources = append(curSources, up.source)
+							curDists = append(curDists, up.dist)
+						}
+					}
+
+					flush() // Ensure flushed after drain cycle
+
+					if !anyWork {
+						if producersDone.Load() {
+							// Check one last time to ensure no race where producer pushed just before setting done
+							// Actually atomic store gives happens-before?
+							// A simple double check is safe.
+							stillEmpty := true
+							for rIdx := workerID; rIdx < numShards; rIdx += numConsumers {
+								if rings[rIdx].Len() > 0 {
+									stillEmpty = false
+									break
+								}
+							}
+							if stillEmpty {
+								return nil
+							}
+						} else {
+							runtime.Gosched()
+						}
+					}
+				}
+			})
+		}
+
+		// Producers (gLink)
 		gLink, _ := errgroup.WithContext(ctx)
-		gLink.SetLimit(runtime.GOMAXPROCS(0))
+		gLink.SetLimit(runtime.GOMAXPROCS(0)) /**/
 
 		for i := 0; i < len(activeIndices); i += chunkSize {
 			// Capture range
@@ -466,7 +556,7 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 
 					neighbors := h.selectNeighbors(ctxSearch, candidates, m, data)
 
-					// 1. Forward Connections
+					// 1. Forward Connections (Immediate)
 					fwdTargets := make([]uint32, len(neighbors))
 					fwdDists := make([]float32, len(neighbors))
 					for j, nb := range neighbors {
@@ -475,85 +565,39 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 					}
 					h.AddConnectionsBatch(ctxSearch, data, node.id, fwdTargets, fwdDists, lc, maxConn)
 
-					// 2. Collect Reverse Connections
+					// 2. Reverse Connections (Push to Ring)
 					for _, neighbor := range neighbors {
 						targetID := neighbor.ID
-						lockID := targetID % ShardedLockCount
+						lockID := targetID % uint32(numShards) // Shard selection
 
-						updatesMu[lockID].Lock()
-						updatesByLock[lockID] = append(updatesByLock[lockID], ReverseUpdate{target: targetID, source: node.id, dist: neighbor.Dist})
-						updatesMu[lockID].Unlock()
+						update := reverseUpdate{target: targetID, source: node.id, dist: neighbor.Dist}
+
+						// Push Blocking to handle backpressure
+						if !rings[lockID].PushBlocking(update, 100*time.Millisecond) {
+							// If timed out, drop reverse connection?
+							// Or just retry indefinitely? Indefinitely is safer for correctness.
+							// In practice 4096 buffer should be plenty drainable.
+							// Force push? No method.
+							// Loop forever.
+							for !rings[lockID].Push(update) {
+								runtime.Gosched()
+							}
+						}
 					}
 				}
 				return nil
 			})
 		}
+
+		// Wait for producers
 		if err := gLink.Wait(); err != nil {
 			return err
 		}
 
-		// 3. Process Reverse Connections (Batched)
+		// Signal consumers
+		producersDone.Store(true)
 
-		// Execute updates parallelized by LockID
-		gRev, _ := errgroup.WithContext(ctx)
-		gRev.SetLimit(runtime.GOMAXPROCS(0))
-
-		for l := 0; l < ShardedLockCount; l++ {
-			l := l
-			updates := updatesByLock[l]
-			if len(updates) == 0 {
-				continue
-			}
-
-			gRev.Go(func() error {
-				ctxSearch := h.searchPool.Get().(*ArrowSearchContext)
-				ctxSearch.Reset()
-				defer h.searchPool.Put(ctxSearch)
-
-				maxConn := h.mMax
-				if lc == 0 {
-					maxConn = h.mMax0
-				}
-
-				// Sort by target to group batch updates
-				// Since all targets hash to the same lock, we can process them sequentially safely.
-				slices.SortFunc(updates, func(a, b ReverseUpdate) int {
-					if a.target < b.target {
-						return -1
-					}
-					if a.target > b.target {
-						return 1
-					}
-					return 0
-				})
-
-				var curTarget uint32
-				// Reuse buffers
-				curSources := make([]uint32, 0, 16)
-				curDists := make([]float32, 0, 16)
-
-				flush := func() {
-					if len(curSources) > 0 {
-						h.AddConnectionsBatch(ctxSearch, data, curTarget, curSources, curDists, lc, maxConn)
-						curSources = curSources[:0]
-						curDists = curDists[:0]
-					}
-				}
-
-				for _, up := range updates {
-					if len(curSources) > 0 && up.target != curTarget {
-						flush()
-					}
-					curTarget = up.target
-					curSources = append(curSources, up.source)
-					curDists = append(curDists, up.dist)
-				}
-				flush()
-
-				return nil
-			})
-		}
-
+		// Wait for consumers
 		if err := gRev.Wait(); err != nil {
 			return err
 		}
@@ -562,11 +606,8 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 	}
 
 	// 4. Update Global Stats
-	h.nodeCount.Add(int64(n)) // Done already? No, we didn't increment earlier.
-	// Wait, caller `AddBatch` logic in standard uses `Insert` which increments.
-	// We implement `AddBatch`, so we are responsible.
-	// Actually `AddBatch` calls `Grow` with size.
-	// But `nodeCount` tracks *inserted* nodes.
+	// ... (Same as before) ...
+	h.nodeCount.Add(int64(n))
 
 	// Update Max Level / Entry Point atomically
 	h.initMu.Lock()

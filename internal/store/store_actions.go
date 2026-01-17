@@ -18,7 +18,6 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
-	"github.com/apache/arrow-go/v18/arrow/memory"
 
 	lmem "github.com/23skdu/longbow/internal/memory"
 	"github.com/23skdu/longbow/internal/metrics"
@@ -366,6 +365,28 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 			strFilters[k] = fmt.Sprintf("%v", v)
 		}
 
+		// Generate Cache Key
+		cacheKey := HashHybridQuery(
+			req.Dataset,
+			req.Vector,
+			req.TextQuery,
+			req.K,
+			req.Alpha,
+			60,  // Default RRF k
+			0.0, // Default Graph Alpha
+			0,   // Default Graph Depth
+		)
+
+		// Check Cache
+		if cached, ok := s.queryCache.Get(cacheKey); ok {
+			// Hit!
+			body, err := json.Marshal(cached)
+			if err != nil {
+				return status.Errorf(codes.Internal, "failed to marshal cached results: %v", err)
+			}
+			return stream.Send(&flight.Result{Body: body})
+		}
+
 		// Use SearchHybrid for text+vector search
 		// Signature: (ctx, name, query, textQuery, k, alpha, rrfK, graphAlpha, graphDepth)
 		// Filters are currently not supported in this pipeline path
@@ -380,6 +401,10 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 			0.0, // Default Graph Alpha
 			0,   // Default Graph Depth
 		)
+		if err == nil {
+			// Cache the result
+			s.queryCache.Put(cacheKey, results)
+		}
 		if err != nil {
 			return ToGRPCStatus(err)
 		}
@@ -398,7 +423,7 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 	// Use TrackingAllocator to monitor zero-copy behavior (expecting low allocations)
 	// and track metadata overhead.
-	trackAlloc := lmem.NewTrackingAllocator(memory.DefaultAllocator)
+	trackAlloc := lmem.NewTrackingAllocator(s.pooledMem)
 	r, err := flight.NewRecordReader(stream, ipc.WithAllocator(trackAlloc))
 	if err != nil {
 		s.logger.Error().Err(err).Msg("DoPut failed to create reader")
@@ -597,6 +622,23 @@ func (s *VectorStore) flushPutBatch(ds *Dataset, batch []arrow.RecordBatch) erro
 
 	ts := time.Now().UnixNano()
 
+	// Backpressure: Check if we should throttle
+	if s.CheckIngestionBackpressure() {
+		// Log warning occasionally (every 5 seconds?) or use rate limiter
+		s.logger.Warn().Msg("Applying ingestion backpressure (throttling)")
+		// Loop with sleep until pressure relieves or context done
+		ticker := time.NewTicker(100 * time.Millisecond) // Check every 100ms
+		defer ticker.Stop()
+
+		// Wait loop
+		for s.CheckIngestionBackpressure() {
+			select {
+			case <-ticker.C:
+				// Continue checking
+			}
+		}
+	}
+
 	for _, rec := range batch {
 		rec.Retain() // Retain for Persistence Worker
 		rec.Retain() // Retain for Ingestion Worker (applyBatchToMemory triggers release)
@@ -614,12 +656,7 @@ func (s *VectorStore) flushPutBatch(ds *Dataset, batch []arrow.RecordBatch) erro
 		// Increment pending ingestion count
 		ds.PendingIngestion.Add(1)
 
-		select {
-		case s.ingestionQueue <- ingestionJob{datasetName: name, batch: rec, ts: ts}:
-		default:
-			// Backpressure logic for ingestion
-			s.ingestionQueue <- ingestionJob{datasetName: name, batch: rec, ts: ts}
-		}
+		s.ingestionQueue.PushBlocking(ingestionJob{datasetName: name, batch: rec, ts: ts}, 5*time.Second)
 	}
 
 	return nil
@@ -634,7 +671,7 @@ func (s *VectorStore) StoreRecordBatch(ctx context.Context, name string, rec arr
 	metrics.IngestionLagCount.Add(float64(rec.NumRows()))
 
 	s.persistenceQueue <- persistenceJob{datasetName: name, batch: rec, ts: ts}
-	s.ingestionQueue <- ingestionJob{datasetName: name, batch: rec, ts: ts}
+	s.ingestionQueue.PushBlocking(ingestionJob{datasetName: name, batch: rec, ts: ts}, 5*time.Second)
 
 	return nil
 }

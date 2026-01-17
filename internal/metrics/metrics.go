@@ -666,6 +666,46 @@ var (
 		},
 	)
 
+	// HNSWInsertLatencyByType measures insert latency per vector data type
+	HNSWInsertLatencyByType = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_hnsw_insert_latency_by_type_seconds",
+			Help:    "Latency of HNSW insert operations bucketed by vector type",
+			Buckets: []float64{0.0001, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1},
+		},
+		[]string{"type"},
+	)
+
+	// HNSWInsertLatencyByDim measures insert latency per vector dimension
+	HNSWInsertLatencyByDim = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_hnsw_insert_latency_by_dim_seconds",
+			Help:    "Latency of HNSW insert operations bucketed by dimension",
+			Buckets: []float64{0.0001, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1},
+		},
+		[]string{"dim"},
+	)
+
+	// HNSWBulkInsertLatencyByType measures bulk insert latency per vector data type
+	HNSWBulkInsertLatencyByType = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_hnsw_bulk_insert_latency_by_type_seconds",
+			Help:    "Latency of HNSW bulk insert operations bucketed by vector type",
+			Buckets: []float64{0.001, 0.01, 0.1, 0.5, 1, 5, 10, 30},
+		},
+		[]string{"type"},
+	)
+
+	// HNSWBulkInsertLatencyByDim measures bulk insert latency per vector dimension
+	HNSWBulkInsertLatencyByDim = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_hnsw_bulk_insert_latency_by_dim_seconds",
+			Help:    "Latency of HNSW bulk insert operations bucketed by dimension",
+			Buckets: []float64{0.001, 0.01, 0.1, 0.5, 1, 5, 10, 30},
+		},
+		[]string{"dim"},
+	)
+
 	HNSWBulkVectorsProcessedTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_hnsw_bulk_vectors_processed_total",

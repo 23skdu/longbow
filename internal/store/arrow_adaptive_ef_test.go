@@ -1,6 +1,5 @@
 package store
 
-
 import "testing"
 
 func TestGetAdaptiveEf(t *testing.T) {
@@ -104,9 +103,9 @@ func TestGetAdaptiveEf(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			h := &ArrowHNSW{
-				efConstruction: tt.config.EfConstruction,
-				config:         tt.config,
+				config: tt.config,
 			}
+			h.efConstruction.Store(int32(tt.config.EfConstruction))
 
 			result := h.getAdaptiveEf(tt.nodeCount)
 
@@ -128,23 +127,23 @@ func TestAdaptiveEfLinearRamp(t *testing.T) {
 	}
 
 	h := &ArrowHNSW{
-		efConstruction: config.EfConstruction,
-		config:         config,
+		config: config,
 	}
+	h.efConstruction.Store(int32(config.EfConstruction))
 
 	// Test that ef increases monotonically
 	prevEf := 0
 	for nodeCount := 0; nodeCount <= 10000; nodeCount += 1000 {
 		ef := h.getAdaptiveEf(nodeCount)
-		
+
 		if ef < prevEf {
 			t.Errorf("ef decreased: nodeCount=%d, ef=%d, prevEf=%d", nodeCount, ef, prevEf)
 		}
-		
+
 		if ef < 100 || ef > 400 {
 			t.Errorf("ef out of range: nodeCount=%d, ef=%d", nodeCount, ef)
 		}
-		
+
 		prevEf = ef
 	}
 }
@@ -160,13 +159,43 @@ func TestAdaptiveEfMinimumBounds(t *testing.T) {
 	}
 
 	h := &ArrowHNSW{
-		efConstruction: config.EfConstruction,
-		config:         config,
+		config: config,
 	}
+	h.efConstruction.Store(int32(config.EfConstruction))
 
 	ef := h.getAdaptiveEf(0)
-	
+
 	if ef < 50 {
 		t.Errorf("ef below absolute minimum: ef=%d, want >= 50", ef)
+	}
+}
+
+func TestSetEfConstruction(t *testing.T) {
+	config := ArrowHNSWConfig{
+		EfConstruction: 400,
+		AdaptiveEf:     true, // Enabled to check base scaling
+	}
+	h := &ArrowHNSW{
+		config: config,
+	}
+	h.efConstruction.Store(int32(config.EfConstruction))
+
+	// Initial check
+	if ef := h.getAdaptiveEf(100000); ef != 400 {
+		t.Errorf("Initial ef = %d, want 400", ef)
+	}
+
+	// Dynamic update
+	h.SetEfConstruction(100)
+
+	// Check update reflected
+	if val := h.efConstruction.Load(); val != 100 {
+		t.Errorf("efConstruction atomic = %d, want 100", val)
+	}
+
+	// Check adaptive scaling uses new base
+	// At high node count, should be close to base
+	if ef := h.getAdaptiveEf(100000); ef != 100 {
+		t.Errorf("Updated ef = %d, want 100", ef)
 	}
 }

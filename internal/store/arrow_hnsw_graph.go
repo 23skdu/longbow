@@ -61,10 +61,6 @@ type ArrowHNSWConfig struct {
 
 	IndexedColumns []string // Columns to build bitmap index for
 
-	QueryCacheEnabled  bool
-	QueryCacheCapacity int
-	QueryCacheTTL      time.Duration
-
 	DataType VectorDataType // underlying vector element type
 }
 
@@ -243,7 +239,7 @@ type ArrowHNSW struct {
 	m              int
 	mMax           int
 	mMax0          int
-	efConstruction int
+	efConstruction atomic.Int32
 
 	backend      atomic.Pointer[GraphData]
 	diskGraph    atomic.Pointer[DiskGraph] // Read-only mmap backing store
@@ -264,7 +260,6 @@ type ArrowHNSW struct {
 	metricEarlyTermination   *prometheus.CounterVec
 
 	bitmapIndex *BitmapIndex
-	queryCache  *QueryCache
 
 	// Connectivity Repair Agent (optional)
 	repairAgent *RepairAgent
@@ -589,243 +584,6 @@ func (g *GraphData) Close() error {
 	return nil
 }
 
-// Clone creates a deep copy of GraphData with new capacity.
-// Note: This is expensive and involves full Arena copy or re-allocation.
-// For SlabArena, we might just create new Arena and copy active data.
-func (gd *GraphData) Clone(minCap, targetDims int, sq8Enabled, pqEnabled bool, pqDims int, bqEnabled, float16Enabled, packedAdjacencyEnabled bool) *GraphData {
-	// Reuse the same arenas to keep offsets valid
-	// gd.SlabArena.AddRef() // SlabArena is simple struct/pointer, no ref counting needed exposed.
-	// Actually SlabArena is a pointer. Reusing it is fine.
-	// We do NOT use NewGraphData because it creates a new SlabArena.
-
-	numChunks := (minCap + ChunkSize - 1) / ChunkSize
-	if numChunks < 1 {
-		numChunks = 1
-	}
-
-	// Recalculate padded dimensions for new targetDims
-	elementSize := gd.Type.ElementSize()
-	rawBytes := targetDims * elementSize
-	paddedBytes := (rawBytes + 63) & ^63
-	paddedDims := targetDims
-	if elementSize > 0 {
-		paddedDims = paddedBytes / elementSize
-	}
-
-	newGD := &GraphData{
-		Capacity:     numChunks * ChunkSize,
-		Dims:         targetDims,
-		PaddedDims:   paddedDims,
-		PQDims:       pqDims,
-		Type:         gd.Type,
-		SlabArena:    gd.SlabArena,
-		Uint8Arena:   gd.Uint8Arena,
-		Int8Arena:    gd.Int8Arena,
-		Int16Arena:   gd.Int16Arena,
-		Uint16Arena:  gd.Uint16Arena,
-		Float32Arena: gd.Float32Arena,
-		Float16Arena: gd.Float16Arena,
-		Float64Arena: gd.Float64Arena,
-
-		Uint32Arena: gd.Uint32Arena,
-		Int32Arena:  gd.Int32Arena,
-		Uint64Arena: gd.Uint64Arena,
-		Int64Arena:  gd.Int64Arena,
-
-		Complex64Arena:  gd.Complex64Arena,
-		Complex128Arena: gd.Complex128Arena,
-
-		Levels: make([]uint64, numChunks),
-	}
-
-	if targetDims > 0 {
-		newGD.Vectors = make([]uint64, numChunks)
-		if float16Enabled {
-			newGD.VectorsF16 = make([]uint64, numChunks)
-		}
-		if sq8Enabled {
-			newGD.VectorsSQ8 = make([]uint64, numChunks)
-		}
-		if pqEnabled && pqDims > 0 {
-			newGD.VectorsPQ = make([]uint64, numChunks)
-		}
-		if bqEnabled {
-			newGD.VectorsBQ = make([]uint64, numChunks)
-		}
-		if gd.Type == VectorTypeComplex64 {
-			newGD.VectorsC64 = make([]uint64, numChunks)
-		}
-		if gd.Type == VectorTypeComplex128 {
-			newGD.VectorsC128 = make([]uint64, numChunks)
-		}
-	}
-
-	for i := 0; i < ArrowMaxLayers; i++ {
-		newGD.Neighbors[i] = make([]uint64, numChunks)
-		newGD.Counts[i] = make([]uint64, numChunks)
-		newGD.Versions[i] = make([]uint64, numChunks)
-	}
-
-	// Levels - use bulk copy for better performance with large allocations
-	limit := len(gd.Levels)
-	if len(newGD.Levels) < limit {
-		limit = len(newGD.Levels)
-	}
-	// For large allocations (>100 chunks), bulk copy is more efficient
-	if limit > 100 {
-		copy(newGD.Levels, gd.Levels[:limit])
-	} else {
-		for i := 0; i < limit; i++ {
-			newGD.Levels[i] = atomic.LoadUint64(&gd.Levels[i])
-		}
-	}
-
-	// Vectors
-	if len(gd.Vectors) > 0 {
-		limit = len(gd.Vectors)
-		if len(newGD.Vectors) < limit {
-			limit = len(newGD.Vectors)
-		}
-		if limit > 100 {
-			copy(newGD.Vectors, gd.Vectors[:limit])
-		} else {
-			for i := 0; i < limit; i++ {
-				newGD.Vectors[i] = atomic.LoadUint64(&gd.Vectors[i])
-			}
-		}
-	}
-
-	// SQ8
-	if len(gd.VectorsSQ8) > 0 {
-		limit = len(gd.VectorsSQ8)
-		if len(newGD.VectorsSQ8) < limit {
-			limit = len(newGD.VectorsSQ8)
-		}
-		for i := 0; i < limit; i++ {
-			newGD.VectorsSQ8[i] = atomic.LoadUint64(&gd.VectorsSQ8[i])
-		}
-	}
-
-	// PQ
-	if len(gd.VectorsPQ) > 0 {
-		limit = len(gd.VectorsPQ)
-		if len(newGD.VectorsPQ) < limit {
-			limit = len(newGD.VectorsPQ)
-		}
-		for i := 0; i < limit; i++ {
-			newGD.VectorsPQ[i] = atomic.LoadUint64(&gd.VectorsPQ[i])
-		}
-	}
-
-	// BQ
-	if len(gd.VectorsBQ) > 0 {
-		limit = len(gd.VectorsBQ)
-		if len(newGD.VectorsBQ) < limit {
-			limit = len(newGD.VectorsBQ)
-		}
-		for i := 0; i < limit; i++ {
-			newGD.VectorsBQ[i] = atomic.LoadUint64(&gd.VectorsBQ[i])
-		}
-	}
-
-	// Float16
-	if len(gd.VectorsF16) > 0 {
-		limit = len(gd.VectorsF16)
-		if len(newGD.VectorsF16) < limit {
-			limit = len(newGD.VectorsF16)
-		}
-		for i := 0; i < limit; i++ {
-			newGD.VectorsF16[i] = atomic.LoadUint64(&gd.VectorsF16[i])
-		}
-	}
-
-	// Packed Neighbors (v0.1.4-rc1)
-	for i := 0; i < ArrowMaxLayers; i++ {
-		newGD.PackedNeighbors[i] = gd.PackedNeighbors[i]
-	}
-
-	// Neighbors / Counts / Versions - bulk copy for large allocations
-	for i := 0; i < ArrowMaxLayers; i++ {
-		// Neighbors
-		limit = len(gd.Neighbors[i])
-		if len(newGD.Neighbors[i]) < limit {
-			limit = len(newGD.Neighbors[i])
-		}
-		if limit > 100 {
-			copy(newGD.Neighbors[i], gd.Neighbors[i][:limit])
-		} else {
-			for j := 0; j < limit; j++ {
-				newGD.Neighbors[i][j] = atomic.LoadUint64(&gd.Neighbors[i][j])
-			}
-		}
-
-		// Counts
-		limit = len(gd.Counts[i])
-		if len(newGD.Counts[i]) < limit {
-			limit = len(newGD.Counts[i])
-		}
-		if limit > 100 {
-			copy(newGD.Counts[i], gd.Counts[i][:limit])
-		} else {
-			for j := 0; j < limit; j++ {
-				newGD.Counts[i][j] = atomic.LoadUint64(&gd.Counts[i][j])
-			}
-		}
-
-		// Versions
-		limit = len(gd.Versions[i])
-		if len(newGD.Versions[i]) < limit {
-			limit = len(newGD.Versions[i])
-		}
-		if limit > 100 {
-			copy(newGD.Versions[i], gd.Versions[i][:limit])
-		} else {
-			for j := 0; j < limit; j++ {
-				newGD.Versions[i][j] = atomic.LoadUint64(&gd.Versions[i][j])
-			}
-		}
-	}
-
-	// Transfer Arena ownership?
-	// GraphData shares same Arena?
-	// NewGraphData creates NEW Arenas.
-	// We want to KEEP underlying data.
-	// So newGD should reference OLD Arenas.
-	newGD.SlabArena = gd.SlabArena
-	newGD.Uint8Arena = gd.Uint8Arena
-	newGD.Float32Arena = gd.Float32Arena
-	newGD.Uint32Arena = gd.Uint32Arena
-	newGD.Int32Arena = gd.Int32Arena
-	newGD.Uint64Arena = gd.Uint64Arena
-	newGD.Float16Arena = gd.Float16Arena
-	newGD.Complex64Arena = gd.Complex64Arena
-	newGD.Complex128Arena = gd.Complex128Arena
-
-	// Copy chunks for complex vectors
-	if gd.VectorsC64 != nil {
-		newGD.VectorsC64 = make([]uint64, len(newGD.Vectors))
-		limit := len(gd.VectorsC64)
-		if len(newGD.VectorsC64) < limit {
-			limit = len(newGD.VectorsC64)
-		}
-		for i := 0; i < limit; i++ {
-			newGD.VectorsC64[i] = atomic.LoadUint64(&gd.VectorsC64[i])
-		}
-	}
-	if gd.VectorsC128 != nil {
-		newGD.VectorsC128 = make([]uint64, len(newGD.Vectors))
-		limit := len(gd.VectorsC128)
-		if len(newGD.VectorsC128) < limit {
-			limit = len(newGD.VectorsC128)
-		}
-		for i := 0; i < limit; i++ {
-			newGD.VectorsC128[i] = atomic.LoadUint64(&gd.VectorsC128[i])
-		}
-	}
-
-	return newGD
-}
-
 func (h *ArrowHNSW) Grow(minCap, dims int) {
 	start := time.Now()
 	h.growMu.Lock()
@@ -844,14 +602,34 @@ func (h *ArrowHNSW) growNoLock(minCap, dims int) {
 	if !needsUpgrade && data.Capacity >= minCap && data.Dims == dims && data.PQDims == h.config.PQM {
 		return
 	}
-	newCap := data.Capacity
-	if newCap < minCap {
-		newCap = minCap + ChunkSize
+
+	// Determine new capacity with geometric growth
+	currentCap := data.Capacity
+	newCap := currentCap
+
+	// If current capacity is small, grow aggressively (2x)
+	// If large (>1M vectors), grow more conservatively (1.5x) to save memory
+	const LargeCapacityThreshold = 1_000_000
+
+	if minCap > currentCap {
+		if currentCap < LargeCapacityThreshold {
+			newCap = currentCap * 2
+		} else {
+			newCap = currentCap + (currentCap / 2) // 1.5x
+		}
+
+		// Ensure we satisfy the request
+		if newCap < minCap {
+			newCap = minCap
+		}
+
+		// Round up to ChunkSize
 		if newCap%ChunkSize != 0 {
 			newCap = ((newCap / ChunkSize) + 1) * ChunkSize
 		}
 	}
-	newGD := data.Clone(newCap, dims, h.config.SQ8Enabled, h.config.PQEnabled, h.config.PQM, h.config.BQEnabled, h.config.Float16Enabled, h.config.PackedAdjacencyEnabled) // fixed config
+
+	newGD := data.Clone(newCap, dims, h.config.SQ8Enabled, h.config.PQEnabled, h.config.PQM, h.config.BQEnabled, h.config.Float16Enabled, h.config.PackedAdjacencyEnabled)
 
 	h.data.Store(newGD)
 	h.backend.Store(newGD)

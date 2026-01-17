@@ -27,6 +27,7 @@ import (
 type VectorStore struct {
 	flight.BaseFlightServer
 	mem           memory.Allocator
+	pooledMem     memory.Allocator // Pooled allocator for transient ingestion buffers
 	logger        zerolog.Logger
 	maxMemory     atomic.Int64
 	currentMemory atomic.Int64
@@ -39,10 +40,10 @@ type VectorStore struct {
 	engine        *storage.StorageEngine // Manages WAL and Snapshots
 	snapshotReset chan time.Duration
 
-	indexQueue          *IndexJobQueue      // Integrated HNSW
-	ingestionQueue      chan ingestionJob   // Decoupled ingestion pipeline
-	persistenceQueue    chan persistenceJob // Async persistence queue
-	pendingOverflowJobs atomic.Int64        // Jobs spinning in applyBatchToMemory
+	indexQueue          *IndexJobQueue       // Integrated HNSW
+	ingestionQueue      *IngestionRingBuffer // Lock-free ring buffer
+	persistenceQueue    chan persistenceJob  // Async persistence queue
+	pendingOverflowJobs atomic.Int64         // Jobs spinning in applyBatchToMemory
 
 	// Lifecycle
 	stopChan          chan struct{}
@@ -126,6 +127,7 @@ func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes 
 
 	s := &VectorStore{
 		mem:          mem,
+		pooledMem:    NewPooledAllocator(),
 		logger:       logger,
 		memoryConfig: memCfg,
 		stopChan:     make(chan struct{}),
@@ -136,13 +138,14 @@ func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes 
 
 	s.maxMemory.Store(maxMemoryBytes)
 	s.indexQueue = NewIndexJobQueue(DefaultIndexJobQueueConfig())
-	s.ingestionQueue = make(chan ingestionJob, 10000)     // Increased buffer for high throughput
+	s.ingestionQueue = NewIngestionRingBuffer(256)        // 256 slots to prevent memory overrun (batches are large)
 	s.persistenceQueue = make(chan persistenceJob, 10000) // Increased buffer for persistence
 
 	s.nsManager = newNamespaceManager()
 	s.columnIndex = NewColumnInvertedIndex()
 
 	// Default Cache: 1024 entries, 60s TTL
+
 	// In future, make this configurable per dataset or global
 	s.queryCache = cache.NewQueryCache[[]SearchResult](1024, 60*time.Second, "global")
 
@@ -167,6 +170,32 @@ func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes 
 	s.StartIndexingWorkers(1)
 
 	return s
+}
+
+// CheckIngestionBackpressure checks if the system is under heavy load and
+// should throttle incoming requests.
+// Returns true if backpressure should be applied.
+func (s *VectorStore) CheckIngestionBackpressure() bool {
+	// 1. Memory Pressure
+	// If current memory > 90% of max memory, throttle.
+	maxMem := s.maxMemory.Load()
+	if maxMem > 0 {
+		currMem := s.currentMemory.Load()
+		if float64(currMem) > float64(maxMem)*0.9 {
+			return true
+		}
+	}
+
+	// 2. Queue Pressure
+	// If ingestion queue is > 80% full, throttle.
+	// Capacity is 16384 (hardcoded in NewVectorStore).
+	// Capacity is 256
+	const queueCap = 256
+	if s.ingestionQueue != nil && s.ingestionQueue.Len() > (queueCap*80)/100 {
+		return true
+	}
+
+	return false
 }
 
 // TrackMemory adds delta to current usage and logs if large

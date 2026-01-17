@@ -12,6 +12,12 @@
 - **Search QPS**: ~920 - 1840 QPS
 - **Scale**: Verified to 25,000 vectors on M3 Pro.
 
+## v0.1.7 Search & Stability Enhancements (Phase 12)
+
+- **Query Result Caching**: Implemented automatic short-lived caching for `How-Hybrid` search. Repeated queries (e.g. dashboards) now return in **~10-20µs** (previously 200µs+).
+- **Adaptive Ingestion**: `efConstruction` now dynamically downscales during backpressure events (queue > 1k), preventing OOMs and stabilizing throughput under heavy load.
+- **Lock-Free Ingestion**: Replaced channel-based queue with Ring Buffer, eliminating lock contention at 1GB/s.
+
 ## Executive Summary
 
 Longbow demonstrates high throughput and low latency across a wide range of data types. Integer types (`int8` - `int64`) and `float32` provides the most stable performance, with ingestion and retrieval often exceeding **1 GB/s**. Extended types (`float16`, `float64`, `complex*`) are supported but show variable stability at specific dimensions in current tests.

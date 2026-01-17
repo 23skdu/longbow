@@ -615,6 +615,17 @@ func (s *ShardedHNSW) GetDimension() uint32 {
 	return s.dimension
 }
 
+// SetEfConstruction updates the efConstruction parameter dynamically for all shards.
+func (s *ShardedHNSW) SetEfConstruction(ef int) {
+	s.shardsMu.RLock()
+	defer s.shardsMu.RUnlock()
+	for _, shard := range s.shards {
+		if shard != nil && shard.index != nil {
+			shard.index.SetEfConstruction(ef)
+		}
+	}
+}
+
 func (s *ShardedHNSW) TrainPQ(vectors [][]float32) error {
 	// For sharded HNSW, training PQ should ideally happen on the whole dataset
 	// and then distributed to shards or managed at the top level.

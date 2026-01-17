@@ -3,6 +3,7 @@ package store
 import (
 	"fmt"
 	"math"
+	"strconv"
 
 	"github.com/apache/arrow-go/v18/arrow/float16"
 
@@ -135,8 +136,10 @@ func (h *ArrowHNSW) Insert(id uint32, level int) error {
 // InsertWithVector inserts a vector that has already been retrieved.
 func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 	start := time.Now()
+	var dims int
 	defer func() {
-		h.metricInsertDuration.Observe(time.Since(start).Seconds())
+		duration := time.Since(start).Seconds()
+		h.metricInsertDuration.Observe(duration)
 		nodeCount := float64(h.nodeCount.Load())
 		h.metricNodeCount.Set(nodeCount)
 		if h.config.BQEnabled {
@@ -148,7 +151,12 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 		if h.dataset != nil {
 			dsName = h.dataset.Name
 		}
-		metrics.HNSWIngestionThroughputVectorsPerSecond.WithLabelValues(dsName, h.config.DataType.String()).Inc()
+		typeStr := h.config.DataType.String()
+		metrics.HNSWIngestionThroughputVectorsPerSecond.WithLabelValues(dsName, typeStr).Inc()
+
+		// Enhanced Observability
+		metrics.HNSWInsertLatencyByType.WithLabelValues(typeStr).Observe(duration)
+		metrics.HNSWInsertLatencyByDim.WithLabelValues(strconv.Itoa(dims)).Observe(duration)
 	}()
 
 	// Make a defensive copy of the vector is avoided by copying into GraphData first.
@@ -156,7 +164,7 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 
 	// 2. Check Capacity & SQ8/Vectors Status
 	// Check dimensions lock-free
-	dims := int(h.dims.Load())
+	dims = int(h.dims.Load())
 
 	data := h.data.Load()
 
@@ -409,7 +417,7 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 
 	// Determine efConstruction for this insertion
 	// If adaptive ef is enabled, scale based on current graph size
-	ef := h.efConstruction
+	ef := int(h.efConstruction.Load())
 	if h.config.AdaptiveEf {
 		nodeCount := int(h.nodeCount.Load())
 		ef = h.getAdaptiveEf(nodeCount)
@@ -1442,7 +1450,7 @@ func (h *ArrowHNSW) InsertWithVectorF16(id uint32, vec []float16.Num, level int)
 	}
 
 	// Insertion
-	ef := h.efConstruction
+	ef := int(h.efConstruction.Load())
 	if h.config.AdaptiveEf {
 		ef = h.getAdaptiveEf(int(h.nodeCount.Load()))
 	}

@@ -144,8 +144,6 @@ func (h *ArrowHNSW) Search(q any, k, ef int, filter *query.Bitset) ([]SearchResu
 			// dims is total float32 elements. Complex64 is 2x float32 size, so bytes = dims * 4
 		case VectorTypeComplex128:
 			typeLabel = "complex128"
-			// dims is total float32 elements. Complex128 is 16 bytes.
-			// One complex128 corresponds to 2 float32s (8 bytes). So size is double.
 			vecBytes = dims * 8
 		case VectorTypeUint8:
 			typeLabel = "uint8"
@@ -153,7 +151,27 @@ func (h *ArrowHNSW) Search(q any, k, ef int, filter *query.Bitset) ([]SearchResu
 		case VectorTypeInt8:
 			typeLabel = "int8"
 			vecBytes = dims
-			// add others as needed, default float32
+		case VectorTypeInt16:
+			typeLabel = "int16"
+			vecBytes = dims * 2
+		case VectorTypeUint16:
+			typeLabel = "uint16"
+			vecBytes = dims * 2
+		case VectorTypeInt32:
+			typeLabel = "int32"
+			vecBytes = dims * 4
+		case VectorTypeUint32:
+			typeLabel = "uint32"
+			vecBytes = dims * 4
+		case VectorTypeInt64:
+			typeLabel = "int64"
+			vecBytes = dims * 8
+		case VectorTypeUint64:
+			typeLabel = "uint64"
+			vecBytes = dims * 8
+		case VectorTypeFloat64:
+			typeLabel = "float64"
+			vecBytes = dims * 8
 		}
 	}
 	// Check for optimizations

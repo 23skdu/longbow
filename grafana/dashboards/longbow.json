@@ -2409,6 +2409,213 @@
       ],
       "title": "Datasets Warmed",
       "type": "stat"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 100
+      },
+      "id": 300,
+      "title": "Ingestion & Persistence Health",
+      "type": "row"
+    },
+    {
+      "datasource": "${datasource}",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 100
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 0,
+        "y": 101
+      },
+      "id": 301,
+      "targets": [
+        {
+          "expr": "longbow_ingestion_queue_depth",
+          "refId": "A"
+        }
+      ],
+      "title": "Ingestion Queue Depth",
+      "type": "stat"
+    },
+    {
+      "datasource": "${datasource}",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1000
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 6,
+        "y": 101
+      },
+      "id": 302,
+      "targets": [
+        {
+          "expr": "longbow_ingestion_lag_count",
+          "refId": "A"
+        }
+      ],
+      "title": "Ingestion Lag Count",
+      "type": "stat"
+    },
+    {
+      "datasource": "${datasource}",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 10
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 12,
+        "y": 101
+      },
+      "id": 303,
+      "targets": [
+        {
+          "expr": "longbow_wal_queue_depth",
+          "refId": "A"
+        }
+      ],
+      "title": "WAL Queue Depth",
+      "type": "stat"
+    },
+    {
+      "datasource": "${datasource}",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 18,
+        "y": 101
+      },
+      "id": 304,
+      "targets": [
+        {
+          "expr": "increase(longbow_wal_write_errors_total[5m])",
+          "refId": "A"
+        }
+      ],
+      "title": "WAL Write Errors (5m)",
+      "type": "stat"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 107
+      },
+      "id": 305,
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(longbow_wal_write_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "P99",
+          "refId": "A"
+        }
+      ],
+      "title": "WAL Write Duration P99",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 107
+      },
+      "id": 306,
+      "targets": [
+        {
+          "expr": "longbow_gc_tuner_target_gogc",
+          "legendFormat": "GOGC",
+          "refId": "A"
+        },
+        {
+          "expr": "longbow_gc_tuner_heap_utilization * 100",
+          "legendFormat": "Heap Util %",
+          "refId": "B"
+        }
+      ],
+      "title": "Adaptive GC Status",
+      "type": "timeseries"
     }
   ],
   "refresh": "5s",

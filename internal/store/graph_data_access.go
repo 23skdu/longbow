@@ -14,6 +14,12 @@ func (gd *GraphData) SetVectorFromFloat32(id uint32, vec []float32) error {
 	cOff := chunkOffset(id)
 	dims := gd.Dims // logical dims
 
+	// Safely determine the number of elements to copy
+	limit := dims
+	if len(vec) < limit {
+		limit = len(vec)
+	}
+
 	// 1. Try Float16 (Auxiliary or Primary)
 	// We check this first because if VectorsF16 exists (Aux), we prefer it for storage if enabled.
 	// Or if Type is Float16 (Primary).
@@ -24,8 +30,8 @@ func (gd *GraphData) SetVectorFromFloat32(id uint32, vec []float32) error {
 			stride := gd.GetPaddedDimsForType(VectorTypeFloat16)
 			start := int(cOff) * stride
 			dest := f16Chunk[start : start+dims]
-			for i, v := range vec {
-				dest[i] = float16.New(v)
+			for i := 0; i < limit; i++ {
+				dest[i] = float16.New(vec[i])
 			}
 			return nil
 		}
@@ -38,7 +44,7 @@ func (gd *GraphData) SetVectorFromFloat32(id uint32, vec []float32) error {
 	case VectorTypeFloat32:
 		chunk := gd.GetVectorsChunk(cID)
 		if chunk != nil {
-			copy(chunk[start:start+dims], vec)
+			copy(chunk[start:start+dims], vec[:limit])
 			return nil
 		}
 
@@ -47,6 +53,10 @@ func (gd *GraphData) SetVectorFromFloat32(id uint32, vec []float32) error {
 		if chunk != nil {
 			dest := chunk[start : start+dims]
 			// Input is interleaved [r, i, r, i...]
+			// Dims for complex type is number of complex numbers
+			// vec len is number of float32s.
+			// so vec len should be >= 2 * dims?
+			// Safety check for complex logic:
 			for i := 0; i < dims; i++ {
 				if 2*i+1 < len(vec) {
 					dest[i] = complex(vec[2*i], vec[2*i+1])
@@ -71,8 +81,8 @@ func (gd *GraphData) SetVectorFromFloat32(id uint32, vec []float32) error {
 		chunk := gd.GetVectorsFloat64Chunk(cID)
 		if chunk != nil {
 			dest := chunk[start : start+dims]
-			for i, v := range vec {
-				dest[i] = float64(v)
+			for i := 0; i < limit; i++ {
+				dest[i] = float64(vec[i])
 			}
 			return nil
 		}
@@ -81,8 +91,8 @@ func (gd *GraphData) SetVectorFromFloat32(id uint32, vec []float32) error {
 		chunk := gd.GetVectorsInt8Chunk(cID)
 		if chunk != nil {
 			dest := chunk[start : start+dims]
-			for i, v := range vec {
-				dest[i] = int8(v) // Simple cast, maybe add saturation?
+			for i := 0; i < limit; i++ {
+				dest[i] = int8(vec[i]) // Simple cast, maybe add saturation?
 			}
 			return nil
 		}

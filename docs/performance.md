@@ -26,26 +26,26 @@ Longbow demonstrates high throughput and low latency across a wide range of data
 
 The following matrix aggregates performance for `DoPut` (Ingestion), `DoGet` (Retrieval), and `Dense Search` (HNSW).
 
-| Type       |   Dim | DoPut (MB/s) | DoGet (MB/s) | Dense QPS | Status         |
-|:-----------|------:|-------------:|-------------:|----------:|:---------------|
-| **int8**   |   128 |       328.49 |       392.37 |      84.6 | **Stable**     |
-| **int8**   |   384 |       472.93 |       902.52 |      79.5 | **Stable**     |
-| **int16**  |   128 |       383.28 |      1190.97 |    1627.3 | **Stable**     |
-| **int16**  |   384 |       584.45 |      1642.40 |     929.0 | **Stable**     |
-| **int32**  |   128 |       297.56 |      1119.41 |    1442.6 | **Stable**     |
-| **int32**  |   384 |       679.91 |      1345.77 |     931.1 | **Stable**     |
-| **int64**  |   128 |       675.77 |      1737.55 |    1234.1 | **Stable**     |
-| **int64**  |   384 |      1022.08 |      1555.05 |     894.4 | **Stable**     |
-| **float32**|   128 |      1120.69 |       243.23 |      90.4 | **Stable**     |
-| **float32**|   384 |       342.99 |      1695.12 |      73.4 | **Stable**     |
-| **float16**|   128 |          0.0 |          0.0 |       0.0 | **Stable** (1) |
-| **float16**|   384 |       569.75 |      *Error* |     965.1 | Partial        |
-| **float64**|   128 |          0.0 |          0.0 |       0.0 | **Stable** (1) |
-| **float64**|   384 |       595.34 |      1018.82 |     132.1 | **Stable**     |
-| **complex64**| 128 |       799.22 |   961.29*    |    1771.1 | **Stable**     |
-| **complex64**| 384 |       995.25 |      *Error* |    1247.9 | Partial        |
-| **complex128**|128 |      1266.13 |      1952.11 |    1866.6 | **Stable**     |
-| **complex128**|384 |       971.31 |      *Error* |    1157.3 | Partial        |
+| Type       |   Dim | DoPut (MB/s) | DoGet (MB/s) | Dense QPS | Status     |
+|:-----------|------:|-------------:|-------------:|----------:|:-----------|
+| **int8**   |   128 |       254.18 |       463.97 |    2685.5 | **Stable** |
+| **int8**   |   384 |      1004.73 |      1383.68 |    1494.0 | **Stable** |
+| **int16**  |   128 |       785.07 |      1296.58 |    3867.7 | **Stable** |
+| **int16**  |   384 |      1520.56 |      1616.00 |    2516.6 | **Stable** |
+| **int32**  |   128 |      1119.83 |      1466.87 |    3566.4 | **Stable** |
+| **int32**  |   384 |      1211.54 |      1623.40 |    2455.3 | **Stable** |
+| **int64**  |   128 |      1818.29 |      2282.29 |    3938.8 | **Stable** |
+| **int64**  |   384 |      1207.53 |      2582.73 |    2480.9 | **Stable** |
+| **float32**|   128 |       936.42 |      1425.10 |    1233.8 | **Stable** |
+| **float32**|   384 |      1883.72 |       387.75 |     360.0 | **Stable** |
+| **float16**|   128 |       709.63 |       131.38 |      60.5 | **Stable** |
+| **float16**|   384 |      1457.25 |       267.58 |      54.0 | **Stable** |
+| **float64**|   128 |        44.26 |       215.94 |     126.5 | **Stable** |
+| **float64**|   384 |        44.64 |       479.00 |     109.2 | **Stable** |
+| **complex64**| 128 |        34.59 |      1209.54 |     247.9 | **Stable** |
+| **complex64**| 384 |        44.66 |       304.02 |     122.6 | **Stable** |
+| **complex128**|128 |       170.69 |      2086.60 |     175.7 | **Stable** |
+| **complex128**|384 |       457.44 |       551.12 |     177.6 | **Stable** |
 
 *> Note: `complex64 @ 128d` DoGet verified manually at 961 MB/s on clean server.*
 *(1) Note: `float16/float64 @ 128d` timed out in the matrix run due to test environment resource limits. Verified successfully in isolation (15k vectors) with full functionality (Put/Get/Search).*

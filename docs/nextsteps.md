@@ -249,3 +249,100 @@ Focused optimization plan to double throughput for 10k-50k vector datasets (128-
 2. **HNSW Search Min/Max**: Replace conditional updates for `closest` and `closestDist` in `searchLayer`.
    - **Target**: `internal/store/arrow_hnsw_search.go`
    - **Plan**: Use arithmetic min/max or `math.Min` if inlined/intrinsics are faster (Go's `min` built-in might be branchless).
+
+---
+
+## Phase 7: Optimization Round 2 (Soak Test Findings)
+
+**Source**: `soak_test.py` (15m run, 27k ops, 1.8GB RSS growth).
+**Findings**: Massive memory churn in `compactRecords` (290GB allocs) and CPU hotspots in generic distance computation.
+
+### 17. Zero-Copy Streaming Compaction
+
+- **Problem**: `compactRecords` accounts for 70% of all allocations (290GB) due to `Resize` and `Builder` copying.
+- **Solution**: Implement a streaming compactor that writes directly to target Slabs without intermediate `RecordBuilder` buffers.
+- **Impact**: >90% reduction in GC churn during compaction.
+
+### 18. Recycled Bitset Pool for Search
+
+- **Problem**: `bitutil.SetBit` and `make([]byte)` for `Visited` sets cause high frequent GC.
+- **Solution**: Use `sync.Pool` to recycle `Visited` bitsets between search queries.
+- **Impact**: 5-10% CPU reduction in high-QPS search.
+
+### 19. Slab Defragmentation & Reclamation
+
+- **Problem**: `SlabArena` grows indefinitely (10GB RSS) even with relatively small vector count (27k), implying fragmentation.
+- **Solution**: Implement a "Copy-Collection" style defragmenter that moves live objects to new slabs and releases old pages.
+- **Impact**: Reduce long-running memory footprint by 40-60%.
+
+### 20. Batched Distance Computation (`ComputeBatch`)
+
+- **Problem**: `float32Computer.Compute` is a top CPU consumer due to per-vector function call overhead.
+- **Solution**: Implement `ComputeBatch(query, []candidates)` to use SIMD masking and amortize call overhead.
+- **Impact**: 15-20% faster search traversal.
+
+### 21. Software Prefetching in HNSW
+
+- **Problem**: Random memory access in HNSW graph traversal causes L1/L2 cache misses.
+- **Solution**: Insert explicit `_mm_prefetch` (via Assembly) for the next 4 candidate nodes in the search loop.
+- **Impact**: 10-15% latency reduction for large graphs.
+
+### 22. SIMD-Accelerated Bitset Operations
+
+- **Problem**: Bitset operations (`Check`, `Set`) are scalar and hot.
+- **Solution**: Use AVX2/NEON instructions to check/set 256 bits at a time.
+- **Impact**: Faster filtering and visited checks.
+
+### 23. Scalar Quantization (SQ8) for Pruning
+
+- **Problem**: Full float32 distance calculation is expensive for all candidates.
+- **Solution**: Maintain an SQ8 (byte-quantized) copy of vectors for the upper layers of HNSW to perform fast approximate distance pruning.
+- **Impact**: 2x-4x faster distance calculation in search routing.
+
+### 24. Direct Memory Ingestion (Bypass Builder)
+
+- **Problem**: `DoPut` allocates Arrow Builders which resize significantly.
+- **Solution**: Pre-allocate destination buffers based on batch size and `Release` input Arrow batches immediately after copy.
+- **Impact**: Reduced ingestion latency and memory pressure.
+
+### 25. Lock-Free Ingestion Ring Buffer
+
+- **Problem**: `ingestionQueue` uses channel/mutex which may contend at 1GB/s.
+- **Solution**: Replace with a pre-allocated Ring Buffer (LMAX Disruptor pattern).
+- **Impact**: Consistent microsecond-level ingestion latency.
+
+### 26. JEMalloc / Alternative Allocator
+
+- **Problem**: Go GC struggles with the massive pointer graph of 10GB+ Arrows.
+- **Solution**: Offload Arrow data buffers to C-heap using `jemalloc` (via CGO or specialized allocator) to hide it from Go GC.
+- **Impact**: Massive reduction in GC pause times for large heaps.
+
+### 27. Adaptive `efConstruction`
+
+- **Problem**: Fixed `efConstruction` wastes CPU on easy insertions or yields poor recall on hard ones.
+- **Solution**: Dynamically adjust `ef` based on current recall targets and server load.
+- **Impact**: Better CPU utilization under load.
+
+### 28. Dictionary Encoding for Text Metadata
+
+- **Problem**: Repeated text strings in metadata bloom memory usage.
+- **Solution**: Automatically apply Arrow Dictionary Encoding to string columns with low cardinality.
+- **Impact**: 2x-5x memory reduction for repetitive metadata.
+
+### 29. Query Result Caching (Short Lived)
+
+- **Problem**: Burst of identical queries (e.g., from retry loops or popular items) re-execute search.
+- **Solution**: Cache search results (Hash(query, k)) with a sub-second TTL.
+- **Impact**: Near-instant results for hot keys.
+
+### 30. Parallel Compaction Sharding
+
+- **Problem**: Compaction is single-threaded per dataset.
+- **Solution**: Share compaction work into non-overlapping ID ranges and run in parallel.
+- **Impact**: Faster recovery and compaction catch-up.
+
+### 31. Profile-Guided Optimization (PGO)
+
+- **Problem**: Generic compilation misses optimization opportunities.
+- **Solution**: Use the `cpu.pprof` collected from this soak test (`soak_profiles/cpu_node0_*.pprof`) to build the release binary.
+- **Impact**: 5-10% global performance improvement.

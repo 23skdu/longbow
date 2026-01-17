@@ -19,10 +19,10 @@ func NewStreamingCompactor(pool memory.Allocator) *StreamingCompactor {
 }
 
 // Compact merges batches while filtering deleted rows (tombstones).
-func (sc *StreamingCompactor) Compact(schema *arrow.Schema, batches []arrow.RecordBatch, tombstones []*qry.Bitset) (arrow.RecordBatch, [][]int, int64, error) {
+func (sc *StreamingCompactor) Compact(schema *arrow.Schema, batches []arrow.RecordBatch, tombstones []*qry.Bitset) (batch arrow.RecordBatch, mapping [][]int, removed int64, err error) {
 	// 1. Calculate total output rows and pre-validate
 	totalOutRows := int64(0)
-	mapping := make([][]int, len(batches))
+	mapping = make([][]int, len(batches))
 
 	// Pre-calculate mappings to avoid doing it during copy
 	// This gives us exact output size
@@ -113,11 +113,11 @@ func (sc *StreamingCompactor) compactColumn(dt arrow.DataType, inputs []arrow.Ar
 
 	default:
 		// Fallback to builder for unsupported types to be safe
-		return sc.fallbackCompact(dt, inputs, mapping, totalRows)
+		return sc.fallbackCompact(dt, inputs, mapping)
 	}
 }
 
-func (sc *StreamingCompactor) compactFixedSize(dt arrow.DataType, inputs []arrow.Array, mapping [][]int, totalRows int, itemSize int) (arrow.Array, error) {
+func (sc *StreamingCompactor) compactFixedSize(dt arrow.DataType, inputs []arrow.Array, mapping [][]int, totalRows, itemSize int) (arrow.Array, error) {
 	// 1. Allocate Buffers
 	// Validity Bitmap + Values Buffer
 	validityBytes := int(bitutil.BytesForBits(int64(totalRows)))
@@ -162,11 +162,6 @@ func (sc *StreamingCompactor) compactFixedSize(dt arrow.DataType, inputs []arrow
 
 		// Get raw input buffers
 		// Data buffer is usually at index 1 for simple types
-		if len(arr.Data().Buffers()) < 2 {
-			// Should be at least validity (0) and data (1)
-			// But if all null, data might be nil?
-			// Handle explicitly
-		}
 
 		// Fast path: Copy bytes
 		inData := arr.Data().Buffers()[1].Bytes()
@@ -337,7 +332,7 @@ func (sc *StreamingCompactor) compactFixedSizeList(dt *arrow.FixedSizeListType, 
 	return array.MakeFromData(data), nil
 }
 
-func (sc *StreamingCompactor) fallbackCompact(dt arrow.DataType, inputs []arrow.Array, mapping [][]int, totalRows int) (arrow.Array, error) {
+func (sc *StreamingCompactor) fallbackCompact(dt arrow.DataType, inputs []arrow.Array, mapping [][]int) (arrow.Array, error) {
 	// Use builder
 	b := array.NewBuilder(sc.pool, dt)
 	defer b.Release()

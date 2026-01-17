@@ -19,28 +19,50 @@ type HNSWDistanceComputer interface {
 
 // float32Computer handles standard Float32 vectors.
 type float32Computer struct {
-	data       *GraphData
-	q          []float32
-	dims       int
-	paddedDims int
-	distFunc   func([]float32, []float32) float32 // Dynamic dispatch for blocked/aligned optimizations
+	data          *GraphData
+	q             []float32
+	dims          int
+	paddedDims    int
+	distFunc      func([]float32, []float32) float32 // Dynamic dispatch for blocked/aligned optimizations
+	batchDistFunc func([]float32, [][]float32, []float32)
+	ctx           *ArrowSearchContext
 }
 
 func (c *float32Computer) Compute(ids []uint32, dists []float32) {
-	vecs := c.data.Vectors // Primary array
+	// resize scratch buffer
+	if cap(c.ctx.scratchVecs) < len(ids) {
+		c.ctx.scratchVecs = make([][]float32, len(ids))
+	}
+	c.ctx.scratchVecs = c.ctx.scratchVecs[:len(ids)]
+	vecs := c.ctx.scratchVecs
+
+	primaryVecs := c.data.Vectors
+	// Use scratchNeighbors to track missing indices (safe to reuse here)
+	missingIndices := c.ctx.scratchNeighbors[:0]
+
+	// Gather vectors
 	for i, id := range ids {
 		cID := chunkID(id)
-		if int(cID) < len(vecs) {
+		if int(cID) < len(primaryVecs) {
 			chunk := c.data.GetVectorsChunk(cID)
 			if chunk != nil {
 				start := int(chunkOffset(id)) * c.paddedDims
 				if start+c.dims <= len(chunk) {
-					v := chunk[start : start+c.dims]
-					dists[i] = c.distFunc(c.q, v)
+					vecs[i] = chunk[start : start+c.dims]
 					continue
 				}
 			}
 		}
+		// Sentinel: use query as dummy (distance 0), fix up later
+		vecs[i] = c.q
+		missingIndices = append(missingIndices, uint32(i))
+	}
+
+	// Compute batch
+	c.batchDistFunc(c.q, vecs, dists)
+
+	// Post-check: Fixup missing
+	for _, i := range missingIndices {
 		dists[i] = math.MaxFloat32
 	}
 }
@@ -59,6 +81,14 @@ func (c *float32Computer) ComputeSingle(id uint32) float32 {
 }
 
 func (c *float32Computer) Prefetch(id uint32) {
+	cID := chunkID(id)
+	chunk := c.data.GetVectorsChunk(cID)
+	if chunk != nil {
+		start := int(chunkOffset(id)) * c.paddedDims
+		if start < len(chunk) {
+			simd.Prefetch(unsafe.Pointer(&chunk[start]))
+		}
+	}
 }
 
 // sq8Computer handles SQ8 quantized vectors.
@@ -371,22 +401,50 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *GraphData, ctx *ArrowSearchContext
 	// 5. Default Float32
 	metrics.HNSWPolymorphicSearchCount.WithLabelValues("float32").Inc()
 
-	// Handle Float32 input
+	// Handle Float32 input (or convert others)
 	var qF32 []float32
-	var dims int // Declare dims
-	if q, ok := queryVec.([]float32); ok {
+	var dims int
+
+	switch q := queryVec.(type) {
+	case []float32:
 		qF32 = q
-		dims = len(q) // Correct dims for blocking
-	} else {
-		// If using approximate search (approx=true) we might accept other types or panic.
-		// For now, if we reach here with non-float32 and no other handler matched, return a fallback or panic.
-		// However, return a float32Computer with nil query might panic later.
-		// It's safer to ensure we handle the type or convert.
-		return &float32Computer{data: data, dims: data.Dims} // Or panic("unsupported type")
+		dims = len(q)
+	case []complex64:
+		// Fallback: Convert complex64 -> float32 (interleaved)
+		qF32 = make([]float32, len(q)*2)
+		for i, v := range q {
+			qF32[2*i] = real(v)
+			qF32[2*i+1] = imag(v)
+		}
+		dims = len(qF32)
+	case []complex128:
+		// Fallback: complex128 -> float32 (lossy)
+		qF32 = make([]float32, len(q)*2)
+		for i, v := range q {
+			qF32[2*i] = float32(real(v))
+			qF32[2*i+1] = float32(imag(v))
+		}
+		dims = len(qF32)
+	case []float64:
+		// Fallback: float64 -> float32 (lossy)
+		qF32 = make([]float32, len(q))
+		for i, v := range q {
+			qF32[i] = float32(v)
+		}
+		dims = len(qF32)
+	default:
+		// Unrecoverable type mismatch
+		// We return a computer with the context to avoid immediate nil-pointer,
+		// but distFunc might still be nil if we don't init it.
+		// However, falling through allows init!
+		// But qF32 is nil.
+		return &float32Computer{data: data, dims: data.Dims, ctx: ctx}
 	}
 
 	// Select distance function with potential blocked optimization
 	var distFunc func([]float32, []float32) float32
+	var batchDistFunc func([]float32, [][]float32, []float32)
+
 	switch h.metric {
 	case MetricDotProduct:
 		if dims > 1024 {
@@ -394,9 +452,11 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *GraphData, ctx *ArrowSearchContext
 		} else {
 			distFunc = simd.DotProduct
 		}
+		batchDistFunc = simd.DotProductBatch
 	case MetricCosine:
 		// Potential: CosineBlocked (Not already implemented, fallback)
 		distFunc = simd.CosineDistance
+		batchDistFunc = simd.CosineDistanceBatch
 	default:
 		// Euclidean
 		if dims > 1024 {
@@ -404,13 +464,16 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *GraphData, ctx *ArrowSearchContext
 		} else {
 			distFunc = simd.DistFunc // Uses initialized function pointer
 		}
+		batchDistFunc = simd.EuclideanDistanceVerticalBatch
 	}
 
 	return &float32Computer{
-		data:       data,
-		q:          qF32,
-		dims:       data.Dims,
-		paddedDims: data.GetPaddedDims(),
-		distFunc:   distFunc,
+		data:          data,
+		q:             qF32,
+		dims:          data.Dims,
+		paddedDims:    data.GetPaddedDims(),
+		distFunc:      distFunc,
+		batchDistFunc: batchDistFunc,
+		ctx:           ctx,
 	}
 }

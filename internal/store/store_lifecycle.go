@@ -228,6 +228,21 @@ func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
 				ds.dataMu.RUnlock()
 
 				if idx != nil {
+					// Adaptive EfConstruction based on queue depth
+					if adaptive, ok := idx.(interface{ SetEfConstruction(int) }); ok {
+						depth := s.indexQueue.Len()
+						var targetEf int
+						switch {
+						case depth > 5000:
+							targetEf = 50
+						case depth > 1000:
+							targetEf = 100
+						default:
+							targetEf = 400 // Default high quality
+						}
+						adaptive.SetEfConstruction(targetEf)
+					}
+
 					docIDs, addErr = idx.AddBatch(recs, rowIdxs, batchIdxs)
 					if addErr != nil {
 						s.logger.Error().

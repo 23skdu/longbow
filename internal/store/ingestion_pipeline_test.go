@@ -61,54 +61,37 @@ func TestIngestionPipeline_Backpressure(t *testing.T) {
 	defer func() { _ = store.Close() }()
 	dsName := "test_backpressure"
 
-	// Fill the queue
-	queueCap := cap(store.ingestionQueue)
-	// We need to stop the worker first to strictly fill the queue.
-	// The worker starts automatically in NewVectorStore.
-	// We can't stop it easily. But we can flood it faster than it consumes?
-	// Or we can just rely on the fact that if we send 101 items, the 101st *might* block if worker is slow.
-	// A better test is to mock the worker or consumer, but we rely on internal impl.
-
-	// Create a store but DONT consume?
-	// We can manipulate the queue directly since we are in `package store`.
-	// Close the worker? No.
-
-	// Let's create a store where we don't start the worker?
-	// NewVectorStore starts it.
-
-	// We can manually call stopWorkers to stop worker safely
+	// Stop workers so we can fill the queue manually
 	store.stopWorkers()
-	// Wait for worker to exit?
-	store.workerWg.Wait() // This blocks until all workers done.
+	store.workerWg.Wait()
 
-	// Now queue is not being consumed.
-	// Fill it.
+	// Capacity is 16384 (from NewVectorStore)
+	queueCap := 16384
+
 	rec := createTestRecordBatch(t, 10)
 	defer rec.Release()
 
-	// Fill it.
+	// Fill the queue
 	for i := 0; i < queueCap; i++ {
-		// We manually inject into channel to avoid WAL overhead/checks if we want pure queue test,
-		// but using StoreRecordBatch is better integration test.
-		// However StoreRecordBatch writes WAL. We better mock or just accept it (file I/O might be slow but fine).
-		// Let's just push to channel directly to test queue physics.
-		select {
-		case store.ingestionQueue <- ingestionJob{datasetName: dsName, batch: rec}:
-			rec.Retain()
-		default:
+		job := ingestionJob{datasetName: dsName, batch: rec}
+		rec.Retain()
+		if !store.ingestionQueue.Push(job) {
 			t.Fatalf("Queue should not be full at %d", i)
 		}
 	}
 
-	// Now the queue is full (100 items).
-	// Next insert should block.
+	// Now the queue is full.
+	// Next PushBlocking should block or timeout.
 
+	// Start a goroutine that blocks
 	done := make(chan bool)
 	go func() {
-		// This should block
-		store.ingestionQueue <- ingestionJob{datasetName: dsName, batch: rec}
+		job := ingestionJob{datasetName: dsName, batch: rec}
 		rec.Retain()
-		done <- true
+		// Wait up to 5s. Should succeed after we drain.
+		if store.ingestionQueue.PushBlocking(job, 5*time.Second) {
+			done <- true
+		}
 	}()
 
 	select {
@@ -119,7 +102,8 @@ func TestIngestionPipeline_Backpressure(t *testing.T) {
 	}
 
 	// Unblock by draining one
-	<-store.ingestionQueue
+	_, ok := store.ingestionQueue.Pop()
+	require.True(t, ok, "Queue should have item")
 
 	select {
 	case <-done:

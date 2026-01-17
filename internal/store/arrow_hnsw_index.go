@@ -86,16 +86,16 @@ func NewArrowHNSW(dataset *Dataset, config ArrowHNSWConfig, locStore *ChunkedLoc
 	}
 
 	h := &ArrowHNSW{
-		dataset:        dataset,
-		config:         config,
-		m:              config.M,
-		mMax:           config.MMax,
-		mMax0:          config.MMax0,
-		efConstruction: config.EfConstruction,
-		ml:             1.0 / math.Log(float64(config.M)),
-		deleted:        query.NewAtomicBitset(), // Initial capacity, grows
-		metric:         config.Metric,
-		vectorColIdx:   -1,
+		dataset: dataset,
+		config:  config,
+		m:       config.M,
+		mMax:    config.MMax,
+		mMax0:   config.MMax0,
+		// efConstruction initialized below
+		ml:           1.0 / math.Log(float64(config.M)),
+		deleted:      query.NewAtomicBitset(), // Initial capacity, grows
+		metric:       config.Metric,
+		vectorColIdx: -1,
 
 		// Initialize Cached Metrics
 		metricInsertDuration:     metrics.HNSWInsertDurationSeconds,
@@ -112,19 +112,7 @@ func NewArrowHNSW(dataset *Dataset, config ArrowHNSWConfig, locStore *ChunkedLoc
 
 		bitmapIndex: NewBitmapIndex(),
 	}
-
-	if config.QueryCacheEnabled {
-		capacity := config.QueryCacheCapacity
-		if capacity <= 0 {
-			capacity = 1000 // Default
-		}
-		ttl := config.QueryCacheTTL
-		if ttl <= 0 {
-			ttl = 5 * time.Minute // Default
-		}
-		h.queryCache = NewQueryCache(capacity, ttl)
-		h.queryCache.SetDatasetName(dsName)
-	}
+	h.efConstruction.Store(int32(config.EfConstruction))
 
 	h.distFunc = h.resolveDistanceFunc()
 	h.distFuncF16 = h.resolveDistanceFuncF16()
@@ -450,13 +438,6 @@ func (h *ArrowHNSW) SearchVectors(queryVec any, k int, filters []query.Filter, o
 	}
 	metrics.HnswSearchThroughputDims.WithLabelValues(dimBucket).Inc()
 
-	paramsKey := fmt.Sprintf("k=%d,filters=%v", k, filters)
-	if h.queryCache != nil {
-		if res, ok := h.queryCache.Get(q, paramsKey); ok {
-			return res, nil
-		}
-	}
-
 	limit := k
 	qBitset := (*query.Bitset)(nil)
 
@@ -567,9 +548,7 @@ func (h *ArrowHNSW) SearchVectors(queryVec any, k int, filters []query.Filter, o
 			if len(res) > k {
 				res = res[:k]
 			}
-			if h.queryCache != nil {
-				h.queryCache.Set(q, paramsKey, res)
-			}
+
 			if options.IncludeVectors {
 				h.extractVectors(res, options.VectorFormat)
 			}
@@ -699,6 +678,11 @@ func (h *ArrowHNSW) PreWarm(targetSize int) {
 		// cID is uint32
 		h.ensureChunk(data, uint32(i), 0, dims)
 	}
+}
+
+// SetEfConstruction updates the efConstruction parameter dynamically.
+func (h *ArrowHNSW) SetEfConstruction(ef int) {
+	h.efConstruction.Store(int32(ef))
 }
 
 // Warmup implements VectorIndex.

@@ -7,22 +7,6 @@ Completed items have been verified and archived.
 
 Remaining tasks to support 12 data types and 3072 dimensions.
 
-### 3. Enhanced Observability
-
-**Goal**: Expose matrix of performance across all types.
-
-- **Subtasks**:
-  - Add granular Prometheus metrics for per-type latency.
-  - Implement dimension-bucketed performance tracking.
-
-### 4. High-Dimension Growth Stability
-
-**Goal**: Ensure stability for extremely large vectors (3072 dims).
-
-- **Subtasks**:
-  - Optimize `Grow` and `Clone` for large vector pre-allocation.
-  - Implement slab-aware memory reclamation.
-
 ### 5. Final Integration & Regression
 
 **Goal**: Address legacy debt and validate full matrix.
@@ -148,7 +132,7 @@ Focused optimization plan to double throughput for 10k-50k vector datasets (128-
 **Solution**:
 
 - Implement `ParallelFor` for `AddBatchBulk` vector insertion.
-- Tune `efConstruction` dynamically based on dataset size (lower for initial build, higher for refinement).
+- [x] Tune `efConstruction` dynamically based on dataset size (lower for initial build, higher for refinement).
 - Use `Goroutine Pool` to reduce scheduler overhead for small batches.
 
 ### 5. Lock Contention Reduction in VectorStore
@@ -257,12 +241,6 @@ Focused optimization plan to double throughput for 10k-50k vector datasets (128-
 **Source**: `soak_test.py` (15m run, 27k ops, 1.8GB RSS growth).
 **Findings**: Massive memory churn in `compactRecords` (290GB allocs) and CPU hotspots in generic distance computation.
 
-### 17. Zero-Copy Streaming Compaction
-
-- **Problem**: `compactRecords` accounts for 70% of all allocations (290GB) due to `Resize` and `Builder` copying.
-- **Solution**: Implement a streaming compactor that writes directly to target Slabs without intermediate `RecordBuilder` buffers.
-- **Impact**: >90% reduction in GC churn during compaction.
-
 ### 18. Recycled Bitset Pool for Search
 
 - **Problem**: `bitutil.SetBit` and `make([]byte)` for `Visited` sets cause high frequent GC.
@@ -275,65 +253,17 @@ Focused optimization plan to double throughput for 10k-50k vector datasets (128-
 - **Solution**: Implement a "Copy-Collection" style defragmenter that moves live objects to new slabs and releases old pages.
 - **Impact**: Reduce long-running memory footprint by 40-60%.
 
-### 20. Batched Distance Computation (`ComputeBatch`)
-
-- **Problem**: `float32Computer.Compute` is a top CPU consumer due to per-vector function call overhead.
-- **Solution**: Implement `ComputeBatch(query, []candidates)` to use SIMD masking and amortize call overhead.
-- **Impact**: 15-20% faster search traversal.
-
-### 21. Software Prefetching in HNSW
-
-- **Problem**: Random memory access in HNSW graph traversal causes L1/L2 cache misses.
-- **Solution**: Insert explicit `_mm_prefetch` (via Assembly) for the next 4 candidate nodes in the search loop.
-- **Impact**: 10-15% latency reduction for large graphs.
-
-### 22. SIMD-Accelerated Bitset Operations
-
-- **Problem**: Bitset operations (`Check`, `Set`) are scalar and hot.
-- **Solution**: Use AVX2/NEON instructions to check/set 256 bits at a time.
-- **Impact**: Faster filtering and visited checks.
-
-### 23. Scalar Quantization (SQ8) for Pruning
-
-- **Problem**: Full float32 distance calculation is expensive for all candidates.
-- **Solution**: Maintain an SQ8 (byte-quantized) copy of vectors for the upper layers of HNSW to perform fast approximate distance pruning.
-- **Impact**: 2x-4x faster distance calculation in search routing.
-
-### 24. Direct Memory Ingestion (Bypass Builder)
-
-- **Problem**: `DoPut` allocates Arrow Builders which resize significantly.
-- **Solution**: Pre-allocate destination buffers based on batch size and `Release` input Arrow batches immediately after copy.
-- **Impact**: Reduced ingestion latency and memory pressure.
-
-### 25. Lock-Free Ingestion Ring Buffer
-
-- **Problem**: `ingestionQueue` uses channel/mutex which may contend at 1GB/s.
-- **Solution**: Replace with a pre-allocated Ring Buffer (LMAX Disruptor pattern).
-- **Impact**: Consistent microsecond-level ingestion latency.
-
 ### 26. JEMalloc / Alternative Allocator
 
 - **Problem**: Go GC struggles with the massive pointer graph of 10GB+ Arrows.
 - **Solution**: Offload Arrow data buffers to C-heap using `jemalloc` (via CGO or specialized allocator) to hide it from Go GC.
 - **Impact**: Massive reduction in GC pause times for large heaps.
 
-### 27. Adaptive `efConstruction`
-
-- **Problem**: Fixed `efConstruction` wastes CPU on easy insertions or yields poor recall on hard ones.
-- **Solution**: Dynamically adjust `ef` based on current recall targets and server load.
-- **Impact**: Better CPU utilization under load.
-
 ### 28. Dictionary Encoding for Text Metadata
 
 - **Problem**: Repeated text strings in metadata bloom memory usage.
 - **Solution**: Automatically apply Arrow Dictionary Encoding to string columns with low cardinality.
 - **Impact**: 2x-5x memory reduction for repetitive metadata.
-
-### 29. Query Result Caching (Short Lived)
-
-- **Problem**: Burst of identical queries (e.g., from retry loops or popular items) re-execute search.
-- **Solution**: Cache search results (Hash(query, k)) with a sub-second TTL.
-- **Impact**: Near-instant results for hot keys.
 
 ### 30. Parallel Compaction Sharding
 

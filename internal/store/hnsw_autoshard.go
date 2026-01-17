@@ -450,6 +450,24 @@ func (a *AutoShardingIndex) GetDimension() uint32 {
 	return a.current.GetDimension()
 }
 
+// SetEfConstruction updates the efConstruction parameter dynamically.
+func (a *AutoShardingIndex) SetEfConstruction(ef int) {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	// Update current index if supported
+	if h, ok := a.current.(interface{ SetEfConstruction(int) }); ok {
+		h.SetEfConstruction(ef)
+	}
+
+	// Update interim index if exists
+	if a.interimIndex != nil {
+		if h, ok := a.interimIndex.(interface{ SetEfConstruction(int) }); ok {
+			h.SetEfConstruction(ef)
+		}
+	}
+}
+
 func (a *AutoShardingIndex) TrainPQ(vectors [][]float32) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()

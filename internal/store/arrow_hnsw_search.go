@@ -332,14 +332,36 @@ func (h *ArrowHNSW) searchLayer(computer HNSWDistanceComputer, entryPoint uint32
 				neighborIDs, found = pn.GetNeighbors(curr.ID)
 			}
 			if found {
-				for _, nid := range neighborIDs {
-					if !ctx.visited.IsSet(nid) {
-						ctx.Visit(nid)
-						ctx.Visit(nid)
-						ctx.scratchIDs = append(ctx.scratchIDs, nid)
-						computer.Prefetch(nid)
-					}
+				// Batch filter unvisited
+				// Use scratchIDs as temporary buffer for output?
+				// No, scratchIDs is the output for Compute.
+				// We need to filter indices.
+				// But we need to update visitedList too.
+
+				// 1. Filter
+				// We can reuse scratchNeighbors if available?
+				// scratchNeighbors is used for disk fallback. Safe here?
+				// Yes, because disk fallback is later in the loop.
+
+				// Wait, standard FilterVisited checks bitset AND updates it.
+				// We need to append to visitedList manually.
+				// Maybe we should just use a loop if batching overhead is high?
+				// But we want vectorization.
+
+				// Let's use FilterVisitedInto
+				// Note: unvisited buffer could be scratchIDs directly?
+				// Yes, if we append to it.
+				startLen := len(ctx.scratchIDs)
+				ctx.scratchIDs = ctx.visited.FilterVisitedInto(neighborIDs, ctx.scratchIDs)
+
+				// 2. Update visitedList and Prefetch
+				// Now iterate the *newly added* IDs
+				for i := startLen; i < len(ctx.scratchIDs); i++ {
+					nid := ctx.scratchIDs[i]
+					ctx.visitedList = append(ctx.visitedList, nid)
+					computer.Prefetch(nid)
 				}
+
 				collected = true
 			}
 		}
@@ -384,13 +406,14 @@ func (h *ArrowHNSW) searchLayer(computer HNSWDistanceComputer, entryPoint uint32
 					// DiskGraph.GetNeighbors takes buffer
 					diskNeighbors := disk.GetNeighbors(layer, curr.ID, ctx.scratchNeighbors[:0])
 					if len(diskNeighbors) > 0 {
-						for _, nid := range diskNeighbors {
-							if !ctx.visited.IsSet(nid) {
-								ctx.Visit(nid)
-								ctx.scratchIDs = append(ctx.scratchIDs, nid)
-								computer.Prefetch(nid)
-							}
+						startLen := len(ctx.scratchIDs)
+						ctx.scratchIDs = ctx.visited.FilterVisitedInto(diskNeighbors, ctx.scratchIDs)
+						for i := startLen; i < len(ctx.scratchIDs); i++ {
+							nid := ctx.scratchIDs[i]
+							ctx.visitedList = append(ctx.visitedList, nid)
+							computer.Prefetch(nid)
 						}
+
 						collected = true
 						usedDisk = true
 					}
@@ -419,13 +442,14 @@ func (h *ArrowHNSW) searchLayer(computer HNSWDistanceComputer, entryPoint uint32
 					}
 
 					if atomic.LoadUint32(verAddr) == ver {
-						for i := 0; i < count; i++ {
-							nid := localNeighbors[i]
-							if !ctx.visited.IsSet(nid) {
-								ctx.Visit(nid)
-								ctx.scratchIDs = append(ctx.scratchIDs, nid)
-								computer.Prefetch(nid)
-							}
+						// Batch filter
+						startLen := len(ctx.scratchIDs)
+						ctx.scratchIDs = ctx.visited.FilterVisitedInto(localNeighbors[:count], ctx.scratchIDs)
+
+						for i := startLen; i < len(ctx.scratchIDs); i++ {
+							nid := ctx.scratchIDs[i]
+							ctx.visitedList = append(ctx.visitedList, nid)
+							computer.Prefetch(nid)
 						}
 						collected = true
 						break

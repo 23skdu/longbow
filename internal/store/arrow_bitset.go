@@ -96,3 +96,50 @@ func (b *ArrowBitset) Size() int {
 func (b *ArrowBitset) Contains(i uint32) bool {
 	return b.IsSet(i)
 }
+
+// FilterVisited takes a list of IDs, checks if they are visited, sets them if not,
+// and returns a new slice containing only the previously UNVISITED IDs.
+// This allows batching the check-and-set operation.
+func (b *ArrowBitset) FilterVisited(ids []uint32) []uint32 {
+	out := make([]uint32, 0, len(ids))
+
+	for _, id := range ids {
+		idx := int(id)
+		if idx >= b.size {
+			b.Grow(idx + 1)
+		}
+
+		wordIdx := idx / 64
+		bitMask := uint64(1) << (idx % 64)
+
+		// Check
+		if (b.data[wordIdx] & bitMask) == 0 {
+			// Not visited: Set it and append
+			b.data[wordIdx] |= bitMask
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+// FilterVisitedInto filters unvisited IDs into the provided 'out' slice.
+func (b *ArrowBitset) FilterVisitedInto(ids []uint32, out []uint32) []uint32 {
+	// Don't reset out, append to it?
+	// Usually caller explicitly passes out[:0] if they want reset.
+	// We should just append.
+	for _, id := range ids {
+		idx := int(id)
+		if idx >= b.size {
+			b.Grow(idx + 1)
+		}
+
+		wordIdx := idx / 64
+		bitMask := uint64(1) << (idx % 64)
+
+		if (b.data[wordIdx] & bitMask) == 0 {
+			b.data[wordIdx] |= bitMask
+			out = append(out, id)
+		}
+	}
+	return out
+}

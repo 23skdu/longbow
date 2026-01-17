@@ -373,27 +373,27 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *GraphData, ctx *ArrowSearchContext
 			}
 		}
 
-		// 4. SQ8
-		// Only supports float32 input for now as SQ8 encoding expects float32
-		if h.config.SQ8Enabled && h.quantizer != nil && h.metric == MetricEuclidean {
-			if qF32, ok := queryVec.([]float32); ok {
-				dims := len(qF32)
-				metrics.HNSWPolymorphicSearchCount.WithLabelValues("sq8").Inc()
-				if cap(ctx.querySQ8) < dims {
-					ctx.querySQ8 = make([]byte, dims)
-				}
-				ctx.querySQ8 = ctx.querySQ8[:dims]
-				h.quantizer.Encode(qF32, ctx.querySQ8)
+	}
+	// 4. SQ8
+	// Only supports float32 input for now as SQ8 encoding expects float32
+	if h.config.SQ8Enabled && h.quantizer != nil && h.metric == MetricEuclidean {
+		if qF32, ok := queryVec.([]float32); ok {
+			dims := len(qF32)
+			metrics.HNSWPolymorphicSearchCount.WithLabelValues("sq8").Inc()
+			if cap(ctx.querySQ8) < dims {
+				ctx.querySQ8 = make([]byte, dims)
+			}
+			ctx.querySQ8 = ctx.querySQ8[:dims]
+			h.quantizer.Encode(qF32, ctx.querySQ8)
 
-				return &sq8Computer{
-					data:       data,
-					disk:       disk,
-					querySQ8:   ctx.querySQ8,
-					quantizer:  h.quantizer,
-					dims:       data.Dims,
-					paddedDims: (data.Dims + 63) & ^63,
-					scale:      h.quantizer.L2Scale(),
-				}
+			return &sq8Computer{
+				data:       data,
+				disk:       disk,
+				querySQ8:   ctx.querySQ8,
+				quantizer:  h.quantizer,
+				dims:       data.Dims,
+				paddedDims: (data.Dims + 63) & ^63,
+				scale:      h.quantizer.L2Scale(),
 			}
 		}
 	}

@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -410,91 +411,28 @@ func compactRecords(pool memory.Allocator, schema *arrow.Schema, records []arrow
 
 // filterTombstones creates a new RecordBatch with deleted rows removed.
 func filterTombstones(pool memory.Allocator, schema *arrow.Schema, rec arrow.RecordBatch, tomb *qry.Bitset) (filtered arrow.RecordBatch, mapping []int, removed int64) {
-	numRows := int(rec.NumRows())
-	rowMapping := make([]int, numRows)
-	keepIndices := make([]int, 0, numRows)
+	sc := NewStreamingCompactor(pool)
+	// Wrap single batch
+	batches := []arrow.RecordBatch{rec}
+	tombstones := []*qry.Bitset{tomb}
 
-	for i := 0; i < numRows; i++ {
-		if tomb.Contains(i) {
-			rowMapping[i] = -1
-		} else {
-			rowMapping[i] = len(keepIndices)
-			keepIndices = append(keepIndices, i)
-		}
+	merged, mappings, removed, err := sc.Compact(schema, batches, tombstones)
+	if err != nil {
+		panic(fmt.Errorf("compaction failed (single): %w", err))
 	}
-
-	if len(keepIndices) == numRows {
-		rec.Retain()
-		return rec, rowMapping, 0
-	}
-
-	if len(keepIndices) == 0 {
-		// All rows deleted - return empty record with same schema
-		builder := array.NewRecordBuilder(pool, schema)
-		defer builder.Release()
-		return builder.NewRecordBatch(), rowMapping, int64(numRows)
-	}
-
-	// Filter using Arrow compute or manual copy
-	// For simplicity and to avoid context overhead in background worker, use manual builder
-	builder := array.NewRecordBuilder(pool, schema)
-	defer builder.Release()
-
-	for colIdx := 0; colIdx < int(schema.NumFields()); colIdx++ {
-		// Dynamic check for column existence in batch
-		if colIdx >= int(rec.NumCols()) {
-			fieldBuilder := builder.Field(colIdx)
-			for range keepIndices {
-				fieldBuilder.AppendNull()
-			}
-			continue
-		}
-
-		col := rec.Column(colIdx)
-		fieldBuilder := builder.Field(colIdx)
-		for _, rowIdx := range keepIndices {
-			appendValue(fieldBuilder, col, rowIdx)
-		}
-	}
-
-	return builder.NewRecordBatch(), rowMapping, int64(numRows - len(keepIndices))
+	return merged, mappings[0], removed
 }
 
 // mergeAndFilterRecordBatches combines multiple record batches into one while skipping tombstones.
 func mergeAndFilterRecordBatches(pool memory.Allocator, schema *arrow.Schema, batches []arrow.RecordBatch, tombstones []*qry.Bitset) (merged arrow.RecordBatch, mapping [][]int, removed int64) {
-	builder := array.NewRecordBuilder(pool, schema)
-	defer builder.Release()
-
-	rowMappings := make([][]int, len(batches))
-	totalRemoved := int64(0)
-	currentRowOffset := 0
-
-	for i, batch := range batches {
-		numRows := int(batch.NumRows())
-		rowMappings[i] = make([]int, numRows)
-		tomb := tombstones[i]
-
-		for rowIdx := 0; rowIdx < numRows; rowIdx++ {
-			if tomb != nil && tomb.Contains(rowIdx) {
-				rowMappings[i][rowIdx] = -1
-				totalRemoved++
-			} else {
-				rowMappings[i][rowIdx] = currentRowOffset
-				for colIdx := 0; colIdx < int(schema.NumFields()); colIdx++ {
-					fieldBuilder := builder.Field(colIdx)
-					if colIdx >= int(batch.NumCols()) {
-						fieldBuilder.AppendNull()
-						continue
-					}
-					col := batch.Column(colIdx)
-					appendValue(fieldBuilder, col, rowIdx)
-				}
-				currentRowOffset++
-			}
-		}
+	sc := NewStreamingCompactor(pool)
+	var err error
+	merged, mapping, removed, err = sc.Compact(schema, batches, tombstones)
+	if err != nil {
+		// Panic for now as we don't have error propagation in this legacy signature
+		panic(fmt.Errorf("compaction failed: %w", err))
 	}
-
-	return builder.NewRecordBatch(), rowMappings, totalRemoved
+	return
 }
 
 // appendValue appends a single value from an arrow.Array to a builder.

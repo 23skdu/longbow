@@ -2,6 +2,7 @@ package memory
 
 import (
 	"testing"
+	"unsafe"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -37,7 +38,7 @@ func TestArenaAllocator(t *testing.T) {
 	largeBuf := alloc.Allocate(DefaultArenaChunkSize) // This might trigger large alloc path or fill chunk
 	assert.Equal(t, DefaultArenaChunkSize, len(largeBuf))
 
-	// 5. Huge allocation (bypass pool)
+	// 5. Huge allocation (bypass standard pool, use huge pool)
 	hugeBuf := alloc.Allocate(DefaultArenaChunkSize * 2)
 	assert.Equal(t, DefaultArenaChunkSize*2, len(hugeBuf))
 }
@@ -56,4 +57,35 @@ func TestArenaReuse(t *testing.T) {
 	// Re-use same object
 	_ = alloc.Allocate(512)
 	assert.Equal(t, int64(512), alloc.Allocated())
+}
+
+func TestArenaAllocator_HugeReuse(t *testing.T) {
+	alloc := NewArenaAllocator()
+
+	// 1. Alloc 100MB (Fits in 128MB pool)
+	size := 100 * 1024 * 1024
+	buf1 := alloc.Allocate(size)
+	ptr1 := unsafe.Pointer(&buf1[0])
+
+	// 2. Release
+	alloc.Release()
+
+	// 3. Alloc 100MB again
+	buf2 := alloc.Allocate(size)
+	ptr2 := unsafe.Pointer(&buf2[0])
+
+	// Should reuse the same buffer
+	assert.Equal(t, ptr1, ptr2, "Huge buffer should be reused from pool")
+
+	// 4. Alloc 200MB (Fits in 256MB pool)
+	alloc.Release()
+	buf3 := alloc.Allocate(200 * 1024 * 1024)
+	ptr3 := unsafe.Pointer(&buf3[0])
+
+	alloc.Release()
+	buf4 := alloc.Allocate(200 * 1024 * 1024)
+	ptr4 := unsafe.Pointer(&buf4[0])
+
+	assert.Equal(t, ptr3, ptr4, "200MB buffer should be reused")
+	assert.NotEqual(t, ptr1, ptr3, "Different pools should have different buffers")
 }

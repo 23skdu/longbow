@@ -28,7 +28,6 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/apache/arrow-go/v18/arrow/flight"
-	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/joho/godotenv"
 	"github.com/kelseyhightower/envconfig"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -232,7 +231,7 @@ func run() error {
 	defer runtime.KeepAlive(ballast)
 
 	// Create memory allocator
-	mem := memory.NewGoAllocator()
+	mem := lbmem.NewArenaAllocator()
 
 	// Initialize vector store with compaction config
 	compactionCfg := store.CompactionConfig{

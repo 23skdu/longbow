@@ -140,11 +140,12 @@ func getHugeChunk(size int) *[]byte {
 
 func putHugeChunk(ptr *[]byte) {
 	c := cap(*ptr)
-	if c == 128*1024*1024 {
+	switch c {
+	case 128 * 1024 * 1024:
 		pool128MB.Put(ptr)
-	} else if c == 256*1024*1024 {
+	case 256 * 1024 * 1024:
 		pool256MB.Put(ptr)
-	} else if c == 512*1024*1024 {
+	case 512 * 1024 * 1024:
 		pool512MB.Put(ptr)
 	}
 	// Else drop

@@ -112,6 +112,15 @@ func (e *StorageEngine) SyncWAL() error {
 	return nil
 }
 
+// ErrCh returns a channel that signals background WAL errors.
+// Returns nil if the current WAL configuration is synchronous.
+func (e *StorageEngine) ErrCh() <-chan error {
+	if e.walBatcher != nil {
+		return e.walBatcher.ErrCh
+	}
+	return nil
+}
+
 // GetWALQueueDepth returns the current pending and capacity of the WAL queue.
 func (e *StorageEngine) GetWALQueueDepth() (pending, capacity int) {
 	if e.walBatcher == nil {

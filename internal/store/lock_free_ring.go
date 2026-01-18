@@ -74,8 +74,6 @@ func (rb *LockFreeRingBuffer[T]) Push(item T) bool {
 				slot.sequence.Store(tail + 1)
 				return true
 			}
-		} else if seq < tail {
-			runtime.Gosched()
 		} else {
 			runtime.Gosched()
 		}
@@ -110,8 +108,6 @@ func (rb *LockFreeRingBuffer[T]) Pop() (T, bool) {
 				slot.sequence.Store(head + uint64(len(rb.buffer)))
 				return item, true
 			}
-		} else if seq < nextSeq {
-			runtime.Gosched()
 		} else {
 			runtime.Gosched()
 		}

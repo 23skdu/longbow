@@ -173,9 +173,33 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 	// Use first record's schema (all records in a dataset must share schema)
 	schema := ds.Records[0].Schema()
 
-	// Adaptive Chunking (Optimized for TTFB)
-	// We slice the records into smaller chunks to improve time-to-first-byte and flow control.
-	chunkStrategy := lbflight.NewAdaptiveChunkStrategy(4096, 65536, 2.0)
+	// Adaptive Chunking (Byte-Aware Optimization)
+	// We estimate row size to ensure chunks are at least ~2MB to saturate bandwidth
+	// while keeping overhead low.
+	avgRowSize := int64(256) // Default fallback
+	if ds.Records[0].NumRows() > 0 {
+		batchSize := estimateBatchSize(ds.Records[0])
+		avgRowSize = batchSize / ds.Records[0].NumRows()
+		if avgRowSize == 0 {
+			avgRowSize = 1
+		}
+	}
+
+	targetChunkBytes := int64(2 * 1024 * 1024) // 2MB Target
+	minChunkRows := int(targetChunkBytes / avgRowSize)
+	if minChunkRows < 4096 {
+		minChunkRows = 4096 // Keep minimum floor of 4096
+	} else if minChunkRows > 65536 {
+		minChunkRows = 65536 // Cap max start to reasonable level
+	}
+
+	// Max chunk can be larger
+	maxChunkRows := minChunkRows * 4
+	if maxChunkRows > 131072 {
+		maxChunkRows = 131072
+	}
+
+	chunkStrategy := lbflight.NewAdaptiveChunkStrategy(minChunkRows, maxChunkRows, 2.0)
 	recordsToProcess, tombstonesToProcess := AdaptivelySliceBatches(ds.Records, ds.Tombstones, chunkStrategy)
 	ds.dataMu.RUnlock() // RELEASE LOCK IMMEDIATELY AFTER CLONING REFERENCES
 

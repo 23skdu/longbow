@@ -497,6 +497,19 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 		return status.Errorf(codes.Internal, "failed to retrieve or create dataset %s", name)
 	}
 
+	// Schema Evolution & Validation
+	// Validate compatibility and evolve if additive changes are present
+	if err := ds.SchemaManager.Evolve(r.Schema()); err != nil {
+		s.logger.Error().Err(err).Str("dataset", name).Msg("Schema evolution/validation failed")
+		return status.Errorf(codes.InvalidArgument, "schema mismatch: %v", err)
+	}
+
+	// Update dataset's schema reference to ensure it uses the latest version
+	// We need to lock to update the pointer safely
+	ds.dataMu.Lock()
+	ds.Schema = ds.SchemaManager.GetCurrentSchema()
+	ds.dataMu.Unlock()
+
 	if created {
 		mem := ds.IndexMemoryBytes.Load()
 		if mem > 100*1024*1024 {
@@ -524,6 +537,12 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 	flush := func() error {
 		if len(batch) == 0 {
 			return nil
+		}
+
+		// Check total size of batch
+		totalBytes := int64(0)
+		for _, b := range batch {
+			totalBytes += estimateBatchSize(b)
 		}
 
 		// Optimization: Concatenate small batches into one large batch
@@ -564,10 +583,11 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 	for r.Next() {
 		rec := r.RecordBatch()
 
-		// Adaptive Batching (Option 1):
-		// If the record is large enough and we don't have pending small records,
+		// Adaptive Batching (Byte-Aware Option 1):
+		// If the record is large enough (>= 4MB) and we don't have pending small records,
 		// write it directly to avoid concatenation/slice overhead.
-		if len(batch) == 0 && rec.NumRows() >= 25000 {
+		recSize := estimateBatchSize(rec)
+		if len(batch) == 0 && recSize >= 4*1024*1024 {
 			rec.Retain()
 			if err := s.flushPutBatch(ds, []arrow.RecordBatch{rec}); err != nil {
 				rec.Release()
@@ -579,7 +599,13 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 		rec.Retain()
 		batch = append(batch, rec)
 
-		if len(batch) >= maxBatchSize {
+		// Check accumulator size
+		totalBatchBytes := int64(0)
+		for _, b := range batch {
+			totalBatchBytes += estimateBatchSize(b)
+		}
+
+		if len(batch) >= maxBatchSize || totalBatchBytes >= 4*1024*1024 {
 			if err := flush(); err != nil {
 				return err
 			}
@@ -632,10 +658,7 @@ func (s *VectorStore) flushPutBatch(ds *Dataset, batch []arrow.RecordBatch) erro
 
 		// Wait loop
 		for s.CheckIngestionBackpressure() {
-			select {
-			case <-ticker.C:
-				// Continue checking
-			}
+			<-ticker.C
 		}
 	}
 

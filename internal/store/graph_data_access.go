@@ -116,16 +116,7 @@ func (gd *GraphData) GetVectorAsFloat32(id uint32) ([]float32, error) {
 		return nil, fmt.Errorf("invalid dimensions 0")
 	}
 
-	// 1. primary Float32
-	if gd.Type == VectorTypeFloat32 {
-		chunk := gd.GetVectorsChunk(cID)
-		if chunk != nil {
-			start := int(cOff) * paddedDims
-			return chunk[start : start+dims], nil
-		}
-	}
-
-	// 2. Float16 (Primary or Aux)
+	// 1. Float16 (Primary or Aux) - Check this BEFORE Float32 if potentially using F16 storage backing
 	if (gd.VectorsF16 != nil && int(cID) < len(gd.VectorsF16)) || gd.Type == VectorTypeFloat16 {
 		chunk := gd.GetVectorsF16Chunk(cID)
 		if chunk != nil {
@@ -137,6 +128,15 @@ func (gd *GraphData) GetVectorAsFloat32(id uint32) ([]float32, error) {
 				res[i] = v.Float32()
 			}
 			return res, nil
+		}
+	}
+
+	// 2. primary Float32
+	if gd.Type == VectorTypeFloat32 {
+		chunk := gd.GetVectorsChunk(cID)
+		if chunk != nil {
+			start := int(cOff) * paddedDims
+			return chunk[start : start+dims], nil
 		}
 	}
 
@@ -165,6 +165,20 @@ func (gd *GraphData) GetVectorAsFloat32(id uint32) ([]float32, error) {
 			for i, v := range c128s {
 				res[2*i] = float32(real(v))
 				res[2*i+1] = float32(imag(v))
+			}
+			return res, nil
+		}
+	}
+
+	// 5. Int8
+	if gd.Type == VectorTypeInt8 {
+		chunk := gd.GetVectorsInt8Chunk(cID)
+		if chunk != nil {
+			start := int(cOff) * paddedDims // Assumption: Int8 PaddedDims matches
+			i8s := chunk[start : start+dims]
+			res := make([]float32, dims)
+			for i, v := range i8s {
+				res[i] = float32(v)
 			}
 			return res, nil
 		}
@@ -289,6 +303,15 @@ func (gd *GraphData) SetVector(id uint32, vec any) error {
 				return nil
 			}
 		}
+	case []int8:
+		if gd.Type == VectorTypeInt8 {
+			chunk := gd.GetVectorsInt8Chunk(cID)
+			if chunk != nil {
+				start := int(cOff) * gd.GetPaddedDims()
+				copy(chunk[start:start+dims], v)
+				return nil
+			}
+		}
 	}
 
 	return fmt.Errorf("storage not available or type mismatch for SetVector: ID=%d Type=%s Input=%T", id, gd.Type, vec)
@@ -307,6 +330,15 @@ func (gd *GraphData) GetVector(id uint32) (any, error) {
 
 	switch gd.Type {
 	case VectorTypeFloat32:
+		// Check for F16 override first
+		if gd.VectorsF16 != nil && int(cID) < len(gd.VectorsF16) {
+			chunk := gd.GetVectorsF16Chunk(cID)
+			if chunk != nil {
+				start := int(cOff) * gd.GetPaddedDimsForType(VectorTypeFloat16)
+				return chunk[start : start+dims], nil
+			}
+		}
+
 		chunk := gd.GetVectorsChunk(cID)
 		if chunk != nil {
 			start := int(cOff) * gd.GetPaddedDims()

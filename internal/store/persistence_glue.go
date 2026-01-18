@@ -55,6 +55,32 @@ func (s *VectorStore) InitPersistence(cfg storage.StorageConfig) error {
 	s.workerWg.Add(1)
 	go s.runSnapshotTicker(cfg.SnapshotInterval)
 
+	// Start snapshot ticker
+	s.workerWg.Add(1)
+	go s.runSnapshotTicker(cfg.SnapshotInterval)
+
+	// Monitor Async WAL Errors
+	if errCh := s.engine.ErrCh(); errCh != nil {
+		s.workerWg.Add(1)
+		go func() {
+			defer s.workerWg.Done()
+			for {
+				select {
+				case <-s.stopChan:
+					return
+				case err, ok := <-errCh:
+					if !ok {
+						return
+					}
+					s.logger.Error().Err(err).Msg("Maintainer: Critical Async WAL Failure")
+					// Determine policy: Shutdown? Read-Only?
+					// For now, we log FATAL-equivalent logic or metrics.
+					// In robust systems, this might trigger a circuit breaker.
+				}
+			}
+		}()
+	}
+
 	return nil
 }
 
@@ -205,6 +231,15 @@ func (s *VectorStore) ApplyDelta(name string, rec arrow.RecordBatch, seq uint64,
 			ds.Index = NewAutoShardingIndex(ds, config)
 		}
 	}
+
+	// Sync Schema Manager (Critical for recovery)
+	if err := ds.SchemaManager.Evolve(rec.Schema()); err != nil {
+		ds.dataMu.Unlock()
+		return fmt.Errorf("schema evolution failed during replay: %w", err)
+	}
+	// Update generic schema pointer
+	ds.Schema = ds.SchemaManager.GetCurrentSchema()
+
 	ds.dataMu.Unlock()
 
 	// 3. Row-level LWW

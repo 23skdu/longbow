@@ -243,59 +243,128 @@ func (h *ArrowHNSW) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []int)
 
 	ids := make([]uint32, n)
 
-	// Check for Bulk Optimized Path (Float32 only for now)
-	if n >= BULK_INSERT_THRESHOLD && h.config.DataType == VectorTypeFloat32 {
-		// Extract all vectors for bulk insert
-		allVecs := make([][]float32, n)
+	// Check for Bulk Optimized Path (All types supported)
+	if n >= BULK_INSERT_THRESHOLD {
 		useDirectIndex := len(recs) == n
 
-		for i := 0; i < n; i++ {
-			var rec arrow.RecordBatch
-			if useDirectIndex {
-				rec = recs[i]
-			} else {
-				// Fallback for compact recs slice (requires batchIdxs to be local indices, creating ambiguity with Global ID)
-				// Assuming if useDirectIndex is false, batchIdxs might be local, but current usage suggests Global.
-				// This path is dangerous but kept for backward compat if any calls rely on it correctly.
-				if batchIdxs[i] < len(recs) {
-					rec = recs[batchIdxs[i]]
-				} else {
-					// Fallback: use first record if OOB (best effort to avoid panic in critical path)
-					// This logic is fundamentally flawed without explicit correct input, but panic is worse.
-					rec = recs[0]
+		// Prepare typed slice
+		var vecs any
+
+		switch h.config.DataType {
+		case VectorTypeFloat32:
+			vecsF32 := make([][]float32, n)
+			for i := 0; i < n; i++ {
+				rec := getRecordBatch(i, recs, batchIdxs, useDirectIndex)
+				// Use Generic extraction which is safe and efficient
+				// We expect float32
+				v, e := ExtractVectorGeneric[float32](rec, rowIdxs[i], h.vectorColIdx)
+				if e != nil {
+					return nil, e
+				}
+				vecsF32[i] = v
+			}
+			vecs = vecsF32
+
+		case VectorTypeFloat16:
+			vecsF16 := make([][]float16.Num, n)
+			for i := 0; i < n; i++ {
+				rec := getRecordBatch(i, recs, batchIdxs, useDirectIndex)
+				v, e := ExtractVectorGeneric[float16.Num](rec, rowIdxs[i], h.vectorColIdx)
+				if e != nil {
+					return nil, e
+				}
+				vecsF16[i] = v
+			}
+			vecs = vecsF16
+
+		case VectorTypeFloat64:
+			vecsF64 := make([][]float64, n)
+			for i := 0; i < n; i++ {
+				rec := getRecordBatch(i, recs, batchIdxs, useDirectIndex)
+				v, e := ExtractVectorGeneric[float64](rec, rowIdxs[i], h.vectorColIdx)
+				if e != nil {
+					return nil, e
+				}
+				vecsF64[i] = v
+			}
+			vecs = vecsF64
+
+		case VectorTypeComplex64:
+			vecsC64 := make([][]complex64, n)
+			for i := 0; i < n; i++ {
+				rec := getRecordBatch(i, recs, batchIdxs, useDirectIndex)
+				v, e := ExtractVectorGeneric[complex64](rec, rowIdxs[i], h.vectorColIdx)
+				if e != nil {
+					return nil, e
+				}
+				vecsC64[i] = v
+			}
+			vecs = vecsC64
+
+		case VectorTypeComplex128:
+			vecsC128 := make([][]complex128, n)
+			for i := 0; i < n; i++ {
+				rec := getRecordBatch(i, recs, batchIdxs, useDirectIndex)
+				v, e := ExtractVectorGeneric[complex128](rec, rowIdxs[i], h.vectorColIdx)
+				if e != nil {
+					return nil, e
+				}
+				vecsC128[i] = v
+			}
+			vecs = vecsC128
+
+		default:
+			// Fallback for unknown types or unoptimized types: use float32 conversion if possible?
+			// Or just skip bulk insert?
+			// Current AddBatchBulk handles generic errors.
+			// Let's force skip if type not handled above to assume standard serial insert.
+			// But since we want to optimize, maybe log warning?
+			// Actually, if we skip here, it falls through to standard insert (Step 4).
+			vecs = nil
+		}
+
+		if vecs != nil {
+			// Chunking for Bulk Insert to avoid O(N^2) memory explosion
+			const bulkChunkSize = 2500 // Limit to ~25MB matrix (2500^2 * 4) + overhead
+
+			for chunkStart := 0; chunkStart < n; chunkStart += bulkChunkSize {
+				chunkEnd := chunkStart + bulkChunkSize
+				if chunkEnd > n {
+					chunkEnd = n
+				}
+				chunkN := chunkEnd - chunkStart
+
+				// Slice the generic vecs
+				var chunkVecs any
+				switch v := vecs.(type) {
+				case [][]float32:
+					chunkVecs = v[chunkStart:chunkEnd]
+				case [][]float16.Num:
+					chunkVecs = v[chunkStart:chunkEnd]
+				case [][]int8:
+					chunkVecs = v[chunkStart:chunkEnd]
+				case [][]float64:
+					chunkVecs = v[chunkStart:chunkEnd]
+				case [][]complex64:
+					chunkVecs = v[chunkStart:chunkEnd]
+				case [][]complex128:
+					chunkVecs = v[chunkStart:chunkEnd]
+				}
+
+				// Calculate chunk startID
+				chunkStartID := uint32(startID) + uint32(chunkStart)
+
+				if err := h.AddBatchBulk(context.Background(), chunkStartID, chunkN, chunkVecs); err != nil {
+					return nil, err
 				}
 			}
-			v, err := ExtractVectorFromArrow(rec, rowIdxs[i], h.vectorColIdx)
-			if err != nil {
-				return nil, fmt.Errorf("failed to extract vector for bulk insert: %w", err)
+
+			// Populate returned IDs
+			for i := 0; i < n; i++ {
+				ids[i] = uint32(startID) + uint32(i)
 			}
-			allVecs[i] = v
+			return ids, nil
 		}
-
-		// Chunking for Bulk Insert to avoid O(N^2) memory explosion
-		const bulkChunkSize = 2500 // Limit to ~25MB matrix (2500^2 * 4) + overhead
-
-		for chunkStart := 0; chunkStart < n; chunkStart += bulkChunkSize {
-			chunkEnd := chunkStart + bulkChunkSize
-			if chunkEnd > n {
-				chunkEnd = n
-			}
-			chunkN := chunkEnd - chunkStart
-			chunkVecs := allVecs[chunkStart:chunkEnd]
-
-			// Calculate chunk startID
-			chunkStartID := uint32(startID) + uint32(chunkStart)
-
-			if err := h.AddBatchBulk(context.Background(), chunkStartID, chunkN, chunkVecs); err != nil {
-				return nil, err
-			}
-		}
-
-		// Populate returned IDs
-		for i := 0; i < n; i++ {
-			ids[i] = uint32(startID) + uint32(i)
-		}
-		return ids, nil
 	}
 
 	// 3. Preemptively Train SQ8 if needed

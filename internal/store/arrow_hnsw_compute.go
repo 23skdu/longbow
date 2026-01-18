@@ -238,6 +238,34 @@ func (c *float16Computer) Prefetch(id uint32) {
 	}
 }
 
+// genericComputer handles any storage type by converting to float32 on the fly.
+// This is slower but correct for new/unsupported types like Int8.
+type genericComputer struct {
+	data     *GraphData
+	q        []float32
+	dims     int
+	distFunc func([]float32, []float32) float32
+}
+
+func (c *genericComputer) Compute(ids []uint32, dists []float32) {
+	for i, id := range ids {
+		dists[i] = c.ComputeSingle(id)
+	}
+}
+
+func (c *genericComputer) ComputeSingle(id uint32) float32 {
+	v, err := c.data.GetVectorAsFloat32(id)
+	if err == nil {
+		return c.distFunc(c.q, v)
+	}
+	return math.MaxFloat32
+}
+
+func (c *genericComputer) Prefetch(id uint32) {
+	// Generic prefetch is hard without knowing underlying type.
+	// Can optimize later if needed.
+}
+
 // resolveHNSWComputer selects the appropriate computer and encodes the query if necessary.
 func (h *ArrowHNSW) resolveHNSWComputer(data *GraphData, ctx *ArrowSearchContext, queryVec any, _ bool) HNSWDistanceComputer {
 	// Defaults if we can't determine dimensions from query logic below (fallback)
@@ -432,12 +460,19 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *GraphData, ctx *ArrowSearchContext
 			qF32[i] = float32(v)
 		}
 		dims = len(qF32)
+	case []int8:
+		// Fallback: int8 -> float32
+		qF32 = make([]float32, len(q))
+		for i, v := range q {
+			qF32[i] = float32(v)
+		}
+		dims = len(qF32)
 	default:
 		// Unrecoverable type mismatch
-		// We return a computer with the context to avoid immediate nil-pointer,
-		// but distFunc might still be nil if we don't init it.
-		// However, falling through allows init!
-		// But qF32 is nil.
+		// We return a generic computer (likely to fail if q is nil, but better than panic)
+		// If q is nil, we should probably warn.
+		// Assuming genericComputer helps if we somehow have storage but weird query?
+		// Actually, if we hit default, q is unknown/nil.
 		return &float32Computer{data: data, dims: data.Dims, ctx: ctx}
 	}
 
@@ -465,6 +500,19 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *GraphData, ctx *ArrowSearchContext
 			distFunc = simd.DistFunc // Uses initialized function pointer
 		}
 		batchDistFunc = simd.EuclideanDistanceVerticalBatch
+	}
+
+	// Use GenericComputer if storage is not Float32 and we don't have specialized computer
+	// Note: Float16, Float64, Complex, PQ, SQ8 handled above.
+	// If we are here, we have Float32 Query (converted) but Unknown Storage Type (e.g. Int8)
+	// OR we have Float32 Storage.
+	if data.Type != VectorTypeFloat32 {
+		return &genericComputer{
+			data:     data,
+			q:        qF32,
+			dims:     data.Dims,
+			distFunc: distFunc,
+		}
 	}
 
 	return &float32Computer{

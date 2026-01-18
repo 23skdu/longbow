@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
 )
@@ -23,6 +24,10 @@ type BufferedWAL struct {
 	flushDelay   time.Duration
 	stopCh       chan struct{}
 	doneCh       chan struct{}
+
+	// Error handling
+	ErrCh   chan error
+	onError func(error)
 
 	// Synchronization
 	currentSeq uint64        // Max sequence currently in buffer
@@ -42,11 +47,19 @@ func NewBufferedWAL(backend WALBackend, maxBatchSize int, flushDelay time.Durati
 		stopCh:       make(chan struct{}),
 		doneCh:       make(chan struct{}),
 		flushCh:      make(chan struct{}, 1),
+		ErrCh:        make(chan error, 1),
 	}
 	w.syncCond = sync.NewCond(&w.mu)
 
 	go w.runFlushLoop()
 	return w
+}
+
+// SetOnError sets a callback function to be invoked when a flush error occurs.
+func (w *BufferedWAL) SetOnError(fn func(error)) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.onError = fn
 }
 
 // Write writes a record to the in-memory buffer.
@@ -229,10 +242,25 @@ func (w *BufferedWAL) tryFlush() {
 
 	wb := w.swapBufferLocked()
 	w.isFlushing = true
+
+	// Capture onError callback while holding lock to avoid race if it's set later
+	onError := w.onError
 	w.mu.Unlock()
 
-	_ = w.flushBufferToBackend(wb)
-	// TODO: Log error?
+	err := w.flushBufferToBackend(wb)
+	if err != nil {
+		metrics.WALFlushErrors.Inc()
+		// Try to send to error channel (non-blocking)
+		select {
+		case w.ErrCh <- err:
+		default:
+		}
+
+		// Invoke callback if set
+		if onError != nil {
+			onError(err)
+		}
+	}
 
 	w.mu.Lock()
 	w.isFlushing = false

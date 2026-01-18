@@ -165,9 +165,9 @@ func initializeDispatch() {
 		euclideanDistanceF16Impl = euclideanF16AVX512
 		cosineDistanceF16Impl = cosineF16AVX512
 		dotProductF16Impl = dotF16AVX512
-		euclideanDistanceComplex64Impl = euclideanComplex64Unrolled
-		euclideanDistanceComplex128Impl = euclideanComplex128Unrolled
 		euclideanDistanceFloat64Impl = euclideanFloat64Unrolled4x
+		// Optimization: Use float32 AVX kernels for complex64
+		euclideanDistanceComplex64Impl = euclideanComplex64Optimized
 	case "avx2":
 		euclideanDistanceImpl = euclideanAVX2
 		euclideanDistance384Impl = euclideanGeneric // AVX2 384-dim not implemented yet, fallback
@@ -191,7 +191,7 @@ func initializeDispatch() {
 		euclideanDistanceF16Impl = euclideanF16AVX2
 		cosineDistanceF16Impl = cosineF16AVX2
 		dotProductF16Impl = dotF16AVX2
-		euclideanDistanceComplex64Impl = euclideanComplex64Unrolled   // Fallback
+		euclideanDistanceComplex64Impl = euclideanComplex64Optimized
 		euclideanDistanceComplex128Impl = euclideanComplex128Unrolled // Fallback
 		euclideanDistanceFloat64Impl = euclideanFloat64Unrolled4x
 	case "neon":
@@ -218,7 +218,7 @@ func initializeDispatch() {
 		euclideanDistanceF16Impl = euclideanF16Unrolled4x
 		cosineDistanceF16Impl = cosineF16Unrolled4x
 		dotProductF16Impl = dotF16Unrolled4x
-		euclideanDistanceComplex64Impl = euclideanComplex64Unrolled   // Fallback
+		euclideanDistanceComplex64Impl = euclideanComplex64Optimized
 		euclideanDistanceComplex128Impl = euclideanComplex128Unrolled // Fallback
 		euclideanDistanceFloat64Impl = euclideanFloat64Unrolled4x
 	default:
@@ -244,7 +244,7 @@ func initializeDispatch() {
 		euclideanDistanceF16Impl = euclideanF16Unrolled4x
 		cosineDistanceF16Impl = cosineF16Unrolled4x
 		dotProductF16Impl = dotF16Unrolled4x
-		euclideanDistanceComplex64Impl = euclideanComplex64Unrolled
+		euclideanDistanceComplex64Impl = euclideanComplex64Optimized
 		euclideanDistanceComplex128Impl = euclideanComplex128Unrolled
 		euclideanDistanceFloat64Impl = euclideanFloat64Unrolled4x
 	}
@@ -409,7 +409,19 @@ func EuclideanDistanceComplex64(a, b []complex64) float32 {
 	if len(a) == 0 {
 		return 0
 	}
-	return euclideanDistanceComplex64Impl(a, b)
+	// Optimization: complex64 is just 2x float32s in memory.
+	// We can treat them as float32 vectors of 2*N length and use the highly optimized
+	// AVX/NEON kernels for float32.
+	//
+	// Euclidean distance is sqrt(sum((real_diff^2 + imag_diff^2))), which is
+	// exactly what 2N float32 euclidean distance calculates.
+
+	// Unsafe cast to []float32
+	// Note: len * 2, cap * 2
+	vfA := unsafe.Slice((*float32)(unsafe.Pointer(&a[0])), len(a)*2)
+	vfB := unsafe.Slice((*float32)(unsafe.Pointer(&b[0])), len(b)*2)
+
+	return EuclideanDistance(vfA, vfB)
 }
 
 // EuclideanDistanceComplex128 calculates Euclidean distance for Complex128 vectors.

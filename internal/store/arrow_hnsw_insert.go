@@ -180,6 +180,48 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 		}
 	}
 
+	// Lazy Dimension Initialization
+	// Must happen BEFORE acquiring RLock to avoid Deadlock during Grow()
+	if dims == 0 {
+		inputDims := 0
+		switch v := vec.(type) {
+		case []float32:
+			inputDims = len(v)
+		case []float16.Num:
+			inputDims = len(v)
+		case []complex64:
+			inputDims = len(v)
+		case []complex128:
+			inputDims = len(v)
+		case []float64:
+			inputDims = len(v)
+		case []int8:
+			inputDims = len(v)
+		case []uint8:
+			inputDims = len(v)
+		}
+
+		if inputDims > 0 {
+			h.initMu.Lock()
+			// Double-check under lock
+			dims = int(h.dims.Load())
+			if dims == 0 {
+				newDims := inputDims
+				// 1. Force Grow with new dimensions first.
+				// This acquires growMu.Lock(), which is safe here (we don't hold RLock yet).
+				h.Grow(data.Capacity, newDims)
+
+				// 2. Advertise dimensions
+				h.dims.Store(int32(newDims))
+				dims = newDims
+
+				// Reload data after Grow
+				data = h.data.Load()
+			}
+			h.initMu.Unlock()
+		}
+	}
+
 	// Invariant: If dims > 0, Vectors/SQ8 arrays MUST exist in data.
 	// We check both Capacity and existence of structures.
 	if data.Capacity <= int(id) || (dims > 0 && data.Vectors == nil) {
@@ -187,7 +229,12 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 		data = h.data.Load()
 	}
 
-	// Lazy Chunk Allocation
+	// Acquire Read Lock to prevent concurrent Grow() from swapping GraphData
+	// while we are allocating/initializing chunks in the current snapshot.
+	h.growMu.RLock()
+	defer h.growMu.RUnlock()
+
+	// Lazy Chunk Allocation (Protected by RLock)
 	cID := chunkID(id)
 	cOff := chunkOffset(id)
 	data = h.ensureChunk(data, cID, cOff, dims)
@@ -205,46 +252,8 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 	// Access the chunk pointer atomically
 	levelsChunk := data.GetLevelsChunk(cID)
 	// We ensured chunk exists, so levelsChunk should not be nil.
-	// We ensured chunk exists, so levelsChunk should not be nil.
-	levelsChunk[cOff] = uint8(level)
-
-	// Cache dimensions on first insert
-	if dims == 0 {
-		// Determine dims from input vector
-		// This is tricky with 'any', we need to check type.
-		inputDims := 0
-		switch v := vec.(type) {
-		case []float32:
-			inputDims = len(v)
-		case []float16.Num:
-			inputDims = len(v)
-		case []complex64:
-			inputDims = len(v)
-		case []complex128:
-			inputDims = len(v)
-			// TODO: Handler other types
-		}
-
-		if inputDims > 0 {
-			h.initMu.Lock()
-			dims = int(h.dims.Load())
-			if dims == 0 {
-				newDims := inputDims
-				// 1. Force Grow with new dimensions first.
-				h.Grow(data.Capacity, newDims)
-				data = h.data.Load() // Reload updated data
-
-				// 2. Advertise dimensions
-				h.dims.Store(int32(newDims))
-				dims = newDims
-
-				// Re-ensure chunk with new dims
-				data = h.ensureChunk(data, cID, cOff, dims)
-			} else {
-				data = h.data.Load()
-			}
-			h.initMu.Unlock()
-		}
+	if levelsChunk != nil {
+		levelsChunk[cOff] = uint8(level)
 	}
 
 	// Recovery block removed: Invariant guarantees Vectors exist if dims > 0.

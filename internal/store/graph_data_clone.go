@@ -1,10 +1,5 @@
 package store
 
-import (
-	"github.com/23skdu/longbow/internal/memory"
-	"github.com/apache/arrow-go/v18/arrow/float16"
-)
-
 // Clone creates a deep copy of GraphData with new capacity.
 // This implementation is optimized for high-dimensional vectors by using
 // bulk memory copies for metadata arrays instead of element-wise atomic loads,
@@ -143,12 +138,4 @@ func (gd *GraphData) Clone(minCap, targetDims int, sq8Enabled, pqEnabled bool, p
 	}
 
 	return newGD
-}
-
-// ensureF16Arena makes sure the Float16Arena exists, creating it if necessary.
-// This is relevant when upgrading to F16 enabled during runtime.
-func (gd *GraphData) ensureF16Arena() {
-	if gd.Float16Arena == nil && gd.SlabArena != nil {
-		gd.Float16Arena = memory.NewTypedArena[float16.Num](gd.SlabArena)
-	}
 }

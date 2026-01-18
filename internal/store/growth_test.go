@@ -55,7 +55,7 @@ func TestHighDimGrowth(t *testing.T) {
 	config.DataType = VectorTypeFloat32
 
 	idx := NewArrowHNSW(ds, config, NewChunkedLocationStore())
-	defer idx.Close()
+	defer func() { _ = idx.Close() }()
 
 	// Initial State
 	require.Equal(t, 0, idx.Len())

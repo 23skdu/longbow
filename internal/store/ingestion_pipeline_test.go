@@ -65,8 +65,8 @@ func TestIngestionPipeline_Backpressure(t *testing.T) {
 	store.stopWorkers()
 	store.workerWg.Wait()
 
-	// Capacity is 16384 (from NewVectorStore)
-	queueCap := 16384
+	// Capacity is 256 (from NewVectorStore)
+	queueCap := 256
 
 	rec := createTestRecordBatch(t, 10)
 	defer rec.Release()

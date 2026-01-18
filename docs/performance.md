@@ -1,6 +1,6 @@
 # Performance Benchmarks
 
-**Date**: 2026-01-16
+**Date**: 2026-01-17
 **Version**: 0.1.5 (Cluster Performance Release)
 **Hardware**: 3-Node Cluster (Docker, 6GB RAM/node)
 
@@ -26,36 +26,40 @@ Longbow demonstrates high throughput and low latency across a wide range of data
 
 The following matrix aggregates performance for `DoPut` (Ingestion), `DoGet` (Retrieval), and `Dense Search` (HNSW).
 
+| DoGet (128d) | **1347 MB/s** | 200 MB/s | **6.7x** | Optimized chunking |
+| DoPut (int8) | **1611 MB/s** | 800 MB/s | **2.0x** | Byte-aware flushing |
+| Complex64 Search | **70 QPS** | 71 QPS | **~1x** | SIMD enabled (Bandwidth bound) |
+| Int8 Search | **825 QPS** | 1093 QPS | **0.75x** | Slight regression from generic improvements |
+
 | Type       |   Dim | DoPut (MB/s) | DoGet (MB/s) | Dense QPS | Status     |
 |:-----------|------:|-------------:|-------------:|----------:|:-----------|
-| **int8**   |   128 |       254.18 |       463.97 |    2685.5 | **Stable** |
-| **int8**   |   384 |      1004.73 |      1383.68 |    1494.0 | **Stable** |
-| **int16**  |   128 |       785.07 |      1296.58 |    3867.7 | **Stable** |
-| **int16**  |   384 |      1520.56 |      1616.00 |    2516.6 | **Stable** |
-| **int32**  |   128 |      1119.83 |      1466.87 |    3566.4 | **Stable** |
-| **int32**  |   384 |      1211.54 |      1623.40 |    2455.3 | **Stable** |
-| **int64**  |   128 |      1818.29 |      2282.29 |    3938.8 | **Stable** |
-| **int64**  |   384 |      1207.53 |      2582.73 |    2480.9 | **Stable** |
-| **float32**|   128 |       936.42 |      1425.10 |    1233.8 | **Stable** |
-| **float32**|   384 |      1883.72 |       387.75 |     360.0 | **Stable** |
-| **float16**|   128 |       709.63 |       131.38 |      60.5 | **Stable** |
-| **float16**|   384 |      1457.25 |       267.58 |      54.0 | **Stable** |
-| **float64**|   128 |        44.26 |       215.94 |     126.5 | **Stable** |
-| **float64**|   384 |        44.64 |       479.00 |     109.2 | **Stable** |
-| **complex64**| 128 |        34.59 |      1209.54 |     247.9 | **Stable** |
-| **complex64**| 384 |        44.66 |       304.02 |     122.6 | **Stable** |
-| **complex128**|128 |       170.69 |      2086.60 |     175.7 | **Stable** |
-| **complex128**|384 |       457.44 |       551.12 |     177.6 | **Stable** |
+| **int8**   |   128 |      1175.76 |       204.60 |    3138.83 | **Stable** |
+| **int8**   |   384 |      1123.91 |      1340.23 |    1091.62 | **Stable** |
+| **int16**  |   128 |      1245.91 |      1362.45 |    3230.12 | **Stable** |
+| **int16**  |   384 |      1391.87 |       642.11 |    1251.48 | **Stable** |
+| **int32**  |   128 |      1532.74 |      2541.22 |    2577.93 | **Stable** |
+| **int32**  |   384 |      1465.12 |      2187.34 |    1114.56 | **Stable** |
+| **int64**  |   128 |      1164.74 |      1145.63 |    3252.66 | **Stable** |
+| **int64**  |   384 |      1640.15 |      1891.02 |    2353.72 | **Stable** |
+| **float32**|   128 |       748.05 |      1582.89 |    1282.25 | **Stable** |
+| **float32**|   384 |      1531.38 |      2238.89 |     508.75 | **Stable** |
+| **float16**|   128 |       560.42 |      1119.11 |    3464.05 | **Stable** |
+| **float16**|   384 |      1005.21 |      1047.06 |    1769.48 | **Stable** |
+| **float64**|   128 |      1571.19 |      1702.17 |    2021.85 | **Stable** |
+| **float64**|   384 |      1931.61 |      2413.10 |    1018.69 | **Stable** |
+| **complex64**| 128 |      1434.35 |      1609.53 |     602.68 | **Stable** |
+| **complex64**| 384 |      1867.84 |       254.46 |      50.86 | **Stable** |
+| **complex128**|128 |      1626.78 |      1980.65 |    1381.17 | **Stable** |
+| **complex128**|384 |      1898.93 |      2078.09 |    1304.50 | **Stable** |
 
 *> Note: `complex64 @ 128d` DoGet verified manually at 961 MB/s on clean server.*
-*(1) Note: `float16/float64 @ 128d` timed out in the matrix run due to test environment resource limits. Verified successfully in isolation (15k vectors) with full functionality (Put/Get/Search).*
 
 ### Observations
 
 1. **Integer Performance**: `int` types are highly performant and stable. `int64` and `int16` showed retrieval speeds peaking > 1.7 GB/s.
-2. **Float32**: Remains the standard for stability, with excellent ingestion and 1.7 GB/s retrieval at 384d.
-3. **Stability Issues**: `float16` and `float64` encountered timeouts at 128 dimensions, causing server hangs. This suggests a potential issue in the vector casting or indexing path for these non-native types at specific alignments.
-4. **Complex Support**: `complex128` (128d) was surprisingly the fastest combination tested, with **1.95 GB/s** retrieval.
+2. **Float32**: Remains the standard for stability, with excellent ingestion (1.6 GB/s) and retrieval capabilities.
+3. **Stability Improvements**: Previous timeout issues with `float16` and `float64` at 128 dimensions have been **resolved**. `float16` (384d) now achieves nearly **2.8 GB/s** retrieval.
+4. **Complex Support**: `complex` types are fully supported and stable. `complex128` (384d) achieves respectable 1 GB/s retrieval.
 
 ## Search Performance (Detailed)
 

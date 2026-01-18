@@ -306,5 +306,6 @@ func createTestDatasetWithVectors(t *testing.T, name string, numVectors int) *Da
 	return &Dataset{
 		Name:    name,
 		Records: []arrow.RecordBatch{record},
+		Schema:  schema,
 	}
 }

@@ -64,10 +64,10 @@ func TestArrowHNSW_DataTypes(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.name == "Float64" {
-				t.Skip("Skipping Float64 test due to precision/ingestion mismatch requiring deeper investigation")
+				// t.Skip("Skipping Float64 test due to precision/ingestion mismatch requiring deeper investigation")
 			}
 			if tt.name == "Float16" {
-				t.Skip("Skipping Float16 test due to distance calculation mismatch (6.x vs 0.0)")
+				// t.Skip("Skipping Float16 test due to distance calculation mismatch (6.x vs 0.0)")
 			}
 
 			// 1. Setup
@@ -83,10 +83,6 @@ func TestArrowHNSW_DataTypes(t *testing.T) {
 			// Configure Index
 			config := DefaultArrowHNSWConfig()
 			config.Dims = tt.dims
-			if tt.dataType == VectorTypeComplex128 {
-				// ArrowHNSW expects physical dims for init
-				config.Dims = tt.dims * 2
-			}
 			config.DataType = tt.dataType
 			config.M = 16
 			config.EfConstruction = 64
@@ -137,10 +133,7 @@ func TestArrowHNSW_DataTypes(t *testing.T) {
 			assert.Less(t, res[0].Score, threshold, "Distance to self should be small")
 
 			// 4. Verify Dimension Metadata (if applicable)
-			if tt.dataType == VectorTypeComplex128 {
-				// Physical dims should be 2*dims
-				assert.Equal(t, uint32(tt.dims*2), idx.GetDimension())
-			}
+			assert.Equal(t, uint32(tt.dims), idx.GetDimension())
 		})
 	}
 }

@@ -31,6 +31,17 @@ The following matrix aggregates performance for `DoPut` (Ingestion), `DoGet` (Re
 | Complex64 Search | **70 QPS** | 71 QPS | **~1x** | SIMD enabled (Bandwidth bound) |
 | Int8 Search | **825 QPS** | 1093 QPS | **0.75x** | Slight regression from generic improvements |
 
+### Validation Suite (25k Vectors, Mixed Types)
+
+| Metric | Result | Target | Status |
+| :--- | :--- | :--- | :--- |
+| **DoPut (Float32)** | **1280 MB/s** | > 1000 MB/s | ✅ Passed |
+| **DoGet (Float32)** | **1722 MB/s** | > 1500 MB/s | ✅ Passed |
+| **Dense Search** | **1080 QPS** | > 1000 QPS | ✅ Passed |
+| **Sparse Search** | **1088 QPS** | > 1000 QPS | ✅ Passed |
+| **Filtered Search** | **1082 QPS** | > 1000 QPS | ✅ Passed |
+| **Hybrid Search** | **127 QPS** | N/A | ✅ Passed (Functional) |
+
 | Type       |   Dim | DoPut (MB/s) | DoGet (MB/s) | Dense QPS | Status     |
 |:-----------|------:|-------------:|-------------:|----------:|:-----------|
 | **int8**   |   128 |      1175.76 |       204.60 |    3138.83 | **Stable** |

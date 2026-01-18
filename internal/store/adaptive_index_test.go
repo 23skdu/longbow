@@ -2,10 +2,12 @@ package store
 
 import (
 	"testing"
+	"time"
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
+	"github.com/stretchr/testify/assert"
 )
 
 // =============================================================================
@@ -193,10 +195,10 @@ func TestAdaptiveIndexSwitchesToHNSW(t *testing.T) {
 		}
 	}
 
-	// Should have switched to HNSW after exceeding threshold
-	if idx.GetIndexType() != "hnsw" {
-		t.Errorf("expected hnsw after threshold, got %s", idx.GetIndexType())
-	}
+	// Should have switched to HNSW after exceeding threshold (async)
+	assert.Eventually(t, func() bool {
+		return idx.GetIndexType() == "hnsw"
+	}, 1*time.Second, 10*time.Millisecond, "expected hnsw after threshold")
 }
 
 func TestAdaptiveIndexSearchAfterMigration(t *testing.T) {
@@ -235,9 +237,10 @@ func TestAdaptiveIndexGetMigrationCount(t *testing.T) {
 	}
 
 	// Migration count should have increased
-	if idx.GetMigrationCount() <= initialCount {
-		t.Error("expected migration count to increase")
-	}
+	// Migration count should have increased (async)
+	assert.Eventually(t, func() bool {
+		return idx.GetMigrationCount() > initialCount
+	}, 1*time.Second, 10*time.Millisecond, "expected migration count to increase")
 }
 
 func TestAdaptiveIndexConcurrentAccess(t *testing.T) {

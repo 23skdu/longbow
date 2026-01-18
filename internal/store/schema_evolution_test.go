@@ -91,3 +91,36 @@ func TestSchemaEvolution_DroppedColumnReused(t *testing.T) {
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "was dropped")
 }
+
+func TestSchemaEvolution_Concurrent(t *testing.T) {
+	initialFields := []arrow.Field{
+		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
+	}
+	initialSchema := arrow.NewSchema(initialFields, nil)
+	manager := NewSchemaEvolutionManager(initialSchema, "test_dataset")
+
+	// Concurrent threads trying to add the SAME new column
+	concurrency := 10
+	errCh := make(chan error, concurrency)
+
+	// New schema to evolve to
+	newFields := append(initialFields, arrow.Field{Name: "new_col", Type: arrow.BinaryTypes.String})
+	newSchema := arrow.NewSchema(newFields, nil)
+
+	for i := 0; i < concurrency; i++ {
+		go func() {
+			errCh <- manager.Evolve(newSchema)
+		}()
+	}
+
+	// All should succeed (or be no-ops)
+	for i := 0; i < concurrency; i++ {
+		err := <-errCh
+		assert.NoError(t, err)
+	}
+
+	// Verify Schema
+	current := manager.GetCurrentSchema()
+	assert.Equal(t, 2, current.NumFields())
+	assert.Equal(t, "new_col", current.Field(1).Name)
+}

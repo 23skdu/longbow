@@ -67,7 +67,7 @@ func TestObservability_GranularMetrics(t *testing.T) {
 	// We search with float32 approx since Int8 input support in Search() input validation might be limited,
 	// but the *Metric* switch uses config.DataType/data.Type which we set to Int8.
 	q := []float32{1.0, 0.0}
-	_, err = idx.Search(q, 1, 10, nil)
+	_, err = idx.Search(context.Background(), q, 1, 10, nil)
 	require.NoError(t, err)
 
 	assert.Equal(t, 1, testutil.CollectAndCount(metrics.HNSWSearchLatencyByType), "Should record search latency for int8 type")
@@ -135,7 +135,7 @@ func TestHNSW_ObservabilityMetrics(t *testing.T) {
 
 	// Search
 	q := []float32{1.0, 0.0}
-	_, err = idx.Search(q, 1, 10, nil)
+	_, err = idx.Search(context.Background(), q, 1, 10, nil)
 	require.NoError(t, err)
 
 	// Verify Metrics

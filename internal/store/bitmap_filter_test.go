@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"testing"
 
 	qry "github.com/23skdu/longbow/internal/query"
@@ -140,7 +141,7 @@ func TestSearchWithBitmapFiltering(t *testing.T) {
 		{Field: "category", Operator: "eq", Value: "B"},
 	}
 
-	results, err := idx.SearchVectors(queryVec, 3, filters, SearchOptions{})
+	results, err := idx.SearchVectors(context.Background(), queryVec, 3, filters, SearchOptions{})
 	require.NoError(t, err)
 	require.Len(t, results, 1)
 
@@ -202,7 +203,7 @@ func TestShardedSearchWithBitmapFiltering(t *testing.T) {
 		{Field: "category", Operator: "eq", Value: "B"},
 	}
 
-	results, err := idx.SearchVectors(queryVec, 4, filters, SearchOptions{})
+	results, err := idx.SearchVectors(context.Background(), queryVec, 4, filters, SearchOptions{})
 	require.NoError(t, err)
 	require.Len(t, results, 2)
 

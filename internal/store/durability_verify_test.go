@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -206,7 +207,7 @@ func TestDurability_IndexRebuild(t *testing.T) {
 	// VectorIndex interface: Search(query []float32, k int, ef int, filter *query.Bitset) ([]Candidate, error)
 
 	qVec := []float32{1.0, 0.0}
-	results, err := ds.Index.SearchVectors(qVec, 1, nil, SearchOptions{})
+	results, err := ds.Index.SearchVectors(context.Background(), qVec, 1, nil, SearchOptions{})
 	require.NoError(t, err)
 	require.Len(t, results, 1)
 	require.Equal(t, uint32(0), uint32(results[0].ID)) // Logic uses uint32 internally for IDs from index usually?

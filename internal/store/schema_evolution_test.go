@@ -104,7 +104,7 @@ func TestSchemaEvolution_Concurrent(t *testing.T) {
 	errCh := make(chan error, concurrency)
 
 	// New schema to evolve to
-	newFields := append(initialFields, arrow.Field{Name: "new_col", Type: arrow.BinaryTypes.String})
+	newFields := append(initialFields, arrow.Field{Name: "new_col", Type: arrow.BinaryTypes.String}) //nolint:gocritic
 	newSchema := arrow.NewSchema(newFields, nil)
 
 	for i := 0; i < concurrency; i++ {

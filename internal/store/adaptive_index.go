@@ -2,6 +2,7 @@ package store
 
 import (
 	"container/heap"
+	"context"
 	"errors"
 	"sync"
 	"sync/atomic"
@@ -94,7 +95,7 @@ func (b *BruteForceIndex) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs 
 }
 
 // SearchVectorsWithBitmap returns k nearest neighbors filtered by a bitset.
-func (b *BruteForceIndex) SearchVectorsWithBitmap(q any, k int, filter *query.Bitset, options SearchOptions) []SearchResult {
+func (b *BruteForceIndex) SearchVectorsWithBitmap(ctx context.Context, q any, k int, filter *query.Bitset, options SearchOptions) []SearchResult {
 	// Not implemented for BruteForce, but needed for interface
 	return nil
 }
@@ -138,7 +139,7 @@ func (b *BruteForceIndex) EstimateMemory() int64 {
 }
 
 // SearchVectors returns the k nearest neighbors using linear scan.
-func (b *BruteForceIndex) SearchVectors(q any, k int, filters []query.Filter, options SearchOptions) ([]SearchResult, error) {
+func (b *BruteForceIndex) SearchVectors(ctx context.Context, q any, k int, filters []query.Filter, options SearchOptions) ([]SearchResult, error) {
 	qF32, ok := q.([]float32)
 	if !ok {
 		// BruteForce currently only supports float32
@@ -156,6 +157,11 @@ func (b *BruteForceIndex) SearchVectors(q any, k int, filters []query.Filter, op
 	heap.Init(h)
 
 	for i, loc := range b.locations {
+		if i%1000 == 0 {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+		}
 		vec := b.getVector(loc)
 		if vec == nil {
 			continue
@@ -325,11 +331,11 @@ func (a *AdaptiveIndex) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []
 	return ids, nil
 }
 
-func (a *AdaptiveIndex) SearchVectorsWithBitmap(q any, k int, filter *query.Bitset, options SearchOptions) []SearchResult {
+func (a *AdaptiveIndex) SearchVectorsWithBitmap(ctx context.Context, q any, k int, filter *query.Bitset, options SearchOptions) []SearchResult {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	if a.usingHNSW.Load() {
-		return a.hnsw.SearchVectorsWithBitmap(q, k, filter, options)
+		return a.hnsw.SearchVectorsWithBitmap(ctx, q, k, filter, options)
 	}
 	return nil
 }
@@ -466,17 +472,17 @@ func (a *AdaptiveIndex) migrateToHNSW() {
 }
 
 // SearchVectors delegates to the active index.
-func (a *AdaptiveIndex) SearchVectors(q any, k int, filters []query.Filter, options SearchOptions) ([]SearchResult, error) {
+func (a *AdaptiveIndex) SearchVectors(ctx context.Context, q any, k int, filters []query.Filter, options SearchOptions) ([]SearchResult, error) {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 
 	if a.usingHNSW.Load() {
 		metrics.HnswSearchesTotal.Inc()
-		return a.hnsw.SearchVectors(q, k, filters, options)
+		return a.hnsw.SearchVectors(ctx, q, k, filters, options)
 	}
 	metrics.BruteForceSearchesTotal.Inc()
 	// BruteForce doesn't support filters yet, ignoring them
-	return a.bruteForce.SearchVectors(q, k, filters, options)
+	return a.bruteForce.SearchVectors(ctx, q, k, filters, options)
 }
 
 // GetIndexType returns the current index type.

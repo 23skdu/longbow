@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"strconv"
@@ -18,7 +19,7 @@ import (
 
 // Search performs k-NN search using the provided query vector.
 // Returns the k nearest neighbors sorted by distance.
-func (h *ArrowHNSW) Search(q any, k, ef int, filter *query.Bitset) ([]SearchResult, error) {
+func (h *ArrowHNSW) Search(ctx context.Context, q any, k, ef int, filter *query.Bitset) ([]SearchResult, error) {
 	// Encode query if SQ8 enabled
 	dims := int(h.dims.Load())
 
@@ -108,10 +109,10 @@ func (h *ArrowHNSW) Search(q any, k, ef int, filter *query.Bitset) ([]SearchResu
 
 	// Get search context from pool
 	metrics.HNSWSearchPoolGetTotal.Inc()
-	ctx := h.searchPool.Get().(*ArrowSearchContext)
+	searchCtx := h.searchPool.Get().(*ArrowSearchContext)
 	defer func() {
 		metrics.HNSWSearchPoolPutTotal.Inc()
-		h.searchPool.Put(ctx)
+		h.searchPool.Put(searchCtx)
 	}()
 
 	metrics.HNSWSearchQueriesTotal.WithLabelValues(strconv.Itoa(dims)).Inc()
@@ -195,26 +196,43 @@ func (h *ArrowHNSW) Search(q any, k, ef int, filter *query.Bitset) ([]SearchResu
 	}()
 
 	// Resolve Distance Computer
-	computer := h.resolveHNSWComputer(data, ctx, q, false)
+	computer := h.resolveHNSWComputer(data, searchCtx, q, false)
 
 	traversalStart := time.Now()
 	for l := maxL; l > 0; l-- {
-		ctx.Reset()
-		ep = h.searchLayer(computer, ep, 1, l, ctx, data, nil)
-		totalVisited += ctx.VisitedCount()
+		// Check context for cancellation
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+
+		searchCtx.Reset()
+		var err error
+		ep, err = h.searchLayer(ctx, computer, ep, 1, l, searchCtx, data, nil)
+		if err != nil {
+			return nil, err
+		}
+		totalVisited += searchCtx.VisitedCount()
 	}
 	metrics.HNSWSearchPhaseDurationSeconds.WithLabelValues(dsName, "traversal").Observe(time.Since(traversalStart).Seconds())
 
 	// 2. Final Search at Layer 0
-	ctx.Reset()
+	// Check context
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
+	searchCtx.Reset()
 
 	layer0Start := time.Now()
-	_ = h.searchLayer(computer, ep, ef, 0, ctx, data, filter)
-	totalVisited += ctx.VisitedCount()
+	_, err := h.searchLayer(ctx, computer, ep, ef, 0, searchCtx, data, filter)
+	if err != nil {
+		return nil, err
+	}
+	totalVisited += searchCtx.VisitedCount()
 	metrics.HNSWSearchPhaseDurationSeconds.WithLabelValues(dsName, "layer0").Observe(time.Since(layer0Start).Seconds())
 
 	// Results are in resultSet
-	resultSet := ctx.resultSet
+	resultSet := searchCtx.resultSet
 	results := make([]SearchResult, 0, targetK)
 
 	// Peek multiple results from max-heap (not efficient but we only do it once)
@@ -245,7 +263,7 @@ func (h *ArrowHNSW) Search(q any, k, ef int, filter *query.Bitset) ([]SearchResu
 
 		// Create a high-precision computer for refinement (usually Float32)
 		// We use the same context but ignore SQ8/PQ/BQ settings
-		refineComputer := h.resolveHNSWComputer(data, ctx, q, false)
+		refineComputer := h.resolveHNSWComputer(data, searchCtx, q, false)
 		// If refineComputer is SQ8, we need to force it to Float32/Primary
 		// Actually resolveHNSWComputer uses h.config.SQ8Enabled.
 		// For refinement, we want to bypass quantized computers.
@@ -265,6 +283,9 @@ func (h *ArrowHNSW) Search(q any, k, ef int, filter *query.Bitset) ([]SearchResu
 		}
 
 		for i := range results {
+			if i%100 == 0 && ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
 			results[i].Score = refineComputer.ComputeSingle(uint32(results[i].ID))
 		}
 		// Resort
@@ -281,7 +302,7 @@ func (h *ArrowHNSW) Search(q any, k, ef int, filter *query.Bitset) ([]SearchResu
 	return results, nil
 }
 
-func (h *ArrowHNSW) searchLayer(computer HNSWDistanceComputer, entryPoint uint32, ef, layer int, ctx *ArrowSearchContext, data *GraphData, filter *query.Bitset) (candidate uint32) {
+func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer HNSWDistanceComputer, entryPoint uint32, ef, layer int, ctx *ArrowSearchContext, data *GraphData, filter *query.Bitset) (candidate uint32, err error) {
 	ctx.ResetVisited()
 	ctx.candidates.Clear()
 
@@ -316,7 +337,16 @@ func (h *ArrowHNSW) searchLayer(computer HNSWDistanceComputer, entryPoint uint32
 	closest := entryPoint
 	closestDist := entryDist
 
+	// Local counter for context check frequency
+	ops := 0
+
 	for ctx.candidates.Len() > 0 {
+		// Check context cancellation periodically (bitwise version of % 64 == 0)
+		ops++
+		if (ops&0x3F == 0) && goCtx.Err() != nil {
+			return 0, goCtx.Err()
+		}
+
 		curr, ok := ctx.candidates.Pop()
 		if !ok {
 			break
@@ -531,7 +561,7 @@ func (h *ArrowHNSW) searchLayer(computer HNSWDistanceComputer, entryPoint uint32
 		}
 	}
 
-	return closest
+	return closest, nil
 }
 
 func (h *ArrowHNSW) distanceF16(q []float16.Num, id uint32, data *GraphData, _ *ArrowSearchContext) float32 {
@@ -652,13 +682,4 @@ func (h *ArrowHNSW) mustGetVectorFromData(data *GraphData, id uint32) any {
 	// If we reached here, the vector ID is invalid in the graph or data is missing.
 	// We return nil to allow callers to fallback or use a sentinel.
 	return nil
-}
-
-// getSentinelVector returns a zero-filled vector of the correct dimension.
-// It uses a cached slice if available or allocates one.
-// Since this is an error path fallback, allocation is acceptable, but we try to be cheap.
-func (h *ArrowHNSW) getSentinelVector(dims int) []float32 {
-	// TODO: Use a pool or pre-allocated global if this happens frequently.
-	// For now, simple allocation is fine as this should be rare (0 in steady state).
-	return make([]float32, dims)
 }

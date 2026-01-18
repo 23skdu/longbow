@@ -158,7 +158,7 @@ func (s *VectorStore) handleVectorSearchExchange(stream flight.FlightService_DoE
 		_ = ef
 	}
 
-	searchResults, err := ds.Index.SearchVectors(queryVec, k, nil, searchOpts)
+	searchResults, err := ds.Index.SearchVectors(stream.Context(), queryVec, k, nil, searchOpts)
 	ds.dataMu.RUnlock() // Unlock early
 
 	if err != nil {

@@ -57,7 +57,7 @@ func TestPadding_OddDimensions(t *testing.T) {
 	// Wait, if it failed with "res[0].Dist undefined" previously (Step 667), it likely meant Dist didn't exist.
 	// So Score probably exists.
 
-	res, err := idx.Search(query, 10, 100, nil)
+	res, err := idx.Search(ctx, query, 10, 100, nil)
 	assert.NoError(t, err)
 	assert.NotEmpty(t, res)
 	assert.EqualValues(t, 50, res[0].ID)

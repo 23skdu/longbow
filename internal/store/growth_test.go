@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"math/rand"
 	"runtime"
 	"testing"
@@ -98,7 +99,7 @@ func TestHighDimGrowth(t *testing.T) {
 	// Search for specific vectors and ensure they are found as top result (distance 0)
 	for i := 0; i < numVecs; i += 50 { // Sample check
 		query := vectors[i]
-		res, err := idx.Search(query, 1, 100, nil)
+		res, err := idx.Search(context.Background(), query, 1, 100, nil)
 		require.NoError(t, err)
 		require.GreaterOrEqual(t, len(res), 1)
 		require.Equal(t, uint32(i), uint32(res[0].ID), "Should find self at rank 0")

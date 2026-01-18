@@ -277,6 +277,18 @@ func (h *ArrowHNSW) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []int)
 			}
 			vecs = vecsF16
 
+		case VectorTypeInt8:
+			vecsInt8 := make([][]int8, n)
+			for i := 0; i < n; i++ {
+				rec := getRecordBatch(i, recs, batchIdxs, useDirectIndex)
+				v, e := ExtractVectorGeneric[int8](rec, rowIdxs[i], h.vectorColIdx)
+				if e != nil {
+					return nil, e
+				}
+				vecsInt8[i] = v
+			}
+			vecs = vecsInt8
+
 		case VectorTypeFloat64:
 			vecsF64 := make([][]float64, n)
 			for i := 0; i < n; i++ {
@@ -481,7 +493,7 @@ func (h *ArrowHNSW) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []int)
 }
 
 // SearchVectors implements VectorIndex.
-func (h *ArrowHNSW) SearchVectors(queryVec any, k int, filters []query.Filter, options SearchOptions) ([]SearchResult, error) {
+func (h *ArrowHNSW) SearchVectors(ctx context.Context, queryVec any, k int, filters []query.Filter, options SearchOptions) ([]SearchResult, error) {
 	// Post-filtering with Adaptive Expansion
 	initialFactor := 10
 	retryFactor := 50
@@ -552,7 +564,7 @@ func (h *ArrowHNSW) SearchVectors(queryVec any, k int, filters []query.Filter, o
 		ef := limit + 100
 
 		// Pass qBitset if we matched simple criteria
-		candidates, err := h.Search(q, limit, ef, qBitset)
+		candidates, err := h.Search(ctx, q, limit, ef, qBitset)
 		if err != nil {
 			return nil, err
 		}
@@ -632,11 +644,11 @@ func (h *ArrowHNSW) SearchVectors(queryVec any, k int, filters []query.Filter, o
 }
 
 // SearchVectorsWithBitmap implements VectorIndex.
-func (h *ArrowHNSW) SearchVectorsWithBitmap(q any, k int, filter *query.Bitset, options SearchOptions) []SearchResult {
+func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, q any, k int, filter *query.Bitset, options SearchOptions) []SearchResult {
 	ef := k + 100
 	// Calls h.Search which returns ([]SearchResult, error)
 	// The interface signature returns only []SearchResult
-	res, _ := h.Search(q, k, ef, filter)
+	res, _ := h.Search(ctx, q, k, ef, filter)
 	return res
 }
 

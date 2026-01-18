@@ -299,7 +299,7 @@ func measureRecall(t *testing.T, numVectors, dim, numQueries, k int, cfg *store.
 		idx := i
 		eg.Go(func() error {
 			query := queries[idx]
-			hnsw2Results, err := hnsw2Index.Search(query, k+1, k*200, nil)
+			hnsw2Results, err := hnsw2Index.Search(context.Background(), query, k+1, k*200, nil)
 			if err != nil {
 				return err
 			}

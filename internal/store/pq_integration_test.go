@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"math/rand"
 	"testing"
 
@@ -102,7 +103,7 @@ func TestPQ_EndToEnd(t *testing.T) {
 		queryVec := vectors[queryIdx]
 
 		// Perform Search
-		results, err := hnsw.Search(queryVec, k, 100, nil)
+		results, err := hnsw.Search(context.Background(), queryVec, k, 100, nil)
 		require.NoError(t, err)
 
 		// Check if queryIdx is in results

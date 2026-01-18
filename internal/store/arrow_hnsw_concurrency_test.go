@@ -200,7 +200,7 @@ func TestArrowHNSW_Concurrency_MixedReadWrite(t *testing.T) {
 							query[k] = rand.Float32()
 						}
 						// Search
-						_, _ = idx.SearchVectors(query, 10, nil, SearchOptions{})
+						_, _ = idx.SearchVectors(context.Background(), query, 10, nil, SearchOptions{})
 					}
 					time.Sleep(time.Millisecond)
 				}

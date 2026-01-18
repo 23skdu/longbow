@@ -125,7 +125,7 @@ func (s *VectorStore) handleVectorSearchAction(action *flight.Action, stream fli
 
 			// Perform search
 			var errSearch error
-			searchResults, errSearch = ds.Index.SearchVectors(queryVec, req.K, req.Filters, SearchOptions{
+			searchResults, errSearch = ds.Index.SearchVectors(stream.Context(), queryVec, req.K, req.Filters, SearchOptions{
 				IncludeVectors: req.IncludeVectors,
 				VectorFormat:   req.VectorFormat,
 			})
@@ -396,7 +396,7 @@ func (s *VectorStore) handleVectorSearchByIDAction(action *flight.Action, stream
 	}
 
 	// 2. Perform Search
-	results, err := ds.Index.SearchVectors(targetVec, req.K, nil, SearchOptions{
+	results, err := ds.Index.SearchVectors(stream.Context(), targetVec, req.K, nil, SearchOptions{
 		IncludeVectors: req.IncludeVectors,
 		VectorFormat:   req.VectorFormat,
 	})

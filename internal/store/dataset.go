@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"errors"
 	"os"
 	"strconv"
@@ -205,7 +206,7 @@ func (d *Dataset) GetHNSW2Index() interface{} {
 }
 
 // SearchDataset delegates to the vector index if available
-func (d *Dataset) SearchDataset(query []float32, k int) ([]SearchResult, error) {
+func (d *Dataset) SearchDataset(ctx context.Context, query []float32, k int) ([]SearchResult, error) {
 	d.dataMu.RLock()
 	idx := d.Index
 	d.dataMu.RUnlock()
@@ -214,7 +215,7 @@ func (d *Dataset) SearchDataset(query []float32, k int) ([]SearchResult, error) 
 		return nil, nil
 	}
 	// Assuming vector index interface has SearchVectors
-	return idx.SearchVectors(query, k, nil, SearchOptions{})
+	return idx.SearchVectors(ctx, query, k, nil, SearchOptions{})
 }
 
 // AddToIndex adds a vector to the index

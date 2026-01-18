@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"runtime"
 	"testing"
 
@@ -127,7 +128,7 @@ func TestHNSW_HighDimensionGrowth(t *testing.T) {
 		queryVec[i] = float32(i) / float32(dims)
 	}
 
-	results, err := hnsw.SearchVectors(queryVec, 10, nil, SearchOptions{})
+	results, err := hnsw.SearchVectors(context.Background(), queryVec, 10, nil, SearchOptions{})
 	require.NoError(t, err)
 	require.Len(t, results, 10, "Should return 10 results")
 

@@ -1,6 +1,7 @@
 package store_test
 
 import (
+	"context"
 	"math/rand"
 	"testing"
 	"time"
@@ -55,7 +56,7 @@ func BenchmarkHNSW_ZeroCopy_Float16(b *testing.B) {
 	b.Run("Search/ZeroCopy", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			// Zero-copy search
-			_, err := idx.Search(query, k, 100, nil)
+			_, err := idx.Search(context.Background(), query, k, 100, nil)
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -71,7 +72,7 @@ func BenchmarkHNSW_ZeroCopy_Float16(b *testing.B) {
 	b.Run("Search/LegacyConverted", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			// Passing []float32 triggers conversion in resolveHNSWComputer
-			_, err := idx.Search(queryF32, k, 100, nil)
+			_, err := idx.Search(context.Background(), queryF32, k, 100, nil)
 			if err != nil {
 				b.Fatal(err)
 			}

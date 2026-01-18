@@ -61,7 +61,7 @@ func TestArrowHNSW_Float16_ZeroCopy(t *testing.T) {
 	// 5. Search with Native Type
 	// Search for vector 0, expect ID 0
 	query := vecsF16[0]
-	results, err := idx.Search(query, 10, 50, nil)
+	results, err := idx.Search(context.Background(), query, 10, 50, nil)
 	require.NoError(t, err)
 	require.NotEmpty(t, results)
 

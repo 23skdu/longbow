@@ -1,11 +1,11 @@
 package store
 
-
 import (
+	"context"
 	"sync"
 	"testing"
 	"time"
-	
+
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
@@ -15,31 +15,31 @@ import (
 func TestConcurrentSearch(t *testing.T) {
 	dataset := &Dataset{Name: "test"}
 	index := NewArrowHNSW(dataset, DefaultArrowHNSWConfig(), nil)
-	
+
 	// Create a simple index with a few nodes
 	// Note: This test validates the locking mechanism works
 	// Full concurrent search testing requires vector storage integration
-	
+
 	query := []float32{1.0, 2.0, 3.0}
-	
+
 	// Run concurrent searches
 	var wg sync.WaitGroup
 	numGoroutines := 10
 	numSearches := 100
-	
+
 	for i := 0; i < numGoroutines; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for j := 0; j < numSearches; j++ {
-				_, err := index.Search(query, 10, 20, nil)
+				_, err := index.Search(context.Background(), query, 10, 20, nil)
 				if err != nil {
 					t.Errorf("concurrent search failed: %v", err)
 				}
 			}
 		}()
 	}
-	
+
 	wg.Wait()
 }
 
@@ -53,16 +53,16 @@ func TestConcurrentSearchAndInsert(t *testing.T) {
 		},
 		nil,
 	)
-	
+
 	// Create vectors
 	numVectors := 1000
 	bldr := array.NewFixedSizeListBuilder(mem, int32(dim), arrow.PrimitiveTypes.Float32)
 	defer bldr.Release()
 	vb := bldr.ValueBuilder().(*array.Float32Builder)
-	
+
 	bldr.Reserve(numVectors)
 	vb.Reserve(numVectors * dim)
-	
+
 	// Fill with dummy data
 	for i := 0; i < numVectors; i++ {
 		bldr.Append(true)
@@ -70,36 +70,36 @@ func TestConcurrentSearchAndInsert(t *testing.T) {
 			vb.Append(float32(i + j))
 		}
 	}
-	
+
 	rec := bldr.NewArray()
 	defer rec.Release()
 	batch := array.NewRecordBatch(schema, []arrow.Array{rec}, int64(numVectors))
 	defer batch.Release()
-		
+
 	dataset := &Dataset{
-		Name: "test", 
-		Schema: schema,
+		Name:    "test",
+		Schema:  schema,
 		Records: []arrow.RecordBatch{batch},
 	}
-	
+
 	index := NewArrowHNSW(dataset, DefaultArrowHNSWConfig(), nil)
-	
+
 	query := make([]float32, dim)
-	
+
 	var wg sync.WaitGroup
-	
+
 	// Searchers
 	for i := 0; i < 5; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for j := 0; j < 50; j++ {
-				_, _ = index.Search(query, 10, 20, nil)
+				_, _ = index.Search(context.Background(), query, 10, 20, nil)
 				time.Sleep(time.Microsecond)
 			}
 		}()
 	}
-	
+
 	// Inserters
 	for i := 0; i < 2; i++ {
 		wg.Add(1)
@@ -119,7 +119,7 @@ func TestConcurrentSearchAndInsert(t *testing.T) {
 			}
 		}(startIdx)
 	}
-	
+
 	wg.Wait()
 }
 
@@ -127,29 +127,29 @@ func TestConcurrentSearchAndInsert(t *testing.T) {
 func BenchmarkConcurrentSearch(b *testing.B) {
 	dataset := &Dataset{Name: "test"}
 	index := NewArrowHNSW(dataset, DefaultArrowHNSWConfig(), nil)
-	
+
 	query := []float32{1.0, 2.0, 3.0}
-	
+
 	b.Run("Sequential", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			_, _ = index.Search(query, 10, 20, nil)
+			_, _ = index.Search(context.Background(), query, 10, 20, nil)
 		}
 	})
-	
+
 	b.Run("Parallel-4", func(b *testing.B) {
 		b.SetParallelism(4)
 		b.RunParallel(func(pb *testing.PB) {
 			for pb.Next() {
-				_, _ = index.Search(query, 10, 20, nil)
+				_, _ = index.Search(context.Background(), query, 10, 20, nil)
 			}
 		})
 	})
-	
+
 	b.Run("Parallel-8", func(b *testing.B) {
 		b.SetParallelism(8)
 		b.RunParallel(func(pb *testing.PB) {
 			for pb.Next() {
-				_, _ = index.Search(query, 10, 20, nil)
+				_, _ = index.Search(context.Background(), query, 10, 20, nil)
 			}
 		})
 	})
@@ -159,15 +159,15 @@ func BenchmarkConcurrentSearch(b *testing.B) {
 func BenchmarkSearchLatency(b *testing.B) {
 	dataset := &Dataset{Name: "test"}
 	index := NewArrowHNSW(dataset, DefaultArrowHNSWConfig(), nil)
-	
+
 	query := make([]float32, 384)
 	for i := range query {
 		query[i] = float32(i)
 	}
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = index.Search(query, 10, 20, nil)
+		_, _ = index.Search(context.Background(), query, 10, 20, nil)
 	}
 }
 
@@ -175,9 +175,9 @@ func BenchmarkSearchLatency(b *testing.B) {
 func BenchmarkInsertThroughput(b *testing.B) {
 	dataset := &Dataset{Name: "test"}
 	index := NewArrowHNSW(dataset, DefaultArrowHNSWConfig(), nil)
-	
+
 	lg := NewLevelGenerator(1.44269504089)
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		level := lg.Generate()

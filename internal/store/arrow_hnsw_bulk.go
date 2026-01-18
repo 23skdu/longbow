@@ -290,7 +290,10 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 
 					if lc > node.level {
 						// Descent phase: ef=1
-						res := h.searchLayerForInsert(ctxSearch, node.vec, currEp, 1, lc, data)
+						res, err := h.searchLayerForInsert(ctx, ctxSearch, node.vec, currEp, 1, lc, data)
+						if err != nil {
+							return err
+						}
 						if len(res) > 0 {
 							currentEps[idx] = res[0].ID
 						}
@@ -302,7 +305,10 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 							ef = h.getAdaptiveEf(int(h.nodeCount.Load()))
 						}
 
-						res := h.searchLayerForInsert(ctxSearch, node.vec, currEp, ef, lc, data)
+						res, err := h.searchLayerForInsert(ctx, ctxSearch, node.vec, currEp, ef, lc, data)
+						if err != nil {
+							return err
+						}
 						// Store candidates (make copy as ctx is reused)
 						// searchLayerForInsert returns slice from ctx.scratchResults
 						cp := make([]Candidate, len(res), len(res)+16) // Pre-alloc extra cap for intra-batch
@@ -454,13 +460,16 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 											dist = h.distFuncC128(q, t)
 										}
 									case []int8:
-										// Temporary: Convert to float32 for int8 if no specialized dist func
-										// Or cast if h.distFunc handles it? No, h.distFunc is strictly []float32
-										// TODO: Add distFuncInt8. For now, on-the-fly conversion is slow but functional for correctness.
-										// But this loop is for speed. Let's assume we want to support it.
-										// Ideally we add support in ArrowHNSW or simd package.
-										// Fallback: MaxFloat
-										dist = math.MaxFloat32
+										if t, ok := tVec.([]int8); ok {
+											// Fallback: Convert to float32 on the fly and compute Euclidean
+											var sum float32
+											for k := 0; k < len(q) && k < len(t); k++ {
+												diff := float32(q[k]) - float32(t[k])
+												sum += diff * diff
+											}
+											dist = float32(math.Sqrt(float64(sum)))
+											done = true
+										}
 									default:
 										dist = math.MaxFloat32
 									}

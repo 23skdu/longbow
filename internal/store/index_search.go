@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"time"
@@ -70,7 +71,7 @@ func (h *HNSWIndex) GetNeighbors(id VectorID) ([]VectorID, error) {
 
 // SearchVectors performs k-NN search returning full results with scores (distances).
 // Uses striped locks for location access to reduce contention in result processing.
-func (h *HNSWIndex) SearchVectors(queryVec any, k int, filters []qry.Filter, options SearchOptions) ([]SearchResult, error) {
+func (h *HNSWIndex) SearchVectors(ctx context.Context, queryVec any, k int, filters []qry.Filter, options SearchOptions) ([]SearchResult, error) {
 	q, ok := queryVec.([]float32)
 	if !ok {
 		return nil, fmt.Errorf("HNSWIndex only supports []float32, got %T", queryVec)
@@ -101,7 +102,7 @@ func (h *HNSWIndex) SearchVectors(queryVec any, k int, filters []qry.Filter, opt
 		bitset, err := h.dataset.GenerateFilterBitset(filters)
 		if err == nil && bitset != nil {
 			defer bitset.Release()
-			res := h.SearchVectorsWithBitmap(queryVec, k, bitset, options)
+			res := h.SearchVectorsWithBitmap(ctx, queryVec, k, bitset, options)
 			// Extract vectors if requested (SearchVectorsWithBitmap doesn't do this)
 			if options.IncludeVectors {
 				h.extractVectors(res, options.VectorFormat)
@@ -160,7 +161,7 @@ func (h *HNSWIndex) SearchVectors(queryVec any, k int, filters []qry.Filter, opt
 		}
 
 		// Get search context from pool
-		ctx := h.searchPool.Get()
+		poolCtx := h.searchPool.Get()
 
 		// Use pooled buffers
 		// Note: ctx buffers might need resetting if reused in loop, but we defer Put at end of function or loop?
@@ -174,8 +175,8 @@ func (h *HNSWIndex) SearchVectors(queryVec any, k int, filters []qry.Filter, opt
 
 		res := make([]SearchResult, 0, k) // Allocate fresh result slice for this attempt
 
-		batchIDs := ctx.batchIDs
-		batchLocs := ctx.batchLocs
+		batchIDs := poolCtx.batchIDs
+		batchLocs := poolCtx.batchLocs
 
 		// PQ Context setup...
 		var pqTable []float32
@@ -188,8 +189,8 @@ func (h *HNSWIndex) SearchVectors(queryVec any, k int, filters []qry.Filter, opt
 			pqTable = h.pqEncoder.ComputeDistanceTableFlat(q)
 			pqM = h.pqEncoder.CodeSize()
 			const batchSize = searchBatchSize
-			pqFlatCodes = ctx.pqFlatCodes[:batchSize*pqM]
-			pqBatchResults = ctx.pqBatchResults
+			pqFlatCodes = poolCtx.pqFlatCodes[:batchSize*pqM]
+			pqBatchResults = poolCtx.pqBatchResults
 			packedLen = (pqM + 3) / 4
 		}
 		h.pqCodesMu.RUnlock()
@@ -293,7 +294,7 @@ func (h *HNSWIndex) SearchVectors(queryVec any, k int, filters []qry.Filter, opt
 			h.exitEpoch()
 		}
 
-		h.searchPool.Put(ctx) // Release context for this attempt
+		h.searchPool.Put(poolCtx) // Release context for this attempt
 
 		// Check if we satisfied K
 		if len(res) >= k || attempt == maxRetries || len(filters) == 0 {
@@ -312,7 +313,7 @@ func (h *HNSWIndex) SearchVectors(queryVec any, k int, filters []qry.Filter, opt
 }
 
 // SearchVectorsWithBitmap returns k nearest neighbors filtered by a bitset.
-func (h *HNSWIndex) SearchVectorsWithBitmap(queryVec any, k int, filter *qry.Bitset, options SearchOptions) []SearchResult {
+func (h *HNSWIndex) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k int, filter *qry.Bitset, options SearchOptions) []SearchResult {
 	q, ok := queryVec.([]float32)
 	if !ok {
 		return []SearchResult{}

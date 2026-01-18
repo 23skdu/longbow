@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/23skdu/longbow/internal/pq"
@@ -114,10 +115,10 @@ type VectorIndex interface {
 
 	// SearchVectors returns the k nearest neighbors for the query vector with scores and optional filtering.
 	// query can be []float32, []float16.Num, []complex64, []complex128, etc.
-	SearchVectors(query any, k int, filters []query.Filter, options SearchOptions) ([]SearchResult, error)
+	SearchVectors(ctx context.Context, query any, k int, filters []query.Filter, options SearchOptions) ([]SearchResult, error)
 
 	// SearchVectorsWithBitmap returns k nearest neighbors filtered by a bitset.
-	SearchVectorsWithBitmap(query any, k int, filter *query.Bitset, options SearchOptions) []SearchResult
+	SearchVectorsWithBitmap(ctx context.Context, query any, k int, filter *query.Bitset, options SearchOptions) []SearchResult
 
 	// GetLocation retrieves the storage location for a given vector ID.
 	// Returns the location and true if found, or zero location and false if not found.

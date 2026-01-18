@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -44,14 +45,14 @@ func TestComplex128_DimensionCheck(t *testing.T) {
 	// Note: Complex128 HNSW uses float64 internally but SearchVectors API takes float32.
 
 	// Let's verify standard search path
-	_, err := idx.SearchVectors(validQuery, 10, nil, SearchOptions{})
+	_, err := idx.SearchVectors(context.Background(), validQuery, 10, nil, SearchOptions{})
 	require.NoError(t, err, "Search with correct physical dimension should succeed")
 
 	// Case 2: Search with LOGICAL dimension (4 floats) - Should Fail
 	// logicalDim is 4 (from above)
 
 	invalidQuery := make([]float32, logicalDim)
-	_, err = idx.SearchVectors(invalidQuery, 10, nil, SearchOptions{})
+	_, err = idx.SearchVectors(context.Background(), invalidQuery, 10, nil, SearchOptions{})
 	require.Error(t, err, "Search with logical dimension (half size) should fail")
 	require.Contains(t, err.Error(), fmt.Sprintf("index expects %d elements (logical dims=%d), got query len %d", physicalDim, logicalDim, logicalDim))
 }
@@ -121,7 +122,7 @@ func TestComplex_SearchCorrectness(t *testing.T) {
 	// Query: [1.1, 0, 0, 0] (Close to V1)
 	query := []float32{1.1, 0, 0, 0}
 
-	res, err := idx.SearchVectors(query, 5, nil, SearchOptions{VectorFormat: "complex128"}) // format might matter for distance func
+	res, err := idx.SearchVectors(context.Background(), query, 5, nil, SearchOptions{VectorFormat: "complex128"}) // format might matter for distance func
 	require.NoError(t, err)
 
 	require.GreaterOrEqual(t, len(res), 1)
@@ -136,7 +137,7 @@ func TestComplex_SearchCorrectness(t *testing.T) {
 	// Search 2
 	// Query: [0.1, 0, 1.1, 0] (Close to V2)
 	query2 := []float32{0.1, 0, 1.1, 0}
-	res2, err := idx.SearchVectors(query2, 5, nil, SearchOptions{})
+	res2, err := idx.SearchVectors(context.Background(), query2, 5, nil, SearchOptions{})
 	require.NoError(t, err)
 	require.Equal(t, VectorID(1), res2[0].ID)
 }

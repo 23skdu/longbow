@@ -1,7 +1,7 @@
 package store_test
 
-
 import (
+	"context"
 	"math"
 	"testing"
 
@@ -118,7 +118,7 @@ func TestRecallDebug(t *testing.T) {
 
 	// Get hnsw2 results with higher ef for better recall
 	ef := k * 10 // Use 10x k for better recall
-	hnsw2Results, err := hnsw2Index.Search(query, k, ef, nil)
+	hnsw2Results, err := hnsw2Index.Search(context.Background(), query, k, ef, nil)
 	if err != nil {
 		t.Fatalf("hnsw2 search failed: %v", err)
 	}

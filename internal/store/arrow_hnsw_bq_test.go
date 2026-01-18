@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"math/rand"
 	"testing"
 	"time"
@@ -103,7 +104,7 @@ func TestArrowHNSW_BinaryQuantization_Integration(t *testing.T) {
 	}
 
 	// Standard Search
-	results, err := index.SearchVectors(queryVec, 10, nil, SearchOptions{})
+	results, err := index.SearchVectors(context.Background(), queryVec, 10, nil, SearchOptions{})
 	require.NoError(t, err)
 	require.Len(t, results, 10)
 

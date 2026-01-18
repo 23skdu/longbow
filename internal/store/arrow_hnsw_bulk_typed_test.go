@@ -1,7 +1,7 @@
 package store
 
 import (
-	"math/rand"
+	"context"
 	"testing"
 
 	"github.com/apache/arrow-go/v18/arrow"
@@ -55,42 +55,36 @@ func TestAddBatch_Bulk_Typed(t *testing.T) {
 			// Populate Data
 			for i := 0; i < numVecs; i++ {
 				listB.Append(true)
-				switch tt.dataType {
-				case VectorTypeInt8:
-					valB := listB.ValueBuilder().(*array.Int8Builder)
+				switch valB := listB.ValueBuilder().(type) {
+				case *array.Int8Builder:
 					for j := 0; j < tt.dims; j++ {
-						valB.Append(int8(rand.Intn(100)))
+						// Encode i into first 2 bytes to ensure uniqueness
+						val := int8(0)
+						switch j {
+						case 0:
+							val = int8(i & 0xFF)
+						case 1:
+							val = int8((i >> 8) & 0xFF)
+						}
+						valB.Append(val)
 					}
-				case VectorTypeFloat64:
-					valB := listB.ValueBuilder().(*array.Float64Builder)
-					for j := 0; j < tt.dims; j++ {
-						valB.Append(rand.Float64())
+				case *array.Float64Builder:
+					if tt.dataType == VectorTypeFloat64 {
+						for j := 0; j < tt.dims; j++ {
+							valB.Append(float64(i) + float64(j)*0.1)
+						}
+					} else {
+						// Complex128
+						for j := 0; j < tt.dims; j++ {
+							valB.Append(float64(i) + float64(j)*0.1)       // Real
+							valB.Append(float64(i) + float64(j)*0.1 + 0.5) // Imag
+						}
 					}
-				case VectorTypeComplex64:
-					// Complex64 in Arrow is usually represented as standard FixedSizeList(2) of Float32 or Struct?
-					// Longbow usually treats Complex64 as FixedSizeList[Dims*2] of Float32 implicitly or specialized type.
-					// Given ExtractVectorGeneric[complex64] works, it implies the underlying storage is combatible.
-					// Let's use Float32Builder and pack it.
-					// BUT ExtractVectorGeneric[complex64] expects the Arrow type to align.
-					// If the Arrow type is FixedSizeList<Float32>[Dims*2], we can cast to []complex64 IF layout matches.
-					// In Go, []complex64 is contiguous 64-bit (32r, 32i).
-					// Arrow Float32 is 32-bit.
-					// If we pack [r, i, r, i...], it matches.
-
-					// However, getArrowType helper below needs to be correct.
-					// For Complex64, let's assume we model it as Float32 in Arrow for now,
-					// but the Index treats it as Complex64.
-					// NOTE: Arrow doesn't have native Complex type.
-					valB := listB.ValueBuilder().(*array.Float32Builder)
+				case *array.Float32Builder:
+					// Complex64
 					for j := 0; j < tt.dims; j++ {
-						valB.Append(rand.Float32()) // Real
-						valB.Append(rand.Float32()) // Imag
-					}
-				case VectorTypeComplex128:
-					valB := listB.ValueBuilder().(*array.Float64Builder)
-					for j := 0; j < tt.dims; j++ {
-						valB.Append(rand.Float64()) // Real
-						valB.Append(rand.Float64()) // Imag
+						valB.Append(float32(i) + float32(j)*0.1)       // Real
+						valB.Append(float32(i) + float32(j)*0.1 + 0.5) // Imag
 					}
 				}
 			}
@@ -129,7 +123,7 @@ func TestAddBatch_Bulk_Typed(t *testing.T) {
 
 			// Verify Search (sanity check)
 			// Search with the vector itself should return itself as top 1 (distance 0)
-			res, err := idx.SearchVectors(vecAny, 10, nil, SearchOptions{})
+			res, err := idx.SearchVectors(context.Background(), vecAny, 10, nil, SearchOptions{})
 			require.NoError(t, err)
 			require.NotEmpty(t, res)
 			assert.Equal(t, VectorID(qID), res[0].ID)

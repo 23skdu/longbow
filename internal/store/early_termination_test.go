@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"testing"
 
 	"github.com/apache/arrow-go/v18/arrow/memory"
@@ -24,7 +25,7 @@ func TestHNSW_SearchEarlyTermination(t *testing.T) {
 
 	// Search with long ef but should terminate early because all distances are 0
 	q := []float32{1.0, 1.0, 1.0, 1.0}
-	results, err := h.Search(q, 10, 100, nil)
+	results, err := h.Search(context.Background(), q, 10, 100, nil)
 	require.NoError(t, err)
 	assert.GreaterOrEqual(t, len(results), 10)
 
@@ -46,7 +47,7 @@ func FuzzHNSW_SearchEarlyTermination(f *testing.F) {
 		}
 
 		q := []float32{val}
-		_, err := h.Search(q, 1, ef, nil)
+		_, err := h.Search(context.Background(), q, 1, ef, nil)
 		if err != nil {
 			t.Errorf("Search failed: %v", err)
 		}

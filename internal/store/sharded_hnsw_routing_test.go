@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"sync"
 	"testing"
 
@@ -105,7 +106,7 @@ func TestShardedHNSW_MergedSearch(t *testing.T) {
 		q[i] = 50.0
 	}
 
-	results, err := idx.SearchVectors(q, 5, nil, SearchOptions{})
+	results, err := idx.SearchVectors(context.Background(), q, 5, nil, SearchOptions{})
 	require.NoError(t, err)
 	require.Len(t, results, 5)
 
@@ -148,7 +149,7 @@ func TestShardedHNSW_Filtering(t *testing.T) {
 		q[i] = 50.0
 	}
 
-	results, err := idx.SearchVectors(q, 5, filters, SearchOptions{})
+	results, err := idx.SearchVectors(context.Background(), q, 5, filters, SearchOptions{})
 	require.NoError(t, err)
 	require.NotEmpty(t, results)
 

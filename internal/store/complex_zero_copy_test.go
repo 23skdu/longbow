@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"math"
 	"math/rand"
 	"testing"
@@ -56,7 +57,7 @@ func TestArrowHNSW_Complex64_ZeroCopy(t *testing.T) {
 	// Passing a native []complex64 slice.
 	// The new Search(any) signature should allow this and resolve correctly.
 	query := vecsC64[0]
-	results, err := idx.Search(query, 10, 50, nil)
+	results, err := idx.Search(context.Background(), query, 10, 50, nil)
 	require.NoError(t, err)
 	require.NotEmpty(t, results)
 
@@ -103,7 +104,7 @@ func TestArrowHNSW_Complex128_ZeroCopy(t *testing.T) {
 	assert.Equal(t, vecsC128[0], valC128)
 
 	// Search
-	results, err := idx.Search(vecsC128[0], 5, 50, nil)
+	results, err := idx.Search(context.Background(), vecsC128[0], 5, 50, nil)
 	require.NoError(t, err)
 	require.NotEmpty(t, results)
 
@@ -132,7 +133,7 @@ func TestArrowHNSW_Complex_FlattenedQuery(t *testing.T) {
 	// 4 complex128 = 8 floats.
 	flatQuery := []float32{1, 1, 2, 2, 3, 3, 4, 4}
 
-	results, err := idx.Search(flatQuery, 1, 10, nil)
+	results, err := idx.Search(context.Background(), flatQuery, 1, 10, nil)
 	require.NoError(t, err)
 	require.Len(t, results, 1)
 	require.Equal(t, uint32(0), uint32(results[0].ID))

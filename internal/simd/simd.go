@@ -214,10 +214,10 @@ func initializeDispatch() {
 		euclideanDistanceVerticalBatchImpl = euclideanVerticalBatchNEON
 		euclideanDistanceSQ8BatchImpl = euclideanSQ8BatchGeneric // Fallback to generic for now
 		andBytesImpl = andBytesGeneric
-		// F16 Kernels: Use generic unrolled implementation due to potential alignment issues with NEON assembly
-		euclideanDistanceF16Impl = euclideanF16Unrolled4x
-		cosineDistanceF16Impl = cosineF16Unrolled4x
-		dotProductF16Impl = dotF16Unrolled4x
+		// F16 Kernels
+		euclideanDistanceF16Impl = euclideanF16NEON
+		cosineDistanceF16Impl = cosineF16NEON
+		dotProductF16Impl = dotF16NEON
 		euclideanDistanceComplex64Impl = euclideanComplex64Optimized
 		euclideanDistanceComplex128Impl = euclideanComplex128Unrolled // Fallback
 		euclideanDistanceFloat64Impl = euclideanFloat64Unrolled4x

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"math/rand"
 	"os"
 	"testing"
@@ -101,7 +102,7 @@ func FuzzPolymorphicIngestion(f *testing.F) {
 
 		// Search
 		if ds.Index != nil {
-			_, err := ds.Index.SearchVectors(q, 10, nil, SearchOptions{})
+			_, err := ds.Index.SearchVectors(context.Background(), q, 10, nil, SearchOptions{})
 			if err != nil {
 				t.Logf("Search failed: %v", err)
 			}
@@ -133,7 +134,7 @@ func FuzzPolymorphicIngestion(f *testing.F) {
 		if ds2.Index != nil {
 			metrics.HNSWPolymorphicFuzzCrashRecovered.Inc()
 			// Search again
-			_, err = ds2.Index.SearchVectors(q, 10, nil, SearchOptions{})
+			_, err = ds2.Index.SearchVectors(context.Background(), q, 10, nil, SearchOptions{})
 			require.NoError(t, err)
 		}
 	})

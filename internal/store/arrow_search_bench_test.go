@@ -1,7 +1,7 @@
 package store
 
-
 import (
+	"context"
 	"fmt"
 	"math"
 	"math/rand"
@@ -78,7 +78,7 @@ func BenchmarkSearchWithBatchCompute(b *testing.B) {
 
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			_, _ = h.Search(query, 10, 50, nil)
+			_, _ = h.Search(context.Background(), query, 10, 50, nil)
 		}
 	})
 
@@ -89,7 +89,7 @@ func BenchmarkSearchWithBatchCompute(b *testing.B) {
 
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			_, _ = h.Search(query, 10, 50, nil)
+			_, _ = h.Search(context.Background(), query, 10, 50, nil)
 		}
 
 		// Restore
@@ -156,7 +156,7 @@ func BenchmarkSearchScaling(b *testing.B) {
 
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				_, _ = h.Search(query, 10, 50, nil)
+				_, _ = h.Search(context.Background(), query, 10, 50, nil)
 			}
 		})
 	}

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"math/rand"
 	"testing"
 	"time"
@@ -99,7 +100,7 @@ func TestBulkDeferredConnections(t *testing.T) {
 		i := rng.Intn(numVecs)
 		query := vectors[i]
 
-		res, err := idx.Search(query, 10, 100, nil)
+		res, err := idx.Search(context.Background(), query, 10, 100, nil)
 		require.NoError(t, err)
 		require.NotEmpty(t, res)
 

@@ -139,7 +139,7 @@ func FuzzIngestionIntegrity_Concurrent(f *testing.F) {
 		}
 
 		// Search
-		results, err := ds.Index.SearchVectors(queryVec, 1, nil, SearchOptions{})
+		results, err := ds.Index.SearchVectors(context.Background(), queryVec, 1, nil, SearchOptions{})
 		require.NoError(t, err)
 		require.GreaterOrEqual(t, len(results), 1, "Should find at least 1 result")
 

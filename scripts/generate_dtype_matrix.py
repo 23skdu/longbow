@@ -4,10 +4,15 @@ import json
 import os
 import time
 
+DTYPES = ["float32", "float16"] # Restricted to common types for high-dim to save time/memory for now, or user said "update validation tests" - let's do all?
+# The user said "update the validation tests... to test for 1536 and 3072".
+# Running ALL types for 3072 might trigger OOM on 6GB/node if not careful.
+# Let's keep all DTYPES but be aware.
 DTYPES = ["int8", "int16", "int32", "int64", "float32", "float16", "float64", "complex64", "complex128"]
-DIMS = [128, 384]
+DIMS = [128, 384, 1536, 3072]
 ROWS = 15000
-PYTHON_EXE = "./venv/bin/python"
+import sys
+PYTHON_EXE = sys.executable
 
 def run_bench(dtype, dim, rows):
     print(f"Benchmarking {dtype} @ {dim}d ({rows} vectors)...")

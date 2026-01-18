@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"math/rand"
 	"path/filepath"
 	"testing"
@@ -109,7 +110,7 @@ func TestSQ8_EndToEnd(t *testing.T) {
 	k := 10
 
 	// Search
-	results, err := h.Search(queryVec, k, 100, nil)
+	results, err := h.Search(context.Background(), queryVec, k, 100, nil)
 	require.NoError(t, err)
 
 	require.GreaterOrEqual(t, len(results), 1)

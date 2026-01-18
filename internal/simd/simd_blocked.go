@@ -1,6 +1,10 @@
 package simd
 
-import "math"
+import (
+	"math"
+
+	"github.com/23skdu/longbow/internal/metrics"
+)
 
 const blockedSimdThreshold = 1024
 
@@ -53,4 +57,74 @@ func L2Float32Blocked(a, b []float32) float32 {
 	}
 
 	return float32(math.Sqrt(float64(sum)))
+}
+
+// EuclideanDistanceTiledBatch calculates distances for multiple vectors by tiling the dimension loop.
+// This keeps chunks of the query vector in L1/L2 cache while processing multiple data vectors.
+func EuclideanDistanceTiledBatch(query []float32, vectors [][]float32, results []float32) {
+	if len(query) <= blockedSimdThreshold {
+		EuclideanDistanceBatch(query, vectors, results)
+		return
+	}
+
+	metrics.SimdTiledDistanceBatchTotal.Inc()
+
+	// Initialize results to zero
+	for i := range results {
+		results[i] = 0
+	}
+
+	numVecs := len(vectors)
+	dims := len(query)
+
+	// Outer loop over dimension tiles
+	for i := 0; i < dims; i += blockedSimdThreshold {
+		end := i + blockedSimdThreshold
+		if end > dims {
+			end = dims
+		}
+		qTile := query[i:end]
+
+		// Inner loop over vectors
+		for j := 0; j < numVecs; j++ {
+			vTile := vectors[j][i:end]
+			results[j] += L2SquaredFloat32(qTile, vTile)
+		}
+	}
+
+	// Final Sqrt pass
+	for i := range results {
+		results[i] = float32(math.Sqrt(float64(results[i])))
+	}
+}
+
+// DotProductTiledBatch calculates dot products for multiple vectors by tiling the dimension loop.
+func DotProductTiledBatch(query []float32, vectors [][]float32, results []float32) {
+	if len(query) <= blockedSimdThreshold {
+		DotProductBatch(query, vectors, results)
+		return
+	}
+
+	// Initialize results to zero
+	for i := range results {
+		results[i] = 0
+	}
+
+	numVecs := len(vectors)
+	dims := len(query)
+	impl := dotProductImpl
+
+	// Outer loop over dimension tiles
+	for i := 0; i < dims; i += blockedSimdThreshold {
+		end := i + blockedSimdThreshold
+		if end > dims {
+			end = dims
+		}
+		qTile := query[i:end]
+
+		// Inner loop over vectors
+		for j := 0; j < numVecs; j++ {
+			results[j] += impl(qTile, vectors[j][i:end])
+		}
+	}
 }

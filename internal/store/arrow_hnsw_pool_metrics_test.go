@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"testing"
 
 	"github.com/23skdu/longbow/internal/metrics"
@@ -45,7 +46,7 @@ func TestArrowHNSW_PoolMetrics(t *testing.T) {
 	searchGetBefore := getCounterValue(metrics.HNSWSearchPoolGetTotal)
 	searchPutBefore := getCounterValue(metrics.HNSWSearchPoolPutTotal)
 
-	_, err = idx.Search(vec, 1, 10, nil)
+	_, err = idx.Search(context.Background(), vec, 1, 10, nil)
 	require.NoError(t, err)
 
 	searchGetAfter := getCounterValue(metrics.HNSWSearchPoolGetTotal)

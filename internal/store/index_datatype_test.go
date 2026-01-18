@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"fmt"
 	"math/rand"
 	"sync"
@@ -63,12 +64,6 @@ func TestArrowHNSW_DataTypes(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.name == "Float64" {
-				// t.Skip("Skipping Float64 test due to precision/ingestion mismatch requiring deeper investigation")
-			}
-			if tt.name == "Float16" {
-				// t.Skip("Skipping Float16 test due to distance calculation mismatch (6.x vs 0.0)")
-			}
 
 			// 1. Setup
 			rec, originalVecs := tt.makeRecord(count, tt.dims)
@@ -118,7 +113,7 @@ func TestArrowHNSW_DataTypes(t *testing.T) {
 			// NOTE: For Complex128, originalVecs contains the FLATTENED float32 representation (2*dims)
 			// queryVec should be passed as is involved in distance calc.
 
-			res, err := idx.Search(queryVec, 10, 50, nil)
+			res, err := idx.Search(context.Background(), queryVec, 10, 50, nil)
 			require.NoError(t, err, "Search failed")
 			require.NotEmpty(t, res, "Search returned 0 results")
 

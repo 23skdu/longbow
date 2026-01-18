@@ -1,11 +1,11 @@
 package store
 
 import (
+	"context"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -75,17 +75,6 @@ func TestAdaptiveIndex_AsyncMigration(t *testing.T) {
 	assert.Equal(t, 20, idx.Len(), "Index should contain all 20 vectors")
 
 	queryVec := []float32{0.0, 0.0, 0.0, 0.0} // Matches vector 0 roughly
-	results, _ := idx.SearchVectors(queryVec, 20, nil, SearchOptions{})
+	results, _ := idx.SearchVectors(context.Background(), queryVec, 20, nil, SearchOptions{})
 	assert.Equal(t, 20, len(results), "Should find all vectors")
-}
-
-// Helper to create vector method (copied for standalone test)
-func createSchema() *arrow.Schema {
-	return arrow.NewSchema(
-		[]arrow.Field{
-			{Name: "id", Type: arrow.PrimitiveTypes.Int64},
-			{Name: "vector", Type: arrow.FixedSizeListOf(4, arrow.PrimitiveTypes.Float32)},
-		},
-		nil,
-	)
 }

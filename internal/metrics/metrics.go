@@ -1106,12 +1106,29 @@ var (
 		[]string{"dataset", "component"}, // component: "graph", "vectors", "metadata", "id_map"
 	)
 
-	// SchemaEvolutionTotal counts schema evolution events
+	// Schema Evolution
 	SchemaEvolutionTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_schema_evolution_total",
 			Help: "Total number of schema evolution events",
 		},
 		[]string{"type", "status"},
+	)
+
+	// Slab Pool Metrics
+	SlabPoolAllocationsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_slab_pool_allocations_total",
+			Help: "Total number of slab allocations (both pooled and new)",
+		},
+		[]string{"size", "result"}, // result: "hit", "miss"
+	)
+
+	// Simd Tiled Metrics
+	SimdTiledDistanceBatchTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_simd_tiled_distance_batch_total",
+			Help: "Total number of tiled distance batch operations performed for high-dim vectors (>1024 dims)",
+		},
 	)
 )

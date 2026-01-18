@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"strconv"
@@ -418,7 +419,10 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 
 	for lc := maxL; lc > level; lc-- {
 		// Find closest point at this layer
-		neighbors := h.searchLayerForInsert(ctx, vec, ep, 1, lc, data)
+		neighbors, err := h.searchLayerForInsert(context.Background(), ctx, vec, ep, 1, lc, data)
+		if err != nil {
+			return err
+		}
 		if len(neighbors) > 0 {
 			ep = neighbors[0].ID
 		}
@@ -435,7 +439,10 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 	// Insert at layers 0 to level
 	for lc := level; lc >= 0; lc-- {
 		// Find M nearest neighbors at this layer using adaptive ef
-		candidates := h.searchLayerForInsert(ctx, vec, ep, ef, lc, data)
+		candidates, err := h.searchLayerForInsert(context.Background(), ctx, vec, ep, ef, lc, data)
+		if err != nil {
+			return err
+		}
 
 		// Select M neighbors (Target)
 		m := h.m
@@ -571,9 +578,12 @@ func (h *ArrowHNSW) ensureTrained(limitID int, extraSamples [][]float32) {
 
 // searchLayerForInsert performs search during insertion.
 // Returns candidates sorted by distance.
-func (h *ArrowHNSW) searchLayerForInsert(ctx *ArrowSearchContext, query any, entryPoint uint32, ef, layer int, data *GraphData) []Candidate {
+func (h *ArrowHNSW) searchLayerForInsert(goCtx context.Context, ctx *ArrowSearchContext, query any, entryPoint uint32, ef, layer int, data *GraphData) ([]Candidate, error) {
 	computer := h.resolveHNSWComputer(data, ctx, query, false)
-	_ = h.searchLayer(computer, entryPoint, ef, layer, ctx, data, nil)
+	_, err := h.searchLayer(goCtx, computer, entryPoint, ef, layer, ctx, data, nil)
+	if err != nil {
+		return nil, err
+	}
 
 	// Transfer results from resultSet to a slice
 	res := make([]Candidate, ctx.resultSet.Len())
@@ -581,7 +591,7 @@ func (h *ArrowHNSW) searchLayerForInsert(ctx *ArrowSearchContext, query any, ent
 		c, _ := ctx.resultSet.Pop()
 		res[i] = c
 	}
-	return res
+	return res, nil
 }
 
 // selectNeighbors selects the best M neighbors using the RobustPrune heuristic.

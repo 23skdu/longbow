@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"testing"
 
 	"github.com/apache/arrow-go/v18/arrow"
@@ -40,7 +41,7 @@ func TestHNSW_Metrics(t *testing.T) {
 		require.NoError(t, err)
 
 		// Search for [1.0, 0.0] (self)
-		res, err := idx.SearchVectors([]float32{1.0, 0.0}, 2, nil, SearchOptions{})
+		res, err := idx.SearchVectors(context.Background(), []float32{1.0, 0.0}, 2, nil, SearchOptions{})
 		require.NoError(t, err)
 		require.Len(t, res, 2)
 		assert.Equal(t, VectorID(0), res[0].ID)
@@ -67,7 +68,7 @@ func TestHNSW_Metrics(t *testing.T) {
 		// If coder/hnsw minimizes, it might prefer smaller dot products if we don't negate.
 		// However, most vector DBs use Negative Dot Product for minimization.
 		// Let's check how it behaves.
-		res, err := idx.SearchVectors([]float32{1.0, 0.0}, 2, nil, SearchOptions{})
+		res, err := idx.SearchVectors(context.Background(), []float32{1.0, 0.0}, 2, nil, SearchOptions{})
 		require.NoError(t, err)
 		require.Len(t, res, 2)
 		// With negated Dot Product, index 0 is best: -1.0 < 0.0
@@ -105,7 +106,7 @@ func TestShardedHNSW_Metrics(t *testing.T) {
 		_, err = idx.AddByLocation(0, 1)
 		require.NoError(t, err)
 
-		res, err := idx.SearchVectors([]float32{1.0, 0.0, 0.0, 0.0}, 2, nil, SearchOptions{})
+		res, err := idx.SearchVectors(context.Background(), []float32{1.0, 0.0, 0.0, 0.0}, 2, nil, SearchOptions{})
 		require.NoError(t, err)
 		require.Len(t, res, 2)
 		assert.InDelta(t, 0.0, res[0].Score, 1e-6) // Best match (self)

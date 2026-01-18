@@ -3,6 +3,7 @@ package store
 import (
 	"testing"
 
+	"context"
 	"math/rand"
 	"time"
 
@@ -73,7 +74,7 @@ func TestAdaptiveSearch_RetryLogic(t *testing.T) {
 		{Field: "id_col", Operator: "=", Value: "95"},
 	}
 
-	results, err := index.SearchVectors(q, k, filters, SearchOptions{})
+	results, err := index.SearchVectors(context.Background(), q, k, filters, SearchOptions{})
 	require.NoError(t, err)
 
 	// Verify we got 1 result

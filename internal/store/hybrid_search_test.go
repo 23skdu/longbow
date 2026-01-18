@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -209,7 +210,7 @@ func (hs *HybridSearcher) Add(id VectorID, vector []float32, text string) {
 // Defining minimal stub methods to satisfy the compiler.
 
 func (hs *HybridSearcher) SearchDense(query []float32, k int) []SearchResult {
-	res, _ := hs.hnsw.SearchVectors(query, k, nil, SearchOptions{})
+	res, _ := hs.hnsw.SearchVectors(context.Background(), query, k, nil, SearchOptions{})
 	return res
 }
 

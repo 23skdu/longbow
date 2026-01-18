@@ -487,7 +487,7 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *GraphData, ctx *ArrowSearchContext
 		} else {
 			distFunc = simd.DotProduct
 		}
-		batchDistFunc = simd.DotProductBatch
+		batchDistFunc = simd.DotProductTiledBatch
 	case MetricCosine:
 		// Potential: CosineBlocked (Not already implemented, fallback)
 		distFunc = simd.CosineDistance
@@ -499,7 +499,7 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *GraphData, ctx *ArrowSearchContext
 		} else {
 			distFunc = simd.DistFunc // Uses initialized function pointer
 		}
-		batchDistFunc = simd.EuclideanDistanceVerticalBatch
+		batchDistFunc = simd.EuclideanDistanceTiledBatch
 	}
 
 	// Use GenericComputer if storage is not Float32 and we don't have specialized computer

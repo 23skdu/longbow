@@ -354,6 +354,17 @@ func NewGraphData(capacity, dims int, sq8Enabled, pqEnabled bool, pqDims int, bq
 		slabSize = (totalRequired * 3) / 2
 	}
 
+	// Snap to standard bucket sizes to enable global pooling in SlabPool
+	if slabSize <= 4*1024*1024 {
+		slabSize = 4 * 1024 * 1024
+	} else if slabSize <= 8*1024*1024 {
+		slabSize = 8 * 1024 * 1024
+	} else if slabSize <= 16*1024*1024 {
+		slabSize = 16 * 1024 * 1024
+	} else if slabSize <= 32*1024*1024 {
+		slabSize = 32 * 1024 * 1024
+	}
+
 	slab := memory.NewSlabArena(slabSize)
 
 	var f16Arena *memory.TypedArena[float16.Num]

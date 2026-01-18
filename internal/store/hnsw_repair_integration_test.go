@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -86,7 +87,7 @@ func TestArrowHNSW_RepairAgent_AfterDeletions(t *testing.T) {
 	// Verify remaining nodes are still searchable
 	for i := 10; i < 20; i++ {
 		vec := []float32{float32(i) / 20.0, float32(i%5) / 5.0}
-		results, err := idx.SearchVectors(vec, 1, nil, SearchOptions{})
+		results, err := idx.SearchVectors(context.Background(), vec, 1, nil, SearchOptions{})
 		require.NoError(t, err)
 		assert.Greater(t, len(results), 0, "Node %d should be reachable", i)
 	}

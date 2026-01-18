@@ -56,7 +56,7 @@ func TestComplex64_Support(t *testing.T) {
 
 	// Search
 	// Use vec[0] as query. Should find itself.
-	results, err := idx.Search(vecs[0], 10, 50, nil)
+	results, err := idx.Search(context.Background(), vecs[0], 10, 50, nil)
 	require.NoError(t, err)
 	require.NotEmpty(t, results)
 	assert.EqualValues(t, 0, results[0].ID)
@@ -102,7 +102,7 @@ func TestComplex128_Support(t *testing.T) {
 	assert.True(t, ok)
 	assert.Equal(t, complexVecs[0], vecC128)
 
-	results, err := idx.Search(vecs[0], 10, 50, nil)
+	results, err := idx.Search(context.Background(), vecs[0], 10, 50, nil)
 	require.NoError(t, err)
 	require.NotEmpty(t, results)
 	assert.EqualValues(t, 0, results[0].ID)

@@ -82,19 +82,44 @@ func (b *float32VectorBatch) Len() int {
 func (b *float32VectorBatch) ComputeDistances(query any, dists []float32) {
 	q, ok := query.([]float32)
 	if !ok {
-		// Mismatch. Fill with max dist?
 		for i := range b.vecs {
 			dists[i] = math.MaxFloat32
 		}
 		return
 	}
 
-	// Basic loop dispatch
+	if b.h.metric == MetricEuclidean {
+		// Defensive: check for nil vectors to avoid SIMD kernel panic
+		hasNil := false
+		for _, v := range b.vecs {
+			if v == nil {
+				hasNil = true
+				break
+			}
+		}
+
+		if !hasNil {
+			// Optimized SIMD Batch Path
+			simd.EuclideanDistanceVerticalBatch(q, b.vecs, dists)
+		} else {
+			// Fallback with nil handling
+			for i, v := range b.vecs {
+				if v == nil {
+					dists[i] = math.MaxFloat32
+				} else {
+					dists[i] = simd.DistFunc(q, v)
+				}
+			}
+		}
+		return
+	}
+
+	// Fallback loop dispatch for other metrics
 	for i, v := range b.vecs {
 		if v == nil {
 			dists[i] = math.MaxFloat32
 		} else {
-			dists[i] = simd.DistFunc(q, v)
+			dists[i] = b.h.distFunc(q, v)
 		}
 	}
 }
@@ -104,15 +129,23 @@ func (b *float32VectorBatch) Reset() {
 }
 
 func (b *float32VectorBatch) Get(i int) any {
+	if i < 0 || i >= len(b.vecs) {
+		return nil
+	}
 	return b.vecs[i]
 }
 
 func (b *float32VectorBatch) Swap(i, j int) {
+	if i < 0 || i >= len(b.vecs) || j < 0 || j >= len(b.vecs) {
+		return
+	}
 	b.vecs[i], b.vecs[j] = b.vecs[j], b.vecs[i]
 }
 
 func (b *float32VectorBatch) Pop() {
-	b.vecs = b.vecs[:len(b.vecs)-1]
+	if len(b.vecs) > 0 {
+		b.vecs = b.vecs[:len(b.vecs)-1]
+	}
 }
 
 // float16VectorBatch implements VectorBatch for float16 vectors.

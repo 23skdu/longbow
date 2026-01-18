@@ -35,6 +35,7 @@ type BufferedWAL struct {
 	syncCond   *sync.Cond    // Broadcasts when flushedSeq updates
 	isFlushing bool          // True if a flush is in progress
 	flushCh    chan struct{} // Signal to force flush
+	fatalErr   atomic.Value  // Stores the first fatal error encountered (type: error)
 }
 
 // NewBufferedWAL creates a new buffered WAL.
@@ -67,6 +68,11 @@ func (w *BufferedWAL) SetOnError(fn func(error)) {
 func (w *BufferedWAL) Write(name string, seq uint64, ts int64, record arrow.RecordBatch) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+
+	// Fail fast if backend is broken
+	if errVal := w.fatalErr.Load(); errVal != nil {
+		return errVal.(error)
+	}
 
 	// Header: Checksum(4) | Seq(8) | Timestamp(8) | NameLen(4) | RecLen(8) = 32 bytes
 	const headerSize = 32
@@ -186,9 +192,20 @@ func (w *BufferedWAL) Sync() error {
 			break
 		}
 
+		// Check for fatal error while waiting
+		if errVal := w.fatalErr.Load(); errVal != nil {
+			w.mu.Unlock()
+			return errVal.(error)
+		}
+
 		w.syncCond.Wait()
 	}
 	w.mu.Unlock()
+
+	// Double check after waking up
+	if errVal := w.fatalErr.Load(); errVal != nil {
+		return errVal.(error)
+	}
 
 	return nil
 }
@@ -248,8 +265,18 @@ func (w *BufferedWAL) tryFlush() {
 	w.mu.Unlock()
 
 	err := w.flushBufferToBackend(wb)
+
+	w.mu.Lock()
+	w.isFlushing = false
+
 	if err != nil {
 		metrics.WALFlushErrors.Inc()
+
+		// Store fatal error if check first time
+		if w.fatalErr.Load() == nil {
+			w.fatalErr.Store(err)
+		}
+
 		// Try to send to error channel (non-blocking)
 		select {
 		case w.ErrCh <- err:
@@ -260,10 +287,13 @@ func (w *BufferedWAL) tryFlush() {
 		if onError != nil {
 			onError(err)
 		}
+	} else {
+		// Success: Update flushed sequence
+		w.flushedSeq.Store(wb.maxSeq)
 	}
 
-	w.mu.Lock()
-	w.isFlushing = false
+	// Broadcast to unblock any Sync waiters (for both success and failure)
+	w.syncCond.Broadcast()
 	w.mu.Unlock()
 }
 
@@ -307,11 +337,9 @@ func (w *BufferedWAL) flushBufferToBackend(wb *writeBatch) error {
 		return fmt.Errorf("wal backend sync: %w", err)
 	}
 
-	// Update flushed sequence
-	w.flushedSeq.Store(wb.maxSeq)
-
-	// Broadcast to waiters
-	w.syncCond.Broadcast()
+	if err := w.backend.Sync(); err != nil {
+		return fmt.Errorf("wal backend sync: %w", err)
+	}
 
 	return nil
 }

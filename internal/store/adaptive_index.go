@@ -266,6 +266,7 @@ type AdaptiveIndex struct {
 	bruteForce     *BruteForceIndex
 	hnsw           VectorIndex
 	usingHNSW      atomic.Bool
+	migrating      atomic.Bool
 	migrationCount atomic.Int64
 	vectorCount    atomic.Int64
 }
@@ -405,23 +406,63 @@ func (a *AdaptiveIndex) EstimateMemory() int64 {
 }
 
 // migrateToHNSW converts from BruteForce to HNSW (must hold mu.Lock).
+// migrateToHNSW converts from BruteForce to HNSW asynchronously.
+// It builds the index in the background and atomically swaps it.
 func (a *AdaptiveIndex) migrateToHNSW() {
-	if a.usingHNSW.Load() {
+	// 1. Check if already migrating or using HNSW (fast path)
+	if a.usingHNSW.Load() || !a.migrating.CompareAndSwap(false, true) {
 		return
 	}
 
-	config := DefaultArrowHNSWConfig()
-	config.Metric = a.dataset.Metric
-	a.hnsw = NewArrowHNSW(a.dataset, config, nil)
+	go func() {
+		defer a.migrating.Store(false)
 
-	for _, loc := range a.bruteForce.locations {
-		_, _ = a.hnsw.AddByLocation(loc.BatchIdx, loc.RowIdx)
-	}
+		// 2. Snapshot current state (Fast RLock)
+		a.mu.RLock()
+		if a.bruteForce == nil { // Already migrated?
+			a.mu.RUnlock()
+			return
+		}
+		// Copy locations to separate slice to iterate safely without holding lock
+		snapshotLocations := make([]Location, len(a.bruteForce.locations))
+		copy(snapshotLocations, a.bruteForce.locations)
+		a.mu.RUnlock()
 
-	a.usingHNSW.Store(true)
-	a.migrationCount.Add(1)
-	metrics.AdaptiveIndexMigrationsTotal.WithLabelValues("brute_force", "hnsw").Inc()
-	a.bruteForce = nil
+		// 3. Build HNSW from snapshot (Slow, No Lock)
+		config := DefaultArrowHNSWConfig()
+		config.Metric = a.dataset.Metric
+		newHNSW := NewArrowHNSW(a.dataset, config, nil)
+
+		for _, loc := range snapshotLocations {
+			_, _ = newHNSW.AddByLocation(loc.BatchIdx, loc.RowIdx)
+		}
+
+		// 4. Atomic Swap (Stop The World)
+		a.mu.Lock()
+		defer a.mu.Unlock()
+
+		// Check cancellation/state changes
+		if a.usingHNSW.Load() || a.bruteForce == nil {
+			_ = newHNSW.Close() // Discard result
+			return
+		}
+
+		// 5. Catch up (Apply Delta)
+		currentLocations := a.bruteForce.locations
+		if len(currentLocations) > len(snapshotLocations) {
+			delta := currentLocations[len(snapshotLocations):]
+			for _, loc := range delta {
+				_, _ = newHNSW.AddByLocation(loc.BatchIdx, loc.RowIdx)
+			}
+		}
+
+		// 6. Swap
+		a.hnsw = newHNSW
+		a.usingHNSW.Store(true)
+		a.migrationCount.Add(1)
+		metrics.AdaptiveIndexMigrationsTotal.WithLabelValues("brute_force", "hnsw").Inc()
+		a.bruteForce = nil
+	}()
 }
 
 // SearchVectors delegates to the active index.

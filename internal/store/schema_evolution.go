@@ -105,7 +105,11 @@ func (m *SchemaEvolutionManager) AddColumn(name string, dtype arrow.DataType) er
 
 	// Check if column already exists (and not dropped)
 	if existing, ok := m.columns[name]; ok && existing.DroppedAt == 0 {
-		return fmt.Errorf("column %q already exists", name)
+		// Idempotency: If types match, it's a success (already done)
+		if arrow.TypeEqual(existing.Type, dtype) {
+			return nil
+		}
+		return fmt.Errorf("column %q already exists with different type: %s vs %s", name, existing.Type, dtype)
 	}
 
 	// If column was previously dropped, we can re-add it

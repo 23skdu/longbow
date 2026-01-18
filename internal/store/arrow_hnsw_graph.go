@@ -108,7 +108,7 @@ type ArrowSearchContext struct {
 
 func NewArrowSearchContext() *ArrowSearchContext {
 	return &ArrowSearchContext{
-		visited:          NewArrowBitset(10000),
+		visited:          NewArrowBitset(128000),
 		candidates:       NewFixedHeap(400),
 		resultSet:        NewMaxHeap(400),
 		scratchIDs:       make([]uint32, 0, MaxNeighbors),

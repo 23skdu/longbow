@@ -35,7 +35,7 @@ except ImportError:
 DEFAULT_TIMEOUT = 30.0
 
 # Benchmark Configuration
-BENCHMARK_SIZES = [3000, 5000, 10000, 25000]
+BENCHMARK_SIZES = [3000, 5000, 10000, 25000, 50000]
 
 # =============================================================================
 # Data Classes

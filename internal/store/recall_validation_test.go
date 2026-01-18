@@ -50,8 +50,8 @@ func TestRecallValidation(t *testing.T) {
 			InitialCapacity:         50000,
 		}},
 		{"Large_100K_Recall@10", 100000, 384, 100, 10, 0.880, &store.ArrowHNSWConfig{
-			M: 64, MMax: 128, MMax0: 128, EfConstruction: 800,
-			SelectionHeuristicLimit: 400,
+			M: 64, MMax: 128, MMax0: 128, EfConstruction: 400,
+			SelectionHeuristicLimit: 128, // Reduced from 400 to fix low recall issue
 			Alpha:                   1.0,
 			KeepPrunedConnections:   true,
 			SQ8Enabled:              false,

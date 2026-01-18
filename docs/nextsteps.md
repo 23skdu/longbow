@@ -4,16 +4,16 @@ This document outlines the prioritized 15-point roadmap for optimizing, stabiliz
 
 ## Critical Reliability & Stability
 
-### 1. Fix Silent WAL Flush Failures
+### 1. Fix Silent WAL Flush Failures (Completed)
 
 **Target:** `internal/storage/wal_buffered.go`
 
 - **Problem:** `tryFlush` ignores errors returned by `flushBufferToBackend` (TODO L235). This can lead to silent data loss if the disk fills up or permissions fail.
 - **Solution:** Implement an error channel or shutdown latch to halt the server/ingestor immediately upon persistent WAL failures.
 
-### 2. Robust Schema Evolution
+### 2. Robust Schema Evolution (Completed)
 
-**Target:** `internal/store/schema_manager.go`
+**Target:** `internal/store/schema_evolution.go`
 
 - **Problem:** Schema changes currently rely on implicit handling or potentially unsafe casting.
 - **Solution:** Implement strict versioning in `ApplyDelta`. Add validation logic to ensure backward-compatible additive changes (e.g., adding columns) and reject breaking changes.
@@ -48,7 +48,7 @@ This document outlines the prioritized 15-point roadmap for optimizing, stabiliz
 - **Problem:** Current compaction copies row-by-row even when row mappings are contiguous (TODO L178).
 - **Solution:** Detect contiguous ranges in the `mapping` slice and use `copy()` or specialized SIMD `memcpy` to move blocks of data, significantly increasing memory bandwidth utilization.
 
-### 7. Zero-Copy Arrow Integration
+### 7. Zero-Copy Arrow Integration (Completed)
 
 **Target:** `internal/store/flight_zero_copy_allocator_test.go`
 
@@ -78,7 +78,7 @@ This document outlines the prioritized 15-point roadmap for optimizing, stabiliz
 - **Problem:** Bitset intersection/union is scalar.
 - **Solution:** Implement AVX2/NEON intrinsics for bitset logic to speed up filtered search over large datasets.
 
-### 11. Optimized Complex Number Distance
+### 11. Optimized Complex Number Distance (Completed)
 
 **Target:** `internal/store/arrow_hnsw_search.go`
 
@@ -108,7 +108,7 @@ This document outlines the prioritized 15-point roadmap for optimizing, stabiliz
 - **Problem:** Optimized accessors are missing for `Uint8`, `Int16`, and other integer types (TODO L100).
 - **Solution:** Implement specific accessors for all Arrow integer types to avoid slow generic fallback paths.
 
-### 15. Async Index Persistence
+### 15. Async Index Persistence (Completed)
 
 **Target:** `internal/store/persistence_worker.go`
 

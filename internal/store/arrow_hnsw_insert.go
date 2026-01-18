@@ -459,30 +459,18 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 			maxConn = h.mMax0
 		}
 
+		// Optimized target (Forward) connections additions using batch to avoid redundant pruning of 'id'
+		neighborIDs := make([]uint32, len(neighbors))
+		neighborDists := make([]float32, len(neighbors))
+		for i, n := range neighbors {
+			neighborIDs[i] = n.ID
+			neighborDists[i] = n.Dist
+		}
+		h.AddConnectionsBatch(ctx, data, id, neighborIDs, neighborDists, lc, maxConn)
+
+		// Reverse connections still one-by-one for now to respect sharded locks easily
 		for _, neighbor := range neighbors {
-			h.AddConnection(ctx, data, id, neighbor.ID, lc, maxConn, neighbor.Dist)
 			h.AddConnection(ctx, data, neighbor.ID, id, lc, maxConn, neighbor.Dist)
-
-			// Prune neighbor if needed (still useful to keep strict M_max if buffer wasn't hit)
-			// Read count atomically
-			cID := chunkID(neighbor.ID)
-			cOff := chunkOffset(neighbor.ID)
-
-			countsChunk := data.GetCountsChunk(lc, cID)
-			if countsChunk == nil {
-				// Chunk not yet loaded in this data snapshot, reload data
-				data = h.data.Load() // Reload the outer 'data' variable
-				countsChunk = data.GetCountsChunk(lc, cID)
-				if countsChunk == nil {
-					// Still nil after reload, something is wrong, skip pruning for this neighbor
-					continue
-				}
-			}
-
-			count := atomic.LoadInt32(&countsChunk[cOff])
-			if int(count) > maxConn {
-				h.PruneConnections(ctx, data, neighbor.ID, maxConn, lc)
-			}
 		}
 
 		// Update entry point
@@ -622,11 +610,6 @@ func (h *ArrowHNSW) selectNeighbors(ctx *ArrowSearchContext, candidates []Candid
 		}
 		selected = ctx.scratchSelected[:0]
 
-		if cap(ctx.scratchRemaining) < len(candidates) {
-			ctx.scratchRemaining = make([]Candidate, len(candidates)*2)
-		}
-		remaining = ctx.scratchRemaining[:len(candidates)]
-
 		// Initialize/Reset Request Batches
 		if ctx.selectedBatch == nil {
 			ctx.selectedBatch = h.newVectorBatch(data)
@@ -638,6 +621,11 @@ func (h *ArrowHNSW) selectNeighbors(ctx *ArrowSearchContext, candidates []Candid
 		} else {
 			ctx.remainingBatch.Reset()
 		}
+
+		if cap(ctx.scratchRemaining) < len(candidates) {
+			ctx.scratchRemaining = make([]Candidate, len(candidates)*2)
+		}
+		remaining = ctx.scratchRemaining[:len(candidates)]
 
 		// Map variables to batches for clarity (optional, or just use ctx.X)
 	} else {
@@ -839,7 +827,10 @@ func (h *ArrowHNSW) selectNeighbors(ctx *ArrowSearchContext, candidates []Candid
 		}
 	}
 
-	return selected
+	// Return a COPY to avoid shared scratch corruption during re-entrant calls (e.g. symmetry/pruning)
+	res := make([]Candidate, len(selected))
+	copy(res, selected)
+	return res
 }
 
 // AddConnection adds a directed edge from source to target at the given layer.
@@ -1281,14 +1272,22 @@ func (h *ArrowHNSW) pruneConnectionsLocked(ctx *ArrowSearchContext, data *GraphD
 		ctx.pruneDepth++
 		defer func() { ctx.pruneDepth-- }()
 
-		// Circuit breaker: if we're too deep in recursion, just return current neighbors
+		// Circuit breaker
 		if ctx.pruneDepth > 5 {
-			// Too deep, return current neighbors without pruning
 			return
 		}
 	}
 
 	selected := h.selectNeighbors(ctx, candidates, maxConn, data)
+
+	// Seqlock write start: odd = dirty
+	verChunk := data.GetVersionsChunk(layer, cID)
+	var verAddr *uint32
+	if verChunk != nil {
+		verAddr = &verChunk[cOff]
+		atomic.AddUint32(verAddr, 1)
+	}
+
 	// Write back
 	for i, cand := range selected {
 		atomic.StoreUint32(&neighborsChunk[baseIdx+i], cand.ID)
@@ -1296,18 +1295,10 @@ func (h *ArrowHNSW) pruneConnectionsLocked(ctx *ArrowSearchContext, data *GraphD
 	// Update count
 	atomic.StoreInt32(countAddr, int32(len(selected)))
 
-	// Seqlock write start
-	verChunk := data.GetVersionsChunk(layer, cID)
-	if verChunk == nil {
-		// Should not happen if other chunks exist
-		return
+	// Seqlock write end: even = clean
+	if verAddr != nil {
+		atomic.AddUint32(verAddr, 1)
 	}
-	verAddr := &verChunk[cOff]
-	atomic.AddUint32(verAddr, 1)
-
-	// Seqlock write end
-	atomic.AddUint32(verAddr, 1)
-
 	// --- Packed Neighbors Integration (v0.1.4-rc1) ---
 	if layer < len(data.PackedNeighbors) && data.PackedNeighbors[layer] != nil {
 		pn := data.PackedNeighbors[layer]

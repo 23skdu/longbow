@@ -484,6 +484,7 @@ func (h *ArrowHNSW) searchLayer(computer HNSWDistanceComputer, entryPoint uint32
 		}
 
 		// 2. Compute Distances and Update resultSet
+
 		batchCount := len(ctx.scratchIDs)
 		if cap(ctx.scratchDists) < batchCount {
 			ctx.scratchDists = make([]float32, batchCount*2)
@@ -493,7 +494,18 @@ func (h *ArrowHNSW) searchLayer(computer HNSWDistanceComputer, entryPoint uint32
 		// Compute Distances
 		computer.Compute(ctx.scratchIDs, dists)
 
+		// Cap search to consistent node count
+		maxNodes := int(h.nodeCount.Load())
+		if maxNodes > data.Capacity {
+			maxNodes = data.Capacity
+		}
+
 		for i, nid := range ctx.scratchIDs {
+			// Check if neighbor is within the valid range of the current snapshot
+			if int(nid) >= maxNodes {
+				continue
+			}
+
 			dist := dists[i]
 			if filter != nil && !filter.Contains(int(nid)) {
 				continue
@@ -567,26 +579,23 @@ func (h *ArrowHNSW) getVectorAny(id uint32) (any, error) {
 }
 
 func (h *ArrowHNSW) mustGetVectorFromData(data *GraphData, id uint32) any {
-	cID := chunkID(id)
-	cOff := chunkOffset(id)
-	dims := data.Dims
-	// paddedDims removal fixed lint error
-
-	if dims <= 0 {
+	if int(id) >= data.Capacity {
 		return nil
 	}
 
 	// 1. Try Generic Accessor (F32, F16, Complex)
-	// This handles all exact-representation types natively.
 	if vec, err := data.GetVector(id); err == nil {
 		return vec
 	}
 
 	// 1b. Try Float32 (Legacy / Conversion path)
-	// If GetVector failed (maybe type mismatch?), try generic float32 conversion.
 	if vec, err := data.GetVectorAsFloat32(id); err == nil {
 		return vec
 	}
+
+	cID := chunkID(id)
+	cOff := chunkOffset(id)
+	dims := data.Dims
 
 	// 2. Try SQ8 (Lossy)
 	sq8Chunk := data.GetVectorsSQ8Chunk(cID)
@@ -639,13 +648,10 @@ func (h *ArrowHNSW) mustGetVectorFromData(data *GraphData, id uint32) any {
 		}
 	}
 
-	// 5. Sentinel Fallback (Data Miss / Race Condition)
-	// If we reached here, the vector ID is valid in the graph but data is missing.
-	// This can happen during high-concurrency ingestion where the graph link is
-	// visible before the data is fully committed/copied.
-	// Returning a sentinel avoids panics in the hot path.
-	metrics.VectorSentinelHitTotal.Inc()
-	return h.getSentinelVector(dims)
+	// 5. No data available
+	// If we reached here, the vector ID is invalid in the graph or data is missing.
+	// We return nil to allow callers to fallback or use a sentinel.
+	return nil
 }
 
 // getSentinelVector returns a zero-filled vector of the correct dimension.

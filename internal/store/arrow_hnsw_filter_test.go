@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"os"
 	"testing"
 	"time"
@@ -86,7 +87,7 @@ func TestArrowHNSW_VectorizedFilter(t *testing.T) {
 		{Field: "category", Operator: "=", Value: "1"},
 	}
 
-	results, err := ds.Index.SearchVectors(qVec, 10, filters, SearchOptions{})
+	results, err := ds.Index.SearchVectors(context.Background(), qVec, 10, filters, SearchOptions{})
 	require.NoError(t, err)
 
 	t.Logf("Found %d results for cat=1", len(results))
@@ -104,7 +105,7 @@ func TestArrowHNSW_VectorizedFilter(t *testing.T) {
 		{Field: "score", Operator: ">", Value: "0.5"},
 	}
 
-	results2, err := ds.Index.SearchVectors(qVec, 10, filters2, SearchOptions{})
+	results2, err := ds.Index.SearchVectors(context.Background(), qVec, 10, filters2, SearchOptions{})
 	require.NoError(t, err)
 
 	t.Logf("Found %d results for score > 0.5", len(results2))

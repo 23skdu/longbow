@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"testing"
 
 	"github.com/23skdu/longbow/internal/metrics"
@@ -44,7 +45,7 @@ func TestArrowHNSW_Metrics(t *testing.T) {
 		require.NoError(t, err)
 
 		// Search for [1.0, 0.0]
-		res, err := idx.Search([]float32{1.0, 0.0}, 2, 20, nil)
+		res, err := idx.Search(context.Background(), []float32{1.0, 0.0}, 2, 20, nil)
 		require.NoError(t, err)
 		require.Len(t, res, 2)
 
@@ -85,7 +86,7 @@ func TestArrowHNSW_Metrics(t *testing.T) {
 
 		// Perform search
 		q := []float32{0.5, 0.5, 0.5, 0.5}
-		_, err = idx.Search(q, 10, 20, nil)
+		_, err = idx.Search(context.Background(), q, 10, 20, nil)
 		require.NoError(t, err)
 
 		// Verify Metrics
@@ -104,7 +105,7 @@ func TestArrowHNSW_Metrics(t *testing.T) {
 		_, err = idxF16.AddByLocation(0, 0)
 		require.NoError(t, err)
 
-		_, err = idxF16.Search(q, 10, 20, nil)
+		_, err = idxF16.Search(context.Background(), q, 10, 20, nil)
 		require.NoError(t, err)
 
 		countF16 := testutil.ToFloat64(metrics.HNSWPolymorphicSearchCount.WithLabelValues("float16"))

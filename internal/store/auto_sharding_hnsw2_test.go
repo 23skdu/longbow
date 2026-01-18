@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -79,7 +80,7 @@ func TestAutoShardingIndex_UseHNSW2(t *testing.T) {
 	// Search
 	// Query close to Vec 1: [0.9, 0.1, 0, 0]
 	q := []float32{0.9, 0.1, 0, 0}
-	res, err := idx.SearchVectors(q, 10, nil, SearchOptions{})
+	res, err := idx.SearchVectors(context.Background(), q, 10, nil, SearchOptions{})
 	require.NoError(t, err)
 	require.NotEmpty(t, res)
 

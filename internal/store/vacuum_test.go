@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -83,7 +84,7 @@ func TestHNSW_Vacuum(t *testing.T) {
 			continue
 		}
 		query[0] = float32(i)
-		results, err := h.Search(query, 5, 20, nil)
+		results, err := h.Search(context.Background(), query, 5, 20, nil)
 		require.NoError(t, err)
 		// Self-match usually found
 		found := false

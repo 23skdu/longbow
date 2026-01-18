@@ -664,7 +664,7 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, stream fli
 			ds.dataMu.RUnlock() // RELEASE BEFORE SEARCH
 
 			// Core Search (No dataset lock held)
-			searchResults, err = index.SearchVectors(queryVec, req.K, req.Filters, SearchOptions{
+			searchResults, err = index.SearchVectors(stream.Context(), queryVec, req.K, req.Filters, SearchOptions{
 				IncludeVectors: req.IncludeVectors,
 				VectorFormat:   req.VectorFormat,
 			})

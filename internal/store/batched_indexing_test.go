@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -80,7 +81,7 @@ func TestBatchedIndexing(t *testing.T) {
 	// Check search
 	query := make([]float32, 128)
 	query[0] = 50.0
-	results, err := ds.Index.SearchVectors(query, 5, nil, SearchOptions{})
+	results, err := ds.Index.SearchVectors(context.Background(), query, 5, nil, SearchOptions{})
 	require.NoError(t, err)
 	assert.NotEmpty(t, results)
 	assert.Equal(t, VectorID(50), results[0].ID)

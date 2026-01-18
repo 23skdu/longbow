@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -100,7 +101,7 @@ func TestArrowHNSW_LargeBatchIngestion_30k(t *testing.T) {
 	qVec[0] = targetVal
 
 	// Perform Search
-	res, err := idx.SearchVectors(qVec, 10, nil, SearchOptions{})
+	res, err := idx.SearchVectors(context.Background(), qVec, 10, nil, SearchOptions{})
 	require.NoError(t, err)
 	require.GreaterOrEqual(t, len(res), 1)
 

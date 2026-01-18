@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"testing"
@@ -48,7 +49,7 @@ func TestShardedHNSW_AutoSplit(t *testing.T) {
 
 	// Verify we can search across all of them
 	query := []float32{float32(200), float32(200), float32(200)}
-	results, err := sharded.SearchVectors(query, 10, nil, SearchOptions{})
+	results, err := sharded.SearchVectors(context.Background(), query, 10, nil, SearchOptions{})
 	if err != nil {
 		t.Fatalf("Search failed: %v", err)
 	}

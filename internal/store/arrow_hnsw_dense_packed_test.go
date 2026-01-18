@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -60,7 +61,7 @@ func TestArrowHNSW_AddBatch_Parallel_Dense_Packed(t *testing.T) {
 		qVec[j] = float32(50+j) * 0.01
 	}
 
-	res, err := idx.SearchVectors(qVec, 10, nil, SearchOptions{})
+	res, err := idx.SearchVectors(context.Background(), qVec, 10, nil, SearchOptions{})
 	require.NoError(t, err)
 	assert.NotEmpty(t, res)
 	fmt.Printf("Top 1 ID: %d, Score: %f\n", res[0].ID, res[0].Score)

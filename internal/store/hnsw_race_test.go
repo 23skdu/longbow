@@ -124,7 +124,7 @@ func TestHNSWRaceCompaction(t *testing.T) {
 			default:
 				ds, ok := vs.getDataset(datasetName)
 				if ok && ds.Index != nil {
-					_, _ = ds.Index.SearchVectors(query, 5, nil, SearchOptions{})
+					_, _ = ds.Index.SearchVectors(context.Background(), query, 5, nil, SearchOptions{})
 				}
 				time.Sleep(10 * time.Millisecond)
 			}

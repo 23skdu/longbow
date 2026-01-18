@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"sync"
 	"testing"
 
@@ -58,7 +59,7 @@ func TestArrowHNSW_AddBatch_Sequential(t *testing.T) {
 	// 4. Verify Search (Basic Recall)
 	// Search for a known vector
 	queryVec := makeTestVector(dims, 50) // From 1st batch
-	results, err := idx.SearchVectors(queryVec, 10, nil, SearchOptions{})
+	results, err := idx.SearchVectors(context.Background(), queryVec, 10, nil, SearchOptions{})
 	require.NoError(t, err)
 	require.NotEmpty(t, results)
 	found := false

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"testing"
 )
 
@@ -61,7 +62,7 @@ func TestDelete(t *testing.T) {
 	// Verify they all exist in search
 	query := make([]float32, 128)
 	query[0] = 5.0
-	_, _ = index.Search(query, 10, 20, nil)
+	_, _ = index.Search(context.Background(), query, 10, 20, nil)
 
 	// Wait, if neighbors are not connected, Search will only find entry point.
 	// For Delete test, we just need to verify that if a node IS found, it's filtered.
@@ -72,7 +73,7 @@ func TestDelete(t *testing.T) {
 		index.AddConnection(ctx, data, 0, uint32(i), 0, 16, 0.0)
 	}
 
-	results, _ := index.Search(query, 10, 20, nil)
+	results, _ := index.Search(context.Background(), query, 10, 20, nil)
 	if len(results) != 10 {
 		t.Errorf("expected 10 results, got %d", len(results))
 	}
@@ -81,7 +82,7 @@ func TestDelete(t *testing.T) {
 	_ = index.Delete(5)
 
 	// Search again
-	results, _ = index.Search(query, 10, 20, nil)
+	results, _ = index.Search(context.Background(), query, 10, 20, nil)
 	// Node 5 should be missing
 	found5 := false
 	for _, res := range results {
@@ -98,7 +99,7 @@ func TestDelete(t *testing.T) {
 		_ = index.Delete(uint32(i))
 	}
 
-	results, _ = index.Search(query, 10, 20, nil)
+	results, _ = index.Search(context.Background(), query, 10, 20, nil)
 	if len(results) != 0 {
 		t.Errorf("expected 0 results, got %d", len(results))
 	}

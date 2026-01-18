@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"fmt"
 	"runtime"
 	"sort"
@@ -359,23 +360,23 @@ func (a *AutoShardingIndex) migrateToSharded() {
 }
 
 // SearchVectors implements VectorIndex.
-func (a *AutoShardingIndex) SearchVectors(q any, k int, filters []query.Filter, options SearchOptions) ([]SearchResult, error) {
+func (a *AutoShardingIndex) SearchVectors(ctx context.Context, q any, k int, filters []query.Filter, options SearchOptions) ([]SearchResult, error) {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 
 	sharded := a.sharded
 	if sharded {
-		return a.current.SearchVectors(q, k, filters, options)
+		return a.current.SearchVectors(ctx, q, k, filters, options)
 	}
 
 	interim := a.interimIndex
-	res, err := a.current.SearchVectors(q, k, filters, options)
+	res, err := a.current.SearchVectors(ctx, q, k, filters, options)
 	if err != nil {
 		return nil, err
 	}
 
 	if interim != nil {
-		res2, err := interim.SearchVectors(q, k, filters, options)
+		res2, err := interim.SearchVectors(ctx, q, k, filters, options)
 		if err != nil {
 			// Log error but return what we have
 			fmt.Printf("Error searching interim index: %v\n", err)
@@ -388,19 +389,19 @@ func (a *AutoShardingIndex) SearchVectors(q any, k int, filters []query.Filter, 
 }
 
 // SearchVectorsWithBitmap implements VectorIndex.
-func (a *AutoShardingIndex) SearchVectorsWithBitmap(q any, k int, filter *query.Bitset, options SearchOptions) []SearchResult {
+func (a *AutoShardingIndex) SearchVectorsWithBitmap(ctx context.Context, q any, k int, filter *query.Bitset, options SearchOptions) []SearchResult {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 
 	sharded := a.sharded
 	if sharded {
-		return a.current.SearchVectorsWithBitmap(q, k, filter, options)
+		return a.current.SearchVectorsWithBitmap(ctx, q, k, filter, options)
 	}
 
 	interim := a.interimIndex
-	res := a.current.SearchVectorsWithBitmap(q, k, filter, options)
+	res := a.current.SearchVectorsWithBitmap(ctx, q, k, filter, options)
 	if interim != nil {
-		res2 := interim.SearchVectorsWithBitmap(q, k, filter, options)
+		res2 := interim.SearchVectorsWithBitmap(ctx, q, k, filter, options)
 		res = a.mergeSearchResults(res, res2, k)
 	}
 

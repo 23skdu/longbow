@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/23skdu/longbow/internal/gpu"
@@ -65,11 +66,11 @@ func (h *HNSWIndex) SyncGPU(ids []int64, vectors []float32) error {
 
 // SearchHybrid performs GPU+CPU hybrid search
 // Uses GPU for candidate generation, then refines with CPU HNSW graph
-func (h *HNSWIndex) SearchHybrid(query []float32, k int) ([]SearchResult, error) {
+func (h *HNSWIndex) SearchHybrid(ctx context.Context, query []float32, k int) ([]SearchResult, error) {
 	// If GPU not enabled or failed, use pure CPU
 	if !h.gpuEnabled || h.gpuIndex == nil {
 		// Use SearchByVector which returns []SearchResult
-		return h.SearchVectors(query, k, nil, SearchOptions{})
+		return h.SearchVectors(ctx, query, k, nil, SearchOptions{})
 	}
 
 	// Step 1: GPU generates candidates (k * 10 for better recall)
@@ -81,7 +82,7 @@ func (h *HNSWIndex) SearchHybrid(query []float32, k int) ([]SearchResult, error)
 	candidateIDs, distances, err := h.gpuIndex.Search(query, candidateCount)
 	if err != nil {
 		// GPU search failed, fallback to CPU
-		return h.SearchVectors(query, k, nil, SearchOptions{})
+		return h.SearchVectors(ctx, query, k, nil, SearchOptions{})
 	}
 
 	// Step 2: Refine with HNSW graph

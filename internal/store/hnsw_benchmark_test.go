@@ -1,7 +1,7 @@
 package store_test
 
-
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -108,7 +108,7 @@ func BenchmarkHNSWComparison(b *testing.B) {
 
 	b.Run("Search/HNSW2", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			_, err := hnsw2Idx.Search(query, k, k*10, nil)
+			_, err := hnsw2Idx.Search(context.Background(), query, k, k*10, nil)
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -130,7 +130,7 @@ func BenchmarkHNSWComparison(b *testing.B) {
 	b.Run("SearchParallel/HNSW2", func(b *testing.B) {
 		b.RunParallel(func(pb *testing.PB) {
 			for pb.Next() {
-				_, err := hnsw2Idx.Search(query, k, k*10, nil)
+				_, err := hnsw2Idx.Search(context.Background(), query, k, k*10, nil)
 				if err != nil {
 					b.Fatal(err)
 				}

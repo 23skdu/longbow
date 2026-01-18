@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"testing"
 
 	"github.com/23skdu/longbow/internal/pq"
@@ -64,7 +65,7 @@ func (m *MockIndex) Search(q []float32, k int) []VectorID {
 	return []VectorID{}
 }
 
-func (m *MockIndex) SearchVectors(q any, k int, filters []query.Filter, options SearchOptions) ([]SearchResult, error) {
+func (m *MockIndex) SearchVectors(ctx context.Context, q any, k int, filters []query.Filter, options SearchOptions) ([]SearchResult, error) {
 	m.SearchCalls++
 	results := make([]SearchResult, 0, k)
 	for i := 0; i < k; i++ {
@@ -73,7 +74,7 @@ func (m *MockIndex) SearchVectors(q any, k int, filters []query.Filter, options 
 	return results, nil
 }
 
-func (m *MockIndex) SearchVectorsWithBitmap(q any, k int, filter *query.Bitset, options SearchOptions) []SearchResult {
+func (m *MockIndex) SearchVectorsWithBitmap(ctx context.Context, q any, k int, filter *query.Bitset, options SearchOptions) []SearchResult {
 	m.SearchCalls++
 	return []SearchResult{}
 }

@@ -66,4 +66,14 @@ func TestBufferedWAL_SilentFlushFailure_Reproduction(t *testing.T) {
 	case <-time.After(1 * time.Second):
 		t.Fatal("Expected flush error on ErrCh, but timed out")
 	}
+
+	// 3. Verify Sync fails fast
+	err = wal.Sync()
+	assert.Error(t, err, "Sync should return fatal error")
+	assert.Contains(t, err.Error(), "simulated disk full")
+
+	// 4. Verify subsequent Writes fail fast
+	err = wal.Write("test_dataset", 2, time.Now().UnixNano(), rec)
+	assert.Error(t, err, "Write should return fatal error")
+	assert.Contains(t, err.Error(), "simulated disk full")
 }

@@ -231,7 +231,7 @@ func run() error {
 	defer runtime.KeepAlive(ballast)
 
 	// Create memory allocator
-	mem := lbmem.NewArenaAllocator()
+	mem := store.NewPooledAllocator()
 
 	// Initialize vector store with compaction config
 	compactionCfg := store.CompactionConfig{

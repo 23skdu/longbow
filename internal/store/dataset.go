@@ -40,6 +40,9 @@ type Dataset struct {
 	Schema     *arrow.Schema
 	Topo       *NUMATopology
 
+	// Schema Evolution
+	SchemaManager *SchemaEvolutionManager
+
 	// Tombstones map BatchIdx -> Bitset of deleted RowIdxs
 	Tombstones map[int]*qry.Bitset
 
@@ -150,6 +153,9 @@ func NewDataset(name string, schema *arrow.Schema) *Dataset {
 		Metric:          MetricEuclidean, // Default
 		// hnsw2Index will be initialized externally to avoid import cycle
 	}
+
+	// Initialize Schema Manager
+	ds.SchemaManager = NewSchemaEvolutionManager(schema, name)
 
 	// Initialize fragmentation tracker
 	ds.fragmentationTracker = NewFragmentationTracker()

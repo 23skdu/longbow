@@ -38,7 +38,7 @@ func (m *mockQueryCacheActionServer) Context() context.Context {
 func TestVectorStore_QueryCache_Integration(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	store := NewVectorStore(mem, zerolog.Nop(), 1024*1024*1024, 1024*1024*100, 1*time.Hour)
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// 1. Create a dataset with some data
 	dsName := "cache_test_ds"
@@ -96,7 +96,7 @@ func TestVectorStore_QueryCache_Integration(t *testing.T) {
 
 	// Decode result 1
 	var res1 []SearchResult
-	json.Unmarshal(mockStream.sent[0].Body, &res1)
+	_ = json.Unmarshal(mockStream.sent[0].Body, &res1)
 	assert.NotEmpty(t, res1)
 
 	// 4. Second Call - Should be HIT (faster)
@@ -107,7 +107,7 @@ func TestVectorStore_QueryCache_Integration(t *testing.T) {
 	duration2 := time.Since(start)
 
 	var res2 []SearchResult
-	json.Unmarshal(mockStream2.sent[0].Body, &res2)
+	_ = json.Unmarshal(mockStream2.sent[0].Body, &res2)
 	assert.Equal(t, res1, res2, "Results should be identical")
 
 	t.Logf("First call: %v, Second call: %v", duration1, duration2)
@@ -123,7 +123,7 @@ func TestVectorStore_QueryCache_Integration(t *testing.T) {
 	// Can't access cache directly.
 }
 
-func createCacheTestRecordBatch(t *testing.T, rows int) arrow.RecordBatch {
+func createCacheTestRecordBatch(_ *testing.T, rows int) arrow.RecordBatch {
 	pool := memory.NewGoAllocator()
 	schema := arrow.NewSchema(
 		[]arrow.Field{

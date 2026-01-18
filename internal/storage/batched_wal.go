@@ -66,6 +66,7 @@ type WALBatcher struct {
 	doneCh       chan struct{}
 	flushCh      chan chan error // Channel for synchronous flush requests
 	flushErr     error
+	ErrCh        chan error                  // Channel for async flush errors
 	rateTracker  *WriteRateTracker           // Adaptive: tracks write rate
 	intervalCalc *AdaptiveIntervalCalculator // Adaptive: calculates intervals
 	asyncFsyncer *AsyncFsyncer               // Async: background fsync handler
@@ -95,6 +96,7 @@ func NewWALBatcher(dataPath string, config *WALBatcherConfig) *WALBatcher {
 		stopCh:     make(chan struct{}),
 		doneCh:     make(chan struct{}),
 		flushCh:    make(chan chan error),
+		ErrCh:      make(chan error, 1),
 	}
 	if config.Adaptive.Enabled {
 		w.rateTracker = NewWriteRateTracker(1 * time.Second)
@@ -393,6 +395,12 @@ func (w *WALBatcher) handleFlushError(err error) {
 	w.flushErr = err
 	w.mu.Unlock()
 	metrics.WalWritesTotal.WithLabelValues("error").Inc()
+
+	// Try to report error
+	select {
+	case w.ErrCh <- err:
+	default:
+	}
 }
 
 // drainAndFlush drains channel and flushes remaining entries on stop

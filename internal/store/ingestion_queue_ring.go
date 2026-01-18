@@ -77,12 +77,9 @@ func (rb *IngestionRingBuffer) Push(job ingestionJob) bool {
 				slot.sequence.Store(tail + 1)
 				return true
 			}
-		} else if seq < tail {
-			// Slot lags behind, shouldn't happen in single-producer per slot logic unless wrap around race
-			// Typically means producer needs to wait or retry if we lost race
-			runtime.Gosched()
 		} else {
-			// seq > tail: Slot already claimed by another producer who won CAS
+			// seq < tail: Slot lags behind
+			// seq > tail: Slot already claimed by another producer
 			runtime.Gosched()
 		}
 	}
@@ -116,10 +113,8 @@ func (rb *IngestionRingBuffer) Pop() (ingestionJob, bool) {
 				slot.sequence.Store(head + uint64(len(rb.buffer)))
 				return job, true
 			}
-		} else if seq < nextSeq {
-			// Producer hasn't finished writing yet
-			runtime.Gosched()
 		} else {
+			// seq < nextSeq: Producer hasn't finished writing yet
 			// seq > nextSeq: Should not happen normally unless head moved
 			runtime.Gosched()
 		}

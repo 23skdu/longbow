@@ -210,7 +210,7 @@ type ArrowHNSW struct {
 	nodeCount  atomic.Int64
 
 	initMu sync.Mutex
-	growMu sync.Mutex
+	growMu sync.RWMutex
 
 	shardedLocks []sync.Mutex
 

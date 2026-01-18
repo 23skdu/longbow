@@ -504,9 +504,15 @@ var (
 			Help: "Current heap utilization ratio (heap_inuse / limit)",
 		},
 	)
-)
 
-// =============================================================================
+	// WALFlushErrors counts total number of WAL flush failures
+	WALFlushErrors = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_wal_flush_errors_total",
+			Help: "Total number of WAL flush failures",
+		},
+	)
+) // =============================================================================
 // Pipeline & S3 Metrics
 // =============================================================================
 
@@ -1098,5 +1104,14 @@ var (
 			Help: "Memory usage of HNSW index components",
 		},
 		[]string{"dataset", "component"}, // component: "graph", "vectors", "metadata", "id_map"
+	)
+
+	// SchemaEvolutionTotal counts schema evolution events
+	SchemaEvolutionTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_schema_evolution_total",
+			Help: "Total number of schema evolution events",
+		},
+		[]string{"type", "status"},
 	)
 )

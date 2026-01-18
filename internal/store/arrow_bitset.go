@@ -123,7 +123,7 @@ func (b *ArrowBitset) FilterVisited(ids []uint32) []uint32 {
 }
 
 // FilterVisitedInto filters unvisited IDs into the provided 'out' slice.
-func (b *ArrowBitset) FilterVisitedInto(ids []uint32, out []uint32) []uint32 {
+func (b *ArrowBitset) FilterVisitedInto(ids, out []uint32) []uint32 {
 	// Don't reset out, append to it?
 	// Usually caller explicitly passes out[:0] if they want reset.
 	// We should just append.

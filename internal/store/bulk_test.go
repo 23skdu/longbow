@@ -68,7 +68,7 @@ func TestBulkDeferredConnections(t *testing.T) {
 	config.InitialCapacity = numVecs
 
 	idx := NewArrowHNSW(ds, config, NewChunkedLocationStore())
-	defer idx.Close()
+	defer func() { _ = idx.Close() }()
 
 	// 4. Perform Bulk Insert
 	// AddBatch expects []RecordBatch

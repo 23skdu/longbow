@@ -11,6 +11,12 @@ ingestion and low-latency retrieval.
 - **Auto-Sharding**: Small datasets use a single HNSW index; larger datasets are transparently migrated
   to a sharded, lock-striped `ShardedHNSW` for parallel insertion.
 
+### Warm Tier (SSD Offloading)
+
+- **Disk-Based Vectors**: When `LONGBOW_USE_DISK=1` is enabled, full-precision vectors are offloaded to an append-only file on SSD (`DiskVectorStore`).
+- **Hybrid Index**: The HNSW graph and compressed vector representations (PQ/SQ8) remain in RAM for fast traversal, while the final re-ranking step retrieves full vectors from disk.
+- **RAM Savings**: Significantly reduces memory footprint (e.g., 90% reduction for 3072d vectors), enabling billion-scale datasets on moderate hardware.
+
 ### Cold Tier (Object Storage)
 
 - **Parquet Snapshots**: In-memory segments are periodically flushed to local disk or S3 as Parquet files.

@@ -40,10 +40,12 @@ These parameters control the HNSW graph construction and search behavior.
 | `LONGBOW_HNSW_KEEP_PRUNED` | `false` | **Pragma**: If true, ensures nodes always reach `M` connections by backfilling pruned edges. |
 | `LONGBOW_HNSW_SQ8_ENABLED` | `false` | Enable SQ8 scalar quantization for 4x memory reduction. |
 | `LONGBOW_HNSW_FLOAT16_ENABLED` | `false` | Enable native Float16 storage for 2x memory reduction. |
+| `LONGBOW_USE_DISK` | `false` | Enable SSD-based vector offloading (Disk-ANN) for Reduced RAM usage. |
 
 | `LONGBOW_HNSW_REFINEMENT_FACTOR` | `1.0` | Refinement factor for SQ8 search. `2.0-4.0` recommended for high recall. |
 | `LONGBOW_HNSW_PQ_ENABLED` | `false` | Enable Product Quantization. |
 | `LONGBOW_USE_HNSW2` | `false` | Enable the new Arrow-native HNSW implementation. |
+| `LONGBOW_USE_DISK` | `false` | Enable SSD-based vector offloading (Disk-ANN) for Reduced RAM usage. |
 | `LONGBOW_AUTO_SHARDING_THRESHOLD` | `10000` | Number of vectors per shard before triggering a split. |
 | `LONGBOW_AUTO_SHARDING_SPLIT_THRESHOLD` | `65536` | Chunk size for sharded HNSW. |
 | `LONGBOW_RING_SHARDING_ENABLED` | `true` | Enable consistent hashing ring sharding. |

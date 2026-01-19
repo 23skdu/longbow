@@ -15,7 +15,7 @@ Longbow demonstrates high throughput and low latency across a wide range of data
   - **1536d (text-embedding-3-small)**: Verified stable with ~730 QPS (float32) and >2500 MB/s retrieval.
   - **3072d (text-embedding-3-large)**: `float16` recommended (~220 QPS). `float32` shows significant performance degradation (15 QPS) due to memory bandwidth/cache effects.
 
-## Cluster Validation Suite (5k Vectors, 3-Node)
+### Cluster Validation Suite (5k Vectors, 3-Node)
 
 Verified on a 3-node cluster using `float32` vectors @ 128 dimensions.
 
@@ -35,34 +35,25 @@ The following matrix aggregates performance for `DoPut` (Ingestion), `DoGet` (Re
 | Type       |   Dim | DoPut (MB/s) | DoGet (MB/s) | Dense QPS | Status     |
 |:-----------|------:|-------------:|-------------:|----------:|:-----------|
 | **int8**   |   128 |       170.89 |       515.24 |    2581.3 | **Stable** |
-| **int8**   |   384 |       523.99 |      1689.43 |    1701.5 | **Stable** |
-| **int16**  |   128 |       293.83 |      1282.51 |    2508.4 | **Stable** |
-| **int16**  |   384 |       952.52 |      1998.05 |    1697.6 | **Stable** |
+| **int16**  |   128 |       293.83 |       930.02 |    2084.8 | **Stable** |
 | **int32**  |   128 |       700.92 |      1317.47 |    2548.2 | **Stable** |
-| **int32**  |   384 |      1295.76 |      2586.09 |    1537.0 | **Stable** |
-| **int64**  |   128 |       680.58 |      2198.50 |    2455.1 | **Stable** |
-| **int64**  |   384 |      1530.32 |      2742.05 |    1663.6 | **Stable** |
+| **int64**  |   128 |       925.83 |      2241.94 |    2633.3 | **Stable** |
 | **float32**|   128 |       530.30 |      1870.90 |     881.2 | **Stable** |
-| **float32**|   384 |      1214.05 |      2491.24 |     373.5 | **Stable** |
 | **float16**|   128 |       300.76 |      1239.93 |    2488.8 | **Stable** |
-| **float16**|   384 |       762.05 |      2113.78 |    1703.6 | **Stable** |
 | **float64**|   128 |       850.91 |      2427.07 |    1690.2 | **Stable** |
-| **float64**|   384 |      1303.93 |      2821.55 |    1056.1 | **Stable** |
-| **complex64**| 128 |       857.67 |      2332.19 |     504.4 | **Stable** |
-| **complex64**| 384 |      1453.96 |       848.58 |     157.2 | **Stable** |
 | **complex128**|128 |      1341.22 |      2612.38 |    1288.4 | **Stable** |
-| **complex128**|384 |      1339.99 |      2864.01 |     863.7 | **Stable** |
 
 ### High-Dimensional Matrix (OpenAI Models)
 
+Performance for high-dimensional vectors on 6GB/node cluster.
+
 | Type       |   Dim | DoPut (MB/s) | DoGet (MB/s) | Dense QPS | Status     |
 |:-----------|------:|-------------:|-------------:|----------:|:-----------|
-| **float32**|  1536 |      1545.92 |      2761.29 |     729.0 | **Stable** |
-| **float16**|  1536 |      1063.71 |      2616.32 |     726.3 | **Stable** |
-| **int8**   |  1536 |      1063.71 |      2616.32 |     726.3 | **Stable** |
-| **float32**|  3072 |       276.50 |       492.73 |      15.5 | **Degraded** |
-| **float16**|  3072 |       516.82 |      1829.08 |     219.8 | **Stable** |
-| **int8**   |  3072 |       587.16 |      1552.10 |     210.0 | **Stable** |
+| **int16**  |  1536 |        36.66 |      3227.79 |     708.7 | **Excellent** |
+| **int32**  |  1536 |      1587.29 |      3129.30 |     689.4 | **Excellent** |
+| **float16**|  1536 |       617.86 |       420.36 |      37.7 | **Memory Bound** |
+| **float32**|  1536 |        46.65 |       861.30 |      20.4 | **Memory Bound** |
+| **int8**   |  3072 |        80.66 |       383.16 |      40.9 | **Stable** |
 
 ## Observations
 

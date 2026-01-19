@@ -106,6 +106,23 @@ type ArrowSearchContext struct {
 	visitedList    []uint32 // Track visited IDs for sparse clearing
 }
 
+func (c *ArrowSearchContext) EnsureCapacity(dim int) {
+	// Only resize if current capacity is insufficient
+	if cap(c.querySQ8) < dim {
+		c.querySQ8 = make([]byte, 0, dim)
+		metrics.HNSWSearchScratchSpaceResizesTotal.WithLabelValues("query_sq8").Inc()
+	}
+	if cap(c.queryF16) < dim {
+		c.queryF16 = make([]float16.Num, 0, dim)
+		metrics.HNSWSearchScratchSpaceResizesTotal.WithLabelValues("query_f16").Inc()
+	}
+	// For Float32 query (scratch space for distance calculations if needed)
+	if cap(c.adcTable) < dim {
+		c.adcTable = make([]float32, 0, dim)
+		metrics.HNSWSearchScratchSpaceResizesTotal.WithLabelValues("adc_table").Inc()
+	}
+}
+
 func NewArrowSearchContext() *ArrowSearchContext {
 	return &ArrowSearchContext{
 		visited:          NewArrowBitset(128000),
@@ -121,6 +138,7 @@ func NewArrowSearchContext() *ArrowSearchContext {
 		scratchVecsSQ8:   make([][]byte, 0, MaxNeighbors),
 		querySQ8:         make([]byte, 0, 1536), // Common high-dim size
 		queryF16:         make([]float16.Num, 0, 1536),
+		adcTable:         make([]float32, 0, 1536),
 		visitedList:      make([]uint32, 0, 2048),
 	}
 }
@@ -170,6 +188,10 @@ func (c *ArrowSearchContext) Reset() {
 	// They are overwritten/resized at the start of Search() if needed.
 
 	c.scratchPQCodes = c.scratchPQCodes[:0]
+	c.querySQ8 = c.querySQ8[:0]
+	c.queryBQ = c.queryBQ[:0]
+	c.queryF16 = c.queryF16[:0]
+	c.adcTable = c.adcTable[:0]
 	c.pruneDepth = 0
 }
 
@@ -355,13 +377,14 @@ func NewGraphData(capacity, dims int, sq8Enabled, pqEnabled bool, pqDims int, bq
 	}
 
 	// Snap to standard bucket sizes to enable global pooling in SlabPool
-	if slabSize <= 4*1024*1024 {
+	switch {
+	case slabSize <= 4*1024*1024:
 		slabSize = 4 * 1024 * 1024
-	} else if slabSize <= 8*1024*1024 {
+	case slabSize <= 8*1024*1024:
 		slabSize = 8 * 1024 * 1024
-	} else if slabSize <= 16*1024*1024 {
+	case slabSize <= 16*1024*1024:
 		slabSize = 16 * 1024 * 1024
-	} else if slabSize <= 32*1024*1024 {
+	case slabSize <= 32*1024*1024:
 		slabSize = 32 * 1024 * 1024
 	}
 
@@ -1093,7 +1116,9 @@ func (h *ArrowHNSW) ensureChunk(data *GraphData, cID, _ uint32, dims int) *Graph
 	}
 
 	// Primary Vectors
-	if dims > 0 && !h.config.Float16Enabled && len(data.Vectors) > int(cID) && atomic.LoadUint64(&data.Vectors[cID]) == 0 {
+	// Skip RAM allocation if DiskStore is used for primary storage
+	skipRAM := data.DiskStore != nil
+	if dims > 0 && !skipRAM && !h.config.Float16Enabled && len(data.Vectors) > int(cID) && atomic.LoadUint64(&data.Vectors[cID]) == 0 {
 		var ref memory.SliceRef
 		var err error
 

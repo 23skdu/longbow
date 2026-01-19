@@ -141,15 +141,26 @@ func ExtractVectorGeneric[T any](rec arrow.RecordBatch, rowIdx, colIdx int) ([]T
 	listOffset := listArr.Data().Offset()
 	start := (listOffset + rowIdx) * width
 	values := listArr.Data().Children()[0]
+	var zero T
+	elemSize := int(unsafe.Sizeof(zero))
 
-	// Validate bounds
+	// Validate bounds and handle potentially truncated buffers (e.g. from Flight IPC)
 	if len(values.Buffers()) > 1 && values.Buffers()[1] != nil {
 		bufLen := values.Buffers()[1].Len()
-		var zero T
-		elemSize := int(unsafe.Sizeof(zero))
 		needed := (start + width) * elemSize
+
 		if bufLen < needed {
-			return nil, fmt.Errorf("ExtractVectorGeneric: buffer out of bounds (len=%d, needed=%d)", bufLen, needed)
+			// TRUNCATED BUFFER HEURISTIC:
+			// If the buffer is smaller than the absolute offset + width,
+			// check if it's large enough for the relative offset alone.
+			// This happens when Arrow IPC flattens the buffer but preserves listOffset.
+			relativeNeeded := (rowIdx + 1) * width * elemSize
+			if bufLen >= relativeNeeded {
+				// Assume truncated buffer where index 0 is logical index listOffset
+				start = rowIdx * width
+			} else {
+				return nil, fmt.Errorf("ExtractVectorGeneric: buffer out of bounds (len=%d, needed=%d, rowIdx=%d, listOffset=%d, width=%d). Buffer is too small even for relative access", bufLen, needed, rowIdx, listOffset, width)
+			}
 		}
 	}
 
@@ -272,7 +283,10 @@ func InferVectorDataType(schema *arrow.Schema, fieldName string) VectorDataType 
 	if val, ok := fmd.GetValue("longbow.vector_type"); ok {
 		return parseVectorType(val)
 	}
-	if val, ok := fmd.GetValue("longbow.type"); ok {
+
+	// 1.5 Check Schema Metadata (Global fallback)
+	smd := schema.Metadata()
+	if val, ok := smd.GetValue("longbow.vector_type"); ok {
 		return parseVectorType(val)
 	}
 
@@ -283,39 +297,41 @@ func InferVectorDataType(schema *arrow.Schema, fieldName string) VectorDataType 
 	}
 
 	elemType := listType.Elem()
+	var finalType VectorDataType
 	switch elemType.ID() {
 	case arrow.FLOAT32:
-		// Check for complex marker in metadata if it was sent as interleaved F32
+		finalType = VectorTypeFloat32
 		if val, _ := fmd.GetValue("longbow.complex"); val == "true" {
-			return VectorTypeComplex64
+			finalType = VectorTypeComplex64
 		}
-		return VectorTypeFloat32
 	case arrow.FLOAT64:
+		finalType = VectorTypeFloat64
 		if val, _ := fmd.GetValue("longbow.complex"); val == "true" {
-			return VectorTypeComplex128
+			finalType = VectorTypeComplex128
 		}
-		return VectorTypeFloat64
 	case arrow.FLOAT16:
-		return VectorTypeFloat16
+		finalType = VectorTypeFloat16
 	case arrow.INT8:
-		return VectorTypeInt8
+		finalType = VectorTypeInt8
 	case arrow.UINT8:
-		return VectorTypeUint8
+		finalType = VectorTypeUint8
 	case arrow.INT16:
-		return VectorTypeInt16
+		finalType = VectorTypeInt16
 	case arrow.UINT16:
-		return VectorTypeUint16
+		finalType = VectorTypeUint16
 	case arrow.INT32:
-		return VectorTypeInt32
+		finalType = VectorTypeInt32
 	case arrow.UINT32:
-		return VectorTypeUint32
+		finalType = VectorTypeUint32
 	case arrow.INT64:
-		return VectorTypeInt64
+		finalType = VectorTypeInt64
 	case arrow.UINT64:
-		return VectorTypeUint64
+		finalType = VectorTypeUint64
+	default:
+		finalType = VectorTypeFloat32
 	}
 
-	return VectorTypeFloat32
+	return finalType
 }
 
 func parseVectorType(val string) VectorDataType {

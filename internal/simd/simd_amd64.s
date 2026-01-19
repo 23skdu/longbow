@@ -527,3 +527,349 @@ dot_f16_avx512_done:
     VMOVSS  X0, ret+24(FP)
     VZEROUPPER
     RET
+// =============================================================================
+// Float64 Kernels
+// =============================================================================
+
+// func euclideanFloat64AVX2Kernel(a, b unsafe.Pointer, n int) float32
+TEXT ·euclideanFloat64AVX2Kernel(SB), NOSPLIT, $0-28
+    MOVQ    a+0(FP), SI
+    MOVQ    b+8(FP), DI
+    MOVQ    n+16(FP), BX
+
+    VXORPD  Y0, Y0, Y0          // sum accumulator (double precision)
+    
+    CMPQ    BX, $4
+    JL      euc_f64_avx2_tail
+
+euc_f64_avx2_loop:
+    VMOVUPD (SI), Y1            // Load 4 float64s
+    VMOVUPD (DI), Y2
+    VSUBPD  Y2, Y1, Y1
+    VFMADD231PD Y1, Y1, Y0      // Y0 += Y1 * Y1
+
+    ADDQ    $32, SI
+    ADDQ    $32, DI
+    SUBQ    $4, BX
+    CMPQ    BX, $4
+    JGE     euc_f64_avx2_loop
+
+euc_f64_avx2_tail:
+    // Reduction Y0 -> X0
+    VEXTRACTF128 $1, Y0, X1
+    VADDPD  X1, X0, X0
+    VUNPCKHPD X0, X1, X1       // high 64 bits to low
+    VADDSD  X1, X0, X0         // scalar double add
+
+    CMPQ    BX, $0
+    JE      euc_f64_avx2_done
+
+euc_f64_avx2_tail_loop:
+    VMOVSD  (SI), X1
+    VMOVSD  (DI), X2
+    VSUBSD  X2, X1, X1
+    VFMADD231SD X1, X1, X0
+    
+    ADDQ    $8, SI
+    ADDQ    $8, DI
+    DECQ    BX
+    JNZ     euc_f64_avx2_tail_loop
+
+euc_f64_avx2_done:
+    VSQRTSD X0, X0, X0
+    VCVTSD2SS X0, X0, X0       // Convert double result to float32 result
+    VMOVSS  X0, ret+24(FP)
+    VZEROUPPER
+    RET
+
+// func dotFloat64AVX2Kernel(a, b unsafe.Pointer, n int) float32
+TEXT ·dotFloat64AVX2Kernel(SB), NOSPLIT, $0-28
+    MOVQ    a+0(FP), SI
+    MOVQ    b+8(FP), DI
+    MOVQ    n+16(FP), BX
+
+    VXORPD  Y0, Y0, Y0          // sum accumulator
+    CMPQ    BX, $4
+    JL      dot_f64_avx2_tail
+
+dot_f64_avx2_loop:
+    VMOVUPD (SI), Y1
+    VMOVUPD (DI), Y2
+    VFMADD231PD Y1, Y2, Y0
+
+    ADDQ    $32, SI
+    ADDQ    $32, DI
+    SUBQ    $4, BX
+    CMPQ    BX, $4
+    JGE     dot_f64_avx2_loop
+
+dot_f64_avx2_tail:
+    VEXTRACTF128 $1, Y0, X1
+    VADDPD  X1, X0, X0
+    VUNPCKHPD X0, X1, X1
+    VADDSD  X1, X0, X0
+
+    CMPQ    BX, $0
+    JE      dot_f64_avx2_done
+
+dot_f64_avx2_tail_loop:
+    VMOVSD  (SI), X1
+    VMOVSD  (DI), X2
+    VFMADD231SD X1, X2, X0
+    
+    ADDQ    $8, SI
+    ADDQ    $8, DI
+    DECQ    BX
+    JNZ     dot_f64_avx2_tail_loop
+
+dot_f64_avx2_done:
+    VCVTSD2SS X0, X0, X0
+    VMOVSS  X0, ret+24(FP)
+    VZEROUPPER
+    RET
+
+// func euclideanFloat64AVX512Kernel(a, b unsafe.Pointer, n int) float32
+TEXT ·euclideanFloat64AVX512Kernel(SB), NOSPLIT, $0-28
+    MOVQ    a+0(FP), SI
+    MOVQ    b+8(FP), DI
+    MOVQ    n+16(FP), BX
+
+    VXORPD  Z0, Z0, Z0
+    CMPQ    BX, $8
+    JL      euc_f64_avx512_tail
+
+euc_f64_avx512_loop:
+    VMOVUPD (SI), Z1
+    VMOVUPD (DI), Z2
+    VSUBPD  Z2, Z1, Z1
+    VFMADD231PD Z1, Z1, Z0
+
+    ADDQ    $64, SI
+    ADDQ    $64, DI
+    SUBQ    $8, BX
+    CMPQ    BX, $8
+    JGE     euc_f64_avx512_loop
+
+euc_f64_avx512_tail:
+    // Reduction
+    VEXTRACTF64X4 $1, Z0, Y1
+    VADDPD  Y1, Y0, Y0
+    VEXTRACTF128 $1, Y0, X1
+    VADDPD  X1, X0, X0
+    VUNPCKHPD X0, X1, X1
+    VADDSD  X1, X0, X0
+
+    CMPQ    BX, $0
+    JE      euc_f64_avx512_done
+
+    // Basic tail loop
+euc_f64_avx512_tail_loop:
+    VMOVSD  (SI), X1
+    VMOVSD  (DI), X2
+    VSUBSD  X2, X1, X1
+    VFMADD231SD X1, X1, X0
+    ADDQ    $8, SI
+    ADDQ    $8, DI
+    DECQ    BX
+    JNZ     euc_f64_avx512_tail_loop
+
+euc_f64_avx512_done:
+    VSQRTSD X0, X0, X0
+    VCVTSD2SS X0, X0, X0
+    VMOVSS  X0, ret+24(FP)
+    VZEROUPPER
+    RET
+
+// func dotFloat64AVX512Kernel(a, b unsafe.Pointer, n int) float32
+TEXT ·dotFloat64AVX512Kernel(SB), NOSPLIT, $0-28
+    MOVQ    a+0(FP), SI
+    MOVQ    b+8(FP), DI
+    MOVQ    n+16(FP), BX
+
+    VXORPD  Z0, Z0, Z0
+    CMPQ    BX, $8
+    JL      dot_f64_avx512_tail
+
+dot_f64_avx512_loop:
+    VMOVUPD (SI), Z1
+    VMOVUPD (DI), Z2
+    VFMADD231PD Z1, Z2, Z0
+
+    ADDQ    $64, SI
+    ADDQ    $64, DI
+    SUBQ    $8, BX
+    CMPQ    BX, $8
+    JGE     dot_f64_avx512_loop
+
+dot_f64_avx512_tail:
+    VEXTRACTF64X4 $1, Z0, Y1
+    VADDPD  Y1, Y0, Y0
+    VEXTRACTF128 $1, Y0, X1
+    VADDPD  X1, X0, X0
+    VUNPCKHPD X0, X1, X1
+    VADDSD  X1, X0, X0
+
+    CMPQ    BX, $0
+    JE      dot_f64_avx512_done
+
+dot_f64_avx512_tail_loop:
+    VMOVSD  (SI), X1
+    VMOVSD  (DI), X2
+    VFMADD231SD X1, X2, X0
+    ADDQ    $8, SI
+    ADDQ    $8, DI
+    DECQ    BX
+    JNZ     dot_f64_avx512_tail_loop
+
+dot_f64_avx512_done:
+    VCVTSD2SS X0, X0, X0
+    VMOVSS  X0, ret+24(FP)
+    VZEROUPPER
+    RET
+
+// =============================================================================
+// Int8 Kernels
+// =============================================================================
+
+// func euclideanInt8AVX2Kernel(a, b unsafe.Pointer, n int) float32
+TEXT ·euclideanInt8AVX2Kernel(SB), NOSPLIT, $0-28
+    MOVQ    a+0(FP), SI
+    MOVQ    b+8(FP), DI
+    MOVQ    n+16(FP), BX
+
+    VXORPS  Y0, Y0, Y0          // sum accumulator (float32)
+
+    // Process 16 int8s -> 16 int16s -> 16 float32s?
+    // AVX2 Registers are 256-bit.
+    // 16 bytes = 128 bit. 
+    // We can load 16 bytes (X reg), sign extend to 16 shorts (256-bit Y reg)? 
+    // Wait, Diffs can fit in int16. Square fits in int32.
+    // Diffs: [-128, 127] - [-128, 127] = [-255, 255]. Fits in int16.
+    // Square: 255*255 = 65025. Fits in int32 (and mostly uint16).
+    // Sum: 1536 * 65025 ~= 100M. Fits in int32.
+    // We can stay in integer domain for sum!
+    
+    // Strategy:
+    // 1. Load 32 bytes (Y reg).
+    // 2. Split into two 16-element chunks? Or just process 16 bytes at a time?
+    // VPMOVSXBW X -> Y (16 bytes -> 16 words)
+    
+    CMPQ    BX, $16
+    JL      euc_i8_avx2_tail
+
+euc_i8_avx2_loop:
+    VPMOVSXBW (SI), Y1          // Load 16 int8 -> 16 int16
+    VPMOVSXBW (DI), Y2
+    VPSUBW  Y2, Y1, Y1          // y1 = a - b
+    VPMADDWD Y1, Y1, Y1         // y1 = (y1_low * y1_low) + (y1_high * y1_high) -> 8 int32s per, reduced pairs
+                                // Actually VPMADDWD does pairs: dst[i] = src[2*i]*dst[2*i] + src[2*i+1]*dst[2*i+1]
+                                // So 16 int16s -> 8 int32 sums. Perfect.
+    
+    // Accumulate into Y0 (int32)
+    // Wait, Y0 here is float from other kernels, let's keep it int32 (Y0)
+    VPADDD  Y1, Y0, Y0
+
+    ADDQ    $16, SI
+    ADDQ    $16, DI
+    SUBQ    $16, BX
+    CMPQ    BX, $16
+    JGE     euc_i8_avx2_loop
+
+euc_i8_avx2_tail:
+    // Reduction of 8 int32s in Y0
+    VEXTRACTF128 $1, Y0, X1
+    VPADDD  X1, X0, X0
+    VPHADDD X0, X0, X0          // Horizontal add 32-bit integers
+    VPHADDD X0, X0, X0
+    VMOVSS  X0, X0              // Lower 32-bit is sum
+    
+    // Convert to float
+    VCVTDQ2PS X0, X0
+    
+    CMPQ    BX, $0
+    JE      euc_i8_avx2_done
+
+euc_i8_avx2_tail_loop:
+    MOVBQZX (SI), R8
+    MOVBQZX (DI), R9
+    // Sign-extend Manually? Go 1.20 MOVBQBSX?
+    // Let's rely on standard instructions.
+    // Actually MOVBQZX is zero extend. We need sign extend if Int8.
+    MOVBQSX (SI), R8
+    MOVBQSX (DI), R9
+    SUBQ    R9, R8
+    IMULQ   R8, R8
+    
+    // Add to X0 (float)
+    CVTSI2SS R8, X1
+    ADDSS   X1, X0
+
+    INCQ    SI
+    INCQ    DI
+    DECQ    BX
+    JNZ     euc_i8_avx2_tail_loop
+
+euc_i8_avx2_done:
+    VSQRTSS X0, X0, X0
+    VMOVSS  X0, ret+24(FP)
+    VZEROUPPER
+    RET
+
+// func euclideanInt16AVX2Kernel(a, b unsafe.Pointer, n int) float32
+TEXT ·euclideanInt16AVX2Kernel(SB), NOSPLIT, $0-28
+    MOVQ    a+0(FP), SI
+    MOVQ    b+8(FP), DI
+    MOVQ    n+16(FP), BX
+
+    VXORPS  Y0, Y0, Y0          // sum accumulator (int32)
+
+    CMPQ    BX, $8
+    JL      euc_i16_avx2_tail
+
+euc_i16_avx2_loop:
+    VPMOVSXWD (SI), Y1          // Load 8 int16 -> 8 int32
+    VCVTDQ2PS Y1, Y1            // Convert 8 int32 -> 8 float32
+    
+    VPMOVSXWD (DI), Y2
+    VCVTDQ2PS Y2, Y2
+    
+    VSUBPS  Y2, Y1, Y1          // diff (float)
+    VFMADD231PS Y1, Y1, Y0      // sum += diff * diff (float)
+
+    ADDQ    $16, SI             // 8 * 2 bytes
+    ADDQ    $16, DI
+    SUBQ    $8, BX
+    CMPQ    BX, $8
+    JGE     euc_i16_avx2_loop
+
+euc_i16_avx2_tail:
+    // Reduction Y0 (float) -> X0
+    VEXTRACTF128 $1, Y0, X1
+    VADDPS  X1, X0, X0
+    VMOVHLPS X0, X1, X1
+    VADDPS  X1, X0, X0
+    VMOVSHDUP X0, X1
+    VADDSS  X1, X0, X0
+
+    CMPQ    BX, $0
+    JE      euc_i16_avx2_done
+
+euc_i16_avx2_tail_loop:
+    MOVWQSX (SI), R8
+    MOVWQSX (DI), R9
+    SUBQ    R9, R8
+    IMULQ   R8, R8
+    
+    CVTSI2SS R8, X1
+    ADDSS   X1, X0
+
+    ADDQ    $2, SI
+    ADDQ    $2, DI
+    DECQ    BX
+    JNZ     euc_i16_avx2_tail_loop
+
+euc_i16_avx2_done:
+    VSQRTSS X0, X0, X0
+    VMOVSS  X0, ret+24(FP)
+    VZEROUPPER
+    RET

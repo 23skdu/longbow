@@ -85,6 +85,30 @@ func NewArrowHNSW(dataset *Dataset, config ArrowHNSWConfig, locStore *ChunkedLoc
 		dsName = dataset.Name
 	}
 
+	// NEW: Auto-infer DataType and Dims if they are unknown or 0 and dataset is available
+	if dataset != nil && dataset.Schema != nil {
+		if config.DataType == VectorTypeUnknown || config.DataType == VectorTypeFloat32 {
+			colName := "vector"
+			config.DataType = InferVectorDataType(dataset.Schema, colName)
+		}
+		if config.Dims == 0 {
+			// Extract Dims from schema
+			for _, field := range dataset.Schema.Fields() {
+				colName := "vector"
+				if field.Name == colName {
+					if listType, ok := field.Type.(*arrow.FixedSizeListType); ok {
+						config.Dims = int(listType.Len())
+						if config.DataType == VectorTypeComplex64 || config.DataType == VectorTypeComplex128 {
+							// For complex types, the logical dimension is half the physical dimension
+							config.Dims /= 2
+						}
+						break
+					}
+				}
+			}
+		}
+	}
+
 	h := &ArrowHNSW{
 		dataset: dataset,
 		config:  config,
@@ -130,30 +154,6 @@ func NewArrowHNSW(dataset *Dataset, config ArrowHNSWConfig, locStore *ChunkedLoc
 		h.locationStore = locStore
 	} else {
 		h.locationStore = NewChunkedLocationStore()
-	}
-
-	// NEW: Auto-infer DataType and Dims if they are unknown or 0 and dataset is available
-	if dataset != nil && dataset.Schema != nil {
-		if config.DataType == VectorTypeUnknown || config.DataType == VectorTypeFloat32 {
-			colName := "vector"
-			config.DataType = InferVectorDataType(dataset.Schema, colName)
-		}
-		if config.Dims == 0 {
-			// Extract Dims from schema
-			for _, field := range dataset.Schema.Fields() {
-				colName := "vector"
-				if field.Name == colName {
-					if listType, ok := field.Type.(*arrow.FixedSizeListType); ok {
-						config.Dims = int(listType.Len())
-						if config.DataType == VectorTypeComplex64 || config.DataType == VectorTypeComplex128 {
-							// For complex types, the logical dimension is half the physical dimension
-							config.Dims /= 2
-						}
-						break
-					}
-				}
-			}
-		}
 	}
 
 	// Initialize with empty graph data

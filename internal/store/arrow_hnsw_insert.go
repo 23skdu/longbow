@@ -230,6 +230,13 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 		data = h.data.Load()
 	}
 
+	// SQ8 Training: Must be done BEFORE acquiring RLock to avoid recursive Lock/RLock deadlock
+	if h.config.SQ8Enabled && dims > 0 {
+		if vecF32, ok := vec.([]float32); ok {
+			h.ensureTrained(int(h.locationStore.MaxID()), [][]float32{vecF32})
+		}
+	}
+
 	// Acquire Read Lock to prevent concurrent Grow() from swapping GraphData
 	// while we are allocating/initializing chunks in the current snapshot.
 	h.growMu.RLock()
@@ -260,7 +267,9 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 	// Recovery block removed: Invariant guarantees Vectors exist if dims > 0.
 
 	// Store Vector (Copy for L2 locality)
-	if dims > 0 {
+	// Skip if DiskStore is enabled (already written via BatchAppend or will be written)
+	// Note: We check data.DiskStore which is populated if offloading is active.
+	if dims > 0 && data.DiskStore == nil {
 		if err := data.SetVector(id, vec); err != nil {
 			return err
 		}
@@ -333,12 +342,6 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 	// This avoids race conditions from concurrent writes to the same chunk
 	var localSQ8Buffer []byte
 	sq8Handled := false
-
-	if h.config.SQ8Enabled && dims > 0 {
-		if vecF32, ok := vec.([]float32); ok {
-			h.ensureTrained(int(h.locationStore.MaxID()), [][]float32{vecF32})
-		}
-	}
 
 	// Encode to local buffer if quantizer is trained (and ready)
 	if h.sq8Ready.Load() {

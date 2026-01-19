@@ -37,8 +37,10 @@ func BenchmarkL2Float32_3072(b *testing.B) {
 	})
 }
 
+var sink float32
+
 // manualBlockedL2 simulates a different block size
-func manualBlockedL2(a, b []float32, blockSize int) float32 {
+func manualBlockedL2(a, b []float32, blockSize int) {
 	var sum float32
 	i := 0
 	for ; i <= len(a)-blockSize; i += blockSize {
@@ -47,8 +49,5 @@ func manualBlockedL2(a, b []float32, blockSize int) float32 {
 	if i < len(a) {
 		sum += L2SquaredFloat32(a[i:], b[i:])
 	}
-	// Simulate Sqrt cost (though trivial compared to loop)
-	// We use a dummy sqrt to be fair
-	// To avoid import cycle or just keep it simple, checking loop speed.
-	return sum
+	sink = sum
 }

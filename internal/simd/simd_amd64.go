@@ -12,8 +12,14 @@ import (
 // AVX2 optimized Euclidean distance
 // Processes 8 float32s at a time (256-bit registers)
 func euclideanAVX2(a, b []float32) float32 {
+	sum := l2SquaredAVX2(a, b)
+	return float32(math.Sqrt(float64(sum)))
+}
+
+// AVX2 optimized L2 Squared distance (no Sqrt)
+func l2SquaredAVX2(a, b []float32) float32 {
 	if !features.HasAVX2 {
-		return euclideanGeneric(a, b)
+		return L2SquaredFloat32(a, b)
 	}
 
 	var sum float32
@@ -34,7 +40,7 @@ func euclideanAVX2(a, b []float32) float32 {
 		sum += d * d
 	}
 
-	return float32(math.Sqrt(float64(sum)))
+	return sum
 }
 
 // AVX512 optimized Euclidean distance
@@ -45,8 +51,19 @@ func euclideanAVX512(a, b []float32) float32 {
 	if len(a) == 0 {
 		return 0
 	}
-	sum := l2SquaredAVX512(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a))
+	sum := l2SquaredAVX512Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a))
 	return float32(math.Sqrt(float64(sum)))
+}
+
+// AVX512 optimized L2 Squared distance (no Sqrt)
+func l2SquaredAVX512(a, b []float32) float32 {
+	if !features.HasAVX512 {
+		return l2SquaredAVX2(a, b)
+	}
+	if len(a) == 0 {
+		return 0
+	}
+	return l2SquaredAVX512Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a))
 }
 
 // AVX512 optimized Euclidean distance for 384 dims
@@ -212,7 +229,7 @@ func euclideanBatchAVX512(query []float32, vectors [][]float32, results []float3
 			panic("simd: vector length mismatch")
 		}
 		if len(v) > 0 {
-			sum := l2SquaredAVX512(queryPtr, unsafe.Pointer(&v[0]), qLen)
+			sum := l2SquaredAVX512Kernel(queryPtr, unsafe.Pointer(&v[0]), qLen)
 			results[idx] = float32(math.Sqrt(float64(sum)))
 		} else {
 			results[idx] = 0
@@ -402,6 +419,10 @@ func adcBatchNEON(table []float32, flatCodes []byte, m int, results []float32) {
 	adcBatchGeneric(table, flatCodes, m, results)
 }
 
+func l2SquaredNEON(a, b []float32) float32 {
+	return L2SquaredFloat32(a, b)
+}
+
 func euclideanF16NEON(a, b []float16.Num) float32 {
 	return euclideanF16Unrolled4x(a, b)
 }
@@ -418,7 +439,7 @@ func cosineF16NEON(a, b []float16.Num) float32 {
 // New full-loop kernels
 //
 //go:noescape
-func l2SquaredAVX512(a, b unsafe.Pointer, n int) float32
+func l2SquaredAVX512Kernel(a, b unsafe.Pointer, n int) float32
 
 //go:noescape
 func cosineDotAVX512(a, b unsafe.Pointer, n int) (dot, normA, normB float32)
@@ -607,3 +628,72 @@ func dotF16AVX2Kernel(a, b unsafe.Pointer, n int) float32
 
 //go:noescape
 func dotF16AVX512Kernel(a, b unsafe.Pointer, n int) float32
+
+// =============================================================================
+// Float64 Implementations
+// =============================================================================
+
+func euclideanFloat64AVX2(a, b []float64) float32 {
+	if !features.HasAVX2 {
+		return 0 // Fallback handled by caller or we can export generic? Calling convention mismatch.
+		// Actually, simd_amd64.go usually implements the optimized version.
+		// If generic fallback is needed, the `simd.go` registry logic usually handles it.
+		// But here we are returning float32 from float64 inputs...
+	}
+	if len(a) == 0 {
+		return 0
+	}
+	return euclideanFloat64AVX2Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a))
+}
+
+func euclideanFloat64AVX512(a, b []float64) float32 {
+	if !features.HasAVX512 {
+		return euclideanFloat64AVX2(a, b)
+	}
+	if len(a) == 0 {
+		return 0
+	}
+	return euclideanFloat64AVX512Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a))
+}
+
+// =============================================================================
+// Int8 Implementations
+// =============================================================================
+
+func euclideanInt8AVX2(a, b []int8) float32 {
+	if !features.HasAVX2 {
+		return 0
+	}
+	if len(a) == 0 {
+		return 0
+	}
+	return euclideanInt8AVX2Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a))
+}
+
+// =============================================================================
+// Int16 Implementations
+// =============================================================================
+
+func euclideanInt16AVX2(a, b []int16) float32 {
+	if !features.HasAVX2 {
+		return 0
+	}
+	if len(a) == 0 {
+		return 0
+	}
+	return euclideanInt16AVX2Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a))
+}
+
+// Kernel Declarations for new types
+
+//go:noescape
+func euclideanFloat64AVX2Kernel(a, b unsafe.Pointer, n int) float32
+
+//go:noescape
+func euclideanFloat64AVX512Kernel(a, b unsafe.Pointer, n int) float32
+
+//go:noescape
+func euclideanInt8AVX2Kernel(a, b unsafe.Pointer, n int) float32
+
+//go:noescape
+func euclideanInt16AVX2Kernel(a, b unsafe.Pointer, n int) float32

@@ -110,6 +110,7 @@ func (h *ArrowHNSW) Search(ctx context.Context, q any, k, ef int, filter *query.
 	// Get search context from pool
 	metrics.HNSWSearchPoolGetTotal.Inc()
 	searchCtx := h.searchPool.Get().(*ArrowSearchContext)
+	searchCtx.EnsureCapacity(dims) // Ensure scratch buffers handle high-dim vectors
 	defer func() {
 		metrics.HNSWSearchPoolPutTotal.Inc()
 		h.searchPool.Put(searchCtx)

@@ -195,6 +195,17 @@ func (gd *GraphData) GetVectorAsFloat32(id uint32) ([]float32, error) {
 		}
 	}
 
+	// 6. DiskStore Fallback (Phase 6)
+	if gd.DiskStore != nil {
+		vec, err := gd.DiskStore.Get(id)
+		if err == nil {
+			return vec, nil
+		}
+		// If error, fall through or return error?
+		// Usually if DiskStore is configured, we expect it to be there.
+		return nil, fmt.Errorf("failed to retrieve vector from DiskStore: %w", err)
+	}
+
 	return nil, fmt.Errorf("vector data unavailable for ID %d", id)
 }
 

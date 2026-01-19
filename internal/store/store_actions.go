@@ -240,7 +240,7 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 		}
 		return nil
 
-	case "delete-dataset":
+	case "delete-dataset", "DeleteNamespace":
 		var curr map[string]interface{}
 		if err := json.Unmarshal(action.Body, &curr); err != nil {
 			return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
@@ -530,8 +530,9 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 	}
 
 	// Batching configuration
-	const maxBatchSize = 100
-	batch := make([]arrow.RecordBatch, 0, maxBatchSize)
+	const maxBatchRows = 10000             // High row limit, we mostly care about bytes for high-dim
+	const maxBatchBytes = 10 * 1024 * 1024 // 10MB cap for alignment
+	batch := make([]arrow.RecordBatch, 0, 100)
 
 	// Helper to flush batch
 	flush := func() error {
@@ -544,6 +545,8 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 		for _, b := range batch {
 			totalBytes += estimateBatchSize(b)
 		}
+
+		metrics.DoPutBatchSizeBytes.Observe(float64(totalBytes))
 
 		// Optimization: Concatenate small batches into one large batch
 		// to reduce WAL overhead and lock contention.
@@ -584,11 +587,12 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 		rec := r.RecordBatch()
 
 		// Adaptive Batching (Byte-Aware Option 1):
-		// If the record is large enough (>= 4MB) and we don't have pending small records,
+		// If the record is large enough (>= 10MB) and we don't have pending small records,
 		// write it directly to avoid concatenation/slice overhead.
 		recSize := estimateBatchSize(rec)
-		if len(batch) == 0 && recSize >= 4*1024*1024 {
+		if len(batch) == 0 && recSize >= maxBatchBytes {
 			rec.Retain()
+			metrics.DoPutBatchSizeBytes.Observe(float64(recSize))
 			if err := s.flushPutBatch(ds, []arrow.RecordBatch{rec}); err != nil {
 				rec.Release()
 				return err
@@ -601,11 +605,13 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 
 		// Check accumulator size
 		totalBatchBytes := int64(0)
+		totalBatchRows := int64(0)
 		for _, b := range batch {
 			totalBatchBytes += estimateBatchSize(b)
+			totalBatchRows += b.NumRows()
 		}
 
-		if len(batch) >= maxBatchSize || totalBatchBytes >= 4*1024*1024 {
+		if totalBatchRows >= maxBatchRows || totalBatchBytes >= maxBatchBytes {
 			if err := flush(); err != nil {
 				return err
 			}

@@ -87,3 +87,7 @@ func cosineBatchNEON(query []float32, vectors [][]float32, results []float32) {
 func euclideanVerticalBatchNEON(query []float32, vectors [][]float32, results []float32) {
 	euclideanBatchNEON(query, vectors, results)
 }
+
+func l2SquaredNEON(a, b []float32) float32 {
+	return L2SquaredFloat32(a, b) // Fallback to unrolled Go implementation
+}

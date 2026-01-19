@@ -4,6 +4,8 @@ import (
 	"errors"
 	"math"
 	"math/rand"
+
+	"github.com/23skdu/longbow/internal/simd"
 )
 
 // TrainKMeans runs K-Means clustering on flattened data.
@@ -58,7 +60,7 @@ func TrainKMeans(data []float32, n, dim, k, maxIter int) ([]float32, error) {
 
 			for c := 0; c < k; c++ {
 				cent := centroids[c*dim : (c+1)*dim]
-				dist := distL2Sq(vec, cent)
+				dist := simd.L2Squared(vec, cent)
 				if dist < bestDist {
 					bestDist = dist
 					bestC = c
@@ -103,13 +105,4 @@ func TrainKMeans(data []float32, n, dim, k, maxIter int) ([]float32, error) {
 	}
 
 	return centroids, nil
-}
-
-func distL2Sq(a, b []float32) float32 {
-	var sum float32
-	for i := range a {
-		d := a[i] - b[i]
-		sum += d * d
-	}
-	return sum
 }

@@ -5,19 +5,30 @@
 
 ## Phase 1: High-Dimensional Optimization (Immediate)
 
-1. **Investigate 3072d Float32 Degradation**:
+1. **High-Dim SIMD Tuning**:
+    * **Action**: Optimize AVX512/NEON kernels for 1536/3072d vectors (loop unrolling, cache prefetching) to handle strided access efficiently.
+2. **SQ8 Recall Validation**:
+    * **Action**: Verify recall/loss of SQ8 vs Float32 on normalized high-dim vectors (1536d) to ensure accuracy is within acceptable limits.
+3. **Parallel Index Building**:
+    * **Action**: Move graph linking (HNSW insert) to async workers to unblock the main ingestion loop and utilize all cores.
+4. **Ingestion Buffer Pooling**:
+    * **Action**: Implement `sync.Pool` for SQ8 encoding buffers and scratch space to reduce GC pressure during high-throughput ingestion.
+5. **JIT/PGO Optimization**:
+    * **Action**: Enable Profile Guided Optimization (PGO) for the hot distance calculation paths to allow the Go compiler to inline and optimize based on real workloads.
+
+6. **Investigate 3072d Float32 Degradation**:
     * **Finding**: `float32` @ 3072d drops to 15 QPS (vs 220 QPS for `float16`).
     * **Action**: Profile L2/L3 cache misses. Implement blocked/tiled distance calculation for dimensions > 1024 to maximize L2/L3 cache usage.
-2. **Optimize Chunk Allocation (`ensureChunk`)**:
+7. **Optimize Chunk Allocation (`ensureChunk`)**:
     * **Finding**: Pprof shows `ensureChunk` / `AllocSliceDirty` consuming 65% of heap allocs during high-dim ingest.
     * **Action**: Implement a slab allocator or recycle chunks to reduce GC pressure and allocation overhead.
-3. **Ingestion Batching Alignment**:
+8. **Ingestion Batching Alignment**:
     * High-dim vectors create large allocation spikes.
     * **Action**: Implement adaptive batch sizing in `DoPut` based on payload size (not just row count) to keep allocs < 10MB per batch.
-4. **Memory Pooling for Search**:
+9. **Memory Pooling for Search**:
     * Query vectors for 3072d require significant scratch space.
     * **Action**: Expand `ArrowSearchContext` pool to handle variable-sized scratch buffers efficiently, preventing GC churn.
-5. **Quantization (SQ8) Verification**:
+10. **Quantization (SQ8) Verification**:
     * Scaling to high dimensions requires compression.
     * **Action**: Validate and tune SQ8 quantization specifically for 1536d distribution (e.g. OpenAI embeddings are normalized, check loss).
 

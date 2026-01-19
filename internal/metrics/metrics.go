@@ -1131,4 +1131,22 @@ var (
 			Help: "Total number of tiled distance batch operations performed for high-dim vectors (>1024 dims)",
 		},
 	)
+
+	// DoPut Adaptive Batching Alignment
+	DoPutBatchSizeBytes = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_doput_batch_size_bytes",
+			Help:    "Payload size of each flushed DoPut batch",
+			Buckets: []float64{1024, 65536, 1048576, 4194304, 8388608, 10485760, 16777216},
+		},
+	)
+
+	// HNSW Search Context Metrics
+	HNSWSearchScratchSpaceResizesTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_hnsw_search_scratch_resizes_total",
+			Help: "Total number of times search context scratch buffers were resized",
+		},
+		[]string{"field"}, // "query", "neighbors", "candidates"
+	)
 )

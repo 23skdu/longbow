@@ -69,3 +69,11 @@ func euclideanVerticalBatchAVX512(query []float32, vectors [][]float32, results 
 }
 
 func prefetchNTA(p unsafe.Pointer) {}
+
+func euclideanFloat64AVX2(a, b []float64) float32   { panic("avx2 not supported") }
+func euclideanFloat64AVX512(a, b []float64) float32 { panic("avx512 not supported") }
+func euclideanInt8AVX2(a, b []int8) float32         { panic("avx2 not supported") }
+func euclideanInt16AVX2(a, b []int16) float32       { panic("avx2 not supported") }
+
+func l2SquaredAVX2(a, b []float32) float32   { return L2SquaredFloat32(a, b) }
+func l2SquaredAVX512(a, b []float32) float32 { return L2SquaredFloat32(a, b) }

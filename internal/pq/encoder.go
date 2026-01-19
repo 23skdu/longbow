@@ -4,6 +4,8 @@ import (
 	"errors"
 	"math"
 	"unsafe"
+
+	"github.com/23skdu/longbow/internal/simd"
 )
 
 // PQEncoder implements Product Quantization.
@@ -91,7 +93,7 @@ func (e *PQEncoder) Encode(vector []float32) ([]byte, error) {
 
 		for k := 0; k < e.K; k++ {
 			cent := centroids[k*e.SubDim : (k+1)*e.SubDim]
-			dist := distL2Sq(subVec, cent)
+			dist := simd.L2Squared(subVec, cent)
 			if dist < bestDist {
 				bestDist = dist
 				bestIdx = k

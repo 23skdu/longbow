@@ -1,37 +1,53 @@
-#!/usr/bin/env python3
 import subprocess
 import json
 import os
+import sys
 import time
+from longbow.client import LongbowClient
 
-DTYPES = ["float32", "float16"] # Restricted to common types for high-dim to save time/memory for now, or user said "update validation tests" - let's do all?
-# The user said "update the validation tests... to test for 1536 and 3072".
-# Running ALL types for 3072 might trigger OOM on 6GB/node if not careful.
-# Let's keep all DTYPES but be aware.
+# Matrix configuration
 DTYPES = ["int8", "int16", "int32", "int64", "float32", "float16", "float64", "complex64", "complex128"]
 DIMS = [128, 384, 1536, 3072]
 ROWS = 15000
-import sys
+
 PYTHON_EXE = sys.executable
 
 def run_bench(dtype, dim, rows):
+    dataset_name = f"matrix_{dtype}_{dim}"
+    output_file = f"{dataset_name}.json"
+    
+    # Check if we already have this result
+    if os.path.exists(output_file):
+         print(f"Skipping {dtype} @ {dim}d (result exists)")
+         with open(output_file, 'r') as f:
+             data = json.load(f)
+             put = next((r for r in data if r['name'].startswith('DoPut')), None)
+             get = next((r for r in data if r['name'].startswith('DoGet')), None)
+             search = next((r for r in data if r['name'].startswith('VectorSearch')), None)
+             return {
+                    "put_mb": put['throughput'] if put else 0,
+                    "get_mb": get['throughput'] if get else 0,
+                    "search_qps": search['throughput'] if search else 0,
+                    "status": "Stable"
+                }
+
     print(f"Benchmarking {dtype} @ {dim}d ({rows} vectors)...")
-    output_file = f"matrix_{dtype}_{dim}.json"
     
     cmd = [
         PYTHON_EXE, "scripts/perf_test.py",
-        "--dtype", dtype,
-        "--dim", str(dim),
+        "--dataset", dataset_name,
         "--rows", str(rows),
-        "--dataset", f"matrix_{dtype}_{dim}",
+        "--dim", str(dim),
+        "--dtype", dtype,
         "--search",
         "--json", output_file,
-        "--queries", "500",
         "--k", "10"
     ]
     
     try:
-        subprocess.run(cmd, check=True, capture_output=True, text=True)
+        # Run bench
+        res_proc = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        
         if os.path.exists(output_file):
             with open(output_file, 'r') as f:
                 data = json.load(f)
@@ -40,12 +56,22 @@ def run_bench(dtype, dim, rows):
                 get = next((r for r in data if r['name'].startswith('DoGet')), None)
                 search = next((r for r in data if r['name'].startswith('VectorSearch')), None)
                 
-                return {
+                res = {
                     "put_mb": put['throughput'] if put else 0,
                     "get_mb": get['throughput'] if get else 0,
                     "search_qps": search['throughput'] if search else 0,
                     "status": "Stable"
                 }
+
+                # Cleanup
+                try:
+                    client = LongbowClient(uri="grpc://localhost:3000")
+                    client.delete_namespace(dataset_name)
+                    print(f"  Cleaned up {dataset_name}")
+                except Exception as ce:
+                    print(f"  Cleanup failed for {dataset_name}: {ce}")
+
+                return res
     except Exception as e:
         print(f"  Error {dtype}@{dim}d: {e}")
         return {"put_mb": 0, "get_mb": 0, "search_qps": 0, "status": "Error"}
@@ -55,24 +81,38 @@ def run_bench(dtype, dim, rows):
 def main():
     matrix = []
     
+    # Ensure correct PYTHONPATH for SDK
+    current_dir = os.getcwd()
+    sdk_src = os.path.join(current_dir, "longbowclientsdk", "src")
+    if sdk_src not in sys.path:
+        sys.path.append(sdk_src)
+    os.environ["PYTHONPATH"] = f"{sdk_src}:{os.environ.get('PYTHONPATH', '')}"
+
+    start_time = time.time()
+    
     for dim in DIMS:
         for dtype in DTYPES:
             res = run_bench(dtype, dim, ROWS)
             matrix.append({
-                "type": dtype,
                 "dim": dim,
+                "dtype": dtype,
                 **res
             })
             
-    # Print results
-    print("\n| Type | Dim | DoPut (MB/s) | DoGet (MB/s) | Dense QPS | Status |")
-    print("|:---|---:|---:|---:|---:|:---|")
-    for r in matrix:
-        print(f"| **{r['type']}** | {r['dim']} | {r['put_mb']:.2f} | {r['get_mb']:.2f} | {r['search_qps']:.1f} | {r['status']} |")
+            # Save intermediate results
+            with open("matrix_results.json", "w") as f:
+                json.dump(matrix, f, indent=2)
 
-    # Save summary
-    with open("matrix_results.json", "w") as f:
-        json.dump(matrix, f, indent=2)
+    total_time = time.time() - start_time
+    print(f"\nMatrix generation completed in {total_time/60:.2f} minutes")
+    
+    # Print summary table
+    print("\n" + "="*80)
+    print(f"{'DType':<12} | {'Dim':<6} | {'Put MB/s':<10} | {'Get MB/s':<10} | {'Search QPS':<10} | {'Status'}")
+    print("-" * 80)
+    for r in matrix:
+        print(f"{r['dtype']:<12} | {r['dim']:<6} | {r['put_mb']:<10.2f} | {r['get_mb']:<10.2f} | {r['search_qps']:<10.2f} | {r['status']}")
+    print("="*80)
 
 if __name__ == "__main__":
     main()

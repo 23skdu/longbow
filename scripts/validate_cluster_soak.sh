@@ -9,7 +9,12 @@ function cleanup {
 trap cleanup EXIT
 trap cleanup SIGINT
 
-# 0. Build
+# 0. Cleanup Start
+echo "Ensuring clean slate..."
+pkill -f 'bin/longbow' || true
+sleep 3
+
+# 1. Build
 echo "Building binary..."
 CGO_ENABLED=0 go build -tags=nogpu -o bin/longbow ./cmd/longbow
 

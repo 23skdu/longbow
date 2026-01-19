@@ -70,6 +70,7 @@ var (
 	euclideanDistanceBatchImpl distanceBatchFunc
 	cosineDistanceBatchImpl    distanceBatchFunc
 	dotProductBatchImpl        distanceBatchFunc
+	l2SquaredImpl              distanceFunc
 
 	matchInt64Impl   matchInt64Func
 	matchFloat32Impl matchFloat32Func
@@ -88,6 +89,9 @@ var (
 	euclideanDistanceComplex64Impl  distanceComplex64Func
 	euclideanDistanceComplex128Impl distanceComplex128Func
 	euclideanDistanceFloat64Impl    distanceFloat64Func
+
+	euclideanDistanceInt8Impl  func(a, b []int8) float32
+	euclideanDistanceInt16Impl func(a, b []int16) float32
 )
 
 func init() {
@@ -155,6 +159,7 @@ func initializeDispatch() {
 		euclideanDistanceBatchImpl = euclideanBatchAVX512
 		cosineDistanceBatchImpl = cosineBatchAVX512
 		dotProductBatchImpl = dotBatchAVX512
+		l2SquaredImpl = l2SquaredAVX512 // uses AVX512 kernel
 		prefetchImpl = prefetchNTA
 		matchInt64Impl = matchInt64AVX512
 		matchFloat32Impl = matchFloat32AVX512
@@ -165,7 +170,9 @@ func initializeDispatch() {
 		euclideanDistanceF16Impl = euclideanF16AVX512
 		cosineDistanceF16Impl = cosineF16AVX512
 		dotProductF16Impl = dotF16AVX512
-		euclideanDistanceFloat64Impl = euclideanFloat64Unrolled4x
+		euclideanDistanceFloat64Impl = euclideanFloat64AVX512
+		euclideanDistanceInt8Impl = euclideanInt8AVX2
+		euclideanDistanceInt16Impl = euclideanInt16AVX2
 		// Optimization: Use float32 AVX kernels for complex64
 		euclideanDistanceComplex64Impl = euclideanComplex64Optimized
 	case "avx2":
@@ -181,6 +188,7 @@ func initializeDispatch() {
 		euclideanDistanceBatchImpl = euclideanBatchAVX2
 		cosineDistanceBatchImpl = cosineBatchAVX2
 		dotProductBatchImpl = dotBatchAVX2
+		l2SquaredImpl = l2SquaredAVX2 // uses AVX2 kernel (no sqrt)
 		prefetchImpl = prefetchNTA
 		matchInt64Impl = matchInt64AVX2
 		matchFloat32Impl = matchFloat32AVX2
@@ -193,7 +201,9 @@ func initializeDispatch() {
 		dotProductF16Impl = dotF16AVX2
 		euclideanDistanceComplex64Impl = euclideanComplex64Optimized
 		euclideanDistanceComplex128Impl = euclideanComplex128Unrolled // Fallback
-		euclideanDistanceFloat64Impl = euclideanFloat64Unrolled4x
+		euclideanDistanceFloat64Impl = euclideanFloat64AVX2
+		euclideanDistanceInt8Impl = euclideanInt8AVX2
+		euclideanDistanceInt16Impl = euclideanInt16AVX2
 	case "neon":
 		euclideanDistanceImpl = euclideanNEON
 		euclideanDistance384Impl = euclidean384NEON
@@ -207,6 +217,7 @@ func initializeDispatch() {
 		euclideanDistanceBatchImpl = euclideanBatchNEON
 		cosineDistanceBatchImpl = cosineBatchNEON
 		dotProductBatchImpl = dotBatchNEON
+		l2SquaredImpl = l2SquaredNEON
 		prefetchImpl = prefetchGeneric
 		matchInt64Impl = matchInt64Generic
 		matchFloat32Impl = matchFloat32Generic
@@ -221,6 +232,8 @@ func initializeDispatch() {
 		euclideanDistanceComplex64Impl = euclideanComplex64Optimized
 		euclideanDistanceComplex128Impl = euclideanComplex128Unrolled // Fallback
 		euclideanDistanceFloat64Impl = euclideanFloat64Unrolled4x
+		euclideanDistanceInt8Impl = euclideanInt8Unrolled4x
+		euclideanDistanceInt16Impl = euclideanInt16Unrolled4x
 	default:
 		euclideanDistanceImpl = euclideanUnrolled4x
 		euclideanDistance384Impl = euclideanUnrolled4x
@@ -234,6 +247,7 @@ func initializeDispatch() {
 		euclideanDistanceBatchImpl = euclideanBatchUnrolled4x
 		cosineDistanceBatchImpl = cosineBatchUnrolled4x
 		dotProductBatchImpl = dotBatchUnrolled4x
+		l2SquaredImpl = L2SquaredFloat32
 		prefetchImpl = prefetchGeneric
 		matchInt64Impl = matchInt64Generic
 		matchFloat32Impl = matchFloat32Generic
@@ -247,6 +261,8 @@ func initializeDispatch() {
 		euclideanDistanceComplex64Impl = euclideanComplex64Optimized
 		euclideanDistanceComplex128Impl = euclideanComplex128Unrolled
 		euclideanDistanceFloat64Impl = euclideanFloat64Unrolled4x
+		euclideanDistanceInt8Impl = euclideanInt8Unrolled4x
+		euclideanDistanceInt16Impl = euclideanInt16Unrolled4x
 	}
 
 	// Register current implementations into the new dynamic registry.
@@ -274,10 +290,10 @@ func initializeDispatch() {
 	Registry.Register(MetricEuclidean, DataTypeComplex128, 0, euclideanDistanceComplex128Impl)
 
 	// Baseline Fallbacks for all other types
-	Registry.Register(MetricEuclidean, DataTypeInt8, 0, euclideanInt8Unrolled4x)
+	Registry.Register(MetricEuclidean, DataTypeInt8, 0, euclideanDistanceInt8Impl)
 	Registry.Register(MetricDotProduct, DataTypeInt8, 0, dotInt8Unrolled4x)
 
-	Registry.Register(MetricEuclidean, DataTypeInt16, 0, euclideanInt16Unrolled4x)
+	Registry.Register(MetricEuclidean, DataTypeInt16, 0, euclideanDistanceInt16Impl)
 	Registry.Register(MetricDotProduct, DataTypeInt16, 0, dotInt16Unrolled4x)
 
 	Registry.Register(MetricEuclidean, DataTypeInt32, 0, euclideanInt32Unrolled4x)
@@ -322,6 +338,18 @@ func EuclideanDistance(a, b []float32) float32 {
 		return euclideanDistance128Impl(a, b)
 	}
 	return euclideanDistanceImpl(a, b)
+}
+
+// L2Squared calculates the squared Euclidean distance between two vectors.
+// Optimized for PQ training and ADC table construction.
+func L2Squared(a, b []float32) float32 {
+	if len(a) != len(b) {
+		panic("simd: vector length mismatch")
+	}
+	if len(a) == 0 {
+		return 0
+	}
+	return l2SquaredImpl(a, b)
 }
 
 // CosineDistance calculates the cosine distance (1 - similarity) between two vectors.
@@ -432,7 +460,18 @@ func EuclideanDistanceComplex128(a, b []complex128) float32 {
 	if len(a) == 0 {
 		return 0
 	}
-	return euclideanDistanceComplex128Impl(a, b)
+	// Optimization: complex128 is just 2x float64s in memory.
+	// We can treat them as float64 vectors of 2*N length and use the optimized
+	// AVX/AVX512 kernels for float64.
+	//
+	// Euclidean distance is sqrt(sum((real_diff^2 + imag_diff^2))), which is
+	// exactly what 2N float64 euclidean distance calculates.
+
+	// Unsafe cast to []float64
+	vfA := unsafe.Slice((*float64)(unsafe.Pointer(&a[0])), len(a)*2)
+	vfB := unsafe.Slice((*float64)(unsafe.Pointer(&b[0])), len(b)*2)
+
+	return EuclideanDistanceFloat64(vfA, vfB)
 }
 
 // Prefetch hints to the CPU to fetch data into cache for future use.

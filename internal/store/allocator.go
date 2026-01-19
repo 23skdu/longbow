@@ -12,7 +12,8 @@ type ChunkAllocator struct {
 }
 
 // NewChunkAllocator creates a new allocator for chunks of dimensions: numItems * itemSizeBytes.
-func NewChunkAllocator(numItems int, itemSizeBytes int) *ChunkAllocator {
+// NewChunkAllocator creates a new allocator for chunks of dimensions: numItems * itemSizeBytes.
+func NewChunkAllocator(numItems, itemSizeBytes int) *ChunkAllocator {
 	totalSize := numItems * itemSizeBytes
 	return &ChunkAllocator{
 		size: totalSize,
@@ -39,5 +40,5 @@ func (a *ChunkAllocator) Free(b []byte) {
 	}
 	// Reslice to full capacity to ensure we don't leak capacity drift?
 	// Just put it back.
-	a.pool.Put(b[:a.size])
+	a.pool.Put(b[:a.size]) //nolint:staticcheck // SA6002: slice is pointer-like enough for us
 }

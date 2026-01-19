@@ -90,6 +90,7 @@ When running the Longbow container directly (e.g., via Docker), you can configur
 | `LONGBOW_HNSW_KEEP_PRUNED` | Keep pruned connections | `false` |
 | `LONGBOW_HNSW_SQ8_ENABLED` | Enable 8-bit quantization | `false` |
 | `LONGBOW_HNSW_FLOAT16_ENABLED` | Enable Float16 storage | `false` |
+| `LONGBOW_USE_DISK` | Enable Disk-based vector storage | `false` |
 | `LONGBOW_HNSW_REFINEMENT_FACTOR` | Re-ranking refinement multiple | `1.0` |
 
 ### Hybrid Search

@@ -351,6 +351,7 @@ RRF advantages:
 ### Memory Efficiency
 
 * **Zero-copy design**: ~50% RAM reduction vs. standard HNSW
+* **Disk Offloading**: Up to **90% RAM reduction** for high-dimensional vectors (e.g., 3072d) by storing full vectors on SSD.
 * **Size-bucketed pools**: Reduced GC pressure via `PooledAllocator`
 
 ### Search Latency

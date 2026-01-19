@@ -58,6 +58,7 @@ hnsw:
 
   refinementFactor: 1.0
   useHNSW2: true
+  useDisk: false
 
 # Memory & GC Configuration
 memory:

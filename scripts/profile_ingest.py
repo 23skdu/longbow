@@ -110,7 +110,7 @@ def main():
     
     # Initial Warmup
     print("Warming up...")
-    benchmark_put_sustained(client, 25000, 5)
+    benchmark_put_sustained(client, 1000, 5)
     
     # Real Run
     print(f"\n{'='*60}")
@@ -118,7 +118,7 @@ def main():
     print(f"{'='*60}")
     
     # Run for 15s to measure peak throughput before memory limits/compaction pressure
-    benchmark_put_sustained(client, 25000, 15)
+    benchmark_put_sustained(client, 1000, 15)
 
 if __name__ == "__main__":
     main()

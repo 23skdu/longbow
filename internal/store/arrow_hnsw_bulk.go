@@ -111,8 +111,32 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 					return fmt.Errorf("unsupported vector type in bulk insert: %T", vecs)
 				}
 
+				// Basic validation
 				if v == nil {
-					return fmt.Errorf("vector missing for bulk insert ID %d", id)
+					return fmt.Errorf("vector missing for bulk insert ID %d (nil slice)", id)
+				}
+
+				// Validate dimensions based on type
+				// Since we are inside generic handling, we use reflection or just assume the type switch gave us a valid slice.
+				// We can check length here.
+				var vLen int
+				switch vec := v.(type) {
+				case []float32:
+					vLen = len(vec)
+				case []float16.Num:
+					vLen = len(vec)
+				case []int8:
+					vLen = len(vec)
+				case []float64:
+					vLen = len(vec)
+				case []complex64:
+					vLen = len(vec)
+				case []complex128:
+					vLen = len(vec)
+				}
+
+				if vLen != dims {
+					return fmt.Errorf("vector dimension mismatch for ID %d: expected %d, got %d", id, dims, vLen)
 				}
 
 				// Always ingest into hot storage using method that handles all types

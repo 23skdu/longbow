@@ -29,6 +29,7 @@ func TestBM25AutoIndexingDuringDoPut(t *testing.T) {
 	})
 	require.NoError(t, err)
 	defer func() { _ = store.Close() }()
+	store.StartIngestionWorkers(1)
 
 	batch := createBM25TestBatch(t, mem, "description", []string{
 		"the quick brown fox jumps over the lazy dog",
@@ -65,6 +66,7 @@ func TestBM25AutoIndexingMultipleBatches(t *testing.T) {
 	})
 	require.NoError(t, err)
 	defer func() { _ = store.Close() }()
+	store.StartIngestionWorkers(1)
 
 	batch1 := createBM25TestBatch(t, mem, "title", []string{"alpha beta gamma"})
 	defer batch1.Release()
@@ -98,6 +100,7 @@ func TestBM25NoIndexingWhenDisabled(t *testing.T) {
 
 	store := NewVectorStore(mem, logger, 1<<30, 0, 0)
 	defer func() { _ = store.Close() }()
+	store.StartIngestionWorkers(1)
 
 	batch := createBM25TestBatch(t, mem, "description", []string{"test content"})
 	defer batch.Release()
@@ -122,6 +125,7 @@ func TestBM25MultipleTextColumns(t *testing.T) {
 	})
 	require.NoError(t, err)
 	defer func() { _ = store.Close() }()
+	store.StartIngestionWorkers(1)
 
 	batch := createBM25MultiColBatch(t, mem,
 		[]string{"title", "body"},
@@ -164,6 +168,7 @@ func TestBM25IndexingMetrics(t *testing.T) {
 	})
 	require.NoError(t, err)
 	defer func() { _ = store.Close() }()
+	store.StartIngestionWorkers(1)
 
 	batch := createBM25TestBatch(t, mem, "text", []string{"doc1", "doc2", "doc3"})
 	defer batch.Release()

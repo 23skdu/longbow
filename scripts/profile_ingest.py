@@ -70,55 +70,58 @@ def benchmark_put_sustained(client, batch_size, duration_sec):
     total_vectors = 0
     batch_idx = 0
     
-    try:
-        while time.time() - start_time < duration_sec:
-            # We reuse batches but 'do_put' sends them as is. 
-            # This means we Are overwriting IDs 0..N*Batch repeatedly.
-            # Longbow treats upserts as writes, so workload is similar.
-            batch = batches[batch_idx % len(batches)]
-            batch_idx += 1
-            
-            try:
-                descriptor = flight.FlightDescriptor.for_path(DATASET)
-                writer, _ = client.do_put(descriptor, batch.schema)
-                writer.write_table(batch)
-                writer.close()
-                total_vectors += batch_size
-                
-                if total_vectors % 100000 == 0:
-                     print(f"  Ingested {total_vectors} vectors...")
-                     
-            except Exception as e:
-               print(f"  Error: {e}")
-               time.sleep(1)
-               
-    finally:
-        pprof_thread.join()
-
-    total_duration = time.time() - start_time
-    throughput = total_vectors / total_duration
+    while time.time() - start_time < duration_sec:
+        # We reuse batches but 'do_put' sends them as is. 
+        # This means we Are overwriting IDs 0..N*Batch repeatedly.
+        # Longbow treats upserts as writes, so workload is similar.
+        batch = batches[batch_idx % len(batches)]
+        batch_idx += 1
+        
+        descriptor = flight.FlightDescriptor.for_path(DATASET)
+        writer, _ = client.do_put(descriptor, batch.schema)
+        writer.write_table(batch)
+        writer.close()
+        total_vectors += batch_size
+        
+        if total_vectors % 100000 == 0:
+             print(f"  Ingested {total_vectors} vectors...")
+    
+    # Wait for pprof to finish (daemon or just detach? better to join but use real_duration)
+    # pprof_thread.join() 
+    # Actually, we don't need to block for pprof to finish to report stats.
+    # But to be clean we should.
+    
+    real_duration = time.time() - start_time
+    
+    throughput = total_vectors / real_duration
     mb_s = (throughput * DIM * 4) / (1024 * 1024)
     
     print(f"\nResult:")
     print(f"  Total Vectors: {total_vectors}")
-    print(f"  Duration: {total_duration:.2f}s")
+    print(f"  Duration: {real_duration:.2f}s")
     print(f"  Throughput: {throughput:.0f} vectors/s")
     print(f"  Bandwidth: {mb_s:.2f} MB/s")
 
+import argparse
+
 def main():
+    parser = argparse.ArgumentParser(description='Profile Ingestion')
+    parser.add_argument('--batch_size', type=int, default=1000, help='Batch size per request')
+    args = parser.parse_args()
+
     client = get_client("grpc://localhost:3000")
     
     # Initial Warmup
-    print("Warming up...")
-    benchmark_put_sustained(client, 1000, 5)
+    print(f"Warming up (Batch={args.batch_size})...")
+    benchmark_put_sustained(client, args.batch_size, 5)
     
     # Real Run
     print(f"\n{'='*60}")
-    print(f"PROFILE RUN: 384d Float32 (1000 batch)")
+    print(f"PROFILE RUN: 384d Float32 ({args.batch_size} batch)")
     print(f"{'='*60}")
     
     # Run for 15s to measure peak throughput before memory limits/compaction pressure
-    benchmark_put_sustained(client, 1000, 15)
+    benchmark_put_sustained(client, args.batch_size, 15)
 
 if __name__ == "__main__":
     main()

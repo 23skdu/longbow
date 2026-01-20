@@ -46,10 +46,11 @@ type VectorStore struct {
 	pendingOverflowJobs atomic.Int64         // Jobs spinning in applyBatchToMemory
 
 	// Lifecycle
-	stopChan          chan struct{}
-	stopOnce          sync.Once      // Protects stopChan closure
-	indexWg           sync.WaitGroup // For background workers
-	startIndexingOnce sync.Once      // Ensure background workers start only once
+	stopChan           chan struct{}
+	stopOnce           sync.Once      // Protects stopChan closure
+	indexWg            sync.WaitGroup // For background workers
+	startIndexingOnce  sync.Once      // Ensure background workers start only once
+	ingestionStartOnce sync.Once      // Ensure ingestion workers start only once
 	// mu       sync.RWMutex   // DEPRECATED: Replaced by RCU
 	datasets atomic.Pointer[map[string]*Dataset]
 
@@ -138,8 +139,8 @@ func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes 
 
 	s.maxMemory.Store(maxMemoryBytes)
 	s.indexQueue = NewIndexJobQueue(DefaultIndexJobQueueConfig())
-	s.ingestionQueue = NewIngestionRingBuffer(256)        // 256 slots to prevent memory overrun (batches are large)
-	s.persistenceQueue = make(chan persistenceJob, 10000) // Increased buffer for persistence
+	s.ingestionQueue = NewIngestionRingBuffer(64)      // Reduced from 256 to prevent OOM with large batches
+	s.persistenceQueue = make(chan persistenceJob, 64) // Reduced from 10000 to prevent OOM
 
 	s.nsManager = newNamespaceManager()
 	s.columnIndex = NewColumnInvertedIndex()
@@ -159,12 +160,8 @@ func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes 
 		s.compactionWorker.Start()
 	}
 
-	numRunners := runtime.NumCPU()
-	s.workerWg.Add(1 + numRunners)
+	s.workerWg.Add(1)
 	go s.runPersistenceWorker()
-	for i := 0; i < numRunners; i++ {
-		go s.runIngestionWorker()
-	}
 
 	// Start default index worker (1 thread)
 	s.StartIndexingWorkers(1)

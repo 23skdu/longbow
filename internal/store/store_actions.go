@@ -530,8 +530,8 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 	}
 
 	// Batching configuration
-	const maxBatchRows = 10000             // High row limit, we mostly care about bytes for high-dim
-	const maxBatchBytes = 10 * 1024 * 1024 // 10MB cap for alignment
+	const maxBatchRows = 50000             // Aggressive batching for small vectors
+	const maxBatchBytes = 32 * 1024 * 1024 // 32MB cap
 	batch := make([]arrow.RecordBatch, 0, 100)
 
 	// Helper to flush batch

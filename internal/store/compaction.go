@@ -29,16 +29,20 @@ type CompactionConfig struct {
 	// RateLimitBytesPerSec limits the speed of compaction/snapshotting (bytes/sec).
 	// Default: 50MB/s (52428800). 0 means unlimited.
 	RateLimitBytesPerSec int64
+	// FragmentationThreshold triggers compaction if tombstones/rows > threshold.
+	// Default: 0.3 (30%).
+	FragmentationThreshold float64
 }
 
 // DefaultCompactionConfig returns sensible defaults for compaction.
 func DefaultCompactionConfig() CompactionConfig {
 	return CompactionConfig{
-		TargetBatchSize:      10000,
-		MinBatchesToCompact:  10,
-		CompactionInterval:   30 * time.Second,
-		Enabled:              true,
-		RateLimitBytesPerSec: 50 * 1024 * 1024, // 50MB/s
+		TargetBatchSize:        10000,
+		MinBatchesToCompact:    10,
+		CompactionInterval:     30 * time.Second,
+		Enabled:                true,
+		RateLimitBytesPerSec:   50 * 1024 * 1024, // 50MB/s
+		FragmentationThreshold: 0.3,
 	}
 }
 
@@ -218,8 +222,8 @@ type CompactionCandidate struct {
 	TotalRow int64
 }
 
-// identifyCompactionCandidates finds contiguous runs of small batches.
-func identifyCompactionCandidates(records []arrow.RecordBatch, targetSize int64) []CompactionCandidate {
+// identifyCompactionCandidates finds contiguous runs of small batches OR highly fragmented batches.
+func identifyCompactionCandidates(records []arrow.RecordBatch, tombstones []*qry.Bitset, targetSize int64, fragThreshold float64) []CompactionCandidate {
 	var candidates []CompactionCandidate
 	if len(records) < 2 {
 		return candidates
@@ -233,9 +237,18 @@ func identifyCompactionCandidates(records []arrow.RecordBatch, targetSize int64)
 	for i, rec := range records {
 		rows := rec.NumRows()
 
-		// If a single batch is already large enough, it acts as a barrier
+		// Check Fragmentation
+		isFragmented := false
+		if fragThreshold > 0 && tombstones != nil && i < len(tombstones) && tombstones[i] != nil {
+			deleted := tombstones[i].Count()
+			if rows > 0 && float64(deleted)/float64(rows) >= fragThreshold {
+				isFragmented = true
+			}
+		}
+
+		// If a single batch is already large enough AND not fragmented, it acts as a barrier
 		// Flush current accumulation if any
-		if rows >= targetSize {
+		if rows >= targetSize && !isFragmented {
 			if count > 1 {
 				candidates = append(candidates, CompactionCandidate{
 					StartIdx: startIdx,
@@ -256,9 +269,20 @@ func identifyCompactionCandidates(records []arrow.RecordBatch, targetSize int64)
 		currentRows += rows
 		count++
 
-		if currentRows >= targetSize {
+		// Trigger compaction if:
+		// 1. Group size >= Target
+		// 2. Current batch is highly fragmented (aggressive merge with neighbors)
+		if currentRows >= targetSize || isFragmented {
 			// Found a group
-			if count > 1 { // Only merge if we actually combining multiple
+			// Note: If isFragmented is true, we force merge.
+			// Ideally we want to merge it with *something*.
+			// If it's the first in the group (count=1), we might wait for next?
+			// But if we are at end of loop or hit barrier, we take it.
+			// Let's accept count >= 1 if fragmented?
+			// Actually, merging a single fragmented batch essentially just "GCs" it (rewrites it).
+			// So count >= 1 is valid for fragmentation!
+
+			if count > 1 || (isFragmented && count >= 1) {
 				candidates = append(candidates, CompactionCandidate{
 					StartIdx: startIdx,
 					EndIdx:   i + 1,
@@ -293,11 +317,19 @@ type BatchRemapInfo struct {
 
 // compactRecords returns a NEW slice of RecordBatches and a remapping table.
 // It DOES NOT Modify the input slice.
-func compactRecords(pool memory.Allocator, schema *arrow.Schema, records []arrow.RecordBatch, tombstones map[int]*qry.Bitset, targetSize int64, datasetName string, limiter *RateLimiter) (compacted []arrow.RecordBatch, remap map[int]BatchRemapInfo) {
+func compactRecords(pool memory.Allocator, schema *arrow.Schema, records []arrow.RecordBatch, tombstones map[int]*qry.Bitset, targetSize int64, datasetName string, limiter *RateLimiter, fragThreshold float64) (compacted []arrow.RecordBatch, remap map[int]BatchRemapInfo) {
 	if schema == nil && len(records) > 0 {
 		schema = records[0].Schema()
 	}
-	candidates := identifyCompactionCandidates(records, targetSize)
+	// Convert map[int]*Bitset to slice for identification
+	tombstoneSlice := make([]*qry.Bitset, len(records))
+	for i := range records {
+		if ts, ok := tombstones[i]; ok {
+			tombstoneSlice[i] = ts
+		}
+	}
+
+	candidates := identifyCompactionCandidates(records, tombstoneSlice, targetSize, fragThreshold)
 	if len(candidates) == 0 {
 		return nil, nil // Nothing to do
 	}

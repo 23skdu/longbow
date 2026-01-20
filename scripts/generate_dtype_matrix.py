@@ -3,12 +3,30 @@ import json
 import os
 import sys
 import time
+
+# Ensure correct PYTHONPATH for SDK before importing it
+current_dir = os.getcwd()
+sdk_src = os.path.join(current_dir, "longbowclientsdk", "src")
+if sdk_src not in sys.path:
+    sys.path.insert(0, sdk_src)
+
 from longbow.client import LongbowClient
 
 # Matrix configuration
 DTYPES = ["int8", "int16", "int32", "int64", "float32", "float16", "float64", "complex64", "complex128"]
 DIMS = [128, 384, 1536, 3072]
 ROWS = 15000
+
+def calculate_rows(dtype, dim, target_mb=100, min_rows=15000, max_rows=50000):
+    sizes = {
+        "int8": 1, "int16": 2, "int32": 4, "int64": 8,
+        "float16": 2, "float32": 4, "float64": 8,
+        "complex64": 8, "complex128": 16
+    }
+    size_per_vec = dim * sizes.get(dtype, 4)
+    target_bytes = target_mb * 1024 * 1024
+    rows = int(target_bytes / size_per_vec)
+    return max(min_rows, min(rows, max_rows))
 
 PYTHON_EXE = sys.executable
 
@@ -46,7 +64,8 @@ def run_bench(dtype, dim, rows):
     
     try:
         # Run bench
-        res_proc = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        env = os.environ.copy()
+        res_proc = subprocess.run(cmd, check=True, capture_output=True, text=True, env=env)
         
         if os.path.exists(output_file):
             with open(output_file, 'r') as f:
@@ -92,7 +111,8 @@ def main():
     
     for dim in DIMS:
         for dtype in DTYPES:
-            res = run_bench(dtype, dim, ROWS)
+            rows = calculate_rows(dtype, dim)
+            res = run_bench(dtype, dim, rows)
             matrix.append({
                 "dim": dim,
                 "dtype": dtype,

@@ -4,7 +4,9 @@ import (
 	"testing"
 
 	"github.com/23skdu/longbow/internal/memory"
+	"github.com/apache/arrow-go/v18/arrow/float16"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestGraphData_Accessors(t *testing.T) {
@@ -163,4 +165,61 @@ func TestGraphData_Signatures(t *testing.T) {
 
 	levels := gd.GetLevelsChunk(0)
 	_ = levels
+}
+
+func TestGraphData_SetVector_Float64_To_Float16(t *testing.T) {
+	// 1. Create GraphData with Float16
+	gd := NewGraphData(128, 128, false, false, 0, false, false, false, VectorTypeFloat16)
+	defer func() { _ = gd.Close() }()
+
+	// 2. Create float64 vector
+	vec := make([]float64, 128)
+	for i := range vec {
+		vec[i] = float64(i)
+	}
+
+	// 3. Manually allocate chunk 0 in PRIMARY Vectors
+	// Since gd.SlabArena is private (?), we can't access it?
+	// But gd.Uint32Arena is accessible in previous test?
+	// gd.Uint32Arena is exported.
+	// gd.Float16Arena?
+	// In my previous test I created new arena/slab.
+	// But `NewGraphData` creates internal SlabArena.
+	// Can I access it?
+	// `graph_data.go` defines `SlabArena *memory.SlabArena` field?
+	// If it's exported I can use it.
+	// Previous test `TestGraphData_Accessors` used `gd.Uint32Arena.AllocSlice`.
+
+	// I need access to `Float16Arena` to AllocSlice for it?
+	// Is `Float16Arena` exported?
+	// `arrow_hnsw_graph.go`: `Float16Arena *memory.TypedArena[float16.Num]`.
+	// Yes, usually exported if Capitalized.
+	// Let's assume it is.
+	// `VectorsF16` is exported. `Vectors` is exported.
+
+	// However, PRIMARY Vectors for Float16 uses `Vectors` array.
+	// We need to store offset there.
+	// And memory must be valid.
+
+	// Option A: Use gd.Float16Arena.AllocSlice(ChunkSize * PaddedDims)
+	// GetPaddedDimsForType(VectorTypeFloat16) -> 128 (no padding if dims=128).
+
+	ref, err := gd.Float16Arena.AllocSlice(ChunkSize * 128)
+	require.NoError(t, err)
+	gd.Vectors[0] = ref.Offset
+
+	// 4. SetVector
+	err = gd.SetVector(0, vec)
+	require.NoError(t, err, "SetVector should succeed with Float64 -> Float16 conversion")
+
+	// 5. Verify data
+	v, err := gd.GetVector(0)
+	require.NoError(t, err)
+	vF16, ok := v.([]float16.Num)
+	require.True(t, ok, "Attached vector should be float16")
+
+	// Check first element (0.0)
+	assert.Equal(t, float32(0.0), vF16[0].Float32())
+	// Check second element (1.0)
+	assert.Equal(t, float32(1.0), vF16[1].Float32())
 }

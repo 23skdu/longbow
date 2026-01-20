@@ -209,6 +209,147 @@ func (gd *GraphData) GetVectorAsFloat32(id uint32) ([]float32, error) {
 	return nil, fmt.Errorf("vector data unavailable for ID %d", id)
 }
 
+// GetVectorAsFloat32Into retrieves the vector at ID and converts it to []float32 into the provided buffer.
+// If the underlying storage is natively Float32, it may return a direct slice to the data (ignoring buf) to avoid copying.
+// The returned slice should be used for reading.
+// buf must have capacity >= Dims.
+func (gd *GraphData) GetVectorAsFloat32Into(id uint32, buf []float32) ([]float32, error) {
+	cID := chunkID(id)
+	cOff := chunkOffset(id)
+	dims := gd.Dims
+	paddedDims := gd.GetPaddedDims()
+
+	if dims <= 0 {
+		return nil, fmt.Errorf("invalid dimensions 0")
+	}
+
+	// 1. Float16 (Primary or Aux)
+	if (gd.VectorsF16 != nil && int(cID) < len(gd.VectorsF16)) || gd.Type == VectorTypeFloat16 {
+		chunk := gd.GetVectorsF16Chunk(cID)
+		if chunk != nil {
+			stride := gd.GetPaddedDimsForType(VectorTypeFloat16)
+			start := int(cOff) * stride
+			f16s := chunk[start : start+dims]
+
+			// Must convert to buf
+			if cap(buf) < dims {
+				buf = make([]float32, dims)
+			}
+			buf = buf[:dims]
+
+			for i, v := range f16s {
+				buf[i] = v.Float32()
+			}
+			return buf, nil
+		}
+	}
+
+	// 2. primary Float32 - ZERO COPY optimization
+	if gd.Type == VectorTypeFloat32 {
+		chunk := gd.GetVectorsChunk(cID)
+		if chunk != nil {
+			start := int(cOff) * paddedDims
+			// Return direct slice
+			return chunk[start : start+dims], nil
+		}
+	}
+
+	// 3. Complex64
+	if gd.Type == VectorTypeComplex64 {
+		chunk := gd.GetVectorsComplex64Chunk(cID)
+		if chunk != nil {
+			start := int(cOff) * gd.GetPaddedDimsForType(VectorTypeComplex64)
+			c64s := chunk[start : start+dims]
+
+			needed := dims * 2
+			if cap(buf) < needed {
+				buf = make([]float32, needed)
+			}
+			buf = buf[:needed]
+
+			for i, v := range c64s {
+				buf[2*i] = real(v)
+				buf[2*i+1] = imag(v)
+			}
+			return buf, nil
+		}
+	}
+
+	// 4. Complex128
+	if gd.Type == VectorTypeComplex128 {
+		chunk := gd.GetVectorsComplex128Chunk(cID)
+		if chunk != nil {
+			start := int(cOff) * gd.GetPaddedDimsForType(VectorTypeComplex128)
+			c128s := chunk[start : start+dims]
+
+			needed := dims * 2
+			if cap(buf) < needed {
+				buf = make([]float32, needed)
+			}
+			buf = buf[:needed]
+
+			for i, v := range c128s {
+				buf[2*i] = float32(real(v))
+				buf[2*i+1] = float32(imag(v))
+			}
+			return buf, nil
+		}
+	}
+
+	// 5. Int8
+	if gd.Type == VectorTypeInt8 {
+		chunk := gd.GetVectorsInt8Chunk(cID)
+		if chunk != nil {
+			start := int(cOff) * paddedDims
+			i8s := chunk[start : start+dims]
+
+			if cap(buf) < dims {
+				buf = make([]float32, dims)
+			}
+			buf = buf[:dims]
+
+			for i, v := range i8s {
+				buf[i] = float32(v)
+			}
+			return buf, nil
+		}
+	}
+
+	// 5. Float64 (Support added for completeness)
+	if gd.Type == VectorTypeFloat64 {
+		chunk := gd.GetVectorsFloat64Chunk(cID)
+		if chunk != nil {
+			start := int(cOff) * gd.GetPaddedDimsForType(VectorTypeFloat64)
+			f64s := chunk[start : start+dims]
+
+			if cap(buf) < dims {
+				buf = make([]float32, dims)
+			}
+			buf = buf[:dims]
+
+			for i, v := range f64s {
+				buf[i] = float32(v)
+			}
+			return buf, nil
+		}
+	}
+
+	// 6. DiskStore Fallback
+	if gd.DiskStore != nil {
+		// DiskStore usually returns new slice. Can we pass buf?
+		// DiskStore.Get signature? It returns ([]float32, error).
+		// We can't reuse buf unless DiskStore API supports it.
+		// For now just return result.
+		vec, err := gd.DiskStore.Get(id)
+		if err == nil {
+			return vec, nil
+		}
+		return nil, fmt.Errorf("failed to retrieve vector from DiskStore: %w", err)
+	}
+
+	return nil, fmt.Errorf("vector data unavailable for ID %d (Type=%s)", id, gd.Type)
+}
+
 // SetVector sets the vector at the given ID using the provided generic input.
 // It handles type conversion and storage selection.
 func (gd *GraphData) SetVector(id uint32, vec any) error {
@@ -310,6 +451,20 @@ func (gd *GraphData) SetVector(id uint32, vec any) error {
 					if 2*i+1 < len(v) {
 						dest[i] = complex(float32(v[2*i]), float32(v[2*i+1]))
 					}
+				}
+				return nil
+			}
+		case VectorTypeFloat16:
+			chunk := gd.GetVectorsF16Chunk(cID)
+			if chunk != nil {
+				start := int(cOff) * gd.GetPaddedDimsForType(VectorTypeFloat16)
+				dest := chunk[start : start+dims]
+				limit := dims
+				if len(v) < limit {
+					limit = len(v)
+				}
+				for i := 0; i < limit; i++ {
+					dest[i] = float16.New(float32(v[i]))
 				}
 				return nil
 			}

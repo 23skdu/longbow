@@ -554,8 +554,7 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer HNSWDistanceComp
 				if dist < worst.Dist {
 					ctx.candidates.Push(Candidate{ID: nid, Dist: dist})
 					if !h.IsDeleted(nid) {
-						resultSet.Pop()
-						resultSet.Push(Candidate{ID: nid, Dist: dist})
+						resultSet.ReplaceTop(Candidate{ID: nid, Dist: dist})
 					}
 				}
 			}

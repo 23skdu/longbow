@@ -128,6 +128,7 @@ type Config struct {
 	AutoShardingThreshold      int  `envconfig:"AUTO_SHARDING_THRESHOLD" default:"10000"`
 	AutoShardingSplitThreshold int  `envconfig:"AUTO_SHARDING_SPLIT_THRESHOLD" default:"65536"` // Default chunk size
 	RingShardingEnabled        bool `envconfig:"RING_SHARDING_ENABLED" default:"true"`
+	IngestionWorkerCount       int  `envconfig:"INGESTION_WORKER_COUNT" default:"0"` // 0 = runtime.NumCPU()
 }
 
 // Global config instance for hook functions
@@ -312,6 +313,8 @@ func run() error {
 
 	// Start background indexing workers
 	vectorStore.StartIndexingWorkers(runtime.NumCPU())
+	// Start ingestion workers
+	vectorStore.StartIngestionWorkers(cfg.IngestionWorkerCount)
 
 	// Initialize OpenTelemetry Tracer
 	tp := initTracer()

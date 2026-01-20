@@ -149,6 +149,21 @@ func (s *VectorStore) StartIndexingWorkers(numWorkers int) {
 	})
 }
 
+// StartIngestionWorkers starts the background ingestion workers.
+// If count is <= 0, it defaults to runtime.NumCPU().
+func (s *VectorStore) StartIngestionWorkers(count int) {
+	if count <= 0 {
+		count = runtime.NumCPU()
+	}
+	s.ingestionStartOnce.Do(func() {
+		s.workerWg.Add(count)
+		for i := 0; i < count; i++ {
+			go s.runIngestionWorker()
+		}
+		s.logger.Info().Int("count", count).Msg("Started ingestion workers")
+	})
+}
+
 func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
 	maxBatch := 1000
 	var currentBatch int

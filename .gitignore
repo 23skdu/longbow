@@ -266,3 +266,4 @@ benchmark_results.log
 # JSON files (Ignore all except in grafana directory)
 *.json
 !grafana/**/*.json
+*.gz

@@ -241,10 +241,11 @@ func (c *float16Computer) Prefetch(id uint32) {
 // genericComputer handles any storage type by converting to float32 on the fly.
 // This is slower but correct for new/unsupported types like Int8.
 type genericComputer struct {
-	data     *GraphData
-	q        []float32
-	dims     int
-	distFunc func([]float32, []float32) float32
+	data       *GraphData
+	q          []float32
+	dims       int
+	distFunc   func([]float32, []float32) float32
+	scratchVec []float32
 }
 
 func (c *genericComputer) Compute(ids []uint32, dists []float32) {
@@ -254,7 +255,8 @@ func (c *genericComputer) Compute(ids []uint32, dists []float32) {
 }
 
 func (c *genericComputer) ComputeSingle(id uint32) float32 {
-	v, err := c.data.GetVectorAsFloat32(id)
+	// Use GetVectorAsFloat32Into to avoid allocation
+	v, err := c.data.GetVectorAsFloat32Into(id, c.scratchVec)
 	if err == nil {
 		return c.distFunc(c.q, v)
 	}
@@ -508,10 +510,11 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *GraphData, ctx *ArrowSearchContext
 	// OR we have Float32 Storage.
 	if data.Type != VectorTypeFloat32 {
 		return &genericComputer{
-			data:     data,
-			q:        qF32,
-			dims:     data.Dims,
-			distFunc: distFunc,
+			data:       data,
+			q:          qF32,
+			dims:       data.Dims,
+			distFunc:   distFunc,
+			scratchVec: make([]float32, data.Dims),
 		}
 	}
 

@@ -117,3 +117,14 @@ func (h *MaxHeap) bubbleDown(idx int) {
 		idx = largest
 	}
 }
+
+// ReplaceTop replaces the maximum element with a new candidate and reorders the heap.
+// This is more efficient than Pop followed by Push.
+func (h *MaxHeap) ReplaceTop(c Candidate) {
+	if h.size == 0 {
+		h.Push(c)
+		return
+	}
+	h.items[0] = c
+	h.bubbleDown(0)
+}

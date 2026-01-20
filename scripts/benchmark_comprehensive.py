@@ -20,7 +20,7 @@ from collections import defaultdict
 # Config
 DATASET = "perf_test_v4"
 DIM = 384
-SIZES = [3000, 5000, 7000, 9000, 15000, 20000]
+SIZES = [50000]
 PROFILES_DIR = "profiles_comprehensive"
 
 class BenchmarkResults:
@@ -317,8 +317,22 @@ def benchmark_tombstone_deletion(clients, ids_to_delete):
         try:
             req = json.dumps({"dataset": DATASET, "id": str(id_val)}).encode("utf-8")
             action = flight.Action("Delete", req)
-            list(clients[0].do_action(action))
+            # Broadcast to all nodes - data is sharded
+            deleted = False
+            last_err = None
+            for client in clients:
+                try:
+                    list(client.do_action(action))
+                    deleted = True
+                    break
+                except Exception as e:
+                    last_err = e
+            
+            if not deleted:
+                raise last_err or Exception("Unknown error")
         except Exception as e:
+            if errors < 5:
+                print(f"    Delete error: {e}")
             errors += 1
     
     with ThreadPoolExecutor(max_workers=10) as ex:
@@ -354,6 +368,42 @@ def collect_pprof(urls, label=""):
             print(f"    Node {i}: ✓")
         except Exception as e:
             print(f"    Node {i}: Failed - {e}")
+
+def wait_for_readiness(clients, timeout=300):
+    """Wait for all nodes to be ready (indexing complete)"""
+    print("  Waiting for cluster readiness...")
+    start = time.time()
+    last_print = 0
+    
+    while time.time() - start < timeout:
+        all_ready = True
+        pending_counts = []
+        
+        for i, client in enumerate(clients):
+            try:
+                action = flight.Action("check_readiness", json.dumps({"dataset": DATASET}).encode("utf-8"))
+                results = list(client.do_action(action))
+                for res in results:
+                    body = res.body.to_pybytes().decode('utf-8')
+                    status = json.loads(body)
+                    if status.get("status") != "READY":
+                        all_ready = False
+                        if "reason" in status:
+                             pending_counts.append(status["reason"])
+            except Exception as e:
+                # If node is transiently unavailable, keep waiting
+                all_ready = False
+        
+        if all_ready:
+            print(f"    Cluster READY in {time.time() - start:.1f}s")
+            return
+            
+        if time.time() - last_print > 5:
+            print(f"    Waiting... ({', '.join(pending_counts)})")
+            last_print = time.time()
+            
+        time.sleep(1)
+    print("    WARNING: Timeout waiting for readiness")
 
 def main():
     parser = argparse.ArgumentParser()
@@ -435,6 +485,10 @@ def main():
     print(f"\n{'=' * 80}")
     print("PHASE: Tombstone Deletion")
     print(f"{'=' * 80}")
+    
+    # Wait for ingestion to complete
+    wait_for_readiness(clients)
+    
     ids_to_del = list(range(current_count - 1000, current_count))
     del_throughput, del_duration, del_errors, post_p50, post_p95, post_p99, post_errors = \
         benchmark_tombstone_deletion(clients, ids_to_del)

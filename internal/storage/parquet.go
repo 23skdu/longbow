@@ -88,10 +88,17 @@ func writeParquet(w io.Writer, records ...arrow.RecordBatch) error {
 				elemType := vecCol.DataType().(*arrow.FixedSizeListType).Elem()
 				vecLen = int(vecCol.DataType().(*arrow.FixedSizeListType).Len())
 
-				if elemType.ID() == arrow.FLOAT16 {
+				switch elemType.ID() {
+				case arrow.FLOAT16:
 					vecDataF16 = vecCol.ListValues().(*array.Float16)
-				} else {
+				case arrow.FLOAT32:
 					vecData = vecCol.ListValues().(*array.Float32)
+				case arrow.FLOAT64:
+					// Float64 conversion is handled in the loop below,
+					// as the target schema is Float32.
+					// No direct assignment to vecData or vecDataF16 here.
+				default:
+					return fmt.Errorf("unsupported vector element type: %s", elemType)
 				}
 			} else {
 				hasVec = false
@@ -105,14 +112,23 @@ func writeParquet(w io.Writer, records ...arrow.RecordBatch) error {
 				start := int(i) * vecLen
 				end := start + vecLen
 
-				if vecDataF16 != nil {
+				switch {
+				case vecDataF16 != nil:
 					vals := vecDataF16.Values()[start:end]
 					vec = make([]float32, vecLen)
 					for k, v := range vals {
 						vec[k] = v.Float32()
 					}
-				} else if vecData != nil {
+				case vecData != nil:
 					vec = vecData.Float32Values()[start:end]
+				default:
+					// Must be Float64 or handled above
+					col := rec.Column(vecColIdx).(*array.FixedSizeList)
+					vals := col.ListValues().(*array.Float64).Float64Values()[start:end]
+					vec = make([]float32, vecLen)
+					for k, v := range vals {
+						vec[k] = float32(v)
+					}
 				}
 			}
 

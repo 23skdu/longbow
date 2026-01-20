@@ -10,6 +10,16 @@ import (
 func (s *VectorStore) runIngestionWorker() {
 	defer s.workerWg.Done()
 
+	// Create reusable timer for backoff (stopped initially)
+	timer := time.NewTimer(0)
+	if !timer.Stop() {
+		select {
+		case <-timer.C:
+		default:
+		}
+	}
+	defer timer.Stop()
+
 	for {
 		select {
 		case <-s.stopChan:
@@ -21,10 +31,19 @@ func (s *VectorStore) runIngestionWorker() {
 		if !ok {
 			// Backoff if empty
 			// Check stop channel while sleeping
+			// Use reusable timer to avoid allocation churn
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+			timer.Reset(50 * time.Microsecond)
+
 			select {
 			case <-s.stopChan:
 				return
-			case <-time.After(50 * time.Microsecond):
+			case <-timer.C:
 			}
 			continue
 		}

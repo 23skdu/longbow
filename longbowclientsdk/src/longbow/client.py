@@ -301,7 +301,7 @@ class LongbowClient:
         if self._meta_client is None:
             self.connect()
             
-        req = {"name": dataset}
+        req = {"dataset": dataset}
         if ids:
             # Server "delete" action takes "id" (string) and "dataset".
             # It processes one ID at a time.

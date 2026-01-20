@@ -76,7 +76,7 @@ func TestIdentifyCompactionCandidates(t *testing.T) {
 				}
 			}()
 
-			candidates := identifyCompactionCandidates(batches, tt.targetSize)
+			candidates := identifyCompactionCandidates(batches, nil, tt.targetSize, 0.0)
 			assert.Equal(t, tt.expected, candidates)
 		})
 	}
@@ -109,7 +109,7 @@ func TestCompactRecords_Basic(t *testing.T) {
 	defer b3.Release()
 
 	// 1. Test standard merge (no tombstones)
-	compacted, remapping := compactRecords(mem, schema, batches, nil, 100, "test", nil)
+	compacted, remapping := compactRecords(mem, schema, batches, nil, 100, "test", nil, 0.0)
 
 	assert.Len(t, compacted, 1)
 	assert.Equal(t, int64(30), compacted[0].NumRows())
@@ -133,7 +133,7 @@ func TestCompactRecords_Basic(t *testing.T) {
 	tomb3.Set(9) // Delete ID 29 (last row of b3)
 	tombstones[2] = tomb3
 
-	compacted, remapping = compactRecords(mem, schema, batches, tombstones, 100, "test", nil)
+	compacted, remapping = compactRecords(mem, schema, batches, tombstones, 100, "test", nil, 0.0)
 
 	assert.Len(t, compacted, 1)
 	assert.Equal(t, int64(27), compacted[0].NumRows()) // 30 - 3 = 27

@@ -867,13 +867,18 @@ func (s *VectorStore) applyBatchToMemory(name string, rec arrow.RecordBatch, ts 
 
 		// Infer DataType from the FIRST record
 		dataType := InferVectorDataType(rec.Schema(), "vector")
+		s.logger.Info().Str("dataset", name).Str("dataType", dataType.String()).Msg("Inferred vector data type for new index")
+
 		if config.IndexConfig == nil {
 			hnswCfg := DefaultArrowHNSWConfig()
 			hnswCfg.Metric = ds.Metric
 			hnswCfg.DataType = dataType
 			config.IndexConfig = &hnswCfg
 		} else {
-			config.IndexConfig.DataType = dataType
+			// Clone the config to avoid polluting the shared autoShardingConfig
+			clonedCfg := *config.IndexConfig
+			clonedCfg.DataType = dataType
+			config.IndexConfig = &clonedCfg
 		}
 
 		aIdx := NewAutoShardingIndex(ds, config)

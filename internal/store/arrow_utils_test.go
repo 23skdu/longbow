@@ -244,3 +244,59 @@ func TestExtractVectorF16FromArrow(t *testing.T) {
 		t.Errorf("ExtractVectorFromArrow(F16) = %v, want [1.0, 2.0]", vecF32C)
 	}
 }
+
+func TestInferVectorDataType_Float64(t *testing.T) {
+	// Create float64 vector schema without metadata
+	fieldType := arrow.FixedSizeListOf(128, arrow.PrimitiveTypes.Float64)
+	fields := []arrow.Field{
+		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
+		{Name: "vector", Type: fieldType},
+	}
+	schema := arrow.NewSchema(fields, nil)
+
+	dt := InferVectorDataType(schema, "vector")
+	if dt != VectorTypeFloat64 {
+		t.Errorf("InferVectorDataType = %v, want VectorTypeFloat64", dt)
+	}
+}
+
+func TestExtractVectorFromArrow_Float64(t *testing.T) {
+	pool := memory.NewGoAllocator()
+	b := array.NewRecordBuilder(pool, arrow.NewSchema(
+		[]arrow.Field{
+			{Name: "vector", Type: arrow.FixedSizeListOf(2, arrow.PrimitiveTypes.Float64)},
+		}, nil,
+	))
+	defer b.Release()
+
+	lb := b.Field(0).(*array.FixedSizeListBuilder)
+	vb := lb.ValueBuilder().(*array.Float64Builder)
+
+	lb.Append(true)
+	vb.AppendValues([]float64{1.1, 2.2}, nil)
+
+	rec := b.NewRecordBatch()
+	defer rec.Release()
+
+	// 1. Check ExtractVectorFromArrow (should return float32)
+	vecF32, err := ExtractVectorFromArrow(rec, 0, 0)
+	if err != nil {
+		t.Fatalf("ExtractVectorFromArrow failed: %v", err)
+	}
+	if len(vecF32) != 2 || vecF32[0] < 1.09 || vecF32[0] > 1.11 { // InDelta check manually
+		t.Errorf("Expected 1.1, got %v", vecF32[0])
+	}
+
+	// 2. Check ExtractVectorAny (should return []float64)
+	vecAny, err := ExtractVectorAny(rec, 0, 0)
+	if err != nil {
+		t.Fatalf("ExtractVectorAny failed: %v", err)
+	}
+	vecF64, ok := vecAny.([]float64)
+	if !ok {
+		t.Fatalf("ExtractVectorAny returned %T, want []float64", vecAny)
+	}
+	if vecF64[0] != 1.1 {
+		t.Errorf("Expected 1.1, got %v", vecF64[0])
+	}
+}

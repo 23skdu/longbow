@@ -34,7 +34,7 @@ func NewDiskVectorStore(path string, dim int) (*DiskVectorStore, error) { // Cha
 	}
 
 	flags := os.O_RDWR | os.O_CREATE // | os.O_APPEND managed manually for Append
-	f, err := os.OpenFile(path, flags, 0644)
+	f, err := os.OpenFile(path, flags, 0o644)
 	if err != nil {
 		return nil, err
 	}
@@ -228,7 +228,7 @@ func (s *DiskVectorStore) SnapshotTo(ctx context.Context, backend interface{}, n
 	if err != nil {
 		return err
 	}
-	defer rf.Close()
+	defer func() { _ = rf.Close() }()
 
 	// Use reflection or interface assertion for the backend method
 	// The test expects WriteSnapshotFile(ctx, name, ext, reader)
@@ -258,7 +258,7 @@ func RestoreDiskVectorStore(ctx context.Context, backend interface{}, name, dest
 	if err != nil {
 		return err
 	}
-	defer rc.Close()
+	defer func() { _ = rc.Close() }()
 
 	// Ensure dest dir exists
 	// os.MkdirAll(filepath.Dir(destPath), 0755)
@@ -267,7 +267,7 @@ func RestoreDiskVectorStore(ctx context.Context, backend interface{}, name, dest
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	if _, err := io.Copy(f, rc); err != nil {
 		return err

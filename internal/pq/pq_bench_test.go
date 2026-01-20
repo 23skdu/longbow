@@ -8,7 +8,7 @@ import (
 
 func BenchmarkPQ_1536d(b *testing.B) {
 	dim := 1536
-	m := 192 // 1536 / 8 = 192
+	m := 192 // 1536 divided by 8 is 192
 	k := 256
 	numSamples := 1000
 
@@ -26,24 +26,24 @@ func BenchmarkPQ_1536d(b *testing.B) {
 	b.Run("Train", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			encoder, _ := NewPQEncoder(dim, m, k)
-			encoder.Train(vectors)
+			_ = encoder.Train(vectors)
 		}
 	})
 
 	encoder, _ := NewPQEncoder(dim, m, k)
-	encoder.Train(vectors)
+	_ = encoder.Train(vectors)
 
 	vector := vectors[0]
 
 	b.Run("Encode", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			encoder.Encode(vector)
+			_, _ = encoder.Encode(vector)
 		}
 	})
 
 	b.Run("BuildADCTable", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			encoder.BuildADCTable(vector)
+			_, _ = encoder.BuildADCTable(vector)
 		}
 	})
 }

@@ -92,7 +92,7 @@ func (vs *VectorStore) CompactDataset(name string) error {
 	// 1. Perform Incremental Compaction
 	// Returns a NEW slice of records and a remapping table
 	// We use vs.mem (the tracked allocator) instead of creating a new one
-	newRecords, remapping := compactRecords(vs.mem, ds.Schema, ds.Records, ds.Tombstones, vs.compactionConfig.TargetBatchSize, name, vs.rateLimiter)
+	newRecords, remapping := compactRecords(vs.mem, ds.Schema, ds.Records, ds.Tombstones, vs.compactionConfig.TargetBatchSize, name, vs.rateLimiter, vs.compactionConfig.FragmentationThreshold)
 
 	if newRecords == nil {
 		return nil // No changes needed

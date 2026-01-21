@@ -96,7 +96,9 @@ func (b *BatchDistanceComputer) ComputeL2DistancesInto(
 	}
 
 	// Use Fast Batch SIMD implementation
-	simd.EuclideanDistanceBatch(query, candidateVectors, out)
+	if err := simd.EuclideanDistanceBatch(query, candidateVectors, out); err != nil {
+		return nil, err
+	}
 	return out, nil
 }
 

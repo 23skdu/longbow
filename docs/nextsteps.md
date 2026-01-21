@@ -1,4 +1,4 @@
-# 10-Part Plan: Memory Optimization & Goroutine Leak Prevention (v0.1.5)
+# 9-Part Plan: Memory Optimization & Goroutine Leak Prevention (v0.1.5)
 
 **Goal**: Resolve `SlabArena` memory retention (59.7GB heap), implement HNSW graph compaction, prevent goroutine leaks, and achieve stable memory usage during sustained ingestion.
 
@@ -8,22 +8,7 @@
 
 ## Implementation Plan
 
-### 1. SlabArena Memory Release Audit
-
-**Objective**: Ensure `SlabArena.Release()` returns memory to the OS via `madvise(MADV_DONTNEED)`.
-
-**Changes**:
-
-- **[MODIFY]** `internal/memory/slab_pool.go`: Add `madvise(MADV_DONTNEED)` syscall in `Release()` to hint OS that pages can be reclaimed.
-- **[MODIFY]** `internal/memory/slab_pool.go`: Track per-slab usage metrics to identify when slabs can be fully released.
-- **[NEW]** `internal/memory/slab_pool_test.go`: Unit test verifying RSS decreases after `Release()` calls.
-- **[NEW]** `internal/memory/slab_pool_fuzz_test.go`: Fuzz test for concurrent allocate/release patterns.
-
-**Verification**: Monitor RSS via `/proc/self/status` before/after release. Expect RSS to drop proportionally.
-
----
-
-### 2. TypedArena Compaction
+### 1. TypedArena Compaction
 
 **Objective**: Implement periodic compaction for `TypedArena` to consolidate fragmented slabs.
 
@@ -38,7 +23,7 @@
 
 ---
 
-### 3. HNSW Graph Compaction
+### 2. HNSW Graph Compaction
 
 **Objective**: Implement periodic HNSW graph compaction to rebuild graphs with tighter memory layout.
 
@@ -54,7 +39,7 @@
 
 ---
 
-### 4. Aggressive GC Tuner
+### 3. Aggressive GC Tuner
 
 **Objective**: Make `GCTuner` more responsive to arena retention by lowering GOGC when heap is dominated by arenas.
 
@@ -69,7 +54,7 @@
 
 ---
 
-### 5. Goroutine Leak Detection
+### 4. Goroutine Leak Detection
 
 **Objective**: Audit all background goroutines for proper shutdown and add leak detection tests.
 
@@ -84,7 +69,7 @@
 
 ---
 
-### 6. Context Cancellation for Long Operations
+### 5. Context Cancellation for Long Operations
 
 **Objective**: Add context cancellation to all long-running operations (compaction, indexing, replication).
 
@@ -99,7 +84,7 @@
 
 ---
 
-### 7. Metrics for Memory Subsystem
+### 6. Metrics for Memory Subsystem
 
 **Objective**: Add Prometheus metrics for arena usage, slab fragmentation, and compaction events.
 
@@ -114,7 +99,7 @@
 
 ---
 
-### 8. Shutdown Timeout Enforcement
+### 7. Shutdown Timeout Enforcement
 
 **Objective**: Enforce hard timeout for graceful shutdown to prevent hung workers from blocking `Close()`.
 
@@ -128,7 +113,7 @@
 
 ---
 
-### 9. Memory Leak Integration Test
+### 8. Memory Leak Integration Test
 
 **Objective**: Create long-running integration test that validates memory returns to baseline after dataset drop.
 
@@ -142,7 +127,7 @@
 
 ---
 
-### 10. Documentation & Runbook
+### 9. Documentation & Runbook
 
 **Objective**: Document memory management architecture and create operational runbook for memory issues.
 

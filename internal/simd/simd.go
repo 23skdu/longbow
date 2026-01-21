@@ -113,7 +113,9 @@ func init() {
 		} else {
 			// Override with JIT implementation
 			euclideanDistanceBatchImpl = func(query []float32, vectors [][]float32, results []float32) error {
-				jitRT.EuclideanBatchInto(query, vectors, results)
+				if err := jitRT.EuclideanBatchInto(query, vectors, results); err != nil {
+					return err
+				}
 				return nil
 			}
 			log.Info().Msg("JIT SIMD Enabled for Euclidean Batch")

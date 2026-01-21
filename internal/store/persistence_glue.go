@@ -351,18 +351,19 @@ func (s *VectorStore) writeToWAL(rec arrow.RecordBatch, name string, ts int64) e
 	return s.engine.WriteToWAL(name, rec, seq, ts)
 }
 
-func (s *VectorStore) Snapshot() error {
+func (s *VectorStore) Snapshot(ctx context.Context) error {
 	if s.engine == nil {
 		return nil
 	}
 
 	// Create source iterator
-	source := &storeSnapshotSource{s: s}
+	source := &storeSnapshotSource{s: s, ctx: ctx}
 	return s.engine.Snapshot(source)
 }
 
 type storeSnapshotSource struct {
-	s *VectorStore
+	s   *VectorStore
+	ctx context.Context
 }
 
 func (src *storeSnapshotSource) Iterate(fn func(storage.SnapshotItem) error) error {
@@ -387,7 +388,7 @@ func (src *storeSnapshotSource) Iterate(fn func(storage.SnapshotItem) error) err
 			dsName := ds.Name
 			diskStore := ds.DiskStore
 			item.OnSnapshot = func(backend storage.SnapshotBackend) error {
-				return diskStore.SnapshotTo(context.Background(), backend, dsName)
+				return diskStore.SnapshotTo(src.ctx, backend, dsName)
 			}
 		}
 
@@ -433,8 +434,15 @@ func (src *storeSnapshotSource) Iterate(fn func(storage.SnapshotItem) error) err
 		approxSize += len(item.PQCodebook)
 
 		if src.s.rateLimiter != nil {
+			// Context check before rate limiting
+			select {
+			case <-src.ctx.Done():
+				return src.ctx.Err()
+			default:
+			}
+
 			startWait := time.Now()
-			_ = src.s.rateLimiter.Wait(context.Background(), approxSize)
+			_ = src.s.rateLimiter.Wait(src.ctx, approxSize)
 			metrics.SnapshotRateLimitWaitSeconds.Observe(time.Since(startWait).Seconds())
 		}
 
@@ -491,7 +499,7 @@ func (s *VectorStore) runSnapshotTicker(interval time.Duration) {
 		case <-s.stopChan:
 			return
 		case <-timer.C:
-			if err := s.Snapshot(); err != nil {
+			if err := s.Snapshot(context.Background()); err != nil {
 				metrics.SnapshotTotal.WithLabelValues("error").Inc()
 				s.logger.Error().Err(err).Msg("Scheduled snapshot failed")
 			} else {

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -76,7 +77,7 @@ func TestAsyncPersistence_EndToEnd(t *testing.T) {
 	// 3. Execute Async Write
 	// flushPutBatch expects []arrow.RecordBatch
 	// It calls rec.Retain() internaly.
-	err = s.flushPutBatch(ds, []arrow.RecordBatch{rec})
+	err = s.flushPutBatch(context.Background(), ds, []arrow.RecordBatch{rec})
 	require.NoError(t, err)
 	rec.Release() // Caller releases its own ref
 

@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -560,7 +561,7 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 			if err != nil {
 				s.logger.Error().Err(err).Msg("Failed to concatenate batches")
 				// Fallback to processing individually
-				if err := s.flushPutBatch(ds, batch); err != nil {
+				if err := s.flushPutBatch(stream.Context(), ds, batch); err != nil {
 					return err
 				}
 				batch = batch[:0]
@@ -569,7 +570,7 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 		}
 
 		// Flush single combined batch
-		err := s.flushPutBatch(ds, []arrow.RecordBatch{combined})
+		err := s.flushPutBatch(stream.Context(), ds, []arrow.RecordBatch{combined})
 		combined.Release()
 		if err != nil {
 			return err
@@ -593,7 +594,7 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 		if len(batch) == 0 && recSize >= maxBatchBytes {
 			rec.Retain()
 			metrics.DoPutBatchSizeBytes.Observe(float64(recSize))
-			if err := s.flushPutBatch(ds, []arrow.RecordBatch{rec}); err != nil {
+			if err := s.flushPutBatch(stream.Context(), ds, []arrow.RecordBatch{rec}); err != nil {
 				rec.Release()
 				return err
 			}
@@ -642,7 +643,7 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 }
 
 // flushPutBatch handles writing a batch of records to WAL and memory
-func (s *VectorStore) flushPutBatch(ds *Dataset, batch []arrow.RecordBatch) error {
+func (s *VectorStore) flushPutBatch(ctx context.Context, ds *Dataset, batch []arrow.RecordBatch) error {
 	if len(batch) == 0 {
 		return nil
 	}
@@ -664,7 +665,11 @@ func (s *VectorStore) flushPutBatch(ds *Dataset, batch []arrow.RecordBatch) erro
 
 		// Wait loop
 		for s.CheckIngestionBackpressure() {
-			<-ticker.C
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-ticker.C:
+			}
 		}
 	}
 
@@ -679,13 +684,23 @@ func (s *VectorStore) flushPutBatch(ds *Dataset, batch []arrow.RecordBatch) erro
 
 		// 1. Send to Persistence (Backpressure if full to ensure durability logic isn't overrun)
 		// If queue is full, we block. This throttles client if disk is slow.
-		s.persistenceQueue <- persistenceJob{datasetName: name, batch: rec, ts: ts}
+		select {
+		case s.persistenceQueue <- persistenceJob{datasetName: name, batch: rec, ts: ts}:
+		case <-ctx.Done():
+			rec.Release() // Release both retains on cancellation
+			rec.Release()
+			return ctx.Err()
+		}
 
 		// 2. Send to Ingestion
 		// Increment pending ingestion count
 		ds.PendingIngestion.Add(1)
 
-		s.ingestionQueue.PushBlocking(ingestionJob{datasetName: name, batch: rec, ts: ts}, 5*time.Second)
+		if !s.ingestionQueue.PushBlocking(ingestionJob{datasetName: name, batch: rec, ts: ts}, 5*time.Second) {
+			// If PushBlocking fails (timeout or stop), we must adjust PendingIngestion
+			ds.PendingIngestion.Add(-1)
+			return errors.New("failed to enqueue ingestion job (timeout or queue closed)")
+		}
 	}
 
 	return nil
@@ -699,8 +714,17 @@ func (s *VectorStore) StoreRecordBatch(ctx context.Context, name string, rec arr
 	rec.Retain() // For Ingestion
 	metrics.IngestionLagCount.Add(float64(rec.NumRows()))
 
-	s.persistenceQueue <- persistenceJob{datasetName: name, batch: rec, ts: ts}
-	s.ingestionQueue.PushBlocking(ingestionJob{datasetName: name, batch: rec, ts: ts}, 5*time.Second)
+	select {
+	case s.persistenceQueue <- persistenceJob{datasetName: name, batch: rec, ts: ts}:
+	case <-ctx.Done():
+		rec.Release()
+		rec.Release()
+		return ctx.Err()
+	}
+
+	if !s.ingestionQueue.PushBlocking(ingestionJob{datasetName: name, batch: rec, ts: ts}, 5*time.Second) {
+		return errors.New("failed to enqueue ingestion job")
+	}
 
 	return nil
 }

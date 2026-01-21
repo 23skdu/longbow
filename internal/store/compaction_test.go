@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"testing"
 
 	"github.com/apache/arrow-go/v18/arrow"
@@ -9,9 +10,11 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	qry "github.com/23skdu/longbow/internal/query"
+	"go.uber.org/goleak"
 )
 
 func TestIdentifyCompactionCandidates(t *testing.T) {
+	t.Cleanup(func() { goleak.VerifyNone(t) })
 	mem := memory.NewGoAllocator()
 	schema := arrow.NewSchema([]arrow.Field{{Name: "id", Type: arrow.PrimitiveTypes.Int64}}, nil)
 
@@ -83,6 +86,7 @@ func TestIdentifyCompactionCandidates(t *testing.T) {
 }
 
 func TestCompactRecords_Basic(t *testing.T) {
+	t.Cleanup(func() { goleak.VerifyNone(t) })
 	mem := memory.NewGoAllocator()
 	schema := arrow.NewSchema([]arrow.Field{
 		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
@@ -109,7 +113,7 @@ func TestCompactRecords_Basic(t *testing.T) {
 	defer b3.Release()
 
 	// 1. Test standard merge (no tombstones)
-	compacted, remapping := compactRecords(mem, schema, batches, nil, 100, "test", nil, 0.0)
+	compacted, remapping := compactRecords(context.Background(), mem, schema, batches, nil, 100, "test", nil, 0.0)
 
 	assert.Len(t, compacted, 1)
 	assert.Equal(t, int64(30), compacted[0].NumRows())
@@ -133,7 +137,7 @@ func TestCompactRecords_Basic(t *testing.T) {
 	tomb3.Set(9) // Delete ID 29 (last row of b3)
 	tombstones[2] = tomb3
 
-	compacted, remapping = compactRecords(mem, schema, batches, tombstones, 100, "test", nil, 0.0)
+	compacted, remapping = compactRecords(context.Background(), mem, schema, batches, tombstones, 100, "test", nil, 0.0)
 
 	assert.Len(t, compacted, 1)
 	assert.Equal(t, int64(27), compacted[0].NumRows()) // 30 - 3 = 27

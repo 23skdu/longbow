@@ -1222,8 +1222,12 @@ func (h *ArrowHNSW) pruneConnectionsLocked(ctx *ArrowSearchContext, data *GraphD
 
 				nVecSQ8Chunk := data.GetVectorsSQ8Chunk(nCID)
 				if nVecSQ8Chunk != nil && offRem+dims <= len(nVecSQ8Chunk) {
-					d := simd.EuclideanDistanceSQ8(nodeSQ8, nVecSQ8Chunk[offRem:offRem+dims])
-					dists[i] = float32(d)
+					d, err := simd.EuclideanDistanceSQ8(nodeSQ8, nVecSQ8Chunk[offRem:offRem+dims])
+					if err != nil {
+						dists[i] = math.MaxFloat32
+					} else {
+						dists[i] = float32(d)
+					}
 				} else {
 					dists[i] = math.MaxFloat32
 				}
@@ -1267,7 +1271,12 @@ func (h *ArrowHNSW) pruneConnectionsLocked(ctx *ArrowSearchContext, data *GraphD
 
 			// Compute distance once for initial Candidate
 			if okNode && okVec {
-				dists[i] = simd.DistFunc(nodeVec, vec)
+				d, err := simd.DistFunc(nodeVec, vec)
+				if err != nil {
+					dists[i] = math.MaxFloat32
+				} else {
+					dists[i] = d
+				}
 			} else {
 				dists[i] = math.MaxFloat32 // Push to bottom if invalid type
 			}

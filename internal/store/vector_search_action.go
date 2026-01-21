@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"sync"
 	"time"
 
 	lbmem "github.com/23skdu/longbow/internal/memory"
@@ -19,12 +18,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// Global zero-alloc parser pool for VectorSearch
-var vectorSearchParserPool = sync.Pool{
-	New: func() interface{} {
-		return query.NewZeroAllocVectorSearchParser(768)
-	},
-}
+// No longer using global pool here, moved to VectorStore
 
 // handleVectorSearchAction handles the VectorSearch DoAction request
 func (s *VectorStore) handleVectorSearchAction(action *flight.Action, stream flight.FlightService_DoActionServer) error {
@@ -37,8 +31,8 @@ func (s *VectorStore) handleVectorSearchAction(action *flight.Action, stream fli
 	var req query.VectorSearchRequest
 	var parseErr error
 
-	parser := vectorSearchParserPool.Get().(*query.ZeroAllocVectorSearchParser)
-	defer vectorSearchParserPool.Put(parser)
+	parser := s.vectorSearchParserPool.Get().(*query.ZeroAllocVectorSearchParser)
+	defer s.vectorSearchParserPool.Put(parser)
 
 	req, parseErr = parser.Parse(action.Body)
 	if parseErr != nil {

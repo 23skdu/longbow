@@ -494,14 +494,16 @@ func (e *FilterEvaluator) MatchesBatch(rowIndices []int) []int {
 
 // MatchesAll evaluates all filters on the entire batch using SIMD and returns matching row indices.
 // This is optimal for dense scans.
-func (e *FilterEvaluator) MatchesAll(batchLen int) []int {
+// MatchesAll evaluates all filters on the entire batch using SIMD and returns matching row indices.
+// This is optimal for dense scans.
+func (e *FilterEvaluator) MatchesAll(batchLen int) ([]int, error) {
 	if len(e.ops) == 0 {
 		// Return all indices
 		indices := make([]int, batchLen)
 		for i := 0; i < batchLen; i++ {
 			indices[i] = i
 		}
-		return indices
+		return indices, nil
 	}
 
 	// Allocate bitmaps
@@ -519,7 +521,9 @@ func (e *FilterEvaluator) MatchesAll(batchLen int) []int {
 		for i := 1; i < len(e.ops); i++ {
 			e.ops[i].MatchBitmap(tmp)
 			// Intersect (AND)
-			simd.AndBytes(bitmap, tmp)
+			if err := simd.AndBytes(bitmap, tmp); err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -530,7 +534,7 @@ func (e *FilterEvaluator) MatchesAll(batchLen int) []int {
 			indices = append(indices, i)
 		}
 	}
-	return indices
+	return indices, nil
 }
 
 // Reset binds the evaluator to a new record batch, reusing the existing filter operations.
@@ -594,7 +598,9 @@ func (e *FilterEvaluator) EvaluateToArrowBoolean(mem memory.Allocator, rows int)
 		tmp := make([]byte, rows)
 		for i := 1; i < len(e.ops); i++ {
 			e.ops[i].MatchBitmap(tmp)
-			simd.AndBytes(bitmap, tmp)
+			if err := simd.AndBytes(bitmap, tmp); err != nil {
+				return nil, err
+			}
 		}
 	}
 

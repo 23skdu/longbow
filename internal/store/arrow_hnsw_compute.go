@@ -12,8 +12,8 @@ import (
 
 // HNSWDistanceComputer abstracts the loop for computing distances for a batch of IDs.
 type HNSWDistanceComputer interface {
-	Compute(ids []uint32, dists []float32)
-	ComputeSingle(id uint32) float32
+	Compute(ids []uint32, dists []float32) error
+	ComputeSingle(id uint32) (float32, error)
 	Prefetch(id uint32)
 }
 
@@ -23,12 +23,12 @@ type float32Computer struct {
 	q             []float32
 	dims          int
 	paddedDims    int
-	distFunc      func([]float32, []float32) float32 // Dynamic dispatch for blocked/aligned optimizations
-	batchDistFunc func([]float32, [][]float32, []float32)
+	distFunc      DistanceFunc      // Use defined types from metric.go
+	batchDistFunc BatchDistanceFunc // Use defined types from metric.go
 	ctx           *ArrowSearchContext
 }
 
-func (c *float32Computer) Compute(ids []uint32, dists []float32) {
+func (c *float32Computer) Compute(ids []uint32, dists []float32) error {
 	// resize scratch buffer
 	if cap(c.ctx.scratchVecs) < len(ids) {
 		c.ctx.scratchVecs = make([][]float32, len(ids))
@@ -59,15 +59,18 @@ func (c *float32Computer) Compute(ids []uint32, dists []float32) {
 	}
 
 	// Compute batch
-	c.batchDistFunc(c.q, vecs, dists)
+	if err := c.batchDistFunc(c.q, vecs, dists); err != nil {
+		return err
+	}
 
 	// Post-check: Fixup missing
 	for _, i := range missingIndices {
 		dists[i] = math.MaxFloat32
 	}
+	return nil
 }
 
-func (c *float32Computer) ComputeSingle(id uint32) float32 {
+func (c *float32Computer) ComputeSingle(id uint32) (float32, error) {
 	cID := chunkID(id)
 	chunk := c.data.GetVectorsChunk(cID)
 	if chunk != nil {
@@ -77,7 +80,7 @@ func (c *float32Computer) ComputeSingle(id uint32) float32 {
 			return c.distFunc(c.q, v)
 		}
 	}
-	return math.MaxFloat32
+	return math.MaxFloat32, nil
 }
 
 func (c *float32Computer) Prefetch(id uint32) {
@@ -102,30 +105,37 @@ type sq8Computer struct {
 	scale      float32
 }
 
-func (c *sq8Computer) Compute(ids []uint32, dists []float32) {
+func (c *sq8Computer) Compute(ids []uint32, dists []float32) error {
 	for i, id := range ids {
-		dists[i] = c.ComputeSingle(id)
+		d, err := c.ComputeSingle(id)
+		if err != nil {
+			return err
+		}
+		dists[i] = d
 	}
+	return nil
 }
 
-func (c *sq8Computer) ComputeSingle(id uint32) float32 {
+func (c *sq8Computer) ComputeSingle(id uint32) (float32, error) {
 	cID := chunkID(id)
 	chunk := c.data.GetVectorsSQ8Chunk(cID)
 	if chunk != nil {
 		start := int(chunkOffset(id)) * c.paddedDims
 		if start+c.dims <= len(chunk) {
 			v := chunk[start : start+c.dims]
-			return float32(simd.EuclideanDistanceSQ8(c.querySQ8, v)) * c.scale
+			d, err := simd.EuclideanDistanceSQ8(c.querySQ8, v)
+			return float32(d) * c.scale, err
 		}
 	}
 	// Fallback to Disk
 	if c.disk != nil && int(id) < c.disk.Size() {
 		v := c.disk.GetVectorSQ8(id)
 		if v != nil && len(v) == c.dims {
-			return float32(simd.EuclideanDistanceSQ8(c.querySQ8, v)) * c.scale
+			d, err := simd.EuclideanDistanceSQ8(c.querySQ8, v)
+			return float32(d) * c.scale, err
 		}
 	}
-	return math.MaxFloat32
+	return math.MaxFloat32, nil
 }
 
 func (c *sq8Computer) Prefetch(id uint32) {
@@ -149,7 +159,7 @@ type pqComputer struct {
 	pqM          int
 }
 
-func (c *pqComputer) Compute(ids []uint32, dists []float32) {
+func (c *pqComputer) Compute(ids []uint32, dists []float32) error {
 	batchSize := len(ids)
 	requiredSize := batchSize * c.pqM
 	if cap(c.scratchCodes) < requiredSize {
@@ -173,19 +183,18 @@ func (c *pqComputer) Compute(ids []uint32, dists []float32) {
 			}
 		}
 	}
-	_ = c.pqEncoder.ADCDistanceBatch(c.adcTable, codes, dists)
+	return c.pqEncoder.ADCDistanceBatch(c.adcTable, codes, dists)
 }
 
-func (c *pqComputer) ComputeSingle(id uint32) float32 {
+func (c *pqComputer) ComputeSingle(id uint32) (float32, error) {
 	v := c.data.GetVectorPQ(id)
 	if v == nil && c.disk != nil && int(id) < c.disk.Size() {
 		v = c.disk.GetVectorPQ(id)
 	}
 	if v != nil {
-		d, _ := c.pqEncoder.ADCDistance(c.adcTable, v)
-		return d
+		return c.pqEncoder.ADCDistance(c.adcTable, v)
 	}
-	return math.MaxFloat32
+	return math.MaxFloat32, nil
 }
 
 func (c *pqComputer) Prefetch(id uint32) {
@@ -208,13 +217,18 @@ type float16Computer struct {
 	paddedDims int
 }
 
-func (c *float16Computer) Compute(ids []uint32, dists []float32) {
+func (c *float16Computer) Compute(ids []uint32, dists []float32) error {
 	for i, id := range ids {
-		dists[i] = c.ComputeSingle(id)
+		d, err := c.ComputeSingle(id)
+		if err != nil {
+			return err
+		}
+		dists[i] = d
 	}
+	return nil
 }
 
-func (c *float16Computer) ComputeSingle(id uint32) float32 {
+func (c *float16Computer) ComputeSingle(id uint32) (float32, error) {
 	cID := chunkID(id)
 	chunk := c.data.GetVectorsF16Chunk(cID)
 	if chunk != nil {
@@ -224,7 +238,7 @@ func (c *float16Computer) ComputeSingle(id uint32) float32 {
 			return simd.EuclideanDistanceF16(c.q, v)
 		}
 	}
-	return math.MaxFloat32
+	return math.MaxFloat32, nil
 }
 
 func (c *float16Computer) Prefetch(id uint32) {
@@ -244,23 +258,28 @@ type genericComputer struct {
 	data       *GraphData
 	q          []float32
 	dims       int
-	distFunc   func([]float32, []float32) float32
+	distFunc   func([]float32, []float32) (float32, error)
 	scratchVec []float32
 }
 
-func (c *genericComputer) Compute(ids []uint32, dists []float32) {
+func (c *genericComputer) Compute(ids []uint32, dists []float32) error {
 	for i, id := range ids {
-		dists[i] = c.ComputeSingle(id)
+		d, err := c.ComputeSingle(id)
+		if err != nil {
+			return err
+		}
+		dists[i] = d
 	}
+	return nil
 }
 
-func (c *genericComputer) ComputeSingle(id uint32) float32 {
+func (c *genericComputer) ComputeSingle(id uint32) (float32, error) {
 	// Use GetVectorAsFloat32Into to avoid allocation
 	v, err := c.data.GetVectorAsFloat32Into(id, c.scratchVec)
 	if err == nil {
 		return c.distFunc(c.q, v)
 	}
-	return math.MaxFloat32
+	return math.MaxFloat32, nil
 }
 
 func (c *genericComputer) Prefetch(id uint32) {
@@ -435,52 +454,106 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *GraphData, ctx *ArrowSearchContext
 	var qF32 []float32
 	var dims int
 
+	// Helper for buffer management
+	ensureF32 := func(l int) {
+		if cap(ctx.queryF32) < l {
+			ctx.queryF32 = make([]float32, l)
+		}
+		ctx.queryF32 = ctx.queryF32[:l]
+	}
+
 	switch q := queryVec.(type) {
 	case []float32:
 		qF32 = q
 		dims = len(q)
-	case []complex64:
-		// Fallback: Convert complex64 -> float32 (interleaved)
-		qF32 = make([]float32, len(q)*2)
-		for i, v := range q {
-			qF32[2*i] = real(v)
-			qF32[2*i+1] = imag(v)
-		}
-		dims = len(qF32)
-	case []complex128:
-		// Fallback: complex128 -> float32 (lossy)
-		qF32 = make([]float32, len(q)*2)
-		for i, v := range q {
-			qF32[2*i] = float32(real(v))
-			qF32[2*i+1] = float32(imag(v))
-		}
-		dims = len(qF32)
 	case []float64:
-		// Fallback: float64 -> float32 (lossy)
-		qF32 = make([]float32, len(q))
+		dims = len(q)
+		ensureF32(dims)
 		for i, v := range q {
-			qF32[i] = float32(v)
+			ctx.queryF32[i] = float32(v)
 		}
-		dims = len(qF32)
+		qF32 = ctx.queryF32
+	case []int64:
+		dims = len(q)
+		ensureF32(dims)
+		for i, v := range q {
+			ctx.queryF32[i] = float32(v)
+		}
+		qF32 = ctx.queryF32
+	case []int32:
+		dims = len(q)
+		ensureF32(dims)
+		for i, v := range q {
+			ctx.queryF32[i] = float32(v)
+		}
+		qF32 = ctx.queryF32
+	case []int16:
+		dims = len(q)
+		ensureF32(dims)
+		for i, v := range q {
+			ctx.queryF32[i] = float32(v)
+		}
+		qF32 = ctx.queryF32
 	case []int8:
-		// Fallback: int8 -> float32
-		qF32 = make([]float32, len(q))
+		dims = len(q)
+		ensureF32(dims)
 		for i, v := range q {
-			qF32[i] = float32(v)
+			ctx.queryF32[i] = float32(v)
 		}
-		dims = len(qF32)
+		qF32 = ctx.queryF32
+	case []uint64:
+		dims = len(q)
+		ensureF32(dims)
+		for i, v := range q {
+			ctx.queryF32[i] = float32(v)
+		}
+		qF32 = ctx.queryF32
+	case []uint32:
+		dims = len(q)
+		ensureF32(dims)
+		for i, v := range q {
+			ctx.queryF32[i] = float32(v)
+		}
+		qF32 = ctx.queryF32
+	case []uint16:
+		dims = len(q)
+		ensureF32(dims)
+		for i, v := range q {
+			ctx.queryF32[i] = float32(v)
+		}
+		qF32 = ctx.queryF32
+	case []uint8:
+		dims = len(q)
+		ensureF32(dims)
+		for i, v := range q {
+			ctx.queryF32[i] = float32(v)
+		}
+		qF32 = ctx.queryF32
+	case []complex64:
+		dims = len(q) * 2
+		ensureF32(dims)
+		for i, v := range q {
+			ctx.queryF32[2*i] = real(v)
+			ctx.queryF32[2*i+1] = imag(v)
+		}
+		qF32 = ctx.queryF32
+	case []complex128:
+		dims = len(q) * 2
+		ensureF32(dims)
+		for i, v := range q {
+			ctx.queryF32[2*i] = float32(real(v))
+			ctx.queryF32[2*i+1] = float32(imag(v))
+		}
+		qF32 = ctx.queryF32
 	default:
 		// Unrecoverable type mismatch
 		// We return a generic computer (likely to fail if q is nil, but better than panic)
-		// If q is nil, we should probably warn.
-		// Assuming genericComputer helps if we somehow have storage but weird query?
-		// Actually, if we hit default, q is unknown/nil.
 		return &float32Computer{data: data, dims: data.Dims, ctx: ctx}
 	}
 
 	// Select distance function with potential blocked optimization
-	var distFunc func([]float32, []float32) float32
-	var batchDistFunc func([]float32, [][]float32, []float32)
+	var distFunc func([]float32, []float32) (float32, error)
+	var batchDistFunc func([]float32, [][]float32, []float32) error
 
 	switch h.metric {
 	case MetricDotProduct:

@@ -287,7 +287,12 @@ func (h *ArrowHNSW) Search(ctx context.Context, q any, k, ef int, filter *query.
 			if i%100 == 0 && ctx.Err() != nil {
 				return nil, ctx.Err()
 			}
-			results[i].Score = refineComputer.ComputeSingle(uint32(results[i].ID))
+			d, err := refineComputer.ComputeSingle(uint32(results[i].ID))
+			if err != nil {
+				results[i].Score = math.MaxFloat32
+			} else {
+				results[i].Score = d
+			}
 		}
 		// Resort
 		sort.Slice(results, func(i, j int) bool {
@@ -314,7 +319,10 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer HNSWDistanceComp
 	// logic continues...
 
 	// Calculate entry point distance
-	entryDist := computer.ComputeSingle(entryPoint)
+	entryDist, err := computer.ComputeSingle(entryPoint)
+	if err != nil {
+		entryDist = math.MaxFloat32
+	}
 
 	// Ensure heaps are large enough for this ef
 	if ctx.candidates.cap < ef {
@@ -523,7 +531,11 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer HNSWDistanceComp
 		dists := ctx.scratchDists[:batchCount]
 
 		// Compute Distances
-		computer.Compute(ctx.scratchIDs, dists)
+		if err := computer.Compute(ctx.scratchIDs, dists); err != nil {
+			for i := range dists {
+				dists[i] = math.MaxFloat32
+			}
+		}
 
 		// Cap search to consistent node count
 		maxNodes := int(h.nodeCount.Load())
@@ -569,7 +581,11 @@ func (h *ArrowHNSW) distanceF16(q []float16.Num, id uint32, data *GraphData, _ *
 	if v == nil {
 		return math.MaxFloat32
 	}
-	return simd.EuclideanDistanceF16(q, v)
+	d, err := simd.EuclideanDistanceF16(q, v)
+	if err != nil {
+		return math.MaxFloat32
+	}
+	return d
 }
 
 func (h *ArrowHNSW) getVectorAny(id uint32) (any, error) {

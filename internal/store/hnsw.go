@@ -63,8 +63,8 @@ type HNSWIndex struct {
 
 	// Metric for vector distance
 	Metric        DistanceMetric
-	distFunc      func(a, b []float32) float32
-	batchDistFunc func(query []float32, vectors [][]float32, results []float32)
+	distFunc      func(a, b []float32) (float32, error)
+	batchDistFunc func(query []float32, vectors [][]float32, results []float32) error
 
 	// Cached Metrics (Curried)
 	metricInsertDuration       prometheus.Observer
@@ -121,7 +121,13 @@ func NewHNSWIndex(dataset *Dataset, opts ...*HNSWConfig) *HNSWIndex {
 	h.batchDistFunc = h.resolveBatchDistanceFunc()
 
 	// Set distance metric for the graph
-	h.Graph.Distance = h.distFunc
+	h.Graph.Distance = func(a, b []float32) float32 {
+		d, err := h.distFunc(a, b)
+		if err != nil {
+			return math.MaxFloat32
+		}
+		return d
+	}
 
 	return h
 }
@@ -215,13 +221,13 @@ func (h *HNSWIndex) SetIndexedColumns(cols []string) {
 }
 
 // resolveDistanceFunc returns the configured distance function, accounting for PQ state.
-func (h *HNSWIndex) resolveDistanceFunc() func(a, b []float32) float32 {
+func (h *HNSWIndex) resolveDistanceFunc() func(a, b []float32) (float32, error) {
 	h.pqCodesMu.RLock()
 	defer h.pqCodesMu.RUnlock()
 
 	if h.pqEnabled && h.pqEncoder != nil {
 		encoder := h.pqEncoder
-		return func(a, b []float32) float32 {
+		return func(a, b []float32) (float32, error) {
 			codesA := pq.UnpackFloat32sToBytes(a, encoder.M)
 			codesB := pq.UnpackFloat32sToBytes(b, encoder.M)
 
@@ -244,24 +250,25 @@ func (h *HNSWIndex) resolveDistanceFunc() func(a, b []float32) float32 {
 				}
 				dist += subDist
 			}
-			return float32(math.Sqrt(float64(dist)))
+			return float32(math.Sqrt(float64(dist))), nil
 		}
 	}
 
 	switch h.Metric {
 	case MetricCosine:
-		return hnsw.CosineDistance
+		return simd.CosineDistance
 	case MetricDotProduct:
 		// HNSW minimizes distance. For Dot Product (simd returns dot), we return -dot.
 		// NOTE: hnsw library might not support negative distances well in some heuristics?
 		// But strictly speaking, it just does comparisons.
 		// Assuming simd.DotProduct returns dot product (sum a*b).
 		// We negate it so higher dot product = lower "distance".
-		return func(a, b []float32) float32 {
-			return -simd.DotProduct(a, b)
+		return func(a, b []float32) (float32, error) {
+			d, err := simd.DotProduct(a, b)
+			return -d, err
 		}
 	default:
-		return hnsw.EuclideanDistance
+		return simd.EuclideanDistance
 	}
 }
 
@@ -477,7 +484,7 @@ func (h *HNSWIndex) GetDimension() uint32 {
 }
 
 // resolveBatchDistanceFunc returns the batch distance function.
-func (h *HNSWIndex) resolveBatchDistanceFunc() func(query []float32, vectors [][]float32, results []float32) {
+func (h *HNSWIndex) resolveBatchDistanceFunc() func(query []float32, vectors [][]float32, results []float32) error {
 	// For PQ, we might need a different batch function?
 	// This function seems to be used for standard float32 vectors.
 	// If PQ enabled, usage should call specialized PQ batch functions in search path.
@@ -493,11 +500,15 @@ func (h *HNSWIndex) resolveBatchDistanceFunc() func(query []float32, vectors [][
 		// HNSW Search logic usually sorts by Score Ascending (Distance).
 		// If we return raw Dot Product, we should treat it as Score Descending.
 		// However, standard interface usually returns "Distance".
-		return func(query []float32, vectors [][]float32, results []float32) {
-			simd.DotProductBatch(query, vectors, results)
+		return func(query []float32, vectors [][]float32, results []float32) error {
+			err := simd.DotProductBatch(query, vectors, results)
+			if err != nil {
+				return err
+			}
 			for i := range results {
 				results[i] = -results[i]
 			}
+			return nil
 		}
 	default:
 		return simd.EuclideanDistanceBatch
@@ -506,7 +517,13 @@ func (h *HNSWIndex) resolveBatchDistanceFunc() func(query []float32, vectors [][
 
 // GetDistanceFunc is kept for legacy/interface compatibility, returning the pre-resolved func.
 func (h *HNSWIndex) GetDistanceFunc() func(a, b []float32) float32 {
-	return h.distFunc
+	return func(a, b []float32) float32 {
+		d, err := h.distFunc(a, b)
+		if err != nil {
+			return math.MaxFloat32
+		}
+		return d
+	}
 }
 
 // EstimateMemory implements VectorIndex.

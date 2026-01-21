@@ -24,9 +24,12 @@ func cosine32FMA(a, b uintptr) (dot, normA, normB float32)
 
 // DotProductFMA computes dot product using AVX-512 FMA instructions
 // Processes 64 elements per iteration for maximum throughput
-func DotProductFMA(a, b []float32) float32 {
-	if len(a) == 0 || len(a) != len(b) {
-		return 0
+func DotProductFMA(a, b []float32) (float32, error) {
+	if len(a) != len(b) {
+		return 0, ErrDimensionMismatch
+	}
+	if len(a) == 0 {
+		return 0, nil
 	}
 
 	var sum float32
@@ -54,13 +57,16 @@ func DotProductFMA(a, b []float32) float32 {
 		sum += a[i] * b[i]
 	}
 
-	return sum
+	return sum, nil
 }
 
 // EuclideanDistanceFMA computes squared Euclidean distance using AVX-512 FMA
-func EuclideanDistanceFMA(a, b []float32) float32 {
-	if len(a) == 0 || len(a) != len(b) {
-		return 0
+func EuclideanDistanceFMA(a, b []float32) (float32, error) {
+	if len(a) != len(b) {
+		return 0, ErrDimensionMismatch
+	}
+	if len(a) == 0 {
+		return 0, nil
 	}
 
 	var sum float32
@@ -89,13 +95,16 @@ func EuclideanDistanceFMA(a, b []float32) float32 {
 		sum += diff * diff
 	}
 
-	return sum
+	return sum, nil
 }
 
 // CosineDistanceFMA computes cosine distance (1 - similarity) using AVX-512 FMA
-func CosineDistanceFMA(a, b []float32) float32 {
-	if len(a) == 0 || len(a) != len(b) {
-		return 1.0
+func CosineDistanceFMA(a, b []float32) (float32, error) {
+	if len(a) != len(b) {
+		return 0, ErrDimensionMismatch
+	}
+	if len(a) == 0 {
+		return 1.0, nil
 	}
 
 	var dotSum, normASum, normBSum float32
@@ -121,14 +130,14 @@ func CosineDistanceFMA(a, b []float32) float32 {
 	}
 
 	if normASum == 0 || normBSum == 0 {
-		return 1.0
+		return 1.0, nil
 	}
 
 	sqrtNormA := sqrt32(normASum)
 	sqrtNormB := sqrt32(normBSum)
 
 	similarity := dotSum / (sqrtNormA * sqrtNormB)
-	return 1.0 - similarity
+	return 1.0 - similarity, nil
 }
 
 // sqrt32 computes square root of float32 using Newton-Raphson

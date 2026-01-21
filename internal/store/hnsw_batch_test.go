@@ -1,6 +1,5 @@
 package store
 
-
 import (
 	"testing"
 
@@ -227,7 +226,7 @@ func BenchmarkSequential_1000Candidates(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		results := make([]float32, len(candidates))
 		for j, cand := range candidates {
-			results[j] = simd.EuclideanDistance(query, cand)
+			results[j], _ = simd.EuclideanDistance(query, cand)
 		}
 	}
 }

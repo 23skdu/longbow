@@ -31,17 +31,17 @@ func DispatchDistance[T any](metric MetricType, a, b []T) (float32, error) {
 	}()
 
 	switch k := kernel.(type) {
-	case func([]T, []T) float32:
-		return k(a, b), nil
+	case func([]T, []T) (float32, error):
+		return k(a, b)
 	case distanceFunc:
 		if va, ok := any(a).([]float32); ok {
 			vb := any(b).([]float32)
-			return k(va, vb), nil
+			return k(va, vb)
 		}
 	case distanceF16Func:
 		if va, ok := any(a).([]float16.Num); ok {
 			vb := any(b).([]float16.Num)
-			return k(va, vb), nil
+			return k(va, vb)
 		}
 	default:
 		return 0, fmt.Errorf("simd: invalid kernel type for %s: %T", dt, kernel)

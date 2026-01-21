@@ -455,11 +455,19 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 											done = true
 										case useSQ8:
 											h.quantizer.Encode(tF32, tSQ8)
-											dist = float32(h.quantizer.Distance(qSQ8, tSQ8)) * scale
+											d, err := h.quantizer.Distance(qSQ8, tSQ8)
+											if err != nil {
+												dist = math.MaxFloat32
+											} else {
+												dist = float32(d) * scale
+											}
 											done = true
 										default:
-											dist = h.distFunc(qF32, tF32)
-											done = true
+											d, err := h.distFunc(qF32, tF32)
+											if err == nil {
+												dist = d
+												done = true
+											}
 										}
 									}
 								}
@@ -469,19 +477,35 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 									switch q := qVec.(type) {
 									case []float16.Num:
 										if t, ok := tVec.([]float16.Num); ok {
-											dist = h.distFuncF16(q, t)
+											d, err := h.distFuncF16(q, t)
+											if err == nil {
+												dist = d
+												done = true
+											}
 										}
 									case []float64:
 										if t, ok := tVec.([]float64); ok {
-											dist = h.distFuncF64(q, t)
+											d, err := h.distFuncF64(q, t)
+											if err == nil {
+												dist = float32(d)
+												done = true
+											}
 										}
 									case []complex64:
 										if t, ok := tVec.([]complex64); ok {
-											dist = h.distFuncC64(q, t)
+											d, err := h.distFuncC64(q, t)
+											if err == nil {
+												dist = d
+												done = true
+											}
 										}
 									case []complex128:
 										if t, ok := tVec.([]complex128); ok {
-											dist = h.distFuncC128(q, t)
+											d, err := h.distFuncC128(q, t)
+											if err == nil {
+												dist = d
+												done = true
+											}
 										}
 									case []int8:
 										if t, ok := tVec.([]int8); ok {

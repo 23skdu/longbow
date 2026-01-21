@@ -60,7 +60,10 @@ func TrainKMeans(data []float32, n, dim, k, maxIter int) ([]float32, error) {
 
 			for c := 0; c < k; c++ {
 				cent := centroids[c*dim : (c+1)*dim]
-				dist := simd.L2Squared(vec, cent)
+				dist, err := simd.L2Squared(vec, cent)
+				if err != nil {
+					continue
+				}
 				if dist < bestDist {
 					bestDist = dist
 					bestC = c

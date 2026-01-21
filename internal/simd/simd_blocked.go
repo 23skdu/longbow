@@ -12,7 +12,7 @@ const blockedSimdThreshold = 1024
 // optimized for vectors larger than L1 cache lines or for specific instruction pipeelining.
 // It iterates in chunks to ensure data fits in L1 cache and to potentially allow
 // better prefetching efficiency.
-func DotProductFloat32Blocked(a, b []float32) float32 {
+func DotProductFloat32Blocked(a, b []float32) (float32, error) {
 	if len(a) <= blockedSimdThreshold {
 		return DotProduct(a, b)
 	}
@@ -28,19 +28,27 @@ func DotProductFloat32Blocked(a, b []float32) float32 {
 	for ; i <= len(a)-blockedSimdThreshold; i += blockedSimdThreshold {
 		chunkA := a[i : i+blockedSimdThreshold]
 		chunkB := b[i : i+blockedSimdThreshold]
-		sum += impl(chunkA, chunkB)
+		d, err := impl(chunkA, chunkB)
+		if err != nil {
+			return 0, err
+		}
+		sum += d
 	}
 
 	// Remainder
 	if i < len(a) {
-		sum += impl(a[i:], b[i:])
+		d, err := impl(a[i:], b[i:])
+		if err != nil {
+			return 0, err
+		}
+		sum += d
 	}
 
-	return sum
+	return sum, nil
 }
 
 // L2Float32Blocked calculates Euclidean distance using blocked loop processing.
-func L2Float32Blocked(a, b []float32) float32 {
+func L2Float32Blocked(a, b []float32) (float32, error) {
 	if len(a) <= blockedSimdThreshold {
 		return EuclideanDistance(a, b)
 	}
@@ -48,23 +56,30 @@ func L2Float32Blocked(a, b []float32) float32 {
 	var sum float32
 	i := 0
 	for ; i <= len(a)-blockedSimdThreshold; i += blockedSimdThreshold {
-		sum += L2SquaredFloat32(a[i:i+blockedSimdThreshold], b[i:i+blockedSimdThreshold])
+		d, err := L2SquaredFloat32(a[i:i+blockedSimdThreshold], b[i:i+blockedSimdThreshold])
+		if err != nil {
+			return 0, err
+		}
+		sum += d
 	}
 
 	// Remainder
 	if i < len(a) {
-		sum += L2SquaredFloat32(a[i:], b[i:])
+		d, err := L2SquaredFloat32(a[i:], b[i:])
+		if err != nil {
+			return 0, err
+		}
+		sum += d
 	}
 
-	return float32(math.Sqrt(float64(sum)))
+	return float32(math.Sqrt(float64(sum))), nil
 }
 
 // EuclideanDistanceTiledBatch calculates distances for multiple vectors by tiling the dimension loop.
 // This keeps chunks of the query vector in L1/L2 cache while processing multiple data vectors.
-func EuclideanDistanceTiledBatch(query []float32, vectors [][]float32, results []float32) {
+func EuclideanDistanceTiledBatch(query []float32, vectors [][]float32, results []float32) error {
 	if len(query) <= blockedSimdThreshold {
-		EuclideanDistanceBatch(query, vectors, results)
-		return
+		return EuclideanDistanceBatch(query, vectors, results)
 	}
 
 	metrics.SimdTiledDistanceBatchTotal.Inc()
@@ -88,7 +103,11 @@ func EuclideanDistanceTiledBatch(query []float32, vectors [][]float32, results [
 		// Inner loop over vectors
 		for j := 0; j < numVecs; j++ {
 			vTile := vectors[j][i:end]
-			results[j] += L2SquaredFloat32(qTile, vTile)
+			d, err := L2SquaredFloat32(qTile, vTile)
+			if err != nil {
+				return err
+			}
+			results[j] += d
 		}
 	}
 
@@ -96,13 +115,13 @@ func EuclideanDistanceTiledBatch(query []float32, vectors [][]float32, results [
 	for i := range results {
 		results[i] = float32(math.Sqrt(float64(results[i])))
 	}
+	return nil
 }
 
 // DotProductTiledBatch calculates dot products for multiple vectors by tiling the dimension loop.
-func DotProductTiledBatch(query []float32, vectors [][]float32, results []float32) {
+func DotProductTiledBatch(query []float32, vectors [][]float32, results []float32) error {
 	if len(query) <= blockedSimdThreshold {
-		DotProductBatch(query, vectors, results)
-		return
+		return DotProductBatch(query, vectors, results)
 	}
 
 	// Initialize results to zero
@@ -124,7 +143,12 @@ func DotProductTiledBatch(query []float32, vectors [][]float32, results []float3
 
 		// Inner loop over vectors
 		for j := 0; j < numVecs; j++ {
-			results[j] += impl(qTile, vectors[j][i:end])
+			d, err := impl(qTile, vectors[j][i:end])
+			if err != nil {
+				return err
+			}
+			results[j] += d
 		}
 	}
+	return nil
 }

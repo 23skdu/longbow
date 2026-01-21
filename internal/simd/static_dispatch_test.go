@@ -19,7 +19,8 @@ func TestStaticDispatch_Euclidean(t *testing.T) {
 	expected := float32(math.Sqrt(20))
 
 	// Call via the static function pointer
-	result := DistFunc(a, b)
+	result, err := DistFunc(a, b)
+	assert.NoError(t, err)
 
 	assert.InDelta(t, expected, result, 0.0001, "Distance calculation should be correct")
 }

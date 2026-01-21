@@ -92,17 +92,17 @@ func (t *GCTuner) tune(heapInUse uint64) {
 
 	// Simple Logic:
 	// < 50% usage -> HighGOGC (Relaxed GC)
-	// > 90% usage -> LowGOGC (Aggressive GC)
+	// > 80% usage -> LowGOGC (Aggressive GC)
 	// In-between  -> Linear interpolation
 	switch {
 	case ratio < 0.5:
 		targetGOGC = t.highGOGC
-	case ratio > 0.9:
+	case ratio > 0.8:
 		targetGOGC = t.lowGOGC
 	default:
-		// Interpolate: 0.5 -> High, 0.9 -> Low
-		// Slope = (Low - High) / (0.9 - 0.5)
-		slope := float64(t.lowGOGC-t.highGOGC) / 0.4
+		// Interpolate: 0.5 -> High, 0.8 -> Low
+		// Slope = (Low - High) / (0.8 - 0.5)
+		slope := float64(t.lowGOGC-t.highGOGC) / 0.3
 		targetGOGC = t.highGOGC + int(slope*(ratio-0.5))
 	}
 

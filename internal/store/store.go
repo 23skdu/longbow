@@ -20,6 +20,7 @@ import (
 	"github.com/23skdu/longbow/internal/gc"
 	"github.com/23skdu/longbow/internal/mesh"
 	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/query"
 	"github.com/23skdu/longbow/internal/storage"
 )
 
@@ -106,6 +107,9 @@ type VectorStore struct {
 
 	// Adaptive GC Controller (optional)
 	gcController *gc.AdaptiveGCController
+
+	// Parser pool for vector search
+	vectorSearchParserPool sync.Pool
 }
 
 type ingestionJob struct {
@@ -165,6 +169,14 @@ func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes 
 
 	// Start default index worker (1 thread)
 	s.StartIndexingWorkers(1)
+	s.StartIngestionWorkers(1)
+
+	// Initialize parser pool
+	s.vectorSearchParserPool = sync.Pool{
+		New: func() interface{} {
+			return query.NewZeroAllocVectorSearchParser(768, s.logger)
+		},
+	}
 
 	return s
 }

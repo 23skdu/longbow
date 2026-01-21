@@ -228,11 +228,11 @@ func run() error {
 		tuner := lbmem.NewGCTuner(cfg.MaxMemory, cfg.GOGC, 10, &logger)
 		tuner.IsAggressive = true
 		// Run in background, tied to ctx (stops on signal)
-		go tuner.Start(ctx, 100*time.Millisecond)
+		go tuner.Start(ctx, 500*time.Millisecond)
 		logger.Info().
 			Int64("limit_bytes", cfg.MaxMemory).
 			Int("high_gogc", cfg.GOGC).
-			Msg("Aggressive GOGC Tuner started (100ms interval, arena-aware)")
+			Msg("Aggressive GOGC Tuner started (500ms interval, arena-aware)")
 	} else if cfg.GOGC != 100 {
 		debug.SetGCPercent(cfg.GOGC)
 		logger.Info().Int("value", cfg.GOGC).Msg("GOGC tuned (static)")

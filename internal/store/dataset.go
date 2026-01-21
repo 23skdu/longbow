@@ -10,6 +10,7 @@ import (
 	"time"
 
 	qry "github.com/23skdu/longbow/internal/query"
+	"github.com/rs/zerolog"
 
 	"github.com/23skdu/longbow/internal/pq"
 	"github.com/apache/arrow-go/v18/arrow"
@@ -102,6 +103,8 @@ type Dataset struct {
 	// Filter Cache: maps filter hash -> Bitset
 	filterCache map[string]*qry.Bitset
 	filterMu    sync.RWMutex
+
+	Logger zerolog.Logger
 }
 
 // IsSharded returns true if the dataset uses ShardedHNSW.

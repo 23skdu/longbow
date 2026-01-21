@@ -57,17 +57,19 @@ class LongbowClient:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
 
-    def _get_call_options(self):
+    def _get_call_options(self, timeout: Optional[float] = None):
         call_headers = []
         for k, v in self.headers.items():
             call_headers.append((k.encode('utf-8'), v.encode('utf-8')))
         
         if self.api_key:
             call_headers.append((b"authorization", f"Bearer {self.api_key}".encode('utf-8')))
-            
+        
+        if timeout is not None:
+            return flight.FlightCallOptions(headers=call_headers, timeout=timeout)
         return flight.FlightCallOptions(headers=call_headers)
 
-    def insert(self, dataset: str, data: Union[pd.DataFrame, List[Dict]], batch_size: int = 10000) -> None:
+    def insert(self, dataset: str, data: Union[pd.DataFrame, List[Dict]], batch_size: int = 10000, timeout: float = 30.0) -> None:
         """
         Insert vectors into a dataset.
         
@@ -75,24 +77,37 @@ class LongbowClient:
             dataset: Name of the target dataset.
             data: Data to insert (Pandas DataFrame or List of Dicts).
             batch_size: Batch size for upload chunks.
+            timeout: Timeout in seconds for the upload operation (default: 30.0).
         """
         if self._data_client is None:
             self.connect()
 
         # Handle other types
         table = to_arrow_table(data)
-        self._upload_batch(dataset, table)
+        self._upload_batch(dataset, table, timeout=timeout)
 
-    def _upload_batch(self, dataset: str, data: Union[pd.DataFrame, List[Dict], pa.Table]):
-        """Internal helper to upload a materialized batch."""
+    def _upload_batch(self, dataset: str, data: Union[pd.DataFrame, List[Dict], pa.Table], timeout: float = 30.0):
+        """Internal helper to upload a materialized batch with timeout."""
         if isinstance(data, pa.Table):
             table = data
         else:
             table = to_arrow_table(data)
         descriptor = flight.FlightDescriptor.for_path(dataset)
-        writer, _ = self._data_client.do_put(descriptor, table.schema, options=self._get_call_options())
+        call_opts = self._get_call_options(timeout=timeout)
+        writer, reader = self._data_client.do_put(descriptor, table.schema, options=call_opts)
         writer.write_table(table)
-        writer.close()
+        writer.done_writing()  # Signal completion without blocking
+        
+        # Read server acknowledgment if available
+        try:
+            # FlightMetadataReader.read() returns metadata, not iterable
+            _ = reader.read()
+        except (StopIteration, AttributeError):
+            pass  # No response or reader doesn't support read()
+        except Exception as e:
+            # Log but don't fail - data was already sent
+            logger.debug(f"Could not read server response (non-critical): {e}")
+        
         logger.debug(f"Uploaded batch of {table.num_rows} rows to {dataset}")
 
     def search(

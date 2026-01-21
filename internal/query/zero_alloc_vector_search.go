@@ -60,7 +60,6 @@ func (p *ZeroAllocVectorSearchParser) Parse(data []byte) (VectorSearchRequest, e
 
 		if data[i] == '}' {
 			// Copy vector to result (shares backing array)
-			p.logger.Debug().Int("filter_count", len(p.filters)).Msg("DEBUG PARSER: End of object")
 			p.result.Vector = p.vector
 			if len(p.filters) > 0 {
 				p.result.Filters = make([]Filter, len(p.filters))
@@ -68,7 +67,6 @@ func (p *ZeroAllocVectorSearchParser) Parse(data []byte) (VectorSearchRequest, e
 			} else {
 				p.result.Filters = nil
 			}
-			p.logger.Debug().Interface("filters", p.result.Filters).Msg("DEBUG PARSER: Returning results")
 			return p.result, nil
 		}
 
@@ -111,7 +109,6 @@ func (p *ZeroAllocVectorSearchParser) Parse(data []byte) (VectorSearchRequest, e
 			}
 			i = newPos
 		case "filters":
-			p.logger.Debug().Msg("DEBUG PARSER: Found filters key!")
 			newPos, err := p.parseFilters(data, i)
 			if err != nil {
 				return p.result, err

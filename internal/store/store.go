@@ -198,11 +198,11 @@ func (s *VectorStore) CheckIngestionBackpressure() bool {
 
 	// 2. Queue Pressure
 	// If ingestion queue is > 80% full, throttle.
-	// Capacity is 16384 (hardcoded in NewVectorStore).
-	// Capacity is 256
-	const queueCap = 256
-	if s.ingestionQueue != nil && s.ingestionQueue.Len() > (queueCap*80)/100 {
-		return true
+	if s.ingestionQueue != nil {
+		cap := s.ingestionQueue.Capacity()
+		if s.ingestionQueue.Len() > (cap*80)/100 {
+			return true
+		}
 	}
 
 	return false

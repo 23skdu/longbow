@@ -451,6 +451,7 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 	// Use RCU helper for create
 	ds, created := s.getOrCreateDataset(name, func() *Dataset {
 		ds := NewDataset(name, r.Schema())
+		ds.Logger = s.logger
 		ds.Topo = s.numaTopology
 
 		// Disk Store Initialization (Phase 6)
@@ -712,10 +713,11 @@ func (s *VectorStore) flushPutBatch(ctx context.Context, ds *Dataset, batch []ar
 func (s *VectorStore) StoreRecordBatch(ctx context.Context, name string, rec arrow.RecordBatch) error {
 	ts := time.Now().UnixNano()
 
-	ds, ok := s.getDataset(name)
-	if !ok {
-		return fmt.Errorf("dataset %s not found", name)
-	}
+	ds, _ := s.getOrCreateDataset(name, func() *Dataset {
+		d := NewDataset(name, rec.Schema())
+		d.Logger = s.logger
+		return d
+	})
 
 	rec.Retain() // For Persistence
 	rec.Retain() // For Ingestion
@@ -904,7 +906,8 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 	rec.Retain() // Dataset holds a reference
 
 	// Increment pending jobs count while holding lock to ensure compaction sees it
-	ds.PendingIndexJobs.Add(1)
+	// CRITICAL: Must increment by row count to match decrement in runIndexWorker
+	ds.PendingIndexJobs.Add(rec.NumRows())
 
 	// Record NUMA node
 	currCPU := GetCurrentCPU()

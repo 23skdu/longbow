@@ -56,6 +56,7 @@ func (s *VectorStore) evictDataset(name string) {
 func (s *VectorStore) PrewarmDataset(name string, schema *arrow.Schema) {
 	_, created := s.getOrCreateDataset(name, func() *Dataset {
 		ds := NewDataset(name, schema)
+		ds.Logger = s.logger
 		ds.Topo = s.numaTopology
 
 		// Initialize index immediately used default config or a simplified one

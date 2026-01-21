@@ -68,11 +68,13 @@ func NewAutoShardingIndex(ds *Dataset, config AutoShardingConfig) *AutoShardingI
 		// Use HNSW2 default config if enabled
 		hnswConfig := DefaultArrowHNSWConfig()
 		hnswConfig.Metric = ds.Metric
+		hnswConfig.Logger = ds.Logger
 		idx = NewArrowHNSW(ds, hnswConfig, nil)
 	default:
 		// Use ArrowHNSW as default for better performance (parallelism, batching)
 		hnswConfig := DefaultArrowHNSWConfig()
 		hnswConfig.Metric = ds.Metric
+		hnswConfig.Logger = ds.Logger
 		idx = NewArrowHNSW(ds, hnswConfig, nil)
 	}
 

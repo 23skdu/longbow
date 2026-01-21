@@ -7,6 +7,7 @@ CGO_ENABLED=0 go build -tags=nogpu -o bin/longbow ./cmd/longbow
 
 # Create data directories
 mkdir -p data/node1 data/node2 data/node3
+mkdir -p data/node1/snapshots_tmp data/node2/snapshots_tmp data/node3/snapshots_tmp
 
 # Pre-flight cleanup for metrics ports
 echo "Checking for stale metrics processes on 9090-9092..."

@@ -28,11 +28,35 @@ type slab struct {
 	offset uint32 // current allocation pointer (relative to slab)
 }
 
+// ArenaStats holds memory usage information about the arena.
+type ArenaStats struct {
+	TotalCapacity int64
+	UsedBytes     int64
+}
+
 // SlabArena manages large blocks of memory.
 type SlabArena struct {
 	mu      sync.Mutex              // Only guards Alloc (writes)
 	slabs   atomic.Pointer[[]*slab] // Lock-free access to slabs slice
 	slabCap uint32                  // capacity in BYTES
+}
+
+// Stats returns the total capacity and used bytes in the arena.
+func (a *SlabArena) Stats() ArenaStats {
+	slabsPtr := a.slabs.Load()
+	if slabsPtr == nil {
+		return ArenaStats{}
+	}
+	slabs := *slabsPtr
+	stats := ArenaStats{
+		TotalCapacity: int64(len(slabs)) * int64(a.slabCap),
+	}
+	// Note: We need to sum up used portions. This is a bit slow but okay for tuning.
+	// For production, we might want to track this atomically.
+	for _, s := range slabs {
+		stats.UsedBytes += int64(s.offset)
+	}
+	return stats
 }
 
 // NewSlabArena creates a new arena with specified slab byte size.
@@ -48,6 +72,10 @@ func NewSlabArena(slabSizeBytes int) *SlabArena {
 	// Initialize with empty slice
 	empty := make([]*slab, 0)
 	s.slabs.Store(&empty)
+
+	// Register with global registry for GC tuning
+	RegisterArena(s)
+
 	return s
 }
 

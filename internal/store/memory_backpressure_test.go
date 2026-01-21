@@ -160,8 +160,8 @@ func TestMemoryBackpressure_SoftPressureSlowdown(t *testing.T) {
 
 func TestMemoryBackpressure_BackgroundUpdate(t *testing.T) {
 	cfg := BackpressureConfig{
-		SoftLimitBytes: 1 << 30, // 1GB
-		HardLimitBytes: 2 << 30, // 2GB
+		SoftLimitBytes: 10 << 30, // 10GB
+		HardLimitBytes: 20 << 30, // 20GB
 		CheckInterval:  10 * time.Millisecond,
 	}
 
@@ -171,6 +171,7 @@ func TestMemoryBackpressure_BackgroundUpdate(t *testing.T) {
 
 	// Start background monitoring
 	ctrl.Start(ctx)
+	defer ctrl.Stop()
 
 	// 1. Manually force Hard Pressure
 	ctrl.SetPressureLevel(PressureHard)

@@ -138,12 +138,7 @@ func (ca *CompactableArena[T]) Compact(liveRefs []SliceRef) ([]SliceRef, *Compac
 	// We need to return the new references
 	// The compaction allocated in the same order, so we can reconstruct
 	newRefs := make([]SliceRef, len(liveRefs))
-	for i, oldRef := range liveRefs {
-		// Allocate again to get the new offset (already allocated in CompactArena)
-		// Actually, we need to track the mapping during compaction
-		// For now, return the same structure but note that offsets have changed
-		newRefs[i] = oldRef // Caller must re-query or we need to return mapping
-	}
+	copy(newRefs, liveRefs)
 
 	return newRefs, stats, nil
 }

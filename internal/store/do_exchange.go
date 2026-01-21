@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"encoding/binary"
 	"encoding/json"
 	"io"
@@ -85,7 +86,7 @@ func (s *VectorStore) DoExchange(stream flight.FlightService_DoExchangeServer) e
 				FlightService_DoExchangeServer: stream,
 				firstMsg:                       firstMsg,
 			}
-			return s.handleDoExchangeIngest(datasetName, wrappedStream)
+			return s.handleDoExchangeIngest(stream.Context(), datasetName, wrappedStream)
 		}
 	}
 
@@ -268,6 +269,7 @@ func (s *VectorStore) DoExchange(stream flight.FlightService_DoExchangeServer) e
 
 // handleDoExchangeIngest processes valid record batches and sends ACKs back.
 func (s *VectorStore) handleDoExchangeIngest(
+	ctx context.Context,
 	name string,
 	readerSource interface {
 		Recv() (*flight.FlightData, error)
@@ -333,7 +335,7 @@ func (s *VectorStore) handleDoExchangeIngest(
 		rec := r.RecordBatch()
 
 		// Ingest
-		if err := s.flushPutBatch(ds, []arrow.RecordBatch{rec}); err != nil {
+		if err := s.flushPutBatch(ctx, ds, []arrow.RecordBatch{rec}); err != nil {
 			return status.Errorf(codes.Internal, "flush failed: %v", err)
 		}
 

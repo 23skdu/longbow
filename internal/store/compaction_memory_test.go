@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -58,7 +59,7 @@ func TestCompactDataset_InsufficientMemory(t *testing.T) {
 	// Enable compaction config target
 	s.compactionConfig.TargetBatchSize = 100
 
-	err := s.CompactDataset("heavy_dataset")
+	err := s.CompactDataset(context.Background(), "heavy_dataset")
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "insufficient memory headroom")

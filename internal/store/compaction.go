@@ -156,6 +156,17 @@ func (w *CompactionWorker) Stats() CompactionStats {
 func (w *CompactionWorker) run() {
 	defer close(w.doneCh)
 
+	// Create a context that is cancelled when stopCh is closed
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		select {
+		case <-w.stopCh:
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+
 	ticker := time.NewTicker(w.config.CompactionInterval)
 	defer ticker.Stop()
 
@@ -180,7 +191,7 @@ func (w *CompactionWorker) run() {
 				}
 				// Non-blocking attempt to compact
 				start := time.Now()
-				if err := w.store.CompactDataset(ds.Name); err == nil {
+				if err := w.store.CompactDataset(ctx, ds.Name); err == nil {
 					duration := time.Since(start).Seconds()
 					metrics.CompactionDurationSeconds.WithLabelValues(ds.Name, "periodic").Observe(duration)
 					w.compactionsRun.Add(1)
@@ -191,7 +202,7 @@ func (w *CompactionWorker) run() {
 
 				// Run Vacuum (Graph Compaction)
 				// We do this separately. It handles graph edges pointing to deleted nodes.
-				if err := w.store.VacuumDataset(ds.Name); err != nil {
+				if err := w.store.VacuumDataset(ctx, ds.Name); err != nil {
 					w.store.logger.Warn().Err(err).Str("dataset", ds.Name).Msg("Failed to vacuum dataset during compaction")
 				}
 			})
@@ -202,7 +213,7 @@ func (w *CompactionWorker) run() {
 				continue
 			}
 			start := time.Now()
-			if err := w.store.CompactDataset(dsName); err == nil {
+			if err := w.store.CompactDataset(ctx, dsName); err == nil {
 				duration := time.Since(start).Seconds()
 				metrics.CompactionDurationSeconds.WithLabelValues(dsName, "triggered").Observe(duration)
 				w.compactionsRun.Add(1)
@@ -317,7 +328,7 @@ type BatchRemapInfo struct {
 
 // compactRecords returns a NEW slice of RecordBatches and a remapping table.
 // It DOES NOT Modify the input slice.
-func compactRecords(pool memory.Allocator, schema *arrow.Schema, records []arrow.RecordBatch, tombstones map[int]*qry.Bitset, targetSize int64, datasetName string, limiter *RateLimiter, fragThreshold float64) (compacted []arrow.RecordBatch, remap map[int]BatchRemapInfo) {
+func compactRecords(ctx context.Context, pool memory.Allocator, schema *arrow.Schema, records []arrow.RecordBatch, tombstones map[int]*qry.Bitset, targetSize int64, datasetName string, limiter *RateLimiter, fragThreshold float64) (compacted []arrow.RecordBatch, remap map[int]BatchRemapInfo) {
 	if schema == nil && len(records) > 0 {
 		schema = records[0].Schema()
 	}
@@ -359,8 +370,15 @@ func compactRecords(pool memory.Allocator, schema *arrow.Schema, records []arrow
 			// Let's treat targetSize as rows and assume 100 bytes/row.
 			bytesEstimate := int(cand.TotalRow * 100)
 
+			// Context check before rate limiting
+			select {
+			case <-ctx.Done():
+				return nil, nil
+			default:
+			}
+
 			startWait := time.Now()
-			_ = limiter.Wait(context.Background(), bytesEstimate)
+			_ = limiter.Wait(ctx, bytesEstimate)
 			metrics.CompactionRateLimitWaitSeconds.Observe(time.Since(startWait).Seconds())
 		}
 

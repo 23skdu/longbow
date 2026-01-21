@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -45,7 +46,7 @@ func TestGraphPersistence_SnapshotRecovery(t *testing.T) {
 	assert.Equal(t, 1, ds.Graph.EdgeCount())
 
 	// 3. Snapshot
-	err = store.Snapshot()
+	err = store.Snapshot(context.Background())
 	require.NoError(t, err)
 
 	// 4. Close

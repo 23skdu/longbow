@@ -1,18 +1,18 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/pprof" // Register pprof handlers manually
 	"os"
 	"os/signal"
+	"strconv" // Added for hostname fallback
 	"strings"
 	"sync"
 	"syscall"
 	"time"
-
-	"context"
-	"strconv" // Added for hostname fallback
 
 	"runtime"
 	"runtime/debug"
@@ -180,8 +180,9 @@ func run() error {
 	defer stop()
 
 	if err := envconfig.Process("LONGBOW", &globalCfg); err != nil {
-		// Fallback to basic logging if config fails
-		panic("Failed to process config: " + err.Error())
+		stop()
+		fmt.Fprintf(os.Stderr, "Failed to process config: %v\n", err)
+		os.Exit(1)
 	}
 	cfg := globalCfg
 
@@ -191,11 +192,15 @@ func run() error {
 		Level:  cfg.LogLevel,
 	})
 	if err != nil {
-		panic("Failed to initialize logger: " + err.Error())
+		stop()
+		fmt.Fprintf(os.Stderr, "Failed to initialize logger: %v\n", err)
+		os.Exit(1)
 	}
 
 	if err := ValidateConfig(&cfg); err != nil {
-		logger.Fatal().Err(err).Msg("Invalid configuration")
+		logger.Error().Err(err).Msg("Invalid configuration")
+		fmt.Fprintf(os.Stderr, "Invalid configuration: %v\n", err)
+		os.Exit(1)
 	}
 
 	logger.Info().
@@ -221,12 +226,13 @@ func run() error {
 	// Dynamic GOGC Tuning
 	if cfg.MaxMemory > 0 {
 		tuner := lbmem.NewGCTuner(cfg.MaxMemory, cfg.GOGC, 10, &logger)
+		tuner.IsAggressive = true
 		// Run in background, tied to ctx (stops on signal)
-		go tuner.Start(ctx, 2*time.Second)
+		go tuner.Start(ctx, 100*time.Millisecond)
 		logger.Info().
 			Int64("limit_bytes", cfg.MaxMemory).
 			Int("high_gogc", cfg.GOGC).
-			Msg("Dynamic GOGC Tuner started")
+			Msg("Aggressive GOGC Tuner started (100ms interval, arena-aware)")
 	} else if cfg.GOGC != 100 {
 		debug.SetGCPercent(cfg.GOGC)
 		logger.Info().Int("value", cfg.GOGC).Msg("GOGC tuned (static)")

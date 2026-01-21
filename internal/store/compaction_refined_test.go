@@ -47,7 +47,7 @@ func TestCompactRecords_Incremental(t *testing.T) {
 	records := []arrow.RecordBatch{b1, b2, b3, b4, b5}
 	target := int64(300)
 
-	compacted, remapping := compactRecords(pool, schema, records, nil, target, "test", nil, 0.0)
+	compacted, remapping := compactRecords(context.Background(), pool, schema, records, nil, target, "test", nil, 0.0)
 
 	require.Len(t, compacted, 3)
 	require.Equal(t, int64(200), compacted[0].NumRows())
@@ -143,7 +143,7 @@ func TestCompaction_IndexIntegrity(t *testing.T) {
 
 	// 4. Trigger Compaction
 	s.compactionConfig.TargetBatchSize = 50
-	err := s.CompactDataset("test_compaction")
+	err := s.CompactDataset(context.Background(), "test_compaction")
 	require.NoError(t, err)
 
 	require.Len(t, ds.Records, 2)
@@ -198,7 +198,7 @@ func TestCompaction_Tombstones(t *testing.T) {
 
 	// Compact with target 100 (merge all 4 -> 1 batch of 40 theoretically, but with filtering it will be 38)
 	s.compactionConfig.TargetBatchSize = 100
-	err := s.CompactDataset("tombstone_test")
+	err := s.CompactDataset(context.Background(), "tombstone_test")
 	require.NoError(t, err)
 
 	require.Len(t, ds.Records, 1)

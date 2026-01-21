@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"runtime"
 	"sort"
 	"sync"
@@ -39,7 +40,7 @@ func (h *HNSWIndex) SetParallelSearchConfig(cfg ParallelSearchConfig) {
 }
 
 // processResultsParallel processes HNSW neighbors using worker pool
-func (h *HNSWIndex) processResultsParallel(query []float32, neighbors []hnsw.Node[VectorID], k int, filters []qry.Filter) []SearchResult {
+func (h *HNSWIndex) processResultsParallel(ctx context.Context, query []float32, neighbors []hnsw.Node[VectorID], k int, filters []qry.Filter) []SearchResult {
 	cfg := h.getParallelSearchConfig()
 	numWorkers := cfg.Workers
 	if numWorkers <= 0 {
@@ -48,7 +49,7 @@ func (h *HNSWIndex) processResultsParallel(query []float32, neighbors []hnsw.Nod
 
 	chunkSize := (len(neighbors) + numWorkers - 1) / numWorkers
 	if chunkSize < 50 { // Increased threshold to avoid overhead for small chunks
-		return h.processResultsSerial(query, neighbors, k, filters)
+		return h.processResultsSerial(ctx, query, neighbors, k, filters)
 	}
 
 	metrics.HnswParallelSearchSplits.WithLabelValues(h.dataset.Name).Inc()
@@ -71,7 +72,7 @@ func (h *HNSWIndex) processResultsParallel(query []float32, neighbors []hnsw.Nod
 		wg.Add(1)
 		go func(workerID int, chunk []hnsw.Node[VectorID]) {
 			defer wg.Done()
-			chunksResults[workerID] = h.processChunk(query, chunk, filters)
+			chunksResults[workerID] = h.processChunk(ctx, query, chunk, filters)
 		}(i, neighbors[start:end])
 	}
 	wg.Wait()
@@ -100,7 +101,7 @@ func (h *HNSWIndex) processResultsParallel(query []float32, neighbors []hnsw.Nod
 }
 
 // processChunk processes a chunk of HNSW neighbors
-func (h *HNSWIndex) processChunk(query []float32, neighbors []hnsw.Node[VectorID], filters []qry.Filter) []SearchResult {
+func (h *HNSWIndex) processChunk(ctx context.Context, query []float32, neighbors []hnsw.Node[VectorID], filters []qry.Filter) []SearchResult {
 	results := make([]SearchResult, 0, len(neighbors))
 
 	// Step 1: Batch location lookup
@@ -110,6 +111,14 @@ func (h *HNSWIndex) processChunk(query []float32, neighbors []hnsw.Node[VectorID
 	found := make([]bool, len(neighbors))
 
 	for i, n := range neighbors {
+		// Context check every 32 items
+		if i&31 == 0 {
+			select {
+			case <-ctx.Done():
+				return nil
+			default:
+			}
+		}
 		nodeID := n.Key
 		loc, ok := h.locationStore.Get(nodeID)
 		if ok {
@@ -140,6 +149,15 @@ func (h *HNSWIndex) processChunk(query []float32, neighbors []hnsw.Node[VectorID
 	}
 
 	for i, n := range neighbors {
+		// Context check every 32 items
+		if i&31 == 0 {
+			select {
+			case <-ctx.Done():
+				h.dataset.dataMu.RUnlock()
+				return nil
+			default:
+			}
+		}
 		if !found[i] {
 			continue
 		}
@@ -197,6 +215,13 @@ func (h *HNSWIndex) processChunk(query []float32, neighbors []hnsw.Node[VectorID
 
 		distFunc := h.GetDistanceFunc()
 		for i, v := range vecs {
+			if i&31 == 0 {
+				select {
+				case <-ctx.Done():
+					return nil
+				default:
+				}
+			}
 			if len(v) == packedLen {
 				ptr := unsafe.Pointer(&v[0])
 				src := unsafe.Slice((*byte)(ptr), m)
@@ -251,7 +276,7 @@ func (h *HNSWIndex) processChunk(query []float32, neighbors []hnsw.Node[VectorID
 }
 
 // processResultsSerial is the fallback serial implementation
-func (h *HNSWIndex) processResultsSerial(query []float32, neighbors []hnsw.Node[VectorID], k int, filters []qry.Filter) []SearchResult {
+func (h *HNSWIndex) processResultsSerial(ctx context.Context, query []float32, neighbors []hnsw.Node[VectorID], k int, filters []qry.Filter) []SearchResult {
 	distFunc := h.GetDistanceFunc()
 
 	evaluators := make(map[int]*qry.FilterEvaluator)
@@ -265,7 +290,14 @@ func (h *HNSWIndex) processResultsSerial(query []float32, neighbors []hnsw.Node[
 	res := make([]SearchResult, 0, len(neighbors))
 	count := 0
 
-	for _, n := range neighbors {
+	for i, n := range neighbors {
+		if i&31 == 0 {
+			select {
+			case <-ctx.Done():
+				return res
+			default:
+			}
+		}
 		if count >= k {
 			break
 		}

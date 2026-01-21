@@ -110,7 +110,7 @@ func FuzzPolymorphicIngestion(f *testing.F) {
 
 		// 4. Persistence Roundtrip
 		// Snapshot
-		err = store.Snapshot()
+		err = store.Snapshot(context.Background())
 		require.NoError(t, err)
 
 		_ = store.Close()

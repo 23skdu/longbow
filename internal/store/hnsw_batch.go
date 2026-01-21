@@ -188,7 +188,9 @@ func (h *HNSWIndex) computeBatchDistance(query []float32, vectors [][]float32, r
 		h.batchDistFunc(query, vectors, results)
 		return
 	}
-	simd.EuclideanDistanceBatch(query, vectors, results)
+	if err := simd.EuclideanDistanceBatch(query, vectors, results); err != nil {
+		return
+	}
 }
 
 // SearchBatch is a convenience method that calls SearchBatchOptimized.

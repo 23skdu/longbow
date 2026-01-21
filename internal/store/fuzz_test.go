@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"math/rand"
 	"testing"
 	"time"
@@ -106,7 +107,7 @@ func FuzzCompaction(f *testing.F) {
 		// looking at compaction_store.go...
 		// store.CompactDataset(ctx, dsName)
 
-		if err := store.CompactDataset(dsName); err != nil {
+		if err := store.CompactDataset(context.Background(), dsName); err != nil {
 			t.Errorf("CompactDataset failed: %v", err)
 		}
 

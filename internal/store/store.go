@@ -93,6 +93,7 @@ type VectorStore struct {
 	// Shutdown and lifecycle (Phase 6/21)
 	shutdownState int32
 	workerWg      sync.WaitGroup
+	cleanupWg     sync.WaitGroup
 
 	// hnsw2 integration hook (Phase 5)
 	// Called after dataset creation to initialize hnsw2 (avoids import cycle)
@@ -488,8 +489,10 @@ func (s *VectorStore) DropDataset(ctx context.Context, name string) error {
 			metrics.StoreDroppedDatasets.Inc()
 			metrics.StoreActiveDatasets.Set(float64(len(newMap)))
 
+			s.cleanupWg.Add(1)
 			go func() {
 				// Defer cleanup to background to avoid blocking DropDataset call (Fast Path)
+				defer s.cleanupWg.Done()
 				defer func() {
 					if r := recover(); r != nil {
 						s.logger.Error().Msgf("Panic during dataset cleanup: %v", r)

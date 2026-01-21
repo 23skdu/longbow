@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"io"
 	"sync/atomic"
 
@@ -47,6 +48,9 @@ func (m *mockPutStream) Recv() (*flight.FlightData, error) {
 	d := m.chunks[m.idx]
 	m.idx++
 	return d, nil
+}
+func (m *mockPutStream) Context() context.Context {
+	return context.Background()
 }
 
 func (m *mockPutStream) Send(*flight.PutResult) error {
@@ -97,6 +101,9 @@ func (m *mockClientStream) CloseSend() error {
 
 func (m *mockClientStream) Recv() (*flight.PutResult, error) {
 	return &flight.PutResult{}, nil
+}
+func (m *mockClientStream) Context() context.Context {
+	return context.Background()
 }
 
 // Mocks extracted for sharing

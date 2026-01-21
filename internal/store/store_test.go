@@ -17,6 +17,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"github.com/apache/arrow-go/v18/arrow/memory"
+	"go.uber.org/goleak"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
@@ -25,6 +26,14 @@ import (
 const bufSize = 1024 * 1024
 
 func setupServer(t *testing.T) (store *VectorStore, dir string, dialer func(context.Context, string) (net.Conn, error)) {
+	t.Cleanup(func() {
+		goleak.VerifyNone(t,
+			goleak.IgnoreTopFunction("google.golang.org/grpc.(*addrConn).resetTransport"),
+			goleak.IgnoreTopFunction("google.golang.org/grpc.(*ccBalancerWrapper).watcher"),
+			goleak.IgnoreTopFunction("google.golang.org/grpc/internal/resolver/dns.(*dnsResolver).watcher"),
+			goleak.IgnoreTopFunction("google.golang.org/grpc/internal/grpcsync.(*CallbackSerializer).run"),
+		)
+	})
 	lis := bufconn.Listen(bufSize)
 
 	// Create temp dir for persistence
@@ -304,7 +313,7 @@ func TestPersistence(t *testing.T) {
 	_, _ = stream.Recv()
 
 	// Force Snapshot
-	if err := vs.Snapshot(); err != nil {
+	if err := vs.Snapshot(context.Background()); err != nil {
 		t.Fatalf("Snapshot failed: %v", err)
 	}
 

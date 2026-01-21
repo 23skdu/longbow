@@ -370,6 +370,34 @@ var (
 		Help: "Total number of batches merged during compaction",
 	}, []string{"dataset"})
 
+	// Memory Subsystem Metrics
+	// ArenaMemoryBytes tracks current bytes allocated in arena pools by size
+	ArenaMemoryBytes = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "longbow_arena_memory_bytes",
+			Help: "Current bytes allocated in arena pools by size",
+		},
+		[]string{"size"}, // "4MB", "8MB", "16MB", "32MB"
+	)
+
+	// SlabFragmentationRatio tracks fragmentation ratio for slab pools (pooled/active)
+	SlabFragmentationRatio = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "longbow_slab_fragmentation_ratio",
+			Help: "Fragmentation ratio for slab pools (pooled/active)",
+		},
+		[]string{"size"},
+	)
+
+	// CompactionEventsTotal counts total number of compaction events by type
+	CompactionEventsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_compaction_events_total",
+			Help: "Total number of compaction events by type",
+		},
+		[]string{"dataset", "type"}, // type: "auto", "manual", "vacuum"
+	)
+
 	// IngestionQueueDepth tracks the current number of batches in the ingestion queue
 	IngestionQueueDepth = promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "longbow_ingestion_queue_depth",

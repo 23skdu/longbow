@@ -114,9 +114,9 @@ type VectorStore struct {
 }
 
 type ingestionJob struct {
-	datasetName string
-	batch       arrow.RecordBatch
-	ts          int64
+	ds    *Dataset
+	batch arrow.RecordBatch
+	ts    int64
 	// We might add more metadata here (e.g. span context)
 }
 
@@ -503,10 +503,15 @@ func (s *VectorStore) DropDataset(ctx context.Context, name string) error {
 				// Old readers might still hold the reference.
 				// Closing immediately *might* panic concurrent readers if not careful,
 				// but usually Dataset struct uses locks or is robust.
-				// Ideally we wait for refcount or just close underlying resources which are safe to close.
-				// Dataset.Close() typically releases Arrow memory.
+				// Ensure all pending indexing/ingestion for this dataset is finished
+				// before we decrement the global memory counter.
+				droppedDS.WaitForIndexing()
+
+				// Decrement both record batch memory AND index memory
+				totalMemory := droppedDS.SizeBytes.Load() + droppedDS.IndexMemoryBytes.Load()
+				s.currentMemory.Add(-totalMemory)
 				droppedDS.Close()
-				s.logger.Info().Str("dataset", name).Msg("Dataset dropped and resources released (async)")
+				s.logger.Info().Str("dataset", name).Int64("freed_bytes", totalMemory).Msg("Dataset dropped and resources released (async)")
 			}()
 
 			return nil

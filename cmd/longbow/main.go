@@ -328,7 +328,7 @@ func run() error {
 		}
 	}()
 
-	// Start metrics server with timeouts (G114 fix)
+	// Start metrics server with timeouts and port retry logic
 	go func() {
 		mux := http.NewServeMux()
 		mux.Handle("/metrics", promhttp.Handler())
@@ -340,19 +340,59 @@ func run() error {
 		mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
 		mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
 
+		// Try to bind to the configured port, with fallback to next 5 ports
+		baseAddr := cfg.MetricsAddr
+		host, portStr, err := net.SplitHostPort(baseAddr)
+		if err != nil {
+			logger.Error().Err(err).Str("addr", baseAddr).Msg("Invalid metrics address format")
+			return
+		}
+
+		basePort, err := strconv.Atoi(portStr)
+		if err != nil {
+			logger.Error().Err(err).Str("port", portStr).Msg("Invalid metrics port")
+			return
+		}
+
+		var boundAddr string
+		var listener net.Listener
+		maxRetries := 5
+		for i := 0; i < maxRetries; i++ {
+			tryPort := basePort + i
+			tryAddr := net.JoinHostPort(host, strconv.Itoa(tryPort))
+
+			listener, err = net.Listen("tcp", tryAddr)
+			if err == nil {
+				boundAddr = tryAddr
+				logger.Info().
+					Str("addr", boundAddr).
+					Int("attempt", i+1).
+					Msg("Metrics server bound successfully")
+				break
+			}
+
+			if i == maxRetries-1 {
+				logger.Error().
+					Err(err).
+					Str("base_addr", baseAddr).
+					Int("retries", maxRetries).
+					Msg("Failed to bind metrics server after retries")
+				return
+			}
+		}
+
 		srv := &http.Server{
-			Addr:         cfg.MetricsAddr,
 			Handler:      mux,
 			ReadTimeout:  10 * time.Second,
 			WriteTimeout: 10 * time.Second,
 			IdleTimeout:  60 * time.Second,
 		}
 
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := srv.Serve(listener); err != nil && err != http.ErrServerClosed {
 			logger.Error().
 				Err(err).
-				Str("addr", cfg.MetricsAddr).
-				Msg("Metrics server failed to start - check if port is already in use")
+				Str("addr", boundAddr).
+				Msg("Metrics server failed")
 		}
 	}()
 

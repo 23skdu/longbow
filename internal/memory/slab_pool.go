@@ -3,6 +3,7 @@ package memory
 import (
 	"strconv"
 	"sync"
+	"sync/atomic"
 
 	"github.com/23skdu/longbow/internal/metrics"
 )
@@ -10,8 +11,11 @@ import (
 // SlabPool recycles byte slices of a fixed size to avoid repeated allocations and OS zeroing costs.
 // It is specifically designed for 1MB slabs used by standard SlabArena configurations.
 type SlabPool struct {
-	pool sync.Pool
-	size int
+	pool        sync.Pool
+	size        int
+	activeCount int64 // Number of slabs currently in use (not in pool)
+	pooledCount int64 // Number of slabs currently in the pool
+	maxPooled   int64 // Maximum slabs to keep in pool before releasing to OS
 }
 
 var (
@@ -29,7 +33,8 @@ var (
 
 func newSlabPool(size int) *SlabPool {
 	return &SlabPool{
-		size: size,
+		size:      size,
+		maxPooled: 100, // Keep at most 100 slabs in pool before releasing
 		pool: sync.Pool{
 			New: func() any {
 				b := make([]byte, size)
@@ -81,6 +86,12 @@ func PutSlab(b []byte) {
 }
 
 func (p *SlabPool) Get() []byte {
+	atomic.AddInt64(&p.activeCount, 1)
+	// Only decrement pooledCount if there was actually something in the pool
+	// sync.Pool.Get() may call New() which creates a new slab
+	if atomic.LoadInt64(&p.pooledCount) > 0 {
+		atomic.AddInt64(&p.pooledCount, -1)
+	}
 	return *p.pool.Get().(*[]byte)
 }
 
@@ -88,5 +99,55 @@ func (p *SlabPool) Put(b []byte) {
 	if cap(b) != p.size {
 		return
 	}
+
+	atomic.AddInt64(&p.activeCount, -1)
+
+	// Check if we should release this slab instead of pooling it
+	pooled := atomic.LoadInt64(&p.pooledCount)
+	if pooled >= p.maxPooled {
+		// Release memory back to OS instead of pooling
+		_ = ReleaseSlab(b) // Ignore error, worst case we just don't release
+		return
+	}
+
+	atomic.AddInt64(&p.pooledCount, 1)
 	p.pool.Put(&b)
+}
+
+// ReleaseUnused forces the pool to release excess slabs back to the OS.
+// This is useful for explicit memory management after heavy workloads.
+func (p *SlabPool) ReleaseUnused() int {
+	released := 0
+	pooled := atomic.LoadInt64(&p.pooledCount)
+
+	// Release slabs beyond a reasonable threshold
+	threshold := p.maxPooled / 2 // Keep 50% of max as buffer
+
+	for i := int64(0); i < pooled-threshold; i++ {
+		if slab := p.pool.Get(); slab != nil {
+			b := *slab.(*[]byte)
+			if err := ReleaseSlab(b); err == nil {
+				released++
+				atomic.AddInt64(&p.pooledCount, -1)
+			} else {
+				// Put it back if release failed
+				p.pool.Put(slab)
+				break
+			}
+		} else {
+			break
+		}
+	}
+
+	return released
+}
+
+// ActiveCount returns the number of slabs currently in use
+func (p *SlabPool) ActiveCount() int64 {
+	return atomic.LoadInt64(&p.activeCount)
+}
+
+// PooledCount returns the number of slabs currently in the pool
+func (p *SlabPool) PooledCount() int64 {
+	return atomic.LoadInt64(&p.pooledCount)
 }

@@ -1,57 +1,67 @@
-# 10-Part Plan: Optimizing 384d Ingestion Throughput
+# 10-Part Plan: Error Handling & Logging Standardization (STABILIZATION)
+
+**Goal**: Move Longbow from "research" grade to "production" grade by standardizing how errors are reported and how the system logs its state.
+
+## Current Priority: Stabilization Plan
+
+- [ ] **1. Allocator Hardening**: Replace `panic()` in `internal/memory/allocator.go` (`AssertSize`) with `testing.T.Errorf` or error returns where applicable.
+- [ ] **2. SIMD Length Safeguards**: Refactor SIMD functions in `internal/simd/simd.go` to return errors on `length mismatch` instead of panicking.
+- [ ] **3. Storage Engine Silent Error Cleanup**: Fix `_ = err` calls in `internal/storage/engine.go` (e.g., lines 375-376) to properly propagate or log errors.
+- [ ] **4. Fuzz Test Robustness**: Replace `_ = store.Close()` and other ignored errors in `internal/store/fuzz_test.go` with proper checks to catch silent failures during fuzzing.
+- [ ] **5. Config Validation**: Call `ValidateConfig()` in `cmd/longbow/main.go` immediately after loading the configuration to prevent invalid states from propagating.
+- [ ] **6. Production Logging Implementation**: Replace `fmt.Printf` and `fmt.Fprintf(os.Stderr, ...)` in `internal/simd/simd.go`, `internal/storage/engine.go`, and `cmd/longbow/main.go` with `zerolog`.
+- [ ] **7. Storage Engine Debug Print Removal**: Remove or convert `fmt.Printf` calls in `internal/storage/engine.go` (lines 265, 423, 451, 454) to `logger.Debug()`.
+- [ ] **8. Query Parser Logging Refactor**: Replace `DEBUG PARSER` prints in `internal/query/zero_alloc_vector_search.go` with a proper `zerolog.Logger` instance.
+- [ ] **9. Codebase-wide fmt.Printf Audit**: Perform a final grep for `fmt.Printf` in the `internal/` directory to ensure no leakages of unformatted logs to stdout.
+- [ ] **10. Verification & Linting**: Run `golangci-lint` to ensure all new error returns are handled and that the `errcheck` pass is clean.
+
+---
+
+# 10-Part Plan: Optimizing 384d Ingestion Throughput (v0.1.5)
 
 **Goal**: Achieve > 800 MB/s ingestion throughput for all data types (especially Float32) at 384 dimensions.
 **Current State**: Float32 @ 384d is ~608 MB/s. Int8 @ 384d is ~551 MB/s.
 
-## 1. Deep Profiling & Instability Investigation
+## Current Progress Status
 
-**Observation**: 384d ingestion throughput ranges from 115 MB/s to 435 MB/s for identical workloads.
-**Action**: Capture profiles during "fast" vs "slow" periods.
-**Goal**: Identify the intermittent blocker (likely GC pauses, WAL sync spikes, or Background Index Compaction).
-**Method**: Continuous profiling during a 5-minute soak test.
+- [ ] **1. Deep Profiling & Instability Investigation**: **ACTIVE**. Logs show significant memory pressure and GC churn.
+- [ ] **2. Client-Side Batch Size Optimization**: **PENDING**. Need to verify if 1k batch still outperforms 10k in current stabilization.
+- [x] **3. Server-Side Batch Aggregation Tuning**: **IMPLEMENTED**. `DoPut` aggregates batches (via `concatenateBatches`) up to 50k rows or 32MB.
+- [x] **4. Ingestion Worker Scaling**: **IMPLEMENTED**. `VectorStore` uses `ingestionQueue` and configurable workers (default 12 in logs).
+- [x] **5. Zero-Copy Pathway Audit**: **REVIEWED**. `GraphData.SetVector` uses `copy` for `float32`. Native zero-copy from Arrow buffers is blocked by the HNSW chunked-arena storage requirement.
+- [x] **6. SIMD Distance Optimization for 384d**: **IMPLEMENTED**. Optimized `euclidean384AVX512` and `dot384AVX512` kernels exist.
+- [x] **7. WAL Async Write Tuning**: **IMPLEMENTED**. `persistenceQueue` and async persistence worker handle WAL writes.
+- [x] **8. Memory Allocator & GC Tuning**: **IMPLEMENTED**. `SlabArena` and `TypedArena` are used to reduce object churn.
+- [x] **9. Index Construction Parameter Tuning**: **IMPLEMENTED**. `AddBatchBulk` uses parallelized linkage and robust pruning.
+- [x] **10. Pre-allocation Strategy**: **IMPLEMENTED**. `NewGraphData` and `Grow` handle capacity reservation.
 
-## 2. Client-Side Batch Size Optimization
+---
 
-**Action**: Benchmark ingestion with varying client-side batch sizes (1k vs 10k).
-**Observation**: Initial tests showed 1k batch > 10k batch (unexpected). This suggests large batches trigger the bottleneck (e.g. large allocation GC pressure).
-**Goal**: Find the "Goldilocks" batch size that maximizes throughput without triggering stability issues.
+## Identified Regressions & Critical Issues (v0.1.4-rc1)
 
-## 3. Server-Side Batch Aggregation Tuning
+### A. Memory Pressure & GC Thrashing
 
-**Action**: Tune `DoPut` internal buffer thresholds (`maxBatchBytes` / `maxBatchRows`) in `store_actions.go`.
-**Goal**: Ensure server aggregates enough small batches before hitting the WAL/Index to amortize lock acquisition and I/O costs.
+**Observation**: `node1.log` shows constant GC cycles (e.g., `gc 20`, `gc 21`, ...) once the heap reaches ~6GB.
+**Impact**: Throughput drops drastically as the CPU spends >20% of time in GC.
+**Root Cause**: Ingestion of large datasets (soak test) exceeding the configured `max_memory` limit too quickly, or `TypedArena` not reclaiming memory fast enough for the benchmark pace.
+**Action**: increase `max_memory` for benchmark environments or tune `GOGC` dynamically based on available RAM.
 
-## 4. Ingestion Worker Scaling
+### B. Metrics Server Port Conflict
 
-**Action**: Increase `NumIngestionWorkers` for 384d datasets.
-**Goal**: 384d vectors require more "compute per MB" than 1536d vectors (more headers, more indexing ops per byte). Increasing parallelism can utilize available CPU cores to process these smaller units faster.
+**Observation**: `server.log` reports `listen tcp 0.0.0.0:9090: bind: address already in use`.
+**Impact**: Losing visibility into Prometheus metrics during soak tests.
+**Action**: Add retry logic with port increment or allow configurable metrics port per node.
 
-## 5. Zero-Copy Pathway Audit
+### C. Validation Script OOM/Termination
 
-**Action**: Verify `Float32` and `Int` vectors at 384d follow the "Zero-Copy" ingestion path in `store_actions.go`.
-**Goal**: Ensure `GraphData.SetVector` (or equivalent) is not allocating intermediate slices. Use `benchstat` to measure allocation rate.
+**Observation**: `validation_output.txt` shows `python3 scripts/verify_global_search.py` being killed (Signal 9).
+**Impact**: Search validation fails during soak tests.
+**Root Cause**: Local machine memory exhaustion or resource limits.
 
-## 6. SIMD Distance Optimization for 384d
+---
 
-**Action**: Analyze `DistCosine` / `DistEuclidean` performance for `dim=384`.
-**Goal**: Check for alignment issues. 384 is divisible by 16 (AVX-512) and 8 (AVX2), but "tail" processing might be less efficient than for 128d or 1024d. Optimize the SIMD loop for this specific fixed dimension.
+## Revised Action Plan
 
-## 7. WAL Async Write Tuning
-
-**Action**: Increase `persistenceQueue` depth for high-throughput small-vector scenarios.
-**Goal**: PREVENT backpressure from the WAL writer. If WAL cannot keep up with > 100k writes/s (even if throughput < 800MB/s), it will block ingestion.
-
-## 8. Memory Allocator & GC Tuning
-
-**Action**: Analyze `mallocgc` pressure. Set `GOGC` aggressively or optimize vector slice pooling.
-**Goal**: Small vectors generate high object churn. Reducing GC frequency or reusing buffers via `sync.Pool` for 384d vectors can yield significant gains.
-
-## 9. Index Construction Parameter Tuning
-
-**Action**: Experiment with lower `efConstruction` during bulk load, or parallelize `Insert` further.
-**Goal**: HNSW construction is O(N log N). If construction is the bottleneck, temporarily relaxing graph quality (to be repaired later) or optimizing neighbor selection can boost speed.
-
-## 10. Pre-allocation Strategy
-
-**Action**: Ensure `GraphData` internal arrays are pre-allocated for the expected dataset size (e.g. 50k) to avoid resizing copying costs during the initial load.
-**Goal**: Eliminate `grow` pauses during the benchmark.
+1. **Investigate Heap Growth**: Profile `TypedArena` during the 5th-10th minute of soak to see why memory isn't stabilizing.
+2. **Batch Size Re-verification**: Re-run 1k vs 10k test now that server-side aggregation is active.
+3. **Metrics Port Fix**: Ensure each node in the cluster uses a unique metrics port.

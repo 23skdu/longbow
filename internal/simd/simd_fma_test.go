@@ -7,6 +7,8 @@ import (
 	"math/rand"
 	"testing"
 	"unsafe"
+
+	"github.com/stretchr/testify/require"
 )
 
 // =============================================================================
@@ -25,7 +27,7 @@ func generateRandomVectorFMA(n int, seed int64) []float32 {
 }
 
 // Reference implementations for verification
-func referenceDotProduct(a, b []float32) float32 {
+func referenceDotProductFMA(a, b []float32) float32 {
 	var sum float64
 	for i := range a {
 		sum += float64(a[i]) * float64(b[i])
@@ -33,7 +35,7 @@ func referenceDotProduct(a, b []float32) float32 {
 	return float32(sum)
 }
 
-func referenceEuclidean(a, b []float32) float32 {
+func referenceEuclideanFMA(a, b []float32) float32 {
 	var sum float64
 	for i := range a {
 		d := float64(a[i]) - float64(b[i])
@@ -42,7 +44,7 @@ func referenceEuclidean(a, b []float32) float32 {
 	return float32(math.Sqrt(sum))
 }
 
-func referenceCosine(a, b []float32) float32 {
+func referenceCosineFMA(a, b []float32) float32 {
 	var dot, normA, normB float64
 	for i := range a {
 		dot += float64(a[i]) * float64(b[i])
@@ -67,7 +69,7 @@ func TestDot32FMA_Correctness(t *testing.T) {
 	a := generateRandomVectorFMA(32, 42)
 	b := generateRandomVectorFMA(32, 43)
 
-	expected := referenceDotProduct(a, b)
+	expected := referenceDotProductFMA(a, b)
 	got := dot32FMA(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0])))
 
 	// Allow small epsilon for FMA vs separate mul+add
@@ -130,7 +132,7 @@ func TestDot64FMA_Correctness(t *testing.T) {
 	a := generateRandomVectorFMA(64, 48)
 	b := generateRandomVectorFMA(64, 49)
 
-	expected := referenceDotProduct(a, b)
+	expected := referenceDotProductFMA(a, b)
 	got := dot64FMA(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0])))
 
 	epsilon := float32(1e-4)
@@ -170,8 +172,9 @@ func TestDotProductFMA_FullVector768(t *testing.T) {
 	a := generateRandomVectorFMA(768, 52)
 	b := generateRandomVectorFMA(768, 53)
 
-	expected := referenceDotProduct(a, b)
-	got := DotProductFMA(a, b)
+	expected := referenceDotProductFMA(a, b)
+	got, err := DotProductFMA(a, b)
+	require.NoError(t, err)
 
 	// Larger vectors accumulate more error
 	epsilon := float32(1e-3)
@@ -189,8 +192,9 @@ func TestEuclideanDistanceFMA_FullVector1536(t *testing.T) {
 	a := generateRandomVectorFMA(1536, 54)
 	b := generateRandomVectorFMA(1536, 55)
 
-	expected := referenceEuclidean(a, b)
-	got := EuclideanDistanceFMA(a, b)
+	expected := referenceEuclideanFMA(a, b)
+	got, err := EuclideanDistanceFMA(a, b)
+	require.NoError(t, err)
 
 	epsilon := float32(1e-2)
 	if diff := float32(math.Abs(float64(got - expected))); diff > epsilon {
@@ -206,8 +210,9 @@ func TestCosineDistanceFMA_FullVector768(t *testing.T) {
 	a := generateRandomVectorFMA(768, 56)
 	b := generateRandomVectorFMA(768, 57)
 
-	expected := referenceCosine(a, b)
-	got := CosineDistanceFMA(a, b)
+	expected := referenceCosineFMA(a, b)
+	got, err := CosineDistanceFMA(a, b)
+	require.NoError(t, err)
 
 	epsilon := float32(1e-3)
 	if diff := float32(math.Abs(float64(got - expected))); diff > epsilon {
@@ -230,7 +235,7 @@ func BenchmarkDotProduct_FMA_768(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		_ = DotProductFMA(v1, v2)
+		_, _ = DotProductFMA(v1, v2)
 	}
 }
 
@@ -241,7 +246,7 @@ func BenchmarkDotProduct_Current_768(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		_ = DotProduct(v1, v2)
+		_, _ = DotProduct(v1, v2)
 	}
 }
 
@@ -256,7 +261,7 @@ func BenchmarkEuclidean_FMA_1536(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		_ = EuclideanDistanceFMA(v1, v2)
+		_, _ = EuclideanDistanceFMA(v1, v2)
 	}
 }
 
@@ -267,7 +272,7 @@ func BenchmarkEuclidean_Current_1536(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		_ = EuclideanDistance(v1, v2)
+		_, _ = EuclideanDistance(v1, v2)
 	}
 }
 
@@ -282,7 +287,7 @@ func BenchmarkCosine_FMA_768(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		_ = CosineDistanceFMA(v1, v2)
+		_, _ = CosineDistanceFMA(v1, v2)
 	}
 }
 
@@ -293,7 +298,7 @@ func BenchmarkCosine_Current_768(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		_ = CosineDistance(v1, v2)
+		_, _ = CosineDistance(v1, v2)
 	}
 }
 
@@ -310,13 +315,15 @@ func TestFMA_ZeroVector(t *testing.T) {
 	ones := generateRandomVectorFMA(64, 60)
 
 	// Dot product with zero vector should be 0
-	dot := DotProductFMA(zeros, ones)
+	dot, err := DotProductFMA(zeros, ones)
+	require.NoError(t, err)
 	if dot != 0 {
 		t.Errorf("dot product with zero vector: got %v, want 0", dot)
 	}
 
 	// Cosine with zero vector should be 1.0 (max distance)
-	cos := CosineDistanceFMA(zeros, ones)
+	cos, err := CosineDistanceFMA(zeros, ones)
+	require.NoError(t, err)
 	if cos != 1.0 {
 		t.Errorf("cosine distance with zero vector: got %v, want 1.0", cos)
 	}
@@ -330,13 +337,15 @@ func TestFMA_IdenticalVectors(t *testing.T) {
 	v := generateRandomVectorFMA(128, 61)
 
 	// Euclidean distance to self should be 0
-	euc := EuclideanDistanceFMA(v, v)
+	euc, err := EuclideanDistanceFMA(v, v)
+	require.NoError(t, err)
 	if euc != 0 {
 		t.Errorf("euclidean distance to self: got %v, want 0", euc)
 	}
 
 	// Cosine distance to self should be 0 (identical = similarity 1.0)
-	cos := CosineDistanceFMA(v, v)
+	cos, err := CosineDistanceFMA(v, v)
+	require.NoError(t, err)
 	if cos > 1e-6 {
 		t.Errorf("cosine distance to self: got %v, want ~0", cos)
 	}
@@ -352,8 +361,9 @@ func TestFMA_NonAlignedLength(t *testing.T) {
 		a := generateRandomVectorFMA(size, int64(size))
 		b := generateRandomVectorFMA(size, int64(size+1))
 
-		expected := referenceDotProduct(a, b)
-		got := DotProductFMA(a, b)
+		expected := referenceDotProductFMA(a, b)
+		got, err := DotProductFMA(a, b)
+		require.NoError(t, err)
 
 		epsilon := float32(1e-3)
 		if diff := float32(math.Abs(float64(got - expected))); diff > epsilon*float32(size)/100 {

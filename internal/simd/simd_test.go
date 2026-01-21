@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"math"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // Reference implementations for correctness verification
@@ -68,7 +71,8 @@ func TestEuclideanDistance_Basic(t *testing.T) {
 	b := []float32{5, 6, 7, 8}
 
 	expected := referenceEuclidean(a, b)
-	result := EuclideanDistance(a, b)
+	result, err := EuclideanDistance(a, b)
+	assert.NoError(t, err)
 
 	if !approxEqual(result, expected, 1e-5) {
 		t.Errorf("EuclideanDistance(%v, %v) = %v, expected %v", a, b, result, expected)
@@ -78,7 +82,8 @@ func TestEuclideanDistance_Basic(t *testing.T) {
 func TestEuclideanDistance_Identical(t *testing.T) {
 	a := []float32{1, 2, 3, 4, 5, 6, 7, 8}
 
-	result := EuclideanDistance(a, a)
+	result, err := EuclideanDistance(a, a)
+	assert.NoError(t, err)
 
 	if result != 0 {
 		t.Errorf("Distance to self should be 0, got %v", result)
@@ -89,7 +94,8 @@ func TestEuclideanDistance_Zeros(t *testing.T) {
 	a := make([]float32, 128)
 	b := make([]float32, 128)
 
-	result := EuclideanDistance(a, b)
+	result, err := EuclideanDistance(a, b)
+	assert.NoError(t, err)
 
 	if result != 0 {
 		t.Errorf("Distance between zero vectors should be 0, got %v", result)
@@ -105,7 +111,8 @@ func TestEuclideanDistance_VariousDimensions(t *testing.T) {
 			b := makeTestVector(dim, 2.0)
 
 			expected := referenceEuclidean(a, b)
-			result := EuclideanDistance(a, b)
+			result, err := EuclideanDistance(a, b)
+			assert.NoError(t, err)
 
 			if !approxEqual(result, expected, 1e-3) {
 				t.Errorf("dim=%d: got %v, expected %v", dim, result, expected)
@@ -115,15 +122,10 @@ func TestEuclideanDistance_VariousDimensions(t *testing.T) {
 }
 
 func TestEuclideanDistance_LengthMismatch(t *testing.T) {
-	defer func() {
-		if r := recover(); r == nil {
-			t.Error("Expected panic for mismatched lengths")
-		}
-	}()
-
 	a := []float32{1, 2, 3}
 	b := []float32{1, 2}
-	EuclideanDistance(a, b)
+	_, err := EuclideanDistance(a, b)
+	require.Error(t, err)
 }
 
 // === Cosine Similarity Tests ===
@@ -133,7 +135,8 @@ func TestCosineDistance_Basic(t *testing.T) {
 	b := []float32{5, 6, 7, 8}
 
 	expected := referenceCosine(a, b)
-	result := CosineDistance(a, b)
+	result, err := CosineDistance(a, b)
+	assert.NoError(t, err)
 
 	if !approxEqual(result, expected, 1e-5) {
 		t.Errorf("CosineDistance(%v, %v) = %v, expected %v", a, b, result, expected)
@@ -143,7 +146,8 @@ func TestCosineDistance_Basic(t *testing.T) {
 func TestCosineDistance_Identical(t *testing.T) {
 	a := []float32{1, 2, 3, 4, 5, 6, 7, 8}
 
-	result := CosineDistance(a, a)
+	result, err := CosineDistance(a, a)
+	assert.NoError(t, err)
 
 	if !approxEqual(result, 0, 1e-5) {
 		t.Errorf("Cosine distance to self should be 0, got %v", result)
@@ -154,7 +158,8 @@ func TestCosineDistance_Orthogonal(t *testing.T) {
 	a := []float32{1, 0, 0, 0}
 	b := []float32{0, 1, 0, 0}
 
-	result := CosineDistance(a, b)
+	result, err := CosineDistance(a, b)
+	assert.NoError(t, err)
 
 	// Orthogonal vectors have cosine similarity 0, distance 1
 	if !approxEqual(result, 1.0, 1e-5) {
@@ -166,7 +171,8 @@ func TestCosineDistance_Opposite(t *testing.T) {
 	a := []float32{1, 2, 3, 4}
 	b := []float32{-1, -2, -3, -4}
 
-	result := CosineDistance(a, b)
+	result, err := CosineDistance(a, b)
+	assert.NoError(t, err)
 
 	// Opposite vectors have cosine similarity -1, distance 2
 	if !approxEqual(result, 2.0, 1e-5) {
@@ -178,7 +184,8 @@ func TestCosineDistance_ZeroVector(t *testing.T) {
 	a := []float32{0, 0, 0, 0}
 	b := []float32{1, 2, 3, 4}
 
-	result := CosineDistance(a, b)
+	result, err := CosineDistance(a, b)
+	assert.NoError(t, err)
 
 	// Zero vector should return max distance
 	if result != 1.0 {
@@ -195,7 +202,8 @@ func TestCosineDistance_VariousDimensions(t *testing.T) {
 			b := makeTestVector(dim, 2.0)
 
 			expected := referenceCosine(a, b)
-			result := CosineDistance(a, b)
+			result, err := CosineDistance(a, b)
+			assert.NoError(t, err)
 
 			if !approxEqual(result, expected, 1e-3) {
 				t.Errorf("dim=%d: got %v, expected %v", dim, result, expected)
@@ -205,15 +213,10 @@ func TestCosineDistance_VariousDimensions(t *testing.T) {
 }
 
 func TestCosineDistance_LengthMismatch(t *testing.T) {
-	defer func() {
-		if r := recover(); r == nil {
-			t.Error("Expected panic for mismatched lengths")
-		}
-	}()
-
 	a := []float32{1, 2, 3}
 	b := []float32{1, 2}
-	CosineDistance(a, b)
+	_, err := CosineDistance(a, b)
+	require.Error(t, err)
 }
 
 // === Dot Product Tests ===
@@ -224,7 +227,8 @@ func TestDotProduct_Basic(t *testing.T) {
 
 	// 1*5 + 2*6 + 3*7 + 4*8 = 5 + 12 + 21 + 32 = 70
 	expected := float32(70)
-	result := DotProduct(a, b)
+	result, err := DotProduct(a, b)
+	assert.NoError(t, err)
 
 	if !approxEqual(result, expected, 1e-5) {
 		t.Errorf("DotProduct(%v, %v) = %v, expected %v", a, b, result, expected)
@@ -245,7 +249,8 @@ func TestDotProduct_VariousDimensions(t *testing.T) {
 				expected += a[i] * b[i]
 			}
 
-			result := DotProduct(a, b)
+			result, err := DotProduct(a, b)
+			assert.NoError(t, err)
 
 			if !approxEqual(result, expected, 1e-3) {
 				t.Errorf("dim=%d: got %v, expected %v", dim, result, expected)
@@ -261,7 +266,7 @@ func BenchmarkEuclideanDistance_128(b *testing.B) {
 	v2 := makeTestVector(128, 2.0)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		EuclideanDistance(v1, v2)
+		_, _ = EuclideanDistance(v1, v2)
 	}
 }
 
@@ -270,7 +275,7 @@ func BenchmarkEuclideanDistance_384(b *testing.B) {
 	v2 := makeTestVector(384, 2.0)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		EuclideanDistance(v1, v2)
+		_, _ = EuclideanDistance(v1, v2)
 	}
 }
 
@@ -279,7 +284,7 @@ func BenchmarkEuclideanDistance_768(b *testing.B) {
 	v2 := makeTestVector(768, 2.0)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		EuclideanDistance(v1, v2)
+		_, _ = EuclideanDistance(v1, v2)
 	}
 }
 
@@ -288,7 +293,7 @@ func BenchmarkEuclideanDistance_1536(b *testing.B) {
 	v2 := makeTestVector(1536, 2.0)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		EuclideanDistance(v1, v2)
+		_, _ = EuclideanDistance(v1, v2)
 	}
 }
 
@@ -297,7 +302,7 @@ func BenchmarkCosineDistance_128(b *testing.B) {
 	v2 := makeTestVector(128, 2.0)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		CosineDistance(v1, v2)
+		_, _ = CosineDistance(v1, v2)
 	}
 }
 
@@ -306,7 +311,7 @@ func BenchmarkCosineDistance_384(b *testing.B) {
 	v2 := makeTestVector(384, 2.0)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		CosineDistance(v1, v2)
+		_, _ = CosineDistance(v1, v2)
 	}
 }
 
@@ -315,7 +320,7 @@ func BenchmarkCosineDistance_768(b *testing.B) {
 	v2 := makeTestVector(768, 2.0)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		CosineDistance(v1, v2)
+		_, _ = CosineDistance(v1, v2)
 	}
 }
 
@@ -324,7 +329,7 @@ func BenchmarkCosineDistance_1536(b *testing.B) {
 	v2 := makeTestVector(1536, 2.0)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		CosineDistance(v1, v2)
+		_, _ = CosineDistance(v1, v2)
 	}
 }
 
@@ -333,7 +338,7 @@ func BenchmarkDotProduct_1536(b *testing.B) {
 	v2 := makeTestVector(1536, 2.0)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		DotProduct(v1, v2)
+		_, _ = DotProduct(v1, v2)
 	}
 }
 
@@ -343,7 +348,7 @@ func BenchmarkEuclidean_Generic_768(b *testing.B) {
 	v2 := makeTestVector(768, 2.0)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		euclideanGeneric(v1, v2)
+		_, _ = euclideanGeneric(v1, v2)
 	}
 }
 
@@ -352,7 +357,7 @@ func BenchmarkCosine_Generic_768(b *testing.B) {
 	v2 := makeTestVector(768, 2.0)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		cosineGeneric(v1, v2)
+		_, _ = cosineGeneric(v1, v2)
 	}
 }
 

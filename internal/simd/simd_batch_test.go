@@ -28,11 +28,14 @@ func TestEuclideanDistanceBatch(t *testing.T) {
 	results := make([]float32, numVectors)
 
 	// This function doesn't exist yet, so this test will fail to compile
-	EuclideanDistanceBatch(query, vectors, results)
+	_ = EuclideanDistanceBatch(query, vectors, results)
 
 	// Verify results against single-vector implementation
 	for i, v := range vectors {
-		expected := EuclideanDistance(query, v)
+		expected, err := EuclideanDistance(query, v)
+		if err != nil {
+			t.Errorf("EuclideanDistance error: %v", err)
+		}
 		if results[i] != expected {
 			t.Errorf("Mismatch at index %d: expected %f, got %f", i, expected, results[i])
 		}
@@ -61,6 +64,6 @@ func BenchmarkEuclideanDistanceBatch(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		EuclideanDistanceBatch(query, vectors, results)
+		_ = EuclideanDistanceBatch(query, vectors, results)
 	}
 }

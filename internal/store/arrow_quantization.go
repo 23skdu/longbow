@@ -98,7 +98,7 @@ func (sq *ScalarQuantizer) Encode(vec []float32, dst []byte) []byte {
 }
 
 // Distance returns squared L2 in quantized space
-func (sq *ScalarQuantizer) Distance(a, b []byte) int32 {
+func (sq *ScalarQuantizer) Distance(a, b []byte) (int32, error) {
 	return simd.EuclideanDistanceSQ8(a, b)
 }
 

@@ -100,14 +100,23 @@ func (b *float32VectorBatch) ComputeDistances(query any, dists []float32) {
 
 		if !hasNil {
 			// Optimized SIMD Batch Path
-			simd.EuclideanDistanceVerticalBatch(q, b.vecs, dists)
+			if err := simd.EuclideanDistanceVerticalBatch(q, b.vecs, dists); err != nil {
+				for i := range dists {
+					dists[i] = math.MaxFloat32
+				}
+			}
 		} else {
 			// Fallback with nil handling
 			for i, v := range b.vecs {
 				if v == nil {
 					dists[i] = math.MaxFloat32
 				} else {
-					dists[i] = simd.DistFunc(q, v)
+					d, err := simd.DistFunc(q, v)
+					if err != nil {
+						dists[i] = math.MaxFloat32
+					} else {
+						dists[i] = d
+					}
 				}
 			}
 		}
@@ -119,7 +128,12 @@ func (b *float32VectorBatch) ComputeDistances(query any, dists []float32) {
 		if v == nil {
 			dists[i] = math.MaxFloat32
 		} else {
-			dists[i] = b.h.distFunc(q, v)
+			d, err := b.h.distFunc(q, v)
+			if err != nil {
+				dists[i] = math.MaxFloat32
+			} else {
+				dists[i] = d
+			}
 		}
 	}
 }
@@ -206,7 +220,12 @@ func (b *float16VectorBatch) ComputeDistances(query any, dists []float32) {
 		if v == nil {
 			dists[i] = math.MaxFloat32
 		} else {
-			dists[i] = simd.EuclideanDistanceF16(q, v)
+			d, err := simd.EuclideanDistanceF16(q, v)
+			if err != nil {
+				dists[i] = math.MaxFloat32
+			} else {
+				dists[i] = d
+			}
 		}
 	}
 }
@@ -287,7 +306,12 @@ func (b *float64VectorBatch) ComputeDistances(query any, dists []float32) {
 		if v == nil {
 			dists[i] = math.MaxFloat32
 		} else {
-			dists[i] = b.h.distFuncF64(q, v)
+			d, err := b.h.distFuncF64(q, v)
+			if err != nil {
+				dists[i] = math.MaxFloat32
+			} else {
+				dists[i] = float32(d)
+			}
 		}
 	}
 }
@@ -351,7 +375,12 @@ func (b *complex64VectorBatch) ComputeDistances(query any, dists []float32) {
 		if v == nil {
 			dists[i] = math.MaxFloat32
 		} else {
-			dists[i] = b.h.distFuncC64(q, v)
+			d, err := b.h.distFuncC64(q, v)
+			if err != nil {
+				dists[i] = math.MaxFloat32
+			} else {
+				dists[i] = d
+			}
 		}
 	}
 }
@@ -415,7 +444,12 @@ func (b *complex128VectorBatch) ComputeDistances(query any, dists []float32) {
 		if v == nil {
 			dists[i] = math.MaxFloat32
 		} else {
-			dists[i] = b.h.distFuncC128(q, v)
+			d, err := b.h.distFuncC128(q, v)
+			if err != nil {
+				dists[i] = math.MaxFloat32
+			} else {
+				dists[i] = d
+			}
 		}
 	}
 }

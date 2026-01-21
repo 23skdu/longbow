@@ -100,6 +100,7 @@ type ArrowSearchContext struct {
 	querySQ8       []byte
 	queryBQ        []uint64
 	queryF16       []float16.Num
+	queryF32       []float32
 	adcTable       []float32
 	scratchPQCodes []byte
 	pruneDepth     int
@@ -115,6 +116,10 @@ func (c *ArrowSearchContext) EnsureCapacity(dim int) {
 	if cap(c.queryF16) < dim {
 		c.queryF16 = make([]float16.Num, 0, dim)
 		metrics.HNSWSearchScratchSpaceResizesTotal.WithLabelValues("query_f16").Inc()
+	}
+	if cap(c.queryF32) < dim {
+		c.queryF32 = make([]float32, 0, dim)
+		metrics.HNSWSearchScratchSpaceResizesTotal.WithLabelValues("query_f32").Inc()
 	}
 	// For Float32 query (scratch space for distance calculations if needed)
 	if cap(c.adcTable) < dim {
@@ -138,6 +143,7 @@ func NewArrowSearchContext() *ArrowSearchContext {
 		scratchVecsSQ8:   make([][]byte, 0, MaxNeighbors),
 		querySQ8:         make([]byte, 0, 1536), // Common high-dim size
 		queryF16:         make([]float16.Num, 0, 1536),
+		queryF32:         make([]float32, 0, 1536),
 		adcTable:         make([]float32, 0, 1536),
 		visitedList:      make([]uint32, 0, 2048),
 	}
@@ -191,6 +197,7 @@ func (c *ArrowSearchContext) Reset() {
 	c.querySQ8 = c.querySQ8[:0]
 	c.queryBQ = c.queryBQ[:0]
 	c.queryF16 = c.queryF16[:0]
+	c.queryF32 = c.queryF32[:0]
 	c.adcTable = c.adcTable[:0]
 	c.pruneDepth = 0
 }
@@ -250,12 +257,12 @@ type ArrowHNSW struct {
 	locationStore *ChunkedLocationStore
 
 	metric        DistanceMetric
-	distFunc      func([]float32, []float32) float32
-	distFuncF16   func([]float16.Num, []float16.Num) float32
-	distFuncF64   func([]float64, []float64) float32
-	distFuncC64   func([]complex64, []complex64) float32
-	distFuncC128  func([]complex128, []complex128) float32
-	batchDistFunc func([]float32, [][]float32, []float32)
+	distFunc      func([]float32, []float32) (float32, error)
+	distFuncF16   func([]float16.Num, []float16.Num) (float32, error)
+	distFuncF64   func([]float64, []float64) (float32, error)
+	distFuncC64   func([]complex64, []complex64) (float32, error)
+	distFuncC128  func([]complex128, []complex128) (float32, error)
+	batchDistFunc func([]float32, [][]float32, []float32) error
 	batchComputer interface{}
 
 	m              int
@@ -1402,4 +1409,20 @@ func (gd *GraphData) GetVectorF16(id uint32) []float16.Num {
 		return nil
 	}
 	return vecF16Chunk[off : off+gd.Dims]
+}
+
+func (gd *GraphData) GetVectorsUint8Chunk(chunkID uint32) []uint8 {
+	if int(chunkID) >= len(gd.Vectors) {
+		return nil
+	}
+	offset := atomic.LoadUint64(&gd.Vectors[chunkID])
+	if offset == 0 || gd.Type != VectorTypeUint8 {
+		return nil
+	}
+	ref := memory.SliceRef{
+		Offset: offset,
+		Len:    uint32(ChunkSize * gd.Dims),
+		Cap:    uint32(ChunkSize * gd.Dims),
+	}
+	return gd.Uint8Arena.Get(ref)
 }

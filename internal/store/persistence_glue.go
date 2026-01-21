@@ -212,7 +212,6 @@ func (s *VectorStore) loadSnapshotItem(item *storage.SnapshotItem) {
 
 		ds.dataMu.Lock()
 		ds.Records = append(ds.Records, rec)
-		fmt.Printf("loadSnapshotItem: Appended batch to ds %p. Total batches: %d\n", ds, len(ds.Records))
 		batchIdx := len(ds.Records) - 1
 		ds.UpdatePrimaryIndex(batchIdx, rec)
 		s.currentMemory.Add(CachedRecordSize(rec))

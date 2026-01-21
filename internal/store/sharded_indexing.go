@@ -1,7 +1,6 @@
 package store
 
 import (
-	"fmt"
 	"hash/fnv"
 	"runtime"
 	"sync"
@@ -95,7 +94,6 @@ func (sic *ShardedIndexChannel) Send(job IndexJob) bool {
 	// Use defer/recover to handle send on closed channel
 	defer func() {
 		if r := recover(); r != nil {
-			fmt.Printf("Recovered from panic in ShardedIndexChannel: %v\n", r)
 			metrics.PanicTotal.WithLabelValues("sharded_index_channel").Inc()
 		}
 	}()

@@ -929,14 +929,15 @@ func (h *ArrowHNSW) indexMetadata(id uint32, recs []arrow.RecordBatch, i int, ro
 }
 
 // resolveDistanceFunc returns the distance function based on configuration.
-func (h *ArrowHNSW) resolveDistanceFunc() func(a, b []float32) float32 {
+func (h *ArrowHNSW) resolveDistanceFunc() func(a, b []float32) (float32, error) {
 	switch h.metric {
 	case MetricCosine:
 		return simd.CosineDistance
 	case MetricDotProduct:
 		// For HNSW minimization, negate Dot Product
-		return func(a, b []float32) float32 {
-			return -simd.DotProduct(a, b)
+		return func(a, b []float32) (float32, error) {
+			d, err := simd.DotProduct(a, b)
+			return -d, err
 		}
 	default: // Euclidean
 		return simd.EuclideanDistance
@@ -944,13 +945,14 @@ func (h *ArrowHNSW) resolveDistanceFunc() func(a, b []float32) float32 {
 }
 
 // resolveDistanceFuncF16 returns the FP16 distance function.
-func (h *ArrowHNSW) resolveDistanceFuncF16() func(a, b []float16.Num) float32 {
+func (h *ArrowHNSW) resolveDistanceFuncF16() func(a, b []float16.Num) (float32, error) {
 	switch h.metric {
 	case MetricCosine:
 		return simd.CosineDistanceF16
 	case MetricDotProduct:
-		return func(a, b []float16.Num) float32 {
-			return -simd.DotProductF16(a, b)
+		return func(a, b []float16.Num) (float32, error) {
+			d, err := simd.DotProductF16(a, b)
+			return -d, err
 		}
 	default: // Euclidean
 		return simd.EuclideanDistanceF16
@@ -958,16 +960,17 @@ func (h *ArrowHNSW) resolveDistanceFuncF16() func(a, b []float16.Num) float32 {
 }
 
 // resolveDistanceFuncF64 returns the Float64 distance function.
-func (h *ArrowHNSW) resolveDistanceFuncF64() func(a, b []float64) float32 {
+func (h *ArrowHNSW) resolveDistanceFuncF64() func(a, b []float64) (float32, error) {
 	switch h.metric {
 	case MetricCosine:
-		return func(a, b []float64) float32 {
+		return func(a, b []float64) (float32, error) {
 			// Fallback since we don't have CosineDistanceF64 in simd yet
 			return simd.CosineDistance(simd.ToFloat32(a), simd.ToFloat32(b))
 		}
 	case MetricDotProduct:
-		return func(a, b []float64) float32 {
-			return -float32(simd.DotProductF64(a, b))
+		return func(a, b []float64) (float32, error) {
+			d, err := simd.DotProductF64(a, b)
+			return -d, err
 		}
 	default: // Euclidean
 		return simd.EuclideanDistanceFloat64
@@ -975,26 +978,30 @@ func (h *ArrowHNSW) resolveDistanceFuncF64() func(a, b []float64) float32 {
 }
 
 // resolveDistanceFuncC64 returns the Complex64 distance function.
-func (h *ArrowHNSW) resolveDistanceFuncC64() func(a, b []complex64) float32 {
+func (h *ArrowHNSW) resolveDistanceFuncC64() func(a, b []complex64) (float32, error) {
 	return simd.EuclideanDistanceComplex64
 }
 
 // resolveDistanceFuncC128 returns the Complex128 distance function.
-func (h *ArrowHNSW) resolveDistanceFuncC128() func(a, b []complex128) float32 {
+func (h *ArrowHNSW) resolveDistanceFuncC128() func(a, b []complex128) (float32, error) {
 	return simd.EuclideanDistanceComplex128
 }
 
 // resolveBatchDistanceFunc returns the batch distance function.
-func (h *ArrowHNSW) resolveBatchDistanceFunc() func(query []float32, vectors [][]float32, results []float32) {
+func (h *ArrowHNSW) resolveBatchDistanceFunc() func(query []float32, vectors [][]float32, results []float32) error {
 	switch h.metric {
 	case MetricCosine:
 		return simd.CosineDistanceBatch
 	case MetricDotProduct:
-		return func(query []float32, vectors [][]float32, results []float32) {
-			simd.DotProductBatch(query, vectors, results)
+		return func(query []float32, vectors [][]float32, results []float32) error {
+			err := simd.DotProductBatch(query, vectors, results)
+			if err != nil {
+				return err
+			}
 			for i := range results {
 				results[i] = -results[i]
 			}
+			return nil
 		}
 	default:
 		return simd.EuclideanDistanceBatch

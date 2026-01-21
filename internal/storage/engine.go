@@ -16,6 +16,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/golang/snappy"
+	"github.com/rs/zerolog/log"
 )
 
 const (
@@ -148,29 +149,18 @@ func (e *StorageEngine) ReplayWAL(applier ApplierFunc) (uint64, error) {
 	if err != nil {
 		return 0, err
 	}
-	defer func() { _ = f.Close() }()
+	defer f.Close()
 
-	// Logic copied from previous implementation
 	var maxSeq uint64
 	count := 0
 
-	// Buffer for reading
-	// Reuse a buffer pool for inner decompression if needed?
-
-	// Buffer for reading
-	// Reuse a buffer pool for inner decompression if needed?
-
 	for {
 		header := make([]byte, 32)
-		// 1. Read Header
 		if _, err := io.ReadFull(f, header); err != nil {
-			if err == io.EOF {
+			if err == io.EOF || err == io.ErrUnexpectedEOF {
 				break
 			}
-			if err == io.ErrUnexpectedEOF {
-				break
-			}
-			return 0, fmt.Errorf("header read: %w", err)
+			return 0, fmt.Errorf("header read error at count %d: %w", count, err)
 		}
 
 		storedChecksum := binary.LittleEndian.Uint32(header[0:4])
@@ -184,39 +174,38 @@ func (e *StorageEngine) ReplayWAL(applier ApplierFunc) (uint64, error) {
 		}
 
 		if nameLen > 1024*1024 || recLen > 1024*1024*1024 {
+			log.Warn().Uint32("nameLen", nameLen).Uint64("recLen", recLen).Msg("ReplayWAL: skipping record with excessive length")
 			break
 		}
 
-		// 2. Read Name
 		nameBytes := make([]byte, nameLen)
 		if _, err := io.ReadFull(f, nameBytes); err != nil {
+			log.Warn().Err(err).Msg("ReplayWAL: failed to read name")
 			break
 		}
 		name := string(nameBytes)
 
-		// 3. Read Record
 		recBytes := make([]byte, recLen)
 		if _, err := io.ReadFull(f, recBytes); err != nil {
+			log.Warn().Err(err).Msg("ReplayWAL: failed to read record bytes")
 			break
 		}
 
-		// 4. Verify Checksum
 		crc := crc32.NewIEEE()
 		_, _ = crc.Write(nameBytes)
 		_, _ = crc.Write(recBytes)
 		calculatedCRC := crc.Sum32()
 
-		// Sentinel logic (Compressed)
 		if storedChecksum == 0xFFFFFFFF {
 			if nameLen != 1 || nameBytes[0] != 1 {
 				continue
 			}
 			decompressed, err := snappy.Decode(nil, recBytes)
 			if err != nil {
+				log.Warn().Err(err).Msg("ReplayWAL: failed to decompress block")
 				continue
 			}
 
-			// Inner items
 			dr := bytes.NewReader(decompressed)
 			innerHeader := make([]byte, 32)
 			for {
@@ -233,17 +222,23 @@ func (e *StorageEngine) ReplayWAL(applier ApplierFunc) (uint64, error) {
 				}
 
 				inNameBytes := make([]byte, inNameLen)
-				_, _ = io.ReadFull(dr, inNameBytes)
+				if _, err := io.ReadFull(dr, inNameBytes); err != nil {
+					break
+				}
 				inRecBytes := make([]byte, inRecLen)
-				_, _ = io.ReadFull(dr, inRecBytes)
+				if _, err := io.ReadFull(dr, inRecBytes); err != nil {
+					break
+				}
 
-				// Apply Inner
 				r, err := ipc.NewReader(bytes.NewReader(inRecBytes), ipc.WithAllocator(e.mem))
 				if err == nil {
 					if r.Next() {
 						rec := r.RecordBatch()
 						rec.Retain()
-						_ = applier(string(inNameBytes), rec, inSeq, inTs)
+						if err := applier(string(inNameBytes), rec, inSeq, inTs); err != nil {
+							r.Release()
+							return 0, fmt.Errorf("applier failed for inner record: %w", err)
+						}
 						count++
 					}
 					r.Release()
@@ -256,21 +251,26 @@ func (e *StorageEngine) ReplayWAL(applier ApplierFunc) (uint64, error) {
 			return 0, fmt.Errorf("wal crc mismatch at seq %d: expected %x, got %x", seq, storedChecksum, calculatedCRC)
 		}
 
-		// Deserialize Record
 		r, err := ipc.NewReader(bytes.NewReader(recBytes), ipc.WithAllocator(e.mem))
 		if err == nil {
 			if r.Next() {
 				rec := r.RecordBatch()
 				rec.Retain()
-				fmt.Printf("ReplayWAL: Applying seq=%d name=%s rows=%d\n", seq, name, rec.NumRows())
-				_ = applier(name, rec, seq, ts)
+				log.Debug().
+					Uint64("seq", seq).
+					Str("name", name).
+					Int64("rows", rec.NumRows()).
+					Msg("ReplayWAL: Applying record")
+				if err := applier(name, rec, seq, ts); err != nil {
+					r.Release()
+					return 0, fmt.Errorf("applier failed for record: %w", err)
+				}
 				count++
 			}
 			r.Release()
 		}
 	}
 
-	metrics.WalReplayDurationSeconds.Observe(time.Since(start).Seconds())
 	return maxSeq, nil
 }
 
@@ -310,26 +310,26 @@ func (e *StorageEngine) Snapshot(source SnapshotSource) error {
 				return err
 			}
 		}
-		e.writeSnapshotItem(&item, tempDir)
-		return nil
+		return e.writeSnapshotItem(&item, tempDir)
 	})
 	if err != nil {
 		return err
 	}
 
-	_ = os.RemoveAll(snapshotDir)
+	if err := os.RemoveAll(snapshotDir); err != nil {
+		log.Warn().Err(err).Msg("Snapshot: failed to remove old snapshot dir")
+	}
+
 	if err := os.Rename(tempDir, snapshotDir); err != nil {
 		return fmt.Errorf("failed to rename snapshot dir: %w", err)
 	}
 
-	// Truncate WAL
 	// Truncate WAL and Restart Batcher
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
 	hadBatcher := e.walBatcher != nil
 
-	// 1. Stop Batcher
 	if hadBatcher {
 		if err := e.walBatcher.Stop(); err != nil {
 			return fmt.Errorf("failed to stop wal batcher for snapshot: %w", err)
@@ -337,15 +337,15 @@ func (e *StorageEngine) Snapshot(source SnapshotSource) error {
 		e.walBatcher = nil
 	}
 
-	// 2. Truncate WAL
 	if e.wal != nil {
 		_ = e.wal.Close()
 		walPath := filepath.Join(e.dataPath, walFileName)
-		_ = os.Truncate(walPath, 0)
+		if err := os.Truncate(walPath, 0); err != nil {
+			log.Error().Err(err).Msg("Snapshot: failed to truncate WAL")
+		}
 		e.wal = NewWAL(e.dataPath)
 	}
 
-	// 3. Restart Batcher
 	if hadBatcher {
 		batcherCfg := DefaultWALBatcherConfig()
 		if e.config.DoPutBatchSize > 0 {
@@ -366,40 +366,53 @@ func (e *StorageEngine) Snapshot(source SnapshotSource) error {
 	return nil
 }
 
-func (e *StorageEngine) writeSnapshotItem(item *SnapshotItem, tempDir string) {
+func (e *StorageEngine) writeSnapshotItem(item *SnapshotItem, tempDir string) error {
 	// Write Data Records
 	if len(item.Records) > 0 {
 		path := filepath.Join(tempDir, item.Name+".parquet")
 		f, err := os.Create(path)
-		if err == nil {
-			_ = writeParquet(f, item.Records...)
-			_ = f.Close()
+		if err != nil {
+			return fmt.Errorf("failed to create record parquet: %w", err)
 		}
+		if err := writeParquet(f, item.Records...); err != nil {
+			f.Close()
+			return fmt.Errorf("failed to write record parquet: %w", err)
+		}
+		f.Close()
 	}
 
 	// Write Graph Records
 	if len(item.GraphRecords) > 0 {
 		path := filepath.Join(tempDir, item.Name+".graph.parquet")
 		f, err := os.Create(path)
-		if err == nil {
-			for _, rec := range item.GraphRecords {
-				_ = writeGraphParquet(f, rec)
-			}
-			_ = f.Close()
+		if err != nil {
+			return fmt.Errorf("failed to create graph parquet: %w", err)
 		}
+		for _, rec := range item.GraphRecords {
+			if err := writeGraphParquet(f, rec); err != nil {
+				f.Close()
+				return fmt.Errorf("failed to write graph parquet: %w", err)
+			}
+		}
+		f.Close()
 	}
 
 	// Write PQ
 	if len(item.PQCodebook) > 0 {
 		path := filepath.Join(tempDir, item.Name+".pq")
-		_ = os.WriteFile(path, item.PQCodebook, 0o644)
+		if err := os.WriteFile(path, item.PQCodebook, 0o644); err != nil {
+			return fmt.Errorf("failed to write PQ codebook: %w", err)
+		}
 	}
 
 	// Write Config
 	if len(item.IndexConfig) > 0 {
 		path := filepath.Join(tempDir, item.Name+".config")
-		_ = os.WriteFile(path, item.IndexConfig, 0o644)
+		if err := os.WriteFile(path, item.IndexConfig, 0o644); err != nil {
+			return fmt.Errorf("failed to write index config: %w", err)
+		}
 	}
+	return nil
 }
 
 // LoadSnapshots reads all snapshots and calls loader for each item.
@@ -420,7 +433,7 @@ func (e *StorageEngine) LoadSnapshots(loader func(SnapshotItem) error) error {
 	partials := make(map[string]*SnapshotItem)
 
 	for _, entry := range entries {
-		fmt.Printf("LoadSnapshots: Found entry %s\n", entry.Name())
+		log.Trace().Str("entry", entry.Name()).Msg("LoadSnapshots: Processing entry")
 		ext := filepath.Ext(entry.Name())
 		name := entry.Name()[:len(entry.Name())-len(ext)]
 		fullPath := filepath.Join(snapshotDir, entry.Name())
@@ -448,10 +461,10 @@ func (e *StorageEngine) LoadSnapshots(loader func(SnapshotItem) error) error {
 		case name + ".parquet":
 			rec, err := readParquet(f, info.Size(), e.mem)
 			if err == nil && rec != nil {
-				fmt.Printf("LoadSnapshots: Loaded records for %s, rows=%d\n", name, rec.NumRows())
+				log.Debug().Str("name", name).Int64("rows", rec.NumRows()).Msg("LoadSnapshots: Loaded records")
 				item.Records = append(item.Records, rec)
-			} else {
-				fmt.Printf("LoadSnapshots: Failed to read parquet for %s: %v\n", name, err)
+			} else if err != nil {
+				log.Error().Err(err).Str("name", name).Msg("LoadSnapshots: Failed to read parquet")
 			}
 		case name + ".graph.parquet":
 			rec, err := readGraphParquet(f, info.Size(), e.mem)

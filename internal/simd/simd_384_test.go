@@ -16,10 +16,16 @@ func TestEuclidean384(t *testing.T) {
 		b[i] = rng.Float32()
 	}
 
-	expected := euclideanGeneric(a, b)
+	expected, err1 := euclideanGeneric(a, b)
+	if err1 != nil {
+		t.Errorf("euclideanGeneric error: %v", err1)
+	}
 
 	// Should route to specialized 384 kernel
-	got := EuclideanDistance(a, b)
+	got, err2 := EuclideanDistance(a, b)
+	if err2 != nil {
+		t.Errorf("EuclideanDistance error: %v", err2)
+	}
 
 	// Check closeness
 	diff := expected - got
@@ -42,10 +48,16 @@ func TestDot384(t *testing.T) {
 		b[i] = rng.Float32()
 	}
 
-	expected := dotGeneric(a, b)
+	expected, err1 := dotGeneric(a, b)
+	if err1 != nil {
+		t.Errorf("dotGeneric error: %v", err1)
+	}
 
 	// Should route to specialized 384 kernel
-	got := DotProduct(a, b)
+	got, err2 := DotProduct(a, b)
+	if err2 != nil {
+		t.Errorf("DotProduct error: %v", err2)
+	}
 
 	// Check closeness
 	diff := expected - got
@@ -64,7 +76,7 @@ func BenchmarkEuclidean384(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		EuclideanDistance(a, bb)
+		_, _ = EuclideanDistance(a, bb)
 	}
 }
 
@@ -92,7 +104,7 @@ func BenchmarkDot384(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		DotProduct(a, bb)
+		_, _ = DotProduct(a, bb)
 	}
 }
 
@@ -103,6 +115,6 @@ func BenchmarkDot385_Generic(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		DotProduct(a, bb)
+		_, _ = DotProduct(a, bb)
 	}
 }

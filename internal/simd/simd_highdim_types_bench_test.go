@@ -58,7 +58,7 @@ func benchmarkFloat64(b *testing.B, dim int) {
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		EuclideanDistanceFloat64(v1, v2)
+		_, _ = EuclideanDistanceFloat64(v1, v2)
 	}
 }
 
@@ -105,16 +105,16 @@ func benchmarkInt8(b *testing.B, dim int) {
 
 	// Fallback if Get not found
 	distFunc := Registry.Get(MetricEuclidean, DataTypeInt8, 0)
-	var f func([]int8, []int8) float32
+	var f func([]int8, []int8) (float32, error)
 	if distFunc == nil {
 		f = euclideanInt8Unrolled4x
 	} else {
-		f = distFunc.(func([]int8, []int8) float32)
+		f = distFunc.(func([]int8, []int8) (float32, error))
 	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		f(v1, v2)
+		_, _ = f(v1, v2)
 	}
 }
 
@@ -134,17 +134,17 @@ func benchmarkInt16(b *testing.B, dim int) {
 
 	// Fallback if Get not found
 	distFunc := Registry.Get(MetricEuclidean, DataTypeInt16, 0)
-	var f func([]int16, []int16) float32
+	var f func([]int16, []int16) (float32, error)
 	if distFunc == nil {
 		// Fallback to internal if registry miss (shouldn't happen if initialized)
 		f = euclideanInt16Unrolled4x
 	} else {
-		f = distFunc.(func([]int16, []int16) float32)
+		f = distFunc.(func([]int16, []int16) (float32, error))
 	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		f(v1, v2)
+		_, _ = f(v1, v2)
 	}
 }
 
@@ -158,6 +158,6 @@ func benchmarkComplex128(b *testing.B, dim int) {
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		EuclideanDistanceComplex128(v1, v2)
+		_, _ = EuclideanDistanceComplex128(v1, v2)
 	}
 }

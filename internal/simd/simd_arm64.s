@@ -2,8 +2,8 @@
 
 #include "textflag.h"
 
-// func euclideanNEON(a, b []float32) float32
-TEXT ·euclideanNEON(SB), NOSPLIT, $0-52
+// func euclideanNEONKernel(a, b []float32) float32
+TEXT ·euclideanNEONKernel(SB), NOSPLIT, $0-52
     MOVD    a_base+0(FP), R0
     MOVD    a_len+8(FP), R1
     MOVD    b_base+24(FP), R2
@@ -56,8 +56,8 @@ done:
     FMOVS   F0, ret+48(FP)
     RET
 
-// func dotNEON(a, b []float32) float32
-TEXT ·dotNEON(SB), NOSPLIT, $0-52
+// func dotNEONKernel(a, b []float32) float32
+TEXT ·dotNEONKernel(SB), NOSPLIT, $0-52
     MOVD    a_base+0(FP), R0
     MOVD    a_len+8(FP), R1
     MOVD    b_base+24(FP), R2
@@ -106,8 +106,8 @@ dot_done:
 // FP16 OPTIMIZED IMPLEMENTATIONS
 // ============================================================================
 
-// func euclideanF16NEON(a, b []float16.Num) float32
-TEXT ·euclideanF16NEON(SB), NOSPLIT, $0-52
+// func euclideanF16NEONKernel(a, b []float16.Num) float32
+TEXT ·euclideanF16NEONKernel(SB), NOSPLIT, $0-52
     MOVD    a_base+0(FP), R0
     MOVD    a_len+8(FP), R1
     MOVD    b_base+24(FP), R2
@@ -174,8 +174,8 @@ euc_f16_done:
     FMOVS   F0, ret+48(FP)
     RET
 
-// func dotF16NEON(a, b []float16.Num) float32
-TEXT ·dotF16NEON(SB), NOSPLIT, $0-52
+// func dotF16NEONKernel(a, b []float16.Num) float32
+TEXT ·dotF16NEONKernel(SB), NOSPLIT, $0-52
     MOVD    a_base+0(FP), R0
     MOVD    a_len+8(FP), R1
     MOVD    b_base+24(FP), R2
@@ -234,8 +234,8 @@ dot_f16_done:
     FMOVS   F0, ret+48(FP)
     RET
 
-// func cosineF16NEON(a, b []float16.Num) float32
-TEXT ·cosineF16NEON(SB), NOSPLIT, $0-52
+// func cosineF16NEONKernel(a, b []float16.Num) float32
+TEXT ·cosineF16NEONKernel(SB), NOSPLIT, $0-52
     MOVD    a_base+0(FP), R0
     MOVD    a_len+8(FP), R1
     MOVD    b_base+24(FP), R2

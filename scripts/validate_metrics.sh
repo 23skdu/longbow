@@ -6,7 +6,7 @@ set -e
 
 METRICS_FILE="internal/metrics/metrics.go"
 DASHBOARD_FILE="grafana/dashboards/longbow.json"
-CLUSTER_PORTS="9090 9091 9092"
+CLUSTER_PORTS=${1:-"9090 9091 9092"}
 
 echo "=================================="
 echo "📋 LONGBOW METRICS VALIDATION"

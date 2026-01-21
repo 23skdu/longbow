@@ -4,6 +4,7 @@ import (
 	"container/heap"
 	"context"
 	"errors"
+	"math"
 	"sync"
 	"sync/atomic"
 
@@ -167,7 +168,10 @@ func (b *BruteForceIndex) SearchVectors(ctx context.Context, q any, k int, filte
 			continue
 		}
 
-		dist := simd.EuclideanDistance(qF32, vec)
+		dist, err := simd.EuclideanDistance(qF32, vec)
+		if err != nil {
+			dist = math.MaxFloat32
+		}
 
 		if h.Len() < k {
 			heap.Push(h, bfHeapItem{

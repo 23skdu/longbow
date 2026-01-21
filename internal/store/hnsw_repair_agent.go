@@ -1,6 +1,7 @@
 package store
 
 import (
+	"math"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -252,7 +253,10 @@ func (r *RepairAgent) repairOrphan(orphan uint32, layer int) {
 		}
 
 		// Use SIMD distance function
-		dist := simd.DistFunc(orphanVec, nodeVec)
+		dist, err := simd.DistFunc(orphanVec, nodeVec)
+		if err != nil {
+			dist = math.MaxFloat32
+		}
 		candidates = append(candidates, candidate{id: nodeID, dist: dist})
 	}
 

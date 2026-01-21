@@ -38,8 +38,13 @@ echo "PID: $!"
 echo "Waiting for healthy status..."
 
 # Wait loop
+# Extract port from LONGBOW_METRICS_ADDR (expecting format host:port or :port)
+METRICS_PORT=$(echo $LONGBOW_METRICS_ADDR | cut -d':' -f2)
+if [ -z "$METRICS_PORT" ]; then METRICS_PORT="9090"; fi
+
+echo "Waiting for healthy status on port $METRICS_PORT..."
 for i in {1..30}; do
-    if curl -s http://localhost:9090/metrics > /dev/null; then
+    if curl -s http://localhost:$METRICS_PORT/metrics > /dev/null; then
         echo "Node is UP!"
         exit 0
     fi

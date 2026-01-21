@@ -4,12 +4,13 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestZeroAllocTicketParser_Parse(t *testing.T) {
-	parser := NewZeroAllocTicketParser()
+	parser := NewZeroAllocTicketParser(zerolog.Nop())
 
 	t.Run("BasicValid", func(t *testing.T) {
 		data := []byte(`{"name": "cities", "limit": 100}`)
@@ -114,7 +115,7 @@ func TestParseTicketQuerySafe(t *testing.T) {
 
 func BenchmarkZeroAllocParser(b *testing.B) {
 	data := []byte(`{"name": "users", "limit": 50, "filters": [{"field": "country", "operator": "==", "value": "US"}]}`)
-	parser := NewZeroAllocTicketParser()
+	parser := NewZeroAllocTicketParser(zerolog.Nop())
 
 	b.Run("ZeroAlloc", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {

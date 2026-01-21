@@ -48,7 +48,7 @@ func (h *HNSWIndex) Add(batchIdx, rowIdx int) (uint32, error) {
 
 				err := h.TrainPQ(sample)
 				if err != nil {
-					fmt.Printf("PQ Training failed: %v\n", err)
+					// PQ Training failed
 				}
 				metrics.HNSWPQTrainingDuration.WithLabelValues(h.dataset.Name).Observe(time.Since(start).Seconds())
 			}

@@ -59,7 +59,10 @@ func (h *ArrowHNSW) adjustMParameter(data *GraphData, sampleSize int) {
 			continue
 		}
 
-		d := h.distFunc(sampleVecs[i], sampleVecs[j])
+		d, err := h.distFunc(sampleVecs[i], sampleVecs[j])
+		if err != nil {
+			continue
+		}
 		dists = append(dists, d)
 	}
 

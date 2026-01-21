@@ -1,6 +1,7 @@
 package store
 
 import (
+	"math"
 	"sort"
 	"time"
 
@@ -256,7 +257,12 @@ func (h *HNSWIndex) SearchBatchWithArena(queries [][]float32, k int, arena *Sear
 			vec := h.getVector(id)
 			dist := float32(0)
 			if vec != nil {
-				dist = simd.EuclideanDistance(q, vec) // Assuming Euclidean default for test
+				d, err := simd.EuclideanDistance(q, vec) // Assuming Euclidean default for test
+				if err != nil {
+					dist = math.MaxFloat32
+				} else {
+					dist = d
+				}
 			}
 			ranked[j] = RankedResult{ID: id, Distance: dist}
 		}

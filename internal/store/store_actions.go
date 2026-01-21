@@ -782,7 +782,6 @@ func (s *VectorStore) applyBatchToMemory(name string, rec arrow.RecordBatch, ts 
 		ds.Topo = s.numaTopology
 
 		// Disk Store Initialization (Phase 6)
-		fmt.Printf("CRITICAL DEBUG: Checking DiskStore for %s\n", name)
 		s.logger.Info().Str("name", name).Msg("Checking DiskStore init condition")
 		if strings.HasPrefix(name, "test_disk") || os.Getenv("LONGBOW_USE_DISK") == "1" {
 			path := filepath.Join(s.dataPath, name+"_vectors.bin")

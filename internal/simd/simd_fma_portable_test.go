@@ -59,7 +59,10 @@ func TestDotProductFMA_Basic(t *testing.T) {
 	b := []float32{5, 6, 7, 8}
 
 	expected := refDotProduct(a, b) // expected = 70
-	got := DotProductFMA(a, b)
+	got, err := DotProductFMA(a, b)
+	if err != nil {
+		t.Errorf("DotProductFMA error: %v", err)
+	}
 
 	if math.Abs(float64(got-expected)) > 1e-5 {
 		t.Errorf("DotProductFMA basic: got %v, want %v", got, expected)
@@ -71,7 +74,10 @@ func TestDotProductFMA_768Dim(t *testing.T) {
 	b := generateTestVector(768, 43)
 
 	expected := refDotProduct(a, b)
-	got := DotProductFMA(a, b)
+	got, err := DotProductFMA(a, b)
+	if err != nil {
+		t.Errorf("DotProductFMA error: %v", err)
+	}
 
 	epsilon := float32(1e-4)
 	if diff := float32(math.Abs(float64(got - expected))); diff > epsilon {
@@ -84,7 +90,10 @@ func TestDotProductFMA_1536Dim(t *testing.T) {
 	b := generateTestVector(1536, 45)
 
 	expected := refDotProduct(a, b)
-	got := DotProductFMA(a, b)
+	got, err := DotProductFMA(a, b)
+	if err != nil {
+		t.Errorf("DotProductFMA error: %v", err)
+	}
 
 	epsilon := float32(1e-3)
 	if diff := float32(math.Abs(float64(got - expected))); diff > epsilon {
@@ -93,16 +102,16 @@ func TestDotProductFMA_1536Dim(t *testing.T) {
 }
 
 func TestDotProductFMA_EmptyVector(t *testing.T) {
-	got := DotProductFMA([]float32{}, []float32{})
+	got, _ := DotProductFMA([]float32{}, []float32{})
 	if got != 0 {
 		t.Errorf("DotProductFMA empty: got %v, want 0", got)
 	}
 }
 
 func TestDotProductFMA_LengthMismatch(t *testing.T) {
-	got := DotProductFMA([]float32{1, 2, 3}, []float32{1, 2})
-	if got != 0 {
-		t.Errorf("DotProductFMA mismatch: got %v, want 0", got)
+	_, err := DotProductFMA([]float32{1, 2, 3}, []float32{1, 2})
+	if err == nil {
+		t.Errorf("DotProductFMA mismatch: expected error, got nil")
 	}
 }
 
@@ -115,7 +124,10 @@ func TestEuclideanDistanceFMA_Basic(t *testing.T) {
 	b := []float32{3, 4, 0}
 
 	expected := refEuclideanSq(a, b) // 25 (squared)
-	got := EuclideanDistanceFMA(a, b)
+	got, err := EuclideanDistanceFMA(a, b)
+	if err != nil {
+		t.Errorf("EuclideanDistanceFMA error: %v", err)
+	}
 
 	if math.Abs(float64(got-expected)) > 1e-5 {
 		t.Errorf("EuclideanDistanceFMA basic: got %v, want %v", got, expected)
@@ -127,7 +139,10 @@ func TestEuclideanDistanceFMA_768Dim(t *testing.T) {
 	b := generateTestVector(768, 51)
 
 	expected := refEuclideanSq(a, b)
-	got := EuclideanDistanceFMA(a, b)
+	got, err := EuclideanDistanceFMA(a, b)
+	if err != nil {
+		t.Errorf("EuclideanDistanceFMA error: %v", err)
+	}
 
 	epsilon := float32(1e-3)
 	if diff := float32(math.Abs(float64(got - expected))); diff > epsilon {
@@ -137,7 +152,7 @@ func TestEuclideanDistanceFMA_768Dim(t *testing.T) {
 
 func TestEuclideanDistanceFMA_Identical(t *testing.T) {
 	a := generateTestVector(256, 60)
-	got := EuclideanDistanceFMA(a, a)
+	got, _ := EuclideanDistanceFMA(a, a)
 
 	if got != 0 {
 		t.Errorf("EuclideanDistanceFMA identical: got %v, want 0", got)
@@ -153,7 +168,10 @@ func TestCosineDistanceFMA_Basic(t *testing.T) {
 	b := []float32{0, 1, 0}
 
 	expected := refCosineDistance(a, b) // 1.0 (orthogonal)
-	got := CosineDistanceFMA(a, b)
+	got, err := CosineDistanceFMA(a, b)
+	if err != nil {
+		t.Errorf("CosineDistanceFMA error: %v", err)
+	}
 
 	if math.Abs(float64(got-expected)) > 1e-5 {
 		t.Errorf("CosineDistanceFMA orthogonal: got %v, want %v", got, expected)
@@ -162,7 +180,7 @@ func TestCosineDistanceFMA_Basic(t *testing.T) {
 
 func TestCosineDistanceFMA_Identical(t *testing.T) {
 	a := generateTestVector(384, 70)
-	got := CosineDistanceFMA(a, a)
+	got, _ := CosineDistanceFMA(a, a)
 
 	// Identical vectors should have cosine distance 0
 	if math.Abs(float64(got)) > 1e-5 {
@@ -175,7 +193,10 @@ func TestCosineDistanceFMA_768Dim(t *testing.T) {
 	b := generateTestVector(768, 81)
 
 	expected := refCosineDistance(a, b)
-	got := CosineDistanceFMA(a, b)
+	got, err := CosineDistanceFMA(a, b)
+	if err != nil {
+		t.Errorf("CosineDistanceFMA error: %v", err)
+	}
 
 	epsilon := float32(1e-4)
 	if diff := float32(math.Abs(float64(got - expected))); diff > epsilon {
@@ -187,7 +208,7 @@ func TestCosineDistanceFMA_ZeroVector(t *testing.T) {
 	a := make([]float32, 128)
 	b := generateTestVector(128, 90)
 
-	got := CosineDistanceFMA(a, b)
+	got, _ := CosineDistanceFMA(a, b)
 
 	if got != 1.0 {
 		t.Errorf("CosineDistanceFMA zero: got %v, want 1.0", got)
@@ -207,21 +228,21 @@ func TestFMA_NonAlignedLengths(t *testing.T) {
 
 		// Dot product
 		expDot := refDotProduct(a, b)
-		gotDot := DotProductFMA(a, b)
+		gotDot, _ := DotProductFMA(a, b)
 		if math.Abs(float64(gotDot-expDot)) > 1e-4 {
 			t.Errorf("DotProductFMA size=%d: got %v, want %v", size, gotDot, expDot)
 		}
 
 		// Euclidean
 		expEuc := refEuclideanSq(a, b)
-		gotEuc := EuclideanDistanceFMA(a, b)
+		gotEuc, _ := EuclideanDistanceFMA(a, b)
 		if math.Abs(float64(gotEuc-expEuc)) > 1e-4 {
 			t.Errorf("EuclideanDistanceFMA size=%d: got %v, want %v", size, gotEuc, expEuc)
 		}
 
 		// Cosine
 		expCos := refCosineDistance(a, b)
-		gotCos := CosineDistanceFMA(a, b)
+		gotCos, _ := CosineDistanceFMA(a, b)
 		if math.Abs(float64(gotCos-expCos)) > 1e-4 {
 			t.Errorf("CosineDistanceFMA size=%d: got %v, want %v", size, gotCos, expCos)
 		}
@@ -237,7 +258,7 @@ func BenchmarkDotProductFMA_768(b *testing.B) {
 	v := generateTestVector(768, 2)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = DotProductFMA(a, v)
+		_, _ = DotProductFMA(a, v)
 	}
 }
 
@@ -246,7 +267,7 @@ func BenchmarkDotProductFMA_1536(b *testing.B) {
 	v := generateTestVector(1536, 2)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = DotProductFMA(a, v)
+		_, _ = DotProductFMA(a, v)
 	}
 }
 
@@ -255,7 +276,7 @@ func BenchmarkEuclideanDistanceFMA_768(b *testing.B) {
 	v := generateTestVector(768, 2)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = EuclideanDistanceFMA(a, v)
+		_, _ = EuclideanDistanceFMA(a, v)
 	}
 }
 
@@ -264,6 +285,6 @@ func BenchmarkCosineDistanceFMA_768(b *testing.B) {
 	v := generateTestVector(768, 2)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = CosineDistanceFMA(a, v)
+		_, _ = CosineDistanceFMA(a, v)
 	}
 }

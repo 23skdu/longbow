@@ -194,6 +194,10 @@ func run() error {
 		panic("Failed to initialize logger: " + err.Error())
 	}
 
+	if err := ValidateConfig(&cfg); err != nil {
+		logger.Fatal().Err(err).Msg("Invalid configuration")
+	}
+
 	logger.Info().
 		Str("listen_addr", cfg.ListenAddr).
 		Str("meta_addr", cfg.MetaAddr).
@@ -345,7 +349,10 @@ func run() error {
 		}
 
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Error().Err(err).Msg("Metrics server failed")
+			logger.Error().
+				Err(err).
+				Str("addr", cfg.MetricsAddr).
+				Msg("Metrics server failed to start - check if port is already in use")
 		}
 	}()
 

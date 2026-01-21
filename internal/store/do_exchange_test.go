@@ -111,7 +111,7 @@ func TestDoExchange_Ingest(t *testing.T) {
 
 	// Check store has data (poll for async ingestion)
 	ds, ok := s.getDataset("test_exchange_ingest")
-	assert.True(t, ok)
+	require.True(t, ok)
 
 	assert.Eventually(t, func() bool {
 		ds.dataMu.RLock()
@@ -119,8 +119,7 @@ func TestDoExchange_Ingest(t *testing.T) {
 		return len(ds.Records) == 1
 	}, 1*time.Second, 10*time.Millisecond, "dataset should have 1 record batch")
 
-	ds.dataMu.RLock()
-	defer ds.dataMu.RUnlock()
+	require.Len(t, ds.Records, 1)
 	assert.Equal(t, int64(2), ds.Records[0].NumRows())
 }
 

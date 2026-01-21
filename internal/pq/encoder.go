@@ -93,7 +93,10 @@ func (e *PQEncoder) Encode(vector []float32) ([]byte, error) {
 
 		for k := 0; k < e.K; k++ {
 			cent := centroids[k*e.SubDim : (k+1)*e.SubDim]
-			dist := simd.L2Squared(subVec, cent)
+			dist, err := simd.L2Squared(subVec, cent)
+			if err != nil {
+				continue
+			}
 			if dist < bestDist {
 				bestDist = dist
 				bestIdx = k

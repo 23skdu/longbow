@@ -1,7 +1,7 @@
 package simd
 
 import (
-	"fmt"
+	"errors"
 	"math"
 	"os"
 	"unsafe"
@@ -10,6 +10,12 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/float16"
 
 	"github.com/klauspost/cpuid/v2"
+	"github.com/rs/zerolog/log"
+)
+
+var (
+	ErrDimensionMismatch    = errors.New("simd: vector dimension mismatch")
+	ErrInitializationFailed = errors.New("simd: initialization failed")
 )
 
 // CPUFeatures contains detected CPU SIMD capabilities
@@ -22,16 +28,16 @@ type CPUFeatures struct {
 
 // Function pointer types for dispatch
 type (
-	distanceFunc         func(a, b []float32) float32
-	distanceBatchFunc    func(query []float32, vectors [][]float32, results []float32)
-	distanceSQ8BatchFunc func(query []byte, vectors [][]byte, results []float32)
-	adcDistanceBatchFunc func(table []float32, flatCodes []byte, m int, results []float32)
+	distanceFunc         func(a, b []float32) (float32, error)
+	distanceBatchFunc    func(query []float32, vectors [][]float32, results []float32) error
+	distanceSQ8BatchFunc func(query []byte, vectors [][]byte, results []float32) error
+	adcDistanceBatchFunc func(table []float32, flatCodes []byte, m int, results []float32) error
 
-	distanceF16Func func(a, b []float16.Num) float32
+	distanceF16Func func(a, b []float16.Num) (float32, error)
 
-	distanceComplex64Func  func(a, b []complex64) float32
-	distanceComplex128Func func(a, b []complex128) float32
-	distanceFloat64Func    func(a, b []float64) float32
+	distanceComplex64Func  func(a, b []complex64) (float32, error)
+	distanceComplex128Func func(a, b []complex128) (float32, error)
+	distanceFloat64Func    func(a, b []float64) (float32, error)
 
 	// CompareOp represents a comparison operator for SIMD filters
 	CompareOp int
@@ -47,8 +53,8 @@ const (
 )
 
 type (
-	matchInt64Func   func(src []int64, val int64, op CompareOp, dst []byte)
-	matchFloat32Func func(src []float32, val float32, op CompareOp, dst []byte)
+	matchInt64Func   func(src []int64, val int64, op CompareOp, dst []byte) error
+	matchFloat32Func func(src []float32, val float32, op CompareOp, dst []byte) error
 )
 
 var (
@@ -90,8 +96,8 @@ var (
 	euclideanDistanceComplex128Impl distanceComplex128Func
 	euclideanDistanceFloat64Impl    distanceFloat64Func
 
-	euclideanDistanceInt8Impl  func(a, b []int8) float32
-	euclideanDistanceInt16Impl func(a, b []int16) float32
+	euclideanDistanceInt8Impl  func(a, b []int8) (float32, error)
+	euclideanDistanceInt16Impl func(a, b []int16) (float32, error)
 )
 
 func init() {
@@ -103,22 +109,26 @@ func init() {
 
 	if os.Getenv("LONGBOW_JIT") == "1" {
 		if err := initJIT(); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to init JIT: %v\n", err)
+			log.Error().Err(err).Msg("Failed to init JIT")
 		} else {
 			// Override with JIT implementation
-			euclideanDistanceBatchImpl = jitRT.EuclideanBatchInto
-			fmt.Println("JIT SIMD Enabled for Euclidean Batch")
+			euclideanDistanceBatchImpl = func(query []float32, vectors [][]float32, results []float32) error {
+				jitRT.EuclideanBatchInto(query, vectors, results)
+				return nil
+			}
+			log.Info().Msg("JIT SIMD Enabled for Euclidean Batch")
 		}
 	}
 }
 
 // AndBytes performs bitwise AND: dst[i] &= src[i].
 // Assumes len(dst) == len(src).
-func AndBytes(dst, src []byte) {
+func AndBytes(dst, src []byte) error {
 	if len(dst) != len(src) {
-		panic("simd: length mismatch")
+		return errors.New("simd: length mismatch")
 	}
 	andBytesImpl(dst, src)
+	return nil
 }
 
 func detectCPU() {
@@ -324,12 +334,12 @@ func GetImplementation() string {
 
 // EuclideanDistance calculates the Euclidean distance between two vectors.
 // Uses pre-selected implementation via function pointer (no switch overhead).
-func EuclideanDistance(a, b []float32) float32 {
+func EuclideanDistance(a, b []float32) (float32, error) {
 	if len(a) != len(b) {
-		panic("simd: vector length mismatch")
+		return 0, errors.New("simd: vector length mismatch")
 	}
 	if len(a) == 0 {
-		return 0
+		return 0, nil
 	}
 	if len(a) == 384 {
 		return euclideanDistance384Impl(a, b)
@@ -342,36 +352,36 @@ func EuclideanDistance(a, b []float32) float32 {
 
 // L2Squared calculates the squared Euclidean distance between two vectors.
 // Optimized for PQ training and ADC table construction.
-func L2Squared(a, b []float32) float32 {
+func L2Squared(a, b []float32) (float32, error) {
 	if len(a) != len(b) {
-		panic("simd: vector length mismatch")
+		return 0, errors.New("simd: vector length mismatch")
 	}
 	if len(a) == 0 {
-		return 0
+		return 0, nil
 	}
 	return l2SquaredImpl(a, b)
 }
 
 // CosineDistance calculates the cosine distance (1 - similarity) between two vectors.
 // Uses pre-selected implementation via function pointer (no switch overhead).
-func CosineDistance(a, b []float32) float32 {
+func CosineDistance(a, b []float32) (float32, error) {
 	if len(a) != len(b) {
-		panic("simd: vector length mismatch")
+		return 0, errors.New("simd: vector length mismatch")
 	}
 	if len(a) == 0 {
-		return 1.0
+		return 1.0, nil
 	}
 	return cosineDistanceImpl(a, b)
 }
 
 // DotProduct calculates the dot product of two vectors.
 // Uses pre-selected implementation via function pointer (no switch overhead).
-func DotProduct(a, b []float32) float32 {
+func DotProduct(a, b []float32) (float32, error) {
 	if len(a) != len(b) {
-		panic("simd: vector length mismatch")
+		return 0, errors.New("simd: vector length mismatch")
 	}
 	if len(a) == 0 {
-		return 0
+		return 0, nil
 	}
 	if len(a) == 384 {
 		return dotProduct384Impl(a, b)
@@ -383,69 +393,62 @@ func DotProduct(a, b []float32) float32 {
 }
 
 // EuclideanDistanceF16 calculates the Euclidean distance between two FP16 vectors.
-func EuclideanDistanceF16(a, b []float16.Num) float32 {
+func EuclideanDistanceF16(a, b []float16.Num) (float32, error) {
 	if len(a) != len(b) {
-		panic("simd: vector length mismatch")
+		return 0, errors.New("simd: vector length mismatch")
 	}
 	if len(a) == 0 {
-		return 0
+		return 0, nil
 	}
 	metrics.SimdF16OpsTotal.WithLabelValues("euclidean", implementation).Inc()
 	return euclideanDistanceF16Impl(a, b)
 }
 
 // CosineDistanceF16 calculates the cosine distance between two FP16 vectors.
-func CosineDistanceF16(a, b []float16.Num) float32 {
+func CosineDistanceF16(a, b []float16.Num) (float32, error) {
 	if len(a) != len(b) {
-		panic("simd: vector length mismatch")
+		return 0, errors.New("simd: vector length mismatch")
 	}
 	if len(a) == 0 {
-		return 1.0
+		return 1.0, nil
 	}
 	metrics.SimdF16OpsTotal.WithLabelValues("cosine", implementation).Inc()
 	return cosineDistanceF16Impl(a, b)
 }
 
 // DotProductF16 calculates the dot product of two FP16 vectors.
-func DotProductF16(a, b []float16.Num) float32 {
+func DotProductF16(a, b []float16.Num) (float32, error) {
 	if len(a) != len(b) {
-		panic("simd: vector length mismatch")
+		return 0, errors.New("simd: vector length mismatch")
 	}
 	if len(a) == 0 {
-		return 0
+		return 0, nil
 	}
 	metrics.SimdF16OpsTotal.WithLabelValues("dot", implementation).Inc()
 	return dotProductF16Impl(a, b)
 }
 
 // EuclideanDistanceFloat64 calculates Euclidean distance for Float64 vectors.
-func EuclideanDistanceFloat64(a, b []float64) float32 {
+// EuclideanDistanceFloat64 calculates Euclidean distance using Float64.
+// Returns float32 distance for consistency with other metrics.
+func EuclideanDistanceFloat64(a, b []float64) (float32, error) {
 	if len(a) != len(b) {
-		panic("simd: vector length mismatch")
+		return 0, errors.New("simd: vector length mismatch")
 	}
 	if len(a) == 0 {
-		return 0
+		return 0, nil
 	}
 	return euclideanDistanceFloat64Impl(a, b)
 }
 
-// EuclideanDistanceComplex64 calculates Euclidean distance for Complex64 vectors.
-func EuclideanDistanceComplex64(a, b []complex64) float32 {
+func EuclideanDistanceComplex64(a, b []complex64) (float32, error) {
 	if len(a) != len(b) {
-		panic("simd: vector length mismatch")
+		return 0, errors.New("simd: vector length mismatch")
 	}
 	if len(a) == 0 {
-		return 0
+		return 0, nil
 	}
-	// Optimization: complex64 is just 2x float32s in memory.
-	// We can treat them as float32 vectors of 2*N length and use the highly optimized
-	// AVX/NEON kernels for float32.
-	//
-	// Euclidean distance is sqrt(sum((real_diff^2 + imag_diff^2))), which is
-	// exactly what 2N float32 euclidean distance calculates.
-
 	// Unsafe cast to []float32
-	// Note: len * 2, cap * 2
 	vfA := unsafe.Slice((*float32)(unsafe.Pointer(&a[0])), len(a)*2)
 	vfB := unsafe.Slice((*float32)(unsafe.Pointer(&b[0])), len(b)*2)
 
@@ -453,12 +456,12 @@ func EuclideanDistanceComplex64(a, b []complex64) float32 {
 }
 
 // EuclideanDistanceComplex128 calculates Euclidean distance for Complex128 vectors.
-func EuclideanDistanceComplex128(a, b []complex128) float32 {
+func EuclideanDistanceComplex128(a, b []complex128) (float32, error) {
 	if len(a) != len(b) {
-		panic("simd: vector length mismatch")
+		return 0, errors.New("simd: vector length mismatch")
 	}
 	if len(a) == 0 {
-		return 0
+		return 0, nil
 	}
 	// Optimization: complex128 is just 2x float64s in memory.
 	// We can treat them as float64 vectors of 2*N length and use the optimized
@@ -481,41 +484,41 @@ func Prefetch(p unsafe.Pointer) {
 }
 
 // DotProductF64 calculates the dot product of two Float64 vectors.
-func DotProductF64(a, b []float64) float64 {
+func DotProductF64(a, b []float64) (float32, error) {
 	if len(a) != len(b) {
-		panic("simd: vector length mismatch")
+		return 0, errors.New("simd: vector length mismatch")
 	}
 	if len(a) == 0 {
-		return 0
+		return 0, nil
 	}
-	return float64(dotFloat64Unrolled4x(a, b))
+	return dotFloat64Unrolled4x(a, b)
 }
 
 // DotProductComplex64 calculates the real part of the dot product of two Complex64 vectors.
-func DotProductComplex64(a, b []complex64) float32 {
+func DotProductComplex64(a, b []complex64) (float32, error) {
 	if len(a) != len(b) {
-		panic("simd: vector length mismatch")
+		return 0, errors.New("simd: vector length mismatch")
 	}
 	if len(a) == 0 {
-		return 0
+		return 0, nil
 	}
 	return dotComplex64Unrolled(a, b)
 }
 
 // DotProductComplex128 calculates the real part of the dot product of two Complex128 vectors.
-func DotProductComplex128(a, b []complex128) float32 {
+func DotProductComplex128(a, b []complex128) (float32, error) {
 	if len(a) != len(b) {
-		panic("simd: vector length mismatch")
+		return 0, errors.New("simd: vector length mismatch")
 	}
 	if len(a) == 0 {
-		return 0
+		return 0, nil
 	}
 	// Missing dotComplex128Unrolled implementation, using simple loop for now
 	var dot complex128
 	for i := range a {
 		dot += a[i] * b[i]
 	}
-	return float32(real(dot))
+	return float32(real(dot)), nil
 }
 
 // ToFloat32 converts a float64 slice to a float32 slice (Allocates).
@@ -538,15 +541,19 @@ func float32SliceToBytes(vec []float32) []byte {
 
 // Generic implementations (fallback)
 
-func euclideanGeneric(a, b []float32) float32 {
-	return float32(math.Sqrt(float64(L2SquaredFloat32(a, b))))
+func euclideanGeneric(a, b []float32) (float32, error) {
+	d, err := L2SquaredFloat32(a, b)
+	return float32(math.Sqrt(float64(d))), err
 }
 
 // L2SquaredFloat32 calculates the squared Euclidean distance.
 // Uses unrolled 4x loop for performance.
-func L2SquaredFloat32(a, b []float32) float32 {
+func L2SquaredFloat32(a, b []float32) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
 	if len(a) == 0 {
-		return 0
+		return 0, nil
 	}
 
 	var sum0, sum1, sum2, sum3 float32
@@ -571,10 +578,13 @@ func L2SquaredFloat32(a, b []float32) float32 {
 		sum0 += d * d
 	}
 
-	return sum0 + sum1 + sum2 + sum3
+	return sum0 + sum1 + sum2 + sum3, nil
 }
 
-func cosineGeneric(a, b []float32) float32 {
+func cosineGeneric(a, b []float32) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
 	var dot, normA, normB float32
 	for i := 0; i < len(a); i++ {
 		dot += a[i] * b[i]
@@ -582,91 +592,118 @@ func cosineGeneric(a, b []float32) float32 {
 		normB += b[i] * b[i]
 	}
 	if normA == 0 || normB == 0 {
-		return 1.0
+		return 1.0, nil
 	}
-	return 1.0 - (dot / float32(math.Sqrt(float64(normA)*float64(normB))))
+	return 1.0 - (dot / float32(math.Sqrt(float64(normA)*float64(normB)))), nil
 }
 
-func dotGeneric(a, b []float32) float32 {
+func dotGeneric(a, b []float32) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
 	var sum float32
 	for i := 0; i < len(a); i++ {
 		sum += a[i] * b[i]
 	}
-	return sum
+	return sum, nil
 }
 
 // EuclideanDistanceBatch calculates the Euclidean distance between a query vector and multiple candidate vectors.
 // This batch version reduces function call overhead and allows for CPU-specific optimizations.
 // Uses pre-selected implementation via function pointer (no switch overhead).
-func EuclideanDistanceBatch(query []float32, vectors [][]float32, results []float32) {
+func EuclideanDistanceBatch(query []float32, vectors [][]float32, results []float32) error {
 	if len(vectors) != len(results) {
-		panic("simd: vectors and results length mismatch")
+		return errors.New("simd: vectors and results length mismatch")
 	}
 	if len(vectors) == 0 {
-		return
+		return nil
 	}
 	euclideanDistanceBatchImpl(query, vectors, results)
+	return nil
 }
 
 // EuclideanDistanceVerticalBatch optimally calculates distances for multiple vectors at once.
-func EuclideanDistanceVerticalBatch(query []float32, vectors [][]float32, results []float32) {
+func EuclideanDistanceVerticalBatch(query []float32, vectors [][]float32, results []float32) error {
 	if len(vectors) != len(results) {
-		panic("simd: vectors and results length mismatch")
+		return errors.New("simd: vectors and results length mismatch")
 	}
 	if len(vectors) == 0 {
-		return
+		return nil
 	}
 	euclideanDistanceVerticalBatchImpl(query, vectors, results)
+	return nil
 }
 
 // EuclideanDistanceSQ8Batch calculates Euclidean distance between SQ8 query and multiple SQ8 vectors.
-func EuclideanDistanceSQ8Batch(query []byte, vectors [][]byte, results []float32) {
+func EuclideanDistanceSQ8Batch(query []byte, vectors [][]byte, results []float32) error {
 	if len(vectors) != len(results) {
-		panic("simd: vectors and results length mismatch")
+		return errors.New("simd: vectors and results length mismatch")
 	}
 	if len(vectors) == 0 {
-		return
+		return nil
 	}
 	euclideanDistanceSQ8BatchImpl(query, vectors, results)
+	return nil
 }
 
 // euclideanSQ8BatchGeneric is the fallback implementation
-func euclideanSQ8BatchGeneric(query []byte, vectors [][]byte, results []float32) {
+func euclideanSQ8BatchGeneric(query []byte, vectors [][]byte, results []float32) error {
 	for i, v := range vectors {
-		results[i] = float32(EuclideanSQ8Generic(query, v))
+		d, err := EuclideanSQ8Generic(query, v)
+		if err != nil {
+			return err
+		}
+		results[i] = float32(d)
 	}
+	return nil
 }
 
 // euclideanBatchGeneric is the fallback implementation
-func euclideanBatchGeneric(query []float32, vectors [][]float32, results []float32) {
+func euclideanBatchGeneric(query []float32, vectors [][]float32, results []float32) error {
 	for i, v := range vectors {
-		results[i] = euclideanGeneric(query, v)
+		d, err := euclideanGeneric(query, v)
+		if err != nil {
+			return err
+		}
+		results[i] = d
 	}
+	return nil
 }
 
-func dotBatchGeneric(query []float32, vectors [][]float32, results []float32) {
+func dotBatchGeneric(query []float32, vectors [][]float32, results []float32) error {
 	for i, v := range vectors {
-		results[i] = dotGeneric(query, v)
+		d, err := DotProduct(query, v)
+		if err != nil {
+			return err
+		}
+		results[i] = d
 	}
+	return nil
 }
 
-func cosineBatchGeneric(query []float32, vectors [][]float32, results []float32) {
+func cosineBatchGeneric(query []float32, vectors [][]float32, results []float32) error {
 	for i, v := range vectors {
-		results[i] = cosineGeneric(query, v)
+		d, err := CosineDistance(query, v)
+		if err != nil {
+			return err
+		}
+		results[i] = d
 	}
+	return nil
 }
 
 // ADCDistanceBatch calculates asymmetric distances for multiple PQ-encoded vectors.
 // table is the precomputed distance table of size [m * 256].
 // flatCodes is a flattened byte slice of size [len(results) * m].
-func ADCDistanceBatch(table []float32, flatCodes []byte, m int, results []float32) {
+func ADCDistanceBatch(table []float32, flatCodes []byte, m int, results []float32) error {
 	if len(flatCodes) < len(results)*m {
-		panic("simd: flatCodes too small")
+		return errors.New("simd: flatCodes too small")
 	}
 	adcDistanceBatchImpl(table, flatCodes, m, results)
+	return nil
 }
 
-func adcBatchGeneric(table []float32, flatCodes []byte, m int, results []float32) {
+func adcBatchGeneric(table []float32, flatCodes []byte, m int, results []float32) error {
 	for i := 0; i < len(results); i++ {
 		var sum float32
 		codes := flatCodes[i*m : (i+1)*m]
@@ -675,6 +712,7 @@ func adcBatchGeneric(table []float32, flatCodes []byte, m int, results []float32
 		}
 		results[i] = float32(math.Sqrt(float64(sum)))
 	}
+	return nil
 }
 
 // =============================================================================
@@ -685,10 +723,12 @@ func adcBatchGeneric(table []float32, flatCodes []byte, m int, results []float32
 // - ~2-4x speedup over simple scalar loops
 // =============================================================================
 
-// euclideanUnrolled4x computes Euclidean distance with 4x loop unrolling
-func euclideanUnrolled4x(a, b []float32) float32 {
+func euclideanUnrolled4x(a, b []float32) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
 	if len(a) == 0 {
-		return 0
+		return 0, nil
 	}
 
 	var sum0, sum1, sum2, sum3 float32
@@ -713,13 +753,16 @@ func euclideanUnrolled4x(a, b []float32) float32 {
 		sum0 += d * d
 	}
 
-	return float32(math.Sqrt(float64(sum0 + sum1 + sum2 + sum3)))
+	return float32(math.Sqrt(float64(sum0 + sum1 + sum2 + sum3))), nil
 }
 
 // cosineUnrolled4x computes cosine distance with 4x loop unrolling
-func cosineUnrolled4x(a, b []float32) float32 {
+func cosineUnrolled4x(a, b []float32) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
 	if len(a) == 0 {
-		return 1.0
+		return 1.0, nil
 	}
 
 	var dot0, dot1, dot2, dot3 float32
@@ -762,15 +805,18 @@ func cosineUnrolled4x(a, b []float32) float32 {
 	normB := normB0 + normB1 + normB2 + normB3
 
 	if normA == 0 || normB == 0 {
-		return 1.0
+		return 1.0, nil
 	}
-	return 1.0 - (dot / float32(math.Sqrt(float64(normA)*float64(normB))))
+	return 1.0 - (dot / float32(math.Sqrt(float64(normA)*float64(normB)))), nil
 }
 
 // dotUnrolled4x computes dot product with 4x loop unrolling
-func dotUnrolled4x(a, b []float32) float32 {
+func dotUnrolled4x(a, b []float32) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
 	if len(a) == 0 {
-		return 0
+		return 0, nil
 	}
 
 	var sum0, sum1, sum2, sum3 float32
@@ -790,35 +836,53 @@ func dotUnrolled4x(a, b []float32) float32 {
 		sum0 += a[i] * b[i]
 	}
 
-	return sum0 + sum1 + sum2 + sum3
+	return sum0 + sum1 + sum2 + sum3, nil
 }
 
 // euclideanBatchUnrolled4x computes batch Euclidean distances using unrolled inner loop
-func euclideanBatchUnrolled4x(query []float32, vectors [][]float32, results []float32) {
+func euclideanBatchUnrolled4x(query []float32, vectors [][]float32, results []float32) error {
 	for i, v := range vectors {
-		results[i] = euclideanUnrolled4x(query, v)
+		d, err := euclideanUnrolled4x(query, v)
+		if err != nil {
+			return err
+		}
+		results[i] = d
 	}
+	return nil
 }
 
 // cosineBatchUnrolled4x computes batch cosine distances using unrolled inner loop
 // with 4 independent accumulators per dot/norm calculation (12 total accumulators).
-func cosineBatchUnrolled4x(query []float32, vectors [][]float32, results []float32) {
+func cosineBatchUnrolled4x(query []float32, vectors [][]float32, results []float32) error {
 	for i, v := range vectors {
-		results[i] = cosineUnrolled4x(query, v)
+		d, err := cosineUnrolled4x(query, v)
+		if err != nil {
+			return err
+		}
+		results[i] = d
 	}
+	return nil
 }
 
 // dotBatchUnrolled4x computes batch dot products using unrolled inner loop
 // with 4 independent accumulators to break loop-carried dependencies.
-func dotBatchUnrolled4x(query []float32, vectors [][]float32, results []float32) {
+func dotBatchUnrolled4x(query []float32, vectors [][]float32, results []float32) error {
 	for i, v := range vectors {
-		results[i] = dotUnrolled4x(query, v)
+		d, err := dotUnrolled4x(query, v)
+		if err != nil {
+			return err
+		}
+		results[i] = d
 	}
+	return nil
 }
 
 // euclidean128Unrolled4x calculates Euclidean distance for fixed 128 dimension.
 // Relies on compiler loop unrolling and bound check elimination.
-func euclidean128Unrolled4x(a, b []float32) float32 {
+func euclidean128Unrolled4x(a, b []float32) (float32, error) {
+	if len(a) != 128 || len(b) != 128 {
+		return 0, errors.New("simd: length must be 128")
+	}
 	// Bounds check elimination hint
 	_ = a[127]
 	_ = b[127]
@@ -835,10 +899,13 @@ func euclidean128Unrolled4x(a, b []float32) float32 {
 		sum2 += d2 * d2
 		sum3 += d3 * d3
 	}
-	return float32(math.Sqrt(float64(sum0 + sum1 + sum2 + sum3)))
+	return float32(math.Sqrt(float64(sum0 + sum1 + sum2 + sum3))), nil
 }
 
-func dot128Unrolled4x(a, b []float32) float32 {
+func dot128Unrolled4x(a, b []float32) (float32, error) {
+	if len(a) != 128 || len(b) != 128 {
+		return 0, errors.New("simd: length must be 128")
+	}
 	_ = a[127]
 	_ = b[127]
 
@@ -849,7 +916,7 @@ func dot128Unrolled4x(a, b []float32) float32 {
 		sum2 += a[i+2] * b[i+2]
 		sum3 += a[i+3] * b[i+3]
 	}
-	return sum0 + sum1 + sum2 + sum3
+	return sum0 + sum1 + sum2 + sum3, nil
 }
 
 // =============================================================================
@@ -860,30 +927,32 @@ func dot128Unrolled4x(a, b []float32) float32 {
 
 // CosineDistanceBatch calculates cosine distance between query and multiple vectors.
 // Uses parallel sum reduction with multiple accumulators for ILP optimization.
-func CosineDistanceBatch(query []float32, vectors [][]float32, results []float32) {
+func CosineDistanceBatch(query []float32, vectors [][]float32, results []float32) error {
 	if len(vectors) == 0 {
-		return
+		return nil
 	}
 	if len(results) < len(vectors) {
-		panic("results slice too small")
+		return errors.New("simd: results slice too small")
 	}
 	metrics.CosineBatchCallsTotal.Inc()
 	metrics.ParallelReductionVectorsProcessed.Add(float64(len(vectors)))
 	cosineDistanceBatchImpl(query, vectors, results)
+	return nil
 }
 
 // DotProductBatch calculates dot product between query and multiple vectors.
 // Uses parallel sum reduction with multiple accumulators for ILP optimization.
-func DotProductBatch(query []float32, vectors [][]float32, results []float32) {
+func DotProductBatch(query []float32, vectors [][]float32, results []float32) error {
 	if len(vectors) == 0 {
-		return
+		return nil
 	}
 	if len(results) < len(vectors) {
-		panic("results slice too small")
+		return errors.New("simd: results slice too small")
 	}
 	metrics.DotProductBatchCallsTotal.Inc()
 	metrics.ParallelReductionVectorsProcessed.Add(float64(len(vectors)))
 	dotProductBatchImpl(query, vectors, results)
+	return nil
 }
 
 // Internal implementation pointers
@@ -891,23 +960,25 @@ var prefetchImpl func(p unsafe.Pointer)
 
 // MatchInt64 performs a comparison of src elements against val, storing the result (0 or 1) in dst.
 // One byte per element is written to dst.
-func MatchInt64(src []int64, val int64, op CompareOp, dst []byte) {
+func MatchInt64(src []int64, val int64, op CompareOp, dst []byte) error {
 	if len(src) != len(dst) {
-		panic("simd: length mismatch")
+		return errors.New("simd: length mismatch")
 	}
 	matchInt64Impl(src, val, op, dst)
+	return nil
 }
 
 // MatchFloat32 performs a comparison of src elements against val, storing the result (0 or 1) in dst.
 // One byte per element is written to dst.
-func MatchFloat32(src []float32, val float32, op CompareOp, dst []byte) {
+func MatchFloat32(src []float32, val float32, op CompareOp, dst []byte) error {
 	if len(src) != len(dst) {
-		panic("simd: length mismatch")
+		return errors.New("simd: length mismatch")
 	}
 	matchFloat32Impl(src, val, op, dst)
+	return nil
 }
 
-func matchInt64Generic(src []int64, val int64, op CompareOp, dst []byte) {
+func matchInt64Generic(src []int64, val int64, op CompareOp, dst []byte) error {
 	switch op {
 	case CompareEq:
 		for i, v := range src {
@@ -1011,10 +1082,11 @@ func matchInt64Generic(src []int64, val int64, op CompareOp, dst []byte) {
 			}
 		}
 	}
+	return nil
 }
 
 // matchFloat32Generic implements branchless float32 matching
-func matchFloat32Generic(src []float32, val float32, op CompareOp, dst []byte) {
+func matchFloat32Generic(src []float32, val float32, op CompareOp, dst []byte) error {
 	// Treat as uint32 for bitwise ops if needed, or use careful regular comparison.
 	// For Float32, equality is tricky with NaN, but assumming standard numbers.
 	// op is the enum.
@@ -1078,13 +1150,17 @@ func matchFloat32Generic(src []float32, val float32, op CompareOp, dst []byte) {
 			}
 		}
 	}
+	return nil
 }
 
 // =============================================================================
 // FP16 Generic Implementations (Unrolled 4x)
 // =============================================================================
 
-func euclideanF16Unrolled4x(a, b []float16.Num) float32 {
+func euclideanF16Unrolled4x(a, b []float16.Num) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
 	var sum0, sum1, sum2, sum3 float32
 	n := len(a)
 	i := 0
@@ -1102,10 +1178,13 @@ func euclideanF16Unrolled4x(a, b []float16.Num) float32 {
 		d := a[i].Float32() - b[i].Float32()
 		sum0 += d * d
 	}
-	return float32(math.Sqrt(float64(sum0 + sum1 + sum2 + sum3)))
+	return float32(math.Sqrt(float64(sum0 + sum1 + sum2 + sum3))), nil
 }
 
-func dotF16Unrolled4x(a, b []float16.Num) float32 {
+func dotF16Unrolled4x(a, b []float16.Num) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
 	var sum0, sum1, sum2, sum3 float32
 	n := len(a)
 	i := 0
@@ -1118,10 +1197,13 @@ func dotF16Unrolled4x(a, b []float16.Num) float32 {
 	for ; i < n; i++ {
 		sum0 += a[i].Float32() * b[i].Float32()
 	}
-	return sum0 + sum1 + sum2 + sum3
+	return sum0 + sum1 + sum2 + sum3, nil
 }
 
-func cosineF16Unrolled4x(a, b []float16.Num) float32 {
+func cosineF16Unrolled4x(a, b []float16.Num) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
 	var dot0, dot1, dot2, dot3 float32
 	var normA0, normA1, normA2, normA3 float32
 	var normB0, normB1, normB2, normB3 float32
@@ -1153,7 +1235,7 @@ func cosineF16Unrolled4x(a, b []float16.Num) float32 {
 	normA := normA0 + normA1 + normA2 + normA3
 	normB := normB0 + normB1 + normB2 + normB3
 	if normA == 0 || normB == 0 {
-		return 1.0
+		return 1.0, nil
 	}
-	return 1.0 - (dot / float32(math.Sqrt(float64(normA)*float64(normB))))
+	return 1.0 - (dot / float32(math.Sqrt(float64(normA)*float64(normB)))), nil
 }

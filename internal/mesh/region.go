@@ -151,7 +151,10 @@ func (r *Router) searchTree(query []float32, limit int) []string {
 
 	for _, item := range items {
 		// Re-verify specific condition
-		dist := simd.EuclideanDistance(query, item.Centroid)
+		dist, err := simd.EuclideanDistance(query, item.Centroid)
+		if err != nil {
+			continue
+		}
 		if dist <= item.Region.Radius*1.5 {
 			candidates = append(candidates, candidate{item.Region.OwnerID, dist})
 		}

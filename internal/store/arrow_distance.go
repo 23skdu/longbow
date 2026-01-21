@@ -86,7 +86,11 @@ func (b *BatchDistanceComputer) ComputeL2DistancesInto(
 	// Use serial loop fallback.
 	if n < 32 {
 		for i, vec := range candidateVectors {
-			out[i] = simd.EuclideanDistance(query, vec)
+			d, err := simd.EuclideanDistance(query, vec)
+			if err != nil {
+				return nil, err
+			}
+			out[i] = d
 		}
 		return out, nil
 	}
@@ -101,12 +105,16 @@ func (b *BatchDistanceComputer) ComputeL2DistancesInto(
 func (b *BatchDistanceComputer) ComputeL2DistancesSIMDFallback(
 	query []float32,
 	candidateVectors [][]float32,
-) []float32 {
+) ([]float32, error) {
 	distances := make([]float32, len(candidateVectors))
 	for i, candidate := range candidateVectors {
-		distances[i] = simd.EuclideanDistance(query, candidate)
+		d, err := simd.EuclideanDistance(query, candidate)
+		if err != nil {
+			return nil, err
+		}
+		distances[i] = d
 	}
-	return distances
+	return distances, nil
 }
 
 // ShouldUseBatchCompute determines whether to use Arrow compute or SIMD fallback.

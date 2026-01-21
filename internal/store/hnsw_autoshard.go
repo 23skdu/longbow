@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"fmt"
 	"runtime"
 	"sort"
 	"sync"
@@ -228,15 +227,13 @@ func (a *AutoShardingIndex) migrateToSharded() {
 		return
 	}
 
-	fmt.Println("Starting migration to ShardedHNSW...")
-
-	n := a.current.Len()
+	// Starting migration
 
 	// Verify we have a basic HNSWIndex
 	oldIndex, ok := a.current.(*HNSWIndex)
 	if !ok {
 		// Should not happen unless initialized incorrectly or wrapped recursively
-		fmt.Printf("Cannot migrate: current index is not *HNSWIndex, but %T\n", a.current)
+		// Silent failure
 		a.mu.Unlock()
 		a.dataset.dataMu.RUnlock()
 		return
@@ -270,7 +267,7 @@ func (a *AutoShardingIndex) migrateToSharded() {
 	batchSize := 50
 	lastMigrated := 0
 
-	fmt.Printf("Migration started: %d vectors to move...\n", n)
+	// Migration started
 
 	for {
 		// Read state under lock
@@ -314,13 +311,13 @@ func (a *AutoShardingIndex) migrateToSharded() {
 			_, err := newIndex.AddByRecord(it.rec, it.loc.RowIdx, it.loc.BatchIdx)
 			it.rec.Release()
 			if err != nil {
-				fmt.Printf("Error migrating vector %d: %v\n", it.id, err)
+				// migration skip
 			}
 		}
 
 		lastMigrated = endIdx
-		if lastMigrated%50 == 0 {
-			fmt.Printf("Migration progress: %d/%d vectors...\n", lastMigrated, nSnap)
+		if lastMigrated%1000 == 0 {
+			// progress
 		}
 
 		// Give other threads a window
@@ -328,8 +325,6 @@ func (a *AutoShardingIndex) migrateToSharded() {
 		// Small sleep to ensure fairness on high-core machines
 		time.Sleep(10 * time.Microsecond)
 	}
-
-	totalMigrated := lastMigrated // For logging accuracy
 
 	// Final swap
 
@@ -356,7 +351,6 @@ func (a *AutoShardingIndex) migrateToSharded() {
 
 	duration := time.Since(start)
 	metrics.IndexMigrationDuration.Observe(duration.Seconds())
-	fmt.Printf("Migration complete. %d vectors moved to %d shards in %v.\n", totalMigrated, shardedConfig.NumShards, duration)
 }
 
 // SearchVectors implements VectorIndex.
@@ -379,7 +373,6 @@ func (a *AutoShardingIndex) SearchVectors(ctx context.Context, q any, k int, fil
 		res2, err := interim.SearchVectors(ctx, q, k, filters, options)
 		if err != nil {
 			// Log error but return what we have
-			fmt.Printf("Error searching interim index: %v\n", err)
 			return res, nil
 		}
 		res = a.mergeSearchResults(res, res2, k)

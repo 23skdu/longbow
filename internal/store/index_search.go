@@ -22,9 +22,11 @@ func (h *HNSWIndex) Search(queryVec []float32, k int) ([]VectorID, error) {
 	// PQ Encoding for query
 	var graphQuery = queryVec
 	// Use RLock for config check to avoid race
+	startPQ := time.Now()
 	h.pqCodesMu.RLock()
-	// Capture locals to avoid holding lock too long if encoding is slow?
-	// Encoding is fast enough.
+	if h.metricLockWait != nil {
+		h.metricLockWait.WithLabelValues("pq_read").Observe(time.Since(startPQ).Seconds())
+	}
 	if h.pqEnabled && h.pqEncoder != nil {
 		codes, _ := h.pqEncoder.Encode(queryVec)
 		graphQuery = pq.PackBytesToFloat32s(codes)
@@ -33,7 +35,11 @@ func (h *HNSWIndex) Search(queryVec []float32, k int) ([]VectorID, error) {
 
 	// coder/hnsw library requires synchronization between Search and Add
 	// Use global RLock for graph search (multiple concurrent searches OK)
+	startGraph := time.Now()
 	h.mu.RLock()
+	if h.metricLockWait != nil {
+		h.metricLockWait.WithLabelValues("read").Observe(time.Since(startGraph).Seconds())
+	}
 	neighbors := h.Graph.Search(graphQuery, k)
 	h.mu.RUnlock()
 
@@ -131,8 +137,11 @@ func (h *HNSWIndex) SearchVectors(ctx context.Context, queryVec any, k int, filt
 		h.pqCodesMu.RUnlock()
 
 		// Graph search requires global lock
+		startGraph := time.Now()
 		h.mu.RLock()
-		h.Graph.Search(graphQuery, limit)
+		if h.metricLockWait != nil {
+			h.metricLockWait.WithLabelValues("read").Observe(time.Since(startGraph).Seconds())
+		}
 		neighbors := h.Graph.Search(graphQuery, limit)
 		h.mu.RUnlock()
 
@@ -155,7 +164,9 @@ func (h *HNSWIndex) SearchVectors(ctx context.Context, queryVec any, k int, filt
 		// Pre-process filters with multi-batch support
 		evaluators := make(map[int]*qry.FilterEvaluator)
 		if len(filters) > 0 {
+			startDS := time.Now()
 			h.dataset.dataMu.RLock()
+			metrics.DatasetLockWaitDurationSeconds.WithLabelValues("search_eval").Observe(time.Since(startDS).Seconds())
 			if len(h.dataset.Records) > 0 {
 				ev, err := qry.NewFilterEvaluator(h.dataset.Records[0], filters)
 				if err != nil {

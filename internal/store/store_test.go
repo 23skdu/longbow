@@ -140,7 +140,7 @@ func TestDoPutAndDoGet(t *testing.T) {
 	}
 
 	// 3. DoGet
-	ticketBytes, _ := json.Marshal(map[string]interface{}{"name": "test_dataset"})
+	ticketBytes, _ := json.Marshal(map[string]any{"name": "test_dataset"})
 	ticket := &flight.Ticket{Ticket: ticketBytes}
 	rStream, err := client.DoGet(ctx, ticket)
 	if err != nil {

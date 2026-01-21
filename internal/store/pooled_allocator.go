@@ -37,8 +37,8 @@ func NewPooledAllocator() *PooledAllocator {
 	for i := 0; i < numBuckets; i++ {
 		size := 1 << (i + minBucketShift)
 		p.pools[i] = &sync.Pool{
-			New: func(s int) func() interface{} {
-				return func() interface{} {
+			New: func(s int) func() any {
+				return func() any {
 					b := make([]byte, s)
 					return &b
 				}

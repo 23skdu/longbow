@@ -40,7 +40,7 @@ func NewRateLimiter(cfg Config) *RateLimiter {
 
 // UnaryInterceptor returns a gRPC unary interceptor
 func (l *RateLimiter) UnaryInterceptor() grpc.UnaryServerInterceptor {
-	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		if !l.enabled {
 			return handler(ctx, req)
 		}
@@ -61,7 +61,7 @@ func (l *RateLimiter) UnaryInterceptor() grpc.UnaryServerInterceptor {
 
 // StreamInterceptor returns a gRPC stream interceptor
 func (l *RateLimiter) StreamInterceptor() grpc.StreamServerInterceptor {
-	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+	return func(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		if !l.enabled {
 			return handler(srv, ss)
 		}

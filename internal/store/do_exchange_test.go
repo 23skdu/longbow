@@ -97,7 +97,7 @@ func TestDoExchange_Ingest(t *testing.T) {
 	require.NotNil(t, data)
 	require.NotEmpty(t, data.AppMetadata)
 
-	var ack map[string]interface{}
+	var ack map[string]any
 	err = json.Unmarshal(data.AppMetadata, &ack)
 	require.NoError(t, err)
 

@@ -57,12 +57,12 @@ func (m *MockDoGetStream) SetTrailer(md metadata.MD) {
 }
 
 // SendMsg implements grpc.ServerStream
-func (m *MockDoGetStream) SendMsg(msg interface{}) error {
+func (m *MockDoGetStream) SendMsg(msg any) error {
 	return nil
 }
 
 // RecvMsg implements grpc.ServerStream
-func (m *MockDoGetStream) RecvMsg(msg interface{}) error {
+func (m *MockDoGetStream) RecvMsg(msg any) error {
 	return nil
 }
 

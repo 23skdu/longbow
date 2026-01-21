@@ -75,7 +75,7 @@ type WALBatcher struct {
 
 // compressBufPool is a global pool for compression buffers
 var compressBufPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		// Start with 64KB, will grow as needed
 		buf := make([]byte, 0, 64*1024)
 		return &buf

@@ -35,7 +35,7 @@ type SearchPool struct {
 func NewSearchPool() *SearchPool {
 	return &SearchPool{
 		pool: sync.Pool{
-			New: func() interface{} {
+			New: func() any {
 				return &SearchContext{
 					results:        make([]SearchResult, 0, 100),
 					batchIDs:       make([]VectorID, searchBatchSize),

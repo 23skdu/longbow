@@ -20,7 +20,7 @@ import (
 // PartitionProxyInterceptor creates a unary server interceptor for request routing
 func PartitionProxyInterceptor(rm *RingManager, forwarder *RequestForwarder) grpc.UnaryServerInterceptor {
 	tracer := otel.Tracer("longbow/sharding")
-	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		ctx, span := tracer.Start(ctx, "PartitionProxyFunc")
 		defer span.End()
 
@@ -59,7 +59,7 @@ func PartitionProxyInterceptor(rm *RingManager, forwarder *RequestForwarder) grp
 // PartitionProxyStreamInterceptor creates a stream server interceptor for request routing
 func PartitionProxyStreamInterceptor(rm *RingManager, forwarder *RequestForwarder, aggregator *StreamAggregator) grpc.StreamServerInterceptor {
 	tracer := otel.Tracer("longbow/sharding")
-	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+	return func(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		ctx, span := tracer.Start(ss.Context(), "PartitionProxyStreamFunc")
 		defer span.End()
 
@@ -99,7 +99,7 @@ func PartitionProxyStreamInterceptor(rm *RingManager, forwarder *RequestForwarde
 }
 
 // extractRoutingKey extracts the partitioning key (e.g., ticket, id)
-func extractRoutingKey(ctx context.Context, req interface{}) (string, error) {
+func extractRoutingKey(ctx context.Context, req any) (string, error) {
 	// 1. Metadata
 	if key, err := extractRoutingKeyFromMetadata(ctx); err == nil {
 		return key, nil
@@ -112,7 +112,7 @@ func extractRoutingKey(ctx context.Context, req interface{}) (string, error) {
 			return r.Path[0], nil
 		}
 		if len(r.Cmd) > 0 {
-			var cmd map[string]interface{}
+			var cmd map[string]any
 			if err := json.Unmarshal(r.Cmd, &cmd); err == nil {
 				if name, ok := cmd["name"].(string); ok {
 					return name, nil
@@ -128,7 +128,7 @@ func extractRoutingKey(ctx context.Context, req interface{}) (string, error) {
 		if !strings.HasPrefix(tStr, "{") {
 			return tStr, nil
 		}
-		var ticketData map[string]interface{}
+		var ticketData map[string]any
 		if err := json.Unmarshal(r.Ticket, &ticketData); err == nil {
 			if name, ok := ticketData["name"].(string); ok {
 				return name, nil

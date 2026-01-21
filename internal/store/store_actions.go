@@ -38,7 +38,7 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 			return members[i].ID < members[j].ID
 		})
 
-		resp := map[string]interface{}{
+		resp := map[string]any{
 			"self":    s.Mesh.GetIdentity(),
 			"members": members,
 			"count":   len(members),
@@ -65,7 +65,7 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 			}
 		}
 
-		resp := map[string]interface{}{
+		resp := map[string]any{
 			"status": "READY",
 		}
 
@@ -132,9 +132,10 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 					found = true
 				} else {
 					// Need to set tombstone. Upgrade to write lock.
-					// Note: Upgrading RLock to Lock is not atomic. We must RUnlock then Lock.
+					dsLockStart := time.Now()
 					ds.dataMu.RUnlock()
 					ds.dataMu.Lock()
+					metrics.DatasetLockWaitDurationSeconds.WithLabelValues("delete_upgrade").Observe(time.Since(dsLockStart).Seconds())
 
 					// Re-verify location after re-lock (though PrimaryIndex is append-only for IDs usually)
 					// Verify tombstone again
@@ -242,7 +243,7 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 		return nil
 
 	case "delete-dataset", "DeleteNamespace":
-		var curr map[string]interface{}
+		var curr map[string]any
 		if err := json.Unmarshal(action.Body, &curr); err != nil {
 			return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
 		}
@@ -285,7 +286,7 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 			}
 		}()
 
-		var curr map[string]interface{}
+		var curr map[string]any
 		if err := json.Unmarshal(action.Body, &curr); err != nil {
 			return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
 		}
@@ -347,12 +348,12 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 
 	case "HybridSearch":
 		var req struct {
-			Dataset   string                 `json:"dataset"`
-			Vector    []float32              `json:"vector"`
-			K         int                    `json:"k"`
-			TextQuery string                 `json:"text_query"`
-			Alpha     float32                `json:"alpha"`
-			Filters   map[string]interface{} `json:"filters"`
+			Dataset   string         `json:"dataset"`
+			Vector    []float32      `json:"vector"`
+			K         int            `json:"k"`
+			TextQuery string         `json:"text_query"`
+			Alpha     float32        `json:"alpha"`
+			Filters   map[string]any `json:"filters"`
 		}
 		if err := json.Unmarshal(action.Body, &req); err != nil {
 			return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
@@ -875,9 +876,9 @@ func (s *VectorStore) applyBatchToMemory(name string, rec arrow.RecordBatch, ts 
 		}
 	}
 
+	dsLockStart := time.Now()
 	ds.dataMu.Lock()
 	defer ds.dataMu.Unlock()
-	dsLockStart := time.Now()
 
 	// Lazy Index Initialization
 	if ds.Index == nil {

@@ -5,6 +5,7 @@ import (
 	"runtime"
 	"sync"
 	"sync/atomic"
+	"time"
 	"unsafe"
 
 	"github.com/23skdu/longbow/internal/gpu"
@@ -157,7 +158,11 @@ type HNSWConfig struct {
 // RemapLocations updates the location mapping for a set of VectorIDs.
 // This is used during compaction when records are moved to new batches.
 func (h *HNSWIndex) RemapLocations(mapping map[VectorID]Location) error {
+	start := time.Now()
 	h.mu.Lock()
+	if h.metricLockWait != nil {
+		h.metricLockWait.WithLabelValues("write").Observe(time.Since(start).Seconds())
+	}
 	defer h.mu.Unlock()
 
 	for id, loc := range mapping {
@@ -169,7 +174,11 @@ func (h *HNSWIndex) RemapLocations(mapping map[VectorID]Location) error {
 // RemapFromBatchInfo efficiently updates locations based on batch movements.
 // It iterates all locations in the store and updates them if they belong to moved batches.
 func (h *HNSWIndex) RemapFromBatchInfo(remapping map[int]BatchRemapInfo) error {
+	start := time.Now()
 	h.mu.Lock()
+	if h.metricLockWait != nil {
+		h.metricLockWait.WithLabelValues("write").Observe(time.Since(start).Seconds())
+	}
 	defer h.mu.Unlock()
 
 	// Iterate mutable allows us to update atomic entries directly
@@ -456,7 +465,11 @@ func (h *HNSWIndex) advanceEpoch() {
 
 // Close releases resources associated with the index.
 func (h *HNSWIndex) Close() error {
+	start := time.Now()
 	h.mu.Lock()
+	if h.metricLockWait != nil {
+		h.metricLockWait.WithLabelValues("write").Observe(time.Since(start).Seconds())
+	}
 	defer h.mu.Unlock()
 	h.Graph = nil
 	h.locationStore.Reset() // Clear locations

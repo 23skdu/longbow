@@ -151,7 +151,7 @@ func NewArrowSearchContext() *ArrowSearchContext {
 
 func NewArrowSearchContextPool() *sync.Pool {
 	return &sync.Pool{
-		New: func() interface{} {
+		New: func() any {
 			metrics.HNSWSearchPoolNewTotal.Inc()
 			return NewArrowSearchContext()
 		},
@@ -263,7 +263,7 @@ type ArrowHNSW struct {
 	distFuncC64   func([]complex64, []complex64) (float32, error)
 	distFuncC128  func([]complex128, []complex128) (float32, error)
 	batchDistFunc func([]float32, [][]float32, []float32) error
-	batchComputer interface{}
+	batchComputer any
 
 	m              int
 	mMax           int

@@ -43,14 +43,14 @@ var (
 		[]string{"dataset", "type"}, // dataset name, "read" or "write"
 	)
 
-	// DatasetLockWaitDuration measures time waiting for dataset-level locks
-	DatasetLockWaitDuration = promauto.NewHistogramVec(
+	// DatasetLockWaitDurationSeconds measures time waiting for dataset-level locks
+	DatasetLockWaitDurationSeconds = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "longbow_dataset_lock_wait_duration_seconds",
 			Help:    "Time spent waiting for dataset-level locks",
 			Buckets: []float64{0.00001, 0.0001, 0.001, 0.005, 0.01, 0.05},
 		},
-		[]string{"dataset", "type"},
+		[]string{"operation"},
 	)
 
 	// ShardLockWaitDuration measures time waiting for shard-level locks
@@ -60,6 +60,9 @@ var (
 			Help:    "Time spent waiting for shard-level locks",
 			Buckets: []float64{0.00001, 0.0001, 0.001, 0.005, 0.01, 0.05},
 		},
-		[]string{"dataset", "shard", "type"},
+		[]string{"shard", "type"},
 	)
+
+	// Compatibility aliases if needed (can't really alias vars this way in Go easily, so just naming them right)
+	DatasetLockWaitDuration = DatasetLockWaitDurationSeconds
 )

@@ -192,7 +192,7 @@ func (cb *CircuitBreaker) Allow() bool {
 
 // Execute runs the given function if the CircuitBreaker allows it
 // If the function returns an error, it is counted as a failure
-func (cb *CircuitBreaker) Execute(req func() (interface{}, error)) (interface{}, error) {
+func (cb *CircuitBreaker) Execute(req func() (any, error)) (any, error) {
 	if !cb.Allow() {
 		return nil, ErrOpenState
 	}

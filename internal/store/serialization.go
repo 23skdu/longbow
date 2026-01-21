@@ -12,7 +12,7 @@ import (
 
 // bufferPool recycles buffers to avoid allocation and copy
 var bufferPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		// Pre-allocate ~2.5MB (5000 rows * 512 bytes)
 		// capacity 3MB
 		return bytes.NewBuffer(make([]byte, 0, 3*1024*1024))

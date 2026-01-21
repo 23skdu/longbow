@@ -155,7 +155,7 @@ func TestDataServerDoGet(t *testing.T) {
 	_, _ = stream.Recv()
 
 	// Now get data - ticket uses JSON format
-	ticketBytes, _ := json.Marshal(map[string]interface{}{"name": "ds_get_test"})
+	ticketBytes, _ := json.Marshal(map[string]any{"name": "ds_get_test"})
 	tkt := &flight.Ticket{Ticket: ticketBytes}
 	getStream, err := client.DoGet(ctx, tkt)
 	if err != nil {
@@ -183,7 +183,7 @@ func TestDataServerDoGetNotFound(t *testing.T) {
 	client := setupDataServerTest(t)
 	ctx := context.Background()
 
-	ticketBytes, _ := json.Marshal(map[string]interface{}{"name": "nonexistent"})
+	ticketBytes, _ := json.Marshal(map[string]any{"name": "nonexistent"})
 	tkt := &flight.Ticket{Ticket: ticketBytes}
 	stream, err := client.DoGet(ctx, tkt)
 	if err != nil {
@@ -439,7 +439,7 @@ func TestMetaServerDoGetUnimplemented(t *testing.T) {
 	client, _ := setupMetaServerTest(t)
 	ctx := context.Background()
 
-	ticketBytes, _ := json.Marshal(map[string]interface{}{"name": "test"})
+	ticketBytes, _ := json.Marshal(map[string]any{"name": "test"})
 	tkt := &flight.Ticket{Ticket: ticketBytes}
 	stream, err := client.DoGet(ctx, tkt)
 	if err != nil {

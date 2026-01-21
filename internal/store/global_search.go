@@ -309,7 +309,7 @@ func (c *GlobalSearchCoordinator) cleanupLoop() {
 }
 
 func (c *GlobalSearchCoordinator) pruneVisible() {
-	c.clients.Range(func(key, value interface{}) bool {
+	c.clients.Range(func(key, value any) bool {
 		entry := value.(*clientEntry)
 		if time.Since(entry.lastUse) > c.idleTimeout {
 			c.logger.Info().Str("addr", key.(string)).Msg("Pruning idle flight client")
@@ -322,7 +322,7 @@ func (c *GlobalSearchCoordinator) pruneVisible() {
 
 func (c *GlobalSearchCoordinator) Close() error {
 	close(c.stopCh)
-	c.clients.Range(func(key, value interface{}) bool {
+	c.clients.Range(func(key, value any) bool {
 		entry := value.(*clientEntry)
 		_ = entry.client.Close()
 		c.clients.Delete(key)

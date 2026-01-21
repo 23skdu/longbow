@@ -92,6 +92,10 @@ func (p *SlabPool) Get() []byte {
 	if atomic.LoadInt64(&p.pooledCount) > 0 {
 		atomic.AddInt64(&p.pooledCount, -1)
 	}
+
+	// Update metrics
+	p.updateMetrics()
+
 	return *p.pool.Get().(*[]byte)
 }
 
@@ -107,11 +111,16 @@ func (p *SlabPool) Put(b []byte) {
 	if pooled >= p.maxPooled {
 		// Release memory back to OS instead of pooling
 		_ = ReleaseSlab(b) // Ignore error, worst case we just don't release
+		// Update metrics after releasing
+		p.updateMetrics()
 		return
 	}
 
 	atomic.AddInt64(&p.pooledCount, 1)
 	p.pool.Put(&b)
+
+	// Update metrics
+	p.updateMetrics()
 }
 
 // ReleaseUnused forces the pool to release excess slabs back to the OS.
@@ -150,4 +159,25 @@ func (p *SlabPool) ActiveCount() int64 {
 // PooledCount returns the number of slabs currently in the pool
 func (p *SlabPool) PooledCount() int64 {
 	return atomic.LoadInt64(&p.pooledCount)
+}
+
+// updateMetrics updates Prometheus metrics for this slab pool
+func (p *SlabPool) updateMetrics() {
+	active := atomic.LoadInt64(&p.activeCount)
+	pooled := atomic.LoadInt64(&p.pooledCount)
+
+	// Calculate size label
+	sizeLabel := strconv.Itoa(p.size)
+
+	// Update arena memory bytes (active slabs * size)
+	arenaBytes := float64(active * int64(p.size))
+	metrics.ArenaMemoryBytes.WithLabelValues(sizeLabel).Set(arenaBytes)
+
+	// Calculate fragmentation ratio (pooled/active)
+	// Higher ratio means more fragmentation (more slabs sitting idle in pool)
+	fragmentation := float64(0)
+	if active > 0 {
+		fragmentation = float64(pooled) / float64(active)
+	}
+	metrics.SlabFragmentationRatio.WithLabelValues(sizeLabel).Set(fragmentation)
 }

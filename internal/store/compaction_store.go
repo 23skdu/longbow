@@ -46,6 +46,10 @@ func (vs *VectorStore) CompactDataset(ctx context.Context, name string) error {
 	defer func() {
 		metrics.CompactionDurationSeconds.WithLabelValues(name, "manual").Observe(time.Since(start).Seconds())
 	}()
+
+	// Track compaction event
+	metrics.CompactionEventsTotal.WithLabelValues(name, "manual").Inc()
+
 	ds, ok := vs.getDataset(name)
 	if !ok {
 		return errors.New("compaction: dataset not found")
@@ -182,6 +186,9 @@ func (vs *VectorStore) VacuumDataset(ctx context.Context, name string) error {
 	defer func() {
 		metrics.CompactionDurationSeconds.WithLabelValues(name, "vacuum").Observe(time.Since(start).Seconds())
 	}()
+
+	// Track vacuum event
+	metrics.CompactionEventsTotal.WithLabelValues(name, "vacuum").Inc()
 
 	ds, ok := vs.getDataset(name)
 	if !ok {

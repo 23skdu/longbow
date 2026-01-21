@@ -183,3 +183,78 @@ func BenchmarkCompactableArena_Get(b *testing.B) {
 		_ = arena.Get(ref)
 	}
 }
+
+func TestTypedArena_Compact(t *testing.T) {
+	arena := NewTypedArena[uint32](NewSlabArena(1 * 1024 * 1024))
+
+	var refs []SliceRef
+	for i := 0; i < 50; i++ {
+		ref, err := arena.AllocSlice(1000)
+		require.NoError(t, err)
+
+		data := arena.Get(ref)
+		for j := range data {
+			data[j] = uint32(i*1000 + j)
+		}
+
+		refs = append(refs, ref)
+	}
+
+	initialSize := arena.TotalAllocated()
+	t.Logf("Initial size: %d bytes", initialSize)
+
+	liveRefs := make([]SliceRef, 0, len(refs)/2)
+	for i := 0; i < len(refs); i += 2 {
+		liveRefs = append(liveRefs, refs[i])
+	}
+
+	stats, err := arena.Compact(liveRefs)
+	require.NoError(t, err)
+	require.NotNil(t, stats)
+
+	t.Logf("Compaction stats: slabs=%d, reclaimed=%d, copied=%d, fragmentation=%.2f%%",
+		stats.SlabsCompacted, stats.BytesReclaimed, stats.LiveDataCopied, stats.FragmentationPct)
+
+	assert.Greater(t, stats.FragmentationPct, 0.0)
+	assert.Greater(t, stats.BytesReclaimed, int64(0))
+
+	finalSize := arena.TotalAllocated()
+	t.Logf("Final size: %d bytes", finalSize)
+	assert.Less(t, finalSize, initialSize)
+}
+
+func TestTypedArena_CompactConcurrent(t *testing.T) {
+	arena := NewTypedArena[uint32](NewSlabArena(4 * 1024 * 1024))
+
+	var refs []SliceRef
+	for i := 0; i < 20; i++ {
+		ref, err := arena.AllocSlice(1000)
+		require.NoError(t, err)
+		refs = append(refs, ref)
+	}
+
+	done := make(chan bool, 5)
+
+	for g := 0; g < 5; g++ {
+		go func() {
+			defer func() { done <- true }()
+
+			for i := 0; i < 10; i++ {
+				liveRefs := make([]SliceRef, 0, len(refs)/2)
+				for j := 0; j < len(refs); j += 2 {
+					liveRefs = append(liveRefs, refs[j])
+				}
+
+				_, err := arena.Compact(liveRefs)
+				if err != nil {
+					t.Errorf("compact failed: %v", err)
+					return
+				}
+			}
+		}()
+	}
+
+	for g := 0; g < 5; g++ {
+		<-done
+	}
+}

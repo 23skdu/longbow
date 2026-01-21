@@ -1,4 +1,4 @@
-# 9-Part Plan: Memory Optimization & Goroutine Leak Prevention (v0.1.5)
+# 8-Part Plan: Memory Optimization & Goroutine Leak Prevention (v0.1.5)
 
 **Goal**: Resolve `SlabArena` memory retention (59.7GB heap), implement HNSW graph compaction, prevent goroutine leaks, and achieve stable memory usage during sustained ingestion.
 
@@ -8,22 +8,7 @@
 
 ## Implementation Plan
 
-### 1. TypedArena Compaction
-
-**Objective**: Implement periodic compaction for `TypedArena` to consolidate fragmented slabs.
-
-**Changes**:
-
-- **[NEW]** `internal/memory/arena_compaction.go`: Implement `CompactArena()` to copy live data to new slabs and release old ones.
-- **[MODIFY]** `internal/memory/typed_arena.go`: Add `Compact()` method with read-write lock protection.
-- **[NEW]** `internal/memory/arena_compaction_test.go`: Unit test verifying memory consolidation.
-- **[NEW]** `internal/memory/arena_compaction_fuzz_test.go`: Fuzz test for concurrent compaction under load.
-
-**Verification**: Measure slab count and RSS before/after compaction. Expect 20-30% reduction in fragmented workloads.
-
----
-
-### 2. HNSW Graph Compaction
+### 1. HNSW Graph Compaction
 
 **Objective**: Implement periodic HNSW graph compaction to rebuild graphs with tighter memory layout.
 
@@ -39,7 +24,7 @@
 
 ---
 
-### 3. Aggressive GC Tuner
+### 2. Aggressive GC Tuner
 
 **Objective**: Make `GCTuner` more responsive to arena retention by lowering GOGC when heap is dominated by arenas.
 
@@ -54,7 +39,7 @@
 
 ---
 
-### 4. Goroutine Leak Detection
+### 3. Goroutine Leak Detection
 
 **Objective**: Audit all background goroutines for proper shutdown and add leak detection tests.
 
@@ -69,7 +54,7 @@
 
 ---
 
-### 5. Context Cancellation for Long Operations
+### 4. Context Cancellation for Long Operations
 
 **Objective**: Add context cancellation to all long-running operations (compaction, indexing, replication).
 
@@ -84,7 +69,7 @@
 
 ---
 
-### 6. Metrics for Memory Subsystem
+### 5. Metrics for Memory Subsystem
 
 **Objective**: Add Prometheus metrics for arena usage, slab fragmentation, and compaction events.
 
@@ -99,7 +84,7 @@
 
 ---
 
-### 7. Shutdown Timeout Enforcement
+### 6. Shutdown Timeout Enforcement
 
 **Objective**: Enforce hard timeout for graceful shutdown to prevent hung workers from blocking `Close()`.
 
@@ -113,7 +98,7 @@
 
 ---
 
-### 8. Memory Leak Integration Test
+### 7. Memory Leak Integration Test
 
 **Objective**: Create long-running integration test that validates memory returns to baseline after dataset drop.
 
@@ -127,7 +112,7 @@
 
 ---
 
-### 9. Documentation & Runbook
+### 8. Documentation & Runbook
 
 **Objective**: Document memory management architecture and create operational runbook for memory issues.
 

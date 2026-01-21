@@ -541,7 +541,11 @@ func (h *HNSWIndex) SearchByID(id VectorID, k int) []VectorID {
 	}
 	defer release()
 
+	start := time.Now()
 	h.mu.RLock()
+	if h.metricLockWait != nil {
+		h.metricLockWait.WithLabelValues("read").Observe(time.Since(start).Seconds())
+	}
 	neighbors := h.Graph.Search(vec, k)
 	h.mu.RUnlock()
 
@@ -575,7 +579,11 @@ func (h *HNSWIndex) SearchWithArena(queryVec []float32, k int, arena *SearchAren
 		return nil
 	}
 
+	start := time.Now()
 	h.mu.RLock()
+	if h.metricLockWait != nil {
+		h.metricLockWait.WithLabelValues("read").Observe(time.Since(start).Seconds())
+	}
 	neighbors := h.Graph.Search(queryVec, k)
 	h.mu.RUnlock()
 
@@ -620,7 +628,11 @@ func (h *HNSWIndex) SearchByIDUnsafe(id VectorID, k int) []VectorID {
 	defer release()
 
 	// coder/hnsw is not thread-safe for concurrent Search and Add.
+	start := time.Now()
 	h.mu.RLock()
+	if h.metricLockWait != nil {
+		h.metricLockWait.WithLabelValues("read").Observe(time.Since(start).Seconds())
+	}
 	neighbors := h.Graph.Search(vec, k)
 	h.mu.RUnlock()
 
@@ -648,7 +660,9 @@ func (h *HNSWIndex) extractVectors(results []SearchResult, format string) {
 	if h.dataset == nil {
 		return
 	}
+	start := time.Now()
 	h.dataset.dataMu.RLock()
+	metrics.DatasetLockWaitDurationSeconds.WithLabelValues("extract_vectors").Observe(time.Since(start).Seconds())
 	defer h.dataset.dataMu.RUnlock()
 
 	for i := range results {
@@ -656,7 +670,11 @@ func (h *HNSWIndex) extractVectors(results []SearchResult, format string) {
 
 		// Priority 1: Check format and local PQ storage
 		if format == "quantized" {
+			startPQ := time.Now()
 			h.pqCodesMu.RLock()
+			if h.metricLockWait != nil {
+				h.metricLockWait.WithLabelValues("pq_read").Observe(time.Since(startPQ).Seconds())
+			}
 			if h.pqEnabled && int(id) < len(h.pqCodes) && len(h.pqCodes[id]) > 0 {
 				results[i].Vector = h.pqCodes[id]
 				h.pqCodesMu.RUnlock()

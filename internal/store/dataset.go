@@ -88,9 +88,9 @@ type Dataset struct {
 	recordEviction *RecordEvictionManager
 
 	// hnsw2 integration (Phase 5)
-	// Using interface{} to avoid import cycle with hnsw2 package
+	// Using any to avoid import cycle with hnsw2 package
 	// Actual type is *hnsw2.ArrowHNSW, initialized externally
-	hnsw2Index interface{}
+	hnsw2Index any
 	useHNSW2   bool // Feature flag
 
 	// Metric defines the distance metric for this dataset
@@ -195,13 +195,13 @@ func (d *Dataset) UseHNSW2() bool {
 
 // SetHNSW2Index sets the hnsw2 index (called from external initialization).
 // This avoids import cycles by allowing main package to initialize hnsw2.
-func (d *Dataset) SetHNSW2Index(idx interface{}) {
+func (d *Dataset) SetHNSW2Index(idx any) {
 	d.hnsw2Index = idx
 }
 
 // GetHNSW2Index returns the hnsw2 index.
 // Caller should type assert to *hnsw2.ArrowHNSW.
-func (d *Dataset) GetHNSW2Index() interface{} {
+func (d *Dataset) GetHNSW2Index() any {
 	return d.hnsw2Index
 }
 

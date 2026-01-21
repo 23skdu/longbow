@@ -61,7 +61,7 @@ func TestVectorStore_QueryCache_Integration(t *testing.T) {
 	}, 10*time.Second, 500*time.Millisecond)
 
 	// 2. Prepare HybridSearch Action
-	req := map[string]interface{}{
+	req := map[string]any{
 		"dataset": dsName,
 		"vector":  []float32{0.1, 0.2}, // 2 dims? verify createTestRecordBatch dims. usually 128.
 		// Wait, createTestRecordBatch uses 128 dims. Let's make a zero vector of 128 dims.

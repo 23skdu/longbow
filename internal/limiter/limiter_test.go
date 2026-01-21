@@ -31,7 +31,7 @@ func TestRateLimiter_UnaryInterceptor(t *testing.T) {
 	l := NewRateLimiter(Config{RPS: 1, Burst: 1})
 	interceptor := l.UnaryInterceptor()
 
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, req any) (any, error) {
 		return "ok", nil
 	}
 
@@ -98,7 +98,7 @@ func TestRateLimiter_Disabled(t *testing.T) {
 	l := NewRateLimiter(Config{RPS: 0})
 	interceptor := l.UnaryInterceptor()
 
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, req any) (any, error) {
 		return "ok", nil
 	}
 

@@ -138,7 +138,7 @@ func BenchmarkE2EDoGet(b *testing.B) {
 			_ = stream.CloseSend()
 			_, _ = stream.Recv()
 
-			ticketBytes, _ := json.Marshal(map[string]interface{}{"name": "bench_e2e"})
+			ticketBytes, _ := json.Marshal(map[string]any{"name": "bench_e2e"})
 			ticket := &flight.Ticket{Ticket: ticketBytes}
 
 			// 3. Benchmark DoGet

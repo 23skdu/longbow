@@ -7,6 +7,7 @@ import (
 	"math"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/pq"
@@ -69,7 +70,9 @@ func NewBruteForceIndex(ds *Dataset) *BruteForceIndex {
 
 // AddByLocation adds a vector from the dataset using batch and row indices.
 func (b *BruteForceIndex) AddByLocation(batchIdx, rowIdx int) (uint32, error) {
+	start := time.Now()
 	b.mu.Lock()
+	metrics.IndexLockWaitDuration.WithLabelValues(b.dataset.Name, "write").Observe(time.Since(start).Seconds())
 	defer b.mu.Unlock()
 
 	id := uint32(len(b.locations))
@@ -103,7 +106,9 @@ func (b *BruteForceIndex) SearchVectorsWithBitmap(ctx context.Context, q any, k 
 
 // GetLocation retrieves the storage location for a given vector ID.
 func (b *BruteForceIndex) GetLocation(id VectorID) (Location, bool) {
+	start := time.Now()
 	b.mu.RLock()
+	metrics.IndexLockWaitDuration.WithLabelValues(b.dataset.Name, "read").Observe(time.Since(start).Seconds())
 	defer b.mu.RUnlock()
 	if int(id) >= len(b.locations) {
 		return Location{}, false
@@ -146,7 +151,9 @@ func (b *BruteForceIndex) SearchVectors(ctx context.Context, q any, k int, filte
 		// BruteForce currently only supports float32
 		return nil, errors.New("BruteForceIndex only supports []float32 queries")
 	}
+	start := time.Now()
 	b.mu.RLock()
+	metrics.IndexLockWaitDuration.WithLabelValues(b.dataset.Name, "read").Observe(time.Since(start).Seconds())
 	defer b.mu.RUnlock()
 
 	if len(b.locations) == 0 {
@@ -202,7 +209,9 @@ func (b *BruteForceIndex) SearchVectors(ctx context.Context, q any, k int, filte
 
 // Len returns the number of indexed vectors.
 func (b *BruteForceIndex) Len() int {
+	start := time.Now()
 	b.mu.RLock()
+	metrics.IndexLockWaitDuration.WithLabelValues(b.dataset.Name, "read").Observe(time.Since(start).Seconds())
 	defer b.mu.RUnlock()
 	return len(b.locations)
 }
@@ -293,7 +302,9 @@ func NewAdaptiveIndex(ds *Dataset, cfg AdaptiveIndexConfig) *AdaptiveIndex {
 
 // AddByLocation adds a vector and potentially triggers migration to HNSW.
 func (a *AdaptiveIndex) AddByLocation(batchIdx, rowIdx int) (uint32, error) {
+	start := time.Now()
 	a.mu.Lock()
+	metrics.IndexLockWaitDuration.WithLabelValues(a.dataset.Name, "write").Observe(time.Since(start).Seconds())
 	defer a.mu.Unlock()
 
 	var id uint32
@@ -477,7 +488,9 @@ func (a *AdaptiveIndex) migrateToHNSW() {
 
 // SearchVectors delegates to the active index.
 func (a *AdaptiveIndex) SearchVectors(ctx context.Context, q any, k int, filters []query.Filter, options SearchOptions) ([]SearchResult, error) {
+	start := time.Now()
 	a.mu.RLock()
+	metrics.IndexLockWaitDuration.WithLabelValues(a.dataset.Name, "read").Observe(time.Since(start).Seconds())
 	defer a.mu.RUnlock()
 
 	if a.usingHNSW.Load() {

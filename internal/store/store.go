@@ -174,7 +174,7 @@ func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes 
 
 	// Initialize parser pool
 	s.vectorSearchParserPool = sync.Pool{
-		New: func() interface{} {
+		New: func() any {
 			return query.NewZeroAllocVectorSearchParser(768, s.logger)
 		},
 	}

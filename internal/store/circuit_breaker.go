@@ -199,7 +199,7 @@ func (cb *CircuitBreaker) RecordFailure() {
 }
 
 // Execute wraps a function with circuit breaker logic
-func (cb *CircuitBreaker) Execute(fn func() (interface{}, error)) (interface{}, error) {
+func (cb *CircuitBreaker) Execute(fn func() (any, error)) (any, error) {
 	if !cb.Allow() {
 		return nil, ErrCircuitOpen
 	}
@@ -286,7 +286,7 @@ func (r *CircuitBreakerRegistry) Reset(key string) {
 
 // ResetAll resets all circuit breakers
 func (r *CircuitBreakerRegistry) ResetAll() {
-	r.breakers.Range(func(_, value interface{}) bool {
+	r.breakers.Range(func(_, value any) bool {
 		value.(*CircuitBreaker).Reset()
 		return true
 	})

@@ -81,10 +81,10 @@ func benchmarkInt8(b *testing.B, dim int) {
 
 	// We need to pass pointers to generic function, which wants unsafe.Pointer or interface?
 	// Registry returns func(unsafe.Pointer, unsafe.Pointer) float32 ? NO.
-	// Registry returns `interface{}` currently or `unsafe.Pointer`?
+	// Registry returns `any` currently or `unsafe.Pointer`?
 	// Let's check `Registry.LookUp` signature from `registry.go`?
 	// Wait, simd.go Registry.Register passes `euclideanInt8Unrolled4x` which is `func([]int8, []int8) float32`.
-	// The Registry likely stores `interface{}`.
+	// The Registry likely stores `any`.
 
 	// Reflection overhead is bad for microbenchmark.
 	// We should probably rely on `euclideanInt8Unrolled4x` being available since we are in `package simd`.

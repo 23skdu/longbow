@@ -35,7 +35,7 @@ func NewArenaAllocator() *ArenaAllocator {
 }
 
 var globalChunkPool = &sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		// Allocate a big chunk
 		b := make([]byte, DefaultArenaChunkSize)
 		return &b
@@ -118,9 +118,9 @@ func (a *ArenaAllocator) Release() {
 
 // Huge chunk pooling
 var (
-	pool128MB = &sync.Pool{New: func() interface{} { b := make([]byte, 128*1024*1024); return &b }}
-	pool256MB = &sync.Pool{New: func() interface{} { b := make([]byte, 256*1024*1024); return &b }}
-	pool512MB = &sync.Pool{New: func() interface{} { b := make([]byte, 512*1024*1024); return &b }}
+	pool128MB = &sync.Pool{New: func() any { b := make([]byte, 128*1024*1024); return &b }}
+	pool256MB = &sync.Pool{New: func() any { b := make([]byte, 256*1024*1024); return &b }}
+	pool512MB = &sync.Pool{New: func() any { b := make([]byte, 512*1024*1024); return &b }}
 	// Anything larger => heap
 )
 

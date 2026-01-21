@@ -16,11 +16,11 @@ func (h ResultHeap) Len() int           { return len(h) }
 func (h ResultHeap) Less(i, j int) bool { return h[i].Result.Score < h[j].Result.Score } // Min-heap by score (asc)
 func (h ResultHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
 
-func (h *ResultHeap) Push(x interface{}) {
+func (h *ResultHeap) Push(x any) {
 	*h = append(*h, x.(StreamItem))
 }
 
-func (h *ResultHeap) Pop() interface{} {
+func (h *ResultHeap) Pop() any {
 	old := *h
 	n := len(old)
 	x := old[n-1]

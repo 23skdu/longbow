@@ -207,7 +207,7 @@ func (s *DiskVectorStore) Advise(advice int) error {
 
 // SnapshotTo writes the current content of the store to the backend.
 // We only write the file content.
-func (s *DiskVectorStore) SnapshotTo(ctx context.Context, backend interface{}, name string) error {
+func (s *DiskVectorStore) SnapshotTo(ctx context.Context, backend any, name string) error {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -244,7 +244,7 @@ func (s *DiskVectorStore) SnapshotTo(ctx context.Context, backend interface{}, n
 }
 
 // RestoreDiskVectorStore restores a store from a snapshot.
-func RestoreDiskVectorStore(ctx context.Context, backend interface{}, name, destPath string) error {
+func RestoreDiskVectorStore(ctx context.Context, backend any, name, destPath string) error {
 	type snapshotReader interface {
 		ReadSnapshotFile(ctx context.Context, name, ext string) (io.ReadCloser, error)
 	}

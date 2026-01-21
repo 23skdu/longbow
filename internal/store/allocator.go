@@ -18,7 +18,7 @@ func NewChunkAllocator(numItems, itemSizeBytes int) *ChunkAllocator {
 	return &ChunkAllocator{
 		size: totalSize,
 		pool: sync.Pool{
-			New: func() interface{} {
+			New: func() any {
 				// Allocate a new slice
 				return make([]byte, totalSize)
 			},

@@ -86,7 +86,7 @@ func (f *RequestForwarder) GetConn(ctx context.Context, target string) (*grpc.Cl
 }
 
 // Forward forwards a unary request to the target node transparently.
-func (f *RequestForwarder) Forward(ctx context.Context, targetNodeID string, req interface{}, method string) (interface{}, error) {
+func (f *RequestForwarder) Forward(ctx context.Context, targetNodeID string, req any, method string) (any, error) {
 	addr := f.resolver.GetNodeAddr(targetNodeID)
 	if addr == "" {
 		return nil, fmt.Errorf("forwarder: unknown node ID %s", targetNodeID)
@@ -115,7 +115,7 @@ func (f *RequestForwarder) Forward(ctx context.Context, targetNodeID string, req
 	// For now, let's implement a typed forward for known methods if we can,
 	// or fallback to a smarter generic approach.
 
-	var reply interface{}
+	var reply any
 	switch method {
 	case "/arrow.flight.protocol.FlightService/GetFlightInfo":
 		reply = &flight.FlightInfo{}
@@ -170,7 +170,7 @@ func (f *RequestForwarder) ForwardStream(ctx context.Context, targetNodeID strin
 	// Server -> Client (Forwarding request/data)
 	go func() {
 		for {
-			var msg interface{}
+			var msg any
 			switch method {
 			case "/arrow.flight.protocol.FlightService/DoGet":
 				msg = &flight.Ticket{}
@@ -199,7 +199,7 @@ func (f *RequestForwarder) ForwardStream(ctx context.Context, targetNodeID strin
 	// Client -> Server (Returning data/response)
 	go func() {
 		for {
-			var msg interface{}
+			var msg any
 			if method == "/arrow.flight.protocol.FlightService/DoAction" {
 				msg = &flight.Result{}
 			} else {

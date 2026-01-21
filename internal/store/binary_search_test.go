@@ -58,8 +58,8 @@ func (m *mockSearchStream) Context() context.Context     { return m.ctx }
 func (m *mockSearchStream) SetHeader(metadata.MD) error  { return nil }
 func (m *mockSearchStream) SendHeader(metadata.MD) error { return nil }
 func (m *mockSearchStream) SetTrailer(metadata.MD)       {}
-func (m *mockSearchStream) SendMsg(interface{}) error    { return nil }
-func (m *mockSearchStream) RecvMsg(interface{}) error    { return nil }
+func (m *mockSearchStream) SendMsg(any) error    { return nil }
+func (m *mockSearchStream) RecvMsg(any) error    { return nil }
 
 func (m *mockSearchStream) addFlightData(data *flight.FlightData) {
 	m.mu.Lock()

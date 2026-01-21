@@ -167,7 +167,7 @@ func runSearch(ctx context.Context, c *client.SmartClient) error {
 		queryVec[i] = rand.Float32()
 	}
 
-	req := map[string]interface{}{
+	req := map[string]any{
 		"dataset": "bench_collection",
 		"vector":  queryVec,
 		"k":       10,

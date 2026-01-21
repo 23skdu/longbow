@@ -341,7 +341,7 @@ func (s *VectorStore) handleDoExchangeIngest(
 
 		batchID++
 		// Send ACK back to client (required by protocol and tests)
-		ack := map[string]interface{}{
+		ack := map[string]any{
 			"status":   "acked",
 			"batch_id": batchID,
 			"rows":     rec.NumRows(),

@@ -114,7 +114,7 @@ func TestCircuitBreaker_ReOpensOnFailureInHalfOpen(t *testing.T) {
 func TestCircuitBreaker_Execute_Success(t *testing.T) {
 	cb := NewCircuitBreaker(DefaultCircuitBreakerConfig())
 
-	result, err := cb.Execute(func() (interface{}, error) {
+	result, err := cb.Execute(func() (any, error) {
 		return "success", nil
 	})
 
@@ -135,7 +135,7 @@ func TestCircuitBreaker_Execute_RejectsWhenOpen(t *testing.T) {
 	cb := NewCircuitBreaker(cfg)
 	cb.RecordFailure() // Open circuit
 
-	_, err := cb.Execute(func() (interface{}, error) {
+	_, err := cb.Execute(func() (any, error) {
 		return "should not run", nil
 	})
 

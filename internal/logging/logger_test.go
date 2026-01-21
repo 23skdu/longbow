@@ -105,7 +105,7 @@ func TestJSONOutput(t *testing.T) {
 
 	logger.Info().Str("foo", "bar").Msg("json test")
 
-	var entry map[string]interface{}
+	var entry map[string]any
 	if err := json.Unmarshal(buf.Bytes(), &entry); err != nil {
 		t.Fatalf("Failed to parse JSON output: %v, output: %s", err, buf.String())
 	}
@@ -135,7 +135,7 @@ func TestLoggerWithFields(t *testing.T) {
 	childLogger := baseLogger.With().Str("component", "test").Logger()
 	childLogger.Info().Msg("message with component")
 
-	var entry map[string]interface{}
+	var entry map[string]any
 	if err := json.Unmarshal(buf.Bytes(), &entry); err != nil {
 		t.Fatalf("Failed to parse JSON: %v", err)
 	}

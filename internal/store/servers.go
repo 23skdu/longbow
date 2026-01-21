@@ -157,7 +157,7 @@ func (s *MetaServer) DoAction(action *flight.Action, stream flight.FlightService
 	if action == nil {
 		return status.Error(codes.InvalidArgument, "action is required")
 	}
-	LogClientAction(stream.Context(), s.logger, s.Mesh, "DoAction", map[string]interface{}{
+	LogClientAction(stream.Context(), s.logger, s.Mesh, "DoAction", map[string]any{
 		"type": action.Type,
 	})
 
@@ -239,7 +239,7 @@ func (s *MetaServer) handleDiscoveryStatus(_ *flight.Action, stream flight.Fligh
 		return status.Error(codes.FailedPrecondition, "mesh is not initialized")
 	}
 	provider, peers := s.Mesh.GetDiscoveryStatus()
-	statusInfo := map[string]interface{}{
+	statusInfo := map[string]any{
 		"provider": provider,
 		"peers":    peers,
 	}
@@ -284,7 +284,7 @@ func (s *MetaServer) handleDeleteNamespace(action *flight.Action, stream flight.
 
 func (s *MetaServer) handleListNamespaces(_ *flight.Action, stream flight.FlightService_DoActionServer) error {
 	names := s.ListNamespaces()
-	resp := map[string]interface{}{
+	resp := map[string]any{
 		"namespaces": names,
 		"count":      len(names),
 	}

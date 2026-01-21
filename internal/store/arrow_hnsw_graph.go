@@ -610,6 +610,9 @@ func (g *GraphData) GetPaddedDimsForType(dt VectorDataType) int {
 }
 
 func (g *GraphData) Close() error {
+	if g.SlabArena != nil {
+		g.SlabArena.Free()
+	}
 	// Nil out all chunks to help GC even if GraphData persists in other references
 	g.Levels = nil
 	g.Vectors = nil
@@ -672,8 +675,15 @@ func (h *ArrowHNSW) growNoLock(minCap, dims int) {
 
 	newGD := data.Clone(newCap, dims, h.config.SQ8Enabled, h.config.PQEnabled, h.config.PQM, h.config.BQEnabled, h.config.Float16Enabled, h.config.PackedAdjacencyEnabled)
 
-	h.data.Store(newGD)
-	h.backend.Store(newGD)
+	oldGD := h.data.Swap(newGD)
+	oldBackend := h.backend.Swap(newGD)
+
+	if oldGD != nil && oldGD != newGD {
+		_ = oldGD.Close()
+	}
+	if oldBackend != nil && oldBackend != newGD && oldBackend != oldGD {
+		_ = oldBackend.Close()
+	}
 	if dims > 0 {
 		h.dims.Store(int32(dims))
 	}

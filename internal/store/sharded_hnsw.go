@@ -597,7 +597,18 @@ func (s *ShardedHNSW) SetIndexedColumns(cols []string) {
 
 // Close implements VectorIndex.
 func (s *ShardedHNSW) Close() error {
-	return nil
+	s.shardsMu.Lock()
+	defer s.shardsMu.Unlock()
+	var lastErr error
+	for _, shard := range s.shards {
+		if shard != nil && shard.index != nil {
+			if err := shard.index.Close(); err != nil {
+				lastErr = err
+			}
+		}
+	}
+	s.shards = nil
+	return lastErr
 }
 
 // GetLocation returns the storage location for a given VectorID

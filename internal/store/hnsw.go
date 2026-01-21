@@ -293,7 +293,9 @@ func (h *HNSWIndex) getVector(id VectorID) []float32 {
 		return nil // Tombstoned
 	}
 
+	lockStart := time.Now()
 	h.dataset.dataMu.RLock()
+	metrics.DatasetLockWaitDurationSeconds.WithLabelValues("get_vector").Observe(time.Since(lockStart).Seconds())
 	defer h.dataset.dataMu.RUnlock()
 
 	if h.dataset.Records == nil || loc.BatchIdx >= len(h.dataset.Records) {
@@ -354,7 +356,9 @@ func (h *HNSWIndex) getVectorUnsafe(id VectorID) (vec []float32, release func())
 
 	// Optimized path: Use Unsafe pointer logic to skip Arrow overhead
 	// We still need dataset read lock to access Records slice pointer safely
+	startDS := time.Now()
 	h.dataset.dataMu.RLock() // Can this be RLock? Yes, Records slice won't change, only appends.
+	metrics.DatasetLockWaitDurationSeconds.WithLabelValues("get_vector_unsafe").Observe(time.Since(startDS).Seconds())
 
 	if loc.BatchIdx >= len(h.dataset.Records) {
 		h.dataset.dataMu.RUnlock()

@@ -1,22 +1,3 @@
-# 10-Part Plan: Error Handling & Logging Standardization (STABILIZATION)
-
-**Goal**: Move Longbow from "research" grade to "production" grade by standardizing how errors are reported and how the system logs its state.
-
-## Current Priority: Stabilization Plan
-
-- [ ] **1. Allocator Hardening**: Replace `panic()` in `internal/memory/allocator.go` (`AssertSize`) with `testing.T.Errorf` or error returns where applicable.
-- [ ] **2. SIMD Length Safeguards**: Refactor SIMD functions in `internal/simd/simd.go` to return errors on `length mismatch` instead of panicking.
-- [ ] **3. Storage Engine Silent Error Cleanup**: Fix `_ = err` calls in `internal/storage/engine.go` (e.g., lines 375-376) to properly propagate or log errors.
-- [ ] **4. Fuzz Test Robustness**: Replace `_ = store.Close()` and other ignored errors in `internal/store/fuzz_test.go` with proper checks to catch silent failures during fuzzing.
-- [ ] **5. Config Validation**: Call `ValidateConfig()` in `cmd/longbow/main.go` immediately after loading the configuration to prevent invalid states from propagating.
-- [ ] **6. Production Logging Implementation**: Replace `fmt.Printf` and `fmt.Fprintf(os.Stderr, ...)` in `internal/simd/simd.go`, `internal/storage/engine.go`, and `cmd/longbow/main.go` with `zerolog`.
-- [ ] **7. Storage Engine Debug Print Removal**: Remove or convert `fmt.Printf` calls in `internal/storage/engine.go` (lines 265, 423, 451, 454) to `logger.Debug()`.
-- [ ] **8. Query Parser Logging Refactor**: Replace `DEBUG PARSER` prints in `internal/query/zero_alloc_vector_search.go` with a proper `zerolog.Logger` instance.
-- [ ] **9. Codebase-wide fmt.Printf Audit**: Perform a final grep for `fmt.Printf` in the `internal/` directory to ensure no leakages of unformatted logs to stdout.
-- [ ] **10. Verification & Linting**: Run `golangci-lint` to ensure all new error returns are handled and that the `errcheck` pass is clean.
-
----
-
 # 10-Part Plan: Optimizing 384d Ingestion Throughput (v0.1.5)
 
 **Goal**: Achieve > 800 MB/s ingestion throughput for all data types (especially Float32) at 384 dimensions.

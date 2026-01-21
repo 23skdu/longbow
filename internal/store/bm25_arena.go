@@ -244,3 +244,19 @@ func (idx *BM25ArenaIndex) DocumentCount() uint32 {
 
 	return idx.totalDocs
 }
+
+// Close releases resources associated with the index
+func (idx *BM25ArenaIndex) Close() error {
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+
+	if idx.arena != nil {
+		idx.arena.Free()
+		idx.arena = nil
+	}
+	idx.tokenDict = nil
+	idx.termFreqs = nil
+	idx.docFreqs = nil
+	idx.docLengths = nil
+	return nil
+}

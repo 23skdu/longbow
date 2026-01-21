@@ -17,7 +17,9 @@ import (
 func (h *HNSWIndex) Add(batchIdx, rowIdx int) (uint32, error) {
 	// 1. Prepare location and update locations slice under global lock
 	// and get vector while holding the lock to protect against slice reallocations.
+	start := time.Now()
 	h.mu.Lock()
+	metrics.IndexLockWaitDuration.WithLabelValues(h.dataset.Name, "write").Observe(time.Since(start).Seconds())
 	id := h.locationStore.Append(Location{BatchIdx: batchIdx, RowIdx: rowIdx})
 	h.mu.Unlock()
 
@@ -79,7 +81,9 @@ func (h *HNSWIndex) Add(batchIdx, rowIdx int) (uint32, error) {
 
 	if pqEnabled && encoder != nil {
 		codes, _ := encoder.Encode(vec)
+		startPQ := time.Now()
 		h.pqCodesMu.Lock()
+		metrics.IndexLockWaitDuration.WithLabelValues(h.dataset.Name, "pq_write").Observe(time.Since(startPQ).Seconds())
 		// Resize storage if necessary
 		if int(id) >= len(h.pqCodes) {
 			// Grow slice to accommodate new ID
@@ -174,7 +178,9 @@ func (h *HNSWIndex) AddSafe(rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32
 	vec := floatArr.Float32Values()[start:end]
 
 	// 3. Update locations under global lock
+	startLoc := time.Now()
 	h.mu.Lock()
+	metrics.IndexLockWaitDuration.WithLabelValues(h.dataset.Name, "write").Observe(time.Since(startLoc).Seconds())
 	h.locationStore.Append(Location{BatchIdx: batchIdx, RowIdx: rowIdx})
 	h.mu.Unlock()
 
@@ -195,7 +201,9 @@ func (h *HNSWIndex) AddSafe(rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32
 
 	if pqEnabled && encoder != nil {
 		codes, _ := encoder.Encode(vec)
+		startPQSafe := time.Now()
 		h.pqCodesMu.Lock()
+		metrics.IndexLockWaitDuration.WithLabelValues(h.dataset.Name, "pq_write").Observe(time.Since(startPQSafe).Seconds())
 		// Resize storage if necessary
 		if int(id) >= len(h.pqCodes) {
 			targetLen := int(id) + 1
@@ -331,7 +339,9 @@ func (h *HNSWIndex) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []int)
 		}
 
 		// Store PQ codes safely
+		startPQ := time.Now()
 		h.pqCodesMu.Lock()
+		metrics.IndexLockWaitDuration.WithLabelValues(h.dataset.Name, "pq_write").Observe(time.Since(startPQ).Seconds())
 		targetLen := int(baseID) + n
 		if len(h.pqCodes) < targetLen {
 			// Resize
@@ -456,7 +466,9 @@ func (h *HNSWIndex) AddBatchParallel(locations []Location, workers int) error {
 	}
 
 	// Phase 1: Append all locations (Lock-free-ish / Reduced Lock)
+	start := time.Now()
 	h.mu.Lock()
+	metrics.IndexLockWaitDuration.WithLabelValues(h.dataset.Name, "write").Observe(time.Since(start).Seconds())
 	baseID := VectorID(h.locationStore.Len())
 	for _, loc := range locations {
 		h.locationStore.Append(loc)
@@ -515,7 +527,9 @@ func (h *HNSWIndex) AddBatchParallel(locations []Location, workers int) error {
 
 // SetPQEncoder enables product quantization with the provided encoder.
 func (h *HNSWIndex) SetPQEncoder(encoder *pq.PQEncoder) {
+	start := time.Now()
 	h.pqCodesMu.Lock()
+	metrics.IndexLockWaitDuration.WithLabelValues(h.dataset.Name, "pq_write").Observe(time.Since(start).Seconds())
 	h.pqEncoder = encoder
 	h.pqEnabled = true
 	// Initialize code storage if needed
@@ -567,7 +581,9 @@ func (h *HNSWIndex) TrainPQ(vectors [][]float32) error {
 
 	// Encode existing vectors
 	count := int(h.nextVecID.Load())
+	startPQ := time.Now()
 	h.pqCodesMu.Lock()
+	metrics.IndexLockWaitDuration.WithLabelValues(h.dataset.Name, "pq_write").Observe(time.Since(startPQ).Seconds())
 	defer h.pqCodesMu.Unlock()
 
 	if cap(h.pqCodes) < count {

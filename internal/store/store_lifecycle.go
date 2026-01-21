@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"runtime"
+	"runtime/debug"
 	"time"
 
 	"github.com/23skdu/longbow/internal/metrics"
@@ -440,4 +441,23 @@ func (s *VectorStore) StartEvictionTicker(interval time.Duration) {
 			}
 		}
 	}()
+}
+
+// ReleaseMemory explicitly triggers GC and frees OS memory.
+// It also waits for async cleanups to complete.
+func (s *VectorStore) ReleaseMemory() {
+	s.logger.Info().Msg("Explicitly releasing memory")
+
+	// 1. Wait for async cleanups
+	s.cleanupWg.Wait()
+
+	// 2. Trigger GC
+	runtime.GC()
+
+	// 3. Free OS memory
+	debug.FreeOSMemory()
+
+	s.logger.Info().
+		Int64("current_memory_bytes", s.currentMemory.Load()).
+		Msg("Memory release complete")
 }

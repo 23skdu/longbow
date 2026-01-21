@@ -78,10 +78,7 @@ func writeParquet(w io.Writer, records ...arrow.RecordBatch) error {
 			}
 		}
 
-		var vecData *array.Float32
-		var vecDataF16 *array.Float16
 		var vecLen int
-
 		if hasVec {
 			col := rec.Column(vecColIdx)
 			if vecCol, ok := col.(*array.FixedSizeList); ok {
@@ -89,14 +86,10 @@ func writeParquet(w io.Writer, records ...arrow.RecordBatch) error {
 				vecLen = int(vecCol.DataType().(*arrow.FixedSizeListType).Len())
 
 				switch elemType.ID() {
-				case arrow.FLOAT16:
-					vecDataF16 = vecCol.ListValues().(*array.Float16)
-				case arrow.FLOAT32:
-					vecData = vecCol.ListValues().(*array.Float32)
-				case arrow.FLOAT64:
-					// Float64 conversion is handled in the loop below,
-					// as the target schema is Float32.
-					// No direct assignment to vecData or vecDataF16 here.
+				case arrow.FLOAT16, arrow.FLOAT32, arrow.FLOAT64,
+					arrow.INT8, arrow.UINT8, arrow.INT16, arrow.UINT16,
+					arrow.INT32, arrow.UINT32, arrow.INT64, arrow.UINT64:
+					// Supported types: handled via dynamic conversion in loop
 				default:
 					return fmt.Errorf("unsupported vector element type: %s", elemType)
 				}
@@ -111,22 +104,52 @@ func writeParquet(w io.Writer, records ...arrow.RecordBatch) error {
 			if hasVec {
 				start := int(i) * vecLen
 				end := start + vecLen
+				vec = make([]float32, vecLen)
 
-				switch {
-				case vecDataF16 != nil:
-					vals := vecDataF16.Values()[start:end]
-					vec = make([]float32, vecLen)
-					for k, v := range vals {
+				col := rec.Column(vecColIdx).(*array.FixedSizeList)
+				values := col.ListValues()
+
+				switch vArr := values.(type) {
+				case *array.Float16:
+					for k, v := range vArr.Values()[start:end] {
 						vec[k] = v.Float32()
 					}
-				case vecData != nil:
-					vec = vecData.Float32Values()[start:end]
-				default:
-					// Must be Float64 or handled above
-					col := rec.Column(vecColIdx).(*array.FixedSizeList)
-					vals := col.ListValues().(*array.Float64).Float64Values()[start:end]
-					vec = make([]float32, vecLen)
-					for k, v := range vals {
+				case *array.Float32:
+					vec = vArr.Float32Values()[start:end]
+				case *array.Float64:
+					for k, v := range vArr.Float64Values()[start:end] {
+						vec[k] = float32(v)
+					}
+				case *array.Int8:
+					for k, v := range vArr.Int8Values()[start:end] {
+						vec[k] = float32(v)
+					}
+				case *array.Int16:
+					for k, v := range vArr.Int16Values()[start:end] {
+						vec[k] = float32(v)
+					}
+				case *array.Int32:
+					for k, v := range vArr.Int32Values()[start:end] {
+						vec[k] = float32(v)
+					}
+				case *array.Int64:
+					for k, v := range vArr.Int64Values()[start:end] {
+						vec[k] = float32(v)
+					}
+				case *array.Uint8:
+					for k, v := range vArr.Uint8Values()[start:end] {
+						vec[k] = float32(v)
+					}
+				case *array.Uint16:
+					for k, v := range vArr.Uint16Values()[start:end] {
+						vec[k] = float32(v)
+					}
+				case *array.Uint32:
+					for k, v := range vArr.Uint32Values()[start:end] {
+						vec[k] = float32(v)
+					}
+				case *array.Uint64:
+					for k, v := range vArr.Uint64Values()[start:end] {
 						vec[k] = float32(v)
 					}
 				}

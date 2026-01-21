@@ -357,10 +357,23 @@ func (d *Dataset) Close() {
 		d.BM25Index = nil
 	}
 
+	if d.BM25ArenaIndex != nil {
+		_ = d.BM25ArenaIndex.Close()
+		d.BM25ArenaIndex = nil
+	}
+
 	if d.Graph != nil {
 		_ = d.Graph.Close()
 		d.Graph = nil
 	}
+
+	// Release records
+	for _, r := range d.Records {
+		if r != nil {
+			r.Release()
+		}
+	}
+	d.Records = nil
 
 	d.PrimaryIndex = nil
 	d.recordEviction = nil
@@ -428,7 +441,7 @@ func (d *Dataset) UpdatePrimaryIndex(batchIdx int, rec arrow.RecordBatch) {
 
 // WaitForIndexing blocks until all pending indexing jobs for this dataset are complete.
 func (d *Dataset) WaitForIndexing() {
-	for d.PendingIndexJobs.Load() > 0 {
-		time.Sleep(5 * time.Millisecond)
+	for d.PendingIndexJobs.Load() > 0 || d.PendingIngestion.Load() > 0 {
+		time.Sleep(10 * time.Millisecond)
 	}
 }

@@ -332,7 +332,9 @@ func (a *AdaptiveIndex) AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx int)
 
 // AddBatch adds multiple vectors efficiently.
 func (a *AdaptiveIndex) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []int) ([]uint32, error) {
+	start := time.Now()
 	a.mu.Lock()
+	metrics.IndexLockWaitDuration.WithLabelValues(a.dataset.Name, "write").Observe(time.Since(start).Seconds())
 	defer a.mu.Unlock()
 
 	ids := make([]uint32, len(recs))
@@ -347,7 +349,9 @@ func (a *AdaptiveIndex) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []
 }
 
 func (a *AdaptiveIndex) SearchVectorsWithBitmap(ctx context.Context, q any, k int, filter *query.Bitset, options SearchOptions) []SearchResult {
+	start := time.Now()
 	a.mu.RLock()
+	metrics.IndexLockWaitDuration.WithLabelValues(a.dataset.Name, "read").Observe(time.Since(start).Seconds())
 	defer a.mu.RUnlock()
 	if a.usingHNSW.Load() {
 		return a.hnsw.SearchVectorsWithBitmap(ctx, q, k, filter, options)
@@ -356,7 +360,9 @@ func (a *AdaptiveIndex) SearchVectorsWithBitmap(ctx context.Context, q any, k in
 }
 
 func (a *AdaptiveIndex) GetLocation(id VectorID) (Location, bool) {
+	start := time.Now()
 	a.mu.RLock()
+	metrics.IndexLockWaitDuration.WithLabelValues(a.dataset.Name, "read").Observe(time.Since(start).Seconds())
 	defer a.mu.RUnlock()
 	if a.usingHNSW.Load() {
 		return a.hnsw.GetLocation(id)
@@ -365,7 +371,9 @@ func (a *AdaptiveIndex) GetLocation(id VectorID) (Location, bool) {
 }
 
 func (a *AdaptiveIndex) GetDimension() uint32 {
+	start := time.Now()
 	a.mu.RLock()
+	metrics.IndexLockWaitDuration.WithLabelValues(a.dataset.Name, "read").Observe(time.Since(start).Seconds())
 	defer a.mu.RUnlock()
 	if a.usingHNSW.Load() {
 		return a.hnsw.GetDimension()
@@ -374,7 +382,9 @@ func (a *AdaptiveIndex) GetDimension() uint32 {
 }
 
 func (a *AdaptiveIndex) Warmup() int {
+	start := time.Now()
 	a.mu.RLock()
+	metrics.IndexLockWaitDuration.WithLabelValues(a.dataset.Name, "read").Observe(time.Since(start).Seconds())
 	defer a.mu.RUnlock()
 	if a.usingHNSW.Load() {
 		return a.hnsw.Warmup()
@@ -383,7 +393,9 @@ func (a *AdaptiveIndex) Warmup() int {
 }
 
 func (a *AdaptiveIndex) SetIndexedColumns(cols []string) {
+	start := time.Now()
 	a.mu.RLock()
+	metrics.IndexLockWaitDuration.WithLabelValues(a.dataset.Name, "read").Observe(time.Since(start).Seconds())
 	defer a.mu.RUnlock()
 	if a.usingHNSW.Load() {
 		a.hnsw.SetIndexedColumns(cols)
@@ -391,7 +403,9 @@ func (a *AdaptiveIndex) SetIndexedColumns(cols []string) {
 }
 
 func (a *AdaptiveIndex) Close() error {
+	start := time.Now()
 	a.mu.Lock()
+	metrics.IndexLockWaitDuration.WithLabelValues(a.dataset.Name, "write").Observe(time.Since(start).Seconds())
 	defer a.mu.Unlock()
 	if a.usingHNSW.Load() {
 		return a.hnsw.Close()
@@ -400,7 +414,9 @@ func (a *AdaptiveIndex) Close() error {
 }
 
 func (a *AdaptiveIndex) TrainPQ(vectors [][]float32) error {
+	start := time.Now()
 	a.mu.Lock()
+	metrics.IndexLockWaitDuration.WithLabelValues(a.dataset.Name, "write").Observe(time.Since(start).Seconds())
 	defer a.mu.Unlock()
 	if a.usingHNSW.Load() {
 		return a.hnsw.TrainPQ(vectors)
@@ -409,7 +425,9 @@ func (a *AdaptiveIndex) TrainPQ(vectors [][]float32) error {
 }
 
 func (a *AdaptiveIndex) GetPQEncoder() *pq.PQEncoder {
+	start := time.Now()
 	a.mu.RLock()
+	metrics.IndexLockWaitDuration.WithLabelValues(a.dataset.Name, "read").Observe(time.Since(start).Seconds())
 	defer a.mu.RUnlock()
 	if a.usingHNSW.Load() {
 		return a.hnsw.GetPQEncoder()
@@ -418,7 +436,9 @@ func (a *AdaptiveIndex) GetPQEncoder() *pq.PQEncoder {
 }
 
 func (a *AdaptiveIndex) EstimateMemory() int64 {
+	start := time.Now()
 	a.mu.RLock()
+	metrics.IndexLockWaitDuration.WithLabelValues(a.dataset.Name, "read").Observe(time.Since(start).Seconds())
 	defer a.mu.RUnlock()
 	if a.usingHNSW.Load() {
 		return a.hnsw.EstimateMemory()
@@ -439,7 +459,9 @@ func (a *AdaptiveIndex) migrateToHNSW() {
 		defer a.migrating.Store(false)
 
 		// 2. Snapshot current state (Fast RLock)
+		migStart := time.Now()
 		a.mu.RLock()
+		metrics.IndexLockWaitDuration.WithLabelValues(a.dataset.Name, "read").Observe(time.Since(migStart).Seconds())
 		if a.bruteForce == nil { // Already migrated?
 			a.mu.RUnlock()
 			return
@@ -459,7 +481,9 @@ func (a *AdaptiveIndex) migrateToHNSW() {
 		}
 
 		// 4. Atomic Swap (Stop The World)
+		swapStart := time.Now()
 		a.mu.Lock()
+		metrics.IndexLockWaitDuration.WithLabelValues(a.dataset.Name, "write").Observe(time.Since(swapStart).Seconds())
 		defer a.mu.Unlock()
 
 		// Check cancellation/state changes
@@ -517,7 +541,9 @@ func (a *AdaptiveIndex) GetMigrationCount() int64 {
 
 // Len returns the number of indexed vectors.
 func (a *AdaptiveIndex) Len() int {
+	start := time.Now()
 	a.mu.RLock()
+	metrics.IndexLockWaitDuration.WithLabelValues(a.dataset.Name, "read").Observe(time.Since(start).Seconds())
 	defer a.mu.RUnlock()
 
 	if a.usingHNSW.Load() {

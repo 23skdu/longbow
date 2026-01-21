@@ -599,6 +599,7 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 				rec.Release()
 				return err
 			}
+			rec.Release()
 			continue
 		}
 
@@ -697,7 +698,7 @@ func (s *VectorStore) flushPutBatch(ctx context.Context, ds *Dataset, batch []ar
 		// Increment pending ingestion count
 		ds.PendingIngestion.Add(1)
 
-		if !s.ingestionQueue.PushBlocking(ingestionJob{datasetName: name, batch: rec, ts: ts}, 5*time.Second) {
+		if !s.ingestionQueue.PushBlocking(ingestionJob{ds: ds, batch: rec, ts: ts}, 5*time.Second) {
 			// If PushBlocking fails (timeout or stop), we must adjust PendingIngestion
 			ds.PendingIngestion.Add(-1)
 			return errors.New("failed to enqueue ingestion job (timeout or queue closed)")
@@ -711,6 +712,11 @@ func (s *VectorStore) flushPutBatch(ctx context.Context, ds *Dataset, batch []ar
 func (s *VectorStore) StoreRecordBatch(ctx context.Context, name string, rec arrow.RecordBatch) error {
 	ts := time.Now().UnixNano()
 
+	ds, ok := s.getDataset(name)
+	if !ok {
+		return fmt.Errorf("dataset %s not found", name)
+	}
+
 	rec.Retain() // For Persistence
 	rec.Retain() // For Ingestion
 	metrics.IngestionLagCount.Add(float64(rec.NumRows()))
@@ -723,7 +729,12 @@ func (s *VectorStore) StoreRecordBatch(ctx context.Context, name string, rec arr
 		return ctx.Err()
 	}
 
-	if !s.ingestionQueue.PushBlocking(ingestionJob{datasetName: name, batch: rec, ts: ts}, 5*time.Second) {
+	// Track pending ingestion BEFORE enqueuing to fix WaitForIndexing races
+	ds.PendingIngestion.Add(1)
+
+	// Dispatch for ingestion
+	if !s.ingestionQueue.PushBlocking(ingestionJob{ds: ds, batch: rec, ts: ts}, 10*time.Second) {
+		ds.PendingIngestion.Add(-1)
 		return errors.New("failed to enqueue ingestion job")
 	}
 
@@ -801,40 +812,8 @@ func (s *VectorStore) concatenateBatches(batches []arrow.RecordBatch) (arrow.Rec
 }
 
 // applyBatchToMemory applies a batch to the in-memory dataset and dispatches indexing
-func (s *VectorStore) applyBatchToMemory(name string, rec arrow.RecordBatch, ts int64) error {
-	ds, _ := s.getOrCreateDataset(name, func() *Dataset {
-		ds := NewDataset(name, rec.Schema())
-		ds.Topo = s.numaTopology
-
-		// Disk Store Initialization (Phase 6)
-		s.logger.Info().Str("name", name).Msg("Checking DiskStore init condition")
-		if strings.HasPrefix(name, "test_disk") || os.Getenv("LONGBOW_USE_DISK") == "1" {
-			path := filepath.Join(s.dataPath, name+"_vectors.bin")
-			// Determine dim from schema
-			dim := 0
-			if vecCol := findVectorColumn(rec); vecCol != nil {
-				if listArr, ok := vecCol.(*array.FixedSizeList); ok {
-					dim = int(listArr.DataType().(*arrow.FixedSizeListType).Len())
-				} else {
-					s.logger.Warn().Msg("Vector column found but not FixedSizeList")
-				}
-			} else {
-				s.logger.Warn().Msg("Vector column not found in schema")
-			}
-			s.logger.Info().Int("dim", dim).Str("path", path).Msg("DiskStore resolved dim")
-
-			if dim > 0 {
-				dvs, err := NewDiskVectorStore(path, dim)
-				if err != nil {
-					s.logger.Error().Err(err).Msg("Failed to create DiskVectorStore")
-				} else {
-					ds.DiskStore = dvs
-					s.logger.Info().Str("path", path).Int("dim", dim).Msg("DiskVectorStore initialized")
-				}
-			}
-		}
-		return ds
-	})
+func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts int64) error {
+	name := ds.Name
 
 	// Memory tracking
 	batchSize := estimateBatchSize(rec)
@@ -848,6 +827,7 @@ func (s *VectorStore) applyBatchToMemory(name string, rec arrow.RecordBatch, ts 
 	if batchSize > 100*1024*1024 {
 		s.logger.Warn().Int64("size", batchSize).Msg("Large memory addition in DoPut")
 	}
+	s.logger.Debug().Str("dataset", name).Int64("batch_size", batchSize).Msg("applyBatchToMemory adding to currentMemory")
 	s.currentMemory.Add(batchSize)
 	ds.SizeBytes.Add(batchSize)
 	metrics.FlightRowsProcessed.WithLabelValues("put", "ok").Add(float64(rec.NumRows()))

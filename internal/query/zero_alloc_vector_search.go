@@ -2,9 +2,10 @@ package query
 
 import (
 	"errors"
-	"fmt"
 	"math"
 	"strconv"
+
+	"github.com/rs/zerolog"
 )
 
 // ZeroAllocVectorSearchParser parses VectorSearchRequest JSON with minimal allocations.
@@ -15,14 +16,16 @@ type ZeroAllocVectorSearchParser struct {
 	result  VectorSearchRequest
 	vector  []float32 // pre-allocated vector buffer
 	filters []Filter  // pre-allocated filters buffer
+	logger  zerolog.Logger
 }
 
 // NewZeroAllocVectorSearchParser creates a new reusable parser.
 // maxDims specifies the maximum expected vector dimensions for pre-allocation.
-func NewZeroAllocVectorSearchParser(maxDims int) *ZeroAllocVectorSearchParser {
+func NewZeroAllocVectorSearchParser(maxDims int, logger zerolog.Logger) *ZeroAllocVectorSearchParser {
 	return &ZeroAllocVectorSearchParser{
 		vector:  make([]float32, 0, maxDims),
 		filters: make([]Filter, 0, 16),
+		logger:  logger,
 	}
 }
 
@@ -57,7 +60,7 @@ func (p *ZeroAllocVectorSearchParser) Parse(data []byte) (VectorSearchRequest, e
 
 		if data[i] == '}' {
 			// Copy vector to result (shares backing array)
-			fmt.Printf("DEBUG PARSER: End of object. p.filters len=%d\n", len(p.filters))
+			p.logger.Debug().Int("filter_count", len(p.filters)).Msg("DEBUG PARSER: End of object")
 			p.result.Vector = p.vector
 			if len(p.filters) > 0 {
 				p.result.Filters = make([]Filter, len(p.filters))
@@ -65,7 +68,7 @@ func (p *ZeroAllocVectorSearchParser) Parse(data []byte) (VectorSearchRequest, e
 			} else {
 				p.result.Filters = nil
 			}
-			fmt.Printf("DEBUG PARSER: Returning with Filters=%v\n", p.result.Filters)
+			p.logger.Debug().Interface("filters", p.result.Filters).Msg("DEBUG PARSER: Returning results")
 			return p.result, nil
 		}
 
@@ -108,7 +111,7 @@ func (p *ZeroAllocVectorSearchParser) Parse(data []byte) (VectorSearchRequest, e
 			}
 			i = newPos
 		case "filters":
-			fmt.Printf("DEBUG PARSER: Found filters key!\n")
+			p.logger.Debug().Msg("DEBUG PARSER: Found filters key!")
 			newPos, err := p.parseFilters(data, i)
 			if err != nil {
 				return p.result, err
@@ -171,7 +174,7 @@ func (p *ZeroAllocVectorSearchParser) Parse(data []byte) (VectorSearchRequest, e
 		default:
 			// Unknown field: return error to trigger fallback to json.Unmarshal
 			// This is important because the zero-alloc parser doesn't support 'vectors' yet.
-			fmt.Printf("DEBUG: Unknown key in VectorSearchRequest: %s\n", key)
+			p.logger.Warn().Str("key", key).Msg("DEBUG: Unknown key in VectorSearchRequest")
 			return p.result, errors.New("unknown field: " + key)
 		}
 

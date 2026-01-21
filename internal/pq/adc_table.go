@@ -39,7 +39,10 @@ func (e *PQEncoder) BuildADCTable(query []float32) ([]float32, error) {
 			cent := centroids[cStart:cEnd]
 
 			// Compute squared L2 distance between query subvector and centroid
-			dist := simd.L2Squared(querySub, cent)
+			dist, err := simd.L2Squared(querySub, cent)
+			if err != nil {
+				return nil, err
+			}
 			table[i*k+j] = dist
 		}
 	}

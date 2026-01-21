@@ -133,7 +133,8 @@ func TestPQ_EndToEnd(t *testing.T) {
 	queryVec := vectors[1]
 
 	// Exact Distance
-	exactDist := simd.EuclideanDistance(queryVec, testVec)
+	exactDist, err := simd.EuclideanDistance(queryVec, testVec)
+	require.NoError(t, err)
 	exactDistSq := exactDist * exactDist
 
 	// ADC Distance

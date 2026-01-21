@@ -60,7 +60,10 @@ func TestEuclideanDistanceF16(t *testing.T) {
 			b := makeTestVectorF16(dim)
 
 			expected := referenceEuclideanF16(a, b)
-			actual := EuclideanDistanceF16(a, b)
+			actual, err := EuclideanDistanceF16(a, b)
+			if err != nil {
+				t.Fatalf("EuclideanDistanceF16 error: %v", err)
+			}
 
 			// FP16 has limited precision, so we use a relatively large epsilon
 			// but we expect the SIMD vs Generic to match exactly or very closely.
@@ -79,7 +82,10 @@ func TestDotProductF16(t *testing.T) {
 			b := makeTestVectorF16(dim)
 
 			expected := referenceDotProductF16(a, b)
-			actual := DotProductF16(a, b)
+			actual, err := DotProductF16(a, b)
+			if err != nil {
+				t.Fatalf("DotProductF16 error: %v", err)
+			}
 
 			if math.Abs(float64(expected-actual)) > 1e-3 {
 				t.Errorf("dim %d: expected %f, got %f", dim, expected, actual)
@@ -96,7 +102,10 @@ func TestCosineDistanceF16(t *testing.T) {
 			b := makeTestVectorF16(dim)
 
 			expected := referenceCosineF16(a, b)
-			actual := CosineDistanceF16(a, b)
+			actual, err := CosineDistanceF16(a, b)
+			if err != nil {
+				t.Fatalf("CosineDistanceF16 error: %v", err)
+			}
 
 			if math.Abs(float64(expected-actual)) > 2e-3 {
 				t.Errorf("dim %d: expected %f, got %f", dim, expected, actual)
@@ -111,7 +120,7 @@ func BenchmarkEuclideanDistanceF16_384(b *testing.B) {
 	v2 := makeTestVectorF16(dim)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = EuclideanDistanceF16(v1, v2)
+		_, _ = EuclideanDistanceF16(v1, v2)
 	}
 }
 
@@ -121,6 +130,6 @@ func BenchmarkDotProductF16_384(b *testing.B) {
 	v2 := makeTestVectorF16(dim)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = DotProductF16(v1, v2)
+		_, _ = DotProductF16(v1, v2)
 	}
 }

@@ -274,7 +274,10 @@ func (d *Dataset) GenerateFilterBitsetLocked(filters []qry.Filter, hash string) 
 			continue // Should not happen with consistent schema
 		}
 
-		matches := eval.MatchesAll(int(rec.NumRows()))
+		matches, err := eval.MatchesAll(int(rec.NumRows()))
+		if err != nil {
+			return nil, err
+		}
 		for _, rowIdx := range matches {
 			loc := Location{BatchIdx: batchIdx, RowIdx: rowIdx}
 			if vid, ok := idx.GetVectorID(loc); ok {

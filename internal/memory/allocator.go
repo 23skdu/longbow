@@ -151,11 +151,12 @@ func putHugeChunk(ptr *[]byte) {
 	// Else drop
 }
 
-// AssertSize is a test helper (no-op here)
-func (a *ArenaAllocator) AssertSize(t interface{}, sz int) {
+// AssertSize is a test helper that returns an error if size mismatch occurs
+func (a *ArenaAllocator) AssertSize(sz int) error {
 	if int(a.Allocated()) != sz {
-		panic(fmt.Sprintf("allocator size mismatch: expected %d, got %d", sz, a.Allocated()))
+		return fmt.Errorf("allocator size mismatch: expected %d, got %d", sz, a.Allocated())
 	}
+	return nil
 }
 
 var _ memory.Allocator = (*ArenaAllocator)(nil)

@@ -591,6 +591,12 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 				}
 
 				// Loop until completed
+				defer func() {
+					if r := recover(); r != nil {
+						h.config.Logger.Error().Interface("panic", r).Msg("Panic in HNSW bulk reverse writer")
+					}
+				}()
+
 				for {
 					anyWork := false
 
@@ -712,12 +718,16 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 
 						// Push Blocking to handle backpressure
 						if !rings[lockID].PushBlocking(update, 100*time.Millisecond) {
-							// If timed out, drop reverse connection?
-							// Or just retry indefinitely? Indefinitely is safer for correctness.
-							// In practice 4096 buffer should be plenty drainable.
-							// Force push? No method.
-							// Loop forever.
+							// Check context before spinning
+							if ctx.Err() != nil {
+								return ctx.Err()
+							}
+
+							// Force push loop with context check to avoid infinite hang if consumers fail
 							for !rings[lockID].Push(update) {
+								if ctx.Err() != nil {
+									return ctx.Err()
+								}
 								runtime.Gosched()
 							}
 						}
@@ -744,9 +754,6 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 	}
 
 	// 4. Update Global Stats
-	// ... (Same as before) ...
-	h.nodeCount.Add(int64(n))
-
 	// Update Max Level / Entry Point atomically
 	h.initMu.Lock()
 	currentMax := int(h.maxLevel.Load())
@@ -755,6 +762,8 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 		h.entryPoint.Store(batchEpCandidate)
 	}
 	h.initMu.Unlock()
+
+	h.nodeCount.Add(int64(n))
 
 	return nil
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/23skdu/longbow/internal/query"
 	"github.com/apache/arrow-go/v18/arrow/float16"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/rs/zerolog"
 )
 
 const (
@@ -62,6 +63,8 @@ type ArrowHNSWConfig struct {
 	IndexedColumns []string // Columns to build bitmap index for
 
 	DataType VectorDataType // underlying vector element type
+
+	Logger zerolog.Logger
 }
 
 func DefaultArrowHNSWConfig() ArrowHNSWConfig {
@@ -96,6 +99,7 @@ type ArrowSearchContext struct {
 	scratchDiscarded []Candidate
 	scratchVecs      [][]float32
 	scratchVecsSQ8   [][]byte
+	scratchVecsF16   [][]float16.Num
 
 	querySQ8       []byte
 	queryBQ        []uint64
@@ -176,7 +180,9 @@ func (c *ArrowSearchContext) Reset() {
 	c.scratchSelected = c.scratchSelected[:0]
 	c.scratchRemaining = c.scratchRemaining[:0]
 	// 2D slices: Reset length to 0. NOTE: Inner slices are not reclaimed, but we overwrite them anyway
-	c.scratchRemaining = c.scratchRemaining[:0]
+	c.scratchVecs = c.scratchVecs[:0]
+	c.scratchVecsSQ8 = c.scratchVecsSQ8[:0]
+	c.scratchVecsF16 = c.scratchVecsF16[:0]
 
 	// Reset batches if they exist
 	if c.selectedBatch != nil {
@@ -610,21 +616,10 @@ func (g *GraphData) GetPaddedDimsForType(dt VectorDataType) int {
 }
 
 func (g *GraphData) Close() error {
-	if g.SlabArena != nil {
-		g.SlabArena.Free()
-	}
-	// Nil out all chunks to help GC even if GraphData persists in other references
-	g.Levels = nil
-	g.Vectors = nil
-	g.VectorsSQ8 = nil
-	g.VectorsPQ = nil
-	g.VectorsBQ = nil
-
-	for i := 0; i < ArrowMaxLayers; i++ {
-		g.Neighbors[i] = nil
-		g.Counts[i] = nil
-		g.Versions[i] = nil
-	}
+	// SlabArena freeing is now handled by the index owner (ArrowHNSW.Close)
+	// to avoid premature freeing during Grow operations where arenas are shared.
+	// We no longer nil out fields here because concurrent readers might still have
+	// a reference to the old GraphData during a Grow transition.
 	return nil
 }
 

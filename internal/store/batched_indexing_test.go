@@ -12,6 +12,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 )
 
 func TestBatchedIndexing(t *testing.T) {
@@ -29,14 +30,15 @@ func TestBatchedIndexing(t *testing.T) {
 	ds := NewDataset("batched_test", schema)
 	ds.Index = NewHNSWIndex(ds)
 
-	store := &VectorStore{
-		indexQueue: NewIndexJobQueue(DefaultIndexJobQueueConfig()),
-		logger:     zerolog.Nop(),
-	}
+	store := NewVectorStore(pool, zerolog.Nop(), 1<<30, 0, 0)
+	t.Cleanup(func() {
+		_ = store.Close()
+		goleak.VerifyNone(t)
+	})
 	store.datasets.Store(&map[string]*Dataset{ds.Name: ds})
 
 	// Start worker
-	go store.runIndexWorker(nil)
+	store.StartIndexingWorkers(1)
 
 	// 2. Add vectors in batches
 	numVectors := 200

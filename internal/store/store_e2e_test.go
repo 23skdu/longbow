@@ -29,6 +29,7 @@ func TestStore_EndToEnd_TDD(t *testing.T) {
 
 	// 1. Initialize Store
 	store := NewVectorStore(mem, logger, 1<<30, 0, 0)
+	defer store.Close()
 	store.dataPath = tmpDir
 	// Start WAL/Persistence subsystem
 	err := store.InitPersistence(storage.StorageConfig{
@@ -115,10 +116,11 @@ func TestStore_EndToEnd_TDD(t *testing.T) {
 
 	// 6. Persistence & Reload
 	server.Shutdown()
-	_ = store.Close()
+	// store.Close() is deferred
 
 	// Re-open
 	store2 := NewVectorStore(mem, logger, 1<<30, 0, 0)
+	defer store2.Close()
 	store2.dataPath = tmpDir
 	// InitPersistence requires path and interval
 	err = store2.InitPersistence(storage.StorageConfig{

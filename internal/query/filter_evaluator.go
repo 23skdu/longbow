@@ -2,6 +2,7 @@ package query
 
 import (
 	"fmt"
+	"log"
 	"strconv"
 	"strings"
 
@@ -10,6 +11,20 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 )
+
+// matchInt64WithError wraps SIMD MatchInt64 and logs errors
+func matchInt64WithError(src []int64, val int64, op simd.CompareOp, dst []byte) {
+	if err := simd.MatchInt64(src, val, op, dst); err != nil {
+		log.Printf("SIMD MatchInt64 error: %v", err)
+	}
+}
+
+// matchFloat32WithError wraps SIMD MatchFloat32 and logs errors
+func matchFloat32WithError(src []float32, val float32, op simd.CompareOp, dst []byte) {
+	if err := simd.MatchFloat32(src, val, op, dst); err != nil {
+		log.Printf("SIMD MatchFloat32 error: %v", err)
+	}
+}
 
 // filterOp represents a typed operation on a specific column
 type filterOp interface {
@@ -82,7 +97,7 @@ func (o *int64FilterOp) MatchBitmap(dst []byte) {
 		return
 	}
 
-	simd.MatchInt64(o.col.Int64Values(), o.val, op, dst)
+	matchInt64WithError(o.col.Int64Values(), o.val, op, dst)
 
 	if o.col.NullN() > 0 {
 		offset := o.col.Data().Offset()
@@ -129,7 +144,7 @@ func (o *int64FilterOp) FilterBatch(indices []int) []int {
 	}
 
 	bitmap := make([]byte, len(indices))
-	simd.MatchInt64(values, o.val, op, bitmap)
+	matchInt64WithError(values, o.val, op, bitmap)
 
 	result := make([]int, 0, len(indices))
 	hasNulls := o.col.NullN() > 0
@@ -208,7 +223,7 @@ func (o *float32FilterOp) MatchBitmap(dst []byte) {
 		return
 	}
 
-	simd.MatchFloat32(o.col.Float32Values(), o.val, op, dst)
+	matchFloat32WithError(o.col.Float32Values(), o.val, op, dst)
 
 	if o.col.NullN() > 0 {
 		offset := o.col.Data().Offset()
@@ -255,7 +270,7 @@ func (o *float32FilterOp) FilterBatch(indices []int) []int {
 	}
 
 	bitmap := make([]byte, len(indices))
-	simd.MatchFloat32(values, o.val, op, bitmap)
+	matchFloat32WithError(values, o.val, op, bitmap)
 
 	result := make([]int, 0, len(indices))
 	hasNulls := o.col.NullN() > 0

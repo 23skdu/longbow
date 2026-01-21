@@ -114,6 +114,13 @@ func (h *HNSWIndex) SearchVectors(ctx context.Context, queryVec any, k int, filt
 	}
 
 	for attempt := 0; attempt <= maxRetries; attempt++ {
+		// Check context before each attempt
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+		}
+
 		// PQ Encoding for query
 		var graphQuery = q
 		h.pqCodesMu.RLock()
@@ -132,7 +139,7 @@ func (h *HNSWIndex) SearchVectors(ctx context.Context, queryVec any, k int, filt
 		// Use parallel processing for large result sets
 		cfg := h.getParallelSearchConfig()
 		if cfg.Enabled && len(neighbors) >= cfg.Threshold {
-			res := h.processResultsParallel(q, neighbors, k, filters)
+			res := h.processResultsParallel(ctx, q, neighbors, k, filters)
 			// If we found enough, or it's the last attempt, return
 			if len(res) >= k || attempt == maxRetries || len(filters) == 0 {
 				return res, nil
@@ -198,6 +205,16 @@ func (h *HNSWIndex) SearchVectors(ctx context.Context, queryVec any, k int, filt
 		count := 0
 		const batchSize = searchBatchSize
 		for i := 0; i < len(neighbors); i += batchSize {
+			// Periodic context check (every batch)
+			if i%(batchSize*4) == 0 { // Check every 4 batches (128 candidates) for minimal overhead
+				select {
+				case <-ctx.Done():
+					h.searchPool.Put(poolCtx)
+					return nil, ctx.Err()
+				default:
+				}
+			}
+
 			if count >= k {
 				break
 			}
@@ -365,6 +382,15 @@ func (h *HNSWIndex) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 	h.pqCodesMu.RUnlock()
 
 	for i := 0; i < len(neighbors); i += batchSize {
+		// Periodic context check
+		if i%(batchSize*4) == 0 {
+			select {
+			case <-ctx.Done():
+				return res
+			default:
+			}
+		}
+
 		if resultCount >= k {
 			break
 		}

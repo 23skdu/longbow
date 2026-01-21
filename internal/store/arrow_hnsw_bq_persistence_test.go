@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"os"
 	"testing"
 	"time"
@@ -95,7 +96,7 @@ func TestArrowHNSW_BQ_Persistence(t *testing.T) {
 	require.True(t, arrowIndex.config.BQEnabled)
 
 	// 4. Snapshot
-	err = store.Snapshot()
+	err = store.Snapshot(context.Background())
 	require.NoError(t, err)
 
 	// 5. Close and Reopen

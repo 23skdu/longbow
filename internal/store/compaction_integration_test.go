@@ -1,10 +1,11 @@
 package store
 
-
 import (
-	"github.com/rs/zerolog"
+	"context"
 	"testing"
 	"time"
+
+	"github.com/rs/zerolog"
 
 	"github.com/apache/arrow-go/v18/arrow/memory"
 )
@@ -59,7 +60,7 @@ func TestVectorStoreCompactDatasetNotFound(t *testing.T) {
 	store := NewVectorStore(memory.NewGoAllocator(), zerolog.Nop(), 1<<30, 1<<20, time.Hour)
 	defer func() { _ = store.Close() }()
 
-	err := store.CompactDataset("non_existent")
+	err := store.CompactDataset(context.Background(), "non_existent")
 	if err == nil {
 		t.Error("expected error for non-existent dataset")
 	}

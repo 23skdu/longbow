@@ -1321,6 +1321,19 @@ func (h *ArrowHNSW) Delete(id uint32) error {
 	return nil
 }
 
+// NeedsCompaction returns true if the index has enough tombstones to warrant compaction.
+func (h *ArrowHNSW) NeedsCompaction() bool {
+	deleted := h.deleted.Count()
+	total := h.nodeCount.Load()
+
+	if total < 1000 {
+		return false
+	}
+
+	// Trigger if more than 30% are deleted
+	return float64(deleted)/float64(total) > 0.3
+}
+
 // GetEntryPoint returns the current entry point node ID.
 
 // GetEntryPoint returns the current entry point node ID.

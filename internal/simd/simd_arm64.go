@@ -26,6 +26,9 @@ func euclideanF16NEONKernel(a, b []float16.Num) float32
 //go:noescape
 func dotF16NEONKernel(a, b []float16.Num) float32
 
+//go:noescape
+func cosineF16NEONKernel(a, b []float16.Num) float32
+
 // Public Go wrappers (with error propagation)
 
 func euclideanNEON(a, b []float32) (float32, error) {
@@ -69,22 +72,13 @@ func dotF16NEON(a, b []float16.Num) (float32, error) {
 }
 
 func cosineF16NEON(a, b []float16.Num) (float32, error) {
-	dot, err := dotF16NEON(a, b)
-	if err != nil {
-		return 0, err
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
 	}
-	normA, err := dotF16NEON(a, a)
-	if err != nil {
-		return 0, err
+	if len(a) == 0 {
+		return 0, nil
 	}
-	normB, err := dotF16NEON(b, b)
-	if err != nil {
-		return 0, err
-	}
-	if normA <= 0 || normB <= 0 {
-		return 1.0, nil
-	}
-	return 1.0 - (dot / float32(math.Sqrt(float64(normA)*float64(normB)))), nil
+	return cosineF16NEONKernel(a, b), nil
 }
 
 // Optimized for 384 dimensions

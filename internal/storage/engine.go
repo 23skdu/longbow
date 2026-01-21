@@ -149,7 +149,11 @@ func (e *StorageEngine) ReplayWAL(applier ApplierFunc) (uint64, error) {
 	if err != nil {
 		return 0, err
 	}
-	defer f.Close()
+	defer func() {
+		if err := f.Close(); err != nil {
+			log.Error().Err(err).Msg("failed to close WAL file during replay")
+		}
+	}()
 
 	var maxSeq uint64
 	count := 0
@@ -375,10 +379,15 @@ func (e *StorageEngine) writeSnapshotItem(item *SnapshotItem, tempDir string) er
 			return fmt.Errorf("failed to create record parquet: %w", err)
 		}
 		if err := writeParquet(f, item.Records...); err != nil {
-			f.Close()
+			if closeErr := f.Close(); closeErr != nil {
+				log.Error().Err(closeErr).Msg("failed to close parquet file on write error")
+			}
 			return fmt.Errorf("failed to write record parquet: %w", err)
 		}
-		f.Close()
+		if err := f.Close(); err != nil {
+			log.Error().Err(err).Msg("failed to close parquet file after write")
+			return fmt.Errorf("failed to close parquet file: %w", err)
+		}
 	}
 
 	// Write Graph Records
@@ -390,11 +399,15 @@ func (e *StorageEngine) writeSnapshotItem(item *SnapshotItem, tempDir string) er
 		}
 		for _, rec := range item.GraphRecords {
 			if err := writeGraphParquet(f, rec); err != nil {
-				f.Close()
+				if closeErr := f.Close(); closeErr != nil {
+					log.Error().Err(closeErr).Msg("failed to close graph parquet file on write error")
+				}
 				return fmt.Errorf("failed to write graph parquet: %w", err)
 			}
 		}
-		f.Close()
+		if err := f.Close(); err != nil {
+			return fmt.Errorf("failed to close graph parquet file: %w", err)
+		}
 	}
 
 	// Write PQ
@@ -482,7 +495,9 @@ func (e *StorageEngine) LoadSnapshots(loader func(SnapshotItem) error) error {
 				item.IndexConfig = data
 			}
 		}
-		_ = f.Close()
+		if err := f.Close(); err != nil {
+			log.Error().Err(err).Str("path", fullPath).Msg("failed to close snapshot file")
+		}
 	}
 
 	for _, item := range partials {

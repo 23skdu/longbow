@@ -65,8 +65,9 @@ func (e *PQEncoder) ADCDistanceBatch(table []float32, flatCodes []byte, results 
 		return errors.New("invalid table size")
 	}
 
-	// Use SIMD accelerated function
-	simd.ADCDistanceBatch(table, flatCodes, e.M, results)
+	if err := simd.ADCDistanceBatch(table, flatCodes, e.M, results); err != nil {
+		return err
+	}
 	return nil
 }
 

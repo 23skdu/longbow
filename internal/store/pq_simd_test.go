@@ -1,6 +1,5 @@
 package store
 
-
 import (
 	"math"
 	"math/rand"
@@ -31,7 +30,9 @@ func TestADCBatchSIMD(t *testing.T) {
 	scalarResults := make([]float32, n)
 
 	// Run SIMD
-	simd.ADCDistanceBatch(table, flatCodes, m, simdResults)
+	if err := simd.ADCDistanceBatch(table, flatCodes, m, simdResults); err != nil {
+		t.Fatalf("ADC batch failed: %v", err)
+	}
 
 	// Run Scalar (from simd.go)
 	for i := 0; i < n; i++ {
@@ -62,6 +63,8 @@ func BenchmarkADCBatchSIMD(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		simd.ADCDistanceBatch(table, flatCodes, m, results)
+		if err := simd.ADCDistanceBatch(table, flatCodes, m, results); err != nil {
+			b.Fatalf("ADC batch failed (iteration %d): %v", i, err)
+		}
 	}
 }

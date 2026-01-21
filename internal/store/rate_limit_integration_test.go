@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -77,7 +78,7 @@ func TestCompaction_RateLimit(t *testing.T) {
 	// Trigger compaction
 	store.WaitForIndexing(dsName)
 	start := time.Now()
-	err := store.CompactDataset(dsName)
+	err := store.CompactDataset(context.Background(), dsName)
 	require.NoError(t, err)
 	duration := time.Since(start)
 

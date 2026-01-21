@@ -107,7 +107,7 @@ func TestDurability_SnapshotAndWAL(t *testing.T) {
 	store1.WaitForIndexing("ds_mixed")
 
 	// 3. Trigger Snapshot
-	require.NoError(t, store1.Snapshot())
+	require.NoError(t, store1.Snapshot(context.Background()))
 
 	// 4. Insert Batch B
 	recB := createDurabilityTestBatch(mem, 5, 5)
@@ -249,7 +249,7 @@ func TestDurability_WALTruncation(t *testing.T) {
 	require.NoError(t, store1.ApplyDelta("ds_dup", rec, 1, 0))
 
 	// Snapshot
-	require.NoError(t, store1.Snapshot())
+	require.NoError(t, store1.Snapshot(context.Background()))
 
 	// Wait for any async truncate if it exists (StorageEngine might do it inline in Snapshot though)
 	_ = store1.Close()

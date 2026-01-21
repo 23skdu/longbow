@@ -50,9 +50,7 @@ func TestShouldUsePipelineExt_NilPool(t *testing.T) {
 	if vs == nil {
 		t.Fatal("Failed to create VectorStore")
 	}
-	defer func() { _ = vs.Close() }()
-	// Note: No explicit shutdown needed as NewVectorStore doesn't start everything
-	// until more methods are called, and this is a unit test.
+	defer vs.Close()
 
 	// Should return false when pool is nil
 	if vs.shouldUsePipeline(10) {
@@ -112,6 +110,7 @@ func TestGetPipelineThreshold(t *testing.T) {
 	if store == nil {
 		t.Fatal("Failed to create VectorStore")
 	}
+	defer store.Close()
 
 	if store.GetPipelineThreshold() != 5 {
 		t.Errorf("Expected threshold 5, got %d", store.GetPipelineThreshold())

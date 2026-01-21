@@ -199,6 +199,12 @@ func (b *AtomicBitset) ToUint32Array() []uint32 {
 	return bm.ToArray()
 }
 
+func (b *AtomicBitset) Reset() {
+	b.writeMu.Lock()
+	defer b.writeMu.Unlock()
+	b.bitmap.Store(roaring.New())
+}
+
 func (b *AtomicBitset) Clone() *AtomicBitset {
 	bm := b.bitmap.Load()
 	newAb := NewAtomicBitset()

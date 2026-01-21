@@ -474,6 +474,7 @@ func (a *AdaptiveIndex) migrateToHNSW() {
 		// 3. Build HNSW from snapshot (Slow, No Lock)
 		config := DefaultArrowHNSWConfig()
 		config.Metric = a.dataset.Metric
+		config.Logger = a.dataset.Logger
 		newHNSW := NewArrowHNSW(a.dataset, config, nil)
 
 		for _, loc := range snapshotLocations {

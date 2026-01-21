@@ -126,6 +126,11 @@ func (rb *IngestionRingBuffer) Len() int {
 	return int(rb.tail.Load() - rb.head.Load())
 }
 
+// Capacity returns the total size of the ring buffer
+func (rb *IngestionRingBuffer) Capacity() int {
+	return len(rb.buffer)
+}
+
 // PushBlocking adds an item, blocking/yielding if full until space is available or timeout.
 func (rb *IngestionRingBuffer) PushBlocking(job ingestionJob, timeout time.Duration) bool {
 	deadline := time.Now().Add(timeout)

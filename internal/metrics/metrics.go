@@ -1177,4 +1177,29 @@ var (
 		},
 		[]string{"field"}, // "query", "neighbors", "candidates"
 	)
+
+	// Vector Access Metrics - Zero-Copy Optimization
+	VectorAccessZeroCopyTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_vector_access_zerocopy_total",
+			Help: "Total number of zero-copy vector accesses",
+		},
+		[]string{"dataset", "index_type"},
+	)
+
+	VectorAccessCopyTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_vector_access_copy_total",
+			Help: "Total number of vector accesses requiring copy",
+		},
+		[]string{"dataset", "index_type"},
+	)
+
+	VectorAccessBytesAllocated = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_vector_access_bytes_allocated_total",
+			Help: "Total bytes allocated for vector copies",
+		},
+		[]string{"dataset", "index_type"},
+	)
 )

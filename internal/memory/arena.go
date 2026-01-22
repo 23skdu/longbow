@@ -83,16 +83,7 @@ func NewSlabArena(slabSizeBytes int) *SlabArena {
 // Returns a GLOBAL offset.
 // Guarantees zero-initialized memory.
 func (a *SlabArena) Alloc(size int) (uint64, error) {
-	// Fast path for small allocations (≤ 64 bytes)
-	if size <= 64 {
-		offset, ok := a.allocFast(size)
-		if ok {
-			metrics.ArenaFastPathTotal.Inc()
-			return offset, nil
-		}
-		metrics.ArenaFastPathFailedTotal.Inc()
-	}
-	// Slow path for larger allocations or when fast path fails
+	// Slow path always uses mutex-protected allocCommon
 	metrics.ArenaSlowPathTotal.Inc()
 	return a.allocCommon(size, true)
 }
@@ -102,12 +93,12 @@ func (a *SlabArena) Alloc(size int) (uint64, error) {
 // MEMORY IS NOT GUARANTEED TO BE ZEROED.
 // Use this only when you will immediately overwrite the entire range.
 func (a *SlabArena) AllocDirty(size int) (uint64, error) {
-	// Reverting optimization for stability: Force zeroing
-	return a.allocCommon(size, true)
+	return a.allocCommon(size, false)
 }
 
-// allocFast is a lock-free fast path for small allocations (≤ 64 bytes).
+// AllocFast attempts lock-free allocation for small sizes (≤ 64 bytes).
 // Returns (globalOffset, true) on success, (0, false) on failure.
+// This is an internal helper that doesn't increment metrics.
 func (a *SlabArena) allocFast(size int) (uint64, bool) {
 	const align = 8
 	needed := uint32(size)
@@ -151,13 +142,20 @@ func (a *SlabArena) allocCommon(size int, zero bool) (uint64, error) {
 	}
 	needed := uint32(size)
 	if needed > a.slabCap {
-		// For huge allocations, we strictly might fail or support header-based huge slabs.
-		// For now fail.
 		return 0, fmt.Errorf("alloc request %d exceeds slab capacity %d", size, a.slabCap)
 	}
 
 	a.mu.Lock()
 	defer a.mu.Unlock()
+
+	// Try fast path while holding the mutex (safe because no concurrent access)
+	if size <= 64 {
+		if offset, ok := a.allocFast(size); ok {
+			metrics.ArenaFastPathTotal.Inc()
+			return offset, nil
+		}
+		metrics.ArenaFastPathFailedTotal.Inc()
+	}
 
 	// Load current state
 	currentSlabsPtr := a.slabs.Load()

@@ -49,7 +49,6 @@ func (s *VectorStore) runIngestionWorker() {
 		}
 
 		// Found job
-		s.logger.Debug().Str("dataset", job.ds.Name).Int64("rows", job.batch.NumRows()).Msg("IngestionWorker picked up job")
 		start := time.Now()
 
 		// Update metrics

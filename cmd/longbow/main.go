@@ -436,9 +436,10 @@ func run() error {
 			ID:             nodeID,
 			Port:           cfg.GossipPort,
 			ProtocolPeriod: cfg.GossipInterval,
-			Addr:           "0.0.0.0", // Bind to all interfaces
-			GRPCAddr:       selfAddr,  // Advertise this for gRPC Data
-			MetaAddr:       metaAddr,  // Advertise this for gRPC Meta
+			Addr:           "0.0.0.0",               // Bind to all interfaces
+			AdvertiseAddr:  cfg.GossipAdvertiseAddr, // Public gossip address for containers/K8s
+			GRPCAddr:       selfAddr,                // Advertise this for gRPC Data
+			MetaAddr:       metaAddr,                // Advertise this for gRPC Meta
 			Delegate:       ringManager,
 			Discovery: mesh.DiscoveryConfig{
 				Provider:    cfg.GossipDiscovery,
@@ -446,12 +447,6 @@ func run() error {
 				DNSRecord:   cfg.GossipDNSRecord,
 			},
 		}
-
-		// If provided, override advertise addr logic (TODO: pass to NewGossip if supported or modify Gossip to take AdvertiseAddr)
-		// Current gossip.go uses "127.0.0.1" hardcoded in Start(). We should probably fix that too but for now...
-		// Let's rely on GossipConfig defaults or update internal/mesh/gossip.go later.
-		// Wait, NewGossip takes GossipConfig but g.Start() uses "127.0.0.1". I should fix gossip.go too!
-		// Proceeding with initialization.
 
 		g := mesh.NewGossip(&gossipCfg)
 		if err := g.Start(); err != nil {

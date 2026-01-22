@@ -86,7 +86,8 @@
 - **[~IN PROGRESS~]{.completed} Error Handling Consistency**:
   - **[~IN PROGRESS~]{.completed} Standardize on `%w` formatting.**
   - **[~IN PROGRESS~]{.completed} Use custom error types from `internal/store/errors.go` вместо `fmt.Errorf`.
-- **[~IN PROGRESS~]{.completed} TODO Resolution**: Resolve gossip advertise address logic and generic quantizer TODOs.
+- **[~IN PROGRESS~]{.completed} TODO Resolution**: Resolve generic quantizer TODO.
+  - ✅ **COMPLETED** gossip advertise address logic (added AdvertiseAddr field to GossipConfig, used in Start())
 
 ### 7. Automation & Security
 

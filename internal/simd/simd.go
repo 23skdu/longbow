@@ -28,11 +28,12 @@ type CPUFeatures struct {
 
 // Function pointer types for dispatch
 type (
-	distanceFunc         func(a, b []float32) (float32, error)
-	distanceBatchFunc    func(query []float32, vectors [][]float32, results []float32) error
-	distanceSQ8BatchFunc func(query []byte, vectors [][]byte, results []float32) error
-	distanceF16BatchFunc func(query []float16.Num, vectors [][]float16.Num, results []float32) error
-	adcDistanceBatchFunc func(table []float32, flatCodes []byte, m int, results []float32) error
+	distanceFunc          func(a, b []float32) (float32, error)
+	distanceBatchFunc     func(query []float32, vectors [][]float32, results []float32) error
+	distanceBatchFlatFunc func(query []float32, flatVectors []float32, numVectors, dims int, results []float32) error
+	distanceSQ8BatchFunc  func(query []byte, vectors [][]byte, results []float32) error
+	distanceF16BatchFunc  func(query []float16.Num, vectors [][]float16.Num, results []float32) error
+	adcDistanceBatchFunc  func(table []float32, flatCodes []byte, m int, results []float32) error
 
 	distanceF16Func func(a, b []float16.Num) (float32, error)
 
@@ -71,13 +72,14 @@ var (
 	// DistFunc is the best available Euclidean distance implementation
 	DistFunc distanceFunc
 
-	dotProductImpl             distanceFunc
-	dotProduct384Impl          distanceFunc
-	dotProduct128Impl          distanceFunc // optimized for dimensions=128
-	euclideanDistanceBatchImpl distanceBatchFunc
-	cosineDistanceBatchImpl    distanceBatchFunc
-	dotProductBatchImpl        distanceBatchFunc
-	l2SquaredImpl              distanceFunc
+	dotProductImpl                 distanceFunc
+	dotProduct384Impl              distanceFunc
+	dotProduct128Impl              distanceFunc // optimized for dimensions=128
+	euclideanDistanceBatchImpl     distanceBatchFunc
+	euclideanDistanceBatchFlatImpl distanceBatchFlatFunc
+	cosineDistanceBatchImpl        distanceBatchFunc
+	dotProductBatchImpl            distanceBatchFunc
+	l2SquaredImpl                  distanceFunc
 
 	matchInt64Impl   matchInt64Func
 	matchFloat32Impl matchFloat32Func
@@ -171,6 +173,7 @@ func initializeDispatch() {
 		dotProduct384Impl = dot384AVX512
 		dotProduct128Impl = dot128Unrolled4x // Fallback to unrolled Go
 		euclideanDistanceBatchImpl = euclideanBatchAVX512
+		euclideanDistanceBatchFlatImpl = euclideanBatchFlatAVX512
 		cosineDistanceBatchImpl = cosineBatchAVX512
 		dotProductBatchImpl = dotBatchAVX512
 		l2SquaredImpl = l2SquaredAVX512 // uses AVX512 kernel
@@ -201,6 +204,7 @@ func initializeDispatch() {
 		dotProduct384Impl = dotGeneric
 		dotProduct128Impl = dot128Unrolled4x
 		euclideanDistanceBatchImpl = euclideanBatchAVX2
+		euclideanDistanceBatchFlatImpl = euclideanBatchFlatAVX2
 		cosineDistanceBatchImpl = cosineBatchAVX2
 		dotProductBatchImpl = dotBatchAVX2
 		l2SquaredImpl = l2SquaredAVX2 // uses AVX2 kernel (no sqrt)
@@ -231,6 +235,7 @@ func initializeDispatch() {
 		dotProduct384Impl = dot384NEON
 		dotProduct128Impl = dot128NEON
 		euclideanDistanceBatchImpl = euclideanBatchNEON
+		euclideanDistanceBatchFlatImpl = euclideanBatchFlatGeneric
 		cosineDistanceBatchImpl = cosineBatchNEON
 		dotProductBatchImpl = dotBatchNEON
 		l2SquaredImpl = l2SquaredNEON
@@ -262,6 +267,7 @@ func initializeDispatch() {
 		dotProduct384Impl = dotUnrolled4x
 		dotProduct128Impl = dot128Unrolled4x
 		euclideanDistanceBatchImpl = euclideanBatchUnrolled4x
+		euclideanDistanceBatchFlatImpl = euclideanBatchFlatGeneric
 		cosineDistanceBatchImpl = cosineBatchUnrolled4x
 		dotProductBatchImpl = dotBatchUnrolled4x
 		l2SquaredImpl = L2SquaredFloat32
@@ -659,6 +665,37 @@ func EuclideanDistanceBatch(query []float32, vectors [][]float32, results []floa
 	return nil
 }
 
+// EuclideanDistanceBatchFlat computes distances between a query and vectors in a flat buffer.
+// This is more efficient than EuclideanDistanceBatch when vectors are already available
+// in a contiguous memory layout, as it avoids allocating a [][]float32 slice wrapper.
+// flatVectors: concatenated vectors [v0_0, v0_1, ..., v0_dims-1, v1_0, ...]
+// numVectors: number of vectors in the buffer
+// dims: dimension of each vector
+func EuclideanDistanceBatchFlat(query []float32, flatVectors []float32, numVectors, dims int, results []float32) error {
+	if numVectors == 0 {
+		return nil
+	}
+	if dims == 384 {
+		for i := 0; i < numVectors; i++ {
+			offset := i * 384
+			v := flatVectors[offset : offset+384]
+			d, _ := euclideanDistance384Impl(query, v)
+			results[i] = d
+		}
+		return nil
+	}
+	if dims == 128 {
+		for i := 0; i < numVectors; i++ {
+			offset := i * 128
+			v := flatVectors[offset : offset+128]
+			d, _ := euclideanDistance128Impl(query, v)
+			results[i] = d
+		}
+		return nil
+	}
+	return euclideanDistanceBatchFlatImpl(query, flatVectors, numVectors, dims, results)
+}
+
 // EuclideanDistanceVerticalBatch optimally calculates distances for multiple vectors at once.
 func EuclideanDistanceVerticalBatch(query []float32, vectors [][]float32, results []float32) error {
 	if len(vectors) != len(results) {
@@ -713,6 +750,48 @@ func euclideanBatchGeneric(query []float32, vectors [][]float32, results []float
 	return nil
 }
 
+// EuclideanDistanceBatchFlat computes distances between a query and vectors stored in a flat buffer.
+// This eliminates the overhead of creating a [][]float32 slice wrapper.
+// flatVectors: concatenated vectors [v0_0, v0_1, ..., v0_dims-1, v1_0, ...]
+// dims: dimension of each vector
+func euclideanBatchFlatGeneric(query []float32, flatVectors []float32, numVectors, dims int, results []float32) error {
+	if len(results) != numVectors {
+		return errors.New("simd: results length mismatch")
+	}
+	if len(flatVectors) < numVectors*dims {
+		return errors.New("simd: flatVectors too small")
+	}
+	if numVectors == 0 {
+		return nil
+	}
+
+	queryLen := len(query)
+	if queryLen != dims {
+		return errors.New("simd: query dimension mismatch")
+	}
+
+	for i := 0; i < numVectors; i++ {
+		offset := i * dims
+		v := flatVectors[offset : offset+dims]
+		d, err := euclideanUnrolled4x(query, v)
+		if err != nil {
+			return err
+		}
+		results[i] = d
+	}
+	return nil
+}
+
+// euclideanBatchFlatAVX2 is the AVX2 optimized flat batch version
+func euclideanBatchFlatAVX2(query []float32, flatVectors []float32, numVectors, dims int, results []float32) error {
+	return euclideanBatchFlatGeneric(query, flatVectors, numVectors, dims, results)
+}
+
+// euclideanBatchFlatAVX512 is the AVX512 optimized flat batch version
+func euclideanBatchFlatAVX512(query []float32, flatVectors []float32, numVectors, dims int, results []float32) error {
+	return euclideanBatchFlatGeneric(query, flatVectors, numVectors, dims, results)
+}
+
 func dotBatchGeneric(query []float32, vectors [][]float32, results []float32) error {
 	for i, v := range vectors {
 		if v == nil {
@@ -750,6 +829,66 @@ func ADCDistanceBatch(table []float32, flatCodes []byte, m int, results []float3
 	}
 	adcDistanceBatchImpl(table, flatCodes, m, results)
 	return nil
+}
+
+// FindNearestCentroid finds the index of the nearest centroid to query using batch distance computation.
+// This is optimized for PQ encoding where we need to find the closest of K centroids for a subvector.
+// centroids: flattened centroids [c0_0, c0_1, ..., c0_subDim-1, c1_0, ...]
+// subDim: dimension of each centroid (and query)
+// k: number of centroids
+// Returns the index of the nearest centroid and the distance
+func FindNearestCentroid(query []float32, centroids []float32, subDim, k int) (int, float32) {
+	if len(centroids) < k*subDim {
+		return 0, float32(math.MaxFloat32)
+	}
+
+	if k <= 8 {
+		// For small K, sequential search is faster due to batch overhead
+		bestDist := float32(math.MaxFloat32)
+		bestIdx := 0
+		for i := 0; i < k; i++ {
+			offset := i * subDim
+			cent := centroids[offset : offset+subDim]
+			d, _ := L2Squared(query, cent)
+			if d < bestDist {
+				bestDist = d
+				bestIdx = i
+			}
+		}
+		return bestIdx, bestDist
+	}
+
+	// For larger K, use batch computation
+	results := make([]float32, k)
+	EuclideanDistanceBatchFlat(query, centroids, k, subDim, results)
+
+	// Find minimum
+	bestDist := results[0]
+	bestIdx := 0
+	for i := 1; i < k; i++ {
+		if results[i] < bestDist {
+			bestDist = results[i]
+			bestIdx = i
+		}
+	}
+	return bestIdx, bestDist
+}
+
+// FindNearestCentroidInCodebook finds the nearest centroid in a codebook for PQ encoding.
+// codebook: M slices of K*SubDim flattened centroids
+// m: number of subvectors
+// k: number of centroids per subspace
+// subDim: dimension of each subvector
+// Returns the encoded bytes (M bytes)
+func FindNearestCentroidInCodebook(query []float32, codebook [][]float32, m, k, subDim int) []byte {
+	codes := make([]byte, m)
+	for i := 0; i < m; i++ {
+		subVec := query[i*subDim : (i+1)*subDim]
+		centroids := codebook[i]
+		bestIdx, _ := FindNearestCentroid(subVec, centroids, subDim, k)
+		codes[i] = byte(bestIdx)
+	}
+	return codes
 }
 
 func adcBatchGeneric(table []float32, flatCodes []byte, m int, results []float32) error {

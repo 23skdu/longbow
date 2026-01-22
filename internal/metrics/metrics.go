@@ -841,6 +841,39 @@ var (
 		},
 	)
 
+	// SearchResultPool metrics
+	SearchResultPoolGetTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_search_result_pool_get_total",
+			Help: "Total number of result slices retrieved from the pool",
+		},
+		[]string{"capacity"}, // bucket by initial capacity
+	)
+
+	SearchResultPoolPutTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_search_result_pool_put_total",
+			Help: "Total number of result slices returned to the pool",
+		},
+		[]string{"capacity"},
+	)
+
+	SearchResultPoolHitsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_search_result_pool_hits_total",
+			Help: "Total number of pool hits (reused slices)",
+		},
+		[]string{"capacity"},
+	)
+
+	SearchResultPoolMissesTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_search_result_pool_misses_total",
+			Help: "Total number of pool misses (new allocations)",
+		},
+		[]string{"capacity"},
+	)
+
 	HNSWInsertPoolGetTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_hnsw_insert_pool_get_total",
@@ -1229,5 +1262,68 @@ var (
 			Help: "Total bytes allocated for vector copies",
 		},
 		[]string{"dataset", "index_type"},
+	)
+
+	// BloomFilter metrics for filter evaluation optimization
+	BloomFilterEarlyExitsTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_bloom_filter_early_exits_total",
+			Help: "Total number of times Bloom filter optimization caused early exit (all rows rejected)",
+		},
+	)
+
+	BloomFilterSelectivityHistogram = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_bloom_filter_selectivity",
+			Help:    "Distribution of estimated filter selectivity (0-1, where 1 means all rows match)",
+			Buckets: []float64{0.001, 0.01, 0.05, 0.1, 0.2, 0.5, 0.8, 1.0},
+		},
+		[]string{"filter_type"}, // "int64", "float32", "float64", "string"
+	)
+
+	BloomFilterBitmapZeroChecksTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_bloom_filter_bitmap_zero_checks_total",
+			Help: "Total number of bitmap zero checks performed during filter evaluation",
+		},
+	)
+
+	// StringFilter metrics for SIMD-accelerated string filter operations
+	StringFilterOpsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_string_filter_ops_total",
+			Help: "Total number of string filter operations",
+		},
+		[]string{"operator", "path"}, // operator: "eq", "neq", "gt", etc.; path: "fast", "slow"
+	)
+
+	StringFilterDurationSeconds = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_string_filter_duration_seconds",
+			Help:    "Duration of string filter operations",
+			Buckets: []float64{0.00001, 0.0001, 0.001, 0.01, 0.1, 1},
+		},
+		[]string{"operator", "path"},
+	)
+
+	StringFilterEqualLengthTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_string_filter_equal_length_total",
+			Help: "Total number of string filters using equal-length fast path",
+		},
+	)
+
+	StringFilterComparisonsTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_string_filter_comparisons_total",
+			Help: "Total number of string comparisons performed",
+		},
+	)
+
+	StringFilterBytesComparedTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_string_filter_bytes_compared_total",
+			Help: "Total number of bytes compared during string filtering",
+		},
 	)
 )

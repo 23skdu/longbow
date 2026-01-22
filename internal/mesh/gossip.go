@@ -46,10 +46,11 @@ type updateItem struct {
 }
 
 type GossipConfig struct {
-	ID        string
-	Addr      string // Bind Addr
-	Port      int
-	Discovery DiscoveryConfig
+	ID            string
+	Addr          string // Bind Addr
+	Port          int
+	AdvertiseAddr string // Public gossip address for containers/K8s
+	Discovery     DiscoveryConfig
 
 	ProtocolPeriod   time.Duration
 	AckTimeout       time.Duration
@@ -101,9 +102,14 @@ func (g *Gossip) Start() error {
 	g.conn = conn
 
 	// Add self to members
+	advertiseAddr := g.Config.AdvertiseAddr
+	if advertiseAddr == "" {
+		// Fallback to 127.0.0.1 if not set (single-node testing)
+		advertiseAddr = fmt.Sprintf("127.0.0.1:%d", g.Config.Port)
+	}
 	g.UpdateMember(&Member{
 		ID:          g.Config.ID,
-		Addr:        fmt.Sprintf("127.0.0.1:%d", g.Config.Port), // Simplification for now
+		Addr:        advertiseAddr,
 		GRPCAddr:    g.Config.GRPCAddr,
 		MetaAddr:    g.Config.MetaAddr,
 		Status:      StatusAlive,

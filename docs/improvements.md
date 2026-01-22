@@ -1,130 +1,29 @@
 # Longbow Performance Improvements
 
-This document identifies 15 high-impact performance improvements for the Longbow distributed vector database based on deep code analysis.
+This document identifies 10 high-impact performance improvements for the Longbow distributed vector database based on deep code analysis. 8 improvements have been completed.
 
 ---
 
-## 1. Optimize Query Cache Lock Contention
+## Completed Improvements
 
-**File:** `internal/cache/query_cache.go:38-80`
+| # | Improvement | Area | Status |
+|---|-------------|------|--------|
+| 1 | Query Cache Lock Optimization | Caching | IMPLEMENTED |
+| 2 | Eliminate Redundant Slice Allocations | Search | IMPLEMENTED |
+| 3 | SIMD-Accelerated PQ Encoding | Compression | IMPLEMENTED |
+| 4 | K-Means Buffer Reuse | Training | IMPLEMENTED |
+| 5 | Ring Lookup Hot Key Caching | Sharding | IMPLEMENTED |
+| 6 | Vector Prefetching in HNSW Search | Search | IMPLEMENTED |
+| 7 | Optimize Slab Arena Allocation Lock | Memory | IMPLEMENTED |
+| 8 | Batch Filter Evaluator Operations | Query | IMPLEMENTED |
 
-**Issue:** The `Get()` method acquires a write lock to move items to the front of the LRU list, causing contention under high read loads.
-
-**Impact:** High lock contention reduces query throughput by up to 40% under concurrent loads.
-
-**Solution:** Skip LRU updates on reads or use a read-modify-write pattern:
-
-```go
-func (c *QueryCache[T]) Get(key uint64) (T, bool) {
-    c.mu.RLock()
-    elem, ok := c.items[key]
-    if !ok {
-        c.mu.RUnlock()
-        metrics.QueryCacheMissesTotal.WithLabelValues(c.dataset).Inc()
-        var zero T
-        return zero, false
-    }
-    item := elem.Value.(*CacheItem[T])
-    if time.Now().After(item.ExpiresAt) {
-        c.mu.RUnlock()
-        metrics.QueryCacheMissesTotal.WithLabelValues(c.dataset).Inc()
-        var zero T
-        return zero, false
-    }
-    c.mu.RUnlock()
-    
-    // Optionally update LRU asynchronously or skip for pure read caches
-    metrics.QueryCacheHitsTotal.WithLabelValues(c.dataset).Inc()
-    return item.Value, true
-}
-```
-
-**Expected Improvement:** 20-40% throughput increase under concurrent reads.
+See [docs/improvements_completed.md](./improvements_completed.md) for details on completed implementations.
 
 ---
 
-## 2. Eliminate Redundant Slice Allocations in Parallel Search
+## Pending Improvements
 
-**File:** `internal/store/parallel_search.go:197-205`
-
-**Issue:** The code creates a new `[][]float32` slice and copies vectors, then calls batch distance functions that iterate again.
-
-**Impact:** Unnecessary memory allocation and copy overhead on every search.
-
-**Solution:** Pass vectors directly to batch functions using a flat representation or batch iterator pattern:
-
-```go
-// Pre-allocate a single flat buffer for batch operations
-flatBuffer := make([]float32, len(tasks)*dims)
-for i, t := range tasks {
-    copy(flatBuffer[i*dims:], t.vec)
-}
-scores := make([]float32, len(tasks))
-simd.EuclideanDistanceBatchFlat(query, flatBuffer, dims, scores)
-```
-
-**Expected Improvement:** 10-15% latency reduction, reduced GC pressure.
-
----
-
-## 3. Add SIMD Optimizations for PQ Distance Computation
-
-**File:** `internal/pq/encoder.go:75-109`
-
-**Issue:** The `Encode()` method iterates through all K centroids sequentially for each subvector.
-
-**Impact:** O(M * K * SubDim) complexity dominates PQ encoding time.
-
-**Solution:** Implement SIMD-accelerated centroid search:
-
-```go
-func (e *PQEncoder) EncodeSIMD(vector []float32) ([]byte, error) {
-    codes := make([]byte, e.M)
-    
-    for m := 0; m < e.M; m++ {
-        subVec := vector[m*e.SubDim : (m+1)*e.SubDim]
-        // Use SIMD L2SquaredBatch for faster centroid search
-        bestIdx := findNearestCentroidSIMD(subVec, e.Codebooks[m], e.K, e.SubDim)
-        codes[m] = byte(bestIdx)
-    }
-    return codes, nil
-}
-```
-
-**Expected Improvement:** 3-5x faster PQ encoding for large M values.
-
----
-
-## 4. Optimize Consistent Hash Ring Lookup
-
-**File:** `internal/sharding/ring.go:58-77`
-
-**Issue:** `GetNode()` performs binary search on every call without caching or optimization.
-
-**Impact:** Minor for single lookups, but compounds in high-throughput scenarios.
-
-**Solution:** Add optional caching layer for hot keys and optimize the binary search with precomputed bounds:
-
-```go
-func (c *ConsistentHash) GetNode(key string) string {
-    c.mu.RLock()
-    defer c.mu.RUnlock()
-    
-    if len(c.sortedHashes) == 0 {
-        return ""
-    }
-    
-    h := c.hash(key)
-    
-    // Use sort.Search with bounds hints
-    idx := sort.Search(len(c.sortedHashes), func(i int) bool {
-        return c.sortedHashes[i] >= h
-    })
-    
-    if idx == len(c.sortedHashes) {
-        idx = 0
-    }
-    return c.nodes[c.sortedHashes[idx]]
+## 1. Implement Vector Prefetching in HNSW Search
 }
 ```
 
@@ -132,42 +31,7 @@ func (c *ConsistentHash) GetNode(key string) string {
 
 ---
 
-## 5. Reduce Memory Allocations in K-Means Training
-
-**File:** `internal/pq/kmeans.go:21-111`
-
-**Issue:** The training loop creates new `[]float32` slices for sums on every iteration.
-
-**Impact:** Excessive GC pressure during PQ training on large datasets.
-
-**Solution:** Reuse buffers across iterations:
-
-```go
-func TrainKMeans(data []float32, n, dim, k, maxIter int) ([]float32, error) {
-    centroids := make([]float32, k*dim)
-    
-    // Pre-allocate and reuse buffers
-    assignments := make([]int, n)
-    counts := make([]int, k)
-    sums := make([]float32, k*dim)  // Reuse this across iterations
-    
-    for iter := 0; iter < maxIter; iter++ {
-        // Only reset sums buffer, don't reallocate
-        clear(sums)  // Go 1.21+ efficient clearing
-        for i := range counts {
-            counts[i] = 0
-        }
-        // ... rest of loop
-    }
-    return centroids, nil
-}
-```
-
-**Expected Improvement:** 30-50% reduction in training time for large datasets.
-
----
-
-## 6. Implement Vector Prefetching in HNSW Search
+## 3. Implement Vector Prefetching in HNSW Search
 
 **File:** `internal/store/parallel_search.go:104-130`
 
@@ -210,7 +74,7 @@ func (h *HNSWIndex) processChunk(ctx context.Context, query []float32, neighbors
 
 ---
 
-## 7. Optimize Slab Arena Allocation Lock
+## 4. Optimize Slab Arena Allocation Lock
 
 **File:** `internal/memory/arena.go:82-194`
 
@@ -257,7 +121,7 @@ func (a *SlabArena) allocFast(size int) (uint64, error) {
 
 ---
 
-## 8. Batch Filter Evaluator Operations
+## 5. Batch Filter Evaluator Operations
 
 **File:** `internal/query/filter_evaluator.go:491-508`
 
@@ -295,7 +159,7 @@ func (e *FilterEvaluator) MatchesBatchFused(rowIndices []int) []int {
 
 ---
 
-## 9. Optimize Dataset Lock Usage
+## 6. Optimize Dataset Lock Usage
 
 **File:** `internal/store/hnsw.go:284-344`
 
@@ -331,7 +195,7 @@ func (h *HNSWIndex) getVectorUnsafe(id VectorID) (vec []float32, release func())
 
 ---
 
-## 10. Implement Connection Pool for Distributed Queries
+## 7. Implement Connection Pool for Distributed Queries
 
 **File:** `internal/sharding/scatter_gather.go`
 
@@ -375,7 +239,7 @@ func (p *ShardConnPool) GetConn(node string) *grpc.ClientConn {
 
 ---
 
-## 11. Add SIMD for String Filter Operations
+## 8. Add SIMD for String Filter Operations
 
 **File:** `internal/query/filter_evaluator.go:346-403`
 
@@ -418,7 +282,7 @@ func (o *stringFilterOp) MatchBitmap(dst []byte) {
 
 ---
 
-## 12. Optimize HNSW Graph Traversal with Branch Prediction Hints
+## 9. Optimize HNSW Graph Traversal with Branch Prediction Hints
 
 **File:** `internal/store/parallel_search.go:279-354`
 
@@ -479,7 +343,7 @@ func (h *HNSWIndex) processResultsSerial(ctx context.Context, query []float32, n
 
 ---
 
-## 13. Implement Result Set Pooling
+## 10. Implement Result Set Pooling
 
 **File:** `internal/store/search_pool.go:1-88`
 
@@ -532,7 +396,7 @@ func (sp *SearchPool) PutResults(r []SearchResult) {
 
 ---
 
-## 14. Add Bloom Filter for Rapid Filter Evaluation
+## 11. Add Bloom Filter for Rapid Filter Evaluation
 
 **File:** `internal/query/filter_evaluator.go:510-553`
 
@@ -580,7 +444,7 @@ func (e *FilterEvaluator) MatchesAll(batchLen int) ([]int, error) {
 
 ---
 
-## 15. Implement Adaptive Batch Sizing for Search Workers
+## 12. Implement Adaptive Batch Sizing for Search Workers
 
 **File:** `internal/store/parallel_search.go:42-101`
 
@@ -630,21 +494,18 @@ func (h *HNSWIndex) processResultsParallel(ctx context.Context, query []float32,
 
 | # | Improvement | Area | Expected Impact |
 |---|-------------|------|-----------------|
-| 1 | Query Cache Lock Optimization | Caching | 20-40% throughput |
-| 2 | Eliminate Redundant Allocations | Search | 10-15% latency |
-| 3 | SIMD for PQ Encoding | Compression | 3-5x encoding speed |
-| 4 | Ring Lookup Optimization | Sharding | 5-10% reduction |
-| 5 | K-Means Buffer Reuse | Training | 30-50% training time |
-| 6 | Vector Prefetching | HNSW | 10-20% search speed |
-| 7 | Lock-Free Arena Allocation | Memory | 50-70% throughput |
-| 8 | Batch Filter Fusion | Query | 15-25% filter speed |
-| 9 | Epoch-Based Lock Elimination | Storage | Eliminate contention |
-| 10 | Connection Pooling | Distribution | 20-30% latency |
-| 11 | SIMD String Filters | Query | 5-10x filter speed |
-| 12 | Branch Prediction Hints | HNSW | 5-10% traversal |
-| 13 | Result Set Pooling | GC | 10-20% GC reduction |
-| 14 | Adaptive Filter Ordering | Query | 30-50% filter speed |
-| 15 | Dynamic Chunk Sizing | Parallelism | 10-15% efficiency |
+| 1 | Vector Prefetching | HNSW | 10-20% search speed |
+| 2 | Lock-Free Arena Allocation | Memory | 50-70% throughput |
+| 3 | Batch Filter Fusion | Query | 15-25% filter speed |
+| 4 | Epoch-Based Lock Elimination | Storage | Eliminate contention |
+| 5 | Connection Pooling | Distribution | 20-30% latency |
+| 6 | SIMD String Filters | Query | 5-10x filter speed |
+| 7 | Branch Prediction Hints | HNSW | 5-10% traversal |
+| 8 | Result Set Pooling | GC | 10-20% GC reduction |
+| 9 | Adaptive Filter Ordering | Query | 30-50% filter speed |
+| 10 | Dynamic Chunk Sizing | Parallelism | 10-15% efficiency |
+
+**Completed:** 8/15 improvements
 
 **Total Expected Impact:** 2-3x improvement in overall throughput for typical workloads.
 

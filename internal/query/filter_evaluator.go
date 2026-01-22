@@ -5,7 +5,9 @@ import (
 	"log"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/simd"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
@@ -491,6 +493,12 @@ func (e *FilterEvaluator) Matches(rowIdx int) bool {
 // MatchesBatch evaluates filters for a slice of row indices and returns a subset of matching indices.
 // This uses vectorized FilterBatch operations for improved performance.
 func (e *FilterEvaluator) MatchesBatch(rowIndices []int) []int {
+	start := time.Now()
+	defer func() {
+		metrics.FilterEvaluatorOpsTotal.WithLabelValues("MatchesBatch").Inc()
+		metrics.FilterEvaluatorDurationSeconds.WithLabelValues("MatchesBatch").Observe(time.Since(start).Seconds())
+	}()
+
 	if len(e.ops) == 0 {
 		return rowIndices
 	}
@@ -501,9 +509,51 @@ func (e *FilterEvaluator) MatchesBatch(rowIndices []int) []int {
 	for _, op := range e.ops {
 		result = op.FilterBatch(result)
 		if len(result) == 0 {
+			metrics.FilterEvaluatorAllocations.WithLabelValues("MatchesBatch", "intermediate").Add(float64(len(result)))
 			return nil
 		}
 	}
+	metrics.FilterEvaluatorAllocations.WithLabelValues("MatchesBatch", "intermediate").Add(float64(len(result)))
+	return result
+}
+
+// MatchesBatchFused evaluates all filters in a single pass without creating intermediate slices.
+// This reduces memory allocations and improves cache locality compared to MatchesBatch.
+func (e *FilterEvaluator) MatchesBatchFused(rowIndices []int) []int {
+	start := time.Now()
+	defer func() {
+		metrics.FilterEvaluatorOpsTotal.WithLabelValues("MatchesBatchFused").Inc()
+		metrics.FilterEvaluatorDurationSeconds.WithLabelValues("MatchesBatchFused").Observe(time.Since(start).Seconds())
+	}()
+
+	if len(e.ops) == 0 {
+		return rowIndices
+	}
+
+	if len(rowIndices) == 0 {
+		return nil
+	}
+
+	result := make([]int, 0, len(rowIndices))
+
+	for _, idx := range rowIndices {
+		matches := true
+		for _, op := range e.ops {
+			if !op.Match(idx) {
+				matches = false
+				break
+			}
+		}
+		if matches {
+			result = append(result, idx)
+		}
+	}
+
+	if len(result) == 0 {
+		return nil
+	}
+
+	metrics.FilterEvaluatorAllocations.WithLabelValues("MatchesBatchFused", "indices").Add(float64(len(result)))
 	return result
 }
 

@@ -83,6 +83,17 @@ func NewSlabArena(slabSizeBytes int) *SlabArena {
 // Returns a GLOBAL offset.
 // Guarantees zero-initialized memory.
 func (a *SlabArena) Alloc(size int) (uint64, error) {
+	// Fast path for small allocations (≤ 64 bytes)
+	if size <= 64 {
+		offset, ok := a.allocFast(size)
+		if ok {
+			metrics.ArenaFastPathTotal.Inc()
+			return offset, nil
+		}
+		metrics.ArenaFastPathFailedTotal.Inc()
+	}
+	// Slow path for larger allocations or when fast path fails
+	metrics.ArenaSlowPathTotal.Inc()
 	return a.allocCommon(size, true)
 }
 
@@ -93,6 +104,45 @@ func (a *SlabArena) Alloc(size int) (uint64, error) {
 func (a *SlabArena) AllocDirty(size int) (uint64, error) {
 	// Reverting optimization for stability: Force zeroing
 	return a.allocCommon(size, true)
+}
+
+// allocFast is a lock-free fast path for small allocations (≤ 64 bytes).
+// Returns (globalOffset, true) on success, (0, false) on failure.
+func (a *SlabArena) allocFast(size int) (uint64, bool) {
+	const align = 8
+	needed := uint32(size)
+	pad := (align - (needed % align)) % align
+	totalNeeded := needed + pad
+
+	for {
+		slabsPtr := a.slabs.Load()
+		slabs := *slabsPtr
+
+		if len(slabs) == 0 {
+			return 0, false
+		}
+
+		active := slabs[len(slabs)-1]
+
+		oldOffset := atomic.LoadUint32(&active.offset)
+		newOffset := oldOffset + totalNeeded
+
+		if newOffset > uint32(len(active.data)) {
+			return 0, false
+		}
+
+		if atomic.CompareAndSwapUint32(&active.offset, oldOffset, newOffset) {
+			start := oldOffset
+
+			if start == 0 && active.id == 1 {
+				start += align
+				atomic.AddUint32(&active.offset, align)
+			}
+
+			globalOffset := (uint64(active.id-1) * uint64(a.slabCap)) + uint64(start)
+			return globalOffset, true
+		}
+	}
 }
 
 func (a *SlabArena) allocCommon(size int, zero bool) (uint64, error) {

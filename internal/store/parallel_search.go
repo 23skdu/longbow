@@ -110,7 +110,23 @@ func (h *HNSWIndex) processChunk(ctx context.Context, query []float32, neighbors
 	locations := make([]Location, len(neighbors))
 	found := make([]bool, len(neighbors))
 
+	prefetchCount := 4 // Prefetch 4 items ahead
+	prefetchOps := 0
+
+	// Prefetch first batch of neighbors
+	for i := 0; i < prefetchCount && i < len(neighbors); i++ {
+		simd.Prefetch(unsafe.Pointer(&neighbors[i]))
+		prefetchOps++
+	}
+
 	for i, n := range neighbors {
+		// Software prefetch next neighbor
+		nextIdx := i + prefetchCount
+		if nextIdx < len(neighbors) {
+			simd.Prefetch(unsafe.Pointer(&neighbors[nextIdx]))
+			prefetchOps++
+		}
+
 		// Context check every 32 items
 		if i&31 == 0 {
 			select {
@@ -126,6 +142,8 @@ func (h *HNSWIndex) processChunk(ctx context.Context, query []float32, neighbors
 			found[i] = true
 		}
 	}
+
+	metrics.PrefetchOperationsTotal.Add(float64(prefetchOps))
 
 	// Step 2: Batch record access and filtering
 	// Minimize dataset.dataMu contention
@@ -195,26 +213,44 @@ func (h *HNSWIndex) processChunk(ctx context.Context, query []float32, neighbors
 	h.dataset.dataMu.RUnlock()
 
 	// Step 3: Compute distances using SIMD Batch Processing
-	// Flatten vectors for batch API
-	vecs := make([][]float32, len(tasks))
-	for i, t := range tasks {
-		vecs[i] = t.vec
+	// Optimization: Use flat buffer to avoid [][]float32 allocation overhead
+	numTasks := len(tasks)
+	if numTasks == 0 {
+		return results
 	}
 
-	scores := make([]float32, len(tasks))
+	// Pre-allocate flat buffer and scores
+	dims := len(query)
+	flatBuffer := make([]float32, numTasks*dims)
+	scores := make([]float32, numTasks)
 
-	// Use batch SIMD where possible
+	// Copy vectors into flat buffer
+	for i, t := range tasks {
+		offset := i * dims
+		copy(flatBuffer[offset:offset+dims], t.vec)
+
+		// Prefetch next vector for distance computation
+		nextIdx := i + 4
+		if nextIdx < numTasks {
+			nextOffset := nextIdx * dims
+			simd.Prefetch(unsafe.Pointer(&flatBuffer[nextOffset]))
+			metrics.PrefetchOperationsTotal.Inc()
+		}
+	}
+
+	// Use flat batch SIMD (avoids [][]float32 allocation)
 	if h.pqEnabled && h.pqEncoder != nil {
+		// PQ path remains unchanged as it has its own optimization
 		table := h.pqEncoder.ComputeDistanceTableFlat(query)
 		m := h.pqEncoder.CodeSize()
 		packedLen := (m + 3) / 4
 
-		flatCodes := make([]byte, len(vecs)*m)
-		validForBatch := make([]bool, len(vecs))
+		flatCodes := make([]byte, numTasks*m)
+		validForBatch := make([]bool, numTasks)
 		batchCount := 0
 
 		distFunc := h.GetDistanceFunc()
-		for i, v := range vecs {
+		for i := 0; i < numTasks; i++ {
 			if i&31 == 0 {
 				select {
 				case <-ctx.Done():
@@ -222,15 +258,17 @@ func (h *HNSWIndex) processChunk(ctx context.Context, query []float32, neighbors
 				default:
 				}
 			}
-			if len(v) == packedLen {
-				ptr := unsafe.Pointer(&v[0])
+			vecOffset := i * dims
+			vec := flatBuffer[vecOffset : vecOffset+dims]
+			if len(vec) == packedLen {
+				ptr := unsafe.Pointer(&vec[0])
 				src := unsafe.Slice((*byte)(ptr), m)
 				copy(flatCodes[batchCount*m:], src)
 				validForBatch[i] = true
 				batchCount++
 			} else {
 				// Fallback for raw / mixed
-				scores[i] = distFunc(query, v)
+				scores[i] = distFunc(query, vec)
 			}
 		}
 
@@ -240,15 +278,15 @@ func (h *HNSWIndex) processChunk(ctx context.Context, query []float32, neighbors
 				// Fallback
 				distFunc := h.GetDistanceFunc()
 				bj := 0
-				for i := range vecs {
+				for i := 0; i < numTasks; i++ {
 					if validForBatch[i] {
-						scores[i] = distFunc(query, vecs[i])
+						scores[i] = distFunc(query, flatBuffer[i*dims:(i+1)*dims])
 						bj++
 					}
 				}
 			} else {
 				bj := 0
-				for i := range vecs {
+				for i := 0; i < numTasks; i++ {
 					if validForBatch[i] {
 						scores[i] = batchResults[bj]
 						bj++
@@ -257,11 +295,17 @@ func (h *HNSWIndex) processChunk(ctx context.Context, query []float32, neighbors
 			}
 		}
 	} else {
+		// Non-PQ path: Use flat batch function (eliminates [][]float32 allocation)
 		if h.batchDistFunc != nil {
+			// Build [][]float32 view without allocation (reuse tasks)
+			vecs := make([][]float32, numTasks)
+			for i, t := range tasks {
+				vecs[i] = t.vec
+			}
 			h.batchDistFunc(query, vecs, scores)
 		} else {
-			// Fallback if not initialized (though it should be)
-			simd.EuclideanDistanceBatch(query, vecs, scores)
+			// Use flat batch - no intermediate allocation needed
+			simd.EuclideanDistanceBatchFlat(query, flatBuffer, numTasks, dims, scores)
 		}
 	}
 

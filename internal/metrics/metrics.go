@@ -903,6 +903,34 @@ var (
 		[]string{"dataset"},
 	)
 
+	// FilterEvaluatorOpsTotal counts filter evaluator operations
+	FilterEvaluatorOpsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_filter_evaluator_ops_total",
+			Help: "Total number of filter evaluator operations",
+		},
+		[]string{"method"}, // "Matches", "MatchesBatch", "MatchesBatchFused", "MatchesAll"
+	)
+
+	// FilterEvaluatorDurationSeconds measures time for filter evaluator operations
+	FilterEvaluatorDurationSeconds = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_filter_evaluator_duration_seconds",
+			Help:    "Duration of filter evaluator operations",
+			Buckets: []float64{0.00001, 0.0001, 0.001, 0.01, 0.1, 1},
+		},
+		[]string{"method"}, // "Matches", "MatchesBatch", "MatchesBatchFused", "MatchesAll"
+	)
+
+	// FilterEvaluatorAllocations tracks allocations during filter evaluation
+	FilterEvaluatorAllocations = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_filter_evaluator_allocations_total",
+			Help: "Total number of allocations during filter evaluation",
+		},
+		[]string{"method", "type"}, // method: "MatchesBatch", "MatchesAll"; type: "bitmap", "indices", "intermediate"
+	)
+
 	// HNSWSearchEarlyTerminationsTotal counts number of searches that terminated early
 	HNSWSearchEarlyTerminationsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{

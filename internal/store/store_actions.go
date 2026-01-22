@@ -829,7 +829,6 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 	if batchSize > 100*1024*1024 {
 		s.logger.Warn().Int64("size", batchSize).Msg("Large memory addition in DoPut")
 	}
-	s.logger.Debug().Str("dataset", name).Int64("batch_size", batchSize).Msg("applyBatchToMemory adding to currentMemory")
 	s.currentMemory.Add(batchSize)
 	ds.SizeBytes.Add(batchSize)
 	metrics.FlightRowsProcessed.WithLabelValues("put", "ok").Add(float64(rec.NumRows()))

@@ -217,9 +217,6 @@ func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
 					return
 				}
 
-				// Log start
-				s.logger.Debug().Str("dataset", dsName).Int("jobs", len(dsGroup)).Msg("Processing batch starting")
-
 				// Total rows in this group for this dataset
 				totalRowsInGroup := 0
 				for _, j := range dsGroup {
@@ -375,7 +372,6 @@ func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
 				// Decrement pending jobs count
 				// Decrement pending jobs count
 				ds.PendingIndexJobs.Add(int64(-totalRowsInGroup))
-				s.logger.Debug().Str("dataset", dsName).Msg("Processing batch finished")
 			}()
 		}
 	}

@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/23skdu/longbow/internal/metrics"
@@ -97,7 +98,11 @@ func (vs *VectorStore) CompactDataset(ctx context.Context, name string) error {
 	// 1. Perform Incremental Compaction
 	// Returns a NEW slice of records and a remapping table
 	// We use vs.mem (the tracked allocator) instead of creating a new one
-	newRecords, remapping := compactRecords(ctx, vs.mem, ds.Schema, ds.Records, ds.Tombstones, vs.compactionConfig.TargetBatchSize, name, vs.rateLimiter, vs.compactionConfig.FragmentationThreshold)
+	newRecords, remapping, err := compactRecords(ctx, vs.mem, ds.Schema, ds.Records, ds.Tombstones, vs.compactionConfig.TargetBatchSize, name, vs.rateLimiter, vs.compactionConfig.FragmentationThreshold)
+	if err != nil {
+		metrics.CompactionErrorsTotal.Inc()
+		return fmt.Errorf("compaction records failed: %w", err)
+	}
 
 	if newRecords == nil {
 		return nil // No changes needed

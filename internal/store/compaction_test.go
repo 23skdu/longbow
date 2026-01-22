@@ -8,6 +8,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	qry "github.com/23skdu/longbow/internal/query"
 	"go.uber.org/goleak"
@@ -113,7 +114,9 @@ func TestCompactRecords_Basic(t *testing.T) {
 	defer b3.Release()
 
 	// 1. Test standard merge (no tombstones)
-	compacted, remapping := compactRecords(context.Background(), mem, schema, batches, nil, 100, "test", nil, 0.0)
+	compacted, remapping, err := compactRecords(context.Background(), mem, schema, batches, nil, 100, "test", nil, 0.0)
+	require.NoError(t, err)
+	require.NotNil(t, compacted)
 
 	assert.Len(t, compacted, 1)
 	assert.Equal(t, int64(30), compacted[0].NumRows())
@@ -137,7 +140,9 @@ func TestCompactRecords_Basic(t *testing.T) {
 	tomb3.Set(9) // Delete ID 29 (last row of b3)
 	tombstones[2] = tomb3
 
-	compacted, remapping = compactRecords(context.Background(), mem, schema, batches, tombstones, 100, "test", nil, 0.0)
+	compacted, remapping, err = compactRecords(context.Background(), mem, schema, batches, tombstones, 100, "test", nil, 0.0)
+	require.NoError(t, err)
+	require.NotNil(t, compacted)
 
 	assert.Len(t, compacted, 1)
 	assert.Equal(t, int64(27), compacted[0].NumRows()) // 30 - 3 = 27
@@ -169,7 +174,9 @@ func TestFilterTombstones(t *testing.T) {
 	tomb.Set(2)
 	tomb.Set(8)
 
-	filtered, mapping, removed := filterTombstones(mem, schema, rec, tomb)
+	filtered, mapping, removed, err := filterTombstones(mem, schema, rec, tomb)
+	require.NoError(t, err)
+	require.NotNil(t, filtered)
 	defer filtered.Release()
 
 	assert.Equal(t, int64(8), filtered.NumRows())

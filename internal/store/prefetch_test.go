@@ -131,13 +131,14 @@ func TestVectorPrefetch_PrefetchConfig(t *testing.T) {
 	cfg := DefaultParallelSearchConfig()
 	assert.True(t, cfg.Enabled)
 	assert.Greater(t, cfg.Workers, 0)
-	assert.Equal(t, 50, cfg.Threshold)
+	assert.Equal(t, 100, cfg.Threshold)
 
 	// Update config
 	cfg.Workers = 8
 	cfg.Threshold = 100
-	idx := &HNSWIndex{}
-	idx.SetParallelSearchConfig(cfg)
+	idx := &HNSWIndex{
+		parallelConfig: cfg,
+	}
 
 	gotCfg := idx.getParallelSearchConfig()
 	assert.Equal(t, 8, gotCfg.Workers)
@@ -196,9 +197,28 @@ func TestVectorPrefetch_ContextCancellation(t *testing.T) {
 }
 
 func TestVectorPrefetch_ProcessResultsParallelEmpty(t *testing.T) {
-	idx := &HNSWIndex{}
+	mem := memory.NewGoAllocator()
+	dims := 64
 
-	query := make([]float32, 128)
+	vectors := make([][]float32, 10)
+	for i := range vectors {
+		vec := make([]float32, dims)
+		for j := range vec {
+			vec[j] = rand.Float32()
+		}
+		vectors[i] = vec
+	}
+
+	rec := makeHNSWTestRecord(mem, dims, vectors)
+	defer rec.Release()
+
+	ds := &Dataset{
+		Name:    "test",
+		Records: []arrow.RecordBatch{rec},
+	}
+	idx := NewHNSWIndex(ds)
+
+	query := make([]float32, dims)
 	neighbors := []hnsw.Node[VectorID]{}
 
 	results := idx.processResultsParallel(context.Background(), query, neighbors, 10, nil)

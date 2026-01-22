@@ -18,6 +18,7 @@ import (
 
 	"github.com/23skdu/longbow/internal/cache"
 	"github.com/23skdu/longbow/internal/gc"
+	lbmem "github.com/23skdu/longbow/internal/memory"
 	"github.com/23skdu/longbow/internal/mesh"
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/query"
@@ -99,6 +100,11 @@ type VectorStore struct {
 
 	// hnsw2 integration hook (Phase 5)
 	// Called after dataset creation to initialize hnsw2 (avoids import cycle)
+	hnsw2Config *ArrowHNSWConfig
+
+	// Memory Tuner
+	tuner *lbmem.GCTuner
+
 	datasetInitHook func(*Dataset)
 
 	// Distributed search coordinator (shared between Data/Meta servers)
@@ -207,6 +213,13 @@ func (s *VectorStore) CheckIngestionBackpressure() bool {
 			return true
 		}
 	}
+	// 3. Global Heap Pressure (v0.1.4-rc5 fix)
+	if s.tuner != nil {
+		ratio := s.tuner.GetUtilizationRatio()
+		if ratio > 0.95 {
+			return true
+		}
+	}
 
 	return false
 }
@@ -227,6 +240,11 @@ func stackTrace() string {
 	buf := make([]byte, 1024)
 	n := runtime.Stack(buf, false)
 	return string(buf[:n])
+}
+
+// SetGCTuner sets the memory tuner for backpressure.
+func (s *VectorStore) SetGCTuner(tuner *lbmem.GCTuner) {
+	s.tuner = tuner
 }
 
 // RCU Helpers

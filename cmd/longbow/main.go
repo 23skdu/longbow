@@ -224,8 +224,9 @@ func run() error {
 	}
 
 	// Dynamic GOGC Tuning
+	var tuner *lbmem.GCTuner
 	if cfg.MaxMemory > 0 {
-		tuner := lbmem.NewGCTuner(cfg.MaxMemory, cfg.GOGC, 10, &logger)
+		tuner = lbmem.NewGCTuner(cfg.MaxMemory, cfg.GOGC, 10, &logger)
 		tuner.IsAggressive = true
 		// Run in background, tied to ctx (stops on signal)
 		go tuner.Start(ctx, 500*time.Millisecond)
@@ -252,6 +253,7 @@ func run() error {
 		CompactionInterval:  cfg.CompactionInterval,
 	}
 	vectorStore := store.NewVectorStoreWithCompaction(mem, logger, cfg.MaxMemory, cfg.MaxWALSize, cfg.TTL, compactionCfg)
+	vectorStore.SetGCTuner(tuner)
 
 	// Register hnsw2 initialization hook
 	vectorStore.SetDatasetInitHook(func(ds *store.Dataset) {

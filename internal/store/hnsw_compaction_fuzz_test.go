@@ -63,7 +63,7 @@ func FuzzHNSW_Compaction(f *testing.F) {
 		r := rand.New(rand.NewSource(42))
 
 		for i := 0; i < int(numVectors); i++ {
-			_, err := h.AddByLocation(0, i)
+			_, err := h.AddByLocation(context.Background(), 0, i)
 			if err != nil {
 				return
 			}
@@ -170,7 +170,7 @@ func FuzzHNSW_CompactionUnderLoad(f *testing.F) {
 		defer h.Close()
 
 		for i := 0; i < 200; i++ {
-			_, _ = h.AddByLocation(0, i)
+			_, _ = h.AddByLocation(context.Background(), 0, i)
 		}
 
 		var wg sync.WaitGroup
@@ -188,7 +188,7 @@ func FuzzHNSW_CompactionUnderLoad(f *testing.F) {
 					switch (gID + iter) % 4 {
 					case 0:
 						for i := 0; i < 10; i++ {
-							_, _ = h.AddByLocation(0, int(iter)*10+i)
+							_, _ = h.AddByLocation(context.Background(), 0, int(iter)*10+i)
 						}
 					case 1:
 						for i := 0; i < 5; i++ {

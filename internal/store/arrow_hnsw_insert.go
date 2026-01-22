@@ -762,7 +762,13 @@ func (h *ArrowHNSW) selectNeighbors(ctx *ArrowSearchContext, candidates []Candid
 						}
 					}
 
-					simd.EuclideanDistanceSQ8Batch(vecSel, vecsSQ8, dists)
+					if err := simd.EuclideanDistanceSQ8Batch(vecSel, vecsSQ8, dists); err != nil {
+						// Fallback to single compute if batch fails (unlikely)
+						for i := range dists {
+							d, _ := simd.EuclideanDistanceSQ8(vecSel, vecsSQ8[i])
+							dists[i] = float32(d)
+						}
+					}
 
 					if hasInvalid {
 						for i := range remaining {

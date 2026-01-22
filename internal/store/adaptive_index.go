@@ -69,7 +69,7 @@ func NewBruteForceIndex(ds *Dataset) *BruteForceIndex {
 }
 
 // AddByLocation adds a vector from the dataset using batch and row indices.
-func (b *BruteForceIndex) AddByLocation(batchIdx, rowIdx int) (uint32, error) {
+func (b *BruteForceIndex) AddByLocation(ctx context.Context, batchIdx, rowIdx int) (uint32, error) {
 	start := time.Now()
 	b.mu.Lock()
 	metrics.IndexLockWaitDuration.WithLabelValues(b.dataset.Name, "write").Observe(time.Since(start).Seconds())
@@ -84,15 +84,15 @@ func (b *BruteForceIndex) AddByLocation(batchIdx, rowIdx int) (uint32, error) {
 }
 
 // AddByRecord adds a vector from a record batch.
-func (b *BruteForceIndex) AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32, error) {
-	return b.AddByLocation(batchIdx, rowIdx)
+func (b *BruteForceIndex) AddByRecord(ctx context.Context, rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32, error) {
+	return b.AddByLocation(ctx, batchIdx, rowIdx)
 }
 
 // AddBatch adds multiple vectors efficiently.
-func (b *BruteForceIndex) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []int) ([]uint32, error) {
+func (b *BruteForceIndex) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowIdxs, batchIdxs []int) ([]uint32, error) {
 	ids := make([]uint32, len(recs))
 	for i := range recs {
-		id, _ := b.AddByRecord(recs[i], rowIdxs[i], batchIdxs[i])
+		id, _ := b.AddByRecord(ctx, recs[i], rowIdxs[i], batchIdxs[i])
 		ids[i] = id
 	}
 	return ids, nil
@@ -300,38 +300,46 @@ func NewAdaptiveIndex(ds *Dataset, cfg AdaptiveIndexConfig) *AdaptiveIndex {
 	return a
 }
 
-// AddByLocation adds a vector and potentially triggers migration to HNSW.
-func (a *AdaptiveIndex) AddByLocation(batchIdx, rowIdx int) (uint32, error) {
+// AddByLocation delegates to the active index.
+func (a *AdaptiveIndex) AddByLocation(ctx context.Context, batchIdx, rowIdx int) (uint32, error) {
+	// Fast path: if HNSW is already active, delegate with RLock
+	a.mu.RLock()
+	hnsw := a.hnsw
+	a.mu.RUnlock()
+
+	if hnsw != nil {
+		return hnsw.AddByLocation(ctx, batchIdx, rowIdx)
+	}
+
+	// If HNSW is not active, acquire a write lock for BruteForce operations and potential migration
 	start := time.Now()
 	a.mu.Lock()
 	metrics.IndexLockWaitDuration.WithLabelValues(a.dataset.Name, "write").Observe(time.Since(start).Seconds())
 	defer a.mu.Unlock()
 
-	var id uint32
-	var err error
-
+	// Re-check if HNSW became active while waiting for the lock
 	if a.usingHNSW.Load() {
-		id, err = a.hnsw.AddByLocation(batchIdx, rowIdx)
-	} else {
-		id, err = a.bruteForce.AddByLocation(batchIdx, rowIdx)
-		if err == nil {
-			newCount := a.vectorCount.Add(1)
-			if a.config.Enabled && int(newCount) >= a.config.Threshold { //nolint:gosec // G115
-				a.migrateToHNSW()
-			}
-		}
+		return a.hnsw.AddByLocation(ctx, batchIdx, rowIdx)
 	}
 
+	// Use BruteForce
+	id, err := a.bruteForce.AddByLocation(ctx, batchIdx, rowIdx)
+	if err == nil {
+		newCount := a.vectorCount.Add(1)
+		if a.config.Enabled && int(newCount) >= a.config.Threshold { //nolint:gosec // G115
+			a.migrateToHNSW()
+		}
+	}
 	return id, err
 }
 
 // AddByRecord adds a vector from a record batch.
-func (a *AdaptiveIndex) AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32, error) {
-	return a.AddByLocation(batchIdx, rowIdx)
+func (a *AdaptiveIndex) AddByRecord(ctx context.Context, rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32, error) {
+	return a.AddByLocation(ctx, batchIdx, rowIdx)
 }
 
 // AddBatch adds multiple vectors efficiently.
-func (a *AdaptiveIndex) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []int) ([]uint32, error) {
+func (a *AdaptiveIndex) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowIdxs, batchIdxs []int) ([]uint32, error) {
 	start := time.Now()
 	a.mu.Lock()
 	metrics.IndexLockWaitDuration.WithLabelValues(a.dataset.Name, "write").Observe(time.Since(start).Seconds())
@@ -339,7 +347,7 @@ func (a *AdaptiveIndex) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []
 
 	ids := make([]uint32, len(recs))
 	for i := range recs {
-		id, err := a.AddByLocation(batchIdxs[i], rowIdxs[i])
+		id, err := a.AddByLocation(ctx, batchIdxs[i], rowIdxs[i])
 		if err != nil {
 			return nil, err
 		}
@@ -446,7 +454,6 @@ func (a *AdaptiveIndex) EstimateMemory() int64 {
 	return a.bruteForce.EstimateMemory()
 }
 
-// migrateToHNSW converts from BruteForce to HNSW (must hold mu.Lock).
 // migrateToHNSW converts from BruteForce to HNSW asynchronously.
 // It builds the index in the background and atomically swaps it.
 func (a *AdaptiveIndex) migrateToHNSW() {
@@ -478,7 +485,7 @@ func (a *AdaptiveIndex) migrateToHNSW() {
 		newHNSW := NewArrowHNSW(a.dataset, config, nil)
 
 		for _, loc := range snapshotLocations {
-			_, _ = newHNSW.AddByLocation(loc.BatchIdx, loc.RowIdx)
+			_, _ = newHNSW.AddByLocation(context.Background(), loc.BatchIdx, loc.RowIdx)
 		}
 
 		// 4. Atomic Swap (Stop The World)
@@ -498,7 +505,7 @@ func (a *AdaptiveIndex) migrateToHNSW() {
 		if len(currentLocations) > len(snapshotLocations) {
 			delta := currentLocations[len(snapshotLocations):]
 			for _, loc := range delta {
-				_, _ = newHNSW.AddByLocation(loc.BatchIdx, loc.RowIdx)
+				_, _ = newHNSW.AddByLocation(context.Background(), loc.BatchIdx, loc.RowIdx)
 			}
 		}
 

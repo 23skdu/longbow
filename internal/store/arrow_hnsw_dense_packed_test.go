@@ -51,7 +51,7 @@ func TestArrowHNSW_AddBatch_Parallel_Dense_Packed(t *testing.T) {
 	}
 
 	// AddBatch (Bulk)
-	ids, err := idx.AddBatch(recs, rowIdxs, batchIdxs)
+	ids, err := idx.AddBatch(context.Background(), recs, rowIdxs, batchIdxs)
 	require.NoError(t, err)
 	assert.Equal(t, numVectors, len(ids))
 

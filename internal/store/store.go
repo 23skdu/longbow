@@ -92,6 +92,8 @@ type VectorStore struct {
 
 	// Shutdown and lifecycle (Phase 6/21)
 	shutdownState int32
+	ctx           context.Context
+	cancel        context.CancelFunc
 	workerWg      sync.WaitGroup
 	cleanupWg     sync.WaitGroup
 
@@ -138,6 +140,7 @@ func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes 
 		memoryConfig: memCfg,
 		stopChan:     make(chan struct{}),
 	}
+	s.ctx, s.cancel = context.WithCancel(context.Background())
 	// Initialize empty datasets map
 	emptyMap := make(map[string]*Dataset)
 	s.datasets.Store(&emptyMap)

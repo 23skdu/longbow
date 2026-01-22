@@ -103,15 +103,15 @@ type SearchOptions struct {
 type VectorIndex interface {
 	// AddByLocation adds a vector from the dataset using batch and row indices.
 	// Returns the assigned internal Vector ID.
-	AddByLocation(batchIdx, rowIdx int) (uint32, error)
+	AddByLocation(ctx context.Context, batchIdx, rowIdx int) (uint32, error)
 
 	// AddByRecord adds a vector directly from a record batch.
 	// Returns the assigned internal Vector ID.
-	AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32, error)
+	AddByRecord(ctx context.Context, rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32, error)
 
 	// AddBatch adds multiple vectors from multiple record batches efficiently.
 	// Returns the assigned internal Vector IDs.
-	AddBatch(recs []arrow.RecordBatch, rowIdxs []int, batchIdxs []int) ([]uint32, error)
+	AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowIdxs []int, batchIdxs []int) ([]uint32, error)
 
 	// SearchVectors returns the k nearest neighbors for the query vector with scores and optional filtering.
 	// query can be []float32, []float16.Num, []complex64, []complex128, etc.

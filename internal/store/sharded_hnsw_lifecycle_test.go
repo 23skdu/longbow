@@ -51,7 +51,7 @@ func TestShardedHNSW_Compaction(t *testing.T) {
 
 	// Add to index
 	for i := 0; i < 10; i++ {
-		_, err := idx.AddByRecord(rec0, i, 0)
+		_, err := idx.AddByRecord(context.Background(), rec0, i, 0)
 		require.NoError(t, err)
 	}
 
@@ -120,7 +120,7 @@ func TestShardedHNSW_Vacuum(t *testing.T) {
 	dataset.Records = []arrow.RecordBatch{rec}
 
 	for i := 0; i < 10; i++ {
-		_, err := idx.AddByRecord(rec, i, 0)
+		_, err := idx.AddByRecord(context.Background(), rec, i, 0)
 		require.NoError(t, err)
 	}
 
@@ -177,7 +177,7 @@ func TestShardedHNSW_DynamicGrowth(t *testing.T) {
 	dataset.Records = []arrow.RecordBatch{rec}
 
 	for i := 0; i < 25; i++ {
-		_, err := idx.AddByRecord(rec, i, 0)
+		_, err := idx.AddByRecord(context.Background(), rec, i, 0)
 		require.NoError(t, err)
 	}
 

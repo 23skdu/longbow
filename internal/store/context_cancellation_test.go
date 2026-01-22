@@ -57,7 +57,7 @@ func TestSearchContextCancellation(t *testing.T) {
 	// Index the data
 	hnswIdx := ds.Index.(*HNSWIndex)
 	for i := 0; i < numRows; i++ {
-		_, err := hnswIdx.AddSafe(rec, i, 0)
+		_, err := hnswIdx.AddSafe(context.Background(), rec, i, 0)
 		require.NoError(t, err)
 	}
 

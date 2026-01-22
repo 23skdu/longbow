@@ -56,7 +56,7 @@ func BenchmarkHNSWComparison(b *testing.B) {
 		idx := store.NewHNSWIndex(ds)
 		start := time.Now()
 		for i := 0; i < numVectors; i++ {
-			_, _ = idx.Add(0, i)
+			_, _ = idx.Add(context.Background(), 0, i)
 		}
 		b.ReportMetric(float64(time.Since(start).Milliseconds()), "coder_build_ms")
 		return idx
@@ -72,7 +72,7 @@ func BenchmarkHNSWComparison(b *testing.B) {
 		start := time.Now()
 		for i := 0; i < numVectors; i++ {
 			// AddByLocation handles ID generation and location storage
-			_, _ = idx.AddByLocation(0, i)
+			_, _ = idx.AddByLocation(context.Background(), 0, i)
 		}
 		b.ReportMetric(float64(time.Since(start).Milliseconds()), "hnsw2_build_ms")
 		return idx

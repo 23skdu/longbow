@@ -160,7 +160,11 @@ func (c *GlobalSearchCoordinator) GlobalSearch(ctx context.Context, localResults
 
 					reader, err := flight.NewRecordReader(stream)
 					if err != nil {
-						c.logger.Warn().Err(err).Str("peer", p.ID).Msg("NewRecordReader failed")
+						if status.Code(err) == codes.NotFound {
+							c.logger.Debug().Err(err).Str("peer", p.ID).Msg("NewRecordReader failed (NotFound)")
+						} else {
+							c.logger.Warn().Err(err).Str("peer", p.ID).Msg("NewRecordReader failed")
+						}
 						failSignal <- struct{}{}
 						return
 					}

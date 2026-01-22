@@ -75,7 +75,7 @@ func TestSQ8_EndToEnd(t *testing.T) {
 	for i := 0; i < numVecs; i++ {
 		// Use AddByLocation which resolves via Dataset
 		// ID i maps to Batch 0, Row i
-		_, err := h.AddByLocation(0, i)
+		_, err := h.AddByLocation(context.Background(), 0, i)
 		require.NoError(t, err)
 	}
 
@@ -157,7 +157,7 @@ func TestSQ8_Persistence(t *testing.T) {
 	h := NewArrowHNSW(ds, config, nil)
 
 	for i := 0; i < numVecs; i++ {
-		_, err := h.AddByLocation(0, i)
+		_, err := h.AddByLocation(context.Background(), 0, i)
 		require.NoError(t, err)
 	}
 

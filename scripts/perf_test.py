@@ -122,6 +122,10 @@ def generate_vectors(num_rows: int, dim: int, with_text: bool = False, dtype_str
         "int16": (np.int16, pa.int16()),
         "int32": (np.int32, pa.int32()),
         "int64": (np.int64, pa.int64()),
+        "uint8": (np.uint8, pa.uint8()),
+        "uint16": (np.uint16, pa.uint16()),
+        "uint32": (np.uint32, pa.uint32()),
+        "uint64": (np.uint64, pa.uint64()),
         "complex64": (np.complex64, pa.float32()),  # Stored as list of floats (2x dim)
         "complex128": (np.complex128, pa.float64()), # Stored as list of floats (2x dim)
     }
@@ -148,8 +152,11 @@ def generate_vectors(num_rows: int, dim: int, with_text: bool = False, dtype_str
         vectors = pa.FixedSizeListArray.from_arrays(flat_view, type=tensor_type)
     else:
         # Standard numeric types
-        if "int" in dtype_str:
-            data = np.random.randint(-100, 100, size=(num_rows, dim)).astype(np_dtype)
+        if "int" in dtype_str or "uint" in dtype_str:
+            if "uint" in dtype_str:
+                data = np.random.randint(0, 200, size=(num_rows, dim)).astype(np_dtype)
+            else:
+                data = np.random.randint(-100, 100, size=(num_rows, dim)).astype(np_dtype)
         else:
             data = np.random.rand(num_rows, dim).astype(np_dtype)
             
@@ -625,6 +632,10 @@ def benchmark_concurrent_load(data_uri: str, meta_uri: str, name: str, dim: int,
         while not stop_event.is_set():
             start = time.time()
             try:
+                # Set routing key for sharding
+                routing_key = f"worker-{worker_id}-{local_ops % 10}"
+                client.headers["x-longbow-key"] = routing_key
+                
                 if operation == "put" or (operation == "mixed" and local_ops % 2 == 0):
                     client.insert(name, small_table)
                 else:
@@ -692,7 +703,8 @@ def main():
     parser.add_argument("--rows", type=int, default=10_000)
     parser.add_argument("--dim", type=int, default=128)
     parser.add_argument("--dtype", default="float32", 
-                        choices=["float32", "float16", "float64", "int8", "int16", "int32", "int64", "complex64", "complex128"],
+                        choices=["float32", "float16", "float64", "int8", "int16", "int32", "int64", 
+                                 "uint8", "uint16", "uint32", "uint64", "complex64", "complex128"],
                         help="Data type for vectors")
     parser.add_argument("--k", type=int, default=10)
     parser.add_argument("--queries", type=int, default=1000)

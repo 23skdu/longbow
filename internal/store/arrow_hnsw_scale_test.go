@@ -81,7 +81,7 @@ func TestArrowHNSW_LargeBatchIngestion_30k(t *testing.T) {
 
 	// 3. Ingest
 	startIngest := time.Now()
-	ids, err := idx.AddBatch(recs, rowIdxs, batchIdxs)
+	ids, err := idx.AddBatch(context.Background(), recs, rowIdxs, batchIdxs)
 	require.NoError(t, err)
 	ingestDur := time.Since(startIngest)
 	t.Logf("Ingested %d vectors in %v (%.2f vec/s)", count, ingestDur, float64(count)/ingestDur.Seconds())

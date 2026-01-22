@@ -1,7 +1,7 @@
 package store
 
-
 import (
+	"context"
 	"fmt"
 	"sync"
 	"testing"
@@ -43,7 +43,7 @@ func TestAddBatchParallel_Basic(t *testing.T) {
 		locations[i] = Location{BatchIdx: 0, RowIdx: i}
 	}
 
-	err := idx.AddBatchParallel(locations, 4)
+	err := idx.AddBatchParallel(context.Background(), locations, 4)
 	require.NoError(t, err)
 	assert.Equal(t, 100, idx.Len())
 }
@@ -65,7 +65,7 @@ func TestAddBatchParallel_SingleWorker(t *testing.T) {
 		locations[i] = Location{BatchIdx: 0, RowIdx: i}
 	}
 
-	err := idx.AddBatchParallel(locations, 1)
+	err := idx.AddBatchParallel(context.Background(), locations, 1)
 	require.NoError(t, err)
 	assert.Equal(t, 50, idx.Len())
 }
@@ -83,7 +83,7 @@ func TestAddBatchParallel_EmptyBatch(t *testing.T) {
 	idx := NewHNSWIndex(ds)
 
 	locations := []Location{}
-	err := idx.AddBatchParallel(locations, 4)
+	err := idx.AddBatchParallel(context.Background(), locations, 4)
 	require.NoError(t, err)
 	assert.Equal(t, 0, idx.Len())
 }
@@ -112,7 +112,7 @@ func TestAddBatchParallel_ConcurrentSafety(t *testing.T) {
 		go func(start int) {
 			defer wg.Done()
 			batch := locations[start*50 : (start+1)*50]
-			_ = idx.AddBatchParallel(batch, 2)
+			_ = idx.AddBatchParallel(context.Background(), batch, 2)
 		}(i)
 	}
 	wg.Wait()
@@ -141,7 +141,7 @@ func TestAddBatchParallel_SearchQuality(t *testing.T) {
 		locations[i] = Location{BatchIdx: 0, RowIdx: i}
 	}
 
-	err := idx.AddBatchParallel(locations, 4)
+	err := idx.AddBatchParallel(context.Background(), locations, 4)
 	require.NoError(t, err)
 
 	// Search for vector 25, neighbors should be close indices
@@ -183,7 +183,7 @@ func TestAddBatchParallel_WorkerCounts(t *testing.T) {
 				locations[i] = Location{BatchIdx: 0, RowIdx: i}
 			}
 
-			err := idx.AddBatchParallel(locations, workers)
+			err := idx.AddBatchParallel(context.Background(), locations, workers)
 			require.NoError(t, err)
 			assert.Equal(t, 100, idx.Len())
 		})
@@ -213,7 +213,7 @@ func TestAddBatchParallel_LargeScale(t *testing.T) {
 	}
 
 	start := time.Now()
-	err := idx.AddBatchParallel(locations, 8)
+	err := idx.AddBatchParallel(context.Background(), locations, 8)
 	duration := time.Since(start)
 
 	require.NoError(t, err)
@@ -243,7 +243,7 @@ func BenchmarkAddBatchParallel(b *testing.B) {
 			}
 			idx := NewHNSWIndex(ds)
 			for j := 0; j < numVectors; j++ {
-				_, _ = idx.Add(0, j)
+				_, _ = idx.Add(context.Background(), 0, j)
 			}
 		}
 		b.ReportMetric(float64(numVectors*b.N)/b.Elapsed().Seconds(), "vectors/sec")
@@ -258,7 +258,7 @@ func BenchmarkAddBatchParallel(b *testing.B) {
 					Records: []arrow.RecordBatch{rec},
 				}
 				idx := NewHNSWIndex(ds)
-				_ = idx.AddBatchParallel(locations, workers)
+				_ = idx.AddBatchParallel(context.Background(), locations, workers)
 			}
 			b.ReportMetric(float64(numVectors*b.N)/b.Elapsed().Seconds(), "vectors/sec")
 		})
@@ -290,7 +290,7 @@ func BenchmarkAddBatch(b *testing.B) {
 			Records: []arrow.RecordBatch{rec},
 		}
 		idx := NewHNSWIndex(ds)
-		_, err := idx.AddBatch(recs, rowIdxs, batchIdxs)
+		_, err := idx.AddBatch(context.Background(), recs, rowIdxs, batchIdxs)
 		if err != nil {
 			b.Fatal(err)
 		}

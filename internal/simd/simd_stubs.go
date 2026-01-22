@@ -5,6 +5,8 @@ package simd
 import (
 	"errors"
 	"unsafe"
+
+	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
 // Stubs for non-AMD64 architectures to satisfy simd.go references
@@ -82,3 +84,19 @@ func euclideanInt16AVX2(a, b []int16) (float32, error) { return 0, errors.New("a
 
 func l2SquaredAVX2(a, b []float32) (float32, error)   { return L2SquaredFloat32(a, b) }
 func l2SquaredAVX512(a, b []float32) (float32, error) { return L2SquaredFloat32(a, b) }
+
+func euclideanSQ8BatchAVX2(query []byte, vectors [][]byte, results []float32) error {
+	return euclideanSQ8BatchGeneric(query, vectors, results)
+}
+
+func euclideanSQ8BatchAVX512(query []byte, vectors [][]byte, results []float32) error {
+	return euclideanSQ8BatchGeneric(query, vectors, results)
+}
+
+func euclideanF16BatchAVX2(query []float16.Num, vectors [][]float16.Num, results []float32) error {
+	return euclideanF16BatchGeneric(query, vectors, results)
+}
+
+func euclideanF16BatchAVX512(query []float16.Num, vectors [][]float16.Num, results []float32) error {
+	return euclideanF16BatchGeneric(query, vectors, results)
+}

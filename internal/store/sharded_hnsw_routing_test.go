@@ -66,7 +66,7 @@ func TestShardedHNSW_Routing(t *testing.T) {
 	ds.Records = append(ds.Records, rec)
 
 	for i := 0; i < 100; i++ {
-		_, err := idx.AddSafe(rec, i, 0)
+		_, err := idx.AddSafe(context.Background(), rec, i, 0)
 		require.NoError(t, err)
 	}
 
@@ -97,7 +97,7 @@ func TestShardedHNSW_MergedSearch(t *testing.T) {
 	ds.Records = append(ds.Records, rec)
 
 	for i := 0; i < 100; i++ {
-		_, err := idx.AddSafe(rec, i, 0)
+		_, err := idx.AddSafe(context.Background(), rec, i, 0)
 		require.NoError(t, err)
 	}
 
@@ -136,7 +136,7 @@ func TestShardedHNSW_Filtering(t *testing.T) {
 	ds.Records = append(ds.Records, rec)
 
 	for i := 0; i < 100; i++ {
-		_, err := idx.AddSafe(rec, i, 0)
+		_, err := idx.AddSafe(context.Background(), rec, i, 0)
 		require.NoError(t, err)
 	}
 

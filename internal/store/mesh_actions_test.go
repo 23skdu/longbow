@@ -29,6 +29,7 @@ func TestMeshActions(t *testing.T) {
 	s.SetMesh(g)
 
 	meta := NewMetaServer(s)
+	defer func() { _ = meta.Close() }()
 
 	t.Run("MeshIdentity", func(t *testing.T) {
 		stream := &mockDoActionServer{}

@@ -114,7 +114,7 @@ func TestComplex_SearchCorrectness(t *testing.T) {
 
 	// Insert vectors individually using AddByRecord to handle location mapping automatically
 	for i := 0; i < len(vectors); i++ {
-		_, err := idx.AddByRecord(rec, i, 0) // batchIdx 0
+		_, err := idx.AddByRecord(context.Background(), rec, i, 0) // batchIdx 0
 		require.NoError(t, err)
 	}
 

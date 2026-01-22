@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"math/rand"
 	"testing"
 
@@ -115,7 +116,7 @@ func benchmarkAddBatch(b *testing.B, sq8 bool) {
 			// Let's do PER BLOCK inside `AddBatch`.
 			// idx.AddBatch([]arrow.RecordBatch{batches[j]}, rowIdxs, batchIdxs)
 
-			_, _ = idx.AddBatch([]arrow.RecordBatch{batches[j]}, rowIdxs, batchIdxs)
+			_, _ = idx.AddBatch(context.Background(), []arrow.RecordBatch{batches[j]}, rowIdxs, batchIdxs)
 		}
 
 		b.StopTimer()

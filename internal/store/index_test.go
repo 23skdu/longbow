@@ -23,24 +23,24 @@ func NewMockIndex() *MockIndex {
 	}
 }
 
-func (m *MockIndex) AddByLocation(batchIdx, rowIdx int) (uint32, error) {
+func (m *MockIndex) AddByLocation(ctx context.Context, batchIdx, rowIdx int) (uint32, error) {
 	m.AddCalls++
 	id := VectorID(len(m.Vectors))
 	m.Vectors[id] = Location{BatchIdx: batchIdx, RowIdx: rowIdx}
 	return uint32(id), nil
 }
 
-func (m *MockIndex) AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32, error) {
+func (m *MockIndex) AddByRecord(ctx context.Context, rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32, error) {
 	m.AddCalls++
 	id := VectorID(len(m.Vectors))
 	m.Vectors[id] = Location{BatchIdx: batchIdx, RowIdx: rowIdx}
 	return uint32(id), nil
 }
 
-func (m *MockIndex) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []int) ([]uint32, error) {
+func (m *MockIndex) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowIdxs, batchIdxs []int) ([]uint32, error) {
 	ids := make([]uint32, len(recs))
 	for i := range recs {
-		id, _ := m.AddByRecord(recs[i], rowIdxs[i], batchIdxs[i])
+		id, _ := m.AddByRecord(ctx, recs[i], rowIdxs[i], batchIdxs[i])
 		ids[i] = id
 	}
 	return ids, nil

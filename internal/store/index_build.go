@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"sync"
@@ -14,7 +15,7 @@ import (
 )
 
 // Add inserts a new vector location into the index and adds it to the graph.
-func (h *HNSWIndex) Add(batchIdx, rowIdx int) (uint32, error) {
+func (h *HNSWIndex) Add(ctx context.Context, batchIdx, rowIdx int) (uint32, error) {
 	// 1. Prepare location and update locations slice under global lock
 	// and get vector while holding the lock to protect against slice reallocations.
 	start := time.Now()
@@ -126,7 +127,7 @@ func (h *HNSWIndex) Add(batchIdx, rowIdx int) (uint32, error) {
 
 // AddSafe adds a vector using a direct record batch reference.
 // It COPIES the vector to ensure it remains stable even if the record batch is released.
-func (h *HNSWIndex) AddSafe(rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32, error) {
+func (h *HNSWIndex) AddSafe(ctx context.Context, rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32, error) {
 	if rec == nil {
 		return 0, fmt.Errorf("AddSafe: record is nil")
 	}
@@ -241,19 +242,45 @@ func (h *HNSWIndex) AddSafe(rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32
 }
 
 // AddByLocation implements VectorIndex interface for HNSWIndex.
-func (h *HNSWIndex) AddByLocation(batchIdx, rowIdx int) (uint32, error) {
-	return h.Add(batchIdx, rowIdx)
+func (h *HNSWIndex) AddByLocation(ctx context.Context, batchIdx, rowIdx int) (uint32, error) {
+	if h.dataset == nil {
+		return 0, fmt.Errorf("no dataset associated with index")
+	}
+	h.dataset.dataMu.RLock()
+	if batchIdx >= len(h.dataset.Records) {
+		h.dataset.dataMu.RUnlock()
+		return 0, fmt.Errorf("batch index out of bounds")
+	}
+	rec := h.dataset.Records[batchIdx]
+	h.dataset.dataMu.RUnlock()
+
+	return h.AddByRecord(ctx, rec, rowIdx, batchIdx)
 }
 
 // AddByRecord implements VectorIndex interface for HNSWIndex.
-func (h *HNSWIndex) AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32, error) {
-	return h.AddSafe(rec, rowIdx, batchIdx)
+func (h *HNSWIndex) AddByRecord(ctx context.Context, rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32, error) {
+	recs := []arrow.RecordBatch{rec}
+	rowIdxs := []int{rowIdx}
+	batchIdxs := []int{batchIdx}
+	ids, err := h.AddBatch(ctx, recs, rowIdxs, batchIdxs)
+	if err != nil {
+		return 0, err
+	}
+	if len(ids) == 0 {
+		return 0, fmt.Errorf("failed to add vector")
+	}
+	return ids[0], nil
 }
 
 // AddBatch implements VectorIndex interface for HNSWIndex.
-func (h *HNSWIndex) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []int) ([]uint32, error) {
+func (h *HNSWIndex) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowIdxs, batchIdxs []int) ([]uint32, error) {
 	if len(recs) == 0 {
 		return nil, nil
+	}
+
+	// Check if context is already done
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 
 	start := time.Now()
@@ -267,6 +294,12 @@ func (h *HNSWIndex) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []int)
 
 	// 1. Extract vectors (Done outside h.mu lock)
 	for i := 0; i < n; i++ {
+		// Occasional context check for large extraction phase
+		if i%100 == 0 {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+		}
 		vec, err := h.extractVector(recs[i], rowIdxs[i])
 		if err != nil {
 			return nil, err
@@ -316,8 +349,12 @@ func (h *HNSWIndex) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []int)
 			}
 		} else {
 			var wg sync.WaitGroup
-			chunkSize := (n + 8 - 1) / 8 // 8 workers appropriate for encoding
-			for i := 0; i < 8; i++ {
+			numWorkers := 8
+			chunkSize := (n + numWorkers - 1) / numWorkers
+
+			// Use context-aware wait group or just check context in loop?
+			// The encoder.Encode is CPU bound but we should still respect context.
+			for i := 0; i < numWorkers; i++ {
 				start := i * chunkSize
 				end := start + chunkSize
 				if end > n {
@@ -330,12 +367,21 @@ func (h *HNSWIndex) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []int)
 				go func(s, e int) {
 					defer wg.Done()
 					for j := s; j < e; j++ {
+						// Non-critical check, avoid too many syscalls
+						if j%10 == 0 && ctx.Err() != nil {
+							return
+						}
 						codes, _ := encoder.Encode(vectors[j])
 						encodedVectors[j] = pq.PackBytesToFloat32s(codes)
 					}
 				}(start, end)
 			}
 			wg.Wait()
+		}
+
+		// Check if we exited early due to context
+		if err := ctx.Err(); err != nil {
+			return nil, err
 		}
 
 		// Store PQ codes safely
@@ -360,7 +406,9 @@ func (h *HNSWIndex) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []int)
 		for i := 0; i < n; i++ {
 			id := int(baseID) + i
 			// UnpackFloat32sToBytes is robust
-			h.pqCodes[id] = pq.UnpackFloat32sToBytes(encodedVectors[i], encoder.CodeSize())
+			if encodedVectors[i] != nil {
+				h.pqCodes[id] = pq.UnpackFloat32sToBytes(encodedVectors[i], encoder.CodeSize())
+			}
 		}
 		h.pqCodesMu.Unlock()
 
@@ -370,11 +418,21 @@ func (h *HNSWIndex) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []int)
 		}
 	}
 
+	// Final check before entering graph lock loop
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	// 5. Add to graph (Batched Locking)
 	// Use extremely fine-grained locking to allow Searches to interleave fairly.
 	const lockBatchSize = 1
 
 	for i := 0; i < n; i += lockBatchSize {
+		// Respect context between lock batches (helps with shutdown)
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+
 		end := i + lockBatchSize
 		if end > n {
 			end = n
@@ -383,7 +441,9 @@ func (h *HNSWIndex) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []int)
 		h.mu.Lock()
 		for j := i; j < end; j++ {
 			id := baseID + VectorID(j)
-			h.Graph.Add(hnsw.MakeNode(id, encodedVectors[j]))
+			if encodedVectors[j] != nil {
+				h.Graph.Add(hnsw.MakeNode(id, encodedVectors[j]))
+			}
 		}
 		h.mu.Unlock()
 	}
@@ -452,7 +512,7 @@ type vectorData struct {
 }
 
 // AddBatchParallel adds multiple vectors in parallel using worker goroutines.
-func (h *HNSWIndex) AddBatchParallel(locations []Location, workers int) error {
+func (h *HNSWIndex) AddBatchParallel(ctx context.Context, locations []Location, workers int) error {
 	if len(locations) == 0 {
 		return nil
 	}

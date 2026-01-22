@@ -56,7 +56,7 @@ func TestGenerateFilterBitset(t *testing.T) {
 
 	// Add to index to populate location store
 	for i := 0; i < 5; i++ {
-		_, err := idx.AddByLocation(0, i)
+		_, err := idx.AddByLocation(context.Background(), 0, i)
 		require.NoError(t, err)
 	}
 
@@ -130,7 +130,7 @@ func TestSearchWithBitmapFiltering(t *testing.T) {
 	ds.Records = append(ds.Records, rec)
 
 	for i := range vecs {
-		_, err := idx.AddByLocation(0, i)
+		_, err := idx.AddByLocation(context.Background(), 0, i)
 		require.NoError(t, err)
 	}
 
@@ -192,7 +192,7 @@ func TestShardedSearchWithBitmapFiltering(t *testing.T) {
 	ds.Records = append(ds.Records, rec)
 
 	for i := range vecs {
-		_, err := idx.AddByLocation(0, i)
+		_, err := idx.AddByLocation(context.Background(), 0, i)
 		require.NoError(t, err)
 	}
 

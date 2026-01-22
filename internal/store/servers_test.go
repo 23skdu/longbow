@@ -324,6 +324,7 @@ func setupMetaServerTest(t *testing.T) (flight.Client, *VectorStore) {
 		_ = client.Close()
 		s.Stop()
 		_ = lis.Close()
+		_ = ms.Close()
 		_ = vs.Close()
 		_ = os.RemoveAll(tmpDir)
 	})

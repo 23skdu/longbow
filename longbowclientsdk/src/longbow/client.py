@@ -69,7 +69,7 @@ class LongbowClient:
             return flight.FlightCallOptions(headers=call_headers, timeout=timeout)
         return flight.FlightCallOptions(headers=call_headers)
 
-    def insert(self, dataset: str, data: Union[pd.DataFrame, List[Dict]], batch_size: int = 10000, timeout: float = 30.0) -> None:
+    def insert(self, dataset: str, data: Union[pd.DataFrame, List[Dict]], batch_size: int = 10000, timeout: float = 180.0) -> None:
         """
         Insert vectors into a dataset.
         
@@ -77,7 +77,7 @@ class LongbowClient:
             dataset: Name of the target dataset.
             data: Data to insert (Pandas DataFrame or List of Dicts).
             batch_size: Batch size for upload chunks.
-            timeout: Timeout in seconds for the upload operation (default: 30.0).
+            timeout: Timeout in seconds for the upload operation (default: 180.0).
         """
         if self._data_client is None:
             self.connect()
@@ -86,7 +86,7 @@ class LongbowClient:
         table = to_arrow_table(data)
         self._upload_batch(dataset, table, timeout=timeout)
 
-    def _upload_batch(self, dataset: str, data: Union[pd.DataFrame, List[Dict], pa.Table], timeout: float = 30.0):
+    def _upload_batch(self, dataset: str, data: Union[pd.DataFrame, List[Dict], pa.Table], timeout: float = 180.0):
         """Internal helper to upload a materialized batch with timeout."""
         if isinstance(data, pa.Table):
             table = data

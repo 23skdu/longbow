@@ -185,12 +185,9 @@ func TestGenericQuantizer_Float32ToUint64(t *testing.T) {
 
 	vec := []float32{1.0, 0.0, -1.0}
 	codes := encode(vec)
-	// Verify encoding produces correct code structure
-	require.Equal(t, 64, len(codes)*8, "Should handle 64 dimensions")
+	require.Equal(t, 1, len(codes), "Should produce 1 code word for 3 dims")
 
-	// Verify decode worked correctly - decode returns (result, nil)
-	_, err := decode(codes)
-	require.NoError(t, err, "Decode should not return error")
+	_ = decode(codes)
 }
 
 // TestGenericQuantizer_Float32ToByte tests float32 -> byte quantization (PQ style)

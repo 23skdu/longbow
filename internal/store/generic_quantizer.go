@@ -241,9 +241,9 @@ func (g *GenericPQQuantizer) Encode(vectors any) ([]byte, error) {
 }
 
 // Decode implements Quantizer interface
-func (g *GenericBQQuantizer) Decode(codes []uint64) ([]float32, error) {
-	// BQEncoder.Decode returns []float32 (not an error)
-	return g.encoder.Decode(codes), nil
+func (g *GenericPQQuantizer) Decode(codes []byte) ([]float32, error) {
+	result, err := g.encoder.Decode(codes)
+	return result, err
 }
 
 // Dims implements Quantizer interface

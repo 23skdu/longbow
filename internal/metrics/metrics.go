@@ -1326,4 +1326,140 @@ var (
 			Help: "Total number of bytes compared during string filtering",
 		},
 	)
+
+	// Connection Pool metrics for distributed query optimization
+	ConnectionPoolGetTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_connection_pool_get_total",
+			Help: "Total number of connection pool get operations",
+		},
+		[]string{"result"}, // "hit", "miss", "stale", "error"
+	)
+
+	ConnectionPoolCreateTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_connection_pool_create_total",
+			Help: "Total number of new connections created",
+		},
+	)
+
+	ConnectionPoolCloseTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_connection_pool_close_total",
+			Help: "Total number of connections closed",
+		},
+	)
+
+	ConnectionPoolActiveConnections = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "longbow_connection_pool_active_connections",
+			Help: "Current number of active connections in the pool",
+		},
+		[]string{"target"}, // target address
+	)
+
+	ConnectionPoolGetDurationSeconds = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_connection_pool_get_duration_seconds",
+			Help:    "Duration of connection pool get operations",
+			Buckets: []float64{0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1},
+		},
+		[]string{"result"}, // "hit", "miss", "stale", "error"
+	)
+
+	ConnectionPoolHealthCheckTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_connection_pool_health_check_total",
+			Help: "Total number of connection health checks",
+		},
+		[]string{"result"}, // "healthy", "unhealthy", "error"
+	)
+
+	ConnectionPoolRefreshTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_connection_pool_refresh_total",
+			Help: "Total number of connection refreshes due to health check failure",
+		},
+	)
+
+	// Branch Prediction metrics for HNSW graph traversal optimization
+	HnswBranchPredictionTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_hnsw_branch_prediction_total",
+			Help: "Total number of branch predictions by type",
+		},
+		[]string{"branch_type"}, // "filter_match", "filter_miss", "location_found", "location_miss", "result_append"
+	)
+
+	HnswBranchPredictionLikelyTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_hnsw_branch_prediction_likely_total",
+			Help: "Total number of branches marked as likely (true)",
+		},
+	)
+
+	HnswBranchPredictionUnlikelyTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_hnsw_branch_prediction_unlikely_total",
+			Help: "Total number of branches marked as unlikely (false)",
+		},
+	)
+
+	HnswTraversalIterationsTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_hnsw_traversal_iterations_total",
+			Help: "Total number of iterations during HNSW graph traversal",
+		},
+	)
+
+	HnswContextCheckTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_hnsw_context_check_total",
+			Help: "Total number of context checks performed during traversal",
+		},
+	)
+
+	HnswContextCheckCancelledTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_hnsw_context_check_cancelled_total",
+			Help: "Total number of times context check detected cancellation",
+		},
+	)
+
+	// Batch Distance Compute metrics for SIMD batch optimization
+	BatchDistanceComputeTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_batch_distance_compute_total",
+			Help: "Total number of batch distance compute operations",
+		},
+	)
+
+	BatchDistanceComputeDurationSeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_batch_distance_compute_duration_seconds",
+			Help:    "Duration of batch distance compute operations",
+			Buckets: []float64{0.00001, 0.0001, 0.001, 0.01, 0.1, 1},
+		},
+	)
+
+	BatchDistanceComputePairsTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_batch_distance_compute_pairs_total",
+			Help: "Total number of query-candidate pairs processed in batch",
+		},
+	)
+
+	BatchDistanceComputeSIMDUsed = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_batch_distance_compute_simd_used_total",
+			Help: "Total number of batch operations using SIMD optimization",
+		},
+	)
+
+	BatchDistanceComputeFallbackTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_batch_distance_compute_fallback_total",
+			Help: "Total number of batch operations falling back to scalar",
+		},
+	)
 )

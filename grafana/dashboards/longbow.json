@@ -2616,6 +2616,322 @@
       ],
       "title": "Adaptive GC Status",
       "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 115
+      },
+      "id": 400,
+      "panels": [],
+      "title": "Batch Distance Compute & HNSW Traversal",
+      "type": "row"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 116
+      },
+      "id": 401,
+      "targets": [
+        {
+          "expr": "rate(longbow_batch_distance_compute_total[1m])",
+          "legendFormat": "Ops/s",
+          "refId": "A"
+        }
+      ],
+      "title": "Batch Distance Compute Rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 8,
+        "y": 116
+      },
+      "id": 402,
+      "targets": [
+        {
+          "expr": "rate(longbow_batch_distance_compute_pairs_total[1m])",
+          "legendFormat": "Pairs/s",
+          "refId": "A"
+        }
+      ],
+      "title": "Batch Distance Pairs/s",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 116
+      },
+      "id": 403,
+      "targets": [
+        {
+          "expr": "rate(longbow_batch_distance_compute_simd_used_total[1m]) / rate(longbow_batch_distance_compute_total[1m])",
+          "legendFormat": "SIMD Usage %",
+          "refId": "A"
+        }
+      ],
+      "title": "SIMD Usage Ratio",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 122
+      },
+      "id": 404,
+      "targets": [
+        {
+          "expr": "rate(longbow_hnsw_branch_prediction_total{branch_type=\"filter_match\"}[1m]) / rate(longbow_hnsw_branch_prediction_total[1m])",
+          "legendFormat": "Filter Match %",
+          "refId": "A"
+        }
+      ],
+      "title": "HNSW Filter Match Rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 8,
+        "y": 122
+      },
+      "id": 405,
+      "targets": [
+        {
+          "expr": "rate(longbow_hnsw_traversal_iterations_total[1m])",
+          "legendFormat": "Iterations/s",
+          "refId": "A"
+        }
+      ],
+      "title": "HNSW Traversal Iterations",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 122
+      },
+      "id": 406,
+      "targets": [
+        {
+          "expr": "rate(longbow_hnsw_context_check_cancelled_total[1m])",
+          "legendFormat": "Cancels/s",
+          "refId": "A"
+        }
+      ],
+      "title": "Context Check Cancellations",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 128
+      },
+      "id": 410,
+      "panels": [],
+      "title": "String & Bloom Filters",
+      "type": "row"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 129
+      },
+      "id": 411,
+      "targets": [
+        {
+          "expr": "rate(longbow_string_filter_ops_total{operator=\"eq\"}[1m])",
+          "legendFormat": "Eq/s",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(longbow_string_filter_ops_total{operator=\"neq\"}[1m])",
+          "legendFormat": "Neq/s",
+          "refId": "B"
+        }
+      ],
+      "title": "String Filter Operations",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 8,
+        "y": 129
+      },
+      "id": 412,
+      "targets": [
+        {
+          "expr": "rate(longbow_string_filter_comparisons_total[1m])",
+          "legendFormat": "Comparisons/s",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(longbow_string_filter_bytes_compared_total[1m])",
+          "legendFormat": "Bytes/s",
+          "refId": "B"
+        }
+      ],
+      "title": "String Filter Throughput",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 129
+      },
+      "id": 413,
+      "targets": [
+        {
+          "expr": "rate(longbow_bloom_filter_early_exits_total[1m])",
+          "legendFormat": "Early Exits/s",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(longbow_bloom_filter_bitmap_zero_checks_total[1m])",
+          "legendFormat": "Zero Checks/s",
+          "refId": "B"
+        }
+      ],
+      "title": "Bloom Filter Operations",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 135
+      },
+      "id": 420,
+      "panels": [],
+      "title": "Connection & Result Pools",
+      "type": "row"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 0,
+        "y": 136
+      },
+      "id": 421,
+      "targets": [
+        {
+          "expr": "rate(longbow_connection_pool_get_total{result=\"hit\"}[1m])",
+          "legendFormat": "Hits/s",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(longbow_connection_pool_get_total{result=\"miss\"}[1m])",
+          "legendFormat": "Misses/s",
+          "refId": "B"
+        }
+      ],
+      "title": "Connection Pool Hits/Misses",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 6,
+        "y": 136
+      },
+      "id": 422,
+      "targets": [
+        {
+          "expr": "longbow_connection_pool_active_connections",
+          "legendFormat": "{{target}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Active Connections",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 12,
+        "y": 136
+      },
+      "id": 423,
+      "targets": [
+        {
+          "expr": "rate(longbow_search_result_pool_hits_total{capacity=\"32\"}[1m])",
+          "legendFormat": "Hits (32)",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(longbow_search_result_pool_misses_total{capacity=\"32\"}[1m])",
+          "legendFormat": "Misses (32)",
+          "refId": "B"
+        }
+      ],
+      "title": "Result Pool Hit Rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 18,
+        "y": 136
+      },
+      "id": 424,
+      "targets": [
+        {
+          "expr": "rate(longbow_filter_evaluator_ops_total{method=\"MatchesBatchFused\"}[1m])",
+          "legendFormat": "Fused/s",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(longbow_filter_evaluator_ops_total{method=\"MatchesBatch\"}[1m])",
+          "legendFormat": "Batch/s",
+          "refId": "B"
+        }
+      ],
+      "title": "Filter Evaluator Operations",
+      "type": "timeseries"
     }
   ],
   "refresh": "5s",

@@ -1,6 +1,6 @@
 # Longbow Performance Improvements
 
-This document identifies 10 high-impact performance improvements for the Longbow distributed vector database based on deep code analysis. 10 improvements have been completed.
+This document identifies 15 high-impact performance improvements for the Longbow distributed vector database based on deep code analysis. 15 improvements have been completed.
 
 ---
 
@@ -20,6 +20,9 @@ This document identifies 10 high-impact performance improvements for the Longbow
 | 10 | Implement Adaptive Batch Sizing | Parallelism | IMPLEMENTED |
 | 11 | Add Bloom Filter for Rapid Filter Evaluation | Query | IMPLEMENTED |
 | 12 | SIMD-Accelerated String Filter Operations | Query | IMPLEMENTED |
+| 13 | Implement Connection Pool for Distributed Queries | Distribution | IMPLEMENTED |
+| 14 | Optimize HNSW Graph Traversal with Branch Prediction | Search | IMPLEMENTED |
+| 15 | SIMD Batch Distance Compute Optimization | Compute | IMPLEMENTED |
 
 See [docs/improvements_completed.md](./improvements_completed.md) for details on completed implementations.
 
@@ -509,7 +512,7 @@ func (h *HNSWIndex) processResultsParallel(ctx context.Context, query []float32,
 | 9 | Adaptive Filter Ordering | Query | 30-50% filter speed |
 | 10 | Dynamic Chunk Sizing | Parallelism | 10-15% efficiency |
 
-**Completed:** 10/15 improvements
+**Completed:** 15/15 improvements
 
 **Total Expected Impact:** 2-3x improvement in overall throughput for typical workloads.
 

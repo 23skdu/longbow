@@ -857,9 +857,9 @@ func (h *ArrowHNSW) AddConnection(ctx *ArrowSearchContext, data *GraphData, sour
 	// Acquire lock for the specific node (shard)
 	lockID := source % ShardedLockCount
 	lockStart := time.Now()
-	h.shardedLocks[lockID].Lock()
+	h.shardedLocks.Lock(uint64(lockID))
 	h.metricLockWait.WithLabelValues("sharded").Observe(time.Since(lockStart).Seconds())
-	defer h.shardedLocks[lockID].Unlock()
+	defer h.shardedLocks.Unlock(uint64(lockID))
 
 	cID := chunkID(source)
 	cOff := chunkOffset(source)
@@ -984,8 +984,8 @@ func (h *ArrowHNSW) AddConnectionsBatch(ctx *ArrowSearchContext, data *GraphData
 
 	// Acquire lock for the target node
 	lockID := target % ShardedLockCount
-	h.shardedLocks[lockID].Lock()
-	defer h.shardedLocks[lockID].Unlock()
+	h.shardedLocks.Lock(uint64(lockID))
+	defer h.shardedLocks.Unlock(uint64(lockID))
 
 	cID := chunkID(target)
 	cOff := chunkOffset(target)
@@ -1151,8 +1151,8 @@ func (h *ArrowHNSW) AddConnectionsBatch(ctx *ArrowSearchContext, data *GraphData
 // PruneConnections removes excess connections from a node's neighbor list.
 func (h *ArrowHNSW) PruneConnections(ctx *ArrowSearchContext, data *GraphData, id uint32, maxConn, layer int) {
 	lockID := id % ShardedLockCount
-	h.shardedLocks[lockID].Lock()
-	defer h.shardedLocks[lockID].Unlock()
+	h.shardedLocks.Lock(uint64(lockID))
+	defer h.shardedLocks.Unlock(uint64(lockID))
 
 	// COW Promotion
 	data = h.promoteNode(data, id)

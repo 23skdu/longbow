@@ -6,7 +6,6 @@ import (
 	"math"
 	"math/rand"
 	"runtime"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -149,10 +148,11 @@ func NewArrowHNSW(dataset *Dataset, config ArrowHNSWConfig, locStore *ChunkedLoc
 	h.distFuncC128 = h.resolveDistanceFuncC128()
 	h.batchDistFunc = h.resolveBatchDistanceFunc()
 
-	h.shardedLocks = make([]sync.Mutex, ShardedLockCount)
-	for i := 0; i < len(h.shardedLocks); i++ {
-		h.shardedLocks[i] = sync.Mutex{}
-	}
+	// Initialize cache-aligned sharded mutex for reduced contention
+	h.shardedLocks = NewAlignedShardedMutex(AlignedShardedMutexConfig{
+		NumShards:      ShardedLockCount,
+		EnableAdaptive: false,
+	})
 
 	if locStore != nil {
 		h.locationStore = locStore

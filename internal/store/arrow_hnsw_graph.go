@@ -247,7 +247,7 @@ type ArrowHNSW struct {
 	initMu sync.Mutex
 	growMu sync.RWMutex
 
-	shardedLocks []sync.Mutex
+	shardedLocks *AlignedShardedMutex
 
 	data       atomic.Pointer[GraphData]
 	deleted    *query.AtomicBitset
@@ -350,6 +350,10 @@ type GraphData struct {
 
 	// Packed Neighbors (v0.1.4-rc1 optimization)
 	PackedNeighbors [ArrowMaxLayers]*PackedAdjacency
+
+	// Lock-free neighbor caches (v0.1.4-rc5 optimization)
+	// Provides zero-lock reads for hot search paths
+	LockFreeNeighborCaches [ArrowMaxLayers]*LockFreeNeighborCache
 }
 
 const (
@@ -461,6 +465,9 @@ func NewGraphData(capacity, dims int, sq8Enabled, pqEnabled bool, pqDims int, bq
 		if packedAdjacencyEnabled {
 			gd.PackedNeighbors[i] = NewPackedAdjacency(slab, capacity)
 		}
+
+		// Initialize lock-free neighbor cache for this layer
+		gd.LockFreeNeighborCaches[i] = NewLockFreeNeighborCache()
 	}
 	return gd
 }
@@ -495,13 +502,13 @@ func (h *ArrowHNSW) CleanupTombstones(maxNodes int) int {
 
 		// Lock this node to safely modify its neighbor list
 		lockID := nodeID % 1024
-		h.shardedLocks[lockID].Lock()
+		h.shardedLocks.Lock(uint64(lockID))
 
 		// Re-check deleted status after lock? Unlikely to change from false -> true without lock?
 		// Delete() uses lock? No, Delete() typically atomic bitset.
 		// If it became deleted while we waited, we can skip.
 		if h.deleted.Contains(int(nodeID)) {
-			h.shardedLocks[lockID].Unlock()
+			h.shardedLocks.Unlock(uint64(lockID))
 			continue
 		}
 
@@ -583,7 +590,7 @@ func (h *ArrowHNSW) CleanupTombstones(maxNodes int) int {
 			atomic.AddUint32(verAddr, 1)
 		}
 
-		h.shardedLocks[lockID].Unlock()
+		h.shardedLocks.Unlock(uint64(lockID))
 	}
 
 	return totalPruned

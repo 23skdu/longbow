@@ -1,7 +1,7 @@
 package store
 
-
 import (
+	"context"
 	"sync"
 	"testing"
 
@@ -44,7 +44,7 @@ func TestEpochBasics(t *testing.T) {
 		{1.0, 2.0, 3.0, 4.0},
 	})
 	idx := NewHNSWIndex(ds)
-	_, _ = idx.Add(0, 0)
+	_, _ = idx.Add(context.Background(), 0, 0)
 
 	// Initial epoch should be 0
 	assert.Equal(t, uint64(0), idx.currentEpoch.Load())
@@ -64,7 +64,7 @@ func TestGetVectorUnsafeReturnsDirectSlice(t *testing.T) {
 	testVec := []float32{1.0, 2.0, 3.0, 4.0}
 	ds := makeTestDataset(mem, 4, [][]float32{testVec})
 	idx := NewHNSWIndex(ds)
-	_, _ = idx.Add(0, 0)
+	_, _ = idx.Add(context.Background(), 0, 0)
 
 	// Get unsafe vector
 	vec, release := idx.getVectorUnsafe(0)
@@ -92,7 +92,7 @@ func TestGetVectorUnsafeInvalidID(t *testing.T) {
 		{1.0, 2.0, 3.0, 4.0},
 	})
 	idx := NewHNSWIndex(ds)
-	_, _ = idx.Add(0, 0)
+	_, _ = idx.Add(context.Background(), 0, 0)
 
 	// Invalid ID should return nil
 	vec, release := idx.getVectorUnsafe(999)
@@ -110,7 +110,7 @@ func TestGetVectorUnsafeConcurrent(t *testing.T) {
 	ds := makeTestDataset(mem, 4, vectors)
 	idx := NewHNSWIndex(ds)
 	for i := range vectors {
-		_, _ = idx.Add(0, i)
+		_, _ = idx.Add(context.Background(), 0, i)
 	}
 
 	// Run concurrent readers
@@ -147,7 +147,7 @@ func TestEpochAdvanceWaitsForReaders(t *testing.T) {
 		{1.0, 2.0, 3.0, 4.0},
 	})
 	idx := NewHNSWIndex(ds)
-	_, _ = idx.Add(0, 0)
+	_, _ = idx.Add(context.Background(), 0, 0)
 
 	// Enter epoch, verify reader count incremented
 	idx.enterEpoch()
@@ -179,7 +179,7 @@ func BenchmarkGetVectorCopy(b *testing.B) {
 	}
 	ds := makeTestDataset(mem, dims, [][]float32{vec})
 	idx := NewHNSWIndex(ds)
-	_, err := idx.Add(0, 0)
+	_, err := idx.Add(context.Background(), 0, 0)
 	require.NoError(b, err)
 
 	b.ResetTimer()
@@ -199,7 +199,7 @@ func BenchmarkGetVectorUnsafe(b *testing.B) {
 	}
 	ds := makeTestDataset(mem, dims, [][]float32{vec})
 	idx := NewHNSWIndex(ds)
-	_, _ = idx.Add(0, 0)
+	_, _ = idx.Add(context.Background(), 0, 0)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -219,7 +219,7 @@ func BenchmarkGetVectorUnsafeHighDim(b *testing.B) {
 	}
 	ds := makeTestDataset(mem, dims, [][]float32{vec})
 	idx := NewHNSWIndex(ds)
-	_, _ = idx.Add(0, 0)
+	_, _ = idx.Add(context.Background(), 0, 0)
 
 	b.ResetTimer()
 	b.Run("Copy", func(b *testing.B) {

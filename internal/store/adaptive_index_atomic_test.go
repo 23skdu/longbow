@@ -26,7 +26,7 @@ func TestAdaptiveIndex_AsyncMigration(t *testing.T) {
 	// 2. Trigger Migration
 	// Add 9 vectors (Threshold is 10)
 	for i := 0; i < 9; i++ {
-		_, err := idx.AddByLocation(0, i)
+		_, err := idx.AddByLocation(context.Background(), 0, i)
 		assert.NoError(t, err)
 	}
 
@@ -35,7 +35,7 @@ func TestAdaptiveIndex_AsyncMigration(t *testing.T) {
 	// We want to verify that in the new world, it returns quickly (or at least subsequent writes do).
 
 	start := time.Now()
-	_, err := idx.AddByLocation(0, 9) // Triggers migration
+	_, err := idx.AddByLocation(context.Background(), 0, 9) // Triggers migration
 	assert.NoError(t, err)
 	duration := time.Since(start)
 
@@ -55,7 +55,7 @@ func TestAdaptiveIndex_AsyncMigration(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		for i := 10; i < 20; i++ {
-			_, err := idx.AddByLocation(0, i)
+			_, err := idx.AddByLocation(context.Background(), 0, i)
 			assert.NoError(t, err)
 			time.Sleep(1 * time.Millisecond)
 		}

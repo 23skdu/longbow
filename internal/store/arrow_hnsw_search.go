@@ -196,6 +196,11 @@ func (h *ArrowHNSW) Search(ctx context.Context, q any, k, ef int, filter *query.
 		metrics.HNSWPolymorphicThroughput.WithLabelValues(typeLabel).Add(totalBytes)
 	}()
 
+	// Fast-path for float32: bypass interface and devirtualize searchLayer
+	if qF32, ok := q.([]float32); ok && h.config.DataType == VectorTypeFloat32 && !h.config.SQ8Enabled && !h.config.PQEnabled && !h.config.BQEnabled {
+		return h.SearchFloat32(ctx, qF32, k, ef, filter)
+	}
+
 	// Resolve Distance Computer
 	computer := h.resolveHNSWComputer(data, searchCtx, q, false)
 
@@ -263,25 +268,8 @@ func (h *ArrowHNSW) Search(ctx context.Context, q any, k, ef int, filter *query.
 		metrics.HNSWRefineThroughput.WithLabelValues(typeLabel).Add(float64(len(results)))
 
 		// Create a high-precision computer for refinement (usually Float32)
-		// We use the same context but ignore SQ8/PQ/BQ settings
-		refineComputer := h.resolveHNSWComputer(data, searchCtx, q, false)
-		// If refineComputer is SQ8, we need to force it to Float32/Primary
-		// Actually resolveHNSWComputer uses h.config.SQ8Enabled.
-		// For refinement, we want to bypass quantized computers.
-
-		// TODO: Refactor resolveHNSWComputer to accept a 'forceFullPrecision' flag.
-		// For now, let's manually build a float32 computer if possible.
-		if _, isSQ8 := refineComputer.(*sq8Computer); isSQ8 {
-			if qF32, ok := q.([]float32); ok {
-				refineComputer = &float32Computer{
-					data:       data,
-					q:          qF32,
-					dims:       data.Dims,
-					paddedDims: data.GetPaddedDims(),
-					distFunc:   h.distFunc,
-				}
-			}
-		}
+		// We use the same context but bypass SQ8/PQ/LQ settings using forceFullPrecision=true
+		refineComputer := h.resolveHNSWComputer(data, searchCtx, q, true)
 
 		for i := range results {
 			if i%100 == 0 && ctx.Err() != nil {
@@ -698,4 +686,301 @@ func (h *ArrowHNSW) mustGetVectorFromData(data *GraphData, id uint32) any {
 	// If we reached here, the vector ID is invalid in the graph or data is missing.
 	// We return nil to allow callers to fallback or use a sentinel.
 	return nil
+}
+
+// SearchFloat32 is the devirtualized fast-path for float32 vectors.
+func (h *ArrowHNSW) SearchFloat32(ctx context.Context, q []float32, k, ef int, filter *query.Bitset) ([]SearchResult, error) {
+	backend := h.backend.Load()
+	if backend == nil || h.nodeCount.Load() == 0 {
+		return []SearchResult{}, nil
+	}
+	graph := backend
+
+	if k <= 0 {
+		return []SearchResult{}, nil
+	}
+
+	dims := int(h.dims.Load())
+	searchCtx := h.searchPool.Get().(*ArrowSearchContext)
+	defer h.searchPool.Put(searchCtx)
+	searchCtx.EnsureCapacity(dims)
+
+	// Metrics
+	metrics.HNSWSearchQueriesTotal.WithLabelValues(strconv.Itoa(dims)).Inc()
+	metrics.HnswSearchThroughputDims.WithLabelValues(strconv.Itoa(dims)).Inc()
+
+	entryPoint := h.entryPoint.Load()
+	maxLevel := int(h.maxLevel.Load())
+
+	// Select Distance Functions
+	distFunc := simd.EuclideanDistance
+	batchDistFunc := simd.EuclideanDistanceBatch
+	if h.metric == MetricDotProduct {
+		distFunc = func(a, b []float32) (float32, error) {
+			d, err := simd.DotProduct(a, b)
+			return -d, err
+		}
+		batchDistFunc = func(query []float32, vectors [][]float32, results []float32) error {
+			if err := simd.DotProductBatch(query, vectors, results); err != nil {
+				return err
+			}
+			for i := range results {
+				results[i] = -results[i]
+			}
+			return nil
+		}
+	} else if h.metric == MetricCosine {
+		distFunc = simd.CosineDistance
+		batchDistFunc = simd.CosineDistanceBatch
+	}
+
+	curr := entryPoint
+	for l := maxLevel; l > 0; l-- {
+		searchCtx.Reset()
+		next, err := h.searchLayerFloat32(ctx, q, curr, 1, l, searchCtx, graph, nil, distFunc, batchDistFunc)
+		if err != nil {
+			return nil, err
+		}
+		curr = next
+	}
+
+	searchCtx.Reset()
+	_, err := h.searchLayerFloat32(ctx, q, curr, ef, 0, searchCtx, graph, filter, distFunc, batchDistFunc)
+	if err != nil {
+		return nil, err
+	}
+
+	resultSet := searchCtx.resultSet
+	results := make([]SearchResult, 0, resultSet.Len())
+	for resultSet.Len() > 0 {
+		c, _ := resultSet.Pop()
+		results = append(results, SearchResult{ID: VectorID(c.ID), Score: c.Dist})
+	}
+
+	for i, j := 0, len(results)-1; i < j; i, j = i+1, j-1 {
+		results[i], results[j] = results[j], results[i]
+	}
+
+	if len(results) > k {
+		results = results[:k]
+	}
+
+	return results, nil
+}
+
+func (h *ArrowHNSW) searchLayerFloat32(goCtx context.Context, q []float32, entryPoint uint32, ef, layer int, ctx *ArrowSearchContext, data *GraphData, filter *query.Bitset, distFunc func([]float32, []float32) (float32, error), batchDistFunc func([]float32, [][]float32, []float32) error) (candidate uint32, err error) {
+	ctx.ResetVisited()
+	ctx.candidates.Clear()
+
+	useF16 := h.config.Float16Enabled
+	dims := data.Dims
+	paddedDims := data.PaddedDims
+	primaryVecs := data.Vectors
+
+	getVec := func(id uint32) []float32 {
+		cID := chunkID(id)
+		if int(cID) < len(primaryVecs) {
+			chunk := data.GetVectorsChunk(cID)
+			if chunk != nil {
+				start := int(chunkOffset(id)) * paddedDims
+				if start+dims <= len(chunk) {
+					return chunk[start : start+dims]
+				}
+			}
+		}
+		return nil
+	}
+
+	entryVec := getVec(entryPoint)
+	entryDist := float32(math.MaxFloat32)
+	if entryVec != nil {
+		d, _ := distFunc(q, entryVec)
+		entryDist = d
+	}
+
+	if ctx.candidates.cap < ef {
+		ctx.candidates.Grow(ef)
+	}
+	resultSet := ctx.resultSet
+	if resultSet.cap < ef {
+		resultSet = NewMaxHeap(ef)
+		ctx.resultSet = resultSet
+	}
+	resultSet.Clear()
+
+	ctx.candidates.Clear()
+	ctx.candidates.Push(Candidate{ID: entryPoint, Dist: entryDist})
+	ctx.Visit(entryPoint)
+
+	if !h.IsDeleted(entryPoint) {
+		resultSet.Push(Candidate{ID: entryPoint, Dist: entryDist})
+	}
+
+	closest := entryPoint
+	closestDist := entryDist
+	ops := 0
+
+	for ctx.candidates.Len() > 0 {
+		ops++
+		if (ops&0x3F == 0) && goCtx.Err() != nil {
+			return 0, goCtx.Err()
+		}
+
+		curr, ok := ctx.candidates.Pop()
+		if !ok {
+			break
+		}
+
+		if resultSet.Len() >= ef {
+			worst, ok := resultSet.Peek()
+			if ok && curr.Dist > worst.Dist {
+				break
+			}
+		}
+
+		if curr.Dist < closestDist {
+			closest = curr.ID
+			closestDist = curr.Dist
+		}
+
+		ctx.scratchIDs = ctx.scratchIDs[:0]
+		collected := false
+
+		if layer < len(data.PackedNeighbors) && data.PackedNeighbors[layer] != nil {
+			pn := data.PackedNeighbors[layer]
+			var neighborIDs []uint32
+			var found bool
+			if useF16 {
+				neighborIDs, _, found = pn.GetNeighborsF16(curr.ID)
+			} else {
+				neighborIDs, found = pn.GetNeighbors(curr.ID)
+			}
+			if found {
+				startLen := len(ctx.scratchIDs)
+				ctx.scratchIDs = ctx.visited.FilterVisitedInto(neighborIDs, ctx.scratchIDs)
+				for i := startLen; i < len(ctx.scratchIDs); i++ {
+					ctx.visitedList = append(ctx.visitedList, ctx.scratchIDs[i])
+				}
+				collected = true
+			}
+		}
+
+		if !collected {
+			var neighborsChunk []uint32
+			var count int
+			var verAddr *uint32
+			cID := chunkID(curr.ID)
+			cOff := chunkOffset(curr.ID)
+			versionsChunk := data.GetVersionsChunk(layer, cID)
+			if versionsChunk != nil {
+				countsChunk := data.GetCountsChunk(layer, cID)
+				neighborsChunk = data.GetNeighborsChunk(layer, cID)
+				if countsChunk != nil && neighborsChunk != nil {
+					count = int(atomic.LoadInt32(&countsChunk[cOff]))
+					if count > 0 {
+						verAddr = &versionsChunk[cOff]
+					}
+				}
+			}
+
+			if count == 0 {
+				disk := h.diskGraph.Load()
+				if disk != nil && int(curr.ID) < disk.Size() {
+					diskNeighbors := disk.GetNeighbors(layer, curr.ID, ctx.scratchNeighbors[:0])
+					if len(diskNeighbors) > 0 {
+						startLen := len(ctx.scratchIDs)
+						ctx.scratchIDs = ctx.visited.FilterVisitedInto(diskNeighbors, ctx.scratchIDs)
+						for i := startLen; i < len(ctx.scratchIDs); i++ {
+							ctx.visitedList = append(ctx.visitedList, ctx.scratchIDs[i])
+						}
+						collected = true
+					}
+				}
+			}
+
+			if verAddr != nil && count > 0 {
+				for retries := 0; retries <= 1000; retries++ {
+					ver := atomic.LoadUint32(verAddr)
+					if ver%2 != 0 {
+						runtime.Gosched()
+						continue
+					}
+					if count > MaxNeighbors {
+						count = MaxNeighbors
+					}
+					baseIdx := int(cOff) * MaxNeighbors
+					var localNeighbors [MaxNeighbors]uint32
+					for i := 0; i < count; i++ {
+						localNeighbors[i] = atomic.LoadUint32(&neighborsChunk[baseIdx+i])
+					}
+					if atomic.LoadUint32(verAddr) == ver {
+						startLen := len(ctx.scratchIDs)
+						ctx.scratchIDs = ctx.visited.FilterVisitedInto(localNeighbors[:count], ctx.scratchIDs)
+						for i := startLen; i < len(ctx.scratchIDs); i++ {
+							ctx.visitedList = append(ctx.visitedList, ctx.scratchIDs[i])
+						}
+						collected = true
+						break
+					}
+					runtime.Gosched()
+				}
+			}
+		}
+
+		if !collected || len(ctx.scratchIDs) == 0 {
+			continue
+		}
+
+		batchCount := len(ctx.scratchIDs)
+		if cap(ctx.scratchDists) < batchCount {
+			ctx.scratchDists = make([]float32, batchCount*2)
+		}
+		dists := ctx.scratchDists[:batchCount]
+
+		if batchCount <= 4 {
+			for i, nid := range ctx.scratchIDs {
+				v := getVec(nid)
+				if v != nil {
+					dists[i], _ = distFunc(q, v)
+				} else {
+					dists[i] = math.MaxFloat32
+				}
+			}
+		} else {
+			if cap(ctx.scratchVecs) < batchCount {
+				ctx.scratchVecs = make([][]float32, batchCount*2)
+			}
+			vecs := ctx.scratchVecs[:batchCount]
+			for i, nid := range ctx.scratchIDs {
+				vecs[i] = getVec(nid)
+			}
+			_ = batchDistFunc(q, vecs, dists)
+		}
+
+		maxNodes := int(h.nodeCount.Load())
+		for i, nid := range ctx.scratchIDs {
+			if int(nid) >= maxNodes {
+				continue
+			}
+			dist := dists[i]
+			if filter != nil && !filter.Contains(int(nid)) {
+				continue
+			}
+			if resultSet.Len() < ef {
+				ctx.candidates.Push(Candidate{ID: nid, Dist: dist})
+				if !h.IsDeleted(nid) {
+					resultSet.Push(Candidate{ID: nid, Dist: dist})
+				}
+			} else {
+				worst, _ := resultSet.Peek()
+				if dist < worst.Dist {
+					ctx.candidates.Push(Candidate{ID: nid, Dist: dist})
+					if !h.IsDeleted(nid) {
+						resultSet.ReplaceTop(Candidate{ID: nid, Dist: dist})
+					}
+				}
+			}
+		}
+	}
+	return closest, nil
 }

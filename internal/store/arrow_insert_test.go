@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"sync/atomic"
 	"testing"
 
@@ -59,7 +60,7 @@ func TestInsert_SingleNode(t *testing.T) {
 	index := NewArrowHNSW(dataset, config, nil)
 
 	// Insert ID 0 -> Batch 0, Row 0
-	id, err := index.AddByLocation(0, 0)
+	id, err := index.AddByLocation(context.Background(), 0, 0)
 	if err != nil {
 		t.Fatalf("AddByLocation failed: %v", err)
 	}
@@ -104,7 +105,7 @@ func TestInsert_MultipleNodes(t *testing.T) {
 
 	// Insert 10 vectors
 	for i := 0; i < 10; i++ {
-		_, err := index.AddByLocation(0, i)
+		_, err := index.AddByLocation(context.Background(), 0, i)
 		if err != nil {
 			t.Fatalf("AddByLocation(%d) failed: %v", i, err)
 		}
@@ -300,7 +301,7 @@ func BenchmarkInsert(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		_, err := index.AddByLocation(0, i)
+		_, err := index.AddByLocation(context.Background(), 0, i)
 		if err != nil {
 			b.Fatalf("AddByLocation failed: %v", err)
 		}

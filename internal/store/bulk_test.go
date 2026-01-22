@@ -84,7 +84,7 @@ func TestBulkDeferredConnections(t *testing.T) {
 	// Need to populate h.vectorColIdx or let it discover?
 	// AddBatch discovers if < 0. defaulted in NewArrowHNSW to -1.
 
-	ids, err := idx.AddBatch([]arrow.RecordBatch{rec}, rowIdxs, batchIdxs)
+	ids, err := idx.AddBatch(context.Background(), []arrow.RecordBatch{rec}, rowIdxs, batchIdxs)
 	require.NoError(t, err)
 	require.Len(t, ids, numVecs)
 

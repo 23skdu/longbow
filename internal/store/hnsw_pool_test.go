@@ -1,7 +1,7 @@
 package store
 
-
 import (
+	"context"
 	"sync"
 	"testing"
 
@@ -29,7 +29,7 @@ func TestHNSW_ScratchPoolBasic(t *testing.T) {
 
 	// Add vectors
 	for i := 0; i < 3; i++ {
-		_, err := idx.Add(0, i)
+		_, err := idx.Add(context.Background(), 0, i)
 		require.NoError(t, err)
 	}
 
@@ -65,7 +65,7 @@ func TestHNSW_ScratchPoolConcurrent(t *testing.T) {
 	idx := NewHNSWIndex(ds)
 
 	for i := 0; i < numVectors; i++ {
-		_, err := idx.Add(0, i)
+		_, err := idx.Add(context.Background(), 0, i)
 		require.NoError(t, err)
 	}
 
@@ -121,7 +121,7 @@ func TestHNSW_ScratchPoolDifferentDimensions(t *testing.T) {
 			idx := NewHNSWIndex(ds)
 
 			for i := 0; i < 5; i++ {
-				_, err := idx.Add(0, i)
+				_, err := idx.Add(context.Background(), 0, i)
 				require.NoError(t, err)
 			}
 
@@ -154,7 +154,7 @@ func BenchmarkHNSW_ScratchPoolAllocs(b *testing.B) {
 	idx := NewHNSWIndex(ds)
 
 	for i := 0; i < numVectors; i++ {
-		_, _ = idx.Add(0, i)
+		_, _ = idx.Add(context.Background(), 0, i)
 	}
 
 	b.ResetTimer()
@@ -188,7 +188,7 @@ func BenchmarkHNSW_ScratchPoolAllocsParallel(b *testing.B) {
 	idx := NewHNSWIndex(ds)
 
 	for i := 0; i < numVectors; i++ {
-		_, _ = idx.Add(0, i)
+		_, _ = idx.Add(context.Background(), 0, i)
 	}
 
 	b.ResetTimer()

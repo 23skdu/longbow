@@ -77,7 +77,7 @@ func TestHNSWZeroCopyAccess(t *testing.T) {
 
 	// Index vectors
 	for i := 0; i < len(vectors); i++ {
-		_, err := hnswIdx.Add(0, i)
+		_, err := hnswIdx.Add(context.Background(), 0, i)
 		require.NoError(t, err)
 	}
 

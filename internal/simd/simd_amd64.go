@@ -214,8 +214,9 @@ func euclideanBatchAVX2(query []float32, vectors [][]float32, results []float32)
 	}
 
 	for idx, v := range vectors {
-		if len(query) != len(v) {
-			return errors.New("simd: vector length mismatch")
+		if v == nil || len(query) != len(v) {
+			results[idx] = math.MaxFloat32
+			continue
 		}
 
 		var sum float32
@@ -250,8 +251,9 @@ func euclideanBatchAVX512(query []float32, vectors [][]float32, results []float3
 	qLen := len(query)
 
 	for idx, v := range vectors {
-		if len(v) != qLen {
-			return errors.New("simd: vector length mismatch")
+		if v == nil || len(v) != qLen {
+			results[idx] = math.MaxFloat32
+			continue
 		}
 		if len(v) > 0 {
 			sum := l2SquaredAVX512Kernel(queryPtr, unsafe.Pointer(&v[0]), qLen)
@@ -259,6 +261,81 @@ func euclideanBatchAVX512(query []float32, vectors [][]float32, results []float3
 		} else {
 			results[idx] = 0
 		}
+	}
+	return nil
+}
+
+func euclideanSQ8BatchAVX2(query []byte, vectors [][]byte, results []float32) error {
+	if len(query) == 0 {
+		return nil
+	}
+	qPtr := unsafe.Pointer(&query[0])
+	qLen := len(query)
+	for i, v := range vectors {
+		if v == nil {
+			continue
+		}
+		if len(v) != qLen {
+			return errors.New("simd: vector length mismatch")
+		}
+		results[i] = float32(euclideanSQ8AVX2Kernel(qPtr, unsafe.Pointer(&v[0]), qLen))
+	}
+	return nil
+}
+
+func euclideanSQ8BatchAVX512(query []byte, vectors [][]byte, results []float32) error {
+	if !features.HasAVX512 {
+		return euclideanSQ8BatchAVX2(query, vectors, results)
+	}
+	if len(query) == 0 {
+		return nil
+	}
+	qPtr := unsafe.Pointer(&query[0])
+	qLen := len(query)
+	for i, v := range vectors {
+		if v == nil {
+			continue
+		}
+		if len(v) != qLen {
+			return errors.New("simd: vector length mismatch")
+		}
+		results[i] = float32(euclideanSQ8AVX512Kernel(qPtr, unsafe.Pointer(&v[0]), qLen))
+	}
+	return nil
+}
+
+func euclideanF16BatchAVX2(query []float16.Num, vectors [][]float16.Num, results []float32) error {
+	if len(query) == 0 {
+		return nil
+	}
+	qPtr := unsafe.Pointer(&query[0])
+	qLen := len(query)
+	for i, v := range vectors {
+		if v == nil {
+			continue
+		}
+		if len(v) != qLen {
+			return errors.New("simd: vector length mismatch")
+		}
+		results[i] = euclideanF16AVX2Kernel(qPtr, unsafe.Pointer(&v[0]), qLen)
+	}
+	return nil
+}
+
+func euclideanF16BatchAVX512(query []float16.Num, vectors [][]float16.Num, results []float32) error {
+	if len(query) == 0 {
+		return nil
+	}
+	qPtr := unsafe.Pointer(&query[0])
+	qLen := len(query)
+	for i, v := range vectors {
+		if v == nil {
+			continue
+		}
+		if len(v) != qLen {
+			return errors.New("simd: vector length mismatch")
+		}
+		results[i] = euclideanF16AVX512Kernel(qPtr, unsafe.Pointer(&v[0]), qLen)
 	}
 	return nil
 }

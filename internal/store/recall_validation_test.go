@@ -40,6 +40,12 @@ func TestRecallValidation(t *testing.T) {
 			KeepPrunedConnections:   true,
 			InitialCapacity:         10000,
 		}},
+		{"Medium_10K_SQ8_Recall@10", 10000, 384, 100, 10, 0.950, &store.ArrowHNSWConfig{
+			M: 48, MMax: 96, MMax0: 96, EfConstruction: 400,
+			SQ8Enabled:       true,
+			RefinementFactor: 2.0,
+			InitialCapacity:  10000,
+		}},
 		{"Medium_50K_Recall@10", 50000, 384, 100, 10, 0.920, &store.ArrowHNSWConfig{
 			M: 64, MMax: 128, MMax0: 128, EfConstruction: 600,
 			SelectionHeuristicLimit: 0,
@@ -202,7 +208,7 @@ func measureRecall(t *testing.T, numVectors, dim, numQueries, k int, cfg *store.
 	// Sequential Ingestion (Parallel insertion is hitting races/fragmentation)
 	vectorIDs := make([]uint32, numVectors)
 	for j := 0; j < numVectors; j++ {
-		vecID, err := hnsw2Index.AddByLocation(0, j)
+		vecID, err := hnsw2Index.AddByLocation(context.Background(), 0, j)
 		if err != nil {
 			t.Fatalf("Failed to add vector %d: %v", j, err)
 		}

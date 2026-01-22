@@ -2,7 +2,6 @@ package store
 
 import (
 	"errors"
-	"hash/fnv"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -70,20 +69,12 @@ func (sm *ShardedRWMutex) NumShards() int {
 	return sm.numShards
 }
 
-// ShardFor returns the shard index for a given key using FNV-1a hash.
+// ShardFor returns the shard index for a given key using an inline FNV-1a hash.
 func (sm *ShardedRWMutex) ShardFor(key uint64) int {
-	h := fnv.New64a()
-	b := make([]byte, 8)
-	b[0] = byte(key)
-	b[1] = byte(key >> 8)
-	b[2] = byte(key >> 16)
-	b[3] = byte(key >> 24)
-	b[4] = byte(key >> 32)
-	b[5] = byte(key >> 40)
-	b[6] = byte(key >> 48)
-	b[7] = byte(key >> 56)
-	h.Write(b)
-	return int(h.Sum64() % uint64(sm.numShards)) //nolint:gosec // G115 - shard index guaranteed to fit in int
+	const prime64 = 1099511628211
+	hash := uint64(14695981039346656037) ^ key
+	hash *= prime64
+	return int(hash % uint64(sm.numShards))
 }
 
 // Lock acquires a write lock for the shard associated with the given key.

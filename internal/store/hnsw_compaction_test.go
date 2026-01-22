@@ -55,7 +55,7 @@ func TestHNSWCompaction_Functional(t *testing.T) {
 
 	// 2. Insert all nodes
 	for i := 0; i < numNodes; i++ {
-		_, err := h.AddByLocation(0, i)
+		_, err := h.AddByLocation(context.Background(), 0, i)
 		require.NoError(t, err)
 	}
 
@@ -143,7 +143,7 @@ func TestHNSWCompaction_NoDeletions(t *testing.T) {
 	defer h.Close()
 
 	for i := 0; i < numNodes; i++ {
-		_, _ = h.AddByLocation(0, i)
+		_, _ = h.AddByLocation(context.Background(), 0, i)
 	}
 
 	stats, err := h.CompactGraph(context.Background())

@@ -94,7 +94,7 @@ func TestHNSW_BulkInsert(t *testing.T) {
 		batchIdxs[i] = 0
 	}
 
-	ids, err := idx.AddBatch([]arrow.RecordBatch{batch}, rowIdxs, batchIdxs)
+	ids, err := idx.AddBatch(context.Background(), []arrow.RecordBatch{batch}, rowIdxs, batchIdxs)
 	require.NoError(t, err)
 	require.Len(t, ids, numVectors)
 

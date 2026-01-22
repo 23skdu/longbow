@@ -86,7 +86,7 @@ func TestArrowHNSW_AddBatch_Parallel_SQ8(t *testing.T) {
 	}
 
 	// 4. Run AddBatch (this will be parallel now)
-	ids, err := idx.AddBatch(recs, rowIdxs, batchIdxs)
+	ids, err := idx.AddBatch(context.Background(), recs, rowIdxs, batchIdxs)
 	require.NoError(t, err)
 	assert.Equal(t, numVectors, len(ids))
 	assert.Equal(t, numVectors, idx.Size())

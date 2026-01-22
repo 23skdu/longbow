@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"math/rand"
 	"testing"
 	"time"
@@ -49,7 +50,7 @@ func TestSQ8AutoTuning(t *testing.T) {
 	ds.Records = append(ds.Records, rec1)
 	rec1.Retain()
 
-	ids1, err := idx.AddBatch([]arrow.RecordBatch{rec1}, makeRangeHelper(n1), make([]int, n1))
+	ids1, err := idx.AddBatch(context.Background(), []arrow.RecordBatch{rec1}, makeRangeHelper(n1), make([]int, n1))
 	require.NoError(t, err)
 
 	// Verify Trained (Threshold 10 < 50)
@@ -100,7 +101,7 @@ func TestSQ8AutoTuning(t *testing.T) {
 	for k := range batchIdxs {
 		batchIdxs[k] = 1
 	}
-	ids2, err := idx.AddBatch([]arrow.RecordBatch{rec2}, makeRangeHelper(n2), batchIdxs)
+	ids2, err := idx.AddBatch(context.Background(), []arrow.RecordBatch{rec2}, makeRangeHelper(n2), batchIdxs)
 	require.NoError(t, err)
 
 	// Verify Trained

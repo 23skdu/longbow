@@ -54,7 +54,7 @@ func TestObservability_GranularMetrics(t *testing.T) {
 	metrics.HNSWInsertLatencyByType.Reset()
 	metrics.HNSWInsertLatencyByDim.Reset()
 
-	_, err := idx.AddByLocation(0, 0)
+	_, err := idx.AddByLocation(context.Background(), 0, 0)
 	require.NoError(t, err)
 
 	// Check histograms recorded 1 event
@@ -123,9 +123,9 @@ func TestHNSW_ObservabilityMetrics(t *testing.T) {
 	idx := NewArrowHNSW(ds, config, NewChunkedLocationStore())
 
 	// Add vectors
-	_, err := idx.AddByLocation(0, 0)
+	_, err := idx.AddByLocation(context.Background(), 0, 0)
 	require.NoError(t, err)
-	_, err = idx.AddByLocation(0, 1)
+	_, err = idx.AddByLocation(context.Background(), 0, 1)
 	require.NoError(t, err)
 
 	// Reset metrics before search

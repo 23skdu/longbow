@@ -199,7 +199,7 @@ func (hs *HybridSearcher) Add(id VectorID, vector []float32, text string) {
 	hs.hnsw.dataset.dataMu.Unlock()
 
 	// 3. Add to HNSW index
-	_, _ = hs.hnsw.Add(batchIdx, 0)
+	_, _ = hs.hnsw.Add(context.Background(), batchIdx, 0)
 
 	// 4. Add to BM25/Inverted index
 	addToIndex(hs.bm25, id, text)

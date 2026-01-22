@@ -112,7 +112,7 @@ func TestConcurrentSearchAndInsert(t *testing.T) {
 				// AddByLocation automatically populates location store
 				// BatchIdx 0, RowIdx = idx
 				// Assuming idx < numVectors
-				if _, err := index.AddByLocation(0, idx); err != nil {
+				if _, err := index.AddByLocation(context.Background(), 0, idx); err != nil {
 					t.Errorf("Insert failed: %v", err)
 				}
 				time.Sleep(time.Microsecond * 10)

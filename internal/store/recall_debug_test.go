@@ -62,7 +62,7 @@ func TestRecallDebug(t *testing.T) {
 
 	// Insert vectors into hnsw2
 	for i := 0; i < numVectors; i++ {
-		if _, err := hnsw2Index.AddByLocation(0, i); err != nil {
+		if _, err := hnsw2Index.AddByLocation(context.Background(), 0, i); err != nil {
 			t.Fatalf("Failed to insert vector %d: %v", i, err)
 		}
 	}

@@ -26,7 +26,11 @@ var _ VectorIndex = (*ArrowHNSW)(nil)
 
 // AddByLocation implements VectorIndex.
 // It assigns a new VectorID, records the location, and inserts into the graph.
-func (h *ArrowHNSW) AddByLocation(batchIdx, rowIdx int) (uint32, error) {
+func (h *ArrowHNSW) AddByLocation(ctx context.Context, batchIdx, rowIdx int) (uint32, error) {
+	// Check context
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
 	// 1. Generate new VectorID AND Store location
 	// ChunkedLocationStore.Append handles atomic ID generation and storage
 	vecID := h.locationStore.Append(Location{BatchIdx: batchIdx, RowIdx: rowIdx})
@@ -52,8 +56,8 @@ func (h *ArrowHNSW) generateLevel() int {
 }
 
 // AddByRecord implements VectorIndex.
-func (h *ArrowHNSW) AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32, error) {
-	return h.AddByLocation(batchIdx, rowIdx)
+func (h *ArrowHNSW) AddByRecord(ctx context.Context, rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32, error) {
+	return h.AddByLocation(ctx, batchIdx, rowIdx)
 }
 
 // NewArrowHNSW creates a new HNSW index backed by Arrow records.
@@ -198,7 +202,10 @@ func NewArrowHNSW(dataset *Dataset, config ArrowHNSWConfig, locStore *ChunkedLoc
 }
 
 // AddBatch implements VectorIndex.
-func (h *ArrowHNSW) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []int) ([]uint32, error) {
+func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowIdxs, batchIdxs []int) ([]uint32, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	n := len(rowIdxs)
 	if n == 0 {
 		return nil, nil
@@ -366,7 +373,7 @@ func (h *ArrowHNSW) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []int)
 				// Calculate chunk startID
 				chunkStartID := uint32(startID) + uint32(chunkStart)
 
-				if err := h.AddBatchBulk(context.Background(), chunkStartID, chunkN, chunkVecs); err != nil {
+				if err := h.AddBatchBulk(ctx, chunkStartID, chunkN, chunkVecs); err != nil {
 					return nil, err
 				}
 			}
@@ -448,7 +455,7 @@ func (h *ArrowHNSW) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []int)
 
 	// Parallel insertion for non-SQ8 indices
 	// We bypass AddByLocation as we already have ID and Capacity
-	g, ctx := errgroup.WithContext(context.Background())
+	g, ctx := errgroup.WithContext(ctx)
 	g.SetLimit(runtime.GOMAXPROCS(0))
 
 	for i := 0; i < n; i++ {
@@ -843,14 +850,25 @@ func (h *ArrowHNSW) EstimateMemory() int64 {
 
 // Close implements VectorIndex.
 func (h *ArrowHNSW) Close() error {
-	// Release GraphData
+	// Release GraphData and SlabArenas
 	var firstErr error
-	if data := h.data.Swap(nil); data != nil {
+	data := h.data.Swap(nil)
+	backend := h.backend.Swap(nil)
+
+	if data != nil {
+		if data.SlabArena != nil {
+			data.SlabArena.Free()
+		}
 		if err := data.Close(); err != nil {
 			firstErr = err
 		}
 	}
-	if backend := h.backend.Swap(nil); backend != nil {
+
+	if backend != nil && backend != data {
+		// Only free backend arena if it's different from data's arena
+		if backend.SlabArena != nil && (data == nil || backend.SlabArena != data.SlabArena) {
+			backend.SlabArena.Free()
+		}
 		if err := backend.Close(); err != nil && firstErr == nil {
 			firstErr = err
 		}

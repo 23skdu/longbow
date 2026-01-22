@@ -80,7 +80,7 @@ func TestArrowHNSW_BQ_Persistence(t *testing.T) {
 	arrowIndex := NewArrowHNSW(ds, bqConfig, nil)
 
 	// Re-add data to this new index
-	_, err = arrowIndex.AddByRecord(rec, 0, 0)
+	_, err = arrowIndex.AddByRecord(context.Background(), rec, 0, 0)
 	require.NoError(t, err)
 
 	// Replace in AutoShardingIndex via reflection or if accessible?

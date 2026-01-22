@@ -60,7 +60,7 @@ func (h *DualIndexHarness) AddVector(id uint32, vec []float32) {
 	batchIdx := len(h.dataset.Records) - 1
 
 	// Insert into candidate
-	if _, err := h.candidate.AddByLocation(batchIdx, 0); err != nil {
+	if _, err := h.candidate.AddByLocation(context.Background(), batchIdx, 0); err != nil {
 		fmt.Printf("PANIC ERROR: %v\n", err)
 		panic(err.Error())
 	}

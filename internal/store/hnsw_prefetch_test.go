@@ -82,7 +82,7 @@ func TestSearchVectorsCorrectness(t *testing.T) {
 
 	// Manually index vectors
 	for i := 0; i < len(vectors); i++ {
-		_, _ = hnswIdx.Add(0, i) // Batch 0, Row i
+		_, err := hnswIdx.Add(context.Background(), 0, i) // Batch 0, Row i
 		require.NoError(t, err)
 	}
 
@@ -150,7 +150,7 @@ func BenchmarkSearchVectorsBatched(b *testing.B) {
 	ds.dataMu.Unlock()
 
 	for i := 0; i < n; i++ {
-		_, _ = idx.Add(0, i)
+		_, _ = idx.Add(context.Background(), 0, i)
 	}
 
 	query := make([]float32, 128)
@@ -204,7 +204,7 @@ func BenchmarkSearchVectorsWithBitmapBatched(b *testing.B) {
 	ds.dataMu.Unlock()
 
 	for i := 0; i < n; i++ {
-		_, _ = idx.Add(0, i)
+		_, _ = idx.Add(context.Background(), 0, i)
 	}
 
 	filter := qry.NewBitset()

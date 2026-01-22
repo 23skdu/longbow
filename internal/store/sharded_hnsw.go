@@ -185,28 +185,28 @@ func (s *ShardedHNSW) GetShardForID(id VectorID) int {
 }
 
 // AddByLocation implements VectorIndex.
-func (s *ShardedHNSW) AddByLocation(batchIdx, rowIdx int) (uint32, error) {
+func (s *ShardedHNSW) AddByLocation(ctx context.Context, batchIdx, rowIdx int) (uint32, error) {
 	if s.dataset == nil {
 		return 0, fmt.Errorf("no dataset")
 	}
 	s.dataset.dataMu.RLock()
 	defer s.dataset.dataMu.RUnlock()
 
-	return s.AddByLocationUnsafe(batchIdx, rowIdx)
+	return s.AddByLocationUnsafe(ctx, batchIdx, rowIdx)
 }
 
 // AddByLocationUnsafe adds a vector from the dataset without taking dataset.dataMu.
-func (s *ShardedHNSW) AddByLocationUnsafe(batchIdx, rowIdx int) (uint32, error) {
+func (s *ShardedHNSW) AddByLocationUnsafe(ctx context.Context, batchIdx, rowIdx int) (uint32, error) {
 	if batchIdx >= len(s.dataset.Records) {
 		return 0, fmt.Errorf("invalid batch idx")
 	}
 	rec := s.dataset.Records[batchIdx]
-	return s.AddByRecord(rec, rowIdx, batchIdx)
+	return s.AddByRecord(ctx, rec, rowIdx, batchIdx)
 }
 
 // AddSafe alias.
-func (s *ShardedHNSW) AddSafe(rec arrow.RecordBatch, rowIdx, batchIdx int) (VectorID, error) {
-	id, err := s.AddByRecord(rec, rowIdx, batchIdx)
+func (s *ShardedHNSW) AddSafe(ctx context.Context, rec arrow.RecordBatch, rowIdx, batchIdx int) (VectorID, error) {
+	id, err := s.AddByRecord(ctx, rec, rowIdx, batchIdx)
 	if err != nil {
 		return 0, err
 	}
@@ -214,7 +214,7 @@ func (s *ShardedHNSW) AddSafe(rec arrow.RecordBatch, rowIdx, batchIdx int) (Vect
 }
 
 // AddBatch implements VectorIndex.
-func (s *ShardedHNSW) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []int) ([]uint32, error) {
+func (s *ShardedHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowIdxs, batchIdxs []int) ([]uint32, error) {
 	if len(recs) == 0 {
 		return nil, nil
 	}
@@ -222,7 +222,12 @@ func (s *ShardedHNSW) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []in
 	// Delegating to simple loop for now to ensure correctness with sharding.
 	ids := make([]uint32, len(recs))
 	for i := range recs {
-		id, err := s.AddByRecord(recs[i], rowIdxs[i], batchIdxs[i])
+		if i%100 == 0 {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+		}
+		id, err := s.AddByRecord(ctx, recs[i], rowIdxs[i], batchIdxs[i])
 		if err != nil {
 			return nil, err
 		}
@@ -232,7 +237,7 @@ func (s *ShardedHNSW) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []in
 }
 
 // AddByRecord implements VectorIndex.
-func (s *ShardedHNSW) AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32, error) {
+func (s *ShardedHNSW) AddByRecord(ctx context.Context, rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32, error) {
 	// Extract vector
 	var vecCol arrow.Array
 	for i, field := range rec.Schema().Fields() {

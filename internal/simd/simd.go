@@ -31,6 +31,7 @@ type (
 	distanceFunc         func(a, b []float32) (float32, error)
 	distanceBatchFunc    func(query []float32, vectors [][]float32, results []float32) error
 	distanceSQ8BatchFunc func(query []byte, vectors [][]byte, results []float32) error
+	distanceF16BatchFunc func(query []float16.Num, vectors [][]float16.Num, results []float32) error
 	adcDistanceBatchFunc func(table []float32, flatCodes []byte, m int, results []float32) error
 
 	distanceF16Func func(a, b []float16.Num) (float32, error)
@@ -84,6 +85,7 @@ var (
 	adcDistanceBatchImpl               adcDistanceBatchFunc
 	euclideanDistanceVerticalBatchImpl distanceBatchFunc
 	euclideanDistanceSQ8BatchImpl      distanceSQ8BatchFunc
+	euclideanDistanceF16BatchImpl      distanceF16BatchFunc
 
 	// Bitwise operations
 	andBytesImpl func(dst, src []byte)
@@ -177,7 +179,8 @@ func initializeDispatch() {
 		matchFloat32Impl = matchFloat32AVX512
 		adcDistanceBatchImpl = adcBatchAVX512
 		euclideanDistanceVerticalBatchImpl = euclideanVerticalBatchAVX512
-		euclideanDistanceSQ8BatchImpl = euclideanSQ8BatchGeneric // Fallback to generic for now
+		euclideanDistanceSQ8BatchImpl = euclideanSQ8BatchAVX512
+		euclideanDistanceF16BatchImpl = euclideanF16BatchAVX512
 		andBytesImpl = andBytesGeneric
 		euclideanDistanceF16Impl = euclideanF16AVX512
 		cosineDistanceF16Impl = cosineF16AVX512
@@ -206,7 +209,8 @@ func initializeDispatch() {
 		matchFloat32Impl = matchFloat32AVX2
 		adcDistanceBatchImpl = adcBatchAVX2
 		euclideanDistanceVerticalBatchImpl = euclideanVerticalBatchAVX2
-		euclideanDistanceSQ8BatchImpl = euclideanSQ8BatchGeneric // Fallback to generic for now
+		euclideanDistanceSQ8BatchImpl = euclideanSQ8BatchAVX2
+		euclideanDistanceF16BatchImpl = euclideanF16BatchAVX2
 		andBytesImpl = andBytesGeneric
 		euclideanDistanceF16Impl = euclideanF16AVX2
 		cosineDistanceF16Impl = cosineF16AVX2
@@ -236,6 +240,7 @@ func initializeDispatch() {
 		adcDistanceBatchImpl = adcBatchNEON
 		euclideanDistanceVerticalBatchImpl = euclideanVerticalBatchNEON
 		euclideanDistanceSQ8BatchImpl = euclideanSQ8BatchGeneric // Fallback to generic for now
+		euclideanDistanceF16BatchImpl = euclideanF16BatchGeneric
 		andBytesImpl = andBytesGeneric
 		// F16 Kernels
 		euclideanDistanceF16Impl = euclideanF16NEON
@@ -266,6 +271,7 @@ func initializeDispatch() {
 		adcDistanceBatchImpl = adcBatchGeneric
 		euclideanDistanceVerticalBatchImpl = euclideanBatchGeneric
 		euclideanDistanceSQ8BatchImpl = euclideanSQ8BatchGeneric
+		euclideanDistanceF16BatchImpl = euclideanF16BatchGeneric
 		andBytesImpl = andBytesGeneric
 		euclideanDistanceF16Impl = euclideanF16Unrolled4x
 		cosineDistanceF16Impl = cosineF16Unrolled4x
@@ -336,6 +342,17 @@ func GetImplementation() string {
 
 // EuclideanDistance calculates the Euclidean distance between two vectors.
 // Uses pre-selected implementation via function pointer (no switch overhead).
+// EuclideanDistanceF16Batch computes Euclidean distances between one query and multiple Float16 vectors.
+func EuclideanDistanceF16Batch(query []float16.Num, vectors [][]float16.Num, results []float32) error {
+	if len(vectors) != len(results) {
+		return errors.New("simd: vectors and results length mismatch")
+	}
+	if len(vectors) == 0 {
+		return nil
+	}
+	return euclideanDistanceF16BatchImpl(query, vectors, results)
+}
+
 func EuclideanDistance(a, b []float32) (float32, error) {
 	if len(a) != len(b) {
 		return 0, errors.New("simd: vector length mismatch")
@@ -515,12 +532,7 @@ func DotProductComplex128(a, b []complex128) (float32, error) {
 	if len(a) == 0 {
 		return 0, nil
 	}
-	// Missing dotComplex128Unrolled implementation, using simple loop for now
-	var dot complex128
-	for i := range a {
-		dot += a[i] * b[i]
-	}
-	return float32(real(dot)), nil
+	return dotComplex128Unrolled(a, b)
 }
 
 // ToFloat32 converts a float64 slice to a float32 slice (Allocates).
@@ -620,6 +632,29 @@ func EuclideanDistanceBatch(query []float32, vectors [][]float32, results []floa
 	if len(vectors) == 0 {
 		return nil
 	}
+	dims := len(query)
+	if dims == 384 {
+		for i, v := range vectors {
+			if v == nil || len(v) != 384 {
+				results[i] = math.MaxFloat32
+				continue
+			}
+			d, _ := euclideanDistance384Impl(query, v)
+			results[i] = d
+		}
+		return nil
+	}
+	if dims == 128 {
+		for i, v := range vectors {
+			if v == nil || len(v) != 128 {
+				results[i] = math.MaxFloat32
+				continue
+			}
+			d, _ := euclideanDistance128Impl(query, v)
+			results[i] = d
+		}
+		return nil
+	}
 	euclideanDistanceBatchImpl(query, vectors, results)
 	return nil
 }
@@ -651,6 +686,9 @@ func EuclideanDistanceSQ8Batch(query []byte, vectors [][]byte, results []float32
 // euclideanSQ8BatchGeneric is the fallback implementation
 func euclideanSQ8BatchGeneric(query []byte, vectors [][]byte, results []float32) error {
 	for i, v := range vectors {
+		if v == nil {
+			continue
+		}
 		d, err := EuclideanSQ8Generic(query, v)
 		if err != nil {
 			return err
@@ -663,6 +701,9 @@ func euclideanSQ8BatchGeneric(query []byte, vectors [][]byte, results []float32)
 // euclideanBatchGeneric is the fallback implementation
 func euclideanBatchGeneric(query []float32, vectors [][]float32, results []float32) error {
 	for i, v := range vectors {
+		if v == nil {
+			continue
+		}
 		d, err := euclideanGeneric(query, v)
 		if err != nil {
 			return err
@@ -674,6 +715,9 @@ func euclideanBatchGeneric(query []float32, vectors [][]float32, results []float
 
 func dotBatchGeneric(query []float32, vectors [][]float32, results []float32) error {
 	for i, v := range vectors {
+		if v == nil {
+			continue
+		}
 		d, err := DotProduct(query, v)
 		if err != nil {
 			return err
@@ -685,6 +729,9 @@ func dotBatchGeneric(query []float32, vectors [][]float32, results []float32) er
 
 func cosineBatchGeneric(query []float32, vectors [][]float32, results []float32) error {
 	for i, v := range vectors {
+		if v == nil {
+			continue
+		}
 		d, err := CosineDistance(query, v)
 		if err != nil {
 			return err

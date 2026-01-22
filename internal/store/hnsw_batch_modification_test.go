@@ -47,7 +47,7 @@ func TestArrowHNSW_AddBatch_Sequential(t *testing.T) {
 			batchIdxs[i] = b
 		}
 
-		ids, err := idx.AddBatch([]arrow.RecordBatch{rec}, rowIdxs, batchIdxs)
+		ids, err := idx.AddBatch(context.Background(), []arrow.RecordBatch{rec}, rowIdxs, batchIdxs)
 		require.NoError(t, err)
 		require.Len(t, ids, batchSize)
 		rec.Release()
@@ -119,7 +119,7 @@ func TestArrowHNSW_AddBatch_Concurrent(t *testing.T) {
 					batchIdxs[i] = currentBatchIdx
 				}
 
-				ids, err := idx.AddBatch([]arrow.RecordBatch{rec}, rowIdxs, batchIdxs)
+				ids, err := idx.AddBatch(context.Background(), []arrow.RecordBatch{rec}, rowIdxs, batchIdxs)
 				if err != nil {
 					t.Errorf("Worker %d failed: %v", workerID, err)
 					rec.Release()

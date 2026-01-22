@@ -260,7 +260,8 @@ func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
 						adaptive.SetEfConstruction(targetEf)
 					}
 
-					docIDs, addErr = idx.AddBatch(recs, rowIdxs, batchIdxs)
+					// Propagate store shutdown context
+					docIDs, addErr = idx.AddBatch(s.ctx, recs, rowIdxs, batchIdxs)
 					if addErr != nil {
 						s.logger.Error().
 							Str("dataset", dsName).

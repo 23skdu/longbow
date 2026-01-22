@@ -83,10 +83,10 @@ func TestShardedHNSW_FilterPanicReproduction(t *testing.T) {
 	ds.dataMu.Lock()
 	ds.Records = append(ds.Records, rec0)
 	ds.dataMu.Unlock()
-	if _, err := idx.AddByRecord(rec0, 0, 0); err != nil {
+	if _, err := idx.AddByRecord(context.Background(), rec0, 0, 0); err != nil {
 		t.Fatalf("AddByRecord failed: %v", err)
 	}
-	if _, err := idx.AddByRecord(rec0, 1, 0); err != nil {
+	if _, err := idx.AddByRecord(context.Background(), rec0, 1, 0); err != nil {
 		t.Fatalf("AddByRecord failed: %v", err)
 	}
 
@@ -104,7 +104,7 @@ func TestShardedHNSW_FilterPanicReproduction(t *testing.T) {
 	ds.dataMu.Lock()
 	ds.Records = append(ds.Records, rec1)
 	ds.dataMu.Unlock()
-	if _, err := idx.AddByRecord(rec1, 0, 1); err != nil {
+	if _, err := idx.AddByRecord(context.Background(), rec1, 0, 1); err != nil {
 		t.Fatalf("AddByRecord failed: %v", err)
 	}
 

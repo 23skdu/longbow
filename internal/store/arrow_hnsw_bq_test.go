@@ -76,7 +76,7 @@ func TestArrowHNSW_BinaryQuantization_Integration(t *testing.T) {
 
 	// Insert Vectors
 	for i := 0; i < count; i++ {
-		_, err := index.AddByLocation(0, i)
+		_, err := index.AddByLocation(context.Background(), 0, i)
 		require.NoError(t, err)
 	}
 

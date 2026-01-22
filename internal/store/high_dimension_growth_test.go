@@ -84,7 +84,7 @@ func TestHNSW_HighDimensionGrowth(t *testing.T) {
 
 		// Add to index
 		for i := 0; i < batchSize; i++ {
-			_, err := hnsw.AddByLocation(batchIdx, i)
+			_, err := hnsw.AddByLocation(context.Background(), batchIdx, i)
 			require.NoError(t, err)
 		}
 
@@ -195,7 +195,7 @@ func TestHNSW_HighDimensionGrowth_MemoryPressure(t *testing.T) {
 		ds.dataMu.Unlock()
 
 		for i := 0; i < batchSize; i++ {
-			_, err := hnsw.AddByLocation(batchIdx, i)
+			_, err := hnsw.AddByLocation(context.Background(), batchIdx, i)
 			require.NoError(t, err)
 		}
 

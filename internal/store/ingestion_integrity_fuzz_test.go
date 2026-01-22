@@ -123,12 +123,23 @@ func FuzzIngestionIntegrity_Concurrent(f *testing.F) {
 		// Pick random target
 		randWriter := rand.Intn(numWriters)
 		randBatch := rand.Intn(batchesPerWriter)
-		// We re-create that batch
+		// Pick random row in batch
+		randRow := rand.Intn(rowsPerBatch)
+
+		// Prepare query vector from recreated batch
 		targetRec := createIntegrityTestBatch(mem, rowsPerBatch, randWriter, randBatch)
 		defer targetRec.Release()
 
-		// Pick random row in batch
-		randRow := rand.Intn(rowsPerBatch)
+		// Get the string ID for the chosen row to look up physical ID in store
+		strIDCol := targetRec.Column(0).(*array.String)
+		strID := strIDCol.Value(randRow)
+
+		ds.dataMu.RLock()
+		rowLoc, ok := ds.PrimaryIndex[strID]
+		ds.dataMu.RUnlock()
+		require.True(t, ok, "ID should be in primary index")
+		require.NotNil(t, rowLoc)
+
 		vecCol := targetRec.Column(1).(*array.FixedSizeList)
 		valCol := vecCol.ListValues().(*array.Float32)
 

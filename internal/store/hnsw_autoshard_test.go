@@ -28,7 +28,7 @@ func TestShardedHNSW_AutoSplit(t *testing.T) {
 	ds.dataMu.Unlock()
 
 	for i := 0; i < numVectors; i++ {
-		_, err := sharded.AddSafe(rec, i, 0)
+		_, err := sharded.AddSafe(context.Background(), rec, i, 0)
 		if err != nil {
 			t.Fatalf("Add failed at %d: %v", i, err)
 		}

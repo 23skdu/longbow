@@ -29,6 +29,30 @@ type float32Computer struct {
 }
 
 func (c *float32Computer) Compute(ids []uint32, dists []float32) error {
+	primaryVecs := c.data.Vectors
+	dims := c.dims
+	paddedDims := c.paddedDims
+
+	// FAST PATH: Small batches to avoid gathering vecs slice
+	if len(ids) <= 4 {
+		for i, id := range ids {
+			cID := chunkID(id)
+			if int(cID) < len(primaryVecs) {
+				chunk := c.data.GetVectorsChunk(cID)
+				if chunk != nil {
+					start := int(chunkOffset(id)) * paddedDims
+					if start+dims <= len(chunk) {
+						d, _ := c.distFunc(c.q, chunk[start:start+dims])
+						dists[i] = d
+						continue
+					}
+				}
+			}
+			dists[i] = math.MaxFloat32
+		}
+		return nil
+	}
+
 	// resize scratch buffer
 	if cap(c.ctx.scratchVecs) < len(ids) {
 		c.ctx.scratchVecs = make([][]float32, len(ids))
@@ -36,7 +60,6 @@ func (c *float32Computer) Compute(ids []uint32, dists []float32) error {
 	c.ctx.scratchVecs = c.ctx.scratchVecs[:len(ids)]
 	vecs := c.ctx.scratchVecs
 
-	primaryVecs := c.data.Vectors
 	// Use scratchNeighbors to track missing indices (safe to reuse here)
 	missingIndices := c.ctx.scratchNeighbors[:0]
 
@@ -46,9 +69,9 @@ func (c *float32Computer) Compute(ids []uint32, dists []float32) error {
 		if int(cID) < len(primaryVecs) {
 			chunk := c.data.GetVectorsChunk(cID)
 			if chunk != nil {
-				start := int(chunkOffset(id)) * c.paddedDims
-				if start+c.dims <= len(chunk) {
-					vecs[i] = chunk[start : start+c.dims]
+				start := int(chunkOffset(id)) * paddedDims
+				if start+dims <= len(chunk) {
+					vecs[i] = chunk[start : start+dims]
 					continue
 				}
 			}
@@ -103,16 +126,55 @@ type sq8Computer struct {
 	dims       int
 	paddedDims int
 	scale      float32
+	ctx        *ArrowSearchContext
 }
 
 func (c *sq8Computer) Compute(ids []uint32, dists []float32) error {
-	for i, id := range ids {
-		d, err := c.ComputeSingle(id)
-		if err != nil {
-			return err
-		}
-		dists[i] = d
+	// Gather vectors and prefetch
+	if cap(c.ctx.scratchVecsSQ8) < len(ids) {
+		c.ctx.scratchVecsSQ8 = make([][]byte, len(ids))
 	}
+	c.ctx.scratchVecsSQ8 = c.ctx.scratchVecsSQ8[:len(ids)]
+	vecs := c.ctx.scratchVecsSQ8
+
+	// Batch prefetch
+	for _, id := range ids {
+		c.Prefetch(id)
+	}
+
+	for i, id := range ids {
+		cID := chunkID(id)
+		chunk := c.data.GetVectorsSQ8Chunk(cID)
+		if chunk != nil {
+			start := int(chunkOffset(id)) * c.paddedDims
+			if start+c.dims <= len(chunk) {
+				vecs[i] = chunk[start : start+c.dims]
+				continue
+			}
+		}
+		// Fallback: will be handled by EuclideanDistanceSQ8Batch if we use dummy,
+		// but currently it doesn't handle nil. Let's use ComputeSingle for rare fallbacks.
+		d, _ := c.ComputeSingle(id)
+		dists[i] = d
+		vecs[i] = nil // Mark as already computed
+	}
+
+	// Filter out already computed (disk fallbacks)
+	// For simplicity, if most are in memory, we can just compute the whole batch
+	// but nil checks are safer.
+	// Actually, let's just use the batch function for everything in memory.
+	err := simd.EuclideanDistanceSQ8Batch(c.querySQ8, vecs, dists)
+	if err != nil {
+		return err
+	}
+
+	// Apply scale
+	for i := range dists {
+		if vecs[i] != nil { // Only if computed by batch
+			dists[i] *= c.scale
+		}
+	}
+
 	return nil
 }
 
@@ -215,17 +277,38 @@ type float16Computer struct {
 	q          []float16.Num
 	dims       int
 	paddedDims int
+	ctx        *ArrowSearchContext
 }
 
 func (c *float16Computer) Compute(ids []uint32, dists []float32) error {
-	for i, id := range ids {
-		d, err := c.ComputeSingle(id)
-		if err != nil {
-			return err
-		}
-		dists[i] = d
+	if cap(c.ctx.scratchVecsF16) < len(ids) {
+		c.ctx.scratchVecsF16 = make([][]float16.Num, len(ids))
 	}
-	return nil
+	c.ctx.scratchVecsF16 = c.ctx.scratchVecsF16[:len(ids)]
+	vecs := c.ctx.scratchVecsF16
+
+	// Batch prefetch
+	for _, id := range ids {
+		c.Prefetch(id)
+	}
+
+	for i, id := range ids {
+		cID := chunkID(id)
+		chunk := c.data.GetVectorsF16Chunk(cID)
+		if chunk != nil {
+			start := int(chunkOffset(id)) * c.paddedDims
+			if start+c.dims <= len(chunk) {
+				vecs[i] = chunk[start : start+c.dims]
+				continue
+			}
+		}
+		// Fallback
+		d, _ := c.ComputeSingle(id)
+		dists[i] = d
+		vecs[i] = nil
+	}
+
+	return simd.EuclideanDistanceF16Batch(c.q, vecs, dists)
 }
 
 func (c *float16Computer) ComputeSingle(id uint32) (float32, error) {
@@ -260,6 +343,7 @@ type genericComputer struct {
 	dims       int
 	distFunc   func([]float32, []float32) (float32, error)
 	scratchVec []float32
+	ctx        *ArrowSearchContext
 }
 
 func (c *genericComputer) Compute(ids []uint32, dists []float32) error {
@@ -288,13 +372,11 @@ func (c *genericComputer) Prefetch(id uint32) {
 }
 
 // resolveHNSWComputer selects the appropriate computer and encodes the query if necessary.
-func (h *ArrowHNSW) resolveHNSWComputer(data *GraphData, ctx *ArrowSearchContext, queryVec any, _ bool) HNSWDistanceComputer {
-	// Defaults if we can't determine dimensions from query logic below (fallback)
+func (h *ArrowHNSW) resolveHNSWComputer(data *GraphData, ctx *ArrowSearchContext, queryVec any, forceFullPrecision bool) HNSWDistanceComputer {
 	// Defaults if we can't determine dimensions from query logic below (fallback)
 	// dims := int(h.dims.Load()) // Unused
 	disk := h.diskGraph.Load() // Load disk backend
 
-	// 1. Float16 Native
 	// 1. Float16 Native
 	if qF16, ok := queryVec.([]float16.Num); ok {
 		// Native Float16 query
@@ -304,11 +386,13 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *GraphData, ctx *ArrowSearchContext
 			q:          qF16,
 			dims:       data.Dims,
 			paddedDims: data.GetPaddedDimsForType(VectorTypeFloat16),
+			ctx:        ctx,
 		}
 	}
 
 	// Float16 Enabled but using Float32 query (conversion required)
-	if h.config.Float16Enabled || data.Type == VectorTypeFloat16 {
+	// Skip if forceFullPrecision is true and data is Float32
+	if (h.config.Float16Enabled && !forceFullPrecision) || data.Type == VectorTypeFloat16 {
 		if qF32, ok := queryVec.([]float32); ok {
 			dims := len(qF32)
 			if cap(ctx.queryF16) < dims {
@@ -327,6 +411,7 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *GraphData, ctx *ArrowSearchContext
 				q:          ctx.queryF16,
 				dims:       data.Dims,
 				paddedDims: data.GetPaddedDimsForType(VectorTypeFloat16),
+				ctx:        ctx,
 			}
 		}
 	}
@@ -403,46 +488,49 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *GraphData, ctx *ArrowSearchContext
 
 	// ... continue with existing logic ...
 
-	// 3. PQ (reordered index for diff)
-	if h.config.PQEnabled && h.pqEncoder != nil {
-		if qF32, ok := queryVec.([]float32); ok {
-			// Prepare ADC table
-			table, err := h.pqEncoder.BuildADCTable(qF32)
-			if err == nil {
-				metrics.HNSWPolymorphicSearchCount.WithLabelValues("pq").Inc()
-				ctx.adcTable = table
-				return &pqComputer{
-					data:         data,
-					disk:         disk,
-					adcTable:     ctx.adcTable,
-					pqEncoder:    h.pqEncoder,
-					scratchCodes: ctx.scratchPQCodes,
-					pqM:          data.PQDims, // Use data.PQDims (loaded from graph)
+	if !forceFullPrecision {
+		// 3. PQ (reordered index for diff)
+		if h.config.PQEnabled && h.pqEncoder != nil {
+			if qF32, ok := queryVec.([]float32); ok {
+				// Prepare ADC table
+				table, err := h.pqEncoder.BuildADCTable(qF32)
+				if err == nil {
+					metrics.HNSWPolymorphicSearchCount.WithLabelValues("pq").Inc()
+					ctx.adcTable = table
+					return &pqComputer{
+						data:         data,
+						disk:         disk,
+						adcTable:     ctx.adcTable,
+						pqEncoder:    h.pqEncoder,
+						scratchCodes: ctx.scratchPQCodes,
+						pqM:          data.PQDims, // Use data.PQDims (loaded from graph)
+					}
 				}
 			}
 		}
 
-	}
-	// 4. SQ8
-	// Only supports float32 input for now as SQ8 encoding expects float32
-	if h.config.SQ8Enabled && h.quantizer != nil && h.metric == MetricEuclidean {
-		if qF32, ok := queryVec.([]float32); ok {
-			dims := len(qF32)
-			metrics.HNSWPolymorphicSearchCount.WithLabelValues("sq8").Inc()
-			if cap(ctx.querySQ8) < dims {
-				ctx.querySQ8 = make([]byte, dims)
-			}
-			ctx.querySQ8 = ctx.querySQ8[:dims]
-			h.quantizer.Encode(qF32, ctx.querySQ8)
+		// 4. SQ8
+		// Only supports float32 input for now as SQ8 encoding expects float32
+		if h.config.SQ8Enabled && h.quantizer != nil && h.metric == MetricEuclidean {
+			if qF32, ok := queryVec.([]float32); ok {
+				dims := len(qF32)
+				metrics.HNSWPolymorphicSearchCount.WithLabelValues("sq8").Inc()
+				if cap(ctx.querySQ8) < dims {
+					ctx.querySQ8 = make([]byte, dims)
+				}
+				ctx.querySQ8 = ctx.querySQ8[:dims]
+				h.quantizer.Encode(qF32, ctx.querySQ8)
 
-			return &sq8Computer{
-				data:       data,
-				disk:       disk,
-				querySQ8:   ctx.querySQ8,
-				quantizer:  h.quantizer,
-				dims:       data.Dims,
-				paddedDims: (data.Dims + 63) & ^63,
-				scale:      h.quantizer.L2Scale(),
+				return &sq8Computer{
+					data:       data,
+					disk:       disk,
+					querySQ8:   ctx.querySQ8,
+					quantizer:  h.quantizer,
+					dims:       data.Dims,
+					paddedDims: (data.Dims + 63) & ^63,
+					scale:      h.quantizer.L2Scale(),
+					ctx:        ctx,
+				}
 			}
 		}
 	}
@@ -572,7 +660,7 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *GraphData, ctx *ArrowSearchContext
 		if dims > 1024 {
 			distFunc = simd.L2Float32Blocked
 		} else {
-			distFunc = simd.DistFunc // Uses initialized function pointer
+			distFunc = simd.EuclideanDistance
 		}
 		batchDistFunc = simd.EuclideanDistanceTiledBatch
 	}
@@ -588,6 +676,7 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *GraphData, ctx *ArrowSearchContext
 			dims:       data.Dims,
 			distFunc:   distFunc,
 			scratchVec: make([]float32, data.Dims),
+			ctx:        ctx,
 		}
 	}
 

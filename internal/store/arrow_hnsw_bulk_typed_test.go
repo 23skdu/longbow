@@ -100,7 +100,7 @@ func TestAddBatch_Bulk_Typed(t *testing.T) {
 				batchIdxs[i] = 0 // Single batch
 			}
 
-			ids, err := idx.AddBatch([]arrow.RecordBatch{rec}, rowIdxs, batchIdxs)
+			ids, err := idx.AddBatch(context.Background(), []arrow.RecordBatch{rec}, rowIdxs, batchIdxs)
 			require.NoError(t, err)
 			assert.Len(t, ids, numVecs)
 			assert.Equal(t, numVecs, idx.Len())

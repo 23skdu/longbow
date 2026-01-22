@@ -356,7 +356,34 @@ func dotFloat64Unrolled4x(a, b []float64) (float32, error) {
 		sum3 += a[i+3] * b[i+3]
 	}
 	for ; i < n; i++ {
-		sum0 += a[i] * b[i] // FIXing potential bug here too, it should be a[i]*b[i]
+		sum0 += a[i] * b[i]
 	}
 	return float32(sum0 + sum1 + sum2 + sum3), nil
+}
+
+func dotComplex128Unrolled(a, b []complex128) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	var dotR0, dotR1, dotR2, dotR3 float64
+	var dotI0, dotI1, dotI2, dotI3 float64
+	n := len(a)
+	i := 0
+	for ; i <= n-4; i += 4 {
+		v0, v1, v2, v3 := a[i], a[i+1], a[i+2], a[i+3]
+		w0, w1, w2, w3 := b[i], b[i+1], b[i+2], b[i+3]
+		dotR0 += real(v0) * real(w0)
+		dotR1 += real(v1) * real(w1)
+		dotR2 += real(v2) * real(w2)
+		dotR3 += real(v3) * real(w3)
+		dotI0 += imag(v0) * imag(w0)
+		dotI1 += imag(v1) * imag(w1)
+		dotI2 += imag(v2) * imag(w2)
+		dotI3 += imag(v3) * imag(w3)
+	}
+	for ; i < n; i++ {
+		dotR0 += real(a[i]) * real(b[i])
+		dotI0 += imag(a[i]) * imag(b[i])
+	}
+	return float32((dotR0 + dotR1 + dotR2 + dotR3) - (dotI0 + dotI1 + dotI2 + dotI3)), nil
 }

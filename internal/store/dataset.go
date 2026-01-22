@@ -231,7 +231,8 @@ func (d *Dataset) AddToIndex(batchIdx, rowIdx int) error {
 		return errors.New("no index available")
 	}
 
-	_, err := idx.AddByLocation(batchIdx, rowIdx)
+	// Pass Background or propagate context
+	_, err := idx.AddByLocation(context.Background(), batchIdx, rowIdx)
 	return err
 }
 

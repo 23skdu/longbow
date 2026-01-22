@@ -58,8 +58,8 @@ func (m *mockSearchStream) Context() context.Context     { return m.ctx }
 func (m *mockSearchStream) SetHeader(metadata.MD) error  { return nil }
 func (m *mockSearchStream) SendHeader(metadata.MD) error { return nil }
 func (m *mockSearchStream) SetTrailer(metadata.MD)       {}
-func (m *mockSearchStream) SendMsg(any) error    { return nil }
-func (m *mockSearchStream) RecvMsg(any) error    { return nil }
+func (m *mockSearchStream) SendMsg(any) error            { return nil }
+func (m *mockSearchStream) RecvMsg(any) error            { return nil }
 
 func (m *mockSearchStream) addFlightData(data *flight.FlightData) {
 	m.mu.Lock()
@@ -179,7 +179,7 @@ func setupTestDataset(t *testing.T, s *VectorStore, name string) {
 	// AddByRecord requires batch tracking which we don't have fully setup.
 	// But AddByLocation(batchIdx, rowIdx) is low level.
 	// batchIdx=0, rowIdx=0.
-	_, err := idx.AddByLocation(0, 0)
+	_, err := idx.AddByLocation(context.Background(), 0, 0)
 	require.NoError(t, err)
 }
 

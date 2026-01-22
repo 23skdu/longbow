@@ -119,7 +119,7 @@ func TestCompaction_IndexIntegrity(t *testing.T) {
 		require.True(t, ok)
 
 		for rowIdx := 0; rowIdx < int(rec.NumRows()); rowIdx++ {
-			_, err := hnswIdx.AddSafe(rec, rowIdx, batchIdx)
+			_, err := hnswIdx.AddSafe(context.Background(), rec, rowIdx, batchIdx)
 			require.NoError(t, err)
 		}
 	}

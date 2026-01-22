@@ -64,7 +64,7 @@ func BenchmarkParallelSearch(b *testing.B) {
 
 		// Add to index
 		for j := 0; j < int(rec.NumRows()); j++ {
-			_, _ = ds.Index.AddByLocation(len(ds.Records)-1, j)
+			_, _ = ds.Index.AddByLocation(context.Background(), len(ds.Records)-1, j)
 		}
 		bld.Release()
 	}

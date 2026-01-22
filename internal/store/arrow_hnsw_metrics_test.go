@@ -39,9 +39,9 @@ func TestArrowHNSW_Metrics(t *testing.T) {
 		idx := NewArrowHNSW(ds, config, NewChunkedLocationStore())
 
 		// Add vectors 0 and 1
-		_, err := idx.AddByLocation(0, 0)
+		_, err := idx.AddByLocation(context.Background(), 0, 0)
 		require.NoError(t, err)
-		_, err = idx.AddByLocation(0, 1)
+		_, err = idx.AddByLocation(context.Background(), 0, 1)
 		require.NoError(t, err)
 
 		// Search for [1.0, 0.0]
@@ -81,7 +81,7 @@ func TestArrowHNSW_Metrics(t *testing.T) {
 		idx := NewArrowHNSW(ds, config, NewChunkedLocationStore())
 
 		// Add vector
-		_, err := idx.AddByLocation(0, 0)
+		_, err := idx.AddByLocation(context.Background(), 0, 0)
 		require.NoError(t, err)
 
 		// Perform search
@@ -102,7 +102,7 @@ func TestArrowHNSW_Metrics(t *testing.T) {
 		idxF16 := NewArrowHNSW(ds, configF16, NewChunkedLocationStore())
 
 		// Must add a vector so search doesn't early return
-		_, err = idxF16.AddByLocation(0, 0)
+		_, err = idxF16.AddByLocation(context.Background(), 0, 0)
 		require.NoError(t, err)
 
 		_, err = idxF16.Search(context.Background(), q, 10, 20, nil)

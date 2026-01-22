@@ -59,7 +59,7 @@ func TestSQ8Indexing(t *testing.T) {
 	rec.Retain()
 
 	// Add batch
-	ids, err := idx.AddBatch([]arrow.RecordBatch{rec}, makeRangeHelper(n), make([]int, n))
+	ids, err := idx.AddBatch(context.Background(), []arrow.RecordBatch{rec}, makeRangeHelper(n), make([]int, n))
 	require.NoError(t, err)
 
 	// Verify that VectorsSQ8 is populated
@@ -159,7 +159,7 @@ func TestSQ8Refinement(t *testing.T) {
 	rec.Retain()
 
 	// Add batch
-	ids, err := idx.AddBatch([]arrow.RecordBatch{rec}, makeRangeHelper(n), make([]int, n))
+	ids, err := idx.AddBatch(context.Background(), []arrow.RecordBatch{rec}, makeRangeHelper(n), make([]int, n))
 	require.NoError(t, err)
 
 	// Search

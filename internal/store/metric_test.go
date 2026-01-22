@@ -35,9 +35,9 @@ func TestHNSW_Metrics(t *testing.T) {
 
 	t.Run("MetricCosine", func(t *testing.T) {
 		idx := NewHNSWIndexWithMetric(ds, MetricCosine)
-		_, err := idx.Add(0, 0)
+		_, err := idx.Add(context.Background(), 0, 0)
 		require.NoError(t, err)
-		_, err = idx.Add(0, 1)
+		_, err = idx.Add(context.Background(), 0, 1)
 		require.NoError(t, err)
 
 		// Search for [1.0, 0.0] (self)
@@ -57,9 +57,9 @@ func TestHNSW_Metrics(t *testing.T) {
 		// dotGeneric returns sum(a*b).
 
 		idx := NewHNSWIndexWithMetric(ds, MetricDotProduct)
-		_, err := idx.Add(0, 0)
+		_, err := idx.Add(context.Background(), 0, 0)
 		require.NoError(t, err)
-		_, err = idx.Add(0, 1)
+		_, err = idx.Add(context.Background(), 0, 1)
 		require.NoError(t, err)
 
 		// Search for [1.0, 0.0]
@@ -101,9 +101,9 @@ func TestShardedHNSW_Metrics(t *testing.T) {
 		config.Metric = MetricCosine
 		idx := NewShardedHNSW(config, ds)
 
-		_, err := idx.AddByLocation(0, 0)
+		_, err := idx.AddByLocation(context.Background(), 0, 0)
 		require.NoError(t, err)
-		_, err = idx.AddByLocation(0, 1)
+		_, err = idx.AddByLocation(context.Background(), 0, 1)
 		require.NoError(t, err)
 
 		res, err := idx.SearchVectors(context.Background(), []float32{1.0, 0.0, 0.0, 0.0}, 2, nil, SearchOptions{})

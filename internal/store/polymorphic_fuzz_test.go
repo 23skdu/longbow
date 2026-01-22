@@ -84,7 +84,7 @@ func FuzzPolymorphicIngestion(f *testing.F) {
 			// AddByRecord
 			// Assume rowIdx starts at 0 for this batch
 			for i := 0; i < int(batch.NumRows()); i++ {
-				_, err := ds.Index.AddByLocation(batchIdx, i)
+				_, err := ds.Index.AddByLocation(context.Background(), batchIdx, i)
 				require.NoError(t, err)
 			}
 		}

@@ -102,7 +102,7 @@ func (a *AutoShardingIndex) SetInitialDimension(dim int) {
 }
 
 // AddByLocation adds a vector to the index.
-func (a *AutoShardingIndex) AddByLocation(batchIdx, rowIdx int) (uint32, error) {
+func (a *AutoShardingIndex) AddByLocation(ctx context.Context, batchIdx, rowIdx int) (uint32, error) {
 	// Lock held throughout execution to prevent Close during migration
 	a.mu.RLock()
 	sharded := a.sharded
@@ -110,18 +110,18 @@ func (a *AutoShardingIndex) AddByLocation(batchIdx, rowIdx int) (uint32, error) 
 	curr := a.current
 
 	if sharded {
-		id, err := curr.AddByLocation(batchIdx, rowIdx)
+		id, err := curr.AddByLocation(ctx, batchIdx, rowIdx)
 		a.mu.RUnlock()
 		return id, err
 	}
 
 	if interim != nil {
-		id, err := interim.AddByLocation(batchIdx, rowIdx)
+		id, err := interim.AddByLocation(ctx, batchIdx, rowIdx)
 		a.mu.RUnlock()
 		return id, err
 	}
 
-	id, err := curr.AddByLocation(batchIdx, rowIdx)
+	id, err := curr.AddByLocation(ctx, batchIdx, rowIdx)
 	a.mu.RUnlock()
 
 	if err == nil {
@@ -131,25 +131,25 @@ func (a *AutoShardingIndex) AddByLocation(batchIdx, rowIdx int) (uint32, error) 
 }
 
 // AddByRecord implementation to support interim index.
-func (a *AutoShardingIndex) AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32, error) {
+func (a *AutoShardingIndex) AddByRecord(ctx context.Context, rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32, error) {
 	a.mu.RLock()
 	sharded := a.sharded
 	interim := a.interimIndex
 	curr := a.current
 
 	if sharded {
-		id, err := curr.AddByRecord(rec, rowIdx, batchIdx)
+		id, err := curr.AddByRecord(ctx, rec, rowIdx, batchIdx)
 		a.mu.RUnlock()
 		return id, err
 	}
 
 	if interim != nil {
-		id, err := interim.AddByRecord(rec, rowIdx, batchIdx)
+		id, err := interim.AddByRecord(ctx, rec, rowIdx, batchIdx)
 		a.mu.RUnlock()
 		return id, err
 	}
 
-	id, err := curr.AddByRecord(rec, rowIdx, batchIdx)
+	id, err := curr.AddByRecord(ctx, rec, rowIdx, batchIdx)
 	a.mu.RUnlock()
 
 	if err == nil {
@@ -159,26 +159,26 @@ func (a *AutoShardingIndex) AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx 
 }
 
 // AddBatch adds multiple vectors from multiple record batches efficiently.
-func (a *AutoShardingIndex) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []int) ([]uint32, error) {
+func (a *AutoShardingIndex) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowIdxs, batchIdxs []int) ([]uint32, error) {
 	a.mu.RLock()
 	sharded := a.sharded
 	interim := a.interimIndex
 	curr := a.current
 
 	if sharded {
-		ids, err := curr.AddBatch(recs, rowIdxs, batchIdxs)
+		ids, err := curr.AddBatch(ctx, recs, rowIdxs, batchIdxs)
 		a.mu.RUnlock()
 		return ids, err
 	}
 
 	if interim != nil {
 		// During migration, add to the NEW index directly
-		ids, err := interim.AddBatch(recs, rowIdxs, batchIdxs)
+		ids, err := interim.AddBatch(ctx, recs, rowIdxs, batchIdxs)
 		a.mu.RUnlock()
 		return ids, err
 	}
 
-	ids, err := curr.AddBatch(recs, rowIdxs, batchIdxs)
+	ids, err := curr.AddBatch(ctx, recs, rowIdxs, batchIdxs)
 	a.mu.RUnlock()
 
 	if err == nil {
@@ -310,7 +310,7 @@ func (a *AutoShardingIndex) migrateToSharded() {
 
 		// Perform expensive additions outside dataMu
 		for _, it := range items {
-			_, err := newIndex.AddByRecord(it.rec, it.loc.RowIdx, it.loc.BatchIdx)
+			_, err := newIndex.AddByRecord(context.Background(), it.rec, it.loc.RowIdx, it.loc.BatchIdx)
 			it.rec.Release()
 			if err != nil {
 				// migration skip

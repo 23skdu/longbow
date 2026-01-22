@@ -99,7 +99,7 @@ func BenchmarkSearch_SmallIndex(b *testing.B) {
 	// Bulk Insert
 	// Assuming location 0..n map to vectors
 	for i := 0; i < n; i++ {
-		_, err := index.AddByLocation(0, i)
+		_, err := index.AddByLocation(context.Background(), 0, i)
 		if err != nil {
 			b.Fatalf("insert failed: %v", err)
 		}
@@ -167,7 +167,7 @@ func BenchmarkSearch_LargeIndex(b *testing.B) {
 
 	// Bulk Insert
 	for i := 0; i < n; i++ {
-		_, err := index.AddByLocation(0, i)
+		_, err := index.AddByLocation(context.Background(), 0, i)
 		if err != nil {
 			b.Fatalf("insert failed: %v", err)
 		}

@@ -73,7 +73,7 @@ func TestAutoShardingIndex_UseHNSW2(t *testing.T) {
 	idx.SetInitialDimension(4)
 
 	// Ingest
-	ids, err := idx.AddBatch([]arrow.RecordBatch{rec}, []int{0, 1, 2}, []int{0, 0, 0})
+	ids, err := idx.AddBatch(context.Background(), []arrow.RecordBatch{rec}, []int{0, 1, 2}, []int{0, 0, 0})
 	require.NoError(t, err)
 	require.Len(t, ids, 3)
 

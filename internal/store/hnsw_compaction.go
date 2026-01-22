@@ -171,54 +171,54 @@ func (h *ArrowHNSW) CompactGraph(ctx context.Context) (*HNSWCompactionStats, err
 	return stats, nil
 }
 
-// copyVector copies vector from old graph to new graph
-func (h *ArrowHNSW) copyVector(old, new *GraphData, oldID, newID uint32) {
+// copyVector copies vector from old graph to target graph
+func (h *ArrowHNSW) copyVector(old, target *GraphData, oldID, newID uint32) {
 	cID_old := chunkID(oldID)
 	cOff_old := chunkOffset(oldID)
 	cID_new := chunkID(newID)
 	cOff_new := chunkOffset(newID)
 
 	// Primary Vectors
-	switch new.Type {
+	switch target.Type {
 	case VectorTypeFloat32:
-		copyVectorTyped(old.GetVectorsChunk(cID_old), new.GetVectorsChunk(cID_new), cOff_old, cOff_new, new.PaddedDims)
+		copyVectorTyped(old.GetVectorsChunk(cID_old), target.GetVectorsChunk(cID_new), cOff_old, cOff_new, target.PaddedDims)
 	case VectorTypeFloat16:
-		copyVectorTyped(old.GetVectorsF16Chunk(cID_old), new.GetVectorsF16Chunk(cID_new), cOff_old, cOff_new, new.PaddedDims)
+		copyVectorTyped(old.GetVectorsF16Chunk(cID_old), target.GetVectorsF16Chunk(cID_new), cOff_old, cOff_new, target.PaddedDims)
 	case VectorTypeFloat64:
-		copyVectorTyped(old.GetVectorsFloat64Chunk(cID_old), new.GetVectorsFloat64Chunk(cID_new), cOff_old, cOff_new, new.PaddedDims)
+		copyVectorTyped(old.GetVectorsFloat64Chunk(cID_old), target.GetVectorsFloat64Chunk(cID_new), cOff_old, cOff_new, target.PaddedDims)
 	case VectorTypeInt8:
-		copyVectorTyped(old.GetVectorsInt8Chunk(cID_old), new.GetVectorsInt8Chunk(cID_new), cOff_old, cOff_new, new.PaddedDims)
+		copyVectorTyped(old.GetVectorsInt8Chunk(cID_old), target.GetVectorsInt8Chunk(cID_new), cOff_old, cOff_new, target.PaddedDims)
 	case VectorTypeUint8:
-		copyVectorTyped(old.GetVectorsUint8Chunk(cID_old), new.GetVectorsUint8Chunk(cID_new), cOff_old, cOff_new, new.PaddedDims)
+		copyVectorTyped(old.GetVectorsUint8Chunk(cID_old), target.GetVectorsUint8Chunk(cID_new), cOff_old, cOff_new, target.PaddedDims)
 	case VectorTypeInt16:
-		copyVectorTyped(old.GetVectorsInt16Chunk(cID_old), new.GetVectorsInt16Chunk(cID_new), cOff_old, cOff_new, new.PaddedDims)
+		copyVectorTyped(old.GetVectorsInt16Chunk(cID_old), target.GetVectorsInt16Chunk(cID_new), cOff_old, cOff_new, target.PaddedDims)
 	case VectorTypeUint16:
-		copyVectorTyped(old.GetVectorsUint16Chunk(cID_old), new.GetVectorsUint16Chunk(cID_new), cOff_old, cOff_new, new.PaddedDims)
+		copyVectorTyped(old.GetVectorsUint16Chunk(cID_old), target.GetVectorsUint16Chunk(cID_new), cOff_old, cOff_new, target.PaddedDims)
 	case VectorTypeInt32:
-		copyVectorTyped(old.GetVectorsInt32Chunk(cID_old), new.GetVectorsInt32Chunk(cID_new), cOff_old, cOff_new, new.PaddedDims)
+		copyVectorTyped(old.GetVectorsInt32Chunk(cID_old), target.GetVectorsInt32Chunk(cID_new), cOff_old, cOff_new, target.PaddedDims)
 	case VectorTypeUint32:
-		copyVectorTyped(old.GetVectorsUint32Chunk(cID_old), new.GetVectorsUint32Chunk(cID_new), cOff_old, cOff_new, new.PaddedDims)
+		copyVectorTyped(old.GetVectorsUint32Chunk(cID_old), target.GetVectorsUint32Chunk(cID_new), cOff_old, cOff_new, target.PaddedDims)
 	case VectorTypeInt64:
-		copyVectorTyped(old.GetVectorsInt64Chunk(cID_old), new.GetVectorsInt64Chunk(cID_new), cOff_old, cOff_new, new.PaddedDims)
+		copyVectorTyped(old.GetVectorsInt64Chunk(cID_old), target.GetVectorsInt64Chunk(cID_new), cOff_old, cOff_new, target.PaddedDims)
 	case VectorTypeUint64:
-		copyVectorTyped(old.GetVectorsUint64Chunk(cID_old), new.GetVectorsUint64Chunk(cID_new), cOff_old, cOff_new, new.PaddedDims)
+		copyVectorTyped(old.GetVectorsUint64Chunk(cID_old), target.GetVectorsUint64Chunk(cID_new), cOff_old, cOff_new, target.PaddedDims)
 	case VectorTypeComplex64:
-		copyVectorTyped(old.GetVectorsComplex64Chunk(cID_old), new.GetVectorsComplex64Chunk(cID_new), cOff_old, cOff_new, new.PaddedDims)
+		copyVectorTyped(old.GetVectorsComplex64Chunk(cID_old), target.GetVectorsComplex64Chunk(cID_new), cOff_old, cOff_new, target.PaddedDims)
 	case VectorTypeComplex128:
-		copyVectorTyped(old.GetVectorsComplex128Chunk(cID_old), new.GetVectorsComplex128Chunk(cID_new), cOff_old, cOff_new, new.PaddedDims)
+		copyVectorTyped(old.GetVectorsComplex128Chunk(cID_old), target.GetVectorsComplex128Chunk(cID_new), cOff_old, cOff_new, target.PaddedDims)
 	}
 
 	// Copy Quantized/Encoded vectors if enabled
 	if h.config.SQ8Enabled {
-		paddedSQ8 := (new.Dims + 63) & ^63
-		copyVectorTyped(old.GetVectorsSQ8Chunk(cID_old), new.GetVectorsSQ8Chunk(cID_new), cOff_old, cOff_new, paddedSQ8)
+		paddedSQ8 := (target.Dims + 63) & ^63
+		copyVectorTyped(old.GetVectorsSQ8Chunk(cID_old), target.GetVectorsSQ8Chunk(cID_new), cOff_old, cOff_new, paddedSQ8)
 	}
 	if h.config.PQEnabled {
-		copyVectorTyped(old.GetVectorsPQChunk(cID_old), new.GetVectorsPQChunk(cID_new), cOff_old, cOff_new, new.PQDims)
+		copyVectorTyped(old.GetVectorsPQChunk(cID_old), target.GetVectorsPQChunk(cID_new), cOff_old, cOff_new, target.PQDims)
 	}
 	if h.config.BQEnabled {
-		numWords := (new.Dims + 63) / 64
-		copyVectorTyped(old.GetVectorsBQChunk(cID_old), new.GetVectorsBQChunk(cID_new), cOff_old, cOff_new, numWords)
+		numWords := (target.Dims + 63) / 64
+		copyVectorTyped(old.GetVectorsBQChunk(cID_old), target.GetVectorsBQChunk(cID_new), cOff_old, cOff_new, numWords)
 	}
 }
 
@@ -234,7 +234,7 @@ func copyVectorTyped[T any](src, dest []T, offSrc, offDest uint32, stride int) {
 }
 
 // copyNeighbors copies and remaps neighbors from old graph to new graph
-func (h *ArrowHNSW) copyNeighbors(old, new *GraphData, oldID, newID uint32, layer int, oldToNew map[uint32]uint32) {
+func (h *ArrowHNSW) copyNeighbors(old, target *GraphData, oldID, newID uint32, layer int, oldToNew map[uint32]uint32) {
 	cID_old := chunkID(oldID)
 	cOff_old := chunkOffset(oldID)
 	cID_new := chunkID(newID)
@@ -252,8 +252,8 @@ func (h *ArrowHNSW) copyNeighbors(old, new *GraphData, oldID, newID uint32, laye
 		return
 	}
 
-	newCounts := new.GetCountsChunk(layer, cID_new)
-	newNeighbors := new.GetNeighborsChunk(layer, cID_new)
+	newCounts := target.GetCountsChunk(layer, cID_new)
+	newNeighbors := target.GetNeighborsChunk(layer, cID_new)
 	if newCounts == nil || newNeighbors == nil {
 		return
 	}
@@ -273,8 +273,8 @@ func (h *ArrowHNSW) copyNeighbors(old, new *GraphData, oldID, newID uint32, laye
 	atomic.StoreInt32(&newCounts[cOff_new], int32(actualCount))
 }
 
-func (h *ArrowHNSW) copyPackedNeighbors(old, new *GraphData, oldID, newID uint32, layer int, oldToNew map[uint32]uint32) {
-	if old.PackedNeighbors[layer] == nil || new.PackedNeighbors[layer] == nil {
+func (h *ArrowHNSW) copyPackedNeighbors(old, target *GraphData, oldID, newID uint32, layer int, oldToNew map[uint32]uint32) {
+	if old.PackedNeighbors[layer] == nil || target.PackedNeighbors[layer] == nil {
 		return
 	}
 
@@ -291,6 +291,6 @@ func (h *ArrowHNSW) copyPackedNeighbors(old, new *GraphData, oldID, newID uint32
 	}
 
 	if len(newNeighbors) > 0 {
-		_ = new.PackedNeighbors[layer].SetNeighbors(newID, newNeighbors)
+		_ = target.PackedNeighbors[layer].SetNeighbors(newID, newNeighbors)
 	}
 }

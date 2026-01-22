@@ -101,7 +101,7 @@ func TestArrowHNSW_DataTypes(t *testing.T) {
 				batchIdxs[i] = 0
 			}
 
-			ids, err := idx.AddBatch([]arrow.RecordBatch{rec}, rowIdxs, batchIdxs)
+			ids, err := idx.AddBatch(context.Background(), []arrow.RecordBatch{rec}, rowIdxs, batchIdxs)
 			require.NoError(t, err, "AddBatch failed")
 			assert.Equal(t, count, len(ids))
 			assert.Equal(t, count, idx.Len())

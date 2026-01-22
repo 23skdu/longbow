@@ -1,6 +1,5 @@
 package store
 
-
 import (
 	"runtime"
 	"sync"
@@ -260,6 +259,16 @@ func TestShardedRWMutexStats(t *testing.T) {
 }
 
 // --- Benchmark Tests ---
+
+var shardResult int
+
+func BenchmarkShardFor(b *testing.B) {
+	sm := NewShardedRWMutexDefault()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		shardResult = sm.ShardFor(uint64(i))
+	}
+}
 
 func BenchmarkShardedRWMutexLock(b *testing.B) {
 	sm := NewShardedRWMutex(ShardedRWMutexConfig{NumShards: runtime.NumCPU()})

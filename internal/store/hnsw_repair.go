@@ -51,11 +51,11 @@ func (h *ArrowHNSW) RepairTombstones(ctx context.Context, batchSize int) int {
 
 		// Lock node
 		lockID := nid % 1024
-		h.shardedLocks[lockID].Lock()
+		h.shardedLocks.Lock(uint64(lockID))
 
 		// Re-check validity
 		if h.deleted.Contains(int(nid)) {
-			h.shardedLocks[lockID].Unlock()
+			h.shardedLocks.Unlock(uint64(lockID))
 			continue
 		}
 
@@ -205,7 +205,7 @@ func (h *ArrowHNSW) RepairTombstones(ctx context.Context, batchSize int) int {
 				repaired++
 			}
 		}
-		h.shardedLocks[lockID].Unlock()
+		h.shardedLocks.Unlock(uint64(lockID))
 	}
 
 	return repaired

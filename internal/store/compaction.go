@@ -328,7 +328,7 @@ type BatchRemapInfo struct {
 
 // compactRecords returns a NEW slice of RecordBatches and a remapping table.
 // It DOES NOT Modify the input slice.
-func compactRecords(ctx context.Context, pool memory.Allocator, schema *arrow.Schema, records []arrow.RecordBatch, tombstones map[int]*qry.Bitset, targetSize int64, datasetName string, limiter *RateLimiter, fragThreshold float64) (compacted []arrow.RecordBatch, remap map[int]BatchRemapInfo) {
+func compactRecords(ctx context.Context, pool memory.Allocator, schema *arrow.Schema, records []arrow.RecordBatch, tombstones map[int]*qry.Bitset, targetSize int64, datasetName string, limiter *RateLimiter, fragThreshold float64) (compacted []arrow.RecordBatch, remap map[int]BatchRemapInfo, err error) {
 	if schema == nil && len(records) > 0 {
 		schema = records[0].Schema()
 	}
@@ -342,7 +342,7 @@ func compactRecords(ctx context.Context, pool memory.Allocator, schema *arrow.Sc
 
 	candidates := identifyCompactionCandidates(records, tombstoneSlice, targetSize, fragThreshold)
 	if len(candidates) == 0 {
-		return nil, nil // Nothing to do
+		return nil, nil, nil // Nothing to do
 	}
 
 	// We process candidates in order.
@@ -373,7 +373,7 @@ func compactRecords(ctx context.Context, pool memory.Allocator, schema *arrow.Sc
 			// Context check before rate limiting
 			select {
 			case <-ctx.Done():
-				return nil, nil
+				return nil, nil, ctx.Err()
 			default:
 			}
 
@@ -388,7 +388,11 @@ func compactRecords(ctx context.Context, pool memory.Allocator, schema *arrow.Sc
 			tomb := tombstones[i]
 			if tomb != nil && tomb.Count() > 0 {
 				// We still need to filter this "untouched" batch because it has tombstones
-				filtered, rowMapping, removed := filterTombstones(pool, schema, rec, tomb)
+				filtered, rowMapping, removed, err := filterTombstones(pool, schema, rec, tomb)
+				if err != nil {
+					metrics.CompactionErrorsTotal.Inc()
+					return nil, nil, err
+				}
 				totalRemoved += removed
 				remapping[i] = BatchRemapInfo{NewBatchIdx: len(result), NewRowIdxs: rowMapping}
 				result = append(result, filtered)
@@ -415,7 +419,11 @@ func compactRecords(ctx context.Context, pool memory.Allocator, schema *arrow.Sc
 			candTombstones[i-cand.StartIdx] = tombstones[i]
 		}
 
-		merged, candRowMappings, removed := mergeAndFilterRecordBatches(pool, schema, subset, candTombstones)
+		merged, candRowMappings, removed, err := mergeAndFilterRecordBatches(pool, schema, subset, candTombstones)
+		if err != nil {
+			metrics.CompactionErrorsTotal.Inc()
+			return nil, nil, err
+		}
 		totalRemoved += removed
 
 		newBatchIdx := len(result)
@@ -437,7 +445,11 @@ func compactRecords(ctx context.Context, pool memory.Allocator, schema *arrow.Sc
 		rec := records[i]
 		tomb := tombstones[i]
 		if tomb != nil && tomb.Count() > 0 {
-			filtered, rowMapping, removed := filterTombstones(pool, schema, rec, tomb)
+			filtered, rowMapping, removed, err := filterTombstones(pool, schema, rec, tomb)
+			if err != nil {
+				metrics.CompactionErrorsTotal.Inc()
+				return nil, nil, err
+			}
 			totalRemoved += removed
 			remapping[i] = BatchRemapInfo{NewBatchIdx: len(result), NewRowIdxs: rowMapping}
 			result = append(result, filtered)
@@ -456,33 +468,30 @@ func compactRecords(ctx context.Context, pool memory.Allocator, schema *arrow.Sc
 		metrics.CompactionRecordsRemovedTotal.WithLabelValues(datasetName).Add(float64(totalRemoved))
 	}
 
-	return result, remapping
+	return result, remapping, nil
 }
 
 // filterTombstones creates a new RecordBatch with deleted rows removed.
-func filterTombstones(pool memory.Allocator, schema *arrow.Schema, rec arrow.RecordBatch, tomb *qry.Bitset) (filtered arrow.RecordBatch, mapping []int, removed int64) {
+func filterTombstones(pool memory.Allocator, schema *arrow.Schema, rec arrow.RecordBatch, tomb *qry.Bitset) (filtered arrow.RecordBatch, mapping []int, removed int64, err error) {
 	sc := NewStreamingCompactor(pool)
-	// Wrap single batch
 	batches := []arrow.RecordBatch{rec}
 	tombstones := []*qry.Bitset{tomb}
 
-	merged, mappings, removed, err := sc.Compact(schema, batches, tombstones)
-	if err != nil {
-		panic(fmt.Errorf("compaction failed (single): %w", err))
+	merged, mappings, removed, compErr := sc.Compact(schema, batches, tombstones)
+	if compErr != nil {
+		return nil, nil, 0, fmt.Errorf("filterTombstones compaction failed: %w", compErr)
 	}
-	return merged, mappings[0], removed
+	return merged, mappings[0], removed, nil
 }
 
 // mergeAndFilterRecordBatches combines multiple record batches into one while skipping tombstones.
-func mergeAndFilterRecordBatches(pool memory.Allocator, schema *arrow.Schema, batches []arrow.RecordBatch, tombstones []*qry.Bitset) (merged arrow.RecordBatch, mapping [][]int, removed int64) {
+func mergeAndFilterRecordBatches(pool memory.Allocator, schema *arrow.Schema, batches []arrow.RecordBatch, tombstones []*qry.Bitset) (merged arrow.RecordBatch, mapping [][]int, removed int64, err error) {
 	sc := NewStreamingCompactor(pool)
-	var err error
-	merged, mapping, removed, err = sc.Compact(schema, batches, tombstones)
-	if err != nil {
-		// Panic for now as we don't have error propagation in this legacy signature
-		panic(fmt.Errorf("compaction failed: %w", err))
+	merged, mapping, removed, compErr := sc.Compact(schema, batches, tombstones)
+	if compErr != nil {
+		return nil, nil, 0, fmt.Errorf("mergeAndFilterRecordBatches compaction failed: %w", compErr)
 	}
-	return
+	return merged, mapping, removed, nil
 }
 
 // appendValue appends a single value from an arrow.Array to a builder.

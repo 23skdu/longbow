@@ -5,6 +5,7 @@ import (
 	"runtime"
 	"runtime/debug"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/23skdu/longbow/internal/metrics"
@@ -36,7 +37,8 @@ type GCTuner struct {
 	logger *zerolog.Logger
 
 	// State to avoid thrashing
-	currentGOGC int
+	currentGOGC     int
+	lastUtilization atomic.Uint64 // 0..1000 representing 0.0..1.0 ratio
 }
 
 // NewGCTuner creates a tuner. limitBytes should be close to container memory limit.
@@ -151,6 +153,7 @@ func (t *GCTuner) tune(heapInUse uint64) {
 		}
 	}
 	metrics.GCTunerHeapUtilization.Set(ratio)
+	t.lastUtilization.Store(uint64(ratio * 1000))
 
 	var targetGOGC int
 
@@ -195,4 +198,9 @@ func (t *GCTuner) tune(heapInUse uint64) {
 		}
 	}
 	t.mu.Unlock()
+}
+
+// GetUtilizationRatio returns the last measured memory utilization ratio (0.0 to 1.0+).
+func (t *GCTuner) GetUtilizationRatio() float64 {
+	return float64(t.lastUtilization.Load()) / 1000.0
 }

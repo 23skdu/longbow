@@ -62,7 +62,7 @@
 
 - **[MODIFY]** `internal/store/compaction_worker.go`: Accept `context.Context` and check `ctx.Done()` in compaction loop.
 - **[MODIFY]** `internal/store/store_lifecycle.go`: Pass context from `stopChan` to all workers.
-- **[MODIFY]** `internal/store/hnsw_batch.go`: Check context in `AddBatchBulk` inner loops.
+
 - **[NEW]** `internal/store/context_cancellation_test.go`: Unit test verifying operations abort on context cancel.
 
 **Verification**: Cancel context mid-operation and verify graceful shutdown within 1 second.

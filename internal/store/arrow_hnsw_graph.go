@@ -1124,13 +1124,29 @@ func (gd *GraphData) GetLevel(id uint32) int {
 	return int(chunk[cOff])
 }
 func (h *ArrowHNSW) ensureChunk(data *GraphData, cID, _ uint32, dims int) *GraphData {
-	// Use Double-Check Locking pattern with atomic CAS
+	// Fast path check to avoid locking if chunk is already allocated.
+	// This relies on Levels being the first thing allocated.
+	if len(data.Levels) > int(cID) && atomic.LoadUint64(&data.Levels[cID]) != 0 {
+		return data
+	}
 
+	// Slow path: lock to ensure atomic chunk allocation
+	h.initMu.Lock()
+	defer h.initMu.Unlock()
+
+	// Double-check after lock acquisition
+	if len(data.Levels) > int(cID) && atomic.LoadUint64(&data.Levels[cID]) != 0 {
+		return data
+	}
+
+	// Use Double-Check Locking pattern with atomic CAS
 	// Levels
 	if atomic.LoadUint64(&data.Levels[cID]) == 0 {
 		ref, err := data.Uint8Arena.AllocSlice(ChunkSize)
 		if err == nil {
-			atomic.CompareAndSwapUint64(&data.Levels[cID], 0, ref.Offset)
+			if atomic.CompareAndSwapUint64(&data.Levels[cID], 0, ref.Offset) {
+				h.dataset.IndexMemoryBytes.Add(int64(ChunkSize))
+			}
 		}
 	}
 
@@ -1186,8 +1202,11 @@ func (h *ArrowHNSW) ensureChunk(data *GraphData, cID, _ uint32, dims int) *Graph
 
 		if err == nil && ref.Offset != 0 {
 			// Try to set the vector offset. If we fail, it means someone else already set it.
-			atomic.CompareAndSwapUint64(&data.Vectors[cID], 0, ref.Offset)
-			metrics.HNSWArenaAllocationBytes.WithLabelValues(data.Type.String()).Add(float64(count * data.Type.ElementSize()))
+			if atomic.CompareAndSwapUint64(&data.Vectors[cID], 0, ref.Offset) {
+				allocBytes := int64(count * data.Type.ElementSize())
+				metrics.HNSWArenaAllocationBytes.WithLabelValues(data.Type.String()).Add(float64(allocBytes))
+				h.dataset.IndexMemoryBytes.Add(allocBytes)
+			}
 		}
 	}
 
@@ -1199,6 +1218,7 @@ func (h *ArrowHNSW) ensureChunk(data *GraphData, cID, _ uint32, dims int) *Graph
 		ref, err := data.Uint8Arena.AllocSliceDirty(ChunkSize * paddedDims)
 		if err == nil {
 			if atomic.CompareAndSwapUint64(&data.VectorsSQ8[cID], 0, ref.Offset) {
+				h.dataset.IndexMemoryBytes.Add(int64(ChunkSize * paddedDims))
 				// Copy-On-Write logic remains same...
 				// Copy-On-Write: If we have a backing graph, copy existing vectors into this new chunk
 				if data.BackingGraph != nil {
@@ -1231,7 +1251,9 @@ func (h *ArrowHNSW) ensureChunk(data *GraphData, cID, _ uint32, dims int) *Graph
 	if h.config.PQEnabled && data.PQDims > 0 && len(data.VectorsPQ) > int(cID) && atomic.LoadUint64(&data.VectorsPQ[cID]) == 0 {
 		ref, err := data.Uint8Arena.AllocSliceDirty(ChunkSize * data.PQDims)
 		if err == nil {
-			atomic.CompareAndSwapUint64(&data.VectorsPQ[cID], 0, ref.Offset)
+			if atomic.CompareAndSwapUint64(&data.VectorsPQ[cID], 0, ref.Offset) {
+				h.dataset.IndexMemoryBytes.Add(int64(ChunkSize * data.PQDims))
+			}
 		}
 	}
 
@@ -1240,7 +1262,9 @@ func (h *ArrowHNSW) ensureChunk(data *GraphData, cID, _ uint32, dims int) *Graph
 		numWords := (dims + 63) / 64
 		ref, err := data.Uint64Arena.AllocSliceDirty(ChunkSize * numWords)
 		if err == nil {
-			atomic.CompareAndSwapUint64(&data.VectorsBQ[cID], 0, ref.Offset)
+			if atomic.CompareAndSwapUint64(&data.VectorsBQ[cID], 0, ref.Offset) {
+				h.dataset.IndexMemoryBytes.Add(int64(ChunkSize * numWords * 8))
+			}
 		}
 	}
 
@@ -1249,7 +1273,9 @@ func (h *ArrowHNSW) ensureChunk(data *GraphData, cID, _ uint32, dims int) *Graph
 		paddedDimsF16 := data.GetPaddedDimsForType(VectorTypeFloat16)
 		ref, err := data.Float16Arena.AllocSliceDirty(ChunkSize * paddedDimsF16)
 		if err == nil {
-			atomic.CompareAndSwapUint64(&data.VectorsF16[cID], 0, ref.Offset)
+			if atomic.CompareAndSwapUint64(&data.VectorsF16[cID], 0, ref.Offset) {
+				h.dataset.IndexMemoryBytes.Add(int64(ChunkSize * paddedDimsF16 * 2))
+			}
 		}
 	}
 
@@ -1259,7 +1285,10 @@ func (h *ArrowHNSW) ensureChunk(data *GraphData, cID, _ uint32, dims int) *Graph
 			// Neighbors can be dirty (we rely on Counts)
 			ref, err := data.Uint32Arena.AllocSliceDirty(ChunkSize * MaxNeighbors)
 			if err == nil {
-				atomic.CompareAndSwapUint64(&data.Neighbors[i][cID], 0, ref.Offset)
+				if atomic.CompareAndSwapUint64(&data.Neighbors[i][cID], 0, ref.Offset) {
+					allocBytes := int64(ChunkSize * MaxNeighbors * 4)
+					h.dataset.IndexMemoryBytes.Add(allocBytes)
+				}
 			}
 		}
 		if atomic.LoadUint64(&data.Counts[i][cID]) == 0 {

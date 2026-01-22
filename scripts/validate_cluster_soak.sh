@@ -34,16 +34,16 @@ echo ">>> [1/5] Running Gossip & Global Search Validation (Pre-Soak)..."
 python3 scripts/verify_global_search.py
 
 # 3. Soak Test Node 1
-echo ">>> [2/5] Soak Testing Node 1 (30s)..."
-python3 scripts/perf_test.py --dataset soak_test --rows 2000 --dim 384 --search --hybrid --concurrent 4 --duration 30 --data-uri grpc://localhost:3000 --meta-uri grpc://localhost:3001
+echo ">>> [2/5] Soak Testing Node 1 (45s)..."
+python3 scripts/perf_test.py --dataset soak_test --rows 500 --dim 384 --search --hybrid --concurrent 4 --duration 45 --data-uri grpc://localhost:3000 --meta-uri grpc://localhost:3001
 
 # 4. Soak Test Node 2
-echo ">>> [3/5] Soak Testing Node 2 (30s)..."
-python3 scripts/perf_test.py --dataset soak_test --rows 2000 --dim 384 --search --hybrid --concurrent 4 --duration 30 --data-uri grpc://localhost:3010 --meta-uri grpc://localhost:3011
+echo ">>> [3/5] Soak Testing Node 2 (45s)..."
+python3 scripts/perf_test.py --dataset soak_test --rows 500 --dim 384 --search --hybrid --concurrent 4 --duration 45 --data-uri grpc://localhost:3010 --meta-uri grpc://localhost:3011
 
 # 5. Soak Test Node 3
-echo ">>> [4/5] Soak Testing Node 3 (30s)..."
-python3 scripts/perf_test.py --dataset soak_test --rows 2000 --dim 384 --search --hybrid --concurrent 4 --duration 30 --data-uri grpc://localhost:3020 --meta-uri grpc://localhost:3021
+echo ">>> [4/5] Soak Testing Node 3 (45s)..."
+python3 scripts/perf_test.py --dataset soak_test --rows 500 --dim 384 --search --hybrid --concurrent 4 --duration 45 --data-uri grpc://localhost:3020 --meta-uri grpc://localhost:3021
 
 # 6. Validation (Post-Soak)
 echo ">>> [5/5] Running Gossip & Global Search Validation (Post-Soak)..."

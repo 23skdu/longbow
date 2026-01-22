@@ -647,6 +647,9 @@ def benchmark_concurrent_load(data_uri: str, meta_uri: str, name: str, dim: int,
                 
                 local_ops += 1
                 local_latencies.append((time.time() - start) * 1000)
+                
+                # Small sleep to prevent DoS-like load on local resources
+                time.sleep(0.01) # 10ms
             except Exception as e:
                 local_errors += 1
                 if local_errors <= 1:

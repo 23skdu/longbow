@@ -469,6 +469,42 @@ var (
 		},
 		[]string{"dataset"},
 	)
+
+	// Adaptive Chunk Sizing Metrics
+	HnswAdaptiveChunkSize = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_hnsw_adaptive_chunk_size",
+			Help:    "Chunk sizes used in adaptive parallel search",
+			Buckets: []float64{10, 25, 50, 100, 250, 500, 1000, 2500, 5000},
+		},
+		[]string{"dataset", "method"}, // method: "parallel", "serial"
+	)
+
+	HnswParallelSearchWorkerCount = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_hnsw_parallel_search_worker_count",
+			Help:    "Number of workers used in parallel search",
+			Buckets: []float64{1, 2, 4, 8, 16, 32, 64},
+		},
+		[]string{"dataset"},
+	)
+
+	HnswParallelSearchEfficiency = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_hnsw_parallel_search_efficiency",
+			Help:    "Efficiency ratio (work per worker) in parallel search",
+			Buckets: []float64{0.1, 0.25, 0.5, 1.0, 2.0, 4.0, 10.0},
+		},
+		[]string{"dataset"},
+	)
+
+	HnswSerialFallbackTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_hnsw_serial_fallback_total",
+			Help: "Total number of serial fallback decisions",
+		},
+		[]string{"dataset", "reason"}, // reason: "small_set", "disabled", "efficiency"
+	)
 )
 
 // =============================================================================

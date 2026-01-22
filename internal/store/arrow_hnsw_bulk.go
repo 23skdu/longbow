@@ -150,9 +150,9 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 					sq8Chunk := data.GetVectorsSQ8Chunk(cID)
 					if sq8Chunk != nil {
 						// SQ8 Quantizer currently only supports []float32
-						// We might need to convert or skip if not supported
+						// To make it generic, use NewGenericSQ8Quantizer wrapper around SQ8Encoder
+						// Type conversion from float16/int8 to float32 would use helpers in generic_quantizer.go
 						// For now, only support float32 for SQ8 optimization path here
-						// TODO: Make quantizer generic
 						if vf32, ok := v.([]float32); ok {
 							sq8Stride := (dims + 63) & ^63
 							start := int(cOff) * sq8Stride

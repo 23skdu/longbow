@@ -122,11 +122,11 @@ drain_i:
 		job.batch.Release()
 	}
 
-	// If it flushes every 10MB:
-	// Each rec is 2MB. 5 records = 10MB.
-	// Total 10 records -> 2 flushes.
+	// With 32MB batching limit:
+	// Each rec is 2MB. 10 records = 20MB total.
+	// All records fit in one batch (< 32MB), so only 1 flush occurs.
 
-	assert.Equal(t, 2, flushCount, "Should have flushed 2 times with 10MB limit")
+	assert.Equal(t, 1, flushCount, "Should have flushed 1 time with 32MB limit")
 }
 
 // Helpers for testing

@@ -55,9 +55,11 @@ func (c AdaptiveIndexConfig) Validate() error {
 
 // BruteForceIndex implements VectorIndex using linear scan O(N) search.
 type BruteForceIndex struct {
-	mu        sync.RWMutex
-	locations []Location
-	dataset   *Dataset
+	mu            sync.RWMutex
+	locations     []Location
+	dataset       *Dataset
+	activeReaders atomic.Int64  // Track active zero-copy readers
+	currentEpoch  atomic.Uint64 // Epoch counter for safe reclamation
 }
 
 // NewBruteForceIndex creates a new brute force index for the given dataset.
@@ -170,12 +172,16 @@ func (b *BruteForceIndex) SearchVectors(ctx context.Context, q any, k int, filte
 				return nil, err
 			}
 		}
-		vec := b.getVector(loc)
-		if vec == nil {
+
+		// Use zero-copy access for performance
+		vec, release := b.getVectorUnsafe(loc)
+		if vec == nil || release == nil {
 			continue
 		}
 
 		dist, err := simd.EuclideanDistance(qF32, vec)
+		release() // Release immediately after distance computation
+
 		if err != nil {
 			dist = math.MaxFloat32
 		}
@@ -245,7 +251,66 @@ func (b *BruteForceIndex) getVector(loc Location) []float32 {
 	// Return a copy to avoid data races
 	result := make([]float32, listSize)
 	copy(result, values[start:start+listSize])
+
+	// Track metrics
+	metrics.VectorAccessCopyTotal.WithLabelValues(b.dataset.Name, "brute_force").Inc()
+	metrics.VectorAccessBytesAllocated.WithLabelValues(b.dataset.Name, "brute_force").Add(float64(listSize * 4))
+
 	return result
+}
+
+// getVectorUnsafe retrieves a zero-copy view of the vector.
+// The caller MUST call release() when done to decrement the epoch counter.
+// The returned slice is only valid until release() is called.
+func (b *BruteForceIndex) getVectorUnsafe(loc Location) (vec []float32, release func()) {
+	b.enterEpoch()
+
+	if b.dataset == nil || loc.BatchIdx >= len(b.dataset.Records) {
+		b.exitEpoch()
+		return nil, nil
+	}
+
+	record := b.dataset.Records[loc.BatchIdx]
+	fieldIndices := record.Schema().FieldIndices("vector")
+	if len(fieldIndices) == 0 {
+		b.exitEpoch()
+		return nil, nil
+	}
+
+	vecCol := record.Column(fieldIndices[0])
+	list, ok := vecCol.(*array.FixedSizeList)
+	if !ok {
+		b.exitEpoch()
+		return nil, nil
+	}
+
+	values := list.ListValues().(*array.Float32).Float32Values()
+	listSize := int(list.DataType().(*arrow.FixedSizeListType).Len())
+	start := loc.RowIdx * listSize
+
+	if start+listSize > len(values) {
+		b.exitEpoch()
+		return nil, nil
+	}
+
+	// Return direct slice view (zero-copy)
+	vec = values[start : start+listSize]
+	release = b.exitEpoch
+
+	// Track metrics
+	metrics.VectorAccessZeroCopyTotal.WithLabelValues(b.dataset.Name, "brute_force").Inc()
+
+	return vec, release
+}
+
+// enterEpoch increments the active reader count
+func (b *BruteForceIndex) enterEpoch() {
+	b.activeReaders.Add(1)
+}
+
+// exitEpoch decrements the active reader count
+func (b *BruteForceIndex) exitEpoch() {
+	b.activeReaders.Add(-1)
 }
 
 // bfHeapItem is a heap item for brute force search.

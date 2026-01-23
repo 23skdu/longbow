@@ -102,6 +102,13 @@ var (
 		Help:    "Latency of DoExchange search operations",
 		Buckets: []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5},
 	})
+
+	DoExchangeSearchTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_do_exchange_search_total",
+			Help: "Total number of DoExchange search operations",
+		},
+	)
 )
 
 // =============================================================================
@@ -159,5 +166,20 @@ var (
 			Help: "Total number of gRPC messages received",
 		},
 		[]string{"method"},
+	)
+
+	GRPCStreamSendLatencySeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_grpc_stream_send_latency_seconds",
+			Help:    "Latency of gRPC stream Send operations",
+			Buckets: []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5},
+		},
+	)
+
+	GRPCStreamStallTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_grpc_stream_stall_total",
+			Help: "Total number of gRPC stream stalls detected",
+		},
 	)
 )

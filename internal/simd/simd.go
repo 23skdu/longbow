@@ -9,7 +9,6 @@ import (
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/apache/arrow-go/v18/arrow/float16"
 
-	"github.com/klauspost/cpuid/v2"
 	"github.com/rs/zerolog/log"
 )
 
@@ -17,14 +16,6 @@ var (
 	ErrDimensionMismatch    = errors.New("simd: vector dimension mismatch")
 	ErrInitializationFailed = errors.New("simd: initialization failed")
 )
-
-// CPUFeatures contains detected CPU SIMD capabilities
-type CPUFeatures struct {
-	Vendor    string
-	HasAVX2   bool
-	HasAVX512 bool
-	HasNEON   bool
-}
 
 // Function pointer types for dispatch
 type (
@@ -60,8 +51,6 @@ type (
 )
 
 var (
-	features       CPUFeatures
-	implementation string
 
 	// Function pointers initialized at startup - eliminates switch overhead in hot path
 	euclideanDistanceImpl    distanceFunc
@@ -135,27 +124,6 @@ func AndBytes(dst, src []byte) error {
 	}
 	andBytesImpl(dst, src)
 	return nil
-}
-
-func detectCPU() {
-	features = CPUFeatures{
-		Vendor:    cpuid.CPU.VendorString,
-		HasAVX2:   cpuid.CPU.Supports(cpuid.AVX2),
-		HasAVX512: cpuid.CPU.Supports(cpuid.AVX512F) && cpuid.CPU.Supports(cpuid.AVX512DQ),
-		HasNEON:   cpuid.CPU.Supports(cpuid.ASIMD), // ARM NEON
-	}
-
-	// Select best implementation
-	switch {
-	case features.HasAVX512:
-		implementation = "avx512"
-	case features.HasAVX2:
-		implementation = "avx2"
-	case features.HasNEON:
-		implementation = "neon"
-	default:
-		implementation = "generic"
-	}
 }
 
 // initializeDispatch sets function pointers based on detected CPU features.
@@ -337,14 +305,6 @@ func initializeDispatch() {
 }
 
 // GetCPUFeatures returns detected CPU SIMD capabilities
-func GetCPUFeatures() CPUFeatures {
-	return features
-}
-
-// GetImplementation returns the selected SIMD implementation name
-func GetImplementation() string {
-	return implementation
-}
 
 // EuclideanDistance calculates the Euclidean distance between two vectors.
 // Uses pre-selected implementation via function pointer (no switch overhead).

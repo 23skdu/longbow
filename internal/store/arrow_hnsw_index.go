@@ -659,23 +659,6 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, q any, k int, f
 }
 
 // GetLocation implements VectorIndex.
-func (h *ArrowHNSW) GetLocation(id VectorID) (Location, bool) {
-	return h.locationStore.Get(id)
-}
-
-// GetVectorID implements VectorIndex.
-// It returns the ID for a given location using the reverse index.
-func (h *ArrowHNSW) GetVectorID(loc Location) (VectorID, bool) {
-	return h.locationStore.GetID(loc)
-}
-
-// SetLocation allows manually setting the location for a vector ID.
-// This is used by ShardedHNSW to populate shard-local location stores for filtering.
-func (h *ArrowHNSW) SetLocation(id VectorID, loc Location) {
-	h.locationStore.EnsureCapacity(id)
-	h.locationStore.Set(id, loc)
-	h.locationStore.UpdateSize(id)
-}
 
 // GetNeighbors returns the nearest neighbors for a given vector ID from the graph
 // at the base layer (Layer 0).

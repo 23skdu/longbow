@@ -878,7 +878,22 @@ func (h *ArrowHNSW) Size() int {
 	return int(h.nodeCount.Load())
 }
 
+// Delete marks a vector as deleted in the index.
+// This is a soft delete that will be cleaned up during compaction.
+func (h *ArrowHNSW) Delete(id uint32) error {
+	h.deleted.Set(int(id))
+	return nil
+}
+
+// IsDeleted checks if a vector is marked as deleted.
+// Checks both soft deletes (bitset) and hard deletes (tombstone marker).
 func (h *ArrowHNSW) IsDeleted(id uint32) bool {
+	// First check soft delete (bitset)
+	if h.deleted.Contains(int(id)) {
+		return true
+	}
+
+	// Then check hard delete (tombstone marker)
 	data := h.data.Load()
 	if data == nil || int(id) >= data.Capacity {
 		return true
@@ -903,16 +918,17 @@ func (gd *GraphData) GetLevel(id uint32) int {
 }
 
 func (h *ArrowHNSW) NeedsCompaction() bool {
-	// Simple heuristic: if deleted nodes > 10% of total capacity
-	deleted := 0
+	// Heuristic: if deleted nodes > 30% of total nodes OR capacity > 2x expected size
 	data := h.data.Load()
-	if data == nil {
+	if data == nil || data.Capacity == 0 {
 		return false
 	}
-	for i := uint32(0); i < uint32(data.Capacity); i++ {
-		if h.IsDeleted(i) {
-			deleted++
-		}
+	totalNodes := int(h.nodeCount.Load())
+	if totalNodes == 0 {
+		return false
 	}
-	return deleted > data.Capacity/10
+	deletedCount := h.deleted.Count()
+	deletedRatio := float64(deletedCount) / float64(totalNodes)
+	sizeRatio := float64(data.Capacity) / float64(totalNodes)
+	return deletedRatio > 0.3 || sizeRatio > 2.0
 }

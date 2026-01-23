@@ -88,6 +88,11 @@ func (t *GCTuner) Start(ctx context.Context, interval time.Duration) {
 		debug.SetMemoryLimit(t.limitBytes)
 	}
 
+	// Use 500ms interval for faster response
+	if interval == 0 {
+		interval = 500 * time.Millisecond
+	}
+
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
@@ -110,6 +115,7 @@ func (t *GCTuner) tune(heapInUse uint64) {
 
 	t.mu.RLock()
 	aggressive := t.IsAggressive
+	totalArenaCapacity := int64(0)
 	unusedArenaMemory := int64(0)
 	if aggressive {
 		// Use both registered and global arenas
@@ -120,6 +126,7 @@ func (t *GCTuner) tune(heapInUse uint64) {
 		for _, a := range arenas {
 			seen[a] = true
 			stats := a.Stats()
+			totalArenaCapacity += stats.TotalCapacity
 			unused := stats.TotalCapacity - stats.UsedBytes
 			if unused > 0 {
 				unusedArenaMemory += unused
@@ -130,6 +137,7 @@ func (t *GCTuner) tune(heapInUse uint64) {
 				continue
 			}
 			stats := a.Stats()
+			totalArenaCapacity += stats.TotalCapacity
 			unused := stats.TotalCapacity - stats.UsedBytes
 			if unused > 0 {
 				unusedArenaMemory += unused
@@ -147,6 +155,35 @@ func (t *GCTuner) tune(heapInUse uint64) {
 	}
 
 	ratio := float64(effectiveInUse) / float64(t.limitBytes)
+
+	// Arena-aware tuning: if arena usage >70% of heap, set GOGC=50
+	arenaRatio := float64(totalArenaCapacity) / float64(heapInUse)
+	var targetGOGC int
+	if aggressive && arenaRatio > 0.7 {
+		// Arena-dominated heap: be very aggressive
+		targetGOGC = 50
+		if t.logger != nil {
+			t.logger.Warn().
+				Float64("arenaRatio", arenaRatio).
+				Int64("totalArenaCapacity", totalArenaCapacity).
+				Uint64("heapInUse", heapInUse).
+				Msg("Arena-dominated heap detected, setting aggressive GOGC=50")
+		}
+	} else {
+		// Standard logic
+		switch {
+		case ratio < 0.5:
+			targetGOGC = t.highGOGC
+		case ratio > 0.9:
+			targetGOGC = t.lowGOGC
+		default:
+			// Interpolate: 0.5 -> High, 0.9 -> Low
+			// Slope = (Low - High) / (0.9 - 0.5)
+			slope := float64(t.lowGOGC-t.highGOGC) / 0.4
+			targetGOGC = t.highGOGC + int(slope*(ratio-0.5))
+		}
+	}
+
 	if aggressive && ratio > 0.7 {
 		if t.logger != nil {
 			t.logger.Warn().Float64("ratio", ratio).Int64("effective", effectiveInUse).Msg("High effective heap utilization")
@@ -154,24 +191,6 @@ func (t *GCTuner) tune(heapInUse uint64) {
 	}
 	metrics.GCTunerHeapUtilization.Set(ratio)
 	t.lastUtilization.Store(uint64(ratio * 1000))
-
-	var targetGOGC int
-
-	// Simple Logic:
-	// < 50% usage -> HighGOGC (Relaxed GC)
-	// > 90% usage -> LowGOGC (Aggressive GC)
-	// In-between  -> Linear interpolation
-	switch {
-	case ratio < 0.5:
-		targetGOGC = t.highGOGC
-	case ratio > 0.9:
-		targetGOGC = t.lowGOGC
-	default:
-		// Interpolate: 0.5 -> High, 0.9 -> Low
-		// Slope = (Low - High) / (0.9 - 0.5)
-		slope := float64(t.lowGOGC-t.highGOGC) / 0.4
-		targetGOGC = t.highGOGC + int(slope*(ratio-0.5))
-	}
 
 	// Clamp
 	if targetGOGC < t.lowGOGC {

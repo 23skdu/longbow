@@ -306,35 +306,6 @@ func initializeDispatch() {
 
 // GetCPUFeatures returns detected CPU SIMD capabilities
 
-// EuclideanDistanceF16Batch computes Euclidean distances between one query and multiple Float16 vectors.
-func EuclideanDistanceF16Batch(query []float16.Num, vectors [][]float16.Num, results []float32) error {
-	if len(vectors) != len(results) {
-		return errors.New("simd: vectors and results length mismatch")
-	}
-	if len(vectors) == 0 {
-		return nil
-	}
-	return euclideanDistanceF16BatchImpl(query, vectors, results)
-}
-
-// ToFloat32 converts a float64 slice to a float32 slice (Allocates).
-func ToFloat32(v []float64) []float32 {
-	res := make([]float32, len(v))
-	for i, val := range v {
-		res[i] = float32(val)
-	}
-	return res
-}
-
-func float32SliceToBytes(vec []float32) []byte {
-	if len(vec) == 0 {
-		return nil
-	}
-	size := len(vec) * 4
-	ptr := unsafe.Pointer(&vec[0])
-	return unsafe.Slice((*byte)(ptr), size)
-}
-
 // Generic implementations (fallback)
 
 func euclideanGeneric(a, b []float32) (float32, error) {
@@ -374,94 +345,6 @@ func dotGeneric(a, b []float32) (float32, error) {
 // EuclideanDistanceBatch calculates the Euclidean distance between a query vector and multiple candidate vectors.
 // This batch version reduces function call overhead and allows for CPU-specific optimizations.
 // Uses pre-selected implementation via function pointer (no switch overhead).
-func EuclideanDistanceBatch(query []float32, vectors [][]float32, results []float32) error {
-	if len(vectors) != len(results) {
-		return errors.New("simd: vectors and results length mismatch")
-	}
-	if len(vectors) == 0 {
-		return nil
-	}
-	dims := len(query)
-	if dims == 384 {
-		for i, v := range vectors {
-			if v == nil || len(v) != 384 {
-				results[i] = math.MaxFloat32
-				continue
-			}
-			d, _ := euclideanDistance384Impl(query, v)
-			results[i] = d
-		}
-		return nil
-	}
-	if dims == 128 {
-		for i, v := range vectors {
-			if v == nil || len(v) != 128 {
-				results[i] = math.MaxFloat32
-				continue
-			}
-			d, _ := euclideanDistance128Impl(query, v)
-			results[i] = d
-		}
-		return nil
-	}
-	euclideanDistanceBatchImpl(query, vectors, results)
-	return nil
-}
-
-// EuclideanDistanceBatchFlat computes distances between a query and vectors in a flat buffer.
-// This is more efficient than EuclideanDistanceBatch when vectors are already available
-// in a contiguous memory layout, as it avoids allocating a [][]float32 slice wrapper.
-// flatVectors: concatenated vectors [v0_0, v0_1, ..., v0_dims-1, v1_0, ...]
-// numVectors: number of vectors in the buffer
-// dims: dimension of each vector
-func EuclideanDistanceBatchFlat(query []float32, flatVectors []float32, numVectors, dims int, results []float32) error {
-	if numVectors == 0 {
-		return nil
-	}
-	if dims == 384 {
-		for i := 0; i < numVectors; i++ {
-			offset := i * 384
-			v := flatVectors[offset : offset+384]
-			d, _ := euclideanDistance384Impl(query, v)
-			results[i] = d
-		}
-		return nil
-	}
-	if dims == 128 {
-		for i := 0; i < numVectors; i++ {
-			offset := i * 128
-			v := flatVectors[offset : offset+128]
-			d, _ := euclideanDistance128Impl(query, v)
-			results[i] = d
-		}
-		return nil
-	}
-	return euclideanDistanceBatchFlatImpl(query, flatVectors, numVectors, dims, results)
-}
-
-// EuclideanDistanceVerticalBatch optimally calculates distances for multiple vectors at once.
-func EuclideanDistanceVerticalBatch(query []float32, vectors [][]float32, results []float32) error {
-	if len(vectors) != len(results) {
-		return errors.New("simd: vectors and results length mismatch")
-	}
-	if len(vectors) == 0 {
-		return nil
-	}
-	euclideanDistanceVerticalBatchImpl(query, vectors, results)
-	return nil
-}
-
-// EuclideanDistanceSQ8Batch calculates Euclidean distance between SQ8 query and multiple SQ8 vectors.
-func EuclideanDistanceSQ8Batch(query []byte, vectors [][]byte, results []float32) error {
-	if len(vectors) != len(results) {
-		return errors.New("simd: vectors and results length mismatch")
-	}
-	if len(vectors) == 0 {
-		return nil
-	}
-	euclideanDistanceSQ8BatchImpl(query, vectors, results)
-	return nil
-}
 
 // euclideanSQ8BatchGeneric is the fallback implementation
 func euclideanSQ8BatchGeneric(query []byte, vectors [][]byte, results []float32) error {
@@ -565,14 +448,6 @@ func cosineBatchGeneric(query []float32, vectors [][]float32, results []float32)
 
 // ADCDistanceBatch calculates asymmetric distances for multiple PQ-encoded vectors.
 // table is the precomputed distance table of size [m * 256].
-// flatCodes is a flattened byte slice of size [len(results) * m].
-func ADCDistanceBatch(table []float32, flatCodes []byte, m int, results []float32) error {
-	if len(flatCodes) < len(results)*m {
-		return errors.New("simd: flatCodes too small")
-	}
-	adcDistanceBatchImpl(table, flatCodes, m, results)
-	return nil
-}
 
 // FindNearestCentroid finds the index of the nearest centroid to query using batch distance computation.
 // This is optimized for PQ encoding where we need to find the closest of K centroids for a subvector.
@@ -855,36 +730,6 @@ func dot128Unrolled4x(a, b []float32) (float32, error) {
 // =============================================================================
 
 // Batch function type for cosine and dot distance
-
-// CosineDistanceBatch calculates cosine distance between query and multiple vectors.
-// Uses parallel sum reduction with multiple accumulators for ILP optimization.
-func CosineDistanceBatch(query []float32, vectors [][]float32, results []float32) error {
-	if len(vectors) == 0 {
-		return nil
-	}
-	if len(results) < len(vectors) {
-		return errors.New("simd: results slice too small")
-	}
-	metrics.CosineBatchCallsTotal.Inc()
-	metrics.ParallelReductionVectorsProcessed.Add(float64(len(vectors)))
-	cosineDistanceBatchImpl(query, vectors, results)
-	return nil
-}
-
-// DotProductBatch calculates dot product between query and multiple vectors.
-// Uses parallel sum reduction with multiple accumulators for ILP optimization.
-func DotProductBatch(query []float32, vectors [][]float32, results []float32) error {
-	if len(vectors) == 0 {
-		return nil
-	}
-	if len(results) < len(vectors) {
-		return errors.New("simd: results slice too small")
-	}
-	metrics.DotProductBatchCallsTotal.Inc()
-	metrics.ParallelReductionVectorsProcessed.Add(float64(len(vectors)))
-	dotProductBatchImpl(query, vectors, results)
-	return nil
-}
 
 // Internal implementation pointers
 var prefetchImpl func(p unsafe.Pointer)

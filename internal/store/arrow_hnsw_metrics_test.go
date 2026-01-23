@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"testing"
 
 	"github.com/23skdu/longbow/internal/metrics"
@@ -38,13 +39,13 @@ func TestArrowHNSW_Metrics(t *testing.T) {
 		idx := NewArrowHNSW(ds, config, NewChunkedLocationStore())
 
 		// Add vectors 0 and 1
-		_, err := idx.AddByLocation(0, 0)
+		_, err := idx.AddByLocation(context.Background(), 0, 0)
 		require.NoError(t, err)
-		_, err = idx.AddByLocation(0, 1)
+		_, err = idx.AddByLocation(context.Background(), 0, 1)
 		require.NoError(t, err)
 
 		// Search for [1.0, 0.0]
-		res, err := idx.Search([]float32{1.0, 0.0}, 2, 20, nil)
+		res, err := idx.Search(context.Background(), []float32{1.0, 0.0}, 2, 20, nil)
 		require.NoError(t, err)
 		require.Len(t, res, 2)
 
@@ -80,12 +81,12 @@ func TestArrowHNSW_Metrics(t *testing.T) {
 		idx := NewArrowHNSW(ds, config, NewChunkedLocationStore())
 
 		// Add vector
-		_, err := idx.AddByLocation(0, 0)
+		_, err := idx.AddByLocation(context.Background(), 0, 0)
 		require.NoError(t, err)
 
 		// Perform search
 		q := []float32{0.5, 0.5, 0.5, 0.5}
-		_, err = idx.Search(q, 10, 20, nil)
+		_, err = idx.Search(context.Background(), q, 10, 20, nil)
 		require.NoError(t, err)
 
 		// Verify Metrics
@@ -101,10 +102,10 @@ func TestArrowHNSW_Metrics(t *testing.T) {
 		idxF16 := NewArrowHNSW(ds, configF16, NewChunkedLocationStore())
 
 		// Must add a vector so search doesn't early return
-		_, err = idxF16.AddByLocation(0, 0)
+		_, err = idxF16.AddByLocation(context.Background(), 0, 0)
 		require.NoError(t, err)
 
-		_, err = idxF16.Search(q, 10, 20, nil)
+		_, err = idxF16.Search(context.Background(), q, 10, 20, nil)
 		require.NoError(t, err)
 
 		countF16 := testutil.ToFloat64(metrics.HNSWPolymorphicSearchCount.WithLabelValues("float16"))

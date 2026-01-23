@@ -32,8 +32,14 @@ func TestEuclideanUnrolledCorrectness(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			expected := euclideanGeneric(tc.a, tc.b)
-			got := euclideanUnrolled4x(tc.a, tc.b)
+			expected, err1 := euclideanGeneric(tc.a, tc.b)
+			if err1 != nil {
+				t.Errorf("euclideanGeneric error: %v", err1)
+			}
+			got, err2 := euclideanUnrolled4x(tc.a, tc.b)
+			if err2 != nil {
+				t.Errorf("euclideanUnrolled4x error: %v", err2)
+			}
 			if !almostEqual(expected, got) {
 				t.Errorf("euclideanUnrolled4x mismatch: expected %v, got %v", expected, got)
 			}
@@ -61,8 +67,14 @@ func TestCosineUnrolledCorrectness(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			expected := cosineGeneric(tc.a, tc.b)
-			got := cosineUnrolled4x(tc.a, tc.b)
+			expected, err1 := cosineGeneric(tc.a, tc.b)
+			if err1 != nil {
+				t.Errorf("cosineGeneric error: %v", err1)
+			}
+			got, err2 := cosineUnrolled4x(tc.a, tc.b)
+			if err2 != nil {
+				t.Errorf("cosineUnrolled4x error: %v", err2)
+			}
 			if !almostEqual(expected, got) {
 				t.Errorf("cosineUnrolled4x mismatch: expected %v, got %v", expected, got)
 			}
@@ -89,8 +101,14 @@ func TestDotUnrolledCorrectness(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			expected := dotGeneric(tc.a, tc.b)
-			got := dotUnrolled4x(tc.a, tc.b)
+			expected, err1 := dotGeneric(tc.a, tc.b)
+			if err1 != nil {
+				t.Errorf("dotGeneric error: %v", err1)
+			}
+			got, err2 := dotUnrolled4x(tc.a, tc.b)
+			if err2 != nil {
+				t.Errorf("dotUnrolled4x error: %v", err2)
+			}
 			if !almostEqual(expected, got) {
 				t.Errorf("dotUnrolled4x mismatch: expected %v, got %v", expected, got)
 			}
@@ -112,11 +130,15 @@ func TestEuclideanBatchUnrolledCorrectness(t *testing.T) {
 
 	// Compute expected with scalar
 	for i, v := range vectors {
-		expectedResults[i] = euclideanGeneric(query, v)
+		res, err := euclideanGeneric(query, v)
+		if err != nil {
+			t.Errorf("euclideanGeneric error: %v", err)
+		}
+		expectedResults[i] = res
 	}
 
 	// Compute with unrolled batch
-	euclideanBatchUnrolled4x(query, vectors, gotResults)
+	_ = euclideanBatchUnrolled4x(query, vectors, gotResults)
 
 	for i := range expectedResults {
 		if !almostEqual(expectedResults[i], gotResults[i]) {
@@ -134,7 +156,7 @@ func BenchmarkEuclidean_Scalar_128dim(b *testing.B) {
 	vec := make128Offset()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = euclideanGeneric(a, vec)
+		_, _ = euclideanGeneric(a, vec)
 	}
 }
 
@@ -143,7 +165,7 @@ func BenchmarkEuclidean_Unrolled4x_128dim(b *testing.B) {
 	vec := make128Offset()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = euclideanUnrolled4x(a, vec)
+		_, _ = euclideanUnrolled4x(a, vec)
 	}
 }
 
@@ -152,7 +174,7 @@ func BenchmarkCosine_Scalar_128dim(b *testing.B) {
 	vec := make128Offset()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = cosineGeneric(a, vec)
+		_, _ = cosineGeneric(a, vec)
 	}
 }
 
@@ -161,7 +183,7 @@ func BenchmarkCosine_Unrolled4x_128dim(b *testing.B) {
 	vec := make128Offset()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = cosineUnrolled4x(a, vec)
+		_, _ = cosineUnrolled4x(a, vec)
 	}
 }
 
@@ -170,7 +192,7 @@ func BenchmarkDot_Scalar_128dim(b *testing.B) {
 	vec := make128Offset()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = dotGeneric(a, vec)
+		_, _ = dotGeneric(a, vec)
 	}
 }
 
@@ -179,7 +201,7 @@ func BenchmarkDot_Unrolled4x_128dim(b *testing.B) {
 	vec := make128Offset()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = dotUnrolled4x(a, vec)
+		_, _ = dotUnrolled4x(a, vec)
 	}
 }
 
@@ -205,7 +227,7 @@ func BenchmarkEuclideanBatch_Unrolled4x_128dim_100vec(b *testing.B) {
 	results := make([]float32, 100)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		euclideanBatchUnrolled4x(query, vectors, results)
+		_ = euclideanBatchUnrolled4x(query, vectors, results)
 	}
 }
 

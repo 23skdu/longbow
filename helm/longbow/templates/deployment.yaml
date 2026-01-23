@@ -95,6 +95,8 @@ spec:
               value: {{ .Values.hnsw.refinementFactor | quote }}
             - name: LONGBOW_USE_HNSW2
               value: {{ .Values.hnsw.useHNSW2 | quote }}
+            - name: LONGBOW_USE_DISK
+              value: {{ .Values.hnsw.useDisk | quote }}
             # Memory & GC
             - name: MEMORY_EVICTION_HEADROOM
               value: {{ .Values.memory.evictionHeadroom | quote }}

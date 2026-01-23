@@ -69,6 +69,7 @@ func TestVectorSearchAction_ValidRequest(t *testing.T) {
 	defer func() { _ = store.Close() }()
 
 	metaServer := NewMetaServer(store)
+	defer func() { _ = metaServer.Close() }()
 
 	// Create VectorSearch request
 	req := qry.VectorSearchRequest{
@@ -102,6 +103,7 @@ func TestVectorSearchAction_InvalidDataset(t *testing.T) {
 	defer func() { _ = store.Close() }()
 
 	metaServer := NewMetaServer(store)
+	defer func() { _ = metaServer.Close() }()
 
 	req := qry.VectorSearchRequest{
 		Dataset: "nonexistent",
@@ -129,6 +131,7 @@ func TestVectorSearchAction_InvalidJSON(t *testing.T) {
 	defer func() { _ = store.Close() }()
 
 	metaServer := NewMetaServer(store)
+	defer func() { _ = metaServer.Close() }()
 
 	action := &flight.Action{
 		Type: "VectorSearch",
@@ -149,6 +152,7 @@ func TestVectorSearchAction_DimensionMismatch(t *testing.T) {
 	defer func() { _ = store.Close() }()
 
 	metaServer := NewMetaServer(store)
+	defer func() { _ = metaServer.Close() }()
 
 	// Wrong dimension - dataset has 128, we send 64
 	req := qry.VectorSearchRequest{
@@ -177,6 +181,7 @@ func TestVectorSearchAction_KLessThanOne(t *testing.T) {
 	defer func() { _ = store.Close() }()
 
 	metaServer := NewMetaServer(store)
+	defer func() { _ = metaServer.Close() }()
 
 	req := qry.VectorSearchRequest{
 		Dataset: "test-dataset",
@@ -204,6 +209,7 @@ func TestVectorSearchAction_MetricsEmitted(t *testing.T) {
 	defer func() { _ = store.Close() }()
 
 	metaServer := NewMetaServer(store)
+	defer func() { _ = metaServer.Close() }()
 
 	req := qry.VectorSearchRequest{
 		Dataset: "test-dataset",
@@ -309,6 +315,7 @@ func TestVectorSearchByIDAction_Success(t *testing.T) {
 	oldRec.Release()
 
 	metaServer := NewMetaServer(store)
+	defer func() { _ = metaServer.Close() }()
 
 	// Test: Find ID "100" (Index 1)
 	req := qry.VectorSearchByIDRequest{
@@ -339,6 +346,7 @@ func TestVectorSearchAction_GraphBias(t *testing.T) {
 	defer func() { _ = store.Close() }()
 
 	metaServer := NewMetaServer(store)
+	defer func() { _ = metaServer.Close() }()
 	ds, _ := store.getDataset("graph-dataset")
 
 	// Setup Graph: Connect 0(ID=10) <-> 1(ID=20)

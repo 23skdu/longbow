@@ -1,7 +1,7 @@
 package store
 
 import (
-	"fmt"
+	"context"
 	"runtime"
 	"sort"
 	"sync"
@@ -68,11 +68,13 @@ func NewAutoShardingIndex(ds *Dataset, config AutoShardingConfig) *AutoShardingI
 		// Use HNSW2 default config if enabled
 		hnswConfig := DefaultArrowHNSWConfig()
 		hnswConfig.Metric = ds.Metric
+		hnswConfig.Logger = ds.Logger
 		idx = NewArrowHNSW(ds, hnswConfig, nil)
 	default:
 		// Use ArrowHNSW as default for better performance (parallelism, batching)
 		hnswConfig := DefaultArrowHNSWConfig()
 		hnswConfig.Metric = ds.Metric
+		hnswConfig.Logger = ds.Logger
 		idx = NewArrowHNSW(ds, hnswConfig, nil)
 	}
 
@@ -100,7 +102,7 @@ func (a *AutoShardingIndex) SetInitialDimension(dim int) {
 }
 
 // AddByLocation adds a vector to the index.
-func (a *AutoShardingIndex) AddByLocation(batchIdx, rowIdx int) (uint32, error) {
+func (a *AutoShardingIndex) AddByLocation(ctx context.Context, batchIdx, rowIdx int) (uint32, error) {
 	// Lock held throughout execution to prevent Close during migration
 	a.mu.RLock()
 	sharded := a.sharded
@@ -108,18 +110,18 @@ func (a *AutoShardingIndex) AddByLocation(batchIdx, rowIdx int) (uint32, error) 
 	curr := a.current
 
 	if sharded {
-		id, err := curr.AddByLocation(batchIdx, rowIdx)
+		id, err := curr.AddByLocation(ctx, batchIdx, rowIdx)
 		a.mu.RUnlock()
 		return id, err
 	}
 
 	if interim != nil {
-		id, err := interim.AddByLocation(batchIdx, rowIdx)
+		id, err := interim.AddByLocation(ctx, batchIdx, rowIdx)
 		a.mu.RUnlock()
 		return id, err
 	}
 
-	id, err := curr.AddByLocation(batchIdx, rowIdx)
+	id, err := curr.AddByLocation(ctx, batchIdx, rowIdx)
 	a.mu.RUnlock()
 
 	if err == nil {
@@ -129,25 +131,25 @@ func (a *AutoShardingIndex) AddByLocation(batchIdx, rowIdx int) (uint32, error) 
 }
 
 // AddByRecord implementation to support interim index.
-func (a *AutoShardingIndex) AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32, error) {
+func (a *AutoShardingIndex) AddByRecord(ctx context.Context, rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32, error) {
 	a.mu.RLock()
 	sharded := a.sharded
 	interim := a.interimIndex
 	curr := a.current
 
 	if sharded {
-		id, err := curr.AddByRecord(rec, rowIdx, batchIdx)
+		id, err := curr.AddByRecord(ctx, rec, rowIdx, batchIdx)
 		a.mu.RUnlock()
 		return id, err
 	}
 
 	if interim != nil {
-		id, err := interim.AddByRecord(rec, rowIdx, batchIdx)
+		id, err := interim.AddByRecord(ctx, rec, rowIdx, batchIdx)
 		a.mu.RUnlock()
 		return id, err
 	}
 
-	id, err := curr.AddByRecord(rec, rowIdx, batchIdx)
+	id, err := curr.AddByRecord(ctx, rec, rowIdx, batchIdx)
 	a.mu.RUnlock()
 
 	if err == nil {
@@ -157,26 +159,26 @@ func (a *AutoShardingIndex) AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx 
 }
 
 // AddBatch adds multiple vectors from multiple record batches efficiently.
-func (a *AutoShardingIndex) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []int) ([]uint32, error) {
+func (a *AutoShardingIndex) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowIdxs, batchIdxs []int) ([]uint32, error) {
 	a.mu.RLock()
 	sharded := a.sharded
 	interim := a.interimIndex
 	curr := a.current
 
 	if sharded {
-		ids, err := curr.AddBatch(recs, rowIdxs, batchIdxs)
+		ids, err := curr.AddBatch(ctx, recs, rowIdxs, batchIdxs)
 		a.mu.RUnlock()
 		return ids, err
 	}
 
 	if interim != nil {
 		// During migration, add to the NEW index directly
-		ids, err := interim.AddBatch(recs, rowIdxs, batchIdxs)
+		ids, err := interim.AddBatch(ctx, recs, rowIdxs, batchIdxs)
 		a.mu.RUnlock()
 		return ids, err
 	}
 
-	ids, err := curr.AddBatch(recs, rowIdxs, batchIdxs)
+	ids, err := curr.AddBatch(ctx, recs, rowIdxs, batchIdxs)
 	a.mu.RUnlock()
 
 	if err == nil {
@@ -227,15 +229,13 @@ func (a *AutoShardingIndex) migrateToSharded() {
 		return
 	}
 
-	fmt.Println("Starting migration to ShardedHNSW...")
-
-	n := a.current.Len()
+	// Starting migration
 
 	// Verify we have a basic HNSWIndex
 	oldIndex, ok := a.current.(*HNSWIndex)
 	if !ok {
 		// Should not happen unless initialized incorrectly or wrapped recursively
-		fmt.Printf("Cannot migrate: current index is not *HNSWIndex, but %T\n", a.current)
+		// Silent failure
 		a.mu.Unlock()
 		a.dataset.dataMu.RUnlock()
 		return
@@ -269,7 +269,7 @@ func (a *AutoShardingIndex) migrateToSharded() {
 	batchSize := 50
 	lastMigrated := 0
 
-	fmt.Printf("Migration started: %d vectors to move...\n", n)
+	// Migration started
 
 	for {
 		// Read state under lock
@@ -310,16 +310,16 @@ func (a *AutoShardingIndex) migrateToSharded() {
 
 		// Perform expensive additions outside dataMu
 		for _, it := range items {
-			_, err := newIndex.AddByRecord(it.rec, it.loc.RowIdx, it.loc.BatchIdx)
+			_, err := newIndex.AddByRecord(context.Background(), it.rec, it.loc.RowIdx, it.loc.BatchIdx)
 			it.rec.Release()
 			if err != nil {
-				fmt.Printf("Error migrating vector %d: %v\n", it.id, err)
+				// migration skip
 			}
 		}
 
 		lastMigrated = endIdx
-		if lastMigrated%50 == 0 {
-			fmt.Printf("Migration progress: %d/%d vectors...\n", lastMigrated, nSnap)
+		if lastMigrated%1000 == 0 {
+			// progress
 		}
 
 		// Give other threads a window
@@ -327,8 +327,6 @@ func (a *AutoShardingIndex) migrateToSharded() {
 		// Small sleep to ensure fairness on high-core machines
 		time.Sleep(10 * time.Microsecond)
 	}
-
-	totalMigrated := lastMigrated // For logging accuracy
 
 	// Final swap
 
@@ -355,30 +353,28 @@ func (a *AutoShardingIndex) migrateToSharded() {
 
 	duration := time.Since(start)
 	metrics.IndexMigrationDuration.Observe(duration.Seconds())
-	fmt.Printf("Migration complete. %d vectors moved to %d shards in %v.\n", totalMigrated, shardedConfig.NumShards, duration)
 }
 
 // SearchVectors implements VectorIndex.
-func (a *AutoShardingIndex) SearchVectors(q []float32, k int, filters []query.Filter, options SearchOptions) ([]SearchResult, error) {
+func (a *AutoShardingIndex) SearchVectors(ctx context.Context, q any, k int, filters []query.Filter, options SearchOptions) ([]SearchResult, error) {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 
 	sharded := a.sharded
 	if sharded {
-		return a.current.SearchVectors(q, k, filters, options)
+		return a.current.SearchVectors(ctx, q, k, filters, options)
 	}
 
 	interim := a.interimIndex
-	res, err := a.current.SearchVectors(q, k, filters, options)
+	res, err := a.current.SearchVectors(ctx, q, k, filters, options)
 	if err != nil {
 		return nil, err
 	}
 
 	if interim != nil {
-		res2, err := interim.SearchVectors(q, k, filters, options)
+		res2, err := interim.SearchVectors(ctx, q, k, filters, options)
 		if err != nil {
 			// Log error but return what we have
-			fmt.Printf("Error searching interim index: %v\n", err)
 			return res, nil
 		}
 		res = a.mergeSearchResults(res, res2, k)
@@ -388,19 +384,19 @@ func (a *AutoShardingIndex) SearchVectors(q []float32, k int, filters []query.Fi
 }
 
 // SearchVectorsWithBitmap implements VectorIndex.
-func (a *AutoShardingIndex) SearchVectorsWithBitmap(q []float32, k int, filter *query.Bitset, options SearchOptions) []SearchResult {
+func (a *AutoShardingIndex) SearchVectorsWithBitmap(ctx context.Context, q any, k int, filter *query.Bitset, options SearchOptions) []SearchResult {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 
 	sharded := a.sharded
 	if sharded {
-		return a.current.SearchVectorsWithBitmap(q, k, filter, options)
+		return a.current.SearchVectorsWithBitmap(ctx, q, k, filter, options)
 	}
 
 	interim := a.interimIndex
-	res := a.current.SearchVectorsWithBitmap(q, k, filter, options)
+	res := a.current.SearchVectorsWithBitmap(ctx, q, k, filter, options)
 	if interim != nil {
-		res2 := interim.SearchVectorsWithBitmap(q, k, filter, options)
+		res2 := interim.SearchVectorsWithBitmap(ctx, q, k, filter, options)
 		res = a.mergeSearchResults(res, res2, k)
 	}
 
@@ -448,6 +444,24 @@ func (a *AutoShardingIndex) GetDimension() uint32 {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return a.current.GetDimension()
+}
+
+// SetEfConstruction updates the efConstruction parameter dynamically.
+func (a *AutoShardingIndex) SetEfConstruction(ef int) {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	// Update current index if supported
+	if h, ok := a.current.(interface{ SetEfConstruction(int) }); ok {
+		h.SetEfConstruction(ef)
+	}
+
+	// Update interim index if exists
+	if a.interimIndex != nil {
+		if h, ok := a.interimIndex.(interface{ SetEfConstruction(int) }); ok {
+			h.SetEfConstruction(ef)
+		}
+	}
 }
 
 func (a *AutoShardingIndex) TrainPQ(vectors [][]float32) error {

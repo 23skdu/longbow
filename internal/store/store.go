@@ -18,8 +18,10 @@ import (
 
 	"github.com/23skdu/longbow/internal/cache"
 	"github.com/23skdu/longbow/internal/gc"
+	lbmem "github.com/23skdu/longbow/internal/memory"
 	"github.com/23skdu/longbow/internal/mesh"
 	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/query"
 	"github.com/23skdu/longbow/internal/storage"
 )
 
@@ -27,6 +29,7 @@ import (
 type VectorStore struct {
 	flight.BaseFlightServer
 	mem           memory.Allocator
+	pooledMem     memory.Allocator // Pooled allocator for transient ingestion buffers
 	logger        zerolog.Logger
 	maxMemory     atomic.Int64
 	currentMemory atomic.Int64
@@ -39,13 +42,17 @@ type VectorStore struct {
 	engine        *storage.StorageEngine // Manages WAL and Snapshots
 	snapshotReset chan time.Duration
 
-	indexQueue     *IndexJobQueue    // Integrated HNSW
-	ingestionQueue chan ingestionJob // Decoupled ingestion pipeline
+	indexQueue          *IndexJobQueue       // Integrated HNSW
+	ingestionQueue      *IngestionRingBuffer // Lock-free ring buffer
+	persistenceQueue    chan persistenceJob  // Async persistence queue
+	pendingOverflowJobs atomic.Int64         // Jobs spinning in applyBatchToMemory
 
 	// Lifecycle
-	stopChan          chan struct{}
-	indexWg           sync.WaitGroup // For background workers
-	startIndexingOnce sync.Once      // Ensure background workers start only once
+	stopChan           chan struct{}
+	stopOnce           sync.Once      // Protects stopChan closure
+	indexWg            sync.WaitGroup // For background workers
+	startIndexingOnce  sync.Once      // Ensure background workers start only once
+	ingestionStartOnce sync.Once      // Ensure ingestion workers start only once
 	// mu       sync.RWMutex   // DEPRECATED: Replaced by RCU
 	datasets atomic.Pointer[map[string]*Dataset]
 
@@ -86,10 +93,18 @@ type VectorStore struct {
 
 	// Shutdown and lifecycle (Phase 6/21)
 	shutdownState int32
+	ctx           context.Context
+	cancel        context.CancelFunc
 	workerWg      sync.WaitGroup
+	cleanupWg     sync.WaitGroup
 
 	// hnsw2 integration hook (Phase 5)
 	// Called after dataset creation to initialize hnsw2 (avoids import cycle)
+	hnsw2Config *ArrowHNSWConfig //nolint:unused
+
+	// Memory Tuner
+	tuner *lbmem.GCTuner
+
 	datasetInitHook func(*Dataset)
 
 	// Distributed search coordinator (shared between Data/Meta servers)
@@ -101,13 +116,22 @@ type VectorStore struct {
 
 	// Adaptive GC Controller (optional)
 	gcController *gc.AdaptiveGCController
+
+	// Parser pool for vector search
+	vectorSearchParserPool sync.Pool
 }
 
 type ingestionJob struct {
+	ds    *Dataset
+	batch arrow.RecordBatch
+	ts    int64
+	// We might add more metadata here (e.g. span context)
+}
+
+type persistenceJob struct {
 	datasetName string
 	batch       arrow.RecordBatch
 	ts          int64
-	// We might add more metadata here (e.g. span context)
 }
 
 //nolint:gocritic // Logger passed by value for simplicity
@@ -117,23 +141,26 @@ func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes 
 
 	s := &VectorStore{
 		mem:          mem,
+		pooledMem:    NewPooledAllocator(),
 		logger:       logger,
 		memoryConfig: memCfg,
 		stopChan:     make(chan struct{}),
 	}
+	s.ctx, s.cancel = context.WithCancel(context.Background())
 	// Initialize empty datasets map
 	emptyMap := make(map[string]*Dataset)
 	s.datasets.Store(&emptyMap)
 
 	s.maxMemory.Store(maxMemoryBytes)
 	s.indexQueue = NewIndexJobQueue(DefaultIndexJobQueueConfig())
-	s.ingestionQueue = make(chan ingestionJob, 100) // Buffer 100 batches
+	s.ingestionQueue = NewIngestionRingBuffer(64)      // Reduced from 256 to prevent OOM with large batches
+	s.persistenceQueue = make(chan persistenceJob, 64) // Reduced from 10000 to prevent OOM
 
-	s.nsManager = newNamespaceManager()
 	s.nsManager = newNamespaceManager()
 	s.columnIndex = NewColumnInvertedIndex()
 
 	// Default Cache: 1024 entries, 60s TTL
+
 	// In future, make this configurable per dataset or global
 	s.queryCache = cache.NewQueryCache[[]SearchResult](1024, 60*time.Second, "global")
 
@@ -142,18 +169,59 @@ func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes 
 
 	// Initialize Compaction
 	s.compactionConfig = DefaultCompactionConfig()
-	s.compactionWorker = NewCompactionWorker(s, s.compactionConfig)
+	s.compactionWorker = NewCompactionWorker(s, s.compactionConfig, &s.workerWg)
 	if s.compactionConfig.Enabled {
 		s.compactionWorker.Start()
 	}
 
 	s.workerWg.Add(1)
-	go s.runIngestionWorker()
+	go s.runPersistenceWorker()
 
 	// Start default index worker (1 thread)
 	s.StartIndexingWorkers(1)
+	s.StartIngestionWorkers(1)
+
+	// Initialize parser pool
+	s.vectorSearchParserPool = sync.Pool{
+		New: func() any {
+			return query.NewZeroAllocVectorSearchParser(768, s.logger)
+		},
+	}
 
 	return s
+}
+
+// CheckIngestionBackpressure checks if the system is under heavy load and
+// should throttle incoming requests.
+// Returns true if backpressure should be applied.
+func (s *VectorStore) CheckIngestionBackpressure() bool {
+	// 1. Memory Pressure
+	// If current memory > 90% of max memory, throttle.
+	maxMem := s.maxMemory.Load()
+	if maxMem > 0 {
+		currMem := s.currentMemory.Load()
+		if float64(currMem) > float64(maxMem)*0.9 {
+			return true
+		}
+	}
+
+	// 2. Queue Pressure
+	// If ingestion queue is > 80% full, throttle.
+	if s.ingestionQueue != nil {
+		queueCap := s.ingestionQueue.Capacity()
+		if s.ingestionQueue.Len() > (queueCap*80)/100 {
+			return true
+		}
+	}
+	// 3. Global Heap Pressure (v0.1.4-rc5 fix)
+	if s.tuner != nil {
+		ratio := s.tuner.GetUtilizationRatio()
+		if ratio > 0.95 {
+			return true
+		}
+	}
+
+	return false
 }
 
 // TrackMemory adds delta to current usage and logs if large
@@ -172,6 +240,11 @@ func stackTrace() string {
 	buf := make([]byte, 1024)
 	n := runtime.Stack(buf, false)
 	return string(buf[:n])
+}
+
+// SetGCTuner sets the memory tuner for backpressure.
+func (s *VectorStore) SetGCTuner(tuner *lbmem.GCTuner) {
+	s.tuner = tuner
 }
 
 // RCU Helpers
@@ -437,8 +510,10 @@ func (s *VectorStore) DropDataset(ctx context.Context, name string) error {
 			metrics.StoreDroppedDatasets.Inc()
 			metrics.StoreActiveDatasets.Set(float64(len(newMap)))
 
+			s.cleanupWg.Add(1)
 			go func() {
 				// Defer cleanup to background to avoid blocking DropDataset call (Fast Path)
+				defer s.cleanupWg.Done()
 				defer func() {
 					if r := recover(); r != nil {
 						s.logger.Error().Msgf("Panic during dataset cleanup: %v", r)
@@ -449,10 +524,15 @@ func (s *VectorStore) DropDataset(ctx context.Context, name string) error {
 				// Old readers might still hold the reference.
 				// Closing immediately *might* panic concurrent readers if not careful,
 				// but usually Dataset struct uses locks or is robust.
-				// Ideally we wait for refcount or just close underlying resources which are safe to close.
-				// Dataset.Close() typically releases Arrow memory.
+				// Ensure all pending indexing/ingestion for this dataset is finished
+				// before we decrement the global memory counter.
+				droppedDS.WaitForIndexing()
+
+				// Decrement both record batch memory AND index memory
+				totalMemory := droppedDS.SizeBytes.Load() + droppedDS.IndexMemoryBytes.Load()
+				s.currentMemory.Add(-totalMemory)
 				droppedDS.Close()
-				s.logger.Info().Str("dataset", name).Msg("Dataset dropped and resources released (async)")
+				s.logger.Info().Str("dataset", name).Int64("freed_bytes", totalMemory).Msg("Dataset dropped and resources released (async)")
 			}()
 
 			return nil
@@ -464,6 +544,17 @@ func (s *VectorStore) DropDataset(ctx context.Context, name string) error {
 
 // WaitForIndexing blocks until all pending indexing jobs for the given dataset are complete.
 func (s *VectorStore) WaitForIndexing(name string) {
+	// First wait for any global congestion to clear
+	start := time.Now()
+	for s.pendingOverflowJobs.Load() > 0 {
+		if time.Since(start) > 5*time.Second {
+			// Don't block forever if something is stuck, let dataset check proceed
+			s.logger.Warn().Msg("WaitForIndexing timed out waiting for global overflow jobs")
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
 	if ds, ok := s.getDataset(name); ok {
 		ds.WaitForIndexing()
 	}

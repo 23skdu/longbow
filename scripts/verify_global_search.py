@@ -37,8 +37,11 @@ def search(client, dataset, query_vec, local_only=False):
     results = list(client.do_action(action))
     if not results:
         return []
-    result_json = json.loads(results[0].body.to_pybytes())
-    return result_json.get("ids", [])
+    # Response is Arrow IPC stream
+    reader = pa.ipc.open_stream(results[0].body)
+    table = reader.read_all()
+    # "id" column is uint64
+    return table.column("id").to_pylist()
 
 def main():
     print("Waiting for cluster to settle...")

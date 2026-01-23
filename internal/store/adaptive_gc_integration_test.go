@@ -17,6 +17,7 @@ func TestVectorStore_AdaptiveGC_Integration(t *testing.T) {
 
 	// Create VectorStore
 	store := NewVectorStore(pool, logger, 1<<30, 0, time.Hour)
+	defer func() { _ = store.Close() }()
 	require.NotNil(t, store)
 	require.NotNil(t, store.gcController, "GC controller should be initialized")
 
@@ -51,6 +52,7 @@ func TestVectorStore_AdaptiveGC_EnableDisableMultiple(t *testing.T) {
 	logger := zerolog.Nop()
 
 	store := NewVectorStore(pool, logger, 1<<30, 0, time.Hour)
+	defer func() { _ = store.Close() }()
 
 	config := gc.AdaptiveGCConfig{
 		Enabled:        true,
@@ -82,6 +84,7 @@ func TestVectorStore_AdaptiveGC_DefaultDisabled(t *testing.T) {
 	logger := zerolog.Nop()
 
 	store := NewVectorStore(pool, logger, 1<<30, 0, time.Hour)
+	defer func() { _ = store.Close() }()
 
 	// Controller should exist but not be running
 	require.NotNil(t, store.gcController)

@@ -18,9 +18,8 @@ import (
 func TestHNSWRaceCompaction(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	vs := NewVectorStore(mem, zerolog.Nop(), 0, 0, 0)
+	defer func() { _ = vs.Close() }()
 	vs.StartIndexingWorkers(2) // More workers to increase race chance
-	// VectorStore doesn't have a public Stop, but we can close stopChan if it was exported.
-	// For this test, we'll just let it be cleaned up by GC or add a Stop method if possible.
 
 	datasetName := "race_test"
 	dim := 128
@@ -103,7 +102,7 @@ func TestHNSWRaceCompaction(t *testing.T) {
 				return
 			default:
 				time.Sleep(20 * time.Millisecond)
-				_ = vs.CompactDataset(datasetName)
+				_ = vs.CompactDataset(context.Background(), datasetName)
 			}
 		}
 	}()
@@ -125,7 +124,7 @@ func TestHNSWRaceCompaction(t *testing.T) {
 			default:
 				ds, ok := vs.getDataset(datasetName)
 				if ok && ds.Index != nil {
-					_, _ = ds.Index.SearchVectors(query, 5, nil, SearchOptions{})
+					_, _ = ds.Index.SearchVectors(context.Background(), query, 5, nil, SearchOptions{})
 				}
 				time.Sleep(10 * time.Millisecond)
 			}

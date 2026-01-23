@@ -1,7 +1,7 @@
 package store
 
-
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -60,7 +60,7 @@ func (h *DualIndexHarness) AddVector(id uint32, vec []float32) {
 	batchIdx := len(h.dataset.Records) - 1
 
 	// Insert into candidate
-	if _, err := h.candidate.AddByLocation(batchIdx, 0); err != nil {
+	if _, err := h.candidate.AddByLocation(context.Background(), batchIdx, 0); err != nil {
 		fmt.Printf("PANIC ERROR: %v\n", err)
 		panic(err.Error())
 	}
@@ -77,7 +77,7 @@ func (h *DualIndexHarness) MeasureRecall(query []float32, k int) float64 {
 	// For now, let's just run search and return 1.0 if it doesn't error and returns k items
 	// Real recall calculation requires brute force neighbor finding.
 
-	res, err := h.candidate.Search(query, k, k*2, nil)
+	res, err := h.candidate.Search(context.Background(), query, k, k*2, nil)
 	if err != nil {
 		return 0.0
 	}

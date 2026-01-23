@@ -89,3 +89,59 @@ reduce:
     MOVL         AX, ret+24(FP)
     VZEROUPPER
     RET
+
+// func euclideanSQ8AVX512Kernel(a, b unsafe.Pointer, n int) int32
+TEXT ·euclideanSQ8AVX512Kernel(SB), NOSPLIT, $0-40
+    MOVQ    a+0(FP), SI
+    MOVQ    b+8(FP), DI
+    MOVQ    n+16(FP), CX
+
+    XORL    AX, AX
+    VXORPS  Z0, Z0, Z0
+
+    CMPQ    CX, $32
+    JB      tail_check_512
+
+loop_32_512:
+    VPMOVZXBW (SI), Z1          // Load 32 bytes from a, expand to 32 uint16 in Z1
+    VPMOVZXBW (DI), Z2          // Load 32 bytes from b, expand to 32 uint16 in Z2
+    VPSUBW    Z2, Z1, Z1        // Z1 = a - b (32 x int16)
+    VPMADDWD  Z1, Z1, Z1        // Z1 = (a-b)^2 summed in pairs (16 x int32)
+    VPADDD    Z1, Z0, Z0        // Accumulate into Z0
+
+    ADDQ    $32, SI
+    ADDQ    $32, DI
+    SUBQ    $32, CX
+    CMPQ    CX, $32
+    JAE     loop_32_512
+
+tail_check_512:
+    CMPQ    CX, $0
+    JE      reduce_512
+
+tail_loop_512:
+    MOVBLZX (SI), BX
+    MOVBLZX (DI), DX
+    SUBL    DX, BX
+    IMULL   BX, BX
+    ADDL    BX, AX
+    
+    INCQ    SI
+    INCQ    DI
+    DECQ    CX
+    JNZ     tail_loop_512
+
+reduce_512:
+    // Reduce Z0 (16 x int32) to X0
+    VEXTRACTI64X4 $1, Z0, Y1    // Y1 = upper 8 ints
+    VPADDD       Y1, Y0, Y0     // Y0 = 8 int32 sums
+    VEXTRACTI128 $1, Y0, X1     // X1 = upper 4 ints
+    VPADDD       X1, X0, X0     // X0 = 4 int32 sums
+    VPHADDD      X0, X0, X0     // Horizontal add
+    VPHADDD      X0, X0, X0
+    
+    MOVQ         X0, BX
+    ADDL         BX, AX
+    MOVL         AX, ret+24(FP)
+    VZEROUPPER
+    RET

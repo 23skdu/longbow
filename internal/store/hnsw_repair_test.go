@@ -38,7 +38,7 @@ func TestHNSW_TombstoneRepair_WiresAround(t *testing.T) {
 	// 3. Mark "Hub" nodes as deleted
 	deletedCnt := 20
 	for i := 0; i < deletedCnt; i++ {
-		idx.Delete(uint32(i))
+		_ = idx.Delete(uint32(i))
 	}
 
 	// Verify they are tombstones
@@ -106,7 +106,7 @@ func TestHNSW_TombstoneRepair_WiresAround(t *testing.T) {
 
 	// 6. Verify Reachability
 	for i := deletedCnt; i < count; i++ {
-		res, err := idx.SearchVectors(vecs[i], 1, nil, SearchOptions{})
+		res, err := idx.SearchVectors(context.Background(), vecs[i], 1, nil, SearchOptions{})
 		require.NoError(t, err)
 		if len(res) == 0 {
 			t.Errorf("Node %d unreachable", i)

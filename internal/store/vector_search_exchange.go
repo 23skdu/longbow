@@ -158,7 +158,7 @@ func (s *VectorStore) handleVectorSearchExchange(stream flight.FlightService_DoE
 		_ = ef
 	}
 
-	searchResults, err := ds.Index.SearchVectors(queryVec, k, nil, searchOpts)
+	searchResults, err := ds.Index.SearchVectors(stream.Context(), queryVec, k, nil, searchOpts)
 	ds.dataMu.RUnlock() // Unlock early
 
 	if err != nil {
@@ -176,7 +176,7 @@ func (s *VectorStore) handleVectorSearchExchange(stream flight.FlightService_DoE
 	// Let's re-acquire RLock or keep it held.
 
 	ds.dataMu.RLock()
-	searchResults = s.MapInternalToUserIDs(ds, searchResults)
+	searchResults = s.mapInternalToUserIDsLocked(ds, searchResults)
 	ds.dataMu.RUnlock()
 
 	// 4. Serialize Results
@@ -210,7 +210,7 @@ func (s *VectorStore) handleVectorSearchExchange(stream flight.FlightService_DoE
 	// NewRecordWriter takes (ipc.MessageWriter, ...options)
 	// flight.NewRecordWriter takes (flight.DataStreamWriter, ...options)
 	writer := flight.NewRecordWriter(stream, ipc.WithSchema(schema))
-	defer writer.Close()
+	defer func() { _ = writer.Close() }()
 
 	if err := writer.Write(resRec); err != nil {
 		return status.Errorf(codes.Internal, "failed to write response: %v", err)

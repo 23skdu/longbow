@@ -38,7 +38,8 @@ func TestBatchDistanceComputer_ComputeL2Distances(t *testing.T) {
 
 	// Verify against reference implementation
 	for i, candidate := range candidates {
-		expected := simd.EuclideanDistance(query, candidate)
+		expected, err := simd.EuclideanDistance(query, candidate)
+		assert.NoError(t, err)
 		assert.InDelta(t, expected, distances[i], 1e-5, "Distance mismatch for candidate %d", i)
 	}
 }
@@ -132,7 +133,7 @@ func BenchmarkBatchDistanceComputer_SIMD(b *testing.B) {
 		b.Run(fmt.Sprintf("SIMD_Batch%d", batchSize), func(b *testing.B) {
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				_ = computer.ComputeL2DistancesSIMDFallback(query, candidates)
+				_, _ = computer.ComputeL2DistancesSIMDFallback(query, candidates)
 			}
 		})
 	}

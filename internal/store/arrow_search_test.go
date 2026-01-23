@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"testing"
 
 	"github.com/apache/arrow-go/v18/arrow"
@@ -13,7 +14,7 @@ func TestSearch_EmptyIndex(t *testing.T) {
 	index := NewArrowHNSW(dataset, DefaultArrowHNSWConfig(), nil)
 
 	query := []float32{1.0, 2.0, 3.0}
-	results, err := index.Search(query, 10, 20, nil)
+	results, err := index.Search(context.Background(), query, 10, 20, nil)
 
 	if err != nil {
 		t.Fatalf("Search failed: %v", err)
@@ -31,7 +32,7 @@ func TestSearch_InvalidK(t *testing.T) {
 	query := []float32{1.0, 2.0, 3.0}
 
 	// k = 0 should return empty results
-	results, err := index.Search(query, 0, 20, nil)
+	results, err := index.Search(context.Background(), query, 0, 20, nil)
 	if err != nil {
 		t.Fatalf("Search failed: %v", err)
 	}
@@ -40,7 +41,7 @@ func TestSearch_InvalidK(t *testing.T) {
 	}
 
 	// k < 0 should return empty results
-	results, err = index.Search(query, -1, 20, nil)
+	results, err = index.Search(context.Background(), query, -1, 20, nil)
 	if err != nil {
 		t.Fatalf("Search failed: %v", err)
 	}
@@ -98,7 +99,7 @@ func BenchmarkSearch_SmallIndex(b *testing.B) {
 	// Bulk Insert
 	// Assuming location 0..n map to vectors
 	for i := 0; i < n; i++ {
-		_, err := index.AddByLocation(0, i)
+		_, err := index.AddByLocation(context.Background(), 0, i)
 		if err != nil {
 			b.Fatalf("insert failed: %v", err)
 		}
@@ -111,7 +112,7 @@ func BenchmarkSearch_SmallIndex(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := index.Search(query, 10, 50, nil)
+		_, err := index.Search(context.Background(), query, 10, 50, nil)
 		if err != nil {
 			b.Fatalf("search failed: %v", err)
 		}
@@ -166,7 +167,7 @@ func BenchmarkSearch_LargeIndex(b *testing.B) {
 
 	// Bulk Insert
 	for i := 0; i < n; i++ {
-		_, err := index.AddByLocation(0, i)
+		_, err := index.AddByLocation(context.Background(), 0, i)
 		if err != nil {
 			b.Fatalf("insert failed: %v", err)
 		}
@@ -179,7 +180,7 @@ func BenchmarkSearch_LargeIndex(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := index.Search(query, 10, 50, nil)
+		_, err := index.Search(context.Background(), query, 10, 50, nil)
 		if err != nil {
 			b.Fatalf("search failed: %v", err)
 		}

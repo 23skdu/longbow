@@ -65,7 +65,7 @@ func TestRepairAgent_RepairAfterDeletion(t *testing.T) {
 	}
 
 	// Delete middle node (1) - might create orphans
-	idx.Delete(1)
+	_ = idx.Delete(1)
 
 	agent := NewRepairAgent(idx, config)
 
@@ -140,7 +140,7 @@ func TestRepairAgent_MaxRepairsLimit(t *testing.T) {
 
 	// Delete several nodes to potentially create orphans
 	for i := 1; i < 5; i++ {
-		idx.Delete(uint32(i))
+		_ = idx.Delete(uint32(i))
 	}
 
 	agent := NewRepairAgent(idx, config)
@@ -237,7 +237,7 @@ func BenchmarkRepairAgent_RepairCycle(b *testing.B) {
 
 	// Delete some nodes
 	for i := 10; i < 20; i++ {
-		idx.Delete(uint32(i))
+		_ = idx.Delete(uint32(i))
 	}
 
 	agent := NewRepairAgent(idx, config)

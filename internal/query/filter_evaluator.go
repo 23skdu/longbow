@@ -2,14 +2,31 @@ package query
 
 import (
 	"fmt"
+	"log"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/simd"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 )
+
+// matchInt64WithError wraps SIMD MatchInt64 and logs errors
+func matchInt64WithError(src []int64, val int64, op simd.CompareOp, dst []byte) {
+	if err := simd.MatchInt64(src, val, op, dst); err != nil {
+		log.Printf("SIMD MatchInt64 error: %v", err)
+	}
+}
+
+// matchFloat32WithError wraps SIMD MatchFloat32 and logs errors
+func matchFloat32WithError(src []float32, val float32, op simd.CompareOp, dst []byte) {
+	if err := simd.MatchFloat32(src, val, op, dst); err != nil {
+		log.Printf("SIMD MatchFloat32 error: %v", err)
+	}
+}
 
 // filterOp represents a typed operation on a specific column
 type filterOp interface {
@@ -82,7 +99,7 @@ func (o *int64FilterOp) MatchBitmap(dst []byte) {
 		return
 	}
 
-	simd.MatchInt64(o.col.Int64Values(), o.val, op, dst)
+	matchInt64WithError(o.col.Int64Values(), o.val, op, dst)
 
 	if o.col.NullN() > 0 {
 		offset := o.col.Data().Offset()
@@ -129,7 +146,7 @@ func (o *int64FilterOp) FilterBatch(indices []int) []int {
 	}
 
 	bitmap := make([]byte, len(indices))
-	simd.MatchInt64(values, o.val, op, bitmap)
+	matchInt64WithError(values, o.val, op, bitmap)
 
 	result := make([]int, 0, len(indices))
 	hasNulls := o.col.NullN() > 0
@@ -208,7 +225,7 @@ func (o *float32FilterOp) MatchBitmap(dst []byte) {
 		return
 	}
 
-	simd.MatchFloat32(o.col.Float32Values(), o.val, op, dst)
+	matchFloat32WithError(o.col.Float32Values(), o.val, op, dst)
 
 	if o.col.NullN() > 0 {
 		offset := o.col.Data().Offset()
@@ -255,7 +272,7 @@ func (o *float32FilterOp) FilterBatch(indices []int) []int {
 	}
 
 	bitmap := make([]byte, len(indices))
-	simd.MatchFloat32(values, o.val, op, bitmap)
+	matchFloat32WithError(values, o.val, op, bitmap)
 
 	result := make([]int, 0, len(indices))
 	hasNulls := o.col.NullN() > 0
@@ -366,11 +383,145 @@ func (o *stringFilterOp) Match(rowIdx int) bool {
 }
 
 func (o *stringFilterOp) MatchBitmap(dst []byte) {
-	for i := 0; i < len(dst); i++ {
-		if o.Match(i) {
-			dst[i] = 1
-		} else {
-			dst[i] = 0
+	start := time.Now()
+	defer func() {
+		metrics.StringFilterOpsTotal.WithLabelValues(o.operator, "optimized").Inc()
+		metrics.StringFilterDurationSeconds.WithLabelValues(o.operator, "optimized").Observe(time.Since(start).Seconds())
+	}()
+
+	valLen := len(o.val)
+
+	switch o.operator {
+	case "=", "eq", "==":
+		metrics.StringFilterEqualLengthTotal.Inc()
+
+		if valLen == 0 {
+			for i := 0; i < len(dst); i++ {
+				switch {
+				case o.col.IsNull(i):
+					dst[i] = 0
+				case o.col.ValueLen(i) == 0:
+					dst[i] = 1
+				default:
+					dst[i] = 0
+				}
+			}
+			return
+		}
+
+		for i := 0; i < len(dst); i++ {
+			if o.col.IsNull(i) {
+				dst[i] = 0
+				continue
+			}
+			if o.col.ValueLen(i) != valLen {
+				dst[i] = 0
+				continue
+			}
+
+			s := o.col.Value(i)
+			metrics.StringFilterComparisonsTotal.Inc()
+			metrics.StringFilterBytesComparedTotal.Add(float64(valLen))
+
+			match := true
+			for j := 0; j < valLen; j++ {
+				if s[j] != o.val[j] {
+					match = false
+					break
+				}
+			}
+			if match {
+				dst[i] = 1
+			} else {
+				dst[i] = 0
+			}
+		}
+
+	case "!=", "neq":
+		for i := 0; i < len(dst); i++ {
+			if o.col.IsNull(i) {
+				dst[i] = 0
+				continue
+			}
+			if o.col.ValueLen(i) != valLen {
+				dst[i] = 1
+				continue
+			}
+
+			s := o.col.Value(i)
+			metrics.StringFilterComparisonsTotal.Inc()
+			metrics.StringFilterBytesComparedTotal.Add(float64(valLen))
+
+			match := true
+			for j := 0; j < valLen; j++ {
+				if s[j] != o.val[j] {
+					match = false
+					break
+				}
+			}
+			if match {
+				dst[i] = 0
+			} else {
+				dst[i] = 1
+			}
+		}
+
+	case ">", "gt":
+		for i := 0; i < len(dst); i++ {
+			switch {
+			case o.col.IsNull(i):
+				dst[i] = 0
+			case o.col.Value(i) > o.val:
+				dst[i] = 1
+			default:
+				dst[i] = 0
+			}
+		}
+
+	case "<", "lt":
+		for i := 0; i < len(dst); i++ {
+			switch {
+			case o.col.IsNull(i):
+				dst[i] = 0
+			case o.col.Value(i) < o.val:
+				dst[i] = 1
+			default:
+				dst[i] = 0
+			}
+		}
+
+	case ">=", "ge":
+		for i := 0; i < len(dst); i++ {
+			switch {
+			case o.col.IsNull(i):
+				dst[i] = 0
+			case o.col.Value(i) >= o.val:
+				dst[i] = 1
+			default:
+				dst[i] = 0
+			}
+		}
+
+	case "<=", "le":
+		for i := 0; i < len(dst); i++ {
+			switch {
+			case o.col.IsNull(i):
+				dst[i] = 0
+			case o.col.Value(i) <= o.val:
+				dst[i] = 1
+			default:
+				dst[i] = 0
+			}
+		}
+
+	default:
+		metrics.StringFilterOpsTotal.WithLabelValues(o.operator, "slow").Inc()
+		for i := 0; i < len(dst); i++ {
+			if o.Match(i) {
+				dst[i] = 1
+			} else {
+				dst[i] = 0
+			}
 		}
 	}
 }
@@ -476,6 +627,12 @@ func (e *FilterEvaluator) Matches(rowIdx int) bool {
 // MatchesBatch evaluates filters for a slice of row indices and returns a subset of matching indices.
 // This uses vectorized FilterBatch operations for improved performance.
 func (e *FilterEvaluator) MatchesBatch(rowIndices []int) []int {
+	start := time.Now()
+	defer func() {
+		metrics.FilterEvaluatorOpsTotal.WithLabelValues("MatchesBatch").Inc()
+		metrics.FilterEvaluatorDurationSeconds.WithLabelValues("MatchesBatch").Observe(time.Since(start).Seconds())
+	}()
+
 	if len(e.ops) == 0 {
 		return rowIndices
 	}
@@ -486,51 +643,115 @@ func (e *FilterEvaluator) MatchesBatch(rowIndices []int) []int {
 	for _, op := range e.ops {
 		result = op.FilterBatch(result)
 		if len(result) == 0 {
+			metrics.FilterEvaluatorAllocations.WithLabelValues("MatchesBatch", "intermediate").Add(float64(len(result)))
 			return nil
 		}
 	}
+	metrics.FilterEvaluatorAllocations.WithLabelValues("MatchesBatch", "intermediate").Add(float64(len(result)))
+	return result
+}
+
+// MatchesBatchFused evaluates all filters in a single pass without creating intermediate slices.
+// This reduces memory allocations and improves cache locality compared to MatchesBatch.
+func (e *FilterEvaluator) MatchesBatchFused(rowIndices []int) []int {
+	start := time.Now()
+	defer func() {
+		metrics.FilterEvaluatorOpsTotal.WithLabelValues("MatchesBatchFused").Inc()
+		metrics.FilterEvaluatorDurationSeconds.WithLabelValues("MatchesBatchFused").Observe(time.Since(start).Seconds())
+	}()
+
+	if len(e.ops) == 0 {
+		return rowIndices
+	}
+
+	if len(rowIndices) == 0 {
+		return nil
+	}
+
+	result := make([]int, 0, len(rowIndices))
+
+	for _, idx := range rowIndices {
+		matches := true
+		for _, op := range e.ops {
+			if !op.Match(idx) {
+				matches = false
+				break
+			}
+		}
+		if matches {
+			result = append(result, idx)
+		}
+	}
+
+	if len(result) == 0 {
+		return nil
+	}
+
+	metrics.FilterEvaluatorAllocations.WithLabelValues("MatchesBatchFused", "indices").Add(float64(len(result)))
 	return result
 }
 
 // MatchesAll evaluates all filters on the entire batch using SIMD and returns matching row indices.
 // This is optimal for dense scans.
-func (e *FilterEvaluator) MatchesAll(batchLen int) []int {
+// Uses Bloom filter-inspired optimization: reorders filters by selectivity and early exits when all rows are rejected.
+func (e *FilterEvaluator) MatchesAll(batchLen int) ([]int, error) {
+	start := time.Now()
+	defer func() {
+		metrics.FilterEvaluatorOpsTotal.WithLabelValues("MatchesAll").Inc()
+		metrics.FilterEvaluatorDurationSeconds.WithLabelValues("MatchesAll").Observe(time.Since(start).Seconds())
+	}()
+
 	if len(e.ops) == 0 {
 		// Return all indices
 		indices := make([]int, batchLen)
 		for i := 0; i < batchLen; i++ {
 			indices[i] = i
 		}
-		return indices
+		return indices, nil
 	}
 
+	// Reorder filters by selectivity (high selectivity = few matches = run first)
+	// This enables early exit optimization
+	sortedOps := selectOpsBySelectivity(e.ops)
+
 	// Allocate bitmaps
-	// Note: batchLen serves as capacity.
-	// We assume all columns in the batch have the same length.
-	// Ops access columns which know their length, but dst must be sized correctly.
-	// We pass dst of batchLen.
-
 	bitmap := make([]byte, batchLen)
-	// Initialize first op
-	e.ops[0].MatchBitmap(bitmap)
+	sortedOps[0].MatchBitmap(bitmap)
 
-	if len(e.ops) > 1 {
+	// Early exit if first filter rejects all rows
+	if isBitmapAllZeros(bitmap) {
+		metrics.BloomFilterEarlyExitsTotal.Inc()
+		metrics.FilterEvaluatorAllocations.WithLabelValues("MatchesAll", "early_exit").Add(0)
+		return []int{}, nil
+	}
+
+	if len(sortedOps) > 1 {
 		tmp := make([]byte, batchLen)
-		for i := 1; i < len(e.ops); i++ {
-			e.ops[i].MatchBitmap(tmp)
+		for i := 1; i < len(sortedOps); i++ {
+			sortedOps[i].MatchBitmap(tmp)
 			// Intersect (AND)
-			simd.AndBytes(bitmap, tmp)
+			if err := simd.AndBytes(bitmap, tmp); err != nil {
+				return nil, err
+			}
+
+			// Early exit if bitmap becomes all zeros (all remaining rows rejected)
+			if isBitmapAllZeros(bitmap) {
+				metrics.BloomFilterEarlyExitsTotal.Inc()
+				metrics.FilterEvaluatorAllocations.WithLabelValues("MatchesAll", "early_exit").Add(float64(len(tmp)))
+				return []int{}, nil
+			}
 		}
 	}
 
 	// Collect indices
-	indices := make([]int, 0, batchLen/2) // Pre-allocate estimate
+	indices := make([]int, 0, batchLen/2)
 	for i, b := range bitmap {
 		if b != 0 {
 			indices = append(indices, i)
 		}
 	}
-	return indices
+	metrics.FilterEvaluatorAllocations.WithLabelValues("MatchesAll", "indices").Add(float64(len(indices)))
+	return indices, nil
 }
 
 // Reset binds the evaluator to a new record batch, reusing the existing filter operations.
@@ -594,7 +815,9 @@ func (e *FilterEvaluator) EvaluateToArrowBoolean(mem memory.Allocator, rows int)
 		tmp := make([]byte, rows)
 		for i := 1; i < len(e.ops); i++ {
 			e.ops[i].MatchBitmap(tmp)
-			simd.AndBytes(bitmap, tmp)
+			if err := simd.AndBytes(bitmap, tmp); err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -610,4 +833,96 @@ func (e *FilterEvaluator) EvaluateToArrowBoolean(mem memory.Allocator, rows int)
 		b.Append(v != 0)
 	}
 	return b.NewBooleanArray(), nil
+}
+
+// estimateSelectivity estimates how selective a filter is (0-1, where 1 means all rows match).
+// Higher selectivity means fewer rows pass the filter, which is better for early exit optimization.
+func estimateSelectivity(op filterOp, sampleSize int) float64 {
+	var filterType string
+	var sampleCount int
+
+	switch o := op.(type) {
+	case *int64FilterOp:
+		filterType = "int64"
+		sampleCount = o.col.Len()
+	case *float32FilterOp:
+		filterType = "float32"
+		sampleCount = o.col.Len()
+	case *float64FilterOp:
+		filterType = "float64"
+		sampleCount = o.col.Len()
+	case *stringFilterOp:
+		filterType = "string"
+		sampleCount = o.col.Len()
+	default:
+		return 0.5 // Default to neutral selectivity for unknown types
+	}
+
+	if sampleCount == 0 {
+		metrics.BloomFilterSelectivityHistogram.WithLabelValues(filterType).Observe(1.0)
+		return 1.0
+	}
+
+	sample := sampleSize
+	if sample > sampleCount {
+		sample = sampleCount
+	}
+
+	matchCount := 0
+	for i := 0; i < sample; i++ {
+		if op.Match(i) {
+			matchCount++
+		}
+	}
+
+	selectivity := float64(matchCount) / float64(sample)
+	metrics.BloomFilterSelectivityHistogram.WithLabelValues(filterType).Observe(selectivity)
+	return selectivity
+}
+
+// isBitmapAllZeros checks if a bitmap contains all zeros (no matches).
+// Uses a fast SIMD-like approach for better performance.
+func isBitmapAllZeros(bitmap []byte) bool {
+	metrics.BloomFilterBitmapZeroChecksTotal.Inc()
+
+	for _, b := range bitmap {
+		if b != 0 {
+			return false
+		}
+	}
+	return true
+}
+
+// selectOpsBySelectivity reorders filter operations by estimated selectivity.
+// Filters with higher selectivity (fewer matches) should run first for better early exit.
+func selectOpsBySelectivity(ops []filterOp) []filterOp {
+	if len(ops) <= 1 {
+		return ops
+	}
+
+	type selectivityPair struct {
+		op          filterOp
+		selectivity float64
+	}
+
+	pairs := make([]selectivityPair, len(ops))
+	for i, op := range ops {
+		pairs[i] = selectivityPair{op: op, selectivity: estimateSelectivity(op, 100)}
+	}
+
+	// Sort by selectivity ascending (higher selectivity = fewer matches = run first)
+	// This means filters that reject more rows run first, enabling early exit.
+	for i := 0; i < len(pairs)-1; i++ {
+		for j := i + 1; j < len(pairs); j++ {
+			if pairs[j].selectivity < pairs[i].selectivity {
+				pairs[i], pairs[j] = pairs[j], pairs[i]
+			}
+		}
+	}
+
+	result := make([]filterOp, len(ops))
+	for i, p := range pairs {
+		result[i] = p.op
+	}
+	return result
 }

@@ -31,7 +31,10 @@ func TestChunkedGrowth(t *testing.T) {
 
 	// Check num chunks
 	// Grow adds ChunkSize headroom and then rounds up
-	expectedCap := targetCap + ChunkSize
+	// Grow ensures capacity >= targetCap. It rounds up to ChunkSize.
+	// We expect capacity to be 5000 (if exact) rounded up to ChunkSize.
+	// 5000 / 1024 = 4.88 -> 5 chunks.
+	expectedCap := targetCap
 	if expectedCap%ChunkSize != 0 {
 		expectedCap = ((expectedCap / ChunkSize) + 1) * ChunkSize
 	}

@@ -35,7 +35,7 @@ func (vp *VectorPool) Get(dim int) *[]float32 {
 		pool, exists = vp.pools[dim]
 		if !exists {
 			pool = &sync.Pool{
-				New: func() interface{} {
+				New: func() any {
 					vp.misses.Add(1)
 					slice := make([]float32, dim)
 					return &slice

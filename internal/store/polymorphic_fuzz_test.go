@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"math/rand"
 	"os"
 	"testing"
@@ -40,11 +41,12 @@ func FuzzPolymorphicIngestion(f *testing.F) {
 		if err != nil {
 			t.Skip("failed to create temp dir")
 		}
-		defer os.RemoveAll(tmpDir)
+		defer func() { _ = os.RemoveAll(tmpDir) }()
 
 		// 1. Initialize Store
 		logger := zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr}).With().Timestamp().Logger()
 		store := NewVectorStore(mem, logger, 50*1024*1024, 0, 0)
+		defer func() { _ = store.Close() }()
 
 		// Init persistence to ensure we can persist
 		cfg := storage.StorageConfig{
@@ -54,7 +56,6 @@ func FuzzPolymorphicIngestion(f *testing.F) {
 		}
 		err = store.InitPersistence(cfg)
 		if err != nil {
-			store.Close()
 			t.Skipf("failed to init persistence: %v", err)
 		}
 
@@ -83,7 +84,7 @@ func FuzzPolymorphicIngestion(f *testing.F) {
 			// AddByRecord
 			// Assume rowIdx starts at 0 for this batch
 			for i := 0; i < int(batch.NumRows()); i++ {
-				_, err := ds.Index.AddByLocation(batchIdx, i)
+				_, err := ds.Index.AddByLocation(context.Background(), batchIdx, i)
 				require.NoError(t, err)
 			}
 		}
@@ -101,7 +102,7 @@ func FuzzPolymorphicIngestion(f *testing.F) {
 
 		// Search
 		if ds.Index != nil {
-			_, err := ds.Index.SearchVectors(q, 10, nil, SearchOptions{})
+			_, err := ds.Index.SearchVectors(context.Background(), q, 10, nil, SearchOptions{})
 			if err != nil {
 				t.Logf("Search failed: %v", err)
 			}
@@ -109,14 +110,14 @@ func FuzzPolymorphicIngestion(f *testing.F) {
 
 		// 4. Persistence Roundtrip
 		// Snapshot
-		err = store.Snapshot()
+		err = store.Snapshot(context.Background())
 		require.NoError(t, err)
 
-		store.Close()
+		_ = store.Close()
 
 		// Re-open
 		store2 := NewVectorStore(mem, logger, 50*1024*1024, 0, 0)
-		defer store2.Close()
+		defer func() { _ = store2.Close() }()
 
 		err = store2.InitPersistence(cfg)
 		require.NoError(t, err)
@@ -133,7 +134,7 @@ func FuzzPolymorphicIngestion(f *testing.F) {
 		if ds2.Index != nil {
 			metrics.HNSWPolymorphicFuzzCrashRecovered.Inc()
 			// Search again
-			_, err = ds2.Index.SearchVectors(q, 10, nil, SearchOptions{})
+			_, err = ds2.Index.SearchVectors(context.Background(), q, 10, nil, SearchOptions{})
 			require.NoError(t, err)
 		}
 	})

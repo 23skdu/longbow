@@ -18,9 +18,9 @@ from concurrent.futures import ThreadPoolExecutor
 from collections import defaultdict
 
 # Config
-DATASET = "perf_test"
+DATASET = "perf_test_v4"
 DIM = 384
-SIZES = [3000, 5000, 7000, 9000, 15000, 20000]
+SIZES = [50000]
 PROFILES_DIR = "profiles_comprehensive"
 
 class BenchmarkResults:
@@ -45,7 +45,7 @@ def get_client(uri):
 
 def generate_batch(start_id, count, dim, include_metadata=False):
     """Generate Arrow batch with optional metadata for filtered/hybrid search"""
-    ids = pa.array(np.arange(start_id, start_id + count), type=pa.int64())
+    ids = pa.array([str(i) for i in range(start_id, start_id + count)], type=pa.string())
     data = np.random.rand(count, dim).astype(np.float32)
     tensor_type = pa.list_(pa.float32(), dim)
     flat_data = data.flatten()
@@ -95,7 +95,7 @@ def benchmark_do_put(clients, start_id, count, batch_size=1000):
     print(f"    DoPut: {total} vectors in {duration:.2f}s ({throughput:.0f} vectors/s, {bandwidth_mb:.2f} MB/s)")
     return throughput, bandwidth_mb, duration
 
-def benchmark_do_get(clients, num_queries=1000):
+def benchmark_do_get(clients, num_queries=100):
     """Benchmark DoGet throughput"""
     print(f"  DoGet: Retrieving {num_queries} batches...")
     start = time.time()
@@ -124,24 +124,44 @@ def benchmark_do_exchange(clients, num_queries=500):
     latencies = []
     errors = 0
     
+    # Pre-build schema
+    tensor_type = pa.list_(pa.float32(), DIM)
+    query_schema = pa.schema([
+        pa.field("query_vector", tensor_type),
+        pa.field("k", pa.int32()),
+        pa.field("dataset", pa.string()),
+    ])
+    
     for i in range(num_queries):
         client = clients[i % len(clients)]
         try:
             # Create query batch
-            vec = np.random.rand(DIM).astype(np.float32)
-            query_schema = pa.schema([
-                pa.field("query_vector", pa.list_(pa.float32(), DIM)),
-                pa.field("k", pa.int32()),
-                pa.field("ef", pa.int32()),
-                pa.field("dataset", pa.string()),
-            ])
+            vec_data = np.random.rand(1, DIM).astype(np.float32).flatten()
+            vectors = pa.FixedSizeListArray.from_arrays(vec_data, type=tensor_type)
+            
+            table = pa.Table.from_arrays([
+                vectors,
+                pa.array([10], type=pa.int32()),
+                pa.array([DATASET], type=pa.string())
+            ], schema=query_schema)
             
             t0 = time.time()
-            # Note: DoExchange implementation may vary
-            # This is a placeholder for the actual implementation
+            descriptor = flight.FlightDescriptor.for_command(b"search")
+            writer, reader = client.do_exchange(descriptor)
+            
+            writer.begin(query_schema)
+            writer.write_table(table)
+            writer.done_writing()
+            
+            # Read results
+            for chunk in reader:
+                pass
+                
             latencies.append((time.time() - t0) * 1000)
         except Exception as e:
             errors += 1
+            if errors <= 1:
+                print(f"    DoExchange error: {e}")
     
     if latencies:
         p50 = np.percentile(latencies, 50)
@@ -202,7 +222,7 @@ def benchmark_sparse_search(clients, k=10, num_queries=500):
                 "dataset": DATASET,
                 "vector": vec,
                 "k": k,
-                "filter": {"category": f"cat_{i % 10}"}
+                "filters": [{"field": "category", "operator": "==", "value": f"cat_{i % 10}"}]
             }).encode("utf-8")
             
             client = clients[i % len(clients)]
@@ -234,7 +254,7 @@ def benchmark_filtered_search(clients, k=10, num_queries=500):
                 "dataset": DATASET,
                 "vector": vec,
                 "k": k,
-                "filter": {"category": f"cat_{i % 3}"}  # Filter to 30% of data
+                "filters": [{"field": "category", "operator": "==", "value": f"cat_{i % 3}"}]  # Filter to 30% of data
             }).encode("utf-8")
             
             client = clients[i % len(clients)]
@@ -295,10 +315,24 @@ def benchmark_tombstone_deletion(clients, ids_to_delete):
     def del_one(id_val):
         nonlocal errors
         try:
-            req = json.dumps({"dataset": DATASET, "id": id_val}).encode("utf-8")
+            req = json.dumps({"dataset": DATASET, "id": str(id_val)}).encode("utf-8")
             action = flight.Action("Delete", req)
-            list(clients[0].do_action(action))
+            # Broadcast to all nodes - data is sharded
+            deleted = False
+            last_err = None
+            for client in clients:
+                try:
+                    list(client.do_action(action))
+                    deleted = True
+                    break
+                except Exception as e:
+                    last_err = e
+            
+            if not deleted:
+                raise last_err or Exception("Unknown error")
         except Exception as e:
+            if errors < 5:
+                print(f"    Delete error: {e}")
             errors += 1
     
     with ThreadPoolExecutor(max_workers=10) as ex:
@@ -334,6 +368,42 @@ def collect_pprof(urls, label=""):
             print(f"    Node {i}: ✓")
         except Exception as e:
             print(f"    Node {i}: Failed - {e}")
+
+def wait_for_readiness(clients, timeout=300):
+    """Wait for all nodes to be ready (indexing complete)"""
+    print("  Waiting for cluster readiness...")
+    start = time.time()
+    last_print = 0
+    
+    while time.time() - start < timeout:
+        all_ready = True
+        pending_counts = []
+        
+        for i, client in enumerate(clients):
+            try:
+                action = flight.Action("check_readiness", json.dumps({"dataset": DATASET}).encode("utf-8"))
+                results = list(client.do_action(action))
+                for res in results:
+                    body = res.body.to_pybytes().decode('utf-8')
+                    status = json.loads(body)
+                    if status.get("status") != "READY":
+                        all_ready = False
+                        if "reason" in status:
+                             pending_counts.append(status["reason"])
+            except Exception as e:
+                # If node is transiently unavailable, keep waiting
+                all_ready = False
+        
+        if all_ready:
+            print(f"    Cluster READY in {time.time() - start:.1f}s")
+            return
+            
+        if time.time() - last_print > 5:
+            print(f"    Waiting... ({', '.join(pending_counts)})")
+            last_print = time.time()
+            
+        time.sleep(1)
+    print("    WARNING: Timeout waiting for readiness")
 
 def main():
     parser = argparse.ArgumentParser()
@@ -415,6 +485,10 @@ def main():
     print(f"\n{'=' * 80}")
     print("PHASE: Tombstone Deletion")
     print(f"{'=' * 80}")
+    
+    # Wait for ingestion to complete
+    wait_for_readiness(clients)
+    
     ids_to_del = list(range(current_count - 1000, current_count))
     del_throughput, del_duration, del_errors, post_p50, post_p95, post_p99, post_errors = \
         benchmark_tombstone_deletion(clients, ids_to_del)

@@ -35,7 +35,7 @@ except ImportError:
 DEFAULT_TIMEOUT = 30.0
 
 # Benchmark Configuration
-BENCHMARK_SIZES = [3000, 5000, 7000, 13000, 20000, 35000]
+BENCHMARK_SIZES = [3000, 5000, 10000, 25000, 50000]
 
 # =============================================================================
 # Data Classes
@@ -73,8 +73,8 @@ class BenchmarkResult:
         return sorted_lat[min(idx, len(sorted_lat) - 1)]
 
 
-def check_cluster_health(client: LongbowClient) -> bool:
-    """Check cluster status before running benchmarks."""
+def check_cluster_health(client: LongbowClient):
+    """Check cluster status before running benchmarks. Returns (bool, members_list)."""
     print("Checking cluster health...")
     try:
         # Access meta client directly or use future SDK method
@@ -86,37 +86,83 @@ def check_cluster_health(client: LongbowClient) -> bool:
         results = list(client._meta_client.do_action(action, options=options))
         if not results:
             print("WARN: No status returned from cluster")
-            return False
+            return False, []
             
         status = json.loads(results[0].body.to_pybytes())
         count = status.get("count", 0)
         print(f"Cluster Healthy: {count} active members")
-        for m in status.get("members", []):
+        members = status.get("members", [])
+        for m in members:
+            # Addr is typically the internal address. We might need GrpcAddr if different.
+            # Assuming Addr is reachable for benchmark if GrpcAddr is similar or if 
+            # environment is local docker.
             print(f" - {m.get('ID')} ({m.get('Addr')}) [{m.get('Status', 'Unknown')}]")
             
-        return count > 0
+        return count > 0, members
     except Exception as e:
         # Relax check for single node local dev where gossip might be off
         print(f"Cluster check failed (Warning): {e}")
-        return True
+        return True, []
 
 
 # =============================================================================
 # Data Generation
 # =============================================================================
 
-def generate_vectors(num_rows: int, dim: int, with_text: bool = False, fp16: bool = False) -> pa.Table:
+def generate_vectors(num_rows: int, dim: int, with_text: bool = False, dtype_str: str = "float32") -> pa.Table:
     """Generate random vectors (keep returning Table for efficiency)."""
-    print(f"Generating {num_rows:,} vectors of dimension {dim}...")
+    print(f"Generating {num_rows:,} vectors of dimension {dim} (type={dtype_str})...")
 
-    # Vector data
-    dtype = np.float16 if fp16 else np.float32
-    pa_dtype = pa.float16() if fp16 else pa.float32()
-    
-    data = np.random.rand(num_rows, dim).astype(dtype)
-    tensor_type = pa.list_(pa_dtype, dim)
-    flat_data = data.flatten()
-    vectors = pa.FixedSizeListArray.from_arrays(flat_data, type=tensor_type)
+    # Map string to numpy/arrow types
+    type_map = {
+        "float32": (np.float32, pa.float32()),
+        "float16": (np.float16, pa.float16()),
+        "float64": (np.float64, pa.float64()),
+        "int8": (np.int8, pa.int8()),
+        "int16": (np.int16, pa.int16()),
+        "int32": (np.int32, pa.int32()),
+        "int64": (np.int64, pa.int64()),
+        "uint8": (np.uint8, pa.uint8()),
+        "uint16": (np.uint16, pa.uint16()),
+        "uint32": (np.uint32, pa.uint32()),
+        "uint64": (np.uint64, pa.uint64()),
+        "complex64": (np.complex64, pa.float32()),  # Stored as list of floats (2x dim)
+        "complex128": (np.complex128, pa.float64()), # Stored as list of floats (2x dim)
+    }
+
+    if dtype_str not in type_map:
+        raise ValueError(f"Unsupported dtype: {dtype_str}. Options: {list(type_map.keys())}")
+
+    np_dtype, pa_subtype = type_map[dtype_str]
+    is_complex = "complex" in dtype_str
+
+    if is_complex:
+        # Complex numbers simulated as 2 * dim floats
+        real_dim = dim * 2
+        # Generate complex numbers then view as floats
+        data = np.random.rand(num_rows, dim).astype(np_dtype) + 1j * np.random.rand(num_rows, dim).astype(np_dtype)
+        # Flatten and view as real components
+        # e.g. [1+2j, 3+4j] -> [1, 2, 3, 4]
+        if dtype_str == "complex64":
+            flat_view = data.view(np.float32).flatten()
+        else:
+            flat_view = data.view(np.float64).flatten()
+        
+        tensor_type = pa.list_(pa_subtype, real_dim)
+        vectors = pa.FixedSizeListArray.from_arrays(flat_view, type=tensor_type)
+    else:
+        # Standard numeric types
+        if "int" in dtype_str or "uint" in dtype_str:
+            if "uint" in dtype_str:
+                data = np.random.randint(0, 200, size=(num_rows, dim)).astype(np_dtype)
+            else:
+                data = np.random.randint(-100, 100, size=(num_rows, dim)).astype(np_dtype)
+        else:
+            data = np.random.rand(num_rows, dim).astype(np_dtype)
+            
+        flat_data = data.flatten()
+        tensor_type = pa.list_(pa_subtype, dim)
+        vectors = pa.FixedSizeListArray.from_arrays(flat_data, type=tensor_type)
 
     # IDs
     ids = pa.array(np.arange(num_rows), type=pa.int64())
@@ -152,9 +198,18 @@ def generate_vectors(num_rows: int, dim: int, with_text: bool = False, fp16: boo
     return pa.Table.from_arrays(arrays, schema=schema)
 
 
-def generate_query_vectors(num_queries: int, dim: int) -> np.ndarray:
+def generate_query_vectors(num_queries: int, dim: int, dtype_str: str = "float32") -> np.ndarray:
     """Generate random query vectors."""
-    return np.random.rand(num_queries, dim).astype(np.float32)
+    is_complex = "complex" in dtype_str
+    
+    # physical dimension for generation
+    gen_dim = dim * 2 if is_complex else dim
+    
+    # Use float32 for query vectors (server accepts float32 and converts/casts as needed)
+    # UNLESS the server explicitly requires 2x dimensions for complex search.
+    # Based on the error "expected 768, got 384", the server expects 2x dim.
+    
+    return np.random.rand(num_queries, gen_dim).astype(np.float32)
 
 
 # =============================================================================
@@ -202,27 +257,80 @@ def benchmark_put(client: LongbowClient, table: pa.Table, name: str) -> Benchmar
     )
 
 
-def benchmark_get(client: LongbowClient, name: str, filters: Optional[list] = None) -> BenchmarkResult:
-    """Benchmark DoGet using SDK with zero-copy Arrow streaming."""
+def benchmark_get(client: LongbowClient, name: str, filters: Optional[list] = None, members: list = None) -> BenchmarkResult:
+    """Benchmark DoGet using SDK, attempting distributed fetch from all members."""
     filter_desc = f"with filters: {filters}" if filters else "(full scan)"
     print(f"\n[GET] Downloading dataset '{name}' {filter_desc}...")
+    
+    # Target list: primary client first, then others if members provided
+    # Actually, if we want full dataset and it's sharded, we MUST fetch from all unique addresses.
+    # But for now, let's keep it simple: Use primary. If 0 rows and members exist, try others.
+    # OR: Do we want to simulate a "Parallel Download"?
+    
+    # Let's try Parallel Distributed Fetch if members > 1
+    targets = []
+    if members and len(members) > 1:
+        # Deduplicate/Parse members
+        # Current client uri
+        primary_uri = client.uri
+        
+        # We need to guess the Flight port for members if Addr is just one port.
+        # Usually Addr is the Gossip Port? Or GRPC? 
+        # In this setup, it seems 127.0.0.1:7946 is the node address.
+        # Let's assume Addr is the Flight/GRPC address we can connect to.
+        for m in members:
+            # Use GRPCAddr explicitly if available (exposed by Meta Server)
+            addr = m.get("GRPCAddr") or m.get("Addr")
+            if addr:
+                targets.append(f"grpc://{addr}")
+    else:
+        # Just primary
+        targets = [client.uri]
+
+    # Remove duplicates
+    targets = list(set(targets))
+    if not targets: targets = [client.uri]
+    
+    print(f"[GET] Fetching from {len(targets)} nodes: {targets}")
 
     start_time = time.time()
-    try:
-        # Use zero-copy Arrow Table download (no Dask overhead)
-        table = client.download_arrow(name, filter=filters)
-        row_count = table.num_rows
-        nbytes = table.nbytes
-    except Exception as e:
-        print(f"[GET] Error: {e}")
-        return BenchmarkResult(name="DoGet", duration_seconds=0, throughput=0, throughput_unit="MB/s", errors=1)
+    total_rows = 0
+    total_bytes = 0
+    error_count = 0
+    
+    def fetch_node(uri):
+        try:
+            # Create transient client
+            # Note: We don't have meta_uri for each, but DoGet doesn't need it usually?
+            # Although SDK init connects to meta?
+            # We can reuse primary meta_uri for all, assuming they share metadata plane.
+            c = LongbowClient(uri=uri, meta_uri=client.meta_uri)
+            # Short timeout?
+            # c.connect() # Implicit
+            table = c.download_arrow(name, filter=filters)
+            return table.num_rows, table.nbytes
+        except Exception as e:
+            print(f"  [GET] Failed from {uri}: {e}")
+            return 0, 0
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(targets)) as executor:
+        futures = [executor.submit(fetch_node, uri) for uri in targets]
+        for f in concurrent.futures.as_completed(futures):
+            r, b = f.result()
+            total_rows += r
+            total_bytes += b
+    
+    # If total rows is 0, that's an issue (unless dataset is empty)
+    if total_rows == 0:
+        error_count = 1 
+        print(f"[GET] Error: Retrieved 0 rows from {len(targets)} nodes.")
 
     duration = time.time() - start_time
-    mb = nbytes / 1024 / 1024
+    mb = total_bytes / 1024 / 1024
     throughput = mb / duration if duration > 0 else 0
-    throughput_rows = row_count / duration if duration > 0 else 0
+    throughput_rows = total_rows / duration if duration > 0 else 0
 
-    print(f"[GET] Retrieved {row_count:,} rows in {duration:.4f}s")
+    print(f"[GET] Retrieved {total_rows:,} rows in {duration:.4f}s")
     print(f"[GET] Throughput: {throughput:.2f} MB/s ({throughput_rows:.1f} rows/s)")
 
     return BenchmarkResult(
@@ -230,8 +338,9 @@ def benchmark_get(client: LongbowClient, name: str, filters: Optional[list] = No
         duration_seconds=duration,
         throughput=throughput,
         throughput_unit="MB/s",
-        rows=row_count,
-        bytes_processed=nbytes,
+        rows=total_rows,
+        bytes_processed=total_bytes,
+        errors=error_count
     )
 
 
@@ -330,6 +439,7 @@ def benchmark_vector_search(client: LongbowClient, name: str,
     )
 
     print(f"[SEARCH] Completed: {qps:.2f} queries/s")
+    print(f"[SEARCH] Total Rows Found: {total_results}")
     print(f"[SEARCH] Latency p50={result.p50_ms:.2f}ms p95={result.p95_ms:.2f}ms p99={result.p99_ms:.2f}ms")
     return result
 
@@ -517,11 +627,15 @@ def benchmark_concurrent_load(data_uri: str, meta_uri: str, name: str, dim: int,
         local_errors = 0
 
         # Small batch for load
-        small_table = generate_vectors(100, dim)
+        small_table = generate_vectors(2000, dim, dtype_str="float32")
 
         while not stop_event.is_set():
             start = time.time()
             try:
+                # Set routing key for sharding
+                routing_key = f"worker-{worker_id}-{local_ops % 10}"
+                client.headers["x-longbow-key"] = routing_key
+                
                 if operation == "put" or (operation == "mixed" and local_ops % 2 == 0):
                     client.insert(name, small_table)
                 else:
@@ -533,6 +647,9 @@ def benchmark_concurrent_load(data_uri: str, meta_uri: str, name: str, dim: int,
                 
                 local_ops += 1
                 local_latencies.append((time.time() - start) * 1000)
+                
+                # Small sleep to prevent DoS-like load on local resources
+                time.sleep(0.01) # 10ms
             except Exception as e:
                 local_errors += 1
                 if local_errors <= 1:
@@ -588,6 +705,10 @@ def main():
     parser.add_argument("--dataset", required=True)
     parser.add_argument("--rows", type=int, default=10_000)
     parser.add_argument("--dim", type=int, default=128)
+    parser.add_argument("--dtype", default="float32", 
+                        choices=["float32", "float16", "float64", "int8", "int16", "int32", "int64", 
+                                 "uint8", "uint16", "uint32", "uint64", "complex64", "complex128"],
+                        help="Data type for vectors")
     parser.add_argument("--k", type=int, default=10)
     parser.add_argument("--queries", type=int, default=1000)
     parser.add_argument("--json", help="Path to save results as JSON")
@@ -615,8 +736,9 @@ def main():
     # Init
     client = LongbowClient(uri=args.data_uri, meta_uri=args.meta_uri)
     
-    # Check for FP16 in dataset name or flag
-    is_fp16 = "fp16" in args.dataset.lower() or "float16" in args.dataset.lower()
+    # Auto-detect fp16 from dataset name if dtype not specified (legacy compat)
+    if args.dtype == "float32" and ("fp16" in args.dataset.lower() or "float16" in args.dataset.lower()):
+        args.dtype = "float16"
     
     # Process Filter
     filters = None
@@ -632,7 +754,8 @@ def main():
                 sys.exit(1)
     
     # Check health
-    if not check_cluster_health(client):
+    is_healthy, cluster_members = check_cluster_health(client)
+    if not is_healthy:
         print("Cluster not ready. Exiting.")
         sys.exit(1)
 
@@ -642,7 +765,7 @@ def main():
     
     for size in sizes_to_run:
         print(f"\n" + "="*80)
-        print(f"BENCHMARK RUN: {size:,} Vectors")
+        print(f"BENCHMARK RUN: {size:,} Vectors ({args.dtype})")
         print("="*80)
         
         current_dataset = f"{args.dataset}_{size}" if args.run_suite else args.dataset
@@ -651,7 +774,7 @@ def main():
         try:
             # PUT
             if not args.skip_put:
-                table = generate_vectors(size, args.dim, with_text=args.with_text, fp16=is_fp16)
+                table = generate_vectors(size, args.dim, with_text=args.with_text, dtype_str=args.dtype)
                 res = benchmark_put(client, table, current_dataset)
                 results.append(res)
                 
@@ -660,12 +783,12 @@ def main():
 
             # GET
             if not args.skip_get:
-                res = benchmark_get(client, current_dataset)
+                res = benchmark_get(client, current_dataset, members=cluster_members)
                 results.append(res)
 
             # SEARCH
             if not args.skip_search:
-                q_vecs = generate_query_vectors(args.queries, args.dim)
+                q_vecs = generate_query_vectors(args.queries, args.dim, dtype_str=args.dtype)
                 
                 # 1. Dense Search
                 print("\n--> Running Dense Search")

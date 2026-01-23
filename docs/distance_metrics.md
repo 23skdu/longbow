@@ -1,6 +1,7 @@
 # Distance Metrics
 
-Longbow supports multiple distance metrics for vector similarity search, each optimized with SIMD instructions (AVX2, AVX512, NEON) for maximum performance.
+Longbow supports multiple distance metrics for vector similarity search, each optimized with
+SIMD instructions (AVX2, AVX512, NEON) for maximum performance.
 
 ## Supported Metrics
 
@@ -113,7 +114,7 @@ All three metrics are SIMD-optimized with platform-specific implementations:
 
 **Benchmark Results** (128-dim vectors, 10K dataset):
 
-```
+```text
 Metric          Throughput      Latency (p99)
 Euclidean       850K qps        1.2ms
 Cosine          720K qps        1.4ms
@@ -128,7 +129,7 @@ Dot Product     890K qps        1.1ms
 
 ### Decision Tree
 
-```
+```text
 Are your vectors normalized (unit length)?
 ├─ Yes → Use Cosine or Dot Product
 │         (Dot Product is faster for normalized vectors)
@@ -183,7 +184,8 @@ writer.close()
 
 # Search using cosine distance
 query_vector = [0.1, 0.2, ...]  # 384-dim
-ticket = flight.Ticket(f'{{"collection": "my_collection", "k": 10, "query": {query_vector}}}'.encode())
+ticket_data = f'{{"collection": "my_collection", "k": 10, "query": {query_vector}}}'
+ticket = flight.Ticket(ticket_data.encode())
 reader = client.do_get(ticket)
 results = reader.read_all()
 ```
@@ -271,7 +273,8 @@ vectors = [normalize(v) for v in raw_vectors]
 
 **Problem**: Higher dot products should mean more similar, but results seem inverted.
 
-**Explanation**: Longbow uses **negative dot product** for HNSW minimization. This is correct behavior - the most similar vectors will have the most negative scores.
+**Explanation**: Longbow uses **negative dot product** for HNSW minimization. This is correct behavior -
+the most similar vectors will have the most negative scores.
 
 ```python
 # Interpret results correctly

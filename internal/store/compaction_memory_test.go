@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -20,6 +21,7 @@ func TestCompactDataset_InsufficientMemory(t *testing.T) {
 	// MaxMemory = 200MB
 	maxMem := int64(200 * 1024 * 1024)
 	s := NewVectorStore(mem, logger, maxMem, 1024, time.Hour)
+	defer func() { _ = s.Close() }()
 
 	// Create dummy dataset
 	schema := arrow.NewSchema([]arrow.Field{{Name: "id", Type: arrow.PrimitiveTypes.Int64}}, nil)
@@ -57,7 +59,7 @@ func TestCompactDataset_InsufficientMemory(t *testing.T) {
 	// Enable compaction config target
 	s.compactionConfig.TargetBatchSize = 100
 
-	err := s.CompactDataset("heavy_dataset")
+	err := s.CompactDataset(context.Background(), "heavy_dataset")
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "insufficient memory headroom")

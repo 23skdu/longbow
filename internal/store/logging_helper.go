@@ -11,7 +11,7 @@ import (
 // LogClientAction logs an action performed by a client, resolving their identity if possible.
 //
 //nolint:gocritic // Logger passed by value for simplicity
-func LogClientAction(ctx context.Context, logger zerolog.Logger, m *mesh.Gossip, action string, meta map[string]interface{}) {
+func LogClientAction(ctx context.Context, logger zerolog.Logger, m *mesh.Gossip, action string, meta map[string]any) {
 	// 1. Get Client IP from Context
 	var clientIP string
 	if p, ok := peer.FromContext(ctx); ok {

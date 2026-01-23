@@ -21,6 +21,7 @@ func TestCastRecordToSchema_EdgeCases(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()
 	vs := NewVectorStore(mem, logger, 1024*1024*1024, 0, 0)
+	defer func() { _ = vs.Close() }()
 
 	fields := []arrow.Field{
 		{Name: "col1", Type: arrow.PrimitiveTypes.Int64},

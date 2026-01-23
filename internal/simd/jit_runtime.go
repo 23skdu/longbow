@@ -152,12 +152,12 @@ func (rt *JitRuntime) EuclideanBatch(query []float32, vectors [][]float32) ([]fl
 	return bytesToFloat32Slice(resBytes), nil
 }
 
-func (rt *JitRuntime) EuclideanBatchInto(query []float32, vectors [][]float32, results []float32) {
+func (rt *JitRuntime) EuclideanBatchInto(query []float32, vectors [][]float32, results []float32) error {
 	if len(vectors) == 0 {
-		return
+		return nil
 	}
 	if len(results) < len(vectors) {
-		panic("simd: results slice too small")
+		return fmt.Errorf("simd: results slice too small (have %d, need %d)", len(results), len(vectors))
 	}
 
 	dim := uint32(len(query))
@@ -180,9 +180,8 @@ func (rt *JitRuntime) EuclideanBatchInto(query []float32, vectors [][]float32, r
 	if uint32(mem.Size()) < totalSize {
 		growPages := (totalSize - uint32(mem.Size()) + 65535) / 65536
 		if _, ok := mem.Grow(growPages); !ok {
-			// Panic or log? Fallback?
-			// For now panic to signal JIT OOM
-			panic(fmt.Sprintf("jit: oom growing memory: failed to grow by %d pages", growPages))
+			metrics.JitKernelErrorsTotal.Inc()
+			return fmt.Errorf("jit: oom growing memory: failed to grow by %d pages", growPages)
 		}
 	}
 
@@ -195,14 +194,13 @@ func (rt *JitRuntime) EuclideanBatchInto(query []float32, vectors [][]float32, r
 	_, err := rt.euclideanBatch.Call(rt.ctx, uint64(ptrQ), uint64(ptrVecs), uint64(nVecs), uint64(dim), uint64(ptrResults))
 	if err != nil {
 		metrics.JitKernelErrorsTotal.Inc()
-		return
+		return err
 	}
 	metrics.JitKernelCallsTotal.WithLabelValues("euclidean_batch").Inc()
 
 	resBytes, _ := mem.Read(ptrResults, resultsSize)
 
-	// Copy output
-	// Ensure safety
 	src := bytesToFloat32Slice(resBytes)
 	copy(results, src)
+	return nil
 }

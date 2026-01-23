@@ -3,7 +3,7 @@ set -e
 
 # Configuration
 SCALES=(5000 9000 15000 25000)
-DIM=384
+# DIM set in loop below
 MEMORY_LIMIT=$((6 * 1024 * 1024 * 1024)) # 6GB
 OUTPUT_DIR="reports"
 mkdir -p $OUTPUT_DIR
@@ -71,48 +71,40 @@ echo "Waiting for cluster to stabilize (10s)..."
 sleep 10
 
 # Verify Cluster
-echo "Verifying cluster health..."
-python3 scripts/perf_test.py --check-cluster --meta-uri grpc://127.0.0.1:3001
+# echo "Verifying cluster health..."
+# python3 scripts/perf_test.py --check-cluster --meta-uri grpc://127.0.0.1:3001 --dataset health_check --skip-put --skip-search --skip-get
 
 # Run Benchmarks
-for SCALE in "${SCALES[@]}"; do
-    ECHO "=================================================="
-    echo "Running Benchmark Scale: $SCALE vectors"
-    ECHO "=================================================="
-    
-    REPORT_FILE="$OUTPUT_DIR/report_${SCALE}.json"
-    PROFILE_FILE="$OUTPUT_DIR/profile_${SCALE}.pb.gz"
+# Run Benchmarks
+DIMS=(128 384)
 
-    # Start CPU Profile capture in background
-    # Increased duration to 30s to match likely test duration
-    (sleep 5 && curl -s -o "$PROFILE_FILE" "http://localhost:9090/debug/pprof/profile?seconds=30") &
-    PPROF_PID=$!
+for DIM in "${DIMS[@]}"; do
+    echo "=================================================="
+    echo "Running Benchmark Dimension: $DIM"
+    echo "=================================================="
 
-    # Run Perf Test
-    # Using Node 1 as entry point. Partitioning will handle distribution.
-    # --all runs all tests (Put, Get, Search, Hybrid, etc.)
-    python3 scripts/perf_test.py \
-        --data-uri grpc://127.0.0.1:3000 \
-        --meta-uri grpc://127.0.0.1:3001 \
-        --rows $SCALE \
-        --dim $DIM \
-        --name "bench_${SCALE}" \
-        --test-put \
-        --test-get \
-        --test-search \
-        --test-hybrid \
-        --test-graph \
-        --test-delete \
-        --skip-id-search \
-        --json "$REPORT_FILE"
+    for SCALE in "${SCALES[@]}"; do
+        echo "--------------------------------------------------"
+        echo "  Scale: $SCALE vectors"
+        echo "--------------------------------------------------"
+        
+        REPORT_FILE="$OUTPUT_DIR/report_dim${DIM}_${SCALE}.json"
+        
+        # Run Perf Test
+        # Removed invalid flags --test-put/get/search/hybrid/graph as they are default
+        # Kept --test-delete
+        python3 scripts/perf_test.py \
+            --data-uri grpc://127.0.0.1:3000 \
+            --meta-uri grpc://127.0.0.1:3001 \
+            --rows $SCALE \
+            --dim $DIM \
+            --dataset "bench_dim${DIM}_${SCALE}" \
+            --test-delete \
+            --json "$REPORT_FILE" 
 
-    wait $PPROF_PID
-    echo "Saved pprof profile to $PROFILE_FILE"
-    echo "Validating profile size..."
-    ls -lh $PROFILE_FILE
-
-    # Optional: Short cooldown between runs
-    sleep 5
+        # Optional: Short cooldown between runs
+        sleep 5
+    done
 done
 
 echo "Benchmarks Complete!"

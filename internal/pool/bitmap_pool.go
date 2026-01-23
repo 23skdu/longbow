@@ -13,7 +13,7 @@ type BitmapPool struct {
 
 var globalBitmapPool = &BitmapPool{
 	pool: sync.Pool{
-		New: func() interface{} {
+		New: func() any {
 			return roaring.NewBitmap()
 		},
 	},

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -46,7 +47,9 @@ func TestCompactRecords_Incremental(t *testing.T) {
 	records := []arrow.RecordBatch{b1, b2, b3, b4, b5}
 	target := int64(300)
 
-	compacted, remapping := compactRecords(pool, schema, records, nil, target, "test", nil)
+	compacted, remapping, err := compactRecords(context.Background(), pool, schema, records, nil, target, "test", nil, 0.0)
+	require.NoError(t, err)
+	require.NotNil(t, compacted)
 
 	require.Len(t, compacted, 3)
 	require.Equal(t, int64(200), compacted[0].NumRows())
@@ -118,7 +121,7 @@ func TestCompaction_IndexIntegrity(t *testing.T) {
 		require.True(t, ok)
 
 		for rowIdx := 0; rowIdx < int(rec.NumRows()); rowIdx++ {
-			_, err := hnswIdx.AddSafe(rec, rowIdx, batchIdx)
+			_, err := hnswIdx.AddSafe(context.Background(), rec, rowIdx, batchIdx)
 			require.NoError(t, err)
 		}
 	}
@@ -128,7 +131,7 @@ func TestCompaction_IndexIntegrity(t *testing.T) {
 
 	// 3. Verify Search BEFORE Compaction
 	query := []float32{55, 0, 0, 0}
-	res, _ := ds.SearchDataset(query, 1)
+	res, _ := ds.SearchDataset(context.Background(), query, 1)
 	require.Len(t, res, 1)
 
 	// Verify result via Location Lookup
@@ -142,7 +145,7 @@ func TestCompaction_IndexIntegrity(t *testing.T) {
 
 	// 4. Trigger Compaction
 	s.compactionConfig.TargetBatchSize = 50
-	err := s.CompactDataset("test_compaction")
+	err := s.CompactDataset(context.Background(), "test_compaction")
 	require.NoError(t, err)
 
 	require.Len(t, ds.Records, 2)
@@ -150,7 +153,7 @@ func TestCompaction_IndexIntegrity(t *testing.T) {
 	require.Equal(t, int64(50), ds.Records[1].NumRows())
 
 	// 5. Verify Search AFTER Compaction
-	resAfter, _ := ds.SearchDataset(query, 1)
+	resAfter, _ := ds.SearchDataset(context.Background(), query, 1)
 	require.Len(t, resAfter, 1)
 
 	locAfter, foundAfter := ds.Index.GetLocation(resAfter[0].ID)
@@ -197,7 +200,7 @@ func TestCompaction_Tombstones(t *testing.T) {
 
 	// Compact with target 100 (merge all 4 -> 1 batch of 40 theoretically, but with filtering it will be 38)
 	s.compactionConfig.TargetBatchSize = 100
-	err := s.CompactDataset("tombstone_test")
+	err := s.CompactDataset(context.Background(), "tombstone_test")
 	require.NoError(t, err)
 
 	require.Len(t, ds.Records, 1)

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"testing"
 
 	qry "github.com/23skdu/longbow/internal/query"
@@ -55,7 +56,7 @@ func TestGenerateFilterBitset(t *testing.T) {
 
 	// Add to index to populate location store
 	for i := 0; i < 5; i++ {
-		_, err := idx.AddByLocation(0, i)
+		_, err := idx.AddByLocation(context.Background(), 0, i)
 		require.NoError(t, err)
 	}
 
@@ -129,7 +130,7 @@ func TestSearchWithBitmapFiltering(t *testing.T) {
 	ds.Records = append(ds.Records, rec)
 
 	for i := range vecs {
-		_, err := idx.AddByLocation(0, i)
+		_, err := idx.AddByLocation(context.Background(), 0, i)
 		require.NoError(t, err)
 	}
 
@@ -140,7 +141,7 @@ func TestSearchWithBitmapFiltering(t *testing.T) {
 		{Field: "category", Operator: "eq", Value: "B"},
 	}
 
-	results, err := idx.SearchVectors(queryVec, 3, filters, SearchOptions{})
+	results, err := idx.SearchVectors(context.Background(), queryVec, 3, filters, SearchOptions{})
 	require.NoError(t, err)
 	require.Len(t, results, 1)
 
@@ -191,7 +192,7 @@ func TestShardedSearchWithBitmapFiltering(t *testing.T) {
 	ds.Records = append(ds.Records, rec)
 
 	for i := range vecs {
-		_, err := idx.AddByLocation(0, i)
+		_, err := idx.AddByLocation(context.Background(), 0, i)
 		require.NoError(t, err)
 	}
 
@@ -202,7 +203,7 @@ func TestShardedSearchWithBitmapFiltering(t *testing.T) {
 		{Field: "category", Operator: "eq", Value: "B"},
 	}
 
-	results, err := idx.SearchVectors(queryVec, 4, filters, SearchOptions{})
+	results, err := idx.SearchVectors(context.Background(), queryVec, 4, filters, SearchOptions{})
 	require.NoError(t, err)
 	require.Len(t, results, 2)
 

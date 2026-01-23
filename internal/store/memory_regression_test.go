@@ -1,7 +1,7 @@
 package store
 
-
 import (
+	"context"
 	"testing"
 
 	"github.com/apache/arrow-go/v18/arrow"
@@ -61,23 +61,23 @@ func TestHNSWIndex_EstimateMemory(t *testing.T) {
 	// Let's rely on AddBatch if it handles vector extraction.
 	// Looking at `hnsw.go` (from previous context), AddBatch typically iterates and calls AddByLocation.
 	// So we must put the record into the dataset first.
-	
+
 	ds.dataMu.Lock()
 	ds.Records = append(ds.Records, rec)
 	rec.Retain() // Dataset owns one ref
 	ds.dataMu.Unlock()
-    
-    // Construct inputs for AddBatch
-    recs := make([]arrow.RecordBatch, numRows)
-    rowIdxs := make([]int, numRows)
-    batchIdxs := make([]int, numRows)
-    for i := 0; i < numRows; i++ {
-        recs[i] = rec
-        rowIdxs[i] = i
-        batchIdxs[i] = 0 // The first batch in dataset
-    }
 
-	_, err := index.AddBatch(recs, rowIdxs, batchIdxs)
+	// Construct inputs for AddBatch
+	recs := make([]arrow.RecordBatch, numRows)
+	rowIdxs := make([]int, numRows)
+	batchIdxs := make([]int, numRows)
+	for i := 0; i < numRows; i++ {
+		recs[i] = rec
+		rowIdxs[i] = i
+		batchIdxs[i] = 0 // The first batch in dataset
+	}
+
+	_, err := index.AddBatch(context.Background(), recs, rowIdxs, batchIdxs)
 	require.NoError(t, err)
 
 	// Check memory after adding
@@ -86,11 +86,11 @@ func TestHNSWIndex_EstimateMemory(t *testing.T) {
 
 	// It should have grown
 	assert.Greater(t, afterMem, initialMem, "Memory estimate should increase after indexing vectors")
-    
-    // Roughly verify the size. 
-    // 1000 vectors * (2 dims * 4 bytes + overhead).
-    // Overhead per node approx 100-200 bytes.
-    // 1000 * (8 + 200) ~= 208,000 bytes.
-    // Let's just assert it is reasonably larger.
-    assert.True(t, afterMem > initialMem + int64(numRows)*10, "Memory growth should be significant per vector")
+
+	// Roughly verify the size.
+	// 1000 vectors * (2 dims * 4 bytes + overhead).
+	// Overhead per node approx 100-200 bytes.
+	// 1000 * (8 + 200) ~= 208,000 bytes.
+	// Let's just assert it is reasonably larger.
+	assert.True(t, afterMem > initialMem+int64(numRows)*10, "Memory growth should be significant per vector")
 }

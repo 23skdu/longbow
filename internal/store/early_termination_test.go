@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"testing"
 
 	"github.com/apache/arrow-go/v18/arrow/memory"
@@ -17,12 +18,14 @@ func TestHNSW_SearchEarlyTermination(t *testing.T) {
 	// Add 100 identical vectors (should converge extremely fast)
 	vec := []float32{1.0, 1.0, 1.0, 1.0}
 	for i := 0; i < 100; i++ {
-		h.InsertWithVector(uint32(i), vec, 0)
+		if err := h.InsertWithVector(uint32(i), vec, 0); err != nil {
+			t.Fatalf("Insert failed: %v", err)
+		}
 	}
 
 	// Search with long ef but should terminate early because all distances are 0
 	q := []float32{1.0, 1.0, 1.0, 1.0}
-	results, err := h.Search(q, 10, 100, nil)
+	results, err := h.Search(context.Background(), q, 10, 100, nil)
 	require.NoError(t, err)
 	assert.GreaterOrEqual(t, len(results), 10)
 
@@ -39,10 +42,12 @@ func FuzzHNSW_SearchEarlyTermination(f *testing.F) {
 		}
 		h := NewArrowHNSW(nil, DefaultArrowHNSWConfig(), nil)
 		h.SetDimension(1)
-		h.InsertWithVector(1, []float32{val}, 0)
+		if err := h.InsertWithVector(1, []float32{val}, 0); err != nil {
+			t.Fatalf("Insert failed: %v", err)
+		}
 
 		q := []float32{val}
-		_, err := h.Search(q, 1, ef, nil)
+		_, err := h.Search(context.Background(), q, 1, ef, nil)
 		if err != nil {
 			t.Errorf("Search failed: %v", err)
 		}

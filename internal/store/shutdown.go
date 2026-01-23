@@ -36,8 +36,23 @@ func (s *VectorStore) Shutdown(ctx context.Context) error {
 
 	// Step 1: Signal background workers to stop
 	s.logger.Info().Msg("Signaling background workers to stop")
-	close(s.stopChan)
-	s.stopCompaction()
+	s.stopWorkers()
+
+	// Step 1.5: Wait for pending overflow jobs (spinners) to enqueue
+	s.logger.Info().Msg("Waiting for pending overflow jobs...")
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+
+waitLoop:
+	for s.pendingOverflowJobs.Load() > 0 {
+		select {
+		case <-ctx.Done():
+			s.logger.Warn().Int64("count", s.pendingOverflowJobs.Load()).Msg("Shutdown timeout waiting for overflow jobs")
+			break waitLoop
+		case <-ticker.C:
+			// Check again
+		}
+	}
 
 	// Step 2: Drain the index queue
 	s.logger.Info().Msg("Draining index queue...")
@@ -55,6 +70,7 @@ func (s *VectorStore) Shutdown(ctx context.Context) error {
 	done := make(chan struct{})
 	go func() {
 		s.workerWg.Wait()
+		s.cleanupWg.Wait() // Wait for DropDataset cleanups
 		close(done)
 	}()
 
@@ -75,7 +91,7 @@ func (s *VectorStore) Shutdown(ctx context.Context) error {
 		s.logger.Warn().Msg("Shutdown timeout, skipping final snapshot")
 	default:
 		s.logger.Info().Msg("Creating final snapshot...")
-		if err := s.Snapshot(); err != nil {
+		if err := s.Snapshot(ctx); err != nil {
 			s.logger.Error().Err(err).Msg("Failed to create final snapshot")
 			// Don't fail shutdown for snapshot errors
 		} else {

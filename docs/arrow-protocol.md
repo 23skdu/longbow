@@ -4,88 +4,69 @@ Longbow adheres to the Apache Arrow Flight protocol version 18.
 
 ## Endpoints
 
-### Handshake
-
-Standard gRPC handshake.
-
 ### ListFlights
 
-Returns a stream of `FlightInfo` objects representing stored vectors.
+Returns a stream of `FlightInfo` objects representing stored datasets. Supported on the **Meta Server**.
 
-Clients can filter the results by providing a JSON-serialized
-in the  argument.
+#### Criteria Filtering
 
-#### TicketQuery Structure
+Clients can filter results by providing a JSON-serialized `TicketQuery` in the `expression` field.
 
-```json
-{
- "name": "optional_name_match",
- "limit": 100,
- "filters": [
- {"field": "name", "operator": "contains", "value": "test"},
- {"field": "rows", "operator": ">", "value": "1000"}
- ]
-}
-```
+Supported Filters:
 
-#### Supported Filters
-
-| Field | Supported Operators | Description |
-| :--- | :--- | :--- |
-| `name` | `=`, `!=`, `contains` | Filter by dataset name. |
-| `rows` | `=`, `>`, `<`, `>=`, `<=` | Filter by total row count. |
+- `name`: Match by dataset name (operator: `contains`).
+- `rows`: Match by row count (operators: `==`, `>`, `<=`).
 
 ### GetFlightInfo
 
-**Input**: `FlightDescriptor` (Path)
-**Output**: `FlightInfo` (Schema, TotalRecords, TotalBytes)
+Returns schema and metadata for a specific dataset path.
 
 ### DoGet
 
-**Input**: `Ticket` containing a JSON-serialized `TicketQuery`.
-**Output**: Stream of Arrow Record Batches.
+Retrieves data or performs searches via a `Ticket` containing a JSON `TicketQuery`.
 
-#### TicketQuery Structure
+#### Standard Fetch
+
+```json
+{"name": "my_dataset", "filters": [{"field": "id", "op": "=", "value": "123"}]}
+```
+
+#### Search (Integrated)
 
 ```json
 {
-  "name": "dataset_name",
-  "filters": [
-    {"field": "id", "op": ">", "value": "50"},
-    {"field": "category", "op": "=", "value": "A"}
-  ]
+  "search": {
+    "dataset": "my_data",
+    "vector": [0.1, 0.2, ...],
+    "k": 10
+  }
 }
 ```
 
 ### DoPut
 
-**Input**: Stream of Arrow Record Batches
-**Output**: Stream of `PutResult`
+Streams Arrow Record Batches to the server. Supports **AppMetadata** in `PutResult` for backpressure signaling (`slow_down`).
 
 ### DoExchange
 
-**Input**: Bidirectional stream of `FlightData`
-**Output**: Bidirectional stream (used for sync/replication)
+Bidirectional stream for advanced mesh operations.
 
-- **Foundation**: Currently implements a basic ping/ack and dataset fetch mechanism using `cmd` in descriptor.
+- **VectorSearch**: High-performance bidirectional search.
+- **sync**: Delta synchronization using WAL sequence numbers.
+- **merkle_node**: Merkle tree navigation for data consistency checks.
 
-## Actions
+## Actions (`DoAction`)
+
+Longbow uses `DoAction` for control plane operations and specific search modes.
 
 ### VectorSearch
 
-**Type**: `VectorSearch`
-**Input**: JSON payload
-**Output**: JSON stream of results
+**Type**: `VectorSearch` (on Meta Server)
+**Input**: JSON payload containing `dataset`, `vector`, `k`, and optional `filters`.
+**Output**: JSON stream of search results.
 
-**Payload**:
+### VectorSearchByID
 
-```json
-{
-  "dataset": "my_data",
-  "vector": [0.1, 0.2, ...],
-  "k": 10,
-  "filters": [
-    {"field": "tag", "op": "=", "value": "important"}
-  ]
-}
-```
+**Type**: `VectorSearchByID`
+**Input**: `{"dataset": "...", "id": "...", "k": 10}`
+**Output**: Similar vectors based on an existing ID.

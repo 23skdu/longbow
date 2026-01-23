@@ -3,6 +3,7 @@ package simd_test
 import (
 	"math"
 	"math/rand"
+	"strconv"
 	"testing"
 
 	"github.com/23skdu/longbow/internal/simd"
@@ -50,4 +51,24 @@ func Benchmark_Compare_EuclideanBatch(b *testing.B) {
 			simd.EuclideanDistanceBatch(query, vectors, results)
 		}
 	})
+}
+
+func BenchmarkEuclideanF32_Single(b *testing.B) {
+	dims := []int{128, 384, 768, 1536}
+	for _, dim := range dims {
+		v1 := make([]float32, dim)
+		v2 := make([]float32, dim)
+		// Init random
+		for i := 0; i < dim; i++ {
+			v1[i] = rand.Float32()
+			v2[i] = rand.Float32()
+		}
+
+		b.Run("EuclideanF32_"+strconv.Itoa(dim), func(b *testing.B) {
+			b.SetBytes(int64(dim * 4)) // 4 bytes per float32
+			for i := 0; i < b.N; i++ {
+				simd.EuclideanDistance(v1, v2)
+			}
+		})
+	}
 }

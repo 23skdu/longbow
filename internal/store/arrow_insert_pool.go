@@ -31,7 +31,7 @@ type InsertContextPool struct {
 func NewInsertContextPool() *InsertContextPool {
 	return &InsertContextPool{
 		pool: sync.Pool{
-			New: func() interface{} {
+			New: func() any {
 				return &InsertContext{
 					candidates: make([][]Candidate, ArrowMaxLayers),
 					visited:    NewArrowBitset(10000),

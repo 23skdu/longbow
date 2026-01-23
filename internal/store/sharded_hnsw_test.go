@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -157,7 +158,7 @@ func TestShardedHNSW_AddToShard(t *testing.T) {
 
 	// Add vectors
 	for i := 0; i < 100; i++ {
-		id, err := sharded.AddSafe(rec, i, 0)
+		id, err := sharded.AddSafe(context.Background(), rec, i, 0)
 		if err != nil {
 			t.Fatalf("Add failed: %v", err)
 		}
@@ -208,7 +209,7 @@ func TestShardedHNSW_ParallelAdds(t *testing.T) {
 			defer rec.Release()
 
 			for i := 0; i < vectorsPerGoroutine; i++ {
-				_, err := sharded.AddSafe(rec, i, 0)
+				_, err := sharded.AddSafe(context.Background(), rec, i, 0)
 				if err != nil {
 					errCount.Add(1)
 				}
@@ -247,7 +248,7 @@ func TestShardedHNSW_Search(t *testing.T) {
 
 	// Add 100 vectors
 	for i := 0; i < 100; i++ {
-		_, err := sharded.AddSafe(rec, i, 0)
+		_, err := sharded.AddSafe(context.Background(), rec, i, 0)
 		if err != nil {
 			t.Fatalf("Add failed: %v", err)
 		}
@@ -255,7 +256,7 @@ func TestShardedHNSW_Search(t *testing.T) {
 
 	// Search
 	query := []float32{50.0, 50.0, 50.0}
-	results, _ := sharded.SearchVectors(query, 10, nil, SearchOptions{})
+	results, _ := sharded.SearchVectors(context.Background(), query, 10, nil, SearchOptions{})
 
 	if len(results) == 0 {
 		t.Fatal("expected search results, got none")
@@ -271,7 +272,7 @@ func TestShardedHNSW_SearchEmpty(t *testing.T) {
 	sharded := NewShardedHNSW(cfg, ds)
 
 	query := []float32{1.0, 2.0, 3.0}
-	results, _ := sharded.SearchVectors(query, 10, nil, SearchOptions{})
+	results, _ := sharded.SearchVectors(context.Background(), query, 10, nil, SearchOptions{})
 
 	if len(results) != 0 {
 		t.Errorf("expected 0 results on empty index, got %d", len(results))
@@ -295,7 +296,7 @@ func TestShardedHNSW_GetLocation(t *testing.T) {
 
 	// Add vectors
 	for i := 0; i < 20; i++ {
-		_, err := sharded.AddSafe(rec, i, 0)
+		_, err := sharded.AddSafe(context.Background(), rec, i, 0)
 		if err != nil {
 			t.Fatalf("Add failed: %v", err)
 		}
@@ -334,7 +335,7 @@ func TestShardedHNSW_ShardStats(t *testing.T) {
 
 	// Add 100 vectors
 	for i := 0; i < 100; i++ {
-		_, _ = sharded.AddSafe(rec, i, 0)
+		_, _ = sharded.AddSafe(context.Background(), rec, i, 0)
 	}
 
 	stats := sharded.ShardStats()
@@ -369,7 +370,7 @@ func TestShardedHNSW_ConcurrentAddAndSearch(t *testing.T) {
 
 	// Pre-populate
 	for i := 0; i < 50; i++ {
-		_, _ = sharded.AddSafe(rec, i, 0)
+		_, _ = sharded.AddSafe(context.Background(), rec, i, 0)
 	}
 
 	var wg sync.WaitGroup
@@ -381,7 +382,7 @@ func TestShardedHNSW_ConcurrentAddAndSearch(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for i := 50; i < 100; i++ {
-				_, _ = sharded.AddSafe(rec, i, 0)
+				_, _ = sharded.AddSafe(context.Background(), rec, i, 0)
 			}
 		}()
 	}
@@ -393,7 +394,7 @@ func TestShardedHNSW_ConcurrentAddAndSearch(t *testing.T) {
 			defer wg.Done()
 			for i := 0; i < 50; i++ {
 				query := []float32{float32(i), float32(i), float32(i)}
-				_, _ = sharded.SearchVectors(query, 5, nil, SearchOptions{})
+				_, _ = sharded.SearchVectors(context.Background(), query, 5, nil, SearchOptions{})
 			}
 		}()
 	}
@@ -413,7 +414,7 @@ func BenchmarkHNSW_SingleAdd(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = sharded.AddSafe(rec, i, 0)
+		_, _ = sharded.AddSafe(context.Background(), rec, i, 0)
 	}
 }
 
@@ -430,7 +431,7 @@ func BenchmarkHNSW_ShardedParallelAdd(b *testing.B) {
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
 			// In realistic scenario we'd use atomics for rowIdx
-			_, _ = sharded.AddSafe(rec, 0, 0)
+			_, _ = sharded.AddSafe(context.Background(), rec, 0, 0)
 		}
 	})
 }
@@ -445,13 +446,13 @@ func BenchmarkHNSW_ShardedSearch(b *testing.B) {
 	defer rec.Release()
 
 	for i := 0; i < 1000; i++ {
-		_, _ = sharded.AddSafe(rec, i, 0)
+		_, _ = sharded.AddSafe(context.Background(), rec, i, 0)
 	}
 
 	query := make([]float32, 128)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = sharded.SearchVectors(query, 10, nil, SearchOptions{})
+		_, _ = sharded.SearchVectors(context.Background(), query, 10, nil, SearchOptions{})
 	}
 }
 
@@ -466,8 +467,8 @@ func TestShardedHNSW_SearchByID(t *testing.T) {
 	ds.Records = append(ds.Records, rec)
 	ds.dataMu.Unlock()
 
-	id, _ := sharded.AddSafe(rec, 0, 0)
-	results := sharded.SearchByID(id, 5)
+	id, _ := sharded.AddSafe(context.Background(), rec, 0, 0)
+	results := sharded.SearchByID(context.Background(), id, 5)
 	if len(results) == 0 {
 		t.Fatal("expected results")
 	}

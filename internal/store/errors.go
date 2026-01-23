@@ -50,6 +50,18 @@ func (e *ErrDimensionMismatch) Error() string {
 		e.Dataset, e.Expected, e.Actual)
 }
 
+// ErrVectorDimensionMismatch indicates vector dimension incompatibility for bulk operations.
+type ErrVectorDimensionMismatch struct {
+	ID       int // Vector ID in the batch
+	Expected int
+	Actual   int
+}
+
+func (e *ErrVectorDimensionMismatch) Error() string {
+	return fmt.Sprintf("vector dimension mismatch for ID %d: expected %d, got %d",
+		e.ID, e.Expected, e.Actual)
+}
+
 // ErrResourceExhausted indicates system resource limits exceeded.
 type ErrResourceExhausted struct {
 	Resource string
@@ -133,6 +145,56 @@ func NewDimensionMismatchError(dataset string, expected, actual int) error {
 	return &ErrDimensionMismatch{Dataset: dataset, Expected: expected, Actual: actual}
 }
 
+// NewVectorDimensionMismatchError creates a vector dimension mismatch error for bulk operations.
+func NewVectorDimensionMismatchError(id int, expected, actual int) error {
+	return &ErrVectorDimensionMismatch{ID: id, Expected: expected, Actual: actual}
+}
+
+// =============================================================================
+// Neighbor Selection Error Types
+// =============================================================================
+
+// ErrNeighborSelectionLengthMismatch indicates mismatched lengths in neighbor selection inputs.
+type ErrNeighborSelectionLengthMismatch struct {
+	DistancesLen int
+	IDsLen       int
+}
+
+func (e *ErrNeighborSelectionLengthMismatch) Error() string {
+	return fmt.Sprintf("neighbor selection length mismatch: distances %d, ids %d",
+		e.DistancesLen, e.IDsLen)
+}
+
+// ErrNeighborSelectionFailed indicates failure in the neighbor selection compute kernel.
+type ErrNeighborSelectionFailed struct {
+	Operation string // "select_k_neighbors", "take_ids", "take_dists"
+	Cause     error
+}
+
+func (e *ErrNeighborSelectionFailed) Error() string {
+	return fmt.Sprintf("neighbor selection %s failed: %v", e.Operation, e.Cause)
+}
+
+func (e *ErrNeighborSelectionFailed) Unwrap() error {
+	return e.Cause
+}
+
+// NewNeighborSelectionLengthMismatchError creates a length mismatch error.
+func NewNeighborSelectionLengthMismatchError(distancesLen, idsLen int) error {
+	return &ErrNeighborSelectionLengthMismatch{
+		DistancesLen: distancesLen,
+		IDsLen:       idsLen,
+	}
+}
+
+// NewNeighborSelectionFailedError creates a neighbor selection failure error.
+func NewNeighborSelectionFailedError(operation string, cause error) error {
+	return &ErrNeighborSelectionFailed{
+		Operation: operation,
+		Cause:     cause,
+	}
+}
+
 // NewResourceExhaustedError creates a resource exhausted error.
 func NewResourceExhaustedError(resource, message string) error {
 	return &ErrResourceExhausted{Resource: resource, Message: message}
@@ -171,14 +233,17 @@ func ToGRPCStatus(err error) error {
 
 	// Map domain errors to gRPC codes
 	var (
-		notFoundErr       *ErrNotFound
-		invalidArgErr     *ErrInvalidArgument
-		schemaMismatchErr *ErrSchemaMismatch
-		dimMismatchErr    *ErrDimensionMismatch
-		resourceExhErr    *ErrResourceExhausted
-		unavailableErr    *ErrUnavailable
-		persistenceErr    *ErrPersistence
-		internalErr       *ErrInternal
+		notFoundErr                *ErrNotFound
+		invalidArgErr              *ErrInvalidArgument
+		schemaMismatchErr          *ErrSchemaMismatch
+		dimMismatchErr             *ErrDimensionMismatch
+		vectorDimMismatchErr       *ErrVectorDimensionMismatch
+		neighborLenMismatchErr     *ErrNeighborSelectionLengthMismatch
+		neighborSelectionFailedErr *ErrNeighborSelectionFailed
+		resourceExhErr             *ErrResourceExhausted
+		unavailableErr             *ErrUnavailable
+		persistenceErr             *ErrPersistence
+		internalErr                *ErrInternal
 	)
 
 	switch {
@@ -193,6 +258,15 @@ func ToGRPCStatus(err error) error {
 
 	case errors.As(err, &dimMismatchErr):
 		return status.Error(codes.InvalidArgument, err.Error())
+
+	case errors.As(err, &vectorDimMismatchErr):
+		return status.Error(codes.InvalidArgument, err.Error())
+
+	case errors.As(err, &neighborLenMismatchErr):
+		return status.Error(codes.InvalidArgument, err.Error())
+
+	case errors.As(err, &neighborSelectionFailedErr):
+		return status.Error(codes.Internal, err.Error())
 
 	case errors.As(err, &resourceExhErr):
 		return status.Error(codes.ResourceExhausted, err.Error())

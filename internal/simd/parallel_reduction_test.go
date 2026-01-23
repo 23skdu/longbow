@@ -21,11 +21,17 @@ func TestCosineBatchUnrolledCorrectness(t *testing.T) {
 	results := make([]float32, len(vectors))
 
 	// Compute with batch unrolled
-	cosineBatchUnrolled4x(query, vectors, results)
+	err := cosineBatchUnrolled4x(query, vectors, results)
+	if err != nil {
+		t.Errorf("cosineBatchUnrolled4x error: %v", err)
+	}
 
 	// Verify against scalar
 	for i, v := range vectors {
-		expected := cosineGeneric(query, v)
+		expected, err := cosineGeneric(query, v)
+		if err != nil {
+			t.Errorf("cosineGeneric error: %v", err)
+		}
 		if math.Abs(float64(results[i]-expected)) > 1e-4 {
 			t.Errorf("cosineBatchUnrolled4x[%d] mismatch: expected %v, got %v", i, expected, results[i])
 		}
@@ -44,11 +50,17 @@ func TestDotBatchUnrolledCorrectness(t *testing.T) {
 	results := make([]float32, len(vectors))
 
 	// Compute with batch unrolled
-	dotBatchUnrolled4x(query, vectors, results)
+	err := dotBatchUnrolled4x(query, vectors, results)
+	if err != nil {
+		t.Errorf("dotBatchUnrolled4x error: %v", err)
+	}
 
 	// Verify against scalar
 	for i, v := range vectors {
-		expected := dotGeneric(query, v)
+		expected, err := dotGeneric(query, v)
+		if err != nil {
+			t.Errorf("dotGeneric error: %v", err)
+		}
 		if math.Abs(float64(results[i]-expected)) > 1e-4 {
 			t.Errorf("dotBatchUnrolled4x[%d] mismatch: expected %v, got %v", i, expected, results[i])
 		}
@@ -64,7 +76,10 @@ func TestCosineBatchDispatch(t *testing.T) {
 	}
 	results := make([]float32, len(vectors))
 
-	CosineDistanceBatch(query, vectors, results)
+	err := CosineDistanceBatch(query, vectors, results)
+	if err != nil {
+		t.Errorf("CosineDistanceBatch error: %v", err)
+	}
 
 	if results[0] > 1e-4 {
 		t.Errorf("identical vectors should have cosine distance ~0, got %v", results[0])
@@ -84,7 +99,10 @@ func TestDotBatchDispatch(t *testing.T) {
 	}
 	results := make([]float32, len(vectors))
 
-	DotProductBatch(query, vectors, results)
+	err := DotProductBatch(query, vectors, results)
+	if err != nil {
+		t.Errorf("DotProductBatch error: %v", err)
+	}
 
 	expected := []float32{1, 2, 10}
 	for i, exp := range expected {
@@ -114,15 +132,25 @@ func TestParallelReductionHighDimension(t *testing.T) {
 	cosResults := make([]float32, len(vectors))
 	dotResults := make([]float32, len(vectors))
 
-	EuclideanDistanceBatch(query, vectors, eucResults)
-	CosineDistanceBatch(query, vectors, cosResults)
-	DotProductBatch(query, vectors, dotResults)
+	if err := EuclideanDistanceBatch(query, vectors, eucResults); err != nil {
+		t.Errorf("EuclideanDistanceBatch error: %v", err)
+	}
+	if err := CosineDistanceBatch(query, vectors, cosResults); err != nil {
+		t.Errorf("CosineDistanceBatch error: %v", err)
+	}
+	if err := DotProductBatch(query, vectors, dotResults); err != nil {
+		t.Errorf("DotProductBatch error: %v", err)
+	}
 
 	// Verify against scalar
 	for i, v := range vectors {
-		expEuc := euclideanGeneric(query, v)
-		expCos := cosineGeneric(query, v)
-		expDot := dotGeneric(query, v)
+		expEuc, errE := euclideanGeneric(query, v)
+		expCos, errC := cosineGeneric(query, v)
+		expDot, errD := dotGeneric(query, v)
+
+		if errE != nil || errC != nil || errD != nil {
+			t.Errorf("generic error")
+		}
 
 		if math.Abs(float64(eucResults[i]-expEuc)) > 1e-3 {
 			t.Errorf("euclidean[%d] mismatch: got %v, want %v", i, eucResults[i], expEuc)
@@ -150,7 +178,10 @@ func TestAccumulatorIndependence(t *testing.T) {
 	// Set diagonal pattern
 	a[0], a[5], a[10], a[15] = 1, 1, 1, 1
 
-	dot := dotUnrolled4x(a, b)
+	dot, err := dotUnrolled4x(a, b)
+	if err != nil {
+		t.Errorf("dotUnrolled4x error: %v", err)
+	}
 	if math.Abs(float64(dot-4.0)) > 1e-6 {
 		t.Errorf("expected dot=4 (one per accumulator), got %v", dot)
 	}
@@ -223,7 +254,7 @@ func BenchmarkCosine_Sequential_128dim_100vec(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		for _, v := range vectors {
-			_ = CosineDistance(query, v)
+			_, _ = CosineDistance(query, v)
 		}
 	}
 }
@@ -246,7 +277,7 @@ func BenchmarkDot_Sequential_128dim_100vec(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		for _, v := range vectors {
-			_ = DotProduct(query, v)
+			_, _ = DotProduct(query, v)
 		}
 	}
 }

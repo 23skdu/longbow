@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
 )
@@ -24,12 +25,17 @@ type BufferedWAL struct {
 	stopCh       chan struct{}
 	doneCh       chan struct{}
 
+	// Error handling
+	ErrCh   chan error
+	onError func(error)
+
 	// Synchronization
 	currentSeq uint64        // Max sequence currently in buffer
 	flushedSeq atomic.Uint64 // Max sequence flushed to backend
 	syncCond   *sync.Cond    // Broadcasts when flushedSeq updates
 	isFlushing bool          // True if a flush is in progress
 	flushCh    chan struct{} // Signal to force flush
+	fatalErr   atomic.Value  // Stores the first fatal error encountered (type: error)
 }
 
 // NewBufferedWAL creates a new buffered WAL.
@@ -42,6 +48,7 @@ func NewBufferedWAL(backend WALBackend, maxBatchSize int, flushDelay time.Durati
 		stopCh:       make(chan struct{}),
 		doneCh:       make(chan struct{}),
 		flushCh:      make(chan struct{}, 1),
+		ErrCh:        make(chan error, 1),
 	}
 	w.syncCond = sync.NewCond(&w.mu)
 
@@ -49,11 +56,23 @@ func NewBufferedWAL(backend WALBackend, maxBatchSize int, flushDelay time.Durati
 	return w
 }
 
+// SetOnError sets a callback function to be invoked when a flush error occurs.
+func (w *BufferedWAL) SetOnError(fn func(error)) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.onError = fn
+}
+
 // Write writes a record to the in-memory buffer.
 // It buffers the write in memory, avoiding double serialization.
 func (w *BufferedWAL) Write(name string, seq uint64, ts int64, record arrow.RecordBatch) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+
+	// Fail fast if backend is broken
+	if errVal := w.fatalErr.Load(); errVal != nil {
+		return errVal.(error)
+	}
 
 	// Header: Checksum(4) | Seq(8) | Timestamp(8) | NameLen(4) | RecLen(8) = 32 bytes
 	const headerSize = 32
@@ -173,9 +192,20 @@ func (w *BufferedWAL) Sync() error {
 			break
 		}
 
+		// Check for fatal error while waiting
+		if errVal := w.fatalErr.Load(); errVal != nil {
+			w.mu.Unlock()
+			return errVal.(error)
+		}
+
 		w.syncCond.Wait()
 	}
 	w.mu.Unlock()
+
+	// Double check after waking up
+	if errVal := w.fatalErr.Load(); errVal != nil {
+		return errVal.(error)
+	}
 
 	return nil
 }
@@ -229,13 +259,41 @@ func (w *BufferedWAL) tryFlush() {
 
 	wb := w.swapBufferLocked()
 	w.isFlushing = true
+
+	// Capture onError callback while holding lock to avoid race if it's set later
+	onError := w.onError
 	w.mu.Unlock()
 
-	_ = w.flushBufferToBackend(wb)
-	// TODO: Log error?
+	err := w.flushBufferToBackend(wb)
 
 	w.mu.Lock()
 	w.isFlushing = false
+
+	if err != nil {
+		metrics.WALFlushErrors.Inc()
+
+		// Store fatal error if check first time
+		if w.fatalErr.Load() == nil {
+			w.fatalErr.Store(err)
+		}
+
+		// Try to send to error channel (non-blocking)
+		select {
+		case w.ErrCh <- err:
+		default:
+		}
+
+		// Invoke callback if set
+		if onError != nil {
+			onError(err)
+		}
+	} else {
+		// Success: Update flushed sequence
+		w.flushedSeq.Store(wb.maxSeq)
+	}
+
+	// Broadcast to unblock any Sync waiters (for both success and failure)
+	w.syncCond.Broadcast()
 	w.mu.Unlock()
 }
 
@@ -279,11 +337,9 @@ func (w *BufferedWAL) flushBufferToBackend(wb *writeBatch) error {
 		return fmt.Errorf("wal backend sync: %w", err)
 	}
 
-	// Update flushed sequence
-	w.flushedSeq.Store(wb.maxSeq)
-
-	// Broadcast to waiters
-	w.syncCond.Broadcast()
+	if err := w.backend.Sync(); err != nil {
+		return fmt.Errorf("wal backend sync: %w", err)
+	}
 
 	return nil
 }

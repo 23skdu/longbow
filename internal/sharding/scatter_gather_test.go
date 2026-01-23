@@ -20,7 +20,7 @@ func TestScatterGather_Scatter(t *testing.T) {
 	sg := NewScatterGather(rm, nil, zerolog.Nop()) // Forwarder nil as we won't use it in mock
 
 	// Mock function that returns node ID
-	fn := func(ctx context.Context, nodeID string) (interface{}, error) {
+	fn := func(ctx context.Context, nodeID string) (any, error) {
 		// Simulate network latency
 		time.Sleep(10 * time.Millisecond)
 		return "response-from-" + nodeID, nil
@@ -67,7 +67,7 @@ func BenchmarkScatterGather(b *testing.B) {
 
 	sg := NewScatterGather(rm, nil, zerolog.Nop())
 	ctx := context.Background()
-	fn := func(ctx context.Context, nodeID string) (interface{}, error) {
+	fn := func(ctx context.Context, nodeID string) (any, error) {
 		return 1, nil
 	}
 

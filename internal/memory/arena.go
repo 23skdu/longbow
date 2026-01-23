@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"unsafe"
 
 	"github.com/23skdu/longbow/internal/metrics"
@@ -27,11 +28,35 @@ type slab struct {
 	offset uint32 // current allocation pointer (relative to slab)
 }
 
+// ArenaStats holds memory usage information about the arena.
+type ArenaStats struct {
+	TotalCapacity int64
+	UsedBytes     int64
+}
+
 // SlabArena manages large blocks of memory.
 type SlabArena struct {
-	mu      sync.RWMutex
-	slabs   []*slab
-	slabCap uint32 // capacity in BYTES
+	mu      sync.Mutex              // Only guards Alloc (writes)
+	slabs   atomic.Pointer[[]*slab] // Lock-free access to slabs slice
+	slabCap uint32                  // capacity in BYTES
+}
+
+// Stats returns the total capacity and used bytes in the arena.
+func (a *SlabArena) Stats() ArenaStats {
+	slabsPtr := a.slabs.Load()
+	if slabsPtr == nil {
+		return ArenaStats{}
+	}
+	slabs := *slabsPtr
+	stats := ArenaStats{
+		TotalCapacity: int64(len(slabs)) * int64(a.slabCap),
+	}
+	// Note: We need to sum up used portions. This is a bit slow but okay for tuning.
+	// For production, we might want to track this atomically.
+	for _, s := range slabs {
+		stats.UsedBytes += int64(s.offset)
+	}
+	return stats
 }
 
 // NewSlabArena creates a new arena with specified slab byte size.
@@ -41,30 +66,104 @@ func NewSlabArena(slabSizeBytes int) *SlabArena {
 	}
 	// Ensure alignment? For now, we assume simple byte allocation.
 	// 4KB or 2MB alignment is good.
-	return &SlabArena{
+	s := &SlabArena{
 		slabCap: uint32(slabSizeBytes),
 	}
+	// Initialize with empty slice
+	empty := make([]*slab, 0)
+	s.slabs.Store(&empty)
+
+	// Register with global registry for GC tuning
+	RegisterArena(s)
+
+	return s
 }
 
 // Alloc reserves space for 'size' bytes.
 // Returns a GLOBAL offset.
+// Guarantees zero-initialized memory.
 func (a *SlabArena) Alloc(size int) (uint64, error) {
+	// Slow path always uses mutex-protected allocCommon
+	metrics.ArenaSlowPathTotal.Inc()
+	return a.allocCommon(size, true)
+}
+
+// AllocDirty reserves space for 'size' bytes.
+// Returns a GLOBAL offset.
+// MEMORY IS NOT GUARANTEED TO BE ZEROED.
+// Use this only when you will immediately overwrite the entire range.
+func (a *SlabArena) AllocDirty(size int) (uint64, error) {
+	return a.allocCommon(size, false)
+}
+
+// AllocFast attempts lock-free allocation for small sizes (≤ 64 bytes).
+// Returns (globalOffset, true) on success, (0, false) on failure.
+// This is an internal helper that doesn't increment metrics.
+func (a *SlabArena) allocFast(size int) (uint64, bool) {
+	const align = 8
+	needed := uint32(size)
+	pad := (align - (needed % align)) % align
+	totalNeeded := needed + pad
+
+	for {
+		slabsPtr := a.slabs.Load()
+		slabs := *slabsPtr
+
+		if len(slabs) == 0 {
+			return 0, false
+		}
+
+		active := slabs[len(slabs)-1]
+
+		oldOffset := atomic.LoadUint32(&active.offset)
+		newOffset := oldOffset + totalNeeded
+
+		if newOffset > uint32(len(active.data)) {
+			return 0, false
+		}
+
+		if atomic.CompareAndSwapUint32(&active.offset, oldOffset, newOffset) {
+			start := oldOffset
+
+			if start == 0 && active.id == 1 {
+				start += align
+				atomic.AddUint32(&active.offset, align)
+			}
+
+			globalOffset := (uint64(active.id-1) * uint64(a.slabCap)) + uint64(start)
+			return globalOffset, true
+		}
+	}
+}
+
+func (a *SlabArena) allocCommon(size int, zero bool) (uint64, error) {
 	if size <= 0 {
 		return 0, errors.New("alloc size must be positive")
 	}
 	needed := uint32(size)
 	if needed > a.slabCap {
-		// For huge allocations, we strictly might fail or support header-based huge slabs.
-		// For now fail.
 		return 0, fmt.Errorf("alloc request %d exceeds slab capacity %d", size, a.slabCap)
 	}
 
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
+	// Try fast path while holding the mutex (safe because no concurrent access)
+	if size <= 64 {
+		if offset, ok := a.allocFast(size); ok {
+			metrics.ArenaFastPathTotal.Inc()
+			return offset, nil
+		}
+		metrics.ArenaFastPathFailedTotal.Inc()
+	}
+
+	// Load current state
+	currentSlabsPtr := a.slabs.Load()
+	currentSlabs := *currentSlabsPtr
+
 	var active *slab
-	if len(a.slabs) > 0 {
-		active = a.slabs[len(a.slabs)-1]
+	if len(currentSlabs) > 0 {
+		active = currentSlabs[len(currentSlabs)-1]
 	}
 
 	// Simple bump allocator within slab
@@ -76,18 +175,30 @@ func (a *SlabArena) Alloc(size int) (uint64, error) {
 		pad := (align - (active.offset % align)) % align
 		if active.offset+pad+needed <= uint32(len(active.data)) {
 			active.offset += pad // consume padding
+		} else {
+			// Won't fit, need new slab
+			active = nil
 		}
-		// If won't fit, skip to next slab
 	}
 
-	// Check fit
-	if active == nil || !canFit(active, needed, align) {
+	// Check fit (active might have been nil'd above if full)
+	if active == nil {
+		// Allocate new slab using local helper or pool
+		buf := GetSlab(int(a.slabCap))
+
 		newSlab := &slab{
-			id:     uint32(len(a.slabs) + 1), // ID starts at 1
-			data:   make([]byte, a.slabCap),
+			id:     uint32(len(currentSlabs) + 1), // ID starts at 1
+			data:   buf,
 			offset: 0,
 		}
-		a.slabs = append(a.slabs, newSlab)
+		// Copy-On-Write for lock-free readers
+		newSlabs := make([]*slab, len(currentSlabs)+1)
+		copy(newSlabs, currentSlabs)
+		newSlabs[len(currentSlabs)] = newSlab
+
+		// Publish new state
+		a.slabs.Store(&newSlabs)
+
 		active = newSlab
 
 		metrics.ArenaSlabsTotal.Inc()
@@ -99,38 +210,61 @@ func (a *SlabArena) Alloc(size int) (uint64, error) {
 	active.offset += pad
 
 	start := active.offset
+	// Offset 0 is reserved for nil. For the very first slab and very first allocation,
+	// we burn 'align' bytes to ensure we move away from 0 while maintaining alignment.
+	if start == 0 && active.id == 1 {
+		active.offset += uint32(align)
+		start = active.offset
+	}
+
 	active.offset += needed
+
+	// ZEROING LOGIC
+	if zero {
+		// Zero the allocated range
+		// If the slab came from 'make', it's already zeroed IF we haven't used it.
+		// But if we reuse slabs, or if we mix clean/dirty allocs in same slab,
+		// we MUST explicitly zero here to be safe.
+		// Go's built-in 'clear' or simple loop?
+		// For small n, loop is fine. For large n, copy/clear is fine.
+		// 'make' provides zeroed memory, but we can't track easily if this specific range is fresh.
+		// Pessimistic zeroing is safest when pooling.
+		// Given we want to optimize 'AllocDirty', we accept cost in 'Alloc'.
+		clear(active.data[start : start+needed])
+	}
 
 	// Result = (SlabIndex * SlabCap) + LocalOffset
 	// Slab index is (ID-1).
 	slabIdx := uint64(active.id - 1)
 	globalOffset := (slabIdx * uint64(a.slabCap)) + uint64(start)
 
-	// Offset 0 is reserved for nil, so strict usage requires start > 0?
-	// Or we make sure Slab 1 starts at Offset 1?
-	// If GlobalOffset == 0, is it nil?
-	// Slab 1, Offset 0 -> Global 0.
-	// We should offset by specific base or treat 0 as nil.
-	// Let's add +1 to global offset or something?
-	// Existing code checks `offset == 0` as nil.
-	// So valid offsets must be > 0.
-	// Since Slab 1, Offset 0 is 0. We should introduce `offsetBase = 1`.
-	// Or just verify we never return 0.
-	if globalOffset == 0 {
-		// This happens if Slab 1, Offset 0.
-		// We can burn the first byte of Slab 1.
-		if active.id == 1 && start == 0 {
-			active.offset++ // burn byte 0
-			globalOffset++
-		}
-	}
-
 	return globalOffset, nil
 }
 
-func canFit(s *slab, needed, align uint32) bool {
-	pad := (align - (s.offset % align)) % align
-	return s.offset+pad+needed <= uint32(len(s.data))
+// Free releases all slabs back to the pool.
+// The arena must not be used after this.
+func (a *SlabArena) Free() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	currentSlabsPtr := a.slabs.Load()
+	if currentSlabsPtr == nil {
+		return
+	}
+	currentSlabs := *currentSlabsPtr
+
+	for _, s := range currentSlabs {
+		PutSlab(s.data)
+		s.data = nil // Help GC
+	}
+
+	// Reset (optional, if we want to reuse arena struct)
+	empty := make([]*slab, 0)
+	a.slabs.Store(&empty)
+
+	// metrics.ArenaSlabsTotal is a Counter, we cannot decrement.
+	// If we want to track active slabs, we need a separate Gauge.
+	// For now, just ignore decrement.
 }
 
 // Get returns the byte slice.
@@ -142,16 +276,15 @@ func (a *SlabArena) Get(offset uint64, length uint32) []byte {
 	slabIdx := offset / uint64(a.slabCap)
 	localOffset := uint32(offset % uint64(a.slabCap))
 
-	a.mu.RLock() // Lock needed for slabs slice access? Yes if it grows?
-	// Slabs append-only. Reading existing pointer safe?
-	// Generally safe if we have memory barrier, but lock is safer.
-	defer a.mu.RUnlock()
+	// Lock-free read
+	slabsPtr := a.slabs.Load()
+	slabs := *slabsPtr
 
-	if int(slabIdx) >= len(a.slabs) {
+	if int(slabIdx) >= len(slabs) {
 		return nil
 	}
 
-	s := a.slabs[slabIdx]
+	s := slabs[slabIdx]
 	if uint64(localOffset)+uint64(length) > uint64(len(s.data)) {
 		return nil
 	}
@@ -161,6 +294,8 @@ func (a *SlabArena) Get(offset uint64, length uint32) []byte {
 
 // GetPointer returns unsafe.Pointer to the data.
 // Use with caution.
+// GetPointer returns unsafe.Pointer to the data.
+// Use with caution.
 func (a *SlabArena) GetPointer(offset uint64) unsafe.Pointer {
 	if offset == 0 {
 		return nil
@@ -168,12 +303,13 @@ func (a *SlabArena) GetPointer(offset uint64) unsafe.Pointer {
 	slabIdx := offset / uint64(a.slabCap)
 	localOffset := uint32(offset % uint64(a.slabCap))
 
-	a.mu.RLock()
-	defer a.mu.RUnlock()
+	// Lock-free read
+	slabsPtr := a.slabs.Load()
+	slabs := *slabsPtr
 
-	if int(slabIdx) >= len(a.slabs) {
+	if int(slabIdx) >= len(slabs) {
 		return nil
 	}
-	s := a.slabs[slabIdx]
+	s := slabs[slabIdx]
 	return unsafe.Pointer(&s.data[localOffset])
 }

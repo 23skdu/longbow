@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -28,16 +29,20 @@ type CompactionConfig struct {
 	// RateLimitBytesPerSec limits the speed of compaction/snapshotting (bytes/sec).
 	// Default: 50MB/s (52428800). 0 means unlimited.
 	RateLimitBytesPerSec int64
+	// FragmentationThreshold triggers compaction if tombstones/rows > threshold.
+	// Default: 0.3 (30%).
+	FragmentationThreshold float64
 }
 
 // DefaultCompactionConfig returns sensible defaults for compaction.
 func DefaultCompactionConfig() CompactionConfig {
 	return CompactionConfig{
-		TargetBatchSize:      10000,
-		MinBatchesToCompact:  10,
-		CompactionInterval:   30 * time.Second,
-		Enabled:              true,
-		RateLimitBytesPerSec: 50 * 1024 * 1024, // 50MB/s
+		TargetBatchSize:        10000,
+		MinBatchesToCompact:    10,
+		CompactionInterval:     30 * time.Second,
+		Enabled:                true,
+		RateLimitBytesPerSec:   50 * 1024 * 1024, // 50MB/s
+		FragmentationThreshold: 0.3,
 	}
 }
 
@@ -78,7 +83,8 @@ type CompactionWorker struct {
 	triggerChan  chan string
 	triggerCount atomic.Int64
 
-	store *VectorStore
+	store    *VectorStore
+	workerWg *sync.WaitGroup
 
 	// Statistics
 	compactionsRun atomic.Int64
@@ -88,10 +94,15 @@ type CompactionWorker struct {
 }
 
 // NewCompactionWorker creates a new compaction worker with the given config.
-func NewCompactionWorker(store *VectorStore, cfg CompactionConfig) *CompactionWorker {
+func NewCompactionWorker(store *VectorStore, cfg CompactionConfig, workerWg ...*sync.WaitGroup) *CompactionWorker {
+	var wg *sync.WaitGroup
+	if len(workerWg) > 0 {
+		wg = workerWg[0]
+	}
 	w := &CompactionWorker{
 		store:       store,
 		config:      cfg,
+		workerWg:    wg,
 		triggerChan: make(chan string, 100), // Buffered to avoid blocking
 	}
 	w.lastRunTime.Store(time.Time{})
@@ -113,6 +124,10 @@ func (w *CompactionWorker) Start() {
 	w.stopCh = make(chan struct{})
 	w.doneCh = make(chan struct{})
 	w.running.Store(true)
+
+	if w.workerWg != nil {
+		w.workerWg.Add(1)
+	}
 
 	go w.run()
 }
@@ -150,6 +165,20 @@ func (w *CompactionWorker) Stats() CompactionStats {
 // run is the main worker loop.
 func (w *CompactionWorker) run() {
 	defer close(w.doneCh)
+	if w.workerWg != nil {
+		defer w.workerWg.Done()
+	}
+
+	// Create a context that is cancelled when stopCh is closed
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		select {
+		case <-w.stopCh:
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
 
 	ticker := time.NewTicker(w.config.CompactionInterval)
 	defer ticker.Stop()
@@ -175,7 +204,7 @@ func (w *CompactionWorker) run() {
 				}
 				// Non-blocking attempt to compact
 				start := time.Now()
-				if err := w.store.CompactDataset(ds.Name); err == nil {
+				if err := w.store.CompactDataset(ctx, ds.Name); err == nil {
 					duration := time.Since(start).Seconds()
 					metrics.CompactionDurationSeconds.WithLabelValues(ds.Name, "periodic").Observe(duration)
 					w.compactionsRun.Add(1)
@@ -186,7 +215,7 @@ func (w *CompactionWorker) run() {
 
 				// Run Vacuum (Graph Compaction)
 				// We do this separately. It handles graph edges pointing to deleted nodes.
-				if err := w.store.VacuumDataset(ds.Name); err != nil {
+				if err := w.store.VacuumDataset(ctx, ds.Name); err != nil {
 					w.store.logger.Warn().Err(err).Str("dataset", ds.Name).Msg("Failed to vacuum dataset during compaction")
 				}
 			})
@@ -197,7 +226,7 @@ func (w *CompactionWorker) run() {
 				continue
 			}
 			start := time.Now()
-			if err := w.store.CompactDataset(dsName); err == nil {
+			if err := w.store.CompactDataset(ctx, dsName); err == nil {
 				duration := time.Since(start).Seconds()
 				metrics.CompactionDurationSeconds.WithLabelValues(dsName, "triggered").Observe(duration)
 				w.compactionsRun.Add(1)
@@ -217,8 +246,8 @@ type CompactionCandidate struct {
 	TotalRow int64
 }
 
-// identifyCompactionCandidates finds contiguous runs of small batches.
-func identifyCompactionCandidates(records []arrow.RecordBatch, targetSize int64) []CompactionCandidate {
+// identifyCompactionCandidates finds contiguous runs of small batches OR highly fragmented batches.
+func identifyCompactionCandidates(records []arrow.RecordBatch, tombstones []*qry.Bitset, targetSize int64, fragThreshold float64) []CompactionCandidate {
 	var candidates []CompactionCandidate
 	if len(records) < 2 {
 		return candidates
@@ -232,9 +261,18 @@ func identifyCompactionCandidates(records []arrow.RecordBatch, targetSize int64)
 	for i, rec := range records {
 		rows := rec.NumRows()
 
-		// If a single batch is already large enough, it acts as a barrier
+		// Check Fragmentation
+		isFragmented := false
+		if fragThreshold > 0 && tombstones != nil && i < len(tombstones) && tombstones[i] != nil {
+			deleted := tombstones[i].Count()
+			if rows > 0 && float64(deleted)/float64(rows) >= fragThreshold {
+				isFragmented = true
+			}
+		}
+
+		// If a single batch is already large enough AND not fragmented, it acts as a barrier
 		// Flush current accumulation if any
-		if rows >= targetSize {
+		if rows >= targetSize && !isFragmented {
 			if count > 1 {
 				candidates = append(candidates, CompactionCandidate{
 					StartIdx: startIdx,
@@ -255,9 +293,20 @@ func identifyCompactionCandidates(records []arrow.RecordBatch, targetSize int64)
 		currentRows += rows
 		count++
 
-		if currentRows >= targetSize {
+		// Trigger compaction if:
+		// 1. Group size >= Target
+		// 2. Current batch is highly fragmented (aggressive merge with neighbors)
+		if currentRows >= targetSize || isFragmented {
 			// Found a group
-			if count > 1 { // Only merge if we actually combining multiple
+			// Note: If isFragmented is true, we force merge.
+			// Ideally we want to merge it with *something*.
+			// If it's the first in the group (count=1), we might wait for next?
+			// But if we are at end of loop or hit barrier, we take it.
+			// Let's accept count >= 1 if fragmented?
+			// Actually, merging a single fragmented batch essentially just "GCs" it (rewrites it).
+			// So count >= 1 is valid for fragmentation!
+
+			if count > 1 || (isFragmented && count >= 1) {
 				candidates = append(candidates, CompactionCandidate{
 					StartIdx: startIdx,
 					EndIdx:   i + 1,
@@ -292,13 +341,21 @@ type BatchRemapInfo struct {
 
 // compactRecords returns a NEW slice of RecordBatches and a remapping table.
 // It DOES NOT Modify the input slice.
-func compactRecords(pool memory.Allocator, schema *arrow.Schema, records []arrow.RecordBatch, tombstones map[int]*qry.Bitset, targetSize int64, datasetName string, limiter *RateLimiter) (compacted []arrow.RecordBatch, remap map[int]BatchRemapInfo) {
+func compactRecords(ctx context.Context, pool memory.Allocator, schema *arrow.Schema, records []arrow.RecordBatch, tombstones map[int]*qry.Bitset, targetSize int64, datasetName string, limiter *RateLimiter, fragThreshold float64) (compacted []arrow.RecordBatch, remap map[int]BatchRemapInfo, err error) {
 	if schema == nil && len(records) > 0 {
 		schema = records[0].Schema()
 	}
-	candidates := identifyCompactionCandidates(records, targetSize)
+	// Convert map[int]*Bitset to slice for identification
+	tombstoneSlice := make([]*qry.Bitset, len(records))
+	for i := range records {
+		if ts, ok := tombstones[i]; ok {
+			tombstoneSlice[i] = ts
+		}
+	}
+
+	candidates := identifyCompactionCandidates(records, tombstoneSlice, targetSize, fragThreshold)
 	if len(candidates) == 0 {
-		return nil, nil // Nothing to do
+		return nil, nil, nil // Nothing to do
 	}
 
 	// We process candidates in order.
@@ -326,8 +383,15 @@ func compactRecords(pool memory.Allocator, schema *arrow.Schema, records []arrow
 			// Let's treat targetSize as rows and assume 100 bytes/row.
 			bytesEstimate := int(cand.TotalRow * 100)
 
+			// Context check before rate limiting
+			select {
+			case <-ctx.Done():
+				return nil, nil, ctx.Err()
+			default:
+			}
+
 			startWait := time.Now()
-			_ = limiter.Wait(context.Background(), bytesEstimate)
+			_ = limiter.Wait(ctx, bytesEstimate)
 			metrics.CompactionRateLimitWaitSeconds.Observe(time.Since(startWait).Seconds())
 		}
 
@@ -337,7 +401,11 @@ func compactRecords(pool memory.Allocator, schema *arrow.Schema, records []arrow
 			tomb := tombstones[i]
 			if tomb != nil && tomb.Count() > 0 {
 				// We still need to filter this "untouched" batch because it has tombstones
-				filtered, rowMapping, removed := filterTombstones(pool, schema, rec, tomb)
+				filtered, rowMapping, removed, err := filterTombstones(pool, schema, rec, tomb)
+				if err != nil {
+					metrics.CompactionErrorsTotal.Inc()
+					return nil, nil, err
+				}
 				totalRemoved += removed
 				remapping[i] = BatchRemapInfo{NewBatchIdx: len(result), NewRowIdxs: rowMapping}
 				result = append(result, filtered)
@@ -364,7 +432,11 @@ func compactRecords(pool memory.Allocator, schema *arrow.Schema, records []arrow
 			candTombstones[i-cand.StartIdx] = tombstones[i]
 		}
 
-		merged, candRowMappings, removed := mergeAndFilterRecordBatches(pool, schema, subset, candTombstones)
+		merged, candRowMappings, removed, err := mergeAndFilterRecordBatches(pool, schema, subset, candTombstones)
+		if err != nil {
+			metrics.CompactionErrorsTotal.Inc()
+			return nil, nil, err
+		}
 		totalRemoved += removed
 
 		newBatchIdx := len(result)
@@ -386,7 +458,11 @@ func compactRecords(pool memory.Allocator, schema *arrow.Schema, records []arrow
 		rec := records[i]
 		tomb := tombstones[i]
 		if tomb != nil && tomb.Count() > 0 {
-			filtered, rowMapping, removed := filterTombstones(pool, schema, rec, tomb)
+			filtered, rowMapping, removed, err := filterTombstones(pool, schema, rec, tomb)
+			if err != nil {
+				metrics.CompactionErrorsTotal.Inc()
+				return nil, nil, err
+			}
 			totalRemoved += removed
 			remapping[i] = BatchRemapInfo{NewBatchIdx: len(result), NewRowIdxs: rowMapping}
 			result = append(result, filtered)
@@ -405,96 +481,30 @@ func compactRecords(pool memory.Allocator, schema *arrow.Schema, records []arrow
 		metrics.CompactionRecordsRemovedTotal.WithLabelValues(datasetName).Add(float64(totalRemoved))
 	}
 
-	return result, remapping
+	return result, remapping, nil
 }
 
 // filterTombstones creates a new RecordBatch with deleted rows removed.
-func filterTombstones(pool memory.Allocator, schema *arrow.Schema, rec arrow.RecordBatch, tomb *qry.Bitset) (filtered arrow.RecordBatch, mapping []int, removed int64) {
-	numRows := int(rec.NumRows())
-	rowMapping := make([]int, numRows)
-	keepIndices := make([]int, 0, numRows)
+func filterTombstones(pool memory.Allocator, schema *arrow.Schema, rec arrow.RecordBatch, tomb *qry.Bitset) (filtered arrow.RecordBatch, mapping []int, removed int64, err error) {
+	sc := NewStreamingCompactor(pool)
+	batches := []arrow.RecordBatch{rec}
+	tombstones := []*qry.Bitset{tomb}
 
-	for i := 0; i < numRows; i++ {
-		if tomb.Contains(i) {
-			rowMapping[i] = -1
-		} else {
-			rowMapping[i] = len(keepIndices)
-			keepIndices = append(keepIndices, i)
-		}
+	merged, mappings, removed, compErr := sc.Compact(schema, batches, tombstones)
+	if compErr != nil {
+		return nil, nil, 0, fmt.Errorf("filterTombstones compaction failed: %w", compErr)
 	}
-
-	if len(keepIndices) == numRows {
-		rec.Retain()
-		return rec, rowMapping, 0
-	}
-
-	if len(keepIndices) == 0 {
-		// All rows deleted - return empty record with same schema
-		builder := array.NewRecordBuilder(pool, schema)
-		defer builder.Release()
-		return builder.NewRecordBatch(), rowMapping, int64(numRows)
-	}
-
-	// Filter using Arrow compute or manual copy
-	// For simplicity and to avoid context overhead in background worker, use manual builder
-	builder := array.NewRecordBuilder(pool, schema)
-	defer builder.Release()
-
-	for colIdx := 0; colIdx < int(schema.NumFields()); colIdx++ {
-		// Dynamic check for column existence in batch
-		if colIdx >= int(rec.NumCols()) {
-			fieldBuilder := builder.Field(colIdx)
-			for range keepIndices {
-				fieldBuilder.AppendNull()
-			}
-			continue
-		}
-
-		col := rec.Column(colIdx)
-		fieldBuilder := builder.Field(colIdx)
-		for _, rowIdx := range keepIndices {
-			appendValue(fieldBuilder, col, rowIdx)
-		}
-	}
-
-	return builder.NewRecordBatch(), rowMapping, int64(numRows - len(keepIndices))
+	return merged, mappings[0], removed, nil
 }
 
 // mergeAndFilterRecordBatches combines multiple record batches into one while skipping tombstones.
-func mergeAndFilterRecordBatches(pool memory.Allocator, schema *arrow.Schema, batches []arrow.RecordBatch, tombstones []*qry.Bitset) (merged arrow.RecordBatch, mapping [][]int, removed int64) {
-	builder := array.NewRecordBuilder(pool, schema)
-	defer builder.Release()
-
-	rowMappings := make([][]int, len(batches))
-	totalRemoved := int64(0)
-	currentRowOffset := 0
-
-	for i, batch := range batches {
-		numRows := int(batch.NumRows())
-		rowMappings[i] = make([]int, numRows)
-		tomb := tombstones[i]
-
-		for rowIdx := 0; rowIdx < numRows; rowIdx++ {
-			if tomb != nil && tomb.Contains(rowIdx) {
-				rowMappings[i][rowIdx] = -1
-				totalRemoved++
-			} else {
-				rowMappings[i][rowIdx] = currentRowOffset
-				for colIdx := 0; colIdx < int(schema.NumFields()); colIdx++ {
-					fieldBuilder := builder.Field(colIdx)
-					if colIdx >= int(batch.NumCols()) {
-						fieldBuilder.AppendNull()
-						continue
-					}
-					col := batch.Column(colIdx)
-					appendValue(fieldBuilder, col, rowIdx)
-				}
-				currentRowOffset++
-			}
-		}
+func mergeAndFilterRecordBatches(pool memory.Allocator, schema *arrow.Schema, batches []arrow.RecordBatch, tombstones []*qry.Bitset) (merged arrow.RecordBatch, mapping [][]int, removed int64, err error) {
+	sc := NewStreamingCompactor(pool)
+	merged, mapping, removed, compErr := sc.Compact(schema, batches, tombstones)
+	if compErr != nil {
+		return nil, nil, 0, fmt.Errorf("mergeAndFilterRecordBatches compaction failed: %w", compErr)
 	}
-
-	return builder.NewRecordBatch(), rowMappings, totalRemoved
+	return merged, mapping, removed, nil
 }
 
 // appendValue appends a single value from an arrow.Array to a builder.
@@ -751,7 +761,7 @@ func NewVectorStoreWithCompaction(mem memory.Allocator, logger zerolog.Logger, m
 	store.compactionConfig = compactionCfg
 	store.rateLimiter = NewRateLimiter(compactionCfg.RateLimitBytesPerSec)
 	if compactionCfg.Enabled {
-		store.compactionWorker = NewCompactionWorker(store, compactionCfg)
+		store.compactionWorker = NewCompactionWorker(store, compactionCfg, &store.workerWg)
 		store.compactionWorker.Start()
 	}
 	return store

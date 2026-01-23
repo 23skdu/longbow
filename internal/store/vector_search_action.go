@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"sync"
 	"time"
 
 	lbmem "github.com/23skdu/longbow/internal/memory"
@@ -19,12 +18,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// Global zero-alloc parser pool for VectorSearch
-var vectorSearchParserPool = sync.Pool{
-	New: func() interface{} {
-		return query.NewZeroAllocVectorSearchParser(768)
-	},
-}
+// No longer using global pool here, moved to VectorStore
 
 // handleVectorSearchAction handles the VectorSearch DoAction request
 func (s *VectorStore) handleVectorSearchAction(action *flight.Action, stream flight.FlightService_DoActionServer) error {
@@ -37,8 +31,8 @@ func (s *VectorStore) handleVectorSearchAction(action *flight.Action, stream fli
 	var req query.VectorSearchRequest
 	var parseErr error
 
-	parser := vectorSearchParserPool.Get().(*query.ZeroAllocVectorSearchParser)
-	defer vectorSearchParserPool.Put(parser)
+	parser := s.vectorSearchParserPool.Get().(*query.ZeroAllocVectorSearchParser)
+	defer s.vectorSearchParserPool.Put(parser)
 
 	req, parseErr = parser.Parse(action.Body)
 	if parseErr != nil {
@@ -110,15 +104,22 @@ func (s *VectorStore) handleVectorSearchAction(action *flight.Action, stream fli
 
 			// Validate dimension
 			expectedDim := ds.Index.GetDimension()
-			if uint32(len(queryVec)) != expectedDim {
+			actualDim := uint32(len(queryVec))
+			dsType := InferVectorDataType(ds.Schema, "vector")
+			if dsType == VectorTypeComplex64 || dsType == VectorTypeComplex128 {
+				// Interleaved float32s -> logical complex dimension is half
+				actualDim /= 2
+			}
+
+			if actualDim != expectedDim {
 				ds.dataMu.RUnlock()
 				metrics.VectorSearchActionErrors.Inc()
-				return status.Errorf(codes.InvalidArgument, "dimension mismatch: expected %d, got %d", expectedDim, len(queryVec))
+				return status.Errorf(codes.InvalidArgument, "dimension mismatch: expected %d, got %d", expectedDim, actualDim)
 			}
 
 			// Perform search
 			var errSearch error
-			searchResults, errSearch = ds.Index.SearchVectors(queryVec, req.K, req.Filters, SearchOptions{
+			searchResults, errSearch = ds.Index.SearchVectors(stream.Context(), queryVec, req.K, req.Filters, SearchOptions{
 				IncludeVectors: req.IncludeVectors,
 				VectorFormat:   req.VectorFormat,
 			})
@@ -147,7 +148,7 @@ func (s *VectorStore) handleVectorSearchAction(action *flight.Action, stream fli
 			}
 
 			// Map internal IDs to User IDs
-			searchResults = s.MapInternalToUserIDs(ds, searchResults)
+			searchResults = s.mapInternalToUserIDsLocked(ds, searchResults)
 			ds.dataMu.RUnlock()
 		}
 
@@ -389,7 +390,7 @@ func (s *VectorStore) handleVectorSearchByIDAction(action *flight.Action, stream
 	}
 
 	// 2. Perform Search
-	results, err := ds.Index.SearchVectors(targetVec, req.K, nil, SearchOptions{
+	results, err := ds.Index.SearchVectors(stream.Context(), targetVec, req.K, nil, SearchOptions{
 		IncludeVectors: req.IncludeVectors,
 		VectorFormat:   req.VectorFormat,
 	})
@@ -398,7 +399,7 @@ func (s *VectorStore) handleVectorSearchByIDAction(action *flight.Action, stream
 	}
 
 	// 3. Map Results
-	results = s.MapInternalToUserIDs(ds, results)
+	results = s.mapInternalToUserIDsLocked(ds, results)
 
 	resp := query.VectorSearchResponse{
 		IDs:    make([]uint64, len(results)),

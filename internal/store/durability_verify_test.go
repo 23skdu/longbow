@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -16,7 +17,7 @@ import (
 // Helper to create schema with vector
 func createDurabilityTestSchema() *arrow.Schema {
 	return arrow.NewSchema([]arrow.Field{
-		{Name: "id", Type: arrow.PrimitiveTypes.Uint32},
+		{Name: "id", Type: arrow.PrimitiveTypes.Int32},
 		{Name: "val", Type: arrow.PrimitiveTypes.Int64},
 		{Name: "vector", Type: arrow.FixedSizeListOf(2, arrow.PrimitiveTypes.Float32)},
 	}, nil)
@@ -29,7 +30,7 @@ func createDurabilityTestBatch(mem memory.Allocator, startID, count int) arrow.R
 	defer b.Release()
 
 	for i := 0; i < count; i++ {
-		b.Field(0).(*array.Uint32Builder).Append(uint32(startID + i))
+		b.Field(0).(*array.Int32Builder).Append(int32(startID + i))
 		b.Field(1).(*array.Int64Builder).Append(int64((startID + i) * 100))
 
 		listB := b.Field(2).(*array.FixedSizeListBuilder)
@@ -64,14 +65,15 @@ func TestDurability_EndToEnd(t *testing.T) {
 
 	// Force WAL Sync
 	require.NoError(t, store1.FlushWAL())
-	require.NoError(t, store1.ClosePersistence())
+	_ = store1.Close() // Ensure workers are stopped
 
 	// 3. Recover Store 2
 	store2 := NewVectorStore(mem, logger, 1<<30, 1<<30, 0)
 	require.NoError(t, store2.InitPersistence(cfg1))
-	defer func() { _ = store2.ClosePersistence() }()
+	defer func() { _ = store2.Close() }()
 
 	// 4. Verify
+	store2.WaitForIndexing("test_ds")
 	ds, err := store2.GetDataset("test_ds")
 	require.NoError(t, err)
 	require.NotNil(t, ds)
@@ -79,9 +81,9 @@ func TestDurability_EndToEnd(t *testing.T) {
 	require.Len(t, ds.Records, 1)
 	require.Equal(t, int64(10), ds.Records[0].NumRows())
 
-	idArr := ds.Records[0].Column(0).(*array.Uint32)
-	require.Equal(t, uint32(0), idArr.Value(0))
-	require.Equal(t, uint32(9), idArr.Value(9))
+	idArr := ds.Records[0].Column(0).(*array.Int32)
+	require.Equal(t, int32(0), idArr.Value(0))
+	require.Equal(t, int32(9), idArr.Value(9))
 }
 
 // TestDurability_SnapshotAndWAL verifies recovery from a Snapshot + Subsequent WAL entries.
@@ -105,7 +107,7 @@ func TestDurability_SnapshotAndWAL(t *testing.T) {
 	store1.WaitForIndexing("ds_mixed")
 
 	// 3. Trigger Snapshot
-	require.NoError(t, store1.Snapshot())
+	require.NoError(t, store1.Snapshot(context.Background()))
 
 	// 4. Insert Batch B
 	recB := createDurabilityTestBatch(mem, 5, 5)
@@ -115,25 +117,25 @@ func TestDurability_SnapshotAndWAL(t *testing.T) {
 	store1.WaitForIndexing("ds_mixed")
 
 	require.NoError(t, store1.FlushWAL())
-	_ = store1.ClosePersistence()
+	_ = store1.Close()
 
 	// 5. Recover Store 2
 	store2 := NewVectorStore(mem, logger, 1<<30, 1<<30, 0)
 	require.NoError(t, store2.InitPersistence(cfg1))
-	defer func() { _ = store2.ClosePersistence() }()
+	defer func() { _ = store2.Close() }()
 
 	// 6. Verify
+	store2.WaitForIndexing("ds_mixed")
 	ds, err := store2.GetDataset("ds_mixed")
 	require.NoError(t, err)
 
-	// ds.dataMu.RLock() // Not strictly needed in single thread test but good practice
 	fmt.Printf("Verify: Checking ds %p\n", ds)
 	totalRows := 0
 	for i, r := range ds.Records {
 		fmt.Printf("Verify: Batch %d rows: %d\n", i, r.NumRows())
 		totalRows += int(r.NumRows())
 	}
-	// ds.dataMu.RUnlock()
+
 	fmt.Printf("Verify: Total rows: %d\n", totalRows)
 	require.Equal(t, 10, totalRows)
 	require.Equal(t, 10, ds.IndexLen())
@@ -152,7 +154,7 @@ func TestDurability_IndexRebuild(t *testing.T) {
 
 	// Vector Schema
 	schema := arrow.NewSchema([]arrow.Field{
-		{Name: "id", Type: arrow.PrimitiveTypes.Uint32},
+		{Name: "id", Type: arrow.PrimitiveTypes.Int32},
 		{Name: "vector", Type: arrow.FixedSizeListOf(2, arrow.PrimitiveTypes.Float32)},
 	}, nil)
 	b := array.NewRecordBuilder(mem, schema)
@@ -163,11 +165,11 @@ func TestDurability_IndexRebuild(t *testing.T) {
 	listB := b.Field(1).(*array.FixedSizeListBuilder)
 	valB := listB.ValueBuilder().(*array.Float32Builder)
 
-	b.Field(0).(*array.Uint32Builder).Append(0)
+	b.Field(0).(*array.Int32Builder).Append(0)
 	listB.Append(true)
 	valB.AppendValues([]float32{1.0, 0.0}, nil)
 
-	b.Field(0).(*array.Uint32Builder).Append(1)
+	b.Field(0).(*array.Int32Builder).Append(1)
 	listB.Append(true)
 	valB.AppendValues([]float32{0.0, 1.0}, nil)
 
@@ -178,14 +180,15 @@ func TestDurability_IndexRebuild(t *testing.T) {
 	require.NoError(t, store1.ApplyDelta("ds_vec", rec, 1, time.Now().UnixNano()))
 	store1.WaitForIndexing("ds_vec")
 	require.NoError(t, store1.FlushWAL())
-	_ = store1.ClosePersistence()
+	_ = store1.Close()
 
 	// Recover
 	store2 := NewVectorStore(mem, logger, 1<<30, 1<<30, 0)
 	require.NoError(t, store2.InitPersistence(cfg1))
-	defer func() { _ = store2.ClosePersistence() }()
+	defer func() { _ = store2.Close() }()
 
 	// Search
+	store2.WaitForIndexing("ds_vec")
 	// Query [1.0, 0.0] should confirm ID 0 is top match
 	// We need a way to invoke search. Store doesn't expose Search directly easily without Coordinator?
 	// We can get the dataset's index.
@@ -204,10 +207,17 @@ func TestDurability_IndexRebuild(t *testing.T) {
 	// VectorIndex interface: Search(query []float32, k int, ef int, filter *query.Bitset) ([]Candidate, error)
 
 	qVec := []float32{1.0, 0.0}
-	results, err := ds.Index.SearchVectors(qVec, 1, nil, SearchOptions{})
+	results, err := ds.Index.SearchVectors(context.Background(), qVec, 1, nil, SearchOptions{})
 	require.NoError(t, err)
 	require.Len(t, results, 1)
-	require.Equal(t, uint32(0), uint32(results[0].ID))
+	require.Equal(t, uint32(0), uint32(results[0].ID)) // Logic uses uint32 internally for IDs from index usually?
+	// The results[0].ID comes from the index. Index usually returns 0..N offset or mapped ID.
+	// If auto-sharding index uses the "id" column as External ID?
+	// AutoShardingIndex uses primary index.
+	// If schema has "id", it uses it?
+	// Actually results[0].ID is int64 or uint64?
+	// internal/store/index.go: Candidate.ID is int64.
+	// require.Equal(t, int64(0), results[0].ID)
 	// Dist should be close to 0 (Squared Euclidean: (1-1)^2 + (0-0)^2 = 0)
 	require.InDelta(t, 0.0, results[0].Score, 0.0001)
 }
@@ -239,16 +249,15 @@ func TestDurability_WALTruncation(t *testing.T) {
 	require.NoError(t, store1.ApplyDelta("ds_dup", rec, 1, 0))
 
 	// Snapshot
-	require.NoError(t, store1.Snapshot())
+	require.NoError(t, store1.Snapshot(context.Background()))
 
 	// Wait for any async truncate if it exists (StorageEngine might do it inline in Snapshot though)
-
-	_ = store1.ClosePersistence()
+	_ = store1.Close()
 
 	// Recover
 	store2 := NewVectorStore(mem, logger, 1<<30, 1<<30, 0)
 	require.NoError(t, store2.InitPersistence(cfg1))
-	defer func() { _ = store2.ClosePersistence() }()
+	defer func() { _ = store2.Close() }()
 
 	ds, _ := store2.GetDataset("ds_dup")
 	// If WAL wasn't truncated/checkpointed, we'd have 1 (Snapshot) + 1 (WAL) = 2 records?

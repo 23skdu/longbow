@@ -160,7 +160,11 @@ func (c *GlobalSearchCoordinator) GlobalSearch(ctx context.Context, localResults
 
 					reader, err := flight.NewRecordReader(stream)
 					if err != nil {
-						c.logger.Warn().Err(err).Str("peer", p.ID).Msg("NewRecordReader failed")
+						if status.Code(err) == codes.NotFound {
+							c.logger.Debug().Err(err).Str("peer", p.ID).Msg("NewRecordReader failed (NotFound)")
+						} else {
+							c.logger.Warn().Err(err).Str("peer", p.ID).Msg("NewRecordReader failed")
+						}
 						failSignal <- struct{}{}
 						return
 					}
@@ -309,7 +313,7 @@ func (c *GlobalSearchCoordinator) cleanupLoop() {
 }
 
 func (c *GlobalSearchCoordinator) pruneVisible() {
-	c.clients.Range(func(key, value interface{}) bool {
+	c.clients.Range(func(key, value any) bool {
 		entry := value.(*clientEntry)
 		if time.Since(entry.lastUse) > c.idleTimeout {
 			c.logger.Info().Str("addr", key.(string)).Msg("Pruning idle flight client")
@@ -322,7 +326,7 @@ func (c *GlobalSearchCoordinator) pruneVisible() {
 
 func (c *GlobalSearchCoordinator) Close() error {
 	close(c.stopCh)
-	c.clients.Range(func(key, value interface{}) bool {
+	c.clients.Range(func(key, value any) bool {
 		entry := value.(*clientEntry)
 		_ = entry.client.Close()
 		c.clients.Delete(key)

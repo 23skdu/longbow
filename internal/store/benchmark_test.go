@@ -3,10 +3,10 @@ package store
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/23skdu/longbow/internal/storage"
 	"github.com/apache/arrow-go/v18/arrow"
@@ -138,7 +138,7 @@ func BenchmarkE2EDoGet(b *testing.B) {
 			_ = stream.CloseSend()
 			_, _ = stream.Recv()
 
-			ticketBytes, _ := json.Marshal(map[string]interface{}{"name": "bench_e2e"})
+			ticketBytes, _ := json.Marshal(map[string]any{"name": "bench_e2e"})
 			ticket := &flight.Ticket{Ticket: ticketBytes}
 
 			// 3. Benchmark DoGet
@@ -157,6 +157,9 @@ func BenchmarkE2EDoGet(b *testing.B) {
 				rowsRead := 0
 				for reader.Next() {
 					rowsRead += int(reader.RecordBatch().NumRows())
+				}
+				if err := reader.Err(); err != nil {
+					b.Errorf("Reader error after %d rows: %v", rowsRead, err)
 				}
 				reader.Release()
 
@@ -179,6 +182,11 @@ func BenchmarkE2EDoPut(b *testing.B) {
 
 	for _, bm := range benchmarks {
 		b.Run(bm.name, func(b *testing.B) {
+			// Override config for Buffered to be AsyncFsync for fair comparison
+			if bm.name == "Buffered" {
+				bm.cfg.AsyncFsync = true
+				bm.cfg.SnapshotInterval = 24 * time.Hour
+			}
 			client := setupDataServerBench(b, bm.cfg)
 			ctx := context.Background()
 
@@ -193,7 +201,7 @@ func BenchmarkE2EDoPut(b *testing.B) {
 			builder := array.NewRecordBuilder(mem, schema)
 			defer builder.Release()
 
-			numRows := 1000
+			numRows := 10000
 			ids := make([]int32, numRows)
 			for i := 0; i < numRows; i++ {
 				ids[i] = int32(i)
@@ -210,7 +218,7 @@ func BenchmarkE2EDoPut(b *testing.B) {
 					b.Fatal(err)
 				}
 				w := flight.NewRecordWriter(stream, ipc.WithSchema(schema))
-				w.SetFlightDescriptor(&flight.FlightDescriptor{Path: []string{fmt.Sprintf("bench_put_%d", i)}})
+				w.SetFlightDescriptor(&flight.FlightDescriptor{Path: []string{"bench_put_reuse"}})
 				_ = w.Write(rec)
 				_ = w.Close()
 				_ = stream.CloseSend()

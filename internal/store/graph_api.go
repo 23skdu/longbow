@@ -166,7 +166,7 @@ func (s *VectorStore) handleGetGraphStats(body []byte, stream flight.FlightServi
 		preds = []string{}
 	}
 
-	resp := map[string]interface{}{
+	resp := map[string]any{
 		"edge_count":      edgeCount,
 		"community_count": commCount,
 		"predicates":      preds,

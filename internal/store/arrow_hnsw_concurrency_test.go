@@ -93,7 +93,7 @@ func TestArrowHNSW_Concurrency_AddBatch(t *testing.T) {
 			}
 
 			// Call AddBatch
-			_, err := idx.AddBatch(batchRecs, batchRowIdxs, batchBatchIdxs)
+			_, err := idx.AddBatch(context.Background(), batchRecs, batchRowIdxs, batchBatchIdxs)
 			if err != nil {
 				errCount.Add(1)
 				// Use thread-safe logging or just fmt
@@ -171,7 +171,7 @@ func TestArrowHNSW_Concurrency_MixedReadWrite(t *testing.T) {
 						bIdxs[k] = 0
 					}
 
-					_, err := idx.AddBatch(recs, rIdxs, bIdxs)
+					_, err := idx.AddBatch(context.Background(), recs, rIdxs, bIdxs)
 					if err != nil {
 						fmt.Printf("Writer error: %v\n", err)
 						return
@@ -200,7 +200,7 @@ func TestArrowHNSW_Concurrency_MixedReadWrite(t *testing.T) {
 							query[k] = rand.Float32()
 						}
 						// Search
-						_, _ = idx.SearchVectors(query, 10, nil, SearchOptions{})
+						_, _ = idx.SearchVectors(context.Background(), query, 10, nil, SearchOptions{})
 					}
 					time.Sleep(time.Millisecond)
 				}

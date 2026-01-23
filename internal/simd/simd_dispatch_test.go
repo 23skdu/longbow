@@ -59,7 +59,8 @@ func TestDispatchCorrectness(t *testing.T) {
 
 	t.Run("euclidean_via_dispatch", func(t *testing.T) {
 		// Expected: sqrt((5-1)^2 + (6-2)^2 + (7-3)^2 + (8-4)^2) = sqrt(64) = 8
-		result := EuclideanDistance(a, b)
+		result, err := EuclideanDistance(a, b)
+		assert.NoError(t, err)
 		expected := float32(8.0)
 		if abs(result-expected) > 0.0001 {
 			t.Errorf("EuclideanDistance = %v, want %v", result, expected)
@@ -68,7 +69,8 @@ func TestDispatchCorrectness(t *testing.T) {
 
 	t.Run("dot_product_via_dispatch", func(t *testing.T) {
 		// Expected: 1*5 + 2*6 + 3*7 + 4*8 = 5 + 12 + 21 + 32 = 70
-		result := DotProduct(a, b)
+		result, err := DotProduct(a, b)
+		assert.NoError(t, err)
 		expected := float32(70.0)
 		if abs(result-expected) > 0.0001 {
 			t.Errorf("DotProduct = %v, want %v", result, expected)
@@ -76,7 +78,8 @@ func TestDispatchCorrectness(t *testing.T) {
 	})
 
 	t.Run("cosine_via_dispatch", func(t *testing.T) {
-		result := CosineDistance(a, b)
+		result, err := CosineDistance(a, b)
+		assert.NoError(t, err)
 		// Cosine distance should be between 0 and 2
 		if result < 0 || result > 2 {
 			t.Errorf("CosineDistance = %v, expected between 0 and 2", result)
@@ -144,7 +147,8 @@ func TestDispatchNoSwitch(t *testing.T) {
 	b := []float32{5.0, 6.0, 7.0, 8.0}
 
 	// Call implementation directly (no validation wrapper)
-	result := euclideanDistanceImpl(a, b)
+	result, err := euclideanDistanceImpl(a, b)
+	assert.NoError(t, err)
 	expected := float32(8.0)
 	if abs(result-expected) > 0.0001 {
 		t.Errorf("direct impl call = %v, want %v", result, expected)
@@ -162,25 +166,25 @@ func BenchmarkDispatchOverhead(b *testing.B) {
 
 	b.Run("EuclideanDistance_Dispatched", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			_ = EuclideanDistance(a, c)
+			_, _ = EuclideanDistance(a, c)
 		}
 	})
 
 	b.Run("EuclideanDistance_Direct", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			_ = euclideanDistanceImpl(a, c)
+			_, _ = euclideanDistanceImpl(a, c)
 		}
 	})
 
 	b.Run("DotProduct_Dispatched", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			_ = DotProduct(a, c)
+			_, _ = DotProduct(a, c)
 		}
 	})
 
 	b.Run("DotProduct_Direct", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			_ = dotProductImpl(a, c)
+			_, _ = dotProductImpl(a, c)
 		}
 	})
 }
@@ -204,7 +208,7 @@ func BenchmarkHotPath(b *testing.B) {
 	b.Run("Sequential_Dispatched", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			for _, c := range candidates {
-				_ = EuclideanDistance(query, c)
+				_, _ = EuclideanDistance(query, c)
 			}
 		}
 	})
@@ -212,7 +216,7 @@ func BenchmarkHotPath(b *testing.B) {
 	b.Run("Sequential_Direct", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			for _, c := range candidates {
-				_ = euclideanDistanceImpl(query, c)
+				_, _ = euclideanDistanceImpl(query, c)
 			}
 		}
 	})

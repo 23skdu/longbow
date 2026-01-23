@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"math/rand"
 	"testing"
 	"time"
@@ -58,7 +59,7 @@ func TestSQ8Indexing(t *testing.T) {
 	rec.Retain()
 
 	// Add batch
-	ids, err := idx.AddBatch([]arrow.RecordBatch{rec}, makeRangeHelper(n), make([]int, n))
+	ids, err := idx.AddBatch(context.Background(), []arrow.RecordBatch{rec}, makeRangeHelper(n), make([]int, n))
 	require.NoError(t, err)
 
 	// Verify that VectorsSQ8 is populated
@@ -81,7 +82,9 @@ func TestSQ8Indexing(t *testing.T) {
 	if len(data.VectorsSQ8) > 0 {
 		chunk := data.GetVectorsSQ8Chunk(0)
 		if chunk != nil {
-			assert.Equal(t, ChunkSize*16, len(chunk))
+			// SQ8 is padded to 64 bytes
+			// 16 dims -> 64 bytes stride
+			assert.Equal(t, ChunkSize*64, len(chunk))
 		}
 	}
 
@@ -90,7 +93,7 @@ func TestSQ8Indexing(t *testing.T) {
 	query := vecs[10]
 	targetID := ids[10]
 	// Approximate search
-	res, err := idx.SearchVectors(query, 10, nil, SearchOptions{})
+	res, err := idx.SearchVectors(context.Background(), query, 10, nil, SearchOptions{})
 	require.NoError(t, err)
 	require.NotEmpty(t, res, "Search results should not be empty")
 
@@ -122,6 +125,7 @@ func TestSQ8Refinement(t *testing.T) {
 	cfg.M = 16
 	cfg.EfConstruction = 50
 	cfg.SQ8Enabled = true
+	cfg.SQ8TrainingThreshold = 100
 	cfg.RefinementFactor = 5.0 // Fetch 5x candidates and re-rank
 
 	idx := NewArrowHNSW(ds, cfg, nil)
@@ -155,14 +159,14 @@ func TestSQ8Refinement(t *testing.T) {
 	rec.Retain()
 
 	// Add batch
-	ids, err := idx.AddBatch([]arrow.RecordBatch{rec}, makeRangeHelper(n), make([]int, n))
+	ids, err := idx.AddBatch(context.Background(), []arrow.RecordBatch{rec}, makeRangeHelper(n), make([]int, n))
 	require.NoError(t, err)
 
 	// Search
 	query := vecs[10]
 	targetID := ids[10]
 	// Refined search
-	res, err := idx.SearchVectors(query, 10, nil, SearchOptions{})
+	res, err := idx.SearchVectors(context.Background(), query, 10, nil, SearchOptions{})
 	require.NoError(t, err)
 
 	// Expect vector 10 to be in top results

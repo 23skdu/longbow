@@ -2,6 +2,8 @@ package query
 
 import (
 	"testing"
+
+	"github.com/rs/zerolog"
 )
 
 func FuzzZeroAllocTicketParser_Parse(f *testing.F) {
@@ -25,7 +27,7 @@ func FuzzZeroAllocTicketParser_Parse(f *testing.F) {
 		// Use a fresh parser for each interaction to ensure isolation,
 		// though reusing generally should work if reset implemented correctly.
 		// For fuzzing we mainly care about Panics.
-		parser := NewZeroAllocTicketParser()
+		parser := NewZeroAllocTicketParser(zerolog.Nop())
 		_, _ = parser.Parse(data)
 	})
 }

@@ -27,6 +27,7 @@ func FuzzIngestionPipeline_ConcurrentWrites(f *testing.F) {
 
 		mem := memory.NewGoAllocator()
 		store := NewVectorStore(mem, zerolog.Nop(), 1024*1024*1024, 1024*1024*100, 1*time.Hour)
+		defer func() { _ = store.Close() }()
 		dsName := fmt.Sprintf("fuzz_ds_%d_%d", numWriters, batchesPerWriter)
 
 		var wg sync.WaitGroup

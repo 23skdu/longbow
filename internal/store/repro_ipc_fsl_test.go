@@ -1,6 +1,5 @@
 package store
 
-
 import (
 	"bytes"
 	"testing"
@@ -17,6 +16,7 @@ func TestCastRecordToSchema_MissingFSL(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()
 	vs := NewVectorStore(mem, logger, 1024*1024*1024, 0, 0)
+	defer func() { _ = vs.Close() }()
 
 	// Schema A: int64
 	fieldsA := []arrow.Field{

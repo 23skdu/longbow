@@ -1,12 +1,18 @@
 package simd
 
+import (
+	"math"
+
+	"github.com/23skdu/longbow/internal/metrics"
+)
+
 const blockedSimdThreshold = 1024
 
 // DotProductFloat32Blocked calculates dot product using blocked loop processing
 // optimized for vectors larger than L1 cache lines or for specific instruction pipeelining.
 // It iterates in chunks to ensure data fits in L1 cache and to potentially allow
 // better prefetching efficiency.
-func DotProductFloat32Blocked(a, b []float32) float32 {
+func DotProductFloat32Blocked(a, b []float32) (float32, error) {
 	if len(a) <= blockedSimdThreshold {
 		return DotProduct(a, b)
 	}
@@ -22,71 +28,127 @@ func DotProductFloat32Blocked(a, b []float32) float32 {
 	for ; i <= len(a)-blockedSimdThreshold; i += blockedSimdThreshold {
 		chunkA := a[i : i+blockedSimdThreshold]
 		chunkB := b[i : i+blockedSimdThreshold]
-		sum += impl(chunkA, chunkB)
+		d, err := impl(chunkA, chunkB)
+		if err != nil {
+			return 0, err
+		}
+		sum += d
 	}
 
 	// Remainder
 	if i < len(a) {
-		sum += impl(a[i:], b[i:])
+		d, err := impl(a[i:], b[i:])
+		if err != nil {
+			return 0, err
+		}
+		sum += d
 	}
 
-	return sum
+	return sum, nil
 }
 
 // L2Float32Blocked calculates Euclidean distance using blocked loop processing.
-func L2Float32Blocked(a, b []float32) float32 {
+func L2Float32Blocked(a, b []float32) (float32, error) {
 	if len(a) <= blockedSimdThreshold {
 		return EuclideanDistance(a, b)
 	}
 
-	// L2 is sqrt(sum((a-b)^2)).
-	// We can sum squared differences in blocks, then sqrt at the end.
+	var sum float32
+	i := 0
+	for ; i <= len(a)-blockedSimdThreshold; i += blockedSimdThreshold {
+		d, err := L2SquaredFloat32(a[i:i+blockedSimdThreshold], b[i:i+blockedSimdThreshold])
+		if err != nil {
+			return 0, err
+		}
+		sum += d
+	}
 
-	// Access 'euclideanGeneric' or 'euclideanAVX2' etc via internal pointer?
-	// EuclideanDistance implementation returns sqrt(sum).
-	// We need the SUM SQUARE, not the distance (sqrt) of chunks!
-	// Wait! EuclideanDistance(chunk) returns sqrt(sum(diff^2)).
-	// sum(diff^2)_total != sum(sqrt(chunk_diff^2)) !!
-	// So we CANNOT use EuclideanDistance impls directly if they return Sqrt!
+	// Remainder
+	if i < len(a) {
+		d, err := L2SquaredFloat32(a[i:], b[i:])
+		if err != nil {
+			return 0, err
+		}
+		sum += d
+	}
 
-	// We need a "SquaredEuclidean" implementation exposed?
-	// The current implementations `euclideanAVX2` etc. return SQRT.
-	// We cannot simply block them unless we have a `EuclideanSquared` function.
+	return float32(math.Sqrt(float64(sum))), nil
+}
 
-	// Check if we have Squared Euclidean implementations?
-	// Looking at `simd.go` exports... No explicit SquaredEuclidean exposed.
-	// But `L2Squared` is sometimes used.
+// EuclideanDistanceTiledBatch calculates distances for multiple vectors by tiling the dimension loop.
+// This keeps chunks of the query vector in L1/L2 cache while processing multiple data vectors.
+func EuclideanDistanceTiledBatch(query []float32, vectors [][]float32, results []float32) error {
+	if len(query) <= blockedSimdThreshold {
+		return EuclideanDistanceBatch(query, vectors, results)
+	}
 
-	// If we can't efficiently compute squared euclidean for a chunk using AVX,
-	// then blocking L2 this way is IMPOSSIBLE without adding `SquaredEuclidean` kernels!
+	metrics.SimdTiledDistanceBatchTotal.Inc()
 
-	// Strategy:
-	// 1. Check if `simd` internal kernels expose a squared version?
-	//    `euclideanAVX2` implementation usually does `sqrt` at the very end.
-	//    I would need to duplicate the kernel or refactor `simd` to expose `L2Squared`.
+	// Initialize results to zero
+	for i := range results {
+		results[i] = 0
+	}
 
-	// REFACTOR:
-	// I should add `L2Squared` to the registry/simd interface.
-	// But that's a bigger change.
-	// For now, I can fallback to a generic unrolled loop that just doesn't Sqrt?
-	// Or, just implement the blocking for DotProduct only (as requested "Block-based SIMD processing").
-	// But L2 is also important.
+	numVecs := len(vectors)
+	dims := len(query)
 
-	// Alternative:
-	// Just use DotProduct logic: |a-b|^2 = |a|^2 - 2a.b + |b|^2
-	// = Dot(a,a) - 2Dot(a,b) + Dot(b,b)
-	// We can block DotProduct!
-	// But (a-b)^2 is numerically more stable usually.
+	// Outer loop over dimension tiles
+	for i := 0; i < dims; i += blockedSimdThreshold {
+		end := i + blockedSimdThreshold
+		if end > dims {
+			end = dims
+		}
+		qTile := query[i:end]
 
-	// Let's rely on generic unrolled for now inside blocks? No, that defeats the purpose.
+		// Inner loop over vectors
+		for j := 0; j < numVecs; j++ {
+			vTile := vectors[j][i:end]
+			d, err := L2SquaredFloat32(qTile, vTile)
+			if err != nil {
+				return err
+			}
+			results[j] += d
+		}
+	}
 
-	// Actually, looking at `simd_baseline.go` or `simd_amd64.s`, `euclideanAVX2` does the sqrt.
-	// If I leave `L2Blocked` as wrapper for `EuclideanDistance` (no blocking), it satisfies correctness.
-	// I will mark it as TODO for optimization or implement generic blocking if performance matters.
+	// Final Sqrt pass
+	for i := range results {
+		results[i] = float32(math.Sqrt(float64(results[i])))
+	}
+	return nil
+}
 
-	// Given the constraint and risk of refactoring assembly dispatch, I will keep L2Blocked simple
-	// (just dispatch to standard EuclideanDistance) and focus blocking on DotProduct.
-	// UNLESS I can easily access L2Squared.
+// DotProductTiledBatch calculates dot products for multiple vectors by tiling the dimension loop.
+func DotProductTiledBatch(query []float32, vectors [][]float32, results []float32) error {
+	if len(query) <= blockedSimdThreshold {
+		return DotProductBatch(query, vectors, results)
+	}
 
-	return EuclideanDistance(a, b)
+	// Initialize results to zero
+	for i := range results {
+		results[i] = 0
+	}
+
+	numVecs := len(vectors)
+	dims := len(query)
+	impl := dotProductImpl
+
+	// Outer loop over dimension tiles
+	for i := 0; i < dims; i += blockedSimdThreshold {
+		end := i + blockedSimdThreshold
+		if end > dims {
+			end = dims
+		}
+		qTile := query[i:end]
+
+		// Inner loop over vectors
+		for j := 0; j < numVecs; j++ {
+			d, err := impl(qTile, vectors[j][i:end])
+			if err != nil {
+				return err
+			}
+			results[j] += d
+		}
+	}
+	return nil
 }

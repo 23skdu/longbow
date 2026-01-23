@@ -57,17 +57,19 @@ class LongbowClient:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
 
-    def _get_call_options(self):
+    def _get_call_options(self, timeout: Optional[float] = None):
         call_headers = []
         for k, v in self.headers.items():
             call_headers.append((k.encode('utf-8'), v.encode('utf-8')))
         
         if self.api_key:
             call_headers.append((b"authorization", f"Bearer {self.api_key}".encode('utf-8')))
-            
+        
+        if timeout is not None:
+            return flight.FlightCallOptions(headers=call_headers, timeout=timeout)
         return flight.FlightCallOptions(headers=call_headers)
 
-    def insert(self, dataset: str, data: Union[pd.DataFrame, List[Dict]], batch_size: int = 10000) -> None:
+    def insert(self, dataset: str, data: Union[pd.DataFrame, List[Dict]], batch_size: int = 10000, timeout: float = 180.0) -> None:
         """
         Insert vectors into a dataset.
         
@@ -75,24 +77,37 @@ class LongbowClient:
             dataset: Name of the target dataset.
             data: Data to insert (Pandas DataFrame or List of Dicts).
             batch_size: Batch size for upload chunks.
+            timeout: Timeout in seconds for the upload operation (default: 180.0).
         """
         if self._data_client is None:
             self.connect()
 
         # Handle other types
         table = to_arrow_table(data)
-        self._upload_batch(dataset, table)
+        self._upload_batch(dataset, table, timeout=timeout)
 
-    def _upload_batch(self, dataset: str, data: Union[pd.DataFrame, List[Dict], pa.Table]):
-        """Internal helper to upload a materialized batch."""
+    def _upload_batch(self, dataset: str, data: Union[pd.DataFrame, List[Dict], pa.Table], timeout: float = 180.0):
+        """Internal helper to upload a materialized batch with timeout."""
         if isinstance(data, pa.Table):
             table = data
         else:
             table = to_arrow_table(data)
         descriptor = flight.FlightDescriptor.for_path(dataset)
-        writer, _ = self._data_client.do_put(descriptor, table.schema, options=self._get_call_options())
+        call_opts = self._get_call_options(timeout=timeout)
+        writer, reader = self._data_client.do_put(descriptor, table.schema, options=call_opts)
         writer.write_table(table)
-        writer.close()
+        writer.done_writing()  # Signal completion without blocking
+        
+        # Read server acknowledgment if available
+        try:
+            # FlightMetadataReader.read() returns metadata, not iterable
+            _ = reader.read()
+        except (StopIteration, AttributeError):
+            pass  # No response or reader doesn't support read()
+        except Exception as e:
+            # Log but don't fail - data was already sent
+            logger.debug(f"Could not read server response (non-critical): {e}")
+        
         logger.debug(f"Uploaded batch of {table.num_rows} rows to {dataset}")
 
     def search(
@@ -118,6 +133,36 @@ class LongbowClient:
         """
         if self._data_client is None:
             self.connect()
+
+        # Handle complex query vectors and sanitization for JSON
+        try:
+            import numpy as np
+            has_numpy = True
+        except ImportError:
+            has_numpy = False
+
+        if has_numpy and hasattr(vector, "dtype"):
+            if np.issubdtype(vector.dtype, np.complexfloating):
+                # Flatten complex to [real, imag, real, imag...]
+                # Use correct float type matching the complex precision
+                target_dtype = np.float32 if vector.dtype == np.complex64 else np.float64
+                vector = vector.view(target_dtype).flatten().tolist()
+            elif isinstance(vector, np.ndarray):
+                vector = vector.tolist()
+        
+        # Handle Python list of complex numbers (e.g. [1+1j, 2+2j])
+        if isinstance(vector, list) and len(vector) > 0 and isinstance(vector[0], complex):
+            flat_vector = []
+            for v in vector:
+                flat_vector.append(float(v.real))
+                flat_vector.append(float(v.imag))
+            vector = flat_vector
+
+        # Sanitize: Ensure no NaN/Inf which breaks server JSON parsing
+        import math
+        for i, v in enumerate(vector):
+            if isinstance(v, (int, float)) and not math.isfinite(v):
+                raise ValueError(f"Query vector contains invalid value (NaN or Inf) at index {i}")
 
         req = {
             "dataset": dataset,
@@ -271,23 +316,26 @@ class LongbowClient:
         if self._meta_client is None:
             self.connect()
             
-        req = {"name": dataset}
+        req = {"dataset": dataset}
         if ids:
-            req["ids"] = ids
-            # Use "delete" action for specific IDs
-            # Wait, store_actions.go expects "dataset" and "id" (singular string? or list?)
-            # store_actions.go line 58: struct { Dataset string, ID string }
-            # It only supports deleting ONE ID at a time?
-            # "delete-vector" action (line 167) takes "dataset" and "vector_id" (int).
-            # "delete" action takes "id" (string).
-            # If client.delete takes List[int], we might need iteration.
-            # Let's check "delete" implementation in store_actions.go.
-            # It iterates records and compares string ID.
-            # If I want to support batch delete? Not implemented efficiently?
-            # For now, let's implement iter loop or warn. 
-            # Or better, rename valid method 'delete_dataset' and 'delete'
-            # Let's fix deleting namespace first.
-            pass 
+            # Server "delete" action takes "id" (string) and "dataset".
+            # It processes one ID at a time.
+            # We iterate here.
+            # Convert all IDs to string as server expects string IDs (currently).
+            for i in ids:
+                single_req = {
+                    "dataset": dataset,
+                    "id": str(i)
+                }
+                action_body = json.dumps(single_req).encode("utf-8")
+                # ignore result for now, just best effort
+                try:
+                    action = flight.Action("delete", action_body)
+                    list(self._meta_client.do_action(action, options=self._get_call_options()))
+                except Exception as e:
+                    # Log or warn? For batch delete, partial failure is tricky.
+                    # We continue.
+                    pass
         else:
             # Delete entire namespace
             action_body = json.dumps(req).encode("utf-8")

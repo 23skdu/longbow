@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"math"
 	"sync/atomic"
 	"time"
 
@@ -50,11 +51,11 @@ func (h *ArrowHNSW) RepairTombstones(ctx context.Context, batchSize int) int {
 
 		// Lock node
 		lockID := nid % 1024
-		h.shardedLocks[lockID].Lock()
+		h.shardedLocks.Lock(uint64(lockID))
 
 		// Re-check validity
 		if h.deleted.Contains(int(nid)) {
-			h.shardedLocks[lockID].Unlock()
+			h.shardedLocks.Unlock(uint64(lockID))
 			continue
 		}
 
@@ -110,7 +111,10 @@ func (h *ArrowHNSW) RepairTombstones(ctx context.Context, batchSize int) int {
 				for r := 0; r < count; r++ {
 					neighborID := neighborsChunk[baseIdx+r]
 					if !h.deleted.Contains(int(neighborID)) {
-						dist := h.distFunc(getVec(h, data, nid), getVec(h, data, neighborID))
+						dist, err := h.distFunc(getVec(h, data, nid), getVec(h, data, neighborID))
+						if err != nil {
+							dist = math.MaxFloat32
+						}
 						poolCtx.candidates.Push(Candidate{ID: neighborID, Dist: dist})
 						poolCtx.visited.Set(neighborID)
 					}
@@ -149,7 +153,10 @@ func (h *ArrowHNSW) RepairTombstones(ctx context.Context, batchSize int) int {
 						v1 := getVec(h, data, nid)
 						v2 := getVec(h, data, candidateID)
 						if v1 != nil && v2 != nil {
-							dist := h.distFunc(v1, v2)
+							dist, err := h.distFunc(v1, v2)
+							if err != nil {
+								dist = math.MaxFloat32
+							}
 							poolCtx.candidates.Push(Candidate{ID: candidateID, Dist: dist})
 							poolCtx.visited.Set(candidateID)
 						}
@@ -198,7 +205,7 @@ func (h *ArrowHNSW) RepairTombstones(ctx context.Context, batchSize int) int {
 				repaired++
 			}
 		}
-		h.shardedLocks[lockID].Unlock()
+		h.shardedLocks.Unlock(uint64(lockID))
 	}
 
 	return repaired

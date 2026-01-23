@@ -261,7 +261,7 @@ func (p *DoGetPipeline) ProcessRecords(
 	records []arrow.RecordBatch,
 	tombstones map[int]*query.Bitset,
 	filters []query.Filter,
-	evaluator interface{},
+	evaluator any,
 ) <-chan PipelineStage {
 	resCh := make(chan PipelineStage, p.bufferSize)
 
@@ -324,7 +324,7 @@ func NewDoGetPipelinePool(workers, bufferSize int) *DoGetPipelinePool {
 		workers:  workers,
 		bufferSz: bufferSize,
 		pool: sync.Pool{
-			New: func() interface{} {
+			New: func() any {
 				return NewDoGetPipeline(workers, bufferSize)
 			},
 		},

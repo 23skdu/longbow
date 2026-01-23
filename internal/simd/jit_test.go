@@ -16,7 +16,8 @@ func TestJITEuclidean(t *testing.T) {
 	b := []float32{4.0, 5.0, 6.0}
 
 	// Expected: sqrt((1-4)^2 + (2-5)^2 + (3-6)^2) = sqrt(9 + 9 + 9) = sqrt(27) = 5.196152
-	expected := euclideanGeneric(a, b)
+	expected, err := euclideanGeneric(a, b)
+	require.NoError(t, err)
 	actual := jitRT.Euclidean(a, b)
 
 	assert.InDelta(t, expected, actual, 0.0001)
@@ -59,13 +60,13 @@ func BenchmarkJITEuclidean(b *testing.B) {
 
 	b.Run("Generic", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			_ = euclideanGeneric(a, v)
+			_, _ = euclideanGeneric(a, v)
 		}
 	})
 
 	b.Run("SIMD", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			_ = EuclideanDistance(a, v)
+			_, _ = EuclideanDistance(a, v)
 		}
 	})
 }
@@ -94,7 +95,7 @@ func BenchmarkJITEuclideanBatch(b *testing.B) {
 	b.Run("Native_Loop", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			for j := 0; j < batchSize; j++ {
-				_ = EuclideanDistance(q, vecs[j])
+				_, _ = EuclideanDistance(q, vecs[j])
 			}
 		}
 	})

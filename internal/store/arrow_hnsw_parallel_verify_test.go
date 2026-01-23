@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"testing"
 
 	"github.com/apache/arrow-go/v18/arrow"
@@ -85,7 +86,7 @@ func TestArrowHNSW_AddBatch_Parallel_SQ8(t *testing.T) {
 	}
 
 	// 4. Run AddBatch (this will be parallel now)
-	ids, err := idx.AddBatch(recs, rowIdxs, batchIdxs)
+	ids, err := idx.AddBatch(context.Background(), recs, rowIdxs, batchIdxs)
 	require.NoError(t, err)
 	assert.Equal(t, numVectors, len(ids))
 	assert.Equal(t, numVectors, idx.Size())
@@ -96,7 +97,7 @@ func TestArrowHNSW_AddBatch_Parallel_SQ8(t *testing.T) {
 	for j := 0; j < dims; j++ {
 		qVec[j] = float32(50+j) * 0.01
 	}
-	res, err := idx.SearchVectors(qVec, 10, nil, SearchOptions{})
+	res, err := idx.SearchVectors(context.Background(), qVec, 10, nil, SearchOptions{})
 	require.NoError(t, err)
 	assert.NotEmpty(t, res)
 	assert.Equal(t, uint32(50), uint32(res[0].ID))

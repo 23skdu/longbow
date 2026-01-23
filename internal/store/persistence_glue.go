@@ -11,6 +11,7 @@ import (
 	"github.com/23skdu/longbow/internal/pq"
 	"github.com/23skdu/longbow/internal/storage"
 	"github.com/apache/arrow-go/v18/arrow"
+	"golang.org/x/sync/errgroup"
 )
 
 // InitPersistence initializes the storage engine and replays data.
@@ -28,11 +29,75 @@ func (s *VectorStore) InitPersistence(cfg storage.StorageConfig) error {
 	// This prevents memory bloat by processing/indexing chunks as they arrive
 	s.StartIndexingWorkers(runtime.NumCPU())
 
-	// Load Snapshots
+	// Load Snapshots Parallelized
+	eg, _ := errgroup.WithContext(context.Background())
+	eg.SetLimit(runtime.NumCPU()) // Limit concurrency to avoid OOM
+
 	if err := s.engine.LoadSnapshots(func(item storage.SnapshotItem) error {
-		return s.loadSnapshotItem(&item)
+		// Defensive copy for async processing
+		// SnapshotItem might be reused by the iterator
+		asyncItem := item
+
+		// Deep copy slices to be safe against reuse
+		if len(item.Records) > 0 {
+			asyncItem.Records = make([]arrow.RecordBatch, len(item.Records))
+			copy(asyncItem.Records, item.Records)
+			// Must Retain HERE because iterator might Release them after callback returns?
+			// Typically iterator yields Ownership or Retained Batch.
+			// Ideally we Retain them all now to hold them for the goroutine.
+			for _, r := range asyncItem.Records {
+				r.Retain()
+			}
+		}
+		if len(item.GraphRecords) > 0 {
+			asyncItem.GraphRecords = make([]arrow.RecordBatch, len(item.GraphRecords))
+			copy(asyncItem.GraphRecords, item.GraphRecords)
+			for _, r := range asyncItem.GraphRecords {
+				r.Retain()
+			}
+		}
+		if len(item.PQCodebook) > 0 {
+			asyncItem.PQCodebook = make([]byte, len(item.PQCodebook))
+			copy(asyncItem.PQCodebook, item.PQCodebook)
+		}
+		if len(item.IndexConfig) > 0 {
+			asyncItem.IndexConfig = make([]byte, len(item.IndexConfig))
+			copy(asyncItem.IndexConfig, item.IndexConfig)
+		}
+
+		eg.Go(func() error {
+			defer func() {
+				// Release our "async-hold" references after processing
+				// loadSnapshotItem will retain what it needs (ds.Records)
+				// But we Retained them above to keep them alive until this runs.
+				// Wait, loadSnapshotItem calls Retain().
+				// So we have Ref=1 (Iterator) -> Ref=2 (Our Async hold).
+				// loadSnapshotItem will Ref=3 (DS hold).
+				// We need to Release Ref=2 when done.
+				for _, r := range asyncItem.Records {
+					r.Release()
+				}
+				for _, r := range asyncItem.GraphRecords {
+					r.Release()
+				}
+			}()
+
+			// Process
+			s.loadSnapshotItem(&asyncItem)
+			return nil
+		})
+		return nil
 	}); err != nil {
-		s.logger.Error().Err(err).Msg("Failed to load snapshots")
+		s.logger.Error().Err(err).Msg("Failed to start snapshot loading")
+		// Don't return, allow Wait to finish what started?
+		// But LoadSnapshots returned error, so iteration stopped.
+	}
+
+	// Wait for all loads to finish
+	if err := eg.Wait(); err != nil {
+		s.logger.Error().Err(err).Msg("Failed to load snapshots (async)")
+		// Critical error? Or continue with partial?
+		// For consistency, maybe just log.
 	}
 
 	// Replay WAL
@@ -55,10 +120,36 @@ func (s *VectorStore) InitPersistence(cfg storage.StorageConfig) error {
 	s.workerWg.Add(1)
 	go s.runSnapshotTicker(cfg.SnapshotInterval)
 
+	// Start snapshot ticker
+	s.workerWg.Add(1)
+	go s.runSnapshotTicker(cfg.SnapshotInterval)
+
+	// Monitor Async WAL Errors
+	if errCh := s.engine.ErrCh(); errCh != nil {
+		s.workerWg.Add(1)
+		go func() {
+			defer s.workerWg.Done()
+			for {
+				select {
+				case <-s.stopChan:
+					return
+				case err, ok := <-errCh:
+					if !ok {
+						return
+					}
+					s.logger.Error().Err(err).Msg("Maintainer: Critical Async WAL Failure")
+					// Determine policy: Shutdown? Read-Only?
+					// For now, we log FATAL-equivalent logic or metrics.
+					// In robust systems, this might trigger a circuit breaker.
+				}
+			}
+		}()
+	}
+
 	return nil
 }
 
-func (s *VectorStore) loadSnapshotItem(item *storage.SnapshotItem) error {
+func (s *VectorStore) loadSnapshotItem(item *storage.SnapshotItem) {
 	ds, _ := s.getOrCreateDataset(item.Name, func() *Dataset {
 		// Infer schema from first record
 		var schema *arrow.Schema
@@ -87,7 +178,7 @@ func (s *VectorStore) loadSnapshotItem(item *storage.SnapshotItem) error {
 	})
 
 	if ds == nil {
-		return nil // Could happen if schema inference failed
+		return // Could happen if schema inference failed
 	}
 
 	// Initialize Index if missing (Critical for restoration)
@@ -121,7 +212,6 @@ func (s *VectorStore) loadSnapshotItem(item *storage.SnapshotItem) error {
 
 		ds.dataMu.Lock()
 		ds.Records = append(ds.Records, rec)
-		fmt.Printf("loadSnapshotItem: Appended batch to ds %p. Total batches: %d\n", ds, len(ds.Records))
 		batchIdx := len(ds.Records) - 1
 		ds.UpdatePrimaryIndex(batchIdx, rec)
 		s.currentMemory.Add(CachedRecordSize(rec))
@@ -161,7 +251,6 @@ func (s *VectorStore) loadSnapshotItem(item *storage.SnapshotItem) error {
 		}
 	}
 
-	return nil
 }
 
 func (s *VectorStore) ApplyDelta(name string, rec arrow.RecordBatch, seq uint64, ts int64) error {
@@ -205,6 +294,15 @@ func (s *VectorStore) ApplyDelta(name string, rec arrow.RecordBatch, seq uint64,
 			ds.Index = NewAutoShardingIndex(ds, config)
 		}
 	}
+
+	// Sync Schema Manager (Critical for recovery)
+	if err := ds.SchemaManager.Evolve(rec.Schema()); err != nil {
+		ds.dataMu.Unlock()
+		return fmt.Errorf("schema evolution failed during replay: %w", err)
+	}
+	// Update generic schema pointer
+	ds.Schema = ds.SchemaManager.GetCurrentSchema()
+
 	ds.dataMu.Unlock()
 
 	// 3. Row-level LWW
@@ -253,18 +351,19 @@ func (s *VectorStore) writeToWAL(rec arrow.RecordBatch, name string, ts int64) e
 	return s.engine.WriteToWAL(name, rec, seq, ts)
 }
 
-func (s *VectorStore) Snapshot() error {
+func (s *VectorStore) Snapshot(ctx context.Context) error {
 	if s.engine == nil {
 		return nil
 	}
 
 	// Create source iterator
-	source := &storeSnapshotSource{s: s}
+	source := &storeSnapshotSource{s: s, ctx: ctx}
 	return s.engine.Snapshot(source)
 }
 
 type storeSnapshotSource struct {
-	s *VectorStore
+	s   *VectorStore
+	ctx context.Context
 }
 
 func (src *storeSnapshotSource) Iterate(fn func(storage.SnapshotItem) error) error {
@@ -289,7 +388,7 @@ func (src *storeSnapshotSource) Iterate(fn func(storage.SnapshotItem) error) err
 			dsName := ds.Name
 			diskStore := ds.DiskStore
 			item.OnSnapshot = func(backend storage.SnapshotBackend) error {
-				return diskStore.SnapshotTo(context.Background(), backend, dsName)
+				return diskStore.SnapshotTo(src.ctx, backend, dsName)
 			}
 		}
 
@@ -335,8 +434,15 @@ func (src *storeSnapshotSource) Iterate(fn func(storage.SnapshotItem) error) err
 		approxSize += len(item.PQCodebook)
 
 		if src.s.rateLimiter != nil {
+			// Context check before rate limiting
+			select {
+			case <-src.ctx.Done():
+				return src.ctx.Err()
+			default:
+			}
+
 			startWait := time.Now()
-			_ = src.s.rateLimiter.Wait(context.Background(), approxSize)
+			_ = src.s.rateLimiter.Wait(src.ctx, approxSize)
 			metrics.SnapshotRateLimitWaitSeconds.Observe(time.Since(startWait).Seconds())
 		}
 
@@ -393,7 +499,7 @@ func (s *VectorStore) runSnapshotTicker(interval time.Duration) {
 		case <-s.stopChan:
 			return
 		case <-timer.C:
-			if err := s.Snapshot(); err != nil {
+			if err := s.Snapshot(context.Background()); err != nil {
 				metrics.SnapshotTotal.WithLabelValues("error").Inc()
 				s.logger.Error().Err(err).Msg("Scheduled snapshot failed")
 			} else {
@@ -422,6 +528,15 @@ func (s *VectorStore) FlushWAL() error {
 		return s.engine.SyncWAL()
 	}
 	return nil
+}
+
+// stopWorkers signals all background workers to stop.
+// It is idempotent and safe to call multiple times.
+func (s *VectorStore) stopWorkers() {
+	s.stopOnce.Do(func() {
+		close(s.stopChan)
+		s.stopCompaction()
+	})
 }
 
 // TruncateWAL wrapper for backward compatibility or testing.

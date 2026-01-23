@@ -58,7 +58,7 @@ func SearchHybrid(ctx context.Context, s *VectorStore, name string, queryVec []f
 	if alpha > 0 && len(queryVec) > 0 {
 		if ds.Index != nil {
 			var err error
-			denseResults, err = ds.Index.SearchVectors(queryVec, k*2, nil, SearchOptions{})
+			denseResults, err = ds.Index.SearchVectors(ctx, queryVec, k*2, nil, SearchOptions{})
 			if err != nil {
 				s.logger.Error().Err(err).Msg("Vector search failed in hybrid search")
 				// Continue with sparse results only?
@@ -118,7 +118,7 @@ func SearchHybrid(ctx context.Context, s *VectorStore, name string, queryVec []f
 	}
 
 	// Map internal IDs to user IDs (Phase 14 integration)
-	resolved := s.MapInternalToUserIDs(ds, finalResults)
+	resolved := s.mapInternalToUserIDsLocked(ds, finalResults)
 	if len(resolved) > k {
 		resolved = resolved[:k]
 	}
@@ -173,11 +173,11 @@ func HybridSearch(ctx context.Context, s *VectorStore, name string, queryVec []f
 	switch {
 	case filterBitmap != nil && filterBitmap.Count() > 0:
 		// Perform filtered search
-		results = ds.Index.SearchVectorsWithBitmap(queryVec, k, filterBitmap, SearchOptions{})
+		results = ds.Index.SearchVectorsWithBitmap(ctx, queryVec, k, filterBitmap, SearchOptions{})
 	case !hasFilters:
 		// No filters, standard search
 		var err error
-		results, err = ds.Index.SearchVectors(queryVec, k, nil, SearchOptions{})
+		results, err = ds.Index.SearchVectors(ctx, queryVec, k, nil, SearchOptions{})
 		if err != nil {
 			return nil, err
 		}

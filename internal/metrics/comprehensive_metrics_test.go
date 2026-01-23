@@ -83,7 +83,7 @@ func TestBloomFalsePositiveRate_Exists(t *testing.T) {
 		t.Fatal("BloomFalsePositiveRate metric should not be nil")
 	}
 	// Should be Gauge (observed FP rate)
-	BloomFalsePositiveRate.Set(0.01)
+	BloomFalsePositiveRate.WithLabelValues("test_dataset", "test_column").Set(0.01)
 }
 
 // -----------------------------------------------------------------------------

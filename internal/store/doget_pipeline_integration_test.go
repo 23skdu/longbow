@@ -39,6 +39,7 @@ func TestDoGetUsesPipelineForMultiBatch(t *testing.T) {
 	if store == nil {
 		t.Fatal("NewVectorStoreWithPipeline returned nil")
 	}
+	defer func() { _ = store.Close() }()
 
 	if store.GetDoGetPipelinePool() == nil {
 		t.Fatal("DoGetPipelinePool should be initialized")
@@ -94,6 +95,7 @@ func TestDoGetSerialPathForSingleBatch(t *testing.T) {
 	if store == nil {
 		t.Fatal("NewVectorStoreWithPipeline returned nil")
 	}
+	defer func() { _ = store.Close() }()
 
 	schema := arrow.NewSchema([]arrow.Field{
 		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
@@ -135,6 +137,7 @@ func TestDoGetPipelinePreservesOrder(t *testing.T) {
 	if store == nil {
 		t.Fatal("NewVectorStoreWithPipeline returned nil")
 	}
+	defer func() { _ = store.Close() }()
 
 	schema := arrow.NewSchema([]arrow.Field{
 		{Name: "batch_id", Type: arrow.PrimitiveTypes.Int64},
@@ -181,6 +184,7 @@ func TestDoGetPipelineConcurrentRequests(t *testing.T) {
 	if store == nil {
 		t.Fatal("NewVectorStoreWithPipeline returned nil")
 	}
+	defer func() { _ = store.Close() }()
 
 	schema := arrow.NewSchema([]arrow.Field{
 		{Name: "id", Type: arrow.PrimitiveTypes.Int64},

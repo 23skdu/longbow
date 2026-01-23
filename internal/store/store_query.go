@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"log"
 	"runtime"
 	"strconv"
 	"strings"
@@ -19,6 +18,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 
 	"github.com/23skdu/longbow/internal/cache"
+	lbflight "github.com/23skdu/longbow/internal/flight"
 	lbmem "github.com/23skdu/longbow/internal/memory"
 	"github.com/23skdu/longbow/internal/mesh"
 	"github.com/23skdu/longbow/internal/metrics"
@@ -123,8 +123,8 @@ func (s *VectorStore) GetSchema(ctx context.Context, desc *flight.FlightDescript
 
 // DoGet - Minimal implementation
 func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGetServer) error {
-	// fmt.Printf("[DEBUG] DoGet received ticket len=%d\n", len(tkt.Ticket))
-	log.Printf("[DEBUG] DoGet received ticket (len=%d): %q", len(tkt.Ticket), string(tkt.Ticket))
+	startDoGet := time.Now()
+	// log.Printf("[DEBUG] DoGet received ticket (len=%d): %q", len(tkt.Ticket), string(tkt.Ticket))
 	// Parse ticket
 	query, err := qry.ParseTicketQuerySafe(tkt.Ticket)
 	if err != nil {
@@ -133,11 +133,11 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 		if sStr != "" && sStr[0] != '{' {
 			query.Name = sStr
 		} else {
-			s.logger.Error().Err(err).Msg("Failed to parse ticket")
+			s.logger.Error().Err(err).Str("ticket_preview", string(tkt.Ticket)).Msg("Failed to parse ticket")
 			return status.Error(codes.InvalidArgument, "invalid ticket format")
 		}
+		err = nil // Clear error after fallback
 	}
-	// log.Printf("[DEBUG] Parsed query: Search=%v Name=%s", query.Search, query.Name)
 
 	// Create Request-Scoped Arena Allocator
 	// This reduces GC pressure for transient buffers (masks, filtered batches, serialized records)
@@ -163,28 +163,62 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 	}
 
 	ds.dataMu.RLock()
-	defer ds.dataMu.RUnlock()
-
+	// Check if dataset is already empty or if we have records
 	if len(ds.Records) == 0 {
+		ds.dataMu.RUnlock()
 		s.logger.Warn().Msg("Dataset empty")
 		return nil
 	}
 
-	// Use first record's schema
+	// Use first record's schema (all records in a dataset must share schema)
 	schema := ds.Records[0].Schema()
-	s.logger.Info().Msgf("DoGet Schema: %v", schema.String())
 
-	// Create Writer WITHOUT options first to be safe
-	w := flight.NewRecordWriter(stream, ipc.WithSchema(schema))
-	defer func() { _ = w.Close() }()
+	// Adaptive Chunking (Byte-Aware Optimization)
+	// We estimate row size to ensure chunks are at least ~2MB to saturate bandwidth
+	// while keeping overhead low.
+	avgRowSize := int64(256) // Default fallback
+	if ds.Records[0].NumRows() > 0 {
+		batchSize := estimateBatchSize(ds.Records[0])
+		avgRowSize = batchSize / ds.Records[0].NumRows()
+		if avgRowSize == 0 {
+			avgRowSize = 1
+		}
+	}
+
+	targetChunkBytes := int64(2 * 1024 * 1024) // 2MB Target
+	minChunkRows := int(targetChunkBytes / avgRowSize)
+	if minChunkRows < 4096 {
+		minChunkRows = 4096 // Keep minimum floor of 4096
+	} else if minChunkRows > 65536 {
+		minChunkRows = 65536 // Cap max start to reasonable level
+	}
+
+	// Max chunk can be larger
+	maxChunkRows := minChunkRows * 4
+	if maxChunkRows > 131072 {
+		maxChunkRows = 131072
+	}
+
+	chunkStrategy := lbflight.NewAdaptiveChunkStrategy(minChunkRows, maxChunkRows, 2.0)
+	recordsToProcess, tombstonesToProcess := AdaptivelySliceBatches(ds.Records, ds.Tombstones, chunkStrategy)
+	ds.dataMu.RUnlock() // RELEASE LOCK IMMEDIATELY AFTER CLONING REFERENCES
+
+	s.logger.Info().Str("name", name).Int("batches", len(recordsToProcess)).Msg("DoGet streaming started")
+
+	defer func() {
+		for _, r := range recordsToProcess {
+			r.Release()
+		}
+	}()
 
 	ctx := stream.Context()
 	rowsSent := int64(0)
 
 	// Parallel Processing with Pipeline Support (Phase 5)
+	// Recalculate workers based on chunked records
 	numWorkers := runtime.NumCPU()
-	if numWorkers > len(ds.Records) {
-		numWorkers = len(ds.Records)
+	if numWorkers > len(recordsToProcess) {
+		numWorkers = len(recordsToProcess)
 	}
 	if numWorkers < 1 {
 		numWorkers = 1
@@ -197,7 +231,7 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 
 	// Determine execution strategy
 	var stageChan <-chan PipelineStage
-	usePipeline := s.shouldUsePipeline(len(ds.Records))
+	usePipeline := s.shouldUsePipeline(len(recordsToProcess))
 	var pipeline *DoGetPipeline
 
 	if usePipeline {
@@ -209,20 +243,20 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 		}
 
 		// ProcessRecords handles feeding safely
-		stageChan = pipeline.ProcessRecords(ctx, ds.Records, ds.Tombstones, query.Filters, nil)
-		metrics.DoGetPipelineStepsTotal.WithLabelValues("scan", "pipeline").Add(float64(len(ds.Records)))
-		s.logger.Debug().Int("workers", pipeline.NumWorkers()).Msg("Using DoGetPipeline")
+		stageChan = pipeline.ProcessRecords(ctx, recordsToProcess, tombstonesToProcess, query.Filters, nil)
+		metrics.DoGetPipelineStepsTotal.WithLabelValues("scan", "pipeline").Add(float64(len(recordsToProcess)))
+
 	} else {
 		// Simple feeder for small datasets
-		metrics.DoGetPipelineStepsTotal.WithLabelValues("scan", "simple").Add(float64(len(ds.Records)))
-		c := make(chan PipelineStage, len(ds.Records))
+		metrics.DoGetPipelineStepsTotal.WithLabelValues("scan", "simple").Add(float64(len(recordsToProcess)))
+		c := make(chan PipelineStage, len(recordsToProcess))
 		stageChan = c
 		go func() {
 			defer close(c)
-			for i, rec := range ds.Records {
+			for i, rec := range recordsToProcess {
 				var ts *qry.Bitset
 				// Map access is safe under RLock
-				if t, ok := ds.Tombstones[i]; ok {
+				if t, ok := tombstonesToProcess[i]; ok {
 					ts = t
 				}
 				select {
@@ -244,6 +278,7 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 		go func() {
 			defer wg.Done()
 			var evaluator *qry.FilterEvaluator
+
 			for stage := range stageChan {
 				rec := stage.Record
 				deleted := stage.Tombstone
@@ -318,7 +353,6 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 				select {
 				case resultsChan <- processed:
 				case <-ctx.Done():
-					processed.Release()
 					return
 				}
 			}
@@ -332,60 +366,63 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 		close(errChan)
 	}()
 
+	// Use standard Flight RecordWriter to stream results
+	// This efficiently handles schema (first message) and subsequent batches
+	// without intermediate copying or manual chunk management.
+	writer := flight.NewRecordWriter(stream, ipc.WithSchema(schema))
+	defer func() { _ = writer.Close() }()
+
 	// Consume Results (Sequential Write)
 	for {
-		select {
-		case batch, ok := <-resultsChan:
-			if !ok {
-				resultsChan = nil // Channel closed
-			} else {
-				// Verify Columns
-				for i := 0; i < int(batch.NumCols()); i++ {
-					col := batch.Column(i)
-					if col.Len() != int(batch.NumRows()) {
-						s.logger.Error().
-							Int("col_idx", i).
-							Int("col_len", col.Len()).
-							Int64("batch_rows", batch.NumRows()).
-							Msg("DoGet Batch Column Length Mismatch")
-					}
-					// Check data length for specific types if known, or just ensure not nil
-					if col.Data() == nil {
-						s.logger.Error().Int("col_idx", i).Msg("DoGet Batch Column Data is NIL")
-					}
-				}
+		rec, ok := <-resultsChan
+		if !ok {
+			resultsChan = nil // Channel closed
+		} else {
+			startWrite := time.Now()
 
-				startWrite := time.Now()
-				if err := w.Write(batch); err != nil {
-					s.logger.Error().Err(err).Msg("DoGet Write failed")
-					batch.Release()
+			// Write batch directly to stream
+			// Ensure schema strictly matches writer (e.g. metadata from compute kernels)
+			if !rec.Schema().Equal(schema) {
+				// Use helper to safely cast/align (avoiding panics if types mismatch)
+				aligned, err := castRecordToSchema(mem, rec, schema)
+				if err != nil {
+					s.logger.Error().Err(err).Msg("Failed to align record batch schema")
+					rec.Release()
 					return err
 				}
-				writeDuration := time.Since(startWrite)
-				metrics.GRPCStreamSendLatencySeconds.Observe(writeDuration.Seconds())
-
-				// If write takes more than 50ms, consider it a potential flow-control stall
-				if writeDuration > 50*time.Millisecond {
-					metrics.GRPCStreamStallTotal.Inc()
-					s.logger.Trace().Dur("duration", writeDuration).Msg("Detected stream stall (flow control)")
-				}
-
-				rowsSent += batch.NumRows()
-				batch.Release()
-
-				// Track stats for test verification
-				if usePipeline {
-					s.incrementPipelineBatches(1)
-				}
-
-				if query.Limit > 0 && rowsSent >= query.Limit {
-					goto DRAIN
-				}
+				rec.Release() // Release old wrapper
+				rec = aligned
 			}
-		case err, ok := <-errChan:
-			if ok && err != nil {
+
+			if err := writer.Write(rec); err != nil {
+				s.logger.Error().Err(err).Msg("DoGet Send failed")
+				rec.Release()
 				return err
 			}
+
+			if rowsSent == 0 {
+				metrics.DoGetTimeToFirstChunk.Observe(time.Since(startDoGet).Seconds())
+			}
+
+			rowsSent += rec.NumRows()
+			rec.Release()
+
+			writeDuration := time.Since(startWrite)
+			metrics.GRPCStreamSendLatencySeconds.Observe(writeDuration.Seconds())
+
+			if writeDuration > 50*time.Millisecond {
+				metrics.GRPCStreamStallTotal.Inc()
+
+			}
+
+			// Track stats for test verification
+			if usePipeline {
+				s.incrementPipelineBatches(1)
+			}
+		}
+		if ok && err != nil {
+
+			return err
 		}
 		if resultsChan == nil {
 			break
@@ -397,31 +434,28 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 	}
 
 	// Normal exit
-	return nil
-
-DRAIN:
-	if pipeline != nil && s.doGetPipelinePool != nil {
-		s.doGetPipelinePool.Put(pipeline)
-	}
-	// Drain remaining results to prevent worker deadlock
-	go func() {
-		for range resultsChan {
-			// discard
-		}
-	}()
-
 	s.logger.Info().Int64("rows_sent", rowsSent).Msg("DoGet completed")
 	metrics.FlightRowsProcessed.WithLabelValues("get", "ok").Add(float64(rowsSent))
 	return nil
 }
 
 // MapInternalToUserIDs maps internal HNSW IDs to user-provided IDs
+// MapInternalToUserIDs maps internal HNSW IDs to user-provided IDs
+// This is the public wrapper that acquires a read lock.
 func (s *VectorStore) MapInternalToUserIDs(ds *Dataset, results []SearchResult) []SearchResult {
 	start := time.Now()
 	defer func() {
 		metrics.IDResolutionDuration.Observe(time.Since(start).Seconds())
 	}()
 
+	ds.dataMu.RLock()
+	defer ds.dataMu.RUnlock()
+	return s.mapInternalToUserIDsLocked(ds, results)
+}
+
+// mapInternalToUserIDsLocked maps internal HNSW IDs to user-provided IDs.
+// Caller MUST hold ds.dataMu.RLock (or Lock).
+func (s *VectorStore) mapInternalToUserIDsLocked(ds *Dataset, results []SearchResult) []SearchResult {
 	// Use the VectorIndex interface directly to look up locations.
 	// This supports HNSWIndex, ArrowHNSW, AutoShardingIndex, etc.
 	if ds.Index == nil {
@@ -429,11 +463,6 @@ func (s *VectorStore) MapInternalToUserIDs(ds *Dataset, results []SearchResult) 
 	}
 
 	mappedResults := make([]SearchResult, 0, len(results))
-
-	// We need to access dataset records. The HNSW index locations point to Batch/Row.
-	// We'll use those to look up the ID from the "id" column of the record batch.
-	ds.dataMu.RLock()
-	defer ds.dataMu.RUnlock()
 
 	for _, res := range results {
 		// 1. Get location (Batch, Row) from VectorIndex
@@ -443,13 +472,13 @@ func (s *VectorStore) MapInternalToUserIDs(ds *Dataset, results []SearchResult) 
 			// If we return raw result, it contains internal ID, which might confuse client.
 			// But skipping might lose data.
 			// Let's assume invalid and skip?
-			log.Printf("[DEBUG] MapInternalToUserIDs: ID %d not found in Index location store", res.ID)
+			// log.Printf("[DEBUG] MapInternalToUserIDs: ID %d not found in Index location store", res.ID)
 			continue
 		}
 
 		// 2. Access RecordBatch
 		if loc.BatchIdx >= len(ds.Records) {
-			log.Printf("[DEBUG] MapInternalToUserIDs: dropping ID %d. BatchIdx %d >= Records %d", res.ID, loc.BatchIdx, len(ds.Records))
+
 			continue
 		}
 		rec := ds.Records[loc.BatchIdx]
@@ -619,38 +648,42 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, stream fli
 			}
 
 			ds.dataMu.RLock()
-			// log.Printf("[DEBUG] handleDoGetSearch: index exists=%v", ds.Index != nil)
-			if ds.Index == nil {
+			index := ds.Index
+			graph := ds.Graph
+			if index == nil {
 				ds.dataMu.RUnlock()
 				return status.Error(codes.FailedPrecondition, "index not initialized")
 			}
 
-			// Validate dimension
-			if len(queryVec) > 0 && uint32(len(queryVec)) != ds.Index.GetDimension() {
-				expected := ds.Index.GetDimension()
+			// Validate dimension under lock
+			if len(queryVec) > 0 && uint32(len(queryVec)) != index.GetDimension() {
+				expected := index.GetDimension()
 				ds.dataMu.RUnlock()
 				return status.Errorf(codes.InvalidArgument, "dimension mismatch: expected %d, got %d", expected, len(queryVec))
 			}
+			ds.dataMu.RUnlock() // RELEASE BEFORE SEARCH
 
-			searchResults, err = ds.Index.SearchVectors(queryVec, req.K, req.Filters, SearchOptions{
+			// Core Search (No dataset lock held)
+			searchResults, err = index.SearchVectors(stream.Context(), queryVec, req.K, req.Filters, SearchOptions{
 				IncludeVectors: req.IncludeVectors,
 				VectorFormat:   req.VectorFormat,
 			})
 			if err != nil {
-				ds.dataMu.RUnlock()
 				return status.Errorf(codes.Internal, "search failed: %v", err)
 			}
 
+			// Capture data for mapping/re-ranking
+			ds.dataMu.RLock()
 			// Graph Re-ranking
-			if req.GraphAlpha > 0 && ds.Graph != nil {
-				ranked := ds.Graph.RankWithGraph(searchResults, req.GraphAlpha, 2)
+			if req.GraphAlpha > 0 && graph != nil {
+				ranked := graph.RankWithGraph(searchResults, req.GraphAlpha, 2)
 				if len(ranked) > 0 {
 					searchResults = ranked
 				}
 			}
 
-			// Map IDs
-			searchResults = s.MapInternalToUserIDs(ds, searchResults)
+			// Map internal IDs to user IDs
+			searchResults = s.mapInternalToUserIDsLocked(ds, searchResults)
 			ds.dataMu.RUnlock()
 		}
 
@@ -684,12 +717,9 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, stream fli
 
 		if len(searchResults) > 0 {
 			s.queryCache.Put(cacheKey, searchResults)
-		} else {
-			log.Printf("[DEBUG] Not caching empty results for %s", req.Dataset)
 		}
 
 	} // End of Cache Miss block
-	// log.Printf("[DEBUG] handleDoGetSearch: Sending %d results", len(searchResults))
 
 	// 5. Stream Results (Arrow)
 	// Schema: id (uint64), score (float32)

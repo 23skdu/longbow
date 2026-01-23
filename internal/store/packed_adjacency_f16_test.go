@@ -45,7 +45,6 @@ func TestPackedAdjacencyF16_MemorySavings(t *testing.T) {
 	// But it does space allocation.
 	err := adj.SetNeighbors(id, neighbors)
 	require.NoError(t, err)
-	// memF32 := arena.Allocated() // No Allocated() method in SlabArena
 
 	// Just verify F16 works with large set
 	arenaF16 := memory.NewSlabArena(1024 * 1024)

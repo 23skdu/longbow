@@ -5,8 +5,8 @@ downtime.
 
 ## Versioning
 
-Each dataset now tracks a `Version` number, which increments whenever a schema
-change is detected and accepted.
+Each dataset tracks a `Version` number. Note that automated version incrementing on schema
+changes is planned but currently requires manual coordination if explicit tracking is needed.
 
 ## Evolution Rules
 

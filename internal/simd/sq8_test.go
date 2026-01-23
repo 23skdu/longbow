@@ -3,6 +3,8 @@ package simd
 import (
 	crypto_rand "crypto/rand"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestEuclideanDistanceSQ8(t *testing.T) {
@@ -27,10 +29,12 @@ func TestEuclideanDistanceSQ8(t *testing.T) {
 			_, _ = crypto_rand.Read(b)
 
 			// Reference
-			expected := EuclideanSQ8Generic(a, b)
+			expected, err1 := EuclideanSQ8Generic(a, b)
+			require.NoError(t, err1)
 
 			// Optimized (via Dispatch)
-			got := EuclideanDistanceSQ8(a, b)
+			got, err2 := EuclideanDistanceSQ8(a, b)
+			require.NoError(t, err2)
 
 			if got != expected {
 				t.Errorf("expected %d, got %d", expected, got)
@@ -48,13 +52,13 @@ func BenchmarkEuclideanDistanceSQ8(b *testing.B) {
 
 	b.Run("Generic", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			EuclideanSQ8Generic(a, vecB)
+			_, _ = EuclideanSQ8Generic(a, vecB)
 		}
 	})
 
 	b.Run("Optimized", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			EuclideanDistanceSQ8(a, vecB)
+			_, _ = EuclideanDistanceSQ8(a, vecB)
 		}
 	})
 }

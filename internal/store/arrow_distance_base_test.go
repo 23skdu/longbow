@@ -99,7 +99,7 @@ func BenchmarkDistanceSIMD_vs_L2(b *testing.B) {
 
 	b.Run("L2", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			_ = simd.EuclideanDistance(a, vec)
+			_, _ = simd.EuclideanDistance(a, vec)
 		}
 	})
 }

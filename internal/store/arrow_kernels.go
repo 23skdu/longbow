@@ -2,6 +2,7 @@ package store
 
 import (
 	"fmt"
+	"math"
 	"sort"
 
 	"github.com/23skdu/longbow/internal/simd"
@@ -199,7 +200,12 @@ func l2DistanceExec(ctx *exec.KernelCtx, batch *exec.ExecSpan, out *exec.ExecRes
 		}
 		rVec := rightVals[rOff : rOff+int64(dim)]
 
-		outSlice[i] = simd.EuclideanDistance(lVec, rVec)
+		d, err := simd.EuclideanDistance(lVec, rVec)
+		if err != nil {
+			outSlice[i] = math.MaxFloat32
+		} else {
+			outSlice[i] = d
+		}
 	}
 	return nil
 }

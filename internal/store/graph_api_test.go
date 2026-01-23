@@ -18,6 +18,7 @@ func TestGraphAPI_GetGraphStats(t *testing.T) {
 	logger := zerolog.Nop()
 	s := NewVectorStore(mem, logger, 1<<30, 0, time.Hour)
 	meta := NewMetaServer(s)
+	defer func() { _ = s.Close() }()
 	defer func() { _ = meta.Close() }()
 
 	// 1. Setup Dataset
@@ -74,7 +75,9 @@ func TestGraphAPI_GetGraphStats_NotFound(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()
 	s := NewVectorStore(mem, logger, 1<<30, 0, time.Hour)
+	defer func() { _ = s.Close() }()
 	meta := NewMetaServer(s)
+	defer func() { _ = meta.Close() }()
 
 	req := map[string]string{"dataset": "non_existent"}
 	reqBytes, _ := json.Marshal(req)

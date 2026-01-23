@@ -1,12 +1,14 @@
 package store
 
 import (
+	"context"
 	"math/rand"
 	"testing"
 	"time"
 
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/rs/zerolog"
+	"github.com/stretchr/testify/assert"
 )
 
 func FuzzIngestion(f *testing.F) {
@@ -20,7 +22,11 @@ func FuzzIngestion(f *testing.F) {
 
 		// Use Nop logger to avoid clutter
 		store := NewVectorStore(mem, zerolog.Nop(), 50*1024*1024, 0, 0)
-		defer func() { _ = store.Close() }()
+		defer func() {
+			if err := store.Close(); err != nil {
+				t.Errorf("store.Close() failed: %v", err)
+			}
+		}()
 
 		schema := GenerateRandomSchema(rng)
 		numRows := rng.Intn(100) + 1
@@ -65,7 +71,7 @@ func FuzzCompaction(f *testing.F) {
 		mem := memory.NewGoAllocator()
 
 		store := NewVectorStore(mem, zerolog.Nop(), 50*1024*1024, 0, 0)
-		defer func() { _ = store.Close() }()
+		defer func() { assert.NoError(t, store.Close()) }()
 
 		// Ensure compaction worker is set up
 		store.compactionConfig = DefaultCompactionConfig()
@@ -101,7 +107,9 @@ func FuzzCompaction(f *testing.F) {
 		// looking at compaction_store.go...
 		// store.CompactDataset(ctx, dsName)
 
-		_ = store.CompactDataset(dsName)
+		if err := store.CompactDataset(context.Background(), dsName); err != nil {
+			t.Errorf("CompactDataset failed: %v", err)
+		}
 
 		// Assert assumption: No panic.
 	})

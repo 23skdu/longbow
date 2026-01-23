@@ -130,7 +130,7 @@ func TestHybridSearch_EmptyQuery(t *testing.T) {
 	arena := memory.NewSlabArena(1024 * 1024)
 	bm25 := NewBM25ArenaIndex(arena, 100)
 
-	bm25.IndexDocument(1, []string{"test", "document"})
+	_ = bm25.IndexDocument(1, []string{"test", "document"})
 
 	// Empty query should return zero scores
 	scores := bm25.Score([]string{}, []uint32{1})
@@ -142,7 +142,7 @@ func TestHybridSearch_NonExistentTokens(t *testing.T) {
 	arena := memory.NewSlabArena(1024 * 1024)
 	bm25 := NewBM25ArenaIndex(arena, 100)
 
-	bm25.IndexDocument(1, []string{"test", "document"})
+	_ = bm25.IndexDocument(1, []string{"test", "document"})
 
 	// Query with non-existent tokens
 	query := []string{"nonexistent", "tokens"}

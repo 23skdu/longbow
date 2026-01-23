@@ -8,34 +8,37 @@ import "math"
 // These provide reference behavior for testing on ARM/other architectures
 
 // DotProductFMA falls back to scalar implementation on non-AMD64
-func DotProductFMA(a, b []float32) float32 {
-	if len(a) == 0 || len(a) != len(b) {
-		return 0
+func DotProductFMA(a, b []float32) (float32, error) {
+	if len(a) != len(b) {
+		return 0, ErrDimensionMismatch
 	}
 	var sum float32
 	for i := range a {
 		sum += a[i] * b[i]
 	}
-	return sum
+	return sum, nil
 }
 
 // EuclideanDistanceFMA falls back to scalar implementation on non-AMD64
-func EuclideanDistanceFMA(a, b []float32) float32 {
-	if len(a) == 0 || len(a) != len(b) {
-		return 0
+func EuclideanDistanceFMA(a, b []float32) (float32, error) {
+	if len(a) != len(b) {
+		return 0, ErrDimensionMismatch
 	}
 	var sum float32
 	for i := range a {
 		diff := a[i] - b[i]
 		sum += diff * diff
 	}
-	return sum
+	return sum, nil
 }
 
 // CosineDistanceFMA falls back to scalar implementation on non-AMD64
-func CosineDistanceFMA(a, b []float32) float32 {
-	if len(a) == 0 || len(a) != len(b) {
-		return 1.0
+func CosineDistanceFMA(a, b []float32) (float32, error) {
+	if len(a) != len(b) {
+		return 0, ErrDimensionMismatch
+	}
+	if len(a) == 0 {
+		return 1.0, nil
 	}
 	var dot, normA, normB float64
 	for i := range a {
@@ -44,7 +47,7 @@ func CosineDistanceFMA(a, b []float32) float32 {
 		normB += float64(b[i]) * float64(b[i])
 	}
 	if normA == 0 || normB == 0 {
-		return 1.0
+		return 1.0, nil
 	}
-	return float32(1.0 - dot/math.Sqrt(normA*normB))
+	return float32(1.0 - dot/math.Sqrt(normA*normB)), nil
 }

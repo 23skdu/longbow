@@ -160,7 +160,7 @@ func FuzzRepairAgent_MParameter(f *testing.F) {
 
 		// Delete some
 		for i := 10; i < 20; i++ {
-			idx.Delete(uint32(i))
+			_ = idx.Delete(uint32(i))
 		}
 
 		agent := NewRepairAgent(idx, config)
@@ -213,7 +213,7 @@ func FuzzRepairAgent_Combined(f *testing.F) {
 
 		// Delete nodes
 		for i := 0; i < deleteCount; i++ {
-			idx.Delete(uint32(i))
+			_ = idx.Delete(uint32(i))
 		}
 
 		agent := NewRepairAgent(idx, config)

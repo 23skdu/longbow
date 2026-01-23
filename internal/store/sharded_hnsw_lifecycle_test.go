@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"testing"
 
 	"github.com/23skdu/longbow/internal/query"
@@ -50,12 +51,12 @@ func TestShardedHNSW_Compaction(t *testing.T) {
 
 	// Add to index
 	for i := 0; i < 10; i++ {
-		_, err := idx.AddByRecord(rec0, i, 0)
+		_, err := idx.AddByRecord(context.Background(), rec0, i, 0)
 		require.NoError(t, err)
 	}
 
 	// Verify lookups
-	res, err := idx.SearchVectors([]float32{0, 0, 0, 0}, 1, nil, SearchOptions{})
+	res, err := idx.SearchVectors(context.Background(), []float32{0, 0, 0, 0}, 1, nil, SearchOptions{})
 	require.NoError(t, err)
 	require.Len(t, res, 1)
 	assert.Equal(t, VectorID(0), res[0].ID) // ID 0 is closest to 0,0,0,0
@@ -87,7 +88,7 @@ func TestShardedHNSW_Compaction(t *testing.T) {
 	assert.Equal(t, 0, loc.RowIdx)
 
 	// SearchByID should still work
-	foundIDs := idx.SearchByID(VectorID(0), 5)
+	foundIDs := idx.SearchByID(context.Background(), VectorID(0), 5)
 	assert.Contains(t, foundIDs, VectorID(0)) // Should find itself
 }
 
@@ -119,7 +120,7 @@ func TestShardedHNSW_Vacuum(t *testing.T) {
 	dataset.Records = []arrow.RecordBatch{rec}
 
 	for i := 0; i < 10; i++ {
-		_, err := idx.AddByRecord(rec, i, 0)
+		_, err := idx.AddByRecord(context.Background(), rec, i, 0)
 		require.NoError(t, err)
 	}
 
@@ -176,7 +177,7 @@ func TestShardedHNSW_DynamicGrowth(t *testing.T) {
 	dataset.Records = []arrow.RecordBatch{rec}
 
 	for i := 0; i < 25; i++ {
-		_, err := idx.AddByRecord(rec, i, 0)
+		_, err := idx.AddByRecord(context.Background(), rec, i, 0)
 		require.NoError(t, err)
 	}
 

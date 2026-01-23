@@ -69,8 +69,8 @@ func TestFlight_ZeroCopyAllocator(t *testing.T) {
 
 	w := flight.NewRecordWriter(mockClient, ipc.WithSchema(schema))
 	require.NoError(t, w.Write(rec))
-	w.Close()
-	mockClient.CloseSend()
+	_ = w.Close()
+	_ = mockClient.CloseSend()
 
 	wg.Wait()
 	t.Logf("Generated %d chunks", len(chunks))

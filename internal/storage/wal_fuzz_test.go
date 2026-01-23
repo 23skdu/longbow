@@ -17,7 +17,11 @@ func FuzzFSBackend_Write(f *testing.F) {
 		if err != nil {
 			t.Fatalf("failed to create backend: %v", err)
 		}
-		defer backend.Close()
+		defer func() {
+			if err := backend.Close(); err != nil {
+				t.Logf("failed to close backend: %v", err)
+			}
+		}()
 
 		n, err := backend.Write(data)
 		if err != nil {

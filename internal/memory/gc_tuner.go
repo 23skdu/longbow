@@ -5,6 +5,7 @@ import (
 	"runtime"
 	"runtime/debug"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/23skdu/longbow/internal/metrics"
@@ -28,18 +29,22 @@ type GCTuner struct {
 	highGOGC   int
 	lowGOGC    int
 
+	IsAggressive bool
+	arenas       []*SlabArena
+	mu           sync.RWMutex
+
 	reader MemStatsReader
 	logger *zerolog.Logger
 
 	// State to avoid thrashing
-	currentGOGC int
-	mu          sync.Mutex
+	currentGOGC     int
+	lastUtilization atomic.Uint64 // 0..1000 representing 0.0..1.0 ratio
 }
 
 // NewGCTuner creates a tuner. limitBytes should be close to container memory limit.
 func NewGCTuner(limitBytes int64, highGOGC, lowGOGC int, logger *zerolog.Logger) *GCTuner {
 	if highGOGC <= 0 {
-		highGOGC = 100
+		highGOGC = 80
 	}
 	if lowGOGC <= 0 {
 		lowGOGC = 10
@@ -48,14 +53,32 @@ func NewGCTuner(limitBytes int64, highGOGC, lowGOGC int, logger *zerolog.Logger)
 		lowGOGC = highGOGC
 	}
 
-	return &GCTuner{
+	tuner := &GCTuner{
 		limitBytes:  limitBytes,
 		highGOGC:    highGOGC,
 		lowGOGC:     lowGOGC,
 		reader:      &defaultMemStatsReader{},
 		logger:      logger,
-		currentGOGC: 100,
+		currentGOGC: debug.SetGCPercent(-1), // Get current GOGC without changing it
 	}
+
+	if tuner.logger != nil {
+		tuner.logger.Info().
+			Int64("limitBytes", limitBytes).
+			Int("highGOGC", highGOGC).
+			Int("lowGOGC", lowGOGC).
+			Int("initialGOGC", tuner.currentGOGC).
+			Msg("GCTuner initialized")
+	}
+
+	return tuner
+}
+
+// RegisterArena adds an arena to be tracked by the tuner.
+func (t *GCTuner) RegisterArena(a *SlabArena) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.arenas = append(t.arenas, a)
 }
 
 // Start runs the tuner loop until context is canceled.
@@ -63,6 +86,11 @@ func (t *GCTuner) Start(ctx context.Context, interval time.Duration) {
 	// Set hard limit first
 	if t.limitBytes > 0 {
 		debug.SetMemoryLimit(t.limitBytes)
+	}
+
+	// Use 500ms interval for faster response
+	if interval == 0 {
+		interval = 500 * time.Millisecond
 	}
 
 	ticker := time.NewTicker(interval)
@@ -85,26 +113,84 @@ func (t *GCTuner) tune(heapInUse uint64) {
 		return
 	}
 
-	ratio := float64(heapInUse) / float64(t.limitBytes)
-	metrics.GCTunerHeapUtilization.Set(ratio)
+	t.mu.RLock()
+	aggressive := t.IsAggressive
+	totalArenaCapacity := int64(0)
+	unusedArenaMemory := int64(0)
+	if aggressive {
+		// Use both registered and global arenas
+		arenas := t.arenas
+		global := GetGlobalArenas()
 
-	var targetGOGC int
-
-	// Simple Logic:
-	// < 50% usage -> HighGOGC (Relaxed GC)
-	// > 90% usage -> LowGOGC (Aggressive GC)
-	// In-between  -> Linear interpolation
-	switch {
-	case ratio < 0.5:
-		targetGOGC = t.highGOGC
-	case ratio > 0.9:
-		targetGOGC = t.lowGOGC
-	default:
-		// Interpolate: 0.5 -> High, 0.9 -> Low
-		// Slope = (Low - High) / (0.9 - 0.5)
-		slope := float64(t.lowGOGC-t.highGOGC) / 0.4
-		targetGOGC = t.highGOGC + int(slope*(ratio-0.5))
+		seen := make(map[*SlabArena]bool)
+		for _, a := range arenas {
+			seen[a] = true
+			stats := a.Stats()
+			totalArenaCapacity += stats.TotalCapacity
+			unused := stats.TotalCapacity - stats.UsedBytes
+			if unused > 0 {
+				unusedArenaMemory += unused
+			}
+		}
+		for _, a := range global {
+			if seen[a] {
+				continue
+			}
+			stats := a.Stats()
+			totalArenaCapacity += stats.TotalCapacity
+			unused := stats.TotalCapacity - stats.UsedBytes
+			if unused > 0 {
+				unusedArenaMemory += unused
+			}
+		}
 	}
+	t.mu.RUnlock()
+
+	// Effective Usage = Total Heap Inuse - Memory reserved by arenas but not actually used.
+	// We want to be aggressive when ACTUAL data (active nodes + overhead) approaches limit,
+	// but NOT when just reserved slabs approach limit (those can be freed/compacted).
+	effectiveInUse := int64(heapInUse) - unusedArenaMemory
+	if effectiveInUse < 0 {
+		effectiveInUse = 0
+	}
+
+	ratio := float64(effectiveInUse) / float64(t.limitBytes)
+
+	// Arena-aware tuning: if arena usage >70% of heap, set GOGC=50
+	arenaRatio := float64(totalArenaCapacity) / float64(heapInUse)
+	var targetGOGC int
+	if aggressive && arenaRatio > 0.7 {
+		// Arena-dominated heap: be very aggressive
+		targetGOGC = 50
+		if t.logger != nil {
+			t.logger.Warn().
+				Float64("arenaRatio", arenaRatio).
+				Int64("totalArenaCapacity", totalArenaCapacity).
+				Uint64("heapInUse", heapInUse).
+				Msg("Arena-dominated heap detected, setting aggressive GOGC=50")
+		}
+	} else {
+		// Standard logic
+		switch {
+		case ratio < 0.5:
+			targetGOGC = t.highGOGC
+		case ratio > 0.9:
+			targetGOGC = t.lowGOGC
+		default:
+			// Interpolate: 0.5 -> High, 0.9 -> Low
+			// Slope = (Low - High) / (0.9 - 0.5)
+			slope := float64(t.lowGOGC-t.highGOGC) / 0.4
+			targetGOGC = t.highGOGC + int(slope*(ratio-0.5))
+		}
+	}
+
+	if aggressive && ratio > 0.7 {
+		if t.logger != nil {
+			t.logger.Warn().Float64("ratio", ratio).Int64("effective", effectiveInUse).Msg("High effective heap utilization")
+		}
+	}
+	metrics.GCTunerHeapUtilization.Set(ratio)
+	t.lastUtilization.Store(uint64(ratio * 1000))
 
 	// Clamp
 	if targetGOGC < t.lowGOGC {
@@ -117,12 +203,23 @@ func (t *GCTuner) tune(heapInUse uint64) {
 	t.mu.Lock()
 	if targetGOGC != t.currentGOGC {
 		// Only set if changed significantly (e.g. > 5 difference) to avoid noise
+		// In aggressive mode we might want smaller threshold? Let's stick to 2.
+		threshold := 5
+		if aggressive {
+			threshold = 2
+		}
+
 		diff := targetGOGC - t.currentGOGC
-		if diff < -5 || diff > 5 {
+		if diff < -threshold || diff > threshold {
 			debug.SetGCPercent(targetGOGC)
 			t.currentGOGC = targetGOGC
 			metrics.GCTunerTargetGOGC.Set(float64(targetGOGC))
 		}
 	}
 	t.mu.Unlock()
+}
+
+// GetUtilizationRatio returns the last measured memory utilization ratio (0.0 to 1.0+).
+func (t *GCTuner) GetUtilizationRatio() float64 {
+	return float64(t.lastUtilization.Load()) / 1000.0
 }

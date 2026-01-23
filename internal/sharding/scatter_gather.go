@@ -29,13 +29,13 @@ func NewScatterGather(rm *RingManager, forwarder *RequestForwarder, logger zerol
 // Result holds the result from a single node
 type Result struct {
 	NodeID string
-	Data   interface{}
+	Data   any
 	Error  error
 }
 
 // ScatterFn is the function to execute on each node
 // It takes a context (with timeout) and the target node ID
-type ScatterFn func(ctx context.Context, nodeID string) (interface{}, error)
+type ScatterFn func(ctx context.Context, nodeID string) (any, error)
 
 // Scatter executes the given function across all independent nodes in the cluster.
 // It supports a strict consistency mode (all must succeed) or best-effort.

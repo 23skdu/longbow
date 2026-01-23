@@ -1,7 +1,7 @@
 package store_test
 
-
 import (
+	"context"
 	"math"
 	"testing"
 
@@ -62,7 +62,7 @@ func TestRecallDebug(t *testing.T) {
 
 	// Insert vectors into hnsw2
 	for i := 0; i < numVectors; i++ {
-		if _, err := hnsw2Index.AddByLocation(0, i); err != nil {
+		if _, err := hnsw2Index.AddByLocation(context.Background(), 0, i); err != nil {
 			t.Fatalf("Failed to insert vector %d: %v", i, err)
 		}
 	}
@@ -118,7 +118,7 @@ func TestRecallDebug(t *testing.T) {
 
 	// Get hnsw2 results with higher ef for better recall
 	ef := k * 10 // Use 10x k for better recall
-	hnsw2Results, err := hnsw2Index.Search(query, k, ef, nil)
+	hnsw2Results, err := hnsw2Index.Search(context.Background(), query, k, ef, nil)
 	if err != nil {
 		t.Fatalf("hnsw2 search failed: %v", err)
 	}

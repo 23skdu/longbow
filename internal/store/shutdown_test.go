@@ -159,7 +159,7 @@ func TestWALTruncationAfterSnapshot(t *testing.T) {
 	}
 
 	// Force a snapshot
-	if err := s.Snapshot(); err != nil {
+	if err := s.Snapshot(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 

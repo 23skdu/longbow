@@ -4,7 +4,52 @@ import (
 	"errors"
 	"math"
 	"math/rand"
+	"sync"
+
+	"github.com/23skdu/longbow/internal/simd"
 )
+
+// Buffer pool for K-Means training to reduce allocations
+var kmeansBufferPool = sync.Pool{
+	New: func() any {
+		return &kmeansBuffers{}
+	},
+}
+
+// kmeansBuffers holds reusable buffers for K-Means training
+type kmeansBuffers struct {
+	assignments []int
+	counts      []int
+	sums        []float32
+}
+
+// getBuffers retrieves buffers from the pool or creates new ones
+func getKMeansBuffers(n, k, dim int) *kmeansBuffers {
+	buf := kmeansBufferPool.Get().(*kmeansBuffers)
+
+	// Resize if needed
+	if cap(buf.assignments) < n {
+		buf.assignments = make([]int, n)
+	}
+	buf.assignments = buf.assignments[:n]
+
+	if cap(buf.counts) < k {
+		buf.counts = make([]int, k)
+	}
+	buf.counts = buf.counts[:k]
+
+	if cap(buf.sums) < k*dim {
+		buf.sums = make([]float32, k*dim)
+	}
+	buf.sums = buf.sums[:k*dim]
+
+	return buf
+}
+
+// putBuffers returns buffers to the pool
+func putKMeansBuffers(buf *kmeansBuffers) {
+	kmeansBufferPool.Put(buf)
+}
 
 // TrainKMeans runs K-Means clustering on flattened data.
 // data: flattened vector data (n * dim)
@@ -33,20 +78,19 @@ func TrainKMeans(data []float32, n, dim, k, maxIter int) ([]float32, error) {
 		copy(centroids[i*dim:(i+1)*dim], data[idx*dim:(idx+1)*dim])
 	}
 
-	// Buffers
-	assignments := make([]int, n)
-	counts := make([]int, k)
-	sums := make([]float32, k*dim)
+	// Get buffers from pool (reduces allocations for repeated training)
+	buf := getKMeansBuffers(n, k, dim)
+	defer putKMeansBuffers(buf)
+
+	assignments := buf.assignments
+	counts := buf.counts
+	sums := buf.sums
 
 	// 2. Iteration
 	for iter := 0; iter < maxIter; iter++ {
-		// Reset accumulators
-		for i := range sums {
-			sums[i] = 0
-		}
-		for i := range counts {
-			counts[i] = 0
-		}
+		// Reset accumulators using clear() (more efficient than manual loops)
+		clear(sums)
+		clear(counts)
 
 		changed := 0
 
@@ -58,14 +102,17 @@ func TrainKMeans(data []float32, n, dim, k, maxIter int) ([]float32, error) {
 
 			for c := 0; c < k; c++ {
 				cent := centroids[c*dim : (c+1)*dim]
-				dist := distL2Sq(vec, cent)
+				dist, err := simd.L2Squared(vec, cent)
+				if err != nil {
+					continue
+				}
 				if dist < bestDist {
 					bestDist = dist
 					bestC = c
 				}
 			}
 
-			if assignments[i] != bestC { // Check convergence based on assignment stability
+			if assignments[i] != bestC {
 				changed++
 				assignments[i] = bestC
 			}
@@ -89,8 +136,6 @@ func TrainKMeans(data []float32, n, dim, k, maxIter int) ([]float32, error) {
 				}
 			} else {
 				// Re-initialize empty cluster with a random vector from data
-				// (Simple heuristic to avoid dead clusters)
-				// ideally should pick far away point, but random is okay for now
 				idx := rand.Intn(n)
 				copy(centroids[c*dim:(c+1)*dim], data[idx*dim:(idx+1)*dim])
 			}
@@ -103,13 +148,4 @@ func TrainKMeans(data []float32, n, dim, k, maxIter int) ([]float32, error) {
 	}
 
 	return centroids, nil
-}
-
-func distL2Sq(a, b []float32) float32 {
-	var sum float32
-	for i := range a {
-		d := a[i] - b[i]
-		sum += d * d
-	}
-	return sum
 }

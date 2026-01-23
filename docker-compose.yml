@@ -1,93 +1,70 @@
 version: '3.8'
 
+x-common-env: &common-env
+  # Core
+  LONGBOW_NODE_ID: node1
+  LONGBOW_LOG_LEVEL: info
+  LONGBOW_LISTEN_ADDR: 0.0.0.0:3000
+  LONGBOW_META_ADDR: 0.0.0.0:3001
+  LONGBOW_METRICS_ADDR: 0.0.0.0:9090
+  LONGBOW_DATA_PATH: /data
+  
+  # HNSW & Indexing (Pragmas)
+  LONGBOW_HNSW_M: 16
+  LONGBOW_HNSW_EF_CONSTRUCTION: 200
+  LONGBOW_HNSW_ALPHA: 1.2
+  LONGBOW_HNSW_KEEP_PRUNED: "false"
+  LONGBOW_USE_HNSW2: "true"
+  LONGBOW_HNSW_SQ8_ENABLED: "false"
+  LONGBOW_HNSW_FLOAT16_ENABLED: "false"
+  
+  # Memory & GC
+  LONGBOW_MAX_MEMORY: 4294967296 # 4GB
+  LONGBOW_GOGC: 100
+  LONGBOW_GC_BALLAST_G: 1
+  
+  # Storage & Persistence
+  LONGBOW_STORAGE_ASYNC_FSYNC: "true"
+  LONGBOW_STORAGE_USE_DIRECT_IO: "false"
+  LONGBOW_SNAPSHOT_INTERVAL: 1h
+  LONGBOW_MAX_WAL_SIZE: 104857600 # 100MB
+  
+  # gRPC Tuning
+  LONGBOW_GRPC_MAX_RECV_MSG_SIZE: 536870912
+  LONGBOW_GRPC_MAX_SEND_MSG_SIZE: 536870912
+  
+  # Hybrid Search
+  LONGBOW_HYBRID_SEARCH_ENABLED: "false"
+  LONGBOW_HYBRID_TEXT_COLUMNS: text
+  LONGBOW_HYBRID_ALPHA: 0.5
+
 services:
-  node1:
-    image: longbow:latest
-    container_name: node1
+  # Single Instance / Primary Node
+  longbow:
+    build: .
+    # image: ghcr.io/23skdu/longbow:latest
+    container_name: longbow
     environment:
-      - NODE_ID=node1
-      - LISTEN_ADDR=node1:3000
-      - META_ADDR=node1:3001
-      - METRICS_ADDR=0.0.0.0:9090
-      - GOSSIP_ENABLED=true
-      - GOSSIP_PORT=7946
-      - GOSSIP_ADVERTISE_ADDR=node1
-      - GOSSIP_STATIC_PEERS=node2:7946,node3:7946
-      - MAX_MEMORY=8589934592 # 8GB
-      - AUTO_SHARDING_ENABLED=true
-      - DATA_PATH=/data
-      - LOG_LEVEL=debug
+      <<: *common-env
+      LONGBOW_GOSSIP_ENABLED: "false" # Disabled for one-instance mode
     ports:
-      - "4000:3000"
-      - "4001:3001"
-      - "9190:9090"
+      - "3000:3000" # Data Plane
+      - "3001:3001" # Control Plane
+      - "9090:9090" # Metrics
     volumes:
-      - ./data/node1:/data
-    networks:
-      - longbow-net
+      - ./data/longbow:/data
     ulimits:
       nofile:
         soft: 65536
         hard: 65536
-
-  node2:
-    image: longbow:latest
-    container_name: node2
-    environment:
-      - NODE_ID=node2
-      - LISTEN_ADDR=node2:3000
-      - META_ADDR=node2:3001
-      - METRICS_ADDR=0.0.0.0:9090
-      - GOSSIP_ENABLED=true
-      - GOSSIP_PORT=7946
-      - GOSSIP_ADVERTISE_ADDR=node2
-      - GOSSIP_STATIC_PEERS=node1:7946,node3:7946
-      - MAX_MEMORY=8589934592 # 8GB
-      - AUTO_SHARDING_ENABLED=true
-      - DATA_PATH=/data
-      - LOG_LEVEL=debug
-    ports:
-      - "4002:3000"
-      - "4003:3001"
-      - "9191:9090"
-    volumes:
-      - ./data/node2:/data
-    networks:
-      - longbow-net
-    ulimits:
-      nofile:
-        soft: 65536
-        hard: 65536
-
-  node3:
-    image: longbow:latest
-    container_name: node3
-    environment:
-      - NODE_ID=node3
-      - LISTEN_ADDR=node3:3000
-      - META_ADDR=node3:3001
-      - METRICS_ADDR=0.0.0.0:9090
-      - GOSSIP_ENABLED=true
-      - GOSSIP_PORT=7946
-      - GOSSIP_ADVERTISE_ADDR=node3
-      - GOSSIP_STATIC_PEERS=node1:7946,node2:7946
-      - MAX_MEMORY=8589934592 # 8GB
-      - AUTO_SHARDING_ENABLED=true
-      - DATA_PATH=/data
-      - LOG_LEVEL=debug
-    ports:
-      - "4004:3000"
-      - "4005:3001"
-      - "9192:9090"
-    volumes:
-      - ./data/node3:/data
-    networks:
-      - longbow-net
-    ulimits:
-      nofile:
-        soft: 65536
-        hard: 65536
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9090/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
 
 networks:
-  longbow-net:
+  default:
+    name: longbow-net
     driver: bridge

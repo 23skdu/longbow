@@ -1,6 +1,7 @@
 package mesh
 
 import (
+	"math"
 	"math/rand"
 	"sort"
 
@@ -72,7 +73,11 @@ func buildVPTree(items []RegionItem) *vpNode {
 	}
 	dists := make([]distItem, len(subset))
 	for i, it := range subset {
-		dists[i] = distItem{it, simd.EuclideanDistance(vp.Centroid, it.Centroid)}
+		d, err := simd.EuclideanDistance(vp.Centroid, it.Centroid)
+		if err != nil {
+			d = math.MaxFloat32
+		}
+		dists[i] = distItem{it, d}
 	}
 
 	// 3. Sort by distance to find median
@@ -120,7 +125,10 @@ func (t *VPTree) searchRecursive(node *vpNode, query []float32, radius float32, 
 		return
 	}
 
-	dist := simd.EuclideanDistance(query, node.item.Centroid)
+	dist, err := simd.EuclideanDistance(query, node.item.Centroid)
+	if err != nil {
+		dist = math.MaxFloat32
+	}
 
 	// Check node itself
 	if dist <= radius {

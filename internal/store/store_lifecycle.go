@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"runtime"
+	"runtime/debug"
 	"time"
 
 	"github.com/23skdu/longbow/internal/metrics"
@@ -55,40 +56,59 @@ func (s *VectorStore) evictDataset(name string) {
 func (s *VectorStore) PrewarmDataset(name string, schema *arrow.Schema) {
 	_, created := s.getOrCreateDataset(name, func() *Dataset {
 		ds := NewDataset(name, schema)
+		ds.Logger = s.logger
 		ds.Topo = s.numaTopology
 
-		// Initialize index immediately used default config or a simplified one
-		config := s.autoShardingConfig
-		if config.ShardThreshold == 0 {
-			// Fallback default
-			config.ShardThreshold = 10000
-			config.Enabled = true
-			config.ShardCount = runtime.NumCPU()
-		}
+		// Check if this dataset has a vector column before creating index
+		hasVectorColumn := false
+		var vectorDim int
 
-		aIdx := NewAutoShardingIndex(ds, config)
-
-		// Try to find vector dimension
-		// We'll copy the logic from applyBatchToMemory or extract it
 		for _, f := range schema.Fields() {
 			if f.Name == "vector" {
 				if fst, ok := f.Type.(*arrow.FixedSizeListType); ok {
-					aIdx.SetInitialDimension(int(fst.Len()))
+					hasVectorColumn = true
+					vectorDim = int(fst.Len())
+					dataType := InferVectorDataType(schema, "vector")
+					if dataType == VectorTypeComplex64 || dataType == VectorTypeComplex128 {
+						vectorDim /= 2
+					}
 				}
+				break // Found vector column, no need to continue
 			}
 		}
 
-		// Pre-warm to mitigate cold start latency
-		// We use a reasonable default batch size (4096 fits in 4 chunks)
-		aIdx.PreWarm(4096)
+		// Only create index if dataset has a vector column
+		if hasVectorColumn {
+			// Initialize index immediately used default config or a simplified one
+			config := s.autoShardingConfig
+			if config.ShardThreshold == 0 {
+				// Fallback default
+				config.ShardThreshold = 10000
+				config.Enabled = true
+				config.ShardCount = runtime.NumCPU()
+			}
 
-		ds.Index = aIdx
+			aIdx := NewAutoShardingIndex(ds, config)
+			aIdx.SetInitialDimension(vectorDim)
+
+			// Pre-warm to mitigate cold start latency
+			// We use a reasonable default batch size (4096 fits in 4 chunks)
+			aIdx.PreWarm(4096)
+
+			ds.Index = aIdx
+		}
 
 		return ds
 	})
 
 	if created {
-		s.logger.Info().Str("dataset", name).Msg("Pre-warmed dataset with index")
+		// Only log pre-warmed message if index was actually created
+		ds, _ := s.getDataset(name)
+		if ds.Index != nil {
+			s.logger.Info().Str("dataset", name).Msg("Pre-warmed dataset with index")
+		} else {
+			s.logger.Info().Str("dataset", name).Msg("Created dataset (no vector column, no index)")
+		}
 	}
 }
 
@@ -145,8 +165,22 @@ func (s *VectorStore) StartIndexingWorkers(numWorkers int) {
 	})
 }
 
+// StartIngestionWorkers starts the background ingestion workers.
+// If count is <= 0, it defaults to runtime.NumCPU().
+func (s *VectorStore) StartIngestionWorkers(count int) {
+	if count <= 0 {
+		count = runtime.NumCPU()
+	}
+	s.ingestionStartOnce.Do(func() {
+		s.workerWg.Add(count)
+		for i := 0; i < count; i++ {
+			go s.runIngestionWorker()
+		}
+		s.logger.Info().Int("count", count).Msg("Started ingestion workers")
+	})
+}
+
 func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
-	minBatch := 128
 	maxBatch := 1000
 	var currentBatch int
 
@@ -160,7 +194,6 @@ func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
 		if len(group) == 0 {
 			return
 		}
-		// log.Printf("[DEBUG] processBatch processing %d jobs", len(group))
 
 		// Sort by dataset to batch index additions
 		byDataset := make(map[string][]IndexJob)
@@ -198,9 +231,6 @@ func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
 					return
 				}
 
-				// Log start
-				s.logger.Debug().Str("dataset", dsName).Int("jobs", len(dsGroup)).Msg("Processing batch starting")
-
 				// Total rows in this group for this dataset
 				totalRowsInGroup := 0
 				for _, j := range dsGroup {
@@ -221,8 +251,28 @@ func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
 
 				var docIDs []uint32
 				var addErr error
-				if ds.Index != nil {
-					docIDs, addErr = ds.Index.AddBatch(recs, rowIdxs, batchIdxs)
+				ds.dataMu.RLock()
+				idx := ds.Index
+				ds.dataMu.RUnlock()
+
+				if idx != nil {
+					// Adaptive EfConstruction based on queue depth
+					if adaptive, ok := idx.(interface{ SetEfConstruction(int) }); ok {
+						depth := s.indexQueue.Len()
+						var targetEf int
+						switch {
+						case depth > 5000:
+							targetEf = 50
+						case depth > 1000:
+							targetEf = 100
+						default:
+							targetEf = 400 // Default high quality
+						}
+						adaptive.SetEfConstruction(targetEf)
+					}
+
+					// Propagate store shutdown context
+					docIDs, addErr = idx.AddBatch(s.ctx, recs, rowIdxs, batchIdxs)
 					if addErr != nil {
 						s.logger.Error().
 							Str("dataset", dsName).
@@ -259,7 +309,7 @@ func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
 						schema := j.Record.Schema()
 						numRows := int(j.Record.NumRows())
 
-						// Identify string columns once per batch
+						// Identify string columns
 						stringCols := make([]int, 0)
 						for colIdx, field := range schema.Fields() {
 							if field.Type.ID() == arrow.STRING {
@@ -268,40 +318,39 @@ func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
 						}
 
 						if len(stringCols) > 0 {
-							// Cache BM25 index lookup
-							ds.dataMu.RLock()
-							bm25 := ds.BM25Index
-							ds.dataMu.RUnlock()
+							// 1. Prepare Inverted Indexes (Batch Lock)
+							// Map from colIdx -> *InvertedIndex
+							invIndexes := make(map[int]*InvertedIndex)
+							var bm25 *BM25InvertedIndex
 
+							ds.dataMu.Lock()
+							if ds.InvertedIndexes == nil {
+								ds.InvertedIndexes = make(map[string]*InvertedIndex)
+							}
+							for _, colIdx := range stringCols {
+								fieldName := schema.Field(colIdx).Name
+								invIdx := ds.InvertedIndexes[fieldName]
+								if invIdx == nil {
+									invIdx = NewInvertedIndex()
+									ds.InvertedIndexes[fieldName] = invIdx
+								}
+								invIndexes[colIdx] = invIdx
+							}
+							bm25 = ds.BM25Index
+							ds.dataMu.Unlock()
+
+							// 2. Add Documents (No Lock on DS)
+							// InvertedIndex.Add must be thread-safe or we are the only writer for this batch.
+							// Since we are inside the Index Worker (single-threaded per batch), and InvertedIndex
+							// usually protects itself or is only accessed here, it should be safe.
 							for r := 0; r < numRows; r++ {
 								docID := docIDs[docIDIdx]
 								docIDIdx++
 
 								for _, colIdx := range stringCols {
-									fieldName := schema.Field(colIdx).Name
-
-									// Double-checked locking avoidance: Use RLock first, verify, then Lock?
-									// Optimizing for Phase 1: Keep logical structure but potentially minimize critical section?
-									// For now keeping existing logic to avoid regression, focusing on Index Worker structure.
-
-									ds.dataMu.RLock()
-									var invIdx *InvertedIndex
-									if ds.InvertedIndexes != nil {
-										invIdx = ds.InvertedIndexes[fieldName]
-									}
-									ds.dataMu.RUnlock()
-
+									invIdx := invIndexes[colIdx]
 									if invIdx == nil {
-										ds.dataMu.Lock()
-										if ds.InvertedIndexes == nil {
-											ds.InvertedIndexes = make(map[string]*InvertedIndex)
-										}
-										invIdx = ds.InvertedIndexes[fieldName]
-										if invIdx == nil {
-											invIdx = NewInvertedIndex()
-											ds.InvertedIndexes[fieldName] = invIdx
-										}
-										ds.dataMu.Unlock()
+										continue
 									}
 
 									colI := j.Record.Column(colIdx)
@@ -337,7 +386,6 @@ func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
 				// Decrement pending jobs count
 				// Decrement pending jobs count
 				ds.PendingIndexJobs.Add(int64(-totalRowsInGroup))
-				s.logger.Debug().Str("dataset", dsName).Msg("Processing batch finished")
 			}()
 		}
 	}
@@ -346,15 +394,18 @@ func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
 		// Adaptive logic
 		queueDepth := s.indexQueue.Len()
 
-		if queueDepth > 100 {
+		switch {
+		case queueDepth > 100:
+			s.logger.Warn().Int("depth", queueDepth).Msg("Ingestion queue is BACKPRESSURED")
 			ticker.Reset(1 * time.Millisecond)
-			currentBatch = maxBatch
-		} else if queueDepth > 10 {
-			ticker.Reset(5 * time.Millisecond)
-			currentBatch = 500
-		} else {
+			currentBatch = maxBatch // 1000
+		case queueDepth > 50:
+			s.logger.Info().Int("depth", queueDepth).Msg("Ingestion queue is filling up")
 			ticker.Reset(10 * time.Millisecond)
-			currentBatch = minBatch
+			currentBatch = 500
+		default:
+			ticker.Reset(100 * time.Millisecond)
+			currentBatch = 100
 		}
 
 		select {
@@ -402,4 +453,23 @@ func (s *VectorStore) StartEvictionTicker(interval time.Duration) {
 			}
 		}
 	}()
+}
+
+// ReleaseMemory explicitly triggers GC and frees OS memory.
+// It also waits for async cleanups to complete.
+func (s *VectorStore) ReleaseMemory() {
+	s.logger.Info().Msg("Explicitly releasing memory")
+
+	// 1. Wait for async cleanups
+	s.cleanupWg.Wait()
+
+	// 2. Trigger GC
+	runtime.GC()
+
+	// 3. Free OS memory
+	debug.FreeOSMemory()
+
+	s.logger.Info().
+		Int64("current_memory_bytes", s.currentMemory.Load()).
+		Msg("Memory release complete")
 }

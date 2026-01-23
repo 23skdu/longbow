@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"time"
@@ -21,9 +22,11 @@ func (h *HNSWIndex) Search(queryVec []float32, k int) ([]VectorID, error) {
 	// PQ Encoding for query
 	var graphQuery = queryVec
 	// Use RLock for config check to avoid race
+	startPQ := time.Now()
 	h.pqCodesMu.RLock()
-	// Capture locals to avoid holding lock too long if encoding is slow?
-	// Encoding is fast enough.
+	if h.metricLockWait != nil {
+		h.metricLockWait.WithLabelValues("pq_read").Observe(time.Since(startPQ).Seconds())
+	}
 	if h.pqEnabled && h.pqEncoder != nil {
 		codes, _ := h.pqEncoder.Encode(queryVec)
 		graphQuery = pq.PackBytesToFloat32s(codes)
@@ -32,7 +35,11 @@ func (h *HNSWIndex) Search(queryVec []float32, k int) ([]VectorID, error) {
 
 	// coder/hnsw library requires synchronization between Search and Add
 	// Use global RLock for graph search (multiple concurrent searches OK)
+	startGraph := time.Now()
 	h.mu.RLock()
+	if h.metricLockWait != nil {
+		h.metricLockWait.WithLabelValues("read").Observe(time.Since(startGraph).Seconds())
+	}
 	neighbors := h.Graph.Search(graphQuery, k)
 	h.mu.RUnlock()
 
@@ -70,7 +77,12 @@ func (h *HNSWIndex) GetNeighbors(id VectorID) ([]VectorID, error) {
 
 // SearchVectors performs k-NN search returning full results with scores (distances).
 // Uses striped locks for location access to reduce contention in result processing.
-func (h *HNSWIndex) SearchVectors(queryVec []float32, k int, filters []qry.Filter, options SearchOptions) ([]SearchResult, error) {
+func (h *HNSWIndex) SearchVectors(ctx context.Context, queryVec any, k int, filters []qry.Filter, options SearchOptions) ([]SearchResult, error) {
+	q, ok := queryVec.([]float32)
+	if !ok {
+		return nil, fmt.Errorf("HNSWIndex only supports []float32, got %T", queryVec)
+	}
+
 	defer func(start time.Time) {
 		metrics.SearchLatencySeconds.WithLabelValues(h.dataset.Name, "vector").Observe(time.Since(start).Seconds())
 	}(time.Now())
@@ -96,7 +108,7 @@ func (h *HNSWIndex) SearchVectors(queryVec []float32, k int, filters []qry.Filte
 		bitset, err := h.dataset.GenerateFilterBitset(filters)
 		if err == nil && bitset != nil {
 			defer bitset.Release()
-			res := h.SearchVectorsWithBitmap(queryVec, k, bitset, options)
+			res := h.SearchVectorsWithBitmap(ctx, queryVec, k, bitset, options)
 			// Extract vectors if requested (SearchVectorsWithBitmap doesn't do this)
 			if options.IncludeVectors {
 				h.extractVectors(res, options.VectorFormat)
@@ -108,25 +120,35 @@ func (h *HNSWIndex) SearchVectors(queryVec []float32, k int, filters []qry.Filte
 	}
 
 	for attempt := 0; attempt <= maxRetries; attempt++ {
+		// Check context before each attempt
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+		}
+
 		// PQ Encoding for query
-		var graphQuery = queryVec
+		var graphQuery = q
 		h.pqCodesMu.RLock()
 		if h.pqEnabled && h.pqEncoder != nil {
-			codes, _ := h.pqEncoder.Encode(queryVec)
+			codes, _ := h.pqEncoder.Encode(q)
 			graphQuery = pq.PackBytesToFloat32s(codes)
 		}
 		h.pqCodesMu.RUnlock()
 
 		// Graph search requires global lock
+		startGraph := time.Now()
 		h.mu.RLock()
-		h.Graph.Search(graphQuery, limit)
+		if h.metricLockWait != nil {
+			h.metricLockWait.WithLabelValues("read").Observe(time.Since(startGraph).Seconds())
+		}
 		neighbors := h.Graph.Search(graphQuery, limit)
 		h.mu.RUnlock()
 
 		// Use parallel processing for large result sets
 		cfg := h.getParallelSearchConfig()
 		if cfg.Enabled && len(neighbors) >= cfg.Threshold {
-			res := h.processResultsParallel(queryVec, neighbors, k, filters)
+			res := h.processResultsParallel(ctx, q, neighbors, k, filters)
 			// If we found enough, or it's the last attempt, return
 			if len(res) >= k || attempt == maxRetries || len(filters) == 0 {
 				return res, nil
@@ -142,7 +164,9 @@ func (h *HNSWIndex) SearchVectors(queryVec []float32, k int, filters []qry.Filte
 		// Pre-process filters with multi-batch support
 		evaluators := make(map[int]*qry.FilterEvaluator)
 		if len(filters) > 0 {
+			startDS := time.Now()
 			h.dataset.dataMu.RLock()
+			metrics.DatasetLockWaitDurationSeconds.WithLabelValues("search_eval").Observe(time.Since(startDS).Seconds())
 			if len(h.dataset.Records) > 0 {
 				ev, err := qry.NewFilterEvaluator(h.dataset.Records[0], filters)
 				if err != nil {
@@ -155,7 +179,7 @@ func (h *HNSWIndex) SearchVectors(queryVec []float32, k int, filters []qry.Filte
 		}
 
 		// Get search context from pool
-		ctx := h.searchPool.Get()
+		poolCtx := h.searchPool.Get()
 
 		// Use pooled buffers
 		// Note: ctx buffers might need resetting if reused in loop, but we defer Put at end of function or loop?
@@ -169,8 +193,8 @@ func (h *HNSWIndex) SearchVectors(queryVec []float32, k int, filters []qry.Filte
 
 		res := make([]SearchResult, 0, k) // Allocate fresh result slice for this attempt
 
-		batchIDs := ctx.batchIDs
-		batchLocs := ctx.batchLocs
+		batchIDs := poolCtx.batchIDs
+		batchLocs := poolCtx.batchLocs
 
 		// PQ Context setup...
 		var pqTable []float32
@@ -180,11 +204,11 @@ func (h *HNSWIndex) SearchVectors(queryVec []float32, k int, filters []qry.Filte
 		var packedLen int
 		h.pqCodesMu.RLock()
 		if h.pqEnabled && h.pqEncoder != nil {
-			pqTable = h.pqEncoder.ComputeDistanceTableFlat(queryVec)
+			pqTable = h.pqEncoder.ComputeDistanceTableFlat(q)
 			pqM = h.pqEncoder.CodeSize()
 			const batchSize = searchBatchSize
-			pqFlatCodes = ctx.pqFlatCodes[:batchSize*pqM]
-			pqBatchResults = ctx.pqBatchResults
+			pqFlatCodes = poolCtx.pqFlatCodes[:batchSize*pqM]
+			pqBatchResults = poolCtx.pqBatchResults
 			packedLen = (pqM + 3) / 4
 		}
 		h.pqCodesMu.RUnlock()
@@ -192,6 +216,16 @@ func (h *HNSWIndex) SearchVectors(queryVec []float32, k int, filters []qry.Filte
 		count := 0
 		const batchSize = searchBatchSize
 		for i := 0; i < len(neighbors); i += batchSize {
+			// Periodic context check (every batch)
+			if i%(batchSize*4) == 0 { // Check every 4 batches (128 candidates) for minimal overhead
+				select {
+				case <-ctx.Done():
+					h.searchPool.Put(poolCtx)
+					return nil, ctx.Err()
+				default:
+				}
+			}
+
 			if count >= k {
 				break
 			}
@@ -256,7 +290,7 @@ func (h *HNSWIndex) SearchVectors(queryVec []float32, k int, filters []qry.Filte
 						copy(pqFlatCodes[j*pqM:], srcCodes)
 						pqBatchResults[j] = -1
 					} else {
-						dist := distFunc(queryVec, vec)
+						dist := distFunc(q, vec)
 						res = append(res, SearchResult{ID: id, Score: dist})
 						count++
 						if pqTable != nil {
@@ -288,7 +322,7 @@ func (h *HNSWIndex) SearchVectors(queryVec []float32, k int, filters []qry.Filte
 			h.exitEpoch()
 		}
 
-		h.searchPool.Put(ctx) // Release context for this attempt
+		h.searchPool.Put(poolCtx) // Release context for this attempt
 
 		// Check if we satisfied K
 		if len(res) >= k || attempt == maxRetries || len(filters) == 0 {
@@ -307,7 +341,12 @@ func (h *HNSWIndex) SearchVectors(queryVec []float32, k int, filters []qry.Filte
 }
 
 // SearchVectorsWithBitmap returns k nearest neighbors filtered by a bitset.
-func (h *HNSWIndex) SearchVectorsWithBitmap(queryVec []float32, k int, filter *qry.Bitset, options SearchOptions) []SearchResult {
+func (h *HNSWIndex) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k int, filter *qry.Bitset, options SearchOptions) []SearchResult {
+	q, ok := queryVec.([]float32)
+	if !ok {
+		return []SearchResult{}
+	}
+
 	if filter == nil || filter.Count() == 0 {
 		return []SearchResult{}
 	}
@@ -318,14 +357,14 @@ func (h *HNSWIndex) SearchVectorsWithBitmap(queryVec []float32, k int, filter *q
 
 	count := filter.Count()
 	if count < 1000 {
-		return h.searchBruteForceWithBitmap(queryVec, k, filter)
+		return h.searchBruteForceWithBitmap(q, k, filter)
 	}
 
 	// Adaptive limit calculation based on filter selectivity
 	limit := calculateAdaptiveLimit(k, count, h.Len())
 
 	h.mu.RLock()
-	neighbors := h.Graph.Search(queryVec, limit)
+	neighbors := h.Graph.Search(q, limit)
 	h.mu.RUnlock()
 
 	distFunc := h.GetDistanceFunc()
@@ -345,7 +384,7 @@ func (h *HNSWIndex) SearchVectorsWithBitmap(queryVec []float32, k int, filter *q
 	var packedLen int
 	h.pqCodesMu.RLock()
 	if h.pqEnabled && h.pqEncoder != nil {
-		pqTable = h.pqEncoder.ComputeDistanceTableFlat(queryVec)
+		pqTable = h.pqEncoder.ComputeDistanceTableFlat(q)
 		pqM = h.pqEncoder.CodeSize()
 		pqFlatCodes = make([]byte, batchSize*pqM)
 		pqBatchResults = make([]float32, batchSize)
@@ -354,6 +393,15 @@ func (h *HNSWIndex) SearchVectorsWithBitmap(queryVec []float32, k int, filter *q
 	h.pqCodesMu.RUnlock()
 
 	for i := 0; i < len(neighbors); i += batchSize {
+		// Periodic context check
+		if i%(batchSize*4) == 0 {
+			select {
+			case <-ctx.Done():
+				return res
+			default:
+			}
+		}
+
 		if resultCount >= k {
 			break
 		}
@@ -406,7 +454,7 @@ func (h *HNSWIndex) SearchVectorsWithBitmap(queryVec []float32, k int, filter *q
 					pqBatchResults[j] = -1 // Mark as needing SIMD
 				} else {
 					// Case 2: Standard distance
-					dist := distFunc(queryVec, vec)
+					dist := distFunc(q, vec)
 					res = append(res, SearchResult{ID: id, Score: dist})
 					resultCount++
 					if pqTable != nil {
@@ -493,7 +541,11 @@ func (h *HNSWIndex) SearchByID(id VectorID, k int) []VectorID {
 	}
 	defer release()
 
+	start := time.Now()
 	h.mu.RLock()
+	if h.metricLockWait != nil {
+		h.metricLockWait.WithLabelValues("read").Observe(time.Since(start).Seconds())
+	}
 	neighbors := h.Graph.Search(vec, k)
 	h.mu.RUnlock()
 
@@ -527,7 +579,11 @@ func (h *HNSWIndex) SearchWithArena(queryVec []float32, k int, arena *SearchAren
 		return nil
 	}
 
+	start := time.Now()
 	h.mu.RLock()
+	if h.metricLockWait != nil {
+		h.metricLockWait.WithLabelValues("read").Observe(time.Since(start).Seconds())
+	}
 	neighbors := h.Graph.Search(queryVec, k)
 	h.mu.RUnlock()
 
@@ -572,7 +628,11 @@ func (h *HNSWIndex) SearchByIDUnsafe(id VectorID, k int) []VectorID {
 	defer release()
 
 	// coder/hnsw is not thread-safe for concurrent Search and Add.
+	start := time.Now()
 	h.mu.RLock()
+	if h.metricLockWait != nil {
+		h.metricLockWait.WithLabelValues("read").Observe(time.Since(start).Seconds())
+	}
 	neighbors := h.Graph.Search(vec, k)
 	h.mu.RUnlock()
 
@@ -600,7 +660,9 @@ func (h *HNSWIndex) extractVectors(results []SearchResult, format string) {
 	if h.dataset == nil {
 		return
 	}
+	start := time.Now()
 	h.dataset.dataMu.RLock()
+	metrics.DatasetLockWaitDurationSeconds.WithLabelValues("extract_vectors").Observe(time.Since(start).Seconds())
 	defer h.dataset.dataMu.RUnlock()
 
 	for i := range results {
@@ -608,7 +670,11 @@ func (h *HNSWIndex) extractVectors(results []SearchResult, format string) {
 
 		// Priority 1: Check format and local PQ storage
 		if format == "quantized" {
+			startPQ := time.Now()
 			h.pqCodesMu.RLock()
+			if h.metricLockWait != nil {
+				h.metricLockWait.WithLabelValues("pq_read").Observe(time.Since(startPQ).Seconds())
+			}
 			if h.pqEnabled && int(id) < len(h.pqCodes) && len(h.pqCodes[id]) > 0 {
 				results[i].Vector = h.pqCodes[id]
 				h.pqCodesMu.RUnlock()

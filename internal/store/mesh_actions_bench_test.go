@@ -14,12 +14,14 @@ func BenchmarkMeshStatus(b *testing.B) {
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()
 	s := NewVectorStore(mem, logger, 1<<30, 1<<30, 0)
+	defer func() { _ = s.Close() }()
 
 	gcfg := mesh.GossipConfig{
 		ID:   "node-master",
 		Port: 9999,
 	}
 	g := mesh.NewGossip(&gcfg)
+	defer g.Stop()
 	s.SetMesh(g)
 
 	meta := NewMetaServer(s)

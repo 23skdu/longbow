@@ -76,7 +76,7 @@ func NewIPCBufferPool(cfg RecordWriterPoolConfig) *IPCBufferPool {
 		config: cfg,
 	}
 
-	p.pool.New = func() interface{} {
+	p.pool.New = func() any {
 		atomic.AddInt64(&p.misses, 1)
 		return bytes.NewBuffer(make([]byte, 0, initSize))
 	}

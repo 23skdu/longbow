@@ -787,6 +787,43 @@ func (gd *GraphData) GetLevelsChunk(chunkID uint32) []uint8 {
 	return gd.Uint8Arena.Get(ref)
 }
 
+// SetNeighbors sets the neighbor list for a node at a specific layer.
+// This is a low-level method that directly manipulates the graph data structure.
+// For high-level operations, use ArrowHNSW.AddConnection instead.
+func (gd *GraphData) SetNeighbors(layer int, id uint32, neighbors []uint32) {
+	if len(neighbors) > MaxNeighbors {
+		neighbors = neighbors[:MaxNeighbors] // Truncate if too many
+	}
+
+	cID := chunkID(id)
+	cOff := chunkOffset(id)
+
+	// Ensure chunks exist
+	gd.EnsureChunk(cID, int(id)+1)
+
+	versionsChunk := gd.GetVersionsChunk(layer, cID)
+	countsChunk := gd.GetCountsChunk(layer, cID)
+	neighborsChunk := gd.GetNeighborsChunk(layer, cID)
+
+	if versionsChunk == nil || countsChunk == nil || neighborsChunk == nil {
+		return // Cannot set neighbors if chunks don't exist
+	}
+
+	// Update version for consistency
+	atomic.AddUint32(&versionsChunk[cOff], 1)
+
+	// Set count
+	atomic.StoreInt32(&countsChunk[cOff], int32(len(neighbors)))
+
+	// Set neighbors
+	baseIdx := int(cOff) * MaxNeighbors
+	for i, neighbor := range neighbors {
+		if baseIdx+i < len(neighborsChunk) {
+			neighborsChunk[baseIdx+i] = neighbor
+		}
+	}
+}
+
 func (gd *GraphData) GetNeighbors(layer int, id uint32, buffer []uint32) []uint32 {
 	cID := chunkID(id)
 	cOff := chunkOffset(id)
@@ -876,6 +913,16 @@ func (h *ArrowHNSW) GetPQEncoder() *pq.PQEncoder {
 
 func (h *ArrowHNSW) Size() int {
 	return int(h.nodeCount.Load())
+}
+
+// GetEntryPoint returns the current entry point of the HNSW graph.
+func (h *ArrowHNSW) GetEntryPoint() uint32 {
+	return h.entryPoint.Load()
+}
+
+// GetMaxLevel returns the current maximum level of the HNSW graph.
+func (h *ArrowHNSW) GetMaxLevel() int {
+	return int(h.maxLevel.Load())
 }
 
 // Delete marks a vector as deleted in the index.

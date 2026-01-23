@@ -11,6 +11,19 @@ import (
 	"github.com/23skdu/longbow/internal/metrics"
 )
 
+// Insert adds a new vector to the HNSW graph.
+// The vector is identified by its VectorID and assigned a random level.
+func (h *ArrowHNSW) Insert(id uint32, level int) error {
+	// Zero-Copy Ingestion Path
+	// Get vector for distance calculations (and caching)
+	// We use generic getVectorAny to support all types.
+	vec, err := h.getVectorAny(id)
+	if err != nil {
+		return err
+	}
+	return h.InsertWithVector(id, vec, level)
+}
+
 // InsertWithVector inserts a vector that has already been retrieved.
 func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 	start := time.Now()

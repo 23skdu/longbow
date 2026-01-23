@@ -327,28 +327,6 @@ var (
 		Help: "Current memory pressure ratio (0-1, where 1 is maximum pressure)",
 	})
 
-	// HNSW Repair Agent Metrics
-	HNSWRepairOrphansDetected = promauto.NewCounterVec(prometheus.CounterOpts{
-		Name: "longbow_hnsw_repair_orphans_detected_total",
-		Help: "Total number of orphaned nodes detected by repair agent",
-	}, []string{"dataset"})
-
-	HNSWRepairOrphansRepaired = promauto.NewCounterVec(prometheus.CounterOpts{
-		Name: "longbow_hnsw_repair_orphans_repaired_total",
-		Help: "Total number of orphaned nodes repaired by repair agent",
-	}, []string{"dataset"})
-
-	HNSWRepairScanDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Name:    "longbow_hnsw_repair_scan_duration_seconds",
-		Help:    "Duration of repair agent scan cycles",
-		Buckets: prometheus.ExponentialBuckets(0.001, 2, 12), // 1ms to ~4s
-	}, []string{"dataset"})
-
-	HNSWRepairLastScanTime = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "longbow_hnsw_repair_last_scan_timestamp_seconds",
-		Help: "Unix timestamp of last repair scan",
-	}, []string{"dataset"})
-
 	// Fragmentation-Aware Compaction Metrics
 	CompactionTombstoneDensity = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "longbow_compaction_tombstone_density_ratio",
@@ -421,13 +399,6 @@ var (
 	IndexJobsOverflowTotal = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "longbow_index_jobs_overflow_total",
 		Help: "Total number of index jobs sent to overflow buffer or retried asynchronously",
-	})
-
-	// HNSWVisitedResetDuration tracks the time spent resetting the visited bitset/list
-	HNSWVisitedResetDuration = promauto.NewHistogram(prometheus.HistogramOpts{
-		Name:    "longbow_hnsw_visited_reset_duration_seconds",
-		Help:    "Time spent resetting HNSW visited set",
-		Buckets: []float64{0.000001, 0.00001, 0.0001, 0.001, 0.01}, // tailored for fast ops
 	})
 
 	// PrefetchOperationsTotal tracks software prefetch instructions issued
@@ -679,168 +650,7 @@ var (
 	)
 )
 
-// =============================================================================
-// HNSW Graph Metrics
-// =============================================================================
-
 var (
-	HNSWInsertDurationSeconds = promauto.NewHistogram(
-		prometheus.HistogramOpts{
-			Name:    "longbow_hnsw_insert_duration_seconds",
-			Help:    "Duration of HNSW vector insertion",
-			Buckets: []float64{0.0001, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1},
-		},
-	)
-
-	HNSWBulkInsertDurationSeconds = promauto.NewHistogram(
-		prometheus.HistogramOpts{
-			Name:    "longbow_hnsw_bulk_insert_duration_seconds",
-			Help:    "Duration of HNSW bulk vector insertion",
-			Buckets: []float64{0.001, 0.01, 0.1, 0.5, 1, 5, 10, 30},
-		},
-	)
-
-	// HNSWInsertLatencyByType measures insert latency per vector data type
-	HNSWInsertLatencyByType = promauto.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "longbow_hnsw_insert_latency_by_type_seconds",
-			Help:    "Latency of HNSW insert operations bucketed by vector type",
-			Buckets: []float64{0.0001, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1},
-		},
-		[]string{"type"},
-	)
-
-	// HNSWInsertLatencyByDim measures insert latency per vector dimension
-	HNSWInsertLatencyByDim = promauto.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "longbow_hnsw_insert_latency_by_dim_seconds",
-			Help:    "Latency of HNSW insert operations bucketed by dimension",
-			Buckets: []float64{0.0001, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1},
-		},
-		[]string{"dim"},
-	)
-
-	// HNSWBulkInsertLatencyByType measures bulk insert latency per vector data type
-	HNSWBulkInsertLatencyByType = promauto.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "longbow_hnsw_bulk_insert_latency_by_type_seconds",
-			Help:    "Latency of HNSW bulk insert operations bucketed by vector type",
-			Buckets: []float64{0.001, 0.01, 0.1, 0.5, 1, 5, 10, 30},
-		},
-		[]string{"type"},
-	)
-
-	// HNSWBulkInsertLatencyByDim measures bulk insert latency per vector dimension
-	HNSWBulkInsertLatencyByDim = promauto.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "longbow_hnsw_bulk_insert_latency_by_dim_seconds",
-			Help:    "Latency of HNSW bulk insert operations bucketed by dimension",
-			Buckets: []float64{0.001, 0.01, 0.1, 0.5, 1, 5, 10, 30},
-		},
-		[]string{"dim"},
-	)
-
-	HNSWBulkVectorsProcessedTotal = promauto.NewCounter(
-		prometheus.CounterOpts{
-			Name: "longbow_hnsw_bulk_vectors_processed_total",
-			Help: "Total number of vectors processed using bulk insert path",
-		},
-	)
-
-	// HnswSearchThroughputDims counts search operations bucketed by dimension
-	HnswSearchThroughputDims = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "longbow_ahnsw_search_throughput_dims",
-			Help: "Total number of search operations bucketed by vector dimension",
-		},
-		[]string{"dims"},
-	)
-
-	// HNSWSearchLatencyByType measures search latency per vector data type
-	HNSWSearchLatencyByType = promauto.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "longbow_hnsw_search_latency_by_type_seconds",
-			Help:    "Latency of HNSW search operations bucketed by vector type",
-			Buckets: prometheus.DefBuckets,
-		},
-		[]string{"type"},
-	)
-
-	// HNSWSearchLatencyByDim measures search latency per vector dimension
-	HNSWSearchLatencyByDim = promauto.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "longbow_hnsw_search_latency_by_dim_seconds",
-			Help:    "Latency of HNSW search operations bucketed by dimension",
-			Buckets: prometheus.DefBuckets,
-		},
-		[]string{"dim"},
-	)
-
-	// HNSWRefineThroughput counts vectors refined per type
-	HNSWRefineThroughput = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "longbow_hnsw_refine_throughput_total",
-			Help: "Total vectors processed through refinement layer",
-		},
-		[]string{"type"},
-	)
-
-	HNSWNodesTotal = promauto.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "longbow_hnsw_nodes_total",
-			Help: "Total number of nodes in the HNSW graph",
-		},
-		[]string{"dataset"},
-	)
-
-	HNSWResizesTotal = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "longbow_hnsw_resizes_total",
-			Help: "Total number of HNSW graph resizes",
-		},
-		[]string{"dataset"},
-	)
-	// IndexBuildDurationSeconds measures the time taken to build or update the index
-	IndexBuildDurationSeconds = promauto.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "longbow_index_build_duration_seconds",
-			Help:    "Duration of index build or update operations",
-			Buckets: []float64{0.01, 0.05, 0.1, 0.5, 1, 5, 10, 30, 60},
-		},
-		[]string{"dataset"},
-	)
-
-	// SearchLatencySeconds measures the duration of search operations by query type
-	SearchLatencySeconds = promauto.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "longbow_search_latency_seconds",
-			Help:    "Latency of search operations",
-			Buckets: []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5},
-		},
-		[]string{"dataset", "query_type"}, // query_type: "vector", "hybrid", "keyword"
-	)
-
-	HNSWSearchPoolGetTotal = promauto.NewCounter(
-		prometheus.CounterOpts{
-			Name: "longbow_hnsw_search_pool_get_total",
-			Help: "Total number of search contexts retrieved from the pool",
-		},
-	)
-
-	HNSWSearchPoolNewTotal = promauto.NewCounter(
-		prometheus.CounterOpts{
-			Name: "longbow_hnsw_search_pool_new_total",
-			Help: "Total number of new search contexts allocated (cache misses)",
-		},
-	)
-
-	HNSWSearchPoolPutTotal = promauto.NewCounter(
-		prometheus.CounterOpts{
-			Name: "longbow_hnsw_search_pool_put_total",
-			Help: "Total number of search contexts returned to the pool",
-		},
-	)
-
 	// SearchResultPool metrics
 	SearchResultPoolGetTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
@@ -856,6 +666,25 @@ var (
 			Help: "Total number of result slices returned to the pool",
 		},
 		[]string{"capacity"},
+	)
+
+	// General search latency metrics
+	SearchLatencySeconds = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_search_latency_seconds",
+			Help:    "Latency of search operations by type",
+			Buckets: []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5},
+		},
+		[]string{"dataset", "type"},
+	)
+
+	// Schema evolution metrics
+	SchemaEvolutionTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_schema_evolution_total",
+			Help: "Total number of schema evolution operations",
+		},
+		[]string{"operation", "status"},
 	)
 
 	SearchResultPoolHitsTotal = promauto.NewCounterVec(
@@ -874,66 +703,12 @@ var (
 		[]string{"capacity"},
 	)
 
-	HNSWInsertPoolGetTotal = promauto.NewCounter(
-		prometheus.CounterOpts{
-			Name: "longbow_hnsw_insert_pool_get_total",
-			Help: "Total number of insert contexts retrieved from the pool",
-		},
-	)
-
-	HNSWInsertPoolNewTotal = promauto.NewCounter(
-		prometheus.CounterOpts{
-			Name: "longbow_hnsw_insert_pool_new_total",
-			Help: "Total number of new insert contexts allocated (cache misses)",
-		},
-	)
-
-	HNSWInsertPoolPutTotal = promauto.NewCounter(
-		prometheus.CounterOpts{
-			Name: "longbow_hnsw_insert_pool_put_total",
-			Help: "Total number of insert contexts returned to the pool",
-		},
-	)
-
-	HNSWBitsetGrowTotal = promauto.NewCounter(
-		prometheus.CounterOpts{
-			Name: "longbow_hnsw_bitset_grow_total",
-			Help: "Total number of times a bitset was grown/reallocated",
-		},
-	)
-
-	HNSWDistanceCalculationsF16Total = promauto.NewCounter(
-		prometheus.CounterOpts{
-			Name: "longbow_hnsw_distance_calculations_f16_total",
-			Help: "Total number of native FP16 distance calculations performed",
-		},
-	)
-
 	// VectorSentinelHitTotal counts number of times a sentinel zero-vector was returned
 	VectorSentinelHitTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_vector_sentinel_hit_total",
 			Help: "Total number of times a sentinel vector was used due to missing data",
 		},
-	)
-
-	// HNSWBitmapIndexEntriesTotal tracks number of entries in metadata bitmap index
-	HNSWBitmapIndexEntriesTotal = promauto.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "longbow_hnsw_bitmap_index_entries_total",
-			Help: "Total number of unique field:value pairs in the bitmap index",
-		},
-		[]string{"dataset"},
-	)
-
-	// HNSWBitmapFilterDurationSeconds measures time to evaluate bitset filters
-	HNSWBitmapFilterDurationSeconds = promauto.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "longbow_hnsw_bitmap_filter_duration_seconds",
-			Help:    "Time taken to evaluate metadata bitset filters",
-			Buckets: []float64{0.00001, 0.0001, 0.001, 0.01, 0.1},
-		},
-		[]string{"dataset"},
 	)
 
 	// FilterEvaluatorOpsTotal counts filter evaluator operations
@@ -962,15 +737,6 @@ var (
 			Help: "Total number of allocations during filter evaluation",
 		},
 		[]string{"method", "type"}, // method: "MatchesBatch", "MatchesAll"; type: "bitmap", "indices", "intermediate"
-	)
-
-	// HNSWSearchEarlyTerminationsTotal counts number of searches that terminated early
-	HNSWSearchEarlyTerminationsTotal = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "longbow_hnsw_search_early_terminations_total",
-			Help: "Total number of searches that terminated early due to convergence",
-		},
-		[]string{"dataset", "reason"},
 	)
 
 	// QueryCacheOpsTotal counts query cache operations (hit, miss, evict)
@@ -1110,100 +876,6 @@ var (
 	)
 
 	// =============================================================================
-	// HNSW Advanced & Health Metrics
-	// =============================================================================
-
-	// HNSWSearchPhaseDurationSeconds measures time spent in different phases of HNSW search
-	HNSWSearchPhaseDurationSeconds = promauto.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "longbow_hnsw_search_phase_duration_seconds",
-			Help:    "Duration of HNSW search phases",
-			Buckets: []float64{0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1},
-		},
-		[]string{"dataset", "phase"}, // phase: "candidate_selection", "pruning", "distance_calc", "refinement"
-	)
-
-	// HNSWDisconnectedComponents tracks the number of disconnected components in the HNSW graph
-	HNSWDisconnectedComponents = promauto.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "longbow_hnsw_disconnected_components",
-			Help: "Number of disconnected components in the HNSW graph",
-		},
-		[]string{"dataset"},
-	)
-
-	// HNSWOrphanNodes tracks the number of nodes with zero degree in the HNSW graph
-	HNSWOrphanNodes = promauto.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "longbow_hnsw_orphan_nodes",
-			Help: "Number of orphan nodes (degree 0) in the HNSW graph",
-		},
-		[]string{"dataset"},
-	)
-
-	// HNSWAverageDegree tracks the average degree of nodes in the HNSW graph
-	HNSWAverageDegree = promauto.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "longbow_hnsw_avg_degree",
-			Help: "Average degree of nodes in the HNSW graph",
-		},
-		[]string{"dataset"},
-	)
-
-	// HNSWMaxComponentSize tracks the size of the largest connected component
-	HNSWMaxComponentSize = promauto.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "longbow_hnsw_max_component_size",
-			Help: "Size of the largest connected component in the HNSW graph",
-		},
-		[]string{"dataset"},
-	)
-
-	// HNSWEstimatedDiameter tracks the estimated diameter of the HNSW graph
-	HNSWEstimatedDiameter = promauto.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "longbow_hnsw_estimated_diameter",
-			Help: "Estimated diameter (max BFS depth) of the HNSW graph",
-		},
-		[]string{"dataset"},
-	)
-
-	// HNSWAvgLevelDistribution tracks the distribution of nodes across HNSW levels
-	HNSWAvgLevelDistribution = promauto.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "longbow_hnsw_level_distribution",
-			Help: "Average number of nodes at each HNSW level",
-		},
-		[]string{"dataset", "level"},
-	)
-
-	// HNSWIngestionThroughputVectorsPerSecond measures ingestion rate
-	HNSWIngestionThroughputVectorsPerSecond = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "longbow_hnsw_ingestion_throughput_vectors_total",
-			Help: "Total number of vectors ingested, used to calculate throughput",
-		},
-		[]string{"dataset", "vector_type"},
-	)
-
-	// HNSWMemoryUsageBytes tracks memory consumption of HNSW structures
-	HNSWMemoryUsageBytes = promauto.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "longbow_hnsw_memory_usage_bytes",
-			Help: "Memory usage of HNSW index components",
-		},
-		[]string{"dataset", "component"}, // component: "graph", "vectors", "metadata", "id_map"
-	)
-
-	// Schema Evolution
-	SchemaEvolutionTotal = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "longbow_schema_evolution_total",
-			Help: "Total number of schema evolution events",
-		},
-		[]string{"type", "status"},
-	)
-
 	// Slab Pool Metrics
 	SlabPoolAllocationsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
@@ -1228,15 +900,6 @@ var (
 			Help:    "Payload size of each flushed DoPut batch",
 			Buckets: []float64{1024, 65536, 1048576, 4194304, 8388608, 10485760, 16777216},
 		},
-	)
-
-	// HNSW Search Context Metrics
-	HNSWSearchScratchSpaceResizesTotal = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "longbow_hnsw_search_scratch_resizes_total",
-			Help: "Total number of times search context scratch buffers were resized",
-		},
-		[]string{"field"}, // "query", "neighbors", "candidates"
 	)
 
 	// Vector Access Metrics - Zero-Copy Optimization

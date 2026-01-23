@@ -92,6 +92,28 @@ var (
 			Help: "Total number of vector casts from Float32 to Float16",
 		},
 	)
+
+	// Memory allocator metrics
+	AllocatorBytesAllocatedTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_allocator_bytes_allocated_total",
+			Help: "Total bytes allocated by the memory allocator",
+		},
+	)
+
+	AllocatorAllocationsActive = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "longbow_allocator_allocations_active",
+			Help: "Current number of active memory allocations",
+		},
+	)
+
+	AllocatorBytesFreedTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_allocator_bytes_freed_total",
+			Help: "Total bytes freed by the memory allocator",
+		},
+	)
 )
 
 // =============================================================================

@@ -61,7 +61,7 @@ func EuclideanDistanceBatch(query []float32, vectors [][]float32, results []floa
 
 // EuclideanDistanceBatchFlat computes distances against a flat array of vectors.
 // Vectors are stored contiguously: [v1[0], v1[1], ..., v1[dims], v2[0], ...]
-func EuclideanDistanceBatchFlat(query []float32, flatVectors []float32, numVectors, dims int, results []float32) error {
+func EuclideanDistanceBatchFlat(query []float32, flatVectors []float32, numVectors int, dims int, results []float32) error {
 	if numVectors == 0 {
 		return nil
 	}
@@ -137,7 +137,7 @@ func CosineDistanceBatch(query []float32, vectors [][]float32, results []float32
 	}
 	metrics.CosineBatchCallsTotal.Inc()
 	metrics.ParallelReductionVectorsProcessed.Add(float64(len(vectors)))
-	cosineDistanceBatchImpl(query, vectors, results)
+	_ = cosineDistanceBatchImpl(query, vectors, results)
 	return nil
 }
 
@@ -152,7 +152,7 @@ func DotProductBatch(query []float32, vectors [][]float32, results []float32) er
 	}
 	metrics.DotProductBatchCallsTotal.Inc()
 	metrics.ParallelReductionVectorsProcessed.Add(float64(len(vectors)))
-	dotProductBatchImpl(query, vectors, results)
+	_ = dotProductBatchImpl(query, vectors, results)
 	return nil
 }
 

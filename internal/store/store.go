@@ -100,7 +100,7 @@ type VectorStore struct {
 
 	// hnsw2 integration hook (Phase 5)
 	// Called after dataset creation to initialize hnsw2 (avoids import cycle)
-	hnsw2Config *ArrowHNSWConfig
+	hnsw2Config *ArrowHNSWConfig //nolint:unused
 
 	// Memory Tuner
 	tuner *lbmem.GCTuner
@@ -208,8 +208,8 @@ func (s *VectorStore) CheckIngestionBackpressure() bool {
 	// 2. Queue Pressure
 	// If ingestion queue is > 80% full, throttle.
 	if s.ingestionQueue != nil {
-		cap := s.ingestionQueue.Capacity()
-		if s.ingestionQueue.Len() > (cap*80)/100 {
+		queueCap := s.ingestionQueue.Capacity()
+		if s.ingestionQueue.Len() > (queueCap*80)/100 {
 			return true
 		}
 	}

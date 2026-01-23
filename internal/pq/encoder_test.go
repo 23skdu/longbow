@@ -260,7 +260,7 @@ func BenchmarkPQEncoder_Encode(b *testing.B) {
 			b.ReportAllocs()
 
 			for i := 0; i < b.N; i++ {
-				encoder.Encode(query)
+				_, _ = encoder.Encode(query)
 			}
 		})
 	}

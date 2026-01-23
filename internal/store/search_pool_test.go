@@ -70,8 +70,7 @@ func TestSearchResultPool_Basic(t *testing.T) {
 	assert.Equal(t, 10, cap(result))
 
 	// Add some results
-	result = append(result, SearchResult{ID: 1, Score: 0.1})
-	result = append(result, SearchResult{ID: 2, Score: 0.2})
+	result = append(result, SearchResult{ID: 1, Score: 0.1}, SearchResult{ID: 2, Score: 0.2})
 	require.Len(t, result, 2)
 
 	// Put it back
@@ -171,8 +170,7 @@ func TestSearchResultPool_ClearOnPut(t *testing.T) {
 	pool := NewSearchResultPool()
 
 	result := pool.Get(10)
-	result = append(result, SearchResult{ID: 1, Score: 0.5})
-	result = append(result, SearchResult{ID: 2, Score: 0.3})
+	result = append(result, SearchResult{ID: 1, Score: 0.5}, SearchResult{ID: 2, Score: 0.3})
 
 	pool.Put(result)
 

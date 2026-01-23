@@ -74,7 +74,7 @@ func FuzzHNSW_Compaction(f *testing.F) {
 		if numToDelete > 0 {
 			for i := int64(0); i < numToDelete; i++ {
 				id := uint32(r.Intn(int(numVectors)))
-				h.Delete(id)
+				_ = h.Delete(id)
 			}
 		}
 
@@ -194,7 +194,7 @@ func FuzzHNSW_CompactionUnderLoad(f *testing.F) {
 						for i := 0; i < 5; i++ {
 							id := uint32(int(iter)*5 + i)
 							if id < 1000 {
-								h.Delete(id)
+								_ = h.Delete(id)
 							}
 						}
 					case 2:

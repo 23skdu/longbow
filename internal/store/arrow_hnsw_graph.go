@@ -892,14 +892,66 @@ func (h *ArrowHNSW) ensureChunk(data *GraphData, cID, _ uint32, dims int) *Graph
 
 	// Allocate chunk data if not already done
 	// Use Double-Check Locking pattern with atomic CAS
+
 	// Levels
 	if atomic.LoadUint64(&data.Levels[cID]) == 0 {
 		ref, err := data.Uint8Arena.AllocSlice(ChunkSize)
 		if err == nil {
 			if atomic.CompareAndSwapUint64(&data.Levels[cID], 0, ref.Offset) {
-				h.dataset.IndexMemoryBytes.Add(int64(ChunkSize))
+				if h.dataset != nil {
+					h.dataset.IndexMemoryBytes.Add(int64(ChunkSize))
+				}
 			}
 		}
+	}
+
+	// Vectors (based on data type)
+	switch data.Type {
+	case VectorTypeFloat32:
+		if len(data.Vectors) > int(cID) && atomic.LoadUint64(&data.Vectors[cID]) == 0 {
+			ref, err := data.Float32Arena.AllocSlice(ChunkSize * data.PaddedDims)
+			if err == nil {
+				if atomic.CompareAndSwapUint64(&data.Vectors[cID], 0, ref.Offset) {
+					if h.dataset != nil {
+						h.dataset.IndexMemoryBytes.Add(int64(ChunkSize * data.PaddedDims * 4)) // 4 bytes per float32
+					}
+				}
+			}
+		}
+	case VectorTypeInt8:
+		if len(data.VectorsInt8) > int(cID) && atomic.LoadUint64(&data.VectorsInt8[cID]) == 0 {
+			ref, err := data.Int8Arena.AllocSlice(ChunkSize * data.PaddedDims)
+			if err == nil {
+				if atomic.CompareAndSwapUint64(&data.VectorsInt8[cID], 0, ref.Offset) {
+					if h.dataset != nil {
+						h.dataset.IndexMemoryBytes.Add(int64(ChunkSize * data.PaddedDims * 1)) // 1 byte per int8
+					}
+				}
+			}
+		}
+	case VectorTypeUint8:
+		if len(data.VectorsUint8) > int(cID) && atomic.LoadUint64(&data.VectorsUint8[cID]) == 0 {
+			ref, err := data.Uint8Arena.AllocSlice(ChunkSize * data.PaddedDims)
+			if err == nil {
+				if atomic.CompareAndSwapUint64(&data.VectorsUint8[cID], 0, ref.Offset) {
+					if h.dataset != nil {
+						h.dataset.IndexMemoryBytes.Add(int64(ChunkSize * data.PaddedDims * 1)) // 1 byte per uint8
+					}
+				}
+			}
+		}
+	case VectorTypeFloat16:
+		if len(data.VectorsF16) > int(cID) && atomic.LoadUint64(&data.VectorsF16[cID]) == 0 {
+			ref, err := data.Float16Arena.AllocSlice(ChunkSize * data.PaddedDims)
+			if err == nil {
+				if atomic.CompareAndSwapUint64(&data.VectorsF16[cID], 0, ref.Offset) {
+					if h.dataset != nil {
+						h.dataset.IndexMemoryBytes.Add(int64(ChunkSize * data.PaddedDims * 2)) // 2 bytes per float16
+					}
+				}
+			}
+		}
+		// Add other types as needed...
 	}
 
 	return data

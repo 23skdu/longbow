@@ -136,7 +136,8 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 				}
 
 				if vLen != dims {
-					return fmt.Errorf("vector dimension mismatch for ID %d: expected %d, got %d", id, dims, vLen)
+					metrics.BulkInsertDimensionErrorsTotal.Inc()
+					return NewVectorDimensionMismatchError(int(id), dims, vLen)
 				}
 
 				// Always ingest into hot storage using method that handles all types

@@ -640,6 +640,14 @@ var (
 		},
 	)
 
+	// BulkInsertDimensionErrorsTotal counts dimension mismatch errors during bulk inserts
+	BulkInsertDimensionErrorsTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_bulk_insert_dimension_errors_total",
+			Help: "Total number of dimension mismatch errors during bulk vector inserts",
+		},
+	)
+
 	SnapshotTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_snapshot_operations_total",

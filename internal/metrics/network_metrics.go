@@ -109,6 +109,23 @@ var (
 			Help: "Total number of DoExchange search operations",
 		},
 	)
+
+	// FlightTicketParseDurationSeconds measures latency of parsing Flight tickets
+	FlightTicketParseDurationSeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_flight_ticket_parse_duration_seconds",
+			Help:    "Latency of flight ticket parsing",
+			Buckets: []float64{0.00001, 0.0001, 0.001, 0.01, 0.1},
+		},
+	)
+
+	// ActiveSearchContexts tracks currently active search contexts
+	ActiveSearchContexts = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "longbow_active_search_contexts",
+			Help: "Number of currently active search contexts",
+		},
+	)
 )
 
 // =============================================================================

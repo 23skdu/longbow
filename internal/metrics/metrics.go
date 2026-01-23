@@ -266,7 +266,6 @@ var (
 		[]string{"operation", "status"},
 	)
 
-
 	// VectorSentinelHitTotal counts number of times a sentinel zero-vector was returned
 	VectorSentinelHitTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
@@ -680,5 +679,14 @@ var (
 			Name: "longbow_batch_distance_compute_fallback_total",
 			Help: "Total number of batch operations falling back to scalar",
 		},
+	)
+
+	// ArrowMemoryUsedBytes tracks memory used by Arrow allocators
+	ArrowMemoryUsedBytes = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "longbow_arrow_memory_used_bytes",
+			Help: "Current bytes used by Arrow memory allocators",
+		},
+		[]string{"allocator"},
 	)
 )

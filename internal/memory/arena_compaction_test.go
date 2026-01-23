@@ -39,7 +39,7 @@ func TestCompactableArena_Compaction(t *testing.T) {
 	arena := NewCompactableArena[uint32](1 * 1024 * 1024) // 1MB slabs
 
 	// Allocate many small slices to create fragmentation
-	var refs []SliceRef
+	refs := make([]SliceRef, 0, 100)
 	for i := 0; i < 100; i++ {
 		ref, err := arena.AllocSlice(1000)
 		require.NoError(t, err)
@@ -91,7 +91,7 @@ func TestCompactableArena_DataIntegrity(t *testing.T) {
 		pattern uint64
 	}
 
-	var slices []testSlice
+	slices := make([]testSlice, 0, 50)
 	for i := 0; i < 50; i++ {
 		ref, err := arena.AllocSlice(500)
 		require.NoError(t, err)
@@ -187,7 +187,7 @@ func BenchmarkCompactableArena_Get(b *testing.B) {
 func TestTypedArena_Compact(t *testing.T) {
 	arena := NewTypedArena[uint32](NewSlabArena(1 * 1024 * 1024))
 
-	var refs []SliceRef
+	refs := make([]SliceRef, 0, 50)
 	for i := 0; i < 50; i++ {
 		ref, err := arena.AllocSlice(1000)
 		require.NoError(t, err)
@@ -226,7 +226,7 @@ func TestTypedArena_Compact(t *testing.T) {
 func TestTypedArena_CompactConcurrent(t *testing.T) {
 	arena := NewTypedArena[uint32](NewSlabArena(4 * 1024 * 1024))
 
-	var refs []SliceRef
+	refs := make([]SliceRef, 0, 20)
 	for i := 0; i < 20; i++ {
 		ref, err := arena.AllocSlice(1000)
 		require.NoError(t, err)

@@ -19,101 +19,155 @@ type VectorRecord struct {
 	Vector []float32 `parquet:"vector"`
 }
 
-// writeParquet writes an Arrow record to a Parquet writer
-func writeParquet(w io.Writer, rec arrow.RecordBatch) error {
+// writeParquet writes one or more Arrow records to a Parquet writer.
+// It uses a single parquet.Writer to ensure a valid file with one footer.
+func writeParquet(w io.Writer, records ...arrow.RecordBatch) error {
+	if len(records) == 0 {
+		return nil
+	}
+
 	pw := parquet.NewGenericWriter[VectorRecord](w, parquet.Compression(&parquet.Zstd))
+	defer func() {
+		// Best effort close on early return
+		_ = pw.Close()
+	}()
 
-	rows := rec.NumRows()
-	idColIdx := -1
-	vecColIdx := -1
-	for i, f := range rec.Schema().Fields() {
-		switch f.Name {
-		case "id":
-			idColIdx = i
-		case "vector":
-			vecColIdx = i
+	for _, rec := range records {
+		rows := rec.NumRows()
+		if rows == 0 {
+			continue
 		}
-	}
 
-	if idColIdx == -1 {
-		idColIdx = 0
-	}
-	if vecColIdx == -1 {
-		vecColIdx = 1
-	}
-
-	if idColIdx >= int(rec.NumCols()) {
-		return fmt.Errorf("id column index %d out of bounds (cols=%d)", idColIdx, rec.NumCols())
-	}
-	// Vector column is optional-ish, but if we need it for VectorRecord, we must check
-	hasVec := vecColIdx < int(rec.NumCols())
-
-	var ids []int32
-	idCol := rec.Column(idColIdx)
-	switch idArr := idCol.(type) {
-	case *array.Int32:
-		ids = idArr.Int32Values()
-	case *array.Uint32:
-		ids = make([]int32, rec.NumRows())
-		for i := 0; i < int(rec.NumRows()); i++ {
-			ids[i] = int32(idArr.Value(i))
-		}
-	default:
-		ids = make([]int32, rec.NumRows())
-		for i := 0; i < int(rec.NumRows()); i++ {
-			ids[i] = int32(i)
-		}
-	}
-
-	var vecData *array.Float32
-	var vecDataF16 *array.Float16
-	var vecLen int
-
-	if hasVec {
-		vecCol := rec.Column(vecColIdx).(*array.FixedSizeList)
-
-		// Check inner type
-		elemType := vecCol.DataType().(*arrow.FixedSizeListType).Elem()
-		vecLen = int(vecCol.DataType().(*arrow.FixedSizeListType).Len())
-
-		if elemType.ID() == arrow.FLOAT16 {
-			vecDataF16 = vecCol.ListValues().(*array.Float16)
-		} else {
-			vecData = vecCol.ListValues().(*array.Float32)
-		}
-	}
-
-	records := make([]VectorRecord, rows)
-	for i := int64(0); i < rows; i++ {
-		var vec []float32
-		if hasVec {
-			start := int(i) * vecLen
-			end := start + vecLen
-
-			if vecDataF16 != nil {
-				// Convert F16 -> F32
-				vals := vecDataF16.Values()[start:end]
-				vec = make([]float32, vecLen)
-				for k, v := range vals {
-					vec[k] = v.Float32()
-				}
-			} else if vecData != nil {
-				vec = vecData.Float32Values()[start:end]
+		idColIdx := -1
+		vecColIdx := -1
+		for i, f := range rec.Schema().Fields() {
+			switch f.Name {
+			case "id":
+				idColIdx = i
+			case "vector":
+				vecColIdx = i
 			}
 		}
 
-		records[i] = VectorRecord{
-			ID:     ids[i],
-			Vector: vec,
+		if idColIdx == -1 {
+			idColIdx = 0
+		}
+		if vecColIdx == -1 {
+			vecColIdx = 1
+		}
+
+		if idColIdx >= int(rec.NumCols()) {
+			return fmt.Errorf("id column index %d out of bounds (cols=%d)", idColIdx, rec.NumCols())
+		}
+		hasVec := vecColIdx < int(rec.NumCols())
+
+		var ids []int32
+		idCol := rec.Column(idColIdx)
+		switch idArr := idCol.(type) {
+		case *array.Int32:
+			ids = idArr.Int32Values()
+		case *array.Uint32:
+			ids = make([]int32, rows)
+			for i := 0; i < int(rows); i++ {
+				ids[i] = int32(idArr.Value(i))
+			}
+		default:
+			ids = make([]int32, rows)
+			for i := 0; i < int(rows); i++ {
+				ids[i] = int32(i)
+			}
+		}
+
+		var vecLen int
+		if hasVec {
+			col := rec.Column(vecColIdx)
+			if vecCol, ok := col.(*array.FixedSizeList); ok {
+				elemType := vecCol.DataType().(*arrow.FixedSizeListType).Elem()
+				vecLen = int(vecCol.DataType().(*arrow.FixedSizeListType).Len())
+
+				switch elemType.ID() {
+				case arrow.FLOAT16, arrow.FLOAT32, arrow.FLOAT64,
+					arrow.INT8, arrow.UINT8, arrow.INT16, arrow.UINT16,
+					arrow.INT32, arrow.UINT32, arrow.INT64, arrow.UINT64:
+					// Supported types: handled via dynamic conversion in loop
+				default:
+					return fmt.Errorf("unsupported vector element type: %s", elemType)
+				}
+			} else {
+				hasVec = false
+			}
+		}
+
+		parquetRecords := make([]VectorRecord, rows)
+		for i := int64(0); i < rows; i++ {
+			var vec []float32
+			if hasVec {
+				start := int(i) * vecLen
+				end := start + vecLen
+				vec = make([]float32, vecLen)
+
+				col := rec.Column(vecColIdx).(*array.FixedSizeList)
+				values := col.ListValues()
+
+				switch vArr := values.(type) {
+				case *array.Float16:
+					for k, v := range vArr.Values()[start:end] {
+						vec[k] = v.Float32()
+					}
+				case *array.Float32:
+					vec = vArr.Float32Values()[start:end]
+				case *array.Float64:
+					for k, v := range vArr.Float64Values()[start:end] {
+						vec[k] = float32(v)
+					}
+				case *array.Int8:
+					for k, v := range vArr.Int8Values()[start:end] {
+						vec[k] = float32(v)
+					}
+				case *array.Int16:
+					for k, v := range vArr.Int16Values()[start:end] {
+						vec[k] = float32(v)
+					}
+				case *array.Int32:
+					for k, v := range vArr.Int32Values()[start:end] {
+						vec[k] = float32(v)
+					}
+				case *array.Int64:
+					for k, v := range vArr.Int64Values()[start:end] {
+						vec[k] = float32(v)
+					}
+				case *array.Uint8:
+					for k, v := range vArr.Uint8Values()[start:end] {
+						vec[k] = float32(v)
+					}
+				case *array.Uint16:
+					for k, v := range vArr.Uint16Values()[start:end] {
+						vec[k] = float32(v)
+					}
+				case *array.Uint32:
+					for k, v := range vArr.Uint32Values()[start:end] {
+						vec[k] = float32(v)
+					}
+				case *array.Uint64:
+					for k, v := range vArr.Uint64Values()[start:end] {
+						vec[k] = float32(v)
+					}
+				}
+			}
+
+			parquetRecords[i] = VectorRecord{
+				ID:     ids[i],
+				Vector: vec,
+			}
+		}
+
+		if _, err := pw.Write(parquetRecords); err != nil {
+			return err
 		}
 	}
 
 	start := time.Now()
-	_, err := pw.Write(records)
-	if err != nil {
-		return err
-	}
-	err = pw.Close()
+	err := pw.Close()
 	if err == nil {
 		metrics.SnapshotWriteDurationSeconds.Observe(time.Since(start).Seconds())
 		if fi, ok := w.(interface{ Stat() (os.FileInfo, error) }); ok {

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"math/rand"
 	"testing"
 	"time"
@@ -93,7 +94,7 @@ func TestHNSW_BulkInsert(t *testing.T) {
 		batchIdxs[i] = 0
 	}
 
-	ids, err := idx.AddBatch([]arrow.RecordBatch{batch}, rowIdxs, batchIdxs)
+	ids, err := idx.AddBatch(context.Background(), []arrow.RecordBatch{batch}, rowIdxs, batchIdxs)
 	require.NoError(t, err)
 	require.Len(t, ids, numVectors)
 
@@ -106,7 +107,7 @@ func TestHNSW_BulkInsert(t *testing.T) {
 	// Verify Search (Recall Check)
 	// We expect to find the exact vector we inserted (distance ~0)
 	t.Logf("Starting Search for target")
-	results, err := idx.SearchVectors(queryVec, 10, nil, SearchOptions{})
+	results, err := idx.SearchVectors(context.Background(), queryVec, 10, nil, SearchOptions{})
 	t.Logf("Finished Search, err=%v, len=%d", err, len(results))
 	require.NoError(t, err)
 	require.NotEmpty(t, results)

@@ -10,21 +10,21 @@ Longbow is a distributed, high-performance vector database designed for low-late
 
 - **Hybrid Indexing**:
   - **Dense**: HNSW (Hierarchical Navigable Small World) for approximate nearest neighbor search.
-  - **Sparse**: Inverted Index (Roaring Bitmaps) for keyword matching.
+  - **Sparse**: Inverted Index (BM25/Sparse) for keyword matching.
   - **Auto-Sharding**: Transparently upgrades standard indices to **ShardedHNSW** (lock-striped) when thresholds are met.
 - **Interim Sharding**: Uses a temporary sharded index during migration to eliminate double-indexing overhead, ensuring linear scalability during resizing.
 - **Zero-Copy**: Utilizes Apache Arrow for zero-copy data representation, minimizing serialization overhead.
-- **Lock-Free**: Experimental lock-free indexing structures (skip list) for high concurrency.
-- **SIMD & NUMA**: optimized for modern CPU architectures with SIMD instructions (AVX2/AVX-512) and NUMA-aware memory allocation.
-- **FP16 Storage**: Native Float16 support for reduced memory bandwidth and improved cache efficiency.
+- **Concurrency**: Concurrent HNSW with fine-grained locking per node/level to maximize throughput.
+- **SIMD**: Optimized for modern CPU architectures with SIMD instructions (AVX2/AVX-512) and dimension-blocked kernels for 1024-3072 dims.
+- **Polymorphic Storage**: Native support for **FP16**, **SQ8**, **PQ**, and **BQ** for reduced memory footprint and improved cache efficiency.
 
 ### 2. Storage Layer
 
-- **LSM Tree**: Log-Structured Merge tree based engine for efficient write-heavy workloads.
+- **WAL-Backed Engine**: Log-structured storage with an in-memory primary store and background record-batch compaction.
 - **WAL (Write Ahead Log)**:
   - **`io_uring` Backend**: Linux-specific optimization using efficient async I/O ring buffers for high-throughput writes.
   - **FS Backend**: Fallback standard file system logger for compatibility.
-- **Persistence**: Periodic checkpoints and snapshots ensure data durability.
+- **Durability**: Periodic checkpoints and snapshots ensure data durability.
 
 ### 3. Distributed Mesh
 
@@ -59,6 +59,5 @@ Longbow is a distributed, high-performance vector database designed for low-late
 
 See [Configuration Guide](configuration.md) for details on:
 
-- `STORAGE_USE_IOURING`
+- `LONGBOW_STORAGE_USE_IOURING`
 - `LONGBOW_GOSSIP_ENABLED`
-- `LONGBOW_NUMA_Enable`

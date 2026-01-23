@@ -1,6 +1,7 @@
 package store
 
 import (
+	"math"
 	"sort"
 	"time"
 
@@ -187,7 +188,9 @@ func (h *HNSWIndex) computeBatchDistance(query []float32, vectors [][]float32, r
 		h.batchDistFunc(query, vectors, results)
 		return
 	}
-	simd.EuclideanDistanceBatch(query, vectors, results)
+	if err := simd.EuclideanDistanceBatch(query, vectors, results); err != nil {
+		return
+	}
 }
 
 // SearchBatch is a convenience method that calls SearchBatchOptimized.
@@ -256,7 +259,12 @@ func (h *HNSWIndex) SearchBatchWithArena(queries [][]float32, k int, arena *Sear
 			vec := h.getVector(id)
 			dist := float32(0)
 			if vec != nil {
-				dist = simd.EuclideanDistance(q, vec) // Assuming Euclidean default for test
+				d, err := simd.EuclideanDistance(q, vec) // Assuming Euclidean default for test
+				if err != nil {
+					dist = math.MaxFloat32
+				} else {
+					dist = d
+				}
 			}
 			ranked[j] = RankedResult{ID: id, Distance: dist}
 		}

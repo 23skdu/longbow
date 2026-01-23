@@ -1,7 +1,7 @@
 package store
 
-
 import (
+	"context"
 	"testing"
 
 	"github.com/apache/arrow-go/v18/arrow"
@@ -109,7 +109,7 @@ func TestHNSWSearchWithArena(t *testing.T) {
 
 	// Add vectors to index
 	for i := range vectors {
-		if _, err := index.Add(0, i); err != nil {
+		if _, err := index.Add(context.Background(), 0, i); err != nil {
 			t.Fatalf("Add failed: %v", err)
 		}
 	}
@@ -167,7 +167,7 @@ func TestHNSWSearchWithArenaUsesArena(t *testing.T) {
 	ds.dataMu.Unlock()
 
 	for i := 0; i < 3; i++ {
-		_, _ = index.Add(0, i)
+		_, _ = index.Add(context.Background(), 0, i)
 	}
 
 	arena := NewSearchArena(4096)
@@ -216,7 +216,7 @@ func TestHNSWSearchWithArenaReset(t *testing.T) {
 	ds.dataMu.Unlock()
 
 	for i := 0; i < 5; i++ {
-		_, _ = index.Add(0, i)
+		_, _ = index.Add(context.Background(), 0, i)
 	}
 
 	arena := NewSearchArena(4096)
@@ -274,7 +274,7 @@ func TestHNSWSearchWithArenaNilArena(t *testing.T) {
 	ds.Records = []arrow.RecordBatch{rec}
 	ds.dataMu.Unlock()
 
-	_, _ = index.Add(0, 0)
+	_, _ = index.Add(context.Background(), 0, 0)
 
 	query := []float32{1.0, 0.0, 0.0, 0.0}
 
@@ -323,7 +323,7 @@ func TestHNSWSearchWithArenaExhaustion(t *testing.T) {
 	ds.dataMu.Unlock()
 
 	for i := 0; i < 10; i++ {
-		_, _ = index.Add(0, i)
+		_, _ = index.Add(context.Background(), 0, i)
 	}
 
 	// Very small arena that will exhaust
@@ -398,7 +398,7 @@ func BenchmarkSearchWithArenaVsSearchByID(b *testing.B) {
 	ds.dataMu.Unlock()
 
 	for i := 0; i < 1000; i++ {
-		_, _ = index.Add(0, i)
+		_, _ = index.Add(context.Background(), 0, i)
 	}
 
 	query := make([]float32, 128)

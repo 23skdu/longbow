@@ -1,7 +1,9 @@
 package store
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/23skdu/longbow/internal/metrics"
@@ -40,11 +42,15 @@ func (vs *VectorStore) GetCompactionStats() CompactionStats {
 }
 
 // CompactDataset manually triggers compaction for a specific dataset.
-func (vs *VectorStore) CompactDataset(name string) error {
+func (vs *VectorStore) CompactDataset(ctx context.Context, name string) error {
 	start := time.Now()
 	defer func() {
 		metrics.CompactionDurationSeconds.WithLabelValues(name, "manual").Observe(time.Since(start).Seconds())
 	}()
+
+	// Track compaction event
+	metrics.CompactionEventsTotal.WithLabelValues(name, "manual").Inc()
+
 	ds, ok := vs.getDataset(name)
 	if !ok {
 		return errors.New("compaction: dataset not found")
@@ -92,7 +98,11 @@ func (vs *VectorStore) CompactDataset(name string) error {
 	// 1. Perform Incremental Compaction
 	// Returns a NEW slice of records and a remapping table
 	// We use vs.mem (the tracked allocator) instead of creating a new one
-	newRecords, remapping := compactRecords(vs.mem, ds.Schema, ds.Records, ds.Tombstones, vs.compactionConfig.TargetBatchSize, name, vs.rateLimiter)
+	newRecords, remapping, err := compactRecords(ctx, vs.mem, ds.Schema, ds.Records, ds.Tombstones, vs.compactionConfig.TargetBatchSize, name, vs.rateLimiter, vs.compactionConfig.FragmentationThreshold)
+	if err != nil {
+		metrics.CompactionErrorsTotal.Inc()
+		return fmt.Errorf("compaction records failed: %w", err)
+	}
 
 	if newRecords == nil {
 		return nil // No changes needed
@@ -175,12 +185,15 @@ func (vs *VectorStore) CompactDataset(name string) error {
 }
 
 // VacuumDataset triggers graph vacuum (CleanupTombstones) for the named dataset.
-func (vs *VectorStore) VacuumDataset(name string) error {
+func (vs *VectorStore) VacuumDataset(ctx context.Context, name string) error {
 	start := time.Now()
 	// Using a new metric label "vacuum"
 	defer func() {
 		metrics.CompactionDurationSeconds.WithLabelValues(name, "vacuum").Observe(time.Since(start).Seconds())
 	}()
+
+	// Track vacuum event
+	metrics.CompactionEventsTotal.WithLabelValues(name, "vacuum").Inc()
 
 	ds, ok := vs.getDataset(name)
 	if !ok {
@@ -199,9 +212,17 @@ func (vs *VectorStore) VacuumDataset(name string) error {
 	// Check if this is an ArrowHNSW which supports Vacuum
 	switch idx := index.(type) {
 	case *ArrowHNSW:
-		// Run Vacuum
-		// We pass 0 to scan all nodes. Or we could be smarter?
-		// For now, full vacuum.
+		// 1. Check if Full Compaction is needed (High fragmentation)
+		if idx.NeedsCompaction() {
+			stats, err := idx.CompactGraph(ctx)
+			if err == nil && stats != nil && stats.NodesRemoved > 0 {
+				metrics.CompactionOperationsTotal.WithLabelValues(name, "graph_compacted").Inc()
+				return nil
+			}
+			// If error or no nodes removed, fall back to simple prune
+		}
+
+		// 2. Run Simple Vacuum (Connection Pruning)
 		pruned := idx.CleanupTombstones(0)
 		if pruned > 0 {
 			metrics.CompactionOperationsTotal.WithLabelValues(name, "vacuum_pruned").Add(float64(pruned))

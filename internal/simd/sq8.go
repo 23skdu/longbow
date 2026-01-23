@@ -1,8 +1,10 @@
 package simd
 
+import "errors"
+
 var (
 	// Function pointer for SQ8 distance
-	euclideanSQ8Impl func(a, b []byte) int32
+	euclideanSQ8Impl func(a, b []byte) (int32, error)
 )
 
 func init() {
@@ -32,15 +34,15 @@ func init() {
 // Returns:
 //
 //	Squared L2 distance (int32)
-func EuclideanDistanceSQ8(a, b []byte) int32 {
+func EuclideanDistanceSQ8(a, b []byte) (int32, error) {
 	if len(a) != len(b) {
-		panic("simd: vector length mismatch")
+		return 0, errors.New("simd: vector length mismatch")
 	}
 	// Direct Call to function pointer
 	return euclideanSQ8Impl(a, b)
 }
 
-func EuclideanSQ8Generic(a, b []byte) int32 {
+func EuclideanSQ8Generic(a, b []byte) (int32, error) {
 	var sum int32
 	i := 0
 	// Unroll 8x
@@ -60,7 +62,7 @@ func EuclideanSQ8Generic(a, b []byte) int32 {
 		d := int32(a[i]) - int32(b[i])
 		sum += d * d
 	}
-	return sum
+	return sum, nil
 }
 
 // QuantizeSQ8 converts a float32 vector to uint8 using min/max bounds.

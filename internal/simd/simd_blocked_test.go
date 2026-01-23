@@ -25,11 +25,13 @@ func TestDotProductBlocked_Float32(t *testing.T) {
 			}
 
 			// Sanity check baseline
-			baseline := DotProduct(a, b)
+			baseline, err0 := DotProduct(a, b)
+			assert.NoError(t, err0)
 			assert.InDelta(t, expected, baseline, 0.01, "Baseline accuracy check")
 
 			// Blocked version
-			result := DotProductFloat32Blocked(a, b)
+			result, err := DotProductFloat32Blocked(a, b)
+			assert.NoError(t, err)
 			assert.InDelta(t, expected, result, 0.01, "Blocked implementation accuracy check")
 		})
 	}
@@ -48,8 +50,10 @@ func TestEuclideanBlocked_Float32(t *testing.T) {
 				b[i] = rand.Float32()
 			}
 
-			expected := EuclideanDistance(a, b)
-			result := L2Float32Blocked(a, b)
+			expected, err1 := EuclideanDistance(a, b)
+			assert.NoError(t, err1)
+			result, err2 := L2Float32Blocked(a, b)
+			assert.NoError(t, err2)
 
 			assert.InDelta(t, expected, result, 0.01, "Blocked L2 accuracy check")
 		})
@@ -64,13 +68,13 @@ func BenchmarkDotProduct_3072(b *testing.B) {
 
 	b.Run("Baseline", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			DotProduct(a, bVec)
+			_, _ = DotProduct(a, bVec)
 		}
 	})
 
 	b.Run("Blocked", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			DotProductFloat32Blocked(a, bVec)
+			_, _ = DotProductFloat32Blocked(a, bVec)
 		}
 	})
 }

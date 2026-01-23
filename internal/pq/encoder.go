@@ -4,6 +4,8 @@ import (
 	"errors"
 	"math"
 	"unsafe"
+
+	"github.com/23skdu/longbow/internal/simd"
 )
 
 // PQEncoder implements Product Quantization.
@@ -79,6 +81,17 @@ func (e *PQEncoder) Encode(vector []float32) ([]byte, error) {
 		return nil, errors.New("encoder not trained")
 	}
 
+	// Use SIMD-accelerated encoding for better performance
+	// For small K (<= 16), sequential search is competitive
+	// For larger K, batch SIMD provides significant speedup
+	if e.K <= 16 {
+		return e.encodeSequential(vector), nil
+	}
+	return e.encodeSIMD(vector), nil
+}
+
+// encodeSequential uses sequential search - optimal for small K
+func (e *PQEncoder) encodeSequential(vector []float32) []byte {
 	codes := make([]byte, e.M)
 
 	for m := 0; m < e.M; m++ {
@@ -91,7 +104,10 @@ func (e *PQEncoder) Encode(vector []float32) ([]byte, error) {
 
 		for k := 0; k < e.K; k++ {
 			cent := centroids[k*e.SubDim : (k+1)*e.SubDim]
-			dist := distL2Sq(subVec, cent)
+			dist, err := simd.L2Squared(subVec, cent)
+			if err != nil {
+				continue
+			}
 			if dist < bestDist {
 				bestDist = dist
 				bestIdx = k
@@ -100,7 +116,23 @@ func (e *PQEncoder) Encode(vector []float32) ([]byte, error) {
 		codes[m] = byte(bestIdx)
 	}
 
-	return codes, nil
+	return codes
+}
+
+// encodeSIMD uses batch SIMD for finding nearest centroids - optimal for large K
+func (e *PQEncoder) encodeSIMD(vector []float32) []byte {
+	codes := make([]byte, e.M)
+
+	for m := 0; m < e.M; m++ {
+		subVec := vector[m*e.SubDim : (m+1)*e.SubDim]
+		centroids := e.Codebooks[m]
+
+		// Use SIMD batch to find nearest centroid
+		bestIdx, _ := simd.FindNearestCentroid(subVec, centroids, e.SubDim, e.K)
+		codes[m] = byte(bestIdx)
+	}
+
+	return codes
 }
 
 // Decode reconstructs the approximated vector from the codes.

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"fmt"
 	"hash/fnv"
 	"sync"
 	"time"
@@ -12,8 +13,13 @@ const numShards = 32
 
 // shard represents a single segment of the sharded map
 type shard struct {
-	mu   sync.RWMutex
-	data map[string]*Dataset
+	mu    sync.RWMutex
+	data  map[string]*Dataset
+	index string // string representation of the shard index
+}
+
+func (s *shard) id() string {
+	return s.index
 }
 
 // ShardedMap provides concurrent access to datasets via sharding
@@ -26,7 +32,8 @@ func NewShardedMap() *ShardedMap {
 	sm := &ShardedMap{}
 	for i := 0; i < numShards; i++ {
 		sm.shards[i] = &shard{
-			data: make(map[string]*Dataset),
+			data:  make(map[string]*Dataset),
+			index: fmt.Sprintf("%d", i),
 		}
 	}
 	return sm
@@ -44,7 +51,7 @@ func (sm *ShardedMap) Get(name string) (*Dataset, bool) {
 	s := sm.getShard(name)
 	start := time.Now()
 	s.mu.RLock()
-	metrics.ShardLockWaitDuration.Observe(time.Since(start).Seconds())
+	metrics.ShardLockWaitDuration.WithLabelValues(s.id(), "read").Observe(time.Since(start).Seconds())
 	defer s.mu.RUnlock()
 	ds, ok := s.data[name]
 	return ds, ok
@@ -55,7 +62,7 @@ func (sm *ShardedMap) Set(name string, ds *Dataset) {
 	s := sm.getShard(name)
 	start := time.Now()
 	s.mu.Lock()
-	metrics.ShardLockWaitDuration.Observe(time.Since(start).Seconds())
+	metrics.ShardLockWaitDuration.WithLabelValues(s.id(), "write").Observe(time.Since(start).Seconds())
 	defer s.mu.Unlock()
 	s.data[name] = ds
 }
@@ -65,7 +72,7 @@ func (sm *ShardedMap) Delete(name string) {
 	s := sm.getShard(name)
 	start := time.Now()
 	s.mu.Lock()
-	metrics.ShardLockWaitDuration.Observe(time.Since(start).Seconds())
+	metrics.ShardLockWaitDuration.WithLabelValues(s.id(), "write").Observe(time.Since(start).Seconds())
 	defer s.mu.Unlock()
 	delete(s.data, name)
 }
@@ -77,7 +84,7 @@ func (sm *ShardedMap) GetOrCreate(name string, create func() *Dataset) *Dataset 
 	// Try read first
 	start := time.Now()
 	s.mu.RLock()
-	metrics.ShardLockWaitDuration.Observe(time.Since(start).Seconds())
+	metrics.ShardLockWaitDuration.WithLabelValues(s.id(), "read").Observe(time.Since(start).Seconds())
 	if ds, ok := s.data[name]; ok {
 		s.mu.RUnlock()
 		return ds
@@ -87,7 +94,7 @@ func (sm *ShardedMap) GetOrCreate(name string, create func() *Dataset) *Dataset 
 	// Upgrade to write lock
 	start = time.Now()
 	s.mu.Lock()
-	metrics.ShardLockWaitDuration.Observe(time.Since(start).Seconds())
+	metrics.ShardLockWaitDuration.WithLabelValues(s.id(), "write").Observe(time.Since(start).Seconds())
 	defer s.mu.Unlock()
 
 	// Double-check after acquiring write lock
@@ -158,7 +165,7 @@ func (sm *ShardedMap) WithLock(name string, fn func(data map[string]*Dataset)) {
 	s := sm.getShard(name)
 	start := time.Now()
 	s.mu.Lock()
-	metrics.ShardLockWaitDuration.Observe(time.Since(start).Seconds())
+	metrics.ShardLockWaitDuration.WithLabelValues(s.id(), "write").Observe(time.Since(start).Seconds())
 	defer s.mu.Unlock()
 	fn(s.data)
 }
@@ -168,7 +175,7 @@ func (sm *ShardedMap) WithRLock(name string, fn func(data map[string]*Dataset)) 
 	s := sm.getShard(name)
 	start := time.Now()
 	s.mu.RLock()
-	metrics.ShardLockWaitDuration.Observe(time.Since(start).Seconds())
+	metrics.ShardLockWaitDuration.WithLabelValues(s.id(), "read").Observe(time.Since(start).Seconds())
 	defer s.mu.RUnlock()
 	fn(s.data)
 }

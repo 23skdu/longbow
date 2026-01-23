@@ -36,7 +36,8 @@ func TestVPTree_BuildAndSearch(t *testing.T) {
 	// 4. Verify against Brute Force
 	var expected []RegionItem
 	for _, item := range items {
-		dist := simd.EuclideanDistance(query, item.Centroid)
+		dist, err := simd.EuclideanDistance(query, item.Centroid)
+		assert.NoError(t, err)
 		if dist <= radius {
 			expected = append(expected, item)
 		}

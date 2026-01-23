@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"math/rand"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -32,11 +33,18 @@ var (
 )
 
 func main() {
+	if err := run(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
 	flag.Parse()
 
 	peerList := strings.Split(*peers, ",")
-	if len(peerList) == 0 {
-		log.Fatal("No peers specified")
+	if len(peerList) == 0 || (len(peerList) == 1 && peerList[0] == "") {
+		return fmt.Errorf("no peers specified: use -peers flag to specify at least one peer address (e.g., 127.0.0.1:3000)")
 	}
 
 	fmt.Printf("Starting benchmark:\n")
@@ -105,6 +113,7 @@ func main() {
 
 	wg.Wait()
 	printResults(time.Since(start), ops.Load(), errors.Load(), &latency)
+	return nil
 }
 
 // runIngest generates a random batch and sends it via DoPut
@@ -167,7 +176,7 @@ func runSearch(ctx context.Context, c *client.SmartClient) error {
 		queryVec[i] = rand.Float32()
 	}
 
-	req := map[string]interface{}{
+	req := map[string]any{
 		"dataset": "bench_collection",
 		"vector":  queryVec,
 		"k":       10,

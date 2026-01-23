@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"errors"
 	"os"
 	"strconv"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	qry "github.com/23skdu/longbow/internal/query"
+	"github.com/rs/zerolog"
 
 	"github.com/23skdu/longbow/internal/pq"
 	"github.com/apache/arrow-go/v18/arrow"
@@ -40,6 +42,9 @@ type Dataset struct {
 	Schema     *arrow.Schema
 	Topo       *NUMATopology
 
+	// Schema Evolution
+	SchemaManager *SchemaEvolutionManager
+
 	// Tombstones map BatchIdx -> Bitset of deleted RowIdxs
 	Tombstones map[int]*qry.Bitset
 
@@ -58,6 +63,7 @@ type Dataset struct {
 
 	// In-flight Indexing Tracking (Compaction Safety)
 	PendingIndexJobs atomic.Int64
+	PendingIngestion atomic.Int64
 
 	// LWW State
 	LWW *TimestampMap
@@ -83,9 +89,9 @@ type Dataset struct {
 	recordEviction *RecordEvictionManager
 
 	// hnsw2 integration (Phase 5)
-	// Using interface{} to avoid import cycle with hnsw2 package
+	// Using any to avoid import cycle with hnsw2 package
 	// Actual type is *hnsw2.ArrowHNSW, initialized externally
-	hnsw2Index interface{}
+	hnsw2Index any
 	useHNSW2   bool // Feature flag
 
 	// Metric defines the distance metric for this dataset
@@ -97,6 +103,8 @@ type Dataset struct {
 	// Filter Cache: maps filter hash -> Bitset
 	filterCache map[string]*qry.Bitset
 	filterMu    sync.RWMutex
+
+	Logger zerolog.Logger
 }
 
 // IsSharded returns true if the dataset uses ShardedHNSW.
@@ -150,6 +158,9 @@ func NewDataset(name string, schema *arrow.Schema) *Dataset {
 		// hnsw2Index will be initialized externally to avoid import cycle
 	}
 
+	// Initialize Schema Manager
+	ds.SchemaManager = NewSchemaEvolutionManager(schema, name)
+
 	// Initialize fragmentation tracker
 	ds.fragmentationTracker = NewFragmentationTracker()
 	ds.fragmentationTracker.SetDatasetName(name)
@@ -187,18 +198,18 @@ func (d *Dataset) UseHNSW2() bool {
 
 // SetHNSW2Index sets the hnsw2 index (called from external initialization).
 // This avoids import cycles by allowing main package to initialize hnsw2.
-func (d *Dataset) SetHNSW2Index(idx interface{}) {
+func (d *Dataset) SetHNSW2Index(idx any) {
 	d.hnsw2Index = idx
 }
 
 // GetHNSW2Index returns the hnsw2 index.
 // Caller should type assert to *hnsw2.ArrowHNSW.
-func (d *Dataset) GetHNSW2Index() interface{} {
+func (d *Dataset) GetHNSW2Index() any {
 	return d.hnsw2Index
 }
 
 // SearchDataset delegates to the vector index if available
-func (d *Dataset) SearchDataset(query []float32, k int) ([]SearchResult, error) {
+func (d *Dataset) SearchDataset(ctx context.Context, query []float32, k int) ([]SearchResult, error) {
 	d.dataMu.RLock()
 	idx := d.Index
 	d.dataMu.RUnlock()
@@ -207,7 +218,7 @@ func (d *Dataset) SearchDataset(query []float32, k int) ([]SearchResult, error) 
 		return nil, nil
 	}
 	// Assuming vector index interface has SearchVectors
-	return idx.SearchVectors(query, k, nil, SearchOptions{})
+	return idx.SearchVectors(ctx, query, k, nil, SearchOptions{})
 }
 
 // AddToIndex adds a vector to the index
@@ -220,7 +231,8 @@ func (d *Dataset) AddToIndex(batchIdx, rowIdx int) error {
 		return errors.New("no index available")
 	}
 
-	_, err := idx.AddByLocation(batchIdx, rowIdx)
+	// Pass Background or propagate context
+	_, err := idx.AddByLocation(context.Background(), batchIdx, rowIdx)
 	return err
 }
 
@@ -242,6 +254,11 @@ func (d *Dataset) GenerateFilterBitset(filters []qry.Filter) (*qry.Bitset, error
 	d.dataMu.RLock()
 	defer d.dataMu.RUnlock()
 
+	return d.GenerateFilterBitsetLocked(filters, hash)
+}
+
+// GenerateFilterBitsetLocked is the variant that assumes d.dataMu is already held.
+func (d *Dataset) GenerateFilterBitsetLocked(filters []qry.Filter, hash string) (*qry.Bitset, error) {
 	if len(d.Records) == 0 || d.Index == nil {
 		return nil, nil
 	}
@@ -261,7 +278,10 @@ func (d *Dataset) GenerateFilterBitset(filters []qry.Filter) (*qry.Bitset, error
 			continue // Should not happen with consistent schema
 		}
 
-		matches := eval.MatchesAll(int(rec.NumRows()))
+		matches, err := eval.MatchesAll(int(rec.NumRows()))
+		if err != nil {
+			return nil, err
+		}
 		for _, rowIdx := range matches {
 			loc := Location{BatchIdx: batchIdx, RowIdx: rowIdx}
 			if vid, ok := idx.GetVectorID(loc); ok {
@@ -341,10 +361,23 @@ func (d *Dataset) Close() {
 		d.BM25Index = nil
 	}
 
+	if d.BM25ArenaIndex != nil {
+		_ = d.BM25ArenaIndex.Close()
+		d.BM25ArenaIndex = nil
+	}
+
 	if d.Graph != nil {
 		_ = d.Graph.Close()
 		d.Graph = nil
 	}
+
+	// Release records
+	for _, r := range d.Records {
+		if r != nil {
+			r.Release()
+		}
+	}
+	d.Records = nil
 
 	d.PrimaryIndex = nil
 	d.recordEviction = nil
@@ -412,7 +445,7 @@ func (d *Dataset) UpdatePrimaryIndex(batchIdx int, rec arrow.RecordBatch) {
 
 // WaitForIndexing blocks until all pending indexing jobs for this dataset are complete.
 func (d *Dataset) WaitForIndexing() {
-	for d.PendingIndexJobs.Load() > 0 {
-		time.Sleep(5 * time.Millisecond)
+	for d.PendingIndexJobs.Load() > 0 || d.PendingIngestion.Load() > 0 {
+		time.Sleep(10 * time.Millisecond)
 	}
 }

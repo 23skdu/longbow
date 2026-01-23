@@ -99,6 +99,32 @@ func (b *Bitset) Release() {
 	}
 }
 
+// Slice returns a new Bitset containing bits in range [offset, offset+length)
+// shifted by -offset. Used for splitting batches with tombstones.
+func (b *Bitset) Slice(offset, length int) *Bitset {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+
+	newBm := NewBitset()
+	if b.bitmap == nil {
+		return newBm
+	}
+
+	// Optimize: Using iterator with skip
+	iter := b.bitmap.Iterator()
+	iter.AdvanceIfNeeded(uint32(offset))
+
+	for iter.HasNext() {
+		val := iter.Next()
+		if val >= uint32(offset+length) {
+			break
+		}
+		newBm.Set(int(val) - offset)
+	}
+
+	return newBm
+}
+
 // AtomicBitset implements a lock-free (for readers) bitset using Copy-On-Write logic.
 // It is optimized for scenarios with frequent reads (Contains) and infrequent writes (Set/Delete).
 type AtomicBitset struct {
@@ -171,6 +197,12 @@ func (b *AtomicBitset) ToUint32Array() []uint32 {
 		return nil
 	}
 	return bm.ToArray()
+}
+
+func (b *AtomicBitset) Reset() {
+	b.writeMu.Lock()
+	defer b.writeMu.Unlock()
+	b.bitmap.Store(roaring.New())
 }
 
 func (b *AtomicBitset) Clone() *AtomicBitset {

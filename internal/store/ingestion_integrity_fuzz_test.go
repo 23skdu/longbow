@@ -40,6 +40,7 @@ func FuzzIngestionIntegrity_Concurrent(f *testing.F) {
 
 		// Setup store with fast indexing
 		store := NewVectorStore(mem, zerolog.Nop(), 1024*1024*100, 1024*1024*100, 1*time.Hour)
+		defer func() { _ = store.Close() }()
 
 		// Force HNSW2 (ArrowHNSW) usage and fast Indexing
 		// store.DatasetInitHook or similar?
@@ -64,7 +65,7 @@ func FuzzIngestionIntegrity_Concurrent(f *testing.F) {
 				defer wg.Done()
 				for b := 0; b < batchesPerWriter; b++ {
 					// Create batch
-					rec := createIntegrityTestBatch(t, mem, rowsPerBatch, writerID, b)
+					rec := createIntegrityTestBatch(mem, rowsPerBatch, writerID, b)
 					err := store.StoreRecordBatch(context.Background(), dsName, rec)
 					rec.Release()
 					if err != nil {
@@ -122,12 +123,23 @@ func FuzzIngestionIntegrity_Concurrent(f *testing.F) {
 		// Pick random target
 		randWriter := rand.Intn(numWriters)
 		randBatch := rand.Intn(batchesPerWriter)
-		// We re-create that batch
-		targetRec := createIntegrityTestBatch(t, mem, rowsPerBatch, randWriter, randBatch)
-		defer targetRec.Release()
-
 		// Pick random row in batch
 		randRow := rand.Intn(rowsPerBatch)
+
+		// Prepare query vector from recreated batch
+		targetRec := createIntegrityTestBatch(mem, rowsPerBatch, randWriter, randBatch)
+		defer targetRec.Release()
+
+		// Get the string ID for the chosen row to look up physical ID in store
+		strIDCol := targetRec.Column(0).(*array.String)
+		strID := strIDCol.Value(randRow)
+
+		ds.dataMu.RLock()
+		rowLoc, ok := ds.PrimaryIndex[strID]
+		ds.dataMu.RUnlock()
+		require.True(t, ok, "ID should be in primary index")
+		require.NotNil(t, rowLoc)
+
 		vecCol := targetRec.Column(1).(*array.FixedSizeList)
 		valCol := vecCol.ListValues().(*array.Float32)
 
@@ -138,7 +150,7 @@ func FuzzIngestionIntegrity_Concurrent(f *testing.F) {
 		}
 
 		// Search
-		results, err := ds.Index.SearchVectors(queryVec, 1, nil, SearchOptions{})
+		results, err := ds.Index.SearchVectors(context.Background(), queryVec, 1, nil, SearchOptions{})
 		require.NoError(t, err)
 		require.GreaterOrEqual(t, len(results), 1, "Should find at least 1 result")
 
@@ -147,7 +159,7 @@ func FuzzIngestionIntegrity_Concurrent(f *testing.F) {
 	})
 }
 
-func createIntegrityTestBatch(t *testing.T, mem memory.Allocator, rows int, wID, bID int) arrow.RecordBatch {
+func createIntegrityTestBatch(mem memory.Allocator, rows, wID, bID int) arrow.RecordBatch {
 	// Schema: id (string), vector (float32[128])
 	dims := 128
 	schema := arrow.NewSchema([]arrow.Field{

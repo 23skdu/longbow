@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"testing"
@@ -96,7 +97,7 @@ func TestPQPersistence(t *testing.T) {
 	require.True(t, trained, "Should have found and trained index")
 
 	// 3. Snapshot
-	err = store.Snapshot()
+	err = store.Snapshot(context.Background())
 	require.NoError(t, err)
 
 	// Verify .pq file exists

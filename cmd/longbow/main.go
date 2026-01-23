@@ -1,18 +1,18 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/pprof" // Register pprof handlers manually
 	"os"
 	"os/signal"
+	"strconv" // Added for hostname fallback
 	"strings"
 	"sync"
 	"syscall"
 	"time"
-
-	"context"
-	"strconv" // Added for hostname fallback
 
 	"runtime"
 	"runtime/debug"
@@ -28,7 +28,6 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/apache/arrow-go/v18/arrow/flight"
-	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/joho/godotenv"
 	"github.com/kelseyhightower/envconfig"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -129,6 +128,7 @@ type Config struct {
 	AutoShardingThreshold      int  `envconfig:"AUTO_SHARDING_THRESHOLD" default:"10000"`
 	AutoShardingSplitThreshold int  `envconfig:"AUTO_SHARDING_SPLIT_THRESHOLD" default:"65536"` // Default chunk size
 	RingShardingEnabled        bool `envconfig:"RING_SHARDING_ENABLED" default:"true"`
+	IngestionWorkerCount       int  `envconfig:"INGESTION_WORKER_COUNT" default:"0"` // 0 = runtime.NumCPU()
 }
 
 // Global config instance for hook functions
@@ -180,8 +180,9 @@ func run() error {
 	defer stop()
 
 	if err := envconfig.Process("LONGBOW", &globalCfg); err != nil {
-		// Fallback to basic logging if config fails
-		panic("Failed to process config: " + err.Error())
+		stop()
+		fmt.Fprintf(os.Stderr, "Failed to process config: %v\n", err)
+		os.Exit(1)
 	}
 	cfg := globalCfg
 
@@ -191,7 +192,15 @@ func run() error {
 		Level:  cfg.LogLevel,
 	})
 	if err != nil {
-		panic("Failed to initialize logger: " + err.Error())
+		stop()
+		fmt.Fprintf(os.Stderr, "Failed to initialize logger: %v\n", err)
+		os.Exit(1)
+	}
+
+	if err := ValidateConfig(&cfg); err != nil {
+		logger.Error().Err(err).Msg("Invalid configuration")
+		fmt.Fprintf(os.Stderr, "Invalid configuration: %v\n", err)
+		os.Exit(1)
 	}
 
 	logger.Info().
@@ -215,14 +224,16 @@ func run() error {
 	}
 
 	// Dynamic GOGC Tuning
+	var tuner *lbmem.GCTuner
 	if cfg.MaxMemory > 0 {
-		tuner := lbmem.NewGCTuner(cfg.MaxMemory, cfg.GOGC, 10, &logger)
+		tuner = lbmem.NewGCTuner(cfg.MaxMemory, cfg.GOGC, 10, &logger)
+		tuner.IsAggressive = true
 		// Run in background, tied to ctx (stops on signal)
-		go tuner.Start(ctx, 2*time.Second)
+		go tuner.Start(ctx, 500*time.Millisecond)
 		logger.Info().
 			Int64("limit_bytes", cfg.MaxMemory).
 			Int("high_gogc", cfg.GOGC).
-			Msg("Dynamic GOGC Tuner started")
+			Msg("Aggressive GOGC Tuner started (500ms interval, arena-aware)")
 	} else if cfg.GOGC != 100 {
 		debug.SetGCPercent(cfg.GOGC)
 		logger.Info().Int("value", cfg.GOGC).Msg("GOGC tuned (static)")
@@ -232,7 +243,7 @@ func run() error {
 	defer runtime.KeepAlive(ballast)
 
 	// Create memory allocator
-	mem := memory.NewGoAllocator()
+	mem := store.NewPooledAllocator()
 
 	// Initialize vector store with compaction config
 	compactionCfg := store.CompactionConfig{
@@ -242,6 +253,7 @@ func run() error {
 		CompactionInterval:  cfg.CompactionInterval,
 	}
 	vectorStore := store.NewVectorStoreWithCompaction(mem, logger, cfg.MaxMemory, cfg.MaxWALSize, cfg.TTL, compactionCfg)
+	vectorStore.SetGCTuner(tuner)
 
 	// Register hnsw2 initialization hook
 	vectorStore.SetDatasetInitHook(func(ds *store.Dataset) {
@@ -313,6 +325,8 @@ func run() error {
 
 	// Start background indexing workers
 	vectorStore.StartIndexingWorkers(runtime.NumCPU())
+	// Start ingestion workers
+	vectorStore.StartIngestionWorkers(cfg.IngestionWorkerCount)
 
 	// Initialize OpenTelemetry Tracer
 	tp := initTracer()
@@ -322,7 +336,7 @@ func run() error {
 		}
 	}()
 
-	// Start metrics server with timeouts (G114 fix)
+	// Start metrics server with timeouts and port retry logic
 	go func() {
 		mux := http.NewServeMux()
 		mux.Handle("/metrics", promhttp.Handler())
@@ -334,16 +348,59 @@ func run() error {
 		mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
 		mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
 
+		// Try to bind to the configured port, with fallback to next 5 ports
+		baseAddr := cfg.MetricsAddr
+		host, portStr, err := net.SplitHostPort(baseAddr)
+		if err != nil {
+			logger.Error().Err(err).Str("addr", baseAddr).Msg("Invalid metrics address format")
+			return
+		}
+
+		basePort, err := strconv.Atoi(portStr)
+		if err != nil {
+			logger.Error().Err(err).Str("port", portStr).Msg("Invalid metrics port")
+			return
+		}
+
+		var boundAddr string
+		var listener net.Listener
+		maxRetries := 5
+		for i := 0; i < maxRetries; i++ {
+			tryPort := basePort + i
+			tryAddr := net.JoinHostPort(host, strconv.Itoa(tryPort))
+
+			listener, err = net.Listen("tcp", tryAddr)
+			if err == nil {
+				boundAddr = tryAddr
+				logger.Info().
+					Str("addr", boundAddr).
+					Int("attempt", i+1).
+					Msg("Metrics server bound successfully")
+				break
+			}
+
+			if i == maxRetries-1 {
+				logger.Error().
+					Err(err).
+					Str("base_addr", baseAddr).
+					Int("retries", maxRetries).
+					Msg("Failed to bind metrics server after retries")
+				return
+			}
+		}
+
 		srv := &http.Server{
-			Addr:         cfg.MetricsAddr,
 			Handler:      mux,
 			ReadTimeout:  10 * time.Second,
 			WriteTimeout: 10 * time.Second,
 			IdleTimeout:  60 * time.Second,
 		}
 
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Error().Err(err).Msg("Metrics server failed")
+		if err := srv.Serve(listener); err != nil && err != http.ErrServerClosed {
+			logger.Error().
+				Err(err).
+				Str("addr", boundAddr).
+				Msg("Metrics server failed")
 		}
 	}()
 
@@ -379,9 +436,10 @@ func run() error {
 			ID:             nodeID,
 			Port:           cfg.GossipPort,
 			ProtocolPeriod: cfg.GossipInterval,
-			Addr:           "0.0.0.0", // Bind to all interfaces
-			GRPCAddr:       selfAddr,  // Advertise this for gRPC Data
-			MetaAddr:       metaAddr,  // Advertise this for gRPC Meta
+			Addr:           "0.0.0.0",               // Bind to all interfaces
+			AdvertiseAddr:  cfg.GossipAdvertiseAddr, // Public gossip address for containers/K8s
+			GRPCAddr:       selfAddr,                // Advertise this for gRPC Data
+			MetaAddr:       metaAddr,                // Advertise this for gRPC Meta
 			Delegate:       ringManager,
 			Discovery: mesh.DiscoveryConfig{
 				Provider:    cfg.GossipDiscovery,
@@ -389,12 +447,6 @@ func run() error {
 				DNSRecord:   cfg.GossipDNSRecord,
 			},
 		}
-
-		// If provided, override advertise addr logic (TODO: pass to NewGossip if supported or modify Gossip to take AdvertiseAddr)
-		// Current gossip.go uses "127.0.0.1" hardcoded in Start(). We should probably fix that too but for now...
-		// Let's rely on GossipConfig defaults or update internal/mesh/gossip.go later.
-		// Wait, NewGossip takes GossipConfig but g.Start() uses "127.0.0.1". I should fix gossip.go too!
-		// Proceeding with initialization.
 
 		g := mesh.NewGossip(&gossipCfg)
 		if err := g.Start(); err != nil {

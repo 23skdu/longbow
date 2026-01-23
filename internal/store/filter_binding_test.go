@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -82,8 +83,12 @@ func TestShardedHNSW_FilterPanicReproduction(t *testing.T) {
 	ds.dataMu.Lock()
 	ds.Records = append(ds.Records, rec0)
 	ds.dataMu.Unlock()
-	idx.AddByRecord(rec0, 0, 0)
-	idx.AddByRecord(rec0, 1, 0)
+	if _, err := idx.AddByRecord(context.Background(), rec0, 0, 0); err != nil {
+		t.Fatalf("AddByRecord failed: %v", err)
+	}
+	if _, err := idx.AddByRecord(context.Background(), rec0, 1, 0); err != nil {
+		t.Fatalf("AddByRecord failed: %v", err)
+	}
 
 	// Add data to Batch 1
 	id1Builder := array.NewInt64Builder(pool)
@@ -99,7 +104,9 @@ func TestShardedHNSW_FilterPanicReproduction(t *testing.T) {
 	ds.dataMu.Lock()
 	ds.Records = append(ds.Records, rec1)
 	ds.dataMu.Unlock()
-	idx.AddByRecord(rec1, 0, 1)
+	if _, err := idx.AddByRecord(context.Background(), rec1, 0, 1); err != nil {
+		t.Fatalf("AddByRecord failed: %v", err)
+	}
 
 	// Search with filter
 	filters := []query.Filter{
@@ -108,7 +115,7 @@ func TestShardedHNSW_FilterPanicReproduction(t *testing.T) {
 
 	// This search will likely panic because ShardedHNSW.SearchVectors uses evaluator bound to rec0
 	// while matching rows in rec1 (for globalID 2).
-	results, err := idx.SearchVectors([]float32{1, 1, 1}, 10, filters, SearchOptions{})
+	results, err := idx.SearchVectors(context.Background(), []float32{1, 1, 1}, 10, filters, SearchOptions{})
 	require.NoError(t, err)
 
 	fmt.Printf("Results: %v\n", results)

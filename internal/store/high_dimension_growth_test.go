@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"runtime"
 	"testing"
 
@@ -48,7 +49,7 @@ func TestHNSW_HighDimensionGrowth(t *testing.T) {
 	t.Logf("Initial heap alloc: %d MB", m1.HeapAlloc/(1024*1024))
 
 	// Reset growth metric
-	metrics.HNSWIndexGrowthDuration.Write(&dto.Metric{})
+	_ = metrics.HNSWIndexGrowthDuration.Write(&dto.Metric{})
 
 	// Add vectors in batches to trigger multiple growth operations
 	batchSize := 500
@@ -83,7 +84,7 @@ func TestHNSW_HighDimensionGrowth(t *testing.T) {
 
 		// Add to index
 		for i := 0; i < batchSize; i++ {
-			_, err := hnsw.AddByLocation(batchIdx, i)
+			_, err := hnsw.AddByLocation(context.Background(), batchIdx, i)
 			require.NoError(t, err)
 		}
 
@@ -127,7 +128,7 @@ func TestHNSW_HighDimensionGrowth(t *testing.T) {
 		queryVec[i] = float32(i) / float32(dims)
 	}
 
-	results, err := hnsw.SearchVectors(queryVec, 10, nil, SearchOptions{})
+	results, err := hnsw.SearchVectors(context.Background(), queryVec, 10, nil, SearchOptions{})
 	require.NoError(t, err)
 	require.Len(t, results, 10, "Should return 10 results")
 
@@ -194,7 +195,7 @@ func TestHNSW_HighDimensionGrowth_MemoryPressure(t *testing.T) {
 		ds.dataMu.Unlock()
 
 		for i := 0; i < batchSize; i++ {
-			_, err := hnsw.AddByLocation(batchIdx, i)
+			_, err := hnsw.AddByLocation(context.Background(), batchIdx, i)
 			require.NoError(t, err)
 		}
 

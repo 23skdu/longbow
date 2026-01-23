@@ -18,6 +18,25 @@ groups:
         annotations:
           summary: "Slow global search performance"
           description: "P95 global search latency exceeds 2 seconds."
+  - name: longbow_hybrid_search_alerts
+    rules:
+      - alert: LongbowHybridSearchStalled
+        expr: longbow_hybrid_search_enabled == 1 AND rate(longbow_hybrid_search_vector_total[5m]) == 0 AND rate(longbow_hybrid_search_keyword_total[5m]) == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Hybrid search stalled"
+          description: "Hybrid search is enabled but no vector or keyword searches have been processed for 5 minutes."
+
+      - alert: LongbowBM25IndexStalled
+        expr: longbow_hybrid_search_enabled == 1 AND rate(longbow_bm25_documents_indexed_total[5m]) == 0
+        for: 15m
+        labels:
+          severity: info
+        annotations:
+          summary: "BM25 indexing activity low"
+          description: "Hybrid search is enabled but no documents have been indexed to BM25 for 15 minutes."
 
   - name: longbow_wal_alerts
     rules:
@@ -182,6 +201,15 @@ groups:
           summary: "High memory fragmentation"
           description: "Memory fragmentation ratio is {{ $value }}, consider compaction."
 
+      - alert: LongbowHighBackpressureRejections
+        expr: rate(longbow_memory_backpressure_rejects_total[5m]) > 5
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Critical memory backpressure"
+          description: "System is rejecting more than 5 requests/sec due to memory exhaustion."
+
   - name: longbow_performance_alerts
     rules:
       - alert: LongbowHighIpcErrors
@@ -201,6 +229,24 @@ groups:
         annotations:
           summary: "Slow Flight operations for {{ $labels.method }}"
           description: "P99 latency exceeds 5 seconds."
+
+      - alert: LongbowGPUSlowSearch
+        expr: histogram_quantile(0.99, sum(rate(longbow_vector_search_gpu_latency_seconds_bucket[5m])) by (le)) > 0.5
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Slow GPU search operations"
+          description: "P99 GPU search latency exceeds 500ms."
+
+      - alert: LongbowGPUFailure
+        expr: rate(longbow_vector_search_gpu_operations_total[5m]) == 0 AND longbow_gpu_enabled == 1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "GPU acceleration failure"
+          description: "GPU is enabled but no operations are being processed, may indicate driver or hang issue."
 
       - alert: LongbowHighLockContention
         expr: histogram_quantile(0.95, sum(rate(longbow_dataset_lock_wait_duration_seconds_bucket[5m])) by (le, operation)) > 0.1
@@ -307,3 +353,12 @@ groups:
         annotations:
           summary: "High vector clock conflict rate"
           description: "Vector clock conflicts exceeding 10/sec ({{ $value }})."
+
+      - alert: LongbowTombstoneSaturation
+        expr: (longbow_tombstones_total / longbow_hnsw_node_count) > 0.2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High tombstone density"
+          description: "Tombstones represent {{ $value | humanizePercentage }} of the index. Compaction recommended."

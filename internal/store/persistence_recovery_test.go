@@ -83,14 +83,13 @@ func TestPersistence_ReplayWAL_Corruption(t *testing.T) {
 		require.NoError(t, err)
 
 		store := NewVectorStore(mem, logger, 1<<30, 0, time.Hour)
+		defer func() { _ = store.Close() }()
 		err = store.InitPersistence(storage.StorageConfig{DataPath: tmpDir})
 
 		// New behavior: InitPersistence returns error on corruption
 		// unless we modify it to tolerate/skip.
 		// For now we assert Error to be strict.
 		assert.Error(t, err)
-
-		_ = store.Close()
 	})
 
 	t.Run("TruncatedHeader", func(t *testing.T) {
@@ -100,11 +99,10 @@ func TestPersistence_ReplayWAL_Corruption(t *testing.T) {
 		require.NoError(t, err)
 
 		store := NewVectorStore(mem, logger, 1<<30, 0, time.Hour)
+		defer func() { _ = store.Close() }()
 		err = store.InitPersistence(storage.StorageConfig{DataPath: tmpDir})
 		// Engine treats truncated header at EOF as end of WAL (best effort)
 		assert.NoError(t, err)
-
-		_ = store.Close()
 	})
 
 	t.Run("TruncatedRecord", func(t *testing.T) {
@@ -118,10 +116,9 @@ func TestPersistence_ReplayWAL_Corruption(t *testing.T) {
 		require.NoError(t, err)
 
 		store := NewVectorStore(mem, logger, 1<<30, 0, time.Hour)
+		defer func() { _ = store.Close() }()
 		err = store.InitPersistence(storage.StorageConfig{DataPath: tmpDir})
 		// Engine treats truncated record at EOF as end of WAL
 		assert.NoError(t, err)
-
-		_ = store.Close()
 	})
 }

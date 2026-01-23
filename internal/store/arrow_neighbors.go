@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/compute"
@@ -19,7 +18,7 @@ func (b *BatchDistanceComputer) SelectTopKNeighbors(
 		return nil, nil, nil
 	}
 	if len(distances) != len(ids) {
-		return nil, nil, fmt.Errorf("length mismatch: distances %d, ids %d", len(distances), len(ids))
+		return nil, nil, NewNeighborSelectionLengthMismatchError(len(distances), len(ids))
 	}
 	if len(ids) <= k {
 		outID := make([]uint32, len(ids))
@@ -59,7 +58,7 @@ func (b *BatchDistanceComputer) SelectTopKNeighbors(
 
 	indicesDatum, err := compute.CallFunction(ctx, "select_k_neighbors", opts, datumDists, datumIDs)
 	if err != nil {
-		return nil, nil, fmt.Errorf("select_k_neighbors failed: %w", err)
+		return nil, nil, NewNeighborSelectionFailedError("select_k_neighbors", err)
 	}
 	defer indicesDatum.Release()
 
@@ -85,7 +84,7 @@ func (b *BatchDistanceComputer) SelectTopKNeighbors(
 
 	takenIDsDatum, err := compute.Take(ctx, *takeOpts, datumIDs, compute.NewDatum(topKIndices))
 	if err != nil {
-		return nil, nil, fmt.Errorf("take ids failed: %w", err)
+		return nil, nil, NewNeighborSelectionFailedError("take_ids", err)
 	}
 	defer takenIDsDatum.Release()
 	takenIDs := takenIDsDatum.(*compute.ArrayDatum).MakeArray().(*array.Uint32)
@@ -93,7 +92,7 @@ func (b *BatchDistanceComputer) SelectTopKNeighbors(
 
 	takenDistsDatum, err := compute.Take(ctx, *takeOpts, datumDists, compute.NewDatum(topKIndices))
 	if err != nil {
-		return nil, nil, fmt.Errorf("take dists failed: %w", err)
+		return nil, nil, NewNeighborSelectionFailedError("take_dists", err)
 	}
 	defer takenDistsDatum.Release()
 	takenDists := takenDistsDatum.(*compute.ArrayDatum).MakeArray().(*array.Float32)

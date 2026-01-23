@@ -24,20 +24,19 @@ type CheckpointCoordinator struct {
 	checkpointCount atomic.Uint64
 	participants    map[string]bool
 	barrierCounts   map[uint64]int
-	barrierCond     *sync.Cond
+	epochChannels   map[uint64]chan struct{}
 	mu              sync.Mutex
 	inProgress      atomic.Bool
 }
 
 // NewCheckpointCoordinator creates a new checkpoint coordinator.
 func NewCheckpointCoordinator(cfg CheckpointConfig) *CheckpointCoordinator {
-	c := &CheckpointCoordinator{
+	return &CheckpointCoordinator{
 		config:        cfg,
 		participants:  make(map[string]bool),
 		barrierCounts: make(map[uint64]int),
+		epochChannels: make(map[uint64]chan struct{}),
 	}
-	c.barrierCond = sync.NewCond(&c.mu)
-	return c
 }
 
 // GetEpoch returns the current checkpoint epoch.
@@ -77,48 +76,42 @@ func (c *CheckpointCoordinator) InitiateCheckpoint(ctx context.Context) error {
 	metrics.CheckpointEpoch.Set(float64(newEpoch))
 	metrics.CheckpointsTotal.Inc()
 
-	// Broadcast to all waiting goroutines
-	c.mu.Lock()
-	c.barrierCond.Broadcast()
-	c.mu.Unlock()
-
 	return nil
 }
 
 // WaitForBarrier waits until quorum participants reach the barrier.
 func (c *CheckpointCoordinator) WaitForBarrier(ctx context.Context, participantID string, epoch uint64) error {
 	c.mu.Lock()
-	defer c.mu.Unlock()
+
+	// Get or create channel for this epoch
+	ch, ok := c.epochChannels[epoch]
+	if !ok {
+		ch = make(chan struct{})
+		c.epochChannels[epoch] = ch
+	}
 
 	// Increment barrier count for this epoch
 	c.barrierCounts[epoch]++
 	currentCount := c.barrierCounts[epoch]
 
 	// Check if quorum is reached
-	if currentCount >= c.config.QuorumRequired {
-		c.barrierCond.Broadcast()
-		metrics.CheckpointBarrierReached.Inc()
-		return nil
+	// Only close if not already closed
+	select {
+	case <-ch:
+		// already closed
+	default:
+		if currentCount >= c.config.QuorumRequired {
+			close(ch)
+			metrics.CheckpointBarrierReached.Inc()
+		}
 	}
+	c.mu.Unlock()
 
 	// Wait for quorum or timeout
-	done := make(chan struct{})
-	go func() {
-		c.mu.Lock()
-		for c.barrierCounts[epoch] < c.config.QuorumRequired {
-			c.barrierCond.Wait()
-		}
-		c.mu.Unlock()
-		close(done)
-	}()
-
-	c.mu.Unlock()
 	select {
-	case <-done:
-		c.mu.Lock()
+	case <-ch:
 		return nil
 	case <-ctx.Done():
-		c.mu.Lock()
 		metrics.CheckpointTimeoutsTotal.Inc()
 		return ctx.Err()
 	}

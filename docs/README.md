@@ -18,7 +18,7 @@ graph TB
 
     subgraph Core["Vector Store Core"]
         direction TB
-        Shards["Sharded HNSW Index (32 shards)"]
+        Shards["Sharded HNSW Index (Dynamic CPU-based)"]
         Sparse["Inverted Index (BM25/Sparse)"]
         Arena["Slab Arena (Off-heap Vectors)"]
         Pool["Bitmap & Result Pools (Optimized)"]
@@ -42,6 +42,8 @@ graph TB
 ## Key Features
 
 * **Apache Arrow Flight Protocol**: Zero-copy data transfer.
+* **Polymorphic Vector Support**: Native support for Float32, FP16, SQ8, PQ, BQ, and Int8.
+* **High-Dimensionality**: Optimized for up to 3072 dimensions with cache-line padding and blocked SIMD.
 * **In-Memory Storage**: Fast read/write operations.
 * **Prometheus Metrics**: Built-in observability.
 * **Helm Deployment**: Easy installation on Kubernetes.
@@ -63,10 +65,11 @@ Longbow exposes Prometheus metrics on port `9090` at `/metrics`.
 
 ### Custom Metrics
 
-* `longbow_flight_operations_total`: Total number of Flight operations (DoGet,
+* `longbow_flight_ops_total`: Total number of Flight operations (DoGet,
 DoPut, etc.)
 * `longbow_flight_duration_seconds`: Histogram of operation latencies
-* `longbow_flight_bytes_processed_total`: Total bytes processed in operations
+* `longbow_flight_bytes_read_total`: Total bytes read in operations
+* `longbow_flight_bytes_written_total`: Total bytes written in operations
 
 ### Scrape Configuration
 

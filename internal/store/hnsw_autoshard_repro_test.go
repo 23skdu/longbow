@@ -8,6 +8,8 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"context"
+
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
@@ -47,7 +49,7 @@ func TestAutoSharding_ConcurrentWrites_Repro(t *testing.T) {
 		rowIdxs[i] = i
 		batchIdxs[i] = 0
 	}
-	_, _ = index.AddBatch([]arrow.RecordBatch{preloadBatch}, rowIdxs, batchIdxs)
+	_, _ = index.AddBatch(context.Background(), []arrow.RecordBatch{preloadBatch}, rowIdxs, batchIdxs)
 	fmt.Println("Pre-load complete. Starting race...")
 
 	var wg sync.WaitGroup
@@ -97,7 +99,7 @@ func TestAutoSharding_ConcurrentWrites_Repro(t *testing.T) {
 				}
 
 				// The call that might panic if index is closed underneath
-				_, _ = index.AddBatch([]arrow.RecordBatch{batch}, rowIdxs, batchIdxs)
+				_, _ = index.AddBatch(context.Background(), []arrow.RecordBatch{batch}, rowIdxs, batchIdxs)
 
 				// Small sleep to allow migration to interleave
 				if i%10 == 0 {

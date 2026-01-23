@@ -24,7 +24,7 @@ func TestPartitionProxyInterceptor_Local(t *testing.T) {
 	fwdCfg := DefaultForwarderConfig()
 	forwarder := NewRequestForwarder(&fwdCfg, rm)
 	interceptor := PartitionProxyInterceptor(rm, forwarder)
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, req any) (any, error) {
 		return "success", nil
 	}
 
@@ -47,7 +47,7 @@ func TestPartitionProxyInterceptor_Remote(t *testing.T) {
 	fwdCfg := DefaultForwarderConfig()
 	forwarder := NewRequestForwarder(&fwdCfg, rm)
 	interceptor := PartitionProxyInterceptor(rm, forwarder)
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, req any) (any, error) {
 		return "should-not-be-called", nil
 	}
 

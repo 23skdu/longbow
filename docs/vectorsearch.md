@@ -19,9 +19,9 @@ Longbow implements a **Circuit Breaker** pattern to prevent cascading failures d
 
 ### Circuit Breaker
 
-* **Protection**: Wraps `DoGet` and `VectorSearch` operations.
-* **Threshold**: Trips after 10 consecutive failures.
-* **Cooldown**: 30-second reset timeout.
+* **Protection**: Wraps `DoGet` and `VectorSearch` (via `DoAction`) operations.
+* **Threshold**: Trips after **10 consecutive failures**.
+* **Cooldown**: **30-second** reset timeout.
 * **Behavior**: Fast-fails requests with `Unavailable` status when open, allowing the system to recover.
 
 ## Filtered Search
@@ -33,10 +33,15 @@ Longbow supports metadata filtering during vector search and data scans.
 Currently, Longbow uses a robust **Post-Filtering** strategy integrated with the HNSW graph traversal:
 
 1. **Oversampling**: The index retrieves a larger set of candidates (`k * oversample_factor`).
-2. **Deterministic Mapping**: Internal `VectorID`s are mapped to metadata row locations using a high-density mapping table.
+2. **Deterministic Mapping**: Internal `VectorID`s are mapped to metadata row locations using a
+   high-density mapping table in the `Dataset`.
 3. **Predicate Application**: Each candidate is checked against the provided filter criteria
    (e.g., `id > 100`, `category == 'news'`) using the `MatchesFilters` engine.
 4. **Result Selection**: The first `k` matching candidates that satisfy all predicates are returned to the client.
+
+> [!NOTE]
+> Pre-filtering using a `ColumnInvertedIndex` is supported for specific high-cardinality exact matches
+> but is not the default for complex range or composite filters.
 
 This approach maintains the system's **zero-copy architecture** by accessing metadata directly from Arrow
 memory during the filtering phase.
@@ -77,12 +82,13 @@ Unlike standard libraries, this implementation operates directly on Arrow buffer
 * **Zero-Allocation**: Eliminates allocation churn through object pooling and pre-allocated buffers.
 * **Arrow-Native**: Direct integration with Arrow record batches for zero-copy vector access.
 * **Concurrent Scale**: Multi-core graph building and search using fine-grained locking (`shardedLocks`).
-* **Hardware Acceleration**: SIMD-optimized distance calculations (AVX2/NEON) and Product Quantization (ADC).
+* **Hardware Acceleration**: SIMD-optimized distance calculations (AVX2/NEON) and Product
+  Quantization (ADC).
 
 #### Concurrent Graph Building
 
-* **Locking Strategy**: Uses a hybrid approach with a global `resizeMu` for graph resizing and fine-grained `shardedLocks`
-  ([1024]Mutex) for individual node updates.
+* **Locking Strategy**: Uses a hybrid approach with a global `resizeMu` for graph resizing and
+  fine-grained `shardedLocks` ([1024]Mutex) for individual node updates.
 * **Throughput**: Scales linearly with cores. Thread safety is verified via `TestConcurrentInsert` and specific data race
   regression tests (lazy allocation fixes).
 
@@ -101,8 +107,8 @@ Longbow dynamically optimizes index structures based on dataset size:
 
 * **Small Datasets**: Uses standard `HNSWIndex` for low-overhead access.
 * **Large Datasets**: Automatically migrates to `ShardedHNSW` to enable parallel lock-striping.
-* **Seamless Transition**: The `AutoShardingIndex` handles this upgrade transparently, utilizing an "Interim Sharding"
-  strategy to maintain high availability and consistency during the background migration process.
+* **Seamless Transition**: The `AutoShardingIndex` handles this upgrade transparently, utilizing an
+  "Interim Sharding" strategy to maintain high availability and consistency during migration.
 
 ### SIMD Acceleration
 
@@ -132,7 +138,8 @@ Longbow supports native **Float16 (Half-Precision)** vector storage to reduce me
 
 * **Storage Ratio**: 2 bytes per dimension vs 4 bytes (FP32). 50% memory reduction for raw vectors.
 * **Performance**:
-  * **Search**: ~1.4x higher QPS significantly lower latency (p99) due to reduced memory usage.
+  * **Search**: ~1.4x higher QPS and significantly lower latency (p99) due to reduced
+    memory usage.
   * **Ingestion**: ~20% slower due to conversion overhead (Float32 -> Float16).
 * **Accuracy**: Negligible loss in recall for most embedding models (e.g., OpenAI, Cohere).
 * **Enabling**: Set `HNSW_FLOAT16_ENABLED=true`.
@@ -143,7 +150,8 @@ The `HybridSearchPipeline` orchestrates the entire search flow, integrating filt
 
 ### Pipeline Stages
 
-1. **Exact Filtering** (Optional): Prunes the search space using `ColumnInvertedIndex` for O(1) attribute lookups.
+1. **Exact Filtering** (Optional): Prunes the search space using `ColumnInvertedIndex` for
+   O(1) attribute lookups.
 2. **Retrieval**:
    * **Dense**: Parallel HNSW search.
    * **Sparse**: Parallel BM25 inverted index search.
@@ -186,7 +194,8 @@ type Reranker interface {
 }
 ```
 
-Longbow provides a `CrossEncoderReranker` (currently a stub) to integrate deep learning models that score query-document pairs.
+Longbow provides a `CrossEncoderReranker` (currently a stub) to integrate deep learning models
+that score query-document pairs.
 
 ## Hybrid Search (Legacy Concepts)
 
@@ -256,7 +265,8 @@ edges := gs.GetEdges(VectorID(0))
 
 ### Graph-Biased Ranking (Spreading Activation)
 
-Longbow implements a **Rank-Based Spreading Activation** algorithm to re-rank search results based on graph topology.
+Longbow implements a **Rank-Based Spreading Activation** algorithm to re-rank search results 
+based on graph topology.
 
 1.  **Initialization**: Initial vector search results are assigned a mass based on their rank (`1/rank`).
 2.  **Expansion**: Mass "spreads" to connected neighbors via weighted edges.
@@ -341,6 +351,7 @@ RRF advantages:
 ### Memory Efficiency
 
 * **Zero-copy design**: ~50% RAM reduction vs. standard HNSW
+* **Disk Offloading**: Up to **90% RAM reduction** for high-dimensional vectors (e.g., 3072d) by storing full vectors on SSD.
 * **Size-bucketed pools**: Reduced GC pressure via `PooledAllocator`
 
 ### Search Latency

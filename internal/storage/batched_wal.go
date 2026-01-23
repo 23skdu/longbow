@@ -57,36 +57,46 @@ type WALBatcher struct {
 	entries chan WALEntry
 
 	// Internal state
-	mu           sync.Mutex
+	mu           sync.Mutex // Only for backend I/O, not for batching
 	backend      WALBackend
-	batch        []WALEntry
-	backBatch    []WALEntry // double-buffer: swap on flush to avoid allocation
+	ringBuffer   *WALRingBuffer // Lock-free ring buffer for batching
 	running      bool
 	bufPool      *pool.BytePool // pooled buffers for IPC serialization
 	stopCh       chan struct{}
 	doneCh       chan struct{}
 	flushCh      chan chan error // Channel for synchronous flush requests
 	flushErr     error
+	ErrCh        chan error                  // Channel for async flush errors
 	rateTracker  *WriteRateTracker           // Adaptive: tracks write rate
 	intervalCalc *AdaptiveIntervalCalculator // Adaptive: calculates intervals
 	asyncFsyncer *AsyncFsyncer               // Async: background fsync handler
 	flushBuf     bytes.Buffer                // Reused buffer for flush serialization
-	compressBuf  []byte                      // Reused buffer for compression
+}
+
+// compressBufPool is a global pool for compression buffers
+var compressBufPool = sync.Pool{
+	New: func() any {
+		// Start with 64KB, will grow as needed
+		buf := make([]byte, 0, 64*1024)
+		return &buf
+	},
 }
 
 // NewWALBatcher creates a new batched WAL writer
 func NewWALBatcher(dataPath string, config *WALBatcherConfig) *WALBatcher {
+	// Use ring buffer capacity = MaxBatchSize * 2 for headroom
+	ringCapacity := config.MaxBatchSize * 2
 	w := &WALBatcher{
-		dataPath:  dataPath,
-		config:    *config,
-		mem:       memory.NewGoAllocator(),
-		entries:   make(chan WALEntry, config.MaxBatchSize*100), // Increased capacity (10k by default) to handle bursts
-		batch:     make([]WALEntry, 0, config.MaxBatchSize),
-		backBatch: make([]WALEntry, 0, config.MaxBatchSize),
-		bufPool:   pool.NewBytePool(),
-		stopCh:    make(chan struct{}),
-		doneCh:    make(chan struct{}),
-		flushCh:   make(chan chan error),
+		dataPath:   dataPath,
+		config:     *config,
+		mem:        memory.NewGoAllocator(),
+		entries:    make(chan WALEntry, config.MaxBatchSize*100), // Increased capacity (10k by default) to handle bursts
+		ringBuffer: NewWALRingBuffer(ringCapacity),
+		bufPool:    pool.NewBytePool(),
+		stopCh:     make(chan struct{}),
+		doneCh:     make(chan struct{}),
+		flushCh:    make(chan chan error),
+		ErrCh:      make(chan error, 1),
 	}
 	if config.Adaptive.Enabled {
 		w.rateTracker = NewWriteRateTracker(1 * time.Second)
@@ -181,19 +191,52 @@ func (w *WALBatcher) flushLoop() {
 	ticker := time.NewTicker(w.config.FlushInterval)
 	defer ticker.Stop()
 
+	// Local buffer to accumulate entries before locking
+	// We use this to drain the channel and minimize lock acquisitions.
+	localBatch := make([]WALEntry, 0, w.config.MaxBatchSize)
+
 	for {
 		select {
 		case entry := <-w.entries:
-			walLockStart2 := time.Now()
-			w.mu.Lock()
-			metrics.WALLockWaitDuration.WithLabelValues("flush_check").Observe(time.Since(walLockStart2).Seconds())
+			// 1. Drain channel eagerly up to MaxBatchSize
+			localBatch = localBatch[:0]
+			localBatch = append(localBatch, entry)
+
+			// Try to drain more if available
+		DrainLoop:
+			for len(localBatch) < w.config.MaxBatchSize {
+				select {
+				case e := <-w.entries:
+					localBatch = append(localBatch, e)
+				default:
+					break DrainLoop
+				}
+			}
+
+			// 2. Push to ring buffer (lock-free)
 			// Track pending entries (backpressure indicator)
 			metrics.WalPendingEntries.Set(float64(len(w.entries)))
-			w.batch = append(w.batch, entry)
-			shoudFlush := len(w.batch) >= w.config.MaxBatchSize
-			w.mu.Unlock()
 
-			if shoudFlush {
+			// Push entries to ring buffer
+			pushCount := 0
+			for _, e := range localBatch {
+				if w.ringBuffer.Push(e) {
+					pushCount++
+					metrics.WalRingBufferPushesTotal.Inc()
+				} else {
+					// Buffer full - flush immediately
+					metrics.WalRingBufferFullTotal.Inc()
+					break
+				}
+			}
+
+			// Update ring buffer utilization metric
+			utilization := float64(w.ringBuffer.Len()) / float64(w.ringBuffer.Cap())
+			metrics.WalRingBufferUtilization.Set(utilization)
+
+			// Flush if buffer is getting full or we hit capacity
+			shouldFlush := w.ringBuffer.Len() >= w.config.MaxBatchSize || pushCount < len(localBatch)
+			if shouldFlush {
 				w.flush()
 			}
 
@@ -202,14 +245,6 @@ func (w *WALBatcher) flushLoop() {
 
 		case ch := <-w.flushCh:
 			// Synchronous flush request
-			// Drain any pending entries first (optional but good for consistency)
-			// Actually select prefers this case? No, random.
-			// Best effort drain?
-			// Let's just flush what we have in batch.
-			// If user wants to ensure previous writes are flushed, they should rely on ordering.
-			// But entries channel is buffered. Writers might have written to channel.
-			// To strictly flush all *written* items, we need to drain entries channel?
-			// Yes, for Sync semantics: "everything written before Sync returns".
 			w.drainChannelNonBlocking()
 			w.flush()
 			ch <- w.flushErr
@@ -224,21 +259,20 @@ func (w *WALBatcher) flushLoop() {
 
 // flush writes all batched entries to disk
 func (w *WALBatcher) flush() {
-	walLockStart3 := time.Now()
-	w.mu.Lock()
-	metrics.WALLockWaitDuration.WithLabelValues("flush").Observe(time.Since(walLockStart3).Seconds())
-	if len(w.batch) == 0 {
-		w.mu.Unlock()
+	// Drain entries from ring buffer
+	batch := make([]WALEntry, 0, w.config.MaxBatchSize)
+	count := w.ringBuffer.Drain(&batch)
+
+	if count == 0 {
 		return
 	}
 
-	// Swap batch to avoid holding lock during serialization/IO
-	batch := w.batch
-	w.batch = w.backBatch[:0]
-	w.backBatch = batch // double-buffer swap
-	w.mu.Unlock()
+	metrics.WalRingBufferDrainsTotal.Inc()
+	metrics.WalBatchSize.Observe(float64(count))
 
-	metrics.WalBatchSize.Observe(float64(len(batch)))
+	// Update utilization after drain
+	utilization := float64(w.ringBuffer.Len()) / float64(w.ringBuffer.Cap())
+	metrics.WalRingBufferUtilization.Set(utilization)
 
 	// Prepare output buffer
 	w.flushBuf.Reset()
@@ -275,24 +309,22 @@ func (w *WALBatcher) flush() {
 		src := rawBatch.Bytes()
 		maxLen := snappy.MaxEncodedLen(len(src))
 
-		// Ensure compressBuf is large enough
-		if cap(w.compressBuf) < maxLen {
-			w.compressBuf = make([]byte, maxLen)
+		// Get a buffer from the pool
+		compressBufPtr := compressBufPool.Get().(*[]byte)
+		compressBuf := *compressBufPtr
+
+		// Ensure buffer is large enough
+		if cap(compressBuf) < maxLen {
+			compressBuf = make([]byte, 0, maxLen)
 		}
 
-		// Use the slice with correct length but backed by the reused array
-		// snappy.Encode uses dst[:cap] basically, so we pass a slice with sufficient capacity.
-		// Note: passing explicit slice to reuse capacity.
-		// The returned slice is a sub-slice of the argument if it fits.
-
-		// Reset length to 0 but keep cap? Snappy Encode docs say:
-		// "Encode returns the encoded form of src. The returned slice may be a sub-slice of dst if dst was large enough."
-		// We pass w.compressBuf[:maxLen] as dst to be safe? Or w.compressBuf[:0]?
-		// Go snappy implementation usually appends or overwrites.
-		// Safe pattern:
-		dest := snappy.Encode(w.compressBuf[:0], src)
-		w.compressBuf = dest // Updates length, keeps underlying array if same
+		// Compress into the buffer
+		dest := snappy.Encode(compressBuf[:0], src)
 		payload = dest
+
+		// Return buffer to pool (store the potentially grown buffer)
+		*compressBufPtr = dest
+		defer compressBufPool.Put(compressBufPtr)
 
 		// 3. Construct Compressed Block Header
 		// Checksum = 0xFFFFFFFF (Sentinel)
@@ -307,9 +339,10 @@ func (w *WALBatcher) flush() {
 		// NameLen: 1 (Compression Type: 1=Snappy)
 		// RecLen: len(payload)
 
-		header := encodeWALEntryHeader(0xFFFFFFFF, lastSeq, 0, 1, uint64(len(payload)))
+		var header [32]byte
+		encodeWALEntryHeader(header[:], 0xFFFFFFFF, lastSeq, 0, 1, uint64(len(payload)))
 
-		w.flushBuf.Write(header)
+		w.flushBuf.Write(header[:])
 		w.flushBuf.Write([]byte{1}) // Name (Type=1)
 		w.flushBuf.Write(payload)   // Record (Compressed Data)
 
@@ -362,6 +395,12 @@ func (w *WALBatcher) handleFlushError(err error) {
 	w.flushErr = err
 	w.mu.Unlock()
 	metrics.WalWritesTotal.WithLabelValues("error").Inc()
+
+	// Try to report error
+	select {
+	case w.ErrCh <- err:
+	default:
+	}
 }
 
 // drainAndFlush drains channel and flushes remaining entries on stop
@@ -370,11 +409,8 @@ func (w *WALBatcher) drainAndFlush() {
 	for {
 		select {
 		case entry := <-w.entries:
-			walLockStart6 := time.Now()
-			w.mu.Lock()
-			metrics.WALLockWaitDuration.WithLabelValues("sync_complete").Observe(time.Since(walLockStart6).Seconds())
-			w.batch = append(w.batch, entry)
-			w.mu.Unlock()
+			// Push to ring buffer
+			w.ringBuffer.Push(entry)
 		default:
 			// Channel empty
 			w.flush()
@@ -383,15 +419,13 @@ func (w *WALBatcher) drainAndFlush() {
 	}
 }
 
-// encodeWALEntryHeader encodes crc(uint32), seq(uint64), ts(int64), nameLen(uint32) and recLen(uint64) into a 32-byte slice
-func encodeWALEntryHeader(crc uint32, seq uint64, ts int64, nameLen uint32, recLen uint64) []byte {
-	buf := make([]byte, 32)
+// encodeWALEntryHeader encodes header into provided buffer
+func encodeWALEntryHeader(buf []byte, crc uint32, seq uint64, ts int64, nameLen uint32, recLen uint64) {
 	binary.LittleEndian.PutUint32(buf[0:4], crc)
 	binary.LittleEndian.PutUint64(buf[4:12], seq)
 	binary.LittleEndian.PutUint64(buf[12:20], uint64(ts))
 	binary.LittleEndian.PutUint32(buf[20:24], nameLen)
 	binary.LittleEndian.PutUint64(buf[24:32], recLen)
-	return buf
 }
 
 // writeEntry serializes and writes a single entry to WAL
@@ -408,21 +442,33 @@ func (w *WALBatcher) serializeEntry(out *bytes.Buffer, entry WALEntry, scratch *
 	}
 	recBytes := scratch.Bytes()
 
-	nameBytes := []byte(entry.Name)
-	nameLen := uint32(len(nameBytes))
+	// Zero-allocation string length
+	nameLen := uint32(len(entry.Name))
 	recLen := uint64(len(recBytes))
 
+	// Calculate CRC
 	crc := crc32.NewIEEE()
-	_, _ = crc.Write(nameBytes)
+	// crc.Write([]byte(string)) does allocation?
+	// Go optimized string->byte conversion for Read/Write?
+	// standard library handles this optimized in recent versions?
+	// Manually unsafe slice? For now, we prefer safety.
+	// io.WriteString is not on hash.Hash.
+	// But we can cast safely if needed.
+	// Let's allocation here is small (name is short).
+	// Ideally we accept that or use unsafe if critical.
+	_, _ = crc.Write([]byte(entry.Name))
 	_, _ = crc.Write(recBytes)
 	checksum := crc.Sum32()
 
-	header := encodeWALEntryHeader(checksum, entry.Seq, entry.Timestamp, nameLen, recLen)
+	// Reserve header space (32 bytes)
+	// We can write header directly to out?
+	var header [32]byte
+	encodeWALEntryHeader(header[:], checksum, entry.Seq, entry.Timestamp, nameLen, recLen)
 
-	if _, err := out.Write(header); err != nil {
+	if _, err := out.Write(header[:]); err != nil {
 		return err
 	}
-	if _, err := out.Write(nameBytes); err != nil {
+	if _, err := out.WriteString(entry.Name); err != nil { // Use WriteString
 		return err
 	}
 	if _, err := out.Write(recBytes); err != nil {
@@ -536,9 +582,7 @@ func (w *WALBatcher) drainChannelNonBlocking() {
 	for {
 		select {
 		case entry := <-w.entries:
-			w.mu.Lock()
-			w.batch = append(w.batch, entry)
-			w.mu.Unlock()
+			w.ringBuffer.Push(entry)
 		default:
 			return
 		}

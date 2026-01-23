@@ -12,7 +12,7 @@ func TestFSBackend_WriteSyncClose(t *testing.T) {
 	tmpFile := t.TempDir() + "/fs_backend_test.wal"
 	backend, err := NewFSBackend(tmpFile)
 	require.NoError(t, err)
-	defer os.Remove(tmpFile)
+	defer func() { _ = os.Remove(tmpFile) }()
 
 	data := []byte("hello world")
 	n, err := backend.Write(data)
@@ -45,7 +45,7 @@ func TestFSBackend_DirectIO(t *testing.T) {
 	}
 	defer func() {
 		_ = backend.Close()
-		os.Remove(tmpFile)
+		_ = os.Remove(tmpFile)
 	}()
 
 	// DirectIO often requires aligned buffer and size.

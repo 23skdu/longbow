@@ -3,17 +3,14 @@ package store
 import (
 	"context"
 	"fmt"
-	"log"
 	"math"
 	"math/rand"
 	"runtime"
-	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/query"
-	"github.com/23skdu/longbow/internal/simd"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/float16"
@@ -27,7 +24,11 @@ var _ VectorIndex = (*ArrowHNSW)(nil)
 
 // AddByLocation implements VectorIndex.
 // It assigns a new VectorID, records the location, and inserts into the graph.
-func (h *ArrowHNSW) AddByLocation(batchIdx, rowIdx int) (uint32, error) {
+func (h *ArrowHNSW) AddByLocation(ctx context.Context, batchIdx, rowIdx int) (uint32, error) {
+	// Check context
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
 	// 1. Generate new VectorID AND Store location
 	// ChunkedLocationStore.Append handles atomic ID generation and storage
 	vecID := h.locationStore.Append(Location{BatchIdx: batchIdx, RowIdx: rowIdx})
@@ -53,15 +54,32 @@ func (h *ArrowHNSW) generateLevel() int {
 }
 
 // AddByRecord implements VectorIndex.
-func (h *ArrowHNSW) AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32, error) {
-	return h.AddByLocation(batchIdx, rowIdx)
+func (h *ArrowHNSW) AddByRecord(ctx context.Context, rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32, error) {
+	return h.AddByLocation(ctx, batchIdx, rowIdx)
 }
 
 // NewArrowHNSW creates a new HNSW index backed by Arrow records.
 // If locationStore is nil, a new one is created.
 func NewArrowHNSW(dataset *Dataset, config ArrowHNSWConfig, locStore *ChunkedLocationStore) *ArrowHNSW { //nolint:gocritic
+	// Merge with defaults if partially initialized
+	defaults := DefaultArrowHNSWConfig()
 	if config.M == 0 {
-		config = DefaultArrowHNSWConfig()
+		config.M = defaults.M
+	}
+	if config.MMax == 0 {
+		config.MMax = defaults.MMax
+	}
+	if config.MMax0 == 0 {
+		config.MMax0 = defaults.MMax0
+	}
+	if config.EfConstruction == 0 {
+		config.EfConstruction = defaults.EfConstruction
+	}
+	if config.Metric == "" {
+		config.Metric = defaults.Metric
+	}
+	if config.DataType == VectorTypeUnknown {
+		config.DataType = defaults.DataType
 	}
 
 	dsName := "default"
@@ -69,17 +87,41 @@ func NewArrowHNSW(dataset *Dataset, config ArrowHNSWConfig, locStore *ChunkedLoc
 		dsName = dataset.Name
 	}
 
+	// NEW: Auto-infer DataType and Dims if they are unknown or 0 and dataset is available
+	if dataset != nil && dataset.Schema != nil {
+		if config.DataType == VectorTypeUnknown || config.DataType == VectorTypeFloat32 {
+			colName := "vector"
+			config.DataType = InferVectorDataType(dataset.Schema, colName)
+		}
+		if config.Dims == 0 {
+			// Extract Dims from schema
+			for _, field := range dataset.Schema.Fields() {
+				colName := "vector"
+				if field.Name == colName {
+					if listType, ok := field.Type.(*arrow.FixedSizeListType); ok {
+						config.Dims = int(listType.Len())
+						if config.DataType == VectorTypeComplex64 || config.DataType == VectorTypeComplex128 {
+							// For complex types, the logical dimension is half the physical dimension
+							config.Dims /= 2
+						}
+						break
+					}
+				}
+			}
+		}
+	}
+
 	h := &ArrowHNSW{
-		dataset:        dataset,
-		config:         config,
-		m:              config.M,
-		mMax:           config.MMax,
-		mMax0:          config.MMax0,
-		efConstruction: config.EfConstruction,
-		ml:             1.0 / math.Log(float64(config.M)),
-		deleted:        query.NewAtomicBitset(), // Initial capacity, grows
-		metric:         config.Metric,
-		vectorColIdx:   -1,
+		dataset: dataset,
+		config:  config,
+		m:       config.M,
+		mMax:    config.MMax,
+		mMax0:   config.MMax0,
+		// efConstruction initialized below
+		ml:           1.0 / math.Log(float64(config.M)),
+		deleted:      query.NewAtomicBitset(), // Initial capacity, grows
+		metric:       config.Metric,
+		vectorColIdx: -1,
 
 		// Initialize Cached Metrics
 		metricInsertDuration:     metrics.HNSWInsertDurationSeconds,
@@ -96,28 +138,20 @@ func NewArrowHNSW(dataset *Dataset, config ArrowHNSWConfig, locStore *ChunkedLoc
 
 		bitmapIndex: NewBitmapIndex(),
 	}
-
-	if config.QueryCacheEnabled {
-		capacity := config.QueryCacheCapacity
-		if capacity <= 0 {
-			capacity = 1000 // Default
-		}
-		ttl := config.QueryCacheTTL
-		if ttl <= 0 {
-			ttl = 5 * time.Minute // Default
-		}
-		h.queryCache = NewQueryCache(capacity, ttl)
-		h.queryCache.SetDatasetName(dsName)
-	}
+	h.efConstruction.Store(int32(config.EfConstruction))
 
 	h.distFunc = h.resolveDistanceFunc()
 	h.distFuncF16 = h.resolveDistanceFuncF16()
+	h.distFuncF64 = h.resolveDistanceFuncF64()
+	h.distFuncC64 = h.resolveDistanceFuncC64()
+	h.distFuncC128 = h.resolveDistanceFuncC128()
 	h.batchDistFunc = h.resolveBatchDistanceFunc()
 
-	h.shardedLocks = make([]sync.Mutex, ShardedLockCount)
-	for i := 0; i < len(h.shardedLocks); i++ {
-		h.shardedLocks[i] = sync.Mutex{}
-	}
+	// Initialize cache-aligned sharded mutex for reduced contention
+	h.shardedLocks = NewAlignedShardedMutex(AlignedShardedMutexConfig{
+		NumShards:      ShardedLockCount,
+		EnableAdaptive: false,
+	})
 
 	if locStore != nil {
 		h.locationStore = locStore
@@ -167,7 +201,10 @@ func NewArrowHNSW(dataset *Dataset, config ArrowHNSWConfig, locStore *ChunkedLoc
 }
 
 // AddBatch implements VectorIndex.
-func (h *ArrowHNSW) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []int) ([]uint32, error) {
+func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowIdxs, batchIdxs []int) ([]uint32, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	n := len(rowIdxs)
 	if n == 0 {
 		return nil, nil
@@ -212,43 +249,140 @@ func (h *ArrowHNSW) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []int)
 
 	ids := make([]uint32, n)
 
-	// Check for Bulk Optimized Path
+	// Check for Bulk Optimized Path (All types supported)
 	if n >= BULK_INSERT_THRESHOLD {
-		// Extract all vectors for bulk insert
-		allVecs := make([][]float32, n)
 		useDirectIndex := len(recs) == n
 
-		for i := 0; i < n; i++ {
-			var rec arrow.RecordBatch
-			if useDirectIndex {
-				rec = recs[i]
-			} else {
-				// Fallback for compact recs slice (requires batchIdxs to be local indices, creating ambiguity with Global ID)
-				// Assuming if useDirectIndex is false, batchIdxs might be local, but current usage suggests Global.
-				// This path is dangerous but kept for backward compat if any calls rely on it correctly.
-				if batchIdxs[i] < len(recs) {
-					rec = recs[batchIdxs[i]]
-				} else {
-					// Fallback: use first record if OOB (best effort to avoid panic in critical path)
-					// This logic is fundamentally flawed without explicit correct input, but panic is worse.
-					rec = recs[0]
+		// Prepare typed slice
+		var vecs any
+
+		switch h.config.DataType {
+		case VectorTypeFloat32:
+			vecsF32 := make([][]float32, n)
+			for i := 0; i < n; i++ {
+				rec := getRecordBatch(i, recs, batchIdxs, useDirectIndex)
+				// Use Generic extraction which is safe and efficient
+				// We expect float32
+				v, e := ExtractVectorGeneric[float32](rec, rowIdxs[i], h.vectorColIdx)
+				if e != nil {
+					return nil, e
 				}
+				vecsF32[i] = v
 			}
-			v, err := ExtractVectorFromArrow(rec, rowIdxs[i], h.vectorColIdx)
-			if err != nil {
-				return nil, fmt.Errorf("failed to extract vector for bulk insert: %w", err)
+			vecs = vecsF32
+
+		case VectorTypeFloat16:
+			vecsF16 := make([][]float16.Num, n)
+			for i := 0; i < n; i++ {
+				rec := getRecordBatch(i, recs, batchIdxs, useDirectIndex)
+				v, e := ExtractVectorGeneric[float16.Num](rec, rowIdxs[i], h.vectorColIdx)
+				if e != nil {
+					return nil, e
+				}
+				vecsF16[i] = v
 			}
-			allVecs[i] = v
+			vecs = vecsF16
+
+		case VectorTypeInt8:
+			vecsInt8 := make([][]int8, n)
+			for i := 0; i < n; i++ {
+				rec := getRecordBatch(i, recs, batchIdxs, useDirectIndex)
+				v, e := ExtractVectorGeneric[int8](rec, rowIdxs[i], h.vectorColIdx)
+				if e != nil {
+					return nil, e
+				}
+				vecsInt8[i] = v
+			}
+			vecs = vecsInt8
+
+		case VectorTypeFloat64:
+			vecsF64 := make([][]float64, n)
+			for i := 0; i < n; i++ {
+				rec := getRecordBatch(i, recs, batchIdxs, useDirectIndex)
+				v, e := ExtractVectorGeneric[float64](rec, rowIdxs[i], h.vectorColIdx)
+				if e != nil {
+					return nil, e
+				}
+				vecsF64[i] = v
+			}
+			vecs = vecsF64
+
+		case VectorTypeComplex64:
+			vecsC64 := make([][]complex64, n)
+			for i := 0; i < n; i++ {
+				rec := getRecordBatch(i, recs, batchIdxs, useDirectIndex)
+				v, e := ExtractVectorGeneric[complex64](rec, rowIdxs[i], h.vectorColIdx)
+				if e != nil {
+					return nil, e
+				}
+				vecsC64[i] = v
+			}
+			vecs = vecsC64
+
+		case VectorTypeComplex128:
+			vecsC128 := make([][]complex128, n)
+			for i := 0; i < n; i++ {
+				rec := getRecordBatch(i, recs, batchIdxs, useDirectIndex)
+				v, e := ExtractVectorGeneric[complex128](rec, rowIdxs[i], h.vectorColIdx)
+				if e != nil {
+					return nil, e
+				}
+				vecsC128[i] = v
+			}
+			vecs = vecsC128
+
+		default:
+			// Fallback for unknown types or unoptimized types: use float32 conversion if possible?
+			// Or just skip bulk insert?
+			// Current AddBatchBulk handles generic errors.
+			// Let's force skip if type not handled above to assume standard serial insert.
+			// But since we want to optimize, maybe log warning?
+			// Actually, if we skip here, it falls through to standard insert (Step 4).
+			vecs = nil
 		}
 
-		if err := h.AddBatchBulk(context.Background(), uint32(startID), n, allVecs); err != nil {
-			return nil, err
+		if vecs != nil {
+			// Chunking for Bulk Insert to avoid O(N^2) memory explosion
+			const bulkChunkSize = 2500 // Limit to ~25MB matrix (2500^2 * 4) + overhead
+
+			for chunkStart := 0; chunkStart < n; chunkStart += bulkChunkSize {
+				chunkEnd := chunkStart + bulkChunkSize
+				if chunkEnd > n {
+					chunkEnd = n
+				}
+				chunkN := chunkEnd - chunkStart
+
+				// Slice the generic vecs
+				var chunkVecs any
+				switch v := vecs.(type) {
+				case [][]float32:
+					chunkVecs = v[chunkStart:chunkEnd]
+				case [][]float16.Num:
+					chunkVecs = v[chunkStart:chunkEnd]
+				case [][]int8:
+					chunkVecs = v[chunkStart:chunkEnd]
+				case [][]float64:
+					chunkVecs = v[chunkStart:chunkEnd]
+				case [][]complex64:
+					chunkVecs = v[chunkStart:chunkEnd]
+				case [][]complex128:
+					chunkVecs = v[chunkStart:chunkEnd]
+				}
+
+				// Calculate chunk startID
+				chunkStartID := uint32(startID) + uint32(chunkStart)
+
+				if err := h.AddBatchBulk(ctx, chunkStartID, chunkN, chunkVecs); err != nil {
+					return nil, err
+				}
+			}
+
+			// Populate returned IDs
+			for i := 0; i < n; i++ {
+				ids[i] = uint32(startID) + uint32(i)
+			}
+			return ids, nil
 		}
-		// Populate returned IDs
-		for i := 0; i < n; i++ {
-			ids[i] = uint32(startID) + uint32(i)
-		}
-		return ids, nil
 	}
 
 	// 3. Preemptively Train SQ8 if needed
@@ -320,7 +454,7 @@ func (h *ArrowHNSW) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []int)
 
 	// Parallel insertion for non-SQ8 indices
 	// We bypass AddByLocation as we already have ID and Capacity
-	g, ctx := errgroup.WithContext(context.Background())
+	g, ctx := errgroup.WithContext(ctx)
 	g.SetLimit(runtime.GOMAXPROCS(0))
 
 	for i := 0; i < n; i++ {
@@ -365,7 +499,7 @@ func (h *ArrowHNSW) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []int)
 }
 
 // SearchVectors implements VectorIndex.
-func (h *ArrowHNSW) SearchVectors(queryVec []float32, k int, filters []query.Filter, options SearchOptions) ([]SearchResult, error) {
+func (h *ArrowHNSW) SearchVectors(ctx context.Context, queryVec any, k int, filters []query.Filter, options SearchOptions) ([]SearchResult, error) {
 	// Post-filtering with Adaptive Expansion
 	initialFactor := 10
 	retryFactor := 50
@@ -373,7 +507,16 @@ func (h *ArrowHNSW) SearchVectors(queryVec []float32, k int, filters []query.Fil
 	q := queryVec // Alias to avoid shadowing package query
 
 	// Track throughput by dimension
-	dim := len(q)
+	dim := 0
+	switch v := q.(type) {
+	case []float32:
+		dim = len(v)
+	case []float16.Num:
+		dim = len(v)
+	case []complex64, []complex128:
+		// approximations
+		dim = 0 // handled inside resolveHNSWComputer
+	}
 	dimBucket := "other"
 	if dim == 128 || dim == 256 || dim == 384 || dim == 768 || dim == 1024 || dim == 1536 || dim == 3072 {
 		dimBucket = fmt.Sprintf("%d", dim)
@@ -381,13 +524,6 @@ func (h *ArrowHNSW) SearchVectors(queryVec []float32, k int, filters []query.Fil
 		dimBucket = ">3072"
 	}
 	metrics.HnswSearchThroughputDims.WithLabelValues(dimBucket).Inc()
-
-	paramsKey := fmt.Sprintf("k=%d,filters=%v", k, filters)
-	if h.queryCache != nil {
-		if res, ok := h.queryCache.Get(q, paramsKey); ok {
-			return res, nil
-		}
-	}
 
 	limit := k
 	qBitset := (*query.Bitset)(nil)
@@ -431,19 +567,13 @@ func (h *ArrowHNSW) SearchVectors(queryVec []float32, k int, filters []query.Fil
 	}
 
 	for attempt := 0; attempt <= maxRetries; attempt++ {
-		// Use ef = limit + 100 heuristic
 		ef := limit + 100
 
 		// Pass qBitset if we matched simple criteria
-		candidates, err := h.Search(q, limit, ef, qBitset)
+		candidates, err := h.Search(ctx, q, limit, ef, qBitset)
 		if err != nil {
 			return nil, err
 		}
-
-		log.Printf("[DEBUG] ArrowHNSW.Search returned %d candidates", len(candidates))
-
-		log.Printf("[DEBUG] HNSW Search returned %d candidates (limit=%d, ef=%d, has_qBitset=%v, num_filters=%d)\\n",
-			len(candidates), limit, ef, qBitset != nil, len(filters))
 
 		// Filter candidates (only if we didn't use qBitset or if there's complex logic)
 		var res []SearchResult
@@ -454,12 +584,9 @@ func (h *ArrowHNSW) SearchVectors(queryVec []float32, k int, filters []query.Fil
 				return nil, fmt.Errorf("dataset empty during filter")
 			}
 
-			log.Printf("[DEBUG] Starting post-filtering: candidates=%d, filters=%d, batches=%d\n",
-				len(candidates), len(filters), len(h.dataset.Records))
-
 			evaluator, err := query.NewFilterEvaluator(h.dataset.Records[0], filters)
 			if err != nil {
-				log.Printf("[DEBUG] Failed to create evaluator for batch 0: %v\n", err)
+
 				return nil, err
 			}
 
@@ -469,47 +596,36 @@ func (h *ArrowHNSW) SearchVectors(queryVec []float32, k int, filters []query.Fil
 			evaluators := make(map[int]*query.FilterEvaluator)
 			evaluators[0] = evaluator
 
-			matchCount := 0
-			for i, candle := range candidates {
+			for _, candle := range candidates {
 				loc, ok := h.locationStore.Get(VectorID(candle.ID))
 				if !ok {
-					log.Printf("[DEBUG] Candidate %d (ID=%d): location not found\n", i, candle.ID)
-					continue
-				}
 
-				if i < 3 {
-					log.Printf("[DEBUG] Candidate %d: ID=%d, BatchIdx=%d, RowIdx=%d\n",
-						i, candle.ID, loc.BatchIdx, loc.RowIdx)
+					continue
 				}
 
 				// Get or create evaluator for this batch
 				ev, ok := evaluators[loc.BatchIdx]
 				if !ok {
 					if loc.BatchIdx >= len(h.dataset.Records) {
-						log.Printf("[DEBUG] Candidate %d: BatchIdx %d out of range (max %d)\n",
-							i, loc.BatchIdx, len(h.dataset.Records)-1)
+
 						continue
 					}
 					ev, err = query.NewFilterEvaluator(h.dataset.Records[loc.BatchIdx], filters)
 					if err != nil {
-						log.Printf("[DEBUG] Failed to create evaluator for batch %d: %v\n",
-							loc.BatchIdx, err)
+
 						continue
 					}
 					evaluators[loc.BatchIdx] = ev
 				}
 
 				matches := ev.Matches(loc.RowIdx)
-				if i < 3 {
-					log.Printf("[DEBUG] Candidate %d: Matches=%v\n", i, matches)
-				}
+
 				if matches {
-					matchCount++
+
 					res = append(res, candle)
 				}
 			}
-			log.Printf("[DEBUG] Post-filtering complete: matched=%d, total=%d\n",
-				matchCount, len(candidates))
+
 		} else {
 			res = candidates
 		}
@@ -519,9 +635,7 @@ func (h *ArrowHNSW) SearchVectors(queryVec []float32, k int, filters []query.Fil
 			if len(res) > k {
 				res = res[:k]
 			}
-			if h.queryCache != nil {
-				h.queryCache.Set(q, paramsKey, res)
-			}
+
 			if options.IncludeVectors {
 				h.extractVectors(res, options.VectorFormat)
 			}
@@ -536,32 +650,15 @@ func (h *ArrowHNSW) SearchVectors(queryVec []float32, k int, filters []query.Fil
 }
 
 // SearchVectorsWithBitmap implements VectorIndex.
-func (h *ArrowHNSW) SearchVectorsWithBitmap(q []float32, k int, filter *query.Bitset, options SearchOptions) []SearchResult {
+func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, q any, k int, filter *query.Bitset, options SearchOptions) []SearchResult {
 	ef := k + 100
 	// Calls h.Search which returns ([]SearchResult, error)
 	// The interface signature returns only []SearchResult
-	res, _ := h.Search(q, k, ef, filter)
+	res, _ := h.Search(ctx, q, k, ef, filter)
 	return res
 }
 
 // GetLocation implements VectorIndex.
-func (h *ArrowHNSW) GetLocation(id VectorID) (Location, bool) {
-	return h.locationStore.Get(id)
-}
-
-// GetVectorID implements VectorIndex.
-// It returns the ID for a given location using the reverse index.
-func (h *ArrowHNSW) GetVectorID(loc Location) (VectorID, bool) {
-	return h.locationStore.GetID(loc)
-}
-
-// SetLocation allows manually setting the location for a vector ID.
-// This is used by ShardedHNSW to populate shard-local location stores for filtering.
-func (h *ArrowHNSW) SetLocation(id VectorID, loc Location) {
-	h.locationStore.EnsureCapacity(id)
-	h.locationStore.Set(id, loc)
-	h.locationStore.UpdateSize(id)
-}
 
 // GetNeighbors returns the nearest neighbors for a given vector ID from the graph
 // at the base layer (Layer 0).
@@ -653,6 +750,11 @@ func (h *ArrowHNSW) PreWarm(targetSize int) {
 	}
 }
 
+// SetEfConstruction updates the efConstruction parameter dynamically.
+func (h *ArrowHNSW) SetEfConstruction(ef int) {
+	h.efConstruction.Store(int32(ef))
+}
+
 // Warmup implements VectorIndex.
 func (h *ArrowHNSW) Warmup() int {
 	// Defaults to current size, just ensuring all are allocated
@@ -730,12 +832,28 @@ func (h *ArrowHNSW) EstimateMemory() int64 {
 
 // Close implements VectorIndex.
 func (h *ArrowHNSW) Close() error {
-	// Release GraphData
-	if data := h.data.Swap(nil); data != nil {
-		_ = data.Close()
+	// Release GraphData and SlabArenas
+	var firstErr error
+	data := h.data.Swap(nil)
+	backend := h.backend.Swap(nil)
+
+	if data != nil {
+		if data.SlabArena != nil {
+			data.SlabArena.Free()
+		}
+		if err := data.Close(); err != nil {
+			firstErr = err
+		}
 	}
-	if backend := h.backend.Swap(nil); backend != nil {
-		_ = backend.Close()
+
+	if backend != nil && backend != data {
+		// Only free backend arena if it's different from data's arena
+		if backend.SlabArena != nil && (data == nil || backend.SlabArena != data.SlabArena) {
+			backend.SlabArena.Free()
+		}
+		if err := backend.Close(); err != nil && firstErr == nil {
+			firstErr = err
+		}
 	}
 
 	// Release Bitsets (Roaring Bitmaps are pooled)
@@ -752,7 +870,7 @@ func (h *ArrowHNSW) Close() error {
 	h.dataset = nil
 	h.locationStore = nil
 
-	return nil
+	return firstErr
 }
 
 func (h *ArrowHNSW) indexMetadata(id uint32, recs []arrow.RecordBatch, i int, rowIdxs, batchIdxs []int) {
@@ -811,50 +929,6 @@ func (h *ArrowHNSW) indexMetadata(id uint32, recs []arrow.RecordBatch, i int, ro
 }
 
 // resolveDistanceFunc returns the distance function based on configuration.
-func (h *ArrowHNSW) resolveDistanceFunc() func(a, b []float32) float32 {
-	switch h.metric {
-	case MetricCosine:
-		return simd.CosineDistance
-	case MetricDotProduct:
-		// For HNSW minimization, negate Dot Product
-		return func(a, b []float32) float32 {
-			return -simd.DotProduct(a, b)
-		}
-	default: // Euclidean
-		return simd.EuclideanDistance
-	}
-}
-
-// resolveDistanceFuncF16 returns the FP16 distance function.
-func (h *ArrowHNSW) resolveDistanceFuncF16() func(a, b []float16.Num) float32 {
-	switch h.metric {
-	case MetricCosine:
-		return simd.CosineDistanceF16
-	case MetricDotProduct:
-		return func(a, b []float16.Num) float32 {
-			return -simd.DotProductF16(a, b)
-		}
-	default: // Euclidean
-		return simd.EuclideanDistanceF16
-	}
-}
-
-// resolveBatchDistanceFunc returns the batch distance function.
-func (h *ArrowHNSW) resolveBatchDistanceFunc() func(query []float32, vectors [][]float32, results []float32) {
-	switch h.metric {
-	case MetricCosine:
-		return simd.CosineDistanceBatch
-	case MetricDotProduct:
-		return func(query []float32, vectors [][]float32, results []float32) {
-			simd.DotProductBatch(query, vectors, results)
-			for i := range results {
-				results[i] = -results[i]
-			}
-		}
-	default:
-		return simd.EuclideanDistanceBatch
-	}
-}
 func (h *ArrowHNSW) extractVectors(results []SearchResult, format string) {
 	data := h.data.Load()
 	if data == nil {

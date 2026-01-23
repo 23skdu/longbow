@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/23skdu/longbow/internal/query"
 	"github.com/apache/arrow-go/v18/arrow"
@@ -86,96 +87,121 @@ func checkFilterRow(col arrow.Array, i int, f *query.Filter) bool {
 
 	switch c := col.(type) {
 	case *array.String:
-		val := c.Value(i)
-		switch f.Operator {
-		case "eq", "=":
-			return val == f.Value
-		case "neq", "!=":
-			return val != f.Value
-		case ">", "<", ">=", "<=":
-			return compareStrings(val, f.Value, f.Operator)
-		}
+		return checkFilterString(c, i, f)
 	case *array.Int64:
-		val := c.Value(i)
-		fVal, err := strconv.ParseInt(f.Value, 10, 64)
-		if err != nil {
-			return false
-		}
-		switch f.Operator {
-		case "eq", "=":
-			return val == fVal
-		case "neq", "!=":
-			return val != fVal
-		case ">":
-			return val > fVal
-		case "<":
-			return val < fVal
-		case ">=":
-			return val >= fVal
-		case "<=":
-			return val <= fVal
-		}
+		return checkFilterInt64(c, i, f)
 	case *array.Int32:
-		val := c.Value(i)
-		fVal, err := strconv.ParseInt(f.Value, 10, 32)
-		if err != nil {
-			return false
-		}
-		switch f.Operator {
-		case "eq", "=":
-			return int64(val) == fVal
-		case "neq", "!=":
-			return int64(val) != fVal
-		case ">":
-			return int64(val) > fVal
-		case "<":
-			return int64(val) < fVal
-		case ">=":
-			return int64(val) >= fVal
-		case "<=":
-			return int64(val) <= fVal
-		}
+		return checkFilterInt32(c, i, f)
 	case *array.Float32:
-		val := c.Value(i)
-		fVal, err := strconv.ParseFloat(f.Value, 32)
-		if err != nil {
-			return false
-		}
-		fv := float32(fVal)
-		switch f.Operator {
-		case "eq", "=":
-			return val == fv
-		case "neq", "!=":
-			return val != fv
-		case ">":
-			return val > fv
-		case "<":
-			return val < fv
-		case ">=":
-			return val >= fv
-		case "<=":
-			return val <= fv
-		}
+		return checkFilterFloat32(c, i, f)
 	case *array.Float64:
-		val := c.Value(i)
-		fVal, err := strconv.ParseFloat(f.Value, 64)
-		if err != nil {
-			return false
-		}
-		switch f.Operator {
-		case "eq", "=":
-			return val == fVal
-		case "neq", "!=":
-			return val != fVal
-		case ">":
-			return val > fVal
-		case "<":
-			return val < fVal
-		case ">=":
-			return val >= fVal
-		case "<=":
-			return val <= fVal
-		}
+		return checkFilterFloat64(c, i, f)
+	}
+	return false
+}
+
+func checkFilterString(c *array.String, i int, f *query.Filter) bool {
+	val := c.Value(i)
+	switch strings.ToLower(f.Operator) {
+	case "eq", "=":
+		return val == f.Value
+	case "neq", "!=":
+		return val != f.Value
+	case ">", "<", ">=", "<=":
+		return compareStrings(val, f.Value, f.Operator)
+	}
+	return false
+}
+
+func checkFilterInt64(c *array.Int64, i int, f *query.Filter) bool {
+	val := c.Value(i)
+	fVal, err := strconv.ParseInt(f.Value, 10, 64)
+	if err != nil {
+		return false
+	}
+	switch strings.ToLower(f.Operator) {
+	case "eq", "=":
+		return val == fVal
+	case "neq", "!=":
+		return val != fVal
+	case ">":
+		return val > fVal
+	case "<":
+		return val < fVal
+	case ">=":
+		return val >= fVal
+	case "<=":
+		return val <= fVal
+	}
+	return false
+}
+
+func checkFilterInt32(c *array.Int32, i int, f *query.Filter) bool {
+	val := c.Value(i)
+	fVal, err := strconv.ParseInt(f.Value, 10, 32)
+	if err != nil {
+		return false
+	}
+	switch strings.ToLower(f.Operator) {
+	case "eq", "=":
+		return int64(val) == fVal
+	case "neq", "!=":
+		return int64(val) != fVal
+	case ">":
+		return int64(val) > fVal
+	case "<":
+		return int64(val) < fVal
+	case ">=":
+		return int64(val) >= fVal
+	case "<=":
+		return int64(val) <= fVal
+	}
+	return false
+}
+
+func checkFilterFloat32(c *array.Float32, i int, f *query.Filter) bool {
+	val := c.Value(i)
+	fVal, err := strconv.ParseFloat(f.Value, 32)
+	if err != nil {
+		return false
+	}
+	fv := float32(fVal)
+	switch strings.ToLower(f.Operator) {
+	case "eq", "=":
+		return val == fv
+	case "neq", "!=":
+		return val != fv
+	case ">":
+		return val > fv
+	case "<":
+		return val < fv
+	case ">=":
+		return val >= fv
+	case "<=":
+		return val <= fv
+	}
+	return false
+}
+
+func checkFilterFloat64(c *array.Float64, i int, f *query.Filter) bool {
+	val := c.Value(i)
+	fVal, err := strconv.ParseFloat(f.Value, 64)
+	if err != nil {
+		return false
+	}
+	switch strings.ToLower(f.Operator) {
+	case "eq", "=":
+		return val == fVal
+	case "neq", "!=":
+		return val != fVal
+	case ">":
+		return val > fVal
+	case "<":
+		return val < fVal
+	case ">=":
+		return val >= fVal
+	case "<=":
+		return val <= fVal
 	}
 	return false
 }

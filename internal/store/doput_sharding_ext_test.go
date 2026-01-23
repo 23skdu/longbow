@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -124,7 +125,7 @@ func TestExtractVectorFromCol_Success(t *testing.T) {
 func TestDatasetSearchDataset_NoIndex(t *testing.T) {
 	ds := &Dataset{Name: "test"}
 
-	results, _ := ds.SearchDataset([]float32{1, 2, 3}, 10)
+	results, _ := ds.SearchDataset(context.Background(), []float32{1, 2, 3}, 10)
 	if results != nil {
 		t.Error("expected nil results with no index")
 	}
@@ -144,7 +145,7 @@ func TestDatasetSearchDataset_WithHNSW(t *testing.T) {
 	}
 
 	// Empty index should return empty results
-	results, _ := ds.SearchDataset([]float32{1, 2, 3}, 10)
+	results, _ := ds.SearchDataset(context.Background(), []float32{1, 2, 3}, 10)
 	if len(results) != 0 {
 		t.Errorf("expected empty results, got %d", len(results))
 	}
@@ -155,7 +156,7 @@ func TestDatasetSearchDataset_WithSharded(t *testing.T) {
 	ds.Index = NewShardedHNSW(DefaultShardedHNSWConfig(), ds)
 
 	// Empty index should return empty results
-	results, _ := ds.SearchDataset([]float32{1, 2, 3}, 10)
+	results, _ := ds.SearchDataset(context.Background(), []float32{1, 2, 3}, 10)
 	if len(results) != 0 {
 		t.Errorf("expected empty results, got %d", len(results))
 	}
@@ -259,7 +260,7 @@ func TestHNSWIndex_SearchVectors_Empty(t *testing.T) {
 	ds := &Dataset{Name: "test"}
 	hnsw := NewHNSWIndex(ds)
 
-	results, err := hnsw.SearchVectors([]float32{1, 2, 3}, 10, nil, SearchOptions{})
+	results, err := hnsw.SearchVectors(context.Background(), []float32{1, 2, 3}, 10, nil, SearchOptions{})
 	if err != nil {
 		t.Errorf("Search failed: %v", err)
 	}
@@ -277,7 +278,7 @@ func TestShardedHNSW_SearchVectors_Empty(t *testing.T) {
 	ds := &Dataset{Name: "test"}
 	sharded := NewShardedHNSW(cfg, ds)
 
-	results, err := sharded.SearchVectors([]float32{1, 2, 3}, 10, nil, SearchOptions{})
+	results, err := sharded.SearchVectors(context.Background(), []float32{1, 2, 3}, 10, nil, SearchOptions{})
 	if err != nil {
 		t.Errorf("Search failed: %v", err)
 	}
@@ -344,6 +345,6 @@ func BenchmarkDatasetSearchDataset(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = ds.SearchDataset(query, 10)
+		_, _ = ds.SearchDataset(context.Background(), query, 10)
 	}
 }

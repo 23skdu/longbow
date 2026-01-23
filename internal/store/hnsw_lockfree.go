@@ -1,6 +1,7 @@
 package store
 
 import (
+	"math"
 	"math/rand/v2"
 	"sync"
 	"sync/atomic"
@@ -43,7 +44,7 @@ type LockFreeHNSW struct {
 	nodes sync.Map // map[VectorID]*LockFreeNode
 
 	// Distance function
-	distFunc func(a, b []float32) float32
+	distFunc func(a, b []float32) (float32, error)
 }
 
 func NewLockFreeHNSW() *LockFreeHNSW {
@@ -70,7 +71,10 @@ func (h *LockFreeHNSW) Search(query []float32, k, ef int) []VectorID {
 
 	// 1. Zoom down to layer 0
 	currObj := ep
-	dist := h.distFunc(query, currObj.Vec)
+	dist, err := h.distFunc(query, currObj.Vec)
+	if err != nil {
+		dist = math.MaxFloat32
+	}
 	// Start from the entry point's level, not the potentially racing global maxLayer
 	startLevel := currObj.Level
 
@@ -90,7 +94,10 @@ func (h *LockFreeHNSW) Search(query []float32, k, ef int) []VectorID {
 				if fNode == nil {
 					continue
 				}
-				d := h.distFunc(query, fNode.Vec)
+				d, err := h.distFunc(query, fNode.Vec)
+				if err != nil {
+					d = math.MaxFloat32
+				}
 				if d < dist {
 					dist = d
 					currObj = fNode

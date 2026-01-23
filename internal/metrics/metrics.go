@@ -49,13 +49,12 @@ var (
 		[]string{"component"},
 	)
 
-	DoGetTimeToFirstChunk = promauto.NewHistogramVec(
+	DoGetTimeToFirstChunk = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "longbow_do_get_time_to_first_chunk_seconds",
 			Help:    "Time from DoGet start to receiving first chunk",
 			Buckets: []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5},
 		},
-		[]string{"dataset"},
 	)
 )
 
@@ -257,32 +256,6 @@ var (
 )
 
 var (
-	// SearchResultPool metrics
-	SearchResultPoolGetTotal = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "longbow_search_result_pool_get_total",
-			Help: "Total number of result slices retrieved from the pool",
-		},
-		[]string{"capacity"}, // bucket by initial capacity
-	)
-
-	SearchResultPoolPutTotal = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "longbow_search_result_pool_put_total",
-			Help: "Total number of result slices returned to the pool",
-		},
-		[]string{"capacity"},
-	)
-
-	// General search latency metrics
-	SearchLatencySeconds = promauto.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "longbow_search_latency_seconds",
-			Help:    "Latency of search operations by type",
-			Buckets: []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5},
-		},
-		[]string{"dataset", "type"},
-	)
 
 	// Schema evolution metrics
 	SchemaEvolutionTotal = promauto.NewCounterVec(
@@ -293,21 +266,6 @@ var (
 		[]string{"operation", "status"},
 	)
 
-	SearchResultPoolHitsTotal = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "longbow_search_result_pool_hits_total",
-			Help: "Total number of pool hits (reused slices)",
-		},
-		[]string{"capacity"},
-	)
-
-	SearchResultPoolMissesTotal = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "longbow_search_result_pool_misses_total",
-			Help: "Total number of pool misses (new allocations)",
-		},
-		[]string{"capacity"},
-	)
 
 	// VectorSentinelHitTotal counts number of times a sentinel zero-vector was returned
 	VectorSentinelHitTotal = promauto.NewCounter(

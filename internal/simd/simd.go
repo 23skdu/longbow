@@ -60,14 +60,13 @@ var (
 	// DistFunc is the best available Euclidean distance implementation
 	DistFunc distanceFunc
 
-	dotProductImpl                 distanceFunc
-	dotProduct384Impl              distanceFunc
-	dotProduct128Impl              distanceFunc // optimized for dimensions=128
-	euclideanDistanceBatchImpl     distanceBatchFunc
-	euclideanDistanceBatchFlatImpl distanceBatchFlatFunc
-	cosineDistanceBatchImpl        distanceBatchFunc
-	dotProductBatchImpl            distanceBatchFunc
-	l2SquaredImpl                  distanceFunc
+	dotProductImpl             distanceFunc
+	dotProduct384Impl          distanceFunc
+	dotProduct128Impl          distanceFunc // optimized for dimensions=128
+	euclideanDistanceBatchImpl distanceBatchFunc
+	cosineDistanceBatchImpl    distanceBatchFunc
+	dotProductBatchImpl        distanceBatchFunc
+	l2SquaredImpl              distanceFunc
 
 	matchInt64Impl   matchInt64Func
 	matchFloat32Impl matchFloat32Func

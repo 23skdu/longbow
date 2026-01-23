@@ -8,9 +8,84 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
+// ImplementationDispatch holds all SIMD function pointers for a specific implementation
+type ImplementationDispatch struct {
+	// Core distance functions
+	EuclideanDistance distanceFunc
+	CosineDistance    distanceFunc
+	DotProduct        distanceFunc
+
+	// Batch functions
+	EuclideanDistanceBatch     distanceBatchFunc
+	CosineDistanceBatch        distanceBatchFunc
+	DotProductBatch            distanceBatchFunc
+	EuclideanDistanceBatchFlat distanceBatchFlatFunc
+
+	// Specialized functions
+	EuclideanDistance384 distanceFunc
+	EuclideanDistance128 distanceFunc
+}
+
+// Global dispatch table - one per implementation
+var dispatchTable = map[string]ImplementationDispatch{
+	"avx512": {
+		EuclideanDistance:          euclideanAVX512,
+		CosineDistance:             cosineAVX512,
+		DotProduct:                 dotAVX512,
+		EuclideanDistanceBatch:     euclideanBatchAVX512,
+		CosineDistanceBatch:        cosineBatchAVX512,
+		DotProductBatch:            dotBatchAVX512,
+		EuclideanDistanceBatchFlat: euclideanBatchFlatAVX512,
+		EuclideanDistance384:       euclidean384AVX512,
+		EuclideanDistance128:       euclidean128Unrolled4x,
+	},
+	"avx2": {
+		EuclideanDistance:          euclideanAVX2,
+		CosineDistance:             cosineAVX2,
+		DotProduct:                 dotAVX2,
+		EuclideanDistanceBatch:     euclideanBatchAVX2,
+		CosineDistanceBatch:        cosineBatchAVX2,
+		DotProductBatch:            dotBatchAVX2,
+		EuclideanDistanceBatchFlat: euclideanBatchFlatAVX2,
+		EuclideanDistance384:       euclideanGeneric,
+		EuclideanDistance128:       euclidean128Unrolled4x,
+	},
+	"neon": {
+		EuclideanDistance:          euclideanNEON,
+		CosineDistance:             cosineNEON,
+		DotProduct:                 dotNEON,
+		EuclideanDistanceBatch:     euclideanBatchNEON,
+		CosineDistanceBatch:        cosineBatchNEON,
+		DotProductBatch:            dotBatchNEON,
+		EuclideanDistanceBatchFlat: euclideanBatchFlatGeneric, // Fallback for NEON
+		EuclideanDistance384:       euclideanGeneric,
+		EuclideanDistance128:       euclidean128Unrolled4x,
+	},
+	"generic": {
+		EuclideanDistance:          euclideanGeneric,
+		CosineDistance:             cosineGeneric,
+		DotProduct:                 dotGeneric,
+		EuclideanDistanceBatch:     euclideanBatchGeneric,
+		CosineDistanceBatch:        cosineBatchGeneric,
+		DotProductBatch:            dotBatchGeneric,
+		EuclideanDistanceBatchFlat: euclideanBatchFlatGeneric,
+		EuclideanDistance384:       euclideanGeneric,
+		EuclideanDistance128:       euclideanGeneric,
+	},
+}
+
+// Current dispatch - single pointer lookup instead of many
+var currentDispatch *ImplementationDispatch
+
 // initializeDispatch sets function pointers based on detected CPU features.
 // This is called once at startup, removing branch overhead from hot paths.
 func initializeDispatch() {
+	dispatch, exists := dispatchTable[implementation]
+	if !exists {
+		// Fallback to generic if implementation not found
+		dispatch = dispatchTable["generic"]
+	}
+	currentDispatch = &dispatch
 	switch implementation {
 	case "avx512":
 		euclideanDistanceImpl = euclideanAVX512
@@ -23,7 +98,7 @@ func initializeDispatch() {
 		dotProduct384Impl = dot384AVX512
 		dotProduct128Impl = dot128Unrolled4x // Fallback to unrolled Go
 		euclideanDistanceBatchImpl = euclideanBatchAVX512
-		euclideanDistanceBatchFlatImpl = euclideanBatchFlatAVX512
+
 		cosineDistanceBatchImpl = cosineBatchAVX512
 		dotProductBatchImpl = dotBatchAVX512
 		l2SquaredImpl = l2SquaredAVX512 // uses AVX512 kernel
@@ -54,7 +129,7 @@ func initializeDispatch() {
 		dotProduct384Impl = dotGeneric
 		dotProduct128Impl = dot128Unrolled4x
 		euclideanDistanceBatchImpl = euclideanBatchAVX2
-		euclideanDistanceBatchFlatImpl = euclideanBatchFlatAVX2
+
 		cosineDistanceBatchImpl = cosineBatchAVX2
 		dotProductBatchImpl = dotBatchAVX2
 		l2SquaredImpl = l2SquaredAVX2 // uses AVX2 kernel (no sqrt)
@@ -85,7 +160,6 @@ func initializeDispatch() {
 		dotProduct384Impl = dot384NEON
 		dotProduct128Impl = dot128NEON
 		euclideanDistanceBatchImpl = euclideanBatchNEON
-		euclideanDistanceBatchFlatImpl = euclideanBatchFlatGeneric
 		cosineDistanceBatchImpl = cosineBatchNEON
 		dotProductBatchImpl = dotBatchNEON
 		l2SquaredImpl = l2SquaredNEON
@@ -117,7 +191,6 @@ func initializeDispatch() {
 		dotProduct384Impl = dotUnrolled4x
 		dotProduct128Impl = dot128Unrolled4x
 		euclideanDistanceBatchImpl = euclideanBatchUnrolled4x
-		euclideanDistanceBatchFlatImpl = euclideanBatchFlatGeneric
 		cosineDistanceBatchImpl = cosineBatchUnrolled4x
 		dotProductBatchImpl = dotBatchUnrolled4x
 		l2SquaredImpl = L2SquaredFloat32

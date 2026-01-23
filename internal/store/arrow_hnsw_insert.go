@@ -70,18 +70,7 @@ func (h *ArrowHNSW) selectNeighbors(ctx *ArrowSearchContext, candidates []Candid
 
 // Core insertion functions that remain to be refactored in Phase 3
 
-// Insert adds a new vector to the HNSW graph.
-// The vector is identified by its VectorID and assigned a random level.
-func (h *ArrowHNSW) Insert(id uint32, level int) error {
-	// Zero-Copy Ingestion Path
-	// Get vector for distance calculations (and caching)
-	// We use generic getVectorAny to support all types.
-	vec, err := h.getVectorAny(id)
-	if err != nil {
-		return err
-	}
-	return h.InsertWithVector(id, vec, level)
-}
+// Insert function moved to insertion_core.go
 
 // ensureTrained checks if SQ8 training is needed and performs it if sufficient data is accumulated.
 // limitID specifies the max ID to backfill (inclusive).

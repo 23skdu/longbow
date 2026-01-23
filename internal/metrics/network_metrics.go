@@ -62,20 +62,22 @@ var (
 	)
 
 	// FlightPoolConnectionsActive tracks active connections in the flight client pool
-	FlightPoolConnectionsActive = promauto.NewGauge(
+	FlightPoolConnectionsActive = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "longbow_flight_pool_connections_active",
 			Help: "Number of active connections in the flight client pool",
 		},
+		[]string{"host"},
 	)
 
 	// FlightPoolWaitDuration measures time waiting for a flight client connection
-	FlightPoolWaitDuration = promauto.NewHistogram(
+	FlightPoolWaitDuration = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "longbow_flight_pool_wait_duration_seconds",
 			Help:    "Time spent waiting for a flight client connection from pool",
 			Buckets: []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1},
 		},
+		[]string{"host"},
 	)
 
 	// FlightPoolConnectionsCreated tracks total connections created

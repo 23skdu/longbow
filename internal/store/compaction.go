@@ -83,7 +83,8 @@ type CompactionWorker struct {
 	triggerChan  chan string
 	triggerCount atomic.Int64
 
-	store *VectorStore
+	store    *VectorStore
+	workerWg *sync.WaitGroup
 
 	// Statistics
 	compactionsRun atomic.Int64
@@ -93,10 +94,15 @@ type CompactionWorker struct {
 }
 
 // NewCompactionWorker creates a new compaction worker with the given config.
-func NewCompactionWorker(store *VectorStore, cfg CompactionConfig) *CompactionWorker {
+func NewCompactionWorker(store *VectorStore, cfg CompactionConfig, workerWg ...*sync.WaitGroup) *CompactionWorker {
+	var wg *sync.WaitGroup
+	if len(workerWg) > 0 {
+		wg = workerWg[0]
+	}
 	w := &CompactionWorker{
 		store:       store,
 		config:      cfg,
+		workerWg:    wg,
 		triggerChan: make(chan string, 100), // Buffered to avoid blocking
 	}
 	w.lastRunTime.Store(time.Time{})
@@ -118,6 +124,10 @@ func (w *CompactionWorker) Start() {
 	w.stopCh = make(chan struct{})
 	w.doneCh = make(chan struct{})
 	w.running.Store(true)
+
+	if w.workerWg != nil {
+		w.workerWg.Add(1)
+	}
 
 	go w.run()
 }
@@ -155,6 +165,9 @@ func (w *CompactionWorker) Stats() CompactionStats {
 // run is the main worker loop.
 func (w *CompactionWorker) run() {
 	defer close(w.doneCh)
+	if w.workerWg != nil {
+		defer w.workerWg.Done()
+	}
 
 	// Create a context that is cancelled when stopCh is closed
 	ctx, cancel := context.WithCancel(context.Background())
@@ -748,7 +761,7 @@ func NewVectorStoreWithCompaction(mem memory.Allocator, logger zerolog.Logger, m
 	store.compactionConfig = compactionCfg
 	store.rateLimiter = NewRateLimiter(compactionCfg.RateLimitBytesPerSec)
 	if compactionCfg.Enabled {
-		store.compactionWorker = NewCompactionWorker(store, compactionCfg)
+		store.compactionWorker = NewCompactionWorker(store, compactionCfg, &store.workerWg)
 		store.compactionWorker.Start()
 	}
 	return store

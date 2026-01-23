@@ -169,7 +169,7 @@ func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes 
 
 	// Initialize Compaction
 	s.compactionConfig = DefaultCompactionConfig()
-	s.compactionWorker = NewCompactionWorker(s, s.compactionConfig)
+	s.compactionWorker = NewCompactionWorker(s, s.compactionConfig, &s.workerWg)
 	if s.compactionConfig.Enabled {
 		s.compactionWorker.Start()
 	}

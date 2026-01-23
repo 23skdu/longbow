@@ -11,7 +11,35 @@
 
 ### 1. Refactoring & Code Quality
 
-- **[~IN PROGRESS~]{.completed} Split Monolithic Files**: Refactor `arrow_hnsw_insert.go` (1600+ lines), `simd.go` (1200+ lines), and `metrics_storage.go` (1100+ lines) into smaller modules.
+- **[~IN PROGRESS~]{.completed} Split Monolithic Files**: Refactor `arrow_hnsw_insert.go` (1645 lines), `simd.go` (1429 lines), and `metrics_storage.go` (1189 lines) into smaller modules.
+  - **Phase 1: Planning & Analysis (Parts 1-4)**
+    - Part 1: Analyze file dependencies and coupling points
+    - Part 2: Design new module boundaries and interfaces
+    - Part 3: Create migration checklist and testing strategy
+    - Part 4: Establish refactoring order (metrics → SIMD → HNSW)
+
+  - **Phase 2: Metrics Storage Refactoring (Parts 5-8)**
+    - Part 5: Extract WAL metrics to `wal_metrics.go`
+    - Part 6: Extract compaction metrics to `compaction_metrics.go`
+    - Part 7: Extract storage/index metrics to `storage_metrics.go`
+    - Part 8: Extract bulk operation metrics to `bulk_metrics.go`
+
+  - **Phase 3: SIMD Refactoring (Parts 9-12)**
+    - Part 9: Extract CPU detection to `cpu_detection.go`
+    - Part 10: Extract distance functions to `distance_functions.go`
+    - Part 11: Extract batch operations to `batch_operations.go`
+    - Part 12: Extract dispatch logic to `dispatch.go`
+
+  - **Phase 4: HNSW Insert Refactoring (Parts 13-20)**
+    - Part 13: Extract PQ training to `pq_training.go`
+    - Part 14: Extract core insertion logic to `insertion_core.go`
+    - Part 15: Extract connection management to `connection_management.go`
+    - Part 16: Extract level generation to `level_generation.go`
+    - Part 17: Extract insert search operations to `insert_search.go`
+    - Part 18: Extract pruning logic to `connection_pruning.go`
+    - Part 19: Extract F16-specific operations to `f16_operations.go`
+    - Part 20: Update imports and validate all modules
+
 - **[~IN PROGRESS~]{.completed} Error Handling Consistency**:
   - Standardize on `%w` formatting.
   - Use custom error types from `internal/store/errors.go` instead of `fmt.Errorf`.

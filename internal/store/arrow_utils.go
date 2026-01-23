@@ -141,6 +141,28 @@ func ExtractVectorGeneric[T any](rec arrow.RecordBatch, rowIdx, colIdx int) ([]T
 	listOffset := listArr.Data().Offset()
 	start := (listOffset + rowIdx) * width
 	values := listArr.Data().Children()[0]
+	var zero T
+	elemSize := int(unsafe.Sizeof(zero))
+
+	// Validate bounds and handle potentially truncated buffers (e.g. from Flight IPC)
+	if len(values.Buffers()) > 1 && values.Buffers()[1] != nil {
+		bufLen := values.Buffers()[1].Len()
+		needed := (start + width) * elemSize
+
+		if bufLen < needed {
+			// TRUNCATED BUFFER HEURISTIC:
+			// If the buffer is smaller than the absolute offset + width,
+			// check if it's large enough for the relative offset alone.
+			// This happens when Arrow IPC flattens the buffer but preserves listOffset.
+			relativeNeeded := (rowIdx + 1) * width * elemSize
+			if bufLen >= relativeNeeded {
+				// Assume truncated buffer where index 0 is logical index listOffset
+				start = rowIdx * width
+			} else {
+				return nil, fmt.Errorf("ExtractVectorGeneric: buffer out of bounds (len=%d, needed=%d, rowIdx=%d, listOffset=%d, width=%d). Buffer is too small even for relative access", bufLen, needed, rowIdx, listOffset, width)
+			}
+		}
+	}
 
 	// Zero-copy extraction
 	return unsafeVectorSliceGeneric[T](values, start, width), nil
@@ -198,7 +220,149 @@ func ExtractVectorFromArrow(rec arrow.RecordBatch, rowIdx, colIdx int) ([]float3
 			res[i] = float32(val)
 		}
 		return res, nil
+	case []int16:
+		res := make([]float32, len(v))
+		for i, val := range v {
+			res[i] = float32(val)
+		}
+		return res, nil
+	case []uint16:
+		res := make([]float32, len(v))
+		for i, val := range v {
+			res[i] = float32(val)
+		}
+		return res, nil
+	case []int32:
+		res := make([]float32, len(v))
+		for i, val := range v {
+			res[i] = float32(val)
+		}
+		return res, nil
+	case []uint32:
+		res := make([]float32, len(v))
+		for i, val := range v {
+			res[i] = float32(val)
+		}
+		return res, nil
+	case []int64:
+		res := make([]float32, len(v))
+		for i, val := range v {
+			res[i] = float32(val)
+		}
+		return res, nil
+	case []uint64:
+		res := make([]float32, len(v))
+		for i, val := range v {
+			res[i] = float32(val)
+		}
+		return res, nil
 	default:
 		return nil, fmt.Errorf("ExtractVectorFromArrow: casting from %T to []float32 not implemented", anyVec)
+	}
+}
+
+func InferVectorDataType(schema *arrow.Schema, fieldName string) VectorDataType {
+	if schema == nil {
+		return VectorTypeFloat32
+	}
+
+	idx := schema.FieldIndices(fieldName)
+	if len(idx) == 0 {
+		// Try default metadata check if field not found
+		md := schema.Metadata()
+		if val, ok := md.GetValue("longbow.vector_type"); ok {
+			return parseVectorType(val)
+		}
+		return VectorTypeFloat32
+	}
+
+	f := schema.Field(idx[0])
+
+	// 1. Check Field Metadata (Preferred)
+	fmd := f.Metadata
+	if val, ok := fmd.GetValue("longbow.vector_type"); ok {
+		return parseVectorType(val)
+	}
+
+	// 1.5 Check Schema Metadata (Global fallback)
+	smd := schema.Metadata()
+	if val, ok := smd.GetValue("longbow.vector_type"); ok {
+		return parseVectorType(val)
+	}
+
+	// 2. Fallback to physical type inspection
+	listType, ok := f.Type.(*arrow.FixedSizeListType)
+	if !ok {
+		return VectorTypeFloat32
+	}
+
+	elemType := listType.Elem()
+	var finalType VectorDataType
+	switch elemType.ID() {
+	case arrow.FLOAT32:
+		finalType = VectorTypeFloat32
+		if val, _ := fmd.GetValue("longbow.complex"); val == "true" {
+			finalType = VectorTypeComplex64
+		}
+	case arrow.FLOAT64:
+		finalType = VectorTypeFloat64
+		if val, _ := fmd.GetValue("longbow.complex"); val == "true" {
+			finalType = VectorTypeComplex128
+		}
+	case arrow.FLOAT16:
+		finalType = VectorTypeFloat16
+	case arrow.INT8:
+		finalType = VectorTypeInt8
+	case arrow.UINT8:
+		finalType = VectorTypeUint8
+	case arrow.INT16:
+		finalType = VectorTypeInt16
+	case arrow.UINT16:
+		finalType = VectorTypeUint16
+	case arrow.INT32:
+		finalType = VectorTypeInt32
+	case arrow.UINT32:
+		finalType = VectorTypeUint32
+	case arrow.INT64:
+		finalType = VectorTypeInt64
+	case arrow.UINT64:
+		finalType = VectorTypeUint64
+	default:
+		finalType = VectorTypeFloat32
+	}
+
+	return finalType
+}
+
+func parseVectorType(val string) VectorDataType {
+	switch val {
+	case "complex64":
+		return VectorTypeComplex64
+	case "complex128":
+		return VectorTypeComplex128
+	case "float16":
+		return VectorTypeFloat16
+	case "float32":
+		return VectorTypeFloat32
+	case "float64":
+		return VectorTypeFloat64
+	case "int8":
+		return VectorTypeInt8
+	case "uint8":
+		return VectorTypeUint8
+	case "int16":
+		return VectorTypeInt16
+	case "uint16":
+		return VectorTypeUint16
+	case "int32":
+		return VectorTypeInt32
+	case "uint32":
+		return VectorTypeUint32
+	case "int64":
+		return VectorTypeInt64
+	case "uint64":
+		return VectorTypeUint64
+	default:
+		return VectorTypeFloat32
 	}
 }

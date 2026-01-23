@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -18,7 +19,6 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
-	"github.com/apache/arrow-go/v18/arrow/memory"
 
 	lmem "github.com/23skdu/longbow/internal/memory"
 	"github.com/23skdu/longbow/internal/metrics"
@@ -38,7 +38,7 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 			return members[i].ID < members[j].ID
 		})
 
-		resp := map[string]interface{}{
+		resp := map[string]any{
 			"self":    s.Mesh.GetIdentity(),
 			"members": members,
 			"count":   len(members),
@@ -54,7 +54,53 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 		}
 		return nil
 
-	case "delete":
+	case "check_readiness":
+		var req struct {
+			Dataset string `json:"dataset"`
+		}
+		// Body is optional
+		if len(action.Body) > 0 {
+			if err := json.Unmarshal(action.Body, &req); err != nil {
+				return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
+			}
+		}
+
+		resp := map[string]any{
+			"status": "READY",
+		}
+
+		// 1. Check Global Queue
+		qLen := s.indexQueue.Len()
+		if qLen > 0 {
+			resp["status"] = "BUSY"
+			resp["reason"] = fmt.Sprintf("global index queue has %d jobs", qLen)
+		} else if req.Dataset != "" {
+			// 2. Check Specific Dataset
+			ds, ok := s.getDataset(req.Dataset)
+			if !ok {
+				resp["status"] = "NOT_FOUND"
+				resp["reason"] = "dataset not found"
+			} else {
+				pending := ds.PendingIndexJobs.Load()
+				pendingIngestion := ds.PendingIngestion.Load()
+				if pending > 0 || pendingIngestion > 0 {
+					resp["status"] = "BUSY"
+					resp["reason"] = fmt.Sprintf("dataset has %d pending index jobs, %d pending ingestion jobs", pending, pendingIngestion)
+				} else if ds.Index == nil {
+					resp["status"] = "BUSY"
+					resp["reason"] = "index not initialized"
+				}
+				resp["index_len"] = ds.IndexLen()
+			}
+		}
+
+		body, err := json.Marshal(resp)
+		if err != nil {
+			return status.Errorf(codes.Internal, "failed to serialize status: %v", err)
+		}
+		return stream.Send(&flight.Result{Body: body})
+
+	case "delete", "Delete":
 		var req struct {
 			Dataset string `json:"dataset"`
 			ID      string `json:"id"`
@@ -73,49 +119,116 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 
 		found := false
 		ds.dataMu.RLock()
-		for i, rec := range ds.Records {
-			idColIdx := -1
-			for j, field := range rec.Schema().Fields() {
-				if field.Name == "id" {
-					idColIdx = j
+
+		// Use PrimaryIndex for O(1) lookup
+		if ds.PrimaryIndex != nil {
+			if loc, ok := ds.PrimaryIndex[req.ID]; ok {
+				// We found the location!
+
+				// Optimization: Check if already deleted inside the read lock first
+				// to avoid Upgrade to Write Lock if not needed.
+				if ts, ok := ds.Tombstones[loc.BatchIdx]; ok && ts != nil && ts.Contains(loc.RowIdx) {
+					// Already deleted, treat as success
+					found = true
+				} else {
+					// Need to set tombstone. Upgrade to write lock.
+					dsLockStart := time.Now()
+					ds.dataMu.RUnlock()
+					ds.dataMu.Lock()
+					metrics.DatasetLockWaitDurationSeconds.WithLabelValues("delete_upgrade").Observe(time.Since(dsLockStart).Seconds())
+
+					// Re-verify location after re-lock (though PrimaryIndex is append-only for IDs usually)
+					// Verify tombstone again
+					if ds.Tombstones[loc.BatchIdx] == nil {
+						ds.Tombstones[loc.BatchIdx] = qry.NewBitset()
+					}
+					ds.Tombstones[loc.BatchIdx].Set(loc.RowIdx)
+					// Also update global 'deleted' set in HNSW if needed?
+					// Currently HNSW relies on dataset Tombstones or its own bitset.
+					// HNSW has 'deleted' bitset, synced via CleanupTombstones usually.
+					// But we should probably mark it here too if HNSW is tightly coupled?
+					// The architecture seems to be: Dataset Tombstones are source of truth.
+
+					metrics.TombstonesTotal.WithLabelValues(req.Dataset).Inc()
+
+					// Re-acquire read lock for remaining logic if needed (e.g., if we were in a loop)
+					// But we are effectively done.
+					// To match surrounding code flow:
+					ds.dataMu.Unlock()
+					ds.dataMu.RLock() // Re-lock to match defer RUnlock()
+					found = true
+				}
+			}
+		}
+
+		// Fallback Linear Scan (only if PrimaryIndex failed or nil)
+		if !found && ds.PrimaryIndex == nil {
+			for i, rec := range ds.Records {
+				idColIdx := -1
+				for j, field := range rec.Schema().Fields() {
+					if field.Name == "id" {
+						idColIdx = j
+						break
+					}
+				}
+				if idColIdx == -1 {
+					continue
+				}
+
+				col := rec.Column(idColIdx)
+				rowIdx := -1
+
+				// Handle different ID types
+				switch arr := col.(type) {
+				case *array.String:
+					for j := 0; j < arr.Len(); j++ {
+						if arr.Value(j) == req.ID {
+							rowIdx = j
+							break
+						}
+					}
+				case *array.Int64:
+					var intID int64
+					if n, _ := fmt.Sscanf(req.ID, "%d", &intID); n == 1 {
+						for j := 0; j < arr.Len(); j++ {
+							if arr.Value(j) == intID {
+								rowIdx = j
+								break
+							}
+						}
+					}
+				case *array.Uint64:
+					var uintID uint64
+					if n, _ := fmt.Sscanf(req.ID, "%d", &uintID); n == 1 {
+						for j := 0; j < arr.Len(); j++ {
+							if arr.Value(j) == uintID {
+								rowIdx = j
+								break
+							}
+						}
+					}
+				}
+
+				if rowIdx != -1 {
+					// Check if already deleted
+					ts := ds.Tombstones[i]
+					if ts != nil && ts.Contains(rowIdx) {
+						found = true // Already deleted
+						break
+					}
+
+					ds.dataMu.RUnlock()
+					ds.dataMu.Lock()
+					if ds.Tombstones[i] == nil {
+						ds.Tombstones[i] = qry.NewBitset()
+					}
+					ds.Tombstones[i].Set(rowIdx)
+					ds.dataMu.Unlock()
+					metrics.TombstonesTotal.WithLabelValues(req.Dataset).Inc()
+					found = true
+					ds.dataMu.RLock()
 					break
 				}
-			}
-			if idColIdx == -1 {
-				continue
-			}
-
-			idCol, ok := rec.Column(idColIdx).(*array.String)
-			if !ok {
-				continue
-			}
-
-			for j := 0; j < idCol.Len(); j++ {
-				if idCol.Value(j) != req.ID {
-					continue
-				}
-
-				// Check if already deleted
-				ts := ds.Tombstones[i]
-				if ts != nil && ts.Contains(j) {
-					continue
-				}
-
-				// Found it! Set tombstone
-				ds.dataMu.RUnlock()
-				ds.dataMu.Lock()
-				if ds.Tombstones[i] == nil {
-					ds.Tombstones[i] = qry.NewBitset()
-				}
-				ds.Tombstones[i].Set(j)
-				ds.dataMu.Unlock()
-				metrics.TombstonesTotal.WithLabelValues(req.Dataset).Inc()
-				found = true
-				ds.dataMu.RLock() // Re-lock for loop continuity or exit
-				break
-			}
-			if found {
-				break
 			}
 		}
 		ds.dataMu.RUnlock()
@@ -129,8 +242,8 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 		}
 		return nil
 
-	case "delete-dataset":
-		var curr map[string]interface{}
+	case "delete-dataset", "DeleteNamespace":
+		var curr map[string]any
 		if err := json.Unmarshal(action.Body, &curr); err != nil {
 			return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
 		}
@@ -173,7 +286,7 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 			}
 		}()
 
-		var curr map[string]interface{}
+		var curr map[string]any
 		if err := json.Unmarshal(action.Body, &curr); err != nil {
 			return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
 		}
@@ -232,6 +345,78 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 
 	case "GetGraphStats":
 		return s.handleGetGraphStats(action.Body, stream)
+
+	case "HybridSearch":
+		var req struct {
+			Dataset   string         `json:"dataset"`
+			Vector    []float32      `json:"vector"`
+			K         int            `json:"k"`
+			TextQuery string         `json:"text_query"`
+			Alpha     float32        `json:"alpha"`
+			Filters   map[string]any `json:"filters"`
+		}
+		if err := json.Unmarshal(action.Body, &req); err != nil {
+			return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
+		}
+
+		// Convert generic dictionary filters to string map if needed, or update HybridSearch sig
+		// s.HybridSearch signature: (ctx, name, query []float32, k int, filters map[string]string)
+		// We'll coerce filters to map[string]string for now
+		strFilters := make(map[string]string)
+		for k, v := range req.Filters {
+			strFilters[k] = fmt.Sprintf("%v", v)
+		}
+
+		// Generate Cache Key
+		cacheKey := HashHybridQuery(
+			req.Dataset,
+			req.Vector,
+			req.TextQuery,
+			req.K,
+			req.Alpha,
+			60,  // Default RRF k
+			0.0, // Default Graph Alpha
+			0,   // Default Graph Depth
+		)
+
+		// Check Cache
+		if cached, ok := s.queryCache.Get(cacheKey); ok {
+			// Hit!
+			body, err := json.Marshal(cached)
+			if err != nil {
+				return status.Errorf(codes.Internal, "failed to marshal cached results: %v", err)
+			}
+			return stream.Send(&flight.Result{Body: body})
+		}
+
+		// Use SearchHybrid for text+vector search
+		// Signature: (ctx, name, query, textQuery, k, alpha, rrfK, graphAlpha, graphDepth)
+		// Filters are currently not supported in this pipeline path
+		results, err := s.SearchHybrid(
+			stream.Context(),
+			req.Dataset,
+			req.Vector,
+			req.TextQuery,
+			req.K,
+			req.Alpha,
+			60,  // Default RRF k
+			0.0, // Default Graph Alpha
+			0,   // Default Graph Depth
+		)
+		if err == nil {
+			// Cache the result
+			s.queryCache.Put(cacheKey, results)
+		}
+		if err != nil {
+			return ToGRPCStatus(err)
+		}
+
+		// Serialize results
+		body, err := json.Marshal(results)
+		if err != nil {
+			return status.Errorf(codes.Internal, "failed to marshal hybrid results: %v", err)
+		}
+		return stream.Send(&flight.Result{Body: body})
 	}
 	return status.Error(codes.Unimplemented, "unknown action type "+action.Type)
 }
@@ -240,7 +425,7 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 	// Use TrackingAllocator to monitor zero-copy behavior (expecting low allocations)
 	// and track metadata overhead.
-	trackAlloc := lmem.NewTrackingAllocator(memory.DefaultAllocator)
+	trackAlloc := lmem.NewTrackingAllocator(s.pooledMem)
 	r, err := flight.NewRecordReader(stream, ipc.WithAllocator(trackAlloc))
 	if err != nil {
 		s.logger.Error().Err(err).Msg("DoPut failed to create reader")
@@ -266,6 +451,7 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 	// Use RCU helper for create
 	ds, created := s.getOrCreateDataset(name, func() *Dataset {
 		ds := NewDataset(name, r.Schema())
+		ds.Logger = s.logger
 		ds.Topo = s.numaTopology
 
 		// Disk Store Initialization (Phase 6)
@@ -314,6 +500,19 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 		return status.Errorf(codes.Internal, "failed to retrieve or create dataset %s", name)
 	}
 
+	// Schema Evolution & Validation
+	// Validate compatibility and evolve if additive changes are present
+	if err := ds.SchemaManager.Evolve(r.Schema()); err != nil {
+		s.logger.Error().Err(err).Str("dataset", name).Msg("Schema evolution/validation failed")
+		return status.Errorf(codes.InvalidArgument, "schema mismatch: %v", err)
+	}
+
+	// Update dataset's schema reference to ensure it uses the latest version
+	// We need to lock to update the pointer safely
+	ds.dataMu.Lock()
+	ds.Schema = ds.SchemaManager.GetCurrentSchema()
+	ds.dataMu.Unlock()
+
 	if created {
 		mem := ds.IndexMemoryBytes.Load()
 		if mem > 100*1024*1024 {
@@ -334,14 +533,23 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 	}
 
 	// Batching configuration
-	const maxBatchSize = 100
-	batch := make([]arrow.RecordBatch, 0, maxBatchSize)
+	const maxBatchRows = 50000             // Aggressive batching for small vectors
+	const maxBatchBytes = 32 * 1024 * 1024 // 32MB cap
+	batch := make([]arrow.RecordBatch, 0, 100)
 
 	// Helper to flush batch
 	flush := func() error {
 		if len(batch) == 0 {
 			return nil
 		}
+
+		// Check total size of batch
+		totalBytes := int64(0)
+		for _, b := range batch {
+			totalBytes += estimateBatchSize(b)
+		}
+
+		metrics.DoPutBatchSizeBytes.Observe(float64(totalBytes))
 
 		// Optimization: Concatenate small batches into one large batch
 		// to reduce WAL overhead and lock contention.
@@ -355,7 +563,7 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 			if err != nil {
 				s.logger.Error().Err(err).Msg("Failed to concatenate batches")
 				// Fallback to processing individually
-				if err := s.flushPutBatch(name, batch); err != nil {
+				if err := s.flushPutBatch(stream.Context(), ds, batch); err != nil {
 					return err
 				}
 				batch = batch[:0]
@@ -364,8 +572,9 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 		}
 
 		// Flush single combined batch
-		if err := s.flushPutBatch(name, []arrow.RecordBatch{combined}); err != nil {
-			combined.Release()
+		err := s.flushPutBatch(stream.Context(), ds, []arrow.RecordBatch{combined})
+		combined.Release()
+		if err != nil {
 			return err
 		}
 
@@ -380,22 +589,33 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 	for r.Next() {
 		rec := r.RecordBatch()
 
-		// Adaptive Batching (Option 1):
-		// If the record is large enough and we don't have pending small records,
+		// Adaptive Batching (Byte-Aware Option 1):
+		// If the record is large enough (>= 10MB) and we don't have pending small records,
 		// write it directly to avoid concatenation/slice overhead.
-		if len(batch) == 0 && rec.NumRows() >= 100 {
+		recSize := estimateBatchSize(rec)
+		if len(batch) == 0 && recSize >= maxBatchBytes {
 			rec.Retain()
-			if err := s.flushPutBatch(name, []arrow.RecordBatch{rec}); err != nil {
+			metrics.DoPutBatchSizeBytes.Observe(float64(recSize))
+			if err := s.flushPutBatch(stream.Context(), ds, []arrow.RecordBatch{rec}); err != nil {
 				rec.Release()
 				return err
 			}
+			rec.Release()
 			continue
 		}
 
 		rec.Retain()
 		batch = append(batch, rec)
 
-		if len(batch) >= maxBatchSize {
+		// Check accumulator size
+		totalBatchBytes := int64(0)
+		totalBatchRows := int64(0)
+		for _, b := range batch {
+			totalBatchBytes += estimateBatchSize(b)
+			totalBatchRows += b.NumRows()
+		}
+
+		if totalBatchRows >= maxBatchRows || totalBatchBytes >= maxBatchBytes {
 			if err := flush(); err != nil {
 				return err
 			}
@@ -426,37 +646,63 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 }
 
 // flushPutBatch handles writing a batch of records to WAL and memory
-func (s *VectorStore) flushPutBatch(name string, batch []arrow.RecordBatch) error {
+func (s *VectorStore) flushPutBatch(ctx context.Context, ds *Dataset, batch []arrow.RecordBatch) error {
 	if len(batch) == 0 {
 		return nil
 	}
+	name := ds.Name
 
-	// 1. Write to WAL (Sync)
+	// 1. Enqueue to Persistence Queue (Async WAL) & Ingestion Queue (Async Indexing)
+	// We do this in parallel or sequentially.
+	// Since both are async queues now, the latency is just channel send.
+
 	ts := time.Now().UnixNano()
-	for _, rec := range batch {
-		if err := s.writeToWAL(rec, name, ts); err != nil {
-			s.logger.Error().Err(err).Str("dataset", name).Msg("Failed to write record to WAL during flushPutBatch")
-			// Depending on strictness, we might return error here.
-			// For now, we follow existing behavior: log and proceed (though skipping WAL is dangerous for durability).
-			// Ideally we should return err if WAL is mandatory.
-			// Let's return error to be safe.
-			return fmt.Errorf("WAL write failed: %w", err)
+
+	// Backpressure: Check if we should throttle
+	if s.CheckIngestionBackpressure() {
+		// Log warning occasionally (every 5 seconds?) or use rate limiter
+		s.logger.Warn().Msg("Applying ingestion backpressure (throttling)")
+		// Loop with sleep until pressure relieves or context done
+		ticker := time.NewTicker(100 * time.Millisecond) // Check every 100ms
+		defer ticker.Stop()
+
+		// Wait loop
+		for s.CheckIngestionBackpressure() {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-ticker.C:
+			}
 		}
 	}
 
-	// 2. Enqueue to Ingestion Pipeline (Async)
 	for _, rec := range batch {
-		rec.Retain() // Retain for the worker (which will Release)
+		rec.Retain() // Retain for Persistence Worker
+		rec.Retain() // Retain for Ingestion Worker (applyBatchToMemory triggers release)
+
+		// Note: We retain twice because two different workers will Release() it.
 
 		// Update lag metric
 		metrics.IngestionLagCount.Add(float64(rec.NumRows()))
 
+		// 1. Send to Persistence (Backpressure if full to ensure durability logic isn't overrun)
+		// If queue is full, we block. This throttles client if disk is slow.
 		select {
-		case s.ingestionQueue <- ingestionJob{datasetName: name, batch: rec, ts: ts}:
-		default:
-			// Backpressure: if queue full, block or fail.
-			// Ideally block to slow down client.
-			s.ingestionQueue <- ingestionJob{datasetName: name, batch: rec, ts: ts}
+		case s.persistenceQueue <- persistenceJob{datasetName: name, batch: rec, ts: ts}:
+		case <-ctx.Done():
+			rec.Release() // Release both retains on cancellation
+			rec.Release()
+			return ctx.Err()
+		}
+
+		// 2. Send to Ingestion
+		// Increment pending ingestion count
+		ds.PendingIngestion.Add(1)
+
+		if !s.ingestionQueue.PushBlocking(ingestionJob{ds: ds, batch: rec, ts: ts}, 5*time.Second) {
+			// If PushBlocking fails (timeout or stop), we must adjust PendingIngestion
+			ds.PendingIngestion.Add(-1)
+			return errors.New("failed to enqueue ingestion job (timeout or queue closed)")
 		}
 	}
 
@@ -465,17 +711,34 @@ func (s *VectorStore) flushPutBatch(name string, batch []arrow.RecordBatch) erro
 
 // StoreRecordBatch stores a batch of records in a dataset
 func (s *VectorStore) StoreRecordBatch(ctx context.Context, name string, rec arrow.RecordBatch) error {
-	// 1. Write to WAL (Sync)
 	ts := time.Now().UnixNano()
-	if err := s.writeToWAL(rec, name, ts); err != nil {
-		return err
-	}
 
-	// 2. Enqueue to Ingestion Pipeline (Async)
-	rec.Retain() // Retain for worker
+	ds, _ := s.getOrCreateDataset(name, func() *Dataset {
+		d := NewDataset(name, rec.Schema())
+		d.Logger = s.logger
+		return d
+	})
+
+	rec.Retain() // For Persistence
+	rec.Retain() // For Ingestion
 	metrics.IngestionLagCount.Add(float64(rec.NumRows()))
 
-	s.ingestionQueue <- ingestionJob{datasetName: name, batch: rec, ts: ts}
+	select {
+	case s.persistenceQueue <- persistenceJob{datasetName: name, batch: rec, ts: ts}:
+	case <-ctx.Done():
+		rec.Release()
+		rec.Release()
+		return ctx.Err()
+	}
+
+	// Track pending ingestion BEFORE enqueuing to fix WaitForIndexing races
+	ds.PendingIngestion.Add(1)
+
+	// Dispatch for ingestion
+	if !s.ingestionQueue.PushBlocking(ingestionJob{ds: ds, batch: rec, ts: ts}, 10*time.Second) {
+		ds.PendingIngestion.Add(-1)
+		return errors.New("failed to enqueue ingestion job")
+	}
 
 	return nil
 }
@@ -551,41 +814,8 @@ func (s *VectorStore) concatenateBatches(batches []arrow.RecordBatch) (arrow.Rec
 }
 
 // applyBatchToMemory applies a batch to the in-memory dataset and dispatches indexing
-func (s *VectorStore) applyBatchToMemory(name string, rec arrow.RecordBatch, ts int64) error {
-	ds, _ := s.getOrCreateDataset(name, func() *Dataset {
-		ds := NewDataset(name, rec.Schema())
-		ds.Topo = s.numaTopology
-
-		// Disk Store Initialization (Phase 6)
-		fmt.Printf("CRITICAL DEBUG: Checking DiskStore for %s\n", name)
-		s.logger.Info().Str("name", name).Msg("Checking DiskStore init condition")
-		if strings.HasPrefix(name, "test_disk") || os.Getenv("LONGBOW_USE_DISK") == "1" {
-			path := filepath.Join(s.dataPath, name+"_vectors.bin")
-			// Determine dim from schema
-			dim := 0
-			if vecCol := findVectorColumn(rec); vecCol != nil {
-				if listArr, ok := vecCol.(*array.FixedSizeList); ok {
-					dim = int(listArr.DataType().(*arrow.FixedSizeListType).Len())
-				} else {
-					s.logger.Warn().Msg("Vector column found but not FixedSizeList")
-				}
-			} else {
-				s.logger.Warn().Msg("Vector column not found in schema")
-			}
-			s.logger.Info().Int("dim", dim).Str("path", path).Msg("DiskStore resolved dim")
-
-			if dim > 0 {
-				dvs, err := NewDiskVectorStore(path, dim)
-				if err != nil {
-					s.logger.Error().Err(err).Msg("Failed to create DiskVectorStore")
-				} else {
-					ds.DiskStore = dvs
-					s.logger.Info().Str("path", path).Int("dim", dim).Msg("DiskVectorStore initialized")
-				}
-			}
-		}
-		return ds
-	})
+func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts int64) error {
+	name := ds.Name
 
 	// Memory tracking
 	batchSize := estimateBatchSize(rec)
@@ -595,7 +825,6 @@ func (s *VectorStore) applyBatchToMemory(name string, rec arrow.RecordBatch, ts 
 	}
 
 	metrics.DoPutPayloadSizeBytes.Observe(float64(batchSize))
-	AdviseRecord(rec, AdviceRandom)
 
 	if batchSize > 100*1024*1024 {
 		s.logger.Warn().Int64("size", batchSize).Msg("Large memory addition in DoPut")
@@ -628,8 +857,9 @@ func (s *VectorStore) applyBatchToMemory(name string, rec arrow.RecordBatch, ts 
 		}
 	}
 
-	ds.dataMu.Lock()
 	dsLockStart := time.Now()
+	ds.dataMu.Lock()
+	defer ds.dataMu.Unlock()
 
 	// Lazy Index Initialization
 	if ds.Index == nil {
@@ -640,10 +870,30 @@ func (s *VectorStore) applyBatchToMemory(name string, rec arrow.RecordBatch, ts 
 			config.ShardCount = runtime.NumCPU()
 		}
 
+		// Infer DataType from the FIRST record
+		dataType := InferVectorDataType(rec.Schema(), "vector")
+		s.logger.Info().Str("dataset", name).Str("dataType", dataType.String()).Msg("Inferred vector data type for new index")
+
+		if config.IndexConfig == nil {
+			hnswCfg := DefaultArrowHNSWConfig()
+			hnswCfg.Metric = ds.Metric
+			hnswCfg.DataType = dataType
+			config.IndexConfig = &hnswCfg
+		} else {
+			// Clone the config to avoid polluting the shared autoShardingConfig
+			clonedCfg := *config.IndexConfig
+			clonedCfg.DataType = dataType
+			config.IndexConfig = &clonedCfg
+		}
+
 		aIdx := NewAutoShardingIndex(ds, config)
 		if vecCol := findVectorColumn(rec); vecCol != nil {
 			if listArr, ok := vecCol.(*array.FixedSizeList); ok {
 				dim := int(listArr.DataType().(*arrow.FixedSizeListType).Len())
+				// Use logical dimension for ArrowHNSW
+				if dataType == VectorTypeComplex64 || dataType == VectorTypeComplex128 {
+					dim /= 2
+				}
 				aIdx.SetInitialDimension(dim)
 			}
 		}
@@ -655,7 +905,8 @@ func (s *VectorStore) applyBatchToMemory(name string, rec arrow.RecordBatch, ts 
 	rec.Retain() // Dataset holds a reference
 
 	// Increment pending jobs count while holding lock to ensure compaction sees it
-	ds.PendingIndexJobs.Add(1)
+	// CRITICAL: Must increment by row count to match decrement in runIndexWorker
+	ds.PendingIndexJobs.Add(rec.NumRows())
 
 	// Record NUMA node
 	currCPU := GetCurrentCPU()
@@ -675,7 +926,6 @@ func (s *VectorStore) applyBatchToMemory(name string, rec arrow.RecordBatch, ts 
 		}
 	}
 
-	ds.dataMu.Unlock()
 	metrics.DatasetLockWaitDurationSeconds.WithLabelValues("put").Observe(time.Since(dsLockStart).Seconds())
 
 	// Batch append to DiskStore outside main dataset lock
@@ -704,34 +954,19 @@ func (s *VectorStore) applyBatchToMemory(name string, rec arrow.RecordBatch, ts 
 		// Queue full: dispatch in goroutine to unblock DoPut latency
 		// Note: This relies on WAL for durability if the process crashes before this goroutine finishes.
 		metrics.IndexJobsOverflowTotal.Inc()
+		s.pendingOverflowJobs.Add(1)
 		go func() {
-			// Spin-wait until space is available.
-			// Ideally we would have a blocking Send, but the Queue doesn't expose one.
-			// This is a tradeoff for extreme ingestion throughput.
-			backoff := 10 * time.Millisecond
-			for {
-				time.Sleep(backoff)
-				if s.indexQueue.Send(job) {
-					return
-				}
-				if backoff < 500*time.Millisecond {
-					backoff *= 2
-				}
-			}
+			defer s.pendingOverflowJobs.Add(-1)
+			// Block efficiently until space is available
+			s.indexQueue.Block(job)
 		}()
 	}
 
 	// Inverted index update removed from here - now handled by runIndexWorker asynchronously
 
-	// Compaction trigger
+	// Compaction trigger check (now integrated into the primary lock section or performed without re-locking)
 	if s.compactionWorker != nil {
-		shouldCompact := false
-		ds.dataMu.RLock()
 		if len(ds.Records) >= s.compactionConfig.MinBatchesToCompact {
-			shouldCompact = true
-		}
-		ds.dataMu.RUnlock()
-		if shouldCompact {
 			_ = s.compactionWorker.TriggerCompaction(name)
 		}
 	}

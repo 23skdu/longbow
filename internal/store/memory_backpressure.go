@@ -36,6 +36,8 @@ type MemoryBackpressureController struct {
 	rejectCount   atomic.Uint64
 	mu            sync.Mutex
 	cond          *sync.Cond
+	stopChan      chan struct{}
+	stopOnce      sync.Once
 }
 
 // NewMemoryBackpressureController creates a new backpressure controller.
@@ -44,6 +46,7 @@ func NewMemoryBackpressureController(cfg BackpressureConfig) *MemoryBackpressure
 		config: cfg,
 	}
 	ctrl.cond = sync.NewCond(&ctrl.mu)
+	ctrl.stopChan = make(chan struct{})
 	return ctrl
 }
 
@@ -56,6 +59,8 @@ func (c *MemoryBackpressureController) Start(ctx context.Context) {
 		for {
 			select {
 			case <-ctx.Done():
+				return
+			case <-c.stopChan:
 				return
 			case <-ticker.C:
 				prevLevel := c.GetPressureLevel()
@@ -204,4 +209,11 @@ func (c *MemoryBackpressureController) GetAcquireCount() uint64 {
 // GetRejectCount returns the total number of rejected acquires.
 func (c *MemoryBackpressureController) GetRejectCount() uint64 {
 	return c.rejectCount.Load()
+}
+
+// Stop halts the background monitoring.
+func (c *MemoryBackpressureController) Stop() {
+	c.stopOnce.Do(func() {
+		close(c.stopChan)
+	})
 }

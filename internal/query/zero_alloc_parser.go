@@ -6,6 +6,8 @@ import (
 	"sync/atomic"
 
 	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 )
 
 type TicketQuery struct {
@@ -25,7 +27,7 @@ type Filter struct {
 }
 
 // Hash returns a unique string representation of the filter for caching purposes.
-func (f Filter) Hash() string {
+func (f *Filter) Hash() string {
 	h := f.Field + ":" + f.Operator + ":" + f.Value + ":" + f.Logic
 	if len(f.Filters) > 0 {
 		h += "("
@@ -46,13 +48,15 @@ type ZeroAllocTicketParser struct {
 	result       TicketQuery
 	filters      []Filter
 	searchParser *ZeroAllocVectorSearchParser
+	logger       zerolog.Logger
 }
 
 // NewZeroAllocTicketParser creates a new reusable parser
-func NewZeroAllocTicketParser() *ZeroAllocTicketParser {
+func NewZeroAllocTicketParser(logger zerolog.Logger) *ZeroAllocTicketParser {
 	return &ZeroAllocTicketParser{
 		filters:      make([]Filter, 0, 16),
-		searchParser: NewZeroAllocVectorSearchParser(768), // Default max dims
+		searchParser: NewZeroAllocVectorSearchParser(768, logger), // Default max dims
+		logger:       logger,
 	}
 }
 
@@ -652,7 +656,7 @@ func ParseTicketQuerySafe(data []byte) (TicketQuery, error) {
 		if metrics.ParserPoolMisses != nil {
 			metrics.ParserPoolMisses.Inc()
 		}
-		parser = NewZeroAllocTicketParser()
+		parser = NewZeroAllocTicketParser(log.Logger)
 	}
 
 	// Parse the data

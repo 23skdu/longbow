@@ -1,7 +1,7 @@
 package store
 
-
 import (
+	"context"
 	"testing"
 
 	"github.com/23skdu/longbow/internal/metrics"
@@ -20,7 +20,7 @@ func TestSearchWithBatchDistance_UsesBatchCalculation(t *testing.T) {
 
 	index := NewHNSWIndex(ds)
 	for i := 0; i < 100; i++ {
-		_, _ = index.Add(0, i)
+		_, _ = index.Add(context.Background(), 0, i)
 	}
 
 	query := makeTestVector(128, 0)
@@ -54,7 +54,7 @@ func TestSearchWithBatchDistance_CorrectResults(t *testing.T) {
 
 	index := NewHNSWIndex(ds)
 	for i := 0; i < 50; i++ {
-		_, _ = index.Add(0, i)
+		_, _ = index.Add(context.Background(), 0, i)
 	}
 
 	// Query for first vector
@@ -80,7 +80,7 @@ func TestSearchBatchOptimized_UsesBatchDistance(t *testing.T) {
 
 	index := NewHNSWIndex(ds)
 	for i := 0; i < 100; i++ {
-		_, _ = index.Add(0, i)
+		_, _ = index.Add(context.Background(), 0, i)
 	}
 
 	// Multiple queries
@@ -115,7 +115,7 @@ func TestBatchDistanceSearch_Metrics(t *testing.T) {
 
 	index := NewHNSWIndex(ds)
 	for i := 0; i < 50; i++ {
-		_, _ = index.Add(0, i)
+		_, _ = index.Add(context.Background(), 0, i)
 	}
 
 	initialCount := testutil.ToFloat64(metrics.BatchDistanceCallsTotal)
@@ -167,7 +167,7 @@ func TestSearchWithBatchDistance_KGreaterThanSize(t *testing.T) {
 
 	index := NewHNSWIndex(ds)
 	for i := 0; i < 3; i++ {
-		_, _ = index.Add(0, i)
+		_, _ = index.Add(context.Background(), 0, i)
 	}
 
 	query := makeTestVector(32, 0)

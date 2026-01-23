@@ -98,7 +98,7 @@ func (sq *ScalarQuantizer) Encode(vec []float32, dst []byte) []byte {
 }
 
 // Distance returns squared L2 in quantized space
-func (sq *ScalarQuantizer) Distance(a, b []byte) int32 {
+func (sq *ScalarQuantizer) Distance(a, b []byte) (int32, error) {
 	return simd.EuclideanDistanceSQ8(a, b)
 }
 
@@ -108,7 +108,12 @@ func (sq *ScalarQuantizer) Decode(src []byte) []float32 {
 	minV, maxV := sq.minVal, sq.maxVal
 	sq.mu.RUnlock()
 
-	dst := make([]float32, len(src))
+	// Ensure capacity for SIMD loads (align to 16 floats / 64 bytes)
+	paddedLen := (len(src) + 15) & ^15
+	if paddedLen < len(src) {
+		paddedLen = len(src)
+	}
+	dst := make([]float32, len(src), paddedLen)
 	scale := (maxV - minV) / 255.0
 
 	for i, b := range src {
@@ -128,7 +133,7 @@ func (sq *ScalarQuantizer) L2Scale() float32 {
 }
 
 // Params returns the current min/max values.
-func (sq *ScalarQuantizer) Params() (float32, float32) {
+func (sq *ScalarQuantizer) Params() (minVal, maxVal float32) {
 	sq.mu.RLock()
 	defer sq.mu.RUnlock()
 	return sq.minVal, sq.maxVal

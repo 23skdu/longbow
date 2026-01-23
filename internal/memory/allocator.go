@@ -35,7 +35,7 @@ func NewArenaAllocator() *ArenaAllocator {
 }
 
 var globalChunkPool = &sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		// Allocate a big chunk
 		b := make([]byte, DefaultArenaChunkSize)
 		return &b
@@ -49,9 +49,12 @@ func (a *ArenaAllocator) Allocate(size int) []byte {
 
 	atomic.AddInt64(&a.allocated, int64(size))
 
-	// If request is huge, just make a dedicated slice (don't pollute arena)
+	// If request is huge, use huge pool
 	if size > DefaultArenaChunkSize {
-		return make([]byte, size)
+		chunkPtr := getHugeChunk(size)
+		// We track it in 'chunks' so we can free it later
+		a.chunks = append(a.chunks, chunkPtr)
+		return (*chunkPtr)[:size]
 	}
 
 	// Check if we have room in current chunk
@@ -99,10 +102,13 @@ func (a *ArenaAllocator) Release() {
 	defer a.mu.Unlock()
 
 	for _, chunkPtr := range a.chunks {
-		// Reset chunk for next user?
-		// Actually, standard sync.Pool behavior relies on the user to re-initialize or overwrite.
-		// Since we append to it, we don't zero it out (expensive). DO NOT Assume zeroed memory.
-		a.pool.Put(chunkPtr)
+		// Return standard chunks to global pool
+		if cap(*chunkPtr) == DefaultArenaChunkSize {
+			a.pool.Put(chunkPtr)
+		} else {
+			// Return huge chunks to huge pool
+			putHugeChunk(chunkPtr)
+		}
 	}
 	a.chunks = nil
 	a.currentChunk = nil
@@ -110,11 +116,47 @@ func (a *ArenaAllocator) Release() {
 	atomic.StoreInt64(&a.allocated, 0)
 }
 
-// AssertSize is a test helper (no-op here)
-func (a *ArenaAllocator) AssertSize(t interface{}, sz int) {
-	if int(a.Allocated()) != sz {
-		panic(fmt.Sprintf("allocator size mismatch: expected %d, got %d", sz, a.Allocated()))
+// Huge chunk pooling
+var (
+	pool128MB = &sync.Pool{New: func() any { b := make([]byte, 128*1024*1024); return &b }}
+	pool256MB = &sync.Pool{New: func() any { b := make([]byte, 256*1024*1024); return &b }}
+	pool512MB = &sync.Pool{New: func() any { b := make([]byte, 512*1024*1024); return &b }}
+	// Anything larger => heap
+)
+
+func getHugeChunk(size int) *[]byte {
+	if size <= 128*1024*1024 {
+		return pool128MB.Get().(*[]byte)
 	}
+	if size <= 256*1024*1024 {
+		return pool256MB.Get().(*[]byte)
+	}
+	if size <= 512*1024*1024 {
+		return pool512MB.Get().(*[]byte)
+	}
+	b := make([]byte, size)
+	return &b
+}
+
+func putHugeChunk(ptr *[]byte) {
+	c := cap(*ptr)
+	switch c {
+	case 128 * 1024 * 1024:
+		pool128MB.Put(ptr)
+	case 256 * 1024 * 1024:
+		pool256MB.Put(ptr)
+	case 512 * 1024 * 1024:
+		pool512MB.Put(ptr)
+	}
+	// Else drop
+}
+
+// AssertSize is a test helper that returns an error if size mismatch occurs
+func (a *ArenaAllocator) AssertSize(sz int) error {
+	if int(a.Allocated()) != sz {
+		return fmt.Errorf("allocator size mismatch: expected %d, got %d", sz, a.Allocated())
+	}
+	return nil
 }
 
 var _ memory.Allocator = (*ArenaAllocator)(nil)

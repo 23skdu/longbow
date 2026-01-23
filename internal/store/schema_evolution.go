@@ -105,7 +105,11 @@ func (m *SchemaEvolutionManager) AddColumn(name string, dtype arrow.DataType) er
 
 	// Check if column already exists (and not dropped)
 	if existing, ok := m.columns[name]; ok && existing.DroppedAt == 0 {
-		return fmt.Errorf("column %q already exists", name)
+		// Idempotency: If types match, it's a success (already done)
+		if arrow.TypeEqual(existing.Type, dtype) {
+			return nil
+		}
+		return fmt.Errorf("column %q already exists with different type: %s vs %s", name, existing.Type, dtype)
 	}
 
 	// If column was previously dropped, we can re-add it
@@ -277,4 +281,72 @@ func (m *SchemaEvolutionManager) GetVersionCount() int {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return len(m.versions)
+}
+
+// ValidateCompatibility checks if the new schema is compatible with the current schema.
+// Compatible means:
+// 1. All existing columns must exist in new schema with same type (unless dropped).
+// 2. New columns are allowed (additive).
+// 3. Dropped columns in new schema are allowed if they are also dropped in current schema (or we allow implicit drops? No, we require explicit drop).
+//
+// Actually, for DoPut, we often allow partial updates (subset of columns).
+// But for "Evolution", we usually mean the schema of the *Batch* implies the new desired schema.
+// If the batch has NEW columns -> Add them.
+// If the batch MISSES columns -> That's fine, they will be null/default in storage.
+// If the batch has CHANGED types -> Error.
+func (m *SchemaEvolutionManager) ValidateCompatibility(newSchema *arrow.Schema) error {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	for _, field := range newSchema.Fields() {
+		// Check if column exists
+		if existing, ok := m.columns[field.Name]; ok {
+			// If it exists, check type match
+			// We skip this check if the column was dropped (effectively it's a "new" column name reuse, which we disallowed earlier, but let's be consistent).
+			if existing.DroppedAt > 0 {
+				return fmt.Errorf("column %q was dropped; cannot re-introduce (yet)", field.Name)
+			}
+
+			if !arrow.TypeEqual(existing.Type, field.Type) {
+				return fmt.Errorf("type mismatch for column %q: existing=%s, new=%s", field.Name, existing.Type, field.Type)
+			}
+		}
+		// If it doesn't exist, it's a new column (Additive) -> O
+	}
+
+	return nil
+}
+
+// Evolve upgrades the schema based on the input schema.
+// It applies additive changes found in newSchema.
+func (m *SchemaEvolutionManager) Evolve(newSchema *arrow.Schema) error {
+	// 1. Fast path: Check equality first?
+	// But `Equal` might be slow. We can just check existence of all new fields.
+
+	// Validate compatibility first
+	if err := m.ValidateCompatibility(newSchema); err != nil {
+		return err
+	}
+
+	// 2. Apply changes
+	var changesMade bool
+	for _, field := range newSchema.Fields() {
+		m.mu.RLock()
+		_, exists := m.columns[field.Name]
+		m.mu.RUnlock()
+
+		if !exists {
+			// Found new column
+			if err := m.AddColumn(field.Name, field.Type); err != nil {
+				return err
+			}
+			changesMade = true
+		}
+	}
+
+	if changesMade {
+		metrics.SchemaEvolutionTotal.WithLabelValues("evolve", "success").Inc()
+	}
+
+	return nil
 }

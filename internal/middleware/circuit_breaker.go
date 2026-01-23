@@ -26,7 +26,7 @@ func CircuitBreakerInterceptor() grpc.UnaryServerInterceptor {
 	}
 	cb := breaker.NewCircuitBreaker(config)
 
-	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		// Only protect expensive search operations
 		isProtected := info.FullMethod == "/arrow.flight.protocol.FlightService/DoGet" ||
 			info.FullMethod == "/arrow.flight.protocol.FlightService/DoAction" // Simple check, could refine for specific actions
@@ -35,7 +35,7 @@ func CircuitBreakerInterceptor() grpc.UnaryServerInterceptor {
 			return handler(ctx, req)
 		}
 
-		res, err := cb.Execute(func() (interface{}, error) {
+		res, err := cb.Execute(func() (any, error) {
 			return handler(ctx, req)
 		})
 

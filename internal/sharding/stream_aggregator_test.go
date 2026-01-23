@@ -40,8 +40,8 @@ func (m *MockFlightStream) Header() (metadata.MD, error) { return nil, nil }
 func (m *MockFlightStream) Trailer() metadata.MD         { return nil }
 func (m *MockFlightStream) CloseSend() error             { return nil }
 func (m *MockFlightStream) Context() context.Context     { return context.Background() }
-func (m *MockFlightStream) SendMsg(m2 interface{}) error { return nil }
-func (m *MockFlightStream) RecvMsg(m2 interface{}) error { return nil }
+func (m *MockFlightStream) SendMsg(m2 any) error { return nil }
+func (m *MockFlightStream) RecvMsg(m2 any) error { return nil }
 
 // Since mocking Flight stream is hard (requires IPC bytes), we verify sortAndSlice directly mostly,
 // and basic Aggregate flow.

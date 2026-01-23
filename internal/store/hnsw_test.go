@@ -1,7 +1,7 @@
 package store
 
-
 import (
+	"context"
 	"sync"
 	"testing"
 
@@ -60,7 +60,7 @@ func TestHNSW_SingleVector(t *testing.T) {
 	idx := NewHNSWIndex(ds)
 
 	// Add the single vector
-	_, err := idx.Add(0, 0)
+	_, err := idx.Add(context.Background(), 0, 0)
 	require.NoError(t, err)
 
 	// Search should return self
@@ -95,7 +95,7 @@ func TestHNSW_KGreaterThanTotal(t *testing.T) {
 
 	// Add all vectors
 	for i := 0; i < 3; i++ {
-		_, err := idx.Add(0, i)
+		_, err := idx.Add(context.Background(), 0, i)
 		require.NoError(t, err)
 	}
 
@@ -126,7 +126,7 @@ func TestHNSW_DuplicateVectors(t *testing.T) {
 
 	// Add all duplicate vectors
 	for i := 0; i < 3; i++ {
-		_, err := idx.Add(0, i)
+		_, err := idx.Add(context.Background(), 0, i)
 		require.NoError(t, err)
 	}
 
@@ -165,7 +165,7 @@ func TestHNSW_HighDimensionalVectors(t *testing.T) {
 
 	// Add all vectors
 	for i := 0; i < 3; i++ {
-		_, err := idx.Add(0, i)
+		_, err := idx.Add(context.Background(), 0, i)
 		require.NoError(t, err)
 	}
 
@@ -209,7 +209,7 @@ func TestHNSW_ConcurrentAdd(t *testing.T) {
 			defer wg.Done()
 			start := workerID * vectorsPerWorker
 			for i := start; i < start+vectorsPerWorker; i++ {
-				_, err := idx.Add(0, i)
+				_, err := idx.Add(context.Background(), 0, i)
 				require.NoError(t, err)
 			}
 		}(w)

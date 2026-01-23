@@ -98,7 +98,8 @@ func TestEncodeWALEntryHeader(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			buf := encodeWALEntryHeader(tt.crc, tt.seq, tt.ts, tt.nameLen, tt.recLen)
+			var buf [32]byte
+			encodeWALEntryHeader(buf[:], tt.crc, tt.seq, tt.ts, tt.nameLen, tt.recLen)
 
 			if len(buf) != 32 {
 				t.Errorf("expected 32 bytes, got %d", len(buf))
@@ -217,8 +218,9 @@ func BenchmarkEncodeWALEntryHeader(b *testing.B) {
 	nameLen := uint32(12)
 	recLen := uint64(1024)
 
+	var buf [32]byte
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = encodeWALEntryHeader(crc, 0, 0, nameLen, recLen)
+		encodeWALEntryHeader(buf[:], crc, 0, 0, nameLen, recLen)
 	}
 }

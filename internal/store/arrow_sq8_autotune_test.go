@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"math/rand"
 	"testing"
 	"time"
@@ -49,7 +50,7 @@ func TestSQ8AutoTuning(t *testing.T) {
 	ds.Records = append(ds.Records, rec1)
 	rec1.Retain()
 
-	ids1, err := idx.AddBatch([]arrow.RecordBatch{rec1}, makeRangeHelper(n1), make([]int, n1))
+	ids1, err := idx.AddBatch(context.Background(), []arrow.RecordBatch{rec1}, makeRangeHelper(n1), make([]int, n1))
 	require.NoError(t, err)
 
 	// Verify Trained (Threshold 10 < 50)
@@ -61,7 +62,8 @@ func TestSQ8AutoTuning(t *testing.T) {
 	// We expect NON-ZERO bytes now
 	cOff := chunkOffset(ids1[0])
 	dims := 16
-	off := int(cOff) * dims
+	paddedDims := 64
+	off := int(cOff) * paddedDims
 	firstVecSQ8 := sq8Chunk[off : off+dims]
 	allZero := true
 	for _, b := range firstVecSQ8 {
@@ -99,7 +101,7 @@ func TestSQ8AutoTuning(t *testing.T) {
 	for k := range batchIdxs {
 		batchIdxs[k] = 1
 	}
-	ids2, err := idx.AddBatch([]arrow.RecordBatch{rec2}, makeRangeHelper(n2), batchIdxs)
+	ids2, err := idx.AddBatch(context.Background(), []arrow.RecordBatch{rec2}, makeRangeHelper(n2), batchIdxs)
 	require.NoError(t, err)
 
 	// Verify Trained
@@ -118,7 +120,7 @@ func TestSQ8AutoTuning(t *testing.T) {
 
 	// Verify New Vectors Encoded
 	cOff2 := chunkOffset(ids2[0])
-	off2 := int(cOff2) * dims
+	off2 := int(cOff2) * paddedDims
 	// ids2[0] might be in same chunk or next. 50+0 = 50. Same chunk.
 	secondVecSQ8 := sq8Chunk[off2 : off2+dims]
 	allZero2 := true

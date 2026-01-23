@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/23skdu/longbow/internal/pq"
@@ -15,7 +16,8 @@ import (
 type VectorDataType int
 
 const (
-	VectorTypeInt8 VectorDataType = iota
+	VectorTypeUnknown VectorDataType = iota
+	VectorTypeInt8
 	VectorTypeUint8
 	VectorTypeInt16
 	VectorTypeUint16
@@ -32,6 +34,8 @@ const (
 
 func (t VectorDataType) String() string {
 	switch t {
+	case VectorTypeUnknown:
+		return "unknown"
 	case VectorTypeInt8:
 		return "int8"
 	case VectorTypeUint8:
@@ -66,6 +70,8 @@ func (t VectorDataType) String() string {
 // ElementSize returns the size of a single element of this type in bytes.
 func (t VectorDataType) ElementSize() int {
 	switch t {
+	case VectorTypeUnknown:
+		return 0
 	case VectorTypeInt8, VectorTypeUint8:
 		return 1
 	case VectorTypeInt16, VectorTypeUint16, VectorTypeFloat16:
@@ -97,21 +103,22 @@ type SearchOptions struct {
 type VectorIndex interface {
 	// AddByLocation adds a vector from the dataset using batch and row indices.
 	// Returns the assigned internal Vector ID.
-	AddByLocation(batchIdx, rowIdx int) (uint32, error)
+	AddByLocation(ctx context.Context, batchIdx, rowIdx int) (uint32, error)
 
 	// AddByRecord adds a vector directly from a record batch.
 	// Returns the assigned internal Vector ID.
-	AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32, error)
+	AddByRecord(ctx context.Context, rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32, error)
 
 	// AddBatch adds multiple vectors from multiple record batches efficiently.
 	// Returns the assigned internal Vector IDs.
-	AddBatch(recs []arrow.RecordBatch, rowIdxs []int, batchIdxs []int) ([]uint32, error)
+	AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowIdxs []int, batchIdxs []int) ([]uint32, error)
 
 	// SearchVectors returns the k nearest neighbors for the query vector with scores and optional filtering.
-	SearchVectors(query []float32, k int, filters []query.Filter, options SearchOptions) ([]SearchResult, error)
+	// query can be []float32, []float16.Num, []complex64, []complex128, etc.
+	SearchVectors(ctx context.Context, query any, k int, filters []query.Filter, options SearchOptions) ([]SearchResult, error)
 
 	// SearchVectorsWithBitmap returns k nearest neighbors filtered by a bitset.
-	SearchVectorsWithBitmap(query []float32, k int, filter *query.Bitset, options SearchOptions) []SearchResult
+	SearchVectorsWithBitmap(ctx context.Context, query any, k int, filter *query.Bitset, options SearchOptions) []SearchResult
 
 	// GetLocation retrieves the storage location for a given vector ID.
 	// Returns the location and true if found, or zero location and false if not found.

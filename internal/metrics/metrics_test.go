@@ -17,4 +17,12 @@ func TestMetricsInitialization(t *testing.T) {
 	assert.NotNil(t, SnapshotTotal)
 	assert.NotNil(t, SnapshotDurationSeconds)
 	assert.NotNil(t, EvictionsTotal)
+
+	// Lock Contention Metrics
+	assert.NotNil(t, LockContentionDuration)
+	assert.NotNil(t, WALLockWaitDuration)
+	assert.NotNil(t, PoolLockWaitDuration)
+	assert.NotNil(t, IndexLockWaitDuration)
+	assert.NotNil(t, DatasetLockWaitDuration)
+	assert.NotNil(t, ShardLockWaitDuration)
 }

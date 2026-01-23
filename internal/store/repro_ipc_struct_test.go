@@ -1,6 +1,5 @@
 package store
 
-
 import (
 	"bytes"
 	"testing"
@@ -9,14 +8,15 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"github.com/apache/arrow-go/v18/arrow/memory"
-	"github.com/stretchr/testify/require"
 	"github.com/rs/zerolog"
+	"github.com/stretchr/testify/require"
 )
 
 func TestCastRecordToSchema_MissingStruct(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()
 	vs := NewVectorStore(mem, logger, 1024*1024*1024, 0, 0)
+	defer func() { _ = vs.Close() }()
 
 	// Schema A: int64
 	fieldsA := []arrow.Field{

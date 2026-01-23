@@ -39,7 +39,10 @@ func (e *PQEncoder) BuildADCTable(query []float32) ([]float32, error) {
 			cent := centroids[cStart:cEnd]
 
 			// Compute squared L2 distance between query subvector and centroid
-			dist := distL2Sq(querySub, cent)
+			dist, err := simd.L2Squared(querySub, cent)
+			if err != nil {
+				return nil, err
+			}
 			table[i*k+j] = dist
 		}
 	}
@@ -62,8 +65,9 @@ func (e *PQEncoder) ADCDistanceBatch(table []float32, flatCodes []byte, results 
 		return errors.New("invalid table size")
 	}
 
-	// Use SIMD accelerated function
-	simd.ADCDistanceBatch(table, flatCodes, e.M, results)
+	if err := simd.ADCDistanceBatch(table, flatCodes, e.M, results); err != nil {
+		return err
+	}
 	return nil
 }
 

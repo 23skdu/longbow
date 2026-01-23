@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -72,14 +73,14 @@ func TestAutoShardingIndex_UseHNSW2(t *testing.T) {
 	idx.SetInitialDimension(4)
 
 	// Ingest
-	ids, err := idx.AddBatch([]arrow.RecordBatch{rec}, []int{0, 1, 2}, []int{0, 0, 0})
+	ids, err := idx.AddBatch(context.Background(), []arrow.RecordBatch{rec}, []int{0, 1, 2}, []int{0, 0, 0})
 	require.NoError(t, err)
 	require.Len(t, ids, 3)
 
 	// Search
 	// Query close to Vec 1: [0.9, 0.1, 0, 0]
 	q := []float32{0.9, 0.1, 0, 0}
-	res, err := idx.SearchVectors(q, 10, nil, SearchOptions{})
+	res, err := idx.SearchVectors(context.Background(), q, 10, nil, SearchOptions{})
 	require.NoError(t, err)
 	require.NotEmpty(t, res)
 

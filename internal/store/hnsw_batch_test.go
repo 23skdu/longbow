@@ -1,7 +1,7 @@
 package store
 
-
 import (
+	"context"
 	"testing"
 
 	"github.com/23skdu/longbow/internal/simd"
@@ -70,7 +70,7 @@ func TestHNSWIndex_SearchBatch(t *testing.T) {
 
 	idx := NewHNSWIndex(ds)
 	for i := 0; i < 100; i++ {
-		_, _ = idx.Add(0, i)
+		_, _ = idx.Add(context.Background(), 0, i)
 	}
 
 	queries := [][]float32{
@@ -103,7 +103,7 @@ func TestHNSWIndex_RerankBatch(t *testing.T) {
 
 	idx := NewHNSWIndex(ds)
 	for i := 0; i < 50; i++ {
-		_, _ = idx.Add(0, i)
+		_, _ = idx.Add(context.Background(), 0, i)
 	}
 
 	query := makeTestVector(16, 0)
@@ -132,7 +132,7 @@ func TestHNSWIndex_SearchBatchWithArena(t *testing.T) {
 
 	idx := NewHNSWIndex(ds)
 	for i := 0; i < 100; i++ {
-		_, _ = idx.Add(0, i)
+		_, _ = idx.Add(context.Background(), 0, i)
 	}
 
 	arena := NewSearchArena(64 * 1024)
@@ -227,7 +227,7 @@ func BenchmarkSequential_1000Candidates(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		results := make([]float32, len(candidates))
 		for j, cand := range candidates {
-			results[j] = simd.EuclideanDistance(query, cand)
+			results[j], _ = simd.EuclideanDistance(query, cand)
 		}
 	}
 }

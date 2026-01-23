@@ -59,7 +59,10 @@ func (h *ArrowHNSW) adjustMParameter(data *GraphData, sampleSize int) {
 			continue
 		}
 
-		d := h.distFunc(sampleVecs[i], sampleVecs[j])
+		d, err := h.distFunc(sampleVecs[i], sampleVecs[j])
+		if err != nil {
+			continue
+		}
 		dists = append(dists, d)
 	}
 
@@ -96,13 +99,14 @@ func (h *ArrowHNSW) adjustMParameter(data *GraphData, sampleSize int) {
 	newM := h.m
 	newMMax := h.mMax
 
-	if idEst > 100 {
+	switch {
+	case idEst > 100:
 		newM = 48
 		newMMax = 96
-	} else if idEst > 50 {
+	case idEst > 50:
 		newM = 32
 		newMMax = 64
-	} else if idEst > 20 {
+	case idEst > 20:
 		newM = 24
 		newMMax = 48
 	}

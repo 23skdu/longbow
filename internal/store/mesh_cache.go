@@ -62,7 +62,7 @@ func (c *MeshStatusCache) Invalidate() {
 
 // jsonEncoderPool pools JSON encoders and buffers to reduce allocations.
 var jsonEncoderPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		buf := new(bytes.Buffer)
 		enc := json.NewEncoder(buf)
 		return &jsonEncoderWrapper{

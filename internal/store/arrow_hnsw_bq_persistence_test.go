@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"os"
 	"testing"
 	"time"
@@ -79,7 +80,7 @@ func TestArrowHNSW_BQ_Persistence(t *testing.T) {
 	arrowIndex := NewArrowHNSW(ds, bqConfig, nil)
 
 	// Re-add data to this new index
-	_, err = arrowIndex.AddByRecord(rec, 0, 0)
+	_, err = arrowIndex.AddByRecord(context.Background(), rec, 0, 0)
 	require.NoError(t, err)
 
 	// Replace in AutoShardingIndex via reflection or if accessible?
@@ -95,17 +96,17 @@ func TestArrowHNSW_BQ_Persistence(t *testing.T) {
 	require.True(t, arrowIndex.config.BQEnabled)
 
 	// 4. Snapshot
-	err = store.Snapshot()
+	err = store.Snapshot(context.Background())
 	require.NoError(t, err)
 
 	// 5. Close and Reopen
-	_ = store.ClosePersistence()
+	_ = store.Close()
 
 	// Creating new store to verify restore
 	store2 := NewVectorStore(mem, logger, 1024*1024*1024, 0, 0)
 	err = store2.InitPersistence(config)
 	require.NoError(t, err)
-	defer func() { _ = store2.ClosePersistence() }()
+	defer func() { _ = store2.Close() }()
 
 	// 6. Verify Restore
 	ds2, err := store2.GetDataset(schemaName)

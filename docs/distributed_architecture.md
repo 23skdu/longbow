@@ -5,7 +5,9 @@
 
 ## Overview
 
-Longbow transitions from a single-node vector store to a distributed, horizontally scalable system using a "Dynamo-style" architecture. This document details the core components implemented during Phases 7, 8, and 9.
+Longbow transitions from a single-node vector store to a distributed, horizontally scalable system
+using a "Dynamo-style" architecture. This document details the core components implemented during
+Phases 7, 8, and 9.
 
 ## Core Components
 
@@ -42,15 +44,17 @@ Longbow transitions from a single-node vector store to a distributed, horizontal
 - **Behavior**:
   - Maintains a connection pool to all nodes in the ring.
   - Resolves Node ID -> Network Address using `RingManager`.
-  - *Current State*: Returns `FORWARD_REQUIRED` error with target address hint (Smart Client pattern support).
-  - *Future State*: Recursive forwarding or fully transparent proxying.
+  - **Transparent Proxying**: The server automatically forwards requests to the correct owner node
+    via gRPC interceptors.
+  - **Smart Client Protocol**: Returns `FORWARD_REQUIRED` error with target address hint for clients
+    that want to minimize latency by connecting directly to the owner.
 
 ## Data Flow
 
 1. **Client** sends request `Put(Key="A")` to Node 1.
 2. **Node 1 Proxy** hashes "A" -> Owner is Node 2.
-3. **Node 1** returns error `FORWARD_REQUIRED: target=Node2 addr=10.0.0.2:3000`.
-4. **Client** retries request against Node 2.
+3. **Node 1** transparently forwards the request to Node 2 and returns the result to the client.
+4. **Alternative**: If strict client-side routing is preferred, Node 1 can return `FORWARD_REQUIRED: target=Node2 addr=10.0.0.2:3000`.
 5. **Node 2** accepts request and writes to WAL.
 
 ## Replication Strategy

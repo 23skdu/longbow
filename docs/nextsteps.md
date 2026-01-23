@@ -1,132 +1,135 @@
-# Next Steps & Roadmap
+# 6-Part Plan: Memory Optimization & Goroutine Leak Prevention (v0.1.5)
 
-This document tracks the remaining work for Performance Optimization and Polymorphic Vector Support.
-Completed items have been verified and archived.
+**Goal**: Resolve `SlabArena` memory retention (59.7GB heap), implement HNSW graph compaction, prevent goroutine leaks, and achieve stable memory usage during sustained ingestion.
 
-## Polymorphic & High-Dimensionality Support
-
-Remaining tasks to support 12 data types and 3072 dimensions.
-
-### 1. 128-3072 Dimension Layout Optimization
-
-**Goal**: Specialized optimizations for power-of-two dimension points.
-
-- **Subtasks**:
-  - Implement cache-line padding for specific widths.
-  - Add block-based SIMD processing for vectors > 1024 dims.
-- **Metrics**: `ahnsw_search_throughput_dims` (Gauge).
-
-### 2. Refactor HNSW Search for Native Polymorphism (Completed)
-
-**Goal**: Decouple graph traversal from float32 assumptions.
-
-- **Subtasks**:
-  - [x] Refactor `mustGetVectorFromData` to use generic views without casting.
-  - [x] Update `Search` and `Insert` implementation to use the dynamic dispatcher directly for non-float types (e.g. Int8).
-- **Metrics**: `ahnsw_polymorphic_search_count` (Counter).
-
-### 3. Enhanced Observability
-
-**Goal**: Expose matrix of performance across all types.
-
-- **Subtasks**:
-  - Add granular Prometheus metrics for per-type latency.
-  - Implement dimension-bucketed performance tracking.
-
-### 4. High-Dimension Growth Stability
-
-**Goal**: Ensure stability for extremely large vectors (3072 dims).
-
-- **Subtasks**:
-  - Optimize `Grow` and `Clone` for large vector pre-allocation.
-  - Implement slab-aware memory reclamation.
-
-### 5. Final Integration & Regression
-
-**Goal**: Address legacy debt and validate full matrix.
-
-- **Subtasks**:
-  - Fix dimension mismatches in legacy HNSW tests.
-  - Final sharded/multi-node validation across all 12 types.
+**Current State**: Profiling reveals 87.56% of heap (52.3GB) held by `SlabArena` allocations. Memory stabilizes but never releases back to OS.
 
 ---
 
-## Ingestion Performance Optimizations
+## Implementation Plan
 
-Remaining high-priority optimizations for the ingestion pipeline.
+### 1. HNSW Graph Compaction
 
-### 6. Eliminate Double-Checked Locking in Text Indexing
+**Objective**: Implement periodic HNSW graph compaction to rebuild graphs with tighter memory layout.
 
-**Problem**: `runIndexWorker()` uses double-checked locking for inverted index creation, causing contention.
-**Solution**:
+**Changes**:
 
-- Use `sync.Map` for `InvertedIndexes` to eliminate read locks.
-- Pre-create inverted indexes during dataset initialization.
-- Batch text indexing operations per column.
-**Expected Impact**: 10-15% faster hybrid search ingestion.
+- **[NEW]** `internal/store/hnsw_compaction.go`: Implement `CompactGraph()` to rebuild HNSW with optimized layout.
+- **[MODIFY]** `internal/store/arrow_hnsw_index.go`: Add `NeedsCompaction()` heuristic (e.g., >30% deleted nodes or >2x expected size).
+- **[MODIFY]** `internal/store/compaction_worker.go`: Trigger HNSW compaction alongside record batch compaction.
+- **[NEW]** `internal/store/hnsw_compaction_test.go`: Unit test verifying graph integrity post-compaction.
+- **[NEW]** `internal/store/hnsw_compaction_fuzz_test.go`: Fuzz test for compaction under concurrent search/insert.
 
-### 7. Optimize Deferred Connection Updates
+**Verification**: Compare memory usage and search latency before/after compaction. Expect 15-25% memory reduction.
 
-**Problem**: `AddBatchBulk()` collects reverse connections with 16-way sharding, but processes serially per shard.
-**Solution**:
+---
 
-- Increase sharding from 16 to 256 for better parallelism.
-- Use lock-free ring buffer for deferred updates.
-- Batch multiple targets per `AddConnectionsBatch` call.
-**Expected Impact**: 20-25% faster graph construction in bulk mode.
+### 2. Aggressive GC Tuner
 
-### 8. Vectorized String Column Indexing
+**Objective**: Make `GCTuner` more responsive to arena retention by lowering GOGC when heap is dominated by arenas.
 
-**Problem**: Text indexing processes strings one-by-one with array bounds checks.
-**Solution**:
+**Changes**:
 
-- Batch extract strings.
-- Parallelize tokenization across string chunks.
-- Use SIMD for whitespace detection/splitting.
-**Expected Impact**: 30-40% faster text indexing.
+- **[MODIFY]** `internal/memory/gc_tuner.go`: Add arena-aware tuning that sets GOGC=50 when arena usage >70% of heap.
+- **[MODIFY]** `internal/memory/gc_tuner.go`: Increase tuning frequency from 2s to 500ms for faster response.
+- **[MODIFY]** `internal/memory/gc_tuner_test.go`: Update tests for new aggressive thresholds.
+- **[NEW]** `internal/memory/gc_tuner_integration_test.go`: Integration test with real `SlabArena` allocations.
 
-### 9. Lazy BM25 Index Initialization
+**Verification**: Run soak test and verify GC triggers more frequently when arena usage is high. Expect heap to stabilize at lower levels.
 
-**Problem**: BM25 index is created eagerly.
-**Solution**:
+---
 
-- Defer creation until first hybrid search query.
-- Use bloom filter to track presence of text columns.
-**Expected Impact**: 20-30% lower memory for vector-only workloads.
+### 3. Goroutine Leak Detection
 
-### 10. Prefetch Neighbor Chunks During Search
+**Objective**: Audit all background goroutines for proper shutdown and add leak detection tests.
 
-**Problem**: `searchLayerForInsert()` causes cache misses.
-**Solution**:
+**Changes**:
 
-- Prefetch next 4 candidate vectors using `PREFETCHT0`.
-- Group candidates by chunk ID.
-**Expected Impact**: 10-15% faster search during insertion.
+- **[NEW]** `internal/store/goroutine_audit.go`: Document all background goroutines with lifecycle ownership.
+- **[MODIFY]** `internal/store/store_lifecycle.go`: Ensure all workers check `stopChan` and use `workerWg`.
+- **[NEW]** `internal/store/goroutine_leak_test.go`: Test that verifies goroutine count returns to baseline after `Close()`.
+- **[NEW]** `internal/store/goroutine_leak_fuzz_test.go`: Fuzz test for rapid open/close cycles.
 
-### 11. Batched Metric Updates
+**Verification**: Use `runtime.NumGoroutine()` before/after store lifecycle. Expect count to return to ±5 of baseline.
 
-**Problem**: Metrics are updated per-job, causing atomic contention.
-**Solution**:
+---
 
-- Accumulate metrics in thread-local counters.
-- Flush to Prometheus every 100ms.
-**Expected Impact**: 5-8% lower CPU overhead.
+### 4. Context Cancellation for Long Operations
 
-### 12. Optimistic Locking for Connection Pruning
+**Objective**: Add context cancellation to all long-running operations (compaction, indexing, replication).
 
-**Problem**: `PruneConnections()` acquires exclusive lock unnecessarily.
-**Solution**:
+**Changes**:
 
-- Check connection count with atomic load before locking.
-- Use RCU-style updates for neighbor lists.
-**Expected Impact**: 15-20% lower lock contention.
+- **[MODIFY]** `internal/store/compaction_worker.go`: Accept `context.Context` and check `ctx.Done()` in compaction loop.
+- **[MODIFY]** `internal/store/store_lifecycle.go`: Pass context from `stopChan` to all workers.
 
-### 13. Parallel Schema Validation
+- **[NEW]** `internal/store/context_cancellation_test.go`: Unit test verifying operations abort on context cancel.
 
-**Problem**: `ApplyDelta()` validates schema serially.
-**Solution**:
+**Verification**: Cancel context mid-operation and verify graceful shutdown within 1 second.
 
-- Cache validated schemas in `sync.Map`.
-- Skip validation for known schema fingerprints.
-- Parallelize field type checking.
-**Expected Impact**: 5-10% faster ingestion.
+---
+
+### 5. Metrics for Memory Subsystem
+
+**Objective**: Add Prometheus metrics for arena usage, slab fragmentation, and compaction events.
+
+**Changes**:
+
+- **[MODIFY]** `internal/metrics/metrics.go`: Add `ArenaMemoryBytes`, `SlabFragmentationRatio`, `CompactionEventsTotal`.
+- **[MODIFY]** `internal/memory/slab_pool.go`: Update metrics on allocate/release.
+- **[MODIFY]** `internal/store/compaction_worker.go`: Increment `CompactionEventsTotal` on each run.
+- **[NEW]** `internal/metrics/memory_metrics_test.go`: Unit test for metric registration and updates.
+
+**Verification**: Query metrics endpoint and verify values match expected arena state.
+
+---
+
+### 6. Shutdown Timeout Enforcement
+
+**Objective**: Enforce hard timeout for graceful shutdown to prevent hung workers from blocking `Close()`.
+
+**Changes**:
+
+- **[MODIFY]** `internal/store/store_lifecycle.go`: Add 30-second timeout for `workerWg.Wait()`.
+- **[MODIFY]** `cmd/longbow/main.go`: Log warning if shutdown exceeds timeout and force-stop remaining workers.
+- **[NEW]** `internal/store/shutdown_timeout_test.go`: Test that `Close()` completes within timeout even with hung workers.
+
+**Verification**: Simulate hung worker and verify `Close()` returns within 30 seconds.
+
+---
+
+### 7. Memory Leak Integration Test
+
+**Objective**: Create long-running integration test that validates memory returns to baseline after dataset drop.
+
+**Changes**:
+
+- **[NEW]** `internal/store/memory_leak_integration_test.go`: Test that creates/drops datasets 100 times and verifies RSS growth <10%.
+- **[NEW]** `scripts/memory_leak_soak.sh`: Automated script for 1-hour memory leak detection.
+- **[MODIFY]** `internal/store/store_lifecycle.go`: Add `ReleaseMemory()` method to explicitly trigger arena compaction.
+
+**Verification**: Run for 1 hour, verify RSS growth <100MB and no goroutine leaks.
+
+---
+
+### 8. Documentation & Runbook
+
+**Objective**: Document memory management architecture and create operational runbook for memory issues.
+
+**Changes**:
+
+- **[NEW]** `docs/memory_architecture.md`: Document `SlabArena`, `TypedArena`, and compaction strategies.
+- **[NEW]** `docs/runbooks/high_memory_usage.md`: Runbook for diagnosing and resolving memory issues in production.
+- **[MODIFY]** `README.md`: Add memory tuning section with recommended `GOGC` and `max_memory` values.
+
+**Verification**: Review documentation with team and validate runbook steps in staging environment.
+
+---
+
+## Success Criteria
+
+- [ ] RSS stabilizes at <10GB for 20-minute soak test (down from 60GB)
+- [ ] No goroutine leaks after 100 store open/close cycles
+- [ ] Compaction reduces memory by 20-30% in fragmented scenarios
+- [ ] All background workers shut down within 30 seconds
+- [ ] Metrics accurately reflect arena usage and compaction events

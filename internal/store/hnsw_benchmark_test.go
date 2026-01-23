@@ -1,7 +1,7 @@
 package store_test
 
-
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -56,7 +56,7 @@ func BenchmarkHNSWComparison(b *testing.B) {
 		idx := store.NewHNSWIndex(ds)
 		start := time.Now()
 		for i := 0; i < numVectors; i++ {
-			_, _ = idx.Add(0, i)
+			_, _ = idx.Add(context.Background(), 0, i)
 		}
 		b.ReportMetric(float64(time.Since(start).Milliseconds()), "coder_build_ms")
 		return idx
@@ -72,7 +72,7 @@ func BenchmarkHNSWComparison(b *testing.B) {
 		start := time.Now()
 		for i := 0; i < numVectors; i++ {
 			// AddByLocation handles ID generation and location storage
-			_, _ = idx.AddByLocation(0, i)
+			_, _ = idx.AddByLocation(context.Background(), 0, i)
 		}
 		b.ReportMetric(float64(time.Since(start).Milliseconds()), "hnsw2_build_ms")
 		return idx
@@ -108,7 +108,7 @@ func BenchmarkHNSWComparison(b *testing.B) {
 
 	b.Run("Search/HNSW2", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			_, err := hnsw2Idx.Search(query, k, k*10, nil)
+			_, err := hnsw2Idx.Search(context.Background(), query, k, k*10, nil)
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -130,7 +130,7 @@ func BenchmarkHNSWComparison(b *testing.B) {
 	b.Run("SearchParallel/HNSW2", func(b *testing.B) {
 		b.RunParallel(func(pb *testing.PB) {
 			for pb.Next() {
-				_, err := hnsw2Idx.Search(query, k, k*10, nil)
+				_, err := hnsw2Idx.Search(context.Background(), query, k, k*10, nil)
 				if err != nil {
 					b.Fatal(err)
 				}

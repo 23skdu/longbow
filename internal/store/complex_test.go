@@ -45,15 +45,18 @@ func TestComplex64_Support(t *testing.T) {
 	err := idx.AddBatchBulk(context.Background(), 0, count, vecs)
 	require.NoError(t, err)
 
-	// Verify Data Integrity via getVector
-	v0, err := idx.getVector(0)
-	require.NoError(t, err)
-	assert.Equal(t, dims*2, len(v0))
-	assert.InDeltaSlice(t, vecs[0], v0, 1e-5)
+	// Verify vector storage
+	// Use ID 0 for verification
+	id0 := uint64(0)
+	vecAny, err := idx.getVectorAny(uint32(id0))
+	assert.NoError(t, err)
+	vecC64, ok := vecAny.([]complex64)
+	assert.True(t, ok)
+	assert.Equal(t, complexVecs[0], vecC64)
 
 	// Search
 	// Use vec[0] as query. Should find itself.
-	results, err := idx.Search(vecs[0], 10, 50, nil)
+	results, err := idx.Search(context.Background(), vecs[0], 10, 50, nil)
 	require.NoError(t, err)
 	require.NotEmpty(t, results)
 	assert.EqualValues(t, 0, results[0].ID)
@@ -73,26 +76,33 @@ func TestComplex128_Support(t *testing.T) {
 	idx := NewArrowHNSW(nil, config, nil)
 
 	vecs := make([][]float32, count)
+	complexVecs := make([][]complex128, count)
 
 	for i := 0; i < count; i++ {
 		vecs[i] = make([]float32, dims*2)
+		complexVecs[i] = make([]complex128, dims)
 		for j := 0; j < dims; j++ {
 			re := rand.Float32()
 			im := rand.Float32()
 			vecs[i][2*j] = re
 			vecs[i][2*j+1] = im
+			complexVecs[i][j] = complex(float64(re), float64(im))
 		}
 	}
 
 	err := idx.AddBatchBulk(context.Background(), 0, count, vecs)
 	require.NoError(t, err)
 
-	v0, err := idx.getVector(0)
-	require.NoError(t, err)
-	assert.Equal(t, dims*2, len(v0))
-	assert.InDeltaSlice(t, vecs[0], v0, 1e-5)
+	// Verify vector storage
+	// Use ID 0 for verification
+	id0 := uint64(0)
+	vecAny, err := idx.getVectorAny(uint32(id0))
+	assert.NoError(t, err)
+	vecC128, ok := vecAny.([]complex128)
+	assert.True(t, ok)
+	assert.Equal(t, complexVecs[0], vecC128)
 
-	results, err := idx.Search(vecs[0], 10, 50, nil)
+	results, err := idx.Search(context.Background(), vecs[0], 10, 50, nil)
 	require.NoError(t, err)
 	require.NotEmpty(t, results)
 	assert.EqualValues(t, 0, results[0].ID)

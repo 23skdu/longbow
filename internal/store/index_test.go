@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"testing"
 
 	"github.com/23skdu/longbow/internal/pq"
@@ -22,24 +23,24 @@ func NewMockIndex() *MockIndex {
 	}
 }
 
-func (m *MockIndex) AddByLocation(batchIdx, rowIdx int) (uint32, error) {
+func (m *MockIndex) AddByLocation(ctx context.Context, batchIdx, rowIdx int) (uint32, error) {
 	m.AddCalls++
 	id := VectorID(len(m.Vectors))
 	m.Vectors[id] = Location{BatchIdx: batchIdx, RowIdx: rowIdx}
 	return uint32(id), nil
 }
 
-func (m *MockIndex) AddByRecord(rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32, error) {
+func (m *MockIndex) AddByRecord(ctx context.Context, rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32, error) {
 	m.AddCalls++
 	id := VectorID(len(m.Vectors))
 	m.Vectors[id] = Location{BatchIdx: batchIdx, RowIdx: rowIdx}
 	return uint32(id), nil
 }
 
-func (m *MockIndex) AddBatch(recs []arrow.RecordBatch, rowIdxs, batchIdxs []int) ([]uint32, error) {
+func (m *MockIndex) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowIdxs, batchIdxs []int) ([]uint32, error) {
 	ids := make([]uint32, len(recs))
 	for i := range recs {
-		id, _ := m.AddByRecord(recs[i], rowIdxs[i], batchIdxs[i])
+		id, _ := m.AddByRecord(ctx, recs[i], rowIdxs[i], batchIdxs[i])
 		ids[i] = id
 	}
 	return ids, nil
@@ -64,7 +65,7 @@ func (m *MockIndex) Search(q []float32, k int) []VectorID {
 	return []VectorID{}
 }
 
-func (m *MockIndex) SearchVectors(q []float32, k int, filters []query.Filter, options SearchOptions) ([]SearchResult, error) {
+func (m *MockIndex) SearchVectors(ctx context.Context, q any, k int, filters []query.Filter, options SearchOptions) ([]SearchResult, error) {
 	m.SearchCalls++
 	results := make([]SearchResult, 0, k)
 	for i := 0; i < k; i++ {
@@ -73,7 +74,7 @@ func (m *MockIndex) SearchVectors(q []float32, k int, filters []query.Filter, op
 	return results, nil
 }
 
-func (m *MockIndex) SearchVectorsWithBitmap(q []float32, k int, filter *query.Bitset, options SearchOptions) []SearchResult {
+func (m *MockIndex) SearchVectorsWithBitmap(ctx context.Context, q any, k int, filter *query.Bitset, options SearchOptions) []SearchResult {
 	m.SearchCalls++
 	return []SearchResult{}
 }

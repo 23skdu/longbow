@@ -250,26 +250,19 @@ func TestBatchedWAL_DoubleBufferSwap(t *testing.T) {
 	// Give time for entries to be received
 	time.Sleep(20 * time.Millisecond)
 
-	// Capture buffer pointer before flush
-	batcher.mu.Lock()
-	bufferBeforeFlush := &batcher.batch
-	batcher.mu.Unlock()
+	// Ring buffer should have entries before flush
+	bufferSizeBefore := batcher.ringBuffer.Len()
+	require.Greater(t, bufferSizeBefore, 0, "ring buffer should have entries before flush")
 
 	// Trigger flush by calling internal flush
 	batcher.flush()
 
-	// After flush, batch should be cleared but buffer reused
-	batcher.mu.Lock()
-	bufferAfterFlush := &batcher.batch
-	require.Equal(t, 0, len(batcher.batch), "batch should be empty after flush")
-	require.Greater(t, cap(batcher.batch), 0, "batch capacity should be preserved")
-	batcher.mu.Unlock()
+	// After flush, ring buffer should be empty
+	require.Equal(t, 0, batcher.ringBuffer.Len(), "ring buffer should be empty after flush")
+	require.Greater(t, batcher.ringBuffer.Cap(), 0, "ring buffer capacity should be preserved")
 
-	// Verify buffer was swapped (double-buffering) not reallocated
-	// The key test: pointer should be different (swapped) OR same (reused)
-	// With double-buffering, we expect consistent behavior
-	_ = bufferBeforeFlush
-	_ = bufferAfterFlush
+	// Verify buffer behavior is consistent
+	// With ring buffer, we expect zero entries after drain
 }
 
 // TestBatchedWAL_NoAllocOnFlush verifies flush doesn't allocate new buffers
@@ -301,7 +294,8 @@ func TestBatchedWAL_NoAllocOnFlush(t *testing.T) {
 		batcher.mu.Lock()
 		for i := 0; i < 5; i++ {
 			rec := makeTestRecord(mem, int64(i))
-			batcher.batch = append(batcher.batch, WALEntry{Record: rec, Name: "test"})
+			// Push directly to ring buffer for testing
+			batcher.ringBuffer.Push(WALEntry{Record: rec, Name: "test"})
 		}
 		batcher.mu.Unlock()
 		batcher.flush()
@@ -339,15 +333,13 @@ func TestBatchedWAL_DoubleBufferCapacityPreserved(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 		batcher.flush()
 
-		// Check capacity is preserved
-		batcher.mu.Lock()
-		batchCap := cap(batcher.batch)
-		batchLen := len(batcher.batch)
-		batcher.mu.Unlock()
+		// Check ring buffer state (lock-free, no mutex needed)
+		bufferLen := batcher.ringBuffer.Len()
+		bufferCap := batcher.ringBuffer.Cap()
 
-		assert.Equal(t, 0, batchLen, "batch should be empty after flush (cycle %d)", cycle)
-		assert.GreaterOrEqual(t, batchCap, maxBatch,
-			"batch capacity should be >= maxBatch (cycle %d): got %d", cycle, batchCap)
+		assert.Equal(t, 0, bufferLen, "ring buffer should be empty after flush (cycle %d)", cycle)
+		assert.GreaterOrEqual(t, bufferCap, maxBatch*2,
+			"ring buffer capacity should be >= maxBatch*2 (cycle %d): got %d", cycle, bufferCap)
 	}
 }
 

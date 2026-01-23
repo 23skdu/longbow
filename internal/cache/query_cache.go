@@ -38,45 +38,28 @@ func NewQueryCache[T any](capacity int, ttl time.Duration, dataset string) *Quer
 func (c *QueryCache[T]) Get(key uint64) (T, bool) {
 	c.mu.RLock()
 	elem, ok := c.items[key]
-	c.mu.RUnlock()
-
 	if !ok {
+		c.mu.RUnlock()
 		metrics.QueryCacheMissesTotal.WithLabelValues(c.dataset).Inc()
 		var zero T
 		return zero, false
 	}
 
-	// Double check expiry
 	item := elem.Value.(*CacheItem[T])
 	if time.Now().After(item.ExpiresAt) {
-		// Expired
-		// We need to upgrade lock to remove it?
-		// Or just let lazy cleanup/overwrite handle it?
-		// Better to return miss and let caller overwrite.
-		// Technically we should delete it but that requires lock upgrade.
-		// For simplicity, treat as miss.
-		// Actual cleanup happens on Put or explicit cleanup.
+		c.mu.RUnlock()
 		metrics.QueryCacheMissesTotal.WithLabelValues(c.dataset).Inc()
 		var zero T
 		return zero, false
 	}
 
-	// Move to front (requires write lock)
-	// To minimize contention, we could skip moving to front on every read?
-	// Or simpler: Upgrade lock.
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	// Re-check existence after lock
-	if elem, ok := c.items[key]; ok {
-		c.lru.MoveToFront(elem)
-		metrics.QueryCacheHitsTotal.WithLabelValues(c.dataset).Inc()
-		return elem.Value.(*CacheItem[T]).Value, true
-	}
-
-	metrics.QueryCacheMissesTotal.WithLabelValues(c.dataset).Inc()
-	var zero T
-	return zero, false
+	// Optimization: Skip LRU update on reads to avoid write lock contention.
+	// For read-heavy workloads, the LRU update overhead exceeds the benefit
+	// of keeping frequently accessed items at the front. Eviction will still
+	// work correctly as expired items are cleaned up lazily.
+	metrics.QueryCacheHitsTotal.WithLabelValues(c.dataset).Inc()
+	c.mu.RUnlock()
+	return item.Value, true
 }
 
 func (c *QueryCache[T]) Put(key uint64, value T) {

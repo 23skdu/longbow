@@ -7,20 +7,25 @@ ingestion and low-latency retrieval.
 
 ### Hot Tier (Memory)
 
-- **Mutable Segment**: Incoming writes go here. Implemented as a concurrent
-  skip-list.
-- **Immutable Segments**: When the mutable segment fills up, it is sealed and
-  becomes immutable.
+- **Mutable Segments**: Incoming writes are stored as Arrow RecordBatches and indexed in the HNSW graph.
+- **Auto-Sharding**: Small datasets use a single HNSW index; larger datasets are transparently migrated
+  to a sharded, lock-striped `ShardedHNSW` for parallel insertion.
+
+### Warm Tier (SSD Offloading)
+
+- **Disk-Based Vectors**: When `LONGBOW_USE_DISK=1` is enabled, full-precision vectors are offloaded to an append-only file on SSD (`DiskVectorStore`).
+- **Hybrid Index**: The HNSW graph and compressed vector representations (PQ/SQ8) remain in RAM for fast traversal, while the final re-ranking step retrieves full vectors from disk.
+- **RAM Savings**: Significantly reduces memory footprint (e.g., 90% reduction for 3072d vectors), enabling billion-scale datasets on moderate hardware.
 
 ### Cold Tier (Object Storage)
 
-- **Parquet Snapshots**: Immutable segments are periodically flushed to disk or
-  S3 as Parquet files.
-- **Leveled Compaction**: Background workers automatically merge small batches (e.g., 10x100 rows) into larger optimally-sized batches (e.g., 1x1000 rows) to improve scan performance and reduce fragmentation.
-- **Async Fsync**: WAL writes are buffered and fsync'd asynchronously (default 1s interval) to maximize ingestion throughput while maintaining durability guarantees.
-- **WAL Size Limit**: A configurable limit (default 100MB) ensures that the
-  Write-Ahead Log (WAL) doesn't grow indefinitely. When the limit is reached, a
-  snapshot is automatically triggered to compact the data and truncate the WAL.
+- **Parquet Snapshots**: In-memory segments are periodically flushed to local disk or S3 as Parquet files.
+- **Leveled Compaction**: Background workers automatically merge small batches into larger
+  optimally-sized batches (e.g., 10k rows) to improve scan performance and reduce fragmentation.
+- **Async Fsync**: WAL writes are buffered and fsync'd asynchronously to maximize ingestion throughput
+  while maintaining durability.
+- **WAL Size Limit**: A configurable limit ensures that the Write-Ahead Log (WAL) doesn't grow
+  indefinitely. When reached, a snapshot is automatically triggered to compact data and truncate the WAL.
 
 ### Data Integrity
 
@@ -29,9 +34,11 @@ ingestion and low-latency retrieval.
 
 ### Graph Compaction (Vacuum)
 
-While "Leveled Compaction" merges physical data (Arrow RecordBatches) on disk/S3, the in-memory HNSW graph requires separate maintenance to handle deletions efficiently.
+While "Leveled Compaction" merges physical data (Arrow RecordBatches) on disk/S3, the in-memory HNSW
+graph requires separate maintenance to handle deletions efficiently.
 
-- **Problem**: Deleted nodes are logically hidden via a `Deleted` bitset but remain in the graph structure ("ghost nodes"), increasing traversal cost.
+- **Problem**: Deleted nodes are logically hidden via a `Deleted` bitset but remain in the graph
+  structure ("ghost nodes"), increasing traversal cost.
 - **Solution (Vacuum)**: A background process (`CleanupTombstones`) periodically scans the graph:
   1. Identifies nodes marked as deleted.
   2. Prunes connections to these nodes from their neighbors.
@@ -68,47 +75,33 @@ Longbow supports two storage backends for snapshots:
 
 ### Local Disk Backend (Default)
 
-Snapshots are written to a local directory. Best for development and
-single-node deployments.
+Snapshots are written to a local directory. Best for development and single-node deployments.
 
-```yaml
-storage:
-  backend: "local"
-  path: "/var/lib/longbow/data"
-  flush_interval_ms: 10000
-  max_segment_size: 1048576
-  compression: "snappy"
-  max_wal_size: 104857600  # 100MB
+```bash
+export LONGBOW_DATA_PATH="/var/lib/longbow/data"
+export LONGBOW_SNAPSHOT_INTERVAL="1h"
+export LONGBOW_MAX_WAL_SIZE="104857600" # 100MB
+export LONGBOW_STORAGE_ASYNC_FSYNC="true"
 ```
 
 ### S3 Backend
 
-Snapshots are written to S3-compatible object storage. Recommended for
-production deployments requiring durability and distributed access.
+Snapshots are written to S3-compatible object storage. Recommended for production deployments
+requiring durability and distributed access.
 
 **Supported S3-compatible services:**
 
-- Amazon S3
-- MinIO
-- Cloudflare R2
-- DigitalOcean Spaces
-- Backblaze B2
+- Amazon S3, MinIO, Cloudflare R2, DigitalOcean Spaces, etc.
 
 #### S3 Configuration
 
-```yaml
-storage:
-  backend: "s3"
-  flush_interval_ms: 10000
-  max_segment_size: 1048576
-  compression: "snappy"
-  max_wal_size: 104857600
-  s3:
-    endpoint: ""                    # Leave empty for AWS S3
-    bucket: "longbow-snapshots"
-    prefix: "prod/vectors"          # Optional key prefix
-    region: "us-east-1"
-    use_path_style: false           # Set true for MinIO
+```bash
+export LONGBOW_STORAGE_BACKEND="s3"
+export LONGBOW_S3_BUCKET="longbow-snapshots"
+export LONGBOW_S3_PREFIX="prod/vectors"
+export LONGBOW_S3_REGION="us-east-1"
+export LONGBOW_S3_ENDPOINT="http://minio.local:9000" # For MinIO
+export LONGBOW_S3_USE_PATH_STYLE="true"              # For MinIO
 ```
 
 #### S3 Credentials
@@ -182,11 +175,11 @@ import (
     "log"
     "os"
 
-    "github.com/23skdu/longbow/internal/store"
+    "github.com/23skdu/longbow/internal/storage"
 )
 
 func main() {
-    cfg := &store.S3BackendConfig{
+    cfg := &storage.S3BackendConfig{
         Endpoint:        "http://minio:9000",  // Empty for AWS S3
         Bucket:          "longbow-snapshots",
         Prefix:          "prod/vectors",
@@ -196,15 +189,15 @@ func main() {
         UsePathStyle:    true,  // Required for MinIO
     }
 
-    backend, err := store.NewS3Backend(cfg)
+    backend, err := storage.NewS3Backend(cfg)
     if err != nil {
         log.Fatal(err)
     }
 
     ctx := context.Background()
 
-    // Write a snapshot
-    err = backend.WriteSnapshot(ctx, "my_collection", parquetData)
+    // Write a snapshot file
+    err = backend.WriteSnapshotFile(ctx, "my_collection", ".parquet", dataReader)
     if err != nil {
         log.Fatal(err)
     }
@@ -219,7 +212,7 @@ func main() {
     // Read a snapshot
     reader, err := backend.ReadSnapshot(ctx, "my_collection")
     if err != nil {
-        if store.IsNotFoundError(err) {
+        if storage.IsNotFoundError(err) {
             log.Println("Snapshot not found")
         } else {
             log.Fatal(err)

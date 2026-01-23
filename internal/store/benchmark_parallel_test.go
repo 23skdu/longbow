@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"sync"
 	"testing"
 
@@ -15,6 +16,7 @@ func BenchmarkParallelSearch(b *testing.B) {
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()
 	vs := NewVectorStore(mem, logger, 1024*1024*512, 0, 0)
+	defer func() { _ = vs.Close() }()
 
 	// Setup dataset with 10k vectors
 	dim := 128
@@ -62,7 +64,7 @@ func BenchmarkParallelSearch(b *testing.B) {
 
 		// Add to index
 		for j := 0; j < int(rec.NumRows()); j++ {
-			_, _ = ds.Index.AddByLocation(len(ds.Records)-1, j)
+			_, _ = ds.Index.AddByLocation(context.Background(), len(ds.Records)-1, j)
 		}
 		bld.Release()
 	}
@@ -83,7 +85,7 @@ func BenchmarkParallelSearch(b *testing.B) {
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			// Use k=1000 to trigger meaningful work
-			_, _ = ds.Index.SearchVectors(query, 1000, nil, SearchOptions{})
+			_, _ = ds.Index.SearchVectors(context.Background(), query, 1000, nil, SearchOptions{})
 		}
 	})
 
@@ -95,7 +97,7 @@ func BenchmarkParallelSearch(b *testing.B) {
 		})
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			_, _ = ds.Index.SearchVectors(query, 1000, nil, SearchOptions{})
+			_, _ = ds.Index.SearchVectors(context.Background(), query, 1000, nil, SearchOptions{})
 		}
 	})
 
@@ -107,7 +109,7 @@ func BenchmarkParallelSearch(b *testing.B) {
 		})
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			_, _ = ds.Index.SearchVectors(query, 1000, nil, SearchOptions{})
+			_, _ = ds.Index.SearchVectors(context.Background(), query, 1000, nil, SearchOptions{})
 		}
 	})
 
@@ -119,7 +121,7 @@ func BenchmarkParallelSearch(b *testing.B) {
 		})
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			_, _ = ds.Index.SearchVectors(query, 1000, nil, SearchOptions{})
+			_, _ = ds.Index.SearchVectors(context.Background(), query, 1000, nil, SearchOptions{})
 		}
 	})
 }

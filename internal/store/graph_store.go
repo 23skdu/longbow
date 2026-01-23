@@ -592,11 +592,11 @@ func (pq PathPriorityQueue) Swap(i, j int) {
 	pq[i], pq[j] = pq[j], pq[i]
 }
 
-func (pq *PathPriorityQueue) Push(x interface{}) {
+func (pq *PathPriorityQueue) Push(x any) {
 	*pq = append(*pq, x.(queueItem))
 }
 
-func (pq *PathPriorityQueue) Pop() interface{} {
+func (pq *PathPriorityQueue) Pop() any {
 	old := *pq
 	n := len(old)
 	item := old[n-1]

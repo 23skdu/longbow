@@ -43,7 +43,7 @@ func NewK8sProvider(namespace, labelSelector string, port int) *K8sProvider {
 		LabelSelector: labelSelector,
 		Port:          port,
 		bufferPool: sync.Pool{
-			New: func() interface{} {
+			New: func() any {
 				// Pre-allocate a reasonable buffer size for K8s responses (e.g. 64KB)
 				b := make([]byte, 65536)
 				return &b

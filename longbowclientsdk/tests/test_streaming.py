@@ -39,7 +39,8 @@ class TestArrowStreaming:
         )
         
         # Upload dataset
-        dataset_name = "test_streaming_dataset"
+        import uuid
+        dataset_name = f"test_stream_{uuid.uuid4().hex}"
         client.insert(dataset_name, table)
         
         yield dataset_name

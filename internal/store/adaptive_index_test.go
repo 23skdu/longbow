@@ -1,11 +1,14 @@
 package store
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
+	"github.com/stretchr/testify/assert"
 )
 
 // =============================================================================
@@ -88,7 +91,7 @@ func TestBruteForceIndexAddByLocation(t *testing.T) {
 
 	// Add vectors from batch 0
 	for i := 0; i < 10; i++ {
-		_, err := idx.AddByLocation(0, i)
+		_, err := idx.AddByLocation(context.Background(), 0, i)
 		if err != nil {
 			t.Fatalf("AddByLocation failed: %v", err)
 		}
@@ -105,14 +108,14 @@ func TestBruteForceIndexSearchVectors(t *testing.T) {
 
 	// Add all vectors
 	for i := 0; i < 100; i++ {
-		if _, err := idx.AddByLocation(0, i); err != nil {
+		if _, err := idx.AddByLocation(context.Background(), 0, i); err != nil {
 			t.Fatalf("AddByLocation failed: %v", err)
 		}
 	}
 
 	// Search for k=10 nearest neighbors
 	query := []float32{0.1, 0.2, 0.3, 0.4}
-	results, _ := idx.SearchVectors(query, 10, nil, SearchOptions{})
+	results, _ := idx.SearchVectors(context.Background(), query, 10, nil, SearchOptions{})
 
 	if len(results) != 10 {
 		t.Errorf("expected 10 results, got %d", len(results))
@@ -133,14 +136,14 @@ func TestBruteForceIndexSearchExact(t *testing.T) {
 	idx := NewBruteForceIndex(ds)
 
 	for i := 0; i < 5; i++ {
-		if _, err := idx.AddByLocation(0, i); err != nil {
+		if _, err := idx.AddByLocation(context.Background(), 0, i); err != nil {
 			t.Fatalf("AddByLocation failed: %v", err)
 		}
 	}
 
 	// Search with k larger than index size
 	query := []float32{1.0, 0.0, 0.0, 0.0}
-	results, _ := idx.SearchVectors(query, 100, nil, SearchOptions{})
+	results, _ := idx.SearchVectors(context.Background(), query, 100, nil, SearchOptions{})
 
 	// Should return all 5 vectors, not 100
 	if len(results) != 5 {
@@ -153,7 +156,7 @@ func TestBruteForceIndexEmptySearch(t *testing.T) {
 	idx := NewBruteForceIndex(ds)
 
 	query := []float32{1.0, 2.0, 3.0, 4.0}
-	results, _ := idx.SearchVectors(query, 10, nil, SearchOptions{})
+	results, _ := idx.SearchVectors(context.Background(), query, 10, nil, SearchOptions{})
 
 	if len(results) != 0 {
 		t.Errorf("expected 0 results for empty index, got %d", len(results))
@@ -188,15 +191,15 @@ func TestAdaptiveIndexSwitchesToHNSW(t *testing.T) {
 
 	// Add vectors up to threshold
 	for i := 0; i < 100; i++ {
-		if _, err := idx.AddByLocation(0, i); err != nil {
+		if _, err := idx.AddByLocation(context.Background(), 0, i); err != nil {
 			t.Fatalf("AddByLocation failed at %d: %v", i, err)
 		}
 	}
 
-	// Should have switched to HNSW after exceeding threshold
-	if idx.GetIndexType() != "hnsw" {
-		t.Errorf("expected hnsw after threshold, got %s", idx.GetIndexType())
-	}
+	// Should have switched to HNSW after exceeding threshold (async)
+	assert.Eventually(t, func() bool {
+		return idx.GetIndexType() == "hnsw"
+	}, 1*time.Second, 10*time.Millisecond, "expected hnsw after threshold")
 }
 
 func TestAdaptiveIndexSearchAfterMigration(t *testing.T) {
@@ -207,14 +210,14 @@ func TestAdaptiveIndexSearchAfterMigration(t *testing.T) {
 
 	// Add vectors to trigger migration
 	for i := 0; i < 50; i++ {
-		if _, err := idx.AddByLocation(0, i); err != nil {
+		if _, err := idx.AddByLocation(context.Background(), 0, i); err != nil {
 			t.Fatalf("AddByLocation failed: %v", err)
 		}
 	}
 
 	// Search should work after migration
 	query := []float32{0.1, 0.2, 0.3, 0.4}
-	results, _ := idx.SearchVectors(query, 10, nil, SearchOptions{})
+	results, _ := idx.SearchVectors(context.Background(), query, 10, nil, SearchOptions{})
 
 	if len(results) == 0 {
 		t.Error("expected search results after migration")
@@ -231,13 +234,14 @@ func TestAdaptiveIndexGetMigrationCount(t *testing.T) {
 
 	// Add vectors to trigger migration
 	for i := 0; i < 20; i++ {
-		_, _ = idx.AddByLocation(0, i)
+		_, _ = idx.AddByLocation(context.Background(), 0, i)
 	}
 
 	// Migration count should have increased
-	if idx.GetMigrationCount() <= initialCount {
-		t.Error("expected migration count to increase")
-	}
+	// Migration count should have increased (async)
+	assert.Eventually(t, func() bool {
+		return idx.GetMigrationCount() > initialCount
+	}, 1*time.Second, 10*time.Millisecond, "expected migration count to increase")
 }
 
 func TestAdaptiveIndexConcurrentAccess(t *testing.T) {
@@ -251,7 +255,7 @@ func TestAdaptiveIndexConcurrentAccess(t *testing.T) {
 	for g := 0; g < 4; g++ {
 		go func(start int) {
 			for i := start; i < start+100; i++ {
-				_, _ = idx.AddByLocation(0, i%500)
+				_, _ = idx.AddByLocation(context.Background(), 0, i%500)
 			}
 			done <- true
 		}(g * 100)
@@ -263,7 +267,7 @@ func TestAdaptiveIndexConcurrentAccess(t *testing.T) {
 
 	// Should have migrated and still be functional
 	query := []float32{0.5, 0.5, 0.5, 0.5}
-	results, _ := idx.SearchVectors(query, 5, nil, SearchOptions{})
+	results, _ := idx.SearchVectors(context.Background(), query, 5, nil, SearchOptions{})
 	if len(results) == 0 {
 		t.Error("expected results after concurrent access")
 	}
@@ -306,5 +310,6 @@ func createTestDatasetWithVectors(t *testing.T, name string, numVectors int) *Da
 	return &Dataset{
 		Name:    name,
 		Records: []arrow.RecordBatch{record},
+		Schema:  schema,
 	}
 }

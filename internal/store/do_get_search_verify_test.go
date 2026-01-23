@@ -31,6 +31,7 @@ func TestDoGetSearch_Integration(t *testing.T) {
 	logger := zerolog.Nop()
 	// NewVectorStore args: allocator, logger, maxMemory, walBytes(unused), checkInterval(unused)
 	store := NewVectorStore(memory.NewGoAllocator(), logger, 1024*1024, 0, time.Minute)
+	defer func() { _ = store.Close() }()
 	store.StartIndexingWorkers(1) // Start 1 worker for test
 
 	// Create and Populate Dataset
@@ -92,7 +93,7 @@ func TestDoGetSearch_Integration(t *testing.T) {
 	ds, err := store.GetDataset("test_ds")
 	require.NoError(t, err)
 	require.Eventually(t, func() bool {
-		return ds.Index.Len() == 3
+		return ds.IndexLen() == 3
 	}, 5*time.Second, 100*time.Millisecond, "Index should reach 3 records")
 
 	// 2. Setup Client (GlobalSearchCoordinator)

@@ -15,12 +15,12 @@ func TestCircuitBreakerInterceptor(t *testing.T) {
 	interceptor := CircuitBreakerInterceptor()
 
 	// Mock handler that always fails
-	failHandler := func(ctx context.Context, req interface{}) (interface{}, error) {
+	failHandler := func(ctx context.Context, req any) (any, error) {
 		return nil, errors.New("remote error")
 	}
 
 	// Mock handler that succeeds
-	successHandler := func(ctx context.Context, req interface{}) (interface{}, error) {
+	successHandler := func(ctx context.Context, req any) (any, error) {
 		return "success", nil
 	}
 
@@ -54,7 +54,7 @@ func TestCircuitBreakerInterceptor_Unprotected(t *testing.T) {
 		FullMethod: "/some.other.Service/SomeMethod",
 	}
 
-	failHandler := func(ctx context.Context, req interface{}) (interface{}, error) {
+	failHandler := func(ctx context.Context, req any) (any, error) {
 		return nil, errors.New("remote error")
 	}
 
@@ -70,7 +70,7 @@ func TestCircuitBreakerInterceptor_Unprotected(t *testing.T) {
 	// So even if the method is unprotected, it won't trigger the breaker.
 	// But if it IS protected, it WILL.
 
-	successHandler := func(ctx context.Context, req interface{}) (interface{}, error) {
+	successHandler := func(ctx context.Context, req any) (any, error) {
 		return "success", nil
 	}
 

@@ -124,7 +124,7 @@ func (r *PeerReplicator) RemovePeer(id string) {
 // GetPeers returns all registered peers
 func (r *PeerReplicator) GetPeers() []*ReplicatorPeerInfo {
 	var result []*ReplicatorPeerInfo
-	r.peers.Range(func(_, value interface{}) bool {
+	r.peers.Range(func(_, value any) bool {
 		result = append(result, value.(*ReplicatorPeerInfo))
 		return true
 	})

@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
@@ -20,6 +21,7 @@ func TestSearchVectorsCorrectness(t *testing.T) {
 
 	// Initialize VectorStore
 	vs := NewVectorStore(mem, logger, 1024*1024*1024, 100*1024*1024, 0)
+	defer func() { _ = vs.Close() }()
 
 	// Define schema
 	schema := arrow.NewSchema(
@@ -59,24 +61,35 @@ func TestSearchVectorsCorrectness(t *testing.T) {
 	err := vs.StoreRecordBatch(ctx, "test", rec)
 	require.NoError(t, err)
 
-	ds, ok := vs.getDataset("test")
-	require.True(t, ok)
-	require.NotNil(t, ds)
+	// Wait for data to become visible (Async Ingestion)
+	var ds *Dataset
+	require.Eventually(t, func() bool {
+		var ok bool
+		ds, ok = vs.getDataset("test")
+		if !ok {
+			return false
+		}
+		ds.dataMu.RLock()
+		defer ds.dataMu.RUnlock()
+		return len(ds.Records) > 0 && ds.Index != nil
+	}, 5*time.Second, 10*time.Millisecond, "Dataset should eventually have records and index")
 
 	// Manually initialize HNSW index
 	hnswIdx := NewHNSWIndex(ds)
+	ds.dataMu.Lock()
 	ds.Index = hnswIdx
+	ds.dataMu.Unlock()
 
 	// Manually index vectors
 	for i := 0; i < len(vectors); i++ {
-		_, _ = hnswIdx.Add(0, i) // Batch 0, Row i
+		_, err := hnswIdx.Add(context.Background(), 0, i) // Batch 0, Row i
 		require.NoError(t, err)
 	}
 
 	query := []float32{1, 0.1, 0, 0}
 
 	// Test SearchVectors (Batched)
-	results, err := hnswIdx.SearchVectors(query, 2, nil, SearchOptions{})
+	results, err := hnswIdx.SearchVectors(context.Background(), query, 2, nil, SearchOptions{})
 	require.NoError(t, err)
 	require.Len(t, results, 2)
 	// Closer to [1,0,0,0] (ID 0) and [1,1,0,0] (ID 4)
@@ -89,7 +102,7 @@ func TestSearchVectorsCorrectness(t *testing.T) {
 	filter.Set(2)
 	filter.Set(3)
 
-	resultsBitmap := hnswIdx.SearchVectorsWithBitmap(query, 2, filter, SearchOptions{})
+	resultsBitmap := hnswIdx.SearchVectorsWithBitmap(context.Background(), query, 2, filter, SearchOptions{})
 	require.Len(t, resultsBitmap, 2)
 	// ID 1 and 2 are closest among filtered {1, 2, 3}
 	assert.Equal(t, VectorID(1), resultsBitmap[0].ID)
@@ -137,7 +150,7 @@ func BenchmarkSearchVectorsBatched(b *testing.B) {
 	ds.dataMu.Unlock()
 
 	for i := 0; i < n; i++ {
-		_, _ = idx.Add(0, i)
+		_, _ = idx.Add(context.Background(), 0, i)
 	}
 
 	query := make([]float32, 128)
@@ -147,7 +160,7 @@ func BenchmarkSearchVectorsBatched(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = idx.SearchVectors(query, 100, nil, SearchOptions{})
+		_, _ = idx.SearchVectors(context.Background(), query, 100, nil, SearchOptions{})
 	}
 }
 
@@ -191,7 +204,7 @@ func BenchmarkSearchVectorsWithBitmapBatched(b *testing.B) {
 	ds.dataMu.Unlock()
 
 	for i := 0; i < n; i++ {
-		_, _ = idx.Add(0, i)
+		_, _ = idx.Add(context.Background(), 0, i)
 	}
 
 	filter := qry.NewBitset()
@@ -206,6 +219,6 @@ func BenchmarkSearchVectorsWithBitmapBatched(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		idx.SearchVectorsWithBitmap(query, 100, filter, SearchOptions{})
+		idx.SearchVectorsWithBitmap(context.Background(), query, 100, filter, SearchOptions{})
 	}
 }

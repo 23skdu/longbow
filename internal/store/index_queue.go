@@ -56,10 +56,12 @@ type IndexJobQueue struct {
 	droppedCount  uint64
 
 	// Lifecycle
-	stopChan chan struct{}
-	stopped  int32
-	stopOnce sync.Once
-	wg       sync.WaitGroup
+	stopChan   chan struct{}
+	stopped    int32
+	stopOnce   sync.Once
+	wg         sync.WaitGroup
+	blockersWg sync.WaitGroup // Waits for blocked producers
+	sendMu     sync.RWMutex   // Protects mainChan close vs send
 
 	// Memory Pressure
 	estimatedBytes int64 // Atomic
@@ -83,7 +85,12 @@ func NewIndexJobQueue(cfg IndexJobQueueConfig) *IndexJobQueue {
 
 // Send submits a job without blocking. Returns true if accepted, false if dropped.
 func (q *IndexJobQueue) Send(job IndexJob) bool {
-	// Check if stopped
+	// Protect against send on closed channel
+	q.sendMu.RLock()
+	defer q.sendMu.RUnlock()
+
+	// Check if stopped (must be checked under lock or atomic is fine,
+	// but lock ensures we don't race with close)
 	if atomic.LoadInt32(&q.stopped) == 1 {
 		return false
 	}
@@ -108,6 +115,48 @@ func (q *IndexJobQueue) Send(job IndexJob) bool {
 			atomic.AddInt64(&q.estimatedBytes, size)
 			return true
 		}
+		return false
+	}
+}
+
+// Block submits a job, blocking until space is available or queue stopped.
+// This is more efficient than spin-waiting for backpressure.
+func (q *IndexJobQueue) Block(job IndexJob) bool {
+	// 1. Try non-blocking existing path (fills overflow if available)
+	if q.Send(job) {
+		return true
+	}
+
+	// 2. Both main and overflow are full. Block on mainChan.
+	// We do not hold lock here to allow Stop() to proceed.
+	// Stop() will close stopChan, which unblocks us.
+
+	if atomic.LoadInt32(&q.stopped) == 1 {
+		return false
+	}
+
+	q.blockersWg.Add(1)
+	defer q.blockersWg.Done()
+
+	// Re-check after adding to WG to avoid race
+	if atomic.LoadInt32(&q.stopped) == 1 {
+		return false
+	}
+
+	size := int64(0)
+	if job.Record != nil {
+		size = int64(job.Record.NumRows() * int64(job.Record.NumCols()) * 8)
+	}
+
+	select {
+	case q.mainChan <- job:
+		// Succeeded after blocking
+		atomic.AddUint64(&q.directSent, 1)
+		atomic.AddInt64(&q.estimatedBytes, size)
+		return true
+	case <-q.stopChan:
+		// Stopped while waiting
+		atomic.AddUint64(&q.droppedCount, 1)
 		return false
 	}
 }
@@ -241,12 +290,27 @@ func (q *IndexJobQueue) Stats() IndexJobQueueStats {
 	}
 }
 
+// IsStopped returns true if the queue is stopped.
+func (q *IndexJobQueue) IsStopped() bool {
+	return atomic.LoadInt32(&q.stopped) == 1
+}
+
 // Stop gracefully stops the queue.
 func (q *IndexJobQueue) Stop() {
 	q.stopOnce.Do(func() {
+		// Take write lock to prohibit further sends
+		q.sendMu.Lock()
 		atomic.StoreInt32(&q.stopped, 1)
+		// Signal drainLoop to stop
 		close(q.stopChan)
+		q.sendMu.Unlock()
+
+		// Wait for drainLoop to finish (which calls drainRemaining)
 		q.wg.Wait()
+		// Wait for blocked producers to finish or abort
+		q.blockersWg.Wait()
+
+		// NOW close mainChan, after all sends (including drainRemaining) are done
 		close(q.mainChan)
 	})
 }

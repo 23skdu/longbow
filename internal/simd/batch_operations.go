@@ -25,7 +25,7 @@ func EuclideanDistanceF16Batch(query []float16.Num, vectors [][]float16.Num, res
 }
 
 // EuclideanDistanceBatch computes Euclidean distances between one query and multiple vectors.
-// Uses pre-selected implementation via function pointer (no switch overhead).
+// Uses unified dispatch table for optimal cache locality and reduced dispatch overhead.
 func EuclideanDistanceBatch(query []float32, vectors [][]float32, results []float32) error {
 	if len(vectors) != len(results) {
 		return errors.New("simd: vectors and results length mismatch")
@@ -40,7 +40,7 @@ func EuclideanDistanceBatch(query []float32, vectors [][]float32, results []floa
 				results[i] = math.MaxFloat32
 				continue
 			}
-			d, _ := euclideanDistance384Impl(query, v)
+			d, _ := currentDispatch.EuclideanDistance384(query, v)
 			results[i] = d
 		}
 		return nil
@@ -51,12 +51,12 @@ func EuclideanDistanceBatch(query []float32, vectors [][]float32, results []floa
 				results[i] = math.MaxFloat32
 				continue
 			}
-			d, _ := euclideanDistance128Impl(query, v)
+			d, _ := currentDispatch.EuclideanDistance128(query, v)
 			results[i] = d
 		}
 		return nil
 	}
-	return euclideanDistanceBatchImpl(query, vectors, results)
+	return currentDispatch.EuclideanDistanceBatch(query, vectors, results)
 }
 
 // EuclideanDistanceBatchFlat computes distances against a flat array of vectors.
@@ -69,7 +69,7 @@ func EuclideanDistanceBatchFlat(query []float32, flatVectors []float32, numVecto
 		for i := 0; i < numVectors; i++ {
 			offset := i * 384
 			v := flatVectors[offset : offset+384]
-			d, _ := euclideanDistance384Impl(query, v)
+			d, _ := currentDispatch.EuclideanDistance384(query, v)
 			results[i] = d
 		}
 		return nil
@@ -78,12 +78,12 @@ func EuclideanDistanceBatchFlat(query []float32, flatVectors []float32, numVecto
 		for i := 0; i < numVectors; i++ {
 			offset := i * 128
 			v := flatVectors[offset : offset+128]
-			d, _ := euclideanDistance128Impl(query, v)
+			d, _ := currentDispatch.EuclideanDistance128(query, v)
 			results[i] = d
 		}
 		return nil
 	}
-	return euclideanDistanceBatchFlatImpl(query, flatVectors, numVectors, dims, results)
+	return currentDispatch.EuclideanDistanceBatchFlat(query, flatVectors, numVectors, dims, results)
 }
 
 // EuclideanDistanceVerticalBatch optimally calculates distances for multiple vectors at once.

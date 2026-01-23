@@ -13,7 +13,7 @@ import (
 // =============================================================================
 
 // EuclideanDistance calculates the Euclidean distance between two vectors.
-// Uses pre-selected implementation via function pointer (no switch overhead).
+// Uses unified dispatch table for optimal cache locality and reduced dispatch overhead.
 func EuclideanDistance(a, b []float32) (float32, error) {
 	if len(a) != len(b) {
 		return 0, errors.New("simd: vector length mismatch")
@@ -22,12 +22,12 @@ func EuclideanDistance(a, b []float32) (float32, error) {
 		return 0, nil
 	}
 	if len(a) == 384 {
-		return euclideanDistance384Impl(a, b)
+		return currentDispatch.EuclideanDistance384(a, b)
 	}
 	if len(a) == 128 {
-		return euclideanDistance128Impl(a, b)
+		return currentDispatch.EuclideanDistance128(a, b)
 	}
-	return euclideanDistanceImpl(a, b)
+	return currentDispatch.EuclideanDistance(a, b)
 }
 
 // L2Squared calculates the squared Euclidean distance between two vectors.
@@ -43,7 +43,7 @@ func L2Squared(a, b []float32) (float32, error) {
 }
 
 // CosineDistance calculates the cosine distance (1 - similarity) between two vectors.
-// Uses pre-selected implementation via function pointer (no switch overhead).
+// Uses unified dispatch table for optimal cache locality and reduced dispatch overhead.
 func CosineDistance(a, b []float32) (float32, error) {
 	if len(a) != len(b) {
 		return 0, errors.New("simd: vector length mismatch")
@@ -51,11 +51,11 @@ func CosineDistance(a, b []float32) (float32, error) {
 	if len(a) == 0 {
 		return 1.0, nil
 	}
-	return cosineDistanceImpl(a, b)
+	return currentDispatch.CosineDistance(a, b)
 }
 
 // DotProduct calculates the dot product of two vectors.
-// Uses pre-selected implementation via function pointer (no switch overhead).
+// Uses unified dispatch table for optimal cache locality and reduced dispatch overhead.
 func DotProduct(a, b []float32) (float32, error) {
 	if len(a) != len(b) {
 		return 0, errors.New("simd: vector length mismatch")
@@ -69,7 +69,7 @@ func DotProduct(a, b []float32) (float32, error) {
 	if len(a) == 128 {
 		return dotProduct128Impl(a, b)
 	}
-	return dotProductImpl(a, b)
+	return currentDispatch.DotProduct(a, b)
 }
 
 // EuclideanDistanceF16 calculates the Euclidean distance between two FP16 vectors.

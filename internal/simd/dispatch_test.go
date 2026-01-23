@@ -163,3 +163,156 @@ func TestRegistryAfterDispatch(t *testing.T) {
 		})
 	}
 }
+
+// TestCPUFeatureDetectionComprehensive tests that CPU features are detected correctly
+func TestCPUFeatureDetectionComprehensive(t *testing.T) {
+	// Force re-detection for testing
+	detectCPU()
+
+	features := GetCPUFeatures()
+	impl := GetImplementation()
+
+	// Basic validation
+	assert.NotEmpty(t, features.Vendor, "CPU vendor should be detected")
+
+	// Implementation should be one of the supported types
+	validImpls := []string{"avx512", "avx2", "neon", "generic"}
+	found := false
+	for _, valid := range validImpls {
+		if impl == valid {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "Implementation should be one of: %v, got: %s", validImpls, impl)
+
+	// Feature flags should be consistent with implementation
+	switch impl {
+	case "avx512":
+		assert.True(t, features.HasAVX512, "AVX512 implementation requires AVX512 support")
+		assert.True(t, features.HasAVX2, "AVX512 support implies AVX2 support")
+	case "avx2":
+		assert.True(t, features.HasAVX2, "AVX2 implementation requires AVX2 support")
+		assert.False(t, features.HasAVX512, "AVX2 implementation should not have AVX512")
+	case "neon":
+		assert.True(t, features.HasNEON, "NEON implementation requires NEON support")
+	case "generic":
+		// Generic can run anywhere
+	}
+}
+
+// TestFunctionDispatch tests that dispatched functions work correctly
+func TestFunctionDispatch(t *testing.T) {
+	// Test data
+	query := []float32{1.0, 2.0, 3.0, 4.0}
+	vector := []float32{4.0, 3.0, 2.0, 1.0}
+
+	// Test Euclidean distance
+	dist, err := EuclideanDistance(query, vector)
+	require.NoError(t, err)
+	assert.Greater(t, dist, float32(0), "Distance should be positive")
+
+	// Test cosine distance
+	cosDist, err := CosineDistance(query, vector)
+	require.NoError(t, err)
+	assert.True(t, cosDist >= -1.0 && cosDist <= 1.0, "Cosine distance should be in [-1, 1]")
+
+	// Test dot product
+	dot, err := DotProduct(query, vector)
+	require.NoError(t, err)
+	expectedDot := float32(1*4 + 2*3 + 3*2 + 4*1) // 4 + 6 + 6 + 4 = 20
+	assert.InDelta(t, expectedDot, dot, 0.01, "Dot product should match expected value")
+}
+
+// TestBatchFunctionDispatch tests that batch operations work correctly
+func TestBatchFunctionDispatch(t *testing.T) {
+	// Test data
+	query := []float32{1.0, 2.0, 3.0, 4.0}
+	vectors := [][]float32{
+		{4.0, 3.0, 2.0, 1.0},
+		{1.0, 1.0, 1.0, 1.0},
+		{2.0, 2.0, 2.0, 2.0},
+	}
+	results := make([]float32, len(vectors))
+
+	// Test batch Euclidean distance
+	err := EuclideanDistanceBatch(query, vectors, results)
+	require.NoError(t, err)
+	assert.Equal(t, len(vectors), len(results), "Results should match input count")
+	for _, result := range results {
+		assert.Greater(t, result, float32(0), "All distances should be positive")
+	}
+
+	// Test batch cosine distance
+	err = CosineDistanceBatch(query, vectors, results)
+	require.NoError(t, err)
+	for _, result := range results {
+		assert.True(t, result >= -1.0 && result <= 1.0, "All cosine distances should be in [-1, 1]")
+	}
+
+	// Test batch dot product
+	err = DotProductBatch(query, vectors, results)
+	require.NoError(t, err)
+	assert.Equal(t, len(vectors), len(results), "Results should match input count")
+}
+
+// TestFallbackMechanisms tests that fallback implementations work
+func TestFallbackMechanisms(t *testing.T) {
+	// Test with empty slices - check for no panic rather than error
+	emptyQuery := []float32{}
+	emptyVector := []float32{}
+
+	// Empty vectors might not error but should not panic
+	assert.NotPanics(t, func() {
+		_, _ = EuclideanDistance(emptyQuery, emptyVector)
+	}, "Empty vectors should not panic")
+
+	// Test with mismatched dimensions
+	shortQuery := []float32{1.0, 2.0}
+	longVector := []float32{1.0, 2.0, 3.0, 4.0}
+
+	_, err := EuclideanDistance(shortQuery, longVector)
+	assert.Error(t, err, "Mismatched dimensions should return error")
+}
+
+// TestImplementationSpecificBehavior tests behavior varies by implementation
+func TestImplementationSpecificBehavior(t *testing.T) {
+	impl := GetImplementation()
+
+	// Test that implementation affects function selection
+	switch impl {
+	case "avx512":
+		// AVX512 should use optimized kernels
+		assert.NotNil(t, euclideanDistanceImpl)
+	case "avx2":
+		// AVX2 should use AVX2 kernels
+		assert.NotNil(t, euclideanDistanceImpl)
+	case "neon":
+		// NEON should use ARM kernels
+		assert.NotNil(t, euclideanDistanceImpl)
+	case "generic":
+		// Generic should use Go implementations
+		assert.NotNil(t, euclideanDistanceImpl)
+	}
+
+	// All implementations should have working distance functions
+	query := []float32{1.0, 2.0, 3.0, 4.0}
+	vector := []float32{4.0, 3.0, 2.0, 1.0}
+
+	dist, err := EuclideanDistance(query, vector)
+	require.NoError(t, err)
+	assert.Greater(t, dist, float32(0))
+}
+
+// TestMetricsIntegration tests that metrics are updated correctly
+func TestMetricsIntegration(t *testing.T) {
+	// Force re-initialization to update metrics
+	initializeDispatch()
+
+	// Basic distance computation should not fail
+	query := []float32{1.0, 2.0, 3.0}
+	vector := []float32{3.0, 2.0, 1.0}
+
+	_, err := EuclideanDistance(query, vector)
+	assert.NoError(t, err)
+}

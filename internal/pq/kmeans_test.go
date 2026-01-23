@@ -6,7 +6,6 @@ import (
 )
 
 func TestTrainKMeans_Basic(t *testing.T) {
-	rand.Seed(42)
 
 	// Create simple test data: 3 clusters of 100 vectors each
 	n := 300
@@ -141,14 +140,6 @@ func TestTrainKMeans_CentroidCount(t *testing.T) {
 			t.Errorf("Centroid[%d] has unreasonable value: %f", i, v)
 		}
 	}
-}
-
-func floatEquals(a, b, tol float32) bool {
-	diff := a - b
-	if diff < 0 {
-		diff = -diff
-	}
-	return diff < tol
 }
 
 func BenchmarkTrainKMeans(b *testing.B) {

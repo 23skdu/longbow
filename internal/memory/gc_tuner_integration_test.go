@@ -21,9 +21,9 @@ func TestGCTuner_ArenaAwareTuning(t *testing.T) {
 	arena := NewSlabArena(1024 * 1024) // 1MB slabs
 	defer arena.Free()
 
-	// Try to allocate some memory to increase capacity (ignore errors)
+	// Try to allocate some memory to increase capacity
 	for i := 0; i < 5; i++ {
-		arena.Alloc(256 * 1024) // 256KB at a time
+		_, _ = arena.Alloc(256 * 1024) // 256KB at a time, ignore errors in test
 	}
 
 	stats := arena.Stats()

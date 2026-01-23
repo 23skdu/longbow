@@ -24,7 +24,7 @@ func TestMemoryLeak_CreateDropDataset(t *testing.T) {
 	zerolog.SetGlobalLevel(zerolog.DebugLevel)
 	mem := memory.NewGoAllocator()
 	s := NewVectorStore(mem, logger, 10*1024*1024*1024, 0, 0)
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	ctx := context.Background()
 	schema := arrow.NewSchema([]arrow.Field{
@@ -160,10 +160,10 @@ func TestMemoryLeak_GoroutineCount(t *testing.T) {
 	for i := 0; i < 50; i++ {
 		name := fmt.Sprintf("ds_%d", i)
 		s.PrewarmDataset(name, schema)
-		s.DropDataset(ctx, name)
+		_ = s.DropDataset(ctx, name)
 	}
 
-	s.Close()
+	_ = s.Close()
 
 	// Wait for workers to stop
 	time.Sleep(500 * time.Millisecond)

@@ -75,7 +75,7 @@ func TestHNSWCompaction_Functional(t *testing.T) {
 		id := uint32(r.Intn(numNodes))
 		if !deleted[id] {
 			deleted[id] = true
-			h.Delete(id)
+			_ = h.Delete(id)
 		}
 	}
 

@@ -59,7 +59,7 @@ type BruteForceIndex struct {
 	locations     []Location
 	dataset       *Dataset
 	activeReaders atomic.Int64  // Track active zero-copy readers
-	currentEpoch  atomic.Uint64 // Epoch counter for safe reclamation
+	currentEpoch  atomic.Uint64 // Epoch counter for safe reclamation //nolint:unused
 }
 
 // NewBruteForceIndex creates a new brute force index for the given dataset.

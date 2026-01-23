@@ -363,7 +363,7 @@ func (h *HNSWIndex) processChunk(ctx context.Context, query []float32, neighbors
 			h.batchDistFunc(query, vecs, scores)
 		} else {
 			// Use flat batch - no intermediate allocation needed
-			simd.EuclideanDistanceBatchFlat(query, flatBuffer, numTasks, dims, scores)
+			_ = simd.EuclideanDistanceBatchFlat(query, flatBuffer, numTasks, dims, scores)
 		}
 	}
 

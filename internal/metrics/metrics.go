@@ -6,216 +6,10 @@ import (
 )
 
 // =============================================================================
-// Flight & RPC Metrics
+// Rate Limit Metrics
 // =============================================================================
 
 var (
-	// FlightBytesReadTotal counts total bytes read from Arrow Flight tickets
-	FlightBytesReadTotal = promauto.NewCounter(
-		prometheus.CounterOpts{
-			Name: "longbow_flight_bytes_read_total",
-			Help: "Total bytes read from Flight tickets",
-		},
-	)
-
-	// FlightBytesWrittenTotal counts total bytes written to Arrow Flight streams
-	FlightBytesWrittenTotal = promauto.NewCounter(
-		prometheus.CounterOpts{
-			Name: "longbow_flight_bytes_written_total",
-			Help: "Total bytes written to Flight streams",
-		},
-	)
-
-	// FlightOpsTotal counts total Flight operations
-	FlightOpsTotal = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "longbow_flight_ops_total",
-			Help: "Total number of Flight operations",
-		},
-		[]string{"action", "status"},
-	)
-
-	// FlightDurationSeconds measures latency of Flight operations
-	FlightDurationSeconds = promauto.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "longbow_flight_duration_seconds",
-			Help:    "Latency of Flight operations",
-			Buckets: []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5, 10},
-		},
-		[]string{"action"},
-	)
-
-	// FlightActiveTickets tracks currently processing/active tickets
-	FlightActiveTickets = promauto.NewGauge(
-		prometheus.GaugeOpts{
-			Name: "longbow_flight_active_tickets",
-			Help: "Number of currently active Flight tickets",
-		},
-	)
-
-	// FlightStreamPoolSize - Number of recycled stream writers
-	FlightStreamPoolSize = promauto.NewGauge(
-		prometheus.GaugeOpts{
-			Name: "longbow_flight_stream_pool_size",
-			Help: "Number of recycled Flight stream writers in the pool",
-		},
-	)
-
-	// FlightPoolConnectionsActive tracks active connections in the flight client pool
-	FlightPoolConnectionsActive = promauto.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "longbow_flight_pool_connections_active",
-			Help: "Number of active connections in the flight client pool",
-		},
-		[]string{"host"},
-	)
-
-	// FlightPoolWaitDuration measures time waiting for a flight client connection
-	FlightPoolWaitDuration = promauto.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "longbow_flight_pool_wait_duration_seconds",
-			Help:    "Time waiting for a flight client connection",
-			Buckets: []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5},
-		},
-		[]string{"host"},
-	)
-	// FlightTicketParseDurationSeconds measures time to parse flight tickets
-	FlightTicketParseDurationSeconds = promauto.NewHistogram(
-		prometheus.HistogramOpts{
-			Name:    "longbow_flight_ticket_parse_duration_seconds",
-			Help:    "Time taken to parse Flight tickets",
-			Buckets: []float64{0.0001, 0.001, 0.01},
-		},
-	)
-
-	// DoGetTimeToFirstChunk measures time from request to first chunk sent
-	DoGetTimeToFirstChunk = promauto.NewHistogram(
-		prometheus.HistogramOpts{
-			Name:    "longbow_doget_time_to_first_chunk_seconds",
-			Help:    "Time from DoGet request to first chunk sent (latency indicator)",
-			Buckets: []float64{0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1},
-		},
-	)
-
-	// DoGetChunkSizeHistogram tracks chunk sizes used in DoGet operations
-	DoGetChunkSizeHistogram = promauto.NewHistogram(
-		prometheus.HistogramOpts{
-			Name:    "longbow_doget_chunk_size_rows",
-			Help:    "Distribution of chunk sizes (in rows) used in DoGet operations",
-			Buckets: []float64{1000, 2000, 4096, 8192, 16384, 32768, 65536, 131072},
-		},
-	)
-
-	// DoGetAdaptiveChunksTotal counts chunks sent with adaptive sizing
-	DoGetAdaptiveChunksTotal = promauto.NewCounter(
-		prometheus.CounterOpts{
-			Name: "longbow_doget_adaptive_chunks_total",
-			Help: "Total number of chunks sent using adaptive chunk sizing",
-		},
-	)
-
-	// DoGetChunkGrowthRate tracks current growth multiplier
-	DoGetChunkGrowthRate = promauto.NewGauge(
-		prometheus.GaugeOpts{
-			Name: "longbow_doget_chunk_growth_rate",
-			Help: "Current chunk size growth rate (multiplier)",
-		},
-	)
-
-	// ArrowMemoryUsedBytes tracks memory used by Arrow allocators
-	ArrowMemoryUsedBytes = promauto.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "longbow_arrow_memory_used_bytes",
-			Help: "Current bytes allocated by Arrow memory pool",
-		},
-		[]string{"allocator"},
-	)
-
-	// AllocatorBytesAllocatedTotal tracks cumulative bytes allocated
-	AllocatorBytesAllocatedTotal = promauto.NewCounter(
-		prometheus.CounterOpts{
-			Name: "longbow_allocator_bytes_allocated_total",
-			Help: "Total bytes allocated by the custom allocator",
-		},
-	)
-
-	// AllocatorBytesFreedTotal tracks cumulative bytes freed
-	AllocatorBytesFreedTotal = promauto.NewCounter(
-		prometheus.CounterOpts{
-			Name: "longbow_allocator_bytes_freed_total",
-			Help: "Total bytes freed by the custom allocator",
-		},
-	)
-
-	// AllocatorAllocationsActive tracks number of active allocation objects
-	AllocatorAllocationsActive = promauto.NewGauge(
-		prometheus.GaugeOpts{
-			Name: "longbow_allocator_allocations_active",
-			Help: "Number of currently active memory allocations",
-		},
-	)
-)
-
-// =============================================================================
-// Rate Limiting & Server Protections
-// =============================================================================
-
-var (
-	RateLimitRequestsTotal = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "longbow_rate_limit_requests_total",
-			Help: "Total number of requests processed by rate limiter",
-		},
-		[]string{"result"}, // "allowed", "throttled"
-	)
-
-	// ActiveSearchContexts tracks concurrent search requests
-	ActiveSearchContexts = promauto.NewGauge(
-		prometheus.GaugeOpts{
-			Name: "longbow_active_search_contexts",
-			Help: "Number of currently active search contexts",
-		},
-	)
-
-	ValidationFailuresTotal = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "longbow_validation_failures_total",
-			Help: "Total number of request validation failures",
-		},
-		[]string{"type"},
-	)
-
-	IpcDecodeErrorsTotal = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "longbow_ipc_decode_errors_total",
-			Help: "Total number of IPC message decoding errors",
-		},
-		[]string{"type"},
-	)
-
-	// PanicTotal counts total recovering panics in the system
-	PanicTotal = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "longbow_panics_total",
-			Help: "Total number of recovered panics",
-		},
-		[]string{"component"},
-	)
-
-	// DoExchangeSearchTotal counts total number of searches via DoExchange
-	DoExchangeSearchTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "longbow_do_exchange_search_total",
-		Help: "Total number of searches performed via Arrow Flight DoExchange binary protocol",
-	})
-
-	// DoExchangeSearchDuration measures latency of DoExchange search operations
-	DoExchangeSearchDuration = promauto.NewHistogram(prometheus.HistogramOpts{
-		Name:    "longbow_do_exchange_search_duration_seconds",
-		Help:    "Latency of DoExchange search operations",
-		Buckets: []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5},
-	})
-
-	// Rate Limit Metrics
 	CompactionRateLimitWaitSeconds = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "longbow_compaction_rate_limit_wait_seconds",
@@ -229,6 +23,22 @@ var (
 			Help:    "Time spent waiting for snapshot rate limiter",
 			Buckets: []float64{0.001, 0.01, 0.1, 0.5, 1, 5},
 		},
+	)
+
+	RateLimitRequestsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_rate_limit_requests_total",
+			Help: "Total number of rate limited requests",
+		},
+		[]string{"result"}, // "allowed", "throttled"
+	)
+
+	ValidationFailuresTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_validation_failures_total",
+			Help: "Total number of validation failures",
+		},
+		[]string{"component", "reason"},
 	)
 )
 
@@ -462,46 +272,6 @@ var (
 )
 
 // =============================================================================
-// gRPC Metrics
-// =============================================================================
-
-var (
-	GRPCMaxHeaderListSize = promauto.NewGauge(
-		prometheus.GaugeOpts{
-			Name: "longbow_grpc_max_header_list_size",
-			Help: "Configured max header list size for gRPC",
-		},
-	)
-	GRPCMaxRecvMsgSize = promauto.NewGauge(
-		prometheus.GaugeOpts{
-			Name: "longbow_grpc_max_recv_msg_size",
-			Help: "Configured max receive message size for gRPC",
-		},
-	)
-	GRPCMaxSendMsgSize = promauto.NewGauge(
-		prometheus.GaugeOpts{
-			Name: "longbow_grpc_max_send_msg_size",
-			Help: "Configured max send message size for gRPC",
-		},
-	)
-
-	// GRPCStreamStallTotal counts total number of detected stream stalls
-	GRPCStreamStallTotal = promauto.NewCounter(
-		prometheus.CounterOpts{
-			Name: "longbow_grpc_stream_stall_total",
-			Help: "Total number of gRPC stream stalling events detected",
-		},
-	)
-
-	// GRPCStreamSendLatencySeconds measures the latency of gRPC SendMsg calls
-	GRPCStreamSendLatencySeconds = promauto.NewHistogram(
-		prometheus.HistogramOpts{
-			Name:    "longbow_grpc_stream_send_latency_seconds",
-			Help:    "Latency of gRPC SendMsg calls (used to detect flow control stalling)",
-			Buckets: []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5},
-		},
-	)
-)
 
 // =============================================================================
 // Namespace Metrics

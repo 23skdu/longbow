@@ -1,9 +1,7 @@
 package store
 
-
 import (
 	"testing"
-	
 )
 
 // TestConcurrentInsert validates thread-safe concurrent insert operations.
@@ -11,13 +9,13 @@ func TestConcurrentInsert(t *testing.T) {
 	dataset := &Dataset{Name: "test"}
 	index := NewArrowHNSW(dataset, DefaultArrowHNSWConfig(), nil)
 	lg := NewLevelGenerator(1.44269504089)
-	
+
 	// Note: Inserts will fail without vector storage, but tests locking
 	numGoroutines := 4
 	insertsPerGoroutine := 25
-	
+
 	errChan := make(chan error, numGoroutines*insertsPerGoroutine)
-	
+
 	for i := 0; i < numGoroutines; i++ {
 		go func(offset int) {
 			for j := 0; j < insertsPerGoroutine; j++ {
@@ -30,7 +28,7 @@ func TestConcurrentInsert(t *testing.T) {
 			}
 		}(i)
 	}
-	
+
 	// Collect errors (expected due to missing vector storage)
 	for i := 0; i < numGoroutines*insertsPerGoroutine; i++ {
 		select {
@@ -46,14 +44,14 @@ func BenchmarkConcurrentInsert(b *testing.B) {
 	dataset := &Dataset{Name: "test"}
 	index := NewArrowHNSW(dataset, DefaultArrowHNSWConfig(), nil)
 	lg := NewLevelGenerator(1.44269504089)
-	
+
 	b.Run("Sequential", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			level := lg.Generate()
 			_ = index.Insert(uint32(i), level)
 		}
 	})
-	
+
 	b.Run("Parallel-4", func(b *testing.B) {
 		b.SetParallelism(4)
 		var counter uint32

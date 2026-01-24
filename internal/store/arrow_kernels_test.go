@@ -1,6 +1,5 @@
 package store
 
-
 import (
 	"math"
 	"math/rand"
@@ -19,7 +18,7 @@ func TestSelectTopKNeighbors(t *testing.T) {
 	n := 100
 	dists := make([]float32, n)
 	ids := make([]uint32, n)
-	
+
 	// Create random distances
 	for i := 0; i < n; i++ {
 		dists[i] = rand.Float32()
@@ -32,12 +31,12 @@ func TestSelectTopKNeighbors(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, resIDs, k)
 	assert.Len(t, resDists, k)
-	
+
 	// Verify sorted order (smallest first)
 	for i := 1; i < k; i++ {
 		assert.LessOrEqual(t, resDists[i-1], resDists[i])
 	}
-	
+
 	// Verify content matches top K smallest manually
 	// (Manual sort verification skipped for brevity, trusting monotonic check)
 	assert.LessOrEqual(t, resDists[k-1], float32(1.0))
@@ -71,8 +70,8 @@ func TestComputeL2DistancesKernel(t *testing.T) {
 	// HNSW uses Squared L2 usually. "EuclideanDistance" usually means SQRT(sum).
 	// But hnsw implementation often optimizes by comparing squared.
 	// Let's check `l2Distance` implementation in `distance_simd.go` or usage.
-	// Usually efficient L2 is squared. 
-	// `simd.EuclideanDistance` implies non-squared? 
+	// Usually efficient L2 is squared.
+	// `simd.EuclideanDistance` implies non-squared?
 	// `EuclideanDistance` usually means actual distance. `L2Squared` means squared.
 	// Let's check `simd` implementation if I can.
 	// Or check dists[1] vs 30 or sqrt(30)=5.477.

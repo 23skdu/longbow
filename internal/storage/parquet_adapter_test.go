@@ -1,6 +1,5 @@
 package storage
 
-
 import (
 	"bytes"
 	"os"

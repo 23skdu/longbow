@@ -2,7 +2,6 @@ package concurrency
 
 import (
 	"sync/atomic"
-	"unsafe"
 )
 
 type LockFreeQueue[T any] struct {
@@ -17,12 +16,9 @@ type node[T any] struct {
 }
 
 func NewLockFreeQueue[T any]() *LockFreeQueue[T] {
-	dummy := node[T]{}
-	q := &LockFreeQueue[T]{
-		dummy: dummy,
-	}
-	q.head.Store(unsafe.Pointer(&dummy))
-	q.tail.Store(unsafe.Pointer(&dummy))
+	q := &LockFreeQueue[T]{}
+	q.head.Store(&q.dummy)
+	q.tail.Store(&q.dummy)
 	return q
 }
 
@@ -31,14 +27,13 @@ func (q *LockFreeQueue[T]) Enqueue(value T) {
 
 	for {
 		tail := q.tail.Load()
-		next := (*node[T])(atomic.LoadPointer((*unsafe.Pointer)(&tail.next)))
 
 		if tail != q.tail.Load() {
 			continue
 		}
 
-		if atomic.CompareAndSwapPointer((*unsafe.Pointer)(&tail.next), unsafe.Pointer(next), unsafe.Pointer(newNode)) {
-			q.tail.Store(unsafe.Pointer(newNode))
+		if tail.next.CompareAndSwap(nil, newNode) {
+			q.tail.Store(newNode)
 			return
 		}
 	}
@@ -50,7 +45,7 @@ func (q *LockFreeQueue[T]) Dequeue() (T, bool) {
 	for {
 		head := q.head.Load()
 		tail := q.tail.Load()
-		next := (*node[T])(atomic.LoadPointer((*unsafe.Pointer)(&head.next)))
+		next := head.next.Load()
 
 		if head == q.head.Load() {
 			if head == tail {
@@ -60,7 +55,7 @@ func (q *LockFreeQueue[T]) Dequeue() (T, bool) {
 				return zero, false
 			}
 
-			if atomic.CompareAndSwapPointer((*unsafe.Pointer)(&q.head), unsafe.Pointer(head), unsafe.Pointer(next)) {
+			if q.head.CompareAndSwap(head, next) {
 				return next.value, true
 			}
 		}
@@ -70,6 +65,6 @@ func (q *LockFreeQueue[T]) Dequeue() (T, bool) {
 func (q *LockFreeQueue[T]) IsEmpty() bool {
 	head := q.head.Load()
 	tail := q.tail.Load()
-	next := (*node[T])(atomic.LoadPointer((*unsafe.Pointer)(&head.next)))
+	next := head.next.Load()
 	return head == tail && next == nil
 }

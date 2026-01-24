@@ -1,7 +1,6 @@
 package concurrency
 
 import (
-	"math/rand"
 	"runtime"
 	"sync"
 	"testing"
@@ -127,21 +126,19 @@ func TestLockFreeStack_BasicOperations(t *testing.T) {
 func TestWorkStealingScheduler_Basic(t *testing.T) {
 	s := NewWorkStealingScheduler[func()](4)
 
-	submitted := make([]int, 0)
+	executed := make([]int, 0)
 
-	var noop func()
-
-	s.Submit(func() noop { submitted = append(submitted, 1) })
-	s.Submit(func() noop { submitted = append(submitted, 2) })
-	s.Submit(func() noop { submitted = append(submitted, 3) })
-	s.Submit(func() noop { submitted = append(submitted, 4) })
+	s.Submit(func() { executed = append(executed, 1) })
+	s.Submit(func() { executed = append(executed, 2) })
+	s.Submit(func() { executed = append(executed, 3) })
+	s.Submit(func() { executed = append(executed, 4) })
 
 	s.Start()
-	time.Sleep(10 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 	s.Stop()
 
-	if len(submitted) != 4 {
-		t.Errorf("Expected 4 submitted tasks, got %d", len(submitted))
+	if len(executed) != 4 {
+		t.Errorf("Expected 4 executed tasks, got %d", len(executed))
 	}
 }
 

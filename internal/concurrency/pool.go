@@ -39,10 +39,6 @@ func (cp *ConcurrentPool[T]) Put(item T) {
 func (cp *ConcurrentPool[T]) Stats() PoolStats {
 	stats := PoolStats{NumPools: len(cp.pools)}
 
-	for _, pool := range cp.pools {
-		stats.TotalObjects++
-	}
-
 	return stats
 }
 

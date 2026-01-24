@@ -1,6 +1,5 @@
 package store
 
-
 import (
 	"math/rand"
 	"sync"

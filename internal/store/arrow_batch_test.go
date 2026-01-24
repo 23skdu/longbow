@@ -1,6 +1,5 @@
 package store
 
-
 import (
 	"testing"
 )
@@ -10,16 +9,16 @@ func TestBatchDistanceCompute(t *testing.T) {
 		{1.0, 2.0, 3.0},
 		{4.0, 5.0, 6.0},
 	}
-	
+
 	candidates := [][]float32{
 		{1.0, 2.0, 3.0},
 		{4.0, 5.0, 6.0},
 	}
-	
+
 	results := make([]float32, 2)
-	
+
 	BatchDistanceCompute(queries, candidates, results)
-	
+
 	// Identical vectors should have distance 0
 	if results[0] != 0.0 {
 		t.Errorf("distance[0] = %f, want 0.0", results[0])
@@ -34,7 +33,7 @@ func BenchmarkBatchDistanceCompute(b *testing.B) {
 	queries := make([][]float32, numPairs)
 	candidates := make([][]float32, numPairs)
 	results := make([]float32, numPairs)
-	
+
 	for i := 0; i < numPairs; i++ {
 		queries[i] = make([]float32, 384)
 		candidates[i] = make([]float32, 384)
@@ -43,7 +42,7 @@ func BenchmarkBatchDistanceCompute(b *testing.B) {
 			candidates[i][j] = float32(i + j + 1)
 		}
 	}
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		BatchDistanceCompute(queries, candidates, results)
@@ -55,7 +54,7 @@ func BenchmarkBatchVsSequential(b *testing.B) {
 	queries := make([][]float32, numPairs)
 	candidates := make([][]float32, numPairs)
 	results := make([]float32, numPairs)
-	
+
 	for i := 0; i < numPairs; i++ {
 		queries[i] = make([]float32, 384)
 		candidates[i] = make([]float32, 384)
@@ -64,13 +63,13 @@ func BenchmarkBatchVsSequential(b *testing.B) {
 			candidates[i][j] = float32(i + j + 1)
 		}
 	}
-	
+
 	b.Run("Batch", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			BatchDistanceCompute(queries, candidates, results)
 		}
 	})
-	
+
 	b.Run("Sequential", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			for j := 0; j < numPairs; j++ {

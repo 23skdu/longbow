@@ -1,6 +1,5 @@
 package store
 
-
 import (
 	"fmt"
 	"math/rand"

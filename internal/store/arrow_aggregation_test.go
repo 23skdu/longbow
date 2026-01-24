@@ -1,9 +1,8 @@
 package store
 
-
 import (
-	"testing"
 	"github.com/stretchr/testify/assert"
+	"testing"
 )
 
 func TestMergeKWay(t *testing.T) {
@@ -51,7 +50,7 @@ func TestMergeKWayEmptyshards(t *testing.T) {
 	agg := NewShardedResultAggregator()
 	shardResults := [][]SearchResult{
 		{},
-		{ {ID: 1, Score: 0.1} },
+		{{ID: 1, Score: 0.1}},
 		{},
 	}
 	merged := agg.MergeKWay(shardResults, 5)

@@ -7,6 +7,7 @@ import (
 	"context"
 
 	"github.com/23skdu/longbow/internal/query"
+	lbtypes "github.com/23skdu/longbow/internal/store/types"
 )
 
 // HybridPipelineConfig configures the hybrid search pipeline
@@ -147,7 +148,7 @@ func (p *HybridSearchPipeline) Search(q *HybridSearchQuery) ([]SearchResult, err
 			// Convert rank to score (higher rank = lower score)
 			score := 1.0 / float32(rank+1)
 			denseResults = append(denseResults, SearchResult{
-				ID:    VectorID(id),
+				ID:    lbtypes.VectorID(id),
 				Score: score,
 			})
 		}
@@ -202,7 +203,7 @@ func FuseLinear(dense, sparse []SearchResult, alpha float32, limit int) []Search
 		}
 	}
 	for _, r := range dense {
-		scores[r.ID] += alpha * (r.Score / maxDense)
+		scores[VectorID(r.ID)] += alpha * (r.Score / maxDense)
 	}
 
 	// Normalize sparse scores and apply (1-alpha) weight
@@ -213,13 +214,13 @@ func FuseLinear(dense, sparse []SearchResult, alpha float32, limit int) []Search
 		}
 	}
 	for _, r := range sparse {
-		scores[r.ID] += (1.0 - alpha) * (r.Score / maxSparse)
+		scores[VectorID(r.ID)] += (1.0 - alpha) * (r.Score / maxSparse)
 	}
 
 	// Convert to slice and sort
 	results := make([]SearchResult, 0, len(scores))
 	for id, score := range scores {
-		results = append(results, SearchResult{ID: id, Score: score})
+		results = append(results, SearchResult{ID: lbtypes.VectorID(id), Score: score})
 	}
 	return dedupeAndSort(results, limit)
 }
@@ -236,12 +237,12 @@ func FuseCascade(exact map[VectorID]struct{}, keyword, vector []SearchResult, li
 	// If exact filters provided, only keep results present in exact set
 	if len(exact) > 0 {
 		for _, r := range keyword {
-			if _, ok := exact[r.ID]; ok {
+			if _, ok := exact[VectorID(r.ID)]; ok {
 				filtered = append(filtered, r)
 			}
 		}
 		for _, r := range vector {
-			if _, ok := exact[r.ID]; ok {
+			if _, ok := exact[VectorID(r.ID)]; ok {
 				// Avoid duplicates if already in keyword results
 				found := false
 				for _, fr := range filtered {
@@ -336,7 +337,8 @@ func (p *HybridSearchPipeline) findVectorID(pos RowPosition) (VectorID, bool) {
 		return 0, false
 	}
 	// O(1) Reverse Lookup relying on reverseMap in ChunkedLocationStore
-	return p.hnswIndex.GetVectorID(Location{BatchIdx: pos.RecordIdx, RowIdx: pos.RowIdx})
+	id, ok := p.hnswIndex.GetVectorID(Location{BatchIdx: pos.RecordIdx, RowIdx: pos.RowIdx})
+	return VectorID(id), ok
 }
 
 // Reranker defines the interface for the second-stage re-ranking
@@ -365,12 +367,12 @@ func dedupeAndSort(results []SearchResult, limit int) []SearchResult {
 	var unique []SearchResult
 
 	for _, r := range results {
-		if idx, ok := seen[r.ID]; ok {
+		if idx, ok := seen[VectorID(r.ID)]; ok {
 			if r.Score > unique[idx].Score {
 				unique[idx].Score = r.Score
 			}
 		} else {
-			seen[r.ID] = len(unique)
+			seen[VectorID(r.ID)] = len(unique)
 			unique = append(unique, r)
 		}
 	}

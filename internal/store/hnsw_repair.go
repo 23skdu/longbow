@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/store/types"
 )
 
 // RepairTombstones scans the graph for connections to deleted nodes and repairs them.
@@ -28,7 +29,7 @@ func (h *ArrowHNSW) RepairTombstones(ctx context.Context, batchSize int) int {
 
 	maxID := int(h.nodeCount.Load())
 
-	poolCtx := h.searchPool.Get().(*ArrowSearchContext)
+	poolCtx := h.searchPool.Get() // Already returns *ArrowSearchContext if searchPool is ArrowSearchContextPool
 	poolCtx.Reset()
 	defer h.searchPool.Put(poolCtx)
 
@@ -44,7 +45,7 @@ func (h *ArrowHNSW) RepairTombstones(ctx context.Context, batchSize int) int {
 		}
 
 		nid := uint32(i)
-		if h.deleted.Contains(int(nid)) {
+		if h.deleted.Contains(nid) {
 			// If node itself is deleted, skip
 			continue
 		}
@@ -54,13 +55,13 @@ func (h *ArrowHNSW) RepairTombstones(ctx context.Context, batchSize int) int {
 		h.shardedLocks.Lock(uint64(lockID))
 
 		// Re-check validity
-		if h.deleted.Contains(int(nid)) {
+		if h.deleted.Contains(nid) {
 			h.shardedLocks.Unlock(uint64(lockID))
 			continue
 		}
 
 		// Scan layers
-		for lvl := 0; lvl < ArrowMaxLayers; lvl++ {
+		for lvl := 0; lvl < types.ArrowMaxLayers; lvl++ {
 			cID := chunkID(nid)
 			cOff := chunkOffset(nid)
 
@@ -90,7 +91,7 @@ func (h *ArrowHNSW) RepairTombstones(ctx context.Context, batchSize int) int {
 
 			for r := 0; r < count; r++ {
 				neighborID := neighborsChunk[baseIdx+r]
-				if h.deleted.Contains(int(neighborID)) {
+				if h.deleted.Contains(neighborID) {
 					hasTombstone = true
 					knownTombstones = append(knownTombstones, neighborID)
 				}
@@ -110,13 +111,13 @@ func (h *ArrowHNSW) RepairTombstones(ctx context.Context, batchSize int) int {
 				// Add existing VALID neighbors
 				for r := 0; r < count; r++ {
 					neighborID := neighborsChunk[baseIdx+r]
-					if !h.deleted.Contains(int(neighborID)) {
+					if !h.deleted.Contains(neighborID) {
 						dist, err := h.distFunc(getVec(h, data, nid), getVec(h, data, neighborID))
 						if err != nil {
 							dist = math.MaxFloat32
 						}
 						poolCtx.candidates.Push(Candidate{ID: neighborID, Dist: dist})
-						poolCtx.visited.Set(neighborID)
+						poolCtx.visited.Set(int(neighborID))
 					}
 				}
 
@@ -143,10 +144,10 @@ func (h *ArrowHNSW) RepairTombstones(ctx context.Context, batchSize int) int {
 						if candidateID == nid {
 							continue
 						} // Don't add self
-						if h.deleted.Contains(int(candidateID)) {
+						if h.deleted.Contains(candidateID) {
 							continue
 						} // Skip recursive tombstones
-						if poolCtx.visited.IsSet(candidateID) {
+						if poolCtx.visited.IsSet(int(candidateID)) {
 							continue
 						}
 
@@ -158,7 +159,7 @@ func (h *ArrowHNSW) RepairTombstones(ctx context.Context, batchSize int) int {
 								dist = math.MaxFloat32
 							}
 							poolCtx.candidates.Push(Candidate{ID: candidateID, Dist: dist})
-							poolCtx.visited.Set(candidateID)
+							poolCtx.visited.Set(int(candidateID))
 						}
 					}
 				}

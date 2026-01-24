@@ -8,6 +8,8 @@ import (
 	prommetrics "github.com/23skdu/longbow/internal/metrics"
 )
 
+const MaxNeighbors = 64
+
 // GraphMetrics holds statistics about the HNSW graph quality.
 type GraphMetrics struct {
 	TotalNodes          int
@@ -62,7 +64,7 @@ func (h *ArrowHNSW) AnalyzeGraph() GraphMetrics {
 		}
 
 		// Connected Components (BFS)
-		if !visited.IsSet(uint32(i)) {
+		if !visited.IsSet(int(i)) {
 			metrics.ConnectedComponents++
 			size := h.bfsComponentSize(data, layer, uint32(i), visited)
 			componentSizes[metrics.ConnectedComponents] = size
@@ -108,7 +110,7 @@ func (h *ArrowHNSW) AnalyzeGraph() GraphMetrics {
 // bfsComponentSize counts nodes in the component reachable from startNode.
 func (h *ArrowHNSW) bfsComponentSize(data *GraphData, layer int, startNode uint32, visited *ArrowBitset) int {
 	queue := []uint32{startNode}
-	visited.Set(startNode)
+	visited.Set(int(startNode))
 	count := 0
 
 	for len(queue) > 0 {
@@ -134,8 +136,8 @@ func (h *ArrowHNSW) bfsComponentSize(data *GraphData, layer int, startNode uint3
 
 		for i := 0; i < int(neighborCount); i++ {
 			neighbor := neighborsChunk[baseIdx+i]
-			if !visited.IsSet(neighbor) {
-				visited.Set(neighbor)
+			if !visited.IsSet(int(neighbor)) {
+				visited.Set(int(neighbor))
 				queue = append(queue, neighbor)
 			}
 		}
@@ -147,7 +149,7 @@ func (h *ArrowHNSW) bfsComponentSize(data *GraphData, layer int, startNode uint3
 func (h *ArrowHNSW) bfsDiameter(data *GraphData, layer int, startNode uint32) int {
 	nodeCount := int(h.nodeCount.Load())
 	visited := NewArrowBitset(nodeCount)
-	visited.Set(startNode)
+	visited.Set(int(startNode))
 
 	queue := []uint32{startNode}
 	maxDepth := 0
@@ -178,8 +180,8 @@ func (h *ArrowHNSW) bfsDiameter(data *GraphData, layer int, startNode uint32) in
 			baseIdx := int(cOff) * MaxNeighbors
 			for k := 0; k < neighborCount; k++ {
 				neighbor := neighborsChunk[baseIdx+k]
-				if !visited.IsSet(neighbor) {
-					visited.Set(neighbor)
+				if !visited.IsSet(int(neighbor)) {
+					visited.Set(int(neighbor))
 					queue = append(queue, neighbor)
 				}
 			}

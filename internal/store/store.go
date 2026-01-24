@@ -168,8 +168,8 @@ func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes 
 	s.gcController = gc.NewAdaptiveGCController(gc.DefaultAdaptiveGCConfig())
 
 	// Initialize Compaction
-	s.compactionConfig = DefaultCompactionConfig()
-	s.compactionWorker = NewCompactionWorker(s, s.compactionConfig, &s.workerWg)
+	s.compactionConfig = *DefaultCompactionConfig()
+	s.compactionWorker = NewCompactionWorker(s, &s.compactionConfig)
 	if s.compactionConfig.Enabled {
 		s.compactionWorker.Start()
 	}
@@ -557,5 +557,27 @@ func (s *VectorStore) WaitForIndexing(name string) {
 
 	if ds, ok := s.getDataset(name); ok {
 		ds.WaitForIndexing()
+	}
+}
+
+func (s *VectorStore) stopWorkers() {
+	s.stopOnce.Do(func() {
+		if s.stopChan != nil {
+			close(s.stopChan)
+		}
+	})
+}
+
+func (s *VectorStore) ClosePersistence() error {
+	if s.engine != nil {
+		return s.engine.Close()
+	}
+	return nil
+}
+
+func (s *VectorStore) runPersistenceWorker() {
+	// Stub for persistence worker loop
+	if s.stopChan != nil {
+		<-s.stopChan
 	}
 }

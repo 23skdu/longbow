@@ -150,8 +150,11 @@ func TestArrowHNSW_Float16_Integration(t *testing.T) {
 	assert.Equal(t, uint64(0), chunkVal, "Float32 vector storage (Vectors) should be empty/zero when Float16 is enabled")
 
 	// F16 Vectors should be populated
-	chunkValF16 := atomic.LoadUint64(&gd.VectorsF16[0])
-	assert.NotEqual(t, uint64(0), chunkValF16, "Float16 vector storage (VectorsF16) should have allocated chunk")
+	// Need unsafe cast as VectorsF16 is []float16.Num (uint16)
+	// We want to check if chunk is allocated/non-zero
+	chunkF16 := gd.GetVectorsF16Chunk(0)
+	assert.NotNil(t, chunkF16)
+	assert.Greater(t, len(chunkF16), 0)
 
 	// Retrieve and Check Precision
 	for i := 0; i < n; i++ {

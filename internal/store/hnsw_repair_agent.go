@@ -177,14 +177,14 @@ func (r *RepairAgent) detectOrphans() []uint32 {
 		reachable[current] = true
 
 		// Check if node is deleted
-		if r.index.deleted.Contains(int(current)) {
+		if r.index.deleted.Contains(current) {
 			continue
 		}
 
 		// Get neighbors at layer 0
 		neighbors := r.getNeighbors(current, 0, data)
 		for _, neighbor := range neighbors {
-			if !reachable[neighbor] && !r.index.deleted.Contains(int(neighbor)) {
+			if !reachable[neighbor] && !r.index.deleted.Contains(neighbor) {
 				queue = append(queue, neighbor)
 			}
 		}
@@ -194,7 +194,7 @@ func (r *RepairAgent) detectOrphans() []uint32 {
 	orphans := []uint32{}
 	for i := 0; i < nodeCount; i++ {
 		nodeID := uint32(i)
-		if !reachable[nodeID] && !r.index.deleted.Contains(int(nodeID)) {
+		if !reachable[nodeID] && !r.index.deleted.Contains(nodeID) {
 			orphans = append(orphans, nodeID)
 		}
 	}
@@ -239,7 +239,7 @@ func (r *RepairAgent) repairOrphan(orphan uint32, layer int) {
 		if nodeID == orphan {
 			continue
 		}
-		if r.index.deleted.Contains(int(nodeID)) {
+		if r.index.deleted.Contains(nodeID) {
 			continue
 		}
 

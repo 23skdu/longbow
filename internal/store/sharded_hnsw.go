@@ -11,6 +11,8 @@ import (
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/pq"
 	"github.com/23skdu/longbow/internal/query"
+	"github.com/23skdu/longbow/internal/store/types"
+	"github.com/RoaringBitmap/roaring/v2"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"golang.org/x/sync/errgroup"
@@ -164,14 +166,14 @@ func (s *ShardedHNSW) newShard(_ int) *hnswShard {
 	arrowConfig.M = s.config.M
 	arrowConfig.MMax = s.config.M * 3
 	arrowConfig.MMax0 = s.config.M * 2
-	arrowConfig.EfConstruction = s.config.EfConstruction
+	arrowConfig.EfConstruction = int32(s.config.EfConstruction)
 	arrowConfig.InitialCapacity = s.config.ShardSplitThreshold // Capacity hint
 	arrowConfig.Metric = s.config.Metric
 	arrowConfig.PackedAdjacencyEnabled = s.config.PackedAdjacencyEnabled
 
 	// We pass nil for ChunkedLocationStore because shards use local IDs and don't manage global locations
 	// The ShardedHNSW manages the global location store.
-	idx := NewArrowHNSW(s.dataset, arrowConfig, nil)
+	idx := NewArrowHNSW(s.dataset, arrowConfig)
 
 	// Correct dimension initialization
 	idx.SetDimension(int(s.dimension))
@@ -234,6 +236,40 @@ func (s *ShardedHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, ro
 		ids[i] = id
 	}
 	return ids, nil
+}
+
+// DeleteBatch implements VectorIndex.
+func (s *ShardedHNSW) DeleteBatch(ctx context.Context, ids []uint32) error {
+	// Group by shard
+	shardIds := make(map[int][]uint32)
+	for _, id := range ids {
+		vid := VectorID(id)
+		shardIdx := s.sharder.GetShard(vid)
+		shardIds[shardIdx] = append(shardIds[shardIdx], id)
+	}
+
+	s.shardsMu.RLock()
+	defer s.shardsMu.RUnlock()
+
+	for shardIdx, distinctIDs := range shardIds {
+		if shardIdx >= len(s.shards) || s.shards[shardIdx] == nil {
+			continue
+		}
+		shard := s.shards[shardIdx]
+		// Convert Global IDs to Local IDs
+		var localIDs []uint32
+		for _, gid := range distinctIDs {
+			if lid, ok := shard.getLocalID(VectorID(gid)); ok {
+				localIDs = append(localIDs, lid)
+			}
+		}
+		if len(localIDs) > 0 {
+			if err := shard.index.DeleteBatch(ctx, localIDs); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // AddByRecord implements VectorIndex.
@@ -348,17 +384,23 @@ func (s *ShardedHNSW) AddByRecord(ctx context.Context, rec arrow.RecordBatch, ro
 }
 
 // SearchVectors implements VectorIndex.
-func (s *ShardedHNSW) SearchVectors(ctx context.Context, queryVec any, k int, filters []query.Filter, options SearchOptions) ([]SearchResult, error) {
+func (s *ShardedHNSW) SearchVectors(ctx context.Context, queryVec any, k int, filters []query.Filter, options any) ([]SearchResult, error) {
 	if k <= 0 {
 		return nil, nil
 	}
+
+	searchOptions := SearchOptions{}
+	if opt, ok := options.(SearchOptions); ok {
+		searchOptions = opt
+	}
+	_ = searchOptions // Mark as used
 
 	// 1. Optimization: Try bitmap-based filtering
 	if len(filters) > 0 && s.dataset != nil {
 		bitset, err := s.dataset.GenerateFilterBitset(filters)
 		if err == nil && bitset != nil {
 			defer bitset.Release()
-			res := s.SearchVectorsWithBitmap(ctx, queryVec, k, bitset, options)
+			res, _ := s.SearchVectorsWithBitmap(ctx, queryVec, k, bitset.AsRoaring(), options)
 			// Sharded SearchVectorsWithBitmap already handles Local->Global mapping
 			// and global bitset filtering.
 			return res, nil
@@ -470,8 +512,7 @@ func (s *ShardedHNSW) SearchVectors(ctx context.Context, queryVec any, k int, fi
 }
 
 // SearchVectorsWithBitmap implements VectorIndex.
-func (s *ShardedHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k int, filter *query.Bitset, options SearchOptions) []SearchResult {
-
+func (s *ShardedHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k int, filter *roaring.Bitmap, options any) ([]SearchResult, error) {
 	type shardResult struct {
 		results  []SearchResult
 		shardIdx int
@@ -491,8 +532,10 @@ func (s *ShardedHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any,
 		go func(idx int, sh *hnswShard) {
 			defer wg.Done()
 			// Pass nil filter to shard, filter globally
-			res := sh.index.SearchVectorsWithBitmap(ctx, queryVec, k*2, nil, options)
-			ch <- shardResult{results: res, shardIdx: idx}
+			res, err := sh.index.SearchVectorsWithBitmap(ctx, queryVec, k*2, nil, options)
+			if err == nil {
+				ch <- shardResult{results: res, shardIdx: idx}
+			}
 		}(i, shard)
 	}
 	wg.Wait()
@@ -508,7 +551,7 @@ func (s *ShardedHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any,
 			}
 
 			// Global Bitset Filter
-			if filter != nil && !filter.Contains(int(globalID)) {
+			if filter != nil && !filter.Contains(uint32(globalID)) {
 				continue
 			}
 
@@ -525,12 +568,21 @@ func (s *ShardedHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any,
 		merged = merged[:k]
 	}
 
-	return merged
+	return merged, nil
 }
 
 // Len implements VectorIndex.
 func (s *ShardedHNSW) Len() int {
 	return int(s.nextID.Load())
+}
+
+// Size implements VectorIndexer.
+func (s *ShardedHNSW) Size() int {
+	return s.Len()
+}
+
+func (s *ShardedHNSW) Search(ctx context.Context, query any, k int, filter any) ([]types.Candidate, error) {
+	return nil, fmt.Errorf("use SearchVectors for sharded search")
 }
 
 // SearchByID searches for vectors similar to the vector at the given ID.
@@ -578,7 +630,7 @@ func (s *ShardedHNSW) SearchByID(ctx context.Context, id VectorID, k int) []Vect
 
 	ids := make([]VectorID, len(results))
 	for i, r := range results {
-		ids[i] = r.ID
+		ids[i] = VectorID(r.ID)
 	}
 	return ids
 }
@@ -617,13 +669,17 @@ func (s *ShardedHNSW) Close() error {
 }
 
 // GetLocation returns the storage location for a given VectorID
-func (s *ShardedHNSW) GetLocation(id VectorID) (Location, bool) {
-	return s.locationStore.Get(id)
+func (s *ShardedHNSW) GetLocation(id uint32) (any, bool) {
+	return s.locationStore.Get(VectorID(id))
 }
 
 // GetVectorID returns the VectorID for a given storage location
-func (s *ShardedHNSW) GetVectorID(loc Location) (VectorID, bool) {
-	return s.locationStore.GetID(loc)
+func (s *ShardedHNSW) GetVectorID(loc any) (uint32, bool) {
+	if l, ok := loc.(Location); ok {
+		id, found := s.locationStore.GetID(l)
+		return uint32(id), found
+	}
+	return 0, false
 }
 
 // GetDimension implements VectorIndex.
@@ -637,15 +693,12 @@ func (s *ShardedHNSW) SetEfConstruction(ef int) {
 	defer s.shardsMu.RUnlock()
 	for _, shard := range s.shards {
 		if shard != nil && shard.index != nil {
-			shard.index.SetEfConstruction(ef)
+			shard.index.SetEfConstruction(int32(ef))
 		}
 	}
 }
 
 func (s *ShardedHNSW) TrainPQ(vectors [][]float32) error {
-	// For sharded HNSW, training PQ should ideally happen on the whole dataset
-	// and then distributed to shards or managed at the top level.
-	// For now, let's assume it's a stub or managed by Dataset.
 	return nil
 }
 
@@ -653,9 +706,19 @@ func (s *ShardedHNSW) GetPQEncoder() *pq.PQEncoder {
 	return nil
 }
 
+func (s *ShardedHNSW) PreWarm(targetSize int) {
+	s.shardsMu.RLock()
+	defer s.shardsMu.RUnlock()
+	for _, shard := range s.shards {
+		if shard != nil && shard.index != nil {
+			shard.index.PreWarm(targetSize / len(s.shards))
+		}
+	}
+}
+
 // GetNeighbors returns the nearest neighbors for a given vector ID.
-func (s *ShardedHNSW) GetNeighbors(id VectorID) ([]VectorID, error) {
-	shardIdx := s.GetShardForID(id)
+func (s *ShardedHNSW) GetNeighbors(id uint32) ([]uint32, error) {
+	shardIdx := s.GetShardForID(VectorID(id))
 
 	s.shardsMu.RLock()
 	if shardIdx >= len(s.shards) || s.shards[shardIdx] == nil {
@@ -665,25 +728,25 @@ func (s *ShardedHNSW) GetNeighbors(id VectorID) ([]VectorID, error) {
 	shard := s.shards[shardIdx]
 	s.shardsMu.RUnlock()
 
-	localID, ok := shard.getLocalID(id)
+	localID, ok := shard.getLocalID(VectorID(id))
 	if !ok {
 		return nil, fmt.Errorf("vector id not found in shard")
 	}
 
 	// Get local neighbors
-	localNeighbors, err := shard.index.GetNeighbors(VectorID(localID))
+	localNeighbors, err := shard.index.GetNeighbors(localID)
 	if err != nil {
 		return nil, err
 	}
 
 	// Map to Global IDs
-	globalNeighbors := make([]VectorID, len(localNeighbors))
-	for i, ln := range localNeighbors {
-		globalID, ok := shard.getGlobalID(uint32(ln))
+	globalNeighbors := make([]uint32, 0, len(localNeighbors))
+	for _, ln := range localNeighbors {
+		globalID, ok := shard.getGlobalID(ln)
 		if !ok {
-			continue // Should not happen
+			continue
 		}
-		globalNeighbors[i] = globalID
+		globalNeighbors = append(globalNeighbors, uint32(globalID))
 	}
 	return globalNeighbors, nil
 }
@@ -773,6 +836,11 @@ func (s *ShardedHNSW) RemapFromBatchInfo(remapping map[int]BatchRemapInfo) error
 	return nil
 }
 
+// GetEntryPoint implements VectorIndex.
+func (s *ShardedHNSW) GetEntryPoint() uint32 {
+	return 0
+}
+
 // CleanupTombstones removes deleted nodes from the graph (Vacuum).
 func (s *ShardedHNSW) CleanupTombstones(threshold int) int {
 	totalPruned := 0
@@ -791,7 +859,7 @@ func (s *ShardedHNSW) CleanupTombstones(threshold int) int {
 		go func(sh *hnswShard) {
 			defer wg.Done()
 			// Forward to underlying ArrowHNSW
-			pruned := sh.index.CleanupTombstones(threshold)
+			pruned, _ := sh.index.CleanupTombstones(threshold)
 			mu.Lock()
 			totalPruned += pruned
 			mu.Unlock()

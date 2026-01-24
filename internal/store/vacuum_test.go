@@ -26,7 +26,7 @@ func TestHNSW_Vacuum(t *testing.T) {
 	cfg := DefaultArrowHNSWConfig()
 	cfg.M = 16
 	cfg.EfConstruction = 100
-	h := NewArrowHNSW(dataset, cfg, nil)
+	h := NewArrowHNSW(dataset, cfg)
 
 	// Insert 1000 vectors
 	n := 1000
@@ -65,7 +65,7 @@ func TestHNSW_Vacuum(t *testing.T) {
 
 	// 4. Run Vacuum (Compaction)
 	start := time.Now()
-	prunedCount := h.CleanupTombstones(0) // Scan all
+	prunedCount, _ := h.CleanupTombstones(0) // Scan all
 	t.Logf("Vacuum took %v, Pruned %d connections", time.Since(start), prunedCount)
 
 	// 5. Verify Post-Vacuum
@@ -80,7 +80,7 @@ func TestHNSW_Vacuum(t *testing.T) {
 	// Perform searches for remaining items to ensure graph is not broken
 	query := make([]float32, 32)
 	for i := 1; i < n; i += 20 { // Sample nodes
-		if h.deleted.Contains(i) {
+		if h.deleted.Contains(uint32(i)) {
 			continue
 		}
 		query[0] = float32(i)

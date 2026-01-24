@@ -19,8 +19,8 @@ func TestLevelGenerator(t *testing.T) {
 		level := lg.Generate()
 		levels[level]++
 
-		if level < 0 || level >= ArrowMaxLayers {
-			t.Errorf("level %d out of bounds [0, %d)", level, ArrowMaxLayers)
+		if level < 0 || level >= types.ArrowMaxLayers {
+			t.Errorf("level %d out of bounds [0, %d)", level, types.ArrowMaxLayers)
 		}
 	}
 
@@ -130,7 +130,11 @@ func TestAddConnection(t *testing.T) {
 	// Manually ensure chunks for testing
 	numChunks := (64 + ChunkSize - 1) / ChunkSize
 	for i := 0; i < numChunks; i++ {
-		data = index.ensureChunk(data, uint32(i), 0, 64) // dim not critical here?
+		var err error
+		data, err = index.ensureChunk(data, uint32(i), 0, 64) // dim not critical here?
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	// Must have search context for pruning
@@ -184,7 +188,11 @@ func TestPruneConnections(t *testing.T) {
 	// Allocate chunks
 	numChunks := (20 + ChunkSize - 1) / ChunkSize
 	for i := 0; i < numChunks; i++ {
-		data = index.ensureChunk(data, uint32(i), 0, 11)
+		var err error
+		data, err = index.ensureChunk(data, uint32(i), 0, 11)
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	// Setup vectors for distance calculation

@@ -3,6 +3,7 @@ package store
 import (
 	"github.com/23skdu/longbow/internal/core"
 	"github.com/23skdu/longbow/internal/storage"
+	"github.com/23skdu/longbow/internal/store/types"
 )
 
 // Type Aliases to maintain backward compatibility while migrating to internal/core
@@ -24,6 +25,10 @@ const (
 	// MetricDotProduct is the Inner Product (higher is usually better).
 	MetricDotProduct = core.MetricDotProduct
 )
+
+// Index interface alias
+type VectorIndex = types.VectorIndexer
+type GraphData = types.GraphData
 
 // Persistence Aliases
 type StorageConfig = storage.StorageConfig

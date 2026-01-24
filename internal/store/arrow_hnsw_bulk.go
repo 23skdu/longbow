@@ -26,6 +26,12 @@ type reverseUpdate struct {
 	dist   float32
 }
 
+const ShardedLockCount = 1024
+
+func NewVectorDimensionMismatchError(id, expected, actual int) error {
+	return fmt.Errorf("vector dimension mismatch for id %d: expected %d, got %d", id, expected, actual)
+}
+
 // AddBatchBulk attempts to insert a batch of vectors in parallel using a bulk strategy.
 // It assumes IDs, locations, and capacity have already been prepared/reserved.
 func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vecs any) error {
@@ -305,7 +311,7 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 
 			gLayer.Go(func() error {
 				// Thread-local context
-				ctxSearch := h.searchPool.Get().(*ArrowSearchContext)
+				ctxSearch := h.searchPool.Get()
 				ctxSearch.Reset()
 				defer h.searchPool.Put(ctxSearch)
 
@@ -488,7 +494,7 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 										if t, ok := tVec.([]float64); ok {
 											d, err := h.distFuncF64(q, t)
 											if err == nil {
-												dist = float32(d)
+												dist = d
 												done = true
 											}
 										}
@@ -504,7 +510,7 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 										if t, ok := tVec.([]complex128); ok {
 											d, err := h.distFuncC128(q, t)
 											if err == nil {
-												dist = d
+												dist = float32(d)
 												done = true
 											}
 										}
@@ -568,7 +574,7 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 				// Each worker handles slices: i, i+numConsumers, i+2*numConsumers...
 				// Efficient sharding
 
-				ctxSearch := h.searchPool.Get().(*ArrowSearchContext)
+				ctxSearch := h.searchPool.Get() // Removed type assertion
 				ctxSearch.Reset()
 				defer h.searchPool.Put(ctxSearch)
 
@@ -594,7 +600,9 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 				// Loop until completed
 				defer func() {
 					if r := recover(); r != nil {
-						h.config.Logger.Error().Interface("panic", r).Msg("Panic in HNSW bulk reverse writer")
+						// h.config.Logger.Error().Interface("panic", r).Msg("Panic in HNSW bulk reverse writer")
+						// Simplified logging to avoid interface issues
+						fmt.Printf("Panic in HNSW bulk reverse writer: %v\n", r)
 					}
 				}()
 
@@ -664,7 +672,7 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 
 			gLink.Go(func() error {
 
-				ctxSearch := h.searchPool.Get().(*ArrowSearchContext)
+				ctxSearch := h.searchPool.Get() // Removed type assertion
 				ctxSearch.Reset()
 				defer h.searchPool.Put(ctxSearch)
 

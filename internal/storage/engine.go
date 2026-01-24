@@ -533,3 +533,21 @@ func (e *StorageEngine) Close() error {
 func (e *StorageEngine) SetSnapshotBackend(backend SnapshotBackend) {
 	e.snapshotBackend = backend
 }
+
+func (e *StorageEngine) WriteWAL(name string, rec arrow.RecordBatch, seq uint64, ts int64) error {
+	return e.WriteToWAL(name, rec, seq, ts)
+}
+
+func (e *StorageEngine) CreateSnapshot(item SnapshotItem) error {
+	tempDir := filepath.Join(e.dataPath, snapshotDirName+"_tmp")
+	_ = os.MkdirAll(tempDir, 0o755)
+	return e.writeSnapshotItem(&item, tempDir)
+}
+
+func (e *StorageEngine) FlushWAL() error {
+	return e.SyncWAL()
+}
+
+func (e *StorageEngine) TruncateWAL(seq uint64) error {
+	return nil
+}

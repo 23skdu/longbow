@@ -7,6 +7,8 @@ import (
 	"math"
 	"os"
 	"sort"
+
+	"github.com/23skdu/longbow/internal/store/types"
 )
 
 // WriteDiskGraph serializes the in-memory GraphData to a DiskGraph file.
@@ -23,7 +25,7 @@ func WriteDiskGraph(gd *GraphData, path string, maxNodeID int, sqMin, sqMax floa
 	// 1. Calculate Schema
 	// Find actual max level (and max node ID implicitly handled by caller via maxNodeID)
 	maxLayer := 0
-	for l := ArrowMaxLayers - 1; l >= 0; l-- {
+	for l := types.ArrowMaxLayers - 1; l >= 0; l-- {
 		// check if any node exists at this layer
 		hasNode := false
 		if l < len(gd.Neighbors) {
@@ -47,7 +49,7 @@ func WriteDiskGraph(gd *GraphData, path string, maxNodeID int, sqMin, sqMax floa
 	}
 
 	// PQ Dims Check
-	pqDims := gd.PQDims
+	pqDims := gd.PQDims()
 
 	numNodes := uint32(maxNodeID)
 

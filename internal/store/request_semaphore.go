@@ -6,6 +6,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/23skdu/longbow/internal/core"
 	"github.com/23skdu/longbow/internal/metrics"
 	"golang.org/x/sync/semaphore"
 )
@@ -105,7 +106,7 @@ func (rs *RequestSemaphore) Acquire(ctx context.Context) error {
 	if err != nil {
 		atomic.AddInt64(&rs.timeouts, 1)
 		metrics.SemaphoreTimeoutsTotal.Inc()
-		return NewResourceExhaustedError("semaphore", "acquire timeout or context cancelled")
+		return core.NewResourceExhaustedError("semaphore", "acquire timeout or context cancelled")
 	}
 
 	atomic.AddInt64(&rs.acquires, 1)

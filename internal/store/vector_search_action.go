@@ -10,6 +10,7 @@ import (
 	"github.com/23skdu/longbow/internal/mesh"
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/query"
+	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/flight"
@@ -121,7 +122,7 @@ func (s *VectorStore) handleVectorSearchAction(action *flight.Action, stream fli
 			var errSearch error
 			searchResults, errSearch = ds.Index.SearchVectors(stream.Context(), queryVec, req.K, req.Filters, SearchOptions{
 				IncludeVectors: req.IncludeVectors,
-				VectorFormat:   req.VectorFormat,
+				VectorFormat:   types.MapStringToVectorDataType(req.VectorFormat),
 			})
 			if errSearch != nil {
 				ds.dataMu.RUnlock()
@@ -392,7 +393,7 @@ func (s *VectorStore) handleVectorSearchByIDAction(action *flight.Action, stream
 	// 2. Perform Search
 	results, err := ds.Index.SearchVectors(stream.Context(), targetVec, req.K, nil, SearchOptions{
 		IncludeVectors: req.IncludeVectors,
-		VectorFormat:   req.VectorFormat,
+		VectorFormat:   types.MapStringToVectorDataType(req.VectorFormat),
 	})
 	if err != nil {
 		return status.Errorf(codes.Internal, "search failed: %v", err)

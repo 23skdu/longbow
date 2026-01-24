@@ -34,7 +34,7 @@ func TestPQPersistence(t *testing.T) {
 	defer func() { _ = os.Unsetenv("LONGBOW_USE_HNSW2") }()
 
 	store.datasetInitHook = func(ds *Dataset) {
-		idx := NewArrowHNSW(ds, DefaultArrowHNSWConfig(), nil)
+		idx := NewArrowHNSW(ds, DefaultArrowHNSWConfig())
 		ds.Index = idx
 	}
 
@@ -124,7 +124,7 @@ func TestPQPersistence(t *testing.T) {
 	require.Equal(t, 256, ds2.PQEncoder.K)
 
 	// 6. Verify Index Picks it up
-	idx2 := NewArrowHNSW(ds2, DefaultArrowHNSWConfig(), nil)
+	idx2 := NewArrowHNSW(ds2, DefaultArrowHNSWConfig())
 	idx2.m = 16
 	idx2.dims.Store(128)
 

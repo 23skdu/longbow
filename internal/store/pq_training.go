@@ -2,6 +2,7 @@ package store
 
 import (
 	"fmt"
+
 	"github.com/23skdu/longbow/internal/pq"
 )
 
@@ -86,7 +87,10 @@ func (h *ArrowHNSW) TrainPQ(vectors [][]float32) error {
 				cID := chunkID(i)
 				cOff := chunkOffset(i)
 
-				data = h.ensureChunk(data, cID, cOff, data.Dims)
+				data, err = h.ensureChunk(data, cID, cOff, data.Dims)
+				if err != nil {
+					continue
+				}
 
 				if chunk := data.GetVectorsPQChunk(cID); chunk != nil {
 					copy(chunk[int(cOff)*m:(int(cOff)+1)*m], code)

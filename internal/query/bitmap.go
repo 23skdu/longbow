@@ -15,6 +15,15 @@ type Bitset struct {
 	mu     sync.RWMutex
 }
 
+func (b *Bitset) AsRoaring() *roaring.Bitmap {
+	if b == nil {
+		return nil
+	}
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.bitmap
+}
+
 func NewBitset() *Bitset {
 	return &Bitset{
 		bitmap: pool.GetBitmap(),

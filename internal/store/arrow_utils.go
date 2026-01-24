@@ -5,6 +5,7 @@ import (
 	"unsafe"
 
 	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/float16"
@@ -261,9 +262,9 @@ func ExtractVectorFromArrow(rec arrow.RecordBatch, rowIdx, colIdx int) ([]float3
 	}
 }
 
-func InferVectorDataType(schema *arrow.Schema, fieldName string) VectorDataType {
+func InferVectorDataType(schema *arrow.Schema, fieldName string) types.VectorDataType {
 	if schema == nil {
-		return VectorTypeFloat32
+		return types.VectorTypeFloat32
 	}
 
 	idx := schema.FieldIndices(fieldName)
@@ -273,7 +274,7 @@ func InferVectorDataType(schema *arrow.Schema, fieldName string) VectorDataType 
 		if val, ok := md.GetValue("longbow.vector_type"); ok {
 			return parseVectorType(val)
 		}
-		return VectorTypeFloat32
+		return types.VectorTypeFloat32
 	}
 
 	f := schema.Field(idx[0])
@@ -293,76 +294,76 @@ func InferVectorDataType(schema *arrow.Schema, fieldName string) VectorDataType 
 	// 2. Fallback to physical type inspection
 	listType, ok := f.Type.(*arrow.FixedSizeListType)
 	if !ok {
-		return VectorTypeFloat32
+		return types.VectorTypeFloat32
 	}
 
 	elemType := listType.Elem()
-	var finalType VectorDataType
+	var finalType types.VectorDataType
 	switch elemType.ID() {
 	case arrow.FLOAT32:
-		finalType = VectorTypeFloat32
+		finalType = types.VectorTypeFloat32
 		if val, _ := fmd.GetValue("longbow.complex"); val == "true" {
-			finalType = VectorTypeComplex64
+			finalType = types.VectorTypeComplex64
 		}
 	case arrow.FLOAT64:
-		finalType = VectorTypeFloat64
+		finalType = types.VectorTypeFloat64
 		if val, _ := fmd.GetValue("longbow.complex"); val == "true" {
-			finalType = VectorTypeComplex128
+			finalType = types.VectorTypeComplex128
 		}
 	case arrow.FLOAT16:
-		finalType = VectorTypeFloat16
+		finalType = types.VectorTypeFloat16
 	case arrow.INT8:
-		finalType = VectorTypeInt8
+		finalType = types.VectorTypeInt8
 	case arrow.UINT8:
-		finalType = VectorTypeUint8
+		finalType = types.VectorTypeUint8
 	case arrow.INT16:
-		finalType = VectorTypeInt16
+		finalType = types.VectorTypeInt16
 	case arrow.UINT16:
-		finalType = VectorTypeUint16
+		finalType = types.VectorTypeUint16
 	case arrow.INT32:
-		finalType = VectorTypeInt32
+		finalType = types.VectorTypeInt32
 	case arrow.UINT32:
-		finalType = VectorTypeUint32
+		finalType = types.VectorTypeUint32
 	case arrow.INT64:
-		finalType = VectorTypeInt64
+		finalType = types.VectorTypeInt64
 	case arrow.UINT64:
-		finalType = VectorTypeUint64
+		finalType = types.VectorTypeUint64
 	default:
-		finalType = VectorTypeFloat32
+		finalType = types.VectorTypeFloat32
 	}
 
 	return finalType
 }
 
-func parseVectorType(val string) VectorDataType {
+func parseVectorType(val string) types.VectorDataType {
 	switch val {
 	case "complex64":
-		return VectorTypeComplex64
+		return types.VectorTypeComplex64
 	case "complex128":
-		return VectorTypeComplex128
+		return types.VectorTypeComplex128
 	case "float16":
-		return VectorTypeFloat16
+		return types.VectorTypeFloat16
 	case "float32":
-		return VectorTypeFloat32
+		return types.VectorTypeFloat32
 	case "float64":
-		return VectorTypeFloat64
+		return types.VectorTypeFloat64
 	case "int8":
-		return VectorTypeInt8
+		return types.VectorTypeInt8
 	case "uint8":
-		return VectorTypeUint8
+		return types.VectorTypeUint8
 	case "int16":
-		return VectorTypeInt16
+		return types.VectorTypeInt16
 	case "uint16":
-		return VectorTypeUint16
+		return types.VectorTypeUint16
 	case "int32":
-		return VectorTypeInt32
+		return types.VectorTypeInt32
 	case "uint32":
-		return VectorTypeUint32
+		return types.VectorTypeUint32
 	case "int64":
-		return VectorTypeInt64
+		return types.VectorTypeInt64
 	case "uint64":
-		return VectorTypeUint64
+		return types.VectorTypeUint64
 	default:
-		return VectorTypeFloat32
+		return types.VectorTypeFloat32
 	}
 }

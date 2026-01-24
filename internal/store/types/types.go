@@ -1,5 +1,7 @@
 package types
 
+import "github.com/23skdu/longbow/internal/core"
+
 // VectorDataType represents the data type of vector elements
 type VectorDataType int
 
@@ -9,6 +11,15 @@ const (
 	VectorTypeInt8
 	VectorTypeUint8
 	VectorTypeFloat16
+	VectorTypeFloat64
+	VectorTypeComplex64
+	VectorTypeComplex128
+	VectorTypeInt16
+	VectorTypeUint16
+	VectorTypeInt32
+	VectorTypeUint32
+	VectorTypeInt64
+	VectorTypeUint64
 	// Add other types as needed
 )
 
@@ -25,6 +36,28 @@ func (vdt VectorDataType) String() string {
 		return "float16"
 	default:
 		return "unknown"
+	}
+}
+
+// MapStringToVectorDataType maps a string representation to its VectorDataType
+func MapStringToVectorDataType(s string) VectorDataType {
+	switch s {
+	case "float32":
+		return VectorTypeFloat32
+	case "float16":
+		return VectorTypeFloat16
+	case "int8":
+		return VectorTypeInt8
+	case "uint8":
+		return VectorTypeUint8
+	case "float64":
+		return VectorTypeFloat64
+	case "complex64":
+		return VectorTypeComplex64
+	case "complex128":
+		return VectorTypeComplex128
+	default:
+		return VectorTypeUnknown
 	}
 }
 
@@ -57,3 +90,15 @@ const ChunkSize = 1024
 
 // ArrowMaxLayers is the maximum number of layers in HNSW hierarchy
 const ArrowMaxLayers = 16
+
+// VectorID is a type alias for vector identifiers
+type VectorID = core.VectorID
+
+// SearchResult represents a single flight search result
+type SearchResult struct {
+	ID       VectorID
+	Distance float32
+	Score    float32
+	Metadata map[string]interface{}
+	Vector   []byte // Binary payload for the vector if requested
+}

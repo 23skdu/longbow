@@ -4,14 +4,19 @@ package store
 
 // GetLocation implements VectorIndex.
 // It returns the location (batch index, row index) for a given vector ID.
-func (h *ArrowHNSW) GetLocation(id VectorID) (Location, bool) {
-	return h.locationStore.Get(id)
+func (h *ArrowHNSW) GetLocation(id uint32) (any, bool) {
+	return h.locationStore.Get(VectorID(id))
 }
 
 // GetVectorID implements VectorIndex.
 // It returns the ID for a given location using the reverse index.
-func (h *ArrowHNSW) GetVectorID(loc Location) (VectorID, bool) {
-	return h.locationStore.GetID(loc)
+func (h *ArrowHNSW) GetVectorID(loc any) (uint32, bool) {
+	l, ok := loc.(Location)
+	if !ok {
+		return 0, false
+	}
+	id, ok := h.locationStore.GetID(l)
+	return uint32(id), ok
 }
 
 // SetLocation allows manually setting the location for a vector ID.

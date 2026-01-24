@@ -13,6 +13,8 @@ import (
 	"github.com/23skdu/longbow/internal/pq"
 	"github.com/23skdu/longbow/internal/query"
 	"github.com/23skdu/longbow/internal/simd"
+	lbtypes "github.com/23skdu/longbow/internal/store/types"
+	"github.com/RoaringBitmap/roaring/v2"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 )
@@ -101,9 +103,9 @@ func (b *BruteForceIndex) AddBatch(ctx context.Context, recs []arrow.RecordBatch
 }
 
 // SearchVectorsWithBitmap returns k nearest neighbors filtered by a bitset.
-func (b *BruteForceIndex) SearchVectorsWithBitmap(ctx context.Context, q any, k int, filter *query.Bitset, options SearchOptions) []SearchResult {
+func (b *BruteForceIndex) SearchVectorsWithBitmap(ctx context.Context, q any, k int, filter *roaring.Bitmap, options SearchOptions) ([]SearchResult, error) {
 	// Not implemented for BruteForce, but needed for interface
-	return nil
+	return nil, nil
 }
 
 // GetLocation retrieves the storage location for a given vector ID.
@@ -205,7 +207,7 @@ func (b *BruteForceIndex) SearchVectors(ctx context.Context, q any, k int, filte
 	for i := len(results) - 1; i >= 0; i-- {
 		item := heap.Pop(h).(bfHeapItem)
 		results[i] = SearchResult{
-			ID:    item.id,
+			ID:    lbtypes.VectorID(item.id),
 			Score: item.score,
 		}
 	}
@@ -421,7 +423,7 @@ func (a *AdaptiveIndex) AddBatch(ctx context.Context, recs []arrow.RecordBatch, 
 	return ids, nil
 }
 
-func (a *AdaptiveIndex) SearchVectorsWithBitmap(ctx context.Context, q any, k int, filter *query.Bitset, options SearchOptions) []SearchResult {
+func (a *AdaptiveIndex) SearchVectorsWithBitmap(ctx context.Context, q any, k int, filter *roaring.Bitmap, options SearchOptions) ([]SearchResult, error) {
 	start := time.Now()
 	a.mu.RLock()
 	metrics.IndexLockWaitDuration.WithLabelValues(a.dataset.Name, "read").Observe(time.Since(start).Seconds())
@@ -429,7 +431,7 @@ func (a *AdaptiveIndex) SearchVectorsWithBitmap(ctx context.Context, q any, k in
 	if a.usingHNSW.Load() {
 		return a.hnsw.SearchVectorsWithBitmap(ctx, q, k, filter, options)
 	}
-	return nil
+	return nil, nil
 }
 
 func (a *AdaptiveIndex) GetLocation(id VectorID) (Location, bool) {
@@ -438,7 +440,11 @@ func (a *AdaptiveIndex) GetLocation(id VectorID) (Location, bool) {
 	metrics.IndexLockWaitDuration.WithLabelValues(a.dataset.Name, "read").Observe(time.Since(start).Seconds())
 	defer a.mu.RUnlock()
 	if a.usingHNSW.Load() {
-		return a.hnsw.GetLocation(id)
+		val, _ := a.hnsw.GetLocation(uint32(id))
+		if loc, ok := val.(Location); ok {
+			return loc, true
+		}
+		return Location{}, false
 	}
 	return a.bruteForce.GetLocation(id)
 }
@@ -547,7 +553,7 @@ func (a *AdaptiveIndex) migrateToHNSW() {
 		config := DefaultArrowHNSWConfig()
 		config.Metric = a.dataset.Metric
 		config.Logger = a.dataset.Logger
-		newHNSW := NewArrowHNSW(a.dataset, config, nil)
+		newHNSW := NewArrowHNSW(a.dataset, config)
 
 		for _, loc := range snapshotLocations {
 			_, _ = newHNSW.AddByLocation(context.Background(), loc.BatchIdx, loc.RowIdx)

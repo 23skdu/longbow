@@ -3,6 +3,8 @@ package store
 import (
 	"sync"
 	"sync/atomic"
+
+	"github.com/23skdu/longbow/internal/store/types"
 )
 
 // InsertContext holds temporary state for a single insert operation.
@@ -33,7 +35,7 @@ func NewInsertContextPool() *InsertContextPool {
 		pool: sync.Pool{
 			New: func() any {
 				return &InsertContext{
-					candidates: make([][]Candidate, ArrowMaxLayers),
+					candidates: make([][]Candidate, types.ArrowMaxLayers),
 					visited:    NewArrowBitset(10000),
 					neighbors:  make([]Candidate, 0, 100),
 				}

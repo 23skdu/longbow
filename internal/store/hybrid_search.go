@@ -8,6 +8,7 @@ import (
 
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/query"
+	lbtypes "github.com/23skdu/longbow/internal/store/types"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -173,7 +174,11 @@ func HybridSearch(ctx context.Context, s *VectorStore, name string, queryVec []f
 	switch {
 	case filterBitmap != nil && filterBitmap.Count() > 0:
 		// Perform filtered search
-		results = ds.Index.SearchVectorsWithBitmap(ctx, queryVec, k, filterBitmap, SearchOptions{})
+		var err error
+		results, err = ds.Index.SearchVectorsWithBitmap(ctx, queryVec, k, filterBitmap.AsRoaring(), SearchOptions{})
+		if err != nil {
+			return nil, err
+		}
 	case !hasFilters:
 		// No filters, standard search
 		var err error
@@ -207,7 +212,7 @@ func RankFusion(list1, list2 []SearchResult, k, rrfK int) []SearchResult {
 	// Sort
 	final := make([]SearchResult, 0, len(scores))
 	for id, score := range scores {
-		final = append(final, SearchResult{ID: VectorID(id), Score: score})
+		final = append(final, SearchResult{ID: lbtypes.VectorID(id), Score: score})
 	}
 
 	sort.Slice(final, func(i, j int) bool {

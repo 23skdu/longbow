@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/compute"
@@ -106,4 +107,12 @@ func (b *BatchDistanceComputer) SelectTopKNeighbors(
 	copy(resDists, takenDists.Float32Values())
 
 	return resIDs, resDists, nil
+}
+
+func NewNeighborSelectionLengthMismatchError(distsLen, idsLen int) error {
+	return fmt.Errorf("neighbor selection length mismatch: dists=%d ids=%d", distsLen, idsLen)
+}
+
+func NewNeighborSelectionFailedError(op string, err error) error {
+	return fmt.Errorf("neighbor selection failed during %s: %w", op, err)
 }

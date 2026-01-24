@@ -135,6 +135,26 @@ func (s *ChunkedLocationStore) Set(id VectorID, loc Location) {
 	}
 }
 
+// Delete removes the location for a given ID.
+func (s *ChunkedLocationStore) Delete(id VectorID) {
+	chunks := *s.chunks.Load()
+	idx := int(id)
+	chunkIdx := idx / LocationChunkSize
+	offset := idx % LocationChunkSize
+
+	if chunkIdx < len(chunks) {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		// Get old packed value to remove from reverse map
+		packed := chunks[chunkIdx].data[offset].Load()
+		delete(s.reverseMap, packed)
+
+		// Mark as deleted/invalid (e.g. 0 or specific sentinel)
+		// Assuming 0 is invalid or we just rely on reverseMap removal.
+		chunks[chunkIdx].data[offset].Store(0)
+	}
+}
+
 // Append adds a new location and returns its ID.
 // This requires a lock but only during chunk creation.
 func (s *ChunkedLocationStore) Append(loc Location) VectorID {

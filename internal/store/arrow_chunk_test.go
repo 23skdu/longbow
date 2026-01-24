@@ -43,7 +43,11 @@ func TestChunkedGrowth(t *testing.T) {
 
 	// Ensure Chunk 0 is allocated for testing
 	// Use ensureChunk which handles Arena allocation
-	newData = h.ensureChunk(newData, 0, 0, 128)
+	var err error
+	newData, err = h.ensureChunk(newData, 0, 0, 128)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	// Test Data Persistence across Grow
 	// Write something to chunk 0

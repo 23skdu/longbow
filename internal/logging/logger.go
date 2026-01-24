@@ -1,7 +1,6 @@
 package logging
 
 import (
-
 	"io"
 	"os"
 	"strings"
@@ -109,4 +108,3 @@ func (h MetricsHook) Run(e *zerolog.Event, level zerolog.Level, msg string) {
 		LogErrorsTotal.Inc()
 	}
 }
-

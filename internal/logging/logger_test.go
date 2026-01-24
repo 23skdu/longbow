@@ -200,4 +200,3 @@ func TestDefaultConfig(t *testing.T) {
 		t.Errorf("Expected default level='info', got %s", cfg.Level)
 	}
 }
-

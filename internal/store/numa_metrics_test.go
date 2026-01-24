@@ -1,6 +1,5 @@
 package store
 
-
 import (
 	"runtime"
 	"testing"

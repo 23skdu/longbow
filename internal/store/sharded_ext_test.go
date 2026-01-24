@@ -1,6 +1,5 @@
 package store
 
-
 import (
 	"testing"
 	"time"

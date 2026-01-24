@@ -18,10 +18,6 @@ type WorkQueue[T any] struct {
 	items []T
 }
 
-type Task[T any] struct {
-	Work T
-}
-
 func NewWorkStealingScheduler[T any](numWorkers int) *WorkStealingScheduler[T] {
 	if numWorkers < 1 {
 		numWorkers = runtime.NumCPU()
@@ -40,8 +36,8 @@ func NewWorkStealingScheduler[T any](numWorkers int) *WorkStealingScheduler[T] {
 	}
 }
 
-func (ws *WorkStealingScheduler[T]) Submit(task Task[T]) {
-	workerID := runtime.GOMAXPROCS(0)
+func (ws *WorkStealingScheduler[T]) Submit(task T) {
+	workerID := runtime.GOMAXPROCS(0) % ws.workers
 	q := ws.queues[workerID]
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -49,7 +45,8 @@ func (ws *WorkStealingScheduler[T]) Submit(task Task[T]) {
 	q.items = append(q.items, task)
 }
 
-func (ws *WorkStealingScheduler[T]) GetTask(workerID int) (Task[T], bool) {
+func (ws *WorkStealingScheduler[T]) GetTask(workerID int) (T, bool) {
+	var zero T
 	q := ws.queues[workerID]
 	q.mu.Lock()
 	if len(q.items) > 0 {
@@ -60,7 +57,7 @@ func (ws *WorkStealingScheduler[T]) GetTask(workerID int) (Task[T], bool) {
 	}
 	q.mu.Unlock()
 
-	startIdx := atomic.LoadUint32(&ws.stealIndex)
+	startIdx := ws.stealIndex.Load()
 	for i := 0; i < ws.workers-1; i++ {
 		victimID := (int(startIdx) + i + 1) % ws.workers
 		victim := ws.queues[victimID]
@@ -70,13 +67,13 @@ func (ws *WorkStealingScheduler[T]) GetTask(workerID int) (Task[T], bool) {
 			task := victim.items[0]
 			victim.items = victim.items[1:]
 			victim.mu.Unlock()
-			atomic.StoreUint32(&ws.stealIndex, uint32(victimID))
+			ws.stealIndex.Store(uint32(victimID))
 			return task, true
 		}
 		victim.mu.Unlock()
 	}
 
-	return Task[T]{}, false
+	return zero, false
 }
 
 func (ws *WorkStealingScheduler[T]) Start() {
@@ -104,16 +101,9 @@ func (ws *WorkStealingScheduler[T]) worker(workerID int) {
 				continue
 			}
 
-			switch any(task.Work).(type) {
-			case func():
-				task.Work()
-			case func() T:
-				task.Work()
-			case func(int):
-				task.Work.(int)
-			case func(string):
-				task.Work.(string)
-			default:
+			if fn, ok := any(task).(func()); ok {
+				fn()
+			} else {
 				runtime.Gosched()
 			}
 		}
@@ -130,7 +120,7 @@ func (ws *WorkStealingScheduler[T]) Stats() SchedulerStats {
 	}
 
 	stats.NumWorkers = ws.workers
-	stats.StealIndex = int(atomic.LoadUint32(&ws.stealIndex))
+	stats.StealIndex = int(ws.stealIndex.Load())
 
 	return stats
 }

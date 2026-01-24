@@ -7,7 +7,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-
 func TestBatchDistanceCompute_Basic(t *testing.T) {
 	queries := [][]float32{
 		{1.0, 0.0, 0.0},
@@ -186,4 +185,3 @@ func FuzzBatchDistanceCompute(f *testing.F) {
 		}
 	})
 }
-

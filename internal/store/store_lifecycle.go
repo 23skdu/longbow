@@ -380,7 +380,7 @@ func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
 					// Update Memory Pressure on Queue
 					// Approximate size calculation matching Send()
 					size := int64(j.Record.NumRows() * int64(j.Record.NumCols()) * 8)
-					s.indexQueue.DecreaseEstimatedBytes(size)
+					// s.indexQueue.DecreaseEstimatedBytes(size)
 				}
 
 				// Decrement pending jobs count
@@ -391,20 +391,33 @@ func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
 	}
 
 	for {
+		job, ok := s.indexQueue.Pop()
+		if ok {
+			jobs = append(jobs, job)
+		}
+
+		if len(jobs) == 0 {
+			// No jobs, wait a bit
+			time.Sleep(10 * time.Millisecond)
+			continue
+		}
+
+		if len(jobs) >= currentBatch || (!ok && len(jobs) > 0) {
+			processBatch(jobs)
+			jobs = jobs[:0]
+		}
+
 		// Adaptive logic
 		queueDepth := s.indexQueue.Len()
 
 		switch {
 		case queueDepth > 100:
 			s.logger.Warn().Int("depth", queueDepth).Msg("Ingestion queue is BACKPRESSURED")
-			ticker.Reset(1 * time.Millisecond)
 			currentBatch = maxBatch // 1000
 		case queueDepth > 50:
 			s.logger.Info().Int("depth", queueDepth).Msg("Ingestion queue is filling up")
-			ticker.Reset(10 * time.Millisecond)
 			currentBatch = 500
 		default:
-			ticker.Reset(100 * time.Millisecond)
 			currentBatch = 100
 		}
 
@@ -414,25 +427,8 @@ func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
 				processBatch(jobs)
 			}
 			return
-		case job, ok := <-s.indexQueue.Jobs():
-			if !ok {
-				if len(jobs) > 0 {
-					processBatch(jobs)
-				}
-				return
-			}
-			jobs = append(jobs, job)
-			// Process batch if full
-			if len(jobs) >= currentBatch {
-				processBatch(jobs)
-				jobs = jobs[:0]
-			}
-		case <-ticker.C:
-			if len(jobs) > 0 {
-				// Process whatever we have
-				processBatch(jobs)
-				jobs = jobs[:0]
-			}
+		default:
+			// continue
 		}
 	}
 }

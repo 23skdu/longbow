@@ -9,7 +9,7 @@ import (
 
 // resolveDistanceFunc returns the appropriate distance function for float32 vectors.
 func (h *ArrowHNSW) resolveDistanceFunc() func(a, b []float32) (float32, error) {
-	switch h.metric {
+	switch h.config.Metric {
 	case MetricCosine:
 		return simd.CosineDistance
 	case MetricDotProduct:
@@ -25,7 +25,7 @@ func (h *ArrowHNSW) resolveDistanceFunc() func(a, b []float32) (float32, error) 
 
 // resolveDistanceFuncF16 returns the FP16 distance function.
 func (h *ArrowHNSW) resolveDistanceFuncF16() func(a, b []float16.Num) (float32, error) {
-	switch h.metric {
+	switch h.config.Metric {
 	case MetricCosine:
 		return simd.CosineDistanceF16
 	case MetricDotProduct:
@@ -40,7 +40,7 @@ func (h *ArrowHNSW) resolveDistanceFuncF16() func(a, b []float16.Num) (float32, 
 
 // resolveDistanceFuncF64 returns the Float64 distance function.
 func (h *ArrowHNSW) resolveDistanceFuncF64() func(a, b []float64) (float32, error) {
-	switch h.metric {
+	switch h.config.Metric {
 	case MetricCosine:
 		return func(a, b []float64) (float32, error) {
 			// Fallback since we don't have CosineDistanceF64 in simd yet
@@ -68,7 +68,7 @@ func (h *ArrowHNSW) resolveDistanceFuncC128() func(a, b []complex128) (float32, 
 
 // resolveBatchDistanceFunc returns the batch distance function.
 func (h *ArrowHNSW) resolveBatchDistanceFunc() func(query []float32, vectors [][]float32, results []float32) error {
-	switch h.metric {
+	switch h.config.Metric {
 	case MetricCosine:
 		return simd.CosineDistanceBatch
 	case MetricDotProduct:

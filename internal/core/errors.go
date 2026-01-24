@@ -61,3 +61,8 @@ func (e *ErrUnavailable) Error() string {
 func NewUnavailableError(operation, reason string) error {
 	return &ErrUnavailable{Operation: operation, Reason: reason}
 }
+
+// NewShutdownError creates a formatted error for shutdown failures.
+func NewShutdownError(op, target string, err error) error {
+	return fmt.Errorf("shutdown %s failed for %s: %w", op, target, err)
+}

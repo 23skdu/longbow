@@ -23,6 +23,8 @@ import (
 	"github.com/23skdu/longbow/internal/mesh"
 	"github.com/23skdu/longbow/internal/metrics"
 	qry "github.com/23skdu/longbow/internal/query"
+	"github.com/23skdu/longbow/internal/store/types"
+	lbtypes "github.com/23skdu/longbow/internal/store/types"
 )
 
 func (s *VectorStore) ListFlights(c *flight.Criteria, stream flight.FlightService_ListFlightsServer) error {
@@ -442,7 +444,7 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 // MapInternalToUserIDs maps internal HNSW IDs to user-provided IDs
 // MapInternalToUserIDs maps internal HNSW IDs to user-provided IDs
 // This is the public wrapper that acquires a read lock.
-func (s *VectorStore) MapInternalToUserIDs(ds *Dataset, results []SearchResult) []SearchResult {
+func (s *VectorStore) MapInternalToUserIDs(ds *Dataset, results []lbtypes.SearchResult) []lbtypes.SearchResult {
 	start := time.Now()
 	defer func() {
 		metrics.IDResolutionDuration.Observe(time.Since(start).Seconds())
@@ -455,24 +457,23 @@ func (s *VectorStore) MapInternalToUserIDs(ds *Dataset, results []SearchResult) 
 
 // mapInternalToUserIDsLocked maps internal HNSW IDs to user-provided IDs.
 // Caller MUST hold ds.dataMu.RLock (or Lock).
-func (s *VectorStore) mapInternalToUserIDsLocked(ds *Dataset, results []SearchResult) []SearchResult {
+func (s *VectorStore) mapInternalToUserIDsLocked(ds *Dataset, results []lbtypes.SearchResult) []lbtypes.SearchResult {
 	// Use the VectorIndex interface directly to look up locations.
 	// This supports HNSWIndex, ArrowHNSW, AutoShardingIndex, etc.
 	if ds.Index == nil {
 		return results
 	}
 
-	mappedResults := make([]SearchResult, 0, len(results))
+	mappedResults := make([]lbtypes.SearchResult, 0, len(results))
 
 	for _, res := range results {
 		// 1. Get location (Batch, Row) from VectorIndex
-		loc, found := ds.Index.GetLocation(res.ID)
+		locAny, found := ds.Index.GetLocation(uint32(res.ID))
 		if !found {
-			// If not found in index (race condition?), skip or keep
-			// If we return raw result, it contains internal ID, which might confuse client.
-			// But skipping might lose data.
-			// Let's assume invalid and skip?
-			// log.Printf("[DEBUG] MapInternalToUserIDs: ID %d not found in Index location store", res.ID)
+			continue
+		}
+		loc, ok := locAny.(Location)
+		if !ok {
 			continue
 		}
 
@@ -505,30 +506,30 @@ func (s *VectorStore) mapInternalToUserIDsLocked(ds *Dataset, results []SearchRe
 		// ID column can be uint32 or uint64 (or others).
 		// VectorID is uint32. If user ID is uint64 > 2^32, we have a truncation issue.
 		// For now, cast to VectorID (uint32).
-		var resolvedID VectorID
+		var resolvedID lbtypes.VectorID
 
 		switch c := col.(type) {
 		case *array.Uint32:
 			if loc.RowIdx < c.Len() {
-				resolvedID = VectorID(c.Value(loc.RowIdx))
+				resolvedID = lbtypes.VectorID(c.Value(loc.RowIdx))
 			} else {
-				resolvedID = res.ID // Fallback
+				resolvedID = lbtypes.VectorID(res.ID) // Fallback
 			}
 		case *array.Uint64:
 			if loc.RowIdx < c.Len() {
-				resolvedID = VectorID(c.Value(loc.RowIdx)) // Truncate if needed
+				resolvedID = lbtypes.VectorID(c.Value(loc.RowIdx)) // Truncate if needed
 			} else {
 				resolvedID = res.ID
 			}
 		case *array.Int64:
 			if loc.RowIdx < c.Len() {
-				resolvedID = VectorID(c.Value(loc.RowIdx))
+				resolvedID = lbtypes.VectorID(c.Value(loc.RowIdx))
 			} else {
 				resolvedID = res.ID
 			}
 		case *array.Int32:
 			if loc.RowIdx < c.Len() {
-				resolvedID = VectorID(c.Value(loc.RowIdx))
+				resolvedID = lbtypes.VectorID(c.Value(loc.RowIdx))
 			} else {
 				resolvedID = res.ID
 			}
@@ -542,11 +543,11 @@ func (s *VectorStore) mapInternalToUserIDsLocked(ds *Dataset, results []SearchRe
 				val := c.Value(loc.RowIdx)
 				u, err := strconv.ParseUint(val, 10, 64)
 				if err == nil {
-					resolvedID = VectorID(u)
+					resolvedID = lbtypes.VectorID(u)
 				} else {
 					// If not numeric, we're stuck with internal ID for the uint64 field.
 					// A better fix would be to return StringIDs in the response.
-					resolvedID = res.ID
+					resolvedID = lbtypes.VectorID(res.ID)
 				}
 			} else {
 				resolvedID = res.ID
@@ -556,7 +557,7 @@ func (s *VectorStore) mapInternalToUserIDsLocked(ds *Dataset, results []SearchRe
 			resolvedID = res.ID
 		}
 
-		mappedResults = append(mappedResults, SearchResult{
+		mappedResults = append(mappedResults, lbtypes.SearchResult{
 			ID:    resolvedID,
 			Score: res.Score,
 		})
@@ -575,12 +576,12 @@ func (s *VectorStore) GetDataset(name string) (*Dataset, error) {
 }
 
 // HybridSearch is a wrapper for the HybridSearch function
-func (s *VectorStore) HybridSearch(ctx context.Context, name string, query []float32, k int, filters map[string]string) ([]SearchResult, error) {
+func (s *VectorStore) HybridSearch(ctx context.Context, name string, query []float32, k int, filters map[string]string) ([]lbtypes.SearchResult, error) {
 	return HybridSearch(ctx, s, name, query, k, filters)
 }
 
 // SearchHybrid is a wrapper for the SearchHybrid function (RRF version)
-func (s *VectorStore) SearchHybrid(ctx context.Context, name string, query []float32, textQuery string, k int, alpha float32, rrfK int, graphAlpha float32, graphDepth int) ([]SearchResult, error) {
+func (s *VectorStore) SearchHybrid(ctx context.Context, name string, query []float32, textQuery string, k int, alpha float32, rrfK int, graphAlpha float32, graphDepth int) ([]lbtypes.SearchResult, error) {
 	// Expose graph params in future? For now default to 0 (disabled)
 	return SearchHybrid(ctx, s, name, query, textQuery, k, alpha, rrfK, graphAlpha, graphDepth)
 }
@@ -617,7 +618,7 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, stream fli
 		return status.Error(codes.InvalidArgument, "no query vector provided")
 	}
 
-	var searchResults []SearchResult
+	var searchResults []lbtypes.SearchResult
 	var err error
 
 	// 2.5 Query Cache Check
@@ -664,12 +665,13 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, stream fli
 			ds.dataMu.RUnlock() // RELEASE BEFORE SEARCH
 
 			// Core Search (No dataset lock held)
-			searchResults, err = index.SearchVectors(stream.Context(), queryVec, req.K, req.Filters, SearchOptions{
+			var searchErr error
+			searchResults, searchErr = index.SearchVectors(stream.Context(), queryVec, req.K, req.Filters, SearchOptions{
 				IncludeVectors: req.IncludeVectors,
-				VectorFormat:   req.VectorFormat,
+				VectorFormat:   types.MapStringToVectorDataType(req.VectorFormat),
 			})
-			if err != nil {
-				return status.Errorf(codes.Internal, "search failed: %v", err)
+			if searchErr != nil {
+				return status.Errorf(codes.Internal, "search failed: %v", searchErr)
 			}
 
 			// Capture data for mapping/re-ranking

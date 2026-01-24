@@ -379,7 +379,7 @@ func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
 
 					// Update Memory Pressure on Queue
 					// Approximate size calculation matching Send()
-					size := int64(j.Record.NumRows() * int64(j.Record.NumCols()) * 8)
+					// size := int64(j.Record.NumRows() * int64(j.Record.NumCols()) * 8)
 					// s.indexQueue.DecreaseEstimatedBytes(size)
 				}
 

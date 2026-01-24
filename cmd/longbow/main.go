@@ -143,23 +143,16 @@ func initializeHNSW2(ds *store.Dataset, logger *zerolog.Logger) {
 	config.M = globalCfg.HNSW2M
 	config.MMax = globalCfg.HNSW2M * 2
 	config.MMax0 = globalCfg.HNSW2M * 2
-	config.EfConstruction = globalCfg.HNSW2EfConstruction
-	config.Alpha = globalCfg.HNSW2Alpha
-	config.KeepPrunedConnections = globalCfg.HNSW2KeepPruned
+	config.EfConstruction = int32(globalCfg.HNSW2EfConstruction)
 	config.SQ8Enabled = globalCfg.HNSW2SQ8Enabled
-	config.PQEnabled = globalCfg.HNSW2PQEnabled
-	config.RefinementFactor = globalCfg.HNSW2Refinement
-	config.Float16Enabled = globalCfg.HNSW2Float16Enabled
 
-	hnswIndex := store.NewArrowHNSW(ds, config, nil)
+	hnswIndex := store.NewArrowHNSW(ds, config)
 	ds.SetHNSW2Index(hnswIndex)
 	if logger.GetLevel() != zerolog.Disabled {
 		logger.Info().
 			Str("dataset", ds.Name).
 			Int("M", config.M).
-			Int("ef", config.EfConstruction).
-			Float32("alpha", config.Alpha).
-			Bool("keep_pruned", config.KeepPrunedConnections).
+			Int("ef", int(config.EfConstruction)).
 			Msg("hnsw2 initialized")
 	}
 }
@@ -245,14 +238,8 @@ func run() error {
 	// Create memory allocator
 	mem := store.NewPooledAllocator()
 
-	// Initialize vector store with compaction config
-	compactionCfg := store.CompactionConfig{
-		Enabled:             cfg.CompactionEnabled,
-		TargetBatchSize:     cfg.CompactionTargetBatchSize,
-		MinBatchesToCompact: cfg.CompactionMinBatches,
-		CompactionInterval:  cfg.CompactionInterval,
-	}
-	vectorStore := store.NewVectorStoreWithCompaction(mem, logger, cfg.MaxMemory, cfg.MaxWALSize, cfg.TTL, compactionCfg)
+	// Initialize vector store
+	vectorStore := store.NewVectorStore(mem, logger, cfg.MaxMemory, cfg.MaxWALSize, cfg.TTL)
 	vectorStore.SetGCTuner(tuner)
 
 	// Register hnsw2 initialization hook

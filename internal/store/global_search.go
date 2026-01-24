@@ -9,6 +9,7 @@ import (
 	"github.com/23skdu/longbow/internal/mesh"
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/query"
+	lbtypes "github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/rs/zerolog"
@@ -181,7 +182,7 @@ func (c *GlobalSearchCoordinator) GlobalSearch(ctx context.Context, localResults
 
 						for k := 0; k < len(ids); k++ {
 							results = append(results, SearchResult{
-								ID:    VectorID(ids[k]),
+								ID:    lbtypes.VectorID(ids[k]),
 								Score: scores[k],
 							})
 						}

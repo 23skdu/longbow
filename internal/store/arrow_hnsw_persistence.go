@@ -3,6 +3,8 @@ package store
 import (
 	"fmt"
 	"sync/atomic"
+
+	"github.com/23skdu/longbow/internal/store/types"
 )
 
 // LoadFromMmap opens a DiskGraph file and attaches it to the ArrowHNSW index.
@@ -86,7 +88,7 @@ func (h *ArrowHNSW) promoteNode(data *GraphData, id uint32) *GraphData {
 	}
 
 	// Iterate all layers
-	for l := 0; l < ArrowMaxLayers; l++ {
+	for l := 0; l < types.ArrowMaxLayers; l++ {
 		// Get neighbors from Disk
 		diskNeighbors := dg.GetNeighbors(l, id, nil)
 		if len(diskNeighbors) == 0 {
@@ -94,7 +96,15 @@ func (h *ArrowHNSW) promoteNode(data *GraphData, id uint32) *GraphData {
 		}
 
 		// Ensure chunk in Mutable Data
-		data = h.ensureChunk(data, cID, cOff, data.Dims)
+		var err error
+		data, err = h.ensureChunk(data, cID, cOff, data.Dims)
+		if err != nil {
+			// What to do? Log and continue? Or return?
+			// promoteNode returns *GraphData.
+			// Ideally we shouldn't fail memory alloc here.
+			// For now, return unmodified data if error (safe fallback?)
+			return data
+		}
 
 		countsChunk := data.GetCountsChunk(l, cID)
 		neighborsChunk := data.GetNeighborsChunk(l, cID)

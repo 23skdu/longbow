@@ -42,10 +42,10 @@ type VectorStore struct {
 	engine        *storage.StorageEngine // Manages WAL and Snapshots
 	snapshotReset chan time.Duration
 
-	indexQueue          *IndexJobQueue       // Integrated HNSW
-	ingestionQueue      *IngestionRingBuffer // Lock-free ring buffer
-	persistenceQueue    chan persistenceJob  // Async persistence queue
-	pendingOverflowJobs atomic.Int64         // Jobs spinning in applyBatchToMemory
+	indexQueue          *IndexJobQueueLockFree // Integrated HNSW
+	ingestionQueue      *IngestionRingBuffer   // Lock-free ring buffer
+	persistenceQueue    chan persistenceJob    // Async persistence queue
+	pendingOverflowJobs atomic.Int64           // Jobs spinning in applyBatchToMemory
 
 	// Lifecycle
 	stopChan           chan struct{}
@@ -152,7 +152,7 @@ func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes 
 	s.datasets.Store(&emptyMap)
 
 	s.maxMemory.Store(maxMemoryBytes)
-	s.indexQueue = NewIndexJobQueue(DefaultIndexJobQueueConfig())
+	s.indexQueue = NewIndexJobQueueLockFree(DefaultIndexJobQueueConfig())
 	s.ingestionQueue = NewIngestionRingBuffer(64)      // Reduced from 256 to prevent OOM with large batches
 	s.persistenceQueue = make(chan persistenceJob, 64) // Reduced from 10000 to prevent OOM
 

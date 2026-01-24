@@ -4,6 +4,8 @@ import (
 	"math"
 	"math/rand"
 	"sync"
+
+	"github.com/23skdu/longbow/internal/store/types"
 )
 
 // LevelGenerator generates random levels for HNSW nodes using exponential decay.
@@ -25,7 +27,7 @@ func NewLevelGenerator(ml float64) *LevelGenerator {
 
 // Generate returns a random level using exponential decay.
 // Uses the formula: level = -ln(uniform(0,1)) * ml
-// The level is capped at ArrowMaxLayers - 1 to prevent excessive memory usage.
+// The level is capped at types.ArrowMaxLayers - 1 to prevent excessive memory usage.
 func (lg *LevelGenerator) Generate() int {
 	lg.mu.Lock()
 	defer lg.mu.Unlock()
@@ -34,9 +36,9 @@ func (lg *LevelGenerator) Generate() int {
 	uniform := lg.rng.Float64()
 	level := int(-math.Log(uniform) * lg.ml)
 
-	// Cap at ArrowMaxLayers - 1
-	if level >= ArrowMaxLayers {
-		level = ArrowMaxLayers - 1
+	// Cap at types.ArrowMaxLayers - 1
+	if level >= types.ArrowMaxLayers {
+		level = types.ArrowMaxLayers - 1
 	}
 
 	return level

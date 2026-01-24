@@ -11,6 +11,8 @@ import (
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/pq"
 	"github.com/23skdu/longbow/internal/query"
+	"github.com/23skdu/longbow/internal/store/types"
+	"github.com/RoaringBitmap/roaring/v2"
 	"github.com/apache/arrow-go/v18/arrow"
 )
 
@@ -63,19 +65,19 @@ func NewAutoShardingIndex(ds *Dataset, config AutoShardingConfig) *AutoShardingI
 	var idx VectorIndex
 	switch {
 	case config.IndexConfig != nil:
-		idx = NewArrowHNSW(ds, *config.IndexConfig, nil)
+		idx = NewArrowHNSW(ds, *config.IndexConfig)
 	case ds.UseHNSW2():
 		// Use HNSW2 default config if enabled
 		hnswConfig := DefaultArrowHNSWConfig()
 		hnswConfig.Metric = ds.Metric
 		hnswConfig.Logger = ds.Logger
-		idx = NewArrowHNSW(ds, hnswConfig, nil)
+		idx = NewArrowHNSW(ds, hnswConfig)
 	default:
 		// Use ArrowHNSW as default for better performance (parallelism, batching)
 		hnswConfig := DefaultArrowHNSWConfig()
 		hnswConfig.Metric = ds.Metric
 		hnswConfig.Logger = ds.Logger
-		idx = NewArrowHNSW(ds, hnswConfig, nil)
+		idx = NewArrowHNSW(ds, hnswConfig)
 	}
 
 	return &AutoShardingIndex{
@@ -299,11 +301,13 @@ func (a *AutoShardingIndex) migrateToSharded() {
 		a.dataset.dataMu.RLock()
 		for id := lastMigrated; id < endIdx; id++ {
 			vid := VectorID(id)
-			loc, ok := oldIdx.GetLocation(vid)
-			if ok && loc.BatchIdx < len(a.dataset.Records) {
-				rec := a.dataset.Records[loc.BatchIdx]
-				rec.Retain()
-				items = append(items, item{rec: rec, loc: loc, id: vid})
+			locAny, ok := oldIdx.GetLocation(uint32(vid))
+			if ok {
+				if loc, ok := locAny.(Location); ok && loc.BatchIdx < len(a.dataset.Records) {
+					rec := a.dataset.Records[loc.BatchIdx]
+					rec.Retain()
+					items = append(items, item{rec: rec, loc: loc, id: vid})
+				}
 			}
 		}
 		a.dataset.dataMu.RUnlock()
@@ -356,7 +360,7 @@ func (a *AutoShardingIndex) migrateToSharded() {
 }
 
 // SearchVectors implements VectorIndex.
-func (a *AutoShardingIndex) SearchVectors(ctx context.Context, q any, k int, filters []query.Filter, options SearchOptions) ([]SearchResult, error) {
+func (a *AutoShardingIndex) SearchVectors(ctx context.Context, q any, k int, filters []query.Filter, options any) ([]SearchResult, error) {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 
@@ -384,7 +388,7 @@ func (a *AutoShardingIndex) SearchVectors(ctx context.Context, q any, k int, fil
 }
 
 // SearchVectorsWithBitmap implements VectorIndex.
-func (a *AutoShardingIndex) SearchVectorsWithBitmap(ctx context.Context, q any, k int, filter *query.Bitset, options SearchOptions) []SearchResult {
+func (a *AutoShardingIndex) SearchVectorsWithBitmap(ctx context.Context, q any, k int, filter *roaring.Bitmap, options any) ([]SearchResult, error) {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 
@@ -394,13 +398,18 @@ func (a *AutoShardingIndex) SearchVectorsWithBitmap(ctx context.Context, q any, 
 	}
 
 	interim := a.interimIndex
-	res := a.current.SearchVectorsWithBitmap(ctx, q, k, filter, options)
+	res, err := a.current.SearchVectorsWithBitmap(ctx, q, k, filter, options)
+	if err != nil {
+		return nil, err
+	}
 	if interim != nil {
-		res2 := interim.SearchVectorsWithBitmap(ctx, q, k, filter, options)
-		res = a.mergeSearchResults(res, res2, k)
+		res2, err := interim.SearchVectorsWithBitmap(ctx, q, k, filter, options)
+		if err == nil {
+			res = a.mergeSearchResults(res, res2, k)
+		}
 	}
 
-	return res
+	return res, nil
 }
 
 func (a *AutoShardingIndex) mergeSearchResults(res1, res2 []SearchResult, k int) []SearchResult {
@@ -482,17 +491,24 @@ func (idx *AutoShardingIndex) SetIndexedColumns(cols []string) {
 }
 
 // GetLocation retrieves the storage location for a given vector ID.
-func (idx *AutoShardingIndex) GetLocation(id VectorID) (Location, bool) {
+func (idx *AutoShardingIndex) GetLocation(id uint32) (any, bool) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 	return idx.current.GetLocation(id)
 }
 
 // GetVectorID retrieves the vector ID for a given storage location.
-func (idx *AutoShardingIndex) GetVectorID(loc Location) (VectorID, bool) {
+func (idx *AutoShardingIndex) GetVectorID(loc any) (uint32, bool) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 	return idx.current.GetVectorID(loc)
+}
+
+// Search implements VectorIndexer.
+func (idx *AutoShardingIndex) Search(ctx context.Context, q any, k int, options any) ([]types.Candidate, error) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	return idx.current.Search(ctx, q, k, options)
 }
 
 // Warmup delegates to the current index.
@@ -521,7 +537,7 @@ func (idx *AutoShardingIndex) Close() error {
 }
 
 // GetNeighbors returns the nearest neighbors for a given vector ID.
-func (idx *AutoShardingIndex) GetNeighbors(id VectorID) ([]VectorID, error) {
+func (idx *AutoShardingIndex) GetNeighbors(id uint32) ([]uint32, error) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 
@@ -552,4 +568,22 @@ func (idx *AutoShardingIndex) EstimateMemory() int64 {
 	}
 
 	return size
+}
+
+func (a *AutoShardingIndex) DeleteBatch(ctx context.Context, ids []uint32) error {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.current.DeleteBatch(ctx, ids)
+}
+
+func (a *AutoShardingIndex) GetEntryPoint() uint32 {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.current.GetEntryPoint()
+}
+
+func (a *AutoShardingIndex) Size() int {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.current.Size()
 }

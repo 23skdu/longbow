@@ -126,10 +126,14 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 	// Lazy Chunk Allocation (Protected by RLock)
 	cID := chunkID(id)
 	cOff := chunkOffset(id)
-	data = h.ensureChunk(data, cID, cOff, dims)
+	var err error
+	data, err = h.ensureChunk(data, cID, cOff, dims)
+	if err != nil {
+		return err
+	}
 
 	metrics.HNSWInsertPoolGetTotal.Inc()
-	ctx := h.searchPool.Get().(*ArrowSearchContext)
+	ctx := h.searchPool.Get()
 	ctx.Reset()
 	defer func() {
 		metrics.HNSWInsertPoolPutTotal.Inc()
@@ -188,7 +192,7 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 			if err == nil {
 				encodedChunk := data.GetVectorsPQChunk(cID)
 				if encodedChunk != nil {
-					pqM := data.PQDims
+					pqM := data.PQDims()
 					if pqM > 0 {
 						baseIdx := int(cOff) * pqM
 						copy(encodedChunk[baseIdx:baseIdx+pqM], code)
@@ -280,7 +284,11 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 		// Re-ensure OUR chunk exists in this new data view for safety
 		// (though likely it does if Grow copied it, or we allocate it again)
 		// We need to ensure we can write links to our node later.
-		data = h.ensureChunk(data, cID, cOff, dims)
+		var err error
+		data, err = h.ensureChunk(data, cID, cOff, dims)
+		if err != nil {
+			return err
+		}
 	}
 
 	for lc := maxL; lc > level; lc-- {

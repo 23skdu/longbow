@@ -6,6 +6,8 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+
+	lbtypes "github.com/23skdu/longbow/internal/store/types"
 )
 
 // BM25InvertedIndex is a sharded inverted index with proper BM25 scoring
@@ -262,7 +264,7 @@ func (idx *BM25InvertedIndex) SearchBM25(query string, limit int) []SearchResult
 	// Convert to results and sort
 	results := make([]SearchResult, 0, len(docScores))
 	for id, score := range docScores {
-		results = append(results, SearchResult{ID: id, Score: score})
+		results = append(results, SearchResult{ID: lbtypes.VectorID(id), Score: score})
 	}
 
 	sort.Slice(results, func(i, j int) bool {

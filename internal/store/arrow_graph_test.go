@@ -58,7 +58,7 @@ func TestGraphData_Initialization(t *testing.T) {
 	}
 
 	// Check Neighbors array allocation (chunked)
-	for i := 0; i < ArrowMaxLayers; i++ {
+	for i := 0; i < types.ArrowMaxLayers; i++ {
 		if len(data.Neighbors[i]) != expectedChunks {
 			t.Errorf("Layer %d Neighbors chunks = %d, want %d", i, len(data.Neighbors[i]), expectedChunks)
 		}

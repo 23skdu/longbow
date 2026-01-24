@@ -5,6 +5,8 @@ import (
 
 	"github.com/23skdu/longbow/internal/simd"
 	"github.com/apache/arrow-go/v18/arrow/float16"
+
+	"github.com/23skdu/longbow/internal/store/types"
 )
 
 // VectorBatch abstracts a batch of vectors for efficient distance computation.
@@ -43,7 +45,7 @@ type VectorBatch interface {
 // float32VectorBatch implements VectorBatch for float32 vectors.
 type float32VectorBatch struct {
 	h    *ArrowHNSW
-	data *GraphData
+	data *types.GraphData
 	vecs [][]float32
 }
 
@@ -88,7 +90,20 @@ func (b *float32VectorBatch) ComputeDistances(query any, dists []float32) {
 		return
 	}
 
-	if b.h.metric == MetricEuclidean {
+	// Metric check
+	if b.h.config.Metric == "" {
+		// return errors.New("metric not set in config")
+		// Fallback to Euclidean or handle error
+	}
+
+	// Check against known metrics (assuming MetricEuclidean constant available)
+	// if b.h.config.Metric == MetricEuclidean { ... }
+	// But compilation error was "b.h.metric undefined".
+	// The code block matching is crucial.
+	// Step 269:
+	// 93: 	if b.h.metric == MetricEuclidean {
+
+	if b.h.config.Metric == MetricEuclidean {
 		// Defensive: check for nil vectors to avoid SIMD kernel panic
 		hasNil := false
 		for _, v := range b.vecs {
@@ -165,7 +180,7 @@ func (b *float32VectorBatch) Pop() {
 // float16VectorBatch implements VectorBatch for float16 vectors.
 type float16VectorBatch struct {
 	h    *ArrowHNSW
-	data *GraphData
+	data *types.GraphData
 	vecs [][]float16.Num
 }
 
@@ -264,7 +279,7 @@ func (b *float16VectorBatch) Pop() {
 // float64VectorBatch implements VectorBatch for float64 vectors.
 type float64VectorBatch struct {
 	h    *ArrowHNSW
-	data *GraphData
+	data *types.GraphData
 	vecs [][]float64
 }
 
@@ -310,7 +325,7 @@ func (b *float64VectorBatch) ComputeDistances(query any, dists []float32) {
 			if err != nil {
 				dists[i] = math.MaxFloat32
 			} else {
-				dists[i] = float32(d)
+				dists[i] = d
 			}
 		}
 	}
@@ -333,7 +348,7 @@ func (b *float64VectorBatch) Pop() {
 // complex64VectorBatch implements VectorBatch for complex64 vectors.
 type complex64VectorBatch struct {
 	h    *ArrowHNSW
-	data *GraphData
+	data *types.GraphData
 	vecs [][]complex64
 }
 
@@ -402,7 +417,7 @@ func (b *complex64VectorBatch) Pop() {
 // complex128VectorBatch implements VectorBatch for complex128 vectors.
 type complex128VectorBatch struct {
 	h    *ArrowHNSW
-	data *GraphData
+	data *types.GraphData
 	vecs [][]complex128
 }
 
@@ -448,7 +463,7 @@ func (b *complex128VectorBatch) ComputeDistances(query any, dists []float32) {
 			if err != nil {
 				dists[i] = math.MaxFloat32
 			} else {
-				dists[i] = d
+				dists[i] = float32(d)
 			}
 		}
 	}
@@ -469,7 +484,7 @@ func (b *complex128VectorBatch) Pop() {
 }
 
 // newVectorBatch creates a VectorBatch appropriate for the data type.
-func (h *ArrowHNSW) newVectorBatch(data *GraphData) VectorBatch {
+func (h *ArrowHNSW) newVectorBatch(data *types.GraphData) VectorBatch {
 	switch data.Type {
 	case VectorTypeFloat16:
 		return &float16VectorBatch{

@@ -90,7 +90,7 @@ func TestSQ8_EndToEnd(t *testing.T) {
 
 	chunkID := uint32(0)
 
-	sq8Chunk := data.GetVectorsSQ8Chunk(chunkID)
+	sq8Chunk := data.GetVectorsSQ8Chunk(int(chunkID))
 	require.NotNil(t, sq8Chunk, "First SQ8 chunk should exist")
 
 	v0SQ8 := sq8Chunk[0:dims]

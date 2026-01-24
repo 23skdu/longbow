@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/23skdu/longbow/internal/gpu"
+	lbtypes "github.com/23skdu/longbow/internal/store/types"
 	"github.com/rs/zerolog"
 )
 
@@ -70,7 +71,11 @@ func (h *HNSWIndex) SearchHybrid(ctx context.Context, query []float32, k int) ([
 	// If GPU not enabled or failed, use pure CPU
 	if !h.gpuEnabled || h.gpuIndex == nil {
 		// Use SearchByVector which returns []SearchResult
-		return h.SearchVectors(ctx, query, k, nil, SearchOptions{})
+		res, err := h.SearchVectors(ctx, query, k, nil, any(nil))
+		if err != nil {
+			return nil, err
+		}
+		return res, nil
 	}
 
 	// Step 1: GPU generates candidates (k * 10 for better recall)
@@ -82,7 +87,11 @@ func (h *HNSWIndex) SearchHybrid(ctx context.Context, query []float32, k int) ([
 	candidateIDs, distances, err := h.gpuIndex.Search(query, candidateCount)
 	if err != nil {
 		// GPU search failed, fallback to CPU
-		return h.SearchVectors(ctx, query, k, nil, SearchOptions{})
+		res, err := h.SearchVectors(ctx, query, k, nil, any(nil))
+		if err != nil {
+			return nil, err
+		}
+		return res, nil
 	}
 
 	// Step 2: Refine with HNSW graph
@@ -107,7 +116,7 @@ func (h *HNSWIndex) SearchHybrid(ctx context.Context, query []float32, k int) ([
 		}
 
 		results = append(results, SearchResult{
-			ID:    vecID,
+			ID:    lbtypes.VectorID(vecID),
 			Score: distances[i],
 		})
 	}

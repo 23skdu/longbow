@@ -75,7 +75,7 @@ func TestPQ_EndToEnd(t *testing.T) {
 
 	// Check a few existing vectors
 	for i := 0; i < trainVecs; i++ {
-		code := gd.GetVectorPQ(uint32(i))
+		code, _ := gd.GetVectorPQ(uint32(i))
 		require.NotNil(t, code, "Backfilled vector %d should have PQ code", i)
 		assert.Equal(t, pqM, len(code), "PQ code length mismatch")
 	}
@@ -87,7 +87,7 @@ func TestPQ_EndToEnd(t *testing.T) {
 
 		// Verify Quantized immediately
 		gd = hnsw.data.Load()
-		code := gd.GetVectorPQ(uint32(i))
+		code, _ := gd.GetVectorPQ(uint32(i))
 		require.NotNil(t, code, "New vector %d should have PQ code", i)
 	}
 
@@ -128,7 +128,7 @@ func TestPQ_EndToEnd(t *testing.T) {
 	// Pick a vector and calculate exact L2 vs ADC result
 	testID := uint32(0)
 	testVec := vectors[0]
-	code := gd.GetVectorPQ(testID)
+	code, _ := gd.GetVectorPQ(testID)
 	// We need another vector to compute distance FROM
 	queryVec := vectors[1]
 

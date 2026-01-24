@@ -217,7 +217,7 @@ func (d *Dataset) SearchDataset(ctx context.Context, query []float32, k int) ([]
 	if idx == nil {
 		return nil, nil
 	}
-	// Assuming vector index interface has SearchVectors
+	// Returns []SearchResult, error
 	return idx.SearchVectors(ctx, query, k, nil, SearchOptions{})
 }
 

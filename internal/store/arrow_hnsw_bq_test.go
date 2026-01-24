@@ -87,7 +87,7 @@ func TestArrowHNSW_BinaryQuantization_Integration(t *testing.T) {
 
 	// Check content of BQ vector for Cluster 0 (record 0)
 	// Expect all 1s (approx) -> 0xFF...
-	bqVec0 := data.GetVectorBQ(0)
+	bqVec0, _ := data.GetVectorBQ(0)
 	require.NotNil(t, bqVec0)
 	// With 128 dims, we have 2 uint64s.
 	// 0: All 1s = 0xFFFFFFFFFFFFFFFF

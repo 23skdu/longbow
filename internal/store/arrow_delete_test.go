@@ -26,7 +26,11 @@ func TestDelete(t *testing.T) {
 	for i := 0; i < numChunks; i++ {
 		// Mock dimensions
 		dims := 128
-		data = index.ensureChunk(data, uint32(i), 0, dims)
+		var err error
+		data, err = index.ensureChunk(data, uint32(i), 0, dims)
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	// Insert 10 vectors

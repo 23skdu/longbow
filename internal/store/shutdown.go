@@ -4,6 +4,8 @@ import (
 	"context"
 	"sync/atomic"
 	"time"
+
+	"github.com/23skdu/longbow/internal/core"
 )
 
 // shutdown state constants
@@ -58,7 +60,7 @@ waitLoop:
 	s.logger.Info().Msg("Draining index queue...")
 	if err := s.drainIndexQueue(ctx); err != nil {
 		s.logger.Error().Err(err).Msg("Failed to drain index queue")
-		shutdownErr = NewShutdownError("drain", "index_queue", err)
+		shutdownErr = core.NewShutdownError("drain", "index_queue", err)
 	} else {
 		s.logger.Info().Msg("Index queue drained successfully")
 	}
@@ -101,7 +103,7 @@ waitLoop:
 
 	// Step 5: Close Persistence (WAL Batcher, Engine)
 	if err := s.ClosePersistence(); err != nil {
-		shutdownErr = NewShutdownError("close", "persistence", err)
+		shutdownErr = core.NewShutdownError("close", "persistence", err)
 		s.logger.Error().Err(err).Msg("Failed to close persistence")
 	} else {
 		s.logger.Info().Msg("Persistence closed successfully")

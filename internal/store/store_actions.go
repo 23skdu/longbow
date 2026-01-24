@@ -22,6 +22,7 @@ import (
 
 	lmem "github.com/23skdu/longbow/internal/memory"
 	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/query"
 	qry "github.com/23skdu/longbow/internal/query"
 )
 
@@ -313,15 +314,16 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 		}
 
 		// Resolve location using interface method (works for all index types)
-		loc, found := ds.Index.GetLocation(VectorID(vid))
+		locRaw, found := ds.Index.GetLocation(uint32(vid))
 		if !found {
 			return status.Errorf(codes.NotFound, "vector id %d not found in dataset %s (index len=%d)", vid, dsName, ds.Index.Len())
 		}
+		loc := locRaw.(Location)
 
 		// set tombstone
 		ds.dataMu.Lock()
 		if ds.Tombstones[loc.BatchIdx] == nil {
-			ds.Tombstones[loc.BatchIdx] = qry.NewBitset()
+			ds.Tombstones[loc.BatchIdx] = query.NewBitset()
 		}
 		ts := ds.Tombstones[loc.BatchIdx]
 		ds.dataMu.Unlock()
@@ -408,7 +410,7 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 			s.queryCache.Put(cacheKey, results)
 		}
 		if err != nil {
-			return ToGRPCStatus(err)
+			return status.Errorf(codes.Internal, "failed to parse filters: %v", err)
 		}
 
 		// Serialize results
@@ -957,8 +959,8 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 		s.pendingOverflowJobs.Add(1)
 		go func() {
 			defer s.pendingOverflowJobs.Add(-1)
-			// Block efficiently until space is available
-			s.indexQueue.Block(job)
+			// Block efficiently until space is available (1s timeout)
+			s.indexQueue.Block(job, 1*time.Second)
 		}()
 	}
 
@@ -967,7 +969,7 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 	// Compaction trigger check (now integrated into the primary lock section or performed without re-locking)
 	if s.compactionWorker != nil {
 		if len(ds.Records) >= s.compactionConfig.MinBatchesToCompact {
-			_ = s.compactionWorker.TriggerCompaction(name)
+			s.compactionWorker.TriggerCompaction()
 		}
 	}
 

@@ -16,7 +16,6 @@ import (
 	"github.com/RoaringBitmap/roaring/v2"
 
 	"github.com/apache/arrow-go/v18/arrow"
-	"github.com/apache/arrow-go/v18/arrow/array"
 	arrowarray "github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/float16"
 	"github.com/prometheus/client_golang/prometheus"
@@ -363,9 +362,17 @@ func (h *ArrowHNSW) setDims(dims int32) {
 	h.dims.Store(dims)
 }
 
-// SetDimension sets the dimension of the index.
+// SetDimension sets the absolute dimension of the index.
 func (h *ArrowHNSW) SetDimension(dim int) {
 	h.setDims(int32(dim))
+	// Also ensure GraphData is updated to reflect this dimension
+	// This is critical if the index was initialized with 0 dims but large capacity (default config).
+	h.initMu.Lock()
+	defer h.initMu.Unlock()
+	data := h.data.Load()
+	if data != nil {
+		h.Grow(data.Capacity, dim)
+	}
 }
 
 // Delete invokes Delete for a single id.
@@ -457,75 +464,64 @@ func (h *ArrowHNSW) AddByRecord(ctx context.Context, rec arrow.RecordBatch, rowI
 
 func (h *ArrowHNSW) extractVector(rec arrow.RecordBatch, colIdx, rowIdx int) any {
 	col := rec.Column(colIdx)
-	if list, ok := col.(*array.FixedSizeList); ok {
-		// Get raw float slice
-		values := list.ListValues()
 
-		// Re-implementation using generic Arrow check
-		// We assume flat array values.
-		// Wait, ListValues() returns Array.
-
-		// Simplified approach: use ValueStrides logic if implied or simple slice
-		// Let's assume contiguous for performance benchmarking context
-		// But we need to be correct.
-
-		// Standard extraction handles float32/64.
-		// If we detect mismatch, we assume conversion needed.
-
-		// Let's look at what I implemented before in extractVector.
-		// Snippet 1910 showed lines 457...
-
-		// I will implement the conversion logic:
-		// If DataType is Complex64, read Float32 array and reinterpret.
-
-		size := int(list.DataType().(*arrow.FixedSizeListType).Len())
-		offset := rowIdx * size
-
+	// Helper to extract values from underlying array
+	extractValues := func(values arrow.Array, start, end int64) any {
 		switch arr := values.(type) {
 		case *arrowarray.Float32:
 			// Handle Complex64
 			if h.config.DataType == types.VectorTypeComplex64 {
-				floats := arr.Float32Values()[offset : offset+size]
+				floats := arr.Float32Values()[start:end]
 				// size should be 2 * dims
+				size := int(end - start)
 				complexes := make([]complex64, size/2)
 				for i := 0; i < size/2; i++ {
 					complexes[i] = complex(floats[2*i], floats[2*i+1])
 				}
 				return complexes
 			}
-			return arr.Float32Values()[offset : offset+size]
+			// Important: Return copy or ensuring safety?
+			// Float32Values returns slice. Arrow semantics: slice is view.
+			// But we copy into GraphData immediately in InsertWithVector (SetVector does copy).
+			return arr.Float32Values()[start:end]
 
 		case *arrowarray.Float64:
 			// Handle Complex128
 			if h.config.DataType == types.VectorTypeComplex128 {
-				floats := arr.Float64Values()[offset : offset+size]
-				// size should be 2 * dims
+				floats := arr.Float64Values()[start:end]
+				size := int(end - start)
 				complexes := make([]complex128, size/2)
 				for i := 0; i < size/2; i++ {
 					complexes[i] = complex(floats[2*i], floats[2*i+1])
 				}
 				return complexes
 			}
-			return arr.Float64Values()[offset : offset+size]
+			return arr.Float64Values()[start:end]
 
 		case *arrowarray.Int8:
-			return arr.Int8Values()[offset : offset+size]
+			return arr.Int8Values()[start:end]
 
-		case *arrowarray.Uint16:
-			// Treat as float16.Num
-			uints := arr.Uint16Values()[offset : offset+size]
-			f16s := make([]float16.Num, size)
-			for i, v := range uints {
-				f16s[i] = float16.FromBits(v)
-			}
-			return f16s
+		// Add other types as needed
 		default:
-			// Skip unknown types instead of panicking to match robust production behavior,
-			// or panic if strictly required by test logic flow.
-			// Given previous debug, let's return nil and log if relevant level.
 			return nil
 		}
 	}
+
+	if list, ok := col.(*arrowarray.FixedSizeList); ok {
+		values := list.ListValues()
+		size := int64(list.DataType().(*arrow.FixedSizeListType).Len())
+		offset := int64(rowIdx) * size
+		return extractValues(values, offset, offset+size)
+	}
+
+	if list, ok := col.(*arrowarray.List); ok {
+		offsets := list.Offsets()
+		start := int64(offsets[rowIdx])
+		end := int64(offsets[rowIdx+1])
+		values := list.ListValues()
+		return extractValues(values, start, end)
+	}
+
 	return nil
 }
 
@@ -626,27 +622,69 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 	maxLevel := h.maxLevel.Load()
 	data := h.data.Load()
 
-	if data == nil {
-		return nil, fmt.Errorf("graph data is nil")
+	// data might be stale relative to ep if a concurrent growth occurred.
+	// Reload data if necessary to ensure it covers the entry point.
+	if data == nil || int(ep) >= data.Capacity {
+		data = h.data.Load()
+		if data == nil {
+			return nil, fmt.Errorf("graph data is nil")
+		}
+		// If still out of bounds, it's a critical error or race that shouldn't happen with correct ordering,
+		// but we can't proceed.
+		if int(ep) >= data.Capacity {
+			// It is possible ep was just updated and Grow logic finished, but we loaded data just before Grow swapped?
+			// But we just reloaded.
+			// Only explanation: ep > data.Capacity.
+			// This might happen if 'ep' update happened BUT 'Grow' used a new 'data' pointer, and we see 'ep' but 'data' is still old?
+			// Wait, if we reloaded data, we should see the new pointer.
+			return nil, fmt.Errorf("entry point %d out of bounds (capacity %d)", ep, data.Capacity)
+		}
 	}
 
-	dist := float32(0)
 	// Calculate distance to entry point
-	// We need to handle query type and entry point vector type
-	// For now assuming float32
+	var dist float32
 	if q, ok := queryVec.([]float32); ok {
 		vec, err := data.GetVector(ep)
 		if err != nil {
 			return nil, err
 		}
-		if v, ok := vec.([]float32); ok {
+
+		switch v := vec.(type) {
+		case []float32:
 			d, err := h.distFunc(q, v)
 			if err != nil {
 				return nil, err
 			}
 			dist = d
-		} else {
-			return nil, fmt.Errorf("unsupported vector type for distance calculation")
+		case []float64:
+			if h.distFuncF64 == nil {
+				return nil, fmt.Errorf("float64 distance function not initialized")
+			}
+			q64 := make([]float64, len(q))
+			for i, val := range q {
+				q64[i] = float64(val)
+			}
+			d, err := h.distFuncF64(q64, v)
+			if err != nil {
+				return nil, err
+			}
+			dist = d
+		case []float16.Num:
+			if h.distFuncF16 == nil {
+				return nil, fmt.Errorf("float16 distance function not initialized")
+			}
+			q16 := make([]float16.Num, len(q))
+			for i, val := range q {
+				q16[i] = float16.New(val)
+			}
+			d, err := h.distFuncF16(q16, v)
+			if err != nil {
+				return nil, err
+			}
+			dist = d
+		// Add other types as needed (Complex, Int8)
+		default:
+			return nil, fmt.Errorf("unsupported vector type %T for distance calculation", vec)
 		}
 	}
 
@@ -731,46 +769,31 @@ func (h *ArrowHNSW) Grow(capacity, dims int) error {
 
 	// Calculate current vs target
 	currentCap := data.Capacity
-	if capacity <= currentCap {
+	currentDims := data.Dims
+
+	if capacity <= currentCap && dims == currentDims {
 		return nil
 	}
 
-	// Update capacity metadata
-	data.Capacity = capacity
-	data.Dims = dims
-	// Note: replacing pointer or modifying fields?
-	// GraphData members are slices/maps, so modifying them is safe under lock if all readers respect lock or use atomics.
-	// We are appending to slices in EnsureChunk. It is NOT thread safe for concurrent readers unless we swap the pointer or use lock.
-	// Slice append might reallocate.
-	// So we should probably update `h.data` pointer if we reallocate heavily, OR rely on `data` being shared and protected.
-	// The `data` is `atomic.Pointer`.
-	// If we modify `data` in place, we must be careful.
-	// `EnsureChunk` modifies `Vectors`, `Levels`, etc. in place (append).
-	// Readers might see old slice header.
-	// We really should clone and swap if we want lock-free reads, OR require lock for reads.
-	// `Search` does NOT convert/copy `data`, it calls `h.data.Load()`.
-	// If `EnsureChunk` reallocates `Vectors`, the old `Vectors` slice header in existing `data` struct is STILL there.
-	// Wait, `data.Vectors` is improved in place?
-	// `g.Vectors = append(...)`. This updates `g.Vectors` slice header.
-	// Since `g` is a pointer shared by all, they see the new header?
-	// Yes, `data` is `*GraphData`. `data.Vectors` is a field.
-	// Updating `data.Vectors` is visible to others eventually.
-	// BUT slicing is not atomic.
-	// Ideally we use a lock for reading too, OR we are okay with races in test.
-	// Real implementation probably needs better concurrency (e.g. sharded approach or copy-on-write for graph structure).
-	// For this task (fixing panic/test), simple append under `growMu` is enough if test is single threaded or behaves.
+	// COW: Clone the current data structure
+	// This ensures readers holding old 'data' pointer are safe.
+	// New data structure will have updated capacity and chunks.
+	newData := data.Clone()
+	newData.Capacity = capacity
+	newData.Dims = dims
 
 	// Iteratively ensure chunks
-	// capacity -> number of chunks
-	// ChunkSize is constant (1024)
-	// target chunks
 	numChunks := (capacity + types.ChunkSize - 1) / types.ChunkSize
 	for i := 0; i < numChunks; i++ {
-		if err := data.EnsureChunk(i, 0, dims); err != nil {
+		if err := newData.EnsureChunk(i, 0, dims); err != nil {
+			fmt.Printf("Grow EnsureChunk failed: %v\n", err)
 			return err
 		}
 	}
 
+	// Atomic swap
+	h.data.Store(newData)
+	// fmt.Printf("Grow Success: Cap %d->%d Dims %d->%d\n", currentCap, capacity, currentDims, dims)
 	return nil
 }
 
@@ -886,52 +909,74 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 				if err != nil {
 					return 0, err
 				}
-				if v, ok := vecAny.([]float32); ok {
+				switch v := vecAny.(type) {
+				case []float32:
 					return h.distFunc(q, v)
+				case []float64:
+					if h.distFuncF64 == nil {
+						return math.MaxFloat32, nil
+					}
+					// Convert query once? No, this closure captures q.
+					// Optimally we convert q ONCE outside closure.
+					// But we can just alloc here for correctness first.
+					q64 := make([]float64, len(q))
+					for i, val := range q {
+						q64[i] = float64(val)
+					}
+					return h.distFuncF64(q64, v)
+				case []float16.Num:
+					if h.distFuncF16 == nil {
+						return math.MaxFloat32, nil
+					}
+					q16 := make([]float16.Num, len(q))
+					for i, val := range q {
+						q16[i] = float16.New(val)
+					}
+					return h.distFuncF16(q16, v)
+				default:
+					return math.MaxFloat32, nil
 				}
-				return math.MaxFloat32, nil // Type mismatch treated as infinite distance
 			}
 			// Initial distance to EP
 			epVec, err := data.GetVector(entryPoint)
 			if err != nil {
 				return nil, err
 			}
-			if v, ok := epVec.([]float32); ok {
+
+			switch v := epVec.(type) {
+			case []float32:
 				d, err := h.distFunc(q, v)
 				if err != nil {
 					return nil, err
 				}
 				epDist = d
-			} else {
-				epDist = math.MaxFloat32
-			}
-
-		case []float64:
-			distComputer = func(id uint32) (float32, error) {
-				vecAny, err := data.GetVector(id)
-				if err != nil {
-					return 0, err
+			case []float64:
+				if h.distFuncF64 == nil {
+					return nil, fmt.Errorf("no distFuncF64")
 				}
-				if v, ok := vecAny.([]float64); ok {
-					if h.distFuncF64 != nil {
-						d, err := h.distFuncF64(q, v)
-						return d, err
-					}
-					return 0, nil // Stub
+				q64 := make([]float64, len(q))
+				for i, val := range q {
+					q64[i] = float64(val)
 				}
-				return math.MaxFloat32, nil
-			}
-			epVec, err := data.GetVector(entryPoint)
-			if err != nil {
-				return nil, err
-			}
-			if v, ok := epVec.([]float64); ok && h.distFuncF64 != nil {
-				d, err := h.distFuncF64(q, v)
+				d, err := h.distFuncF64(q64, v)
 				if err != nil {
 					return nil, err
 				}
 				epDist = d
-			} else {
+			case []float16.Num:
+				if h.distFuncF16 == nil {
+					return nil, fmt.Errorf("no distFuncF16")
+				}
+				q16 := make([]float16.Num, len(q))
+				for i, val := range q {
+					q16[i] = float16.New(val)
+				}
+				d, err := h.distFuncF16(q16, v)
+				if err != nil {
+					return nil, err
+				}
+				epDist = d
+			default:
 				epDist = math.MaxFloat32
 			}
 

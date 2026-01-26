@@ -554,7 +554,95 @@ func (g *GraphData) GetLevelsChunk(chunkID int) []uint8 {
 	return nil
 }
 
+// Clone creates a shallow copy of the GraphData with deep copies of the structure slices.
+// This allows concurrent readers to safely access the old structure while a new one is being built (COW).
+func (g *GraphData) Clone() *GraphData {
+	newG := *g // Shallow copy struct
+
+	// Deep copy Vectors (Slice of slices)
+	if g.Vectors != nil {
+		newG.Vectors = make([][]float32, len(g.Vectors))
+		copy(newG.Vectors, g.Vectors)
+	}
+
+	// Deep copy Neighbors (Layer -> Chunk)
+	if g.Neighbors != nil {
+		newG.Neighbors = make([][][]uint32, len(g.Neighbors))
+		for l := range g.Neighbors {
+			if g.Neighbors[l] != nil {
+				newG.Neighbors[l] = make([][]uint32, len(g.Neighbors[l]))
+				copy(newG.Neighbors[l], g.Neighbors[l])
+			}
+		}
+	}
+
+	// Deep copy Counts (Layer -> Chunk)
+	if g.Counts != nil {
+		newG.Counts = make([][][]int32, len(g.Counts))
+		for l := range g.Counts {
+			if g.Counts[l] != nil {
+				newG.Counts[l] = make([][]int32, len(g.Counts[l]))
+				copy(newG.Counts[l], g.Counts[l])
+			}
+		}
+	}
+
+	// Deep copy Versions (Layer -> Chunk)
+	if g.Versions != nil {
+		newG.Versions = make([][][]uint32, len(g.Versions))
+		for l := range g.Versions {
+			if g.Versions[l] != nil {
+				newG.Versions[l] = make([][]uint32, len(g.Versions[l]))
+				copy(newG.Versions[l], g.Versions[l])
+			}
+		}
+	}
+
+	// Deep copy Levels (Chunk)
+	if g.Levels != nil {
+		newG.Levels = make([][]uint8, len(g.Levels))
+		copy(newG.Levels, g.Levels)
+	}
+
+	// Deep copy other vector types
+	if g.VectorsSQ8 != nil {
+		newG.VectorsSQ8 = make([]uint64, len(g.VectorsSQ8))
+		copy(newG.VectorsSQ8, g.VectorsSQ8)
+	}
+	if g.VectorsBQ != nil {
+		newG.VectorsBQ = make([]uint64, len(g.VectorsBQ))
+		copy(newG.VectorsBQ, g.VectorsBQ)
+	}
+	if g.VectorsPQ != nil {
+		newG.VectorsPQ = make([]uint64, len(g.VectorsPQ))
+		copy(newG.VectorsPQ, g.VectorsPQ)
+	}
+	if g.VectorsF16 != nil {
+		newG.VectorsF16 = make([]uint64, len(g.VectorsF16))
+		copy(newG.VectorsF16, g.VectorsF16)
+	}
+	if g.VectorsInt8 != nil {
+		newG.VectorsInt8 = make([]uint64, len(g.VectorsInt8))
+		copy(newG.VectorsInt8, g.VectorsInt8)
+	}
+	if g.VectorsFloat64 != nil {
+		newG.VectorsFloat64 = make([][]float64, len(g.VectorsFloat64))
+		copy(newG.VectorsFloat64, g.VectorsFloat64)
+	}
+	if g.VectorsComplex64 != nil {
+		newG.VectorsComplex64 = make([][]complex64, len(g.VectorsComplex64))
+		copy(newG.VectorsComplex64, g.VectorsComplex64)
+	}
+	if g.VectorsComplex128 != nil {
+		newG.VectorsComplex128 = make([][]complex128, len(g.VectorsComplex128))
+		copy(newG.VectorsComplex128, g.VectorsComplex128)
+	}
+
+	return &newG
+}
+
 // NewGraphData creates a new GraphData instance.
+
 // This is a helper for legacy tests.
 func NewGraphData(capacity, dim int, mmap bool, useDisk bool, fd int,
 	quantization bool, sq8 bool, persistent bool,

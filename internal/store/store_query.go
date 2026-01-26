@@ -23,7 +23,6 @@ import (
 	"github.com/23skdu/longbow/internal/mesh"
 	"github.com/23skdu/longbow/internal/metrics"
 	qry "github.com/23skdu/longbow/internal/query"
-	"github.com/23skdu/longbow/internal/store/types"
 	lbtypes "github.com/23skdu/longbow/internal/store/types"
 )
 
@@ -668,7 +667,7 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, stream fli
 			var searchErr error
 			searchResults, searchErr = index.SearchVectors(stream.Context(), queryVec, req.K, req.Filters, SearchOptions{
 				IncludeVectors: req.IncludeVectors,
-				VectorFormat:   types.MapStringToVectorDataType(req.VectorFormat),
+				VectorFormat:   lbtypes.MapStringToVectorDataType(req.VectorFormat),
 			})
 			if searchErr != nil {
 				return status.Errorf(codes.Internal, "search failed: %v", searchErr)

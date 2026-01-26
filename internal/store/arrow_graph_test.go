@@ -3,7 +3,6 @@ package store
 import (
 	"testing"
 
-	"github.com/23skdu/longbow/internal/store/types"
 	lbtypes "github.com/23skdu/longbow/internal/store/types"
 )
 
@@ -55,13 +54,13 @@ func TestGraphData_Initialization(t *testing.T) {
 	}
 
 	// Levels is now chunked
-	expectedChunks := (capacity + ChunkSize - 1) / ChunkSize
+	expectedChunks := (capacity + lbtypes.ChunkSize - 1) / lbtypes.ChunkSize
 	if len(data.Levels) != expectedChunks {
 		t.Errorf("Levels chunks = %d, want %d", len(data.Levels), expectedChunks)
 	}
 
 	// Check Neighbors array allocation (chunked)
-	for i := 0; i < types.ArrowMaxLayers; i++ {
+	for i := 0; i < lbtypes.ArrowMaxLayers; i++ {
 		if len(data.Neighbors[i]) != expectedChunks {
 			t.Errorf("Layer %d Neighbors chunks = %d, want %d", i, len(data.Neighbors[i]), expectedChunks)
 		}

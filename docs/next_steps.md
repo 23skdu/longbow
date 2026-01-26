@@ -7,9 +7,11 @@ This document outlines the remaining tasks for Longbow development.
 ## Incomplete Tasks
 
 ### 1. I/O & Storage Optimization
+
 - **[NEW]** `internal/storage/benchmark/` - I/O performance benchmarks
 
 ### 2. Security Hardening
+
 - **[NEW]** `internal/security/` - Security utilities and validation
 - **[MODIFY]** Implement input sanitization and validation
 - **[MODIFY]** Add authentication and authorization
@@ -17,6 +19,7 @@ This document outlines the remaining tasks for Longbow development.
 - **[MODIFY]** Regular dependency security scanning
 
 ### 3. CI/CD Pipeline & Automation
+
 - **[COMPLETED]** `Makefile` - Standardized build and development commands
 - **[COMPLETED]** `Makefile` - Standardized build and development commands
 - **[COMPLETED]** `scripts/ci/` - CI utilities and deployment scripts
@@ -28,6 +31,7 @@ This document outlines the remaining tasks for Longbow development.
 - **[COMPLETED]** Fixed all syntax errors and linting issues in security package
 
 ### 4. Developer Experience Improvements
+
 - **[NEW]** `docs/development/` - Developer guides and onboarding
 - **[MODIFY]** Add code generation tools and templates
 - **[NEW]** `scripts/dev/` - Development utilities
@@ -35,19 +39,22 @@ This document outlines the remaining tasks for Longbow development.
 - **[NEW]** `internal/dev/` - Development helpers and debugging tools
 
 ### 5. Benchmarking & Performance Testing
+
 - **[COMPLETED]** `internal/storage/benchmark/` - I/O performance benchmarks
 - **[COMPLETED]** `internal/benchmark/io_benchmark_test.go` - I/O benchmark implementation
 - **[COMPLETED]** `internal/benchmark/throughput_test.go` - Throughput benchmarking
-- **[NEW]** `internal/benchmark/` - Standardized benchmarking framework
-- **[NEW]** `scripts/benchmark/` - Performance testing utilities
+- **[COMPLETED]** `internal/benchmark/` - Standardized benchmarking framework
+- **[COMPLETED]** `scripts/benchmark/` - Performance testing utilities
 - **[MODIFY]** Implement A/B testing capabilities
 - **[COMPLETED]** `docs/performance/` - Performance optimization guides
 
 ### 6. Documentation
+
 - **[MODIFY]** `docs/architecture.md` - Update with sequence diagrams for ingestion and search flows.
 - **[MODIFY]** Improve godoc comments for all exported types.
 
 ### 7. Success Criteria
+
 - [ ] RSS stabilizes at <10GB for soak tests.
 - [ ] Zero build failures across ARM64 and AMD64.
 - [ ] Test coverage >80% for critical paths.

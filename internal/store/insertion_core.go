@@ -51,8 +51,12 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 	// Make a defensive copy of the vector is avoided by copying into GraphData first.
 	// We rely on the copy at line 200 to provide a stable reference.
 	dims = int(h.dims.Load())
-
 	data := h.data.Load()
+
+	// Fix for race where we see new dims but old data pointer due to memory ordering or scheduling
+	if data != nil && dims > 0 && data.Dims != dims {
+		data = h.data.Load()
+	}
 
 	if h.config.AdaptiveMEnabled && !h.adaptiveMTriggered.Load() {
 		count := int(h.nodeCount.Load())
@@ -98,10 +102,10 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 
 				h.dims.Store(int32(newDims))
 				dims = newDims
-
-				data = h.data.Load()
 			}
 			h.initMu.Unlock()
+			// Reload data as it might have been updated by another thread (or us) during init/Grow
+			data = h.data.Load()
 		}
 	}
 

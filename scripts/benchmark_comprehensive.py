@@ -20,7 +20,7 @@ from collections import defaultdict
 # Config
 DATASET = "perf_test_v4"
 DIM = 384
-SIZES = [50000]
+SIZES = [3000, 7000, 15000, 25000, 50000]
 PROFILES_DIR = "profiles_comprehensive"
 DTYPE = "float32"
 

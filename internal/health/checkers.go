@@ -29,7 +29,7 @@ func (dc *DatabaseChecker) Name() string {
 }
 
 func (dc *DatabaseChecker) Check(ctx context.Context) *ComponentHealth {
-	ctx, span := dc.tracer.Start(ctx, "DatabaseChecker.Check")
+	_, span := dc.tracer.Start(ctx, "DatabaseChecker.Check")
 	defer span.End()
 
 	start := time.Now()
@@ -83,7 +83,7 @@ func (sc *StorageChecker) Name() string {
 }
 
 func (sc *StorageChecker) Check(ctx context.Context) *ComponentHealth {
-	ctx, span := sc.tracer.Start(ctx, "StorageChecker.Check")
+	_, span := sc.tracer.Start(ctx, "StorageChecker.Check")
 	defer span.End()
 
 	start := time.Now()
@@ -135,7 +135,7 @@ func (mc *MetricsChecker) Name() string {
 }
 
 func (mc *MetricsChecker) Check(ctx context.Context) *ComponentHealth {
-	ctx, span := mc.tracer.Start(ctx, "MetricsChecker.Check")
+	_, span := mc.tracer.Start(ctx, "MetricsChecker.Check")
 	defer span.End()
 
 	start := time.Now()
@@ -181,7 +181,7 @@ func (lc *LoggingChecker) Name() string {
 }
 
 func (lc *LoggingChecker) Check(ctx context.Context) *ComponentHealth {
-	ctx, span := lc.tracer.Start(ctx, "LoggingChecker.Check")
+	_, span := lc.tracer.Start(ctx, "LoggingChecker.Check")
 	defer span.End()
 
 	start := time.Now()
@@ -226,7 +226,7 @@ func (tc *TracingChecker) Name() string {
 }
 
 func (tc *TracingChecker) Check(ctx context.Context) *ComponentHealth {
-	ctx, span := tc.tracer.Start(ctx, "TracingChecker.Check")
+	_, span := tc.tracer.Start(ctx, "TracingChecker.Check")
 	defer span.End()
 
 	start := time.Now()

@@ -42,7 +42,7 @@ wait_for_node() {
 }
 
 echo "Building Longbow..."
-go build -o ./longbow cmd/longbow/main.go
+go build -o ./longbow ./cmd/longbow
 
 echo "Cleaning up old data and processes..."
 cleanup_ports

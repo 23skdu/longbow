@@ -1,11 +1,6 @@
 package store
 
-import (
-	"sync"
-)
-
 type DiskVectorStore struct {
-	mu   sync.RWMutex
 	path string
 	dim  int
 }

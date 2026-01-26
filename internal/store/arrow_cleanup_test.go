@@ -10,7 +10,7 @@ func TestArrowHNSW_Cleanup(t *testing.T) {
 	ds := NewDataset("test_cleanup", nil)
 	config := DefaultArrowHNSWConfig()
 
-	h := NewArrowHNSW(ds, config, nil)
+	h := NewArrowHNSW(ds, config)
 
 	// Verify initialization
 	assert.NotNil(t, h.data.Load())
@@ -23,10 +23,8 @@ func TestArrowHNSW_Cleanup(t *testing.T) {
 
 	// Verify cleanup
 	assert.Nil(t, h.data.Load())
-	assert.Nil(t, h.backend.Load())
 	assert.Nil(t, h.deleted)
 	assert.Nil(t, h.searchPool)
-	assert.Nil(t, h.batchComputer)
 	assert.Nil(t, h.dataset)
 	assert.Nil(t, h.locationStore)
 }
@@ -34,7 +32,7 @@ func TestArrowHNSW_Cleanup(t *testing.T) {
 func TestDataset_Close_Cascades(t *testing.T) {
 	ds := NewDataset("test_cascade", nil)
 	config := DefaultArrowHNSWConfig()
-	h := NewArrowHNSW(ds, config, nil)
+	h := NewArrowHNSW(ds, config)
 	ds.Index = h
 
 	assert.NotNil(t, ds.Index)

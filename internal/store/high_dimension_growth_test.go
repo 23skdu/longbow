@@ -41,7 +41,7 @@ func TestHNSW_HighDimensionGrowth(t *testing.T) {
 	config.EfConstruction = 100
 	config.InitialCapacity = 1024 // Start small to test growth
 
-	hnsw := NewArrowHNSW(ds, config, nil)
+	hnsw := NewArrowHNSW(ds, config)
 
 	// Track memory via runtime stats
 	var m1, m2 runtime.MemStats
@@ -156,7 +156,7 @@ func TestHNSW_HighDimensionGrowth_MemoryPressure(t *testing.T) {
 	config.M = 16
 	config.InitialCapacity = 512 // Very small initial capacity to force frequent growth
 
-	hnsw := NewArrowHNSW(ds, config, nil)
+	hnsw := NewArrowHNSW(ds, config)
 
 	// Track memory allocations via runtime
 	type memSample struct {

@@ -59,7 +59,7 @@ func TestDurability_EndToEnd(t *testing.T) {
 	rec1 := createDurabilityTestBatch(mem, 0, 10)
 	defer rec1.Release()
 
-	require.NoError(t, store1.writeToWAL(rec1, "test_ds", time.Now().UnixNano()))
+	require.NoError(t, store1.writeToWAL("test_ds", rec1, 1, time.Now().UnixNano()))
 	require.NoError(t, store1.ApplyDelta("test_ds", rec1, 1, time.Now().UnixNano()))
 	store1.WaitForIndexing("test_ds")
 
@@ -102,7 +102,7 @@ func TestDurability_SnapshotAndWAL(t *testing.T) {
 	// 2. Insert Batch A
 	recA := createDurabilityTestBatch(mem, 0, 5)
 	defer recA.Release()
-	require.NoError(t, store1.writeToWAL(recA, "ds_mixed", time.Now().UnixNano()))
+	require.NoError(t, store1.writeToWAL("ds_mixed", recA, 1, time.Now().UnixNano()))
 	require.NoError(t, store1.ApplyDelta("ds_mixed", recA, 1, time.Now().UnixNano()))
 	store1.WaitForIndexing("ds_mixed")
 
@@ -112,7 +112,7 @@ func TestDurability_SnapshotAndWAL(t *testing.T) {
 	// 4. Insert Batch B
 	recB := createDurabilityTestBatch(mem, 5, 5)
 	defer recB.Release()
-	require.NoError(t, store1.writeToWAL(recB, "ds_mixed", time.Now().UnixNano()))
+	require.NoError(t, store1.writeToWAL("ds_mixed", recB, 2, time.Now().UnixNano()))
 	require.NoError(t, store1.ApplyDelta("ds_mixed", recB, 2, time.Now().UnixNano()))
 	store1.WaitForIndexing("ds_mixed")
 
@@ -176,7 +176,7 @@ func TestDurability_IndexRebuild(t *testing.T) {
 	rec := b.NewRecordBatch()
 	defer rec.Release()
 
-	require.NoError(t, store1.writeToWAL(rec, "ds_vec", time.Now().UnixNano()))
+	require.NoError(t, store1.writeToWAL("ds_vec", rec, 1, time.Now().UnixNano()))
 	require.NoError(t, store1.ApplyDelta("ds_vec", rec, 1, time.Now().UnixNano()))
 	store1.WaitForIndexing("ds_vec")
 	require.NoError(t, store1.FlushWAL())
@@ -245,7 +245,7 @@ func TestDurability_WALTruncation(t *testing.T) {
 	rec := createDurabilityTestBatch(mem, 100, 1) // 1 record
 	defer rec.Release()
 
-	require.NoError(t, store1.writeToWAL(rec, "ds_dup", time.Now().UnixNano()))
+	require.NoError(t, store1.writeToWAL("ds_dup", rec, 1, time.Now().UnixNano()))
 	require.NoError(t, store1.ApplyDelta("ds_dup", rec, 1, 0))
 
 	// Snapshot

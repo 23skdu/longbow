@@ -68,7 +68,7 @@ func TestBulkDeferredConnections(t *testing.T) {
 	config.DataType = VectorTypeFloat32
 	config.InitialCapacity = numVecs
 
-	idx := NewArrowHNSW(ds, config, NewChunkedLocationStore())
+	idx := NewArrowHNSW(ds, config)
 	defer func() { _ = idx.Close() }()
 
 	// 4. Perform Bulk Insert
@@ -100,7 +100,7 @@ func TestBulkDeferredConnections(t *testing.T) {
 		i := rng.Intn(numVecs)
 		query := vectors[i]
 
-		res, err := idx.Search(context.Background(), query, 10, 100, nil)
+		res, err := idx.Search(context.Background(), query, 10, nil)
 		require.NoError(t, err)
 		require.NotEmpty(t, res)
 
@@ -109,7 +109,7 @@ func TestBulkDeferredConnections(t *testing.T) {
 		for _, c := range res {
 			if int(c.ID) == i {
 				found = true
-				require.InDelta(t, 0.0, c.Score, 1e-4)
+				require.InDelta(t, 0.0, c.Dist, 1e-4)
 				break
 			}
 		}

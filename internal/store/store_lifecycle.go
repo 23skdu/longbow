@@ -397,6 +397,13 @@ func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
 		}
 
 		if len(jobs) == 0 {
+			// Check for shutdown
+			select {
+			case <-s.stopChan:
+				return
+			default:
+			}
+
 			// No jobs, wait a bit
 			time.Sleep(10 * time.Millisecond)
 			continue

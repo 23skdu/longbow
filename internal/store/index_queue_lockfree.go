@@ -18,7 +18,6 @@ type IndexJobQueueLockFree struct {
 	stopChan chan struct{}
 	stopped  int32
 	stopOnce sync.Once
-	wg       sync.WaitGroup
 
 	estimatedBytes int64
 }

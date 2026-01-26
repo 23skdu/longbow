@@ -21,7 +21,7 @@ func TestArrowHNSW_MmapPersistence(t *testing.T) {
 	cfg.SQ8Enabled = true         // Persistence requires SQ8 (or PQ) in current DiskGraph V3
 	cfg.SQ8TrainingThreshold = 20 // Train after all 20 vectors
 
-	h1 := NewArrowHNSW(nil, cfg, nil)
+	h1 := NewArrowHNSW(nil, cfg)
 
 	// Insert 20 vectors to ensure training
 	vectors := make([][]float32, 20)
@@ -61,7 +61,7 @@ func TestArrowHNSW_MmapPersistence(t *testing.T) {
 
 	// 3. Load from Mmap (New Instance)
 	// Must use same config (especially SQ8 enabled)
-	h2 := NewArrowHNSW(nil, cfg, nil)
+	h2 := NewArrowHNSW(nil, cfg)
 	err = h2.LoadFromMmap(graphPath)
 	require.NoError(t, err)
 
@@ -94,7 +94,7 @@ func TestArrowHNSW_MmapPersistence(t *testing.T) {
 	v5, err := h2.getVectorAny(5)
 	t.Logf("Vector 5: %v, Err: %v", v5, err)
 
-	res, err := h2.Search(context.Background(), q, 1, 20, nil)
+	res, err := h2.Search(context.Background(), q, 1, nil)
 	t.Logf("Search Result: %+v", res)
 	require.NoError(t, err)
 	require.NotEmpty(t, res)
@@ -135,7 +135,7 @@ func TestArrowHNSW_MmapPersistence(t *testing.T) {
 	// Verify search finds new node 20 (InMemory) and old node 10 (Disk or Memory?)
 	// 5 and 6 have vector 5.
 	// 10 has vector 10. 20 has vector 10.
-	res2, err := h2.Search(context.Background(), newVec, 2, 50, nil) // Expect 20 and 10
+	res2, err := h2.Search(context.Background(), newVec, 2, nil) // Expect 20 and 10
 	t.Logf("Search(20) Result: %+v", res2)
 	require.NoError(t, err)
 	assert.True(t, len(res2) >= 2, "Should find at least 2 results")
@@ -166,7 +166,7 @@ func TestArrowHNSW_MmapPersistence(t *testing.T) {
 	// This should overwrite node 0's neighbor list in memory
 	// Verify node 0 still works
 	zeroVec := make([]float32, 16)
-	res3, err := h2.Search(context.Background(), zeroVec, 1, 20, nil)
+	res3, err := h2.Search(context.Background(), zeroVec, 1, nil)
 	require.NoError(t, err)
 	require.Equal(t, uint32(0), uint32(res3[0].ID))
 }

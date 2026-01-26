@@ -152,7 +152,7 @@ func TestAlignedShardedMutex_AdaptiveScaling(t *testing.T) {
 	var wg sync.WaitGroup
 	for i := 0; i < 20; i++ {
 		wg.Add(1)
-		go func(id int) {
+		go func(_ int) {
 			defer wg.Done()
 			// All goroutines compete for same shard
 			key := uint64(0)

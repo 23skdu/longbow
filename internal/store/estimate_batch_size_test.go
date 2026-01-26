@@ -31,7 +31,7 @@ func TestEstimateBatchSize(t *testing.T) {
 		}
 	}
 
-	rec := bld.NewRecord()
+	rec := bld.NewRecordBatch()
 	defer rec.Release()
 
 	size := estimateBatchSize(rec)

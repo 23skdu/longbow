@@ -24,10 +24,12 @@ func TestSQ8AutoTuning(t *testing.T) {
 	cfg := DefaultArrowHNSWConfig()
 	cfg.M = 16
 	cfg.EfConstruction = 50
+	cfg.EfConstruction = 50
 	cfg.SQ8Enabled = true
 	cfg.SQ8TrainingThreshold = 10 // Low threshold for testing
+	cfg.Dims = 16
 
-	idx := NewArrowHNSW(ds, cfg, nil)
+	idx := NewArrowHNSW(ds, cfg)
 
 	// 1. Insert 50 vectors (half threshold)
 	// These should be buffered and NOT SQ8 encoded yet.
@@ -99,7 +101,7 @@ func TestSQ8AutoTuning(t *testing.T) {
 	// Use batch helper for 1s
 	batchIdxs := make([]int, n2)
 	for k := range batchIdxs {
-		batchIdxs[k] = 1
+		batchIdxs[k] = 0
 	}
 	ids2, err := idx.AddBatch(context.Background(), []arrow.RecordBatch{rec2}, makeRangeHelper(n2), batchIdxs)
 	require.NoError(t, err)

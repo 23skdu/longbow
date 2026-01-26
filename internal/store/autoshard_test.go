@@ -19,7 +19,8 @@ func TestAutoShardingGetNeighbors(t *testing.T) {
 	var _ store.VectorIndex = idx
 
 	// Check GetNeighbors signature
-	_, err := idx.GetNeighbors(store.VectorID(0))
+	// Cast to uint32
+	_, err := idx.GetNeighbors(uint32(0))
 	// Expected error since no vectors inserted, but should build and run
 	assert.Error(t, err)
 }

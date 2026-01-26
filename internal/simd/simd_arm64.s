@@ -140,7 +140,7 @@ euc_f16_loop_8x:
     CMP     $8, R1
     BGE     euc_f16_loop_8x
 
-    // Reduction
+    // Final reduction of V0.S4 into F0
     VMOV    V0.S[1], V1.S[0]
     VMOV    V0.S[2], V2.S[0]
     VMOV    V0.S[3], V3.S[0]
@@ -154,14 +154,16 @@ euc_f16_tail:
     MOVHU.P 2(R0), R3
     MOVHU.P 2(R2), R4
     
+    VEOR    V1.B16, V1.B16, V1.B16
+    VEOR    V2.B16, V2.B16, V2.B16
     VMOV    R3, V1.H[0]
     VMOV    R4, V2.H[0]
     
+    
+    // Convert R3, R4 to float32
     WORD    $0x0e217823 
     WORD    $0x0e217844
     
-    VMOV    V3.S[0], V5.S[0]
-    VMOV    V4.S[0], V6.S[0]
     FSUBS   F4, F3, F5
     FMULS   F5, F5, F5
     FADDS   F5, F0, F0
@@ -218,6 +220,8 @@ dot_f16_tail:
     MOVHU.P 2(R0), R3
     MOVHU.P 2(R2), R4
     
+    VEOR    V1.B16, V1.B16, V1.B16
+    VEOR    V2.B16, V2.B16, V2.B16
     VMOV    R3, V1.H[0]
     VMOV    R4, V2.H[0]
     
@@ -310,6 +314,8 @@ cos_f16_tail:
     MOVHU.P 2(R0), R3
     MOVHU.P 2(R2), R4
     
+    VEOR    V1.B16, V1.B16, V1.B16
+    VEOR    V2.B16, V2.B16, V2.B16
     VMOV    R3, V1.H[0]
     VMOV    R4, V2.H[0]
     

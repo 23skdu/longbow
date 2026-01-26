@@ -18,7 +18,7 @@ func BenchmarkHNSW_InitializationOverhead(b *testing.B) {
 	// but here we want to measure steady state overhead of the "if dims > 0 && vectors == nil" check.
 	// So we use a single long-lived index.
 
-	h := NewArrowHNSW(nil, cfg, nil)
+	h := NewArrowHNSW(nil, cfg)
 	// Pre-set dims to avoid init mutex on every insert in this specific bench?
 	// Actually we want to measure standard flow.
 	h.dims.Store(128)
@@ -45,7 +45,7 @@ func BenchmarkHNSW_InitializationOverhead(b *testing.B) {
 func TestHNSW_DimensionTransition(t *testing.T) {
 	cfg := DefaultArrowHNSWConfig()
 	cfg.InitialCapacity = 10
-	h := NewArrowHNSW(nil, cfg, nil)
+	h := NewArrowHNSW(nil, cfg)
 
 	// Initially dims = 0
 	require.Equal(t, int32(0), h.dims.Load())

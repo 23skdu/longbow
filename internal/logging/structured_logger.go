@@ -232,15 +232,6 @@ func getFields(fields ...map[string]any) map[string]any {
 	return result
 }
 
-func getComponent(ctx context.Context) string {
-	if component := ctx.Value("component"); component != nil {
-		if comp, ok := component.(string); ok {
-			return comp
-		}
-	}
-	return ""
-}
-
 type GlobalLogger struct {
 	*StructuredLogger
 }

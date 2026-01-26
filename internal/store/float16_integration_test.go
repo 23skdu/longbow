@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	lbtypes "github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow/float16"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -18,9 +19,9 @@ func TestArrowHNSW_Float16_ZeroCopy(t *testing.T) {
 	config.M = 16
 	config.EfConstruction = 100
 	config.Float16Enabled = true
-	config.DataType = VectorTypeFloat16 // Explicitly use native Float16 storage
+	config.DataType = lbtypes.VectorTypeFloat16 // Explicitly use native Float16 storage
 
-	idx := NewArrowHNSW(nil, config, nil)
+	idx := NewArrowHNSW(nil, config)
 	defer func() { _ = idx.Close() }()
 
 	count := 100
@@ -61,14 +62,14 @@ func TestArrowHNSW_Float16_ZeroCopy(t *testing.T) {
 	// 5. Search with Native Type
 	// Search for vector 0, expect ID 0
 	query := vecsF16[0]
-	results, err := idx.Search(context.Background(), query, 10, 50, nil)
+	results, err := idx.Search(context.Background(), query, 10, nil)
 	require.NoError(t, err)
 	require.NotEmpty(t, results)
 
 	assert.Equal(t, uint32(0), uint32(results[0].ID))
 	// Score for 0 distance might be 0 (Euclidean)
 	if config.Metric == MetricEuclidean {
-		assert.InDelta(t, float32(0), results[0].Score, 1e-4)
+		assert.InDelta(t, float32(0), results[0].Dist, 1e-4)
 	}
 
 	// 6. Test Neighbors fallback (optional/internal)

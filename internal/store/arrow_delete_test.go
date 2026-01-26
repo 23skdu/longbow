@@ -3,6 +3,9 @@ package store
 import (
 	"context"
 	"testing"
+
+	lbtypes "github.com/23skdu/longbow/internal/store/types"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestDelete(t *testing.T) {
@@ -12,13 +15,12 @@ func TestDelete(t *testing.T) {
 	config.EfConstruction = 100
 
 	// Create index with dimensions set
-	index := NewArrowHNSW(nil, config, nil)
+	index := NewArrowHNSW(nil, config)
 	index.dims.Store(128)
 
 	// Initialize GraphData manually with dimensions
-	data := NewGraphData(100, 128, false, false, 0, false, false, false, VectorTypeFloat32)
+	data := lbtypes.NewGraphData(100, 128, false, false, 0, false, false, false, lbtypes.VectorTypeFloat32)
 	index.data.Store(data)
-	index.backend.Store(data) // Sync backend pointer
 
 	// Manually allocate chunks for testing using ensureChunk
 	// We need to ensure chunks exist for the capacity we created (64 => 1 chunk if ChunkSize=1024)
@@ -27,7 +29,7 @@ func TestDelete(t *testing.T) {
 		// Mock dimensions
 		dims := 128
 		var err error
-		data, err = index.ensureChunk(data, uint32(i), 0, dims)
+		data, err = index.ensureChunk(data, i, 0, dims)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -66,18 +68,20 @@ func TestDelete(t *testing.T) {
 	// Verify they all exist in search
 	query := make([]float32, 128)
 	query[0] = 5.0
-	_, _ = index.Search(context.Background(), query, 10, 20, nil)
+	_, err := index.Search(context.Background(), query, 10, nil)
+	assert.NoError(t, err)
 
 	// Wait, if neighbors are not connected, Search will only find entry point.
 	// For Delete test, we just need to verify that if a node IS found, it's filtered.
 	// Let's connect them all to node 0.
-	ctx := index.searchPool.Get().(*ArrowSearchContext)
+	ctx := index.searchPool.Get()
 	defer index.searchPool.Put(ctx)
 	for i := 1; i < 10; i++ {
 		index.AddConnection(ctx, data, 0, uint32(i), 0, 16, 0.0)
 	}
 
-	results, _ := index.Search(context.Background(), query, 10, 20, nil)
+	results, err := index.Search(context.Background(), query, 10, nil)
+	assert.NoError(t, err)
 	if len(results) != 10 {
 		t.Errorf("expected 10 results, got %d", len(results))
 	}
@@ -86,7 +90,8 @@ func TestDelete(t *testing.T) {
 	_ = index.Delete(5)
 
 	// Search again
-	results, _ = index.Search(context.Background(), query, 10, 20, nil)
+	results, err = index.Search(context.Background(), query, 10, nil)
+	assert.NoError(t, err)
 	// Node 5 should be missing
 	found5 := false
 	for _, res := range results {
@@ -103,7 +108,8 @@ func TestDelete(t *testing.T) {
 		_ = index.Delete(uint32(i))
 	}
 
-	results, _ = index.Search(context.Background(), query, 10, 20, nil)
+	results, err = index.Search(context.Background(), query, 10, nil)
+	assert.NoError(t, err)
 	if len(results) != 0 {
 		t.Errorf("expected 0 results, got %d", len(results))
 	}

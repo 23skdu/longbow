@@ -303,16 +303,17 @@ func TestShardedHNSW_GetLocation(t *testing.T) {
 	}
 
 	// Verify retrieval
-	loc, ok := sharded.GetLocation(VectorID(5))
+	locAny, ok := sharded.GetLocation(uint32(5))
 	if !ok {
 		t.Error("expected location for ID 5")
 	}
+	loc := locAny.(Location)
 	if loc.RowIdx != 5 {
 		t.Errorf("expected row idx 5, got %d", loc.RowIdx)
 	}
 
 	// Non-existent ID
-	_, ok = sharded.GetLocation(VectorID(999))
+	_, ok = sharded.GetLocation(uint32(999))
 	if ok {
 		t.Error("expected not found for ID 999")
 	}

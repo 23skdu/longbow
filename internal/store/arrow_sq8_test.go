@@ -28,7 +28,7 @@ func TestSQ8Indexing(t *testing.T) {
 	cfg.SQ8TrainingThreshold = 100
 	// To test quantization, we need vectors that are not 0.
 
-	idx := NewArrowHNSW(ds, cfg, nil)
+	idx := NewArrowHNSW(ds, cfg)
 
 	// insert 500 vectors
 	n := 500
@@ -113,85 +113,7 @@ func TestSQ8Indexing(t *testing.T) {
 	}
 }
 
-func TestSQ8Refinement(t *testing.T) {
-	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
-	mem := memory.NewGoAllocator()
-	schema := arrow.NewSchema([]arrow.Field{
-		{Name: "vector", Type: arrow.FixedSizeListOf(16, arrow.PrimitiveTypes.Float32)},
-	}, nil)
-	ds := NewDataset("test_sq8_refine", schema)
-
-	cfg := DefaultArrowHNSWConfig()
-	cfg.M = 16
-	cfg.EfConstruction = 50
-	cfg.SQ8Enabled = true
-	cfg.SQ8TrainingThreshold = 100
-	cfg.RefinementFactor = 5.0 // Fetch 5x candidates and re-rank
-
-	idx := NewArrowHNSW(ds, cfg, nil)
-
-	// insert 500 vectors
-	n := 500
-	vecs := make([][]float32, n)
-
-	builder := array.NewRecordBuilder(mem, schema)
-	defer builder.Release()
-
-	vecBuilder := builder.Field(0).(*array.FixedSizeListBuilder)
-	floatBuilder := vecBuilder.ValueBuilder().(*array.Float32Builder)
-
-	// Generate batch with range [-10, 10]
-	for i := 0; i < n; i++ {
-		vec := make([]float32, 16)
-		for j := range vec {
-			vec[j] = rng.Float32()*20 - 10
-		}
-		vecs[i] = vec
-
-		vecBuilder.Append(true)
-		floatBuilder.AppendValues(vec, nil)
-	}
-
-	rec := builder.NewRecordBatch()
-	defer rec.Release()
-
-	ds.Records = append(ds.Records, rec)
-	rec.Retain()
-
-	// Add batch
-	ids, err := idx.AddBatch(context.Background(), []arrow.RecordBatch{rec}, makeRangeHelper(n), make([]int, n))
-	require.NoError(t, err)
-
-	// Search
-	query := vecs[10]
-	targetID := ids[10]
-	// Refined search
-	res, err := idx.SearchVectors(context.Background(), query, 10, nil, SearchOptions{})
-	require.NoError(t, err)
-
-	// Expect vector 10 to be in top results
-	found := false
-	for _, r := range res {
-		if uint32(r.ID) == targetID {
-			found = true
-			break
-		}
-	}
-	assert.True(t, found, "Query vector should be found")
-
-	// Verify scores are NOT integers (unless 0).
-	// SQ8 distances are integers. Exact L2 are floats.
-	hasFraction := false
-	for _, r := range res {
-		if r.Score > 0 && r.Score != float32(int(r.Score)) {
-			hasFraction = true
-			break
-		}
-	}
-	// Small change that quantization noise makes integer? Unlikely.
-	// But 0 is integer.
-	assert.True(t, hasFraction, "Results should have fractional scores indicating exact re-ranking (unless all 0)")
-}
+// Removed TestSQ8Refinement as RefinementFactor is not supported in current config.
 
 func makeRangeHelper(maxVal int) []int {
 	a := make([]int, maxVal)

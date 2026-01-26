@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/23skdu/longbow/internal/core"
 	"github.com/23skdu/longbow/internal/query"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
@@ -81,9 +82,9 @@ func TestShardedHNSW_Compaction(t *testing.T) {
 	require.NoError(t, err)
 
 	// 4. Verify Search Uses New Location
-	// We need to inspect location store
-	loc, ok := idx.GetLocation(VectorID(0))
+	locAny, ok := idx.GetLocation(uint32(0))
 	require.True(t, ok)
+	loc := locAny.(core.Location)
 	assert.Equal(t, 10, loc.BatchIdx)
 	assert.Equal(t, 0, loc.RowIdx)
 
@@ -188,8 +189,9 @@ func TestShardedHNSW_DynamicGrowth(t *testing.T) {
 
 	// Verify all items are findable
 	for i := 0; i < 25; i++ {
-		loc, ok := idx.GetLocation(VectorID(i))
+		locAny, ok := idx.GetLocation(uint32(i))
 		require.True(t, ok, "ID %d not found", i)
+		loc := locAny.(core.Location)
 		assert.Equal(t, i, loc.RowIdx)
 	}
 }

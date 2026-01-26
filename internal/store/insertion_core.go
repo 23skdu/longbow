@@ -114,7 +114,8 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 	// SQ8 Training: Must be done BEFORE acquiring RLock to avoid recursive Lock/RLock deadlock
 	if h.config.SQ8Enabled && dims > 0 {
 		if vecF32, ok := vec.([]float32); ok {
-			h.ensureTrained(int(h.locationStore.MaxID()), [][]float32{vecF32})
+			// Use nodeCount as an approximation of total vectors seen including this one
+			h.ensureTrained(int(h.nodeCount.Load())+1, [][]float32{vecF32})
 		}
 	}
 
@@ -151,7 +152,8 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 	// Store Vector (Copy for L2 locality)
 	// Skip if DiskStore is enabled (already written via BatchAppend or will be written)
 	// Note: We check data.DiskStore which is populated if offloading is active.
-	if dims > 0 && data.DiskStore == nil {
+	// FIX: Check if DiskGraph is loaded via atomic pointer, not data.DiskStore if it's nil
+	if dims > 0 && h.diskGraph.Load() == nil {
 		if err := data.SetVector(id, vec); err != nil {
 			return err
 		}

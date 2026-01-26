@@ -98,7 +98,7 @@ func runDatasetCycle(t *testing.T, ctx context.Context, s *VectorStore, name str
 		}
 	}
 
-	rec := bld.NewRecord()
+	rec := bld.NewRecordBatch()
 	defer rec.Release()
 
 	beforeStore := s.currentMemory.Load()

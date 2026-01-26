@@ -36,16 +36,20 @@ func TestAddBatch_Bulk_Typed(t *testing.T) {
 			config.DataType = tt.dataType
 			config.Dims = tt.dims
 
-			idx := NewArrowHNSW(nil, config, nil)
+			idx := NewArrowHNSW(nil, config)
 			defer func() { _ = idx.Close() }()
 
 			// Generate 1100 vectors to ensure Bulk Path (> 1000)
 			numVecs := 1100
 
 			// Build Record Batch
+			physDims := tt.dims
+			if tt.dataType == VectorTypeComplex64 || tt.dataType == VectorTypeComplex128 {
+				physDims = tt.dims * 2
+			}
 			builder := array.NewRecordBuilder(pool, arrow.NewSchema(
 				[]arrow.Field{
-					{Name: "vector", Type: arrow.FixedSizeListOf(int32(tt.dims), getArrowType(tt.dataType))},
+					{Name: "vector", Type: arrow.FixedSizeListOf(int32(physDims), getArrowType(tt.dataType))},
 				}, nil,
 			))
 			defer builder.Release()
@@ -147,7 +151,7 @@ func TestAddBatchBulk_DimensionMismatch(t *testing.T) {
 	config.DataType = VectorTypeFloat32
 	config.Dims = dims
 
-	idx := NewArrowHNSW(ds, config, nil)
+	idx := NewArrowHNSW(ds, config)
 	defer func() { _ = idx.Close() }()
 
 	// Create vectors with wrong dimension (16 instead of 8)

@@ -23,7 +23,7 @@ func TestArrowHNSW_PoolMetrics(t *testing.T) {
 	config.Dims = 128
 
 	ds := &Dataset{Name: "metrics_test"}
-	idx := NewArrowHNSW(ds, config, nil)
+	idx := NewArrowHNSW(ds, config)
 
 	// Baseline
 	getBefore := getCounterValue(metrics.HNSWInsertPoolGetTotal)
@@ -46,7 +46,7 @@ func TestArrowHNSW_PoolMetrics(t *testing.T) {
 	searchGetBefore := getCounterValue(metrics.HNSWSearchPoolGetTotal)
 	searchPutBefore := getCounterValue(metrics.HNSWSearchPoolPutTotal)
 
-	_, err = idx.Search(context.Background(), vec, 1, 10, nil)
+	_, err = idx.Search(context.Background(), vec, 1, nil)
 	require.NoError(t, err)
 
 	searchGetAfter := getCounterValue(metrics.HNSWSearchPoolGetTotal)

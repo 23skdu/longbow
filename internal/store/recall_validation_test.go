@@ -36,70 +36,51 @@ func TestRecallValidation(t *testing.T) {
 		{"Medium_10K_Recall@10", 10000, 384, 100, 10, 0.990, &store.ArrowHNSWConfig{
 			M: 48, MMax: 96, MMax0: 96, EfConstruction: 400,
 			SelectionHeuristicLimit: 0,
-			Alpha:                   1.0,
-			KeepPrunedConnections:   true,
 			InitialCapacity:         10000,
 		}},
 		{"Medium_10K_SQ8_Recall@10", 10000, 384, 100, 10, 0.950, &store.ArrowHNSWConfig{
 			M: 48, MMax: 96, MMax0: 96, EfConstruction: 400,
-			SQ8Enabled:       true,
-			RefinementFactor: 2.0,
-			InitialCapacity:  10000,
+			SQ8Enabled:      true,
+			InitialCapacity: 10000,
 		}},
 		{"Medium_50K_Recall@10", 50000, 384, 100, 10, 0.920, &store.ArrowHNSWConfig{
 			M: 64, MMax: 128, MMax0: 128, EfConstruction: 600,
 			SelectionHeuristicLimit: 0,
-			Alpha:                   1.0,
-			KeepPrunedConnections:   false,
 			SQ8Enabled:              false,
-			RefinementFactor:        1.0,
 			InitialCapacity:         50000,
 		}},
 		{"Large_100K_Recall@10", 100000, 384, 100, 10, 0.880, &store.ArrowHNSWConfig{
 			M: 64, MMax: 128, MMax0: 128, EfConstruction: 400,
 			SelectionHeuristicLimit: 128, // Reduced from 400 to fix low recall issue
-			Alpha:                   1.0,
-			KeepPrunedConnections:   true,
 			SQ8Enabled:              false,
-			RefinementFactor:        1.0,
 			DataType:                store.VectorTypeFloat32,
 		}},
 		{"Large_500K_Recall@10", 500000, 384, 100, 10, 0.850, &store.ArrowHNSWConfig{
 			M: 96, MMax: 192, MMax0: 192, EfConstruction: 1000,
 			SelectionHeuristicLimit: 400,
-			Alpha:                   1.0,
-			KeepPrunedConnections:   true,
 			SQ8Enabled:              false,
-			RefinementFactor:        1.0,
 			DataType:                store.VectorTypeFloat32,
 		}},
 		{"Dim_128_100K_Recall@10", 100000, 128, 100, 10, 0.990, &store.ArrowHNSWConfig{
 			M: 48, MMax: 96, MMax0: 96, EfConstruction: 600,
-			Alpha:    1.0,
 			DataType: store.VectorTypeFloat32,
 		}},
 		{"Dim_768_20K_Recall@10", 20000, 768, 100, 10, 0.990, &store.ArrowHNSWConfig{
 			M: 48, MMax: 96, MMax0: 96, EfConstruction: 1000,
-			Alpha:    1.0,
 			DataType: store.VectorTypeFloat32,
 		}},
 		{"Dim_1536_20K_Recall@10", 20000, 1536, 100, 10, 0.990, &store.ArrowHNSWConfig{
 			M: 48, MMax: 96, MMax0: 96, EfConstruction: 1000,
-			Alpha:    1.0,
 			DataType: store.VectorTypeFloat32,
 		}},
 		{"Stress_500K_128D_Recall@10", 500000, 128, 50, 10, 0.900, &store.ArrowHNSWConfig{
 			M: 48, MMax: 96, MMax0: 96, EfConstruction: 400,
-			Alpha:    1.0,
 			DataType: store.VectorTypeFloat32,
 		}},
 		{"Huge_1M_Recall@10", 1000000, 384, 100, 10, 0.850, &store.ArrowHNSWConfig{
 			M: 96, MMax: 192, MMax0: 192, EfConstruction: 1200,
 			SelectionHeuristicLimit: 400,
-			Alpha:                   1.0,
-			KeepPrunedConnections:   true,
 			SQ8Enabled:              true,
-			RefinementFactor:        2.0,
 		}},
 	}
 
@@ -178,7 +159,7 @@ func measureRecall(t *testing.T, numVectors, dim, numQueries, k int, cfg *store.
 	} else {
 		config = store.DefaultArrowHNSWConfig()
 	}
-	hnsw2Index := store.NewArrowHNSW(ds, config, nil)
+	hnsw2Index := store.NewArrowHNSW(ds, config)
 
 	// Validate that vectors can be retrieved correctly from Arrow
 	// This ensures zero-copy retrieval is working
@@ -260,7 +241,9 @@ func measureRecall(t *testing.T, numVectors, dim, numQueries, k int, cfg *store.
 				query := queries[qIdx]
 
 				// SIMD batch distance calculation
-				simd.EuclideanDistanceBatch(query, vectors, dists)
+				if err := simd.EuclideanDistanceBatch(query, vectors, dists); err != nil {
+					return err
+				}
 
 				// Find top K
 				type idDist struct {
@@ -305,7 +288,7 @@ func measureRecall(t *testing.T, numVectors, dim, numQueries, k int, cfg *store.
 		idx := i
 		eg.Go(func() error {
 			query := queries[idx]
-			hnsw2Results, err := hnsw2Index.Search(context.Background(), query, k+1, k*200, nil)
+			hnsw2Results, err := hnsw2Index.Search(context.Background(), query, k+1, nil)
 			if err != nil {
 				return err
 			}

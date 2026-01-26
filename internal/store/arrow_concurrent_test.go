@@ -14,7 +14,7 @@ import (
 // TestConcurrentSearch validates thread-safe concurrent search operations.
 func TestConcurrentSearch(t *testing.T) {
 	dataset := &Dataset{Name: "test"}
-	index := NewArrowHNSW(dataset, DefaultArrowHNSWConfig(), nil)
+	index := NewArrowHNSW(dataset, DefaultArrowHNSWConfig())
 
 	// Create a simple index with a few nodes
 	// Note: This test validates the locking mechanism works
@@ -32,7 +32,7 @@ func TestConcurrentSearch(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for j := 0; j < numSearches; j++ {
-				_, err := index.Search(context.Background(), query, 10, 20, nil)
+				_, err := index.Search(context.Background(), query, 10, nil)
 				if err != nil {
 					t.Errorf("concurrent search failed: %v", err)
 				}
@@ -82,7 +82,7 @@ func TestConcurrentSearchAndInsert(t *testing.T) {
 		Records: []arrow.RecordBatch{batch},
 	}
 
-	index := NewArrowHNSW(dataset, DefaultArrowHNSWConfig(), nil)
+	index := NewArrowHNSW(dataset, DefaultArrowHNSWConfig())
 
 	query := make([]float32, dim)
 
@@ -94,7 +94,7 @@ func TestConcurrentSearchAndInsert(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for j := 0; j < 50; j++ {
-				_, _ = index.Search(context.Background(), query, 10, 20, nil)
+				_, _ = index.Search(context.Background(), query, 10, nil)
 				time.Sleep(time.Microsecond)
 			}
 		}()
@@ -126,13 +126,13 @@ func TestConcurrentSearchAndInsert(t *testing.T) {
 // BenchmarkConcurrentSearch benchmarks concurrent search performance.
 func BenchmarkConcurrentSearch(b *testing.B) {
 	dataset := &Dataset{Name: "test"}
-	index := NewArrowHNSW(dataset, DefaultArrowHNSWConfig(), nil)
+	index := NewArrowHNSW(dataset, DefaultArrowHNSWConfig())
 
 	query := []float32{1.0, 2.0, 3.0}
 
 	b.Run("Sequential", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			_, _ = index.Search(context.Background(), query, 10, 20, nil)
+			_, _ = index.Search(context.Background(), query, 10, nil)
 		}
 	})
 
@@ -140,7 +140,7 @@ func BenchmarkConcurrentSearch(b *testing.B) {
 		b.SetParallelism(4)
 		b.RunParallel(func(pb *testing.PB) {
 			for pb.Next() {
-				_, _ = index.Search(context.Background(), query, 10, 20, nil)
+				_, _ = index.Search(context.Background(), query, 10, nil)
 			}
 		})
 	})
@@ -149,7 +149,7 @@ func BenchmarkConcurrentSearch(b *testing.B) {
 		b.SetParallelism(8)
 		b.RunParallel(func(pb *testing.PB) {
 			for pb.Next() {
-				_, _ = index.Search(context.Background(), query, 10, 20, nil)
+				_, _ = index.Search(context.Background(), query, 10, nil)
 			}
 		})
 	})
@@ -158,7 +158,7 @@ func BenchmarkConcurrentSearch(b *testing.B) {
 // BenchmarkSearchLatency benchmarks search latency distribution.
 func BenchmarkSearchLatency(b *testing.B) {
 	dataset := &Dataset{Name: "test"}
-	index := NewArrowHNSW(dataset, DefaultArrowHNSWConfig(), nil)
+	index := NewArrowHNSW(dataset, DefaultArrowHNSWConfig())
 
 	query := make([]float32, 384)
 	for i := range query {
@@ -167,20 +167,21 @@ func BenchmarkSearchLatency(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = index.Search(context.Background(), query, 10, 20, nil)
+		_, _ = index.Search(context.Background(), query, 10, nil)
 	}
 }
 
 // BenchmarkInsertThroughput benchmarks insert throughput.
 func BenchmarkInsertThroughput(b *testing.B) {
 	dataset := &Dataset{Name: "test"}
-	index := NewArrowHNSW(dataset, DefaultArrowHNSWConfig(), nil)
+	index := NewArrowHNSW(dataset, DefaultArrowHNSWConfig())
 
 	lg := NewLevelGenerator(1.44269504089)
 
+	query := make([]float32, 384)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		level := lg.Generate()
-		_ = index.Insert(uint32(i), level)
+		_ = index.InsertWithVector(uint32(i), query, level)
 	}
 }

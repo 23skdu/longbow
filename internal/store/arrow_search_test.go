@@ -11,10 +11,10 @@ import (
 
 func TestSearch_EmptyIndex(t *testing.T) {
 	dataset := &Dataset{Name: "test"}
-	index := NewArrowHNSW(dataset, DefaultArrowHNSWConfig(), nil)
+	index := NewArrowHNSW(dataset, DefaultArrowHNSWConfig())
 
 	query := []float32{1.0, 2.0, 3.0}
-	results, err := index.Search(context.Background(), query, 10, 20, nil)
+	results, err := index.Search(context.Background(), query, 10, nil)
 
 	if err != nil {
 		t.Fatalf("Search failed: %v", err)
@@ -27,12 +27,12 @@ func TestSearch_EmptyIndex(t *testing.T) {
 
 func TestSearch_InvalidK(t *testing.T) {
 	dataset := &Dataset{Name: "test"}
-	index := NewArrowHNSW(dataset, DefaultArrowHNSWConfig(), nil)
+	index := NewArrowHNSW(dataset, DefaultArrowHNSWConfig())
 
 	query := []float32{1.0, 2.0, 3.0}
 
 	// k = 0 should return empty results
-	results, err := index.Search(context.Background(), query, 0, 20, nil)
+	results, err := index.Search(context.Background(), query, 0, nil)
 	if err != nil {
 		t.Fatalf("Search failed: %v", err)
 	}
@@ -41,7 +41,7 @@ func TestSearch_InvalidK(t *testing.T) {
 	}
 
 	// k < 0 should return empty results
-	results, err = index.Search(context.Background(), query, -1, 20, nil)
+	results, err = index.Search(context.Background(), query, -1, nil)
 	if err != nil {
 		t.Fatalf("Search failed: %v", err)
 	}
@@ -54,7 +54,7 @@ func TestArrowSearchContext_Pooling(t *testing.T) {
 	pool := NewArrowSearchContextPool()
 
 	// Get context
-	ctx1 := pool.Get().(*ArrowSearchContext)
+	ctx1 := pool.Get()
 	if ctx1 == nil {
 		t.Fatal("pool.Get() returned nil")
 	}
@@ -67,7 +67,7 @@ func TestArrowSearchContext_Pooling(t *testing.T) {
 	pool.Put(ctx1)
 
 	// Get again - should be reused
-	ctx2 := pool.Get().(*ArrowSearchContext)
+	ctx2 := pool.Get()
 	if ctx2 == nil {
 		t.Fatal("pool.Get() returned nil on second call")
 	}
@@ -94,7 +94,7 @@ func BenchmarkSearch_SmallIndex(b *testing.B) {
 
 	config := DefaultArrowHNSWConfig()
 	config.EfConstruction = 100
-	index := NewArrowHNSW(dataset, config, nil)
+	index := NewArrowHNSW(dataset, config)
 
 	// Bulk Insert
 	// Assuming location 0..n map to vectors
@@ -112,7 +112,7 @@ func BenchmarkSearch_SmallIndex(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := index.Search(context.Background(), query, 10, 50, nil)
+		_, err := index.Search(context.Background(), query, 10, nil)
 		if err != nil {
 			b.Fatalf("search failed: %v", err)
 		}
@@ -163,7 +163,7 @@ func BenchmarkSearch_LargeIndex(b *testing.B) {
 
 	config := DefaultArrowHNSWConfig()
 	config.EfConstruction = 100
-	index := NewArrowHNSW(dataset, config, nil)
+	index := NewArrowHNSW(dataset, config)
 
 	// Bulk Insert
 	for i := 0; i < n; i++ {
@@ -180,7 +180,7 @@ func BenchmarkSearch_LargeIndex(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := index.Search(context.Background(), query, 10, 50, nil)
+		_, err := index.Search(context.Background(), query, 10, nil)
 		if err != nil {
 			b.Fatalf("search failed: %v", err)
 		}

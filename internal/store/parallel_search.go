@@ -44,7 +44,7 @@ func (h *HNSWIndex) SetParallelSearchConfig(cfg ParallelSearchConfig) {
 }
 
 // processResultsParallel processes HNSW neighbors using worker pool
-func (h *HNSWIndex) processResultsParallel(ctx context.Context, query []float32, neighbors []hnsw.Node[VectorID], k int, filters []qry.Filter) []SearchResult {
+func (h *HNSWIndex) processResultsParallel(ctx context.Context, query []float32, neighbors []hnsw.Node[VectorID], k int, filters []qry.Filter) []SearchResult { //nolint:unparam
 	cfg := h.getParallelSearchConfig()
 	numWorkers := cfg.Workers
 	if numWorkers <= 0 {

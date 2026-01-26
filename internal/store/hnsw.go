@@ -30,9 +30,7 @@ type HNSWIndex struct {
 	dims          int
 	dimsOnce      sync.Once
 
-	vectorColIdx  atomic.Int32
-	currentEpoch  atomic.Uint64
-	activeReaders atomic.Int64
+	vectorColIdx atomic.Int32
 
 	resultPool *resultPool
 	searchPool *SearchPool
@@ -42,7 +40,6 @@ type HNSWIndex struct {
 	pqTrainingThreshold int
 	pqEncoder           *pq.PQEncoder
 	pqCodes             [][]uint8
-	pqCodesMu           sync.RWMutex
 
 	parallelConfig ParallelSearchConfig
 
@@ -142,11 +139,6 @@ func (h *HNSWIndex) AddByLocation(ctx context.Context, batchIdx, rowIdx int) (ui
 	loc := Location{BatchIdx: batchIdx, RowIdx: rowIdx}
 	h.locationStore.Set(vid, loc)
 
-	vec := h.getVector(vid)
-	if vec != nil {
-		// assuming coder/hnsw has some insertion or we handle it via Graph field directly if public
-		// The original code had Graph field public.
-	}
 	return id, nil
 }
 

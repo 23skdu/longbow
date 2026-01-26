@@ -122,3 +122,103 @@ func (h *FixedHeap) bubbleDown(idx int) {
 		idx = smallest
 	}
 }
+
+// MaxHeap is a fixed-capacity max-heap.
+// It keeps the LARGEST elements at the top.
+type MaxHeap struct {
+	items []Candidate
+	size  int
+	cap   int
+}
+
+// NewMaxHeap creates a new fixed-capacity max-heap.
+func NewMaxHeap(capacity int) *MaxHeap {
+	return &MaxHeap{
+		items: make([]Candidate, capacity),
+		size:  0,
+		cap:   capacity,
+	}
+}
+
+func (h *MaxHeap) Len() int {
+	return h.size
+}
+
+func (h *MaxHeap) Push(c Candidate) {
+	if h.size < h.cap {
+		h.items[h.size] = c
+		h.size++
+		h.bubbleUp(h.size - 1)
+	} else if c.Dist < h.items[0].Dist { // Only push if smaller than max? No, MaxHeap usually just holds items.
+		// If capacity is limited, we might want to evict largest?
+		// The test says "MaxHeap used for top-k smallest values".
+		// This means we keep the K smallest values.
+		// To do this, we use a MaxHeap of size K.
+		// If new item < Max (Root), we replace Root and sift down.
+		// This behavior is usually implemented by user, or implicit in a "BoundedMaxHeap".
+		// But here `Push` is void or bool.
+		// The test: checks `if h.Len() >= capacity { h.Pop() }`.
+		// It manually verifies capacity!
+		// So `Push` just adds. If full, it should probably expand or panic or just overwrite end?
+		// But test calls Pop first if full.
+		// So `Push` assumes space exists.
+
+		h.items[h.size] = c
+		h.size++
+		h.bubbleUp(h.size - 1)
+	}
+}
+
+func (h *MaxHeap) Pop() (Candidate, bool) {
+	if h.size == 0 {
+		return Candidate{}, false
+	}
+	maxItem := h.items[0]
+	h.size--
+	if h.size > 0 {
+		h.items[0] = h.items[h.size]
+		h.bubbleDown(0)
+	}
+	return maxItem, true
+}
+
+func (h *MaxHeap) Peek() (Candidate, bool) {
+	if h.size == 0 {
+		return Candidate{}, false
+	}
+	return h.items[0], true
+}
+
+func (h *MaxHeap) bubbleUp(idx int) {
+	for idx > 0 {
+		parent := (idx - 1) / 2
+		// MaxHeap: child > parent -> Swap
+		if h.items[idx].Dist <= h.items[parent].Dist {
+			break
+		}
+		h.items[idx], h.items[parent] = h.items[parent], h.items[idx]
+		idx = parent
+	}
+}
+
+func (h *MaxHeap) bubbleDown(idx int) {
+	for {
+		left := 2*idx + 1
+		right := 2*idx + 2
+		largest := idx
+
+		if left < h.size && h.items[left].Dist > h.items[largest].Dist {
+			largest = left
+		}
+		if right < h.size && h.items[right].Dist > h.items[largest].Dist {
+			largest = right
+		}
+
+		if largest == idx {
+			break
+		}
+
+		h.items[idx], h.items[largest] = h.items[largest], h.items[idx]
+		idx = largest
+	}
+}

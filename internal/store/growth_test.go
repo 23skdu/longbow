@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	lbtypes "github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/stretchr/testify/require"
 )
@@ -53,9 +54,9 @@ func TestHighDimGrowth(t *testing.T) {
 	config.M = 16
 	config.EfConstruction = 100
 	config.Dims = dims
-	config.DataType = VectorTypeFloat32
+	config.DataType = lbtypes.VectorTypeFloat32
 
-	idx := NewArrowHNSW(ds, config, NewChunkedLocationStore())
+	idx := NewArrowHNSW(ds, config)
 	defer func() { _ = idx.Close() }()
 
 	// Initial State
@@ -99,11 +100,11 @@ func TestHighDimGrowth(t *testing.T) {
 	// Search for specific vectors and ensure they are found as top result (distance 0)
 	for i := 0; i < numVecs; i += 50 { // Sample check
 		query := vectors[i]
-		res, err := idx.Search(context.Background(), query, 1, 100, nil)
+		res, err := idx.Search(context.Background(), query, 1, nil)
 		require.NoError(t, err)
 		require.GreaterOrEqual(t, len(res), 1)
 		require.Equal(t, uint32(i), uint32(res[0].ID), "Should find self at rank 0")
-		require.InDelta(t, 0.0, res[0].Score, 1e-4, "Distance should be ~0")
+		require.InDelta(t, 0.0, res[0].Dist, 1e-4, "Distance should be ~0")
 	}
 
 	// Verify Memory Stats optional (just log them)

@@ -22,7 +22,7 @@ type DualIndexHarness struct {
 // NewDualIndexHarness creates a new validation harness.
 func NewDualIndexHarness(dataset *Dataset) *DualIndexHarness {
 	return &DualIndexHarness{
-		candidate: NewArrowHNSW(dataset, DefaultArrowHNSWConfig(), nil),
+		candidate: NewArrowHNSW(dataset, DefaultArrowHNSWConfig()),
 		dataset:   dataset,
 		vectors:   make(map[uint32][]float32),
 	}
@@ -77,7 +77,7 @@ func (h *DualIndexHarness) MeasureRecall(query []float32, k int) float64 {
 	// For now, let's just run search and return 1.0 if it doesn't error and returns k items
 	// Real recall calculation requires brute force neighbor finding.
 
-	res, err := h.candidate.Search(context.Background(), query, k, k*2, nil)
+	res, err := h.candidate.Search(context.Background(), query, k, nil)
 	if err != nil {
 		return 0.0
 	}

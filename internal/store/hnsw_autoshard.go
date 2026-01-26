@@ -318,12 +318,14 @@ func (a *AutoShardingIndex) migrateToSharded() {
 			it.rec.Release()
 			if err != nil {
 				// migration skip
+				continue
 			}
 		}
 
 		lastMigrated = endIdx
 		if lastMigrated%1000 == 0 {
-			// progress
+			// progress logging (future)
+			_ = lastMigrated
 		}
 
 		// Give other threads a window

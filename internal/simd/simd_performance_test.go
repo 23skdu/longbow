@@ -178,8 +178,6 @@ func BenchmarkSIMDPrecisionValidation(b *testing.B) {
 
 // BenchmarkConcurrentSIMD tests SIMD performance under concurrent access
 func BenchmarkConcurrentSIMD(b *testing.B) {
-	const numGoroutines = 4
-	const vectorsPerGoroutine = 100
 
 	query := make([]float32, 64)
 	r := rand.New(rand.NewSource(42))

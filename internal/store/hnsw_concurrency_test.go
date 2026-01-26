@@ -70,7 +70,7 @@ func TestHNSW_Concurrency_HighContention(t *testing.T) {
 			for j := 0; j < vectorsPerGoroutine; j++ {
 				rowIdx := rand.Intn(500)
 				// AddSafe copies vector, so rowIdx reuse is fine for testing concurrency of graph
-				_, err := idx.AddSafe(context.Background(), rec, rowIdx, 0)
+				_, err := idx.AddByLocation(context.Background(), 0, rowIdx) // Was AddSafe, now AddByLocation. Batch 0.
 				if err != nil {
 					errCount.Add(1)
 					fmt.Printf("Add error: %v\n", err)
@@ -101,7 +101,7 @@ func TestHNSW_Concurrency_Mixed(t *testing.T) {
 
 	// Pre-populate
 	for i := 0; i < 100; i++ {
-		_, _ = idx.AddSafe(context.Background(), rec, i, 0)
+		_, _ = idx.AddByLocation(context.Background(), 0, i) // Batch 0 presumed
 	}
 
 	var wg sync.WaitGroup
@@ -120,7 +120,7 @@ func TestHNSW_Concurrency_Mixed(t *testing.T) {
 					return
 				default:
 					rowIdx := rand.Intn(500)
-					_, _ = idx.AddSafe(context.Background(), rec, rowIdx, 0)
+					_, _ = idx.AddByLocation(context.Background(), 0, rowIdx)
 					ops.Add(1)
 					runtime.Gosched()
 				}
@@ -133,13 +133,13 @@ func TestHNSW_Concurrency_Mixed(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			q := make([]float32, 128)
+			q := concurrencyTestVector(128, i) // Use helper or random
 			for {
 				select {
 				case <-done:
 					return
 				default:
-					_, _ = idx.Search(q, 5)
+					_, _ = idx.SearchVectors(context.Background(), q, 5, nil, SearchOptions{})
 					ops.Add(1)
 					runtime.Gosched()
 				}
@@ -159,3 +159,29 @@ func TestHNSW_Concurrency_Mixed(t *testing.T) {
 		t.Error("Index shrank?")
 	}
 }
+
+// Helper for test vectors (if not available in package scope due to build weirdness)
+// But wait, if we are in package store, and hnsw_batch_test.go has it, we should see it.
+// If makeTestVector is undefined, we add it or rely on it being present.
+// I will not define it to avoid redeclaration if it IS present.
+// But earlier logs said undefined. I'll rely on it being present or use generate function.
+// Actually, mixed test uses it.
+// I'll make sure it uses `makeTestVector` if it exists.
+// Wait, I see I used `makeTestVector(128, i)` above.
+// If it is undefined, I should define it here or rename it.
+// To avoid redeclaration risk if `hnsw_batch_test.go` defines it, I will use `concurrencyTestVector`.
+
+func concurrencyTestVector(dims, seed int) []float32 {
+	v := make([]float32, dims)
+	for i := range v {
+		v[i] = float32((seed*dims+i)%100) / 100.0
+	}
+	return v
+}
+
+// Replace makeTestVector call above with concurrencyTestVector?
+// Or better: ensure we don't use makeTestVector.
+// I replaced `q := makeTestVector(...)` with `q := concurrencyTestVector(...)` conceptually.
+// Actually, let's just implement `makeConcurrencyTestVector` or similar inline.
+// Ah, `makeConcurrencyTestRecord` uses rand.
+// I'll update `TestHNSW_Concurrency_Mixed` to use `concurrencyTestVector` in the rewrite.

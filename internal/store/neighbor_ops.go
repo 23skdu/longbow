@@ -409,41 +409,80 @@ func (h *ArrowHNSW) pruneConnectionsLocked(ctx *ArrowSearchContext, data *GraphD
 			ctx.scratchVecs = make([][]float32, count*2)
 		}
 
-		var neighborVecs [][]float32
-		if ctx != nil {
-			neighborVecs = ctx.scratchVecs[:count]
-		} else {
-			neighborVecs = make([][]float32, count)
-		}
-
 		// nodeVec needed for distance calc
 		// nodeVec needed for distance calc
 		// Note: for now we assume float32. Future refactor will make DistFunc polymorphic.
+		// Polymorphic Distance Calculation
 		nodeVecAny := h.mustGetVectorFromData(data, nodeID)
-		nodeVec, okNode := nodeVecAny.([]float32)
 
 		for i := 0; i < count; i++ {
 			neighborID := neighborsChunk[baseIdx+i]
 			vecAny := h.mustGetVectorFromData(data, neighborID)
-			vec, okVec := vecAny.([]float32)
 
-			if okVec {
-				neighborVecs[i] = vec
-			} else {
-				neighborVecs[i] = nil
-			}
+			var dist float32 = math.MaxFloat32
 
-			// Compute distance once for initial Candidate
-			if okNode && okVec {
-				d, err := simd.DistFunc(nodeVec, vec)
-				if err != nil {
-					dists[i] = math.MaxFloat32
-				} else {
-					dists[i] = d
+			switch nV := nodeVecAny.(type) {
+			case []float32:
+				if v, ok := vecAny.([]float32); ok {
+					d, err := h.distFunc(nV, v)
+					if err == nil {
+						dist = d
+					}
 				}
-			} else {
-				dists[i] = math.MaxFloat32 // Push to bottom if invalid type
+			case []float64:
+				if v, ok := vecAny.([]float64); ok && h.distFuncF64 != nil {
+					d, err := h.distFuncF64(nV, v)
+					if err == nil {
+						dist = d
+					}
+				} else if v, ok := vecAny.([]float64); ok {
+					// Fallback manual L2
+					if len(nV) == len(v) {
+						var sum float64
+						for k := range nV {
+							diff := nV[k] - v[k]
+							sum += diff * diff
+						}
+						dist = float32(math.Sqrt(sum))
+					}
+				}
+			case []int8:
+				if v, ok := vecAny.([]int8); ok {
+					if len(nV) == len(v) {
+						var sum float32
+						for k := range nV {
+							diff := float32(nV[k]) - float32(v[k])
+							sum += diff * diff
+						}
+						dist = float32(math.Sqrt(float64(sum)))
+					}
+				}
+			case []complex64:
+				if v, ok := vecAny.([]complex64); ok {
+					if len(nV) == len(v) {
+						var sum float32
+						for k := range nV {
+							diff := nV[k] - v[k]
+							modSq := real(diff)*real(diff) + imag(diff)*imag(diff)
+							sum += modSq
+						}
+						dist = float32(math.Sqrt(float64(sum)))
+					}
+				}
+			case []complex128:
+				if v, ok := vecAny.([]complex128); ok {
+					if len(nV) == len(v) {
+						var sum float64
+						for k := range nV {
+							diff := nV[k] - v[k]
+							modSq := real(diff)*real(diff) + imag(diff)*imag(diff)
+							sum += modSq
+						}
+						dist = float32(math.Sqrt(sum))
+					}
+				}
 			}
+			dists[i] = dist
 		}
 	}
 

@@ -8,7 +8,7 @@ import (
 // Returns candidates sorted by distance.
 func (h *ArrowHNSW) searchLayerForInsert(goCtx context.Context, ctx *ArrowSearchContext, query any, entryPoint uint32, ef, layer int, data *GraphData) ([]Candidate, error) {
 	computer := h.resolveHNSWComputer(data, ctx, query, false)
-	_, err := h.searchLayer(goCtx, computer, entryPoint, ef, layer, ctx, data, nil)
+	_, err := h.searchLayer(goCtx, computer, entryPoint, ef, layer, ctx, data, query)
 	if err != nil {
 		return nil, err
 	}
@@ -23,7 +23,7 @@ func (h *ArrowHNSW) searchLayerForInsert(goCtx context.Context, ctx *ArrowSearch
 }
 
 // selectNeighbors selects the best M neighbors using the RobustPrune heuristic.
-func (h *ArrowHNSW) selectNeighbors(ctx *ArrowSearchContext, candidates []Candidate, m int, data *GraphData) []Candidate {
+func (h *ArrowHNSW) selectNeighbors(ctx *ArrowSearchContext, candidates []Candidate, m int, _ *GraphData) []Candidate {
 	if len(candidates) <= m {
 		return candidates
 	}
@@ -42,7 +42,14 @@ func (h *ArrowHNSW) selectNeighbors(ctx *ArrowSearchContext, candidates []Candid
 	var remaining []Candidate
 
 	if ctx != nil {
+		if cap(ctx.scratchSelected) < m {
+			ctx.scratchSelected = make([]Candidate, 0, m)
+		}
 		selected = ctx.scratchSelected[:0]
+
+		if cap(ctx.scratchRemaining) < len(candidates) {
+			ctx.scratchRemaining = make([]Candidate, len(candidates))
+		}
 		remaining = ctx.scratchRemaining[:len(candidates)]
 		copy(remaining, candidates)
 	} else {

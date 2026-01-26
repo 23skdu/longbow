@@ -153,7 +153,7 @@ func TestShardedMutex_ReducedContention(t *testing.T) {
 
 	for i := 0; i < numGoroutines; i++ {
 		wg.Add(1)
-		go func(workerID int) {
+		go func(_ int) {
 			defer wg.Done()
 			for j := 0; j < numOperations/numGoroutines; j++ {
 				sm.Lock("test")

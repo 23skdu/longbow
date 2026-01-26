@@ -21,13 +21,13 @@ func euclideanNEONKernel(a, b []float32) float32
 func dotNEONKernel(a, b []float32) float32
 
 //go:noescape
-func euclideanF16NEONKernel(a, b []float16.Num) float32
+func euclideanF16NEONKernel(a, b []float16.Num) float32 //nolint:unused
 
 //go:noescape
-func dotF16NEONKernel(a, b []float16.Num) float32
+func dotF16NEONKernel(a, b []float16.Num) float32 //nolint:unused
 
 //go:noescape
-func cosineF16NEONKernel(a, b []float16.Num) float32
+func cosineF16NEONKernel(a, b []float16.Num) float32 //nolint:unused
 
 // Public Go wrappers (with error propagation)
 
@@ -49,36 +49,6 @@ func dotNEON(a, b []float32) (float32, error) {
 		return 0, nil
 	}
 	return dotNEONKernel(a, b), nil
-}
-
-func euclideanF16NEON(a, b []float16.Num) (float32, error) {
-	if len(a) != len(b) {
-		return 0, errors.New("simd: length mismatch")
-	}
-	if len(a) == 0 {
-		return 0, nil
-	}
-	return euclideanF16NEONKernel(a, b), nil
-}
-
-func dotF16NEON(a, b []float16.Num) (float32, error) {
-	if len(a) != len(b) {
-		return 0, errors.New("simd: length mismatch")
-	}
-	if len(a) == 0 {
-		return 0, nil
-	}
-	return dotF16NEONKernel(a, b), nil
-}
-
-func cosineF16NEON(a, b []float16.Num) (float32, error) {
-	if len(a) != len(b) {
-		return 0, errors.New("simd: length mismatch")
-	}
-	if len(a) == 0 {
-		return 0, nil
-	}
-	return cosineF16NEONKernel(a, b), nil
 }
 
 // Optimized for 384 dimensions

@@ -412,8 +412,15 @@ func (rts *ResilienceTestSuite) GetMetrics() *TestMetrics {
 	rts.metrics.mu.RLock()
 	defer rts.metrics.mu.RUnlock()
 
-	metricsCopy := *rts.metrics
-	return &metricsCopy
+	return &TestMetrics{
+		TotalRequests:       rts.metrics.TotalRequests,
+		SuccessfulRequests:  rts.metrics.SuccessfulRequests,
+		FailedRequests:      rts.metrics.FailedRequests,
+		InjectedFaults:      rts.metrics.InjectedFaults,
+		CircuitBreakerTrips: rts.metrics.CircuitBreakerTrips,
+		RetryAttempts:       rts.metrics.RetryAttempts,
+		AverageLatency:      rts.metrics.AverageLatency,
+	}
 }
 
 func (rts *ResilienceTestSuite) Reset() {

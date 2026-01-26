@@ -166,7 +166,7 @@ func (sp *SearchResultPool) Put(slice []SearchResult) {
 	slice = slice[:0]
 
 	bucket.puts.Add(1)
-	bucket.pool.Put(slice)
+	bucket.pool.Put(slice) //nolint:staticcheck // SA6002: slice header is small, avoiding API change
 
 	metrics.SearchResultPoolPutTotal.WithLabelValues(capacityBucketLabel(capacity)).Inc()
 }

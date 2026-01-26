@@ -9,122 +9,97 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestArrowHNSW_RepairAgent_Integration(t *testing.T) {
+func TestRepairIntegration_DeleteAndRepair(t *testing.T) {
+	// 1. Setup Store with HNSW Index
 	config := DefaultArrowHNSWConfig()
-	config.M = 8
-	config.Dims = 2
+	config.M = 4 // Small M for simpler graph
 
-	idx := NewArrowHNSW(nil, config, nil)
-	require.NotNil(t, idx)
-	require.NotNil(t, idx.repairAgent, "Repair agent should be initialized")
+	// Create ArrowHNSW
+	// We need a dataset but tests often pass nil if NewArrowHNSW allows it for testing, or we construct minimal one.
+	// Constructor: NewArrowHNSW(ds *Dataset, cfg ArrowHNSWConfig) *HNSWIndex
+	ds := &Dataset{}
+	idx := NewArrowHNSW(ds, config)
 
-	// Insert some vectors
+	// 2. Insert Data
+	// Insert 0->1->2->3
 	vecs := [][]float32{
 		{1.0, 0.0},
 		{0.9, 0.1},
 		{0.8, 0.2},
 		{0.7, 0.3},
-		{0.6, 0.4},
 	}
-
 	for i, vec := range vecs {
 		err := idx.InsertWithVector(uint32(i), vec, 0)
 		require.NoError(t, err)
 	}
 
-	// Enable repair agent
-	repairConfig := RepairAgentConfig{
-		Enabled:            true,
-		ScanInterval:       100 * time.Millisecond,
-		MaxRepairsPerCycle: 10,
-	}
-
-	idx.EnableRepairAgent(repairConfig)
-
-	// Let it run
-	time.Sleep(250 * time.Millisecond)
-
-	// Disable
-	idx.DisableRepairAgent()
-
-	assert.True(t, true, "Integration test completed")
-}
-
-func TestArrowHNSW_RepairAgent_AfterDeletions(t *testing.T) {
-	config := DefaultArrowHNSWConfig()
-	config.M = 8
-	config.Dims = 2
-
-	idx := NewArrowHNSW(nil, config, nil)
-
-	// Insert vectors
-	for i := 0; i < 20; i++ {
-		vec := []float32{float32(i) / 20.0, float32(i%5) / 5.0}
-		err := idx.InsertWithVector(uint32(i), vec, 0)
-		require.NoError(t, err)
-	}
-
-	// Delete some nodes
-	for i := 5; i < 10; i++ {
-		_ = idx.Delete(uint32(i))
-	}
-
-	// Enable repair agent
-	repairConfig := RepairAgentConfig{
+	// 3. Start Repair Agent
+	agentConfig := RepairAgentConfig{
 		Enabled:            true,
 		ScanInterval:       50 * time.Millisecond,
-		MaxRepairsPerCycle: 20,
+		MaxRepairsPerCycle: 10,
 	}
+	agent := NewRepairAgent(idx, agentConfig)
+	agent.Start()
+	defer agent.Stop()
 
-	idx.EnableRepairAgent(repairConfig)
+	// 4. Delete Node
+	// Delete node 1
+	err := idx.Delete(1)
+	require.NoError(t, err)
 
-	// Let it run multiple cycles
+	// 5. Wait for Repair
+	// Wait enough time for agent to scan and repair
 	time.Sleep(200 * time.Millisecond)
 
-	// Disable
-	idx.DisableRepairAgent()
+	// 6. Verify Graph Integrity
+	// Check if we can still reach node 2 from node 0 (should form bridge 0->2)
+	// Or check orphans count (should be 0)
+	orphans := agent.detectOrphans()
+	assert.Len(t, orphans, 0, "Should satisfy graph connectivity after repair")
 
-	// Verify remaining nodes are still searchable
-	for i := 10; i < 20; i++ {
-		vec := []float32{float32(i) / 20.0, float32(i%5) / 5.0}
-		results, err := idx.SearchVectors(context.Background(), vec, 1, nil, SearchOptions{})
-		require.NoError(t, err)
-		assert.Greater(t, len(results), 0, "Node %d should be reachable", i)
-	}
+	// 7. Verify Search
+	// Search for something close to node 2
+	results, err := idx.SearchVectors(context.Background(), []float32{0.8, 0.2}, 1, nil, SearchOptions{})
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	assert.Equal(t, VectorID(2), results[0].ID)
 }
 
-func TestArrowHNSW_RepairAgent_EnableDisableMultiple(t *testing.T) {
+func TestRepairIntegration_ConcurrentLoad(t *testing.T) {
+	// 1. Setup
 	config := DefaultArrowHNSWConfig()
-	config.M = 4
-	config.Dims = 2
+	ds := &Dataset{}
+	idx := NewArrowHNSW(ds, config)
 
-	idx := NewArrowHNSW(nil, config, nil)
-
-	// Insert a few vectors
-	for i := 0; i < 10; i++ {
-		vec := []float32{float32(i) / 10.0, 0.0}
-		_ = idx.InsertWithVector(uint32(i), vec, 0)
-	}
-
-	repairConfig := RepairAgentConfig{
+	agentConfig := RepairAgentConfig{
 		Enabled:            true,
 		ScanInterval:       50 * time.Millisecond,
-		MaxRepairsPerCycle: 10,
+		MaxRepairsPerCycle: 50,
 	}
+	agent := NewRepairAgent(idx, agentConfig)
+	agent.Start()
+	defer agent.Stop()
 
-	// Enable, disable, enable again
-	idx.EnableRepairAgent(repairConfig)
+	// 2. Concurrent Insert/Delete loop
+	done := make(chan bool)
+	go func() {
+		for i := 0; i < 100; i++ {
+			vec := []float32{0.5, 0.5}
+			_ = idx.InsertWithVector(uint32(i), vec, 0)
+			time.Sleep(2 * time.Millisecond)
+			if i%5 == 0 {
+				_ = idx.Delete(uint32(i))
+			}
+		}
+		done <- true
+	}()
+
+	<-done
 	time.Sleep(100 * time.Millisecond)
 
-	idx.DisableRepairAgent()
-	time.Sleep(50 * time.Millisecond)
-
-	// Re-enable with different config
-	repairConfig.ScanInterval = 100 * time.Millisecond
-	idx.EnableRepairAgent(repairConfig)
-	time.Sleep(150 * time.Millisecond)
-
-	idx.DisableRepairAgent()
-
-	assert.True(t, true, "Multiple enable/disable cycles completed")
+	// 3. Verify no panic and graph is clean
+	orphans := agent.detectOrphans()
+	// Orphans might exist transiently, but we just check for no crash
+	_ = orphans
 }

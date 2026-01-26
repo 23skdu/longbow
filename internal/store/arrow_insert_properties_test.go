@@ -4,6 +4,8 @@ import (
 	"sync/atomic"
 	"testing"
 
+	lbtypes "github.com/23skdu/longbow/internal/store/types"
+
 	"github.com/leanovate/gopter"
 	"github.com/leanovate/gopter/gen"
 	"github.com/leanovate/gopter/prop"
@@ -25,20 +27,19 @@ func TestInsertProperties(t *testing.T) {
 			config.M = 10
 			config.MMax = 20
 			config.MMax0 = 20
-			config.Alpha = 1.0
 
-			index := NewArrowHNSW(nil, config, nil)
+			index := NewArrowHNSW(nil, config)
 			index.dims.Store(2)
 
 			// Init data
-			data := NewGraphData(nodeCount+10, 2, false, false, 0, false, false, false, VectorTypeFloat32)
+			data := lbtypes.NewGraphData(nodeCount+10, 2, false, false, 0, false, false, false, lbtypes.VectorTypeFloat32)
 			index.data.Store(data)
 
 			// Helper to add fake vector chunk
 			ensureChunk := func(id uint32) {
 				cID := chunkID(id)
 				cOff := chunkOffset(id)
-				index.ensureChunk(data, cID, cOff, 2)
+				index.ensureChunk(data, int(cID), int(cOff), 2)
 				// Fake vector data isn't strictly needed for connectivity if we skip distance checks?
 				// But AddConnection might read it for pruning.
 				// Let's rely on geometric graph construction being hard to randomly ensure without vectors.
@@ -58,7 +59,7 @@ func TestInsertProperties(t *testing.T) {
 
 			// Insert nodes
 			// We need a search context
-			ctx := index.searchPool.Get().(*ArrowSearchContext)
+			ctx := index.searchPool.Get()
 			defer index.searchPool.Put(ctx)
 
 			for i := 0; i < nodeCount; i++ {
@@ -95,7 +96,7 @@ func TestInsertProperties(t *testing.T) {
 				queue = queue[1:]
 				found++
 
-				neighbors, _ := index.GetNeighbors(VectorID(curr)) // Assuming this method works on graph
+				neighbors, _ := index.GetNeighbors(uint32(curr)) // Assuming this method works on graph
 				for _, n := range neighbors {
 					nid := uint32(n)
 					if !visited[nid] {
@@ -122,13 +123,12 @@ func TestInsertProperties(t *testing.T) {
 			config.M = m
 			config.MMax = m * 2
 			config.MMax0 = m
-			config.Alpha = 1.0
 
-			index := NewArrowHNSW(nil, config, nil)
+			index := NewArrowHNSW(nil, config)
 			index.dims.Store(1) // use 1-dim vectors
 
 			// Initialize GraphData manually
-			data := NewGraphData(1000, 1, false, false, 0, false, false, false, VectorTypeFloat32) // capacity 1000, dim 1
+			data := lbtypes.NewGraphData(1000, 1, false, false, 0, false, false, false, lbtypes.VectorTypeFloat32) // capacity 1000, dim 1
 			index.data.Store(data)
 
 			// Setup dummy vectors
@@ -137,14 +137,14 @@ func TestInsertProperties(t *testing.T) {
 				cOff := chunkOffset(uint32(i))
 
 				// Ensure chunk is allocated
-				data = index.ensureChunk(data, cID, cOff, int(index.dims.Load()))
+				data, _ = index.ensureChunk(data, int(cID), int(cOff), int(index.dims.Load()))
 
 				// Check vector (optional)
 				// storedVec := (*data.Vectors[cID])[int(cOff)*index.dims : (int(cOff)+1)*index.dims]
 			}
 
 			// Need ArrowSearchContext
-			ctx := index.searchPool.Get().(*ArrowSearchContext)
+			ctx := index.searchPool.Get()
 			defer index.searchPool.Put(ctx)
 
 			// Add connections
@@ -190,7 +190,7 @@ func TestArrowSearchContextPooling(t *testing.T) {
 	pool := NewArrowSearchContextPool()
 
 	// Get context
-	ctx1 := pool.Get().(*ArrowSearchContext)
+	ctx1 := pool.Get()
 	if ctx1 == nil {
 		t.Fatal("pool.Get() returned nil")
 	}
@@ -205,7 +205,7 @@ func TestArrowSearchContextPooling(t *testing.T) {
 	pool.Put(ctx1)
 
 	// Get again - should be reused
-	ctx2 := pool.Get().(*ArrowSearchContext)
+	ctx2 := pool.Get()
 	if ctx2 == nil {
 		t.Fatal("pool.Get() returned nil on second call")
 	}
@@ -257,7 +257,7 @@ func BenchmarkArrowSearchContextPool(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		ctx := pool.Get().(*ArrowSearchContext)
+		ctx := pool.Get()
 		// Simulate some work
 		ctx.candidates.Push(Candidate{ID: uint32(i), Dist: float32(i)})
 		pool.Put(ctx)

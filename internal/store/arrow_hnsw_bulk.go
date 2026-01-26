@@ -776,18 +776,3 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 
 	return nil
 }
-
-// pruneIfNecessary checks if a node's connections exceed maxConn and prunes them
-func (h *ArrowHNSW) pruneIfNecessary(ctx *ArrowSearchContext, data *GraphData, id uint32, layer, maxConn int) {
-	cID := chunkID(id)
-	cOff := chunkOffset(id)
-	countsChunk := data.GetCountsChunk(layer, cID)
-	if countsChunk == nil {
-		return
-	}
-
-	count := atomic.LoadInt32(&countsChunk[cOff])
-	if int(count) > maxConn {
-		h.PruneConnections(ctx, data, id, maxConn, layer)
-	}
-}

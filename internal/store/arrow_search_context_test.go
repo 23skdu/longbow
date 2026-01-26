@@ -32,7 +32,7 @@ func TestArrowSearchContextPool_MemoryAlignment(t *testing.T) {
 	pool := NewArrowSearchContextPool()
 
 	// Get context
-	ctx1 := pool.Get().(*ArrowSearchContext)
+	ctx1 := pool.Get()
 	dim := 3072
 	ctx1.querySQ8 = append(ctx1.querySQ8[:0], make([]byte, dim)...)
 
@@ -40,7 +40,7 @@ func TestArrowSearchContextPool_MemoryAlignment(t *testing.T) {
 	pool.Put(ctx1)
 
 	// Get again
-	ctx2 := pool.Get().(*ArrowSearchContext)
+	ctx2 := pool.Get()
 	assert.GreaterOrEqual(t, cap(ctx2.querySQ8), dim, "Pooled context should retain its large capacity")
 	pool.Put(ctx2)
 }

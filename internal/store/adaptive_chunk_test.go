@@ -181,7 +181,7 @@ func TestAdaptiveChunkSize_ConfigThresholds(t *testing.T) {
 func TestAdaptiveChunkSize_ConcurrentSafety(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	vectors := generateTestVectors(100, 4)
-	rec := makeHNSWTestRecord(mem, 4, vectors)
+	rec := makeBatchTestRecord(mem, 4, vectors)
 
 	ds := &Dataset{
 		Name:    "test",
@@ -193,7 +193,9 @@ func TestAdaptiveChunkSize_ConcurrentSafety(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		locations[i] = Location{BatchIdx: 0, RowIdx: i}
 	}
-	_ = idx.AddBatchParallel(context.Background(), locations, 4)
+	for _, loc := range locations {
+		_, _ = idx.AddByLocation(context.Background(), loc.BatchIdx, loc.RowIdx)
+	}
 
 	neighbors := make([]hnsw.Node[VectorID], 1000)
 	for i := 0; i < 1000; i++ {
@@ -213,7 +215,7 @@ func TestAdaptiveChunkSize_ConcurrentSafety(t *testing.T) {
 			defer wg.Done()
 			for i := 0; i < 10; i++ {
 				k := 10 + (gid+i)%20
-				_, _ = idx.Search(query, k)
+				_, _ = idx.Search(context.Background(), query, k, nil)
 			}
 		}(g)
 	}
@@ -225,7 +227,7 @@ func BenchmarkAdaptiveChunkSize_ParallelVsSerial(b *testing.B) {
 	dims := 128
 	numVectors := 10000
 	vectors := generateTestVectors(numVectors, dims)
-	rec := makeHNSWTestRecord(mem, dims, vectors)
+	rec := makeBatchTestRecord(mem, dims, vectors)
 	defer rec.Release()
 
 	ds := &Dataset{
@@ -238,7 +240,9 @@ func BenchmarkAdaptiveChunkSize_ParallelVsSerial(b *testing.B) {
 	for i := 0; i < numVectors; i++ {
 		locations[i] = Location{BatchIdx: 0, RowIdx: i}
 	}
-	_ = idx.AddBatchParallel(context.Background(), locations, 8)
+	for _, loc := range locations {
+		_, _ = idx.AddByLocation(context.Background(), loc.BatchIdx, loc.RowIdx)
+	}
 
 	query := make([]float32, dims)
 	for i := range query {
@@ -249,7 +253,7 @@ func BenchmarkAdaptiveChunkSize_ParallelVsSerial(b *testing.B) {
 		b.ResetTimer()
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			_, _ = idx.Search(query, 10)
+			_, _ = idx.Search(context.Background(), query, 10, nil)
 		}
 	})
 

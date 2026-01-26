@@ -3,7 +3,8 @@ package store
 import (
 	"math"
 	"math/rand"
-	"sync/atomic"
+
+	lbtypes "github.com/23skdu/longbow/internal/store/types"
 
 	"testing"
 
@@ -21,7 +22,7 @@ func TestFloat16_RoundTrip(t *testing.T) {
 
 	// Create GraphData with Float16 enabled
 	// NewGraphData(capacity, dims, sq8, pq, pqDims, bq, float16, false)
-	gd := NewGraphData(capacity, dims, false, false, 0, false, true, false, VectorTypeFloat16)
+	gd := lbtypes.NewGraphData(capacity, dims, false, false, 0, false, true, false, lbtypes.VectorTypeFloat16)
 
 	require.NotNil(t, gd.Float16Arena)
 	require.NotNil(t, gd.VectorsF16)
@@ -44,11 +45,11 @@ func TestFloat16_RoundTrip(t *testing.T) {
 
 	// Ensure VectorsF16 chunk exists
 	// Mimic ensureChunk logic for F16
-	chunk := gd.GetVectorsF16Chunk(cID)
+	chunk := gd.GetVectorsF16Chunk(int(cID))
 	if chunk == nil {
 		// Allocating in TypedArena:
-		chunkSize := ChunkSize * dims
-		ref, err := gd.Float16Arena.AllocSlice(chunkSize)
+		// Test uses ChunkSize=1024
+		ref, err := gd.Float16Arena.AllocSlice(lbtypes.ChunkSize * dims)
 		require.NoError(t, err)
 
 		// Store the offset
@@ -98,7 +99,7 @@ func TestArrowHNSW_Float16_Integration(t *testing.T) {
 	cfg.InitialCapacity = 100
 
 	// Create HNSW
-	hnsw := NewArrowHNSW(nil, cfg, nil)
+	hnsw := NewArrowHNSW(nil, cfg)
 
 	// Insert 10 vectors
 	n := 10
@@ -146,8 +147,8 @@ func TestArrowHNSW_Float16_Integration(t *testing.T) {
 	// Actually, we need to check if chunk allocated.
 	// cID ends up being 0 for id=1..10.
 	// gd.Vectors[0] should be 0.
-	chunkVal := atomic.LoadUint64(&gd.Vectors[0])
-	assert.Equal(t, uint64(0), chunkVal, "Float32 vector storage (Vectors) should be empty/zero when Float16 is enabled")
+	// Check if Vectors[0] is nil instead of atomic Load on slice
+	assert.Nil(t, gd.GetVectorsChunk(0), "Float32 vector storage (Vectors) should be empty/zero when Float16 is enabled")
 
 	// F16 Vectors should be populated
 	// Need unsafe cast as VectorsF16 is []float16.Num (uint16)

@@ -22,7 +22,6 @@ import (
 
 	lmem "github.com/23skdu/longbow/internal/memory"
 	"github.com/23skdu/longbow/internal/metrics"
-	"github.com/23skdu/longbow/internal/query"
 	qry "github.com/23skdu/longbow/internal/query"
 )
 
@@ -323,7 +322,7 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 		// set tombstone
 		ds.dataMu.Lock()
 		if ds.Tombstones[loc.BatchIdx] == nil {
-			ds.Tombstones[loc.BatchIdx] = query.NewBitset()
+			ds.Tombstones[loc.BatchIdx] = qry.NewBitset()
 		}
 		ts := ds.Tombstones[loc.BatchIdx]
 		ds.dataMu.Unlock()

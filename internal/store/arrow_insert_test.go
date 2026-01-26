@@ -8,6 +8,8 @@ import (
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
+
+	lbtypes "github.com/23skdu/longbow/internal/store/types"
 )
 
 func TestLevelGenerator(t *testing.T) {
@@ -19,8 +21,8 @@ func TestLevelGenerator(t *testing.T) {
 		level := lg.Generate()
 		levels[level]++
 
-		if level < 0 || level >= types.ArrowMaxLayers {
-			t.Errorf("level %d out of bounds [0, %d)", level, types.ArrowMaxLayers)
+		if level < 0 || level >= lbtypes.ArrowMaxLayers {
+			t.Errorf("level %d out of bounds [0, %d)", level, lbtypes.ArrowMaxLayers)
 		}
 	}
 
@@ -57,7 +59,7 @@ func TestInsert_SingleNode(t *testing.T) {
 	}
 
 	config := DefaultArrowHNSWConfig()
-	index := NewArrowHNSW(dataset, config, nil)
+	index := NewArrowHNSW(dataset, config)
 
 	// Insert ID 0 -> Batch 0, Row 0
 	id, err := index.AddByLocation(context.Background(), 0, 0)
@@ -101,7 +103,7 @@ func TestInsert_MultipleNodes(t *testing.T) {
 	}
 
 	config := DefaultArrowHNSWConfig()
-	index := NewArrowHNSW(dataset, config, nil)
+	index := NewArrowHNSW(dataset, config)
 
 	// Insert 10 vectors
 	for i := 0; i < 10; i++ {
@@ -119,10 +121,10 @@ func TestInsert_MultipleNodes(t *testing.T) {
 func TestAddConnection(t *testing.T) {
 	dataset := &Dataset{Name: "test"}
 	config := DefaultArrowHNSWConfig()
-	index := NewArrowHNSW(dataset, config, nil)
+	index := NewArrowHNSW(dataset, config)
 
 	// Initialize GraphData manually
-	data := NewGraphData(0, 64, false, false, 0, false, false, false, VectorTypeFloat32)
+	data := lbtypes.NewGraphData(0, 64, false, false, 0, false, false, false, lbtypes.VectorTypeFloat32)
 	index.data.Store(data)
 
 	// Allocate chunks
@@ -131,14 +133,14 @@ func TestAddConnection(t *testing.T) {
 	numChunks := (64 + ChunkSize - 1) / ChunkSize
 	for i := 0; i < numChunks; i++ {
 		var err error
-		data, err = index.ensureChunk(data, uint32(i), 0, 64) // dim not critical here?
+		data, err = index.ensureChunk(data, int(i), 0, 64) // dim not critical here?
 		if err != nil {
 			t.Fatal(err)
 		}
 	}
 
 	// Must have search context for pruning
-	ctx := index.searchPool.Get().(*ArrowSearchContext)
+	ctx := index.searchPool.Get()
 	defer index.searchPool.Put(ctx)
 
 	// Add connection 0 -> 1 at layer 0
@@ -177,11 +179,11 @@ func TestPruneConnections(t *testing.T) {
 	dataset := &Dataset{Name: "test"}
 	config := DefaultArrowHNSWConfig()
 	// Strict alpha to force pruning based on distance
-	config.Alpha = 1.0
-	index := NewArrowHNSW(dataset, config, nil)
+	// config.Alpha = 1.0 // Alpha no longer configurable
+	index := NewArrowHNSW(dataset, config)
 
 	// Initialize GraphData manually
-	data := NewGraphData(20, 11, false, false, 0, false, false, false, VectorTypeFloat32)
+	data := lbtypes.NewGraphData(20, 11, false, false, 0, false, false, false, lbtypes.VectorTypeFloat32)
 	index.data.Store(data)
 
 	// Allocate chunks
@@ -189,7 +191,7 @@ func TestPruneConnections(t *testing.T) {
 	numChunks := (20 + ChunkSize - 1) / ChunkSize
 	for i := 0; i < numChunks; i++ {
 		var err error
-		data, err = index.ensureChunk(data, uint32(i), 0, 11)
+		data, err = index.ensureChunk(data, int(i), 0, 11)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -199,6 +201,7 @@ func TestPruneConnections(t *testing.T) {
 	// Node 0 at Origin [0...]
 	// Neighbors 1..10 are orthogonal unit vectors [1,0..], [0,1..]
 	// Dist(0, i) = 1.0
+	// Dist(i, j) = sqrt(2) = 1.41
 	// Dist(i, j) = sqrt(2) = 1.41
 
 	dim := 11
@@ -249,7 +252,7 @@ func TestPruneConnections(t *testing.T) {
 	// Check 2. Dist(2,1)=1.41. Dist(2,0)=1. 1.41 * 1.0 > 1. Keep!
 	// So orthogonal neighbors should be preserved up to M.
 
-	ctx := index.searchPool.Get().(*ArrowSearchContext)
+	ctx := index.searchPool.Get()
 	defer index.searchPool.Put(ctx)
 
 	index.PruneConnections(ctx, data, 0, 5, 0)
@@ -304,7 +307,7 @@ func BenchmarkInsert(b *testing.B) {
 	}
 
 	config := DefaultArrowHNSWConfig()
-	index := NewArrowHNSW(dataset, config, nil)
+	index := NewArrowHNSW(dataset, config)
 
 	b.ResetTimer()
 

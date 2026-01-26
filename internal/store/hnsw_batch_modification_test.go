@@ -22,7 +22,7 @@ func TestArrowHNSW_AddBatch_Sequential(t *testing.T) {
 	cfg := DefaultArrowHNSWConfig()
 	cfg.M = 16
 	cfg.EfConstruction = 100
-	idx := NewArrowHNSW(ds, cfg, nil)
+	idx := NewArrowHNSW(ds, cfg)
 	// Manually set dims since we bypass full initialization
 	idx.dims.Store(int32(dims))
 
@@ -88,7 +88,7 @@ func TestArrowHNSW_AddBatch_Concurrent(t *testing.T) {
 	cfg := DefaultArrowHNSWConfig()
 	cfg.M = 16
 	cfg.EfConstruction = 100
-	idx := NewArrowHNSW(ds, cfg, nil)
+	idx := NewArrowHNSW(ds, cfg)
 	idx.dims.Store(int32(dims))
 
 	var wg sync.WaitGroup
@@ -140,7 +140,5 @@ func TestArrowHNSW_AddBatch_Concurrent(t *testing.T) {
 	require.Equal(t, totalVecs, idx.Len())
 }
 
-// Helper to create Arrow record (duplicated from hnsw_batch_test.go if not exported, assumes copy here)
-// If makeBatchTestRecord is in same package 'store' and hnsw_batch_test.go is 'package store', it is visible.
-// I will check if I need to redefine it or if I can rely on the one in hnsw_batch_test.go
-// If `sw_batch_test.go` belongs to `store` (it does), then `makeBatchTestRecord` is available.
+// Helper to create Arrow record (duplicated from hnsw_batch_test.go if not visible)
+// It seems visible since same package.

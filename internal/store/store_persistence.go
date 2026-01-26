@@ -23,6 +23,7 @@ func (s *VectorStore) InitPersistence(cfg StorageConfig) error {
 		return fmt.Errorf("failed to create storage engine: %w", err)
 	}
 	s.engine = engine
+	s.dataPath = cfg.DataPath
 
 	// 2. Initialize WAL (and Batcher)
 	if err := s.engine.InitWAL(); err != nil {
@@ -62,6 +63,36 @@ func (s *VectorStore) applyReplayBatch(name string, rec arrow.RecordBatch, seq u
 	ds, _ := s.getOrCreateDataset(name, func() *Dataset {
 		d := NewDataset(name, rec.Schema())
 		d.Logger = s.logger
+		d.Topo = s.numaTopology
+
+		// Initialize Index
+		hasVectorColumn := false
+		var vectorDim int
+		for _, f := range rec.Schema().Fields() {
+			if f.Name == "vector" {
+				if fst, ok := f.Type.(*arrow.FixedSizeListType); ok {
+					hasVectorColumn = true
+					vectorDim = int(fst.Len())
+					dataType := InferVectorDataType(rec.Schema(), "vector")
+					if dataType == VectorTypeComplex64 || dataType == VectorTypeComplex128 {
+						vectorDim /= 2
+					}
+				}
+				break
+			}
+		}
+
+		if hasVectorColumn {
+			config := s.autoShardingConfig
+			if config.ShardThreshold == 0 {
+				config.ShardThreshold = 10000
+				config.Enabled = true
+			}
+			aIdx := NewAutoShardingIndex(d, config)
+			aIdx.SetInitialDimension(vectorDim)
+			d.Index = aIdx
+		}
+
 		return d
 	})
 
@@ -128,6 +159,36 @@ func (s *VectorStore) loadSnapshotItem(item storage.SnapshotItem) error {
 	ds, _ := s.getOrCreateDataset(item.Name, func() *Dataset {
 		d := NewDataset(item.Name, schema)
 		d.Logger = s.logger
+		d.Topo = s.numaTopology
+
+		// Initialize Index (Same logic as applyReplayBatch)
+		hasVectorColumn := false
+		var vectorDim int
+		for _, f := range schema.Fields() {
+			if f.Name == "vector" {
+				if fst, ok := f.Type.(*arrow.FixedSizeListType); ok {
+					hasVectorColumn = true
+					vectorDim = int(fst.Len())
+					dataType := InferVectorDataType(schema, "vector")
+					if dataType == VectorTypeComplex64 || dataType == VectorTypeComplex128 {
+						vectorDim /= 2
+					}
+				}
+				break
+			}
+		}
+
+		if hasVectorColumn {
+			config := s.autoShardingConfig
+			if config.ShardThreshold == 0 {
+				config.ShardThreshold = 10000
+				config.Enabled = true
+			}
+			aIdx := NewAutoShardingIndex(d, config)
+			aIdx.SetInitialDimension(vectorDim)
+			d.Index = aIdx
+		}
+
 		return d
 	})
 

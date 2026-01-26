@@ -7,7 +7,7 @@ import (
 // TestConcurrentInsert validates thread-safe concurrent insert operations.
 func TestConcurrentInsert(t *testing.T) {
 	dataset := &Dataset{Name: "test"}
-	index := NewArrowHNSW(dataset, DefaultArrowHNSWConfig(), nil)
+	index := NewArrowHNSW(dataset, DefaultArrowHNSWConfig())
 	lg := NewLevelGenerator(1.44269504089)
 
 	// Note: Inserts will fail without vector storage, but tests locking
@@ -42,7 +42,7 @@ func TestConcurrentInsert(t *testing.T) {
 // BenchmarkConcurrentInsert benchmarks concurrent insert performance.
 func BenchmarkConcurrentInsert(b *testing.B) {
 	dataset := &Dataset{Name: "test"}
-	index := NewArrowHNSW(dataset, DefaultArrowHNSWConfig(), nil)
+	index := NewArrowHNSW(dataset, DefaultArrowHNSWConfig())
 	lg := NewLevelGenerator(1.44269504089)
 
 	b.Run("Sequential", func(b *testing.B) {

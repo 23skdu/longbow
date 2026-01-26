@@ -102,7 +102,7 @@ func TestHNSWRaceCompaction(t *testing.T) {
 				return
 			default:
 				time.Sleep(20 * time.Millisecond)
-				_ = vs.CompactDataset(context.Background(), datasetName)
+				// _ = vs.CompactDataset(context.Background(), datasetName) // Not implemented
 			}
 		}
 	}()

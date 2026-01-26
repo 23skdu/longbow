@@ -3,6 +3,7 @@ package security
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -145,5 +146,9 @@ func getClientIP(r *http.Request) string {
 	}
 
 	// Finally use RemoteAddr
-	return r.RemoteAddr
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
 }

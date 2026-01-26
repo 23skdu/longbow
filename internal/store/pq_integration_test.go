@@ -31,13 +31,13 @@ func TestPQ_EndToEnd(t *testing.T) {
 	config.PQEnabled = false
 
 	// Mock Dataset/LocationStore setup
-	locStore := NewChunkedLocationStore()
+	// locStore variable removed
 	// Dataset is used for GetVector fallback, but since we verified InsertWithVector stores data
 	// in GraphData (VectorsChunk), we might get away with nil Dataset for HNSW operations
 	// IF the vectors are present in GraphData.
 	// However, getVector checks locationStore then dataset.
 	// Let's rely on GraphData being populated by InsertWithVector.
-	hnsw := NewArrowHNSW(nil, config, locStore)
+	hnsw := NewArrowHNSW(nil, config)
 
 	// 2. Generate Random Data
 	rng := rand.New(rand.NewSource(42)) // Fixed seed for reproducibility
@@ -75,7 +75,7 @@ func TestPQ_EndToEnd(t *testing.T) {
 
 	// Check a few existing vectors
 	for i := 0; i < trainVecs; i++ {
-		code, _ := gd.GetVectorPQ(uint32(i))
+		code := gd.GetVectorPQ(uint32(i))
 		require.NotNil(t, code, "Backfilled vector %d should have PQ code", i)
 		assert.Equal(t, pqM, len(code), "PQ code length mismatch")
 	}
@@ -87,7 +87,7 @@ func TestPQ_EndToEnd(t *testing.T) {
 
 		// Verify Quantized immediately
 		gd = hnsw.data.Load()
-		code, _ := gd.GetVectorPQ(uint32(i))
+		code := gd.GetVectorPQ(uint32(i))
 		require.NotNil(t, code, "New vector %d should have PQ code", i)
 	}
 
@@ -103,7 +103,7 @@ func TestPQ_EndToEnd(t *testing.T) {
 		queryVec := vectors[queryIdx]
 
 		// Perform Search
-		results, err := hnsw.Search(context.Background(), queryVec, k, 100, nil)
+		results, err := hnsw.Search(context.Background(), queryVec, k, nil)
 		require.NoError(t, err)
 
 		// Check if queryIdx is in results
@@ -128,7 +128,7 @@ func TestPQ_EndToEnd(t *testing.T) {
 	// Pick a vector and calculate exact L2 vs ADC result
 	testID := uint32(0)
 	testVec := vectors[0]
-	code, _ := gd.GetVectorPQ(testID)
+	code := gd.GetVectorPQ(testID)
 	// We need another vector to compute distance FROM
 	queryVec := vectors[1]
 

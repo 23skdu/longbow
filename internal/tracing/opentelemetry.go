@@ -18,8 +18,6 @@ type TraceSpan struct {
 }
 
 type Tracer struct {
-	provider oteltrace.TracerProvider
-	tracer   oteltrace.Tracer
 }
 
 type SpanConfig struct {
@@ -30,7 +28,6 @@ type SpanConfig struct {
 }
 
 var globalTracer oteltrace.Tracer
-var traceConfig SpanConfig
 
 func InitTracer(config SpanConfig) error {
 	if config.SampleRate < 0 || config.SampleRate > 1 {
@@ -56,7 +53,6 @@ func InitTracer(config SpanConfig) error {
 
 	otel.SetTracerProvider(tp)
 	globalTracer = tp.Tracer("longbow")
-	traceConfig = config
 	return nil
 }
 

@@ -18,7 +18,7 @@ func TestRepairAgent_DetectOrphans_Simple(t *testing.T) {
 	// Create ArrowHNSW index
 	hnswConfig := DefaultArrowHNSWConfig()
 	hnswConfig.M = 4
-	idx := NewArrowHNSW(nil, hnswConfig, nil)
+	idx := NewArrowHNSW(nil, hnswConfig)
 
 	// Insert connected nodes
 	vecs := [][]float32{
@@ -49,7 +49,7 @@ func TestRepairAgent_RepairAfterDeletion(t *testing.T) {
 
 	hnswConfig := DefaultArrowHNSWConfig()
 	hnswConfig.M = 4
-	idx := NewArrowHNSW(nil, hnswConfig, nil)
+	idx := NewArrowHNSW(nil, hnswConfig)
 
 	// Insert nodes forming a chain: 0 -> 1 -> 2 -> 3
 	vecs := [][]float32{
@@ -84,7 +84,7 @@ func TestRepairAgent_Lifecycle(t *testing.T) {
 	}
 
 	hnswConfig := DefaultArrowHNSWConfig()
-	idx := NewArrowHNSW(nil, hnswConfig, nil)
+	idx := NewArrowHNSW(nil, hnswConfig)
 
 	agent := NewRepairAgent(idx, config)
 	require.NotNil(t, agent)
@@ -108,7 +108,7 @@ func TestRepairAgent_Disabled(t *testing.T) {
 	}
 
 	hnswConfig := DefaultArrowHNSWConfig()
-	idx := NewArrowHNSW(nil, hnswConfig, nil)
+	idx := NewArrowHNSW(nil, hnswConfig)
 
 	agent := NewRepairAgent(idx, config)
 
@@ -129,7 +129,7 @@ func TestRepairAgent_MaxRepairsLimit(t *testing.T) {
 
 	hnswConfig := DefaultArrowHNSWConfig()
 	hnswConfig.M = 4
-	idx := NewArrowHNSW(nil, hnswConfig, nil)
+	idx := NewArrowHNSW(nil, hnswConfig)
 
 	// Insert some nodes
 	for i := 0; i < 10; i++ {
@@ -161,7 +161,7 @@ func TestRepairAgent_EmptyGraph(t *testing.T) {
 	}
 
 	hnswConfig := DefaultArrowHNSWConfig()
-	idx := NewArrowHNSW(nil, hnswConfig, nil)
+	idx := NewArrowHNSW(nil, hnswConfig)
 
 	agent := NewRepairAgent(idx, config)
 
@@ -181,7 +181,7 @@ func TestRepairAgent_SingleNode(t *testing.T) {
 	}
 
 	hnswConfig := DefaultArrowHNSWConfig()
-	idx := NewArrowHNSW(nil, hnswConfig, nil)
+	idx := NewArrowHNSW(nil, hnswConfig)
 
 	// Insert single node
 	vec := []float32{1.0, 0.0}
@@ -203,7 +203,7 @@ func BenchmarkRepairAgent_DetectOrphans(b *testing.B) {
 
 	hnswConfig := DefaultArrowHNSWConfig()
 	hnswConfig.M = 16
-	idx := NewArrowHNSW(nil, hnswConfig, nil)
+	idx := NewArrowHNSW(nil, hnswConfig)
 
 	// Build graph with 1000 nodes
 	for i := 0; i < 1000; i++ {
@@ -227,7 +227,7 @@ func BenchmarkRepairAgent_RepairCycle(b *testing.B) {
 
 	hnswConfig := DefaultArrowHNSWConfig()
 	hnswConfig.M = 16
-	idx := NewArrowHNSW(nil, hnswConfig, nil)
+	idx := NewArrowHNSW(nil, hnswConfig)
 
 	// Build graph
 	for i := 0; i < 500; i++ {

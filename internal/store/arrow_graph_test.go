@@ -2,6 +2,9 @@ package store
 
 import (
 	"testing"
+
+	"github.com/23skdu/longbow/internal/store/types"
+	lbtypes "github.com/23skdu/longbow/internal/store/types"
 )
 
 // TestArrowHNSW_NewIndex validates index creation.
@@ -9,7 +12,7 @@ func TestArrowHNSW_NewIndex(t *testing.T) {
 	dataset := &Dataset{Name: "test"}
 	config := DefaultArrowHNSWConfig()
 
-	index := NewArrowHNSW(dataset, config, nil)
+	index := NewArrowHNSW(dataset, config)
 
 	if index == nil {
 		t.Fatal("NewArrowHNSW returned nil")
@@ -45,7 +48,7 @@ func TestArrowHNSW_DefaultArrowHNSWConfig(t *testing.T) {
 // TestGraphData_Initialization validates GraphData structure.
 func TestGraphData_Initialization(t *testing.T) {
 	capacity := 100
-	data := NewGraphData(100, 10, false, false, 0, false, false, false, VectorTypeFloat32)
+	data := lbtypes.NewGraphData(100, 10, false, false, 0, false, false, false, lbtypes.VectorTypeFloat32)
 
 	if data.Capacity < capacity {
 		t.Errorf("Capacity = %d, want >= %d", data.Capacity, capacity)
@@ -92,6 +95,6 @@ func BenchmarkNewArrowHNSW(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = NewArrowHNSW(dataset, config, nil)
+		_ = NewArrowHNSW(dataset, config)
 	}
 }

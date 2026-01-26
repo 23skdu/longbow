@@ -103,9 +103,9 @@ func TestColumnIndexLookupDuration_Exists(t *testing.T) {
 	if ColumnIndexLookupDuration == nil {
 		t.Fatal("ColumnIndexLookupDuration metric should not be nil")
 	}
-	// Should be HistogramVec with dataset label
-	ColumnIndexLookupDuration.WithLabelValues("dataset1").Observe(0.0001)
-	ColumnIndexLookupDuration.WithLabelValues("dataset2").Observe(0.001)
+	// Should be HistogramVec with dataset and column labels
+	ColumnIndexLookupDuration.WithLabelValues("dataset1", "column1").Observe(0.0001)
+	ColumnIndexLookupDuration.WithLabelValues("dataset2", "column1").Observe(0.001)
 }
 
 // -----------------------------------------------------------------------------

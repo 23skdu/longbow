@@ -15,7 +15,7 @@ import (
 )
 
 // createTestRecords creates multiple record batches for testing
-func createTestRecords(count int) []arrow.Record {
+func createTestRecords(count int) []arrow.RecordBatch {
 	pool := memory.NewGoAllocator()
 	schema := arrow.NewSchema(
 		[]arrow.Field{
@@ -25,7 +25,7 @@ func createTestRecords(count int) []arrow.Record {
 		nil,
 	)
 
-	var records []arrow.Record
+	var records []arrow.RecordBatch
 	for i := 0; i < count; i++ {
 		builder := array.NewRecordBuilder(pool, schema)
 		defer builder.Release()
@@ -33,7 +33,7 @@ func createTestRecords(count int) []arrow.Record {
 		builder.Field(0).(*array.Int64Builder).Append(int64(i))
 		builder.Field(1).(*array.BinaryBuilder).Append([]byte(fmt.Sprintf("test-data-%d", i)))
 
-		record := builder.NewRecord()
+		record := builder.NewRecordBatch()
 		records = append(records, record)
 	}
 
@@ -41,7 +41,7 @@ func createTestRecords(count int) []arrow.Record {
 }
 
 // writeRecordsToWAL writes records to WAL backend
-func writeRecordsToWAL(ctx context.Context, backend storage.WALBackend, records []arrow.Record) error {
+func writeRecordsToWAL(ctx context.Context, backend storage.WALBackend, records []arrow.RecordBatch) error {
 	for i, record := range records {
 		if err := writeRecordToWAL(ctx, backend, record, fmt.Sprintf("dataset-%d", i), uint64(i)); err != nil {
 			return fmt.Errorf("failed to write record %d: %w", i, err)
@@ -51,16 +51,14 @@ func writeRecordsToWAL(ctx context.Context, backend storage.WALBackend, records 
 }
 
 // writeRecordToWAL writes a single record to WAL
-func writeRecordToWAL(ctx context.Context, backend storage.WALBackend, record arrow.Record, dataset string, seq uint64) error {
+func writeRecordToWAL(_ context.Context, backend storage.WALBackend, _ arrow.RecordBatch, dataset string, seq uint64) error {
 	// Create a simple WAL entry format
 	entry := struct {
 		Dataset string
 		Seq     uint64
-		Record  arrow.Record
 	}{
 		Dataset: dataset,
 		Seq:     seq,
-		Record:  record,
 	}
 
 	// Simple serialization for benchmarking

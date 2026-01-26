@@ -38,9 +38,8 @@ type VectorStore struct {
 	sequence atomic.Uint64 // Global operation sequence
 
 	// Persistence
-	dataPath      string
-	engine        *storage.StorageEngine // Manages WAL and Snapshots
-	snapshotReset chan time.Duration
+	dataPath string
+	engine   *storage.StorageEngine // Manages WAL and Snapshots
 
 	indexQueue          *IndexJobQueueLockFree // Integrated HNSW
 	ingestionQueue      *IngestionRingBuffer   // Lock-free ring buffer
@@ -81,7 +80,6 @@ type VectorStore struct {
 	// Compaction (Phase 11/14)
 	compactionConfig CompactionConfig
 	compactionWorker *CompactionWorker
-	rateLimiter      *RateLimiter
 
 	// Auto-sharding (Phase 13)
 	autoShardingConfig AutoShardingConfig
@@ -562,6 +560,9 @@ func (s *VectorStore) WaitForIndexing(name string) {
 
 func (s *VectorStore) stopWorkers() {
 	s.stopOnce.Do(func() {
+		if s.compactionWorker != nil {
+			s.compactionWorker.Stop()
+		}
 		if s.stopChan != nil {
 			close(s.stopChan)
 		}
@@ -576,8 +577,39 @@ func (s *VectorStore) ClosePersistence() error {
 }
 
 func (s *VectorStore) runPersistenceWorker() {
-	// Stub for persistence worker loop
-	if s.stopChan != nil {
-		<-s.stopChan
+	defer s.workerWg.Done()
+
+	for {
+		select {
+		case <-s.stopChan:
+			return
+		case job := <-s.persistenceQueue:
+			s.processPersistenceJob(job)
+		}
+	}
+}
+
+func (s *VectorStore) processPersistenceJob(job persistenceJob) {
+	defer job.batch.Release()
+
+	// Assign Sequence atomically
+	seq := s.sequence.Add(1)
+
+	// Write to WAL if engine is initialized
+	// Note: We access s.engine racily if InitPersistence is called concurrently,
+	// but usage model implies Init happens before heavy load.
+
+	s.configMu.RLock()
+	engine := s.engine
+	s.configMu.RUnlock()
+
+	if engine != nil {
+		if err := engine.WriteWAL(job.datasetName, job.batch, seq, job.ts); err != nil {
+			s.logger.Error().
+				Str("dataset", job.datasetName).
+				Uint64("seq", seq).
+				Err(err).
+				Msg("Failed to write to WAL")
+		}
 	}
 }

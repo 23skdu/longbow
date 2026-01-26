@@ -56,7 +56,8 @@ func BenchmarkHNSWComparison(b *testing.B) {
 		idx := store.NewHNSWIndex(ds)
 		start := time.Now()
 		for i := 0; i < numVectors; i++ {
-			_, _ = idx.Add(context.Background(), 0, i)
+			// Updated to AddByLocation
+			_, _ = idx.AddByLocation(context.Background(), 0, i)
 		}
 		b.ReportMetric(float64(time.Since(start).Milliseconds()), "coder_build_ms")
 		return idx
@@ -64,14 +65,12 @@ func BenchmarkHNSWComparison(b *testing.B) {
 
 	// Helper to create and populate hnsw2
 	createHNSW2 := func() *store.ArrowHNSW {
-		// ArrowHNSW now manages its own location store internally
-
 		config := store.DefaultArrowHNSWConfig()
-		idx := store.NewArrowHNSW(ds, config, nil)
+		// Updated to remove 3rd arg
+		idx := store.NewArrowHNSW(ds, config)
 
 		start := time.Now()
 		for i := 0; i < numVectors; i++ {
-			// AddByLocation handles ID generation and location storage
 			_, _ = idx.AddByLocation(context.Background(), 0, i)
 		}
 		b.ReportMetric(float64(time.Since(start).Milliseconds()), "hnsw2_build_ms")
@@ -99,7 +98,8 @@ func BenchmarkHNSWComparison(b *testing.B) {
 
 	b.Run("Search/Coder", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			_, err := coderIdx.Search(query, k)
+			// SearchVectors signature updated
+			_, err := coderIdx.SearchVectors(context.Background(), query, k, nil, store.SearchOptions{})
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -108,7 +108,8 @@ func BenchmarkHNSWComparison(b *testing.B) {
 
 	b.Run("Search/HNSW2", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			_, err := hnsw2Idx.Search(context.Background(), query, k, k*10, nil)
+			// Search signature updated (removed efSearch)
+			_, err := hnsw2Idx.Search(context.Background(), query, k, nil)
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -119,7 +120,7 @@ func BenchmarkHNSWComparison(b *testing.B) {
 	b.Run("SearchParallel/Coder", func(b *testing.B) {
 		b.RunParallel(func(pb *testing.PB) {
 			for pb.Next() {
-				_, err := coderIdx.Search(query, k)
+				_, err := coderIdx.SearchVectors(context.Background(), query, k, nil, store.SearchOptions{})
 				if err != nil {
 					b.Fatal(err)
 				}
@@ -130,7 +131,7 @@ func BenchmarkHNSWComparison(b *testing.B) {
 	b.Run("SearchParallel/HNSW2", func(b *testing.B) {
 		b.RunParallel(func(pb *testing.PB) {
 			for pb.Next() {
-				_, err := hnsw2Idx.Search(context.Background(), query, k, k*10, nil)
+				_, err := hnsw2Idx.Search(context.Background(), query, k, nil)
 				if err != nil {
 					b.Fatal(err)
 				}

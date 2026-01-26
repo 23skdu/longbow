@@ -62,7 +62,9 @@ func TestTrainKMeans_Basic(t *testing.T) {
 }
 
 func TestTrainKMeans_EmptyCluster(t *testing.T) {
-	rand.Seed(123)
+	// rand.Seed(123) - deprecated
+	r := rand.New(rand.NewSource(123))
+	_ = r // suppress unused if needed
 
 	// Test handling of empty clusters (n < k case)
 	n := 5

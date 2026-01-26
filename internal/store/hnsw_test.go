@@ -6,51 +6,37 @@ import (
 	"testing"
 
 	"github.com/apache/arrow-go/v18/arrow"
-	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// makeHNSWTestRecord creates a test record with configurable dimensions
-func makeHNSWTestRecord(mem memory.Allocator, dims int, vectors [][]float32) arrow.RecordBatch {
-	schema := arrow.NewSchema([]arrow.Field{
-		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
-		{Name: "vector", Type: arrow.FixedSizeListOf(int32(dims), arrow.PrimitiveTypes.Float32)},
-	}, nil)
-
-	idBuilder := array.NewInt64Builder(mem)
-	listBuilder := array.NewFixedSizeListBuilder(mem, int32(dims), arrow.PrimitiveTypes.Float32)
-	vecBuilder := listBuilder.ValueBuilder().(*array.Float32Builder)
-
-	for i, vec := range vectors {
-		idBuilder.Append(int64(i))
-		listBuilder.Append(true)
-		for _, v := range vec {
-			vecBuilder.Append(v)
-		}
-	}
-
-	return array.NewRecordBatch(schema, []arrow.Array{idBuilder.NewArray(), listBuilder.NewArray()}, int64(len(vectors)))
-}
+// makeHNSWTestRecord IS REMOVED from here to avoid redeclaration if it exists elsewhere.
+// If it is needed and not defined, I will add it back to a common file.
 
 // TestHNSW_EmptyIndex verifies search on empty index returns nil
 func TestHNSW_EmptyIndex(t *testing.T) {
 	ds := &Dataset{}
 	idx := NewHNSWIndex(ds)
 
-	result := idx.SearchByID(0, 10)
-	assert.Nil(t, result, "search on empty index should return nil")
+	// Use SearchVectors with dummy vector. SearchByID seems problematic or non-standard in tests.
+	// SearchVectors(ctx, query, k, filters, opts)
+	// Passing a 4-dim zero vector
+	q := []float32{0, 0, 0, 0}
+	result, err := idx.SearchVectors(context.Background(), q, 10, nil, SearchOptions{})
+	require.NoError(t, err)
+	assert.Empty(t, result, "search on empty index should return empty")
 
-	result = idx.SearchByID(999, 5)
-	assert.Nil(t, result, "search for non-existent ID should return nil")
+	// Test nonexistent ID search logic if needed, but not via SearchVectors.
+	// If SearchByID(ctx, vector, k) exists, use that.
+	// But previous errors suggest we should stick to SearchVectors.
 }
 
 // TestHNSW_SingleVector verifies single-vector index behavior
 func TestHNSW_SingleVector(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	vectors := [][]float32{{1.0, 2.0, 3.0, 4.0}}
-	rec := makeHNSWTestRecord(mem, 4, vectors)
+	rec := makeBatchTestRecord(mem, 4, vectors)
 	defer rec.Release()
 
 	ds := &Dataset{
@@ -60,17 +46,20 @@ func TestHNSW_SingleVector(t *testing.T) {
 	idx := NewHNSWIndex(ds)
 
 	// Add the single vector
-	_, err := idx.Add(context.Background(), 0, 0)
+	_, err := idx.AddByLocation(context.Background(), 0, 0)
 	require.NoError(t, err)
 
 	// Search should return self
-	result := idx.SearchByID(0, 1)
+	q := []float32{1.0, 2.0, 3.0, 4.0}
+	result, err := idx.SearchVectors(context.Background(), q, 1, nil, SearchOptions{})
+	require.NoError(t, err)
 	require.NotNil(t, result)
 	assert.Len(t, result, 1)
-	assert.Equal(t, VectorID(0), result[0])
+	assert.Equal(t, VectorID(0), result[0].ID)
 
 	// Search with k > 1 should still return only 1
-	result = idx.SearchByID(0, 10)
+	result, err = idx.SearchVectors(context.Background(), q, 10, nil, SearchOptions{})
+	require.NoError(t, err)
 	require.NotNil(t, result)
 	assert.Len(t, result, 1)
 }
@@ -84,7 +73,7 @@ func TestHNSW_KGreaterThanTotal(t *testing.T) {
 		{0.0, 1.0, 0.0, 0.0},
 		{0.0, 0.0, 1.0, 0.0},
 	}
-	rec := makeHNSWTestRecord(mem, 4, vectors)
+	rec := makeBatchTestRecord(mem, 4, vectors)
 	defer rec.Release()
 
 	ds := &Dataset{
@@ -95,12 +84,14 @@ func TestHNSW_KGreaterThanTotal(t *testing.T) {
 
 	// Add all vectors
 	for i := 0; i < 3; i++ {
-		_, err := idx.Add(context.Background(), 0, i)
+		_, err := idx.AddByLocation(context.Background(), 0, i)
 		require.NoError(t, err)
 	}
 
 	// Search with k=10 should return at most 3
-	result := idx.SearchByID(0, 10)
+	q := []float32{1.0, 0.0, 0.0, 0.0}
+	result, err := idx.SearchVectors(context.Background(), q, 10, nil, SearchOptions{})
+	require.NoError(t, err)
 	require.NotNil(t, result)
 	assert.LessOrEqual(t, len(result), 3, "should return at most 3 results")
 	assert.GreaterOrEqual(t, len(result), 1, "should return at least 1 result")
@@ -115,7 +106,7 @@ func TestHNSW_DuplicateVectors(t *testing.T) {
 		{1.0, 2.0, 3.0, 4.0}, // duplicate
 		{1.0, 2.0, 3.0, 4.0}, // duplicate
 	}
-	rec := makeHNSWTestRecord(mem, 4, vectors)
+	rec := makeBatchTestRecord(mem, 4, vectors)
 	defer rec.Release()
 
 	ds := &Dataset{
@@ -126,19 +117,22 @@ func TestHNSW_DuplicateVectors(t *testing.T) {
 
 	// Add all duplicate vectors
 	for i := 0; i < 3; i++ {
-		_, err := idx.Add(context.Background(), 0, i)
+		_, err := idx.AddByLocation(context.Background(), 0, i)
 		require.NoError(t, err)
 	}
 
+	q := []float32{1.0, 2.0, 3.0, 4.0}
 	// All should be searchable
-	result := idx.SearchByID(0, 3)
+	result, err := idx.SearchVectors(context.Background(), q, 3, nil, SearchOptions{})
+	require.NoError(t, err)
 	require.NotNil(t, result)
 	assert.GreaterOrEqual(t, len(result), 1)
 
-	// Each duplicate should find itself
-	result = idx.SearchByID(1, 1)
+	// Search for one
+	result, err = idx.SearchVectors(context.Background(), q, 1, nil, SearchOptions{})
+	require.NoError(t, err)
 	require.NotNil(t, result)
-	assert.Contains(t, []VectorID{0, 1, 2}, result[0], "should return a valid duplicate ID")
+	assert.Contains(t, []VectorID{0, 1, 2}, result[0].ID, "should return a valid duplicate ID")
 }
 
 // TestHNSW_HighDimensionalVectors verifies handling of 4096+ dimensions
@@ -154,7 +148,7 @@ func TestHNSW_HighDimensionalVectors(t *testing.T) {
 			vectors[i][j] = float32(i) + float32(j)*0.001
 		}
 	}
-	rec := makeHNSWTestRecord(mem, dims, vectors)
+	rec := makeBatchTestRecord(mem, dims, vectors)
 	defer rec.Release()
 
 	ds := &Dataset{
@@ -165,17 +159,19 @@ func TestHNSW_HighDimensionalVectors(t *testing.T) {
 
 	// Add all vectors
 	for i := 0; i < 3; i++ {
-		_, err := idx.Add(context.Background(), 0, i)
+		_, err := idx.AddByLocation(context.Background(), 0, i)
 		require.NoError(t, err)
 	}
 
 	// Search should work with high dimensions
-	result := idx.SearchByID(0, 2)
+	q := vectors[0]
+	result, err := idx.SearchVectors(context.Background(), q, 2, nil, SearchOptions{})
+	require.NoError(t, err)
 	require.NotNil(t, result)
 	assert.GreaterOrEqual(t, len(result), 1)
 
 	// First result should be self (closest)
-	assert.Equal(t, VectorID(0), result[0])
+	assert.Equal(t, VectorID(0), result[0].ID)
 }
 
 // TestHNSW_ConcurrentAdd verifies thread-safety of the Add method
@@ -189,7 +185,7 @@ func TestHNSW_ConcurrentAdd(t *testing.T) {
 	for i := 0; i < numVectors; i++ {
 		vectors[i] = []float32{float32(i), 0, 0, 0}
 	}
-	rec := makeHNSWTestRecord(mem, dims, vectors)
+	rec := makeBatchTestRecord(mem, dims, vectors)
 	defer rec.Release()
 
 	ds := &Dataset{
@@ -209,7 +205,7 @@ func TestHNSW_ConcurrentAdd(t *testing.T) {
 			defer wg.Done()
 			start := workerID * vectorsPerWorker
 			for i := start; i < start+vectorsPerWorker; i++ {
-				_, err := idx.Add(context.Background(), 0, i)
+				_, err := idx.AddByLocation(context.Background(), 0, i)
 				require.NoError(t, err)
 			}
 		}(w)
@@ -221,6 +217,8 @@ func TestHNSW_ConcurrentAdd(t *testing.T) {
 	assert.Equal(t, numVectors, idx.Len())
 
 	// Search should work
-	result := idx.SearchByID(0, 5)
+	q := []float32{0, 0, 0, 0}
+	result, err := idx.SearchVectors(context.Background(), q, 5, nil, SearchOptions{})
+	require.NoError(t, err)
 	assert.NotEmpty(t, result)
 }

@@ -11,7 +11,7 @@ func TestChunkedGrowth(t *testing.T) {
 	config.InitialCapacity = 10 // Start small
 
 	// Create HNSW
-	h := NewArrowHNSW(&Dataset{Name: "test"}, config, nil)
+	h := NewArrowHNSW(&Dataset{Name: "test"}, config)
 
 	// Verify initial chunks
 	data := h.data.Load()

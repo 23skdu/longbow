@@ -4,28 +4,30 @@ import (
 	"fmt"
 	"testing"
 
+	lbtypes "github.com/23skdu/longbow/internal/store/types"
+
 	"github.com/stretchr/testify/assert"
 )
 
 func TestVectorDataType_String(t *testing.T) {
 	tests := []struct {
-		dt       VectorDataType
+		dt       lbtypes.VectorDataType
 		expected string
 	}{
-		{VectorTypeInt8, "int8"},
-		{VectorTypeUint8, "uint8"},
-		{VectorTypeInt16, "int16"},
-		{VectorTypeUint16, "uint16"},
-		{VectorTypeInt32, "int32"},
-		{VectorTypeUint32, "uint32"},
-		{VectorTypeInt64, "int64"},
-		{VectorTypeUint64, "uint64"},
-		{VectorTypeFloat16, "float16"},
-		{VectorTypeFloat32, "float32"},
-		{VectorTypeFloat64, "float64"},
-		{VectorTypeComplex64, "complex64"},
-		{VectorTypeComplex128, "complex128"},
-		{VectorDataType(-1), "unknown(-1)"},
+		{lbtypes.VectorTypeInt8, "int8"},
+		{lbtypes.VectorTypeUint8, "uint8"},
+		{lbtypes.VectorTypeInt16, "int16"},
+		{lbtypes.VectorTypeUint16, "uint16"},
+		{lbtypes.VectorTypeInt32, "int32"},
+		{lbtypes.VectorTypeUint32, "uint32"},
+		{lbtypes.VectorTypeInt64, "int64"},
+		{lbtypes.VectorTypeUint64, "uint64"},
+		{lbtypes.VectorTypeFloat16, "float16"},
+		{lbtypes.VectorTypeFloat32, "float32"},
+		{lbtypes.VectorTypeFloat64, "float64"},
+		{lbtypes.VectorTypeComplex64, "complex64"},
+		{lbtypes.VectorTypeComplex128, "complex128"},
+		{lbtypes.VectorDataType(-1), "unknown(-1)"},
 	}
 
 	for _, tt := range tests {
@@ -37,22 +39,22 @@ func TestVectorDataType_String(t *testing.T) {
 
 func TestVectorDataType_ElementSize(t *testing.T) {
 	tests := []struct {
-		dt       VectorDataType
+		dt       lbtypes.VectorDataType
 		expected int
 	}{
-		{VectorTypeInt8, 1},
-		{VectorTypeUint8, 1},
-		{VectorTypeInt16, 2},
-		{VectorTypeUint16, 2},
-		{VectorTypeFloat16, 2},
-		{VectorTypeInt32, 4},
-		{VectorTypeUint32, 4},
-		{VectorTypeFloat32, 4},
-		{VectorTypeInt64, 8},
-		{VectorTypeUint64, 8},
-		{VectorTypeFloat64, 8},
-		{VectorTypeComplex64, 8},
-		{VectorTypeComplex128, 16},
+		{lbtypes.VectorTypeInt8, 1},
+		{lbtypes.VectorTypeUint8, 1},
+		{lbtypes.VectorTypeInt16, 2},
+		{lbtypes.VectorTypeUint16, 2},
+		{lbtypes.VectorTypeFloat16, 2},
+		{lbtypes.VectorTypeInt32, 4},
+		{lbtypes.VectorTypeUint32, 4},
+		{lbtypes.VectorTypeFloat32, 4},
+		{lbtypes.VectorTypeInt64, 8},
+		{lbtypes.VectorTypeUint64, 8},
+		{lbtypes.VectorTypeFloat64, 8},
+		{lbtypes.VectorTypeComplex64, 8},
+		{lbtypes.VectorTypeComplex128, 16},
 		{VectorDataType(99), 0},
 	}
 

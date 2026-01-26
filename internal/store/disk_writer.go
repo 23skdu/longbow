@@ -32,7 +32,7 @@ func WriteDiskGraph(gd *GraphData, path string, maxNodeID int, sqMin, sqMax floa
 			// Iterate efficiently: chunks are allocated sparsely?
 			// Actually gd.Neighbors[l] is a slice of chunk offsets.
 			for cID := 0; cID < len(gd.Neighbors[l]); cID++ {
-				if gd.Neighbors[l][cID] != 0 {
+				if gd.Neighbors[l][cID] != nil {
 					hasNode = true
 					break
 				}

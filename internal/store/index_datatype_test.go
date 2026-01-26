@@ -87,8 +87,7 @@ func TestArrowHNSW_DataTypes(t *testing.T) {
 				config.Float16Enabled = true
 			}
 
-			locStore := NewChunkedLocationStore()
-			idx := NewArrowHNSW(ds, config, locStore)
+			idx := NewArrowHNSW(ds, config)
 			defer func() { _ = idx.Close() }()
 
 			// 2. Ingestion (AddBatch)
@@ -113,7 +112,7 @@ func TestArrowHNSW_DataTypes(t *testing.T) {
 			// NOTE: For Complex128, originalVecs contains the FLATTENED float32 representation (2*dims)
 			// queryVec should be passed as is involved in distance calc.
 
-			res, err := idx.Search(context.Background(), queryVec, 10, 50, nil)
+			res, err := idx.Search(context.Background(), queryVec, 10, nil)
 			require.NoError(t, err, "Search failed")
 			require.NotEmpty(t, res, "Search returned 0 results")
 
@@ -125,7 +124,7 @@ func TestArrowHNSW_DataTypes(t *testing.T) {
 			if tt.dataType == VectorTypeFloat16 {
 				threshold = 0.5 // Relaxed for F16
 			}
-			assert.Less(t, res[0].Score, threshold, "Distance to self should be small")
+			assert.Less(t, res[0].Dist, threshold, "Distance to self should be small")
 
 			// 4. Verify Dimension Metadata (if applicable)
 			assert.Equal(t, uint32(tt.dims), idx.GetDimension())

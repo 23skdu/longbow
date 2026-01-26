@@ -18,7 +18,7 @@ func TestHNSW_TombstoneRepair_WiresAround(t *testing.T) {
 	config.M = 8
 	config.EfConstruction = 40
 
-	idx := NewArrowHNSW(nil, config, nil)
+	idx := NewArrowHNSW(nil, config)
 
 	// 2. Build a graph with random vectors
 	count := 100

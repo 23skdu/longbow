@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/23skdu/longbow/internal/metrics"
+	lbtypes "github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/float16"
@@ -44,11 +45,11 @@ func TestObservability_GranularMetrics(t *testing.T) {
 	}
 
 	config := DefaultArrowHNSWConfig()
-	config.DataType = VectorTypeFloat16
+	config.DataType = lbtypes.VectorTypeFloat16
 	config.Float16Enabled = true // Ensure flag is synced
 
 	// Initialize Index
-	idx := NewArrowHNSW(ds, config, NewChunkedLocationStore())
+	idx := NewArrowHNSW(ds, config)
 
 	// 1. Verify Insert Metrics (Float16)
 	metrics.HNSWInsertLatencyByType.Reset()
@@ -67,7 +68,7 @@ func TestObservability_GranularMetrics(t *testing.T) {
 	// We search with float32 approx since Int8 input support in Search() input validation might be limited,
 	// but the *Metric* switch uses config.DataType/data.Type which we set to Int8.
 	q := []float32{1.0, 0.0}
-	_, err = idx.Search(context.Background(), q, 1, 10, nil)
+	_, err = idx.Search(context.Background(), q, 1, nil)
 	require.NoError(t, err)
 
 	assert.Equal(t, 1, testutil.CollectAndCount(metrics.HNSWSearchLatencyByType), "Should record search latency for int8 type")
@@ -86,14 +87,15 @@ func TestObservability_GranularMetrics(t *testing.T) {
 	// Let's assume for now we use a float32 index for bulk test to be safe on logic.
 
 	configF32 := DefaultArrowHNSWConfig()
-	configF32.DataType = VectorTypeFloat32
-	idxF32 := NewArrowHNSW(ds, configF32, NewChunkedLocationStore())
+	configF32.DataType = lbtypes.VectorTypeFloat32
+	idxF32 := NewArrowHNSW(ds, configF32)
 
 	vecs := [][]float32{{1.0, 0.0}}
 	// We need to ensure graph has capacity/chunks. AddBatchBulk usually does prep.
 	// We need to feed it context.
 	// Also it calls h.data.Load(), so we need initialized data.
-	idxF32.Grow(10, 2)
+	err = idxF32.Grow(10, 2)
+	require.NoError(t, err)
 
 	err = idxF32.AddBatchBulk(context.Background(), 100, 1, vecs)
 	require.NoError(t, err)
@@ -105,7 +107,7 @@ func TestHNSW_ObservabilityMetrics(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	vectors := [][]float32{{1.0, 0.0}, {0.0, 1.0}}
 	dims := 2
-	rec := makeHNSWTestRecord(mem, dims, vectors)
+	rec := makeBatchTestRecord(mem, dims, vectors)
 	defer rec.Release()
 
 	ds := &Dataset{
@@ -115,12 +117,10 @@ func TestHNSW_ObservabilityMetrics(t *testing.T) {
 	}
 
 	config := DefaultArrowHNSWConfig()
-	// Enable something that triggers the 'useRefinement' flag if we want to test refinement throughput
-	// useRefinement := (h.config.SQ8Enabled || h.config.PQEnabled || h.config.BQEnabled) && h.config.RefinementFactor > 1.0
+	// useRefinement := (h.config.SQ8Enabled || h.config.PQEnabled || h.config.BQEnabled)
 	config.SQ8Enabled = true
-	config.RefinementFactor = 2.0
 
-	idx := NewArrowHNSW(ds, config, NewChunkedLocationStore())
+	idx := NewArrowHNSW(ds, config)
 
 	// Add vectors
 	_, err := idx.AddByLocation(context.Background(), 0, 0)
@@ -135,7 +135,7 @@ func TestHNSW_ObservabilityMetrics(t *testing.T) {
 
 	// Search
 	q := []float32{1.0, 0.0}
-	_, err = idx.Search(context.Background(), q, 1, 10, nil)
+	_, err = idx.Search(context.Background(), q, 1, nil)
 	require.NoError(t, err)
 
 	// Verify Metrics

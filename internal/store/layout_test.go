@@ -3,6 +3,7 @@ package store
 import (
 	"testing"
 
+	lbtypes "github.com/23skdu/longbow/internal/store/types"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -53,17 +54,17 @@ func TestGraphData_CacheLinePadding(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gd := NewGraphData(100, tt.dims, false, false, 0, false, false, false, tt.dataType)
+			gd := lbtypes.NewGraphData(100, tt.dims, false, false, 0, false, false, false, tt.dataType)
 
 			// Verify PaddedDims
 			elementSize := tt.dataType.ElementSize()
 			expectedPaddedDims := tt.expectedBytes / elementSize
 
-			assert.Equal(t, expectedPaddedDims, gd.PaddedDims, "PaddedDims should match expected padded byte size")
+			assert.Equal(t, expectedPaddedDims, gd.GetPaddedDims(), "PaddedDims should match expected padded byte size")
 			assert.Equal(t, tt.dims, gd.Dims, "Original dims should be preserved")
 
 			// Verify actual byte alignment
-			paddedBytes := gd.PaddedDims * elementSize
+			paddedBytes := gd.GetPaddedDims() * elementSize
 			assert.Equal(t, 0, paddedBytes%64, "Vector size in bytes must be multiple of 64")
 		})
 	}

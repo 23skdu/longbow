@@ -18,7 +18,7 @@ func BenchmarkHNSW_InsertAllocations(b *testing.B) {
 	config.InitialCapacity = 1000 // Small start to force growth
 
 	ds := &Dataset{Name: "bench_alloc"}
-	h := NewArrowHNSW(ds, config, nil)
+	h := NewArrowHNSW(ds, config)
 
 	// Pre-generate vectors
 	vecs := make([][]float32, b.N)
@@ -49,11 +49,11 @@ func TestHNSW_VisitedGrowth(t *testing.T) {
 	// Track allocations indirectly by address change? Hard in Go.
 	// But we can check capacity behavior.
 
-	initialCap := cap(bs.data)
+	initialCap := cap(bs.bits)
 
 	// Grow slightly
 	bs.Grow(101)
-	cap1 := cap(bs.data)
+	cap1 := cap(bs.bits)
 
 	// Depending on start size (100 bits = 2 uint64s), cap=2.
 	// 101 bits = 2 uint64s.
@@ -63,7 +63,7 @@ func TestHNSW_VisitedGrowth(t *testing.T) {
 
 	// Grow to 129 (3 words)
 	bs.Grow(129)
-	cap2 := cap(bs.data)
+	cap2 := cap(bs.bits)
 
 	// Current impl: cap2 should be 3.
 	// Optimized impl: cap2 should be 4 or more (doubling).

@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"testing"
 
+	lbtypes "github.com/23skdu/longbow/internal/store/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -18,12 +19,12 @@ func TestArrowHNSW_Complex64_ZeroCopy(t *testing.T) {
 
 	config := DefaultArrowHNSWConfig()
 	config.Dims = dims
-	config.DataType = VectorTypeComplex64
+	config.DataType = lbtypes.VectorTypeComplex64
 	config.M = 16
 	config.EfConstruction = 100
-	config.Metric = MetricEuclidean
+	config.Metric = "l2"
 
-	idx := NewArrowHNSW(nil, config, nil)
+	idx := NewArrowHNSW(nil, config)
 
 	// 1. Prepare Data
 	vecsC64 := make([][]complex64, count)
@@ -57,14 +58,14 @@ func TestArrowHNSW_Complex64_ZeroCopy(t *testing.T) {
 	// Passing a native []complex64 slice.
 	// The new Search(any) signature should allow this and resolve correctly.
 	query := vecsC64[0]
-	results, err := idx.Search(context.Background(), query, 10, 50, nil)
+	results, err := idx.Search(context.Background(), query, 10, nil)
 	require.NoError(t, err)
 	require.NotEmpty(t, results)
 
 	// Expect ID 0 at top
 	assert.Equal(t, uint32(0), uint32(results[0].ID))
 	// Score should be ~0 (Euclidean distance to itself)
-	assert.True(t, math.Abs(float64(results[0].Score)) < 1e-5, "Expected 0 distance for self-search")
+	assert.True(t, math.Abs(float64(results[0].Dist)) < 1e-5, "Expected 0 distance for self-search")
 }
 
 // TestArrowHNSW_Complex128_ZeroCopy validates native complex128 support.
@@ -74,12 +75,12 @@ func TestArrowHNSW_Complex128_ZeroCopy(t *testing.T) {
 
 	config := DefaultArrowHNSWConfig()
 	config.Dims = dims
-	config.DataType = VectorTypeComplex128
+	config.DataType = lbtypes.VectorTypeComplex128
 	config.M = 16
 	config.EfConstruction = 100
-	config.Metric = MetricEuclidean
+	config.Metric = "l2"
 
-	idx := NewArrowHNSW(nil, config, nil)
+	idx := NewArrowHNSW(nil, config)
 
 	vecsC128 := make([][]complex128, count)
 	for i := 0; i < count; i++ {
@@ -104,22 +105,22 @@ func TestArrowHNSW_Complex128_ZeroCopy(t *testing.T) {
 	assert.Equal(t, vecsC128[0], valC128)
 
 	// Search
-	results, err := idx.Search(context.Background(), vecsC128[0], 5, 50, nil)
+	results, err := idx.Search(context.Background(), vecsC128[0], 5, nil)
 	require.NoError(t, err)
 	require.NotEmpty(t, results)
 
 	assert.Equal(t, uint32(0), uint32(results[0].ID))
-	assert.True(t, math.Abs(float64(results[0].Score)) < 1e-5)
+	assert.True(t, math.Abs(float64(results[0].Dist)) < 1e-5)
 }
 
 func TestArrowHNSW_Complex_FlattenedQuery(t *testing.T) {
 	dims := 4 // 4 complex numbers
 	config := DefaultArrowHNSWConfig()
 	config.Dims = dims
-	config.DataType = VectorTypeComplex128
-	config.Metric = MetricEuclidean
+	config.DataType = lbtypes.VectorTypeComplex128
+	config.Metric = "l2"
 
-	idx := NewArrowHNSW(nil, config, nil)
+	idx := NewArrowHNSW(nil, config)
 
 	// Create test vector
 	vec := []complex128{1 + 1i, 2 + 2i, 3 + 3i, 4 + 4i}
@@ -133,9 +134,9 @@ func TestArrowHNSW_Complex_FlattenedQuery(t *testing.T) {
 	// 4 complex128 = 8 floats.
 	flatQuery := []float32{1, 1, 2, 2, 3, 3, 4, 4}
 
-	results, err := idx.Search(context.Background(), flatQuery, 1, 10, nil)
+	results, err := idx.Search(context.Background(), flatQuery, 1, nil)
 	require.NoError(t, err)
 	require.Len(t, results, 1)
 	require.Equal(t, uint32(0), uint32(results[0].ID))
-	require.InDelta(t, 0.0, results[0].Score, 1e-5)
+	require.InDelta(t, 0.0, results[0].Dist, 1e-5)
 }

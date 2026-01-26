@@ -145,10 +145,11 @@ func TestSearchWithBitmapFiltering(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, results, 1)
 
-	loc, ok := idx.GetLocation(results[0].ID)
+	loc, ok := idx.GetLocation(uint32(results[0].ID))
 	require.True(t, ok)
-	assert.Equal(t, 0, loc.BatchIdx)
-	assert.Equal(t, 1, loc.RowIdx)
+	l := loc.(Location)
+	assert.Equal(t, 0, l.BatchIdx)
+	assert.Equal(t, 1, l.RowIdx)
 }
 
 func TestShardedSearchWithBitmapFiltering(t *testing.T) {

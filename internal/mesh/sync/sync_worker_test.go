@@ -92,8 +92,11 @@ func TestSyncWorker_Replication(t *testing.T) {
 	_, err = putStream.Recv() // wait for ack
 	require.Equal(t, io.EOF, err)
 
-	// Wait for WAL flush on leader
-	time.Sleep(100 * time.Millisecond)
+	// Wait for Leader to ingest and update indices/Merkle
+	require.Eventually(t, func() bool {
+		ds, err := leaderStore.GetDataset("ds1")
+		return err == nil && ds.IndexLen() > 0
+	}, 5*time.Second, 100*time.Millisecond, "Leader should have indexed the data")
 
 	// 5. Start SyncWorker on Follower
 	worker := NewSyncWorker(followerStore, &logger)

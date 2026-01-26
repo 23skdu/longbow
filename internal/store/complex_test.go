@@ -5,6 +5,7 @@ import (
 	"math/rand"
 	"testing"
 
+	lbtypes "github.com/23skdu/longbow/internal/store/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -17,12 +18,12 @@ func TestComplex64_Support(t *testing.T) {
 
 	config := DefaultArrowHNSWConfig()
 	config.Dims = dims
-	config.DataType = VectorTypeComplex64
+	config.DataType = lbtypes.VectorTypeComplex64
 	config.M = 16
 	config.EfConstruction = 100
 	config.Float16Enabled = false // Ensure we use Complex64
 
-	idx := NewArrowHNSW(nil, config, nil)
+	idx := NewArrowHNSW(nil, config)
 
 	// Generate random vectors
 	vecs := make([][]float32, count)
@@ -56,11 +57,11 @@ func TestComplex64_Support(t *testing.T) {
 
 	// Search
 	// Use vec[0] as query. Should find itself.
-	results, err := idx.Search(context.Background(), vecs[0], 10, 50, nil)
+	results, err := idx.Search(context.Background(), vecs[0], 10, nil)
 	require.NoError(t, err)
 	require.NotEmpty(t, results)
 	assert.EqualValues(t, 0, results[0].ID)
-	assert.Equal(t, float32(0), results[0].Score)
+	assert.Equal(t, float32(0), results[0].Dist)
 }
 
 func TestComplex128_Support(t *testing.T) {
@@ -69,11 +70,11 @@ func TestComplex128_Support(t *testing.T) {
 
 	config := DefaultArrowHNSWConfig()
 	config.Dims = dims
-	config.DataType = VectorTypeComplex128
+	config.DataType = lbtypes.VectorTypeComplex128
 	config.M = 16
 	config.EfConstruction = 100
 
-	idx := NewArrowHNSW(nil, config, nil)
+	idx := NewArrowHNSW(nil, config)
 
 	vecs := make([][]float32, count)
 	complexVecs := make([][]complex128, count)
@@ -102,7 +103,7 @@ func TestComplex128_Support(t *testing.T) {
 	assert.True(t, ok)
 	assert.Equal(t, complexVecs[0], vecC128)
 
-	results, err := idx.Search(context.Background(), vecs[0], 10, 50, nil)
+	results, err := idx.Search(context.Background(), vecs[0], 10, nil)
 	require.NoError(t, err)
 	require.NotEmpty(t, results)
 	assert.EqualValues(t, 0, results[0].ID)

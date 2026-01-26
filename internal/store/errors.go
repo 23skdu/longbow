@@ -28,3 +28,14 @@ func NewConfigError(component, field, value, message string) error {
 		Timestamp: time.Now(),
 	}
 }
+
+// ErrVectorDimensionMismatch represents a mismatch between vector dimensions.
+type ErrVectorDimensionMismatch struct {
+	ID       int
+	Expected int
+	Actual   int
+}
+
+func (e *ErrVectorDimensionMismatch) Error() string {
+	return fmt.Sprintf("dimension mismatch for vector %d: expected %d, got %d", e.ID, e.Expected, e.Actual)
+}

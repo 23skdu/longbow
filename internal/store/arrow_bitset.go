@@ -41,7 +41,7 @@ func (b *ArrowBitset) Set(pos int) {
 
 	// Grow if necessary
 	if pos >= b.blocks*64 {
-		b.growInternal(pos)
+		b.growInternal(pos + 1)
 	}
 
 	block := pos / 64

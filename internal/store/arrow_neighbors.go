@@ -8,6 +8,16 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/compute"
 )
 
+// ErrNeighborSelectionLengthMismatch is the error type for mismatched input lengths.
+type ErrNeighborSelectionLengthMismatch struct {
+	DistancesLen int
+	IDsLen       int
+}
+
+func (e *ErrNeighborSelectionLengthMismatch) Error() string {
+	return fmt.Sprintf("neighbor selection length mismatch: dists=%d ids=%d", e.DistancesLen, e.IDsLen)
+}
+
 // SelectTopKNeighbors selects the k nearest neighbors based on distances using Arrow compute kernels.
 // It uses the custom "select_k_neighbors" kernel.
 func (b *BatchDistanceComputer) SelectTopKNeighbors(
@@ -19,7 +29,7 @@ func (b *BatchDistanceComputer) SelectTopKNeighbors(
 		return nil, nil, nil
 	}
 	if len(distances) != len(ids) {
-		return nil, nil, NewNeighborSelectionLengthMismatchError(len(distances), len(ids))
+		return nil, nil, &ErrNeighborSelectionLengthMismatch{DistancesLen: len(distances), IDsLen: len(ids)}
 	}
 	if len(ids) <= k {
 		outID := make([]uint32, len(ids))
@@ -107,10 +117,6 @@ func (b *BatchDistanceComputer) SelectTopKNeighbors(
 	copy(resDists, takenDists.Float32Values())
 
 	return resIDs, resDists, nil
-}
-
-func NewNeighborSelectionLengthMismatchError(distsLen, idsLen int) error {
-	return fmt.Errorf("neighbor selection length mismatch: dists=%d ids=%d", distsLen, idsLen)
 }
 
 func NewNeighborSelectionFailedError(op string, err error) error {

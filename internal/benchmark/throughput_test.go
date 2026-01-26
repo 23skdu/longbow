@@ -1,7 +1,6 @@
 package benchmark
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"runtime"
@@ -59,8 +58,9 @@ func BenchmarkThroughput(b *testing.B) {
 			b.ReportMetric(bytesPerSecond, "bytes/sec")
 
 			// Report to Prometheus for monitoring
-			metrics.StorageWriteOpsTotal.Inc()
-			metrics.StorageWriteLatencySeconds.Observe(b.Elapsed().Seconds())
+			// Report to Prometheus for monitoring
+			metrics.WalWritesTotal.WithLabelValues("success").Inc()
+			metrics.WalFsyncDurationSeconds.WithLabelValues("success").Observe(b.Elapsed().Seconds())
 		})
 	}
 }
@@ -68,14 +68,11 @@ func BenchmarkThroughput(b *testing.B) {
 // createStandardBackend creates a standard WAL backend for testing
 func createStandardBackend(b *testing.B, dir string) storage.WALBackend {
 	filePath := fmt.Sprintf("%s/standard.wal", dir)
-	file, err := os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	backend, err := storage.NewFSBackend(filePath)
 	if err != nil {
 		b.Fatalf("failed to create standard WAL: %v", err)
 	}
-	return &storage.FSBackend{
-		F:    file,
-		Path: filePath,
-	}
+	return backend
 }
 
 // createIOUringBackend creates an io_uring WAL backend for testing
@@ -115,7 +112,8 @@ func BenchmarkLatency(b *testing.B) {
 		latency := time.Since(start)
 
 		// Record latency distribution
-		metrics.StorageWriteLatencySeconds.Observe(latency.Seconds())
+		// Record latency distribution
+		metrics.WalFsyncDurationSeconds.WithLabelValues("success").Observe(latency.Seconds())
 	}
 
 	b.ReportMetric(float64(b.N)/b.Elapsed().Seconds(), "ops/sec")

@@ -1,15 +1,11 @@
 package security
 
 import (
-	"context"
-	"fmt"
 	"net/http"
-	"strings"
+	"net/http/httptest"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestRateLimiter(t *testing.T) {
@@ -82,7 +78,6 @@ func TestSecurityHeaders(t *testing.T) {
 	protectedHandler := SecurityHeaders(nextHandler)
 
 	req := httptest.NewRequest("GET", "/test", nil)
-	require.NoError(t, err)
 
 	w := httptest.NewRecorder()
 	protectedHandler.ServeHTTP(w, req)

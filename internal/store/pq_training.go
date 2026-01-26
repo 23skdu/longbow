@@ -66,7 +66,9 @@ func (h *ArrowHNSW) TrainPQ(vectors [][]float32) error {
 		}
 	}
 	if data != nil {
-		h.growNoLock(data.Capacity, data.Dims)
+		if err := h.growNoLock(data.Capacity, data.Dims); err != nil {
+			return err
+		}
 		data = h.data.Load()
 
 		if data.VectorsPQ != nil {

@@ -22,8 +22,8 @@ func TestBitsetProperties(t *testing.T) {
 				return true // Skip invalid inputs
 			}
 			bs := NewArrowBitset(size)
-			bs.Set(idx)
-			return bs.IsSet(idx)
+			bs.Set(int(idx))
+			return bs.IsSet(int(idx))
 		},
 		gen.IntRange(1, 10000),
 		gen.UInt32Range(0, 9999),
@@ -40,7 +40,7 @@ func TestBitsetProperties(t *testing.T) {
 			// Set some bits
 			for _, idx := range indices {
 				if int(idx) < size {
-					bs.Set(idx)
+					bs.Set(int(idx))
 				}
 			}
 
@@ -49,7 +49,7 @@ func TestBitsetProperties(t *testing.T) {
 
 			// All should be unset
 			for i := 0; i < size; i++ {
-				if bs.IsSet(uint32(i)) {
+				if bs.IsSet(i) {
 					return false
 				}
 			}

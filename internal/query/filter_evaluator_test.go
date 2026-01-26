@@ -354,7 +354,7 @@ func makeInt64Range(_, end int) []int64 {
 	return result
 }
 
-func makeInt64Mod(_, mod, count int) []int64 {
+func makeInt64Mod(_, mod, count int) []int64 { //nolint:unparam
 	result := make([]int64, count)
 	for i := 0; i < count; i++ {
 		result[i] = int64((i % mod) + 1)

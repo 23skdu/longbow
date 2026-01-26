@@ -22,6 +22,15 @@ DATASET = "perf_test_v4"
 DIM = 384
 SIZES = [50000]
 PROFILES_DIR = "profiles_comprehensive"
+DTYPE = "float32"
+
+TYPE_MAP = {
+    "float32": (np.float32, pa.float32(), 1),
+    "float64": (np.float64, pa.float64(), 1),
+    "int8": (np.int8, pa.int8(), 1),
+    "complex64": (np.float32, pa.float32(), 2),
+    "complex128": (np.float64, pa.float64(), 2),
+}
 
 class BenchmarkResults:
     def __init__(self):
@@ -45,9 +54,12 @@ def get_client(uri):
 
 def generate_batch(start_id, count, dim, include_metadata=False):
     """Generate Arrow batch with optional metadata for filtered/hybrid search"""
+    np_type, pa_type, dim_factor = TYPE_MAP[DTYPE]
+    effective_dim = dim * dim_factor
+    
     ids = pa.array([str(i) for i in range(start_id, start_id + count)], type=pa.string())
-    data = np.random.rand(count, dim).astype(np.float32)
-    tensor_type = pa.list_(pa.float32(), dim)
+    data = np.random.rand(count, effective_dim).astype(np_type)
+    tensor_type = pa.list_(pa_type, effective_dim)
     flat_data = data.flatten()
     vectors = pa.FixedSizeListArray.from_arrays(flat_data, type=tensor_type)
     ts = pa.array([time.time_ns()] * count, type=pa.timestamp("ns"))
@@ -91,9 +103,16 @@ def benchmark_do_put(clients, start_id, count, batch_size=1000):
     
     duration = time.time() - start
     throughput = total / duration if duration > 0 else 0
-    bandwidth_mb = (throughput * DIM * 4) / (1024 * 1024)
-    print(f"    DoPut: {total} vectors in {duration:.2f}s ({throughput:.0f} vectors/s, {bandwidth_mb:.2f} MB/s)")
-    return throughput, bandwidth_mb, duration
+    
+    # Calculate bytes per vector
+    np_type, _, dim_factor = TYPE_MAP[DTYPE]
+    bytes_per_elem = np.dtype(np_type).itemsize
+    vec_size = DIM * dim_factor * bytes_per_elem
+    
+    bandwidth_mb = (throughput * vec_size) / (1024 * 1024)
+    bandwidth_mbits = bandwidth_mb * 8
+    print(f"    DoPut: {total} vectors in {duration:.2f}s ({throughput:.0f} vectors/s, {bandwidth_mb:.2f} MB/s, {bandwidth_mbits:.2f} Mb/s)")
+    return throughput, bandwidth_mb, bandwidth_mbits, duration
 
 def benchmark_do_get(clients, num_queries=100):
     """Benchmark DoGet throughput"""
@@ -114,9 +133,15 @@ def benchmark_do_get(clients, num_queries=100):
     
     duration = time.time() - start
     throughput = total_records / duration if duration > 0 else 0
-    bandwidth_gb = (throughput * DIM * 4) / (1024 * 1024 * 1024)
-    print(f"    DoGet: {total_records} records in {duration:.2f}s ({throughput:.0f} records/s, {bandwidth_gb:.2f} GB/s), Errors: {errors}")
-    return throughput, bandwidth_gb, duration, errors
+    
+    np_type, _, dim_factor = TYPE_MAP[DTYPE]
+    bytes_per_elem = np.dtype(np_type).itemsize
+    vec_size = DIM * dim_factor * bytes_per_elem
+    
+    bandwidth_gb = (throughput * vec_size) / (1024 * 1024 * 1024)
+    bandwidth_mbits = (bandwidth_gb * 1024 * 8)
+    print(f"    DoGet: {total_records} records in {duration:.2f}s ({throughput:.0f} records/s, {bandwidth_gb:.2f} GB/s, {bandwidth_mbits:.2f} Mb/s), Errors: {errors}")
+    return throughput, bandwidth_gb, bandwidth_mbits, duration, errors
 
 def benchmark_do_exchange(clients, num_queries=500):
     """Benchmark DoExchange (binary search protocol)"""
@@ -125,7 +150,10 @@ def benchmark_do_exchange(clients, num_queries=500):
     errors = 0
     
     # Pre-build schema
-    tensor_type = pa.list_(pa.float32(), DIM)
+    # Pre-build schema
+    np_type, pa_type, dim_factor = TYPE_MAP[DTYPE]
+    effective_dim = DIM * dim_factor
+    tensor_type = pa.list_(pa_type, effective_dim)
     query_schema = pa.schema([
         pa.field("query_vector", tensor_type),
         pa.field("k", pa.int32()),
@@ -136,7 +164,7 @@ def benchmark_do_exchange(clients, num_queries=500):
         client = clients[i % len(clients)]
         try:
             # Create query batch
-            vec_data = np.random.rand(1, DIM).astype(np.float32).flatten()
+            vec_data = np.random.rand(1, effective_dim).astype(np_type).flatten()
             vectors = pa.FixedSizeListArray.from_arrays(vec_data, type=tensor_type)
             
             table = pa.Table.from_arrays([
@@ -180,7 +208,8 @@ def benchmark_dense_search(clients, k=10, num_queries=1000, concurrency=4):
     def run_query():
         nonlocal errors
         try:
-            vec = np.random.rand(DIM).astype(np.float32).tolist()
+            np_type, _, dim_factor = TYPE_MAP[DTYPE]
+            vec = np.random.rand(DIM * dim_factor).astype(np_type).tolist()
             req = json.dumps({
                 "dataset": DATASET,
                 "vector": vec,
@@ -216,7 +245,8 @@ def benchmark_sparse_search(clients, k=10, num_queries=500):
     
     for i in range(num_queries):
         try:
-            vec = np.random.rand(DIM).astype(np.float32).tolist()
+            np_type, _, dim_factor = TYPE_MAP[DTYPE]
+            vec = np.random.rand(DIM * dim_factor).astype(np_type).tolist()
             # Sparse: filter to specific category (reduces search space)
             req = json.dumps({
                 "dataset": DATASET,
@@ -249,7 +279,8 @@ def benchmark_filtered_search(clients, k=10, num_queries=500):
     
     for i in range(num_queries):
         try:
-            vec = np.random.rand(DIM).astype(np.float32).tolist()
+            np_type, _, dim_factor = TYPE_MAP[DTYPE]
+            vec = np.random.rand(DIM * dim_factor).astype(np_type).tolist()
             req = json.dumps({
                 "dataset": DATASET,
                 "vector": vec,
@@ -281,7 +312,8 @@ def benchmark_hybrid_search(clients, k=10, num_queries=500):
     
     for i in range(num_queries):
         try:
-            vec = np.random.rand(DIM).astype(np.float32).tolist()
+            np_type, _, dim_factor = TYPE_MAP[DTYPE]
+            vec = np.random.rand(DIM * dim_factor).astype(np_type).tolist()
             req = json.dumps({
                 "dataset": DATASET,
                 "vector": vec,
@@ -409,7 +441,13 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--uris", default="grpc://localhost:3000,grpc://localhost:3010,grpc://localhost:3020")
     parser.add_argument("--pprof", default="http://localhost:9090,http://localhost:9091,http://localhost:9092")
+    parser.add_argument("--dim", type=int, default=384, help="Vector dimension")
+    parser.add_argument("--type", type=str, default="float32", choices=TYPE_MAP.keys(), help="Vector data type")
     args = parser.parse_args()
+    
+    global DIM, DTYPE
+    DIM = args.dim
+    DTYPE = args.type
     
     clients = [get_client(u) for u in args.uris.split(",")]
     pprof_urls = args.pprof.split(",")
@@ -433,18 +471,20 @@ def main():
         
         # 1. DoPut
         if needed > 0:
-            throughput, bandwidth, duration = benchmark_do_put(clients, current_count, needed)
+            throughput, bandwidth, bandwidth_mbits, duration = benchmark_do_put(clients, current_count, needed)
             results.add(phase, "DoPut Throughput (vectors/s)", f"{throughput:.0f}")
             results.add(phase, "DoPut Bandwidth (MB/s)", f"{bandwidth:.2f}")
+            results.add(phase, "DoPut Bandwidth (Mb/s)", f"{bandwidth_mbits:.2f}")
             results.add(phase, "DoPut Duration (s)", f"{duration:.2f}")
             current_count = target
         
         time.sleep(2)  # Settling time
         
         # 2. DoGet
-        get_throughput, get_bandwidth, get_duration, get_errors = benchmark_do_get(clients)
+        get_throughput, get_bandwidth, get_mbits, get_duration, get_errors = benchmark_do_get(clients)
         results.add(phase, "DoGet Throughput (records/s)", f"{get_throughput:.0f}")
         results.add(phase, "DoGet Bandwidth (GB/s)", f"{get_bandwidth:.2f}")
+        results.add(phase, "DoGet Bandwidth (Mb/s)", f"{get_mbits:.2f}")
         results.add(phase, "DoGet Errors", str(get_errors))
         
         # 3. DoExchange

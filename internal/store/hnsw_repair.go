@@ -67,7 +67,7 @@ func (h *ArrowHNSW) RepairTombstones(ctx context.Context, batchSize int) int {
 
 			// Get Neighbors
 			// NOTE: We need direct access to modify.
-			if lvl >= len(data.Neighbors) || int(cID) >= len(data.Neighbors[lvl]) || data.Neighbors[lvl][cID] == 0 {
+			if lvl >= len(data.Neighbors) || int(cID) >= len(data.Neighbors[lvl]) || data.Neighbors[lvl][cID] == nil {
 				continue
 			}
 

@@ -2,6 +2,8 @@ package store
 
 import (
 	"testing"
+
+	lbtypes "github.com/23skdu/longbow/internal/store/types"
 )
 
 func TestGraphData_ArenaNeighbors(t *testing.T) {
@@ -11,11 +13,11 @@ func TestGraphData_ArenaNeighbors(t *testing.T) {
 	// The new signature is likely: func NewGraphData(capacity, dims int, sq8, pq bool, pqDims int, bq bool, false, false, VectorTypeFloat32) *GraphData
 	initialCapacity := 100
 	dims := 128
-	data := NewGraphData(initialCapacity, dims, false, false, 0, false, false, false, VectorTypeFloat32)
+	data := lbtypes.NewGraphData(initialCapacity, dims, false, false, 0, false, false, false, lbtypes.VectorTypeFloat32)
 
 	// Simulate node allocation
 	// We need to ensure chunks are allocated for ID 0
-	data.EnsureChunk(0, 128)
+	_ = data.EnsureChunk(0, 0, 128)
 
 	// Simulate adding neighbors for Node 0 at Layer 0
 	// We expect a new method or modified usage.
@@ -33,7 +35,7 @@ func TestGraphData_ArenaNeighbors(t *testing.T) {
 
 	// This method doesn't exist yet, it will fail compilation if run.
 	// That's fine for TDD step 1.
-	data.SetNeighbors(layer, nodeID, targets)
+	_ = data.SetNeighbors(nodeID, targets)
 
 	readBack := data.GetNeighbors(layer, nodeID, nil)
 	if len(readBack) != len(targets) {
@@ -49,14 +51,14 @@ func TestGraphData_ArenaNeighbors(t *testing.T) {
 
 func TestGraphData_ArenaGrowth(t *testing.T) {
 	// Verify that we can store widespread IDs (triggering multiple chunks/slabs)
-	gd := NewGraphData(10000, 16, false, false, 0, false, false, false, VectorTypeFloat32)
+	gd := lbtypes.NewGraphData(10000, 16, false, false, 0, false, false, false, lbtypes.VectorTypeFloat32)
 
 	// Add neighbors for node 5000
 	id := uint32(5000)
-	gd.EnsureChunk(chunkID(id), 16)
+	_ = gd.EnsureChunk(int(id/1024), int(id%1024), 16)
 
 	data := []uint32{100, 200, 300}
-	gd.SetNeighbors(0, id, data)
+	_ = gd.SetNeighbors(id, data)
 
 	res := gd.GetNeighbors(0, id, nil)
 	if len(res) != 3 || res[1] != 200 {

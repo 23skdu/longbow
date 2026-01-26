@@ -1,12 +1,8 @@
 package store
 
-import (
-	"github.com/23skdu/longbow/internal/simd"
-	"github.com/apache/arrow-go/v18/arrow/float16"
-)
-
 // Distance function resolvers extracted from arrow_hnsw_index.go
 
+/*
 // resolveDistanceFunc returns the appropriate distance function for float32 vectors.
 func (h *ArrowHNSW) resolveDistanceFunc() func(a, b []float32) (float32, error) {
 	switch h.config.Metric {
@@ -60,12 +56,16 @@ func (h *ArrowHNSW) resolveDistanceFuncF64() func(a, b []float64) (float32, erro
 func (h *ArrowHNSW) resolveDistanceFuncC64() func(a, b []complex64) (float32, error) {
 	return simd.EuclideanDistanceComplex64
 }
+*/
 
+/*
 // resolveDistanceFuncC128 returns the Complex128 distance function.
 func (h *ArrowHNSW) resolveDistanceFuncC128() func(a, b []complex128) (float32, error) {
 	return simd.EuclideanDistanceComplex128
 }
+*/
 
+/*
 // resolveBatchDistanceFunc returns the batch distance function.
 func (h *ArrowHNSW) resolveBatchDistanceFunc() func(query []float32, vectors [][]float32, results []float32) error {
 	switch h.config.Metric {
@@ -86,3 +86,4 @@ func (h *ArrowHNSW) resolveBatchDistanceFunc() func(query []float32, vectors [][
 		return simd.EuclideanDistanceBatch
 	}
 }
+*/

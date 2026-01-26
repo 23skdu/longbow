@@ -21,7 +21,7 @@ func TestArrowHNSW_Metrics(t *testing.T) {
 		{0.0, 1.0},
 	}
 	dims := 2
-	rec := makeHNSWTestRecord(mem, dims, vectors)
+	rec := makeBatchTestRecord(mem, dims, vectors)
 	defer rec.Release()
 
 	ds := &Dataset{
@@ -36,7 +36,7 @@ func TestArrowHNSW_Metrics(t *testing.T) {
 		config.EfConstruction = 100
 		config.Metric = MetricCosine
 
-		idx := NewArrowHNSW(ds, config, NewChunkedLocationStore())
+		idx := NewArrowHNSW(ds, config)
 
 		// Add vectors 0 and 1
 		_, err := idx.AddByLocation(context.Background(), 0, 0)
@@ -45,7 +45,7 @@ func TestArrowHNSW_Metrics(t *testing.T) {
 		require.NoError(t, err)
 
 		// Search for [1.0, 0.0]
-		res, err := idx.Search(context.Background(), []float32{1.0, 0.0}, 2, 20, nil)
+		res, err := idx.Search(context.Background(), []float32{1.0, 0.0}, 2, nil)
 		require.NoError(t, err)
 		require.Len(t, res, 2)
 
@@ -53,7 +53,7 @@ func TestArrowHNSW_Metrics(t *testing.T) {
 		foundSelf := false
 		for _, r := range res {
 			if r.ID == 0 {
-				assert.InDelta(t, 0.0, r.Score, 1e-6)
+				assert.InDelta(t, 0.0, r.Dist, 1e-6)
 				foundSelf = true
 			}
 		}
@@ -69,7 +69,7 @@ func TestArrowHNSW_Metrics(t *testing.T) {
 		// Setup vector data
 		mem := memory.NewGoAllocator()
 		vectors := [][]float32{{0.5, 0.5, 0.5, 0.5}}
-		rec := makeHNSWTestRecord(mem, 4, vectors)
+		rec := makeBatchTestRecord(mem, 4, vectors)
 		defer rec.Release()
 
 		ds := &Dataset{
@@ -78,7 +78,7 @@ func TestArrowHNSW_Metrics(t *testing.T) {
 
 		// Create ArrowHNSW
 		config := DefaultArrowHNSWConfig()
-		idx := NewArrowHNSW(ds, config, NewChunkedLocationStore())
+		idx := NewArrowHNSW(ds, config)
 
 		// Add vector
 		_, err := idx.AddByLocation(context.Background(), 0, 0)
@@ -86,7 +86,7 @@ func TestArrowHNSW_Metrics(t *testing.T) {
 
 		// Perform search
 		q := []float32{0.5, 0.5, 0.5, 0.5}
-		_, err = idx.Search(context.Background(), q, 10, 20, nil)
+		_, err = idx.Search(context.Background(), q, 10, nil)
 		require.NoError(t, err)
 
 		// Verify Metrics
@@ -99,13 +99,13 @@ func TestArrowHNSW_Metrics(t *testing.T) {
 		// Test Float16 configuration
 		configF16 := DefaultArrowHNSWConfig()
 		configF16.Float16Enabled = true
-		idxF16 := NewArrowHNSW(ds, configF16, NewChunkedLocationStore())
+		idxF16 := NewArrowHNSW(ds, configF16)
 
 		// Must add a vector so search doesn't early return
 		_, err = idxF16.AddByLocation(context.Background(), 0, 0)
 		require.NoError(t, err)
 
-		_, err = idxF16.Search(context.Background(), q, 10, 20, nil)
+		_, err = idxF16.Search(context.Background(), q, 10, nil)
 		require.NoError(t, err)
 
 		countF16 := testutil.ToFloat64(metrics.HNSWPolymorphicSearchCount.WithLabelValues("float16"))

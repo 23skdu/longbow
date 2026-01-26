@@ -22,7 +22,7 @@ func TestArrowHNSW_AddBatchBulk_EnsureChunkRace(t *testing.T) {
 			// and not actual data retrieval through the dataset.
 		}
 
-		h := NewArrowHNSW(mockDataset, cfg, NewChunkedLocationStore())
+		h := NewArrowHNSW(mockDataset, cfg)
 
 		// Helper function to get vector from ArrowHNSW (mimicking GetVector)
 		getVectorFloat32 := func(hnsw *ArrowHNSW, id uint32) []float32 {

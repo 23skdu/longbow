@@ -80,7 +80,7 @@ func TestHNSW_BulkInsert(t *testing.T) {
 	cfg.EfConstruction = 100
 	// Ensure auto-sharding doesn't mess with us (though we use raw HNSW here)
 
-	idx := NewArrowHNSW(ds, cfg, nil)
+	idx := NewArrowHNSW(ds, cfg)
 	defer func() { _ = idx.Close() }()
 
 	// Insert Batch

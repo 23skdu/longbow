@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -391,7 +392,7 @@ func TestChunkWorkerPool_ErrorHandling(t *testing.T) {
 	var callCount atomic.Int64
 	handler := func(ctx context.Context, chunk *FlightDataChunk) error {
 		callCount.Add(1)
-		return NewInternalError("test", nil)
+		return fmt.Errorf("queue check failed")
 	}
 
 	pool := NewChunkWorkerPool(cfg, queue, handler)

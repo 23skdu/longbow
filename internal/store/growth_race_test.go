@@ -21,7 +21,7 @@ func TestHNSW_GrowthRace(t *testing.T) {
 	cfg.M = 16
 	cfg.EfConstruction = 100
 
-	h := NewArrowHNSW(nil, cfg, nil)
+	h := NewArrowHNSW(nil, cfg)
 	// Manually set dims to > 0 so we don't hit the "initMu" path for first insert
 	h.dims.Store(128)
 

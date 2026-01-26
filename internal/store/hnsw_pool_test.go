@@ -19,7 +19,7 @@ func TestHNSW_ScratchPoolBasic(t *testing.T) {
 		{5.0, 6.0, 7.0, 8.0},
 		{9.0, 10.0, 11.0, 12.0},
 	}
-	rec := makeHNSWTestRecord(mem, 4, vectors)
+	rec := makeBatchTestRecord(mem, 4, vectors)
 	defer rec.Release()
 
 	ds := &Dataset{
@@ -29,18 +29,24 @@ func TestHNSW_ScratchPoolBasic(t *testing.T) {
 
 	// Add vectors
 	for i := 0; i < 3; i++ {
-		_, err := idx.Add(context.Background(), 0, i)
+		_, err := idx.AddByLocation(context.Background(), 0, i)
 		require.NoError(t, err)
 	}
 
-	// Verify getVector returns correct data (via SearchByID which uses getVector)
-	result := idx.SearchByID(0, 1)
-	require.NotNil(t, result)
-	assert.Equal(t, VectorID(0), result[0])
+	// Verify getVector returns correct data (via SearchVectors using a known vector)
+	// We want to check if data is retrieved correctly.
+	// We'll search for vector 0.
+	queryVec := vectors[0]
+	result, err := idx.SearchVectors(context.Background(), queryVec, 1, nil, SearchOptions{})
+	require.NoError(t, err)
+	require.NotEmpty(t, result)
+	assert.Equal(t, VectorID(0), result[0].ID)
 
-	result = idx.SearchByID(1, 1)
-	require.NotNil(t, result)
-	assert.Equal(t, VectorID(1), result[0])
+	queryVec1 := vectors[1]
+	result, err = idx.SearchVectors(context.Background(), queryVec1, 1, nil, SearchOptions{})
+	require.NoError(t, err)
+	require.NotEmpty(t, result)
+	assert.Equal(t, VectorID(1), result[0].ID)
 }
 
 // TestHNSW_ScratchPoolConcurrent verifies pool is safe under concurrent access
@@ -56,7 +62,7 @@ func TestHNSW_ScratchPoolConcurrent(t *testing.T) {
 			vectors[i][j] = float32(i*dims + j)
 		}
 	}
-	rec := makeHNSWTestRecord(mem, dims, vectors)
+	rec := makeBatchTestRecord(mem, dims, vectors)
 	defer rec.Release()
 
 	ds := &Dataset{
@@ -65,7 +71,7 @@ func TestHNSW_ScratchPoolConcurrent(t *testing.T) {
 	idx := NewHNSWIndex(ds)
 
 	for i := 0; i < numVectors; i++ {
-		_, err := idx.Add(context.Background(), 0, i)
+		_, err := idx.AddByLocation(context.Background(), 0, i)
 		require.NoError(t, err)
 	}
 
@@ -79,10 +85,12 @@ func TestHNSW_ScratchPoolConcurrent(t *testing.T) {
 		go func(goroutineID int) {
 			defer wg.Done()
 			for s := 0; s < searchesPerGoroutine; s++ {
-				id := VectorID((goroutineID*searchesPerGoroutine + s) % numVectors)
-				result := idx.SearchByID(id, 5)
-				if result == nil {
-					t.Errorf("unexpected nil result for ID %d", id)
+				// Pick a random vector from our set to query
+				idInt := (goroutineID*searchesPerGoroutine + s) % numVectors
+				queryVec := vectors[idInt]
+				result, err := idx.SearchVectors(context.Background(), queryVec, 5, nil, SearchOptions{})
+				if result == nil || err != nil {
+					t.Errorf("unexpected error/nil result for ID %d: %v", idInt, err)
 				}
 			}
 		}(g)
@@ -112,7 +120,7 @@ func TestHNSW_ScratchPoolDifferentDimensions(t *testing.T) {
 					vectors[i][j] = float32(i) + float32(j)*0.001
 				}
 			}
-			rec := makeHNSWTestRecord(mem, tc.dims, vectors)
+			rec := makeBatchTestRecord(mem, tc.dims, vectors)
 			defer rec.Release()
 
 			ds := &Dataset{
@@ -121,13 +129,15 @@ func TestHNSW_ScratchPoolDifferentDimensions(t *testing.T) {
 			idx := NewHNSWIndex(ds)
 
 			for i := 0; i < 5; i++ {
-				_, err := idx.Add(context.Background(), 0, i)
+				_, err := idx.AddByLocation(context.Background(), 0, i)
 				require.NoError(t, err)
 			}
 
-			result := idx.SearchByID(0, 3)
-			require.NotNil(t, result)
-			assert.Equal(t, VectorID(0), result[0], "first result should be self")
+			queryVec := vectors[0]
+			result, err := idx.SearchVectors(context.Background(), queryVec, 3, nil, SearchOptions{})
+			require.NoError(t, err)
+			require.NotEmpty(t, result)
+			assert.Equal(t, VectorID(0), result[0].ID, "first result should be self")
 		})
 	}
 }
@@ -145,7 +155,7 @@ func BenchmarkHNSW_ScratchPoolAllocs(b *testing.B) {
 			vectors[i][j] = float32(i*dims + j)
 		}
 	}
-	rec := makeHNSWTestRecord(mem, dims, vectors)
+	rec := makeBatchTestRecord(mem, dims, vectors)
 	defer rec.Release()
 
 	ds := &Dataset{
@@ -154,15 +164,17 @@ func BenchmarkHNSW_ScratchPoolAllocs(b *testing.B) {
 	idx := NewHNSWIndex(ds)
 
 	for i := 0; i < numVectors; i++ {
-		_, _ = idx.Add(context.Background(), 0, i)
+		_, _ = idx.AddByLocation(context.Background(), 0, i)
 	}
 
 	b.ResetTimer()
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		id := VectorID(i % numVectors)
-		_ = idx.SearchByID(id, 10)
+		// Mock search with vector retrieval overhead included?
+		// We'll just search using a vector from the set.
+		queryVec := vectors[i%numVectors]
+		_, _ = idx.SearchVectors(context.Background(), queryVec, 10, nil, SearchOptions{})
 	}
 }
 
@@ -179,7 +191,7 @@ func BenchmarkHNSW_ScratchPoolAllocsParallel(b *testing.B) {
 			vectors[i][j] = float32(i*dims + j)
 		}
 	}
-	rec := makeHNSWTestRecord(mem, dims, vectors)
+	rec := makeBatchTestRecord(mem, dims, vectors)
 	defer rec.Release()
 
 	ds := &Dataset{
@@ -188,7 +200,7 @@ func BenchmarkHNSW_ScratchPoolAllocsParallel(b *testing.B) {
 	idx := NewHNSWIndex(ds)
 
 	for i := 0; i < numVectors; i++ {
-		_, _ = idx.Add(context.Background(), 0, i)
+		_, _ = idx.AddByLocation(context.Background(), 0, i)
 	}
 
 	b.ResetTimer()
@@ -197,8 +209,8 @@ func BenchmarkHNSW_ScratchPoolAllocsParallel(b *testing.B) {
 	b.RunParallel(func(pb *testing.PB) {
 		i := 0
 		for pb.Next() {
-			id := VectorID(i % numVectors)
-			_ = idx.SearchByID(id, 10)
+			queryVec := vectors[i%numVectors]
+			_, _ = idx.SearchVectors(context.Background(), queryVec, 10, nil, SearchOptions{})
 			i++
 		}
 	})

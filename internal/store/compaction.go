@@ -155,7 +155,7 @@ func (w *CompactionWorker) checkAndCompact() {
 	// Implementation depends on store structure
 }
 
-func (w *CompactionWorker) compactDataset(dataset string) {
+func (w *CompactionWorker) compactDataset(_ string) {
 	defer func() {
 		if r := recover(); r != nil {
 			w.failedCompactions.Add(1)

@@ -39,7 +39,7 @@ func BenchmarkHNSW_ZeroCopy_Float16(b *testing.B) {
 	config.Float16Enabled = true
 	config.DataType = store.VectorTypeFloat16
 
-	idx := store.NewArrowHNSW(nil, config, nil)
+	idx := store.NewArrowHNSW(nil, config)
 	// Populate
 	start := time.Now()
 	for i := 0; i < numVectors; i++ {
@@ -56,7 +56,7 @@ func BenchmarkHNSW_ZeroCopy_Float16(b *testing.B) {
 	b.Run("Search/ZeroCopy", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			// Zero-copy search
-			_, err := idx.Search(context.Background(), query, k, 100, nil)
+			_, err := idx.Search(context.Background(), query, k, nil)
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -72,7 +72,7 @@ func BenchmarkHNSW_ZeroCopy_Float16(b *testing.B) {
 	b.Run("Search/LegacyConverted", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			// Passing []float32 triggers conversion in resolveHNSWComputer
-			_, err := idx.Search(context.Background(), queryF32, k, 100, nil)
+			_, err := idx.Search(context.Background(), queryF32, k, nil)
 			if err != nil {
 				b.Fatal(err)
 			}

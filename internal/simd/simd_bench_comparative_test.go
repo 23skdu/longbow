@@ -48,7 +48,9 @@ func Benchmark_Compare_EuclideanBatch(b *testing.B) {
 
 	b.Run("SIMD", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			simd.EuclideanDistanceBatch(query, vectors, results)
+			if err := simd.EuclideanDistanceBatch(query, vectors, results); err != nil {
+				b.Fatalf("EuclideanDistanceBatch failed: %v", err)
+			}
 		}
 	})
 }
@@ -67,7 +69,9 @@ func BenchmarkEuclideanF32_Single(b *testing.B) {
 		b.Run("EuclideanF32_"+strconv.Itoa(dim), func(b *testing.B) {
 			b.SetBytes(int64(dim * 4)) // 4 bytes per float32
 			for i := 0; i < b.N; i++ {
-				simd.EuclideanDistance(v1, v2)
+				if _, err := simd.EuclideanDistance(v1, v2); err != nil {
+					b.Fatalf("EuclideanDistance failed: %v", err)
+				}
 			}
 		})
 	}

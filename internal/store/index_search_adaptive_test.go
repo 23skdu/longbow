@@ -53,7 +53,7 @@ func TestAdaptiveSearch_RetryLogic(t *testing.T) {
 	config.EfConstruction = 100
 	config.InitialCapacity = 1024
 
-	index := NewArrowHNSW(dataset, config)
+	index := NewArrowHNSW(dataset, &config)
 
 	// Insert all vectors
 	for i := 0; i < count; i++ {
@@ -97,7 +97,7 @@ func TestAdaptiveHNSW_AdjustsM(t *testing.T) {
 	cfg.Dims = 128
 
 	// 2. Create Index
-	idx := NewArrowHNSW(nil, cfg)
+	idx := NewArrowHNSW(nil, &cfg)
 
 	// 3. Generate structured data (high intrinsic dimensionality)
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))

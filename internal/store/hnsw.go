@@ -162,7 +162,7 @@ func (h *HNSWIndex) DeleteBatch(ctx context.Context, ids []uint32) error {
 	return nil // Stub
 }
 
-func (h *HNSWIndex) Search(ctx context.Context, query any, k int, filter any) ([]types.Candidate, error) {
+func (h *HNSWIndex) Search(ctx context.Context, queryVal any, k int, filter any) ([]types.Candidate, error) {
 	return nil, nil // Stub
 }
 
@@ -236,8 +236,8 @@ func (h *HNSWIndex) GetPQEncoder() *pq.PQEncoder {
 	return h.pqEncoder
 }
 
-func (h *HNSWIndex) SearchWithArena(query []float32, k int, arena any) []VectorID {
-	results, _ := h.Search(context.Background(), query, k, nil)
+func (h *HNSWIndex) SearchWithArena(queryVal []float32, k int, arena any) []VectorID {
+	results, _ := h.Search(context.Background(), queryVal, k, nil)
 	ids := make([]VectorID, len(results))
 	for i, r := range results {
 		ids[i] = VectorID(r.ID)

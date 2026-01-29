@@ -92,7 +92,10 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 				cID := chunkID(id)
 				cOff := chunkOffset(id)
 				dims := int(h.dims.Load())
-				h.ensureChunk(data, cID, cOff, dims)
+				_, err := h.ensureChunk(data, cID, cOff, dims)
+				if err != nil {
+					return fmt.Errorf("failed to ensure chunk for ID %d: %w", id, err)
+				}
 
 				// Level generation
 				level := h.generateLevel()

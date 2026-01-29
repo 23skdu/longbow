@@ -108,11 +108,12 @@ func TestGenericQuantizer_Float32ToUint8(t *testing.T) {
 	encode := func(vec []float32) []uint8 {
 		result := make([]uint8, len(vec))
 		for i, v := range vec {
-			if v < 0 {
+			switch {
+			case v < 0:
 				result[i] = 0
-			} else if v > 10 {
+			case v > 10:
 				result[i] = 255
-			} else {
+			default:
 				// Normalize to [0, 255]
 				result[i] = uint8((v / 10.0) * 255.0)
 			}

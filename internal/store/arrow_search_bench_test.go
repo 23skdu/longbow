@@ -34,7 +34,7 @@ func BenchmarkSearchScaling(b *testing.B) {
 			config := DefaultArrowHNSWConfig()
 			config.M = 16
 			config.EfConstruction = 100
-			h := NewArrowHNSW(ds, config)
+			h := NewArrowHNSW(ds, &config)
 
 			// Build vectors
 			builder := array.NewRecordBuilder(mem, schema)

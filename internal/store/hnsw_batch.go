@@ -189,6 +189,9 @@ func (h *HNSWIndex) computeBatchDistance(query []float32, vectors [][]float32, r
 		return
 	}
 	if err := simd.EuclideanDistanceBatch(query, vectors, results); err != nil {
+		for i := range results {
+			results[i] = 0
+		}
 		return
 	}
 }

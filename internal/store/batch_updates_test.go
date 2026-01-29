@@ -23,7 +23,11 @@ func TestBatchNeighborUpdater_Basic(t *testing.T) {
 	}
 
 	bu := NewBatchNeighborUpdater(cfg)
-	defer bu.Stop()
+	defer func() {
+		if err := bu.Stop(); err != nil {
+			t.Logf("failed to stop BatchNeighborUpdater: %v", err)
+		}
+	}()
 
 	// Add 5 updates (should not flush immediately)
 	for i := 0; i < 5; i++ {
@@ -58,7 +62,11 @@ func TestBatchNeighborUpdater_Interval(t *testing.T) {
 	}
 
 	bu := NewBatchNeighborUpdater(cfg)
-	defer bu.Stop()
+	defer func() {
+		if err := bu.Stop(); err != nil {
+			t.Logf("failed to stop BatchNeighborUpdater: %v", err)
+		}
+	}()
 
 	bu.Add(BatchNeighborUpdate{NodeID: 1, Layer: 0, Neighbors: []uint32{}})
 

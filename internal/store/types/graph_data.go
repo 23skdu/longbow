@@ -2,6 +2,7 @@ package types
 
 import (
 	"fmt"
+	"sync/atomic"
 
 	"github.com/23skdu/longbow/internal/memory"
 	"github.com/apache/arrow-go/v18/arrow/float16"
@@ -507,39 +508,59 @@ func (g *GraphData) GetNeighbors(layer int, id uint32, buf []uint32) []uint32 {
 	cOff := int(id) % ChunkSize
 
 	counts := g.GetCountsChunk(layer, cID)
-	if counts == nil {
-		return nil
-	}
-	count := int(counts[cOff])
-	if count == 0 {
-		return nil // Or empty slice?
-	}
-
 	neighbors := g.GetNeighborsChunk(layer, cID)
-	if neighbors == nil {
+	versions := g.GetVersionsChunk(layer, cID)
+
+	if counts == nil || neighbors == nil {
 		return nil
 	}
 
+	countAddr := &counts[cOff]
 	base := cOff * MaxNeighbors
-	if base+count > len(neighbors) {
-		return nil // Should not happen
+
+	// Seqlock read loop
+	for attempts := 0; attempts < 100; attempts++ {
+		var v1 uint32
+		if versions != nil {
+			v1 = atomic.LoadUint32(&versions[cOff])
+			if v1%2 != 0 {
+				// Writer is active, spin
+				continue
+			}
+		}
+
+		count := int(atomic.LoadInt32(countAddr))
+		if count == 0 {
+			return nil
+		}
+		if base+count > len(neighbors) {
+			return nil
+		}
+
+		var res []uint32
+		if buf != nil && cap(buf) >= count {
+			res = buf[:count]
+		} else {
+			res = make([]uint32, count)
+		}
+
+		// Atomic copy to satisfy race detector and coordinate with seqlock
+		for i := 0; i < count; i++ {
+			res[i] = atomic.LoadUint32(&neighbors[base+i])
+		}
+
+		if versions != nil {
+			v2 := atomic.LoadUint32(&versions[cOff])
+			if v1 == v2 {
+				return res
+			}
+			// Version changed during read, retry
+			continue
+		}
+		return res
 	}
 
-	// Return a copy into buf if provided, or new slice
-	// Actually, usually we return a slice to the underlying array?
-	// But `disk_writer.go` sorts it. Sorting mutates.
-	// We MUST return a copy if caller converts.
-	// But `GetNeighbors` implementation usually returns slice of node IDs.
-
-	src := neighbors[base : base+count]
-	if buf != nil && cap(buf) >= count {
-		buf = buf[:count]
-		copy(buf, src)
-		return buf
-	}
-	res := make([]uint32, count)
-	copy(res, src)
-	return res
+	return nil
 }
 
 func (g *GraphData) GetVectorSQ8(id uint32) []byte {

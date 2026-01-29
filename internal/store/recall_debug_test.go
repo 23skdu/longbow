@@ -57,7 +57,7 @@ func TestRecallDebug(t *testing.T) {
 	// Build hnsw2 index
 	config := store.DefaultArrowHNSWConfig()
 	// NewArrowHNSW signature fixed
-	hnsw2Index := store.NewArrowHNSW(ds, config)
+	hnsw2Index := store.NewArrowHNSW(ds, &config)
 
 	// Insert vectors into hnsw2
 	for i := 0; i < numVectors; i++ {

@@ -173,7 +173,7 @@ func (s *ShardedHNSW) newShard(_ int) *hnswShard {
 
 	// We pass nil for ChunkedLocationStore because shards use local IDs and don't manage global locations
 	// The ShardedHNSW manages the global location store.
-	idx := NewArrowHNSW(s.dataset, arrowConfig)
+	idx := NewArrowHNSW(s.dataset, &arrowConfig)
 
 	// Correct dimension initialization
 	idx.SetDimension(int(s.dimension))
@@ -581,7 +581,7 @@ func (s *ShardedHNSW) Size() int {
 	return s.Len()
 }
 
-func (s *ShardedHNSW) Search(ctx context.Context, query any, k int, filter any) ([]types.Candidate, error) {
+func (s *ShardedHNSW) Search(ctx context.Context, queryVal any, k int, filter any) ([]types.Candidate, error) {
 	return nil, fmt.Errorf("use SearchVectors for sharded search")
 }
 

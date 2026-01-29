@@ -39,7 +39,7 @@ func BenchmarkHNSW_ZeroCopy_Float16(b *testing.B) {
 	config.Float16Enabled = true
 	config.DataType = store.VectorTypeFloat16
 
-	idx := store.NewArrowHNSW(nil, config)
+	idx := store.NewArrowHNSW(nil, &config)
 	// Populate
 	start := time.Now()
 	for i := 0; i < numVectors; i++ {

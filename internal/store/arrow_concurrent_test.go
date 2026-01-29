@@ -14,7 +14,8 @@ import (
 // TestConcurrentSearch validates thread-safe concurrent search operations.
 func TestConcurrentSearch(t *testing.T) {
 	dataset := &Dataset{Name: "test"}
-	index := NewArrowHNSW(dataset, DefaultArrowHNSWConfig())
+	defaultConfig := DefaultArrowHNSWConfig()
+	index := NewArrowHNSW(dataset, &defaultConfig)
 
 	// Create a simple index with a few nodes
 	// Note: This test validates the locking mechanism works
@@ -82,7 +83,8 @@ func TestConcurrentSearchAndInsert(t *testing.T) {
 		Records: []arrow.RecordBatch{batch},
 	}
 
-	index := NewArrowHNSW(dataset, DefaultArrowHNSWConfig())
+	defaultConfig := DefaultArrowHNSWConfig()
+	index := NewArrowHNSW(dataset, &defaultConfig)
 
 	query := make([]float32, dim)
 
@@ -126,7 +128,8 @@ func TestConcurrentSearchAndInsert(t *testing.T) {
 // BenchmarkConcurrentSearch benchmarks concurrent search performance.
 func BenchmarkConcurrentSearch(b *testing.B) {
 	dataset := &Dataset{Name: "test"}
-	index := NewArrowHNSW(dataset, DefaultArrowHNSWConfig())
+	defaultConfig := DefaultArrowHNSWConfig()
+	index := NewArrowHNSW(dataset, &defaultConfig)
 
 	query := []float32{1.0, 2.0, 3.0}
 
@@ -158,7 +161,8 @@ func BenchmarkConcurrentSearch(b *testing.B) {
 // BenchmarkSearchLatency benchmarks search latency distribution.
 func BenchmarkSearchLatency(b *testing.B) {
 	dataset := &Dataset{Name: "test"}
-	index := NewArrowHNSW(dataset, DefaultArrowHNSWConfig())
+	defaultConfig := DefaultArrowHNSWConfig()
+	index := NewArrowHNSW(dataset, &defaultConfig)
 
 	query := make([]float32, 384)
 	for i := range query {
@@ -174,7 +178,8 @@ func BenchmarkSearchLatency(b *testing.B) {
 // BenchmarkInsertThroughput benchmarks insert throughput.
 func BenchmarkInsertThroughput(b *testing.B) {
 	dataset := &Dataset{Name: "test"}
-	index := NewArrowHNSW(dataset, DefaultArrowHNSWConfig())
+	defaultConfig := DefaultArrowHNSWConfig()
+	index := NewArrowHNSW(dataset, &defaultConfig)
 
 	lg := NewLevelGenerator(1.44269504089)
 

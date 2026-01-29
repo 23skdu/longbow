@@ -16,10 +16,10 @@ type DatabaseChecker struct {
 	tracer trace.Tracer
 }
 
-func NewDatabaseChecker(logger zerolog.Logger, tracer trace.Tracer) *DatabaseChecker {
+func NewDatabaseChecker(logger *zerolog.Logger, tracer trace.Tracer) *DatabaseChecker {
 	return &DatabaseChecker{
 		name:   "database",
-		logger: logger,
+		logger: *logger,
 		tracer: tracer,
 	}
 }

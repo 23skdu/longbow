@@ -10,7 +10,7 @@ func TestArrowHNSW_Cleanup(t *testing.T) {
 	ds := NewDataset("test_cleanup", nil)
 	config := DefaultArrowHNSWConfig()
 
-	h := NewArrowHNSW(ds, config)
+	h := NewArrowHNSW(ds, &config)
 
 	// Verify initialization
 	assert.NotNil(t, h.data.Load())
@@ -32,7 +32,7 @@ func TestArrowHNSW_Cleanup(t *testing.T) {
 func TestDataset_Close_Cascades(t *testing.T) {
 	ds := NewDataset("test_cascade", nil)
 	config := DefaultArrowHNSWConfig()
-	h := NewArrowHNSW(ds, config)
+	h := NewArrowHNSW(ds, &config)
 	ds.Index = h
 
 	assert.NotNil(t, ds.Index)

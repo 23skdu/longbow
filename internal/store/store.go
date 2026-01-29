@@ -182,7 +182,7 @@ func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes 
 	// Initialize parser pool
 	s.vectorSearchParserPool = sync.Pool{
 		New: func() any {
-			return query.NewZeroAllocVectorSearchParser(768, s.logger)
+			return query.NewZeroAllocVectorSearchParser(768, &s.logger)
 		},
 	}
 
@@ -326,6 +326,14 @@ func (s *VectorStore) SetCoordinator(c *GlobalSearchCoordinator) {
 
 func (s *VectorStore) SetMesh(m *mesh.Gossip) {
 	s.Mesh = m
+}
+
+// GetMeshMembers returns the current members from the mesh gossip instance.
+func (s *VectorStore) GetMeshMembers() []mesh.Member {
+	if s.Mesh == nil {
+		return nil
+	}
+	return s.Mesh.GetMembers()
 }
 
 // SetDatasetInitHook sets a hook function called after dataset creation.

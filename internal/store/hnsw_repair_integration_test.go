@@ -18,7 +18,7 @@ func TestRepairIntegration_DeleteAndRepair(t *testing.T) {
 	// We need a dataset but tests often pass nil if NewArrowHNSW allows it for testing, or we construct minimal one.
 	// Constructor: NewArrowHNSW(ds *Dataset, cfg ArrowHNSWConfig) *HNSWIndex
 	ds := &Dataset{}
-	idx := NewArrowHNSW(ds, config)
+	idx := NewArrowHNSW(ds, &config)
 
 	// 2. Insert Data
 	// Insert 0->1->2->3
@@ -70,7 +70,7 @@ func TestRepairIntegration_ConcurrentLoad(t *testing.T) {
 	// 1. Setup
 	config := DefaultArrowHNSWConfig()
 	ds := &Dataset{}
-	idx := NewArrowHNSW(ds, config)
+	idx := NewArrowHNSW(ds, &config)
 
 	agentConfig := RepairAgentConfig{
 		Enabled:            true,

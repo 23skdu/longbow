@@ -15,7 +15,7 @@ func TestDelete(t *testing.T) {
 	config.EfConstruction = 100
 
 	// Create index with dimensions set
-	index := NewArrowHNSW(nil, config)
+	index := NewArrowHNSW(nil, &config)
 	index.dims.Store(128)
 
 	// Initialize GraphData manually with dimensions

@@ -209,7 +209,7 @@ func NewFallbackCache(ttl time.Duration) *FallbackCache {
 	}
 }
 
-func (fc *FallbackCache) Get(key string) (interface{}, bool, error) {
+func (fc *FallbackCache) Get(key string) (value interface{}, found bool, err error) {
 	fc.mu.RLock()
 	defer fc.mu.RUnlock()
 
@@ -221,7 +221,10 @@ func (fc *FallbackCache) Get(key string) (interface{}, bool, error) {
 		return nil, false, nil
 	}
 
-	return entry.Value, entry.IsFallback, entry.Error
+	value = entry.Value
+	found = entry.IsFallback
+	err = entry.Error
+	return
 }
 
 func (fc *FallbackCache) Set(key string, value interface{}, isFallback bool, err error) {

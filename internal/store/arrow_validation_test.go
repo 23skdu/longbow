@@ -21,8 +21,9 @@ type DualIndexHarness struct {
 
 // NewDualIndexHarness creates a new validation harness.
 func NewDualIndexHarness(dataset *Dataset) *DualIndexHarness {
+	cfg := DefaultArrowHNSWConfig()
 	return &DualIndexHarness{
-		candidate: NewArrowHNSW(dataset, DefaultArrowHNSWConfig()),
+		candidate: NewArrowHNSW(dataset, &cfg),
 		dataset:   dataset,
 		vectors:   make(map[uint32][]float32),
 	}

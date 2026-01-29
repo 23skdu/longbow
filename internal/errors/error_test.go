@@ -23,7 +23,7 @@ func TestStructuredError_Error(t *testing.T) {
 
 func TestStructuredError_WithContext(t *testing.T) {
 	err := New(ErrorTypeValidation, "test_op", "test message")
-	err.WithContext("user_id", 123).WithContext("dataset", "test_dataset")
+	err = err.WithContext("user_id", 123).WithContext("dataset", "test_dataset")
 
 	assert.Equal(t, 123, err.Context["user_id"])
 	assert.Equal(t, "test_dataset", err.Context["dataset"])

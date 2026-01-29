@@ -220,7 +220,7 @@ func TestFunctionDispatch(t *testing.T) {
 	// Test dot product
 	dot, err := DotProduct(query, vector)
 	require.NoError(t, err)
-	expectedDot := float32(1*4 + 2*3 + 3*2 + 4*1) // 4 + 6 + 6 + 4 = 20
+	expectedDot := float32(1*4 + 2*3 + 3*2 + 4*1)
 	assert.InDelta(t, expectedDot, dot, 0.01, "Dot product should match expected value")
 }
 

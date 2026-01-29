@@ -52,11 +52,11 @@ type ZeroAllocTicketParser struct {
 }
 
 // NewZeroAllocTicketParser creates a new reusable parser
-func NewZeroAllocTicketParser(logger zerolog.Logger) *ZeroAllocTicketParser {
+func NewZeroAllocTicketParser(logger *zerolog.Logger) *ZeroAllocTicketParser {
 	return &ZeroAllocTicketParser{
 		filters:      make([]Filter, 0, 16),
 		searchParser: NewZeroAllocVectorSearchParser(768, logger), // Default max dims
-		logger:       logger,
+		logger:       *logger,
 	}
 }
 
@@ -656,7 +656,7 @@ func ParseTicketQuerySafe(data []byte) (TicketQuery, error) {
 		if metrics.ParserPoolMisses != nil {
 			metrics.ParserPoolMisses.Inc()
 		}
-		parser = NewZeroAllocTicketParser(log.Logger)
+		parser = NewZeroAllocTicketParser(&log.Logger)
 	}
 
 	// Parse the data

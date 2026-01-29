@@ -79,7 +79,7 @@ func benchmarkAddBatch(b *testing.B, sq8 bool) {
 	for i := 0; i < b.N; i++ {
 		b.StopTimer()
 		// Re-create index to simulate fresh bulk load
-		idx := NewArrowHNSW(ds, config)
+		idx := NewArrowHNSW(ds, &config)
 		b.StartTimer()
 
 		// Bulk Load

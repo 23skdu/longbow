@@ -148,7 +148,7 @@ func (s *VectorStore) applyReplayBatch(name string, rec arrow.RecordBatch, seq u
 }
 
 // loadSnapshotItem loads a snapshot item into memory.
-func (s *VectorStore) loadSnapshotItem(item storage.SnapshotItem) error {
+func (s *VectorStore) loadSnapshotItem(item *storage.SnapshotItem) error {
 	if len(item.Records) == 0 {
 		return nil
 	}

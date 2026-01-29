@@ -50,7 +50,11 @@ func TestShouldUsePipelineExt_NilPool(t *testing.T) {
 	if vs == nil {
 		t.Fatal("Failed to create VectorStore")
 	}
-	defer vs.Close()
+	defer func() {
+		if err := vs.Close(); err != nil {
+			t.Logf("failed to close VectorStore: %v", err)
+		}
+	}()
 
 	// Should return false when pool is nil
 	if vs.shouldUsePipeline(10) {
@@ -110,7 +114,11 @@ func TestGetPipelineThreshold(t *testing.T) {
 	if store == nil {
 		t.Fatal("Failed to create VectorStore")
 	}
-	defer store.Close()
+	defer func() {
+		if err := store.Close(); err != nil {
+			t.Logf("failed to close VectorStore: %v", err)
+		}
+	}()
 
 	if store.GetPipelineThreshold() != 5 {
 		t.Errorf("Expected threshold 5, got %d", store.GetPipelineThreshold())

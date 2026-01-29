@@ -21,7 +21,7 @@ func TestArrowHNSW_MmapPersistence(t *testing.T) {
 	cfg.SQ8Enabled = true         // Persistence requires SQ8 (or PQ) in current DiskGraph V3
 	cfg.SQ8TrainingThreshold = 20 // Train after all 20 vectors
 
-	h1 := NewArrowHNSW(nil, cfg)
+	h1 := NewArrowHNSW(nil, &cfg)
 
 	// Insert 20 vectors to ensure training
 	vectors := make([][]float32, 20)
@@ -61,7 +61,7 @@ func TestArrowHNSW_MmapPersistence(t *testing.T) {
 
 	// 3. Load from Mmap (New Instance)
 	// Must use same config (especially SQ8 enabled)
-	h2 := NewArrowHNSW(nil, cfg)
+	h2 := NewArrowHNSW(nil, &cfg)
 	err = h2.LoadFromMmap(graphPath)
 	require.NoError(t, err)
 

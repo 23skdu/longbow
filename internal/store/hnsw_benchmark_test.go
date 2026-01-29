@@ -67,7 +67,7 @@ func BenchmarkHNSWComparison(b *testing.B) {
 	createHNSW2 := func() *store.ArrowHNSW {
 		config := store.DefaultArrowHNSWConfig()
 		// Updated to remove 3rd arg
-		idx := store.NewArrowHNSW(ds, config)
+		idx := store.NewArrowHNSW(ds, &config)
 
 		start := time.Now()
 		for i := 0; i < numVectors; i++ {

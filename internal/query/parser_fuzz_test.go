@@ -27,7 +27,8 @@ func FuzzZeroAllocTicketParser_Parse(f *testing.F) {
 		// Use a fresh parser for each interaction to ensure isolation,
 		// though reusing generally should work if reset implemented correctly.
 		// For fuzzing we mainly care about Panics.
-		parser := NewZeroAllocTicketParser(zerolog.Nop())
+		nopLogger := zerolog.Nop()
+		parser := NewZeroAllocTicketParser(&nopLogger)
 		_, _ = parser.Parse(data)
 	})
 }

@@ -28,7 +28,7 @@ func TestComplex128_DimensionCheck(t *testing.T) {
 	cfg.Metric = "l2"                   // Standard L2 on components matches complex L2 distance
 
 	// Initialize Index
-	idx := NewArrowHNSW(ds, cfg)
+	idx := NewArrowHNSW(ds, &cfg)
 	defer func() { _ = idx.Close() }()
 
 	// During initialization/first insert, HNSW learns the dimension.
@@ -69,7 +69,7 @@ func TestComplex_SearchCorrectness(t *testing.T) {
 	cfg := DefaultArrowHNSWConfig()
 	cfg.DataType = VectorTypeComplex128
 
-	idx := NewArrowHNSW(ds, cfg)
+	idx := NewArrowHNSW(ds, &cfg)
 	defer func() { _ = idx.Close() }()
 
 	// Insert 3 Vectors

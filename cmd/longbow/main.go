@@ -146,7 +146,7 @@ func initializeHNSW2(ds *store.Dataset, logger *zerolog.Logger) {
 	config.EfConstruction = int32(globalCfg.HNSW2EfConstruction)
 	config.SQ8Enabled = globalCfg.HNSW2SQ8Enabled
 
-	hnswIndex := store.NewArrowHNSW(ds, config)
+	hnswIndex := store.NewArrowHNSW(ds, &config)
 	ds.SetHNSW2Index(hnswIndex)
 	if logger.GetLevel() != zerolog.Disabled {
 		logger.Info().
@@ -173,9 +173,8 @@ func run() error {
 	defer stop()
 
 	if err := envconfig.Process("LONGBOW", &globalCfg); err != nil {
-		stop()
 		fmt.Fprintf(os.Stderr, "Failed to process config: %v\n", err)
-		os.Exit(1)
+		return err
 	}
 	cfg := globalCfg
 
@@ -185,7 +184,6 @@ func run() error {
 		Level:  cfg.LogLevel,
 	})
 	if err != nil {
-		stop()
 		fmt.Fprintf(os.Stderr, "Failed to initialize logger: %v\n", err)
 		os.Exit(1)
 	}

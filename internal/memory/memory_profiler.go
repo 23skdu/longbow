@@ -70,21 +70,21 @@ type MemoryStats struct {
 	LastGC           time.Time
 }
 
-func (ms MemoryStats) AllocationRate() float64 {
+func (ms *MemoryStats) AllocationRate() float64 {
 	if ms.Duration == 0 {
 		return 0
 	}
 	return float64(ms.TotalAllocations) / ms.Duration.Seconds()
 }
 
-func (ms MemoryStats) ThroughputMBps() float64 {
+func (ms *MemoryStats) ThroughputMBps() float64 {
 	if ms.Duration == 0 {
 		return 0
 	}
 	return (float64(ms.TotalAllocBytes) / (1024 * 1024)) / ms.Duration.Seconds()
 }
 
-func (ms MemoryStats) FragmentationRatio() float64 {
+func (ms *MemoryStats) FragmentationRatio() float64 {
 	if ms.TotalAllocBytes == 0 {
 		return 0
 	}
@@ -165,8 +165,8 @@ func (ma *MemoryAnalyzer) AnalyzeUsage() MemoryAnalysis {
 		ProfilerStats:   profilerStats,
 		RuntimeStats:    runtimeStats,
 		HeapUtilization: float64(runtimeStats.HeapInuse) / float64(runtimeStats.HeapSys) * 100,
-		MemoryPressure:  ma.calculateMemoryPressure(profilerStats, runtimeStats),
-		Recommendations: ma.generateRecommendations(profilerStats, runtimeStats),
+		MemoryPressure:  ma.calculateMemoryPressure(&profilerStats, runtimeStats),
+		Recommendations: ma.generateRecommendations(&profilerStats, runtimeStats),
 	}
 
 	return analysis
@@ -189,7 +189,7 @@ const (
 	PressureCritical MemoryPressure = "critical"
 )
 
-func (ma *MemoryAnalyzer) calculateMemoryPressure(profilerStats MemoryStats, runtimeStats RuntimeMemoryStats) MemoryPressure {
+func (ma *MemoryAnalyzer) calculateMemoryPressure(profilerStats *MemoryStats, runtimeStats RuntimeMemoryStats) MemoryPressure {
 	heapUtilization := float64(runtimeStats.HeapInuse) / float64(runtimeStats.HeapSys)
 	goroutineCount := float64(runtimeStats.NumGoroutines)
 	gcFraction := runtimeStats.GCCPUFraction
@@ -206,7 +206,7 @@ func (ma *MemoryAnalyzer) calculateMemoryPressure(profilerStats MemoryStats, run
 	return PressureLow
 }
 
-func (ma *MemoryAnalyzer) generateRecommendations(profilerStats MemoryStats, runtimeStats RuntimeMemoryStats) []string {
+func (ma *MemoryAnalyzer) generateRecommendations(profilerStats *MemoryStats, runtimeStats RuntimeMemoryStats) []string {
 	var recs []string
 
 	if profilerStats.FragmentationRatio() > 0.3 {

@@ -88,7 +88,7 @@ func TestTrainKMeans_EmptyCluster(t *testing.T) {
 }
 
 func TestTrainKMeans_SingleIteration(t *testing.T) {
-	rand.Seed(456)
+	rng := rand.New(rand.NewSource(456))
 
 	n := 100
 	dim := 8
@@ -97,7 +97,7 @@ func TestTrainKMeans_SingleIteration(t *testing.T) {
 
 	for i := 0; i < n; i++ {
 		for j := 0; j < dim; j++ {
-			data[i*dim+j] = rand.Float32()
+			data[i*dim+j] = rng.Float32()
 		}
 	}
 
@@ -112,7 +112,7 @@ func TestTrainKMeans_SingleIteration(t *testing.T) {
 }
 
 func TestTrainKMeans_CentroidCount(t *testing.T) {
-	rand.Seed(999)
+	rng := rand.New(rand.NewSource(999))
 
 	n := 1000
 	dim := 32
@@ -121,7 +121,7 @@ func TestTrainKMeans_CentroidCount(t *testing.T) {
 
 	for i := 0; i < n; i++ {
 		for j := 0; j < dim; j++ {
-			data[i*dim+j] = rand.Float32()
+			data[i*dim+j] = rng.Float32()
 		}
 	}
 
@@ -145,7 +145,7 @@ func TestTrainKMeans_CentroidCount(t *testing.T) {
 }
 
 func BenchmarkTrainKMeans(b *testing.B) {
-	rand.Seed(42)
+	rng := rand.New(rand.NewSource(42))
 
 	testCases := []struct {
 		name string
@@ -162,53 +162,87 @@ func BenchmarkTrainKMeans(b *testing.B) {
 		b.Run(tc.name, func(b *testing.B) {
 			data := make([]float32, tc.n*tc.dim)
 			for i := range data {
-				data[i] = rand.Float32()
+				data[i] = rng.Float32()
 			}
 
 			b.ResetTimer()
 			b.ReportAllocs()
 
 			for i := 0; i < b.N; i++ {
-				TrainKMeans(data, tc.n, tc.dim, tc.k, 10)
+				_, err := TrainKMeans(data, tc.n, tc.dim, tc.k, 10)
+				if err != nil {
+					b.Fatalf("TrainKMeans failed: %v", err)
+				}
 			}
 		})
 	}
 }
 
 func BenchmarkTrainKMeans_AllocationReduction(b *testing.B) {
-	rand.Seed(42)
+	rng := rand.New(rand.NewSource(42))
 
 	n := 10000
 	dim := 128
 	k := 64
 	data := make([]float32, n*dim)
 	for i := range data {
-		data[i] = rand.Float32()
+		data[i] = rng.Float32()
 	}
 
-	b.ReportAllocs()
+	// Warm up the pool
+	for i := 0; i < 5; i++ {
+		_, err := TrainKMeans(data, n, dim, k, 5)
+		if err != nil {
+			b.Fatalf("TrainKMeans warmup failed: %v", err)
+		}
+	}
+
 	b.ResetTimer()
+	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		TrainKMeans(data, n, dim, k, 10)
+		_, err := TrainKMeans(data, n, dim, k, 10)
+		if err != nil {
+			b.Fatalf("TrainKMeans failed: %v", err)
+		}
 	}
 }
 
 // BenchmarkTrainKMeans_WarmPool measures performance after pool is warmed up
 func BenchmarkTrainKMeans_WarmPool(b *testing.B) {
-	rand.Seed(42)
+	rng := rand.New(rand.NewSource(42))
 
 	n := 10000
 	dim := 128
 	k := 64
 	data := make([]float32, n*dim)
 	for i := range data {
-		data[i] = rand.Float32()
+		data[i] = rng.Float32()
 	}
 
 	// Warm up the pool
 	for i := 0; i < 5; i++ {
-		TrainKMeans(data, n, dim, k, 5)
+		_, err := TrainKMeans(data, n, dim, k, 5)
+		if err != nil {
+			b.Fatalf("TrainKMeans warmup failed: %v", err)
+		}
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		if _, err := TrainKMeans(data, n, dim, k, 10); err != nil {
+			b.Fatalf("TrainKMeans failed: %v", err)
+		}
+	}
+
+	// Warm up the pool
+	for i := 0; i < 5; i++ {
+		_, err := TrainKMeans(data, n, dim, k, 5)
+		if err != nil {
+			b.Fatalf("TrainKMeans warmup failed: %v", err)
+		}
 	}
 
 	b.ResetTimer()

@@ -51,7 +51,7 @@ func NewConsistentHash(vnodes int) *ConsistentHash {
 }
 
 // NewConsistentHashWithCache creates a new ring with custom cache configuration
-func NewConsistentHashWithCache(vnodes int, cacheCapacity int, cacheTTL time.Duration) *ConsistentHash {
+func NewConsistentHashWithCache(vnodes, cacheCapacity int, cacheTTL time.Duration) *ConsistentHash {
 	return &ConsistentHash{
 		nodes:         make(map[uint64]string),
 		vnodes:        vnodes,

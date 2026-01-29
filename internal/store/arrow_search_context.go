@@ -200,6 +200,8 @@ func NewArrowSearchContext() *ArrowSearchContext {
 		resultSet:        make(CandidateHeap, 0, 100),
 		scratchSelected:  make([]Candidate, 0, 100),
 		scratchRemaining: make([]Candidate, 0, 100),
+		queryBQ:          make([]uint64, 0, 256),
+		querySQ8:         make([]uint8, 0, 1536),
 		dirty:            false,
 		operations:       0,
 	}
@@ -250,6 +252,8 @@ func (ctx *ArrowSearchContext) Reset() {
 	ctx.resultSet = ctx.resultSet[:0]
 	ctx.scratchSelected = ctx.scratchSelected[:0]
 	ctx.scratchRemaining = ctx.scratchRemaining[:0]
+	ctx.queryBQ = ctx.queryBQ[:0]
+	ctx.querySQ8 = ctx.querySQ8[:0]
 	ctx.dirty = false
 	ctx.operations = 0
 

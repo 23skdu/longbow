@@ -234,6 +234,19 @@ func (s *VectorStore) DoExchange(stream flight.FlightService_DoExchangeServer) e
 					return err
 				}
 				continue // Skip the final ack for this command
+			case "root":
+				ds, ok := s.getDataset(datasetName)
+				if !ok {
+					return status.Errorf(codes.NotFound, "dataset %s not found", datasetName)
+				}
+
+				root := ds.Merkle.RootHash()
+				if err := stream.Send(&flight.FlightData{
+					DataBody: root[:],
+				}); err != nil {
+					return err
+				}
+				continue
 			case "VectorSearch":
 				// Fallback if checked late
 				return s.handleVectorSearchExchange(stream, data)

@@ -22,7 +22,7 @@ func TestArrowHNSW_AddBatchBulk_EnsureChunkRace(t *testing.T) {
 			// and not actual data retrieval through the dataset.
 		}
 
-		h := NewArrowHNSW(mockDataset, cfg)
+		h := NewArrowHNSW(mockDataset, &cfg)
 
 		// Helper function to get vector from ArrowHNSW (mimicking GetVector)
 		getVectorFloat32 := func(hnsw *ArrowHNSW, id uint32) []float32 {
@@ -50,7 +50,11 @@ func TestArrowHNSW_AddBatchBulk_EnsureChunkRace(t *testing.T) {
 			return chunk[start : start+dims]
 		}
 
-		defer h.Close()
+		defer func() {
+			if err := h.Close(); err != nil {
+				t.Logf("failed to close ArrowHNSW: %v", err)
+			}
+		}()
 
 		numVectors := 2048 // Enough vectors to span multiple chunks
 		vecs := make([][]float32, numVectors)

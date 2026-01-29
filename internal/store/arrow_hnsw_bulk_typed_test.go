@@ -36,7 +36,7 @@ func TestAddBatch_Bulk_Typed(t *testing.T) {
 			config.DataType = tt.dataType
 			config.Dims = tt.dims
 
-			idx := NewArrowHNSW(nil, config)
+			idx := NewArrowHNSW(nil, &config)
 			defer func() { _ = idx.Close() }()
 
 			// Generate 1100 vectors to ensure Bulk Path (> 1000)
@@ -151,7 +151,7 @@ func TestAddBatchBulk_DimensionMismatch(t *testing.T) {
 	config.DataType = VectorTypeFloat32
 	config.Dims = dims
 
-	idx := NewArrowHNSW(ds, config)
+	idx := NewArrowHNSW(ds, &config)
 	defer func() { _ = idx.Close() }()
 
 	// Create vectors with wrong dimension (16 instead of 8)

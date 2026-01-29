@@ -87,7 +87,7 @@ func TestArrowHNSW_DataTypes(t *testing.T) {
 				config.Float16Enabled = true
 			}
 
-			idx := NewArrowHNSW(ds, config)
+			idx := NewArrowHNSW(ds, &config)
 			defer func() { _ = idx.Close() }()
 
 			// 2. Ingestion (AddBatch)

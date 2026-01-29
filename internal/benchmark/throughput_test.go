@@ -18,7 +18,11 @@ func BenchmarkThroughput(b *testing.B) {
 	if err != nil {
 		b.Fatalf("failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			b.Logf("failed to remove temp dir %s: %v", tmpDir, err)
+		}
+	}()
 
 	// Test different backends
 	testCases := []struct {
@@ -31,7 +35,11 @@ func BenchmarkThroughput(b *testing.B) {
 
 	for _, tc := range testCases {
 		b.Run(tc.name, func(b *testing.B) {
-			defer tc.backend.Close()
+			defer func() {
+				if err := tc.backend.Close(); err != nil {
+					b.Logf("failed to close backend: %v", err)
+				}
+			}()
 
 			// Create test data
 			testData := make([]byte, 1024) // 1KB per operation
@@ -91,10 +99,18 @@ func BenchmarkLatency(b *testing.B) {
 	if err != nil {
 		b.Fatalf("failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			b.Logf("failed to remove temp dir %s: %v", tmpDir, err)
+		}
+	}()
 
 	backend := createIOUringBackend(b, tmpDir)
-	defer backend.Close()
+	defer func() {
+		if err := backend.Close(); err != nil {
+			b.Logf("failed to close backend: %v", err)
+		}
+	}()
 
 	testData := make([]byte, 256) // Small operation
 
@@ -122,7 +138,11 @@ func BenchmarkLatency(b *testing.B) {
 // BenchmarkConcurrentAccess measures concurrent access patterns
 func BenchmarkConcurrentAccess(b *testing.B) {
 	backend := createStandardBackend(&testing.B{}, "/tmp")
-	defer backend.Close()
+	defer func() {
+		if err := backend.Close(); err != nil {
+			b.Logf("failed to close backend: %v", err)
+		}
+	}()
 
 	testData := make([]byte, 512)
 

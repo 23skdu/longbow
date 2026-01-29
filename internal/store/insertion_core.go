@@ -48,15 +48,76 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 		metrics.HNSWInsertLatencyByDim.WithLabelValues(strconv.Itoa(dims)).Observe(duration)
 	}()
 
-	// Make a defensive copy of the vector is avoided by copying into GraphData first.
-	// We rely on the copy at line 200 to provide a stable reference.
-	dims = int(h.dims.Load())
+	// Acquire Read Lock to protect initial data/dims access and prevent structural races
+	h.growMu.RLock()
 	data := h.data.Load()
+	dims = int(h.dims.Load())
 
-	// Fix for race where we see new dims but old data pointer due to memory ordering or scheduling
+	// Fix for race where we see new dims but old data pointer
 	if data != nil && dims > 0 && data.Dims != dims {
 		data = h.data.Load()
 	}
+
+	// Double-check if we need growth or and lazy initialization under lock
+	cID := chunkID(id)
+	cOff := chunkOffset(id)
+	needsStructuralChange := data == nil || int(id) >= data.Capacity || dims == 0 || (dims > 0 && data.Vectors == nil) || cID >= len(data.Vectors) || data.Vectors[cID] == nil
+
+	if needsStructuralChange {
+		h.growMu.RUnlock()
+		// Re-initialize/Grow without holding RLock to allow write lock acquisition
+		if dims == 0 {
+			inputDims := 0
+			switch v := vec.(type) {
+			case []float32:
+				inputDims = len(v)
+			case []float16.Num:
+				inputDims = len(v)
+			case []complex64:
+				inputDims = len(v)
+			case []complex128:
+				inputDims = len(v)
+			case []float64:
+				inputDims = len(v)
+			case []int8:
+				inputDims = len(v)
+			case []uint8:
+				inputDims = len(v)
+			}
+			if inputDims > 0 {
+				h.initMu.Lock()
+				if h.dims.Load() == 0 {
+					if err := h.Grow(h.data.Load().Capacity, inputDims); err != nil {
+						return fmt.Errorf("failed to grow during initial resize: %w", err)
+					}
+					h.dims.Store(int32(inputDims))
+				}
+				h.initMu.Unlock()
+			}
+		}
+
+		// Ensure capacity for the specific ID
+		currData := h.data.Load()
+		currDims := int(h.dims.Load())
+		if int(id) >= currData.Capacity {
+			if err := h.Grow(int(id)+1, currDims); err != nil {
+				return fmt.Errorf("failed to grow for ID %d: %w", id, err)
+			}
+		}
+
+		// Allocate chunk
+		var err error
+		_, err = h.ensureChunk(h.data.Load(), cID, cOff, currDims)
+		if err != nil {
+			return err
+		}
+
+		// Re-acquire RLock for the rest of the operation
+		h.growMu.RLock()
+		data = h.data.Load() // Use latest snapshot
+		dims = int(h.dims.Load())
+	}
+	defer h.growMu.RUnlock()
 
 	if h.config.AdaptiveMEnabled && !h.adaptiveMTriggered.Load() {
 		count := int(h.nodeCount.Load())
@@ -70,75 +131,11 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 		}
 	}
 
-	// Lazy Dimension Initialization
-	// Must happen BEFORE acquiring RLock to avoid Deadlock during Grow()
-	if dims == 0 {
-		inputDims := 0
-		switch v := vec.(type) {
-		case []float32:
-			inputDims = len(v)
-		case []float16.Num:
-			inputDims = len(v)
-		case []complex64:
-			inputDims = len(v)
-		case []complex128:
-			inputDims = len(v)
-		case []float64:
-			inputDims = len(v)
-		case []int8:
-			inputDims = len(v)
-		case []uint8:
-			inputDims = len(v)
-		}
-
-		if inputDims > 0 {
-			h.initMu.Lock()
-			// Double-check under lock
-			dims = int(h.dims.Load())
-			if dims == 0 {
-				newDims := inputDims
-				// This acquires growMu.Lock(), which is safe here (we don't hold RLock yet).
-				if err := h.Grow(data.Capacity, newDims); err != nil {
-					return fmt.Errorf("failed to grow during insertion: %w", err)
-				}
-
-				h.dims.Store(int32(newDims))
-				dims = newDims
-			}
-			h.initMu.Unlock()
-			// Reload data as it might have been updated by another thread (or us) during init/Grow
-			data = h.data.Load()
-		}
-	}
-
-	// Invariant: If dims > 0, Vectors/SQ8 arrays MUST exist in data.
-	if data.Capacity <= int(id) || (dims > 0 && data.Vectors == nil) {
-		if err := h.Grow(int(id)+1, dims); err != nil {
-			return fmt.Errorf("failed to grow for ID %d: %w", id, err)
-		}
-		data = h.data.Load()
-	}
-
-	// SQ8 Training: Must be done BEFORE acquiring RLock to avoid recursive Lock/RLock deadlock
+	// SQ8 Training
 	if h.config.SQ8Enabled && dims > 0 {
 		if vecF32, ok := vec.([]float32); ok {
-			// Use nodeCount as an approximation of total vectors seen including this one
 			h.ensureTrained(int(h.nodeCount.Load())+1, [][]float32{vecF32})
 		}
-	}
-
-	// Acquire Read Lock to prevent concurrent Grow() from swapping GraphData
-	// while we are allocating/initializing chunks in the current snapshot.
-	h.growMu.RLock()
-	defer h.growMu.RUnlock()
-
-	// Lazy Chunk Allocation (Protected by RLock)
-	cID := chunkID(id)
-	cOff := chunkOffset(id)
-	var err error
-	data, err = h.ensureChunk(data, cID, cOff, dims)
-	if err != nil {
-		return err
 	}
 
 	metrics.HNSWInsertPoolGetTotal.Inc()

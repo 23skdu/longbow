@@ -66,8 +66,8 @@ func TestArrowHNSW_AddBatch_Sequential(t *testing.T) {
 	for _, r := range results {
 		// We can't easily map back to b/i without checking vector content or using ID if predictable
 		// But AddBatch returns IDs. We assumed monotonic.
-		// Let's just check score/distance is close to 0 (assuming Euclidean distance behavior)
-		if r.Score < 0.0001 {
+		// For an exact match, Distance should be close to 0 and Score should be close to 1
+		if r.Score > 0.999 || r.Distance < 0.0001 {
 			found = true
 			break
 		}

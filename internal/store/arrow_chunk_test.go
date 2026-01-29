@@ -88,10 +88,10 @@ func TestChunkHelpers(t *testing.T) {
 	cID := chunkID(id)
 	cOff := chunkOffset(id)
 
-	assert.Equal(t, uint32(1), cID)
-	assert.Equal(t, uint32(5), cOff)
+	assert.Equal(t, 1, cID)
+	assert.Equal(t, 5, cOff)
 
 	id2 := uint32(5)
-	assert.Equal(t, uint32(0), chunkID(id2))
-	assert.Equal(t, uint32(5), chunkOffset(id2))
+	assert.Equal(t, 0, chunkID(id2))
+	assert.Equal(t, 5, chunkOffset(id2))
 }

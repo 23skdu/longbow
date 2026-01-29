@@ -72,7 +72,7 @@ func TestArrowHNSW_AddBatch_Parallel_SQ8(t *testing.T) {
 	cfg.SQ8TrainingThreshold = 100
 
 	// Create Index
-	idx := NewArrowHNSW(ds, cfg)
+	idx := NewArrowHNSW(ds, &cfg)
 	defer func() { _ = idx.Close() }()
 
 	// 3. Call AddBatch

@@ -11,7 +11,7 @@ func TestChunkedGrowth(t *testing.T) {
 	config.InitialCapacity = 10 // Start small
 
 	// Create HNSW
-	h := NewArrowHNSW(&Dataset{Name: "test"}, config)
+	h := NewArrowHNSW(&Dataset{Name: "test"}, &config)
 
 	// Verify initial chunks
 	data := h.data.Load()
@@ -24,7 +24,9 @@ func TestChunkedGrowth(t *testing.T) {
 	// Let's manually manipulate capacity for testing, OR just Grow huge.
 
 	targetCap := 5000
-	h.Grow(targetCap, 0)
+	if err := h.Grow(targetCap, 0); err != nil {
+		t.Fatalf("Grow failed: %v", err)
+	}
 
 	newData := h.data.Load()
 	assert.GreaterOrEqual(t, newData.Capacity, targetCap)
@@ -63,7 +65,9 @@ func TestChunkedGrowth(t *testing.T) {
 	}
 
 	// Grow again
-	h.Grow(targetCap+ChunkSize, 0) // Add one more chunk
+	if err := h.Grow(targetCap+ChunkSize, 0); err != nil {
+		t.Fatalf("Grow failed: %v", err)
+	} // Add one more chunk
 	grownData := h.data.Load()
 
 	// Check old data preserved

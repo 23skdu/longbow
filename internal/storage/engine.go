@@ -429,7 +429,7 @@ func (e *StorageEngine) writeSnapshotItem(item *SnapshotItem, tempDir string) er
 }
 
 // LoadSnapshots reads all snapshots and calls loader for each item.
-func (e *StorageEngine) LoadSnapshots(loader func(SnapshotItem) error) error {
+func (e *StorageEngine) LoadSnapshots(loader func(*SnapshotItem) error) error {
 	// If backend is present, we might want to list from backend first?
 	// For now, load from local as snapshots are typically local first.
 	// If S3 restoration is needed, it should be explicit 'Restore' command or Init logic.
@@ -501,7 +501,7 @@ func (e *StorageEngine) LoadSnapshots(loader func(SnapshotItem) error) error {
 	}
 
 	for _, item := range partials {
-		if err := loader(*item); err != nil {
+		if err := loader(item); err != nil {
 			return err
 		}
 	}
@@ -538,10 +538,10 @@ func (e *StorageEngine) WriteWAL(name string, rec arrow.RecordBatch, seq uint64,
 	return e.WriteToWAL(name, rec, seq, ts)
 }
 
-func (e *StorageEngine) CreateSnapshot(item SnapshotItem) error {
+func (e *StorageEngine) CreateSnapshot(item *SnapshotItem) error {
 	tempDir := filepath.Join(e.dataPath, snapshotDirName+"_tmp")
 	_ = os.MkdirAll(tempDir, 0o755)
-	return e.writeSnapshotItem(&item, tempDir)
+	return e.writeSnapshotItem(item, tempDir)
 }
 
 func (e *StorageEngine) FlushWAL() error {

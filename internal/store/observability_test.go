@@ -49,7 +49,7 @@ func TestObservability_GranularMetrics(t *testing.T) {
 	config.Float16Enabled = true // Ensure flag is synced
 
 	// Initialize Index
-	idx := NewArrowHNSW(ds, config)
+	idx := NewArrowHNSW(ds, &config)
 
 	// 1. Verify Insert Metrics (Float16)
 	metrics.HNSWInsertLatencyByType.Reset()
@@ -88,7 +88,7 @@ func TestObservability_GranularMetrics(t *testing.T) {
 
 	configF32 := DefaultArrowHNSWConfig()
 	configF32.DataType = lbtypes.VectorTypeFloat32
-	idxF32 := NewArrowHNSW(ds, configF32)
+	idxF32 := NewArrowHNSW(ds, &configF32)
 
 	vecs := [][]float32{{1.0, 0.0}}
 	// We need to ensure graph has capacity/chunks. AddBatchBulk usually does prep.
@@ -120,7 +120,7 @@ func TestHNSW_ObservabilityMetrics(t *testing.T) {
 	// useRefinement := (h.config.SQ8Enabled || h.config.PQEnabled || h.config.BQEnabled)
 	config.SQ8Enabled = true
 
-	idx := NewArrowHNSW(ds, config)
+	idx := NewArrowHNSW(ds, &config)
 
 	// Add vectors
 	_, err := idx.AddByLocation(context.Background(), 0, 0)

@@ -42,11 +42,12 @@ func ConvertFloat32ToUint8(vec []float32) ([]uint8, error) {
 	for i, v := range vec {
 		// Simple clamping to [0, 255] for now
 		// TODO: Implement proper casting with bounds checking
-		if v < 0 {
+		switch {
+		case v < 0:
 			result[i] = 0
-		} else if v > 255 {
+		case v > 255:
 			result[i] = 255
-		} else {
+		default:
 			result[i] = uint8(v)
 		}
 	}

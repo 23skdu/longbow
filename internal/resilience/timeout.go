@@ -102,11 +102,11 @@ type AdaptiveTimeout struct {
 	mu           sync.RWMutex
 }
 
-func NewAdaptiveTimeout(base, min, max time.Duration) *AdaptiveTimeout {
+func NewAdaptiveTimeout(base, minTimeout, maxTimeout time.Duration) *AdaptiveTimeout {
 	return &AdaptiveTimeout{
 		baseTimeout:  base,
-		minTimeout:   min,
-		maxTimeout:   max,
+		minTimeout:   minTimeout,
+		maxTimeout:   maxTimeout,
 		adjustment:   0.1,
 		measurements: make([]time.Duration, 0, 100),
 	}
@@ -202,7 +202,7 @@ func (tg *TimeoutGroup) GetManager(name string) *TimeoutManager {
 	return manager
 }
 
-func (tg *TimeoutGroup) GetAdaptiveTimeout(name string, base, min, max time.Duration) *AdaptiveTimeout {
+func (tg *TimeoutGroup) GetAdaptiveTimeout(name string, base, minTimeout, maxTimeout time.Duration) *AdaptiveTimeout {
 	tg.mu.RLock()
 	timeout, exists := tg.adaptive[name]
 	tg.mu.RUnlock()
@@ -218,7 +218,7 @@ func (tg *TimeoutGroup) GetAdaptiveTimeout(name string, base, min, max time.Dura
 		return timeout
 	}
 
-	timeout = NewAdaptiveTimeout(base, min, max)
+	timeout = NewAdaptiveTimeout(base, minTimeout, maxTimeout)
 	tg.adaptive[name] = timeout
 
 	return timeout

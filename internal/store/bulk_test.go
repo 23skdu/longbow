@@ -68,7 +68,7 @@ func TestBulkDeferredConnections(t *testing.T) {
 	config.DataType = VectorTypeFloat32
 	config.InitialCapacity = numVecs
 
-	idx := NewArrowHNSW(ds, config)
+	idx := NewArrowHNSW(ds, &config)
 	defer func() { _ = idx.Close() }()
 
 	// 4. Perform Bulk Insert

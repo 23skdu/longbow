@@ -67,7 +67,7 @@ func (bu *BatchNeighborUpdater) Add(update BatchNeighborUpdate) {
 	bu.mu.Unlock()
 
 	if shouldFlush {
-		bu.Flush()
+		_ = bu.Flush()
 	}
 }
 
@@ -114,7 +114,7 @@ func (bu *BatchNeighborUpdater) runFlushWorker() {
 			bu.mu.Unlock()
 
 			if shouldFlush {
-				bu.Flush()
+				_ = bu.Flush()
 			}
 		}
 	}

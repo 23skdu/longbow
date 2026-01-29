@@ -259,6 +259,8 @@ func (hm *HealthManager) HTTPHandler() http.Handler {
 		if health.Status == StatusUnhealthy {
 			w.WriteHeader(http.StatusServiceUnavailable)
 		}
-		json.NewEncoder(w).Encode(health)
+		if err := json.NewEncoder(w).Encode(health); err != nil {
+			http.Error(w, "Failed to encode health response", http.StatusInternalServerError)
+		}
 	})
 }

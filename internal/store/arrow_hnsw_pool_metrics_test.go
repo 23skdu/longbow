@@ -23,7 +23,7 @@ func TestArrowHNSW_PoolMetrics(t *testing.T) {
 	config.Dims = 128
 
 	ds := &Dataset{Name: "metrics_test"}
-	idx := NewArrowHNSW(ds, config)
+	idx := NewArrowHNSW(ds, &config)
 
 	// Baseline
 	getBefore := getCounterValue(metrics.HNSWInsertPoolGetTotal)

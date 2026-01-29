@@ -22,7 +22,7 @@ func TestArrowHNSW_AddBatch_Parallel_Dense_Packed(t *testing.T) {
 	arrowConfig.SQ8Enabled = false // Test Dense first
 	arrowConfig.PackedAdjacencyEnabled = true
 
-	idx := NewArrowHNSW(nil, arrowConfig)
+	idx := NewArrowHNSW(nil, &arrowConfig)
 
 	// Generate vectors
 	vecBuilder := array.NewFixedSizeListBuilder(mem, int32(dims), arrow.PrimitiveTypes.Float32)

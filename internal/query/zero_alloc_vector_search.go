@@ -21,11 +21,11 @@ type ZeroAllocVectorSearchParser struct {
 
 // NewZeroAllocVectorSearchParser creates a new reusable parser.
 // maxDims specifies the maximum expected vector dimensions for pre-allocation.
-func NewZeroAllocVectorSearchParser(maxDims int, logger zerolog.Logger) *ZeroAllocVectorSearchParser {
+func NewZeroAllocVectorSearchParser(maxDims int, logger *zerolog.Logger) *ZeroAllocVectorSearchParser {
 	return &ZeroAllocVectorSearchParser{
 		vector:  make([]float32, 0, maxDims),
 		filters: make([]Filter, 0, 16),
-		logger:  logger,
+		logger:  *logger,
 	}
 }
 

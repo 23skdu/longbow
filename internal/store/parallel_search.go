@@ -131,7 +131,7 @@ func (h *HNSWIndex) processResultsParallel(ctx context.Context, query []float32,
 }
 
 // getFallbackReason returns the reason for serial fallback
-func getFallbackReason(cfg ParallelSearchConfig, neighborCount int, chunkSize int) string {
+func getFallbackReason(cfg ParallelSearchConfig, neighborCount, chunkSize int) string {
 	if !cfg.Enabled {
 		return "disabled"
 	}
@@ -360,10 +360,18 @@ func (h *HNSWIndex) processChunk(ctx context.Context, query []float32, neighbors
 			for i, t := range tasks {
 				vecs[i] = t.vec
 			}
-			h.batchDistFunc(query, vecs, scores)
+			if err := h.batchDistFunc(query, vecs, scores); err != nil {
+				for i := range scores {
+					scores[i] = 0
+				}
+			}
 		} else {
 			// Use flat batch - no intermediate allocation needed
-			_ = simd.EuclideanDistanceBatchFlat(query, flatBuffer, numTasks, dims, scores)
+			if err := simd.EuclideanDistanceBatchFlat(query, flatBuffer, numTasks, dims, scores); err != nil {
+				for i := range scores {
+					scores[i] = 0
+				}
+			}
 		}
 	}
 

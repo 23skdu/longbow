@@ -12,7 +12,8 @@ import (
 func TestHNSW_SearchEarlyTermination(t *testing.T) {
 	// Setup a small HNSW with some data
 	_ = memory.NewGoAllocator()
-	h := NewArrowHNSW(nil, DefaultArrowHNSWConfig())
+	cfg := DefaultArrowHNSWConfig()
+	h := NewArrowHNSW(nil, &cfg)
 	h.SetDimension(4)
 
 	// Add 100 identical vectors (should converge extremely fast)
@@ -40,7 +41,8 @@ func FuzzHNSW_SearchEarlyTermination(f *testing.F) {
 		if ef <= 0 || ef > 1000 {
 			return
 		}
-		h := NewArrowHNSW(nil, DefaultArrowHNSWConfig())
+		cfg := DefaultArrowHNSWConfig()
+		h := NewArrowHNSW(nil, &cfg)
 		h.SetDimension(1)
 		if err := h.InsertWithVector(1, []float32{val}, 0); err != nil {
 			t.Fatalf("Insert failed: %v", err)

@@ -11,7 +11,8 @@ import (
 
 func TestSearch_EmptyIndex(t *testing.T) {
 	dataset := &Dataset{Name: "test"}
-	index := NewArrowHNSW(dataset, DefaultArrowHNSWConfig())
+	cfg := DefaultArrowHNSWConfig()
+	index := NewArrowHNSW(dataset, &cfg)
 
 	query := []float32{1.0, 2.0, 3.0}
 	results, err := index.Search(context.Background(), query, 10, nil)
@@ -27,7 +28,8 @@ func TestSearch_EmptyIndex(t *testing.T) {
 
 func TestSearch_InvalidK(t *testing.T) {
 	dataset := &Dataset{Name: "test"}
-	index := NewArrowHNSW(dataset, DefaultArrowHNSWConfig())
+	cfg := DefaultArrowHNSWConfig()
+	index := NewArrowHNSW(dataset, &cfg)
 
 	query := []float32{1.0, 2.0, 3.0}
 
@@ -94,7 +96,7 @@ func BenchmarkSearch_SmallIndex(b *testing.B) {
 
 	config := DefaultArrowHNSWConfig()
 	config.EfConstruction = 100
-	index := NewArrowHNSW(dataset, config)
+	index := NewArrowHNSW(dataset, &config)
 
 	// Bulk Insert
 	// Assuming location 0..n map to vectors
@@ -163,7 +165,7 @@ func BenchmarkSearch_LargeIndex(b *testing.B) {
 
 	config := DefaultArrowHNSWConfig()
 	config.EfConstruction = 100
-	index := NewArrowHNSW(dataset, config)
+	index := NewArrowHNSW(dataset, &config)
 
 	// Bulk Insert
 	for i := 0; i < n; i++ {

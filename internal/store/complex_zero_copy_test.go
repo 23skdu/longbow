@@ -24,7 +24,7 @@ func TestArrowHNSW_Complex64_ZeroCopy(t *testing.T) {
 	config.EfConstruction = 100
 	config.Metric = "l2"
 
-	idx := NewArrowHNSW(nil, config)
+	idx := NewArrowHNSW(nil, &config)
 
 	// 1. Prepare Data
 	vecsC64 := make([][]complex64, count)
@@ -80,7 +80,7 @@ func TestArrowHNSW_Complex128_ZeroCopy(t *testing.T) {
 	config.EfConstruction = 100
 	config.Metric = "l2"
 
-	idx := NewArrowHNSW(nil, config)
+	idx := NewArrowHNSW(nil, &config)
 
 	vecsC128 := make([][]complex128, count)
 	for i := 0; i < count; i++ {
@@ -120,7 +120,7 @@ func TestArrowHNSW_Complex_FlattenedQuery(t *testing.T) {
 	config.DataType = lbtypes.VectorTypeComplex128
 	config.Metric = "l2"
 
-	idx := NewArrowHNSW(nil, config)
+	idx := NewArrowHNSW(nil, &config)
 
 	// Create test vector
 	vec := []complex128{1 + 1i, 2 + 2i, 3 + 3i, 4 + 4i}

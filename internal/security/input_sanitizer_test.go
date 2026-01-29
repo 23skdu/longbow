@@ -77,7 +77,7 @@ func TestSecurityHeaders(t *testing.T) {
 	// Wrap with security headers middleware
 	protectedHandler := SecurityHeaders(nextHandler)
 
-	req := httptest.NewRequest("GET", "/test", nil)
+	req := httptest.NewRequest("GET", "/test", http.NoBody)
 
 	w := httptest.NewRecorder()
 	protectedHandler.ServeHTTP(w, req)

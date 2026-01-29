@@ -48,7 +48,7 @@ func (s *VectorStore) Snapshot(ctx context.Context) error {
 			Records: records,
 		}
 
-		if err := s.engine.CreateSnapshot(item); err != nil {
+		if err := s.engine.CreateSnapshot(&item); err != nil {
 			return fmt.Errorf("failed to snapshot dataset %s: %w", name, err)
 		}
 	}

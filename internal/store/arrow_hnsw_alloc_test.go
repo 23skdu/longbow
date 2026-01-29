@@ -18,7 +18,7 @@ func BenchmarkHNSW_InsertAllocations(b *testing.B) {
 	config.InitialCapacity = 1000 // Small start to force growth
 
 	ds := &Dataset{Name: "bench_alloc"}
-	h := NewArrowHNSW(ds, config)
+	h := NewArrowHNSW(ds, &config)
 
 	// Pre-generate vectors
 	vecs := make([][]float32, b.N)

@@ -22,7 +22,7 @@ func TestArrowHNSW_AddBatch_Sequential(t *testing.T) {
 	cfg := DefaultArrowHNSWConfig()
 	cfg.M = 16
 	cfg.EfConstruction = 100
-	idx := NewArrowHNSW(ds, cfg)
+	idx := NewArrowHNSW(ds, &cfg)
 	// Manually set dims since we bypass full initialization
 	idx.dims.Store(int32(dims))
 
@@ -88,7 +88,7 @@ func TestArrowHNSW_AddBatch_Concurrent(t *testing.T) {
 	cfg := DefaultArrowHNSWConfig()
 	cfg.M = 16
 	cfg.EfConstruction = 100
-	idx := NewArrowHNSW(ds, cfg)
+	idx := NewArrowHNSW(ds, &cfg)
 	idx.dims.Store(int32(dims))
 
 	var wg sync.WaitGroup

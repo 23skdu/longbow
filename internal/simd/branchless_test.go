@@ -57,7 +57,9 @@ func TestMatchInt64Correctness(t *testing.T) {
 	dst := make([]byte, len(src))
 
 	// Test Eq
-	matchInt64Generic(src, 42, CompareEq, dst)
+	if err := matchInt64Generic(src, 42, CompareEq, dst); err != nil {
+		t.Fatalf("matchInt64Generic failed: %v", err)
+	}
 	expected := []byte{0, 0, 0, 1, 0, 0}
 	for i, v := range expected {
 		if dst[i] != v {
@@ -66,7 +68,9 @@ func TestMatchInt64Correctness(t *testing.T) {
 	}
 
 	// Test Neq
-	matchInt64Generic(src, 42, CompareNeq, dst)
+	if err := matchInt64Generic(src, 42, CompareNeq, dst); err != nil {
+		t.Fatalf("matchInt64Generic failed: %v", err)
+	}
 	expectedNeq := []byte{1, 1, 1, 0, 1, 1}
 	for i, v := range expectedNeq {
 		if dst[i] != v {

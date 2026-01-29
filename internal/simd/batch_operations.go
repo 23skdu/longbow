@@ -61,7 +61,7 @@ func EuclideanDistanceBatch(query []float32, vectors [][]float32, results []floa
 
 // EuclideanDistanceBatchFlat computes distances against a flat array of vectors.
 // Vectors are stored contiguously: [v1[0], v1[1], ..., v1[dims], v2[0], ...]
-func EuclideanDistanceBatchFlat(query []float32, flatVectors []float32, numVectors int, dims int, results []float32) error {
+func EuclideanDistanceBatchFlat(query, flatVectors []float32, numVectors, dims int, results []float32) error {
 	if numVectors == 0 {
 		return nil
 	}

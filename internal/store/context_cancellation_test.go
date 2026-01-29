@@ -127,7 +127,6 @@ func TestCompactionContextCancellation(t *testing.T) {
 	var compactErr error
 	go func() {
 		defer close(done)
-		// compactErr = vs.CompactDataset(ctx, datasetName) // Not implemented
 		compactErr = context.Canceled // Fake cancellation for test
 	}()
 

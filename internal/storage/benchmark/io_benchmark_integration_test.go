@@ -25,16 +25,16 @@ func createTestRecords(count int) []arrow.RecordBatch {
 		nil,
 	)
 
-	var records []arrow.RecordBatch
+	records := make([]arrow.RecordBatch, 0, count)
 	for i := 0; i < count; i++ {
 		builder := array.NewRecordBuilder(pool, schema)
-		defer builder.Release()
 
 		builder.Field(0).(*array.Int64Builder).Append(int64(i))
 		builder.Field(1).(*array.BinaryBuilder).Append([]byte(fmt.Sprintf("test-data-%d", i)))
 
 		record := builder.NewRecordBatch()
 		records = append(records, record)
+		builder.Release()
 	}
 
 	return records
@@ -80,7 +80,11 @@ func TestWALPerformance(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			t.Logf("failed to remove temp dir %s: %v", tmpDir, err)
+		}
+	}()
 
 	// Test different backends
 	testCases := []struct {
@@ -93,7 +97,11 @@ func TestWALPerformance(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			defer tc.backend.Close()
+			defer func() {
+				if err := tc.backend.Close(); err != nil {
+					t.Logf("failed to close backend: %v", err)
+				}
+			}()
 
 			ctx := context.Background()
 			records := createTestRecords(1000)

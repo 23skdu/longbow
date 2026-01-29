@@ -9,6 +9,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/pq"
 	"github.com/23skdu/longbow/internal/query"
 	"github.com/23skdu/longbow/internal/simd"
@@ -155,9 +156,9 @@ func (h *ArrowHNSW) getVectorAny(id uint32) (any, error) {
 }
 
 // NewArrowHNSW creates a new ArrowHNSW index with the given configuration
-func NewArrowHNSW(dataset *Dataset, config ArrowHNSWConfig) *ArrowHNSW {
+func NewArrowHNSW(dataset *Dataset, config *ArrowHNSWConfig) *ArrowHNSW {
 	h := &ArrowHNSW{
-		config:        config,
+		config:        *config,
 		dataset:       dataset,
 		m:             config.M,
 		mMax:          config.MMax,
@@ -253,8 +254,8 @@ func NewArrowHNSW(dataset *Dataset, config ArrowHNSWConfig) *ArrowHNSW {
 }
 
 // SetData sets the graph data for the index
-func (h *ArrowHNSW) SetData(data types.GraphData) {
-	h.data.Store(&data)
+func (h *ArrowHNSW) SetData(data *types.GraphData) {
+	h.data.Store(data)
 }
 
 // GetData returns the current graph data
@@ -353,7 +354,7 @@ func (h *ArrowHNSW) SetPQEncoder(encoder *pq.PQEncoder) {
 }
 
 // GetMetrics returns the Prometheus metrics for this index
-func (h *ArrowHNSW) GetMetrics() (prometheus.Histogram, prometheus.Histogram, prometheus.Counter, prometheus.Counter) {
+func (h *ArrowHNSW) GetMetrics() (insertDuration, searchDuration prometheus.Histogram, nodesAdded, searchQueries prometheus.Counter) {
 	return h.metricInsertDuration, h.metricSearchDuration, h.metricNodesAdded, h.metricSearchQueries
 }
 
@@ -371,7 +372,7 @@ func (h *ArrowHNSW) SetDimension(dim int) {
 	defer h.initMu.Unlock()
 	data := h.data.Load()
 	if data != nil {
-		h.Grow(data.Capacity, dim)
+		_ = h.Grow(data.Capacity, dim)
 	}
 }
 
@@ -411,7 +412,7 @@ func (h *ArrowHNSW) DeleteBatch(ctx context.Context, ids []uint32) error {
 
 // Interface implementation: AddByLocation adds a vector by its location
 func (h *ArrowHNSW) AddByLocation(ctx context.Context, batchIdx, rowIdx int) (uint32, error) {
-	id := uint32(h.nodeCount.Load())
+	id := uint32(h.nodeCount.Add(1) - 1)
 
 	var vec any
 	if h.dataset != nil && batchIdx < len(h.dataset.Records) {
@@ -526,7 +527,7 @@ func (h *ArrowHNSW) extractVector(rec arrow.RecordBatch, colIdx, rowIdx int) any
 }
 
 // Interface implementation: Search performs k-nearest neighbor search
-func (h *ArrowHNSW) Search(ctx context.Context, query any, k int, filter any) ([]types.Candidate, error) {
+func (h *ArrowHNSW) Search(ctx context.Context, queryVal any, k int, filter any) ([]types.Candidate, error) {
 	if h.nodeCount.Load() == 0 {
 		return []types.Candidate{}, nil
 	}
@@ -537,7 +538,7 @@ func (h *ArrowHNSW) Search(ctx context.Context, query any, k int, filter any) ([
 	// So SearchVectorsWithBitmap will get its own.
 	// We can remove the Get/Put here.
 
-	results, err := h.SearchVectorsWithBitmap(ctx, query, k, nil, nil)
+	results, err := h.SearchVectorsWithBitmap(ctx, queryVal, k, nil, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -615,8 +616,12 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 		return nil, nil
 	}
 
+	metrics.HNSWSearchPoolGetTotal.Inc()
 	searchCtx := h.searchPool.Get()
-	defer h.searchPool.Put(searchCtx)
+	defer func() {
+		metrics.HNSWSearchPoolPutTotal.Inc()
+		h.searchPool.Put(searchCtx)
+	}()
 
 	ep := h.entryPoint.Load()
 	maxLevel := h.maxLevel.Load()
@@ -793,7 +798,6 @@ func (h *ArrowHNSW) Grow(capacity, dims int) error {
 
 	// Atomic swap
 	h.data.Store(newData)
-	// fmt.Printf("Grow Success: Cap %d->%d Dims %d->%d\n", currentCap, capacity, currentDims, dims)
 	return nil
 }
 
@@ -856,8 +860,8 @@ func (h *ArrowHNSW) SearchVectors(ctx context.Context, queryVec any, k int, filt
 	return h.SearchVectorsWithBitmap(ctx, queryVec, k, bitset.AsRoaring(), options)
 }
 
-func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, _ *ArrowSearchContext, query any, _ bool) any {
-	switch q := query.(type) {
+func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, _ *ArrowSearchContext, queryVal any, _ bool) any {
+	switch q := queryVal.(type) {
 	case []float64:
 		return &float64Computer{data: data, q: q, dims: len(q)}
 	case []complex64:
@@ -870,7 +874,7 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, _ *ArrowSearchCon
 
 // searchLayer is used by insertion logic
 // searchLayer implements HNSW layer search
-func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint uint32, ef int, layer int, ctx *ArrowSearchContext, data *types.GraphData, queryVec any) ([]Candidate, error) {
+func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint uint32, ef, layer int, ctx *ArrowSearchContext, data *types.GraphData, queryVec any) ([]Candidate, error) {
 	// Initialize Heaps
 	// ctx.candidates (MinHeap) - Nodes to visit
 	// ctx.resultSet (MaxHeap) - Best nodes found so far

@@ -23,7 +23,7 @@ func TestComplex64_Support(t *testing.T) {
 	config.EfConstruction = 100
 	config.Float16Enabled = false // Ensure we use Complex64
 
-	idx := NewArrowHNSW(nil, config)
+	idx := NewArrowHNSW(nil, &config)
 
 	// Generate random vectors
 	vecs := make([][]float32, count)
@@ -74,7 +74,7 @@ func TestComplex128_Support(t *testing.T) {
 	config.M = 16
 	config.EfConstruction = 100
 
-	idx := NewArrowHNSW(nil, config)
+	idx := NewArrowHNSW(nil, &config)
 
 	vecs := make([][]float32, count)
 	complexVecs := make([][]complex128, count)

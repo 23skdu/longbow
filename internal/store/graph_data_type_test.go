@@ -18,7 +18,7 @@ func TestGraphData_PolymorphicAllocation(t *testing.T) {
 	capacity := 2048
 
 	hnswConfig := DefaultArrowHNSWConfig()
-	hnsw := NewArrowHNSW(nil, hnswConfig)
+	hnsw := NewArrowHNSW(nil, &hnswConfig)
 
 	for _, dt := range types {
 		t.Run(dt.String(), func(t *testing.T) {

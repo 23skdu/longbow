@@ -200,7 +200,7 @@ func euclideanBatchGeneric(query []float32, vectors [][]float32, results []float
 // This eliminates the overhead of creating a [][]float32 slice wrapper.
 // flatVectors: concatenated vectors [v0_0, v0_1, ..., v0_dims-1, v1_0, ...]
 // dims: dimension of each vector
-func euclideanBatchFlatGeneric(query []float32, flatVectors []float32, numVectors, dims int, results []float32) error {
+func euclideanBatchFlatGeneric(query, flatVectors []float32, numVectors, dims int, results []float32) error {
 	if len(results) != numVectors {
 		return errors.New("simd: results length mismatch")
 	}
@@ -229,12 +229,12 @@ func euclideanBatchFlatGeneric(query []float32, flatVectors []float32, numVector
 }
 
 // euclideanBatchFlatAVX2 is the AVX2 optimized flat batch version
-func euclideanBatchFlatAVX2(query []float32, flatVectors []float32, numVectors, dims int, results []float32) error {
+func euclideanBatchFlatAVX2(query, flatVectors []float32, numVectors, dims int, results []float32) error {
 	return euclideanBatchFlatGeneric(query, flatVectors, numVectors, dims, results)
 }
 
 // euclideanBatchFlatAVX512 is the AVX512 optimized flat batch version
-func euclideanBatchFlatAVX512(query []float32, flatVectors []float32, numVectors, dims int, results []float32) error {
+func euclideanBatchFlatAVX512(query, flatVectors []float32, numVectors, dims int, results []float32) error {
 	return euclideanBatchFlatGeneric(query, flatVectors, numVectors, dims, results)
 }
 
@@ -275,7 +275,7 @@ func cosineBatchGeneric(query []float32, vectors [][]float32, results []float32)
 // subDim: dimension of each centroid (and query)
 // k: number of centroids
 // Returns the index of the nearest centroid and the distance
-func FindNearestCentroid(query []float32, centroids []float32, subDim, k int) (int, float32) {
+func FindNearestCentroid(query, centroids []float32, subDim, k int) (int, float32) {
 	if len(centroids) < k*subDim {
 		return 0, float32(math.MaxFloat32)
 	}
@@ -298,7 +298,20 @@ func FindNearestCentroid(query []float32, centroids []float32, subDim, k int) (i
 
 	// For larger K, use batch computation
 	results := make([]float32, k)
-	EuclideanDistanceBatchFlat(query, centroids, k, subDim, results)
+	if err := EuclideanDistanceBatchFlat(query, centroids, k, subDim, results); err != nil {
+		// Fall back to sequential computation on error
+		bestDist := float32(math.MaxFloat32)
+		bestIdx := 0
+		for i := 0; i < k; i++ {
+			centroid := centroids[i*subDim : (i+1)*subDim]
+			dist, _ := euclideanDistanceImpl(query, centroid)
+			if dist < bestDist {
+				bestDist = dist
+				bestIdx = i
+			}
+		}
+		return bestIdx, bestDist
+	}
 
 	// Find minimum
 	bestDist := results[0]
@@ -560,8 +573,7 @@ func MatchInt64(src []int64, val int64, op CompareOp, dst []byte) error {
 	if len(src) != len(dst) {
 		return errors.New("simd: length mismatch")
 	}
-	matchInt64Impl(src, val, op, dst)
-	return nil
+	return matchInt64Impl(src, val, op, dst)
 }
 
 // MatchFloat32 performs a comparison of src elements against val, storing the result (0 or 1) in dst.

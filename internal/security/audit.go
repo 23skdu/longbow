@@ -37,7 +37,7 @@ func NewAuditLogger() *AuditLogger {
 }
 
 // LogAuditEntry logs an audit entry
-func (a *AuditLogger) LogAuditEntry(ctx context.Context, entry AuditEntry) {
+func (a *AuditLogger) LogAuditEntry(ctx context.Context, entry *AuditEntry) {
 	event := a.logger.Info().
 		Str("operation", entry.Operation).
 		Str("resource", entry.Resource).
@@ -114,7 +114,7 @@ func AuthenticationMiddleware(next http.Handler) http.Handler {
 
 		// Log authentication attempt
 		auditLogger := NewAuditLogger()
-		auditLogger.LogAuditEntry(r.Context(), AuditEntry{
+		entry := AuditEntry{
 			Timestamp: time.Now(),
 			UserID:    token,
 			Operation: "authenticate",
@@ -122,7 +122,8 @@ func AuthenticationMiddleware(next http.Handler) http.Handler {
 			IPAddress: getClientIP(r),
 			Success:   true,
 			Reason:    "",
-		})
+		}
+		auditLogger.LogAuditEntry(r.Context(), &entry)
 
 		// Call next handler
 		next.ServeHTTP(w, r)

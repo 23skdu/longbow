@@ -121,7 +121,7 @@ var (
 	)
 )
 
-func RecordTraceSpan(ctx TraceContext) {
+func RecordTraceSpan(ctx *TraceContext) {
 	status := "success"
 	if ctx.Error != "" {
 		status = "error"

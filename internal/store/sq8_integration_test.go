@@ -51,7 +51,7 @@ func TestSQ8_Integration(t *testing.T) {
 	config.SQ8Enabled = true
 	config.Dims = dims
 
-	h := NewArrowHNSW(ds, config)
+	h := NewArrowHNSW(ds, &config)
 
 	// Add batch
 	rowIdxs := make([]int, count)

@@ -82,7 +82,7 @@ func TestAuditLogger(t *testing.T) {
 		}
 
 		assert.NotPanics(t, func() {
-			auditLogger.LogAuditEntry(context.Background(), entry)
+			auditLogger.LogAuditEntry(context.Background(), &entry)
 		})
 	})
 
@@ -98,7 +98,7 @@ func TestAuditLogger(t *testing.T) {
 		}
 
 		assert.NotPanics(t, func() {
-			auditLogger.LogAuditEntry(context.Background(), entry)
+			auditLogger.LogAuditEntry(context.Background(), &entry)
 		})
 	})
 }
@@ -106,7 +106,9 @@ func TestAuditLogger(t *testing.T) {
 func TestAuthenticationMiddleware(t *testing.T) {
 	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("protected content"))
+		if _, err := w.Write([]byte("protected content")); err != nil {
+			t.Logf("failed to write response: %v", err)
+		}
 	})
 
 	protectedHandler := AuthenticationMiddleware(nextHandler)
@@ -139,7 +141,7 @@ func TestAuthenticationMiddleware(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest("GET", "/test", nil)
+			req := httptest.NewRequest("GET", "/test", http.NoBody)
 
 			for key, value := range tt.headers {
 				req.Header.Set(key, value)
@@ -189,7 +191,7 @@ func TestGetClientIP(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest("GET", "/test", nil)
+			req := httptest.NewRequest("GET", "/test", http.NoBody)
 
 			req.RemoteAddr = tt.remoteAddr
 			for key, value := range tt.headers {

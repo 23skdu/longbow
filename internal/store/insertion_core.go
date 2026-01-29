@@ -98,7 +98,9 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 			if dims == 0 {
 				newDims := inputDims
 				// This acquires growMu.Lock(), which is safe here (we don't hold RLock yet).
-				h.Grow(data.Capacity, newDims)
+				if err := h.Grow(data.Capacity, newDims); err != nil {
+					return fmt.Errorf("failed to grow during insertion: %w", err)
+				}
 
 				h.dims.Store(int32(newDims))
 				dims = newDims
@@ -111,7 +113,9 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 
 	// Invariant: If dims > 0, Vectors/SQ8 arrays MUST exist in data.
 	if data.Capacity <= int(id) || (dims > 0 && data.Vectors == nil) {
-		h.Grow(int(id)+1, dims)
+		if err := h.Grow(int(id)+1, dims); err != nil {
+			return fmt.Errorf("failed to grow for ID %d: %w", id, err)
+		}
 		data = h.data.Load()
 	}
 
@@ -362,6 +366,5 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 		h.entryPoint.Store(id)
 	}
 
-	h.nodeCount.Add(1)
 	return nil
 }

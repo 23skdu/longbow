@@ -11,7 +11,7 @@ func TestArrowHNSW_NewIndex(t *testing.T) {
 	dataset := &Dataset{Name: "test"}
 	config := DefaultArrowHNSWConfig()
 
-	index := NewArrowHNSW(dataset, config)
+	index := NewArrowHNSW(dataset, &config)
 
 	if index == nil {
 		t.Fatal("NewArrowHNSW returned nil")
@@ -94,6 +94,6 @@ func BenchmarkNewArrowHNSW(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = NewArrowHNSW(dataset, config)
+		_ = NewArrowHNSW(dataset, &config)
 	}
 }

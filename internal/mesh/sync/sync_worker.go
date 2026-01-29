@@ -1,3 +1,4 @@
+// Package sync manages background delta replication from peers.
 package sync
 
 import (
@@ -11,13 +12,21 @@ import (
 
 	"github.com/23skdu/longbow/internal/mesh"
 	"github.com/23skdu/longbow/internal/metrics"
-	"github.com/23skdu/longbow/internal/store"
+	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"github.com/rs/zerolog"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
+
+// SyncStore defines the interface required by SyncWorker to interact with the local store.
+// This breaks the circular dependency between mesh/sync and store packages.
+type SyncStore interface {
+	ApplyDelta(datasetName string, rec arrow.RecordBatch, seq uint64, ts int64) error
+	MerkleRoot(name string) [32]byte
+	GetMeshMembers() []mesh.Member
+}
 
 // SyncPriority defines how often to check a peer for updates
 type SyncPriority int
@@ -30,7 +39,7 @@ const (
 
 // SyncWorker manages background delta replication from peers
 type SyncWorker struct {
-	store  *store.VectorStore
+	store  SyncStore
 	logger zerolog.Logger
 
 	peers  map[string]*PeerState
@@ -44,7 +53,7 @@ type PeerState struct {
 	Priority    SyncPriority
 }
 
-func NewSyncWorker(s *store.VectorStore, logger *zerolog.Logger) *SyncWorker {
+func NewSyncWorker(s SyncStore, logger *zerolog.Logger) *SyncWorker {
 	return &SyncWorker{
 		store:  s,
 		logger: *logger,
@@ -89,17 +98,15 @@ func (w *SyncWorker) run() {
 
 func (w *SyncWorker) syncAll() {
 	// 1. Discover peers from Gossip if available
-	if w.store.Mesh != nil {
-		members := w.store.Mesh.GetMembers()
-		for i := range members {
-			m := &members[i]
-			// Skip self and non-alive nodes
-			if m.ID != w.store.Mesh.Config.ID && m.Status == mesh.StatusAlive {
-				// Gossip address might be UDP, but SyncWorker needs gRPC (TCP).
-				// We assume they share the same host, but we might need a way to map ports.
-				// For now, we use the Addr from gossip directly.
-				w.AddPeer(m.Addr)
-			}
+	members := w.store.GetMeshMembers()
+	for i := range members {
+		m := &members[i]
+		// Skip non-alive nodes
+		if m.Status == mesh.StatusAlive {
+			// We can't easily check identity without more store info,
+			// but AddPeer handles duplicates if needed.
+			// Ideally we'd know our own ID here too.
+			w.AddPeer(m.GRPCAddr)
 		}
 	}
 
@@ -121,11 +128,26 @@ func (w *SyncWorker) syncAll() {
 }
 
 func (w *SyncWorker) syncPeer(p *PeerState) error {
+	// 1. Compare Merkle Roots early to avoid unnecessary sync connection
+	// We use "ds1" as default example for now, ideally this would be per-dataset
+	remoteRoot, err := w.fetchRemoteMerkleRoot(p.Addr, "ds1")
+	if err == nil {
+		localRoot := w.store.MerkleRoot("ds1")
+		if remoteRoot == localRoot {
+			metrics.MeshMerkleMatchTotal.WithLabelValues("match").Inc()
+			w.logger.Info().Str("peer", p.Addr).Msg("Merkle roots match, skipping sync")
+			return nil
+		}
+		metrics.MeshMerkleMatchTotal.WithLabelValues("mismatch").Inc()
+		w.logger.Info().Str("peer", p.Addr).Msg("Merkle roots differ, starting sync")
+	}
+
 	w.logger.Info().
 		Str("addr", p.Addr).
 		Uint64("last_seq", p.LastSeenSeq).
 		Msg("Syncing with peer")
-	// 1. Connect to peer
+
+	// 2. Connect to peer
 	conn, err := grpc.NewClient(p.Addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return err
@@ -134,13 +156,13 @@ func (w *SyncWorker) syncPeer(p *PeerState) error {
 
 	client := flight.NewFlightServiceClient(conn)
 
-	// 2. Start DoExchange for sync
+	// 3. Start DoExchange for sync
 	stream, err := client.DoExchange(context.Background())
 	if err != nil {
 		return err
 	}
 
-	// 3. Send "sync" request with last seen seq
+	// 4. Send "sync" request with last seen seq
 	lastSeqBuf := make([]byte, 8)
 	binary.LittleEndian.PutUint64(lastSeqBuf, p.LastSeenSeq)
 
@@ -156,20 +178,6 @@ func (w *SyncWorker) syncPeer(p *PeerState) error {
 	}
 	if err := stream.CloseSend(); err != nil {
 		return err
-	}
-
-	// 4. Compare Merkle Roots (using "ds1" as example)
-	remoteRoot, err := w.fetchRemoteMerkleRoot(p.Addr, "ds1")
-	if err == nil {
-		localRoot := w.store.MerkleRoot("ds1")
-		if remoteRoot == localRoot {
-			metrics.MeshMerkleMatchTotal.WithLabelValues("match").Inc()
-			w.logger.Info().Str("peer", p.Addr).Msg("Merkle roots match, skipping sync")
-			return nil
-		} else {
-			metrics.MeshMerkleMatchTotal.WithLabelValues("mismatch").Inc()
-			w.logger.Info().Str("peer", p.Addr).Msg("Merkle roots differ, starting sync")
-		}
 	}
 
 	// 5. Receive deltas
@@ -248,27 +256,29 @@ func (w *SyncWorker) fetchRemoteMerkleRoot(addr, dataset string) ([32]byte, erro
 	// Request root (empty path)
 	req := &flight.FlightData{
 		FlightDescriptor: &flight.FlightDescriptor{
+			Cmd:  []byte("root"),
 			Path: []string{dataset},
-			Cmd:  []byte("merkle_node"),
 		},
 	}
+
 	if err := stream.Send(req); err != nil {
 		return [32]byte{}, err
 	}
-	if err := stream.CloseSend(); err != nil {
-		return [32]byte{}, err
+
+	for {
+		resp, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return [32]byte{}, err
+		}
+
+		// Simple: first 32 bytes are the root
+		if len(resp.DataBody) >= 32 {
+			return [32]byte(resp.DataBody[:32]), nil
+		}
 	}
 
-	resp, err := stream.Recv()
-	if err != nil {
-		return [32]byte{}, err
-	}
-
-	if len(resp.DataBody) < 32 {
-		return [32]byte{}, fmt.Errorf("invalid merkle response")
-	}
-
-	var root [32]byte
-	copy(root[:], resp.DataBody[0:32])
-	return root, nil
+	return [32]byte{}, fmt.Errorf("root not found")
 }

@@ -29,7 +29,7 @@ func TestSQ8AutoTuning(t *testing.T) {
 	cfg.SQ8TrainingThreshold = 10 // Low threshold for testing
 	cfg.Dims = 16
 
-	idx := NewArrowHNSW(ds, cfg)
+	idx := NewArrowHNSW(ds, &cfg)
 
 	// 1. Insert 50 vectors (half threshold)
 	// These should be buffered and NOT SQ8 encoded yet.

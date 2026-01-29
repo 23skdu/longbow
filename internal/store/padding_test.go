@@ -36,7 +36,7 @@ func TestHNSW_SearchPadding(t *testing.T) {
 	cfg := DefaultArrowHNSWConfig()
 	cfg.M = 16
 	cfg.EfConstruction = 64
-	idx := NewArrowHNSW(ds, cfg)
+	idx := NewArrowHNSW(ds, &cfg)
 
 	for i := 0; i < count; i++ {
 		_, err := idx.AddByLocation(context.Background(), 0, i)

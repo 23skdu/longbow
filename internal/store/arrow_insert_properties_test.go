@@ -28,7 +28,7 @@ func TestInsertProperties(t *testing.T) {
 			config.MMax = 20
 			config.MMax0 = 20
 
-			index := NewArrowHNSW(nil, config)
+			index := NewArrowHNSW(nil, &config)
 			index.dims.Store(2)
 
 			// Init data
@@ -39,7 +39,10 @@ func TestInsertProperties(t *testing.T) {
 			ensureChunk := func(id uint32) {
 				cID := chunkID(id)
 				cOff := chunkOffset(id)
-				index.ensureChunk(data, int(cID), int(cOff), 2)
+				_, err := index.ensureChunk(data, int(cID), int(cOff), 2)
+				if err != nil {
+					t.Fatalf("ensureChunk failed for ID %d: %v", id, err)
+				}
 				// Fake vector data isn't strictly needed for connectivity if we skip distance checks?
 				// But AddConnection might read it for pruning.
 				// Let's rely on geometric graph construction being hard to randomly ensure without vectors.
@@ -124,7 +127,7 @@ func TestInsertProperties(t *testing.T) {
 			config.MMax = m * 2
 			config.MMax0 = m
 
-			index := NewArrowHNSW(nil, config)
+			index := NewArrowHNSW(nil, &config)
 			index.dims.Store(1) // use 1-dim vectors
 
 			// Initialize GraphData manually

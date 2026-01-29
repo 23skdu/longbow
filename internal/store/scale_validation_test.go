@@ -88,7 +88,7 @@ func runScaleTest(t *testing.T, numVecs int, dims []int) {
 	}
 }
 
-func runType(t *testing.T, typeName string, dim int, numVecs int, genFunc func(*array.RecordBuilder, array.Builder, *rand.Rand) any, arrowType arrow.DataType, isComplex ...bool) {
+func runType(t *testing.T, typeName string, dim, numVecs int, genFunc func(*array.RecordBuilder, array.Builder, *rand.Rand) any, arrowType arrow.DataType, isComplex ...bool) {
 	mem := memory.NewGoAllocator()
 
 	buildDim := dim
@@ -116,7 +116,7 @@ func runType(t *testing.T, typeName string, dim int, numVecs int, genFunc func(*
 	batchSize := 1000
 	batches := numVecs / batchSize
 
-	var batchesArr []arrow.RecordBatch
+	batchesArr := make([]arrow.RecordBatch, 0, batches)
 
 	for i := 0; i < batches; i++ {
 		for j := 0; j < batchSize; j++ {
@@ -149,7 +149,7 @@ func runType(t *testing.T, typeName string, dim int, numVecs int, genFunc func(*
 	}
 
 	ds := store.NewDataset("bench_"+typeName, schema)
-	idx := store.NewArrowHNSW(ds, cfg)
+	idx := store.NewArrowHNSW(ds, &cfg)
 
 	ingestStart := time.Now()
 
@@ -184,7 +184,7 @@ func runType(t *testing.T, typeName string, dim int, numVecs int, genFunc func(*
 
 	// Measure
 	numQueries := 100
-	var latencies []float64
+	latencies := make([]float64, 0, numQueries)
 
 	for i := 0; i < numQueries; i++ {
 		t0 := time.Now()

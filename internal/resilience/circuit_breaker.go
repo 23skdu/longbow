@@ -172,7 +172,7 @@ func (cb *CircuitBreaker) onFailure(state CircuitState, now time.Time) {
 	}
 }
 
-func (cb *CircuitBreaker) currentState(now time.Time) (CircuitState, uint64) {
+func (cb *CircuitBreaker) currentState(now time.Time) (state CircuitState, failures uint64) {
 	switch cb.state {
 	case StateClosed:
 		if !cb.expiry.IsZero() && cb.expiry.Before(now) {
@@ -183,7 +183,9 @@ func (cb *CircuitBreaker) currentState(now time.Time) (CircuitState, uint64) {
 			cb.setState(StateHalfOpen, now)
 		}
 	}
-	return cb.state, cb.generation
+	state = cb.state
+	failures = cb.generation
+	return
 }
 
 func (cb *CircuitBreaker) setState(state CircuitState, now time.Time) {

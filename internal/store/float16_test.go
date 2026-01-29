@@ -99,7 +99,7 @@ func TestArrowHNSW_Float16_Integration(t *testing.T) {
 	cfg.InitialCapacity = 100
 
 	// Create HNSW
-	hnsw := NewArrowHNSW(nil, cfg)
+	hnsw := NewArrowHNSW(nil, &cfg)
 
 	// Insert 10 vectors
 	n := 10

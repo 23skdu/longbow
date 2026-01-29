@@ -59,7 +59,7 @@ func TestInsert_SingleNode(t *testing.T) {
 	}
 
 	config := DefaultArrowHNSWConfig()
-	index := NewArrowHNSW(dataset, config)
+	index := NewArrowHNSW(dataset, &config)
 
 	// Insert ID 0 -> Batch 0, Row 0
 	id, err := index.AddByLocation(context.Background(), 0, 0)
@@ -103,7 +103,7 @@ func TestInsert_MultipleNodes(t *testing.T) {
 	}
 
 	config := DefaultArrowHNSWConfig()
-	index := NewArrowHNSW(dataset, config)
+	index := NewArrowHNSW(dataset, &config)
 
 	// Insert 10 vectors
 	for i := 0; i < 10; i++ {
@@ -121,7 +121,7 @@ func TestInsert_MultipleNodes(t *testing.T) {
 func TestAddConnection(t *testing.T) {
 	dataset := &Dataset{Name: "test"}
 	config := DefaultArrowHNSWConfig()
-	index := NewArrowHNSW(dataset, config)
+	index := NewArrowHNSW(dataset, &config)
 
 	// Initialize GraphData manually
 	data := lbtypes.NewGraphData(0, 64, false, false, 0, false, false, false, lbtypes.VectorTypeFloat32)
@@ -180,7 +180,7 @@ func TestPruneConnections(t *testing.T) {
 	config := DefaultArrowHNSWConfig()
 	// Strict alpha to force pruning based on distance
 	// config.Alpha = 1.0 // Alpha no longer configurable
-	index := NewArrowHNSW(dataset, config)
+	index := NewArrowHNSW(dataset, &config)
 
 	// Initialize GraphData manually
 	data := lbtypes.NewGraphData(20, 11, false, false, 0, false, false, false, lbtypes.VectorTypeFloat32)
@@ -307,7 +307,7 @@ func BenchmarkInsert(b *testing.B) {
 	}
 
 	config := DefaultArrowHNSWConfig()
-	index := NewArrowHNSW(dataset, config)
+	index := NewArrowHNSW(dataset, &config)
 
 	b.ResetTimer()
 

@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"runtime"
 	"strconv"
 	"strings"
@@ -469,6 +470,7 @@ func (s *VectorStore) mapInternalToUserIDsLocked(ds *Dataset, results []lbtypes.
 		// 1. Get location (Batch, Row) from VectorIndex
 		locAny, found := ds.Index.GetLocation(uint32(res.ID))
 		if !found {
+			fmt.Printf("[DEBUG] mapInternalToUserIDsLocked: location NOT found for internal ID %d\n", uint32(res.ID))
 			continue
 		}
 		loc, ok := locAny.(Location)

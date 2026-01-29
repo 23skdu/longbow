@@ -65,10 +65,10 @@ type ArrowHNSWConfig struct {
 // DefaultArrowHNSWConfig returns a configuration with sensible defaults
 func DefaultArrowHNSWConfig() ArrowHNSWConfig {
 	return ArrowHNSWConfig{
-		M:                   16,
-		MMax:                32,
-		MMax0:               32,
-		EfConstruction:      200,
+		M:                   32,
+		MMax:                64,
+		MMax0:               64,
+		EfConstruction:      400,
 		EfSearch:            50,
 		AdaptiveEf:          false,
 		AdaptiveEfMin:       50,
@@ -166,6 +166,7 @@ func NewArrowHNSW(dataset *Dataset, config *ArrowHNSWConfig) *ArrowHNSW {
 		shardedLocks:  NewAlignedShardedMutex(AlignedShardedMutexConfig{NumShards: 64}),
 		searchPool:    NewArrowSearchContextPool(),
 		locationStore: NewChunkedLocationStore(),
+		deleted:       roaring.New(),
 	}
 
 	// Initialize distance function
@@ -174,6 +175,7 @@ func NewArrowHNSW(dataset *Dataset, config *ArrowHNSWConfig) *ArrowHNSW {
 
 	// Initialize atomic values
 	h.efConstruction.Store(config.EfConstruction)
+	h.dims.Store(int32(config.Dims))
 
 	// Initialize quantization if enabled
 	if config.SQ8Enabled {
@@ -378,6 +380,7 @@ func (h *ArrowHNSW) SetDimension(dim int) {
 
 // Delete invokes Delete for a single id.
 func (h *ArrowHNSW) Delete(id uint32) error {
+	h.deleted.Add(id)
 	h.locationStore.Delete(VectorID(id))
 	return nil
 }
@@ -396,6 +399,19 @@ func (h *ArrowHNSW) ensureChunk(data *types.GraphData, cID, cOff, dims int) (*ty
 	if data == nil {
 		return nil, fmt.Errorf("data is nil")
 	}
+
+	// Strictly serialized growth to avoid structural races in GraphData
+	h.growMu.Lock()
+	defer h.growMu.Unlock()
+
+	// Reload data to ensure we have the latest view before modifying
+	data = h.data.Load()
+
+	// Ensure dims is synced between atomic and data struct
+	if data.Dims == 0 && dims > 0 {
+		data.Dims = dims
+	}
+
 	err := data.EnsureChunk(cID, cOff, dims)
 	return data, err
 }
@@ -440,7 +456,7 @@ func (h *ArrowHNSW) AddByLocation(ctx context.Context, batchIdx, rowIdx int) (ui
 
 // AddByRecord implements VectorIndex.
 func (h *ArrowHNSW) AddByRecord(ctx context.Context, rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32, error) {
-	id := uint32(h.nodeCount.Load())
+	id := uint32(h.nodeCount.Add(1) - 1)
 
 	var vec any
 	// Find vector column
@@ -459,6 +475,7 @@ func (h *ArrowHNSW) AddByRecord(ctx context.Context, rec arrow.RecordBatch, rowI
 	if err != nil {
 		return 0, err
 	}
+	h.SetLocation(VectorID(id), Location{BatchIdx: batchIdx, RowIdx: rowIdx})
 
 	return id, nil
 }
@@ -827,8 +844,26 @@ func (h *ArrowHNSW) generateLevel() int {
 func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowIdxs, batchIdxs []int) ([]uint32, error) {
 	ids := make([]uint32, 0, len(rowIdxs))
 	for i := range rowIdxs {
-		// Use AddByRecord with the specific record batch
-		rec := recs[batchIdxs[i]]
+		if i%100 == 0 {
+			if err := ctx.Err(); err != nil {
+				return ids, err
+			}
+		}
+
+		// Robust record resolution
+		var rec arrow.RecordBatch
+		bIdx := batchIdxs[i]
+		switch {
+		case bIdx < len(recs) && recs[bIdx] != nil:
+			rec = recs[bIdx]
+		case len(recs) == 1:
+			rec = recs[0]
+		case i < len(recs):
+			rec = recs[i]
+		default:
+			return ids, fmt.Errorf("could not resolve record batch for row %d (batchIdx %d, recs len %d)", i, bIdx, len(recs))
+		}
+
 		id, err := h.AddByRecord(ctx, rec, rowIdxs[i], batchIdxs[i])
 		if err != nil {
 			return ids, err

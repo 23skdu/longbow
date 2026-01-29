@@ -237,13 +237,21 @@ func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
 					totalRowsInGroup += int(j.Record.NumRows())
 				}
 
-				recs := make([]arrow.RecordBatch, 0, totalRowsInGroup)
+				// Find max batch index to size the recs slice correctly
+				maxBatchIdx := -1
+				for _, j := range dsGroup {
+					if j.BatchIdx > maxBatchIdx {
+						maxBatchIdx = j.BatchIdx
+					}
+				}
+
+				recs := make([]arrow.RecordBatch, maxBatchIdx+1)
 				rowIdxs := make([]int, 0, totalRowsInGroup)
 				batchIdxs := make([]int, 0, totalRowsInGroup)
 				for _, j := range dsGroup {
+					recs[j.BatchIdx] = j.Record
 					n := int(j.Record.NumRows())
 					for r := 0; r < n; r++ {
-						recs = append(recs, j.Record)
 						rowIdxs = append(rowIdxs, r)
 						batchIdxs = append(batchIdxs, j.BatchIdx)
 					}

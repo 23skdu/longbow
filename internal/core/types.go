@@ -16,13 +16,15 @@ type Location struct {
 // It assumes batchIdx and rowIdx fit within 32 bits, which is generally safe.
 // This matches the logic previously in internal/store/location_store.go
 func PackLocation(loc Location) uint64 {
-	return uint64(uint32(loc.BatchIdx))<<32 | uint64(uint32(loc.RowIdx))
+	// Offset BatchIdx by 1 (uint32) to ensure the packed result is never 0 for valid locations (BatchIdx >= 0).
+	// This prevents uninitialized slots (value 0) from being confused with Batch 0, Row 0.
+	return uint64(uint32(loc.BatchIdx+1))<<32 | uint64(uint32(loc.RowIdx))
 }
 
 // UnpackLocation unpacks a uint64 into a Location.
 func UnpackLocation(val uint64) Location {
 	return Location{
-		BatchIdx: int(int32(val >> 32)),
+		BatchIdx: int(int32(val>>32)) - 1,
 		RowIdx:   int(int32(val)),
 	}
 }

@@ -81,6 +81,12 @@ func (s *hnswShard) mapID(globalID VectorID) uint32 {
 	localID := uint32(len(s.localToGlobal))
 	s.localToGlobal = append(s.localToGlobal, globalID)
 	s.globalToLocal[globalID] = localID
+
+	// Sync index nodeCount with shard map
+	if s.index != nil {
+		s.index.nodeCount.Store(int64(len(s.localToGlobal)))
+	}
+
 	return localID
 }
 
@@ -222,14 +228,28 @@ func (s *ShardedHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, ro
 	}
 
 	// Delegating to simple loop for now to ensure correctness with sharding.
-	ids := make([]uint32, len(recs))
-	for i := range recs {
+	ids := make([]uint32, len(rowIdxs))
+	for i := range rowIdxs {
 		if i%100 == 0 {
 			if err := ctx.Err(); err != nil {
 				return nil, err
 			}
 		}
-		id, err := s.AddByRecord(ctx, recs[i], rowIdxs[i], batchIdxs[i])
+		// Robust record resolution
+		var rec arrow.RecordBatch
+		bIdx := batchIdxs[i]
+		switch {
+		case bIdx < len(recs) && recs[bIdx] != nil:
+			rec = recs[bIdx]
+		case len(recs) == 1:
+			rec = recs[0]
+		case i < len(recs):
+			rec = recs[i]
+		default:
+			return nil, fmt.Errorf("could not resolve record batch for row %d (batchIdx %d, recs len %d)", i, bIdx, len(recs))
+		}
+
+		id, err := s.AddByRecord(ctx, rec, rowIdxs[i], batchIdxs[i])
 		if err != nil {
 			return nil, err
 		}

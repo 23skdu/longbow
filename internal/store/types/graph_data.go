@@ -16,6 +16,8 @@ type GraphData struct {
 	Dims       int
 	Type       VectorDataType
 	SQ8Enabled bool
+	BQEnabled  bool
+	PQEnabled  bool
 
 	// Mutable State
 	BackingGraph any // interface{} to avoid import cycle (likely *DiskGraph)
@@ -207,13 +209,19 @@ func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
 	// Ensure Vectors (Float32 is default/primary)
 	if g.Type == VectorTypeFloat32 || g.Type == VectorTypeUnknown {
 		for len(g.Vectors) <= cID {
-			g.Vectors = append(g.Vectors, make([]float32, ChunkSize*dims))
+			g.Vectors = append(g.Vectors, nil)
+		}
+		if g.Vectors[cID] == nil {
+			g.Vectors[cID] = make([]float32, ChunkSize*dims)
 		}
 	}
 
 	// Ensure Levels
 	for len(g.Levels) <= cID {
-		g.Levels = append(g.Levels, make([]uint8, ChunkSize))
+		g.Levels = append(g.Levels, nil)
+	}
+	if g.Levels[cID] == nil {
+		g.Levels[cID] = make([]uint8, ChunkSize)
 	}
 
 	// Ensure Neighbors, Counts, Versions for all layers
@@ -225,15 +233,24 @@ func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
 	for l := 0; l < ArrowMaxLayers; l++ {
 		// Ensure Neighbors
 		for len(g.Neighbors[l]) <= cID {
-			g.Neighbors[l] = append(g.Neighbors[l], make([]uint32, ChunkSize*MaxNeighbors))
+			g.Neighbors[l] = append(g.Neighbors[l], nil)
+		}
+		if g.Neighbors[l][cID] == nil {
+			g.Neighbors[l][cID] = make([]uint32, ChunkSize*MaxNeighbors)
 		}
 		// Ensure Counts
 		for len(g.Counts[l]) <= cID {
-			g.Counts[l] = append(g.Counts[l], make([]int32, ChunkSize))
+			g.Counts[l] = append(g.Counts[l], nil)
+		}
+		if g.Counts[l][cID] == nil {
+			g.Counts[l][cID] = make([]int32, ChunkSize)
 		}
 		// Ensure Versions
 		for len(g.Versions[l]) <= cID {
-			g.Versions[l] = append(g.Versions[l], make([]uint32, ChunkSize))
+			g.Versions[l] = append(g.Versions[l], nil)
+		}
+		if g.Versions[l][cID] == nil {
+			g.Versions[l][cID] = make([]uint32, ChunkSize)
 		}
 	}
 
@@ -264,21 +281,30 @@ func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
 	// Ensure Float64
 	if g.Type == VectorTypeFloat64 {
 		for len(g.VectorsFloat64) <= cID {
-			g.VectorsFloat64 = append(g.VectorsFloat64, make([]float64, ChunkSize*dims))
+			g.VectorsFloat64 = append(g.VectorsFloat64, nil)
+		}
+		if g.VectorsFloat64[cID] == nil {
+			g.VectorsFloat64[cID] = make([]float64, ChunkSize*dims)
 		}
 	}
 
 	// Ensure Complex64
 	if g.Type == VectorTypeComplex64 {
 		for len(g.VectorsComplex64) <= cID {
-			g.VectorsComplex64 = append(g.VectorsComplex64, make([]complex64, ChunkSize*dims))
+			g.VectorsComplex64 = append(g.VectorsComplex64, nil)
+		}
+		if g.VectorsComplex64[cID] == nil {
+			g.VectorsComplex64[cID] = make([]complex64, ChunkSize*dims)
 		}
 	}
 
 	// Ensure Complex128
 	if g.Type == VectorTypeComplex128 {
 		for len(g.VectorsComplex128) <= cID {
-			g.VectorsComplex128 = append(g.VectorsComplex128, make([]complex128, ChunkSize*dims))
+			g.VectorsComplex128 = append(g.VectorsComplex128, nil)
+		}
+		if g.VectorsComplex128[cID] == nil {
+			g.VectorsComplex128[cID] = make([]complex128, ChunkSize*dims)
 		}
 	}
 
@@ -297,6 +323,66 @@ func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
 				return err
 			}
 			g.VectorsInt8 = append(g.VectorsInt8, ref.Offset)
+		}
+	}
+
+	// Ensure BQ if enabled
+	if g.BQEnabled {
+		for len(g.VectorsBQ) <= cID {
+			if g.Uint64Arena == nil {
+				paddedDims := (dims + 63) & ^63
+				numWords := paddedDims / 64
+				slabSize := ChunkSize * numWords * 8
+				if slabSize < 1024*1024 {
+					slabSize = 1024 * 1024
+				}
+				g.Uint64Arena = memory.NewTypedArena[uint64](memory.NewSlabArena(slabSize))
+			}
+			paddedDims := (dims + 63) & ^63
+			numWords := paddedDims / 64
+			ref, err := g.Uint64Arena.AllocSliceDirty(ChunkSize * numWords)
+			if err != nil {
+				return err
+			}
+			g.VectorsBQ = append(g.VectorsBQ, ref.Offset)
+		}
+	}
+
+	// Ensure PQ if enabled
+	if g.PQEnabled {
+		for len(g.VectorsPQ) <= cID {
+			if g.Uint64Arena == nil {
+				// PQ usually stores small codes, but use dimensions as proxy if needed.
+				// For now assume uint64 per vector for PQ codes (e.g. 8 bytes per vector)
+				slabSize := ChunkSize * 8
+				if slabSize < 1024*1024 {
+					slabSize = 1024 * 1024
+				}
+				g.Uint64Arena = memory.NewTypedArena[uint64](memory.NewSlabArena(slabSize))
+			}
+			ref, err := g.Uint64Arena.AllocSliceDirty(ChunkSize)
+			if err != nil {
+				return err
+			}
+			g.VectorsPQ = append(g.VectorsPQ, ref.Offset)
+		}
+	}
+
+	// Ensure F16
+	if g.Type == VectorTypeFloat16 {
+		for len(g.VectorsF16) <= cID {
+			if g.Float16Arena == nil {
+				slabSize := ChunkSize * dims * 2
+				if slabSize < 1024*1024 {
+					slabSize = 1024 * 1024
+				}
+				g.Float16Arena = memory.NewTypedArena[float16.Num](memory.NewSlabArena(slabSize))
+			}
+			ref, err := g.Float16Arena.AllocSliceDirty(ChunkSize * dims)
+			if err != nil {
+				return err
+			}
+			g.VectorsF16 = append(g.VectorsF16, ref.Offset)
 		}
 	}
 
@@ -709,22 +795,38 @@ func NewGraphData(capacity, dim int, mmap bool, useDisk bool, fd int,
 	}
 	c128Arena := memory.NewSlabArena(c128SlabSize)
 
+	numChunks := (capacity + ChunkSize - 1) / ChunkSize
+	if numChunks < 0 {
+		numChunks = 0
+	}
+
 	gd := &GraphData{
-		Capacity:        capacity,
-		Dims:            dim,
-		Type:            dataType,
-		SQ8Enabled:      sq8,
-		Vectors:         make([][]float32, 0),
-		Neighbors:       make([][][]uint32, ArrowMaxLayers),
-		Counts:          make([][][]int32, ArrowMaxLayers),
-		Versions:        make([][][]uint32, ArrowMaxLayers),
-		Levels:          make([][]uint8, 0),
-		Float32Arena:    memory.NewTypedArena[float32](f32Arena),
-		Uint8Arena:      memory.NewTypedArena[uint8](u8Arena),
-		Float64Arena:    memory.NewTypedArena[float64](f64Arena),
-		Int8Arena:       memory.NewTypedArena[int8](i8Arena),
-		Complex64Arena:  memory.NewTypedArena[complex64](c64Arena),
-		Complex128Arena: memory.NewTypedArena[complex128](c128Arena),
+		Capacity:          capacity,
+		Dims:              dim,
+		Type:              dataType,
+		SQ8Enabled:        sq8,
+		BQEnabled:         quantization,
+		PQEnabled:         quantization,
+		Vectors:           make([][]float32, numChunks),
+		VectorsFloat64:    make([][]float64, numChunks),
+		VectorsComplex64:  make([][]complex64, numChunks),
+		VectorsComplex128: make([][]complex128, numChunks),
+		Neighbors:         make([][][]uint32, ArrowMaxLayers),
+		Counts:            make([][][]int32, ArrowMaxLayers),
+		Versions:          make([][][]uint32, ArrowMaxLayers),
+		Levels:            make([][]uint8, numChunks),
+		Float32Arena:      memory.NewTypedArena[float32](f32Arena),
+		Uint8Arena:        memory.NewTypedArena[uint8](u8Arena),
+		Float64Arena:      memory.NewTypedArena[float64](f64Arena),
+		Int8Arena:         memory.NewTypedArena[int8](i8Arena),
+		Complex64Arena:    memory.NewTypedArena[complex64](c64Arena),
+		Complex128Arena:   memory.NewTypedArena[complex128](c128Arena),
+	}
+
+	for i := 0; i < ArrowMaxLayers; i++ {
+		gd.Neighbors[i] = make([][]uint32, numChunks)
+		gd.Counts[i] = make([][]int32, numChunks)
+		gd.Versions[i] = make([][]uint32, numChunks)
 	}
 	return gd
 }

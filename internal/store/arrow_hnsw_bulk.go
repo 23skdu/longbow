@@ -35,6 +35,9 @@ func NewVectorDimensionMismatchError(id, expected, actual int) error {
 // AddBatchBulk attempts to insert a batch of vectors in parallel using a bulk strategy.
 // It assumes IDs, locations, and capacity have already been prepared/reserved.
 func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vecs any) error {
+	if n <= 0 {
+		return nil
+	}
 	start := time.Now()
 	defer func() {
 		duration := time.Since(start).Seconds()
@@ -48,9 +51,26 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 		metrics.HNSWBulkInsertLatencyByDim.WithLabelValues(strconv.Itoa(dims)).Observe(duration)
 	}()
 
-	// 1. Prepare Active Set
-	// We need to track the active nodes we are inserting.
-	// Since we reserved contiguous IDs, they are just [startID, startID + n).
+	// 1. Ensure capacity and chunks for the entire range (Synchronous/Locked)
+	// This prevents workers from racing on structural changes.
+	dims := int(h.dims.Load())
+	maxID := startID + uint32(n) - 1
+	cID_start := chunkID(startID)
+	cID_end := chunkID(maxID)
+
+	for cid := cID_start; cid <= cID_end; cid++ {
+		// Pass 0 as offset, it's ignored for chunk allocation
+		_, err := h.ensureChunk(h.data.Load(), cid, 0, dims)
+		if err != nil {
+			return fmt.Errorf("failed to pre-allocate chunk %d for bulk insert: %w", cid, err)
+		}
+	}
+
+	// 2. Prepare Active Set
+	// Acquire Read Lock to ensure we have a stable GraphData pointer for the duration of the insertion.
+	// This prevents concurrent Grows from swapping away our data pointer.
+	h.growMu.RLock()
+	defer h.growMu.RUnlock()
 
 	type activeNode struct {
 		id    uint32
@@ -88,14 +108,8 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 			}
 			for j := offset; j < end; j++ {
 				id := startID + uint32(j)
-				// Ensure chunks allocated (Versions etc needed for search)
 				cID := chunkID(id)
 				cOff := chunkOffset(id)
-				dims := int(h.dims.Load())
-				_, err := h.ensureChunk(data, cID, cOff, dims)
-				if err != nil {
-					return fmt.Errorf("failed to ensure chunk for ID %d: %w", id, err)
-				}
 
 				// Level generation
 				level := h.generateLevel()
@@ -210,9 +224,7 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 					vec:   v,
 				}
 
-				// Init levels chunk if needed (done in Insert usually, here we do it)
-				// We assume EnsureChunk called by caller or Grow.
-				// But we need to set the level.
+				// Init levels chunk if needed
 				levelsChunk := data.GetLevelsChunk(cID)
 				if levelsChunk != nil {
 					levelsChunk[cOff] = uint8(level)

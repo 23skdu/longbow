@@ -18,24 +18,10 @@ import perf_test
 from longbow import LongbowClient
 
 # Configuration matching user request
-COUNTS = [5000, 10000, 25000]
-DIMS = [128, 384, 1536, 3072]
-# "All supported data types" - based on perf_test.py excluding some exotic ones?
-# User said "all support data types".
-TYPES = [
-    "float32", "float16", 
-    # "float64", # Often not hw accelerated, but supported
-    # "int8", "int16", "int32", "int64", 
-    # "uint8", 
-    # "complex64", "complex128"
-]
-# We'll start with a core set to ensure it finishes reasonable fast for the demo, 
-# but the script structure will support all. 
+COUNTS = [3000, 5000, 10000, 15000, 25000, 50000]
+DIMS = [384]
 TYPES_FULL = [
-    "int8", "int16", "int32", "int64",
-    "uint8", "uint16", "uint32", "uint64", 
-    "float16", "float32", "float64", 
-    "complex64", "complex128"
+    "float32", "float16", "int8", "uint8", "int32"
 ]
 
 class MatrixRunner:
@@ -55,10 +41,11 @@ class MatrixRunner:
             "ingest_vec_s": 0,
             "doget_mb_s": 0,
             "doget_vec_s": 0,
-            "latency_dense": 0,
-            "latency_sparse": 0,
-            "latency_filtered": 0,
-            "latency_hybrid": 0
+            "dense_p50": 0, "dense_p95": 0, "dense_p99": 0,
+            "filtered_p50": 0, "filtered_p95": 0, "filtered_p99": 0,
+            "sparse_p50": 0, "sparse_p95": 0, "sparse_p99": 0,
+            "hybrid_p50": 0, "hybrid_p95": 0, "hybrid_p99": 0,
+            "error": ""
         }
 
         try:
@@ -71,7 +58,7 @@ class MatrixRunner:
             res_entry["ingest_mb_s"] = put_res.throughput 
             res_entry["ingest_vec_s"] = put_res.rows / put_res.duration_seconds
 
-            time.sleep(1) # settle
+            time.sleep(2) # Wait for indexing
 
             # 1.5 Retrieval (DoGet)
             print("  Retrieving (DoGet)...")
@@ -82,40 +69,35 @@ class MatrixRunner:
             # 2. Dense Search
             q_vecs = perf_test.generate_query_vectors(100, dim, dtype_str=dtype)
             dense_res = perf_test.benchmark_vector_search(self.client, ds_name, q_vecs, k=10, vector_format=dtype)
-            res_entry["latency_dense"] = dense_res.p95_ms
+            res_entry["dense_p50"] = dense_res.p50_ms
+            res_entry["dense_p95"] = dense_res.p95_ms
+            res_entry["dense_p99"] = dense_res.p99_ms
 
             # 3. Filtered Search (Metadata filter)
-            # perf_test generates "category" field: "A" or "B"
             filters = [{"field": "category", "op": "==", "value": "A"}]
-            dt_filt_res = perf_test.benchmark_vector_search(self.client, ds_name, q_vecs, k=10, filters=filters, vector_format=dtype)
-            res_entry["latency_filtered"] = dt_filt_res.p95_ms
+            filt_res = perf_test.benchmark_vector_search(self.client, ds_name, q_vecs, k=10, filters=filters, vector_format=dtype)
+            res_entry["filtered_p50"] = filt_res.p50_ms
+            res_entry["filtered_p95"] = filt_res.p95_ms
+            res_entry["filtered_p99"] = filt_res.p99_ms
 
-            # 4. Sparse/Id Search (Simulating "Sparse" as lookup or specific high-selectivity)
-            # User asked for "4 search types". In comprehensive it was Dense, Sparse, Filtered, Hybrid.
-            # Sparse there meant "filter to specific single item" effectively?
-            # Let's use ID search as proxy for "Sparse/Point" lookup latency? 
-            # Or just highly selective filter?
-            # Let's match benchmark_comprehensive "Sparse" which was filter to 1/10th.
-            # Here "category" is 1/2.
-            # We'll stick to Filtered (category) and Hybrid. 
-            # Fourth type? "Search By ID"?
-            id_res = perf_test.benchmark_search_by_id(self.client, ds_name, ids=["1", "10", "100"], k=10)
-            res_entry["latency_sparse"] = id_res.p95_ms # Using ID lookup as "Sparse/Exact" proxy
+            # 4. Sparse (Simulated via high-selectivity filter)
+            sparse_filters = [{"field": "id", "op": "==", "value": 1}]
+            sparse_res = perf_test.benchmark_vector_search(self.client, ds_name, q_vecs[:10], k=1, filters=sparse_filters, vector_format=dtype)
+            res_entry["sparse_p50"] = sparse_res.p50_ms
+            res_entry["sparse_p95"] = sparse_res.p95_ms
+            res_entry["sparse_p99"] = sparse_res.p99_ms
 
             # 5. Hybrid Search
-            # generate text queries
             txt_queries = ["machine learning" for _ in range(100)]
             hyb_res = perf_test.benchmark_hybrid_search(self.client, ds_name, q_vecs, k=10, text_queries=txt_queries, alpha=0.5)
-            res_entry["latency_hybrid"] = hyb_res.p95_ms
+            res_entry["hybrid_p50"] = hyb_res.p50_ms
+            res_entry["hybrid_p95"] = hyb_res.p95_ms
+            res_entry["hybrid_p99"] = hyb_res.p99_ms
 
             self.results.append(res_entry)
             
-            # Cleanup to free memory
+            # Cleanup
             try:
-                # Use internal meta client to delete dataset if SDK doesn't expose it directly yet
-                # Or assume client.delete_dataset exists (it might not)
-                # flight action "delete-dataset"
-                import json
                 import pyarrow.flight as flight
                 action = flight.Action("delete-dataset", json.dumps({"dataset": ds_name}).encode("utf-8"))
                 list(self.client._meta_client.do_action(action))
@@ -130,9 +112,8 @@ class MatrixRunner:
 
     def run(self):
         for dtype in TYPES_FULL:
-            for dim in DIMS:
-                for count in COUNTS:
-                    self.run_configuration(count, dim, dtype)
+            for count in COUNTS:
+                self.run_configuration(count, DIMS[0], dtype)
         
         self.save_results()
 

@@ -22,7 +22,7 @@ type Navigator interface {
 
 type GraphNavigator struct {
 	mu            sync.RWMutex
-	graph         *types.GraphData
+	graphProvider func() *types.GraphData
 	metrics       *NavigatorMetrics
 	searchConfig  NavigatorConfig
 	isInitialized atomic.Bool
@@ -132,11 +132,11 @@ func NewNavigatorMetrics(reg prometheus.Registerer) *NavigatorMetrics {
 	return m
 }
 
-func NewGraphNavigator(graph *types.GraphData, config NavigatorConfig, reg prometheus.Registerer) *GraphNavigator {
+func NewGraphNavigator(graphProvider func() *types.GraphData, config NavigatorConfig, reg prometheus.Registerer) *GraphNavigator {
 	return &GraphNavigator{
-		graph:        graph,
-		searchConfig: config,
-		metrics:      NewNavigatorMetrics(reg),
+		graphProvider: graphProvider,
+		searchConfig:  config,
+		metrics:       NewNavigatorMetrics(reg),
 	}
 }
 
@@ -144,7 +144,10 @@ func (gn *GraphNavigator) Initialize() error {
 	gn.mu.Lock()
 	defer gn.mu.Unlock()
 
-	if gn.graph == nil {
+	if gn.graphProvider == nil {
+		return fmt.Errorf("graph provider cannot be nil")
+	}
+	if gn.graphProvider() == nil {
 		return fmt.Errorf("graph data cannot be nil")
 	}
 
@@ -256,8 +259,13 @@ func (gn *GraphNavigator) getNeighbors(nodeID uint32) ([]uint32, bool) {
 	gn.mu.RLock()
 	defer gn.mu.RUnlock()
 
+	graph := gn.graphProvider()
+	if graph == nil {
+		return nil, false
+	}
+
 	for layer := 0; layer < types.ArrowMaxLayers; layer++ {
-		neighbors := gn.graph.GetNeighbors(layer, nodeID, []uint32{})
+		neighbors := graph.GetNeighbors(layer, nodeID, []uint32{})
 		if len(neighbors) > 0 {
 			return neighbors, true
 		}
@@ -289,12 +297,17 @@ func (gn *GraphNavigator) shouldTerminateEarly(currentID, targetID uint32, hops 
 }
 
 func (gn *GraphNavigator) calculateDistance(node1, node2 uint32) float32 {
-	vec1, err := gn.graph.GetVector(node1)
+	graph := gn.graphProvider()
+	if graph == nil {
+		return math.MaxFloat32
+	}
+
+	vec1, err := graph.GetVector(node1)
 	if err != nil {
 		return math.MaxFloat32
 	}
 
-	vec2, err := gn.graph.GetVector(node2)
+	vec2, err := graph.GetVector(node2)
 	if err != nil {
 		return math.MaxFloat32
 	}

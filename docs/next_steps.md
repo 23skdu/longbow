@@ -86,8 +86,8 @@ This document outlines the remaining tasks for Longbow development.
 
 3. **Concurrent Graph Operations**
    - [x] Parallel graph traversal algorithms
-   - Lock-free graph state updates
-   - NUMA-aware graph operation distribution
+   - [x] Lock-free graph state updates
+   - [x] NUMA-aware graph operation distribution (Cache-aligned partitioning)
 
 ### Phase 4: Testing & Validation ✅
 

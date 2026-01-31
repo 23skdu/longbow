@@ -588,7 +588,6 @@ func (g *GraphData) GetVectorBQ(id uint32) ([]uint64, error) {
 }
 
 // GetNeighbors returns the neighbors for a given node at a level.
-// GetNeighbors returns the neighbors for a given node at a level.
 func (g *GraphData) GetNeighbors(layer int, id uint32, buf []uint32) []uint32 {
 	cID := int(id) / ChunkSize
 	cOff := int(id) % ChunkSize
@@ -609,8 +608,8 @@ func (g *GraphData) GetNeighbors(layer int, id uint32, buf []uint32) []uint32 {
 		var v1 uint32
 		if versions != nil {
 			v1 = atomic.LoadUint32(&versions[cOff])
-			if v1%2 != 0 {
-				// Writer is active, spin
+			if v1&NodeLockMask != 0 {
+				// Writer is active/locked, spin
 				continue
 			}
 		}
@@ -647,6 +646,57 @@ func (g *GraphData) GetNeighbors(layer int, id uint32, buf []uint32) []uint32 {
 	}
 
 	return nil
+}
+
+// LockNode acquires a per-node spinlock.
+func (g *GraphData) LockNode(layer int, id uint32) uint32 {
+	versions := g.GetVersionsChunk(layer, int(id)/ChunkSize)
+	if versions == nil {
+		return 0
+	}
+	verAddr := &versions[int(id)%ChunkSize]
+
+	for {
+		v := atomic.LoadUint32(verAddr)
+		if v&NodeLockMask == 0 {
+			if atomic.CompareAndSwapUint32(verAddr, v, v|NodeLockMask) {
+				return v // Return old version for Unlock
+			}
+		}
+		// Spin
+		for i := 0; i < 10; i++ {
+			// Relaxed spin
+		}
+	}
+}
+
+// UnlockNode releases the per-node spinlock and increments the version.
+func (g *GraphData) UnlockNode(layer int, id uint32, oldVersion uint32) {
+	versions := g.GetVersionsChunk(layer, int(id)/ChunkSize)
+	if versions == nil {
+		return
+	}
+	verAddr := &versions[int(id)%ChunkSize]
+	// Increment version and clear lock bit
+	newVersion := (oldVersion + 1) & (NodeLockMask - 1)
+	atomic.StoreUint32(verAddr, newVersion)
+}
+
+// TryLockNode attempts to acquire the lock once.
+func (g *GraphData) TryLockNode(layer int, id uint32) (uint32, bool) {
+	versions := g.GetVersionsChunk(layer, int(id)/ChunkSize)
+	if versions == nil {
+		return 0, false
+	}
+	verAddr := &versions[int(id)%ChunkSize]
+
+	v := atomic.LoadUint32(verAddr)
+	if v&NodeLockMask == 0 {
+		if atomic.CompareAndSwapUint32(verAddr, v, v|NodeLockMask) {
+			return v, true
+		}
+	}
+	return 0, false
 }
 
 func (g *GraphData) GetVectorSQ8(id uint32) []byte {

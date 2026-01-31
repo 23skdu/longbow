@@ -85,7 +85,7 @@ This document outlines the remaining tasks for Longbow development.
    - [x] Graph density-aware search parameters
 
 3. **Concurrent Graph Operations**
-   - Parallel graph traversal algorithms
+   - [x] Parallel graph traversal algorithms
    - Lock-free graph state updates
    - NUMA-aware graph operation distribution
 

@@ -126,6 +126,24 @@ func (ta *TypedArena[T]) AllocSliceDirty(count int) (SliceRef, error) {
 	}, nil
 }
 
+// AllocSliceAligned allocates an aligned slice.
+func (ta *TypedArena[T]) AllocSliceAligned(count, align int) (SliceRef, error) {
+	var zero T
+	elemSize := int(unsafe.Sizeof(zero))
+	totalBytes := count * elemSize
+
+	offset, err := ta.arena.AllocAligned(totalBytes, align)
+	if err != nil {
+		return SliceRef{}, err
+	}
+
+	return SliceRef{
+		Offset: offset,
+		Len:    uint32(count),
+		Cap:    uint32(count),
+	}, nil
+}
+
 // Get retrieves a typed slice from the arena using a SliceRef.
 func (ta *TypedArena[T]) Get(ref SliceRef) []T {
 	if ref.Offset == 0 || ref.Len == 0 {

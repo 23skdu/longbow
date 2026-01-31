@@ -75,9 +75,9 @@ This document outlines the remaining tasks for Longbow development.
 ### Phase 3: Advanced Features (Weeks 9-12)
 
 1. **Query Planning & Optimization**
-   - Query planner for graph navigation strategies
-   - Cost-based optimization for multi-hop queries
-   - Dynamic pruning heuristics
+   - [x] Query planner for graph navigation strategies
+   - [x] Cost-based optimization for multi-hop queries (A*)
+   - [x] Dynamic pruning heuristics
 
 2. **Graph Analytics Engine**
    - Graph centrality measures for spread-out analysis

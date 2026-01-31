@@ -28,6 +28,7 @@ type GraphNavigator struct {
 	searchConfig  NavigatorConfig
 	isInitialized atomic.Bool
 	cache         map[string]cachedResult
+	planner       *QueryPlanner
 	cacheMu       sync.RWMutex
 }
 
@@ -148,6 +149,7 @@ func NewGraphNavigator(graphProvider func() *types.GraphData, config NavigatorCo
 		searchConfig:  config,
 		metrics:       NewNavigatorMetrics(reg),
 		cache:         make(map[string]cachedResult),
+		planner:       NewQueryPlanner(),
 	}
 }
 
@@ -201,7 +203,11 @@ func (gn *GraphNavigator) FindPath(ctx context.Context, query NavigatorQuery) (*
 		gn.metrics.CacheMisses.Inc()
 	}
 
-	path, err := gn.findPathInternal(ctx, query.StartID, query.TargetID, query.MaxHops)
+	// Use Planner to determine strategy
+	strategy := gn.planner.Plan(query)
+
+	// Execute strategy
+	path, err := strategy.FindPath(ctx, gn, query)
 	if err != nil {
 		return nil, err
 	}
@@ -227,79 +233,6 @@ func (gn *GraphNavigator) FindPath(ctx context.Context, query NavigatorQuery) (*
 	}
 
 	return path, nil
-}
-
-func (gn *GraphNavigator) findPathInternal(ctx context.Context, startID, targetID uint32, maxHops int) (*NavigatorPath, error) {
-	type queueItem struct {
-		id   uint32
-		hops int
-		path []uint32
-	}
-
-	queue := []queueItem{{id: startID, hops: 0, path: []uint32{startID}}}
-	visited := make(map[uint32]bool)
-
-	for len(queue) > 0 {
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		default:
-		}
-
-		current := queue[0]
-		queue = queue[1:]
-
-		if current.id == targetID {
-			return &NavigatorPath{
-				StartID: startID,
-				EndID:   targetID,
-				Path:    current.path,
-				Hops:    current.hops,
-				Found:   true,
-			}, nil
-		}
-
-		if current.hops >= maxHops {
-			continue
-		}
-
-		if gn.searchConfig.EarlyTerminate && gn.shouldTerminateEarly(current.id, targetID, current.hops) {
-			gn.metrics.EarlyTerminations.Inc()
-			continue
-		}
-
-		if visited[current.id] {
-			continue
-		}
-		visited[current.id] = true
-
-		neighbors, ok := gn.getNeighbors(current.id)
-		if !ok {
-			continue
-		}
-
-		for _, neighbor := range neighbors {
-			if !visited[neighbor] {
-				newPath := make([]uint32, len(current.path)+1)
-				copy(newPath, current.path)
-				newPath[len(current.path)] = neighbor
-
-				queue = append(queue, queueItem{
-					id:   neighbor,
-					hops: current.hops + 1,
-					path: newPath,
-				})
-			}
-		}
-	}
-
-	return &NavigatorPath{
-		StartID: startID,
-		EndID:   targetID,
-		Path:    []uint32{},
-		Hops:    0,
-		Found:   false,
-	}, nil
 }
 
 func (gn *GraphNavigator) getNeighbors(nodeID uint32) ([]uint32, bool) {

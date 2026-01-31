@@ -85,7 +85,7 @@ func NewSlabArena(slabSizeBytes int) *SlabArena {
 func (a *SlabArena) Alloc(size int) (uint64, error) {
 	// Slow path always uses mutex-protected allocCommon
 	metrics.ArenaSlowPathTotal.Inc()
-	return a.allocCommon(size, true)
+	return a.allocCommon(size, 8, true)
 }
 
 // AllocDirty reserves space for 'size' bytes.
@@ -93,7 +93,16 @@ func (a *SlabArena) Alloc(size int) (uint64, error) {
 // MEMORY IS NOT GUARANTEED TO BE ZEROED.
 // Use this only when you will immediately overwrite the entire range.
 func (a *SlabArena) AllocDirty(size int) (uint64, error) {
-	return a.allocCommon(size, false)
+	return a.allocCommon(size, 8, false)
+}
+
+// AllocAligned reserves space with specific alignment.
+func (a *SlabArena) AllocAligned(size, align int) (uint64, error) {
+	if align <= 0 || (align&(align-1)) != 0 {
+		return 0, errors.New("align must be a power of 2")
+	}
+	metrics.ArenaSlowPathTotal.Inc()
+	return a.allocCommon(size, align, true)
 }
 
 // AllocFast attempts lock-free allocation for small sizes (≤ 64 bytes).
@@ -136,7 +145,7 @@ func (a *SlabArena) allocFast(size int) (uint64, bool) {
 	}
 }
 
-func (a *SlabArena) allocCommon(size int, zero bool) (uint64, error) {
+func (a *SlabArena) allocCommon(size, align int, zero bool) (uint64, error) {
 	if size <= 0 {
 		return 0, errors.New("alloc size must be positive")
 	}
@@ -149,7 +158,8 @@ func (a *SlabArena) allocCommon(size int, zero bool) (uint64, error) {
 	defer a.mu.Unlock()
 
 	// Try fast path while holding the mutex (safe because no concurrent access)
-	if size <= 64 {
+	// Fast path assumes 8-byte alignment
+	if size <= 64 && align <= 8 {
 		if offset, ok := a.allocFast(size); ok {
 			metrics.ArenaFastPathTotal.Inc()
 			return offset, nil
@@ -166,15 +176,16 @@ func (a *SlabArena) allocCommon(size int, zero bool) (uint64, error) {
 		active = currentSlabs[len(currentSlabs)-1]
 	}
 
-	// Simple bump allocator within slab
-	// TODO: Alignment padding? (e.g. 8-byte align)
-	// Let's force 8-byte alignment for safety of typed access
-	const align = 8
+	// Make sure align is uint32 compatible
+	uAlign := uint32(align)
 
 	if active != nil {
-		pad := (align - (active.offset % align)) % align
+		pad := (uAlign - (active.offset % uAlign)) % uAlign
 		if active.offset+pad+needed <= uint32(len(active.data)) {
 			active.offset += pad // consume padding
+			if pad > 0 {
+				metrics.AdjacencyPaddingBytes.Add(float64(pad))
+			}
 		} else {
 			// Won't fit, need new slab
 			active = nil
@@ -206,8 +217,11 @@ func (a *SlabArena) allocCommon(size int, zero bool) (uint64, error) {
 	}
 
 	// Calc aligned offset
-	pad := (align - (active.offset % align)) % align
+	pad := (uAlign - (active.offset % uAlign)) % uAlign
 	active.offset += pad
+	if pad > 0 {
+		metrics.AdjacencyPaddingBytes.Add(float64(pad))
+	}
 
 	start := active.offset
 	// Offset 0 is reserved for nil. For the very first slab and very first allocation,

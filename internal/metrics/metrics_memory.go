@@ -54,4 +54,12 @@ var (
 			Help: "Total number of vectors stored in managed arenas (SlabArena)",
 		},
 	)
+
+	// AdjacencyPaddingBytes tracks bytes used for alignment padding
+	AdjacencyPaddingBytes = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_adjacency_padding_bytes_total",
+			Help: "Total bytes used for alignment padding in graph adjacency",
+		},
+	)
 )

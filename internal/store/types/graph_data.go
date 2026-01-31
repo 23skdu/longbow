@@ -21,7 +21,8 @@ type GraphData struct {
 	PQEnabled  bool
 
 	// Mutable State
-	BackingGraph any // interface{} to avoid import cycle (likely *DiskGraph)
+	BackingGraph  any    // interface{} to avoid import cycle (likely *DiskGraph)
+	GlobalVersion uint64 // Atomic access
 
 	// Vectors (primary storage, usually float32)
 	Vectors [][]float32
@@ -391,6 +392,7 @@ func (g *GraphData) SetNeighbors(id uint32, neighbors []uint32) error {
 	// But we should try to get it.
 	countsChunk := g.GetCountsChunk(layer, cID)
 	neighborsChunk := g.GetNeighborsChunk(layer, cID)
+	versionsChunk := g.GetVersionsChunk(layer, cID)
 
 	if countsChunk == nil || neighborsChunk == nil {
 		// Try to ensure?
@@ -399,6 +401,7 @@ func (g *GraphData) SetNeighbors(id uint32, neighbors []uint32) error {
 		}
 		countsChunk = g.GetCountsChunk(layer, cID)
 		neighborsChunk = g.GetNeighborsChunk(layer, cID)
+		versionsChunk = g.GetVersionsChunk(layer, cID)
 		if countsChunk == nil || neighborsChunk == nil {
 			return fmt.Errorf("failed to allocate chunk for SetNeighbors")
 		}
@@ -407,6 +410,10 @@ func (g *GraphData) SetNeighbors(id uint32, neighbors []uint32) error {
 	if len(neighbors) > MaxNeighbors {
 		// Truncate or error?
 		neighbors = neighbors[:MaxNeighbors]
+	}
+
+	if versionsChunk != nil {
+		atomic.AddUint32(&versionsChunk[cOff], 1)
 	}
 
 	baseIdx := cOff * MaxNeighbors
@@ -418,6 +425,13 @@ func (g *GraphData) SetNeighbors(id uint32, neighbors []uint32) error {
 
 	// Update count
 	countsChunk[cOff] = int32(len(neighbors))
+
+	if versionsChunk != nil {
+		atomic.AddUint32(&versionsChunk[cOff], 1)
+	}
+
+	// Increment global version
+	atomic.AddUint64(&g.GlobalVersion, 1)
 
 	return nil
 }

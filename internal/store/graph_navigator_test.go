@@ -27,6 +27,10 @@ func createTestGraph(t *testing.T) *types.GraphData {
 func TestGraphNavigator_FindPath_Linear(t *testing.T) {
 	g := createTestGraph(t)
 	// Create linear graph: 0 -> 1 -> 2 -> 3
+	_ = g.SetNeighbors(0, []uint32{1})
+	_ = g.SetNeighbors(1, []uint32{2})
+	_ = g.SetNeighbors(2, []uint32{3})
+
 	ctx := context.Background()
 	query := NavigatorQuery{
 		StartID:  0,
@@ -34,7 +38,7 @@ func TestGraphNavigator_FindPath_Linear(t *testing.T) {
 		MaxHops:  5,
 	}
 
-	nav := NewGraphNavigator(g, NavigatorConfig{MaxHops: 10}, nil)
+	nav := NewGraphNavigator(func() *types.GraphData { return g }, NavigatorConfig{MaxHops: 10}, nil)
 	err := nav.Initialize()
 	require.NoError(t, err)
 
@@ -48,12 +52,11 @@ func TestGraphNavigator_FindPath_Linear(t *testing.T) {
 func TestGraphNavigator_FindPath_Star(t *testing.T) {
 	g := createTestGraph(t)
 	// Create star graph: 0 -> {1, 2, 3}, 1 -> {4}, 2 -> {4}, 3 -> {4}
-	g.SetNeighbors(0, []uint32{1, 2, 3})
-	g.SetNeighbors(1, []uint32{4})
-	g.SetNeighbors(2, []uint32{4})
-	g.SetNeighbors(3, []uint32{4})
-
-	nav := NewGraphNavigator(g, NavigatorConfig{MaxHops: 10}, nil)
+	_ = g.SetNeighbors(0, []uint32{1, 2, 3})
+	_ = g.SetNeighbors(1, []uint32{4})
+	_ = g.SetNeighbors(2, []uint32{4})
+	_ = g.SetNeighbors(3, []uint32{4})
+	nav := NewGraphNavigator(func() *types.GraphData { return g }, NavigatorConfig{MaxHops: 10}, nil)
 	err := nav.Initialize()
 	require.NoError(t, err)
 
@@ -74,11 +77,11 @@ func TestGraphNavigator_FindPath_Star(t *testing.T) {
 func TestGraphNavigator_MaxHops(t *testing.T) {
 	g := createTestGraph(t)
 	// 0 -> 1 -> 2 -> 3
-	g.SetNeighbors(0, []uint32{1})
-	g.SetNeighbors(1, []uint32{2})
-	g.SetNeighbors(2, []uint32{3})
+	_ = g.SetNeighbors(0, []uint32{1})
+	_ = g.SetNeighbors(1, []uint32{2})
+	_ = g.SetNeighbors(2, []uint32{3})
 
-	nav := NewGraphNavigator(g, NavigatorConfig{MaxHops: 2}, nil)
+	nav := NewGraphNavigator(func() *types.GraphData { return g }, NavigatorConfig{MaxHops: 2}, nil)
 	err := nav.Initialize()
 	require.NoError(t, err)
 
@@ -99,14 +102,14 @@ func TestGraphNavigator_DistancePruning(t *testing.T) {
 	// 0 -> 1 -> 2 -> 3
 	// Dist 0-1=1, 1-2=1, 2-3=1
 	// Total 0-3=3
-	g.SetNeighbors(0, []uint32{1})
-	g.SetNeighbors(1, []uint32{2})
-	g.SetNeighbors(2, []uint32{3})
+	_ = g.SetNeighbors(0, []uint32{1})
+	_ = g.SetNeighbors(1, []uint32{2})
+	_ = g.SetNeighbors(2, []uint32{3})
 
 	// Thresholds:
 	// node 1 (hops 1): no prune (hops < 2)
 	// node 2 (hops 2): dist(2, 3) = 1.0. If threshold = 0.5, it should prune.
-	nav := NewGraphNavigator(g, NavigatorConfig{
+	nav := NewGraphNavigator(func() *types.GraphData { return g }, NavigatorConfig{
 		MaxHops:           10,
 		EarlyTerminate:    true,
 		DistanceThreshold: 0.5,
@@ -128,10 +131,10 @@ func TestGraphNavigator_DistancePruning(t *testing.T) {
 
 func TestGraphNavigator_Metrics(t *testing.T) {
 	g := createTestGraph(t)
-	g.SetNeighbors(0, []uint32{1})
+	_ = g.SetNeighbors(0, []uint32{1})
 
 	reg := prometheus.NewRegistry()
-	nav := NewGraphNavigator(g, NavigatorConfig{MaxHops: 10}, reg)
+	nav := NewGraphNavigator(func() *types.GraphData { return g }, NavigatorConfig{MaxHops: 10}, reg)
 	err := nav.Initialize()
 	require.NoError(t, err)
 
@@ -148,7 +151,36 @@ func TestGraphNavigator_Metrics(t *testing.T) {
 	// Check metrics
 	metrics := nav.GetMetrics()
 	assert.NotNil(t, metrics)
+	assert.True(t, nav.IsInitialized())
+}
 
-	// We can't easily read Counter values from Prometheus Registry without a collector,
-	// but we can check if they are initialized.
+func TestGraphNavigator_SearchRadius(t *testing.T) {
+	g := createTestGraph(t)
+	// 0 -> 1 -> 2 -> 3
+	// We want to terminate at node 2 (hops=2).
+	// Node 2 has 1 neighbor (3). If Radius > 1, it should prune.
+	_ = g.SetNeighbors(0, []uint32{1})
+	_ = g.SetNeighbors(1, []uint32{2})
+	_ = g.SetNeighbors(2, []uint32{3}) // Node 2 has 1 neighbor
+	_ = g.SetNeighbors(3, []uint32{})
+
+	nav := NewGraphNavigator(func() *types.GraphData { return g }, NavigatorConfig{
+		MaxHops:        5,
+		EarlyTerminate: true,
+		SearchRadius:   2.0,
+	}, nil)
+	err := nav.Initialize()
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	query := NavigatorQuery{
+		StartID:  0,
+		TargetID: 3,
+		MaxHops:  5,
+	}
+
+	// Should fail to find path because node 2 terminates early
+	path, err := nav.FindPath(ctx, query)
+	require.NoError(t, err)
+	assert.False(t, path.Found)
 }

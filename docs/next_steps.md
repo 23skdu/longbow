@@ -63,9 +63,9 @@ This document outlines the remaining tasks for Longbow development.
    - [x] Adaptive search radius for spread-out graphs
 
 2. **HNSW Integration Layer**
-   - Integrate navigator with existing HNSW implementation
-   - Graph state management and caching
-   - Concurrent-safe graph traversal operations
+   - [x] Integrate navigator with existing HNSW implementation
+   - [ ] Graph state management and caching
+   - [ ] Concurrent-safe graph traversal operations
 
 3. **Distance Optimizations**
    - SIMD-optimized graph distance calculations

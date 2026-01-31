@@ -48,7 +48,7 @@ func FuzzFindPath(f *testing.F) {
 			EarlyTerminate:    earlyTerminate,
 			DistanceThreshold: distThreshold,
 		}
-		nav := NewGraphNavigator(g, config, nil)
+		nav := NewGraphNavigator(func() *types.GraphData { return g }, config, nil)
 		err = nav.Initialize()
 		require.NoError(t, err)
 

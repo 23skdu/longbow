@@ -69,6 +69,8 @@ type ArrowHNSWConfig struct {
 	Float16Enabled         bool
 	SQ8TrainingThreshold   int
 	PackedAdjacencyEnabled bool
+
+	Registerer prometheus.Registerer
 }
 
 // DefaultArrowHNSWConfig returns a configuration with sensible defaults
@@ -163,6 +165,9 @@ type ArrowHNSW struct {
 
 	sq8TrainingBuffer [][]float32
 	levelMultiplier   float64
+
+	// Graph Navigation
+	navigator *GraphNavigator
 }
 
 // GetVector retrieves the vector for the given ID.
@@ -279,6 +284,16 @@ func NewArrowHNSW(dataset *Dataset, config *ArrowHNSWConfig) *ArrowHNSW {
 		config.DataType,
 	)
 	h.data.Store(gd)
+
+	// Initialize Graph Navigator
+	navConfig := NavigatorConfig{
+		MaxHops:           10, // Default
+		Concurrency:       config.Workers,
+		EarlyTerminate:    true,
+		DistanceThreshold: 0, // No threshold by default
+	}
+	h.navigator = NewGraphNavigator(h.GetData, navConfig, config.Registerer)
+	_ = h.navigator.Initialize()
 
 	return h
 }
@@ -622,6 +637,14 @@ func (h *ArrowHNSW) Close() error {
 	h.locationStore = nil
 	h.deleted = nil
 	return nil
+}
+
+// Navigate performs a graph navigation query
+func (h *ArrowHNSW) Navigate(ctx context.Context, navQuery NavigatorQuery) (*NavigatorPath, error) {
+	if h.navigator == nil {
+		return nil, fmt.Errorf("graph navigator not initialized")
+	}
+	return h.navigator.FindPath(ctx, navQuery)
 }
 
 // Extended methods for AdaptiveIndex compatibility

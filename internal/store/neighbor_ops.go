@@ -6,8 +6,9 @@ import (
 	"math"
 	"sync/atomic"
 	"time"
+	"unsafe"
 
-	"github.com/23skdu/longbow/internal/simd"
+	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
@@ -44,7 +45,7 @@ func (h *ArrowHNSW) AddConnection(ctx *ArrowSearchContext, data *GraphData, sour
 	// Check for duplicates first to ensure idempotency
 	// This requires reading current neighbors
 	currentCount := atomic.LoadInt32(&countsChunk[cOff])
-	baseIdx := int(cOff) * MaxNeighbors
+	baseIdx := int(cOff) * types.MaxNeighbors
 
 	for i := 0; i < int(currentCount); i++ {
 		if atomic.LoadUint32(&neighborsChunk[baseIdx+i]) == target {
@@ -57,7 +58,7 @@ func (h *ArrowHNSW) AddConnection(ctx *ArrowSearchContext, data *GraphData, sour
 	// 3a. Prepare for write
 	// Calculate slot using currentCount (stable under shard lock)
 	slot := int(currentCount)
-	if slot >= MaxNeighbors {
+	if slot >= types.MaxNeighbors {
 		// Should not happen if MaxNeighbors >> maxConn and pruning works
 		return
 	}
@@ -169,7 +170,7 @@ func (h *ArrowHNSW) AddConnectionsBatch(ctx *ArrowSearchContext, data *GraphData
 	// We read current neighbors to check against incoming sources.
 	// Since duplicates are rare in HNSW construction (unless duplicate vectors),
 	// we can do a simple check.
-	baseIdx := int(cOff) * MaxNeighbors
+	baseIdx := int(cOff) * types.MaxNeighbors
 
 	// Identify distinct new sources that are NOT already connected
 	// Optimization: Use a small stack map or simple loop if small.
@@ -200,7 +201,7 @@ func (h *ArrowHNSW) AddConnectionsBatch(ctx *ArrowSearchContext, data *GraphData
 	// So we must bound `toAddIdxs` to fit available space OR implement a "pre-prune" strategy.
 	// A simpler safe approach: Cap at MaxNeighbors - currentCount
 
-	available := MaxNeighbors - int(currentCount)
+	available := types.MaxNeighbors - int(currentCount)
 	if available < 0 {
 		available = 0
 	}
@@ -343,7 +344,7 @@ func (h *ArrowHNSW) pruneConnectionsLocked(ctx *ArrowSearchContext, data *GraphD
 	}
 
 	// Collect all current neighbors as candidates
-	baseIdx := int(cOff) * MaxNeighbors
+	baseIdx := int(cOff) * types.MaxNeighbors
 
 	var dists []float32
 	if ctx != nil {
@@ -365,127 +366,68 @@ func (h *ArrowHNSW) pruneConnectionsLocked(ctx *ArrowSearchContext, data *GraphD
 		candidates = make([]Candidate, count)
 	}
 
-	// Logic Switch: SQ8 vs Float32
-	if h.quantizer != nil && len(data.VectorsSQ8) > 0 {
-		// SQ8 Path
-		// Node itself is in VectorsSQ8
-		dims := int(h.dims.Load())
-		paddedDims := (dims + 63) & ^63
-		offNode := int(cOff) * paddedDims
-		nodeSQ8Chunk := data.GetVectorsSQ8Chunk(cID)
-		if nodeSQ8Chunk != nil && offNode+dims <= len(nodeSQ8Chunk) {
-			nodeSQ8 := nodeSQ8Chunk[offNode : offNode+dims]
+	// Unified Distance Calculation (v0.1.4-rc2)
+	// We MUST handle mixed types because SQ8 nodes can have Float32 neighbors (from early training)
+	nodeVecAny, err := data.GetVector(nodeID)
+	if err != nil || nodeVecAny == nil {
+		return
+	}
 
-			for i := 0; i < count; i++ {
-				neighborID := neighborsChunk[baseIdx+i]
-
-				// Neighbor chunk access
-				nCID := chunkID(neighborID)
-				nCOff := chunkOffset(neighborID)
-				offRem := int(nCOff) * paddedDims
-
-				nVecSQ8Chunk := data.GetVectorsSQ8Chunk(nCID)
-				if nVecSQ8Chunk != nil && offRem+dims <= len(nVecSQ8Chunk) {
-					d, err := simd.EuclideanDistanceSQ8(nodeSQ8, nVecSQ8Chunk[offRem:offRem+dims])
-					if err != nil {
-						dists[i] = math.MaxFloat32
-					} else {
-						dists[i] = float32(d)
-					}
-				} else {
-					dists[i] = math.MaxFloat32
-				}
+	// Helper to get float32 representation for distance calc
+	toF32 := func(v any) []float32 {
+		switch vf := v.(type) {
+		case []float32:
+			return vf
+		case []int8:
+			if h.quantizer != nil && h.sq8Ready.Load() {
+				// Safe cast to byte
+				byteVec := *(*[]byte)(unsafe.Pointer(&vf))
+				return h.quantizer.Decode(byteVec)
 			}
-		} else {
-			for i := 0; i < count; i++ {
-				dists[i] = math.MaxFloat32
+			res := make([]float32, len(vf))
+			for i, val := range vf {
+				res[i] = float32(uint8(val))
 			}
-		}
-
-	} else {
-		// Float32 Path
-		// Use scratch buffers from context to avoid allocations
-		if ctx != nil && cap(ctx.scratchVecs) < count {
-			ctx.scratchVecs = make([][]float32, count*2)
-		}
-
-		// nodeVec needed for distance calc
-		// nodeVec needed for distance calc
-		// Note: for now we assume float32. Future refactor will make DistFunc polymorphic.
-		// Polymorphic Distance Calculation
-		nodeVecAny := h.mustGetVectorFromData(data, nodeID)
-
-		for i := 0; i < count; i++ {
-			neighborID := neighborsChunk[baseIdx+i]
-			vecAny := h.mustGetVectorFromData(data, neighborID)
-
-			var dist float32 = math.MaxFloat32
-
-			switch nV := nodeVecAny.(type) {
-			case []float32:
-				if v, ok := vecAny.([]float32); ok {
-					d, err := h.distFunc(nV, v)
-					if err == nil {
-						dist = d
-					}
-				}
-			case []float64:
-				if v, ok := vecAny.([]float64); ok && h.distFuncF64 != nil {
-					d, err := h.distFuncF64(nV, v)
-					if err == nil {
-						dist = d
-					}
-				} else if v, ok := vecAny.([]float64); ok {
-					// Fallback manual L2
-					if len(nV) == len(v) {
-						var sum float64
-						for k := range nV {
-							diff := nV[k] - v[k]
-							sum += diff * diff
-						}
-						dist = float32(math.Sqrt(sum))
-					}
-				}
-			case []int8:
-				if v, ok := vecAny.([]int8); ok {
-					if len(nV) == len(v) {
-						var sum float32
-						for k := range nV {
-							diff := float32(nV[k]) - float32(v[k])
-							sum += diff * diff
-						}
-						dist = float32(math.Sqrt(float64(sum)))
-					}
-				}
-			case []complex64:
-				if v, ok := vecAny.([]complex64); ok {
-					if len(nV) == len(v) {
-						var sum float32
-						for k := range nV {
-							diff := nV[k] - v[k]
-							modSq := real(diff)*real(diff) + imag(diff)*imag(diff)
-							sum += modSq
-						}
-						dist = float32(math.Sqrt(float64(sum)))
-					}
-				}
-			case []complex128:
-				if v, ok := vecAny.([]complex128); ok {
-					if len(nV) == len(v) {
-						var sum float64
-						for k := range nV {
-							diff := nV[k] - v[k]
-							modSq := real(diff)*real(diff) + imag(diff)*imag(diff)
-							sum += modSq
-						}
-						dist = float32(math.Sqrt(sum))
-					}
-				}
+			return res
+		case []uint8:
+			if h.quantizer != nil && h.sq8Ready.Load() {
+				return h.quantizer.Decode(vf)
 			}
-			dists[i] = dist
+			res := make([]float32, len(vf))
+			for i, val := range vf {
+				res[i] = float32(val)
+			}
+			return res
+		default:
+			return nil
 		}
 	}
 
+	nodeVecF32 := toF32(nodeVecAny)
+	if nodeVecF32 == nil {
+		return
+	}
+
+	for i := 0; i < count; i++ {
+		neighborID := neighborsChunk[baseIdx+i]
+		vecAny, err := data.GetVector(neighborID)
+		if err != nil || vecAny == nil {
+			dists[i] = math.MaxFloat32
+			continue
+		}
+
+		vecF32 := toF32(vecAny)
+		if vecF32 != nil {
+			d, err := h.distFunc(nodeVecF32, vecF32)
+			if err == nil {
+				dists[i] = d
+			} else {
+				dists[i] = math.MaxFloat32
+			}
+		} else {
+			dists[i] = math.MaxFloat32
+		}
+	}
 	// Populate candidates with IDs and distances
 	for i := 0; i < count; i++ {
 		candidates[i] = Candidate{ID: neighborsChunk[baseIdx+i], Dist: dists[i]}

@@ -16,6 +16,7 @@ type GraphData struct {
 	Dims       int
 	Type       VectorDataType
 	SQ8Enabled bool
+	SQ8Ready   bool
 	BQEnabled  bool
 	PQEnabled  bool
 
@@ -28,7 +29,7 @@ type GraphData struct {
 	// VectorsPQ for quantized vectors
 	VectorsPQ []uint64
 
-	// VectorsInt8 for int8 vectors
+	// VectorsInt8 for raw int8 vectors
 	VectorsInt8 []uint64
 
 	// VectorsF16 for half-precision
@@ -309,22 +310,7 @@ func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
 	}
 
 	// Ensure Int8
-	if g.Type == VectorTypeInt8 {
-		for len(g.VectorsInt8) <= cID {
-			if g.Int8Arena == nil {
-				slabSize := ChunkSize * dims
-				if slabSize < 1024*1024 {
-					slabSize = 1024 * 1024
-				}
-				g.Int8Arena = memory.NewTypedArena[int8](memory.NewSlabArena(slabSize))
-			}
-			ref, err := g.Int8Arena.AllocSliceDirty(ChunkSize * dims)
-			if err != nil {
-				return err
-			}
-			g.VectorsInt8 = append(g.VectorsInt8, ref.Offset)
-		}
-	}
+	// Already handled by unified SQ8/Int8 block above
 
 	// Ensure BQ if enabled
 	if g.BQEnabled {
@@ -451,38 +437,29 @@ func (g *GraphData) GetVector(id uint32) (any, error) {
 	// Based on type, get the appropriate chunk
 	// Only supporting float32 and float16 for now in this generic method
 	// for simplicity, as they are the primary types used in tests.
-	if g.Float32Arena != nil && len(g.Vectors) > cID {
-		chunk := g.GetVectorsChunk(cID)
+	if g.Uint8Arena != nil && len(g.VectorsSQ8) > cID && g.SQ8Ready {
+		chunk := g.GetVectorsSQ8Chunk(cID)
 		if chunk != nil {
-			start := cOff * g.Dims
+			paddedDims := (g.Dims + 63) & ^63
+			start := cOff * paddedDims
 			if start+g.Dims <= len(chunk) {
 				return chunk[start : start+g.Dims], nil
 			}
 		}
 	}
 
-	if g.Float16Arena != nil && len(g.VectorsF16) > cID {
-		chunk := g.GetVectorsF16Chunk(cID)
-		if chunk != nil {
-			start := cOff * g.Dims
-			if start+g.Dims <= len(chunk) {
-				return chunk[start : start+g.Dims], nil
-			}
-		}
-	}
-
-	if len(g.VectorsFloat64) > cID {
-		chunk := g.GetVectorsFloat64Chunk(cID)
-		if chunk != nil {
-			start := cOff * g.Dims
-			if start+g.Dims <= len(chunk) {
-				return chunk[start : start+g.Dims], nil
-			}
-		}
-	}
-
-	if g.Int8Arena != nil && len(g.VectorsInt8) > cID {
+	if g.Int8Arena != nil && len(g.VectorsInt8) > cID && g.SQ8Ready {
 		chunk := g.GetVectorsInt8Chunk(cID)
+		if chunk != nil {
+			start := cOff * g.Dims
+			if start+g.Dims <= len(chunk) {
+				return chunk[start : start+g.Dims], nil
+			}
+		}
+	}
+
+	if len(g.Vectors) > cID {
+		chunk := g.GetVectorsChunk(cID)
 		if chunk != nil {
 			start := cOff * g.Dims
 			if start+g.Dims <= len(chunk) {
@@ -563,6 +540,15 @@ func (g *GraphData) SetVector(id uint32, vec any) error {
 		chunk := g.GetVectorsInt8Chunk(cID)
 		if chunk != nil {
 			start := cOff * g.Dims
+			if start+len(v) <= len(chunk) {
+				copy(chunk[start:start+len(v)], v)
+			}
+		}
+	case []byte:
+		chunk := g.GetVectorsSQ8Chunk(cID)
+		if chunk != nil {
+			paddedDims := (g.Dims + 63) & ^63
+			start := cOff * paddedDims
 			if start+len(v) <= len(chunk) {
 				copy(chunk[start:start+len(v)], v)
 			}

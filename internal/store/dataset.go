@@ -9,7 +9,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/23skdu/longbow/internal/query"
 	qry "github.com/23skdu/longbow/internal/query"
 	"github.com/rs/zerolog"
 
@@ -281,7 +280,7 @@ func (d *Dataset) GenerateFilterBitsetLocked(filters []qry.Filter, hash string) 
 	// and the cached one stays safe.
 	d.filterMu.Lock()
 	if d.filterCache == nil {
-		d.filterCache = make(map[string]*query.Bitset)
+		d.filterCache = make(map[string]*qry.Bitset)
 	}
 	if len(d.filterCache) > 100 {
 		// Evict first element (pseudo-LRU since map iteration is random)

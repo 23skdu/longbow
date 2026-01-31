@@ -178,18 +178,16 @@ func (pa *PackedAdjacency) updatePage(id uint32, packed uint64) error {
 	chunksPtr := pa.chunks.Load()
 	if chunksPtr == nil || chunkIdx >= len(*chunksPtr) {
 		pa.EnsureCapacity(id)
+		chunksPtr = pa.chunks.Load()
 	}
 
-	// Take Read Lock to protect against resizing while we update
-	pa.mu.RLock()
-	defer pa.mu.RUnlock()
-
-	// Reload chunks after possible growth
-	chunks := *pa.chunks.Load()
+	chunks := *chunksPtr
 
 	// Get or Alloc Page
 	pageOffset := atomic.LoadUint64(&chunks[chunkIdx])
 	if pageOffset == 0 {
+		// We still need to coordinate page allocation to avoid leaks/double-alloc,
+		// but we can use CAS on the chunk slot.
 		pRef, err := pa.pageArena.AllocSlice(AdjacencyChunkSize)
 		if err != nil {
 			return err
@@ -199,6 +197,8 @@ func (pa *PackedAdjacency) updatePage(id uint32, packed uint64) error {
 			pDest[i] = 0
 		}
 		if !atomic.CompareAndSwapUint64(&chunks[chunkIdx], 0, pRef.Offset) {
+			// Someone else won the race, return our slice to arena (if possible)
+			// or just accept the tiny leak (it's internal arena so it stays till Close)
 			pageOffset = atomic.LoadUint64(&chunks[chunkIdx])
 		} else {
 			pageOffset = pRef.Offset

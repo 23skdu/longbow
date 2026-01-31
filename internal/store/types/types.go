@@ -91,6 +91,10 @@ const ChunkSize = 1024
 // ArrowMaxLayers is the maximum number of layers in HNSW hierarchy
 const ArrowMaxLayers = 16
 
+// NodeLockMask is used for atomic per-node locking in the Version field.
+// HNSW version fields are uint32: [Lock Bit (1 bit) | Version (31 bits)]
+const NodeLockMask uint32 = 1 << 31
+
 // VectorID is a type alias for vector identifiers
 type VectorID = core.VectorID
 

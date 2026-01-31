@@ -19,7 +19,7 @@ import (
 // TestVectorIndexInterfaceHNSW verifies HNSWIndex implements VectorIndex.
 func TestVectorIndexInterfaceHNSW(t *testing.T) {
 	ds := &Dataset{Name: "test"}
-	hnsw := NewHNSWIndex(ds)
+	hnsw := NewTestHNSWIndex(ds)
 
 	// Should implement VectorIndex interface
 	var _ VectorIndex = hnsw
@@ -52,10 +52,10 @@ func TestDatasetIsSharded(t *testing.T) {
 	ds := &Dataset{
 		Name: "test",
 	}
-	ds.Index = NewHNSWIndex(ds)
+	ds.Index = NewTestHNSWIndex(ds)
 
 	// Verify references
-	if ds.Index.(*HNSWIndex).dataset != ds {
+	if ds.Index.(*ArrowHNSW).dataset != ds {
 		t.Error("Index dataset reference incorrect")
 	}
 
@@ -75,15 +75,15 @@ func TestDatasetIsSharded(t *testing.T) {
 func TestDatasetIndexLen(t *testing.T) {
 	ds := &Dataset{
 		Name:  "test",
-		Index: NewHNSWIndex(nil),
+		Index: NewTestHNSWIndex(nil),
 	}
-	ds.Index.(*HNSWIndex).dataset = ds
+	ds.Index.(*ArrowHNSW).dataset = ds
 
 	if ds.IndexLen() != 0 {
 		t.Errorf("expected 0, got %d", ds.IndexLen())
 	}
 	// Check that dataset reference is updated
-	if ds.Index.(*HNSWIndex).dataset != ds {
+	if ds.Index.(*ArrowHNSW).dataset != ds {
 		t.Error("dataset reference not updated in HNSW index")
 	}
 }
@@ -92,7 +92,7 @@ func TestDatasetIndexLen(t *testing.T) {
 func TestDatasetGetVectorIndex(t *testing.T) {
 	ds := &Dataset{
 		Name:  "test",
-		Index: NewHNSWIndex(nil),
+		Index: NewTestHNSWIndex(nil),
 	}
 
 	idx := ds.GetVectorIndex()
@@ -210,10 +210,10 @@ func TestDoPutAutoShardingIntegration(t *testing.T) {
 	// Create dataset manually without expensive indexing
 	ds := &Dataset{
 		Name:  "test",
-		Index: NewHNSWIndex(nil),
+		Index: NewTestHNSWIndex(nil),
 	}
-	ds.Index.(*HNSWIndex).dataset = ds
-	ds.Index.(*HNSWIndex).dataset = ds
+	ds.Index.(*ArrowHNSW).dataset = ds
+	ds.Index.(*ArrowHNSW).dataset = ds
 	vs.updateDatasets(func(m map[string]*Dataset) {
 		m["test"] = ds
 	})
@@ -244,10 +244,10 @@ func TestDoPutConcurrentMigration(t *testing.T) {
 	// Create dataset with index
 	ds := &Dataset{
 		Name:  "concurrent",
-		Index: NewHNSWIndex(nil),
+		Index: NewTestHNSWIndex(nil),
 	}
-	ds.Index.(*HNSWIndex).dataset = ds
-	ds.Index.(*HNSWIndex).dataset = ds
+	ds.Index.(*ArrowHNSW).dataset = ds
+	ds.Index.(*ArrowHNSW).dataset = ds
 	vs.updateDatasets(func(m map[string]*Dataset) {
 		m["concurrent"] = ds
 	})
@@ -287,9 +287,9 @@ func BenchmarkAddToIndexHNSW(b *testing.B) {
 	ds := &Dataset{
 		Name:    "bench",
 		Records: []arrow.RecordBatch{rec},
-		Index:   NewHNSWIndex(nil),
+		Index:   NewTestHNSWIndex(nil),
 	}
-	ds.Index.(*HNSWIndex).dataset = ds
+	ds.Index.(*ArrowHNSW).dataset = ds
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

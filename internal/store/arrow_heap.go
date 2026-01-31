@@ -1,10 +1,7 @@
 package store
 
 // Candidate represents a search candidate with its ID and distance.
-type Candidate struct {
-	ID   uint32
-	Dist float32
-}
+// Uses type Candidate from group aliases.
 
 // FixedHeap is a fixed-capacity min-heap for managing search candidates.
 // It avoids allocations by using a pre-allocated array.

@@ -25,7 +25,7 @@ func TestHNSW_ScratchPoolBasic(t *testing.T) {
 	ds := &Dataset{
 		Records: []arrow.RecordBatch{rec},
 	}
-	idx := NewHNSWIndex(ds)
+	idx := NewTestHNSWIndex(ds)
 
 	// Add vectors
 	for i := 0; i < 3; i++ {
@@ -68,7 +68,7 @@ func TestHNSW_ScratchPoolConcurrent(t *testing.T) {
 	ds := &Dataset{
 		Records: []arrow.RecordBatch{rec},
 	}
-	idx := NewHNSWIndex(ds)
+	idx := NewTestHNSWIndex(ds)
 
 	for i := 0; i < numVectors; i++ {
 		_, err := idx.AddByLocation(context.Background(), 0, i)
@@ -126,7 +126,7 @@ func TestHNSW_ScratchPoolDifferentDimensions(t *testing.T) {
 			ds := &Dataset{
 				Records: []arrow.RecordBatch{rec},
 			}
-			idx := NewHNSWIndex(ds)
+			idx := NewTestHNSWIndex(ds)
 
 			for i := 0; i < 5; i++ {
 				_, err := idx.AddByLocation(context.Background(), 0, i)
@@ -161,7 +161,7 @@ func BenchmarkHNSW_ScratchPoolAllocs(b *testing.B) {
 	ds := &Dataset{
 		Records: []arrow.RecordBatch{rec},
 	}
-	idx := NewHNSWIndex(ds)
+	idx := NewTestHNSWIndex(ds)
 
 	for i := 0; i < numVectors; i++ {
 		_, _ = idx.AddByLocation(context.Background(), 0, i)
@@ -197,7 +197,7 @@ func BenchmarkHNSW_ScratchPoolAllocsParallel(b *testing.B) {
 	ds := &Dataset{
 		Records: []arrow.RecordBatch{rec},
 	}
-	idx := NewHNSWIndex(ds)
+	idx := NewTestHNSWIndex(ds)
 
 	for i := 0; i < numVectors; i++ {
 		_, _ = idx.AddByLocation(context.Background(), 0, i)

@@ -1,8 +1,6 @@
 package store
 
-import "github.com/23skdu/longbow/internal/store/types"
-
-const ChunkSize = types.ChunkSize
+// ChunkSize is provided by type_aliases.go
 
 func chunkID(id uint32) int {
 	return int(id / uint32(ChunkSize))

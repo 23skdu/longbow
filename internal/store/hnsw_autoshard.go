@@ -8,6 +8,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"io"
+
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/pq"
 	"github.com/23skdu/longbow/internal/query"
@@ -63,16 +65,9 @@ func NewAutoShardingIndex(ds *Dataset, config AutoShardingConfig) *AutoShardingI
 	}
 
 	var idx VectorIndex
-	switch {
-	case config.IndexConfig != nil:
+	if config.IndexConfig != nil {
 		idx = NewArrowHNSW(ds, config.IndexConfig)
-	case ds.UseHNSW2():
-		// Use HNSW2 default config if enabled
-		hnswConfig := DefaultArrowHNSWConfig()
-		hnswConfig.Metric = ds.Metric
-		hnswConfig.Logger = ds.Logger
-		idx = NewArrowHNSW(ds, &hnswConfig)
-	default:
+	} else {
 		// Use ArrowHNSW as default for better performance (parallelism, batching)
 		hnswConfig := DefaultArrowHNSWConfig()
 		hnswConfig.Metric = ds.Metric
@@ -93,13 +88,8 @@ func (a *AutoShardingIndex) SetInitialDimension(dim int) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	switch h := a.current.(type) {
-	case *HNSWIndex:
-		h.dimsOnce.Do(func() {
-			h.dims = dim
-		})
-	case *ArrowHNSW:
-		h.SetDimension(dim)
+	if h, ok := a.current.(*ArrowHNSW); ok {
+		h.SetDimension(int(dim))
 	}
 }
 
@@ -200,12 +190,6 @@ func (a *AutoShardingIndex) checkShardThreshold() {
 	a.mu.RUnlock()
 
 	if currentLen >= threshold {
-		// Only trigger migration if not already sharded and not already migrating
-		// AND if the current index is of a type that supports migration (HNSWIndex only for now)
-		if _, ok := a.current.(*HNSWIndex); !ok {
-			return
-		}
-
 		if !a.sharded && a.migrating.CompareAndSwap(false, true) {
 			go a.migrateToSharded()
 		}
@@ -232,20 +216,11 @@ func (a *AutoShardingIndex) migrateToSharded() {
 	}
 
 	// Starting migration
-
-	// Verify we have a basic HNSWIndex
-	oldIndex, ok := a.current.(*HNSWIndex)
-	if !ok {
-		// Should not happen unless initialized incorrectly or wrapped recursively
-		// Silent failure
-		a.mu.Unlock()
-		a.dataset.dataMu.RUnlock()
-		return
-	}
+	oldIndex := a.current
 
 	// Create new ShardedHNSW config
 	shardedConfig := DefaultShardedHNSWConfig()
-	shardedConfig.Metric = oldIndex.Metric
+	shardedConfig.Metric = a.dataset.Metric
 	shardedConfig.Dimension = oldIndex.GetDimension()
 	if a.config.ShardCount > 0 {
 		shardedConfig.NumShards = a.config.ShardCount
@@ -303,7 +278,7 @@ func (a *AutoShardingIndex) migrateToSharded() {
 			vid := VectorID(id)
 			locAny, ok := oldIdx.GetLocation(uint32(vid))
 			if ok {
-				if loc, ok := locAny.(Location); ok && loc.BatchIdx < len(a.dataset.Records) {
+				if loc, ok := locAny.(Location); ok && loc.BatchIdx >= 0 && loc.BatchIdx < len(a.dataset.Records) {
 					rec := a.dataset.Records[loc.BatchIdx]
 					rec.Retain()
 					items = append(items, item{rec: rec, loc: loc, id: vid})
@@ -441,6 +416,12 @@ func (a *AutoShardingIndex) mergeSearchResults(res1, res2 []SearchResult, k int)
 		return combined[:k]
 	}
 	return combined
+}
+
+func (a *AutoShardingIndex) IsSharded() bool {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.sharded
 }
 
 // Len implements VectorIndex.
@@ -588,4 +569,63 @@ func (a *AutoShardingIndex) Size() int {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return a.current.Size()
+}
+
+// ExportState implements VectorIndex.
+func (a *AutoShardingIndex) ExportState() ([]byte, error) {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.current.ExportState()
+}
+
+// ImportState implements VectorIndex.
+func (a *AutoShardingIndex) ImportState(data []byte) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.current.ImportState(data)
+}
+
+// ExportGraph implements VectorIndex.
+func (a *AutoShardingIndex) ExportGraph(w io.Writer) error {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.current.ExportGraph(w)
+}
+
+// ImportGraph implements VectorIndex.
+func (a *AutoShardingIndex) ImportGraph(r io.Reader) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.current.ImportGraph(r)
+}
+
+// ExportDelta implements VectorIndex.
+func (a *AutoShardingIndex) ExportDelta(fromVersion uint64) (*types.DeltaSync, error) {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.current.ExportDelta(fromVersion)
+}
+
+// ApplyDelta implements VectorIndex.
+func (a *AutoShardingIndex) ApplyDelta(delta *types.DeltaSync) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.current.ApplyDelta(delta)
+}
+
+// GetParallelSearchConfig implements VectorIndex.
+func (a *AutoShardingIndex) GetParallelSearchConfig() types.ParallelSearchConfig {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.current.GetParallelSearchConfig()
+}
+
+// SetParallelSearchConfig updates the parallel search configuration
+func (a *AutoShardingIndex) SetParallelSearchConfig(cfg types.ParallelSearchConfig) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.current.SetParallelSearchConfig(cfg)
+	if a.interimIndex != nil {
+		a.interimIndex.SetParallelSearchConfig(cfg)
+	}
 }

@@ -2,6 +2,7 @@ package types
 
 import (
 	"context"
+	"io"
 
 	"github.com/23skdu/longbow/internal/pq"
 	"github.com/23skdu/longbow/internal/query"
@@ -17,6 +18,7 @@ type VectorIndexer interface {
 	Search(ctx context.Context, query any, k int, filter any) ([]Candidate, error)
 	SearchVectors(ctx context.Context, q any, k int, filters []query.Filter, options any) ([]SearchResult, error)
 	SearchVectorsWithBitmap(ctx context.Context, q any, k int, filter *roaring.Bitmap, options any) ([]SearchResult, error)
+	IsSharded() bool
 
 	// Metadata operations
 	Size() int
@@ -45,6 +47,18 @@ type VectorIndexer interface {
 	// Batch operations
 	AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowIdxs, batchIdxs []int) ([]uint32, error)
 	DeleteBatch(ctx context.Context, ids []uint32) error
+
+	// Sync/Serialization operations
+	ExportState() ([]byte, error)
+	ImportState(data []byte) error
+	ExportGraph(w io.Writer) error
+	ImportGraph(r io.Reader) error
+	ExportDelta(fromVersion uint64) (*DeltaSync, error)
+	ApplyDelta(delta *DeltaSync) error
+
+	// Parallel Search
+	SetParallelSearchConfig(cfg ParallelSearchConfig)
+	GetParallelSearchConfig() ParallelSearchConfig
 }
 
 // GraphDataInterface defines the interface for graph data operations

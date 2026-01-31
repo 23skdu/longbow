@@ -92,16 +92,9 @@ type IndexConfig struct {
 	Dimension int
 
 	// Type-specific configurations
-	HNSWConfig    *HNSWIndexConfig
+	HNSWConfig    *ArrowHNSWConfig
 	IVFFlatConfig *IVFFlatConfig
 	DiskANNConfig *DiskANNConfig
-}
-
-// HNSWIndexConfig holds HNSW-specific configuration
-type HNSWIndexConfig struct {
-	M              int
-	EfConstruction int
-	EfSearch       int
 }
 
 // IVFFlatConfig holds IVF-Flat-specific configuration

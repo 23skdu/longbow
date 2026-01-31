@@ -48,7 +48,7 @@ func TestBM25AutoIndexingDuringDoPut(t *testing.T) {
 	}, 2*time.Second, 100*time.Millisecond, "BM25 index should eventually exist")
 
 	assert.Eventually(t, func() bool {
-		results := bm25.SearchBM25("fox", 10)
+		results := bm25.SearchBM25("fox", 10, nil)
 		return len(results) > 0
 	}, 2*time.Second, 100*time.Millisecond, "BM25 search should return results for indexed term 'fox'")
 }
@@ -85,11 +85,11 @@ func TestBM25AutoIndexingMultipleBatches(t *testing.T) {
 	}, 2*time.Second, 100*time.Millisecond)
 
 	assert.Eventually(t, func() bool {
-		return len(bm25.SearchBM25("alpha", 10)) > 0
+		return len(bm25.SearchBM25("alpha", 10, nil)) > 0
 	}, 2*time.Second, 100*time.Millisecond, "First batch term should be searchable")
 
 	assert.Eventually(t, func() bool {
-		return len(bm25.SearchBM25("delta", 10)) > 0
+		return len(bm25.SearchBM25("delta", 10, nil)) > 0
 	}, 2*time.Second, 100*time.Millisecond, "Second batch term should be searchable")
 }
 
@@ -145,11 +145,11 @@ func TestBM25MultipleTextColumns(t *testing.T) {
 	}, 2*time.Second, 100*time.Millisecond)
 
 	assert.Eventually(t, func() bool {
-		return len(bm25.SearchBM25("uniquetitleterm", 10)) > 0
+		return len(bm25.SearchBM25("uniquetitleterm", 10, nil)) > 0
 	}, 2*time.Second, 100*time.Millisecond, "Title column should be indexed")
 
 	assert.Eventually(t, func() bool {
-		return len(bm25.SearchBM25("uniquebodyterm", 10)) > 0
+		return len(bm25.SearchBM25("uniquebodyterm", 10, nil)) > 0
 	}, 2*time.Second, 100*time.Millisecond, "Body column should be indexed")
 }
 

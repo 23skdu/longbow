@@ -5,6 +5,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
@@ -40,7 +41,7 @@ func BenchmarkParallelSearch(b *testing.B) {
 		Records: make([]arrow.RecordBatch, 0),
 		dataMu:  sync.RWMutex{},
 	}
-	ds.Index = NewHNSWIndex(ds)
+	ds.Index = NewTestHNSWIndex(ds)
 	vs.datasets.Store(&map[string]*Dataset{"bench_parallel": ds})
 
 	// Insert data
@@ -71,7 +72,7 @@ func BenchmarkParallelSearch(b *testing.B) {
 
 	query := vectors[0] // Use first vector as query
 
-	hnswIdx, ok := ds.Index.(*HNSWIndex)
+	hnswIdx, ok := ds.Index.(*ArrowHNSW)
 	if !ok {
 		b.Fatalf("Index is not HNSWIndex")
 	}
@@ -79,7 +80,7 @@ func BenchmarkParallelSearch(b *testing.B) {
 	b.ResetTimer()
 
 	b.Run("Serial", func(b *testing.B) {
-		hnswIdx.SetParallelSearchConfig(ParallelSearchConfig{
+		hnswIdx.SetParallelSearchConfig(types.ParallelSearchConfig{
 			Enabled: false,
 		})
 		b.ResetTimer()
@@ -90,7 +91,7 @@ func BenchmarkParallelSearch(b *testing.B) {
 	})
 
 	b.Run("Parallel-2Workers", func(b *testing.B) {
-		hnswIdx.SetParallelSearchConfig(ParallelSearchConfig{
+		hnswIdx.SetParallelSearchConfig(types.ParallelSearchConfig{
 			Enabled:   true,
 			Workers:   2,
 			Threshold: 1, // Force parallel
@@ -102,7 +103,7 @@ func BenchmarkParallelSearch(b *testing.B) {
 	})
 
 	b.Run("Parallel-4Workers", func(b *testing.B) {
-		hnswIdx.SetParallelSearchConfig(ParallelSearchConfig{
+		hnswIdx.SetParallelSearchConfig(types.ParallelSearchConfig{
 			Enabled:   true,
 			Workers:   4,
 			Threshold: 1, // Force parallel
@@ -114,7 +115,7 @@ func BenchmarkParallelSearch(b *testing.B) {
 	})
 
 	b.Run("Parallel-8Workers", func(b *testing.B) {
-		hnswIdx.SetParallelSearchConfig(ParallelSearchConfig{
+		hnswIdx.SetParallelSearchConfig(types.ParallelSearchConfig{
 			Enabled:   true,
 			Workers:   8,
 			Threshold: 1, // Force parallel

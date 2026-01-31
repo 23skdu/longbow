@@ -11,23 +11,26 @@ import (
 
 // InitGPU attempts to initialize GPU acceleration for this index
 //
+// InitGPU attempts to initialize GPU acceleration for this index
+//
 //nolint:gocritic // Logger passed by value for simplicity
-func (h *HNSWIndex) InitGPU(deviceID int, logger zerolog.Logger) error {
-	h.mu.Lock()
-	defer h.mu.Unlock()
+func (h *ArrowHNSW) InitGPU(deviceID int, logger zerolog.Logger) error {
+	h.gpuMu.Lock()
+	defer h.gpuMu.Unlock()
 
 	if h.gpuEnabled {
 		return fmt.Errorf("GPU already initialized")
 	}
 
-	// Get dimensions from dataset
-	if h.dims == 0 {
+	// Get dimensions from ArrowHNSW
+	dims := int(h.GetDimension())
+	if dims == 0 {
 		return fmt.Errorf("cannot initialize GPU: index dimensions not set")
 	}
 
 	cfg := gpu.GPUConfig{
 		DeviceID:  deviceID,
-		Dimension: h.dims,
+		Dimension: dims,
 	}
 
 	idx, err := gpu.NewIndexWithConfig(cfg)
@@ -48,7 +51,7 @@ func (h *HNSWIndex) InitGPU(deviceID int, logger zerolog.Logger) error {
 	if logger.GetLevel() != zerolog.Disabled {
 		logger.Info().
 			Int("device", deviceID).
-			Int("dimensions", h.dims).
+			Int("dimensions", dims).
 			Msg("GPU acceleration enabled")
 	}
 
@@ -57,7 +60,7 @@ func (h *HNSWIndex) InitGPU(deviceID int, logger zerolog.Logger) error {
 
 // SyncGPU adds vectors to the GPU index
 // Should be called after adding vectors to the CPU index
-func (h *HNSWIndex) SyncGPU(ids []int64, vectors []float32) error {
+func (h *ArrowHNSW) SyncGPU(ids []int64, vectors []float32) error {
 	if !h.gpuEnabled || h.gpuIndex == nil {
 		return nil // GPU not enabled, skip
 	}
@@ -67,10 +70,10 @@ func (h *HNSWIndex) SyncGPU(ids []int64, vectors []float32) error {
 
 // SearchHybrid performs GPU+CPU hybrid search
 // Uses GPU for candidate generation, then refines with CPU HNSW graph
-func (h *HNSWIndex) SearchHybrid(ctx context.Context, query []float32, k int) ([]SearchResult, error) {
+func (h *ArrowHNSW) SearchHybrid(ctx context.Context, query []float32, k int) ([]SearchResult, error) {
 	// If GPU not enabled or failed, use pure CPU
 	if !h.gpuEnabled || h.gpuIndex == nil {
-		// Use SearchByVector which returns []SearchResult
+		// Use SearchVectors which returns []SearchResult
 		res, err := h.SearchVectors(ctx, query, k, nil, any(nil))
 		if err != nil {
 			return nil, err
@@ -102,13 +105,11 @@ func (h *HNSWIndex) SearchHybrid(ctx context.Context, query []float32, k int) ([
 		vecID := VectorID(candidateIDs[i])
 
 		// Verify this is a valid vector
-		h.mu.RLock()
-		loc, ok := h.locationStore.Get(vecID)
+		locAny, ok := h.GetLocation(uint32(vecID))
 		if !ok {
-			h.mu.RUnlock()
 			continue
 		}
-		h.mu.RUnlock()
+		loc, _ := locAny.(Location)
 
 		// Skip tombstoned vectors
 		if loc.BatchIdx == -1 {
@@ -125,9 +126,9 @@ func (h *HNSWIndex) SearchHybrid(ctx context.Context, query []float32, k int) ([
 }
 
 // CloseGPU releases GPU resources
-func (h *HNSWIndex) CloseGPU() error {
-	h.mu.Lock()
-	defer h.mu.Unlock()
+func (h *ArrowHNSW) CloseGPU() error {
+	h.gpuMu.Lock()
+	defer h.gpuMu.Unlock()
 
 	if h.gpuIndex != nil {
 		err := h.gpuIndex.Close()
@@ -140,8 +141,8 @@ func (h *HNSWIndex) CloseGPU() error {
 }
 
 // IsGPUEnabled returns whether GPU acceleration is active
-func (h *HNSWIndex) IsGPUEnabled() bool {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
+func (h *ArrowHNSW) IsGPUEnabled() bool {
+	h.gpuMu.RLock()
+	defer h.gpuMu.RUnlock()
 	return h.gpuEnabled
 }

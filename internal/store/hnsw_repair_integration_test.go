@@ -16,7 +16,7 @@ func TestRepairIntegration_DeleteAndRepair(t *testing.T) {
 
 	// Create ArrowHNSW
 	// We need a dataset but tests often pass nil if NewArrowHNSW allows it for testing, or we construct minimal one.
-	// Constructor: NewArrowHNSW(ds *Dataset, cfg ArrowHNSWConfig) *HNSWIndex
+	// Constructor: NewArrowHNSW(ds *Dataset, cfg ArrowHNSWConfig) *ArrowHNSW
 	ds := &Dataset{}
 	idx := NewArrowHNSW(ds, &config)
 

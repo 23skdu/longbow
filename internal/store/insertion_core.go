@@ -196,16 +196,17 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 	// Phase 2: Search and link from level down to 0
 	// We start from min(level, max(0, maxL)) to ensure we link even if graph was empty.
 	// Actually, if graph was empty, we just skip search and set entry point.
-	startL := level
-	if maxL >= 0 {
-		startL = min(level, maxL)
-	} else {
+	// Phase 2: Search and link from level down to 0
+	// We start from min(level, max(0, maxL)) to ensure we link even if graph was empty.
+	// Actually, if graph was empty, we just skip search and set entry point.
+	if maxL < 0 {
 		// First node ever
 		h.maxLevel.Store(int32(level))
 		h.entryPoint.Store(id)
 		h.nodeCount.Add(1)
 		return nil // No one to link to
 	}
+	startL := min(level, maxL)
 
 	for l := startL; l >= 0; l-- {
 		ef := int(h.config.EfConstruction)
@@ -256,11 +257,4 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 	h.nodeCount.Add(1)
 
 	return nil
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }

@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/23skdu/longbow/internal/simd"
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -372,13 +373,12 @@ func (gn *GraphNavigator) calculateDistance(node1, node2 uint32) float32 {
 		return math.MaxFloat32
 	}
 
-	var sum float32
-	for i := 0; i < len(v1); i++ {
-		diff := v1[i] - v2[i]
-		sum += diff * diff
+	// Use SIMD optimization
+	dist, err := simd.DistFunc(v1, v2)
+	if err != nil {
+		return math.MaxFloat32
 	}
-
-	return float32(math.Sqrt(float64(sum)))
+	return dist
 }
 
 func (gn *GraphNavigator) GetMetrics() *NavigatorMetrics {

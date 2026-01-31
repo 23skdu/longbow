@@ -111,8 +111,13 @@ func (pa *PackedAdjacency) EnsureCapacity(nodeID uint32) {
 }
 
 func (pa *PackedAdjacency) SetNeighbors(id uint32, neighbors []uint32) error {
-	// 1. Alloc neighbor list
-	ref, err := pa.neighborArena.AllocSlice(len(neighbors))
+	if len(neighbors) == 0 {
+		// Store empty reference (offset 0, length 0)
+		return pa.updatePage(id, PackRef(0, 0))
+	}
+
+	// 1. Alloc neighbor list (Aligned to 64 bytes)
+	ref, err := pa.neighborArena.AllocSliceAligned(len(neighbors), 64)
 	if err != nil {
 		return err
 	}
@@ -133,9 +138,14 @@ func (pa *PackedAdjacency) SetNeighborsF16(id uint32, neighbors []uint32, distan
 		return errors.New("packed adjacency: neighbors and distances length mismatch")
 	}
 
+	if len(neighbors) == 0 {
+		return pa.updatePage(id, PackRef(0, 0))
+	}
+
 	// Alloc a block of size len*4 + len*2
 	totalBytes := len(neighbors)*4 + len(distances)*2
-	offset, err := pa.baseArena.Alloc(totalBytes)
+	// Align to 64 bytes for SIMD operations
+	offset, err := pa.baseArena.AllocAligned(totalBytes, 64)
 	if err != nil {
 		return err
 	}

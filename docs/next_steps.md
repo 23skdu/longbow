@@ -68,9 +68,9 @@ This document outlines the remaining tasks for Longbow development.
    - [x] Concurrent-safe graph traversal operations
 
 3. **Distance Optimizations**
-   - SIMD-optimized graph distance calculations
-   - Early termination strategies for sparse graphs
-   - Memory-aligned graph adjacency operations
+   - [x] SIMD-optimized graph distance calculations
+   - [x] Early termination strategies for sparse graphs
+   - [x] Memory-aligned graph adjacency operations
 
 ### Phase 3: Advanced Features (Weeks 9-12)
 

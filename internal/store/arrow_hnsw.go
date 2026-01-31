@@ -1,14 +1,20 @@
 package store
 
 import (
+	"bytes"
 	"container/heap"
 	"context"
+	"encoding/gob"
 	"fmt"
+	"io"
 	"math"
+	"math/rand"
 	"sort"
 	"sync"
 	"sync/atomic"
+	"unsafe"
 
+	"github.com/23skdu/longbow/internal/core"
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/pq"
 	"github.com/23skdu/longbow/internal/query"
@@ -54,6 +60,8 @@ type ArrowHNSWConfig struct {
 	Dims                    int
 	SelectionHeuristicLimit int
 
+	ParallelSearch types.ParallelSearchConfig
+
 	AdaptiveMEnabled   bool
 	AdaptiveMThreshold int
 
@@ -65,21 +73,23 @@ type ArrowHNSWConfig struct {
 // DefaultArrowHNSWConfig returns a configuration with sensible defaults
 func DefaultArrowHNSWConfig() ArrowHNSWConfig {
 	return ArrowHNSWConfig{
-		M:                   32,
-		MMax:                64,
-		MMax0:               64,
-		EfConstruction:      400,
-		EfSearch:            50,
-		AdaptiveEf:          false,
-		AdaptiveEfMin:       50,
-		AdaptiveEfThreshold: 0,
-		InitialCapacity:     10000,
-		Workers:             4,
-		Quantization:        false,
-		SQ8Enabled:          false,
-		UseDisk:             false,
-		DiskPath:            "./data",
-		DataType:            types.VectorTypeFloat32,
+		M:                       32,
+		MMax:                    64,
+		MMax0:                   64,
+		EfConstruction:          400,
+		EfSearch:                50,
+		AdaptiveEf:              false,
+		AdaptiveEfMin:           50,
+		AdaptiveEfThreshold:     0,
+		InitialCapacity:         10000,
+		Workers:                 4,
+		Quantization:            false,
+		SQ8Enabled:              false,
+		UseDisk:                 false,
+		DiskPath:                "./data",
+		DataType:                types.VectorTypeFloat32,
+		SQ8TrainingThreshold:    5000,
+		SelectionHeuristicLimit: 400,
 	}
 }
 
@@ -135,11 +145,14 @@ type ArrowHNSW struct {
 
 	repairAgent *RepairAgent
 
+	parallelConfig types.ParallelSearchConfig
+
 	metricNodeCount prometheus.Gauge
 	metricBQVectors prometheus.Gauge
 	metricLockWait  *prometheus.HistogramVec
 
 	sq8TrainingBuffer [][]float32
+	levelMultiplier   float64
 }
 
 // GetVector retrieves the vector for the given ID.
@@ -158,15 +171,19 @@ func (h *ArrowHNSW) getVectorAny(id uint32) (any, error) {
 // NewArrowHNSW creates a new ArrowHNSW index with the given configuration
 func NewArrowHNSW(dataset *Dataset, config *ArrowHNSWConfig) *ArrowHNSW {
 	h := &ArrowHNSW{
-		config:        *config,
-		dataset:       dataset,
-		m:             config.M,
-		mMax:          config.MMax,
-		mMax0:         config.MMax0,
-		shardedLocks:  NewAlignedShardedMutex(AlignedShardedMutexConfig{NumShards: 64}),
-		searchPool:    NewArrowSearchContextPool(),
-		locationStore: NewChunkedLocationStore(),
-		deleted:       roaring.New(),
+		config:          *config,
+		dataset:         dataset,
+		m:               config.M,
+		mMax:            config.MMax,
+		mMax0:           config.MMax0,
+		shardedLocks:    NewAlignedShardedMutex(AlignedShardedMutexConfig{NumShards: 64}),
+		searchPool:      NewArrowSearchContextPool(),
+		locationStore:   NewChunkedLocationStore(),
+		deleted:         roaring.New(),
+		levelMultiplier: 1.0 / math.Log(float64(config.M)),
+	}
+	if dataset != nil {
+		dataset.Index = h
 	}
 
 	// Initialize distance function
@@ -175,6 +192,7 @@ func NewArrowHNSW(dataset *Dataset, config *ArrowHNSWConfig) *ArrowHNSW {
 
 	// Initialize atomic values
 	h.efConstruction.Store(config.EfConstruction)
+	h.maxLevel.Store(-1)
 	h.dims.Store(int32(config.Dims))
 
 	// Initialize quantization if enabled
@@ -263,6 +281,10 @@ func (h *ArrowHNSW) SetData(data *types.GraphData) {
 // GetData returns the current graph data
 func (h *ArrowHNSW) GetData() *types.GraphData {
 	return h.data.Load()
+}
+
+func (h *ArrowHNSW) IsSharded() bool {
+	return false
 }
 
 // GetConfig returns the current configuration
@@ -428,7 +450,7 @@ func (h *ArrowHNSW) DeleteBatch(ctx context.Context, ids []uint32) error {
 
 // Interface implementation: AddByLocation adds a vector by its location
 func (h *ArrowHNSW) AddByLocation(ctx context.Context, batchIdx, rowIdx int) (uint32, error) {
-	id := uint32(h.nodeCount.Add(1) - 1)
+	id := uint32(h.nodeCount.Load())
 
 	var vec any
 	if h.dataset != nil && batchIdx < len(h.dataset.Records) {
@@ -446,7 +468,9 @@ func (h *ArrowHNSW) AddByLocation(ctx context.Context, batchIdx, rowIdx int) (ui
 		}
 	}
 
-	err := h.InsertWithVector(id, vec, 0)
+	h.SetLocation(VectorID(id), Location{BatchIdx: batchIdx, RowIdx: rowIdx})
+
+	err := h.InsertWithVector(id, vec, h.generateLevel())
 	if err != nil {
 		return 0, err
 	}
@@ -456,7 +480,7 @@ func (h *ArrowHNSW) AddByLocation(ctx context.Context, batchIdx, rowIdx int) (ui
 
 // AddByRecord implements VectorIndex.
 func (h *ArrowHNSW) AddByRecord(ctx context.Context, rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32, error) {
-	id := uint32(h.nodeCount.Add(1) - 1)
+	id := uint32(h.nodeCount.Load())
 
 	var vec any
 	// Find vector column
@@ -471,11 +495,12 @@ func (h *ArrowHNSW) AddByRecord(ctx context.Context, rec arrow.RecordBatch, rowI
 		vec = h.extractVector(rec, vecColIdx, rowIdx)
 	}
 
-	err := h.InsertWithVector(id, vec, 0)
+	h.SetLocation(VectorID(id), Location{BatchIdx: batchIdx, RowIdx: rowIdx})
+
+	err := h.InsertWithVector(id, vec, h.generateLevel())
 	if err != nil {
 		return 0, err
 	}
-	h.SetLocation(VectorID(id), Location{BatchIdx: batchIdx, RowIdx: rowIdx})
 
 	return id, nil
 }
@@ -528,7 +553,9 @@ func (h *ArrowHNSW) extractVector(rec arrow.RecordBatch, colIdx, rowIdx int) any
 	if list, ok := col.(*arrowarray.FixedSizeList); ok {
 		values := list.ListValues()
 		size := int64(list.DataType().(*arrow.FixedSizeListType).Len())
-		offset := int64(rowIdx) * size
+		// Account for list array offset
+		listOffset := int64(list.Data().Offset())
+		offset := (listOffset + int64(rowIdx)) * size
 		return extractValues(values, offset, offset+size)
 	}
 
@@ -623,20 +650,46 @@ func (h MaxCandidateHeapAdapter) Push(x any) {
 }
 
 func (h MaxCandidateHeapAdapter) Pop() any {
-	// Call existing Pop which removes last element
-	c, _ := h.CandidateHeap.Pop()
-	return c
+	old := *h.CandidateHeap
+	n := len(old)
+	x := old[n-1]
+	*h.CandidateHeap = old[0 : n-1]
+	return x
+}
+
+func (h *ArrowHNSW) ensureReady() {
+	if h.searchPool == nil {
+		h.initMu.Lock()
+		if h.searchPool == nil {
+			h.searchPool = NewArrowSearchContextPool()
+		}
+		if h.deleted == nil {
+			h.deleted = roaring.New()
+		}
+		if h.locationStore == nil {
+			h.locationStore = NewChunkedLocationStore()
+		}
+		if h.shardedLocks == nil {
+			h.shardedLocks = NewAlignedShardedMutex(AlignedShardedMutexConfig{NumShards: 64})
+		}
+		h.initMu.Unlock()
+	}
 }
 
 func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k int, filter *roaring.Bitmap, options any) ([]SearchResult, error) {
+	h.ensureReady()
 	if h.nodeCount.Load() == 0 {
 		return nil, nil
 	}
 
-	metrics.HNSWSearchPoolGetTotal.Inc()
+	if metrics.HNSWSearchPoolGetTotal != nil {
+		metrics.HNSWSearchPoolGetTotal.Inc()
+	}
 	searchCtx := h.searchPool.Get()
 	defer func() {
-		metrics.HNSWSearchPoolPutTotal.Inc()
+		if metrics.HNSWSearchPoolPutTotal != nil {
+			metrics.HNSWSearchPoolPutTotal.Inc()
+		}
 		h.searchPool.Put(searchCtx)
 	}()
 
@@ -704,7 +757,35 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 				return nil, err
 			}
 			dist = d
-		// Add other types as needed (Complex, Int8)
+		case []int8, []uint8:
+			var v8 []uint8
+			if vi8, ok := v.([]int8); ok {
+				v8 = *(*[]uint8)(unsafe.Pointer(&vi8))
+			} else {
+				v8 = v.([]uint8)
+			}
+
+			if h.quantizer != nil && h.sq8Ready.Load() {
+				minV, maxV := h.quantizer.Params()
+				scale := (maxV - minV) / 255.0
+				var sum float32
+				for i, val := range q {
+					// De-quantize: min + level * scale
+					deq := minV + float32(v8[i])*scale
+					diff := val - deq
+					sum += diff * diff
+				}
+				dist = float32(math.Sqrt(float64(sum)))
+			} else {
+				// Fallback
+				var sum float32
+				for i, val := range q {
+					diff := val - float32(v8[i])
+					sum += diff * diff
+				}
+				dist = float32(math.Sqrt(float64(sum)))
+			}
+		// Add other types as needed (Complex)
 		default:
 			return nil, fmt.Errorf("unsupported vector type %T for distance calculation", vec)
 		}
@@ -727,43 +808,70 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 		}
 	}
 
-	// 2. Search at layer 0
+	// 2. Search at layer 0 with adaptive retry
 	efSearch := int(h.config.EfSearch)
+	if h.config.SQ8Enabled && efSearch < 100 {
+		// Provide more search buffer by default for SQ8 to compensate for quantization noise
+		efSearch = 100
+	}
+
 	if k > efSearch {
 		efSearch = k
 	}
 
-	res, err := h.searchLayer(ctx, nil, currObj.ID, efSearch, 0, searchCtx, data, queryVec)
-	if err != nil {
-		return nil, err
+	var results []SearchResult
+	var qv []float32
+	var ok bool
+	if qv, ok = queryVec.([]float32); !ok {
+		// Fallback to non-retry path if not float32 (unlikely for this path)
+		res, err := h.searchLayer(ctx, nil, currObj.ID, efSearch, 0, searchCtx, data, queryVec)
+		if err != nil {
+			return nil, err
+		}
+		sort.Slice(res, func(i, j int) bool { return res[i].Dist < res[j].Dist })
+		result := make([]SearchResult, 0, k)
+		for _, c := range res {
+			if filter != nil && !filter.Contains(c.ID) {
+				continue
+			}
+			result = append(result, SearchResult{ID: VectorID(c.ID), Distance: c.Dist, Score: 1.0 / (1.0 + c.Dist)})
+			if len(result) >= k {
+				break
+			}
+		}
+		return result, nil
 	}
 
-	candidates := res
-
-	// Create SearchResults (sorted by distance)
-	// resultSet was a MaxHeap, not sorted.
-	sort.Slice(candidates, func(i, j int) bool {
-		return candidates[i].Dist < candidates[j].Dist
-	})
-
-	result := make([]SearchResult, 0, k)
-	count := 0
-	for _, c := range candidates {
-		if filter != nil && !filter.Contains(c.ID) {
-			continue // Post-filtering
+	maxNodeCount := int(h.nodeCount.Load())
+	for attempt := 0; attempt < 3; attempt++ {
+		res, err := h.searchLayer(ctx, nil, currObj.ID, efSearch, 0, searchCtx, data, queryVec)
+		if err != nil {
+			return nil, err
 		}
-		result = append(result, SearchResult{ID: VectorID(c.ID), Distance: c.Dist, Score: 1.0 / (1.0 + c.Dist)})
-		count++
-		if count >= k {
+
+		typeCandidates := make([]types.Candidate, len(res))
+		for i, c := range res {
+			typeCandidates[i] = types.Candidate{ID: c.ID, Dist: c.Dist}
+		}
+
+		results = processResultsParallelInternal(ctx, h, qv, typeCandidates, k, nil, filter)
+		if len(results) >= k || attempt == 2 || efSearch >= maxNodeCount {
 			break
 		}
+
+		// Expand search search space
+		efSearch *= 5
+		if efSearch > maxNodeCount {
+			efSearch = maxNodeCount
+		}
+		// h.metricSearchRetries.Inc() // Placeholder if metric exists
 	}
 
-	return result, nil
+	return results, nil
 }
 
 func (h *ArrowHNSW) Warmup() int {
-	return 0
+	return int(h.nodeCount.Load())
 }
 
 func (h *ArrowHNSW) GetNeighbors(id uint32) ([]uint32, error) {
@@ -831,13 +939,11 @@ func (h *ArrowHNSW) SetIndexedColumns(columns []string) {
 }
 
 func (h *ArrowHNSW) generateLevel() int {
-	// Implement HNSW level generation
-	// Use simplified logic or random generator
-	// ml := int(math.Floor(-math.Log(rand.Float64()) * h.levelMultiplier))
-	// For now, return 0 (base layer) or simple random to compile.
-	// HNSW requires random level based on M.
-	// Since we are fixing compilation, we can use a stub.
-	return 0
+	l := int(math.Floor(-math.Log(rand.Float64()) * h.levelMultiplier))
+	if l > types.ArrowMaxLayers-1 {
+		l = types.ArrowMaxLayers - 1
+	}
+	return l
 }
 
 // AddBatch implements VectorIndex.
@@ -884,19 +990,34 @@ func (h *ArrowHNSW) SearchVectors(ctx context.Context, queryVec any, k int, filt
 		var err error
 		bitset, err = h.dataset.GenerateFilterBitset(filters)
 		if err != nil {
-			return nil, err // Should likely error if filters invalid
+			return nil, err
 		}
 		if bitset != nil {
 			defer bitset.Release()
 		}
 	}
 
+	var roaringFilter *roaring.Bitmap
+	if bitset != nil {
+		roaringFilter = bitset.AsRoaring()
+	}
+
 	// Returns []SearchResult, error
-	return h.SearchVectorsWithBitmap(ctx, queryVec, k, bitset.AsRoaring(), options)
+	return h.SearchVectorsWithBitmap(ctx, queryVec, k, roaringFilter, options)
 }
 
 func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, _ *ArrowSearchContext, queryVal any, _ bool) any {
 	switch q := queryVal.(type) {
+	case []float32:
+		return &float32Computer{data: data, q: q, dims: len(q), h: h}
+	case []int8, []uint8:
+		var q8 []uint8
+		if qi8, ok := queryVal.([]int8); ok {
+			q8 = *(*[]uint8)(unsafe.Pointer(&qi8))
+		} else {
+			q8 = queryVal.([]uint8)
+		}
+		return &int8Computer{data: data, q: q8, dims: len(q8), h: h}
 	case []float64:
 		return &float64Computer{data: data, q: q, dims: len(q)}
 	case []complex64:
@@ -955,9 +1076,6 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 					if h.distFuncF64 == nil {
 						return math.MaxFloat32, nil
 					}
-					// Convert query once? No, this closure captures q.
-					// Optimally we convert q ONCE outside closure.
-					// But we can just alloc here for correctness first.
 					q64 := make([]float64, len(q))
 					for i, val := range q {
 						q64[i] = float64(val)
@@ -972,52 +1090,36 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 						q16[i] = float16.New(val)
 					}
 					return h.distFuncF16(q16, v)
-				default:
-					return math.MaxFloat32, nil
-				}
-			}
-			// Initial distance to EP
-			epVec, err := data.GetVector(entryPoint)
-			if err != nil {
-				return nil, err
-			}
+				case []int8, []uint8:
+					var v8 []uint8
+					if vi8, ok := v.([]int8); ok {
+						v8 = *(*[]uint8)(unsafe.Pointer(&vi8))
+					} else {
+						v8 = v.([]uint8)
+					}
 
-			switch v := epVec.(type) {
-			case []float32:
-				d, err := h.distFunc(q, v)
-				if err != nil {
-					return nil, err
+					if h.quantizer != nil && h.sq8Ready.Load() {
+						minV, maxV := h.quantizer.Params()
+						scale := (maxV - minV) / 255.0
+						var sum float32
+						for i, val := range q {
+							deq := minV + float32(v8[i])*scale
+							diff := val - deq
+							sum += diff * diff
+						}
+						return float32(math.Sqrt(float64(sum))), nil
+					}
+					// Fallback
+					var sum float32
+					for i, val := range q {
+						diff := val - float32(v8[i])
+						sum += diff * diff
+					}
+					return float32(math.Sqrt(float64(sum))), nil
 				}
-				epDist = d
-			case []float64:
-				if h.distFuncF64 == nil {
-					return nil, fmt.Errorf("no distFuncF64")
-				}
-				q64 := make([]float64, len(q))
-				for i, val := range q {
-					q64[i] = float64(val)
-				}
-				d, err := h.distFuncF64(q64, v)
-				if err != nil {
-					return nil, err
-				}
-				epDist = d
-			case []float16.Num:
-				if h.distFuncF16 == nil {
-					return nil, fmt.Errorf("no distFuncF16")
-				}
-				q16 := make([]float16.Num, len(q))
-				for i, val := range q {
-					q16[i] = float16.New(val)
-				}
-				d, err := h.distFuncF16(q16, v)
-				if err != nil {
-					return nil, err
-				}
-				epDist = d
-			default:
-				epDist = math.MaxFloat32
+				return math.MaxFloat32, nil
 			}
+			epDist, _ = distComputer(entryPoint)
 
 		case []int8:
 			distComputer = func(id uint32) (float32, error) {
@@ -1025,15 +1127,50 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 				if err != nil {
 					return 0, err
 				}
-				if v, ok := vecAny.([]int8); ok {
-					// Simple L2 for Int8
-					if len(q) != len(v) {
-						return math.MaxFloat32, nil
-					}
+				switch vAny := vecAny.(type) {
+				case []float32:
+					// Convert q to float32
+					minV, maxV := h.quantizer.Params()
+					scale := (maxV - minV) / 255.0
 					var sum float32
 					for i, val := range q {
-						diff := float32(val) - float32(v[i])
+						deq := minV + float32(val)*scale
+						diff := deq - vAny[i]
 						sum += diff * diff
+					}
+					return float32(math.Sqrt(float64(sum))), nil
+				case []int8, []uint8:
+					var v8 []uint8
+					if vi8, ok := vAny.([]int8); ok {
+						v8 = *(*[]uint8)(unsafe.Pointer(&vi8))
+					} else {
+						v8 = vAny.([]uint8)
+					}
+
+					var q8 []uint8
+					q8 = *(*[]uint8)(unsafe.Pointer(&q))
+
+					if len(q8) != len(v8) {
+						return math.MaxFloat32, nil
+					}
+
+					var sum float32
+					if h.quantizer != nil && h.sq8Ready.Load() {
+						minV, maxV := h.quantizer.Params()
+						scale := (maxV - minV) / 255.0
+						for i, val := range q8 {
+							// De-quantize: min + level * scale
+							deqQ := minV + float32(val)*scale
+							deqV := minV + float32(v8[i])*scale
+							diff := deqQ - deqV
+							sum += diff * diff
+						}
+					} else {
+						// Fallback
+						for i, val := range q8 {
+							diff := float32(val) - float32(v8[i])
+							sum += diff * diff
+						}
 					}
 					return float32(math.Sqrt(float64(sum))), nil
 				}
@@ -1107,7 +1244,12 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 
 		if len(ctx.resultSet) > 0 {
 			furthest := ctx.resultSet[0]
-			if curr.Dist > furthest.Dist && ctx.resultSet.Len() >= ef {
+			threshold := furthest.Dist
+			if h.config.SQ8Enabled {
+				// Be more lenient for SQ8 during searching as distance might be slightly noisy
+				threshold *= 1.05
+			}
+			if curr.Dist > threshold && ctx.resultSet.Len() >= ef {
 				// Optimization: if closest candidate is worse than worst result, stop
 				break
 			}
@@ -1156,12 +1298,298 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 		}
 	}
 
-	// Return results as slice
-	res := make([]Candidate, len(ctx.resultSet))
-	copy(res, ctx.resultSet)
+	// Return results as sorted slice (ascending distance)
+	// resultSet is a MaxHeap, so popping from it gives largest first.
+	// We populate the result slice from end to beginning.
+	count := len(ctx.resultSet)
+	res := make([]Candidate, count)
+	for i := count - 1; i >= 0; i-- {
+		res[i] = heap.Pop(&resultSetAdapter).(Candidate)
+	}
 	return res, nil
 }
 
 func (h *ArrowHNSW) Len() int {
 	return h.Size()
+}
+
+// ExportState implements VectorIndex.
+func (h *ArrowHNSW) ExportState() ([]byte, error) {
+	h.growMu.RLock()
+	defer h.growMu.RUnlock()
+
+	locs := make([]Location, 0, h.locationStore.Len())
+	h.locationStore.IterateMutable(func(_ VectorID, val *atomic.Uint64) {
+		loc := core.UnpackLocation(val.Load())
+		locs = append(locs, loc)
+	})
+
+	state := types.SyncState{
+		Version:   0,
+		Dims:      int(h.dims.Load()),
+		Locations: locs,
+		// GraphData: we can't easily gob-encode GraphData due to arenas.
+		// For now, return an error or skip GraphData if it's too complex.
+		// But HNSWGraphSync needs it.
+	}
+
+	var buf bytes.Buffer
+	if err := gob.NewEncoder(&buf).Encode(state); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// ImportState implements VectorIndex.
+func (h *ArrowHNSW) ImportState(data []byte) error {
+	var state types.SyncState
+	if err := gob.NewDecoder(bytes.NewReader(data)).Decode(&state); err != nil {
+		return err
+	}
+	h.growMu.Lock()
+	defer h.growMu.Unlock()
+
+	h.dims.Store(int32(state.Dims))
+	h.locationStore.Reset()
+	for _, loc := range state.Locations {
+		h.locationStore.Append(loc)
+	}
+	return nil
+}
+
+// ExportGraph implements VectorIndex.
+func (h *ArrowHNSW) ExportGraph(w io.Writer) error {
+	return fmt.Errorf("ExportGraph not yet implemented for ArrowHNSW")
+}
+
+// ImportGraph implements VectorIndex.
+func (h *ArrowHNSW) ImportGraph(r io.Reader) error {
+	return fmt.Errorf("ImportGraph not yet implemented for ArrowHNSW")
+}
+
+// ExportDelta implements VectorIndex.
+func (h *ArrowHNSW) ExportDelta(fromVersion uint64) (*types.DeltaSync, error) {
+	return nil, fmt.Errorf("ExportDelta not yet implemented for ArrowHNSW")
+}
+
+// ApplyDelta implements VectorIndex.
+func (h *ArrowHNSW) ApplyDelta(delta *types.DeltaSync) error {
+	return fmt.Errorf("ApplyDelta not yet implemented for ArrowHNSW")
+}
+
+// GetParallelSearchConfig implements VectorIndex.
+func (h *ArrowHNSW) GetParallelSearchConfig() types.ParallelSearchConfig {
+	return h.parallelConfig
+}
+
+// SetParallelSearchConfig implements VectorIndex.
+func (h *ArrowHNSW) SetParallelSearchConfig(cfg types.ParallelSearchConfig) {
+	h.parallelConfig = cfg
+}
+
+// ParallelSearchHost implementation for ArrowHNSW
+func (h *ArrowHNSW) GetDataset() *Dataset { return h.dataset }
+
+func (h *ArrowHNSW) GetLocationForParallel(id uint32) (core.Location, bool) {
+	return h.locationStore.Get(VectorID(id))
+}
+
+func (h *ArrowHNSW) ExtractVectorForParallel(rec arrow.RecordBatch, rowIdx int) ([]float32, error) {
+	if rec == nil {
+		return nil, fmt.Errorf("record is nil")
+	}
+	// Find vector column by name
+	vecColIdx := -1
+	for i := 0; i < int(rec.NumCols()); i++ {
+		if rec.ColumnName(i) == "vector" {
+			vecColIdx = i
+			break
+		}
+	}
+
+	if vecColIdx == -1 {
+		// Fallback to column 0 if only 1 column
+		if rec.NumCols() == 1 {
+			vecColIdx = 0
+		} else {
+			return nil, fmt.Errorf("vector column not found in record")
+		}
+	}
+
+	return ExtractVectorFromArrow(rec, rowIdx, vecColIdx)
+}
+
+func (h *ArrowHNSW) GetDistanceFuncForParallel() func([]float32, []float32) float32 {
+	return func(a, b []float32) float32 {
+		d, _ := h.distFunc(a, b)
+		return d
+	}
+}
+
+func (h *ArrowHNSW) GetPQEnabledForParallel() bool          { return h.config.PQEnabled }
+func (h *ArrowHNSW) GetPQEncoderForParallel() *pq.PQEncoder { return h.pqEncoder }
+
+func (h *ArrowHNSW) ExtractVectorByIDForParallel(id uint32) ([]float32, error) {
+	vecAny, err := h.GetVector(id)
+	if err != nil {
+		return nil, err
+	}
+	if v, ok := vecAny.([]float32); ok {
+		return v, nil
+	}
+	return nil, fmt.Errorf("unsupported vector type for parallel search")
+}
+
+func (h *ArrowHNSW) SearchForParallel(query []float32, k int) []types.Candidate {
+	// Use the existing Search implementation which handles bitmask and conversion
+	res, err := h.Search(context.Background(), query, k, nil)
+	if err != nil {
+		return nil
+	}
+	return res
+}
+
+// SearchWithArena performs k-NN search using an arena allocator for results.
+func (h *ArrowHNSW) SearchWithArena(queryVec []float32, k int, arena any) []VectorID {
+	// Fallback to standard search if no arena
+	if arena == nil {
+		results, _ := h.SearchVectorsWithBitmap(context.Background(), queryVec, k, nil, nil)
+		ids := make([]VectorID, len(results))
+		for i, r := range results {
+			ids[i] = VectorID(r.ID)
+		}
+		return ids
+	}
+
+	searchArena, ok := arena.(*SearchArena)
+	if !ok {
+		// Try casting if it's passed as interface
+		results, _ := h.SearchVectorsWithBitmap(context.Background(), queryVec, k, nil, nil)
+		ids := make([]VectorID, len(results))
+		for i, r := range results {
+			ids[i] = VectorID(r.ID)
+		}
+		return ids
+	}
+
+	results, err := h.SearchVectorsWithBitmap(context.Background(), queryVec, k, nil, nil)
+	if err != nil || len(results) == 0 {
+		return nil
+	}
+
+	ids := searchArena.AllocVectorIDSlice(len(results))
+	if ids == nil {
+		// Fallback to heap if arena exhausted
+		ids = make([]VectorID, len(results))
+	}
+
+	for i, r := range results {
+		ids[i] = VectorID(r.ID)
+	}
+	return ids
+}
+
+type float32Computer struct {
+	data *types.GraphData
+	q    []float32
+	dims int
+	h    *ArrowHNSW
+}
+
+func (c *float32Computer) ComputeSingle(id uint32) (float32, error) {
+	vecAny, err := c.data.GetVector(id)
+	if err != nil {
+		return 0, err
+	}
+	switch v := vecAny.(type) {
+	case []float32:
+		return c.h.distFunc(c.q, v)
+	case []int8, []uint8:
+		var v8 []uint8
+		if vi8, ok := v.([]int8); ok {
+			v8 = *(*[]uint8)(unsafe.Pointer(&vi8))
+		} else {
+			v8 = v.([]uint8)
+		}
+
+		if c.h.quantizer != nil && c.h.sq8Ready.Load() {
+			minV, maxV := c.h.quantizer.Params()
+			scale := (maxV - minV) / 255.0
+			var sum float32
+			for i, val := range c.q {
+				deq := minV + float32(v8[i])*scale
+				diff := val - deq
+				sum += diff * diff
+			}
+			return float32(math.Sqrt(float64(sum))), nil
+		}
+		var sum float32
+		for i, val := range c.q {
+			diff := val - float32(v8[i])
+			sum += diff * diff
+		}
+		return float32(math.Sqrt(float64(sum))), nil
+	}
+	return math.MaxFloat32, nil
+}
+
+type int8Computer struct {
+	data *types.GraphData
+	q    []uint8
+	dims int
+	h    *ArrowHNSW
+}
+
+func (c *int8Computer) ComputeSingle(id uint32) (float32, error) {
+	vecAny, err := c.data.GetVector(id)
+	if err != nil {
+		return 0, err
+	}
+	switch v := vecAny.(type) {
+	case []float32:
+		if c.h.quantizer != nil && c.h.sq8Ready.Load() {
+			minV, maxV := c.h.quantizer.Params()
+			scale := (maxV - minV) / 255.0
+			var sum float32
+			for i, val := range c.q {
+				deq := minV + float32(val)*scale
+				diff := deq - v[i]
+				sum += diff * diff
+			}
+			return float32(math.Sqrt(float64(sum))), nil
+		}
+		var sum float32
+		for i, val := range c.q {
+			diff := float32(val) - v[i]
+			sum += diff * diff
+		}
+		return float32(math.Sqrt(float64(sum))), nil
+	case []int8, []uint8:
+		var v8 []uint8
+		if vi8, ok := v.([]int8); ok {
+			v8 = *(*[]uint8)(unsafe.Pointer(&vi8))
+		} else {
+			v8 = v.([]uint8)
+		}
+
+		if c.h.quantizer != nil && c.h.sq8Ready.Load() {
+			minV, maxV := c.h.quantizer.Params()
+			scale := (maxV - minV) / 255.0
+			var sum float32
+			for i, val := range c.q {
+				deqQ := minV + float32(val)*scale
+				deqV := minV + float32(v8[i])*scale
+				diff := deqQ - deqV
+				sum += diff * diff
+			}
+			return float32(math.Sqrt(float64(sum))), nil
+		}
+		var sum float32
+		for i, val := range c.q {
+			diff := float32(val) - float32(v8[i])
+			sum += diff * diff
+		}
+		return float32(math.Sqrt(float64(sum))), nil
+	}
+	return math.MaxFloat32, nil
 }

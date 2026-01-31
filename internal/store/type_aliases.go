@@ -29,6 +29,13 @@ const (
 // Index interface alias
 type VectorIndex = types.VectorIndexer
 type GraphData = types.GraphData
+type Candidate = types.Candidate
+
+const (
+	MaxNeighbors   = types.MaxNeighbors
+	ChunkSize      = types.ChunkSize
+	ArrowMaxLayers = types.ArrowMaxLayers
+)
 
 // Persistence Aliases
 type StorageConfig = storage.StorageConfig

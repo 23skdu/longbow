@@ -6,9 +6,8 @@ import (
 	"sync/atomic"
 
 	prommetrics "github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/store/types"
 )
-
-const MaxNeighbors = 64
 
 // GraphMetrics holds statistics about the HNSW graph quality.
 type GraphMetrics struct {
@@ -92,7 +91,7 @@ func (h *ArrowHNSW) AnalyzeGraph() GraphMetrics {
 	}
 	prommetrics.HNSWDisconnectedComponents.WithLabelValues(dsName).Set(float64(metrics.ConnectedComponents))
 	prommetrics.HNSWOrphanNodes.WithLabelValues(dsName).Set(float64(metrics.ZeroDegreeNodes))
-	prommetrics.HNSWAverageDegree.WithLabelValues(dsName).Set(metrics.AverageDegree)
+	prommetrics.HNSWAverageDegree.WithLabelValues(dsName, "0").Set(metrics.AverageDegree)
 	prommetrics.HNSWMaxComponentSize.WithLabelValues(dsName).Set(float64(metrics.MaxComponentSize))
 	prommetrics.HNSWEstimatedDiameter.WithLabelValues(dsName).Set(float64(metrics.EstimatedDiameter))
 
@@ -128,7 +127,7 @@ func (h *ArrowHNSW) bfsComponentSize(data *GraphData, layer int, startNode uint3
 		}
 		neighborCount := atomic.LoadInt32(&countsChunk[cOff])
 
-		baseIdx := int(cOff) * MaxNeighbors
+		baseIdx := int(cOff) * types.MaxNeighbors
 		neighborsChunk := data.GetNeighborsChunk(layer, cID)
 		if neighborsChunk == nil {
 			continue
@@ -177,7 +176,7 @@ func (h *ArrowHNSW) bfsDiameter(data *GraphData, layer int, startNode uint32) in
 				continue
 			}
 
-			baseIdx := int(cOff) * MaxNeighbors
+			baseIdx := int(cOff) * types.MaxNeighbors
 			for k := 0; k < neighborCount; k++ {
 				neighbor := neighborsChunk[baseIdx+k]
 				if !visited.IsSet(int(neighbor)) {

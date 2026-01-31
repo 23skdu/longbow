@@ -52,7 +52,7 @@ func TestHNSW_Concurrency_HighContention(t *testing.T) {
 		dataMu:  sync.RWMutex{},
 	}
 
-	idx := NewHNSWIndex(ds)
+	idx := NewTestHNSWIndex(ds)
 	// Create stripe locks created by NewHNSWIndex, but let's ensure they are initialized
 	// NewHNSWIndex initializes them based on NumCPU.
 
@@ -97,7 +97,7 @@ func TestHNSW_Concurrency_Mixed(t *testing.T) {
 	defer rec.Release()
 
 	ds := &Dataset{Name: "mixed_test", dataMu: sync.RWMutex{}}
-	idx := NewHNSWIndex(ds)
+	idx := NewTestHNSWIndex(ds)
 
 	// Pre-populate
 	for i := 0; i < 100; i++ {

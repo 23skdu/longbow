@@ -7,55 +7,51 @@ import (
 	"sync"
 	"unsafe"
 
+	"github.com/23skdu/longbow/internal/core"
 	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/pq"
 	qry "github.com/23skdu/longbow/internal/query"
 	"github.com/23skdu/longbow/internal/simd"
-	"github.com/coder/hnsw"
+	"github.com/23skdu/longbow/internal/store/types"
+	"github.com/RoaringBitmap/roaring/v2"
+	"github.com/apache/arrow-go/v18/arrow"
 )
 
-// ParallelSearchConfig controls parallel search behavior
-type ParallelSearchConfig struct {
-	Enabled      bool
-	Workers      int
-	Threshold    int
-	MinChunkSize int
-	MaxChunkSize int
+// ParallelSearchHost abstracts index-specific operations needed for parallel result processing.
+type ParallelSearchHost interface {
+	GetDataset() *Dataset
+	GetLocationForParallel(id uint32) (core.Location, bool)
+	ExtractVectorForParallel(rec arrow.RecordBatch, rowIdx int) ([]float32, error)
+	GetParallelSearchConfig() types.ParallelSearchConfig
+	GetDistanceFuncForParallel() func(a, b []float32) float32
+	GetPQEnabledForParallel() bool
+	GetPQEncoderForParallel() *pq.PQEncoder
+	ExtractVectorByIDForParallel(id uint32) ([]float32, error)
+	SearchForParallel(query []float32, k int) []types.Candidate
 }
 
-// DefaultParallelSearchConfig returns sensible defaults
-func DefaultParallelSearchConfig() ParallelSearchConfig {
-	return ParallelSearchConfig{
-		Enabled:      true,
-		Workers:      runtime.NumCPU(),
-		Threshold:    100,
-		MinChunkSize: 32,
-		MaxChunkSize: 500,
-	}
+// HNSWIndex used to implement ParallelSearchHost here, but now ArrowHNSW implements it directly.
+
+// processResultsParallel processes candidate neighbors using worker pool
+func (h *ArrowHNSW) processResultsParallel(ctx context.Context, query []float32, candidates []types.Candidate, k int, filters []qry.Filter) []SearchResult { //nolint:unparam
+	return processResultsParallelInternal(ctx, h, query, candidates, k, filters, nil)
 }
 
-// getParallelSearchConfig returns the current config
-func (h *HNSWIndex) getParallelSearchConfig() ParallelSearchConfig {
-	return h.parallelConfig
-}
-
-// SetParallelSearchConfig updates the parallel search configuration
-func (h *HNSWIndex) SetParallelSearchConfig(cfg ParallelSearchConfig) {
-	h.parallelConfig = cfg
-}
-
-// processResultsParallel processes HNSW neighbors using worker pool
-func (h *HNSWIndex) processResultsParallel(ctx context.Context, query []float32, neighbors []hnsw.Node[VectorID], k int, filters []qry.Filter) []SearchResult { //nolint:unparam
-	cfg := h.getParallelSearchConfig()
+// processResultsParallelInternal is the generalized parallel result processing routine.
+func processResultsParallelInternal(ctx context.Context, h ParallelSearchHost, query []float32, candidates []types.Candidate, k int, filters []qry.Filter, bitmap *roaring.Bitmap) []SearchResult {
+	cfg := h.GetParallelSearchConfig()
 	numWorkers := cfg.Workers
 	if numWorkers <= 0 {
 		numWorkers = runtime.NumCPU()
 	}
 
-	neighborCount := len(neighbors)
+	neighborCount := len(candidates)
+	dataset := h.GetDataset()
+	dsName := "unknown"
+	if dataset != nil {
+		dsName = dataset.Name
+	}
 
-	// Adaptive chunk sizing
-	// Calculate optimal chunk size to balance parallelism and overhead
-	// Target 2-4x the worker count for good load balancing
 	targetChunks := numWorkers * 3
 	chunkSize := neighborCount / targetChunks
 
@@ -68,25 +64,23 @@ func (h *HNSWIndex) processResultsParallel(ctx context.Context, query []float32,
 	}
 
 	// Record metrics
-	metrics.HnswAdaptiveChunkSize.WithLabelValues(h.dataset.Name, "parallel").Observe(float64(chunkSize))
-	metrics.HnswParallelSearchWorkerCount.WithLabelValues(h.dataset.Name).Observe(float64(numWorkers))
+	metrics.HnswAdaptiveChunkSize.WithLabelValues(dsName, "parallel").Observe(float64(chunkSize))
+	metrics.HnswParallelSearchWorkerCount.WithLabelValues(dsName).Observe(float64(numWorkers))
 
 	// Determine if parallel processing is worthwhile
-	// Fall back to serial if:
-	// 1. Parallel is disabled
-	// 2. Not enough work for effective parallelization (less than 2 chunks worth)
 	if !cfg.Enabled || neighborCount < chunkSize*2 {
-		metrics.HnswSerialFallbackTotal.WithLabelValues(h.dataset.Name, getFallbackReason(cfg, neighborCount, chunkSize)).Inc()
-		return h.processResultsSerial(ctx, query, neighbors, k, filters)
+		metrics.HnswSerialFallbackTotal.WithLabelValues(dsName, getFallbackReason(cfg, neighborCount, chunkSize)).Inc()
+		// Serial fallback implementation here is simplified to just reuse the chunk logic in serial
+		return processChunkInternal(ctx, h, query, candidates, filters, bitmap)
 	}
 
-	metrics.HnswParallelSearchSplits.WithLabelValues(h.dataset.Name).Inc()
+	metrics.HnswParallelSearchSplits.WithLabelValues(dsName).Inc()
 
-	// Calculate efficiency metric (work per worker vs chunk size)
+	// Calculate efficiency metric
 	efficiency := float64(neighborCount) / float64(numWorkers*chunkSize)
-	metrics.HnswParallelSearchEfficiency.WithLabelValues(h.dataset.Name).Observe(efficiency)
+	metrics.HnswParallelSearchEfficiency.WithLabelValues(dsName).Observe(efficiency)
 
-	// Pre-allocate results array of arrays to avoid mutex on append
+	// Pre-allocate results array of arrays
 	chunksResults := make([][]SearchResult, numWorkers)
 	var wg sync.WaitGroup
 
@@ -101,10 +95,10 @@ func (h *HNSWIndex) processResultsParallel(ctx context.Context, query []float32,
 		}
 
 		wg.Add(1)
-		go func(workerID int, chunk []hnsw.Node[VectorID]) {
+		go func(workerID int, chunk []types.Candidate) {
 			defer wg.Done()
-			chunksResults[workerID] = h.processChunk(ctx, query, chunk, filters)
-		}(i, neighbors[start:end])
+			chunksResults[workerID] = processChunkInternal(ctx, h, query, chunk, filters, bitmap)
+		}(i, candidates[start:end])
 	}
 	wg.Wait()
 
@@ -119,8 +113,9 @@ func (h *HNSWIndex) processResultsParallel(ctx context.Context, query []float32,
 		allResults = append(allResults, res...)
 	}
 
+	// Sort and limit
 	sort.Slice(allResults, func(i, j int) bool {
-		return allResults[i].Score < allResults[j].Score
+		return allResults[i].Distance < allResults[j].Distance
 	})
 
 	if len(allResults) > k {
@@ -131,7 +126,7 @@ func (h *HNSWIndex) processResultsParallel(ctx context.Context, query []float32,
 }
 
 // getFallbackReason returns the reason for serial fallback
-func getFallbackReason(cfg ParallelSearchConfig, neighborCount, chunkSize int) string {
+func getFallbackReason(cfg types.ParallelSearchConfig, neighborCount, chunkSize int) string {
 	if !cfg.Enabled {
 		return "disabled"
 	}
@@ -141,30 +136,29 @@ func getFallbackReason(cfg ParallelSearchConfig, neighborCount, chunkSize int) s
 	return "efficiency"
 }
 
-// processChunk processes a chunk of HNSW neighbors
-func (h *HNSWIndex) processChunk(ctx context.Context, query []float32, neighbors []hnsw.Node[VectorID], filters []qry.Filter) []SearchResult {
-	results := make([]SearchResult, 0, len(neighbors))
+// processChunkInternal processes a chunk of HNSW neighbors using generic ParallelSearchHost.
+func processChunkInternal(ctx context.Context, h ParallelSearchHost, query []float32, candidates []types.Candidate, filters []qry.Filter, bitmap *roaring.Bitmap) []SearchResult {
+	results := make([]SearchResult, 0, len(candidates))
+	dataset := h.GetDataset()
 
 	// Step 1: Batch location lookup
-	// Optimized: Parallel access via ChunkedLocationStore is lock-free for reads
-	// and doesn't require global Mu RLock for the list itself.
-	locations := make([]Location, len(neighbors))
-	found := make([]bool, len(neighbors))
+	locations := make([]core.Location, len(candidates))
+	found := make([]bool, len(candidates))
 
 	prefetchCount := 4 // Prefetch 4 items ahead
 	prefetchOps := 0
 
-	// Prefetch first batch of neighbors
-	for i := 0; i < prefetchCount && i < len(neighbors); i++ {
-		simd.Prefetch(unsafe.Pointer(&neighbors[i]))
+	// Prefetch first batch of candidates
+	for i := 0; i < prefetchCount && i < len(candidates); i++ {
+		simd.Prefetch(unsafe.Pointer(&candidates[i]))
 		prefetchOps++
 	}
 
-	for i, n := range neighbors {
-		// Software prefetch next neighbor
+	for i, n := range candidates {
+		// Software prefetch next candidate
 		nextIdx := i + prefetchCount
-		if nextIdx < len(neighbors) {
-			simd.Prefetch(unsafe.Pointer(&neighbors[nextIdx]))
+		if nextIdx < len(candidates) {
+			simd.Prefetch(unsafe.Pointer(&candidates[nextIdx]))
 			prefetchOps++
 		}
 
@@ -178,9 +172,11 @@ func (h *HNSWIndex) processChunk(ctx context.Context, query []float32, neighbors
 			}
 		}
 
-		nodeID := n.Key
-		loc, ok := h.locationStore.Get(nodeID)
-		// Likely path: location is found (most neighbors should be valid)
+		nodeID := n.ID
+		if bitmap != nil && !bitmap.Contains(nodeID) {
+			continue
+		}
+		loc, ok := h.GetLocationForParallel(nodeID)
 		if ok {
 			metrics.HnswBranchPredictionTotal.WithLabelValues("location_found").Inc()
 			locations[i] = loc
@@ -192,122 +188,111 @@ func (h *HNSWIndex) processChunk(ctx context.Context, query []float32, neighbors
 
 	metrics.PrefetchOperationsTotal.Add(float64(prefetchOps))
 
-	// Step 2: Batch record access and filtering
-	// Minimize dataset.dataMu contention
-
 	type vectorTask struct {
-		id  VectorID
+		id  uint32
 		vec []float32
 	}
-	// Pre-allocate to reduce allocs
-	tasks := make([]vectorTask, 0, len(neighbors))
-
-	h.dataset.dataMu.RLock()
-
+	tasks := make([]vectorTask, 0, len(candidates))
 	evaluators := make(map[int]*qry.FilterEvaluator)
-	if len(filters) > 0 && len(h.dataset.Records) > 0 {
-		// Pre-bind batch 0 if it exists
-		ev, err := qry.NewFilterEvaluator(h.dataset.Records[0], filters)
-		if err == nil {
-			evaluators[0] = ev
+	if dataset != nil {
+		dataset.dataMu.RLock()
+		if len(filters) > 0 && len(dataset.Records) > 0 {
+			ev, err := qry.NewFilterEvaluator(dataset.Records[0], filters)
+			if err == nil {
+				evaluators[0] = ev
+			}
 		}
 	}
 
-	for i, n := range neighbors {
-		// Context check every 32 items
+	for i, n := range candidates {
 		if i&31 == 0 {
 			metrics.HnswContextCheckTotal.Inc()
 			select {
 			case <-ctx.Done():
-				h.dataset.dataMu.RUnlock()
+				if dataset != nil {
+					dataset.dataMu.RUnlock()
+				}
 				return nil
 			default:
 			}
 		}
-		// Likely path: neighbor was found in location store
+
 		if !found[i] {
-			metrics.HnswBranchPredictionTotal.WithLabelValues("location_miss").Inc()
 			continue
 		}
-		metrics.HnswBranchPredictionTotal.WithLabelValues("location_found").Inc()
-		loc := locations[i]
 
-		if loc.BatchIdx >= len(h.dataset.Records) {
-			continue
-		}
-		rec := h.dataset.Records[loc.BatchIdx]
-
-		if len(evaluators) > 0 {
-			ev, ok := evaluators[loc.BatchIdx]
-			if !ok {
-				if loc.BatchIdx >= len(h.dataset.Records) {
-					continue
-				}
-				var err error
-				ev, err = qry.NewFilterEvaluator(h.dataset.Records[loc.BatchIdx], filters)
-				if err != nil {
-					continue
-				}
-				evaluators[loc.BatchIdx] = ev
-			}
-			// Likely path: filter matches (most rows pass)
-			if ev.Matches(loc.RowIdx) {
-				metrics.HnswBranchPredictionTotal.WithLabelValues("filter_match").Inc()
-			} else {
-				metrics.HnswBranchPredictionTotal.WithLabelValues("filter_miss").Inc()
+		if dataset != nil {
+			loc := locations[i]
+			if loc.BatchIdx < 0 || loc.BatchIdx >= len(dataset.Records) {
 				continue
 			}
-		} else {
-			metrics.HnswBranchPredictionTotal.WithLabelValues("filter_match").Inc()
-		}
+			rec := dataset.Records[loc.BatchIdx]
 
-		// Extract vector (copy)
-		vec, err := h.extractVector(rec, loc.RowIdx)
-		if err == nil && vec != nil {
-			metrics.HnswBranchPredictionTotal.WithLabelValues("result_append").Inc()
-			tasks = append(tasks, vectorTask{id: n.Key, vec: vec})
+			if len(evaluators) > 0 {
+				ev, ok := evaluators[loc.BatchIdx]
+				if !ok {
+					var err error
+					ev, err = qry.NewFilterEvaluator(dataset.Records[loc.BatchIdx], filters)
+					if err != nil {
+						continue
+					}
+					evaluators[loc.BatchIdx] = ev
+				}
+				if !ev.Matches(loc.RowIdx) {
+					metrics.HnswBranchPredictionTotal.WithLabelValues("filter_miss").Inc()
+					continue
+				}
+				metrics.HnswBranchPredictionTotal.WithLabelValues("filter_match").Inc()
+			}
+
+			vec, err := h.ExtractVectorForParallel(rec, loc.RowIdx)
+			if err == nil && vec != nil {
+				tasks = append(tasks, vectorTask{id: n.ID, vec: vec})
+			}
+		} else {
+			// Fallback if no dataset (structured filters not supported in this mode)
+			if len(filters) > 0 {
+				continue // Skip if filters required but dataset unavailable
+			}
+			vec, err := h.ExtractVectorByIDForParallel(n.ID)
+			if err == nil && vec != nil {
+				tasks = append(tasks, vectorTask{id: n.ID, vec: vec})
+			}
 		}
 	}
-	h.dataset.dataMu.RUnlock()
+	if dataset != nil {
+		dataset.dataMu.RUnlock()
+	}
 
-	// Step 3: Compute distances using SIMD Batch Processing
-	// Optimization: Use flat buffer to avoid [][]float32 allocation overhead
+	// Step 3: Compute distances
 	numTasks := len(tasks)
 	if numTasks == 0 {
 		return results
 	}
 
-	// Pre-allocate flat buffer and scores
 	dims := len(query)
 	flatBuffer := make([]float32, numTasks*dims)
 	scores := make([]float32, numTasks)
 
-	// Copy vectors into flat buffer
 	for i, t := range tasks {
 		offset := i * dims
 		copy(flatBuffer[offset:offset+dims], t.vec)
-
-		// Prefetch next vector for distance computation
-		nextIdx := i + 4
-		if nextIdx < numTasks {
-			nextOffset := nextIdx * dims
-			simd.Prefetch(unsafe.Pointer(&flatBuffer[nextOffset]))
-			metrics.PrefetchOperationsTotal.Inc()
+		if i+4 < numTasks {
+			simd.Prefetch(unsafe.Pointer(&flatBuffer[(i+4)*dims]))
 		}
 	}
 
-	// Use flat batch SIMD (avoids [][]float32 allocation)
-	if h.pqEnabled && h.pqEncoder != nil {
-		// PQ path remains unchanged as it has its own optimization
-		table := h.pqEncoder.ComputeDistanceTableFlat(query)
-		m := h.pqEncoder.CodeSize()
-		packedLen := (m + 3) / 4
+	if h.GetPQEnabledForParallel() && h.GetPQEncoderForParallel() != nil {
+		encoder := h.GetPQEncoderForParallel()
+		table := encoder.ComputeDistanceTableFlat(query)
+		m := encoder.CodeSize()
+		// packedLen := (m + 3) / 4 (unused)
 
 		flatCodes := make([]byte, numTasks*m)
 		validForBatch := make([]bool, numTasks)
 		batchCount := 0
 
-		distFunc := h.GetDistanceFunc()
+		distFunc := h.GetDistanceFuncForParallel()
 		for i := 0; i < numTasks; i++ {
 			if i&31 == 0 {
 				select {
@@ -318,23 +303,22 @@ func (h *HNSWIndex) processChunk(ctx context.Context, query []float32, neighbors
 			}
 			vecOffset := i * dims
 			vec := flatBuffer[vecOffset : vecOffset+dims]
-			if len(vec) == packedLen {
+			if len(vec) == m { // In memory it might be stored as []byte? No, ExtractVector returns []float32
+				// This part is tricky because ExtractVector returns []float32, but PQ codes are bytes.
+				// If we are in PQ mode, the vectors returned by ExtractVector should already be PQ codes packed into []float32 bits.
 				ptr := unsafe.Pointer(&vec[0])
 				src := unsafe.Slice((*byte)(ptr), m)
 				copy(flatCodes[batchCount*m:], src)
 				validForBatch[i] = true
 				batchCount++
 			} else {
-				// Fallback for raw / mixed
 				scores[i] = distFunc(query, vec)
 			}
 		}
 
 		if batchCount > 0 {
 			batchResults := make([]float32, batchCount)
-			if err := h.pqEncoder.ADCDistanceBatch(table, flatCodes[:batchCount*m], batchResults); err != nil {
-				// Fallback
-				distFunc := h.GetDistanceFunc()
+			if err := encoder.ADCDistanceBatch(table, flatCodes[:batchCount*m], batchResults); err != nil {
 				bj := 0
 				for i := 0; i < numTasks; i++ {
 					if validForBatch[i] {
@@ -353,131 +337,22 @@ func (h *HNSWIndex) processChunk(ctx context.Context, query []float32, neighbors
 			}
 		}
 	} else {
-		// Non-PQ path: Use flat batch function (eliminates [][]float32 allocation)
-		if h.batchDistFunc != nil {
-			// Build [][]float32 view without allocation (reuse tasks)
-			vecs := make([][]float32, numTasks)
-			for i, t := range tasks {
-				vecs[i] = t.vec
-			}
-			if err := h.batchDistFunc(query, vecs, scores); err != nil {
-				for i := range scores {
-					scores[i] = 0
-				}
-			}
-		} else {
-			// Use flat batch - no intermediate allocation needed
-			if err := simd.EuclideanDistanceBatchFlat(query, flatBuffer, numTasks, dims, scores); err != nil {
-				for i := range scores {
-					scores[i] = 0
-				}
+		if err := simd.EuclideanDistanceBatchFlat(query, flatBuffer, numTasks, dims, scores); err != nil {
+			distFunc := h.GetDistanceFuncForParallel()
+			for i := 0; i < numTasks; i++ {
+				scores[i] = distFunc(query, flatBuffer[i*dims:(i+1)*dims])
 			}
 		}
 	}
 
 	for i, t := range tasks {
+		dist := scores[i]
 		results = append(results, SearchResult{
-			ID:    t.id,
-			Score: scores[i],
+			ID:       VectorID(t.id),
+			Distance: dist,
+			Score:    1.0 / (1.0 + dist),
 		})
 	}
 
 	return results
-}
-
-// processResultsSerial is the fallback serial implementation
-func (h *HNSWIndex) processResultsSerial(ctx context.Context, query []float32, neighbors []hnsw.Node[VectorID], k int, filters []qry.Filter) []SearchResult {
-	distFunc := h.GetDistanceFunc()
-
-	evaluators := make(map[int]*qry.FilterEvaluator)
-	if len(filters) > 0 && len(h.dataset.Records) > 0 {
-		ev, err := qry.NewFilterEvaluator(h.dataset.Records[0], filters)
-		if err == nil {
-			evaluators[0] = ev
-		}
-	}
-
-	res := make([]SearchResult, 0, len(neighbors))
-	count := 0
-
-	for i, n := range neighbors {
-		metrics.HnswTraversalIterationsTotal.Inc()
-
-		if i&31 == 0 {
-			metrics.HnswContextCheckTotal.Inc()
-			select {
-			case <-ctx.Done():
-				return res
-			default:
-			}
-		}
-
-		// Likely path: haven't reached k results yet
-		if count >= k {
-			break
-		}
-
-		loc, found := h.locationStore.Get(n.Key)
-		// Likely path: location is found
-		if !found {
-			metrics.HnswBranchPredictionTotal.WithLabelValues("location_miss").Inc()
-			continue
-		}
-		metrics.HnswBranchPredictionTotal.WithLabelValues("location_found").Inc()
-
-		h.dataset.dataMu.RLock()
-		// Likely path: valid batch index
-		if loc.BatchIdx >= len(h.dataset.Records) {
-			h.dataset.dataMu.RUnlock()
-			metrics.HnswBranchPredictionTotal.WithLabelValues("location_miss").Inc()
-			continue
-		}
-		rec := h.dataset.Records[loc.BatchIdx]
-
-		if len(evaluators) > 0 {
-			ev, ok := evaluators[loc.BatchIdx]
-			if !ok {
-				if loc.BatchIdx >= len(h.dataset.Records) {
-					h.dataset.dataMu.RUnlock()
-					continue
-				}
-				var err error
-				ev, err = qry.NewFilterEvaluator(h.dataset.Records[loc.BatchIdx], filters)
-				if err != nil {
-					h.dataset.dataMu.RUnlock()
-					continue
-				}
-				evaluators[loc.BatchIdx] = ev
-			}
-			// Likely path: filter matches
-			if ev.Matches(loc.RowIdx) {
-				metrics.HnswBranchPredictionTotal.WithLabelValues("filter_match").Inc()
-			} else {
-				metrics.HnswBranchPredictionTotal.WithLabelValues("filter_miss").Inc()
-				h.dataset.dataMu.RUnlock()
-				continue
-			}
-		} else {
-			metrics.HnswBranchPredictionTotal.WithLabelValues("filter_match").Inc()
-		}
-
-		vec, _ := h.extractVector(rec, loc.RowIdx)
-		h.dataset.dataMu.RUnlock()
-
-		// Likely path: vector extraction succeeds
-		if vec == nil {
-			metrics.HnswBranchPredictionTotal.WithLabelValues("location_miss").Inc()
-			continue
-		}
-		metrics.HnswBranchPredictionTotal.WithLabelValues("result_append").Inc()
-
-		dist := distFunc(query, vec)
-		res = append(res, SearchResult{
-			ID:    n.Key,
-			Score: dist,
-		})
-		count++
-	}
-
-	return res
 }

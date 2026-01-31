@@ -15,6 +15,7 @@ import (
 	"unsafe"
 
 	"github.com/23skdu/longbow/internal/core"
+	"github.com/23skdu/longbow/internal/gpu"
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/pq"
 	"github.com/23skdu/longbow/internal/query"
@@ -145,7 +146,16 @@ type ArrowHNSW struct {
 
 	repairAgent *RepairAgent
 
+	// Parallel Search Config
 	parallelConfig types.ParallelSearchConfig
+
+	// GPU Support
+	gpuMu       sync.RWMutex
+	gpuEnabled  bool
+	gpuFallback bool
+	gpuIndex    gpu.Index
+
+	// Metrics
 
 	metricNodeCount prometheus.Gauge
 	metricBQVectors prometheus.Gauge
@@ -864,7 +874,7 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 		if efSearch > maxNodeCount {
 			efSearch = maxNodeCount
 		}
-		// h.metricSearchRetries.Inc() // Placeholder if metric exists
+
 	}
 
 	return results, nil
@@ -1030,7 +1040,7 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, _ *ArrowSearchCon
 
 // searchLayer is used by insertion logic
 // searchLayer implements HNSW layer search
-func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint uint32, ef, layer int, ctx *ArrowSearchContext, data *types.GraphData, queryVec any) ([]Candidate, error) {
+func (h *ArrowHNSW) searchLayer(_ context.Context, computer any, entryPoint uint32, ef, layer int, ctx *ArrowSearchContext, data *types.GraphData, queryVec any) ([]Candidate, error) {
 	// Initialize Heaps
 	// ctx.candidates (MinHeap) - Nodes to visit
 	// ctx.resultSet (MaxHeap) - Best nodes found so far
@@ -1440,9 +1450,9 @@ func (h *ArrowHNSW) ExtractVectorByIDForParallel(id uint32) ([]float32, error) {
 	return nil, fmt.Errorf("unsupported vector type for parallel search")
 }
 
-func (h *ArrowHNSW) SearchForParallel(query []float32, k int) []types.Candidate {
+func (h *ArrowHNSW) SearchForParallel(queryVec []float32, k int) []types.Candidate {
 	// Use the existing Search implementation which handles bitmask and conversion
-	res, err := h.Search(context.Background(), query, k, nil)
+	res, err := h.Search(context.Background(), queryVec, k, nil)
 	if err != nil {
 		return nil
 	}

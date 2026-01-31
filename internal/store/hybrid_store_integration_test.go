@@ -146,7 +146,7 @@ func TestVectorStoreIndexTextColumns(t *testing.T) {
 		t.Fatal("BM25 index is nil")
 	}
 
-	results := bm25.SearchBM25("hello", 10)
+	results := bm25.SearchBM25("hello", 10, nil)
 	if len(results) == 0 {
 		t.Error("expected to find 'hello' in BM25 index")
 	}

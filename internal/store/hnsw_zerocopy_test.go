@@ -19,7 +19,7 @@ func TestHNSW_ZeroCopy_Path(t *testing.T) {
 	defer rec.Release()
 
 	ds := &Dataset{Records: []arrow.RecordBatch{rec}}
-	idx := NewHNSWIndex(ds)
+	idx := NewTestHNSWIndex(ds)
 
 	_, err := idx.AddByLocation(context.Background(), 0, 0) // Add first
 	require.NoError(t, err)

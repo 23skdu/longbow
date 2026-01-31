@@ -74,7 +74,7 @@ func TestSearchVectorsCorrectness(t *testing.T) {
 	}, 5*time.Second, 10*time.Millisecond, "Dataset should eventually have records and index")
 
 	// Manually initialize HNSW index
-	hnswIdx := NewHNSWIndex(ds)
+	hnswIdx := NewTestHNSWIndex(ds)
 	ds.dataMu.Lock()
 	ds.Index = hnswIdx
 	ds.dataMu.Unlock()
@@ -120,9 +120,9 @@ func BenchmarkSearchVectorsBatched(b *testing.B) {
 	)
 
 	ds := NewDataset("bench", schema)
-	idx := NewHNSWIndex(ds)
+	idx := NewTestHNSWIndex(ds)
 	ds.Index = idx
-	idx.dims = 128
+	idx.SetDimension(128)
 
 	// Add 10,000 vectors
 	const n = 10000
@@ -175,9 +175,9 @@ func BenchmarkSearchVectorsWithBitmapBatched(b *testing.B) {
 	)
 
 	ds := NewDataset("bench", schema)
-	idx := NewHNSWIndex(ds)
+	idx := NewTestHNSWIndex(ds)
 	ds.Index = idx
-	idx.dims = 128
+	idx.SetDimension(128)
 
 	const n = 10000
 	builder := array.NewFixedSizeListBuilder(mem, 128, arrow.PrimitiveTypes.Float32)

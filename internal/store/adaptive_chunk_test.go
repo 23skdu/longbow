@@ -6,9 +6,9 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/memory"
-	"github.com/coder/hnsw"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -127,13 +127,13 @@ func TestAdaptiveChunkSize_WorkerEfficiency(t *testing.T) {
 func TestAdaptiveChunkSize_ConfigThresholds(t *testing.T) {
 	testCases := []struct {
 		name             string
-		config           ParallelSearchConfig
+		config           types.ParallelSearchConfig
 		neighborCount    int
 		expectedParallel bool
 	}{
 		{
 			name: "Enabled with sufficient neighbors",
-			config: ParallelSearchConfig{
+			config: types.ParallelSearchConfig{
 				Enabled:   true,
 				Workers:   4,
 				Threshold: 100,
@@ -143,7 +143,7 @@ func TestAdaptiveChunkSize_ConfigThresholds(t *testing.T) {
 		},
 		{
 			name: "Disabled always serial",
-			config: ParallelSearchConfig{
+			config: types.ParallelSearchConfig{
 				Enabled:   false,
 				Workers:   4,
 				Threshold: 100,
@@ -187,7 +187,7 @@ func TestAdaptiveChunkSize_ConcurrentSafety(t *testing.T) {
 		Name:    "test",
 		Records: []arrow.RecordBatch{rec},
 	}
-	idx := NewHNSWIndex(ds)
+	idx := NewTestHNSWIndex(ds)
 
 	locations := make([]Location, 100)
 	for i := 0; i < 100; i++ {
@@ -197,9 +197,9 @@ func TestAdaptiveChunkSize_ConcurrentSafety(t *testing.T) {
 		_, _ = idx.AddByLocation(context.Background(), loc.BatchIdx, loc.RowIdx)
 	}
 
-	neighbors := make([]hnsw.Node[VectorID], 1000)
+	neighbors := make([]types.Candidate, 1000)
 	for i := 0; i < 1000; i++ {
-		neighbors[i] = hnsw.Node[VectorID]{Key: VectorID(i % 100)}
+		neighbors[i] = types.Candidate{ID: uint32(i % 100)}
 	}
 
 	query := make([]float32, 4)
@@ -234,7 +234,7 @@ func BenchmarkAdaptiveChunkSize_ParallelVsSerial(b *testing.B) {
 		Name:    "bench",
 		Records: []arrow.RecordBatch{rec},
 	}
-	idx := NewHNSWIndex(ds)
+	idx := NewTestHNSWIndex(ds)
 
 	locations := make([]Location, numVectors)
 	for i := 0; i < numVectors; i++ {
@@ -257,9 +257,9 @@ func BenchmarkAdaptiveChunkSize_ParallelVsSerial(b *testing.B) {
 		}
 	})
 
-	neighbors500 := make([]hnsw.Node[VectorID], 500)
+	neighbors500 := make([]types.Candidate, 500)
 	for i := 0; i < 500; i++ {
-		neighbors500[i] = hnsw.Node[VectorID]{Key: VectorID(i % numVectors)}
+		neighbors500[i] = types.Candidate{ID: uint32(i % numVectors)}
 	}
 
 	b.Run("MediumSet_Parallel", func(b *testing.B) {
@@ -270,9 +270,9 @@ func BenchmarkAdaptiveChunkSize_ParallelVsSerial(b *testing.B) {
 		}
 	})
 
-	neighbors5000 := make([]hnsw.Node[VectorID], 5000)
+	neighbors5000 := make([]types.Candidate, 5000)
 	for i := 0; i < 5000; i++ {
-		neighbors5000[i] = hnsw.Node[VectorID]{Key: VectorID(i % numVectors)}
+		neighbors5000[i] = types.Candidate{ID: uint32(i % numVectors)}
 	}
 
 	b.Run("LargeSet_Parallel", func(b *testing.B) {

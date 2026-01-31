@@ -24,7 +24,7 @@ func TestGenerateFilterBitset(t *testing.T) {
 	)
 
 	ds := NewDataset("test", schema)
-	idx := NewHNSWIndex(ds)
+	idx := NewTestHNSWIndex(ds)
 	ds.Index = idx
 
 	// Create a batch with some data
@@ -104,7 +104,7 @@ func TestSearchWithBitmapFiltering(t *testing.T) {
 	)
 
 	ds := NewDataset("test_search", schema)
-	idx := NewHNSWIndex(ds)
+	idx := NewTestHNSWIndex(ds)
 	ds.Index = idx
 
 	builder := array.NewRecordBuilder(pool, schema)

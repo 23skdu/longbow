@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/23skdu/longbow/internal/query"
+	"github.com/RoaringBitmap/roaring/v2"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
@@ -197,7 +198,9 @@ func TestFuseLinear(t *testing.T) {
 }
 
 func TestFuseCascade(t *testing.T) {
-	exactIDs := map[VectorID]struct{}{1: {}, 2: {}}
+	exactIDs := roaring.New()
+	exactIDs.Add(1)
+	exactIDs.Add(2)
 	keyword := []SearchResult{{ID: 1, Score: 5.0}, {ID: 3, Score: 4.0}}
 	vector := []SearchResult{{ID: 2, Score: 0.9}, {ID: 4, Score: 0.8}}
 
@@ -310,7 +313,7 @@ func TestHybridSearchPipeline_ExactFilters(t *testing.T) {
 	p.SetColumnIndex(colIdx)
 
 	// Set up HNSW with locations
-	hnsw := NewHNSWIndex(ds)
+	hnsw := NewTestHNSWIndex(ds)
 	// Add locations so findVectorID works
 	for i := 0; i < 10; i++ {
 		hnsw.locationStore.Append(Location{BatchIdx: 0, RowIdx: i})

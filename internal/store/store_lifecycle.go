@@ -292,10 +292,6 @@ func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
 						var newIndexSize int64
 						if ds.Index != nil {
 							newIndexSize = ds.Index.EstimateMemory()
-						} else if ds.GetHNSW2Index() != nil {
-							if est, ok := ds.GetHNSW2Index().(interface{ EstimateMemory() int64 }); ok {
-								newIndexSize = est.EstimateMemory()
-							}
 						}
 
 						if newIndexSize > 0 {

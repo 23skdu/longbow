@@ -65,7 +65,6 @@ func TestGraphAPI_GetGraphStats(t *testing.T) {
 	err = json.Unmarshal(stream.results[0].Body, &resp)
 	require.NoError(t, err)
 
-	// assert.Equal(t, 2, resp.EdgeCount)
 	// assert.GreaterOrEqual(t, resp.CommunityCount, 1)
 	// assert.Contains(t, resp.Predicates, "knows")
 }

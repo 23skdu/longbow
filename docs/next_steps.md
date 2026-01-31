@@ -80,9 +80,9 @@ This document outlines the remaining tasks for Longbow development.
    - [x] Dynamic pruning heuristics
 
 2. **Graph Analytics Engine**
-   - Graph centrality measures for spread-out analysis
-   - Community detection in sparse HNSW graphs
-   - Graph density-aware search parameters
+   - [x] Graph centrality measures for spread-out analysis
+   - [x] Community detection in sparse HNSW graphs
+   - [x] Graph density-aware search parameters
 
 3. **Concurrent Graph Operations**
    - Parallel graph traversal algorithms

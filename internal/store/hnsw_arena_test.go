@@ -67,7 +67,7 @@ func TestSearchArenaAllocVectorIDSliceExhaustion(t *testing.T) {
 func TestHNSWSearchWithArena(t *testing.T) {
 	// Create dataset with test vectors
 	ds := &Dataset{Name: "test-arena"}
-	index := NewHNSWIndex(ds)
+	index := NewTestHNSWIndex(ds)
 
 	// Build test record with vectors
 	alloc := memory.NewGoAllocator()
@@ -135,7 +135,7 @@ func TestHNSWSearchWithArena(t *testing.T) {
 // TestHNSWSearchWithArenaUsesArena verifies arena offset advances
 func TestHNSWSearchWithArenaUsesArena(t *testing.T) {
 	ds := &Dataset{Name: "test-arena-usage"}
-	index := NewHNSWIndex(ds)
+	index := NewTestHNSWIndex(ds)
 
 	alloc := memory.NewGoAllocator()
 	schema := arrow.NewSchema([]arrow.Field{
@@ -185,7 +185,7 @@ func TestHNSWSearchWithArenaUsesArena(t *testing.T) {
 // TestHNSWSearchWithArenaReset verifies arena can be reset and reused
 func TestHNSWSearchWithArenaReset(t *testing.T) {
 	ds := &Dataset{Name: "test-arena-reset"}
-	index := NewHNSWIndex(ds)
+	index := NewTestHNSWIndex(ds)
 
 	alloc := memory.NewGoAllocator()
 	schema := arrow.NewSchema([]arrow.Field{
@@ -245,7 +245,7 @@ func TestHNSWSearchWithArenaReset(t *testing.T) {
 // TestHNSWSearchWithArenaNilArena tests fallback when arena is nil
 func TestHNSWSearchWithArenaNilArena(t *testing.T) {
 	ds := &Dataset{Name: "test-nil-arena"}
-	index := NewHNSWIndex(ds)
+	index := NewTestHNSWIndex(ds)
 
 	alloc := memory.NewGoAllocator()
 	schema := arrow.NewSchema([]arrow.Field{
@@ -291,7 +291,7 @@ func TestHNSWSearchWithArenaNilArena(t *testing.T) {
 // TestHNSWSearchWithArenaExhaustion tests behavior when arena is exhausted
 func TestHNSWSearchWithArenaExhaustion(t *testing.T) {
 	ds := &Dataset{Name: "test-arena-exhaustion"}
-	index := NewHNSWIndex(ds)
+	index := NewTestHNSWIndex(ds)
 
 	alloc := memory.NewGoAllocator()
 	schema := arrow.NewSchema([]arrow.Field{
@@ -366,7 +366,7 @@ func TestSearchArenaPoolIntegration(t *testing.T) {
 // BenchmarkSearchWithArenaVsSearchByID compares allocation strategies
 func BenchmarkSearchWithArenaVsSearchByID(b *testing.B) {
 	ds := &Dataset{Name: "bench-arena"}
-	index := NewHNSWIndex(ds)
+	index := NewTestHNSWIndex(ds)
 
 	alloc := memory.NewGoAllocator()
 	schema := arrow.NewSchema([]arrow.Field{

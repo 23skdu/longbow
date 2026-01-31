@@ -14,9 +14,9 @@ func TestHNSWPQ_Integration(t *testing.T) {
 	dim := 128
 	numVecs := 2000
 	ds := &Dataset{Name: "test_pq"}
-	h := NewHNSWIndex(ds)
+	h := NewTestHNSWIndex(ds)
 	// Initialize dims
-	h.dims = dim
+	h.SetDimension(dim)
 
 	// Generate random vectors
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))

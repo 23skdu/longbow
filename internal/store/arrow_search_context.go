@@ -169,8 +169,8 @@ type ArrowSearchContext struct {
 	scratchRemaining []Candidate
 
 	scratchDists []float32
-	scratchVecs  [][]float32
-	pruneDepth   int
+
+	pruneDepth int
 
 	// Reset tracking
 	dirty bool

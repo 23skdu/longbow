@@ -14,8 +14,8 @@ type HNSWPluggableAdapter struct {
 	mu        sync.RWMutex
 	dimension int
 	vectors   map[uint64][]float32
-	config    *HNSWIndexConfig
-	hnsw      *HNSWIndex //nolint:unused // reserved for future HNSW integration // actual HNSW index, nil until dataset provided
+	config    *ArrowHNSWConfig
+	hnsw      VectorIndex //nolint:unused // reserved for future HNSW integration // actual HNSW index, nil until dataset provided
 }
 
 func (h *HNSWPluggableAdapter) Type() IndexType {

@@ -480,18 +480,13 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 			}
 		}
 
-		// Call initialization hook if registered (for hnsw2, etc.)
+		// Call initialization hook if registered (for custom index extensions)
 		if s.datasetInitHook != nil {
 			s.datasetInitHook(ds)
 			// Account for initial index memory
 			if ds.Index != nil {
 				initialIndexMem := ds.Index.EstimateMemory()
 				ds.IndexMemoryBytes.Store(initialIndexMem)
-			} else if ds.GetHNSW2Index() != nil {
-				if est, ok := ds.GetHNSW2Index().(interface{ EstimateMemory() int64 }); ok {
-					initialIndexMem := est.EstimateMemory()
-					ds.IndexMemoryBytes.Store(initialIndexMem)
-				}
 			}
 		}
 		return ds
@@ -529,8 +524,8 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 	ds.dataMu.RLock()
 	idx := ds.Index
 	ds.dataMu.RUnlock()
-	if hnswIdx, ok := idx.(*HNSWIndex); ok {
-		s.initGPUIfEnabled(hnswIdx)
+	if idx != nil {
+		s.initGPUIfEnabled(idx)
 	}
 
 	// Batching configuration

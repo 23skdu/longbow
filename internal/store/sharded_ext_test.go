@@ -45,7 +45,7 @@ func TestShardedDataset_IndexGetSet(t *testing.T) {
 		t.Error("initial Index() should be nil")
 	}
 
-	idx := &HNSWIndex{dims: 128}
+	idx := NewTestHNSWIndex(&Dataset{Name: "dummy"})
 	ds.SetIndex(idx)
 
 	got := ds.Index()

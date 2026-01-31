@@ -77,12 +77,12 @@ func SearchHybrid(ctx context.Context, s *VectorStore, name string, queryVec []f
 		// Prefer arena-based index for better performance
 		if ds.BM25ArenaIndex != nil {
 			// Use arena-based BM25 index
-			sparseResults = searchBM25Arena(ds.BM25ArenaIndex, textQuery, k*2)
+			sparseResults = searchBM25Arena(ds.BM25ArenaIndex, textQuery, k*2, nil)
 			metrics.HybridSearchKeywordTotal.Inc()
 			metrics.HybridSearchBM25Duration.WithLabelValues(name).Observe(time.Since(bm25Start).Seconds())
 		} else if ds.BM25Index != nil {
 			// Fallback to legacy BM25 index
-			sparseResults = ds.BM25Index.SearchBM25(textQuery, k*2)
+			sparseResults = ds.BM25Index.SearchBM25(textQuery, k*2, nil)
 			metrics.HybridSearchKeywordTotal.Inc()
 			metrics.HybridSearchBM25Duration.WithLabelValues(name).Observe(time.Since(bm25Start).Seconds())
 		}

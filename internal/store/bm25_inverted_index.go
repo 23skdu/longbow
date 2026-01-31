@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 
 	lbtypes "github.com/23skdu/longbow/internal/store/types"
+	"github.com/RoaringBitmap/roaring/v2"
 )
 
 // BM25InvertedIndex is a sharded inverted index with proper BM25 scoring
@@ -191,7 +192,7 @@ func (idx *BM25InvertedIndex) Delete(id VectorID) {
 }
 
 // SearchBM25 returns documents matching the query, scored by BM25
-func (idx *BM25InvertedIndex) SearchBM25(query string, limit int) []SearchResult {
+func (idx *BM25InvertedIndex) SearchBM25(query string, limit int, filter *roaring.Bitmap) []SearchResult {
 	queryTerms := tokenize(query)
 	if len(queryTerms) == 0 {
 		return nil
@@ -232,6 +233,9 @@ func (idx *BM25InvertedIndex) SearchBM25(query string, limit int) []SearchResult
 				termDF[term] = len(docs)
 				termDocTF[term] = make(map[VectorID]int)
 				for docID, tf := range docs {
+					if filter != nil && !filter.Contains(uint32(docID)) {
+						continue
+					}
 					termDocTF[term][docID] = tf
 					docSet[docID] = struct{}{}
 				}

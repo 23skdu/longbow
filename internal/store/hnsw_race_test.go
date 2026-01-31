@@ -66,7 +66,7 @@ func TestHNSWRaceCompaction(t *testing.T) {
 				// We need to simulate DoPut behavior
 				ds, _ := vs.getOrCreateDataset(datasetName, func() *Dataset {
 					newDs := NewDataset(datasetName, schema)
-					newDs.Index = NewHNSWIndex(newDs)
+					newDs.Index = NewTestHNSWIndex(newDs)
 					return newDs
 				})
 

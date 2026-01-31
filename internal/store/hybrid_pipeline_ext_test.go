@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/23skdu/longbow/internal/query"
+	"github.com/RoaringBitmap/roaring/v2"
 )
 
 // ========== Search Method Tests ==========
@@ -206,19 +207,19 @@ func TestFuseLinear_LimitTruncation(t *testing.T) {
 }
 
 func TestFuseCascade_EmptyExact(t *testing.T) {
-	exactIDs := map[VectorID]struct{}{}
 	keyword := []SearchResult{{ID: 1, Score: 5.0}}
 	vector := []SearchResult{{ID: 2, Score: 0.9}}
 
 	// Empty exact filter = use all
-	results := FuseCascade(exactIDs, keyword, vector, 5)
+	results := FuseCascade(nil, keyword, vector, 5)
 	if len(results) != 2 {
 		t.Errorf("expected 2 results, got %d", len(results))
 	}
 }
 
 func TestFuseCascade_NoMatches(t *testing.T) {
-	exactIDs := map[VectorID]struct{}{99: {}}
+	exactIDs := roaring.New()
+	exactIDs.Add(99)
 	keyword := []SearchResult{{ID: 1, Score: 5.0}}
 	vector := []SearchResult{{ID: 2, Score: 0.9}}
 
@@ -230,7 +231,8 @@ func TestFuseCascade_NoMatches(t *testing.T) {
 }
 
 func TestFuseCascade_Duplicates(t *testing.T) {
-	exactIDs := map[VectorID]struct{}{1: {}}
+	exactIDs := roaring.New()
+	exactIDs.Add(1)
 	keyword := []SearchResult{{ID: 1, Score: 5.0}}
 	vector := []SearchResult{{ID: 1, Score: 0.9}} // Same ID in both
 
@@ -314,22 +316,22 @@ func TestApplyExactFilters_Empty(t *testing.T) {
 	p := NewHybridSearchPipeline(DefaultHybridPipelineConfig())
 
 	result := p.applyExactFilters(nil)
-	if len(result) != 0 {
-		t.Error("expected empty result for nil filters")
+	if result != nil && !result.IsEmpty() {
+		t.Error("expected nil or empty result for nil filters")
 	}
 
 	result = p.applyExactFilters([]query.Filter{})
-	if len(result) != 0 {
-		t.Error("expected empty result for empty filters")
+	if result != nil && !result.IsEmpty() {
+		t.Error("expected nil or empty result for empty filters")
 	}
 }
 
 // ========== Benchmarks ==========
 
 func BenchmarkFuseCascade(b *testing.B) {
-	exactIDs := make(map[VectorID]struct{})
-	for i := 0; i < 50; i++ {
-		exactIDs[VectorID(i)] = struct{}{}
+	exactIDs := roaring.New()
+	for i := uint32(0); i < 50; i++ {
+		exactIDs.Add(i)
 	}
 
 	keyword := make([]SearchResult, 100)

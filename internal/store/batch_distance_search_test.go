@@ -18,7 +18,7 @@ func TestSearchWithBatchDistance_UsesBatchCalculation(t *testing.T) {
 		t.Skip("Could not create test dataset")
 	}
 
-	index := NewHNSWIndex(ds)
+	index := NewTestHNSWIndex(ds)
 	for i := 0; i < 100; i++ {
 		_, _ = index.AddByLocation(context.Background(), 0, i)
 	}
@@ -52,7 +52,7 @@ func TestSearchWithBatchDistance_CorrectResults(t *testing.T) {
 		t.Skip("Could not create test dataset")
 	}
 
-	index := NewHNSWIndex(ds)
+	index := NewTestHNSWIndex(ds)
 	for i := 0; i < 50; i++ {
 		_, _ = index.AddByLocation(context.Background(), 0, i)
 	}
@@ -78,7 +78,7 @@ func TestSearchBatchOptimized_UsesBatchDistance(t *testing.T) {
 		t.Skip("Could not create test dataset")
 	}
 
-	index := NewHNSWIndex(ds)
+	index := NewTestHNSWIndex(ds)
 	for i := 0; i < 100; i++ {
 		_, _ = index.AddByLocation(context.Background(), 0, i)
 	}
@@ -113,7 +113,7 @@ func TestBatchDistanceSearch_Metrics(t *testing.T) {
 		t.Skip("Could not create test dataset")
 	}
 
-	index := NewHNSWIndex(ds)
+	index := NewTestHNSWIndex(ds)
 	for i := 0; i < 50; i++ {
 		_, _ = index.AddByLocation(context.Background(), 0, i)
 	}
@@ -148,7 +148,7 @@ func TestSearchWithBatchDistance_EmptyIndex(t *testing.T) {
 		t.Skip("Could not create test dataset")
 	}
 
-	index := NewHNSWIndex(ds)
+	index := NewTestHNSWIndex(ds)
 
 	query := makeTestVector(64, 0)
 	results := index.SearchWithBatchDistance(query, 5)
@@ -165,7 +165,7 @@ func TestSearchWithBatchDistance_KGreaterThanSize(t *testing.T) {
 		t.Skip("Could not create test dataset")
 	}
 
-	index := NewHNSWIndex(ds)
+	index := NewTestHNSWIndex(ds)
 	for i := 0; i < 3; i++ {
 		_, _ = index.AddByLocation(context.Background(), 0, i)
 	}

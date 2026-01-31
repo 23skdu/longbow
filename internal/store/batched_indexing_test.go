@@ -28,7 +28,7 @@ func TestBatchedIndexing(t *testing.T) {
 	)
 
 	ds := NewDataset("batched_test", schema)
-	ds.Index = NewHNSWIndex(ds)
+	ds.Index = NewTestHNSWIndex(ds)
 
 	store := NewVectorStore(pool, zerolog.Nop(), 1<<30, 0, 0)
 	t.Cleanup(func() {

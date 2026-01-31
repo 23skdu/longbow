@@ -60,7 +60,7 @@ func TestBM25InvertedIndexDelete(t *testing.T) {
 	}
 
 	// Search should not find deleted doc
-	results := idx.SearchBM25("hello", 10)
+	results := idx.SearchBM25("hello", 10, nil)
 	for _, r := range results {
 		if r.ID == VectorID(1) {
 			t.Error("deleted document should not appear in results")
@@ -77,7 +77,7 @@ func TestBM25InvertedIndexSearchBM25(t *testing.T) {
 	idx.Add(VectorID(3), "cherry cherry cherry cherry") // no apple/banana
 
 	// Search for "apple" - doc 1 should rank higher
-	results := idx.SearchBM25("apple", 10)
+	results := idx.SearchBM25("apple", 10, nil)
 	if len(results) == 0 {
 		t.Fatal("expected results for apple query")
 	}
@@ -86,7 +86,7 @@ func TestBM25InvertedIndexSearchBM25(t *testing.T) {
 	}
 
 	// Search for "banana" - doc 2 should rank higher
-	results = idx.SearchBM25("banana", 10)
+	results = idx.SearchBM25("banana", 10, nil)
 	if len(results) == 0 {
 		t.Fatal("expected results for banana query")
 	}
@@ -95,7 +95,7 @@ func TestBM25InvertedIndexSearchBM25(t *testing.T) {
 	}
 
 	// Search for "cherry" - only doc 3
-	results = idx.SearchBM25("cherry", 10)
+	results = idx.SearchBM25("cherry", 10, nil)
 	if len(results) != 1 {
 		t.Errorf("expected 1 result for cherry, got %d", len(results))
 	}
@@ -109,7 +109,7 @@ func TestBM25InvertedIndexMultiTermQuery(t *testing.T) {
 	idx.Add(VectorID(3), "quick lazy cat")
 
 	// Multi-term query "quick brown" should prefer doc 1 (has both terms)
-	results := idx.SearchBM25("quick brown", 10)
+	results := idx.SearchBM25("quick brown", 10, nil)
 	if len(results) == 0 {
 		t.Fatal("expected results")
 	}
@@ -133,7 +133,7 @@ func TestBM25InvertedIndexIDFWeighting(t *testing.T) {
 	}
 
 	// Search for "rare" should return doc 1 with high score
-	results := idx.SearchBM25("rare", 10)
+	results := idx.SearchBM25("rare", 10, nil)
 	if len(results) != 1 {
 		t.Errorf("expected 1 result for rare term, got %d", len(results))
 	}
@@ -143,7 +143,7 @@ func TestBM25InvertedIndexIDFWeighting(t *testing.T) {
 
 	// Rare term should have higher weight than common term
 	rareScore := results[0].Score
-	commonResults := idx.SearchBM25("common", 10)
+	commonResults := idx.SearchBM25("common", 10, nil)
 	// Average common score should be lower due to low IDF
 	var commonScoreAvg float32
 	for _, r := range commonResults {
@@ -165,7 +165,7 @@ func TestBM25InvertedIndexLengthNormalization(t *testing.T) {
 	// Long document with same term frequency
 	idx.Add(VectorID(2), "target padding padding padding padding padding padding padding")
 
-	results := idx.SearchBM25("target", 10)
+	results := idx.SearchBM25("target", 10, nil)
 	if len(results) != 2 {
 		t.Fatalf("expected 2 results, got %d", len(results))
 	}
@@ -207,13 +207,13 @@ func TestBM25InvertedIndexEmptyQuery(t *testing.T) {
 	idx.Add(VectorID(1), "hello world")
 
 	// Empty query should return nil
-	results := idx.SearchBM25("", 10)
+	results := idx.SearchBM25("", 10, nil)
 	if results != nil {
 		t.Errorf("expected nil for empty query, got %v", results)
 	}
 
 	// Whitespace-only query should return nil
-	results = idx.SearchBM25("   ", 10)
+	results = idx.SearchBM25("   ", 10, nil)
 	if results != nil {
 		t.Errorf("expected nil for whitespace query")
 	}
@@ -246,7 +246,7 @@ func TestBM25InvertedIndexConcurrency(t *testing.T) {
 		}(i)
 		go func() {
 			defer wg.Done()
-			idx.SearchBM25("test", 10)
+			idx.SearchBM25("test", 10, nil)
 		}()
 	}
 	wg.Wait()
@@ -261,13 +261,13 @@ func TestBM25InvertedIndexLimit(t *testing.T) {
 	}
 
 	// Limit to 5 results
-	results := idx.SearchBM25("common", 5)
+	results := idx.SearchBM25("common", 5, nil)
 	if len(results) != 5 {
 		t.Errorf("expected 5 results with limit, got %d", len(results))
 	}
 
 	// No limit (0) should return all
-	results = idx.SearchBM25("common", 0)
+	results = idx.SearchBM25("common", 0, nil)
 	if len(results) != 20 {
 		t.Errorf("expected 20 results without limit, got %d", len(results))
 	}
@@ -296,6 +296,6 @@ func BenchmarkBM25InvertedIndexSearchBM25(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		idx.SearchBM25("various terms", 10)
+		idx.SearchBM25("various terms", 10, nil)
 	}
 }

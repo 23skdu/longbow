@@ -9,14 +9,13 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/apache/arrow-go/v18/arrow/memory"
-	"github.com/coder/hnsw"
 )
 
 // TestHNSWIndex_Warmup tests the warmup method on HNSWIndex
 func TestHNSWIndex_Warmup(t *testing.T) {
 	t.Run("warmup on empty index does not panic", func(t *testing.T) {
 		ds := &Dataset{Name: "test_empty"}
-		idx := NewHNSWIndex(ds)
+		idx := NewTestHNSWIndex(ds)
 
 		// Should not panic
 		touched := idx.Warmup()
@@ -28,7 +27,7 @@ func TestHNSWIndex_Warmup(t *testing.T) {
 
 	t.Run("warmup touches all nodes", func(t *testing.T) {
 		ds := &Dataset{Name: "test_warmup"}
-		idx := NewHNSWIndex(ds)
+		idx := NewTestHNSWIndex(ds)
 
 		// Add test vectors directly to graph for testing
 		vectors := [][]float32{
@@ -38,7 +37,7 @@ func TestHNSWIndex_Warmup(t *testing.T) {
 		}
 
 		for i, vec := range vectors {
-			idx.Graph.Add(hnsw.MakeNode(VectorID(i), vec))
+			_ = idx.InsertWithVector(uint32(i), vec, 0)
 		}
 
 		// Warmup should touch all nodes
@@ -51,12 +50,12 @@ func TestHNSWIndex_Warmup(t *testing.T) {
 
 	t.Run("warmup is safe for concurrent access", func(t *testing.T) {
 		ds := &Dataset{Name: "test_concurrent"}
-		idx := NewHNSWIndex(ds)
+		idx := NewTestHNSWIndex(ds)
 
 		// Add vectors
 		for i := 0; i < 100; i++ {
 			vec := []float32{float32(i), float32(i + 1), float32(i + 2), float32(i + 3)}
-			idx.Graph.Add(hnsw.MakeNode(VectorID(i), vec))
+			_ = idx.InsertWithVector(uint32(i), vec, 0)
 		}
 
 		// Run warmup concurrently
@@ -96,10 +95,10 @@ func TestVectorStore_Warmup(t *testing.T) {
 		// Create test datasets with indexes
 		for i := 0; i < 3; i++ {
 			ds := &Dataset{Name: fmt.Sprintf("test_ds_%d", i)}
-			ds.Index = NewHNSWIndex(ds)
+			ds.Index = NewTestHNSWIndex(ds)
 			for j := 0; j < 10; j++ {
 				vec := []float32{float32(j), float32(j + 1), float32(j + 2), float32(j + 3)}
-				ds.Index.(*HNSWIndex).Graph.Add(hnsw.MakeNode(VectorID(j), vec))
+				_ = ds.Index.(*ArrowHNSW).InsertWithVector(uint32(j), vec, 0)
 			}
 			store.updateDatasets(func(m map[string]*Dataset) {
 				m[ds.Name] = ds
@@ -123,8 +122,8 @@ func TestVectorStore_Warmup(t *testing.T) {
 
 		// Dataset with index
 		ds1 := &Dataset{Name: "with_index"}
-		ds1.Index = NewHNSWIndex(ds1)
-		ds1.Index.(*HNSWIndex).Graph.Add(hnsw.MakeNode(VectorID(0), []float32{1, 2, 3, 4}))
+		ds1.Index = NewTestHNSWIndex(ds1)
+		_ = ds1.Index.(*ArrowHNSW).InsertWithVector(uint32(0), []float32{1, 2, 3, 4}, 0)
 		store.updateDatasets(func(m map[string]*Dataset) {
 			m[ds1.Name] = ds1
 		})
@@ -151,10 +150,10 @@ func TestVectorStore_Warmup(t *testing.T) {
 		defer func() { _ = store.Close() }()
 
 		ds := &Dataset{Name: "test_duration"}
-		ds.Index = NewHNSWIndex(ds)
+		ds.Index = NewTestHNSWIndex(ds)
 		for i := 0; i < 100; i++ {
 			vec := []float32{float32(i), float32(i + 1), float32(i + 2), float32(i + 3)}
-			ds.Index.(*HNSWIndex).Graph.Add(hnsw.MakeNode(VectorID(i), vec))
+			_ = ds.Index.(*ArrowHNSW).InsertWithVector(uint32(i), vec, 0)
 		}
 		store.updateDatasets(func(m map[string]*Dataset) {
 			m[ds.Name] = ds
@@ -197,10 +196,14 @@ func TestShardedHNSW_Warmup(t *testing.T) {
 			vec := []float32{float32(i), float32(i), float32(i)}
 			// Manually add to shard to bypass dataset dependency
 			shardIdx := sharded.GetShardForID(VectorID(i))
-			localID := sharded.shards[shardIdx].mapID(VectorID(i))
+			shard := sharded.shards[shardIdx]
+			// We know it's *ArrowHNSW as it's created by NewShardedHNSW
+			hnswIdx := shard.index.(*ArrowHNSW)
+			localID := uint32(hnswIdx.nodeCount.Add(1) - 1)
+			shard.registerID(localID, VectorID(i))
 
 			// Use InsertWithVector on the internal ArrowHNSW index
-			err := sharded.shards[shardIdx].index.InsertWithVector(localID, vec, 0)
+			err := hnswIdx.InsertWithVector(localID, vec, 0)
 			if err != nil {
 				t.Fatalf("failed to insert: %v", err)
 			}

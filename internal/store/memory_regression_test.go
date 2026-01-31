@@ -28,7 +28,7 @@ func TestHNSWIndex_EstimateMemory(t *testing.T) {
 
 	// Initialize HNSW Index
 	// Note: NewHNSWIndex takes only *Dataset in this version
-	index := NewHNSWIndex(ds)
+	index := NewTestHNSWIndex(ds)
 
 	// Initial memory should be small but non-zero (struct overhead)
 	initialMem := index.EstimateMemory()

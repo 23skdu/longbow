@@ -35,7 +35,7 @@ func TestMemoryLeak_CreateDropDataset(t *testing.T) {
 	// 1. Warm up and get baseline memory
 	for i := 0; i < 5; i++ {
 		name := fmt.Sprintf("warmup_%d", i)
-		runDatasetCycle(t, ctx, s, name, schema, logger)
+		runDatasetCycle(t, ctx, s, name, schema, &logger)
 	}
 	s.ReleaseMemory()
 
@@ -46,7 +46,7 @@ func TestMemoryLeak_CreateDropDataset(t *testing.T) {
 	iterations := 20 // Fewer iterations for cleaner signal
 	for i := 0; i < iterations; i++ {
 		name := fmt.Sprintf("dataset_%d", i)
-		runDatasetCycle(t, ctx, s, name, schema, logger)
+		runDatasetCycle(t, ctx, s, name, schema, &logger)
 
 		// Force GC and memory release between iterations
 		runtime.GC()
@@ -74,7 +74,7 @@ func TestMemoryLeak_CreateDropDataset(t *testing.T) {
 	assert.True(t, memoryDelta < 100*1024*1024, "Memory leak detected! Delta: %d bytes", memoryDelta)
 }
 
-func runDatasetCycle(t *testing.T, ctx context.Context, s *VectorStore, name string, schema *arrow.Schema, logger zerolog.Logger) {
+func runDatasetCycle(t *testing.T, ctx context.Context, s *VectorStore, name string, schema *arrow.Schema, logger *zerolog.Logger) {
 	// Create dataset
 	beforeCreate := s.currentMemory.Load()
 	s.PrewarmDataset(name, schema)

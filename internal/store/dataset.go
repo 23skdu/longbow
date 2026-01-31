@@ -3,12 +3,13 @@ package store
 import (
 	"context"
 	"errors"
-	"os"
+	"fmt"
 	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/23skdu/longbow/internal/query"
 	qry "github.com/23skdu/longbow/internal/query"
 	"github.com/rs/zerolog"
 
@@ -88,12 +89,6 @@ type Dataset struct {
 	// Per-record eviction
 	recordEviction *RecordEvictionManager
 
-	// hnsw2 integration (Phase 5)
-	// Using any to avoid import cycle with hnsw2 package
-	// Actual type is *hnsw2.ArrowHNSW, initialized externally
-	hnsw2Index any
-	useHNSW2   bool // Feature flag
-
 	// Metric defines the distance metric for this dataset
 	Metric DistanceMetric
 
@@ -107,12 +102,31 @@ type Dataset struct {
 	Logger zerolog.Logger
 }
 
-// IsSharded returns true if the dataset uses ShardedHNSW.
+// IsSharded returns true if the dataset's vector index is sharded.
 func (d *Dataset) IsSharded() bool {
-	d.dataMu.RLock()
-	defer d.dataMu.RUnlock()
-	_, ok := d.Index.(*ShardedHNSW)
-	return ok
+	if d.Index != nil {
+		return d.Index.IsSharded()
+	}
+	return false
+}
+
+// GetShardedIndex returns the index as a *ShardedHNSW if it is one.
+func (d *Dataset) GetShardedIndex() *ShardedHNSW {
+	if d.Index == nil {
+		return nil
+	}
+	if s, ok := d.Index.(*ShardedHNSW); ok {
+		return s
+	}
+	// Also check if it's an AutoShardingIndex that is currently sharded
+	if asi, ok := d.Index.(*AutoShardingIndex); ok {
+		asi.mu.RLock()
+		defer asi.mu.RUnlock()
+		if s, ok := asi.current.(*ShardedHNSW); ok {
+			return s
+		}
+	}
+	return nil
 }
 
 // IndexLen returns the number of vectors in the index.
@@ -136,9 +150,6 @@ func (d *Dataset) GetRecord(idx int) (arrow.RecordBatch, bool) {
 }
 
 func NewDataset(name string, schema *arrow.Schema) *Dataset {
-	// Check feature flag for hnsw2 (default to true)
-	envVal := os.Getenv("LONGBOW_USE_HNSW2")
-	useHNSW2 := envVal != "false"
 
 	ds := &Dataset{
 		Name:            name,
@@ -152,10 +163,8 @@ func NewDataset(name string, schema *arrow.Schema) *Dataset {
 		InvertedIndexes: make(map[string]*InvertedIndex),
 		BM25Index:       NewBM25InvertedIndex(DefaultBM25Config()),
 		Graph:           NewGraphStore(),
-		useHNSW2:        useHNSW2,
 		filterCache:     make(map[string]*qry.Bitset),
 		Metric:          MetricEuclidean, // Default
-		// hnsw2Index will be initialized externally to avoid import cycle
 	}
 
 	// Initialize Schema Manager
@@ -191,34 +200,12 @@ func (d *Dataset) SetLastAccess(t time.Time) {
 	atomic.StoreInt64(&d.lastAccess, t.UnixNano())
 }
 
-// UseHNSW2 returns whether hnsw2 is enabled for this dataset.
-func (d *Dataset) UseHNSW2() bool {
-	return d.useHNSW2
-}
-
-// SetHNSW2Index sets the hnsw2 index (called from external initialization).
-// This avoids import cycles by allowing main package to initialize hnsw2.
-func (d *Dataset) SetHNSW2Index(idx any) {
-	d.hnsw2Index = idx
-}
-
-// GetHNSW2Index returns the hnsw2 index.
-// Caller should type assert to *hnsw2.ArrowHNSW.
-func (d *Dataset) GetHNSW2Index() any {
-	return d.hnsw2Index
-}
-
 // SearchDataset delegates to the vector index if available
-func (d *Dataset) SearchDataset(ctx context.Context, query []float32, k int) ([]SearchResult, error) {
-	d.dataMu.RLock()
-	idx := d.Index
-	d.dataMu.RUnlock()
-
-	if idx == nil {
-		return nil, nil
+func (d *Dataset) SearchDataset(ctx context.Context, queryVec []float32, k int) ([]SearchResult, error) {
+	if d.Index == nil {
+		return nil, fmt.Errorf("index not initialized")
 	}
-	// Returns []SearchResult, error
-	return idx.SearchVectors(ctx, query, k, nil, SearchOptions{})
+	return d.Index.SearchVectors(ctx, queryVec, k, nil, SearchOptions{})
 }
 
 // AddToIndex adds a vector to the index
@@ -293,6 +280,9 @@ func (d *Dataset) GenerateFilterBitsetLocked(filters []qry.Filter, hash string) 
 	// Cache a clone so the original can be released/modified if needed elsewhere
 	// and the cached one stays safe.
 	d.filterMu.Lock()
+	if d.filterCache == nil {
+		d.filterCache = make(map[string]*query.Bitset)
+	}
 	if len(d.filterCache) > 100 {
 		// Evict first element (pseudo-LRU since map iteration is random)
 		for k, v := range d.filterCache {

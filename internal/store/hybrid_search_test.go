@@ -154,7 +154,7 @@ func TestRRF_KParameter(t *testing.T) {
 // =============================================================================
 
 type HybridSearcher struct {
-	hnsw    *HNSWIndex
+	hnsw    *ArrowHNSW
 	bm25    *InvertedIndex
 	deleted map[VectorID]bool
 }
@@ -162,7 +162,7 @@ type HybridSearcher struct {
 func NewHybridSearcher() *HybridSearcher {
 	ds := &Dataset{Records: []arrow.RecordBatch{}}
 	return &HybridSearcher{
-		hnsw:    NewHNSWIndex(ds),
+		hnsw:    NewTestHNSWIndex(ds),
 		bm25:    NewInvertedIndex(),
 		deleted: make(map[VectorID]bool),
 	}

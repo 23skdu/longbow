@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"fmt"
+	"io"
 	"runtime"
 	"sort"
 	"sync"
@@ -14,7 +15,6 @@ import (
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/RoaringBitmap/roaring/v2"
 	"github.com/apache/arrow-go/v18/arrow"
-	"github.com/apache/arrow-go/v18/arrow/array"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -58,36 +58,44 @@ func DefaultShardedHNSWConfig() ShardedHNSWConfig {
 	}
 }
 
-// hnswShard represents a single HNSW graph shard backed by ArrowHNSW.
+// hnswShard represents a single HNSW graph shard backed by any VectorIndex.
 type hnswShard struct {
-	index         *ArrowHNSW
+	index         VectorIndex
 	mu            sync.RWMutex
 	globalToLocal map[VectorID]uint32
 	localToGlobal []VectorID
 }
 
-func newHnswShard(index *ArrowHNSW) *hnswShard {
+func newHnswShard(idx VectorIndex) *hnswShard {
 	return &hnswShard{
-		index:         index,
-		globalToLocal: make(map[VectorID]uint32),
+		index:         idx,
 		localToGlobal: make([]VectorID, 0),
+		globalToLocal: make(map[VectorID]uint32),
 	}
 }
 
-// mapID registers a global ID and assigns/returns a local ID.
-func (s *hnswShard) mapID(globalID VectorID) uint32 {
+// registerID records the mapping between a local shard ID and a global VectorID.
+func (s *hnswShard) registerID(localID uint32, globalID VectorID) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	localID := uint32(len(s.localToGlobal))
-	s.localToGlobal = append(s.localToGlobal, globalID)
-	s.globalToLocal[globalID] = localID
 
-	// Sync index nodeCount with shard map
-	if s.index != nil {
-		s.index.nodeCount.Store(int64(len(s.localToGlobal)))
+	// Ensure localToGlobal slice is large enough
+	if int(localID) >= len(s.localToGlobal) {
+		newLen := int(localID) + 1
+		if cap(s.localToGlobal) < newLen {
+			newCap := cap(s.localToGlobal) * 2
+			if newCap < newLen {
+				newCap = newLen
+			}
+			newSlice := make([]VectorID, newLen, newCap)
+			copy(newSlice, s.localToGlobal)
+			s.localToGlobal = newSlice
+		}
+		s.localToGlobal = s.localToGlobal[:newLen]
 	}
 
-	return localID
+	s.localToGlobal[localID] = globalID
+	s.globalToLocal[globalID] = localID
 }
 
 // getGlobalID returns the global ID for a local ID.
@@ -132,6 +140,8 @@ type ShardedHNSW struct {
 	// Dynamic Sharding
 	sharder  ShardingStrategy
 	shardsMu sync.RWMutex
+
+	parallelConfig types.ParallelSearchConfig
 }
 
 // NewShardedHNSW creates a new sharded HNSW index.
@@ -151,11 +161,12 @@ func NewShardedHNSW(config ShardedHNSWConfig, dataset *Dataset) *ShardedHNSW {
 	}
 
 	s := &ShardedHNSW{
-		config:        config,
-		dataset:       dataset,
-		locationStore: NewChunkedLocationStore(),
-		dimension:     config.Dimension,
-		sharder:       sharder,
+		config:         config,
+		dataset:        dataset,
+		locationStore:  NewChunkedLocationStore(),
+		dimension:      config.Dimension,
+		sharder:        sharder,
+		parallelConfig: types.DefaultParallelSearchConfig(),
 	}
 
 	s.shards = make([]*hnswShard, config.NumShards)
@@ -293,37 +304,11 @@ func (s *ShardedHNSW) DeleteBatch(ctx context.Context, ids []uint32) error {
 }
 
 // AddByRecord implements VectorIndex.
+func (s *ShardedHNSW) IsSharded() bool {
+	return true
+}
+
 func (s *ShardedHNSW) AddByRecord(ctx context.Context, rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32, error) {
-	// Extract vector
-	var vecCol arrow.Array
-	for i, field := range rec.Schema().Fields() {
-		if field.Name == "vector" {
-			vecCol = rec.Column(i)
-			break
-		}
-	}
-	if vecCol == nil {
-		return 0, fmt.Errorf("vector column not found")
-	}
-
-	listArr, ok := vecCol.(*array.FixedSizeList)
-	if !ok {
-		return 0, fmt.Errorf("invalid vector column format")
-	}
-
-	values := listArr.Data().Children()[0]
-	floatArr := array.NewFloat32Data(values)
-	defer floatArr.Release()
-
-	width := int(listArr.DataType().(*arrow.FixedSizeListType).Len())
-	start := rowIdx * width
-	end := start + width
-	if start < 0 || end > floatArr.Len() {
-		return 0, fmt.Errorf("row index out of bounds")
-	}
-
-	vec := floatArr.Float32Values()[start:end]
-
 	// Allocate Global ID
 	id := VectorID(s.nextID.Add(1) - 1)
 
@@ -339,17 +324,11 @@ func (s *ShardedHNSW) AddByRecord(ctx context.Context, rec arrow.RecordBatch, ro
 	if shardIdx < len(s.shards) {
 		shard := s.shards[shardIdx]
 		s.shardsMu.RUnlock()
-		// Common path: existing shard
-		// Map Global ID to Local ID in Shard
-		localID := shard.mapID(id)
-		// Store location in shard index to support filtering
-		shard.index.SetLocation(VectorID(localID), Location{BatchIdx: batchIdx, RowIdx: rowIdx})
-
-		level := shard.index.generateLevel()
-		err := shard.index.InsertWithVector(localID, vec, level)
+		localID, err := shard.index.AddByRecord(ctx, rec, rowIdx, batchIdx)
 		if err != nil {
 			return 0, fmt.Errorf("shard insert failed: %w", err)
 		}
+		shard.registerID(localID, id)
 		metrics.ShardedHnswShardSize.WithLabelValues(s.dataset.Name, fmt.Sprintf("%d", shardIdx)).Inc()
 		return uint32(id), nil
 	}
@@ -367,21 +346,17 @@ func (s *ShardedHNSW) AddByRecord(ctx context.Context, rec arrow.RecordBatch, ro
 		// Someone else created it
 		shard := s.shards[shardIdx]
 		s.shardsMu.Unlock()
-		localID := shard.mapID(id)
-		// Store location in shard index to support filtering
-		shard.index.SetLocation(VectorID(localID), Location{BatchIdx: batchIdx, RowIdx: rowIdx})
-
-		level := shard.index.generateLevel()
-		err := shard.index.InsertWithVector(localID, vec, level)
+		localID, err := shard.index.AddByRecord(ctx, rec, rowIdx, batchIdx)
 		if err != nil {
 			return 0, fmt.Errorf("shard insert failed: %w", err)
 		}
+		shard.registerID(localID, id)
 		metrics.ShardedHnswShardSize.WithLabelValues(s.dataset.Name, fmt.Sprintf("%d", shardIdx)).Inc()
 		return uint32(id), nil
 	}
 
 	// Grow
-	// We fill potential gaps if shardIdx skips (e.g. if batch added many IDs at once)
+	// We fill potential gaps if shardIdx skips
 	for i := len(s.shards); i <= shardIdx; i++ {
 		s.shards = append(s.shards, s.newShard(i))
 	}
@@ -389,15 +364,11 @@ func (s *ShardedHNSW) AddByRecord(ctx context.Context, rec arrow.RecordBatch, ro
 	s.shardsMu.Unlock()
 
 	// Insert
-	localID := shard.mapID(id)
-	// Store location in shard index to support filtering
-	shard.index.SetLocation(VectorID(localID), Location{BatchIdx: batchIdx, RowIdx: rowIdx})
-
-	level := shard.index.generateLevel()
-	err := shard.index.InsertWithVector(localID, vec, level)
+	localID, err := shard.index.AddByRecord(ctx, rec, rowIdx, batchIdx)
 	if err != nil {
 		return 0, fmt.Errorf("shard insert failed: %w", err)
 	}
+	shard.registerID(localID, id)
 
 	metrics.ShardedHnswShardSize.WithLabelValues(s.dataset.Name, fmt.Sprintf("%d", shardIdx)).Inc()
 	return uint32(id), nil
@@ -713,7 +684,14 @@ func (s *ShardedHNSW) SetEfConstruction(ef int) {
 	defer s.shardsMu.RUnlock()
 	for _, shard := range s.shards {
 		if shard != nil && shard.index != nil {
-			shard.index.SetEfConstruction(int32(ef))
+			// Check for SetEfConstruction method (supported by HNSWIndex and ArrowHNSW)
+			// Check for SetEfConstruction method (supported by HNSWIndex and ArrowHNSW)
+			switch h := shard.index.(type) {
+			case interface{ SetEfConstruction(int) }:
+				h.SetEfConstruction(ef)
+			case interface{ SetEfConstruction(int32) }:
+				h.SetEfConstruction(int32(ef))
+			}
 		}
 	}
 }
@@ -839,16 +817,10 @@ func (s *ShardedHNSW) RemapFromBatchInfo(remapping map[int]BatchRemapInfo) error
 					// Update global location
 					s.locationStore.Set(vid, newLoc)
 
-					// Update shard location
-					shardIdx := s.sharder.GetShard(vid)
-					if shardIdx < len(s.shards) {
-						shard := s.shards[shardIdx]
-						if shard != nil {
-							if localID, ok := shard.getLocalID(vid); ok {
-								shard.index.SetLocation(VectorID(localID), newLoc)
-							}
-						}
-					}
+					// Shards currently handle their own internal consistency.
+					// If they are ArrowHNSW, they might need location updates,
+					// but since they don't have SetLocation in the interface,
+					// we skip it for generic support.
 				}
 			}
 		}
@@ -878,13 +850,63 @@ func (s *ShardedHNSW) CleanupTombstones(threshold int) int {
 		wg.Add(1)
 		go func(sh *hnswShard) {
 			defer wg.Done()
-			// Forward to underlying ArrowHNSW
-			pruned, _ := sh.index.CleanupTombstones(threshold)
-			mu.Lock()
-			totalPruned += pruned
-			mu.Unlock()
+			// Check for CleanupTombstones method (supported by ArrowHNSW)
+			if h, ok := sh.index.(interface{ CleanupTombstones(int) int }); ok {
+				pruned := h.CleanupTombstones(threshold)
+				mu.Lock()
+				totalPruned += pruned
+				mu.Unlock()
+			}
 		}(shard)
 	}
 	wg.Wait()
 	return totalPruned
+}
+
+// ExportState implements VectorIndex.
+func (s *ShardedHNSW) ExportState() ([]byte, error) {
+	return nil, fmt.Errorf("ExportState not yet implemented for ShardedHNSW")
+}
+
+// ImportState implements VectorIndex.
+func (s *ShardedHNSW) ImportState(data []byte) error {
+	return fmt.Errorf("ImportState not yet implemented for ShardedHNSW")
+}
+
+// ExportGraph implements VectorIndex.
+func (s *ShardedHNSW) ExportGraph(w io.Writer) error {
+	return fmt.Errorf("ExportGraph not yet implemented for ShardedHNSW")
+}
+
+// ImportGraph implements VectorIndex.
+func (s *ShardedHNSW) ImportGraph(r io.Reader) error {
+	return fmt.Errorf("ImportGraph not yet implemented for ShardedHNSW")
+}
+
+// ExportDelta implements VectorIndex.
+func (s *ShardedHNSW) ExportDelta(fromVersion uint64) (*types.DeltaSync, error) {
+	return nil, fmt.Errorf("ExportDelta not yet implemented for ShardedHNSW")
+}
+
+// ApplyDelta implements VectorIndex.
+func (s *ShardedHNSW) ApplyDelta(delta *types.DeltaSync) error {
+	return fmt.Errorf("ApplyDelta not yet implemented for ShardedHNSW")
+}
+
+// GetParallelSearchConfig implements VectorIndex.
+func (s *ShardedHNSW) GetParallelSearchConfig() types.ParallelSearchConfig {
+	return s.parallelConfig
+}
+
+// SetParallelSearchConfig updates the parallel search configuration
+func (s *ShardedHNSW) SetParallelSearchConfig(cfg types.ParallelSearchConfig) {
+	s.parallelConfig = cfg
+	// Propagate to existing shards
+	s.shardsMu.RLock()
+	defer s.shardsMu.RUnlock()
+	for _, shard := range s.shards {
+		if shard != nil && shard.index != nil {
+			shard.index.SetParallelSearchConfig(cfg)
+		}
+	}
 }

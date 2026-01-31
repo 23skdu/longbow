@@ -134,13 +134,13 @@ func TestDatasetSearchDataset_NoIndex(t *testing.T) {
 func TestDatasetSearchDataset_WithHNSW(t *testing.T) {
 	ds := &Dataset{
 		Name:  "test",
-		Index: NewHNSWIndex(nil),
+		Index: NewTestHNSWIndex(nil),
 	}
-	if ds.Index.(*HNSWIndex).dataset != nil { // Check initial state
+	if ds.Index.(*ArrowHNSW).dataset != nil { // Check initial state
 		t.Error("new dataset: index dataset ref incorrect before assignment")
 	}
-	ds.Index.(*HNSWIndex).dataset = ds
-	if ds.Index.(*HNSWIndex).dataset != ds { // Check after assignment
+	ds.Index.(*ArrowHNSW).dataset = ds
+	if ds.Index.(*ArrowHNSW).dataset != ds { // Check after assignment
 		t.Error("new dataset: index dataset ref incorrect after assignment")
 	}
 
@@ -213,7 +213,7 @@ func TestCheckAndMigrateToSharded_Disabled(t *testing.T) {
 
 	vs.SetAutoShardingConfig(AutoShardingConfig{Enabled: false})
 
-	ds := &Dataset{Name: "test", Index: NewHNSWIndex(nil)}
+	ds := &Dataset{Name: "test", Index: NewTestHNSWIndex(nil)}
 
 	vs.checkAndMigrateToSharded(ds)
 	if ds.IsSharded() {
@@ -243,8 +243,8 @@ func TestCheckAndMigrateToSharded_BelowThreshold(t *testing.T) {
 
 	vs.SetAutoShardingConfig(AutoShardingConfig{Enabled: true, ShardThreshold: 1000000})
 
-	ds := &Dataset{Name: "test", Index: NewHNSWIndex(nil)}
-	ds.Index.(*HNSWIndex).dataset = ds
+	ds := &Dataset{Name: "test", Index: NewTestHNSWIndex(nil)}
+	ds.Index.(*ArrowHNSW).dataset = ds
 
 	vs.checkAndMigrateToSharded(ds)
 	if ds.IsSharded() {
@@ -258,7 +258,7 @@ func TestCheckAndMigrateToSharded_BelowThreshold(t *testing.T) {
 
 func TestHNSWIndex_SearchVectors_Empty(t *testing.T) {
 	ds := &Dataset{Name: "test"}
-	hnsw := NewHNSWIndex(ds)
+	hnsw := NewTestHNSWIndex(ds)
 
 	results, err := hnsw.SearchVectors(context.Background(), []float32{1, 2, 3}, 10, nil, SearchOptions{})
 	if err != nil {
@@ -338,9 +338,9 @@ func BenchmarkExtractVectorFromCol(b *testing.B) {
 func BenchmarkDatasetSearchDataset(b *testing.B) {
 	ds := &Dataset{
 		Name:  "test",
-		Index: NewHNSWIndex(nil),
+		Index: NewTestHNSWIndex(nil),
 	}
-	ds.Index.(*HNSWIndex).dataset = ds
+	ds.Index.(*ArrowHNSW).dataset = ds
 	query := make([]float32, 128)
 
 	b.ResetTimer()

@@ -17,7 +17,7 @@ import (
 // TestHNSW_EmptyIndex verifies search on empty index returns nil
 func TestHNSW_EmptyIndex(t *testing.T) {
 	ds := &Dataset{}
-	idx := NewHNSWIndex(ds)
+	idx := NewTestHNSWIndex(ds)
 
 	// Use SearchVectors with dummy vector. SearchByID seems problematic or non-standard in tests.
 	// SearchVectors(ctx, query, k, filters, opts)
@@ -43,7 +43,7 @@ func TestHNSW_SingleVector(t *testing.T) {
 		Records: []arrow.RecordBatch{rec},
 		dataMu:  sync.RWMutex{},
 	}
-	idx := NewHNSWIndex(ds)
+	idx := NewTestHNSWIndex(ds)
 
 	// Add the single vector
 	_, err := idx.AddByLocation(context.Background(), 0, 0)
@@ -80,7 +80,7 @@ func TestHNSW_KGreaterThanTotal(t *testing.T) {
 		Records: []arrow.RecordBatch{rec},
 		dataMu:  sync.RWMutex{},
 	}
-	idx := NewHNSWIndex(ds)
+	idx := NewTestHNSWIndex(ds)
 
 	// Add all vectors
 	for i := 0; i < 3; i++ {
@@ -113,7 +113,7 @@ func TestHNSW_DuplicateVectors(t *testing.T) {
 		Records: []arrow.RecordBatch{rec},
 		dataMu:  sync.RWMutex{},
 	}
-	idx := NewHNSWIndex(ds)
+	idx := NewTestHNSWIndex(ds)
 
 	// Add all duplicate vectors
 	for i := 0; i < 3; i++ {
@@ -155,7 +155,7 @@ func TestHNSW_HighDimensionalVectors(t *testing.T) {
 		Records: []arrow.RecordBatch{rec},
 		dataMu:  sync.RWMutex{},
 	}
-	idx := NewHNSWIndex(ds)
+	idx := NewTestHNSWIndex(ds)
 
 	// Add all vectors
 	for i := 0; i < 3; i++ {
@@ -192,7 +192,7 @@ func TestHNSW_ConcurrentAdd(t *testing.T) {
 		Name:    "concurrent_test",
 		Records: []arrow.RecordBatch{rec},
 	}
-	idx := NewHNSWIndex(ds)
+	idx := NewTestHNSWIndex(ds)
 
 	// Add vectors concurrently from multiple goroutines
 	var wg sync.WaitGroup

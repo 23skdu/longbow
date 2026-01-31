@@ -8,6 +8,7 @@ import (
 
 	"github.com/23skdu/longbow/internal/query"
 	lbtypes "github.com/23skdu/longbow/internal/store/types"
+	"github.com/RoaringBitmap/roaring/v2"
 )
 
 // HybridPipelineConfig configures the hybrid search pipeline
@@ -78,7 +79,7 @@ type HybridSearchPipeline struct {
 	config      HybridPipelineConfig
 	columnIndex *ColumnInvertedIndex
 	bm25Index   *BM25InvertedIndex
-	hnswIndex   *HNSWIndex
+	hnswIndex   VectorIndex
 	reranker    Reranker
 	dataset     *Dataset
 }
@@ -101,7 +102,7 @@ func (p *HybridSearchPipeline) SetBM25Index(idx *BM25InvertedIndex) {
 }
 
 // SetHNSWIndex sets the HNSW index for vector search
-func (p *HybridSearchPipeline) SetHNSWIndex(idx *HNSWIndex) {
+func (p *HybridSearchPipeline) SetHNSWIndex(idx VectorIndex) {
 	p.hnswIndex = idx
 }
 
@@ -133,31 +134,36 @@ func (p *HybridSearchPipeline) Search(q *HybridSearchQuery) ([]SearchResult, err
 	}
 
 	// 1. Get exact filter IDs if column index enabled
-	exactIDs := p.applyExactFilters(q.ExactFilters)
+	filterBitmap := p.applyExactFilters(q.ExactFilters)
 
 	// 2. Vector search (dense) using HNSW
 	var denseResults []SearchResult
 	if len(q.Vector) > 0 && p.hnswIndex != nil && alpha > 0 {
-		// Use SearchWithArena if available (restored from bak logic)
-		arena := GetArena()
-		defer PutArena(arena)
+		// Use SearchVectorsWithBitmap which is standard in VectorIndex
+		var roaringFilter *roaring.Bitmap
+		if filterBitmap != nil {
+			roaringFilter = filterBitmap
+		}
 
-		// SearchWithArena returns []uint32 (internal IDs)
-		ids := p.hnswIndex.SearchWithArena(q.Vector, q.K*2, arena)
-		for rank, id := range ids {
-			// Convert rank to score (higher rank = lower score)
-			score := 1.0 / float32(rank+1)
-			denseResults = append(denseResults, SearchResult{
-				ID:    lbtypes.VectorID(id),
-				Score: score,
-			})
+		results, err := p.hnswIndex.SearchVectorsWithBitmap(context.Background(), q.Vector, q.K*2, roaringFilter, nil)
+		if err == nil {
+			for rank, r := range results {
+				// Convert rank to score (higher rank = lower score)
+				// Note: Hybrid search often uses rank-based fusion (RRF or Linear-Rank)
+				score := 1.0 / float32(rank+1)
+				denseResults = append(denseResults, SearchResult{
+					ID:       lbtypes.VectorID(r.ID),
+					Score:    score,
+					Distance: r.Distance,
+				})
+			}
 		}
 	}
 
 	// 3. Keyword search (sparse) using BM25
 	var sparseResults []SearchResult
 	if q.KeywordQuery != "" && p.bm25Index != nil && alpha < 1 {
-		sparseResults = p.bm25Index.SearchBM25(q.KeywordQuery, q.K*2)
+		sparseResults = p.bm25Index.SearchBM25(q.KeywordQuery, q.K*2, filterBitmap)
 	}
 
 	// 4. Fuse results based on mode
@@ -168,7 +174,7 @@ func (p *HybridSearchPipeline) Search(q *HybridSearchQuery) ([]SearchResult, err
 	case FusionModeLinear:
 		fused = FuseLinear(denseResults, sparseResults, alpha, q.K)
 	case FusionModeCascade:
-		fused = FuseCascade(exactIDs, sparseResults, denseResults, q.K)
+		fused = FuseCascade(filterBitmap, sparseResults, denseResults, q.K)
 	default:
 		fused = ReciprocalRankFusion(denseResults, sparseResults, p.config.RRFk, q.K)
 	}
@@ -231,18 +237,18 @@ func FuseRRF(dense, sparse []SearchResult, k, limit int) []SearchResult {
 }
 
 // FuseCascade implements cascade-style filtering: exact -> keyword -> vector
-func FuseCascade(exact map[VectorID]struct{}, keyword, vector []SearchResult, limit int) []SearchResult {
+func FuseCascade(filter *roaring.Bitmap, keyword, vector []SearchResult, limit int) []SearchResult {
 	var filtered []SearchResult
 
 	// If exact filters provided, only keep results present in exact set
-	if len(exact) > 0 {
+	if filter != nil && !filter.IsEmpty() {
 		for _, r := range keyword {
-			if _, ok := exact[VectorID(r.ID)]; ok {
+			if filter.Contains(uint32(r.ID)) {
 				filtered = append(filtered, r)
 			}
 		}
 		for _, r := range vector {
-			if _, ok := exact[VectorID(r.ID)]; ok {
+			if filter.Contains(uint32(r.ID)) {
 				// Avoid duplicates if already in keyword results
 				found := false
 				for _, fr := range filtered {
@@ -278,13 +284,12 @@ func FuseCascade(exact map[VectorID]struct{}, keyword, vector []SearchResult, li
 }
 
 // applyExactFilters applies exact match filters using column index
-func (p *HybridSearchPipeline) applyExactFilters(filters []query.Filter) map[VectorID]struct{} {
+func (p *HybridSearchPipeline) applyExactFilters(filters []query.Filter) *roaring.Bitmap {
 	if len(filters) == 0 || p.columnIndex == nil || p.dataset == nil {
 		return nil
 	}
 
-	// For now, we take the intersection of all filters
-	var result map[VectorID]struct{}
+	var result *roaring.Bitmap
 
 	for i, f := range filters {
 		if f.Operator != "=" {
@@ -293,37 +298,25 @@ func (p *HybridSearchPipeline) applyExactFilters(filters []query.Filter) map[Vec
 
 		positions := p.columnIndex.Lookup(p.dataset.Name, f.Field, f.Value)
 		if len(positions) == 0 {
-			return make(map[VectorID]struct{}) // Empty intersection
+			return roaring.New() // Empty intersection
 		}
 
-		// Convert RowPositions to VectorIDs
-		// This is a naive implementation: we need a way to map RowPosition back to VectorID.
-		// Since HybridSearchPipeline is integrated with Dataset, we can ideally use
-		// Dataset's own inverted indexes if available.
-
-		currentIDs := make(map[VectorID]struct{})
+		// Convert RowPositions to VectorIDs and build current filter
+		currentFilter := roaring.New()
 		for _, pos := range positions {
-			// Naive: scan or heuristic?
-			// In HNSWIndex, VectorID matches index in locationStore.
-			// Let's use a helper if possible.
 			id, ok := p.findVectorID(pos)
 			if ok {
-				currentIDs[id] = struct{}{}
+				currentFilter.Add(uint32(id))
 			}
 		}
 
 		if i == 0 {
-			result = currentIDs
-		} else {
-			// Intersection
-			for id := range result {
-				if _, ok := currentIDs[id]; !ok {
-					delete(result, id)
-				}
-			}
+			result = currentFilter
+		} else if result != nil {
+			result.And(currentFilter)
 		}
 
-		if len(result) == 0 {
+		if result != nil && result.IsEmpty() {
 			break
 		}
 	}

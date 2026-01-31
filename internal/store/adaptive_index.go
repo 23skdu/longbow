@@ -103,9 +103,18 @@ func (b *BruteForceIndex) AddBatch(ctx context.Context, recs []arrow.RecordBatch
 }
 
 // SearchVectorsWithBitmap returns k nearest neighbors filtered by a bitset.
-func (b *BruteForceIndex) SearchVectorsWithBitmap(ctx context.Context, q any, k int, filter *roaring.Bitmap, options SearchOptions) ([]SearchResult, error) {
+func (b *BruteForceIndex) SearchVectorsWithBitmap(ctx context.Context, q any, k int, filter *roaring.Bitmap, options any) ([]SearchResult, error) {
 	// Not implemented for BruteForce, but needed for interface
 	return nil, nil
+}
+
+func (idx *AdaptiveIndex) IsSharded() bool {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	if idx.hnsw != nil {
+		return idx.hnsw.IsSharded()
+	}
+	return false
 }
 
 // GetLocation retrieves the storage location for a given vector ID.
@@ -423,7 +432,7 @@ func (a *AdaptiveIndex) AddBatch(ctx context.Context, recs []arrow.RecordBatch, 
 	return ids, nil
 }
 
-func (a *AdaptiveIndex) SearchVectorsWithBitmap(ctx context.Context, q any, k int, filter *roaring.Bitmap, options SearchOptions) ([]SearchResult, error) {
+func (a *AdaptiveIndex) SearchVectorsWithBitmap(ctx context.Context, q any, k int, filter *roaring.Bitmap, options any) ([]SearchResult, error) {
 	start := time.Now()
 	a.mu.RLock()
 	metrics.IndexLockWaitDuration.WithLabelValues(a.dataset.Name, "read").Observe(time.Since(start).Seconds())

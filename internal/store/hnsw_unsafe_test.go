@@ -9,7 +9,7 @@ import (
 // Since methods getVectorUnsafe, enterEpoch etc are internal/missing, we stub tests or commented out.
 
 func TestHNSW_UnsafeAccess(t *testing.T) {
-	// idx := NewHNSWIndex(nil) // Stub
+	// idx := NewTestHNSWIndex(nil) // Stub
 	// _ = idx
 }
 
@@ -26,7 +26,7 @@ func TestHNSW_UnsafeVectorAccess(t *testing.T) {
 	ds := &Dataset{
 		Records: []arrow.RecordBatch{rec},
 	}
-	idx := NewHNSWIndex(ds)
+	idx := NewTestHNSWIndex(ds)
 
 	_, err := idx.Add(context.Background(), 0, 0)
 	require.NoError(t, err)

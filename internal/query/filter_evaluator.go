@@ -56,6 +56,9 @@ func (o *int64FilterOp) Match(rowIdx int) bool {
 		return false
 	}
 	v := o.col.Value(rowIdx)
+	if rowIdx == 20 || rowIdx == 95 {
+		log.Printf("DEBUG: int64FilterOp.Match Index %d, val %d, src %d", rowIdx, o.val, v)
+	}
 	switch o.operator {
 	case "=", "eq", "==":
 		return v == o.val

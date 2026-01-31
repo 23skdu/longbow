@@ -635,12 +635,11 @@ func matchInt64Generic(src []int64, val int64, op CompareOp, dst []byte) error {
 			// (If equal, d=0. 0|-0=0. >>63=0. 1^0=1).
 			// (If not, d!=0. high bit likely set after | -d? Yes.)
 
-			diff := v ^ val
-			// "smear" non-zero to sign bit
-			// Note: -diff in 2's complement.
-			// (diff | -diff) sets MSB if diff != 0.
-			msb := uint64(diff|-diff) >> 63
-			dst[i] = byte(1 ^ msb)
+			if v == val {
+				dst[i] = 1
+			} else {
+				dst[i] = 0
+			}
 		}
 	case CompareNeq:
 		for i, v := range src {

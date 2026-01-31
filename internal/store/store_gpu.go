@@ -2,28 +2,26 @@
 
 package store
 
-import (
-	"github.com/rs/zerolog"
-)
-
 // initGPUIfEnabled attempts to initialize GPU for an HNSW index if GPU is enabled
-func (vs *VectorStore) initGPUIfEnabled(idx *HNSWIndex) {
-	// Check if GPU is enabled via environment or config
-	// For now, we'll add a field to VectorStore
-	if !vs.gpuEnabled {
-		return
-	}
+func (vs *VectorStore) initGPUIfEnabled(idx VectorIndex) {
+	if hnswIdx, ok := idx.(*ArrowHNSW); ok {
+		// Check if GPU is enabled via environment or config
+		// For now, we'll add a field to VectorStore
+		if !vs.gpuEnabled {
+			return
+		}
 
-	err := idx.InitGPU(vs.gpuDeviceID, vs.logger)
-	if err != nil {
-		// GPU init failed, but we continue with CPU-only
-		// Error already logged in InitGPU
-		return
-	}
+		err := hnswIdx.InitGPU(vs.gpuDeviceID, vs.logger)
+		if err != nil {
+			// GPU init failed, but we continue with CPU-only
+			// Error already logged in InitGPU
+			return
+		}
 
-	// GPU successfully initialized
-	vs.logger.Info().
-		Int("device", vs.gpuDeviceID).
-		Int("dimensions", idx.dims).
-		Msg("GPU acceleration enabled for index")
+		// GPU successfully initialized
+		vs.logger.Info().
+			Int("device", vs.gpuDeviceID).
+			Uint32("dimensions", hnswIdx.GetDimension()).
+			Msg("GPU acceleration enabled for index")
+	}
 }

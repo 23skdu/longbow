@@ -25,7 +25,6 @@ import (
 	"github.com/23skdu/longbow/internal/middleware"
 	"github.com/23skdu/longbow/internal/sharding"
 	"github.com/23skdu/longbow/internal/store"
-	"github.com/rs/zerolog"
 
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/joho/godotenv"
@@ -107,15 +106,10 @@ type Config struct {
 	GCBallastG int `envconfig:"GC_BALLAST_G" default:"0"` // Ballast size in GB
 	GOGC       int `envconfig:"GOGC" default:"100"`       // Go Garbage Collector percentage
 
-	// HNSW2 Configuration
-	HNSW2M              int     `envconfig:"HNSW_M" default:"32"`
-	HNSW2EfConstruction int     `envconfig:"HNSW_EF_CONSTRUCTION" default:"400"`
-	HNSW2Alpha          float32 `envconfig:"HNSW_ALPHA" default:"1.0"`
-	HNSW2KeepPruned     bool    `envconfig:"HNSW_KEEP_PRUNED" default:"false"`
-	HNSW2SQ8Enabled     bool    `envconfig:"HNSW_SQ8_ENABLED" default:"false"`
-	HNSW2PQEnabled      bool    `envconfig:"HNSW_PQ_ENABLED" default:"false"`
-	HNSW2Refinement     float64 `envconfig:"HNSW_REFINEMENT_FACTOR" default:"1.0"`
-	HNSW2Float16Enabled bool    `envconfig:"HNSW_FLOAT16_ENABLED" default:"false"`
+	// HNSW Configuration
+	HNSWMaxM           int  `envconfig:"HNSW_M" default:"32"`
+	HNSWEfConstruction int  `envconfig:"HNSW_EF_CONSTRUCTION" default:"400"`
+	HNSWSQ8Enabled     bool `envconfig:"HNSW_SQ8_ENABLED" default:"false"`
 
 	// Compaction Configuration
 	CompactionEnabled         bool          `envconfig:"COMPACTION_ENABLED" default:"true"`
@@ -133,29 +127,6 @@ type Config struct {
 
 // Global config instance for hook functions
 var globalCfg Config
-
-// initializeHNSW2 is the hook function that initializes hnsw2 for datasets.
-func initializeHNSW2(ds *store.Dataset, logger *zerolog.Logger) {
-	if !ds.UseHNSW2() {
-		return
-	}
-	config := store.DefaultArrowHNSWConfig()
-	config.M = globalCfg.HNSW2M
-	config.MMax = globalCfg.HNSW2M * 2
-	config.MMax0 = globalCfg.HNSW2M * 2
-	config.EfConstruction = int32(globalCfg.HNSW2EfConstruction)
-	config.SQ8Enabled = globalCfg.HNSW2SQ8Enabled
-
-	hnswIndex := store.NewArrowHNSW(ds, &config)
-	ds.SetHNSW2Index(hnswIndex)
-	if logger.GetLevel() != zerolog.Disabled {
-		logger.Info().
-			Str("dataset", ds.Name).
-			Int("M", config.M).
-			Int("ef", int(config.EfConstruction)).
-			Msg("hnsw2 initialized")
-	}
-}
 
 func main() {
 	if err := run(); err != nil {
@@ -239,11 +210,6 @@ func run() error {
 	// Initialize vector store
 	vectorStore := store.NewVectorStore(mem, logger, cfg.MaxMemory, cfg.MaxWALSize, cfg.TTL)
 	vectorStore.SetGCTuner(tuner)
-
-	// Register hnsw2 initialization hook
-	vectorStore.SetDatasetInitHook(func(ds *store.Dataset) {
-		initializeHNSW2(ds, &logger)
-	})
 
 	// Configure memory management
 	vectorStore.SetMemoryConfig(store.MemoryConfig{

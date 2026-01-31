@@ -47,7 +47,7 @@ type ShardedDataset struct {
 	records    *PartitionedRecords
 	lastAccess int64 // UnixNano, atomic
 	version    int64 // atomic
-	index      *HNSWIndex
+	index      VectorIndex
 }
 
 // NewShardedDataset creates a new sharded dataset with given config.
@@ -107,12 +107,12 @@ func (sd *ShardedDataset) IncrementVersion() int64 {
 }
 
 // Index returns the HNSW index (may be nil).
-func (sd *ShardedDataset) Index() *HNSWIndex {
+func (sd *ShardedDataset) Index() VectorIndex {
 	return sd.index
 }
 
 // SetIndex sets the HNSW index.
-func (sd *ShardedDataset) SetIndex(idx *HNSWIndex) {
+func (sd *ShardedDataset) SetIndex(idx VectorIndex) {
 	sd.index = idx
 }
 

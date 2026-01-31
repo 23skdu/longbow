@@ -45,7 +45,7 @@ func TestSearchContextCancellation(t *testing.T) {
 	// Setup dataset and index
 	ds, _ := vs.getOrCreateDataset(datasetName, func() *Dataset {
 		newDs := NewDataset(datasetName, schema)
-		newDs.Index = NewHNSWIndex(newDs)
+		newDs.Index = NewTestHNSWIndex(newDs)
 		return newDs
 	})
 
@@ -55,7 +55,7 @@ func TestSearchContextCancellation(t *testing.T) {
 	ds.dataMu.Unlock()
 
 	// Index the data
-	hnswIdx := ds.Index.(*HNSWIndex)
+	hnswIdx := ds.Index.(*ArrowHNSW)
 	for i := 0; i < numRows; i++ {
 		_, err := hnswIdx.AddByLocation(context.Background(), 0, i)
 		require.NoError(t, err)
@@ -129,8 +129,6 @@ func TestCompactionContextCancellation(t *testing.T) {
 		defer close(done)
 		compactErr = context.Canceled // Fake cancellation for test
 	}()
-
-	// cancel() // Cancel compaction
 
 	select {
 	case <-done:

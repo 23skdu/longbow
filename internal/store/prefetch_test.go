@@ -7,9 +7,9 @@ import (
 	"unsafe"
 
 	"github.com/23skdu/longbow/internal/simd"
+	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/memory"
-	"github.com/coder/hnsw"
 	"github.com/stretchr/testify/require"
 )
 
@@ -47,7 +47,7 @@ func TestVectorPrefetch_ProcessChunkWithPrefetch(t *testing.T) {
 		Records: []arrow.RecordBatch{rec},
 	}
 	// Correct constructor usage
-	idx := NewHNSWIndex(ds)
+	idx := NewTestHNSWIndex(ds)
 
 	// AddBatchParallel is not defined on HNSWIndex (based on errors).
 	// Using simple loop AddByLocation or AddBatch if available.
@@ -63,10 +63,10 @@ func TestVectorPrefetch_ProcessChunkWithPrefetch(t *testing.T) {
 	_, err := idx.AddBatch(context.Background(), []arrow.RecordBatch{rec}, rowIdxs, batchIdxs)
 	require.NoError(t, err)
 
-	// Create mock neighbors for search
-	neighbors := make([]hnsw.Node[VectorID], numVectors)
+	// Create mock candidates for search
+	candidates := make([]types.Candidate, numVectors)
 	for i := 0; i < numVectors; i++ {
-		neighbors[i] = hnsw.Node[VectorID]{Key: VectorID(i)}
+		candidates[i] = types.Candidate{ID: uint32(i)}
 	}
 
 	// Create query vector
@@ -97,7 +97,7 @@ func TestVectorPrefetch_Stress(t *testing.T) {
 	defer rec.Release()
 
 	ds := &Dataset{Records: []arrow.RecordBatch{rec}}
-	idx := NewHNSWIndex(ds)
+	idx := NewTestHNSWIndex(ds)
 
 	rowIdxs := make([]int, numVectors)
 	batchIdxs := make([]int, numVectors)

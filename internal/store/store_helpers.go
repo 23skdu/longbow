@@ -13,6 +13,17 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 )
 
+// NewTestHNSWIndex creates an ArrowHNSW index with default config for testing.
+// It replaces the legacy NewHNSWIndex and standardizes on ArrowHNSW.
+func NewTestHNSWIndex(dataset *Dataset) *ArrowHNSW {
+	cfg := DefaultArrowHNSWConfig()
+	// Set reasonable defaults for testing
+	cfg.M = 32
+	cfg.EfConstruction = 100
+	cfg.EfSearch = 50
+	return NewArrowHNSW(dataset, &cfg)
+}
+
 // EnsureTimestampZeroCopy ensures the record has a timestamp column, adding one if missing (zero-copy optimized)
 func EnsureTimestampZeroCopy(mem memory.Allocator, rec arrow.RecordBatch) (arrow.RecordBatch, error) {
 	schema := rec.Schema()

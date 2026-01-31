@@ -51,7 +51,7 @@ func TestAddBatchParallel_Basic(t *testing.T) {
 	ds := &Dataset{
 		Records: []arrow.RecordBatch{rec},
 	}
-	idx := NewHNSWIndex(ds)
+	idx := NewTestHNSWIndex(ds)
 
 	rowIdxs := make([]int, 100)
 	batchIdxs := make([]int, 100)
@@ -79,7 +79,7 @@ func TestAddBatchParallel_SingleWorker(t *testing.T) {
 	ds := &Dataset{
 		Records: []arrow.RecordBatch{rec},
 	}
-	idx := NewHNSWIndex(ds)
+	idx := NewTestHNSWIndex(ds)
 
 	rowIdxs := make([]int, 50)
 	batchIdxs := make([]int, 50)
@@ -103,7 +103,7 @@ func TestAddBatchParallel_EmptyBatch(t *testing.T) {
 	ds := &Dataset{
 		Records: []arrow.RecordBatch{rec},
 	}
-	idx := NewHNSWIndex(ds)
+	idx := NewTestHNSWIndex(ds)
 
 	_, err := idx.AddBatch(context.Background(), []arrow.RecordBatch{rec}, []int{}, []int{})
 	require.NoError(t, err)
@@ -124,7 +124,7 @@ func TestAddBatchParallel_SearchQuality(t *testing.T) {
 	ds := &Dataset{
 		Records: []arrow.RecordBatch{rec},
 	}
-	idx := NewHNSWIndex(ds)
+	idx := NewTestHNSWIndex(ds)
 
 	rowIdxs := make([]int, 50)
 	batchIdxs := make([]int, 50)
@@ -177,7 +177,7 @@ func TestAddBatchParallel_LargeScale(t *testing.T) {
 	ds := &Dataset{
 		Records: []arrow.RecordBatch{rec},
 	}
-	idx := NewHNSWIndex(ds)
+	idx := NewTestHNSWIndex(ds)
 
 	rowIdxs := make([]int, numVectors)
 	batchIdxs := make([]int, numVectors)
@@ -221,7 +221,7 @@ func BenchmarkAddBatchParallel(b *testing.B) {
 			ds := &Dataset{
 				Records: []arrow.RecordBatch{rec},
 			}
-			idx := NewHNSWIndex(ds)
+			idx := NewTestHNSWIndex(ds)
 			// Loop adds
 			for j := 0; j < numVectors; j++ {
 				_, _ = idx.AddByLocation(context.Background(), 0, j)
@@ -237,7 +237,7 @@ func BenchmarkAddBatchParallel(b *testing.B) {
 			ds := &Dataset{
 				Records: []arrow.RecordBatch{rec},
 			}
-			idx := NewHNSWIndex(ds)
+			idx := NewTestHNSWIndex(ds)
 			_, _ = idx.AddBatch(context.Background(), recs, rowIdxs, batchIdxs)
 		}
 		b.ReportMetric(float64(numVectors*b.N)/b.Elapsed().Seconds(), "vectors/sec")

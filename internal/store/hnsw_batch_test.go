@@ -68,7 +68,7 @@ func TestHNSWIndex_SearchBatch(t *testing.T) {
 		t.Skip("Could not create test dataset")
 	}
 
-	idx := NewHNSWIndex(ds)
+	idx := NewTestHNSWIndex(ds)
 	for i := 0; i < 100; i++ {
 		_, _ = idx.AddByLocation(context.Background(), 0, i)
 	}
@@ -101,7 +101,7 @@ func TestHNSWIndex_RerankBatch(t *testing.T) {
 		t.Skip("Could not create test dataset")
 	}
 
-	idx := NewHNSWIndex(ds)
+	idx := NewTestHNSWIndex(ds)
 	for i := 0; i < 50; i++ {
 		_, _ = idx.AddByLocation(context.Background(), 0, i)
 	}
@@ -130,7 +130,7 @@ func TestHNSWIndex_SearchBatchWithArena(t *testing.T) {
 		t.Skip("Could not create test dataset")
 	}
 
-	idx := NewHNSWIndex(ds)
+	idx := NewTestHNSWIndex(ds)
 	for i := 0; i < 100; i++ {
 		_, _ = idx.AddByLocation(context.Background(), 0, i)
 	}
@@ -155,7 +155,7 @@ func TestHNSWIndex_SearchBatchWithArena(t *testing.T) {
 
 func TestHNSWIndex_SearchBatch_Empty(t *testing.T) {
 	ds := createTestDataset(t, "empty-batch-test", 16, 10)
-	idx := NewHNSWIndex(ds)
+	idx := NewTestHNSWIndex(ds)
 
 	// Empty queries
 	results := idx.SearchBatch([][]float32{}, 5)
@@ -172,7 +172,7 @@ func TestHNSWIndex_SearchBatch_Empty(t *testing.T) {
 
 func TestHNSWIndex_RerankBatch_Empty(t *testing.T) {
 	ds := createTestDataset(t, "rerank-empty-test", 16, 10)
-	idx := NewHNSWIndex(ds)
+	idx := NewTestHNSWIndex(ds)
 
 	// Empty candidates
 	results := idx.RerankBatch([]float32{1.0}, []VectorID{}, 5)

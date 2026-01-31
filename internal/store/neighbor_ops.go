@@ -81,6 +81,9 @@ func (h *ArrowHNSW) AddConnection(ctx *ArrowSearchContext, data *GraphData, sour
 	// Seqlock write: increment version (even = clean)
 	atomic.AddUint32(verAddr, 1)
 
+	// Increment global version
+	atomic.AddUint64(&data.GlobalVersion, 1)
+
 	// --- Packed Neighbors Integration (v0.1.4-rc1) ---
 	if layer < len(data.PackedNeighbors) && data.PackedNeighbors[layer] != nil {
 		pn := data.PackedNeighbors[layer]
@@ -248,6 +251,9 @@ func (h *ArrowHNSW) AddConnectionsBatch(ctx *ArrowSearchContext, data *GraphData
 	if verAddr != nil {
 		atomic.AddUint32(verAddr, 1) // Even = clean
 	}
+
+	// Increment global version
+	atomic.AddUint64(&data.GlobalVersion, 1)
 
 	// Packed Neighbors Updates
 	if layer < len(data.PackedNeighbors) && data.PackedNeighbors[layer] != nil {
@@ -466,6 +472,10 @@ func (h *ArrowHNSW) pruneConnectionsLocked(ctx *ArrowSearchContext, data *GraphD
 	if verAddr != nil {
 		atomic.AddUint32(verAddr, 1)
 	}
+
+	// Increment global version
+	atomic.AddUint64(&data.GlobalVersion, 1)
+
 	// --- Packed Neighbors Integration (v0.1.4-rc1) ---
 	if layer < len(data.PackedNeighbors) && data.PackedNeighbors[layer] != nil {
 		pn := data.PackedNeighbors[layer]

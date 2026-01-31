@@ -64,8 +64,8 @@ This document outlines the remaining tasks for Longbow development.
 
 2. **HNSW Integration Layer**
    - [x] Integrate navigator with existing HNSW implementation
-   - [ ] Graph state management and caching
-   - [ ] Concurrent-safe graph traversal operations
+   - [x] Graph state management and caching
+   - [x] Concurrent-safe graph traversal operations
 
 3. **Distance Optimizations**
    - SIMD-optimized graph distance calculations

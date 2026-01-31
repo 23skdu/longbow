@@ -26,6 +26,14 @@ type GraphNavigator struct {
 	metrics       *NavigatorMetrics
 	searchConfig  NavigatorConfig
 	isInitialized atomic.Bool
+	cache         map[string]cachedResult
+	cacheMu       sync.RWMutex
+}
+
+type cachedResult struct {
+	path      *NavigatorPath
+	version   uint64
+	timestamp time.Time
 }
 
 type NavigatorConfig struct {
@@ -35,6 +43,7 @@ type NavigatorConfig struct {
 	EarlyTerminate    bool
 	DistanceThreshold float32
 	EnableCaching     bool
+	CacheTTL          time.Duration
 }
 
 type NavigatorPath struct {
@@ -137,6 +146,7 @@ func NewGraphNavigator(graphProvider func() *types.GraphData, config NavigatorCo
 		graphProvider: graphProvider,
 		searchConfig:  config,
 		metrics:       NewNavigatorMetrics(reg),
+		cache:         make(map[string]cachedResult),
 	}
 }
 
@@ -169,6 +179,27 @@ func (gn *GraphNavigator) FindPath(ctx context.Context, query NavigatorQuery) (*
 	gn.metrics.ConcurrentQueries.Inc()
 	defer gn.metrics.ConcurrentQueries.Dec()
 
+	// Check cache if enabled
+	var cacheKey string
+	if gn.searchConfig.EnableCaching {
+		cacheKey = fmt.Sprintf("%d:%d:%d:%v", query.StartID, query.TargetID, query.MaxHops, query.Constraints)
+		gn.cacheMu.RLock()
+		if cached, ok := gn.cache[cacheKey]; ok {
+			// Validate version
+			currentGraph := gn.graphProvider()
+			if currentGraph != nil {
+				currentVersion := atomic.LoadUint64(&currentGraph.GlobalVersion)
+				if cached.version == currentVersion && (gn.searchConfig.CacheTTL == 0 || time.Since(cached.timestamp) < gn.searchConfig.CacheTTL) {
+					gn.cacheMu.RUnlock()
+					gn.metrics.CacheHits.Inc()
+					return cached.path, nil
+				}
+			}
+		}
+		gn.cacheMu.RUnlock()
+		gn.metrics.CacheMisses.Inc()
+	}
+
 	path, err := gn.findPathInternal(ctx, query.StartID, query.TargetID, query.MaxHops)
 	if err != nil {
 		return nil, err
@@ -177,6 +208,21 @@ func (gn *GraphNavigator) FindPath(ctx context.Context, query NavigatorQuery) (*
 	if path.Found {
 		gn.metrics.PathsFound.Inc()
 		gn.metrics.HopsPerQuery.Observe(float64(path.Hops))
+	}
+
+	// Update cache
+	if gn.searchConfig.EnableCaching && path.Found {
+		currentGraph := gn.graphProvider()
+		if currentGraph != nil {
+			currentVersion := atomic.LoadUint64(&currentGraph.GlobalVersion)
+			gn.cacheMu.Lock()
+			gn.cache[cacheKey] = cachedResult{
+				path:      path,
+				version:   currentVersion,
+				timestamp: time.Now(),
+			}
+			gn.cacheMu.Unlock()
+		}
 	}
 
 	return path, nil

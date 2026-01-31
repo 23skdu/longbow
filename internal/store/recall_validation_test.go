@@ -2,6 +2,7 @@ package store_test
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"math/rand"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"sort"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/23skdu/longbow/internal/simd"
 	"github.com/23skdu/longbow/internal/store"
@@ -40,6 +42,7 @@ func TestRecallValidation(t *testing.T) {
 		}},
 		{"Medium_10K_SQ8_Recall@10", 10000, 384, 100, 10, 0.950, &store.ArrowHNSWConfig{
 			M: 48, MMax: 96, MMax0: 96, EfConstruction: 400,
+			EfSearch:        100,
 			SQ8Enabled:      true,
 			InitialCapacity: 10000,
 		}},
@@ -87,6 +90,9 @@ func TestRecallValidation(t *testing.T) {
 	for _, tc := range testCases {
 		tc := tc // capture range variable
 		t.Run(tc.name, func(t *testing.T) {
+			// Add overall test timeout to catch hangs
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+			defer cancel()
 
 			if tc.numVectors >= 1000000 && os.Getenv("TEST_HUGE") == "" {
 				t.Skip("Skipping Huge 1M test; set TEST_HUGE=1 to run")
@@ -100,7 +106,7 @@ func TestRecallValidation(t *testing.T) {
 				t.Logf("Downscaling test to %d vectors for race detection", tc.numVectors)
 			}
 
-			recall := measureRecall(t, tc.numVectors, tc.dim, tc.numQueries, tc.k, tc.config)
+			recall := measureRecall(ctx, t, tc.numVectors, tc.dim, tc.numQueries, tc.k, tc.config)
 
 			t.Logf("Recall@%d: %.4f%% (target: %.2f%%)", tc.k, recall*100, tc.minRecall*100)
 
@@ -112,7 +118,7 @@ func TestRecallValidation(t *testing.T) {
 }
 
 // measureRecall compares hnsw2 results against brute-force ground truth
-func measureRecall(t *testing.T, numVectors, dim, numQueries, k int, cfg *store.ArrowHNSWConfig) float64 {
+func measureRecall(ctx context.Context, t *testing.T, numVectors, dim, numQueries, k int, cfg *store.ArrowHNSWConfig) float64 {
 	mem := memory.NewGoAllocator()
 
 	// Create schema
@@ -145,6 +151,11 @@ func measureRecall(t *testing.T, numVectors, dim, numQueries, k int, cfg *store.
 
 	rec := builder.NewRecordBatch()
 	defer rec.Release()
+
+	// Initial validation: ensure record batch has expected size
+	if int(rec.NumRows()) != numVectors {
+		t.Fatalf("RecordBatch row count mismatch: got %d, want %d", rec.NumRows(), numVectors)
+	}
 
 	// Create dataset
 	ds := store.NewDataset("recall_test", schema)
@@ -185,16 +196,27 @@ func measureRecall(t *testing.T, numVectors, dim, numQueries, k int, cfg *store.
 	}
 	t.Logf("Vector retrieval validation passed!")
 
+	// Build progress reporter
+	progressInterval := 5000
+	if numVectors > 100000 {
+		progressInterval = 10000
+	}
+
 	// Insert vectors
 	// Sequential Ingestion (Parallel insertion is hitting races/fragmentation)
 	vectorIDs := make([]uint32, numVectors)
 	for j := 0; j < numVectors; j++ {
-		vecID, err := hnsw2Index.AddByLocation(context.Background(), 0, j)
+		// Check context status
+		if err := ctx.Err(); err != nil {
+			t.Fatalf("Insertion interrupted: %v", err)
+		}
+
+		vecID, err := hnsw2Index.AddByLocation(ctx, 0, j)
 		if err != nil {
 			t.Fatalf("Failed to add vector %d: %v", j, err)
 		}
 		vectorIDs[j] = uint32(vecID)
-		if j > 0 && j%5000 == 0 {
+		if j > 0 && j%progressInterval == 0 {
 			t.Logf("Inserted %d/%d vectors", j, numVectors)
 		}
 	}
@@ -235,6 +257,7 @@ func measureRecall(t *testing.T, numVectors, dim, numQueries, k int, cfg *store.
 			dists := make([]float32, numVectors)
 
 			for qIdx := start; qIdx < end; qIdx++ {
+				// Check context AFTER entering loop
 				if qctx.Err() != nil {
 					return qctx.Err()
 				}
@@ -261,8 +284,14 @@ func measureRecall(t *testing.T, numVectors, dim, numQueries, k int, cfg *store.
 
 				gt := make(map[uint32]bool)
 				queryArrIdx := queryIndices[qIdx]
+
+				// Ensure vectorIDs access is safe or the array is immutable by now
+				// vectorIDs is populated sequentially before this and not modified after.
 				for j := 0; j < len(allDistances) && len(gt) < k; j++ {
 					arrIdx := allDistances[j].id
+					if arrIdx >= uint32(len(vectorIDs)) {
+						continue // Safeguard
+					}
 					if arrIdx == uint32(queryArrIdx) {
 						continue
 					}
@@ -283,14 +312,19 @@ func measureRecall(t *testing.T, numVectors, dim, numQueries, k int, cfg *store.
 	totalRecall := 0.0
 	var recallMu sync.Mutex
 
-	eg, _ := errgroup.WithContext(context.Background())
+	eg, _ := errgroup.WithContext(ctx)
 	for i := 0; i < numQueries; i++ {
 		idx := i
 		eg.Go(func() error {
 			query := queries[idx]
-			hnsw2Results, err := hnsw2Index.Search(context.Background(), query, k+1, nil)
+			hnsw2Results, err := hnsw2Index.Search(ctx, query, k+1, nil)
 			if err != nil {
 				return err
+			}
+
+			// Safeguard against nil result
+			if hnsw2Results == nil {
+				return fmt.Errorf("HNSW search returned nil for query %d", idx)
 			}
 
 			queryVecID := vectorIDs[queryIndices[idx]]
@@ -360,7 +394,7 @@ func TestRecallConsistency(t *testing.T) {
 	recalls := make([]float64, numRuns)
 
 	for i := 0; i < numRuns; i++ {
-		recalls[i] = measureRecall(t, 500, 128, 50, 10, nil)
+		recalls[i] = measureRecall(context.Background(), t, 500, 128, 50, 10, nil)
 	}
 
 	// Calculate mean

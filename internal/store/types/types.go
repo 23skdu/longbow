@@ -83,7 +83,7 @@ type Candidate struct {
 }
 
 // MaxNeighbors is the maximum number of neighbors per node in HNSW
-const MaxNeighbors = 64
+const MaxNeighbors = 128
 
 // ChunkSize is the size of data chunks for memory allocation
 const ChunkSize = 1024

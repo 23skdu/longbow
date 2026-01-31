@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"fmt"
+	"sync"
 	"sync/atomic"
 
 	"github.com/23skdu/longbow/internal/store/types"
@@ -33,53 +34,70 @@ func (ga *GraphAnalytics) AnalyzeProperties(ctx context.Context) (*GraphProperti
 		return nil, fmt.Errorf("graph data is nil")
 	}
 
-	nodeCount := 0
-	edgeCount := 0
+	var nodeCount atomic.Int64
+	var edgeCount atomic.Int64
 
-	// Scan Layer 0
+	// Parallel Scan Layer 0
 	if len(graph.Neighbors) > 0 && len(graph.Neighbors[0]) > 0 {
 		chunks := graph.Neighbors[0]
+
+		// Use a worker pool or simple goroutines per chunk (since they are isolated)
+		// We'll use a semaphore to limit concurrency
+		maxWorkers := 8 // Default
+		sem := make(chan struct{}, maxWorkers)
+
+		var wg sync.WaitGroup
 		for cID, chunk := range chunks {
 			if chunk == nil {
 				continue
 			}
-			countChunk := graph.GetCountsChunk(0, cID)
-			if countChunk == nil {
-				continue
-			}
 
-			for cOff := 0; cOff < types.ChunkSize; cOff++ {
-				count := atomic.LoadInt32(&countChunk[cOff])
-				if count > 0 { // Assume logical node existence if it has edges?
-					// Or check Levels/Versions?
-					// Strictly, node existence is tracked by Levels or implicit ID range.
-					// But for HNSW, "inserted" nodes generally have >= 0 edges (orphans possible but rare if properly inserted).
-					// Let's count nodes with count >= 0 (basically valid slots if we can check "occupied").
-					// Since we don't have an "Occupied" bitmap here easily, let's use count > 0 for active structure.
-					// Or better: rely on iterating up to logical bounds if known? No.
-					// Let's stick to simple "nodes with edges" for "Connected Graph Properties".
-					nodeCount++
-					edgeCount += int(count)
+			wg.Add(1)
+			sem <- struct{}{}
+			go func(cID int) {
+				defer wg.Done()
+				defer func() { <-sem }()
+
+				countChunk := graph.GetCountsChunk(0, cID)
+				if countChunk == nil {
+					return
 				}
-			}
+
+				localNodes := int64(0)
+				localEdges := int64(0)
+
+				for cOff := 0; cOff < types.ChunkSize; cOff++ {
+					count := atomic.LoadInt32(&countChunk[cOff])
+					if count > 0 {
+						localNodes++
+						localEdges += int64(count)
+					}
+				}
+				nodeCount.Add(localNodes)
+				edgeCount.Add(localEdges)
+			}(cID)
+
 			select {
 			case <-ctx.Done():
+				wg.Wait()
 				return nil, ctx.Err()
 			default:
 			}
 		}
+		wg.Wait()
 	}
 
 	props := &GraphProperties{
-		NodeCount: nodeCount,
-		EdgeCount: edgeCount,
+		NodeCount: int(nodeCount.Load()),
+		EdgeCount: int(edgeCount.Load()),
 	}
 
-	if nodeCount > 0 {
-		props.AvgDegree = float32(edgeCount) / float32(nodeCount)
-		if nodeCount > 1 {
+	if nc := nodeCount.Load(); nc > 0 {
+		ec := edgeCount.Load()
+		props.AvgDegree = float32(ec) / float32(nc)
+		if nc > 1 {
 			// Directed density
-			props.Density = float32(edgeCount) / (float32(nodeCount) * float32(nodeCount-1))
+			props.Density = float32(ec) / (float32(nc) * float32(nc-1))
 		}
 	}
 

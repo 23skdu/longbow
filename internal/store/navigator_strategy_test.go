@@ -45,7 +45,7 @@ func TestStrategies_Agreement(t *testing.T) {
 	// We need a real GraphNavigator for this, backed by a mock/stub GraphData.
 	// We can use the logic from graph_navigator_test.go (createGraphData) to make a real one.
 
-	gd := types.NewGraphData(10, 2, false, false, -1, false, false, false, types.VectorTypeFloat32)
+	gd := types.NewGraphData(10, 2, false, false, -1, false, false, false, types.VectorTypeFloat32, false, false)
 	// 1->2
 	_ = gd.SetNeighbors(1, []uint32{2})
 	_ = gd.SetVector(1, []float32{1.0, 0.0})

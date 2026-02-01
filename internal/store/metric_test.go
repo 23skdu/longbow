@@ -34,7 +34,9 @@ func TestHNSW_Metrics(t *testing.T) {
 	}
 
 	t.Run("MetricCosine", func(t *testing.T) {
-		idx := NewHNSWIndexWithMetric(ds, MetricCosine)
+		cfg := DefaultArrowHNSWConfig()
+		cfg.Metric = MetricCosine
+		idx := NewArrowHNSW(ds, &cfg)
 		_, err := idx.AddByLocation(context.Background(), 0, 0)
 		require.NoError(t, err)
 		_, err = idx.AddByLocation(context.Background(), 0, 1)
@@ -44,17 +46,21 @@ func TestHNSW_Metrics(t *testing.T) {
 		res, err := idx.SearchVectors(context.Background(), []float32{1.0, 0.0}, 2, nil, SearchOptions{})
 		require.NoError(t, err)
 		require.Len(t, res, 2)
-		assert.Equal(t, VectorID(0), res[0].ID)
-		assert.InDelta(t, 0.0, res[0].Score, 1e-6) // Cosine
-		assert.Equal(t, VectorID(1), res[1].ID)
-		assert.InDelta(t, 1.0, res[1].Score, 1e-6)
+		t.Logf("Res[0]: ID=%v Score=%v", res[0].ID, res[0].Score)
+		t.Logf("Res[1]: ID=%v Score=%v", res[1].ID, res[1].Score)
+		assert.Equal(t, uint32(0), uint32(res[0].ID)) // VectorID cast handling
+		assert.InDelta(t, 0.0, res[0].Distance, 1e-6) // Cosine
+		assert.Equal(t, uint32(1), uint32(res[1].ID))
+		assert.InDelta(t, 1.0, res[1].Distance, 1e-6)
 	})
 
 	t.Run("MetricDotProduct", func(t *testing.T) {
 		// Note: HNSW search usually minimizes distance.
 		// For Dot Product similarity, we often use Negative Dot Product as distance.
 
-		idx := NewHNSWIndexWithMetric(ds, MetricDotProduct)
+		cfg := DefaultArrowHNSWConfig()
+		cfg.Metric = MetricDotProduct
+		idx := NewArrowHNSW(ds, &cfg)
 		_, err := idx.AddByLocation(context.Background(), 0, 0)
 		require.NoError(t, err)
 		_, err = idx.AddByLocation(context.Background(), 0, 1)
@@ -68,11 +74,11 @@ func TestHNSW_Metrics(t *testing.T) {
 		require.Len(t, res, 2)
 
 		// If implementation negates dot product for min-heap:
-		assert.Equal(t, VectorID(0), res[0].ID)
+		assert.Equal(t, uint32(0), uint32(res[0].ID))
 		// Usually distance is 1-dot or -dot.
 		// Assuming implementation details, let's just check ID order.
-		assert.Equal(t, VectorID(0), res[0].ID)
-		assert.Equal(t, VectorID(1), res[1].ID)
+		assert.Equal(t, uint32(0), uint32(res[0].ID))
+		assert.Equal(t, uint32(1), uint32(res[1].ID))
 	})
 }
 
@@ -106,7 +112,7 @@ func TestShardedHNSW_Metrics(t *testing.T) {
 		res, err := idx.SearchVectors(context.Background(), []float32{1.0, 0.0, 0.0, 0.0}, 2, nil, SearchOptions{})
 		require.NoError(t, err)
 		require.Len(t, res, 2)
-		assert.Equal(t, VectorID(0), res[0].ID)
+		assert.Equal(t, uint32(0), uint32(res[0].ID))
 		// Allow some float/metric flexibility
 		// assert.InDelta(t, 0.0, res[0].Score, 1e-6)
 	})

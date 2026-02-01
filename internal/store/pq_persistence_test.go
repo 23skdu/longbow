@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -29,15 +30,6 @@ func TestPQPersistence(t *testing.T) {
 	err = store.InitPersistence(storage.StorageConfig{DataPath: tmpDir})
 	require.NoError(t, err)
 	store.StartIndexingWorkers(1)
-
-	_ = os.Setenv("LONGBOW_USE_HNSW2", "true")
-	defer func() { _ = os.Unsetenv("LONGBOW_USE_HNSW2") }()
-
-	store.datasetInitHook = func(ds *Dataset) {
-		cfg := DefaultArrowHNSWConfig()
-		idx := NewArrowHNSW(ds, &cfg)
-		ds.Index = idx
-	}
 
 	defer func() { _ = store.Close() }()
 
@@ -102,7 +94,7 @@ func TestPQPersistence(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify .pq file exists
-	pqPath := tmpDir + "/snapshots/" + datasetName + ".pq"
+	pqPath := filepath.Join(tmpDir, "snapshots", datasetName+".pq")
 	_, err = os.Stat(pqPath)
 	require.NoError(t, err, "PQ snapshot file should exist")
 

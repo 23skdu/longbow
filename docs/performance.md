@@ -1,68 +1,107 @@
-# Longbow High-Performance Vector Database Matrix
+# Performance Metrics (Matrix Run)
 
-This document provides a comprehensive performance baseline for Longbow across all supported data types at **384 dimensions**. Tests were conducted on a 3-node distributed cluster simulator.
+# Performance Summary
+Generated on: 2026-01-31 18:53:22
 
-## Key Performance Indicators
-* **Ingest**: Throughput measured in Megabytes per second (MB/s).
-* **Retrieval (DoGet)**: Scanned retrieval performance in MB/s.
-* **Search Latency (p95)**: Tail latency (95th percentile) in milliseconds for four search modes.
+| DType | Count | Put (MB/s) | Get (MB/s) | Search Type | p50 (ms) | p95 (ms) | p99 (ms) | TPS |
+|-------|-------|------------|------------|-------------|----------|----------|----------|-----|
+| int32 | 3000 | 648.39 | 1127.34 | dense | 0.63 | 0.81 | 1.97 | 1513.63 |
+| int32 | 3000 |  |  | sparse | 0.63 | 0.73 | 0.94 | 1563.33 |
+| int32 | 3000 |  |  | filtered | 0.62 | 2.45 | 4.26 | 1188.39 |
+| int32 | 3000 |  |  | hybrid | 0.64 | 0.81 | 1.24 | 1509.39 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| int32 | 7000 | 872.37 | 1661.22 | dense | 0.62 | 0.79 | 1.83 | 1536.97 |
+| int32 | 7000 |  |  | sparse | 0.63 | 0.70 | 0.81 | 1569.58 |
+| int32 | 7000 |  |  | filtered | 0.61 | 1.20 | 2.19 | 1464.92 |
+| int32 | 7000 |  |  | hybrid | 0.64 | 2.38 | 3.74 | 1152.53 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| int32 | 15000 | 1158.48 | 1951.61 | dense | 0.63 | 0.75 | 1.35 | 1547.55 |
+| int32 | 15000 |  |  | sparse | 0.64 | 0.74 | 1.92 | 1501.14 |
+| int32 | 15000 |  |  | filtered | 0.62 | 0.71 | 0.91 | 1593.56 |
+| int32 | 15000 |  |  | hybrid | 0.64 | 0.71 | 0.75 | 1548.90 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| int32 | 25000 | 2982.30 | 1622.49 | dense | 0.61 | 0.74 | 1.32 | 1595.60 |
+| int32 | 25000 |  |  | sparse | 0.62 | 0.68 | 0.73 | 1612.19 |
+| int32 | 25000 |  |  | filtered | 0.60 | 0.67 | 0.82 | 1668.78 |
+| int32 | 25000 |  |  | hybrid | 0.65 | 2.54 | 5.56 | 1104.65 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| int32 | 50000 | 4406.41 | 1821.29 | dense | 0.62 | 0.75 | 1.30 | 1571.21 |
+| int32 | 50000 |  |  | sparse | 0.63 | 2.30 | 12.38 | 1127.10 |
+| int32 | 50000 |  |  | filtered | 0.60 | 0.69 | 0.91 | 1650.22 |
+| int32 | 50000 |  |  | hybrid | 0.60 | 0.68 | 0.75 | 1635.75 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| uint32 | 3000 | 897.02 | 1036.06 | dense | 0.64 | 0.79 | 1.49 | 1520.00 |
+| uint32 | 3000 |  |  | sparse | 0.66 | 0.74 | 0.79 | 1517.34 |
+| uint32 | 3000 |  |  | filtered | 0.62 | 0.76 | 0.93 | 1577.39 |
+| uint32 | 3000 |  |  | hybrid | 0.65 | 0.75 | 0.87 | 1527.90 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| uint32 | 7000 | 885.68 | 1699.53 | dense | 0.64 | 0.77 | 1.45 | 1526.81 |
+| uint32 | 7000 |  |  | sparse | 0.66 | 3.18 | 6.74 | 1048.82 |
+| uint32 | 7000 |  |  | filtered | 0.60 | 0.69 | 0.99 | 1635.88 |
+| uint32 | 7000 |  |  | hybrid | 0.63 | 0.71 | 0.90 | 1561.94 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| uint32 | 15000 | 1188.21 | 2333.23 | dense | 0.63 | 0.78 | 1.32 | 1539.69 |
+| uint32 | 15000 |  |  | sparse | 0.65 | 2.72 | 6.36 | 1109.64 |
+| uint32 | 15000 |  |  | filtered | 0.62 | 0.72 | 0.99 | 1576.17 |
+| uint32 | 15000 |  |  | hybrid | 0.65 | 0.74 | 0.91 | 1531.60 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| uint32 | 25000 | 924.39 | 2670.28 | dense | 0.63 | 0.76 | 1.43 | 1543.61 |
+| uint32 | 25000 |  |  | sparse | 0.64 | 0.72 | 0.80 | 1548.59 |
+| uint32 | 25000 |  |  | filtered | 0.60 | 0.73 | 1.16 | 1592.23 |
+| uint32 | 25000 |  |  | hybrid | 0.65 | 0.80 | 1.01 | 1504.26 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| uint32 | 50000 | 4378.36 | 1547.55 | dense | 0.63 | 0.70 | 1.25 | 1577.81 |
+| uint32 | 50000 |  |  | sparse | 0.61 | 0.69 | 0.70 | 1621.13 |
+| uint32 | 50000 |  |  | filtered | 0.60 | 0.69 | 0.97 | 1634.75 |
+| uint32 | 50000 |  |  | hybrid | 0.65 | 2.47 | 4.26 | 1093.09 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| float32 | 3000 | 827.26 | 1110.13 | dense | 1.29 | 1.68 | 2.07 | 764.28 |
+| float32 | 3000 |  |  | sparse | 1.29 | 3.97 | 7.34 | 661.03 |
+| float32 | 3000 |  |  | filtered | 1.27 | 1.62 | 1.85 | 763.68 |
+| float32 | 3000 |  |  | hybrid | 2.16 | 4.09 | 8.88 | 421.74 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| float32 | 7000 | 1364.47 | 1311.86 | dense | 1.06 | 3.05 | 11.74 | 734.99 |
+| float32 | 7000 |  |  | sparse | 1.05 | 1.22 | 1.34 | 944.57 |
+| float32 | 7000 |  |  | filtered | 1.00 | 1.14 | 1.62 | 988.96 |
+| float32 | 7000 |  |  | hybrid | 1.03 | 1.31 | 1.42 | 949.21 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| float32 | 15000 | 1657.34 | 1625.93 | dense | 1.02 | 1.28 | 3.93 | 928.43 |
+| float32 | 15000 |  |  | sparse | 1.03 | 1.28 | 1.59 | 959.16 |
+| float32 | 15000 |  |  | filtered | 0.97 | 1.15 | 1.55 | 1011.03 |
+| float32 | 15000 |  |  | hybrid | 1.08 | 3.94 | 5.69 | 751.40 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| float32 | 25000 | 3221.33 | 1902.21 | dense | 0.57 | 0.69 | 1.24 | 1705.78 |
+| float32 | 25000 |  |  | sparse | 0.57 | 0.64 | 0.69 | 1738.61 |
+| float32 | 25000 |  |  | filtered | 0.56 | 2.14 | 4.54 | 1330.64 |
+| float32 | 25000 |  |  | hybrid | 0.57 | 0.67 | 0.98 | 1698.67 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| float32 | 50000 | 1792.08 | 2747.09 | dense | 1.11 | 1.51 | 1.75 | 868.37 |
+| float32 | 50000 |  |  | sparse | 1.13 | 1.35 | 1.89 | 875.56 |
+| float32 | 50000 |  |  | filtered | 1.06 | 1.65 | 2.02 | 892.24 |
+| float32 | 50000 |  |  | hybrid | 1.19 | 3.25 | 10.75 | 669.09 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| complex64 | 3000 | 1420.72 | 1078.82 | dense | 0.82 | 0.96 | 1.53 | 1200.04 |
+| complex64 | 3000 |  |  | sparse | 0.86 | 1.32 | 1.39 | 1112.86 |
+| complex64 | 3000 |  |  | filtered | 0.86 | 2.71 | 7.85 | 898.40 |
+| complex64 | 3000 |  |  | hybrid | 0.85 | 0.98 | 1.41 | 1149.97 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| complex64 | 7000 | 1292.18 | 603.71 | dense | 6.46 | 9.69 | 24.16 | 170.99 |
+| complex64 | 7000 |  |  | sparse | 6.51 | 9.41 | 15.35 | 174.58 |
+| complex64 | 7000 |  |  | filtered | 6.87 | 9.71 | 11.99 | 164.21 |
+| complex64 | 7000 |  |  | hybrid | 6.46 | 9.02 | 12.83 | 185.98 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| complex64 | 15000 | 3.34 | 1733.37 | dense | 5.17 | 7.57 | 15.69 | 192.59 |
+| complex64 | 15000 |  |  | sparse | 4.53 | 6.02 | 7.03 | 248.52 |
+| complex64 | 15000 |  |  | filtered | 4.71 | 5.96 | 6.61 | 242.28 |
+| complex64 | 15000 |  |  | hybrid | 5.25 | 6.16 | 6.84 | 204.98 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| complex64 | 25000 | 3003.46 | 1162.00 | dense | 5.12 | 7.67 | 13.09 | 209.91 |
+| complex64 | 25000 |  |  | sparse | 4.86 | 6.18 | 6.63 | 234.25 |
+| complex64 | 25000 |  |  | filtered | 4.94 | 6.24 | 9.25 | 232.20 |
+| complex64 | 25000 |  |  | hybrid | 5.09 | 6.31 | 18.22 | 215.79 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
 
-## Search Mode Definitions
-* **Dense**: Standard vector similarity search using HNSW index.
-* **Filtered**: Search constrained by high-cardinality metadata filters (e.g., category match).
-* **Sparse**: Point lookup or extremely high-selectivity search simulation.
-* **Hybrid**: Multi-modal search combining vector similarity and full-text BM25 rankings (alpha=0.5).
-
-## Performance Results Matrix
-
-| Data Type | Count | Ingest (MB/s) | DoGet (MB/s) | Dense p95 | Filter p95 | Sparse p95 | Hybrid p95 |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **float32** | 3,000 | 762.79 | 651.79 | 0.53ms | 0.45ms | 0.45ms | 0.47ms |
-| **float32** | 5,000 | 1183.45 | 1259.77 | 0.51ms | 0.44ms | 0.44ms | 0.49ms |
-| **float32** | 10,000 | 1619.58 | 1240.57 | 0.50ms | 0.47ms | 0.46ms | 0.46ms |
-| **float32** | 15,000 | 1663.09 | 1408.90 | 0.51ms | 0.45ms | 0.45ms | 0.47ms |
-| **float32** | 25,000 | 1322.93 | 1736.86 | 0.49ms | 0.44ms | 0.46ms | 0.47ms |
-| **float32** | 50,000 | 1649.03 | 2287.31 | 0.47ms | 0.41ms | 0.46ms | 0.45ms |
-| | | | | | | | |
-| **float16** | 3,000 | 913.30 | 826.87 | 0.49ms | 0.46ms | 0.44ms | 0.48ms |
-| **float16** | 5,000 | 471.85 | 855.97 | 0.50ms | 0.45ms | 0.47ms | 0.46ms |
-| **float16** | 10,000 | 1068.14 | 1525.01 | 0.51ms | 0.45ms | 0.45ms | 0.45ms |
-| **float16** | 15,000 | 955.09 | 1414.44 | 0.51ms | 0.45ms | 0.47ms | 0.46ms |
-| **float16** | 25,000 | 1364.99 | 1680.22 | 0.49ms | 0.44ms | 0.47ms | 0.47ms |
-| **float16** | 50,000 | 1508.75 | 2073.32 | 0.50ms | 0.44ms | 0.52ms | 0.46ms |
-| | | | | | | | |
-| **int8** | 3,000 | 728.72 | 422.58 | 0.53ms | 0.45ms | 0.44ms | 0.46ms |
-| **int8** | 5,000 | 948.82 | 773.64 | 0.53ms | 0.44ms | 0.50ms | 0.46ms |
-| **int8** | 10,000 | 1192.50 | 617.46 | 0.53ms | 0.44ms | 0.47ms | 0.46ms |
-| **int8** | 15,000 | 795.82 | 1492.66 | 0.52ms | 0.45ms | 0.46ms | 0.47ms |
-| **int8** | 25,000 | 1376.55 | 1362.40 | 0.50ms | 0.45ms | 0.48ms | 0.47ms |
-| **int8** | 50,000 | 1193.17 | 1808.70 | 0.50ms | 0.44ms | 0.46ms | 0.47ms |
-| | | | | | | | |
-| **uint8** | 3,000 | 320.62 | 393.52 | 0.51ms | 0.45ms | 0.44ms | 0.47ms |
-| **uint8** | 5,000 | 431.41 | 391.13 | 0.54ms | 0.45ms | 0.44ms | 0.45ms |
-| **uint8** | 10,000 | 477.14 | 843.69 | 0.50ms | 0.45ms | 0.46ms | 0.46ms |
-| **uint8** | 15,000 | 617.41 | 1531.81 | 0.53ms | 0.47ms | 0.44ms | 0.47ms |
-| **uint8** | 25,000 | 1358.33 | 1298.88 | 0.53ms | 0.45ms | 0.46ms | 0.46ms |
-| **uint8** | 50,000 | 856.23 | 1611.22 | 0.47ms | 0.43ms | 0.47ms | 0.46ms |
-| | | | | | | | |
-| **int32** | 3,000 | 971.29 | 616.34 | 0.51ms | 0.45ms | 0.44ms | 0.46ms |
-| **int32** | 5,000 | 934.72 | 1081.40 | 0.52ms | 0.44ms | 0.45ms | 0.46ms |
-| **int32** | 10,000 | 1036.76 | 1268.07 | 0.50ms | 0.44ms | 0.44ms | 0.46ms |
-| **int32** | 15,000 | 1528.00 | 1387.72 | 0.51ms | 0.44ms | 0.45ms | 0.45ms |
-| **int32** | 25,000 | 2048.35 | 1613.31 | 0.50ms | 0.44ms | 0.46ms | 0.46ms |
-| **int32** | 50,000 | 1068.31 | 2392.85 | 0.46ms | 0.41ms | 0.48ms | 0.43ms |
-| | | | | | | | |
-
-## Executive Summary
-### Throughput Observations
-- **Bandwidth**: Longbow consistently saturates available local network/disk IO, with `float32` and `int8` ingestion exceeding **1.5 GB/s**.
-- **Efficiency**: Memory-efficient types like `int8` show significantly higher vector-per-second counts due to smaller memory footprints.
-
-### Search Latency Characteristics
-- **Consistency**: All dense searches maintain sub-millisecond p95 latency under the tested loads, demonstrating the efficiency of the sharded HNSW implementation.
-- **Hybrid Search**: Combining BM25 with vector search introduces minor overhead but remains well within real-time requirements (<3ms p95).
-
-### Hardware and Environment
-- **Nodes**: 3 Distributed Nodes (Local Simulation)
-- **Core Count**: 12 Logical Processors (Host System)
-- **Storage**: Persistent SSD mapping for HNSW layers
+## Methodology
+- Dimension: 384
+- All tests run on single node bench-tool

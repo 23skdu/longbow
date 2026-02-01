@@ -47,7 +47,7 @@ func TestArrowHNSW_DefaultArrowHNSWConfig(t *testing.T) {
 // TestGraphData_Initialization validates GraphData structure.
 func TestGraphData_Initialization(t *testing.T) {
 	capacity := 100
-	data := lbtypes.NewGraphData(100, 10, false, false, 0, false, false, false, lbtypes.VectorTypeFloat32)
+	data := lbtypes.NewGraphData(100, 10, false, false, 0, false, false, false, lbtypes.VectorTypeFloat32, false, false)
 
 	if data.Capacity < capacity {
 		t.Errorf("Capacity = %d, want >= %d", data.Capacity, capacity)

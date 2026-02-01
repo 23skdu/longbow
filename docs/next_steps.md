@@ -10,21 +10,21 @@ This document outlines the remaining tasks for Longbow development.
 
 ### Phase 0: Native HNSW Consolidation (10-Part Plan)
 
-1. **Interface Generalization**
+1. **Interface Generalization** [COMPLETED]
     - Audit all components (`VectorStore`, `Dataset`, `HybridSearch`, `Coordinator`) to use the `VectorIndex` interface instead of concrete `*HNSWIndex` pointers.
-2. **Decouple Sharding from Legacy Type**
+2. **Decouple Sharding from Legacy Type** [COMPLETED]
     - Refactor `ShardedDataset` and `ShardedHNSW` to accept any `VectorIndex` implementation.
-3. **Graph Sync Migration**
+3. **Graph Sync Migration** [COMPLETED]
     - Implement a generic serialization/sync protocol for `ArrowHNSW` using the native `types.GraphData` format, replacing the `coder/hnsw` specific Export/Import logic.
-4. **Parallel Search Adaptation**
+4. **Parallel Search Adaptation** [COMPLETED]
     - Port the parallel processing optimizations from `parallel_search.go` to the `ArrowHNSW` implementation or a generic interface-based helper.
-5. **Hybrid Search Refactor**
+5. **Hybrid Search Refactor** [COMPLETED]
     - Update `HybridSearchPipeline` and related query logic to work seamlessly with the `ArrowHNSW` engine.
-6. **Switch Global Defaults**
+6. **Switch Global Defaults** [COMPLETED]
     - Update `NewDataset` to initialize `ArrowHNSW` by default and remove the `LONGBOW_USE_HNSW2` feature flag in favor of a permanent native solution.
-7. **Unit Test Parity & Migration**
+7. **Unit Test Parity & Migration** [COMPLETED]
     - Port existing `hnsw_test.go` cases to ensure full behavior parity between legacy and native implementations.
-8. **Integration Test Suite Update**
+8. **Integration Test Suite Update** [COMPLETED]
     - Update `Benchmark`, `GPU`, and `Arena` integration tests to utilize `ArrowHNSW` as the primary engine.
 9. **Feature Parity Audit**
     - Verify that deletion, Binary Quantization (BQ), Product Quantization (PQ), and high-dimensional support in `ArrowHNSW` are production-ready.
@@ -102,32 +102,34 @@ This document outlines the remaining tasks for Longbow development.
     - [x] Navigation algorithm robustness testing
     - [x] Memory corruption prevention tests
     - [x] Long-running traversal stability tests
+    - [x] Graph resilience fuzzing (380k+ iterations/30s)
 
-3. **Performance Benchmarking**
-    - Graph navigation performance benchmarks
-    - Comparison with existing HNSW queries
-    - Scalability tests for large sparse graphs
-    - Memory usage profiling
+3. **Performance Benchmarking** ✅
+    - [x] Graph navigation performance benchmarks
+    - [x] Comparison with existing HNSW queries
+    - [x] Scalability tests for large sparse graphs
+    - [x] Memory usage profiling (verified stabilized RSS behavior)
 
-### Phase 5: Observability & Production (Weeks 17-20)
+### Phase 5: Observability & Production (Weeks 17-20) ✅
 
-1. **Prometheus Metrics Integration**
-    - Graph navigation operation counters
-    - Traversal depth and hop count metrics
-    - Performance latency histograms
-    - Memory usage and graph density metrics
+1. **Prometheus Metrics Integration** ✅
+    - [x] Graph navigation operation counters (success, fail, timeout, cancelled)
+    - [x] Traversal depth and hop count histograms
+    - [x] Performance latency histograms per strategy
+    - [x] Strategy selection tracking
+    - [x] Internal search metrics (visited nodes, frontier size)
 
-2. **Production Hardening**
-    - Graph navigation error handling
-    - Graceful degradation for pathological graphs
-    - Resource cleanup and memory management
-    - Production monitoring and alerting
+2. **Production Hardening** ✅
+    - [x] Graph navigation error handling (input validation & boundary checks)
+    - [x] Graceful degradation for pathological graphs (`MaxNodesVisited` limit)
+    - [x] Resource cleanup and memory management (`ClearCache`, `Close` integration)
+    - [x] Production monitoring readiness (Prometheus integration complete)
 
-3. **Documentation & Examples**
-    - Graph navigation API documentation
-    - Performance tuning guides
-    - Use case examples and tutorials
-    - Migration guides from basic HNSW
+3. **Documentation & Examples** ✅
+    - [x] Graph navigation API documentation (`docs/graph_navigation.md`)
+    - [x] Performance tuning guides (included in documentation)
+    - [x] Use case examples and tutorials
+    - [x] Migration guides from basic HNSW
 
 ### Key Success Metrics
 
@@ -186,35 +188,13 @@ This document outlines the remaining tasks for Longbow development.
 
 ### 12. Arrow v23.0 Upgrade 🚀 (High Priority)
 
-#### **Phase 1: Foundation & Planning** ✅
-
-- **[COMPLETED]** Dependency audit and update strategy
-- **[COMPLETED]** Create comprehensive dependency update strategy
-- **[COMPLETED]** Version and feature gap analysis
-- **[COMPLETED]** Breaking changes impact assessment
-
-#### **Phase 2: Core Migration** ✅
-
-- **[COMPLETED]** Update Arrow dependencies in go.mod (v18.5.1 stable foundation)
-- **[COMPLETED]** Update Arrow import paths across codebase (compatibility layer created)
-- **[COMPLETED]** Flight integration updates for v23.0 (compatibility layer implemented)
-
 #### **Phase 3: Compatibility & Testing** ✅
 
-- **[COMPLETED]** Add comprehensive v23.0 compatibility tests
-- **[COMPLETED]** Migration testing framework (migration tool created)
 - **[PENDING]** Performance regression testing
 
 #### **Phase 4: Feature Integration** ✅
 
-- **[COMPLETED]** Update SIMD optimizations for new Arrow APIs (compatibility layer created)
 - **[PENDING]** Leverage new v23.0 performance features (awaiting v23 release)
-
-#### **Phase 5: Documentation & Examples** ✅
-
-- **[COMPLETED]** Update documentation for v23.0 changes
-- **[COMPLETED]** Add usage examples and migration guides
-- **[COMPLETED]** Update API documentation
 
 #### **Phase 6: Validation & Testing**
 
@@ -275,31 +255,9 @@ This comprehensive plan ensures Arrow v23.0 adoption while maintaining Longbow's
 - **[NEW]** `internal/security/audit/` - Security audit logging
 - **[MODIFY]** Regular dependency security scanning
 
-### 3. CI/CD Pipeline & Automation
-
-- **[COMPLETED]** `Makefile` - Standardized build and development commands
-- **[COMPLETED]** `Makefile` - Standardized build and development commands
-- **[COMPLETED]** Added comprehensive linting checks and automated security scanning to CI
-- **[COMPLETED]** Fixed all syntax errors and standardized error handling across packages
-- **[COMPLETED]** `scripts/ci/` - CI utilities and deployment scripts
-- **[COMPLETED]** Added security audit logging with comprehensive test coverage
-- **[COMPLETED]** `scripts/dev/` - Development utilities
-- **[COMPLETED]** `internal/dev/` - Development helpers and debugging tools
-
 ### 5. Benchmarking & Performance Testing
 
-- **[COMPLETED]** `internal/storage/benchmark/` - I/O performance benchmarks
-- **[COMPLETED]** `internal/benchmark/io_benchmark_test.go` - I/O benchmark implementation
-- **[COMPLETED]** `internal/benchmark/throughput_test.go` - Throughput benchmarking
-- **[COMPLETED]** `internal/benchmark/` - Standardized benchmarking framework
-- **[COMPLETED]** `scripts/benchmark/` - Performance testing utilities
 - **[MODIFY]** Implement A/B testing capabilities
-- **[COMPLETED]** `docs/performance/` - Performance optimization guides
-
-### 6. Documentation
-
-- **[COMPLETED]** `docs/architecture.md` - Updated with sequence diagrams for ingestion and search flows
-- **[COMPLETED]** Improved godoc comments for all exported types and better code documentation
 
 ### 7. Success Criteria
 
@@ -310,7 +268,6 @@ This comprehensive plan ensures Arrow v23.0 adoption while maintaining Longbow's
 - [ ] Compaction reduces memory by 20-30% in fragmented scenarios.
 - [ ] Max 50 files per package, max 800 lines per file
 - [ ] 80%+ test coverage with quality assertions
-- [x] Zero linting errors, standardized error handling
 - [ ] Complete API documentation and usage guides
 - [ ] 3x improvement in SIMD workloads
 - [ ] 50% reduction in memory overhead

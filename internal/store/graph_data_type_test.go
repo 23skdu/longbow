@@ -22,7 +22,7 @@ func TestGraphData_PolymorphicAllocation(t *testing.T) {
 
 	for _, dt := range types {
 		t.Run(dt.String(), func(t *testing.T) {
-			gd := lbtypes.NewGraphData(capacity, dims, false, false, 0, false, false, false, dt)
+			gd := lbtypes.NewGraphData(capacity, dims, false, false, 0, false, false, false, dt, false, false)
 			assert.Equal(t, dt, gd.Type)
 
 			// Ensure chunk works for all types

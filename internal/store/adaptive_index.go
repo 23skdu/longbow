@@ -52,6 +52,42 @@ func (c AdaptiveIndexConfig) Validate() error {
 }
 
 // =============================================================================
+// AdaptiveIndex - Wrapper that switches between BruteForce and HNSW
+// =============================================================================
+
+// AdaptiveIndex automatically switches between BruteForce and HNSW based on size.
+type AdaptiveIndex struct {
+	mu             sync.RWMutex
+	dataset        *Dataset
+	config         AdaptiveIndexConfig
+	bruteForce     *BruteForceIndex
+	hnsw           VectorIndex
+	usingHNSW      atomic.Bool
+	migrating      atomic.Bool
+	migrationCount atomic.Int64
+	vectorCount    atomic.Int64
+}
+
+// NewAdaptiveIndex creates an adaptive index starting with BruteForce.
+func NewAdaptiveIndex(ds *Dataset, cfg AdaptiveIndexConfig) *AdaptiveIndex {
+	a := &AdaptiveIndex{
+		dataset:    ds,
+		config:     cfg,
+		bruteForce: NewBruteForceIndex(ds),
+	}
+	return a
+}
+
+func (idx *AdaptiveIndex) IsSharded() bool {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	if idx.hnsw != nil {
+		return idx.hnsw.IsSharded()
+	}
+	return false
+}
+
+// =============================================================================
 // BruteForceIndex - Linear scan index for small datasets
 // =============================================================================
 
@@ -61,7 +97,6 @@ type BruteForceIndex struct {
 	locations     []Location
 	dataset       *Dataset
 	activeReaders atomic.Int64 // Track active zero-copy readers
-
 }
 
 // NewBruteForceIndex creates a new brute force index for the given dataset.
@@ -94,9 +129,9 @@ func (b *BruteForceIndex) AddByRecord(ctx context.Context, rec arrow.RecordBatch
 
 // AddBatch adds multiple vectors efficiently.
 func (b *BruteForceIndex) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowIdxs, batchIdxs []int) ([]uint32, error) {
-	ids := make([]uint32, len(recs))
-	for i := range recs {
-		id, _ := b.AddByRecord(ctx, recs[i], rowIdxs[i], batchIdxs[i])
+	ids := make([]uint32, len(rowIdxs))
+	for i := range rowIdxs {
+		id, _ := b.AddByRecord(ctx, recs[0], rowIdxs[i], batchIdxs[i]) // Note: simplified fallback
 		ids[i] = id
 	}
 	return ids, nil
@@ -106,15 +141,6 @@ func (b *BruteForceIndex) AddBatch(ctx context.Context, recs []arrow.RecordBatch
 func (b *BruteForceIndex) SearchVectorsWithBitmap(ctx context.Context, q any, k int, filter *roaring.Bitmap, options any) ([]SearchResult, error) {
 	// Not implemented for BruteForce, but needed for interface
 	return nil, nil
-}
-
-func (idx *AdaptiveIndex) IsSharded() bool {
-	idx.mu.RLock()
-	defer idx.mu.RUnlock()
-	if idx.hnsw != nil {
-		return idx.hnsw.IsSharded()
-	}
-	return false
 }
 
 // GetLocation retrieves the storage location for a given vector ID.
@@ -130,7 +156,6 @@ func (b *BruteForceIndex) GetLocation(id VectorID) (Location, bool) {
 }
 
 func (b *BruteForceIndex) GetDimension() uint32 {
-	// Logic to get dim from dataset
 	return 0
 }
 
@@ -145,7 +170,6 @@ func (b *BruteForceIndex) Close() error {
 }
 
 func (b *BruteForceIndex) TrainPQ(vectors [][]float32) error {
-	// Not implemented for BruteForce
 	return nil
 }
 
@@ -161,7 +185,6 @@ func (b *BruteForceIndex) EstimateMemory() int64 {
 func (b *BruteForceIndex) SearchVectors(ctx context.Context, q any, k int, filters []query.Filter, options SearchOptions) ([]SearchResult, error) {
 	qF32, ok := q.([]float32)
 	if !ok {
-		// BruteForce currently only supports float32
 		return nil, errors.New("BruteForceIndex only supports []float32 queries")
 	}
 	start := time.Now()
@@ -173,7 +196,6 @@ func (b *BruteForceIndex) SearchVectors(ctx context.Context, q any, k int, filte
 		return nil, nil
 	}
 
-	// Use a max-heap to track k smallest distances
 	h := &bfSearchHeap{}
 	heap.Init(h)
 
@@ -184,14 +206,13 @@ func (b *BruteForceIndex) SearchVectors(ctx context.Context, q any, k int, filte
 			}
 		}
 
-		// Use zero-copy access for performance
 		vec, release := b.getVectorUnsafe(loc)
 		if vec == nil || release == nil {
 			continue
 		}
 
 		dist, err := simd.EuclideanDistance(qF32, vec)
-		release() // Release immediately after distance computation
+		release()
 
 		if err != nil {
 			dist = math.MaxFloat32
@@ -211,7 +232,6 @@ func (b *BruteForceIndex) SearchVectors(ctx context.Context, q any, k int, filte
 		}
 	}
 
-	// Extract results in sorted order (ascending distance)
 	results := make([]SearchResult, h.Len())
 	for i := len(results) - 1; i >= 0; i-- {
 		item := heap.Pop(h).(bfHeapItem)
@@ -224,7 +244,6 @@ func (b *BruteForceIndex) SearchVectors(ctx context.Context, q any, k int, filte
 	return results, nil
 }
 
-// Len returns the number of indexed vectors.
 func (b *BruteForceIndex) Len() int {
 	start := time.Now()
 	b.mu.RLock()
@@ -270,9 +289,6 @@ func (b *BruteForceIndex) getVector(loc Location) []float32 {
 	return result
 }
 
-// getVectorUnsafe retrieves a zero-copy view of the vector.
-// The caller MUST call release() when done to decrement the epoch counter.
-// The returned slice is only valid until release() is called.
 func (b *BruteForceIndex) getVectorUnsafe(loc Location) (vec []float32, release func()) {
 	b.enterEpoch()
 
@@ -304,37 +320,31 @@ func (b *BruteForceIndex) getVectorUnsafe(loc Location) (vec []float32, release 
 		return nil, nil
 	}
 
-	// Return direct slice view (zero-copy)
 	vec = values[start : start+listSize]
 	release = b.exitEpoch
 
-	// Track metrics
 	metrics.VectorAccessZeroCopyTotal.WithLabelValues(b.dataset.Name, "brute_force").Inc()
 
 	return vec, release
 }
 
-// enterEpoch increments the active reader count
 func (b *BruteForceIndex) enterEpoch() {
 	b.activeReaders.Add(1)
 }
 
-// exitEpoch decrements the active reader count
 func (b *BruteForceIndex) exitEpoch() {
 	b.activeReaders.Add(-1)
 }
 
-// bfHeapItem is a heap item for brute force search.
 type bfHeapItem struct {
 	id    VectorID
 	score float32
 }
 
-// bfSearchHeap implements a max-heap for k-NN search.
 type bfSearchHeap []bfHeapItem
 
 func (h bfSearchHeap) Len() int           { return len(h) }
-func (h bfSearchHeap) Less(i, j int) bool { return h[i].score > h[j].score } // Max-heap
+func (h bfSearchHeap) Less(i, j int) bool { return h[i].score > h[j].score }
 func (h bfSearchHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
 
 func (h *bfSearchHeap) Push(x any) {
@@ -349,36 +359,9 @@ func (h *bfSearchHeap) Pop() any {
 	return x
 }
 
-// =============================================================================
-// AdaptiveIndex - Wrapper that switches between BruteForce and HNSW
-// =============================================================================
+// AdaptiveIndex methods
 
-// AdaptiveIndex automatically switches between BruteForce and HNSW based on size.
-type AdaptiveIndex struct {
-	mu             sync.RWMutex
-	dataset        *Dataset
-	config         AdaptiveIndexConfig
-	bruteForce     *BruteForceIndex
-	hnsw           VectorIndex
-	usingHNSW      atomic.Bool
-	migrating      atomic.Bool
-	migrationCount atomic.Int64
-	vectorCount    atomic.Int64
-}
-
-// NewAdaptiveIndex creates an adaptive index starting with BruteForce.
-func NewAdaptiveIndex(ds *Dataset, cfg AdaptiveIndexConfig) *AdaptiveIndex {
-	a := &AdaptiveIndex{
-		dataset:    ds,
-		config:     cfg,
-		bruteForce: NewBruteForceIndex(ds),
-	}
-	return a
-}
-
-// AddByLocation delegates to the active index.
 func (a *AdaptiveIndex) AddByLocation(ctx context.Context, batchIdx, rowIdx int) (uint32, error) {
-	// Fast path: if HNSW is already active, delegate with RLock
 	a.mu.RLock()
 	hnsw := a.hnsw
 	a.mu.RUnlock()
@@ -387,42 +370,37 @@ func (a *AdaptiveIndex) AddByLocation(ctx context.Context, batchIdx, rowIdx int)
 		return hnsw.AddByLocation(ctx, batchIdx, rowIdx)
 	}
 
-	// If HNSW is not active, acquire a write lock for BruteForce operations and potential migration
 	start := time.Now()
 	a.mu.Lock()
 	metrics.IndexLockWaitDuration.WithLabelValues(a.dataset.Name, "write").Observe(time.Since(start).Seconds())
 	defer a.mu.Unlock()
 
-	// Re-check if HNSW became active while waiting for the lock
 	if a.usingHNSW.Load() {
 		return a.hnsw.AddByLocation(ctx, batchIdx, rowIdx)
 	}
 
-	// Use BruteForce
 	id, err := a.bruteForce.AddByLocation(ctx, batchIdx, rowIdx)
 	if err == nil {
 		newCount := a.vectorCount.Add(1)
-		if a.config.Enabled && int(newCount) >= a.config.Threshold { //nolint:gosec // G115
+		if a.config.Enabled && int(newCount) >= a.config.Threshold {
 			a.migrateToHNSW()
 		}
 	}
 	return id, err
 }
 
-// AddByRecord adds a vector from a record batch.
 func (a *AdaptiveIndex) AddByRecord(ctx context.Context, rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32, error) {
 	return a.AddByLocation(ctx, batchIdx, rowIdx)
 }
 
-// AddBatch adds multiple vectors efficiently.
 func (a *AdaptiveIndex) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowIdxs, batchIdxs []int) ([]uint32, error) {
 	start := time.Now()
 	a.mu.Lock()
 	metrics.IndexLockWaitDuration.WithLabelValues(a.dataset.Name, "write").Observe(time.Since(start).Seconds())
 	defer a.mu.Unlock()
 
-	ids := make([]uint32, len(recs))
-	for i := range recs {
+	ids := make([]uint32, len(rowIdxs))
+	for i := range rowIdxs {
 		id, err := a.AddByLocation(ctx, batchIdxs[i], rowIdxs[i])
 		if err != nil {
 			return nil, err
@@ -498,7 +476,10 @@ func (a *AdaptiveIndex) Close() error {
 	if a.usingHNSW.Load() {
 		return a.hnsw.Close()
 	}
-	return a.bruteForce.Close()
+	if a.bruteForce != nil {
+		return a.bruteForce.Close()
+	}
+	return nil
 }
 
 func (a *AdaptiveIndex) TrainPQ(vectors [][]float32) error {
@@ -509,7 +490,7 @@ func (a *AdaptiveIndex) TrainPQ(vectors [][]float32) error {
 	if a.usingHNSW.Load() {
 		return a.hnsw.TrainPQ(vectors)
 	}
-	return a.bruteForce.TrainPQ(vectors)
+	return nil
 }
 
 func (a *AdaptiveIndex) GetPQEncoder() *pq.PQEncoder {
@@ -520,7 +501,7 @@ func (a *AdaptiveIndex) GetPQEncoder() *pq.PQEncoder {
 	if a.usingHNSW.Load() {
 		return a.hnsw.GetPQEncoder()
 	}
-	return a.bruteForce.GetPQEncoder()
+	return nil
 }
 
 func (a *AdaptiveIndex) EstimateMemory() int64 {
@@ -531,13 +512,13 @@ func (a *AdaptiveIndex) EstimateMemory() int64 {
 	if a.usingHNSW.Load() {
 		return a.hnsw.EstimateMemory()
 	}
-	return a.bruteForce.EstimateMemory()
+	if a.bruteForce != nil {
+		return a.bruteForce.EstimateMemory()
+	}
+	return 0
 }
 
-// migrateToHNSW converts from BruteForce to HNSW asynchronously.
-// It builds the index in the background and atomically swaps it.
 func (a *AdaptiveIndex) migrateToHNSW() {
-	// 1. Check if already migrating or using HNSW (fast path)
 	if a.usingHNSW.Load() || !a.migrating.CompareAndSwap(false, true) {
 		return
 	}
@@ -545,20 +526,17 @@ func (a *AdaptiveIndex) migrateToHNSW() {
 	go func() {
 		defer a.migrating.Store(false)
 
-		// 2. Snapshot current state (Fast RLock)
 		migStart := time.Now()
 		a.mu.RLock()
 		metrics.IndexLockWaitDuration.WithLabelValues(a.dataset.Name, "read").Observe(time.Since(migStart).Seconds())
-		if a.bruteForce == nil { // Already migrated?
+		if a.bruteForce == nil {
 			a.mu.RUnlock()
 			return
 		}
-		// Copy locations to separate slice to iterate safely without holding lock
 		snapshotLocations := make([]Location, len(a.bruteForce.locations))
 		copy(snapshotLocations, a.bruteForce.locations)
 		a.mu.RUnlock()
 
-		// 3. Build HNSW from snapshot (Slow, No Lock)
 		config := DefaultArrowHNSWConfig()
 		config.Metric = a.dataset.Metric
 		config.Logger = a.dataset.Logger
@@ -568,19 +546,16 @@ func (a *AdaptiveIndex) migrateToHNSW() {
 			_, _ = newHNSW.AddByLocation(context.Background(), loc.BatchIdx, loc.RowIdx)
 		}
 
-		// 4. Atomic Swap (Stop The World)
 		swapStart := time.Now()
 		a.mu.Lock()
 		metrics.IndexLockWaitDuration.WithLabelValues(a.dataset.Name, "write").Observe(time.Since(swapStart).Seconds())
 		defer a.mu.Unlock()
 
-		// Check cancellation/state changes
 		if a.usingHNSW.Load() || a.bruteForce == nil {
-			_ = newHNSW.Close() // Discard result
+			_ = newHNSW.Close()
 			return
 		}
 
-		// 5. Catch up (Apply Delta)
 		currentLocations := a.bruteForce.locations
 		if len(currentLocations) > len(snapshotLocations) {
 			delta := currentLocations[len(snapshotLocations):]
@@ -589,7 +564,6 @@ func (a *AdaptiveIndex) migrateToHNSW() {
 			}
 		}
 
-		// 6. Swap
 		a.hnsw = newHNSW
 		a.usingHNSW.Store(true)
 		a.migrationCount.Add(1)
@@ -598,7 +572,6 @@ func (a *AdaptiveIndex) migrateToHNSW() {
 	}()
 }
 
-// SearchVectors delegates to the active index.
 func (a *AdaptiveIndex) SearchVectors(ctx context.Context, q any, k int, filters []query.Filter, options SearchOptions) ([]SearchResult, error) {
 	start := time.Now()
 	a.mu.RLock()
@@ -610,11 +583,12 @@ func (a *AdaptiveIndex) SearchVectors(ctx context.Context, q any, k int, filters
 		return a.hnsw.SearchVectors(ctx, q, k, filters, options)
 	}
 	metrics.BruteForceSearchesTotal.Inc()
-	// BruteForce doesn't support filters yet, ignoring them
-	return a.bruteForce.SearchVectors(ctx, q, k, filters, options)
+	if a.bruteForce != nil {
+		return a.bruteForce.SearchVectors(ctx, q, k, filters, options)
+	}
+	return nil, nil
 }
 
-// GetIndexType returns the current index type.
 func (a *AdaptiveIndex) GetIndexType() string {
 	if a.usingHNSW.Load() {
 		return "hnsw"
@@ -622,12 +596,10 @@ func (a *AdaptiveIndex) GetIndexType() string {
 	return "brute_force"
 }
 
-// GetMigrationCount returns the number of times migration occurred.
 func (a *AdaptiveIndex) GetMigrationCount() int64 {
 	return a.migrationCount.Load()
 }
 
-// Len returns the number of indexed vectors.
 func (a *AdaptiveIndex) Len() int {
 	start := time.Now()
 	a.mu.RLock()

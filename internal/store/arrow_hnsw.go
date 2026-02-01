@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"container/heap"
 	"context"
+	"encoding/binary"
 	"encoding/gob"
 	"fmt"
 	"io"
@@ -49,7 +50,7 @@ type ArrowHNSWConfig struct {
 	UseDisk  bool
 	DiskPath string
 
-	Metric   any
+	Metric   core.DistanceMetric
 	Logger   any
 	DataType types.VectorDataType
 
@@ -93,6 +94,7 @@ func DefaultArrowHNSWConfig() ArrowHNSWConfig {
 		DataType:                types.VectorTypeFloat32,
 		SQ8TrainingThreshold:    5000,
 		SelectionHeuristicLimit: 400,
+		Metric:                  core.MetricEuclidean,
 	}
 }
 
@@ -234,6 +236,11 @@ func NewArrowHNSW(dataset *Dataset, config *ArrowHNSWConfig) *ArrowHNSW {
 	}
 	if dataset != nil {
 		dataset.Index = h
+		// Restore PQ Encoder if present in dataset (e.g. from snapshot)
+		if dataset.PQEncoder != nil {
+			h.pqEncoder = dataset.PQEncoder
+			h.config.PQEnabled = true
+		}
 	}
 
 	// Initialize distance function
@@ -292,18 +299,42 @@ func NewArrowHNSW(dataset *Dataset, config *ArrowHNSWConfig) *ArrowHNSW {
 		Help: "Wait time for HNSW locks",
 	}, []string{"type"})
 
-	// Init default distance funcs (assuming Euclidean/L2)
-	h.distFunc = simd.EuclideanDistance
-	h.distFuncF64 = simd.EuclideanDistanceFloat64
-	// TODO: Add complex distance functions if available in simd, else placeholders
-	// For now, setting placeholders to avoid nil panic if used
-	// h.distFuncC64 = ...
-	// h.distFuncC128 = ...
+	// Init distance funcs based on config
+	fmt.Printf("Initializing ArrowHNSW with metric: %v\n", config.Metric)
+	switch config.Metric {
+	case MetricCosine:
+		h.distFunc = simd.CosineDistance
+		// TODO: Add specialized F64/F16 cosine if available
+		h.distFuncF64 = simd.EuclideanDistanceFloat64 // Fallback or implement
+		h.distFuncF16 = simd.EuclideanDistanceF16     // Fallback or implement
+	case MetricDotProduct:
+		// HNSW requires distance (lower is closer). Dot product is similarity (higher is closer).
+		// We use negative dot product as distance.
+		h.distFunc = func(a, b []float32) (float32, error) {
+			d, err := simd.DotProduct(a, b)
+			return -d, err
+		}
+		h.distFuncF64 = func(a, b []float64) (float32, error) {
+			d, err := simd.DotProductF64(a, b)
+			return -d, err
+		}
+		h.distFuncF16 = simd.EuclideanDistanceF16 // Fallback
+	default: // MetricEuclidean
+		h.distFunc = simd.EuclideanDistance
+		h.distFuncF64 = simd.EuclideanDistanceFloat64
+		h.distFuncF16 = simd.EuclideanDistanceF16
+	}
 
 	// Ensure initial capacity
 	capacity := config.InitialCapacity
 	if capacity < 1000 {
 		capacity = 1000
+	}
+
+	// Determine DataType
+	dt := config.DataType
+	if config.Float16Enabled {
+		dt = types.VectorTypeFloat16
 	}
 
 	// Initialize GraphData
@@ -316,7 +347,9 @@ func NewArrowHNSW(dataset *Dataset, config *ArrowHNSWConfig) *ArrowHNSW {
 		config.Quantization,
 		config.SQ8Enabled,
 		config.UseDisk, // persistent
-		config.DataType,
+		dt,
+		config.BQEnabled,
+		config.PQEnabled,
 	)
 	h.data.Store(gd)
 
@@ -384,6 +417,11 @@ func (h *ArrowHNSW) GetNodeCount() int64 {
 // GetDims returns the vector dimensions
 func (h *ArrowHNSW) GetDims() int32 {
 	return h.dims.Load()
+}
+
+// GetDistanceMetric returns the configured distance metric.
+func (h *ArrowHNSW) GetDistanceMetric() core.DistanceMetric {
+	return h.config.Metric
 }
 
 // GetEntryPoint returns the current entry point node
@@ -469,6 +507,13 @@ func (h *ArrowHNSW) Delete(id uint32) error {
 	h.deleted.Add(id)
 	h.locationStore.Delete(VectorID(id))
 	return nil
+}
+
+func (h *ArrowHNSW) IsDeleted(id uint32) bool {
+	if h.deleted == nil {
+		return false
+	}
+	return h.deleted.Contains(id)
 }
 
 // mustGetVectorFromData retrieves a vector from the given data snapshot or panics.
@@ -608,6 +653,9 @@ func (h *ArrowHNSW) extractVector(rec arrow.RecordBatch, colIdx, rowIdx int) any
 		case *arrowarray.Int8:
 			return arr.Int8Values()[start:end]
 
+		case *arrowarray.Float16:
+			return arr.Values()[start:end]
+
 		// Add other types as needed
 		default:
 			return nil
@@ -671,7 +719,9 @@ func (h *ArrowHNSW) Size() int {
 // Interface implementation: Close cleans up resources
 func (h *ArrowHNSW) Close() error {
 	if h.navigator != nil {
-		h.navigator.Close()
+		if err := h.navigator.Close(); err != nil {
+			return err
+		}
 	}
 	h.data.Store(nil)
 	h.dataset = nil
@@ -793,76 +843,122 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 
 	// Calculate distance to entry point
 	var dist float32
-	if q, ok := queryVec.([]float32); ok {
-		vec, err := h.getVectorWithData(data, ep)
+	vec, err := h.getVectorWithData(data, ep)
+	if err != nil {
+		return nil, err
+	}
+
+	if vec == nil {
+		return nil, fmt.Errorf("entry point vector not found for id %d", ep)
+	}
+
+	// Record polymorphic metric based on storage type
+	if metrics.HNSWPolymorphicSearchCount != nil {
+		var typeLabel string
+		switch vec.(type) {
+		case []float32:
+			typeLabel = "float32"
+		case []float64:
+			typeLabel = "float64"
+		case []float16.Num:
+			typeLabel = "float16"
+		case []int8, []uint8:
+			typeLabel = "int8"
+		case []complex64:
+			typeLabel = "complex64"
+		case []complex128:
+			typeLabel = "complex128"
+		}
+		if typeLabel != "" {
+			metrics.HNSWPolymorphicSearchCount.WithLabelValues(typeLabel).Inc()
+			if metrics.HNSWPolymorphicThroughput != nil {
+				metrics.HNSWPolymorphicThroughput.WithLabelValues(typeLabel).Add(1.0)
+			}
+		}
+	}
+
+	// Use specialized computer if possible
+	computer := h.resolveHNSWComputer(data, searchCtx, queryVec, false)
+	if comp, ok := computer.(interface {
+		ComputeSingle(id uint32) (float32, error)
+	}); ok {
+		dist, err = comp.ComputeSingle(ep)
 		if err != nil {
 			return nil, err
 		}
-
-		switch v := vec.(type) {
+	} else {
+		// Fallback
+		switch q := queryVec.(type) {
 		case []float32:
-			d, err := h.distFunc(q, v)
-			if err != nil {
-				return nil, err
+			switch v := vec.(type) {
+			case []float32:
+				dist, err = h.distFunc(q, v)
+			case []float64:
+				q64 := make([]float64, len(q))
+				for i, val := range q {
+					q64[i] = float64(val)
+				}
+				dist, err = h.distFuncF64(q64, v)
+			default:
+				return nil, fmt.Errorf("unsupported vector type %T for float32 query", vec)
 			}
-			dist = d
 		case []float64:
-			if h.distFuncF64 == nil {
-				return nil, fmt.Errorf("float64 distance function not initialized")
+			if v, ok := vec.([]float64); ok {
+				dist, err = h.distFuncF64(q, v)
 			}
-			q64 := make([]float64, len(q))
-			for i, val := range q {
-				q64[i] = float64(val)
-			}
-			d, err := h.distFuncF64(q64, v)
-			if err != nil {
-				return nil, err
-			}
-			dist = d
 		case []float16.Num:
-			if h.distFuncF16 == nil {
-				return nil, fmt.Errorf("float16 distance function not initialized")
+			if v, ok := vec.([]float16.Num); ok {
+				dist, err = h.distFuncF16(q, v)
 			}
-			q16 := make([]float16.Num, len(q))
-			for i, val := range q {
-				q16[i] = float16.New(val)
+		case []complex64:
+			if v, ok := vec.([]complex64); ok {
+				dist, err = simd.EuclideanDistanceComplex64(q, v)
 			}
-			d, err := h.distFuncF16(q16, v)
-			if err != nil {
-				return nil, err
+		case []complex128:
+			if v, ok := vec.([]complex128); ok {
+				dist, err = simd.EuclideanDistanceComplex128(q, v)
 			}
-			dist = d
 		case []int8, []uint8:
 			var v8 []uint8
-			if vi8, ok := v.([]int8); ok {
-				v8 = *(*[]uint8)(unsafe.Pointer(&vi8))
-			} else {
-				v8 = v.([]uint8)
+			switch vt := vec.(type) {
+			case []int8:
+				v8 = *(*[]uint8)(unsafe.Pointer(&vt))
+			case []uint8:
+				v8 = vt
 			}
 
-			if h.quantizer != nil && h.sq8Ready.Load() {
+			var q8 []uint8
+			switch qt := q.(type) {
+			case []int8:
+				q8 = *(*[]uint8)(unsafe.Pointer(&qt))
+			case []uint8:
+				q8 = qt
+			}
+
+			if h.quantizer != nil && h.sq8Ready.Load() && len(q8) > 0 && len(v8) > 0 {
 				minV, maxV := h.quantizer.Params()
 				scale := (maxV - minV) / 255.0
 				var sum float32
-				for i, val := range q {
-					// De-quantize: min + level * scale
-					deq := minV + float32(v8[i])*scale
-					diff := val - deq
+				for i := range q8 {
+					deqQ := minV + float32(q8[i])*scale
+					deqV := minV + float32(v8[i])*scale
+					diff := deqQ - deqV
 					sum += diff * diff
 				}
 				dist = float32(math.Sqrt(float64(sum)))
-			} else {
-				// Fallback
+			} else if len(q8) > 0 && len(v8) > 0 {
 				var sum float32
-				for i, val := range q {
-					diff := val - float32(v8[i])
+				for i := range q8 {
+					diff := float32(q8[i]) - float32(v8[i])
 					sum += diff * diff
 				}
 				dist = float32(math.Sqrt(float64(sum)))
 			}
-		// Add other types as needed (Complex)
 		default:
-			return nil, fmt.Errorf("unsupported vector type %T for distance calculation", vec)
+			return nil, fmt.Errorf("unsupported query vector type %T", queryVec)
+		}
+		if err != nil {
+			return nil, err
 		}
 	}
 
@@ -906,7 +1002,7 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 		sort.Slice(res, func(i, j int) bool { return res[i].Dist < res[j].Dist })
 		result := make([]SearchResult, 0, k)
 		for _, c := range res {
-			if filter != nil && !filter.Contains(c.ID) {
+			if (h.deleted != nil && h.deleted.Contains(c.ID)) || (filter != nil && !filter.Contains(c.ID)) {
 				continue
 			}
 			result = append(result, SearchResult{ID: VectorID(c.ID), Distance: c.Dist, Score: 1.0 / (1.0 + c.Dist)})
@@ -1399,17 +1495,8 @@ func (h *ArrowHNSW) ExportState() ([]byte, error) {
 		locs = append(locs, loc)
 	})
 
-	state := types.SyncState{
-		Version:   0,
-		Dims:      int(h.dims.Load()),
-		Locations: locs,
-		// GraphData: we can't easily gob-encode GraphData due to arenas.
-		// For now, return an error or skip GraphData if it's too complex.
-		// But HNSWGraphSync needs it.
-	}
-
 	var buf bytes.Buffer
-	if err := gob.NewEncoder(&buf).Encode(state); err != nil {
+	if err := h.ExportGraph(&buf); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil
@@ -1417,39 +1504,120 @@ func (h *ArrowHNSW) ExportState() ([]byte, error) {
 
 // ImportState implements VectorIndex.
 func (h *ArrowHNSW) ImportState(data []byte) error {
-	var state types.SyncState
-	if err := gob.NewDecoder(bytes.NewReader(data)).Decode(&state); err != nil {
+	return h.ImportGraph(bytes.NewReader(data))
+}
+
+// ExportGraph implements VectorIndex.
+func (h *ArrowHNSW) ExportGraph(w io.Writer) error {
+	h.growMu.RLock()
+	defer h.growMu.RUnlock()
+
+	data := h.data.Load()
+	if data == nil {
+		return fmt.Errorf("no graph data to export")
+	}
+
+	// 1. Export Metadata (Locations, Dims) via SyncState
+	locs := make([]Location, 0, h.locationStore.Len())
+	h.locationStore.IterateMutable(func(_ VectorID, val *atomic.Uint64) {
+		loc := core.UnpackLocation(val.Load())
+		locs = append(locs, loc)
+	})
+
+	state := types.SyncState{
+		Version:   1,
+		Dims:      int(h.dims.Load()),
+		Locations: locs,
+	}
+
+	// Use temporary buffer for metadata part
+	var metaBuf bytes.Buffer
+	if err := gob.NewEncoder(&metaBuf).Encode(state); err != nil {
+		return fmt.Errorf("failed to encode metadata: %w", err)
+	}
+	metaBytes := metaBuf.Bytes()
+
+	// Write Metadata Length + Bytes
+	if err := binary.Write(w, binary.LittleEndian, uint32(len(metaBytes))); err != nil {
 		return err
 	}
+	if _, err := w.Write(metaBytes); err != nil {
+		return err
+	}
+
+	// 2. Export GraphData
+	return data.Serialize(w)
+}
+
+// ImportGraph implements VectorIndex.
+func (h *ArrowHNSW) ImportGraph(r io.Reader) error {
 	h.growMu.Lock()
 	defer h.growMu.Unlock()
 
+	// 1. Read Metadata
+	var metaLen uint32
+	if err := binary.Read(r, binary.LittleEndian, &metaLen); err != nil {
+		return fmt.Errorf("failed to read metadata length: %w", err)
+	}
+
+	metaBytes := make([]byte, metaLen)
+	if _, err := io.ReadFull(r, metaBytes); err != nil {
+		return fmt.Errorf("failed to read metadata: %w", err)
+	}
+
+	var state types.SyncState
+	if err := gob.NewDecoder(bytes.NewReader(metaBytes)).Decode(&state); err != nil {
+		return fmt.Errorf("failed to decode metadata: %w", err)
+	}
+
+	// Apply Metadata
 	h.dims.Store(int32(state.Dims))
 	h.locationStore.Reset()
 	for _, loc := range state.Locations {
 		h.locationStore.Append(loc)
 	}
+
+	// 2. Read GraphData
+	data, err := types.DeserializeGraphData(r)
+	if err != nil {
+		return fmt.Errorf("failed to deserialize graph data: %w", err)
+	}
+
+	// Swap data
+	h.data.Store(data)
+
+	// Restore configuration flags
+	h.config.BQEnabled = data.BQEnabled
+	h.config.PQEnabled = data.PQEnabled
+	h.config.PQM = data.PQM
+	h.config.SQ8Enabled = data.SQ8Enabled
+	// Restore node count from metadata (number of valid locations)
+	h.nodeCount.Store(int64(len(state.Locations)))
+	// Capacity isn't count. Size is count.
+	// But serialize loops up to Capacity. If nodes were added sequentially, Len ~ Capacity.
+	// We might need to track actual `Len` or `NodeCount` in `GraphData`.
+	// For now, assume Capacity matches loaded size (sparse gaps handled as zeros).
+	// Ideally `SyncState` should have `NodeCount`.
+	// Let's assume capacity for now or update SyncState next time.
+
+	// Reset runtime structures
+	if h.searchPool == nil {
+		h.searchPool = NewArrowSearchContextPool()
+	}
+
 	return nil
-}
-
-// ExportGraph implements VectorIndex.
-func (h *ArrowHNSW) ExportGraph(w io.Writer) error {
-	return fmt.Errorf("ExportGraph not yet implemented for ArrowHNSW")
-}
-
-// ImportGraph implements VectorIndex.
-func (h *ArrowHNSW) ImportGraph(r io.Reader) error {
-	return fmt.Errorf("ImportGraph not yet implemented for ArrowHNSW")
 }
 
 // ExportDelta implements VectorIndex.
 func (h *ArrowHNSW) ExportDelta(fromVersion uint64) (*types.DeltaSync, error) {
-	return nil, fmt.Errorf("ExportDelta not yet implemented for ArrowHNSW")
+	// Delta sync implementation (Phase 4.1 or later)
+	// For now return full state if version mismatch too large, or error.
+	return nil, fmt.Errorf("ExportDelta not implemented")
 }
 
 // ApplyDelta implements VectorIndex.
 func (h *ArrowHNSW) ApplyDelta(delta *types.DeltaSync) error {
-	return fmt.Errorf("ApplyDelta not yet implemented for ArrowHNSW")
+	return fmt.Errorf("ApplyDelta not implemented")
 }
 
 // GetParallelSearchConfig implements VectorIndex.

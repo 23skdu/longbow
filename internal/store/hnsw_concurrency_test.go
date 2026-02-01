@@ -47,7 +47,7 @@ func TestHNSW_Concurrency_HighContention(t *testing.T) {
 	defer rec.Release()
 
 	ds := &Dataset{
-		Records: nil,
+		Records: []arrow.RecordBatch{rec},
 		Name:    "stress_test",
 		dataMu:  sync.RWMutex{},
 	}
@@ -86,8 +86,8 @@ func TestHNSW_Concurrency_HighContention(t *testing.T) {
 	}
 	t.Logf("Added %d vectors in %v", numGoroutines*vectorsPerGoroutine, duration)
 
-	if idx.Len() != numGoroutines*vectorsPerGoroutine {
-		t.Errorf("Expected %d vectors, got %d", numGoroutines*vectorsPerGoroutine, idx.Len())
+	if idx.AnalyzeGraph().TotalNodes != numGoroutines*vectorsPerGoroutine {
+		t.Errorf("Expected %d vectors, got %d", numGoroutines*vectorsPerGoroutine, idx.AnalyzeGraph().TotalNodes)
 	}
 }
 
@@ -96,7 +96,11 @@ func TestHNSW_Concurrency_Mixed(t *testing.T) {
 	rec := makeConcurrencyTestRecord(mem, 128, 500)
 	defer rec.Release()
 
-	ds := &Dataset{Name: "mixed_test", dataMu: sync.RWMutex{}}
+	ds := &Dataset{
+		Name:    "mixed_test",
+		Records: []arrow.RecordBatch{rec},
+		dataMu:  sync.RWMutex{},
+	}
 	idx := NewTestHNSWIndex(ds)
 
 	// Pre-populate
@@ -155,7 +159,7 @@ func TestHNSW_Concurrency_Mixed(t *testing.T) {
 	t.Logf("Completed %d mixed operations in 200ms", ops.Load())
 
 	// Validate final state
-	if idx.Len() < 100 {
+	if idx.AnalyzeGraph().TotalNodes < 100 {
 		t.Error("Index shrank?")
 	}
 }

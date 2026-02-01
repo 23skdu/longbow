@@ -27,7 +27,9 @@ type ParallelSearchHost interface {
 	GetPQEnabledForParallel() bool
 	GetPQEncoderForParallel() *pq.PQEncoder
 	ExtractVectorByIDForParallel(id uint32) ([]float32, error)
+	GetDistanceMetric() core.DistanceMetric
 	SearchForParallel(query []float32, k int) []types.Candidate
+	IsDeleted(id uint32) bool
 }
 
 // HNSWIndex used to implement ParallelSearchHost here, but now ArrowHNSW implements it directly.
@@ -180,9 +182,18 @@ func processChunkInternal(ctx context.Context, h ParallelSearchHost, query []flo
 		}
 
 		nodeID := n.ID
+		if h.IsDeleted(nodeID) {
+			continue
+		}
 		if bitmap != nil && !bitmap.Contains(nodeID) {
 			continue
 		}
+		if dataset == nil {
+			found[i] = true
+			metrics.HnswBranchPredictionTotal.WithLabelValues("location_found").Inc()
+			continue
+		}
+
 		loc, ok := h.GetLocationForParallel(nodeID)
 		if ok {
 			metrics.HnswBranchPredictionTotal.WithLabelValues("location_found").Inc()
@@ -224,7 +235,7 @@ func processChunkInternal(ctx context.Context, h ParallelSearchHost, query []flo
 			}
 		}
 
-		if !found[i] && dataset != nil {
+		if !found[i] {
 			continue
 		}
 
@@ -344,7 +355,15 @@ func processChunkInternal(ctx context.Context, h ParallelSearchHost, query []flo
 			}
 		}
 	} else {
-		if err := simd.EuclideanDistanceBatchFlat(query, flatBuffer, numTasks, dims, scores); err != nil {
+		metric := h.GetDistanceMetric()
+		usedBatch := false
+		if metric == core.MetricEuclidean {
+			if err := simd.EuclideanDistanceBatchFlat(query, flatBuffer, numTasks, dims, scores); err == nil {
+				usedBatch = true
+			}
+		}
+
+		if !usedBatch {
 			distFunc := h.GetDistanceFuncForParallel()
 			for i := 0; i < numTasks; i++ {
 				scores[i] = distFunc(query, flatBuffer[i*dims:(i+1)*dims])

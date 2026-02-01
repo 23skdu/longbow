@@ -1,6 +1,7 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 
@@ -29,9 +30,17 @@ func (s *VectorStore) Snapshot(ctx context.Context) error {
 		return fmt.Errorf("persistence not initialized")
 	}
 
-	s.configMu.RLock()
-	datasets := s.datasets.Load()
-	s.configMu.RUnlock()
+	return s.engine.Snapshot(&storeSnapshotSource{s: s})
+}
+
+type storeSnapshotSource struct {
+	s *VectorStore
+}
+
+func (src *storeSnapshotSource) Iterate(yield func(storage.SnapshotItem) error) error {
+	src.s.configMu.RLock()
+	datasets := src.s.datasets.Load()
+	src.s.configMu.RUnlock()
 
 	if datasets == nil {
 		return nil
@@ -41,18 +50,35 @@ func (s *VectorStore) Snapshot(ctx context.Context) error {
 		ds.dataMu.RLock()
 		records := make([]arrow.RecordBatch, len(ds.Records))
 		copy(records, ds.Records)
+		// Access PQEncoder under lock
+		var pqBytes []byte
+		if ds.PQEncoder != nil {
+			pqBytes = ds.PQEncoder.Serialize()
+		}
 		ds.dataMu.RUnlock()
 
 		item := storage.SnapshotItem{
-			Name:    name,
-			Records: records,
+			Name:       name,
+			Records:    records,
+			PQCodebook: pqBytes,
 		}
 
-		if err := s.engine.CreateSnapshot(&item); err != nil {
-			return fmt.Errorf("failed to snapshot dataset %s: %w", name, err)
+		// Export Index Graph
+		if ds.Index != nil {
+			var graphBuf bytes.Buffer
+			if err := ds.Index.ExportGraph(&graphBuf); err == nil {
+				item.IndexConfig = graphBuf.Bytes()
+			} else {
+				// We should probably log this error but currently we don't have logger here easily
+				// or return error. Return error is safer.
+				return fmt.Errorf("failed to export index graph for %s: %w", name, err)
+			}
+		}
+
+		if err := yield(item); err != nil {
+			return err
 		}
 	}
-
 	return nil
 }
 

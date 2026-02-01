@@ -34,6 +34,16 @@ func (vdt VectorDataType) String() string {
 		return "uint8"
 	case VectorTypeFloat16:
 		return "float16"
+	case VectorTypeFloat64:
+		return "float64"
+	case VectorTypeComplex64:
+		return "complex64"
+	case VectorTypeComplex128:
+		return "complex128"
+	case VectorTypeInt32:
+		return "int32"
+	case VectorTypeUint32:
+		return "uint32"
 	default:
 		return "unknown"
 	}
@@ -56,6 +66,10 @@ func MapStringToVectorDataType(s string) VectorDataType {
 		return VectorTypeComplex64
 	case "complex128":
 		return VectorTypeComplex128
+	case "int32":
+		return VectorTypeInt32
+	case "uint32":
+		return VectorTypeUint32
 	default:
 		return VectorTypeUnknown
 	}
@@ -64,12 +78,16 @@ func MapStringToVectorDataType(s string) VectorDataType {
 // ElementSize returns the size in bytes of one element of this data type
 func (vdt VectorDataType) ElementSize() int {
 	switch vdt {
-	case VectorTypeFloat32:
-		return 4
 	case VectorTypeInt8, VectorTypeUint8:
 		return 1
-	case VectorTypeFloat16:
+	case VectorTypeFloat16, VectorTypeInt16, VectorTypeUint16:
 		return 2
+	case VectorTypeFloat32, VectorTypeInt32, VectorTypeUint32:
+		return 4
+	case VectorTypeFloat64, VectorTypeInt64, VectorTypeUint64, VectorTypeComplex64:
+		return 8
+	case VectorTypeComplex128:
+		return 16
 	default:
 		return 4 // default to float32 size
 	}

@@ -242,7 +242,7 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 		}
 		return nil
 
-	case "delete-dataset", "DeleteNamespace":
+	case "delete-dataset", "DeleteNamespace", "delete-namespace":
 		var curr map[string]any
 		if err := json.Unmarshal(action.Body, &curr); err != nil {
 			return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
@@ -250,7 +250,10 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 
 		dsName, ok := curr["dataset"].(string)
 		if !ok {
-			return status.Error(codes.InvalidArgument, "missing dataset name")
+			dsName, ok = curr["name"].(string)
+		}
+		if !ok {
+			return status.Error(codes.InvalidArgument, "missing dataset name (use 'dataset' or 'name')")
 		}
 
 		// Use RCU to delete

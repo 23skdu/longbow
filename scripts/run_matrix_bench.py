@@ -7,8 +7,8 @@ from datetime import datetime
 
 # Test Matrix
 DIMS = 384
-COUNTS = [3000, 7000, 15000, 25000, 50000]
-DTYPES = ["int32", "uint32", "float32", "complex64"]
+COUNTS = [1000, 3000, 5000, 10000, 15000, 25000]
+DTYPES = ["complex128", "complex64", "float32", "float64", "float16", "int8", "int32", "uint8", "uint32"]
 
 PYTHON_EXE = "python3"
 PERF_SCRIPT = "scripts/perf_test.py"
@@ -16,10 +16,16 @@ PERF_SCRIPT = "scripts/perf_test.py"
 SDK_PATH = os.path.abspath("longbowclientsdk/src")
 os.environ["PYTHONPATH"] = f"{SDK_PATH}:{os.environ.get('PYTHONPATH', '')}"
 
-def run_bench(dtype, count):
+def run_bench(client, dtype, count):
     ds_name = f"bench_{dtype}_{count}"
     json_file = f"results_{ds_name}.json"
     
+    # Pre-cleanup in case of previous failures
+    try:
+        client.delete_namespace(ds_name)
+    except:
+        pass
+
     # Single comprehensive run
     cmd = [
         PYTHON_EXE, PERF_SCRIPT,
@@ -52,6 +58,13 @@ def run_bench(dtype, count):
             results['filtered'] = next((r for r in data if 'FilteredSearch' in r['name']), None)
             results['hybrid'] = next((r for r in data if 'HybridSearch' in r['name']), None)
         os.remove(json_file)
+    
+    # Cleanup dataset from server to free memory
+    try:
+        print(f"Cleaning up {ds_name}...")
+        client.delete_namespace(ds_name)
+    except Exception as e:
+        print(f"Cleanup failed for {ds_name}: {e}")
     
     return results
 
@@ -92,6 +105,10 @@ def main():
     parser.add_argument("--limit-dtypes", help="Comma separated dtypes")
     parser.add_argument("--limit-counts", help="Comma separated counts")
     args = parser.parse_args()
+    
+    from longbow import LongbowClient
+    client = LongbowClient(uri="grpc://localhost:3000", meta_uri="grpc://localhost:3001")
+    client.connect()
 
     active_dtypes = DTYPES
     if args.limit_dtypes:
@@ -105,7 +122,7 @@ def main():
     for dtype in active_dtypes:
         for count in active_counts:
             try:
-                res = run_bench(dtype, count)
+                res = run_bench(client, dtype, count)
                 all_results.append({
                     "dtype": dtype,
                     "count": count,

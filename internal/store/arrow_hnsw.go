@@ -243,9 +243,24 @@ func NewArrowHNSW(dataset *Dataset, config *ArrowHNSWConfig) *ArrowHNSW {
 		}
 	}
 
-	// Initialize distance function
-	// Assuming L2 for now, should check config.Metric
+	// Initialize distance functions
 	h.distFunc = simd.EuclideanDistance
+	h.distFuncF64 = simd.EuclideanDistanceFloat64
+	h.distFuncF16 = simd.EuclideanDistanceF16
+	h.distFuncC64 = simd.EuclideanDistanceComplex64
+	h.distFuncC128 = func(a, b []complex128) (float64, error) {
+		d, err := simd.EuclideanDistanceComplex128(a, b)
+		return float64(d), err
+	}
+
+	if config.Metric == core.MetricCosine {
+		h.distFunc = simd.CosineDistance
+		h.distFuncF16 = simd.CosineDistanceF16
+		// Cosine for F64/Complex could be added if needed
+	} else if config.Metric == core.MetricDotProduct {
+		h.distFunc = simd.DotProduct
+		h.distFuncF16 = simd.DotProductF16
+	}
 
 	// Initialize atomic values
 	h.efConstruction.Store(config.EfConstruction)
@@ -1681,12 +1696,54 @@ func (h *ArrowHNSW) ExtractVectorByIDForParallel(id uint32) ([]float32, error) {
 		return v, nil
 	}
 
+	// Handle Complex128/64 and other types by flattening to float32
+	switch v := vecAny.(type) {
+	case []complex128:
+		res := make([]float32, len(v)*2)
+		for i, val := range v {
+			res[i*2] = float32(real(val))
+			res[i*2+1] = float32(imag(val))
+		}
+		return res, nil
+	case []complex64:
+		// Complex64 is 2x float32 in memory, treat it as a flattened float32 slice
+		if len(v) == 0 {
+			return nil, nil
+		}
+		res := unsafe.Slice((*float32)(unsafe.Pointer(&v[0])), len(v)*2)
+		// We should return a copy since the parallel worker might use it concurrently
+		resCopy := make([]float32, len(res))
+		copy(resCopy, res)
+		return resCopy, nil
+	case []float64:
+		res := make([]float32, len(v))
+		for i, val := range v {
+			res[i] = float32(val)
+		}
+		return res, nil
+	case []float16.Num:
+		res := make([]float32, len(v))
+		for i, val := range v {
+			res[i] = val.Float32()
+		}
+		return res, nil
+	case []int8:
+		res := make([]float32, len(v))
+		for i, val := range v {
+			res[i] = float32(val)
+		}
+		return res, nil
+	case []uint8:
+		res := make([]float32, len(v))
+		for i, val := range v {
+			res[i] = float32(val)
+		}
+		return res, nil
+	}
+
 	// Handle SQ8 de-quantization for DiskGraph/Compressed vectors
 	if h.quantizer != nil && h.sq8Ready.Load() {
 		if v8, ok := vecAny.([]byte); ok {
-			return h.quantizer.Decode(v8), nil
-		}
-		if v8, ok := vecAny.([]uint8); ok {
 			return h.quantizer.Decode(v8), nil
 		}
 	}
@@ -1783,6 +1840,39 @@ func (c *float32Computer) ComputeSingle(id uint32) (float32, error) {
 			sum += diff * diff
 		}
 		return float32(math.Sqrt(float64(sum))), nil
+	case []complex64:
+		// Treats complex64 as flattened []float32 [re, im, re, im...]
+		if len(c.q) != len(v)*2 {
+			return math.MaxFloat32, nil
+		}
+		// Unsafe cast to []float32
+		vf := unsafe.Slice((*float32)(unsafe.Pointer(&v[0])), len(v)*2)
+		return simd.EuclideanDistance(c.q, vf)
+	case []complex128:
+		// Treats complex128 as flattened []float64, but query is float32
+		if len(c.q) != len(v)*2 {
+			return math.MaxFloat32, nil
+		}
+		// Calculate Euclidean distance between []float32 and []complex128
+		var sum float64
+		for i, val := range v {
+			re := float64(real(val))
+			im := float64(imag(val))
+			diffRe := float64(c.q[i*2]) - re
+			diffIm := float64(c.q[i*2+1]) - im
+			sum += diffRe*diffRe + diffIm*diffIm
+		}
+		return float32(math.Sqrt(sum)), nil
+	case []float64:
+		if len(c.q) != len(v) {
+			return math.MaxFloat32, nil
+		}
+		var sum float64
+		for i, val := range v {
+			diff := float64(c.q[i]) - val
+			sum += diff * diff
+		}
+		return float32(math.Sqrt(sum)), nil
 	}
 	return math.MaxFloat32, nil
 }

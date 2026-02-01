@@ -26,6 +26,9 @@ func (h *ArrowHNSW) Insert(id uint32, level int) error {
 
 // InsertWithVector inserts a vector that has already been retrieved.
 func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
+	if level < 0 {
+		level = h.generateLevel()
+	}
 	start := time.Now()
 	var dims int
 	defer func() {

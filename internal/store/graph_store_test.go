@@ -241,7 +241,6 @@ func TestGraphStore_TraverseParallel(t *testing.T) {
 	// opts.Direction = DirectionOutgoing
 	// results := gs.TraverseParallel(starts, opts)
 
-	// if len(results) != 4 {
 	// 	t.Errorf("expected 4 result sets, got %d", len(results))
 	// }
 
@@ -277,8 +276,6 @@ func TestLouvainClustering_BasicCommunities(t *testing.T) {
 	// Weak link between clusters
 	_ = gs.AddEdge(Edge{Subject: VectorID(3), Predicate: "rel", Object: VectorID(10), Weight: 0.1})
 
-	// communities := gs.DetectCommunities()
-
 	// Should detect 2 communities
 	// if len(communities) < 2 {
 	// 	t.Errorf("expected at least 2 communities, got %d", len(communities))
@@ -293,8 +290,6 @@ func TestLouvainClustering_GetCommunityForNode(t *testing.T) {
 	_ = gs.AddEdge(Edge{Subject: VectorID(1), Predicate: "rel", Object: VectorID(2), Weight: 1.0})
 	_ = gs.AddEdge(Edge{Subject: VectorID(2), Predicate: "rel", Object: VectorID(3), Weight: 1.0})
 
-	// gs.DetectCommunities()
-	// gs.GetCommunityForNode(VectorID(1))
 }
 
 // TestLouvainClustering_CommunityCount tests community count metric
@@ -305,8 +300,6 @@ func TestLouvainClustering_CommunityCount(t *testing.T) {
 	_ = gs.AddEdge(Edge{Subject: VectorID(1), Predicate: "rel", Object: VectorID(2), Weight: 1.0})
 	_ = gs.AddEdge(Edge{Subject: VectorID(2), Predicate: "rel", Object: VectorID(3), Weight: 1.0})
 
-	// gs.DetectCommunities()
-	// gs.CommunityCount()
 }
 
 // TestGraphStore_TraverseWeighted tests that weighted traversal prioritizes higher edge weights

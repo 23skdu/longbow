@@ -388,8 +388,23 @@ func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
 		}
 	}
 
-	// Ensure Int8
-	// Already handled by unified SQ8/Int8 block above
+	// Ensure Int8/Uint8
+	if g.Type == VectorTypeInt8 || g.Type == VectorTypeUint8 {
+		for len(g.VectorsInt8) <= cID {
+			if g.Int8Arena == nil {
+				slabSize := ChunkSize * dims
+				if slabSize < 1024*1024 {
+					slabSize = 1024 * 1024
+				}
+				g.Int8Arena = memory.NewTypedArena[int8](memory.NewSlabArena(slabSize))
+			}
+			ref, err := g.Int8Arena.AllocSliceDirty(ChunkSize * dims)
+			if err != nil {
+				return err
+			}
+			g.VectorsInt8 = append(g.VectorsInt8, ref.Offset)
+		}
+	}
 
 	// Ensure BQ if enabled
 	if g.BQEnabled {
@@ -530,7 +545,7 @@ func (g *GraphData) GetVector(id uint32) (any, error) {
 	// Based on type, get the appropriate chunk
 	// Only supporting float32 and float16 for now in this generic method
 	// for simplicity, as they are the primary types used in tests.
-	if g.Uint8Arena != nil && len(g.VectorsSQ8) > cID && g.SQ8Ready {
+	if g.Uint8Arena != nil && len(g.VectorsSQ8) > cID && (g.SQ8Enabled || g.SQ8Ready) {
 		chunk := g.GetVectorsSQ8Chunk(cID)
 		if chunk != nil {
 			paddedDims := (g.Dims + 63) & ^63
@@ -541,7 +556,7 @@ func (g *GraphData) GetVector(id uint32) (any, error) {
 		}
 	}
 
-	if g.Int8Arena != nil && len(g.VectorsInt8) > cID && g.SQ8Ready {
+	if g.Int8Arena != nil && len(g.VectorsInt8) > cID {
 		chunk := g.GetVectorsInt8Chunk(cID)
 		if chunk != nil {
 			start := cOff * g.Dims
@@ -676,7 +691,18 @@ func (g *GraphData) SetVector(id uint32, vec any) error {
 				copy(chunk[start:start+len(v)], v)
 			}
 		}
-	case []byte:
+	case []uint8: // same as []byte
+		if g.Type == VectorTypeUint8 && g.Int8Arena != nil {
+			chunk := g.GetVectorsInt8Chunk(cID)
+			if chunk != nil {
+				start := cOff * g.Dims
+				if start+len(v) <= len(chunk) {
+					v8 := *(*[]int8)(unsafe.Pointer(&v))
+					copy(chunk[start:start+len(v)], v8)
+				}
+			}
+			return nil
+		}
 		chunk := g.GetVectorsSQ8Chunk(cID)
 		if chunk != nil {
 			paddedDims := (g.Dims + 63) & ^63

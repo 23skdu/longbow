@@ -38,6 +38,11 @@ test-coverage:
 lint:
 	@echo "Running linter..."
 	golangci-lint run
+	@$(MAKE) lint-metrics
+
+lint-metrics:
+	@echo "Verifying Prometheus metrics documentation..."
+	python3 scripts/verify_metrics.py
 
 # Run race condition tests
 race:

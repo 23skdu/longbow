@@ -1,284 +1,88 @@
-# Longbow Development Roadmap
+# Longbow Development Roadmap: I/O & Storage Optimization
 
-This document outlines the remaining tasks for Longbow development.
-
----
-
-## 🔝 Top Priority: Complete Migration to Native ArrowHNSW
-
-**Objective**: Eliminate the legacy `github.com/coder/hnsw` dependency and standardize all vector indexing on the native, zero-copy `ArrowHNSW` implementation.
-
-### Phase 0: Native HNSW Consolidation (10-Part Plan)
-
-1. **Interface Generalization** [COMPLETED]
-    - Audit all components (`VectorStore`, `Dataset`, `HybridSearch`, `Coordinator`) to use the `VectorIndex` interface instead of concrete `*HNSWIndex` pointers.
-2. **Decouple Sharding from Legacy Type** [COMPLETED]
-    - Refactor `ShardedDataset` and `ShardedHNSW` to accept any `VectorIndex` implementation.
-3. **Graph Sync Migration** [COMPLETED]
-    - Implement a generic serialization/sync protocol for `ArrowHNSW` using the native `types.GraphData` format, replacing the `coder/hnsw` specific Export/Import logic.
-4. **Parallel Search Adaptation** [COMPLETED]
-    - Port the parallel processing optimizations from `parallel_search.go` to the `ArrowHNSW` implementation or a generic interface-based helper.
-5. **Hybrid Search Refactor** [COMPLETED]
-    - Update `HybridSearchPipeline` and related query logic to work seamlessly with the `ArrowHNSW` engine.
-6. **Switch Global Defaults** [COMPLETED]
-    - Update `NewDataset` to initialize `ArrowHNSW` by default and remove the `LONGBOW_USE_HNSW2` feature flag in favor of a permanent native solution.
-7. **Unit Test Parity & Migration** [COMPLETED]
-    - Port existing `hnsw_test.go` cases to ensure full behavior parity between legacy and native implementations.
-8. **Integration Test Suite Update** [COMPLETED]
-    - Update `Benchmark`, `GPU`, and `Arena` integration tests to utilize `ArrowHNSW` as the primary engine.
-9. **Feature Parity Audit**
-    - Verify that deletion, Binary Quantization (BQ), Product Quantization (PQ), and high-dimensional support in `ArrowHNSW` are production-ready.
-10. **Final Cleanup**
-    - Delete `internal/store/hnsw.go` and related legacy files.
-    - Remove `github.com/coder/hnsw` from `go.mod`.
+**Objective**: Maximize system throughput and minimize latency by optimizing the I/O path, storage formats, and memory management strategies.
 
 ---
 
-## 🚀 High Priority: Navigating Spread-out Graphs Implementation
+## 🚀 Phase 1: I/O & Throughput Optimization (10-Part Plan)
 
-**Overview**: Add native support for navigating complex, spread-out graph structures to Longbow's internal HNSW implementation, enhancing multi-hop relationship queries and graph-based similarity search.
+1. **Baseline I/O Benchmarking** [COMPLETED]
+    * **Goal**: Establish a trusted baseline for current disk I/O performance during high-ingestion and concurrent search scenarios.
+    * **Tasks**:
+        * [x] Create a specialized benchmark suite (`cmd/bench_io`) to measure raw IOPS and throughput for WAL writes and Index reads.
+        * [x] Profile current `fsync` patterns and latency distribution.
+        * [x] Measure "Time to First Byte" for cold index loading.
 
-### Phase 1: Architecture & Design (Weeks 1-2)
+2. **Telemetry & I/O Observability** [COMPLETED]
+    * **Goal**: Gain deep visibility into storage subsystems to identify bottlenecks in real-time.
+    * **Tasks**:
+        * [x] Integrate `/proc/diskstats` or equivalent OS metrics into the Prometheus exporter.
+        * [x] Trace I/O calls in the WAL and Persistence layers using OpenTelemetry/Prometheus.
+        * [x] Add metrics for "dirty pages" and system-level write amplification.
 
-1. **Graph Structure Analysis**
-   - Analyze current HNSW graph topology patterns
-   - Identify spread-out graph characteristics and challenges
-   - Design graph navigation strategies for sparse connections
+3. **Parallel WAL Archival & Recovery** [COMPLETED]
+    * **Goal**: Prevent WAL I/O from blocking the ingestion critical path.
+    * **Tasks**:
+        * [x] Implement asynchronous/buffered WAL writes with configurable sync intervals (`WALBatcher`).
+        * [x] Parallelize WAL segment replay during startup/recovery (`Pipelined ReplayWAL`).
+        * [x] Investigate group commit strategies for batched writes (Implemented in `WALBatcher`).
 
-2. **Navigation Algorithms Design**
-   - Multi-hop pathfinding algorithms for sparse graphs
-   - Adaptive neighborhood expansion strategies
-   - Distance-aware graph traversal optimizations
+4. **Zero-Copy Memory Mapping (mmap) Optimization** [COMPLETED]
+    * **Goal**: Reduce memory overhead and copy costs for large datasets.
+    * **Tasks**:
+        * [x] Audit `ArrowHNSW` and `DiskGraph` to ensure full zero-copy access where possible (Confirmed).
+        * [x] Implement `madvise` hints (e.g., `MADV_RANDOM` vs `MADV_SEQUENTIAL`) based on access patterns (Implemented in `DiskGraph`).
+        * [x] Benchmark mmap vs. direct `read()` for different graph sizes (Mmap is 8x faster).
 
-3. **Integration Architecture**
-   - Design graph navigation interface for HNSW
-   - Define Prometheus metrics for graph operations
-   - Plan memory-efficient graph traversal
+5. **Concurrent & Non-Blocking Checkpointing**
+    * **Goal**: Eliminate "stop-the-world" pauses during disk snapshots.
+    * **Tasks**:
+        * Implement a Copy-On-Write (COW) snapshotting mechanism for the HNSW graph.
+        * Refactor `GraphStore` to perform serialization on a background thread without blocking readers or writers.
+        * Rate-limit disk flushes to prevent I/O saturation during checkpoints.
 
-### Phase 2: Core Implementation ✅
+6. **Vector Compression & Encoding**
+    * **Goal**: Reduce disk footprint and increase effective I/O bandwidth.
+    * **Tasks**:
+        * Implement block-level compression (Zstd, LZ4) for the `DiskStore`.
+        * Evaluate delta-encoding for HNSW adjacency lists (neighbor IDs are often close).
+        * Benchmark decompression overhead vs. I/O savings.
 
-1. **Graph Navigator Core** ✅
-   - [x] Implement `GraphNavigator` interface
-   - [x] Multi-hop BFS/DFS traversal with distance pruning
-   - [x] Adaptive search radius for spread-out graphs
+7. **Async/Direct I/O (io_uring)**
+    * **Goal**: Maximize NVMe utilization and reduce syscall overhead.
+    * **Tasks**:
+        * Prototype an `io_uring` backend for the `DiskStore` (Linux only).
+        * Implement vectored I/O (`readv`/`writev`) for batched vector retrievals.
+        * Compare performance against standard Go `os.File` operations.
 
-2. **HNSW Integration Layer**
-   - [x] Integrate navigator with existing HNSW implementation
-   - [x] Graph state management and caching
-   - [x] Concurrent-safe graph traversal operations
+8. **Fragmentation-Aware Compaction**
+    * **Goal**: Maintain sequential I/O patterns over time.
+    * **Tasks**:
+        * Enhance the `FragmentationTracker` to trigger compaction based on "read amplification" metrics, not just deleted ratio.
+        * Implement a "Move-to-Front" or equivalent strategy for frequently accessed hot vectors during compaction.
+        * Visualise disk layout fragmentation.
 
-3. **Distance Optimizations**
-   - [x] SIMD-optimized graph distance calculations
-   - [x] Early termination strategies for sparse graphs
-   - [x] Memory-aligned graph adjacency operations
+9. **Tiered Storage Policies**
+    * **Goal**: optimize cost/performance by moving cold data to cheaper storage.
+    * **Tasks**:
+        * Implement a default `HotWarm` policy: Keep Index in RAM/NVMe, offload raw Vector content to S3/BlobStore after N days/hours.
+        * Implement transparent fetching of "warm" vectors from remote storage during search.
+        * Add caching layer (LRU) for remote fetched vectors.
 
-### Phase 3: Advanced Features (Weeks 9-12)
-
-1. **Query Planning & Optimization**
-   - [x] Query planner for graph navigation strategies
-   - [x] Cost-based optimization for multi-hop queries (A*)
-   - [x] Dynamic pruning heuristics
-
-2. **Graph Analytics Engine**
-   - [x] Graph centrality measures for spread-out analysis
-   - [x] Community detection in sparse HNSW graphs
-   - [x] Graph density-aware search parameters
-
-3. **Concurrent Graph Operations**
-   - [x] Parallel graph traversal algorithms
-   - [x] Lock-free graph state updates
-   - [x] NUMA-aware graph operation distribution (Cache-aligned partitioning)
-
-### Phase 4: Testing & Validation ✅
-
-1. **Unit Testing Suite** ✅
-    - [x] Graph navigator unit tests (target: 95% coverage)
-    - [x] HNSW integration tests
-    - [x] Distance calculation accuracy tests
-    - [x] Concurrent operation stress tests
-
-2. **Fuzz Testing Framework** ✅
-    - [x] Graph structure fuzzing for edge cases
-    - [x] Navigation algorithm robustness testing
-    - [x] Memory corruption prevention tests
-    - [x] Long-running traversal stability tests
-    - [x] Graph resilience fuzzing (380k+ iterations/30s)
-
-3. **Performance Benchmarking** ✅
-    - [x] Graph navigation performance benchmarks
-    - [x] Comparison with existing HNSW queries
-    - [x] Scalability tests for large sparse graphs
-    - [x] Memory usage profiling (verified stabilized RSS behavior)
-
-### Phase 5: Observability & Production (Weeks 17-20) ✅
-
-1. **Prometheus Metrics Integration** ✅
-    - [x] Graph navigation operation counters (success, fail, timeout, cancelled)
-    - [x] Traversal depth and hop count histograms
-    - [x] Performance latency histograms per strategy
-    - [x] Strategy selection tracking
-    - [x] Internal search metrics (visited nodes, frontier size)
-
-2. **Production Hardening** ✅
-    - [x] Graph navigation error handling (input validation & boundary checks)
-    - [x] Graceful degradation for pathological graphs (`MaxNodesVisited` limit)
-    - [x] Resource cleanup and memory management (`ClearCache`, `Close` integration)
-    - [x] Production monitoring readiness (Prometheus integration complete)
-
-3. **Documentation & Examples** ✅
-    - [x] Graph navigation API documentation (`docs/graph_navigation.md`)
-    - [x] Performance tuning guides (included in documentation)
-    - [x] Use case examples and tutorials
-    - [x] Migration guides from basic HNSW
-
-### Key Success Metrics
-
-**Performance Targets:**
-
-- Multi-hop queries: <5ms latency for 1000-hop traversals
-- Memory overhead: <15% increase over base HNSW
-- Concurrent queries: Linear scaling up to 64 cores
-- Graph density support: Efficient operation with <1% edge density
-
-**Quality Targets:**
-
-- Unit test coverage: >95% for graph navigation code
-- Fuzz testing: 24+ hours continuous runtime without crashes
-- Memory safety: Zero memory leaks in graph traversal
-- Production stability: 99.9% uptime for graph operations
-
-**Integration Goals:**
-
-- Seamless integration with existing HNSW implementation
-- Backward compatibility with current vector search APIs
-- Progressive enhancement without breaking changes
-- Observable behavior with comprehensive metrics
+10. **Load Testing & Chaos Validation**
+    * **Goal**: Prove reliability under saturation.
+    * **Tasks**:
+        * Run 24-hour saturation soak tests with induced I/O throttling/latency (using `cgroups` or `tc`).
+        * Verify data integrity after power-loss simulations (process kill).
+        * Publish final report: "Longbow I/O Performance Characterization".
 
 ---
 
-## Recently Completed Tasks ✅
+## 📂 Previous Accomplishments
 
-### Code Quality & Linting
+### Native ArrowHNSW Consolidation [COMPLETED]
 
-- **[COMPLETED]** Fixed all linting errors and standardized error handling
-  - Resolved 39 golangci-lint issues including errcheck, gocritic, and style violations
-  - Fixed unchecked error return values in SIMD package
-  - Resolved resource leaks and defer issues
-  - Standardized function signatures and parameter passing
-  - Added proper error handling throughout codebase
-
-### CI/CD Pipeline & Automation  
-
-- **[COMPLETED]** CI pipeline improvements and automation
-  - Fixed build failures across ARM64 and AMD64
-  - Added comprehensive linting checks to CI
-  - Standardized error handling patterns
-  - Improved test coverage and quality assertions
-
-### Documentation & Code Quality
-
-- **[COMPLETED]** Improved code documentation and godoc comments
-  - Added named return values for better code clarity
-  - Standardized function parameter organization
-  - Enhanced code comments and documentation quality
-
----
-
-## Incomplete Tasks
-
-### 12. Arrow v23.0 Upgrade 🚀 (High Priority)
-
-#### **Phase 3: Compatibility & Testing** ✅
-
-- **[PENDING]** Performance regression testing
-
-#### **Phase 4: Feature Integration** ✅
-
-- **[PENDING]** Leverage new v23.0 performance features (awaiting v23 release)
-
-#### **Phase 6: Validation & Testing**
-
-- **[PENDING]** Comprehensive test suite for v23.0
-- **[PENDING]** Performance benchmarks and validation
-- **[PENDING]** Integration testing with existing workflows
-
-#### **Phase 7: Continuous Integration**
-
-- **[PENDING]** Continuous testing in CI/CD pipeline
-- **[PENDING]** Automated security and compatibility checks
-- **[PENDING]** Performance monitoring and optimization
-
-### Key Breaking Changes to Address
-
-1. **Array Type System Updates**
-   - Arrow v23.0 introduces significant changes to array types
-   - Plan migration from v18.5.1 types systematically
-
-2. **Memory Layout Optimizations**
-   - New zero-copy patterns and pooled allocators
-   - Buffer management improvements for zero-copy operations
-
-3. **Performance Enhancements**
-   - SIMD optimizations for new instruction sets
-   - Hardware-aware memory alignment strategies
-
-### Implementation Strategy
-
-The upgrade will be executed in phases to minimize disruption:
-
-- **Phase 1**: Comprehensive dependency audit and testing ✅
-- **Phase 2**: Staged migration with compatibility matrix
-- **Phase 3**: Feature integration and optimization
-- **Phase 4**: Documentation and examples
-- **Phase 5**: Validation and testing
-- **Phase 6**: Continuous integration and monitoring
-
-### Success Criteria
-
-- All tests pass with v23.0
-- No performance regression from v18.5.1
-- Full compatibility with existing workflows
-- Zero data loss during migration
-- Updated documentation reflects all changes
-
-This comprehensive plan ensures Arrow v23.0 adoption while maintaining Longbow's reliability and performance characteristics.
-
-### 1. I/O & Storage Optimization
-
-- **[NEW]** `internal/storage/benchmark/` - I/O performance benchmarks
-
-### 2. Security Hardening
-
-- **[NEW]** `internal/security/` - Security utilities and validation
-- **[MODIFY]** Implement input sanitization and validation
-- **[MODIFY]** Add authentication and authorization
-- **[NEW]** `internal/security/audit/` - Security audit logging
-- **[MODIFY]** Regular dependency security scanning
-
-### 5. Benchmarking & Performance Testing
-
-- **[MODIFY]** Implement A/B testing capabilities
-
-### 7. Success Criteria
-
-- [ ] RSS stabilizes at <10GB for soak tests.
-- [ ] Zero build failures across ARM64 and AMD64.
-- [ ] Test coverage >80% for critical paths.
-- [ ] Zero goroutine leaks after 100 open/close cycles.
-- [ ] Compaction reduces memory by 20-30% in fragmented scenarios.
-- [ ] Max 50 files per package, max 800 lines per file
-- [ ] 80%+ test coverage with quality assertions
-- [ ] Complete API documentation and usage guides
-- [ ] 3x improvement in SIMD workloads
-- [ ] 50% reduction in memory overhead
-- [ ] 2x improvement in concurrent throughput
-- [ ] <5% observability overhead
-- [ ] 99.9% uptime with comprehensive error handling
-- [ ] Zero memory leaks, proper resource cleanup
-- [ ] Complete observability and monitoring
-- [ ] SOC2 compliance ready
-- [ ] <10 minute CI pipeline with full automation
-- [ ] Complete developer tooling and documentation
-- [ ] <1 day new developer onboarding
-- [ ] Zero friction development workflow
-- [ ] <1% performance regression tolerance, comprehensive benchmark suite
+* **Metric Synchronization**: Verified 100% parity between code and docs.
+* **Dependency Removal**: Successfully removed `github.com/coder/hnsw`.
+* **Feature Parity**: BQ, PQ, and High-Dim support verified native.
+* **Graph Navigator**: Advanced graph traversal support implemented.

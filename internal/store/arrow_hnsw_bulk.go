@@ -41,8 +41,10 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 	start := time.Now()
 	defer func() {
 		duration := time.Since(start).Seconds()
-		h.metricBulkInsertDuration.Observe(duration)
-		h.metricBulkVectors.Add(float64(n))
+		metrics.HNSWBulkInsertDurationSeconds.Observe(duration)
+		metrics.HNSWInsertOpsTotal.WithLabelValues(h.name, h.config.DataType.String()).Add(float64(n))
+		metrics.HNSWNodesAddedTotal.WithLabelValues(h.name).Add(float64(n))
+		metrics.HNSWNodeCount.WithLabelValues(h.name).Set(float64(h.nodeCount.Load()))
 
 		// Enhanced Observability
 		typeStr := h.config.DataType.String()

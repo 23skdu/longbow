@@ -321,9 +321,9 @@ func processChunkInternal(ctx context.Context, h ParallelSearchHost, query []flo
 			}
 			vecOffset := i * dims
 			vec := flatBuffer[vecOffset : vecOffset+dims]
-			if len(vec) == m { // In memory it might be stored as []byte? No, ExtractVector returns []float32
-				// This part is tricky because ExtractVector returns []float32, but PQ codes are bytes.
-				// If we are in PQ mode, the vectors returned by ExtractVector should already be PQ codes packed into []float32 bits.
+			// PQM check: we expect codes to be packed into the beginning of the slice.
+			// m is the CodeSize in bytes.
+			if m > 0 && len(vec)*4 >= m {
 				ptr := unsafe.Pointer(&vec[0])
 				src := unsafe.Slice((*byte)(ptr), m)
 				copy(flatCodes[batchCount*m:], src)

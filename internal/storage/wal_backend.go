@@ -3,6 +3,9 @@ package storage
 import (
 	"os"
 	"sync"
+	"time"
+
+	"github.com/23skdu/longbow/internal/metrics"
 )
 
 // WALBackend defines the interface for low-level WAL I/O.
@@ -79,13 +82,21 @@ func (b *FSBackend) Write(p []byte) (int, error) {
 	// but we lock to be explicit if we move away from O_APPEND logic later.
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return b.f.Write(p)
+	n, err := b.f.Write(p)
+	if err == nil {
+		metrics.IOWriteBytesTotal.WithLabelValues("wal").Add(float64(n))
+		metrics.IOWriteOpsTotal.WithLabelValues("wal").Inc()
+	}
+	return n, err
 }
 
 func (b *FSBackend) Sync() error {
+	start := time.Now()
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return b.f.Sync()
+	err := b.f.Sync()
+	metrics.IOFsyncDurationSeconds.WithLabelValues("wal").Observe(time.Since(start).Seconds())
+	return err
 }
 
 func (b *FSBackend) Close() error {

@@ -170,15 +170,6 @@ var (
 		[]string{"dataset"},
 	)
 
-	// HnswNodeCount - Total nodes in the HNSW graph
-	HnswNodeCount = promauto.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "longbow_hnsw_node_count",
-			Help: "Total number of nodes in the HNSW graph",
-		},
-		[]string{"dataset"},
-	)
-
 	HnswShardingMigrationsTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_hnsw_sharding_migrations_total",

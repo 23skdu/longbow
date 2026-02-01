@@ -62,8 +62,8 @@ Notable flags:
 - `LONGBOW_GOSSIP_ENABLED=true` (Enable distributed discovery)
 
 - **Protocol**: Apache Arrow Flight (over gRPC/HTTP2).
-- **Search**: High-performance HNSW vector search with hybrid (Dense + Sparse) support.
-- **Distance Metrics**: Pluggable metrics (Euclidean, Cosine, Dot Product) with SIMD optimizations.
+- **Search**: High-performance HNSW vector search with hybrid (Dense + Sparse) support and polymorphic vector types (F32, F16, Int8, Complex64/128).
+- **Distance Metrics**: Pluggable metrics (Euclidean, Cosine, Dot Product) with SIMD optimizations for all supported types.
 - **Filtering**: Metadata-aware predicate filtering for searches and scans.
 - **Lifecycle**: Support for vector deletion via tombstones.
 - **Durable**: WAL with Apache Parquet format snapshots.
@@ -95,11 +95,11 @@ service.
 
 | Metric Name | Type | Description |
 | :--- | :--- | :--- |
-| `longbow_flight_operations_total` | Counter | Total number of Flight operations (DoGet, DoPut, etc.) |
+| `longbow_flight_ops_total` | Counter | Total number of Flight operations (DoGet, DoPut, etc.) |
 | `longbow_flight_duration_seconds` | Histogram | Latency distribution of Flight operations |
 | `longbow_flight_rows_processed_total` | Counter | Total rows processed in scans and searches |
-| `longbow_vector_search_latency_seconds` | Histogram | Latency of k-NN search operations |
-| `longbow_vector_index_size` | Gauge | Current number of vectors in the index |
+| `longbow_hnsw_search_duration_seconds` | Histogram | Latency of k-NN search operations |
+| `longbow_hnsw_node_count` | Gauge | Current number of vectors in the index |
 | `longbow_tombstones_total` | Gauge | Number of active deleted vector tombstones |
 | `longbow_index_queue_depth` | Gauge | Depth of the asynchronous indexing queue |
 | `longbow_memory_fragmentation_ratio` | Gauge | Ratio of system memory reserved vs used |

@@ -11,8 +11,10 @@ import (
 	"math"
 	"math/rand"
 	"sort"
+	"strconv"
 	"sync"
 	"sync/atomic"
+	"time"
 	"unsafe"
 
 	"github.com/23skdu/longbow/internal/core"
@@ -128,6 +130,7 @@ type ArrowHNSW struct {
 	pqEncoder  *pq.PQEncoder
 	searchPool *ArrowSearchContextPool
 
+	name         string
 	distFunc     func([]float32, []float32) (float32, error)
 	distFuncF64  func([]float64, []float64) (float32, error)
 	distFuncF16  func([]float16.Num, []float16.Num) (float32, error)
@@ -138,13 +141,6 @@ type ArrowHNSW struct {
 
 	initMu sync.Mutex
 	growMu sync.RWMutex
-
-	metricInsertDuration     prometheus.Histogram
-	metricSearchDuration     prometheus.Histogram
-	metricNodesAdded         prometheus.Counter
-	metricSearchQueries      prometheus.Counter
-	metricBulkInsertDuration prometheus.Summary
-	metricBulkVectors        prometheus.Counter
 
 	deleted *roaring.Bitmap
 
@@ -158,12 +154,6 @@ type ArrowHNSW struct {
 	gpuEnabled  bool
 	gpuFallback bool
 	gpuIndex    gpu.Index
-
-	// Metrics
-
-	metricNodeCount prometheus.Gauge
-	metricBQVectors prometheus.Gauge
-	metricLockWait  *prometheus.HistogramVec
 
 	sq8TrainingBuffer [][]float32
 	levelMultiplier   float64
@@ -193,6 +183,19 @@ func (h *ArrowHNSW) GetVector(id uint32) (any, error) {
 	if data == nil {
 		return nil, fmt.Errorf("index data not initialized")
 	}
+
+	// Prefer quantized vectors if enabled
+	if h.config.PQEnabled {
+		if v := data.GetVectorPQ(id); v != nil {
+			return v, nil
+		}
+	}
+	if h.config.BQEnabled {
+		if v, err := data.GetVectorBQ(id); err == nil && v != nil {
+			return v, nil
+		}
+	}
+
 	return data.GetVector(id)
 }
 
@@ -233,6 +236,11 @@ func NewArrowHNSW(dataset *Dataset, config *ArrowHNSWConfig) *ArrowHNSW {
 		locationStore:   NewChunkedLocationStore(),
 		deleted:         roaring.New(),
 		levelMultiplier: 1.0 / math.Log(float64(config.M)),
+	}
+	if dataset != nil {
+		h.name = dataset.Name
+	} else {
+		h.name = "unknown"
 	}
 	if dataset != nil {
 		dataset.Index = h
@@ -276,44 +284,6 @@ func NewArrowHNSW(dataset *Dataset, config *ArrowHNSWConfig) *ArrowHNSW {
 		}
 		// Do not set sq8Ready to true until trained
 	}
-
-	// Initialize metrics
-	h.metricInsertDuration = prometheus.NewHistogram(prometheus.HistogramOpts{
-		Name: "longbow_hnsw_insert_duration_seconds",
-		Help: "Duration of HNSW insert operations",
-	})
-	h.metricSearchDuration = prometheus.NewHistogram(prometheus.HistogramOpts{
-		Name: "longbow_hnsw_search_duration_seconds",
-		Help: "Duration of HNSW search operations",
-	})
-	h.metricNodesAdded = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "longbow_hnsw_nodes_added_total",
-		Help: "Total number of nodes added to HNSW",
-	})
-	h.metricSearchQueries = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "longbow_hnsw_search_queries_total",
-		Help: "Total number of HNSW search queries",
-	})
-	h.metricBulkInsertDuration = prometheus.NewSummary(prometheus.SummaryOpts{
-		Name: "longbow_hnsw_bulk_insert_duration_seconds",
-		Help: "Duration of HNSW bulk insert operations",
-	})
-	h.metricBulkVectors = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "longbow_hnsw_bulk_vectors_total",
-		Help: "Total number of vectors inserted via bulk insert",
-	})
-	h.metricNodeCount = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "longbow_hnsw_node_count",
-		Help: "Total number of nodes in the HNSW graph",
-	})
-	h.metricBQVectors = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "longbow_hnsw_bq_vectors",
-		Help: "Number of vectors with BQ enabled",
-	})
-	h.metricLockWait = prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Name: "longbow_hnsw_lock_wait_seconds",
-		Help: "Wait time for HNSW locks",
-	}, []string{"type"})
 
 	// Init distance funcs based on config
 	fmt.Printf("Initializing ArrowHNSW with metric: %v\n", config.Metric)
@@ -367,6 +337,9 @@ func NewArrowHNSW(dataset *Dataset, config *ArrowHNSWConfig) *ArrowHNSW {
 		config.BQEnabled,
 		config.PQEnabled,
 	)
+	if h.pqEncoder != nil {
+		gd.PQM = h.pqEncoder.CodeSize()
+	}
 	h.data.Store(gd)
 
 	// Initialize Graph Navigator
@@ -493,11 +466,6 @@ func (h *ArrowHNSW) GetPQEncoder() *pq.PQEncoder {
 // SetPQEncoder sets the PQ encoder
 func (h *ArrowHNSW) SetPQEncoder(encoder *pq.PQEncoder) {
 	h.pqEncoder = encoder
-}
-
-// GetMetrics returns the Prometheus metrics for this index
-func (h *ArrowHNSW) GetMetrics() (insertDuration, searchDuration prometheus.Histogram, nodesAdded, searchQueries prometheus.Counter) {
-	return h.metricInsertDuration, h.metricSearchDuration, h.metricNodesAdded, h.metricSearchQueries
 }
 
 // setDims sets the vector dimensions
@@ -826,8 +794,18 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 	if metrics.HNSWSearchPoolGetTotal != nil {
 		metrics.HNSWSearchPoolGetTotal.Inc()
 	}
+	start := time.Now()
 	searchCtx := h.searchPool.Get()
 	defer func() {
+		duration := time.Since(start).Seconds()
+		metrics.HNSWSearchDurationSeconds.Observe(duration)
+
+		var typeLabel string
+		// Infer type from data type config if queryVec is generic
+		typeLabel = h.config.DataType.String()
+		dimsStr := strconv.Itoa(int(h.dims.Load()))
+		metrics.HNSWSearchOpsTotal.WithLabelValues(h.name, typeLabel, dimsStr).Inc()
+
 		if metrics.HNSWSearchPoolPutTotal != nil {
 			metrics.HNSWSearchPoolPutTotal.Inc()
 		}
@@ -866,31 +844,6 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 
 	if vec == nil {
 		return nil, fmt.Errorf("entry point vector not found for id %d", ep)
-	}
-
-	// Record polymorphic metric based on storage type
-	if metrics.HNSWPolymorphicSearchCount != nil {
-		var typeLabel string
-		switch vec.(type) {
-		case []float32:
-			typeLabel = "float32"
-		case []float64:
-			typeLabel = "float64"
-		case []float16.Num:
-			typeLabel = "float16"
-		case []int8, []uint8:
-			typeLabel = "int8"
-		case []complex64:
-			typeLabel = "complex64"
-		case []complex128:
-			typeLabel = "complex128"
-		}
-		if typeLabel != "" {
-			metrics.HNSWPolymorphicSearchCount.WithLabelValues(typeLabel).Inc()
-			if metrics.HNSWPolymorphicThroughput != nil {
-				metrics.HNSWPolymorphicThroughput.WithLabelValues(typeLabel).Add(1.0)
-			}
-		}
 	}
 
 	// Use specialized computer if possible
@@ -1077,6 +1030,11 @@ func (h *ArrowHNSW) growNoLock(_, _ int) error {
 func (h *ArrowHNSW) Grow(capacity, dims int) error {
 	h.growMu.Lock()
 	defer h.growMu.Unlock()
+
+	start := time.Now()
+	defer func() {
+		metrics.HNSWIndexGrowthDuration.Observe(time.Since(start).Seconds())
+	}()
 
 	data := h.data.Load()
 	if data == nil {
@@ -1749,6 +1707,21 @@ func (h *ArrowHNSW) ExtractVectorByIDForParallel(id uint32) ([]float32, error) {
 	if h.quantizer != nil && h.sq8Ready.Load() {
 		if v8, ok := vecAny.([]byte); ok {
 			return h.quantizer.Decode(v8), nil
+		}
+	}
+
+	// Handle PQ codes for parallel search (they are returned as []byte from GetVector)
+	if h.config.PQEnabled && h.pqEncoder != nil {
+		if v8, ok := vecAny.([]byte); ok {
+			// The parallel search worker expects PQ codes to be packed into the first M bytes of a []float32
+			codeSize := h.pqEncoder.CodeSize()
+			if len(v8) == codeSize {
+				res := make([]float32, (codeSize+3)/4)
+				ptr := unsafe.Pointer(&res[0])
+				dest := unsafe.Slice((*byte)(ptr), codeSize)
+				copy(dest, v8)
+				return res, nil
+			}
 		}
 	}
 

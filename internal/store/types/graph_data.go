@@ -724,6 +724,23 @@ func (g *GraphData) PQDims() int {
 }
 
 func (g *GraphData) GetVectorPQ(id uint32) []byte {
+	cID := int(id) / ChunkSize
+	cOff := int(id) % ChunkSize
+
+	chunk := g.GetVectorsPQChunk(cID)
+	if chunk == nil {
+		return nil
+	}
+
+	m := g.PQM
+	if m == 0 {
+		return nil
+	}
+
+	start := cOff * m
+	if start+m <= len(chunk) {
+		return chunk[start : start+m]
+	}
 	return nil
 }
 

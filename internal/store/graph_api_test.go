@@ -22,9 +22,7 @@ func TestGraphAPI_GetGraphStats(t *testing.T) {
 
 	// 1. Setup Dataset
 	dsName := "graph_stats_test"
-	_ = s.CreateNamespace(dsName) // Implicitly creates default namespace? No, just create dataset.
-	// Actually VectorStore.CreateNamespace creates a namespace, but datasets are created on write usually.
-	// Let's manually inject a dataset.
+	_ = s.CreateNamespace(dsName)
 	ds := &Dataset{
 		Name:  dsName,
 		Graph: NewGraphStore(),
@@ -37,15 +35,10 @@ func TestGraphAPI_GetGraphStats(t *testing.T) {
 	_ = ds.Graph.AddEdge(Edge{Subject: 1, Predicate: "knows", Object: 2, Weight: 1.0})
 	_ = ds.Graph.AddEdge(Edge{Subject: 2, Predicate: "knows", Object: 3, Weight: 1.0})
 
-	// Mock DetectCommunities result for stats
-	// DetectCommunities usually runs on demand or background, let's force it if we want stats,
-	// or maybe the stats just return 0 if not run.
-	// The requirement for GetGraphStats is edge_count, community_count, predicates.
-	// _ = ds.Graph.DetectCommunities()
-
 	// 3. Call GetGraphStats
 	req := map[string]string{"dataset": dsName}
-	reqBytes, _ := json.Marshal(req)
+	reqBytes, err := json.Marshal(req)
+	require.NoError(t, err)
 
 	action := &flight.Action{
 		Type: "GetGraphStats",
@@ -53,7 +46,7 @@ func TestGraphAPI_GetGraphStats(t *testing.T) {
 	}
 
 	stream := &mockFlightServer{}
-	err := meta.DoAction(action, stream)
+	err = meta.DoAction(action, stream)
 	require.NoError(t, err)
 
 	require.Len(t, stream.results, 1)
@@ -64,9 +57,6 @@ func TestGraphAPI_GetGraphStats(t *testing.T) {
 	}
 	err = json.Unmarshal(stream.results[0].Body, &resp)
 	require.NoError(t, err)
-
-	// assert.GreaterOrEqual(t, resp.CommunityCount, 1)
-	// assert.Contains(t, resp.Predicates, "knows")
 }
 
 func TestGraphAPI_GetGraphStats_NotFound(t *testing.T) {
@@ -78,7 +68,8 @@ func TestGraphAPI_GetGraphStats_NotFound(t *testing.T) {
 	defer func() { _ = meta.Close() }()
 
 	req := map[string]string{"dataset": "non_existent"}
-	reqBytes, _ := json.Marshal(req)
+	reqBytes, err := json.Marshal(req)
+	require.NoError(t, err)
 
 	action := &flight.Action{
 		Type: "GetGraphStats",
@@ -86,7 +77,7 @@ func TestGraphAPI_GetGraphStats_NotFound(t *testing.T) {
 	}
 
 	stream := &mockFlightServer{}
-	err := meta.DoAction(action, stream)
+	err = meta.DoAction(action, stream)
 	require.Error(t, err)
 }
 

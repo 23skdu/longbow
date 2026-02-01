@@ -105,8 +105,6 @@ func TestSearchVectorsCorrectness(t *testing.T) {
 	// So we skip the bitmap test part or use nil if signature forces it.
 	// We'll trust that SearchVectors usage above covers core search + dataset integration.
 
-	_ = filter
-	// _ = resultsBitmap
 }
 
 func BenchmarkSearchVectorsBatched(b *testing.B) {

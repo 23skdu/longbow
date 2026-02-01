@@ -253,11 +253,12 @@ func NewArrowHNSW(dataset *Dataset, config *ArrowHNSWConfig) *ArrowHNSW {
 		return float64(d), err
 	}
 
-	if config.Metric == core.MetricCosine {
+	switch config.Metric {
+	case core.MetricCosine:
 		h.distFunc = simd.CosineDistance
 		h.distFuncF16 = simd.CosineDistanceF16
 		// Cosine for F64/Complex could be added if needed
-	} else if config.Metric == core.MetricDotProduct {
+	case core.MetricDotProduct:
 		h.distFunc = simd.DotProduct
 		h.distFuncF16 = simd.DotProductF16
 	}
@@ -1734,6 +1735,9 @@ func (h *ArrowHNSW) ExtractVectorByIDForParallel(id uint32) ([]float32, error) {
 		}
 		return res, nil
 	case []uint8:
+		if h.quantizer != nil && h.sq8Ready.Load() {
+			return h.quantizer.Decode(v), nil
+		}
 		res := make([]float32, len(v))
 		for i, val := range v {
 			res[i] = float32(val)

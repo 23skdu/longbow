@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/simd"
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/prometheus/client_golang/prometheus"
@@ -25,6 +26,7 @@ type GraphNavigator struct {
 	mu            sync.RWMutex
 	graphProvider func() *types.GraphData
 	metrics       *NavigatorMetrics
+	datasetName   string
 	searchConfig  NavigatorConfig
 	isInitialized atomic.Bool
 	cache         map[string]cachedResult
@@ -46,6 +48,7 @@ type NavigatorConfig struct {
 	DistanceThreshold float32
 	EnableCaching     bool
 	CacheTTL          time.Duration
+	MaxNodesVisited   int
 }
 
 type NavigatorPath struct {
@@ -143,8 +146,9 @@ func NewNavigatorMetrics(reg prometheus.Registerer) *NavigatorMetrics {
 	return m
 }
 
-func NewGraphNavigator(graphProvider func() *types.GraphData, config NavigatorConfig, reg prometheus.Registerer) *GraphNavigator {
+func NewGraphNavigator(datasetName string, graphProvider func() *types.GraphData, config NavigatorConfig, reg prometheus.Registerer) *GraphNavigator {
 	return &GraphNavigator{
+		datasetName:   datasetName,
 		graphProvider: graphProvider,
 		searchConfig:  config,
 		metrics:       NewNavigatorMetrics(reg),
@@ -173,9 +177,31 @@ func (gn *GraphNavigator) FindPath(ctx context.Context, query NavigatorQuery) (*
 		return nil, fmt.Errorf("navigator not initialized")
 	}
 
+	graph := gn.graphProvider()
+	if graph == nil {
+		return nil, fmt.Errorf("graph data not available")
+	}
+
+	// Boundary Check
+	nodeCount := uint32(graph.GetNodeCount())
+	if query.StartID >= nodeCount {
+		return nil, fmt.Errorf("start node ID %d out of bounds (max %d)", query.StartID, nodeCount-1)
+	}
+	if query.TargetID >= nodeCount {
+		return nil, fmt.Errorf("target node ID %d out of bounds (max %d)", query.TargetID, nodeCount-1)
+	}
+
 	start := time.Now()
+	strategy := gn.planner.Plan(query)
+	strategyName := strategy.Name()
+
+	// Record selection
+	metrics.GraphNavigationStrategySelectionTotal.WithLabelValues(gn.datasetName, strategyName).Inc()
+
 	defer func() {
-		gn.metrics.QueriesDuration.Observe(time.Since(start).Seconds())
+		dur := time.Since(start).Seconds()
+		gn.metrics.QueriesDuration.Observe(dur)
+		metrics.GraphNavigationLatencySeconds.WithLabelValues(gn.datasetName, strategyName).Observe(dur)
 		gn.metrics.QueriesTotal.Inc()
 	}()
 
@@ -203,18 +229,33 @@ func (gn *GraphNavigator) FindPath(ctx context.Context, query NavigatorQuery) (*
 		gn.metrics.CacheMisses.Inc()
 	}
 
-	// Use Planner to determine strategy
-	strategy := gn.planner.Plan(query)
-
 	// Execute strategy
 	path, err := strategy.FindPath(ctx, gn, query)
+
+	resultLabel := "success"
 	if err != nil {
+		switch err {
+		case context.Canceled:
+			resultLabel = "cancelled"
+		case context.DeadlineExceeded:
+			resultLabel = "timeout"
+		default:
+			resultLabel = "fail"
+		}
+
+		metrics.GraphNavigationOperationsTotal.WithLabelValues(gn.datasetName, strategyName, resultLabel).Inc()
 		return nil, err
 	}
+
+	if !path.Found {
+		resultLabel = "not_found"
+	}
+	metrics.GraphNavigationOperationsTotal.WithLabelValues(gn.datasetName, strategyName, resultLabel).Inc()
 
 	if path.Found {
 		gn.metrics.PathsFound.Inc()
 		gn.metrics.HopsPerQuery.Observe(float64(path.Hops))
+		metrics.GraphNavigationHopsTotal.WithLabelValues(gn.datasetName, strategyName).Observe(float64(path.Hops))
 	}
 
 	// Update cache
@@ -320,4 +361,18 @@ func (gn *GraphNavigator) GetMetrics() *NavigatorMetrics {
 
 func (gn *GraphNavigator) IsInitialized() bool {
 	return gn.isInitialized.Load()
+}
+
+// ClearCache removes all entries from the navigation cache.
+func (gn *GraphNavigator) ClearCache() {
+	gn.cacheMu.Lock()
+	defer gn.cacheMu.Unlock()
+	gn.cache = make(map[string]cachedResult)
+}
+
+// Close releases resources associated with the navigator.
+func (gn *GraphNavigator) Close() error {
+	gn.ClearCache()
+	gn.isInitialized.Store(false)
+	return nil
 }

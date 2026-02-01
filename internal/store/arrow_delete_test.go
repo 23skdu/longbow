@@ -19,7 +19,7 @@ func TestDelete(t *testing.T) {
 	index.dims.Store(128)
 
 	// Initialize GraphData manually with dimensions
-	data := lbtypes.NewGraphData(100, 128, false, false, 0, false, false, false, lbtypes.VectorTypeFloat32)
+	data := lbtypes.NewGraphData(100, 128, false, false, 0, false, false, false, lbtypes.VectorTypeFloat32, false, false)
 	index.data.Store(data)
 
 	// Manually allocate chunks for testing using ensureChunk

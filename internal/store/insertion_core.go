@@ -177,6 +177,28 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 		}
 	}
 
+	// If BQ is enabled, encode and store
+	if h.config.BQEnabled {
+		if v32, ok := vec.([]float32); ok {
+			bqVec := encodeBQ(v32)
+			if err := data.SetVectorBQ(id, bqVec); err != nil {
+				return fmt.Errorf("failed to set BQ vector: %w", err)
+			}
+		}
+	}
+
+	// If PQ is enabled and ready, encode and store
+	if h.config.PQEnabled && h.pqEncoder != nil {
+		if v32, ok := vec.([]float32); ok {
+			code, err := h.pqEncoder.Encode(v32)
+			if err == nil {
+				if err := data.SetVectorPQ(id, code); err != nil {
+					return fmt.Errorf("failed to set PQ vector: %w", err)
+				}
+			}
+		}
+	}
+
 	// -------------------------------------------------------------------------
 	// Insertion Logic (Layer Search and Linking)
 	// -------------------------------------------------------------------------
@@ -261,4 +283,20 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 	h.nodeCount.Add(1)
 
 	return nil
+}
+
+func encodeBQ(vec []float32) []uint64 {
+	length := len(vec)
+	padded := (length + 63) & ^63
+	numWords := padded / 64
+	encoded := make([]uint64, numWords)
+
+	for i := 0; i < length; i++ {
+		if vec[i] > 0 {
+			wordIdx := i / 64
+			bitIdx := i % 64
+			encoded[wordIdx] |= (1 << bitIdx)
+		}
+	}
+	return encoded
 }

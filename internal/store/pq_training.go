@@ -53,6 +53,10 @@ func (h *ArrowHNSW) TrainPQ(vectors [][]float32) error {
 	h.config.PQK = k
 
 	data := h.data.Load()
+	if data != nil {
+		data.PQEnabled = true
+		data.PQM = m
+	}
 
 	if h.config.AdaptiveMEnabled && !h.adaptiveMTriggered.Load() {
 		count := int(h.nodeCount.Load())

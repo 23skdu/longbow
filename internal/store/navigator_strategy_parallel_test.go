@@ -16,7 +16,7 @@ func TestParallelBFSStrategy_FindPath(t *testing.T) {
 	rows := 10
 	nodeCount := cols * rows
 
-	gd := types.NewGraphData(nodeCount+10, 2, false, false, -1, false, false, false, types.VectorTypeFloat32)
+	gd := types.NewGraphData(nodeCount+10, 2, false, false, -1, false, false, false, types.VectorTypeFloat32, false, false)
 
 	for y := 0; y < rows; y++ {
 		for x := 0; x < cols; x++ {

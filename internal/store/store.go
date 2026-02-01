@@ -103,8 +103,6 @@ type VectorStore struct {
 	// Memory Tuner
 	tuner *lbmem.GCTuner
 
-	datasetInitHook func(*Dataset)
-
 	// Distributed search coordinator (shared between Data/Meta servers)
 	// Distributed search coordinator (shared between Data/Meta servers)
 	coordinator *GlobalSearchCoordinator
@@ -334,13 +332,6 @@ func (s *VectorStore) GetMeshMembers() []mesh.Member {
 		return nil
 	}
 	return s.Mesh.GetMembers()
-}
-
-// SetDatasetInitHook sets a hook function called after dataset creation.
-// This allows external initialization (e.g., hnsw2) without import cycles.
-// The hook is called from main package which can import both store and hnsw2.
-func (s *VectorStore) SetDatasetInitHook(hook func(*Dataset)) {
-	s.datasetInitHook = hook
 }
 
 // SetIndexedColumns updates columns that should be indexed for fast equality lookups

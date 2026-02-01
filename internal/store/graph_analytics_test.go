@@ -11,7 +11,7 @@ import (
 
 func TestGraphAnalytics_PageRank_Simple(t *testing.T) {
 	// A simple 2-node cycle: 1 <-> 2
-	gd := types.NewGraphData(10, 2, false, false, -1, false, false, false, types.VectorTypeFloat32)
+	gd := types.NewGraphData(10, 2, false, false, -1, false, false, false, types.VectorTypeFloat32, false, false)
 
 	// 1 -> 2
 	_ = gd.SetNeighbors(1, []uint32{2})
@@ -36,7 +36,7 @@ func TestGraphAnalytics_PageRank_Simple(t *testing.T) {
 
 func TestGraphAnalytics_Communities_Disjoint(t *testing.T) {
 	// Two disjoint triangles: {1,2,3} and {4,5,6}
-	gd := types.NewGraphData(10, 2, false, false, -1, false, false, false, types.VectorTypeFloat32)
+	gd := types.NewGraphData(10, 2, false, false, -1, false, false, false, types.VectorTypeFloat32, false, false)
 
 	// Clip 1
 	_ = gd.SetNeighbors(1, []uint32{2, 3})
@@ -76,7 +76,7 @@ func TestGraphAnalytics_StarGraph(t *testing.T) {
 	// 2,3,4 -> 1 (bidirectional star)
 	// PageRank should favor 1.
 
-	gd := types.NewGraphData(10, 2, false, false, -1, false, false, false, types.VectorTypeFloat32)
+	gd := types.NewGraphData(10, 2, false, false, -1, false, false, false, types.VectorTypeFloat32, false, false)
 	_ = gd.SetNeighbors(1, []uint32{2, 3, 4})
 	_ = gd.SetNeighbors(2, []uint32{1})
 	_ = gd.SetNeighbors(3, []uint32{1})
@@ -102,7 +102,7 @@ func TestGraphAnalytics_StarGraph(t *testing.T) {
 }
 
 func TestGraphAnalytics_Properties(t *testing.T) {
-	gd := types.NewGraphData(10, 2, false, false, -1, false, false, false, types.VectorTypeFloat32)
+	gd := types.NewGraphData(10, 2, false, false, -1, false, false, false, types.VectorTypeFloat32, false, false)
 	// Complete graph of 3 nodes: 1->2,3; 2->1,3; 3->1,2
 	_ = gd.SetNeighbors(1, []uint32{2, 3})
 	_ = gd.SetNeighbors(2, []uint32{1, 3})

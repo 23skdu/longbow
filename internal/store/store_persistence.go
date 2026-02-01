@@ -1,9 +1,11 @@
 package store
 
 import (
+	"bytes"
 	"fmt"
 	"time"
 
+	"github.com/23skdu/longbow/internal/pq"
 	"github.com/23skdu/longbow/internal/storage"
 	"github.com/apache/arrow-go/v18/arrow"
 )
@@ -161,6 +163,15 @@ func (s *VectorStore) loadSnapshotItem(item *storage.SnapshotItem) error {
 		d.Logger = s.logger
 		d.Topo = s.numaTopology
 
+		// Restore PQ Encoder
+		if len(item.PQCodebook) > 0 {
+			if enc, err := pq.DeserializePQEncoder(item.PQCodebook); err == nil {
+				d.PQEncoder = enc
+			} else {
+				s.logger.Error().Err(err).Msg("Failed to deserialize PQ encoder from snapshot")
+			}
+		}
+
 		// Initialize Index (Same logic as applyReplayBatch)
 		hasVectorColumn := false
 		var vectorDim int
@@ -187,6 +198,13 @@ func (s *VectorStore) loadSnapshotItem(item *storage.SnapshotItem) error {
 			aIdx := NewAutoShardingIndex(d, config)
 			aIdx.SetInitialDimension(vectorDim)
 			d.Index = aIdx
+
+			// Restore Index Graph
+			if len(item.IndexConfig) > 0 {
+				if err := d.Index.ImportGraph(bytes.NewReader(item.IndexConfig)); err != nil {
+					s.logger.Error().Err(err).Msg("Failed to import index graph from snapshot")
+				}
+			}
 		}
 
 		return d

@@ -304,9 +304,6 @@ func (s *VectorStore) handleDoExchangeIngest(
 	ds, created := s.getOrCreateDataset(name, func() *Dataset {
 		ds := NewDataset(name, r.Schema())
 		ds.Topo = s.numaTopology
-		if s.datasetInitHook != nil {
-			s.datasetInitHook(ds)
-		}
 
 		// Disk vector store support
 		if strings.HasPrefix(name, "test_disk") || os.Getenv("LONGBOW_USE_DISK") == "1" {

@@ -3,6 +3,7 @@ package types
 import (
 	"fmt"
 	"sync/atomic"
+	"unsafe"
 
 	"github.com/23skdu/longbow/internal/memory"
 	"github.com/apache/arrow-go/v18/arrow/float16"
@@ -19,6 +20,7 @@ type GraphData struct {
 	SQ8Ready      bool
 	BQEnabled     bool
 	PQEnabled     bool
+	PQM           int
 	GlobalVersion uint64 // For cache validation
 	BackingGraph  any    // interface{} to avoid import cycle (likely *DiskGraph)
 
@@ -172,12 +174,80 @@ func (g *GraphData) GetVectorsSQ8Chunk(chunkID int) []byte {
 }
 
 func (g *GraphData) GetVectorsBQChunk(chunkID int) []uint64 {
-	return g.VectorsBQ // Simplified
+	if g.Uint64Arena != nil && chunkID < len(g.VectorsBQ) {
+		paddedDims := (g.Dims + 63) & ^63
+		numWordsPerNode := paddedDims / 64
+		chunkLen := ChunkSize * numWordsPerNode
+		if chunkLen == 0 {
+			return nil
+		}
+
+		return g.Uint64Arena.Get(memory.SliceRef{
+			Offset: g.VectorsBQ[chunkID],
+			Len:    uint32(chunkLen),
+			Cap:    uint32(chunkLen),
+		})
+	}
+	return nil
 }
 
-// GetVectorsPQChunk is a method used in pq_training.go
+// GetVectorsPQChunk returns the PQ vectors chunk for the given ID.
 func (g *GraphData) GetVectorsPQChunk(chunkID int) []byte {
-	return nil // Placeholder
+	if g.Uint64Arena != nil && chunkID < len(g.VectorsPQ) && g.PQM > 0 {
+		numWordsPerNode := (g.PQM + 7) / 8
+		numWords := ChunkSize * numWordsPerNode
+
+		chunk := g.Uint64Arena.Get(memory.SliceRef{
+			Offset: g.VectorsPQ[chunkID],
+			Len:    uint32(numWords),
+			Cap:    uint32(numWords),
+		})
+
+		if len(chunk) == 0 {
+			return nil
+		}
+
+		// Cast uint64 to byte slice
+		ptr := unsafe.Pointer(&chunk[0])
+		return unsafe.Slice((*byte)(ptr), numWords*8)
+	}
+	return nil
+}
+
+func (g *GraphData) SetVectorPQ(id uint32, code []byte) error {
+	cID := int(id) / ChunkSize
+	cOff := int(id) % ChunkSize
+
+	if g.Uint64Arena != nil && cID < len(g.VectorsPQ) {
+		m := g.PQM
+		if len(code) != m {
+			return fmt.Errorf("PQ code length mismatch: expected %d, got %d", m, len(code))
+		}
+
+		numWordsPerNode := (m + 7) / 8
+		numWords := ChunkSize * numWordsPerNode
+
+		chunk := g.Uint64Arena.Get(memory.SliceRef{
+			Offset: g.VectorsPQ[cID],
+			Len:    uint32(numWords),
+			Cap:    uint32(numWords),
+		})
+
+		if len(chunk) == 0 {
+			return fmt.Errorf("PQ chunk is empty")
+		}
+
+		// Cast uint64 to byte slice
+		ptr := unsafe.Pointer(&chunk[0])
+		byteChunk := unsafe.Slice((*byte)(ptr), numWords*8)
+
+		start := cOff * m
+		if start+m <= len(byteChunk) {
+			copy(byteChunk[start:start+m], code)
+			return nil
+		}
+	}
+	return fmt.Errorf("failed to set PQ vector for id %d", id)
 }
 
 func (g *GraphData) GetCountsChunk(layer, chunkID int) []int32 {
@@ -344,18 +414,19 @@ func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
 	}
 
 	// Ensure PQ if enabled
-	if g.PQEnabled {
+	if g.PQEnabled && g.PQM > 0 {
 		for len(g.VectorsPQ) <= cID {
 			if g.Uint64Arena == nil {
-				// PQ usually stores small codes, but use dimensions as proxy if needed.
-				// For now assume uint64 per vector for PQ codes (e.g. 8 bytes per vector)
-				slabSize := ChunkSize * 8
+				// Allocate based on PQM
+				numWords := (g.PQM + 7) / 8
+				slabSize := ChunkSize * numWords * 8
 				if slabSize < 1024*1024 {
 					slabSize = 1024 * 1024
 				}
 				g.Uint64Arena = memory.NewTypedArena[uint64](memory.NewSlabArena(slabSize))
 			}
-			ref, err := g.Uint64Arena.AllocSliceDirty(ChunkSize)
+			numWords := (g.PQM + 7) / 8
+			ref, err := g.Uint64Arena.AllocSliceDirty(ChunkSize * numWords)
 			if err != nil {
 				return err
 			}
@@ -510,6 +581,26 @@ func (g *GraphData) GetVector(id uint32) (any, error) {
 		}
 	}
 
+	if len(g.VectorsF16) > cID {
+		chunk := g.GetVectorsF16Chunk(cID)
+		if chunk != nil {
+			start := cOff * g.Dims
+			if start+g.Dims <= len(chunk) {
+				return chunk[start : start+g.Dims], nil
+			}
+		}
+	}
+
+	if len(g.VectorsFloat64) > cID {
+		chunk := g.GetVectorsFloat64Chunk(cID)
+		if chunk != nil {
+			start := cOff * g.Dims
+			if start+g.Dims <= len(chunk) {
+				return chunk[start : start+g.Dims], nil
+			}
+		}
+	}
+
 	if g.BackingGraph != nil {
 		if bg, ok := g.BackingGraph.(graphFallback); ok {
 			return bg.GetVector(id)
@@ -525,6 +616,19 @@ func (g *GraphData) SetVector(id uint32, vec any) error {
 
 	switch v := vec.(type) {
 	case []float32:
+		if g.Type == VectorTypeFloat16 {
+			// Convert to Float16
+			chunk := g.GetVectorsF16Chunk(cID)
+			if chunk != nil {
+				start := cOff * g.Dims
+				if start+len(v) <= len(chunk) {
+					for i, val := range v {
+						chunk[start+i] = float16.New(val)
+					}
+				}
+			}
+			return nil
+		}
 		chunk := g.GetVectorsChunk(cID)
 		if chunk != nil {
 			start := cOff * g.Dims
@@ -598,7 +702,50 @@ func (g *GraphData) GetVectorPQ(id uint32) []byte {
 }
 
 func (g *GraphData) GetVectorBQ(id uint32) ([]uint64, error) {
-	return nil, nil
+	cID := int(id) / ChunkSize
+	cOff := int(id) % ChunkSize
+
+	if g.Uint64Arena != nil && cID < len(g.VectorsBQ) {
+		paddedDims := (g.Dims + 63) & ^63
+		numWords := paddedDims / 64
+		chunkLen := ChunkSize * numWords
+
+		chunk := g.Uint64Arena.Get(memory.SliceRef{
+			Offset: g.VectorsBQ[cID],
+			Len:    uint32(chunkLen),
+			Cap:    uint32(chunkLen),
+		})
+
+		start := cOff * numWords
+		if start+numWords <= len(chunk) {
+			return chunk[start : start+numWords], nil
+		}
+	}
+	return nil, fmt.Errorf("BQ vector not found for id %d", id)
+}
+
+func (g *GraphData) SetVectorBQ(id uint32, vec []uint64) error {
+	cID := int(id) / ChunkSize
+	cOff := int(id) % ChunkSize
+
+	if g.Uint64Arena != nil && cID < len(g.VectorsBQ) {
+		paddedDims := (g.Dims + 63) & ^63
+		numWords := paddedDims / 64
+		chunkLen := ChunkSize * numWords
+
+		chunk := g.Uint64Arena.Get(memory.SliceRef{
+			Offset: g.VectorsBQ[cID],
+			Len:    uint32(chunkLen),
+			Cap:    uint32(chunkLen),
+		})
+
+		start := cOff * numWords
+		if start+len(vec) <= len(chunk) {
+			copy(chunk[start:start+len(vec)], vec)
+			return nil
+		}
+	}
+	return fmt.Errorf("failed to set BQ vector for id %d", id)
 }
 
 // GetNeighbors returns the neighbors for a given node at a level.
@@ -840,9 +987,10 @@ func (g *GraphData) Clone() *GraphData {
 // NewGraphData creates a new GraphData instance.
 
 // This is a helper for legacy tests.
+// NewGraphData creates a new GraphData instance.
 func NewGraphData(capacity, dim int, mmap bool, useDisk bool, fd int,
 	quantization bool, sq8 bool, persistent bool,
-	dataType VectorDataType) *GraphData {
+	dataType VectorDataType, bqEnabled bool, pqEnabled bool) *GraphData {
 
 	// Initialize arenas
 	// Slab size: fit at least one chunk + overhead.
@@ -894,8 +1042,8 @@ func NewGraphData(capacity, dim int, mmap bool, useDisk bool, fd int,
 		Dims:              dim,
 		Type:              dataType,
 		SQ8Enabled:        sq8,
-		BQEnabled:         quantization,
-		PQEnabled:         quantization,
+		BQEnabled:         bqEnabled,
+		PQEnabled:         pqEnabled,
 		Vectors:           make([][]float32, numChunks),
 		VectorsFloat64:    make([][]float64, numChunks),
 		VectorsComplex64:  make([][]complex64, numChunks),

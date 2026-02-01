@@ -170,8 +170,23 @@ type ArrowHNSW struct {
 	navigator *GraphNavigator
 }
 
-// GetVector retrieves the vector for the given ID.
 func (h *ArrowHNSW) GetVector(id uint32) (any, error) {
+	// Fallback to DiskGraph FIRST in hybrid mode if SQ8/PQ is enabled.
+	// This ensures we read the persistent copy even if memory chunks are allocated (due to promotion).
+	dg := h.diskGraph.Load()
+	if dg != nil {
+		if h.config.SQ8Enabled {
+			if v := dg.GetVectorSQ8(id); v != nil {
+				return v, nil
+			}
+		}
+		if h.config.PQEnabled {
+			if v := dg.GetVectorPQ(id); v != nil {
+				return v, nil
+			}
+		}
+	}
+
 	data := h.data.Load()
 	if data == nil {
 		return nil, fmt.Errorf("index data not initialized")
@@ -181,6 +196,26 @@ func (h *ArrowHNSW) GetVector(id uint32) (any, error) {
 
 func (h *ArrowHNSW) getVectorAny(id uint32) (any, error) {
 	return h.GetVector(id)
+}
+
+func (h *ArrowHNSW) getVectorWithData(data *types.GraphData, id uint32) (any, error) {
+	v, err := data.GetVector(id)
+	if v != nil || err != nil {
+		return v, err
+	}
+
+	// Fallback to DiskGraph
+	dg := h.diskGraph.Load()
+	if dg != nil {
+		if h.config.SQ8Enabled {
+			return dg.GetVectorSQ8(id), nil
+		}
+		if h.config.PQEnabled {
+			return dg.GetVectorPQ(id), nil
+		}
+	}
+
+	return nil, nil
 }
 
 // NewArrowHNSW creates a new ArrowHNSW index with the given configuration
@@ -292,7 +327,11 @@ func NewArrowHNSW(dataset *Dataset, config *ArrowHNSWConfig) *ArrowHNSW {
 		EarlyTerminate:    true,
 		DistanceThreshold: 0, // No threshold by default
 	}
-	h.navigator = NewGraphNavigator(h.GetData, navConfig, config.Registerer)
+	dsName := "unknown"
+	if dataset != nil {
+		dsName = dataset.Name
+	}
+	h.navigator = NewGraphNavigator(dsName, h.GetData, navConfig, config.Registerer)
 	_ = h.navigator.Initialize()
 
 	return h
@@ -434,7 +473,7 @@ func (h *ArrowHNSW) Delete(id uint32) error {
 
 // mustGetVectorFromData retrieves a vector from the given data snapshot or panics.
 func (h *ArrowHNSW) mustGetVectorFromData(data *types.GraphData, id uint32) any {
-	vec, err := data.GetVector(id)
+	vec, err := h.getVectorWithData(data, id)
 	if err != nil {
 		panic(err)
 	}
@@ -631,6 +670,9 @@ func (h *ArrowHNSW) Size() int {
 
 // Interface implementation: Close cleans up resources
 func (h *ArrowHNSW) Close() error {
+	if h.navigator != nil {
+		h.navigator.Close()
+	}
 	h.data.Store(nil)
 	h.dataset = nil
 	h.searchPool = nil
@@ -752,7 +794,7 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 	// Calculate distance to entry point
 	var dist float32
 	if q, ok := queryVec.([]float32); ok {
-		vec, err := data.GetVector(ep)
+		vec, err := h.getVectorWithData(data, ep)
 		if err != nil {
 			return nil, err
 		}
@@ -1098,7 +1140,7 @@ func (h *ArrowHNSW) searchLayer(_ context.Context, computer any, entryPoint uint
 		switch q := queryVec.(type) {
 		case []float32:
 			distComputer = func(id uint32) (float32, error) {
-				vecAny, err := data.GetVector(id)
+				vecAny, err := h.getVectorWithData(data, id)
 				if err != nil {
 					return 0, err
 				}
@@ -1156,7 +1198,7 @@ func (h *ArrowHNSW) searchLayer(_ context.Context, computer any, entryPoint uint
 
 		case []int8:
 			distComputer = func(id uint32) (float32, error) {
-				vecAny, err := data.GetVector(id)
+				vecAny, err := h.getVectorWithData(data, id)
 				if err != nil {
 					return 0, err
 				}
@@ -1213,7 +1255,7 @@ func (h *ArrowHNSW) searchLayer(_ context.Context, computer any, entryPoint uint
 
 		case []complex64:
 			distComputer = func(id uint32) (float32, error) {
-				vecAny, err := data.GetVector(id)
+				vecAny, err := h.getVectorWithData(data, id)
 				if err != nil {
 					return 0, err
 				}
@@ -1235,7 +1277,7 @@ func (h *ArrowHNSW) searchLayer(_ context.Context, computer any, entryPoint uint
 
 		case []complex128:
 			distComputer = func(id uint32) (float32, error) {
-				vecAny, err := data.GetVector(id)
+				vecAny, err := h.getVectorWithData(data, id)
 				if err != nil {
 					return 0, err
 				}
@@ -1470,7 +1512,18 @@ func (h *ArrowHNSW) ExtractVectorByIDForParallel(id uint32) ([]float32, error) {
 	if v, ok := vecAny.([]float32); ok {
 		return v, nil
 	}
-	return nil, fmt.Errorf("unsupported vector type for parallel search")
+
+	// Handle SQ8 de-quantization for DiskGraph/Compressed vectors
+	if h.quantizer != nil && h.sq8Ready.Load() {
+		if v8, ok := vecAny.([]byte); ok {
+			return h.quantizer.Decode(v8), nil
+		}
+		if v8, ok := vecAny.([]uint8); ok {
+			return h.quantizer.Decode(v8), nil
+		}
+	}
+
+	return nil, fmt.Errorf("unsupported vector type %T for parallel search", vecAny)
 }
 
 func (h *ArrowHNSW) SearchForParallel(queryVec []float32, k int) []types.Candidate {
@@ -1530,7 +1583,7 @@ type float32Computer struct {
 }
 
 func (c *float32Computer) ComputeSingle(id uint32) (float32, error) {
-	vecAny, err := c.data.GetVector(id)
+	vecAny, err := c.h.getVectorWithData(c.data, id)
 	if err != nil {
 		return 0, err
 	}
@@ -1574,7 +1627,7 @@ type int8Computer struct {
 }
 
 func (c *int8Computer) ComputeSingle(id uint32) (float32, error) {
-	vecAny, err := c.data.GetVector(id)
+	vecAny, err := c.h.getVectorWithData(c.data, id)
 	if err != nil {
 		return 0, err
 	}

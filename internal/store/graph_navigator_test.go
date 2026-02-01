@@ -38,7 +38,7 @@ func TestGraphNavigator_FindPath_Linear(t *testing.T) {
 		MaxHops:  5,
 	}
 
-	nav := NewGraphNavigator(func() *types.GraphData { return g }, NavigatorConfig{MaxHops: 10}, nil)
+	nav := NewGraphNavigator("test", func() *types.GraphData { return g }, NavigatorConfig{MaxHops: 10}, nil)
 	err := nav.Initialize()
 	require.NoError(t, err)
 
@@ -56,7 +56,7 @@ func TestGraphNavigator_FindPath_Star(t *testing.T) {
 	_ = g.SetNeighbors(1, []uint32{4})
 	_ = g.SetNeighbors(2, []uint32{4})
 	_ = g.SetNeighbors(3, []uint32{4})
-	nav := NewGraphNavigator(func() *types.GraphData { return g }, NavigatorConfig{MaxHops: 10}, nil)
+	nav := NewGraphNavigator("test", func() *types.GraphData { return g }, NavigatorConfig{MaxHops: 10}, nil)
 	err := nav.Initialize()
 	require.NoError(t, err)
 
@@ -81,7 +81,7 @@ func TestGraphNavigator_MaxHops(t *testing.T) {
 	_ = g.SetNeighbors(1, []uint32{2})
 	_ = g.SetNeighbors(2, []uint32{3})
 
-	nav := NewGraphNavigator(func() *types.GraphData { return g }, NavigatorConfig{MaxHops: 2}, nil)
+	nav := NewGraphNavigator("test", func() *types.GraphData { return g }, NavigatorConfig{MaxHops: 2}, nil)
 	err := nav.Initialize()
 	require.NoError(t, err)
 
@@ -109,7 +109,7 @@ func TestGraphNavigator_DistancePruning(t *testing.T) {
 	// Thresholds:
 	// node 1 (hops 1): no prune (hops < 2)
 	// node 2 (hops 2): dist(2, 3) = 1.0. If threshold = 0.5, it should prune.
-	nav := NewGraphNavigator(func() *types.GraphData { return g }, NavigatorConfig{
+	nav := NewGraphNavigator("test", func() *types.GraphData { return g }, NavigatorConfig{
 		MaxHops:           10,
 		EarlyTerminate:    true,
 		DistanceThreshold: 0.5,
@@ -134,7 +134,7 @@ func TestGraphNavigator_Metrics(t *testing.T) {
 	_ = g.SetNeighbors(0, []uint32{1})
 
 	reg := prometheus.NewRegistry()
-	nav := NewGraphNavigator(func() *types.GraphData { return g }, NavigatorConfig{MaxHops: 10}, reg)
+	nav := NewGraphNavigator("test", func() *types.GraphData { return g }, NavigatorConfig{MaxHops: 10}, reg)
 	err := nav.Initialize()
 	require.NoError(t, err)
 
@@ -164,7 +164,7 @@ func TestGraphNavigator_SearchRadius(t *testing.T) {
 	_ = g.SetNeighbors(2, []uint32{3}) // Node 2 has 1 neighbor
 	_ = g.SetNeighbors(3, []uint32{})
 
-	nav := NewGraphNavigator(func() *types.GraphData { return g }, NavigatorConfig{
+	nav := NewGraphNavigator("test", func() *types.GraphData { return g }, NavigatorConfig{
 		MaxHops:        5,
 		EarlyTerminate: true,
 		SearchRadius:   2.0,

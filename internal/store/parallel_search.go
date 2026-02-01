@@ -71,7 +71,14 @@ func processResultsParallelInternal(ctx context.Context, h ParallelSearchHost, q
 	if !cfg.Enabled || neighborCount < chunkSize*2 {
 		metrics.HnswSerialFallbackTotal.WithLabelValues(dsName, getFallbackReason(cfg, neighborCount, chunkSize)).Inc()
 		// Serial fallback implementation here is simplified to just reuse the chunk logic in serial
-		return processChunkInternal(ctx, h, query, candidates, filters, bitmap)
+		res := processChunkInternal(ctx, h, query, candidates, filters, bitmap)
+		sort.Slice(res, func(i, j int) bool {
+			return res[i].Distance < res[j].Distance
+		})
+		if len(res) > k {
+			res = res[:k]
+		}
+		return res
 	}
 
 	metrics.HnswParallelSearchSplits.WithLabelValues(dsName).Inc()
@@ -217,7 +224,7 @@ func processChunkInternal(ctx context.Context, h ParallelSearchHost, query []flo
 			}
 		}
 
-		if !found[i] {
+		if !found[i] && dataset != nil {
 			continue
 		}
 

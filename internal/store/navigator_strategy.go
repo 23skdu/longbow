@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+
+	"github.com/23skdu/longbow/internal/metrics"
 )
 
 // NavigationStrategy defines the interface for different pathfinding algorithms.
@@ -28,6 +30,7 @@ func (s *BFSStrategy) FindPath(ctx context.Context, gn *GraphNavigator, query Na
 
 	queue := []queueItem{{id: query.StartID, hops: 0, path: []uint32{query.StartID}}}
 	visited := make(map[uint32]bool)
+	maxFrontierSize := 0
 
 	for len(queue) > 0 {
 		select {
@@ -36,10 +39,15 @@ func (s *BFSStrategy) FindPath(ctx context.Context, gn *GraphNavigator, query Na
 		default:
 		}
 
+		if len(queue) > maxFrontierSize {
+			maxFrontierSize = len(queue)
+		}
 		current := queue[0]
 		queue = queue[1:]
 
 		if current.id == query.TargetID {
+			metrics.GraphNavigationNodesVisitedTotal.WithLabelValues(gn.datasetName, s.Name()).Observe(float64(len(visited)))
+			metrics.GraphNavigationFrontierMaxSize.WithLabelValues(gn.datasetName, s.Name()).Observe(float64(maxFrontierSize))
 			return &NavigatorPath{
 				StartID: query.StartID,
 				EndID:   query.TargetID,
@@ -50,6 +58,10 @@ func (s *BFSStrategy) FindPath(ctx context.Context, gn *GraphNavigator, query Na
 		}
 
 		if current.hops >= query.MaxHops {
+			continue
+		}
+
+		if gn.searchConfig.MaxNodesVisited > 0 && len(visited) >= gn.searchConfig.MaxNodesVisited {
 			continue
 		}
 
@@ -82,6 +94,9 @@ func (s *BFSStrategy) FindPath(ctx context.Context, gn *GraphNavigator, query Na
 			}
 		}
 	}
+
+	metrics.GraphNavigationNodesVisitedTotal.WithLabelValues(gn.datasetName, s.Name()).Observe(float64(len(visited)))
+	metrics.GraphNavigationFrontierMaxSize.WithLabelValues(gn.datasetName, s.Name()).Observe(float64(maxFrontierSize))
 
 	return &NavigatorPath{
 		StartID: query.StartID,

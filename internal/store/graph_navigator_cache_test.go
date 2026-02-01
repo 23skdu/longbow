@@ -18,7 +18,7 @@ func TestGraphNavigator_Caching(t *testing.T) {
 	require.NoError(t, g.SetNeighbors(2, []uint32{}))
 
 	reg := prometheus.NewRegistry()
-	nav := NewGraphNavigator(func() *types.GraphData { return g }, NavigatorConfig{
+	nav := NewGraphNavigator("test", func() *types.GraphData { return g }, NavigatorConfig{
 		MaxHops:       10,
 		EnableCaching: true,
 	}, reg)

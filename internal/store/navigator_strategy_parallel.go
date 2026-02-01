@@ -5,6 +5,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/23skdu/longbow/internal/metrics"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -40,11 +41,18 @@ func (s *ParallelBFSStrategy) FindPath(ctx context.Context, gn *GraphNavigator, 
 	parents := &sync.Map{}
 
 	currentHops := 0
+	visitedCount := atomic.Int64{}
+	visitedCount.Add(1)
+	maxFrontierSize := 0
 
 	for len(frontier) > 0 && currentHops < query.MaxHops {
 		// Prepare next frontier
 		var nextFrontier []uint32
 		var frontierMu sync.Mutex
+
+		if len(frontier) > maxFrontierSize {
+			maxFrontierSize = len(frontier)
+		}
 
 		// Use error group for parallel processing
 		g, _ := errgroup.WithContext(ctx)
@@ -56,6 +64,10 @@ func (s *ParallelBFSStrategy) FindPath(ctx context.Context, gn *GraphNavigator, 
 		// Process current level
 		for _, nodeID := range frontier {
 			if found.Load() {
+				break
+			}
+
+			if gn.searchConfig.MaxNodesVisited > 0 && visitedCount.Load() >= int64(gn.searchConfig.MaxNodesVisited) {
 				break
 			}
 
@@ -96,6 +108,7 @@ func (s *ParallelBFSStrategy) FindPath(ctx context.Context, gn *GraphNavigator, 
 					if _, seen := visited.LoadOrStore(neighbor, true); !seen {
 						parents.Store(neighbor, id)
 						localNext = append(localNext, neighbor)
+						visitedCount.Add(1)
 
 						if neighbor == query.TargetID {
 							found.Store(true)
@@ -144,6 +157,10 @@ func (s *ParallelBFSStrategy) FindPath(ctx context.Context, gn *GraphNavigator, 
 		frontier = nextFrontier
 		currentHops++
 	}
+
+	// Finalize metrics
+	metrics.GraphNavigationNodesVisitedTotal.WithLabelValues(gn.datasetName, s.Name()).Observe(float64(visitedCount.Load()))
+	metrics.GraphNavigationFrontierMaxSize.WithLabelValues(gn.datasetName, s.Name()).Observe(float64(maxFrontierSize))
 
 	return &NavigatorPath{
 		StartID: query.StartID,

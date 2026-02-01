@@ -43,7 +43,7 @@ func TestParallelBFSStrategy_FindPath(t *testing.T) {
 	}
 
 	config := NavigatorConfig{MaxHops: 20, EnableCaching: false}
-	nav := NewGraphNavigator(func() *types.GraphData { return gd }, config, nil)
+	nav := NewGraphNavigator("test", func() *types.GraphData { return gd }, config, nil)
 	_ = nav.Initialize()
 
 	strategy := NewParallelBFSStrategy(4)

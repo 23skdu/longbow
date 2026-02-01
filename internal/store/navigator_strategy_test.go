@@ -61,7 +61,7 @@ func TestStrategies_Agreement(t *testing.T) {
 
 	provider := func() *types.GraphData { return gd }
 	config := NavigatorConfig{MaxHops: 5, EnableCaching: false}
-	nav := NewGraphNavigator(provider, config, nil)
+	nav := NewGraphNavigator("test", provider, config, nil)
 	err := nav.Initialize()
 	assert.NoError(t, err)
 

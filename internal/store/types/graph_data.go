@@ -12,17 +12,15 @@ import (
 // It effectively implements the component storage for ArrowHNSW.
 type GraphData struct {
 	// Metadata
-	Capacity   int
-	Dims       int
-	Type       VectorDataType
-	SQ8Enabled bool
-	SQ8Ready   bool
-	BQEnabled  bool
-	PQEnabled  bool
-
-	// Mutable State
+	Capacity      int
+	Dims          int
+	Type          VectorDataType
+	SQ8Enabled    bool
+	SQ8Ready      bool
+	BQEnabled     bool
+	PQEnabled     bool
+	GlobalVersion uint64 // For cache validation
 	BackingGraph  any    // interface{} to avoid import cycle (likely *DiskGraph)
-	GlobalVersion uint64 // Atomic access
 
 	// Vectors (primary storage, usually float32)
 	Vectors [][]float32
@@ -82,12 +80,22 @@ type GraphData struct {
 	PackedNeighbors []PackedNeighbors
 }
 
+type graphFallback interface {
+	GetNeighbors(layer int, id uint32, buf []uint32) []uint32
+	GetVector(id uint32) (any, error)
+}
+
 // PackedNeighbors interface for graph adjacency management
 type PackedNeighbors interface {
 	GetNeighbors(id uint32) ([]uint32, bool)
 	SetNeighbors(id uint32, neighbors []uint32) error
 	GetNeighborsF16(id uint32) ([]uint32, []float16.Num, bool)
 	SetNeighborsF16(id uint32, neighbors []uint32, dists []float16.Num) error
+}
+
+// GetNodeCount returns the current capacity of the graph (number of addressable nodes).
+func (g *GraphData) GetNodeCount() int {
+	return g.Capacity
 }
 
 // GetVectorsChunk returns the vector chunk for the given ID.
@@ -502,6 +510,12 @@ func (g *GraphData) GetVector(id uint32) (any, error) {
 		}
 	}
 
+	if g.BackingGraph != nil {
+		if bg, ok := g.BackingGraph.(graphFallback); ok {
+			return bg.GetVector(id)
+		}
+	}
+
 	return nil, nil
 }
 
@@ -597,6 +611,11 @@ func (g *GraphData) GetNeighbors(layer int, id uint32, buf []uint32) []uint32 {
 	versions := g.GetVersionsChunk(layer, cID)
 
 	if counts == nil || neighbors == nil {
+		if g.BackingGraph != nil {
+			if bg, ok := g.BackingGraph.(graphFallback); ok {
+				return bg.GetNeighbors(layer, id, buf)
+			}
+		}
 		return nil
 	}
 
@@ -616,6 +635,11 @@ func (g *GraphData) GetNeighbors(layer int, id uint32, buf []uint32) []uint32 {
 
 		count := int(atomic.LoadInt32(countAddr))
 		if count == 0 {
+			if g.BackingGraph != nil {
+				if bg, ok := g.BackingGraph.(graphFallback); ok {
+					return bg.GetNeighbors(layer, id, buf)
+				}
+			}
 			return nil
 		}
 		if base+count > len(neighbors) {
@@ -671,7 +695,7 @@ func (g *GraphData) LockNode(layer int, id uint32) uint32 {
 }
 
 // UnlockNode releases the per-node spinlock and increments the version.
-func (g *GraphData) UnlockNode(layer int, id uint32, oldVersion uint32) {
+func (g *GraphData) UnlockNode(layer int, id, oldVersion uint32) {
 	versions := g.GetVersionsChunk(layer, int(id)/ChunkSize)
 	if versions == nil {
 		return
@@ -700,6 +724,21 @@ func (g *GraphData) TryLockNode(layer int, id uint32) (uint32, bool) {
 }
 
 func (g *GraphData) GetVectorSQ8(id uint32) []byte {
+	cID := int(id) / ChunkSize
+	cOff := int(id) % ChunkSize
+
+	if g.Uint8Arena != nil && len(g.VectorsSQ8) > cID {
+		chunk := g.GetVectorsSQ8Chunk(cID)
+		if chunk != nil {
+			paddedDims := (g.Dims + 63) & ^63
+			start := cOff * paddedDims
+			if start+g.Dims <= len(chunk) {
+				// Return a copy to be safe, or just the slice?
+				// Disk writer wants to write it, so slice is fine.
+				return chunk[start : start+g.Dims]
+			}
+		}
+	}
 	return nil
 }
 

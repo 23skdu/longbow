@@ -339,6 +339,16 @@ func (dg *DiskGraph) GetVectorSQ8(nodeID uint32) []byte {
 	return dg.data[start:end]
 }
 
+func (dg *DiskGraph) GetVector(id uint32) (any, error) {
+	if dg.header.SQ8Offset > 0 {
+		return dg.GetVectorSQ8(id), nil
+	}
+	if dg.header.PQOffset > 0 {
+		return dg.GetVectorPQ(id), nil
+	}
+	return nil, nil
+}
+
 func (dg *DiskGraph) GetVectorPQ(nodeID uint32) []byte {
 	if dg.header.PQOffset == 0 || dg.header.PQDims == 0 {
 		return nil
@@ -358,7 +368,7 @@ func (dg *DiskGraph) GetVectorPQ(nodeID uint32) []byte {
 	return dg.data[start:end]
 }
 
-func (dg *DiskGraph) GetCapacity() int {
+func (dg *DiskGraph) Capacity() int {
 	return int(dg.header.NumNodes)
 }
 

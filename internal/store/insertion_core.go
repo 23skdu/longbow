@@ -124,12 +124,16 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 			return err
 		}
 
-		// Re-acquire RLock for the rest of the operation
-		h.growMu.RLock()
-		data = h.data.Load() // Use latest snapshot
+		// RELOAD data snapshot and CONTINUE without holding RLock
+		data = h.data.Load()
 		dims = int(h.dims.Load())
+	} else {
+		// We were holding RLock from line 59, release it now.
+		h.growMu.RUnlock()
 	}
-	defer h.growMu.RUnlock()
+
+	// From here on, we use 'data' snapshot. Internal operations (AddConnection)
+	// will handle their own locking and data reloads if needed.
 
 	if h.config.AdaptiveMEnabled && !h.adaptiveMTriggered.Load() {
 		count := int(h.nodeCount.Load())

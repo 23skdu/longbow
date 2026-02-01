@@ -3,6 +3,8 @@ package store
 import (
 	"container/heap"
 	"context"
+
+	"github.com/23skdu/longbow/internal/metrics"
 )
 
 // AStarStrategy implements A* search algorithm.
@@ -32,6 +34,7 @@ func (s *AStarStrategy) FindPath(ctx context.Context, gn *GraphNavigator, query 
 
 	visited := make(map[uint32]float32) // id -> gScore (hops)
 	visited[query.StartID] = 0
+	maxFrontierSize := 0
 
 	for pq.Len() > 0 {
 		select {
@@ -40,9 +43,14 @@ func (s *AStarStrategy) FindPath(ctx context.Context, gn *GraphNavigator, query 
 		default:
 		}
 
+		if pq.Len() > maxFrontierSize {
+			maxFrontierSize = pq.Len()
+		}
 		current := heap.Pop(pq).(*aStarItem)
 
 		if current.id == query.TargetID {
+			metrics.GraphNavigationNodesVisitedTotal.WithLabelValues(gn.datasetName, s.Name()).Observe(float64(len(visited)))
+			metrics.GraphNavigationFrontierMaxSize.WithLabelValues(gn.datasetName, s.Name()).Observe(float64(maxFrontierSize))
 			return &NavigatorPath{
 				StartID:   query.StartID,
 				EndID:     query.TargetID,
@@ -54,6 +62,10 @@ func (s *AStarStrategy) FindPath(ctx context.Context, gn *GraphNavigator, query 
 		}
 
 		if current.hops >= query.MaxHops {
+			continue
+		}
+
+		if gn.searchConfig.MaxNodesVisited > 0 && len(visited) >= gn.searchConfig.MaxNodesVisited {
 			continue
 		}
 
@@ -109,6 +121,9 @@ func (s *AStarStrategy) FindPath(ctx context.Context, gn *GraphNavigator, query 
 			heap.Push(pq, item)
 		}
 	}
+
+	metrics.GraphNavigationNodesVisitedTotal.WithLabelValues(gn.datasetName, s.Name()).Observe(float64(len(visited)))
+	metrics.GraphNavigationFrontierMaxSize.WithLabelValues(gn.datasetName, s.Name()).Observe(float64(maxFrontierSize))
 
 	return &NavigatorPath{
 		StartID: query.StartID,

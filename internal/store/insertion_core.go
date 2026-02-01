@@ -33,19 +33,15 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 	var dims int
 	defer func() {
 		duration := time.Since(start).Seconds()
-		h.metricInsertDuration.Observe(duration)
+		metrics.HNSWInsertDurationSeconds.Observe(duration)
 		nodeCount := float64(h.nodeCount.Load())
-		h.metricNodeCount.Set(nodeCount)
-		if h.config.BQEnabled {
-			h.metricBQVectors.Set(nodeCount)
-		}
+		metrics.HNSWNodesAddedTotal.WithLabelValues(h.name).Inc()
+		metrics.HNSWNodeCount.WithLabelValues(h.name).Set(nodeCount)
 
-		dsName := "unknown"
-		if h.dataset != nil {
-			dsName = h.dataset.Name
-		}
 		typeStr := h.config.DataType.String()
-		metrics.HNSWIngestionThroughputVectorsPerSecond.WithLabelValues(dsName, typeStr).Inc()
+		metrics.HNSWInsertOpsTotal.WithLabelValues(h.name, typeStr).Inc()
+
+		metrics.HNSWIngestionThroughputVectorsPerSecond.WithLabelValues(h.name, typeStr).Inc()
 
 		metrics.HNSWInsertLatencyByType.WithLabelValues(typeStr).Observe(duration)
 		metrics.HNSWInsertLatencyByDim.WithLabelValues(strconv.Itoa(dims)).Observe(duration)

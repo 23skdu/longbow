@@ -38,8 +38,17 @@ service:
     port: 3001
 ```
 
-The metrics endpoint is exposed on the pod but does not have a dedicated Service by default. You can
-use standard Prometheus service discovery annotations on the Pod (enabled by default).
+The metrics endpoint is exposed on port 9090. A dedicated Service can be enabled for scraping:
+
+```yaml
+metrics:
+  enabled: true
+  port: 9090
+  service:
+    type: ClusterIP
+  serviceMonitor:
+    enabled: true  # Requires Prometheus Operator
+```
 
 ### Ingress
 
@@ -66,11 +75,11 @@ for handling large datasets and high-throughput vector search.
 
 ```yaml
 grpc:
-  maxRecvMsgSize: 134217728      # 128MB
-  maxSendMsgSize: 134217728      # 128MB
-  initialWindowSize: 4194304     # 4MB
-  initialConnWindowSize: 4194304 # 4MB
-  maxConcurrentStreams: 500
+  maxRecvMsgSize: "67108864"     # 64MB (default)
+  maxSendMsgSize: "67108864"     # 64MB (default)
+  initialWindowSize: "1048576"   # 1MB (default)
+  initialConnWindowSize: "1048576" # 1MB (default)
+  maxConcurrentStreams: 250
   keepAliveTime: "2h"
 ```
 
@@ -93,12 +102,12 @@ Longbow supports optional persistence using a Write-Ahead Log (WAL) and Snapshot
 persistence:
   wal:
     enabled: true
-    size: 10Gi
-    storageClass: gp3
+    size: 5Gi
+    storageClass: ""
   snapshots:
-    enabled: true
-    size: 20Gi
-    storageClass: gp3
+    enabled: false
+    size: 10Gi
+    storageClass: ""
 ```
 
 ### S3 Snapshots

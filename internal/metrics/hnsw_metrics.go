@@ -38,6 +38,12 @@ var (
 		Help: "Total number of HNSW graph node allocations",
 	})
 
+	// HNSWNodesAddedTotal tracks total nodes ever added to the graph.
+	HNSWNodesAddedTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "longbow_hnsw_nodes_added_total",
+		Help: "Total number of nodes added to HNSW",
+	}, []string{"dataset"})
+
 	// Index growth metrics
 	HNSWIndexGrowthDuration = promauto.NewHistogram(prometheus.HistogramOpts{
 		Name:    "longbow_hnsw_index_growth_duration_seconds",
@@ -80,6 +86,14 @@ var (
 			Name:    "longbow_hnsw_bulk_insert_duration_seconds",
 			Help:    "Duration of HNSW bulk vector insertion",
 			Buckets: []float64{0.001, 0.01, 0.1, 0.5, 1, 5, 10, 30},
+		},
+	)
+
+	HNSWSearchDurationSeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_hnsw_search_duration_seconds",
+			Help:    "Duration of HNSW search operations",
+			Buckets: []float64{0.0001, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1},
 		},
 	)
 
@@ -159,12 +173,31 @@ var (
 		[]string{"type"},
 	)
 
-	HNSWNodesTotal = promauto.NewGaugeVec(
+	// HNSWNodeCount tracks the total number of nodes in the HNSW graph per dataset.
+	HNSWNodeCount = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "longbow_hnsw_nodes_total",
+			Name: "longbow_hnsw_node_count",
 			Help: "Total number of nodes in the HNSW graph",
 		},
 		[]string{"dataset"},
+	)
+
+	// HNSWSearchOpsTotal tracks search operations with metadata.
+	HNSWSearchOpsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_hnsw_search_ops_total",
+			Help: "Total number of HNSW search operations",
+		},
+		[]string{"dataset", "type", "dims"},
+	)
+
+	// HNSWInsertOpsTotal tracks insertion operations with metadata.
+	HNSWInsertOpsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_hnsw_insert_ops_total",
+			Help: "Total number of HNSW insertion operations",
+		},
+		[]string{"dataset", "type"},
 	)
 
 	HNSWResizesTotal = promauto.NewCounterVec(

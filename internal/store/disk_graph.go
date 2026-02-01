@@ -6,8 +6,9 @@ import (
 	"math"
 	"os"
 	"sort"
-	"syscall"
 	"unsafe"
+
+	"golang.org/x/sys/unix"
 )
 
 const (
@@ -79,7 +80,7 @@ func NewDiskGraph(path string) (*DiskGraph, error) {
 		return nil, fmt.Errorf("file too small")
 	}
 
-	data, err := syscall.Mmap(int(f.Fd()), 0, int(size), syscall.PROT_READ, syscall.MAP_SHARED)
+	data, err := unix.Mmap(int(f.Fd()), 0, int(size), unix.PROT_READ, unix.MAP_SHARED)
 	if err != nil {
 		_ = f.Close()
 		return nil, fmt.Errorf("mmap failed: %v", err)
@@ -397,11 +398,25 @@ func (dg *DiskGraph) Size() int {
 
 func (dg *DiskGraph) Close() error {
 	if dg.data != nil {
-		_ = syscall.Munmap(dg.data)
+		_ = unix.Munmap(dg.data)
 		dg.data = nil
 	}
 	if dg.f != nil {
 		return dg.f.Close()
 	}
 	return nil
+}
+
+// Madvise hints the kernel about the access pattern for the mmap region.
+// advice can be unix.MADV_RANDOM, unix.MADV_SEQUENTIAL, unix.MADV_WILLNEED, etc.
+func (dg *DiskGraph) Madvise(advice int) error {
+	if dg.data == nil {
+		return nil
+	}
+	return unix.Madvise(dg.data, advice)
+}
+
+// Warmup triggers MADV_WILLNEED to populate the page cache.
+func (dg *DiskGraph) Warmup() error {
+	return dg.Madvise(unix.MADV_WILLNEED)
 }

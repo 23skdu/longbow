@@ -90,12 +90,12 @@ func TestHnswGraphHeight_Exists(t *testing.T) {
 	HnswGraphHeight.WithLabelValues("vectors").Set(5)
 }
 
-func TestHnswNodeCount_Exists(t *testing.T) {
-	if HnswNodeCount == nil {
-		t.Fatal("HnswNodeCount metric should not be nil")
+func TestHNSWNodeCount_Exists(t *testing.T) {
+	if HNSWNodeCount == nil {
+		t.Fatal("HNSWNodeCount metric should not be nil")
 	}
 	// Verify it's a GaugeVec with dataset label
-	HnswNodeCount.WithLabelValues("vectors").Set(10000)
+	HNSWNodeCount.WithLabelValues("vectors").Set(10000)
 }
 
 // Test Flight metrics
@@ -202,7 +202,7 @@ func TestMetricsAreRegistered(t *testing.T) {
 		FilterExecutionDurationSeconds,
 		FilterSelectivityRatio,
 		HnswGraphHeight,
-		HnswNodeCount,
+		HNSWNodeCount,
 		FlightTicketParseDurationSeconds,
 		VectorScratchPoolMissesTotal,
 		DatasetLockWaitDurationSeconds,

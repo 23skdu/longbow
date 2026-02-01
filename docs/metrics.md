@@ -25,19 +25,19 @@ Last Updated: 2026-01-13
 
 ## Flight & RPC
 
-### longbow_flight_operations_total
+### longbow_flight_ops_total
 
 **Type**: Counter  
-**Labels**: `method`, `status`  
+**Labels**: `action`, `status`  
 **Description**: Total number of processed Arrow Flight operations (DoPut, DoGet, DoAction, etc.)
 
 ### longbow_flight_duration_seconds
 
 **Type**: Histogram  
-**Labels**: `method`  
+**Labels**: `action`  
 **Description**: Duration of Arrow Flight operations
 
-### longbow_flight_bytes_processed_total
+### longbow_flight_bytes_written_total
 
 **Type**: Counter  
 **Labels**: `method`  
@@ -76,7 +76,7 @@ Last Updated: 2026-01-13
 **Labels**: `dataset`  
 **Description**: Latency of vector search operations
 
-### longbow_vector_search_action_requests_total
+### longbow_vector_search_action_total
 
 **Type**: Counter  
 **Description**: Total vector search action requests processed
@@ -96,7 +96,7 @@ Last Updated: 2026-01-13
 **Type**: Gauge  
 **Description**: Number of concurrent DoGet/search operations in progress
 
-### longbow_bruteforce_searches_total
+### longbow_brute_force_searches_total
 
 **Type**: Counter  
 **Description**: Total searches performed using BruteForce linear scan
@@ -119,7 +119,35 @@ Last Updated: 2026-01-13
 
 **Type**: Gauge  
 **Labels**: `dataset`  
-**Description**: Total number of nodes in the HNSW graph
+**Description**: Current number of nodes in the HNSW graph (memory + disk).
+
+### longbow_hnsw_nodes_added_total
+
+**Type**: Counter  
+**Labels**: `dataset`  
+**Description**: Total number of nodes ever added to the HNSW graph.
+
+### longbow_hnsw_search_ops_total
+
+**Type**: Counter  
+**Labels**: `dataset`, `type`, `dims`  
+**Description**: Total number of HNSW search operations labeled by data type (float32, float16, etc.) and dimensions.
+
+### longbow_hnsw_insert_ops_total
+
+**Type**: Counter  
+**Labels**: `dataset`, `type`  
+**Description**: Total number of HNSW insertion operations (individual inserts) labeled by data type.
+
+### longbow_hnsw_search_duration_seconds
+
+**Type**: Histogram  
+**Description**: Latency of HNSW search operations.
+
+### longbow_hnsw_bulk_insert_duration_seconds
+
+**Type**: Histogram  
+**Description**: Latency of parallel HNSW bulk insertion operations.
 
 ### longbow_hnsw_graph_height
 
@@ -137,11 +165,6 @@ Last Updated: 2026-01-13
 **Type**: Histogram  
 **Labels**: `dataset`  
 **Description**: Number of HNSW nodes visited per search
-
-### longbow_hnsw_searches_total
-
-**Type**: Counter  
-**Description**: Total number of searches performed using HNSW index
 
 ### longbow_hnsw_active_readers
 
@@ -442,7 +465,7 @@ Last Updated: 2026-01-13
 **Type**: Counter  
 **Description**: Total number of HNSW index migrations to sharded format
 
-### longbow_shard_lock_wait_seconds
+### longbow_shard_lock_wait_duration_seconds
 
 **Type**: Histogram  
 **Description**: Time spent waiting to acquire shard locks
@@ -470,19 +493,19 @@ Last Updated: 2026-01-13
 
 ## Performance Optimizations
 
-### longbow_simd_dispatch_total
+### longbow_simd_dispatch_count
 
 **Type**: Counter  
 **Labels**: `implementation`  
 **Description**: Count of SIMD implementation selections (AVX2, AVX512, NEON, etc.)
 
-### longbow_doget_zero_copy_total
+### longbow_do_get_zero_copy_total
 
 **Type**: Counter  
 **Labels**: `type`  
 **Description**: Total DoGet operations by copy method (zero-copy vs deep-copy)
 
-### longbow_doget_pipeline_steps_total
+### longbow_do_get_pipeline_steps_total
 
 **Type**: Counter  
 **Labels**: `method`  

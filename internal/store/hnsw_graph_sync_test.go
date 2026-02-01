@@ -5,13 +5,7 @@ import (
 	"testing"
 
 	"github.com/apache/arrow-go/v18/arrow"
-	"github.com/coder/hnsw"
 )
-
-func init() {
-	hnsw.RegisterDistanceFunc("euclidean", hnsw.EuclideanDistance)
-	hnsw.RegisterDistanceFunc("cosine", hnsw.CosineDistance)
-}
 
 func TestHNSWGraphSync_ExportState(t *testing.T) {
 	schema := arrow.NewSchema(

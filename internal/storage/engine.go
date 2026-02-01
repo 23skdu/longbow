@@ -1,11 +1,7 @@
 package storage
 
 import (
-	"bytes"
-	"encoding/binary"
 	"fmt"
-	"hash/crc32"
-	"io"
 	"os"
 	"path/filepath"
 	"sync"
@@ -13,9 +9,7 @@ import (
 
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/apache/arrow-go/v18/arrow"
-	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"github.com/apache/arrow-go/v18/arrow/memory"
-	"github.com/golang/snappy"
 	"github.com/rs/zerolog/log"
 )
 
@@ -135,148 +129,6 @@ type ApplierFunc func(name string, rec arrow.RecordBatch, seq uint64, ts int64) 
 
 // ReplayWAL reads the WAL and calls the applier for each entry.
 // Returns the maximum sequence number encountered.
-func (e *StorageEngine) ReplayWAL(applier ApplierFunc) (uint64, error) {
-	start := time.Now()
-	defer func() {
-		metrics.WalReplayDurationSeconds.Observe(time.Since(start).Seconds())
-	}()
-
-	walPath := filepath.Join(e.dataPath, walFileName)
-	f, err := os.Open(walPath)
-	if os.IsNotExist(err) {
-		return 0, nil
-	}
-	if err != nil {
-		return 0, err
-	}
-	defer func() {
-		if err := f.Close(); err != nil {
-			log.Error().Err(err).Msg("failed to close WAL file during replay")
-		}
-	}()
-
-	var maxSeq uint64
-	count := 0
-
-	for {
-		header := make([]byte, 32)
-		if _, err := io.ReadFull(f, header); err != nil {
-			if err == io.EOF || err == io.ErrUnexpectedEOF {
-				break
-			}
-			return 0, fmt.Errorf("header read error at count %d: %w", count, err)
-		}
-
-		storedChecksum := binary.LittleEndian.Uint32(header[0:4])
-		seq := binary.LittleEndian.Uint64(header[4:12])
-		ts := int64(binary.LittleEndian.Uint64(header[12:20]))
-		nameLen := binary.LittleEndian.Uint32(header[20:24])
-		recLen := binary.LittleEndian.Uint64(header[24:32])
-
-		if seq > maxSeq {
-			maxSeq = seq
-		}
-
-		if nameLen > 1024*1024 || recLen > 1024*1024*1024 {
-			log.Warn().Uint32("nameLen", nameLen).Uint64("recLen", recLen).Msg("ReplayWAL: skipping record with excessive length")
-			break
-		}
-
-		nameBytes := make([]byte, nameLen)
-		if _, err := io.ReadFull(f, nameBytes); err != nil {
-			log.Warn().Err(err).Msg("ReplayWAL: failed to read name")
-			break
-		}
-		name := string(nameBytes)
-
-		recBytes := make([]byte, recLen)
-		if _, err := io.ReadFull(f, recBytes); err != nil {
-			log.Warn().Err(err).Msg("ReplayWAL: failed to read record bytes")
-			break
-		}
-
-		crc := crc32.NewIEEE()
-		_, _ = crc.Write(nameBytes)
-		_, _ = crc.Write(recBytes)
-		calculatedCRC := crc.Sum32()
-
-		if storedChecksum == 0xFFFFFFFF {
-			if nameLen != 1 || nameBytes[0] != 1 {
-				continue
-			}
-			decompressed, err := snappy.Decode(nil, recBytes)
-			if err != nil {
-				log.Warn().Err(err).Msg("ReplayWAL: failed to decompress block")
-				continue
-			}
-
-			dr := bytes.NewReader(decompressed)
-			innerHeader := make([]byte, 32)
-			for {
-				if _, err := io.ReadFull(dr, innerHeader); err != nil {
-					break
-				}
-				inSeq := binary.LittleEndian.Uint64(innerHeader[4:12])
-				inTs := int64(binary.LittleEndian.Uint64(innerHeader[12:20]))
-				inNameLen := binary.LittleEndian.Uint32(innerHeader[20:24])
-				inRecLen := binary.LittleEndian.Uint64(innerHeader[24:32])
-
-				if inSeq > maxSeq {
-					maxSeq = inSeq
-				}
-
-				inNameBytes := make([]byte, inNameLen)
-				if _, err := io.ReadFull(dr, inNameBytes); err != nil {
-					break
-				}
-				inRecBytes := make([]byte, inRecLen)
-				if _, err := io.ReadFull(dr, inRecBytes); err != nil {
-					break
-				}
-
-				r, err := ipc.NewReader(bytes.NewReader(inRecBytes), ipc.WithAllocator(e.mem))
-				if err == nil {
-					if r.Next() {
-						rec := r.RecordBatch()
-						rec.Retain()
-						if err := applier(string(inNameBytes), rec, inSeq, inTs); err != nil {
-							r.Release()
-							return 0, fmt.Errorf("applier failed for inner record: %w", err)
-						}
-						count++
-					}
-					r.Release()
-				}
-			}
-			continue
-		}
-
-		if calculatedCRC != storedChecksum {
-			return 0, fmt.Errorf("wal crc mismatch at seq %d: expected %x, got %x", seq, storedChecksum, calculatedCRC)
-		}
-
-		r, err := ipc.NewReader(bytes.NewReader(recBytes), ipc.WithAllocator(e.mem))
-		if err == nil {
-			if r.Next() {
-				rec := r.RecordBatch()
-				rec.Retain()
-				log.Debug().
-					Uint64("seq", seq).
-					Str("name", name).
-					Int64("rows", rec.NumRows()).
-					Msg("ReplayWAL: Applying record")
-				if err := applier(name, rec, seq, ts); err != nil {
-					r.Release()
-					return 0, fmt.Errorf("applier failed for record: %w", err)
-				}
-				count++
-			}
-			r.Release()
-		}
-	}
-
-	return maxSeq, nil
-}
 
 // SnapshotItem represents a dataset snapshot.
 type SnapshotItem struct {

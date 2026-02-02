@@ -64,7 +64,7 @@ func (s *VectorStore) PrewarmDataset(name string, schema *arrow.Schema) {
 		var vectorDim int
 
 		for _, f := range schema.Fields() {
-			if f.Name == "vector" {
+			if f.Name == "vector" || f.Name == "embedding" {
 				if fst, ok := f.Type.(*arrow.FixedSizeListType); ok {
 					hasVectorColumn = true
 					vectorDim = int(fst.Len())

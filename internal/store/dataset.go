@@ -101,6 +101,35 @@ type Dataset struct {
 	Logger zerolog.Logger
 }
 
+// UpdateBatchSize sets the total size of a batch in the fragmentation tracker.
+func (d *Dataset) UpdateBatchSize(batchIdx, size int) {
+	if d.fragmentationTracker != nil {
+		d.fragmentationTracker.SetBatchSize(batchIdx, size)
+	}
+}
+
+// RecordBatchDeletion records a deletion in the specified batch.
+func (d *Dataset) RecordBatchDeletion(batchIdx int) {
+	if d.fragmentationTracker != nil {
+		d.fragmentationTracker.RecordDeletion(batchIdx)
+	}
+}
+
+// GetFragmentedBatches returns indices of batches exceeding the fragmentation threshold.
+func (d *Dataset) GetFragmentedBatches(threshold float64) []int {
+	if d.fragmentationTracker != nil {
+		return d.fragmentationTracker.GetFragmentedBatches(threshold)
+	}
+	return nil
+}
+
+// ResetBatchFragmentation resets the tracking for a batch.
+func (d *Dataset) ResetBatchFragmentation(batchIdx int) {
+	if d.fragmentationTracker != nil {
+		d.fragmentationTracker.Reset(batchIdx)
+	}
+}
+
 // IsSharded returns true if the dataset's vector index is sharded.
 func (d *Dataset) IsSharded() bool {
 	if d.Index != nil {

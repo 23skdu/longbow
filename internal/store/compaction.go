@@ -150,21 +150,61 @@ func (w *CompactionWorker) compactionLoop() {
 
 // checkAndCompact checks all datasets for compaction needs.
 func (w *CompactionWorker) checkAndCompact() {
-	// This would iterate over datasets in the store
-	// and trigger compaction where needed
-	// Implementation depends on store structure
+	w.store.IterateDatasets(func(name string, ds *Dataset) {
+		if ds.fragmentationTracker == nil {
+			return
+		}
+
+		// 1. Check for fragmented batches
+		fragmented := ds.fragmentationTracker.GetFragmentedBatches(w.config.MinFragmentationRatio)
+
+		// 2. Trigger if criteria met
+		if len(fragmented) >= w.config.MinBatchesToCompact {
+			w.Trigger(name)
+		}
+	})
 }
 
-func (w *CompactionWorker) compactDataset(_ string) {
+func (w *CompactionWorker) compactDataset(name string) {
+	ds, ok := w.store.getDataset(name)
+	if !ok {
+		return
+	}
+
 	defer func() {
 		if r := recover(); r != nil {
 			w.failedCompactions.Add(1)
+			w.store.logger.Error().Any("panic", r).Str("dataset", name).Msg("Compaction panic")
 		}
 	}()
 
 	w.mu.Lock()
 	w.lastCompaction = time.Now()
 	w.mu.Unlock()
+
+	// Implement Compaction with Move-to-Front strategy
+	// 1. Identify fragmented batches and hot batches
+	fragmentedIdxs := ds.fragmentationTracker.GetFragmentedBatches(w.config.MinFragmentationRatio)
+	hotIdxs := ds.fragmentationTracker.GetHotBatches(100) // Example threshold
+
+	if len(fragmentedIdxs) == 0 && len(hotIdxs) == 0 {
+		return
+	}
+
+	w.store.logger.Info().
+		Str("dataset", name).
+		Int("fragmented", len(fragmentedIdxs)).
+		Int("hot", len(hotIdxs)).
+		Msg("Starting fragmentation-aware compaction")
+
+	// 2. Perform actual compaction (Atomic swap of records)
+	// This is a complex operation that needs to be careful with RowLocations.
+	// For now, we delegate to a method on Dataset that handles the heavy lifting.
+	if err := ds.Compact(fragmentedIdxs, hotIdxs); err != nil {
+		w.failedCompactions.Add(1)
+		w.store.logger.Error().Err(err).Str("dataset", name).Msg("Compaction failed")
+		return
+	}
 
 	w.totalCompactions.Add(1)
 }

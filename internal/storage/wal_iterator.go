@@ -14,6 +14,8 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/golang/snappy"
+	"github.com/klauspost/compress/zstd"
+	"github.com/pierrec/lz4/v4"
 )
 
 // WALIterator iterators over WAL entries, supporting seeking by Sequence ID and snappy compression.
@@ -25,7 +27,8 @@ type WALIterator struct {
 	mu     sync.Mutex
 
 	// Support for compressed blocks
-	inner *bytes.Reader
+	inner   *bytes.Reader
+	zstdDec *zstd.Decoder
 }
 
 func NewWALIterator(dir string, mem memory.Allocator) (*WALIterator, error) {
@@ -162,10 +165,33 @@ func (it *WALIterator) nextLocked() (seq uint64, ts int64, name string, rec arro
 
 	// 3. Handle Compression Sentinel
 	if storedSum == 0xFFFFFFFF {
-		decompressed, err := snappy.Decode(nil, recBytes)
-		if err != nil {
-			return 0, 0, "", nil, fmt.Errorf("snappy decode: %w", err)
+		compType := byte(1)
+		if len(nameBytes) == 1 {
+			compType = nameBytes[0]
 		}
+
+		var decompressed []byte
+		var err error
+		switch compType {
+		case 1: // Snappy
+			decompressed, err = snappy.Decode(nil, recBytes)
+		case 2: // Zstd
+			if it.zstdDec == nil {
+				it.zstdDec, _ = zstd.NewReader(nil)
+			}
+			decompressed, err = it.zstdDec.DecodeAll(recBytes, nil)
+		case 3: // LZ4
+			rawSize := ts
+			decompressed = make([]byte, rawSize)
+			_, err = lz4.UncompressBlock(recBytes, decompressed)
+		default:
+			err = fmt.Errorf("unknown compression type: %d", compType)
+		}
+
+		if err != nil {
+			return 0, 0, "", nil, fmt.Errorf("decompress (type %d): %w", compType, err)
+		}
+
 		it.inner = bytes.NewReader(decompressed)
 		return it.nextLocked() // Recursive call to read first item from block
 	}
@@ -225,9 +251,31 @@ func (it *WALIterator) nextRawLocked() (seq uint64, ts int64, name string, recBy
 
 	// 3. Handle Compression Sentinel
 	if storedSum == 0xFFFFFFFF {
-		decompressed, err := snappy.Decode(nil, recBytes)
+		compType := byte(1)
+		if len(nameBytes) == 1 {
+			compType = nameBytes[0]
+		}
+
+		var decompressed []byte
+		var err error
+		switch compType {
+		case 1: // Snappy
+			decompressed, err = snappy.Decode(nil, recBytes)
+		case 2: // Zstd
+			if it.zstdDec == nil {
+				it.zstdDec, _ = zstd.NewReader(nil)
+			}
+			decompressed, err = it.zstdDec.DecodeAll(recBytes, nil)
+		case 3: // LZ4
+			rawSize := ts
+			decompressed = make([]byte, rawSize)
+			_, err = lz4.UncompressBlock(recBytes, decompressed)
+		default:
+			err = fmt.Errorf("unknown compression type: %d", compType)
+		}
+
 		if err != nil {
-			return 0, 0, "", nil, fmt.Errorf("snappy decode: %w", err)
+			return 0, 0, "", nil, fmt.Errorf("decompress (type %d): %w", compType, err)
 		}
 		it.inner = bytes.NewReader(decompressed)
 		return it.nextRawLocked() // Recursive call

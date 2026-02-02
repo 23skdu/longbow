@@ -3,7 +3,10 @@ package store
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
+	"encoding/gob"
 	"fmt"
+	"io"
 
 	"github.com/23skdu/longbow/internal/storage"
 	"github.com/apache/arrow-go/v18/arrow"
@@ -65,13 +68,42 @@ func (src *storeSnapshotSource) Iterate(yield func(storage.SnapshotItem) error) 
 
 		// Export Index Graph
 		if ds.Index != nil {
-			var graphBuf bytes.Buffer
-			if err := ds.Index.ExportGraph(&graphBuf); err == nil {
-				item.IndexConfig = graphBuf.Bytes()
+			if hnsw, ok := ds.Index.(*ArrowHNSW); ok {
+				// 1. Capture lightweight clone immediately
+				snap, meta, err := hnsw.SnapshotGraph()
+				if err != nil {
+					return fmt.Errorf("failed to snapshot index for %s: %w", name, err)
+				}
+
+				// 2. Set Writer Callback
+				// This writer will be invoked LATER in a background thread to serialize the clone.
+				item.IndexConfigWriter = func(w io.Writer) error {
+					// Serialize Metadata (SyncState)
+					var metaBuf bytes.Buffer
+					if err := gob.NewEncoder(&metaBuf).Encode(meta); err != nil {
+						return fmt.Errorf("failed to encode metadata: %w", err)
+					}
+					metaBytes := metaBuf.Bytes()
+
+					// Write Metadata Length + Bytes
+					if err := binary.Write(w, binary.LittleEndian, uint32(len(metaBytes))); err != nil {
+						return err
+					}
+					if _, err := w.Write(metaBytes); err != nil {
+						return err
+					}
+
+					// Serialize Graph Data
+					return snap.Serialize(w)
+				}
 			} else {
-				// We should probably log this error but currently we don't have logger here easily
-				// or return error. Return error is safer.
-				return fmt.Errorf("failed to export index graph for %s: %w", name, err)
+				// Fallback
+				var graphBuf bytes.Buffer
+				if err := ds.Index.ExportGraph(&graphBuf); err == nil {
+					item.IndexConfig = graphBuf.Bytes()
+				} else {
+					return fmt.Errorf("failed to export index graph for %s: %w", name, err)
+				}
 			}
 		}
 

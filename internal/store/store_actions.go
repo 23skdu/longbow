@@ -91,6 +91,7 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 					resp["reason"] = "index not initialized"
 				}
 				resp["index_len"] = ds.IndexLen()
+				resp["index_ready"] = ds.Index != nil
 			}
 		}
 
@@ -421,6 +422,50 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 			return status.Errorf(codes.Internal, "failed to marshal hybrid results: %v", err)
 		}
 		return stream.Send(&flight.Result{Body: body})
+
+	case "Compact":
+		var req struct {
+			Dataset string `json:"dataset"`
+		}
+		if err := json.Unmarshal(action.Body, &req); err != nil {
+			return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
+		}
+		if s.compactionWorker != nil {
+			s.compactionWorker.Trigger(req.Dataset)
+		}
+		return stream.Send(&flight.Result{Body: []byte("compaction_triggered")})
+
+	case "TieredOffload":
+		var req struct {
+			Dataset string `json:"dataset"`
+			MaxAge  string `json:"max_age"` // e.g., "1h"
+		}
+		if err := json.Unmarshal(action.Body, &req); err != nil {
+			return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
+		}
+		ds, ok := s.getDataset(req.Dataset)
+		if !ok {
+			return status.Errorf(codes.NotFound, "dataset %s not found", req.Dataset)
+		}
+		if ds.DiskStore == nil {
+			return status.Error(codes.FailedPrecondition, "dataset does not have a disk store")
+		}
+
+		maxAge, err := time.ParseDuration(req.MaxAge)
+		if err != nil {
+			return status.Errorf(codes.InvalidArgument, "invalid max_age: %v", err)
+		}
+
+		offloaded, err := ds.DiskStore.EnforcePolicy(stream.Context(), maxAge)
+		if err != nil {
+			return status.Errorf(codes.Internal, "offload failed: %v", err)
+		}
+
+		resp := map[string]any{
+			"offloaded_blocks": offloaded,
+		}
+		body, _ := json.Marshal(resp)
+		return stream.Send(&flight.Result{Body: body})
 	}
 	return status.Error(codes.Unimplemented, "unknown action type "+action.Type)
 }
@@ -449,7 +494,7 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 		return fmt.Errorf("missing flight descriptor path")
 	}
 
-	s.logger.Info().Str("name", name).Msg("DoPut started (Batched)")
+	s.logger.Info().Str("dataset", name).Msg("DoPut started (Batched)")
 	s.logger.Info().Str("schema", r.Schema().String()).Msg("DoPut Schema")
 
 	// Use RCU helper for create
@@ -464,7 +509,7 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 			dim := 0
 			// Manual find vector column from schema
 			for _, f := range r.Schema().Fields() {
-				if f.Name == "vector" {
+				if f.Name == "vector" || f.Name == "embedding" {
 					if fst, ok := f.Type.(*arrow.FixedSizeListType); ok {
 						dim = int(fst.Len())
 						break
@@ -641,6 +686,7 @@ func (s *VectorStore) flushPutBatch(ctx context.Context, ds *Dataset, batch []ar
 		return nil
 	}
 	name := ds.Name
+	s.logger.Info().Str("dataset", name).Int("batch_size", len(batch)).Msg("Flushing put batch")
 
 	// 1. Enqueue to Persistence Queue (Async WAL) & Ingestion Queue (Async Indexing)
 	// We do this in parallel or sequentially.
@@ -831,7 +877,7 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 	if ds.DiskStore != nil {
 		vecColIdx := -1
 		for i, f := range rec.Schema().Fields() {
-			if f.Name == "vector" {
+			if f.Name == "vector" || f.Name == "embedding" {
 				vecColIdx = i
 				break
 			}
@@ -853,6 +899,7 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 
 	// Lazy Index Initialization
 	if ds.Index == nil {
+		s.logger.Info().Str("dataset", name).Msg("Attempting lazy index initialization")
 		config := s.autoShardingConfig
 		if config.ShardThreshold == 0 {
 			config.ShardThreshold = 10000
@@ -861,8 +908,15 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 		}
 
 		// Infer DataType from the FIRST record
-		dataType := InferVectorDataType(rec.Schema(), "vector")
-		s.logger.Info().Str("dataset", name).Str("dataType", dataType.String()).Msg("Inferred vector data type for new index")
+		vecColName := "vector"
+		for _, f := range rec.Schema().Fields() {
+			if f.Name == "vector" || f.Name == "embedding" {
+				vecColName = f.Name
+				break
+			}
+		}
+		dataType := InferVectorDataType(rec.Schema(), vecColName)
+		s.logger.Info().Str("dataset", name).Str("dataType", dataType.String()).Str("column", vecColName).Msg("Inferred vector data type for new index")
 
 		if config.IndexConfig == nil {
 			hnswCfg := DefaultArrowHNSWConfig()

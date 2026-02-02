@@ -11,6 +11,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/parquet-go/parquet-go"
+	"github.com/parquet-go/parquet-go/compress"
 )
 
 // VectorRecord represents a single row for Parquet serialization
@@ -21,12 +22,22 @@ type VectorRecord struct {
 
 // writeParquet writes one or more Arrow records to a Parquet writer.
 // It uses a single parquet.Writer to ensure a valid file with one footer.
-func writeParquet(w io.Writer, records ...arrow.RecordBatch) error {
+func writeParquet(w io.Writer, compression string, records ...arrow.RecordBatch) error {
 	if len(records) == 0 {
 		return nil
 	}
 
-	pw := parquet.NewGenericWriter[VectorRecord](w, parquet.Compression(&parquet.Zstd))
+	var codec compress.Codec
+	switch compression {
+	case "lz4":
+		codec = &parquet.Lz4Raw
+	case "uncompressed", "none":
+		codec = &parquet.Uncompressed
+	default:
+		codec = &parquet.Zstd
+	}
+
+	pw := parquet.NewGenericWriter[VectorRecord](w, parquet.Compression(codec))
 	defer func() {
 		// Best effort close on early return
 		_ = pw.Close()
@@ -228,8 +239,17 @@ type GraphEdgeRecord struct {
 }
 
 // writeGraphParquet writes a Graph Arrow record to a Parquet writer
-func writeGraphParquet(w io.Writer, rec arrow.RecordBatch) error {
-	pw := parquet.NewGenericWriter[GraphEdgeRecord](w, parquet.Compression(&parquet.Zstd))
+func writeGraphParquet(w io.Writer, compression string, rec arrow.RecordBatch) error {
+	var codec compress.Codec
+	switch compression {
+	case "lz4":
+		codec = &parquet.Lz4Raw
+	case "uncompressed", "none":
+		codec = &parquet.Uncompressed
+	default:
+		codec = &parquet.Zstd
+	}
+	pw := parquet.NewGenericWriter[GraphEdgeRecord](w, parquet.Compression(codec))
 
 	rows := int(rec.NumRows())
 	subjCol := rec.Column(0).(*array.Uint32)

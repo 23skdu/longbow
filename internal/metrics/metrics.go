@@ -110,6 +110,11 @@ var (
 		Help: "Total number of batches merged during compaction",
 	}, []string{"dataset"})
 
+	CompactionRunsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "longbow_compaction_runs_total",
+		Help: "Total number of compaction runs performed",
+	}, []string{"dataset"})
+
 	// Warmup Metrics
 	WarmupProgressPercent = promauto.NewGauge(
 		prometheus.GaugeOpts{

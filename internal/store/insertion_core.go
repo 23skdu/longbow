@@ -21,7 +21,20 @@ func (h *ArrowHNSW) Insert(id uint32, level int) error {
 	if err != nil {
 		return err
 	}
-	return h.InsertWithVector(id, vec, level)
+	err = h.InsertWithVector(id, vec, level)
+	if err == nil {
+		// Update nodeCount if we're adding a new node at the end
+		for {
+			current := h.nodeCount.Load()
+			if int64(id) < current {
+				break
+			}
+			if h.nodeCount.CompareAndSwap(current, int64(id+1)) {
+				break
+			}
+		}
+	}
+	return err
 }
 
 // InsertWithVector inserts a vector that has already been retrieved.
@@ -228,7 +241,7 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 		// First node ever
 		h.maxLevel.Store(int32(level))
 		h.entryPoint.Store(id)
-		h.nodeCount.Add(1)
+		// Removed: h.nodeCount.Add(1) - incremented in caller
 		return nil // No one to link to
 	}
 	startL := min(level, maxL)
@@ -279,7 +292,7 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 		h.entryPoint.Store(id)
 	}
 
-	h.nodeCount.Add(1)
+	// Removed: h.nodeCount.Add(1) - incremented in caller
 
 	return nil
 }

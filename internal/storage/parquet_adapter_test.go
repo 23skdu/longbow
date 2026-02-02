@@ -50,7 +50,7 @@ func TestParquetRoundTrip_BasicIntegrity(t *testing.T) {
 		t.Fatalf("Failed to create file: %v", err)
 	}
 
-	if err := writeParquet(f, rec); err != nil {
+	if err := writeParquet(f, "zstd", rec); err != nil {
 		_ = f.Close()
 		t.Fatalf("writeParquet failed: %v", err)
 	}
@@ -129,7 +129,7 @@ func TestParquetRoundTrip_SchemaPreservation(t *testing.T) {
 
 			path := filepath.Join(tmpDir, tc.name+".parquet")
 			f, _ := os.Create(path)
-			if err := writeParquet(f, rec); err != nil {
+			if err := writeParquet(f, "zstd", rec); err != nil {
 				_ = f.Close()
 				t.Fatalf("writeParquet failed: %v", err)
 			}
@@ -184,7 +184,7 @@ func TestParquetRoundTrip_LargeDataset(t *testing.T) {
 		t.Fatalf("Failed to create file: %v", err)
 	}
 
-	if err := writeParquet(f, rec); err != nil {
+	if err := writeParquet(f, "zstd", rec); err != nil {
 		_ = f.Close()
 		t.Fatalf("writeParquet failed: %v", err)
 	}
@@ -244,7 +244,7 @@ func TestParquetCorruptedFile_Recovery(t *testing.T) {
 
 		path := filepath.Join(tmpDir, "truncated.parquet")
 		f, _ := os.Create(path)
-		_ = writeParquet(f, rec)
+		_ = writeParquet(f, "zstd", rec)
 		_ = f.Close()
 
 		// Truncate file to corrupt it
@@ -282,7 +282,7 @@ func TestParquetCorruptedFile_Recovery(t *testing.T) {
 
 		path := filepath.Join(tmpDir, "corrupted_middle.parquet")
 		f, _ := os.Create(path)
-		_ = writeParquet(f, rec)
+		_ = writeParquet(f, "zstd", rec)
 		_ = f.Close()
 
 		// Corrupt middle of file
@@ -317,7 +317,7 @@ func TestParquetRoundTrip_EmptyRecord(t *testing.T) {
 	f, _ := os.Create(path)
 
 	// Write empty record - may succeed or fail, both are acceptable
-	err := writeParquet(f, rec)
+	err := writeParquet(f, "zstd", rec)
 	_ = f.Close()
 
 	if err != nil {
@@ -352,7 +352,7 @@ func TestParquetWriteToBuffer(t *testing.T) {
 	defer rec.Release()
 
 	var buf bytes.Buffer
-	err := writeParquet(&buf, rec)
+	err := writeParquet(&buf, "zstd", rec)
 	if err != nil {
 		t.Fatalf("writeParquet to buffer failed: %v", err)
 	}

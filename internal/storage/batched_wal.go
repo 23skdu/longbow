@@ -17,6 +17,8 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/golang/snappy"
+	"github.com/klauspost/compress/zstd"
+	"github.com/pierrec/lz4/v4"
 )
 
 // WALEntry represents a single entry to be written to the WAL
@@ -29,13 +31,14 @@ type WALEntry struct {
 
 // WALBatcherConfig configures the batched WAL writer
 type WALBatcherConfig struct {
-	FlushInterval  time.Duration     // Time between flushes (e.g., 10ms)
-	MaxBatchSize   int               // Max entries before forced flush (e.g., 100)
-	Adaptive       AdaptiveWALConfig // Adaptive batching configuration
-	AsyncFsync     AsyncFsyncConfig  // Async fsync configuration
-	UseIOUring     bool              // Use io_uring backend if available
-	UseDirectIO    bool              // Use Direct I/O if available
-	WALCompression bool              // Enable Snappy block compression
+	FlushInterval      time.Duration     // Time between flushes (e.g., 10ms)
+	MaxBatchSize       int               // Max entries before forced flush (e.g., 100)
+	Adaptive           AdaptiveWALConfig // Adaptive batching configuration
+	AsyncFsync         AsyncFsyncConfig  // Async fsync configuration
+	UseIOUring         bool              // Use io_uring backend if available
+	UseDirectIO        bool              // Use Direct I/O if available
+	WALCompression     bool              // Enable block compression
+	WALCompressionType string            // "snappy", "zstd", "lz4"
 }
 
 // DefaultWALBatcherConfig returns sensible defaults
@@ -71,6 +74,7 @@ type WALBatcher struct {
 	intervalCalc *AdaptiveIntervalCalculator // Adaptive: calculates intervals
 	asyncFsyncer *AsyncFsyncer               // Async: background fsync handler
 	flushBuf     bytes.Buffer                // Reused buffer for flush serialization
+	zstdEnc      *zstd.Encoder               // Zstd encoder
 }
 
 // compressBufPool is a global pool for compression buffers
@@ -102,6 +106,10 @@ func NewWALBatcher(dataPath string, config *WALBatcherConfig) *WALBatcher {
 		w.rateTracker = NewWriteRateTracker(1 * time.Second)
 		w.intervalCalc = NewAdaptiveIntervalCalculator(config.Adaptive)
 	}
+
+	z, _ := zstd.NewWriter(nil)
+	w.zstdEnc = z
+
 	// Initialize async fsyncer if enabled
 	if config.AsyncFsync.Enabled {
 		w.asyncFsyncer = NewAsyncFsyncer(config.AsyncFsync)
@@ -282,8 +290,6 @@ func (w *WALBatcher) flush() {
 	// We will serialize all entries into a buffer, then compress that buffer,
 	// then write a SINGLE header for the compressed block.
 
-	var payload []byte
-
 	if w.config.WALCompression {
 		// 1. Serialize all entries to a temporary buffer
 		// Reuse a buffer from the pool for the raw batch
@@ -305,46 +311,48 @@ func (w *WALBatcher) flush() {
 		}
 
 		// 2. Compress the raw batch
-		// MaxEncodedLen ensures we have enough space
 		src := rawBatch.Bytes()
-		maxLen := snappy.MaxEncodedLen(len(src))
 
-		// Get a buffer from the pool
-		compressBufPtr := compressBufPool.Get().(*[]byte)
-		compressBuf := *compressBufPtr
+		var payload []byte
+		compType := byte(1) // 1: Snappy, 2: Zstd, 3: LZ4
 
-		// Ensure buffer is large enough
-		if cap(compressBuf) < maxLen {
-			compressBuf = make([]byte, 0, maxLen)
+		switch w.config.WALCompressionType {
+		case "zstd":
+			payload = w.zstdEnc.EncodeAll(src, nil)
+			compType = 2
+		case "lz4":
+			maxLen := lz4.CompressBlockBound(len(src))
+			compressed := make([]byte, maxLen)
+			n, err := lz4.CompressBlock(src, compressed, nil)
+			if err != nil {
+				w.handleFlushError(err)
+				return
+			}
+			payload = compressed[:n]
+			compType = 3
+		default:
+			// Snappy
+			maxLen := snappy.MaxEncodedLen(len(src))
+			compressBufPtr := compressBufPool.Get().(*[]byte)
+			compressBuf := *compressBufPtr
+			if cap(compressBuf) < maxLen {
+				compressBuf = make([]byte, 0, maxLen)
+			}
+			payload = snappy.Encode(compressBuf[:0], src)
+			*compressBufPtr = payload
+			defer compressBufPool.Put(compressBufPtr)
+			compType = 1
 		}
 
-		// Compress into the buffer
-		dest := snappy.Encode(compressBuf[:0], src)
-		payload = dest
-
-		// Return buffer to pool (store the potentially grown buffer)
-		*compressBufPtr = dest
-		defer compressBufPool.Put(compressBufPtr)
-
 		// 3. Construct Compressed Block Header
-		// Checksum = 0xFFFFFFFF (Sentinel)
-		// Seq = maxSeq in batch (to update flushedSeq correctly during replay if needed, though replay usually uses entry seqs)
-		// We use the LAST entry's sequence for the block header.
 		lastSeq := batch[len(batch)-1].Seq
 
-		// Header fields:
-		// Checksum: Sentinel
-		// Seq: LastSeq
-		// Ts: 0 (unused)
-		// NameLen: 1 (Compression Type: 1=Snappy)
-		// RecLen: len(payload)
-
 		var header [32]byte
-		encodeWALEntryHeader(header[:], 0xFFFFFFFF, lastSeq, 0, 1, uint64(len(payload)))
+		encodeWALEntryHeader(header[:], 0xFFFFFFFF, lastSeq, int64(len(src)), 1, uint64(len(payload)))
 
 		w.flushBuf.Write(header[:])
-		w.flushBuf.Write([]byte{1}) // Name (Type=1)
-		w.flushBuf.Write(payload)   // Record (Compressed Data)
+		w.flushBuf.Write([]byte{compType}) // Name (Type)
+		w.flushBuf.Write(payload)          // Record (Compressed Data)
 
 	} else {
 		// Uncompressed: Serialize each entry directly to flushBuf

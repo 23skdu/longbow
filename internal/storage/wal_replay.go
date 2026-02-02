@@ -15,6 +15,8 @@ import (
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"github.com/golang/snappy"
+	"github.com/klauspost/compress/zstd"
+	"github.com/pierrec/lz4/v4"
 	"github.com/rs/zerolog/log"
 )
 
@@ -224,15 +226,29 @@ func (e *StorageEngine) walDecoderRoutine(in <-chan rawWALBlock, out chan<- deco
 
 		if isCompressed {
 			// Handle Compressed Block
-			if len(block.name) != 1 || block.name[0] != 1 {
-				// Type 1 = Snappy Default
+			if len(block.name) != 1 {
 				continue
 			}
+			compType := block.name[0]
 
-			// Decompress
-			decompressed, err := snappy.Decode(nil, block.recBytes)
+			var decompressed []byte
+			var err error
+			switch compType {
+			case 1: // Snappy
+				decompressed, err = snappy.Decode(nil, block.recBytes)
+			case 2: // Zstd
+				decoder, _ := zstd.NewReader(nil)
+				decompressed, err = decoder.DecodeAll(block.recBytes, nil)
+			case 3: // LZ4
+				rawSize := block.ts
+				decompressed = make([]byte, rawSize)
+				_, err = lz4.UncompressBlock(block.recBytes, decompressed)
+			default:
+				err = fmt.Errorf("unknown compression type: %d", compType)
+			}
+
 			if err != nil {
-				log.Warn().Err(err).Msg("ReplayWAL: failed to decompress block")
+				log.Warn().Err(err).Uint32("type", uint32(compType)).Msg("ReplayWAL: failed to decompress block")
 				continue
 			}
 

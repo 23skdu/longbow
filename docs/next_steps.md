@@ -1,15 +1,18 @@
 # Longbow Development Roadmap: I/O & Storage Optimization
 
-**Objective**: Maximize system throughput and minimize latency by optimizing the I/O path, storage formats, and memory management strategies.
+**Objective**: Maximize system throughput and minimize latency by optimizing the I/O path,
+storage formats, and memory management strategies.
 
 ---
 
 ## 🚀 Phase 1: I/O & Throughput Optimization (10-Part Plan)
 
 1. **Baseline I/O Benchmarking** [COMPLETED]
-    * **Goal**: Establish a trusted baseline for current disk I/O performance during high-ingestion and concurrent search scenarios.
+    * **Goal**: Establish a trusted baseline for current disk I/O performance
+      during high-ingestion and concurrent search scenarios.
     * **Tasks**:
-        * [x] Create a specialized benchmark suite (`cmd/bench_io`) to measure raw IOPS and throughput for WAL writes and Index reads.
+        * [x] Create a specialized benchmark suite (`cmd/bench_io`) to measure raw IOPS
+          and throughput for WAL writes and Index reads.
         * [x] Profile current `fsync` patterns and latency distribution.
         * [x] Measure "Time to First Byte" for cold index loading.
 
@@ -31,43 +34,47 @@
     * **Goal**: Reduce memory overhead and copy costs for large datasets.
     * **Tasks**:
         * [x] Audit `ArrowHNSW` and `DiskGraph` to ensure full zero-copy access where possible (Confirmed).
-        * [x] Implement `madvise` hints (e.g., `MADV_RANDOM` vs `MADV_SEQUENTIAL`) based on access patterns (Implemented in `DiskGraph`).
+        * [x] Implement `madvise` hints (e.g., `MADV_RANDOM` vs `MADV_SEQUENTIAL`)
+          based on access patterns (Implemented in `DiskGraph`).
         * [x] Benchmark mmap vs. direct `read()` for different graph sizes (Mmap is 8x faster).
 
-5. **Concurrent & Non-Blocking Checkpointing**
+5. **Concurrent & Non-Blocking Checkpointing** [COMPLETED]
     * **Goal**: Eliminate "stop-the-world" pauses during disk snapshots.
     * **Tasks**:
-        * Implement a Copy-On-Write (COW) snapshotting mechanism for the HNSW graph.
-        * Refactor `GraphStore` to perform serialization on a background thread without blocking readers or writers.
-        * Rate-limit disk flushes to prevent I/O saturation during checkpoints.
+        * [x] Implement a Copy-On-Write (COW) snapshotting mechanism for the HNSW graph (Implemented via `CloneForSnapshot`).
+        * [x] Refactor `GraphStore` to perform serialization on a background thread without
+          blocking readers or writers (Implemented via `SnapshotGraph` and `IndexConfigWriter` stream).
+        * [x] Rate-limit disk flushes to prevent I/O saturation during checkpoints (Implemented via `RateLimitedWriter`).
 
-6. **Vector Compression & Encoding**
+6. **Vector Compression & Encoding** [COMPLETED]
     * **Goal**: Reduce disk footprint and increase effective I/O bandwidth.
     * **Tasks**:
-        * Implement block-level compression (Zstd, LZ4) for the `DiskStore`.
-        * Evaluate delta-encoding for HNSW adjacency lists (neighbor IDs are often close).
-        * Benchmark decompression overhead vs. I/O savings.
+        * [x] Implement block-level compression (Zstd, LZ4) for the `DiskStore` (Implemented in `DiskVectorStore` with "VCMP" format).
+        * [x] Add configurable compression for Parquet snapshots (Zstd default, LZ4 supported).
+        * [x] Evaluate delta-encoding for HNSW adjacency lists (Implemented in `DiskGraph` v4 via Varint+Delta).
 
-7. **Async/Direct I/O (io_uring)**
+7. **Async/Direct I/O (io_uring)** [COMPLETED]
     * **Goal**: Maximize NVMe utilization and reduce syscall overhead.
     * **Tasks**:
-        * Prototype an `io_uring` backend for the `DiskStore` (Linux only).
-        * Implement vectored I/O (`readv`/`writev`) for batched vector retrievals.
-        * Compare performance against standard Go `os.File` operations.
+        * [x] Prototype an `io_uring` backend for the `DiskStore` (Implemented in `storage.UringStorageBackend`).
+        * [x] Implement vectored I/O (`readv`/`writev`) for batched vector retrievals (Implemented in `DiskVectorStore.GetBatch`).
+        * [x] Compare performance against standard Go `os.File` operations (Verified via `BenchmarkDiskVectorStore_Read`).
 
-8. **Fragmentation-Aware Compaction**
+8. **Fragmentation-Aware Compaction** [COMPLETED]
     * **Goal**: Maintain sequential I/O patterns over time.
     * **Tasks**:
-        * Enhance the `FragmentationTracker` to trigger compaction based on "read amplification" metrics, not just deleted ratio.
-        * Implement a "Move-to-Front" or equivalent strategy for frequently accessed hot vectors during compaction.
-        * Visualise disk layout fragmentation.
+        * [x] Enhance the `FragmentationTracker` to trigger compaction based on
+          "read amplification" metrics, not just deleted ratio.
+        * [x] Implement a "Move-to-Front" strategy for frequently accessed hot vectors
+          during compaction (Implemented in `Dataset.Compact`).
+        * [x] Visualise disk layout fragmentation (Implemented in `Dataset.VisualizeLayout`).
 
-9. **Tiered Storage Policies**
-    * **Goal**: optimize cost/performance by moving cold data to cheaper storage.
+9. **Tiered Storage Policies** [COMPLETED]
+    * **Goal**: Optimize cost/performance by moving cold data to cheaper storage.
     * **Tasks**:
-        * Implement a default `HotWarm` policy: Keep Index in RAM/NVMe, offload raw Vector content to S3/BlobStore after N days/hours.
-        * Implement transparent fetching of "warm" vectors from remote storage during search.
-        * Add caching layer (LRU) for remote fetched vectors.
+        * [x] Implement a default `HotWarm` policy: Age-based offloading of raw Vector content to remote storage.
+        * [x] Implement transparent fetching of "warm" vectors from remote storage during search (Implemented in `DiskVectorStore.fetchBlockData`).
+        * [x] Add caching layer (LRU) for remote fetched vectors (Implemented in `storage.LRUCache`).
 
 10. **Load Testing & Chaos Validation**
     * **Goal**: Prove reliability under saturation.

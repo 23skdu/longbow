@@ -22,6 +22,7 @@ type FragmentationTracker struct {
 type batchFragmentation struct {
 	size      atomic.Int64 // Total records in batch
 	deletions atomic.Int64 // Deleted records count
+	hits      atomic.Int64 // Number of accesses (for hot/cold tracking)
 }
 
 // NewFragmentationTracker creates a new fragmentation tracker
@@ -63,6 +64,15 @@ func (f *FragmentationTracker) RecordDeletion(batchIdx int) {
 	f.updateMetrics(batchIdx, batch)
 }
 
+// RecordAccess records an access (hit) for vectors in this batch
+func (f *FragmentationTracker) RecordAccess(batchIdx int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	batch := f.getOrCreateBatch(batchIdx)
+	batch.hits.Add(1)
+}
+
 // GetDensity returns the tombstone density for a batch (0.0 to 1.0)
 func (f *FragmentationTracker) GetDensity(batchIdx int) float64 {
 	f.mu.RLock()
@@ -89,7 +99,7 @@ func (f *FragmentationTracker) GetDensity(batchIdx int) float64 {
 	return density
 }
 
-// GetFragmentedBatches returns batch indices where density >= threshold
+// GetFragmentedBatches returns batch indices where density >= threshold or read amplification is high
 func (f *FragmentationTracker) GetFragmentedBatches(threshold float64) []int {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
@@ -98,7 +108,16 @@ func (f *FragmentationTracker) GetFragmentedBatches(threshold float64) []int {
 
 	for batchIdx := range f.batches {
 		density := f.getDensityLocked(batchIdx)
-		if density >= threshold {
+		// Read Amplification Factor: 1 / (1 - density)
+		// If density is 0.5 (50% deleted), we read 2x as much data as needed.
+		// If density is 0.8, we read 5x as much data.
+		readAmp := 1.0
+		if density < 1.0 {
+			readAmp = 1.0 / (1.0 - density)
+		}
+
+		// Threshold for read amplification (e.g., 2.0x)
+		if density >= threshold || readAmp >= 2.0 {
 			fragmented = append(fragmented, batchIdx)
 		}
 	}
@@ -107,6 +126,20 @@ func (f *FragmentationTracker) GetFragmentedBatches(threshold float64) []int {
 	metrics.CompactionFragmentedBatches.WithLabelValues(f.datasetName).Set(float64(len(fragmented)))
 
 	return fragmented
+}
+
+// GetHotBatches returns batch indices that are frequently accessed
+func (f *FragmentationTracker) GetHotBatches(minHits int64) []int {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+
+	hot := []int{}
+	for batchIdx, batch := range f.batches {
+		if batch.hits.Load() >= minHits {
+			hot = append(hot, batchIdx)
+		}
+	}
+	return hot
 }
 
 // Reset resets the fragmentation tracking for a batch (e.g., after compaction)
@@ -123,6 +156,13 @@ func (f *FragmentationTracker) Reset(batchIdx int) {
 
 	// Update metrics
 	f.updateMetrics(batchIdx, batch)
+}
+
+// ResetAll resets tracking for all batches
+func (f *FragmentationTracker) ResetAll() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.batches = make(map[int]*batchFragmentation)
 }
 
 // getOrCreateBatch gets or creates a batch fragmentation tracker (must hold lock)

@@ -24,7 +24,7 @@ func TestParquetCompression_IsZSTD(t *testing.T) {
 		t.Fatalf("Failed to create file: %v", err)
 	}
 
-	if err := writeParquet(f, rec); err != nil {
+	if err := writeParquet(f, "zstd", rec); err != nil {
 		_ = f.Close()
 		t.Fatalf("writeParquet failed: %v", err)
 	}

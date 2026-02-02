@@ -1,7 +1,9 @@
 package storage
 
 import (
+	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sync"
@@ -20,13 +22,16 @@ const (
 
 // StorageConfig holds configuration for persistence
 type StorageConfig struct {
-	DataPath         string
-	SnapshotInterval time.Duration
-	AsyncFsync       bool
-	DoPutBatchSize   int
-	UseIOUring       bool
-	UseDirectIO      bool
-	WALCompression   bool
+	DataPath            string
+	SnapshotInterval    time.Duration
+	AsyncFsync          bool
+	DoPutBatchSize      int
+	UseIOUring          bool
+	UseDirectIO         bool
+	WALCompression      bool
+	WALCompressionType  string // "snappy", "zstd", "lz4". Default "snappy".
+	SnapshotRateLimit   int    // Bytes per second. 0 = unlimited.
+	SnapshotCompression string // "zstd", "lz4", "uncompressed". Default "zstd".
 }
 
 // StorageEngine manages the persistence layer (WAL and Snapshots).
@@ -76,6 +81,7 @@ func (e *StorageEngine) InitWAL() error {
 	batcherCfg.UseIOUring = e.config.UseIOUring
 	batcherCfg.UseDirectIO = e.config.UseDirectIO
 	batcherCfg.WALCompression = e.config.WALCompression
+	batcherCfg.WALCompressionType = e.config.WALCompressionType
 
 	e.walBatcher = NewWALBatcher(e.dataPath, &batcherCfg)
 	if err := e.walBatcher.Start(); err != nil {
@@ -132,11 +138,16 @@ type ApplierFunc func(name string, rec arrow.RecordBatch, seq uint64, ts int64) 
 
 // SnapshotItem represents a dataset snapshot.
 type SnapshotItem struct {
-	Name         string
-	Records      []arrow.RecordBatch
-	GraphRecords []arrow.RecordBatch
-	PQCodebook   []byte
-	IndexConfig  []byte
+	Name             string
+	Records          []arrow.RecordBatch
+	GraphRecords     []arrow.RecordBatch
+	PQCodebook       []byte
+	IndexConfigIndex int // Deprecated or internal? No, IndexConfig is []byte.
+	IndexConfig      []byte
+
+	// IndexConfigWriter is a callback to stream index config directly to the output.
+	// If set, recursive buffering is avoided.
+	IndexConfigWriter func(io.Writer) error
 
 	// OnSnapshot is a callback to handle custom snapshot logic (e.g. large file streaming)
 	// It is called with the active snapshot backend if one is configured.
@@ -211,6 +222,7 @@ func (e *StorageEngine) Snapshot(source SnapshotSource) error {
 		batcherCfg.UseIOUring = e.config.UseIOUring
 		batcherCfg.UseDirectIO = e.config.UseDirectIO
 		batcherCfg.WALCompression = e.config.WALCompression
+		batcherCfg.WALCompressionType = e.config.WALCompressionType
 
 		e.walBatcher = NewWALBatcher(e.dataPath, &batcherCfg)
 		if err := e.walBatcher.Start(); err != nil {
@@ -223,6 +235,13 @@ func (e *StorageEngine) Snapshot(source SnapshotSource) error {
 }
 
 func (e *StorageEngine) writeSnapshotItem(item *SnapshotItem, tempDir string) error {
+	limit := e.config.SnapshotRateLimit
+	ctx := context.Background()
+
+	getWriter := func(f *os.File) io.Writer {
+		return NewRateLimitedWriter(f, limit, ctx)
+	}
+
 	// Write Data Records
 	if len(item.Records) > 0 {
 		path := filepath.Join(tempDir, item.Name+".parquet")
@@ -230,7 +249,16 @@ func (e *StorageEngine) writeSnapshotItem(item *SnapshotItem, tempDir string) er
 		if err != nil {
 			return fmt.Errorf("failed to create record parquet: %w", err)
 		}
-		if err := writeParquet(f, item.Records...); err != nil {
+
+		w := getWriter(f)
+
+		// Use configured compression
+		compression := e.config.SnapshotCompression
+		if compression == "" {
+			compression = "zstd" // Default
+		}
+
+		if err := writeParquet(w, compression, item.Records...); err != nil {
 			if closeErr := f.Close(); closeErr != nil {
 				log.Error().Err(closeErr).Msg("failed to close parquet file on write error")
 			}
@@ -249,8 +277,15 @@ func (e *StorageEngine) writeSnapshotItem(item *SnapshotItem, tempDir string) er
 		if err != nil {
 			return fmt.Errorf("failed to create graph parquet: %w", err)
 		}
+
+		w := getWriter(f)
+		compression := e.config.SnapshotCompression
+		if compression == "" {
+			compression = "zstd"
+		}
+
 		for _, rec := range item.GraphRecords {
-			if err := writeGraphParquet(f, rec); err != nil {
+			if err := writeGraphParquet(w, compression, rec); err != nil {
 				if closeErr := f.Close(); closeErr != nil {
 					log.Error().Err(closeErr).Msg("failed to close graph parquet file on write error")
 				}
@@ -271,10 +306,30 @@ func (e *StorageEngine) writeSnapshotItem(item *SnapshotItem, tempDir string) er
 	}
 
 	// Write Config
-	if len(item.IndexConfig) > 0 {
+	if len(item.IndexConfig) > 0 || item.IndexConfigWriter != nil {
 		path := filepath.Join(tempDir, item.Name+".config")
-		if err := os.WriteFile(path, item.IndexConfig, 0o644); err != nil {
-			return fmt.Errorf("failed to write index config: %w", err)
+		f, err := os.Create(path)
+		if err != nil {
+			return fmt.Errorf("failed to create index config file: %w", err)
+		}
+
+		w := getWriter(f)
+
+		// Priority: Writer > Bytes
+		if item.IndexConfigWriter != nil {
+			if err := item.IndexConfigWriter(w); err != nil {
+				_ = f.Close()
+				return fmt.Errorf("failed to sync index config: %w", err)
+			}
+		} else if len(item.IndexConfig) > 0 {
+			if _, err := w.Write(item.IndexConfig); err != nil {
+				_ = f.Close()
+				return fmt.Errorf("failed to write index config: %w", err)
+			}
+		}
+
+		if err := f.Close(); err != nil {
+			return fmt.Errorf("failed to close index config file: %w", err)
 		}
 	}
 	return nil

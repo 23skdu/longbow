@@ -629,3 +629,10 @@ func (a *AutoShardingIndex) SetParallelSearchConfig(cfg types.ParallelSearchConf
 		a.interimIndex.SetParallelSearchConfig(cfg)
 	}
 }
+
+// RemapLocations implements VectorIndex.
+func (a *AutoShardingIndex) RemapLocations(ctx context.Context, mapping map[uint32]any) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.current.RemapLocations(ctx, mapping)
+}

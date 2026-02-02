@@ -543,7 +543,7 @@ func (h *ArrowHNSW) DeleteBatch(ctx context.Context, ids []uint32) error {
 
 // Interface implementation: AddByLocation adds a vector by its location
 func (h *ArrowHNSW) AddByLocation(ctx context.Context, batchIdx, rowIdx int) (uint32, error) {
-	id := uint32(h.nodeCount.Load())
+	id := uint32(h.nodeCount.Add(1) - 1)
 
 	var vec any
 	if h.dataset != nil && batchIdx < len(h.dataset.Records) {
@@ -573,7 +573,7 @@ func (h *ArrowHNSW) AddByLocation(ctx context.Context, batchIdx, rowIdx int) (ui
 
 // AddByRecord implements VectorIndex.
 func (h *ArrowHNSW) AddByRecord(ctx context.Context, rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32, error) {
-	id := uint32(h.nodeCount.Load())
+	id := uint32(h.nodeCount.Add(1) - 1)
 
 	var vec any
 	// Find vector column
@@ -800,9 +800,7 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 		duration := time.Since(start).Seconds()
 		metrics.HNSWSearchDurationSeconds.Observe(duration)
 
-		var typeLabel string
-		// Infer type from data type config if queryVec is generic
-		typeLabel = h.config.DataType.String()
+		typeLabel := h.config.DataType.String()
 		dimsStr := strconv.Itoa(int(h.dims.Load()))
 		metrics.HNSWSearchOpsTotal.WithLabelValues(h.name, typeLabel, dimsStr).Inc()
 
@@ -1482,25 +1480,64 @@ func (h *ArrowHNSW) ImportState(data []byte) error {
 }
 
 // ExportGraph implements VectorIndex.
-func (h *ArrowHNSW) ExportGraph(w io.Writer) error {
+// SnapshotGraph captures the current graph state for serialization.
+// It returns a copy-on-write snapshot that is safe to serialize concurrently with updates.
+func (h *ArrowHNSW) SnapshotGraph() (*types.GraphData, *types.SyncState, error) {
 	h.growMu.RLock()
 	defer h.growMu.RUnlock()
 
 	data := h.data.Load()
 	if data == nil {
-		return fmt.Errorf("no graph data to export")
+		return nil, nil, fmt.Errorf("no graph data to snapshot")
 	}
 
-	// 1. Export Metadata (Locations, Dims) via SyncState
+	snap := data.CloneForSnapshot()
+
 	locs := make([]Location, 0, h.locationStore.Len())
 	h.locationStore.IterateMutable(func(_ VectorID, val *atomic.Uint64) {
 		loc := core.UnpackLocation(val.Load())
 		locs = append(locs, loc)
 	})
 
-	state := types.SyncState{
+	state := &types.SyncState{
 		Version:   1,
 		Dims:      int(h.dims.Load()),
+		Locations: locs,
+	}
+
+	return snap, state, nil
+}
+
+// ExportGraph implements VectorIndex.
+func (h *ArrowHNSW) ExportGraph(w io.Writer) error {
+	// 1. Capture Snapshot + Metadata
+	var snapshot *types.GraphData
+	locs := make([]Location, 0, h.locationStore.Len())
+	var dims int
+
+	// Inline lock scope
+	func() {
+		h.growMu.RLock()
+		defer h.growMu.RUnlock()
+
+		if data := h.data.Load(); data != nil {
+			snapshot = data.CloneForSnapshot()
+		}
+
+		h.locationStore.IterateMutable(func(_ VectorID, val *atomic.Uint64) {
+			loc := core.UnpackLocation(val.Load())
+			locs = append(locs, loc)
+		})
+		dims = int(h.dims.Load())
+	}()
+
+	if snapshot == nil {
+		return fmt.Errorf("no graph data to export")
+	}
+
+	state := types.SyncState{
+		Version:   1,
+		Dims:      dims,
 		Locations: locs,
 	}
 
@@ -1519,8 +1556,8 @@ func (h *ArrowHNSW) ExportGraph(w io.Writer) error {
 		return err
 	}
 
-	// 2. Export GraphData
-	return data.Serialize(w)
+	// 3. Export Snapshot GraphData
+	return snapshot.Serialize(w)
 }
 
 // ImportGraph implements VectorIndex.
@@ -1913,4 +1950,19 @@ func (c *int8Computer) ComputeSingle(id uint32) (float32, error) {
 		return float32(math.Sqrt(float64(sum))), nil
 	}
 	return math.MaxFloat32, nil
+}
+
+func (h *ArrowHNSW) RemapLocations(ctx context.Context, mapping map[uint32]any) error {
+	if h.locationStore == nil {
+		return fmt.Errorf("location store not initialized")
+	}
+
+	for id, locAny := range mapping {
+		if loc, ok := locAny.(core.Location); ok {
+			h.locationStore.Set(core.VectorID(id), loc)
+		} else if loc, ok := locAny.(Location); ok {
+			h.locationStore.Set(core.VectorID(id), loc)
+		}
+	}
+	return nil
 }

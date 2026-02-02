@@ -59,6 +59,9 @@ type VectorIndexer interface {
 	// Parallel Search
 	SetParallelSearchConfig(cfg ParallelSearchConfig)
 	GetParallelSearchConfig() ParallelSearchConfig
+
+	// Maintenance
+	RemapLocations(ctx context.Context, mapping map[uint32]any) error
 }
 
 // GraphDataInterface defines the interface for graph data operations

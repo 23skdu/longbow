@@ -9,6 +9,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/23skdu/longbow/internal/core"
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/pq"
 	"github.com/23skdu/longbow/internal/query"
@@ -909,4 +910,19 @@ func (s *ShardedHNSW) SetParallelSearchConfig(cfg types.ParallelSearchConfig) {
 			shard.index.SetParallelSearchConfig(cfg)
 		}
 	}
+}
+
+// RemapLocations implements VectorIndex.
+func (s *ShardedHNSW) RemapLocations(ctx context.Context, mapping map[uint32]any) error {
+	for id, locAny := range mapping {
+		vid := VectorID(id)
+		if loc, ok := locAny.(core.Location); ok {
+			s.locationStore.Set(vid, loc)
+		} else if loc, ok := locAny.(Location); ok {
+			s.locationStore.Set(vid, loc)
+		}
+	}
+
+	// Propagate to shards if needed (though usually global location store is enough if shards use local IDs)
+	return nil
 }

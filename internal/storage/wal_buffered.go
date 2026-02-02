@@ -166,6 +166,8 @@ func (w *BufferedWAL) Sync() error {
 				w.mu.Unlock()
 				return err
 			}
+			w.flushedSeq.Store(wb.maxSeq)
+			w.syncCond.Broadcast()
 		}
 	}
 
@@ -331,10 +333,6 @@ func (w *BufferedWAL) flushBufferToBackend(wb *writeBatch) error {
 
 	if _, err := w.backend.Write(wb.data); err != nil {
 		return fmt.Errorf("wal flush write: %w", err)
-	}
-
-	if err := w.backend.Sync(); err != nil {
-		return fmt.Errorf("wal backend sync: %w", err)
 	}
 
 	if err := w.backend.Sync(); err != nil {

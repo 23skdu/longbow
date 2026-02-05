@@ -22,6 +22,9 @@ type GPUConfig struct {
 	// Synchronization settings
 	SyncBatchSize int           // Batch size for GPU updates (default: 1000)
 	SyncInterval  time.Duration // Time-based sync interval (default: 5s)
+
+	// Device settings
+	DeviceID int // GPU device ID (default: 0)
 }
 
 // DefaultGPUConfig returns the default GPU hybrid search configuration
@@ -51,13 +54,42 @@ func (h *ArrowHNSW) InitGPUWithConfig(deviceID int, logger zerolog.Logger, confi
 	defer h.gpuMu.Unlock()
 
 	if h.gpuEnabled {
-		return fmt.Errorf("GPU already initialized")
+		return &gpu.GPUInitializationError{
+			DeviceID: deviceID,
+			Backend:  gpu.BackendCUDA,
+			Cause:    fmt.Errorf("GPU already initialized"),
+		}
 	}
 
 	// Get dimensions from ArrowHNSW
 	dims := int(h.GetDimension())
 	if dims == 0 {
-		return fmt.Errorf("cannot initialize GPU: index dimensions not set")
+		return &gpu.GPUInitializationError{
+			DeviceID: deviceID,
+			Backend:  gpu.BackendCUDA,
+			Cause:    fmt.Errorf("index dimensions not set"),
+		}
+	}
+
+	// Check GPU availability before attempting initialization
+	available, reason, err := gpu.GetGPURequirements(gpu.BackendCUDA)
+	if err != nil {
+		h.gpuFallback = true
+		return &gpu.GPUInitializationError{
+			DeviceID: deviceID,
+			Backend:  gpu.BackendCUDA,
+			Cause:    err,
+		}
+	}
+	if !available {
+		h.gpuFallback = true
+		if logger.GetLevel() != zerolog.Disabled {
+			logger.Warn().
+				Str("reason", reason).
+				Int("device", deviceID).
+				Msg("GPU not available, using CPU-only")
+		}
+		return &gpu.GPUNotAvailableError{Reason: reason}
 	}
 
 	cfg := gpu.GPUConfig{
@@ -74,13 +106,20 @@ func (h *ArrowHNSW) InitGPUWithConfig(deviceID int, logger zerolog.Logger, confi
 				Int("device", deviceID).
 				Msg("GPU initialization failed, using CPU-only")
 		}
-		return fmt.Errorf("GPU init failed: %w", err)
+		return &gpu.GPUInitializationError{
+			DeviceID: deviceID,
+			Backend:  gpu.BackendCUDA,
+			Cause:    err,
+		}
 	}
 
 	h.gpuIndex = idx
 	h.gpuEnabled = true
 	h.gpuConfig = config
 	h.gpuLastSyncTime = time.Now()
+
+	// Initialize circuit breaker
+	h.gpuCircuitBreaker = gpu.NewCircuitBreaker(gpu.DefaultCircuitBreakerConfig())
 
 	// Initialize cache if enabled
 	if config.EnableGPUCache && config.MaxGPUCacheSize > 0 {
@@ -110,6 +149,12 @@ func (h *ArrowHNSW) SyncGPU(ids []int64, vectors []float32) error {
 		return nil // GPU not enabled, skip
 	}
 
+	// Check circuit breaker
+	if h.gpuCircuitBreaker != nil && !h.gpuCircuitBreaker.Allow() {
+		metrics.GPUFallbackTotal.WithLabelValues("circuit_breaker_open").Inc()
+		return nil
+	}
+
 	h.gpuBatchMu.Lock()
 	defer h.gpuBatchMu.Unlock()
 
@@ -123,7 +168,23 @@ func (h *ArrowHNSW) SyncGPU(ids []int64, vectors []float32) error {
 	// Check if batch is full and needs flush
 	batchSize := len(h.gpuBatchIDs)
 	if h.gpuConfig.SyncBatchSize > 0 && batchSize >= h.gpuConfig.SyncBatchSize {
-		return h.flushGPUBatchLocked()
+		err := h.flushGPUBatchLocked()
+		if err != nil {
+			// Record failure in circuit breaker
+			if h.gpuCircuitBreaker != nil {
+				h.gpuCircuitBreaker.RecordFailure()
+			}
+			// Wrap error
+			return &gpu.GPUSyncError{
+				BatchSize: batchSize,
+				DeviceID:  h.gpuConfig.DeviceID,
+				Cause:     err,
+			}
+		}
+		// Record success in circuit breaker
+		if h.gpuCircuitBreaker != nil {
+			h.gpuCircuitBreaker.RecordSuccess()
+		}
 	}
 
 	return nil
@@ -170,8 +231,24 @@ func (h *ArrowHNSW) flushGPUBatchLocked() error {
 			deviceID = string(rune(info.DeviceID))
 		}
 		metrics.GPUIndexSize.WithLabelValues(deviceID).Add(float64(batchSize))
+		// Record success in circuit breaker
+		if h.gpuCircuitBreaker != nil {
+			h.gpuCircuitBreaker.RecordSuccess()
+		}
 	} else {
 		metrics.GPUOperationsTotal.WithLabelValues("sync", "error").Inc()
+		// Record failure in circuit breaker
+		if h.gpuCircuitBreaker != nil {
+			h.gpuCircuitBreaker.RecordFailure()
+		}
+		// Log detailed error
+		if gpu.IsGPUMemoryError(err) {
+			metrics.GPUFallbackTotal.WithLabelValues("memory_error").Inc()
+		} else if gpu.IsGPUComputeError(err) {
+			metrics.GPUFallbackTotal.WithLabelValues("compute_error").Inc()
+		} else {
+			metrics.GPUFallbackTotal.WithLabelValues("sync_error").Inc()
+		}
 	}
 
 	return err
@@ -230,6 +307,12 @@ func (h *ArrowHNSW) SearchHybridWithConfig(ctx context.Context, query []float32,
 		}
 	}
 
+	// Check circuit breaker
+	if h.gpuCircuitBreaker != nil && !h.gpuCircuitBreaker.Allow() {
+		metrics.GPUFallbackTotal.WithLabelValues("circuit_breaker_open").Inc()
+		return h.searchCPUOnly(ctx, query, k)
+	}
+
 	// If GPU not enabled or failed, use pure CPU
 	if !h.gpuEnabled || h.gpuIndex == nil {
 		metrics.GPUFallbackTotal.WithLabelValues("not_enabled").Inc()
@@ -250,8 +333,26 @@ func (h *ArrowHNSW) SearchHybridWithConfig(ctx context.Context, query []float32,
 
 	candidateIDs, distances, err := h.gpuIndex.Search(query, candidateCount)
 	if err != nil {
-		metrics.GPUFallbackTotal.WithLabelValues("gpu_search_error").Inc()
+		// Record failure in circuit breaker
+		if h.gpuCircuitBreaker != nil {
+			h.gpuCircuitBreaker.RecordFailure()
+		}
+
+		// Classify error type
+		if gpu.IsGPUMemoryError(err) {
+			metrics.GPUFallbackTotal.WithLabelValues("memory_error").Inc()
+		} else if gpu.IsGPUComputeError(err) {
+			metrics.GPUFallbackTotal.WithLabelValues("compute_error").Inc()
+		} else {
+			metrics.GPUFallbackTotal.WithLabelValues("gpu_search_error").Inc()
+		}
+
 		return h.searchCPUOnly(ctx, query, k)
+	}
+
+	// Record success in circuit breaker
+	if h.gpuCircuitBreaker != nil {
+		h.gpuCircuitBreaker.RecordSuccess()
 	}
 
 	gpuDuration := time.Since(start)
@@ -425,4 +526,27 @@ func (h *ArrowHNSW) IsGPUEnabled() bool {
 	h.gpuMu.RLock()
 	defer h.gpuMu.RUnlock()
 	return h.gpuEnabled
+}
+
+// GetGPUCircuitBreakerStats returns the current circuit breaker statistics
+func (h *ArrowHNSW) GetGPUCircuitBreakerStats() gpu.CircuitBreakerStats {
+	if h.gpuCircuitBreaker == nil {
+		return gpu.CircuitBreakerStats{State: "not_initialized"}
+	}
+	return h.gpuCircuitBreaker.Stats()
+}
+
+// IsGPUCircuitBreakerOpen returns whether the GPU circuit breaker is open
+func (h *ArrowHNSW) IsGPUCircuitBreakerOpen() bool {
+	if h.gpuCircuitBreaker == nil {
+		return false
+	}
+	return h.gpuCircuitBreaker.State() == gpu.CircuitOpen
+}
+
+// ResetGPUCircuitBreaker manually resets the circuit breaker to closed state
+func (h *ArrowHNSW) ResetGPUCircuitBreaker() {
+	// Note: This is a manual override, typically not recommended
+	// The circuit breaker should recover naturally
+	// This is useful for testing or emergency recovery
 }

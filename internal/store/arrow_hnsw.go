@@ -165,6 +165,9 @@ type ArrowHNSW struct {
 	gpuSyncTicker   *time.Ticker
 	gpuStopSync     chan struct{}
 
+	// GPU Circuit Breaker
+	gpuCircuitBreaker *gpu.CircuitBreaker
+
 	sq8TrainingBuffer [][]float32
 	levelMultiplier   float64
 

@@ -150,10 +150,12 @@ type ArrowHNSW struct {
 	parallelConfig types.ParallelSearchConfig
 
 	// GPU Support
-	gpuMu       sync.RWMutex
-	gpuEnabled  bool
-	gpuFallback bool
-	gpuIndex    gpu.Index
+	gpuMu          sync.RWMutex
+	gpuEnabled     bool
+	gpuFallback    bool
+	gpuIndex       gpu.Index
+	gpuConfig      GPUConfig
+	gpuResultCache *gpuResultCache
 
 	sq8TrainingBuffer [][]float32
 	levelMultiplier   float64

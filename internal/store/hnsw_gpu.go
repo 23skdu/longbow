@@ -18,6 +18,10 @@ type GPUConfig struct {
 	RefineTopK          int
 	EnableGPUCache      bool
 	MaxGPUCacheSize     int
+
+	// Synchronization settings
+	SyncBatchSize int           // Batch size for GPU updates (default: 1000)
+	SyncInterval  time.Duration // Time-based sync interval (default: 5s)
 }
 
 // DefaultGPUConfig returns the default GPU hybrid search configuration
@@ -27,6 +31,8 @@ func DefaultGPUConfig() GPUConfig {
 		RefineTopK:          0,
 		EnableGPUCache:      false,
 		MaxGPUCacheSize:     1000,
+		SyncBatchSize:       1000,
+		SyncInterval:        5 * time.Second,
 	}
 }
 
@@ -74,50 +80,136 @@ func (h *ArrowHNSW) InitGPUWithConfig(deviceID int, logger zerolog.Logger, confi
 	h.gpuIndex = idx
 	h.gpuEnabled = true
 	h.gpuConfig = config
+	h.gpuLastSyncTime = time.Now()
 
 	// Initialize cache if enabled
 	if config.EnableGPUCache && config.MaxGPUCacheSize > 0 {
 		h.gpuResultCache = newGPUResultCache(config.MaxGPUCacheSize)
 	}
 
+	// Start background sync ticker for time-based flushing
+	h.startGPUSyncTicker()
+
 	if logger.GetLevel() != zerolog.Disabled {
 		logger.Info().
 			Int("device", deviceID).
 			Int("dimensions", dims).
 			Bool("cache_enabled", config.EnableGPUCache).
+			Int("sync_batch_size", config.SyncBatchSize).
+			Dur("sync_interval", config.SyncInterval).
 			Msg("GPU acceleration enabled")
 	}
 
 	return nil
 }
 
-// SyncGPU adds vectors to the GPU index
-// Should be called after adding vectors to the CPU index
+// SyncGPU adds vectors to the GPU index with batching
+// Vectors are accumulated and flushed when batch size is reached or on timer
 func (h *ArrowHNSW) SyncGPU(ids []int64, vectors []float32) error {
 	if !h.gpuEnabled || h.gpuIndex == nil {
 		return nil // GPU not enabled, skip
 	}
 
+	h.gpuBatchMu.Lock()
+	defer h.gpuBatchMu.Unlock()
+
+	// Add to batch
+	h.gpuBatchIDs = append(h.gpuBatchIDs, ids...)
+	h.gpuBatchVectors = append(h.gpuBatchVectors, vectors...)
+
+	// Update batch size metric
+	metrics.GPUBatchSize.Set(float64(len(h.gpuBatchIDs)))
+
+	// Check if batch is full and needs flush
+	batchSize := len(h.gpuBatchIDs)
+	if h.gpuConfig.SyncBatchSize > 0 && batchSize >= h.gpuConfig.SyncBatchSize {
+		return h.flushGPUBatchLocked()
+	}
+
+	return nil
+}
+
+// FlushGPUUpdates forces immediate synchronization of pending GPU updates
+func (h *ArrowHNSW) FlushGPUUpdates() error {
+	if !h.gpuEnabled || h.gpuIndex == nil {
+		return nil
+	}
+
+	h.gpuBatchMu.Lock()
+	defer h.gpuBatchMu.Unlock()
+
+	return h.flushGPUBatchLocked()
+}
+
+// flushGPUBatchLocked flushes the current batch to GPU (must hold gpuBatchMu)
+func (h *ArrowHNSW) flushGPUBatchLocked() error {
+	if len(h.gpuBatchIDs) == 0 {
+		return nil
+	}
+
 	start := time.Now()
-	err := h.gpuIndex.Add(ids, vectors)
+	err := h.gpuIndex.Add(h.gpuBatchIDs, h.gpuBatchVectors)
 	duration := time.Since(start).Seconds()
 
-	// Record sync duration
+	// Record sync metrics
 	metrics.GPUSyncDurationSeconds.Observe(duration)
+	metrics.GPUOperationsTotal.WithLabelValues("sync", "batch").Inc()
+	metrics.GPUBatchSize.Set(0)
+
+	batchSize := len(h.gpuBatchIDs)
+
+	// Clear batch
+	h.gpuBatchIDs = h.gpuBatchIDs[:0]
+	h.gpuBatchVectors = h.gpuBatchVectors[:0]
+	h.gpuLastSyncTime = time.Now()
 
 	// Update GPU index size metric if successful
 	if err == nil {
-		deviceID := "0" // Default device
-		if h.gpuIndex != nil {
-			// Try to get device info if available
-			if info, err := h.gpuIndex.GetDeviceInfo(); err == nil {
-				deviceID = string(rune(info.DeviceID))
-			}
+		deviceID := "0"
+		if info, err := h.gpuIndex.GetDeviceInfo(); err == nil {
+			deviceID = string(rune(info.DeviceID))
 		}
-		metrics.GPUIndexSize.WithLabelValues(deviceID).Add(float64(len(ids)))
+		metrics.GPUIndexSize.WithLabelValues(deviceID).Add(float64(batchSize))
+	} else {
+		metrics.GPUOperationsTotal.WithLabelValues("sync", "error").Inc()
 	}
 
 	return err
+}
+
+// startGPUSyncTicker starts the background sync ticker for time-based flushing
+func (h *ArrowHNSW) startGPUSyncTicker() {
+	if h.gpuConfig.SyncInterval <= 0 {
+		return
+	}
+
+	h.gpuStopSync = make(chan struct{})
+	h.gpuSyncTicker = time.NewTicker(h.gpuConfig.SyncInterval)
+
+	go func() {
+		for {
+			select {
+			case <-h.gpuSyncTicker.C:
+				h.gpuBatchMu.Lock()
+				// Flush if we have pending updates and interval has passed
+				if len(h.gpuBatchIDs) > 0 && time.Since(h.gpuLastSyncTime) >= h.gpuConfig.SyncInterval {
+					h.flushGPUBatchLocked()
+				}
+				h.gpuBatchMu.Unlock()
+			case <-h.gpuStopSync:
+				return
+			}
+		}
+	}()
+}
+
+// stopGPUSyncTicker stops the background sync ticker
+func (h *ArrowHNSW) stopGPUSyncTicker() {
+	if h.gpuSyncTicker != nil {
+		h.gpuSyncTicker.Stop()
+		close(h.gpuStopSync)
+		h.gpuSyncTicker = nil
+	}
 }
 
 // SearchHybrid performs GPU+CPU hybrid search
@@ -309,6 +401,14 @@ func (h *ArrowHNSW) calculateDistance(a, b []float32) float32 {
 func (h *ArrowHNSW) CloseGPU() error {
 	h.gpuMu.Lock()
 	defer h.gpuMu.Unlock()
+
+	// Stop background sync ticker
+	h.stopGPUSyncTicker()
+
+	// Flush any pending batches
+	h.gpuBatchMu.Lock()
+	h.flushGPUBatchLocked()
+	h.gpuBatchMu.Unlock()
 
 	if h.gpuIndex != nil {
 		err := h.gpuIndex.Close()

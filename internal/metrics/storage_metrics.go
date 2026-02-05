@@ -191,6 +191,33 @@ var (
 		},
 	)
 
+	// GPUDeviceUtilization tracks GPU device utilization percentage
+	GPUDeviceUtilization = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "longbow_gpu_device_utilization_percent",
+			Help: "GPU device utilization percentage (0-100)",
+		},
+		[]string{"device"},
+	)
+
+	// GPUDeviceTemperature tracks GPU device temperature in Celsius
+	GPUDeviceTemperature = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "longbow_gpu_device_temperature_celsius",
+			Help: "GPU device temperature in Celsius",
+		},
+		[]string{"device"},
+	)
+
+	// GPUDevicePowerUsage tracks GPU power consumption in Watts
+	GPUDevicePowerUsage = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "longbow_gpu_device_power_watts",
+			Help: "GPU device power consumption in Watts",
+		},
+		[]string{"device"},
+	)
+
 	// ResultPoolHitsTotal
 	ResultPoolHitsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{

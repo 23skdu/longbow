@@ -89,10 +89,11 @@ type VectorStore struct {
 	nsManager *namespaceManager
 
 	// GPU acceleration (optional)
-	gpuBackend  gpu.GPUBackend
-	gpuDeviceID int
-	gpuMemPool  *gpu.GPUMemPool
-	gpuEnabled  bool
+	gpuBackend   gpu.GPUBackend
+	gpuDeviceID  int
+	gpuMemPool   *gpu.GPUMemPool
+	gpuEnabled   bool
+	gpuIndexPool *gpu.GPUIndexPool // Pool for reusable GPU indexes
 
 	// Shutdown and lifecycle (Phase 6/21)
 	shutdownState int32
@@ -405,7 +406,31 @@ func (s *VectorStore) SetGPUConfig(backend gpu.GPUBackend, deviceID int) {
 		if err == nil {
 			s.gpuMemPool = pool
 		}
+
+		// Initialize GPU index pool
+		s.gpuIndexPool = gpu.NewGPUIndexPool(gpu.DefaultGPUIndexPoolConfig())
 	}
+}
+
+// GetGPUIndexPool returns the GPU index pool for this store
+func (s *VectorStore) GetGPUIndexPool() *gpu.GPUIndexPool {
+	return s.gpuIndexPool
+}
+
+// GetGPUIndexPoolStats returns statistics about the GPU index pool
+func (s *VectorStore) GetGPUIndexPoolStats() gpu.GPUIndexPoolStats {
+	if s.gpuIndexPool == nil {
+		return gpu.GPUIndexPoolStats{}
+	}
+	return s.gpuIndexPool.Stats()
+}
+
+// CleanupGPUIndexPool removes expired idle indexes from the pool
+func (s *VectorStore) CleanupGPUIndexPool() int {
+	if s.gpuIndexPool == nil {
+		return 0
+	}
+	return s.gpuIndexPool.Cleanup()
 }
 
 func (s *VectorStore) checkAndMigrateToSharded(_ *Dataset) {

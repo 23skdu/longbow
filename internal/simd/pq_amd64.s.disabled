@@ -55,42 +55,50 @@ loop_8_vectors:
     // Loop over m subspaces
     MOVQ    $0, CX // CX = j (subspace index)
 
-subspace_loop:
+ subspace_loop:
     CMPQ    CX, DX
     JGE     subspace_done
 
     // Load 8 indices using precomputed base pointers + CX offset
-    
+
     // Vector 0
-    MOVZXB  (SI)(CX*1), R11
+    MOVQ    $0, R11
+    MOVB    (SI)(CX*1), R11L
     PINSRD  $0, R11, X1
-    
+
     // Vector 1
-    MOVZXB  (R10)(CX*1), R11
+    MOVQ    $0, R11
+    MOVB    (R10)(CX*1), R11L
     PINSRD  $1, R11, X1
-    
+
     // Vector 2
-    MOVZXB  (R12)(CX*1), R11
+    MOVQ    $0, R11
+    MOVB    (R12)(CX*1), R11L
     PINSRD  $2, R11, X1
-    
+
     // Vector 3
-    MOVZXB  (R13)(CX*1), R11
+    MOVQ    $0, R11
+    MOVB    (R13)(CX*1), R11L
     PINSRD  $3, R11, X1
-    
+
     // Vector 4
-    MOVZXB  (R14)(CX*1), R11
+    MOVQ    $0, R11
+    MOVB    (R14)(CX*1), R11L
     PINSRD  $4, R11, X1
-    
+
     // Vector 5
-    MOVZXB  (R15)(CX*1), R11
+    MOVQ    $0, R11
+    MOVB    (R15)(CX*1), R11L
     PINSRD  $5, R11, X1
-    
+
     // Vector 6
-    MOVZXB  (AX)(CX*1), R11
+    MOVQ    $0, R11
+    MOVB    (AX)(CX*1), R11L
     PINSRD  $6, R11, X1
-    
+
     // Vector 7
-    MOVZXB  (BX)(CX*1), R11
+    MOVQ    $0, R11
+    MOVB    (BX)(CX*1), R11L
     PINSRD  $7, R11, X1
     
     // table_base = DI + CX * 256 * 4
@@ -140,9 +148,10 @@ tail_vector_loop:
 tail_subspace_loop:
     CMPQ    CX, DX
     JGE     tail_subspace_done
-    
-    MOVZXB  (SI)(CX*1), R10 // code = codes[j]
-    
+
+    MOVQ    $0, R10
+    MOVB    (SI)(CX*1), R10L // code = codes[j]
+
     // val = table[j * 256 + code]
     MOVQ    CX, R11
     SHLQ    $10, R11
@@ -198,7 +207,7 @@ subspace512_loop:
     
     // Indices for 16 vectors
 #define LOAD_INDEX(idx, reg) \
-    MOVZXB  (R10), R11; \
+    MOVB  (R10), R11; \
     VPINSRD $idx, R11, reg, reg; \
     ADDQ    DX, R10
 
@@ -206,30 +215,30 @@ subspace512_loop:
     // Let's use 2 YMMs.
     
     // First 4
-    MOVZXB  (R10), R11
+    MOVB  (R10), R11
     VPINSRD $0, R11, X1, X1
     ADDQ    DX, R10
-    MOVZXB  (R10), R11
+    MOVB  (R10), R11
     VPINSRD $1, R11, X1, X1
     ADDQ    DX, R10
-    MOVZXB  (R10), R11
+    MOVB  (R10), R11
     VPINSRD $2, R11, X1, X1
     ADDQ    DX, R10
-    MOVZXB  (R10), R11
+    MOVB  (R10), R11
     VPINSRD $3, R11, X1, X1
     ADDQ    DX, R10
 
     // Next 4
-    MOVZXB  (R10), R11
+    MOVB  (R10), R11
     VPINSRD $0, R11, X2, X2
     ADDQ    DX, R10
-    MOVZXB  (R10), R11
+    MOVB  (R10), R11
     VPINSRD $1, R11, X2, X2
     ADDQ    DX, R10
-    MOVZXB  (R10), R11
+    MOVB  (R10), R11
     VPINSRD $2, R11, X2, X2
     ADDQ    DX, R10
-    MOVZXB  (R10), R11
+    MOVB  (R10), R11
     VPINSRD $3, R11, X2, X2
     ADDQ    DX, R10
     
@@ -239,29 +248,29 @@ subspace512_loop:
     VPXORD X3, X3, X3
     VPXORD X4, X4, X4
     
-    MOVZXB  (R10), R11
+    MOVB  (R10), R11
     VPINSRD $0, R11, X3, X3
     ADDQ    DX, R10
-    MOVZXB  (R10), R11
+    MOVB  (R10), R11
     VPINSRD $1, R11, X3, X3
     ADDQ    DX, R10
-    MOVZXB  (R10), R11
+    MOVB  (R10), R11
     VPINSRD $2, R11, X3, X3
     ADDQ    DX, R10
-    MOVZXB  (R10), R11
+    MOVB  (R10), R11
     VPINSRD $3, R11, X3, X3
     ADDQ    DX, R10
 
-    MOVZXB  (R10), R11
+    MOVB  (R10), R11
     VPINSRD $0, R11, X4, X4
     ADDQ    DX, R10
-    MOVZXB  (R10), R11
+    MOVB  (R10), R11
     VPINSRD $1, R11, X4, X4
     ADDQ    DX, R10
-    MOVZXB  (R10), R11
+    MOVB  (R10), R11
     VPINSRD $2, R11, X4, X4
     ADDQ    DX, R10
-    MOVZXB  (R10), R11
+    MOVB  (R10), R11
     VPINSRD $3, R11, X4, X4
     ADDQ    DX, R10
     

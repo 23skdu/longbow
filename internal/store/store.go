@@ -18,6 +18,7 @@ import (
 
 	"github.com/23skdu/longbow/internal/cache"
 	"github.com/23skdu/longbow/internal/gc"
+	"github.com/23skdu/longbow/internal/gpu"
 	lbmem "github.com/23skdu/longbow/internal/memory"
 	"github.com/23skdu/longbow/internal/mesh"
 	"github.com/23skdu/longbow/internal/metrics"
@@ -88,6 +89,10 @@ type VectorStore struct {
 	nsManager *namespaceManager
 
 	// GPU acceleration (optional)
+	gpuBackend  gpu.GPUBackend
+	gpuDeviceID int
+	gpuMemPool  *gpu.GPUMemPool
+	gpuEnabled  bool
 
 	// Shutdown and lifecycle (Phase 6/21)
 	shutdownState int32
@@ -387,6 +392,20 @@ func (s *VectorStore) SetAutoShardingConfig(cfg AutoShardingConfig) {
 // GetAutoShardingConfig returns the current auto-sharding configuration
 func (s *VectorStore) GetAutoShardingConfig() AutoShardingConfig {
 	return s.autoShardingConfig
+}
+
+// SetGPUConfig updates the GPU configuration
+func (s *VectorStore) SetGPUConfig(backend gpu.GPUBackend, deviceID int) {
+	s.gpuBackend = backend
+	s.gpuEnabled = true
+	s.gpuDeviceID = deviceID
+
+	if backend != gpu.BackendCPU {
+		pool, err := gpu.NewGPUMemPool(backend, deviceID)
+		if err == nil {
+			s.gpuMemPool = pool
+		}
+	}
 }
 
 func (s *VectorStore) checkAndMigrateToSharded(_ *Dataset) {

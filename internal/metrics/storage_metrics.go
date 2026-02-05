@@ -218,6 +218,38 @@ var (
 		[]string{"device"},
 	)
 
+	// GPUIndexPoolIdle tracks idle indexes in the GPU pool
+	GPUIndexPoolIdle = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "longbow_gpu_index_pool_idle",
+			Help: "Number of idle GPU indexes in the pool",
+		},
+	)
+
+	// GPUIndexPoolActive tracks active (checked out) indexes
+	GPUIndexPoolActive = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "longbow_gpu_index_pool_active",
+			Help: "Number of active (checked out) GPU indexes",
+		},
+	)
+
+	// GPUIndexPoolTotalCreated tracks total indexes created
+	GPUIndexPoolTotalCreated = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_gpu_index_pool_created_total",
+			Help: "Total number of GPU indexes created",
+		},
+	)
+
+	// GPUIndexPoolTotalReused tracks total times indexes were reused
+	GPUIndexPoolTotalReused = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_gpu_index_pool_reused_total",
+			Help: "Total number of times GPU indexes were reused from pool",
+		},
+	)
+
 	// ResultPoolHitsTotal
 	ResultPoolHitsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{

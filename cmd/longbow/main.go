@@ -17,6 +17,7 @@ import (
 	"runtime"
 	"runtime/debug"
 
+	"github.com/23skdu/longbow/internal/gpu"
 	"github.com/23skdu/longbow/internal/limiter"
 	"github.com/23skdu/longbow/internal/logging"
 	lbmem "github.com/23skdu/longbow/internal/memory"
@@ -245,6 +246,25 @@ func run() error {
 			Strs("columns", textCols).
 			Float32("alpha", cfg.HybridSearchAlpha).
 			Msg("Hybrid search enabled")
+	}
+
+	// Configure GPU acceleration
+	if cfg.GPUEnabled {
+		detectedBackend := gpu.DetectGPUBackend()
+
+		if detectedBackend == gpu.BackendCUDA || detectedBackend == gpu.BackendMetal {
+			vectorStore.SetGPUConfig(detectedBackend, cfg.GPUDeviceID)
+			logger.Info().
+				Str("backend", detectedBackend.String()).
+				Bool("enabled", cfg.GPUEnabled).
+				Int("device", cfg.GPUDeviceID).
+				Msg("GPU acceleration configured")
+		} else {
+			logger.Warn().
+				Str("detected_backend", detectedBackend.String()).
+				Msg("No GPU detected, falling back to CPU")
+			vectorStore.SetGPUConfig(gpu.BackendCPU, 0)
+		}
 	}
 
 	// Start eviction ticker if TTL is enabled

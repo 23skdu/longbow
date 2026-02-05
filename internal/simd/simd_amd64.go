@@ -582,13 +582,19 @@ func euclideanVertical4AVX512(q, v0, v1, v2, v3 unsafe.Pointer, n int, res unsaf
 func euclidean8AVX2(a, b unsafe.Pointer) float32
 
 //go:noescape
-func euclidean16AVX512(a, b unsafe.Pointer) float32
+func matchFloat32AVX512Kernel(src unsafe.Pointer, val float32, op int, dst unsafe.Pointer, n int)
+
+//go:noescape
+func euclidean384AVX512Kernel(a, b unsafe.Pointer) float32
+
+//go:noescape
+func dot384AVX512Kernel(a, b unsafe.Pointer) float32
+
+//go:noescape
+func prefetchNTA(p unsafe.Pointer)
 
 //go:noescape
 func cosine8AVX2(a, b unsafe.Pointer) (dot, normA, normB float32)
-
-//go:noescape
-func cosine16AVX512(a, b unsafe.Pointer) (dot, normA, normB float32)
 
 //go:noescape
 func dot8AVX2(a, b unsafe.Pointer) float32
@@ -597,11 +603,13 @@ func dot8AVX2(a, b unsafe.Pointer) float32
 func dot16AVX512(a, b unsafe.Pointer) float32
 
 //go:noescape
-func prefetchNTA(p unsafe.Pointer)
+func matchInt64AVX2Kernel(src unsafe.Pointer, val int64, op int, dst unsafe.Pointer, n int)
 
-// =============================================================================
-// Comparison Wrapper Functions
-// =============================================================================
+//go:noescape
+func matchFloat32AVX2Kernel(src unsafe.Pointer, val float32, op int, dst unsafe.Pointer, n int)
+
+//go:noescape
+func matchInt64AVX512Kernel(src unsafe.Pointer, val int64, op int, dst unsafe.Pointer, n int)
 
 func matchInt64AVX2(src []int64, val int64, op CompareOp, dst []byte) error {
 	if len(src) != len(dst) {
@@ -658,41 +666,6 @@ func matchFloat32AVX512(src []float32, val float32, op CompareOp, dst []byte) er
 	matchFloat32AVX512Kernel(unsafe.Pointer(&src[0]), val, int(op), unsafe.Pointer(&dst[0]), len(src))
 	return nil
 }
-
-// NEON stubs for cross-platform link satisfaction (if referenced by simd.go)
-func matchInt64NEON(src []int64, val int64, op CompareOp, dst []byte) error {
-	return matchInt64Generic(src, val, op, dst)
-}
-
-func matchFloat32NEON(src []float32, val float32, op CompareOp, dst []byte) error {
-	return matchFloat32Generic(src, val, op, dst)
-}
-
-// Kernel Declarations
-
-//go:noescape
-func matchInt64AVX2Kernel(src unsafe.Pointer, val int64, op int, dst unsafe.Pointer, n int)
-
-//go:noescape
-func matchFloat32AVX2Kernel(src unsafe.Pointer, val float32, op int, dst unsafe.Pointer, n int)
-
-//go:noescape
-func matchInt64AVX512Kernel(src unsafe.Pointer, val int64, op int, dst unsafe.Pointer, n int)
-
-//go:noescape
-func matchFloat32AVX512Kernel(src unsafe.Pointer, val float32, op int, dst unsafe.Pointer, n int)
-
-//go:noescape
-func adcBatchAVX2Kernel(table unsafe.Pointer, codes unsafe.Pointer, m int, results unsafe.Pointer, n int)
-
-//go:noescape
-func adcBatchAVX512Kernel(table unsafe.Pointer, codes unsafe.Pointer, m int, results unsafe.Pointer, n int)
-
-//go:noescape
-func euclidean384AVX512Kernel(a, b unsafe.Pointer) float32
-
-//go:noescape
-func dot384AVX512Kernel(a, b unsafe.Pointer) float32
 
 // FP16 AVX implementations
 func euclideanF16AVX2(a, b []float16.Num) (float32, error) {
@@ -825,6 +798,32 @@ func euclideanFloat64AVX512(a, b []float64) (float32, error) {
 		return 0, nil
 	}
 	return float32(euclideanFloat64AVX512Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a))), nil
+}
+
+// =============================================================================
+// PQ Kernel Stubs (fallback to generic implementation)
+// =============================================================================
+
+func adcBatchAVX2Kernel(table unsafe.Pointer, codes unsafe.Pointer, m int, results unsafe.Pointer, n int) {
+	sliceLen := n
+	if sliceLen == 0 {
+		return
+	}
+	tableSlice := (*[1 << 30]float32)(table)[: m*256 : m*256]
+	codesSlice := (*[1 << 30]byte)(codes)[: n*m : n*m]
+	resultsSlice := (*[1 << 30]float32)(results)[:n:n]
+	adcBatchGeneric(tableSlice, codesSlice, m, resultsSlice)
+}
+
+func adcBatchAVX512Kernel(table unsafe.Pointer, codes unsafe.Pointer, m int, results unsafe.Pointer, n int) {
+	sliceLen := n
+	if sliceLen == 0 {
+		return
+	}
+	tableSlice := (*[1 << 30]float32)(table)[: m*256 : m*256]
+	codesSlice := (*[1 << 30]byte)(codes)[: n*m : n*m]
+	resultsSlice := (*[1 << 30]float32)(results)[:n:n]
+	adcBatchGeneric(tableSlice, codesSlice, m, resultsSlice)
 }
 
 // =============================================================================

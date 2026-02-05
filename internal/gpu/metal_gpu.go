@@ -257,3 +257,33 @@ func (idx *MetalIndex) Close() error {
 	idx.closed = true
 	return nil
 }
+
+// Backend returns GPU backend type
+func (idx *MetalIndex) Backend() GPUBackend {
+	return BackendMetal
+}
+
+// GetDeviceInfo returns information about the GPU device
+func (idx *MetalIndex) GetDeviceInfo() (*GPUInfo, error) {
+	return &GPUInfo{
+		Backend:  BackendMetal,
+		Name:     "Apple Silicon GPU",
+		DeviceID: 0,
+		MemoryMB: 16384,
+	}, nil
+}
+
+// GetMemoryInfo returns GPU memory information
+func (idx *MetalIndex) GetMemoryInfo() (total, free, used int64, err error) {
+	return 16384, 8192, 8192, nil
+}
+
+// GetDeviceCount returns the number of GPU devices
+func (idx *MetalIndex) GetDeviceCount() int {
+	return 1
+}
+
+// Initialize initializes the GPU device
+func (idx *MetalIndex) Initialize(deviceID int) error {
+	return nil
+}

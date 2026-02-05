@@ -174,6 +174,23 @@ var (
 		[]string{"device"},
 	)
 
+	// GPUOperationsTotal counts all GPU operations (sync, search, etc.)
+	GPUOperationsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_gpu_operations_total",
+			Help: "Total number of GPU operations",
+		},
+		[]string{"operation", "type"}, // operation: "sync", "search"; type: "batch", "single", "error"
+	)
+
+	// GPUBatchSize tracks the current size of pending GPU batches
+	GPUBatchSize = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "longbow_gpu_batch_size",
+			Help: "Current number of vectors pending in GPU batch",
+		},
+	)
+
 	// ResultPoolHitsTotal
 	ResultPoolHitsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{

@@ -3,7 +3,7 @@
 #include "textflag.h"
 
 // ----------------------------------------------------------------------------
-// func l2SquaredAVX512(a, b unsafe.Pointer, n int) float32
+// func l2SquaredAVX512Kernel(a, b unsafe.Pointer, n int) float32
 //
 // Input:
 //   a:  SI (pointer to float32 array)
@@ -18,7 +18,7 @@
 //   Z4..Z11: Scratch for loading data and computations
 //   K1:      Mask for tail processing
 // ----------------------------------------------------------------------------
-TEXT ·l2SquaredAVX512(SB), NOSPLIT, $0-28
+TEXT ·l2SquaredAVX512Kernel(SB), NOSPLIT, $0-28
     MOVQ    a+0(FP), SI
     MOVQ    b+8(FP), DI
     MOVQ    n+16(FP), BX

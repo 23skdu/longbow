@@ -128,6 +128,128 @@ var (
 		[]string{"operation", "status"},
 	)
 
+	// GPUSearchDurationSeconds measures GPU search operation duration
+	GPUSearchDurationSeconds = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_gpu_search_duration_seconds",
+			Help:    "Duration of GPU search operations",
+			Buckets: prometheus.DefBuckets,
+		},
+		[]string{"backend"},
+	)
+
+	// GPUMemoryBytes tracks GPU memory usage
+	GPUMemoryBytes = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "longbow_gpu_memory_bytes",
+			Help: "GPU memory usage in bytes",
+		},
+		[]string{"device", "type"}, // type: "total", "free", "used"
+	)
+
+	// GPUSyncDurationSeconds measures GPU synchronization duration
+	GPUSyncDurationSeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_gpu_sync_duration_seconds",
+			Help:    "Duration of GPU synchronization operations",
+			Buckets: prometheus.DefBuckets,
+		},
+	)
+
+	// GPUFallbackTotal counts GPU to CPU fallback events
+	GPUFallbackTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_gpu_fallback_total",
+			Help: "Total number of GPU to CPU fallback events",
+		},
+		[]string{"reason"},
+	)
+
+	// GPUIndexSize tracks the number of vectors in GPU index
+	GPUIndexSize = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "longbow_gpu_index_size",
+			Help: "Number of vectors stored in GPU index",
+		},
+		[]string{"device"},
+	)
+
+	// GPUOperationsTotal counts all GPU operations (sync, search, etc.)
+	GPUOperationsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_gpu_operations_total",
+			Help: "Total number of GPU operations",
+		},
+		[]string{"operation", "type"}, // operation: "sync", "search"; type: "batch", "single", "error"
+	)
+
+	// GPUBatchSize tracks the current size of pending GPU batches
+	GPUBatchSize = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "longbow_gpu_batch_size",
+			Help: "Current number of vectors pending in GPU batch",
+		},
+	)
+
+	// GPUDeviceUtilization tracks GPU device utilization percentage
+	GPUDeviceUtilization = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "longbow_gpu_device_utilization_percent",
+			Help: "GPU device utilization percentage (0-100)",
+		},
+		[]string{"device"},
+	)
+
+	// GPUDeviceTemperature tracks GPU device temperature in Celsius
+	GPUDeviceTemperature = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "longbow_gpu_device_temperature_celsius",
+			Help: "GPU device temperature in Celsius",
+		},
+		[]string{"device"},
+	)
+
+	// GPUDevicePowerUsage tracks GPU power consumption in Watts
+	GPUDevicePowerUsage = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "longbow_gpu_device_power_watts",
+			Help: "GPU device power consumption in Watts",
+		},
+		[]string{"device"},
+	)
+
+	// GPUIndexPoolIdle tracks idle indexes in the GPU pool
+	GPUIndexPoolIdle = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "longbow_gpu_index_pool_idle",
+			Help: "Number of idle GPU indexes in the pool",
+		},
+	)
+
+	// GPUIndexPoolActive tracks active (checked out) indexes
+	GPUIndexPoolActive = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "longbow_gpu_index_pool_active",
+			Help: "Number of active (checked out) GPU indexes",
+		},
+	)
+
+	// GPUIndexPoolTotalCreated tracks total indexes created
+	GPUIndexPoolTotalCreated = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_gpu_index_pool_created_total",
+			Help: "Total number of GPU indexes created",
+		},
+	)
+
+	// GPUIndexPoolTotalReused tracks total times indexes were reused
+	GPUIndexPoolTotalReused = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_gpu_index_pool_reused_total",
+			Help: "Total number of times GPU indexes were reused from pool",
+		},
+	)
+
 	// ResultPoolHitsTotal
 	ResultPoolHitsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{

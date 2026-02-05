@@ -4,7 +4,7 @@
 package benchmark
 
 import (
-	"context"
+	"encoding/binary"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +12,9 @@ import (
 	"time"
 
 	"github.com/23skdu/longbow/internal/storage"
+	"github.com/apache/arrow-go/v18/arrow"
+	"github.com/apache/arrow-go/v18/arrow/array"
+	"github.com/apache/arrow-go/v18/arrow/memory"
 )
 
 func createTestBatch() arrow.Record {

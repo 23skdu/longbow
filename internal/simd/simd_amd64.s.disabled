@@ -299,8 +299,8 @@ loop_dot:
     VZEROUPPER
     RET
 
-// func euclideanF16AVX2(a, b unsafe.Pointer, n int) float32
-TEXT ·euclideanF16AVX2(SB), NOSPLIT, $0-28
+// func euclideanF16AVX2Kernel(a, b unsafe.Pointer, n int) float32
+TEXT ·euclideanF16AVX2Kernel(SB), NOSPLIT, $0-28
     MOVQ    a+0(FP), SI
     MOVQ    b+8(FP), DI
     MOVQ    n+16(FP), BX
@@ -337,11 +337,11 @@ euc_f16_avx2_tail_loop:
     PEXTRW  $0, (SI), R8        // Load single FP16 (Wait, Go assembler might need different syntax)
     // Actually, PEXTRW is SSE2.
     // Simpler: load 2 bytes and convert.
-    MOVZWQ  (SI), R8
+    MOVQ R8, X8
     MOVQ    R8, X1
     VCVTPH2PS X1, X1            // convert 1 FP16 to 1 FP32
     
-    MOVZWQ  (DI), R9
+    MOVZX_W  (DI), R9L
     MOVQ    R9, X2
     VCVTPH2PS X2, X2
     
@@ -359,8 +359,8 @@ euc_f16_avx2_done:
     VZEROUPPER
     RET
 
-// func dotF16AVX2(a, b unsafe.Pointer, n int) float32
-TEXT ·dotF16AVX2(SB), NOSPLIT, $0-28
+// func dotF16AVX2Kernel(a, b unsafe.Pointer, n int) float32
+TEXT ·dotF16AVX2Kernel(SB), NOSPLIT, $0-28
     MOVQ    a+0(FP), SI
     MOVQ    b+8(FP), DI
     MOVQ    n+16(FP), BX
@@ -392,11 +392,11 @@ dot_f16_avx2_tail:
     JE      dot_f16_avx2_done
 
 dot_f16_avx2_tail_loop:
-    MOVZWQ  (SI), R8
+    MOVZX (SI), R8L
     MOVQ    R8, X1
     VCVTPH2PS X1, X1
     
-    MOVZWQ  (DI), R9
+    MOVZX_W  (DI), R9L
     MOVQ    R9, X2
     VCVTPH2PS X2, X2
     
@@ -412,8 +412,8 @@ dot_f16_avx2_done:
     VZEROUPPER
     RET
 
-// func euclideanF16AVX512(a, b unsafe.Pointer, n int) float32
-TEXT ·euclideanF16AVX512(SB), NOSPLIT, $0-28
+// func euclideanF16AVX512Kernel(a, b unsafe.Pointer, n int) float32
+TEXT ·euclideanF16AVX512Kernel(SB), NOSPLIT, $0-28
     MOVQ    a+0(FP), SI
     MOVQ    b+8(FP), DI
     MOVQ    n+16(FP), BX
@@ -451,11 +451,11 @@ euc_f16_avx512_tail:
     // Tail mask for AVX-512?
     // Let's use scalar loop for simplicity in tail
 euc_f16_avx512_tail_loop:
-    MOVZWQ  (SI), R8
+    MOVZX (SI), R8L
     MOVQ    R8, X1
     VCVTPH2PS X1, X1
     
-    MOVZWQ  (DI), R9
+    MOVZX_W  (DI), R9L
     MOVQ    R9, X2
     VCVTPH2PS X2, X2
     
@@ -473,8 +473,8 @@ euc_f16_avx512_done:
     VZEROUPPER
     RET
 
-// func dotF16AVX512(a, b unsafe.Pointer, n int) float32
-TEXT ·dotF16AVX512(SB), NOSPLIT, $0-28
+// func dotF16AVX512Kernel(a, b unsafe.Pointer, n int) float32
+TEXT ·dotF16AVX512Kernel(SB), NOSPLIT, $0-28
     MOVQ    a+0(FP), SI
     MOVQ    b+8(FP), DI
     MOVQ    n+16(FP), BX
@@ -508,11 +508,11 @@ dot_f16_avx512_tail:
     JE      dot_f16_avx512_done
 
 dot_f16_avx512_tail_loop:
-    MOVZWQ  (SI), R8
+    MOVZX (SI), R8L
     MOVQ    R8, X1
     VCVTPH2PS X1, X1
     
-    MOVZWQ  (DI), R9
+    MOVZX_W  (DI), R9L
     MOVQ    R9, X2
     VCVTPH2PS X2, X2
     
@@ -801,7 +801,7 @@ euc_i8_avx2_tail_loop:
     IMULQ   R8, R8
     
     // Add to X0 (float)
-    CVTSI2SS R8, X1
+    CVTSL2SS R8, X1
     ADDSS   X1, X0
 
     INCQ    SI
@@ -860,7 +860,7 @@ euc_i16_avx2_tail_loop:
     SUBQ    R9, R8
     IMULQ   R8, R8
     
-    CVTSI2SS R8, X1
+    CVTSL2SS R8, X1
     ADDSS   X1, X0
 
     ADDQ    $2, SI

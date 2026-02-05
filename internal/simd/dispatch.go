@@ -103,8 +103,8 @@ func initializeDispatch() {
 		dotProductBatchImpl = dotBatchAVX512
 		l2SquaredImpl = l2SquaredAVX512 // uses AVX512 kernel
 		prefetchImpl = prefetchNTA
-		matchInt64Impl = matchInt64AVX512
-		matchFloat32Impl = matchFloat32AVX512
+		matchInt64Impl = matchInt64AVX2     // Fallback to AVX2 for now
+		matchFloat32Impl = matchFloat32AVX2 // Fallback to AVX2 for now
 		adcDistanceBatchImpl = adcBatchAVX512
 		euclideanDistanceVerticalBatchImpl = euclideanVerticalBatchAVX512
 		euclideanDistanceSQ8BatchImpl = euclideanSQ8BatchAVX512

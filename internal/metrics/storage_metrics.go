@@ -128,6 +128,52 @@ var (
 		[]string{"operation", "status"},
 	)
 
+	// GPUSearchDurationSeconds measures GPU search operation duration
+	GPUSearchDurationSeconds = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_gpu_search_duration_seconds",
+			Help:    "Duration of GPU search operations",
+			Buckets: prometheus.DefBuckets,
+		},
+		[]string{"backend"},
+	)
+
+	// GPUMemoryBytes tracks GPU memory usage
+	GPUMemoryBytes = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "longbow_gpu_memory_bytes",
+			Help: "GPU memory usage in bytes",
+		},
+		[]string{"device", "type"}, // type: "total", "free", "used"
+	)
+
+	// GPUSyncDurationSeconds measures GPU synchronization duration
+	GPUSyncDurationSeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_gpu_sync_duration_seconds",
+			Help:    "Duration of GPU synchronization operations",
+			Buckets: prometheus.DefBuckets,
+		},
+	)
+
+	// GPUFallbackTotal counts GPU to CPU fallback events
+	GPUFallbackTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_gpu_fallback_total",
+			Help: "Total number of GPU to CPU fallback events",
+		},
+		[]string{"reason"},
+	)
+
+	// GPUIndexSize tracks the number of vectors in GPU index
+	GPUIndexSize = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "longbow_gpu_index_size",
+			Help: "Number of vectors stored in GPU index",
+		},
+		[]string{"device"},
+	)
+
 	// ResultPoolHitsTotal
 	ResultPoolHitsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{

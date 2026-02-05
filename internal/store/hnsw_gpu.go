@@ -3,8 +3,10 @@ package store
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/23skdu/longbow/internal/gpu"
+	"github.com/23skdu/longbow/internal/metrics"
 	lbtypes "github.com/23skdu/longbow/internal/store/types"
 	"github.com/rs/zerolog"
 )
@@ -65,7 +67,26 @@ func (h *ArrowHNSW) SyncGPU(ids []int64, vectors []float32) error {
 		return nil // GPU not enabled, skip
 	}
 
-	return h.gpuIndex.Add(ids, vectors)
+	start := time.Now()
+	err := h.gpuIndex.Add(ids, vectors)
+	duration := time.Since(start).Seconds()
+
+	// Record sync duration
+	metrics.GPUSyncDurationSeconds.Observe(duration)
+
+	// Update GPU index size metric if successful
+	if err == nil {
+		deviceID := "0" // Default device
+		if h.gpuIndex != nil {
+			// Try to get device info if available
+			if info, err := h.gpuIndex.GetDeviceInfo(); err == nil {
+				deviceID = string(rune(info.DeviceID))
+			}
+		}
+		metrics.GPUIndexSize.WithLabelValues(deviceID).Add(float64(len(ids)))
+	}
+
+	return err
 }
 
 // SearchHybrid performs GPU+CPU hybrid search

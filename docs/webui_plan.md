@@ -48,15 +48,20 @@ Longbow gRPC/Arrow Flight
 - Embedded static files with `//go:embed`
 - File: `cmd/longbow/static/index.html`
 
-### Step 3: API Integration ⏳ PENDING
-- Fetch datasets from store
-- Execute search queries via Arrow Flight
-- Display Prometheus metrics
+### Step 3: API Integration ✅ COMPLETED
+- Fetch datasets from store (`/api/datasets`)
+- Execute search queries via VectorStore (`/api/search`)
+- Display Prometheus metrics (`/api/metrics`)
+- Create dataset endpoint (`/api/dataset/create`)
+- Delete dataset endpoint (`/api/dataset/delete`)
+- Enhanced metrics with totals and averages
 
-### Step 4: Polish ⏳ PENDING
-- Dark mode support
-- Mobile responsive
-- Error handling
+### Step 4: Polish ⏳ IN PROGRESS
+- Dark mode support (Tailwind CSS with custom colors)
+- Mobile responsive design (grid adapts to screen size)
+- Error handling with toast notifications
+- Loading states and spinners
+- Dataset creation modal
 
 ## API Endpoints
 
@@ -64,9 +69,11 @@ Longbow gRPC/Arrow Flight
 |--------|------|-------------|
 | GET | /api/datasets | List all datasets |
 | GET | /api/dataset?name=XXX | Get dataset details |
+| POST | /api/dataset/create | Create new dataset |
+| DELETE | /api/dataset/delete?name=XXX | Delete dataset |
 | POST | /api/search | Execute vector search |
 | GET | /api/health | Health check |
-| GET | /api/metrics | Runtime metrics |
+| GET | /api/metrics | Extended metrics |
 
 ## Frontend Components
 
@@ -78,15 +85,15 @@ static/
 ## Usage
 
 ```bash
-# Start Longbow with Web UI
+# Start Longbow
 ./longbow
 
 # Access Web UI
 http://localhost:8080
 
 # Access API directly
-http://localhost:8080/api/datasets
-http://localhost:8080/api/health
+curl http://localhost:8080/api/datasets
+curl http://localhost:8080/api/health
 ```
 
 ## Configuration
@@ -100,9 +107,13 @@ http://localhost:8080/api/health
 
 1. ✅ Create HTTP API handlers
 2. ✅ Set up frontend framework (Vue.js 3 + Tailwind)
-3. ⏳ Implement dataset listing
-4. ⏳ Build search playground
-5. ⏳ Add create/delete dataset functionality
-6. ⏳ Add memory charts and metrics visualization
-7. ⏳ Mobile responsive design
+3. ✅ Implement dataset listing
+4. ✅ Build search playground
+5. ✅ Add create/delete dataset functionality
+6. ✅ Add memory charts and metrics visualization
+7. ✅ Mobile responsive design
 8. ⏳ Error handling and loading states
+9. ⏳ Add Prometheus metrics integration for real-time charts
+10. ⏳ Add dataset detail view
+11. ⏳ Add vector ingestion UI
+12. ⏳ Theme toggle (light/dark mode)

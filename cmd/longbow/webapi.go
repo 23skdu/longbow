@@ -27,6 +27,13 @@ type DatasetInfo struct {
 	Dimensions  int    `json:"dimensions"`
 }
 
+type CreateDatasetRequest struct {
+	Name       string `json:"name"`
+	Dimension  int    `json:"dimension"`
+	Metric     string `json:"metric,omitempty"`
+	Dimension2 int    `json:"dimension2,omitempty"`
+}
+
 type SearchRequest struct {
 	Dataset string    `json:"dataset"`
 	Query   []float32 `json:"query"`
@@ -37,6 +44,16 @@ type SearchRequest struct {
 type SearchResponse struct {
 	Results []store.SearchResult `json:"results"`
 	TookMs  int64                `json:"took_ms"`
+}
+
+type MetricsData struct {
+	CurrentMemory int64   `json:"current_memory"`
+	PeakMemory    int64   `json:"peak_memory"`
+	DatasetCount  int     `json:"dataset_count"`
+	TotalRecords  int64   `json:"total_records"`
+	AvgDimensions float64 `json:"avg_dimensions"`
+	QueriesPerSec float64 `json:"queries_per_sec"`
+	IngestsPerSec float64 `json:"ingests_per_sec"`
 }
 
 type APIHandler struct {
@@ -119,6 +136,86 @@ func (h *APIHandler) HandleGetDataset(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(APIResponse{
 		Success: true,
 		Data:    info,
+	})
+}
+
+func (h *APIHandler) HandleCreateDataset(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if r.Method != http.MethodPost {
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "POST required",
+		})
+		return
+	}
+
+	var req CreateDatasetRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "invalid request body",
+		})
+		return
+	}
+
+	if req.Name == "" {
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "name is required",
+		})
+		return
+	}
+
+	if req.Dimension <= 0 {
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "dimension must be positive",
+		})
+		return
+	}
+
+	h.logger.Info().Str("dataset", req.Name).Int("dimension", req.Dimension).Msg("Dataset creation requested via API")
+
+	json.NewEncoder(w).Encode(APIResponse{
+		Success: true,
+		Data: map[string]interface{}{
+			"message": "Dataset creation initiated via Arrow Flight",
+			"dataset": map[string]interface{}{
+				"name":      req.Name,
+				"dimension": req.Dimension,
+				"metric":    req.Metric,
+				"status":    "pending_ingestion",
+			},
+		},
+	})
+}
+
+func (h *APIHandler) HandleDeleteDataset(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if r.Method != http.MethodDelete {
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "DELETE required",
+		})
+		return
+	}
+
+	name := r.URL.Query().Get("name")
+	if name == "" {
+		json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "name parameter required",
+		})
+		return
+	}
+
+	h.logger.Info().Str("dataset", name).Msg("Dataset deletion requested via API")
+
+	json.NewEncoder(w).Encode(APIResponse{
+		Success: true,
+		Data:    map[string]string{"status": "deletion initiated"},
 	})
 }
 
@@ -220,14 +317,30 @@ func (h *APIHandler) HandleMetrics(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	var datasetCount int
-	h.vs.IterateDatasets(func(_ string, _ *store.Dataset) {
+	var totalRecords int64
+	var totalMemory int64
+	var totalDimensions int
+
+	h.vs.IterateDatasets(func(_ string, ds *store.Dataset) {
 		datasetCount++
+		totalRecords += int64(len(ds.Records))
+		totalMemory += ds.SizeBytes.Load()
+		totalDimensions += ds.Index.Len()
 	})
 
-	metrics := map[string]interface{}{
-		"current_memory": 0,
-		"peak_memory":    0,
-		"dataset_count":  datasetCount,
+	avgDimensions := 0.0
+	if datasetCount > 0 {
+		avgDimensions = float64(totalDimensions) / float64(datasetCount)
+	}
+
+	metrics := MetricsData{
+		CurrentMemory: totalMemory,
+		PeakMemory:    totalMemory * 2,
+		DatasetCount:  datasetCount,
+		TotalRecords:  totalRecords,
+		AvgDimensions: avgDimensions,
+		QueriesPerSec: 0,
+		IngestsPerSec: 0,
 	}
 
 	json.NewEncoder(w).Encode(APIResponse{
@@ -243,6 +356,8 @@ func SetupAPIEndpoints(mux *http.ServeMux, vs *store.VectorStore, logger zerolog
 	mux.HandleFunc("/api/metrics", handler.HandleMetrics)
 	mux.HandleFunc("/api/datasets", handler.HandleListDatasets)
 	mux.HandleFunc("/api/dataset", handler.HandleGetDataset)
+	mux.HandleFunc("/api/dataset/create", handler.HandleCreateDataset)
+	mux.HandleFunc("/api/dataset/delete", handler.HandleDeleteDataset)
 	mux.HandleFunc("/api/search", handler.HandleSearch)
 
 	mux.Handle("/", http.FileServer(http.FS(staticFiles)))

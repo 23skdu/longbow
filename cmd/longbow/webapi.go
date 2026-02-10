@@ -1,12 +1,16 @@
 package main
 
 import (
+	"embed"
 	"encoding/json"
 	"net/http"
 
 	"github.com/23skdu/longbow/internal/store"
 	"github.com/rs/zerolog"
 )
+
+//go:embed static/*
+var staticFiles embed.FS
 
 type APIResponse struct {
 	Success bool        `json:"success"`
@@ -241,43 +245,10 @@ func SetupAPIEndpoints(mux *http.ServeMux, vs *store.VectorStore, logger zerolog
 	mux.HandleFunc("/api/dataset", handler.HandleGetDataset)
 	mux.HandleFunc("/api/search", handler.HandleSearch)
 
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/" || r.URL.Path == "/index.html" {
-			w.Header().Set("Content-Type", "text/html")
-			w.Write([]byte(`<!DOCTYPE html>
-<html>
-<head>
-    <title>Longbow Vector Store</title>
-    <style>
-        body { font-family: system-ui, sans-serif; margin: 40px; background: #1a1a2e; color: #eee; }
-        h1 { color: #00d9ff; }
-        .card { background: #16213e; padding: 20px; border-radius: 8px; margin: 10px 0; }
-        button { background: #00d9ff; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; }
-        input { padding: 8px; border-radius: 4px; border: 1px solid #333; background: #0f3460; color: #fff; }
-    </style>
-</head>
-<body>
-    <h1>Longbow Vector Store</h1>
-    <div class="card">
-        <h2>Quick Actions</h2>
-        <button onclick="fetchDatasets()">Refresh Datasets</button>
-        <button onclick="checkHealth()">Health Check</button>
-    </div>
-    <div id="output"></div>
-    <script>
-        async function fetchDatasets() {
-            const res = await fetch('/api/datasets');
-            const data = await res.json();
-            document.getElementById('output').innerHTML = '<pre>' + JSON.stringify(data, null, 2) + '</pre>';
-        }
-        async function checkHealth() {
-            const res = await fetch('/api/health');
-            const data = await res.json();
-            document.getElementById('output').innerHTML = '<pre>' + JSON.stringify(data, null, 2) + '</pre>';
-        }
-    </script>
-</body>
-</html>`))
-		}
+	mux.Handle("/", http.FileServer(http.FS(staticFiles)))
+
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "healthy"})
 	})
 }

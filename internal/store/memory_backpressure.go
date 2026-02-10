@@ -160,12 +160,15 @@ func (c *MemoryBackpressureController) Acquire(ctx context.Context) error {
 
 			c.mu.Unlock() // Release lock to check context
 
+			// Use timer to avoid memory leak from time.After() in loop
+			timer := time.NewTimer(100 * time.Millisecond)
 			select {
 			case <-ctx.Done():
+				timer.Stop()
 				c.rejectCount.Add(1)
 				metrics.MemoryBackpressureRejectsTotal.Inc()
 				return ctx.Err()
-			case <-time.After(100 * time.Millisecond):
+			case <-timer.C:
 				// Poll / Wait
 			}
 

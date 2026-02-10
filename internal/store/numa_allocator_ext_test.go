@@ -6,17 +6,21 @@ import (
 	"testing"
 )
 
-// Extension tests for NUMA allocator coverage gaps
-
 func TestParseCPUList_SingleCPU(t *testing.T) {
-	res := parseCPUList("0")
+	res, err := parseCPUList("0")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if len(res) != 1 || res[0] != 0 {
 		t.Errorf("expected [0], got %v", res)
 	}
 }
 
 func TestParseCPUList_CommaSeparated(t *testing.T) {
-	res := parseCPUList("0,2,4")
+	res, err := parseCPUList("0,2,4")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	expected := []int{0, 2, 4}
 	if len(res) != len(expected) {
 		t.Fatalf("length mismatch: got %d, want %d", len(res), len(expected))
@@ -29,7 +33,10 @@ func TestParseCPUList_CommaSeparated(t *testing.T) {
 }
 
 func TestParseCPUList_Range(t *testing.T) {
-	res := parseCPUList("0-3")
+	res, err := parseCPUList("0-3")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	expected := []int{0, 1, 2, 3}
 	if len(res) != len(expected) {
 		t.Fatalf("length mismatch: got %d, want %d", len(res), len(expected))
@@ -42,7 +49,10 @@ func TestParseCPUList_Range(t *testing.T) {
 }
 
 func TestParseCPUList_Mixed(t *testing.T) {
-	res := parseCPUList("0,2-4,7")
+	res, err := parseCPUList("0,2-4,7")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	expected := []int{0, 2, 3, 4, 7}
 	if len(res) != len(expected) {
 		t.Fatalf("length mismatch: got %d, want %d", len(res), len(expected))
@@ -55,84 +65,68 @@ func TestParseCPUList_Mixed(t *testing.T) {
 }
 
 func TestParseCPUList_Empty(t *testing.T) {
-	res := parseCPUList("")
+	res, err := parseCPUList("")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if len(res) != 0 {
 		t.Errorf("expected empty slice, got %v", res)
 	}
 }
 
 func TestParseCPUList_Invalid(t *testing.T) {
-	res := parseCPUList("abc")
-	if len(res) == 0 {
-		t.Errorf("parseCPUList returns default for invalid: got %v", res)
+	res, err := parseCPUList("abc")
+	if err == nil {
+		t.Errorf("expected error for invalid input, got nil")
+	}
+	if len(res) != 0 {
+		t.Errorf("expected empty slice for invalid input, got %v", res)
 	}
 }
 
-func TestNUMATopology_NumNodes_Direct(t *testing.T) {
+func TestNUMATopology_Direct(t *testing.T) {
 	topo := &NUMATopology{
-		nodes:    []int{0, 1, 2, 3},
-		numCPUs:  16,
-		nodeCPUs: map[int][]int{0: {0, 1}, 1: {2, 3}, 2: {4, 5}, 3: {6, 7}},
-		cpuNode:  map[int]int{0: 0, 1: 0, 2: 1, 3: 1, 4: 2, 5: 2, 6: 3, 7: 3},
+		NumNodes: 4,
+		CPUs:     [][]int{{0, 1}, {2, 3}, {4, 5}, {6, 7}},
 	}
-	if n := topo.NumNodes(); n != 4 {
-		t.Errorf("NumNodes: got %d, want 4", n)
+	if topo.NumNodes != 4 {
+		t.Errorf("NumNodes: got %d, want 4", topo.NumNodes)
+	}
+	if len(topo.CPUs) != 4 {
+		t.Errorf("CPUs length: got %d, want 4", len(topo.CPUs))
 	}
 }
 
-func TestNUMATopology_NumCPUs_Direct(t *testing.T) {
+func TestNUMAAllocator_Basic(t *testing.T) {
 	topo := &NUMATopology{
-		nodes:    []int{0, 1},
-		numCPUs:  8,
-		nodeCPUs: map[int][]int{0: {0, 1, 2, 3}, 1: {4, 5, 6, 7}},
-		cpuNode:  map[int]int{},
+		NumNodes: 2,
+		CPUs:     [][]int{{0, 1, 2, 3}, {4, 5, 6, 7}},
 	}
-	if n := topo.NumCPUs(); n != 8 {
-		t.Errorf("NumCPUs: got %d, want 8", n)
+	alloc := NewNUMAAllocator(topo, 0)
+
+	buf := alloc.Allocate(100)
+	if len(buf) != 100 {
+		t.Errorf("Allocate: got %d, want 100", len(buf))
 	}
+	alloc.Free(buf)
 }
 
-func TestNUMATopology_GetCPUNode_Direct(t *testing.T) {
+func TestNUMAAllocator_MultipleNodes(t *testing.T) {
 	topo := &NUMATopology{
-		nodes:    []int{0, 1},
-		numCPUs:  4,
-		nodeCPUs: map[int][]int{0: {0, 1}, 1: {2, 3}},
-		cpuNode:  map[int]int{0: 0, 1: 0, 2: 1, 3: 1},
+		NumNodes: 2,
+		CPUs:     [][]int{{0, 1}, {2, 3}},
 	}
-	if node := topo.GetCPUNode(2); node != 1 {
-		t.Errorf("GetCPUNode(2): got %d, want 1", node)
-	}
-	if node := topo.GetCPUNode(99); node != 0 {
-		t.Errorf("GetCPUNode(99) for missing key: got %d", node)
-	}
-}
 
-func TestNUMAAllocator_NumNodes_Enabled(t *testing.T) {
-	cfg := NewNUMAConfig()
-	cfg.Enabled = true
-	alloc, err := NewNUMAAllocator(*cfg)
-	if err != nil {
-		t.Skipf("NUMA not available: %v", err)
-	}
-	if alloc.IsEnabled() {
-		nodes := alloc.NumNodes()
-		if nodes < 1 {
-			t.Errorf("NumNodes should be >= 1, got %d", nodes)
-		}
-	}
-}
+	alloc0 := NewNUMAAllocator(topo, 0)
+	alloc1 := NewNUMAAllocator(topo, 1)
 
-func TestNUMAAllocator_NextNode_RoundRobin(t *testing.T) {
-	// Test with disabled allocator (simpler path)
-	cfg := NewNUMAConfig()
-	cfg.Enabled = false
-	alloc, _ := NewNUMAAllocator(*cfg)
+	buf0 := alloc0.Allocate(50)
+	buf1 := alloc1.Allocate(50)
 
-	// When disabled, NextNode should return 0
-	for i := 0; i < 5; i++ {
-		node := alloc.NextNode()
-		if node != 0 {
-			t.Errorf("NextNode (disabled) iteration %d: got %d, want 0", i, node)
-		}
+	if len(buf0) != 50 || len(buf1) != 50 {
+		t.Errorf("allocation sizes incorrect")
 	}
+
+	alloc0.Free(buf0)
+	alloc1.Free(buf1)
 }

@@ -52,6 +52,7 @@ type Config struct {
 	NodeID           string        `envconfig:"NODE_ID" default:""` // Optional override
 	MetaAddr         string        `envconfig:"META_ADDR" default:"0.0.0.0:3001"`
 	MetricsAddr      string        `envconfig:"METRICS_ADDR" default:"0.0.0.0:9090"`
+	WebUIAddr        string        `envconfig:"WEBUI_ADDR" default:"0.0.0.0:8080"`
 	MaxMemory        int64         `envconfig:"MAX_MEMORY" default:"1073741824"`
 	DataPath         string        `envconfig:"DATA_PATH" default:"./data"`
 	TTL              time.Duration `envconfig:"TTL" default:"0s"`
@@ -372,6 +373,25 @@ func run() error {
 				Err(err).
 				Str("addr", boundAddr).
 				Msg("Metrics server failed")
+		}
+	}()
+
+	// Start Web UI API server
+	go func() {
+		mux := http.NewServeMux()
+		SetupAPIEndpoints(mux, vectorStore, logger)
+
+		srv := &http.Server{
+			Addr:         cfg.WebUIAddr,
+			Handler:      mux,
+			ReadTimeout:  10 * time.Second,
+			WriteTimeout: 10 * time.Second,
+			IdleTimeout:  60 * time.Second,
+		}
+
+		logger.Info().Str("addr", cfg.WebUIAddr).Msg("Web UI API server starting")
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Error().Err(err).Str("addr", cfg.WebUIAddr).Msg("Web UI server failed")
 		}
 	}()
 

@@ -124,6 +124,50 @@ func DetectGPUBackend() GPUBackend {
 	return BackendCPU
 }
 
+// faissGPUAvailable checks if FAISS GPU library is available at runtime
+var faissGPUAvailableCache struct {
+	result  bool
+	checked bool
+}
+
+// IsFAISSGPULibraryAvailable checks if the FAISS GPU library can be loaded
+func IsFAISSGPULibraryAvailable() bool {
+	if faissGPUAvailableCache.checked {
+		return faissGPUAvailableCache.result
+	}
+	faissGPUAvailableCache.checked = true
+
+	faissPaths := []string{
+		"/usr/lib/libfaiss_gpu.so",
+		"/usr/local/lib/libfaiss_gpu.so",
+		"/usr/lib/x86_64-linux-gnu/libfaiss_gpu.so",
+	}
+
+	for _, path := range faissPaths {
+		if _, err := os.Stat(path); err == nil {
+			faissGPUAvailableCache.result = true
+			return true
+		}
+	}
+
+	faissHome := os.Getenv("FAISS_HOME")
+	if faissHome != "" {
+		faissPaths = []string{
+			faissHome + "/lib/libfaiss_gpu.so",
+			faissHome + "/lib64/libfaiss_gpu.so",
+		}
+		for _, path := range faissPaths {
+			if _, err := os.Stat(path); err == nil {
+				faissGPUAvailableCache.result = true
+				return true
+			}
+		}
+	}
+
+	faissGPUAvailableCache.result = false
+	return false
+}
+
 // GetGPURequirements returns GPU requirements and availability
 func GetGPURequirements(backend GPUBackend) (available bool, reason string, err error) {
 	switch backend {
@@ -146,7 +190,13 @@ func GetGPURequirements(backend GPUBackend) (available bool, reason string, err 
 			return false, "CUDA_HOME or FAISS_HOME not set", nil
 		}
 
-		return true, "CUDA available", nil
+		// Check FAISS GPU library availability
+		if !IsFAISSGPULibraryAvailable() {
+			return false, "FAISS GPU library not found. Install FAISS with GPU support: " +
+				"see docs/gpu_setup.md for installation instructions", nil
+		}
+
+		return true, "CUDA and FAISS GPU available", nil
 
 	case BackendMetal:
 		if runtime.GOOS != "darwin" {

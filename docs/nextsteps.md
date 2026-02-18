@@ -47,54 +47,43 @@ The following improvements are recommended for future development:
 
 ### 1. Real FAISS GPU CGO Bindings
 
-**Status**: Placeholder implementation exists
-**Location**: `internal/gpu/faiss_gpu.go`
+**Status**: ⚠️ PARTIAL - Framework exists, needs library linking
+**Location**: `internal/gpu/faiss_gpu.go`, `internal/gpu/interface.go`
 
-The current implementation has forward declarations for FAISS GPU functions but requires actual library linking:
+The current implementation has:
+- Full Go wrapper code implementing the Index interface
+- CGO forward declarations for FAISS GPU functions
+- Runtime FAISS library detection via `IsFAISSGPULibraryAvailable()`
+- Clear error messages in `GetGPURequirements()` when FAISS is missing
 
-```go
-// Current: Placeholder declarations
-extern FaissGpuResourcesPtr faiss_gpu_resources_new(int device);
-extern int faiss_gpu_index_search(...);
-
-// Needed: Link against actual libfaiss_gpu.so
-```
+**Remaining Work**:
+- Requires linking against actual `libfaiss_gpu.so` library
+- Build requires: `CGO_ENABLED=1` with FAISS GPU installed
+- See `docs/gpu_setup.md` for installation instructions
 
 **Implementation Notes**:
-- Requires FAISS GPU library compilation with CUDA support
 - Add proper `#cgo LDFLAGS` with `-lfaiss_gpu -lcudart -lcublas -lcudadevrt`
 - Handle FAISS version compatibility (1.7.x vs 1.8.x)
 - Consider using `github.com/DataIntelligenceCrew/go-faiss` as alternative
 
-**Effort**: High (1-2 weeks)
+**Effort**: High (1-2 weeks) - requires FAISS GPU library setup
 **Impact**: Enables actual GPU acceleration for vector search
 
 ---
 
 ### 2. Native CUDA Memory Management
 
-**Status**: Stub implementations exist
-**Location**: `internal/gpu/memory.go` (lines 146-196)
+**Status**: ✅ IMPLEMENTED
+**Location**: `internal/gpu/memory_cuda.go`
 
-The GPU memory pool has placeholder functions that need actual CUDA driver API integration:
+Full CUDA memory management is implemented with:
+- `cudaMallocWrap()` - GPU memory allocation via CGO
+- `cudaFreeWrap()` - GPU memory deallocation
+- `cudaMemcpyHtoD()`, `cudaMemcpyDtoH()`, `cudaMemcpyDtoD()` - Memory copy operations
+- `cudaMemsetWrap()` - GPU memory initialization
+- Integrated with `GPUMemPool` struct in `memory.go`
 
-```go
-// Current: Stubs returning errors
-func (p *GPUMemPool) allocateCUDAMemory(size int64) (unsafe.Pointer, error) {
-    return nil, fmt.Errorf("CUDA memory allocation not implemented yet")
-}
-
-// Needed: Actual cuMemAlloc/cudaMalloc calls
-```
-
-**Implementation Notes**:
-- Use CUDA Driver API (`cuMemAlloc`, `cuMemFree`, `cuMemcpyHtoD`, `cuMemcpyDtoH`)
-- Or use Runtime API (`cudaMalloc`, `cudaFree`, `cudaMemcpy`)
-- Add memory pool sub-allocations for efficiency
-- Implement memory defragmentation
-
-**Effort**: Medium (3-5 days)
-**Impact**: Enables actual GPU memory operations for large-scale workloads
+All functions use actual CUDA Runtime API calls through CGO.
 
 ---
 
@@ -122,23 +111,17 @@ The hybrid pipeline currently has a placeholder for cross-encoder scoring:
 
 ### 4. Concrete Quantizer Implementations
 
-**Status**: Framework exists, implementations stubbed
-**Location**: `internal/store/generic_quantizer_test.go`
+**Status**: ✅ IMPLEMENTED
+**Location**: `internal/store/scalar_quantization.go`, `internal/store/binary_quantization.go`
 
-Multiple tests have TODOs for concrete quantizer types:
+Full implementations completed:
+- **SQ8 (Scalar Quantization 8-bit)**: `SQ8Encoder` with per-dimension min/max bounds, Encode/Decode, distance functions
+- **BQ (Binary Quantization)**: `BQEncoder` with 1-bit quantization (32x compression), Hamming distance
+- **PQ (Product Quantization)**: Optimized implementation in `internal/pq/encoder.go`
+- SIMD optimizations in `internal/simd/sq8.go`
+- Comprehensive test suite in `generic_quantizer_test.go`
 
-```go
-// TODO: Implement with concrete quantizer types (SQ8Encoder, BQEncoder, PQEncoder)
-```
-
-**Implementation Notes**:
-- Complete SQ8 (Scalar Quantization 8-bit) encoder/decoder
-- Complete BQ (Binary Quantization) encoder/decoder
-- Optimize existing PQ (Product Quantization) implementation
-- Add SIMD optimizations for quantization/dequantization
-
-**Effort**: Medium (1 week)
-**Impact**: Enables significant memory savings (4x for SQ8, 32x for BQ) with minimal accuracy loss
+Memory savings: 4x for SQ8, 32x for BQ
 
 ---
 
@@ -177,13 +160,13 @@ The following validation tests have been prepared but not executed:
 
 ## Implementation Priority
 
-| Priority | Improvement | Effort | Impact |
-|----------|-------------|--------|--------|
-| High | Real FAISS GPU CGO Bindings | 1-2 weeks | Critical for GPU acceleration |
-| High | Native CUDA Memory Management | 3-5 days | Required for production GPU usage |
-| Medium | Concrete Quantizer Implementations | 1 week | Memory optimization |
-| Medium | Extended Chaos Testing | 3-5 days | Production readiness |
-| Low | Cross-Encoder Scoring | 1-2 weeks | Search relevance improvement |
+| Priority | Improvement | Status | Effort | Impact |
+|----------|-------------|--------|--------|--------|
+| High | Real FAISS GPU CGO Bindings | Pending | 1-2 weeks | Critical for GPU acceleration |
+| Medium | Extended Chaos Testing | Pending | 3-5 days | Production readiness |
+| Low | Cross-Encoder Scoring | Pending | 1-2 weeks | Search relevance improvement |
+| - | Native CUDA Memory Management | ✅ Done | - | Required for GPU usage |
+| - | Concrete Quantizer Implementations | ✅ Done | - | Memory optimization |
 
 ---
 

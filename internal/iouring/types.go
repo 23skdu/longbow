@@ -21,6 +21,7 @@ type Params struct {
 }
 
 // SqRingOffsets represents the submission queue ring offsets
+// Must match kernel's struct io_sqring_offsets (40 bytes)
 type SqRingOffsets struct {
 	Head        uint32
 	Tail        uint32
@@ -29,11 +30,11 @@ type SqRingOffsets struct {
 	Flags       uint32
 	Dropped     uint32
 	Array       uint32
-	Resv1       uint32
-	Resv2       uint32
+	Resv        [3]uint32  // 3 reserved fields to match kernel ABI
 }
 
 // CqRingOffsets represents the completion queue ring offsets
+// Must match kernel's struct io_cqring_offsets (32 bytes)
 type CqRingOffsets struct {
 	Head        uint32
 	Tail        uint32
@@ -42,8 +43,7 @@ type CqRingOffsets struct {
 	Overflow    uint32
 	Cqes        uint32
 	Flags       uint32
-	Resv1       uint32
-	Resv2       uint32
+	Resv        [2]uint32  // 2 reserved fields to match kernel ABI
 }
 
 // SQE represents a submission queue entry (64 bytes)

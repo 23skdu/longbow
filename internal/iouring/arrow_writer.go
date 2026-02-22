@@ -234,7 +234,9 @@ func (w *WriteRequest) Wait() int32 {
 // Close releases resources
 func (w *ArrowWriter) Close() error {
 	if w.ipcWriter != nil {
-		w.ipcWriter.Close()
+		if err := w.ipcWriter.Close(); err != nil {
+			return err
+		}
 	}
 	return nil
 }

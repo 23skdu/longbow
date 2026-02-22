@@ -28,3 +28,8 @@ issues:
       linters:
         - prealloc
         - unparam
+        - errcheck
+    # Exclude errcheck for benchmarks (ignore error returns in benchmarks)
+    - path: _bench\.go
+      linters:
+        - errcheck

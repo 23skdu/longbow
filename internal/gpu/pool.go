@@ -178,7 +178,10 @@ func (p *GPUIndexPool) Cleanup() int {
 		pi := e.Value.(*pooledIndex)
 		if p.isExpired(pi) {
 			p.idle.Remove(e)
-			pi.index.Close()
+			if err := pi.index.Close(); err != nil {
+				// Log error but continue cleanup
+				fmt.Printf("GPU index close error: %v\n", err)
+			}
 			removed++
 		}
 		e = next
@@ -247,7 +250,10 @@ func (p *GPUIndexPool) Close() error {
 	// Close all idle indexes
 	for e := p.idle.Front(); e != nil; e = e.Next() {
 		pi := e.Value.(*pooledIndex)
-		pi.index.Close()
+		if err := pi.index.Close(); err != nil {
+			// Log error but continue closing others
+			fmt.Printf("GPU index close error: %v\n", err)
+		}
 	}
 	p.idle.Init()
 

@@ -61,7 +61,9 @@ func (e *MetricsExporter) healthHandler(w http.ResponseWriter, r *http.Request) 
 		status = "cpu_fallback"
 	}
 
-	w.Write([]byte(fmt.Sprintf(`{"status": "%s", "backend": "%s"}`, status, backend)))
+	if _, err := w.Write([]byte(fmt.Sprintf(`{"status": "%s", "backend": "%s"}`, status, backend))); err != nil {
+		http.Error(w, "Failed to write response", http.StatusInternalServerError)
+	}
 }
 
 // Stop stops the metrics HTTP server

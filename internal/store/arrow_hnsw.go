@@ -1084,6 +1084,7 @@ func (h *ArrowHNSW) Grow(capacity, dims int) error {
 
 func (h *ArrowHNSW) SetEfConstruction(ef int32) {
 	h.config.EfConstruction = ef
+	h.efConstruction.Store(ef)
 }
 
 func (h *ArrowHNSW) CleanupTombstones(threshold int) (int, error) {
@@ -1371,6 +1372,31 @@ func (h *ArrowHNSW) searchLayer(_ context.Context, computer any, entryPoint uint
 						diff := val - v[i]
 						modSq := real(diff)*real(diff) + imag(diff)*imag(diff)
 						sum += modSq
+					}
+					return float32(math.Sqrt(sum)), nil
+				}
+				return math.MaxFloat32, nil
+			}
+			epDist, _ = distComputer(entryPoint)
+
+		case []float64:
+			distComputer = func(id uint32) (float32, error) {
+				vecAny, err := h.getVectorWithData(data, id)
+				if err != nil {
+					return 0, err
+				}
+				if v, ok := vecAny.([]float64); ok {
+					if len(q) != len(v) {
+						return math.MaxFloat32, nil
+					}
+					if h.distFuncF64 != nil {
+						return h.distFuncF64(q, v)
+					}
+					// Fallback Euclidean
+					var sum float64
+					for i, val := range q {
+						diff := val - v[i]
+						sum += diff * diff
 					}
 					return float32(math.Sqrt(sum)), nil
 				}

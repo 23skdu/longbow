@@ -133,14 +133,20 @@ func (r *Ring) FlushAndWait(minComplete uint32, timeout time.Duration) (int, err
 
 	submitted := uint32(0)
 
-	// Loop until all pending SQEs are submitted
 	for {
 		tail := atomic.LoadUint32(r.sqTail)
 		head := atomic.LoadUint32(r.sqHead)
 		toSubmit := tail - head
 
 		if toSubmit == 0 {
-			break
+			if minComplete == 0 {
+				break
+			}
+			n, err := ioUringEnter(r.fd, 0, minComplete, flags, nil)
+			if err != nil {
+				return int(submitted), err
+			}
+			return int(n), nil
 		}
 
 		n, err := ioUringEnter(r.fd, toSubmit, minComplete, flags, nil)
@@ -154,7 +160,6 @@ func (r *Ring) FlushAndWait(minComplete uint32, timeout time.Duration) (int, err
 			break
 		}
 
-		// Partial submission, retry with remaining
 		time.Sleep(time.Microsecond)
 	}
 

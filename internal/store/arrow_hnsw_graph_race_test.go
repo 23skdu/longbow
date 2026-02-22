@@ -56,15 +56,6 @@ func TestArrowHNSW_AddBatchBulk_EnsureChunkRace(t *testing.T) {
 			}
 		}()
 
-		numVectors := 2048 // Enough vectors to span multiple chunks
-		vecs := make([][]float32, numVectors)
-		for i := 0; i < numVectors; i++ {
-			vecs[i] = make([]float32, cfg.Dims)
-			for j := 0; j < cfg.Dims; j++ {
-				vecs[i][j] = float32(i + j)
-			}
-		}
-
 		// Use errgroup to simulate concurrent AddBatchBulk calls
 		g, ctx := errgroup.WithContext(context.Background())
 		// Each goroutine adds a small batch of vectors, designed to hit the same initial chunk.
@@ -77,6 +68,15 @@ func TestArrowHNSW_AddBatchBulk_EnsureChunkRace(t *testing.T) {
 		}
 
 		batchSize := 20 // Each goroutine adds a small batch
+		numVectors := concurrency * batchSize // Total vectors = goroutines * batch size
+		vecs := make([][]float32, numVectors)
+		for i := 0; i < numVectors; i++ {
+			vecs[i] = make([]float32, cfg.Dims)
+			for j := 0; j < cfg.Dims; j++ {
+				vecs[i][j] = float32(i + j)
+			}
+		}
+
 		for i := 0; i < concurrency; i++ {
 			startID := uint32(i * batchSize)
 			endID := startID + uint32(batchSize)

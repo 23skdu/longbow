@@ -58,7 +58,9 @@ func NewBufferPool(bufferSize, maxBuffers int) (*BufferPool, error) {
 		buf, err := pool.allocAligned()
 		if err != nil {
 			// Cleanup already allocated buffers
-			pool.Close()
+			if closeErr := pool.Close(); closeErr != nil {
+				return nil, fmt.Errorf("failed to allocate buffer %d: %w (close error: %v)", i, err, closeErr)
+			}
 			return nil, fmt.Errorf("failed to allocate buffer %d: %w", i, err)
 		}
 		pool.available <- buf

@@ -41,13 +41,14 @@ type FSBackend struct {
 // If directIO is true, it attempts to use Direct I/O (O_DIRECT/F_NOCACHE).
 func NewWALBackend(path string, preferAsync, directIO bool) (WALBackend, error) {
 	if preferAsync {
-		// NewUringBackend depends on the platform specific file (linux or stub)
-		// For now, UringBackend handles its own opening. We might want to pass directIO hint there too eventually.
-		backend, err := NewUringBackend(path)
+		backend, err := NewIOUringBackend(path)
 		if err == nil {
 			return backend, nil
 		}
-		// Fallback to FSBackend
+		backend, err = NewUringBackend(path)
+		if err == nil {
+			return backend, nil
+		}
 	}
 	if directIO {
 		return NewFSBackendWithDirectIO(path)

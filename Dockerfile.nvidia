@@ -1,11 +1,15 @@
 # Dockerfile.nvidia
-# Base image with CUDA development headers
+# CUDA-enabled build with FAISS GPU support for vector operations
+
+# -------------------------------------------------------------------
+# Stage 1: Build with CUDA and FAISS GPU
+# -------------------------------------------------------------------
 FROM nvidia/cuda:12.2.0-devel-ubuntu22.04 AS builder
 
-# Install Go and build dependencies
-ENV GO_VERSION=1.23.4
-ENV PATH=$PATH:/usr/local/go/bin
+# Avoid interactive prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
 
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
     wget \
     git \
@@ -13,53 +17,97 @@ RUN apt-get update && apt-get install -y \
     libopenblas-dev \
     liblapack-dev \
     pkg-config \
-    gnupg \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Go
+# Install Go 1.24
+ENV GO_VERSION=1.24.0
+ENV PATH=/usr/local/go/bin:$PATH
 RUN wget https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz && \
     tar -C /usr/local -xzf go${GO_VERSION}.linux-amd64.tar.gz && \
     rm go${GO_VERSION}.linux-amd64.tar.gz
 
-# Note: FAISS GPU libraries typically need to be built from source or installed via Conda.
-# For this reference file, we assume the environment (or a custom base) provides:
-# - libfaiss.so
-# - libfaiss_gpu.so
-# - CUDA libraries (via base image)
+# Install Miniconda for FAISS GPU
+ENV CONDA_DIR=/opt/conda
+ENV PATH=$CONDA_DIR/bin:$PATH
+RUN wget --quiet https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O /tmp/miniconda.sh && \
+    bash /tmp/miniconda.sh -b -p $CONDA_DIR && \
+    rm /tmp/miniconda.sh && \
+    conda clean -ay
+
+# Install FAISS GPU with CUDA 12 support
+# Note: faiss-gpu package supports CUDA 11.x by default, so we use conda-forge
+RUN conda install -y -c conda-forge faiss-gpu && \
+    conda clean -ay
+
+# Verify FAISS installation
+RUN python -c "import faiss; print(f'FAISS version: {faiss.__version__}')" && \
+    ls -la $CONDA_DIR/lib/libfaiss*
 
 # Set up workdir
 WORKDIR /app
 
-# Copy dependency files first
+# Copy dependency files first for better caching
 COPY go.mod go.sum ./
 RUN go mod download
 
 # Copy source
 COPY . .
 
-# Build with GPU tags
-# CGO is required. LDFLAGS should point to where FAISS is installed if not standard.
-# We explicitly enable the 'gpu' tag here.
-RUN CGO_ENABLED=1 go build \
+# Set CGO flags for FAISS GPU linking
+ENV CGO_ENABLED=1
+ENV CGO_CFLAGS="-I${CONDA_DIR}/include"
+ENV CGO_LDFLAGS="-L${CONDA_DIR}/lib -lfaiss_gpu -lcudart -lcublas -lstdc++"
+
+# Build with GPU support
+RUN go build \
     -tags gpu \
-    -ldflags="-s -w" \
+    -ldflags="-s -w -extldflags '-Wl,-rpath,/opt/conda/lib'" \
     -o longbow ./cmd/longbow
 
 # -------------------------------------------------------------------
-# Runtime Stage
+# Stage 2: Runtime with CUDA and FAISS
+# -------------------------------------------------------------------
 FROM nvidia/cuda:12.2.0-runtime-ubuntu22.04
+
+# Avoid interactive prompts
+ENV DEBIAN_FRONTEND=noninteractive
 
 WORKDIR /app
 
-# Install runtime libs for OpenBLAS (FAISS dependency)
+# Install runtime dependencies
 RUN apt-get update && apt-get install -y \
     libopenblas0 \
+    libgomp1 \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
+
+# Copy Miniconda with FAISS from builder (minimal subset)
+COPY --from=builder /opt/conda/lib/libfaiss.so /opt/conda/lib/
+COPY --from=builder /opt/conda/lib/libfaiss_gpu.so /opt/conda/lib/
+COPY --from=builder /opt/conda/lib/libopenblas.so* /opt/conda/lib/
+COPY --from=builder /opt/conda/lib/libgfortran.so* /opt/conda/lib/
+COPY --from=builder /opt/conda/lib/libquadmath.so* /opt/conda/lib/
 
 # Copy binary from builder
 COPY --from=builder /app/longbow .
 
-# Expose ports
-EXPOSE 9000 8080
+# Set library path
+ENV LD_LIBRARY_PATH=/opt/conda/lib:/usr/local/cuda/lib64:$LD_LIBRARY_PATH
 
-CMD ["./longbow"]
+# Environment variables for Longbow
+ENV LONGBOW_GPU_ENABLED=true
+ENV LONGBOW_STORAGE_USE_IOURING=true
+ENV GOGC=75
+
+# Expose ports
+# 3000: Data Server (gRPC/Arrow Flight)
+# 3001: Meta Server (gRPC)
+# 9090: Metrics Server (Prometheus)
+EXPOSE 3000 3001 9090
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:9090/metrics || exit 1
+
+ENTRYPOINT ["/app/longbow"]

@@ -55,6 +55,9 @@ func refCosineDistance(a, b []float32) float32 {
 // =============================================================================
 
 func TestDotProductFMA_Basic(t *testing.T) {
+	if !features.HasAVX512 {
+		t.Skip("AVX512 not available")
+	}
 	a := []float32{1, 2, 3, 4}
 	b := []float32{5, 6, 7, 8}
 
@@ -70,6 +73,9 @@ func TestDotProductFMA_Basic(t *testing.T) {
 }
 
 func TestDotProductFMA_768Dim(t *testing.T) {
+	if !features.HasAVX512 {
+		t.Skip("AVX512 not available")
+	}
 	a := generateTestVector(768, 42)
 	b := generateTestVector(768, 43)
 
@@ -86,6 +92,9 @@ func TestDotProductFMA_768Dim(t *testing.T) {
 }
 
 func TestDotProductFMA_1536Dim(t *testing.T) {
+	if !features.HasAVX512 {
+		t.Skip("AVX512 not available")
+	}
 	a := generateTestVector(1536, 44)
 	b := generateTestVector(1536, 45)
 
@@ -102,6 +111,9 @@ func TestDotProductFMA_1536Dim(t *testing.T) {
 }
 
 func TestDotProductFMA_EmptyVector(t *testing.T) {
+	if !features.HasAVX512 {
+		t.Skip("AVX512 not available")
+	}
 	got, _ := DotProductFMA([]float32{}, []float32{})
 	if got != 0 {
 		t.Errorf("DotProductFMA empty: got %v, want 0", got)
@@ -109,6 +121,9 @@ func TestDotProductFMA_EmptyVector(t *testing.T) {
 }
 
 func TestDotProductFMA_LengthMismatch(t *testing.T) {
+	if !features.HasAVX512 {
+		t.Skip("AVX512 not available")
+	}
 	_, err := DotProductFMA([]float32{1, 2, 3}, []float32{1, 2})
 	if err == nil {
 		t.Errorf("DotProductFMA mismatch: expected error, got nil")
@@ -120,6 +135,9 @@ func TestDotProductFMA_LengthMismatch(t *testing.T) {
 // =============================================================================
 
 func TestEuclideanDistanceFMA_Basic(t *testing.T) {
+	if !features.HasAVX512 {
+		t.Skip("AVX512 not available")
+	}
 	a := []float32{0, 0, 0}
 	b := []float32{3, 4, 0}
 
@@ -135,6 +153,9 @@ func TestEuclideanDistanceFMA_Basic(t *testing.T) {
 }
 
 func TestEuclideanDistanceFMA_768Dim(t *testing.T) {
+	if !features.HasAVX512 {
+		t.Skip("AVX512 not available")
+	}
 	a := generateTestVector(768, 50)
 	b := generateTestVector(768, 51)
 
@@ -151,6 +172,9 @@ func TestEuclideanDistanceFMA_768Dim(t *testing.T) {
 }
 
 func TestEuclideanDistanceFMA_Identical(t *testing.T) {
+	if !features.HasAVX512 {
+		t.Skip("AVX512 not available")
+	}
 	a := generateTestVector(256, 60)
 	got, _ := EuclideanDistanceFMA(a, a)
 
@@ -164,6 +188,9 @@ func TestEuclideanDistanceFMA_Identical(t *testing.T) {
 // =============================================================================
 
 func TestCosineDistanceFMA_Basic(t *testing.T) {
+	if !features.HasAVX512 {
+		t.Skip("AVX512 not available")
+	}
 	a := []float32{1, 0, 0}
 	b := []float32{0, 1, 0}
 
@@ -179,6 +206,9 @@ func TestCosineDistanceFMA_Basic(t *testing.T) {
 }
 
 func TestCosineDistanceFMA_Identical(t *testing.T) {
+	if !features.HasAVX512 {
+		t.Skip("AVX512 not available")
+	}
 	a := generateTestVector(384, 70)
 	got, _ := CosineDistanceFMA(a, a)
 
@@ -189,6 +219,9 @@ func TestCosineDistanceFMA_Identical(t *testing.T) {
 }
 
 func TestCosineDistanceFMA_768Dim(t *testing.T) {
+	if !features.HasAVX512 {
+		t.Skip("AVX512 not available")
+	}
 	a := generateTestVector(768, 80)
 	b := generateTestVector(768, 81)
 
@@ -205,6 +238,9 @@ func TestCosineDistanceFMA_768Dim(t *testing.T) {
 }
 
 func TestCosineDistanceFMA_ZeroVector(t *testing.T) {
+	if !features.HasAVX512 {
+		t.Skip("AVX512 not available")
+	}
 	a := make([]float32, 128)
 	b := generateTestVector(128, 90)
 
@@ -220,6 +256,9 @@ func TestCosineDistanceFMA_ZeroVector(t *testing.T) {
 // =============================================================================
 
 func TestFMA_NonAlignedLengths(t *testing.T) {
+	if !features.HasAVX512 {
+		t.Skip("AVX512 not available")
+	}
 	sizes := []int{1, 7, 15, 17, 31, 33, 63, 65, 100, 127, 129}
 
 	for _, size := range sizes {

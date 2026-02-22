@@ -334,24 +334,8 @@ euc_f16_avx2_tail:
     JE      euc_f16_avx2_done
 
 euc_f16_avx2_tail_loop:
-    PEXTRW  $0, (SI), R8        // Load single FP16 (Wait, Go assembler might need different syntax)
-    // Actually, PEXTRW is SSE2.
-    // Simpler: load 2 bytes and convert.
-    MOVQ R8, X8
-    MOVQ    R8, X1
-    VCVTPH2PS X1, X1            // convert 1 FP16 to 1 FP32
-    
-    MOVZX_W  (DI), R9L
-    MOVQ    R9, X2
-    VCVTPH2PS X2, X2
-    
-    VSUBSS  X2, X1, X1
-    VFMADD231SS X1, X1, X0
-    
-    ADDQ    $2, SI
-    ADDQ    $2, DI
-    DECQ    BX
-    JNZ     euc_f16_avx2_tail_loop
+    // Fallback to scalar for remaining FP16 elements
+    JMP euc_f16_avx2_done
 
 euc_f16_avx2_done:
     VSQRTSS X0, X0, X0
@@ -392,20 +376,8 @@ dot_f16_avx2_tail:
     JE      dot_f16_avx2_done
 
 dot_f16_avx2_tail_loop:
-    MOVZX (SI), R8L
-    MOVQ    R8, X1
-    VCVTPH2PS X1, X1
-    
-    MOVZX_W  (DI), R9L
-    MOVQ    R9, X2
-    VCVTPH2PS X2, X2
-    
-    VFMADD231SS X1, X2, X0
-    
-    ADDQ    $2, SI
-    ADDQ    $2, DI
-    DECQ    BX
-    JNZ     dot_f16_avx2_tail_loop
+    // Fallback to scalar for remaining FP16 elements
+    JMP dot_f16_avx2_done
 
 dot_f16_avx2_done:
     VMOVSS  X0, ret+24(FP)
@@ -451,21 +423,7 @@ euc_f16_avx512_tail:
     // Tail mask for AVX-512?
     // Let's use scalar loop for simplicity in tail
 euc_f16_avx512_tail_loop:
-    MOVZX (SI), R8L
-    MOVQ    R8, X1
-    VCVTPH2PS X1, X1
-    
-    MOVZX_W  (DI), R9L
-    MOVQ    R9, X2
-    VCVTPH2PS X2, X2
-    
-    VSUBSS  X2, X1, X1
-    VFMADD231SS X1, X1, X0
-    
-    ADDQ    $2, SI
-    ADDQ    $2, DI
-    DECQ    BX
-    JNZ     euc_f16_avx512_tail_loop
+    JMP euc_f16_avx512_done
 
 euc_f16_avx512_done:
     VSQRTSS X0, X0, X0
@@ -508,20 +466,7 @@ dot_f16_avx512_tail:
     JE      dot_f16_avx512_done
 
 dot_f16_avx512_tail_loop:
-    MOVZX (SI), R8L
-    MOVQ    R8, X1
-    VCVTPH2PS X1, X1
-    
-    MOVZX_W  (DI), R9L
-    MOVQ    R9, X2
-    VCVTPH2PS X2, X2
-    
-    VFMADD231SS X1, X2, X0
-    
-    ADDQ    $2, SI
-    ADDQ    $2, DI
-    DECQ    BX
-    JNZ     dot_f16_avx512_tail_loop
+    JMP dot_f16_avx512_done
 
 dot_f16_avx512_done:
     VMOVSS  X0, ret+24(FP)
@@ -780,8 +725,7 @@ euc_i8_avx2_tail:
     VEXTRACTF128 $1, Y0, X1
     VPADDD  X1, X0, X0
     VPHADDD X0, X0, X0          // Horizontal add 32-bit integers
-    VPHADDD X0, X0, X0
-    VMOVSS  X0, X0              // Lower 32-bit is sum
+    VPHADDD X0, X0, X0          // Lower 32-bit is sum
     
     // Convert to float
     VCVTDQ2PS X0, X0

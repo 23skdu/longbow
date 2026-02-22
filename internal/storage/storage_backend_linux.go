@@ -111,7 +111,7 @@ func (b *UringStorageBackend) Readv(iovs [][]byte, off int64) (int, error) {
 	// Actually, let's implement a loop of SubmitRequests but wait for them all at once?
 	// That would be true async batching.
 
-	reqs := make([]*iouring.Result, len(iovs))
+	reqs := make([]iouring.Request, len(iovs))
 	currOff := off
 	for i, buf := range iovs {
 		req, err := b.ring.SubmitRequest(iouring.Pread(int(b.f.Fd()), buf, uint64(currOff)), nil)
@@ -138,7 +138,7 @@ func (b *UringStorageBackend) Readv(iovs [][]byte, off int64) (int, error) {
 
 func (b *UringStorageBackend) Writev(iovs [][]byte, off int64) (int, error) {
 	start := time.Now()
-	reqs := make([]*iouring.Result, len(iovs))
+	reqs := make([]iouring.Request, len(iovs))
 	currOff := off
 	for i, buf := range iovs {
 		req, err := b.ring.SubmitRequest(iouring.Pwrite(int(b.f.Fd()), buf, uint64(currOff)), nil)

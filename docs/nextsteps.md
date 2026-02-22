@@ -1,182 +1,187 @@
 # Longbow Development Roadmap
 
-## Status: GPU Support Phase Complete
+## Status: GPU & Custom io_uring Complete | Remaining: FAISS Library Linking & Cross-Encoder
 
-**Date Updated**: February 17, 2026
+**Date Updated**: February 21, 2026
 
-All 15 parts of the GPU Support Implementation plan have been completed. The codebase now has comprehensive GPU support for both NVIDIA CUDA (Linux AMD64) and Apple Metal (macOS ARM64) platforms.
+### ✅ Recently Completed (February 2026)
 
----
+1. **Custom Zero-Lock Zero-Copy io_uring Library** - FULLY IMPLEMENTED
+   - Location: `internal/iouring/` (10 files)
+   - WAL Backend Integration: `internal/storage/wal_backend_arrow_iouring.go`
+   - Uses `golang.org/x/sys/unix` directly (Go 1.24+ compatible)
+   - Features: Lock-free queues, O_DIRECT aligned buffer pool, Arrow IPC integration, Prometheus metrics
 
-## Completed Work Summary
+2. **All GPU Support (Parts 1-15)** - COMPLETE
+   - Build tag system (`gpu`, `gpu_cuda`, `gpu_metal`)
+   - Makefile targets: `build-cuda`, `build-metal`, `build-gpu`
+   - CUDA memory management via CGO
+   - GPU backend abstraction and detection
+   - GPU metrics and monitoring
 
-### GPU Foundation (Parts 1-6) ✅
-- Build tag system (`gpu`, `gpu_cuda`, `gpu_metal`, `gpu_linux`, `gpu_darwin`)
-- Makefile targets: `build-cuda`, `build-metal`, `build-gpu`
-- Environment variable detection (`CUDA_HOME`, `FAISS_HOME`)
-- `GPUBackend` type and `GPUConfig` struct
-- `DetectGPUBackend()` and `GetGPURequirements()` functions
-- Backend abstraction interface with all required methods
-- GPU memory pool structure with CPU fallback
-- GPU index factory with `NewIndexWithBackend()`
-
-### GPU Integration (Parts 7-11) ✅
-- Vector store GPU integration (`InitGPUBackend`, `GetGPUBackend`)
-- Hybrid GPU/CPU search pipeline with candidate generation and CPU refinement
-- GPU index synchronization with batching (`SyncBatchSize`, `SyncInterval`)
-- GPU error handling with typed errors (`GPUNotAvailableError`, `GPUMemoryError`, `GPUInitializationError`, `GPUComputeError`)
-- GPU circuit breaker for automatic fallback
-- GPU metrics and monitoring (Prometheus metrics for latency, memory, operations, fallbacks)
-
-### Platform Support (Parts 12-14) ✅
-- Apple Metal GPU support with unified memory optimizations
-- Cross-platform GPU detection (`DetectAvailableGPUs`, `GetPreferredBackend`, `ValidateBackend`)
-- GPU resource pooling with idle timeout and reuse
-
-### Documentation & Testing (Part 15) ✅
-- `docs/gpu_setup.md` - Complete installation and configuration guide
-- `docs/gpu_integration.md` - API usage and performance tuning guide
-- GPU-specific tests with appropriate build tags (`//go:build gpu`)
-- Makefile build targets for CUDA and Metal
+3. **Concrete Quantizer Implementations** - COMPLETE
+   - SQ8 (Scalar Quantization 8-bit) - 4x memory savings
+   - BQ (Binary Quantization) - 32x memory savings
+   - PQ (Product Quantization)
 
 ---
 
-## Future Improvements
+## 🚧 Remaining Work for CUDA Vector Operations on Linux
 
-The following improvements are recommended for future development:
+### 1. Real FAISS GPU Library Linking (HIGH PRIORITY)
 
-### 1. Real FAISS GPU CGO Bindings
-
-**Status**: ⚠️ PARTIAL - Framework exists, needs library linking
+**Status**: ⚠️ PARTIAL - Framework exists, needs library linking  
 **Location**: `internal/gpu/faiss_gpu.go`, `internal/gpu/interface.go`
 
-The current implementation has:
-- Full Go wrapper code implementing the Index interface
-- CGO forward declarations for FAISS GPU functions
-- Runtime FAISS library detection via `IsFAISSGPULibraryAvailable()`
-- Clear error messages in `GetGPURequirements()` when FAISS is missing
+**What's Done**:
+- ✅ Full Go wrapper implementing the Index interface
+- ✅ CGO forward declarations for FAISS GPU functions
+- ✅ Proper `#cgo LDFLAGS`: `-lfaiss_gpu -lcudart -lcublas -lcudadevrt`
+- ✅ Runtime FAISS library detection via `IsFAISSGPULibraryAvailable()`
 
 **Remaining Work**:
-- Requires linking against actual `libfaiss_gpu.so` library
-- Build requires: `CGO_ENABLED=1` with FAISS GPU installed
-- See `docs/gpu_setup.md` for installation instructions
+1. Install FAISS GPU library on build system:
+   ```bash
+   # Option A: Conda (recommended)
+   conda install -c conda-forge faiss-gpu
+   
+   # Option B: Build from source
+   git clone https://github.com/facebookresearch/faiss.git
+   cmake -DFAISS_ENABLE_GPU=ON -DCMAKE_CUDA_ARCHITECTURES="80;90" ..
+   make -j
+   ```
 
-**Implementation Notes**:
-- Add proper `#cgo LDFLAGS` with `-lfaiss_gpu -lcudart -lcublas -lcudadevrt`
-- Handle FAISS version compatibility (1.7.x vs 1.8.x)
-- Consider using `github.com/DataIntelligenceCrew/go-faiss` as alternative
+2. Set library paths:
+   ```bash
+   export CGO_CFLAGS="-I/path/to/faiss/include"
+   export CGO_LDFLAGS="-L/path/to/faiss/lib -lfaiss_gpu -lcudart -lcublas"
+   ```
 
-**Effort**: High (1-2 weeks) - requires FAISS GPU library setup
-**Impact**: Enables actual GPU acceleration for vector search
+3. Build with GPU support:
+   ```bash
+   make build-cuda
+   # or
+   CGO_ENABLED=1 go build -tags gpu -o bin/longbow-cuda ./cmd/longbow
+   ```
+
+**Effort**: Medium (2-3 days if FAISS library is available)  
+**Impact**: Enables actual GPU-accelerated vector search (vs CPU fallback)
 
 ---
 
-### 2. Native CUDA Memory Management
+### 2. Hybrid Search Cross-Encoder Scoring (MEDIUM PRIORITY)
 
-**Status**: ✅ IMPLEMENTED
-**Location**: `internal/gpu/memory_cuda.go`
-
-Full CUDA memory management is implemented with:
-- `cudaMallocWrap()` - GPU memory allocation via CGO
-- `cudaFreeWrap()` - GPU memory deallocation
-- `cudaMemcpyHtoD()`, `cudaMemcpyDtoH()`, `cudaMemcpyDtoD()` - Memory copy operations
-- `cudaMemsetWrap()` - GPU memory initialization
-- Integrated with `GPUMemPool` struct in `memory.go`
-
-All functions use actual CUDA Runtime API calls through CGO.
-
----
-
-### 3. Hybrid Search Cross-Encoder Scoring
-
-**Status**: TODO in code
+**Status**: ⚠️ TODO - Stub implementation exists  
 **Location**: `internal/store/hybrid_pipeline.go:348`
 
-The hybrid pipeline currently has a placeholder for cross-encoder scoring:
-
+Current stub:
 ```go
-// TODO: Implement actual cross-encoder scoring
+// CrossEncoderReranker is a stub implementation
+func (r *CrossEncoderReranker) Rerank(ctx context.Context, q string, results []SearchResult) ([]SearchResult, error) {
+    // TODO: Implement actual cross-encoder scoring
+    return results, nil
+}
 ```
 
-**Implementation Notes**:
-- Integrate with ONNX Runtime or similar for neural re-ranking
-- Support models like `cross-encoder/ms-marco-MiniLM-L-6-v2`
-- Add batching for efficient GPU inference
-- Cache encoder results for repeated queries
+**Implementation Options**:
+1. **ONNX Runtime** (Recommended):
+   - Export cross-encoder model to ONNX format
+   - Use `github.com/microsoft/onnxruntime-go` for inference
+   - Models: `cross-encoder/ms-marco-MiniLM-L-6-v2`
 
-**Effort**: High (1-2 weeks)
-**Impact**: Significantly improves search relevance for RAG applications
+2. **TensorFlow/PyTorch via CGO**:
+   - More complex, requires TF/PyTorch C libraries
+   - Better for model fine-tuning scenarios
 
----
-
-### 4. Concrete Quantizer Implementations
-
-**Status**: ✅ IMPLEMENTED
-**Location**: `internal/store/scalar_quantization.go`, `internal/store/binary_quantization.go`
-
-Full implementations completed:
-- **SQ8 (Scalar Quantization 8-bit)**: `SQ8Encoder` with per-dimension min/max bounds, Encode/Decode, distance functions
-- **BQ (Binary Quantization)**: `BQEncoder` with 1-bit quantization (32x compression), Hamming distance
-- **PQ (Product Quantization)**: Optimized implementation in `internal/pq/encoder.go`
-- SIMD optimizations in `internal/simd/sq8.go`
-- Comprehensive test suite in `generic_quantizer_test.go`
-
-Memory savings: 4x for SQ8, 32x for BQ
+**Effort**: High (1-2 weeks)  
+**Impact**: Significantly improves RAG search relevance
 
 ---
 
-### 5. Extended Chaos Testing & Validation
+### 3. Extended Chaos Testing & Validation (LOW PRIORITY)
 
-**Status**: Available but not executed
-**Location**: `docs/next_steps.md`
+**Status**: Available but not executed  
+**Location**: `scripts/run_soak.sh`, `scripts/long_soak_local.sh`
 
-The following validation tests have been prepared but not executed:
+Tests prepared but not run:
+1. 24-Hour Extended Soak Test
+2. Power-Loss Simulation (WAL durability)
+3. Performance Characterization Report
 
-1. **24-Hour Extended Soak Test**
-   - Script: `scripts/run_soak.sh` or `scripts/long_soak_local.sh`
-   - Requires: I/O throttling setup (cgroups/tc)
-   - Goal: Verify stability under sustained load
-
-2. **Power-Loss Simulation**
-   - Requires: External script integration
-   - Goal: Verify WAL durability and recovery
-   - Tool: `kill -9` with random timing
-
-3. **Performance Characterization Report**
-   - Generate comprehensive benchmark report
-   - Compare GPU vs CPU performance across dimensions
-   - Document latency percentiles (p50, p99, p999)
-
-**Implementation Notes**:
-- Set up dedicated test environment (Kubernetes cluster or bare metal)
-- Configure I/O throttling: `cgcreate -g blkio:/throttled` and `tc qdisc`
-- Automate power-loss testing with controlled VM shutdown
-- Generate visualizations from metrics data
-
-**Effort**: Medium (3-5 days)
-**Impact**: Production readiness validation and performance documentation
+**Effort**: Medium (3-5 days)  
+**Impact**: Production readiness validation
 
 ---
 
 ## Implementation Priority
 
-| Priority | Improvement | Status | Effort | Impact |
-|----------|-------------|--------|--------|--------|
-| High | Real FAISS GPU CGO Bindings | Pending | 1-2 weeks | Critical for GPU acceleration |
-| Medium | Extended Chaos Testing | Pending | 3-5 days | Production readiness |
-| Low | Cross-Encoder Scoring | Pending | 1-2 weeks | Search relevance improvement |
-| - | Native CUDA Memory Management | ✅ Done | - | Required for GPU usage |
-| - | Concrete Quantizer Implementations | ✅ Done | - | Memory optimization |
+| Priority | Task | Status | Effort | Impact |
+|----------|------|--------|--------|--------|
+| **HIGH** | FAISS GPU Library Linking | ⚠️ Partial | 2-3 days | Enables GPU acceleration |
+| Medium | Cross-Encoder Scoring | ⚠️ TODO | 1-2 weeks | Search relevance |
+| Low | Extended Chaos Testing | Pending | 3-5 days | Production readiness |
+
+---
+
+## Completed Work Summary
+
+### Custom io_uring Library ✅
+- `internal/iouring/syscall.go` - Direct syscall wrappers using `golang.org/x/sys/unix`
+- `internal/iouring/ring.go` - Ring management with mmap
+- `internal/iouring/sq.go`, `cq.go` - Lock-free submission/completion queues
+- `internal/iouring/buffer_pool.go` - O_DIRECT aligned buffer pool
+- `internal/iouring/arrow_writer.go` - Zero-copy Arrow IPC integration
+- `internal/iouring/metrics.go` - Prometheus metrics
+- `internal/storage/wal_backend_arrow_iouring.go` - WAL backend integration
+
+### GPU Support ✅
+- `internal/gpu/memory_cuda.go` - CUDA memory management (CGO)
+- `internal/gpu/faiss_gpu.go` - FAISS GPU index wrapper
+- `internal/gpu/detection.go` - GPU backend detection
+- `internal/gpu/pool.go` - GPU resource pooling
+- `internal/gpu/circuit_breaker.go` - Automatic fallback
+- Makefile targets: `build-cuda`, `build-metal`, `build-gpu`
+
+### Quantization ✅
+- `internal/store/scalar_quantization.go` - SQ8 encoder
+- `internal/store/binary_quantization.go` - BQ encoder
+- `internal/pq/encoder.go` - Product quantization
 
 ---
 
 ## Notes
 
-- All GPU Parts 1-15 from the original plan are now complete
-- The codebase has a solid foundation for GPU acceleration
-- Remaining work focuses on linking against actual GPU libraries and production validation
-- Consider using `github.com/NVIDIA/go-nvml` for enhanced NVIDIA GPU management
+### Quick Start for CUDA Development
+
+```bash
+# 1. Install CUDA toolkit
+sudo apt install nvidia-cuda-toolkit
+
+# 2. Install FAISS GPU (choose one)
+conda install -c conda-forge faiss-gpu
+# OR build from source
+
+# 3. Set environment
+export CUDA_HOME=/usr/local/cuda
+export CGO_ENABLED=1
+
+# 4. Build
+make build-cuda
+
+# 5. Verify
+./bin/longbow-cuda --gpu-info
+```
+
+### Testing io_uring
+
+```bash
+# Run io_uring tests
+go test -v -tags=linux ./internal/iouring/...
+
+# Run WAL backend tests
+go test -v -tags=linux ./internal/storage/... -run IOUring
+```
 
 ---
 
-*Last Updated: February 17, 2026*
+*Last Updated: February 21, 2026*

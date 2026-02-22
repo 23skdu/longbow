@@ -611,6 +611,30 @@ func matchFloat32AVX2Kernel(src unsafe.Pointer, val float32, op int, dst unsafe.
 //go:noescape
 func matchInt64AVX512Kernel(src unsafe.Pointer, val int64, op int, dst unsafe.Pointer, n int)
 
+//go:noescape
+func euclidean16AVX512(a, b unsafe.Pointer) float32
+
+//go:noescape
+func cosine16AVX512(a, b unsafe.Pointer) (dot, normA, normB float32)
+
+//go:noescape
+func euclideanFloat64AVX2Kernel(a, b unsafe.Pointer, n int) float32
+
+//go:noescape
+func euclideanFloat64AVX512Kernel(a, b unsafe.Pointer, n int) float32
+
+//go:noescape
+func euclideanInt8AVX2Kernel(a, b unsafe.Pointer, n int) float32
+
+//go:noescape
+func euclideanInt16AVX2Kernel(a, b unsafe.Pointer, n int) float32
+
+//go:noescape
+func dotFloat64AVX2Kernel(a, b unsafe.Pointer, n int) float32
+
+//go:noescape
+func dotFloat64AVX512Kernel(a, b unsafe.Pointer, n int) float32
+
 func matchInt64AVX2(src []int64, val int64, op CompareOp, dst []byte) error {
 	if len(src) != len(dst) {
 		return errors.New("simd: length mismatch")
@@ -678,6 +702,9 @@ func euclideanF16AVX2(a, b []float16.Num) (float32, error) {
 	if len(a) == 0 {
 		return 0, nil
 	}
+	if len(a) < 8 {
+		return euclideanF16Unrolled4x(a, b)
+	}
 	return euclideanF16AVX2Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a)), nil
 }
 
@@ -690,6 +717,9 @@ func euclideanF16AVX512(a, b []float16.Num) (float32, error) {
 	}
 	if len(a) == 0 {
 		return 0, nil
+	}
+	if len(a) < 16 {
+		return euclideanF16Unrolled4x(a, b)
 	}
 	return euclideanF16AVX512Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a)), nil
 }
@@ -704,6 +734,9 @@ func dotF16AVX2(a, b []float16.Num) (float32, error) {
 	if len(a) == 0 {
 		return 0, nil
 	}
+	if len(a) < 8 {
+		return dotF16Unrolled4x(a, b)
+	}
 	return dotF16AVX2Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a)), nil
 }
 
@@ -716,6 +749,9 @@ func dotF16AVX512(a, b []float16.Num) (float32, error) {
 	}
 	if len(a) == 0 {
 		return 0, nil
+	}
+	if len(a) < 16 {
+		return dotF16Unrolled4x(a, b)
 	}
 	return dotF16AVX512Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a)), nil
 }
@@ -859,17 +895,3 @@ func euclideanInt16AVX2(a, b []int16) (float32, error) {
 	}
 	return euclideanInt16AVX2Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a)), nil
 }
-
-// Kernel Declarations for new types
-
-//go:noescape
-func euclideanFloat64AVX2Kernel(a, b unsafe.Pointer, n int) float32
-
-//go:noescape
-func euclideanFloat64AVX512Kernel(a, b unsafe.Pointer, n int) float32
-
-//go:noescape
-func euclideanInt8AVX2Kernel(a, b unsafe.Pointer, n int) float32
-
-//go:noescape
-func euclideanInt16AVX2Kernel(a, b unsafe.Pointer, n int) float32

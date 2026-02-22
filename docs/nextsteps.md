@@ -1,16 +1,17 @@
 # Longbow Development Roadmap
 
-## Status: GPU & Custom io_uring Complete | Remaining: FAISS Library Linking & Cross-Encoder
+## Status: GPU Complete | io_uring Under Investigation | Remaining: FAISS Library Linking & Cross-Encoder
 
 **Date Updated**: February 21, 2026
 
 ### ✅ Recently Completed (February 2026)
 
-1. **Custom Zero-Lock Zero-Copy io_uring Library** - FULLY IMPLEMENTED
+1. **Custom Zero-Lock Zero-Copy io_uring Library** - ⚠️ UNDER INVESTIGATION
    - Location: `internal/iouring/` (10 files)
    - WAL Backend Integration: `internal/storage/wal_backend_arrow_iouring.go`
-   - Uses `golang.org/x/sys/unix` directly (Go 1.24+ compatible)
-   - Features: Lock-free queues, O_DIRECT aligned buffer pool, Arrow IPC integration, Prometheus metrics
+   - **Issue**: CQE completion returns zeros - struct alignment issue suspected
+   - **Investigation Plan**: See [docs/iouring_investigation.md](./iouring_investigation.md)
+   - Ring setup works, but I/O completions return UserData=0, Res=0
 
 2. **All GPU Support (Parts 1-15)** - COMPLETE
    - Build tag system (`gpu`, `gpu_cuda`, `gpu_metal`)

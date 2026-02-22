@@ -19,7 +19,6 @@ graph TB
         subgraph Node1["Node 1"]
             FlightSrv["Flight Server:3000"]
             MetaSrv["Meta Server:3001"]
-            WebUI["Web UI:8080"]
             Metrics["Metrics:9090"]
             VectorStore1["Vector Store"]
             HNSW1["HNSW Index"]
@@ -47,7 +46,6 @@ graph TB
 
     Python --> Flight
     Go --> Flight
-    HTTP --> WebUI
     Flight --> FlightSrv
     FlightSrv --> VectorStore1
     VectorStore1 --> HNSW1

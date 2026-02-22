@@ -22,9 +22,9 @@ func euclidean64FMA(a, b uintptr) float32
 //go:noescape
 func cosine32FMA(a, b uintptr) (dot, normA, normB float32)
 
-// DotProductFMA computes dot product using AVX-512 FMA instructions
+// DotProductFMA_AVX512 computes dot product using AVX-512 FMA instructions
 // Processes 64 elements per iteration for maximum throughput
-func DotProductFMA(a, b []float32) (float32, error) {
+func DotProductFMA_AVX512(a, b []float32) (float32, error) {
 	if len(a) != len(b) {
 		return 0, ErrDimensionMismatch
 	}
@@ -60,8 +60,8 @@ func DotProductFMA(a, b []float32) (float32, error) {
 	return sum, nil
 }
 
-// EuclideanDistanceFMA computes squared Euclidean distance using AVX-512 FMA
-func EuclideanDistanceFMA(a, b []float32) (float32, error) {
+// EuclideanDistanceFMA_AVX512 computes squared Euclidean distance using AVX-512 FMA
+func EuclideanDistanceFMA_AVX512(a, b []float32) (float32, error) {
 	if len(a) != len(b) {
 		return 0, ErrDimensionMismatch
 	}
@@ -98,8 +98,8 @@ func EuclideanDistanceFMA(a, b []float32) (float32, error) {
 	return sum, nil
 }
 
-// CosineDistanceFMA computes cosine distance (1 - similarity) using AVX-512 FMA
-func CosineDistanceFMA(a, b []float32) (float32, error) {
+// CosineDistanceFMA_AVX512 computes cosine distance (1 - similarity) using AVX-512 FMA
+func CosineDistanceFMA_AVX512(a, b []float32) (float32, error) {
 	if len(a) != len(b) {
 		return 0, ErrDimensionMismatch
 	}
@@ -150,4 +150,28 @@ func sqrt32(x float32) float32 {
 		guess = (guess + x/guess) / 2
 	}
 	return guess
+}
+
+// DotProductFMA dispatches to AVX512 or fallback implementation
+func DotProductFMA(a, b []float32) (float32, error) {
+	if features.HasAVX512 {
+		return DotProductFMA_AVX512(a, b)
+	}
+	return dotGeneric(a, b)
+}
+
+// EuclideanDistanceFMA dispatches to AVX512 or fallback implementation
+func EuclideanDistanceFMA(a, b []float32) (float32, error) {
+	if features.HasAVX512 {
+		return EuclideanDistanceFMA_AVX512(a, b)
+	}
+	return euclideanGeneric(a, b)
+}
+
+// CosineDistanceFMA dispatches to AVX512 or fallback implementation
+func CosineDistanceFMA(a, b []float32) (float32, error) {
+	if features.HasAVX512 {
+		return CosineDistanceFMA_AVX512(a, b)
+	}
+	return cosineGeneric(a, b)
 }

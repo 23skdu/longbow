@@ -10,6 +10,26 @@ import (
 // =============================================================================
 
 var (
+	// IOReadLatencySeconds measures the latency of I/O read operations
+	IOReadLatencySeconds = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_io_read_latency_seconds",
+			Help:    "Latency of I/O read operations by backend",
+			Buckets: prometheus.DefBuckets,
+		},
+		[]string{"backend"},
+	)
+
+	// IOWriteLatencySeconds measures the latency of I/O write operations
+	IOWriteLatencySeconds = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_io_write_latency_seconds",
+			Help:    "Latency of I/O write operations by backend",
+			Buckets: prometheus.DefBuckets,
+		},
+		[]string{"backend"},
+	)
+
 	// IOReadBytesTotal tracks total bytes read from disk
 	IOReadBytesTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{

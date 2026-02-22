@@ -1,0 +1,33 @@
+# Dockerfile for io_uring testing and development
+FROM golang:1.24-bookworm
+
+WORKDIR /app
+
+# Install tools for testing and debugging
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    strace \
+    ltrace \
+    htop \
+    iotop \
+    sysstat \
+    linux-perf \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+
+# Build with io_uring support
+RUN CGO_ENABLED=0 go build \
+    -tags=linux,iouring \
+    -ldflags="-s -w" \
+    -o longbow ./cmd/longbow
+
+# Environment for io_uring
+ENV LONGBOW_STORAGE_USE_IOURING=true
+ENV LONGBOW_IOURING_QUEUE_DEPTH=256
+
+EXPOSE 3000 3001 9090
+
+ENTRYPOINT ["/app/longbow"]

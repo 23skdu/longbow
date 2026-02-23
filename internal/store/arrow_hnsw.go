@@ -19,6 +19,7 @@ import (
 
 	"github.com/23skdu/longbow/internal/core"
 	"github.com/23skdu/longbow/internal/gpu"
+	"github.com/23skdu/longbow/internal/memory"
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/pq"
 	"github.com/23skdu/longbow/internal/query"
@@ -1067,6 +1068,20 @@ func (h *ArrowHNSW) Grow(capacity, dims int) error {
 	newData := data.Clone()
 	newData.Capacity = capacity
 	newData.Dims = dims
+
+	// If dims changed, we need to reinitialize arenas for the new size
+	if dims != currentDims {
+		// Calculate required slab size for new dims
+		requiredSize := types.ChunkSize * dims * 4 // 4 bytes per float32
+		slabSize := requiredSize
+		if slabSize < 1024*1024 {
+			slabSize = 1024 * 1024
+		}
+		// Create new arenas with correct size
+		newData.Float32Arena = memory.NewTypedArena[float32](memory.NewSlabArena(slabSize))
+		// Reset offset arrays since we have new arenas
+		newData.VectorsF32 = nil
+	}
 
 	// Iteratively ensure chunks
 	numChunks := (capacity + types.ChunkSize - 1) / types.ChunkSize

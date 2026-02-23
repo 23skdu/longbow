@@ -176,9 +176,8 @@ func (p *BufferPool) Close() error {
 		if buf != nil && len(buf) > 0 {
 			// Find the original mmap start
 			// We allocated bufferSize + alignment, so the mmap starts before our slice
-			ptr := uintptr(unsafe.Pointer(&buf[0]))
-			startPtr := ptr - uintptr(p.alignment)
-			start := (*byte)(unsafe.Pointer(startPtr))
+			// Use unsafe.Add for pointer arithmetic (Go 1.20+)
+			start := (*byte)(unsafe.Add(unsafe.Pointer(&buf[0]), -p.alignment))
 
 			// Create slice to unmap
 			slice := unsafe.Slice(start, p.bufferSize+p.alignment)

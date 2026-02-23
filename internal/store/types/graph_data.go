@@ -27,6 +27,9 @@ type GraphData struct {
 	// Vectors (primary storage, usually float32)
 	Vectors [][]float32
 
+	// VectorsF32 stores arena offsets for Float32 vectors (off-heap, GC-free)
+	VectorsF32 []uint64
+
 	// VectorsPQ for quantized vectors
 	VectorsPQ []uint64
 
@@ -102,6 +105,11 @@ func (g *GraphData) GetNodeCount() int {
 
 // GetVectorsChunk returns the vector chunk for the given ID.
 func (g *GraphData) GetVectorsChunk(chunkID int) []float32 {
+	// Try arena first (off-heap, GC-free)
+	if g.Float32Arena != nil && chunkID < len(g.VectorsF32) {
+		return g.Float32Arena.Get(memory.SliceRef{Offset: g.VectorsF32[chunkID], Len: uint32(ChunkSize * g.Dims), Cap: uint32(ChunkSize * g.Dims)})
+	}
+	// Fallback to legacy slice
 	if chunkID < len(g.Vectors) {
 		return g.Vectors[chunkID]
 	}
@@ -286,13 +294,26 @@ func (g *GraphData) GetVectorsInt16Chunk(chunkID int) []int16 {
 }
 
 func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
-	// Ensure Vectors (Float32 is default/primary)
+	// Ensure Vectors (Float32 is default/primary) - use arena for off-heap allocation
 	if g.Type == VectorTypeFloat32 || g.Type == VectorTypeUnknown {
-		for len(g.Vectors) <= cID {
+		for len(g.VectorsF32) <= cID {
+			// Create arena on first need
+			// Create arena if needed - always size for the required chunk
+			requiredChunkSize := ChunkSize * dims * 4
+			if g.Float32Arena == nil {
+				slabSize := requiredChunkSize
+				if slabSize < 1024*1024 {
+					slabSize = 1024 * 1024
+				}
+				g.Float32Arena = memory.NewTypedArena[float32](memory.NewSlabArena(slabSize))
+			}
+			ref, err := g.Float32Arena.AllocSliceDirty(ChunkSize * dims)
+			if err != nil {
+				return err
+			}
+			g.VectorsF32 = append(g.VectorsF32, ref.Offset)
+			// Also append nil to Vectors for backward compatibility
 			g.Vectors = append(g.Vectors, nil)
-		}
-		if g.Vectors[cID] == nil {
-			g.Vectors[cID] = make([]float32, ChunkSize*dims)
 		}
 	}
 
@@ -994,6 +1015,10 @@ func (g *GraphData) Clone() *GraphData {
 	if g.VectorsSQ8 != nil {
 		newG.VectorsSQ8 = make([]uint64, len(g.VectorsSQ8))
 		copy(newG.VectorsSQ8, g.VectorsSQ8)
+	}
+	if g.VectorsF32 != nil {
+		newG.VectorsF32 = make([]uint64, len(g.VectorsF32))
+		copy(newG.VectorsF32, g.VectorsF32)
 	}
 	if g.VectorsBQ != nil {
 		newG.VectorsBQ = make([]uint64, len(g.VectorsBQ))

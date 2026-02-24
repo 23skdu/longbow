@@ -267,7 +267,7 @@ cos_reduce_final:
     VADDPS  X1, X0, X0
     VMOVSHDUP X0, X1
     VADDSS  X1, X0, X0
-    VMOVSS  X0, ret+24(FP)
+    VMOVSS  X0, dot+24(FP)
 
     // Reduce Z4 (NormA) -> X4
     VEXTRACTF64X4 $1, Z4, Y5
@@ -278,7 +278,7 @@ cos_reduce_final:
     VADDPS  X5, X4, X4
     VMOVSHDUP X4, X5
     VADDSS  X5, X4, X4
-    VMOVSS  X4, ret+28(FP)
+    VMOVSS  X4, normA+28(FP)
 
     // Reduce Z8 (NormB) -> X8
     VEXTRACTF64X4 $1, Z8, Y5
@@ -289,7 +289,7 @@ cos_reduce_final:
     VADDPS  X5, X8, X8
     VMOVSHDUP X8, X5
     VADDSS  X5, X8, X8
-    VMOVSS  X8, ret+32(FP)
+    VMOVSS  X8, normB+32(FP)
 
     VZEROUPPER
     RET

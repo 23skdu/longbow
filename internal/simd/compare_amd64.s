@@ -201,7 +201,7 @@ done_int64_avx2:
 TEXT ·matchFloat32AVX2Kernel(SB), NOSPLIT, $0-40
     MOVQ    src+0(FP), SI
     MOVSS   val+8(FP), X0
-    MOVQ    op+12(FP), BX // Note offset: 8 + 4 (float32 size) = 12? No, args 8-byte aligned on stack?
+    MOVQ    op+16(FP), BX // Note offset: 8 + 4 (float32 size) = 12? No, args 8-byte aligned on stack?
     // Go regabi might pack nicely, but FP approach:
     // val is float32. But on stack it takes 8 bytes if alignment enforced?
     // Check struct alignment.

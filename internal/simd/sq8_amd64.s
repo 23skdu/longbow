@@ -2,7 +2,7 @@
 #include "textflag.h"
 
 // func euclideanSQ8AVX2Kernel(a, b unsafe.Pointer, n int) int32
-TEXT ·euclideanSQ8AVX2Kernel(SB), NOSPLIT, $0-40
+TEXT ·euclideanSQ8AVX2Kernel(SB), NOSPLIT, $0-28
     MOVQ    a+0(FP), SI       // SI = a pointer
     MOVQ    b+8(FP), DI       // DI = b pointer
     MOVQ    n+16(FP), CX      // CX = n (count)
@@ -91,7 +91,7 @@ reduce:
     RET
 
 // func euclideanSQ8AVX512Kernel(a, b unsafe.Pointer, n int) int32
-TEXT ·euclideanSQ8AVX512Kernel(SB), NOSPLIT, $0-40
+TEXT ·euclideanSQ8AVX512Kernel(SB), NOSPLIT, $0-28
     MOVQ    a+0(FP), SI
     MOVQ    b+8(FP), DI
     MOVQ    n+16(FP), CX

@@ -115,7 +115,7 @@ TEXT ·cosine8AVX2(SB), NOSPLIT, $0-28
     VADDPS  X5, X2, X2
     VMOVSHDUP X2, X5
     VADDSS  X5, X2, X2
-    VMOVSS  X2, ret+16(FP)      // dot
+    VMOVSS  X2, dot+16(FP)
     
     // NormA
     VEXTRACTF128 $1, Y3, X5
@@ -124,7 +124,7 @@ TEXT ·cosine8AVX2(SB), NOSPLIT, $0-28
     VADDPS  X5, X3, X3
     VMOVSHDUP X3, X5
     VADDSS  X5, X3, X3
-    VMOVSS  X3, ret+20(FP)      // normA
+    VMOVSS  X3, normA+20(FP)
     
     // NormB
     VEXTRACTF128 $1, Y4, X5
@@ -133,7 +133,7 @@ TEXT ·cosine8AVX2(SB), NOSPLIT, $0-28
     VADDPS  X5, X4, X4
     VMOVSHDUP X4, X5
     VADDSS  X5, X4, X4
-    VMOVSS  X4, ret+24(FP)      // normB
+    VMOVSS  X4, normB+24(FP)
     
     VZEROUPPER
     RET
@@ -163,7 +163,7 @@ TEXT ·cosine16AVX512(SB), NOSPLIT, $0-28
     VADDPS  X5, X2, X2
     VMOVSHDUP X2, X5
     VADDSS  X5, X2, X2
-    VMOVSS  X2, ret+16(FP)
+    VMOVSS  X2, dot+16(FP)
     
     // Reduce Z3 (normA)
     VEXTRACTF64X4 $1, Z3, Y5
@@ -174,7 +174,7 @@ TEXT ·cosine16AVX512(SB), NOSPLIT, $0-28
     VADDPS  X5, X3, X3
     VMOVSHDUP X3, X5
     VADDSS  X5, X3, X3
-    VMOVSS  X3, ret+20(FP)
+    VMOVSS  X3, normA+20(FP)
     
     // Reduce Z4 (normB)
     VEXTRACTF64X4 $1, Z4, Y5
@@ -185,7 +185,7 @@ TEXT ·cosine16AVX512(SB), NOSPLIT, $0-28
     VADDPS  X5, X4, X4
     VMOVSHDUP X4, X5
     VADDSS  X5, X4, X4
-    VMOVSS  X4, ret+24(FP)
+    VMOVSS  X4, normB+24(FP)
     
     VZEROUPPER
     RET

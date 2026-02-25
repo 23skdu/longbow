@@ -282,12 +282,13 @@
 
 | Priority | Task | Effort | Impact | Status |
 |----------|------|--------|--------|--------|
-| **1** | Off-Heap Memory Management | 3-5 days | **CRITICAL** | 🔴 TODO |
+| **1** | Off-Heap Memory Management | 3-5 days | **CRITICAL** | ✅ COMPLETE |
 | **2** | SIMD Dispatch Optimization | 2-3 days | HIGH | 🔴 TODO |
 | **3** | HNSW Index Optimization | 1 week | HIGH | 🔴 TODO |
 | **4** | CUDA/FAISS Enablement | 1-2 days | **CRITICAL** | ⚠️ Partial |
-| **5** | Memory Allocation Pool | 1-2 days | MEDIUM | 🔴 TODO |
-| **6** | io_uring WAL Backend Fix | 2-3 days | MEDIUM | ⚠️ Under Investigation |
+| **5** | Memory Allocation Pool | 1-2 days | MEDIUM | ✅ COMPLETE |
+| **6** | io_uring WAL Backend Fix | 2-3 days | MEDIUM | ✅ COMPLETE |
+
 
 ---
 
@@ -337,6 +338,19 @@ kill $SERVER_PID
 ---
 
 ## ✅ Previously Completed (February 2026)
+
+4. **Off-Heap Memory Management (SlabArena)** - ✅ COMPLETE
+   - Location: `internal/memory/arena.go`, `internal/memory/vector_arena.go`
+   - Vector storage in off-heap memory via mmap syscalls
+   - Bypasses Go GC for vector data
+   - Used by mem_vector_store.go, arrow_hnsw.go, packed_adjacency.go
+   - GCTuner supports arena memory exclusion from GC pressure
+
+5. **Memory Allocation Pool** - ✅ COMPLETE
+   - Location: `internal/pool/`, sync.Pool patterns throughout
+   - Bitmap pool exists: `internal/pool/bitmap.go`
+   - Distance result pooling implemented
+   - Search context pooling available
 
 1. **Custom Zero-Lock Zero-Copy io_uring Library** - ✅ COMPLETE
    - Location: `internal/iouring/` (9 files)

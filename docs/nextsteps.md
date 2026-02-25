@@ -1,6 +1,6 @@
 # Longbow Development Roadmap
 
-## Status: Linux Performance Optimization Required | GPU Complete | io_uring Under Investigation
+## Status: Linux Performance Optimization Required | GPU Complete | io_uring Complete
 
 **Date Updated**: February 22, 2026
 
@@ -338,10 +338,10 @@ kill $SERVER_PID
 
 ## ✅ Previously Completed (February 2026)
 
-1. **Custom Zero-Lock Zero-Copy io_uring Library** - ⚠️ UNDER INVESTIGATION
-   - Location: `internal/iouring/` (10 files)
+1. **Custom Zero-Lock Zero-Copy io_uring Library** - ✅ COMPLETE
+   - Location: `internal/iouring/` (9 files)
    - WAL Backend Integration: `internal/storage/wal_backend_arrow_iouring.go`
-   - **Issue**: CQE completion returns zeros - struct alignment issue suspected
+   - All io_uring tests passing (read, write, fsync operations)
 
 2. **All GPU Support (Parts 1-15)** - COMPLETE
    - Build tag system (`gpu`, `gpu_cuda`, `gpu_metal`)

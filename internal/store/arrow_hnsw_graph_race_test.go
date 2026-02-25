@@ -67,7 +67,7 @@ func TestArrowHNSW_AddBatchBulk_EnsureChunkRace(t *testing.T) {
 			concurrency = 4
 		}
 
-		batchSize := 20 // Each goroutine adds a small batch
+		batchSize := 20                       // Each goroutine adds a small batch
 		numVectors := concurrency * batchSize // Total vectors = goroutines * batch size
 		vecs := make([][]float32, numVectors)
 		for i := 0; i < numVectors; i++ {

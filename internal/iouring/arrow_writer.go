@@ -71,7 +71,7 @@ func NewArrowWriter(ring *Ring, schema *arrow.Schema, pool *BufferPool) (*ArrowW
 
 // WriteRecordBatch serializes and writes a RecordBatch asynchronously
 // Returns a WriteRequest that can be used to wait for completion
-func (w *ArrowWriter) WriteRecordBatch(rec arrow.Record, offset int64) (*WriteRequest, error) {
+func (w *ArrowWriter) WriteRecordBatch(rec arrow.RecordBatch, offset int64) (*WriteRequest, error) {
 	// Get an aligned buffer from the pool
 	buf := w.bufferPool.Get()
 	if buf == nil {
@@ -120,7 +120,7 @@ func (w *ArrowWriter) WriteRecordBatch(rec arrow.Record, offset int64) (*WriteRe
 }
 
 // WriteV performs vectored write of multiple records
-func (w *ArrowWriter) WriteV(records []arrow.Record, offset int64) (*WriteRequest, error) {
+func (w *ArrowWriter) WriteV(records []arrow.RecordBatch, offset int64) (*WriteRequest, error) {
 	if len(records) == 0 {
 		return nil, fmt.Errorf("no records to write")
 	}
@@ -260,7 +260,7 @@ func NewArrowReader(ring *Ring, schema *arrow.Schema, pool *BufferPool) (*ArrowR
 }
 
 // ReadRecordBatch reads a RecordBatch from the specified offset
-func (r *ArrowReader) ReadRecordBatch(offset int64, size int) (arrow.Record, error) {
+func (r *ArrowReader) ReadRecordBatch(offset int64, size int) (arrow.RecordBatch, error) {
 	// Get aligned buffer
 	buf := r.bufferPool.Get()
 	if buf == nil {
@@ -306,7 +306,7 @@ func (r *ArrowReader) ReadRecordBatch(offset int64, size int) (arrow.Record, err
 		return nil, fmt.Errorf("no record in IPC data")
 	}
 
-	rec := reader.Record()
+	rec := reader.RecordBatch()
 
 	// Return buffer to pool
 	r.bufferPool.Put(buf)

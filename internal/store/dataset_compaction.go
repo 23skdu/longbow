@@ -168,7 +168,7 @@ func (d *Dataset) squashBatch(rec arrow.RecordBatch, tombstones *qry.Bitset) (ar
 		newCols[i] = d.filterArray(col, keepRows, pool)
 	}
 
-	newRec := array.NewRecord(rec.Schema(), newCols, int64(len(keepRows)))
+	newRec := array.NewRecordBatch(rec.Schema(), newCols, int64(len(keepRows)))
 	for _, col := range newCols {
 		col.Release()
 	}

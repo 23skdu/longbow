@@ -83,7 +83,7 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "sum(longbow_flight_operations_total)",
+          "expr": "sum(longbow_flight_ops_total)",
           "refId": "A"
         }
       ],
@@ -241,7 +241,7 @@
       "id": 7,
       "targets": [
         {
-          "expr": "rate(longbow_flight_operations_total[1m])",
+          "expr": "rate(longbow_flight_ops_total[1m])",
           "legendFormat": "{{method}} - {{status}}",
           "refId": "A"
         }
@@ -260,7 +260,7 @@
       "id": 8,
       "targets": [
         {
-          "expr": "histogram_quantile(0.99, sum(rate(longbow_flight_duration_seconds_bucket[5m])) by (le, method))",
+          "expr": "histogram_quantile(0.99, sum(rate(longbow_flight_duration_seconds_bucket[5m])) by (le, action))",
           "legendFormat": "{{method}} P99",
           "refId": "A"
         }
@@ -1315,7 +1315,7 @@
       "id": 36,
       "targets": [
         {
-          "expr": "rate(longbow_doget_zero_copy_total{type=\"zero_copy_retain\"}[1m]) / (rate(longbow_doget_zero_copy_total[1m]) + 1)",
+          "expr": "rate(longbow_vector_access_zerocopy_total{index_type=\"zero_copy_retain\"}[1m]) / (rate(longbow_vector_access_zerocopy_total[1m]) + 1)",
           "legendFormat": "Zero-Copy %",
           "refId": "A"
         }
@@ -1344,7 +1344,7 @@
       "id": 37,
       "targets": [
         {
-          "expr": "histogram_quantile(0.99, sum(rate(longbow_doput_payload_size_bytes_bucket[5m])) by (le))",
+          "expr": "histogram_quantile(0.99, sum(rate(longbow_doput_batch_size_bytes_bucket[5m])) by (le))",
           "legendFormat": "P99",
           "refId": "A"
         }

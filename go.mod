@@ -15,7 +15,7 @@ require (
 )
 
 require (
-	github.com/RoaringBitmap/roaring/v2 v2.14.4
+	github.com/RoaringBitmap/roaring/v2 v2.14.5
 	github.com/aws/aws-sdk-go-v2 v1.41.2
 	github.com/aws/aws-sdk-go-v2/config v1.32.10
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.10

@@ -164,6 +164,12 @@ spec:
               value: {{ .Values.gossip.port | quote }}
             - name: GOSSIP_INTERVAL
               value: {{ .Values.gossip.interval | quote }}
+            - name: GOSSIP_PROTOCOL_PERIOD
+              value: {{ .Values.gossip.protocolPeriod | quote }}
+            - name: GOSSIP_ACK_TIMEOUT
+              value: {{ .Values.gossip.ackTimeout | quote }}
+            - name: GOSSIP_SUSPICION_TIMEOUT
+              value: {{ .Values.gossip.suspicionTimeout | quote }}
             {{- if .Values.gossip.advertiseAddr }}
             - name: GOSSIP_ADVERTISE_ADDR
               value: {{ .Values.gossip.advertiseAddr | quote }}

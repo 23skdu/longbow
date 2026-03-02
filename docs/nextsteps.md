@@ -22,6 +22,7 @@
 | Search p50 latency | 0.76-29ms | 0.40-0.42ms | **2-70x slower** |
 
 **CPU Profile Root Causes (Linux):**
+
 ```
 50%+ time in GC activities:
   - runtime.(*sweepLocked).sweep
@@ -53,6 +54,7 @@
    - Use finalizers only for cleanup
 
 2. **Memory Configuration**
+
    ```bash
    # Increase memory limit (currently 1GB default)
    export LONGBOW_MAX_MEMORY=4G
@@ -68,6 +70,7 @@
    - Location: `internal/memory/gc_tuner.go`
 
 **Success Criteria**:
+
 - GC overhead < 20% of CPU time
 - DoPut throughput > 800 MB/s for 5K vectors
 - Search p50 latency < 0.6ms for 5K vectors
@@ -82,12 +85,15 @@
 **Problem**: AVX512 kernels exist but may not be optimally utilized.
 
 **Current State**:
+
 - AVX512 kernels: `internal/simd/simd_amd64.go`
 - CPU detection: `internal/simd/cpu_detection.go`
 - Dispatch: `internal/simd/dispatch.go`
 
 **Investigation Needed**:
+
 1. Verify AVX512 is actually being used on this CPU
+
    ```bash
    # Check CPU features
    cat /proc/cpuinfo | grep -i avx
@@ -97,6 +103,7 @@
    ```
 
 2. Profile SIMD dispatch overhead
+
    ```bash
    curl http://localhost:9090/debug/pprof/profile?seconds=30 > cpu.prof
    go tool pprof -top cpu.prof | grep simd
@@ -105,11 +112,13 @@
 3. Check for unnecessary bounds checks in hot paths
 
 **Optimizations**:
+
 1. Add specialized kernels for common dimensions (128, 384, 768, 1536)
 2. Use vertical batching for cache efficiency
 3. Add prefetch instructions for predictable access patterns
 
 **Success Criteria**:
+
 - Verified AVX512 dispatch in use
 - Distance computation < 10ns per dimension
 - Batch distance: > 100M comparisons/second
@@ -124,6 +133,7 @@
 **Problem**: Search latency degrades dramatically with dataset size (29ms at 25K).
 
 **Root Causes**:
+
 1. Inefficient neighbor list management
 2. Lock contention during concurrent searches
 3. Cache-unfriendly memory access patterns
@@ -145,6 +155,7 @@
    - Use non-temporal prefetch for write paths
 
 **Success Criteria**:
+
 - Search p50 < 1ms for 25K vectors
 - Search p99 < 5ms for 25K vectors
 - Linear scaling up to 100K vectors
@@ -159,6 +170,7 @@
 **Problem**: GPU acceleration exists but FAISS library is not linked.
 
 **Current State**:
+
 - Framework complete: `internal/gpu/faiss_gpu.go`
 - CGO bindings ready
 - Runtime detection implemented
@@ -168,6 +180,7 @@
 **Solution Options**:
 
 1. **Option A: Conda Installation** (Recommended)
+
    ```bash
    # Install Miniconda if needed
    wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
@@ -185,6 +198,7 @@
    ```
 
 2. **Option B: Build from Source**
+
    ```bash
    git clone https://github.com/facebookresearch/faiss.git
    cd faiss
@@ -197,12 +211,14 @@
    ```
 
 3. **Option C: CPU-Only FAISS** (Fallback)
+
    ```bash
    conda install -c conda-forge faiss-cpu
    # Still provides significant speedup over pure Go
    ```
 
 **Success Criteria**:
+
 - FAISS library detected at startup
 - GPU-accelerated search throughput > 5000 QPS
 - Search p50 < 0.5ms for 25K vectors
@@ -221,6 +237,7 @@
 **Implementation**:
 
 1. **Distance Result Pool**
+
    ```go
    // internal/pool/distance.go
    var distancePool = sync.Pool{
@@ -239,6 +256,7 @@
    - Avoid allocating visitor state per search
 
 **Success Criteria**:
+
 - Pool hit rate > 90%
 - Allocation rate during search < 1KB/query
 - GC pressure reduced by 30%
@@ -253,22 +271,26 @@
 **Problem**: Custom io_uring implementation has completion issues.
 
 **Current State**:
+
 - Location: `internal/iouring/`
 - Issue: CQE returns UserData=0, Res=0
 - Suspected: struct alignment issue
 
 **Investigation Steps**:
+
 1. Add debug logging to SQE submission
 2. Verify struct alignment with C ABI
 3. Test with O_DIRECT disabled
 4. Compare with liburing behavior
 
 **Alternative**: Use standard buffered I/O for now
+
 - `internal/storage/wal_backend_arrow.go`
 - Simpler, more reliable
 - Accept slightly lower throughput
 
 **Success Criteria**:
+
 - WAL writes complete successfully
 - No data loss on crash recovery
 - Throughput > 500 MB/s
@@ -288,7 +310,6 @@
 | **4** | CUDA/FAISS Enablement | 1-2 days | **CRITICAL** | ⚠️ Partial |
 | **5** | Memory Allocation Pool | 1-2 days | MEDIUM | ✅ COMPLETE |
 | **6** | io_uring WAL Backend Fix | 2-3 days | MEDIUM | ✅ COMPLETE |
-
 
 ---
 
@@ -339,32 +360,32 @@ kill $SERVER_PID
 
 ## ✅ Previously Completed (February 2026)
 
-4. **Off-Heap Memory Management (SlabArena)** - ✅ COMPLETE
+1. **Off-Heap Memory Management (SlabArena)** - ✅ COMPLETE
    - Location: `internal/memory/arena.go`, `internal/memory/vector_arena.go`
    - Vector storage in off-heap memory via mmap syscalls
    - Bypasses Go GC for vector data
    - Used by mem_vector_store.go, arrow_hnsw.go, packed_adjacency.go
    - GCTuner supports arena memory exclusion from GC pressure
 
-5. **Memory Allocation Pool** - ✅ COMPLETE
+2. **Memory Allocation Pool** - ✅ COMPLETE
    - Location: `internal/pool/`, sync.Pool patterns throughout
    - Bitmap pool exists: `internal/pool/bitmap.go`
    - Distance result pooling implemented
    - Search context pooling available
 
-1. **Custom Zero-Lock Zero-Copy io_uring Library** - ✅ COMPLETE
+3. **Custom Zero-Lock Zero-Copy io_uring Library** - ✅ COMPLETE
    - Location: `internal/iouring/` (9 files)
    - WAL Backend Integration: `internal/storage/wal_backend_arrow_iouring.go`
    - All io_uring tests passing (read, write, fsync operations)
 
-2. **All GPU Support (Parts 1-15)** - COMPLETE
+4. **All GPU Support (Parts 1-15)** - COMPLETE
    - Build tag system (`gpu`, `gpu_cuda`, `gpu_metal`)
    - Makefile targets: `build-cuda`, `build-metal`, `build-gpu`
    - CUDA memory management via CGO
    - GPU backend abstraction and detection
    - GPU metrics and monitoring
 
-3. **Concrete Quantizer Implementations** - COMPLETE
+5. **Concrete Quantizer Implementations** - COMPLETE
    - SQ8 (Scalar Quantization 8-bit) - 4x memory savings
    - BQ (Binary Quantization) - 32x memory savings
    - PQ (Product Quantization)

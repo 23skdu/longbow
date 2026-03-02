@@ -5,11 +5,13 @@ This document outlines security features implemented in Longbow.
 ## Authentication & Authorization
 
 ### Current State
+
 - No authentication mechanism implemented
 - No authorization layer
 - APIs are open by default
 
 ### Security Implementation Plan
+
 1. **Input Validation**
    - Validate all gRPC messages
    - Sanitize input parameters
@@ -28,6 +30,7 @@ This document outlines security features implemented in Longbow.
 ## Security Utilities
 
 ### Audit Logging
+
 ```go
 // Security audit log entry
 type AuditEntry struct {
@@ -42,6 +45,7 @@ type AuditEntry struct {
 ```
 
 ### Input Sanitization
+
 ```go
 // Validate and sanitize input parameters
 func ValidateInput(input string) error {
@@ -55,12 +59,14 @@ func ValidateInput(input string) error {
 ## Security Scanning
 
 ### CI/CD Integration
+
 - Dependency vulnerability scanning
 - Container image scanning
 - Static code analysis
 - Security testing in CI pipeline
 
 ### Monitoring
+
 - Failed authentication attempts
 - Suspicious activity detection
 - Rate limiting per client

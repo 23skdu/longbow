@@ -107,6 +107,9 @@ config:
   maxWALSize: "104857600" # 100MB default
   snapshotInterval: "1h"
   ttl: "0s" # 0s = disabled
+  logFormat: "json" # json or console
+  logLevel: "info" # debug, info, warn, error
+  nodeId: "" # Optional: set for specific node ID
 
 # Compaction Configuration
 compaction:
@@ -118,7 +121,7 @@ compaction:
 # Sharding Configuration
 sharding:
   auto:
-    enabled: false
+    enabled: true # Auto-sharding enabled by default
     threshold: 10000
     splitThreshold: 65536
   ring:

@@ -5,6 +5,7 @@ This directory contains Grafana dashboard definitions and monitoring configurati
 ## Overview
 
 The observability stack provides comprehensive monitoring for:
+
 - Application metrics and performance
 - Distributed tracing
 - Health checks and readiness probes
@@ -14,9 +15,11 @@ The observability stack provides comprehensive monitoring for:
 ## Grafana Dashboards
 
 ### Application Dashboard (`application.json`)
+
 **UID:** `longbow-application`
 
 Monitors overall application health and performance:
+
 - HTTP request rates and error rates
 - Request duration percentiles (P50, P95, P99)
 - Component health status (Database, Storage, Metrics)
@@ -24,9 +27,11 @@ Monitors overall application health and performance:
 - Goroutine counts and GC statistics
 
 ### Observability Dashboard (`observability.json`)
+
 **UID:** `longbow-observability`
 
 Focuses on the observability stack itself:
+
 - Distributed tracing span creation rates
 - Span duration percentiles
 - Trace sampling configuration
@@ -36,21 +41,25 @@ Focuses on the observability stack itself:
 ## Metrics Available
 
 ### HTTP Metrics
+
 - `http_requests_total` - Total HTTP requests by method, status code, and path
 - `http_request_duration_seconds` - HTTP request duration histogram
 
 ### Health Check Metrics
+
 - `health_check_duration_seconds` - Health check execution time by component
 - `health_check_status` - Health check result status by component
 - `component_health_status` - Current component health status
 
 ### Distributed Tracing Metrics
+
 - `trace_spans_created_total` - Total number of trace spans created
 - `trace_span_duration_seconds` - Trace span duration histogram
 - `trace_sampling_rate` - Current trace sampling rate
 - `trace_correlation_context_total` - Correlation context usage
 
 ### Go Runtime Metrics
+
 - `go_memstats_heap_alloc_bytes` - Heap memory allocation
 - `go_memstats_heap_inuse_bytes` - Heap memory in use
 - `go_memstats_stack_inuse_bytes` - Stack memory in use
@@ -79,12 +88,14 @@ Each endpoint returns JSON with component status, response times, and system inf
 Recommended alerting rules:
 
 ### Critical Alerts
+
 - Component health status unhealthy (status = 0)
 - High error rate (>5% of total requests)
 - Memory usage exceeding 80% of available memory
 - Health check response time >5 seconds
 
 ### Warning Alerts
+
 - Component health status degraded (status = 0.5)
 - High request latency (P95 > 2 seconds)
 - Goroutine count > 1000
@@ -93,6 +104,7 @@ Recommended alerting rules:
 ## Configuration
 
 ### Prometheus Configuration
+
 ```yaml
 scrape_configs:
   - job_name: 'longbow'
@@ -103,7 +115,9 @@ scrape_configs:
 ```
 
 ### Health Check Configuration
+
 Health checks can be customized by implementing the `HealthChecker` interface:
+
 ```go
 type HealthChecker interface {
     Name() string
@@ -122,12 +136,14 @@ type HealthChecker interface {
 ## Troubleshooting
 
 ### Common Issues
+
 - **Missing Metrics**: Verify Prometheus scrape configuration
 - **Health Checks Failing**: Check component logs and dependencies
 - **High Memory Usage**: Investigate goroutine leaks or memory bloat
 - **Slow Queries**: Review distributed tracing data
 
 ### Debug Commands
+
 ```bash
 # Check component health
 curl http://localhost:8080/health

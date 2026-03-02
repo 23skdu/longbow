@@ -14,10 +14,12 @@ This guide covers setting up GPU acceleration for Longbow vector search on both 
 ## Overview
 
 Longbow supports GPU-accelerated vector search on:
+
 - **Linux AMD64**: NVIDIA GPUs via CUDA
 - **macOS ARM64**: Apple Silicon GPUs via Metal
 
 GPU acceleration provides significant performance improvements for:
+
 - Large-scale vector search operations
 - Batch queries
 - High-dimensional vectors (128-1536 dimensions)
@@ -35,6 +37,7 @@ GPU acceleration provides significant performance improvements for:
 #### 1. Install CUDA Toolkit
 
 **Ubuntu/Debian:**
+
 ```bash
 wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.0-1_all.deb
 sudo dpkg -i cuda-keyring_1.0-1_all.deb
@@ -43,6 +46,7 @@ sudo apt-get -y install cuda
 ```
 
 **RHEL/CentOS/Fedora:**
+
 ```bash
 sudo dnf config-manager --add-repo https://developer.download.nvidia.com/compute/cuda/repos/rhel8/x86_64/cuda-rhel8.repo
 sudo dnf -y install cuda
@@ -51,6 +55,7 @@ sudo dnf -y install cuda
 #### 2. Set Environment Variables
 
 Add to your `~/.bashrc` or `~/.zshrc`:
+
 ```bash
 export CUDA_HOME=/usr/local/cuda
 export PATH=$CUDA_HOME/bin:$PATH
@@ -58,6 +63,7 @@ export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
 ```
 
 Then reload:
+
 ```bash
 source ~/.bashrc  # or ~/.zshrc
 ```
@@ -65,11 +71,13 @@ source ~/.bashrc  # or ~/.zshrc
 #### 3. Install FAISS GPU (Optional)
 
 **Conda:**
+
 ```bash
 conda install -c pytorch faiss-gpu
 ```
 
 **From Source:**
+
 ```bash
 git clone https://github.com/facebookresearch/faiss.git
 cd faiss
@@ -80,6 +88,7 @@ sudo make install
 ```
 
 Set FAISS environment variable:
+
 ```bash
 export FAISS_HOME=/usr/local  # or where you installed FAISS
 ```
@@ -87,6 +96,7 @@ export FAISS_HOME=/usr/local  # or where you installed FAISS
 ### Verification
 
 Check CUDA installation:
+
 ```bash
 nvidia-smi
 nvcc --version
@@ -112,6 +122,7 @@ xcode-select --install
 ### Verification
 
 Check Metal availability:
+
 ```bash
 system_profiler SPDisplaysDataType | grep "Metal"
 ```
@@ -121,32 +132,38 @@ system_profiler SPDisplaysDataType | grep "Metal"
 ### Automatic GPU Detection
 
 Build with automatic backend detection:
+
 ```bash
 make build-gpu
 ```
 
 This will:
+
 - Build with **Metal** on macOS ARM64
 - Build with **CUDA** on Linux AMD64
 
 ### Manual Backend Selection
 
 #### CUDA (Linux AMD64)
+
 ```bash
 make build-cuda
 ```
 
 Or manually:
+
 ```bash
 CGO_ENABLED=1 go build -tags gpu -o bin/longbow-cuda ./cmd/longbow
 ```
 
 #### Metal (macOS ARM64)
+
 ```bash
 make build-metal
 ```
 
 Or manually:
+
 ```bash
 CGO_ENABLED=1 go build -tags gpu -o bin/longbow-metal ./cmd/longbow
 ```
@@ -172,6 +189,7 @@ CGO_ENABLED=1 go build -tags gpu -o bin/longbow-metal ./cmd/longbow
 ### Runtime Configuration
 
 Example Go code:
+
 ```go
 import "github.com/23skdu/longbow/internal/gpu"
 
@@ -198,16 +216,19 @@ defer index.Close()
 ### CUDA Issues
 
 **Error: "CUDA libraries not found"**
+
 - Ensure `CUDA_HOME` is set correctly
 - Check that `$CUDA_HOME/lib64/libcudart.so` exists
 - Add CUDA to `LD_LIBRARY_PATH`
 
 **Error: "no CUDA-capable device is detected"**
+
 - Run `nvidia-smi` to verify GPU is detected
 - Check driver installation: `cat /proc/driver/nvidia/version`
 - Ensure user has permissions to access `/dev/nvidia*`
 
 **Error: "CUDA out of memory"**
+
 - Reduce batch size
 - Use a GPU with more memory
 - Enable memory pooling in configuration
@@ -215,31 +236,37 @@ defer index.Close()
 ### Metal Issues
 
 **Error: "Metal framework not found"**
+
 - Ensure macOS 12.0 or higher
 - Verify Metal support: `system_profiler SPDisplaysDataType`
 
 **Error: "Metal initialization failed"**
+
 - Check that you're running on Apple Silicon (not Intel Mac)
 - Verify Xcode Command Line Tools are installed
 
 ### Build Issues
 
 **Error: "undefined: gpu.NewIndex"**
+
 - Ensure you're building with `-tags gpu`
 - Check that CGO is enabled: `CGO_ENABLED=1`
 
 **Error: "cgo: C compiler not found"**
+
 - Install build essentials: `sudo apt-get install build-essential` (Ubuntu)
 - Or: `sudo dnf install gcc` (RHEL/Fedora)
 
 ### Performance Issues
 
 **GPU not being used**
+
 - Check GPU backend detection: `gpu.DetectGPUBackend()`
 - Verify GPU is enabled in config: `cfg.Enabled = true`
 - Check GPU memory utilization during operations
 
 **Slower than CPU**
+
 - For small datasets (<10k vectors), CPU may be faster due to transfer overhead
 - Ensure vectors are properly batched
 - Check that GPU memory is sufficient for your dataset

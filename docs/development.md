@@ -14,17 +14,20 @@ This document provides guidance for contributing to and developing Longbow.
 ### Setup Development Environment
 
 1. **Clone the repository**
+
    ```bash
    git clone https://github.com/23skdu/longbow.git
    cd longbow
    ```
 
 2. **Install dependencies**
+
    ```bash
    make deps
    ```
 
 3. **Run tests to verify setup**
+
    ```bash
    make test
    ```
@@ -115,10 +118,10 @@ make docker-push
 
 Longbow exposes pprof endpoints for debugging:
 
-- CPU Profile: http://localhost:9090/debug/pprof/profile
-- Heap Profile: http://localhost:9090/debug/pprof/heap
-- Goroutine Profile: http://localhost:9090/debug/pprof/goroutine
-- Block Profile: http://localhost:9090/debug/pprof/block
+- CPU Profile: <http://localhost:9090/debug/pprof/profile>
+- Heap Profile: <http://localhost:9090/debug/pprof/heap>
+- Goroutine Profile: <http://localhost:9090/debug/pprof/goroutine>
+- Block Profile: <http://localhost:9090/debug/pprof/block>
 
 #### Debug Logging
 
@@ -184,6 +187,7 @@ Development uses these environment variables:
 #### IDE Configuration
 
 For VS Code, install these extensions:
+
 - Go extension
 - Docker extension
 - Better Comments extension

@@ -3,6 +3,7 @@
 ## Overview
 
 Longbow provides multiple APIs for interacting with the vector store:
+
 - **Arrow Flight API** - Primary gRPC-based protocol for high-performance operations
 - **HTTP REST API** - Web UI and administrative endpoints
 - **Admin Actions** - Flight-based administrative operations
@@ -24,6 +25,7 @@ Longbow implements the Apache Arrow Flight protocol for efficient zero-copy data
 ### DoPut - Data Ingestion
 
 **Request:**
+
 ```protobuf
 message ArrowRecordBatch {
     bytes data = 1;  // IPC-serialized Arrow RecordBatch
@@ -31,6 +33,7 @@ message ArrowRecordBatch {
 ```
 
 **Example (Python):**
+
 ```python
 import pyarrow.flight as pf
 
@@ -55,6 +58,7 @@ reader.done()
 ### DoGet - Vector Search
 
 **Request:**
+
 ```protobuf
 message SearchTicket {
     string dataset = 1;
@@ -65,6 +69,7 @@ message SearchTicket {
 ```
 
 **Example (Python):**
+
 ```python
 import pyarrow.flight as pf
 import numpy as np
@@ -94,6 +99,7 @@ results = reader.read_all()
 | `metrics` | - | Get runtime metrics |
 
 **Example:**
+
 ```python
 # Create dataset
 action = pf.Action("create_dataset", schema.serialize())
@@ -127,6 +133,7 @@ Longbow provides a built-in web UI and REST API on port 8080 (configurable via `
 #### GET /api/health
 
 Response:
+
 ```json
 {
   "success": true,
@@ -141,6 +148,7 @@ Response:
 #### GET /api/datasets
 
 Response:
+
 ```json
 {
   "success": true,
@@ -160,6 +168,7 @@ Response:
 #### GET /api/dataset?name=XXX
 
 Response:
+
 ```json
 {
   "success": true,
@@ -177,6 +186,7 @@ Response:
 #### POST /api/search
 
 **Request:**
+
 ```json
 {
   "dataset": "my_dataset",
@@ -187,6 +197,7 @@ Response:
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -203,6 +214,7 @@ Response:
 #### GET /api/metrics
 
 Response:
+
 ```json
 {
   "success": true,

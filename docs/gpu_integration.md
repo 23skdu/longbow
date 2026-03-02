@@ -20,6 +20,7 @@ Longbow provides GPU-accelerated vector search through pluggable backends:
 - **CPU**: Fallback CPU implementation
 
 The GPU implementation is designed to be:
+
 - **Transparent**: Works alongside existing CPU-based HNSW indexes
 - **Flexible**: Automatic backend detection and fallback
 - **Efficient**: Hybrid search combining GPU and CPU strengths
@@ -258,6 +259,7 @@ cfg.DeviceID = 1  // Use second GPU
 ### Optimal Vector Dimensions
 
 GPU acceleration is most effective for:
+
 - **128-512 dimensions**: Good speedup (2-5x)
 - **512-1536 dimensions**: Excellent speedup (5-15x)
 - **1536+ dimensions**: Maximum speedup (10-50x)
@@ -423,6 +425,7 @@ func monitorGPU() {
 ## Best Practices
 
 1. **Always use defer for cleanup**:
+
    ```go
    index, err := gpu.NewIndex(cfg)
    if err != nil {
@@ -432,6 +435,7 @@ func monitorGPU() {
    ```
 
 2. **Handle GPU unavailability gracefully**:
+
    ```go
    err := hnsw.InitGPU(0, logger)
    if err != nil {
@@ -440,6 +444,7 @@ func monitorGPU() {
    ```
 
 3. **Monitor GPU memory usage**:
+
    ```go
    total, free, used, _ := index.GetMemoryInfo()
    if float64(used)/float64(total) > 0.9 {

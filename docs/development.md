@@ -123,6 +123,8 @@ Longbow exposes pprof endpoints for debugging:
 - Goroutine Profile: <http://localhost:9090/debug/pprof/goroutine>
 - Block Profile: <http://localhost:9090/debug/pprof/block>
 
+> **Note**: Collecting heap profiles under high memory load can cause system crashes. The profiling scripts include memory pressure checks to avoid this. If you encounter crashes during profiling, ensure sufficient free memory (>512MB) before collecting heap profiles.
+
 #### Debug Logging
 
 Enable debug logging:

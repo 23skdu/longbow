@@ -62,13 +62,22 @@ echo "Starting heap profiler (captures every ${PROFILE_INTERVAL}s)..."
     elapsed=0
     capture_count=0
     while [ $elapsed -lt $DURATION ]; do
-        TS=$(date +%s)
-        MINUTES=$((elapsed / 60))
-        echo "[${MINUTES}m] Capturing heap profile ${capture_count}..."
-        curl -s -o profiles/heap_${capture_count}_${TS}.pprof http://localhost:9090/debug/pprof/heap
-        curl -s -o profiles/allocs_${capture_count}_${TS}.pprof http://localhost:9090/debug/pprof/allocs
+        available_kb=$(grep MemAvailable /proc/meminfo 2>/dev/null | awk '{print $2}')
+        if [ -z "$available_kb" ]; then
+            available_kb=$(grep MemFree /proc/meminfo | awk '{print $2}')
+        fi
+        threshold_kb=524288
+        if [ -n "$available_kb" ] && [ "$available_kb" -lt "$threshold_kb" ]; then
+            echo "[$((elapsed / 60))m] Memory pressure detected, skipping profile capture"
+        else
+            TS=$(date +%s)
+            MINUTES=$((elapsed / 60))
+            echo "[${MINUTES}m] Capturing heap profile ${capture_count}..."
+            curl -s --fail -o profiles/heap_${capture_count}_${TS}.pprof http://localhost:9090/debug/pprof/heap 2>/dev/null || true
+            curl -s --fail -o profiles/allocs_${capture_count}_${TS}.pprof http://localhost:9090/debug/pprof/allocs 2>/dev/null || true
+            capture_count=$((capture_count + 1))
+        fi
         
-        capture_count=$((capture_count + 1))
         sleep $PROFILE_INTERVAL
         elapsed=$((elapsed + PROFILE_INTERVAL))
     done

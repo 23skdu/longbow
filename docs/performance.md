@@ -1,5 +1,24 @@
 # Performance Metrics (Matrix Run)
 
+## Performance Notes
+
+### pprof Memory Profile Collection Under Load
+
+When running load tests or soak tests, collecting pprof heap profiles can sometimes cause system crashes due to memory pressure. Go's pprof heap profile generation requires allocating memory to build the profile snapshot. Under heavy load, the system may already be memory-constrained, and additional allocations required for pprof can push the system over its memory limits.
+
+**Mitigations implemented in profiling scripts:**
+
+1. **Memory pressure detection**: Scripts now check available memory before attempting pprof collection
+2. **Graceful failure**: Failed pprof collections are logged but don't crash the benchmark
+3. **Reduced frequency**: pprof collection intervals have been tuned to avoid overlapping with peak load
+
+**Recommendations for production profiling:**
+
+- Run pprof collection during off-peak hours or after load tests complete
+- Use CPU profiles instead of heap profiles when possible (lower memory overhead)
+- Monitor system memory and skip pprof if available memory drops below 512MB
+- Consider using `GOGC` environment variable to reduce GC pressure during profiling
+
 # Performance Summary
 
 Generated on: 2026-02-01 22:52:37

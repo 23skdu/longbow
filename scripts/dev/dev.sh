@@ -161,9 +161,18 @@ run_benchmark() {
 profile_performance() {
 	echo "Profiling Longbow performance..."
 	
-	# Check if pprof is available
-	curl -s http://localhost:9090/debug/pprof/heap > /tmp/heap_profile.txt 2>/dev/null || echo "Failed to get heap profile"
-	curl -s http://localhost:9090/debug/pprof/profile > /tmp/cpu_profile.txt 2>/dev/null || echo "Failed to get CPU profile"
+	available_kb=$(grep MemAvailable /proc/meminfo 2>/dev/null | awk '{print $2}')
+	if [ -z "$available_kb" ]; then
+		available_kb=$(grep MemFree /proc/meminfo | awk '{print $2}')
+	fi
+	threshold_kb=524288
+	if [ -n "$available_kb" ] && [ "$available_kb" -lt "$threshold_kb" ]; then
+		echo "Memory pressure detected, skipping pprof collection"
+		return 1
+	fi
+	
+	curl -s --fail http://localhost:9090/debug/pprof/heap > /tmp/heap_profile.txt 2>/dev/null || echo "Failed to get heap profile"
+	curl -s --fail http://localhost:9090/debug/pprof/profile > /tmp/cpu_profile.txt 2>/dev/null || echo "Failed to get CPU profile"
 	
 	echo "Profiles saved to /tmp/"
 	ls -la /tmp/*_profile.txt 2>/dev/null || true

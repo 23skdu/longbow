@@ -1,5 +1,19 @@
 # Performance Metrics (Matrix Run)
 
+## Latest Benchmark Results (2026-03-04)
+
+Single-node local test with 8GB memory allocation:
+
+| Vectors | Dim | Put (MB/s) | Get (MB/s) | Search QPS | p50 (ms) | p95 (ms) | p99 (ms) |
+|---------|-----|------------|------------|------------|----------|----------|----------|
+| 5000 | 128 | 434.68 | 428.66 | 1130.68 | 0.84 | 1.20 | 1.36 |
+| 10000 | 128 | 448.77 | 532.30 | 1040.26 | 0.79 | 1.19 | 1.88 |
+| 10000 | 128 | 475.45 | 618.94 | 1153.73 | 0.82 | 1.17 | 1.30 |
+
+Concurrent mixed workload (4 workers, 10s duration):
+- Throughput: ~213 ops/s
+- Errors: 4 (entry point not found - indexing not complete)
+
 ## Performance Notes
 
 ### pprof Memory Profile Collection Under Load

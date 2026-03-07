@@ -154,6 +154,28 @@ var (
 		},
 	)
 
+	GCTunerGPUUtilization = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "longbow_gc_tuner_gpu_utilization",
+			Help: "Current GPU utilization percentage (0-100)",
+		},
+	)
+
+	// NUMA Metrics
+	NUMANodeCount = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "longbow_numa_node_count",
+			Help: "Number of NUMA nodes detected",
+		},
+	)
+
+	NUMAEnabled = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "longbow_numa_enabled",
+			Help: "Whether NUMA awareness is enabled (1 = enabled, 0 = disabled)",
+		},
+	)
+
 	// WALFlushErrors counts total number of WAL flush failures
 	WALFlushErrors = promauto.NewCounter(
 		prometheus.CounterOpts{

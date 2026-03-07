@@ -2,6 +2,7 @@ package simd
 
 import (
 	"github.com/klauspost/cpuid/v2"
+	"runtime"
 )
 
 // CPUFeatures contains detected CPU SIMD capabilities
@@ -26,11 +27,14 @@ func detectCPU() {
 		cpuid.CPU.Supports(cpuid.AVX512BW) &&
 		cpuid.CPU.Supports(cpuid.AVX512VL)
 
+	// Only detect NEON on ARM platforms
+	hasNEON := runtime.GOARCH == "arm64" && cpuid.CPU.Supports(cpuid.ASIMD)
+
 	features = CPUFeatures{
 		Vendor:    cpuid.CPU.VendorString,
 		HasAVX2:   cpuid.CPU.Supports(cpuid.AVX2),
 		HasAVX512: hasAVX512,
-		HasNEON:   cpuid.CPU.Supports(cpuid.ASIMD), // ARM NEON
+		HasNEON:   hasNEON,
 	}
 
 	// Select best implementation with fallback logic

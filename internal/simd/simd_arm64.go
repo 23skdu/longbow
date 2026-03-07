@@ -56,11 +56,29 @@ func euclidean384NEON(a, b []float32) (float32, error) {
 	return euclideanNEON(a, b)
 }
 
+// Optimized for 768 dimensions
+func euclidean768NEON(a, b []float32) (float32, error) {
+	return euclideanNEON(a, b)
+}
+
+// Optimized for 1536 dimensions
+func euclidean1536NEON(a, b []float32) (float32, error) {
+	return euclideanNEON(a, b)
+}
+
 func euclidean128NEON(a, b []float32) (float32, error) {
 	return euclideanNEON(a, b)
 }
 
 func dot384NEON(a, b []float32) (float32, error) {
+	return dotNEON(a, b)
+}
+
+func dot768NEON(a, b []float32) (float32, error) {
+	return dotNEON(a, b)
+}
+
+func dot1536NEON(a, b []float32) (float32, error) {
 	return dotNEON(a, b)
 }
 

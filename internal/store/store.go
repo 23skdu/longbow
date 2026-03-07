@@ -95,6 +95,9 @@ type VectorStore struct {
 	gpuEnabled   bool
 	gpuIndexPool *gpu.GPUIndexPool // Pool for reusable GPU indexes
 
+	// NUMA support
+	numaEnabled bool
+
 	// Shutdown and lifecycle (Phase 6/21)
 	shutdownState int32
 	ctx           context.Context
@@ -149,6 +152,10 @@ func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes 
 		stopChan:     make(chan struct{}),
 	}
 	s.ctx, s.cancel = context.WithCancel(context.Background())
+
+	// Initialize NUMA topology if on Linux
+	s.initNUMA(logger)
+
 	// Initialize empty datasets map
 	emptyMap := make(map[string]*Dataset)
 	s.datasets.Store(&emptyMap)
@@ -191,6 +198,45 @@ func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes 
 	}
 
 	return s
+}
+
+// initNUMA initializes NUMA topology detection and enables NUMA-aware allocations
+// when multiple NUMA nodes are detected on the system.
+func (s *VectorStore) initNUMA(logger zerolog.Logger) {
+	topo, err := DetectNUMATopology()
+	if err != nil {
+		logger.Warn().Err(err).Msg("Failed to detect NUMA topology")
+		s.numaEnabled = false
+		metrics.NUMAEnabled.Set(0)
+		metrics.NUMANodeCount.Set(0)
+		return
+	}
+
+	s.numaTopology = topo
+	metrics.NUMANodeCount.Set(float64(topo.NumNodes))
+
+	if topo.NumNodes > 1 {
+		s.numaEnabled = true
+		metrics.NUMAEnabled.Set(1)
+		logger.Info().
+			Int("nodes", topo.NumNodes).
+			Str("topology", topo.String()).
+			Msg("NUMA topology detected")
+	} else {
+		s.numaEnabled = false
+		metrics.NUMAEnabled.Set(0)
+		logger.Debug().Msg("Single NUMA node detected (no NUMA)")
+	}
+}
+
+// GetNUMATopology returns the NUMA topology if available
+func (s *VectorStore) GetNUMATopology() *NUMATopology {
+	return s.numaTopology
+}
+
+// IsNUMAEnabled returns whether NUMA awareness is enabled
+func (s *VectorStore) IsNUMAEnabled() bool {
+	return s.numaEnabled
 }
 
 // CheckIngestionBackpressure checks if the system is under heavy load and

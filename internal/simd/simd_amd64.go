@@ -84,6 +84,40 @@ func euclidean384AVX512(a, b []float32) (float32, error) {
 	return float32(math.Sqrt(float64(euclidean384AVX512Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]))))), nil
 }
 
+// AVX512 optimized Euclidean distance for 768 dims
+// 768 = 3 × 256 = 6 × 128 - can be computed efficiently from 128-bit vectors
+func euclidean768AVX512(a, b []float32) (float32, error) {
+	if len(a) != 768 || len(b) != 768 {
+		return 0, errors.New("simd: length must be 768")
+	}
+	return float32(math.Sqrt(float64(euclidean768AVX512Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]))))), nil
+}
+
+// AVX512 optimized Euclidean distance for 1536 dims
+// 1536 = 12 × 128 - unroll 12 times
+func euclidean1536AVX512(a, b []float32) (float32, error) {
+	if len(a) != 1536 || len(b) != 1536 {
+		return 0, errors.New("simd: length must be 1536")
+	}
+	return float32(math.Sqrt(float64(euclidean1536AVX512Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]))))), nil
+}
+
+// AVX512 optimized dot product for 768 dims
+func dot768AVX512(a, b []float32) (float32, error) {
+	if len(a) != 768 || len(b) != 768 {
+		return 0, errors.New("simd: length must be 768")
+	}
+	return dot768AVX512Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0])), nil
+}
+
+// AVX512 optimized dot product for 1536 dims
+func dot1536AVX512(a, b []float32) (float32, error) {
+	if len(a) != 1536 || len(b) != 1536 {
+		return 0, errors.New("simd: length must be 1536")
+	}
+	return dot1536AVX512Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0])), nil
+}
+
 // AVX2 optimized Cosine distance
 func cosineAVX2(a, b []float32) (float32, error) {
 	if len(a) != len(b) {
@@ -496,71 +530,6 @@ func cosineBatchAVX512(query []float32, vectors [][]float32, results []float32) 
 	return nil
 }
 
-// NEON stubs for AMD64
-func euclideanNEON(a, b []float32) (float32, error) {
-	return euclideanGeneric(a, b)
-}
-
-func cosineNEON(a, b []float32) (float32, error) {
-	return cosineGeneric(a, b)
-}
-
-func dotNEON(a, b []float32) (float32, error) {
-	return dotGeneric(a, b)
-}
-
-func euclidean384NEON(a, b []float32) (float32, error) {
-	return euclideanGeneric(a, b)
-}
-
-func dot384NEON(a, b []float32) (float32, error) {
-	return dotGeneric(a, b)
-}
-
-func euclideanBatchNEON(query []float32, vectors [][]float32, results []float32) error {
-	return euclideanBatchGeneric(query, vectors, results)
-}
-
-func dotBatchNEON(query []float32, vectors [][]float32, results []float32) error {
-	return dotBatchGeneric(query, vectors, results)
-}
-
-func cosineBatchNEON(query []float32, vectors [][]float32, results []float32) error {
-	return cosineBatchGeneric(query, vectors, results)
-}
-
-func euclidean128NEON(a, b []float32) (float32, error) {
-	return euclidean128Unrolled4x(a, b)
-}
-
-func dot128NEON(a, b []float32) (float32, error) {
-	return dot128Unrolled4x(a, b)
-}
-
-func euclideanVerticalBatchNEON(query []float32, vectors [][]float32, results []float32) error {
-	return euclideanBatchGeneric(query, vectors, results)
-}
-
-func adcBatchNEON(table []float32, flatCodes []byte, m int, results []float32) error {
-	return adcBatchGeneric(table, flatCodes, m, results)
-}
-
-func l2SquaredNEON(a, b []float32) (float32, error) {
-	return L2SquaredFloat32(a, b)
-}
-
-func euclideanF16NEON(a, b []float16.Num) (float32, error) {
-	return euclideanF16Unrolled4x(a, b)
-}
-
-func dotF16NEON(a, b []float16.Num) (float32, error) {
-	return dotF16Unrolled4x(a, b)
-}
-
-func cosineF16NEON(a, b []float16.Num) (float32, error) {
-	return cosineF16Unrolled4x(a, b)
-}
-
 // Assembly function declarations
 // New full-loop kernels
 //
@@ -589,6 +558,18 @@ func euclidean384AVX512Kernel(a, b unsafe.Pointer) float32
 
 //go:noescape
 func dot384AVX512Kernel(a, b unsafe.Pointer) float32
+
+//go:noescape
+func euclidean768AVX512Kernel(a, b unsafe.Pointer) float32
+
+//go:noescape
+func euclidean1536AVX512Kernel(a, b unsafe.Pointer) float32
+
+//go:noescape
+func dot768AVX512Kernel(a, b unsafe.Pointer) float32
+
+//go:noescape
+func dot1536AVX512Kernel(a, b unsafe.Pointer) float32
 
 //go:noescape
 func prefetchNTA(p unsafe.Pointer)

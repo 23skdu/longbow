@@ -52,4 +52,47 @@ var (
 		},
 		[]string{"dataset", "type"},
 	)
+
+	// Batch search metrics
+	BatchSearchRequestsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_batch_search_requests_total",
+			Help: "Total number of batch search requests",
+		},
+		[]string{"batch_size"},
+	)
+
+	BatchSearchLatencySeconds = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_batch_search_latency_seconds",
+			Help:    "Latency of batch search operations",
+			Buckets: []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5, 10},
+		},
+		[]string{"batch_size"},
+	)
+
+	BatchSearchQueriesTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_batch_search_queries_total",
+			Help: "Total number of queries processed in batch searches",
+		},
+		[]string{"batch_size"},
+	)
+
+	// Work queue metrics
+	WorkQueueBacklog = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "longbow_work_queue_backlog",
+			Help: "Current number of items in work queue",
+		},
+		[]string{"queue_name"},
+	)
+
+	WorkQueueOverflowsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_work_queue_overflows_total",
+			Help: "Total number of work queue overflow rejections",
+		},
+		[]string{"queue_name"},
+	)
 )

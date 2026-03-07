@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/23skdu/longbow/internal/gpu"
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/rs/zerolog"
 )
@@ -23,25 +24,30 @@ func (d *defaultMemStatsReader) ReadMemStats(m *runtime.MemStats) {
 	runtime.ReadMemStats(m)
 }
 
-// GCTuner adjusts GOGC dynamically based on memory usage.
+// GCTuner adjusts GOGC dynamically based on memory usage and GPU utilization.
 type GCTuner struct {
 	limitBytes int64
 	highGOGC   int
 	lowGOGC    int
 
-	IsAggressive bool
-	arenas       []*SlabArena
-	mu           sync.RWMutex
+	IsAggressive       bool
+	EnableGPUTuning    bool
+	GPUUtilizationHigh float32 // Threshold for "high" GPU utilization (0-100)
+	GPUUtilizationLow  float32 // Threshold for "low" GPU utilization (0-100)
+	arenas             []*SlabArena
+	mu                 sync.RWMutex
 
 	reader MemStatsReader
 	logger *zerolog.Logger
 
 	// State to avoid thrashing
-	currentGOGC     int
-	lastUtilization atomic.Uint64 // 0..1000 representing 0.0..1.0 ratio
+	currentGOGC        int
+	lastUtilization    atomic.Uint64 // 0..1000 representing 0.0..1.0 ratio
+	lastGPUUtilization atomic.Uint32 // 0..1000 representing 0.0..100.0%
 }
 
 // NewGCTuner creates a tuner. limitBytes should be close to container memory limit.
+// GPU tuning is enabled by default when a GPU is available.
 func NewGCTuner(limitBytes int64, highGOGC, lowGOGC int, logger *zerolog.Logger) *GCTuner {
 	if highGOGC <= 0 {
 		highGOGC = 80
@@ -54,12 +60,15 @@ func NewGCTuner(limitBytes int64, highGOGC, lowGOGC int, logger *zerolog.Logger)
 	}
 
 	tuner := &GCTuner{
-		limitBytes:  limitBytes,
-		highGOGC:    highGOGC,
-		lowGOGC:     lowGOGC,
-		reader:      &defaultMemStatsReader{},
-		logger:      logger,
-		currentGOGC: debug.SetGCPercent(-1), // Get current GOGC without changing it
+		limitBytes:         limitBytes,
+		highGOGC:           highGOGC,
+		lowGOGC:            lowGOGC,
+		reader:             &defaultMemStatsReader{},
+		logger:             logger,
+		currentGOGC:        debug.SetGCPercent(-1),
+		EnableGPUTuning:    gpu.GetDeviceCount() > 0,
+		GPUUtilizationHigh: 70.0,
+		GPUUtilizationLow:  30.0,
 	}
 
 	if tuner.logger != nil {
@@ -68,6 +77,7 @@ func NewGCTuner(limitBytes int64, highGOGC, lowGOGC int, logger *zerolog.Logger)
 			Int("highGOGC", highGOGC).
 			Int("lowGOGC", lowGOGC).
 			Int("initialGOGC", tuner.currentGOGC).
+			Bool("gpuTuning", tuner.EnableGPUTuning).
 			Msg("GCTuner initialized")
 	}
 
@@ -156,9 +166,19 @@ func (t *GCTuner) tune(heapInUse uint64) {
 
 	ratio := float64(effectiveInUse) / float64(t.limitBytes)
 
+	// Get GPU utilization if enabled
+	var gpuUtilization float32
+	if t.EnableGPUTuning {
+		if util, err := gpu.GetGlobalGPUUtilization(); err == nil {
+			gpuUtilization = util
+			t.lastGPUUtilization.Store(uint32(util * 10)) // Store as 0-1000
+		}
+	}
+
 	// Arena-aware tuning: if arena usage >70% of heap, set GOGC=50
 	arenaRatio := float64(totalArenaCapacity) / float64(heapInUse)
 	var targetGOGC int
+
 	if aggressive && arenaRatio > 0.7 {
 		// Arena-dominated heap: be very aggressive
 		targetGOGC = 50
@@ -169,8 +189,22 @@ func (t *GCTuner) tune(heapInUse uint64) {
 				Uint64("heapInUse", heapInUse).
 				Msg("Arena-dominated heap detected, setting aggressive GOGC=50")
 		}
+	} else if t.EnableGPUTuning && gpuUtilization >= t.GPUUtilizationHigh {
+		// GPU is highly utilized - reduce GOGC to reduce CPU overhead
+		// Since GPU is doing the heavy lifting, CPU is less critical
+		targetGOGC = t.lowGOGC
+		if t.logger != nil {
+			t.logger.Debug().
+				Float32("gpuUtilization", gpuUtilization).
+				Int("targetGOGC", targetGOGC).
+				Msg("High GPU utilization detected, reducing GOGC")
+		}
+	} else if t.EnableGPUTuning && gpuUtilization <= t.GPUUtilizationLow {
+		// GPU is underutilized - we can afford more GC overhead
+		// CPU is doing more work, so be less aggressive with GC
+		targetGOGC = t.highGOGC
 	} else {
-		// Standard logic
+		// Standard logic based on heap utilization
 		switch {
 		case ratio < 0.5:
 			targetGOGC = t.highGOGC
@@ -191,6 +225,11 @@ func (t *GCTuner) tune(heapInUse uint64) {
 	}
 	metrics.GCTunerHeapUtilization.Set(ratio)
 	t.lastUtilization.Store(uint64(ratio * 1000))
+
+	// Update GPU utilization metric
+	if t.EnableGPUTuning {
+		metrics.GCTunerGPUUtilization.Set(float64(gpuUtilization))
+	}
 
 	// Clamp
 	if targetGOGC < t.lowGOGC {

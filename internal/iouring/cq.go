@@ -8,7 +8,7 @@ import (
 )
 
 // Peek retrieves the next completion without removing it
-// Returns nil if no completions are available
+// Returns nil if no completions are available or if completion is invalid
 func (r *Ring) Peek() *CQE {
 	tail := atomic.LoadUint32(r.cqTail)
 	head := atomic.LoadUint32(r.cqHead)
@@ -22,7 +22,17 @@ func (r *Ring) Peek() *CQE {
 
 	// Get pointer to CQE
 	cqes := unsafe.Slice(r.cqes, r.cqEntriesCached)
-	return &cqes[index]
+	cqe := &cqes[index]
+
+	// Validate CQE - ignore spurious/invalid completions
+	// UserData=0 with Res=0 is often a spurious completion
+	if cqe.UserData == 0 && cqe.Res == 0 {
+		// This looks like a spurious completion, advance and try again
+		r.Advance(1)
+		return r.Peek()
+	}
+
+	return cqe
 }
 
 // PeekBatch retrieves multiple completions without removing them

@@ -71,6 +71,10 @@ func (i *CPUIndex) GetMemoryInfo() (total, free, used int64, err error) {
 	return 0, 0, 0, nil
 }
 
+func (i *CPUIndex) GetUtilization() (float32, error) {
+	return 0, nil
+}
+
 func (i *CPUIndex) GetDeviceCount() int {
 	return 0
 }

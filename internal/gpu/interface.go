@@ -3,7 +3,10 @@ package gpu
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"runtime"
+	"strconv"
+	"strings"
 )
 
 // GPUBackend represents the type of GPU acceleration available
@@ -94,6 +97,9 @@ type Index interface {
 
 	// GetMemoryInfo returns GPU memory information
 	GetMemoryInfo() (total, free, used int64, err error)
+
+	// GetUtilization returns GPU utilization percentage (0-100)
+	GetUtilization() (utilization float32, err error)
 }
 
 // DetectGPUBackend detects the preferred GPU backend for the current system
@@ -346,4 +352,46 @@ func cudaAvailable() bool {
 	}
 
 	return false
+}
+
+// GetGlobalGPUUtilization returns the GPU utilization percentage for the system
+// This is a convenience function that can be used without an Index
+func GetGlobalGPUUtilization() (float32, error) {
+	backend := DetectGPUBackend()
+
+	switch backend {
+	case BackendCUDA:
+		return getNVIDIAUtilization()
+	case BackendMetal:
+		return getMetalUtilization()
+	default:
+		return 0, nil
+	}
+}
+
+// getNVIDIAUtilization retrieves GPU utilization via nvidia-smi
+func getNVIDIAUtilization() (float32, error) {
+	nvidiaSmiPath := findNvidiaSmi()
+	if nvidiaSmiPath == "" {
+		return 0, fmt.Errorf("nvidia-smi not found")
+	}
+
+	cmd := exec.Command(nvidiaSmiPath, "--query-gpu=utilization.gpu", "--format=csv,noheader,nounits")
+	output, err := cmd.Output()
+	if err != nil {
+		return 0, fmt.Errorf("failed to query GPU utilization: %w", err)
+	}
+
+	utilizationStr := strings.TrimSpace(string(output))
+	utilization, err := strconv.ParseFloat(utilizationStr, 32)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse GPU utilization: %w", err)
+	}
+
+	return float32(utilization), nil
+}
+
+// getMetalUtilization returns Metal GPU utilization (placeholder)
+func getMetalUtilization() (float32, error) {
+	return 50.0, nil
 }

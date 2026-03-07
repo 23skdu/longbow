@@ -35,14 +35,18 @@ func adcBatchAVX512(table []float32, flatCodes []byte, m int, results []float32)
 	return adcBatchGeneric(table, flatCodes, m, results)
 }
 
-func euclideanAVX2(a, b []float32) (float32, error)      { return euclideanGeneric(a, b) }
-func euclideanAVX512(a, b []float32) (float32, error)    { return euclideanGeneric(a, b) }
-func cosineAVX2(a, b []float32) (float32, error)         { return cosineGeneric(a, b) }
-func cosineAVX512(a, b []float32) (float32, error)       { return cosineGeneric(a, b) }
-func dotAVX2(a, b []float32) (float32, error)            { return dotGeneric(a, b) }
-func dotAVX512(a, b []float32) (float32, error)          { return dotGeneric(a, b) }
-func euclidean384AVX512(a, b []float32) (float32, error) { return euclideanGeneric(a, b) }
-func dot384AVX512(a, b []float32) (float32, error)       { return dotGeneric(a, b) }
+func euclideanAVX2(a, b []float32) (float32, error)       { return euclideanGeneric(a, b) }
+func euclideanAVX512(a, b []float32) (float32, error)     { return euclideanGeneric(a, b) }
+func cosineAVX2(a, b []float32) (float32, error)          { return cosineGeneric(a, b) }
+func cosineAVX512(a, b []float32) (float32, error)        { return cosineGeneric(a, b) }
+func dotAVX2(a, b []float32) (float32, error)             { return dotGeneric(a, b) }
+func dotAVX512(a, b []float32) (float32, error)           { return dotGeneric(a, b) }
+func euclidean384AVX512(a, b []float32) (float32, error)  { return euclideanGeneric(a, b) }
+func euclidean768AVX512(a, b []float32) (float32, error)  { return euclideanGeneric(a, b) }
+func euclidean1536AVX512(a, b []float32) (float32, error) { return euclideanGeneric(a, b) }
+func dot384AVX512(a, b []float32) (float32, error)        { return dotGeneric(a, b) }
+func dot768AVX512(a, b []float32) (float32, error)        { return dotGeneric(a, b) }
+func dot1536AVX512(a, b []float32) (float32, error)       { return dotGeneric(a, b) }
 
 func euclideanBatchAVX2(query []float32, vectors [][]float32, results []float32) error {
 	return euclideanBatchGeneric(query, vectors, results)

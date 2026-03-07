@@ -295,3 +295,8 @@ func (w *pooledIndexWrapper) GetDeviceInfo() (*GPUInfo, error) {
 func (w *pooledIndexWrapper) GetMemoryInfo() (total, free, used int64, err error) {
 	return w.pooled.index.GetMemoryInfo()
 }
+
+// GetUtilization delegates to the wrapped index
+func (w *pooledIndexWrapper) GetUtilization() (float32, error) {
+	return w.pooled.index.GetUtilization()
+}

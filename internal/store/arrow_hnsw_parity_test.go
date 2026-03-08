@@ -155,6 +155,7 @@ func TestArrowHNSW_HighDimensionalVectors(t *testing.T) {
 		Records: []arrow.RecordBatch{rec},
 	}
 	cfg := DefaultArrowHNSWConfig()
+	cfg.Dims = dims
 	idx := NewArrowHNSW(ds, &cfg)
 
 	// Add all vectors

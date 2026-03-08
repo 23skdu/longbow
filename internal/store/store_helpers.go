@@ -21,6 +21,20 @@ func NewTestHNSWIndex(dataset *Dataset) *ArrowHNSW {
 	cfg.M = 32
 	cfg.EfConstruction = 100
 	cfg.EfSearch = 50
+
+	// Infer dimensions from dataset if provided
+	if dataset != nil && len(dataset.Records) > 0 {
+		rec := dataset.Records[0]
+		for _, field := range rec.Schema().Fields() {
+			if field.Name == "vector" || field.Name == "embedding" {
+				if fsl, ok := field.Type.(*arrow.FixedSizeListType); ok {
+					cfg.Dims = int(fsl.Len())
+				}
+				break
+			}
+		}
+	}
+
 	return NewArrowHNSW(dataset, &cfg)
 }
 

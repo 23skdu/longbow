@@ -298,10 +298,10 @@ func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
 	if g.Type == VectorTypeFloat32 || g.Type == VectorTypeUnknown {
 		for len(g.VectorsF32) <= cID {
 			// Create arena on first need
-			// Create arena if needed - always size for the required chunk
+			// Create arena if needed - always size for the required chunk + alignment buffer
 			requiredChunkSize := ChunkSize * dims * 4
 			if g.Float32Arena == nil {
-				slabSize := requiredChunkSize
+				slabSize := requiredChunkSize + 64
 				if slabSize < 1024*1024 {
 					slabSize = 1024 * 1024
 				}
@@ -363,7 +363,7 @@ func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
 				// Create a slab arena with reasonable size (e.g. 1MB or fits 1 chunk)
 				// SQ8 requires padding to 64 bytes
 				paddedDims := (dims + 63) & ^63
-				slabSize := ChunkSize * paddedDims
+				slabSize := ChunkSize*paddedDims + 64
 				if slabSize < 1024*1024 {
 					slabSize = 1024 * 1024
 				}
@@ -413,7 +413,7 @@ func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
 	if g.Type == VectorTypeInt8 || g.Type == VectorTypeUint8 {
 		for len(g.VectorsInt8) <= cID {
 			if g.Int8Arena == nil {
-				slabSize := ChunkSize * dims
+				slabSize := ChunkSize*dims + 64
 				if slabSize < 1024*1024 {
 					slabSize = 1024 * 1024
 				}
@@ -433,7 +433,7 @@ func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
 			if g.Uint64Arena == nil {
 				paddedDims := (dims + 63) & ^63
 				numWords := paddedDims / 64
-				slabSize := ChunkSize * numWords * 8
+				slabSize := ChunkSize*numWords*8 + 64
 				if slabSize < 1024*1024 {
 					slabSize = 1024 * 1024
 				}
@@ -455,7 +455,7 @@ func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
 			if g.Uint64Arena == nil {
 				// Allocate based on PQM
 				numWords := (g.PQM + 7) / 8
-				slabSize := ChunkSize * numWords * 8
+				slabSize := ChunkSize*numWords*8 + 64
 				if slabSize < 1024*1024 {
 					slabSize = 1024 * 1024
 				}
@@ -474,7 +474,7 @@ func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
 	if g.Type == VectorTypeFloat16 {
 		for len(g.VectorsF16) <= cID {
 			if g.Float16Arena == nil {
-				slabSize := ChunkSize * dims * 2
+				slabSize := ChunkSize*dims*2 + 64
 				if slabSize < 1024*1024 {
 					slabSize = 1024 * 1024
 				}
@@ -1063,21 +1063,21 @@ func NewGraphData(capacity, dim int, mmap bool, useDisk bool, fd int,
 	// Initialize arenas
 	// Slab size: fit at least one chunk + overhead.
 	// Float32: 1024 * dim * 4 bytes.
-	f32SlabSize := ChunkSize * dim * 4
+	f32SlabSize := ChunkSize*dim*4 + 64
 	if f32SlabSize < 1024*1024 {
 		f32SlabSize = 1024 * 1024
 	}
 	f32Arena := memory.NewSlabArena(f32SlabSize)
 
 	// Uint8: 1024 * dim * 1 bytes.
-	u8SlabSize := ChunkSize * dim
+	u8SlabSize := ChunkSize*dim + 64
 	if u8SlabSize < 1024*1024 {
 		u8SlabSize = 1024 * 1024
 	}
 	u8Arena := memory.NewSlabArena(u8SlabSize)
 
 	// Float64: 8 bytes
-	f64SlabSize := ChunkSize * dim * 8
+	f64SlabSize := ChunkSize*dim*8 + 64
 	if f64SlabSize < 1024*1024 {
 		f64SlabSize = 1024 * 1024
 	}
@@ -1087,14 +1087,14 @@ func NewGraphData(capacity, dim int, mmap bool, useDisk bool, fd int,
 	i8Arena := memory.NewSlabArena(u8SlabSize)
 
 	// Complex64: 8 bytes
-	c64SlabSize := ChunkSize * dim * 8
+	c64SlabSize := ChunkSize*dim*8 + 64
 	if c64SlabSize < 1024*1024 {
 		c64SlabSize = 1024 * 1024
 	}
 	c64Arena := memory.NewSlabArena(c64SlabSize)
 
 	// Complex128: 16 bytes
-	c128SlabSize := ChunkSize * dim * 16
+	c128SlabSize := ChunkSize*dim*16 + 64
 	if c128SlabSize < 1024*1024 {
 		c128SlabSize = 1024 * 1024
 	}

@@ -55,7 +55,7 @@ func TestGraphRAG_Scoring(t *testing.T) {
 	rec := b.NewRecordBatch()
 	defer rec.Release()
 
-	err := s.ApplyDelta(datasetName, rec, 1, time.Now().UnixNano())
+	err := s.applyReplayBatch(datasetName, rec, 1, time.Now().UnixNano())
 	require.NoError(t, err)
 
 	// Wait for indexing

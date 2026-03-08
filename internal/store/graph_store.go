@@ -172,8 +172,7 @@ func (gs *GraphStore) RankWithGraph(results []SearchResult, alpha float32, depth
 		// (Simplified: 1 hop for now)
 		edges := gs.forwardEdges[id]
 		for _, edge := range edges {
-			// Object is VectorID (uint32)
-			scores[uint32(edge.Object)] += r.Score * alpha
+			scores[uint32(edge.Object)] += r.Score * alpha * edge.Weight
 		}
 	}
 

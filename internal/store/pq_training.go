@@ -93,7 +93,7 @@ func (h *ArrowHNSW) TrainPQ(vectors [][]float32) error {
 				cID := chunkID(i)
 				cOff := chunkOffset(i)
 
-				data, err = h.ensureChunk(data, cID, cOff, data.Dims)
+				data, err = h.ensureChunkInternal(cID, cOff, data.Dims)
 				if err != nil {
 					continue
 				}

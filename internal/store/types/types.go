@@ -1,6 +1,10 @@
 package types
 
-import "github.com/23skdu/longbow/internal/core"
+import (
+	"fmt"
+
+	"github.com/23skdu/longbow/internal/core"
+)
 
 // VectorDataType represents the data type of vector elements
 type VectorDataType int
@@ -44,8 +48,16 @@ func (vdt VectorDataType) String() string {
 		return "int32"
 	case VectorTypeUint32:
 		return "uint32"
+	case VectorTypeInt16:
+		return "int16"
+	case VectorTypeUint16:
+		return "uint16"
+	case VectorTypeInt64:
+		return "int64"
+	case VectorTypeUint64:
+		return "uint64"
 	default:
-		return "unknown"
+		return fmt.Sprintf("unknown(%d)", int(vdt))
 	}
 }
 
@@ -89,7 +101,7 @@ func (vdt VectorDataType) ElementSize() int {
 	case VectorTypeComplex128:
 		return 16
 	default:
-		return 4 // default to float32 size
+		return 0
 	}
 }
 

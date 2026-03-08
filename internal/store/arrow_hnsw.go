@@ -177,8 +177,17 @@ type ArrowHNSW struct {
 }
 
 func (h *ArrowHNSW) GetVector(id uint32) (any, error) {
-	// Fallback to DiskGraph FIRST in hybrid mode if SQ8/PQ is enabled.
-	// This ensures we read the persistent copy even if memory chunks are allocated (due to promotion).
+	data := h.data.Load()
+	if data == nil {
+		return nil, fmt.Errorf("index data not initialized")
+	}
+
+	// 1. Try raw vector from memory first (most accurate)
+	if v, err := data.GetVector(id); v != nil || err != nil {
+		return v, err
+	}
+
+	// 2. Fallback to DiskGraph in hybrid mode
 	dg := h.diskGraph.Load()
 	if dg != nil {
 		if h.config.SQ8Enabled {
@@ -191,14 +200,18 @@ func (h *ArrowHNSW) GetVector(id uint32) (any, error) {
 				return v, nil
 			}
 		}
+		// Try raw from disk if available
+		if v, _ := dg.GetVector(id); v != nil {
+			return v, nil
+		}
 	}
 
-	data := h.data.Load()
-	if data == nil {
-		return nil, fmt.Errorf("index data not initialized")
+	// 3. Last resort: internal compressed copies in GraphData (only if raw wasn't found)
+	if h.config.SQ8Enabled {
+		if v := data.GetVectorSQ8(id); v != nil {
+			return v, nil
+		}
 	}
-
-	// Prefer quantized vectors if enabled
 	if h.config.PQEnabled {
 		if v := data.GetVectorPQ(id); v != nil {
 			return v, nil
@@ -210,7 +223,7 @@ func (h *ArrowHNSW) GetVector(id uint32) (any, error) {
 		}
 	}
 
-	return data.GetVector(id)
+	return nil, nil
 }
 
 func (h *ArrowHNSW) getVectorAny(id uint32) (any, error) {
@@ -336,6 +349,7 @@ func NewArrowHNSW(dataset *Dataset, config *ArrowHNSWConfig) *ArrowHNSW {
 	if config.Float16Enabled {
 		dt = types.VectorTypeFloat16
 	}
+	h.config.DataType = dt
 
 	// Initialize GraphData
 	gd := types.NewGraphData(
@@ -480,6 +494,24 @@ func (h *ArrowHNSW) GetPQEncoder() *pq.PQEncoder {
 // SetPQEncoder sets the PQ encoder
 func (h *ArrowHNSW) SetPQEncoder(encoder *pq.PQEncoder) {
 	h.pqEncoder = encoder
+	if encoder != nil {
+		h.config.PQM = encoder.M
+		h.config.PQK = encoder.K
+		h.config.PQEnabled = true // Explicitly enable if encoder is set
+
+		data := h.data.Load()
+		if data != nil {
+			data.PQEnabled = true
+			data.PQM = encoder.M
+			// Trigger allocation of current chunks
+			numChunks := (data.Capacity + types.ChunkSize - 1) / types.ChunkSize
+			for i := 0; i < numChunks; i++ {
+				if err := data.EnsureChunk(i, 0, data.Dims); err != nil {
+					return
+				}
+			}
+		}
+	}
 }
 
 // setDims sets the vector dimensions
@@ -533,8 +565,12 @@ func (h *ArrowHNSW) ensureChunk(data *types.GraphData, cID, cOff, dims int) (*ty
 	h.growMu.Lock()
 	defer h.growMu.Unlock()
 
+	return h.ensureChunkInternal(cID, cOff, dims)
+}
+
+func (h *ArrowHNSW) ensureChunkInternal(cID, cOff, dims int) (*types.GraphData, error) {
 	// Reload data to ensure we have the latest view before modifying
-	data = h.data.Load()
+	data := h.data.Load()
 
 	// Ensure dims is synced between atomic and data struct
 	if data.Dims == 0 && dims > 0 {
@@ -818,6 +854,13 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 		dimsStr := strconv.Itoa(int(h.dims.Load()))
 		metrics.HNSWSearchOpsTotal.WithLabelValues(h.name, typeLabel, dimsStr).Inc()
 
+		// Polymorphic metrics needed for test
+		metrics.HNSWPolymorphicSearchCount.WithLabelValues(typeLabel).Inc()
+		metrics.HNSWPolymorphicLatency.WithLabelValues(typeLabel).Observe(duration)
+
+		byteThroughput := float64(int(h.dims.Load()) * h.config.DataType.ElementSize())
+		metrics.HNSWPolymorphicThroughput.WithLabelValues(typeLabel).Add(byteThroughput)
+
 		if metrics.HNSWSearchPoolPutTotal != nil {
 			metrics.HNSWSearchPoolPutTotal.Inc()
 		}
@@ -949,7 +992,7 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 
 	for level := int(maxLevel); level > 0; level-- {
 		// Greedy search: keep 1 best candidate
-		res, err := h.searchLayer(ctx, nil, currObj.ID, 1, level, searchCtx, data, queryVec)
+		res, err := h.searchLayer(ctx, computer, currObj.ID, 1, level, searchCtx, data, queryVec)
 		if err != nil {
 			return nil, err
 		}
@@ -976,7 +1019,7 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 	var ok bool
 	if qv, ok = queryVec.([]float32); !ok {
 		// Fallback to non-retry path if not float32 (unlikely for this path)
-		res, err := h.searchLayer(ctx, nil, currObj.ID, efSearch, 0, searchCtx, data, queryVec)
+		res, err := h.searchLayer(ctx, computer, currObj.ID, efSearch, 0, searchCtx, data, queryVec)
 		if err != nil {
 			return nil, err
 		}
@@ -996,7 +1039,7 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 
 	maxNodeCount := int(h.nodeCount.Load())
 	for attempt := 0; attempt < 3; attempt++ {
-		res, err := h.searchLayer(ctx, nil, currObj.ID, efSearch, 0, searchCtx, data, queryVec)
+		res, err := h.searchLayer(ctx, computer, currObj.ID, efSearch, 0, searchCtx, data, queryVec)
 		if err != nil {
 			return nil, err
 		}
@@ -1034,15 +1077,18 @@ func (h *ArrowHNSW) PreWarm(targetSize int) {
 	// Stub
 }
 
-func (h *ArrowHNSW) growNoLock(_, _ int) error {
-	// Simple stub or implementation of resizing without acquiring growMu (caller holds it)
-	return nil
+func (h *ArrowHNSW) growNoLock(capacity, dims int) error {
+	return h.growInternal(capacity, dims)
 }
 
 func (h *ArrowHNSW) Grow(capacity, dims int) error {
 	h.growMu.Lock()
 	defer h.growMu.Unlock()
 
+	return h.growInternal(capacity, dims)
+}
+
+func (h *ArrowHNSW) growInternal(capacity, dims int) error {
 	start := time.Now()
 	defer func() {
 		metrics.HNSWIndexGrowthDuration.Observe(time.Since(start).Seconds())
@@ -1055,12 +1101,11 @@ func (h *ArrowHNSW) Grow(capacity, dims int) error {
 	}
 
 	// Calculate current vs target
-	currentCap := data.Capacity
 	currentDims := data.Dims
 
-	if capacity <= currentCap && dims == currentDims {
-		return nil
-	}
+	// If capacity and dims haven't changed, but PQ was enabled, we still need to run EnsureChunk
+	// because EnsureChunk handles conditional allocation of PQ/SQ8 buffers even if chunk already exists.
+	// However, if we want to be efficient, we only proceed if something changed OR if we need to ensure PQ/SQ8.
 
 	// COW: Clone the current data structure
 	// This ensures readers holding old 'data' pointer are safe.
@@ -1069,11 +1114,17 @@ func (h *ArrowHNSW) Grow(capacity, dims int) error {
 	newData.Capacity = capacity
 	newData.Dims = dims
 
+	// Update flags from config to ensure EnsureChunk knows about them
+	newData.PQEnabled = h.config.PQEnabled
+	newData.PQM = h.config.PQM
+	newData.SQ8Enabled = h.config.SQ8Enabled
+	newData.BQEnabled = h.config.BQEnabled
+
 	// If dims changed, we need to reinitialize arenas for the new size
 	if dims != currentDims {
 		// Calculate required slab size for new dims
 		requiredSize := types.ChunkSize * dims * 4 // 4 bytes per float32
-		slabSize := requiredSize
+		slabSize := requiredSize + 64
 		if slabSize < 1024*1024 {
 			slabSize = 1024 * 1024
 		}
@@ -1120,6 +1171,83 @@ func (h *ArrowHNSW) generateLevel() int {
 
 // AddBatch implements VectorIndex.
 func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowIdxs, batchIdxs []int) ([]uint32, error) {
+	// Bulk optimization path (optimized for large ingestions)
+	if len(rowIdxs) >= 1000 && !h.IsSharded() {
+		startID := uint32(h.nodeCount.Load())
+		n := len(rowIdxs)
+
+		// Discover vector column
+		vecColIdx := -1
+		if len(recs) > 0 {
+			for i := 0; i < int(recs[0].NumCols()); i++ {
+				if name := recs[0].ColumnName(i); name == "vector" || name == "embedding" {
+					vecColIdx = i
+					break
+				}
+			}
+		}
+
+		if vecColIdx != -1 {
+			// Extract all vectors into a typed slice for bulk processing
+			var vecs any
+			supported := true
+			switch h.config.DataType {
+			case types.VectorTypeFloat32:
+				f32s := make([][]float32, n)
+				for i := range rowIdxs {
+					rec := recs[batchIdxs[i]]
+					if v, ok := h.extractVector(rec, vecColIdx, rowIdxs[i]).([]float32); ok {
+						f32s[i] = v
+						h.SetLocation(VectorID(startID+uint32(i)), Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
+					} else {
+						supported = false
+						break
+					}
+				}
+				vecs = f32s
+			case types.VectorTypeFloat16:
+				f16s := make([][]float16.Num, n)
+				for i := range rowIdxs {
+					rec := recs[batchIdxs[i]]
+					if v, ok := h.extractVector(rec, vecColIdx, rowIdxs[i]).([]float16.Num); ok {
+						f16s[i] = v
+						h.SetLocation(VectorID(startID+uint32(i)), Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
+					} else {
+						supported = false
+						break
+					}
+				}
+				vecs = f16s
+			case types.VectorTypeInt8:
+				i8s := make([][]int8, n)
+				for i := range rowIdxs {
+					rec := recs[batchIdxs[i]]
+					if v, ok := h.extractVector(rec, vecColIdx, rowIdxs[i]).([]int8); ok {
+						i8s[i] = v
+						h.SetLocation(VectorID(startID+uint32(i)), Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
+					} else {
+						supported = false
+						break
+					}
+				}
+				vecs = i8s
+			default:
+				supported = false
+			}
+
+			if supported && vecs != nil {
+				if err := h.AddBatchBulk(ctx, startID, n, vecs); err == nil {
+					ids := make([]uint32, n)
+					for i := 0; i < n; i++ {
+						ids[i] = startID + uint32(i)
+					}
+					return ids, nil
+				}
+				// Fallback to sequential on error or unsupported types
+			}
+		}
+	}
+
 	ids := make([]uint32, 0, len(rowIdxs))
 	for i := range rowIdxs {
 		if i%100 == 0 {
@@ -1181,6 +1309,12 @@ func (h *ArrowHNSW) SearchVectors(ctx context.Context, queryVec any, k int, filt
 func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, _ *ArrowSearchContext, queryVal any, _ bool) any {
 	switch q := queryVal.(type) {
 	case []float32:
+		if h.config.PQEnabled && h.pqEncoder != nil {
+			table, err := h.pqEncoder.BuildADCTable(q)
+			if err == nil {
+				return &pqComputer{data: data, q: q, table: table, h: h}
+			}
+		}
 		return &float32Computer{data: data, q: q, dims: len(q), h: h}
 	case []int8, []uint8:
 		var q8 []uint8
@@ -1414,6 +1548,31 @@ func (h *ArrowHNSW) searchLayer(_ context.Context, computer any, entryPoint uint
 						sum += diff * diff
 					}
 					return float32(math.Sqrt(sum)), nil
+				}
+				return math.MaxFloat32, nil
+			}
+			epDist, _ = distComputer(entryPoint)
+
+		case []float16.Num:
+			distComputer = func(id uint32) (float32, error) {
+				vecAny, err := h.getVectorWithData(data, id)
+				if err != nil {
+					return 0, err
+				}
+				if v, ok := vecAny.([]float16.Num); ok {
+					if len(q) != len(v) {
+						return math.MaxFloat32, nil
+					}
+					if h.distFuncF16 != nil {
+						return h.distFuncF16(q, v)
+					}
+					// Fallback Euclidean
+					var sum float32
+					for i, val := range q {
+						diff := val.Float32() - v[i].Float32()
+						sum += diff * diff
+					}
+					return float32(math.Sqrt(float64(sum))), nil
 				}
 				return math.MaxFloat32, nil
 			}
@@ -1866,6 +2025,29 @@ func (h *ArrowHNSW) SearchWithArena(queryVec []float32, k int, arena any) []Vect
 		ids[i] = VectorID(r.ID)
 	}
 	return ids
+}
+
+type pqComputer struct {
+	data  *types.GraphData
+	q     []float32
+	table []float32
+	h     *ArrowHNSW
+}
+
+func (c *pqComputer) ComputeSingle(id uint32) (float32, error) {
+	code := c.data.GetVectorPQ(id)
+	if code == nil {
+		return math.MaxFloat32, nil
+	}
+	distSq, err := c.h.pqEncoder.ADCDistance(c.table, code)
+	if err != nil {
+		return 0, err
+	}
+	// HNSW Euclidean metric expects distance (sqrt), but ADCDistance returns squared distance.
+	if c.h.config.Metric == core.MetricEuclidean {
+		return float32(math.Sqrt(float64(distSq))), nil
+	}
+	return distSq, nil
 }
 
 type float32Computer struct {

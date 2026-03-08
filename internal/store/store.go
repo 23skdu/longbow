@@ -361,6 +361,9 @@ func (s *VectorStore) getOrCreateDataset(name string, createFn func() *Dataset) 
 		// Create
 		newDs := createFn()
 		if newDs != nil {
+			if s.hybridSearchConfig.Enabled {
+				newDs.BM25Index = NewBM25InvertedIndex(DefaultBM25Config())
+			}
 			m[name] = newDs
 			result = newDs
 			created = true

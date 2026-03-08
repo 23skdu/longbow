@@ -3,6 +3,7 @@ package store
 import (
 	"testing"
 
+	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -11,7 +12,12 @@ func TestChunkedGrowth(t *testing.T) {
 	config.InitialCapacity = 10 // Start small
 
 	// Create HNSW
-	h := NewArrowHNSW(&Dataset{Name: "test"}, &config)
+	fields := []arrow.Field{
+		{Name: "vector", Type: arrow.FixedSizeListOf(128, arrow.PrimitiveTypes.Float32)},
+	}
+	schema := arrow.NewSchema(fields, nil)
+	ds := NewDataset("test", schema)
+	h := NewArrowHNSW(ds, &config)
 
 	// Verify initial chunks
 	data := h.data.Load()
@@ -24,7 +30,7 @@ func TestChunkedGrowth(t *testing.T) {
 	// Let's manually manipulate capacity for testing, OR just Grow huge.
 
 	targetCap := 5000
-	if err := h.Grow(targetCap, 0); err != nil {
+	if err := h.Grow(targetCap, 128); err != nil {
 		t.Fatalf("Grow failed: %v", err)
 	}
 
@@ -65,7 +71,7 @@ func TestChunkedGrowth(t *testing.T) {
 	}
 
 	// Grow again
-	if err := h.Grow(targetCap+ChunkSize, 0); err != nil {
+	if err := h.Grow(targetCap+ChunkSize, 128); err != nil {
 		t.Fatalf("Grow failed: %v", err)
 	} // Add one more chunk
 	grownData := h.data.Load()

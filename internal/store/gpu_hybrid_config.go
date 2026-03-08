@@ -2,9 +2,6 @@ package store
 
 import (
 	"errors"
-	"sort"
-
-	lbtypes "github.com/23skdu/longbow/internal/store/types"
 )
 
 // GPUHybridSearchConfig configures GPU/CPU hybrid search behavior
@@ -127,41 +124,4 @@ func deduplicateCandidates(candidates []candidateResult) []candidateResult {
 	}
 
 	return unique
-}
-
-// mergeAndRerank merges GPU and CPU results, re-ranking by actual distance
-func mergeAndRerank(gpuResults, cpuResults []SearchResult, k int) []SearchResult {
-	// Create a map to deduplicate by ID
-	resultMap := make(map[lbtypes.VectorID]SearchResult, len(gpuResults)+len(cpuResults))
-
-	// Add GPU results first
-	for _, r := range gpuResults {
-		if existing, ok := resultMap[r.ID]; !ok || r.Score < existing.Score {
-			resultMap[r.ID] = r
-		}
-	}
-
-	// Add/merge CPU results
-	for _, r := range cpuResults {
-		if existing, ok := resultMap[r.ID]; !ok || r.Score < existing.Score {
-			resultMap[r.ID] = r
-		}
-	}
-
-	// Convert to slice
-	merged := make([]SearchResult, 0, len(resultMap))
-	for _, r := range resultMap {
-		merged = append(merged, r)
-	}
-
-	// Sort by score (distance) ascending
-	sort.Slice(merged, func(i, j int) bool {
-		return merged[i].Score < merged[j].Score
-	})
-
-	// Return top k
-	if len(merged) > k {
-		return merged[:k]
-	}
-	return merged
 }

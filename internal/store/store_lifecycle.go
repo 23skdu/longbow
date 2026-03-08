@@ -362,7 +362,7 @@ func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
 										if r < col.Len() && col.IsValid(r) {
 											text := col.Value(r)
 											invIdx.Add(text, docID)
-											if bm25 != nil {
+											if s.hybridSearchConfig.Enabled && bm25 != nil {
 												bm25.Add(VectorID(docID), text)
 												metrics.BM25DocumentsIndexedTotal.Inc()
 											}

@@ -101,30 +101,6 @@ func (c *gpuResultCache) evictOldest() {
 	c.order.Remove(elem)
 }
 
-// clear removes all entries from the cache
-func (c *gpuResultCache) clear() {
-	if c == nil {
-		return
-	}
-
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	c.items = make(map[uint64]*list.Element)
-	c.order = list.New()
-}
-
-// size returns the current number of entries
-func (c *gpuResultCache) size() int {
-	if c == nil {
-		return 0
-	}
-
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.order.Len()
-}
-
 // hashQuery creates a hash of a query vector for cache lookup
 func hashQuery(query []float32) uint64 {
 	h := fnv.New64a()

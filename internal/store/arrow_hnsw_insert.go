@@ -2,7 +2,8 @@ package store
 
 import (
 	"context"
-	"unsafe"
+
+	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
 // searchLayerForInsert performs search during insertion.
@@ -38,67 +39,90 @@ func (h *ArrowHNSW) selectNeighbors(ctx *ArrowSearchContext, candidates []Candid
 		selected = make([]Candidate, 0, m)
 	}
 
-	// Unified toF32 helper
-	toF32 := func(v any) []float32 {
-		switch vf := v.(type) {
-		case []float32:
-			return vf
-		case []int8:
-			if h.quantizer != nil && h.sq8Ready.Load() {
-				byteVec := *(*[]byte)(unsafe.Pointer(&vf))
-				return h.quantizer.Decode(byteVec)
-			}
-			res := make([]float32, len(vf))
-			for i, val := range vf {
-				res[i] = float32(uint8(val))
-			}
-			return res
-		case []uint8:
-			if h.quantizer != nil && h.sq8Ready.Load() {
-				return h.quantizer.Decode(vf)
-			}
-			res := make([]float32, len(vf))
-			for i, val := range vf {
-				res[i] = float32(val)
-			}
-			return res
-		default:
-			return nil
-		}
-	}
-
-	// Cache de-quantized vectors to avoid repeated conversions and data access
-	vectorCache := make(map[uint32][]float32, len(candidates))
-
 	// HNSW "Heuristic 2" (Diversity Heuristic)
+	vectorCache := make(map[uint32]any, len(candidates))
+
 	for _, cand := range candidates {
 		if len(selected) >= m {
 			break
 		}
 
 		isDiverse := true
-		v1f, ok := vectorCache[cand.ID]
+		v1, ok := vectorCache[cand.ID]
 		if !ok {
 			vecAny, _ := data.GetVector(cand.ID)
-			v1f = toF32(vecAny)
-			vectorCache[cand.ID] = v1f
+			v1 = vecAny
+			vectorCache[cand.ID] = v1
 		}
-		if v1f == nil {
+		if v1 == nil {
 			continue
 		}
 
 		for _, sel := range selected {
-			v2f, ok := vectorCache[sel.ID]
+			v2, ok := vectorCache[sel.ID]
 			if !ok {
 				vecAny, _ := data.GetVector(sel.ID)
-				v2f = toF32(vecAny)
-				vectorCache[sel.ID] = v2f
+				v2 = vecAny
+				vectorCache[sel.ID] = v2
 			}
-			if v2f == nil {
+			if v2 == nil {
 				continue
 			}
 
-			d, err := h.distFunc(v1f, v2f)
+			var d float32
+			var err error
+
+			switch v1Typed := v1.(type) {
+			case []float32:
+				if v2f, ok := v2.([]float32); ok {
+					d, err = h.distFunc(v1Typed, v2f)
+				}
+			case []float64:
+				if v2Typed, ok := v2.([]float64); ok {
+					d, err = h.distFuncF64(v1Typed, v2Typed)
+				}
+			case []float16.Num:
+				if v2Typed, ok := v2.([]float16.Num); ok {
+					d, err = h.distFuncF16(v1Typed, v2Typed)
+				}
+			case []complex64:
+				if v2Typed, ok := v2.([]complex64); ok {
+					d, err = h.distFuncC64(v1Typed, v2Typed)
+				}
+			case []complex128:
+				if v2Typed, ok := v2.([]complex128); ok {
+					var df64 float64
+					df64, err = h.distFuncC128(v1Typed, v2Typed)
+					d = float32(df64)
+				}
+			case []int8:
+				// Fallback to float32
+				v1f := make([]float32, len(v1Typed))
+				for i, val := range v1Typed {
+					v1f[i] = float32(val)
+				}
+				if v2Typed, ok := v2.([]int8); ok {
+					v2f := make([]float32, len(v2Typed))
+					for i, val := range v2Typed {
+						v2f[i] = float32(val)
+					}
+					d, err = h.distFunc(v1f, v2f)
+				}
+			case []uint8:
+				// Fallback to SQ8 explicitly if enabled handled elsewhere, but default to float32
+				v1f := make([]float32, len(v1Typed))
+				for i, val := range v1Typed {
+					v1f[i] = float32(val)
+				}
+				if v2Typed, ok := v2.([]uint8); ok {
+					v2f := make([]float32, len(v2Typed))
+					for i, val := range v2Typed {
+						v2f[i] = float32(val)
+					}
+					d, err = h.distFunc(v1f, v2f)
+				}
+			}
+
 			// Diversity Heuristic check: Loosen for SQ8 to allow more edges
 			threshold := cand.Dist
 			if h.config.SQ8Enabled {

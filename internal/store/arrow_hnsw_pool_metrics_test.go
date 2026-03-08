@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/apache/arrow-go/v18/arrow"
+	"github.com/apache/arrow-go/v18/arrow/memory"
 	io_prometheus_client "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/require"
 )
@@ -22,7 +24,11 @@ func TestArrowHNSW_PoolMetrics(t *testing.T) {
 	config.M = 16
 	config.Dims = 128
 
-	ds := &Dataset{Name: "metrics_test"}
+	mem := memory.NewGoAllocator()
+	vec := make([]float32, 128)
+	rec := makeBatchTestRecord(mem, 128, [][]float32{vec})
+
+	ds := &Dataset{Name: "metrics_test", Records: []arrow.RecordBatch{rec}}
 	idx := NewArrowHNSW(ds, &config)
 
 	// Baseline
@@ -31,8 +37,7 @@ func TestArrowHNSW_PoolMetrics(t *testing.T) {
 	growBefore := getCounterValue(metrics.HNSWBitsetGrowTotal)
 
 	// Add a vector
-	vec := make([]float32, 128)
-	err := idx.InsertWithVector(0, vec, 0)
+	_, err := idx.AddByLocation(context.Background(), 0, 0)
 	require.NoError(t, err)
 
 	// Verify increments

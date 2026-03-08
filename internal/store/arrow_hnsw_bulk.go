@@ -13,6 +13,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/23skdu/longbow/internal/metrics"
+	lbtypes "github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
@@ -29,7 +30,11 @@ type reverseUpdate struct {
 const ShardedLockCount = 1024
 
 func NewVectorDimensionMismatchError(id, expected, actual int) error {
-	return fmt.Errorf("vector dimension mismatch for id %d: expected %d, got %d", id, expected, actual)
+	return &ErrVectorDimensionMismatch{
+		ID:       id,
+		Expected: expected,
+		Actual:   actual,
+	}
 }
 
 // AddBatchBulk attempts to insert a batch of vectors in parallel using a bulk strategy.
@@ -121,7 +126,24 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 				// Type switch to extract vector from generic batch
 				switch vs := vecs.(type) {
 				case [][]float32:
-					v = vs[j]
+					switch h.config.DataType {
+					case lbtypes.VectorTypeComplex64:
+						f32s := vs[j]
+						c64s := make([]complex64, len(f32s)/2)
+						for k := 0; k < len(f32s)/2; k++ {
+							c64s[k] = complex(f32s[2*k], f32s[2*k+1])
+						}
+						v = c64s
+					case lbtypes.VectorTypeComplex128:
+						f32s := vs[j]
+						c128s := make([]complex128, len(f32s)/2)
+						for k := 0; k < len(f32s)/2; k++ {
+							c128s[k] = complex(float64(f32s[2*k]), float64(f32s[2*k+1]))
+						}
+						v = c128s
+					default:
+						v = vs[j]
+					}
 				case [][]float16.Num:
 					v = vs[j]
 				case [][]int8:
@@ -142,8 +164,6 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 				}
 
 				// Validate dimensions based on type
-				// Since we are inside generic handling, we use reflection or just assume the type switch gave us a valid slice.
-				// We can check length here.
 				var vLen int
 				switch vec := v.(type) {
 				case []float32:

@@ -189,7 +189,6 @@ func NewDataset(name string, schema *arrow.Schema) *Dataset {
 		LWW:             NewTimestampMap(),
 		Merkle:          NewMerkleTree(),
 		InvertedIndexes: make(map[string]*InvertedIndex),
-		BM25Index:       NewBM25InvertedIndex(DefaultBM25Config()),
 		Graph:           NewGraphStore(),
 		filterCache:     make(map[string]*qry.Bitset),
 		Metric:          MetricEuclidean, // Default

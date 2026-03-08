@@ -39,10 +39,8 @@ func TestArrowHNSW_Complex64_ZeroCopy(t *testing.T) {
 	}
 
 	// 2. Insert with Zero-Copy (generic API)
-	for i := 0; i < count; i++ {
-		err := idx.InsertWithVector(uint32(i), vecsC64[i], -1)
-		require.NoError(t, err)
-	}
+	err := idx.AddBatchBulk(context.Background(), 0, count, vecsC64)
+	require.NoError(t, err)
 
 	// 3. Verify Storage Type
 	// Read back ID 0
@@ -92,10 +90,8 @@ func TestArrowHNSW_Complex128_ZeroCopy(t *testing.T) {
 		}
 	}
 
-	for i := 0; i < count; i++ {
-		err := idx.InsertWithVector(uint32(i), vecsC128[i], -1)
-		require.NoError(t, err)
-	}
+	err := idx.AddBatchBulk(context.Background(), 0, count, vecsC128)
+	require.NoError(t, err)
 
 	// Read Back
 	valAny, err := idx.getVectorAny(0)
@@ -124,7 +120,7 @@ func TestArrowHNSW_Complex_FlattenedQuery(t *testing.T) {
 
 	// Create test vector
 	vec := []complex128{1 + 1i, 2 + 2i, 3 + 3i, 4 + 4i}
-	err := idx.InsertWithVector(0, vec, -1)
+	err := idx.AddBatchBulk(context.Background(), 0, 1, [][]complex128{vec})
 	require.NoError(t, err)
 
 	// Flattened Query: 1, 1, 2, 2, 3, 3, 4, 4 (floats)

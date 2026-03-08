@@ -405,7 +405,7 @@ func (h *ArrowHNSW) SearchHybridWithConfig(ctx context.Context, query []float32,
 	candidatesToRefine := candidates[:refineTopK]
 
 	// Perform CPU refinement on selected candidates
-	refinedResults := h.refineWithCPU(ctx, query, candidatesToRefine, k)
+	refinedResults := h.refineWithCPU(query, candidatesToRefine, k)
 
 	// Calculate CPU refinement duration
 	cpuDuration := time.Since(start) - gpuDuration
@@ -440,7 +440,7 @@ func (h *ArrowHNSW) searchCPUOnly(ctx context.Context, query []float32, k int) (
 }
 
 // refineWithCPU performs CPU-based refinement on GPU candidates
-func (h *ArrowHNSW) refineWithCPU(ctx context.Context, query []float32, candidates []candidateResult, k int) []SearchResult {
+func (h *ArrowHNSW) refineWithCPU(query []float32, candidates []candidateResult, k int) []SearchResult {
 	if len(candidates) == 0 {
 		return []SearchResult{}
 	}

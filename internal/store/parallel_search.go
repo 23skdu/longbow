@@ -242,6 +242,11 @@ func processChunkInternal(ctx context.Context, h ParallelSearchHost, query []flo
 		if dataset != nil {
 			loc := locations[i]
 			if loc.BatchIdx < 0 || loc.BatchIdx >= len(dataset.Records) {
+				// Fallback to internal storage if record not available in Arrow records
+				vec, err := h.ExtractVectorByIDForParallel(n.ID)
+				if err == nil && vec != nil {
+					tasks = append(tasks, vectorTask{id: n.ID, vec: vec})
+				}
 				continue
 			}
 			rec := dataset.Records[loc.BatchIdx]
@@ -300,74 +305,18 @@ func processChunkInternal(ctx context.Context, h ParallelSearchHost, query []flo
 		}
 	}
 
-	if h.GetPQEnabledForParallel() && h.GetPQEncoderForParallel() != nil {
-		encoder := h.GetPQEncoderForParallel()
-		table := encoder.ComputeDistanceTableFlat(query)
-		m := encoder.CodeSize()
-		// packedLen := (m + 3) / 4 (unused)
+	metric := h.GetDistanceMetric()
+	usedBatch := false
+	if metric == core.MetricEuclidean {
+		if err := simd.EuclideanDistanceBatchFlat(query, flatBuffer, numTasks, dims, scores); err == nil {
+			usedBatch = true
+		}
+	}
 
-		flatCodes := make([]byte, numTasks*m)
-		validForBatch := make([]bool, numTasks)
-		batchCount := 0
-
+	if !usedBatch {
 		distFunc := h.GetDistanceFuncForParallel()
 		for i := 0; i < numTasks; i++ {
-			if i&31 == 0 {
-				select {
-				case <-ctx.Done():
-					return nil
-				default:
-				}
-			}
-			vecOffset := i * dims
-			vec := flatBuffer[vecOffset : vecOffset+dims]
-			// PQM check: we expect codes to be packed into the beginning of the slice.
-			// m is the CodeSize in bytes.
-			if m > 0 && len(vec)*4 >= m {
-				ptr := unsafe.Pointer(&vec[0])
-				src := unsafe.Slice((*byte)(ptr), m)
-				copy(flatCodes[batchCount*m:], src)
-				validForBatch[i] = true
-				batchCount++
-			} else {
-				scores[i] = distFunc(query, vec)
-			}
-		}
-
-		if batchCount > 0 {
-			batchResults := make([]float32, batchCount)
-			if err := encoder.ADCDistanceBatch(table, flatCodes[:batchCount*m], batchResults); err != nil {
-				bj := 0
-				for i := 0; i < numTasks; i++ {
-					if validForBatch[i] {
-						scores[i] = distFunc(query, flatBuffer[i*dims:(i+1)*dims])
-						bj++
-					}
-				}
-			} else {
-				bj := 0
-				for i := 0; i < numTasks; i++ {
-					if validForBatch[i] {
-						scores[i] = batchResults[bj]
-						bj++
-					}
-				}
-			}
-		}
-	} else {
-		metric := h.GetDistanceMetric()
-		usedBatch := false
-		if metric == core.MetricEuclidean {
-			if err := simd.EuclideanDistanceBatchFlat(query, flatBuffer, numTasks, dims, scores); err == nil {
-				usedBatch = true
-			}
-		}
-
-		if !usedBatch {
-			distFunc := h.GetDistanceFuncForParallel()
-			for i := 0; i < numTasks; i++ {
-				scores[i] = distFunc(query, flatBuffer[i*dims:(i+1)*dims])
-			}
+			scores[i] = distFunc(query, flatBuffer[i*dims:(i+1)*dims])
 		}
 	}
 

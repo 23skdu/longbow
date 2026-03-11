@@ -41,7 +41,7 @@ func NewPinnedBuffer(size int) (*ZeroCopyBuffer, error) {
 
 	buf.refCnt.Store(1)
 
-	ptr, err := unix.Mmap(-1, 0, size, unix.PROT_READ|unix.PROT_WRITE, unix.MAP_ANONYMOUS|unix.MAP_POPULATE)
+	ptr, err := unix.Mmap(-1, 0, size, unix.PROT_READ|unix.PROT_WRITE, populatedMmapFlags)
 	if err != nil {
 		return nil, fmt.Errorf("failed to allocate pinned memory: %w", err)
 	}

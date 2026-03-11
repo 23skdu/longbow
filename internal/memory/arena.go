@@ -231,6 +231,10 @@ func (a *SlabArena) allocCommon(size, align int, zero bool) (uint64, error) {
 		start = active.offset
 	}
 
+	if start+needed > uint32(len(active.data)) {
+		return 0, fmt.Errorf("alloc size %d with alignment padding %d exceeds slab capacity %d", size, start, a.slabCap)
+	}
+
 	active.offset += needed
 
 	// ZEROING LOGIC

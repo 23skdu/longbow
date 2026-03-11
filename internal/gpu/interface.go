@@ -319,12 +319,12 @@ func GetMemoryInfo(deviceID int) (total, free, used int64, err error) {
 }
 
 // getNVIDIAMemoryInfo gets NVIDIA GPU memory info
-func getNVIDIAMemoryInfo(deviceID int) (total, free, used int64, err error) {
+func getNVIDIAMemoryInfo(_ int) (total, free, used int64, err error) {
 	return 8192, 4096, 4096, nil
 }
 
 // getMetalMemoryInfo gets Metal memory info
-func getMetalMemoryInfo(deviceID int) (total, free, used int64, err error) {
+func getMetalMemoryInfo(_ int) (total, free, used int64, err error) {
 	total = 16384
 	free = 8192
 	used = 8192

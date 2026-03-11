@@ -137,9 +137,10 @@ func detectMetalGPUs() []GPUInfo {
 		// Fallback: check Metal framework exists
 		if _, err := os.Stat("/System/Library/Frameworks/Metal.framework"); err == nil {
 			name := "Apple GPU"
-			if runtime.GOARCH == "arm64" {
+			switch runtime.GOARCH {
+			case "arm64":
 				name = "Apple Silicon GPU"
-			} else if runtime.GOARCH == "amd64" {
+			case "amd64":
 				name = "Intel/AMD GPU"
 			}
 

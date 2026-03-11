@@ -144,12 +144,12 @@ func (p *GPUMemPool) GetAvailableMemory() int64 {
 }
 
 // allocateCUDAMemory allocates CUDA memory (stub)
-func (p *GPUMemPool) allocateCUDAMemory(size int64) (unsafe.Pointer, error) {
+func (p *GPUMemPool) allocateCUDAMemory(_ int64) (unsafe.Pointer, error) {
 	return nil, fmt.Errorf("CUDA memory allocation not implemented yet")
 }
 
 // allocateMetalMemory allocates Metal memory (stub)
-func (p *GPUMemPool) allocateMetalMemory(size int64) (unsafe.Pointer, error) {
+func (p *GPUMemPool) allocateMetalMemory(_ int64) (unsafe.Pointer, error) {
 	return nil, fmt.Errorf("Metal memory allocation not implemented yet")
 }
 
@@ -162,36 +162,36 @@ func (p *GPUMemPool) allocateCPUMemory(size int64) (unsafe.Pointer, error) {
 }
 
 // freeCUDAMemory frees CUDA memory (stub)
-func (p *GPUMemPool) freeCUDAMemory(ptr unsafe.Pointer) error {
+func (p *GPUMemPool) freeCUDAMemory(_ unsafe.Pointer) error {
 	return fmt.Errorf("CUDA memory free not implemented yet")
 }
 
 // freeMetalMemory frees Metal memory (stub)
-func (p *GPUMemPool) freeMetalMemory(ptr unsafe.Pointer) error {
+func (p *GPUMemPool) freeMetalMemory(_ unsafe.Pointer) error {
 	return fmt.Errorf("Metal memory free not implemented yet")
 }
 
 // freeCPUMemory frees CPU memory
-func (p *GPUMemPool) freeCPUMemory(ptr unsafe.Pointer) error {
+func (p *GPUMemPool) freeCPUMemory(_ unsafe.Pointer) error {
 	return nil
 }
 
 // cudaMemcpyHostToDevice copies data from host to device in CUDA (stub)
-func (p *GPUMemPool) cudaMemcpyHostToDevice(hostPtr, devicePtr unsafe.Pointer, size int64) error {
+func (p *GPUMemPool) cudaMemcpyHostToDevice(_, _ unsafe.Pointer, _ int64) error {
 	return fmt.Errorf("CUDA memcpy not implemented yet")
 }
 
 // metalMemcpyHostToDevice copies data from host to device in Metal (stub)
-func (p *GPUMemPool) metalMemcpyHostToDevice(hostPtr, devicePtr unsafe.Pointer, size int64) error {
+func (p *GPUMemPool) metalMemcpyHostToDevice(_, _ unsafe.Pointer, _ int64) error {
 	return fmt.Errorf("Metal memcpy not implemented yet")
 }
 
 // cudaMemcpyDeviceToHost copies data from device to host in CUDA (stub)
-func (p *GPUMemPool) cudaMemcpyDeviceToHost(devicePtr, hostPtr unsafe.Pointer, size int64) error {
+func (p *GPUMemPool) cudaMemcpyDeviceToHost(_, _ unsafe.Pointer, _ int64) error {
 	return fmt.Errorf("CUDA memcpy not implemented yet")
 }
 
 // metalMemcpyDeviceToHost copies data from device to host in Metal (stub)
-func (p *GPUMemPool) metalMemcpyDeviceToHost(devicePtr, hostPtr unsafe.Pointer, size int64) error {
+func (p *GPUMemPool) metalMemcpyDeviceToHost(_, _ unsafe.Pointer, _ int64) error {
 	return fmt.Errorf("Metal memcpy not implemented yet")
 }

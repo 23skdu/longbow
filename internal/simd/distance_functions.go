@@ -124,6 +124,18 @@ func EuclideanDistanceFloat64(a, b []float64) (float32, error) {
 	return euclideanDistanceFloat64Impl(a, b)
 }
 
+// CosineDistanceFloat64 calculates the cosine distance (1 - similarity) for Float64 vectors.
+// Returns float32 distance for consistency with other metrics.
+func CosineDistanceFloat64(a, b []float64) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: vector length mismatch")
+	}
+	if len(a) == 0 {
+		return 1.0, nil
+	}
+	return cosineDistanceFloat64Impl(a, b)
+}
+
 // EuclideanDistanceComplex64 calculates Euclidean distance for Complex64 vectors.
 func EuclideanDistanceComplex64(a, b []complex64) (float32, error) {
 	if len(a) != len(b) {

@@ -387,3 +387,47 @@ func dotComplex128Unrolled(a, b []complex128) (float32, error) {
 	}
 	return float32((dotR0 + dotR1 + dotR2 + dotR3) - (dotI0 + dotI1 + dotI2 + dotI3)), nil
 }
+
+// cosineFloat64Unrolled4x calculates cosine distance for Float64 vectors using generic implementation.
+func cosineFloat64Unrolled4x(a, b []float64) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	if len(a) == 0 {
+		return 1.0, nil
+	}
+
+	var dotSum, normASum, normBSum float64
+	n := len(a)
+	i := 0
+
+	// Unrolled loop for better performance
+	for ; i <= n-4; i += 4 {
+		dotSum += a[i]*b[i] + a[i+1]*b[i+1] + a[i+2]*b[i+2] + a[i+3]*b[i+3]
+		normASum += a[i]*a[i] + a[i+1]*a[i+1] + a[i+2]*a[i+2] + a[i+3]*a[i+3]
+		normBSum += b[i]*b[i] + b[i+1]*b[i+1] + b[i+2]*b[i+2] + b[i+3]*b[i+3]
+	}
+
+	// Handle remaining elements
+	for ; i < n; i++ {
+		dotSum += a[i] * b[i]
+		normASum += a[i] * a[i]
+		normBSum += b[i] * b[i]
+	}
+
+	// Calculate cosine similarity
+	if normASum == 0 || normBSum == 0 {
+		return 1.0, nil // Cosine distance is 1 for zero vectors
+	}
+
+	similarity := dotSum / (math.Sqrt(normASum) * math.Sqrt(normBSum))
+	// Clamp to [-1, 1] to handle numerical errors
+	if similarity > 1.0 {
+		similarity = 1.0
+	} else if similarity < -1.0 {
+		similarity = -1.0
+	}
+
+	// Cosine distance = 1 - similarity
+	return float32(1.0 - similarity), nil
+}

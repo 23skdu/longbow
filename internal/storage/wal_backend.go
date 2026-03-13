@@ -57,7 +57,7 @@ func NewWALBackend(path string, preferAsync, directIO bool) (WALBackend, error) 
 }
 
 func NewFSBackend(path string) (*FSBackend, error) {
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 	if err != nil {
 		return nil, err
 	}

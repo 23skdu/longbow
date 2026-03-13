@@ -80,7 +80,7 @@ func (h *HNSWPluggableAdapter) Build() error {
 }
 
 func (h *HNSWPluggableAdapter) Save(path string) error {
-	return os.WriteFile(path, []byte("hnsw"), 0o644)
+	return os.WriteFile(path, []byte("hnsw"), 0600)
 }
 
 func (h *HNSWPluggableAdapter) Load(path string) error {

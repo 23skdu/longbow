@@ -1,5 +1,6 @@
 package pq
 
+// nosec G404 - math/rand is used for k-means centroid initialization, not security-sensitive
 import (
 	"errors"
 	"math"

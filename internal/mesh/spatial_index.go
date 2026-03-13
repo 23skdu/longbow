@@ -1,5 +1,6 @@
 package mesh
 
+// nosec G404 - math/rand is used for spatial index operations, not security-sensitive
 import (
 	"math"
 	"math/rand"

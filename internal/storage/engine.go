@@ -52,7 +52,7 @@ func NewStorageEngine(cfg StorageConfig, mem memory.Allocator) (*StorageEngine, 
 		return nil, fmt.Errorf("storage: data path required")
 	}
 
-	if err := os.MkdirAll(cfg.DataPath, 0o755); err != nil {
+	if err := os.MkdirAll(cfg.DataPath, 0750); err != nil {
 		return nil, fmt.Errorf("storage: failed to create data directory: %w", err)
 	}
 
@@ -167,7 +167,7 @@ func (e *StorageEngine) Snapshot(source SnapshotSource) error {
 	if err := os.RemoveAll(tempDir); err != nil {
 		return fmt.Errorf("failed to clean temp snapshot dir: %w", err)
 	}
-	if err := os.MkdirAll(tempDir, 0o755); err != nil {
+	if err := os.MkdirAll(tempDir, 0750); err != nil {
 		return fmt.Errorf("failed to create temp snapshot dir: %w", err)
 	}
 
@@ -300,7 +300,7 @@ func (e *StorageEngine) writeSnapshotItem(item *SnapshotItem, tempDir string) er
 	// Write PQ
 	if len(item.PQCodebook) > 0 {
 		path := filepath.Join(tempDir, item.Name+".pq")
-		if err := os.WriteFile(path, item.PQCodebook, 0o644); err != nil {
+		if err := os.WriteFile(path, item.PQCodebook, 0600); err != nil {
 			return fmt.Errorf("failed to write PQ codebook: %w", err)
 		}
 	}
@@ -447,7 +447,7 @@ func (e *StorageEngine) WriteWAL(name string, rec arrow.RecordBatch, seq uint64,
 
 func (e *StorageEngine) CreateSnapshot(item *SnapshotItem) error {
 	tempDir := filepath.Join(e.dataPath, snapshotDirName+"_tmp")
-	_ = os.MkdirAll(tempDir, 0o755)
+	_ = os.MkdirAll(tempDir, 0750) // nosec G301
 	return e.writeSnapshotItem(item, tempDir)
 }
 

@@ -41,7 +41,7 @@ func NewMmapVectorStorage(name string, opts MmapOptions) (*MmapVectorStorage, er
 
 	flags |= os.O_CREATE
 
-	f, err := os.OpenFile(name, flags, 0644)
+	f, err := os.OpenFile(name, flags, 0600)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open file: %w", err)
 	}

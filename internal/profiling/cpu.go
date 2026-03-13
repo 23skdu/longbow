@@ -49,7 +49,7 @@ func NewProfiler(config ProfilerConfig, logger *zerolog.Logger) *Profiler {
 		config.ProfileDir = "/tmp/longbow-profiles"
 	}
 
-	if err := os.MkdirAll(config.ProfileDir, 0755); err != nil {
+	if err := os.MkdirAll(config.ProfileDir, 0750); err != nil {
 		logger.Warn().Err(err).Msg("Failed to create profile directory")
 	}
 
@@ -242,7 +242,8 @@ func (f *FlameGraphGenerator) GenerateFlamegraph(profileData []byte) ([]byte, er
 	defer os.Remove(tmpOutput.Name())
 	_ = tmpOutput.Close() // nosec G104
 
-	cmd := exec.Command("go", "tool", "pprof", "-proto", tmpInput.Name())
+	// nosec G204 - tmpInput.Name() is a temp file created by os.CreateTemp, not user input
+	cmd := exec.Command("go", "tool", "pprof", "-proto", tmpInput.Name()) // nosec G204
 	protoData, err := cmd.Output()
 	if err != nil {
 		return nil, err

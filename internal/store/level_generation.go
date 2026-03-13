@@ -1,5 +1,6 @@
 package store
 
+// nosec G404 - math/rand is used for HNSW level generation, not security-sensitive
 import (
 	"math"
 	"math/rand"
@@ -21,7 +22,7 @@ type LevelGenerator struct {
 func NewLevelGenerator(ml float64) *LevelGenerator {
 	return &LevelGenerator{
 		ml:  ml,
-		rng: rand.New(rand.NewSource(42)), // Fixed seed for reproducibility
+		rng: rand.New(rand.NewSource(42)), // #nosec G404
 	}
 }
 

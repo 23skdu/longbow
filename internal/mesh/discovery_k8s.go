@@ -14,9 +14,9 @@ import (
 )
 
 const (
-	tokenPath     = "/var/run/secrets/kubernetes.io/serviceaccount/token"
-	caPath        = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
-	namespacePath = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
+	tokenPath     = "/var/run/secrets/kubernetes.io/serviceaccount/token"     // nosec G101 - path to K8s service account token, not hardcoded credential
+	caPath        = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"    // nosec G101 - path to K8s CA cert, not hardcoded credential
+	namespacePath = "/var/run/secrets/kubernetes.io/serviceaccount/namespace" // nosec G101 - path to K8s namespace, not hardcoded credential
 	apiHost       = "kubernetes.default.svc"
 )
 

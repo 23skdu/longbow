@@ -129,7 +129,7 @@ func (w *WALBatcher) Start() error {
 	}
 
 	// Ensure data directory exists
-	if err := os.MkdirAll(w.dataPath, 0o755); err != nil {
+	if err := os.MkdirAll(w.dataPath, 0750); err != nil {
 		return err
 	}
 

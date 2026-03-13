@@ -76,7 +76,7 @@ func NewTierManager(config TieredStorageConfig, logger *zerolog.Logger) (*TierMa
 	}
 
 	if config.HotDirectory != "" {
-		if err := os.MkdirAll(config.HotDirectory, 0755); err != nil {
+		if err := os.MkdirAll(config.HotDirectory, 0750); err != nil {
 			return nil, err
 		}
 		tm.tiers[TierHot] = &TierStorage{
@@ -88,7 +88,7 @@ func NewTierManager(config TieredStorageConfig, logger *zerolog.Logger) (*TierMa
 	}
 
 	if config.WarmDirectory != "" {
-		if err := os.MkdirAll(config.WarmDirectory, 0755); err != nil {
+		if err := os.MkdirAll(config.WarmDirectory, 0750); err != nil {
 			return nil, err
 		}
 		tm.tiers[TierWarm] = &TierStorage{
@@ -99,7 +99,7 @@ func NewTierManager(config TieredStorageConfig, logger *zerolog.Logger) (*TierMa
 	}
 
 	if config.ColdDirectory != "" {
-		if err := os.MkdirAll(config.ColdDirectory, 0755); err != nil {
+		if err := os.MkdirAll(config.ColdDirectory, 0750); err != nil {
 			return nil, err
 		}
 		tm.tiers[TierCold] = &TierStorage{

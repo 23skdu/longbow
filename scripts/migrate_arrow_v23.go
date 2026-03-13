@@ -58,7 +58,7 @@ func updateImports(filePath string, changes []ImportChange) (bool, error) {
 	}
 
 	if modified {
-		err = os.WriteFile(filePath, updatedContent, 0644)
+		err = os.WriteFile(filePath, updatedContent, 0600)
 		if err != nil {
 			return false, err
 		}

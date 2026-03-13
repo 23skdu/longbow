@@ -2,13 +2,21 @@ package store
 
 // nosec G404 - math/rand is used for IVF centroid selection, not security-sensitive
 import (
+	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"math"
 	"math/rand"
+	"os"
 	"sort"
 	"sync"
 
 	"github.com/23skdu/longbow/internal/simd"
+)
+
+const (
+	ivfFlatMagic   = 0x49564646 // "IVFF" in hex
+	ivfFlatVersion = 1
 )
 
 // =============================================================================
@@ -210,12 +218,206 @@ func (ivf *IVFFlatIndex) SearchBatch(queries [][]float32, k int) ([][]IndexSearc
 }
 
 func (ivf *IVFFlatIndex) Save(path string) error {
-	// TODO: Implement proper persistence
+	ivf.mu.RLock()
+	defer ivf.mu.RUnlock()
+
+	f, err := os.Create(path)
+	if err != nil {
+		return fmt.Errorf("failed to create file: %w", err)
+	}
+	defer f.Close()
+
+	// Write magic number and version
+	if err := binary.Write(f, binary.LittleEndian, uint32(ivfFlatMagic)); err != nil {
+		return fmt.Errorf("failed to write magic: %w", err)
+	}
+	if err := binary.Write(f, binary.LittleEndian, uint32(ivfFlatVersion)); err != nil {
+		return fmt.Errorf("failed to write version: %w", err)
+	}
+
+	// Write dimension
+	if err := binary.Write(f, binary.LittleEndian, uint32(ivf.dimension)); err != nil {
+		return fmt.Errorf("failed to write dimension: %w", err)
+	}
+
+	// Write config as JSON
+	configData, err := json.Marshal(ivf.config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal config: %w", err)
+	}
+	if err := binary.Write(f, binary.LittleEndian, uint32(len(configData))); err != nil {
+		return fmt.Errorf("failed to write config length: %w", err)
+	}
+	if _, err := f.Write(configData); err != nil {
+		return fmt.Errorf("failed to write config: %w", err)
+	}
+
+	// Write cluster count
+	clusterCount := uint32(len(ivf.centroids))
+	if err := binary.Write(f, binary.LittleEndian, clusterCount); err != nil {
+		return fmt.Errorf("failed to write cluster count: %w", err)
+	}
+
+	// Write centroids
+	for _, centroid := range ivf.centroids {
+		centroidBytes := make([]byte, len(centroid)*4)
+		for i, v := range centroid {
+			binary.LittleEndian.PutUint32(centroidBytes[i*4:], math.Float32bits(v))
+		}
+		if _, err := f.Write(centroidBytes); err != nil {
+			return fmt.Errorf("failed to write centroid: %w", err)
+		}
+	}
+
+	// Write vector count
+	vecCount := uint32(len(ivf.vectors))
+	if err := binary.Write(f, binary.LittleEndian, vecCount); err != nil {
+		return fmt.Errorf("failed to write vector count: %w", err)
+	}
+
+	// Sort IDs for deterministic ordering
+	ids := make([]uint64, 0, len(ivf.vectors))
+	for id := range ivf.vectors {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+
+	// Write vectors with assignments: (id, cluster_id, vector)
+	for _, id := range ids {
+		vector := ivf.vectors[id]
+		clusterID := ivf.assignments[id]
+
+		if err := binary.Write(f, binary.LittleEndian, id); err != nil {
+			return fmt.Errorf("failed to write vector id: %w", err)
+		}
+		if err := binary.Write(f, binary.LittleEndian, uint32(clusterID)); err != nil {
+			return fmt.Errorf("failed to write cluster id: %w", err)
+		}
+
+		vecBytes := make([]byte, len(vector)*4)
+		for i, v := range vector {
+			binary.LittleEndian.PutUint32(vecBytes[i*4:], math.Float32bits(v))
+		}
+		if _, err := f.Write(vecBytes); err != nil {
+			return fmt.Errorf("failed to write vector: %w", err)
+		}
+	}
+
+	// Write built flag
+	builtFlag := uint8(0)
+	if ivf.built {
+		builtFlag = 1
+	}
+	if err := binary.Write(f, binary.LittleEndian, builtFlag); err != nil {
+		return fmt.Errorf("failed to write built flag: %w", err)
+	}
+
 	return nil
 }
 
 func (ivf *IVFFlatIndex) Load(path string) error {
-	// TODO: Implement proper loading
+	f, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("failed to open file: %w", err)
+	}
+	defer f.Close()
+
+	// Read and verify magic number
+	var magic uint32
+	if err := binary.Read(f, binary.LittleEndian, &magic); err != nil {
+		return fmt.Errorf("failed to read magic: %w", err)
+	}
+	if magic != ivfFlatMagic {
+		return fmt.Errorf("invalid magic number: got %x, expected %x", magic, ivfFlatMagic)
+	}
+
+	// Read version
+	var version uint32
+	if err := binary.Read(f, binary.LittleEndian, &version); err != nil {
+		return fmt.Errorf("failed to read version: %w", err)
+	}
+	if version > ivfFlatVersion {
+		return fmt.Errorf("unsupported version: %d", version)
+	}
+
+	// Read dimension
+	var dimension uint32
+	if err := binary.Read(f, binary.LittleEndian, &dimension); err != nil {
+		return fmt.Errorf("failed to read dimension: %w", err)
+	}
+	ivf.dimension = int(dimension)
+
+	// Read config
+	var configLen uint32
+	if err := binary.Read(f, binary.LittleEndian, &configLen); err != nil {
+		return fmt.Errorf("failed to read config length: %w", err)
+	}
+	configData := make([]byte, configLen)
+	if _, err := f.Read(configData); err != nil {
+		return fmt.Errorf("failed to read config: %w", err)
+	}
+	ivf.config = &IVFFlatConfig{}
+	if err := json.Unmarshal(configData, ivf.config); err != nil {
+		return fmt.Errorf("failed to unmarshal config: %w", err)
+	}
+
+	// Read cluster count
+	var clusterCount uint32
+	if err := binary.Read(f, binary.LittleEndian, &clusterCount); err != nil {
+		return fmt.Errorf("failed to read cluster count: %w", err)
+	}
+
+	// Read centroids
+	ivf.centroids = make([][]float32, clusterCount)
+	for i := uint32(0); i < clusterCount; i++ {
+		centroid := make([]float32, ivf.dimension)
+		centroidBytes := make([]byte, ivf.dimension*4)
+		if _, err := f.Read(centroidBytes); err != nil {
+			return fmt.Errorf("failed to read centroid: %w", err)
+		}
+		for j := 0; j < ivf.dimension; j++ {
+			centroid[j] = math.Float32frombits(binary.LittleEndian.Uint32(centroidBytes[j*4:]))
+		}
+		ivf.centroids[i] = centroid
+	}
+
+	// Read vectors
+	var vecCount uint32
+	if err := binary.Read(f, binary.LittleEndian, &vecCount); err != nil {
+		return fmt.Errorf("failed to read vector count: %w", err)
+	}
+	ivf.vectors = make(map[uint64][]float32, vecCount)
+	ivf.assignments = make(map[uint64]int, vecCount)
+
+	for i := uint32(0); i < vecCount; i++ {
+		var id uint64
+		if err := binary.Read(f, binary.LittleEndian, &id); err != nil {
+			return fmt.Errorf("failed to read vector id: %w", err)
+		}
+		var clusterID uint32
+		if err := binary.Read(f, binary.LittleEndian, &clusterID); err != nil {
+			return fmt.Errorf("failed to read cluster id: %w", err)
+		}
+
+		vec := make([]float32, ivf.dimension)
+		vecBytes := make([]byte, ivf.dimension*4)
+		if _, err := f.Read(vecBytes); err != nil {
+			return fmt.Errorf("failed to read vector: %w", err)
+		}
+		for j := 0; j < ivf.dimension; j++ {
+			vec[j] = math.Float32frombits(binary.LittleEndian.Uint32(vecBytes[j*4:]))
+		}
+		ivf.vectors[id] = vec
+		ivf.assignments[id] = int(clusterID)
+	}
+
+	// Read built flag
+	var builtFlag uint8
+	if err := binary.Read(f, binary.LittleEndian, &builtFlag); err != nil {
+		return fmt.Errorf("failed to read built flag: %w", err)
+	}
+	ivf.built = builtFlag == 1
+
 	return nil
 }
 

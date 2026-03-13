@@ -1,6 +1,6 @@
 module github.com/23skdu/longbow
 
-go 1.24.9
+go 1.25
 
 require (
 	github.com/apache/arrow-go/v18 v18.5.1

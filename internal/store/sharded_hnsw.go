@@ -1,7 +1,9 @@
 package store
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"runtime"
@@ -866,32 +868,199 @@ func (s *ShardedHNSW) CleanupTombstones(threshold int) int {
 
 // ExportState implements VectorIndex.
 func (s *ShardedHNSW) ExportState() ([]byte, error) {
-	return nil, fmt.Errorf("ExportState not yet implemented for ShardedHNSW")
+	var buf bytes.Buffer
+	if err := s.ExportGraph(&buf); err != nil {
+		return nil, fmt.Errorf("failed to export graph: %w", err)
+	}
+	return buf.Bytes(), nil
 }
 
 // ImportState implements VectorIndex.
 func (s *ShardedHNSW) ImportState(data []byte) error {
-	return fmt.Errorf("ImportState not yet implemented for ShardedHNSW")
+	return s.ImportGraph(bytes.NewReader(data))
 }
 
-// ExportGraph implements VectorIndex.
 func (s *ShardedHNSW) ExportGraph(w io.Writer) error {
-	return fmt.Errorf("ExportGraph not yet implemented for ShardedHNSW")
+	s.shardsMu.RLock()
+	defer s.shardsMu.RUnlock()
+
+	header := struct {
+		Version   uint32
+		NumShards int
+		Dimension uint32
+	}{
+		Version:   1,
+		NumShards: len(s.shards),
+		Dimension: s.dimension,
+	}
+
+	if err := binary.Write(w, binary.LittleEndian, header); err != nil {
+		return fmt.Errorf("failed to write header: %w", err)
+	}
+
+	for i, shard := range s.shards {
+		if shard == nil || shard.index == nil {
+			var zero uint32
+			if err := binary.Write(w, binary.LittleEndian, zero); err != nil {
+				return fmt.Errorf("failed to write shard %d header: %w", i, err)
+			}
+			continue
+		}
+
+		shard.mu.RLock()
+		localToGlobal := make([]VectorID, len(shard.localToGlobal))
+		copy(localToGlobal, shard.localToGlobal)
+		shard.mu.RUnlock()
+
+		if err := binary.Write(w, binary.LittleEndian, uint32(len(localToGlobal))); err != nil {
+			return fmt.Errorf("failed to write shard %d mappings count: %w", i, err)
+		}
+
+		for _, globalID := range localToGlobal {
+			if err := binary.Write(w, binary.LittleEndian, uint64(globalID)); err != nil {
+				return fmt.Errorf("failed to write shard %d mapping: %w", i, err)
+			}
+		}
+
+		if err := shard.index.ExportGraph(w); err != nil {
+			return fmt.Errorf("failed to export shard %d graph: %w", i, err)
+		}
+	}
+
+	return nil
 }
 
-// ImportGraph implements VectorIndex.
 func (s *ShardedHNSW) ImportGraph(r io.Reader) error {
-	return fmt.Errorf("ImportGraph not yet implemented for ShardedHNSW")
+	var header struct {
+		Version   uint32
+		NumShards int
+		Dimension uint32
+	}
+
+	if err := binary.Read(r, binary.LittleEndian, &header); err != nil {
+		return fmt.Errorf("failed to read header: %w", err)
+	}
+
+	if header.Version != 1 {
+		return fmt.Errorf("unsupported export version: %d", header.Version)
+	}
+
+	if header.Dimension != s.dimension {
+		return fmt.Errorf("dimension mismatch: expected %d, got %d", s.dimension, header.Dimension)
+	}
+
+	s.shardsMu.Lock()
+	if header.NumShards > len(s.shards) {
+		newShards := make([]*hnswShard, header.NumShards)
+		copy(newShards, s.shards)
+		for i := len(s.shards); i < header.NumShards; i++ {
+			newShards[i] = s.newShard(i)
+		}
+		s.shards = newShards
+	}
+	s.shardsMu.Unlock()
+
+	for i := 0; i < header.NumShards; i++ {
+		s.shardsMu.RLock()
+		shard := s.shards[i]
+		s.shardsMu.RUnlock()
+
+		if shard == nil {
+			continue
+		}
+
+		var mappingCount uint32
+		if err := binary.Read(r, binary.LittleEndian, &mappingCount); err != nil {
+			return fmt.Errorf("failed to read shard %d mappings count: %w", i, err)
+		}
+
+		if mappingCount == 0 {
+			continue
+		}
+
+		globalIDs := make([]VectorID, mappingCount)
+		for j := uint32(0); j < mappingCount; j++ {
+			var globalID uint64
+			if err := binary.Read(r, binary.LittleEndian, &globalID); err != nil {
+				return fmt.Errorf("failed to read shard %d mapping %d: %w", i, j, err)
+			}
+			globalIDs[j] = VectorID(globalID)
+		}
+
+		shard.mu.Lock()
+		shard.localToGlobal = make([]VectorID, mappingCount)
+		shard.globalToLocal = make(map[VectorID]uint32, mappingCount)
+		for j, globalID := range globalIDs {
+			shard.localToGlobal[j] = globalID
+			shard.globalToLocal[globalID] = uint32(j)
+		}
+		shard.mu.Unlock()
+
+		if shard.index != nil {
+			if err := shard.index.ImportGraph(r); err != nil {
+				return fmt.Errorf("failed to import shard %d graph: %w", i, err)
+			}
+		}
+	}
+
+	return nil
 }
 
-// ExportDelta implements VectorIndex.
 func (s *ShardedHNSW) ExportDelta(fromVersion uint64) (*types.DeltaSync, error) {
-	return nil, fmt.Errorf("ExportDelta not yet implemented for ShardedHNSW")
+	s.shardsMu.RLock()
+	defer s.shardsMu.RUnlock()
+
+	allLocs := make([]core.Location, 0)
+	startIndex := 0
+
+	for _, shard := range s.shards {
+		if shard == nil {
+			continue
+		}
+		shard.mu.RLock()
+		for _, globalID := range shard.localToGlobal {
+			if loc, ok := s.locationStore.Get(VectorID(globalID)); ok {
+				allLocs = append(allLocs, loc)
+			}
+		}
+		shard.mu.RUnlock()
+	}
+
+	return &types.DeltaSync{
+		FromVersion:  fromVersion,
+		ToVersion:    uint64(len(allLocs)),
+		NewLocations: allLocs,
+		StartIndex:   startIndex,
+	}, nil
 }
 
-// ApplyDelta implements VectorIndex.
 func (s *ShardedHNSW) ApplyDelta(delta *types.DeltaSync) error {
-	return fmt.Errorf("ApplyDelta not yet implemented for ShardedHNSW")
+	if delta == nil || len(delta.NewLocations) == 0 {
+		return nil
+	}
+
+	s.shardsMu.RLock()
+	defer s.shardsMu.RUnlock()
+
+	for i, loc := range delta.NewLocations {
+		globalID := VectorID(int(delta.StartIndex) + i)
+		shardIdx := s.sharder.GetShard(globalID)
+
+		if shardIdx >= len(s.shards) || s.shards[shardIdx] == nil {
+			continue
+		}
+
+		shard := s.shards[shardIdx]
+		shard.mu.Lock()
+		localID := uint32(len(shard.localToGlobal))
+		shard.localToGlobal = append(shard.localToGlobal, globalID)
+		shard.globalToLocal[globalID] = localID
+		shard.mu.Unlock()
+
+		s.locationStore.Set(VectorID(globalID), loc)
+	}
+
+	return nil
 }
 
 // GetParallelSearchConfig implements VectorIndex.

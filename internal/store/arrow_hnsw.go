@@ -317,9 +317,8 @@ func NewArrowHNSW(dataset *Dataset, config *ArrowHNSWConfig) *ArrowHNSW {
 	switch config.Metric {
 	case MetricCosine:
 		h.distFunc = simd.CosineDistance
-		// TODO: Add specialized F64/F16 cosine if available
-		h.distFuncF64 = simd.EuclideanDistanceFloat64 // Fallback or implement
-		h.distFuncF16 = simd.EuclideanDistanceF16     // Fallback or implement
+		h.distFuncF64 = simd.CosineDistanceFloat64
+		h.distFuncF16 = simd.CosineDistanceF16
 	case MetricDotProduct:
 		// HNSW requires distance (lower is closer). Dot product is similarity (higher is closer).
 		// We use negative dot product as distance.

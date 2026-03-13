@@ -118,6 +118,7 @@ func initializeDispatch() {
 		cosineDistanceF16Impl = cosineF16AVX512
 		dotProductF16Impl = dotF16AVX512
 		euclideanDistanceFloat64Impl = euclideanFloat64AVX512
+		cosineDistanceFloat64Impl = cosineFloat64Unrolled4x // Fallback for now
 		euclideanDistanceInt8Impl = euclideanInt8AVX2
 		euclideanDistanceInt16Impl = euclideanInt16AVX2
 		// Optimization: Use float32 AVX kernels for complex64
@@ -152,9 +153,8 @@ func initializeDispatch() {
 		euclideanDistanceF16Impl = euclideanF16AVX2
 		cosineDistanceF16Impl = cosineF16AVX2
 		dotProductF16Impl = dotF16AVX2
-		euclideanDistanceComplex64Impl = euclideanComplex64Optimized
-		euclideanDistanceComplex128Impl = euclideanComplex128Unrolled // Fallback
 		euclideanDistanceFloat64Impl = euclideanFloat64AVX2
+		cosineDistanceFloat64Impl = cosineFloat64Unrolled4x // Fallback for now
 		euclideanDistanceInt8Impl = euclideanInt8AVX2
 		euclideanDistanceInt16Impl = euclideanInt16AVX2
 	case "neon":
@@ -191,6 +191,7 @@ func initializeDispatch() {
 		euclideanDistanceComplex64Impl = euclideanComplex64Optimized
 		euclideanDistanceComplex128Impl = euclideanComplex128Unrolled // Fallback
 		euclideanDistanceFloat64Impl = euclideanFloat64Unrolled4x
+		cosineDistanceFloat64Impl = cosineFloat64Unrolled4x
 		euclideanDistanceInt8Impl = euclideanInt8Unrolled4x
 		euclideanDistanceInt16Impl = euclideanInt16Unrolled4x
 	default:
@@ -225,6 +226,7 @@ func initializeDispatch() {
 		euclideanDistanceComplex64Impl = euclideanComplex64Optimized
 		euclideanDistanceComplex128Impl = euclideanComplex128Unrolled
 		euclideanDistanceFloat64Impl = euclideanFloat64Unrolled4x
+		cosineDistanceFloat64Impl = cosineFloat64Unrolled4x
 		euclideanDistanceInt8Impl = euclideanInt8Unrolled4x
 		euclideanDistanceInt16Impl = euclideanInt16Unrolled4x
 	}

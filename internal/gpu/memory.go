@@ -143,14 +143,18 @@ func (p *GPUMemPool) GetAvailableMemory() int64 {
 	return p.totalBytes - p.usedBytes
 }
 
-// allocateCUDAMemory allocates CUDA memory (stub)
+// allocateCUDAMemory allocates CUDA memory (fallback stub)
+// This stub is only used when building without -tags gpu or on non-Linux platforms.
+// For actual CUDA support, build with: go build -tags gpu ./...
 func (p *GPUMemPool) allocateCUDAMemory(_ int64) (unsafe.Pointer, error) {
-	return nil, fmt.Errorf("CUDA memory allocation not implemented yet")
+	return nil, fmt.Errorf("CUDA support not compiled in. Build with -tags gpu on a Linux system with CUDA installed")
 }
 
-// allocateMetalMemory allocates Metal memory (stub)
+// allocateMetalMemory allocates Metal memory (fallback stub)
+// This stub is only used when building without -tags gpu or on non-macOS arm64 platforms.
+// For actual Metal support, build with: go build -tags gpu ./...
 func (p *GPUMemPool) allocateMetalMemory(_ int64) (unsafe.Pointer, error) {
-	return nil, fmt.Errorf("Metal memory allocation not implemented yet")
+	return nil, fmt.Errorf("Metal support not compiled in. Build with -tags gpu on macOS arm64")
 }
 
 // allocateCPUMemory allocates CPU memory (fallback)

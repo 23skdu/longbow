@@ -76,9 +76,10 @@ func (rs *RingSharder) addShard(shardID int) {
 // hash computes a lightweight hash (FNV-1a) for the shard+vnode key.
 func (rs *RingSharder) hash(shardID, vnode int) uint32 {
 	h := fnv.New32a()
-	h.Write([]byte(strconv.Itoa(shardID)))
-	h.Write([]byte(":"))
-	h.Write([]byte(strconv.Itoa(vnode)))
+	// nosec G104 - hash.Write on bytes never returns error
+	_, _ = h.Write([]byte(strconv.Itoa(shardID))) // nosec G104
+	_, _ = h.Write([]byte(":"))                   // nosec G104
+	_, _ = h.Write([]byte(strconv.Itoa(vnode)))   // nosec G104
 	return h.Sum32()
 }
 
@@ -96,7 +97,7 @@ func (rs *RingSharder) hashID(id VectorID) uint32 {
 	b[5] = byte(v >> 40)
 	b[6] = byte(v >> 48)
 	b[7] = byte(v >> 56)
-	h.Write(b[:])
+	_, _ = h.Write(b[:]) // nosec G104
 	return h.Sum32()
 }
 

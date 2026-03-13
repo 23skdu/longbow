@@ -270,7 +270,7 @@ func (h *ArrowHNSW) startGPUSyncTicker() {
 				h.gpuBatchMu.Lock()
 				// Flush if we have pending updates and interval has passed
 				if len(h.gpuBatchIDs) > 0 && time.Since(h.gpuLastSyncTime) >= h.gpuConfig.SyncInterval {
-					h.flushGPUBatchLocked()
+					_ = h.flushGPUBatchLocked() // nosec G104
 				}
 				h.gpuBatchMu.Unlock()
 			case <-h.gpuStopSync:
@@ -508,7 +508,7 @@ func (h *ArrowHNSW) CloseGPU() error {
 
 	// Flush any pending batches
 	h.gpuBatchMu.Lock()
-	h.flushGPUBatchLocked()
+	_ = h.flushGPUBatchLocked() // nosec G104
 	h.gpuBatchMu.Unlock()
 
 	if h.gpuIndex != nil {

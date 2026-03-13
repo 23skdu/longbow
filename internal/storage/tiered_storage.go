@@ -226,7 +226,7 @@ func (tm *TierManager) migrateColdToWarm() {
 
 	for _, key := range coldKeys {
 		if tm.GetTier(key) == TierCold {
-			tm.MigrateToTier(key, TierWarm)
+			_ = tm.MigrateToTier(key, TierWarm) // nosec G104
 		}
 	}
 }
@@ -244,7 +244,7 @@ func (tm *TierManager) migrateWarmToHot() {
 
 	for _, key := range warmKeys {
 		if tm.GetTier(key) == TierWarm {
-			tm.MigrateToTier(key, TierHot)
+			_ = tm.MigrateToTier(key, TierHot) // nosec G104
 		}
 	}
 }

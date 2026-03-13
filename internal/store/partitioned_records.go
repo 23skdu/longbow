@@ -104,7 +104,7 @@ func (pr *PartitionedRecords) hashKey(key uint64) int {
 	b[5] = byte(key >> 40)
 	b[6] = byte(key >> 48)
 	b[7] = byte(key >> 56)
-	h.Write(b)
+	_, _ = h.Write(b)                                // nosec G104
 	return int(h.Sum64() % uint64(pr.numPartitions)) //nolint:gosec // G115 - partition index guaranteed to fit in int
 }
 

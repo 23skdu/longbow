@@ -160,24 +160,33 @@ go build ./...
 
 ---
 
-### P1 - High: Specialized F64/F16 Cosine Distance
+### ✅ P1 - Completed: Specialized F64/F16 Cosine Distance
 
-**Location**: `internal/store/arrow_hnsw.go:320`
+**Location**: 
+- `internal/simd/distance_functions.go` - CosineDistanceFloat64 function
+- `internal/simd/simd_baseline.go` - cosineFloat64Unrolled4x implementation
+- `internal/simd/dispatch.go` - Register implementation in dispatch table
+- `internal/store/arrow_hnsw.go:318-322` - Use CosineDistanceFloat64 and CosineDistanceF16
 
-**Current State**: TODO indicates specialized F64/F16 cosine implementations should be added:
+**Status**: **COMPLETED** - Implemented specialized cosine distance for F64 and F16 vectors
 
-```go
-// TODO: Add specialized F64/F16 cosine if available
-```
+**Changes Made**:
+1. Added `cosineDistanceFloat64Impl` variable to `simd.go`
+2. Implemented `CosineDistanceFloat64` function in `distance_functions.go`
+3. Implemented `cosineFloat64Unrolled4x` generic implementation in `simd_baseline.go`
+4. Registered implementation in dispatch table for all CPU architectures (AVX512, AVX2, NEON, generic)
+5. Updated `ArrowHNSW` to use `CosineDistanceFloat64` and `CosineDistanceF16` for cosine metric
+6. Added comprehensive tests for Float64 cosine distance
 
-**Impact**: Falls back to Euclidean distance for F64/F16 with cosine metric.
+**Implementation Details**:
+- `CosineDistanceFloat64` calculates cosine distance (1 - similarity) for Float64 vectors
+- Handles edge cases: zero vectors, length mismatch, empty vectors
+- Uses unrolled loop for better performance
+- Clamps similarity to [-1, 1] to handle numerical errors
 
-**Required Work**:
-1. Implement specialized cosine distance for F64 vectors
-2. Implement specialized cosine distance for F16 vectors
-3. Register in dispatch table
+**Impact**: F64/F16 vectors now use proper cosine distance instead of falling back to Euclidean distance.
 
-**Estimated Effort**: 2-3 days
+**Test Coverage**: All tests pass including identical, orthogonal, opposite, zero vector, and partial similarity cases.
 
 ---
 

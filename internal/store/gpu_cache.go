@@ -107,7 +107,7 @@ func hashQuery(query []float32) uint64 {
 	for i := 0; i < len(query); i++ {
 		// Convert float32 to bytes
 		bits := uint32(query[i])
-		h.Write([]byte{byte(bits), byte(bits >> 8), byte(bits >> 16), byte(bits >> 24)})
+		_, _ = h.Write([]byte{byte(bits), byte(bits >> 8), byte(bits >> 16), byte(bits >> 24)}) // nosec G104
 	}
 	return h.Sum64()
 }

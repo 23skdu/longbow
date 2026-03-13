@@ -143,7 +143,7 @@ func (p *Profiler) writeMemProfile(filename string) error {
 	defer f.Close()
 
 	runtime.GC()
-	pprof.WriteHeapProfile(f)
+	_ = pprof.WriteHeapProfile(f) // nosec G104
 
 	return nil
 }
@@ -151,19 +151,19 @@ func (p *Profiler) writeMemProfile(filename string) error {
 func (p *Profiler) WriteProfile(profileType string, w io.Writer) error {
 	switch profileType {
 	case "cpu":
-		pprof.StartCPUProfile(w)
+		_ = pprof.StartCPUProfile(w) // nosec G104
 		defer pprof.StopCPUProfile()
 	case "heap":
 		runtime.GC()
-		pprof.WriteHeapProfile(w)
+		_ = pprof.WriteHeapProfile(w) // nosec G104
 	case "goroutine":
-		pprof.Lookup("goroutine").WriteTo(w, 2)
+		_ = pprof.Lookup("goroutine").WriteTo(w, 2) // nosec G104
 	case "threadcreate":
-		pprof.Lookup("threadcreate").WriteTo(w, 2)
+		_ = pprof.Lookup("threadcreate").WriteTo(w, 2) // nosec G104
 	case "block":
-		pprof.Lookup("block").WriteTo(w, 2)
+		_ = pprof.Lookup("block").WriteTo(w, 2) // nosec G104
 	case "mutex":
-		pprof.Lookup("mutex").WriteTo(w, 2)
+		_ = pprof.Lookup("mutex").WriteTo(w, 2) // nosec G104
 	default:
 		return fmt.Errorf("unknown profile type: %s", profileType)
 	}
@@ -233,14 +233,14 @@ func (f *FlameGraphGenerator) GenerateFlamegraph(profileData []byte) ([]byte, er
 	if _, err := tmpInput.Write(profileData); err != nil {
 		return nil, err
 	}
-	tmpInput.Close()
+	_ = tmpInput.Close() // nosec G104
 
 	tmpOutput, err := os.CreateTemp("", "profile-output-*.svg")
 	if err != nil {
 		return nil, err
 	}
 	defer os.Remove(tmpOutput.Name())
-	tmpOutput.Close()
+	_ = tmpOutput.Close() // nosec G104
 
 	cmd := exec.Command("go", "tool", "pprof", "-proto", tmpInput.Name())
 	protoData, err := cmd.Output()

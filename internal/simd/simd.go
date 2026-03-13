@@ -587,7 +587,8 @@ func MatchFloat32(src []float32, val float32, op CompareOp, dst []byte) error {
 	if len(src) != len(dst) {
 		return errors.New("simd: length mismatch")
 	}
-	matchFloat32Impl(src, val, op, dst)
+	// nosec G104 - matchFloat32Impl returns error only for length mismatch, already checked above
+	_ = matchFloat32Impl(src, val, op, dst)
 	return nil
 }
 

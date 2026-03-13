@@ -88,7 +88,7 @@ func (b *ZeroCopyBuffer) Free() {
 	}
 
 	if b.pinned {
-		unix.Munmap(b.Slice())
+		_ = unix.Munmap(b.Slice()) // nosec G104
 	}
 
 	b.ptr = nil

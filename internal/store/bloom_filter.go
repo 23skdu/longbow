@@ -60,12 +60,12 @@ func NewBloomFilter(n int, p float64) *BloomFilter {
 func (bf *BloomFilter) hash(data string) []uint64 {
 	// First hash: FNV-1a
 	h1 := fnv.New64a()
-	h1.Write([]byte(data))
+	_, _ = h1.Write([]byte(data)) // nosec G104
 	hash1 := h1.Sum64()
 
 	// Second hash: FNV-1 (different algorithm)
 	h2 := fnv.New64()
-	h2.Write([]byte(data))
+	_, _ = h2.Write([]byte(data)) // nosec G104
 	hash2 := h2.Sum64()
 
 	// Ensure hash2 is odd for better distribution

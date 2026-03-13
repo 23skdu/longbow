@@ -48,7 +48,7 @@ func NewMmapVectorStorage(name string, opts MmapOptions) (*MmapVectorStorage, er
 
 	stat, err := f.Stat()
 	if err != nil {
-		f.Close()
+		_ = f.Close() // nosec G104
 		return nil, err
 	}
 
@@ -57,7 +57,7 @@ func NewMmapVectorStorage(name string, opts MmapOptions) (*MmapVectorStorage, er
 		size = opts.InitialSize
 		if !opts.ReadOnly {
 			if err := f.Truncate(size); err != nil {
-				f.Close()
+				_ = f.Close() // nosec G104
 				return nil, err
 			}
 		}
@@ -65,7 +65,7 @@ func NewMmapVectorStorage(name string, opts MmapOptions) (*MmapVectorStorage, er
 
 	mmap, err := unix.Mmap(int(f.Fd()), 0, int(size), unix.PROT_READ|unix.PROT_WRITE, unix.MAP_SHARED)
 	if err != nil {
-		f.Close()
+		_ = f.Close() // nosec G104
 		return nil, fmt.Errorf("mmap failed: %w", err)
 	}
 

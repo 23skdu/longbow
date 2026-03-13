@@ -202,15 +202,18 @@ func (r *PeerReplicator) replicateToPeer(ctx context.Context, peer *ReplicatorPe
 		if attempt < r.config.MaxRetries {
 			r.retryTotal.Add(1)
 			metrics.ReplicationRetriesTotal.Inc()
+			timer := time.NewTimer(r.config.RetryBackoff * time.Duration(attempt+1))
 			select {
 			case <-ctx.Done():
+				timer.Stop()
 				result.Duration = time.Since(start)
 				r.failureTotal.Add(1)
 				metrics.ReplicationFailuresTotal.Inc()
 				return result
-			case <-time.After(r.config.RetryBackoff * time.Duration(attempt+1)):
+			case <-timer.C:
 				// Continue to next attempt
 			}
+			timer.Stop()
 		}
 	}
 

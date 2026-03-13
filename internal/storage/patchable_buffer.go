@@ -2,7 +2,30 @@ package storage
 
 import (
 	"errors"
+	"sync"
 )
+
+var bufferPool = sync.Pool{
+	New: func() interface{} {
+		return &PatchableBuffer{
+			buf: make([]byte, 0, 65536),
+		}
+	},
+}
+
+func GetBuffer(capacity int) *PatchableBuffer {
+	buf := bufferPool.Get().(*PatchableBuffer)
+	if cap(buf.buf) < capacity {
+		buf.buf = make([]byte, 0, capacity)
+	}
+	buf.buf = buf.buf[:0]
+	return buf
+}
+
+func PutBuffer(b *PatchableBuffer) {
+	b.Reset()
+	bufferPool.Put(b)
+}
 
 // PatchableBuffer is a buffer that supports appending and random-access writes (patching).
 // It is used to write data sequentially (like a standard buffer) but allows

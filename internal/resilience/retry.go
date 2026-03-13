@@ -95,11 +95,14 @@ func Retry[T any](ctx context.Context, policy *RetryPolicy, fn func() (T, error)
 				delay = time.Duration(float64(delay) * (0.8 + 0.4*rand.Float64()))
 			}
 
+			timer := time.NewTimer(delay)
 			select {
 			case <-ctx.Done():
+				timer.Stop()
 				return result, fmt.Errorf("retry cancelled: %w", ctx.Err())
-			case <-time.After(delay):
+			case <-timer.C:
 			}
+			timer.Stop()
 		}
 
 		result, err := fn()

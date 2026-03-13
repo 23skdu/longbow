@@ -1,6 +1,7 @@
 package store
 
 import (
+	"math/rand"
 	"os"
 	"path/filepath"
 	"sync"
@@ -382,4 +383,232 @@ func (m *mockPluggableIndex) SearchVectors(query []float32, k int, options Searc
 
 func (m *mockPluggableIndex) Len() int {
 	return m.Size()
+}
+
+func TestIVFFlatIndex_AddAndSearch(t *testing.T) {
+	dim := 128
+	cfg := IndexConfig{
+		Type:      IndexTypeIVFFlat,
+		Dimension: dim,
+		IVFFlatConfig: &IVFFlatConfig{
+			NClusters: 10,
+			NProbe:    5,
+		},
+	}
+
+	idx, err := NewIVFFlatIndex(cfg)
+	if err != nil {
+		t.Fatalf("Failed to create IVF-Flat index: %v", err)
+	}
+
+	// Add vectors
+	n := 100
+	ids := make([]uint64, n)
+	vectors := make([][]float32, n)
+	for i := 0; i < n; i++ {
+		ids[i] = uint64(i)
+		vectors[i] = make([]float32, dim)
+		for j := 0; j < dim; j++ {
+			vectors[i][j] = rand.Float32()
+		}
+	}
+
+	err = idx.AddBatch(ids, vectors)
+	if err != nil {
+		t.Fatalf("Failed to add vectors: %v", err)
+	}
+
+	// Build the index
+	err = idx.Build()
+	if err != nil {
+		t.Fatalf("Failed to build index: %v", err)
+	}
+
+	// Search for a query vector
+	query := vectors[0]
+	results, err := idx.Search(query, 5)
+	if err != nil {
+		t.Fatalf("Failed to search: %v", err)
+	}
+
+	if len(results) != 5 {
+		t.Errorf("Expected 5 results, got %d", len(results))
+	}
+
+	// First result should be the query vector itself (distance 0)
+	if results[0].ID != 0 {
+		t.Errorf("Expected first result to be ID 0, got %d", results[0].ID)
+	}
+}
+
+func TestIVFFlatIndex_Empty(t *testing.T) {
+	cfg := IndexConfig{
+		Type:      IndexTypeIVFFlat,
+		Dimension: 128,
+	}
+
+	idx, err := NewIVFFlatIndex(cfg)
+	if err != nil {
+		t.Fatalf("Failed to create IVF-Flat index: %v", err)
+	}
+
+	// Try to build empty index
+	err = idx.Build()
+	if err == nil {
+		t.Error("Expected error when building empty index")
+	}
+
+	// Search on empty index
+	results, err := idx.Search(make([]float32, 128), 5)
+	if err == nil {
+		t.Error("Expected error when searching empty index")
+	}
+	if results != nil {
+		t.Errorf("Expected nil results, got %v", results)
+	}
+}
+
+func TestDiskANNIndex_AddAndSearch(t *testing.T) {
+	dim := 128
+	cfg := IndexConfig{
+		Type:      IndexTypeDiskANN,
+		Dimension: dim,
+		DiskANNConfig: &DiskANNConfig{
+			MaxDegree:    32,
+			BeamWidth:    50,
+			BuildThreads: 1,
+		},
+	}
+
+	idx, err := NewDiskANNIndex(cfg)
+	if err != nil {
+		t.Fatalf("Failed to create DiskANN index: %v", err)
+	}
+
+	// Add vectors
+	n := 50
+	ids := make([]uint64, n)
+	vectors := make([][]float32, n)
+	for i := 0; i < n; i++ {
+		ids[i] = uint64(i)
+		vectors[i] = make([]float32, dim)
+		for j := 0; j < dim; j++ {
+			vectors[i][j] = rand.Float32()
+		}
+	}
+
+	err = idx.AddBatch(ids, vectors)
+	if err != nil {
+		t.Fatalf("Failed to add vectors: %v", err)
+	}
+
+	// Build the index
+	err = idx.Build()
+	if err != nil {
+		t.Fatalf("Failed to build index: %v", err)
+	}
+
+	// Search for a query vector
+	query := vectors[0]
+	results, err := idx.Search(query, 5)
+	if err != nil {
+		t.Fatalf("Failed to search: %v", err)
+	}
+
+	if len(results) != 5 {
+		t.Errorf("Expected 5 results, got %d", len(results))
+	}
+
+	// First result should be the query vector itself (distance 0)
+	if results[0].ID != 0 {
+		t.Errorf("Expected first result to be ID 0, got %d", results[0].ID)
+	}
+}
+
+func TestDiskANNIndex_Empty(t *testing.T) {
+	cfg := IndexConfig{
+		Type:      IndexTypeDiskANN,
+		Dimension: 128,
+	}
+
+	idx, err := NewDiskANNIndex(cfg)
+	if err != nil {
+		t.Fatalf("Failed to create DiskANN index: %v", err)
+	}
+
+	// Try to build empty index
+	err = idx.Build()
+	if err == nil {
+		t.Error("Expected error when building empty index")
+	}
+
+	// Search on empty index
+	results, err := idx.Search(make([]float32, 128), 5)
+	if err == nil {
+		t.Error("Expected error when searching empty index")
+	}
+	if results != nil {
+		t.Errorf("Expected nil results, got %v", results)
+	}
+}
+
+func TestIndexFactory_IVFFlat(t *testing.T) {
+	factory := NewIndexFactory()
+
+	cfg := IndexConfig{
+		Type:      IndexTypeIVFFlat,
+		Dimension: 64,
+		IVFFlatConfig: &IVFFlatConfig{
+			NClusters: 5,
+			NProbe:    3,
+		},
+	}
+
+	idx, err := factory.Create(cfg)
+	if err != nil {
+		t.Fatalf("Failed to create IVF-Flat index via factory: %v", err)
+	}
+
+	if idx.Type() != IndexTypeIVFFlat {
+		t.Errorf("Expected index type IVF-Flat, got %v", idx.Type())
+	}
+
+	if idx.Dimension() != 64 {
+		t.Errorf("Expected dimension 64, got %d", idx.Dimension())
+	}
+
+	if !idx.NeedsBuild() {
+		t.Error("IVF-Flat index should need build")
+	}
+}
+
+func TestIndexFactory_DiskANN(t *testing.T) {
+	factory := NewIndexFactory()
+
+	cfg := IndexConfig{
+		Type:      IndexTypeDiskANN,
+		Dimension: 64,
+		DiskANNConfig: &DiskANNConfig{
+			MaxDegree:    32,
+			BeamWidth:    50,
+			BuildThreads: 1,
+		},
+	}
+
+	idx, err := factory.Create(cfg)
+	if err != nil {
+		t.Fatalf("Failed to create DiskANN index via factory: %v", err)
+	}
+
+	if idx.Type() != IndexTypeDiskANN {
+		t.Errorf("Expected index type DiskANN, got %v", idx.Type())
+	}
+
+	if idx.Dimension() != 64 {
+		t.Errorf("Expected dimension 64, got %d", idx.Dimension())
+	}
+
+	if !idx.NeedsBuild() {
+		t.Error("DiskANN index should need build")
+	}
 }

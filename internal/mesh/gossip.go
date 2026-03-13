@@ -291,10 +291,12 @@ func (g *Gossip) probe() {
 
 	_ = g.sendPing(target.Addr, target.ID, seq)
 
+	timer := time.NewTimer(g.Config.AckTimeout)
 	select {
 	case <-ackCh:
+		timer.Stop()
 		return // Success
-	case <-time.After(g.Config.AckTimeout):
+	case <-timer.C:
 		// 2. Indirect Ping
 		g.mu.RLock()
 		others := g.selectNeighbors(target.ID, IndirectK)
@@ -320,13 +322,17 @@ func (g *Gossip) probe() {
 			_ = g.sendPacketStruct(packet, udpAddr)
 		}
 
+		timer2 := time.NewTimer(g.Config.AckTimeout * 2)
 		select {
 		case <-ackCh:
+			timer2.Stop()
 			return // Success via proxy
-		case <-time.After(g.Config.AckTimeout * 2):
+		case <-timer2.C:
 			g.markSuspect(target.ID)
 		}
+		timer2.Stop()
 	}
+	timer.Stop()
 }
 
 func (g *Gossip) markSuspect(id string) {
@@ -577,14 +583,17 @@ func (g *Gossip) relayPing(targetAddr string, seq uint32, sourceAddr *net.UDPAdd
 		_ = g.sendPacketStruct(packet, udpAddr)
 	}
 
+	timer := time.NewTimer(g.Config.AckTimeout)
 	select {
 	case <-ackCh:
+		timer.Stop()
 		// Relay Ack back to source
 		ack := &Packet{Type: PacketAck, Seq: seq}
 		_ = g.sendPacketStruct(ack, sourceAddr)
-	case <-time.After(g.Config.AckTimeout):
+	case <-timer.C:
 		// Silent failure
 	}
+	timer.Stop()
 }
 
 func (g *Gossip) nextSeq() uint32 {

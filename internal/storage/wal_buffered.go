@@ -41,7 +41,7 @@ type BufferedWAL struct {
 // NewBufferedWAL creates a new buffered WAL.
 func NewBufferedWAL(backend WALBackend, maxBatchSize int, flushDelay time.Duration) *BufferedWAL {
 	w := &BufferedWAL{
-		buf:          NewPatchableBuffer(maxBatchSize * 2), // Pre-allocate
+		buf:          GetBuffer(maxBatchSize * 2),
 		backend:      backend,
 		maxBatchSize: maxBatchSize,
 		flushDelay:   flushDelay,
@@ -84,10 +84,14 @@ func (w *BufferedWAL) Write(name string, seq uint64, ts int64, record arrow.Reco
 	headerOffset := w.buf.Len()
 	w.buf.Grow(headerSize)
 	// Append zeroed header bytes to move cursor
-	_, _ = w.buf.Write(make([]byte, headerSize))
+	if _, err := w.buf.Write(make([]byte, headerSize)); err != nil {
+		return fmt.Errorf("failed to reserve header space: %w", err)
+	}
 
 	// 2. Write Name
-	_, _ = w.buf.Write(nameBytes)
+	if _, err := w.buf.Write(nameBytes); err != nil {
+		return fmt.Errorf("failed to write name: %w", err)
+	}
 
 	// 3. Write RecordBatch directly to buffer
 	recStartOffset := w.buf.Len()
@@ -302,6 +306,7 @@ func (w *BufferedWAL) tryFlush() {
 type writeBatch struct {
 	data   []byte
 	maxSeq uint64
+	buf    *PatchableBuffer
 }
 
 // swapBufferLocked replaces the current buffer with a new one and returns the old one wrapped.
@@ -314,14 +319,12 @@ func (w *BufferedWAL) swapBufferLocked() *writeBatch {
 	oldBuf := w.buf
 	currentMax := w.currentSeq
 
-	// Allocate new buffer
-	// Optimization: we could pool these buffers to avoid allocs
-	// But allocating 64KB chunks is relatively cheap in Go GC compared to the I/O.
-	w.buf = NewPatchableBuffer(w.maxBatchSize * 2)
+	w.buf = GetBuffer(w.maxBatchSize * 2)
 
 	return &writeBatch{
 		data:   oldBuf.Bytes(),
 		maxSeq: currentMax,
+		buf:    oldBuf,
 	}
 }
 
@@ -337,6 +340,10 @@ func (w *BufferedWAL) flushBufferToBackend(wb *writeBatch) error {
 
 	if err := w.backend.Sync(); err != nil {
 		return fmt.Errorf("wal backend sync: %w", err)
+	}
+
+	if wb.buf != nil {
+		PutBuffer(wb.buf)
 	}
 
 	return nil

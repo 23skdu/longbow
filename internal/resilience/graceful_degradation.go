@@ -63,7 +63,7 @@ func (gd *GracefulDegradation) AddHealthCheck(name string, check func() error) {
 	gd.healthChecks[name] = check
 }
 
-func (gd *GracefulDegradation) Execute(ctx context.Context, primary func() (interface{}, error), fallbackStrategy string) (interface{}, error) {
+func (gd *GracefulDegradation) Execute(ctx context.Context, primary func() (any, error), fallbackStrategy string) (any, error) {
 	gd.mu.RLock()
 	strategy, exists := gd.strategies[fallbackStrategy]
 	if !exists || !strategy.Enabled {
@@ -79,6 +79,34 @@ func (gd *GracefulDegradation) Execute(ctx context.Context, primary func() (inte
 		if err == nil {
 			gd.recordFallbackUse(fallbackStrategy)
 			return result, nil
+		}
+	}
+
+	return primary()
+}
+
+func ExecuteWithGracefulDegradation[T any](gd *GracefulDegradation, ctx context.Context, primary func() (T, error), fallbackStrategy string) (T, error) {
+	gd.mu.RLock()
+	strategy, exists := gd.strategies[fallbackStrategy]
+	if !exists || !strategy.Enabled {
+		gd.mu.RUnlock()
+		return primary()
+	}
+
+	currentLevel := gd.currentLevel
+	gd.mu.RUnlock()
+
+	if currentLevel >= strategy.Level {
+		result, err := strategy.FallbackFunc(ctx)
+		if err == nil {
+			gd.recordFallbackUse(fallbackStrategy)
+			var zero T
+			if result != nil {
+				if r, ok := result.(T); ok {
+					return r, nil
+				}
+			}
+			return zero, nil
 		}
 	}
 
@@ -278,6 +306,17 @@ func (b *Bulkhead) Execute(fn func() (interface{}, error)) (interface{}, error) 
 	}
 }
 
+func ExecuteWithBulkhead[T any](b *Bulkhead, fn func() (T, error)) (T, error) {
+	select {
+	case b.semaphore <- struct{}{}:
+		defer func() { <-b.semaphore }()
+		return fn()
+	default:
+		var zero T
+		return zero, fmt.Errorf("bulkhead '%s' is full, max concurrency (%d) reached", b.name, b.maxConcurrency)
+	}
+}
+
 func (b *Bulkhead) ExecuteWithContext(ctx context.Context, fn func(context.Context) (interface{}, error)) (interface{}, error) {
 	select {
 	case b.semaphore <- struct{}{}:
@@ -285,6 +324,17 @@ func (b *Bulkhead) ExecuteWithContext(ctx context.Context, fn func(context.Conte
 		return fn(ctx)
 	case <-ctx.Done():
 		return nil, fmt.Errorf("bulkhead '%s' context cancelled: %w", b.name, ctx.Err())
+	}
+}
+
+func ExecuteWithBulkheadAndContext[T any](b *Bulkhead, ctx context.Context, fn func(context.Context) (T, error)) (T, error) {
+	select {
+	case b.semaphore <- struct{}{}:
+		defer func() { <-b.semaphore }()
+		return fn(ctx)
+	case <-ctx.Done():
+		var zero T
+		return zero, fmt.Errorf("bulkhead '%s' context cancelled: %w", b.name, ctx.Err())
 	}
 }
 
@@ -335,9 +385,14 @@ func (bg *BulkheadGroup) GetBulkhead(name string, maxConcurrency int) *Bulkhead 
 	return bulkhead
 }
 
-func (bg *BulkheadGroup) Execute(name string, maxConcurrency int, fn func() (interface{}, error)) (interface{}, error) {
+func (bg *BulkheadGroup) Execute(name string, maxConcurrency int, fn func() (any, error)) (any, error) {
 	bulkhead := bg.GetBulkhead(name, maxConcurrency)
 	return bulkhead.Execute(fn)
+}
+
+func ExecuteWithBulkheadGroup[T any](bg *BulkheadGroup, name string, maxConcurrency int, fn func() (T, error)) (T, error) {
+	bulkhead := bg.GetBulkhead(name, maxConcurrency)
+	return ExecuteWithBulkhead(bulkhead, fn)
 }
 
 func (bg *BulkheadGroup) RemoveBulkhead(name string) {

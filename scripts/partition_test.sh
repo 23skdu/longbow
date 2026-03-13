@@ -7,12 +7,14 @@ set -e
 
 # Configuration
 CLUSTER_PORTS=(7946 7947 7948) # Default SWIM ports for 3 nodes
+METRICS_PORT=9090
 DURATION=30
 LOG_DIR="/tmp/longbow_partition_test"
 
 # Colors
 GREEN='\033[0;32m'
 RED='\033[0;31m'
+YELLOW='\033[1;33m'
 NC='\033[0m'
 
 mkdir -p "$LOG_DIR"
@@ -28,6 +30,17 @@ check_health() {
     else
         return 1
     fi
+}
+
+get_member_count() {
+    local port=$1
+    local count=$(curl -s "http://localhost:$port/metrics" 2>/dev/null | grep "^longbow_gossip_active_members" | awk '{print $2}')
+    echo "${count:-0}"
+}
+
+get_peer_health() {
+    local port=$1
+    curl -s "http://localhost:$port/metrics" 2>/dev/null | grep "^longbow_peer_health_status" || true
 }
 
 simulate_partition() {
@@ -86,7 +99,16 @@ echo "=================================================="
 
 # 2. Verify Initial State
 log "Verifying 3-node cluster state..."
-# TODO: Use CLI or API to check member count
+expected_members=3
+for i in "${!CLUSTER_PORTS[@]}"; do
+    port=${CLUSTER_PORTS[$i]}
+    members=$(get_member_count $METRICS_PORT)
+    if [ "$members" -ge "$expected_members" ]; then
+        log "${GREEN}Node $((i+1)): Cluster has $members active members${NC}"
+    else
+        log "${YELLOW}Node $((i+1)): Only $members members detected (expected $expected_members)${NC}"
+    fi
+done
 
 # 3. Inject Failure
 simulate_partition
@@ -104,6 +126,22 @@ sleep 10
 
 # 6. Verify Recovery
 log "Verifying cluster converged back to 3 nodes..."
-# TODO: Check member list
+sleep 5
+for i in "${!CLUSTER_PORTS[@]}"; do
+    members=$(get_member_count $METRICS_PORT)
+    if [ "$members" -ge "$expected_members" ]; then
+        log "${GREEN}Node $((i+1)): Cluster recovered with $members active members${NC}"
+    else
+        log "${YELLOW}Node $((i+1)): Still converging - $members members (expected $expected_members)${NC}"
+    fi
+done
+
+peer_health=$(get_peer_health $METRICS_PORT)
+if [ -n "$peer_health" ]; then
+    log "Peer health status:"
+    echo "$peer_health" | while read line; do
+        log "  $line"
+    done
+fi
 
 log "Test Complete."

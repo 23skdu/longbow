@@ -196,20 +196,12 @@ func createHNSWIndex(cfg IndexConfig) (PluggableVectorIndex, error) {
 	}, nil
 }
 
-// createIVFFlatIndex creates an IVF-Flat index (stub implementation)
+// createIVFFlatIndex creates an IVF-Flat index
 func createIVFFlatIndex(cfg IndexConfig) (PluggableVectorIndex, error) {
-	return &IVFFlatIndex{
-		dimension: cfg.Dimension,
-		vectors:   make(map[uint64][]float32),
-		config:    cfg.IVFFlatConfig,
-	}, nil
+	return NewIVFFlatIndex(cfg)
 }
 
-// createDiskANNIndex creates a DiskANN index (stub implementation)
+// createDiskANNIndex creates a DiskANN index
 func createDiskANNIndex(cfg IndexConfig) (PluggableVectorIndex, error) {
-	return &DiskANNIndex{
-		dimension: cfg.Dimension,
-		vectors:   make(map[uint64][]float32),
-		config:    cfg.DiskANNConfig,
-	}, nil
+	return NewDiskANNIndex(cfg)
 }

@@ -75,15 +75,14 @@ func (h *ArrowHNSW) promoteNode(data *GraphData, id uint32) *GraphData {
 	cID := chunkID(id)
 	cOff := chunkOffset(id)
 
-	// Check if already promoted (chunk exists and count > 0)
-	// We check L0 as indicator.
-	// Check if already promoted (chunk exists and count > 0)
-	// We check L0 as indicator.
-	// Optimally we would check here, but for now we fall through to ensure safety.
-	// TODO: Implement optimized check if data.GetNeighborsChunk(0, cID) != nil
-
 	dg := h.diskGraph.Load()
 	if dg == nil {
+		return data
+	}
+
+	// Optimized check: verify chunk exists in memory before promoting
+	neighborsChunkL0 := data.GetNeighborsChunk(0, cID)
+	if neighborsChunkL0 != nil {
 		return data
 	}
 

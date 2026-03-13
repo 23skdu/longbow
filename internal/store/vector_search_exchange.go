@@ -147,15 +147,9 @@ func (s *VectorStore) handleVectorSearchExchange(stream flight.FlightService_DoE
 	}
 
 	// Perform Search
-	// TODO: Use 'ef' if supported by SearchOptions
 	searchOpts := SearchOptions{
 		IncludeVectors: false,
-	}
-	// Logic to use ef if > 0 (assuming SearchVectors might use it or we set it globally)
-	// For now, suppress unused var
-	if ef > 0 {
-		// TODO: Pass ef to HNSW search context
-		_ = ef
+		Ef:             ef,
 	}
 
 	searchResults, err := ds.Index.SearchVectors(stream.Context(), queryVec, k, nil, searchOpts)

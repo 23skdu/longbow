@@ -132,25 +132,31 @@ go build ./...
 
 ---
 
-### P1 - High: HNSW 'ef' Parameter Support
+### ✅ P1 - Completed: HNSW 'ef' Parameter Support
 
-**Location**: `internal/store/vector_search_exchange.go:150,157`
+**Location**: 
+- `internal/store/vector_types.go` - SearchOptions struct
+- `internal/store/vector_search_exchange.go:86-91` - Parse ef from request
+- `internal/store/arrow_hnsw.go:1014-1018` - Use ef in search logic
 
-**Current State**: The 'ef' (entry factor) parameter is not passed to HNSW search context:
+**Status**: **COMPLETED** - Implemented 'ef' parameter support
 
-```go
-// TODO: Use 'ef' if supported by SearchOptions
-// TODO: Pass ef to HNSW search context
-```
+**Changes Made**:
+1. Added `Ef int` field to `SearchOptions` struct with documentation
+2. Updated `vector_search_exchange.go` to pass `ef` parameter from request to SearchOptions
+3. Updated `ArrowHNSW.SearchVectorsWithBitmap()` to extract options and use `Ef` value
+4. When `Ef > 0`, uses custom value; otherwise falls back to config default (`EfSearch`)
+5. Added comprehensive tests for ef parameter functionality
 
-**Impact**: Search performance tuning via ef parameter doesn't work.
+**Implementation Details**:
+- `Ef` parameter controls search breadth in HNSW algorithm
+- Higher `ef` values search more broadly (better recall, slower)
+- Lower `ef` values search more narrowly (faster, potentially lower recall)
+- Default behavior preserved when `Ef <= 0`
 
-**Required Work**:
-1. Add 'ef' parameter to SearchOptions
-2. Pass 'ef' to HNSW search context
-3. Update search logic to use ef parameter
+**Impact**: Search performance tuning via ef parameter now works correctly.
 
-**Estimated Effort**: 1-2 days
+**Test Coverage**: All tests pass with various ef values (0, 10, 50, 100, -1)
 
 ---
 

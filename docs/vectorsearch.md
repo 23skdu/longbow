@@ -194,8 +194,11 @@ type Reranker interface {
 }
 ```
 
-Longbow provides a `CrossEncoderReranker` (currently a stub) to integrate deep learning models
-that score query-document pairs.
+Longbow provides a `CrossEncoderReranker` that re-ranks results using a combination of:
+- Distance score (70% weight)
+- Text match score on metadata fields (30% weight)
+
+For production ML-based reranking, integrate with ONNX Runtime or Hugging Face models.
 
 ## Hybrid Search (Legacy Concepts)
 

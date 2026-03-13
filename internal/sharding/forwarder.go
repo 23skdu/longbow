@@ -244,9 +244,11 @@ func (f *RequestForwarder) Forward(ctx context.Context, targetNodeID string, req
 		reply = &flight.FlightInfo{}
 	case "/arrow.flight.protocol.FlightService/GetSchema":
 		reply = &flight.SchemaResult{}
+	case "/arrow.flight.protocol.FlightService/ListFlights":
+		reply = &flight.FlightInfo{}
+	case "/arrow.flight.protocol.FlightService/DoAction":
+		reply = &flight.Result{}
 	default:
-		// Fallback for unknown unary methods: attempt to use raw bytes
-		// Note: This requires the server to accept the raw bytes back.
 		return nil, status.Errorf(codes.Unimplemented, "forwarding for method %s not yet implemented", method)
 	}
 

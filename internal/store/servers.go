@@ -148,9 +148,11 @@ func (s *MetaServer) DoPut(stream flight.FlightService_DoPutServer) error {
 	return status.Error(codes.Unimplemented, "DoPut not implemented on MetaServer; use DataServer")
 }
 
-// DoExchange returns Unimplemented on MetaServer
+// DoExchange delegates to VectorStore
 func (s *MetaServer) DoExchange(stream flight.FlightService_DoExchangeServer) error {
-	return status.Error(codes.Unimplemented, "DoExchange not implemented")
+	LogClientAction(stream.Context(), s.logger, s.Mesh, "DoExchange", nil)
+	err := s.VectorStore.DoExchange(stream)
+	return ToGRPCStatus(err)
 }
 
 // DoAction handles management commands on MetaServer

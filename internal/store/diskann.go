@@ -1,11 +1,20 @@
 package store
 
 import (
+	"encoding/binary"
+	"encoding/json"
 	"fmt"
+	"math"
+	"os"
 	"sort"
 	"sync"
 
 	"github.com/23skdu/longbow/internal/simd"
+)
+
+const (
+	diskannMagic   = 0x44414B41 // "DAKA" in hex
+	diskannVersion = 1
 )
 
 // =============================================================================
@@ -328,12 +337,209 @@ func (d *DiskANNIndex) SearchBatch(queries [][]float32, k int) ([][]IndexSearchR
 }
 
 func (d *DiskANNIndex) Save(path string) error {
-	// TODO: Implement proper persistence
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	f, err := os.Create(path)
+	if err != nil {
+		return fmt.Errorf("failed to create file: %w", err)
+	}
+	defer f.Close()
+
+	// Write magic number and version
+	if err := binary.Write(f, binary.LittleEndian, uint32(diskannMagic)); err != nil {
+		return fmt.Errorf("failed to write magic: %w", err)
+	}
+	if err := binary.Write(f, binary.LittleEndian, uint32(diskannVersion)); err != nil {
+		return fmt.Errorf("failed to write version: %w", err)
+	}
+
+	// Write dimension
+	if err := binary.Write(f, binary.LittleEndian, uint32(d.dimension)); err != nil {
+		return fmt.Errorf("failed to write dimension: %w", err)
+	}
+
+	// Write config as JSON
+	configData, err := json.Marshal(d.config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal config: %w", err)
+	}
+	if err := binary.Write(f, binary.LittleEndian, uint32(len(configData))); err != nil {
+		return fmt.Errorf("failed to write config length: %w", err)
+	}
+	if _, err := f.Write(configData); err != nil {
+		return fmt.Errorf("failed to write config: %w", err)
+	}
+
+	// Write vector count
+	vecCount := uint32(len(d.vectors))
+	if err := binary.Write(f, binary.LittleEndian, vecCount); err != nil {
+		return fmt.Errorf("failed to write vector count: %w", err)
+	}
+
+	// Sort IDs for deterministic ordering
+	ids := make([]uint64, 0, len(d.vectors))
+	for id := range d.vectors {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+
+	// Write vectors: for each id, write (id, vector)
+	for _, id := range ids {
+		vector := d.vectors[id]
+		if err := binary.Write(f, binary.LittleEndian, id); err != nil {
+			return fmt.Errorf("failed to write vector id: %w", err)
+		}
+		vecBytes := make([]byte, len(vector)*4)
+		for i, v := range vector {
+			binary.LittleEndian.PutUint32(vecBytes[i*4:], math.Float32bits(v))
+		}
+		if _, err := f.Write(vecBytes); err != nil {
+			return fmt.Errorf("failed to write vector: %w", err)
+		}
+	}
+
+	// Write graph count
+	graphCount := uint32(len(d.graph))
+	if err := binary.Write(f, binary.LittleEndian, graphCount); err != nil {
+		return fmt.Errorf("failed to write graph count: %w", err)
+	}
+
+	// Write graph: for each id, write (id, neighbor_count, neighbors)
+	for _, id := range ids {
+		neighbors := d.graph[id]
+		if err := binary.Write(f, binary.LittleEndian, id); err != nil {
+			return fmt.Errorf("failed to write graph id: %w", err)
+		}
+		if err := binary.Write(f, binary.LittleEndian, uint32(len(neighbors))); err != nil {
+			return fmt.Errorf("failed to write neighbor count: %w", err)
+		}
+		if len(neighbors) > 0 {
+			neighborBytes := make([]byte, len(neighbors)*8)
+			for i, n := range neighbors {
+				binary.LittleEndian.PutUint64(neighborBytes[i*8:], n)
+			}
+			if _, err := f.Write(neighborBytes); err != nil {
+				return fmt.Errorf("failed to write neighbors: %w", err)
+			}
+		}
+	}
+
+	// Write built flag
+	builtFlag := uint8(0)
+	if d.built {
+		builtFlag = 1
+	}
+	if err := binary.Write(f, binary.LittleEndian, builtFlag); err != nil {
+		return fmt.Errorf("failed to write built flag: %w", err)
+	}
+
 	return nil
 }
 
 func (d *DiskANNIndex) Load(path string) error {
-	// TODO: Implement proper loading
+	f, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("failed to open file: %w", err)
+	}
+	defer f.Close()
+
+	// Read and verify magic number
+	var magic uint32
+	if err := binary.Read(f, binary.LittleEndian, &magic); err != nil {
+		return fmt.Errorf("failed to read magic: %w", err)
+	}
+	if magic != diskannMagic {
+		return fmt.Errorf("invalid magic number: got %x, expected %x", magic, diskannMagic)
+	}
+
+	// Read version
+	var version uint32
+	if err := binary.Read(f, binary.LittleEndian, &version); err != nil {
+		return fmt.Errorf("failed to read version: %w", err)
+	}
+	if version > diskannVersion {
+		return fmt.Errorf("unsupported version: %d", version)
+	}
+
+	// Read dimension
+	var dimension uint32
+	if err := binary.Read(f, binary.LittleEndian, &dimension); err != nil {
+		return fmt.Errorf("failed to read dimension: %w", err)
+	}
+	d.dimension = int(dimension)
+
+	// Read config
+	var configLen uint32
+	if err := binary.Read(f, binary.LittleEndian, &configLen); err != nil {
+		return fmt.Errorf("failed to read config length: %w", err)
+	}
+	configData := make([]byte, configLen)
+	if _, err := f.Read(configData); err != nil {
+		return fmt.Errorf("failed to read config: %w", err)
+	}
+	d.config = &DiskANNConfig{}
+	if err := json.Unmarshal(configData, d.config); err != nil {
+		return fmt.Errorf("failed to unmarshal config: %w", err)
+	}
+
+	// Read vectors
+	var vecCount uint32
+	if err := binary.Read(f, binary.LittleEndian, &vecCount); err != nil {
+		return fmt.Errorf("failed to read vector count: %w", err)
+	}
+	d.vectors = make(map[uint64][]float32, vecCount)
+	for i := uint32(0); i < vecCount; i++ {
+		var id uint64
+		if err := binary.Read(f, binary.LittleEndian, &id); err != nil {
+			return fmt.Errorf("failed to read vector id: %w", err)
+		}
+		vec := make([]float32, d.dimension)
+		vecBytes := make([]byte, d.dimension*4)
+		if _, err := f.Read(vecBytes); err != nil {
+			return fmt.Errorf("failed to read vector: %w", err)
+		}
+		for j := 0; j < d.dimension; j++ {
+			vec[j] = math.Float32frombits(binary.LittleEndian.Uint32(vecBytes[j*4:]))
+		}
+		d.vectors[id] = vec
+	}
+
+	// Read graph
+	var graphCount uint32
+	if err := binary.Read(f, binary.LittleEndian, &graphCount); err != nil {
+		return fmt.Errorf("failed to read graph count: %w", err)
+	}
+	d.graph = make(map[uint64][]uint64, graphCount)
+	for i := uint32(0); i < graphCount; i++ {
+		var id uint64
+		if err := binary.Read(f, binary.LittleEndian, &id); err != nil {
+			return fmt.Errorf("failed to read graph id: %w", err)
+		}
+		var neighborCount uint32
+		if err := binary.Read(f, binary.LittleEndian, &neighborCount); err != nil {
+			return fmt.Errorf("failed to read neighbor count: %w", err)
+		}
+		neighbors := make([]uint64, neighborCount)
+		if neighborCount > 0 {
+			neighborBytes := make([]byte, neighborCount*8)
+			if _, err := f.Read(neighborBytes); err != nil {
+				return fmt.Errorf("failed to read neighbors: %w", err)
+			}
+			for j := uint32(0); j < neighborCount; j++ {
+				neighbors[j] = binary.LittleEndian.Uint64(neighborBytes[j*8:])
+			}
+		}
+		d.graph[id] = neighbors
+	}
+
+	// Read built flag
+	var builtFlag uint8
+	if err := binary.Read(f, binary.LittleEndian, &builtFlag); err != nil {
+		return fmt.Errorf("failed to read built flag: %w", err)
+	}
+	d.built = builtFlag == 1
+
 	return nil
 }
 

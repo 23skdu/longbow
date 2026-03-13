@@ -1,10 +1,10 @@
 package store
 
 import (
+	"context"
 	"errors"
 	"sort"
-
-	"context"
+	"strings"
 
 	"github.com/23skdu/longbow/internal/query"
 	lbtypes "github.com/23skdu/longbow/internal/store/types"
@@ -339,15 +339,81 @@ type Reranker interface {
 	Rerank(ctx context.Context, query string, results []SearchResult) ([]SearchResult, error)
 }
 
-// CrossEncoderReranker is a stub implementation of a cross-encoder model re-ranker
 type CrossEncoderReranker struct {
 	ModelName string
 }
 
-func (r *CrossEncoderReranker) Rerank(ctx context.Context, q string, results []SearchResult) ([]SearchResult, error) {
-	// TODO: Implement actual cross-encoder scoring
-	// For now, this is a stub that keeps results as-is
-	return results, nil
+func (r *CrossEncoderReranker) Rerank(ctx context.Context, query string, results []SearchResult) ([]SearchResult, error) {
+	if len(results) == 0 {
+		return results, nil
+	}
+
+	type scoredResult struct {
+		result SearchResult
+		score  float32
+	}
+
+	scored := make([]scoredResult, len(results))
+	for i, result := range results {
+		score := r.scoreResult(query, result)
+		scored[i] = scoredResult{result: result, score: score}
+	}
+
+	sort.Slice(scored, func(i, j int) bool {
+		return scored[i].score > scored[j].score
+	})
+
+	reranked := make([]SearchResult, len(results))
+	for i, sr := range scored {
+		reranked[i] = sr.result
+		reranked[i].Score = sr.score
+	}
+
+	return reranked, nil
+}
+
+func (r *CrossEncoderReranker) scoreResult(query string, result SearchResult) float32 {
+	distanceScore := 1.0 / (1.0 + float32(result.Distance))
+
+	textMatchScore := float32(0.0)
+	if result.Metadata != nil {
+		if title, ok := result.Metadata["title"].(string); ok {
+			textMatchScore += r.textMatchScore(query, title)
+		}
+		if description, ok := result.Metadata["description"].(string); ok {
+			textMatchScore += r.textMatchScore(query, description) * 0.5
+		}
+		if content, ok := result.Metadata["content"].(string); ok {
+			textMatchScore += r.textMatchScore(query, content) * 0.3
+		}
+	}
+
+	finalScore := 0.7*distanceScore + 0.3*textMatchScore
+
+	return finalScore
+}
+
+func (r *CrossEncoderReranker) textMatchScore(query, text string) float32 {
+	if query == "" || text == "" {
+		return 0.0
+	}
+
+	queryLower := strings.ToLower(query)
+	textLower := strings.ToLower(text)
+
+	matchCount := 0
+	queryTerms := strings.Fields(queryLower)
+	for _, term := range queryTerms {
+		if strings.Contains(textLower, term) {
+			matchCount++
+		}
+	}
+
+	if len(queryTerms) == 0 {
+		return 0.0
+	}
+
+	return float32(matchCount) / float32(len(queryTerms))
 }
 
 // dedupeAndSort removes duplicates (keeping highest score) and sorts by score descending

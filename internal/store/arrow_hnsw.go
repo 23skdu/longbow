@@ -846,6 +846,13 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 	}
 	start := time.Now()
 	searchCtx := h.searchPool.Get()
+
+	// Extract search options
+	searchOptions := SearchOptions{}
+	if opt, ok := options.(SearchOptions); ok {
+		searchOptions = opt
+	}
+
 	defer func() {
 		duration := time.Since(start).Seconds()
 		metrics.HNSWSearchDurationSeconds.Observe(duration)
@@ -1005,6 +1012,9 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 
 	// 2. Search at layer 0 with adaptive retry
 	efSearch := int(h.config.EfSearch)
+	if searchOptions.Ef > 0 {
+		efSearch = searchOptions.Ef
+	}
 	if h.config.SQ8Enabled && efSearch < 100 {
 		// Provide more search buffer by default for SQ8 to compensate for quantization noise
 		efSearch = 100

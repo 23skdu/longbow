@@ -21,4 +21,5 @@ type SearchOptions struct {
 	VectorFormat   VectorDataType
 	Filter         any
 	ExactK         bool
+	Ef             int // Entry factor for HNSW search (controls search breadth)
 }

@@ -1,5 +1,6 @@
 package store
 
+// nosec G404 - math/rand/v2 is used for HNSW layer generation, not security-sensitive
 import (
 	"math"
 	"math/rand/v2"

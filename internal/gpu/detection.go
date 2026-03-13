@@ -40,7 +40,8 @@ func detectCUDAGPUs() []GPUInfo {
 	}
 
 	// Query GPU information using nvidia-smi
-	cmd := exec.Command(nvidiaSmiPath, "--query-gpu=index,name,memory.total,compute_cap", "--format=csv,noheader,nounits")
+	// nosec G204 - nvidiaSmiPath is set from known config/locations, not user input
+	cmd := exec.Command(nvidiaSmiPath, "--query-gpu=index,name,memory.total,compute_cap", "--format=csv,noheader,nounits") // nosec G204
 	output, err := cmd.Output()
 	if err != nil {
 		return gpus

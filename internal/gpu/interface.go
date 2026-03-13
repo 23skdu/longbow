@@ -376,7 +376,8 @@ func getNVIDIAUtilization() (float32, error) {
 		return 0, fmt.Errorf("nvidia-smi not found")
 	}
 
-	cmd := exec.Command(nvidiaSmiPath, "--query-gpu=utilization.gpu", "--format=csv,noheader,nounits")
+	// nosec G204 - nvidiaSmiPath is set from known config/locations, not user input
+	cmd := exec.Command(nvidiaSmiPath, "--query-gpu=utilization.gpu", "--format=csv,noheader,nounits") // nosec G204
 	output, err := cmd.Output()
 	if err != nil {
 		return 0, fmt.Errorf("failed to query GPU utilization: %w", err)

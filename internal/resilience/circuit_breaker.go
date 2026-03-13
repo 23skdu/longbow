@@ -80,10 +80,22 @@ func DefaultReadyToTrip(counts CircuitBreakerMetrics) bool {
 		(counts.Failures > 10 && float64(counts.Failures)/float64(counts.Requests) > 0.6)
 }
 
-func (cb *CircuitBreaker) Execute(ctx context.Context, req func() (interface{}, error)) (interface{}, error) {
+func (cb *CircuitBreaker) Execute(ctx context.Context, req func() (any, error)) (any, error) {
 	generation, err := cb.beforeRequest()
 	if err != nil {
 		return nil, err
+	}
+
+	result, err := req()
+	cb.afterRequest(generation, err)
+	return result, err
+}
+
+func ExecuteWithCircuitBreaker[T any](cb *CircuitBreaker, ctx context.Context, req func() (T, error)) (T, error) {
+	generation, err := cb.beforeRequest()
+	if err != nil {
+		var zero T
+		return zero, err
 	}
 
 	result, err := req()
@@ -271,9 +283,14 @@ func (cbg *CircuitBreakerGroup) GetBreaker(name string) *CircuitBreaker {
 	return breaker
 }
 
-func (cbg *CircuitBreakerGroup) Execute(ctx context.Context, name string, req func() (interface{}, error)) (interface{}, error) {
+func (cbg *CircuitBreakerGroup) Execute(ctx context.Context, name string, req func() (any, error)) (any, error) {
 	breaker := cbg.GetBreaker(name)
 	return breaker.Execute(ctx, req)
+}
+
+func ExecuteWithCircuitBreakerGroup[T any](cbg *CircuitBreakerGroup, ctx context.Context, name string, req func() (T, error)) (T, error) {
+	breaker := cbg.GetBreaker(name)
+	return ExecuteWithCircuitBreaker(breaker, ctx, req)
 }
 
 func (cbg *CircuitBreakerGroup) GetAllMetrics() map[string]CircuitBreakerMetrics {

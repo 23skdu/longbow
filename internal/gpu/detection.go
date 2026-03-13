@@ -58,12 +58,20 @@ func detectCUDAGPUs() []GPUInfo {
 			continue
 		}
 
-		deviceID, _ := strconv.Atoi(strings.TrimSpace(parts[0]))
+		deviceID, err := strconv.Atoi(strings.TrimSpace(parts[0]))
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: Failed to parse device ID from line '%s': %v\n", line, err)
+			continue
+		}
 		name := strings.TrimSpace(parts[1])
 
 		// Parse memory (in MiB)
 		memoryStr := strings.TrimSpace(parts[2])
-		memoryMiB, _ := strconv.ParseFloat(memoryStr, 64)
+		memoryMiB, err := strconv.ParseFloat(memoryStr, 64)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: Failed to parse memory from '%s': %v\n", memoryStr, err)
+			continue
+		}
 		memoryMB := int64(memoryMiB)
 
 		// Parse compute capability

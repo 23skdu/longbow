@@ -2,6 +2,7 @@ package store
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/23skdu/longbow/internal/pq"
 )
@@ -36,21 +37,60 @@ type QuantizerType interface{}
 // These helpers convert between different vector types before/after quantization.
 
 // ConvertFloat32ToUint8 converts a slice of float32 to uint8
-// This is a placeholder - the actual implementation would do proper casting
+// using min/max bounds for proper scaling to [0, 255] range.
 func ConvertFloat32ToUint8(vec []float32) ([]uint8, error) {
-	result := make([]uint8, len(vec))
-	for i, v := range vec {
-		// Simple clamping to [0, 255] for now
-		// TODO: Implement proper casting with bounds checking
-		switch {
-		case v < 0:
-			result[i] = 0
-		case v > 255:
-			result[i] = 255
-		default:
-			result[i] = uint8(v)
+	if len(vec) == 0 {
+		return []uint8{}, nil
+	}
+
+	minVal := float32(math.MaxFloat32)
+	maxVal := float32(-math.MaxFloat32)
+
+	for _, v := range vec {
+		if math.IsNaN(float64(v)) || math.IsInf(float64(v), 0) {
+			return nil, fmt.Errorf("invalid value: NaN or Inf at vector element")
+		}
+
+		if v < minVal {
+			minVal = v
+		}
+		if v > maxVal {
+			maxVal = v
 		}
 	}
+
+	if minVal == maxVal {
+		result := make([]uint8, len(vec))
+		if minVal < 0 {
+			for i := range result {
+				result[i] = 0
+			}
+		} else if minVal > 255 {
+			for i := range result {
+				result[i] = 255
+			}
+		} else {
+			val := uint8(minVal)
+			for i := range result {
+				result[i] = val
+			}
+		}
+		return result, nil
+	}
+
+	scale := 255.0 / (maxVal - minVal)
+	result := make([]uint8, len(vec))
+
+	for i, v := range vec {
+		scaled := (v - minVal) * scale
+		if scaled < 0 {
+			scaled = 0
+		} else if scaled > 255 {
+			scaled = 255
+		}
+		result[i] = uint8(scaled)
+	}
+
 	return result, nil
 }
 

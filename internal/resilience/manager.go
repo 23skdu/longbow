@@ -58,14 +58,14 @@ func NewResilienceManager(config *ResilienceConfig) *ResilienceManager {
 	}
 }
 
-func (rm *ResilienceManager) ExecuteWithResilience(ctx context.Context, operationType, circuitName string, fn func() (interface{}, error)) (interface{}, error) {
+func (rm *ResilienceManager) ExecuteWithResilience(ctx context.Context, operationType, circuitName string, fn func() (any, error)) (any, error) {
 	bulkhead := rm.bulkheadGroup.GetBulkhead(operationType, rm.config.Bulkheads[operationType])
 
-	return bulkhead.Execute(func() (interface{}, error) {
-		return rm.circuitGroup.Execute(ctx, circuitName, func() (interface{}, error) {
+	return bulkhead.Execute(func() (any, error) {
+		return rm.circuitGroup.Execute(ctx, circuitName, func() (any, error) {
 			timeout := rm.timeoutGroup.GetManager(operationType)
 
-			var result interface{}
+			var result any
 			err := timeout.WithTimeout(ctx, operationType, func(timeoutCtx context.Context) error {
 				var opErr error
 				result, opErr = fn()
@@ -77,7 +77,26 @@ func (rm *ResilienceManager) ExecuteWithResilience(ctx context.Context, operatio
 	})
 }
 
-func (rm *ResilienceManager) ExecuteWithRetry(ctx context.Context, operationType, circuitName string, fn func() (interface{}, error)) (interface{}, error) {
+func ExecuteWithResilience[T any](rm *ResilienceManager, ctx context.Context, operationType, circuitName string, fn func() (T, error)) (T, error) {
+	bulkhead := rm.bulkheadGroup.GetBulkhead(operationType, rm.config.Bulkheads[operationType])
+
+	return ExecuteWithBulkhead(bulkhead, func() (T, error) {
+		return ExecuteWithCircuitBreakerGroup(rm.circuitGroup, ctx, circuitName, func() (T, error) {
+			timeout := rm.timeoutGroup.GetManager(operationType)
+
+			var result T
+			err := timeout.WithTimeout(ctx, operationType, func(timeoutCtx context.Context) error {
+				var opErr error
+				result, opErr = fn()
+				return opErr
+			})
+
+			return result, err
+		})
+	})
+}
+
+func (rm *ResilienceManager) ExecuteWithRetry(ctx context.Context, operationType, circuitName string, fn func() (any, error)) (any, error) {
 	policy := rm.config.Retry
 	var retryPolicy *RetryPolicy
 
@@ -94,12 +113,34 @@ func (rm *ResilienceManager) ExecuteWithRetry(ctx context.Context, operationType
 		retryPolicy = DefaultRetryPolicy()
 	}
 
-	return Retry(ctx, retryPolicy, func() (interface{}, error) {
+	return Retry(ctx, retryPolicy, func() (any, error) {
 		return rm.ExecuteWithResilience(ctx, operationType, circuitName, fn)
 	})
 }
 
-func (rm *ResilienceManager) ExecuteWithDegradation(ctx context.Context, operationType, circuitName, fallbackStrategy string, primary func() (interface{}, error)) (interface{}, error) {
+func ExecuteWithRetry[T any](rm *ResilienceManager, ctx context.Context, operationType, circuitName string, fn func() (T, error)) (T, error) {
+	policy := rm.config.Retry
+	var retryPolicy *RetryPolicy
+
+	switch operationType {
+	case "network":
+		retryPolicy = policy.Network
+	case "storage":
+		retryPolicy = policy.Storage
+	case "search":
+		retryPolicy = policy.Search
+	case "replication":
+		retryPolicy = policy.Replication
+	default:
+		retryPolicy = DefaultRetryPolicy()
+	}
+
+	return Retry(ctx, retryPolicy, func() (T, error) {
+		return ExecuteWithResilience(rm, ctx, operationType, circuitName, fn)
+	})
+}
+
+func (rm *ResilienceManager) ExecuteWithDegradation(ctx context.Context, operationType, circuitName, fallbackStrategy string, primary func() (any, error)) (any, error) {
 	return rm.degradation.Execute(ctx, primary, fallbackStrategy)
 }
 

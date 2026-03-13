@@ -1,6 +1,7 @@
 package store
 
 import (
+	"math"
 	"testing"
 
 	"github.com/23skdu/longbow/internal/pq"
@@ -503,5 +504,125 @@ func FuzzQuantizer_RoundTrip(f *testing.F) {
 			assert.InDelta(t, original[i], decoded[i], float64(maxError)*2,
 				"Quantization error exceeds bounds at index %d", i)
 		}
+	})
+}
+
+// TestConvertFloat32ToUint8 tests the bounds-checked conversion function
+func TestConvertFloat32ToUint8(t *testing.T) {
+	t.Run("Normal range", func(t *testing.T) {
+		vec := []float32{0.0, 63.75, 127.5, 191.25, 255.0}
+		result, err := ConvertFloat32ToUint8(vec)
+		require.NoError(t, err)
+		require.Equal(t, len(vec), len(result))
+
+		assert.Equal(t, uint8(0), result[0])
+		assert.InDelta(t, uint8(64), result[1], 1)
+		assert.InDelta(t, uint8(128), result[2], 1)
+		assert.InDelta(t, uint8(191), result[3], 1)
+		assert.Equal(t, uint8(255), result[4])
+	})
+
+	t.Run("Negative values", func(t *testing.T) {
+		vec := []float32{-10.0, 0.0, 10.0}
+		result, err := ConvertFloat32ToUint8(vec)
+		require.NoError(t, err)
+		require.Equal(t, len(vec), len(result))
+
+		assert.Equal(t, uint8(0), result[0])
+		assert.InDelta(t, uint8(128), result[1], 1)
+		assert.Equal(t, uint8(255), result[2])
+	})
+
+	t.Run("Values above 255", func(t *testing.T) {
+		vec := []float32{0.0, 255.0, 510.0}
+		result, err := ConvertFloat32ToUint8(vec)
+		require.NoError(t, err)
+		require.Equal(t, len(vec), len(result))
+
+		assert.Equal(t, uint8(0), result[0])
+		assert.InDelta(t, uint8(128), result[1], 1)
+		assert.Equal(t, uint8(255), result[2])
+	})
+
+	t.Run("Negative values", func(t *testing.T) {
+		vec := []float32{-10.0, 0.0, 10.0}
+		result, err := ConvertFloat32ToUint8(vec)
+		require.NoError(t, err)
+		require.Equal(t, len(vec), len(result))
+
+		// Should scale from min to max: [-10, 10] -> [0, 255]
+		// -10 -> 0, 0 -> 127.5, 10 -> 255
+		assert.Equal(t, uint8(0), result[0])
+		assert.InDelta(t, uint8(128), result[1], 1) // 127.5 -> 127 or 128
+		assert.Equal(t, uint8(255), result[2])
+	})
+
+	t.Run("Values above 255", func(t *testing.T) {
+		vec := []float32{0.0, 255.0, 510.0}
+		result, err := ConvertFloat32ToUint8(vec)
+		require.NoError(t, err)
+		require.Equal(t, len(vec), len(result))
+
+		// Should scale from min to max: [0, 510] -> [0, 255]
+		assert.Equal(t, uint8(0), result[0])
+		assert.InDelta(t, uint8(128), result[1], 1) // 255 -> 127.5 -> 127 or 128
+		assert.Equal(t, uint8(255), result[2])
+	})
+
+	t.Run("All same values", func(t *testing.T) {
+		vec := []float32{100.0, 100.0, 100.0}
+		result, err := ConvertFloat32ToUint8(vec)
+		require.NoError(t, err)
+		require.Equal(t, len(vec), len(result))
+
+		// All values should be clamped to 100
+		for _, v := range result {
+			assert.Equal(t, uint8(100), v)
+		}
+	})
+
+	t.Run("All same negative values", func(t *testing.T) {
+		vec := []float32{-10.0, -10.0, -10.0}
+		result, err := ConvertFloat32ToUint8(vec)
+		require.NoError(t, err)
+		require.Equal(t, len(vec), len(result))
+
+		// All values should be clamped to 0
+		for _, v := range result {
+			assert.Equal(t, uint8(0), v)
+		}
+	})
+
+	t.Run("All same values above 255", func(t *testing.T) {
+		vec := []float32{300.0, 300.0, 300.0}
+		result, err := ConvertFloat32ToUint8(vec)
+		require.NoError(t, err)
+		require.Equal(t, len(vec), len(result))
+
+		// All values should be clamped to 255
+		for _, v := range result {
+			assert.Equal(t, uint8(255), v)
+		}
+	})
+
+	t.Run("Empty vector", func(t *testing.T) {
+		vec := []float32{}
+		result, err := ConvertFloat32ToUint8(vec)
+		require.NoError(t, err)
+		require.Equal(t, 0, len(result))
+	})
+
+	t.Run("NaN values", func(t *testing.T) {
+		vec := []float32{0.0, float32(math.NaN()), 100.0}
+		_, err := ConvertFloat32ToUint8(vec)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "NaN")
+	})
+
+	t.Run("Inf values", func(t *testing.T) {
+		vec := []float32{0.0, float32(math.Inf(1)), 100.0}
+		_, err := ConvertFloat32ToUint8(vec)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "Inf")
 	})
 }

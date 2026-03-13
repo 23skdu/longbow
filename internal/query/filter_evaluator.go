@@ -824,17 +824,13 @@ func (e *FilterEvaluator) EvaluateToArrowBoolean(mem memory.Allocator, rows int)
 		}
 	}
 
-	// Pack to Arrow Boolean
-	// Arrow booleans are bit-packed.
-	// We can't just pass []byte (0/1).
-	// We use builder for safety, though slowish.
-	// Optimization: Manual bit packing.
 	b := array.NewBooleanBuilder(mem)
 	b.Reserve(rows)
-	// Optimize this later with direct bit packing if needed
-	for _, v := range bitmap {
-		b.Append(v != 0)
+	bools := make([]bool, rows)
+	for i, v := range bitmap {
+		bools[i] = v != 0
 	}
+	b.AppendValues(bools, nil)
 	return b.NewBooleanArray(), nil
 }
 

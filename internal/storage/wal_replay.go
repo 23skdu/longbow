@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"time"
 
@@ -73,40 +74,29 @@ func (e *StorageEngine) ReplayWAL(applier ApplierFunc) (uint64, error) {
 	// 1. Start Reader Goroutine
 	go e.walReaderRoutine(f, rawChan)
 
-	// 2. Start Decoder Goroutines
-	// Ideally we want ordering preserved for the applier.
-	// If applier is strictly sequential and order-dependent, parallel decode is tricky.
-	// However, Snappy decompression is the robust part.
-	// If we use multiple decoders, we might reorder.
-	// HNSW insertion *can* be concurrent if the underlying structure supports it, but our ApplierFunc is opaque.
-	// Assuming strict order is preferred for determinism, we can:
-	// A) Use a single decoder (still better than serial read+decode+apply).
-	// B) Use multiple decoders + a clamp (reorder buffer).
-	//
-	// Given Arrow IPC decoding interacts with memory allocator, let's start with 'runtime.NumCPU()' decoders
-	// BUT enforce order if we want to be safe.
-	// Actually, the simplest optimization that yields 90% benefit is splitting I/O and CPU.
-	// Single decoder + Single applier is already 2x pipeline.
-	// Let's stick to 1 decoder routine for now to guarantee order without complex buffer logic.
-	// Ideally, Snappy decode is the heavy part.
-	// TODO: Upgrade to parallel decoders with reorder buffer if single decoder is bottleneck.
-
-	var wgDecoders sync.WaitGroup
-	numDecoders := 1 // Keep ordered for now
-	wgDecoders.Add(numDecoders)
-
-	for i := 0; i < numDecoders; i++ {
-		go func() {
-			defer wgDecoders.Done()
-			e.walDecoderRoutine(rawChan, decodedChan)
-		}()
+	numDecoders := runtime.NumCPU()
+	if numDecoders < 1 {
+		numDecoders = 1
+	}
+	if numDecoders > 8 {
+		numDecoders = 8
 	}
 
-	// Close decodedChan when decoders are done
-	go func() {
-		wgDecoders.Wait()
-		close(decodedChan)
-	}()
+	log.Info().Int("numDecoders", numDecoders).Msg("ReplayWAL: Starting parallel decoders")
+
+	var wgDecoders sync.WaitGroup
+	wgDecoders.Add(numDecoders)
+
+	reorderedChan := make(chan decodedWALEntry, 100)
+
+	go e.reorderBufferRoutine(decodedChan, reorderedChan, &wgDecoders, numDecoders)
+
+	for i := 0; i < numDecoders; i++ {
+		go func(id int) {
+			defer wgDecoders.Done()
+			e.walDecoderRoutine(rawChan, decodedChan)
+		}(i)
+	}
 
 	// 3. Main Loop: Applier
 	var maxSeq uint64
@@ -308,6 +298,86 @@ func (e *StorageEngine) walDecoderRoutine(in <-chan rawWALBlock, out chan<- deco
 					}
 				}
 				r.Release()
+			}
+		}
+	}
+}
+
+// reorderBufferRoutine reorders decoded entries by sequence number. It collects entries from multiple decoder goroutines and outputs them in order.
+func (e *StorageEngine) reorderBufferRoutine(in chan decodedWALEntry, out chan decodedWALEntry, wgDecoders *sync.WaitGroup, numDecoders int) {
+	defer close(out)
+
+	// Map to hold out-of-order entries
+	buffer := make(map[uint64]decodedWALEntry)
+	nextSeq := uint64(0)
+	activeDecoders := numDecoders
+
+	// Track decoder completion
+	go func() {
+		wgDecoders.Wait()
+		// Signal that all decoders are done by sending a sentinel entry
+		// We use a special channel close signal instead
+	}()
+
+	for {
+		select {
+		case entry, ok := <-in:
+			if !ok {
+				// Input channel closed, all decoders are done
+				activeDecoders--
+				if activeDecoders == 0 {
+					// Flush remaining buffer
+					for len(buffer) > 0 {
+						if entry, exists := buffer[nextSeq]; exists {
+							delete(buffer, nextSeq)
+							out <- entry
+							nextSeq++
+						} else {
+							// We're missing entries, this shouldn't happen
+							// But we need to skip to next available
+							for seq := range buffer {
+								if seq > nextSeq {
+									nextSeq = seq
+									break
+								}
+							}
+						}
+					}
+					return
+				}
+				continue
+			}
+
+			// Handle errors immediately
+			if entry.err != nil {
+				out <- entry
+				return
+			}
+
+			// If this is the expected next sequence, output it
+			if entry.seq == nextSeq {
+				out <- entry
+				nextSeq++
+
+				// Check if we can output more from buffer
+				for {
+					if buffered, exists := buffer[nextSeq]; exists {
+						delete(buffer, nextSeq)
+						out <- buffered
+						nextSeq++
+					} else {
+						break
+					}
+				}
+			} else if entry.seq > nextSeq {
+				// Store out-of-order entry in buffer
+				buffer[entry.seq] = entry
+			} else {
+				// This shouldn't happen (seq < nextSeq), but handle it
+				log.Warn().
+					Uint64("seq", entry.seq).
+					Uint64("nextSeq", nextSeq).
+					Msg("ReplayWAL: Received entry with seq < nextSeq, dropping")
 			}
 		}
 	}

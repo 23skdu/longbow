@@ -1844,14 +1844,52 @@ func (h *ArrowHNSW) ImportGraph(r io.Reader) error {
 
 // ExportDelta implements VectorIndex.
 func (h *ArrowHNSW) ExportDelta(fromVersion uint64) (*types.DeltaSync, error) {
-	// Delta sync implementation (Phase 4.1 or later)
-	// For now return full state if version mismatch too large, or error.
-	return nil, fmt.Errorf("ExportDelta not implemented")
+	h.growMu.RLock()
+	defer h.growMu.RUnlock()
+
+	currentLen := h.locationStore.Len()
+	if fromVersion >= uint64(currentLen) {
+		return &types.DeltaSync{
+			FromVersion:  fromVersion,
+			ToVersion:    uint64(currentLen),
+			NewLocations: nil,
+			StartIndex:   int(fromVersion),
+		}, nil
+	}
+
+	newLocs := make([]core.Location, 0, currentLen-int(fromVersion))
+	idx := 0
+	h.locationStore.IterateMutable(func(_ VectorID, val *atomic.Uint64) {
+		if idx >= int(fromVersion) {
+			loc := core.UnpackLocation(val.Load())
+			newLocs = append(newLocs, loc)
+		}
+		idx++
+	})
+
+	return &types.DeltaSync{
+		FromVersion:  fromVersion,
+		ToVersion:    uint64(currentLen),
+		NewLocations: newLocs,
+		StartIndex:   int(fromVersion),
+	}, nil
 }
 
 // ApplyDelta implements VectorIndex.
 func (h *ArrowHNSW) ApplyDelta(delta *types.DeltaSync) error {
-	return fmt.Errorf("ApplyDelta not implemented")
+	if delta == nil || len(delta.NewLocations) == 0 {
+		return nil
+	}
+
+	h.growMu.Lock()
+	defer h.growMu.Unlock()
+
+	for i, loc := range delta.NewLocations {
+		globalID := uint32(delta.StartIndex + i)
+		h.locationStore.Set(VectorID(globalID), loc)
+	}
+
+	return nil
 }
 
 // GetParallelSearchConfig implements VectorIndex.

@@ -41,7 +41,7 @@ func NewShardedInvertedIndex() *ShardedInvertedIndex {
 // termShardIndex returns the shard index for a term
 func (idx *ShardedInvertedIndex) termShardIndex(term string) int {
 	h := fnv.New32a()
-	h.Write([]byte(term))
+	_, _ = h.Write([]byte(term)) // nosec G104
 	return int(h.Sum32() % invertedIndexShards)
 }
 

@@ -54,7 +54,7 @@ func NewBM25InvertedIndex(config BM25Config) *BM25InvertedIndex {
 // termShardIndex returns the shard index for a term
 func (idx *BM25InvertedIndex) termShardIndex(term string) int {
 	h := fnv.New32a()
-	h.Write([]byte(term))
+	_, _ = h.Write([]byte(term)) // nosec G104
 	return int(h.Sum32() % invertedIndexShards)
 }
 

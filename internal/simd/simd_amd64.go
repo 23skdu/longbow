@@ -631,10 +631,17 @@ func matchInt64AVX2(src []int64, val int64, op CompareOp, dst []byte) error {
 }
 
 func matchFloat32AVX2(src []float32, val float32, op CompareOp, dst []byte) error {
-	// NOTE: The AVX2 SIMD implementation in compare_amd64.s has a bug that causes
-	// incorrect results for arrays >= 8 elements. The generic fallback is correct.
-	// TODO: Fix the SIMD implementation
-	return matchFloat32Generic(src, val, op, dst)
+	if len(src) != len(dst) {
+		return errors.New("simd: length mismatch")
+	}
+	if !features.HasAVX2 {
+		return matchFloat32Generic(src, val, op, dst)
+	}
+	if len(src) == 0 {
+		return nil
+	}
+	matchFloat32AVX2Kernel(unsafe.Pointer(&src[0]), val, int(op), unsafe.Pointer(&dst[0]), len(src))
+	return nil
 }
 
 func matchInt64AVX512(src []int64, val int64, op CompareOp, dst []byte) error {

@@ -1,5 +1,6 @@
 package resilience
 
+// nosec G404 - math/rand is used for retry backoff, not security-sensitive
 import (
 	"context"
 	"fmt"

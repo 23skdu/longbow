@@ -1,5 +1,6 @@
 package main
 
+// nosec G404 - math/rand is used for benchmark test data, not security-sensitive
 import (
 	"context"
 	"encoding/json"

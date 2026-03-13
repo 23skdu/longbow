@@ -1,5 +1,6 @@
 package mesh
 
+// nosec G404 - math/rand is used for gossip protocol, not security-sensitive
 import (
 	"context"
 	"fmt"

@@ -50,9 +50,9 @@ func NewFSStorageBackend(path string, directIO bool) (*FSStorageBackend, error) 
 	var err error
 
 	if directIO {
-		f, err = OpenFileDirect(path, flags, 0644)
+		f, err = OpenFileDirect(path, flags, 0600)
 	} else {
-		f, err = os.OpenFile(path, flags, 0644)
+		f, err = os.OpenFile(path, flags, 0600)
 	}
 
 	if err != nil {

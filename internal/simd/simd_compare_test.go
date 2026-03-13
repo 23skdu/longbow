@@ -70,3 +70,64 @@ func TestMatchFloat32_Correctness(t *testing.T) {
 		})
 	}
 }
+
+func TestMatchFloat32_AVX2_LargeArray(t *testing.T) {
+	src8 := []float32{1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0}
+	dst8 := make([]byte, len(src8))
+
+	tests := []struct {
+		name     string
+		val      float32
+		op       CompareOp
+		expected []byte
+	}{
+		{"Eq_5.0", 5.0, CompareEq, []byte{0, 0, 0, 0, 1, 0, 0, 0}},
+		{"Neq_5.0", 5.0, CompareNeq, []byte{1, 1, 1, 1, 0, 1, 1, 1}},
+		{"Gt_4.5", 4.5, CompareGt, []byte{0, 0, 0, 0, 1, 1, 1, 1}},
+		{"Ge_5.0", 5.0, CompareGe, []byte{0, 0, 0, 0, 1, 1, 1, 1}},
+		{"Lt_5.0", 5.0, CompareLt, []byte{1, 1, 1, 1, 0, 0, 0, 0}},
+		{"Le_5.0", 5.0, CompareLe, []byte{1, 1, 1, 1, 1, 0, 0, 0}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			for i := range dst8 {
+				dst8[i] = 255
+			}
+			MatchFloat32(src8, tc.val, tc.op, dst8)
+			for i, v := range dst8 {
+				if v != tc.expected[i] {
+					t.Errorf("Index %d: expected %d, got %d", i, tc.expected[i], v)
+				}
+			}
+		})
+	}
+
+	src16 := []float32{1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0}
+	dst16 := make([]byte, len(src16))
+	expected16 := []byte{0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+
+	for i := range dst16 {
+		dst16[i] = 255
+	}
+	MatchFloat32(src16, 5.0, CompareEq, dst16)
+	for i, v := range dst16 {
+		if v != expected16[i] {
+			t.Errorf("Index %d: expected %d, got %d", i, expected16[i], v)
+		}
+	}
+
+	src9 := []float32{1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0}
+	dst9 := make([]byte, len(src9))
+	expected9 := []byte{0, 0, 0, 0, 1, 0, 0, 0, 0}
+
+	for i := range dst9 {
+		dst9[i] = 255
+	}
+	MatchFloat32(src9, 5.0, CompareEq, dst9)
+	for i, v := range dst9 {
+		if v != expected9[i] {
+			t.Errorf("Index %d: expected %d, got %d", i, expected9[i], v)
+		}
+	}
+}

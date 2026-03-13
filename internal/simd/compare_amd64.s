@@ -292,134 +292,79 @@ op_le_f32:
     VCMPPS  $2, Y0, Y1, Y2
 
 pack_f32:
-    // Y2 contains 0xFFFFFFFF or 0x00000000 per dword.
-    // Convert to 0x01 or 0x00 bytes.
-    VPSRLD  $31, Y2, Y2 // 0x00000001 or 0
+    // Y2 contains 0xFFFFFFFF or 0x00000000 per dword from VCMPPS.
+    // Extract sign bits to get 8-bit mask.
+    VMOVMSKPS Y2, DX // DX has 8 bits: bit i = sign bit of Y2[i]
     
-    // Pack dwords to words (sat unsigned, but values are 0/1 so safe)
-    VPACKUSDW Y2, Y2, Y2 // Y2: [w0..w7, w0..w7] (duplicated lanes? careful)
-    // VPACKUSDW behaves 128-bit lane-wise.
-    // Lane 0 (DW 0-3) -> Lane 0 (W 0-7, top zero filled).
-    // Result: [w0, w1, w2, w3, 0, 0, 0, 0] in low 128?
-    // No, packs 2 sources. We use same source.
-    // Dwords [A, B, C, D] -> Words [A, B, C, D, A, B, C, D].
-    // We only care about first 4 words in the lane?
-    // Actually, we want to extract bytes.
-    // Better: VPERMD to compact dwords?
-    // Or just VMOVMSKPS? 8 bits.
-    // 8 bits -> LUT (256 entries).
-    // Use LUT method again. It's robust.
+    // We need to expand 8-bit mask to 8 bytes (0x00 or 0x01).
+    // Use lookup table approach. We'll generate the LUT in assembly.
+    // For now, let's use a simple shift/mask approach in general purpose registers.
     
-    // Re-check VMOVMSKPS.
-    // It takes sign bit. If we did SRLD, sign bit is 0.
-    // We need original CMP mask (FF is sign bit set).
-    // So assume we kept Y2 as mask before SRLD.
+    // R9 = mask (8 bits in DX)
+    MOVQ    DX, R9
     
-    // Wait, I overwrote Y2.
-    // Let's rely on VMOVMSKPS from the CMP result directly.
-    // Y2 is mask.
-    VMOVMSKPS Y2, DX // DX has 8 bits.
+    // Clear R10 (will hold expanded bytes in low 64 bits)
+    XORQ    R10, R10
     
-    // We need to write 8 bytes.
-    // LUT approach:
-    // 8 bits is large table? 256 * 8 bytes = 2KB. 
-    // I defined 64 bytes LUT.
-    // Let's define a 2KB LUT?
-    // Or use PSHUFB with bitmask.
-    // PSHUFB with VPMOVMSKB equivalent?
-    // Is there a trick?
-    // VPBROADCASTQ of the 8 bits?
-    // PEXT/PDEP (BMI2)?
-    // PDEP(mask, 0x0101010101010101)?
-    // Mask has 8 bits. Target has 8 bytes.
-    // We want bit `i` to go to byte `i` pos 0.
-    // 0x0101... is source.
-    // PDEP spreads the bits of source to positions marked by mask.
-    // That's different.
-    // We want: if bit `i` is set, byte `i` is `1`.
-    // Valid approach:
-    // Broadcast `0x0101010101010101` (8 bytes of 1s) to R9.
-    // Mask `M` (8 bits).
-    // We want `dest` where byte `i` = `((M >> i) & 1)`.
-    // This is `(ones & expanded_mask)`.
-    // How to expand 8 bits `1101...` to `FF00FF...` or `010001...`?
-    // `PDEP` R9, mask?
-    // If mask is `...1`, PDEP puts first bit of source to pos 0.
-    // If mask is `...101`, PDEP puts first bit of source to pos 0, second bit to pos 2.
-    // This assumes source bits fill the holes.
-    // We want the presence of bit in mask to dictate output?
-    // `PDEP` mask, ones64?
-    // `ones64` has `1` at `0, 8, 16...`.
-    // Mask has bits.
-    // If mask bit 0 is 1, it takes bit from `ones64` pos 0 (which is 1).
-    // If mask bit 1 is 1, it takes bit from `ones64` pos ? (next set bit in ones64?).
-    // No, PDEP is Scatter. source bits are contiguous.
-    // It scatters source bits to positions where `mask` has 1s.
-    // If we use PDEP(mask, ones64).
-    // `mask` (source) bits scattered to `ones64` (control) positions?
-    // No. `PDEP(src, mask)`.
-    // `src` bits are scattered to positions set in `mask`.
-    // This implies `mask` determines positions.
-    // Not what we want.
+    // Expand each bit to a byte position
+    // We'll use a loop-like approach with explicit instructions
     
-    // We want to map `1` bit to `1` byte (value 1).
-    // Loop 8 times? Slow.
+    // Bit 0 -> byte 0: (mask >> 0) & 1
+    MOVQ    R9, R11
+    ANDQ    $1, R11
+    MOVQ    R11, R10  // Byte 0
     
-    // AVX2 alternative:
-    // Use `VPERMD` with standard index vector?
-    // We can just dump 0/1 dwords to stack and compact?
+    // Bit 1 -> byte 1: (mask >> 1) & 1, shifted to byte 1 position
+    MOVQ    R9, R11
+    SHRQ    $1, R11
+    ANDQ    $1, R11
+    SHLQ    $8, R11   // Shift to byte 1 position
+    ORQ     R11, R10
     
-    // Go back to: `VPSRLD $31`.
-    // Result: 8 Dwords of value 0 or 1.
-    // [0/1, 0/1, 0/1, 0/1] [0/1, 0/1, 0/1, 0/1]
-    // We want to pack them to 8 bytes.
-    // VPERMD indices `[0, 4, 8, 12, ...]`?
-    // VPERMD can fetch from any element.
-    // Create index vector `[0, 4, --, --, 1, 5, --, --]` ?
-    // Complex.
+    // Bit 2 -> byte 2
+    MOVQ    R9, R11
+    SHRQ    $2, R11
+    ANDQ    $1, R11
+    SHLQ    $16, R11
+    ORQ     R11, R10
     
-    // Simple way with packing:
-    // Y2: [d0, d1, d2, d3] [d4, d5, d6, d7]
-    // VPACKSSDW Y2, Y2 -> Y2 ([w0, w1, w2, w3, w0.., w4, w5, w6, w7, w4..])
-    // The lanes are separate.
-    // Lane 0: d0..d3 -> w0..w3 (low 64), w0..w3 (high 64).
-    // Lane 1: d4..d7 -> w4..w7 (low 64), w4..w7 (high 64).
-    // Result Y2: [w0..w3, w0..w3, w4..w7, w4..w7].
-    // Permute/Shuffle words to bring w4..w7 adjacent to w0..w3?
-    // VPERMQ Y2, $0xD8 (3, 1, 2, 0) -> [w0..w3, w4..w7, ...] ?
-    // 0xD8: 11 01 10 00.
-    // Lane 0 (00) is w0..w3. Lane 2 (10) is w4..w7.
-    // VPERMQ indices operate on qwords (64-bit).
-    // Y2 has 4 qwords: Q0(w0..3), Q1(w0..3), Q2(w4..7), Q3(w4..7).
-    // We want Q0 and Q2.
-    // VPERMQ $0x04 (00 00 01 02)? No.
-    // VPERMQ $0x08 (0 0 2 0) -> Q0, Q2, Q0, Q0.
-    // Result: [w0..3, w4..7, ...] in low 128.
-    // Y2 now has [vals, vals, garbage].
-    // Now we have 8 words: [w0..w7].
-    // Pack words to bytes.
-    // VPACKUSWB Y2, Y2 -> [b0..b7, b0..b7, ...].
-    // Low 64 bits contains b0..b7.
-    // MOVQ lower XMM to dst.
+    // Bit 3 -> byte 3
+    MOVQ    R9, R11
+    SHRQ    $3, R11
+    ANDQ    $1, R11
+    SHLQ    $24, R11
+    ORQ     R11, R10
     
-    // Sequence:
-    // 1. VPSRLD $31, Y2.
-    // 2. VPACKSSDW Y2, Y2, Y2. (Dword -> Word, signed saturation handles 0/1)
-    // 3. VPERMQ $0xD8, Y2, Y2 (Order lanes to adjacent qwords: 0, 2, 1, 3 -> Q0, Q2, Q1, Q3).
-    //    Actually we just want Q0 (lane0 low) and Q2 (lane1 low) to be adjacent.
-    //    Use $0x08 -> Q0(0), Q2(2), Q0(0), Q0(0). Low 128 is correct.
-    // 4. VPACKUSWB Y2, Y2, Y2. (Word -> Byte). 
-    //    Pack inputs [A, B] -> [A', B'].
-    //    Our input A is [w0..w7]. B is same.
-    //    Result: [b0..b7, b0..b7, ...].
-    // 5. MOVQ X2, (DI). (Write 8 bytes).
+    // Bit 4 -> byte 4
+    MOVQ    R9, R11
+    SHRQ    $4, R11
+    ANDQ    $1, R11
+    SHLQ    $32, R11
+    ORQ     R11, R10
     
-    VPSRLD  $31, Y2, Y2 // 0 or 1
-    VPACKSSDW Y2, Y2, Y2 // Words
-    VPERMQ  $0x08, Y2, Y2 // Bring Q0, Q2 to low 128
-    VPACKUSWB Y2, Y2, Y2 // Bytes
+    // Bit 5 -> byte 5
+    MOVQ    R9, R11
+    SHRQ    $5, R11
+    ANDQ    $1, R11
+    SHLQ    $40, R11
+    ORQ     R11, R10
     
-    MOVQ    X2, (DI)
+    // Bit 6 -> byte 6
+    MOVQ    R9, R11
+    SHRQ    $6, R11
+    ANDQ    $1, R11
+    SHLQ    $48, R11
+    ORQ     R11, R10
+    
+    // Bit 7 -> byte 7
+    MOVQ    R9, R11
+    SHRQ    $7, R11
+    ANDQ    $1, R11
+    SHLQ    $56, R11
+    ORQ     R11, R10
+    
+    // Write the 8 bytes to destination
+    MOVQ    R10, (DI)
     
     ADDQ    $32, SI
     ADDQ    $8, DI

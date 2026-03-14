@@ -362,3 +362,72 @@ groups:
         annotations:
           summary: "High tombstone density"
           description: "Tombstones represent {{ $value | humanizePercentage }} of the index. Compaction recommended."
+
+  - name: longbow_gpu_alerts
+    rules:
+      - alert: LongbowGPUMemoryPressure
+        expr: longbow_gpu_memory_used_bytes / longbow_gpu_memory_total_bytes > 0.9
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "GPU memory pressure"
+          description: "GPU memory utilization is above 90%."
+
+      - alert: LongbowGPUIndexNotSynced
+        expr: longbow_gpu_index_size < (longbow_hnsw_node_count * 0.9)
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "GPU index desync"
+          description: "GPU index has fewer vectors than CPU index, sync may be failing."
+
+      - alert: LongbowGPUFallbackHigh
+        expr: rate(longbow_gpu_fallback_total[5m]) > 10
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High GPU fallback rate"
+          description: "GPU operations falling back to CPU at {{ $value }}/sec."
+
+  - name: longbow_adaptive_gc_alerts
+    rules:
+      - alert: LongbowAdaptiveGCHighGOGC
+        expr: longbow_adaptive_gc_current_gogc > 500
+        for: 10m
+        labels:
+          severity: info
+        annotations:
+          summary: "Adaptive GC targeting high GOGC"
+          description: "Adaptive GC has increased GOGC to {{ $value }}, indicating high memory pressure."
+
+      - alert: LongbowAdaptiveGCAllocationSpike
+        expr: rate(longbow_adaptive_gc_allocation_rate_bytes_per_sec[1m]) > 1e9
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Memory allocation spike"
+          description: "Allocation rate exceeded 1GB/sec in the last minute."
+
+  - name: longbow_storage_alerts
+    rules:
+      - alert: LongbowIOUringNotAvailable
+        expr: longbow_storage_iouring_available == 0 AND ONGBOW_STORAGE_USE_IOURING == 1
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "io_uring not available"
+          description: "io_uring storage is enabled but not available on this system."
+
+      - alert: LongbowHighIOWait
+        expr: rate(longbow_storage_io_wait_seconds_total[5m]) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High I/O wait time"
+          description: "I/O wait time is {{ $value }}/sec, indicating disk saturation."

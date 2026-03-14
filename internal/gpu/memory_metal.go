@@ -9,16 +9,40 @@ package gpu
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
 
-// Allocate Metal buffer
-void* metalMalloc(id<MTLDevice> device, size_t size) {
+// Cache line size for optimal memory access
+#define CACHE_LINE_SIZE 64
+
+// Aligned allocation helper
+void* metalMallocAligned(id<MTLDevice> device, size_t size, size_t alignment) {
     @autoreleasepool {
-        id<MTLBuffer> buffer = [device newBufferWithLength:size
+        // Metal buffers are naturally aligned, but ensure size is multiple of alignment
+        size_t alignedSize = (size + alignment - 1) & ~(alignment - 1);
+        id<MTLBuffer> buffer = [device newBufferWithLength:alignedSize
                                                     options:MTLResourceStorageModeShared];
         if (!buffer) {
             return NULL;
         }
         return (__bridge_retained void*)buffer;
     }
+}
+
+// Allocate Metal buffer with cache-line alignment
+void* metalMalloc(id<MTLDevice> device, size_t size) {
+    @autoreleasepool {
+        // Use 64-byte alignment for cache line optimal access
+        size_t alignedSize = (size + CACHE_LINE_SIZE - 1) & ~(CACHE_LINE_SIZE - 1);
+        id<MTLBuffer> buffer = [device newBufferWithLength:alignedSize
+                                                    options:MTLResourceStorageModeShared];
+        if (!buffer) {
+            return NULL;
+        }
+        return (__bridge_retained void*)buffer;
+    }
+}
+
+// Get optimal buffer length with alignment
+size_t metalAlignedSize(size_t size) {
+    return (size + CACHE_LINE_SIZE - 1) & ~(CACHE_LINE_SIZE - 1);
 }
 
 // Free Metal buffer
@@ -50,12 +74,34 @@ void metalMemcpyFromBuffer(void* dst, id<MTLBuffer> buffer, size_t size) {
         memcpy(dst, [buffer contents], size);
     }
 }
+
+// Get buffer contents pointer for zero-copy access
+void* metalBufferContents(void* buffer) {
+    @autoreleasepool {
+        id<MTLBuffer> mtlBuffer = (__bridge id<MTLBuffer>)buffer;
+        return [mtlBuffer contents];
+    }
+}
 */
 import "C"
 import (
 	"fmt"
 	"unsafe"
 )
+
+const (
+	cacheLineSize = 64
+)
+
+// AlignSize rounds up size to nearest cache line boundary
+func AlignSize(size int) int {
+	return (size + cacheLineSize - 1) & ^(cacheLineSize - 1)
+}
+
+// GetBufferContents returns direct pointer to Metal buffer contents for zero-copy
+func GetBufferContents(buffer unsafe.Pointer) unsafe.Pointer {
+	return C.metalBufferContents(buffer)
+}
 
 // allocateMetalMemory allocates memory using Metal
 func (p *GPUMemPool) allocateMetalMemory(size int64) (unsafe.Pointer, error) {

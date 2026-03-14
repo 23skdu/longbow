@@ -1,0 +1,49 @@
+{{- if .Values.gatewayAPI.enabled }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ include "longbow.fullname" . }}
+  labels:
+    {{- include "longbow.labels" . | nindent 4 }}
+  {{- with .Values.gatewayAPI.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.gatewayAPI.hostnames }}
+  hostnames:
+    {{- range .Values.gatewayAPI.hostnames }}
+    - {{ . | quote }}
+    {{- end }}
+  {{- end }}
+  {{- if .Values.gatewayAPI.parentRefs }}
+  parentRefs:
+    {{- toYaml .Values.gatewayAPI.parentRefs | nindent 4 }}
+  {{- else if .Values.gatewayAPI.className }}
+  parentRefs:
+    - kind: Gateway
+      name: {{ .Values.gatewayAPI.className }}
+      group: gateway.networking.k8s.io
+  {{- end }}
+  rules:
+    {{- range .Values.gatewayAPI.rules }}
+    - matches:
+        {{- range .matches }}
+        - path:
+            type: {{ .path.type | default "PathPrefix" }}
+            value: {{ .path.value | default "/" }}
+          {{- if .headers }}
+          headers:
+            {{- toYaml .headers | nindent 12 }}
+          {{- end }}
+        {{- end }}
+      backendRefs:
+        {{- range .backendRefs }}
+        - name: {{ .name }}
+          port: {{ .port }}
+          {{- if .weight }}
+          weight: {{ .weight }}
+          {{- end }}
+        {{- end }}
+    {{- end }}
+{{- end }}

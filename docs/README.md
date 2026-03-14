@@ -18,72 +18,71 @@ graph TB
 
     subgraph Core["Vector Store Core"]
         direction TB
-        Shards["Sharded HNSW Index (Dynamic CPU-based)"]
-        Sparse["Inverted Index (BM25/Sparse)"]
-        Arena["Slab Arena (Off-heap Vectors)"]
-        Pool["Bitmap & Result Pools (Optimized)"]
+        HNSW["HNSW Index (Sharded)"]
+        ArrowHNSW["Arrow HNSW (Zero-Copy)"]
+        IVF["IVF-Flat Index"]
+        DiskAnn["DiskANN Index"]
+    end
+
+    subgraph ML["ML & Inference"]
+        direction TB
+        Reranker["Cross-Encoder Reranker"]
+        ONNX["ONNX Metal Runtime"]
     end
 
     subgraph Durability["Persistence & WAL"]
         direction TB
         WAL["Write-Ahead Log (Batched)"]
         Snap["Parquet Snapshots"]
-        Storage["Local Disk / S3 Backend"]
+        Export["Export/Import (Binary)"]
     end
 
     Client <-->|"Flight Streams"| DS
     Client <--> MS
     LB --> Core
+    Core --> Reranker
+    Reranker --> ONNX
     Core --> WAL
     WAL --> Snap
-    Snap --> Storage
+    Snap --> Export
 ```
 
 ## Key Features
 
 * **Apache Arrow Flight Protocol**: Zero-copy data transfer.
+* **Multiple Index Types**: HNSW, ArrowHNSW, IVF-Flat, DiskANN
 * **Polymorphic Vector Support**: Native support for Float32, FP16, SQ8, PQ, BQ, and Int8.
 * **High-Dimensionality**: Optimized for up to 3072 dimensions with cache-line padding and blocked SIMD.
 * **In-Memory Storage**: Fast read/write operations.
-* **Prometheus Metrics**: Built-in observability.
+* **ML-Enhanced Search**: Cross-encoder reranking with ONNX/Metal support.
+* **Native Apple Silicon**: Metal-based ONNX runtime for M1/M2/M3 Macs.
+* **Persistence**: Export/Import, WAL, and Parquet Snapshots.
+* **Prometheus Metrics**: Built-in observability including ML inference metrics.
 * **Helm Deployment**: Easy installation on Kubernetes.
-* **Persistence**: Optional persistent storage (WAL + Snapshots) for data durability.
 * **Filtering**: Predicate pushdown for DoGet and Post-filtering for Vector Search.
-* **Mesh Replication**: Foundation for multi-node sync using DoExchange.
+* **Mesh Replication**: Multi-node sync using DoExchange.
 * **Security**: Configurable security contexts for Pods and Containers.
 
 ## Navigation
 
-* [Components](components.md)
-* [Usage Guide](usage.md)
-* [Helm Deployment Guide](helm.md)
-* [Arrow Protocol Spec](arrow-protocol.md)
+### Getting Started
+* [Usage Guide](usage.md) - Basic usage and examples
+* [Configuration](configuration.md) - Configuration options
+* [Helm Deployment](helm.md) - Kubernetes deployment
 
-## Observability & Metrics
+### Architecture
+* [Architecture Overview](architecture.md) - System design
+* [Components](components.md) - Core components
+* [Distributed Architecture](distributed_architecture.md) - Multi-node setup
 
-Longbow exposes Prometheus metrics on port `9090` at `/metrics`.
+### Features
+* [Vector Search](vectorsearch.md) - Search modes and filtering
+* [Reranking](rerank.md) - ML-enhanced reranking
+* [ONNX Metal Runtime](onnx.md) - Native Apple Silicon ML inference
+* [Persistence](persistence.md) - Data durability
+* [GPU Integration](gpu_integration.md) - GPU acceleration
 
-### Custom Metrics
-
-* `longbow_flight_ops_total`: Total number of Flight operations (DoGet,
-DoPut, etc.)
-* `longbow_flight_duration_seconds`: Histogram of operation latencies
-* `longbow_flight_bytes_read_total`: Total bytes read in operations
-* `longbow_flight_bytes_written_total`: Total bytes written in operations
-
-### Scrape Configuration
-
-The Helm chart includes annotations for Prometheus scraping:
-
-```yaml
-podAnnotations:
- prometheus.io/scrape: "true"
- prometheus.io/port: "9090"
- prometheus.io/path: "/metrics"
-```
-
-## Status Badges
-
-![CI](https://github.com/23skdu/longbow/actions/workflows/ci.yml/badge.svg)
-![Helm Validation](https://github.com/23skdu/longbow/actions/workflows/helm-validation.yml/badge.svg)
-![Markdown Lint](https://github.com/23skdu/longbow/actions/workflows/markdown-lint.yml/badge.svg)
+### Operations
+* [Metrics](metrics.md) - Prometheus metrics reference
+* [Troubleshooting](troubleshooting.md) - Common issues and solutions
+* [Security](security.md) - Security best practices

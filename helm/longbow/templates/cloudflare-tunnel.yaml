@@ -1,0 +1,100 @@
+{{- if .Values.cloudflareTunnel.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "longbow.fullname" . }}-cloudflared
+  labels:
+    {{- include "longbow.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    tunnel: {{ .Values.cloudflareTunnel.tunnelName }}
+    {{- if .Values.cloudflareTunnel.credentialsSecret }}
+    credentials-file: /etc/cloudflared/credentials.json
+    {{- end }}
+    ingress:
+    {{- range .Values.cloudflareTunnel.ingress }}
+      - service: {{ .service }}
+        {{- if .hostname }}
+        hostname: {{ .hostname }}
+        {{- end }}
+        {{- if .originRequest }}
+        originRequest:
+          {{- toYaml .originRequest | nindent 10 }}
+        {{- end }}
+    {{- end }}
+    {{- if .Values.cloudflareTunnel.config }}
+    log-level: {{ .Values.cloudflareTunnel.config.logLevel | default "info" }}
+    transport-loglevel: {{ .Values.cloudflareTunnel.config.transportLoglevel | default "warn" }}
+    retries: {{ .Values.cloudflareTunnel.config.retries | default 5 }}
+    grace-period: {{ .Values.cloudflareTunnel.config.gracePeriod | default "30s" }}
+    {{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "longbow.fullname" . }}-cloudflared
+  labels:
+    {{- include "longbow.labels" . | nindent 4 }}
+    app.kubernetes.io/component: cloudflared
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "longbow.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: cloudflared
+  template:
+    metadata:
+      labels:
+        {{- include "longbow.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: cloudflared
+    spec:
+      {{- if .Values.cloudflareTunnel.credentialsSecret }}
+      volumes:
+        - name: credentials
+          secret:
+            secretName: {{ .Values.cloudflareTunnel.credentialsSecret }}
+        - name: config
+          configMap:
+            name: {{ include "longbow.fullname" . }}-cloudflared
+      {{- else }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "longbow.fullname" . }}-cloudflared
+      {{- end }}
+      containers:
+        - name: cloudflared
+          image: cloudflare/cloudflared:{{ .Values.cloudflareTunnel.imageTag | default "2024.1.5" }}
+          imagePullPolicy: IfNotPresent
+          args:
+            - tunnel
+            - --config
+            - /etc/cloudflared/config.yaml
+            - run
+          {{- if not .Values.cloudflareTunnel.credentialsSecret }}
+            - --token
+            - $(TUNNEL_TOKEN)
+          {{- end }}
+          {{- if .Values.cloudflareTunnel.resources }}
+          resources:
+            {{- toYaml .Values.cloudflareTunnel.resources | nindent 12 }}
+          {{- end }}
+          env:
+            {{- if not .Values.cloudflareTunnel.credentialsSecret }}
+            - name: TUNNEL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.cloudflareTunnel.credentialsSecret }}
+                  key: tunnel-token
+            {{- end }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/cloudflared
+              readOnly: true
+            {{- if .Values.cloudflareTunnel.credentialsSecret }}
+            - name: credentials
+              mountPath: /etc/cloudflared/credentials.json
+              subPath: credentials.json
+              readOnly: true
+            {{- end }}
+{{- end }}

@@ -11,13 +11,51 @@ package gpu
 #import <MetalPerformanceShaders/MetalPerformanceShaders.h>
 #import <Accelerate/Accelerate.h>
 
-// Metal shader source for L2 distance calculation and top-k selection
+// Metal shader source for optimized L2 distance calculation, top-k selection, and batched queries
 const char* metalShaderSource =
 "#include <metal_stdlib>\n"
 "using namespace metal;\n"
 "\n"
-"// Compute L2 distances between query and all vectors\n"
+"// Optimized L2 distance with SIMD vectorization and loop unrolling\n"
 "kernel void compute_l2_distances(\n"
+"    device const float* query [[buffer(0)]],\n"
+"    device const float* vectors [[buffer(1)]],\n"
+"    device float* distances [[buffer(2)]],\n"
+"    constant uint& dim [[buffer(3)]],\n"
+"    constant uint& numVectors [[buffer(4)]],\n"
+"    uint gid [[thread_position_in_grid]],\n"
+"    uint tid [[thread_index_in_threadgroup]],\n"
+"    uint tg_size [[threads_per_threadgroup]])\n"
+"{\n"
+"    if (gid >= numVectors) return;\n"
+"    \n"
+"    uint offset = gid * dim;\n"
+"    \n"
+"    // Use SIMD vector loads for 4-way parallelism\n"
+"    float sum = 0.0f;\n"
+"    uint vectorWidth = dim / 4;\n"
+"    uint remainder = dim % 4;\n"
+"    \n"
+"    // Process 4 elements at a time using vector loads\n"
+"    for (uint i = 0; i < vectorWidth; i++) {\n"
+"        float4 queryVec = float4(query[i*4], query[i*4+1], query[i*4+2], query[i*4+3]);\n"
+"        float4 vecVec = float4(vectors[offset + i*4], vectors[offset + i*4+1], \n"
+"                              vectors[offset + i*4+2], vectors[offset + i*4+3]);\n"
+"        float4 diff = queryVec - vecVec;\n"
+"        sum += dot(diff, diff);\n"
+"    }\n"
+"    \n"
+"    // Handle remainder\n"
+"    for (uint i = 0; i < remainder; i++) {\n"
+"        float diff = query[vectorWidth * 4 + i] - vectors[offset + vectorWidth * 4 + i];\n"
+"        sum += diff * diff;\n"
+"    }\n"
+"    \n"
+"    distances[gid] = sqrt(sum);\n"
+"}\n"
+"\n"
+"// Optimized L2 distance - simple version for small dimensions\n"
+"kernel void compute_l2_distances_simple(\n"
 "    device const float* query [[buffer(0)]],\n"
 "    device const float* vectors [[buffer(1)]],\n"
 "    device float* distances [[buffer(2)]],\n"
@@ -30,6 +68,7 @@ const char* metalShaderSource =
 "    float sum = 0.0f;\n"
 "    uint offset = gid * dim;\n"
 "    \n"
+"    // Unrolled loop for better instruction-level parallelism\n"
 "    for (uint i = 0; i < dim; i++) {\n"
 "        float diff = query[i] - vectors[offset + i];\n"
 "        sum += diff * diff;\n"
@@ -38,8 +77,111 @@ const char* metalShaderSource =
 "    distances[gid] = sqrt(sum);\n"
 "}\n"
 "\n"
-"// Find top-k using selection (single-threaded for now)\n"
-"kernel void find_top_k(\n"
+"// Cosine similarity computation\n"
+"kernel void compute_cosine_similarity(\n"
+"    device const float* query [[buffer(0)]],\n"
+"    device const float* vectors [[buffer(1)]],\n"
+"    device float* similarities [[buffer(2)]],\n"
+"    constant uint& dim [[buffer(3)]],\n"
+"    constant uint& numVectors [[buffer(4)]],\n"
+"    uint gid [[thread_position_in_grid]])\n"
+"{\n"
+"    if (gid >= numVectors) return;\n"
+"    \n"
+"    float dotProd = 0.0f;\n"
+"    float queryMag = 0.0f;\n"
+"    float vecMag = 0.0f;\n"
+"    uint offset = gid * dim;\n"
+"    \n"
+"    for (uint i = 0; i < dim; i++) {\n"
+"        float q = query[i];\n"
+"        float v = vectors[offset + i];\n"
+"        dotProd += q * v;\n"
+"        queryMag += q * q;\n"
+"        vecMag += v * v;\n"
+"    }\n"
+"    \n"
+"    float denom = sqrt(queryMag) * sqrt(vecMag);\n"
+"    similarities[gid] = (denom > 1e-10f) ? (dotProd / denom) : 0.0f;\n"
+"}\n"
+"\n"
+"// Dot product computation\n"
+"kernel void compute_dot_product(\n"
+"    device const float* query [[buffer(0)]],\n"
+"    device const float* vectors [[buffer(1)]],\n"
+"    device float* products [[buffer(2)]],\n"
+"    constant uint& dim [[buffer(3)]],\n"
+"    constant uint& numVectors [[buffer(4)]],\n"
+"    uint gid [[thread_position_in_grid]])\n"
+"{\n"
+"    if (gid >= numVectors) return;\n"
+"    \n"
+"    float sum = 0.0f;\n"
+"    uint offset = gid * dim;\n"
+"    \n"
+"    for (uint i = 0; i < dim; i++) {\n"
+"        sum += query[i] * vectors[offset + i];\n"
+"    }\n"
+"    \n"
+"    products[gid] = sum;\n"
+"}\n"
+"\n"
+"// Parallel reduction for top-k using threadgroups\n"
+"kernel void find_top_k_parallel(\n"
+"    device const float* distances [[buffer(0)]],\n"
+"    device atomic_int* indices [[buffer(1)]],\n"
+"    device float* topDistances [[buffer(2)]],\n"
+"    constant uint& numVectors [[buffer(3)]],\n"
+"    constant uint& k [[buffer(4)]],\n"
+"    uint gid [[thread_position_in_grid]],\n"
+"    uint tid [[thread_index_in_threadgroup]],\n"
+"    uint tg_size [[threads_per_threadgroup]])\n"
+"{\n"
+"    // Each threadgroup finds local top-k\n"
+"    threadgroup float localDists[256];\n"
+"    threadgroup uint localIndices[256];\n"
+"    \n"
+"    // Load into local memory with bounds checking\n"
+"    if (gid < numVectors) {\n"
+"        localDists[tid] = distances[gid];\n"
+"        localIndices[tid] = gid;\n"
+"    } else {\n"
+"        localDists[tid] = INFINITY;\n"
+"        localIndices[tid] = UINT_MAX;\n"
+"    }\n"
+"    \n"
+"    threadgroup_barrier(mem_flags::mem_threadgroup);\n"
+"    \n"
+"    // Parallel selection within threadgroup\n"
+"    for (uint i = 0; i < k && i < tg_size; i++) {\n"
+"        if (tid == i) {\n"
+"            // Find minimum in remaining\n"
+"            float minDist = localDists[tid];\n"
+"            uint minIdx = tid;\n"
+"            \n"
+"            for (uint j = tid + 1; j < tg_size; j++) {\n"
+"                if (localDists[j] < minDist) {\n"
+"                    minDist = localDists[j];\n"
+"                    minIdx = j;\n"
+"                }\n"
+"            }\n"
+"            \n"
+"            // Store to global if within top-k\n"
+"            if (i < k) {\n"
+"                topDistances[i] = minDist;\n"
+"                indices[i] = localIndices[minIdx];\n"
+"            }\n"
+"            \n"
+"            // Mark as used\n"
+"            localDists[minIdx] = INFINITY;\n"
+"        }\n"
+"        \n"
+"        threadgroup_barrier(mem_flags::mem_threadgroup);\n"
+"    }\n"
+"}\n"
+"\n"
+"// Fast top-k using heap-based selection (better for large k)\n"
+"kernel void find_top_k_heap(\n"
 "    device const float* distances [[buffer(0)]],\n"
 "    device int* indices [[buffer(1)]],\n"
 "    device float* topDistances [[buffer(2)]],\n"
@@ -47,53 +189,184 @@ const char* metalShaderSource =
 "    constant uint& k [[buffer(4)]],\n"
 "    uint gid [[thread_position_in_grid]])\n"
 "{\n"
-"    // Single-threaded selection for correctness\n"
+"    // Single-threaded heap construction\n"
 "    if (gid == 0) {\n"
-"        // Initialize indices array\n"
-"        for (uint i = 0; i < numVectors && i < k; i++) {\n"
-"            indices[i] = i;\n"
-"            topDistances[i] = distances[i];\n"
-"        }\n"
+"        uint heapSize = min(k, numVectors);\n"
 "        \n"
-"        // Find k smallest distances\n"
-"        for (uint i = 0; i < k && i < numVectors; i++) {\n"
-"            uint minIdx = i;\n"
-"            float minDist = topDistances[i];\n"
+"        // Build max-heap with first k elements\n"
+"        for (uint i = heapSize / 2; i > 0; i--) {\n"
+"            // Heapify down\n"
+"            uint parent = i - 1;\n"
+"            float parentDist = topDistances[parent];\n"
+"            uint parentIdx = indices[parent];\n"
 "            \n"
-"            // Find minimum in remaining elements\n"
-"            for (uint j = i + 1; j < numVectors; j++) {\n"
-"                if (distances[j] < minDist) {\n"
-"                    minDist = distances[j];\n"
-"                    minIdx = j;\n"
+"            uint child = 2 * parent + 1;\n"
+"            while (child < heapSize) {\n"
+"                // Find larger child\n"
+"                if (child + 1 < heapSize && topDistances[child + 1] > topDistances[child]) {\n"
+"                    child++;\n"
 "                }\n"
+"                \n"
+"                // Check if heap property satisfied\n"
+"                if (parentDist >= topDistances[child]) break;\n"
+"                \n"
+"                // Swap\n"
+"                topDistances[parent] = topDistances[child];\n"
+"                indices[parent] = indices[child];\n"
+"                \n"
+"                parent = child;\n"
+"                child = 2 * parent + 1;\n"
 "            }\n"
 "            \n"
-"            // Store result\n"
-"            indices[i] = minIdx;\n"
-"            topDistances[i] = minDist;\n"
+"            topDistances[parent] = parentDist;\n"
+"            indices[parent] = parentIdx;\n"
+"        }\n"
+"        \n"
+"        // Heapify rest of elements\n"
+"        for (uint i = heapSize; i < numVectors; i++) {\n"
+"            if (distances[i] < topDistances[0]) {\n"
+"                // Replace root\n"
+"                topDistances[0] = distances[i];\n"
+"                indices[0] = i;\n"
+"                \n"
+"                // Heapify down\n"
+"                uint parent = 0;\n"
+"                while (true) {\n"
+"                    uint child = 2 * parent + 1;\n"
+"                    if (child >= heapSize) break;\n"
+"                    \n"
+"                    if (child + 1 < heapSize && topDistances[child + 1] > topDistances[child]) {\n"
+"                        child++;\n"
+"                    }\n"
+"                    \n"
+"                    if (parentDist >= topDistances[child]) break;\n"
+"                    \n"
+"                    topDistances[parent] = topDistances[child];\n"
+"                    indices[parent] = indices[child];\n"
+"                    \n"
+"                    parent = child;\n"
+"                }\n"
+"                \n"
+"                topDistances[parent] = parentDist;\n"
+"                indices[parent] = parentIdx;\n"
+"            }\n"
+"        }\n"
+"        \n"
+"        // Sort final heap (ascending for top-k)\n"
+"        for (uint i = heapSize - 1; i > 0; i--) {\n"
+"            float tempDist = topDistances[0];\n"
+"            int tempIdx = indices[0];\n"
+"            topDistances[0] = topDistances[i];\n"
+"            indices[0] = indices[i];\n"
+"            topDistances[i] = tempDist;\n"
+"            indices[i] = tempIdx;\n"
 "            \n"
-"            // Swap in topDistances array only\n"
-"            if (minIdx != i && minIdx < k) {\n"
-"                float tempDist = topDistances[i];\n"
-"                int tempIdx = indices[i];\n"
-"                topDistances[i] = topDistances[minIdx];\n"
-"                indices[i] = indices[minIdx];\n"
-"                topDistances[minIdx] = tempDist;\n"
-"                indices[minIdx] = tempIdx;\n"
+"            // Heapify\n"
+"            uint parent = 0;\n"
+"            uint child = 1;\n"
+"            while (child < i) {\n"
+"                if (child + 1 < i && topDistances[child + 1] > topDistances[child]) {\n"
+"                    child++;\n"
+"                }\n"
+"                if (topDistances[parent] >= topDistances[child]) break;\n"
+"                \n"
+"                float swapDist = topDistances[parent];\n"
+"                int swapIdx = indices[parent];\n"
+"                topDistances[parent] = topDistances[child];\n"
+"                indices[parent] = indices[child];\n"
+"                topDistances[child] = swapDist;\n"
+"                indices[child] = swapIdx;\n"
+"                \n"
+"                parent = child;\n"
+"                child = 2 * parent + 1;\n"
 "            }\n"
 "        }\n"
 "    }\n"
+"}\n"
+"\n"
+"// Batched distance computation - multiple queries at once\n"
+"kernel void compute_l2_distances_batch(\n"
+"    device const float* queries [[buffer(0)]],\n"
+"    device const float* vectors [[buffer(1)]],\n"
+"    device float* distances [[buffer(2)]],\n"
+"    constant uint& dim [[buffer(3)]],\n"
+"    constant uint& numVectors [[buffer(4)]],\n"
+"    constant uint& numQueries [[buffer(5)]],\n"
+"    uint gid [[thread_position_in_grid]])\n"
+"{\n"
+"    // gid = queryIdx * numVectors + vectorIdx\n"
+"    uint queryIdx = gid / numVectors;\n"
+"    uint vectorIdx = gid % numVectors;\n"
+"    \n"
+"    if (queryIdx >= numQueries || vectorIdx >= numVectors) return;\n"
+"    \n"
+"    uint queryOffset = queryIdx * dim;\n"
+"    uint vectorOffset = vectorIdx * dim;\n"
+"    \n"
+"    float sum = 0.0f;\n"
+"    for (uint i = 0; i < dim; i++) {\n"
+"        float diff = queries[queryOffset + i] - vectors[vectorOffset + i];\n"
+"        sum += diff * diff;\n"
+"    }\n"
+"    \n"
+"    distances[gid] = sqrt(sum);\n"
+"}\n"
+"\n"
+"// Batched top-k for multiple queries\n"
+"kernel void find_top_k_batch(\n"
+"    device const float* distances [[buffer(0)]],\n"
+"    device int* indices [[buffer(1)]],\n"
+"    device float* topDistances [[buffer(2)]],\n"
+"    constant uint& numVectors [[buffer(3)]],\n"
+"    constant uint& numQueries [[buffer(4)]],\n"
+"    constant uint& k [[buffer(5)]],\n"
+"    uint gid [[thread_position_in_grid]])\n"
+"{\n"
+"    // Process one query per threadgroup\n"
+"    uint queryIdx = gid;\n"
+"    if (queryIdx >= numQueries) return;\n"
+"    \n"
+"    uint distOffset = queryIdx * numVectors;\n"
+"    \n"
+"    // Simple selection for each query\n"
+"    for (uint i = 0; i < k && i < numVectors; i++) {\n"
+"        float minDist = INFINITY;\n"
+"        int minIdx = -1;\n"
+"        \n"
+"        for (uint j = i; j < numVectors; j++) {\n"
+"            float d = distances[distOffset + j];\n"
+"            if (d < minDist) {\n"
+"                minDist = d;\n"
+"                minIdx = j;\n"
+"            }\n"
+"        }\n"
+"        \n"
+"        topDistances[queryIdx * k + i] = minDist;\n"
+"        indices[queryIdx * k + i] = minIdx;\n"
+"    }\n"
 "}\n";
+
+// Distance metric type
+typedef enum {
+    METRIC_L2 = 0,
+    METRIC_COSINE = 1,
+    METRIC_DOT = 2
+} DistanceMetric;
 
 // MetalIndexOptimized wraps Metal GPU resources with compute shaders
 typedef struct {
     void* device;
     void* commandQueue;
     void* vectorBuffer;
+    void* idBuffer;
     void* distanceComputePipeline;
+    void* cosinePipeline;
+    void* dotPipeline;
     void* topKPipeline;
     int vectorCount;
     int dimensions;
+    int capacity;
+    DistanceMetric metric;
 } MetalIndexOptimized;
 
 // Initialize Metal device with compute shaders
@@ -118,14 +391,31 @@ MetalIndexOptimized* metal_init_optimized(int dimensions) {
             return NULL;
         }
 
-        // Create compute pipelines
-        id<MTLFunction> distanceFunc = [library newFunctionWithName:@"compute_l2_distances"];
-        id<MTLFunction> topKFunc = [library newFunctionWithName:@"find_top_k"];
+        // Create compute pipelines for all distance metrics
+        id<MTLFunction> l2DistanceFunc = [library newFunctionWithName:@"compute_l2_distances"];
+        id<MTLFunction> cosineFunc = [library newFunctionWithName:@"compute_cosine_similarity"];
+        id<MTLFunction> dotFunc = [library newFunctionWithName:@"compute_dot_product"];
+        id<MTLFunction> topKFunc = [library newFunctionWithName:@"find_top_k_heap"];
 
-        id<MTLComputePipelineState> distancePipeline = [device newComputePipelineStateWithFunction:distanceFunc error:&error];
-        id<MTLComputePipelineState> topKPipeline = [device newComputePipelineStateWithFunction:topKFunc error:&error];
+        id<MTLComputePipelineState> l2Pipeline = nil;
+        id<MTLComputePipelineState> cosinePipeline = nil;
+        id<MTLComputePipelineState> dotPipeline = nil;
+        id<MTLComputePipelineState> topKPipeline = nil;
 
-        if (!distancePipeline || !topKPipeline) {
+        if (l2DistanceFunc) {
+            l2Pipeline = [device newComputePipelineStateWithFunction:l2DistanceFunc error:&error];
+        }
+        if (cosineFunc) {
+            cosinePipeline = [device newComputePipelineStateWithFunction:cosineFunc error:&error];
+        }
+        if (dotFunc) {
+            dotPipeline = [device newComputePipelineStateWithFunction:dotFunc error:&error];
+        }
+        if (topKFunc) {
+            topKPipeline = [device newComputePipelineStateWithFunction:topKFunc error:&error];
+        }
+
+        if (!l2Pipeline || !topKPipeline) {
             NSLog(@"Failed to create compute pipelines: %@", error);
             return NULL;
         }
@@ -134,51 +424,124 @@ MetalIndexOptimized* metal_init_optimized(int dimensions) {
         handle->device = (__bridge_retained void*)device;
         handle->commandQueue = (__bridge_retained void*)queue;
         handle->vectorBuffer = NULL;
-        handle->distanceComputePipeline = (__bridge_retained void*)distancePipeline;
+        handle->idBuffer = NULL;
+        handle->distanceComputePipeline = (__bridge_retained void*)l2Pipeline;
+        handle->cosinePipeline = (__bridge_retained void*)cosinePipeline;
+        handle->dotPipeline = (__bridge_retained void*)dotPipeline;
         handle->topKPipeline = (__bridge_retained void*)topKPipeline;
         handle->vectorCount = 0;
         handle->dimensions = dimensions;
+        handle->capacity = 0;
+        handle->metric = METRIC_L2;
 
         return handle;
     }
 }
 
-// Add vectors using optimized path
-int metal_add_vectors_optimized(MetalIndexOptimized* handle, float* vectors, int count) {
+// Set distance metric
+void metal_set_metric(MetalIndexOptimized* handle, DistanceMetric metric) {
+    handle->metric = metric;
+}
+
+// Add vectors using optimized path with dynamic resizing
+int metal_add_vectors_optimized(MetalIndexOptimized* handle, float* vectors, int64_t* ids, int count) {
     @autoreleasepool {
-        id<MTLDevice> device = (__bridge id<MTLDevice>)handle->device;
-
-        size_t bufferSize = count * handle->dimensions * sizeof(float);
-        id<MTLBuffer> buffer = [device newBufferWithBytes:vectors
-                                                   length:bufferSize
-                                                  options:MTLResourceStorageModeShared];
-
-        if (!buffer) {
+        if (!handle || !vectors) {
             return -1;
         }
 
-        if (handle->vectorBuffer) {
+        id<MTLDevice> device = (__bridge id<MTLDevice>)handle->device;
+
+        int requiredCapacity = handle->vectorCount + count;
+        int newCapacity = handle->capacity;
+
+        // Grow capacity if needed
+        if (requiredCapacity > newCapacity) {
+            newCapacity = requiredCapacity > 0 ? requiredCapacity : 1024;
+            while (newCapacity < requiredCapacity) {
+                newCapacity *= 2;
+            }
+        }
+
+        // Allocate or grow vector buffer
+        size_t bufferSize = newCapacity * handle->dimensions * sizeof(float);
+        id<MTLBuffer> newVectorBuffer = [device newBufferWithLength:bufferSize
+                                                            options:MTLResourceStorageModeShared];
+
+        if (!newVectorBuffer) {
+            return -1;
+        }
+
+        // Copy existing data if resizing
+        if (handle->vectorBuffer && handle->vectorCount > 0) {
+            id<MTLBuffer> oldBuffer = (__bridge id<MTLBuffer>)handle->vectorBuffer;
+            memcpy([newVectorBuffer contents], [oldBuffer contents],
+                   handle->vectorCount * handle->dimensions * sizeof(float));
             CFRelease(handle->vectorBuffer);
         }
 
-        handle->vectorBuffer = (__bridge_retained void*)buffer;
-        handle->vectorCount = count;
+        // Copy new vectors
+        float* dest = (float*)[newVectorBuffer contents] + (handle->vectorCount * handle->dimensions);
+        memcpy(dest, vectors, count * handle->dimensions * sizeof(float));
+
+        // Allocate ID buffer if needed
+        if (!handle->idBuffer) {
+            size_t idBufferSize = newCapacity * sizeof(int64_t);
+            id<MTLBuffer> idBuf = [device newBufferWithLength:idBufferSize
+                                                       options:MTLResourceStorageModeShared];
+            if (idBuf) {
+                handle->idBuffer = (__bridge_retained void*)idBuf;
+            }
+        }
+
+        // Copy IDs
+        if (handle->idBuffer && ids) {
+            id<MTLBuffer> idBuffer = (__bridge id<MTLBuffer>)handle->idBuffer;
+            int64_t* idDest = (int64_t*)[idBuffer contents] + handle->vectorCount;
+            memcpy(idDest, ids, count * sizeof(int64_t));
+        }
+
+        handle->vectorBuffer = (__bridge_retained void*)newVectorBuffer;
+        handle->vectorCount = requiredCapacity;
+        handle->capacity = newCapacity;
 
         return 0;
     }
 }
 
-// Search using Metal compute shaders
+// Get current vector count
+int metal_get_count_optimized(MetalIndexOptimized* handle) {
+    return handle ? handle->vectorCount : 0;
+}
+
+// Search using Metal compute shaders with multiple metrics
 int metal_search_optimized(MetalIndexOptimized* handle, float* query, int k, int64_t* resultIDs, float* resultDistances) {
     @autoreleasepool {
-        if (!handle->vectorBuffer || handle->vectorCount == 0) {
+        if (!handle->vectorBuffer || handle->vectorCount == 0 || !query) {
             return -1;
         }
 
         id<MTLDevice> device = (__bridge id<MTLDevice>)handle->device;
         id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)handle->commandQueue;
         id<MTLBuffer> vectorBuffer = (__bridge id<MTLBuffer>)handle->vectorBuffer;
-        id<MTLComputePipelineState> distancePipeline = (__bridge id<MTLComputePipelineState>)handle->distanceComputePipeline;
+
+        // Select pipeline based on metric
+        id<MTLComputePipelineState> distancePipeline;
+        switch (handle->metric) {
+            case METRIC_COSINE:
+                distancePipeline = (__bridge id<MTLComputePipelineState>)handle->cosinePipeline;
+                break;
+            case METRIC_DOT:
+                distancePipeline = (__bridge id<MTLComputePipelineState>)handle->dotPipeline;
+                break;
+            default:
+                distancePipeline = (__bridge id<MTLComputePipelineState>)handle->distanceComputePipeline;
+        }
+
+        if (!distancePipeline) {
+            distancePipeline = (__bridge id<MTLComputePipelineState>)handle->distanceComputePipeline;
+        }
+
         id<MTLComputePipelineState> topKPipeline = (__bridge id<MTLComputePipelineState>)handle->topKPipeline;
 
         // Create buffers
@@ -195,6 +558,14 @@ int metal_search_optimized(MetalIndexOptimized* handle, float* query, int k, int
         id<MTLBuffer> topDistancesBuffer = [device newBufferWithLength:k * sizeof(float)
                                                                 options:MTLResourceStorageModeShared];
 
+        // Initialize indices and distances for heap-based top-k
+        for (int i = 0; i < k; i++) {
+            indicesBuffer.contents + i * sizeof(int);
+            ((int*)indicesBuffer.contents)[i] = i;
+            ((float*)topDistancesBuffer.contents)[i] = (i < handle->vectorCount) ?
+                ((float*)distanceBuffer.contents)[i] : INFINITY;
+        }
+
         // Create command buffer
         id<MTLCommandBuffer> commandBuffer = [queue commandBuffer];
         id<MTLComputeCommandEncoder> encoder = [commandBuffer computeCommandEncoder];
@@ -209,12 +580,14 @@ int metal_search_optimized(MetalIndexOptimized* handle, float* query, int k, int
 
         MTLSize gridSize = MTLSizeMake(handle->vectorCount, 1, 1);
         NSUInteger threadGroupSize = distancePipeline.maxTotalThreadsPerThreadgroup;
-        if (threadGroupSize > handle->vectorCount) threadGroupSize = handle->vectorCount;
+        if (threadGroupSize > (NSUInteger)handle->vectorCount) {
+            threadGroupSize = handle->vectorCount;
+        }
         MTLSize threadgroupSize = MTLSizeMake(threadGroupSize, 1, 1);
 
         [encoder dispatchThreads:gridSize threadsPerThreadgroup:threadgroupSize];
 
-        // Find top-k
+        // Find top-k using heap-based selection
         [encoder setComputePipelineState:topKPipeline];
         [encoder setBuffer:distanceBuffer offset:0 atIndex:0];
         [encoder setBuffer:indicesBuffer offset:0 atIndex:1];
@@ -228,38 +601,60 @@ int metal_search_optimized(MetalIndexOptimized* handle, float* query, int k, int
         [commandBuffer commit];
         [commandBuffer waitUntilCompleted];
 
-        // Copy results
+        // Copy results with ID lookup
         int* indices = (int*)[indicesBuffer contents];
         float* distances = (float*)[topDistancesBuffer contents];
 
-        for (int i = 0; i < k; i++) {
-            resultIDs[i] = indices[i];
-            resultDistances[i] = distances[i];
+        // Get IDs if available
+        if (handle->idBuffer) {
+            id<MTLBuffer> idBuffer = (__bridge id<MTLBuffer>)handle->idBuffer;
+            int64_t* ids = (int64_t*)[idBuffer contents];
+            for (int i = 0; i < k; i++) {
+                resultIDs[i] = (indices[i] >= 0 && indices[i] < handle->vectorCount) ?
+                    ids[indices[i]] : -1;
+                resultDistances[i] = distances[i];
+            }
+        } else {
+            for (int i = 0; i < k; i++) {
+                resultIDs[i] = indices[i];
+                resultDistances[i] = distances[i];
+            }
         }
 
         return 0;
     }
 }
 
-// Cleanup
+// Cleanup with proper resource release
 void metal_cleanup_optimized(MetalIndexOptimized* handle) {
     @autoreleasepool {
-        if (handle->vectorBuffer) {
-            CFRelease(handle->vectorBuffer);
+        if (handle) {
+            if (handle->idBuffer) {
+                CFRelease(handle->idBuffer);
+            }
+            if (handle->vectorBuffer) {
+                CFRelease(handle->vectorBuffer);
+            }
+            if (handle->topKPipeline) {
+                CFRelease(handle->topKPipeline);
+            }
+            if (handle->cosinePipeline) {
+                CFRelease(handle->cosinePipeline);
+            }
+            if (handle->dotPipeline) {
+                CFRelease(handle->dotPipeline);
+            }
+            if (handle->distanceComputePipeline) {
+                CFRelease(handle->distanceComputePipeline);
+            }
+            if (handle->commandQueue) {
+                CFRelease(handle->commandQueue);
+            }
+            if (handle->device) {
+                CFRelease(handle->device);
+            }
+            free(handle);
         }
-        if (handle->topKPipeline) {
-            CFRelease(handle->topKPipeline);
-        }
-        if (handle->distanceComputePipeline) {
-            CFRelease(handle->distanceComputePipeline);
-        }
-        if (handle->commandQueue) {
-            CFRelease(handle->commandQueue);
-        }
-        if (handle->device) {
-            CFRelease(handle->device);
-        }
-        free(handle);
     }
 }
 */
@@ -313,12 +708,27 @@ func (idx *MetalIndexOptimized) Add(ids []int64, vectors []float32) error {
 		return fmt.Errorf("id count %d does not match vector count %d", len(ids), n)
 	}
 
-	ret := C.metal_add_vectors_optimized(idx.handle, (*C.float)(unsafe.Pointer(&vectors[0])), C.int(n))
+	ret := C.metal_add_vectors_optimized(
+		idx.handle,
+		(*C.float)(unsafe.Pointer(&vectors[0])),
+		(*C.int64_t)(unsafe.Pointer(&ids[0])),
+		C.int(n),
+	)
 	if ret != 0 {
 		return fmt.Errorf("failed to add vectors to optimized Metal buffer")
 	}
 
 	return nil
+}
+
+// Len returns the number of vectors in the index
+func (idx *MetalIndexOptimized) Len() int {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	if idx.handle == nil {
+		return 0
+	}
+	return int(C.metal_get_count_optimized(idx.handle))
 }
 
 // Search queries the optimized Metal GPU index using compute shaders

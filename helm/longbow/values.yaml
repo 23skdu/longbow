@@ -32,8 +32,8 @@ securityContext:
 
 # gRPC Configuration
 grpc:
-  maxRecvMsgSize: "67108864" # 64MB
-  maxSendMsgSize: "67108864" # 64MB
+  maxRecvMsgSize: "536870912" # 512MB (increased from 64MB for large dimension vectors)
+  maxSendMsgSize: "536870912" # 512MB
   initialWindowSize: "1048576" # 1MB
   initialConnWindowSize: "1048576" # 1MB
   maxConcurrentStreams: 250
@@ -55,7 +55,6 @@ hnsw:
   keepPruned: false
   sq8Enabled: false
   float16Enabled: false
-
   refinementFactor: 1.0
   useHNSW2: true
   useDisk: false
@@ -110,6 +109,8 @@ config:
   logFormat: "json" # json or console
   logLevel: "info" # debug, info, warn, error
   nodeId: "" # Optional: set for specific node ID
+  # Ingestion worker count (0 = runtime.NumCPU())
+  ingestionWorkerCount: 0
 
 # Compaction Configuration
 compaction:
@@ -144,6 +145,7 @@ gossip:
   interval: "200ms" # Added to satisfy config
   ackTimeout: "100ms" # Timeout for direct ping acknowledgment
   suspicionTimeout: "5s" # Time before suspect member marked dead
+  advertiseAddr: "" # Set to Pod IP in K8s via downward API
   # Discovery configuration
   discovery:
     # Discovery provider: static, dns, or k8s
@@ -189,6 +191,7 @@ s3:
   accessKeyId: ""
   secretAccessKey: ""
 
+# Ingress Configuration (Kubernetes Ingress)
 ingress:
   data:
     enabled: false
@@ -210,6 +213,64 @@ ingress:
           - path: /
             pathType: ImplementationSpecific
     tls: []
+
+# Gateway API (HTTPRoute) Configuration
+# Modern alternative to Ingress - requires Gateway API CRDs
+gatewayAPI:
+  enabled: false
+  # GatewayClass name (e.g., "istio", "traefik", "nginx")
+  className: ""
+  # Hostnames to route
+  hostnames: []
+  # TLS configuration
+  tls:
+    enabled: false
+    secretName: ""
+    # Or use Gateway TLS mode
+    mode: "Terminate" # Terminate or Passthrough
+  # Parent references for the route
+  parentRefs: []
+  # Rules for routing
+  rules:
+    - matches:
+        - path:
+            type: "PathPrefix"
+            value: "/"
+      backendRefs:
+        - name: longbow-data
+          port: 3000
+
+# Cloudflare Tunnel Support
+# Deploy cloudflared as sidecar to expose services via Cloudflare Tunnel
+cloudflareTunnel:
+  enabled: false
+  # Cloudflare credentials secret (must contain tunnel-token or credentials.json)
+  credentialsSecret: ""
+  # Tunnel name (created via cloudflared tunnel create <name>)
+  tunnelName: ""
+  # Ingress rules for routing external traffic to services
+  ingress:
+    - service: http://longbow-data:3000
+      originRequest:
+        noTLSVerify: false
+    - service: http://longbow-meta:3001
+      originRequest:
+        noTLSVerify: false
+    - service: http://longbow-metrics:9090
+      originRequest:
+        noTLSVerify: false
+  # Additional cloudflared configuration
+  config:
+    # Log level: debug, info, warn, error
+    logLevel: "info"
+    # Transport-loglevel: debug, info, warn, error
+    transportLoglevel: "warn"
+    # Retries for connection
+    retries: 5
+    # Grace period for draining connections
+    gracePeriod: "30s"
+  # Resource limits for cloudflared sidecar
+  resources: {}
 
 httpRoute:
   enabled: false

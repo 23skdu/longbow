@@ -205,6 +205,9 @@ spec:
               value: {{ .Values.sharding.auto.threshold | quote }}
             - name: AUTO_SHARDING_SPLIT_THRESHOLD
               value: {{ .Values.sharding.auto.splitThreshold | quote }}
+            # Ingestion Worker Count
+            - name: LONGBOW_INGESTION_WORKER_COUNT
+              value: {{ .Values.config.ingestionWorkerCount | quote }}
 
           ports:
             - name: grpc-data

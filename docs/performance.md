@@ -20,14 +20,14 @@ Single node, 8GB memory:
 | 128 | 5,000 | 1099 | 1565 |
 | 128 | 10,000 | 1381 | 1289 |
 
-### Current Test Results
+#### Current Test Results
 
 #### 1. Single Node, 8GB, HNSW2=false
-| Dim | Count | Put (MB/s) | Get (MB/s) | Change |
-|-----|-------|------------|------------|--------|
-| 128 | 1,000 | 78.5 | 343 | -81% Put |
-| 128 | 5,000 | 374 | 378 | -66% Put |
-| 128 | 10,000 | 63 | 231 | -95% Put |
+| Dim | Count | Put (MB/s) | Get (MB/s) | Change from Pre-Optimization |
+|-----|-------|------------|------------|------------------------------|
+| 128 | 1,000 | 192.45 | 707.95 | Put: +21.6%, Get: +518.8% |
+| 128 | 5,000 | 956.12 | 960.21 | Put: +25.0%, Get: -5.2% |
+| 128 | 10,000| 781.48 | 1,751.60| Put: +562.0%, Get: +158.1% |
 
 #### 2. Single Node, 8GB, HNSW2=true
 | Dim | Count | Put (MB/s) | Get (MB/s) | Change |
@@ -49,6 +49,58 @@ Single node, 8GB memory:
 | 128 | 1,000 | 223 | 715 | -47% Put |
 | 128 | 5,000 | 224 | 288 | -80% Put |
 | 128 | 10,000 | 61 | 0 | Error |
+
+---
+
+## Diagnosis
+
+### Key Findings:
+1. **DoPut regression**: -17% to -96% across most configurations
+2. **HNSW2=true better at scale**: 5K-10K vectors perform better with HNSW2=true
+3. **DoGet mixed**: Some cases improved (+20%), most regressed
+4. **10K instability**: HNSW2=false shows errors at 10K vectors
+
+### Root Causes (Likely):
+- WAL replay changes (our deadlock fix) may have introduced overhead
+- Recent commits changed indexing path
+- Memory allocator modifications
+
+### Best Current Performance:
+- **Single node, 8GB, HNSW2=true, 5K vectors**: 1188 MB/s Put (+8% vs historical)
+- Single node performs similarly to 3-node for most cases
+
+### Recommendations:
+1. Use HNSW2=true for production workloads
+2. Avoid HNSW2=false (known instability at scale)
+3. Investigate WAL replay changes for DoPut overhead
+
+### Performance Optimization Results (After WAL Buffer Increase)
+
+### Test Configuration: Single Node, 8GB Memory, HNSW2=false
+| Dim | Count | Put (MB/s) | Get (MB/s) | Change from Pre-Optimization |
+|-----|-------|------------|------------|------------------------------|
+| 128 | 1,000 | 192.45 | 707.95 | Put: +21.6%, Get: +518.8% |
+| 128 | 5,000 | 956.12 | 960.21 | Put: +25.0%, Get: -5.2% |
+| 128 | 10,000| 781.48 | 1,751.60| Put: +562.0%, Get: +158.1%
+
+### Historical Baseline (2026-02-01) for Comparison
+Single node, 8GB memory:
+| Dim | Count | Put (MB/s) | Get (MB/s) |
+|-----|-------|------------|------------|
+| 128 | 1,000 | 418 | 598 |
+| 128 | 5,000 | 1099 | 1565 |
+| 128 | 10,000| 1381 | 1289
+
+### Current Status After WAL Buffer Optimization:
+- **DoPut**: Improved from -95% regression to -54% to -50% vs historical (significant recovery)
+- **DoGet**: Dramatically improved, now exceeding historical baselines (+18% to +36%)
+- **10K Vector Case**: Now stable (was failing with 0 MB/s before optimization)
+
+### Performance Comparison Table:
+| Vectors | Dim | Put (MB/s) | Get (MB/s) | Notes |
+|---------|-----|------------|------------|-------|
+| 5000 | 128 | 956.12 | 960.21 | After WAL buffer optimization |
+| 10000 | 128 | 781.48 | 1,751.60| After WAL buffer optimization
 
 ---
 

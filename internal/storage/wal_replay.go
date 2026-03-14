@@ -98,11 +98,11 @@ func (e *StorageEngine) ReplayWAL(applier ApplierFunc) (uint64, error) {
 		}(i)
 	}
 
-	// 3. Main Loop: Applier
+	// 3. Main Loop: Applier (read from reorderedChan to get properly ordered entries)
 	var maxSeq uint64
 	count := 0
 
-	for entry := range decodedChan {
+	for entry := range reorderedChan {
 		if entry.err != nil {
 			// Stop immediately on error
 			// We should probably drain/cancel others, but simpler to return
@@ -312,11 +312,10 @@ func (e *StorageEngine) reorderBufferRoutine(in chan decodedWALEntry, out chan d
 	nextSeq := uint64(0)
 	activeDecoders := numDecoders
 
-	// Track decoder completion
+	// Track decoder completion - close input channel when all decoders are done
 	go func() {
 		wgDecoders.Wait()
-		// Signal that all decoders are done by sending a sentinel entry
-		// We use a special channel close signal instead
+		close(in)
 	}()
 
 	for {

@@ -1,8 +1,78 @@
 # Performance Metrics (Matrix Run)
 
-## Latest Benchmark Results (2026-03-04)
+## Latest Benchmark Results (2026-03-14)
 
-Single-node local test with 8GB memory allocation:
+### Bug Fix: WAL Replay Deadlock
+Fixed a critical deadlock in WAL replay that prevented cluster startup. The issue was in `internal/storage/wal_replay.go`:
+- Main loop was reading from wrong channel (`decodedChan` instead of `reorderedChan`)
+- Decoder completion signaling was incomplete
+
+---
+
+## Performance Regression Analysis
+
+### Historical Baseline (2026-02-01)
+Single node, 8GB memory:
+
+| Dim | Count | Put (MB/s) | Get (MB/s) |
+|-----|-------|------------|------------|
+| 128 | 1,000 | 418 | 598 |
+| 128 | 5,000 | 1099 | 1565 |
+| 128 | 10,000 | 1381 | 1289 |
+
+### Current Test Results
+
+#### 1. Single Node, 8GB, HNSW2=false
+| Dim | Count | Put (MB/s) | Get (MB/s) | Change |
+|-----|-------|------------|------------|--------|
+| 128 | 1,000 | 78.5 | 343 | -81% Put |
+| 128 | 5,000 | 374 | 378 | -66% Put |
+| 128 | 10,000 | 63 | 231 | -95% Put |
+
+#### 2. Single Node, 8GB, HNSW2=true
+| Dim | Count | Put (MB/s) | Get (MB/s) | Change |
+|-----|-------|------------|------------|--------|
+| 128 | 1,000 | 188 | 588 | -55% Put |
+| 128 | 5,000 | **1188** | 1028 | **+8% Put** |
+| 128 | 10,000 | 54 | 161 | -96% Put |
+
+#### 3. 3-Node Cluster, 8GB/node, HNSW2=true
+| Dim | Count | Put (MB/s) | Get (MB/s) | Change |
+|-----|-------|------------|------------|--------|
+| 128 | 1,000 | 196 | 580 | -53% Put |
+| 128 | 5,000 | 371 | 1054 | -66% Put |
+| 128 | 10,000 | 1147 | 475 | -17% Put |
+
+#### 4. 3-Node Cluster, 8GB/node, HNSW2=false
+| Dim | Count | Put (MB/s) | Get (MB/s) | Change |
+|-----|-------|------------|------------|--------|
+| 128 | 1,000 | 223 | 715 | -47% Put |
+| 128 | 5,000 | 224 | 288 | -80% Put |
+| 128 | 10,000 | 61 | 0 | Error |
+
+---
+
+## Diagnosis
+
+### Key Findings:
+1. **DoPut regression**: -17% to -96% across most configurations
+2. **HNSW2=true better at scale**: 5K-10K vectors perform better with HNSW2=true
+3. **DoGet mixed**: Some cases improved (+20%), most regressed
+4. **10K instability**: HNSW2=false shows errors at 10K vectors
+
+### Root Causes (Likely):
+- WAL replay changes (our deadlock fix) may have introduced overhead
+- Recent commits changed indexing path
+- Memory allocator modifications
+
+### Best Current Performance:
+- **Single node, 8GB, HNSW2=true, 5K vectors**: 1188 MB/s Put (+8% vs historical)
+- Single node performs similarly to 3-node for most cases
+
+### Recommendations:
+1. Use HNSW2=true for production workloads
+2. Avoid HNSW2=false (known instability at scale)
+3. Investigate WAL replay changes for DoPut overhead
 
 | Vectors | Dim | Put (MB/s) | Get (MB/s) | Search QPS | p50 (ms) | p95 (ms) | p99 (ms) |
 |---------|-----|------------|------------|------------|----------|----------|----------|

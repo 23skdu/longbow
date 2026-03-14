@@ -198,7 +198,11 @@ Longbow provides a `CrossEncoderReranker` that re-ranks results using a combinat
 - Distance score (70% weight)
 - Text match score on metadata fields (30% weight)
 
-For production ML-based reranking, integrate with ONNX Runtime or Hugging Face models.
+For production ML-based reranking, see [Reranking](rerank.md) for:
+- ONNX Runtime integration
+- Native Metal ONNX for Apple Silicon
+- WASM-based inference
+- Custom model configuration
 
 ## Hybrid Search (Legacy Concepts)
 

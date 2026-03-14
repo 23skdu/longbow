@@ -6,6 +6,12 @@ import (
 	"github.com/23skdu/longbow/internal/simd"
 )
 
+var float32DecodePool = sync.Pool{
+	New: func() interface{} {
+		return new([]float32)
+	},
+}
+
 // ScalarQuantizer handles SQ8 quantization for the HNSW index.
 type ScalarQuantizer struct {
 	minVal float32
@@ -113,13 +119,28 @@ func (sq *ScalarQuantizer) Decode(src []byte) []float32 {
 	if paddedLen < len(src) {
 		paddedLen = len(src)
 	}
-	dst := make([]float32, len(src), paddedLen)
+
+	// Use pool to reduce allocations in hot path
+	pooled := float32DecodePool.Get().(*[]float32)
+	if cap(*pooled) < paddedLen {
+		*pooled = make([]float32, paddedLen)
+	} else {
+		*pooled = (*pooled)[:paddedLen]
+	}
+	dst := (*pooled)[:len(src)]
+
 	scale := (maxV - minV) / 255.0
 
 	for i, b := range src {
 		dst[i] = minV + float32(b)*scale
 	}
-	return dst
+
+	// Return a copy to the caller since we're returning the pooled buffer
+	result := make([]float32, len(src))
+	copy(result, dst)
+	float32DecodePool.Put(pooled)
+
+	return result
 }
 
 // L2Scale returns the scaling factor (scale^2) to convert SQ8 integer L2 to float32 L2.

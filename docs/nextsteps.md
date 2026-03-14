@@ -172,4 +172,40 @@ Each optimization step will be validated by:
 
 ---
 
+## Branchless & ZeroCopy Optimization Opportunities
+
+### Branchless Optimizations Found:
+
+1. **Clamp operations in simd_baseline.go (line 424-429)**
+   - Current: if/else branch for clamping similarity to [-1, 1]
+   - Opportunity: Replace with branchless clamp using min/max or arithmetic
+
+2. **Min/Max operations in various files**
+   - Found in: internal/simd/*.go, internal/store/*.go
+   - Opportunity: Use bitwise operations where applicable
+
+3. **Sign operations**
+   - Found: Conditional sign flips (if x < 0 { -x } else { x })
+   - Opportunity: Use branchless absolute value
+
+### ZeroCopy Optimizations Found:
+
+1. **Buffer allocations in store/hnsw_gpu.go**
+   - Current: `append` creates new allocations for GPU batches
+   - Opportunity: Pre-allocate with capacity to avoid reallocation
+
+2. **Slice copies in arrow_neighbors.go (lines 37-38)**
+   - Current: copy() to separate ID and distance buffers
+   - Opportunity: Use direct buffer access from Arrow arrays
+
+3. **Memory pool reuse in internal/memory/**
+   - Current: Various pool implementations
+   - Opportunity: Ensure all hot paths use pool-allocated buffers
+
+4. **gRPC message handling**
+   - Current: Multiple buffer allocations
+   - Opportunity: Reuse buffers for streaming
+
+---
+
 **Next Step**: Begin with WAL replay optimization and unified memory improvements, as these address the primary DoPut regression observed in testing.

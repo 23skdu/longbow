@@ -65,9 +65,11 @@ func (e *StorageEngine) ReplayWAL(applier ApplierFunc) (uint64, error) {
 
 	// Pipeline channels
 	// rawChan needs sufficient buffer to keep reader ahead
-	rawChan := make(chan rawWALBlock, 100)
+	// Increased buffer size for better throughput
+	rawChan := make(chan rawWALBlock, 1000)
 	// decodedChan holds ready-to-apply records. Retain/Release must be handled carefully.
-	decodedChan := make(chan decodedWALEntry, 100)
+	// Increased buffer size
+	decodedChan := make(chan decodedWALEntry, 1000)
 
 	// Context for cancellation? We'll just use close signals.
 

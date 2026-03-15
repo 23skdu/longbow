@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -88,17 +89,28 @@ func TestWALPerformance(t *testing.T) {
 
 	// Test different backends
 	testCases := []struct {
-		name    string
-		backend storage.WALBackend
+		name   string
+		create func(t *testing.T, dir string) (storage.WALBackend, error)
 	}{
-		{"Standard WAL", createStandardWALBackend(t, tmpDir)},
-		{"IOUring WAL", createIOUringWALBackend(t, tmpDir)},
+		{"Standard WAL", func(t *testing.T, dir string) (storage.WALBackend, error) {
+			return storage.NewFSBackend(filepath.Join(dir, "standard.wal"))
+		}},
+		{"IOUring WAL", func(t *testing.T, dir string) (storage.WALBackend, error) {
+			return storage.NewUringBackend(filepath.Join(dir, "iouring.wal"))
+		}},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			backend, err := tc.create(t, tmpDir)
+			if err != nil {
+				if strings.Contains(err.Error(), "only supported on Linux") {
+					t.Skipf("skipping %s: %v", tc.name, err)
+				}
+				t.Fatalf("failed to create backend: %v", err)
+			}
 			defer func() {
-				if err := tc.backend.Close(); err != nil {
+				if err := backend.Close(); err != nil {
 					t.Logf("failed to close backend: %v", err)
 				}
 			}()
@@ -107,10 +119,10 @@ func TestWALPerformance(t *testing.T) {
 			records := createTestRecords(1000)
 
 			start := time.Now()
-			if err := writeRecordsToWAL(ctx, tc.backend, records); err != nil {
+			if err := writeRecordsToWAL(ctx, backend, records); err != nil {
 				t.Fatalf("failed to write records: %v", err)
 			}
-			if err := tc.backend.Sync(); err != nil {
+			if err := backend.Sync(); err != nil {
 				t.Fatalf("failed to sync: %v", err)
 			}
 			duration := time.Since(start)
@@ -124,20 +136,3 @@ func TestWALPerformance(t *testing.T) {
 	}
 }
 
-// createStandardWALBackend creates a standard WAL backend for testing
-func createStandardWALBackend(t *testing.T, dir string) storage.WALBackend {
-	backend, err := storage.NewFSBackend(filepath.Join(dir, "standard.wal"))
-	if err != nil {
-		t.Fatalf("failed to create standard WAL backend: %v", err)
-	}
-	return backend
-}
-
-// createIOUringWALBackend creates an io_uring WAL backend for testing
-func createIOUringWALBackend(t *testing.T, dir string) storage.WALBackend {
-	backend, err := storage.NewUringBackend(filepath.Join(dir, "iouring.wal"))
-	if err != nil {
-		t.Fatalf("failed to create io_uring WAL backend: %v", err)
-	}
-	return backend
-}

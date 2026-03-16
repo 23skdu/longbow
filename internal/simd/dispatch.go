@@ -21,8 +21,9 @@ type ImplementationDispatch struct {
 	DotProductBatch            distanceBatchFunc
 	EuclideanDistanceBatchFlat distanceBatchFlatFunc
 
-	// Specialized functions
+	// Specialized functions for fixed dimensions
 	EuclideanDistance384 distanceFunc
+	EuclideanDistance768 distanceFunc
 	EuclideanDistance128 distanceFunc
 }
 
@@ -37,6 +38,7 @@ var dispatchTable = map[string]ImplementationDispatch{
 		DotProductBatch:            dotBatchAVX512,
 		EuclideanDistanceBatchFlat: euclideanBatchFlatAVX512,
 		EuclideanDistance384:       euclidean384AVX512,
+		EuclideanDistance768:       euclidean768AVX512,
 		EuclideanDistance128:       euclidean128Unrolled4x,
 	},
 	"avx2": {
@@ -47,7 +49,8 @@ var dispatchTable = map[string]ImplementationDispatch{
 		CosineDistanceBatch:        cosineBatchAVX2,
 		DotProductBatch:            dotBatchAVX2,
 		EuclideanDistanceBatchFlat: euclideanBatchFlatAVX2,
-		EuclideanDistance384:       euclideanGeneric,
+		EuclideanDistance384:       euclidean384Unrolled4x,
+		EuclideanDistance768:       euclidean768Unrolled4x,
 		EuclideanDistance128:       euclidean128Unrolled4x,
 	},
 	"neon": {
@@ -58,7 +61,8 @@ var dispatchTable = map[string]ImplementationDispatch{
 		CosineDistanceBatch:        cosineBatchNEON,
 		DotProductBatch:            dotBatchNEON,
 		EuclideanDistanceBatchFlat: euclideanBatchFlatGeneric, // Fallback for NEON
-		EuclideanDistance384:       euclideanGeneric,
+		EuclideanDistance384:       euclidean384Unrolled4x,
+		EuclideanDistance768:       euclidean768Unrolled4x,
 		EuclideanDistance128:       euclidean128Unrolled4x,
 	},
 	"generic": {
@@ -69,7 +73,8 @@ var dispatchTable = map[string]ImplementationDispatch{
 		CosineDistanceBatch:        cosineBatchGeneric,
 		DotProductBatch:            dotBatchGeneric,
 		EuclideanDistanceBatchFlat: euclideanBatchFlatGeneric,
-		EuclideanDistance384:       euclideanGeneric,
+		EuclideanDistance384:       euclidean384Unrolled4x,
+		EuclideanDistance768:       euclidean768Unrolled4x,
 		EuclideanDistance128:       euclideanGeneric,
 	},
 }
@@ -125,9 +130,9 @@ func initializeDispatch() {
 		euclideanDistanceComplex64Impl = euclideanComplex64Optimized
 	case "avx2":
 		euclideanDistanceImpl = euclideanAVX2
-		euclideanDistance384Impl = euclideanGeneric  // AVX2 384-dim not implemented yet, fallback
-		euclideanDistance768Impl = euclideanGeneric  // AVX2 768-dim fallback
-		euclideanDistance1536Impl = euclideanGeneric // AVX2 1536-dim fallback
+		euclideanDistance384Impl = euclidean384Unrolled4x // Optimized unrolled Go implementation
+		euclideanDistance768Impl = euclidean768Unrolled4x // Optimized unrolled Go implementation
+		euclideanDistance1536Impl = euclideanGeneric      // Still needs optimization
 		euclideanDistance128Impl = euclidean128Unrolled4x
 		metrics.SimdDispatchCount.WithLabelValues("avx2").Inc()
 		metrics.SimdStaticDispatchType.Set(2)

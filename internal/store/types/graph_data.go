@@ -1441,6 +1441,337 @@ func (g *GraphData) Clone() *GraphData {
 	return &newG
 }
 
+// PreAllocate pre-allocates memory for the given number of vectors.
+// This avoids lazy allocation overhead during vector insertion.
+// Slab sizes are calculated to be power-of-2 for efficient memory management.
+func (g *GraphData) PreAllocate(capacity int) error {
+	if capacity <= 0 || g.Dims <= 0 {
+		return nil
+	}
+
+	numChunks := (capacity + ChunkSize - 1) / ChunkSize
+	if numChunks <= 0 {
+		numChunks = 1
+	}
+
+	// Pre-allocate Float32 arena chunks
+	if g.Type == VectorTypeFloat32 || g.Type == VectorTypeUnknown {
+		// Calculate optimal slab size: fit all chunks + alignment buffer
+		// Use power-of-2 for efficient memory management
+		requiredSize := numChunks * ChunkSize * g.Dims * 4
+		slabSize := requiredSize + 4096 // 4KB alignment buffer
+		if slabSize < 1024*1024 {
+			slabSize = 1024 * 1024
+		}
+		// NewSlabArena already rounds to power-of-2
+		if g.Float32Arena == nil {
+			g.Float32Arena = memory.NewTypedArena[float32](memory.NewSlabArena(slabSize))
+		}
+		// Pre-allocate all chunks
+		for i := 0; i < numChunks; i++ {
+			ref, err := g.Float32Arena.AllocSliceDirty(ChunkSize * g.Dims)
+			if err != nil {
+				return err
+			}
+			g.VectorsF32 = append(g.VectorsF32, ref.Offset)
+			g.Vectors = append(g.Vectors, nil) // Legacy compatibility
+		}
+	}
+
+	// Pre-allocate Float64 arena chunks
+	if g.Type == VectorTypeFloat64 {
+		requiredSize := numChunks * ChunkSize * g.Dims * 8
+		slabSize := requiredSize + 4096
+		if slabSize < 1024*1024 {
+			slabSize = 1024 * 1024
+		}
+		if g.Float64Arena == nil {
+			g.Float64Arena = memory.NewTypedArena[float64](memory.NewSlabArena(slabSize))
+		}
+		for i := 0; i < numChunks; i++ {
+			ref, err := g.Float64Arena.AllocSliceDirty(ChunkSize * g.Dims)
+			if err != nil {
+				return err
+			}
+			g.VectorsFloat64Offsets = append(g.VectorsFloat64Offsets, ref.Offset)
+		}
+	}
+
+	// Pre-allocate Complex64 arena chunks
+	if g.Type == VectorTypeComplex64 {
+		requiredSize := numChunks * ChunkSize * g.Dims * 8
+		slabSize := requiredSize + 4096
+		if slabSize < 1024*1024 {
+			slabSize = 1024 * 1024
+		}
+		if g.Complex64Arena == nil {
+			g.Complex64Arena = memory.NewTypedArena[complex64](memory.NewSlabArena(slabSize))
+		}
+		for i := 0; i < numChunks; i++ {
+			ref, err := g.Complex64Arena.AllocSliceDirty(ChunkSize * g.Dims)
+			if err != nil {
+				return err
+			}
+			g.VectorsComplex64Offsets = append(g.VectorsComplex64Offsets, ref.Offset)
+		}
+	}
+
+	// Pre-allocate Complex128 arena chunks
+	if g.Type == VectorTypeComplex128 {
+		requiredSize := numChunks * ChunkSize * g.Dims * 16
+		slabSize := requiredSize + 4096
+		if slabSize < 1024*1024 {
+			slabSize = 1024 * 1024
+		}
+		if g.Complex128Arena == nil {
+			g.Complex128Arena = memory.NewTypedArena[complex128](memory.NewSlabArena(slabSize))
+		}
+		for i := 0; i < numChunks; i++ {
+			ref, err := g.Complex128Arena.AllocSliceDirty(ChunkSize * g.Dims)
+			if err != nil {
+				return err
+			}
+			g.VectorsComplex128Offsets = append(g.VectorsComplex128Offsets, ref.Offset)
+		}
+	}
+
+	// Pre-allocate Int64 arena chunks
+	if g.Type == VectorTypeInt64 {
+		requiredSize := numChunks * ChunkSize * g.Dims * 8
+		slabSize := requiredSize + 4096
+		if slabSize < 1024*1024 {
+			slabSize = 1024 * 1024
+		}
+		if g.Int64Arena == nil {
+			g.Int64Arena = memory.NewTypedArena[int64](memory.NewSlabArena(slabSize))
+		}
+		for i := 0; i < numChunks; i++ {
+			ref, err := g.Int64Arena.AllocSliceDirty(ChunkSize * g.Dims)
+			if err != nil {
+				return err
+			}
+			g.VectorsInt64 = append(g.VectorsInt64, ref.Offset)
+		}
+	}
+
+	// Pre-allocate Uint64 arena chunks
+	if g.Type == VectorTypeUint64 {
+		requiredSize := numChunks * ChunkSize * g.Dims * 8
+		slabSize := requiredSize + 4096
+		if slabSize < 1024*1024 {
+			slabSize = 1024 * 1024
+		}
+		if g.Uint64Arena == nil {
+			g.Uint64Arena = memory.NewTypedArena[uint64](memory.NewSlabArena(slabSize))
+		}
+		for i := 0; i < numChunks; i++ {
+			ref, err := g.Uint64Arena.AllocSliceDirty(ChunkSize * g.Dims)
+			if err != nil {
+				return err
+			}
+			g.VectorsUint64 = append(g.VectorsUint64, ref.Offset)
+		}
+	}
+
+	// Pre-allocate Int32 arena chunks
+	if g.Type == VectorTypeInt32 {
+		requiredSize := numChunks * ChunkSize * g.Dims * 4
+		slabSize := requiredSize + 4096
+		if slabSize < 1024*1024 {
+			slabSize = 1024 * 1024
+		}
+		if g.Int32Arena == nil {
+			g.Int32Arena = memory.NewTypedArena[int32](memory.NewSlabArena(slabSize))
+		}
+		for i := 0; i < numChunks; i++ {
+			ref, err := g.Int32Arena.AllocSliceDirty(ChunkSize * g.Dims)
+			if err != nil {
+				return err
+			}
+			g.VectorsInt32 = append(g.VectorsInt32, ref.Offset)
+		}
+	}
+
+	// Pre-allocate Uint32 arena chunks
+	if g.Type == VectorTypeUint32 {
+		requiredSize := numChunks * ChunkSize * g.Dims * 4
+		slabSize := requiredSize + 4096
+		if slabSize < 1024*1024 {
+			slabSize = 1024 * 1024
+		}
+		if g.Uint32Arena == nil {
+			g.Uint32Arena = memory.NewTypedArena[uint32](memory.NewSlabArena(slabSize))
+		}
+		for i := 0; i < numChunks; i++ {
+			ref, err := g.Uint32Arena.AllocSliceDirty(ChunkSize * g.Dims)
+			if err != nil {
+				return err
+			}
+			g.VectorsUint32 = append(g.VectorsUint32, ref.Offset)
+		}
+	}
+
+	// Pre-allocate Int16 arena chunks
+	if g.Type == VectorTypeInt16 {
+		requiredSize := numChunks * ChunkSize * g.Dims * 2
+		slabSize := requiredSize + 4096
+		if slabSize < 1024*1024 {
+			slabSize = 1024 * 1024
+		}
+		if g.Int16Arena == nil {
+			g.Int16Arena = memory.NewTypedArena[int16](memory.NewSlabArena(slabSize))
+		}
+		for i := 0; i < numChunks; i++ {
+			ref, err := g.Int16Arena.AllocSliceDirty(ChunkSize * g.Dims)
+			if err != nil {
+				return err
+			}
+			g.VectorsInt16 = append(g.VectorsInt16, ref.Offset)
+		}
+	}
+
+	// Pre-allocate Uint16 arena chunks
+	if g.Type == VectorTypeUint16 {
+		requiredSize := numChunks * ChunkSize * g.Dims * 2
+		slabSize := requiredSize + 4096
+		if slabSize < 1024*1024 {
+			slabSize = 1024 * 1024
+		}
+		if g.Uint16Arena == nil {
+			g.Uint16Arena = memory.NewTypedArena[uint16](memory.NewSlabArena(slabSize))
+		}
+		for i := 0; i < numChunks; i++ {
+			ref, err := g.Uint16Arena.AllocSliceDirty(ChunkSize * g.Dims)
+			if err != nil {
+				return err
+			}
+			g.VectorsUint16 = append(g.VectorsUint16, ref.Offset)
+		}
+	}
+
+	// Pre-allocate Int8/Uint8 arena chunks
+	if g.Type == VectorTypeInt8 || g.Type == VectorTypeUint8 {
+		requiredSize := numChunks * ChunkSize * g.Dims
+		slabSize := requiredSize + 4096
+		if slabSize < 1024*1024 {
+			slabSize = 1024 * 1024
+		}
+		if g.Int8Arena == nil {
+			g.Int8Arena = memory.NewTypedArena[int8](memory.NewSlabArena(slabSize))
+		}
+		for i := 0; i < numChunks; i++ {
+			ref, err := g.Int8Arena.AllocSliceDirty(ChunkSize * g.Dims)
+			if err != nil {
+				return err
+			}
+			g.VectorsInt8 = append(g.VectorsInt8, ref.Offset)
+		}
+	}
+
+	// Pre-allocate Float16 arena chunks
+	if g.Type == VectorTypeFloat16 {
+		requiredSize := numChunks * ChunkSize * g.Dims * 2
+		slabSize := requiredSize + 4096
+		if slabSize < 1024*1024 {
+			slabSize = 1024 * 1024
+		}
+		if g.Float16Arena == nil {
+			g.Float16Arena = memory.NewTypedArena[float16.Num](memory.NewSlabArena(slabSize))
+		}
+		for i := 0; i < numChunks; i++ {
+			ref, err := g.Float16Arena.AllocSliceDirty(ChunkSize * g.Dims)
+			if err != nil {
+				return err
+			}
+			g.VectorsF16 = append(g.VectorsF16, ref.Offset)
+		}
+	}
+
+	// Pre-allocate SQ8 arena chunks if enabled
+	if g.SQ8Enabled {
+		paddedDims := (g.Dims + 63) & ^63
+		requiredSize := numChunks * ChunkSize * paddedDims
+		slabSize := requiredSize + 4096
+		if slabSize < 1024*1024 {
+			slabSize = 1024 * 1024
+		}
+		if g.Uint8Arena == nil {
+			g.Uint8Arena = memory.NewTypedArena[uint8](memory.NewSlabArena(slabSize))
+		}
+		for i := 0; i < numChunks; i++ {
+			ref, err := g.Uint8Arena.AllocSliceDirty(ChunkSize * paddedDims)
+			if err != nil {
+				return err
+			}
+			g.VectorsSQ8 = append(g.VectorsSQ8, ref.Offset)
+		}
+	}
+
+	// Pre-allocate BQ arena chunks if enabled
+	if g.BQEnabled {
+		paddedDims := (g.Dims + 63) & ^63
+		numWords := paddedDims / 64
+		requiredSize := numChunks * ChunkSize * numWords * 8
+		slabSize := requiredSize + 4096
+		if slabSize < 1024*1024 {
+			slabSize = 1024 * 1024
+		}
+		if g.Uint64Arena == nil {
+			g.Uint64Arena = memory.NewTypedArena[uint64](memory.NewSlabArena(slabSize))
+		}
+		for i := 0; i < numChunks; i++ {
+			ref, err := g.Uint64Arena.AllocSliceDirty(ChunkSize * numWords)
+			if err != nil {
+				return err
+			}
+			g.VectorsBQ = append(g.VectorsBQ, ref.Offset)
+		}
+	}
+
+	// Pre-allocate PQ arena chunks if enabled
+	if g.PQEnabled && g.PQM > 0 {
+		numWords := (g.PQM + 7) / 8
+		requiredSize := numChunks * ChunkSize * numWords * 8
+		slabSize := requiredSize + 4096
+		if slabSize < 1024*1024 {
+			slabSize = 1024 * 1024
+		}
+		if g.Uint64Arena == nil {
+			g.Uint64Arena = memory.NewTypedArena[uint64](memory.NewSlabArena(slabSize))
+		}
+		for i := 0; i < numChunks; i++ {
+			ref, err := g.Uint64Arena.AllocSliceDirty(ChunkSize * numWords)
+			if err != nil {
+				return err
+			}
+			g.VectorsPQ = append(g.VectorsPQ, ref.Offset)
+		}
+	}
+
+	// Pre-allocate Levels for all chunks
+	for i := 0; i < numChunks; i++ {
+		g.Levels = append(g.Levels, make([]uint8, ChunkSize))
+	}
+
+	// Pre-allocate Neighbors, Counts, Versions for all layers
+	if len(g.Neighbors) == 0 {
+		g.Neighbors = make([][][]uint32, ArrowMaxLayers)
+		g.Counts = make([][][]int32, ArrowMaxLayers)
+		g.Versions = make([][][]uint32, ArrowMaxLayers)
+	}
+	for layer := 0; layer < ArrowMaxLayers; layer++ {
+		for i := 0; i < numChunks; i++ {
+			g.Neighbors[layer] = append(g.Neighbors[layer], make([]uint32, ChunkSize*MaxNeighbors))
+			g.Counts[layer] = append(g.Counts[layer], make([]int32, ChunkSize))
+			g.Versions[layer] = append(g.Versions[layer], make([]uint32, ChunkSize))
+		}
+	}
+
+	g.Capacity = capacity
+
+	return nil
+}
+
 // NewGraphData creates a new GraphData instance.
 
 // This is a helper for legacy tests.
@@ -1449,7 +1780,7 @@ func NewGraphData(capacity, dim int, mmap bool, useDisk bool, fd int,
 	quantization bool, sq8 bool, persistent bool,
 	dataType VectorDataType, bqEnabled bool, pqEnabled bool) *GraphData {
 
-	// Initialize arenas
+	// Initialize arenas with power-of-2 slab sizes
 	// Slab size: fit at least one chunk + overhead.
 	// Float32: 1024 * dim * 4 bytes.
 	f32SlabSize := ChunkSize*dim*4 + 64
@@ -1530,5 +1861,11 @@ func NewGraphData(capacity, dim int, mmap bool, useDisk bool, fd int,
 		gd.Counts[i] = make([][]int32, numChunks)
 		gd.Versions[i] = make([][]uint32, numChunks)
 	}
+
+	// Pre-allocate chunks for the given capacity to avoid lazy allocation overhead
+	if capacity > 0 && dim > 0 {
+		_ = gd.PreAllocate(capacity)
+	}
+
 	return gd
 }

@@ -114,12 +114,12 @@ func TestDualIndexHarness_Basic(t *testing.T) {
 		t.Errorf("expected 3 vectors, got %d", len(harness.vectors))
 	}
 
-	// Search will be implemented in Phase 2
+	// Search is implemented, measure recall
 	query := []float32{1.0, 0.0, 0.0}
 	recall := harness.MeasureRecall(query, 1)
 
-	// For now, recall should be 0 (not implemented)
-	if recall != 0.0 {
-		t.Logf("Recall: %f (expected 0 until Search implemented)", recall)
+	// Recall should be 1.0 since we have exact matches in the index
+	if recall != 1.0 {
+		t.Errorf("expected recall 1.0, got %f", recall)
 	}
 }

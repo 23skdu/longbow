@@ -139,8 +139,70 @@ func (b *BruteForceIndex) AddBatch(ctx context.Context, recs []arrow.RecordBatch
 
 // SearchVectorsWithBitmap returns k nearest neighbors filtered by a bitset.
 func (b *BruteForceIndex) SearchVectorsWithBitmap(ctx context.Context, q any, k int, filter *roaring.Bitmap, options any) ([]SearchResult, error) {
-	// Not implemented for BruteForce, but needed for interface
-	return nil, nil
+	qF32, ok := q.([]float32)
+	if !ok {
+		return nil, errors.New("BruteForceIndex only supports []float32 queries")
+	}
+	start := time.Now()
+	b.mu.RLock()
+	metrics.IndexLockWaitDuration.WithLabelValues(b.dataset.Name, "read").Observe(time.Since(start).Seconds())
+	defer b.mu.RUnlock()
+
+	if len(b.locations) == 0 {
+		return nil, nil
+	}
+
+	h := &bfSearchHeap{}
+	heap.Init(h)
+
+	for i, loc := range b.locations {
+		if i%1000 == 0 {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+		}
+
+		// Apply bitmap filter: skip if filter is provided and ID is not in filter
+		if filter != nil && !filter.Contains(uint32(i)) {
+			continue
+		}
+
+		vec, release := b.getVectorUnsafe(loc)
+		if vec == nil || release == nil {
+			continue
+		}
+
+		dist, err := simd.EuclideanDistance(qF32, vec)
+		release()
+
+		if err != nil {
+			dist = math.MaxFloat32
+		}
+
+		if h.Len() < k {
+			heap.Push(h, bfHeapItem{
+				id:    VectorID(i),
+				score: dist,
+			})
+		} else if dist < (*h)[0].score {
+			heap.Pop(h)
+			heap.Push(h, bfHeapItem{
+				id:    VectorID(i),
+				score: dist,
+			})
+		}
+	}
+
+	results := make([]SearchResult, h.Len())
+	for i := len(results) - 1; i >= 0; i-- {
+		item := heap.Pop(h).(bfHeapItem)
+		results[i] = SearchResult{
+			ID:    lbtypes.VectorID(item.id),
+			Score: item.score,
+		}
+	}
+
+	return results, nil
 }
 
 // GetLocation retrieves the storage location for a given vector ID.

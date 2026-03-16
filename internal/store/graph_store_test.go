@@ -2,8 +2,6 @@ package store
 
 import (
 	"testing"
-
-	"github.com/apache/arrow-go/v18/arrow/memory"
 )
 
 // TestGraphStore_AddEdge tests adding edges to the graph store
@@ -131,13 +129,10 @@ func TestGraphStore_DictionaryMemorySavings(t *testing.T) {
 }
 
 // TestGraphStore_FromArrowBatch tests loading edges from Arrow RecordBatch
+// Note: Arrow serialization for GraphStore is not yet implemented.
+// This test serves as a placeholder for future implementation.
 func TestGraphStore_FromArrowBatch(t *testing.T) {
-	gs1 := NewGraphStore()
-	_ = gs1.AddEdge(Edge{Subject: VectorID(100), Predicate: "rel", Object: VectorID(200), Weight: 1.0})
-	_ = gs1.AddEdge(Edge{Subject: VectorID(200), Predicate: "rel", Object: VectorID(300), Weight: 0.5})
-
-	// Arrow serialization not implemented
-	_ = memory.NewGoAllocator()
+	t.Skip("Arrow serialization for GraphStore not yet implemented")
 }
 
 // TestGraphStore_TraverseSingleHop tests finding direct neighbors

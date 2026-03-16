@@ -64,38 +64,49 @@
 3. Profile actual retrieval to confirm bottleneck
 
 ### Priority 3: Implement Batch SIMD for DoPut Ingestion
-**Status**: COMPLEX - Requires Major Refactoring
+**Status**: IN PROGRESS - Code-level investigation complete ✅
 
-**Current State**: Single-vector insertion via SetVector()
-**Target**: Batch insertion with SIMD vectorization
+**Key Finding**: In `arrow_hnsw_bulk.go`, `AddBatchBulk()` processes vectors one-by-one:
+- Line 189: `data.SetVector(id, v)` called in loop
+- Each SetVector() creates chunk slice and does copy
+- No SIMD optimization for bulk copy
 
-**Analysis**:
-1. Current: Arrow IPC → Per-vector SetVector() → Graph storage
-2. Bottleneck: Per-vector processing in AddBatchBulk()
-3. Opportunity: SIMD batch copy/conversion
+**Implementation Plan**:
+1. Modify `AddBatchBulk()` to batch process vectors within same chunk
+2. Use SIMD optimized copy for chunk-level copying
+3. Pre-allocate and reuse buffers
 
-**Complexity**:
-- Requires significant refactoring of AddBatchBulk pipeline
-- Need to batch type conversions (float32 → float16, etc.)
-- Would need to batch vector copies into arena
+**Progress**:
+- [x] Code analysis complete
+- [ ] Implement batch chunk processing
+- [ ] Add SIMD-optimized vector copy
+- [ ] Test and benchmark
 
-**Estimated Effort**: 2-3 weeks
-**Recommendation**: Defer to Phase 2 after other optimizations stabilize
+### Priority 4: HNSW Search Prefetching (Optimization)
+**Status**: IN PROGRESS - Code-level investigation complete ✅
 
-### Priority 4: Optimize HNSW Search with SIMD
-**Status**: IN PROGRESS
+**Key Findings**:
+1. **searchLayer()** (line 1349-1676): Main search bottleneck
+2. **Memory access pattern**: 
+   - Gets neighbors sequentially via `data.GetNeighbors(layer, curr.ID, nil)` (line 1631)
+   - Each neighbor triggers `distComputer(n)` which calls `getVectorWithData()`
+   - This causes many random memory accesses
 
-**Target**: Improve search QPS
+3. **Optimization Opportunities**:
+   - **Neighbor prefetching**: Prefetch neighbor data while computing distances
+   - **Vector prefetching**: Prefetch vector data before distance calculation
+   - **Cache locality**: Process neighbors in batches
 
-**Current Implementation**:
-1. Search uses EuclideanDistance which already has SIMD
-2. Batch search uses SIMD dispatch for various dimensions
-3. Opportunity: Optimize ef parameter selection, prefetching
+**Implementation Plan**:
+1. Add prefetch hints for neighbor list access
+2. Batch distance calculations for multiple neighbors  
+3. Use SIMD batch distance computation
 
-**Actions**:
-1. Profile search path to identify bottlenecks
-2. Add prefetching for graph traversal
-3. Consider parallel search for multiple queries
+**Progress**:
+- [x] Code analysis complete
+- [ ] Implement neighbor prefetching
+- [ ] Implement vector prefetching
+- [ ] Test and benchmark
 
 ### Priority 5: Add Comprehensive Benchmark Suite to CI
 **Status**: IN PROGRESS

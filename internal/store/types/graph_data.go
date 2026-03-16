@@ -340,6 +340,12 @@ func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
 	// Ensure Vectors (Float32 is default/primary) - use arena for off-heap allocation
 	if g.Type == VectorTypeFloat32 || g.Type == VectorTypeUnknown {
 		for len(g.VectorsF32) <= cID {
+			// If dims is 0, allocate a placeholder (will be reallocated when actual dims known)
+			if dims == 0 {
+				g.VectorsF32 = append(g.VectorsF32, 0)
+				g.Vectors = append(g.Vectors, nil)
+				continue
+			}
 			// Create arena on first need
 			// Create arena if needed - always size for the required chunk + alignment buffer
 			requiredChunkSize := ChunkSize * dims * 4
@@ -1037,6 +1043,49 @@ func (g *GraphData) SetVector(id uint32, vec any) error {
 			}
 		}
 	}
+	return nil
+}
+
+// SetVectorsBatch sets multiple vectors in the same chunk efficiently.
+// This is optimized for bulk insertion where vectors belong to the same chunk.
+func (g *GraphData) SetVectorsBatch(startID uint32, vecs [][]float32) error {
+	if len(vecs) == 0 {
+		return nil
+	}
+
+	// Get chunk info for first vector
+	startChunk := int(startID) / ChunkSize
+	chunk := g.GetVectorsChunk(startChunk)
+	if chunk == nil {
+		return fmt.Errorf("chunk %d not found", startChunk)
+	}
+
+	dims := g.Dims
+	if dims == 0 {
+		return fmt.Errorf("dimensions not set")
+	}
+
+	// Batch copy all vectors to chunk
+	for i, vec := range vecs {
+		id := startID + uint32(i)
+		cID := int(id) / ChunkSize
+		cOff := int(id) % ChunkSize
+
+		// Ensure we're in the same chunk
+		if cID != startChunk {
+			// Different chunk - use regular SetVector
+			if err := g.SetVector(id, vec); err != nil {
+				return err
+			}
+			continue
+		}
+
+		start := cOff * dims
+		if start+len(vec) <= len(chunk) {
+			copy(chunk[start:start+len(vec)], vec)
+		}
+	}
+
 	return nil
 }
 

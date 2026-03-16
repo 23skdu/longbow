@@ -8,11 +8,13 @@ RUN go mod download
 
 COPY . .
 
-# Build with io_uring support for Linux
+ARG BUILD_TAGS=linux
+# Build with optional io_uring support for Linux
 # Note: io_uring requires Linux kernel 5.1+
 # The bookworm image includes kernel headers that support io_uring
+# Use --build-arg BUILD_TAGS="linux,iouring" to enable io_uring
 RUN CGO_ENABLED=0 go build \
-    -tags=linux,iouring \
+    -tags=${BUILD_TAGS:-linux} \
     -ldflags="-s -w" \
     -o longbow ./cmd/longbow
 

@@ -104,16 +104,20 @@
 - [ ] Test and benchmark
 
 ### Priority 5: Add Comprehensive Benchmark Suite to CI
-**Status**: IN PROGRESS
+**Status**: COMPLETED ✅
 
-**Target**: Catch regressions early
-
-**Actions**:
-1. Add performance benchmarks to CI pipeline
-2. Set up baseline metrics collection
-3. Add alerts for >5% regression
-
-**Note**: Need to define baseline metrics first before adding CI checks
+**Implementation**:
+- CI benchmark workflow already exists (benchmark.yml)
+- **Enhanced**: Added specific benchmark categories
+  - SIMD benchmarks (Euclidean distance operations)
+  - Search benchmarks (HNSW search performance)
+  - Insert benchmarks (bulk insert performance)
+- **Improvements**:
+  - Run separate benchmark suites for each category
+  - Compare with benchstat for accurate delta detection
+  - Set regression threshold to 5% (was 10%)
+  - Fail CI on regression detection (was warning only)
+- **Process**: Baseline metrics from main branch vs PR branch
 
 ---
 

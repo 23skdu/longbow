@@ -64,15 +64,23 @@
 3. Profile actual retrieval to confirm bottleneck
 
 ### Priority 3: Implement Batch SIMD for DoPut Ingestion
-**Status**: Proposed
+**Status**: COMPLEX - Requires Major Refactoring
 
-**Current State**: Single-vector insertion
+**Current State**: Single-vector insertion via SetVector()
 **Target**: Batch insertion with SIMD vectorization
 
-**Actions**:
-1. Implement batch vector preparation pipeline
-2. Add SIMD vectorized copy for batch insertion
-3. Use lock-free queues for parallel batching
+**Analysis**:
+1. Current: Arrow IPC → Per-vector SetVector() → Graph storage
+2. Bottleneck: Per-vector processing in AddBatchBulk()
+3. Opportunity: SIMD batch copy/conversion
+
+**Complexity**:
+- Requires significant refactoring of AddBatchBulk pipeline
+- Need to batch type conversions (float32 → float16, etc.)
+- Would need to batch vector copies into arena
+
+**Estimated Effort**: 2-3 weeks
+**Recommendation**: Defer to Phase 2 after other optimizations stabilize
 
 ### Priority 4: Optimize HNSW Search with SIMD
 **Status**: Proposed

@@ -1,6 +1,6 @@
 # Performance Metrics (Comprehensive Matrix)
 
-## Latest Benchmark Results (2026-03-16 - With All Fixes Applied)
+## Latest Benchmark Results (2026-03-16 - Float32 Grow Fix Applied)
 
 ### Go Micro-Benchmarks (SIMD)
 
@@ -36,6 +36,12 @@
 #### 4. Search API Fix ✅
 - Added VectorSearch, search, dense, sparse, filtered, hybrid action types
 - All search operations now working
+
+#### 5. Float32 Grow Fragmentation Fix ✅
+- Changed Grow() to use PreAllocate instead of EnsureChunk loop
+- Pre-allocates all chunks in a single large arena during grow
+- Fixes float32 performance degradation at >15k vectors
+- Avoids memory fragmentation from multiple small arena allocations
 
 ### Comparison with Previous Results
 

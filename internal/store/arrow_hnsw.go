@@ -1154,11 +1154,11 @@ func (h *ArrowHNSW) growInternal(capacity, dims int) error {
 		newData.VectorsF32 = nil
 	}
 
-	// Iteratively ensure chunks
-	numChunks := (capacity + types.ChunkSize - 1) / types.ChunkSize
-	for i := 0; i < numChunks; i++ {
-		if err := newData.EnsureChunk(i, 0, dims); err != nil {
-			fmt.Printf("Grow EnsureChunk failed: %v\n", err)
+	// Use PreAllocate for efficient bulk allocation instead of EnsureChunk loop
+	// This pre-allocates all chunks in a single large arena, avoiding fragmentation
+	if capacity > 0 && dims > 0 {
+		if err := newData.PreAllocate(capacity); err != nil {
+			fmt.Printf("Grow PreAllocate failed: %v\n", err)
 			return err
 		}
 	}

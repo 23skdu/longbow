@@ -1,5 +1,131 @@
 # Longbow Performance Optimization Plan - Metal macOS Focus
 
+## Immediate 5-Part Performance Improvement Plan (Based on 2026-03-15 Benchmark Analysis)
+
+### Based on Fresh 22GB Memory Benchmark Results
+
+**Test Configuration:**
+- Memory: 22GB (LONGBOW_MAX_MEMORY=23622320128)
+- Dimensions: 128, 384
+- Vector Counts: 1k, 5k, 15k, 25k
+- Data Types: int64, uint64, float32
+
+**Fresh Results (2026-03-15):**
+| Type | Dim | Count | DoPut (MB/s) | DoGet (MB/s) |
+|------|-----|-------|--------------|--------------|
+| int64 | 128 | 1k | 372 | 894 |
+| int64 | 128 | 5k | 902 | 1035 |
+| int64 | 128 | 15k | 1165 | 1341 |
+| int64 | 128 | 25k | 1391 | 1459 |
+| int64 | 384 | 1k | 906 | 1097 |
+| int64 | 384 | 5k | 1240 | 1063 |
+| int64 | 384 | 15k | 1371 | 1192 |
+| int64 | 384 | 25k | 1332 | 1326 |
+| uint64 | 128 | 5k | 1323 | 897 |
+| uint64 | 384 | 5k | 1170 | 1159 |
+| float32 | 128 | 5k | 737 | 913 |
+| float32 | 384 | 5k | 69 | 121 |
+
+**Regression Analysis vs Previous Results:**
+| Config | Previous | Current | Change |
+|--------|----------|---------|--------|
+| int64 128 5k DoPut | 545 MB/s | 902 MB/s | **+65%** |
+| int64 128 5k DoGet | 1785 MB/s | 1035 MB/s | **-42%** |
+| int64 384 5k DoPut | 1694 MB/s | 1240 MB/s | **-27%** |
+| float32 384 5k DoPut | 1694 MB/s | 69 MB/s | **-96%** |
+
+### pprof Heap Analysis (22GB)
+```
+7083.20MB (48%) - GraphData.EnsureChunk
+5321.94MB (36%) - GetSlab (memory allocation)
+1010.47MB (7%)  - protobuf
+```
+
+---
+
+## 5-Part Immediate Action Plan
+
+### Priority 1: Fix float32 384 Dimension DoPut Regression (-96%)
+**Root Cause**: FOUND - NOT an arena issue! SIMD dispatch falls back to generic for 384 dimensions
+
+**Evidence** (internal/simd/dispatch.go):
+```go
+"neon": {  // Apple Silicon
+    EuclideanDistance384: euclideanGeneric,  // FALLBACK!
+    EuclideanDistance128: euclidean128Unrolled4x,
+},
+"avx2": {  // Intel
+    EuclideanDistance384Impl = euclideanGeneric,  // FALLBACK!
+    EuclideanDistance128Impl = euclidean128Unrolled4x,
+},
+```
+
+The 384-dimension Euclidean distance calculation does NOT have optimized SIMD kernels, falling back to generic (non-vectorized) code. This explains:
+- int64 384 is fast (uses integer math)
+- float32 128 is fast (has optimized euclidean128Unrolled4x)
+- float32 384 is SLOW (falls back to generic)
+
+**Status**: NEEDS SIMD OPTIMIZATION - not a storage/arena issue
+
+**Actions**:
+1. Implement AVX2-optimized Euclidean distance for 384 dimensions
+2. Implement NEON-optimized Euclidean distance for 384 dimensions
+3. Consider adding 768-dimension optimizations
+
+**Target**: Implement 384-dim SIMD kernels to recover performance
+
+### Priority 2: Fix int64 DoGet Regression (-42%)
+**Root Cause**: Likely caching/buffering behavior change after int64 arena fix
+**Status**: INVESTIGATING
+**Actions**:
+1. Profile DoGet path for int64 specifically
+2. Check if arena retrieval has additional overhead vs heap
+3. Optimize GetVectorsInt64Chunk() retrieval path
+**Target**: Recover from 1035 MB/s → 1500+ MB/s
+
+### Priority 3: Enable Arena for uint64 Storage ✅ COMPLETED
+**Current**: uint64 uses heap allocation
+**Actions Completed**:
+1. ✅ Added VectorsUint64 []uint64 field to GraphData
+2. ✅ Added GetVectorsUint64Chunk() method
+3. ✅ Added VectorTypeUint64 case in EnsureChunk()
+4. ✅ Added []uint64 case in SetVector()
+5. ✅ Added uint64 retrieval in GetVector()
+6. ✅ Added VectorsUint64 to Clone()
+**Target**: Match int64 performance (1400+ MB/s)
+
+### Priority 4: Add Int32Arena (Missing) ✅ COMPLETED
+**Current**: int32 has no arena - uses legacy slice
+**Actions Completed**:
+1. ✅ Added VectorsInt32 []uint64 field to GraphData
+2. ✅ Added GetVectorsInt32Chunk() method
+3. ✅ Added VectorTypeInt32 case in EnsureChunk()
+4. ✅ Added []int32 case in SetVector()
+5. ✅ Added int32 retrieval in GetVector()
+6. ✅ Added VectorsInt32 to Clone()
+**Target**: Enable int32 at scale
+
+### Priority 5: Implement SlabArena Fast Path ✅ COMPLETED
+**Root Cause**: Slow path always taken due to missing fast path
+**Actions Completed**:
+1. ✅ Modified Alloc() to try fast path for ≤1024 byte allocations
+2. ✅ Modified AllocDirty() to try fast path for ≤1024 byte allocations
+3. ✅ Fast path uses lock-free atomic operations
+**Target**: 25-40% reduction in allocation overhead
+
+### Priority 5: Implement Fast Path in SlabArena.Alloc()
+**Root Cause**: pprof shows 36% in GetSlab - slow path always taken
+**Current**: `metrics.ArenaSlowPathTotal.Inc()` always hits
+**Actions**:
+1. Implement true fast path for ≤64 byte allocations
+2. Use bit operations instead of modulo for alignment
+3. Reduce mutex contention
+**Target**: 25-40% reduction in allocation overhead
+
+---
+
+# Original Document
+
 **Status**: ACTIVE
 **Date**: March 14, 2026
 **Priority**: HIGH - Address performance regressions and optimize Metal macOS performance

@@ -83,7 +83,13 @@ func NewSlabArena(slabSizeBytes int) *SlabArena {
 // Returns a GLOBAL offset.
 // Guarantees zero-initialized memory.
 func (a *SlabArena) Alloc(size int) (uint64, error) {
-	// Slow path always uses mutex-protected allocCommon
+	// Try fast path first for small allocations (up to 1KB)
+	if size <= 1024 {
+		if offset, ok := a.allocFast(size); ok {
+			return offset, nil
+		}
+	}
+	// Slow path uses mutex-protected allocCommon
 	metrics.ArenaSlowPathTotal.Inc()
 	return a.allocCommon(size, 8, true)
 }
@@ -93,6 +99,12 @@ func (a *SlabArena) Alloc(size int) (uint64, error) {
 // MEMORY IS NOT GUARANTEED TO BE ZEROED.
 // Use this only when you will immediately overwrite the entire range.
 func (a *SlabArena) AllocDirty(size int) (uint64, error) {
+	// Try fast path first for small allocations (up to 1KB)
+	if size <= 1024 {
+		if offset, ok := a.allocFast(size); ok {
+			return offset, nil
+		}
+	}
 	return a.allocCommon(size, 8, false)
 }
 

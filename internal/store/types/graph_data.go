@@ -60,6 +60,12 @@ type GraphData struct {
 	// VectorsInt64 stores arena offsets for Int64 vectors (off-heap, GC-free)
 	VectorsInt64 []uint64
 
+	// VectorsUint64 stores arena offsets for Uint64 vectors (off-heap, GC-free)
+	VectorsUint64 []uint64
+
+	// VectorsInt32 stores arena offsets for Int32 vectors (off-heap, GC-free)
+	VectorsInt32 []uint64
+
 	// VectorsFloat64Offsets stores arena offsets for Float64 vectors (off-heap, GC-free)
 	VectorsFloat64Offsets []uint64
 
@@ -164,6 +170,20 @@ func (g *GraphData) GetVectorsComplex128Chunk(chunkID int) []complex128 {
 func (g *GraphData) GetVectorsInt64Chunk(chunkID int) []int64 {
 	if chunkID < len(g.VectorsInt64) && g.Int64Arena != nil {
 		return g.Int64Arena.Get(memory.SliceRef{Offset: g.VectorsInt64[chunkID], Len: uint32(ChunkSize * g.Dims), Cap: uint32(ChunkSize * g.Dims)})
+	}
+	return nil
+}
+
+func (g *GraphData) GetVectorsUint64Chunk(chunkID int) []uint64 {
+	if chunkID < len(g.VectorsUint64) && g.Uint64Arena != nil {
+		return g.Uint64Arena.Get(memory.SliceRef{Offset: g.VectorsUint64[chunkID], Len: uint32(ChunkSize * g.Dims), Cap: uint32(ChunkSize * g.Dims)})
+	}
+	return nil
+}
+
+func (g *GraphData) GetVectorsInt32Chunk(chunkID int) []int32 {
+	if chunkID < len(g.VectorsInt32) && g.Int32Arena != nil {
+		return g.Int32Arena.Get(memory.SliceRef{Offset: g.VectorsInt32[chunkID], Len: uint32(ChunkSize * g.Dims), Cap: uint32(ChunkSize * g.Dims)})
 	}
 	return nil
 }
@@ -455,6 +475,42 @@ func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
 		}
 	}
 
+	// Ensure Uint64 - use arena for off-heap allocation
+	if g.Type == VectorTypeUint64 {
+		for len(g.VectorsUint64) <= cID {
+			if g.Uint64Arena == nil {
+				slabSize := ChunkSize*dims*8 + 64
+				if slabSize < 1024*1024 {
+					slabSize = 1024 * 1024
+				}
+				g.Uint64Arena = memory.NewTypedArena[uint64](memory.NewSlabArena(slabSize))
+			}
+			ref, err := g.Uint64Arena.AllocSliceDirty(ChunkSize * dims)
+			if err != nil {
+				return err
+			}
+			g.VectorsUint64 = append(g.VectorsUint64, ref.Offset)
+		}
+	}
+
+	// Ensure Int32 - use arena for off-heap allocation
+	if g.Type == VectorTypeInt32 {
+		for len(g.VectorsInt32) <= cID {
+			if g.Int32Arena == nil {
+				slabSize := ChunkSize*dims*4 + 64
+				if slabSize < 1024*1024 {
+					slabSize = 1024 * 1024
+				}
+				g.Int32Arena = memory.NewTypedArena[int32](memory.NewSlabArena(slabSize))
+			}
+			ref, err := g.Int32Arena.AllocSliceDirty(ChunkSize * dims)
+			if err != nil {
+				return err
+			}
+			g.VectorsInt32 = append(g.VectorsInt32, ref.Offset)
+		}
+	}
+
 	// Ensure Int16 - use arena for off-heap allocation
 	if g.Type == VectorTypeInt16 {
 		for len(g.VectorsInt16) <= cID {
@@ -691,6 +747,26 @@ func (g *GraphData) GetVector(id uint32) (any, error) {
 		}
 	}
 
+	if len(g.VectorsUint64) > cID {
+		chunk := g.GetVectorsUint64Chunk(cID)
+		if chunk != nil {
+			start := cOff * g.Dims
+			if start+g.Dims <= len(chunk) {
+				return chunk[start : start+g.Dims], nil
+			}
+		}
+	}
+
+	if len(g.VectorsInt32) > cID {
+		chunk := g.GetVectorsInt32Chunk(cID)
+		if chunk != nil {
+			start := cOff * g.Dims
+			if start+g.Dims <= len(chunk) {
+				return chunk[start : start+g.Dims], nil
+			}
+		}
+	}
+
 	if len(g.VectorsInt16) > cID {
 		chunk := g.GetVectorsInt16Chunk(cID)
 		if chunk != nil {
@@ -826,6 +902,22 @@ func (g *GraphData) SetVector(id uint32, vec any) error {
 		}
 	case []int64:
 		chunk := g.GetVectorsInt64Chunk(cID)
+		if chunk != nil {
+			start := cOff * g.Dims
+			if start+len(v) <= len(chunk) {
+				copy(chunk[start:start+len(v)], v)
+			}
+		}
+	case []uint64:
+		chunk := g.GetVectorsUint64Chunk(cID)
+		if chunk != nil {
+			start := cOff * g.Dims
+			if start+len(v) <= len(chunk) {
+				copy(chunk[start:start+len(v)], v)
+			}
+		}
+	case []int32:
+		chunk := g.GetVectorsInt32Chunk(cID)
 		if chunk != nil {
 			start := cOff * g.Dims
 			if start+len(v) <= len(chunk) {
@@ -1163,6 +1255,14 @@ func (g *GraphData) Clone() *GraphData {
 	if g.VectorsInt16 != nil {
 		newG.VectorsInt16 = make([]uint64, len(g.VectorsInt16))
 		copy(newG.VectorsInt16, g.VectorsInt16)
+	}
+	if g.VectorsUint64 != nil {
+		newG.VectorsUint64 = make([]uint64, len(g.VectorsUint64))
+		copy(newG.VectorsUint64, g.VectorsUint64)
+	}
+	if g.VectorsInt32 != nil {
+		newG.VectorsInt32 = make([]uint64, len(g.VectorsInt32))
+		copy(newG.VectorsInt32, g.VectorsInt32)
 	}
 	if g.VectorsFloat64 != nil {
 		newG.VectorsFloat64 = make([][]float64, len(g.VectorsFloat64))

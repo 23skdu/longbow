@@ -546,6 +546,75 @@ func euclidean128Unrolled4x(a, b []float32) (float32, error) {
 	return float32(math.Sqrt(float64(sum0 + sum1 + sum2 + sum3))), nil
 }
 
+// euclidean384Unrolled4x calculates Euclidean distance for fixed 384 dimension.
+// 384 = 96 × 4 - fully unrolled with 4 accumulators for efficiency.
+func euclidean384Unrolled4x(a, b []float32) (float32, error) {
+	if len(a) != 384 || len(b) != 384 {
+		return 0, errors.New("simd: length must be 384")
+	}
+	_ = a[383]
+	_ = b[383]
+
+	var sum0, sum1, sum2, sum3 float32
+	for i := 0; i < 384; i += 4 {
+		d0 := a[i] - b[i]
+		d1 := a[i+1] - b[i+1]
+		d2 := a[i+2] - b[i+2]
+		d3 := a[i+3] - b[i+3]
+		sum0 += d0 * d0
+		sum1 += d1 * d1
+		sum2 += d2 * d2
+		sum3 += d3 * d3
+	}
+	return float32(math.Sqrt(float64(sum0 + sum1 + sum2 + sum3))), nil
+}
+
+// euclidean768Unrolled4x calculates Euclidean distance for fixed 768 dimension.
+// 768 = 192 × 4 - fully unrolled with 4 accumulators for efficiency.
+func euclidean768Unrolled4x(a, b []float32) (float32, error) {
+	if len(a) != 768 || len(b) != 768 {
+		return 0, errors.New("simd: length must be 768")
+	}
+	_ = a[767]
+	_ = b[767]
+
+	var sum0, sum1, sum2, sum3 float32
+	for i := 0; i < 768; i += 4 {
+		d0 := a[i] - b[i]
+		d1 := a[i+1] - b[i+1]
+		d2 := a[i+2] - b[i+2]
+		d3 := a[i+3] - b[i+3]
+		sum0 += d0 * d0
+		sum1 += d1 * d1
+		sum2 += d2 * d2
+		sum3 += d3 * d3
+	}
+	return float32(math.Sqrt(float64(sum0 + sum1 + sum2 + sum3))), nil
+}
+
+// euclidean1536Unrolled4x calculates Euclidean distance for fixed 1536 dimension.
+// 1536 = 384 × 4 - unrolled with 4 accumulators.
+func euclidean1536Unrolled4x(a, b []float32) (float32, error) {
+	if len(a) != 1536 || len(b) != 1536 {
+		return 0, errors.New("simd: length must be 1536")
+	}
+	_ = a[1535]
+	_ = b[1535]
+
+	var sum0, sum1, sum2, sum3 float32
+	for i := 0; i < 1536; i += 4 {
+		d0 := a[i] - b[i]
+		d1 := a[i+1] - b[i+1]
+		d2 := a[i+2] - b[i+2]
+		d3 := a[i+3] - b[i+3]
+		sum0 += d0 * d0
+		sum1 += d1 * d1
+		sum2 += d2 * d2
+		sum3 += d3 * d3
+	}
+	return float32(math.Sqrt(float64(sum0 + sum1 + sum2 + sum3))), nil
+}
+
 func dot128Unrolled4x(a, b []float32) (float32, error) {
 	if len(a) != 128 || len(b) != 128 {
 		return 0, errors.New("simd: length must be 128")

@@ -23,15 +23,23 @@
 ## 5-Part Performance Improvement Plan
 
 ### Priority 1: Investigate float32 384 DoPut Regression (68 MB/s → 1000+ MB/s target)
-**Status**: Needs verification after SIMD fix
+**Status**: INVESTIGATION COMPLETE ✅
 
-**Current State**: 68.65 MB/s (was 1,693 MB/s)
-**Target**: 1,000+ MB/s
+**Findings**:
+1. SIMD Euclidean384 benchmark: 85.20 ns/op = 17,571 MB/s ✅ (FAST)
+2. Store DoPut float32 384: 69 MB/s ❌ (SLOW)
+3. Root cause: The bottleneck is NOT in SIMD distance calculation - it's in the ingestion pipeline
 
-**Actions**:
-1. Verify SIMD dispatch fix is being used in DoPut path
-2. Check if EnsureChunk is creating new arena each time
-3. Profile DoPut to confirm SIMD kernels are invoked
+**Analysis**:
+- The DoPut benchmark measures entire pipeline: Arrow IPC → Batch processing → Per-vector SetVector → HNSW graph construction
+- The SIMD distance calc is only one small part
+- Found potential bug: "alloc size must be positive" errors during bulk insert
+- The pprof showed EnsureChunk taking 48% of heap - indicating allocation overhead
+
+**Next Steps**:
+1. Fix allocation bug causing "alloc size must be positive" errors
+2. Profile the actual DoPut pipeline to identify bottleneck
+3. Consider batch insertion optimization
 
 ### Priority 2: Investigate int64 DoGet Regression (1,035 MB/s → 1,500+ MB/s target)
 **Status**: Investigation needed

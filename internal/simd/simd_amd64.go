@@ -118,6 +118,21 @@ func dot1536AVX512(a, b []float32) (float32, error) {
 	return dot1536AVX512Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0])), nil
 }
 
+// AVX2 optimized Euclidean distance for 384 dims - uses generic AVX2 SIMD kernel
+func euclidean384AVX2(a, b []float32) (float32, error) {
+	return euclideanAVX2(a, b)
+}
+
+// AVX2 optimized Euclidean distance for 768 dims - uses generic AVX2 SIMD kernel
+func euclidean768AVX2(a, b []float32) (float32, error) {
+	return euclideanAVX2(a, b)
+}
+
+// AVX2 optimized Euclidean distance for 1536 dims - uses generic AVX2 SIMD kernel
+func euclidean1536AVX2(a, b []float32) (float32, error) {
+	return euclideanAVX2(a, b)
+}
+
 // AVX2 optimized Cosine distance
 func cosineAVX2(a, b []float32) (float32, error) {
 	if len(a) != len(b) {

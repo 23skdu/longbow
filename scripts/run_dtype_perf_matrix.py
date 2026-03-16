@@ -39,10 +39,10 @@ DTYPE_CONFIG = {
     "complex128": {"np": np.complex128, "pa": pa.float64(), "factor": 2},
 }
 
-# Benchmark matrix
-DIMS = [128, 384, 786]
-COUNTS = [1000, 3000, 7000, 15000, 25000]
-TYPES = ["int8", "uint8", "float32", "complex128"]
+# Benchmark matrix - user specs
+DIMS = [128, 384]
+COUNTS = [1000, 3000, 5000, 9000, 15000, 20000, 25000]
+TYPES = ["int64", "uint64", "float32", "complex128"]
 SEARCH_TYPES = ["dense", "sparse", "filtered", "hybrid"]
 
 
@@ -53,6 +53,7 @@ class BenchmarkResult:
     count: int
     op: str
     throughput_mbps: float = 0.0
+    vectors_per_sec: float = 0.0
     latency_p50_ms: float = 0.0
     latency_p95_ms: float = 0.0
     latency_p99_ms: float = 0.0
@@ -159,6 +160,7 @@ class PerformanceBenchmark:
             duration = time.time() - start
             mb = table.nbytes / 1024 / 1024
             throughput = mb / duration
+            vectors_per_sec = count / duration if duration > 0 else 0
 
             return BenchmarkResult(
                 dtype=dtype_str,
@@ -166,6 +168,7 @@ class PerformanceBenchmark:
                 count=count,
                 op="DoPut",
                 throughput_mbps=throughput,
+                vectors_per_sec=vectors_per_sec,
             )
         except Exception as e:
             return BenchmarkResult(
@@ -198,8 +201,8 @@ class PerformanceBenchmark:
             duration = time.time() - start
             mb = table.nbytes / 1024 / 1024 if table is not None and count > 0 else 0
             throughput = mb / duration if duration > 0 else 0
+            vectors_per_sec = count / duration if duration > 0 else 0
 
-            # Estimate dimension from table
             dim = 0
             if count > 0 and "vector" in table.column_names:
                 vec_col = table.column("vector")
@@ -211,6 +214,7 @@ class PerformanceBenchmark:
                 count=count,
                 op="DoGet",
                 throughput_mbps=throughput,
+                vectors_per_sec=vectors_per_sec,
             )
         except Exception as e:
             return BenchmarkResult(

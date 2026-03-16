@@ -44,9 +44,14 @@ func dotAVX512(a, b []float32) (float32, error)           { return dotGeneric(a,
 func euclidean384AVX512(a, b []float32) (float32, error)  { return euclideanGeneric(a, b) }
 func euclidean768AVX512(a, b []float32) (float32, error)  { return euclideanGeneric(a, b) }
 func euclidean1536AVX512(a, b []float32) (float32, error) { return euclideanGeneric(a, b) }
-func dot384AVX512(a, b []float32) (float32, error)        { return dotGeneric(a, b) }
-func dot768AVX512(a, b []float32) (float32, error)        { return dotGeneric(a, b) }
-func dot1536AVX512(a, b []float32) (float32, error)       { return dotGeneric(a, b) }
+
+func euclidean384AVX2(a, b []float32) (float32, error)  { return euclideanGeneric(a, b) }
+func euclidean768AVX2(a, b []float32) (float32, error)  { return euclideanGeneric(a, b) }
+func euclidean1536AVX2(a, b []float32) (float32, error) { return euclideanGeneric(a, b) }
+
+func dot384AVX512(a, b []float32) (float32, error)  { return dotGeneric(a, b) }
+func dot768AVX512(a, b []float32) (float32, error)  { return dotGeneric(a, b) }
+func dot1536AVX512(a, b []float32) (float32, error) { return dotGeneric(a, b) }
 
 func euclideanBatchAVX2(query []float32, vectors [][]float32, results []float32) error {
 	return euclideanBatchGeneric(query, vectors, results)

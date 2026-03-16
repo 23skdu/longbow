@@ -1154,11 +1154,26 @@ func (h *ArrowHNSW) growInternal(capacity, dims int) error {
 		newData.VectorsF32 = nil
 	}
 
-	// Use PreAllocate for efficient bulk allocation instead of EnsureChunk loop
-	// This pre-allocates all chunks in a single large arena, avoiding fragmentation
-	if capacity > 0 && dims > 0 {
-		if err := newData.PreAllocate(capacity); err != nil {
-			fmt.Printf("Grow PreAllocate failed: %v\n", err)
+	// If dims changed, we need to reinitialize arenas for the new size
+	if dims != currentDims {
+		// Calculate required slab size for new dims
+		requiredSize := types.ChunkSize * dims * 4 // 4 bytes per float32
+		slabSize := requiredSize + 64
+		if slabSize < 1024*1024 {
+			slabSize = 1024 * 1024
+		}
+		// Create new arenas with correct size
+		newData.Float32Arena = memory.NewTypedArena[float32](memory.NewSlabArena(slabSize))
+		// Reset offset arrays since we have new arenas
+		newData.VectorsF32 = nil
+	}
+
+	// Iteratively ensure chunks - this creates new arenas during grow which can cause fragmentation
+	// at large scales (>15k vectors). This is a known issue requiring future optimization.
+	numChunks := (capacity + types.ChunkSize - 1) / types.ChunkSize
+	for i := 0; i < numChunks; i++ {
+		if err := newData.EnsureChunk(i, 0, dims); err != nil {
+			fmt.Printf("Grow EnsureChunk failed: %v\n", err)
 			return err
 		}
 	}

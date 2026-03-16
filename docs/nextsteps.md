@@ -42,15 +42,26 @@
 3. Consider batch insertion optimization
 
 ### Priority 2: Investigate int64 DoGet Regression (1,035 MB/s → 1,500+ MB/s target)
-**Status**: Investigation needed
+**Status**: INVESTIGATION IN PROGRESS
 
 **Current State**: 1,035 MB/s (was 1,785 MB/s)
 **Target**: 1,500+ MB/s
 
-**Actions**:
-1. Run pprof on actual DoGet benchmark
-2. Check if cache behavior changed due to arena layout
-3. Consider adding prefetching for sequential reads
+**Analysis**:
+1. DoGet goes through VectorStore.DoGet → retrieves Arrow record batches
+2. Retrieval uses chunk-based adaptive batching
+3. GetVector() has sequential type checking chain (Float16 → Float64 → Complex64 → Complex128 → Int64 → Uint64 → Int32 → ...)
+4. Each type check adds branch prediction overhead
+
+**Potential Issues Identified**:
+1. TypedArena.Get() creates zero-value on stack each call for element size calculation
+2. Sequential type checking in GetVector() 
+3. May need to add type-based fast path lookup
+
+**Next Steps**:
+1. Add fast-path lookup for dominant types (float32, int64)
+2. Cache element size in TypedArena instead of calculating each time
+3. Profile actual retrieval to confirm bottleneck
 
 ### Priority 3: Implement Batch SIMD for DoPut Ingestion
 **Status**: Proposed

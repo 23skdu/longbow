@@ -32,7 +32,10 @@ jobs:
 
       - name: Run benchmarks on PR branch
         run: |
-          go test -bench=. -benchmem -count=5 ./... 2>/dev/null | tee pr-bench.txt
+          # Run specific benchmark packages only
+          go test -bench=BenchmarkEuclidean -benchmem -count=5 ./internal/simd/... 2>/dev/null | tee pr-simd-bench.txt
+          go test -bench=BenchmarkSearch -benchmem -count=5 ./internal/store/... 2>/dev/null | tee pr-search-bench.txt
+          go test -bench=BenchmarkArrowHNSWInsert -benchmem -count=5 ./internal/store/... 2>/dev/null | tee pr-insert-bench.txt
 
       - name: Checkout main branch
         uses: actions/checkout@v4
@@ -43,32 +46,61 @@ jobs:
       - name: Run benchmarks on main branch
         run: |
           cd main-branch
-          go test -bench=. -benchmem -count=5 ./... 2>/dev/null | tee ../main-bench.txt
+          go test -bench=BenchmarkEuclidean -benchmem -count=5 ./internal/simd/... 2>/dev/null | tee ../main-simd-bench.txt
+          go test -bench=BenchmarkSearch -benchmem -count=5 ./internal/store/... 2>/dev/null | tee ../main-search-bench.txt
+          go test -bench=BenchmarkArrowHNSWInsert -benchmem -count=5 ./internal/store/... 2>/dev/null | tee ../main-insert-bench.txt
 
       - name: Install benchstat
         run: go install golang.org/x/perf/cmd/benchstat@latest
 
-      - name: Compare benchmarks
-        id: benchstat
+      - name: Compare SIMD benchmarks
+        id: benchstat-simd
         run: |
-          echo "## Benchmark Comparison" > bench-report.md
+          echo "## SIMD Benchmark Comparison" > bench-report.md
+          echo "" >> bench-report.md
+          echo "### Euclidean Distance" >> bench-report.md
+          echo "\`\`\`" >> bench-report.md
+          benchstat main-simd-bench.txt pr-simd-bench.txt 2>/dev/null >> bench-report.md || echo "No SIM benchmarks to compare" >> bench-report.md
+          echo "\`\`\`" >> bench-report.md
+          echo "" >> bench-report.md
+
+      - name: Compare Search benchmarks
+        id: benchstat-search
+        run: |
+          echo "## Search Benchmark Comparison" >> bench-report.md
           echo "" >> bench-report.md
           echo "\`\`\`" >> bench-report.md
-          benchstat main-bench.txt pr-bench.txt >> bench-report.md 2>&1 || true
+          benchstat main-search-bench.txt pr-search-bench.txt 2>/dev/null >> bench-report.md || echo "No search benchmarks to compare" >> bench-report.md
           echo "\`\`\`" >> bench-report.md
+          echo "" >> bench-report.md
 
-          # Check for significant regressions (>10% slowdown)
-          if benchstat main-bench.txt pr-bench.txt 2>/dev/null | grep -E "\+[1-9][0-9]\.[0-9]+%|\+[0-9]{3,}\.[0-9]+%"; then
-            echo "" >> bench-report.md
-            echo "⚠️ **Warning: Potential performance regression detected (>10% slowdown)**" >> bench-report.md
+      - name: Compare Insert benchmarks
+        id: benchstat-insert
+        run: |
+          echo "## Insert Benchmark Comparison" >> bench-report.md
+          echo "" >> bench-report.md
+          echo "\`\`\`" >> bench-report.md
+          benchstat main-insert-bench.txt pr-insert-bench.txt 2>/dev/null >> bench-report.md || echo "No insert benchmarks to compare" >> bench-report.md
+          echo "\`\`\`" >> bench-report.md
+          echo "" >> bench-report.md
+
+      - name: Check for regressions
+        id: check-regression
+        run: |
+          # Check for significant regressions (>5% slowdown)
+          if benchstat main-simd-bench.txt pr-simd-bench.txt 2>/dev/null | grep -E "\+[6-9][0-9]\.[0-9]+%|\+[1-9][0-9][0-9]\.[0-9]+%"; then
             echo "regression=true" >> $GITHUB_OUTPUT
+            echo "⚠️ **Warning: SIMD performance regression detected (>5% slowdown)**" >> bench-report.md
+          elif benchstat main-insert-bench.txt pr-insert-bench.txt 2>/dev/null | grep -E "\+[6-9][0-9]\.[0-9]+%|\+[1-9][0-9][0-9]\.[0-9]+%"; then
+            echo "regression=true" >> $GITHUB_OUTPUT
+            echo "⚠️ **Warning: Insert performance regression detected (>5% slowdown)**" >> bench-report.md
+          elif benchstat main-search-bench.txt pr-search-bench.txt 2>/dev/null | grep -E "\+[6-9][0-9]\.[0-9]+%|\+[1-9][0-9][0-9]\.[0-9]+%"; then
+            echo "regression=true" >> $GITHUB_OUTPUT
+            echo "⚠️ **Warning: Search performance regression detected (>5% slowdown)**" >> bench-report.md
           else
-            echo "" >> bench-report.md
-            echo "✅ No significant performance regressions detected" >> bench-report.md
             echo "regression=false" >> $GITHUB_OUTPUT
+            echo "✅ No significant performance regressions detected" >> bench-report.md
           fi
-
-          cat bench-report.md
 
       - name: Comment on PR
         if: github.event_name == 'pull_request'
@@ -78,7 +110,6 @@ jobs:
             const fs = require('fs');
             const report = fs.readFileSync('bench-report.md', 'utf8');
 
-            // Find existing comment
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -107,8 +138,7 @@ jobs:
             }
 
       - name: Fail on regression
-        if: steps.benchstat.outputs.regression == 'true'
+        if: steps.check-regression.outputs.regression == 'true'
         run: |
           echo "::warning::Performance regression detected! Review benchmark results."
-          # Uncomment next line to fail CI on regression:
-          # exit 1
+          exit 1

@@ -181,7 +181,6 @@ LONGBOW_LISTEN_ADDR=0.0.0.0:3000 \
 LONGBOW_NODE_ID=bench1 \
 LONGBOW_DATA_PATH=data/node_bench \
 LONGBOW_MAX_MEMORY=8589934592 \
-LONGBOW_USE_HNSW2=true \
 ./bin/longbow &
 
 # Capture pprof

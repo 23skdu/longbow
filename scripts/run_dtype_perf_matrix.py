@@ -241,7 +241,7 @@ class PerformanceBenchmark:
         # Build filter if needed
         filter_expr = None
         if search_type == "filtered":
-            filter_expr = f"id:lt:{count // 10}"
+            filter_expr = [{"field": "id", "operator": "lt", "value": str(count // 10)}]
 
         start = time.time()
         latencies = []
@@ -249,16 +249,16 @@ class PerformanceBenchmark:
         try:
             for i in range(queries):
                 q_start = time.time()
-                # Execute search via DoAction
+                # Execute search via DoAction - use VectorSearch action type
                 action = flight.Action(
-                    "search",
+                    "VectorSearch",
                     json.dumps(
                         {
                             "dataset": dataset,
                             "vector": query_vec.tolist(),
                             "k": k,
                             "alpha": alpha,
-                            "filter": filter_expr,
+                            "filters": filter_expr,
                         }
                     ).encode(),
                 )

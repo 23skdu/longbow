@@ -342,8 +342,17 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 	case "add-edge":
 		return s.handleAddEdge(action.Body, stream)
 
+	case "VectorSearch":
+		return s.handleVectorSearchAction(action, stream)
+
 	case "VectorSearchByID":
 		return s.handleVectorSearchByIDAction(action, stream)
+
+	case "search", "dense", "sparse", "filtered", "hybrid":
+		// Handle generic search action types - map to VectorSearch handler
+		// Client sends: search, dense, sparse, filtered, hybrid
+		// Server expects: VectorSearch
+		return s.handleVectorSearchAction(action, stream)
 
 	case "traverse-graph":
 		return s.handleTraverseGraph(action.Body, stream)

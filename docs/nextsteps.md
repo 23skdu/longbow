@@ -208,4 +208,103 @@ Each optimization step will be validated by:
 
 ---
 
-**Next Step**: Begin with WAL replay optimization and unified memory improvements, as these address the primary DoPut regression observed in testing.
+## Deep Arena Analysis Findings (2026-03-15)
+
+### Critical Issues Found
+
+#### 1. **Critical Bug: GetVectorsInt16Chunk Returns Wrong Data**
+**Location**: `internal/store/types/graph_data.go:299-303`
+```go
+func (g *GraphData) GetVectorsInt16Chunk(chunkID int) []int16 {
+    if chunkID < len(g.VectorsPQ) && g.Int16Arena != nil {  // BUG: Uses VectorsPQ!
+        return g.Int16Arena.Get(memory.SliceRef{Offset: g.VectorsPQ[chunkID], ...
+```
+**Issue**: Uses `g.VectorsPQ` offset instead of `g.VectorsInt16` - returns wrong data!
+**Fix**: Replace `g.VectorsPQ[chunkID]` with `g.VectorsInt16[chunkID]`
+
+#### 2. **Float64/Complex Arenas Not Used for Storage**
+**Location**: `internal/store/types/graph_data.go`
+- `Float64Arena`, `Complex64Arena`, `Complex128Arena` are created but NOT used
+- Still allocate via `make([]T, ChunkSize*dims)` - heap allocation, not off-heap
+- **Impact**: Same memory fragmentation issue as int64 had before fix
+
+#### 3. **Missing Arena Implementations**
+| Type | Arena Exists | Actually Used | Issue |
+|------|--------------|---------------|-------|
+| int16 | Yes | **BUG** | Wrong offset array |
+| int32 | No | No | Uses legacy slice |
+| uint16 | No | No | Uses legacy slice |
+| uint32 | No | No | Uses legacy slice |
+| float64 | Yes | **No** | Heap allocation |
+| complex64 | Yes | **No** | Heap allocation |
+| complex128 | Yes | **No** | Heap allocation |
+
+### Performance Bottlenecks Identified
+
+#### 1. **Alloc() Always Takes Slow Path**
+```go
+func (a *SlabArena) Alloc(size int) (uint64, error) {
+    metrics.ArenaSlowPathTotal.Inc()  // ALWAYS hits slow path
+    return a.allocCommon(size, 8, true)  // Always acquires mutex
+}
+```
+**Fix**: Implement true fast path for ≤64 byte allocations
+
+#### 2. **Modulo Operations in Hot Path**
+```go
+pad := (align - (needed % align)) % align  // Two modulo operations
+```
+**Fix**: Use bit operations when align is power of 2: `pad := needed & (align - 1)`
+
+#### 3. **COW Slab Expansion O(n)**
+```go
+newSlabs := make([]*slab, len(currentSlabs)+1)
+copy(newSlabs, currentSlabs)  // O(n) copy every time
+```
+**Fix**: Use atomic pointer swap for O(1) expansion
+
+### Branchless Optimization Opportunities
+
+#### 1. **Alignment Padding (arena.go)**
+Current: `pad := (align - (needed % align)) % align`
+Branchless: `pad := (-needed) & (align - 1)`  // Only if power of 2
+
+#### 2. **First-Allocation Offset Burn**
+Current: `if start == 0 && active.id == 1 { start += align }`
+Branchless: Use bitmask based on offset/id
+
+#### 3. **Get() Nil-Check Elimination**
+Could use unsafe pointer construction, but risky for invalid offsets
+
+### Zero-Copy Opportunities
+
+1. **Vector Type Conversion** - Currently per-element loop, should use SIMD
+2. **Direct Arrow IPC → Arena** - Memory-mapped files directly into arena
+3. **Distance Calculation** - Process directly from arena memory instead of copying
+
+### Recommended Priority Order
+
+#### P0 - Critical (Fix These First)
+1. ~~Fix GetVectorsInt16Chunk bug (data corruption!)~~ ✅ FIXED
+2. ~~Enable Float64Arena for actual storage~~ ✅ FIXED
+3. ~~Enable Complex64Arena/Complex128Arena for actual storage~~ ✅ FIXED
+4. Add Int32Arena (commonly used)
+
+#### P1 - High Impact
+1. Implement true fast path in Alloc()
+2. Replace modulo with bit operations for alignment
+3. Use power-of-2 slab sizes for fast index calculation
+
+#### P2 - Medium Impact
+1. Add Int16Arena, Uint16Arena, Uint32Arena
+2. Optimize COW slab expansion
+3. Reduce strconv overhead in metrics
+
+#### P3 - Nice to Have
+1. Branchless alignment padding
+2. SIMD vectorized type conversion
+3. Direct Arrow IPC → arena zero-copy
+
+---
+
+**Next Step**: Begin with P0 fixes - int16 bug and arena enablement for float64/complex types.

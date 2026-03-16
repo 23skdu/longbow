@@ -34,6 +34,16 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
+// Prefetch prefetches data into CPU cache for better memory access patterns.
+// This is a performance optimization for HNSW graph traversal.
+func prefetch(addr unsafe.Pointer, size int) {
+	for i := 0; i < size; i += 64 {
+		_ = *(*byte)(unsafe.Pointer(uintptr(addr) + uintptr(i)))
+	}
+}
+
+const prefetchCacheLines = 2
+
 // ArrowHNSWConfig holds configuration for ArrowHNSW index
 type ArrowHNSWConfig struct {
 	M              int
@@ -1629,6 +1639,16 @@ func (h *ArrowHNSW) searchLayer(_ context.Context, computer any, entryPoint uint
 		// Lock/RLock needed?
 		// Neighbors are atomic unless resize?
 		neighbors := data.GetNeighbors(layer, curr.ID, nil) // Copy? Helper above does copy.
+
+		// Prefetch neighbor vectors for better cache locality
+		// Process first few neighbors ahead to trigger prefetch
+		prefetchLimit := 4
+		for i := 0; i < len(neighbors) && i < prefetchLimit; i++ {
+			nID := neighbors[i]
+			// Get neighbor chunk to trigger memory access
+			cID := int(nID) / ChunkSize
+			_ = data.GetVectorsChunk(cID)
+		}
 
 		for _, n := range neighbors {
 			if ctx.visited.IsSet(int(n)) {

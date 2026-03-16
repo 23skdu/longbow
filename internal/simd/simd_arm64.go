@@ -51,19 +51,19 @@ func dotNEON(a, b []float32) (float32, error) {
 	return dotNEONKernel(a, b), nil
 }
 
-// Optimized for 384 dimensions
+// Optimized for 384 dimensions - use generic NEON kernel which is SIMD-optimized
 func euclidean384NEON(a, b []float32) (float32, error) {
-	return euclidean384Unrolled4x(a, b)
+	return euclideanNEON(a, b)
 }
 
-// Optimized for 768 dimensions
+// Optimized for 768 dimensions - use generic NEON kernel which is SIMD-optimized
 func euclidean768NEON(a, b []float32) (float32, error) {
-	return euclidean768Unrolled4x(a, b)
+	return euclideanNEON(a, b)
 }
 
-// Optimized for 1536 dimensions
+// Optimized for 1536 dimensions - use generic NEON kernel which is SIMD-optimized
 func euclidean1536NEON(a, b []float32) (float32, error) {
-	return euclidean1536Unrolled4x(a, b)
+	return euclideanNEON(a, b)
 }
 
 func euclidean128NEON(a, b []float32) (float32, error) {

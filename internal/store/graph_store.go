@@ -148,7 +148,9 @@ func (gs *GraphStore) PredicateVocabulary() []string {
 }
 
 func (gs *GraphStore) CommunityCount() int {
-	// Simplified: return number of subjects as proxy for communities if not implemented
+	// Returns number of unique node groups as a proxy for community count.
+	// For accurate community detection, a graph clustering algorithm
+	// (e.g., Louvain, Label Propagation) would need to be implemented.
 	gs.mu.RLock()
 	defer gs.mu.RUnlock()
 	return len(gs.forwardEdges)

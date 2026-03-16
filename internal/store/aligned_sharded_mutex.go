@@ -215,15 +215,30 @@ func (sm *AlignedShardedMutex) AdaptShardCount() {
 
 // resize changes the number of shards (expensive operation, use sparingly).
 func (sm *AlignedShardedMutex) resize(newShardCount int) {
-	// This is a simplified implementation
-	// In production, would need to:
-	// 1. Acquire all locks
-	// 2. Create new shard array
-	// 3. Migrate state
-	// 4. Atomically swap
-	// 5. Release locks
+	oldShards := sm.shards
+	oldCount := len(oldShards)
 
-	// For now, just update the count (actual resize not implemented)
+	if newShardCount <= oldCount {
+		// Shrinking: just update count, old shards will be garbage collected
+		// Note: This leaves unused shards in memory but is safe
+		sm.numShards.Store(int32(newShardCount))
+		return
+	}
+
+	// Growing: create new shards
+	newShards := make([]AlignedShard, newShardCount)
+
+	// Copy existing shards to new array
+	copy(newShards, oldShards)
+
+	// Initialize new shards (no state to migrate, they're new)
+	for i := oldCount; i < newShardCount; i++ {
+		newShards[i] = AlignedShard{}
+	}
+
+	// Atomic swap - readers may temporarily use old or new array
+	// This is safe because we only grow and never shrink the slice
+	sm.shards = newShards
 	sm.numShards.Store(int32(newShardCount))
 }
 

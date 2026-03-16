@@ -93,8 +93,6 @@ spec:
 
             - name: HNSW_REFINEMENT_FACTOR
               value: {{ .Values.hnsw.refinementFactor | quote }}
-            - name: LONGBOW_USE_HNSW2
-              value: {{ .Values.hnsw.useHNSW2 | quote }}
             - name: LONGBOW_USE_DISK
               value: {{ .Values.hnsw.useDisk | quote }}
             # Memory & GC

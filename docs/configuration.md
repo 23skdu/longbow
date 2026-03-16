@@ -44,7 +44,6 @@ These parameters control the HNSW graph construction and search behavior.
 
 | `LONGBOW_HNSW_REFINEMENT_FACTOR` | `1.0` | Refinement factor for SQ8 search. `2.0-4.0` recommended for high recall. |
 | `LONGBOW_HNSW_PQ_ENABLED` | `false` | Enable Product Quantization. |
-| `LONGBOW_USE_HNSW2` | `false` | Enable the new Arrow-native HNSW implementation. |
 | `LONGBOW_USE_DISK` | `false` | Enable SSD-based vector offloading (Disk-ANN) for Reduced RAM usage. |
 | `LONGBOW_AUTO_SHARDING_THRESHOLD` | `10000` | Number of vectors per shard before triggering a split. |
 | `LONGBOW_AUTO_SHARDING_SPLIT_THRESHOLD` | `65536` | Chunk size for sharded HNSW. |

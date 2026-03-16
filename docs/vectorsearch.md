@@ -71,11 +71,10 @@ sequenceDiagram
     DS-->>C: FlightData (Stream)
 ```
 
-### Zero-Copy HNSW2 Implementation (Internal)
+### Arrow-Native HNSW Implementation
 
-We utilize a custom, zero-allocation, Arrow-native implementation of HNSW (`hnsw2`) designed specifically for Longbow's
-workload.
-Unlike standard libraries, this implementation operates directly on Arrow buffers without object overhead.
+Longbow uses an Arrow-native HNSW implementation for high-performance vector search.
+This implementation operates directly on Arrow buffers without object overhead.
 
 #### Key Features
 

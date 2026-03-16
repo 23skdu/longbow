@@ -50,7 +50,6 @@ LONGBOW_META_ADDR=0.0.0.0:3001 \
 LONGBOW_METRICS_ADDR=0.0.0.0:9090 \
 LONGBOW_DATA_PATH=data/node1 \
 LONGBOW_MAX_MEMORY=5368709120 \
-LONGBOW_USE_HNSW2=true \
 ./bin/longbow > data/node1/longbow.log 2>&1 &
 
 echo "Waiting 10s for node to start..."

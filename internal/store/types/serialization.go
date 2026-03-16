@@ -273,7 +273,7 @@ func (g *GraphData) writePQVectors(w io.Writer) error {
 
 func (g *GraphData) writeFloat32Vectors(w io.Writer) error {
 	nodesWritten := 0
-	for _, chunk := range g.Vectors {
+	for chunkID := 0; nodesWritten < g.Capacity; chunkID++ {
 		remaining := g.Capacity - nodesWritten
 		if remaining <= 0 {
 			break
@@ -284,17 +284,16 @@ func (g *GraphData) writeFloat32Vectors(w io.Writer) error {
 			toWriteNodes = remaining
 		}
 
+		chunk := g.GetVectorsChunk(chunkID)
 		if chunk == nil {
-			// Write zeros
 			zeros := make([]float32, toWriteNodes*g.Dims)
 			if err := binary.Write(w, binary.LittleEndian, zeros); err != nil {
 				return err
 			}
 		} else {
-			// Chunk is []float32
 			limit := toWriteNodes * g.Dims
 			if len(chunk) < limit {
-				limit = len(chunk) // Should not happen if strictly managed
+				limit = len(chunk)
 			}
 			if err := binary.Write(w, binary.LittleEndian, chunk[:limit]); err != nil {
 				return err
@@ -592,6 +591,9 @@ func (g *GraphData) readFloat32Vectors(r io.Reader) error {
 			toRead = remaining
 		}
 
+		if err := g.EnsureChunk(cID, 0, g.Dims); err != nil {
+			return err
+		}
 		chunk := g.GetVectorsChunk(cID)
 		limit := toRead * g.Dims
 		if err := binary.Read(r, binary.LittleEndian, chunk[:limit]); err != nil {
@@ -614,6 +616,9 @@ func (g *GraphData) readF16Vectors(r io.Reader) error {
 			toRead = remaining
 		}
 
+		if err := g.EnsureChunk(cID, 0, g.Dims); err != nil {
+			return err
+		}
 		chunk := g.GetVectorsF16Chunk(cID)
 		limit := toRead * g.Dims
 		if err := binary.Read(r, binary.LittleEndian, chunk[:limit]); err != nil {

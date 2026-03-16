@@ -83,17 +83,22 @@
 **Recommendation**: Defer to Phase 2 after other optimizations stabilize
 
 ### Priority 4: Optimize HNSW Search with SIMD
-**Status**: Proposed
+**Status**: IN PROGRESS
 
 **Target**: Improve search QPS
 
+**Current Implementation**:
+1. Search uses EuclideanDistance which already has SIMD
+2. Batch search uses SIMD dispatch for various dimensions
+3. Opportunity: Optimize ef parameter selection, prefetching
+
 **Actions**:
-1. Implement SIMD batch distance computation in search path
-2. Add Metal GPU acceleration for search (if available)
-3. Optimize ef parameter selection
+1. Profile search path to identify bottlenecks
+2. Add prefetching for graph traversal
+3. Consider parallel search for multiple queries
 
 ### Priority 5: Add Comprehensive Benchmark Suite to CI
-**Status**: Proposed
+**Status**: IN PROGRESS
 
 **Target**: Catch regressions early
 
@@ -101,6 +106,8 @@
 1. Add performance benchmarks to CI pipeline
 2. Set up baseline metrics collection
 3. Add alerts for >5% regression
+
+**Note**: Need to define baseline metrics first before adding CI checks
 
 ---
 

@@ -1,6 +1,66 @@
 # Performance Metrics (Comprehensive Matrix)
 
-## Latest Benchmark Results (2026-03-15)
+## Latest Benchmark Results (2026-03-15 - 22GB Memory Tests)
+
+### Fresh Validation Tests (2026-03-15 - 22GB)
+This section contains fresh performance validation tests run with 22GB memory limit.
+
+**Test Configuration:**
+- Memory: 22GB (LONGBOW_MAX_MEMORY=23622320128)
+- Dimensions: 128, 384
+- Vector Counts: 1,000, 5,000, 15,000, 25,000
+- Data Types: int64, uint64, float32
+
+#### Fresh Test Results (22GB)
+
+**int64 Performance:**
+| Dim | Count | DoPut (MB/s) | DoPut (Vec/s) | DoGet (MB/s) | DoGet (Vec/s) |
+|-----|-------|--------------|---------------|--------------|---------------|
+| 128 | 1,000 | 372.63 | 376,000 | 894.25 | 902,000 |
+| 128 | 5,000 | 902.27 | 910,000 | 1,035.07 | 1,044,000 |
+| 128 | 15,000 | 1,165.12 | 1,175,000 | 1,340.97 | 1,351,000 |
+| 128 | 25,000 | 1,390.62 | 1,402,000 | 1,458.83 | 1,470,000 |
+| 384 | 1,000 | 906.11 | 308,000 | 1,096.78 | 372,000 |
+| 384 | 5,000 | 1,239.50 | 421,000 | 1,062.70 | 361,000 |
+| 384 | 15,000 | 1,370.54 | 465,000 | 1,191.99 | 404,000 |
+| 384 | 25,000 | 1,332.04 | 452,000 | 1,326.12 | 450,000 |
+
+**uint64 Performance:**
+| Dim | Count | DoPut (MB/s) | DoPut (Vec/s) | DoGet (MB/s) | DoGet (Vec/s) |
+|-----|-------|--------------|---------------|--------------|---------------|
+| 128 | 5,000 | 1,322.79 | 1,334,000 | 896.86 | 904,000 |
+| 384 | 5,000 | 1,169.92 | 397,000 | 1,158.90 | 393,000 |
+
+**float32 Performance:**
+| Dim | Count | DoPut (MB/s) | DoPut (Vec/s) | DoGet (MB/s) | DoGet (Vec/s) |
+|-----|-------|--------------|---------------|--------------|---------------|
+| 128 | 5,000 | 736.55 | 1,464,000 | 912.56 | 1,813,000 |
+| 384 | 5,000 | 68.65 | 46,000 | 120.60 | 81,000 |
+
+### Comparison with Previous Results (22GB Regression Analysis)
+
+| Config | Metric | Previous | Current (22GB) | Change |
+|--------|--------|----------|----------------|--------|
+| int64 128 5k | DoPut MB/s | 545.37 | 902.27 | **+65%** |
+| int64 128 5k | DoGet MB/s | 1,785.37 | 1,035.07 | **-42%** |
+| int64 384 5k | DoPut MB/s | 1,693.71 | 1,239.50 | **-27%** |
+| int64 384 5k | DoGet MB/s | 1,121.74 | 1,062.70 | **-5%** |
+| float32 128 5k | DoPut MB/s | 716.59 | 736.55 | **+3%** |
+| float32 384 5k | DoPut MB/s | 1,693.71 | 68.65 | **-96%** |
+
+### Key Issues Identified (from pprof)
+
+**Heap Profile (22GB):**
+```
+7083.20MB (48%) - GraphData.EnsureChunk (NOT using arena for float32!)
+5321.94MB (36%) - GetSlab (slow path allocations)
+1010.47MB (7%)  - protobuf
+```
+
+**Root Causes:**
+1. **float32 384 NOT using arena** - DoPut 96% regression
+2. **Slab slow path always hit** - 36% allocation overhead
+3. **int64 DoGet regression** - likely caching behavior change
 
 ### Investigation Summary
 This report documents a performance investigation and fix for int64 vector allocation issues in Longbow.
@@ -174,4 +234,6 @@ Single node, 8GB memory:
 - Memory profiling via pprof heap and CPU profiles
 
 ---
-*Generated: 2026-03-15 16:45:00*
+*Generated: 2026-03-15 19:30:00*
+*Fresh validation tests run: 2026-03-15 19:00-19:30*
+*Full matrix benchmark attempted but exceeded memory limits at high vector counts*

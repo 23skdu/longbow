@@ -130,9 +130,9 @@ func initializeDispatch() {
 		euclideanDistanceComplex64Impl = euclideanComplex64Optimized
 	case "avx2":
 		euclideanDistanceImpl = euclideanAVX2
-		euclideanDistance384Impl = euclidean384Unrolled4x // Optimized unrolled Go implementation
-		euclideanDistance768Impl = euclidean768Unrolled4x // Optimized unrolled Go implementation
-		euclideanDistance1536Impl = euclideanGeneric      // Still needs optimization
+		euclideanDistance384Impl = euclidean384AVX2
+		euclideanDistance768Impl = euclidean768AVX2
+		euclideanDistance1536Impl = euclidean1536AVX2
 		euclideanDistance128Impl = euclidean128Unrolled4x
 		metrics.SimdDispatchCount.WithLabelValues("avx2").Inc()
 		metrics.SimdStaticDispatchType.Set(2)

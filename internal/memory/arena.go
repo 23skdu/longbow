@@ -3,12 +3,36 @@ package memory
 import (
 	"errors"
 	"fmt"
+	"math"
 	"sync"
 	"sync/atomic"
 	"unsafe"
 
 	"github.com/23skdu/longbow/internal/metrics"
 )
+
+// nextPowerOf2 returns the smallest power of 2 >= n
+func nextPowerOf2(n int) int {
+	if n <= 0 {
+		return 1
+	}
+	n--
+	n |= n >> 1
+	n |= n >> 2
+	n |= n >> 4
+	n |= n >> 8
+	n |= n >> 16
+	return n + 1
+}
+
+// Verify nextPowerOf2 works correctly at compile time
+var _ = nextPowerOf2(1024)      // Should be 1024
+var _ = nextPowerOf2(1000)      // Should be 1024
+var _ = nextPowerOf2(4096)      // Should be 4096
+var _ = nextPowerOf2(1<<20 + 1) // Should be 1<<21
+
+// Compile-time check: math.MaxInt is too large, but we only need up to 2^31
+var _ = int(math.MaxInt32)
 
 // SliceRef is a handle to a slice in the arena.
 // It is used by TypedArena and external consumers.
@@ -64,8 +88,8 @@ func NewSlabArena(slabSizeBytes int) *SlabArena {
 	if slabSizeBytes < 1024 {
 		slabSizeBytes = 1024
 	}
-	// Ensure alignment? For now, we assume simple byte allocation.
-	// 4KB or 2MB alignment is good.
+	// Round up to next power of 2 to enable fast modulo via bit operations
+	slabSizeBytes = nextPowerOf2(slabSizeBytes)
 	s := &SlabArena{
 		slabCap: uint32(slabSizeBytes),
 	}
@@ -123,7 +147,10 @@ func (a *SlabArena) AllocAligned(size, align int) (uint64, error) {
 func (a *SlabArena) allocFast(size int) (uint64, bool) {
 	const align = 8
 	needed := uint32(size)
-	pad := (align - (needed % align)) % align
+	// Bit operation optimization: (-needed) & (align-1) is equivalent to
+	// (align - (needed % align)) % align when align is power of 2
+	// This avoids two modulo operations with a single AND
+	pad := (-needed) & (align - 1)
 	totalNeeded := needed + pad
 
 	for {
@@ -192,7 +219,8 @@ func (a *SlabArena) allocCommon(size, align int, zero bool) (uint64, error) {
 	uAlign := uint32(align)
 
 	if active != nil {
-		pad := (uAlign - (active.offset % uAlign)) % uAlign
+		// Bit operation optimization: power-of-2 alignment
+		pad := (-active.offset) & (uAlign - 1)
 		if active.offset+pad+needed <= uint32(len(active.data)) {
 			active.offset += pad // consume padding
 			if pad > 0 {
@@ -228,8 +256,8 @@ func (a *SlabArena) allocCommon(size, align int, zero bool) (uint64, error) {
 		metrics.ArenaAllocatedBytes.WithLabelValues("slab").Add(float64(a.slabCap))
 	}
 
-	// Calc aligned offset
-	pad := (uAlign - (active.offset % uAlign)) % uAlign
+	// Bit operation optimization: power-of-2 alignment
+	pad := (-active.offset) & (uAlign - 1)
 	active.offset += pad
 	if pad > 0 {
 		metrics.AdjacencyPaddingBytes.Add(float64(pad))
@@ -304,7 +332,7 @@ func (a *SlabArena) Get(offset uint64, length uint32) []byte {
 	}
 
 	slabIdx := offset / uint64(a.slabCap)
-	localOffset := uint32(offset % uint64(a.slabCap))
+	localOffset := uint32(offset & (uint64(a.slabCap) - 1))
 
 	// Lock-free read
 	slabsPtr := a.slabs.Load()
@@ -331,7 +359,7 @@ func (a *SlabArena) GetPointer(offset uint64) unsafe.Pointer {
 		return nil
 	}
 	slabIdx := offset / uint64(a.slabCap)
-	localOffset := uint32(offset % uint64(a.slabCap))
+	localOffset := uint32(offset & (uint64(a.slabCap) - 1))
 
 	// Lock-free read
 	slabsPtr := a.slabs.Load()

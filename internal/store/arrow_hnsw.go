@@ -99,7 +99,7 @@ func DefaultArrowHNSWConfig() ArrowHNSWConfig {
 		AdaptiveEf:              false,
 		AdaptiveEfMin:           50,
 		AdaptiveEfThreshold:     0,
-		InitialCapacity:         10000,
+		InitialCapacity:         50000,
 		Workers:                 4,
 		Quantization:            false,
 		SQ8Enabled:              false,

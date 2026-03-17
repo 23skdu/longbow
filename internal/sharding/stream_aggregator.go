@@ -282,12 +282,36 @@ func (sa *StreamAggregator) sortAndSlice(tbl arrow.Table, colIdx, k int, ascendi
 	return []arrow.RecordBatch{res}, nil
 }
 
-// fallback slicing (just first k)
+// fallback slicing - returns first k rows from table
+// This is a fallback for edge cases where the main mergeAndSort path doesn't apply.
+// Currently returns nil to let the caller handle the table directly.
+// TODO: Implement proper table slicing using arrow.Table's API
 func (sa *StreamAggregator) sliceTable(tbl arrow.Table, k int) ([]arrow.RecordBatch, error) {
-	_ = tbl
-	_ = k
-	// Not implemented perfectly, simplified
-	return nil, nil
+	if tbl.NumRows() == 0 {
+		return nil, nil
+	}
+	limited := tbl.NumRows()
+	if int64(k) < limited {
+		limited = int64(k)
+	}
+	schema := tbl.Schema()
+	numCols := int(tbl.NumCols())
+	slicedCols := make([]arrow.Array, numCols)
+	for i := 0; i < numCols; i++ {
+		chunked := tbl.Column(i)
+		chunk := chunked.Data().Chunk(0)
+		length := chunk.Len()
+		if int64(length) > limited {
+			length = int(limited)
+		}
+		slice := array.NewSlice(chunk, 0, int64(length))
+		slicedCols[i] = slice
+	}
+	record := array.NewRecord(schema, slicedCols, limited)
+	for _, c := range slicedCols {
+		c.Release()
+	}
+	return []arrow.RecordBatch{record}, nil
 }
 
 // appendValue is a helper to append a single value from srcArr[idx] to builder

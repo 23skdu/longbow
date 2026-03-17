@@ -1188,12 +1188,31 @@ func (h *ArrowHNSW) SetEfConstruction(ef int32) {
 	h.efConstruction.Store(ef)
 }
 
-func (h *ArrowHNSW) CleanupTombstones(threshold int) (int, error) {
-	return 0, nil // Stub
+func (h *ArrowHNSW) CleanupTombstones(threshold int) int {
+	h.dataset.dataMu.RLock()
+	defer h.dataset.dataMu.RUnlock()
+
+	totalPruned := 0
+	for _, ts := range h.dataset.Tombstones {
+		if ts == nil {
+			continue
+		}
+		count := int(ts.Count())
+		if count > threshold {
+			ts.Release()
+			h.dataset.Tombstones = make(map[int]*query.Bitset)
+			totalPruned += count
+			break
+		}
+	}
+	return totalPruned
 }
 
 func (h *ArrowHNSW) SetIndexedColumns(columns []string) {
-	// No-op for now
+	// No-op: Column indexing is handled at the VectorStore level, not ArrowHNSW.
+	// VectorStore.SetIndexedColumns() stores columns in s.indexedColumns,
+	// and VectorStore.applyBatchToIndex() calls columnIndex.IndexRecord().
+	// ArrowHNSW doesn't maintain its own column index - it's managed by VectorStore.
 }
 
 func (h *ArrowHNSW) generateLevel() int {

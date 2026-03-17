@@ -196,8 +196,7 @@ func (a *SlabArena) allocCommon(size, align int, zero bool) (uint64, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	// Try fast path while holding the mutex (safe because no concurrent access)
-	// Fast path assumes 8-byte alignment
+	// Try fast path while holding the mutex
 	if size <= 64 && align <= 8 {
 		if offset, ok := a.allocFast(size); ok {
 			metrics.ArenaFastPathTotal.Inc()
@@ -215,84 +214,81 @@ func (a *SlabArena) allocCommon(size, align int, zero bool) (uint64, error) {
 		active = currentSlabs[len(currentSlabs)-1]
 	}
 
-	// Make sure align is uint32 compatible
 	uAlign := uint32(align)
+	var start uint32
+	var claimed bool
 
 	if active != nil {
-		// Bit operation optimization: power-of-2 alignment
-		pad := (-active.offset) & (uAlign - 1)
-		if active.offset+pad+needed <= uint32(len(active.data)) {
-			active.offset += pad // consume padding
-			if pad > 0 {
-				metrics.AdjacencyPaddingBytes.Add(float64(pad))
+		for {
+			oldOffset := atomic.LoadUint32(&active.offset)
+			pad := (-oldOffset) & (uAlign - 1)
+			newOffset := oldOffset + pad + needed
+
+			// Enforce 8-byte alignment at the end to support future allocFast
+			if newOffset%8 != 0 {
+				newOffset += 8 - (newOffset % 8)
 			}
-		} else {
-			// Won't fit, need new slab
-			active = nil
+
+			if newOffset <= uint32(len(active.data)) {
+				if atomic.CompareAndSwapUint32(&active.offset, oldOffset, newOffset) {
+					start = oldOffset + pad
+					claimed = true
+					if pad > 0 {
+						metrics.AdjacencyPaddingBytes.Add(float64(pad))
+					}
+					break
+				}
+			} else {
+				// Won't fit, need new slab
+				active = nil
+				break
+			}
 		}
 	}
 
-	// Check fit (active might have been nil'd above if full)
-	if active == nil {
-		// Allocate new slab using local helper or pool
+	if !claimed {
+		// Allocate new slab
 		buf := GetSlab(int(a.slabCap))
+		newId := uint32(len(currentSlabs) + 1)
+
+		var pad uint32
+		if newId == 1 {
+			// Burn alignment bytes to move away from 0
+			pad = uAlign
+			start = pad
+		}
+
+		newOffset := start + needed
+		if newOffset%8 != 0 {
+			newOffset += 8 - (newOffset % 8)
+		}
 
 		newSlab := &slab{
-			id:     uint32(len(currentSlabs) + 1), // ID starts at 1
+			id:     newId,
 			data:   buf,
-			offset: 0,
+			offset: newOffset,
 		}
-		// Copy-On-Write for lock-free readers
+
+		// Zero memory before publishing
+		if zero {
+			clear(buf[start : start+needed])
+		}
+
 		newSlabs := make([]*slab, len(currentSlabs)+1)
 		copy(newSlabs, currentSlabs)
 		newSlabs[len(currentSlabs)] = newSlab
-
-		// Publish new state
 		a.slabs.Store(&newSlabs)
 
 		active = newSlab
 
 		metrics.ArenaSlabsTotal.Inc()
 		metrics.ArenaAllocatedBytes.WithLabelValues("slab").Add(float64(a.slabCap))
+	} else {
+		if zero {
+			clear(active.data[start : start+needed])
+		}
 	}
 
-	// Bit operation optimization: power-of-2 alignment
-	pad := (-active.offset) & (uAlign - 1)
-	active.offset += pad
-	if pad > 0 {
-		metrics.AdjacencyPaddingBytes.Add(float64(pad))
-	}
-
-	start := active.offset
-	// Offset 0 is reserved for nil. For the very first slab and very first allocation,
-	// we burn 'align' bytes to ensure we move away from 0 while maintaining alignment.
-	if start == 0 && active.id == 1 {
-		active.offset += uint32(align)
-		start = active.offset
-	}
-
-	if start+needed > uint32(len(active.data)) {
-		return 0, fmt.Errorf("alloc size %d with alignment padding %d exceeds slab capacity %d", size, start, a.slabCap)
-	}
-
-	active.offset += needed
-
-	// ZEROING LOGIC
-	if zero {
-		// Zero the allocated range
-		// If the slab came from 'make', it's already zeroed IF we haven't used it.
-		// But if we reuse slabs, or if we mix clean/dirty allocs in same slab,
-		// we MUST explicitly zero here to be safe.
-		// Go's built-in 'clear' or simple loop?
-		// For small n, loop is fine. For large n, copy/clear is fine.
-		// 'make' provides zeroed memory, but we can't track easily if this specific range is fresh.
-		// Pessimistic zeroing is safest when pooling.
-		// Given we want to optimize 'AllocDirty', we accept cost in 'Alloc'.
-		clear(active.data[start : start+needed])
-	}
-
-	// Result = (SlabIndex * SlabCap) + LocalOffset
-	// Slab index is (ID-1).
 	slabIdx := uint64(active.id - 1)
 	globalOffset := (slabIdx * uint64(a.slabCap)) + uint64(start)
 

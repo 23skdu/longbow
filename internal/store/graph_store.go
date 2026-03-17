@@ -6,6 +6,9 @@ import (
 	"sync"
 
 	lbtypes "github.com/23skdu/longbow/internal/store/types"
+	"github.com/apache/arrow-go/v18/arrow"
+	"github.com/apache/arrow-go/v18/arrow/array"
+	"github.com/apache/arrow-go/v18/arrow/memory"
 )
 
 type GraphStore struct {
@@ -399,4 +402,59 @@ func (gs *GraphStore) Close() error {
 	gs.edgeCount = 0
 
 	return nil
+}
+
+func (gs *GraphStore) ToArrowBatch() (arrow.RecordBatch, error) {
+	gs.mu.RLock()
+	defer gs.mu.RUnlock()
+
+	if gs.edgeCount == 0 {
+		return nil, nil
+	}
+
+	subjects := make([]uint32, 0, gs.edgeCount)
+	objects := make([]uint32, 0, gs.edgeCount)
+	weights := make([]float32, 0, gs.edgeCount)
+	predicateIndices := make([]int32, 0, gs.edgeCount)
+
+	for _, edges := range gs.forwardEdges {
+		for _, e := range edges {
+			subjects = append(subjects, uint32(e.Subject))
+			objects = append(objects, uint32(e.Object))
+			weights = append(weights, e.Weight)
+			predicateIndices = append(predicateIndices, gs.predicateMap[e.Predicate])
+		}
+	}
+
+	subjectsArr := array.NewUint32Builder(memory.NewGoAllocator())
+	defer subjectsArr.Release()
+	subjectsArr.AppendValues(subjects, nil)
+
+	objectsArr := array.NewUint32Builder(memory.NewGoAllocator())
+	defer objectsArr.Release()
+	objectsArr.AppendValues(objects, nil)
+
+	weightsArr := array.NewFloat32Builder(memory.NewGoAllocator())
+	defer weightsArr.Release()
+	weightsArr.AppendValues(weights, nil)
+
+	predicatesArr := array.NewInt32Builder(memory.NewGoAllocator())
+	defer predicatesArr.Release()
+	predicatesArr.AppendValues(predicateIndices, nil)
+
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "subject", Type: arrow.PrimitiveTypes.Uint32},
+		{Name: "predicate_idx", Type: arrow.PrimitiveTypes.Int32},
+		{Name: "object", Type: arrow.PrimitiveTypes.Uint32},
+		{Name: "weight", Type: arrow.PrimitiveTypes.Float32},
+	}, nil)
+
+	record := array.NewRecord(schema, []arrow.Array{
+		subjectsArr.NewArray(),
+		predicatesArr.NewArray(),
+		objectsArr.NewArray(),
+		weightsArr.NewArray(),
+	}, int64(len(subjects)))
+
+	return record, nil
 }

@@ -6,8 +6,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/apache/arrow-go/v18/arrow/float16"
-
 	"github.com/23skdu/longbow/internal/metrics"
 )
 
@@ -72,13 +70,27 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 
 	if needsStructuralChange {
 		h.growMu.RUnlock()
-		// Re-initialize/Grow without holding RLock to allow write lock acquisition
+	} else {
+		h.growMu.RUnlock()
+		currentData := h.data.Load()
+		if currentData != data {
+			data = currentData
+			dims = int(h.dims.Load())
+			needsStructuralChange = data == nil || int(id) >= data.Capacity || dims == 0 || (dims > 0 && data.Vectors == nil) || cID >= len(data.Vectors) || data.Vectors[cID] == nil
+			if needsStructuralChange {
+				h.growMu.Lock()
+				defer h.growMu.Unlock()
+				goto do_grow
+			}
+		}
+	}
+
+do_grow:
+	if needsStructuralChange {
 		if dims == 0 {
 			inputDims := 0
 			switch v := vec.(type) {
 			case []float32:
-				inputDims = len(v)
-			case []float16.Num:
 				inputDims = len(v)
 			case []complex64:
 				inputDims = len(v)
@@ -104,7 +116,6 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 			}
 		}
 
-		// Ensure capacity for the specific ID
 		currData := h.data.Load()
 		currDims := int(h.dims.Load())
 		if currData == nil || int(id) >= currData.Capacity {
@@ -117,19 +128,20 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 			}
 		}
 
-		// Allocate chunk
 		var err error
 		_, err = h.ensureChunk(h.data.Load(), cID, cOff, currDims)
 		if err != nil {
 			return err
 		}
 
-		// RELOAD data snapshot and CONTINUE without holding RLock
 		data = h.data.Load()
 		dims = int(h.dims.Load())
-	} else {
-		// We were holding RLock from line 59, release it now.
-		h.growMu.RUnlock()
+	}
+
+	currentData := h.data.Load()
+	if currentData != data {
+		data = currentData
+		dims = int(h.dims.Load())
 	}
 
 	// From here on, we use 'data' snapshot. Internal operations (AddConnection)

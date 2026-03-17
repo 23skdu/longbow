@@ -101,9 +101,29 @@ func TestGraphStore_PredicateVocabulary(t *testing.T) {
 	}
 }
 
-// TestGraphStore_ToArrowBatch tests converting edges to Arrow RecordBatch with Dictionary encoding
+// TestGraphStore_ToArrowBatch tests converting edges to Arrow RecordBatch
 func TestGraphStore_ToArrowBatch(t *testing.T) {
-	// Not Implemented Yet
+	gs := NewGraphStore()
+
+	_ = gs.AddEdge(Edge{Subject: VectorID(1), Predicate: "owns", Object: VectorID(10), Weight: 1.0})
+	_ = gs.AddEdge(Edge{Subject: VectorID(1), Predicate: "likes", Object: VectorID(11), Weight: 0.8})
+	_ = gs.AddEdge(Edge{Subject: VectorID(2), Predicate: "owns", Object: VectorID(12), Weight: 1.0})
+
+	record, err := gs.ToArrowBatch()
+	if err != nil {
+		t.Fatalf("ToArrowBatch failed: %v", err)
+	}
+	if record == nil {
+		t.Fatal("expected record, got nil")
+	}
+	defer record.Release()
+
+	if record.NumRows() != 3 {
+		t.Errorf("expected 3 rows, got %d", record.NumRows())
+	}
+	if record.NumCols() != 4 {
+		t.Errorf("expected 4 columns, got %d", record.NumCols())
+	}
 }
 
 // TestGraphStore_DictionaryMemorySavings verifies Dictionary encoding saves memory

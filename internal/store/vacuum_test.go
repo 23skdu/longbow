@@ -6,6 +6,7 @@ import (
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/memory"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -37,8 +38,9 @@ func TestVacuum_Basic(t *testing.T) {
 	// If it's internal logic, we might depend on CleanupTombstones?
 
 	// Just verify cleanup tombstones if that's what vacuum does
-	_, err = h.CleanupTombstones(0) // Assuming this method exists on ArrowHNSW based on previous files
-	require.NoError(t, err)
+	// ArrowHNSW.CleanupTombstones returns int, not (int, error)
+	pruned := h.CleanupTombstones(0)
+	assert.Equal(t, 0, pruned) // ArrowHNSW stub returns 0
 }
 
 func TestVacuum_SearchImpact(t *testing.T) {

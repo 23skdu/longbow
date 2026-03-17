@@ -39,13 +39,9 @@ func TestPQEncoder_TrainAndEncode(t *testing.T) {
 	encoder, err := NewPQEncoder(dims, M, K)
 	require.NoError(t, err)
 
-	// Training should fail strictly because it's not implemented yet
-	// But once implemented, it should succeed
+	// Train the encoder
 	err = encoder.Train(data)
-	if err != nil && err.Error() == "not implemented" {
-		t.Skip("Train not implemented yet")
-	}
-	require.NoError(t, err)
+	require.NoError(t, err, "PQ training should succeed")
 
 	// Test Encoding & Decoding & Quality
 	vec := data[0]
@@ -91,10 +87,7 @@ func TestPQEncoder_EncodeConsistency(t *testing.T) {
 	require.NoError(t, err)
 
 	err = encoder.Train(data)
-	if err != nil && err.Error() == "not implemented" {
-		t.Skip("Train not implemented yet")
-	}
-	require.NoError(t, err)
+	require.NoError(t, err, "PQ training should succeed")
 
 	// Test that encoding produces consistent results
 	vec := data[100]
@@ -127,9 +120,6 @@ func TestPQEncoder_EncodeWithSmallK(t *testing.T) {
 	require.NoError(t, err)
 
 	err = encoder.Train(data)
-	if err != nil && err.Error() == "not implemented" {
-		t.Skip("Train not implemented yet")
-	}
 	require.NoError(t, err)
 
 	vec := data[0]

@@ -65,18 +65,39 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 	cID_start := chunkID(startID)
 	cID_end := chunkID(maxID)
 
-	for cid := cID_start; cid <= cID_end; cid++ {
-		// Pass 0 as offset, it's ignored for chunk allocation
-		_, err := h.ensureChunk(h.data.Load(), cid, 0, dims)
-		if err != nil {
-			return fmt.Errorf("failed to pre-allocate chunk %d for bulk insert: %w", cid, err)
+	// Retry loop to handle concurrent Grow operations that might swap data pointer
+	// between ensureChunk calls and the actual insertion.
+	for {
+		// Capture data pointer before ensureChunk
+		data := h.data.Load()
+
+		// Ensure all required chunks on the current data pointer
+		for cid := cID_start; cid <= cID_end; cid++ {
+			_, err := h.ensureChunk(data, cid, 0, dims)
+			if err != nil {
+				return fmt.Errorf("failed to pre-allocate chunk %d for bulk insert: %w", cid, err)
+			}
 		}
+
+		// Acquire Read Lock to stabilize the data pointer
+		h.growMu.RLock()
+
+		// Check if data pointer changed while we were ensuring chunks
+		currentData := h.data.Load()
+		if data == currentData {
+			// Data pointer is stable, use the CURRENT data pointer (not the one from before ensureChunk)
+			// This ensures we use the latest data that includes our chunk allocations
+			break
+		}
+
+		// Data pointer changed (Grow happened), release lock and retry
+		h.growMu.RUnlock()
 	}
 
-	// 2. Prepare Active Set
-	// Acquire Read Lock to ensure we have a stable GraphData pointer for the duration of the insertion.
-	// This prevents concurrent Grows from swapping away our data pointer.
-	h.growMu.RLock()
+	// At this point, we hold RLock. Load the stable data pointer for use by workers.
+	// This must be loaded AFTER the retry loop confirms stability to ensure we get
+	// the latest GraphData that has our chunk allocations.
+	data := h.data.Load()
 	defer h.growMu.RUnlock()
 
 	type activeNode struct {
@@ -88,7 +109,6 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 	activeNodes := make([]activeNode, n)
 
 	// Pre-load vectors and generate levels (Parallel)
-	data := h.data.Load()
 
 	// Use errgroup for parallel prep
 	gPrep, ctxPrep := errgroup.WithContext(ctx)

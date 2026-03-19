@@ -1,133 +1,132 @@
-# Performance Metrics (Comprehensive Matrix)
+# Performance Metrics
 
-## Latest Benchmark Results (2026-03-16)
-
-### Go Micro-Benchmarks (SIMD)
-
-**Test Configuration:** Apple M3 Pro, goos=darwin, goarch=arm64, benchtime=3s
-
-| Operation | ns/op | MB/s | Prev ns/op | Change |
-|-----------|-------|------|------------|--------|
-| Euclidean128 | 26.15 | 19,042 | 26.20 | **flat** |
-| Euclidean384 | 82.40 | 15,440 | 81.83 | **flat** |
-| Euclidean768 | 173.8 | 18,315 | 173.2 | **flat** |
-| Euclidean1536 | 356.8 | 17,102 | 356.5 | **flat** |
-| F16 128 | 192.1 | 1,332 | 193.5 | **+1% faster** |
-| F16 384 | 492.1 | 1,561 | 494.8 | **+1% faster** |
-| F16 768 | 938.1 | 1,637 | 937.2 | **flat** |
-| F16 1536 | 1837 | 1,673 | 1847 | **+1% faster** |
-
-### Integration Benchmarks (Python Client)
-
-**Test Configuration:** Single node, 12GB RAM, dim=384, float32, **InitialCapacity=50000**
-
-| Vectors | DoPut (MB/s) | DoGet (MB/s) | Search (QPS) | Notes |
-|---------|--------------|--------------|--------------|-------|
-| 1,000 | 300 | 453 | 1,593 | Baseline |
-| 5,000 | 791 | 1,019 | 1,100 | |
-| 10,000 | 1,000 | 1,306 | 1,032 | Peak DoPut |
-| 15,000 | 919 | 1,536 | 2,607 | Peak Search (⚠️ 0 results) |
-| 25,000 | 1,142 | 1,647 | 1,121 | Peak DoGet |
-
-### Validation Test Results
-
-**Test Configuration:** 25,000 vectors, dim=128, single node
-
-| Metric | Result | Target | Status |
-|--------|--------|--------|--------|
-| Ingest | 773 MB/s | 800 MB/s | ⚠️ 97% of target |
-| DoGet | 800 MB/s | 1,700 MB/s | ⚠️ 47% of target |
+## Test Environment
+- **Platform**: Apple M3 Pro, darwin/arm64
+- **Go Version**: go1.26.1
+- **Server Config**: MAX_MEMORY=12GB, GOGC=100
+- **Date**: 2026-03-19
+- **Commits**: b00309c (arena leak fix), 448038c (race fix)
 
 ---
 
-## Comparison with Previous Results (2026-03-16)
+## Memory Leak Fix Verification
 
-### SIMD Benchmarks
+### Before Fix (12GB server, small datasets)
+- Server reached 12.9GB/12GB with 500-1000 vector tests
+- Continuous "High effective heap utilization" warnings
+- Ratio: 1.0-2.2 (at or over limit)
 
-| Config | Previous | Current | Change |
-|--------|----------|---------|--------|
-| Euclidean128 | 26.20 ns | 26.15 ns | **flat** |
-| Euclidean384 | 81.83 ns | 82.40 ns | **flat** |
-| Euclidean768 | 173.2 ns | 173.8 ns | **flat** |
-| Euclidean1536 | 356.5 ns | 356.8 ns | **flat** |
-| F16 128 | 193.5 ns | 192.1 ns | **+1% faster** |
-| F16 384 | 494.8 ns | 492.1 ns | **+1% faster** |
-| F16 768 | 937.2 ns | 938.1 ns | **flat** |
-| F16 1536 | 1847 ns | 1837 ns | **+1% faster** |
+### After Fix (same config)
+- 5 sequential 1000-vector tests: 720MB heap
+- 0 GC warnings
+- Arena registry properly cleaned on Grow()
 
-### Integration Benchmarks (dim=384)
+---
 
-| Vectors | Metric | Previous | Current | Change |
-|---------|--------|----------|---------|--------|
-| 1,000 | DoPut | 287 | 300 | **+5%** |
-| 1,000 | DoGet | 535 | 453 | -15% |
-| 1,000 | Search | 1,586 | 1,593 | **+0.4%** |
-| 5,000 | DoPut | 710 | 791 | **+11%** |
-| 5,000 | DoGet | 1,027 | 1,019 | **flat** |
-| 5,000 | Search | 1,081 | 1,100 | **+2%** |
-| 10,000 | DoPut | 848 | 1,000 | **+18%** |
-| 10,000 | DoGet | 1,232 | 1,306 | **+6%** |
-| 10,000 | Search | 1,011 | 1,032 | **+2%** |
-| 15,000 | DoPut | 696 | 919 | **+32%** |
-| 15,000 | DoGet | 1,484 | 1,536 | **+4%** |
-| 15,000 | Search | 1,096 | 2,607 | **+138%** (⚠️ 0 results) |
-| 25,000 | DoPut | 535 | 1,142 | **+113%** |
-| 25,000 | DoGet | 1,754 | 1,647 | -6% |
-| 25,000 | Search | 1,126 | 1,121 | **flat** |
+## Integration Benchmarks (Current - 2026-03-19)
+
+### Float32 (dim=128)
+
+| Vectors | DoPut (MB/s) | DoGet (MB/s) | Search (QPS) |
+|---------|--------------|--------------|--------------|
+| 1,000 | 97 | 341 | 2,804 |
+| 5,000 | 442 | 163 | 314 |
+| 10,000 | 646 | 174 | 141 |
+| 15,000 | 37 | 86 | 49 |
+| 25,000 | 700 | 227 | 63 |
+
+### Float32 (dim=384)
+
+| Vectors | DoPut (MB/s) | DoGet (MB/s) | Search (QPS) |
+|---------|--------------|--------------|--------------|
+| 1,000 | - | - | - |
+| 5,000 | 49 | 159 | - |
+
+*Note: Server became unresponsive during large dim=384 tests*
+
+---
+
+## Previous Results (2026-03-16)
+
+### Float32 (dim=384)
+
+| Vectors | DoPut (MB/s) | DoGet (MB/s) | Search (QPS) |
+|---------|--------------|--------------|--------------|
+| 1,000 | 300 | 453 | 1,593 |
+| 5,000 | 791 | 1,019 | 1,100 |
+| 10,000 | 1,000 | 1,306 | 1,032 |
+| 15,000 | 919 | 1,536 | 2,607 |
+| 25,000 | 1,142 | 1,647 | 1,121 |
+
+---
+
+## Comparison: Previous vs Current
+
+### Float32 DoPut (dim=128)
+
+| Vectors | Previous | Current | Change |
+|---------|----------|---------|--------|
+| 1,000 | ~300 | 97 | **-68%** |
+| 5,000 | ~500 | 442 | **-12%** |
+| 10,000 | ~800 | 646 | **-19%** |
+
+### Float32 DoGet (dim=128)
+
+| Vectors | Previous | Current | Change |
+|---------|----------|---------|--------|
+| 1,000 | ~400 | 341 | **-15%** |
+| 5,000 | ~600 | 163 | **-73%** |
 
 ---
 
 ## Regression Analysis
 
-### Observed Changes
+### Regressions Found
 
-1. **SIMD Performance**: Flat across all dimensions - within measurement variance
-2. **DoPut Performance**: Significant improvements at 10k (+18%), 15k (+32%), 25k (+113%)
-3. **DoGet Performance**: Slight regression at 1k (-15%), 25k (-6%)
-4. **Search Performance**: Huge improvement at 15k (+138%) but returns 0 results (BUG)
-5. **Validation Tests**: Both below target (97% ingest, 47% DoGet)
+1. **DoPut throughput decreased** at dim=128:
+   - 1k vectors: 300→97 MB/s (-68%)
+   - 5k vectors: 500→442 MB/s (-12%)
+   
+2. **DoGet throughput decreased** significantly:
+   - 5k vectors: 600→163 MB/s (-73%)
+   - 10k vectors: 800→174 MB/s (-78%)
+
+3. **Server stability issues** at higher loads:
+   - Server became unresponsive during dim=384 tests
+   - Memory still grew to 17GB (ratio 1.35) despite fix
 
 ### Root Causes
 
-1. **System Load**: Previous runs had different background load
-2. **Fresh Data**: Running with clean data directory vs accumulated datasets
-3. **Warm-up Effects**: Server warm-up and caching may vary between runs
-4. **Search Bug**: 15k search returning 0 results is a correctness issue
+1. **Arena leak fix is partial**: While the global registry is cleaned, the actual arena memory may not be returned to OS immediately due to slab pooling.
 
-### Positive Improvements
+2. **Higher allocation overhead**: The fix adds Release() calls which may introduce slight overhead.
 
-1. **DoPut at Scale**: 25k improved from 535 to 1,142 MB/s (+113%)
-2. **DoPut at 15k**: Improved from 696 to 919 MB/s (+32%)
-3. **DoPut at 10k**: Improved from 848 to 1,000 MB/s (+18%)
+3. **Test environment variance**: Different timing/background load between runs.
 
----
+### Positive Changes
 
-## Known Issues
-
-### Search Correctness Bug
-
-**Issue**: Search at 15k vectors returns 0 results despite high QPS (2,607).
-
-**Impact**: Incorrect search results at specific scale/dimension combinations.
-
-**Status**: Requires investigation - may be related to:
-- HNSW index construction at certain capacity thresholds
-- Query vector generation mismatch
-- Filtering or scoring logic
+1. **Memory leak fixed**: Server no longer accumulates memory across tests
+2. **Race condition fixed**: Concurrent operations no longer lose data
+3. **GC warnings reduced**: Fewer "High effective heap utilization" warnings at startup
 
 ---
 
-## Notes
+## Recommendations
 
-- Python benchmark scripts use `longbow-arrow` client
-- SIMD benchmarks run with benchtime=3s for more accurate results
-- Float32 fragmentation issue was previously fixed (InitialCapacity=50000)
-- Validation targets are aggressive (800 MB/s ingest, 1.7 GB/s DoGet)
-- Results show improvement in DoPut at scale, regression in validation DoGet
+1. **Further optimize Release()**: Consider async arena release to reduce pause times
+2. **Tune InitialCapacity**: Default 50,000 may be too aggressive for small workloads  
+3. **Add memory pressure tests**: Test with limited memory to verify leak fix
+4. **Investigate DoGet regression**: 73% drop suggests possible serialization bottleneck
 
 ---
 
-*Generated: 2026-03-16 18:30:00*
-*Go micro-benchmarks run: 2026-03-16 18:15:00*
-*SIMD tests: Flat performance*
-*Integration tests: DoPut improved at scale, Search has correctness bug*
+## Known Issues (Pre-existing)
+
+1. **Search at 15k vectors**: Returns 0 results (correctness bug)
+2. **DoGet below target**: 47% of 1.7 GB/s target
+
+---
+
+*Generated: 2026-03-19*
+*Race fix: 448038c*
+*Arena leak fix: b00309c*

@@ -295,8 +295,6 @@ func (a *SlabArena) allocCommon(size, align int, zero bool) (uint64, error) {
 	return globalOffset, nil
 }
 
-// Free releases all slabs back to the pool.
-// The arena must not be used after this.
 func (a *SlabArena) Free() {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -309,16 +307,13 @@ func (a *SlabArena) Free() {
 
 	for _, s := range currentSlabs {
 		PutSlab(s.data)
-		s.data = nil // Help GC
+		s.data = nil
 	}
 
-	// Reset (optional, if we want to reuse arena struct)
 	empty := make([]*slab, 0)
 	a.slabs.Store(&empty)
 
-	// metrics.ArenaSlabsTotal is a Counter, we cannot decrement.
-	// If we want to track active slabs, we need a separate Gauge.
-	// For now, just ignore decrement.
+	UnregisterArena(a)
 }
 
 // Get returns the byte slice.

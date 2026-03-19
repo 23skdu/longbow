@@ -77,7 +77,8 @@ func (s *ChunkedLocationStore) Get(id VectorID) (Location, bool) {
 func (s *ChunkedLocationStore) GetID(loc Location) (VectorID, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	id, ok := s.reverseMap[packLocation(loc)]
+	packed := packLocation(loc)
+	id, ok := s.reverseMap[packed]
 	return id, ok
 }
 
@@ -123,11 +124,6 @@ func (s *ChunkedLocationStore) Set(id VectorID, loc Location) {
 
 	if chunkIdx < len(chunks) {
 		// Update reverse map
-		// We need to know previous location to remove it?
-		// Or just set strict mapping.
-		// If we overwrite, the old reverse mapping becomes stale.
-		// To keep reverse map clean, ideally we remove the old mapping.
-		// For performance, acquiring lock is necessary.
 		s.mu.Lock()
 		chunks[chunkIdx].data[offset].Store(packed)
 		s.reverseMap[packed] = id

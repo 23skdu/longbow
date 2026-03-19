@@ -409,14 +409,9 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 
 		numNew := len(insertingIndices)
 		if numNew > 1 {
-			// Pre-allocate results matrix (Upper Triangular is sufficient, but full matrix simplifies parallel writes)
-			// Flattened: row i is at resultsMatrix[i*numNew : (i+1)*numNew]
-			// Or simple [][]float32 since we parallelize by row anyway?
-			// [][]float32 is safer for concurrent writes to different rows.
-			resultsMatrix := make([][]float32, numNew)
-			for i := 0; i < numNew; i++ {
-				resultsMatrix[i] = make([]float32, numNew)
-			}
+			// Distance Matrix Allocation Removed to Optimize Memory.
+			// We append candidates on-the-fly directly to graphCandidates[qIdx]
+			// since row processing is write-isolated per tile worker goroutine.
 
 			// Blocked Matrix Multiplication
 			// Tile size for cache locality
@@ -566,7 +561,8 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 										dist = math.MaxFloat32
 									}
 								}
-								resultsMatrix[row][col] = dist
+								otherID := activeNodes[tIdx].id
+								graphCandidates[qIdx] = append(graphCandidates[qIdx], Candidate{ID: otherID, Dist: dist})
 							}
 						}
 					}
@@ -576,22 +572,6 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 
 			if err := gIntra.Wait(); err != nil {
 				return err
-			}
-
-			// Merge Intra-results into candidates
-			for i, activeIdx := range insertingIndices {
-				cands := graphCandidates[activeIdx] // Copy
-
-				for j, otherActiveIdx := range insertingIndices {
-					if i == j {
-						continue
-					}
-
-					dist := resultsMatrix[i][j]
-					otherID := activeNodes[otherActiveIdx].id
-					cands = append(cands, Candidate{ID: otherID, Dist: dist})
-				}
-				graphCandidates[activeIdx] = cands
 			}
 		}
 

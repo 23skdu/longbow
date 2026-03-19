@@ -184,6 +184,11 @@ func TestLockFreeNeighbors_RaceDetection(t *testing.T) {
 func TestLockFreeNeighbors_NoMemoryLeaks(t *testing.T) {
 	list := NewLockFreeNeighborList()
 
+	runtime.GC()
+	runtime.Gosched()
+	var mStart runtime.MemStats
+	runtime.ReadMemStats(&mStart)
+
 	// Perform many updates
 	for i := 0; i < 10000; i++ {
 		neighbors := make([]uint32, 100)
@@ -195,15 +200,23 @@ func TestLockFreeNeighbors_NoMemoryLeaks(t *testing.T) {
 
 	// Force GC
 	runtime.GC()
+	runtime.Gosched()
 
 	// Memory should not grow unbounded
-	// This is a basic check - more sophisticated leak detection would use pprof
-	var m runtime.MemStats
-	runtime.ReadMemStats(&m)
-	t.Logf("Alloc after 10k updates: %d MB", m.Alloc/1024/1024)
+	// This is a basic check - measuring delta reduces concurrent test pollution
+	var mEnd runtime.MemStats
+	runtime.ReadMemStats(&mEnd)
+	
+	// Consider uint64 underflow
+	var diff uint64
+	if mEnd.Alloc > mStart.Alloc {
+		diff = mEnd.Alloc - mStart.Alloc
+	}
+	
+	t.Logf("Alloc delta after 10k updates: %d MB", diff/1024/1024)
 
-	// Should be less than 10MB for this test
-	assert.Less(t, m.Alloc, uint64(10*1024*1024), "Memory should not leak")
+	// Should be less than 10MB for this test delta
+	assert.Less(t, diff, uint64(10*1024*1024), "Memory should not leak")
 }
 
 // BenchmarkNeighborAccess_LockFree measures lock-free read performance

@@ -16,6 +16,19 @@ func RegisterArena(a *SlabArena) {
 	globalRegistry = append(globalRegistry, a)
 }
 
+// UnregisterArena removes an arena from the global registry.
+func UnregisterArena(a *SlabArena) {
+	globalRegistryMu.Lock()
+	defer globalRegistryMu.Unlock()
+	for i, arena := range globalRegistry {
+		if arena == a {
+			globalRegistry[i] = globalRegistry[len(globalRegistry)-1]
+			globalRegistry = globalRegistry[:len(globalRegistry)-1]
+			return
+		}
+	}
+}
+
 // GetGlobalArenas returns a snapshot of all registered arenas.
 func GetGlobalArenas() []*SlabArena {
 	globalRegistryMu.RLock()

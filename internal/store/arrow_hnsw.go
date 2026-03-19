@@ -877,7 +877,7 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	
+
 	h.ensureReady()
 
 	// Dimension Validation
@@ -1258,8 +1258,10 @@ func (h *ArrowHNSW) growInternal(capacity, dims int) error {
 		}
 	}
 
-	// Atomic swap
-	h.data.Store(newData)
+	oldData := h.data.Swap(newData)
+	if oldData != nil {
+		oldData.Release()
+	}
 	return nil
 }
 

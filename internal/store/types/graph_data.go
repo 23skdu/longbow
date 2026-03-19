@@ -1945,3 +1945,45 @@ func (g *GraphData) Release() {
 		g.Complex128Arena = nil
 	}
 }
+
+func (g *GraphData) Unregister() {
+	if g.Float32Arena != nil {
+		memory.UnregisterArena(g.Float32Arena.Slab())
+	}
+	if g.Float64Arena != nil {
+		memory.UnregisterArena(g.Float64Arena.Slab())
+	}
+	if g.Uint8Arena != nil {
+		memory.UnregisterArena(g.Uint8Arena.Slab())
+	}
+	if g.Uint16Arena != nil {
+		memory.UnregisterArena(g.Uint16Arena.Slab())
+	}
+	if g.Uint32Arena != nil {
+		memory.UnregisterArena(g.Uint32Arena.Slab())
+	}
+	if g.Uint64Arena != nil {
+		memory.UnregisterArena(g.Uint64Arena.Slab())
+	}
+	if g.Int8Arena != nil {
+		memory.UnregisterArena(g.Int8Arena.Slab())
+	}
+	if g.Int16Arena != nil {
+		memory.UnregisterArena(g.Int16Arena.Slab())
+	}
+	if g.Int32Arena != nil {
+		memory.UnregisterArena(g.Int32Arena.Slab())
+	}
+	if g.Int64Arena != nil {
+		memory.UnregisterArena(g.Int64Arena.Slab())
+	}
+	if g.Float16Arena != nil {
+		memory.UnregisterArena(g.Float16Arena.Slab())
+	}
+	if g.Complex64Arena != nil {
+		memory.UnregisterArena(g.Complex64Arena.Slab())
+	}
+	if g.Complex128Arena != nil {
+		memory.UnregisterArena(g.Complex128Arena.Slab())
+	}
+}

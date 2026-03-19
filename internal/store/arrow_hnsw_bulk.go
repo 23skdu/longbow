@@ -94,11 +94,13 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 		h.growMu.RUnlock()
 	}
 
-	// At this point, we hold RLock. Load the stable data pointer for use by workers.
-	// This must be loaded AFTER the retry loop confirms stability to ensure we get
-	// the latest GraphData that has our chunk allocations.
 	data := h.data.Load()
-	defer h.growMu.RUnlock()
+	growMuReleased := false
+	defer func() {
+		if !growMuReleased {
+			h.growMu.RUnlock()
+		}
+	}()
 
 	type activeNode struct {
 		id    uint32
@@ -810,6 +812,15 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 	h.initMu.Unlock()
 
 	h.nodeCount.Add(int64(n))
+
+	if h.config.SQ8Enabled && h.quantizer != nil && !h.sq8Ready.Load() {
+		if vecsF32, ok := vecs.([][]float32); ok {
+			growMuReleased = true
+			h.growMu.RUnlock()
+			h.ensureTrained(int(startID)+n-1, vecsF32)
+			return nil
+		}
+	}
 
 	return nil
 }

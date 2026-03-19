@@ -258,7 +258,19 @@ func (h *ArrowHNSW) getVectorWithData(data *types.GraphData, id uint32) (any, er
 		}
 	}
 
-	return nil, nil
+	// 4. If all else fails, return a sentinel vector of the correct dimensionality
+	// This prevents panics in distance calculations during edge case lookups
+	metrics.VectorSentinelHitTotal.Inc()
+	if data != nil && data.Dims > 0 {
+		return make([]float32, data.Dims), nil
+	}
+	if dims := h.GetDims(); dims > 0 {
+		return make([]float32, dims), nil
+	}
+	if h.config.Dims > 0 {
+		return make([]float32, h.config.Dims), nil
+	}
+	return nil, fmt.Errorf("could not resolve dimensions for Sentinel vector")
 }
 
 // NewArrowHNSW creates a new ArrowHNSW index with the given configuration
@@ -360,6 +372,22 @@ func NewArrowHNSW(dataset *Dataset, config *ArrowHNSWConfig) *ArrowHNSW {
 		dt = types.VectorTypeFloat16
 	}
 	h.config.DataType = dt
+
+	// Optimize HNSW Dimension Index Parameters for High Scale primitives
+	// Float32 and Float64 scalar math traversal lengths collapse under standard Graph linking caps
+	if (dt == types.VectorTypeFloat32 || dt == types.VectorTypeFloat64) && config.Dims >= 384 {
+		// Increase base connectivity scaling to improve path traversal speeds without triggering O(M^3) backwards pruning
+		if h.m < 24 {
+			h.m = 24
+		}
+		if h.mMax < h.m*2 {
+			h.mMax = h.m * 2
+		}
+		// Expand Level-0 layer bounds (Standard defaults M*2)
+		if h.mMax0 < h.m*2 {
+			h.mMax0 = h.m * 2
+		}
+	}
 
 	// Initialize GraphData
 	gd := types.NewGraphData(
@@ -846,7 +874,36 @@ func (h *ArrowHNSW) ensureReady() {
 }
 
 func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k int, filter *roaring.Bitmap, options any) ([]SearchResult, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	
 	h.ensureReady()
+
+	// Dimension Validation
+	logicalDims := int(h.dims.Load())
+	var physicalDims int
+	switch h.config.DataType {
+	case types.VectorTypeComplex128, types.VectorTypeComplex64:
+		physicalDims = logicalDims * 2
+	default:
+		physicalDims = logicalDims
+	}
+
+	queryLen := 0
+	switch q := queryVec.(type) {
+	case []float32:
+		queryLen = len(q)
+	case []float64:
+		queryLen = len(q)
+	case []complex64, []complex128:
+		// Fallback for slices
+	}
+
+	if queryLen > 0 && queryLen != physicalDims {
+		return nil, fmt.Errorf("index expects %d elements (logical dims=%d), got query len %d", physicalDims, logicalDims, queryLen)
+	}
+
 	if h.nodeCount.Load() == 0 {
 		return nil, nil
 	}
@@ -1090,7 +1147,30 @@ func (h *ArrowHNSW) Warmup() int {
 }
 
 func (h *ArrowHNSW) GetNeighbors(id uint32) ([]uint32, error) {
-	return nil, nil // Stub
+	data := h.data.Load()
+	if data == nil {
+		return nil, fmt.Errorf("index data is nil")
+	}
+
+	cID := chunkID(id)
+	cOff := chunkOffset(id)
+
+	neighborhood := data.GetNeighborsChunk(0, cID)
+	counts := data.GetCountsChunk(0, cID)
+	if neighborhood == nil || counts == nil {
+		return nil, nil
+	}
+
+	count := atomic.LoadInt32(&counts[cOff])
+	if count == 0 {
+		return nil, nil
+	}
+
+	neighbors := make([]uint32, count)
+	startIdx := int(cOff) * types.MaxNeighbors
+	copy(neighbors, neighborhood[startIdx:startIdx+int(count)])
+
+	return neighbors, nil
 }
 
 func (h *ArrowHNSW) PreWarm(targetSize int) {

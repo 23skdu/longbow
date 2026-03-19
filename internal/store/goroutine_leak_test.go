@@ -13,8 +13,13 @@ import (
 )
 
 func TestVectorStore_GoroutineLeak(t *testing.T) {
-	// Verify if goleak is working and if we have leaks
-	defer goleak.VerifyNone(t)
+	// Verify if goleak is working and if we have leaks from our own code
+	// Ignore gRPC internal goroutines which might be leaked by concurrent network tests in the same package
+	defer goleak.VerifyNone(t,
+		goleak.IgnoreTopFunction("google.golang.org/grpc/internal/grpcsync.(*CallbackSerializer).run"),
+		goleak.IgnoreTopFunction("google.golang.org/grpc/internal/resolver/dns.(*dnsResolver).watcher"),
+		goleak.IgnoreTopFunction("google.golang.org/grpc.(*addrConn).resetTransportAndUnlock"),
+	)
 
 	logger := zerolog.Nop()
 	mem := memory.DefaultAllocator

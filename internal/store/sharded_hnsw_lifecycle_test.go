@@ -60,6 +60,7 @@ func TestShardedHNSW_Compaction(t *testing.T) {
 	res, err := idx.SearchVectors(context.Background(), []float32{0, 0, 0, 0}, 1, nil, SearchOptions{})
 	require.NoError(t, err)
 	require.Len(t, res, 1)
+	t.Logf("Search result for [0,0,0,0]: %+v", res)
 	assert.Equal(t, VectorID(0), res[0].ID) // ID 0 is closest to 0,0,0,0
 
 	// 3. Simulate Compaction

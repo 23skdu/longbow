@@ -59,7 +59,6 @@ func TestDurability_EndToEnd(t *testing.T) {
 	rec1 := createDurabilityTestBatch(mem, 0, 10)
 	defer rec1.Release()
 
-	require.NoError(t, store1.writeToWAL("test_ds", rec1, 1, time.Now().UnixNano()))
 	require.NoError(t, store1.ApplyDelta("test_ds", rec1, 1, time.Now().UnixNano()))
 	store1.WaitForIndexing("test_ds")
 
@@ -102,17 +101,16 @@ func TestDurability_SnapshotAndWAL(t *testing.T) {
 	// 2. Insert Batch A
 	recA := createDurabilityTestBatch(mem, 0, 5)
 	defer recA.Release()
-	require.NoError(t, store1.writeToWAL("ds_mixed", recA, 1, time.Now().UnixNano()))
 	require.NoError(t, store1.ApplyDelta("ds_mixed", recA, 1, time.Now().UnixNano()))
 	store1.WaitForIndexing("ds_mixed")
 
 	// 3. Trigger Snapshot
 	require.NoError(t, store1.Snapshot(context.Background()))
+	time.Sleep(10 * time.Millisecond) // Give snapshot background flush time
 
 	// 4. Insert Batch B
 	recB := createDurabilityTestBatch(mem, 5, 5)
 	defer recB.Release()
-	require.NoError(t, store1.writeToWAL("ds_mixed", recB, 2, time.Now().UnixNano()))
 	require.NoError(t, store1.ApplyDelta("ds_mixed", recB, 2, time.Now().UnixNano()))
 	store1.WaitForIndexing("ds_mixed")
 
@@ -176,7 +174,6 @@ func TestDurability_IndexRebuild(t *testing.T) {
 	rec := b.NewRecordBatch()
 	defer rec.Release()
 
-	require.NoError(t, store1.writeToWAL("ds_vec", rec, 1, time.Now().UnixNano()))
 	require.NoError(t, store1.ApplyDelta("ds_vec", rec, 1, time.Now().UnixNano()))
 	store1.WaitForIndexing("ds_vec")
 	require.NoError(t, store1.FlushWAL())
@@ -219,7 +216,7 @@ func TestDurability_IndexRebuild(t *testing.T) {
 	// internal/store/index.go: Candidate.ID is int64.
 	// require.Equal(t, int64(0), results[0].ID)
 	// Dist should be close to 0 (Squared Euclidean: (1-1)^2 + (0-0)^2 = 0)
-	require.InDelta(t, 0.0, results[0].Score, 0.0001)
+	require.InDelta(t, 0.0, results[0].Distance, 0.0001)
 }
 
 // Verify cleaning up of WAL files after snapshot? (Optional advanced)
@@ -245,11 +242,11 @@ func TestDurability_WALTruncation(t *testing.T) {
 	rec := createDurabilityTestBatch(mem, 100, 1) // 1 record
 	defer rec.Release()
 
-	require.NoError(t, store1.writeToWAL("ds_dup", rec, 1, time.Now().UnixNano()))
 	require.NoError(t, store1.ApplyDelta("ds_dup", rec, 1, 0))
 
 	// Snapshot
 	require.NoError(t, store1.Snapshot(context.Background()))
+	time.Sleep(10 * time.Millisecond) // Ensure WAL truncation is fully synced to disk
 
 	// Wait for any async truncate if it exists (StorageEngine might do it inline in Snapshot though)
 	_ = store1.Close()

@@ -559,7 +559,11 @@ func (d *DiskANNIndex) SearchVectors(query []float32, k int, options SearchOptio
 		if id > 4294967295 {
 			id = 4294967295
 		}
-		searchResults[i] = SearchResult{ID: VectorID(id), Score: r.Distance}
+		searchResults[i] = SearchResult{
+			ID:       VectorID(id),
+			Distance: r.Distance,
+			Score:    1.0 / (1.0 + r.Distance),
+		}
 	}
 	return searchResults
 }

@@ -177,6 +177,10 @@ func NewShardedHNSW(config ShardedHNSWConfig, dataset *Dataset) *ShardedHNSW {
 		s.shards[i] = s.newShard(i)
 	}
 
+	if dataset != nil {
+		dataset.Index = s
+	}
+
 	return s
 }
 
@@ -421,7 +425,7 @@ func (s *ShardedHNSW) SearchVectors(ctx context.Context, queryVec any, k int, fi
 		i := i
 		shard := shard
 		g.Go(func() error {
-			res, err := shard.index.SearchVectors(ctx, queryVec, k*2, filters, options) // Oversample
+			res, err := shard.index.SearchVectors(ctx, queryVec, k*2, nil, options) // Oversample, evaluate filters on merge
 			if err != nil {
 				return err
 			}
@@ -495,7 +499,7 @@ func (s *ShardedHNSW) SearchVectors(ctx context.Context, queryVec any, k int, fi
 
 	// Sort and limit
 	sort.Slice(merged, func(i, j int) bool {
-		return merged[i].Score < merged[j].Score
+		return merged[i].Score > merged[j].Score
 	})
 
 	if len(merged) > k {
@@ -510,6 +514,7 @@ func (s *ShardedHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any,
 	type shardResult struct {
 		results  []SearchResult
 		shardIdx int
+		err      error
 	}
 	ch := make(chan shardResult, len(s.shards))
 	var wg sync.WaitGroup
@@ -527,16 +532,18 @@ func (s *ShardedHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any,
 			defer wg.Done()
 			// Pass nil filter to shard, filter globally
 			res, err := sh.index.SearchVectorsWithBitmap(ctx, queryVec, k*2, nil, options)
-			if err == nil {
-				ch <- shardResult{results: res, shardIdx: idx}
-			}
+			ch <- shardResult{results: res, shardIdx: idx, err: err}
 		}(i, shard)
 	}
 	wg.Wait()
 	close(ch)
 
+	// Check for errors first
 	merged := make([]SearchResult, 0, k*2)
 	for sr := range ch {
+		if sr.err != nil {
+			return nil, sr.err
+		}
 		shard := currentShards[sr.shardIdx]
 		for _, r := range sr.results {
 			globalID, ok := shard.getGlobalID(uint32(r.ID))
@@ -555,7 +562,7 @@ func (s *ShardedHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any,
 	}
 
 	sort.Slice(merged, func(i, j int) bool {
-		return merged[i].Score < merged[j].Score
+		return merged[i].Score > merged[j].Score
 	})
 
 	if len(merged) > k {

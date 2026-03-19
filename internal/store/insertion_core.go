@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
 // Insert adds a new vector to the HNSW graph.
@@ -92,6 +93,8 @@ do_grow:
 			switch v := vec.(type) {
 			case []float32:
 				inputDims = len(v)
+			case []float16.Num:
+				inputDims = len(v)
 			case []complex64:
 				inputDims = len(v)
 			case []complex128:
@@ -106,7 +109,12 @@ do_grow:
 			if inputDims > 0 {
 				h.initMu.Lock()
 				if h.dims.Load() == 0 {
-					if err := h.Grow(h.data.Load().Capacity, inputDims); err != nil {
+					data := h.data.Load()
+					capacity := 1024
+					if data != nil {
+						capacity = data.Capacity
+					}
+					if err := h.Grow(capacity, inputDims); err != nil {
 						h.initMu.Unlock()
 						return fmt.Errorf("failed to grow during initial resize: %w", err)
 					}
@@ -247,7 +255,18 @@ do_grow:
 		// First node ever
 		h.maxLevel.Store(int32(level))
 		h.entryPoint.Store(id)
-		// Removed: h.nodeCount.Add(1) - incremented in caller
+
+		// Update nodeCount if it hasn't been incremented by caller
+		for {
+			current := h.nodeCount.Load()
+			if int64(id) < current {
+				break
+			}
+			if h.nodeCount.CompareAndSwap(current, int64(id+1)) {
+				break
+			}
+		}
+
 		return nil // No one to link to
 	}
 	startL := min(level, maxL)

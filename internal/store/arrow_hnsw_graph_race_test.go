@@ -42,8 +42,8 @@ func TestArrowHNSW_AddBatchBulk_EnsureChunkRace(t *testing.T) {
 			if dims == 0 {
 				return nil
 			}
-			paddedDims := data.GetPaddedDims() // Use padded dims for indexing into chunk
-			start := int(cOff) * paddedDims
+			// Use Dims (not paddedDims) to match SetVector's indexing
+			start := int(cOff) * dims
 			if start+dims > len(chunk) {
 				return nil
 			}

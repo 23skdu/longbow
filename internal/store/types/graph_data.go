@@ -202,11 +202,32 @@ func (g *GraphData) GetVectorsUint32Chunk(chunkID int) []uint32 {
 }
 
 func (g *GraphData) GetPaddedDims() int {
-	return g.Dims
+	return g.GetPaddedDimsForType(g.Type)
 }
 
 func (g *GraphData) GetPaddedDimsForType(dt VectorDataType) int {
-	return g.Dims
+	switch dt {
+	case VectorTypeFloat32, VectorTypeInt32, VectorTypeUint32:
+		// 4 bytes per element. Cache line = 64 bytes = 16 elements.
+		return (g.Dims + 15) & ^15
+	case VectorTypeInt8, VectorTypeUint8:
+		// 1 byte per element. Cache line = 64 bytes = 64 elements.
+		return (g.Dims + 63) & ^63
+	case VectorTypeFloat16, VectorTypeInt16, VectorTypeUint16:
+		// 2 bytes per element. Cache line = 64 bytes = 32 elements.
+		return (g.Dims + 31) & ^31
+	case VectorTypeFloat64, VectorTypeInt64, VectorTypeUint64:
+		// 8 bytes per element. Cache line = 64 bytes = 8 elements.
+		return (g.Dims + 7) & ^7
+	case VectorTypeComplex64:
+		// 8 bytes per element (2x float32). Cache line = 64 bytes = 8 elements.
+		return (g.Dims + 7) & ^7
+	case VectorTypeComplex128:
+		// 16 bytes per element (2x float64). Cache line = 64 bytes = 4 elements.
+		return (g.Dims + 3) & ^3
+	default:
+		return g.Dims
+	}
 }
 
 func (g *GraphData) GetVectorsSQ8Chunk(chunkID int) []byte {
@@ -1868,4 +1889,59 @@ func NewGraphData(capacity, dim int, mmap bool, useDisk bool, fd int,
 	}
 
 	return gd
+}
+
+func (g *GraphData) Release() {
+	if g.Float32Arena != nil {
+		g.Float32Arena.Free()
+		g.Float32Arena = nil
+	}
+	if g.Float64Arena != nil {
+		g.Float64Arena.Free()
+		g.Float64Arena = nil
+	}
+	if g.Uint8Arena != nil {
+		g.Uint8Arena.Free()
+		g.Uint8Arena = nil
+	}
+	if g.Uint16Arena != nil {
+		g.Uint16Arena.Free()
+		g.Uint16Arena = nil
+	}
+	if g.Uint32Arena != nil {
+		g.Uint32Arena.Free()
+		g.Uint32Arena = nil
+	}
+	if g.Uint64Arena != nil {
+		g.Uint64Arena.Free()
+		g.Uint64Arena = nil
+	}
+	if g.Int8Arena != nil {
+		g.Int8Arena.Free()
+		g.Int8Arena = nil
+	}
+	if g.Int16Arena != nil {
+		g.Int16Arena.Free()
+		g.Int16Arena = nil
+	}
+	if g.Int32Arena != nil {
+		g.Int32Arena.Free()
+		g.Int32Arena = nil
+	}
+	if g.Int64Arena != nil {
+		g.Int64Arena.Free()
+		g.Int64Arena = nil
+	}
+	if g.Float16Arena != nil {
+		g.Float16Arena.Free()
+		g.Float16Arena = nil
+	}
+	if g.Complex64Arena != nil {
+		g.Complex64Arena.Free()
+		g.Complex64Arena = nil
+	}
+	if g.Complex128Arena != nil {
+		g.Complex128Arena.Free()
+		g.Complex128Arena = nil
+	}
 }

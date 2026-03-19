@@ -17,6 +17,13 @@ func NewTypedArena[T any](arena *SlabArena) *TypedArena[T] {
 	}
 }
 
+func (ta *TypedArena[T]) Free() {
+	if ta.arena != nil {
+		ta.arena.Free()
+		ta.arena = nil
+	}
+}
+
 // TotalAllocated returns total bytes allocated in the arena.
 func (ta *TypedArena[T]) TotalAllocated() int64 {
 	slabsPtr := ta.arena.slabs.Load()

@@ -1846,7 +1846,7 @@ func NewGraphData(capacity, dim int, mmap bool, useDisk bool, fd int,
 		Neighbors:         make([][][]uint32, ArrowMaxLayers),
 		Counts:            make([][][]int32, ArrowMaxLayers),
 		Versions:          make([][][]uint32, ArrowMaxLayers),
-		Levels:            make([][]uint8, numChunks),
+		Levels:            make([][]uint8, 0, numChunks),
 		Float32Arena:      memory.NewTypedArena[float32](f32Arena),
 		Uint8Arena:        memory.NewTypedArena[uint8](u8Arena),
 		Float64Arena:      memory.NewTypedArena[float64](f64Arena),
@@ -1857,9 +1857,9 @@ func NewGraphData(capacity, dim int, mmap bool, useDisk bool, fd int,
 	}
 
 	for i := 0; i < ArrowMaxLayers; i++ {
-		gd.Neighbors[i] = make([][]uint32, numChunks)
-		gd.Counts[i] = make([][]int32, numChunks)
-		gd.Versions[i] = make([][]uint32, numChunks)
+		gd.Neighbors[i] = make([][]uint32, 0, numChunks)
+		gd.Counts[i] = make([][]int32, 0, numChunks)
+		gd.Versions[i] = make([][]uint32, 0, numChunks)
 	}
 
 	// Pre-allocate chunks for the given capacity to avoid lazy allocation overhead

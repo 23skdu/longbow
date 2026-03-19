@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -18,6 +19,10 @@ func TestRepairIntegration_DeleteAndRepair(t *testing.T) {
 	// We need a dataset but tests often pass nil if NewArrowHNSW allows it for testing, or we construct minimal one.
 	// Constructor: NewArrowHNSW(ds *Dataset, cfg ArrowHNSWConfig) *ArrowHNSW
 	ds := &Dataset{}
+
+	// Override dynamic dimensions scaling for minimal integration test
+	config.DataType = types.VectorTypeFloat32
+	config.Dims = 2 // Small overrides
 	idx := NewArrowHNSW(ds, &config)
 
 	// 2. Insert Data

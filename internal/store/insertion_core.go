@@ -122,6 +122,8 @@ do_grow:
 			newCap := int(id) + 1
 			if currData != nil && currData.Capacity > 0 {
 				newCap = max(int(id)+1, currData.Capacity*2)
+				// Align capacity to optimal chunk sizes to prevent fragmentation
+				newCap = (newCap + ChunkSize - 1) & ^(ChunkSize - 1)
 			}
 			if err := h.Grow(newCap, currDims); err != nil {
 				return fmt.Errorf("failed to grow for ID %d: %w", id, err)
@@ -151,7 +153,11 @@ do_grow:
 		count := int(h.nodeCount.Load())
 		threshold := h.config.AdaptiveMThreshold
 		if threshold <= 0 {
-			threshold = 100
+			threshold = 10000 // Shift fallback default to prevent premature connectivity thinning
+			// Check if we initialized with higher capacities
+			if data != nil && data.Capacity >= 50000 {
+				threshold = 50000
+			}
 		}
 
 		if count == threshold {

@@ -85,6 +85,8 @@ func TestBruteForceIndex_ZeroCopyVectorAccess(t *testing.T) {
 		}
 
 		runtime.GC()
+		runtime.Gosched()
+		runtime.GC()
 		var m1, m2 runtime.MemStats
 		runtime.ReadMemStats(&m1)
 
@@ -183,6 +185,8 @@ func TestBruteForceIndex_SearchWithZeroCopy(t *testing.T) {
 		// Warm up
 		_, _ = idx.SearchVectors(context.Background(), query, 10, nil, SearchOptions{})
 
+		runtime.GC()
+		runtime.Gosched()
 		runtime.GC()
 		var m1, m2 runtime.MemStats
 		runtime.ReadMemStats(&m1)

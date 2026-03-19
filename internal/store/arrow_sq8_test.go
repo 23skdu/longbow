@@ -109,7 +109,7 @@ func TestSQ8Indexing(t *testing.T) {
 
 	t.Logf("Top Result Score: %f", res[0].Score)
 	if uint32(res[0].ID) == targetID {
-		assert.Equal(t, float32(0), res[0].Score, "Distance should be 0 for exact match in SQ8")
+		assert.Equal(t, float32(0), res[0].Distance, "Distance should be 0 for exact match in SQ8")
 	}
 }
 

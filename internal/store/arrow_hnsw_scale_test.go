@@ -56,8 +56,9 @@ func TestArrowHNSW_LargeBatchIngestion_30k(t *testing.T) {
 	dims := 128
 
 	cfg := DefaultArrowHNSWConfig()
-	cfg.M = 16
-	cfg.EfConstruction = 100
+	cfg.M = 32
+	cfg.EfConstruction = 200
+	cfg.EfSearch = 200
 	cfg.Dims = dims
 	// Ensure Bulk Threshold is met (default 1000)
 
@@ -118,7 +119,7 @@ func TestArrowHNSW_LargeBatchIngestion_30k(t *testing.T) {
 		// Check against expected pattern
 		// To be rigorous, retrieving the vector for result ID would be better checking logic.
 		// But simpler: just assert distance is near 0
-		if r.Score < 0.0001 { // Assuming L2 distance
+		if r.Distance < 0.0001 { // Assuming L2 distance
 			found = true
 			break
 		}

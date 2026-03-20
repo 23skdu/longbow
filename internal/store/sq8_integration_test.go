@@ -50,6 +50,7 @@ func TestSQ8_Integration(t *testing.T) {
 	config.EfConstruction = 100
 	config.SQ8Enabled = true
 	config.Dims = dims
+	config.SQ8TrainingThreshold = 500
 
 	h := NewArrowHNSW(ds, &config)
 

@@ -459,19 +459,39 @@ func BenchmarkHNSW_ShardedSearch(b *testing.B) {
 
 func TestShardedHNSW_SearchByID(t *testing.T) {
 	cfg := DefaultShardedHNSWConfig()
-	ds := &Dataset{dataMu: sync.RWMutex{}}
+	cfg.NumShards = 1
+	cfg.UseRingSharding = false
+	ds := &Dataset{Name: "test", dataMu: sync.RWMutex{}}
 	sharded := NewShardedHNSW(cfg, ds)
 	mem := memory.NewGoAllocator()
 	rec := makeShardedTestRecord(mem, 3, 10)
 	defer rec.Release()
+
 	ds.dataMu.Lock()
 	ds.Records = append(ds.Records, rec)
 	ds.dataMu.Unlock()
 
-	id, _ := sharded.AddSafe(context.Background(), rec, 0, 0)
-	results := sharded.SearchByID(context.Background(), id, 5)
-	if len(results) == 0 {
-		t.Fatal("expected results")
+	ids, err := sharded.AddBatch(context.Background(), []arrow.RecordBatch{rec}, []int{0, 1, 2}, []int{0, 0, 0})
+	if err != nil {
+		t.Fatalf("AddBatch failed: %v", err)
+	}
+	if len(ids) != 3 {
+		t.Fatalf("expected 3 IDs, got %d", len(ids))
+	}
+
+	for _, id := range ids {
+		results := sharded.SearchByID(context.Background(), VectorID(id), 5)
+		if len(results) == 0 {
+			t.Errorf("SearchByID(%d) returned no results", id)
+		}
+	}
+
+	searchResults, err := sharded.SearchVectors(context.Background(), []float32{1, 2, 3}, 3, nil, SearchOptions{})
+	if err != nil {
+		t.Fatalf("SearchVectors failed: %v", err)
+	}
+	if len(searchResults) == 0 {
+		t.Fatal("SearchVectors returned no results")
 	}
 }
 

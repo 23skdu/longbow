@@ -52,7 +52,8 @@ func TestHNSW_DimensionTransition(t *testing.T) {
 	// Initially dims = 0
 	require.Equal(t, int32(0), h.dims.Load())
 	data := h.data.Load()
-	require.Nil(t, data.Vectors, "Vectors should be nil initially")
+	// nodeCount should be 0 since no vectors inserted yet
+	require.Equal(t, int64(0), h.nodeCount.Load(), "nodeCount should be 0 initially")
 
 	// Insert first vector -> should trigger init
 	vec := make([]float32, 128)
@@ -62,8 +63,8 @@ func TestHNSW_DimensionTransition(t *testing.T) {
 	// Verify state
 	require.Equal(t, int32(128), h.dims.Load())
 	data = h.data.Load()
-	require.NotNil(t, data.Vectors, "Vectors should be allocated")
-	require.NotNil(t, data.Vectors[0], "Chunk 0 should be allocated")
+	require.NotNil(t, data.VectorsF32, "VectorsF32 should be allocated (arena-backed)")
+	require.True(t, len(data.VectorsF32) > 0, "Should have allocated chunks")
 
 	// Verify subsequent insert
 	err = h.InsertWithVector(1, vec, 0)

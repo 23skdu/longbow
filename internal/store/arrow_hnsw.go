@@ -886,6 +886,10 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 
 	h.ensureReady()
 
+	if h.nodeCount.Load() == 0 {
+		return nil, nil
+	}
+
 	// Dimension Validation
 	logicalDims := int(h.dims.Load())
 	var physicalDims int
@@ -908,10 +912,6 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 
 	if queryLen > 0 && queryLen != physicalDims {
 		return nil, fmt.Errorf("index expects %d elements (logical dims=%d), got query len %d", physicalDims, logicalDims, queryLen)
-	}
-
-	if h.nodeCount.Load() == 0 {
-		return nil, nil
 	}
 
 	if metrics.HNSWSearchPoolGetTotal != nil {
@@ -1473,7 +1473,36 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 }
 
 func (h *ArrowHNSW) EstimateMemory() int64 {
-	return 1024 * 1024 * 100 // 100MB placeholder
+	nodeCount := int(h.nodeCount.Load())
+	dims := int(h.dims.Load())
+
+	if nodeCount == 0 || dims == 0 {
+		return 0
+	}
+
+	vecBytesPer := int64(dims * 4)
+
+	vectorMemory := int64(nodeCount) * vecBytesPer
+
+	m := h.m
+	if m == 0 {
+		m = 32
+	}
+	maxLevel := int(h.maxLevel.Load())
+	if maxLevel == 0 {
+		maxLevel = int(math.Log2(float64(nodeCount)))
+		if maxLevel < 1 {
+			maxLevel = 1
+		}
+	}
+	graphMemory := int64(nodeCount) * int64(maxLevel) * int64(m) * 4
+
+	levelsMemory := int64(nodeCount) * 1
+
+	locCount := h.locationStore.Len()
+	locMemory := int64(locCount) * 8
+
+	return vectorMemory + graphMemory + levelsMemory + locMemory
 }
 
 func (h *ArrowHNSW) SearchVectors(ctx context.Context, queryVec any, k int, filters []query.Filter, options any) ([]SearchResult, error) {
@@ -2044,19 +2073,21 @@ func (h *ArrowHNSW) ExportDelta(fromVersion uint64) (*types.DeltaSync, error) {
 	defer h.growMu.RUnlock()
 
 	currentLen := h.locationStore.Len()
-	if fromVersion >= uint64(currentLen) {
+	// Export locations starting from fromVersion up to currentLen
+	startIdx := int(fromVersion)
+	if startIdx >= currentLen {
 		return &types.DeltaSync{
 			FromVersion:  fromVersion,
 			ToVersion:    uint64(currentLen),
 			NewLocations: nil,
-			StartIndex:   int(fromVersion),
+			StartIndex:   startIdx,
 		}, nil
 	}
 
-	newLocs := make([]core.Location, 0, currentLen-int(fromVersion))
+	newLocs := make([]core.Location, 0, currentLen-startIdx)
 	idx := 0
 	h.locationStore.IterateMutable(func(_ VectorID, val *atomic.Uint64) {
-		if idx >= int(fromVersion) {
+		if idx >= startIdx {
 			loc := core.UnpackLocation(val.Load())
 			newLocs = append(newLocs, loc)
 		}
@@ -2067,7 +2098,7 @@ func (h *ArrowHNSW) ExportDelta(fromVersion uint64) (*types.DeltaSync, error) {
 		FromVersion:  fromVersion,
 		ToVersion:    uint64(currentLen),
 		NewLocations: newLocs,
-		StartIndex:   int(fromVersion),
+		StartIndex:   startIdx,
 	}, nil
 }
 
@@ -2081,8 +2112,9 @@ func (h *ArrowHNSW) ApplyDelta(delta *types.DeltaSync) error {
 	defer h.growMu.Unlock()
 
 	for i, loc := range delta.NewLocations {
-		globalID := uint32(delta.StartIndex + i)
-		h.locationStore.Set(VectorID(globalID), loc)
+		globalID := VectorID(delta.StartIndex + i)
+		h.locationStore.EnsureCapacity(globalID)
+		h.locationStore.Set(globalID, loc)
 	}
 
 	return nil

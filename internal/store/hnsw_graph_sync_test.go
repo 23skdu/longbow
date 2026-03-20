@@ -216,11 +216,11 @@ func TestHNSWGraphSync_ApplyDelta(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		idx.locationStore.Append(Location{BatchIdx: 0, RowIdx: i})
 	}
-	gsync := NewHNSWGraphSync(idx)
-	version1 := gsync.GetVersion()
+	version1 := uint64(idx.locationStore.Len())
 	for i := 10; i < 20; i++ {
 		idx.locationStore.Append(Location{BatchIdx: 1, RowIdx: i - 10})
 	}
+	gsync := NewHNSWGraphSync(idx)
 	gsync.IncrementVersion()
 	delta, _ := gsync.ExportDelta(version1)
 	ds2 := NewDataset("test2", schema)

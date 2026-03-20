@@ -120,7 +120,8 @@ func TestHNSW_BulkInsert(t *testing.T) {
 		// If store is empty, IDs start at 0.
 		if uint32(res.ID) == 2500 {
 			found = true
-			require.InDelta(t, 0.0, res.Score, 1e-5, "Expected distance to self to be 0")
+			// Check Distance (not Score) - for exact match, distance should be 0
+			require.InDelta(t, 0.0, res.Distance, 1e-4, "Expected distance to self to be 0")
 			break
 		}
 	}

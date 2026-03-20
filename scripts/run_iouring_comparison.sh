@@ -79,7 +79,7 @@ run_benchmark_suite() {
     export LONGBOW_METRICS_ADDR=127.0.0.1:9090
     export LONGBOW_GOSSIP_PORT=7946
     export LONGBOW_GOSSIP_ENABLED=false
-    export LONGBOW_MAX_MEMORY=$((12 * 1024 * 1024 * 1024))  # 12GB
+    export LONGBOW_MAX_MEMORY=$((20 * 1024 * 1024 * 1024))  # 20GB
     export LONGBOW_DATA_PATH="${PROJECT_DIR}/data/node1"
     export LONGBOW_NODE_ID="node1"
     export LONGBOW_STORAGE_USE_IOURING="$use_iouring"

@@ -3,6 +3,8 @@ package store
 import (
 	"errors"
 	"math"
+
+	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
 // =============================================================================
@@ -133,6 +135,50 @@ func TrainSQ8Encoder(vectors [][]float32) (*SQ8Encoder, error) {
 	return NewSQ8Encoder(cfg)
 }
 
+func TrainSQ8EncoderFloat16(vectors [][]float16.Num) (*SQ8Encoder, error) {
+	if len(vectors) == 0 {
+		return nil, errors.New("no vectors provided for training")
+	}
+
+	dims := len(vectors[0])
+	if dims == 0 {
+		return nil, errors.New("vectors have zero dimensions")
+	}
+
+	f32s := make([][]float32, len(vectors))
+	for i, v := range vectors {
+		f := make([]float32, len(v))
+		for j, f16 := range v {
+			f[j] = f16.Float32()
+		}
+		f32s[i] = f
+	}
+
+	return TrainSQ8Encoder(f32s)
+}
+
+func TrainSQ8EncoderInt8(vectors [][]int8) (*SQ8Encoder, error) {
+	if len(vectors) == 0 {
+		return nil, errors.New("no vectors provided for training")
+	}
+
+	dims := len(vectors[0])
+	if dims == 0 {
+		return nil, errors.New("vectors have zero dimensions")
+	}
+
+	f32s := make([][]float32, len(vectors))
+	for i, v := range vectors {
+		f := make([]float32, len(v))
+		for j, val := range v {
+			f[j] = float32(val)
+		}
+		f32s[i] = f
+	}
+
+	return TrainSQ8Encoder(f32s)
+}
+
 // Dims returns the number of dimensions this encoder handles.
 func (e *SQ8Encoder) Dims() int {
 	return len(e.config.Min)
@@ -174,6 +220,22 @@ func (e *SQ8Encoder) Decode(quantized []uint8) []float32 {
 	result := make([]float32, len(quantized))
 	e.DecodeInto(quantized, result)
 	return result
+}
+
+func (e *SQ8Encoder) EncodeFloat16(vec []float16.Num) []uint8 {
+	f32 := make([]float32, len(vec))
+	for i, val := range vec {
+		f32[i] = val.Float32()
+	}
+	return e.Encode(f32)
+}
+
+func (e *SQ8Encoder) EncodeInt8(vec []int8) []uint8 {
+	f32 := make([]float32, len(vec))
+	for i, val := range vec {
+		f32[i] = float32(val)
+	}
+	return e.Encode(f32)
 }
 
 // DecodeInto decodes a quantized vector into a pre-allocated destination slice.

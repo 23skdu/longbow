@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/23skdu/longbow/internal/pq"
+	"github.com/apache/arrow-go/v18/arrow/float16"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -257,18 +258,48 @@ func TestGenericQuantizer_Float32ToByte(t *testing.T) {
 	require.Equal(t, 8, len(codes), "Code length should match M (number of subspaces)")
 }
 
-// TestQuantizer_TypeConversion_Float16ToFloat32 tests float16 to float32 conversion
 func TestQuantizer_TypeConversion_Float16ToFloat32(t *testing.T) {
-	// For now, our encoders only support float32
-	// When float16 support is added, this test should be updated
-	t.Skip("Concrete quantizers do not support float16 yet - float32 is the only supported type")
+	vecs := make([][]float16.Num, 3)
+	for i := range vecs {
+		vecs[i] = make([]float16.Num, 8)
+		for j := range vecs[i] {
+			vecs[i][j] = float16.New(float32(i*8 + j))
+		}
+	}
+
+	encoder, err := TrainSQ8EncoderFloat16(vecs)
+	require.NoError(t, err)
+	require.NotNil(t, encoder)
+
+	minVals, maxVals := encoder.GetBounds()
+	require.Equal(t, 8, len(minVals))
+	require.Equal(t, 8, len(maxVals))
+	require.True(t, minVals[0] < maxVals[0], "min should be less than max")
 }
 
-// TestQuantizer_TypeConversion_Int8ToFloat32 tests int8 to float32 conversion
 func TestQuantizer_TypeConversion_Int8ToFloat32(t *testing.T) {
-	// For now, our encoders only support float32
-	// When int8 support is added, this test should be updated
-	t.Skip("Concrete quantizers do not support int8 yet - float32 is the only supported type")
+	vecs := make([][]int8, 3)
+	vecs[0] = []int8{-128, -64, 32, 64, 100, -32, 96, 16}
+	vecs[1] = []int8{0, 32, 64, 96, 127, -128, -64, 48}
+	vecs[2] = []int8{16, 48, 80, 112, -50, -96, -32, 127}
+
+	encoder, err := TrainSQ8EncoderInt8(vecs)
+	require.NoError(t, err)
+	require.NotNil(t, encoder)
+
+	minVals, maxVals := encoder.GetBounds()
+	require.Equal(t, 8, len(minVals))
+	require.Equal(t, 8, len(maxVals))
+	require.True(t, minVals[0] < maxVals[0], "min should be less than max")
+
+	f32 := make([]float32, len(vecs[0]))
+	for i, v := range vecs[0] {
+		f32[i] = float32(v)
+	}
+	codes := encoder.Encode(f32)
+	require.Equal(t, 8, len(codes))
+	decoded := encoder.Decode(codes)
+	require.Equal(t, 8, len(decoded))
 }
 
 // TestGenericSQ8Quantizer tests the generic quantizer wrapper

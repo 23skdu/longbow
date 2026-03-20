@@ -4,7 +4,7 @@ set -e
 # Configuration
 SCALES=(5000 9000 15000 25000)
 # DIM set in loop below
-MEMORY_LIMIT=$((12 * 1024 * 1024 * 1024)) # 12GB
+MEMORY_LIMIT=$((20 * 1024 * 1024 * 1024)) # 20GB
 OUTPUT_DIR="reports"
 mkdir -p $OUTPUT_DIR
 mkdir -p data/node1 data/node2 data/node3

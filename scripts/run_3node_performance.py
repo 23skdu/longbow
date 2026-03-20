@@ -43,8 +43,8 @@ def start_cluster():
     env_base = {
         "LONGBOW_GOSSIP_ENABLED": "true",
         "LONGBOW_LOG_LEVEL": "error",
-        "LONGBOW_MAX_MEMORY": "12884901888",  # 12GB per node
-        "GOMEMLIMIT": "12GiB",
+        "LONGBOW_MAX_MEMORY": "21474836480",  # 20GB per node
+        "GOMEMLIMIT": "20GiB",
     }
 
     # Node 1

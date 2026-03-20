@@ -149,15 +149,18 @@ These return "not implemented yet" when built without GPU support. Build with `-
 
 ## Scripts Updated for 12GB Memory
 
-Updated benchmark scripts to use 12GB memory limit for performance testing:
+Updated benchmark scripts to use 20GB memory limit for performance testing:
 
 | Script | Previous | Updated |
 |--------|----------|---------|
-| `scripts/benchmark_runner.py` | env var | 12GB |
-| `scripts/run_3node_performance.py` | 8GB | 12GB |
-| `scripts/benchmark_suite.sh` | 6GB | 12GB |
-| `scripts/start_bench_node.sh` | 8GB | 12GB |
-| `scripts/run_iouring_comparison.sh` | 4GB | 12GB |
+| `scripts/benchmark_runner.py` | 12GB | 20GB |
+| `scripts/run_3node_performance.py` | 12GB | 20GB |
+| `scripts/benchmark_suite.sh` | 12GB | 20GB |
+| `scripts/start_bench_node.sh` | 12GB | 20GB |
+| `scripts/run_iouring_comparison.sh` | 12GB | 20GB |
+| `scripts/start_one_node.sh` | 12GB | 20GB |
+| `scripts/benchmark_incremental.sh` | 12GB | 20GB |
+| `scripts/benchmark_tool_incremental.sh` | 12GB | 20GB |
 
 ---
 

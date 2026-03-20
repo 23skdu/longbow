@@ -63,13 +63,20 @@ Increased default InitialCapacity from 10,000 to **50,000** in `internal/store/a
 **Expected Impact**: Float32 high-dim graphs will have proper connectivity and level distributions, matching Complex64/Float64 performance.
 
 ### 2. Review Grow() Trigger Alignment Thresholds
-**Files**: `internal/store/insertion_core.go`, `internal/store/arrow_hnsw.go`
+**Files**: `internal/store/insertion_core.go`, `internal/store/pq_training.go`
 
-**Status**: Pending
+**Status**: ✅ Resolved
 **Problem**: Sub-optimal alignment constraints inside graph slice chunks might force cascading reallocations or skew HNSW level multipliers.
-**Action**:
-- Verify adaptive layer growth weight thresholds (`AdaptiveMEnabled`).
-- Ensure node sizing link bounds satisfy scaling limits cleanly without forced degradation loops.
+**Analysis**:
+- `ChunkSize = 1024` alignment in Grow() was correct — `(newCap + ChunkSize - 1) & ^(ChunkSize - 1)` properly rounds up.
+- `levelMultiplier` recalculation is now consistent (fixed in item #1).
+**Issues Found**:
+1. `AdaptiveMThreshold` defaults (2000, 5000, 10000) were NOT ChunkSize-aligned (1024), causing triggers between chunk boundaries.
+2. `count == threshold` condition could be skipped by batch inserts that jump over the threshold.
+**Fix Applied**:
+1. `insertion_core.go:165-170` — Changed default thresholds to ChunkSize-aligned values: 2048 / 5120 / 10240.
+2. `insertion_core.go:177` — Changed `count == threshold` to `count >= threshold` to avoid batch-skip.
+3. `pq_training.go:65,71` — Applied same fix (threshold → 1024, `==` → `>=`).
 
 ---
 

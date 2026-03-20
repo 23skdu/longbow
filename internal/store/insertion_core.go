@@ -163,15 +163,15 @@ do_grow:
 		count := int(h.nodeCount.Load())
 		threshold := h.config.AdaptiveMThreshold
 		if threshold <= 0 {
-			threshold = 2000
+			threshold = 2048
 			if data != nil && data.Capacity >= 50000 {
-				threshold = 10000
+				threshold = 10240
 			} else if data != nil && data.Capacity >= 10000 {
-				threshold = 5000
+				threshold = 5120
 			}
 		}
 
-		if count == threshold {
+		if count >= threshold {
 			h.adjustMParameter(data, threshold)
 		}
 	}

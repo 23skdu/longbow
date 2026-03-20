@@ -83,29 +83,34 @@ Increased default InitialCapacity from 10,000 to **50,000** in `internal/store/a
 ## MEDIUM PRIORITY Issues
 
 ### 3. SIMD Filter Operations - NOT ENABLED
-**File**: `internal/query/filter_evaluator_test.go:372-1291`
+**File**: `internal/query/filter_evaluator.go`, `internal/query/filter_evaluator_test.go`
 
-**Issue**: Many SIMD filter tests are skipped.
-
-**Action**: Enable SIMD filter operations for better query performance.
+**Status**: ✅ Verified — Already Implemented
+**Analysis**: The "skipped" tests are fuzz test parameter guards (`t.Skip()` on invalid inputs), not disabled SIMD tests. SIMD filter operations are already implemented and enabled:
+- `simd.MatchInt64` / `simd.MatchFloat32` — fast scalar comparisons
+- `simd.AndBytes` — SIMD bitmap combination
+- `VectorizedFilter` uses Arrow Compute for vectorized filtering
+- `FastPathEqual` / `FastPathNotEqual` — fast paths bypassing Arrow Compute
 
 ---
 
 ### 9. Generic Quantizer - Limited Types
-**File**: `internal/store/generic_quantizer_test.go:264,271`
+**Files**: `internal/store/scalar_quantization.go`, `internal/store/generic_quantizer.go`, `internal/store/generic_quantizer_test.go`
 
-**Issue**: Float16 and Int8 types not supported.
-
-**Action**: Extend quantizer type support.
+**Status**: ✅ Resolved
+**Issue**: Float16 and Int8 types not supported in quantizer.
+**Fix Applied**:
+1. `scalar_quantization.go` — Added `TrainSQ8EncoderFloat16` and `TrainSQ8EncoderInt8` for training from non-float32 types. Added `EncodeFloat16` and `EncodeInt8` methods on `SQ8Encoder`.
+2. `generic_quantizer.go` — Updated `GenericSQ8Quantizer.Encode` to handle `[]float16.Num` and `[]int8` with automatic conversion to `[]float32`.
+3. `generic_quantizer_test.go` — Unskipped `TestQuantizer_TypeConversion_Float16ToFloat32` and `TestQuantizer_TypeConversion_Int8ToFloat32` with proper test data.
 
 ---
 
 ### 10. Arrow Utils - Type Casting
-**File**: `internal/store/arrow_utils.go:269`
+**File**: `internal/store/arrow_utils.go`
 
-**Issue**: `ExtractVectorFromArrow` returns error for certain type conversions.
-
-**Action**: Implement full type conversion support.
+**Status**: ✅ Verified — Mostly Implemented
+**Analysis**: `ExtractVectorFromArrow` already supports conversions for: float32, float16, float64, int8, uint8, int16, uint16, int32, uint32, int64, uint64. The remaining default case handles Complex types which require a different approach (not a simple cast).
 
 ---
 

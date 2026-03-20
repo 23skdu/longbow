@@ -5,6 +5,7 @@ import (
 	"math"
 
 	"github.com/23skdu/longbow/internal/pq"
+	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
 // VectorType is a marker interface for all supported vector types
@@ -206,14 +207,27 @@ func NewGenericSQ8Quantizer(encoder *SQ8Encoder) *GenericSQ8Quantizer {
 
 // Encode implements Quantizer interface
 func (g *GenericSQ8Quantizer) Encode(vectors any) ([]uint8, error) {
-	vf32, ok := vectors.([]float32)
-	if !ok {
+	switch v := vectors.(type) {
+	case []float32:
+		return g.encoder.Encode(v), nil
+	case []float16.Num:
+		f32 := make([]float32, len(v))
+		for i, val := range v {
+			f32[i] = val.Float32()
+		}
+		return g.encoder.Encode(f32), nil
+	case []int8:
+		f32 := make([]float32, len(v))
+		for i, val := range v {
+			f32[i] = float32(val)
+		}
+		return g.encoder.Encode(f32), nil
+	default:
 		return nil, &ErrUnsupportedVectorType{
 			InputType:     fmt.Sprintf("%T", vectors),
 			ExpectedTypes: []string{"[]float32", "[]float16", "[]int8"},
 		}
 	}
-	return g.encoder.Encode(vf32), nil
 }
 
 // Decode implements Quantizer interface

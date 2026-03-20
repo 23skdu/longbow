@@ -762,17 +762,21 @@ func (h *ArrowHNSW) extractVector(rec arrow.RecordBatch, colIdx, rowIdx int) any
 
 // Interface implementation: Search performs k-nearest neighbor search
 func (h *ArrowHNSW) Search(ctx context.Context, queryVal any, k int, filter any) ([]types.Candidate, error) {
+	start := time.Now()
+
 	if h.nodeCount.Load() == 0 {
 		return []types.Candidate{}, nil
 	}
 
-	// searchCtx is used inside SearchVectorsWithBitmap now, so we don't need to hold it here
-	// to avoid double allocation or misuse.
-	// But SearchVectorsWithBitmap signature doesn't take context *pool object*, only Go context.
-	// So SearchVectorsWithBitmap will get its own.
-	// We can remove the Get/Put here.
-
 	results, err := h.SearchVectorsWithBitmap(ctx, queryVal, k, nil, nil)
+
+	// Record search metrics
+	duration := time.Since(start).Seconds()
+	typeStr := h.config.DataType.String()
+	dimStr := strconv.Itoa(int(h.dims.Load()))
+	metrics.HNSWSearchLatencyByType.WithLabelValues(typeStr).Observe(duration)
+	metrics.HNSWSearchLatencyByDim.WithLabelValues(dimStr).Observe(duration)
+
 	if err != nil {
 		return nil, err
 	}

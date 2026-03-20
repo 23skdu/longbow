@@ -78,8 +78,8 @@ def start_server():
     log_file = open("server.log", "w")
     env = os.environ.copy()
     env = os.environ.copy()
-    # Set memory limit to 12GB for performance testing
-    env["LONGBOW_MAX_MEMORY"] = "12884901888"
+    # Set memory limit to 20GB for performance testing
+    env["LONGBOW_MAX_MEMORY"] = "21474836480"
 
     proc = subprocess.Popen(
         ["go", "run", "cmd/longbow/main.go"],

@@ -45,17 +45,22 @@ Increased default InitialCapacity from 10,000 to **50,000** in `internal/store/a
 - 25k vectors: DoGet 271→2,099 MB/s, Search 812 QPS (correct results)
 
 ### 1. Optimize HNSW Dimension Index Parameters (Float32 Collapse Fix)
-**Files**: `internal/store/arrow_hnsw.go`, `internal/store/insertion_core.go`
+**Files**: `internal/store/arrow_hnsw.go`, `internal/store/insertion_core.go`, `internal/store/arrow_hnsw_adaptive.go`
 
-**Status**: Under Investigation
+**Status**: ✅ Resolved
 **Problem**: The integration benchmarks revealed a massive throughput dropoff for Float32 dense searches under specific configurations (e.g., Dimension 384, Scale 15,000+), falling below 100 QPS.
 **Analysis**:
 - Complex64 and Float32 both execute mathematically identical scalar/pointer arithmetic under unrolled Go loops.
 - Both use zero-copy direct array fetch mechanisms (`GetVector`).
-- This isolates the QPS dropoff to graph-traversal iterations sizing (number of node steps taken). The `Float32` pathways are taking significantly longer paths, likely caused by suboptimal connectivity layout links relative to dimension bounds.
-**Action**:
-- Profile and adjust internal adaptive level sizes to satisfy continuous dimensional struct bounds.
-- Analyze scalar loop unroll impacts on CPU cache lines versus vector-sizes.
+- This isolates the QPS dropoff to graph-traversal iterations sizing (number of node steps taken). The `Float32` pathways are taking significantly longer paths, caused by suboptimal M/MMax/MMax0 connectivity parameters for high-dimensional data.
+**Root Causes Found**:
+1. **Init-time optimization missing levelMultiplier recalculation** — The high-dim M adjustment at `arrow_hnsw.go:378-394` changed M/MMax/MMax0 but didn't recalculate `levelMultiplier`, causing incorrect level distributions.
+2. **Dynamic index growth not covered** — The init-time optimization only fired based on `InitialCapacity`. If the index grew past 10k nodes with insufficient initial capacity, no adjustment occurred.
+**Fix Applied**:
+1. `arrow_hnsw.go:394` — Added `levelMultiplier` recalculation after M adjustment in init-time optimization.
+2. `insertion_core.go:177-194` — Added dynamic M optimization trigger when nodeCount crosses 10k for high-dim Float32/Float64.
+3. `arrow_hnsw_adaptive.go:123` — Added `levelMultiplier` recalculation in `adjustMParameter`.
+**Expected Impact**: Float32 high-dim graphs will have proper connectivity and level distributions, matching Complex64/Float64 performance.
 
 ### 2. Review Grow() Trigger Alignment Thresholds
 **Files**: `internal/store/insertion_core.go`, `internal/store/arrow_hnsw.go`

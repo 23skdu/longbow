@@ -391,6 +391,8 @@ func NewArrowHNSW(dataset *Dataset, config *ArrowHNSWConfig) *ArrowHNSW {
 		if h.mMax0 < h.m*2 {
 			h.mMax0 = h.m * 2
 		}
+		// Recalculate levelMultiplier to match adjusted M for proper level distribution
+		h.levelMultiplier = 1.0 / math.Log(float64(h.m))
 	}
 
 	// Initialize GraphData

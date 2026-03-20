@@ -116,6 +116,8 @@ func (h *ArrowHNSW) adjustMParameter(data *GraphData, sampleSize int) {
 		h.m = newM
 		h.mMax = newMMax
 		h.mMax0 = newMMax * 2
+		// Recalculate levelMultiplier to match new M for proper level distribution
+		h.levelMultiplier = 1.0 / math.Log(float64(newM))
 		// Update config for visibility (though config is struct copy usually, h.config might be used elsewhere)
 		h.config.M = newM
 		h.config.MMax = newMMax

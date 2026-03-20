@@ -3,10 +3,12 @@ package store
 import (
 	"context"
 	"fmt"
+	"math"
 	"strconv"
 	"time"
 
 	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
@@ -171,6 +173,28 @@ do_grow:
 
 		if count == threshold {
 			h.adjustMParameter(data, threshold)
+		}
+	}
+
+	// Dynamic HNSW Dimension Index Optimization for Float32/Float64 at Scale
+	// If index wasn't initialized with high InitialCapacity but grew past 10k nodes,
+	// apply the same M/MMax/MMax0 adjustments as the init-time optimization.
+	// This prevents Float32 QPS collapse from suboptimal graph connectivity.
+	currentCount := int(h.nodeCount.Load())
+	currentM := h.m
+	currentDims := int(h.dims.Load())
+
+	if currentCount >= 10000 && currentDims >= 384 &&
+		(h.config.DataType == types.VectorTypeFloat32 || h.config.DataType == types.VectorTypeFloat64) &&
+		!h.adaptiveMTriggered.Load() && currentM < 24 {
+		newM := 24
+		newMMax := 48
+		if currentM < newM {
+			h.m = newM
+			h.mMax = newMMax
+			h.mMax0 = newMMax * 2
+			h.levelMultiplier = 1.0 / math.Log(float64(newM))
+			h.adaptiveMTriggered.Store(true)
 		}
 	}
 

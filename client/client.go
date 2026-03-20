@@ -28,8 +28,8 @@ func NewSmartClient(addr string) (*SmartClient, error) {
 		dialOpts: []grpc.DialOption{
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
 			grpc.WithDefaultCallOptions(
-				grpc.MaxCallRecvMsgSize(1024*1024*100), // 100MB
-				grpc.MaxCallSendMsgSize(1024*1024*100),
+				grpc.MaxCallRecvMsgSize(512 * 1024 * 1024), // 512MB
+				grpc.MaxCallSendMsgSize(512 * 1024 * 1024),
 			),
 		},
 		timeout: 30 * time.Second,
@@ -217,7 +217,11 @@ func (c *SmartClient) DoPut(ctx context.Context, desc *flight.FlightDescriptor) 
 			return nil, err
 		}
 
-		return stream, nil
+		return &smartDoPutStream{
+			FlightService_DoPutClient: stream,
+			desc:                     desc,
+			firstSend:                true,
+		}, nil
 	}
 
 	return nil, fmt.Errorf("max redirects exceeded")
@@ -287,4 +291,18 @@ func (c *SmartClient) DoAction(ctx context.Context, action *flight.Action) (flig
 	}
 
 	return nil, fmt.Errorf("max redirects exceeded")
+}
+
+type smartDoPutStream struct {
+	flight.FlightService_DoPutClient
+	desc      *flight.FlightDescriptor
+	firstSend bool
+}
+
+func (s *smartDoPutStream) Send(data *flight.FlightData) error {
+	if s.firstSend {
+		s.firstSend = false
+		data.FlightDescriptor = s.desc
+	}
+	return s.FlightService_DoPutClient.Send(data)
 }

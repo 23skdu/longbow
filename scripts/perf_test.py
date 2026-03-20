@@ -3,6 +3,7 @@
 
 Comprehensive benchmarking for Longbow vector store using the official Python SDK.
 """
+
 import argparse
 import concurrent.futures
 import json
@@ -20,6 +21,7 @@ import pyarrow as pa
 
 try:
     import boto3
+
     HAS_BOTO3 = True
 except ImportError:
     HAS_BOTO3 = False
@@ -28,7 +30,9 @@ except ImportError:
 try:
     from longbow import LongbowClient
 except ImportError:
-    print("Error: 'longbow' SDK not found. Install it via 'pip install ./longbowclientsdk'")
+    print(
+        "Error: 'longbow' SDK not found. Install it via 'pip install ./longbowclientsdk'"
+    )
     sys.exit(1)
 
 # Global timeout default
@@ -41,9 +45,11 @@ BENCHMARK_SIZES = [3000, 5000, 10000, 25000, 50000]
 # Data Classes
 # =============================================================================
 
+
 @dataclass
 class BenchmarkResult:
     """Container for benchmark results."""
+
     name: str
     duration_seconds: float
     throughput: float
@@ -55,19 +61,22 @@ class BenchmarkResult:
 
     @property
     def p50_ms(self) -> float:
-        if not self.latencies_ms: return 0.0
+        if not self.latencies_ms:
+            return 0.0
         return statistics.median(self.latencies_ms)
 
     @property
     def p95_ms(self) -> float:
-        if not self.latencies_ms: return 0.0
+        if not self.latencies_ms:
+            return 0.0
         sorted_lat = sorted(self.latencies_ms)
         idx = int(len(sorted_lat) * 0.95)
         return sorted_lat[min(idx, len(sorted_lat) - 1)]
 
     @property
     def p99_ms(self) -> float:
-        if not self.latencies_ms: return 0.0
+        if not self.latencies_ms:
+            return 0.0
         sorted_lat = sorted(self.latencies_ms)
         idx = int(len(sorted_lat) * 0.99)
         return sorted_lat[min(idx, len(sorted_lat) - 1)]
@@ -78,26 +87,27 @@ def check_cluster_health(client: LongbowClient):
     print("Checking cluster health...")
     try:
         # Access meta client directly or use future SDK method
-        if client._meta_client is None: client.connect()
+        if client._meta_client is None:
+            client.connect()
         import pyarrow.flight as flight
-        
+
         options = flight.FlightCallOptions(timeout=5.0)
         action = flight.Action("cluster-status", b"")
         results = list(client._meta_client.do_action(action, options=options))
         if not results:
             print("WARN: No status returned from cluster")
             return False, []
-            
+
         status = json.loads(results[0].body.to_pybytes())
         count = status.get("count", 0)
         print(f"Cluster Healthy: {count} active members")
         members = status.get("members", [])
         for m in members:
             # Addr is typically the internal address. We might need GrpcAddr if different.
-            # Assuming Addr is reachable for benchmark if GrpcAddr is similar or if 
+            # Assuming Addr is reachable for benchmark if GrpcAddr is similar or if
             # environment is local docker.
             print(f" - {m.get('ID')} ({m.get('Addr')}) [{m.get('Status', 'Unknown')}]")
-            
+
         return count > 0, members
     except Exception as e:
         # Relax check for single node local dev where gossip might be off
@@ -109,7 +119,10 @@ def check_cluster_health(client: LongbowClient):
 # Data Generation
 # =============================================================================
 
-def generate_vectors(num_rows: int, dim: int, with_text: bool = False, dtype_str: str = "float32") -> pa.Table:
+
+def generate_vectors(
+    num_rows: int, dim: int, with_text: bool = False, dtype_str: str = "float32"
+) -> pa.Table:
     """Generate random vectors (keep returning Table for efficiency)."""
     print(f"Generating {num_rows:,} vectors of dimension {dim} (type={dtype_str})...")
 
@@ -127,11 +140,16 @@ def generate_vectors(num_rows: int, dim: int, with_text: bool = False, dtype_str
         "uint32": (np.uint32, pa.uint32()),
         "uint64": (np.uint64, pa.uint64()),
         "complex64": (np.complex64, pa.float32()),  # Stored as list of floats (2x dim)
-        "complex128": (np.complex128, pa.float64()), # Stored as list of floats (2x dim)
+        "complex128": (
+            np.complex128,
+            pa.float64(),
+        ),  # Stored as list of floats (2x dim)
     }
 
     if dtype_str not in type_map:
-        raise ValueError(f"Unsupported dtype: {dtype_str}. Options: {list(type_map.keys())}")
+        raise ValueError(
+            f"Unsupported dtype: {dtype_str}. Options: {list(type_map.keys())}"
+        )
 
     np_dtype, pa_subtype = type_map[dtype_str]
     is_complex = "complex" in dtype_str
@@ -140,14 +158,16 @@ def generate_vectors(num_rows: int, dim: int, with_text: bool = False, dtype_str
         # Complex numbers simulated as 2 * dim floats
         real_dim = dim * 2
         # Generate complex numbers then view as floats
-        data = np.random.rand(num_rows, dim).astype(np_dtype) + 1j * np.random.rand(num_rows, dim).astype(np_dtype)
+        data = np.random.rand(num_rows, dim).astype(np_dtype) + 1j * np.random.rand(
+            num_rows, dim
+        ).astype(np_dtype)
         # Flatten and view as real components
         # e.g. [1+2j, 3+4j] -> [1, 2, 3, 4]
         if dtype_str == "complex64":
             flat_view = data.view(np.float32).flatten()
         else:
             flat_view = data.view(np.float64).flatten()
-        
+
         tensor_type = pa.list_(pa_subtype, real_dim)
         vectors = pa.FixedSizeListArray.from_arrays(flat_view, type=tensor_type)
     else:
@@ -156,10 +176,12 @@ def generate_vectors(num_rows: int, dim: int, with_text: bool = False, dtype_str
             if "uint" in dtype_str:
                 data = np.random.randint(0, 200, size=(num_rows, dim)).astype(np_dtype)
             else:
-                data = np.random.randint(-100, 100, size=(num_rows, dim)).astype(np_dtype)
+                data = np.random.randint(-100, 100, size=(num_rows, dim)).astype(
+                    np_dtype
+                )
         else:
             data = np.random.rand(num_rows, dim).astype(np_dtype)
-            
+
         flat_data = data.flatten()
         tensor_type = pa.list_(pa_subtype, dim)
         vectors = pa.FixedSizeListArray.from_arrays(flat_data, type=tensor_type)
@@ -178,16 +200,25 @@ def generate_vectors(num_rows: int, dim: int, with_text: bool = False, dtype_str
     ]
     arrays = [ids, vectors, ts_array]
 
-
     # Optional text field for hybrid search
     if with_text:
-        words = ["machine", "learning", "vector", "database", "search",
-                 "embedding", "neural", "network", "model", "data"]
+        words = [
+            "machine",
+            "learning",
+            "vector",
+            "database",
+            "search",
+            "embedding",
+            "neural",
+            "network",
+            "model",
+            "data",
+        ]
         texts = [" ".join(random.choices(words, k=10)) for _ in range(num_rows)]
         text_array = pa.array(texts, type=pa.string())
         fields.append(pa.field("meta", pa.string()))
         arrays.append(text_array)
-        
+
         # Add category for filtered search
         cats = ["A" if i % 2 == 0 else "B" for i in range(num_rows)]
         cat_array = pa.array(cats, type=pa.string())
@@ -198,17 +229,19 @@ def generate_vectors(num_rows: int, dim: int, with_text: bool = False, dtype_str
     return pa.Table.from_arrays(arrays, schema=schema)
 
 
-def generate_query_vectors(num_queries: int, dim: int, dtype_str: str = "float32") -> np.ndarray:
+def generate_query_vectors(
+    num_queries: int, dim: int, dtype_str: str = "float32"
+) -> np.ndarray:
     """Generate random query vectors."""
     is_complex = "complex" in dtype_str
-    
+
     # physical dimension for generation
     gen_dim = dim * 2 if is_complex else dim
-    
+
     # Use float32 for query vectors (server accepts float32 and converts/casts as needed)
     # UNLESS the server explicitly requires 2x dimensions for complex search.
     # Based on the error "expected 768, got 384", the server expects 2x dim.
-    
+
     return np.random.rand(num_queries, gen_dim).astype(np.float32)
 
 
@@ -216,26 +249,27 @@ def generate_query_vectors(num_queries: int, dim: int, dtype_str: str = "float32
 # Basic Benchmarks
 # =============================================================================
 
+
 def benchmark_put(client: LongbowClient, table: pa.Table, name: str) -> BenchmarkResult:
     """Benchmark DoPut using SDK (with manual sharding via headers headers mutation)."""
     print(f"\n[PUT] Uploading dataset '{name}'...")
-    
+
     start_time = time.time()
-    
+
     # Use larger batch sizes for better throughput (2000-5000 rows per batch)
     # This reduces network overhead and improves ingestion performance
     chunk_size = min(5000, max(2000, table.num_rows // 3))  # 2k-5k rows per batch
-    
+
     for i in range(0, table.num_rows, chunk_size):
         chunk = table.slice(i, min(chunk_size, table.num_rows - i))
-        routing_key = f"shard-{i//chunk_size}"
-        
+        routing_key = f"shard-{i // chunk_size}"
+
         # Mutate client headers directly to force routing
         client.headers["x-longbow-key"] = routing_key
-        
+
         # SDK insert handles the rest (accepts pa.Table due to our ingest.py update)
         client.insert(name, chunk)
-        
+
     duration = time.time() - start_time
     # Reset header
     client.headers.pop("x-longbow-key", None)
@@ -257,25 +291,30 @@ def benchmark_put(client: LongbowClient, table: pa.Table, name: str) -> Benchmar
     )
 
 
-def benchmark_get(client: LongbowClient, name: str, filters: Optional[list] = None, members: list = None) -> BenchmarkResult:
+def benchmark_get(
+    client: LongbowClient,
+    name: str,
+    filters: Optional[list] = None,
+    members: list = None,
+) -> BenchmarkResult:
     """Benchmark DoGet using SDK, attempting distributed fetch from all members."""
     filter_desc = f"with filters: {filters}" if filters else "(full scan)"
     print(f"\n[GET] Downloading dataset '{name}' {filter_desc}...")
-    
+
     # Target list: primary client first, then others if members provided
     # Actually, if we want full dataset and it's sharded, we MUST fetch from all unique addresses.
     # But for now, let's keep it simple: Use primary. If 0 rows and members exist, try others.
     # OR: Do we want to simulate a "Parallel Download"?
-    
+
     # Let's try Parallel Distributed Fetch if members > 1
     targets = []
     if members and len(members) > 1:
         # Deduplicate/Parse members
         # Current client uri
         primary_uri = client.uri
-        
+
         # We need to guess the Flight port for members if Addr is just one port.
-        # Usually Addr is the Gossip Port? Or GRPC? 
+        # Usually Addr is the Gossip Port? Or GRPC?
         # In this setup, it seems 127.0.0.1:7946 is the node address.
         # Let's assume Addr is the Flight/GRPC address we can connect to.
         for m in members:
@@ -289,15 +328,16 @@ def benchmark_get(client: LongbowClient, name: str, filters: Optional[list] = No
 
     # Remove duplicates
     targets = list(set(targets))
-    if not targets: targets = [client.uri]
-    
+    if not targets:
+        targets = [client.uri]
+
     print(f"[GET] Fetching from {len(targets)} nodes: {targets}")
 
     start_time = time.time()
     total_rows = 0
     total_bytes = 0
     error_count = 0
-    
+
     def fetch_node(uri):
         try:
             # Create transient client
@@ -319,10 +359,10 @@ def benchmark_get(client: LongbowClient, name: str, filters: Optional[list] = No
             r, b = f.result()
             total_rows += r
             total_bytes += b
-    
+
     # If total rows is 0, that's an issue (unless dataset is empty)
     if total_rows == 0:
-        error_count = 1 
+        error_count = 1
         print(f"[GET] Error: Retrieved 0 rows from {len(targets)} nodes.")
 
     duration = time.time() - start_time
@@ -340,7 +380,7 @@ def benchmark_get(client: LongbowClient, name: str, filters: Optional[list] = No
         throughput_unit="MB/s",
         rows=total_rows,
         bytes_processed=total_bytes,
-        errors=error_count
+        errors=error_count,
     )
 
 
@@ -348,21 +388,26 @@ def benchmark_get(client: LongbowClient, name: str, filters: Optional[list] = No
 # Vector Search Benchmarks
 # =============================================================================
 
-def benchmark_vector_search(client: LongbowClient, name: str,
-                            query_vectors: np.ndarray, k: int,
-                            filters: Optional[list] = None,
-                            global_search: bool = False,
-                            include_vectors: bool = False,
-                            vector_format: str = "f32",
-                            text_query: Optional[str] = None,
-                            alpha: float = 0.0,
-                            **kwargs) -> BenchmarkResult:
+
+def benchmark_vector_search(
+    client: LongbowClient,
+    name: str,
+    query_vectors: np.ndarray,
+    k: int,
+    filters: Optional[list] = None,
+    global_search: bool = False,
+    include_vectors: bool = False,
+    vector_format: str = "f32",
+    text_query: Optional[str] = None,
+    alpha: float = 0.0,
+    **kwargs,
+) -> BenchmarkResult:
     """Benchmark Vector Search using SDK search()."""
     num_queries = len(query_vectors)
     print(f"\n[SEARCH] Running {num_queries:,} vector searches (k={k})...")
 
     latencies = []
-    errors = {'resource_exhausted': 0, 'unavailable': 0, 'other': 0}
+    errors = {"resource_exhausted": 0, "unavailable": 0, "other": 0}
     total_results = 0
 
     # Configure global search header if needed
@@ -372,23 +417,26 @@ def benchmark_vector_search(client: LongbowClient, name: str,
 
     for i, qvec in enumerate(query_vectors):
         q_list = qvec.tolist()
-        
+
         start = time.time()
         retry_count = 0
         max_retries = 2
-        
+
         while retry_count <= max_retries:
             try:
                 # SDK search
                 df = client.search(
-                    name, q_list, k=k, filters=filters, 
-                    include_vectors=include_vectors, 
+                    name,
+                    q_list,
+                    k=k,
+                    filters=filters,
+                    include_vectors=include_vectors,
                     vector_format=vector_format,
-                    text_query=text_query, 
+                    text_query=text_query,
                     alpha=alpha,
-                    **kwargs
+                    **kwargs,
                 )
-                
+
                 # Check for errors in the DataFrame if any column indicates error?
                 # SDK search raises exception on RPC error.
                 # If search returns empty DF, handled below.
@@ -396,26 +444,31 @@ def benchmark_vector_search(client: LongbowClient, name: str,
                 break
             except Exception as e:
                 error_msg = str(e)
-                if "RESOURCE_EXHAUSTED" in error_msg or "memory limit" in error_msg.lower():
-                    errors['resource_exhausted'] += 1
-                    if errors['resource_exhausted'] == 1:
-                        print(f"\n⚠️  [BACKPRESSURE] Server memory limit hit on query {i}")
+                if (
+                    "RESOURCE_EXHAUSTED" in error_msg
+                    or "memory limit" in error_msg.lower()
+                ):
+                    errors["resource_exhausted"] += 1
+                    if errors["resource_exhausted"] == 1:
+                        print(
+                            f"\n⚠️  [BACKPRESSURE] Server memory limit hit on query {i}"
+                        )
                     time.sleep(0.1)
                     retry_count += 1
                 elif "UNAVAILABLE" in error_msg or "evicting" in error_msg.lower():
-                    errors['unavailable'] += 1
-                    if errors['unavailable'] == 1:
+                    errors["unavailable"] += 1
+                    if errors["unavailable"] == 1:
                         print(f"\n⚠️  [EVICTION] Dataset evicting on query {i}")
                     time.sleep(0.05)
                     retry_count += 1
                 else:
-                    errors['other'] += 1
-                    if errors['other'] <= 3:
+                    errors["other"] += 1
+                    if errors["other"] <= 3:
                         print(f"[SEARCH] Error on query {i}: {e}")
                     break
-        
+
         latencies.append((time.time() - start) * 1000)
-        
+
         if (i + 1) % 100 == 0:
             print(f"[SEARCH] Completed {i + 1}/{num_queries} queries...")
 
@@ -440,12 +493,15 @@ def benchmark_vector_search(client: LongbowClient, name: str,
 
     print(f"[SEARCH] Completed: {qps:.2f} queries/s")
     print(f"[SEARCH] Total Rows Found: {total_results}")
-    print(f"[SEARCH] Latency p50={result.p50_ms:.2f}ms p95={result.p95_ms:.2f}ms p99={result.p99_ms:.2f}ms")
+    print(
+        f"[SEARCH] Latency p50={result.p50_ms:.2f}ms p95={result.p95_ms:.2f}ms p99={result.p99_ms:.2f}ms"
+    )
     return result
 
 
-def benchmark_search_by_id(client: LongbowClient, name: str,
-                           ids: list, k: int) -> BenchmarkResult:
+def benchmark_search_by_id(
+    client: LongbowClient, name: str, ids: list, k: int
+) -> BenchmarkResult:
     """Benchmark SearchByID using SDK."""
     num_queries = len(ids)
     print(f"\n[SEARCH-ID] Running {num_queries:,} ID searches (k={k})...")
@@ -484,10 +540,16 @@ def benchmark_search_by_id(client: LongbowClient, name: str,
         errors=errors,
     )
 
-def benchmark_hybrid_search(client: LongbowClient, name: str,
-                            query_vectors: np.ndarray, k: int,
-                            text_queries: list, alpha: float = 0.5,
-                            global_search: bool = False) -> BenchmarkResult:
+
+def benchmark_hybrid_search(
+    client: LongbowClient,
+    name: str,
+    query_vectors: np.ndarray,
+    k: int,
+    text_queries: list,
+    alpha: float = 0.5,
+    global_search: bool = False,
+) -> BenchmarkResult:
     """Benchmark Hybrid Search using SDK."""
     num_queries = len(query_vectors)
     print(f"\n[HYBRID] Running {num_queries:,} hybrid searches (k={k})...")
@@ -495,7 +557,7 @@ def benchmark_hybrid_search(client: LongbowClient, name: str,
     latencies = []
     errors = 0
     total_results = 0
-    
+
     if global_search:
         client.headers["x-longbow-global"] = "true"
         client.headers["x-longbow-key"] = name
@@ -504,8 +566,7 @@ def benchmark_hybrid_search(client: LongbowClient, name: str,
         start = time.time()
         try:
             df = client.search(
-                name, qvec.tolist(), k=k, 
-                text_query=text_query, alpha=alpha
+                name, qvec.tolist(), k=k, text_query=text_query, alpha=alpha
             )
             # df = ddf.compute() # removed
             total_results += len(df)
@@ -516,7 +577,7 @@ def benchmark_hybrid_search(client: LongbowClient, name: str,
             continue
 
         latencies.append((time.time() - start) * 1000)
-        
+
         if (i + 1) % 100 == 0:
             print(f"[HYBRID] Completed {i + 1}/{num_queries} queries...")
 
@@ -546,7 +607,7 @@ def benchmark_delete(client: LongbowClient, name: str, ids: list) -> BenchmarkRe
     latencies = []
     errors = 0
     success = 0
-    
+
     start_total = time.time()
     # SDK delete takes list of IDs, but perf_test loops?
     # SDK delete executes ONE action per call.
@@ -566,7 +627,7 @@ def benchmark_delete(client: LongbowClient, name: str, ids: list) -> BenchmarkRe
     # Let's assume SDK implementation I wrote (DeleteNamespace with ids) is correct target behavior.
     # But if server doesn't support it, perf test will fail.
     # The `ops_test.py` loop suggested server expects single ID "delete-vector".
-    # I should probably use `client._meta_client.do_action("delete-vector")` if I want to mimic perf test behavior 
+    # I should probably use `client._meta_client.do_action("delete-vector")` if I want to mimic perf test behavior
     # OR rely on SDK logic if I believe it works.
     # Given I am the agent who wrote SDK, did I check Server side?
     # No, I didn't check.
@@ -574,7 +635,7 @@ def benchmark_delete(client: LongbowClient, name: str, ids: list) -> BenchmarkRe
     # But for perf/latency measurement of *actions*, SDK `delete` with batch of IDs is ONE call.
     # `perf_test` measures per-ID latency.
     # I will loop 1-by-1 calling SDK delete `ids=[id]` to maintain benchmark semantics.
-    
+
     for i, vid in enumerate(ids):
         start = time.time()
         try:
@@ -582,14 +643,16 @@ def benchmark_delete(client: LongbowClient, name: str, ids: list) -> BenchmarkRe
             success += 1
         except Exception as e:
             errors += 1
-            if errors <= 3: print(f"[DELETE] Error: {e}")
+            if errors <= 3:
+                print(f"[DELETE] Error: {e}")
         latencies.append((time.time() - start) * 1000)
-        
-        if (i+1) % 1000 == 0: print(f"[DELETE] {i+1}...")
+
+        if (i + 1) % 1000 == 0:
+            print(f"[DELETE] {i + 1}...")
 
     duration = time.time() - start_total
     throughput = success / duration if duration > 0 else 0
-    
+
     return BenchmarkResult(
         name="Delete",
         duration_seconds=duration,
@@ -597,7 +660,7 @@ def benchmark_delete(client: LongbowClient, name: str, ids: list) -> BenchmarkRe
         throughput_unit="ops/s",
         rows=success,
         latencies_ms=latencies,
-        errors=errors
+        errors=errors,
     )
 
 
@@ -605,11 +668,20 @@ def benchmark_delete(client: LongbowClient, name: str, ids: list) -> BenchmarkRe
 # Concurrent Load
 # =============================================================================
 
-def benchmark_concurrent_load(data_uri: str, meta_uri: str, name: str, dim: int,
-                              num_workers: int, duration_seconds: int,
-                              operation: str = "mixed") -> BenchmarkResult:
+
+def benchmark_concurrent_load(
+    data_uri: str,
+    meta_uri: str,
+    name: str,
+    dim: int,
+    num_workers: int,
+    duration_seconds: int,
+    operation: str = "mixed",
+) -> BenchmarkResult:
     """Benchmark concurrent load using SDK clients."""
-    print(f"\n[CONCURRENT] Running {num_workers} workers for {duration_seconds}s ({operation})...")
+    print(
+        f"\n[CONCURRENT] Running {num_workers} workers for {duration_seconds}s ({operation})..."
+    )
 
     stop_event = threading.Event()
     results_lock = threading.Lock()
@@ -621,7 +693,7 @@ def benchmark_concurrent_load(data_uri: str, meta_uri: str, name: str, dim: int,
         nonlocal total_ops, total_errors
         # Each worker gets its own SDK client
         client = LongbowClient(uri=data_uri, meta_uri=meta_uri)
-        
+
         local_latencies = []
         local_ops = 0
         local_errors = 0
@@ -635,7 +707,7 @@ def benchmark_concurrent_load(data_uri: str, meta_uri: str, name: str, dim: int,
                 # Set routing key for sharding
                 routing_key = f"worker-{worker_id}-{local_ops % 10}"
                 client.headers["x-longbow-key"] = routing_key
-                
+
                 if operation == "put" or (operation == "mixed" and local_ops % 2 == 0):
                     client.insert(name, small_table)
                 else:
@@ -644,12 +716,12 @@ def benchmark_concurrent_load(data_uri: str, meta_uri: str, name: str, dim: int,
                     ddf = client.search(name, vec, k=5)
                     # ddf is already a pandas DataFrame
                     _ = ddf
-                
+
                 local_ops += 1
                 local_latencies.append((time.time() - start) * 1000)
-                
+
                 # Small sleep to prevent DoS-like load on local resources
-                time.sleep(0.01) # 10ms
+                time.sleep(0.01)  # 10ms
             except Exception as e:
                 local_errors += 1
                 if local_errors <= 1:
@@ -661,7 +733,7 @@ def benchmark_concurrent_load(data_uri: str, meta_uri: str, name: str, dim: int,
             total_ops += local_ops
             total_errors += local_errors
             all_latencies.extend(local_latencies)
-            
+
         client.close()
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
@@ -670,7 +742,7 @@ def benchmark_concurrent_load(data_uri: str, meta_uri: str, name: str, dim: int,
         stop_event.set()
         concurrent.futures.wait(futures)
 
-    duration = duration_seconds # Approximation
+    duration = duration_seconds  # Approximation
     throughput = total_ops / duration if duration > 0 else 0
 
     return BenchmarkResult(
@@ -680,23 +752,27 @@ def benchmark_concurrent_load(data_uri: str, meta_uri: str, name: str, dim: int,
         throughput_unit="ops/s",
         rows=total_ops,
         latencies_ms=all_latencies,
-        errors=total_errors
+        errors=total_errors,
     )
+
 
 class SnapshotManager:
     """Helper for S3 Snapshots (stubbed if no boto3)."""
+
     def __init__(self, bucket: str, region: str = "us-east-1"):
         self.bucket = bucket
         self.s3 = boto3.client("s3", region_name=region) if HAS_BOTO3 else None
-        
+
     def list_snapshots(self, prefix: str) -> list:
-        if not self.s3: return []
+        if not self.s3:
+            return []
         try:
             resp = self.s3.list_objects_v2(Bucket=self.bucket, Prefix=prefix)
             return [obj["Key"] for obj in resp.get("Contents", [])]
         except Exception as e:
             print(f"S3 List Error: {e}")
             return []
+
 
 def main():
     parser = argparse.ArgumentParser(description="Longbow Perf Test (SDK)")
@@ -705,10 +781,26 @@ def main():
     parser.add_argument("--dataset", required=True)
     parser.add_argument("--rows", type=int, default=10_000)
     parser.add_argument("--dim", type=int, default=128)
-    parser.add_argument("--dtype", default="float32", 
-                        choices=["float32", "float16", "float64", "int8", "int16", "int32", "int64", 
-                                 "uint8", "uint16", "uint32", "uint64", "complex64", "complex128"],
-                        help="Data type for vectors")
+    parser.add_argument(
+        "--dtype",
+        default="float32",
+        choices=[
+            "float32",
+            "float16",
+            "float64",
+            "int8",
+            "int16",
+            "int32",
+            "int64",
+            "uint8",
+            "uint16",
+            "uint32",
+            "uint64",
+            "complex64",
+            "complex128",
+        ],
+        help="Data type for vectors",
+    )
     parser.add_argument("--k", type=int, default=10)
     parser.add_argument("--queries", type=int, default=1000)
     parser.add_argument("--json", help="Path to save results as JSON")
@@ -717,29 +809,47 @@ def main():
     parser.add_argument("--skip-put", action="store_true")
     parser.add_argument("--skip-search", action="store_true")
     parser.add_argument("--skip-get", action="store_true")
-    
-    parser.add_argument("--concurrent", type=int, default=0, help="Run concurrent load test (num workers)")
-    parser.add_argument("--duration", type=int, default=10, help="Duration for concurrent test")
-    
+
+    parser.add_argument(
+        "--concurrent",
+        type=int,
+        default=0,
+        help="Run concurrent load test (num workers)",
+    )
+    parser.add_argument(
+        "--duration", type=int, default=10, help="Duration for concurrent test"
+    )
+
     parser.add_argument("--global", dest="global_search", action="store_true")
     parser.add_argument("--with-text", action="store_true", help="Hybrid search test")
-    parser.add_argument("--alpha", type=float, default=0.5, help="Hybrid search alpha (1.0 = text only/sparse, 0.0 = vector only)")
+    parser.add_argument(
+        "--alpha",
+        type=float,
+        default=0.5,
+        help="Hybrid search alpha (1.0 = text only/sparse, 0.0 = vector only)",
+    )
     parser.add_argument("--s3-bucket", help="S3 Bucket for snapshot checks")
-    
+
     parser.add_argument("--test-delete", action="store_true")
     parser.add_argument("--test-id-search", action="store_true")
     parser.add_argument("--filter", help="JSON string for filters or 'field:op:val'")
-    parser.add_argument("--run-suite", action="store_true", help="Run full benchmark suite with standard sizes")
+    parser.add_argument(
+        "--run-suite",
+        action="store_true",
+        help="Run full benchmark suite with standard sizes",
+    )
 
     args = parser.parse_args()
 
     # Init
     client = LongbowClient(uri=args.data_uri, meta_uri=args.meta_uri)
-    
+
     # Auto-detect fp16 from dataset name if dtype not specified (legacy compat)
-    if args.dtype == "float32" and ("fp16" in args.dataset.lower() or "float16" in args.dataset.lower()):
+    if args.dtype == "float32" and (
+        "fp16" in args.dataset.lower() or "float16" in args.dataset.lower()
+    ):
         args.dtype = "float16"
-    
+
     # Process Filter
     filters = None
     if args.filter:
@@ -750,9 +860,11 @@ def main():
             if len(parts) == 3:
                 filters = [{"field": parts[0], "op": parts[1], "value": parts[2]}]
             else:
-                print(f"Error: Invalid filter format '{args.filter}'. Use 'field:op:val' or JSON array.")
+                print(
+                    f"Error: Invalid filter format '{args.filter}'. Use 'field:op:val' or JSON array."
+                )
                 sys.exit(1)
-    
+
     # Check health
     is_healthy, cluster_members = check_cluster_health(client)
     if not is_healthy:
@@ -760,26 +872,28 @@ def main():
         sys.exit(1)
 
     all_results = []
-    
+
     sizes_to_run = BENCHMARK_SIZES if args.run_suite else [args.rows]
-    
+
     for size in sizes_to_run:
-        print(f"\n" + "="*80)
+        print(f"\n" + "=" * 80)
         print(f"BENCHMARK RUN: {size:,} Vectors ({args.dtype})")
-        print("="*80)
-        
+        print("=" * 80)
+
         current_dataset = f"{args.dataset}_{size}" if args.run_suite else args.dataset
         results = []
-    
+
         try:
             # PUT
             if not args.skip_put:
-                table = generate_vectors(size, args.dim, with_text=args.with_text, dtype_str=args.dtype)
+                table = generate_vectors(
+                    size, args.dim, with_text=args.with_text, dtype_str=args.dtype
+                )
                 res = benchmark_put(client, table, current_dataset)
                 results.append(res)
-                
+
                 print("Waiting for indexing...")
-                time.sleep(5)
+                time.sleep(30)
 
             # GET
             if not args.skip_get:
@@ -788,15 +902,20 @@ def main():
 
             # SEARCH
             if not args.skip_search:
-                q_vecs = generate_query_vectors(args.queries, args.dim, dtype_str=args.dtype)
-                
+                q_vecs = generate_query_vectors(
+                    args.queries, args.dim, dtype_str=args.dtype
+                )
+
                 # 1. Dense Search
                 print("\n--> Running Dense Search")
                 res_s = benchmark_vector_search(
-                    client, current_dataset, q_vecs, k=args.k, 
+                    client,
+                    current_dataset,
+                    q_vecs,
+                    k=args.k,
                     filters=filters,
                     global_search=args.global_search,
-                    alpha=0.0 # pure vector
+                    alpha=0.0,  # pure vector
                 )
                 results.append(res_s)
 
@@ -805,11 +924,14 @@ def main():
                     print("\n--> Running Sparse Search")
                     texts = ["data model"] * args.queries
                     res_sparse = benchmark_vector_search(
-                        client, current_dataset, q_vecs, k=args.k,
+                        client,
+                        current_dataset,
+                        q_vecs,
+                        k=args.k,
                         filters=filters,
                         global_search=args.global_search,
                         text_query="data model",
-                        alpha=1.0 # pure text
+                        alpha=1.0,  # pure text
                     )
                     res_sparse.name = "SparseSearch"
                     results.append(res_sparse)
@@ -817,9 +939,13 @@ def main():
                     # 3. Hybrid Search (Alpha 0.5)
                     print("\n--> Running Hybrid Search")
                     res_h = benchmark_hybrid_search(
-                        client, current_dataset, q_vecs, k=args.k, 
-                        text_queries=texts, alpha=args.alpha,
-                        global_search=args.global_search
+                        client,
+                        current_dataset,
+                        q_vecs,
+                        k=args.k,
+                        text_queries=texts,
+                        alpha=args.alpha,
+                        global_search=args.global_search,
                     )
                     results.append(res_h)
 
@@ -827,10 +953,13 @@ def main():
                     print("\n--> Running Filtered Search")
                     filtered_filters = [{"field": "category", "op": "Eq", "value": "A"}]
                     res_f = benchmark_vector_search(
-                        client, current_dataset, q_vecs, k=args.k,
+                        client,
+                        current_dataset,
+                        q_vecs,
+                        k=args.k,
                         filters=filtered_filters,
                         global_search=args.global_search,
-                        alpha=0.0
+                        alpha=0.0,
                     )
                     res_f.name = "FilteredSearch"
                     results.append(res_f)
@@ -839,7 +968,9 @@ def main():
             if args.test_id_search:
                 # query IDs 0..100
                 q_ids = list(range(min(100, size)))
-                res_id = benchmark_search_by_id(client, current_dataset, q_ids, k=args.k)
+                res_id = benchmark_search_by_id(
+                    client, current_dataset, q_ids, k=args.k
+                )
                 results.append(res_id)
 
             # Delete
@@ -851,8 +982,12 @@ def main():
             # Concurrent
             if args.concurrent > 0:
                 res_c = benchmark_concurrent_load(
-                    args.data_uri, args.meta_uri, current_dataset, args.dim,
-                    args.concurrent, args.duration
+                    args.data_uri,
+                    args.meta_uri,
+                    current_dataset,
+                    args.dim,
+                    args.concurrent,
+                    args.duration,
                 )
                 results.append(res_c)
 
@@ -862,23 +997,28 @@ def main():
         except Exception as e:
             print(f"Fatal Error during run for size {size}: {e}")
             import traceback
+
             traceback.print_exc()
-        
+
         # Append to all results with modified names for specific size
         for r in results:
             r.name = f"{r.name} @ {size}"
             all_results.append(r)
 
     # Summary
-    print("\n" + "="*95)
+    print("\n" + "=" * 95)
     print("BENCHMARK SUITE SUMMARY")
-    print("="*95)
-    print(f"{'Name':<35} | {'Throughput':<20} | {'p50 (ms)':<10} | {'p95 (ms)':<10} | {'p99 (ms)':<10} | {'Errors':<8}")
+    print("=" * 95)
+    print(
+        f"{'Name':<35} | {'Throughput':<20} | {'p50 (ms)':<10} | {'p95 (ms)':<10} | {'p99 (ms)':<10} | {'Errors':<8}"
+    )
     print("-" * 95)
     for r in all_results:
         t_str = f"{r.throughput:.2f} {r.throughput_unit}"
-        print(f"{r.name:<35} | {t_str:<20} | {r.p50_ms:<10.2f} | {r.p95_ms:<10.2f} | {r.p99_ms:<10.2f} | {r.errors:<8}")
-    print("="*95)
+        print(
+            f"{r.name:<35} | {t_str:<20} | {r.p50_ms:<10.2f} | {r.p95_ms:<10.2f} | {r.p99_ms:<10.2f} | {r.errors:<8}"
+        )
+    print("=" * 95)
 
     # Save JSON if requested
     if args.json:
@@ -886,20 +1026,23 @@ def main():
             # Convert BenchmarkResult objects to serializable dicts
             json_results = []
             for r in all_results:
-                json_results.append({
-                    "name": r.name,
-                    "duration_seconds": r.duration_seconds,
-                    "throughput": r.throughput,
-                    "throughput_unit": r.throughput_unit,
-                    "rows": r.rows,
-                    "bytes_processed": r.bytes_processed,
-                    "p50_ms": r.p50_ms,
-                    "p95_ms": r.p95_ms,
-                    "p99_ms": r.p99_ms,
-                    "errors": r.errors
-                })
+                json_results.append(
+                    {
+                        "name": r.name,
+                        "duration_seconds": r.duration_seconds,
+                        "throughput": r.throughput,
+                        "throughput_unit": r.throughput_unit,
+                        "rows": r.rows,
+                        "bytes_processed": r.bytes_processed,
+                        "p50_ms": r.p50_ms,
+                        "p95_ms": r.p95_ms,
+                        "p99_ms": r.p99_ms,
+                        "errors": r.errors,
+                    }
+                )
             json.dump(json_results, f, indent=2)
             print(f"Results saved to {args.json}")
+
 
 if __name__ == "__main__":
     main()

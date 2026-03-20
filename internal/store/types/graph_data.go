@@ -1386,54 +1386,31 @@ func (g *GraphData) Clone() *GraphData {
 	}
 
 	// Deep copy other vector types
-	if g.VectorsSQ8 != nil {
-		newG.VectorsSQ8 = make([]uint64, len(g.VectorsSQ8))
-		copy(newG.VectorsSQ8, g.VectorsSQ8)
-	}
-	if g.VectorsF32 != nil {
-		newG.VectorsF32 = make([]uint64, len(g.VectorsF32))
-		copy(newG.VectorsF32, g.VectorsF32)
-	}
-	if g.VectorsBQ != nil {
-		newG.VectorsBQ = make([]uint64, len(g.VectorsBQ))
-		copy(newG.VectorsBQ, g.VectorsBQ)
-	}
 	if g.VectorsPQ != nil {
 		newG.VectorsPQ = make([]uint64, len(g.VectorsPQ))
-		copy(newG.VectorsPQ, g.VectorsPQ)
 	}
-	if g.VectorsF16 != nil {
-		newG.VectorsF16 = make([]uint64, len(g.VectorsF16))
-		copy(newG.VectorsF16, g.VectorsF16)
+	if g.VectorsSQ8 != nil {
+		newG.VectorsSQ8 = make([]uint64, len(g.VectorsSQ8))
 	}
-	if g.VectorsInt8 != nil {
-		newG.VectorsInt8 = make([]uint64, len(g.VectorsInt8))
-		copy(newG.VectorsInt8, g.VectorsInt8)
-	}
-	if g.VectorsInt64 != nil {
-		newG.VectorsInt64 = make([]uint64, len(g.VectorsInt64))
-		copy(newG.VectorsInt64, g.VectorsInt64)
-	}
-	if g.VectorsInt16 != nil {
-		newG.VectorsInt16 = make([]uint64, len(g.VectorsInt16))
-		copy(newG.VectorsInt16, g.VectorsInt16)
-	}
-	if g.VectorsUint16 != nil {
-		newG.VectorsUint16 = make([]uint64, len(g.VectorsUint16))
-		copy(newG.VectorsUint16, g.VectorsUint16)
-	}
-	if g.VectorsUint64 != nil {
-		newG.VectorsUint64 = make([]uint64, len(g.VectorsUint64))
-		copy(newG.VectorsUint64, g.VectorsUint64)
-	}
-	if g.VectorsInt32 != nil {
-		newG.VectorsInt32 = make([]uint64, len(g.VectorsInt32))
-		copy(newG.VectorsInt32, g.VectorsInt32)
-	}
-	if g.VectorsUint32 != nil {
-		newG.VectorsUint32 = make([]uint64, len(g.VectorsUint32))
-		copy(newG.VectorsUint32, g.VectorsUint32)
-	}
+	newG.Uint8Arena = nil
+	newG.Uint64Arena = nil
+	newG.Float32Arena = nil
+	newG.Float64Arena = nil
+	newG.Int8Arena = nil
+	newG.Int64Arena = nil
+	newG.Complex64Arena = nil
+	newG.Complex128Arena = nil
+	newG.VectorsF32 = nil
+	newG.VectorsBQ = nil
+	newG.VectorsPQ = nil
+	newG.VectorsF16 = nil
+	newG.VectorsInt8 = nil
+	newG.VectorsInt64 = nil
+	newG.VectorsInt16 = nil
+	newG.VectorsUint16 = nil
+	newG.VectorsUint64 = nil
+	newG.VectorsInt32 = nil
+	newG.VectorsUint32 = nil
 	if g.VectorsFloat64 != nil {
 		newG.VectorsFloat64 = make([][]float64, len(g.VectorsFloat64))
 		copy(newG.VectorsFloat64, g.VectorsFloat64)

@@ -101,6 +101,29 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 		}
 		return stream.Send(&flight.Result{Body: body})
 
+	case "wait-for-indexing":
+		var req struct {
+			Dataset string `json:"dataset"`
+		}
+		if len(action.Body) > 0 {
+			if err := json.Unmarshal(action.Body, &req); err != nil {
+				return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
+			}
+		}
+		if req.Dataset == "" {
+			return status.Errorf(codes.InvalidArgument, "dataset name is required")
+		}
+		s.WaitForIndexing(req.Dataset)
+		resp := map[string]any{"status": "complete", "dataset": req.Dataset}
+		body, err := json.Marshal(resp)
+		if err != nil {
+			return status.Errorf(codes.Internal, "failed to serialize response: %v", err)
+		}
+		if err := stream.Send(&flight.Result{Body: body}); err != nil {
+			return err
+		}
+		return nil
+
 	case "delete", "Delete":
 		var req struct {
 			Dataset string `json:"dataset"`
@@ -907,7 +930,25 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 	defer ds.dataMu.Unlock()
 
 	// Lazy Index Initialization
-	if ds.Index == nil {
+	// Also check if existing index has wrong DataType (e.g. Pre-warmed with Float32 but data is Float64)
+	var needsReindex bool
+	if ds.Index != nil {
+		if hnsw, ok := ds.Index.(*ArrowHNSW); ok {
+			vecColName := "vector"
+			for _, f := range rec.Schema().Fields() {
+				if f.Name == "vector" || f.Name == "embedding" {
+					vecColName = f.Name
+					break
+				}
+			}
+			wantType := InferVectorDataType(rec.Schema(), vecColName)
+			if hnsw.config.DataType != wantType {
+				s.logger.Info().Str("dataset", name).Str("have", hnsw.config.DataType.String()).Str("want", wantType.String()).Msg("Re-creating index for DataType mismatch")
+				needsReindex = true
+			}
+		}
+	}
+	if ds.Index == nil || needsReindex {
 		s.logger.Info().Str("dataset", name).Msg("Attempting lazy index initialization")
 		config := s.autoShardingConfig
 		if config.ShardThreshold == 0 {

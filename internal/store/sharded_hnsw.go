@@ -198,6 +198,7 @@ func (s *ShardedHNSW) newShard(_ int) *hnswShard {
 	// We pass nil for ChunkedLocationStore because shards use local IDs and don't manage global locations
 	// The ShardedHNSW manages the global location store.
 	idx := NewArrowHNSW(s.dataset, &arrowConfig)
+	idx.SetDisableNodeCountMetric(true)
 
 	// Correct dimension initialization
 	idx.SetDimension(int(s.dimension))

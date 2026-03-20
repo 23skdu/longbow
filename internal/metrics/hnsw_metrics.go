@@ -173,13 +173,12 @@ var (
 		[]string{"type"},
 	)
 
-	// HNSWNodeCount tracks the total number of nodes in the HNSW graph per dataset.
 	HNSWNodeCount = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "longbow_hnsw_node_count",
 			Help: "Total number of nodes in the HNSW graph",
 		},
-		[]string{"dataset"},
+		[]string{"dataset", "shard"},
 	)
 
 	// HNSWSearchOpsTotal tracks search operations with metadata.

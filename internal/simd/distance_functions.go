@@ -242,6 +242,17 @@ func L2SquaredFloat32(a, b []float32) (float32, error) {
 	return sum0 + sum1 + sum2 + sum3, nil
 }
 
+// EuclideanDistanceInt8 calculates Euclidean distance for Int8 vectors.
+func EuclideanDistanceInt8(a, b []int8) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: vector length mismatch")
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	return euclideanDistanceInt8Impl(a, b)
+}
+
 // Prefetch hints to the CPU to fetch data into cache for future use.
 // It uses the PREFETCHNTA instruction on x86 for non-temporal access.
 func Prefetch(p unsafe.Pointer) {

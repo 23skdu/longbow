@@ -11,6 +11,7 @@
 | Euclidean1536 | 368.4 | 16,548 |
 
 ### Integration Benchmarks (float32, dim=384, InitialCapacity=50k)
+
 | Vectors | DoPut (MB/s) | DoGet (MB/s) | Search (QPS) |
 |---------|--------------|--------------|--------------|
 | 1,000 | 414 | 443 | 1,526 |
@@ -20,6 +21,7 @@
 | 25,000 | 1,416 | 2,099 | 812 |
 
 ### Validation Tests (25k vectors, dim=128)
+
 | Metric | Result | Target | Status |
 |--------|--------|--------|--------|
 | Ingest | 1,235 MB/s | 800 MB/s | ✅ PASS |
@@ -42,76 +44,33 @@ Increased default InitialCapacity from 10,000 to **50,000** in `internal/store/a
 - 15k vectors: DoGet 271→1,874 MB/s (**6.9x**), Search 75→897 QPS (**12x**)
 - 25k vectors: DoGet 271→2,099 MB/s, Search 812 QPS (correct results)
 
----
+### 1. Optimize HNSW Dimension Index Parameters (Float32 Collapse Fix)
+**Files**: `internal/store/arrow_hnsw.go`, `internal/store/insertion_core.go`
 
-## HIGH PRIORITY Incomplete Features
+**Status**: Under Investigation
+**Problem**: The integration benchmarks revealed a massive throughput dropoff for Float32 dense searches under specific configurations (e.g., Dimension 384, Scale 15,000+), falling below 100 QPS.
+**Analysis**:
+- Complex64 and Float32 both execute mathematically identical scalar/pointer arithmetic under unrolled Go loops.
+- Both use zero-copy direct array fetch mechanisms (`GetVector`).
+- This isolates the QPS dropoff to graph-traversal iterations sizing (number of node steps taken). The `Float32` pathways are taking significantly longer paths, likely caused by suboptimal connectivity layout links relative to dimension bounds.
+**Action**:
+- Profile and adjust internal adaptive level sizes to satisfy continuous dimensional struct bounds.
+- Analyze scalar loop unroll impacts on CPU cache lines versus vector-sizes.
 
-### 1. PQ Encoder Training - ✅ IMPLEMENTED
-**Files**: `internal/pq/encoder.go`, `internal/pq/encoder_test.go`
+### 2. Review Grow() Trigger Alignment Thresholds
+**Files**: `internal/store/insertion_core.go`, `internal/store/arrow_hnsw.go`
 
-**Status**: Training was already fully implemented. Removed skip condition in test.
-
-**Action**: None required - fully functional.
-
----
-
-### 2. Stream Aggregator - ✅ IMPLEMENTED
-**File**: `internal/sharding/stream_aggregator.go:289`
-
-**Status**: sliceTable fallback now implemented. Returns top k rows from Arrow Table.
-
-**Action**: None required - fully functional.
-
----
-
-### 3. Forwarder - ✅ DONE
-**File**: `internal/sharding/forwarder.go:252`
-
-**Status**: Added explicit error messages for streaming methods (DoPut, DoGet, DoExchange).
-
-**Action**: None required - intentional design.
-
----
-
-### 4. Graph Store Arrow Serialization - ✅ IMPLEMENTED
-**File**: `internal/store/graph_store.go`
-
-**Status**: Added `ToArrowBatch()` method to convert edges to Arrow RecordBatch.
-
-**Action**: None required - fully functional.
-
----
-
-### 5. Vector Extraction - ✅ FIXED
-**File**: `internal/store/vector_extraction_test.go` (removed)
-
-**Status**: Removed duplicate placeholder test. Actual tests exist in `arrow_utils_test.go`.
-
-**Action**: None required - already implemented.
-
----
-
-### 6. CleanupTombstones - ✅ IMPLEMENTED
-**File**: `internal/store/arrow_hnsw.go:1191`
-
-**Status**: Implemented. Clears tombstones from Dataset when count exceeds threshold.
-
-**Action**: None required - functional.
-
----
-
-### 7. SetIndexedColumns - ✅ BY DESIGN
-**File**: `internal/store/arrow_hnsw.go:1201`
-
-**Status**: Intentional no-op. Column indexing is handled at VectorStore level.
-
-**Action**: None required - by design.
+**Status**: Pending
+**Problem**: Sub-optimal alignment constraints inside graph slice chunks might force cascading reallocations or skew HNSW level multipliers.
+**Action**:
+- Verify adaptive layer growth weight thresholds (`AdaptiveMEnabled`).
+- Ensure node sizing link bounds satisfy scaling limits cleanly without forced degradation loops.
 
 ---
 
 ## MEDIUM PRIORITY Issues
 
-### 8. SIMD Filter Operations - NOT ENABLED
+### 3. SIMD Filter Operations - NOT ENABLED
 **File**: `internal/query/filter_evaluator_test.go:372-1291`
 
 **Issue**: Many SIMD filter tests are skipped.
@@ -138,7 +97,8 @@ Increased default InitialCapacity from 10,000 to **50,000** in `internal/store/a
 
 ---
 
-### 11. Test Fixes Needed
+### 4. Test Fixes Needed
+
 | Test File | Issue | Action |
 |-----------|-------|--------|
 | `dataset_map_rcu_test.go:183` | Pending implementation | Implement or remove |
@@ -152,6 +112,7 @@ Increased default InitialCapacity from 10,000 to **50,000** in `internal/store/a
 ## LOW PRIORITY / BY DESIGN
 
 ### Platform-Specific Stubs (No Action Needed)
+
 | Feature | File | Platform |
 |---------|------|----------|
 | NUMA | `internal/store/numa_*_stub.go` | Linux only |

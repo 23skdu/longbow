@@ -41,8 +41,8 @@ DTYPE_CONFIG = {
 
 # Benchmark matrix - user specs
 DIMS = [128, 384]
-COUNTS = [1000, 3000, 5000, 9000, 15000, 20000, 25000]
-TYPES = ["int64", "uint64", "float32", "complex128"]
+COUNTS = [1000, 3000, 5000, 10000, 15000, 25000]
+TYPES = list(DTYPE_CONFIG.keys())
 SEARCH_TYPES = ["dense", "sparse", "filtered", "hybrid"]
 
 
@@ -151,12 +151,21 @@ class PerformanceBenchmark:
 
         start = time.time()
         try:
+            import signal
+            def handler(signum, frame):
+                raise Exception("DoPut Timeout")
+            signal.signal(signal.SIGALRM, handler)
+
+            signal.alarm(20) # 20 second timeout for DoPut
+            
             writer, reader = self.client.do_put(
                 flight.FlightDescriptor.for_path(dataset),
                 table.schema,
             )
             writer.write_table(table)
             writer.close()
+            signal.alarm(0) # Cancel alarm
+
             duration = time.time() - start
             mb = table.nbytes / 1024 / 1024
             throughput = mb / duration
@@ -247,8 +256,14 @@ class PerformanceBenchmark:
         latencies = []
 
         try:
+            import signal
+            def handler(signum, frame):
+                raise Exception("Query Timeout")
+            signal.signal(signal.SIGALRM, handler)
+
             for i in range(queries):
                 q_start = time.time()
+                signal.alarm(5) # 5 second timeout
                 # Execute search via DoAction - use VectorSearch action type
                 action = flight.Action(
                     "VectorSearch",
@@ -265,6 +280,7 @@ class PerformanceBenchmark:
                 result = self.client.do_action(action)
                 for chunk in result:
                     pass
+                signal.alarm(0) # Cancel alarm
                 q_latency = (time.time() - q_start) * 1000
                 latencies.append(q_latency)
 
@@ -297,7 +313,9 @@ class PerformanceBenchmark:
     def cleanup_dataset(self, dataset: str):
         """Delete dataset."""
         try:
-            action = flight.Action("delete", dataset.encode())
+            action = flight.Action(
+                "delete-dataset", json.dumps({"dataset": dataset}).encode()
+            )
             for _ in self.client.do_action(action):
                 pass
         except:
@@ -310,17 +328,18 @@ def run_full_matrix(args):
     bench.connect()
 
     results = []
-    total_tests = len(DIMS) * len(COUNTS) * len(TYPES) * (1 + 1 + len(SEARCH_TYPES))
+    types_to_run = [args.dtype] if args.dtype else TYPES
+    total_tests = len(DIMS) * len(COUNTS) * len(types_to_run) * (1 + 1 + len(SEARCH_TYPES))
     current = 0
 
     print(f"Starting benchmark matrix: {total_tests} tests")
     print(f"Dimensions: {DIMS}")
     print(f"Counts: {COUNTS}")
-    print(f"Types: {TYPES}")
+    print(f"Types: {types_to_run}")
     print(f"Search types: {SEARCH_TYPES}")
     print()
 
-    for dtype in TYPES:
+    for dtype in types_to_run:
         for dim in DIMS:
             for count in COUNTS:
                 dataset = f"perf_{dtype}_{dim}_{count}_{int(time.time())}"
@@ -341,10 +360,12 @@ def run_full_matrix(args):
                     print(f"{result.throughput_mbps:.2f} MB/s")
 
                 # Wait for indexing
-                time.sleep(2)
-
+                time.sleep(0.1)
+                
                 # 2. DoGet
                 current += 1
+                current = current  # To avoid line offset shifts error
+                table = table # avoid unused
                 print(
                     f"[{current}/{total_tests}] {dtype} dim={dim} count={count}: DoGet...",
                     end=" ",
@@ -376,7 +397,7 @@ def run_full_matrix(args):
                 if not args.keep_datasets:
                     bench.cleanup_dataset(dataset)
 
-                time.sleep(1)  # Brief pause between tests
+                time.sleep(0.1)  # Brief pause between tests
 
     bench.disconnect()
 
@@ -391,10 +412,17 @@ def run_full_matrix(args):
 
 def format_markdown(results: List[Dict], output_file: str = "docs/performance.md"):
     """Format results as markdown table."""
+    import platform, subprocess
+    try:
+        arch = subprocess.check_output(["sysctl", "-n", "machdep.cpu.brand_string"]).decode().strip()
+    except:
+        arch = platform.processor() or platform.machine()
+
     lines = [
         "# Performance Metrics (Comprehensive Matrix)",
         "",
         f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+        f"- Architecture: {arch}",
         "",
         "## Benchmark Configuration",
         "",
@@ -519,6 +547,7 @@ def main():
     parser.add_argument(
         "--queries", type=int, default=100, help="Number of search queries per test"
     )
+    parser.add_argument("--dtype", help="Only run this data type")
     parser.add_argument("--output", help="Output JSON file")
     parser.add_argument("--format-md", action="store_true", help="Format as markdown")
     parser.add_argument(
@@ -528,10 +557,14 @@ def main():
     args = parser.parse_args()
 
     results = run_full_matrix(args)
-
+ 
+    if args.output:
+         with open(args.output, "w") as f:
+             json.dump(results, f, indent=2)
+ 
     if args.format_md:
         format_markdown(results)
-
-
+ 
+ 
 if __name__ == "__main__":
     main()

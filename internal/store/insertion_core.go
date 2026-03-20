@@ -161,10 +161,11 @@ do_grow:
 		count := int(h.nodeCount.Load())
 		threshold := h.config.AdaptiveMThreshold
 		if threshold <= 0 {
-			threshold = 10000 // Shift fallback default to prevent premature connectivity thinning
-			// Check if we initialized with higher capacities
+			threshold = 2000
 			if data != nil && data.Capacity >= 50000 {
-				threshold = 50000
+				threshold = 10000
+			} else if data != nil && data.Capacity >= 10000 {
+				threshold = 5000
 			}
 		}
 

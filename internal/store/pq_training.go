@@ -62,10 +62,10 @@ func (h *ArrowHNSW) TrainPQ(vectors [][]float32) error {
 		count := int(h.nodeCount.Load())
 		threshold := h.config.AdaptiveMThreshold
 		if threshold <= 0 {
-			threshold = 100
+			threshold = 1024
 		}
 
-		if count == threshold {
+		if count >= threshold {
 			h.adjustMParameter(data, threshold)
 		}
 	}

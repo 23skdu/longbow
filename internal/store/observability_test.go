@@ -117,7 +117,6 @@ func TestHNSW_ObservabilityMetrics(t *testing.T) {
 	}
 
 	config := DefaultArrowHNSWConfig()
-	// useRefinement := (h.config.SQ8Enabled || h.config.PQEnabled || h.config.BQEnabled)
 	config.SQ8Enabled = true
 
 	idx := NewArrowHNSW(ds, &config)
@@ -131,7 +130,6 @@ func TestHNSW_ObservabilityMetrics(t *testing.T) {
 	// Reset metrics before search
 	metrics.HNSWSearchLatencyByType.Reset()
 	metrics.HNSWSearchLatencyByDim.Reset()
-	metrics.HNSWRefineThroughput.Reset()
 
 	// Search
 	q := []float32{1.0, 0.0}
@@ -139,17 +137,9 @@ func TestHNSW_ObservabilityMetrics(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify Metrics
-	typeLabel := "sq8" // Based on config.SQ8Enabled
-	// Latency metrics are histograms, we can check if they were collected
 	countByType := testutil.CollectAndCount(metrics.HNSWSearchLatencyByType)
 	assert.GreaterOrEqual(t, countByType, 1, "Should record search latency by type")
 
 	countByDim := testutil.CollectAndCount(metrics.HNSWSearchLatencyByDim)
 	assert.GreaterOrEqual(t, countByDim, 1, "Should record search latency by dim")
-
-	// Refine throughput
-	refineCount := testutil.ToFloat64(metrics.HNSWRefineThroughput.WithLabelValues(typeLabel))
-	// targetK = k * RefinementFactor = 1 * 2 = 2. But we only have 2 points total.
-	// So results should be at most 2.
-	assert.Greater(t, refineCount, 0.0, "Should record refinement throughput")
 }

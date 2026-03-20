@@ -15,12 +15,12 @@ type float64Computer struct {
 }
 
 func (c *float64Computer) Compute(ids []uint32, dists []float32) error {
-	stride := c.data.GetPaddedDimsForType(VectorTypeFloat64)
 	for i, id := range ids {
 		cID := chunkID(id)
 		chunk := c.data.GetVectorsFloat64Chunk(cID)
 		if chunk != nil {
-			start := int(chunkOffset(id)) * stride
+			cOff := int(id) % ChunkSize
+			start := cOff * c.data.Dims
 			if start+c.dims <= len(chunk) {
 				v := chunk[start : start+c.dims]
 				d, err := simd.EuclideanDistanceFloat64(c.q, v)
@@ -40,8 +40,8 @@ func (c *float64Computer) ComputeSingle(id uint32) (float32, error) {
 	cID := chunkID(id)
 	chunk := c.data.GetVectorsFloat64Chunk(cID)
 	if chunk != nil {
-		stride := c.data.GetPaddedDimsForType(VectorTypeFloat64)
-		start := int(chunkOffset(id)) * stride
+		cOff := int(id) % ChunkSize
+		start := cOff * c.data.Dims
 		if start+c.dims <= len(chunk) {
 			v := chunk[start : start+c.dims]
 			d, err := simd.EuclideanDistanceFloat64(c.q, v)
@@ -55,8 +55,8 @@ func (c *float64Computer) Prefetch(id uint32) {
 	cID := chunkID(id)
 	chunk := c.data.GetVectorsFloat64Chunk(cID)
 	if chunk != nil {
-		stride := c.data.GetPaddedDimsForType(VectorTypeFloat64)
-		start := int(chunkOffset(id)) * stride
+		cOff := int(id) % ChunkSize
+		start := cOff * c.data.Dims
 		if start < len(chunk) {
 			simd.Prefetch(unsafe.Pointer(&chunk[start]))
 		}

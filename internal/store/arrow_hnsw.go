@@ -148,6 +148,7 @@ type ArrowHNSW struct {
 	distFuncF16  func([]float16.Num, []float16.Num) (float32, error)
 	distFuncC64  func([]complex64, []complex64) (float32, error)
 	distFuncC128 func([]complex128, []complex128) (float64, error)
+	distFuncInt8 func([]int8, []int8) (float32, error)
 
 	adaptiveMTriggered atomic.Bool
 
@@ -310,6 +311,7 @@ func NewArrowHNSW(dataset *Dataset, config *ArrowHNSWConfig) *ArrowHNSW {
 		d, err := simd.EuclideanDistanceComplex128(a, b)
 		return float64(d), err
 	}
+	h.distFuncInt8 = simd.EuclideanDistanceInt8
 
 	switch config.Metric {
 	case core.MetricCosine:
@@ -375,8 +377,10 @@ func NewArrowHNSW(dataset *Dataset, config *ArrowHNSWConfig) *ArrowHNSW {
 
 	// Optimize HNSW Dimension Index Parameters for High Scale primitives
 	// Float32 and Float64 scalar math traversal lengths collapse under standard Graph linking caps
-	if (dt == types.VectorTypeFloat32 || dt == types.VectorTypeFloat64) && config.Dims >= 384 {
-		// Increase base connectivity scaling to improve path traversal speeds without triggering O(M^3) backwards pruning
+	// Gate by dataset size: small datasets (<10k) don't benefit from increased M and suffer
+	// search regression due to nearly-fully-connected graphs (MMax=48 with 1k vectors ≈ fully connected)
+	if config.InitialCapacity >= 10000 && config.Dims >= 384 &&
+		(dt == types.VectorTypeFloat32 || dt == types.VectorTypeFloat64) {
 		if h.m < 24 {
 			h.m = 24
 		}
@@ -1196,8 +1200,22 @@ func (h *ArrowHNSW) growInternal(capacity, dims int) error {
 
 	data := h.data.Load()
 	if data == nil {
-		// Should have been initialized in NewArrowHNSW
-		return fmt.Errorf("index data is nil")
+		gd := types.NewGraphData(
+			capacity,
+			dims,
+			false,
+			h.config.UseDisk,
+			0,
+			h.config.Quantization,
+			h.config.SQ8Enabled,
+			h.config.UseDisk,
+			h.config.DataType,
+			h.config.BQEnabled,
+			h.config.PQEnabled,
+		)
+		h.data.Store(gd)
+		h.dims.Store(int32(dims))
+		data = gd
 	}
 
 	// Calculate current vs target
@@ -1223,7 +1241,7 @@ func (h *ArrowHNSW) growInternal(capacity, dims int) error {
 	// If dims changed, we need to reinitialize arenas for the new size
 	if dims != currentDims {
 		// Calculate required slab size for new dims
-		requiredSize := types.ChunkSize * dims * 4 // 4 bytes per float32
+		requiredSize := types.ChunkSize * dims * 4
 		slabSize := requiredSize + 64
 		if slabSize < 1024*1024 {
 			slabSize = 1024 * 1024
@@ -1234,18 +1252,15 @@ func (h *ArrowHNSW) growInternal(capacity, dims int) error {
 		newData.VectorsF32 = nil
 	}
 
-	// If dims changed, we need to reinitialize arenas for the new size
+	// If dims changed, reinitialize Float64Arena (Clone() nil'd it)
 	if dims != currentDims {
-		// Calculate required slab size for new dims
-		requiredSize := types.ChunkSize * dims * 4 // 4 bytes per float32
+		requiredSize := types.ChunkSize * dims * 8
 		slabSize := requiredSize + 64
 		if slabSize < 1024*1024 {
 			slabSize = 1024 * 1024
 		}
-		// Create new arenas with correct size
-		newData.Float32Arena = memory.NewTypedArena[float32](memory.NewSlabArena(slabSize))
-		// Reset offset arrays since we have new arenas
-		newData.VectorsF32 = nil
+		newData.Float64Arena = memory.NewTypedArena[float64](memory.NewSlabArena(slabSize))
+		newData.VectorsFloat64Offsets = nil
 	}
 
 	// Iteratively ensure chunks - this creates new arenas during grow which can cause fragmentation
@@ -1314,7 +1329,7 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 
 		// Discover vector column
 		vecColIdx := -1
-		if len(recs) > 0 {
+		if len(recs) > 0 && recs[0] != nil {
 			for i := 0; i < int(recs[0].NumCols()); i++ {
 				if name := recs[0].ColumnName(i); name == "vector" || name == "embedding" {
 					vecColIdx = i
@@ -1367,6 +1382,45 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 					}
 				}
 				vecs = i8s
+			case types.VectorTypeFloat64:
+				f64s := make([][]float64, n)
+				for i := range rowIdxs {
+					rec := recs[batchIdxs[i]]
+					if v, ok := h.extractVector(rec, vecColIdx, rowIdxs[i]).([]float64); ok {
+						f64s[i] = v
+						h.SetLocation(VectorID(startID+uint32(i)), Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
+					} else {
+						supported = false
+						break
+					}
+				}
+				vecs = f64s
+			case types.VectorTypeComplex64:
+				c64s := make([][]complex64, n)
+				for i := range rowIdxs {
+					rec := recs[batchIdxs[i]]
+					if v, ok := h.extractVector(rec, vecColIdx, rowIdxs[i]).([]complex64); ok {
+						c64s[i] = v
+						h.SetLocation(VectorID(startID+uint32(i)), Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
+					} else {
+						supported = false
+						break
+					}
+				}
+				vecs = c64s
+			case types.VectorTypeComplex128:
+				c128s := make([][]complex128, n)
+				for i := range rowIdxs {
+					rec := recs[batchIdxs[i]]
+					if v, ok := h.extractVector(rec, vecColIdx, rowIdxs[i]).([]complex128); ok {
+						c128s[i] = v
+						h.SetLocation(VectorID(startID+uint32(i)), Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
+					} else {
+						supported = false
+						break
+					}
+				}
+				vecs = c128s
 			default:
 				supported = false
 			}
@@ -1378,8 +1432,9 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 						ids[i] = startID + uint32(i)
 					}
 					return ids, nil
+				} else {
+					fmt.Printf("AddBatchBulk failed for %s: %v\n", h.config.DataType.String(), err)
 				}
-				// Fallback to sequential on error or unsupported types
 			}
 		}
 	}
@@ -1454,12 +1509,15 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, _ *ArrowSearchCon
 		return &float32Computer{data: data, q: q, dims: len(q), h: h}
 	case []int8, []uint8:
 		var q8 []uint8
+		var qInt8 []int8
 		if qi8, ok := queryVal.([]int8); ok {
 			q8 = *(*[]uint8)(unsafe.Pointer(&qi8))
+			qInt8 = qi8
 		} else {
 			q8 = queryVal.([]uint8)
+			qInt8 = *(*[]int8)(unsafe.Pointer(&q8))
 		}
-		return &int8Computer{data: data, q: q8, dims: len(q8), h: h}
+		return &int8Computer{data: data, q: q8, qInt8: qInt8, dims: len(q8), h: h}
 	case []float64:
 		return &float64Computer{data: data, q: q, dims: len(q)}
 	case []complex64:
@@ -2312,10 +2370,11 @@ func (c *float32Computer) ComputeSingle(id uint32) (float32, error) {
 }
 
 type int8Computer struct {
-	data *types.GraphData
-	q    []uint8
-	dims int
-	h    *ArrowHNSW
+	data  *types.GraphData
+	q     []uint8
+	qInt8 []int8
+	dims  int
+	h     *ArrowHNSW
 }
 
 func (c *int8Computer) ComputeSingle(id uint32) (float32, error) {
@@ -2342,14 +2401,10 @@ func (c *int8Computer) ComputeSingle(id uint32) (float32, error) {
 			sum += diff * diff
 		}
 		return float32(math.Sqrt(float64(sum))), nil
-	case []int8, []uint8:
-		var v8 []uint8
-		if vi8, ok := v.([]int8); ok {
-			v8 = *(*[]uint8)(unsafe.Pointer(&vi8))
-		} else {
-			v8 = v.([]uint8)
-		}
-
+	case []int8:
+		return c.h.distFuncInt8(c.qInt8, v)
+	case []uint8:
+		v8 := v
 		if c.h.quantizer != nil && c.h.sq8Ready.Load() {
 			minV, maxV := c.h.quantizer.Params()
 			scale := (maxV - minV) / 255.0

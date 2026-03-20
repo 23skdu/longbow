@@ -162,7 +162,7 @@ func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes 
 
 	s.maxMemory.Store(maxMemoryBytes)
 	s.indexQueue = NewIndexJobQueueLockFree(DefaultIndexJobQueueConfig())
-	s.ingestionQueue = NewIngestionRingBuffer(64)      // Reduced from 256 to prevent OOM with large batches
+	s.ingestionQueue = NewIngestionRingBuffer(4096)    // Absorbs burst traffic without blocking DoPut
 	s.persistenceQueue = make(chan persistenceJob, 64) // Reduced from 10000 to prevent OOM
 
 	s.nsManager = newNamespaceManager()

@@ -17,6 +17,15 @@ import (
 	"github.com/apache/arrow-go/v18/arrow"
 )
 
+// flatBufferPool pools []float32 slices used in processChunkInternal to avoid
+// per-search allocations that drive GC pressure at large vector scales.
+var flatBufferPool = sync.Pool{
+	New: func() any {
+		s := make([]float32, 0, 4096)
+		return &s
+	},
+}
+
 // ParallelSearchHost abstracts index-specific operations needed for parallel result processing.
 type ParallelSearchHost interface {
 	GetDataset() *Dataset
@@ -294,7 +303,21 @@ func processChunkInternal(ctx context.Context, h ParallelSearchHost, query []flo
 	}
 
 	dims := len(query)
-	flatBuffer := make([]float32, numTasks*dims)
+	need := numTasks * dims
+
+	// Reuse a pooled buffer to avoid per-search heap allocations.
+	pBuf := flatBufferPool.Get().(*[]float32)
+	if cap(*pBuf) < need {
+		*pBuf = make([]float32, need)
+	} else {
+		*pBuf = (*pBuf)[:need]
+	}
+	flatBuffer := *pBuf
+	defer func() {
+		*pBuf = flatBuffer[:0]
+		flatBufferPool.Put(pBuf)
+	}()
+
 	scores := make([]float32, numTasks)
 
 	for i, t := range tasks {

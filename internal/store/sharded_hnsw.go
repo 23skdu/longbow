@@ -449,7 +449,7 @@ func (s *ShardedHNSW) SearchVectors(ctx context.Context, queryVec any, k int, fi
 			// Convert LocalID to GlobalID
 			globalID, ok := shard.getGlobalID(uint32(r.ID))
 			if !ok {
-				continue // Should not happen
+				continue
 			}
 			r.ID = globalID
 
@@ -827,10 +827,18 @@ func (s *ShardedHNSW) RemapFromBatchInfo(remapping map[int]BatchRemapInfo) error
 					// Update global location
 					s.locationStore.Set(vid, newLoc)
 
-					// Shards currently handle their own internal consistency.
-					// If they are ArrowHNSW, they might need location updates,
-					// but since they don't have SetLocation in the interface,
-					// we skip it for generic support.
+					// Update inside the shard if it's an ArrowHNSW to maintain internal consistency
+					for _, shard := range s.shards {
+						if shard == nil {
+							continue
+						}
+						if lid, found := shard.getLocalID(vid); found {
+							if ah, ok := shard.index.(*ArrowHNSW); ok {
+								ah.SetLocation(VectorID(lid), newLoc)
+							}
+							break
+						}
+					}
 				}
 			}
 		}

@@ -206,8 +206,7 @@ func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
 				// Defer recovery to ensure pending count is decremented on panic
 				defer func() {
 					if r := recover(); r != nil {
-						s.logger.Error().Msgf("Panic in index worker for %s: %v", dsName, r)
-						// Try to decrement pending jobs if dataset is available
+						s.logger.Error().Msgf("Panic in index worker for %s: %v\n%s", dsName, r, debug.Stack())
 						if ds, ok := s.getDataset(dsName); ok {
 							var totalRows int64
 							for _, j := range dsGroup {
@@ -249,7 +248,9 @@ func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
 				rowIdxs := make([]int, 0, totalRowsInGroup)
 				batchIdxs := make([]int, 0, totalRowsInGroup)
 				for _, j := range dsGroup {
-					recs[j.BatchIdx] = j.Record
+					if j.Record != nil && j.BatchIdx >= 0 && j.BatchIdx < len(recs) {
+						recs[j.BatchIdx] = j.Record
+					}
 					n := int(j.Record.NumRows())
 					for r := 0; r < n; r++ {
 						rowIdxs = append(rowIdxs, r)

@@ -257,7 +257,13 @@ func (s *ChunkedLocationStore) EnsureCapacity(id VectorID) {
 	idx := int(id)
 	chunkIdx := idx / LocationChunkSize
 
-	// Optimistic check
+	// Always ensure size is at least id+1
+	currentSize := s.size.Load()
+	if uint32(id) >= currentSize {
+		s.UpdateSize(id)
+	}
+
+	// Optimistic check for chunks
 	chunksPtr := s.chunks.Load()
 	if chunkIdx < len(*chunksPtr) {
 		return
@@ -283,11 +289,6 @@ func (s *ChunkedLocationStore) EnsureCapacity(id VectorID) {
 		newChunks[i] = &locationChunk{}
 	}
 	s.chunks.Store(&newChunks)
-
-	currentSize := s.size.Load()
-	if uint32(id) >= currentSize {
-		s.UpdateSize(id)
-	}
 }
 
 // UpdateSize ensures size is at least id+1.

@@ -142,7 +142,9 @@ type ArrowHNSW struct {
 	pqEncoder  *pq.PQEncoder
 	searchPool *ArrowSearchContextPool
 
-	name         string
+	name                   string
+	disableNodeCountMetric atomic.Bool
+
 	distFunc     func([]float32, []float32) (float32, error)
 	distFuncF64  func([]float64, []float64) (float32, error)
 	distFuncF16  func([]float16.Num, []float16.Num) (float32, error)
@@ -429,6 +431,11 @@ func NewArrowHNSW(dataset *Dataset, config *ArrowHNSWConfig) *ArrowHNSW {
 	_ = h.navigator.Initialize()
 
 	return h
+}
+
+// SetDisableNodeCountMetric prevents this ArrowHNSW from reporting HNSWNodeCount.
+func (h *ArrowHNSW) SetDisableNodeCountMetric(disable bool) {
+	h.disableNodeCountMetric.Store(disable)
 }
 
 // SetData sets the graph data for the index
@@ -890,32 +897,33 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 
 	h.ensureReady()
 
+	// Dimension Validation (before nodeCount==0 check so we can validate on empty-but-initialized indexes)
+	logicalDims := int(h.dims.Load())
+	if logicalDims > 0 {
+		var physicalDims int
+		switch h.config.DataType {
+		case types.VectorTypeComplex128, types.VectorTypeComplex64:
+			physicalDims = logicalDims * 2
+		default:
+			physicalDims = logicalDims
+		}
+
+		queryLen := 0
+		switch q := queryVec.(type) {
+		case []float32:
+			queryLen = len(q)
+		case []float64:
+			queryLen = len(q)
+		case []complex64, []complex128:
+		}
+
+		if queryLen > 0 && queryLen != physicalDims {
+			return nil, fmt.Errorf("index expects %d elements (logical dims=%d), got query len %d", physicalDims, logicalDims, queryLen)
+		}
+	}
+
 	if h.nodeCount.Load() == 0 {
 		return nil, nil
-	}
-
-	// Dimension Validation
-	logicalDims := int(h.dims.Load())
-	var physicalDims int
-	switch h.config.DataType {
-	case types.VectorTypeComplex128, types.VectorTypeComplex64:
-		physicalDims = logicalDims * 2
-	default:
-		physicalDims = logicalDims
-	}
-
-	queryLen := 0
-	switch q := queryVec.(type) {
-	case []float32:
-		queryLen = len(q)
-	case []float64:
-		queryLen = len(q)
-	case []complex64, []complex128:
-		// Fallback for slices
-	}
-
-	if queryLen > 0 && queryLen != physicalDims {
-		return nil, fmt.Errorf("index expects %d elements (logical dims=%d), got query len %d", physicalDims, logicalDims, queryLen)
 	}
 
 	if metrics.HNSWSearchPoolGetTotal != nil {

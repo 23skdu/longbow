@@ -38,7 +38,9 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 		metrics.HNSWInsertDurationSeconds.Observe(duration)
 		nodeCount := float64(h.nodeCount.Load())
 		metrics.HNSWNodesAddedTotal.WithLabelValues(h.name).Inc()
-		metrics.HNSWNodeCount.WithLabelValues(h.name).Set(nodeCount)
+		if !h.disableNodeCountMetric.Load() {
+			metrics.HNSWNodeCount.WithLabelValues(h.name, "0").Set(nodeCount)
+		}
 
 		typeStr := h.config.DataType.String()
 		metrics.HNSWInsertOpsTotal.WithLabelValues(h.name, typeStr).Inc()

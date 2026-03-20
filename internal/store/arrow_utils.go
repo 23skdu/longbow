@@ -312,10 +312,14 @@ func InferVectorDataType(schema *arrow.Schema, fieldName string) types.VectorDat
 		finalType = types.VectorTypeFloat32
 		if val, _ := fmd.GetValue("longbow.complex"); val == "true" {
 			finalType = types.VectorTypeComplex64
+		} else if val, _ := smd.GetValue("longbow.complex"); val == "true" {
+			finalType = types.VectorTypeComplex64
 		}
 	case arrow.FLOAT64:
 		finalType = types.VectorTypeFloat64
 		if val, _ := fmd.GetValue("longbow.complex"); val == "true" {
+			finalType = types.VectorTypeComplex128
+		} else if val, _ := smd.GetValue("longbow.complex"); val == "true" {
 			finalType = types.VectorTypeComplex128
 		}
 	case arrow.FLOAT16:

@@ -251,7 +251,6 @@ func processChunkInternal(ctx context.Context, h ParallelSearchHost, query []flo
 		if dataset != nil {
 			loc := locations[i]
 			if loc.BatchIdx < 0 || loc.BatchIdx >= len(dataset.Records) {
-				// Fallback to internal storage if record not available in Arrow records
 				vec, err := h.ExtractVectorByIDForParallel(n.ID)
 				if err == nil && vec != nil {
 					tasks = append(tasks, vectorTask{id: n.ID, vec: vec})
@@ -282,9 +281,8 @@ func processChunkInternal(ctx context.Context, h ParallelSearchHost, query []flo
 				tasks = append(tasks, vectorTask{id: n.ID, vec: vec})
 			}
 		} else {
-			// Fallback if no dataset (structured filters not supported in this mode)
 			if len(filters) > 0 {
-				continue // Skip if filters required but dataset unavailable
+				continue
 			}
 			vec, err := h.ExtractVectorByIDForParallel(n.ID)
 			if err == nil && vec != nil {

@@ -1,6 +1,6 @@
 # Makefile for Longbow
 
-.PHONY: help build build-cuda build-metal build-gpu test lint race clean docker docker-push install deps fmt vet
+.PHONY: help build build-cuda build-metal build-gpu build-rpi0 build-rpi0-2 test test-low-mem lint race clean docker docker-push install deps fmt vet
 
 # Default target
 help:
@@ -11,6 +11,9 @@ help:
 	@echo "  build-cuda - Build with CUDA GPU support (Linux AMD64)"
 	@echo "  build-metal - Build with Metal GPU support (macOS ARM64)"
 	@echo "  build-gpu - Build with GPU support (auto-detect backend)"
+	@echo "  build-rpi0  - Cross-compile for Raspberry Pi Zero (ARMv6, Linux)"
+	@echo "  build-rpi0-2 - Cross-compile for Raspberry Pi Zero 2W (ARM64, Linux)"
+	@echo "  test-low-mem - Run tests with LONGBOW_LOW_MEM=1"
 	@echo "  test      - Run tests"
 	@echo "  lint      - Run linter"
 	@echo "  race      - Run race condition tests"
@@ -63,6 +66,21 @@ build-gpu:
 		$(MAKE) build-cuda; \
 	fi
 
+# Cross-compile for Raspberry Pi Zero (ARMv6, 32-bit, linux)
+# Use LONGBOW_LOW_MEM=1 at runtime on the device to activate low-memory mode.
+build-rpi0:
+	@echo "Cross-compiling for Raspberry Pi Zero (ARMv6, Linux)..."
+	GOOS=linux GOARCH=arm GOARM=6 CGO_ENABLED=0 go build -v -o bin/longbow-rpi0 ./cmd/longbow
+	@echo "Binary: bin/longbow-rpi0"
+	@echo "Tip: Set LONGBOW_LOW_MEM=1 on the device to enable low-memory mode."
+
+# Cross-compile for Raspberry Pi Zero 2W (ARM64, 64-bit, linux)
+build-rpi0-2:
+	@echo "Cross-compiling for Raspberry Pi Zero 2W (ARM64, Linux)..."
+	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -v -o bin/longbow-rpi0-2 ./cmd/longbow
+	@echo "Binary: bin/longbow-rpi0-2"
+	@echo "Tip: Set LONGBOW_LOW_MEM=1 on the device to enable low-memory mode."
+
 # Run tests
 test:
 	@echo "Running tests..."
@@ -72,6 +90,11 @@ test:
 test-coverage:
 	@echo "Running tests with coverage..."
 	go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
+
+# Run tests with low-memory mode enabled (for Raspberry Pi Zero validation)
+test-low-mem:
+	@echo "Running tests with LONGBOW_LOW_MEM=1..."
+	LONGBOW_LOW_MEM=1 go test -v -run TestLowMemConfig ./internal/store/...
 
 # Run linter
 lint:

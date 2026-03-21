@@ -110,7 +110,6 @@ func TestExtractVectorCopy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExtractVectorFromArrow failed: %v", err)
 	}
-
 	if original[0] != 1.0 {
 		t.Errorf("original was modified! got %f, want 1.0", original[0])
 	}
@@ -296,7 +295,7 @@ func TestExtractVectorFromArrow_Float64(t *testing.T) {
 	if !ok {
 		t.Fatalf("ExtractVectorAny returned %T, want []float64", vecAny)
 	}
-	if vecF64[0] != 1.1 {
-		t.Errorf("Expected 1.1, got %v", vecF64[0])
+	if len(vecF64) != 2 || vecF64[0] != 1.1 || vecF64[1] != 2.2 {
+		t.Errorf("ExtractVectorAny unexpected value: got %v, want [1.1 2.2]", vecF64)
 	}
 }

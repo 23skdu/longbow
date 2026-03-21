@@ -94,18 +94,9 @@ func ExtractVectorF16FromArrow(rec arrow.RecordBatch, rowIdx, colIdx int) ([]flo
 	return nil, fmt.Errorf("cannot convert %T to []float16.Num", anyVec)
 }
 
-// extractVectorCopy extracts a vector and returns a copy (for when vector needs to be stored).
+// extractVectorCopy extracts a vector and returns a copy as []float32.
 func extractVectorCopy(rec arrow.RecordBatch, rowIdx, colIdx int) ([]float32, error) {
-	// Get zero-copy slice first
-	vec, err := ExtractVectorFromArrow(rec, rowIdx, colIdx)
-	if err != nil {
-		return nil, err
-	}
-
-	// Make a copy
-	result := make([]float32, len(vec))
-	copy(result, vec)
-	return result, nil
+	return ExtractVectorFromArrow(rec, rowIdx, colIdx)
 }
 
 // ExtractVectorGeneric extracts a vector of the requested type from an Arrow record batch.
@@ -194,22 +185,59 @@ func unsafeVectorSliceGeneric[T any](data arrow.ArrayData, offset, length int) [
 	return unsafe.Slice((*T)(ptr), length)
 }
 
-// ExtractVectorFromArrow (Compatibility helper - Returns Float32, casting if necessary)
-func ExtractVectorFromArrow(rec arrow.RecordBatch, rowIdx, colIdx int) ([]float32, error) {
+// extractVectorRaw extracts a vector and returns it in its native Arrow type (any).
+// For Complex128: returns []float64 (Arrow stores complex as pairs of float64).
+// Use this for internal paths that need the raw type.
+func extractVectorRaw(rec arrow.RecordBatch, rowIdx, colIdx int) (any, error) {
 	anyVec, err := ExtractVectorAny(rec, rowIdx, colIdx)
 	if err != nil {
 		return nil, err
 	}
-
 	switch v := anyVec.(type) {
 	case []float32:
 		return v, nil
+	case []float64:
+		return v, nil
+	case []float16.Num:
+		return v, nil
+	case []int8:
+		return v, nil
+	case []uint8:
+		return v, nil
+	case []int16:
+		return v, nil
+	case []uint16:
+		return v, nil
+	case []int32:
+		return v, nil
+	case []uint32:
+		return v, nil
+	case []int64:
+		return v, nil
+	case []uint64:
+		return v, nil
+	default:
+		return nil, fmt.Errorf("extractVectorRaw: unsupported type %T", anyVec)
+	}
+}
+
+// ExtractVectorFromArrow extracts a vector from an Arrow record batch.
+// Converts all numeric types to []float32 for API compatibility.
+func ExtractVectorFromArrow(rec arrow.RecordBatch, rowIdx, colIdx int) ([]float32, error) {
+	vec, err := extractVectorRaw(rec, rowIdx, colIdx)
+	if err != nil {
+		return nil, err
+	}
+	switch v := vec.(type) {
+	case []float32:
+		cpy := make([]float32, len(v))
+		copy(cpy, v)
+		return cpy, nil
 	case []float16.Num:
 		res := make([]float32, len(v))
 		for i, val := range v {
 			res[i] = val.Float32()
 		}
-		metrics.VectorCastF16ToF32Total.Inc()
 		return res, nil
 	case []float64:
 		res := make([]float32, len(v))
@@ -266,7 +294,7 @@ func ExtractVectorFromArrow(rec arrow.RecordBatch, rowIdx, colIdx int) ([]float3
 		}
 		return res, nil
 	default:
-		return nil, fmt.Errorf("ExtractVectorFromArrow: casting from %T to []float32 not implemented", anyVec)
+		return nil, fmt.Errorf("ExtractVectorFromArrow: unsupported type %T", vec)
 	}
 }
 

@@ -918,9 +918,11 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 			n := int(rec.NumRows())
 			diskVecs = make([][]float32, 0, n)
 			for i := 0; i < n; i++ {
-				if vec, err := ExtractVectorFromArrow(rec, i, vecColIdx); err == nil {
-					diskVecs = append(diskVecs, vec)
+				vec, err := ExtractVectorFromArrow(rec, i, vecColIdx)
+				if err != nil {
+					continue
 				}
+				diskVecs = append(diskVecs, vec)
 			}
 		}
 	}

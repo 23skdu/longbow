@@ -195,7 +195,11 @@ def generate_vectors(
 
     fields = [
         pa.field("id", pa.int64()),
-        pa.field("vector", tensor_type),
+        pa.field(
+            "vector",
+            tensor_type,
+            metadata={"longbow.vector_type": dtype_str} if is_complex else None,
+        ),
         pa.field("timestamp", pa.timestamp("ns")),
     ]
     arrays = [ids, vectors, ts_array]

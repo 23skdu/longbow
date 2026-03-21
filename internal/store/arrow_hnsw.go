@@ -2153,7 +2153,6 @@ func (h *ArrowHNSW) ExtractVectorForParallel(rec arrow.RecordBatch, rowIdx int) 
 	if rec == nil {
 		return nil, fmt.Errorf("record is nil")
 	}
-	// Find vector column by name
 	vecColIdx := -1
 	for i := 0; i < int(rec.NumCols()); i++ {
 		if rec.ColumnName(i) == "vector" {
@@ -2161,9 +2160,7 @@ func (h *ArrowHNSW) ExtractVectorForParallel(rec arrow.RecordBatch, rowIdx int) 
 			break
 		}
 	}
-
 	if vecColIdx == -1 {
-		// Fallback to column 0 if only 1 column
 		if rec.NumCols() == 1 {
 			vecColIdx = 0
 		} else {
@@ -2171,7 +2168,29 @@ func (h *ArrowHNSW) ExtractVectorForParallel(rec arrow.RecordBatch, rowIdx int) 
 		}
 	}
 
-	return ExtractVectorFromArrow(rec, rowIdx, vecColIdx)
+	vec, err := extractVectorRaw(rec, rowIdx, vecColIdx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Complex128 stored in Arrow as FixedSizeList<float64>. Convert to []float32 for the SIMD path.
+	if h.config.DataType == types.VectorTypeComplex128 {
+		vf64, ok := vec.([]float64)
+		if !ok {
+			return nil, fmt.Errorf("expected []float64 for Complex128, got %T", vec)
+		}
+		f32 := make([]float32, len(vf64))
+		for i, v := range vf64 {
+			f32[i] = float32(v)
+		}
+		return f32, nil
+	}
+
+	f32, ok := vec.([]float32)
+	if !ok {
+		return nil, fmt.Errorf("expected []float32, got %T", vec)
+	}
+	return f32, nil
 }
 
 func (h *ArrowHNSW) GetDistanceFuncForParallel() func([]float32, []float32) float32 {

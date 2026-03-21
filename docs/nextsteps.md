@@ -44,6 +44,16 @@ Increased default InitialCapacity from 10,000 to **50,000** in `internal/store/a
 - 15k vectors: DoGet 271→1,874 MB/s (**6.9x**), Search 75→897 QPS (**12x**)
 - 25k vectors: DoGet 271→2,099 MB/s, Search 812 QPS (correct results)
 
+### 1.1 [HIGH PRIORITY] Float32 Regression at Scale 15,000 🔴
+**Status**: INVESIGATING
+**Problem**: The validation matrix run on 2026-03-21 reveals that `float32` performance collapses at `Count=15,000` (both for Dim 128 and 384).
+- **DoGet**: Drops to <40 MB/s (vs >1000 MB/s at 10k).
+- **Dense QPS**: Drops to **18.26** for Dim 384 (vs ~800 at 10k).
+- **Behavior**: Other types (Int32, UInt32, Complex64) do not exhibit this behavior and maintain high performance.
+**Next Steps**:
+- Run isolated benchmarks with CPU profiling for `float32_384_15000`.
+- Standardize allocation triggers and adaptive M levels for scaling past chunk boundaries.
+
 ### 1. Optimize HNSW Dimension Index Parameters (Float32 Collapse Fix)
 **Files**: `internal/store/arrow_hnsw.go`, `internal/store/insertion_core.go`, `internal/store/arrow_hnsw_adaptive.go`
 

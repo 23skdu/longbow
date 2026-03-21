@@ -302,59 +302,90 @@ func (h *ArrowHNSW) pruneConnectionsLocked(ctx *ArrowSearchContext, data *GraphD
 		return
 	}
 
-	// Helper to get float32 representation for distance calc
-	toF32 := func(v any) []float32 {
-		switch vf := v.(type) {
-		case []float32:
-			return vf
-		case []int8:
-			if h.quantizer != nil && h.sq8Ready.Load() {
-				// Safe cast to byte
-				byteVec := *(*[]byte)(unsafe.Pointer(&vf))
-				return h.quantizer.Decode(byteVec)
-			}
-			res := make([]float32, len(vf))
-			for i, val := range vf {
-				res[i] = float32(uint8(val))
-			}
-			return res
-		case []uint8:
-			if h.quantizer != nil && h.sq8Ready.Load() {
-				return h.quantizer.Decode(vf)
-			}
-			res := make([]float32, len(vf))
-			for i, val := range vf {
-				res[i] = float32(val)
-			}
-			return res
-		default:
-			return nil
-		}
-	}
-
-	nodeVecF32 := toF32(nodeVecAny)
-	if nodeVecF32 == nil {
-		return
-	}
-
-	for i := 0; i < count; i++ {
-		neighborID := neighborsChunk[baseIdx+i]
-		vecAny, err := data.GetVector(neighborID)
-		if err != nil || vecAny == nil {
-			dists[i] = math.MaxFloat32
-			continue
+	// Unified Distance Calculation (v0.1.4-rc2) Fast-Path for Float32
+	if data.Type == 1 {
+		nodeVecF32, ok := nodeVecAny.([]float32)
+		if !ok || nodeVecF32 == nil {
+			return
 		}
 
-		vecF32 := toF32(vecAny)
-		if vecF32 != nil {
-			d, err := h.distFunc(nodeVecF32, vecF32)
-			if err == nil {
-				dists[i] = d
+		for i := 0; i < count; i++ {
+			neighborID := neighborsChunk[baseIdx+i]
+			vecAny, err := data.GetVector(neighborID)
+			if err != nil || vecAny == nil {
+				dists[i] = math.MaxFloat32
+				continue
+			}
+
+			if vecF32, ok := vecAny.([]float32); ok {
+				d, err := h.distFunc(nodeVecF32, vecF32)
+				if err == nil {
+					dists[i] = d
+				} else {
+					dists[i] = math.MaxFloat32
+				}
 			} else {
 				dists[i] = math.MaxFloat32
 			}
-		} else {
-			dists[i] = math.MaxFloat32
+		}
+	} else {
+		// Helper to get float32 representation for distance calc
+		toF32 := func(v any) []float32 {
+			switch vf := v.(type) {
+			case []float32:
+				return vf
+			case []int32:
+				res := make([]float32, len(vf))
+				for i, val := range vf { res[i] = float32(val) }
+				return res
+			case []uint32:
+				res := make([]float32, len(vf))
+				for i, val := range vf { res[i] = float32(val) }
+				return res
+			case []int8:
+				if h.quantizer != nil && h.sq8Ready.Load() {
+					byteVec := *(*[]byte)(unsafe.Pointer(&vf))
+					return h.quantizer.Decode(byteVec)
+				}
+				res := make([]float32, len(vf))
+				for i, val := range vf { res[i] = float32(uint8(val)) }
+				return res
+			case []uint8:
+				if h.quantizer != nil && h.sq8Ready.Load() {
+					return h.quantizer.Decode(vf)
+				}
+				res := make([]float32, len(vf))
+				for i, val := range vf { res[i] = float32(val) }
+				return res
+			default:
+				return nil
+			}
+		}
+
+		nodeVecF32 := toF32(nodeVecAny)
+		if nodeVecF32 == nil {
+			return
+		}
+
+		for i := 0; i < count; i++ {
+			neighborID := neighborsChunk[baseIdx+i]
+			vecAny, err := data.GetVector(neighborID)
+			if err != nil || vecAny == nil {
+				dists[i] = math.MaxFloat32
+				continue
+			}
+
+			vecF32 := toF32(vecAny)
+			if vecF32 != nil {
+				d, err := h.distFunc(nodeVecF32, vecF32)
+				if err == nil {
+					dists[i] = d
+				} else {
+					dists[i] = math.MaxFloat32
+				}
+			} else {
+				dists[i] = math.MaxFloat32
+			}
 		}
 	}
 	// Populate candidates with IDs and distances

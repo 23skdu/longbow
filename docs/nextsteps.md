@@ -165,3 +165,24 @@ Updated benchmark scripts to use 20GB memory limit for performance testing:
 ---
 
 Last Updated: 2026-03-20
+
+---
+
+## RaspberryPiZero Platform Plan
+
+### Constraints
+- **Memory**: Extremely limited (512MB RAM).
+- **CPU**: ARMv6 (Pi Zero) or ARMv8 (Pi Zero 2). No AVX, maybe limited Neon.
+- **Storage**: SD Card (slow I/O).
+
+### Core Strategies
+1.  **Low-Memory Mode Configuration**:
+    - Introduce a \`low_mem\` profile in configuration or via environment variable.
+    - Reduce default \`InitialCapacity\` (e.g., 5,000 instead of 50,000).
+    - Downsize or disable memory-heavy pools/caches.
+2.  **CPU Optimization**:
+    - Ensure clean fallback to scalar Go code for architectures without SIMD.
+    - Disable high-performance SIMD instructions that require specific instruction sets (AVX/Neon if not available on 32-bit ARM).
+3.  **Build Configuration**:
+    - Exclude GPU, Metal, and io_uring backends by default for \`arm\` builds.
+    - Verify build with \`GOOS=linux GOARCH=arm GOARM=6\` (for original Pi Zero) or \`arm64\` (for Pi Zero 2).

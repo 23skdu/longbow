@@ -16,6 +16,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"os"
 	"unsafe"
 
 	"github.com/23skdu/longbow/internal/core"
@@ -33,16 +34,6 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/float16"
 	"github.com/prometheus/client_golang/prometheus"
 )
-
-// Prefetch prefetches data into CPU cache for better memory access patterns.
-// This is a performance optimization for HNSW graph traversal.
-func prefetch(addr unsafe.Pointer, size int) {
-	for i := 0; i < size; i += 64 {
-		_ = *(*byte)(unsafe.Pointer(uintptr(addr) + uintptr(i)))
-	}
-}
-
-const prefetchCacheLines = 2
 
 // ArrowHNSWConfig holds configuration for ArrowHNSW index
 type ArrowHNSWConfig struct {
@@ -90,7 +81,7 @@ type ArrowHNSWConfig struct {
 
 // DefaultArrowHNSWConfig returns a configuration with sensible defaults
 func DefaultArrowHNSWConfig() ArrowHNSWConfig {
-	return ArrowHNSWConfig{
+	config := ArrowHNSWConfig{
 		M:                       32,
 		MMax:                    64,
 		MMax0:                   64,
@@ -110,6 +101,15 @@ func DefaultArrowHNSWConfig() ArrowHNSWConfig {
 		SelectionHeuristicLimit: 400,
 		Metric:                  core.MetricEuclidean,
 	}
+
+	if os.Getenv("LONGBOW_LOW_MEM") == "1" || os.Getenv("LONGBOW_LOW_MEM") == "true" {
+		config.InitialCapacity = 5000
+		config.M = 16
+		config.MMax = 32
+		config.MMax0 = 32
+	}
+
+	return config
 }
 
 // ArrowHNSW implements a Hierarchical Navigable Small World (HNSW) index

@@ -68,10 +68,16 @@ func main() {
 
 	var bytesPerElement int64 = 4
 	switch *dtype {
-	case "int16":
-		bytesPerElement = 2
 	case "int8":
 		bytesPerElement = 1
+	case "int16":
+		bytesPerElement = 2
+	case "int32", "uint32", "float32":
+		bytesPerElement = 4
+	case "int64", "uint64", "float64", "complex64":
+		bytesPerElement = 8
+	case "complex128":
+		bytesPerElement = 16
 	}
 	totalBytes := int64(*scale) * int64(*dim) * bytesPerElement
 
@@ -79,12 +85,12 @@ func main() {
 		Name:            "DoPut",
 		DurationSeconds: duration,
 		Throughput:      float64(*scale) / duration,
-		ThroughputUnit:  "rows/s",
+		ThroughputUnit:  "vec/s",
 		ThroughputMBs:   (float64(totalBytes) / (1024 * 1024)) / duration,
 		Rows:           int64(*scale),
 		BytesProcessed: totalBytes,
 	})
-	log.Printf("[PUT] Completed in %.4fs (%.2f rows/s, %.2f MB/s)\n", duration, float64(*scale)/duration, (float64(totalBytes)/(1024*1024))/duration)
+	log.Printf("[PUT] Completed in %.4fs (%.2f vec/s, %.2f MB/s)\n", duration, float64(*scale)/duration, (float64(totalBytes)/(1024*1024))/duration)
 
 	log.Println("Waiting 5s for indexing...")
 	time.Sleep(5 * time.Second)
@@ -103,12 +109,12 @@ func main() {
 		Name:            "DoGet",
 		DurationSeconds: duration,
 		Throughput:      float64(rowsRead) / duration,
-		ThroughputUnit:  "rows/s",
+		ThroughputUnit:  "vec/s",
 		ThroughputMBs:   (float64(totalBytesGet) / (1024 * 1024)) / duration,
 		Rows:           rowsRead,
 		BytesProcessed: totalBytesGet,
 	})
-	log.Printf("[GET] Completed in %.4fs (%.2f rows/s, %.2f MB/s)\n", duration, float64(rowsRead)/duration, (float64(totalBytesGet)/(1024*1024))/duration)
+	log.Printf("[GET] Completed in %.4fs (%.2f vec/s, %.2f MB/s)\n", duration, float64(rowsRead)/duration, (float64(totalBytesGet)/(1024*1024))/duration)
 
 	// 3. Search
 	modes := []string{"Dense", "Sparse", "Hybrid", "Filtered"}
@@ -139,7 +145,7 @@ func main() {
 
 	// 4. Print Summary
 	fmt.Printf("\n%s\n", "BENCHMARK SUITE SUMMARY")
-	fmt.Printf("%-20s | %-18s | %-18s | %-10s\n", "Name", "Throughput (rows/s)", "Throughput (MB/s)", "Rows")
+	fmt.Printf("%-20s | %-18s | %-18s | %-10s\n", "Name", "Throughput (vec/s)", "Throughput (MB/s)", "Rows")
 	for _, r := range results {
 		fmt.Printf("%-20s | %-18.2f | %-18.2f | %-10d\n", r.Name, r.Throughput, r.ThroughputMBs, r.Rows)
 	}
@@ -373,6 +379,17 @@ func generateRecord(count int, dim int, dtype string) (arrow.Record, *arrow.Sche
 		vals := make([]int8, count*dim)
 		for i := range vals {
 			vals[i] = int8(rand.Intn(127))
+		}
+		for i := 0; i < count; i++ {
+			listBldr.Append(true)
+			vb.AppendValues(vals[i*dim:(i+1)*dim], nil)
+		}
+	case "uint32":
+		vb := listBldr.ValueBuilder().(*array.Uint32Builder)
+		vb.Reserve(count * dim)
+		vals := make([]uint32, count*dim)
+		for i := range vals {
+			vals[i] = uint32(rand.Intn(1000))
 		}
 		for i := 0; i < count; i++ {
 			listBldr.Append(true)

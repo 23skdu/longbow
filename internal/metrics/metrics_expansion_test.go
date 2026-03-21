@@ -94,8 +94,8 @@ func TestHNSWNodeCount_Exists(t *testing.T) {
 	if HNSWNodeCount == nil {
 		t.Fatal("HNSWNodeCount metric should not be nil")
 	}
-	// Verify it's a GaugeVec with dataset label
-	HNSWNodeCount.WithLabelValues("vectors").Set(10000)
+	// Verify it's a GaugeVec with dataset and shard labels
+	HNSWNodeCount.WithLabelValues("vectors", "0").Set(10000)
 }
 
 // Test Flight metrics

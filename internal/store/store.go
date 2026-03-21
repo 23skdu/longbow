@@ -186,9 +186,9 @@ func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes 
 	s.workerWg.Add(1)
 	go s.runPersistenceWorker()
 
-	// Start default index worker (1 thread)
-	s.StartIndexingWorkers(1)
-	s.StartIngestionWorkers(1)
+	// Start default index worker (multi-threaded)
+	s.StartIndexingWorkers(runtime.NumCPU())
+	s.StartIngestionWorkers(runtime.NumCPU())
 
 	// Initialize parser pool
 	s.vectorSearchParserPool = sync.Pool{

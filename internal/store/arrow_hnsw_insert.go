@@ -29,6 +29,14 @@ func (h *ArrowHNSW) selectNeighbors(ctx *ArrowSearchContext, candidates []Candid
 		candidates = candidates[:limit]
 	}
 
+	// Fast-path for Float32 to lift type declarations out of nested loops
+	// types.VectorTypeFloat32 is the design DataType setup.
+	// Setup constants to keep speedups or just use types.VectorDataType(1)?
+	// Let's check with types.VectorTypeFloat32
+	if data.Type == 1 { // VectorTypeFloat32 is usually 1, or just do reflection assert once
+		return h.selectNeighborsFloat32(ctx, candidates, m, data)
+	}
+
 	var selected []Candidate
 	if ctx != nil {
 		if cap(ctx.scratchSelected) < m {
@@ -52,6 +60,16 @@ func (h *ArrowHNSW) selectNeighbors(ctx *ArrowSearchContext, candidates []Candid
 		if !ok {
 			vecAny, _ := data.GetVector(cand.ID)
 			v1 = vecAny
+			// Cast integer types to float32 once when fetched into bypass double-loop builds
+			if vInt, ok := vecAny.([]int32); ok {
+				v1f := make([]float32, len(vInt))
+				for i, val := range vInt { v1f[i] = float32(val) }
+				v1 = v1f
+			} else if vUint, ok := vecAny.([]uint32); ok {
+				v1f := make([]float32, len(vUint))
+				for i, val := range vUint { v1f[i] = float32(val) }
+				v1 = v1f
+			}
 			vectorCache[cand.ID] = v1
 		}
 		if v1 == nil {
@@ -169,6 +187,76 @@ func (h *ArrowHNSW) selectNeighbors(ctx *ArrowSearchContext, candidates []Candid
 }
 
 // Core insertion functions that remain to be refactored in Phase 3
+
+// selectNeighborsFloat32 is a specialized high-performance diversity check for float32 vectors.
+func (h *ArrowHNSW) selectNeighborsFloat32(ctx *ArrowSearchContext, candidates []Candidate, m int, data *GraphData) []Candidate {
+	var selected []Candidate
+	if ctx != nil {
+		if cap(ctx.scratchSelected) < m {
+			ctx.scratchSelected = make([]Candidate, 0, m)
+		}
+		selected = ctx.scratchSelected[:0]
+	} else {
+		selected = make([]Candidate, 0, m)
+	}
+
+	vectorCache := make(map[uint32][]float32, len(candidates))
+
+	for _, cand := range candidates {
+		if len(selected) >= m {
+			break
+		}
+
+		isDiverse := true
+		v1, ok := vectorCache[cand.ID]
+		if !ok {
+			vecAny, _ := data.GetVector(cand.ID)
+			if v, ok := vecAny.([]float32); ok {
+				v1 = v
+				vectorCache[cand.ID] = v
+			}
+		}
+		if v1 == nil {
+			continue
+		}
+
+		for _, sel := range selected {
+			v2, ok := vectorCache[sel.ID]
+			if !ok {
+				vecAny, _ := data.GetVector(sel.ID)
+				if v, ok := vecAny.([]float32); ok {
+					v2 = v
+					vectorCache[sel.ID] = v
+				}
+			}
+			if v2 == nil {
+				continue
+			}
+
+			d, err := h.distFunc(v1, v2)
+
+			threshold := cand.Dist
+			if h.config.SQ8Enabled {
+				threshold *= 1.2
+			}
+
+			if err == nil && d > 0 && d < threshold {
+				isDiverse = false
+				break
+			}
+		}
+
+		if isDiverse {
+			selected = append(selected, cand)
+		}
+	}
+
+	if len(selected) == 0 && len(candidates) > 0 {
+		selected = append(selected, candidates[0])
+	}
+
+	return selected
+}
 
 // Insert function moved to insertion_core.go
 

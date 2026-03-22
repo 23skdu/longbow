@@ -16,7 +16,10 @@ type VectorSearchRequest struct {
 
 	// Vector Transport
 	IncludeVectors bool   `json:"include_vectors,omitempty"`
-	VectorFormat   string `json:"vector_format,omitempty"` // "quantized", "f32", "f16"
+	VectorFormat   string `json:"vector_format,omitempty"` // "quantized", "f32", "f16", "bq"
+
+	// Consistency Level for distributed queries
+	Consistency string `json:"consistency,omitempty"` // "ONE", "QUORUM", "ALL"
 }
 
 // VectorSearchResponse defines the response format for VectorSearch action

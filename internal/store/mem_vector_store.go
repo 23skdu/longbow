@@ -27,6 +27,10 @@ type MemVectorStore struct {
 	baseArena  *memory.SlabArena
 	floatArena *memory.TypedArena[float32]
 	indices    map[string]memory.SliceRef
+
+	// Tombstone deletion - mark keys as deleted without freeing memory
+	// This matches ArrowHNSW's approach for consistency across store types
+	deleted map[string]bool
 }
 
 func NewMemVectorStore(opts MemStoreOptions) (*MemVectorStore, error) {
@@ -35,10 +39,10 @@ func NewMemVectorStore(opts MemStoreOptions) (*MemVectorStore, error) {
 		dim:      opts.Dim,
 		vectors:  make(map[string][]float32),
 		indices:  make(map[string]memory.SliceRef),
+		deleted:  make(map[string]bool),
 	}
 
 	if opts.UseArena {
-		// Initialize arena with default large page size (e.g. 1MB)
 		ms.baseArena = memory.NewSlabArena(1024 * 1024)
 		ms.floatArena = memory.NewTypedArena[float32](ms.baseArena)
 	}
@@ -105,4 +109,66 @@ func (ms *MemVectorStore) Get(key string) ([]float32, bool) {
 
 	vec, ok := ms.vectors[key]
 	return vec, ok
+}
+
+// Delete marks a vector as deleted via tombstone (consistent with ArrowHNSW).
+// Returns true if the key existed and was marked deleted, false otherwise.
+func (ms *MemVectorStore) Delete(key string) bool {
+	ms.mu.Lock()
+	defer ms.mu.Unlock()
+
+	if ms.useArena {
+		_, ok := ms.indices[key]
+		if !ok {
+			return false
+		}
+		ms.deleted[key] = true
+		metrics.StoreVectorsManagedCount.Dec()
+		return true
+	}
+
+	_, ok := ms.vectors[key]
+	if ok {
+		ms.deleted[key] = true
+		delete(ms.vectors, key)
+		metrics.StoreVectorsManagedCount.Dec()
+		return true
+	}
+	return false
+}
+
+// DeleteBatch marks multiple vectors as deleted via tombstone.
+// Returns the count of successfully deleted vectors.
+func (ms *MemVectorStore) DeleteBatch(keys []string) int {
+	ms.mu.Lock()
+	defer ms.mu.Unlock()
+
+	deleted := 0
+	if ms.useArena {
+		for _, key := range keys {
+			if _, ok := ms.indices[key]; ok {
+				ms.deleted[key] = true
+				delete(ms.indices, key)
+				deleted++
+			}
+		}
+	} else {
+		for _, key := range keys {
+			if _, ok := ms.vectors[key]; ok {
+				ms.deleted[key] = true
+				delete(ms.vectors, key)
+				deleted++
+			}
+		}
+	}
+
+	metrics.StoreVectorsManagedCount.Add(float64(-deleted))
+	return deleted
+}
+
+// IsDeleted checks if a key is marked as deleted.
+func (ms *MemVectorStore) IsDeleted(key string) bool {
+	ms.mu.RLock()
+	defer ms.mu.RUnlock()
+	return ms.deleted[key]
 }

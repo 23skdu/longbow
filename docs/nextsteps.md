@@ -221,29 +221,26 @@ github.com/23skdu/longbow/internal/simd.dot1536AVX512: relocation target not def
 
 **Verified**: Build succeeds on both macOS (native) and Linux (gccgo/amd64). Benchmark tool and longbow binary run correctly.
 
-### 12. CPU Detection: i7-12650H Lacks AVX512 ⚠️
-**File**: `internal/simd/cpu_detection.go`
+### 12. CPU Detection: i7-12650H Lacks AVX512 ✅ FIXED
+**Files**: `internal/simd/simd_amd64.go`
 
-**Status**: Known — No Action Needed
+**Status**: ✅ FIXED
 
-**Finding**: The ancalagon server (Intel i7-12650H) does **not** have AVX512. CPU flags show AVX and AVX2 but NOT AVX512F/AVX512DQ/AVX512BW/AVX512VL. All SIMD operations fall back to AVX2.
+**Problem**: On AVX2-only systems, `euclidean768AVX2` and `euclidean1536AVX2` fell back to the generic `euclideanAVX2` function (8 floats/iter), which is slower than the scalar unrolled4x Go implementation for high dimensions.
 
-**Performance Impact on Linux/AVX2**:
-- Dense search QPS at 10k vectors: 4,000-5,500 (good)
-- Dense search QPS at 25k vectors: 112-168 (degraded — HNSW traversal length + memory pressure)
-- DoPut/DoGet throughput: 330-740 MB/s (lower than AVX512 systems)
-- int8 indexing: ~33s for 10k vectors (slow — narrow 32-byte AVX2 kernel)
+**Fix Applied**: Changed both functions to delegate to the scalar unrolled4x implementations (`euclidean768Unrolled4x`, `euclidean1536Unrolled4x`) instead of the generic AVX2 loop. On non-AVX512 systems, the scalar Go implementation is faster for 768/1536 dims due to better loop efficiency.
 
-**Recommendation**: AVX2-only kernels for high-dimensional search (768, 1536) should be optimized separately from AVX512 paths. Consider blocking registration of 768/1536 kernels on non-AVX512 systems.
+### 13. int8 AVX2 Kernel Performance ✅ FIXED
+**Files**: `internal/simd/simd_amd64.go`, `internal/simd/simd_amd64.s`
 
-### 13. int8 AVX2 Kernel Performance ⚠️
-**File**: `internal/simd/simd_amd64.s`
+**Status**: ✅ FIXED
 
-**Status**: Known — Optimization Needed
+**Problem**: The original `euclideanInt8AVX2Kernel` processed only 16 bytes (16 int8s) per iteration, requiring 768/16 = 48 iterations for a 768-dim vector. The float32 AVX2 kernel processes 32 bytes per iteration (8 floats), so int8 was ~2x slower per byte.
 
-**Finding**: int8 indexing for 10k vectors takes ~33s on Linux/AVX2 vs ~2s for float32. The int8 Euclidean kernel processes only 32 bytes per iteration (32 int8 = 256 bits) vs float32's 256 bytes per iteration (64 floats = 256 bytes). This 8x narrower processing width causes dramatically slower indexing.
-
-**Recommendation**: Implement a wider int8 AVX2 kernel that processes multiple 32-byte chunks per iteration, similar to how float32 uses 4x16-float unrolling.
+**Fix Applied**:
+1. **New assembly kernel** `euclideanInt8Unrolled4xAVX2Kernel`: Processes 64 bytes (64 int8s) per iteration — 4x wider than the single-chunk kernel. Uses 4 YMM accumulators (one per 16-byte chunk), stays in int16→int32 domain for accumulation, converts to float32 only once at the end.
+2. **Algorithm**: VPMOVSXBW (sign-extend) → VPSUBW (diff) → VPMADDWD (square + pair-reduce to int32) → VPADDD (accumulate) → single horizontal reduction → VCVTDQ2PS → VSQRTSS.
+3. **Go wrapper updated**: `euclideanInt8AVX2` now calls the new 4x-unrolled kernel instead of the single-chunk version.
 
 ---
 

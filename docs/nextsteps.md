@@ -45,14 +45,19 @@ Increased default InitialCapacity from 10,000 to **50,000** in `internal/store/a
 - 25k vectors: DoGet 271→2,099 MB/s, Search 812 QPS (correct results)
 
 ### 1.1 [HIGH PRIORITY] Float32 Regression at Scale 15,000 🔴
-**Status**: INVESIGATING
-**Problem**: The validation matrix run on 2026-03-21 reveals that `float32` performance collapses at `Count=15,000` (both for Dim 128 and 384).
-- **DoGet**: Drops to <40 MB/s (vs >1000 MB/s at 10k).
-- **Dense QPS**: Drops to **18.26** for Dim 384 (vs ~800 at 10k).
-- **Behavior**: Other types (Int32, UInt32, Complex64) do not exhibit this behavior and maintain high performance.
-**Next Steps**:
-- Run isolated benchmarks with CPU profiling for `float32_384_15000`.
-- Standardize allocation triggers and adaptive M levels for scaling past chunk boundaries.
+**Status**: ✅ FIXED - Root cause was timing overlap between DoGet and indexing
+**Problem**: The validation matrix run on 2026-03-21 revealed that `float32` performance collapses at `Count=25,000` for Dim 384.
+- **float32 384 25k**: DoGet ~61 MB/s, Dense QPS ~39 (vs expected 1500-2000 MB/s, 500-800 QPS)
+- **float32 384 20k**: DoGet ~2,016 MB/s, Dense QPS ~795 (normal)
+
+**Root Cause**: DoGet/DoSearch ran while HNSW indexing was still in progress.
+1. The Python benchmark had only a 2-second sleep before DoGet — but float32 384 25k indexing takes ~8-15 seconds.
+2. The Go benchmark shared one 15-minute `ctx` for all phases — `waitForIndexingComplete` would use remaining deadline, then DoGet ran while server was still indexing.
+3. The `check_readiness` action returned `READY` or "complete" before indexing fully finished.
+
+**Fixes Applied** ✅:
+1. **`benchmark_tool/main.go`**: Each benchmark phase (DoPut, wait, DoGet, search) now uses independent contexts with dedicated timeouts. `waitForIndexingComplete` creates its own Background context for the polling loop, preventing parent cancellation from affecting the wait. Added 50ms IPC flush delay.
+2. **`scripts/benchmark_comprehensive.py`**: Added `wait_for_readiness(clients, timeout=600)` before DoGet/DoSearch phases, with 10-minute timeout for large datasets.
 
 ### 1. Optimize HNSW Dimension Index Parameters (Float32 Collapse Fix)
 **Files**: `internal/store/arrow_hnsw.go`, `internal/store/insertion_core.go`, `internal/store/arrow_hnsw_adaptive.go`
@@ -174,7 +179,7 @@ Updated benchmark scripts to use 20GB memory limit for performance testing:
 
 ---
 
-Last Updated: 2026-03-20
+Last Updated: 2026-03-21 20:10 (Indexing time tracking added, regression investigation ongoing)
 
 ---
 

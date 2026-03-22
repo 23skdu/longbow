@@ -160,7 +160,12 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 
 	ds, ok := s.getDataset(name)
 	if !ok {
-		return status.Errorf(codes.NotFound, "dataset %s not found", name)
+		var keys []string
+		s.IterateDatasets(func(k string, _ *Dataset) {
+			keys = append(keys, k)
+		})
+		s.logger.Warn().Str("wanted", name).Strs("available", keys).Msg("DoGet dataset not found")
+		return status.Errorf(codes.NotFound, "dataset %s not found (available: %s)", name, strings.Join(keys, ", "))
 	}
 
 	ds.dataMu.RLock()
@@ -274,11 +279,22 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 	}
 
 	// Start Workers
+	workerArenas := make([]*lbmem.ArenaAllocator, numWorkers)
+	for i := range workerArenas {
+		workerArenas[i] = lbmem.NewArenaAllocator()
+	}
+	defer func() {
+		for _, a := range workerArenas {
+			a.Release()
+		}
+	}()
+
 	for w := 0; w < numWorkers; w++ {
 		wg.Add(1)
-		go func() {
+		go func(workerIdx int) {
 			defer wg.Done()
 			var evaluator *qry.FilterEvaluator
+			workerMem := workerArenas[workerIdx]
 
 			for stage := range stageChan {
 				rec := stage.Record
@@ -299,12 +315,12 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 
 					var mask *array.Boolean
 					if err == nil {
-						mask, err = evaluator.EvaluateToArrowBoolean(mem, int(rec.NumRows()))
+						mask, err = evaluator.EvaluateToArrowBoolean(workerMem, int(rec.NumRows()))
 					}
 
 					var filtered arrow.RecordBatch
 					if err == nil {
-						filtered, err = filterRecordWithMask(ctx, mem, rec, mask)
+						filtered, err = filterRecordWithMask(ctx, workerMem, rec, mask)
 					}
 					if mask != nil {
 						mask.Release()
@@ -333,7 +349,7 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 				} else {
 					// Use zero-copy with tombstone filtering (Phase 5)
 					if deleted != nil && deleted.Count() > 0 {
-						processed, err = ZeroCopyRecordBatch(mem, rec, deleted)
+						processed, err = ZeroCopyRecordBatch(workerMem, rec, deleted)
 						metrics.DoGetZeroCopyTotal.WithLabelValues("zero_copy_mask").Inc()
 					} else {
 						// No tombstones - just retain (zero-copy!)
@@ -357,7 +373,7 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 					return
 				}
 			}
-		}()
+		}(w)
 	}
 
 	// Monitor to close results channel

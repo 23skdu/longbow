@@ -955,6 +955,21 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 		searchOptions = opt
 	}
 
+	// Handle BQ (Binary Quantization) search path
+	// If index has BQ enabled and user requests BQ search, use Hamming distance
+	useBQSearch := searchOptions.VectorFormat == types.VectorTypeBQ
+	if useBQSearch {
+		if h.bqEncoder == nil {
+			return nil, fmt.Errorf("BQ search requested but index does not have BQ enabled")
+		}
+		if qf32, ok := queryVec.([]float32); ok {
+			searchCtx.queryBQ = h.bqEncoder.Encode(qf32)
+			searchCtx.useBQSearch = true
+		} else {
+			return nil, fmt.Errorf("BQ search requires float32 query vector")
+		}
+	}
+
 	defer func() {
 		duration := time.Since(start).Seconds()
 		metrics.HNSWSearchDurationSeconds.Observe(duration)

@@ -20,6 +20,8 @@ type VectorSearchRequest struct {
 
 	// Consistency Level for distributed queries
 	Consistency string `json:"consistency,omitempty"` // "ONE", "QUORUM", "ALL"
+
+	EfSearch int `json:"ef_search,omitempty"`
 }
 
 // VectorSearchResponse defines the response format for VectorSearch action

@@ -57,6 +57,18 @@ func (s *VectorStore) handleVectorSearchAction(action *flight.Action, stream fli
 		return status.Errorf(codes.InvalidArgument, "ef_search must be between 16 and 4096, got %d", req.EfSearch)
 	}
 
+	// Parse consistency level for distributed queries
+	var _ ConsistencyLevel
+	if req.Consistency != "" {
+		var err error
+		_, err = ParseConsistencyLevel(req.Consistency)
+		if err != nil {
+			metrics.VectorSearchActionErrors.Inc()
+			return status.Errorf(codes.InvalidArgument, "invalid consistency: %v", err)
+		}
+		s.logger.Debug().Str("consistency", req.Consistency).Msg("consistency level requested")
+	}
+
 	// Determine if Hybrid Search
 	isHybrid := req.TextQuery != "" || (req.Alpha > 0 && req.Alpha < 1.0)
 

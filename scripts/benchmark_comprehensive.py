@@ -569,7 +569,9 @@ def main():
 
         time.sleep(2)  # Settling time
 
-        # 2. DoGet
+        wait_for_readiness(clients, timeout=600)
+
+        # 3. DoGet
         get_throughput, get_bandwidth, get_mbits, get_duration, get_errors = (
             benchmark_do_get(clients)
         )
@@ -578,20 +580,20 @@ def main():
         results.add(phase, "DoGet Bandwidth (Mb/s)", f"{get_mbits:.2f}")
         results.add(phase, "DoGet Errors", str(get_errors))
 
-        # 3. DoExchange
+        # 4. DoExchange
         ex_p50, ex_p95, ex_p99, ex_errors = benchmark_do_exchange(clients)
         results.add(phase, "DoExchange P50 (ms)", f"{ex_p50:.2f}")
         results.add(phase, "DoExchange P95 (ms)", f"{ex_p95:.2f}")
         results.add(phase, "DoExchange P99 (ms)", f"{ex_p99:.2f}")
 
-        # 4. Dense Search
+        # 5. Dense Search
         dense_p50, dense_p95, dense_p99, dense_errors = benchmark_dense_search(clients)
         results.add(phase, "Dense Search P50 (ms)", f"{dense_p50:.2f}")
         results.add(phase, "Dense Search P95 (ms)", f"{dense_p95:.2f}")
         results.add(phase, "Dense Search P99 (ms)", f"{dense_p99:.2f}")
         results.add(phase, "Dense Search Errors", str(dense_errors))
 
-        # 5. Sparse Search
+        # 6. Sparse Search
         sparse_p50, sparse_p95, sparse_p99, sparse_errors = benchmark_sparse_search(
             clients
         )
@@ -599,13 +601,13 @@ def main():
         results.add(phase, "Sparse Search P95 (ms)", f"{sparse_p95:.2f}")
         results.add(phase, "Sparse Search P99 (ms)", f"{sparse_p99:.2f}")
 
-        # 6. Filtered Search
+        # 7. Filtered Search
         filt_p50, filt_p95, filt_p99, filt_errors = benchmark_filtered_search(clients)
         results.add(phase, "Filtered Search P50 (ms)", f"{filt_p50:.2f}")
         results.add(phase, "Filtered Search P95 (ms)", f"{filt_p95:.2f}")
         results.add(phase, "Filtered Search P99 (ms)", f"{filt_p99:.2f}")
 
-        # 7. Hybrid Search
+        # 8. Hybrid Search
         hybrid_p50, hybrid_p95, hybrid_p99, hybrid_errors = benchmark_hybrid_search(
             clients
         )
@@ -613,10 +615,10 @@ def main():
         results.add(phase, "Hybrid Search P95 (ms)", f"{hybrid_p95:.2f}")
         results.add(phase, "Hybrid Search P99 (ms)", f"{hybrid_p99:.2f}")
 
-        # 8. Collect pprof
+        # 9. Collect pprof
         collect_pprof(pprof_urls, label=phase)
 
-    # 9. Tombstone Deletion Test
+    # 10. Tombstone Deletion Test
     print(f"\n{'=' * 80}")
     print("PHASE: Tombstone Deletion")
     print(f"{'=' * 80}")

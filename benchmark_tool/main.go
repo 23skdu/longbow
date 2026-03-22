@@ -8,6 +8,7 @@ import (
 	"log"
 	"math/rand"
 	"os"
+	"sort"
 	"time"
 
 	"github.com/23skdu/longbow/client"
@@ -27,6 +28,10 @@ type BenchmarkResult struct {
 	Rows             int64     `json:"rows"`
 	BytesProcessed   int64     `json:"bytes_processed"`
 	LatenciesMs      []float64 `json:"latencies_ms,omitempty"`
+	P50LatencyMs     float64   `json:"p50_latency_ms,omitempty"`
+	P95LatencyMs     float64   `json:"p95_latency_ms,omitempty"`
+	P99LatencyMs     float64   `json:"p99_latency_ms,omitempty"`
+	IndexingDuration float64   `json:"indexing_duration_seconds,omitempty"`
 }
 
 func main() {
@@ -40,9 +45,6 @@ func main() {
 	flag.Parse()
 
 	log.Printf("Starting Go Benchmark: Dataset=%s, Scale=%d, Dim=%d, Type=%s\n", *dataset, *scale, *dim, *dtype)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
-	defer cancel()
 
 	sc, err := client.NewSmartClient(*uri)
 	if err != nil {
@@ -60,10 +62,13 @@ func main() {
 	}
 	defer record.Release()
 
+	putCtx, putCancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	start := time.Now()
-	if err := uploadBatch(ctx, sc, *dataset, record, schema); err != nil {
+	if err := uploadBatch(putCtx, sc, *dataset, record, schema); err != nil {
+		putCancel()
 		log.Fatalf("DoPut failed: %v", err)
 	}
+	putCancel()
 	duration := time.Since(start).Seconds()
 
 	var bytesPerElement int64 = 4
@@ -87,18 +92,25 @@ func main() {
 		Throughput:      float64(*scale) / duration,
 		ThroughputUnit:  "vec/s",
 		ThroughputMBs:   (float64(totalBytes) / (1024 * 1024)) / duration,
-		Rows:           int64(*scale),
-		BytesProcessed: totalBytes,
+		Rows:            int64(*scale),
+		BytesProcessed:  totalBytes,
 	})
 	log.Printf("[PUT] Completed in %.4fs (%.2f vec/s, %.2f MB/s)\n", duration, float64(*scale)/duration, (float64(totalBytes)/(1024*1024))/duration)
 
-	log.Println("Waiting 5s for indexing...")
-	time.Sleep(5 * time.Second)
+	log.Println("Waiting for background indexing to complete...")
+	waitCtx, waitCancel := context.WithTimeout(context.Background(), 180*time.Second)
+	indexingStart := time.Now()
+	readyStatus := waitForIndexingComplete(waitCtx, sc, *dataset, 120*time.Second)
+	waitCancel()
+	indexingSeconds := time.Since(indexingStart).Seconds()
+	log.Printf("Indexing complete in %.4fs (status: %s).", indexingSeconds, readyStatus)
 
 	// 2. DoGet
 	log.Println("[GET] Downloading to verify scan...")
+	getCtx, getCancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	start = time.Now()
-	rowsRead, err := downloadBatch(ctx, sc, *dataset)
+	rowsRead, err := downloadBatch(getCtx, sc, *dataset)
+	getCancel()
 	if err != nil {
 		log.Fatalf("DoGet failed: %v", err)
 	}
@@ -111,20 +123,22 @@ func main() {
 		Throughput:      float64(rowsRead) / duration,
 		ThroughputUnit:  "vec/s",
 		ThroughputMBs:   (float64(totalBytesGet) / (1024 * 1024)) / duration,
-		Rows:           rowsRead,
-		BytesProcessed: totalBytesGet,
+		Rows:            rowsRead,
+		BytesProcessed:  totalBytesGet,
 	})
 	log.Printf("[GET] Completed in %.4fs (%.2f vec/s, %.2f MB/s)\n", duration, float64(rowsRead)/duration, (float64(totalBytesGet)/(1024*1024))/duration)
 
 	// 3. Search
 	modes := []string{"Dense", "Sparse", "Hybrid", "Filtered"}
+	searchCtx, searchCancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer searchCancel()
 	for _, mode := range modes {
 		log.Printf("[SEARCH][%s] Running queries...\n", mode)
 		start = time.Now()
 		var latencies []float64
 		for i := 0; i < *queries; i++ {
 			qStart := time.Now()
-			if err := executeSearch(ctx, sc, *dataset, *dim, mode); err != nil {
+			if err := executeSearch(searchCtx, sc, *dataset, *dim, mode); err != nil {
 				log.Printf("[%s] Query %d failed: %v\n", mode, i, err)
 				continue
 			}
@@ -132,22 +146,33 @@ func main() {
 		}
 		duration = time.Since(start).Seconds()
 
+		p50, p95, p99 := 0.0, 0.0, 0.0
+		if len(latencies) > 0 {
+			sort.Float64s(latencies)
+			p50 = latencies[len(latencies)/2]
+			p95 = latencies[int(float64(len(latencies))*0.95)]
+			p99 = latencies[int(float64(len(latencies))*0.99)]
+		}
+
 		results = append(results, BenchmarkResult{
 			Name:            "Search_" + mode,
 			DurationSeconds: duration,
 			Throughput:      float64(*queries) / duration,
 			ThroughputUnit:  "queries/s",
-			Rows:           int64(*queries),
-			LatenciesMs:    latencies,
+			Rows:            int64(*queries),
+			LatenciesMs:     latencies,
+			P50LatencyMs:    p50,
+			P95LatencyMs:    p95,
+			P99LatencyMs:    p99,
 		})
-		log.Printf("[SEARCH][%s] Completed %d queries in %.4fs (%.2f QPS)\n", mode, *queries, duration, float64(*queries)/duration)
+		log.Printf("[SEARCH][%s] Completed %d queries in %.4fs (%.2f QPS, P50: %.2fms, P95: %.2fms, P99: %.2fms)\n", mode, *queries, duration, float64(*queries)/duration, p50, p95, p99)
 	}
 
 	// 4. Print Summary
 	fmt.Printf("\n%s\n", "BENCHMARK SUITE SUMMARY")
-	fmt.Printf("%-20s | %-18s | %-18s | %-10s\n", "Name", "Throughput (vec/s)", "Throughput (MB/s)", "Rows")
+	fmt.Printf("%-20s | %-18s | %-18s | %-10s | %-10s | %-10s | %-10s\n", "Name", "Throughput (vec/s)", "Throughput (MB/s)", "Rows", "P50(ms)", "P95(ms)", "P99(ms)")
 	for _, r := range results {
-		fmt.Printf("%-20s | %-18.2f | %-18.2f | %-10d\n", r.Name, r.Throughput, r.ThroughputMBs, r.Rows)
+		fmt.Printf("%-20s | %-18.2f | %-18.2f | %-10d | %-10.2f | %-10.2f | %-10.2f\n", r.Name, r.Throughput, r.ThroughputMBs, r.Rows, r.P50LatencyMs, r.P95LatencyMs, r.P99LatencyMs)
 	}
 
 	if *outputJson != "" {
@@ -178,7 +203,7 @@ func uploadBatch(ctx context.Context, sc *client.SmartClient, dataset string, re
 	if err := writer.Write(record); err != nil {
 		return err
 	}
-
+	time.Sleep(50 * time.Millisecond)
 	return stream.CloseSend()
 }
 
@@ -255,6 +280,71 @@ func executeSearch(ctx context.Context, sc *client.SmartClient, dataset string, 
 	return reader.Err()
 }
 
+// waitForIndexingComplete polls until the dataset is indexed.
+// The passed ctx is used for the initial action; polling uses an independent Background context.
+func waitForIndexingComplete(ctx context.Context, sc *client.SmartClient, dataset string, timeout time.Duration) string {
+	actionBody, _ := json.Marshal(map[string]string{"dataset": dataset})
+	action := &flight.Action{Type: "wait-for-indexing", Body: actionBody}
+	stream, err := sc.DoAction(ctx, action)
+	if err == nil {
+		for {
+			if result, err := stream.Recv(); err != nil {
+				break
+			} else {
+				body := result.Body
+				if len(body) > 0 {
+					var status map[string]interface{}
+					if err := json.Unmarshal(body, &status); err == nil {
+						if s, ok := status["status"].(string); ok {
+							return s
+						}
+					}
+				}
+			}
+		}
+		return "complete"
+	}
+	log.Printf("wait-for-indexing action failed, polling check_readiness: %v", err)
+
+	pollCtx, pollCancel := context.WithTimeout(context.Background(), timeout)
+	defer pollCancel()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		checkBody, _ := json.Marshal(map[string]string{"dataset": dataset})
+		checkAction := &flight.Action{Type: "check_readiness", Body: checkBody}
+		checkStream, err := sc.DoAction(pollCtx, checkAction)
+		if err != nil {
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+
+		for {
+			if result, err := checkStream.Recv(); err != nil {
+				break
+			} else {
+				body := result.Body
+				if len(body) > 0 {
+					var status map[string]interface{}
+					if err := json.Unmarshal(body, &status); err == nil {
+						if s, ok := status["status"].(string); ok {
+							if s == "READY" {
+								return s
+							}
+							if reason, ok := status["reason"].(string); ok {
+								log.Printf("  Still indexing... (%s)", reason)
+							}
+						}
+					}
+				}
+			}
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	log.Printf("WARNING: Timeout (%v) waiting for indexing to complete for dataset %s", timeout, dataset)
+	return "timeout"
+}
+
 // generateRecord is a multi-type arrow table builder
 func generateRecord(count int, dim int, dtype string) (arrow.Record, *arrow.Schema, error) {
 	pool := memory.NewGoAllocator()
@@ -314,8 +404,6 @@ func generateRecord(count int, dim int, dtype string) (arrow.Record, *arrow.Sche
 	idArr := idBldr.NewArray()
 	defer idArr.Release()
 
-
-
 	// 2. Build Vectors
 	listBldr := array.NewFixedSizeListBuilder(pool, listLen, dt)
 	defer listBldr.Release()
@@ -339,7 +427,7 @@ func generateRecord(count int, dim int, dtype string) (arrow.Record, *arrow.Sche
 			listBldr.Append(true)
 			vb.AppendValues(vals[i*stride:(i+1)*stride], nil)
 		}
-	case "complex128":
+	case "float64", "complex128":
 		vb := listBldr.ValueBuilder().(*array.Float64Builder)
 		stride := dim * dimensionMultiplier
 		vb.Reserve(count * stride)

@@ -81,6 +81,9 @@ func euclidean384AVX512(a, b []float32) (float32, error) {
 	if len(a) != 384 || len(b) != 384 {
 		return 0, errors.New("simd: length must be 384")
 	}
+	if !features.HasAVX512 {
+		return euclidean384AVX2(a, b)
+	}
 	return float32(math.Sqrt(float64(euclidean384AVX512Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]))))), nil
 }
 
@@ -89,6 +92,9 @@ func euclidean384AVX512(a, b []float32) (float32, error) {
 func euclidean768AVX512(a, b []float32) (float32, error) {
 	if len(a) != 768 || len(b) != 768 {
 		return 0, errors.New("simd: length must be 768")
+	}
+	if !features.HasAVX512 {
+		return euclidean768AVX2(a, b)
 	}
 	return float32(math.Sqrt(float64(euclidean768AVX512Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]))))), nil
 }
@@ -99,6 +105,9 @@ func euclidean1536AVX512(a, b []float32) (float32, error) {
 	if len(a) != 1536 || len(b) != 1536 {
 		return 0, errors.New("simd: length must be 1536")
 	}
+	if !features.HasAVX512 {
+		return euclidean1536AVX2(a, b)
+	}
 	return float32(math.Sqrt(float64(euclidean1536AVX512Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]))))), nil
 }
 
@@ -107,6 +116,9 @@ func dot768AVX512(a, b []float32) (float32, error) {
 	if len(a) != 768 || len(b) != 768 {
 		return 0, errors.New("simd: length must be 768")
 	}
+	if !features.HasAVX512 {
+		return dotGeneric(a, b)
+	}
 	return dot768AVX512Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0])), nil
 }
 
@@ -114,6 +126,9 @@ func dot768AVX512(a, b []float32) (float32, error) {
 func dot1536AVX512(a, b []float32) (float32, error) {
 	if len(a) != 1536 || len(b) != 1536 {
 		return 0, errors.New("simd: length must be 1536")
+	}
+	if !features.HasAVX512 {
+		return dotGeneric(a, b)
 	}
 	return dot1536AVX512Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0])), nil
 }

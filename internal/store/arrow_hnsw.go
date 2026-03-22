@@ -109,6 +109,10 @@ func DefaultArrowHNSWConfig() ArrowHNSWConfig {
 		config.MMax0 = 32
 	}
 
+	if os.Getenv("LONGBOW_BQ_ENABLED") == "1" || os.Getenv("LONGBOW_BQ_ENABLED") == "true" {
+		config.BQEnabled = true
+	}
+
 	return config
 }
 

@@ -994,7 +994,7 @@ TEXT ·euclideanInt8Unrolled4xAVX2Kernel(SB), NOSPLIT, $0-28
     VXORPS  Y3, Y3, Y3          // chunk 3: 8 int32 accumulators
 
     CMPQ    BX, $64
-    JL      euc_i8_u4_avx2_tail
+    JL      euc_i8_u4_avx2_reduce
 
 euc_i8_u4_avx2_loop:
     // Chunk 0: bytes 0-15
@@ -1031,50 +1031,70 @@ euc_i8_u4_avx2_loop:
     CMPQ    BX, $64
     JGE     euc_i8_u4_avx2_loop
 
-    // Horizontal reduction: Y0|Y1|Y2|Y3 → X0 (float32 sum)
+euc_i8_u4_avx2_reduce:
+    // Horizontal reduction: Y0|Y1|Y2|Y3 → Y0 (8 int32s)
     VPADDD  Y1, Y0, Y0
     VPADDD  Y3, Y2, Y2
     VPADDD  Y2, Y0, Y0
-    JMP     euc_i8_u4_avx2_reduce
 
-euc_i8_u4_avx2_tail:
-    // Horizontal reduction even for tail
-    VPADDD  Y1, Y0, Y0
-    VPADDD  Y3, Y2, Y2
-    VPADDD  Y2, Y0, Y0
+    // Y0 (8 int32s) → X0 (4 int32s)
+    VEXTRACTF128 $1, Y0, X1
+    VPADDD  X1, X0, X0
 
     CMPQ    BX, $0
-    JE      euc_i8_u4_avx2_convert
+    JE      euc_i8_u4_avx2_finalize
 
-euc_i8_u4_avx2_tail_loop:
+    // Process remaining 16-byte chunks (BX < 64)
+euc_i8_u4_avx2_chunk16:
+    CMPQ    BX, $16
+    JL      euc_i8_u4_avx2_scalar
+    // Process one 16-byte chunk → 8 int32s → reduce to 1
+    VXORPS  Y4, Y4, Y4
+    VXORPS  Y5, Y5, Y5
+    VPMOVSXBW (SI), Y4
+    VPMOVSXBW (DI), Y5
+    VPSUBW  Y5, Y4, Y4
+    VPMADDWD Y4, Y4, Y4
+    // Y4 has 8 int32s → reduce to one in X4[0]
+    VEXTRACTF128 $1, Y4, X5
+    VPADDD  X5, X4, X4
+    VPHADDD X4, X4, X4
+    VPHADDD X4, X4, X4
+    // Add to main accumulator
+    VPADDD  X4, X0, X0
+    ADDQ    $16, SI
+    ADDQ    $16, DI
+    SUBQ    $16, BX
+    JMP     euc_i8_u4_avx2_chunk16
+
+euc_i8_u4_avx2_scalar:
+    // Accumulate 0-15 remaining byte diffs² in DX
+    XORL    DX, DX
+    CMPQ    BX, $0
+    JE      euc_i8_u4_avx2_finalize
+
+euc_i8_u4_avx2_scalar_loop:
     MOVBQSX (SI), R8
     MOVBQSX (DI), R9
     SUBQ    R9, R8
     IMULQ   R8, R8
-    CVTSL2SS R8, X1
-    ADDSS   X1, X0
+    ADDQ    R8, DX
     INCQ    SI
     INCQ    DI
     DECQ    BX
-    JNZ     euc_i8_u4_avx2_tail_loop
+    JNZ     euc_i8_u4_avx2_scalar_loop
 
-euc_i8_u4_avx2_convert:
-    // Convert int32 accumulator X0 to float32
+euc_i8_u4_avx2_finalize:
+    // X0 has 4 int32s; reduce to 1
+    VPHADDD X0, X0, X0
+    VPHADDD X0, X0, X0
+    // X0[0] has int32 SIMD sum
     VCVTDQ2PS X0, X0
-
-euc_i8_u4_avx2_reduce:
-    // Horizontal float reduction of X0
-    VEXTRACTF128 $1, X0, X1
-    VADDPS  X1, X0, X0
-    VMOVHLPS X0, X1, X1
-    VADDPS  X1, X0, X0
-    VMOVSHDUP X0, X1
+    // DX has scalar tail sum; add as float
+    XORPS   X1, X1
+    VCVTSI2SDQ DX, X1, X1    // int64 → double
+    VCVTSD2SS X1, X1, X1     // double → float
     VADDSS  X1, X0, X0
-
-    CMPQ    BX, $0
-    JNE     euc_i8_u4_avx2_tail_loop
-
-euc_i8_u4_avx2_done:
     VSQRTSS X0, X0, X0
     VMOVSS  X0, ret+24(FP)
     VZEROUPPER

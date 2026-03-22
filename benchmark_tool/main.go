@@ -186,7 +186,6 @@ func main() {
 	}
 }
 
-// uploadBatch creates a DoPut streams and executes writes
 func uploadBatch(ctx context.Context, sc *client.SmartClient, dataset string, record arrow.Record, schema *arrow.Schema) error {
 	desc := &flight.FlightDescriptor{
 		Type: flight.DescriptorPATH,
@@ -198,34 +197,54 @@ func uploadBatch(ctx context.Context, sc *client.SmartClient, dataset string, re
 	}
 
 	writer := flight.NewRecordWriter(stream, ipc.WithSchema(schema))
-	defer writer.Close()
+	writer.SetFlightDescriptor(desc)
 
 	if err := writer.Write(record); err != nil {
+		writer.Close()
 		return err
 	}
-	time.Sleep(50 * time.Millisecond)
-	return stream.CloseSend()
+
+	if err := writer.Close(); err != nil {
+		return err
+	}
+
+	if err := stream.CloseSend(); err != nil {
+		return err
+	}
+
+	_, _ = stream.Recv()
+
+	return nil
 }
 
-// downloadBatch performs a DoGet download and returns count
+// downloadBatch performs a DoGet download and returns count.
+// Retries up to 30s if dataset is empty (persistence worker populates ds.Records async).
 func downloadBatch(ctx context.Context, sc *client.SmartClient, dataset string) (int64, error) {
-	reqBytes, _ := json.Marshal(map[string]string{"name": dataset})
-	stream, err := sc.DoGet(ctx, reqBytes)
-	if err != nil {
-		return 0, err
-	}
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		reqBytes, _ := json.Marshal(map[string]string{"name": dataset})
+		stream, err := sc.DoGet(ctx, reqBytes)
+		if err != nil {
+			return 0, err
+		}
 
-	reader, err := flight.NewRecordReader(stream)
-	if err != nil {
-		return 0, err
-	}
-	defer reader.Release()
+		reader, err := flight.NewRecordReader(stream)
+		if err != nil {
+			return 0, err
+		}
 
-	var total int64
-	for reader.Next() {
-		total += reader.Record().NumRows()
+		var total int64
+		for reader.Next() {
+			total += reader.Record().NumRows()
+		}
+		err = reader.Err()
+		reader.Release()
+
+		if total > 0 || time.Now().After(deadline) {
+			return total, err
+		}
+		time.Sleep(500 * time.Millisecond)
 	}
-	return total, reader.Err()
 }
 
 // executeSearch performs search by setting JSON ticket in DoGet

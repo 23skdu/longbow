@@ -11,12 +11,12 @@ import (
 	"io"
 	"math"
 	"math/rand"
+	"os"
 	"sort"
 	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
-	"os"
 	"unsafe"
 
 	"github.com/23skdu/longbow/internal/core"
@@ -831,7 +831,20 @@ func (h *ArrowHNSW) Navigate(ctx context.Context, navQuery NavigatorQuery) (*Nav
 // Extended methods for AdaptiveIndex compatibility
 
 func (h *ArrowHNSW) GetDimension() uint32 {
-	return uint32(h.GetDims())
+	dims := h.GetDims()
+	if dims > 0 {
+		return uint32(dims)
+	}
+	if h.dataset != nil && h.dataset.Schema != nil {
+		for _, f := range h.dataset.Schema.Fields() {
+			if f.Name == "vector" || f.Name == "embedding" {
+				if fslType, ok := f.Type.(*arrow.FixedSizeListType); ok {
+					return uint32(fslType.Len())
+				}
+			}
+		}
+	}
+	return 0
 }
 
 func (b *ArrowBitset) ClearSIMD() {

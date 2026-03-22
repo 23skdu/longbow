@@ -218,6 +218,17 @@ func (b *BruteForceIndex) GetLocation(id VectorID) (Location, bool) {
 }
 
 func (b *BruteForceIndex) GetDimension() uint32 {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	if b.dataset.Schema != nil {
+		for _, f := range b.dataset.Schema.Fields() {
+			if f.Name == "vector" || f.Name == "embedding" {
+				if fslType, ok := f.Type.(*arrow.FixedSizeListType); ok {
+					return uint32(fslType.Len())
+				}
+			}
+		}
+	}
 	return 0
 }
 
@@ -506,7 +517,7 @@ func (a *AdaptiveIndex) GetDimension() uint32 {
 	if a.usingHNSW.Load() {
 		return a.hnsw.GetDimension()
 	}
-	return 0
+	return a.bruteForce.GetDimension()
 }
 
 func (a *AdaptiveIndex) Warmup() int {

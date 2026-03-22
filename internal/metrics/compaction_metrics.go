@@ -440,6 +440,14 @@ var (
 		},
 	)
 
+	VectorSearchEfSearch = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_vector_search_ef_search",
+			Help:    "efSearch value used in vector search queries",
+			Buckets: []float64{16, 32, 64, 128, 256, 512, 1024, 2048, 4096},
+		},
+	)
+
 	// Parser Pool Metrics
 	ParserPoolGets = promauto.NewCounter(
 		prometheus.CounterOpts{

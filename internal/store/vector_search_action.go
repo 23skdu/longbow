@@ -47,10 +47,14 @@ func (s *VectorStore) handleVectorSearchAction(action *flight.Action, stream fli
 	} else {
 		metrics.ZeroAllocVectorSearchParseTotal.Inc()
 	}
-	// Validate K
 	if req.K < 1 {
 		metrics.VectorSearchActionErrors.Inc()
 		return status.Error(codes.InvalidArgument, "k must be at least 1")
+	}
+
+	if req.EfSearch != 0 && (req.EfSearch < 16 || req.EfSearch > 4096) {
+		metrics.VectorSearchActionErrors.Inc()
+		return status.Errorf(codes.InvalidArgument, "ef_search must be between 16 and 4096, got %d", req.EfSearch)
 	}
 
 	// Determine if Hybrid Search
@@ -123,11 +127,16 @@ func (s *VectorStore) handleVectorSearchAction(action *flight.Action, stream fli
 			searchResults, errSearch = ds.Index.SearchVectors(stream.Context(), queryVec, req.K, req.Filters, SearchOptions{
 				IncludeVectors: req.IncludeVectors,
 				VectorFormat:   types.MapStringToVectorDataType(req.VectorFormat),
+				Ef:             req.EfSearch,
 			})
 			if errSearch != nil {
 				ds.dataMu.RUnlock()
 				metrics.VectorSearchActionErrors.Inc()
 				return status.Errorf(codes.Internal, "vector search failed: %v", errSearch)
+			}
+
+			if req.EfSearch > 0 {
+				metrics.VectorSearchEfSearch.Observe(float64(req.EfSearch))
 			}
 
 			// Graph Re-ranking (Standard Path)

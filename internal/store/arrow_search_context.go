@@ -172,6 +172,9 @@ type ArrowSearchContext struct {
 
 	pruneDepth int
 
+	// BQ (Binary Quantization) search mode
+	useBQSearch bool
+
 	// Reset tracking
 	dirty bool
 

@@ -24,7 +24,7 @@ const (
 	VectorTypeUint32
 	VectorTypeInt64
 	VectorTypeUint64
-	// Add other types as needed
+	VectorTypeBQ
 )
 
 // String returns a string representation of the vector data type
@@ -82,6 +82,8 @@ func MapStringToVectorDataType(s string) VectorDataType {
 		return VectorTypeInt32
 	case "uint32":
 		return VectorTypeUint32
+	case "bq":
+		return VectorTypeBQ
 	default:
 		return VectorTypeUnknown
 	}

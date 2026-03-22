@@ -179,7 +179,7 @@ Updated benchmark scripts to use 20GB memory limit for performance testing:
 
 ---
 
-Last Updated: 2026-03-21 20:10 (Indexing time tracking added, regression investigation ongoing)
+Last Updated: 2026-03-22 (Linux build verified, new performance data added)
 
 ---
 
@@ -190,7 +190,65 @@ Last Updated: 2026-03-21 20:10 (Indexing time tracking added, regression investi
 - **CPU**: ARMv6 (Pi Zero) or ARMv8 (Pi Zero 2). No AVX, maybe limited Neon.
 - **Storage**: SD Card (slow I/O).
 
-### Core Strategies
+---
+
+## Linux (ancalagon) Platform Issues — 2026-03-22
+
+### 11. Linux Build Failure: Missing AVX512 Kernels 🔴
+**Files**: `internal/simd/simd_amd64.go`, `internal/simd/simd_amd64.s`
+
+**Status**: ✅ FIXED
+
+**Problem**: `go build ./cmd/longbow` failed on Linux (gccgo 1.24.4) with:
+```
+github.com/23skdu/longbow/internal/simd.euclidean768AVX512: relocation target not defined
+github.com/23skdu/longbow/internal/simd.euclidean1536AVX512: relocation target not defined
+github.com/23skdu/longbow/internal/simd.dot768AVX512: relocation target not defined
+github.com/23skdu/longbow/internal/simd.dot1536AVX512: relocation target not defined
+```
+
+**Root Causes**:
+1. **Missing assembly kernels**: `euclidean768AVX512Kernel`, `euclidean1536AVX512Kernel`, `dot768AVX512Kernel`, `dot1536AVX512Kernel` were never implemented in `simd_amd64.s`. Only `euclidean384AVX512Kernel` and `dot384AVX512Kernel` existed. The `euclidean768` and `euclidean1536` Go functions existed but had no matching assembly implementations.
+2. **Missing AVX512 guards**: The Go wrapper functions (`euclidean384AVX512`, `euclidean768AVX512`, `euclidean1536AVX512`, `dot768AVX512`, `dot1536AVX512`) called their kernels unconditionally without checking `features.HasAVX512`. On systems without AVX512 (e.g., i7-12650H which lacks AVX512), these would attempt to call undefined symbols.
+
+**Fix Applied**:
+1. `simd_amd64.s` — Added 4 new AVX512 assembly kernels (768 and 1536 dims for Euclidean and Dot product), following the same 4x-unrolled pattern as the existing 384-dim kernels.
+2. `simd_amd64.go` — Added `if !features.HasAVX512` guards to 5 functions, with appropriate fallbacks:
+   - `euclidean384AVX512` → falls back to `euclidean384AVX2`
+   - `euclidean768AVX512` → falls back to `euclidean768AVX2`
+   - `euclidean1536AVX512` → falls back to `euclidean1536AVX2`
+   - `dot768AVX512` → falls back to `dotGeneric`
+   - `dot1536AVX512` → falls back to `dotGeneric`
+
+**Verified**: Build succeeds on both macOS (native) and Linux (gccgo/amd64). Benchmark tool and longbow binary run correctly.
+
+### 12. CPU Detection: i7-12650H Lacks AVX512 ⚠️
+**File**: `internal/simd/cpu_detection.go`
+
+**Status**: Known — No Action Needed
+
+**Finding**: The ancalagon server (Intel i7-12650H) does **not** have AVX512. CPU flags show AVX and AVX2 but NOT AVX512F/AVX512DQ/AVX512BW/AVX512VL. All SIMD operations fall back to AVX2.
+
+**Performance Impact on Linux/AVX2**:
+- Dense search QPS at 10k vectors: 4,000-5,500 (good)
+- Dense search QPS at 25k vectors: 112-168 (degraded — HNSW traversal length + memory pressure)
+- DoPut/DoGet throughput: 330-740 MB/s (lower than AVX512 systems)
+- int8 indexing: ~33s for 10k vectors (slow — narrow 32-byte AVX2 kernel)
+
+**Recommendation**: AVX2-only kernels for high-dimensional search (768, 1536) should be optimized separately from AVX512 paths. Consider blocking registration of 768/1536 kernels on non-AVX512 systems.
+
+### 13. int8 AVX2 Kernel Performance ⚠️
+**File**: `internal/simd/simd_amd64.s`
+
+**Status**: Known — Optimization Needed
+
+**Finding**: int8 indexing for 10k vectors takes ~33s on Linux/AVX2 vs ~2s for float32. The int8 Euclidean kernel processes only 32 bytes per iteration (32 int8 = 256 bits) vs float32's 256 bytes per iteration (64 floats = 256 bytes). This 8x narrower processing width causes dramatically slower indexing.
+
+**Recommendation**: Implement a wider int8 AVX2 kernel that processes multiple 32-byte chunks per iteration, similar to how float32 uses 4x16-float unrolling.
+
+---
+
+## RaspberryPiZero Platform Plan
 1.  **Low-Memory Mode Configuration**:
     - Introduce a \`low_mem\` profile in configuration or via environment variable.
     - Reduce default \`InitialCapacity\` (e.g., 5,000 instead of 50,000).

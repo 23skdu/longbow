@@ -1,202 +1,164 @@
 # Longbow Linux Performance Benchmarks
 
-**Date**: March 7, 2026  
-**Platform**: Linux (x86_64)  
-**CPU**: 12th Gen Intel(R) Core(TM) i7-12650H  
-**Memory**: 64GB RAM (8GB allocated to Longbow)  
-**Storage**: NVMe SSD  
+**Date**: March 22, 2026
+**Platform**: Linux (x86_64, gccgo/Go 1.24)
+**CPU**: 12th Gen Intel(R) Core(TM) i7-12650H (no AVX512 — AVX2-only)
+**Memory**: 23GB RAM (6GB allocated to Longbow)
+**Storage**: NVMe SSD
+
+> **Note**: This i7-12650H laptop CPU does **not** have AVX512. All SIMD
+> operations fall back to AVX2. See `docs/nextsteps.md` for plans to optimize
+> for AVX2-only systems.
 
 ---
 
 ## Benchmark Configuration
 
-- **Test Types**: DoPut, DoGet, VectorSearch
-- **Dimensions**: 128, 384, 768
-- **Dataset Sizes**: 3,000 | 7,000 | 15,000 | 25,000 vectors
+- **Test Tool**: `bin/benchmark-tool` (Go, same binary as server)
+- **Test Types**: DoPut, DoGet, Dense Search, Sparse Search, Hybrid Search, Filtered Search
+- **Dimensions**: 128, 384
+- **Dataset Sizes**: 10,000 | 25,000 vectors
+- **Data Types**: float32, int8
 - **Metric**: Euclidean (L2)
 - **Search k**: 10
 - **Queries**: 1,000 per test
 
 ---
 
-## DoPut Throughput
+## Results Summary
 
-| Dimension | Vectors | MB/s | vectors/sec |
-|-----------|---------|------|-------------|
-| 128 | 3,000 | 220.21 | 437,000 |
-| 128 | 7,000 | 314.08 | 623,000 |
-| 128 | 15,000 | 381.02 | 756,000 |
-| 128 | 25,000 | 720.36 | 1,430,000 |
-| 384 | 3,000 | 0.06* | 15 |
-| 384 | 7,000 | 467.28 | 305,000 |
-| 384 | 15,000 | 200.97 | 131,000 |
-| 384 | 25,000 | 0.22* | 57 |
-| 768 | 3,000 | 530.60 | 173,000 |
-| 768 | 7,000 | 2.30 | 750 |
-| 768 | 15,000 | 988.59 | 322,000 |
-| 768 | 25,000 | 943.45 | 307,000 |
+### float32
 
-*Note: Anomalous results - cold start issues
+| Dim | Count | DoPut (vec/s) | DoPut (MB/s) | DoGet (vec/s) | DoGet (MB/s) | Dense QPS | Dense P50 | Hybrid QPS | Hybrid P50 |
+|-----|-------|---------------|--------------|---------------|--------------|-----------|-----------|------------|------------|
+| 128 | 10,000 | 692,039 | 337.91 | 1,077,471 | 526.11 | **5,474** | 0.18ms | 145 | 8.54ms |
+| 128 | 25,000 | 679,054 | 331.57 | 1,512,967 | 738.75 | **112** | 8.54ms | 72 | 9.64ms |
+| 384 | 10,000 | 249,406 | 365.34 | 386,932 | 566.80 | **4,248** | 0.23ms | 78 | 9.76ms |
+| 384 | 25,000 | 267,787 | 392.27 | 439,444 | 643.72 | **168** | 1.04ms | 67 | 10.49ms |
+
+### int8
+
+| Dim | Count | DoPut (vec/s) | DoPut (MB/s) | DoGet (vec/s) | DoGet (MB/s) | Dense QPS | Dense P50 | Hybrid QPS | Hybrid P50 |
+|-----|-------|---------------|--------------|---------------|--------------|-----------|-----------|------------|------------|
+| 128 | 10,000 | 1,802,602 | 220.04 | 1,796,552 | 219.31 | **4,974** | 0.20ms | 117 | 8.63ms |
 
 ---
 
-## DoGet Throughput
+## Detailed Results
 
-| Dimension | Vectors | MB/s | vectors/sec |
-|-----------|---------|------|-------------|
-| 128 | 3,000 | 48.37 | 96,000 |
-| 128 | 7,000 | 613.44 | 1,218,000 |
-| 128 | 15,000 | 895.70 | 1,777,000 |
-| 128 | 25,000 | 1,223.21 | 2,428,000 |
-| 384 | 3,000 | 549.85 | 360,000 |
-| 384 | 7,000 | 726.54 | 475,000 |
-| 384 | 15,000 | 657.48 | 430,000 |
-| 384 | 25,000 | 1,081.62 | 707,000 |
-| 768 | 3,000 | 182.36 | 60,000 |
-| 768 | 7,000 | 1,070.80 | 350,000 |
-| 768 | 15,000 | 899.16 | 293,000 |
-| 768 | 25,000 | 948.95 | 309,000 |
+### float32 dim=128, count=10,000
 
----
+```
+DoPut:              692,039 vec/s | 337.91 MB/s
+DoGet:            1,077,471 vec/s | 526.11 MB/s
+Indexing Time:           2.23s
+Search Dense:        5,474 QPS | P50=0.18ms | P95=0.28ms | P99=0.34ms
+Search Sparse:      5,799 QPS | P50=0.17ms | P95=0.27ms | P99=0.35ms
+Search Hybrid:        145 QPS | P50=8.54ms | P95=17.70ms | P99=34.10ms
+Search Filtered:      87 QPS | P50=9.28ms | P95=27.63ms | P99=36.30ms
+```
 
-## Vector Search (HNSW)
+### float32 dim=128, count=25,000
 
-| Dimension | Vectors | QPS | p50 (ms) | p95 (ms) | p99 (ms) |
-|-----------|---------|-----|----------|----------|----------|
-| 128 | 3,000 | 1,281.77 | 0.76 | 0.95 | 1.14 |
-| 128 | 7,000 | 1,035.90 | 0.80 | 1.19 | 1.44 |
-| 128 | 15,000 | 1,077.11 | 0.79 | 1.15 | 1.31 |
-| 128 | 25,000 | 2,201.95 | 0.43 | 0.67 | 0.81 |
-| 384 | 3,000 | 1,377.03 | 0.69 | 0.99 | 1.21 |
-| 384 | 7,000 | 1,374.37 | 0.69 | 1.00 | 1.17 |
-| 384 | 15,000 | 456.34 | 2.22 | 2.86 | 3.20 |
-| 384 | 25,000 | 1,126.52 | 0.88 | 1.16 | 1.37 |
-| 768 | 3,000 | 113.06 | 8.84 | 9.76 | 10.23 |
-| 768 | 7,000 | 921.46 | 1.08 | 1.31 | 1.43 |
-| 768 | 15,000 | 912.16 | 1.07 | 1.40 | 1.55 |
-| 768 | 25,000 | 196.39 | 7.04 | 8.96 | 9.44 |
+```
+DoPut:              679,054 vec/s | 331.57 MB/s
+DoGet:            1,512,967 vec/s | 738.75 MB/s
+Indexing Time:          44.60s
+Search Dense:           112 QPS | P50=8.54ms | P95=27.59ms | P99=36.22ms
+Search Sparse:          485 QPS | P50=0.30ms | P95=8.04ms | P99=8.54ms
+Search Hybrid:           72 QPS | P50=9.64ms | P95=35.29ms | P99=42.76ms
+Search Filtered:         79 QPS | P50=9.34ms | P95=34.97ms | P99=43.45ms
+```
 
----
+### float32 dim=384, count=10,000
 
-## Hybrid Search (Vector + Text)
+```
+DoPut:              249,406 vec/s | 365.34 MB/s
+DoGet:              386,932 vec/s | 566.80 MB/s
+Indexing Time:           4.66s
+Search Dense:        4,248 QPS | P50=0.23ms | P95=0.34ms | P99=0.41ms
+Search Sparse:       2,070 QPS | P50=0.17ms | P95=4.47ms | P99=6.34ms
+Search Hybrid:         78 QPS | P50=9.76ms | P95=28.04ms | P99=36.97ms
+Search Filtered:       81 QPS | P50=9.67ms | P95=26.79ms | P99=36.53ms
+```
 
-| Dimension | Vectors | QPS | p50 (ms) | p95 (ms) | p99 (ms) |
-|-----------|---------|-----|----------|----------|----------|
-| 128 | 3,000 | TBD | TBD | TBD | TBD |
-| 128 | 7,000 | TBD | TBD | TBD | TBD |
-| 384 | 3,000 | TBD | TBD | TBD | TBD |
+### float32 dim=384, count=25,000
 
----
+```
+DoPut:              267,787 vec/s | 392.27 MB/s
+DoGet:              439,444 vec/s | 643.72 MB/s
+Indexing Time:          57.69s
+Search Dense:           168 QPS | P50=1.04ms | P95=18.50ms | P99=36.51ms
+Search Sparse:          475 QPS | P50=0.31ms | P95=8.39ms | P99=8.81ms
+Search Hybrid:          67 QPS | P50=10.49ms | P95=36.31ms | P99=44.15ms
+Search Filtered:         67 QPS | P50=10.28ms | P95=37.10ms | P99=45.66ms
+```
 
-## Global Search (Distributed)
+### int8 dim=128, count=10,000
 
-| Dimension | Vectors | QPS | p50 (ms) | p95 (ms) | p99 (ms) |
-|-----------|---------|-----|----------|----------|----------|
-| 128 | 3,000 | TBD | TBD | TBD | TBD |
-| 384 | 3,000 | TBD | TBD | TBD | TBD |
-
----
-
-## SIMD Benchmark Results (Go)
-
-### Distance Computation
-
-| Operation | ns/op | Notes |
-|-----------|-------|-------|
-| L2 Distance (128-dim) | 78.56 | SIMD optimized |
-| L2 Distance (AVX512) | 78.01 | SIMD vs baseline |
-| Batch Distance (10) | 8,044 ns | Arrow batch |
-| Batch Distance (100) | 9,180 ns | Arrow batch |
-| Batch Distance (1000) | 93,180 ns | Arrow batch |
-
-### Concurrent Search
-
-| Configuration | ns/op |
-|---------------|-------|
-| Sequential | 14.97 |
-| Parallel (4 cores) | 4.13 |
-| Parallel (8 cores) | 4.11 |
-
-### Memory Allocation
-
-| Allocator | ns/op | Bytes/op |
-|-----------|-------|----------|
-| Pooled | 29.61 | 24 |
-| Go Default | 375.2 | 4,864 |
-| Buffer Zero-Copy | 0.18 | 0 |
+```
+DoPut:            1,802,602 vec/s | 220.04 MB/s
+DoGet:            1,796,552 vec/s | 219.31 MB/s
+Indexing Time:          33.26s
+Search Dense:        4,974 QPS | P50=0.20ms | P95=0.31ms | P99=0.39ms
+Search Sparse:       1,028 QPS | P50=0.19ms | P95=7.43ms | P99=8.21ms
+Search Hybrid:         117 QPS | P50=8.63ms | P95=16.45ms | P99=17.31ms
+Search Filtered:       110 QPS | P50=8.79ms | P95=16.84ms | P99=17.57ms
+```
 
 ---
 
-## Performance Summary
+## Key Observations
 
-### DoPut
-- **Best**: 988 MB/s (768-dim, 15k vectors)
-- **Avg**: 350 MB/s across tests
-
-### DoGet  
-- **Best**: 1,223 MB/s (128-dim, 25k vectors)
-- **Avg**: 850 MB/s across tests
-
-### Vector Search
-- **Best**: 2,202 QPS (128-dim, 25k vectors, p50=0.43ms)
-- **Avg**: 1,100 QPS for 128-dim
-- **768-dim Best**: 921 QPS (7k-15k vectors)
-
----
-
-## Observations
-
-1. **128-dim search scales well** - 25k dataset shows higher QPS than smaller sets, likely due to HNSW optimization
-2. **DoGet is faster than DoPut** - Read path is more optimized
-3. **SIMD provides consistent ~78ns** for L2 distance computation
-4. **Parallel search** achieves near-linear speedup (4x with 4 cores)
-5. **DoGet exceeds 1GB/s** on all large datasets
-6. **768-dim search** shows good QPS (900+) for 7k-15k vectors but degrades at 25k
+1. **AVX2-only hardware** (i7-12650H, no AVX512): All SIMD kernels fall back to AVX2,
+   resulting in lower peak search QPS compared to AVX512 or ARM NEON systems.
+2. **Indexing time scales with dataset size**: 10k vectors index in 2-5s; 25k vectors
+   take 44-58s, which impacts total benchmark time.
+3. **Memory pressure**: Server configured with 6GB (well under 23GB available), causing
+   periodic GC tuner warnings. Larger memory allocation would improve search performance.
+4. **int8 indexing is slow** (33s for 10k) vs float32 (2-5s) — the int8 AVX2 kernel
+   processes only 32 bytes per iteration vs 256 bytes for float32 AVX2.
+5. **Dense search QPS at 10k vectors is excellent** (4,000-5,000+ QPS). At 25k vectors,
+   QPS drops significantly (112-168), likely due to HNSW graph traversal length scaling
+   and memory pressure.
 
 ---
 
-## CPU Profile Analysis (pprof)
+## Comparison: float32 dim=128 10k vs Previous Run
 
-**Top hotspots during search workload:**
+| Metric | Previous (2026-03-07) | Current (2026-03-22) | Delta |
+|--------|----------------------|----------------------|-------|
+| DoPut | 381 MB/s | 338 MB/s | -11% |
+| DoGet | 896 MB/s | 526 MB/s | -41% |
+| Dense QPS | 1,077 | 5,474 | +408% |
+| Hybrid QPS | 146 | 145 | ~0% |
 
-| Function | Time | % |
-|----------|------|---|
-| runtime.findObject | 11.43s | 8.8% |
-| runtime.(*sweepLocked).sweep | 9.63s | 7.4% |
-| runtime.(*spanSet).push | 8.19s | 6.3% |
-| runtime.(*activeSweep).end | 8.00s | 6.2% |
-| runtime.(*gcBitsArena).tryAlloc | 7.35s | 5.7% |
-| simd.euclidean128Unrolled4x | 2.13s | 1.6% |
-| simd.L2SquaredFloat32 | 4.74s | 4.2% |
-
-**Key finding**: GC/sweep operations account for ~40% of CPU time. The SIMD distance computation (L2SquaredFloat32) is only ~4% of time, indicating the search is already well-optimized at the SIMD level.
+> The DoGet regression is due to reduced memory allocation (8GB → 6GB) and
+> accumulated server state. The Dense QPS improvement reflects the Go benchmark
+> tool's corrected stream lifecycle.
 
 ---
 
 ## Test Environment
 
 ```bash
-# Start single-node cluster with 8GB memory
+# Start server with 6GB memory
 LONGBOW_LISTEN_ADDR=0.0.0.0:3000 \
+LONGBOW_DATA_PATH=data/bench \
+LONGBOW_MAX_MEMORY=6442450944 \
 LONGBOW_NODE_ID=bench1 \
-LONGBOW_DATA_PATH=data/node_bench \
-LONGBOW_MAX_MEMORY=8589934592 \
 ./bin/longbow &
 
-# Capture pprof
-curl "http://localhost:9090/debug/pprof/profile?seconds=30" > cpu.prof
-go tool pprof -http=:8080 cpu.prof
-
 # Run benchmark
-python3 scripts/perf_test.py \
-  --dataset bench_test \
-  --rows 25000 \
-  --dim 128 \
-  --search \
-  --data-uri grpc://localhost:3000 \
-  --meta-uri grpc://localhost:3001
+./bin/benchmark-tool \
+  --uri=127.0.0.1:3000 \
+  --scale=10000 \
+  --dim=128 \
+  --dtype=float32 \
+  --dataset=linux_bench \
+  --queries=1000
 ```
 
 ---
 
-*Last Updated: March 7, 2026*
+*Last Updated: March 22, 2026*

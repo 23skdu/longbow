@@ -299,6 +299,163 @@ loop_dot:
     VZEROUPPER
     RET
 
+
+// func euclidean768AVX512Kernel(a, b unsafe.Pointer) float32
+TEXT ·euclidean768AVX512Kernel(SB), NOSPLIT, $0-20
+    MOVQ    a+0(FP), SI
+    MOVQ    b+8(FP), DI
+    VXORPS  Z0, Z0, Z0
+    VXORPS  Z1, Z1, Z1
+    VXORPS  Z2, Z2, Z2
+    VXORPS  Z3, Z3, Z3
+    MOVQ    $12, CX
+loop_euc768:
+    VMOVUPS 0(SI), Z4
+    VMOVUPS 64(SI), Z5
+    VMOVUPS 128(SI), Z6
+    VMOVUPS 192(SI), Z7
+    VSUBPS  0(DI), Z4, Z4
+    VSUBPS  64(DI), Z5, Z5
+    VSUBPS  128(DI), Z6, Z6
+    VSUBPS  192(DI), Z7, Z7
+    VFMADD231PS Z4, Z4, Z0
+    VFMADD231PS Z5, Z5, Z1
+    VFMADD231PS Z6, Z6, Z2
+    VFMADD231PS Z7, Z7, Z3
+    ADDQ    $256, SI
+    ADDQ    $256, DI
+    DECQ    CX
+    JNZ     loop_euc768
+    VADDPS  Z1, Z0, Z0
+    VADDPS  Z3, Z2, Z2
+    VADDPS  Z2, Z0, Z0
+    VEXTRACTF64X4 $1, Z0, Y1
+    VADDPS  Y1, Y0, Y0
+    VEXTRACTF128 $1, Y0, X1
+    VADDPS  X1, X0, X0
+    VMOVHLPS X0, X1, X1
+    VADDPS  X1, X0, X0
+    VMOVSHDUP X0, X1
+    VADDSS  X1, X0, X0
+    VMOVSS  X0, ret+16(FP)
+    VZEROUPPER
+    RET
+
+// func euclidean1536AVX512Kernel(a, b unsafe.Pointer) float32
+TEXT ·euclidean1536AVX512Kernel(SB), NOSPLIT, $0-20
+    MOVQ    a+0(FP), SI
+    MOVQ    b+8(FP), DI
+    VXORPS  Z0, Z0, Z0
+    VXORPS  Z1, Z1, Z1
+    VXORPS  Z2, Z2, Z2
+    VXORPS  Z3, Z3, Z3
+    MOVQ    $24, CX
+loop_euc1536:
+    VMOVUPS 0(SI), Z4
+    VMOVUPS 64(SI), Z5
+    VMOVUPS 128(SI), Z6
+    VMOVUPS 192(SI), Z7
+    VSUBPS  0(DI), Z4, Z4
+    VSUBPS  64(DI), Z5, Z5
+    VSUBPS  128(DI), Z6, Z6
+    VSUBPS  192(DI), Z7, Z7
+    VFMADD231PS Z4, Z4, Z0
+    VFMADD231PS Z5, Z5, Z1
+    VFMADD231PS Z6, Z6, Z2
+    VFMADD231PS Z7, Z7, Z3
+    ADDQ    $256, SI
+    ADDQ    $256, DI
+    DECQ    CX
+    JNZ     loop_euc1536
+    VADDPS  Z1, Z0, Z0
+    VADDPS  Z3, Z2, Z2
+    VADDPS  Z2, Z0, Z0
+    VEXTRACTF64X4 $1, Z0, Y1
+    VADDPS  Y1, Y0, Y0
+    VEXTRACTF128 $1, Y0, X1
+    VADDPS  X1, X0, X0
+    VMOVHLPS X0, X1, X1
+    VADDPS  X1, X0, X0
+    VMOVSHDUP X0, X1
+    VADDSS  X1, X0, X0
+    VMOVSS  X0, ret+16(FP)
+    VZEROUPPER
+    RET
+
+// func dot768AVX512Kernel(a, b unsafe.Pointer) float32
+TEXT ·dot768AVX512Kernel(SB), NOSPLIT, $0-20
+    MOVQ    a+0(FP), SI
+    MOVQ    b+8(FP), DI
+    VXORPS  Z0, Z0, Z0
+    VXORPS  Z1, Z1, Z1
+    VXORPS  Z2, Z2, Z2
+    VXORPS  Z3, Z3, Z3
+    MOVQ    $12, CX
+loop_dot768:
+    VMOVUPS 0(SI), Z4
+    VMOVUPS 64(SI), Z5
+    VMOVUPS 128(SI), Z6
+    VMOVUPS 192(SI), Z7
+    VFMADD231PS 0(DI), Z4, Z0
+    VFMADD231PS 64(DI), Z5, Z1
+    VFMADD231PS 128(DI), Z6, Z2
+    VFMADD231PS 192(DI), Z7, Z3
+    ADDQ    $256, SI
+    ADDQ    $256, DI
+    DECQ    CX
+    JNZ     loop_dot768
+    VADDPS  Z1, Z0, Z0
+    VADDPS  Z3, Z2, Z2
+    VADDPS  Z2, Z0, Z0
+    VEXTRACTF64X4 $1, Z0, Y1
+    VADDPS  Y1, Y0, Y0
+    VEXTRACTF128 $1, Y0, X1
+    VADDPS  X1, X0, X0
+    VMOVHLPS X0, X1, X1
+    VADDPS  X1, X0, X0
+    VMOVSHDUP X0, X1
+    VADDSS  X1, X0, X0
+    VMOVSS  X0, ret+16(FP)
+    VZEROUPPER
+    RET
+
+// func dot1536AVX512Kernel(a, b unsafe.Pointer) float32
+TEXT ·dot1536AVX512Kernel(SB), NOSPLIT, $0-20
+    MOVQ    a+0(FP), SI
+    MOVQ    b+8(FP), DI
+    VXORPS  Z0, Z0, Z0
+    VXORPS  Z1, Z1, Z1
+    VXORPS  Z2, Z2, Z2
+    VXORPS  Z3, Z3, Z3
+    MOVQ    $24, CX
+loop_dot1536:
+    VMOVUPS 0(SI), Z4
+    VMOVUPS 64(SI), Z5
+    VMOVUPS 128(SI), Z6
+    VMOVUPS 192(SI), Z7
+    VFMADD231PS 0(DI), Z4, Z0
+    VFMADD231PS 64(DI), Z5, Z1
+    VFMADD231PS 128(DI), Z6, Z2
+    VFMADD231PS 192(DI), Z7, Z3
+    ADDQ    $256, SI
+    ADDQ    $256, DI
+    DECQ    CX
+    JNZ     loop_dot1536
+    VADDPS  Z1, Z0, Z0
+    VADDPS  Z3, Z2, Z2
+    VADDPS  Z2, Z0, Z0
+    VEXTRACTF64X4 $1, Z0, Y1
+    VADDPS  Y1, Y0, Y0
+    VEXTRACTF128 $1, Y0, X1
+    VADDPS  X1, X0, X0
+    VMOVHLPS X0, X1, X1
+    VADDPS  X1, X0, X0
+    VMOVSHDUP X0, X1
+    VADDSS  X1, X0, X0
+    VMOVSS  X0, ret+16(FP)
+    VZEROUPPER
+    RET
+
 // func euclideanF16AVX2Kernel(a, b unsafe.Pointer, n int) float32
 TEXT ·euclideanF16AVX2Kernel(SB), NOSPLIT, $0-28
     MOVQ    a+0(FP), SI

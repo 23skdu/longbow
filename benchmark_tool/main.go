@@ -98,9 +98,9 @@ func main() {
 	log.Printf("[PUT] Completed in %.4fs (%.2f vec/s, %.2f MB/s)\n", duration, float64(*scale)/duration, (float64(totalBytes)/(1024*1024))/duration)
 
 	log.Println("Waiting for background indexing to complete...")
-	waitCtx, waitCancel := context.WithTimeout(context.Background(), 180*time.Second)
+	waitCtx, waitCancel := context.WithTimeout(context.Background(), 660*time.Second)
 	indexingStart := time.Now()
-	readyStatus := waitForIndexingComplete(waitCtx, sc, *dataset, 120*time.Second)
+	readyStatus := waitForIndexingComplete(waitCtx, sc, *dataset, 600*time.Second)
 	waitCancel()
 	indexingSeconds := time.Since(indexingStart).Seconds()
 	log.Printf("Indexing complete in %.4fs (status: %s).", indexingSeconds, readyStatus)

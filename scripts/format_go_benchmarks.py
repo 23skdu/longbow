@@ -44,7 +44,11 @@ def main():
             "get_vec": doget['throughput'] if doget else 0.0,
             "get_mb": doget['throughput_mbs'] if doget else 0.0,
             "dense_qps": dense['throughput'] if dense else 0.0,
+            "dense_p50": dense.get('p50_latency_ms', 0.0) if dense else 0.0,
+            "dense_p99": dense.get('p99_latency_ms', 0.0) if dense else 0.0,
             "hybrid_qps": hybrid['throughput'] if hybrid else 0.0,
+            "hybrid_p50": hybrid.get('p50_latency_ms', 0.0) if hybrid else 0.0,
+            "hybrid_p99": hybrid.get('p99_latency_ms', 0.0) if hybrid else 0.0,
         })
         
     # Sort results
@@ -58,13 +62,13 @@ def main():
         "",
         "## Results Table",
         "",
-        "| DType | Dim | Count | DoPut (vec/s) | DoPut (MB/s) | DoGet (vec/s) | DoGet (MB/s) | Dense QPS | Hybrid QPS |",
-        "|-------|-----|-------|---------------|--------------|---------------|--------------|-----------|------------|",
+        "| DType | Dim | Count | DoPut (vec/s) | DoPut (MB/s) | DoGet (vec/s) | DoGet (MB/s) | Dense QPS | Dense P50 | Dense P99 | Hybrid QPS | Hybrid P50 | Hybrid P99 |",
+        "|-------|-----|-------|---------------|--------------|---------------|--------------|-----------|-----------|-----------|------------|------------|------------|",
     ]
     
     for r in results:
         lines.append(
-            f"| {r['dtype']} | {r['dim']} | {r['count']} | {r['put_vec']:.2f} | {r['put_mb']:.2f} | {r['get_vec']:.2f} | {r['get_mb']:.2f} | {r['dense_qps']:.2f} | {r['hybrid_qps']:.2f} |"
+            f"| {r['dtype']} | {r['dim']} | {r['count']} | {r['put_vec']:.2f} | {r['put_mb']:.2f} | {r['get_vec']:.2f} | {r['get_mb']:.2f} | {r['dense_qps']:.2f} | {r['dense_p50']:.2f} | {r['dense_p99']:.2f} | {r['hybrid_qps']:.2f} | {r['hybrid_p50']:.2f} | {r['hybrid_p99']:.2f} |"
         )
         
     lines.extend([

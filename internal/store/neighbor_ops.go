@@ -101,7 +101,7 @@ func (h *ArrowHNSW) AddConnection(ctx *ArrowSearchContext, data *GraphData, sour
 
 	// 5. Prune if needed (Still under node-lock)
 	if int(newCount) > maxConn {
-		h.pruneConnectionsLocked(ctx, data, source, maxConn, layer)
+		h.pruneConnectionsLocked(ctx, data, source, maxConn, layer, nil)
 	}
 }
 
@@ -146,6 +146,12 @@ func (h *ArrowHNSW) AddConnectionsBatch(ctx *ArrowSearchContext, data *GraphData
 
 	if len(toAddIdxs) == 0 {
 		return
+	}
+
+	var currentDists []float32
+	if len(currentNeighbors) > 0 {
+		currentDists = make([]float32, len(currentNeighbors))
+		h.computeDistances(data, target, currentNeighbors, currentDists)
 	}
 
 	// 2. Acquire Node Lock
@@ -233,7 +239,7 @@ func (h *ArrowHNSW) AddConnectionsBatch(ctx *ArrowSearchContext, data *GraphData
 
 	// Prune if needed
 	if int(currentCount) > maxConn {
-		h.pruneConnectionsLocked(ctx, data, target, maxConn, layer)
+		h.pruneConnectionsLocked(ctx, data, target, maxConn, layer, currentDists)
 	}
 }
 
@@ -245,11 +251,11 @@ func (h *ArrowHNSW) PruneConnections(ctx *ArrowSearchContext, data *GraphData, i
 	oldVer := data.LockNode(layer, id)
 	defer data.UnlockNode(layer, id, oldVer)
 
-	h.pruneConnectionsLocked(ctx, data, id, maxConn, layer)
+	h.pruneConnectionsLocked(ctx, data, id, maxConn, layer, nil)
 }
 
 // pruneConnectionsLocked reduces connections assuming lock is held.
-func (h *ArrowHNSW) pruneConnectionsLocked(ctx *ArrowSearchContext, data *GraphData, nodeID uint32, maxConn, layer int) {
+func (h *ArrowHNSW) pruneConnectionsLocked(ctx *ArrowSearchContext, data *GraphData, nodeID uint32, maxConn, layer int, precalculatedDists []float32) {
 	cID := chunkID(nodeID)
 	cOff := chunkOffset(nodeID)
 
@@ -310,6 +316,10 @@ func (h *ArrowHNSW) pruneConnectionsLocked(ctx *ArrowSearchContext, data *GraphD
 		}
 
 		for i := 0; i < count; i++ {
+			if i < len(precalculatedDists) {
+				dists[i] = precalculatedDists[i]
+				continue
+			}
 			neighborID := neighborsChunk[baseIdx+i]
 			vecAny, err := data.GetVector(neighborID)
 			if err != nil || vecAny == nil {
@@ -368,6 +378,10 @@ func (h *ArrowHNSW) pruneConnectionsLocked(ctx *ArrowSearchContext, data *GraphD
 		}
 
 		for i := 0; i < count; i++ {
+			if i < len(precalculatedDists) {
+				dists[i] = precalculatedDists[i]
+				continue
+			}
 			neighborID := neighborsChunk[baseIdx+i]
 			vecAny, err := data.GetVector(neighborID)
 			if err != nil || vecAny == nil {
@@ -445,6 +459,97 @@ func (h *ArrowHNSW) pruneConnectionsLocked(ctx *ArrowSearchContext, data *GraphD
 			_ = pn.SetNeighborsF16(nodeID, ids, f16Dists)
 		} else {
 			_ = pn.SetNeighbors(nodeID, ids)
+		}
+	}
+}
+
+// computeDistances calculates distance from nodeID to all items in neighbors array.
+func (h *ArrowHNSW) computeDistances(data *GraphData, nodeID uint32, neighbors []uint32, dists []float32) {
+	nodeVecAny, err := data.GetVector(nodeID)
+	if err != nil || nodeVecAny == nil {
+		return
+	}
+
+	if data.Type == 1 { // Float32 Fast-Path
+		nodeVecF32, ok := nodeVecAny.([]float32)
+		if !ok || nodeVecF32 == nil {
+			return
+		}
+
+		for i, neighborID := range neighbors {
+			vecAny, err := data.GetVector(neighborID)
+			if err != nil || vecAny == nil {
+				dists[i] = math.MaxFloat32
+				continue
+			}
+
+			if vecF32, ok := vecAny.([]float32); ok {
+				d, err := h.distFunc(nodeVecF32, vecF32)
+				if err == nil {
+					dists[i] = d
+				} else {
+					dists[i] = math.MaxFloat32
+				}
+			} else {
+				dists[i] = math.MaxFloat32
+			}
+		}
+	} else {
+		toF32 := func(v any) []float32 {
+			switch vf := v.(type) {
+			case []float32:
+				return vf
+			case []int32:
+				res := make([]float32, len(vf))
+				for i, val := range vf { res[i] = float32(val) }
+				return res
+			case []uint32:
+				res := make([]float32, len(vf))
+				for i, val := range vf { res[i] = float32(val) }
+				return res
+			case []int8:
+				if h.quantizer != nil && h.sq8Ready.Load() {
+					byteVec := *(*[]byte)(unsafe.Pointer(&vf))
+					return h.quantizer.Decode(byteVec)
+				}
+				res := make([]float32, len(vf))
+				for i, val := range vf { res[i] = float32(uint8(val)) }
+				return res
+			case []uint8:
+				if h.quantizer != nil && h.sq8Ready.Load() {
+					return h.quantizer.Decode(vf)
+				}
+				res := make([]float32, len(vf))
+				for i, val := range vf { res[i] = float32(val) }
+				return res
+			default:
+				return nil
+			}
+		}
+
+		nodeVecF32 := toF32(nodeVecAny)
+		if nodeVecF32 == nil {
+			return
+		}
+
+		for i, neighborID := range neighbors {
+			vecAny, err := data.GetVector(neighborID)
+			if err != nil || vecAny == nil {
+				dists[i] = math.MaxFloat32
+				continue
+			}
+
+			vecF32 := toF32(vecAny)
+			if vecF32 != nil {
+				d, err := h.distFunc(nodeVecF32, vecF32)
+				if err == nil {
+					dists[i] = d
+				} else {
+					dists[i] = math.MaxFloat32
+				}
+			} else {
+				dists[i] = math.MaxFloat32
+			}
 		}
 	}
 }

@@ -34,6 +34,8 @@ type CompactionConfig struct {
 	// Strategy settings
 	TriggerThresholds  map[string]int64
 	CompactionStrategy string
+
+	RateLimitBytesPerSec int64
 }
 
 // DefaultCompactionConfig returns a default compaction configuration.
@@ -51,7 +53,8 @@ func DefaultCompactionConfig() *CompactionConfig {
 			"deleted_nodes": 1000,
 			"fragmentation": 30,
 		},
-		CompactionStrategy: "incremental",
+		CompactionStrategy:   "incremental",
+		RateLimitBytesPerSec: 1024 * 1024 * 100,
 	}
 }
 

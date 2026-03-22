@@ -178,7 +178,7 @@ Updated benchmark scripts to use 20GB memory limit for performance testing:
 
 ---
 
-Last Updated: 2026-03-22 01:35 (Linux perf tests complete, skipped tests fixed)
+Last Updated: 2026-03-22 11:45 (64-config benchmark complete, feature parity section added)
 
 ---
 
@@ -255,3 +255,127 @@ github.com/23skdu/longbow/internal/simd.dot1536AVX512: relocation target not def
 3.  **Build Configuration**:
     - Exclude GPU, Metal, and io_uring backends by default for \`arm\` builds.
     - Verify build with \`GOOS=linux GOARCH=arm GOARM=6\` (for original Pi Zero) or \`arm64\` (for Pi Zero 2).
+
+---
+
+## Feature Parity with Leading Vector Databases
+
+*Last Updated: 2026-03-22 — Updated based on codebase analysis vs Milvus, Qdrant, Weaviate, Pinecone*
+
+### ✅ Implemented
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| HNSW index | ✅ Stable | ArrowHNSW with adaptive M, configurable `efConstruction` |
+| DiskANN / IVF index | ✅ Stable | DiskANN SSD-based offloading |
+| SQ8 scalar quantization | ✅ Stable | `GenericSQ8Quantizer`, `SQ8Encoder`, type conversion |
+| Hybrid search (Dense + Sparse) | ✅ Stable | Filtered search, BM25 via hybrid search |
+| Cross-encoder reranking | ✅ Stable | ONNX runtime with Metal/Apple Silicon |
+| Multi-vector types | ✅ Stable | float32/64, float16, int8-64, uint8-64, complex64/128 |
+| Arrow Flight protocol | ✅ Stable | Zero-copy via Apache Arrow IPC |
+| WAL + Parquet snapshots | ✅ Stable | Batched WAL, snapshot interval configurable |
+| Prometheus metrics | ✅ Stable | 100+ custom metrics |
+| Distributed gossip protocol | ✅ Stable | Consistent hashing, SWIM, DoExchange mesh |
+| Go + Python clients | ✅ Stable | Smart client with routing |
+| JS/TS client | 🟡 Partial | `longbowclientsdk/src/longbow/` — exists but not published |
+| Namespace isolation | ✅ Stable | `CreateNamespace`, `DeleteNamespace`, `ListNamespaces` |
+| Metadata filtering | ✅ Stable | Predicate pushdown, `ColumnInvertedIndex` for exact match |
+| Distance metrics | ✅ Stable | Euclidean, Cosine, Dot Product, Hamming (SIMD) |
+| Binary quantization | 🟡 Partial | `arrow_hnsw_bq_test.go` exists but not user-facing |
+| Consistency quorum infra | 🟡 Partial | `internal/store/quorum.go` exists; not user-facing |
+| Distributed NUMA | ✅ Linux | NUMA-aware memory allocators |
+| io_uring WAL | ✅ Linux | High-throughput storage engine |
+| Kubernetes Helm | ✅ | Helm chart available |
+
+### 🔴 HIGH PRIORITY — Production Gaps
+
+#### 14. efSearch Per-Query Configuration
+**Milvus/Qdrant/Pinecone**: Expose `ef`/`efSearch` as a per-query parameter for tuning recall vs. speed.
+**Longbow**: `efSearch` is auto-computed internally (`arrow_hnsw.go:1112-1168`, floor=100). Users cannot override per-query.
+**Action**: Add `efSearch` parameter to `VectorSearchRequest`. Allow runtime override for production tuning. Range: 16–4096.
+
+#### 15. Standalone IVF-PQ Index
+**Milvus/Qdrant**: Offer IVF-PQ as a primary index type (coarse quantizer + product codes).
+**Longbow**: PQ exists as a compression layer within HNSW, not as a standalone index type.
+**Action**: Implement IVF-PQ index: (1) k-means coarse quantizer, (2) PQ encoder per cluster, (3) inverted index mapping cluster IDs to PQ codes. Target: 4-16x memory reduction.
+
+#### 16. Upsert (Update-in-Place)
+**Milvus/Qdrant/Pinecone**: Update a vector by ID — insert or replace atomically.
+**Longbow**: Only insert (append) and delete (tombstone). No update.
+**Action**: Implement upsert that marks old vector tombstoned and inserts new version atomically.
+
+#### 17. REST API / OpenAPI Spec
+**Milvus/Pinecone/Weaviate**: Full REST API with OpenAPI spec.
+**Longbow**: Arrow Flight only (gRPC), no HTTP/REST.
+**Action**: HTTP/REST wrapper for core endpoints (upsert, search, get). Auto-generate OpenAPI from gRPC descriptor.
+
+### 🟡 MEDIUM PRIORITY — Ecosystem Gaps
+
+#### 18. Rich Filter Expression Language
+**Milvus**: `must/must_not/should` boolean filters with nested conditions.
+**Qdrant**: JSON payload conditions with nested booleans.
+**Longbow**: Post-filtering with simple predicates; `ColumnInvertedIndex` for exact match only.
+**Action**: Add compound filter expressions (AND/OR/NOT) with nested field paths. Target: Milvus v3 `must`/`should` parity.
+
+#### 19. User-Facing Consistency Levels
+**Milvus**: Strong / Bounded Staleness / Eventually Consistent per request.
+**Longbow**: Quorum infrastructure exists (`internal/store/quorum.go`, supports One/Quorum/All) but not exposed in client SDK.
+**Action**: Add `ConsistencyLevel` enum to `VectorSearchRequest` and `DoPutRequest`. Wire through quorum manager.
+
+#### 20. Per-Collection HNSW Tuning
+**Milvus**: Index params (`M`, `efConstruction`) per collection.
+**Longbow**: `LONGBOW_HNSW_M`, `LONGBOW_HNSW_EF_CONSTRUCTION` are global env vars only.
+**Action**: Allow index parameters at dataset creation time. Fall back to global env vars.
+
+#### 21. Batch Import CLI (Parquet/NumPy)
+**Milvus**: Bulk import from Parquet, NumPy, CSV files.
+**Longbow**: Programmatic only via SDK.
+**Action**: CLI tool to import `*.parquet` / `*.npy` files directly into a dataset.
+
+#### 22. Published JS/TS SDK
+**Longbow**: `longbowclientsdk/src/longbow/` contains a TypeScript client but not published to npm.
+**Action**: Publish `@longbow/client` to npm. Add async/await support for Node.js.
+
+### 🟢 LOW PRIORITY — Nice to Have
+
+#### 23. Change Data Capture (CDC)
+**Milvus**: Kafka/RabbitMQ integration.
+**Longbow**: Not implemented.
+**Action**: Consider event stream integration for production replication.
+
+#### 24. Schema Evolution / ALTER
+**Milvus**: ALTER collection schema.
+**Longbow**: Schema fixed at creation.
+**Action**: Low priority — consider read-only schema enforcement.
+
+---
+
+### Feature Comparison Matrix
+
+| Feature | Milvus | Qdrant | Weaviate | Pinecone | Longbow |
+|---------|--------|--------|----------|----------|---------|
+| HNSW efSearch tuning | ✅ | ✅ | ✅ | ✅ | ❌ (auto-only) |
+| IVF-PQ index | ✅ | ✅ | ✅ | ✅ | ❌ (compression only) |
+| Upsert | ✅ | ✅ | ✅ | ✅ | ❌ |
+| Rich filter expr | ✅ | ✅ | ✅ | ✅ | ❌ (predicates only) |
+| User-facing consistency | ✅ | ✅ | ✅ | ✅ | ❌ (infra exists) |
+| REST API | ✅ | ✅ | ✅ | ✅ | ❌ |
+| Published TS/JS SDK | ✅ | ✅ | ✅ | ✅ | ❌ (unpublished) |
+| DiskANN on-disk | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Namespaces | ✅ | ✅ | ✅ | ✅ | ✅ |
+| BM25 sparse | ✅ | ✅ | ✅ | ✅ | ✅ (via hybrid) |
+| Multi-vector types | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Binary quantization | ✅ | ✅ | ✅ | ✅ | 🟡 (test-only) |
+| Cross-encoder | ✅ | ❌ | ✅ | ✅ | ✅ |
+| Distributed | ✅ | ✅ | ✅ | ✅ | ✅ |
+
+---
+
+### Recommended Priority Order
+
+1. **efSearch per-query** — High impact, low effort. One parameter change.
+2. **Upsert** — Table stakes for production RAG / knowledge base workloads.
+3. **REST API** — Lowest effort, highest ecosystem impact. gRPC→HTTP wrapper.
+4. **Published TS/JS SDK** — Expands reach to web/Node.js ecosystem.
+5. **Consistency levels (user-facing)** — Required for multi-region deployments.
+6. **IVF-PQ standalone** — Critical for petabyte-scale / disk-based workloads.

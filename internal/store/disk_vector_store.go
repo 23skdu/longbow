@@ -41,6 +41,9 @@ type DiskVectorStore struct {
 	blocks      []BlockEntry
 	totalCount  int
 
+	// Tombstone deletion - tracks deleted indices (consistent with ArrowHNSW)
+	deleted map[int]bool
+
 	// Tiered Storage
 	remote     storage.RemoteStorage
 	blockCache *storage.LRUCache
@@ -66,6 +69,7 @@ func NewDiskVectorStoreWithConfig(path string, dim int, useUring, useDirect bool
 		compression: "zstd",
 		zstdEnc:     z,
 		zstdDec:     zd,
+		deleted:     make(map[int]bool),
 	}
 
 	return dvs, nil
@@ -190,9 +194,19 @@ func (dvs *DiskVectorStore) GetBatch(indices []int) ([][]float32, error) {
 	dvs.mu.RLock()
 	defer dvs.mu.RUnlock()
 
-	// 1. Group indices by block
-	blockRequestMap := make(map[int][]int)
+	filtered := make([]int, 0, len(indices))
 	for _, idx := range indices {
+		if !dvs.deleted[idx] {
+			filtered = append(filtered, idx)
+		}
+	}
+
+	if len(filtered) == 0 {
+		return [][]float32{}, nil
+	}
+
+	blockRequestMap := make(map[int][]int)
+	for _, idx := range filtered {
 		bIdx := dvs.findBlock(idx)
 		if bIdx == -1 {
 			return nil, fmt.Errorf("vector index %d out of bounds", idx)
@@ -208,7 +222,6 @@ func (dvs *DiskVectorStore) GetBatch(indices []int) ([][]float32, error) {
 
 	blockData := make(map[int][]byte)
 
-	// 2. Read blocks
 	for bIdx := range blockRequestMap {
 		raw, err := dvs.fetchBlockData(bIdx)
 		if err != nil {
@@ -217,9 +230,8 @@ func (dvs *DiskVectorStore) GetBatch(indices []int) ([][]float32, error) {
 		blockData[bIdx] = raw
 	}
 
-	// 3. Extract vectors
-	results := make([][]float32, len(indices))
-	for i, idx := range indices {
+	results := make([][]float32, len(filtered))
+	for i, idx := range filtered {
 		bIdx := dvs.findBlock(idx)
 		raw := blockData[bIdx]
 		block := dvs.blocks[bIdx]
@@ -365,4 +377,53 @@ func (dvs *DiskVectorStore) decompressBlock(buf []byte) ([]byte, error) {
 		raw = data
 	}
 	return raw, err
+}
+
+func (dvs *DiskVectorStore) Delete(idx int) bool {
+	dvs.mu.Lock()
+	defer dvs.mu.Unlock()
+
+	if idx < 0 || idx >= dvs.totalCount {
+		return false
+	}
+
+	if dvs.deleted[idx] {
+		return false
+	}
+
+	dvs.deleted[idx] = true
+	return true
+}
+
+func (dvs *DiskVectorStore) DeleteBatch(indices []int) int {
+	dvs.mu.Lock()
+	defer dvs.mu.Unlock()
+
+	deleted := 0
+	for _, idx := range indices {
+		if idx >= 0 && idx < dvs.totalCount && !dvs.deleted[idx] {
+			dvs.deleted[idx] = true
+			deleted++
+		}
+	}
+	return deleted
+}
+
+func (dvs *DiskVectorStore) IsDeleted(idx int) bool {
+	dvs.mu.RLock()
+	defer dvs.mu.RUnlock()
+	return dvs.deleted[idx]
+}
+
+func (dvs *DiskVectorStore) Compact() (int, error) {
+	dvs.mu.Lock()
+	defer dvs.mu.Unlock()
+
+	if len(dvs.deleted) == 0 {
+		return 0, nil
+	}
+
+	compacted := 0
+	dvs.deleted = make(map[int]bool)
+	return compacted, nil
 }

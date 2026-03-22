@@ -974,3 +974,108 @@ euc_i16_avx2_done:
     VMOVSS  X0, ret+24(FP)
     VZEROUPPER
     RET
+
+// =============================================================================
+// Int8 4x-Unrolled AVX2 Kernel (Optimized)
+// Processes 64 bytes (64 int8s) per iteration — 4x wider than single-chunk.
+// Stays in integer domain (int16→int32) for accumulation, converts to float only once.
+// =============================================================================
+
+// func euclideanInt8Unrolled4xAVX2Kernel(a, b unsafe.Pointer, n int) float32
+TEXT ·euclideanInt8Unrolled4xAVX2Kernel(SB), NOSPLIT, $0-28
+    MOVQ    a+0(FP), SI
+    MOVQ    b+8(FP), DI
+    MOVQ    n+16(FP), BX
+
+    // Int32 accumulators (4 chunks × 8 int32s each = 32 total)
+    VXORPS  Y0, Y0, Y0          // chunk 0: 8 int32 accumulators
+    VXORPS  Y1, Y1, Y1          // chunk 1: 8 int32 accumulators
+    VXORPS  Y2, Y2, Y2          // chunk 2: 8 int32 accumulators
+    VXORPS  Y3, Y3, Y3          // chunk 3: 8 int32 accumulators
+
+    CMPQ    BX, $64
+    JL      euc_i8_u4_avx2_tail
+
+euc_i8_u4_avx2_loop:
+    // Chunk 0: bytes 0-15
+    VPMOVSXBW (SI), Y4
+    VPMOVSXBW (DI), Y5
+    VPSUBW   Y5, Y4, Y4
+    VPMADDWD Y4, Y4, Y4
+    VPADDD   Y4, Y0, Y0
+
+    // Chunk 1: bytes 16-31
+    VPMOVSXBW 16(SI), Y4
+    VPMOVSXBW 16(DI), Y5
+    VPSUBW   Y5, Y4, Y4
+    VPMADDWD Y4, Y4, Y4
+    VPADDD   Y4, Y1, Y1
+
+    // Chunk 2: bytes 32-47
+    VPMOVSXBW 32(SI), Y4
+    VPMOVSXBW 32(DI), Y5
+    VPSUBW   Y5, Y4, Y4
+    VPMADDWD Y4, Y4, Y4
+    VPADDD   Y4, Y2, Y2
+
+    // Chunk 3: bytes 48-63
+    VPMOVSXBW 48(SI), Y4
+    VPMOVSXBW 48(DI), Y5
+    VPSUBW   Y5, Y4, Y4
+    VPMADDWD Y4, Y4, Y4
+    VPADDD   Y4, Y3, Y3
+
+    ADDQ    $64, SI
+    ADDQ    $64, DI
+    SUBQ    $64, BX
+    CMPQ    BX, $64
+    JGE     euc_i8_u4_avx2_loop
+
+    // Horizontal reduction: Y0|Y1|Y2|Y3 → X0 (float32 sum)
+    VPADDD  Y1, Y0, Y0
+    VPADDD  Y3, Y2, Y2
+    VPADDD  Y2, Y0, Y0
+    JMP     euc_i8_u4_avx2_reduce
+
+euc_i8_u4_avx2_tail:
+    // Horizontal reduction even for tail
+    VPADDD  Y1, Y0, Y0
+    VPADDD  Y3, Y2, Y2
+    VPADDD  Y2, Y0, Y0
+
+    CMPQ    BX, $0
+    JE      euc_i8_u4_avx2_convert
+
+euc_i8_u4_avx2_tail_loop:
+    MOVBQSX (SI), R8
+    MOVBQSX (DI), R9
+    SUBQ    R9, R8
+    IMULQ   R8, R8
+    CVTSL2SS R8, X1
+    ADDSS   X1, X0
+    INCQ    SI
+    INCQ    DI
+    DECQ    BX
+    JNZ     euc_i8_u4_avx2_tail_loop
+
+euc_i8_u4_avx2_convert:
+    // Convert int32 accumulator X0 to float32
+    VCVTDQ2PS X0, X0
+
+euc_i8_u4_avx2_reduce:
+    // Horizontal float reduction of X0
+    VEXTRACTF128 $1, X0, X1
+    VADDPS  X1, X0, X0
+    VMOVHLPS X0, X1, X1
+    VADDPS  X1, X0, X0
+    VMOVSHDUP X0, X1
+    VADDSS  X1, X0, X0
+
+    CMPQ    BX, $0
+    JNE     euc_i8_u4_avx2_tail_loop
+
+euc_i8_u4_avx2_done:
+    VSQRTSS X0, X0, X0
+    VMOVSS  X0, ret+24(FP)
+    VZEROUPPER
+    RET

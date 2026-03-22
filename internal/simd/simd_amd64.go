@@ -138,14 +138,16 @@ func euclidean384AVX2(a, b []float32) (float32, error) {
 	return euclideanAVX2(a, b)
 }
 
-// AVX2 optimized Euclidean distance for 768 dims - uses generic AVX2 SIMD kernel
+// AVX2 optimized Euclidean distance for 768 dims.
+// Uses scalar unrolled4x (faster than 8-float AVX2 loop for high dims on AVX2-only).
 func euclidean768AVX2(a, b []float32) (float32, error) {
-	return euclideanAVX2(a, b)
+	return euclidean768Unrolled4x(a, b)
 }
 
-// AVX2 optimized Euclidean distance for 1536 dims - uses generic AVX2 SIMD kernel
+// AVX2 optimized Euclidean distance for 1536 dims.
+// Uses scalar unrolled4x (faster than 8-float AVX2 loop for high dims on AVX2-only).
 func euclidean1536AVX2(a, b []float32) (float32, error) {
-	return euclideanAVX2(a, b)
+	return euclidean1536Unrolled4x(a, b)
 }
 
 // AVX2 optimized Cosine distance
@@ -638,6 +640,9 @@ func euclideanFloat64AVX512Kernel(a, b unsafe.Pointer, n int) float32
 func euclideanInt8AVX2Kernel(a, b unsafe.Pointer, n int) float32
 
 //go:noescape
+func euclideanInt8Unrolled4xAVX2Kernel(a, b unsafe.Pointer, n int) float32
+
+//go:noescape
 func euclideanInt16AVX2Kernel(a, b unsafe.Pointer, n int) float32
 
 //go:noescape
@@ -887,7 +892,7 @@ func euclideanInt8AVX2(a, b []int8) (float32, error) {
 	if len(a) == 0 {
 		return 0, nil
 	}
-	return euclideanInt8AVX2Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a)), nil
+	return euclideanInt8Unrolled4xAVX2Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a)), nil
 }
 
 // =============================================================================

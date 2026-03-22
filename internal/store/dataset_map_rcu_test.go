@@ -179,6 +179,51 @@ func TestProtoRCU_CompareAndSwap_Spin(t *testing.T) {
 }
 
 func TestVectorStore_RCU_Integration_Stub(t *testing.T) {
-	// This test will be filled in once VectorStore is updated
-	t.Skip("Pending implementation")
+	vs := &VectorStore{}
+	m := make(map[string]*Dataset)
+	vs.datasets.Store(&m)
+
+	vs.updateDatasets(func(m map[string]*Dataset) {
+		m["test"] = &Dataset{Name: "test"}
+	})
+
+	ds, ok := vs.getDataset("test")
+	if !ok {
+		t.Fatal("Expected dataset 'test' to exist")
+	}
+	if ds.Name != "test" {
+		t.Fatalf("Expected dataset name 'test', got %s", ds.Name)
+	}
+
+	var wg sync.WaitGroup
+	for i := 0; i < 100; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 1000; j++ {
+				vs.getDataset("test")
+			}
+		}()
+	}
+
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			key := fmt.Sprintf("test-%d", id)
+			for j := 0; j < 100; j++ {
+				vs.updateDatasets(func(m map[string]*Dataset) {
+					m[key] = &Dataset{Name: key}
+				})
+				time.Sleep(time.Microsecond)
+			}
+		}(i)
+	}
+
+	wg.Wait()
+
+	finalMap := vs.loadDatasets()
+	if len(finalMap) < 11 {
+		t.Fatalf("Expected at least 11 datasets, got %d", len(finalMap))
+	}
 }

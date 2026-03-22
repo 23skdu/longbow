@@ -65,7 +65,9 @@ func (b *BatchDistanceComputer) SelectTopKNeighbors(
 	opts := &SelectKOptions{K: k}
 
 	datumDists := compute.NewDatum(distArr)
+	defer datumDists.Release()
 	datumIDs := compute.NewDatum(idArr) // Passed but currently unused by kernel (it sorts indices by dists)
+	defer datumIDs.Release()
 
 	indicesDatum, err := compute.CallFunction(ctx, "select_k_neighbors", opts, datumDists, datumIDs)
 	if err != nil {
@@ -93,15 +95,19 @@ func (b *BatchDistanceComputer) SelectTopKNeighbors(
 	takeOpts := compute.DefaultTakeOptions()
 	takeOpts.BoundsCheck = false // Indices guaranteed valid by kernel
 
-	takenIDsDatum, err := compute.Take(ctx, *takeOpts, datumIDs, compute.NewDatum(topKIndices))
+	topKDatum := compute.NewDatum(topKIndices)
+	defer topKDatum.Release()
+
+	takenIDsDatum, err := compute.Take(ctx, *takeOpts, datumIDs, topKDatum)
 	if err != nil {
 		return nil, nil, NewNeighborSelectionFailedError("take_ids", err)
 	}
 	defer takenIDsDatum.Release()
+
 	takenIDs := takenIDsDatum.(*compute.ArrayDatum).MakeArray().(*array.Uint32)
 	defer takenIDs.Release()
 
-	takenDistsDatum, err := compute.Take(ctx, *takeOpts, datumDists, compute.NewDatum(topKIndices))
+	takenDistsDatum, err := compute.Take(ctx, *takeOpts, datumDists, topKDatum)
 	if err != nil {
 		return nil, nil, NewNeighborSelectionFailedError("take_dists", err)
 	}

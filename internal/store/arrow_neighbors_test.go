@@ -33,9 +33,19 @@ func TestNeighborSelectionErrorTypes(t *testing.T) {
 	})
 
 	t.Run("ValidSelection", func(t *testing.T) {
-		// Skip this test due to memory leaks in Arrow array handling
-		// The primary goal is testing error types, which is covered by LengthMismatchError
-		t.Skip("Skipping valid selection test due to Arrow memory management issues")
+		distances := []float32{3.0, 1.0, 2.0, 4.0}
+		ids := []uint32{3, 1, 2, 4}
+
+		resultIDs, resultDists, err := computer.SelectTopKNeighbors(distances, ids, 2)
+
+		require.NoError(t, err, "SelectTopKNeighbors should succeed")
+		assert.Equal(t, 2, len(resultIDs), "Should return 2 IDs")
+		assert.Equal(t, 2, len(resultDists), "Should return 2 distances")
+
+		assert.Equal(t, float32(1.0), resultDists[0])
+		assert.Equal(t, uint32(1), resultIDs[0])
+		assert.Equal(t, float32(2.0), resultDists[1])
+		assert.Equal(t, uint32(2), resultIDs[1])
 	})
 
 	t.Run("EmptySelection", func(t *testing.T) {

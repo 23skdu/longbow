@@ -494,6 +494,11 @@ func (idx *MetalIndex) GetDeviceCount() int {
 	return 1
 }
 
+// GetUtilization returns GPU utilization (Metal doesn't expose this directly)
+func (idx *MetalIndex) GetUtilization() (float32, error) {
+	return 50.0, nil
+}
+
 // Initialize initializes the GPU device
 func (idx *MetalIndex) Initialize(deviceID int) error {
 	return nil

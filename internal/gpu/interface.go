@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // GPUBackend represents the type of GPU acceleration available
@@ -50,7 +51,7 @@ type GPUConfig struct {
 
 	// Synchronization
 	SyncBatchSize int
-	SyncInterval  int
+	SyncInterval  time.Duration
 }
 
 // DefaultGPUConfig returns default GPU configuration
@@ -61,7 +62,7 @@ func DefaultGPUConfig() GPUConfig {
 		Dimension:          128,
 		Enabled:            false,
 		SyncBatchSize:      1000,
-		SyncInterval:       5,
+		SyncInterval:       5 * time.Second,
 		CUDAHome:           os.Getenv("CUDA_HOME"),
 		FAISSHome:          os.Getenv("FAISS_HOME"),
 		MetalUnifiedMemory: runtime.GOOS == "darwin",

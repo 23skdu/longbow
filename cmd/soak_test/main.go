@@ -71,13 +71,23 @@ func main() {
 
 	var wg sync.WaitGroup
 
-	// Phase 1: Ingest Workers
+	fmt.Printf("⏳ Warmup: Ingesting initial data...\n")
+	warmupCtx, warmupCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	warmupWg := sync.WaitGroup{}
+	for i := 0; i < *concurrency; i++ {
+		warmupWg.Add(1)
+		go runWorker(warmupCtx, &warmupWg, peerList[i%len(peerList)], "ingest", stats)
+	}
+	warmupWg.Wait()
+	warmupCancel()
+
+	fmt.Printf("✅ Warmup complete. Starting search workers...\n")
+
 	for i := 0; i < *concurrency; i++ {
 		wg.Add(1)
 		go runWorker(ctx, &wg, peerList[i%len(peerList)], "ingest", stats)
 	}
 
-	// Phase 2: Search & Delete Workers
 	for i := 0; i < *concurrency; i++ {
 		wg.Add(1)
 		go runWorker(ctx, &wg, peerList[i%len(peerList)], "search_delete", stats)
@@ -122,6 +132,7 @@ Loop:
 }
 
 func runWorker(ctx context.Context, wg *sync.WaitGroup, peer, mode string, stats *Stats) {
+	log.Printf("[%s] Worker starting", mode)
 	defer wg.Done()
 
 	c, err := client.NewSmartClient(peer)
@@ -136,23 +147,8 @@ func runWorker(ctx context.Context, wg *sync.WaitGroup, peer, mode string, stats
 		}
 	}()
 
-	// Wait for first index to be ready (only for search/delete)
-	if mode != "ingest" {
-		log.Printf("[%s] Waiting for index readiness...", mode)
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			default:
-			}
-			ready, err := checkReadiness(ctx, c)
-			if err == nil && ready {
-				log.Printf("[%s] Index READY, starting operations", mode)
-				break
-			}
-			time.Sleep(2 * time.Second)
-		}
-	}
+	// Skip readiness check - searches will handle not-ready state
+	_ = c
 
 	for {
 		select {
@@ -167,7 +163,9 @@ func runWorker(ctx context.Context, wg *sync.WaitGroup, peer, mode string, stats
 				}
 			} else {
 				searchMode, searchErr := performSearchAndDelete(ctx, c, stats)
+				searchNames := []string{"Dense", "Sparse", "Filtered", "Hybrid"}
 				if searchErr == nil {
+					log.Printf("[%s] %s search succeeded", mode, searchNames[searchMode])
 					switch searchMode {
 					case DenseSearch:
 						stats.DenseSearches.Add(1)
@@ -182,13 +180,9 @@ func runWorker(ctx context.Context, wg *sync.WaitGroup, peer, mode string, stats
 				err = searchErr
 			}
 
-			if err != nil {
-				if err != context.Canceled && err != context.DeadlineExceeded {
-					log.Printf("[%s] Error: %v", mode, err)
-					stats.Errors.Add(1)
-					// Small backoff on error
-					time.Sleep(100 * time.Millisecond)
-				}
+			if err != nil && err != context.Canceled && err != context.DeadlineExceeded {
+				log.Printf("[%s] Error: %v", mode, err)
+				stats.Errors.Add(1)
 			}
 		}
 	}
@@ -275,13 +269,14 @@ func performSearchAndDelete(ctx context.Context, c *client.SmartClient, stats *S
 	case DenseSearch:
 		req["vector"] = queryVec
 	case SparseSearch:
+		req["vector"] = queryVec
 		textQueries := []string{"machine learning", "neural network", "data science", "deep learning", "artificial intelligence"}
 		req["text_query"] = textQueries[rand.Intn(len(textQueries))]
-		req["alpha"] = 0.0
+		req["alpha"] = 0.1
 	case FilteredSearch:
 		req["vector"] = queryVec
 		if *filterEnabled {
-			req["filters"] = generateCompoundFilter()
+			req["filters"] = []any{generateCompoundFilter()}
 		}
 	case HybridSearch:
 		req["vector"] = queryVec

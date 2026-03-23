@@ -81,7 +81,8 @@ func (s *VectorStore) handleVectorSearchAction(action *flight.Action, stream fli
 		queryVectors = append(queryVectors, req.Vectors...)
 	}
 
-	if len(queryVectors) == 0 {
+	// Allow pure sparse/keyword search (alpha=0.0 with text_query, no vector required)
+	if len(queryVectors) == 0 && req.TextQuery == "" {
 		metrics.VectorSearchActionErrors.Inc()
 		return status.Error(codes.InvalidArgument, "no query vector(s) provided")
 	}

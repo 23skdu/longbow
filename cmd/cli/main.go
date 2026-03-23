@@ -93,7 +93,7 @@ Use "longbow-cli <command> --help" for more information about a command.`)
 }
 
 func getClientURI(args []string) (string, []string) {
-	uri := "grpc://127.0.0.1:3000"
+	uri := "127.0.0.1:3000"
 	var remaining []string
 
 	for i := 0; i < len(args); i++ {

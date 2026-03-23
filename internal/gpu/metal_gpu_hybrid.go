@@ -281,3 +281,23 @@ func (idx *MetalHybridIndex) Close() error {
 	idx.closed = true
 	return nil
 }
+
+func (idx *MetalHybridIndex) Backend() GPUBackend {
+	return BackendMetal
+}
+
+func (idx *MetalHybridIndex) GetDeviceInfo() (*GPUInfo, error) {
+	return &GPUInfo{
+		Backend:  BackendMetal,
+		Name:     "Apple Silicon GPU",
+		DeviceID: 0,
+	}, nil
+}
+
+func (idx *MetalHybridIndex) GetMemoryInfo() (int64, int64, int64, error) {
+	return 0, 0, 0, nil
+}
+
+func (idx *MetalHybridIndex) GetUtilization() (float32, error) {
+	return 50.0, nil
+}

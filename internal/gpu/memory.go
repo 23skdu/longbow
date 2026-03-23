@@ -1,48 +1,12 @@
+//go:build !darwin
+
 package gpu
 
 import (
 	"fmt"
 	"runtime"
-	"sync"
 	"unsafe"
 )
-
-// GPUMemPool manages GPU memory allocation
-type GPUMemPool struct {
-	backend     GPUBackend
-	deviceID    int
-	totalBytes  int64
-	usedBytes   int64
-	allocations map[unsafe.Pointer]int64
-	mu          sync.RWMutex
-}
-
-// GPUAllocation represents a GPU memory allocation
-type GPUAllocation struct {
-	Ptr       unsafe.Pointer
-	Size      int64
-	DevicePtr unsafe.Pointer
-}
-
-// NewGPUMemPool creates a new GPU memory pool
-func NewGPUMemPool(backend GPUBackend, deviceID int) (*GPUMemPool, error) {
-	pool := &GPUMemPool{
-		backend:     backend,
-		deviceID:    deviceID,
-		totalBytes:  0,
-		usedBytes:   0,
-		allocations: make(map[unsafe.Pointer]int64),
-	}
-
-	info, err := GetDeviceInfo(deviceID)
-	if err == nil {
-		if info.MemoryMB > 0 {
-			pool.totalBytes = info.MemoryMB * 1024 * 1024
-		}
-	}
-
-	return pool, nil
-}
 
 // AllocateGPU allocates memory on the GPU
 func (p *GPUMemPool) AllocateGPU(size int64) (unsafe.Pointer, error) {
@@ -56,10 +20,10 @@ func (p *GPUMemPool) AllocateGPU(size int64) (unsafe.Pointer, error) {
 	switch p.backend {
 	case BackendCUDA:
 		return p.allocateCUDAMemory(size)
-	case BackendMetal:
-		return p.allocateMetalMemory(size)
 	case BackendCPU:
 		return p.allocateCPUMemory(size)
+	case BackendMetal:
+		return p.allocateMetalMemoryImpl(size)
 	default:
 		return nil, fmt.Errorf("unsupported backend: %v", p.backend)
 	}
@@ -81,10 +45,11 @@ func (p *GPUMemPool) FreeGPU(ptr unsafe.Pointer) error {
 	switch p.backend {
 	case BackendCUDA:
 		return p.freeCUDAMemory(ptr)
-	case BackendMetal:
-		return p.freeMetalMemory(ptr)
 	case BackendCPU:
 		return p.freeCPUMemory(ptr)
+	case BackendMetal:
+		p.freeMetalMemoryImpl(ptr)
+		return nil
 	default:
 		return fmt.Errorf("unsupported backend: %v", p.backend)
 	}
@@ -95,12 +60,12 @@ func (p *GPUMemPool) MemcpyHostToDevice(hostPtr, devicePtr unsafe.Pointer, size 
 	switch p.backend {
 	case BackendCUDA:
 		return p.cudaMemcpyHostToDevice(hostPtr, devicePtr, size)
-	case BackendMetal:
-		return p.metalMemcpyHostToDevice(hostPtr, devicePtr, size)
 	case BackendCPU:
 		runtime.KeepAlive(hostPtr)
 		runtime.KeepAlive(devicePtr)
 		return nil
+	case BackendMetal:
+		return p.metalMemcpyHostToDeviceImpl(hostPtr, devicePtr, size)
 	default:
 		return fmt.Errorf("unsupported backend: %v", p.backend)
 	}
@@ -111,12 +76,12 @@ func (p *GPUMemPool) MemcpyDeviceToHost(devicePtr, hostPtr unsafe.Pointer, size 
 	switch p.backend {
 	case BackendCUDA:
 		return p.cudaMemcpyDeviceToHost(devicePtr, hostPtr, size)
-	case BackendMetal:
-		return p.metalMemcpyDeviceToHost(devicePtr, hostPtr, size)
 	case BackendCPU:
 		runtime.KeepAlive(hostPtr)
 		runtime.KeepAlive(devicePtr)
 		return nil
+	case BackendMetal:
+		return p.metalMemcpyDeviceToHostImpl(devicePtr, hostPtr, size)
 	default:
 		return fmt.Errorf("unsupported backend: %v", p.backend)
 	}
@@ -150,13 +115,6 @@ func (p *GPUMemPool) allocateCUDAMemory(_ int64) (unsafe.Pointer, error) {
 	return nil, fmt.Errorf("CUDA support not compiled in. Build with -tags gpu on a Linux system with CUDA installed")
 }
 
-// allocateMetalMemory allocates Metal memory (fallback stub)
-// This stub is only used when building without -tags gpu or on non-macOS arm64 platforms.
-// For actual Metal support, build with: go build -tags gpu ./...
-func (p *GPUMemPool) allocateMetalMemory(_ int64) (unsafe.Pointer, error) {
-	return nil, fmt.Errorf("Metal support not compiled in. Build with -tags gpu on macOS arm64")
-}
-
 // allocateCPUMemory allocates CPU memory (fallback)
 func (p *GPUMemPool) allocateCPUMemory(size int64) (unsafe.Pointer, error) {
 	ptr := make([]byte, size)
@@ -168,11 +126,6 @@ func (p *GPUMemPool) allocateCPUMemory(size int64) (unsafe.Pointer, error) {
 // freeCUDAMemory frees CUDA memory (stub)
 func (p *GPUMemPool) freeCUDAMemory(_ unsafe.Pointer) error {
 	return fmt.Errorf("CUDA memory free not implemented yet")
-}
-
-// freeMetalMemory frees Metal memory (stub)
-func (p *GPUMemPool) freeMetalMemory(_ unsafe.Pointer) error {
-	return fmt.Errorf("Metal memory free not implemented yet")
 }
 
 // freeCPUMemory frees CPU memory
@@ -195,7 +148,21 @@ func (p *GPUMemPool) cudaMemcpyDeviceToHost(_, _ unsafe.Pointer, _ int64) error 
 	return fmt.Errorf("CUDA memcpy not implemented yet")
 }
 
-// metalMemcpyDeviceToHost copies data from device to host in Metal (stub)
 func (p *GPUMemPool) metalMemcpyDeviceToHost(_, _ unsafe.Pointer, _ int64) error {
 	return fmt.Errorf("Metal memcpy not implemented yet")
+}
+
+func (p *GPUMemPool) allocateMetalMemoryImpl(_ int64) (unsafe.Pointer, error) {
+	return nil, fmt.Errorf("Metal memory allocation not available")
+}
+
+func (p *GPUMemPool) freeMetalMemoryImpl(_ unsafe.Pointer) {
+}
+
+func (p *GPUMemPool) metalMemcpyHostToDeviceImpl(_, _ unsafe.Pointer, _ int64) error {
+	return fmt.Errorf("Metal memcpy not available")
+}
+
+func (p *GPUMemPool) metalMemcpyDeviceToHostImpl(_, _ unsafe.Pointer, _ int64) error {
+	return fmt.Errorf("Metal memcpy not available")
 }

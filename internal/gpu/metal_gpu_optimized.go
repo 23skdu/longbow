@@ -779,3 +779,23 @@ func (idx *MetalIndexOptimized) Close() error {
 	idx.closed = true
 	return nil
 }
+
+func (idx *MetalIndexOptimized) Backend() GPUBackend {
+	return BackendMetal
+}
+
+func (idx *MetalIndexOptimized) GetDeviceInfo() (*GPUInfo, error) {
+	return &GPUInfo{
+		Backend:  BackendMetal,
+		Name:     "Apple Silicon GPU (Optimized)",
+		DeviceID: 0,
+	}, nil
+}
+
+func (idx *MetalIndexOptimized) GetMemoryInfo() (int64, int64, int64, error) {
+	return 0, 0, 0, nil
+}
+
+func (idx *MetalIndexOptimized) GetUtilization() (float32, error) {
+	return 50.0, nil
+}

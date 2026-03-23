@@ -1300,8 +1300,562 @@ func FuzzStringFilterEvaluator_MultipleOps(f *testing.F) {
 			if idx < 0 || idx >= numRows {
 				continue
 			}
-			// Just verify it doesn't crash - manual verification for all would be slow
 			_ = eval.Matches(idx)
+		}
+	})
+}
+
+func TestFilterEvaluator_CompoundFilter_AND(t *testing.T) {
+	mem := memory.NewGoAllocator()
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
+		{Name: "category", Type: arrow.PrimitiveTypes.Int64},
+		{Name: "status", Type: arrow.PrimitiveTypes.Int64},
+	}, nil)
+
+	b := array.NewRecordBuilder(mem, schema)
+	b.Field(0).(*array.Int64Builder).AppendValues([]int64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, nil)
+	b.Field(1).(*array.Int64Builder).AppendValues([]int64{1, 1, 1, 2, 2, 2, 1, 1, 2, 2}, nil)
+	b.Field(2).(*array.Int64Builder).AppendValues([]int64{1, 2, 1, 2, 1, 2, 1, 2, 1, 2}, nil)
+	rec := b.NewRecordBatch()
+	defer rec.Release()
+
+	filters := []Filter{
+		{
+			Logic: "AND",
+			Filters: []Filter{
+				{Field: "id", Operator: ">=", Value: "3"},
+				{Field: "category", Operator: "=", Value: "1"},
+			},
+		},
+	}
+
+	eval, err := NewFilterEvaluator(rec, filters)
+	require.NoError(t, err)
+
+	result, err := eval.MatchesAll(int(rec.NumRows()))
+	require.NoError(t, err)
+	// id >= 3: indices 2-9
+	// category == 1: indices 0,1,2,6,7
+	// AND: intersection = [2, 6, 7]
+	require.Equal(t, []int{2, 6, 7}, result)
+}
+
+func TestFilterEvaluator_CompoundFilter_OR(t *testing.T) {
+	mem := memory.NewGoAllocator()
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
+		{Name: "category", Type: arrow.PrimitiveTypes.Int64},
+	}, nil)
+
+	b := array.NewRecordBuilder(mem, schema)
+	b.Field(0).(*array.Int64Builder).AppendValues([]int64{1, 2, 3, 4, 5, 6}, nil)
+	b.Field(1).(*array.Int64Builder).AppendValues([]int64{1, 1, 2, 2, 1, 1}, nil)
+	rec := b.NewRecordBatch()
+	defer rec.Release()
+
+	filters := []Filter{
+		{
+			Logic: "OR",
+			Filters: []Filter{
+				{Field: "id", Operator: "=", Value: "1"},
+				{Field: "id", Operator: "=", Value: "3"},
+				{Field: "id", Operator: "=", Value: "5"},
+			},
+		},
+	}
+
+	eval, err := NewFilterEvaluator(rec, filters)
+	require.NoError(t, err)
+
+	result, err := eval.MatchesAll(int(rec.NumRows()))
+	require.NoError(t, err)
+	require.Equal(t, []int{0, 2, 4}, result)
+}
+
+func TestFilterEvaluator_CompoundFilter_NOT(t *testing.T) {
+	mem := memory.NewGoAllocator()
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
+		{Name: "category", Type: arrow.PrimitiveTypes.Int64},
+	}, nil)
+
+	b := array.NewRecordBuilder(mem, schema)
+	b.Field(0).(*array.Int64Builder).AppendValues([]int64{1, 2, 3, 4, 5, 6}, nil)
+	b.Field(1).(*array.Int64Builder).AppendValues([]int64{1, 2, 1, 2, 1, 2}, nil)
+	rec := b.NewRecordBatch()
+	defer rec.Release()
+
+	filters := []Filter{
+		{
+			Logic: "NOT",
+			Filters: []Filter{
+				{Field: "category", Operator: "=", Value: "2"},
+			},
+		},
+	}
+
+	eval, err := NewFilterEvaluator(rec, filters)
+	require.NoError(t, err)
+
+	result, err := eval.MatchesAll(int(rec.NumRows()))
+	require.NoError(t, err)
+	require.Equal(t, []int{0, 2, 4}, result)
+}
+
+func TestFilterEvaluator_CompoundFilter_NestedAND(t *testing.T) {
+	mem := memory.NewGoAllocator()
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
+		{Name: "a", Type: arrow.PrimitiveTypes.Int64},
+		{Name: "b", Type: arrow.PrimitiveTypes.Int64},
+	}, nil)
+
+	b := array.NewRecordBuilder(mem, schema)
+	b.Field(0).(*array.Int64Builder).AppendValues([]int64{1, 2, 3, 4, 5, 6}, nil)
+	b.Field(1).(*array.Int64Builder).AppendValues([]int64{10, 20, 30, 40, 50, 60}, nil)
+	b.Field(2).(*array.Int64Builder).AppendValues([]int64{1, 1, 2, 2, 3, 3}, nil)
+	rec := b.NewRecordBatch()
+	defer rec.Release()
+
+	filters := []Filter{
+		{
+			Logic: "AND",
+			Filters: []Filter{
+				{Field: "a", Operator: ">", Value: "25"},
+				{
+					Logic: "OR",
+					Filters: []Filter{
+						{Field: "b", Operator: "=", Value: "1"},
+						{Field: "b", Operator: "=", Value: "3"},
+					},
+				},
+			},
+		},
+	}
+
+	eval, err := NewFilterEvaluator(rec, filters)
+	require.NoError(t, err)
+
+	result, err := eval.MatchesAll(int(rec.NumRows()))
+	require.NoError(t, err)
+	require.Equal(t, []int{4, 5}, result)
+}
+
+func TestFilterEvaluator_CompoundFilter_MixedWithFlat(t *testing.T) {
+	mem := memory.NewGoAllocator()
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
+		{Name: "category", Type: arrow.PrimitiveTypes.Int64},
+		{Name: "status", Type: arrow.PrimitiveTypes.Int64},
+	}, nil)
+
+	b := array.NewRecordBuilder(mem, schema)
+	b.Field(0).(*array.Int64Builder).AppendValues([]int64{1, 2, 3, 4, 5, 6, 7, 8}, nil)
+	b.Field(1).(*array.Int64Builder).AppendValues([]int64{1, 1, 2, 2, 1, 1, 2, 2}, nil)
+	b.Field(2).(*array.Int64Builder).AppendValues([]int64{1, 2, 1, 2, 1, 2, 1, 2}, nil)
+	rec := b.NewRecordBatch()
+	defer rec.Release()
+
+	filters := []Filter{
+		{Field: "id", Operator: ">", Value: "2"},
+		{
+			Logic: "OR",
+			Filters: []Filter{
+				{Field: "category", Operator: "=", Value: "1"},
+				{Field: "status", Operator: "=", Value: "1"},
+			},
+		},
+	}
+
+	eval, err := NewFilterEvaluator(rec, filters)
+	require.NoError(t, err)
+
+	result, err := eval.MatchesAll(int(rec.NumRows()))
+	require.NoError(t, err)
+	require.Equal(t, []int{2, 4, 5, 6}, result)
+}
+
+func TestFilterEvaluator_CompoundFilter_MatchesBatch(t *testing.T) {
+	mem := memory.NewGoAllocator()
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
+		{Name: "category", Type: arrow.PrimitiveTypes.Int64},
+	}, nil)
+
+	b := array.NewRecordBuilder(mem, schema)
+	b.Field(0).(*array.Int64Builder).AppendValues([]int64{1, 2, 3, 4, 5, 6, 7, 8}, nil)
+	b.Field(1).(*array.Int64Builder).AppendValues([]int64{1, 2, 1, 2, 1, 2, 1, 2}, nil)
+	rec := b.NewRecordBatch()
+	defer rec.Release()
+
+	filters := []Filter{
+		{
+			Logic: "OR",
+			Filters: []Filter{
+				{Field: "id", Operator: "<", Value: "3"},
+				{Field: "category", Operator: "=", Value: "1"},
+			},
+		},
+	}
+
+	eval, err := NewFilterEvaluator(rec, filters)
+	require.NoError(t, err)
+
+	allIndices := []int{0, 1, 2, 3, 4, 5, 6, 7}
+	result := eval.MatchesBatch(allIndices)
+	require.Equal(t, []int{0, 1, 2, 4, 6}, result)
+}
+
+func TestFilterEvaluator_CompoundFilter_EmptyChildren(t *testing.T) {
+	mem := memory.NewGoAllocator()
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
+	}, nil)
+
+	b := array.NewRecordBuilder(mem, schema)
+	b.Field(0).(*array.Int64Builder).AppendValues([]int64{1, 2, 3}, nil)
+	rec := b.NewRecordBatch()
+	defer rec.Release()
+
+	filters := []Filter{
+		{Logic: "AND", Filters: []Filter{}},
+	}
+
+	eval, err := NewFilterEvaluator(rec, filters)
+	require.NoError(t, err)
+
+	result, err := eval.MatchesAll(int(rec.NumRows()))
+	require.NoError(t, err)
+	require.Equal(t, []int{0, 1, 2}, result)
+}
+
+func TestFilterEvaluator_CompoundFilter_ThreeLevels(t *testing.T) {
+	mem := memory.NewGoAllocator()
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "a", Type: arrow.PrimitiveTypes.Int64},
+		{Name: "b", Type: arrow.PrimitiveTypes.Int64},
+		{Name: "c", Type: arrow.PrimitiveTypes.Int64},
+	}, nil)
+
+	b := array.NewRecordBuilder(mem, schema)
+	b.Field(0).(*array.Int64Builder).AppendValues([]int64{1, 2, 3, 4, 5, 6}, nil)
+	b.Field(1).(*array.Int64Builder).AppendValues([]int64{1, 2, 1, 2, 1, 2}, nil)
+	b.Field(2).(*array.Int64Builder).AppendValues([]int64{10, 20, 10, 20, 10, 20}, nil)
+	rec := b.NewRecordBatch()
+	defer rec.Release()
+
+	filters := []Filter{
+		{
+			Logic: "AND",
+			Filters: []Filter{
+				{Field: "a", Operator: ">", Value: "2"},
+				{
+					Logic: "OR",
+					Filters: []Filter{
+						{Field: "b", Operator: "=", Value: "1"},
+						{
+							Logic: "AND",
+							Filters: []Filter{
+								{Field: "c", Operator: "=", Value: "20"},
+								{Field: "a", Operator: "=", Value: "4"},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	eval, err := NewFilterEvaluator(rec, filters)
+	require.NoError(t, err)
+
+	result, err := eval.MatchesAll(int(rec.NumRows()))
+	require.NoError(t, err)
+	require.Equal(t, []int{2, 3, 4}, result)
+}
+
+func TestFilterEvaluator_NestedField_Struct(t *testing.T) {
+	mem := memory.NewGoAllocator()
+	nestedType := arrow.StructOf(
+		arrow.Field{Name: "x", Type: arrow.PrimitiveTypes.Int64, Nullable: true},
+		arrow.Field{Name: "y", Type: arrow.PrimitiveTypes.Int64, Nullable: true},
+	)
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
+		{Name: "metadata", Type: nestedType, Nullable: true},
+	}, nil)
+
+	b := array.NewRecordBuilder(mem, schema)
+	idBuilder := b.Field(0).(*array.Int64Builder)
+	idBuilder.AppendValues([]int64{1, 2, 3, 4}, nil)
+
+	metadataBuilder := b.Field(1).(*array.StructBuilder)
+	xb := metadataBuilder.FieldBuilder(0).(*array.Int64Builder)
+	yb := metadataBuilder.FieldBuilder(1).(*array.Int64Builder)
+
+	metadataBuilder.AppendValues([]bool{true, true, true, true})
+	xb.AppendValues([]int64{10, 20, 30, 40}, nil)
+	yb.AppendValues([]int64{100, 200, 300, 400}, nil)
+
+	rec := b.NewRecordBatch()
+	defer rec.Release()
+
+	filters := []Filter{
+		{Field: "metadata.x", Operator: ">", Value: "15"},
+	}
+
+	eval, err := NewFilterEvaluator(rec, filters)
+	require.NoError(t, err)
+
+	result, err := eval.MatchesAll(int(rec.NumRows()))
+	require.NoError(t, err)
+	require.Equal(t, []int{1, 2, 3}, result)
+}
+
+func TestFilterEvaluator_NestedField_List(t *testing.T) {
+	mem := memory.NewGoAllocator()
+	listType := arrow.ListOf(arrow.PrimitiveTypes.Int64)
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
+		{Name: "tags", Type: listType, Nullable: true},
+	}, nil)
+
+	b := array.NewRecordBuilder(mem, schema)
+	idBuilder := b.Field(0).(*array.Int64Builder)
+	idBuilder.AppendValues([]int64{1, 2, 3}, nil)
+
+	tagsBuilder := b.Field(1).(*array.ListBuilder)
+	itemBuilder := tagsBuilder.ValueBuilder().(*array.Int64Builder)
+
+	tagsBuilder.Append(true)
+	itemBuilder.AppendValues([]int64{10, 20, 30}, nil)
+	tagsBuilder.Append(true)
+	itemBuilder.AppendValues([]int64{40, 50}, nil)
+	tagsBuilder.Append(true)
+	itemBuilder.AppendValues([]int64{60}, nil)
+
+	rec := b.NewRecordBatch()
+	defer rec.Release()
+
+	filters := []Filter{
+		{Field: "tags.item", Operator: "=", Value: "40"},
+	}
+
+	eval, err := NewFilterEvaluator(rec, filters)
+	require.NoError(t, err)
+
+	result, err := eval.MatchesAll(int(rec.NumRows()))
+	require.NoError(t, err)
+	require.Equal(t, []int{1}, result)
+}
+
+func TestFilterEvaluator_NestedField_FixedSizeList(t *testing.T) {
+	mem := memory.NewGoAllocator()
+	fixedType := arrow.FixedSizeListOf(2, arrow.PrimitiveTypes.Int64)
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
+		{Name: "vec", Type: fixedType, Nullable: true},
+	}, nil)
+
+	b := array.NewRecordBuilder(mem, schema)
+	idBuilder := b.Field(0).(*array.Int64Builder)
+	idBuilder.AppendValues([]int64{1, 2, 3}, nil)
+
+	vecBuilder := b.Field(1).(*array.FixedSizeListBuilder)
+	vecItemBuilder := vecBuilder.ValueBuilder().(*array.Int64Builder)
+
+	vecBuilder.Append(true)
+	vecItemBuilder.AppendValues([]int64{1, 2}, nil)
+	vecBuilder.Append(true)
+	vecItemBuilder.AppendValues([]int64{3, 4}, nil)
+	vecBuilder.Append(true)
+	vecItemBuilder.AppendValues([]int64{5, 6}, nil)
+
+	rec := b.NewRecordBatch()
+	defer rec.Release()
+
+	filters := []Filter{
+		{Field: "vec.item", Operator: ">", Value: "2"},
+	}
+
+	eval, err := NewFilterEvaluator(rec, filters)
+	require.NoError(t, err)
+
+	result, err := eval.MatchesAll(int(rec.NumRows()))
+	require.NoError(t, err)
+	require.Equal(t, []int{1, 2}, result)
+}
+
+func TestFilterEvaluator_CompoundAndNested(t *testing.T) {
+	mem := memory.NewGoAllocator()
+	nestedType := arrow.StructOf(
+		arrow.Field{Name: "status", Type: arrow.PrimitiveTypes.Int64, Nullable: true},
+	)
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
+		{Name: "metadata", Type: nestedType, Nullable: true},
+		{Name: "category", Type: arrow.PrimitiveTypes.Int64},
+	}, nil)
+
+	b := array.NewRecordBuilder(mem, schema)
+	b.Field(0).(*array.Int64Builder).AppendValues([]int64{1, 2, 3, 4}, nil)
+	b.Field(2).(*array.Int64Builder).AppendValues([]int64{1, 1, 2, 2}, nil)
+
+	metaBuilder := b.Field(1).(*array.StructBuilder)
+	statusBuilder := metaBuilder.FieldBuilder(0).(*array.Int64Builder)
+	metaBuilder.AppendValues([]bool{true, true, true, true})
+	statusBuilder.AppendValues([]int64{100, 200, 100, 200}, nil)
+
+	rec := b.NewRecordBatch()
+	defer rec.Release()
+
+	filters := []Filter{
+		{
+			Logic: "AND",
+			Filters: []Filter{
+				{Field: "category", Operator: "=", Value: "1"},
+				{Field: "metadata.status", Operator: "=", Value: "100"},
+			},
+		},
+	}
+
+	eval, err := NewFilterEvaluator(rec, filters)
+	require.NoError(t, err)
+
+	result, err := eval.MatchesAll(int(rec.NumRows()))
+	require.NoError(t, err)
+	require.Equal(t, []int{0}, result)
+}
+
+func FuzzFilterEvaluator_CompoundFilters(f *testing.F) {
+	f.Add(100, 3, 10, 0)
+	f.Add(500, 2, 5, 1)
+	f.Add(1000, 4, 8, 2)
+
+	f.Fuzz(func(t *testing.T, numRows, numFilters, categories, logicType int) {
+		if numRows <= 0 || numRows > 2000 {
+			t.Skip()
+		}
+		if numFilters <= 0 || numFilters > 8 {
+			t.Skip()
+		}
+		if categories <= 0 || categories > 50 {
+			t.Skip()
+		}
+		if logicType < 0 || logicType > 2 {
+			t.Skip()
+		}
+
+		logics := []string{"AND", "OR", "NOT"}
+		logic := logics[logicType]
+
+		mem := memory.NewGoAllocator()
+		schema := arrow.NewSchema([]arrow.Field{
+			{Name: "id", Type: arrow.PrimitiveTypes.Int64},
+			{Name: "category", Type: arrow.PrimitiveTypes.Int64},
+		}, nil)
+
+		builder := array.NewRecordBuilder(mem, schema)
+		ids := make([]int64, numRows)
+		cats := make([]int64, numRows)
+		for i := 0; i < numRows; i++ {
+			ids[i] = int64(i + 1)
+			cats[i] = int64((i % categories) + 1)
+		}
+		builder.Field(0).(*array.Int64Builder).AppendValues(ids, nil)
+		builder.Field(1).(*array.Int64Builder).AppendValues(cats, nil)
+		rec := builder.NewRecordBatch()
+		defer rec.Release()
+
+		childFilters := make([]Filter, 2)
+		for i := 0; i < 2; i++ {
+			catVal := int64(i%categories) + 1
+			childFilters[i] = Filter{
+				Field:    "category",
+				Operator: "=",
+				Value:    fmt.Sprintf("%d", catVal),
+			}
+		}
+
+		filters := []Filter{
+			{Logic: logic, Filters: childFilters},
+		}
+
+		eval, err := NewFilterEvaluator(rec, filters)
+		if err != nil {
+			t.Skip()
+		}
+
+		result, err := eval.MatchesAll(numRows)
+		if err != nil {
+			t.Errorf("MatchesAll error: %v", err)
+			return
+		}
+
+		for _, idx := range result {
+			if idx < 0 || idx >= numRows {
+				t.Errorf("invalid index %d returned", idx)
+			}
+		}
+		_ = eval.MatchesBatchFused(nil)
+	})
+}
+
+func FuzzFilterEvaluator_NestedFieldFilters(f *testing.F) {
+	f.Add(100, 50)
+	f.Add(500, 200)
+	f.Add(1000, 500)
+
+	f.Fuzz(func(t *testing.T, numRows, threshold int) {
+		if numRows <= 0 || numRows > 3000 {
+			t.Skip()
+		}
+		if threshold <= 0 || threshold > numRows {
+			t.Skip()
+		}
+
+		mem := memory.NewGoAllocator()
+		nestedType := arrow.StructOf(
+			arrow.Field{Name: "score", Type: arrow.PrimitiveTypes.Int64, Nullable: true},
+		)
+		schema := arrow.NewSchema([]arrow.Field{
+			{Name: "id", Type: arrow.PrimitiveTypes.Int64},
+			{Name: "data", Type: nestedType, Nullable: true},
+		}, nil)
+
+		builder := array.NewRecordBuilder(mem, schema)
+		builder.Field(0).(*array.Int64Builder).AppendValues(make([]int64, numRows), nil)
+
+		metaBuilder := builder.Field(1).(*array.StructBuilder)
+		scoreBuilder := metaBuilder.FieldBuilder(0).(*array.Int64Builder)
+		metaBuilder.AppendValues(make([]bool, numRows))
+		for i := 0; i < numRows; i++ {
+			scoreBuilder.Append(int64(i))
+		}
+
+		rec := builder.NewRecordBatch()
+		defer rec.Release()
+
+		filters := []Filter{
+			{Field: "data.score", Operator: ">", Value: fmt.Sprintf("%d", threshold)},
+		}
+
+		eval, err := NewFilterEvaluator(rec, filters)
+		if err != nil {
+			t.Skip()
+		}
+
+		result, err := eval.MatchesAll(numRows)
+		if err != nil {
+			t.Errorf("MatchesAll error: %v", err)
+			return
+		}
+
+		for _, idx := range result {
+			if idx <= threshold || idx >= numRows {
+				t.Errorf("nested field filter mismatch at index %d: threshold=%d", idx, threshold)
+			}
 		}
 	})
 }

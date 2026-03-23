@@ -34,7 +34,393 @@ type filterOp interface {
 	MatchBitmap(dst []byte)
 	FilterBatch(indices []int) []int
 	Bind(col arrow.Array) error
-} //nolint:interfacebloat
+	Compound() bool
+	MatchValue(val interface{}) bool
+}
+
+// compoundFilterOp handles AND/OR/NOT logic over child filterOps
+type compoundFilterOp struct {
+	logic    string // "AND", "OR", "NOT"
+	children []filterOp
+}
+
+func (c *compoundFilterOp) Compound() bool { return true }
+
+func (c *compoundFilterOp) Match(rowIdx int) bool {
+	switch c.logic {
+	case "AND":
+		for _, child := range c.children {
+			if !child.Match(rowIdx) {
+				return false
+			}
+		}
+		return true
+	case "OR":
+		for _, child := range c.children {
+			if child.Match(rowIdx) {
+				return true
+			}
+		}
+		return false
+	case "NOT":
+		if len(c.children) == 0 {
+			return true
+		}
+		return !c.children[0].Match(rowIdx)
+	default:
+		return false
+	}
+}
+
+func (c *compoundFilterOp) MatchBitmap(dst []byte) {
+	// For compound ops, fall back to row-by-row
+	for i := range dst {
+		dst[i] = 0
+	}
+	// AND: rows must pass all children
+	// OR: rows pass any child
+	// NOT: invert first child result
+	switch c.logic {
+	case "AND":
+		for i := range dst {
+			match := true
+			for _, child := range c.children {
+				if !child.Match(i) {
+					match = false
+					break
+				}
+			}
+			if match {
+				dst[i] = 1
+			}
+		}
+	case "OR":
+		for i := range dst {
+			for _, child := range c.children {
+				if child.Match(i) {
+					dst[i] = 1
+					break
+				}
+			}
+		}
+	case "NOT":
+		if len(c.children) > 0 {
+			child := c.children[0]
+			for i := range dst {
+				if !child.Match(i) {
+					dst[i] = 1
+				}
+			}
+		} else {
+			for i := range dst {
+				dst[i] = 1
+			}
+		}
+	}
+}
+
+func (c *compoundFilterOp) FilterBatch(indices []int) []int {
+	if len(indices) == 0 {
+		return nil
+	}
+	switch c.logic {
+	case "AND":
+		result := indices
+		for _, child := range c.children {
+			result = child.FilterBatch(result)
+			if len(result) == 0 {
+				return nil
+			}
+		}
+		return result
+	case "OR":
+		seen := make(map[int]bool)
+		var result []int
+		for _, child := range c.children {
+			matches := child.FilterBatch(indices)
+			for _, idx := range matches {
+				if !seen[idx] {
+					seen[idx] = true
+					result = append(result, idx)
+				}
+			}
+		}
+		// Maintain original order
+		order := make(map[int]int)
+		for i, idx := range indices {
+			order[idx] = i
+		}
+		sorted := make([]int, len(result))
+		copy(sorted, result)
+		for i := 0; i < len(sorted)-1; i++ {
+			for j := i + 1; j < len(sorted); j++ {
+				if order[sorted[i]] > order[sorted[j]] {
+					sorted[i], sorted[j] = sorted[j], sorted[i]
+				}
+			}
+		}
+		return sorted
+	case "NOT":
+		if len(c.children) == 0 {
+			return indices
+		}
+		excluded := c.children[0].FilterBatch(indices)
+		excludedMap := make(map[int]bool)
+		for _, idx := range excluded {
+			excludedMap[idx] = true
+		}
+		var result []int
+		for _, idx := range indices {
+			if !excludedMap[idx] {
+				result = append(result, idx)
+			}
+		}
+		return result
+	default:
+		return indices
+	}
+}
+
+func (c *compoundFilterOp) Bind(col arrow.Array) error {
+	for _, child := range c.children {
+		if err := child.Bind(col); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c *compoundFilterOp) MatchValue(val interface{}) bool {
+	switch c.logic {
+	case "AND":
+		for _, child := range c.children {
+			if !child.MatchValue(val) {
+				return false
+			}
+		}
+		return true
+	case "OR":
+		for _, child := range c.children {
+			if child.MatchValue(val) {
+				return true
+			}
+		}
+		return false
+	case "NOT":
+		if len(c.children) == 0 {
+			return true
+		}
+		return !c.children[0].MatchValue(val)
+	default:
+		return false
+	}
+}
+
+func resolveNestedField(schema arrow.Schema, fieldPath string) ([]int, arrow.DataType, error) {
+	parts := strings.Split(fieldPath, ".")
+	return resolveNestedFieldParts(schema, parts, 0)
+}
+
+func resolveNestedFieldParts(schema arrow.Schema, parts []string, depth int) ([]int, arrow.DataType, error) {
+	if len(parts) == 0 {
+		return nil, nil, fmt.Errorf("empty field path")
+	}
+
+	idx := schema.FieldIndices(parts[0])
+	if len(idx) == 0 {
+		return idx, nil, fmt.Errorf("field %q not found at depth %d", parts[0], depth)
+	}
+	field := schema.Field(idx[0])
+
+	if len(parts) == 1 {
+		return idx, field.Type, nil
+	}
+
+	switch field.Type.ID() {
+	case arrow.STRUCT:
+		childType := field.Type.(*arrow.StructType)
+		childSchema := arrow.NewSchema(childType.Fields(), nil)
+		return resolveNestedFieldParts(*childSchema, parts[1:], depth+1)
+	case arrow.LIST:
+		childType := field.Type.(*arrow.ListType)
+		elemField := childType.ElemField()
+		childSchema := arrow.NewSchema([]arrow.Field{elemField}, nil)
+		return resolveNestedFieldParts(*childSchema, parts[1:], depth+1)
+	case arrow.FIXED_SIZE_LIST:
+		childType := field.Type.(*arrow.FixedSizeListType)
+		elemField := childType.ElemField()
+		childSchema := arrow.NewSchema([]arrow.Field{elemField}, nil)
+		return resolveNestedFieldParts(*childSchema, parts[1:], depth+1)
+	}
+
+	return nil, nil, fmt.Errorf("field %q is not nested at depth %d", parts[0], depth)
+}
+
+func extractNestedValue(col arrow.Array, rowIdx int, fieldPath string) interface{} {
+	parts := strings.Split(fieldPath, ".")
+	if len(parts) > 1 {
+		parts = parts[1:]
+	}
+	return extractNestedValueParts(col, rowIdx, parts)
+}
+
+func extractNestedValueParts(col arrow.Array, rowIdx int, parts []string) interface{} {
+	if len(parts) == 0 {
+		return extractScalarValue(col, rowIdx)
+	}
+
+	switch col.DataType().ID() {
+	case arrow.STRUCT:
+		s := col.(*array.Struct)
+		childType := s.DataType().(*arrow.StructType)
+		childIdx := -1
+		for i := 0; i < childType.NumFields(); i++ {
+			if childType.Fields()[i].Name == parts[0] {
+				childIdx = i
+				break
+			}
+		}
+		if childIdx < 0 {
+			return nil
+		}
+		childCol := s.Field(childIdx)
+		if len(parts) == 1 {
+			return extractScalarValue(childCol, rowIdx)
+		}
+		return extractNestedValueParts(childCol, rowIdx, parts[1:])
+	case arrow.LIST:
+		l := col.(*array.List)
+		offsets := l.Offsets()
+		if int(offsets[rowIdx]) >= l.Len() {
+			return nil
+		}
+		childCol := l.ListValues()
+		childRow := int(offsets[rowIdx])
+		if len(parts) == 1 {
+			return extractScalarValue(childCol, childRow)
+		}
+		return extractNestedValueParts(childCol, childRow, parts[1:])
+	case arrow.FIXED_SIZE_LIST:
+		fl := col.(*array.FixedSizeList)
+		childCol := fl.ListValues()
+		size := int(fl.DataType().(*arrow.FixedSizeListType).Len())
+		start := rowIdx * size
+		if len(parts) == 1 {
+			return extractScalarValue(childCol, start)
+		}
+		return extractNestedValueParts(childCol, start, parts[1:])
+	default:
+		return extractScalarValue(col, rowIdx)
+	}
+}
+
+func extractScalarValue(col arrow.Array, rowIdx int) interface{} {
+	if col.IsNull(rowIdx) {
+		return nil
+	}
+	switch col.DataType().ID() {
+	case arrow.INT64:
+		return col.(*array.Int64).Value(rowIdx)
+	case arrow.FLOAT32:
+		return col.(*array.Float32).Value(rowIdx)
+	case arrow.FLOAT64:
+		return col.(*array.Float64).Value(rowIdx)
+	case arrow.STRING:
+		return col.(*array.String).Value(rowIdx)
+	case arrow.INT32:
+		return col.(*array.Int32).Value(rowIdx)
+	case arrow.UINT32:
+		return col.(*array.Uint32).Value(rowIdx)
+	case arrow.INT16:
+		return col.(*array.Int16).Value(rowIdx)
+	case arrow.UINT16:
+		return col.(*array.Uint16).Value(rowIdx)
+	case arrow.INT8:
+		return col.(*array.Int8).Value(rowIdx)
+	case arrow.UINT8:
+		return col.(*array.Uint8).Value(rowIdx)
+	case arrow.BOOL:
+		return col.(*array.Boolean).Value(rowIdx)
+	default:
+		return nil
+	}
+}
+
+// nestedFilterOp handles filtering on nested field paths (dot-notation).
+type nestedFilterOp struct {
+	fieldPath  string
+	colIndices []int
+	op         filterOp
+	outerCol   arrow.Array
+}
+
+func (n *nestedFilterOp) Compound() bool { return false }
+
+func (n *nestedFilterOp) Match(rowIdx int) bool {
+	if n.outerCol == nil {
+		return false
+	}
+	parts := strings.Split(n.fieldPath, ".")
+	if len(parts) > 1 {
+		parts = parts[1:]
+	}
+
+	if n.outerCol.DataType().ID() == arrow.LIST {
+		return n.matchAnyInList(rowIdx, parts)
+	}
+
+	val := extractNestedValueParts(n.outerCol, rowIdx, parts)
+	if val == nil {
+		return false
+	}
+	return n.op.MatchValue(val)
+}
+
+func (n *nestedFilterOp) matchAnyInList(rowIdx int, parts []string) bool {
+	l := n.outerCol.(*array.List)
+	offsets := l.Offsets()
+	start := int(offsets[rowIdx])
+	end := int(offsets[rowIdx+1])
+
+	childCol := l.ListValues()
+
+	for i := start; i < end; i++ {
+		val := extractNestedValueParts(childCol, i, parts)
+		if val != nil && n.op.MatchValue(val) {
+			return true
+		}
+	}
+	return false
+}
+
+func (n *nestedFilterOp) MatchBitmap(dst []byte) {
+	for i := range dst {
+		if n.Match(i) {
+			dst[i] = 1
+		} else {
+			dst[i] = 0
+		}
+	}
+}
+
+func (n *nestedFilterOp) FilterBatch(indices []int) []int {
+	result := make([]int, 0, len(indices))
+	for _, idx := range indices {
+		if n.Match(idx) {
+			result = append(result, idx)
+		}
+	}
+	return result
+}
+
+func (n *nestedFilterOp) Bind(col arrow.Array) error {
+	n.outerCol = col
+	return nil
+}
+
+func (n *nestedFilterOp) MatchValue(val interface{}) bool {
+	return n.op.MatchValue(val)
+}
 
 type int64FilterOp struct {
 	col      *array.Int64
@@ -43,6 +429,41 @@ type int64FilterOp struct {
 	colIdx   int
 }
 
+func (o *int64FilterOp) Compound() bool { return false }
+func (o *int64FilterOp) MatchValue(val interface{}) bool {
+	switch v := val.(type) {
+	case int64:
+		return o.compareInt64(v)
+	case int32:
+		return o.compareInt64(int64(v))
+	case int16:
+		return o.compareInt64(int64(v))
+	case int8:
+		return o.compareInt64(int64(v))
+	case float64:
+		return o.compareInt64(int64(v))
+	case float32:
+		return o.compareInt64(int64(v))
+	}
+	return false
+}
+func (o *int64FilterOp) compareInt64(v int64) bool {
+	switch o.operator {
+	case "=", "eq", "==":
+		return v == o.val
+	case "!=", "neq":
+		return v != o.val
+	case ">", "gt":
+		return v > o.val
+	case "<", "lt":
+		return v < o.val
+	case ">=", "ge":
+		return v >= o.val
+	case "<=", "le":
+		return v <= o.val
+	}
+	return false
+}
 func (o *int64FilterOp) Bind(col arrow.Array) error {
 	if col.DataType().ID() != arrow.INT64 {
 		return fmt.Errorf("expected int64 column, got %s", col.DataType())
@@ -172,19 +593,19 @@ type float32FilterOp struct {
 	colIdx   int
 }
 
-func (o *float32FilterOp) Bind(col arrow.Array) error {
-	if col.DataType().ID() != arrow.FLOAT32 {
-		return fmt.Errorf("expected float32 column, got %s", col.DataType())
+func (o *float32FilterOp) Compound() bool { return false }
+func (o *float32FilterOp) MatchValue(val interface{}) bool {
+	switch v := val.(type) {
+	case float64:
+		return o.compareFloat32(float32(v))
+	case float32:
+		return o.compareFloat32(v)
+	case int64:
+		return o.compareFloat32(float32(v))
 	}
-	o.col = col.(*array.Float32)
-	return nil
+	return false
 }
-
-func (o *float32FilterOp) Match(rowIdx int) bool {
-	if o.col.IsNull(rowIdx) {
-		return false
-	}
-	v := o.col.Value(rowIdx)
+func (o *float32FilterOp) compareFloat32(v float32) bool {
 	switch o.operator {
 	case "=", "eq", "==":
 		return v == o.val
@@ -200,6 +621,20 @@ func (o *float32FilterOp) Match(rowIdx int) bool {
 		return v <= o.val
 	}
 	return false
+}
+func (o *float32FilterOp) Bind(col arrow.Array) error {
+	if col.DataType().ID() != arrow.FLOAT32 {
+		return fmt.Errorf("expected float32 column, got %s", col.DataType())
+	}
+	o.col = col.(*array.Float32)
+	return nil
+}
+
+func (o *float32FilterOp) Match(rowIdx int) bool {
+	if o.col.IsNull(rowIdx) {
+		return false
+	}
+	return o.compareFloat32(o.col.Value(rowIdx))
 }
 
 func (o *float32FilterOp) MatchBitmap(dst []byte) {
@@ -298,6 +733,35 @@ type float64FilterOp struct {
 	colIdx   int
 }
 
+func (o *float64FilterOp) Compound() bool { return false }
+func (o *float64FilterOp) MatchValue(val interface{}) bool {
+	switch v := val.(type) {
+	case float64:
+		return o.compareFloat64(v)
+	case float32:
+		return o.compareFloat64(float64(v))
+	case int64:
+		return o.compareFloat64(float64(v))
+	}
+	return false
+}
+func (o *float64FilterOp) compareFloat64(v float64) bool {
+	switch o.operator {
+	case "=", "eq", "==":
+		return v == o.val
+	case "!=", "neq":
+		return v != o.val
+	case ">", "gt":
+		return v > o.val
+	case "<", "lt":
+		return v < o.val
+	case ">=", "ge":
+		return v >= o.val
+	case "<=", "le":
+		return v <= o.val
+	}
+	return false
+}
 func (o *float64FilterOp) Bind(col arrow.Array) error {
 	if col.DataType().ID() != arrow.FLOAT64 {
 		return fmt.Errorf("expected float64 column, got %s", col.DataType())
@@ -355,9 +819,34 @@ type stringFilterOp struct {
 	colIdx   int
 }
 
+func (o *stringFilterOp) Compound() bool { return false }
+func (o *stringFilterOp) MatchValue(val interface{}) bool {
+	v, ok := val.(string)
+	if !ok {
+		return false
+	}
+	return o.compareString(v)
+}
+func (o *stringFilterOp) compareString(v string) bool {
+	switch o.operator {
+	case "=", "eq", "==":
+		return v == o.val
+	case "!=", "neq":
+		return v != o.val
+	case ">", "gt":
+		return v > o.val
+	case "<", "lt":
+		return v < o.val
+	case ">=", "ge":
+		return v >= o.val
+	case "<=", "le":
+		return v <= o.val
+	}
+	return false
+}
 func (o *stringFilterOp) Bind(col arrow.Array) error {
 	if col.DataType().ID() != arrow.STRING {
-		return fmt.Errorf("expected string column, got %s", col.DataType())
+		return fmt.Errorf("expected String column, got %s", col.DataType())
 	}
 	o.col = col.(*array.String)
 	return nil
@@ -546,7 +1035,8 @@ type FilterEvaluator struct {
 	ops []filterOp
 }
 
-// NewFilterEvaluator creates a new evaluator, pre-binding filters to RecordBatch columns
+// NewFilterEvaluator creates a new evaluator, pre-binding filters to RecordBatch columns.
+// Supports compound expressions (AND/OR/NOT) with nested field paths (dot notation).
 func NewFilterEvaluator(rec arrow.RecordBatch, filters []Filter) (*FilterEvaluator, error) {
 	if len(filters) == 0 {
 		return &FilterEvaluator{}, nil
@@ -556,64 +1046,143 @@ func NewFilterEvaluator(rec arrow.RecordBatch, filters []Filter) (*FilterEvaluat
 	schema := rec.Schema()
 
 	for _, f := range filters {
-		indices := schema.FieldIndices(f.Field)
-		if len(indices) == 0 {
-			continue // Or return error? For now follow store_helpers.go behavior
+		op, err := buildFilterOp(*schema, rec, &f)
+		if err != nil {
+			return nil, err
 		}
-		colIdx := indices[0]
-		col := rec.Column(colIdx)
-		opStr := strings.ToLower(f.Operator)
+		if op != nil {
+			ops = append(ops, op)
+		}
+	}
 
-		switch col.DataType().ID() {
+	if len(ops) == 0 && len(filters) > 0 {
+		return nil, fmt.Errorf("failed to bind any filters to schema fields")
+	}
+	return &FilterEvaluator{ops: ops}, nil
+}
+
+func buildFilterOp(schema arrow.Schema, rec arrow.RecordBatch, f *Filter) (filterOp, error) {
+	logic := strings.ToUpper(f.Logic)
+	if logic != "" {
+		return buildCompoundOp(schema, rec, logic, f.Filters)
+	}
+
+	isNested := strings.Contains(f.Field, ".")
+
+	if isNested {
+		colIndices, col, nestedType, err := resolveFilterColumnEx(schema, rec, f.Field)
+		if err != nil || col == nil {
+			return nil, nil
+		}
+
+		opStr := strings.ToLower(f.Operator)
+		colIdx := colIndices[0]
+
+		var innerOp filterOp
+		switch nestedType.ID() {
 		case arrow.INT64:
 			val, err := strconv.ParseInt(f.Value, 10, 64)
 			if err != nil {
 				return nil, fmt.Errorf("invalid int64 value %q for field %s", f.Value, f.Field)
 			}
-			ops = append(ops, &int64FilterOp{
-				col:      col.(*array.Int64),
-				val:      val,
-				operator: opStr,
-				colIdx:   colIdx,
-			})
+			innerOp = &int64FilterOp{val: val, operator: opStr, colIdx: colIdx}
 		case arrow.FLOAT32:
 			val, err := strconv.ParseFloat(f.Value, 32)
 			if err != nil {
 				return nil, fmt.Errorf("invalid float32 value %q for field %s", f.Value, f.Field)
 			}
-			ops = append(ops, &float32FilterOp{
-				col:      col.(*array.Float32),
-				val:      float32(val),
-				operator: opStr,
-				colIdx:   colIdx,
-			})
+			innerOp = &float32FilterOp{val: float32(val), operator: opStr, colIdx: colIdx}
 		case arrow.FLOAT64:
 			val, err := strconv.ParseFloat(f.Value, 64)
 			if err != nil {
 				return nil, fmt.Errorf("invalid float64 value %q for field %s", f.Value, f.Field)
 			}
-			ops = append(ops, &float64FilterOp{
-				col:      col.(*array.Float64),
-				val:      val,
-				operator: opStr,
-				colIdx:   colIdx,
-			})
+			innerOp = &float64FilterOp{val: val, operator: opStr, colIdx: colIdx}
 		case arrow.STRING:
-			ops = append(ops, &stringFilterOp{
-				col:      col.(*array.String),
-				val:      f.Value,
-				operator: opStr,
-				colIdx:   colIdx,
-			})
+			innerOp = &stringFilterOp{val: f.Value, operator: opStr, colIdx: colIdx}
 		default:
-			// Fallback to slow evaluator or error
-			// For now, let's keep it simple and handle common types
+			return nil, nil
+		}
+
+		return &nestedFilterOp{fieldPath: f.Field, colIndices: colIndices, op: innerOp, outerCol: col}, nil
+	}
+
+	colIndices, col, nestedType, err := resolveFilterColumnEx(schema, rec, f.Field)
+	if err != nil || col == nil {
+		return nil, nil
+	}
+
+	opStr := strings.ToLower(f.Operator)
+	colIdx := colIndices[0]
+
+	switch nestedType.ID() {
+	case arrow.INT64:
+		val, err := strconv.ParseInt(f.Value, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid int64 value %q for field %s", f.Value, f.Field)
+		}
+		return &int64FilterOp{col: col.(*array.Int64), val: val, operator: opStr, colIdx: colIdx}, nil
+	case arrow.FLOAT32:
+		val, err := strconv.ParseFloat(f.Value, 32)
+		if err != nil {
+			return nil, fmt.Errorf("invalid float32 value %q for field %s", f.Value, f.Field)
+		}
+		return &float32FilterOp{col: col.(*array.Float32), val: float32(val), operator: opStr, colIdx: colIdx}, nil
+	case arrow.FLOAT64:
+		val, err := strconv.ParseFloat(f.Value, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid float64 value %q for field %s", f.Value, f.Field)
+		}
+		return &float64FilterOp{col: col.(*array.Float64), val: val, operator: opStr, colIdx: colIdx}, nil
+	case arrow.STRING:
+		return &stringFilterOp{col: col.(*array.String), val: f.Value, operator: opStr, colIdx: colIdx}, nil
+	default:
+		return nil, nil
+	}
+}
+
+func resolveFilterColumnEx(schema arrow.Schema, rec arrow.RecordBatch, fieldPath string) ([]int, arrow.Array, arrow.DataType, error) {
+	parts := strings.Split(fieldPath, ".")
+	if len(parts) == 0 {
+		return nil, nil, nil, fmt.Errorf("empty field path")
+	}
+
+	rootIdx := schema.FieldIndices(parts[0])
+	if len(rootIdx) == 0 {
+		return nil, nil, nil, nil
+	}
+
+	indices, dt, err := resolveNestedField(schema, fieldPath)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	return indices, rec.Column(rootIdx[0]), dt, nil
+}
+
+func buildCompoundOp(schema arrow.Schema, rec arrow.RecordBatch, logic string, childFilters []Filter) (filterOp, error) {
+	children := make([]filterOp, 0, len(childFilters))
+	for i := range childFilters {
+		child, err := buildFilterOp(schema, rec, &childFilters[i])
+		if err != nil {
+			return nil, err
+		}
+		if child != nil {
+			children = append(children, child)
 		}
 	}
-	if len(ops) == 0 && len(filters) > 0 {
-		return nil, fmt.Errorf("failed to bind any filters to schema fields")
+	return &compoundFilterOp{logic: logic, children: children}, nil
+}
+
+func resolveFilterColumn(schema arrow.Schema, rec arrow.RecordBatch, fieldPath string) ([]int, arrow.Array, error) {
+	indices, _, err := resolveNestedField(schema, fieldPath)
+	if err != nil {
+		return nil, nil, err
 	}
-	return &FilterEvaluator{ops: ops}, nil
+	if len(indices) == 0 {
+		return nil, nil, nil
+	}
+	return indices, rec.Column(indices[0]), nil
 }
 
 // Matches returns true if the row satisfies all filters
@@ -695,8 +1264,7 @@ func (e *FilterEvaluator) MatchesBatchFused(rowIndices []int) []int {
 }
 
 // MatchesAll evaluates all filters on the entire batch using SIMD and returns matching row indices.
-// This is optimal for dense scans.
-// Uses Bloom filter-inspired optimization: reorders filters by selectivity and early exits when all rows are rejected.
+// Compound filters (AND/OR/NOT) and flat filters are handled separately for optimal performance.
 func (e *FilterEvaluator) MatchesAll(batchLen int) ([]int, error) {
 	start := time.Now()
 	defer func() {
@@ -705,7 +1273,6 @@ func (e *FilterEvaluator) MatchesAll(batchLen int) ([]int, error) {
 	}()
 
 	if len(e.ops) == 0 {
-		// Return all indices
 		indices := make([]int, batchLen)
 		for i := 0; i < batchLen; i++ {
 			indices[i] = i
@@ -713,40 +1280,67 @@ func (e *FilterEvaluator) MatchesAll(batchLen int) ([]int, error) {
 		return indices, nil
 	}
 
-	// Reorder filters by selectivity (high selectivity = few matches = run first)
-	// This enables early exit optimization
-	sortedOps := selectOpsBySelectivity(e.ops)
-
-	// Allocate bitmaps
-	bitmap := make([]byte, batchLen)
-	sortedOps[0].MatchBitmap(bitmap)
-
-	// Early exit if first filter rejects all rows
-	if isBitmapAllZeros(bitmap) {
-		metrics.BloomFilterEarlyExitsTotal.Inc()
-		metrics.FilterEvaluatorAllocations.WithLabelValues("MatchesAll", "early_exit").Add(0)
-		return []int{}, nil
+	flatOps := make([]filterOp, 0, len(e.ops))
+	compoundOps := make([]filterOp, 0, len(e.ops))
+	for _, op := range e.ops {
+		if op.Compound() {
+			compoundOps = append(compoundOps, op)
+		} else {
+			flatOps = append(flatOps, op)
+		}
 	}
 
-	if len(sortedOps) > 1 {
-		tmp := make([]byte, batchLen)
-		for i := 1; i < len(sortedOps); i++ {
-			sortedOps[i].MatchBitmap(tmp)
-			// Intersect (AND)
-			if err := simd.AndBytes(bitmap, tmp); err != nil {
-				return nil, err
-			}
+	var bitmap []byte
+	if len(flatOps) > 0 {
+		sortedFlat := selectOpsBySelectivity(flatOps)
+		bitmap = make([]byte, batchLen)
+		sortedFlat[0].MatchBitmap(bitmap)
 
-			// Early exit if bitmap becomes all zeros (all remaining rows rejected)
+		if isBitmapAllZeros(bitmap) {
+			metrics.BloomFilterEarlyExitsTotal.Inc()
+			return []int{}, nil
+		}
+
+		if len(sortedFlat) > 1 {
+			tmp := make([]byte, batchLen)
+			for i := 1; i < len(sortedFlat); i++ {
+				sortedFlat[i].MatchBitmap(tmp)
+				if err := simd.AndBytes(bitmap, tmp); err != nil {
+					return nil, err
+				}
+				if isBitmapAllZeros(bitmap) {
+					metrics.BloomFilterEarlyExitsTotal.Inc()
+					return []int{}, nil
+				}
+			}
+		}
+	}
+
+	if len(compoundOps) > 0 {
+		compoundBitmap := make([]byte, batchLen)
+		for _, cop := range compoundOps {
+			cop.MatchBitmap(compoundBitmap)
+			if bitmap == nil {
+				bitmap = compoundBitmap
+			} else {
+				if err := simd.AndBytes(bitmap, compoundBitmap); err != nil {
+					return nil, err
+				}
+			}
 			if isBitmapAllZeros(bitmap) {
 				metrics.BloomFilterEarlyExitsTotal.Inc()
-				metrics.FilterEvaluatorAllocations.WithLabelValues("MatchesAll", "early_exit").Add(float64(len(tmp)))
 				return []int{}, nil
 			}
 		}
 	}
 
-	// Collect indices
+	if bitmap == nil {
+		bitmap = make([]byte, batchLen)
+		for i := range bitmap {
+			bitmap[i] = 1
+		}
+	}
+
 	indices := make([]int, 0, batchLen/2)
 	for i, b := range bitmap {
 		if b != 0 {
@@ -764,15 +1358,14 @@ func (e *FilterEvaluator) Reset(rec arrow.RecordBatch) error {
 	}
 
 	for _, op := range e.ops {
-		var colIdx int
-		// We need to access colIdx from the op. Since it's stored in the struct, we type switch.
-		// Alternatively, we could add ColIdx() to the interface, but that exposes implementation detail.
-		// Or we can just store colIdx in FilterEvaluator alongside ops?
-		// FilterEvaluator currently has `ops []filterOp`.
-		// Let's modify FilterEvaluator to store indices mapping ops to columns.
+		if op.Compound() {
+			if err := op.Bind(rec.Columns()[0]); err != nil {
+				continue
+			}
+			continue
+		}
 
-		// Actually, let's just stick to the plan:
-		// We need to retrieve the column from the batch using the stored index.
+		var colIdx int
 		switch o := op.(type) {
 		case *int64FilterOp:
 			colIdx = o.colIdx
@@ -783,7 +1376,7 @@ func (e *FilterEvaluator) Reset(rec arrow.RecordBatch) error {
 		case *stringFilterOp:
 			colIdx = o.colIdx
 		default:
-			return fmt.Errorf("unknown filter op type")
+			continue
 		}
 
 		if colIdx < 0 || colIdx >= int(rec.NumCols()) {
@@ -798,10 +1391,8 @@ func (e *FilterEvaluator) Reset(rec arrow.RecordBatch) error {
 	return nil
 }
 
-// EvaluateToArrowBoolean returns an Arrow Boolean Array mask for the batch.
 func (e *FilterEvaluator) EvaluateToArrowBoolean(mem memory.Allocator, rows int) (*array.Boolean, error) {
 	if len(e.ops) == 0 {
-		// All match
 		b := array.NewBooleanBuilder(mem)
 		b.Reserve(rows)
 		for i := 0; i < rows; i++ {
@@ -810,17 +1401,49 @@ func (e *FilterEvaluator) EvaluateToArrowBoolean(mem memory.Allocator, rows int)
 		return b.NewBooleanArray(), nil
 	}
 
-	// Use temporary byte bitmap
-	bitmap := make([]byte, rows)
-	e.ops[0].MatchBitmap(bitmap)
+	flatOps := make([]filterOp, 0, len(e.ops))
+	compoundOps := make([]filterOp, 0, len(e.ops))
+	for _, op := range e.ops {
+		if op.Compound() {
+			compoundOps = append(compoundOps, op)
+		} else {
+			flatOps = append(flatOps, op)
+		}
+	}
 
-	if len(e.ops) > 1 {
-		tmp := make([]byte, rows)
-		for i := 1; i < len(e.ops); i++ {
-			e.ops[i].MatchBitmap(tmp)
-			if err := simd.AndBytes(bitmap, tmp); err != nil {
-				return nil, err
+	var bitmap []byte
+	if len(flatOps) > 0 {
+		bitmap = make([]byte, rows)
+		flatOps[0].MatchBitmap(bitmap)
+		if len(flatOps) > 1 {
+			tmp := make([]byte, rows)
+			for i := 1; i < len(flatOps); i++ {
+				flatOps[i].MatchBitmap(tmp)
+				if err := simd.AndBytes(bitmap, tmp); err != nil {
+					return nil, err
+				}
 			}
+		}
+	}
+
+	if len(compoundOps) > 0 {
+		cb := make([]byte, rows)
+		for _, cop := range compoundOps {
+			cop.MatchBitmap(cb)
+			if bitmap == nil {
+				bitmap = cb
+			} else {
+				if err := simd.AndBytes(bitmap, cb); err != nil {
+					return nil, err
+				}
+			}
+		}
+	}
+
+	if bitmap == nil {
+		bitmap = make([]byte, rows)
+		for i := range bitmap {
+			bitmap[i] = 1
 		}
 	}
 
@@ -834,9 +1457,11 @@ func (e *FilterEvaluator) EvaluateToArrowBoolean(mem memory.Allocator, rows int)
 	return b.NewBooleanArray(), nil
 }
 
-// estimateSelectivity estimates how selective a filter is (0-1, where 1 means all rows match).
-// Higher selectivity means fewer rows pass the filter, which is better for early exit optimization.
 func estimateSelectivity(op filterOp, sampleSize int) float64 {
+	if op.Compound() {
+		return 0.5
+	}
+
 	var filterType string
 	var sampleCount int
 
@@ -853,8 +1478,11 @@ func estimateSelectivity(op filterOp, sampleSize int) float64 {
 	case *stringFilterOp:
 		filterType = "string"
 		sampleCount = o.col.Len()
+	case *nestedFilterOp:
+		filterType = "nested"
+		return estimateSelectivity(o.op, sampleSize)
 	default:
-		return 0.5 // Default to neutral selectivity for unknown types
+		return 0.5
 	}
 
 	if sampleCount == 0 {

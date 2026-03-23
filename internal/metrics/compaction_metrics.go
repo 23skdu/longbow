@@ -448,6 +448,28 @@ var (
 		},
 	)
 
+	// Compound Filter Metrics
+	CompoundFilterOpsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_compound_filter_ops_total",
+			Help: "Total compound filter operations by logic type",
+		},
+		[]string{"logic"},
+	)
+	CompoundFilterDepth = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_compound_filter_depth",
+			Help:    "Depth of compound filter expression trees",
+			Buckets: []float64{1, 2, 3, 4, 5, 10},
+		},
+	)
+	NestedFieldFilterOpsTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_nested_field_filter_ops_total",
+			Help: "Total filter operations on nested field paths",
+		},
+	)
+
 	// Parser Pool Metrics
 	ParserPoolGets = promauto.NewCounter(
 		prometheus.CounterOpts{

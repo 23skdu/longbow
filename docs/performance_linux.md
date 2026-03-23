@@ -1,10 +1,13 @@
 # Longbow Linux Performance Benchmarks
 
-**Date**: March 22, 2026
+**Date**: March 22-23, 2026
 **Platform**: Linux (x86_64, gccgo/Go 1.24)
 **CPU**: 12th Gen Intel(R) Core(TM) i7-12650H (no AVX512 — AVX2-only)
 **Memory**: 23GB RAM (8GB allocated to Longbow for tests)
 **Storage**: NVMe SSD
+
+> **Status**: Partial results captured (16 configs). Linux shows ~10x lower QPS than M3 Pro
+> due to AVX2-only CPU (i7-12650H lacks AVX512). Previous results from 2026-03-22 below.
 
 > **Note**: This i7-12650H laptop CPU does **not** have AVX512. All SIMD
 > operations fall back to AVX2. The newly added `euclidean768AVX512` and
@@ -197,4 +200,4 @@ LONGBOW_NODE_ID=bench1 \
 
 ---
 
-*Last Updated: March 22, 2026*
+*Last Updated: March 23, 2026 (partial results)*

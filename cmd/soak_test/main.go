@@ -24,28 +24,42 @@ import (
 )
 
 var (
-	peers        = flag.String("peers", "127.0.0.1:3000", "Comma-separated list of peer addresses")
-	duration     = flag.Duration("duration", 5*time.Minute, "Duration of the soak test")
-	concurrency  = flag.Int("workers", 4, "Number of concurrent workers per phase")
-	dataset      = flag.String("dataset", "soak_test_collection", "Dataset name")
-	dim          = flag.Int("dim", 128, "Vector dimension")
-	batchSize    = flag.Int("batch", 100, "Injest batch size")
-	deleteRate   = flag.Float64("delete-rate", 0.1, "Probability of deleting a batch after search")
-	chaosEnabled = flag.Bool("chaos", false, "Enable random process kills (not yet implemented in this tool, but for external script)")
+	peers         = flag.String("peers", "127.0.0.1:3000", "Comma-separated list of peer addresses")
+	duration      = flag.Duration("duration", 5*time.Minute, "Duration of the soak test")
+	concurrency   = flag.Int("workers", 4, "Number of concurrent workers per phase")
+	dataset       = flag.String("dataset", "soak_test_collection", "Dataset name")
+	dim           = flag.Int("dim", 128, "Vector dimension")
+	batchSize     = flag.Int("batch", 100, "Injest batch size")
+	deleteRate    = flag.Float64("delete-rate", 0.1, "Probability of delete/compact after search")
+	chaosEnabled  = flag.Bool("chaos", false, "Enable random process kills (not yet implemented in this tool, but for external script)")
+	filterEnabled = flag.Bool("filters", true, "Enable compound filter searches")
 )
 
 type Stats struct {
-	IngestOps atomic.Int64
-	SearchOps atomic.Int64
-	DeleteOps atomic.Int64
-	Errors    atomic.Int64
+	IngestOps        atomic.Int64
+	DenseSearches    atomic.Int64
+	SparseSearches   atomic.Int64
+	FilteredSearches atomic.Int64
+	HybridSearches   atomic.Int64
+	DeleteOps        atomic.Int64
+	Errors           atomic.Int64
 }
+
+type SearchMode int
+
+const (
+	DenseSearch SearchMode = iota
+	SparseSearch
+	FilteredSearch
+	HybridSearch
+)
 
 func main() {
 	flag.Parse()
 
 	fmt.Printf("🌊 Starting Longbow Soak Test\n")
-	fmt.Printf("Dataset: %s, Workers: %d, Duration: %s, Chaos: %v\n", *dataset, *concurrency, *duration, *chaosEnabled)
+	fmt.Printf("Dataset: %s, Workers: %d, Duration: %s, Chaos: %v, Filters: %v\n",
+		*dataset, *concurrency, *duration, *chaosEnabled, *filterEnabled)
 
 	peerList := strings.Split(*peers, ",")
 
@@ -80,22 +94,31 @@ Loop:
 			break Loop
 		case <-ticker.C:
 			elapsed := time.Since(start)
-			fmt.Printf("[%v] Ingest: %d, Search: %d, Delete: %d, Errors: %d\n",
+			fmt.Printf("[%v] Ingest: %d, Dense: %d, Sparse: %d, Filtered: %d, Hybrid: %d, Delete: %d, Errors: %d\n",
 				elapsed.Round(time.Second),
 				stats.IngestOps.Load(),
-				stats.SearchOps.Load(),
+				stats.DenseSearches.Load(),
+				stats.SparseSearches.Load(),
+				stats.FilteredSearches.Load(),
+				stats.HybridSearches.Load(),
 				stats.DeleteOps.Load(),
 				stats.Errors.Load())
 		}
 	}
 
 	wg.Wait()
+	totalSearches := stats.DenseSearches.Load() + stats.SparseSearches.Load() +
+		stats.FilteredSearches.Load() + stats.HybridSearches.Load()
 	fmt.Printf("\n--- Final Results ---\n")
 	fmt.Printf("Total Elapsed: %v\n", time.Since(start))
-	fmt.Printf("Ingest Ops:   %d\n", stats.IngestOps.Load())
-	fmt.Printf("Search Ops:   %d\n", stats.SearchOps.Load())
-	fmt.Printf("Delete Ops:   %d\n", stats.DeleteOps.Load())
-	fmt.Printf("Total Errors: %d\n", stats.Errors.Load())
+	fmt.Printf("Ingest Ops:       %d\n", stats.IngestOps.Load())
+	fmt.Printf("Dense Searches:   %d\n", stats.DenseSearches.Load())
+	fmt.Printf("Sparse Searches:  %d\n", stats.SparseSearches.Load())
+	fmt.Printf("Filtered Searches: %d\n", stats.FilteredSearches.Load())
+	fmt.Printf("Hybrid Searches:  %d\n", stats.HybridSearches.Load())
+	fmt.Printf("Total Searches:   %d\n", totalSearches)
+	fmt.Printf("Delete Ops:       %d\n", stats.DeleteOps.Load())
+	fmt.Printf("Total Errors:     %d\n", stats.Errors.Load())
 }
 
 func runWorker(ctx context.Context, wg *sync.WaitGroup, peer, mode string, stats *Stats) {
@@ -143,10 +166,20 @@ func runWorker(ctx context.Context, wg *sync.WaitGroup, peer, mode string, stats
 					stats.IngestOps.Add(1)
 				}
 			} else {
-				err = performSearchAndDelete(ctx, c, stats)
-				if err == nil {
-					stats.SearchOps.Add(1)
+				searchMode, searchErr := performSearchAndDelete(ctx, c, stats)
+				if searchErr == nil {
+					switch searchMode {
+					case DenseSearch:
+						stats.DenseSearches.Add(1)
+					case SparseSearch:
+						stats.SparseSearches.Add(1)
+					case FilteredSearch:
+						stats.FilteredSearches.Add(1)
+					case HybridSearch:
+						stats.HybridSearches.Add(1)
+					}
 				}
+				err = searchErr
 			}
 
 			if err != nil {
@@ -165,6 +198,11 @@ func performIngest(ctx context.Context, c *client.SmartClient) error {
 	schema := arrow.NewSchema([]arrow.Field{
 		{Name: "id", Type: arrow.BinaryTypes.String},
 		{Name: "embedding", Type: arrow.FixedSizeListOf(int32(*dim), arrow.PrimitiveTypes.Float32)},
+		{Name: "category", Type: arrow.PrimitiveTypes.Int64},
+		{Name: "score", Type: arrow.PrimitiveTypes.Float32},
+		{Name: "priority", Type: arrow.BinaryTypes.String},
+		{Name: "status", Type: arrow.BinaryTypes.String},
+		{Name: "deleted", Type: arrow.FixedWidthTypes.Boolean},
 		{Name: "timestamp", Type: arrow.PrimitiveTypes.Int64},
 	}, nil)
 
@@ -175,7 +213,15 @@ func performIngest(ctx context.Context, c *client.SmartClient) error {
 	idB := b.Field(0).(*array.StringBuilder)
 	vecB := b.Field(1).(*array.FixedSizeListBuilder)
 	valB := vecB.ValueBuilder().(*array.Float32Builder)
-	tsB := b.Field(2).(*array.Int64Builder)
+	catB := b.Field(2).(*array.Int64Builder)
+	scoreB := b.Field(3).(*array.Float32Builder)
+	prioB := b.Field(4).(*array.StringBuilder)
+	statusB := b.Field(5).(*array.StringBuilder)
+	deletedB := b.Field(6).(*array.BooleanBuilder)
+	tsB := b.Field(7).(*array.Int64Builder)
+
+	categories := []string{"urgent", "high", "normal", "low"}
+	statuses := []string{"active", "pending", "closed"}
 
 	for i := 0; i < *batchSize; i++ {
 		idB.Append(uuid.New().String())
@@ -183,6 +229,11 @@ func performIngest(ctx context.Context, c *client.SmartClient) error {
 		for j := 0; j < *dim; j++ {
 			valB.Append(rand.Float32())
 		}
+		catB.Append(int64(rand.Intn(10)))
+		scoreB.Append(rand.Float32() * 100)
+		prioB.Append(categories[rand.Intn(len(categories))])
+		statusB.Append(statuses[rand.Intn(len(statuses))])
+		deletedB.Append(rand.Float32() < 0.1)
 		tsB.Append(time.Now().UnixNano())
 	}
 
@@ -208,7 +259,8 @@ func performIngest(ctx context.Context, c *client.SmartClient) error {
 	return wr.Close()
 }
 
-func performSearchAndDelete(ctx context.Context, c *client.SmartClient, stats *Stats) error {
+func performSearchAndDelete(ctx context.Context, c *client.SmartClient, stats *Stats) (SearchMode, error) {
+	searchMode := SearchMode(rand.Intn(4))
 	queryVec := make([]float32, *dim)
 	for i := 0; i < *dim; i++ {
 		queryVec[i] = rand.Float32()
@@ -216,9 +268,28 @@ func performSearchAndDelete(ctx context.Context, c *client.SmartClient, stats *S
 
 	req := map[string]any{
 		"dataset": *dataset,
-		"vector":  queryVec,
 		"k":       5,
 	}
+
+	switch searchMode {
+	case DenseSearch:
+		req["vector"] = queryVec
+	case SparseSearch:
+		textQueries := []string{"machine learning", "neural network", "data science", "deep learning", "artificial intelligence"}
+		req["text_query"] = textQueries[rand.Intn(len(textQueries))]
+		req["alpha"] = 0.0
+	case FilteredSearch:
+		req["vector"] = queryVec
+		if *filterEnabled {
+			req["filters"] = generateCompoundFilter()
+		}
+	case HybridSearch:
+		req["vector"] = queryVec
+		textQueries := []string{"search query", "information retrieval", "vector database"}
+		req["text_query"] = textQueries[rand.Intn(len(textQueries))]
+		req["alpha"] = rand.Float64()
+	}
+
 	body, _ := json.Marshal(req)
 
 	action := &flight.Action{
@@ -228,34 +299,21 @@ func performSearchAndDelete(ctx context.Context, c *client.SmartClient, stats *S
 
 	stream, err := c.DoAction(ctx, action)
 	if err != nil {
-		return err
+		return searchMode, err
 	}
 
 	// Drain results
 	for {
-		res, err := stream.Recv()
+		_, err := stream.Recv()
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
-			return err
-		}
-		// In a real scenario we'd parse the result, but here we just collect IDs if we want chaos
-		// The mock action returns metadata usually.
-		// For simplicity, let's assume we want to delete something occasionally.
-		if rand.Float64() < *deleteRate {
-			// In our schema we had "id"
-			// Actually flight Action results are Result objects.
-			_ = res
+			return searchMode, err
 		}
 	}
 
-	// Occasionally perform a "Delete" action if we want to test fragmentation
 	if rand.Float64() < *deleteRate {
-		// Mock delete - we don't have a direct "DeleteByID" flight action yet?
-		// Let's check if there is one.
-		// If not, we skip for now or implement it.
-		// For now, let's just trigger a "Compact" action to stress the system.
 		compactReq := map[string]any{"dataset": *dataset}
 		cBody, _ := json.Marshal(compactReq)
 		compactAction := &flight.Action{
@@ -268,6 +326,38 @@ func performSearchAndDelete(ctx context.Context, c *client.SmartClient, stats *S
 		}
 	}
 
+	return searchMode, nil
+}
+
+func generateCompoundFilter() any {
+	filterTypes := []string{"AND", "OR", "NOT"}
+	filterType := filterTypes[rand.Intn(len(filterTypes))]
+
+	switch filterType {
+	case "AND":
+		return map[string]any{
+			"logic": "AND",
+			"filters": []any{
+				map[string]any{"field": "category", "operator": "=", "value": fmt.Sprintf("%d", rand.Intn(10))},
+				map[string]any{"field": "score", "operator": ">", "value": fmt.Sprintf("%d", rand.Intn(50))},
+			},
+		}
+	case "OR":
+		return map[string]any{
+			"logic": "OR",
+			"filters": []any{
+				map[string]any{"field": "priority", "operator": "=", "value": "high"},
+				map[string]any{"field": "status", "operator": "=", "value": "active"},
+			},
+		}
+	case "NOT":
+		return map[string]any{
+			"logic": "NOT",
+			"filters": []any{
+				map[string]any{"field": "deleted", "operator": "=", "value": "true"},
+			},
+		}
+	}
 	return nil
 }
 func checkReadiness(ctx context.Context, c *client.SmartClient) (bool, error) {

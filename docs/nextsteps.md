@@ -1,6 +1,31 @@
 # Longbow Performance Optimization Status
 
-## Current Benchmark Results (2026-03-16)
+## Current Benchmark Results (2026-03-23)
+
+### M3 Pro (Bahamut) — 61-Config Matrix Complete ✅
+
+**Test**: 8 dtypes × 2 dims × 4 counts = 64 configs (61 completed)
+**Memory**: 20GB allocated
+**Queries**: 1,000 per test
+
+| DType | Dim=128 Best QPS | Dim=384 Best QPS | Notes |
+|-------|-----------------|-----------------|-------|
+| int16 | 11,951 (Filtered) | 8,366 (Filtered) | Best overall performer |
+| int32 | 11,960 (Filtered) | 8,512 (Filtered) | Excellent |
+| uint32 | 12,139 (Filtered) | 9,305 (Filtered) | Best Filtered QPS |
+| int8 | 8,797 (Dense) | 7,000 (Dense) | Best DoGet (8.2M/s) |
+| float32 | 13,036 (Filtered) | 7,679 (Hybrid) | Excellent at 25k |
+| complex64 | 11,869 (Filtered) | 8,055 (Filtered) | Good |
+| float64 | 5,093 (Filtered) | 3,823 (Filtered) | Moderate |
+| complex128 | 8,287 (Dense) | 2,961 (Filtered) | Slow at high dims |
+
+**Anomalies**:
+- `complex64_384_5000`: Very low QPS (347 Dense, 34 Filtered) — indexing not complete
+- `complex128_384_5000/10000/25000`: Timed out (>5 min per test)
+
+---
+
+## Previous Benchmark Results (2026-03-16)
 
 ### SIMD Microbenchmarks (Apple M3 Pro)
 
@@ -199,7 +224,7 @@ Updated benchmark scripts to use 20GB memory limit for performance testing:
 
 ---
 
-Last Updated: 2026-03-22 11:45 (64-config benchmark complete, feature parity section added)
+Last Updated: 2026-03-23 (61-config benchmark complete, M3 Pro performance documented)
 
 ---
 

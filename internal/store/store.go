@@ -461,6 +461,14 @@ func (s *VectorStore) SetGPUConfig(backend gpu.GPUBackend, deviceID int) {
 	}
 }
 
+// SetAutoGPUConfig automatically detects and configures the best available GPU backend
+// Metal on macOS, CUDA on Linux with NVIDIA, CPU fallback if no GPU
+func (s *VectorStore) SetAutoGPUConfig(deviceID int) {
+	backend := gpu.GetPreferredBackend()
+	s.logger.Info().Str("backend", backend.String()).Msg("Auto-detected GPU backend")
+	s.SetGPUConfig(backend, deviceID)
+}
+
 // GetGPUIndexPool returns the GPU index pool for this store
 func (s *VectorStore) GetGPUIndexPool() *gpu.GPUIndexPool {
 	return s.gpuIndexPool

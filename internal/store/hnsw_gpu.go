@@ -40,23 +40,35 @@ func DefaultGPUConfig() GPUConfig {
 }
 
 // InitGPU attempts to initialize GPU acceleration for this index
-//
-// InitGPU attempts to initialize GPU acceleration for this index
+// Uses auto-detected backend (Metal on macOS, CUDA on Linux with NVIDIA, CPU fallback)
 //
 //nolint:gocritic // Logger passed by value for simplicity
 func (h *ArrowHNSW) InitGPU(deviceID int, logger zerolog.Logger) error {
-	return h.InitGPUWithConfig(deviceID, logger, DefaultGPUConfig())
+	return h.InitGPUWithBackend(deviceID, logger, gpu.GetPreferredBackend())
 }
 
-// InitGPUWithConfig initializes GPU with custom configuration
+// InitGPUWithBackend initializes GPU with explicitly specified backend
+// Use this if you need to override auto-detection
+//
+//nolint:gocritic // Logger passed by value for simplicity
+func (h *ArrowHNSW) InitGPUWithBackend(deviceID int, logger zerolog.Logger, backend gpu.GPUBackend) error {
+	return h.InitGPUWithConfigAndBackend(deviceID, logger, DefaultGPUConfig(), backend)
+}
+
+// InitGPUWithConfig initializes GPU with custom configuration using auto-detected backend
 func (h *ArrowHNSW) InitGPUWithConfig(deviceID int, logger zerolog.Logger, config GPUConfig) error {
+	return h.InitGPUWithConfigAndBackend(deviceID, logger, config, gpu.GetPreferredBackend())
+}
+
+// InitGPUWithConfigAndBackend initializes GPU with custom configuration and specified backend
+func (h *ArrowHNSW) InitGPUWithConfigAndBackend(deviceID int, logger zerolog.Logger, config GPUConfig, backend gpu.GPUBackend) error {
 	h.gpuMu.Lock()
 	defer h.gpuMu.Unlock()
 
 	if h.gpuEnabled {
 		return &gpu.GPUInitializationError{
 			DeviceID: deviceID,
-			Backend:  gpu.BackendCUDA,
+			Backend:  backend,
 			Cause:    fmt.Errorf("GPU already initialized"),
 		}
 	}
@@ -66,18 +78,18 @@ func (h *ArrowHNSW) InitGPUWithConfig(deviceID int, logger zerolog.Logger, confi
 	if dims == 0 {
 		return &gpu.GPUInitializationError{
 			DeviceID: deviceID,
-			Backend:  gpu.BackendCUDA,
+			Backend:  backend,
 			Cause:    fmt.Errorf("index dimensions not set"),
 		}
 	}
 
-	// Check GPU availability before attempting initialization
-	available, reason, err := gpu.GetGPURequirements(gpu.BackendCUDA)
+	// Check GPU availability for the specified backend
+	available, reason, err := gpu.GetGPURequirements(backend)
 	if err != nil {
 		h.gpuFallback = true
 		return &gpu.GPUInitializationError{
 			DeviceID: deviceID,
-			Backend:  gpu.BackendCUDA,
+			Backend:  backend,
 			Cause:    err,
 		}
 	}
@@ -85,6 +97,7 @@ func (h *ArrowHNSW) InitGPUWithConfig(deviceID int, logger zerolog.Logger, confi
 		h.gpuFallback = true
 		if logger.GetLevel() != zerolog.Disabled {
 			logger.Warn().
+				Str("backend", backend.String()).
 				Str("reason", reason).
 				Int("device", deviceID).
 				Msg("GPU not available, using CPU-only")
@@ -95,9 +108,10 @@ func (h *ArrowHNSW) InitGPUWithConfig(deviceID int, logger zerolog.Logger, confi
 	cfg := gpu.GPUConfig{
 		DeviceID:  deviceID,
 		Dimension: dims,
+		Backend:   backend,
 	}
 
-	idx, err := gpu.NewIndexWithConfig(cfg)
+	idx, err := gpu.NewIndexWithBackend(cfg, backend)
 	if err != nil {
 		h.gpuFallback = true
 		if logger.GetLevel() != zerolog.Disabled {
@@ -108,7 +122,7 @@ func (h *ArrowHNSW) InitGPUWithConfig(deviceID int, logger zerolog.Logger, confi
 		}
 		return &gpu.GPUInitializationError{
 			DeviceID: deviceID,
-			Backend:  gpu.BackendCUDA,
+			Backend:  backend,
 			Cause:    err,
 		}
 	}
@@ -131,6 +145,7 @@ func (h *ArrowHNSW) InitGPUWithConfig(deviceID int, logger zerolog.Logger, confi
 
 	if logger.GetLevel() != zerolog.Disabled {
 		logger.Info().
+			Str("backend", backend.String()).
 			Int("device", deviceID).
 			Int("dimensions", dims).
 			Bool("cache_enabled", config.EnableGPUCache).

@@ -37,15 +37,7 @@ func (h *ArrowHNSW) selectNeighbors(ctx *ArrowSearchContext, candidates []Candid
 		return h.selectNeighborsFloat32(ctx, candidates, m, data)
 	}
 
-	var selected []Candidate
-	if ctx != nil {
-		if cap(ctx.scratchSelected) < m {
-			ctx.scratchSelected = make([]Candidate, 0, m)
-		}
-		selected = ctx.scratchSelected[:0]
-	} else {
-		selected = make([]Candidate, 0, m)
-	}
+	selected := make([]Candidate, 0, m)
 
 	// HNSW "Heuristic 2" (Diversity Heuristic)
 	vectorCache := make(map[uint32]any, len(candidates))
@@ -190,15 +182,7 @@ func (h *ArrowHNSW) selectNeighbors(ctx *ArrowSearchContext, candidates []Candid
 
 // selectNeighborsFloat32 is a specialized high-performance diversity check for float32 vectors.
 func (h *ArrowHNSW) selectNeighborsFloat32(ctx *ArrowSearchContext, candidates []Candidate, m int, data *GraphData) []Candidate {
-	var selected []Candidate
-	if ctx != nil {
-		if cap(ctx.scratchSelected) < m {
-			ctx.scratchSelected = make([]Candidate, 0, m)
-		}
-		selected = ctx.scratchSelected[:0]
-	} else {
-		selected = make([]Candidate, 0, m)
-	}
+	selected := make([]Candidate, 0, m)
 
 	vectorCache := make(map[uint32][]float32, len(candidates))
 

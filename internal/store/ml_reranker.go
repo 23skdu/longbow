@@ -147,6 +147,14 @@ func (f *RerankerFactory) CreateReranker(config map[string]interface{}) (Reranke
 	modelPath, _ := config["model_path"].(string)
 
 	switch rerankerType {
+	case "cohere":
+		apiKey, _ := config["api_key"].(string)
+		model, _ := config["model"].(string)
+		if apiKey == "" {
+			return nil, errors.New("api_key is required for cohere reranker")
+		}
+		cr := NewCohereReranker(apiKey, model)
+		return &ONNXReranker{model: cr, modelPath: "cohere-external"}, nil
 	case "onnx", "ml":
 		return NewONNXReranker(modelPath)
 	case "heuristic", "":

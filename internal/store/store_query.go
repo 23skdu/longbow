@@ -684,6 +684,7 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, stream fli
 			searchResults, searchErr = index.SearchVectors(stream.Context(), queryVec, req.K, req.Filters, SearchOptions{
 				IncludeVectors: req.IncludeVectors,
 				VectorFormat:   lbtypes.MapStringToVectorDataType(req.VectorFormat),
+				FilterExpr:     ParseFilter(req.FilterExpr),
 			})
 			if searchErr != nil {
 				return status.Errorf(codes.Internal, "search failed: %v", searchErr)

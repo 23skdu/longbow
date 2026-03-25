@@ -266,6 +266,59 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 		}
 		return nil
 
+
+	case "alter_schema", "alter-schema":
+		var req struct {
+			Dataset string `json:"dataset"`
+			Action  string `json:"action"` // "add" or "drop"
+			Column  string `json:"column"`
+			Type    string `json:"type,omitempty"` // Data type string for add
+		}
+		if err := json.Unmarshal(action.Body, &req); err != nil {
+			return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
+		}
+
+		ds, ok := s.getDataset(req.Dataset)
+		if !ok {
+			return status.Errorf(codes.NotFound, "dataset %s not found", req.Dataset)
+		}
+
+		switch strings.ToLower(req.Action) {
+		case "add":
+			var dtype arrow.DataType
+			switch strings.ToLower(req.Type) {
+			case "int64":
+				dtype = arrow.PrimitiveTypes.Int64
+			case "int32":
+				dtype = arrow.PrimitiveTypes.Int32
+			case "float32":
+				dtype = arrow.PrimitiveTypes.Float32
+			case "float64":
+				dtype = arrow.PrimitiveTypes.Float64
+			case "string":
+				dtype = arrow.BinaryTypes.String
+			case "bool":
+				dtype = arrow.FixedWidthTypes.Boolean
+			default:
+				return status.Errorf(codes.InvalidArgument, "unsupported type: %s", req.Type)
+			}
+			if err := ds.SchemaManager.AddColumn(req.Column, dtype); err != nil {
+				return status.Errorf(codes.Internal, "failed to add column: %v", err)
+			}
+		case "drop":
+			if err := ds.SchemaManager.DropColumn(req.Column); err != nil {
+				return status.Errorf(codes.Internal, "failed to drop column: %v", err)
+			}
+		default:
+			return status.Errorf(codes.InvalidArgument, "invalid action: %s", req.Action)
+		}
+
+		ds.dataMu.Lock()
+		ds.Schema = ds.SchemaManager.GetCurrentSchema()
+		ds.dataMu.Unlock()
+
+		return stream.Send(&flight.Result{Body: []byte("schema altered")})
+
 	case "delete-dataset", "DeleteNamespace", "delete-namespace":
 		var curr map[string]any
 		if err := json.Unmarshal(action.Body, &curr); err != nil {
@@ -714,6 +767,8 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 
 // flushPutBatch handles writing a batch of records to WAL and memory
 func (s *VectorStore) flushPutBatch(ctx context.Context, ds *Dataset, batch []arrow.RecordBatch) error {
+	s.broadcastCDC(ds.Name, batch)
+
 	if len(batch) == 0 {
 		return nil
 	}
@@ -1013,14 +1068,7 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 	ds.BatchNodes = append(ds.BatchNodes, currNode)
 
 	// Bulk Update Primary Index under lock
-	if idMap != nil {
-		if ds.PrimaryIndex == nil {
-			ds.PrimaryIndex = make(map[string]RowLocation)
-		}
-		for id, rowIdx := range idMap {
-			ds.PrimaryIndex[id] = RowLocation{BatchIdx: batchIdx, RowIdx: rowIdx}
-		}
-	}
+	ds.UpdatePrimaryIndex(batchIdx, idMap)
 
 	metrics.DatasetLockWaitDurationSeconds.WithLabelValues("put").Observe(time.Since(dsLockStart).Seconds())
 

@@ -11,6 +11,7 @@ DTYPES = {
     "float16": np.float16,
     "float32": np.float32,
     "float64": np.float64,
+    "turboquant": np.float32
     # "complex64": np.complex64, # Need special handling if pyarrow doesn't support directly
     # "complex128": np.complex128 
 }
@@ -57,6 +58,9 @@ def benchmark_type(uri, dtype_str, dim, num_vectors):
     print(f"\n[{dtype_str}] Benchmarking {num_vectors} vectors (dim={dim})...")
     client = flight.FlightClient(uri)
     dataset = f"validate_{dtype_str}_{dim}_{int(time.time())}"
+    
+    lb_client = LongbowClient(uri)
+    lb_client.create_namespace(dataset, dims=dim, data_type=dtype_str, force=True)
     
     # 1. Ingest
     print(f"  Ingesting...")
@@ -223,7 +227,7 @@ def main():
     uri = "grpc://localhost:3000"
     
     # DTypes to test
-    types = ["float16", "float32", "float64", "complex64", "complex128"]
+    types = ["float16", "float32", "float64", "complex64", "complex128", "turboquant"]
     if args.type != "all":
         if args.type in types:
             types = [args.type]

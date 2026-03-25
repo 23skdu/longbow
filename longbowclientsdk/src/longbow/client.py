@@ -209,12 +209,28 @@ class LongbowClient:
         except Exception as e:
             raise LongbowQueryError(f"SearchByID failed: {e}")
 
-    def create_namespace(self, name: str, force: bool = False):
-        """Create a new dataset/namespace."""
+    def create_namespace(self, name: str, dims: int = 128, data_type: str = "float32", force: bool = False, **hnsw_config):
+        """
+        Create a new dataset/namespace.
+        
+        Args:
+            name: Name of the namespace.
+            dims: Vector dimensions.
+            data_type: Storage type (float32, int8, turboquant, etc.).
+            force: If True, overwrite if exists.
+            **hnsw_config: HNSW parameters (m, ef_construction).
+        """
         if self._meta_client is None:
             self.connect()
             
-        action_body = json.dumps({"name": name, "overwrite": force}).encode("utf-8")
+        req = {
+            "name": name,
+            "dims": dims,
+            "data_type": data_type,
+            "overwrite": force,
+            "hnsw_config": hnsw_config
+        }
+        action_body = json.dumps(req).encode("utf-8")
         action = flight.Action("CreateNamespace", action_body)
         list(self._meta_client.do_action(action, options=self._get_call_options()))
         # Check results if needed

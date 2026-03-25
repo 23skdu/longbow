@@ -1224,7 +1224,60 @@ func (h *ArrowHNSW) GetNeighbors(id uint32) ([]uint32, error) {
 }
 
 func (h *ArrowHNSW) PreWarm(targetSize int) {
-	// Stub
+	start := time.Now()
+	defer func() {
+		metrics.HNSWPreWarmDuration.Observe(time.Since(start).Seconds())
+		metrics.HNSWPreWarmTotal.Inc()
+	}()
+
+	data := h.data.Load()
+	if data == nil {
+		return
+	}
+
+	targetChunks := (targetSize + types.ChunkSize - 1) / types.ChunkSize
+	pageSize := 4096
+
+	h.growMu.RLock()
+	defer h.growMu.RUnlock()
+
+	var dummy uint32
+
+	// Prewarm Neighbors (Layer 0) - this is usually the largest memory block
+	if len(data.Neighbors) > 0 && len(data.Neighbors[0]) > 0 {
+		for i := 0; i < targetChunks && i < len(data.Neighbors[0]); i++ {
+			chunk := data.Neighbors[0][i]
+			if chunk == nil {
+				continue
+			}
+			stride := pageSize / 4
+			for j := 0; j < len(chunk); j += stride {
+				dummy += chunk[j] // Force read
+			}
+			if len(chunk) > 0 {
+				dummy += chunk[len(chunk)-1]
+			}
+		}
+	}
+
+	// Prewarm Vectors (Float32 is the most common use-case)
+	if data.Type == types.VectorTypeFloat32 || data.Type == types.VectorTypeUnknown {
+		for i := 0; i < targetChunks && i < len(data.VectorsF32); i++ {
+			chunk := data.GetVectorsChunk(i)
+			if chunk == nil {
+				continue
+			}
+			stride := pageSize / 4
+			for j := 0; j < len(chunk); j += stride {
+				dummy += uint32(chunk[j]) // Force read
+			}
+			if len(chunk) > 0 {
+				dummy += uint32(chunk[len(chunk)-1])
+			}
+		}
+	}
+	
+	_ = dummy
 }
 
 func (h *ArrowHNSW) growNoLock(capacity, dims int) error {

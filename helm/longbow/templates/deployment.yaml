@@ -223,8 +223,9 @@ spec:
             initialDelaySeconds: 5
             periodSeconds: 10
           readinessProbe:
-            tcpSocket:
-              port: grpc-data
+            httpGet:
+              path: /ready
+              port: metrics
             initialDelaySeconds: 5
             periodSeconds: 10
           resources:

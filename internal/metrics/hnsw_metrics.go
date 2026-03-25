@@ -51,6 +51,17 @@ var (
 		Buckets: prometheus.DefBuckets,
 	})
 
+	HNSWPreWarmDuration = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "longbow_hnsw_prewarm_duration_seconds",
+		Help:    "Time taken to page-fault HNSW memory into RAM",
+		Buckets: []float64{0.001, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0, 10.0, 30.0},
+	})
+
+	HNSWPreWarmTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "longbow_hnsw_prewarm_total",
+		Help: "Total number of HNSW index prewarm operations executed",
+	})
+
 	// HNSW Repair Agent Metrics
 	HNSWRepairOrphansDetected = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "longbow_hnsw_repair_orphans_detected_total",

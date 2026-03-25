@@ -11,6 +11,7 @@ import (
 	"strconv" // Added for hostname fallback
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -128,6 +129,7 @@ type Config struct {
 
 // Global config instance for hook functions
 var globalCfg Config
+var globalIsReady atomic.Bool
 
 func main() {
 	if err := run(); err != nil {
@@ -311,6 +313,16 @@ func run() error {
 	go func() {
 		mux := http.NewServeMux()
 		mux.Handle("/metrics", promhttp.Handler())
+
+		mux.HandleFunc("/ready", func(w http.ResponseWriter, r *http.Request) {
+			if globalIsReady.Load() {
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte("OK"))
+			} else {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				w.Write([]byte("Not Ready"))
+			}
+		})
 
 		// Profiling endpoints
 		mux.HandleFunc("/debug/pprof/", pprof.Index)
@@ -539,6 +551,9 @@ func run() error {
 			logger.Error().Err(err).Msg("Meta gRPC server failed")
 		}
 	}()
+
+	// System is now ready to receive traffic
+	globalIsReady.Store(true)
 
 	// Wait for signal
 	<-ctx.Done()

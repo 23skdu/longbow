@@ -281,25 +281,8 @@ func (h *ArrowHNSW) pruneConnectionsLocked(ctx *ArrowSearchContext, data *GraphD
 	// Collect all current neighbors as candidates
 	baseIdx := int(cOff) * types.MaxNeighbors
 
-	var dists []float32
-	if ctx != nil {
-		if cap(ctx.scratchDists) < count {
-			ctx.scratchDists = make([]float32, count*2)
-		}
-		dists = ctx.scratchDists[:count]
-	} else {
-		dists = make([]float32, count)
-	}
-
-	var candidates []Candidate
-	if ctx != nil {
-		if cap(ctx.scratchRemaining) < count {
-			ctx.scratchRemaining = make([]Candidate, count*2)
-		}
-		candidates = ctx.scratchRemaining[:count]
-	} else {
-		candidates = make([]Candidate, count)
-	}
+	dists := make([]float32, count)
+	candidates := make([]Candidate, count)
 
 	// Unified Distance Calculation (v0.1.4-rc2)
 	// We MUST handle mixed types because SQ8 nodes can have Float32 neighbors (from early training)

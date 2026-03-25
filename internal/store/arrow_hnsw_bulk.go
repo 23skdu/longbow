@@ -264,6 +264,21 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 					}
 				}
 
+				// 5. TQ Ingestion
+				if h.tqEncoder != nil {
+					tqChunk := data.GetVectorsTQChunk(cID)
+					if tqChunk != nil {
+						if vf32, ok := v.([]float32); ok {
+							code, err := h.tqEncoder.Encode(vf32)
+							if err == nil {
+								stride := 4 + (dims-1)*data.TurboQuantBits/8 + (dims+7)/8
+								dest := tqChunk[int(cOff)*stride : (int(cOff)+1)*stride]
+								copy(dest, code)
+							}
+						}
+					}
+				}
+
 				activeNodes[j] = activeNode{
 					id:    id,
 					level: level,

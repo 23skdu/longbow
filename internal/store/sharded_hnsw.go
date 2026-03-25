@@ -396,7 +396,11 @@ func (s *ShardedHNSW) SearchVectors(ctx context.Context, queryVec any, k int, fi
 
 	// 1. Optimization: Try bitmap-based filtering
 	if len(filters) > 0 && s.dataset != nil {
-		bitset, err := s.dataset.GenerateFilterBitset(filters)
+		var filterExpr FilterExpr
+		if opts, ok := options.(SearchOptions); ok {
+			filterExpr = opts.FilterExpr
+		}
+		bitset, err := s.dataset.GenerateFilterBitset(filters, filterExpr)
 		if err == nil && bitset != nil {
 			defer bitset.Release()
 			res, _ := s.SearchVectorsWithBitmap(ctx, queryVec, k, bitset.AsRoaring(), options)

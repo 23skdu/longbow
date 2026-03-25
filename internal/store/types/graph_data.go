@@ -17,7 +17,7 @@ type GraphData struct {
 	Dims          int
 	Type          VectorDataType
 	SQ8Enabled    bool
-	SQ8Ready      bool
+	SQ8Ready      atomic.Bool
 	BQEnabled     bool
 	PQEnabled     bool
 	PQM           int
@@ -50,6 +50,9 @@ type GraphData struct {
 
 	// VectorsSQ8 for scalar quantized vectors
 	VectorsSQ8 []uint64
+
+	// VectorsTQ for TurboQuant compressed vectors
+	VectorsTQ []uint64
 
 	// VectorsFloat64
 	VectorsFloat64 [][]float64
@@ -110,6 +113,9 @@ type GraphData struct {
 
 	// PackedNeighbors
 	PackedNeighbors []PackedNeighbors
+
+	TurboQuantEnabled bool
+	TurboQuantBits    int
 }
 
 type graphFallback interface {
@@ -139,6 +145,16 @@ func (g *GraphData) GetVectorsChunk(chunkID int) []float32 {
 	// Fallback to legacy slice
 	if chunkID < len(g.Vectors) {
 		return g.Vectors[chunkID]
+	}
+	return nil
+}
+
+func (g *GraphData) GetVectorsTQChunk(chunkID int) []byte {
+	if chunkID < len(g.VectorsTQ) && g.Uint8Arena != nil {
+		// Calculate size based on TQ format: 4B Radius + (N-1)*Bits/8 + N/8 QJL
+		// For simplicity, we'll need to know Dims and Bits here or store precomputed stride
+		stride := 4 + (g.Dims-1)*g.TurboQuantBits/8 + (g.Dims+7)/8
+		return g.Uint8Arena.Get(memory.SliceRef{Offset: g.VectorsTQ[chunkID], Len: uint32(ChunkSize * stride), Cap: uint32(ChunkSize * stride)})
 	}
 	return nil
 }
@@ -769,7 +785,7 @@ func (g *GraphData) GetVector(id uint32) (any, error) {
 	// Based on type, get the appropriate chunk
 	// Only supporting float32 and float16 for now in this generic method
 	// for simplicity, as they are the primary types used in tests.
-	if g.Uint8Arena != nil && len(g.VectorsSQ8) > cID && (g.SQ8Enabled || g.SQ8Ready) {
+	if g.Uint8Arena != nil && len(g.VectorsSQ8) > cID && (g.SQ8Enabled || g.SQ8Ready.Load()) {
 		chunk := g.GetVectorsSQ8Chunk(cID)
 		if chunk != nil {
 			paddedDims := (g.Dims + 63) & ^63

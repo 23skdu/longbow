@@ -252,6 +252,9 @@ def main():
     parser.add_argument(
         "--output-dir", default="./profiles", help="Directory to save profiles"
     )
+    parser.add_argument(
+        "--data-type", default="float32", help="Longbow data type (float32, turboquant, etc.)"
+    )
     args = parser.parse_args()
 
     uris = args.uris.split(",")
@@ -260,6 +263,16 @@ def main():
     print(f"Starting Soak Test: {args.duration}s, {args.concurrency} threads")
     print(f"URIs: {uris}")
     print(f"PProf URLs: {pprof_urls}")
+    print(f"Data Type: {args.data_type}")
+
+    # Initialize Namespace
+    from longbow.client import LongbowClient
+    lb_client = LongbowClient(uris[0])
+    print(f"Ensuring namespace {DATASET_NAME} exists with type {args.data_type}...")
+    try:
+        lb_client.create_namespace(DATASET_NAME, dims=DIM, data_type=args.data_type, force=True)
+    except Exception as e:
+        print(f"Warning: could not create namespace: {e}")
 
     # Identify target processes if not provided
     pids = args.pid or []

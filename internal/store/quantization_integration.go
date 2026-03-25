@@ -78,7 +78,7 @@ func (h *ArrowHNSW) ensureTrained(limitID int, extraSamples [][]float32) {
 		h.sq8TrainingBuffer = nil
 		h.sq8Ready.Store(true)
 		if gd := h.data.Load(); gd != nil {
-			gd.SQ8Ready = true
+			gd.SQ8Ready.Store(true)
 		}
 	}
 }

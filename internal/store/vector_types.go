@@ -19,7 +19,8 @@ const (
 type SearchOptions struct {
 	IncludeVectors bool
 	VectorFormat   VectorDataType
-	Filter         any
+	Filter         any        // Legacy filter mechanism
+	FilterExpr     FilterExpr // Rich AST JSON Filter
 	ExactK         bool
 	Ef             int // Entry factor for HNSW search (controls search breadth)
 }

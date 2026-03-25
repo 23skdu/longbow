@@ -65,7 +65,7 @@ func TestGenerateFilterBitset(t *testing.T) {
 		{Field: "category", Operator: "eq", Value: "tech"},
 	}
 
-	bitset, err := ds.GenerateFilterBitset(filters)
+	bitset, err := ds.GenerateFilterBitset(filters, nil)
 	require.NoError(t, err)
 	require.NotNil(t, bitset)
 	defer bitset.Release()
@@ -84,7 +84,7 @@ func TestGenerateFilterBitset(t *testing.T) {
 	}
 
 	// 2. Test Cache
-	bitset2, err := ds.GenerateFilterBitset(filters)
+	bitset2, err := ds.GenerateFilterBitset(filters, nil)
 	require.NoError(t, err)
 	require.NotNil(t, bitset2)
 	assert.Equal(t, bitset.Count(), bitset2.Count())

@@ -144,6 +144,7 @@ type ArrowHNSW struct {
 	sq8Ready   atomic.Bool
 	bqEncoder  *BQEncoder
 	pqEncoder  *pq.PQEncoder
+	tqEncoder  *TurboQuantEncoder
 	searchPool *ArrowSearchContextPool
 
 	name                   string
@@ -192,6 +193,7 @@ type ArrowHNSW struct {
 
 	// Graph Navigation
 	navigator *GraphNavigator
+	tqCompute *TurboQuantCompute
 }
 
 func (h *ArrowHNSW) GetVector(id uint32) (any, error) {
@@ -238,6 +240,14 @@ func (h *ArrowHNSW) GetVector(id uint32) (any, error) {
 	if h.config.BQEnabled {
 		if v, err := data.GetVectorBQ(id); err == nil && v != nil {
 			return v, nil
+		}
+	}
+	if h.tqEncoder != nil {
+		chunk := data.GetVectorsTQChunk(chunkID(id))
+		if chunk != nil {
+			stride := 4 + (data.Dims-1)*data.TurboQuantBits/8 + (data.Dims+7)/8
+			start := int(chunkOffset(id)) * stride
+			return h.tqEncoder.Decode(chunk[start : start+stride])
 		}
 	}
 
@@ -433,6 +443,15 @@ func NewArrowHNSW(dataset *Dataset, config *ArrowHNSWConfig) *ArrowHNSW {
 	}
 	h.navigator = NewGraphNavigator(dsName, h.GetData, navConfig, config.Registerer)
 	_ = h.navigator.Initialize()
+
+	if config.DataType == types.VectorTypeTQ {
+		// Default to 3 bits (reaches ~7x compression)
+		bits := 3
+		h.tqEncoder = NewTurboQuantEncoder(config.Dims, bits, 42)
+		h.data.Load().TurboQuantEnabled = true
+		h.data.Load().TurboQuantBits = bits
+		h.tqCompute = NewTurboQuantCompute(h.data.Load())
+	}
 
 	return h
 }
@@ -1374,7 +1393,10 @@ func (h *ArrowHNSW) growInternal(capacity, dims int) error {
 
 	oldData := h.data.Swap(newData)
 	if oldData != nil {
-		oldData.Release()
+		// Defer release to avoid use-after-free data races with concurrent lock-free readers
+		time.AfterFunc(10*time.Second, func() {
+			oldData.Release()
+		})
 	}
 	return nil
 }
@@ -1604,10 +1626,15 @@ func (h *ArrowHNSW) EstimateMemory() int64 {
 
 func (h *ArrowHNSW) SearchVectors(ctx context.Context, queryVec any, k int, filters []query.Filter, options any) ([]SearchResult, error) {
 	// Optimization: Convert filters to bitset
+	var filterExpr FilterExpr
+	if opts, ok := options.(SearchOptions); ok {
+		filterExpr = opts.FilterExpr
+	}
+
 	var bitset *query.Bitset
-	if len(filters) > 0 && h.dataset != nil {
+	if (len(filters) > 0 || filterExpr != nil) && h.dataset != nil {
 		var err error
-		bitset, err = h.dataset.GenerateFilterBitset(filters)
+		bitset, err = h.dataset.GenerateFilterBitset(filters, filterExpr)
 		if err != nil {
 			return nil, err
 		}

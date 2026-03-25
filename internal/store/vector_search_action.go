@@ -140,6 +140,7 @@ func (s *VectorStore) handleVectorSearchAction(action *flight.Action, stream fli
 			searchResults, errSearch = ds.Index.SearchVectors(stream.Context(), queryVec, req.K, req.Filters, SearchOptions{
 				IncludeVectors: req.IncludeVectors,
 				VectorFormat:   types.MapStringToVectorDataType(req.VectorFormat),
+				FilterExpr:     ParseFilter(req.FilterExpr),
 				Ef:             req.EfSearch,
 			})
 			if errSearch != nil {

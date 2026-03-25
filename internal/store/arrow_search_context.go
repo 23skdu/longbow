@@ -152,6 +152,7 @@ type ArrowSearchContext struct {
 
 	queryBQ  []uint64
 	querySQ8 []uint8
+	queryTQ  []byte
 
 	// Distance calculation buffers
 	dists     []float32
@@ -205,6 +206,7 @@ func NewArrowSearchContext() *ArrowSearchContext {
 		scratchRemaining: make([]Candidate, 0, 100),
 		queryBQ:          make([]uint64, 0, 256),
 		querySQ8:         make([]uint8, 0, 1536),
+		queryTQ:          make([]byte, 0, 512),
 		dirty:            false,
 		operations:       0,
 	}
@@ -257,6 +259,7 @@ func (ctx *ArrowSearchContext) Reset() {
 	ctx.scratchRemaining = ctx.scratchRemaining[:0]
 	ctx.queryBQ = ctx.queryBQ[:0]
 	ctx.querySQ8 = ctx.querySQ8[:0]
+	ctx.queryTQ = ctx.queryTQ[:0]
 	ctx.dirty = false
 	ctx.operations = 0
 

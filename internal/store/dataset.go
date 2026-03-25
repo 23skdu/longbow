@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"encoding/json"
 	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	qry "github.com/23skdu/longbow/internal/query"
+	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/rs/zerolog"
 
 	"github.com/23skdu/longbow/internal/pq"
@@ -32,6 +34,11 @@ type RowLocation struct {
 }
 
 // Dataset wraps records with metadata for eviction and tombstones
+type HNSWSettings struct {
+	M              int
+	EfConstruction int
+}
+
 type Dataset struct {
 	Records    []arrow.RecordBatch
 	lastAccess int64 // UnixNano
@@ -89,6 +96,7 @@ type Dataset struct {
 	recordEviction *RecordEvictionManager
 
 	// Metric defines the distance metric for this dataset
+	HNSWConfig HNSWSettings
 	Metric DistanceMetric
 
 	// Fragmentation-Aware Compaction
@@ -251,7 +259,7 @@ func (d *Dataset) AddToIndex(batchIdx, rowIdx int) error {
 }
 
 // GenerateFilterBitset pre-calculates a bitset of VectorIDs that match the filters.
-func (d *Dataset) GenerateFilterBitset(filters []qry.Filter) (*qry.Bitset, error) {
+func (d *Dataset) GenerateFilterBitset(filters []qry.Filter, filterExpr FilterExpr) (*qry.Bitset, error) {
 	// Generate hash
 	var hash string
 	for _, f := range filters {
@@ -268,11 +276,11 @@ func (d *Dataset) GenerateFilterBitset(filters []qry.Filter) (*qry.Bitset, error
 	d.dataMu.RLock()
 	defer d.dataMu.RUnlock()
 
-	return d.GenerateFilterBitsetLocked(filters, hash)
+	return d.GenerateFilterBitsetLocked(filters, filterExpr, hash)
 }
 
 // GenerateFilterBitsetLocked is the variant that assumes d.dataMu is already held.
-func (d *Dataset) GenerateFilterBitsetLocked(filters []qry.Filter, hash string) (*qry.Bitset, error) {
+func (d *Dataset) GenerateFilterBitsetLocked(filters []qry.Filter, filterExpr FilterExpr, hash string) (*qry.Bitset, error) {
 	if len(d.Records) == 0 || d.Index == nil {
 		return nil, nil
 	}
@@ -296,6 +304,37 @@ func (d *Dataset) GenerateFilterBitsetLocked(filters []qry.Filter, hash string) 
 		if err != nil {
 			return nil, err
 		}
+
+		if filterExpr != nil {
+			metaIdx := -1
+			for i, field := range d.Schema.Fields() {
+                if field.Name == "metadata" {
+                    metaIdx = i
+                    break
+                }
+            }
+            
+            var validMatches []int
+			if metaIdx >= 0 {
+				metaCol := rec.Column(metaIdx)
+				strData := array.NewStringData(metaCol.Data())
+				
+				for _, rowIdx := range matches {
+					if strData.IsValid(rowIdx) {
+						metaStr := strData.Value(rowIdx)
+						var metaMap map[string]interface{}
+						if err := json.Unmarshal([]byte(metaStr), &metaMap); err == nil {
+							if filterExpr.Evaluate(metaMap) {
+								validMatches = append(validMatches, rowIdx)
+							}
+						}
+					}
+				}
+				strData.Release()
+				matches = validMatches
+			}
+		}
+
 		for _, rowIdx := range matches {
 			loc := Location{BatchIdx: batchIdx, RowIdx: rowIdx}
 			if vid, ok := idx.GetVectorID(loc); ok {
@@ -444,11 +483,9 @@ func (d *Dataset) ExtractIDs(rec arrow.RecordBatch) map[string]int {
 	return idMap
 }
 
-// UpdatePrimaryIndex updates the ID mapping for a given batch.
-// Note: This is now a convenience wrapper around ExtractIDs.
+// UpdatePrimaryIndex updates the ID mapping for a given batch using a pre-extracted ID map.
 // The caller must hold dataMu lock.
-func (d *Dataset) UpdatePrimaryIndex(batchIdx int, rec arrow.RecordBatch) {
-	idMap := d.ExtractIDs(rec)
+func (d *Dataset) UpdatePrimaryIndex(batchIdx int, idMap map[string]int) {
 	if idMap == nil {
 		return
 	}
@@ -456,6 +493,15 @@ func (d *Dataset) UpdatePrimaryIndex(batchIdx int, rec arrow.RecordBatch) {
 		d.PrimaryIndex = make(map[string]RowLocation)
 	}
 	for id, rowIdx := range idMap {
+		if oldLoc, exists := d.PrimaryIndex[id]; exists {
+			// Upsert: Mark the old RowLocation as Tombstoned before re-mapping
+			if d.Tombstones[oldLoc.BatchIdx] == nil {
+				d.Tombstones[oldLoc.BatchIdx] = qry.NewBitset()
+			}
+			d.Tombstones[oldLoc.BatchIdx].Set(oldLoc.RowIdx)
+			d.RecordBatchDeletion(oldLoc.BatchIdx)
+			metrics.TombstonesTotal.WithLabelValues(d.Name).Inc()
+		}
 		d.PrimaryIndex[id] = RowLocation{BatchIdx: batchIdx, RowIdx: rowIdx}
 	}
 }

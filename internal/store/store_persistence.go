@@ -118,7 +118,12 @@ func (s *VectorStore) applyReplayBatch(name string, rec arrow.RecordBatch, seq u
 	defer ds.dataMu.Unlock()
 
 	rec.Retain() // Dataset takes ownership
+	batchIdx := len(ds.Records)
 	ds.Records = append(ds.Records, rec)
+	
+	// Update Primary Index and natively process RowLocation tombstones for Upserts
+	ds.UpdatePrimaryIndex(batchIdx, ds.ExtractIDs(rec))
+
 	ds.SizeBytes.Add(estimateBatchSize(rec))
 	s.currentMemory.Add(estimateBatchSize(rec))
 

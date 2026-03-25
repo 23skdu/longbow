@@ -30,6 +30,7 @@ import (
 type VectorStore struct {
 	flight.BaseFlightServer
 	mem           memory.Allocator
+	replicator    *PeerReplicator
 	pooledMem     memory.Allocator // Pooled allocator for transient ingestion buffers
 	logger        zerolog.Logger
 	maxMemory     atomic.Int64
@@ -124,6 +125,10 @@ type VectorStore struct {
 
 	// Parser pool for vector search
 	vectorSearchParserPool sync.Pool
+
+	// Change Data Capture (CDC) subscribers
+	cdcMu          sync.RWMutex
+	cdcSubscribers map[string][]chan arrow.RecordBatch
 }
 
 type ingestionJob struct {
@@ -196,6 +201,9 @@ func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes 
 			return query.NewZeroAllocVectorSearchParser(768, &s.logger)
 		},
 	}
+
+	s.replicator = NewPeerReplicator(DefaultReplicatorConfig())
+	s.replicator.Start()
 
 	return s
 }
@@ -710,6 +718,29 @@ func (s *VectorStore) processPersistenceJob(job persistenceJob) {
 				Uint64("seq", seq).
 				Err(err).
 				Msg("Failed to write to WAL")
+		}
+	}
+}
+
+// broadcastCDC safely dispatches a copy of the incoming batch to all registered observers
+func (s *VectorStore) broadcastCDC(dataset string, batches []arrow.RecordBatch) {
+	s.cdcMu.RLock()
+	subs, ok := s.cdcSubscribers[dataset]
+	s.cdcMu.RUnlock()
+	if !ok || len(subs) == 0 {
+		return
+	}
+	
+	for _, batch := range batches {
+		for _, sub := range subs {
+			batch.Retain()
+			select {
+			case sub <- batch:
+				// successfully queued
+			default:
+				// channel full, drop CDC event to avoid blocking ingestion
+				batch.Release()
+			}
 		}
 	}
 }

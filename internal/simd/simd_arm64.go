@@ -21,6 +21,9 @@ func euclideanNEONKernel(a, b []float32) float32
 func dotNEONKernel(a, b []float32) float32
 
 //go:noescape
+func l2SquaredNEONKernel(a, b []float32) float32
+
+//go:noescape
 func euclideanF16NEONKernel(a, b []float16.Num) float32 //nolint:unused
 
 //go:noescape
@@ -159,5 +162,11 @@ func euclideanVerticalBatchNEON(query []float32, vectors [][]float32, results []
 }
 
 func l2SquaredNEON(a, b []float32) (float32, error) {
-	return L2SquaredFloat32(a, b) // Fallback to unrolled Go implementation
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	return l2SquaredNEONKernel(a, b), nil
 }

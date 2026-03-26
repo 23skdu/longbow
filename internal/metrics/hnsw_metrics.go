@@ -293,6 +293,15 @@ var (
 		[]string{"dataset"},
 	)
 
+	// HNSWPreFilteredSearchesTotal counts searches using pre-filter optimization
+	HNSWPreFilteredSearchesTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_hnsw_prefiltered_searches_total",
+			Help: "Total number of HNSW searches using pre-filter optimization",
+		},
+		[]string{"dataset"},
+	)
+
 	// HNSWSearchEarlyTerminationsTotal counts number of searches that terminated early
 	HNSWSearchEarlyTerminationsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{

@@ -417,7 +417,10 @@ func (h *ArrowHNSW) pruneConnectionsLocked(ctx *ArrowSearchContext, data *GraphD
 		atomic.StoreUint32(&neighborsChunk[baseIdx+i], cand.ID)
 	}
 	// Update count
-	atomic.StoreInt32(countAddr, int32(len(selected)))
+	if len(selected) > math.MaxInt32 {
+		panic("too many neighbors")
+	}
+	atomic.StoreInt32(countAddr, int32(len(selected))) // #nosec G115
 
 	// Seqlock write end: even = clean
 	if verAddr != nil {

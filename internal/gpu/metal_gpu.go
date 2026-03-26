@@ -261,6 +261,10 @@ type MetalIndex struct {
 	lastSyncTime time.Time
 	syncTicker   *time.Ticker
 	stopSync     chan struct{}
+
+	// Memory management
+	maxMemory  int64
+	usedMemory int64
 }
 
 // NewMetalIndex creates a new Metal-based GPU index with integrated memory pool
@@ -299,6 +303,7 @@ func NewMetalIndex(cfg GPUConfig) (Index, error) {
 		},
 		lastSyncTime: time.Now(),
 		stopSync:     make(chan struct{}),
+		maxMemory:    cfg.MaxMemory,
 	}
 
 	// Initialize memory pool
@@ -357,6 +362,40 @@ func (idx *MetalIndex) Flush() error {
 	}
 
 	start := time.Now()
+	batchCount := len(idx.batchIDs)
+
+	// Estimate potential memory growth if we were to grow
+	idx.mu.RLock()
+	currentCount := int(C.metal_get_count(idx.handle))
+	currentCapacity := int(idx.handle.capacity)
+	idx.mu.RUnlock()
+
+	requiredCapacity := currentCount + batchCount
+	if requiredCapacity > currentCapacity {
+		// Estimate new capacity (doubling)
+		newCapacity := currentCapacity
+		if newCapacity == 0 {
+			newCapacity = 10000
+		}
+		for newCapacity < requiredCapacity {
+			newCapacity *= 2
+		}
+
+		// Calculate total memory: vectors (float32) + IDs (int64)
+		// vectors: newCapacity * dim * 4
+		// IDs: newCapacity * 8
+		estimatedMem := int64(newCapacity) * int64(idx.dim) * 4
+		estimatedMem += int64(newCapacity) * 8
+
+		if idx.maxMemory > 0 && estimatedMem > idx.maxMemory {
+			return &GPUSyncError{
+				BatchSize: batchCount,
+				DeviceID:  idx.deviceInfo.DeviceID,
+				Cause:     fmt.Errorf("GPU memory limit exceeded: estimated %d bytes, limit %d", estimatedMem, idx.maxMemory),
+			}
+		}
+	}
+
 	ret := C.metal_add_vectors(
 		idx.handle,
 		(*C.float)(unsafe.Pointer(&idx.batchVectors[0])),

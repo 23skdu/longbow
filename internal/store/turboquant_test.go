@@ -3,9 +3,11 @@ package store
 import (
 	"fmt"
 	"math"
+	"math/rand"
 	"testing"
 
 	"github.com/23skdu/longbow/internal/simd"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestTurboQuant_EncoderDecoder(t *testing.T) {
@@ -75,4 +77,49 @@ func TestTurboQuant_CompressionRatio(t *testing.T) {
 	if ratio < 5.0 { // 5.0 is acceptable for 768 due to padding 1024
 		t.Errorf("Compression ratio too low: %.2fx", ratio)
 	}
+}
+func TestTurboQuant_ZeroVector(t *testing.T) {
+	dims := 128
+	encoder := NewTurboQuantEncoder(dims, 4, 42)
+	vec := make([]float32, dims)
+
+	encoded, err := encoder.Encode(vec)
+	assert.NoError(t, err)
+
+	decoded, err := encoder.Decode(encoded)
+	assert.NoError(t, err)
+	assert.Equal(t, len(vec), len(decoded))
+}
+
+func TestTurboQuant_VaryingBitDepths(t *testing.T) {
+	dims := 64
+	for _, bits := range []int{1, 2, 4, 8} {
+		t.Run(fmt.Sprintf("%d-bits", bits), func(t *testing.T) {
+			encoder := NewTurboQuantEncoder(dims, bits, 42)
+			vec := make([]float32, dims)
+			for i := range vec {
+				vec[i] = rand.Float32()
+			}
+
+			encoded, err := encoder.Encode(vec)
+			assert.NoError(t, err)
+
+			decoded, err := encoder.Decode(encoded)
+			assert.NoError(t, err)
+			assert.Equal(t, len(vec), len(decoded))
+		})
+	}
+}
+
+func TestTurboQuant_LargeDimensions(t *testing.T) {
+	dims := 1536
+	encoder := NewTurboQuantEncoder(dims, 4, 42)
+	vec := make([]float32, dims)
+	for i := range vec {
+		vec[i] = float32(i) / 1536.0
+	}
+
+	encoded, err := encoder.Encode(vec)
+	assert.NoError(t, err)
+	assert.True(t, len(encoded) > 0)
 }

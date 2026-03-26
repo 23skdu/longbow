@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"math"
 	"runtime"
 	"sort"
 	"sync"
@@ -190,7 +191,10 @@ func (s *ShardedHNSW) newShard(_ int) *hnswShard {
 	arrowConfig.M = s.config.M
 	arrowConfig.MMax = s.config.M * 3
 	arrowConfig.MMax0 = s.config.M * 2
-	arrowConfig.EfConstruction = int32(s.config.EfConstruction)
+	if s.config.EfConstruction > math.MaxInt32 {
+		panic("efConstruction exceeds MaxInt32")
+	}
+	arrowConfig.EfConstruction = int32(s.config.EfConstruction) // #nosec G115
 	arrowConfig.InitialCapacity = 1024 // Start small, grow dynamically
 	arrowConfig.Metric = s.config.Metric
 	arrowConfig.PackedAdjacencyEnabled = s.config.PackedAdjacencyEnabled
@@ -705,7 +709,10 @@ func (s *ShardedHNSW) SetEfConstruction(ef int) {
 			case interface{ SetEfConstruction(int) }:
 				h.SetEfConstruction(ef)
 			case interface{ SetEfConstruction(int32) }:
-				h.SetEfConstruction(int32(ef))
+				if ef > math.MaxInt32 {
+					panic("ef exceeds MaxInt32")
+				}
+				h.SetEfConstruction(int32(ef)) // #nosec G115
 			}
 		}
 	}
@@ -910,7 +917,7 @@ func (s *ShardedHNSW) ExportGraph(w io.Writer) error {
 		Dimension uint32
 	}{
 		Version:   1,
-		NumShards: int32(len(s.shards)),
+		NumShards: int32(len(s.shards)), // #nosec G115
 		Dimension: s.dimension,
 	}
 

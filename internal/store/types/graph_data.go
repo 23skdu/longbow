@@ -2,6 +2,7 @@ package types
 
 import (
 	"fmt"
+	"math"
 	"sync/atomic"
 	"unsafe"
 
@@ -17,7 +18,7 @@ type GraphData struct {
 	Dims          int
 	Type          VectorDataType
 	SQ8Enabled    bool
-	SQ8Ready      atomic.Bool
+	SQ8Ready      uint32 // 0=not ready, 1=ready
 	BQEnabled     bool
 	PQEnabled     bool
 	PQM           int
@@ -758,7 +759,10 @@ func (g *GraphData) SetNeighbors(id uint32, neighbors []uint32) error {
 	}
 
 	// Update count
-	countsChunk[cOff] = int32(len(neighbors))
+	if len(neighbors) > math.MaxInt32 {
+		panic("too many neighbors")
+	}
+	countsChunk[cOff] = int32(len(neighbors)) // #nosec G115
 
 	if versionsChunk != nil {
 		atomic.AddUint32(&versionsChunk[cOff], 1)
@@ -785,7 +789,7 @@ func (g *GraphData) GetVector(id uint32) (any, error) {
 	// Based on type, get the appropriate chunk
 	// Only supporting float32 and float16 for now in this generic method
 	// for simplicity, as they are the primary types used in tests.
-	if g.Uint8Arena != nil && len(g.VectorsSQ8) > cID && (g.SQ8Enabled || g.SQ8Ready.Load()) {
+	if g.Uint8Arena != nil && len(g.VectorsSQ8) > cID && (g.SQ8Enabled || atomic.LoadUint32(&g.SQ8Ready) == 1) {
 		chunk := g.GetVectorsSQ8Chunk(cID)
 		if chunk != nil {
 			paddedDims := (g.Dims + 63) & ^63
@@ -1354,7 +1358,7 @@ func (g *GraphData) GetLevelsChunk(chunkID int) []uint8 {
 // Clone creates a shallow copy of the GraphData with deep copies of the structure slices.
 // This allows concurrent readers to safely access the old structure while a new one is being built (COW).
 func (g *GraphData) Clone() *GraphData {
-	newG := *g // Shallow copy struct
+	newG := *g
 
 	// Deep copy Vectors (Slice of slices)
 	if g.Vectors != nil {

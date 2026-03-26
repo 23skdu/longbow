@@ -399,6 +399,15 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 		if !ok {
 			resultsChan = nil // Channel closed
 		} else {
+			// Guard against nil/empty records that can cause IPC writer panics
+			if rec == nil || rec.NumRows() == 0 || rec.NumCols() == 0 {
+				s.logger.Warn().Int64("rows", rec.NumRows()).Int64("cols", rec.NumCols()).Msg("Skipping invalid record in DoGet")
+				if rec != nil {
+					rec.Release()
+				}
+				continue
+			}
+
 			startWrite := time.Now()
 
 			// Write batch directly to stream

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"sync/atomic"
 	"testing"
 
 	lbtypes "github.com/23skdu/longbow/internal/store/types"
@@ -81,7 +82,7 @@ func TestArrowHNSW_Coverage_ExtractVectorByIDForParallel(t *testing.T) {
 			h.dims.Store(int32(tc.vectorDims))
 
 			gd := lbtypes.NewGraphData(10, tc.vectorDims, false, false, 0, false, false, false, tc.dataType, false, false)
-			gd.SQ8Ready.Store(true) // For Int8/Uint8 GetVector
+			atomic.StoreUint32(&gd.SQ8Ready, 1) // For Int8/Uint8 GetVector
 			h.data.Store(gd)
 
 			err := gd.EnsureChunk(0, 0, tc.vectorDims)
@@ -163,7 +164,7 @@ func TestArrowHNSW_Coverage_ComputeSingle(t *testing.T) {
 			h := NewArrowHNSW(nil, &config)
 			h.dims.Store(int32(tc.dims))
 			gd := lbtypes.NewGraphData(10, tc.dims, false, false, 0, false, false, false, tc.dataType, false, false)
-			gd.SQ8Ready.Store(true)
+			atomic.StoreUint32(&gd.SQ8Ready, 1)
 			h.data.Store(gd)
 
 			err := gd.EnsureChunk(0, 0, tc.dims)
@@ -242,7 +243,7 @@ func TestMoreComputers(t *testing.T) {
 	config.Dims = dims
 	h := NewArrowHNSW(nil, &config)
 	gd := lbtypes.NewGraphData(10, dims, false, false, 0, false, false, false, lbtypes.VectorTypeFloat64, false, false)
-	gd.SQ8Ready.Store(true)
+	atomic.StoreUint32(&gd.SQ8Ready, 1)
 	h.data.Store(gd)
 
 	// float64Computer
@@ -268,7 +269,7 @@ func TestMoreComputers(t *testing.T) {
 
 	// int8Computer
 	gdInt8 := lbtypes.NewGraphData(10, dims, false, false, 0, false, false, false, lbtypes.VectorTypeInt8, false, false)
-	gdInt8.SQ8Ready.Store(true)
+	atomic.StoreUint32(&gdInt8.SQ8Ready, 1)
 	h.data.Store(gdInt8)
 	err = gdInt8.EnsureChunk(0, 0, dims)
 	require.NoError(t, err)
@@ -311,7 +312,7 @@ func TestSQ8Computers(t *testing.T) {
 
 	gd := lbtypes.NewGraphData(10, dims, true, false, 0, false, false, false, lbtypes.VectorTypeFloat32, false, false)
 	gd.SQ8Enabled = true
-	gd.SQ8Ready.Store(true)
+	atomic.StoreUint32(&gd.SQ8Ready, 1)
 	h.data.Store(gd)
 
 	err := gd.EnsureChunk(0, 0, dims)

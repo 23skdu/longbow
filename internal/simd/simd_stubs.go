@@ -19,11 +19,11 @@ func matchFloat32AVX2(src []float32, val float32, op CompareOp, dst []byte) erro
 	return matchFloat32Generic(src, val, op, dst)
 }
 
-func matchInt64AVX512(src []int64, val int64, op CompareOp, dst []byte) error {
+func matchInt64AVX512(src []int64, val int64, op CompareOp, dst []byte) error { //nolint:unused
 	return matchInt64Generic(src, val, op, dst)
 }
 
-func matchFloat32AVX512(src []float32, val float32, op CompareOp, dst []byte) error {
+func matchFloat32AVX512(src []float32, val float32, op CompareOp, dst []byte) error { //nolint:unused
 	return matchFloat32Generic(src, val, op, dst)
 }
 

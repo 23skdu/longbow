@@ -39,3 +39,6 @@ func cosineF16NEON(a, b []float16.Num) (float32, error)    { return cosineF16Unr
 func dotF16NEON(a, b []float16.Num) (float32, error)       { return dotF16Unrolled4x(a, b) }
 
 func l2SquaredNEON(a, b []float32) (float32, error) { return L2SquaredFloat32(a, b) }
+
+func FastWalshHadamardTransform32NEON(a []float32) error { return FastWalshHadamardTransform32(a) }
+func RandomRotationNEON(a []float32, seed int64) error  { return RandomRotation(a, seed) }

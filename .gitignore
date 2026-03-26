@@ -2,7 +2,6 @@
 *.py[codz]
 *$py.class
 __pycache__/
-__pypackages__/
 
 # Go workspace
 go.work
@@ -13,217 +12,53 @@ go.work.sum
 *.a
 *.o
 
-# Agent file
-.agent*
-.sisyphus/
-
 # Build tools
 benchtool
 bench-tool
-
-# Distribution / packaging
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
-.installed.cfg
-MANIFEST
-*.manifest
-*.spec
-
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
-
-# Unit test / coverage reports
-.tox/
-.nox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.py.cover
-.hypothesis/
-cover/
-
-# Translations
-*.mo
-*.pot
-
-# Django stuff:
-local_settings.py
-db.sqlite3
-db.sqlite3-journal
-
-# Flask stuff:
-instance/
-.webassets-cache
-
-# Scrapy stuff:
-.scrapy
-
-# Sphinx documentation
-docs/_build/
-
-# PyBuilder
-.pybuilder/
-target/
-
-# Jupyter Notebook
-.ipynb_checkpoints
-
-# IPython
-profile_default/
-ipython_config.py
-
-# pdm
-.pdm-python
-.pdm-build/
-
-# pixi
-.pixi
-
-# Celery stuff
-celerybeat-schedule
-celerybeat.pid
-
-# SageMath parsed files
-*.sage.py
-
-# Environments (privacy/security)
-.env
-.envrc
-.env.*
-*.env
-.env.local
-.env.*.local
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
-
-# Spyder project settings
-.spyderproject
-.spyproject
-
-# Rope project settings
-.ropeproject
-
-# mkdocs documentation
-/site
-
-# mypy
-.dmypy.json
-dmypy.json
-
-# Cython debug symbols
-cython_debug/
-
-# Abstra
-.abstra/
-
-# PyPI configuration file
-.pypirc
-
-# Cursor
-.cursorignore
-.cursorindexingignore
-
-# macOS
-.DS_Store
-.AppleDouble
-.LSOverride
-._*
-
-# JetBrains
-.idea/
-*.iml
-*.ipr
-*.iws
-
-# Visual Studio Code
-.vscode/
-
-
-# Marimo
-marimo/_static/
-marimo/_lsp/
-__marimo__/
-
-# Logs
-logs/
-*.log
-server*.log
-debug_*.log
-debug/
-debug_bench*.log
-debug_server*.log
-server_iter*.log
-server_profile*.log
-server_single*.log
-server_test*.log
-
-# Build artifacts and binaries
-internal/store/wal.bin
-*.test
-*.out
-*.prof
-*.pprof
-*.pid
-bin/
-longbow_bin
 longbow
+soak_test
+*.test
+internal/store/wal.bin
+longbow_bin
 longbow_server
 longbow-server
 store.test
 memory.test
 types.test
-coverage.out
-tmp/
+
+# Node.js
+node_modules/
+.npm-cache/
+npm-debug.log*
+yarn-debug.log*
+
+# Build artifacts
+*.bin
+dist/
+build/
+bin/
 data*/
 
-# Python virtual environments (consolidated)
-.pytest_cache/
-.mypy_cache/
-.pyre/
-.pytype/
-.eggs/
-*.egg-info/
-htmlcov/
-
-# Benchmark artifacts
-bench_*
+# Logs and Reports
+logs/
+*.log
+reports/
 benchmark_results/
 benchmark_results*.json
-benchmark_results*.log
 perf_*.json
 results_*.json
-profiles_comprehensive/
-reports/
+perf_summary.md
 
-# Scripts directory generated files
-scripts/**/*.log
-scripts/**/*.prof
-scripts/**/__pycache__/
-scripts/**/results_*.json
-scripts/**/benchmark_*.json
-scripts/**/profiles_*/
+# Profiling
+*.prof
+*.pprof
 
-# JSON files (Ignore all except in grafana directory)
+# IDE and System
+.DS_Store
+.vscode/
+.idea/
+.env*
 *.json
 !grafana/**/*.json
-*.gz
+!longbowclientsdk/**/*.json
+!clients/**/*.json

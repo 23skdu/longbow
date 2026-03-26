@@ -7,6 +7,13 @@ import (
 // FastWalshHadamardTransform32 implements the In-place Fast Walsh-Hadamard Transform
 // for float32 vectors. The length of the vector must be a power of 2.
 func FastWalshHadamardTransform32(a []float32) error {
+	if features.HasNEON {
+		return FastWalshHadamardTransform32NEON(a)
+	}
+	return fastWalshHadamardTransform32Generic(a)
+}
+
+func fastWalshHadamardTransform32Generic(a []float32) error {
 	n := len(a)
 	if n == 0 || (n&(n-1)) != 0 {
 		return errors.New("simd: vector length must be a power of 2 for FWHT")
@@ -38,6 +45,13 @@ func FastWalshHadamardTransform32(a []float32) error {
 // It applies a random sign flip (diagonal matrix D) followed by FWHT.
 // seed is used to generate the deterministic sign flips for reconstruction.
 func RandomRotation(a []float32, seed int64) error {
+	if features.HasNEON {
+		return RandomRotationNEON(a, seed)
+	}
+	return randomRotationGeneric(a, seed)
+}
+
+func randomRotationGeneric(a []float32, seed int64) error {
 	// 1. Random sign flip (D)
 	// We use a simple bit-manipulation based on seed+index for speed
 	for i := range a {
@@ -49,7 +63,7 @@ func RandomRotation(a []float32, seed int64) error {
 
 	// 2. FWHT (H)
 	// If length is not power of 2, we need to pad (handled by caller or here)
-	return FastWalshHadamardTransform32(a)
+	return fastWalshHadamardTransform32Generic(a)
 }
 
 // PadToPowerOf2 pads a vector with zeros to the next power of 2.

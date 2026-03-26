@@ -1,6 +1,7 @@
 package store
 
 import (
+	"math/rand"
 	"testing"
 
 	"github.com/23skdu/longbow/internal/memory"
@@ -154,4 +155,34 @@ func TestBM25Arena_Memory(t *testing.T) {
 	// (This is a smoke test - actual memory usage depends on implementation)
 	assert.Greater(t, idx.TokenCount(), 0)
 	assert.Greater(t, idx.DocumentCount(), uint32(0))
+}
+
+func BenchmarkBM25Arena_Score(b *testing.B) {
+	arena := memory.NewSlabArena(10 * 1024 * 1024)
+	idx := NewBM25ArenaIndex(arena, 10000)
+
+	// Index 1000 documents with some common and rare tokens
+	tokens := []string{"common", "rare", "test", "data", "search", "engine", "optimization", "metal", "gpu", "stability"}
+	for i := 0; i < 1000; i++ {
+		docTokens := []string{tokens[rand.Intn(len(tokens))]}
+		if i%10 == 0 {
+			docTokens = append(docTokens, "rare")
+		}
+		if i%2 == 0 {
+			docTokens = append(docTokens, "common")
+		}
+		_ = idx.IndexDocument(uint32(i), docTokens)
+	}
+
+	docIDs := make([]uint32, 1000)
+	for i := range docIDs {
+		docIDs[i] = uint32(i)
+	}
+
+	query := []string{"common", "rare", "optimization"}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = idx.Score(query, docIDs)
+	}
 }

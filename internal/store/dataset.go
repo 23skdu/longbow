@@ -2,16 +2,16 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"encoding/json"
 	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	qry "github.com/23skdu/longbow/internal/query"
 	"github.com/23skdu/longbow/internal/metrics"
+	qry "github.com/23skdu/longbow/internal/query"
 	"github.com/rs/zerolog"
 
 	"github.com/23skdu/longbow/internal/pq"
@@ -59,7 +59,8 @@ type Dataset struct {
 	BatchNodes []int
 
 	// PrimaryIndex maps ID -> Physical Location (O(1) lookup)
-	PrimaryIndex map[string]RowLocation
+	PrimaryIndex   map[string]RowLocation
+	primaryIndexMu sync.Mutex // Protects PrimaryIndex map updates
 
 	// Memory tracking
 	SizeBytes        atomic.Int64
@@ -97,7 +98,7 @@ type Dataset struct {
 
 	// Metric defines the distance metric for this dataset
 	HNSWConfig HNSWSettings
-	Metric DistanceMetric
+	Metric     DistanceMetric
 
 	// Fragmentation-Aware Compaction
 	fragmentationTracker *FragmentationTracker
@@ -308,17 +309,17 @@ func (d *Dataset) GenerateFilterBitsetLocked(filters []qry.Filter, filterExpr Fi
 		if filterExpr != nil {
 			metaIdx := -1
 			for i, field := range d.Schema.Fields() {
-                if field.Name == "metadata" {
-                    metaIdx = i
-                    break
-                }
-            }
-            
-            var validMatches []int
+				if field.Name == "metadata" {
+					metaIdx = i
+					break
+				}
+			}
+
+			var validMatches []int
 			if metaIdx >= 0 {
 				metaCol := rec.Column(metaIdx)
 				strData := array.NewStringData(metaCol.Data())
-				
+
 				for _, rowIdx := range matches {
 					if strData.IsValid(rowIdx) {
 						metaStr := strData.Value(rowIdx)
@@ -486,6 +487,8 @@ func (d *Dataset) ExtractIDs(rec arrow.RecordBatch) map[string]int {
 // UpdatePrimaryIndex updates the ID mapping for a given batch using a pre-extracted ID map.
 // The caller must hold dataMu lock.
 func (d *Dataset) UpdatePrimaryIndex(batchIdx int, idMap map[string]int) {
+	d.primaryIndexMu.Lock()
+	defer d.primaryIndexMu.Unlock()
 	if idMap == nil {
 		return
 	}
@@ -494,7 +497,30 @@ func (d *Dataset) UpdatePrimaryIndex(batchIdx int, idMap map[string]int) {
 	}
 	for id, rowIdx := range idMap {
 		if oldLoc, exists := d.PrimaryIndex[id]; exists {
-			// Upsert: Mark the old RowLocation as Tombstoned before re-mapping
+			if d.Tombstones[oldLoc.BatchIdx] == nil {
+				d.Tombstones[oldLoc.BatchIdx] = qry.NewBitset()
+			}
+			d.Tombstones[oldLoc.BatchIdx].Set(oldLoc.RowIdx)
+			d.RecordBatchDeletion(oldLoc.BatchIdx)
+			metrics.TombstonesTotal.WithLabelValues(d.Name).Inc()
+		}
+		d.PrimaryIndex[id] = RowLocation{BatchIdx: batchIdx, RowIdx: rowIdx}
+	}
+}
+
+// UpdatePrimaryIndexAsync updates the primary index without holding dataMu.
+// Uses a dedicated mutex for serialization.
+func (d *Dataset) UpdatePrimaryIndexAsync(batchIdx int, idMap map[string]int) {
+	d.primaryIndexMu.Lock()
+	defer d.primaryIndexMu.Unlock()
+	if idMap == nil {
+		return
+	}
+	if d.PrimaryIndex == nil {
+		d.PrimaryIndex = make(map[string]RowLocation)
+	}
+	for id, rowIdx := range idMap {
+		if oldLoc, exists := d.PrimaryIndex[id]; exists {
 			if d.Tombstones[oldLoc.BatchIdx] == nil {
 				d.Tombstones[oldLoc.BatchIdx] = qry.NewBitset()
 			}

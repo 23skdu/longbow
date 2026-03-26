@@ -435,6 +435,27 @@ func (idx *MetalIndex) Search(vector []float32, k int) ([]int64, []float32, erro
 	return resultIDs, resultDistances, nil
 }
 
+// SearchBatch queries the Metal GPU index with multiple vectors in parallel.
+func (idx *MetalIndex) SearchBatch(vectors [][]float32, k int) ([][]int64, [][]float32, error) {
+	if len(vectors) == 0 {
+		return nil, nil, nil
+	}
+
+	results := make([][]int64, len(vectors))
+	distances := make([][]float32, len(vectors))
+
+	for i, vec := range vectors {
+		ids, dist, err := idx.Search(vec, k)
+		if err != nil {
+			return nil, nil, fmt.Errorf("batch search[%d]: %w", i, err)
+		}
+		results[i] = ids
+		distances[i] = dist
+	}
+
+	return results, distances, nil
+}
+
 // Close releases Metal GPU resources
 func (idx *MetalIndex) Close() error {
 	idx.mu.Lock()

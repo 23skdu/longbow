@@ -154,3 +154,23 @@ func (i *CPUIndex) GetDeviceCount() int {
 func (i *CPUIndex) Initialize(deviceID int) error {
 	return nil
 }
+
+func (i *CPUIndex) SearchBatch(vectors [][]float32, k int) ([][]int64, [][]float32, error) {
+	if len(vectors) == 0 {
+		return nil, nil, nil
+	}
+
+	results := make([][]int64, len(vectors))
+	distances := make([][]float32, len(vectors))
+
+	for idx, vec := range vectors {
+		ids, dist, err := i.Search(vec, k)
+		if err != nil {
+			return nil, nil, fmt.Errorf("batch search[%d]: %w", idx, err)
+		}
+		results[idx] = ids
+		distances[idx] = dist
+	}
+
+	return results, distances, nil
+}

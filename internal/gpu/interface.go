@@ -87,6 +87,10 @@ type Index interface {
 	// Search queries the index for the k-nearest neighbors.
 	Search(vector []float32, k int) (ids []int64, distances []float32, err error)
 
+	// SearchBatch queries the index for multiple vectors in parallel for better GPU utilization.
+	// Returns results for each query in the same order as input.
+	SearchBatch(vectors [][]float32, k int) (ids [][]int64, distances [][]float32, err error)
+
 	// Close releases GPU resources.
 	Close() error
 

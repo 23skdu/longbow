@@ -9,7 +9,7 @@
 
 | Bottleneck | Worst Config | Status | Notes |
 |------------|-------------|--------|-------|
-| Dimension scaling | turboquant/float32 128→384 | 🟡 TODO | -52% throughput |
+| Dimension scaling | turboquant/float32 128→384 | ✅ DONE | Blocked processing for 384 dims |
 | P50 latency cliff | turboquant @ dim=384/5k | 🟡 TODO | 0.67ms (72% increase) |
 | Metal GPU | complex64 @ 384/25k | 🟡 TODO | +17% gain (most dtypes flat) |
 
@@ -28,6 +28,7 @@ The following optimizations were implemented in the March 2026 performance sprin
 | 5 | Pre-filter for filtered search | ~10% overhead |
 | 8 | Complex SIMD kernels | complex64: 7,900-8,400 QPS |
 | 10 | CI benchmark workflow | Regression detection |
+| Dimension | Blocked SIMD for 384 dims on ARM64 | Cache locality |
 
 **Files changed:**
 - `internal/store/arrow_hnsw.go` — prefetchLimit
@@ -35,6 +36,8 @@ The following optimizations were implemented in the March 2026 performance sprin
 - `internal/store/dataset.go` — primaryIndexMu
 - `internal/store/hybrid_search.go` — parallel searches
 - `.github/workflows/benchmark.yml` — regression detection
+- `internal/simd/distance_functions.go` — blocked 384 dims
+- `internal/simd/simd_blocked.go` — euclideanBlocked
 
 ---
 

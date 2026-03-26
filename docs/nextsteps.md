@@ -115,10 +115,6 @@ Last Updated: 2026-03-23 (61-config benchmark complete, M3 Pro performance docum
 
 ---
 
-
-
----
-
 ## RaspberryPiZero Platform Plan
 
 1. **Low-Memory Mode Configuration**:
@@ -138,78 +134,15 @@ Last Updated: 2026-03-23 (61-config benchmark complete, M3 Pro performance docum
 
 The following items were identified during a deep codebase review and require implementation to replace mocks, stubs, and incomplete features:
 
-
-### 26. Complete ML Reranker Implementation
-
-**File**: `internal/store/ml_reranker.go`
-**Problem**: The fallback `MLReranker` uses a `stubMLModel` with hardcoded scores on non-Apple/Metal platforms.
-**Action**: Implement a real transformer-based local cross-encoder model runner for Linux/Windows platforms, or integrate an external ML inference API.
-
-
-
-
----
-
 ## Feature Parity with Leading Vector Databases
 
 *Last Updated: 2026-03-22 — Updated based on codebase analysis vs Milvus, Qdrant, Weaviate, Pinecone*
 
-
-
 ### 🔴 HIGH PRIORITY — Production Gaps
-
-
-#### 17. REST API / OpenAPI Spec
-
-**Milvus/Pinecone/Weaviate**: Full REST API with OpenAPI spec.
-**Longbow**: Arrow Flight only (gRPC), no HTTP/REST.
-**Action**: HTTP/REST wrapper for core endpoints (upsert, search, get). Auto-generate OpenAPI from gRPC descriptor.
 
 ### 🟡 MEDIUM PRIORITY — Ecosystem Gaps
 
-#### 18. Rich Filter Expression Language
-
-**Milvus**: `must/must_not/should` boolean filters with nested conditions.
-**Qdrant**: JSON payload conditions with nested booleans.
-**Longbow**: Post-filtering with simple predicates; `ColumnInvertedIndex` for exact match only.
-**Action**: Add compound filter expressions (AND/OR/NOT) with nested field paths. Target: Milvus v3 `must`/`should` parity.
-
-#### 19. User-Facing Consistency Levels
-
-**Milvus**: Strong / Bounded Staleness / Eventually Consistent per request.
-**Longbow**: Quorum infrastructure exists (`internal/store/quorum.go`, supports One/Quorum/All) but not exposed in client SDK.
-**Action**: Add `ConsistencyLevel` enum to `VectorSearchRequest` and `DoPutRequest`. Wire through quorum manager.
-
-#### 20. Per-Collection HNSW Tuning
-
-**Milvus**: Index params (`M`, `efConstruction`) per collection.
-**Longbow**: `LONGBOW_HNSW_M`, `LONGBOW_HNSW_EF_CONSTRUCTION` are global env vars only.
-**Action**: Allow index parameters at dataset creation time. Fall back to global env vars.
-
-#### 21. Batch Import CLI (Parquet/NumPy)
-
-**Milvus**: Bulk import from Parquet, NumPy, CSV files.
-**Longbow**: Programmatic only via SDK.
-**Action**: CLI tool to import `*.parquet` / `*.npy` files directly into a dataset.
-
-#### 22. Published JS/TS SDK
-
-**Longbow**: `longbowclientsdk/src/longbow/` contains a TypeScript client but not published to npm.
-**Action**: Publish `@longbow/client` to npm. Add async/await support for Node.js.
-
 ### 🟢 LOW PRIORITY — Nice to Have
-
-#### 23. Change Data Capture (CDC)
-
-**Milvus**: Kafka/RabbitMQ integration.
-**Longbow**: Not implemented.
-**Action**: Consider event stream integration for production replication.
-
-#### 24. Schema Evolution / ALTER
-
-**Milvus**: ALTER collection schema.
-**Longbow**: Schema fixed at creation.
-**Action**: Low priority — consider read-only schema enforcement.
 
 ---
 
@@ -219,11 +152,11 @@ The following items were identified during a deep codebase review and require im
 |---------|--------|--------|----------|----------|---------|
 | HNSW efSearch tuning | ✅ | ✅ | ✅ | ✅ | ✅ |
 | IVF-PQ index | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Upsert | ✅ | ✅ | ✅ | ✅ | ❌ |
-| Rich filter expr | ✅ | ✅ | ✅ | ✅ | ❌ (predicates only) |
-| User-facing consistency | ✅ | ✅ | ✅ | ✅ | ❌ (infra exists) |
-| REST API | ✅ | ✅ | ✅ | ✅ | ❌ |
-| Published TS/JS SDK | ✅ | ✅ | ✅ | ✅ | ❌ (unpublished) |
+| Upsert | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Rich filter expr | ✅ | ✅ | ✅ | ✅ | ✅ |
+| User-facing consistency | ✅ | ✅ | ✅ | ✅ | ✅ |
+| REST API | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Published TS/JS SDK | ✅ | ✅ | ✅ | ✅ | ✅ |
 | DiskANN on-disk | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Namespaces | ✅ | ✅ | ✅ | ✅ | ✅ |
 | BM25 sparse | ✅ | ✅ | ✅ | ✅ | ✅ (via hybrid) |

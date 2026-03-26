@@ -1,183 +1,114 @@
-# Longbow Mac Metal Performance Benchmarks
+# Performance Validation Matrix — Apple M3 Pro Metal GPU
 
-**Date**: March 22, 2026
-**Platform**: macOS (Darwin arm64)
-**CPU**: Apple M3 Pro (6P + 6E cores)
-**Memory**: 36 GB RAM
-**GPU**: Apple Metal GPU (integrated)
+**Generated**: 2026-03-25
+**Platform**: macOS (Apple M3 Pro, ARM64)
+**Memory**: 12GB allocated
+**Test Tool**: Go benchmark-tool (`bin/benchmark-tool`)
+**Binary**: `bin/longbow-metal` (Metal GPU enabled)
+**Queries**: 200 per test
 
-> **Note**: Metal GPU performance benchmarks require running with adequate memory allocation
-> to avoid GC pressure. Use `LONGBOW_MAX_MEMORY=20g` for Apple Silicon M3 Pro.
+> **Note**: Fresh results from 2026-03-25 test run. All 72 configs completed.
+> Metal GPU accelerated distance calculations.
+
+## Results Table
+
+| DType | Dim | Count | DoPut (vec/s) | DoPut (MB/s) | DoGet (vec/s) | DoGet (MB/s) | Dense QPS | Dense P50 | Hybrid QPS | Hybrid P50 | Filtered QPS | Filtered P50 |
+|-------|-----|-------|---------------|--------------|---------------|--------------|-----------|-----------|------------|------------|--------------|--------------|
+| float32 | 128 | 1,000 | 195,451 | 95 | 727,317 | 355 | 3,844 | 0.25ms | 3,847 | 0.26ms | 4,397 | 0.22ms |
+| float32 | 128 | 5,000 | 803,347 | 392 | 1,301,702 | 636 | 2,487 | 0.40ms | 2,477 | 0.40ms | 2,547 | 0.39ms |
+| float32 | 128 | 10,000 | 1,231,476 | 601 | 2,596,054 | 1,268 | 3,341 | 0.30ms | 2,802 | 0.36ms | 2,851 | 0.35ms |
+| float32 | 128 | 25,000 | 1,593,858 | 778 | 3,292,886 | 1,608 | 3,383 | 0.29ms | 2,820 | 0.35ms | 2,878 | 0.34ms |
+| float64 | 128 | 1,000 | 199,043 | 194 | 541,846 | 529 | 3,552 | 0.28ms | 3,491 | 0.29ms | 3,587 | 0.28ms |
+| float64 | 128 | 5,000 | 552,512 | 540 | 744,472 | 727 | 3,458 | 0.29ms | 3,449 | 0.29ms | 3,523 | 0.28ms |
+| float64 | 128 | 10,000 | 726,672 | 710 | 1,362,452 | 1,331 | 4,209 | 0.23ms | 3,710 | 0.27ms | 3,594 | 0.28ms |
+| float64 | 128 | 25,000 | 799,501 | 781 | 1,776,483 | 1,735 | 4,752 | 0.20ms | 4,695 | 0.21ms | 4,460 | 0.22ms |
+| int8 | 128 | 1,000 | 226,189 | 28 | 1,384,963 | 169 | 3,479 | 0.28ms | 3,437 | 0.29ms | 3,545 | 0.28ms |
+| int8 | 128 | 5,000 | 1,048,447 | 128 | 3,353,643 | 409 | 4,063 | 0.24ms | 4,547 | 0.22ms | 4,816 | 0.20ms |
+| int8 | 128 | 10,000 | 1,925,623 | 235 | 4,082,187 | 498 | 4,245 | 0.23ms | 4,036 | 0.24ms | 3,862 | 0.26ms |
+| int8 | 128 | 25,000 | 3,388,644 | 414 | 10,787,291 | 1,317 | 4,835 | 0.20ms | 4,807 | 0.21ms | 4,477 | 0.22ms |
+| int16 | 128 | 1,000 | 206,024 | 50 | 1,044,750 | 255 | 8,429 | 0.11ms | 9,662 | 0.10ms | 11,726 | 0.08ms |
+| int16 | 128 | 5,000 | 1,017,337 | 248 | 3,020,843 | 738 | 8,625 | 0.11ms | 9,876 | 0.10ms | 11,822 | 0.08ms |
+| int16 | 128 | 10,000 | 1,500,591 | 366 | 2,614,151 | 638 | 8,681 | 0.11ms | 9,680 | 0.10ms | 11,573 | 0.08ms |
+| int16 | 128 | 25,000 | 3,141,345 | 767 | 3,219,368 | 786 | 8,640 | 0.11ms | 9,868 | 0.10ms | 11,330 | 0.09ms |
+| int32 | 128 | 1,000 | 217,817 | 106 | 627,664 | 306 | 3,665 | 0.27ms | 3,668 | 0.27ms | 3,807 | 0.26ms |
+| int32 | 128 | 5,000 | 852,775 | 416 | 1,510,232 | 737 | 3,487 | 0.28ms | 3,486 | 0.28ms | 3,637 | 0.27ms |
+| int32 | 128 | 10,000 | 1,291,934 | 631 | 2,056,044 | 1,004 | 4,187 | 0.24ms | 3,663 | 0.27ms | 3,609 | 0.27ms |
+| int32 | 128 | 25,000 | 1,444,228 | 705 | 3,269,666 | 1,597 | 4,666 | 0.21ms | 4,696 | 0.21ms | 4,472 | 0.22ms |
+| uint32 | 128 | 1,000 | 212,768 | 104 | 752,540 | 367 | 4,248 | 0.23ms | 4,562 | 0.22ms | 4,815 | 0.21ms |
+| uint32 | 128 | 5,000 | 842,779 | 412 | 2,232,392 | 1,090 | 4,163 | 0.24ms | 4,543 | 0.22ms | 4,841 | 0.20ms |
+| uint32 | 128 | 10,000 | 1,146,608 | 560 | 2,475,759 | 1,209 | 4,219 | 0.23ms | 3,735 | 0.27ms | 3,670 | 0.27ms |
+| uint32 | 128 | 25,000 | 1,574,667 | 769 | 3,006,781 | 1,468 | 4,602 | 0.21ms | 4,643 | 0.21ms | 4,453 | 0.22ms |
+| complex64 | 128 | 1,000 | 193,185 | 189 | 209,985 | 205 | 7,905 | 0.12ms | 9,100 | 0.10ms | 11,532 | 0.08ms |
+| complex64 | 128 | 5,000 | 526,191 | 514 | 1,121,684 | 1,095 | 8,209 | 0.12ms | 9,222 | 0.10ms | 11,151 | 0.09ms |
+| complex64 | 128 | 10,000 | 816,332 | 797 | 1,354,715 | 1,323 | 7,897 | 0.12ms | 9,488 | 0.10ms | 11,146 | 0.09ms |
+| complex64 | 128 | 25,000 | 952,426 | 930 | 1,584,397 | 1,547 | 8,359 | 0.11ms | 9,478 | 0.10ms | 10,446 | 0.09ms |
+| complex128 | 128 | 1,000 | 160,301 | 313 | 306,599 | 599 | 4,280 | 0.23ms | 4,588 | 0.22ms | 4,831 | 0.21ms |
+| complex128 | 128 | 5,000 | 348,877 | 681 | 547,538 | 1,069 | 4,035 | 0.25ms | 4,509 | 0.22ms | 4,786 | 0.21ms |
+| complex128 | 128 | 10,000 | 461,819 | 902 | 714,430 | 1,395 | 4,143 | 0.24ms | 3,668 | 0.27ms | 3,613 | 0.27ms |
+| complex128 | 128 | 25,000 | 493,889 | 965 | 995,985 | 1,945 | 4,673 | 0.21ms | 4,392 | 0.23ms | 4,395 | 0.22ms |
+| turboquant | 128 | 1,000 | 215,694 | 10 | 514,183 | 63 | 3,856 | 0.25ms | 4,189 | 0.23ms | 4,552 | 0.22ms |
+| turboquant | 128 | 5,000 | 766,979 | 36 | 1,528,156 | 187 | 2,538 | 0.39ms | 2,501 | 0.40ms | 2,597 | 0.38ms |
+| turboquant | 128 | 10,000 | 1,404,568 | 66 | 2,015,740 | 246 | 3,451 | 0.29ms | 2,794 | 0.36ms | 2,876 | 0.35ms |
+| turboquant | 128 | 25,000 | 1,774,009 | 83 | 2,678,344 | 327 | 3,301 | 0.30ms | 2,793 | 0.36ms | 2,835 | 0.35ms |
+| float32 | 384 | 1,000 | 181,882 | 266 | 362,861 | 532 | 2,587 | 0.38ms | 2,517 | 0.40ms | 2,618 | 0.38ms |
+| float32 | 384 | 5,000 | 418,952 | 614 | 737,631 | 1,081 | 1,499 | 0.65ms | 1,483 | 0.67ms | 1,507 | 0.65ms |
+| float32 | 384 | 10,000 | 564,770 | 827 | 933,761 | 1,368 | 2,737 | 0.36ms | 2,154 | 0.44ms | 2,238 | 0.44ms |
+| float32 | 384 | 25,000 | 614,568 | 900 | 1,142,372 | 1,673 | 2,509 | 0.35ms | 2,395 | 0.41ms | 2,382 | 0.41ms |
+| float64 | 384 | 1,000 | 147,941 | 433 | 263,372 | 772 | 3,171 | 0.32ms | 3,220 | 0.31ms | 3,321 | 0.30ms |
+| float64 | 384 | 5,000 | 272,720 | 799 | 322,151 | 944 | 2,760 | 0.36ms | 2,731 | 0.37ms | 2,809 | 0.35ms |
+| float64 | 384 | 10,000 | 314,828 | 922 | 484,837 | 1,420 | 3,539 | 0.28ms | 3,306 | 0.30ms | 3,366 | 0.29ms |
+| float64 | 384 | 25,000 | 362,122 | 1,061 | 617,893 | 1,810 | 3,805 | 0.26ms | 3,800 | 0.26ms | 3,629 | 0.27ms |
+| int8 | 384 | 1,000 | 201,547 | 74 | 755,073 | 277 | 2,845 | 0.35ms | 2,807 | 0.36ms | 2,872 | 0.35ms |
+| int8 | 384 | 5,000 | 805,780 | 295 | 1,642,823 | 602 | 3,117 | 0.32ms | 3,080 | 0.33ms | 3,268 | 0.30ms |
+| int8 | 384 | 10,000 | 1,305,895 | 478 | 2,247,949 | 823 | 3,564 | 0.28ms | 3,346 | 0.29ms | 3,418 | 0.29ms |
+| int8 | 384 | 25,000 | 1,994,873 | 731 | 3,847,930 | 1,409 | 3,888 | 0.25ms | 3,690 | 0.27ms | 3,772 | 0.26ms |
+| int16 | 384 | 1,000 | 210,587 | 154 | 954,540 | 699 | 6,318 | 0.15ms | 7,561 | 0.13ms | 8,164 | 0.12ms |
+| int16 | 384 | 5,000 | 639,962 | 469 | 1,352,997 | 991 | 6,349 | 0.15ms | 7,612 | 0.13ms | 8,330 | 0.12ms |
+| int16 | 384 | 10,000 | 943,270 | 691 | 1,894,447 | 1,388 | 6,703 | 0.15ms | 7,630 | 0.13ms | 8,158 | 0.12ms |
+| int16 | 384 | 25,000 | 1,174,600 | 860 | 2,084,781 | 1,527 | 6,404 | 0.15ms | 7,633 | 0.13ms | 8,070 | 0.12ms |
+| int32 | 384 | 1,000 | 177,617 | 260 | 338,209 | 495 | 3,175 | 0.31ms | 3,146 | 0.32ms | 3,312 | 0.30ms |
+| int32 | 384 | 5,000 | 470,096 | 689 | 690,512 | 1,011 | 3,186 | 0.32ms | 3,219 | 0.31ms | 3,293 | 0.30ms |
+| int32 | 384 | 10,000 | 651,600 | 954 | 893,592 | 1,309 | 3,550 | 0.28ms | 3,399 | 0.29ms | 3,413 | 0.29ms |
+| int32 | 384 | 25,000 | 619,175 | 907 | 1,185,961 | 1,737 | 3,891 | 0.25ms | 3,665 | 0.27ms | 3,595 | 0.27ms |
+| uint32 | 384 | 1,000 | 172,676 | 253 | 382,147 | 560 | 3,192 | 0.31ms | 3,153 | 0.32ms | 3,183 | 0.31ms |
+| uint32 | 384 | 5,000 | 453,957 | 665 | 698,523 | 1,023 | 3,189 | 0.31ms | 3,180 | 0.31ms | 3,347 | 0.30ms |
+| uint32 | 384 | 10,000 | 619,238 | 907 | 783,574 | 1,148 | 3,471 | 0.29ms | 3,313 | 0.30ms | 3,244 | 0.30ms |
+| uint32 | 384 | 25,000 | 620,820 | 909 | 1,297,314 | 1,900 | 3,888 | 0.25ms | 3,647 | 0.27ms | 3,736 | 0.26ms |
+| complex64 | 384 | 1,000 | 144,354 | 423 | 283,725 | 831 | 5,857 | 0.16ms | 7,302 | 0.14ms | 8,284 | 0.12ms |
+| complex64 | 384 | 5,000 | 315,916 | 926 | 348,341 | 1,021 | 6,337 | 0.15ms | 7,287 | 0.14ms | 8,062 | 0.12ms |
+| complex64 | 384 | 10,000 | 323,060 | 946 | 488,968 | 1,433 | 6,513 | 0.15ms | 7,231 | 0.14ms | 8,002 | 0.12ms |
+| complex64 | 384 | 25,000 | 435,652 | 1,276 | 702,197 | 2,057 | 8,880 | 0.11ms | 8,408 | 0.12ms | 8,908 | 0.10ms |
+| complex128 | 384 | 1,000 | 104,498 | 612 | 109,001 | 639 | 2,815 | 0.35ms | 2,750 | 0.36ms | 2,849 | 0.35ms |
+| complex128 | 384 | 5,000 | 155,493 | 911 | 182,404 | 1,069 | 3,346 | 0.29ms | 3,191 | 0.31ms | 3,321 | 0.30ms |
+| complex128 | 384 | 10,000 | 180,717 | 1,059 | 244,041 | 1,430 | 3,494 | 0.28ms | 3,327 | 0.30ms | 3,247 | 0.31ms |
+| complex128 | 384 | 25,000 | 203,780 | 1,194 | 385,471 | 2,259 | 4,125 | 0.24ms | 3,875 | 0.26ms | 3,494 | 0.28ms |
+| turboquant | 384 | 1,000 | 175,207 | 24 | 416,906 | 153 | 2,569 | 0.38ms | 2,547 | 0.39ms | 2,614 | 0.38ms |
+| turboquant | 384 | 5,000 | 465,553 | 64 | 851,523 | 312 | 1,465 | 0.66ms | 1,476 | 0.67ms | 1,517 | 0.65ms |
+| turboquant | 384 | 10,000 | 545,045 | 75 | 1,123,916 | 412 | 2,772 | 0.36ms | 2,180 | 0.46ms | 2,172 | 0.46ms |
+| turboquant | 384 | 25,000 | 676,022 | 93 | 1,307,249 | 479 | 2,455 | 0.35ms | 2,394 | 0.42ms | 2,392 | 0.41ms |
 
 ---
 
-## Build Status
-
-### Metal GPU Build
+## Benchmark Command
 
 ```bash
-# Build with Metal GPU support
-make build-metal
+# Fresh server per test
+rm -rf data/wal.log data/snapshots data/bench
+mkdir -p data/bench
+LONGBOW_MAX_MEMORY=12884901888 ARROW_DISABLE_LOCKING=1 \
+  ./bin/longbow-metal --listen-addr 127.0.0.1:3000 --data-path data --node-id bench1 &
 
-# Or manually
-CGO_ENABLED=1 go build -tags gpu -o bin/longbow-metal ./cmd/longbow
+# Run benchmark
+./bin/benchmark-tool \
+  --uri=127.0.0.1:3000 \
+  --dim=384 \
+  --dtype=float32 \
+  --scale=25000 \
+  --queries=200 \
+  --dataset=bench_metal_float32_384_25000 \
+  --json=data/perf_logs/result_metal_float32_384_25000.json
 ```
-
-**Build Output**:
-- Binary: `bin/longbow-metal`
-- Build tags: `gpu && darwin && arm64`
-- Metal framework detection: ✓
-
-### Run Performance Tests
-
-```bash
-# Run Metal performance benchmark suite
-./scripts/run_metal_perf.sh
-```
-
-The script:
-1. Detects Metal framework availability
-2. Builds `longbow-metal` binary
-3. Starts server with Metal GPU support (20GB memory)
-4. Runs ingestion, dense search, and hybrid search benchmarks
-5. Outputs JSON results to `results_metal_*.json`
 
 ---
 
-## Benchmark Configuration
-
-- **Test Tool**: `bin/bench-tool` (Go-based)
-- **Test Types**: Ingestion, Dense Search
-- **Dimensions**: 128
-- **Batch Size**: 5000 (ingestion), 1 (search)
-- **Data Type**: float32
-- **Metric**: Euclidean (L2)
-- **Search k**: 10
-- **Concurrent Workers**: 4
-- **Test Duration**: 10 seconds
-- **Memory Allocation**: 20 GB
-
----
-
-## Implementation Details
-
-### GPU Memory Management
-
-Metal GPU implementation uses a dedicated memory pool (`GPUMemPool`) with:
-
-- **Allocation Strategy**: On-demand allocation from Metal heap
-- **Memory Pooling**: Reuses deallocated buffers to reduce GPU memory fragmentation
-- **Thread Safety**: Synchronized access via mutex
-
-### Files
-
-| File | Purpose |
-|------|---------|
-| `internal/gpu/memory_base.go` | Base `GPUMemPool` struct (all platforms) |
-| `internal/gpu/memory_types.go` | Darwin-specific types + `NewGPUMemPool` |
-| `internal/gpu/memory_metal.go` | Metal-specific memory implementations |
-| `internal/gpu/metal_gpu.go` | Base Metal GPU implementation |
-| `internal/gpu/metal_gpu_hybrid.go` | Hybrid search GPU kernels |
-| `internal/gpu/metal_gpu_optimized.go` | Optimized GPU kernels (SIMD) |
-| `internal/gpu/gpu_enabled_darwin.go` | Darwin build configuration |
-
-### Build Tags
-
-```go
-//go:build gpu && darwin && arm64
-```
-
-Required for all Metal-specific files.
-
----
-
-## Known Issues
-
-### Memory Pressure with Pre-existing Data
-
-The default memory allocation (1GB) may cause high heap utilization warnings when
-pre-existing benchmark data is loaded. For performance testing:
-
-```bash
-LONGBOW_MAX_MEMORY=20g ./bin/longbow-metal server
-```
-
-### MetalIndexOptimized Tests
-
-`TestMetalIndexOptimized_Basic` is skipped due to Metal shader compilation issues
-with heap-based top-k selection. The shader has a variable scoping bug that needs
-to be addressed.
-
----
-
-## Observed Results
-
-### Test Run: M3 Pro, 20GB Memory, 128-dim, float32
-
-**Ingestion** (4 concurrent workers, batch-size 5000):
-- Throughput: 66.85 ops/sec
-- Avg Latency: 59.77ms
-- Errors: 1
-
-**Search** (4 concurrent workers, batch-size 1):
-- Throughput: 39,352 ops/sec (~39K QPS)
-- Avg Latency: 101.5µs
-- Errors: 0
-
-### Performance Notes
-
-- Search performance is excellent - 39K QPS with sub-millisecond latency
-- Ingestion limited by HNSW indexing overhead, not network/server
-- Memory utilization stable with 20GB allocation
-- Go bench-tool properly batches records, avoiding queue buildup issues
-
----
-
-## Performance Expectations
-
-Based on M3 Pro Metal GPU architecture:
-
-| Operation | Expected Performance |
-|-----------|---------------------|
-| Vector Ingestion | 500K+ vec/s (ideal conditions) |
-| Dense Search (128-dim) | 10K+ QPS |
-| Dense Search (384-dim) | 5K+ QPS |
-| Hybrid Search | 1K+ QPS |
-
-> **Note**: Actual performance depends on workload characteristics and memory allocation.
-> Current benchmark script needs optimization for batched ingestion mode.
-
----
-
-## Troubleshooting
-
-### Metal Framework Not Found
-
-```bash
-# Verify Metal is available
-ls -la /System/Library/Frameworks/Metal.framework
-```
-
-### Build Fails with Undefined Symbols
-
-Ensure `CGO_ENABLED=1` and macOS ARM64 architecture:
-```bash
-CGO_ENABLED=1 go build -tags gpu -o bin/longbow-metal ./cmd/longbow
-```
-
-### High Memory Utilization
-
-Increase memory allocation:
-```bash
-LONGBOW_MAX_MEMORY=20g ./bin/longbow-metal server
-```
-
-### Benchmark Script Timeout
-
-If the benchmark script times out, reduce the duration in `scripts/run_metal_perf.sh`:
-- Reduce `--duration 10s` to `--duration 5s`
-- Reduce `--concurrency 4` to `--concurrency 2`
-
----
-
-*Last Updated: March 22, 2026*
+*Last Updated: 2026-03-25*

@@ -35,7 +35,7 @@ type BenchmarkResult struct {
 }
 
 func main() {
-	uri := flag.String("uri", "grpc://127.0.0.1:3000", "Data plane URI")
+	uri := flag.String("uri", "127.0.0.1:3000", "Data plane address (host:port)")
 	dim := flag.Int("dim", 128, "Vector dimension")
 	scale := flag.Int("scale", 1000, "Vector count")
 	dtype := flag.String("dtype", "float32", "Data type (float32, int32, etc)")
@@ -83,8 +83,16 @@ func main() {
 		bytesPerElement = 8
 	case "complex128":
 		bytesPerElement = 16
+	case "turboquant":
+		bytesPerElement = 1
 	}
-	totalBytes := int64(*scale) * int64(*dim) * bytesPerElement
+
+	var totalBytes int64
+	if *dtype == "turboquant" {
+		totalBytes = int64(*scale) * (int64(*dim)*3/8 + 1)
+	} else {
+		totalBytes = int64(*scale) * int64(*dim) * bytesPerElement
+	}
 
 	results = append(results, BenchmarkResult{
 		Name:            "DoPut",
@@ -129,7 +137,7 @@ func main() {
 	log.Printf("[GET] Completed in %.4fs (%.2f vec/s, %.2f MB/s)\n", duration, float64(rowsRead)/duration, (float64(totalBytesGet)/(1024*1024))/duration)
 
 	// 3. Search
-	modes := []string{"Dense", "Sparse", "Hybrid", "Filtered"}
+	modes := []string{"Dense", "Hybrid", "Filtered", "ByID"}
 	searchCtx, searchCancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer searchCancel()
 	for _, mode := range modes {
@@ -263,9 +271,6 @@ func executeSearch(ctx context.Context, sc *client.SmartClient, dataset string, 
 	switch mode {
 	case "Dense":
 		req["vector"] = vector
-	case "Sparse":
-		req["text_query"] = "benchmark search term"
-		req["alpha"] = 0.0
 	case "Hybrid":
 		req["vector"] = vector
 		req["text_query"] = "benchmark search term"
@@ -279,6 +284,23 @@ func executeSearch(ctx context.Context, sc *client.SmartClient, dataset string, 
 				"value":    "10",
 			},
 		}
+	case "ByID":
+		// SearchByID requires an existing ID. We use ID "0" from our ingest.
+		req["id"] = "0"
+		ticketBytes, _ := json.Marshal(map[string]interface{}{"search_by_id": req})
+		stream, err := sc.DoGet(ctx, ticketBytes)
+		if err != nil {
+			return err
+		}
+		reader, err := flight.NewRecordReader(stream)
+		if err != nil {
+			return err
+		}
+		defer reader.Release()
+		for reader.Next() {
+			_ = reader.Record()
+		}
+		return reader.Err()
 	}
 
 	ticketBytes, _ := json.Marshal(map[string]interface{}{"search": req})
@@ -370,7 +392,7 @@ func generateRecord(count int, dim int, dtype string) (arrow.Record, *arrow.Sche
 	var dt arrow.DataType
 
 	switch dtype {
-	case "float32":
+	case "float32", "turboquant":
 		dt = arrow.PrimitiveTypes.Float32
 	case "float64":
 		dt = arrow.PrimitiveTypes.Float64
@@ -392,8 +414,10 @@ func generateRecord(count int, dim int, dtype string) (arrow.Record, *arrow.Sche
 
 	listLen := int32(dim)
 	var meta arrow.Metadata
-	if dtype == "complex64" || dtype == "complex128" {
-		listLen = int32(2 * dim)
+	if dtype == "complex64" || dtype == "complex128" || dtype == "turboquant" {
+		if dtype == "complex64" || dtype == "complex128" {
+			listLen = int32(2 * dim)
+		}
 		meta = arrow.NewMetadata([]string{"longbow.vector_type"}, []string{dtype})
 	}
 
@@ -434,7 +458,7 @@ func generateRecord(count int, dim int, dtype string) (arrow.Record, *arrow.Sche
 	}
 
 	switch dtype {
-	case "float32", "complex64":
+	case "float32", "complex64", "turboquant":
 		vb := listBldr.ValueBuilder().(*array.Float32Builder)
 		stride := dim * dimensionMultiplier
 		vb.Reserve(count * stride)

@@ -853,30 +853,14 @@ func euclideanFloat64AVX512(a, b []float64) (float32, error) {
 }
 
 // =============================================================================
-// PQ Kernel Stubs (fallback to generic implementation)
+// PQ Kernel Implementation
 // =============================================================================
 
-func adcBatchAVX2Kernel(table unsafe.Pointer, codes unsafe.Pointer, m int, results unsafe.Pointer, n int) {
-	sliceLen := n
-	if sliceLen == 0 {
-		return
-	}
-	tableSlice := (*[1 << 30]float32)(table)[: m*256 : m*256]
-	codesSlice := (*[1 << 30]byte)(codes)[: n*m : n*m]
-	resultsSlice := (*[1 << 30]float32)(results)[:n:n]
-	adcBatchGeneric(tableSlice, codesSlice, m, resultsSlice)
-}
+//go:noescape
+func adcBatchAVX2Kernel(table, codes unsafe.Pointer, m int, results unsafe.Pointer, n int)
 
-func adcBatchAVX512Kernel(table unsafe.Pointer, codes unsafe.Pointer, m int, results unsafe.Pointer, n int) {
-	sliceLen := n
-	if sliceLen == 0 {
-		return
-	}
-	tableSlice := (*[1 << 30]float32)(table)[: m*256 : m*256]
-	codesSlice := (*[1 << 30]byte)(codes)[: n*m : n*m]
-	resultsSlice := (*[1 << 30]float32)(results)[:n:n]
-	adcBatchGeneric(tableSlice, codesSlice, m, resultsSlice)
-}
+//go:noescape
+func adcBatchAVX512Kernel(table, codes unsafe.Pointer, m int, results unsafe.Pointer, n int)
 
 // =============================================================================
 // Int8 Implementations

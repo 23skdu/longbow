@@ -716,4 +716,41 @@ var (
 		},
 		[]string{"allocator"},
 	)
+
+	// =============================================================================
+	// Remote Storage Metrics (S3/GCS)
+	// =============================================================================
+
+	RemoteStorageOpsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_remote_storage_ops_total",
+			Help: "Total number of remote storage operations",
+		},
+		[]string{"provider", "operation", "status"}, // provider: "s3", "gcs". operation: "put", "get", "delete", "exists". status: "success", "error"
+	)
+
+	RemoteStorageDurationSeconds = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_remote_storage_duration_seconds",
+			Help:    "Duration of remote storage operations",
+			Buckets: []float64{0.01, 0.05, 0.1, 0.5, 1, 5, 15, 30, 60},
+		},
+		[]string{"provider", "operation"},
+	)
+
+	RemoteStorageUploadBytes = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_remote_storage_upload_bytes_total",
+			Help: "Total bytes uploaded to remote storage",
+		},
+		[]string{"provider"},
+	)
+
+	RemoteStorageDownloadBytes = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_remote_storage_download_bytes_total",
+			Help: "Total bytes downloaded from remote storage",
+		},
+		[]string{"provider"},
+	)
 )

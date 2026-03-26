@@ -282,10 +282,7 @@ func (sa *StreamAggregator) sortAndSlice(tbl arrow.Table, colIdx, k int, ascendi
 	return []arrow.RecordBatch{res}, nil
 }
 
-// fallback slicing - returns first k rows from table
-// This is a fallback for edge cases where the main mergeAndSort path doesn't apply.
-// Currently returns nil to let the caller handle the table directly.
-// TODO: Implement proper table slicing using arrow.Table's API
+// sliceTable returns the first k rows from the table, correctly traversing chunk boundaries.
 func (sa *StreamAggregator) sliceTable(tbl arrow.Table, k int) ([]arrow.RecordBatch, error) {
 	if tbl.NumRows() == 0 {
 		return nil, nil
@@ -294,24 +291,49 @@ func (sa *StreamAggregator) sliceTable(tbl arrow.Table, k int) ([]arrow.RecordBa
 	if int64(k) < limited {
 		limited = int64(k)
 	}
-	schema := tbl.Schema()
-	numCols := int(tbl.NumCols())
-	slicedCols := make([]arrow.Array, numCols)
-	for i := 0; i < numCols; i++ {
-		chunked := tbl.Column(i)
-		chunk := chunked.Data().Chunk(0)
-		length := chunk.Len()
-		if int64(length) > limited {
-			length = int(limited)
+
+	tr := array.NewTableReader(tbl, limited)
+	defer tr.Release()
+
+	var batches []arrow.RecordBatch
+	var collected int64
+
+	for tr.Next() {
+		rec := tr.RecordBatch()
+		toTake := rec.NumRows()
+
+		if collected+toTake > limited {
+			takeRows := limited - collected
+			schema := rec.Schema()
+			slicedCols := make([]arrow.Array, rec.NumCols())
+			for i := 0; i < int(rec.NumCols()); i++ {
+				slicedCols[i] = array.NewSlice(rec.Column(i), 0, takeRows)
+			}
+			slicedRec := array.NewRecord(schema, slicedCols, takeRows)
+			for _, c := range slicedCols {
+				c.Release() // slicedRec takes ownership
+			}
+			batches = append(batches, slicedRec)
+			break
 		}
-		slice := array.NewSlice(chunk, 0, int64(length))
-		slicedCols[i] = slice
+
+		rec.Retain()
+		batches = append(batches, rec)
+		collected += toTake
+
+		if collected == limited {
+			break
+		}
 	}
-	record := array.NewRecord(schema, slicedCols, limited)
-	for _, c := range slicedCols {
-		c.Release()
+
+	if tr.Err() != nil {
+		for _, b := range batches {
+			b.Release()
+		}
+		return nil, tr.Err()
 	}
-	return []arrow.RecordBatch{record}, nil
+
+	return batches, nil
 }
 
 // appendValue is a helper to append a single value from srcArr[idx] to builder

@@ -1,6 +1,7 @@
 package simd
 
 import (
+	"errors"
 	"math"
 
 	"github.com/23skdu/longbow/internal/metrics"
@@ -151,4 +152,22 @@ func DotProductTiledBatch(query []float32, vectors [][]float32, results []float3
 		}
 	}
 	return nil
+}
+
+func euclidean384Blocked(a, b []float32) (float32, error) {
+	return euclideanBlocked(a, b)
+}
+
+func euclideanBlocked(a, b []float32) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	sum, err := L2SquaredFloat32(a, b)
+	if err != nil {
+		return 0, err
+	}
+	return float32(math.Sqrt(float64(sum))), nil
 }

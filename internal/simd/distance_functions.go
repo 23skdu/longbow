@@ -22,14 +22,19 @@ func EuclideanDistance(a, b []float32) (float32, error) {
 		return 0, nil
 	}
 	if len(a) == 384 {
-		// Use AVX2 directly for 384 dims (faster than dispatch table which falls back to generic)
 		if features.HasAVX2 {
 			return euclideanAVX2(a, b)
+		}
+		if features.HasNEON {
+			return euclidean384Blocked(a, b)
 		}
 		return currentDispatch.EuclideanDistance384(a, b)
 	}
 	if len(a) == 128 {
 		return currentDispatch.EuclideanDistance128(a, b)
+	}
+	if len(a) > 512 && features.HasNEON {
+		return euclideanBlocked(a, b)
 	}
 	return currentDispatch.EuclideanDistance(a, b)
 }

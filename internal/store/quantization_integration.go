@@ -1,5 +1,7 @@
 package store
 
+import "sync/atomic"
+
 // ensureTrained checks if SQ8 training is needed and performs it if sufficient data is accumulated.
 // limitID specifies the max ID to backfill (inclusive).
 func (h *ArrowHNSW) ensureTrained(limitID int, extraSamples [][]float32) {
@@ -78,7 +80,7 @@ func (h *ArrowHNSW) ensureTrained(limitID int, extraSamples [][]float32) {
 		h.sq8TrainingBuffer = nil
 		h.sq8Ready.Store(true)
 		if gd := h.data.Load(); gd != nil {
-			gd.SQ8Ready.Store(true)
+			atomic.StoreUint32(&gd.SQ8Ready, 1)
 		}
 	}
 }

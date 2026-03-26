@@ -5,13 +5,73 @@
 
 ---
 
-## Remaining Bottlenecks
+## Completed Bottlenecks
 
 | Bottleneck | Worst Config | Status | Notes |
 |------------|-------------|--------|-------|
 | Dimension scaling | turboquant/float32 128→384 | ✅ DONE | Blocked processing for 384 dims |
-| P50 latency cliff | turboquant @ dim=384/5k | 🟡 TODO | 0.67ms (72% increase) |
-| Metal GPU | complex64 @ 384/25k | ✅ DONE | Higher candidate multiplier, batch search |
+| P50 latency cliff | turboquant @ dim=384/5k | ✅ DONE | Cached rotated query in search context |
+| Metal GPU Stability| High-load sustained benchmarks | ✅ DONE | Resource limits and CPU fallback |
+| TurboQuant ARM64 | NEON L2 Squared distance | ✅ DONE | Optimized distance kernels for Pi |
+
+---
+
+## Recommendations for Next Steps
+
+### 1. High Priority
+
+**a. turboquant Hybrid Search Optimization**
+
+- Current: Hybrid QPS drops to 776 at dim=384/count=10k vs 1,476 Dense QPS
+- Root cause: Sparse vector computation overhead in hybrid path
+- Recommendation: Add batch sparse vector computation, similar to Metal batch search
+
+**b. Metal Server Stability (Audit)**
+
+- Current: Basic resource limits and graceful fallback implemented.
+- Recommendation: Perform long-duration soak testing to ensure no gradual leaks.
+
+**c. Integer Overflow Warnings (gosec G115)**
+
+- Fixed 10 HIGH severity issues in core arena/pointer conversions.
+- 181 issues remain (mostly lower severity).
+- Recommendation: Systematically apply the established bounds-check pattern to remaining issues.
+
+### 2. Medium Priority
+
+**a. Zero-Copy Verify**
+
+- Some paths still copy: `Clone()`, `CloneForSnapshot()`
+- Recommendation: Audit hot paths for unnecessary copies
+
+**b. IPC Panic Fix (Already Applied)**
+
+- Fixed: `store_query.go` now guards against nil/empty records
+- Recommendation: Add integration test for edge cases
+
+**c. Race Condition Testing**
+
+- Short race test timed out; full test takes >3 minutes
+- Recommendation: Add targeted race tests for search hot paths
+
+### 3. Lower Priority
+
+**a. gosec Issues**
+
+- 493 total issues (mostly G104: unhandled errors)
+- Low severity - mostly test/benchmark code
+- Recommendation: Add error handling in benchmark tools
+
+**b. Documentation**
+
+- Update performance.md with complete 72-config results
+- Add architecture diagram for Arrow zero-copy flow
+- Document Metal GPU integration patterns
+
+**c. Full ARM64 NEON for TurboQuant**
+
+- Current: L2 squared distance is optimized; FWHT uses generic fallback.
+- Recommendation: Resolve Go assembler instruction issues for vector FADD/FSUB to enable full NEON rotation.
 
 ---
 
@@ -31,6 +91,7 @@ The following optimizations were implemented in the March 2026 performance sprin
 | Dimension | Blocked SIMD for 384 dims on ARM64 | Cache locality |
 
 **Files changed:**
+
 - `internal/store/arrow_hnsw.go` — prefetchLimit
 - `internal/store/store_actions.go` — async PrimaryIndex
 - `internal/store/dataset.go` — primaryIndexMu
@@ -44,57 +105,4 @@ The following optimizations were implemented in the March 2026 performance sprin
 
 ---
 
-## Active Work Items
-
-### Dimension Scaling (128→384): -52% throughput
-
-**Problem**: Large dimension vectors show significant throughput drop when scaling from 128 to 384 dimensions.
-
-**Next Steps**:
-- Profile memory access patterns at 384 dims
-- Consider blocked/tiled distance computation
-- Investigate if SIMD width is limiting factor
-
----
-
-### P50 Latency Cliff: turboquant @ dim=384/5k
-
-**Problem**: P50 latency increases 72% (0.67ms) at 5k vectors with turboquant.
-
-**Next Steps**:
-- Profile with latency histograms
-- Check if GC pauses correlate with latency spikes
-- Investigate HNSW search path for latency outliers
-
----
-
-### Metal GPU Utilization
-
-**Problem**: Metal GPU shows minimal benefit over CPU (only complex64 +17%).
-
-**Root Cause**: 
-- HNSW graph traversal is the bottleneck, not distance computation
-- CPU-GPU transfer overhead negates GPU speedup
-
-**Next Steps**:
-- Use Metal only for batch distance pre-filter (not full search)
-- Profile with MTLCaptureManager to validate
-
----
-
-## Profiling Infrastructure
-
-```bash
-# CPU profile
-go test -cpuprofile=cpu.prof ./internal/store/...
-
-# Memory profile
-go test -memprofile=mem.prof ./internal/store/...
-
-# GC trace
-GODEBUG=gctrace=1 go test ./internal/store/...
-```
-
----
-
-*Last Updated: 2026-03-26*
+**Last Updated**: 2026-03-26

@@ -35,10 +35,14 @@ void metalFree(MetalBufferPtr buffer) {
     }
 }
 
+static id<MTLDevice> g_metalDevice = nil;
+
 MetalDevicePtr metalGetDefaultDevice() {
     @autoreleasepool {
-        id<MTLDevice> device = MTLCreateSystemDefaultDevice();
-        return (__bridge_retained void*)device;
+        if (g_metalDevice == nil) {
+            g_metalDevice = MTLCreateSystemDefaultDevice();
+        }
+        return (__bridge void*)g_metalDevice;
     }
 }
 

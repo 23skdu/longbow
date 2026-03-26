@@ -12,7 +12,7 @@ import (
 	"github.com/rs/zerolog"
 )
 
-func createUpsertTestRecord(t *testing.T, allocator memory.Allocator, startID int, count int) arrow.RecordBatch {
+func createUpsertTestRecord(allocator memory.Allocator, startID int, count int) arrow.RecordBatch {
 	schema := arrow.NewSchema([]arrow.Field{
 		{Name: "id", Type: arrow.BinaryTypes.String},
 		{Name: "vector", Type: arrow.FixedSizeListOf(128, arrow.PrimitiveTypes.Float32)},
@@ -50,7 +50,7 @@ func TestStore_Upsert(t *testing.T) {
 	datasetName := "test_upserts"
 	
 	// Create original batch with ID 1
-	rec1 := createUpsertTestRecord(t, alloc, 1, 1)
+	rec1 := createUpsertTestRecord(alloc, 1, 1)
 	defer rec1.Release()
 
 	err := s.StoreRecordBatch(ctx, datasetName, rec1)
@@ -70,7 +70,7 @@ func TestStore_Upsert(t *testing.T) {
 	require.Len(t, res1, 1, "Should have 1 vector after initial insert")
 
 	// Upsert the same ID but with different vector values (simulating a replacement)
-	rec2 := createUpsertTestRecord(t, alloc, 1, 1)
+	rec2 := createUpsertTestRecord(alloc, 1, 1)
 	defer rec2.Release()
 
 	err = s.StoreRecordBatch(ctx, datasetName, rec2)

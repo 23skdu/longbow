@@ -758,6 +758,16 @@ func (h *ArrowHNSW) extractVector(rec arrow.RecordBatch, colIdx, rowIdx int) any
 			}
 			return arr.Float64Values()[start:end]
 
+		case *arrowarray.Uint32:
+			return arr.Uint32Values()[start:end]
+		case *arrowarray.Int32:
+			return arr.Int32Values()[start:end]
+		case *arrowarray.Uint16:
+			return arr.Uint16Values()[start:end]
+		case *arrowarray.Int16:
+			return arr.Int16Values()[start:end]
+		case *arrowarray.Uint8:
+			return arr.Uint8Values()[start:end]
 		case *arrowarray.Int8:
 			return arr.Int8Values()[start:end]
 
@@ -887,23 +897,6 @@ func (h *MinCandidateHeap) Pop() any {
 	n := len(old)
 	x := old[n-1]
 	*h = old[0 : n-1]
-	return x
-}
-
-// MaxCandidateHeapAdapter wraps CandidateHeap to satisfy heap.Interface with Pop() any
-type MaxCandidateHeapAdapter struct {
-	*CandidateHeap
-}
-
-func (h MaxCandidateHeapAdapter) Push(x any) {
-	*h.CandidateHeap = append(*h.CandidateHeap, x.(Candidate))
-}
-
-func (h MaxCandidateHeapAdapter) Pop() any {
-	old := *h.CandidateHeap
-	n := len(old)
-	x := old[n-1]
-	*h.CandidateHeap = old[0 : n-1]
 	return x
 }
 
@@ -1542,6 +1535,32 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 					}
 				}
 				vecs = c128s
+			case types.VectorTypeUint32:
+				u32s := make([][]uint32, n)
+				for i := range rowIdxs {
+					rec := recs[batchIdxs[i]]
+					if v, ok := h.extractVector(rec, vecColIdx, rowIdxs[i]).([]uint32); ok {
+						u32s[i] = v
+						h.SetLocation(VectorID(startID+uint32(i)), Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
+					} else {
+						supported = false
+						break
+					}
+				}
+				vecs = u32s
+			case types.VectorTypeInt32:
+				i32s := make([][]int32, n)
+				for i := range rowIdxs {
+					rec := recs[batchIdxs[i]]
+					if v, ok := h.extractVector(rec, vecColIdx, rowIdxs[i]).([]int32); ok {
+						i32s[i] = v
+						h.SetLocation(VectorID(startID+uint32(i)), Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
+					} else {
+						supported = false
+						break
+					}
+				}
+				vecs = i32s
 			default:
 				supported = false
 			}
@@ -1699,8 +1718,8 @@ func (h *ArrowHNSW) searchLayer(_ context.Context, computer any, entryPoint uint
 	// Clear Result Set
 	ctx.resultSet.Clear()
 
-	// Adapt MaxHeap
-	resultSetAdapter := MaxCandidateHeapAdapter{CandidateHeap: &ctx.resultSet}
+	// Use resultSet directly (it now implements heap.Interface)
+	resultSetAdapter := &ctx.resultSet
 
 	// Define polymorphic distance computer
 	var distComputer func(uint32) (float32, error)
@@ -1927,6 +1946,48 @@ func (h *ArrowHNSW) searchLayer(_ context.Context, computer any, entryPoint uint
 			}
 			epDist, _ = distComputer(entryPoint)
 
+		case []uint32:
+			distComputer = func(id uint32) (float32, error) {
+				vecAny, err := h.getVectorWithData(data, id)
+				if err != nil {
+					return 0, err
+				}
+				if v, ok := vecAny.([]uint32); ok {
+					if len(q) != len(v) {
+						return math.MaxFloat32, nil
+					}
+					var sum float32
+					for i, val := range q {
+						diff := float32(val) - float32(v[i])
+						sum += diff * diff
+					}
+					return float32(math.Sqrt(float64(sum))), nil
+				}
+				return math.MaxFloat32, nil
+			}
+			epDist, _ = distComputer(entryPoint)
+
+		case []int32:
+			distComputer = func(id uint32) (float32, error) {
+				vecAny, err := h.getVectorWithData(data, id)
+				if err != nil {
+					return 0, err
+				}
+				if v, ok := vecAny.([]int32); ok {
+					if len(q) != len(v) {
+						return math.MaxFloat32, nil
+					}
+					var sum float32
+					for i, val := range q {
+						diff := float32(val) - float32(v[i])
+						sum += diff * diff
+					}
+					return float32(math.Sqrt(float64(sum))), nil
+				}
+				return math.MaxFloat32, nil
+			}
+			epDist, _ = distComputer(entryPoint)
+
 		default:
 			return nil, fmt.Errorf("searchLayer: unsupported query vector type %T", queryVec)
 		}
@@ -2019,7 +2080,7 @@ func (h *ArrowHNSW) searchLayer(_ context.Context, computer any, entryPoint uint
 	count := len(ctx.resultSet)
 	res := make([]Candidate, count)
 	for i := count - 1; i >= 0; i-- {
-		res[i] = heap.Pop(&resultSetAdapter).(Candidate)
+		res[i] = heap.Pop(resultSetAdapter).(Candidate)
 	}
 	return res, nil
 }

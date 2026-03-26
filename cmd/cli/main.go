@@ -2,6 +2,9 @@ package main
 
 import (
 	"context"
+	"github.com/apache/arrow-go/v18/parquet/file"
+	"github.com/apache/arrow-go/v18/parquet/pqarrow"
+	"github.com/sbinet/npyio"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -121,9 +124,9 @@ func mustGetClient(uri string) *client.SmartClient {
 func runImport(ctx context.Context, args []string) {
 	fs := flag.NewFlagSet("import", flag.ExitOnError)
 	dataset := fs.String("dataset", "", "Target dataset name (required)")
-	input := fs.String("input", "", "Input file path (required)")
-	dim := fs.Int("dim", 128, "Vector dimension")
-	count := fs.Int("count", 1000, "Number of vectors to generate (for demo)")
+	input := fs.String("input", "", "Input file path. Supports .parquet and .npy")
+	dim := fs.Int("dim", 128, "Vector dimension (used for demo data)")
+	count := fs.Int("count", 1000, "Number of vectors to generate (used for demo data if no input file)")
 	fs.Parse(args)
 
 	if *dataset == "" {
@@ -135,24 +138,159 @@ func runImport(ctx context.Context, args []string) {
 	sc := mustGetClient(uri)
 	defer sc.Close()
 
-	var rec arrow.Record
-	var sch *arrow.Schema
-
 	if *input != "" {
-		fmt.Printf("Reading file %s is not yet implemented. Use -dim and -count to generate demo data.\n", *input)
+		ext := strings.ToLower(*input)
+		if strings.HasSuffix(ext, ".parquet") {
+			runImportParquet(ctx, sc, *dataset, *input)
+		} else if strings.HasSuffix(ext, ".npy") {
+			runImportNpy(ctx, sc, *dataset, *input)
+		} else {
+			log.Fatalf("Unsupported file format: %s. Only .parquet and .npy are supported.\n", *input)
+		}
+		return
 	}
 
-	rec, sch = generateDemoData(*dim, *count)
+	// Demo mode
+	rec, sch := generateDemoData(*dim, *count)
 	defer rec.Release()
-
-	fmt.Printf("Importing %d rows to dataset %s...\n", rec.NumRows(), *dataset)
+	fmt.Printf("Importing %d demo rows (dim: %d) to dataset %s...\n", rec.NumRows(), *dim, *dataset)
 
 	start := time.Now()
 	if err := uploadData(ctx, sc, *dataset, rec, sch); err != nil {
-		log.Fatalf("Upload failed: %v", err)
+		log.Fatalf("Upload failed: %v\n", err)
+	}
+	fmt.Printf("Successfully imported %d rows in %v\n", rec.NumRows(), time.Since(start))
+}
+
+func runImportParquet(ctx context.Context, sc *client.SmartClient, dataset, inputPath string) {
+	start := time.Now()
+	fmt.Printf("Importing Parquet file %s to dataset %s...\n", inputPath, dataset)
+
+	f, err := os.Open(inputPath)
+	if err != nil {
+		log.Fatalf("Failed to open parquet file: %v\n", err)
+	}
+	defer f.Close()
+
+	rdr, err := file.NewParquetReader(f)
+	if err != nil {
+		log.Fatalf("Failed to create parquet reader: %v\n", err)
+	}
+	defer rdr.Close()
+
+	arrowRdr, err := pqarrow.NewFileReader(rdr, pqarrow.ArrowReadProperties{Parallel: true}, memory.DefaultAllocator)
+	if err != nil {
+		log.Fatalf("Failed to create pqarrow reader: %v\n", err)
 	}
 
-	fmt.Printf("Successfully imported %d rows in %v\n", rec.NumRows(), time.Since(start))
+	tbl, err := arrowRdr.ReadTable(ctx)
+	if err != nil {
+		log.Fatalf("Failed to read table from parquet: %v\n", err)
+	}
+	defer tbl.Release()
+
+	tr := array.NewTableReader(tbl, 10000)
+	defer tr.Release()
+
+	desc := &flight.FlightDescriptor{
+		Type: flight.DescriptorPATH,
+		Path: []string{dataset},
+	}
+
+	stream, err := sc.DoPut(ctx, desc)
+	if err != nil {
+		log.Fatalf("DoPut stream failed: %v\n", err)
+	}
+
+	writer := flight.NewRecordWriter(stream, ipc.WithSchema(tbl.Schema()))
+	writer.SetFlightDescriptor(desc)
+
+	totalRows := int64(0)
+	for tr.Next() {
+		rec := tr.Record()
+		if err := writer.Write(rec); err != nil {
+			log.Fatalf("Failed to write record batch: %v\n", err)
+		}
+		totalRows += rec.NumRows()
+	}
+	if tr.Err() != nil {
+		log.Fatalf("Table reader error: %v\n", tr.Err())
+	}
+
+	writer.Close()
+	if err := stream.CloseSend(); err != nil {
+		log.Fatalf("Failed to close flight stream: %v\n", err)
+	}
+	stream.Recv()
+
+	fmt.Printf("Successfully imported %d rows in %v\n", totalRows, time.Since(start))
+}
+
+func runImportNpy(ctx context.Context, sc *client.SmartClient, dataset, inputPath string) {
+	start := time.Now()
+	fmt.Printf("Importing NumPy file %s to dataset %s...\n", inputPath, dataset)
+
+	f, err := os.Open(inputPath)
+	if err != nil {
+		log.Fatalf("Failed to open npy file: %v\n", err)
+	}
+	defer f.Close()
+
+	r, err := npyio.NewReader(f)
+	if err != nil {
+		log.Fatalf("Failed to create npy reader: %v\n", err)
+	}
+
+	shape := r.Header.Descr.Shape
+	if len(shape) != 2 {
+		log.Fatalf("Expected 2D numpy array, got %dD array\n", len(shape))
+	}
+
+	count := int(shape[0])
+	dim := int(shape[1])
+
+	var data []float32
+	err = r.Read(&data)
+	if err != nil {
+		log.Fatalf("Failed to read npy payload: %v\n", err)
+	}
+
+	mem := memory.NewGoAllocator()
+	sch := arrow.NewSchema([]arrow.Field{
+		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
+		{Name: "vector", Type: arrow.FixedSizeListOf(int32(dim), arrow.PrimitiveTypes.Float32)},
+	}, nil)
+
+	idBuilder := array.NewInt64Builder(mem)
+	defer idBuilder.Release()
+
+	listBuilder := array.NewFixedSizeListBuilder(mem, int32(dim), arrow.PrimitiveTypes.Float32)
+	defer listBuilder.Release()
+	vecBuilder := listBuilder.ValueBuilder().(*array.Float32Builder)
+
+	idBuilder.Reserve(count)
+	listBuilder.Reserve(count)
+	vecBuilder.Reserve(count * dim)
+
+	for i := 0; i < count; i++ {
+		idBuilder.Append(int64(i))
+		listBuilder.Append(true)
+	}
+	vecBuilder.AppendValues(data, nil)
+
+	idArr := idBuilder.NewArray()
+	defer idArr.Release()
+	vecArr := listBuilder.NewArray()
+	defer vecArr.Release()
+
+	rec := array.NewRecordBatch(sch, []arrow.Array{idArr, vecArr}, int64(count))
+	defer rec.Release()
+
+	if err := uploadData(ctx, sc, dataset, rec, sch); err != nil {
+		log.Fatalf("Upload failed: %v\n", err)
+	}
+
+	fmt.Printf("Successfully imported %d rows in %v\n", count, time.Since(start))
 }
 
 func generateDemoData(dim, count int) (arrow.Record, *arrow.Schema) {
@@ -456,6 +594,47 @@ func runDeleteNamespace(ctx context.Context, args []string) {
 	}
 
 	fmt.Printf("Namespace '%s' deleted successfully\n", *name)
+}
+
+
+func runAlterNamespace(ctx context.Context, args []string) {
+	fs := flag.NewFlagSet("alter-namespace", flag.ExitOnError)
+	dataset := fs.String("dataset", "", "Dataset name (required)")
+	action := fs.String("action", "", "add or drop (required)")
+	column := fs.String("column", "", "Column name (required)")
+	typ := fs.String("type", "", "Data type if adding (e.g. float32, string, int64)")
+	fs.Parse(args)
+
+	if *dataset == "" || *action == "" || *column == "" {
+		fmt.Fprintf(os.Stderr, "Usage: longbow-cli alter-namespace -dataset <name> -action <add|drop> -column <name> [-type <type>]\n")
+		os.Exit(1)
+	}
+
+	uri, _ := getClientURI(args)
+	sc := mustGetClient(uri)
+	defer sc.Close()
+
+	payload := map[string]string{
+		"dataset": *dataset,
+		"action":  *action,
+		"column":  *column,
+		"type":    *typ,
+	}
+	actionBody, _ := json.Marshal(payload)
+	act := &flight.Action{Type: "alter_schema", Body: actionBody}
+
+	res, err := sc.DoAction(ctx, act)
+	if err != nil {
+		log.Fatalf("Alter namespace failed: %v\n", err)
+	}
+	
+	msg := ""
+	for {
+		r, err := res.Recv()
+		if err != nil { break }
+		msg += string(r.Body)
+	}
+	fmt.Printf("Success: %s\n", msg)
 }
 
 func runListNamespaces(ctx context.Context, args []string) {

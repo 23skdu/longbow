@@ -244,20 +244,14 @@ func (f *RequestForwarder) Forward(ctx context.Context, targetNodeID string, req
 		reply = &flight.FlightInfo{}
 	case "/arrow.flight.protocol.FlightService/GetSchema":
 		reply = &flight.SchemaResult{}
-	case "/arrow.flight.protocol.FlightService/ListFlights":
-		reply = &flight.FlightInfo{}
-	case "/arrow.flight.protocol.FlightService/DoAction":
-		reply = &flight.Result{}
-	case "/arrow.flight.protocol.FlightService/DoPut":
-		// DoPut is streaming - should use ForwardStream instead
-		// For unary forwarding, return an error indicating streaming is needed
-		return nil, status.Errorf(codes.InvalidArgument, "DoPut is a streaming method, use ForwardStream")
-	case "/arrow.flight.protocol.FlightService/DoGet":
-		// DoGet is streaming - should use ForwardStream instead
-		return nil, status.Errorf(codes.InvalidArgument, "DoGet is a streaming method, use ForwardStream")
-	case "/arrow.flight.protocol.FlightService/DoExchange":
-		// DoExchange is streaming - should use ForwardStream instead
-		return nil, status.Errorf(codes.InvalidArgument, "DoExchange is a streaming method, use ForwardStream")
+	case "/arrow.flight.protocol.FlightService/ListFlights",
+		"/arrow.flight.protocol.FlightService/DoAction",
+		"/arrow.flight.protocol.FlightService/ListActions",
+		"/arrow.flight.protocol.FlightService/DoPut",
+		"/arrow.flight.protocol.FlightService/DoGet",
+		"/arrow.flight.protocol.FlightService/DoExchange",
+		"/arrow.flight.protocol.FlightService/Handshake":
+		return nil, status.Errorf(codes.InvalidArgument, "Method %s is a streaming method, use ForwardStream", method)
 	default:
 		return nil, status.Errorf(codes.Unimplemented, "forwarding for method %s not yet implemented", method)
 	}
@@ -311,6 +305,12 @@ func (f *RequestForwarder) ForwardStream(ctx context.Context, targetNodeID strin
 				msg = &flight.Ticket{}
 			case "/arrow.flight.protocol.FlightService/DoAction":
 				msg = &flight.Action{}
+			case "/arrow.flight.protocol.FlightService/Handshake":
+				msg = &flight.HandshakeRequest{}
+			case "/arrow.flight.protocol.FlightService/ListFlights":
+				msg = &flight.Criteria{}
+			case "/arrow.flight.protocol.FlightService/ListActions":
+				msg = &flight.Empty{}
 			default:
 				msg = &flight.FlightData{}
 			}
@@ -335,9 +335,18 @@ func (f *RequestForwarder) ForwardStream(ctx context.Context, targetNodeID strin
 	go func() {
 		for {
 			var msg any
-			if method == "/arrow.flight.protocol.FlightService/DoAction" {
+			switch method {
+			case "/arrow.flight.protocol.FlightService/DoAction":
 				msg = &flight.Result{}
-			} else {
+			case "/arrow.flight.protocol.FlightService/DoPut":
+				msg = &flight.PutResult{}
+			case "/arrow.flight.protocol.FlightService/ListFlights":
+				msg = &flight.FlightInfo{}
+			case "/arrow.flight.protocol.FlightService/ListActions":
+				msg = &flight.ActionType{}
+			case "/arrow.flight.protocol.FlightService/Handshake":
+				msg = &flight.HandshakeResponse{}
+			default:
 				msg = &flight.FlightData{}
 			}
 

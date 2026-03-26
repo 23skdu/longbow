@@ -11,10 +11,11 @@ import (
 )
 
 type TicketQuery struct {
-	Name    string               `json:"name"`
-	Limit   int64                `json:"limit"`
-	Filters []Filter             `json:"filters"`
-	Search  *VectorSearchRequest `json:"search,omitempty"`
+	Name       string                   `json:"name"`
+	Limit      int64                    `json:"limit"`
+	Filters    []Filter                 `json:"filters"`
+	Search     *VectorSearchRequest     `json:"search,omitempty"`
+	SearchByID *VectorSearchByIDRequest `json:"search_by_id,omitempty"`
 }
 
 type Filter struct {
@@ -151,6 +152,20 @@ func (p *ZeroAllocTicketParser) Parse(data []byte) (TicketQuery, error) {
 				return p.result, err
 			}
 			p.result.Search = &searchReq
+			i = newPos
+		case "search_by_id":
+			// Parse VectorSearchByIDRequest from JSON object
+			start := i
+			newPos, err := skipObject(data, i)
+			if err != nil {
+				return p.result, err
+			}
+			// Parse the JSON object into VectorSearchByIDRequest
+			var req VectorSearchByIDRequest
+			if err := parseSearchByIDRequest(data[start:newPos], &req); err != nil {
+				return p.result, err
+			}
+			p.result.SearchByID = &req
 			i = newPos
 		default:
 			newPos, err := skipValue(data, i)
@@ -670,4 +685,69 @@ func ParseTicketQuerySafe(data []byte) (TicketQuery, error) {
 	}
 
 	return result, err
+}
+
+func parseSearchByIDRequest(data []byte, req *VectorSearchByIDRequest) error {
+	i := skipWhitespace(data, 0)
+	if i >= len(data) || data[i] != '{' {
+		return errors.New("expected opening brace")
+	}
+	i++
+
+	for {
+		i = skipWhitespace(data, i)
+		if i >= len(data) {
+			return errors.New("unexpected end")
+		}
+		if data[i] == '}' {
+			return nil
+		}
+
+		key, newPos, err := parseString(data, i)
+		if err != nil {
+			return err
+		}
+		i = newPos
+		i = skipWhitespace(data, i)
+		if i >= len(data) || data[i] != ':' {
+			return errors.New("expected colon")
+		}
+		i++
+		i = skipWhitespace(data, i)
+
+		switch key {
+		case "dataset":
+			val, newPos, err := parseString(data, i)
+			if err != nil {
+				return err
+			}
+			req.Dataset = val
+			i = newPos
+		case "id":
+			val, newPos, err := parseString(data, i)
+			if err != nil {
+				return err
+			}
+			req.ID = val
+			i = newPos
+		case "k":
+			val, newPos, err := parseInt64(data, i)
+			if err != nil {
+				return err
+			}
+			req.K = int(val)
+			i = newPos
+		default:
+			newPos, err := skipValue(data, i)
+			if err != nil {
+				return err
+			}
+			i = newPos
+		}
+
+		i = skipWhitespace(data, i)
+		if i < len(data) && data[i] == ',' {
+			i++
+		}
+	}
 }

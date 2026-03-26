@@ -30,10 +30,10 @@ type GPUConfig struct {
 // DefaultGPUConfig returns the default GPU hybrid search configuration
 func DefaultGPUConfig() GPUConfig {
 	return GPUConfig{
-		CandidateMultiplier: 10,
+		CandidateMultiplier: 20,
 		RefineTopK:          0,
-		EnableGPUCache:      false,
-		MaxGPUCacheSize:     1000,
+		EnableGPUCache:      true,
+		MaxGPUCacheSize:     2000,
 		SyncBatchSize:       1000,
 		SyncInterval:        5 * time.Second,
 	}

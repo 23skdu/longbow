@@ -300,3 +300,8 @@ func (w *pooledIndexWrapper) GetMemoryInfo() (total, free, used int64, err error
 func (w *pooledIndexWrapper) GetUtilization() (float32, error) {
 	return w.pooled.index.GetUtilization()
 }
+
+// SearchBatch delegates to the wrapped index
+func (w *pooledIndexWrapper) SearchBatch(vectors [][]float32, k int) ([][]int64, [][]float32, error) {
+	return w.pooled.index.SearchBatch(vectors, k)
+}

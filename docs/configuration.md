@@ -67,6 +67,10 @@ Longbow uses the SWIM protocol for decentralized membership.
 | :--- | :--- | :--- |
 | `LONGBOW_STORAGE_USE_IOURING` | `false` | Enable `io_uring` for high-performance WAL writes (Linux only). |
 | `LONGBOW_STORAGE_USE_DIRECT_IO` | `false` | Enable direct I/O for WAL writes. |
+| `LONGBOW_STORAGE_S3_BUCKET` | `""` | Enable S3 remote storage and specify bucket name. |
+| `LONGBOW_STORAGE_S3_REGION` | `us-east-1` | AWS Region for S3 bucket. |
+| `LONGBOW_STORAGE_S3_ENDPOINT` | `""` | Optional endpoint URL for custom S3 compatible storage (MinIO). |
+| `LONGBOW_STORAGE_GCS_BUCKET` | `""` | Enable Google Cloud Storage remote storage and specify bucket name. |
 | `LONGBOW_STORAGE_ASYNC_FSYNC` | `true` | When true, WAL flushes don't block the ingestion hot path. |
 | `LONGBOW_STORAGE_DOPUT_BATCH_SIZE`| `100` | Target batch size for WAL writes. |
 | `LONGBOW_SNAPSHOT_INTERVAL` | `1h` | Frequency of full index snapshots to disk. |

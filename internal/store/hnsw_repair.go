@@ -176,7 +176,7 @@ func (h *ArrowHNSW) RepairTombstones(ctx context.Context, batchSize int) int {
 
 				var candList []Candidate
 				for poolCtx.candidates.Len() > 0 {
-					c, _ := poolCtx.candidates.Pop()
+					c, _ := poolCtx.candidates.PopCandidate()
 					candList = append(candList, c)
 				}
 

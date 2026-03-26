@@ -150,6 +150,10 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 		return s.handleDoGetSearch(query.Search, stream, mem)
 	}
 
+	if query.SearchByID != nil {
+		return s.handleDoGetSearchByID(query.SearchByID, stream, mem)
+	}
+
 	// Existing Dataset Fetch Logic
 	name := query.Name
 	s.logger.Info().
@@ -804,6 +808,129 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, stream fli
 
 		rec.Release()
 	}
+
+	return nil
+}
+
+func (s *VectorStore) handleDoGetSearchByID(req *qry.VectorSearchByIDRequest, stream flight.FlightService_DoGetServer, mem memory.Allocator) error {
+	ds, ok := s.getDataset(req.Dataset)
+	if !ok {
+		return status.Errorf(codes.NotFound, "dataset not found: %s", req.Dataset)
+	}
+
+	ds.dataMu.RLock()
+	defer ds.dataMu.RUnlock()
+
+	if ds.Index == nil {
+		return status.Error(codes.FailedPrecondition, "dataset has no index")
+	}
+
+	var targetVec []float32
+	found := false
+
+	if ds.PrimaryIndex != nil {
+		if loc, ok := ds.PrimaryIndex[req.ID]; ok {
+			isDeleted := false
+			if ts, ok := ds.Tombstones[loc.BatchIdx]; ok && ts != nil && ts.Contains(loc.RowIdx) {
+				isDeleted = true
+			}
+			if !isDeleted && loc.BatchIdx < len(ds.Records) {
+				rec := ds.Records[loc.BatchIdx]
+				vec, err := ExtractVectorFromArrow(rec, loc.RowIdx, -1)
+				if err != nil {
+					return status.Errorf(codes.Internal, "failed to extract vector: %v", err)
+				}
+				targetVec = vec
+				found = true
+			}
+		}
+	}
+
+	if !found {
+		for batchIdx, rec := range ds.Records {
+			idCol := rec.Column(0)
+			for rowIdx := 0; rowIdx < int(rec.NumRows()); rowIdx++ {
+				id := idCol.(*array.String).Value(rowIdx)
+				if id == req.ID {
+					isDeleted := false
+					if ts, ok := ds.Tombstones[batchIdx]; ok && ts != nil && ts.Contains(rowIdx) {
+						isDeleted = true
+					}
+					if !isDeleted {
+						vec, err := ExtractVectorFromArrow(rec, rowIdx, -1)
+						if err != nil {
+							return status.Errorf(codes.Internal, "failed to extract vector: %v", err)
+						}
+						targetVec = vec
+						found = true
+					}
+					break
+				}
+			}
+			if found {
+				break
+			}
+		}
+	}
+
+	if !found {
+		return status.Errorf(codes.NotFound, "id '%s' not found in dataset '%s'", req.ID, req.Dataset)
+	}
+
+	results, err := ds.Index.SearchVectors(stream.Context(), targetVec, req.K, nil, SearchOptions{
+		IncludeVectors: req.IncludeVectors,
+		VectorFormat:   lbtypes.MapStringToVectorDataType(req.VectorFormat),
+	})
+	if err != nil {
+		return status.Errorf(codes.Internal, "search failed: %v", err)
+	}
+
+	results = s.mapInternalToUserIDsLocked(ds, results)
+
+	pool := mem
+	fields := []arrow.Field{
+		{Name: "id", Type: arrow.PrimitiveTypes.Uint64},
+		{Name: "score", Type: arrow.PrimitiveTypes.Float32},
+	}
+	if req.IncludeVectors {
+		fields = append(fields, arrow.Field{Name: "vector", Type: arrow.BinaryTypes.Binary})
+	}
+	schema := arrow.NewSchema(fields, nil)
+
+	w := flight.NewRecordWriter(stream, ipc.WithSchema(schema))
+	defer func() { _ = w.Close() }()
+
+	builder := array.NewRecordBuilder(pool, schema)
+	defer builder.Release()
+
+	idBuilder := builder.Field(0).(*array.Uint64Builder)
+	scoreBuilder := builder.Field(1).(*array.Float32Builder)
+	var vectorBuilder *array.BinaryBuilder
+	if req.IncludeVectors {
+		vectorBuilder = builder.Field(2).(*array.BinaryBuilder)
+	}
+
+	idBuilder.Reserve(len(results))
+	scoreBuilder.Reserve(len(results))
+
+	for _, res := range results {
+		idBuilder.Append(uint64(res.ID))
+		scoreBuilder.Append(res.Score)
+		if req.IncludeVectors && vectorBuilder != nil {
+			if res.Vector != nil {
+				vectorBuilder.Append(res.Vector)
+			} else {
+				vectorBuilder.AppendNull()
+			}
+		}
+	}
+
+	rec := builder.NewRecordBatch()
+	if err := w.Write(rec); err != nil {
+		rec.Release()
+		return status.Errorf(codes.Internal, "failed to write arrow batch: %v", err)
+	}
+	rec.Release()
 
 	return nil
 }

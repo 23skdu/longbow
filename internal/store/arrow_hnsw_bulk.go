@@ -1,6 +1,7 @@
 package store
 
 import (
+	"container/heap"
 	"context"
 	"fmt"
 	"math"
@@ -168,7 +169,15 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 					default:
 						v = vs[j]
 					}
-				case [][]float16.Num:
+				case [][]uint32:
+					v = vs[j]
+				case [][]int32:
+					v = vs[j]
+				case [][]uint16:
+					v = vs[j]
+				case [][]int16:
+					v = vs[j]
+				case [][]uint8:
 					v = vs[j]
 				case [][]int8:
 					v = vs[j]
@@ -177,6 +186,8 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 				case [][]complex64:
 					v = vs[j]
 				case [][]complex128:
+					v = vs[j]
+				case [][]float16.Num:
 					v = vs[j]
 				default:
 					return fmt.Errorf("unsupported vector type in bulk insert: %T", vecs)
@@ -196,12 +207,24 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 					vLen = len(vec)
 				case []int8:
 					vLen = len(vec)
+				case []uint8:
+					vLen = len(vec)
+				case []uint32:
+					vLen = len(vec)
+				case []int32:
+					vLen = len(vec)
+				case []uint16:
+					vLen = len(vec)
+				case []int16:
+					vLen = len(vec)
 				case []float64:
 					vLen = len(vec)
 				case []complex64:
 					vLen = len(vec)
 				case []complex128:
 					vLen = len(vec)
+				default:
+					vLen = 0 // Trigger mismatch
 				}
 
 				if vLen != dims {
@@ -601,7 +624,20 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 									}
 								}
 								otherID := activeNodes[tIdx].id
-								graphCandidates[qIdx] = append(graphCandidates[qIdx], Candidate{ID: otherID, Dist: dist})
+								
+								// Memory Optimization: Bounded Candidate List
+								// Use a max-heap to keep only the top efConstruction candidates.
+								// [0] is the max distance in the heap.
+								efC := int(h.efConstruction.Load())
+								if len(graphCandidates[qIdx]) < efC {
+									graphCandidates[qIdx] = append(graphCandidates[qIdx], Candidate{ID: otherID, Dist: dist})
+									if len(graphCandidates[qIdx]) == efC {
+										heap.Init((*CandidateHeap)(&graphCandidates[qIdx]))
+									}
+								} else if dist < graphCandidates[qIdx][0].Dist {
+									graphCandidates[qIdx][0] = Candidate{ID: otherID, Dist: dist}
+									heap.Fix((*CandidateHeap)(&graphCandidates[qIdx]), 0)
+								}
 							}
 						}
 					}

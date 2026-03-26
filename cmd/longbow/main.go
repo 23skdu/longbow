@@ -18,6 +18,7 @@ import (
 	"runtime"
 	"runtime/debug"
 
+	"github.com/23skdu/longbow/internal/api"
 	"github.com/23skdu/longbow/internal/gpu"
 	"github.com/23skdu/longbow/internal/limiter"
 	"github.com/23skdu/longbow/internal/logging"
@@ -53,6 +54,7 @@ type Config struct {
 	NodeID           string        `envconfig:"NODE_ID" default:""` // Optional override
 	MetaAddr         string        `envconfig:"META_ADDR" default:"0.0.0.0:3001"`
 	MetricsAddr      string        `envconfig:"METRICS_ADDR" default:"0.0.0.0:9090"`
+	RESTAddr         string        `envconfig:"REST_ADDR" default:"0.0.0.0:8080"`
 	MaxMemory        int64         `envconfig:"MAX_MEMORY" default:"1073741824"`
 	DataPath         string        `envconfig:"DATA_PATH" default:"./data"`
 	TTL              time.Duration `envconfig:"TTL" default:"0s"`
@@ -300,6 +302,13 @@ func run() error {
 	vectorStore.StartIndexingWorkers(runtime.NumCPU())
 	// Start ingestion workers
 	vectorStore.StartIngestionWorkers(cfg.IngestionWorkerCount)
+
+	// Start REST API Gateway
+	restServer := api.NewRESTServer(cfg.RESTAddr, vectorStore, &logger)
+	if err := restServer.Start(); err != nil {
+		logger.Error().Err(err).Msg("Failed to start REST gateway")
+	}
+	defer restServer.Stop(context.Background())
 
 	// Initialize OpenTelemetry Tracer
 	tp := initTracer()

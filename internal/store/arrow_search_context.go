@@ -1,6 +1,7 @@
 package store
 
 import (
+	"container/heap"
 	"sync"
 )
 
@@ -11,23 +12,28 @@ func (h CandidateHeap) Len() int           { return len(h) }
 func (h CandidateHeap) Less(i, j int) bool { return h[i].Dist > h[j].Dist } // Max Heap (furthest on top)
 func (h CandidateHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
 
-func (h *CandidateHeap) Push(x Candidate) {
-	*h = append(*h, x)
+func (h *CandidateHeap) Push(x any) {
+	*h = append(*h, x.(Candidate))
+}
+
+func (h *CandidateHeap) Pop() any {
+	old := *h
+	n := len(old)
+	x := old[n-1]
+	*h = old[0 : n-1]
+	return x
 }
 
 func (h *CandidateHeap) Clear() {
 	*h = (*h)[:0]
 }
 
-func (h *CandidateHeap) Pop() (Candidate, bool) {
-	old := *h
-	n := len(old)
-	if n == 0 {
+// PopCandidate pops and returns the top candidate (typed helper)
+func (h *CandidateHeap) PopCandidate() (Candidate, bool) {
+	if len(*h) == 0 {
 		return Candidate{}, false
 	}
-	x := old[n-1]
-	*h = old[0 : n-1]
-	return x, true
+	return heap.Pop(h).(Candidate), true
 }
 
 // PopCandidate pops the top candidate and returns it (typed helper)

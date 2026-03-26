@@ -191,7 +191,7 @@ func (s *ShardedHNSW) newShard(_ int) *hnswShard {
 	arrowConfig.MMax = s.config.M * 3
 	arrowConfig.MMax0 = s.config.M * 2
 	arrowConfig.EfConstruction = int32(s.config.EfConstruction)
-	arrowConfig.InitialCapacity = s.config.ShardSplitThreshold // Capacity hint
+	arrowConfig.InitialCapacity = 1024 // Start small, grow dynamically
 	arrowConfig.Metric = s.config.Metric
 	arrowConfig.PackedAdjacencyEnabled = s.config.PackedAdjacencyEnabled
 
@@ -906,11 +906,11 @@ func (s *ShardedHNSW) ExportGraph(w io.Writer) error {
 
 	header := struct {
 		Version   uint32
-		NumShards int
+		NumShards int32
 		Dimension uint32
 	}{
 		Version:   1,
-		NumShards: len(s.shards),
+		NumShards: int32(len(s.shards)),
 		Dimension: s.dimension,
 	}
 
@@ -953,7 +953,7 @@ func (s *ShardedHNSW) ExportGraph(w io.Writer) error {
 func (s *ShardedHNSW) ImportGraph(r io.Reader) error {
 	var header struct {
 		Version   uint32
-		NumShards int
+		NumShards int32
 		Dimension uint32
 	}
 
@@ -970,20 +970,19 @@ func (s *ShardedHNSW) ImportGraph(r io.Reader) error {
 	}
 
 	s.shardsMu.Lock()
-	if header.NumShards > len(s.shards) {
+	defer s.shardsMu.Unlock()
+
+	if int(header.NumShards) > len(s.shards) {
 		newShards := make([]*hnswShard, header.NumShards)
 		copy(newShards, s.shards)
-		for i := len(s.shards); i < header.NumShards; i++ {
+		for i := len(s.shards); i < int(header.NumShards); i++ {
 			newShards[i] = s.newShard(i)
 		}
 		s.shards = newShards
 	}
-	s.shardsMu.Unlock()
 
-	for i := 0; i < header.NumShards; i++ {
-		s.shardsMu.RLock()
+	for i := 0; i < int(header.NumShards); i++ {
 		shard := s.shards[i]
-		s.shardsMu.RUnlock()
 
 		if shard == nil {
 			continue

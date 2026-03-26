@@ -982,6 +982,11 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 		}
 	}
 
+	searchCtx.filterBitmap = filter
+	if filter != nil {
+		metrics.HNSWPreFilteredSearchesTotal.WithLabelValues(h.name).Inc()
+	}
+
 	defer func() {
 		duration := time.Since(start).Seconds()
 		metrics.HNSWSearchDurationSeconds.Observe(duration)
@@ -996,6 +1001,8 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 
 		byteThroughput := float64(int(h.dims.Load()) * h.config.DataType.ElementSize())
 		metrics.HNSWPolymorphicThroughput.WithLabelValues(typeLabel).Add(byteThroughput)
+
+		searchCtx.filterBitmap = nil
 
 		if metrics.HNSWSearchPoolPutTotal != nil {
 			metrics.HNSWSearchPoolPutTotal.Inc()
@@ -1288,7 +1295,7 @@ func (h *ArrowHNSW) PreWarm(targetSize int) {
 			}
 		}
 	}
-	
+
 	_ = dummy
 }
 
@@ -2028,16 +2035,45 @@ func (h *ArrowHNSW) searchLayer(_ context.Context, computer any, entryPoint uint
 
 		// Lock/RLock needed?
 		// Neighbors are atomic unless resize?
-		neighbors := data.GetNeighbors(layer, curr.ID, nil) // Copy? Helper above does copy.
+		neighbors := data.GetNeighbors(layer, curr.ID, nil)
 
-		// Prefetch neighbor vectors for better cache locality
-		// Process first few neighbors ahead to trigger prefetch
-		prefetchLimit := 4
+		prefetchLimit := h.mMax
+		if prefetchLimit > 64 {
+			prefetchLimit = 64
+		}
+		if prefetchLimit < 16 {
+			prefetchLimit = 16
+		}
 		for i := 0; i < len(neighbors) && i < prefetchLimit; i++ {
 			nID := neighbors[i]
-			// Get neighbor chunk to trigger memory access
 			cID := int(nID) / ChunkSize
-			_ = data.GetVectorsChunk(cID)
+			cOff := int(nID) % ChunkSize
+			chunk := data.GetVectorsChunk(cID)
+			if chunk != nil {
+				start := cOff * data.Dims
+				if start+data.Dims <= len(chunk) {
+					_ = chunk[start]
+					_ = chunk[start+data.Dims-1]
+				}
+			}
+			if len(data.VectorsSQ8) > cID {
+				if sq8Chunk := data.GetVectorsSQ8Chunk(cID); sq8Chunk != nil {
+					paddedDims := (data.Dims + 63) & ^63
+					start := cOff * paddedDims
+					if start+data.Dims <= len(sq8Chunk) {
+						_ = sq8Chunk[start]
+					}
+				}
+			}
+			if len(data.VectorsTQ) > cID {
+				if tqChunk := data.GetVectorsTQChunk(cID); tqChunk != nil {
+					stride := 4 + (data.Dims-1)*data.TurboQuantBits/8 + (data.Dims+7)/8
+					start := cOff * stride
+					if start+stride <= len(tqChunk) {
+						_ = tqChunk[start]
+					}
+				}
+			}
 		}
 
 		for _, n := range neighbors {
@@ -2046,7 +2082,13 @@ func (h *ArrowHNSW) searchLayer(_ context.Context, computer any, entryPoint uint
 			}
 			ctx.visited.Set(int(n))
 
-			// Distance calculation using polymorphic computer
+			if ctx.filterBitmap != nil && !ctx.filterBitmap.Contains(n) {
+				continue
+			}
+			if h.deleted != nil && h.deleted.Contains(n) {
+				continue
+			}
+
 			d, err := distComputer(n)
 			if err != nil {
 				// Warn or continue? Continue.

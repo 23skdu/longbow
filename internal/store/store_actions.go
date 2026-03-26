@@ -266,7 +266,6 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 		}
 		return nil
 
-
 	case "alter_schema", "alter-schema":
 		var req struct {
 			Dataset string `json:"dataset"`
@@ -984,7 +983,6 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 
 	dsLockStart := time.Now()
 	ds.dataMu.Lock()
-	defer ds.dataMu.Unlock()
 
 	// Lazy Index Initialization
 	// Also check if existing index has wrong DataType (e.g. Pre-warmed with Float32 but data is Float64)
@@ -1053,13 +1051,10 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 
 	batchIdx := len(ds.Records)
 	ds.Records = append(ds.Records, rec)
-	rec.Retain() // Dataset holds a reference
+	rec.Retain()
 
-	// Increment pending jobs count while holding lock to ensure compaction sees it
-	// CRITICAL: Must increment by row count to match decrement in runIndexWorker
 	ds.PendingIndexJobs.Add(rec.NumRows())
 
-	// Record NUMA node
 	currCPU := GetCurrentCPU()
 	currNode := -1
 	if s.numaTopology != nil {
@@ -1067,10 +1062,13 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 	}
 	ds.BatchNodes = append(ds.BatchNodes, currNode)
 
-	// Bulk Update Primary Index under lock
-	ds.UpdatePrimaryIndex(batchIdx, idMap)
-
 	metrics.DatasetLockWaitDurationSeconds.WithLabelValues("put").Observe(time.Since(dsLockStart).Seconds())
+
+	ds.dataMu.Unlock()
+
+	// Update Primary Index outside the main lock to reduce contention
+	// PrimaryIndex updates are serialized through a dedicated mutex in UpdatePrimaryIndexAsync
+	ds.UpdatePrimaryIndexAsync(batchIdx, idMap)
 
 	// Batch append to DiskStore outside main dataset lock
 	if len(diskVecs) > 0 {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/23skdu/longbow/internal/metrics"
@@ -54,38 +55,46 @@ func SearchHybrid(ctx context.Context, s *VectorStore, name string, queryVec []f
 
 	var denseResults []SearchResult
 	var sparseResults []SearchResult
+	var wg sync.WaitGroup
+	var denseErr error
 
-	// 1. Dense (Vector) Search
-	if alpha > 0 && len(queryVec) > 0 {
-		if ds.Index != nil {
-			var err error
-			denseResults, err = ds.Index.SearchVectors(ctx, queryVec, k*2, nil, SearchOptions{})
-			if err != nil {
-				s.logger.Error().Err(err).Msg("Vector search failed in hybrid search")
-				// Continue with sparse results only?
-				// For now, let's treat it as a hard failure if dense was requested but failed.
-				return nil, err
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if alpha > 0 && len(queryVec) > 0 {
+			if ds.Index != nil {
+				denseResults, denseErr = ds.Index.SearchVectors(ctx, queryVec, k*2, nil, SearchOptions{})
+				if denseErr != nil {
+					s.logger.Error().Err(denseErr).Msg("Vector search failed in hybrid search")
+					return
+				}
+				metrics.HybridSearchVectorTotal.Inc()
 			}
-			metrics.HybridSearchVectorTotal.Inc()
 		}
-	}
+	}()
 
-	// 2. Sparse (Keyword) Search
-	if alpha < 1.0 && textQuery != "" {
-		bm25Start := time.Now()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if alpha < 1.0 && textQuery != "" {
+			bm25Start := time.Now()
 
-		// Prefer arena-based index for better performance
-		if ds.BM25ArenaIndex != nil {
-			// Use arena-based BM25 index
-			sparseResults = searchBM25Arena(ds.BM25ArenaIndex, textQuery, k*2, nil)
-			metrics.HybridSearchKeywordTotal.Inc()
-			metrics.HybridSearchBM25Duration.WithLabelValues(name).Observe(time.Since(bm25Start).Seconds())
-		} else if ds.BM25Index != nil {
-			// Fallback to legacy BM25 index
-			sparseResults = ds.BM25Index.SearchBM25(textQuery, k*2, nil)
-			metrics.HybridSearchKeywordTotal.Inc()
-			metrics.HybridSearchBM25Duration.WithLabelValues(name).Observe(time.Since(bm25Start).Seconds())
+			if ds.BM25ArenaIndex != nil {
+				sparseResults = searchBM25Arena(ds.BM25ArenaIndex, textQuery, k*2, nil)
+				metrics.HybridSearchKeywordTotal.Inc()
+				metrics.HybridSearchBM25Duration.WithLabelValues(name).Observe(time.Since(bm25Start).Seconds())
+			} else if ds.BM25Index != nil {
+				sparseResults = ds.BM25Index.SearchBM25(textQuery, k*2, nil)
+				metrics.HybridSearchKeywordTotal.Inc()
+				metrics.HybridSearchBM25Duration.WithLabelValues(name).Observe(time.Since(bm25Start).Seconds())
+			}
 		}
+	}()
+
+	wg.Wait()
+
+	if denseErr != nil {
+		return nil, denseErr
 	}
 
 	// 3. Fusion logic

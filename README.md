@@ -4,7 +4,8 @@
 
 # Longbow
 
-<img width="1024" height="559" alt="image" src="https://github.com/user-attachments/assets/16b4632a-f09b-42ab-9b05-9ab5a25566bf" />
+<img width="1024" height="559" alt="image" src="https://github.com/user-attachments/assets/775eb0b4-7e55-4524-abda-c9489de0194e" />
+
 
 Longbow is a distributed, high-performance vector cache built for modern AI/Agentic workloads. It leverages zero-copy data paths, SIMD optimizations, and advanced storage backends to deliver sub-millisecond latency.
 

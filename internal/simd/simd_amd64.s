@@ -1160,43 +1160,35 @@ loop_8_vectors:
     // Load 8 indices using precomputed base pointers + CX offset
 
     // Vector 0
-    MOVQ    $0, R11
-    MOVB    (SI)(CX*1), R11L
+    MOVBLZX (SI)(CX*1), R11
     PINSRD  $0, R11, X1
 
     // Vector 1
-    MOVQ    $0, R11
-    MOVB    (R10)(CX*1), R11L
+    MOVBLZX (R10)(CX*1), R11
     PINSRD  $1, R11, X1
 
     // Vector 2
-    MOVQ    $0, R11
-    MOVB    (R12)(CX*1), R11L
+    MOVBLZX (R12)(CX*1), R11
     PINSRD  $2, R11, X1
 
     // Vector 3
-    MOVQ    $0, R11
-    MOVB    (R13)(CX*1), R11L
+    MOVBLZX (R13)(CX*1), R11
     PINSRD  $3, R11, X1
 
     // Vector 4
-    MOVQ    $0, R11
-    MOVB    (R14)(CX*1), R11L
+    MOVBLZX (R14)(CX*1), R11
     PINSRD  $4, R11, X1
 
     // Vector 5
-    MOVQ    $0, R11
-    MOVB    (R15)(CX*1), R11L
+    MOVBLZX (R15)(CX*1), R11
     PINSRD  $5, R11, X1
 
     // Vector 6
-    MOVQ    $0, R11
-    MOVB    (AX)(CX*1), R11L
+    MOVBLZX (AX)(CX*1), R11
     PINSRD  $6, R11, X1
 
     // Vector 7
-    MOVQ    $0, R11
-    MOVB    (BX)(CX*1), R11L
+    MOVBLZX (BX)(CX*1), R11
     PINSRD  $7, R11, X1
     
     // table_base = DI + CX * 256 * 4
@@ -1248,7 +1240,7 @@ tail_subspace_loop:
     JGE     tail_subspace_done
 
     MOVQ    $0, R10
-    MOVB    (SI)(CX*1), R10L // code = codes[j]
+    MOVBLZX (SI)(CX*1), R10 // code = codes[j]
 
     // val = table[j * 256 + code]
     MOVQ    CX, R11

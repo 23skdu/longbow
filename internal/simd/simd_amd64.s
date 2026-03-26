@@ -1196,11 +1196,40 @@ loop_8_vectors:
     SHLQ    $10, R10 // R10 = CX * 1024 (256 * 4 bytes)
     ADDQ    DI, R10  // R10 = table_base for subspace CX
 
-    // Gather 8 distances: Y2 = table[CX][indices]
-    // VPGATHERDD ymm, mem, mask
-    // Mask must be all 1s
-    VPCMPEQD Y3, Y3, Y3
-    VPGATHERDD (R10)(Y1*4), Y3, Y2
+    // Gather 8 distances using scalar loads (VPGATHERDD not available in Plan9 asm)
+    // Y1 contains 8 indices, load each from table
+    VMOVQ   X1, R11
+    MOVBLZX R11, R11
+    VMOVSS  (R10)(R11*4), X2
+    VPSRLDQ $4, X1, X4
+    VMOVQ   X4, R11
+    MOVBLZX R11, R11
+    VINSERTPS $0x10, (R10)(R11*4), X2, X2
+    VPSRLDQ $8, X1, X4
+    VMOVQ   X4, R11
+    MOVBLZX R11, R11
+    VINSERTPS $0x20, (R10)(R11*4), X2, X2
+    VPSRLDQ $12, X1, X4
+    VMOVQ   X4, R11
+    MOVBLZX R11, R11
+    VINSERTPS $0x30, (R10)(R11*4), X2, X2
+    VEXTRACTF128 $1, Y1, X4
+    VMOVQ   X4, R11
+    MOVBLZX R11, R11
+    VMOVSS  (R10)(R11*4), X5
+    VPSRLDQ $4, X4, X3
+    VMOVQ   X3, R11
+    MOVBLZX R11, R11
+    VINSERTPS $0x10, (R10)(R11*4), X5, X5
+    VPSRLDQ $8, X4, X3
+    VMOVQ   X3, R11
+    MOVBLZX R11, R11
+    VINSERTPS $0x20, (R10)(R11*4), X5, X5
+    VPSRLDQ $12, X4, X3
+    VMOVQ   X3, R11
+    MOVBLZX R11, R11
+    VINSERTPS $0x30, (R10)(R11*4), X5, X5
+    VINSERTF128 $1, X5, Y2, Y2
     
     // sum += distances
     VADDPS  Y2, Y0, Y0

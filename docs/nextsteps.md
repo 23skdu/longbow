@@ -11,7 +11,7 @@
 |------------|-------------|--------|-------|
 | Dimension scaling | turboquant/float32 128→384 | ✅ DONE | Blocked processing for 384 dims |
 | P50 latency cliff | turboquant @ dim=384/5k | 🟡 TODO | 0.67ms (72% increase) |
-| Metal GPU | complex64 @ 384/25k | 🟡 TODO | +17% gain (most dtypes flat) |
+| Metal GPU | complex64 @ 384/25k | ✅ DONE | Higher candidate multiplier, batch search |
 
 ---
 
@@ -38,6 +38,9 @@ The following optimizations were implemented in the March 2026 performance sprin
 - `.github/workflows/benchmark.yml` — regression detection
 - `internal/simd/distance_functions.go` — blocked 384 dims
 - `internal/simd/simd_blocked.go` — euclideanBlocked
+- `internal/store/hnsw_gpu.go` — GPU candidate multiplier
+- `internal/gpu/interface.go` — SearchBatch interface
+- `internal/gpu/metal_gpu*.go` — batch search implementations
 
 ---
 

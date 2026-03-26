@@ -280,7 +280,7 @@ do_grow:
 	// Actually, if graph was empty, we just skip search and set entry point.
 	if maxL < 0 {
 		// First node ever
-		h.maxLevel.Store(int32(level))
+		h.maxLevel.Store(int32(level)) // #nosec G115
 		h.entryPoint.Store(id)
 
 		// Update nodeCount if it hasn't been incremented by caller
@@ -340,7 +340,7 @@ do_grow:
 	}
 
 	if level > maxL {
-		h.maxLevel.Store(int32(level))
+		h.maxLevel.Store(int32(level)) // #nosec G115
 		h.entryPoint.Store(id)
 	}
 

@@ -71,13 +71,13 @@ func (e *TurboQuantEncoder) Encode(vec []float32) ([]byte, error) {
 	// Format: [Radius (4B)][Packed Angles (Variable)][QJL Bits (Variable)]
 	angleBytes := (len(angles)*e.params.BitsPerAngle + 7) / 8
 	result := make([]byte, 4+angleBytes+len(qjlBits))
-	
+
 	// Radius
 	binary.LittleEndian.PutUint32(result[0:4], math.Float32bits(radius))
-	
+
 	// Pack Angles
 	e.packAngles(angles, result[4:4+angleBytes])
-	
+
 	// QJL Bits
 	copy(result[4+angleBytes:], qjlBits)
 
@@ -92,7 +92,7 @@ func (e *TurboQuantEncoder) polarTransformRecursive(vec []float32, angles []floa
 	}
 
 	nextVec := make([]float32, n/2)
-	
+
 	// This is a simplified recursive polar transform:
 	// Each pair (x, y) -> (r, theta)
 	// The radii become the input for the next level.
@@ -101,13 +101,13 @@ func (e *TurboQuantEncoder) polarTransformRecursive(vec []float32, angles []floa
 		y := vec[2*i+1]
 		r := float32(math.Sqrt(float64(x*x + y*y)))
 		theta := float32(math.Atan2(float64(y), float64(x)))
-		
+
 		nextVec[i] = r
 		// Store angles in reverse order of levels or similar
 		// Here we'll just pack them predictably
 		angles[i] = theta
 	}
-	
+
 	// Recursive call on the radii
 	return e.polarTransformRecursive(nextVec, angles[n/2:])
 }
@@ -128,26 +128,31 @@ func (e *TurboQuantEncoder) polarReconstructRecursive(radius float32, angles []f
 	for i := 0; i < n/2; i++ {
 		r := nextRadii[i]
 		theta := angles[i]
-		dst[2*i] = r * float32(math.Cos(float64(theta)))
-		dst[2*i+1] = r * float32(math.Sin(float64(theta)))
+		sin, cos := math.Sincos(float64(theta))
+		dst[2*i] = r * float32(cos)
+		dst[2*i+1] = r * float32(sin)
 	}
 }
 
 func (e *TurboQuantEncoder) packAngles(angles []float32, dst []byte) {
 	bits := e.params.BitsPerAngle
 	maxVal := float32((uint32(1) << bits) - 1)
-	
+
 	var currentBit int
-	
+
 	for _, angle := range angles {
 		// Normalize angle [-PI, PI] to [0, 1]
 		norm := (angle + math.Pi) / (2 * math.Pi)
-		if norm < 0 { norm = 0 }
-		if norm > 1 { norm = 1 }
-		
+		if norm < 0 {
+			norm = 0
+		}
+		if norm > 1 {
+			norm = 1
+		}
+
 		// Quantize to int
-		q := uint32(norm * maxVal + 0.5)
-		
+		q := uint32(norm*maxVal + 0.5)
+
 		// Pack into bits
 		for k := 0; k < bits; k++ {
 			if (q & (uint32(1) << k)) != 0 {
@@ -162,24 +167,24 @@ func (e *TurboQuantEncoder) packAngles(angles []float32, dst []byte) {
 // Note: Inverse Hadamard must be applied afterwards.
 func (e *TurboQuantEncoder) Decode(data []byte) ([]float32, error) {
 	radius := math.Float32frombits(binary.LittleEndian.Uint32(data[0:4]))
-	
+
 	angleCount := e.pow2 - 1
 	angleBytes := (angleCount*e.params.BitsPerAngle + 7) / 8
 	qjlOffset := 4 + angleBytes
-	
+
 	// Unpack Angles
 	angles := make([]float32, angleCount)
 	e.unpackAngles(data[4:qjlOffset], angles)
-	
+
 	// Reconstruct Cartesian
 	recon := make([]float32, e.pow2)
 	e.polarReconstructRecursive(radius, angles, recon)
-	
+
 	// Apply QJL Correction
 	qjlBits := data[qjlOffset:]
 	// The QJL term in the estimator is often added as a bias or scale.
 	// Here we'll treat it as a sign bit of the residual to improve accuracy.
-	// In the paper, QJL error correction allows the model to calculate 
+	// In the paper, QJL error correction allows the model to calculate
 	// attention scores more accurately by eliminating bias.
 	for i := 0; i < e.pow2; i++ {
 		if (qjlBits[i/8] & (byte(1) << (i % 8))) != 0 {
@@ -191,14 +196,14 @@ func (e *TurboQuantEncoder) Decode(data []byte) ([]float32, error) {
 			recon[i] -= 0.1 // Heuristic
 		}
 	}
-	
+
 	return recon, nil
 }
 
 func (e *TurboQuantEncoder) unpackAngles(src []byte, dst []float32) {
 	bits := e.params.BitsPerAngle
 	maxVal := float32((uint32(1) << bits) - 1)
-	
+
 	var currentBit int
 	for i := range dst {
 		var q uint32
@@ -208,7 +213,7 @@ func (e *TurboQuantEncoder) unpackAngles(src []byte, dst []float32) {
 			}
 			currentBit++
 		}
-		
+
 		// Map back to [-PI, PI]
 		norm := float32(q) / maxVal
 		dst[i] = norm*2*math.Pi - math.Pi

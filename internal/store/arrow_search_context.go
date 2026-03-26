@@ -3,6 +3,8 @@ package store
 import (
 	"container/heap"
 	"sync"
+
+	"github.com/RoaringBitmap/roaring/v2"
 )
 
 // CandidateHeap implements a max-heap of Candidates for search results
@@ -160,6 +162,9 @@ type ArrowSearchContext struct {
 	querySQ8 []uint8
 	queryTQ  []byte
 
+	// Cached rotated query for TurboQuant search (avoid recomputing per distance call)
+	rotatedQueryTQ []float32
+
 	// Distance calculation buffers
 	dists     []float32
 	distsTemp []float32
@@ -181,6 +186,9 @@ type ArrowSearchContext struct {
 
 	// BQ (Binary Quantization) search mode
 	useBQSearch bool
+
+	// Filter bitmap for early filtering during search
+	filterBitmap *roaring.Bitmap
 
 	// Reset tracking
 	dirty bool
@@ -266,6 +274,7 @@ func (ctx *ArrowSearchContext) Reset() {
 	ctx.queryBQ = ctx.queryBQ[:0]
 	ctx.querySQ8 = ctx.querySQ8[:0]
 	ctx.queryTQ = ctx.queryTQ[:0]
+	ctx.rotatedQueryTQ = ctx.rotatedQueryTQ[:0]
 	ctx.dirty = false
 	ctx.operations = 0
 

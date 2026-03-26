@@ -7,15 +7,12 @@ import (
 	"github.com/23skdu/longbow/internal/store/types"
 )
 
-// TurboQuantCompute implements the distance computation for TurboQuant vectors.
 type TurboQuantCompute struct {
 	data    *types.GraphData
 	encoder *TurboQuantEncoder
 }
 
 func NewTurboQuantCompute(data *types.GraphData) *TurboQuantCompute {
-	// Reconstruct encoder from GraphData params
-	// Note: We need to store Seed in GraphData too, for now we'll assume 42 or wait for metadata
 	encoder := NewTurboQuantEncoder(data.Dims, data.TurboQuantBits, 42)
 	return &TurboQuantCompute{
 		data:    data,
@@ -32,9 +29,6 @@ func (c *TurboQuantCompute) Distance(id1, id2 uint32) (float32, error) {
 	if err != nil {
 		return 0, err
 	}
-
-	// For TurboQuant, we use the distance function assigned to the index (usually Euclidean)
-	// After rotation, Euclidean distance is preserved.
 	return simd.L2SquaredFloat32(vec1, vec2)
 }
 
@@ -44,7 +38,6 @@ func (c *TurboQuantCompute) DistanceWithVector(id uint32, vec []float32) (float3
 		return 0, err
 	}
 
-	// Rotate the query vector too!
 	rotatedQuery := make([]float32, c.encoder.pow2)
 	copy(rotatedQuery, vec)
 	if err := simd.RandomRotation(rotatedQuery, c.encoder.params.Seed); err != nil {
@@ -52,6 +45,22 @@ func (c *TurboQuantCompute) DistanceWithVector(id uint32, vec []float32) (float3
 	}
 
 	return simd.L2SquaredFloat32(vec1, rotatedQuery)
+}
+
+func (c *TurboQuantCompute) DistanceWithRotatedQuery(id uint32, rotatedQuery []float32) (float32, error) {
+	vec1, err := c.getVector(id)
+	if err != nil {
+		return 0, err
+	}
+	return simd.L2SquaredFloat32(vec1, rotatedQuery)
+}
+
+func (c *TurboQuantCompute) PrecomputeRotatedQuery(vec []float32, output []float32) error {
+	if len(output) < c.encoder.pow2 {
+		output = make([]float32, c.encoder.pow2)
+	}
+	copy(output, vec)
+	return simd.RandomRotation(output, c.encoder.params.Seed)
 }
 
 func (c *TurboQuantCompute) getVector(id uint32) ([]float32, error) {
@@ -69,6 +78,5 @@ func (c *TurboQuantCompute) getVector(id uint32) ([]float32, error) {
 		return nil, fmt.Errorf("tq offset out of bounds")
 	}
 
-	// Decode TQ bytes to rotated float32 vector
 	return c.encoder.Decode(chunk[start : start+stride])
 }

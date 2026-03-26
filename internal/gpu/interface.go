@@ -52,10 +52,19 @@ type GPUConfig struct {
 	// Synchronization
 	SyncBatchSize int
 	SyncInterval  time.Duration
+	MaxMemory     int64 // Maximum GPU memory to use in bytes
 }
 
 // DefaultGPUConfig returns default GPU configuration
 func DefaultGPUConfig() GPUConfig {
+	maxMemStr := os.Getenv("LONGBOW_MAX_MEMORY")
+	maxMem := int64(0)
+	if maxMemStr != "" {
+		if m, err := strconv.ParseInt(maxMemStr, 10, 64); err == nil {
+			maxMem = m
+		}
+	}
+
 	return GPUConfig{
 		Backend:            BackendCPU,
 		DeviceID:           0,
@@ -63,6 +72,7 @@ func DefaultGPUConfig() GPUConfig {
 		Enabled:            false,
 		SyncBatchSize:      1000,
 		SyncInterval:       5 * time.Second,
+		MaxMemory:          maxMem,
 		CUDAHome:           os.Getenv("CUDA_HOME"),
 		FAISSHome:          os.Getenv("FAISS_HOME"),
 		MetalUnifiedMemory: runtime.GOOS == "darwin",

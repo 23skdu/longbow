@@ -181,7 +181,7 @@ func (h *ArrowHNSW) selectNeighbors(ctx *ArrowSearchContext, candidates []Candid
 // Core insertion functions that remain to be refactored in Phase 3
 
 // selectNeighborsFloat32 is a specialized high-performance diversity check for float32 vectors.
-func (h *ArrowHNSW) selectNeighborsFloat32(ctx *ArrowSearchContext, candidates []Candidate, m int, data *GraphData) []Candidate {
+func (h *ArrowHNSW) selectNeighborsFloat32(_ *ArrowSearchContext, candidates []Candidate, m int, data *GraphData) []Candidate {
 	selected := make([]Candidate, 0, m)
 
 	vectorCache := make(map[uint32][]float32, len(candidates))

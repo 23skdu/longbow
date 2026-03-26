@@ -178,52 +178,63 @@ func (idx *BM25ArenaIndex) Score(query []string, docIDs []uint32) map[uint32]flo
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 
-	scores := make(map[uint32]float32)
+	if len(docIDs) == 0 || len(query) == 0 {
+		return nil
+	}
 
-	// Convert query tokens to IDs
-	queryTokenIDs := make([]uint32, 0, len(query))
+	// 1. Pre-calculate IDFs for each query token
+	type tokenStats struct {
+		id  uint32
+		idf float64
+	}
+	queryStats := make([]tokenStats, 0, len(query))
 	for _, token := range query {
 		if tokenID, exists := idx.tokenDict[token]; exists {
-			queryTokenIDs = append(queryTokenIDs, tokenID)
+			df := float64(idx.docFreqs[tokenID])
+			if df > 0 {
+				// BM25 IDF formula: log((N - df + 0.5) / (df + 0.5) + 1.0)
+				idf := math.Log((float64(idx.totalDocs)-df+0.5)/(df+0.5) + 1.0)
+				queryStats = append(queryStats, tokenStats{id: tokenID, idf: idf})
+			}
 		}
 	}
 
-	// Compute BM25 score for each document
-	for _, docID := range docIDs {
-		score := float32(0.0)
+	if len(queryStats) == 0 {
+		return nil
+	}
 
+	scores := make(map[uint32]float32, len(docIDs))
+	avgDL := idx.avgDocLength
+	if avgDL == 0 {
+		avgDL = 1.0
+	}
+
+	// 2. Compute BM25 score for each document
+	// Optimization: Pre-calculate constants for each query token
+	for _, docID := range docIDs {
 		if int(docID) >= len(idx.docLengths) {
-			scores[docID] = 0.0
 			continue
 		}
 
 		docLen := float64(idx.docLengths[docID])
+		var score float64
 
-		for _, tokenID := range queryTokenIDs {
+		for _, ts := range queryStats {
 			// Get term frequency
-			key := (uint64(docID) << 32) | uint64(tokenID)
+			key := (uint64(docID) << 32) | uint64(ts.id)
 			tf := float64(idx.termFreqs[key])
 
-			if tf == 0 {
-				continue
+			if tf > 0 {
+				// BM25 formula: IDF * (tf * (k1 + 1)) / (tf + k1 * (1 - b + b * docLen/avgDocLen))
+				numerator := tf * (idx.k1 + 1.0)
+				denominator := tf + idx.k1*(1.0-idx.b+idx.b*(docLen/avgDL))
+				score += ts.idf * (numerator / denominator)
 			}
-
-			// Get document frequency
-			df := float64(idx.docFreqs[tokenID])
-			if df == 0 {
-				continue
-			}
-
-			// Compute IDF
-			idf := math.Log((float64(idx.totalDocs)-df+0.5)/(df+0.5) + 1.0)
-
-			// Compute BM25 component
-			numerator := tf * (idx.k1 + 1.0)
-			denominator := tf + idx.k1*(1.0-idx.b+idx.b*(docLen/idx.avgDocLength))
-			score += float32(idf * (numerator / denominator))
 		}
 
-		scores[docID] = score
+		if score > 0 {
+			scores[docID] = float32(score)
+		}
 	}
 
 	return scores

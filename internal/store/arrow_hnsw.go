@@ -342,7 +342,10 @@ func NewArrowHNSW(dataset *Dataset, config *ArrowHNSWConfig) *ArrowHNSW {
 	// Initialize atomic values
 	h.efConstruction.Store(config.EfConstruction)
 	h.maxLevel.Store(-1)
-	h.dims.Store(int32(config.Dims))
+	if config.Dims > math.MaxInt32 {
+		panic("dimensions exceed MaxInt32")
+	}
+	h.dims.Store(int32(config.Dims)) // #nosec G115
 
 	// Initialize quantization if enabled
 	if config.SQ8Enabled {
@@ -595,7 +598,10 @@ func (h *ArrowHNSW) setDims(dims int32) {
 
 // SetDimension sets the absolute dimension of the index.
 func (h *ArrowHNSW) SetDimension(dim int) {
-	h.setDims(int32(dim))
+	if dim > math.MaxInt32 {
+		panic("dimension exceeds MaxInt32")
+	}
+	h.setDims(int32(dim)) // #nosec G115
 	// Also ensure GraphData is updated to reflect this dimension
 	// This is critical if the index was initialized with 0 dims but large capacity (default config).
 	h.initMu.Lock()
@@ -1332,7 +1338,10 @@ func (h *ArrowHNSW) growInternal(capacity, dims int) error {
 			h.config.PQEnabled,
 		)
 		h.data.Store(gd)
-		h.dims.Store(int32(dims))
+		if dims > math.MaxInt32 {
+			panic("dims exceed MaxInt32")
+		}
+		h.dims.Store(int32(dims)) // #nosec G115
 		data = gd
 	}
 
@@ -1678,9 +1687,16 @@ func (h *ArrowHNSW) SearchVectors(ctx context.Context, queryVec any, k int, filt
 	return h.SearchVectorsWithBitmap(ctx, queryVec, k, roaringFilter, options)
 }
 
-func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, _ *ArrowSearchContext, queryVal any, _ bool) any {
+func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowSearchContext, queryVal any, _ bool) any {
 	switch q := queryVal.(type) {
 	case []float32:
+		if h.tqCompute != nil && data.TurboQuantEnabled && searchCtx != nil {
+			if len(searchCtx.rotatedQueryTQ) < h.tqCompute.encoder.pow2 {
+				searchCtx.rotatedQueryTQ = make([]float32, h.tqCompute.encoder.pow2)
+			}
+			_ = h.tqCompute.PrecomputeRotatedQuery(q, searchCtx.rotatedQueryTQ)
+			return &tqComputer{data: data, h: h, rotatedQuery: searchCtx.rotatedQueryTQ}
+		}
 		if h.config.PQEnabled && h.pqEncoder != nil {
 			table, err := h.pqEncoder.BuildADCTable(q)
 			if err == nil {
@@ -2257,7 +2273,10 @@ func (h *ArrowHNSW) ImportGraph(r io.Reader) error {
 	}
 
 	// Apply Metadata
-	h.dims.Store(int32(state.Dims))
+	if state.Dims > math.MaxInt32 {
+		panic("state dimensions exceed MaxInt32")
+	}
+	h.dims.Store(int32(state.Dims)) // nosec G115
 	h.locationStore.Reset()
 	for _, loc := range state.Locations {
 		h.locationStore.Append(loc)
@@ -2554,6 +2573,16 @@ type pqComputer struct {
 	q     []float32
 	table []float32
 	h     *ArrowHNSW
+}
+
+type tqComputer struct {
+	data         *types.GraphData
+	h            *ArrowHNSW
+	rotatedQuery []float32
+}
+
+func (c *tqComputer) ComputeSingle(id uint32) (float32, error) {
+	return c.h.tqCompute.DistanceWithRotatedQuery(id, c.rotatedQuery)
 }
 
 func (c *pqComputer) ComputeSingle(id uint32) (float32, error) {

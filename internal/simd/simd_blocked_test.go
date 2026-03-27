@@ -2,11 +2,55 @@ package simd
 
 import (
 	"fmt"
+	"math"
 	"math/rand"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
+
+func float32EqualTol(a, b float32, tolerance float32) bool {
+	return math.Abs(float64(a-b)) <= float64(tolerance)
+}
+
+func TestDimensionSpecificBlocked(t *testing.T) {
+	dims := []int{768, 1024, 1536, 2048, 3072}
+
+	for _, dim := range dims {
+		t.Run(fmt.Sprintf("euclidean%d", dim), func(t *testing.T) {
+			a := make([]float32, dim)
+			b := make([]float32, dim)
+
+			for i := 0; i < dim; i++ {
+				a[i] = rand.Float32()
+				b[i] = rand.Float32()
+			}
+
+			expected, err := euclideanGeneric(a, b)
+			assert.NoError(t, err)
+
+			var result float32
+			var err2 error
+
+			switch dim {
+			case 768:
+				result, err2 = euclidean768Blocked(a, b)
+			case 1024:
+				result, err2 = euclidean1024Blocked(a, b)
+			case 1536:
+				result, err2 = euclidean1536Blocked(a, b)
+			case 2048:
+				result, err2 = euclidean2048Blocked(a, b)
+			case 3072:
+				result, err2 = euclidean3072Blocked(a, b)
+			}
+
+			assert.NoError(t, err2)
+			assert.True(t, float32EqualTol(expected, result, 0.1),
+				fmt.Sprintf("dim=%d: expected=%v, got=%v", dim, expected, result))
+		})
+	}
+}
 
 func TestDotProductBlocked_Float32(t *testing.T) {
 	// Test cases for blocked SIMD (Dimensions > 1024)

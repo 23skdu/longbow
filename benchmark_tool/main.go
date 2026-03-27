@@ -146,7 +146,7 @@ func main() {
 		var latencies []float64
 		for i := 0; i < *queries; i++ {
 			qStart := time.Now()
-			if err := executeSearch(searchCtx, sc, *dataset, *dim, mode); err != nil {
+			if err := executeSearch(searchCtx, sc, *dataset, *dim, *dtype, mode); err != nil {
 				log.Printf("[%s] Query %d failed: %v\n", mode, i, err)
 				continue
 			}
@@ -165,15 +165,15 @@ func main() {
 		results = append(results, BenchmarkResult{
 			Name:            "Search_" + mode,
 			DurationSeconds: duration,
-			Throughput:      float64(*queries) / duration,
+			Throughput:      float64(len(latencies)) / duration,
 			ThroughputUnit:  "queries/s",
-			Rows:            int64(*queries),
+			Rows:            int64(len(latencies)),
 			LatenciesMs:     latencies,
 			P50LatencyMs:    p50,
 			P95LatencyMs:    p95,
 			P99LatencyMs:    p99,
 		})
-		log.Printf("[SEARCH][%s] Completed %d queries in %.4fs (%.2f QPS, P50: %.2fms, P95: %.2fms, P99: %.2fms)\n", mode, *queries, duration, float64(*queries)/duration, p50, p95, p99)
+		log.Printf("[SEARCH][%s] Completed %d queries in %.4fs (%.2f QPS, P50: %.2fms, P95: %.2fms, P99: %.2fms)\n", mode, len(latencies), duration, float64(len(latencies))/duration, p50, p95, p99)
 	}
 
 	// 4. Print Summary
@@ -256,9 +256,13 @@ func downloadBatch(ctx context.Context, sc *client.SmartClient, dataset string) 
 }
 
 // executeSearch performs search by setting JSON ticket in DoGet
-func executeSearch(ctx context.Context, sc *client.SmartClient, dataset string, dim int, mode string) error {
-	// Generate random query vector (always use float32 slice in request payload JSON)
-	vector := make([]float32, dim)
+func executeSearch(ctx context.Context, sc *client.SmartClient, dataset string, dim int, dtype string, mode string) error {
+	// For complex64/complex128, the index stores 2*dim float32 values (real+imaginary parts per element)
+	queryLen := dim
+	if dtype == "complex64" || dtype == "complex128" {
+		queryLen = dim * 2
+	}
+	vector := make([]float32, queryLen)
 	for i := range vector {
 		vector[i] = rand.Float32()
 	}

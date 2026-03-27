@@ -580,7 +580,6 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 
 	s.logger.Info().Str("dataset", name).Msg("DoPut started (Batched)")
 	s.logger.Info().Str("schema", r.Schema().String()).Msg("DoPut Schema")
-
 	// Use RCU helper for create
 	ds, created := s.getOrCreateDataset(name, func() *Dataset {
 		ds := NewDataset(name, r.Schema())
@@ -1041,12 +1040,24 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 		if vecCol := findVectorColumn(rec); vecCol != nil {
 			if listArr, ok := vecCol.(*array.FixedSizeList); ok {
 				dim := int(listArr.DataType().(*arrow.FixedSizeListType).Len())
-				// Use logical dimension for ArrowHNSW
-				if dataType == VectorTypeComplex64 || dataType == VectorTypeComplex128 {
+				s.logger.Info().Str("dataset", name).Int("dim", dim).Str("dataType", dataType.String()).Msg("findVectorColumn result")
+				if dataType == VectorTypeFloat32 {
+					if listType, ok := listArr.DataType().(*arrow.FixedSizeListType); ok {
+						if listType.Elem().ID() == arrow.FLOAT32 && dim%2 == 0 {
+							dataType = VectorTypeComplex64
+							dim /= 2
+							config.IndexConfig.DataType = dataType
+							aIdx = NewAutoShardingIndex(ds, config)
+							s.logger.Info().Str("dataset", name).Int("dim", dim).Str("dataType", dataType.String()).Msg("Detected complex64 from physical dimension")
+						}
+					}
+				} else if dataType == VectorTypeComplex64 || dataType == VectorTypeComplex128 {
 					dim /= 2
 				}
 				aIdx.SetInitialDimension(dim)
 			}
+		} else {
+			s.logger.Error().Str("dataset", name).Msg("findVectorColumn returned nil")
 		}
 		ds.Index = aIdx
 	}
@@ -1065,7 +1076,7 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 	ds.BatchNodes = append(ds.BatchNodes, currNode)
 
 	metrics.DatasetLockWaitDurationSeconds.WithLabelValues("put").Observe(time.Since(dsLockStart).Seconds())
-	
+
 	// Update Primary Index and LWW/Merkle inside the main lock to prevent races
 	// between concurrent ingestion workers.
 	ds.UpdatePrimaryIndexAsync(batchIdx, idMap)

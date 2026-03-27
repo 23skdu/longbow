@@ -218,10 +218,17 @@ func (a *AutoShardingIndex) migrateToSharded() {
 	// Starting migration
 	oldIndex := a.current
 
+	// Get DataType from old index (it's ArrowHNSW at this point)
+	var oldDataType types.VectorDataType
+	if ah, ok := oldIndex.(*ArrowHNSW); ok {
+		oldDataType = ah.config.DataType
+	}
+
 	// Create new ShardedHNSW config
 	shardedConfig := DefaultShardedHNSWConfig()
 	shardedConfig.Metric = a.dataset.Metric
 	shardedConfig.Dimension = oldIndex.GetDimension()
+	shardedConfig.DataType = oldDataType // Preserve DataType for complex64/complex128
 	if a.config.ShardCount > 0 {
 		shardedConfig.NumShards = a.config.ShardCount
 	}

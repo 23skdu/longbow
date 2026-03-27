@@ -7,7 +7,15 @@ import (
 	"github.com/23skdu/longbow/internal/metrics"
 )
 
-const blockedSimdThreshold = 1024
+const (
+	blockedSimdThreshold     = 1024
+	blockedSimdThreshold256  = 256
+	blockedSimdThreshold512  = 512
+	blockedSimdThreshold768  = 768
+	blockedSimdThreshold1536 = 1536
+	blockedSimdThreshold2048 = 2048
+	blockedSimdThreshold3072 = 3072
+)
 
 // DotProductFloat32Blocked calculates dot product using blocked loop processing
 // optimized for vectors larger than L1 cache lines or for specific instruction pipeelining.
@@ -155,12 +163,71 @@ func DotProductTiledBatch(query []float32, vectors [][]float32, results []float3
 }
 
 func euclidean384Blocked(a, b []float32) (float32, error) {
-	return euclideanBlocked(a, b)
+	return euclideanBlockedGeneric(a, b, blockedSimdThreshold256)
+}
+
+func euclidean768Blocked(a, b []float32) (float32, error) {
+	return euclideanBlockedGeneric(a, b, blockedSimdThreshold256)
+}
+
+func euclidean1024Blocked(a, b []float32) (float32, error) {
+	return euclideanBlockedGeneric(a, b, blockedSimdThreshold256)
+}
+
+func euclidean1536Blocked(a, b []float32) (float32, error) {
+	return euclideanBlockedGeneric(a, b, blockedSimdThreshold256)
+}
+
+func euclidean2048Blocked(a, b []float32) (float32, error) {
+	return euclideanBlockedGeneric(a, b, blockedSimdThreshold512)
+}
+
+func euclidean3072Blocked(a, b []float32) (float32, error) {
+	return euclideanBlockedGeneric(a, b, blockedSimdThreshold512)
+}
+
+func euclideanBlockedGeneric(a, b []float32, blockSize int) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	if len(a) <= blockSize {
+		sum, err := L2SquaredFloat32(a, b)
+		if err != nil {
+			return 0, err
+		}
+		return float32(math.Sqrt(float64(sum))), nil
+	}
+
+	var totalSum float32
+	dim := len(a)
+
+	for i := 0; i < dim; i += blockSize {
+		end := i + blockSize
+		if end > dim {
+			end = dim
+		}
+		chunkA := a[i:end]
+		chunkB := b[i:end]
+		chunkSum, err := L2SquaredFloat32(chunkA, chunkB)
+		if err != nil {
+			return 0, err
+		}
+		totalSum += chunkSum
+	}
+
+	return float32(math.Sqrt(float64(totalSum))), nil
 }
 
 func euclideanBlocked(a, b []float32) (float32, error) {
-	if len(a) != len(b) {
-		return 0, errors.New("simd: length mismatch")
+	dim := len(a)
+	if dim >= 2048 {
+		return euclideanBlockedGeneric(a, b, blockedSimdThreshold512)
+	}
+	if dim >= 1024 {
+		return euclideanBlockedGeneric(a, b, blockedSimdThreshold256)
 	}
 	if len(a) == 0 {
 		return 0, nil

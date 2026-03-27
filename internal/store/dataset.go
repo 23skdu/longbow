@@ -59,8 +59,9 @@ type Dataset struct {
 	BatchNodes []int
 
 	// PrimaryIndex maps ID -> Physical Location (O(1) lookup)
-	PrimaryIndex   map[string]RowLocation
-	primaryIndexMu sync.Mutex // Protects PrimaryIndex map updates
+	PrimaryIndex map[string]RowLocation
+	// metadataMu protects PrimaryIndex, LWW, and Merkle updates
+	metadataMu sync.Mutex
 
 	// Memory tracking
 	SizeBytes        atomic.Int64
@@ -487,8 +488,8 @@ func (d *Dataset) ExtractIDs(rec arrow.RecordBatch) map[string]int {
 // UpdatePrimaryIndex updates the ID mapping for a given batch using a pre-extracted ID map.
 // The caller must hold dataMu lock.
 func (d *Dataset) UpdatePrimaryIndex(batchIdx int, idMap map[string]int) {
-	d.primaryIndexMu.Lock()
-	defer d.primaryIndexMu.Unlock()
+	d.metadataMu.Lock()
+	defer d.metadataMu.Unlock()
 	if idMap == nil {
 		return
 	}
@@ -511,8 +512,8 @@ func (d *Dataset) UpdatePrimaryIndex(batchIdx int, idMap map[string]int) {
 // UpdatePrimaryIndexAsync updates the primary index without holding dataMu.
 // Uses a dedicated mutex for serialization.
 func (d *Dataset) UpdatePrimaryIndexAsync(batchIdx int, idMap map[string]int) {
-	d.primaryIndexMu.Lock()
-	defer d.primaryIndexMu.Unlock()
+	d.metadataMu.Lock()
+	defer d.metadataMu.Unlock()
 	if idMap == nil {
 		return
 	}

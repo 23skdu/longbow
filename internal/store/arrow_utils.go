@@ -216,6 +216,10 @@ func extractVectorRaw(rec arrow.RecordBatch, rowIdx, colIdx int) (any, error) {
 		return v, nil
 	case []uint64:
 		return v, nil
+	case []complex64:
+		return v, nil
+	case []complex128:
+		return v, nil
 	default:
 		return nil, fmt.Errorf("extractVectorRaw: unsupported type %T", anyVec)
 	}
@@ -291,6 +295,24 @@ func ExtractVectorFromArrow(rec arrow.RecordBatch, rowIdx, colIdx int) ([]float3
 		res := make([]float32, len(v))
 		for i, val := range v {
 			res[i] = float32(val)
+		}
+		return res, nil
+	case []complex64:
+		// Complex64: 2 float32s per complex number
+		// Convert to float32 slice of 2*len for SIMD distance calculations
+		res := make([]float32, len(v)*2)
+		for i, val := range v {
+			res[i*2] = real(val)
+			res[i*2+1] = imag(val)
+		}
+		return res, nil
+	case []complex128:
+		// Complex128: 2 float64s per complex number
+		// Convert to float32 slice of 2*len for SIMD distance calculations
+		res := make([]float32, len(v)*2)
+		for i, val := range v {
+			res[i*2] = float32(real(val))
+			res[i*2+1] = float32(imag(val))
 		}
 		return res, nil
 	default:

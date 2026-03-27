@@ -73,9 +73,9 @@ func main() {
 
 	var bytesPerElement int64 = 4
 	switch *dtype {
-	case "int8":
+	case "int8", "uint8":
 		bytesPerElement = 1
-	case "int16":
+	case "int16", "uint16":
 		bytesPerElement = 2
 	case "int32", "uint32", "float32":
 		bytesPerElement = 4
@@ -408,6 +408,14 @@ func generateRecord(count int, dim int, dtype string) (arrow.Record, *arrow.Sche
 		dt = arrow.PrimitiveTypes.Int8
 	case "uint32":
 		dt = arrow.PrimitiveTypes.Uint32
+	case "uint16":
+		dt = arrow.PrimitiveTypes.Uint16
+	case "uint8":
+		dt = arrow.PrimitiveTypes.Uint8
+	case "int64":
+		dt = arrow.PrimitiveTypes.Int64
+	case "uint64":
+		dt = arrow.PrimitiveTypes.Uint64
 	case "complex64":
 		dt = arrow.PrimitiveTypes.Float32
 	case "complex128":
@@ -525,6 +533,50 @@ func generateRecord(count int, dim int, dtype string) (arrow.Record, *arrow.Sche
 		vals := make([]uint32, count*dim)
 		for i := range vals {
 			vals[i] = uint32(rand.Intn(1000))
+		}
+		for i := 0; i < count; i++ {
+			listBldr.Append(true)
+			vb.AppendValues(vals[i*dim:(i+1)*dim], nil)
+		}
+	case "uint16":
+		vb := listBldr.ValueBuilder().(*array.Uint16Builder)
+		vb.Reserve(count * dim)
+		vals := make([]uint16, count*dim)
+		for i := range vals {
+			vals[i] = uint16(rand.Intn(1000))
+		}
+		for i := 0; i < count; i++ {
+			listBldr.Append(true)
+			vb.AppendValues(vals[i*dim:(i+1)*dim], nil)
+		}
+	case "uint8":
+		vb := listBldr.ValueBuilder().(*array.Uint8Builder)
+		vb.Reserve(count * dim)
+		vals := make([]uint8, count*dim)
+		for i := range vals {
+			vals[i] = uint8(rand.Intn(255))
+		}
+		for i := 0; i < count; i++ {
+			listBldr.Append(true)
+			vb.AppendValues(vals[i*dim:(i+1)*dim], nil)
+		}
+	case "int64":
+		vb := listBldr.ValueBuilder().(*array.Int64Builder)
+		vb.Reserve(count * dim)
+		vals := make([]int64, count*dim)
+		for i := range vals {
+			vals[i] = int64(rand.Intn(1000))
+		}
+		for i := 0; i < count; i++ {
+			listBldr.Append(true)
+			vb.AppendValues(vals[i*dim:(i+1)*dim], nil)
+		}
+	case "uint64":
+		vb := listBldr.ValueBuilder().(*array.Uint64Builder)
+		vb.Reserve(count * dim)
+		vals := make([]uint64, count*dim)
+		for i := range vals {
+			vals[i] = uint64(rand.Intn(1000))
 		}
 		for i := 0; i < count; i++ {
 			listBldr.Append(true)

@@ -140,12 +140,6 @@ func (s *VectorStore) handleVectorSearchExchange(stream flight.FlightService_DoE
 		return status.Error(codes.FailedPrecondition, "dataset has no index")
 	}
 
-	// Validate dims
-	if uint32(len(queryVec)) != ds.Index.GetDimension() {
-		ds.dataMu.RUnlock()
-		return status.Errorf(codes.InvalidArgument, "dimension mismatch: expected %d, got %d", ds.Index.GetDimension(), len(queryVec))
-	}
-
 	// Perform Search
 	searchOpts := SearchOptions{
 		IncludeVectors: false,

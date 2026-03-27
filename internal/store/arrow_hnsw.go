@@ -357,7 +357,6 @@ func NewArrowHNSW(dataset *Dataset, config *ArrowHNSWConfig) *ArrowHNSW {
 	}
 
 	// Init distance funcs based on config
-	fmt.Printf("Initializing ArrowHNSW with metric: %v\n", config.Metric)
 	switch config.Metric {
 	case MetricCosine:
 		h.distFunc = simd.CosineDistance
@@ -941,7 +940,6 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 
 	h.ensureReady()
 
-	// Dimension Validation (before nodeCount==0 check so we can validate on empty-but-initialized indexes)
 	logicalDims := int(h.dims.Load())
 	if logicalDims > 0 {
 		var physicalDims int
@@ -953,15 +951,23 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 		}
 
 		queryLen := 0
+		var isComplexIndexWithFloatQuery bool
 		switch q := queryVec.(type) {
 		case []float32:
 			queryLen = len(q)
+			if (h.config.DataType == types.VectorTypeComplex64 || h.config.DataType == types.VectorTypeComplex128) &&
+				queryLen == physicalDims {
+				isComplexIndexWithFloatQuery = true
+			}
 		case []float64:
 			queryLen = len(q)
-		case []complex64, []complex128:
+		case []complex64:
+			queryLen = len(q) * 2
+		case []complex128:
+			queryLen = len(q) * 2
 		}
 
-		if queryLen > 0 && queryLen != physicalDims {
+		if queryLen > 0 && !isComplexIndexWithFloatQuery && queryLen != physicalDims {
 			return nil, fmt.Errorf("index expects %d elements (logical dims=%d), got query len %d", physicalDims, logicalDims, queryLen)
 		}
 	}
@@ -1822,6 +1828,36 @@ func (h *ArrowHNSW) searchLayer(_ context.Context, computer any, entryPoint uint
 						sum += diff * diff
 					}
 					return float32(math.Sqrt(float64(sum))), nil
+				case []complex64:
+					qLen := len(q)
+					qComplex := make([]complex64, qLen/2)
+					for i := 0; i < qLen/2; i++ {
+						qComplex[i] = complex(q[2*i], q[2*i+1])
+					}
+					var sum float32
+					for i, val := range qComplex {
+						if i < len(v) {
+							diff := val - v[i]
+							modSq := real(diff)*real(diff) + imag(diff)*imag(diff)
+							sum += modSq
+						}
+					}
+					return float32(math.Sqrt(float64(sum))), nil
+				case []complex128:
+					qLen := len(q)
+					qComplex := make([]complex128, qLen/2)
+					for i := 0; i < qLen/2; i++ {
+						qComplex[i] = complex(float64(q[2*i]), float64(q[2*i+1]))
+					}
+					var sum float64
+					for i, val := range qComplex {
+						if i < len(v) {
+							diff := val - v[i]
+							modSq := real(diff)*real(diff) + imag(diff)*imag(diff)
+							sum += modSq
+						}
+					}
+					return float32(math.Sqrt(sum)), nil
 				}
 				return math.MaxFloat32, nil
 			}

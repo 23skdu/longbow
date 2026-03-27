@@ -120,7 +120,7 @@ func (s *VectorStore) applyReplayBatch(name string, rec arrow.RecordBatch, seq u
 	rec.Retain() // Dataset takes ownership
 	batchIdx := len(ds.Records)
 	ds.Records = append(ds.Records, rec)
-	
+
 	// Update Primary Index and natively process RowLocation tombstones for Upserts
 	ds.UpdatePrimaryIndex(batchIdx, ds.ExtractIDs(rec))
 
@@ -200,6 +200,10 @@ func (s *VectorStore) loadSnapshotItem(item *storage.SnapshotItem) error {
 				config.ShardThreshold = 10000
 				config.Enabled = true
 			}
+			dataType := InferVectorDataType(schema, "vector")
+			hnswCfg := DefaultArrowHNSWConfig()
+			hnswCfg.DataType = dataType
+			config.IndexConfig = &hnswCfg
 			aIdx := NewAutoShardingIndex(d, config)
 			aIdx.SetInitialDimension(vectorDim)
 			d.Index = aIdx

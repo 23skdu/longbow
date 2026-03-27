@@ -52,63 +52,16 @@ func (s *VectorStore) evictDataset(name string) {
 	// Metrics updated elsewhere
 }
 
-// PrewarmDataset initializes a dataset and its index before first data ingestion
 func (s *VectorStore) PrewarmDataset(name string, schema *arrow.Schema) {
 	_, created := s.getOrCreateDataset(name, func() *Dataset {
 		ds := NewDataset(name, schema)
 		ds.Logger = s.logger
 		ds.Topo = s.numaTopology
-
-		// Check if this dataset has a vector column before creating index
-		hasVectorColumn := false
-		var vectorDim int
-
-		for _, f := range schema.Fields() {
-			if f.Name == "vector" || f.Name == "embedding" {
-				if fst, ok := f.Type.(*arrow.FixedSizeListType); ok {
-					hasVectorColumn = true
-					vectorDim = int(fst.Len())
-					dataType := InferVectorDataType(schema, "vector")
-					if dataType == VectorTypeComplex64 || dataType == VectorTypeComplex128 {
-						vectorDim /= 2
-					}
-				}
-				break // Found vector column, no need to continue
-			}
-		}
-
-		// Only create index if dataset has a vector column
-		if hasVectorColumn {
-			// Initialize index immediately used default config or a simplified one
-			config := s.autoShardingConfig
-			if config.ShardThreshold == 0 {
-				// Fallback default
-				config.ShardThreshold = 10000
-				config.Enabled = true
-				config.ShardCount = runtime.NumCPU()
-			}
-
-			aIdx := NewAutoShardingIndex(ds, config)
-			aIdx.SetInitialDimension(vectorDim)
-
-			// Pre-warm to mitigate cold start latency
-			// We use a reasonable default batch size (4096 fits in 4 chunks)
-			aIdx.PreWarm(4096)
-
-			ds.Index = aIdx
-		}
-
 		return ds
 	})
 
 	if created {
-		// Only log pre-warmed message if index was actually created
-		ds, _ := s.getDataset(name)
-		if ds.Index != nil {
-			s.logger.Info().Str("dataset", name).Msg("Pre-warmed dataset with index")
-		} else {
-			s.logger.Info().Str("dataset", name).Msg("Created dataset (no vector column, no index)")
-		}
+		s.logger.Info().Str("dataset", name).Msg("Pre-warmed dataset")
 	}
 }
 

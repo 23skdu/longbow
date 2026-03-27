@@ -36,13 +36,17 @@ type BenchmarkResult struct {
 
 func main() {
 	uri := flag.String("uri", "127.0.0.1:3000", "Data plane address (host:port)")
-	dim := flag.Int("dim", 128, "Vector dimension")
+	dim := flag.Int("dim", 128, "Vector dimension (up to 3072)")
 	scale := flag.Int("scale", 1000, "Vector count")
-	dtype := flag.String("dtype", "float32", "Data type (float32, int32, etc)")
+	dtype := flag.String("dtype", "float32", "Data type (float32, int32, etc, including turboquant)")
 	dataset := flag.String("dataset", "bench_go", "Target dataset name")
 	queries := flag.Int("queries", 1000, "Number of search queries")
 	outputJson := flag.String("json", "", "Save stats as JSON file")
 	flag.Parse()
+
+	if *dim > 3072 {
+		log.Printf("WARNING: Dimension %d exceeds recommended 3072 limit. Proceeding anyway.\n", *dim)
+	}
 
 	log.Printf("Starting Go Benchmark: Dataset=%s, Scale=%d, Dim=%d, Type=%s\n", *dataset, *scale, *dim, *dtype)
 

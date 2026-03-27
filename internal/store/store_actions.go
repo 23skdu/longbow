@@ -1077,17 +1077,13 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 
 	metrics.DatasetLockWaitDurationSeconds.WithLabelValues("put").Observe(time.Since(dsLockStart).Seconds())
 
-	// Update Primary Index and LWW/Merkle inside the main lock to prevent races
-	// between concurrent ingestion workers.
+	ds.dataMu.Unlock()
+
+	// Update Primary Index and LWW/Merkle outside the main lock to prevent search-blocking
+	// contention while processing O(N) metadata updates.
+	// metadataMu inside these methods ensures consistency.
 	ds.UpdatePrimaryIndexAsync(batchIdx, idMap)
 	s.updateLWWAndMerkle(ds, rec, ts)
-
-	// Compaction trigger check inside lock
-	if s.compactionWorker != nil && len(ds.Records) >= s.compactionConfig.MinBatchesToCompact {
-		s.compactionWorker.TriggerCompaction()
-	}
-
-	ds.dataMu.Unlock()
 
 	// Batch append to DiskStore outside main dataset lock to avoid blocking other workers
 	if len(diskVecs) > 0 {

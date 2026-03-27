@@ -183,6 +183,10 @@ func run() error {
 		Int("gogc", cfg.GOGC).
 		Msg(">>---> Starting Longbow")
 
+	// Enable profiling
+	runtime.SetMutexProfileFraction(1)
+	runtime.SetBlockProfileRate(1)
+
 	// Apply GC Ballast if configured
 	var ballast []byte
 	if cfg.GCBallastG > 0 {

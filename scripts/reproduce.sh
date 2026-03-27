@@ -12,7 +12,7 @@ sleep 5
 (sleep 6 && echo "Triggering profile mid-test..." && curl -s "http://127.0.0.1:9090/debug/pprof/profile?seconds=5" > cpu.prof) &
 
 echo "Running benchmark tool for float32 dim=384 scale=15000..."
-./bin/benchmark_tool -uri 127.0.0.1:3000 -dtype float32 -dim 384 -scale 15000 -queries 10 -dataset bench_profile
+./bin/benchmark-tool -uri 127.0.0.1:3000 -dtype float32 -dim 384 -scale 15000 -queries 10 -dataset bench_profile
 
 echo "Waiting for profile to flush..."
 sleep 10

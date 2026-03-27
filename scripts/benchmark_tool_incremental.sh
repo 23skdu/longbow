@@ -19,7 +19,7 @@ trap cleanup EXIT
 
 # 1. Build tool
 echo "Building benchmark_tool..."
-go build -o bin/longbow_bench ./benchmark_tool/
+go build -o bin/benchmark-tool ./benchmark_tool/
 
 for TYPE in "${TYPES[@]}"; do
     for SCALE in "${SCALES[@]}"; do
@@ -43,7 +43,7 @@ for TYPE in "${TYPES[@]}"; do
             sleep 5
             
             # Execution
-            ./bin/longbow_bench \
+            ./bin/benchmark-tool \
                 --uri 127.0.0.1:3000 \
                 --scale $SCALE \
                 --dim $DIM \

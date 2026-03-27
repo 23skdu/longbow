@@ -554,6 +554,9 @@ func (s *VectorStore) GetWALQueueDepth() (count, size int) {
 }
 
 func (s *VectorStore) updateLWWAndMerkle(ds *Dataset, rec arrow.RecordBatch, ts int64) {
+	ds.metadataMu.Lock()
+	defer ds.metadataMu.Unlock()
+
 	idColIdx := -1
 	for i, f := range rec.Schema().Fields() {
 		if f.Name == "id" {

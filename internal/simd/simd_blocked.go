@@ -22,8 +22,8 @@ const (
 // It iterates in chunks to ensure data fits in L1 cache and to potentially allow
 // better prefetching efficiency.
 func DotProductFloat32Blocked(a, b []float32) (float32, error) {
-	if len(a) <= blockedSimdThreshold {
-		return DotProduct(a, b)
+	if len(a) < blockedSimdThreshold {
+		return currentDispatch.DotProduct(a, b)
 	}
 
 	var sum float32
@@ -58,8 +58,8 @@ func DotProductFloat32Blocked(a, b []float32) (float32, error) {
 
 // L2Float32Blocked calculates Euclidean distance using blocked loop processing.
 func L2Float32Blocked(a, b []float32) (float32, error) {
-	if len(a) <= blockedSimdThreshold {
-		return EuclideanDistance(a, b)
+	if len(a) < blockedSimdThreshold {
+		return l2SquaredImpl(a, b)
 	}
 
 	var sum float32

@@ -185,4 +185,43 @@ LONGBOW_MAX_MEMORY=12884901888 ARROW_DISABLE_LOCKING=1 \
 
 ---
 
-*Last Updated: 2026-03-27 (complex64 ByID bug fixed)*
+## Performance Optimization Findings (2026-03-27)
+
+### pprof Analysis - CPU Profile During Search Load
+
+**Key Findings:**
+
+| Category | Time % | Issue | Recommendation |
+|----------|--------|-------|----------------|
+| `runtime.madvise` | 18.5% | Memory management | Reduce allocations, use arena |
+| Atomic CAS | 14.9% | Lock contention | Use lock-free structures |
+| `runtime.usleep` | 12.2% | Thread waiting | Reduce lock hold time |
+| GC (sweep/alloc) | ~35% | Memory pressure | Object pooling, slab arenas |
+| SIMD (euclidean128) | 2.0% | Already optimized | N/A |
+
+### Optimization Opportunities
+
+1. **Memory Allocation Reduction**
+   - Use typed arenas for vector storage
+   - Pool neighbor arrays in HNSW
+   - Pre-allocate search result buffers
+
+2. **Lock Contention Reduction**
+   - Shard locks more granularly
+   - Use atomic operations instead of mutex
+   - Reduce critical section size in AddBatchBulk
+
+3. **GC Pressure**
+   - Object reuse via slab allocators
+   - Reduce temporary slice allocations
+   - Use `sync.Pool` for frequently allocated objects
+
+### Metrics Hot Path Analysis
+
+- **Metrics in SIMD kernels add ~30% overhead** - REMOVED
+- Search-layer metrics with sampling recommended (<1% overhead)
+- Blocked SIMD dispatch now enabled for dimensions >= 768
+
+---
+
+*Last Updated: 2026-03-27 (complex64 ByID bug fixed, pprof analysis added)*

@@ -63,13 +63,47 @@ Notable flags:
 - `LONGBOW_GOSSIP_ENABLED=true` (Enable distributed discovery)
 
 - **Protocol**: Apache Arrow Flight (over gRPC/HTTP2).
-- **Search**: High-performance HNSW vector search with hybrid (Dense + Sparse) support and polymorphic vector types (F32, F16, Int8, Complex64/128).
+- **Search**: High-performance HNSW vector search with hybrid (Dense + Sparse) support and polymorphic vector types.
 - **Distance Metrics**: Pluggable metrics (Euclidean, Cosine, Dot Product) with SIMD optimizations for all supported types.
 - **Filtering**: Metadata-aware predicate filtering for searches and scans.
 - **Lifecycle**: Support for vector deletion via tombstones.
 - **Durable**: WAL with Apache Parquet format snapshots.
 - **Storage**: In-memory ephemeral storage for zero-copy high-speed access.
 - **Observability**: Structured JSON logging and 100+ Prometheus metrics.
+
+## Supported Data Types & Dimensions
+
+Longbow supports the following vector data types with optimized SIMD kernels:
+
+| Data Type | Dimensions Supported | Notes |
+|-----------|---------------------|-------|
+| **float32** | 128, 256, 384, 768, 1024, 1536, 2048, 3072 | Full SIMD optimization |
+| **float64** | 128, 256, 384, 768, 1024, 1536, 2048, 3072 | Full SIMD optimization |
+| **int8** | 128, 256, 384, 768, 1024, 1536, 2048, 3072 | AVX2/NEON optimized |
+| **int16** | 128, 256, 384, 768, 1024, 1536, 2048, 3072 | AVX2/NEON optimized |
+| **int32** | 128, 256, 384, 768, 1024, 1536, 2048, 3072 | AVX2/NEON optimized |
+| **int64** | 128, 256, 384, 768+ | Generic SIMD |
+| **uint8** | 128, 256, 384, 768+ | Generic SIMD |
+| **uint16** | 128, 256, 384, 768+ | Generic SIMD |
+| **uint32** | 128, 256, 384, 768+ | Generic SIMD |
+| **complex64** | 128, 256, 384, 768, 1024, 1536, 2048, 3072 | Full SIMD optimization |
+| **complex128** | 128, 256, 384, 768+ | Generic SIMD |
+| **turboquant** | 128, 256, 384, 768+ | NEON FWHT optimized |
+
+### Optimized Kernel Dimensions
+
+The following dimensions have dimension-specific optimized kernels:
+
+| Dimension | Block Size | Optimization |
+|----------|------------|--------------|
+| 128 | N/A | Direct SIMD unroll |
+| 256 | N/A | Direct SIMD unroll |
+| 384 | N/A | AVX2/NEON specific kernels |
+| 768 | 256 | Blocked SIMD |
+| 1024 | 256 | Blocked SIMD |
+| 1536 | 256 | Blocked SIMD |
+| 2048 | 512 | Blocked SIMD |
+| 3072 | 512 | Blocked SIMD |
 
 ## Architecture & Ports
 

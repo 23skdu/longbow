@@ -2,6 +2,8 @@ package simd
 
 import (
 	"errors"
+	"strconv"
+	"time"
 	"unsafe"
 
 	"github.com/23skdu/longbow/internal/metrics"
@@ -21,22 +23,36 @@ func EuclideanDistance(a, b []float32) (float32, error) {
 	if len(a) == 0 {
 		return 0, nil
 	}
-	if len(a) == 384 {
+
+	dimension := len(a)
+	start := time.Now()
+
+	var result float32
+	var err error
+
+	if dimension == 384 {
 		if features.HasAVX2 {
-			return euclideanAVX2(a, b)
+			result, err = euclideanAVX2(a, b)
+		} else if features.HasNEON {
+			result, err = euclidean384Blocked(a, b)
+		} else {
+			result, err = currentDispatch.EuclideanDistance384(a, b)
 		}
-		if features.HasNEON {
-			return euclidean384Blocked(a, b)
-		}
-		return currentDispatch.EuclideanDistance384(a, b)
+	} else if dimension == 128 {
+		result, err = currentDispatch.EuclideanDistance128(a, b)
+	} else if dimension > 512 && features.HasNEON {
+		result, err = euclideanBlocked(a, b)
+		metrics.SimdBlockedProcessingTotal.WithLabelValues("float32", strconv.Itoa(dimension), "512").Inc()
+	} else {
+		result, err = currentDispatch.EuclideanDistance(a, b)
+		metrics.SimdFallbackTotal.WithLabelValues("float32", strconv.Itoa(dimension), "dimension_not_optimized").Inc()
 	}
-	if len(a) == 128 {
-		return currentDispatch.EuclideanDistance128(a, b)
-	}
-	if len(a) > 512 && features.HasNEON {
-		return euclideanBlocked(a, b)
-	}
-	return currentDispatch.EuclideanDistance(a, b)
+
+	elapsed := time.Since(start)
+	metrics.SimdKernelDuration.WithLabelValues("float32", strconv.Itoa(dimension), "euclidean").Observe(elapsed.Seconds())
+	metrics.SimdKernelOperationsTotal.WithLabelValues("float32", strconv.Itoa(dimension), "euclidean").Inc()
+
+	return result, err
 }
 
 // L2Squared calculates the squared Euclidean distance between two vectors.

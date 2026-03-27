@@ -8,7 +8,7 @@ set -euo pipefail
 DIMS="${1:-128,384}"
 COUNTS="${2:-1000,5000,10000,25000}"
 MEMORY="${3:-12884901888}"  # 12GB default
-DTYPES="float32,float64,int8,int16,int32,uint32,complex64,complex128"
+DTYPES="float32,float64,int8,int16,int32,uint32,complex64,complex128,turboquant"
 QUERIES=200
 URI="127.0.0.1:3000"
 BIN="$(dirname "$0")/../bin"

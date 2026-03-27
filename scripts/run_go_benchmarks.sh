@@ -9,7 +9,7 @@ OUTPUT_FILE="benchmark_results.log"
 echo "Starting Clean Isolated Benchmarks" > $OUTPUT_FILE
 echo "===================" >> $OUTPUT_FILE
 
-go build -o bin/benchmark_tool ./benchmark_tool
+go build -o bin/benchmark-tool ./benchmark_tool
 
 URI="127.0.0.1"
 PORT=3000
@@ -39,7 +39,7 @@ for dtype in "${DTYPES[@]}"; do
          (sleep 7 && curl -s http://127.0.0.1:6060/debug/pprof/profile?seconds=5 > cpu_${dtype}_${dim}_20k.prof) &
       fi
 
-      ./bin/benchmark_tool -uri "$URI:$PORT" -dtype "$dtype" -dim "$dim" -scale "$gcount" -queries 10 -dataset "$DS" -json "results_${dtype}_${dim}_${gcount}.json" 2>&1 >> $OUTPUT_FILE
+      ./bin/benchmark-tool -uri "$URI:$PORT" -dtype "$dtype" -dim "$dim" -scale "$gcount" -queries 10 -dataset "$DS" -json "results_${dtype}_${dim}_${gcount}.json" 2>&1 >> $OUTPUT_FILE
       
       # C. Kill Server for fresh state
       kill $SERVER_PID 2>/dev/null || true

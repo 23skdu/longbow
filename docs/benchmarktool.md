@@ -14,7 +14,7 @@ The `benchmark_tool` is a standalone client driver written in Go using the `apac
 Compile via standard Go toolchain into `bin/`:
 
 ```bash
-go build -o bin/longbow_bench ./benchmark_tool/
+go build -o bin/benchmark-tool ./benchmark_tool/
 ```
 
 ---
@@ -24,7 +24,7 @@ go build -o bin/longbow_bench ./benchmark_tool/
 Flags are supported to configure scale, dimensions, and typed dimensions directly:
 
 ```bash
-./bin/longbow_bench \
+./bin/benchmark-tool \
     --uri grpc://127.0.0.1:3000 \
     --scale 5000 \
     --dim 128 \

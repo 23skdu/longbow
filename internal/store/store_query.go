@@ -684,13 +684,7 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, stream fli
 				return status.Error(codes.FailedPrecondition, "index not initialized")
 			}
 
-			// Validate dimension under lock
-			if len(queryVec) > 0 && uint32(len(queryVec)) != index.GetDimension() {
-				expected := index.GetDimension()
-				ds.dataMu.RUnlock()
-				return status.Errorf(codes.InvalidArgument, "dimension mismatch: expected %d, got %d", expected, len(queryVec))
-			}
-			ds.dataMu.RUnlock() // RELEASE BEFORE SEARCH
+			ds.dataMu.RUnlock()
 
 			// Core Search (No dataset lock held)
 			var searchErr error

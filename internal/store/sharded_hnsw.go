@@ -29,6 +29,7 @@ type ShardedHNSWConfig struct {
 	EfConstruction int            // HNSW efConstruction parameter
 	Metric         DistanceMetric // Distance metric for this index
 	Dimension      uint32         // Vector dimension
+	DataType       VectorDataType // Vector data type (float32, complex64, etc.)
 	// ShardSplitThreshold is deprecated in favor of Ring Sharding but kept for interface/legacy compatibility.
 	// In Ring mode, it implies the *initial capacity* of each shard.
 	ShardSplitThreshold    int
@@ -195,9 +196,14 @@ func (s *ShardedHNSW) newShard(_ int) *hnswShard {
 		panic("efConstruction exceeds MaxInt32")
 	}
 	arrowConfig.EfConstruction = int32(s.config.EfConstruction) // #nosec G115
-	arrowConfig.InitialCapacity = 1024 // Start small, grow dynamically
+	arrowConfig.InitialCapacity = 1024                          // Start small, grow dynamically
 	arrowConfig.Metric = s.config.Metric
 	arrowConfig.PackedAdjacencyEnabled = s.config.PackedAdjacencyEnabled
+
+	// Preserve DataType from config (critical for complex64/complex128)
+	if s.config.DataType != types.VectorTypeUnknown {
+		arrowConfig.DataType = s.config.DataType
+	}
 
 	// We pass nil for ChunkedLocationStore because shards use local IDs and don't manage global locations
 	// The ShardedHNSW manages the global location store.

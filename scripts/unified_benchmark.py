@@ -25,9 +25,12 @@ def run_command(cmd, env=None, capture_output=True, timeout=None):
 class BenchmarkRunner:
     def __init__(self, args):
         self.args = args
+        self.server_addr = os.environ.get("LONGBOW_ADDR", "127.0.0.1:3000")
+        self.node_id = os.environ.get("LONGBOW_NODE_ID", "bench1")
+        self.data_dir = os.environ.get("LONGBOW_DATA_PATH", os.path.join(os.getcwd(), "data/bench"))
+        
         self.bin_dir = os.path.join(os.getcwd(), "bin")
         self.log_dir = os.path.join(os.getcwd(), "data/perf_logs")
-        self.data_dir = os.path.join(os.getcwd(), "data/bench")
         os.makedirs(self.log_dir, exist_ok=True)
         os.makedirs(self.data_dir, exist_ok=True)
         
@@ -60,7 +63,7 @@ class BenchmarkRunner:
         
         with open(log_file, "w") as f:
             process = subprocess.Popen(
-                [server_bin, "--listen-addr", "127.0.0.1:3000", "--data-path", data_root, "--node-id", "bench1"],
+                [server_bin, "--listen-addr", self.server_addr, "--data-path", data_root, "--node-id", self.node_id],
                 env=env,
                 stdout=f,
                 stderr=subprocess.STDOUT
@@ -68,14 +71,18 @@ class BenchmarkRunner:
             self.server_pid = process.pid
             
         # Wait for server
-        for _ in range(30):
-            result = run_command("lsof -i :3000")
+        startup_timeout = int(os.environ.get("LONGBOW_STARTUP_TIMEOUT", "60"))
+        port = self.server_addr.split(":")[-1]
+        
+        for _ in range(startup_timeout):
+            result = run_command(f"lsof -i :{port}")
             if result and "LISTEN" in result.stdout:
-                time.sleep(2)
+                wait_after = int(os.environ.get("LONGBOW_WAIT_AFTER_START", "5"))
+                time.sleep(wait_after)
                 return True
             time.sleep(1)
             
-        print("  WARNING: Server may not be ready on port 3000")
+        print(f"  WARNING: Server may not be ready on port {port}")
         return False
 
     def stop_server(self):
@@ -86,8 +93,8 @@ class BenchmarkRunner:
                 pass
             self.server_pid = None
         
-        # Force cleanup port 3000
-        subprocess.run("pkill -9 -f 'longbow.*bench1'", shell=True, stderr=subprocess.DEVNULL)
+        # Force cleanup port 3000 (or configured port)
+        subprocess.run(f"pkill -9 -f 'longbow.*{self.node_id}'", shell=True, stderr=subprocess.DEVNULL)
         time.sleep(2)
 
     def run_benchmark(self, dim, dtype, count):
@@ -97,7 +104,7 @@ class BenchmarkRunner:
         
         cmd = [
             bench_tool,
-            "--uri=127.0.0.1:3000",
+            f"--uri={self.server_addr}",
             f"--dim={dim}",
             f"--dtype={dtype}",
             f"--scale={count}",
@@ -176,8 +183,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Unified Longbow Benchmark Script")
     parser.add_argument("--mode", choices=["cpu", "metal"], default="cpu", help="Benchmark mode")
     parser.add_argument("--dims", default="128,384,768,1536,3072", help="Comma-separated dimensions")
-    parser.add_argument("--counts", default="1000,5000,10000,25000", help="Comma-separated vector counts")
-    parser.add_argument("--dtypes", default="float32,int8,int32,complex64,turboquant", help="Comma-separated datatypes")
+    parser.add_argument("--counts", default="1000,3000,5000,7000,10000,15000,25000", help="Comma-separated vector counts")
+    parser.add_argument("--dtypes", default="float32,float64,int8,int16,int32,int64,uint8,uint16,uint32,uint64,complex64,complex128,turboquant", help="Comma-separated datatypes")
     parser.add_argument("--memory", type=int, default=21474836480, help="LONGBOW_MAX_MEMORY (default 20GB)")
     parser.add_argument("--queries", type=int, default=200, help="Number of search queries per test")
     parser.add_argument("--timeout", type=int, default=600, help="Timeout in seconds per test")

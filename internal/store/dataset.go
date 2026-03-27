@@ -270,7 +270,7 @@ func (d *Dataset) GenerateFilterBitset(filters []qry.Filter, filterExpr FilterEx
 	d.filterMu.RLock()
 	if bs, ok := d.filterCache[hash]; ok {
 		d.filterMu.RUnlock()
-		return bs.Clone(), nil
+		return bs, nil
 	}
 	d.filterMu.RUnlock()
 
@@ -358,7 +358,7 @@ func (d *Dataset) GenerateFilterBitsetLocked(filters []qry.Filter, filterExpr Fi
 			break
 		}
 	}
-	d.filterCache[hash] = bitset.Clone()
+	d.filterCache[hash] = bitset
 	d.filterMu.Unlock()
 
 	return bitset, nil

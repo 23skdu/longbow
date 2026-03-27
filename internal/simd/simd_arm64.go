@@ -32,6 +32,12 @@ func dotF16NEONKernel(a, b []float16.Num) float32 //nolint:unused
 //go:noescape
 func cosineF16NEONKernel(a, b []float16.Num) float32 //nolint:unused
 
+//go:noescape
+func fastWalshHadamardTransform32NEONKernel(a []float32)
+
+//go:noescape
+func vectorButterflyNEONKernel(a, b []float32)
+
 // Public Go wrappers (with error propagation)
 
 func euclideanNEON(a, b []float32) (float32, error) {
@@ -169,4 +175,47 @@ func l2SquaredNEON(a, b []float32) (float32, error) {
 		return 0, nil
 	}
 	return l2SquaredNEONKernel(a, b), nil
+}
+
+func FastWalshHadamardTransform32NEON(a []float32) error {
+	n := len(a)
+	if n == 0 || (n&(n-1)) != 0 {
+		return errors.New("simd: vector length must be a power of 2 for FWHT")
+	}
+
+	// For sizes < 32, use generic
+	if n < 32 {
+		return fastWalshHadamardTransform32Generic(a)
+	}
+
+	// 1. Initial stages h=1, 2, 4, 8, 16 using the 32-element kernel
+	for i := 0; i < n; i += 32 {
+		fastWalshHadamardTransform32NEONKernel(a[i : i+32])
+	}
+
+	// 2. Larger stages h=32, 64... using vector butterfly kernel
+	if n > 32 {
+		for h := 32; h < n; h <<= 1 {
+			for i := 0; i < n; i += h << 1 {
+				for j := i; j < i+h; j += 4 {
+					vectorButterflyNEONKernel(a[j:j+4], a[j+h:j+h+4])
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+func RandomRotationNEON(a []float32, seed int64) error {
+	// 1. Random sign flip (D)
+	for i := range a {
+		// xorshift-like sign flip
+		if ((uint64(seed+int64(i)) * 6364136223846793005) >> 63) == 1 {
+			a[i] = -a[i]
+		}
+	}
+
+	// 2. FWHT (H)
+	return FastWalshHadamardTransform32NEON(a)
 }

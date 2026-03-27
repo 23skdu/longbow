@@ -412,3 +412,216 @@ ret_one:
     FMOVS   $1.0, F0
     FMOVS   F0, ret+48(FP)
     RET
+
+// Macros to resolve Go assembler issues with vector floating-point instructions
+#define VFADD_V(m, n, d) WORD $(0x4e20d400 | ((m) << 16) | ((n) << 5) | (d))
+#define VFSUB_V(m, n, d) WORD $(0x4ea0d400 | ((m) << 16) | ((n) << 5) | (d))
+
+// func fastWalshHadamardTransform32NEONKernel(a []float32)
+TEXT ·fastWalshHadamardTransform32NEONKernel(SB), NOSPLIT, $0-24
+    MOVD    a_base+0(FP), R0
+    
+    // Load 32 floats into V0-V7 (128 bytes total)
+    VLD1.P  16(R0), [V0.S4]
+    VLD1.P  16(R0), [V1.S4]
+    VLD1.P  16(R0), [V2.S4]
+    VLD1.P  16(R0), [V3.S4]
+    VLD1.P  16(R0), [V4.S4]
+    VLD1.P  16(R0), [V5.S4]
+    VLD1.P  16(R0), [V6.S4]
+    VLD1.P  16(R0), [V7.S4]
+    
+    // Stage 1 (h=16): Butterflies (V0,V4), (V1,V5), (V2,V6), (V3,V7)
+    VORR    V0.B16, V0.B16, V16.B16
+    VFADD_V(4, 0, 0) // V0 = V0 + V4
+    VFSUB_V(4, 16, 4) // V4 = V16 - V4
+    
+    VORR    V1.B16, V1.B16, V16.B16
+    VFADD_V(5, 1, 1) 
+    VFSUB_V(5, 16, 5)
+    
+    VORR    V2.B16, V2.B16, V16.B16
+    VFADD_V(6, 2, 2)
+    VFSUB_V(6, 16, 6)
+    
+    VORR    V3.B16, V3.B16, V16.B16
+    VFADD_V(7, 3, 3) 
+    VFSUB_V(7, 16, 7)
+
+    // Stage 2 (h=8): (V0,V2), (V1,V3), (V4,V6), (V5,V7)
+    VORR    V0.B16, V0.B16, V16.B16
+    VFADD_V(2, 0, 0)
+    VFSUB_V(2, 16, 2)
+    
+    VORR    V1.B16, V1.B16, V16.B16
+    VFADD_V(3, 1, 1)
+    VFSUB_V(3, 16, 3)
+    
+    VORR    V4.B16, V4.B16, V16.B16
+    VFADD_V(6, 4, 4)
+    VFSUB_V(6, 16, 6)
+    
+    VORR    V5.B16, V5.B16, V16.B16
+    VFADD_V(7, 5, 5)
+    VFSUB_V(7, 16, 7)
+
+    // Stage 3 (h=4): (V0,V1), (V2,V3), (V4,V5), (V6,V7)
+    VORR    V0.B16, V0.B16, V16.B16
+    VFADD_V(1, 0, 0)
+    VFSUB_V(1, 16, 1)
+    
+    VORR    V2.B16, V2.B16, V16.B16
+    VFADD_V(3, 2, 2)
+    VFSUB_V(3, 16, 3)
+    
+    VORR    V4.B16, V4.B16, V16.B16
+    VFADD_V(5, 4, 4)
+    VFSUB_V(5, 16, 5)
+    
+    VORR    V6.B16, V6.B16, V16.B16
+    VFADD_V(7, 6, 6)
+    VFSUB_V(7, 16, 7)
+
+    // Stage 4 (h=2): Use VEXT and intra-register butterfly
+    VEXT    $8, V0.B16, V0.B16, V8.B16
+    VFADD_V(8, 0, 9)
+    VFSUB_V(8, 0, 10)
+    VMOV    V9.D[0], V0.D[0]
+    VMOV    V10.D[0], V0.D[1]
+    
+    VEXT    $8, V1.B16, V1.B16, V8.B16
+    VFADD_V(8, 1, 9)
+    VFSUB_V(8, 1, 10)
+    VMOV    V9.D[0], V1.D[0]
+    VMOV    V10.D[0], V1.D[1]
+    
+    VEXT    $8, V2.B16, V2.B16, V8.B16
+    VFADD_V(8, 2, 9)
+    VFSUB_V(8, 2, 10)
+    VMOV    V9.D[0], V2.D[0]
+    VMOV    V10.D[0], V2.D[1]
+    
+    VEXT    $8, V3.B16, V3.B16, V8.B16
+    VFADD_V(8, 3, 9)
+    VFSUB_V(8, 3, 10)
+    VMOV    V9.D[0], V3.D[0]
+    VMOV    V10.D[0], V3.D[1]
+    
+    VEXT    $8, V4.B16, V4.B16, V8.B16
+    VFADD_V(8, 4, 9)
+    VFSUB_V(8, 4, 10)
+    VMOV    V9.D[0], V4.D[0]
+    VMOV    V10.D[0], V4.D[1]
+    
+    VEXT    $8, V5.B16, V5.B16, V8.B16
+    VFADD_V(8, 5, 9)
+    VFSUB_V(8, 5, 10)
+    VMOV    V9.D[0], V5.D[0]
+    VMOV    V10.D[0], V5.D[1]
+    
+    VEXT    $8, V6.B16, V6.B16, V8.B16
+    VFADD_V(8, 6, 9)
+    VFSUB_V(8, 6, 10)
+    VMOV    V9.D[0], V6.D[0]
+    VMOV    V10.D[0], V6.D[1]
+    
+    VEXT    $8, V7.B16, V7.B16, V8.B16
+    VFADD_V(8, 7, 9)
+    VFSUB_V(8, 7, 10)
+    VMOV    V9.D[0], V7.D[0]
+    VMOV    V10.D[0], V7.D[1]
+
+    // Stage 5 (h=1): Use VREV64 and VMOV
+    VREV64  V0.S4, V11.S4
+    VFADD_V(11, 0, 12)
+    VFSUB_V(11, 0, 8) 
+    VMOV    V12.S[0], V0.S[0]
+    VMOV    V8.S[0], V0.S[1]
+    VMOV    V12.S[2], V0.S[2]
+    VMOV    V8.S[2], V0.S[3]
+    
+    VREV64  V1.S4, V11.S4
+    VFADD_V(11, 1, 12)
+    VFSUB_V(11, 1, 8) 
+    VMOV    V12.S[0], V1.S[0]
+    VMOV    V8.S[0], V1.S[1]
+    VMOV    V12.S[2], V1.S[2]
+    VMOV    V8.S[2], V1.S[3]
+
+    VREV64  V2.S4, V11.S4
+    VFADD_V(11, 2, 12)
+    VFSUB_V(11, 2, 13)
+    VMOV    V12.S[0], V2.S[0]
+    VMOV    V13.S[0], V2.S[1]
+    VMOV    V12.S[2], V2.S[2]
+    VMOV    V13.S[2], V2.S[3]
+    
+    VREV64  V3.S4, V11.S4
+    VFADD_V(11, 3, 12)
+    VFSUB_V(11, 3, 13)
+    VMOV    V12.S[0], V3.S[0]
+    VMOV    V13.S[0], V3.S[1]
+    VMOV    V12.S[2], V3.S[2]
+    VMOV    V13.S[2], V3.S[3]
+
+    VREV64  V4.S4, V11.S4
+    VFADD_V(11, 4, 12)
+    VFSUB_V(11, 4, 13)
+    VMOV    V12.S[0], V4.S[0]
+    VMOV    V13.S[0], V4.S[1]
+    VMOV    V12.S[2], V4.S[2]
+    VMOV    V13.S[2], V4.S[3]
+
+    VREV64  V5.S4, V11.S4
+    VFADD_V(11, 5, 12)
+    VFSUB_V(11, 5, 13)
+    VMOV    V12.S[0], V5.S[0]
+    VMOV    V13.S[0], V5.S[1]
+    VMOV    V12.S[2], V5.S[2]
+    VMOV    V13.S[2], V5.S[3]
+
+    VREV64  V6.S4, V11.S4
+    VFADD_V(11, 6, 12)
+    VFSUB_V(11, 6, 13)
+    VMOV    V12.S[0], V6.S[0]
+    VMOV    V13.S[0], V6.S[1]
+    VMOV    V12.S[2], V6.S[2]
+    VMOV    V13.S[2], V6.S[3]
+
+    VREV64  V7.S4, V11.S4
+    VFADD_V(11, 7, 12)
+    VFSUB_V(11, 7, 13)
+    VMOV    V12.S[0], V7.S[0]
+    VMOV    V13.S[0], V7.S[1]
+    VMOV    V12.S[2], V7.S[2]
+    VMOV    V13.S[2], V7.S[3]
+
+    // Store 32 floats back to memory
+    MOVD    a_base+0(FP), R0
+    VST1.P  [V0.S4], 16(R0)
+    VST1.P  [V1.S4], 16(R0)
+    VST1.P  [V2.S4], 16(R0)
+    VST1.P  [V3.S4], 16(R0)
+    VST1.P  [V4.S4], 16(R0)
+    VST1.P  [V5.S4], 16(R0)
+    VST1.P  [V6.S4], 16(R0)
+    VST1.P  [V7.S4], 16(R0)
+    RET
+
+// func vectorButterflyNEONKernel(a, b []float32)
+TEXT ·vectorButterflyNEONKernel(SB), NOSPLIT, $0-48
+    MOVD    a_base+0(FP), R0
+    MOVD    b_base+24(FP), R1
+    
+    // Individual loads
+    VLD1    (R0), [V0.S4]
+    VLD1    (R1), [V1.S4]
+    
+    VORR    V0.B16, V0.B16, V2.B16
+    VFADD_V(1, 0, 0)
+    VFSUB_V(1, 2, 1)
+    
+    VST1    [V0.S4], (R0)
+    VST1    [V1.S4], (R1)
+    RET
+    RET

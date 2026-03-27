@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"math/rand"
 	"os"
 	"strings"
@@ -46,6 +47,10 @@ func run() error {
 	peerList := strings.Split(*peers, ",")
 	if len(peerList) == 0 || (len(peerList) == 1 && peerList[0] == "") {
 		return fmt.Errorf("no peers specified: use -peers flag to specify at least one peer address (e.g., 127.0.0.1:3000)")
+	}
+
+	if *dim > math.MaxInt32 || *dim < 1 {
+		return fmt.Errorf("invalid dimension: %d (must be between 1 and %d)", *dim, math.MaxInt32)
 	}
 
 	fmt.Printf("Starting benchmark:\n")
@@ -123,7 +128,7 @@ func runIngest(ctx context.Context, c *client.SmartClient) error {
 	schema := arrow.NewSchema(
 		[]arrow.Field{
 			{Name: "id", Type: arrow.BinaryTypes.String},
-			{Name: "embedding", Type: arrow.FixedSizeListOf(int32(*dim), arrow.PrimitiveTypes.Float32)},
+			{Name: "embedding", Type: arrow.FixedSizeListOf(int32(*dim), arrow.PrimitiveTypes.Float32)}, //nosec G115
 		},
 		nil,
 	)
@@ -141,7 +146,7 @@ func runIngest(ctx context.Context, c *client.SmartClient) error {
 		idBuilder.Append(uuid.New().String())
 		vecBuilder.Append(true)
 		for j := 0; j < *dim; j++ {
-			valBuilder.Append(rand.Float32())
+			valBuilder.Append(rand.Float32()) //nosec G404
 		}
 	}
 
@@ -174,7 +179,7 @@ func runSearch(ctx context.Context, c *client.SmartClient) error {
 	// Generate random query vector
 	queryVec := make([]float32, *dim)
 	for i := 0; i < *dim; i++ {
-		queryVec[i] = rand.Float32()
+		queryVec[i] = rand.Float32() //nosec G404
 	}
 
 	req := map[string]any{

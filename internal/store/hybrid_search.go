@@ -51,7 +51,10 @@ func SearchHybrid(ctx context.Context, s *VectorStore, name string, queryVec []f
 	}
 
 	ds.dataMu.RLock()
-	defer ds.dataMu.RUnlock()
+	index := ds.Index
+	bm25 := ds.BM25Index
+	bm25Arena := ds.BM25ArenaIndex
+	ds.dataMu.RUnlock()
 
 	var denseResults []SearchResult
 	var sparseResults []SearchResult
@@ -62,8 +65,8 @@ func SearchHybrid(ctx context.Context, s *VectorStore, name string, queryVec []f
 	go func() {
 		defer wg.Done()
 		if alpha > 0 && len(queryVec) > 0 {
-			if ds.Index != nil {
-				denseResults, denseErr = ds.Index.SearchVectors(ctx, queryVec, k*2, nil, SearchOptions{})
+			if index != nil {
+				denseResults, denseErr = index.SearchVectors(ctx, queryVec, k*2, nil, SearchOptions{})
 				if denseErr != nil {
 					s.logger.Error().Err(denseErr).Msg("Vector search failed in hybrid search")
 					return
@@ -79,12 +82,12 @@ func SearchHybrid(ctx context.Context, s *VectorStore, name string, queryVec []f
 		if alpha < 1.0 && textQuery != "" {
 			bm25Start := time.Now()
 
-			if ds.BM25ArenaIndex != nil {
-				sparseResults = searchBM25Arena(ds.BM25ArenaIndex, textQuery, k*2, nil)
+			if bm25Arena != nil {
+				sparseResults = searchBM25Arena(bm25Arena, textQuery, k*2, nil)
 				metrics.HybridSearchKeywordTotal.Inc()
 				metrics.HybridSearchBM25Duration.WithLabelValues(name).Observe(time.Since(bm25Start).Seconds())
-			} else if ds.BM25Index != nil {
-				sparseResults = ds.BM25Index.SearchBM25(textQuery, k*2, nil)
+			} else if bm25 != nil {
+				sparseResults = bm25.SearchBM25(textQuery, k*2, nil)
 				metrics.HybridSearchKeywordTotal.Inc()
 				metrics.HybridSearchBM25Duration.WithLabelValues(name).Observe(time.Since(bm25Start).Seconds())
 			}
@@ -112,15 +115,13 @@ func SearchHybrid(ctx context.Context, s *VectorStore, name string, queryVec []f
 		finalResults = ReciprocalRankFusion(denseResults, sparseResults, rrfK, k)
 	}
 
-	// 4. Graph Re-ranking (GraphRAG)
+	// 4. Graph Re-ranking (GraphRAG) - Re-acquire RLock for post-processing
+	ds.dataMu.RLock()
 	if graphAlpha > 0 && ds.Graph != nil {
 		if graphDepth <= 0 {
 			graphDepth = 2 // Default hop depth
 		}
 		// Rerank using graph topology
-		// We use the current finalResults as seeds
-		// Note: RankWithGraph returns expanded set, we might want to trim back to k or allow expansion
-		// Usually RAG wants context, so expansion is good. But we should probably limit result size eventually.
 		ranked := ds.Graph.RankWithGraph(finalResults, graphAlpha, graphDepth)
 		if len(ranked) > 0 {
 			finalResults = ranked
@@ -129,6 +130,7 @@ func SearchHybrid(ctx context.Context, s *VectorStore, name string, queryVec []f
 
 	// Map internal IDs to user IDs (Phase 14 integration)
 	resolved := s.mapInternalToUserIDsLocked(ds, finalResults)
+	ds.dataMu.RUnlock()
 	if len(resolved) > k {
 		resolved = resolved[:k]
 	}

@@ -394,12 +394,21 @@ func NewArrowHNSW(dataset *Dataset, config *ArrowHNSWConfig) *ArrowHNSW {
 	}
 	h.config.DataType = dt
 
-	// Optimize HNSW Dimension Index Parameters for High Scale primitives
-	// Float32 and Float64 scalar math traversal lengths collapse under standard Graph linking caps
+	// Optimize HNSW Dimension Index Parameters for All Scalar Types at High Scale
+	// All scalar dtypes (Float32, Float64, Int8/16/32, Uint32, Complex64/128, TurboQuant)
+	// suffer HNSW graph connectivity degradation at high dims (>=384) and scale (>=10k).
 	// Gate by dataset size: small datasets (<10k) don't benefit from increased M and suffer
-	// search regression due to nearly-fully-connected graphs (MMax=48 with 1k vectors ≈ fully connected)
+	// search regression due to nearly-fully-connected graphs (MMax=48 with 1k vectors ≈ fully connected).
 	if config.InitialCapacity >= 10000 && config.Dims >= 384 &&
-		(dt == types.VectorTypeFloat32 || dt == types.VectorTypeFloat64) {
+		(dt == types.VectorTypeFloat32 ||
+			dt == types.VectorTypeFloat64 ||
+			dt == types.VectorTypeInt8 ||
+			dt == types.VectorTypeInt16 ||
+			dt == types.VectorTypeInt32 ||
+			dt == types.VectorTypeUint32 ||
+			dt == types.VectorTypeComplex64 ||
+			dt == types.VectorTypeComplex128 ||
+			dt == types.VectorTypeTQ) {
 		if h.m < 24 {
 			h.m = 24
 		}

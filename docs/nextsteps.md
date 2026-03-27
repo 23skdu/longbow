@@ -12,7 +12,10 @@
 | Dimension scaling | turboquant/float32 128→384 | ✅ DONE | Blocked processing for 384 dims |
 | P50 latency cliff | turboquant @ dim=384/5k | ✅ DONE | Cached rotated query in search context |
 | Metal GPU Stability| High-load sustained benchmarks | ✅ DONE | Resource limits and CPU fallback |
-| TurboQuant ARM64 | NEON L2 Squared distance | ✅ DONE | Optimized distance kernels for Pi |
+| TurboQuant ARM64 | NEON L2 and FWHT | ✅ DONE | Full NEON optimized rotation |
+| Zero-Copy Hot Paths| Filter bitset caching | ✅ DONE | Zero-copy filter bitset reuse |
+| IPC Reliability | Nil/Empty record handling | ✅ DONE | Integration tests for edge cases |
+| Concurrency Safety| Search/Ingestion race fixes | ✅ DONE | Fixed SearchHybrid deadlock and races |
 
 ---
 
@@ -39,28 +42,13 @@
 
 ### 2. Medium Priority
 
-**a. Zero-Copy Verify**
-
-- Some paths still copy: `Clone()`, `CloneForSnapshot()`
-- Recommendation: Audit hot paths for unnecessary copies
-
-**b. IPC Panic Fix (Already Applied)**
-
-- Fixed: `store_query.go` now guards against nil/empty records
-- Recommendation: Add integration test for edge cases
-
-**c. Race Condition Testing**
-
-- Short race test timed out; full test takes >3 minutes
-- Recommendation: Add targeted race tests for search hot paths
-
-### 3. Lower Priority
+### 2. Medium Priority
 
 **a. gosec Issues**
 
 - 493 total issues (mostly G104: unhandled errors)
 - Low severity - mostly test/benchmark code
-- Recommendation: Add error handling in benchmark tools
+- Recommendation: Continue systematic error handling in tools; fixed G104/G115/G404 in bench-tool.
 
 **b. Documentation**
 
@@ -70,8 +58,8 @@
 
 **c. Full ARM64 NEON for TurboQuant**
 
-- Current: L2 squared distance is optimized; FWHT uses generic fallback.
-- Recommendation: Resolve Go assembler instruction issues for vector FADD/FSUB to enable full NEON rotation.
+- ✅ DONE: Optimized distance kernels and Fast Walsh-Hadamard Transform (FWHT) for ARM64.
+- Resolved Go assembler instruction issues for vector FADD/FSUB.
 
 ---
 

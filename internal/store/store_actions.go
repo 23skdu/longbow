@@ -831,8 +831,10 @@ func (s *VectorStore) flushPutBatch(ctx context.Context, ds *Dataset, batch []ar
 	return nil
 }
 
-// StoreRecordBatch stores a batch of records in a dataset
 func (s *VectorStore) StoreRecordBatch(ctx context.Context, name string, rec arrow.RecordBatch) error {
+	if rec == nil {
+		return errors.New("nil record batch")
+	}
 	ts := time.Now().UnixNano()
 
 	ds, _ := s.getOrCreateDataset(name, func() *Dataset {
@@ -1063,14 +1065,20 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 	ds.BatchNodes = append(ds.BatchNodes, currNode)
 
 	metrics.DatasetLockWaitDurationSeconds.WithLabelValues("put").Observe(time.Since(dsLockStart).Seconds())
+	
+	// Update Primary Index and LWW/Merkle inside the main lock to prevent races
+	// between concurrent ingestion workers.
+	ds.UpdatePrimaryIndexAsync(batchIdx, idMap)
+	s.updateLWWAndMerkle(ds, rec, ts)
+
+	// Compaction trigger check inside lock
+	if s.compactionWorker != nil && len(ds.Records) >= s.compactionConfig.MinBatchesToCompact {
+		s.compactionWorker.TriggerCompaction()
+	}
 
 	ds.dataMu.Unlock()
 
-	// Update Primary Index outside the main lock to reduce contention
-	// PrimaryIndex updates are serialized through a dedicated mutex in UpdatePrimaryIndexAsync
-	ds.UpdatePrimaryIndexAsync(batchIdx, idMap)
-
-	// Batch append to DiskStore outside main dataset lock
+	// Batch append to DiskStore outside main dataset lock to avoid blocking other workers
 	if len(diskVecs) > 0 {
 		if _, err := ds.DiskStore.BatchAppend(diskVecs); err != nil {
 			s.logger.Error().Err(err).Msg("Failed to batch append to DiskStore")
@@ -1078,9 +1086,6 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 			metrics.DiskStoreWriteBytesTotal.WithLabelValues(name).Add(float64(len(diskVecs) * ds.DiskStore.dim * 4))
 		}
 	}
-
-	// Update LWW/Merkle and Queue Indexing
-	s.updateLWWAndMerkle(ds, rec, ts)
 
 	// Dispatch batch-level indexing job asynchronously to avoid blocking DoPut
 	rec.Retain() // IndexJob holds ref
@@ -1091,26 +1096,13 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 		CreatedAt:   time.Now(),
 	}
 
-	// Try non-blocking send first
 	if !s.indexQueue.Send(job) {
-		// Queue full: dispatch in goroutine to unblock DoPut latency
-		// Note: This relies on WAL for durability if the process crashes before this goroutine finishes.
 		metrics.IndexJobsOverflowTotal.Inc()
 		s.pendingOverflowJobs.Add(1)
 		go func() {
 			defer s.pendingOverflowJobs.Add(-1)
-			// Block efficiently until space is available (1s timeout)
 			s.indexQueue.Block(job, 1*time.Second)
 		}()
-	}
-
-	// Inverted index update removed from here - now handled by runIndexWorker asynchronously
-
-	// Compaction trigger check (now integrated into the primary lock section or performed without re-locking)
-	if s.compactionWorker != nil {
-		if len(ds.Records) >= s.compactionConfig.MinBatchesToCompact {
-			s.compactionWorker.TriggerCompaction()
-		}
 	}
 
 	return nil

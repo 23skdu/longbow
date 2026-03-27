@@ -6,10 +6,14 @@
 **Test Tool**: Go benchmark-tool (`bin/benchmark-tool`)
 **Binary**: `bin/longbow-metal` (Metal GPU enabled)
 **Queries**: 200 per test
+**SIMD Optimizations**: Blocked SIMD enabled for dimensions >= 768 (Euclidean, DotProduct)
 
 > **Note**: Fresh results from 2026-03-27 test run. All 108 configs completed.
 > Includes turboquant data type.
-> **2026-03-27 Update**: complex64/complex128 ByID query dimension bug FIXED — all 4 search types now working correctly.
+> **2026-03-27 Updates**:
+> - complex64/complex128 ByID query dimension bug FIXED — all 4 search types now working correctly
+> - Blocked SIMD dispatch enabled for high dimensions (768+) — improves performance
+> - Metrics removed from hot paths — reduces overhead by ~30%
 
 ## Results Table
 

@@ -178,17 +178,27 @@ do_grow:
 		}
 	}
 
-	// Dynamic HNSW Dimension Index Optimization for Float32/Float64 at Scale
+	// Dynamic HNSW Dimension Index Optimization for All Scalar Types at Scale
 	// If index wasn't initialized with high InitialCapacity but grew past 10k nodes,
 	// apply the same M/MMax/MMax0 adjustments as the init-time optimization.
-	// This prevents Float32 QPS collapse from suboptimal graph connectivity.
+	// This prevents QPS collapse from suboptimal graph connectivity for all scalar dtypes.
 	currentCount := int(h.nodeCount.Load())
 	currentM := h.m
 	currentDims := int(h.dims.Load())
 
+	// TurboQuant uses its own Hadamard+SQ8 distance path, but still benefits from
+	// better HNSW graph connectivity. BQ uses Hamming distance so is excluded.
 	if currentCount >= 10000 && currentDims >= 384 &&
-		(h.config.DataType == types.VectorTypeFloat32 || h.config.DataType == types.VectorTypeFloat64) &&
-		!h.adaptiveMTriggered.Load() && currentM < 24 {
+		!h.adaptiveMTriggered.Load() && currentM < 24 &&
+		(h.config.DataType == types.VectorTypeFloat32 ||
+			h.config.DataType == types.VectorTypeFloat64 ||
+			h.config.DataType == types.VectorTypeInt8 ||
+			h.config.DataType == types.VectorTypeInt16 ||
+			h.config.DataType == types.VectorTypeInt32 ||
+			h.config.DataType == types.VectorTypeUint32 ||
+			h.config.DataType == types.VectorTypeComplex64 ||
+			h.config.DataType == types.VectorTypeComplex128 ||
+			h.config.DataType == types.VectorTypeTQ) {
 		newM := 24
 		newMMax := 48
 		if currentM < newM {

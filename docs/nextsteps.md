@@ -1,6 +1,6 @@
 # Longbow Performance Optimization Plan
 
-**Date**: 2026-03-26
+**Date**: 2026-03-27
 **Platform**: Apple M3 Pro (Bahamut), macOS ARM64 + Linux (Ancalagon)
 
 ---
@@ -16,6 +16,7 @@
 | Zero-Copy Hot Paths| Filter bitset caching | ✅ DONE | Zero-copy filter bitset reuse |
 | IPC Reliability | Nil/Empty record handling | ✅ DONE | Integration tests for edge cases |
 | Concurrency Safety| Search/Ingestion race fixes | ✅ DONE | Fixed SearchHybrid deadlock and races |
+| complex64/complex128 ByID | Dimension mismatch @ 10k+ | ✅ DONE | DataType not propagated during ShardedHNSW migration |
 
 ---
 
@@ -39,6 +40,11 @@
 - Fixed 10 HIGH severity issues in core arena/pointer conversions.
 - 181 issues remain (mostly lower severity).
 - Recommendation: Systematically apply the established bounds-check pattern to remaining issues.
+
+**d. Race Condition Testing**
+
+- `go test -race` takes >5 minutes on store package
+- Recommendation: Run focused race tests on critical paths (search, ingestion, sharding) rather than full suite
 
 ### 2. Medium Priority
 
@@ -93,4 +99,49 @@ The following optimizations were implemented in the March 2026 performance sprin
 
 ---
 
-**Last Updated**: 2026-03-26
+---
+
+## complex64/complex128 ByID Fix (2026-03-27)
+
+**Root Cause**: When `AutoShardingIndex` migrates from `ArrowHNSW` to `ShardedHNSW` (at 10k vectors), the `DataType` field was not being propagated. The `ShardedHNSWConfig` lacked a `DataType` field, so shards were created with default `float32` type, causing dimension mismatches.
+
+**Fix Applied**:
+1. Added `DataType` field to `ShardedHNSWConfig` struct
+2. Added logic to propagate DataType in `ShardedHNSW.newShard()`
+3. Added logic in `hnsw_autoshard.migrateToSharded()` to extract DataType from old index
+4. Added query dimension validation in `SearchVectorsWithBitmap` to handle `[]float32` queries against complex64 indices
+
+**Verification** (Metal 25k@128):
+- Dense: 2804 QPS ✓
+- Hybrid: 2352 QPS ✓
+- Filtered: 2452 QPS ✓
+- ByID: 2647 QPS ✓
+
+**Files Changed**:
+- `internal/store/sharded_hnsw.go` — DataType field + propagation
+- `internal/store/hnsw_autoshard.go` — DataType extraction
+- `internal/store/arrow_hnsw.go` — query dimension validation
+- `benchmark_tool/main.go` — query vector generation fix
+
+---
+
+## Zero-Alloc & Zero-Copy Design Review
+
+**Verification (2026-03-27)**: Code review confirms Longbow maintains zero-copy Arrow principles:
+
+| Component | Implementation | Status |
+|-----------|---------------|--------|
+| DoPut | Direct Arrow RecordBatch injection | ✅ Zero-copy |
+| DoGet | Zero-copy record reader | ✅ Zero-copy |
+| HNSW Search | `arrow.Record` reuse, pooled vectors | ✅ Zero-alloc |
+| Filter Bitsets | Cached, reused across searches | ✅ Zero-copy |
+| SIMD Kernels | Stack-allocated buffers | ✅ Zero-alloc |
+| Hybrid Search | Parallel dense/sparse with pool | ✅ Zero-alloc |
+
+**Potential Improvements**:
+- `SearchVectorsWithBitmap`: Consider pooling result structs
+- `AutoShardingIndex`: Pre-allocate shard maps
+
+---
+
+**Last Updated**: 2026-03-27

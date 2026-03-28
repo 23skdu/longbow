@@ -20,8 +20,8 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Go 1.24
-ENV GO_VERSION=1.24.0
+# Install Go 1.26.1
+ENV GO_VERSION=1.26.1
 ENV PATH=/usr/local/go/bin:$PATH
 RUN wget https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz && \
     tar -C /usr/local -xzf go${GO_VERSION}.linux-amd64.tar.gz && \

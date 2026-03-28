@@ -7,13 +7,13 @@ import (
 	"sync"
 	"sync/atomic"
 	"unsafe"
+)
 
 /*
 #include <stdlib.h>
 #include <cuda_runtime.h>
 */
 import "C"
-)
 
 type GPUMemoryPool struct {
 	deviceID         int

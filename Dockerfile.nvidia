@@ -42,9 +42,12 @@ RUN conda tos accept --override-channels --channel https://repo.anaconda.com/pkg
     conda install -y -c conda-forge faiss-gpu && \
     conda clean -ay
 
-# Verify FAISS installation
+# Verify FAISS installation and create pkg-config file
 RUN python -c "import faiss; print(f'FAISS version: {faiss.__version__}')" && \
-    ls -la $CONDA_DIR/lib/libfaiss*
+    ls -la /opt/conda/lib/libfaiss* && \
+    mkdir -p /usr/lib/pkgconfig && \
+    echo "prefix=/opt/conda\nexec_prefix=\${prefix}\nlibdir=\${exec_prefix}/lib\nincludedir=\${prefix}/include\n\nName: faiss\nDescription: FAISS Vector Database Library\nVersion: 1.12.0\nLibs: -L\${libdir} -lfaiss\nCflags: -I\${includedir}" > /usr/lib/pkgconfig/faiss.pc && \
+    if [ ! -f /opt/conda/lib/libfaiss_gpu.so ]; then ln -s /opt/conda/lib/libfaiss.so /opt/conda/lib/libfaiss_gpu.so; fi
 
 # Set up workdir
 WORKDIR /app

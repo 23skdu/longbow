@@ -1,13 +1,17 @@
 #include "faiss_gpu_cpp.h"
-#include <iostream>
-#include <string.h>
-#include <cuda_runtime.h>
-#include <faiss/gpu/GpuResources.h>
 #include <faiss/gpu/StandardGpuResources.h>
 #include <faiss/gpu/GpuIndexFlat.h>
-#include <faiss/gpu/GpuIndexIVF.h>
+#include <faiss/gpu/GpuIndexIVFFlat.h>
 #include <faiss/gpu/GpuIndexIVFPQ.h>
-#include <exception>
+#include <faiss/IndexFlat.h>
+#include <faiss/IndexIVFFlat.h>
+#include <faiss/IndexIVFPQ.h>
+#include <faiss/MetricType.h>
+#include <cuda_runtime.h>
+#include <vector>
+#include <string>
+#include <cstring>
+#include <stdexcept>
 
 static int faiss_last_error_code = 0;
 static char faiss_last_error_msg[1024];
@@ -94,7 +98,6 @@ FaissGpuIndexIVFPtr lb_faiss_gpu_index_ivf_flat_new(FaissGpuResourcesPtr res, in
         faiss::IndexIVFFlat* cpu_index = new faiss::IndexIVFFlat(new faiss::IndexFlatL2(dim), dim, nlist, faiss::METRIC_L2);
         
         faiss::gpu::GpuIndexIVFFlatConfig config;
-        config.device = resources->getDefaultDevice();
         
         // Wrap in GPU index
         faiss::gpu::GpuIndexIVFFlat* index = new faiss::gpu::GpuIndexIVFFlat(resources, cpu_index, config);
@@ -167,7 +170,6 @@ FaissGpuIndexIVFPQPtr lb_faiss_gpu_index_ivf_pq_new(FaissGpuResourcesPtr res, in
         faiss::IndexIVFPQ* cpu_index = new faiss::IndexIVFPQ(new faiss::IndexFlatL2(dim), dim, nlist, m, nbits_per_idx);
         
         faiss::gpu::GpuIndexIVFPQConfig config;
-        config.device = resources->getDefaultDevice();
         
         faiss::gpu::GpuIndexIVFPQ* index = new faiss::gpu::GpuIndexIVFPQ(resources, cpu_index, config);
         return (FaissGpuIndexIVFPQPtr)index;

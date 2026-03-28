@@ -3,6 +3,8 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
+#include <cuda_runtime.h>
 
 #ifdef __cplusplus
 extern "C" {

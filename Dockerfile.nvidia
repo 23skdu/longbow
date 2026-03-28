@@ -66,7 +66,7 @@ ENV CGO_CXXFLAGS="-I/opt/conda/include -I/usr/local/cuda/include"
 ENV CGO_LDFLAGS="-L/opt/conda/lib -L/usr/local/cuda/lib64 -lfaiss -lfaiss_gpu -lcudart -lcublas -lstdc++"
 
 # Build with GPU support
-RUN CC=g++ go build \
+RUN go build \
     -tags gpu \
     -ldflags="-s -w -extldflags '-Wl,-rpath,/opt/conda/lib'" \
     -o longbow ./cmd/longbow

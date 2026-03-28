@@ -1,9 +1,54 @@
 package metrics
 
 import (
+	"os"
+	"strconv"
+	"sync/atomic"
+	"time"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
+
+var (
+	metricsSamplingRate float64 = 0.01 // Default 1%
+	samplingCounter     uint64
+)
+
+func init() {
+	if val := os.Getenv("LONGBOW_METRICS_SAMPLING_RATE"); val != "" {
+		if r, err := strconv.ParseFloat(val, 64); err == nil {
+			metricsSamplingRate = r
+		}
+	}
+}
+
+// RecordSearchBatchMetrics records accumulated metrics for a search batch (query).
+// It uses internal sampling based on LONGBOW_METRICS_SAMPLING_RATE.
+func RecordSearchBatchMetrics(dtype, dimension, operation string, count int, duration time.Duration) {
+	if metricsSamplingRate <= 0 {
+		return
+	}
+
+	// Simple atomic sampling
+	current := atomic.AddUint64(&samplingCounter, 1)
+	if metricsSamplingRate < 1.0 {
+		// e.g. 0.01 rate means 1 in 100
+		threshold := uint64(1.0 / metricsSamplingRate)
+		if threshold == 0 {
+			threshold = 1
+		}
+		if current%threshold != 0 {
+			return
+		}
+	}
+
+	// Record to histograms/counters
+	// Note: We divide by sampling rate if we want to estimate total volume,
+	// but for histograms (latency), we usually just record the samples.
+	SimdKernelDuration.WithLabelValues(dtype, dimension, operation).Observe(duration.Seconds() / float64(count))
+	SimdKernelOperationsTotal.WithLabelValues(dtype, dimension, operation).Add(float64(count))
+}
 
 // =============================================================================
 // SIMD Kernel Performance Metrics

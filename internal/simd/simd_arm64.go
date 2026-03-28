@@ -5,8 +5,6 @@ package simd
 import (
 	"errors"
 	"math"
-
-	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
 // ARM64 NEON implementations
@@ -24,19 +22,16 @@ func dotNEONKernel(a, b []float32) float32
 func l2SquaredNEONKernel(a, b []float32) float32
 
 //go:noescape
-func euclideanF16NEONKernel(a, b []float16.Num) float32 //nolint:unused
-
-//go:noescape
-func dotF16NEONKernel(a, b []float16.Num) float32 //nolint:unused
-
-//go:noescape
-func cosineF16NEONKernel(a, b []float16.Num) float32 //nolint:unused
+func randomSignFlipNEONKernel(a []float32, seed int64)
 
 //go:noescape
 func fastWalshHadamardTransform32NEONKernel(a []float32)
 
 //go:noescape
 func vectorButterflyNEONKernel(a, b []float32)
+
+//go:noescape
+func vectorButterfly16NEONKernel(a, b []float32)
 
 // Public Go wrappers (with error propagation)
 
@@ -197,8 +192,21 @@ func FastWalshHadamardTransform32NEON(a []float32) error {
 	if n > 32 {
 		for h := 32; h < n; h <<= 1 {
 			for i := 0; i < n; i += h << 1 {
-				for j := i; j < i+h; j += 4 {
+				j := i
+				// Process 16-element blocks using optimized kernel
+				for ; j <= i+h-16; j += 16 {
+					vectorButterfly16NEONKernel(a[j:j+16], a[j+h:j+h+16])
+				}
+				// Remaining 4-element blocks
+				for ; j <= i+h-4; j += 4 {
 					vectorButterflyNEONKernel(a[j:j+4], a[j+h:j+h+4])
+				}
+				// Final single elements if any (h is power of 2, so j should be at i+h)
+				for ; j < i+h; j++ {
+					x := a[j]
+					y := a[j+h]
+					a[j] = x + y
+					a[j+h] = x - y
 				}
 			}
 		}
@@ -209,10 +217,15 @@ func FastWalshHadamardTransform32NEON(a []float32) error {
 
 func RandomRotationNEON(a []float32, seed int64) error {
 	// 1. Random sign flip (D)
-	for i := range a {
-		// xorshift-like sign flip
-		if ((uint64(seed+int64(i)) * 6364136223846793005) >> 63) == 1 {
-			a[i] = -a[i]
+	n := len(a)
+	if n >= 16 {
+		randomSignFlipNEONKernel(a, seed)
+	} else {
+		for i := range a {
+			// xorshift-like sign flip
+			if ((uint64(seed+int64(i)) * 6364136223846793005) >> 63) == 1 {
+				a[i] = -a[i]
+			}
 		}
 	}
 

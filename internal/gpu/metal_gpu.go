@@ -267,8 +267,8 @@ type MetalIndex struct {
 	usedMemory int64
 }
 
-// NewMetalIndex creates a new Metal-based GPU index with integrated memory pool
-func NewMetalIndex(cfg GPUConfig) (Index, error) {
+// NewMetalIndexImpl creates a new Metal-based GPU index with integrated memory pool
+func NewMetalIndexImpl(cfg GPUConfig) (Index, error) {
 	if cfg.Dimension <= 0 {
 		return nil, &GPUInitializationError{
 			DeviceID: cfg.DeviceID,

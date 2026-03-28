@@ -1,5 +1,5 @@
 # Dockerfile for io_uring testing and development
-FROM golang:1.26.1-bookworm
+FROM golang:1.25-bookworm
 
 WORKDIR /app
 
@@ -13,7 +13,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY go.mod go.sum ./
-RUN go mod download
+
+# Temporary downgrade of go.mod version to match the 1.25 toolchain
+# This is required to bypass the Go 1.26 syscall.Sockaddr linker issue in iouring-go
+RUN sed -i 's/^go 1.26.1/go 1.25/' go.mod && go mod download
 
 COPY . .
 

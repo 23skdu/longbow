@@ -1,0 +1,27 @@
+# Longbow Release 0.1.7
+
+The v0.1.7 release of Longbow represents a foundational leap in processing performance and scalability. This release introduces comprehensive GPU acceleration, refined resource management, and optimized SIMD kernels, alongside new indexing and search flexibility.
+
+## Major Architectural Changes
+
+* **Comprehensive GPU Abstraction**: Introduced a unified architecture for GPU acceleration, natively supporting Apple Metal (ARM64) and NVIDIA CUDA (AMD64).
+* **GPU Resource Management**: Implemented advanced resource pooling, automated hardware detection, error handling, and circuit breakers for high-availability GPU workloads.
+* **Hybrid Search Pipeline**: Full integration of GPU/CPU hybrid execution for vector similarity searches, optimizing for low-latency distance computations.
+* **New Indexing Capabilities**: Added IVF-PQ (Inverted File Product Quantization) standalone index support and established the BQ (Binary Quantization) search infrastructure.
+* **Dynamic Search Configuration**: Exposed granular per-query parameters including `efSearch` (range 16-4096) and search consistency levels.
+* **Low-Level Optimizations**: Significant restructuring and optimization of AVX2 and NEON SIMD kernels for `int8` and `float32` types, addressing efficiency in tail-loops and high-dimensional dispatch.
+
+## Core Features and Refinements
+
+- Added `Delete` operations support to both `mem_vector_store` and `disk_vector_store`.
+- Enhanced `efSearch` configuration for HNSW from 16 to 4096 per-query.
+- Integrated consistent partitioning and vector search consistency levels.
+- Full performance audit baseline established with a 440-case test matrix.
+
+## Deployment
+
+The 0.1.7 release is available as four specialized Docker images:
+- `ghcr.io/23skdu/longbow:latest` (Core engine)
+- `ghcr.io/23skdu/longbow-gpu:latest` (Apple Metal accelerated)
+- `ghcr.io/23skdu/longbow-nvidia:latest` (NVIDIA CUDA accelerated)
+- `ghcr.io/23skdu/longbow-iouring:latest` (Optimized for io_uring)

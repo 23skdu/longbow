@@ -624,4 +624,110 @@ TEXT ·vectorButterflyNEONKernel(SB), NOSPLIT, $0-48
     VST1    [V0.S4], (R0)
     VST1    [V1.S4], (R1)
     RET
+
+// func vectorButterfly16NEONKernel(a, b []float32)
+TEXT ·vectorButterfly16NEONKernel(SB), NOSPLIT, $0-48
+    MOVD    a_base+0(FP), R0
+    MOVD    b_base+24(FP), R1
+    
+    // Load 16 floats (4x 128-bit registers) from a and b
+    VLD1    (R0), [V0.S4, V1.S4, V2.S4, V3.S4]
+    VLD1    (R1), [V4.S4, V5.S4, V6.S4, V7.S4]
+    
+    // Butterfly operations: a' = a + b, b' = a - b
+    VORR    V0.B16, V0.B16, V16.B16
+    VFADD_V(4, 0, 0)
+    VFSUB_V(4, 16, 4)
+    
+    VORR    V1.B16, V1.B16, V16.B16
+    VFADD_V(5, 1, 1)
+    VFSUB_V(5, 16, 5)
+    
+    VORR    V2.B16, V2.B16, V16.B16
+    VFADD_V(6, 2, 2)
+    VFSUB_V(6, 16, 6)
+    
+    VORR    V3.B16, V3.B16, V16.B16
+    VFADD_V(7, 3, 3)
+    VFSUB_V(7, 16, 7)
+    
+    // Store results back
+    VST1    [V0.S4, V1.S4, V2.S4, V3.S4], (R0)
+    VST1    [V4.S4, V5.S4, V6.S4, V7.S4], (R1)
+    RET
+
+// func randomSignFlipNEONKernel(a []float32, seed int64)
+TEXT ·randomSignFlipNEONKernel(SB), NOSPLIT, $0-32
+    MOVD    a_base+0(FP), R0
+    MOVD    a_len+8(FP), R1
+    MOVD    seed+24(FP), R2
+
+    MOVD    $0x5851f42d4c957f2d, R3 // Constant
+
+    CMP     $4, R1
+    BLT     sign_flip_tail
+
+sign_flip_loop:
+    // Element 0
+    MUL     R3, R2, R8      // h = seed * c
+    LSR     $63, R8, R8     // h >> 63
+    LSL     $31, R8, R8     // mask = (h >> 63) << 31
+    ADD     $1, R2, R5      // next_seed = seed + 1
+
+    // Element 1
+    MUL     R3, R5, R9
+    LSR     $63, R9, R9
+    LSL     $31, R9, R9
+    ADD     $2, R2, R6
+
+    // Element 2
+    MUL     R3, R6, R10
+    LSR     $63, R10, R10
+    LSL     $31, R10, R10
+    ADD     $3, R2, R7
+
+    // Element 3
+    MUL     R3, R7, R11
+    LSR     $63, R11, R11
+    LSL     $31, R11, R11
+
+    // Pack into V1.S4
+    VMOV    R8, V1.S[0]
+    VMOV    R9, V1.S[1]
+    VMOV    R10, V1.S[2]
+    VMOV    R11, V1.S[3]
+
+    // Load 4 floats
+    VLD1    (R0), [V0.S4]
+
+    // XOR with sign mask
+    VEOR    V1.B16, V0.B16, V0.B16
+
+    // Store back and increment pointer
+    VST1.P  [V0.S4], 16(R0)
+
+    ADD     $4, R2          // seed += 4
+    SUB     $4, R1          // len -= 4
+    CMP     $4, R1
+    BGE     sign_flip_loop
+
+sign_flip_tail:
+    CBZ     R1, sign_flip_done
+    
+    // Tail case for 1-3 elements
+    MUL     R3, R2, R8
+    LSR     $63, R8, R8
+    LSL     $31, R8, R8
+    
+    FMOVS.P 4(R0), F0
+    VMOV    R8, V1.S[0]
+    VEOR    V1.B16, V0.B16, V0.B16
+    FMOVS   F0, -4(R0)
+    
+    ADD     $1, R2
+    SUB     $1, R1
+    B       sign_flip_tail
+
+sign_flip_done:
+    RET
     RET

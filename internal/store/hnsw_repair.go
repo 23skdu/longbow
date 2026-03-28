@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"math"
+	"strconv"
 	"sync/atomic"
 	"time"
 
@@ -31,7 +32,7 @@ func (h *ArrowHNSW) RepairTombstones(ctx context.Context, batchSize int) int {
 
 	poolCtx := h.searchPool.Get() // Already returns *ArrowSearchContext if searchPool is ArrowSearchContextPool
 	poolCtx.Reset()
-	defer h.searchPool.Put(poolCtx)
+	defer h.searchPool.PutWithMetrics(poolCtx, h.config.DataType.String(), strconv.Itoa(int(h.dims.Load())))
 
 	// Iterate valid nodes to check THEIR outgoing connections
 	for i := 0; i < maxID; i++ {

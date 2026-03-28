@@ -129,7 +129,7 @@ const char* metalShaderSource =
 "// Parallel reduction for top-k using threadgroups\n"
 "kernel void find_top_k_parallel(\n"
 "    device const float* distances [[buffer(0)]],\n"
-"    device atomic_int* indices [[buffer(1)]],\n"
+"    device int* indices [[buffer(1)]],\n"
 "    device float* topDistances [[buffer(2)]],\n"
 "    constant uint& numVectors [[buffer(3)]],\n"
 "    constant uint& k [[buffer(4)]],\n"
@@ -193,41 +193,21 @@ const char* metalShaderSource =
 "    if (gid == 0) {\n"
 "        uint heapSize = min(k, numVectors);\n"
 "        \n"
-"        // Build max-heap with first k elements\n"
-"        for (uint i = heapSize / 2; i > 0; i--) {\n"
-"            // Heapify down\n"
-"            uint parent = i - 1;\n"
-"            float parentDist = topDistances[parent];\n"
-"            uint parentIdx = indices[parent];\n"
-"            \n"
-"            uint child = 2 * parent + 1;\n"
-"            while (child < heapSize) {\n"
-"                // Find larger child\n"
-"                if (child + 1 < heapSize && topDistances[child + 1] > topDistances[child]) {\n"
-"                    child++;\n"
-"                }\n"
-"                \n"
-"                // Check if heap property satisfied\n"
-"                if (parentDist >= topDistances[child]) break;\n"
-"                \n"
-"                // Swap\n"
-"                topDistances[parent] = topDistances[child];\n"
-"                indices[parent] = indices[child];\n"
-"                \n"
-"                parent = child;\n"
-"                child = 2 * parent + 1;\n"
-"            }\n"
-"            \n"
-"            topDistances[parent] = parentDist;\n"
-"            indices[parent] = parentIdx;\n"
+"        // Initialize heap with default values\n"
+"        for (uint i = 0; i < heapSize; i++) {\n"
+"            topDistances[i] = INFINITY;\n"
+"            indices[i] = -1;\n"
 "        }\n"
 "        \n"
-"        // Heapify rest of elements\n"
-"        for (uint i = heapSize; i < numVectors; i++) {\n"
-"            if (distances[i] < topDistances[0]) {\n"
+"        // Iterate all elements and maintain max-heap\n"
+"        for (uint i = 0; i < numVectors; i++) {\n"
+"            float currentDist = distances[i];\n"
+"            if (currentDist < topDistances[0]) {\n"
 "                // Replace root\n"
-"                topDistances[0] = distances[i];\n"
-"                indices[0] = i;\n"
+"                float parentDist = currentDist;\n"
+"                int parentIdx = i;\n"
+"                topDistances[0] = parentDist;\n"
+"                indices[0] = parentIdx;\n"
 "                \n"
 "                // Heapify down\n"
 "                uint parent = 0;\n"
@@ -559,11 +539,10 @@ int metal_search_optimized(MetalIndexOptimized* handle, float* query, int k, int
                                                                 options:MTLResourceStorageModeShared];
 
         // Initialize indices and distances for heap-based top-k
+        // Initialize indices and distances with default values before GPU processing
         for (int i = 0; i < k; i++) {
-            indicesBuffer.contents + i * sizeof(int);
-            ((int*)indicesBuffer.contents)[i] = i;
-            ((float*)topDistancesBuffer.contents)[i] = (i < handle->vectorCount) ?
-                ((float*)distanceBuffer.contents)[i] : INFINITY;
+            ((int*)indicesBuffer.contents)[i] = -1;
+            ((float*)topDistancesBuffer.contents)[i] = INFINITY;
         }
 
         // Create command buffer

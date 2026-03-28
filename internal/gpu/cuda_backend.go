@@ -8,7 +8,6 @@ package gpu
 import "C"
 import (
 	"fmt"
-	"unsafe"
 )
 
 // CUDADevice represents a CUDA-capable GPU device

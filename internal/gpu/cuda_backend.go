@@ -3,6 +3,7 @@
 package gpu
 
 /*
+#cgo CFLAGS: -DUSE_GPU
 #include "cuda_backend.h"
 */
 import "C"

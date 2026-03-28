@@ -1,4 +1,6 @@
 #include "faiss_gpu_cpp.h"
+
+#ifdef USE_GPU
 #include <faiss/gpu/StandardGpuResources.h>
 #include <faiss/gpu/GpuIndexFlat.h>
 #include <faiss/gpu/GpuIndexIVFFlat.h>
@@ -12,6 +14,8 @@
 #include <string>
 #include <cstring>
 #include <stdexcept>
+
+extern "C" {
 
 static int faiss_last_error_code = 0;
 static char faiss_last_error_msg[1024];
@@ -234,3 +238,4 @@ int lb_faiss_gpu_index_ivf_pq_set_nprobe(FaissGpuIndexIVFPQPtr ptr, int nprobe) 
 }
 
 }
+#endif // USE_GPU

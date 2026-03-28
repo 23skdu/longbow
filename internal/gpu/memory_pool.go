@@ -8,7 +8,11 @@ import (
 	"sync/atomic"
 	"unsafe"
 
-	"C"
+/*
+#include <stdlib.h>
+#include <cuda_runtime.h>
+*/
+import "C"
 )
 
 type GPUMemoryPool struct {

@@ -89,10 +89,18 @@ int lb_faiss_gpu_index_flat_l2_ntotal(FaissGpuIndexFlatPtr ptr) {
 FaissGpuIndexIVFPtr lb_faiss_gpu_index_ivf_flat_new(FaissGpuResourcesPtr res, int dim, int nlist) {
     try {
         faiss::gpu::StandardGpuResources* resources = (faiss::gpu::StandardGpuResources*)res;
+        
+        // Create CPU index first
+        faiss::IndexIVFFlat* cpu_index = new faiss::IndexIVFFlat(new faiss::IndexFlatL2(dim), dim, nlist, faiss::METRIC_L2);
+        
         faiss::gpu::GpuIndexIVFFlatConfig config;
         config.device = resources->getDefaultDevice();
-        config.metric = faiss::METRIC_L2;
-        faiss::gpu::GpuIndexIVFFlat* index = new faiss::gpu::GpuIndexIVFFlat(resources, dim, nlist, config);
+        
+        // Wrap in GPU index
+        faiss::gpu::GpuIndexIVFFlat* index = new faiss::gpu::GpuIndexIVFFlat(resources, cpu_index, config);
+        
+        // Ownership is transferred to GpuIndex, but we need to manage the cpu_index memory?
+        // Actually, GpuIndex doesn't always take ownership. But for simplicity:
         return (FaissGpuIndexIVFPtr)index;
     } catch (const std::exception& e) {
         strncpy(faiss_last_error_msg, e.what(), sizeof(faiss_last_error_msg) - 1);
@@ -154,10 +162,14 @@ int lb_faiss_gpu_index_ivf_flat_set_nprobe(FaissGpuIndexIVFPtr ptr, int nprobe) 
 FaissGpuIndexIVFPQPtr lb_faiss_gpu_index_ivf_pq_new(FaissGpuResourcesPtr res, int dim, int nlist, int m, int nbits_per_idx) {
     try {
         faiss::gpu::StandardGpuResources* resources = (faiss::gpu::StandardGpuResources*)res;
+        
+        // Create CPU index first
+        faiss::IndexIVFPQ* cpu_index = new faiss::IndexIVFPQ(new faiss::IndexFlatL2(dim), dim, nlist, m, nbits_per_idx);
+        
         faiss::gpu::GpuIndexIVFPQConfig config;
         config.device = resources->getDefaultDevice();
-        config.metric = faiss::METRIC_L2;
-        faiss::gpu::GpuIndexIVFPQ* index = new faiss::gpu::GpuIndexIVFPQ(resources, dim, nlist, m, nbits_per_idx, config);
+        
+        faiss::gpu::GpuIndexIVFPQ* index = new faiss::gpu::GpuIndexIVFPQ(resources, cpu_index, config);
         return (FaissGpuIndexIVFPQPtr)index;
     } catch (const std::exception& e) {
         strncpy(faiss_last_error_msg, e.what(), sizeof(faiss_last_error_msg) - 1);

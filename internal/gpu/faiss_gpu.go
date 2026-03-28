@@ -251,7 +251,7 @@ func (idx *FaissGPUIndex) Search(vector []float32, k int) ([]int64, []float32, e
 	return labels, distances, nil
 }
 
-func (idx *FaissGPUIndex) SearchBatch(queries []float32, k int) ([][]int64, [][]float32, error) {
+func (idx *FaissGPUIndex) SearchBatch(vectors [][]float32, k int) ([][]int64, [][]float32, error) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 
@@ -259,9 +259,15 @@ func (idx *FaissGPUIndex) SearchBatch(queries []float32, k int) ([][]int64, [][]
 		return nil, nil, fmt.Errorf("index is closed")
 	}
 
-	n := len(queries) / idx.dim
+	n := len(vectors)
 	if n == 0 {
 		return nil, nil, fmt.Errorf("no queries")
+	}
+
+	// Flatten vectors for FAISS
+	queries := make([]float32, n*idx.dim)
+	for i, v := range vectors {
+		copy(queries[i*idx.dim:(i+1)*idx.dim], v)
 	}
 
 	distances := make([]float32, n*k)

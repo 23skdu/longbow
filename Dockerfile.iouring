@@ -1,5 +1,4 @@
-# Dockerfile for io_uring testing and development
-FROM golang:1.22-bookworm
+FROM golang:1.26.1-bookworm
 
 WORKDIR /app
 
@@ -13,17 +12,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY go.mod go.sum ./
-RUN sed -i 's/^go 1.26.1/go 1.22/' go.mod && go mod download
+RUN go mod download
 
 COPY . .
 
-# Ensure the patch persists after the full copy and tidy up
-RUN sed -i 's/^go 1.26.1/go 1.22/' go.mod && go mod tidy
-
 # Build with io_uring support
+# -checklinkname=0 is required for iouring-go compatibility with Go 1.23+
 RUN CGO_ENABLED=1 go build \
     -tags=linux,iouring \
-    -ldflags="-s -w" \
+    -ldflags="-s -w -checklinkname=0" \
     -o longbow ./cmd/longbow
 
 # Environment for io_uring

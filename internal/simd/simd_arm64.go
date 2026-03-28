@@ -5,6 +5,8 @@ package simd
 import (
 	"errors"
 	"math"
+
+	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
 // ARM64 NEON implementations
@@ -32,6 +34,15 @@ func vectorButterflyNEONKernel(a, b []float32)
 
 //go:noescape
 func vectorButterfly16NEONKernel(a, b []float32)
+
+//go:noescape
+func euclideanF16NEONKernel(a, b []float16.Num) float32
+
+//go:noescape
+func dotF16NEONKernel(a, b []float16.Num) float32
+
+//go:noescape
+func cosineF16NEONKernel(a, b []float16.Num) float32
 
 // Public Go wrappers (with error propagation)
 

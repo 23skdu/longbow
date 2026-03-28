@@ -61,7 +61,7 @@ func NewFaissGPUIndex(cfg GPUConfig) (*FaissGPUIndex, error) {
 }
 
 func (idx *FaissGPUIndex) initialize(cfg GPUConfig) error {
-	idx.resources = C.faiss_gpu_resources_new(C.int(cfg.DeviceID))
+	idx.resources = C.lb_faiss_gpu_resources_new(C.int(cfg.DeviceID))
 	if idx.resources == nil {
 		return fmt.Errorf("failed to initialize GPU resources for device %d", cfg.DeviceID)
 	}
@@ -86,12 +86,12 @@ func (idx *FaissGPUIndex) selectIndexType(cfg GPUConfig) {
 func (idx *FaissGPUIndex) createIndex() error {
 	switch idx.indexType {
 	case FaissIndexFlat:
-		idx.flatIndex = C.faiss_gpu_index_flat_l2_new(idx.resources, C.int(idx.dim))
+		idx.flatIndex = C.lb_faiss_gpu_index_flat_l2_new(idx.resources, C.int(idx.dim))
 		if idx.flatIndex == nil {
 			return fmt.Errorf("failed to create FAISS GPU flat index")
 		}
 	case FaissIndexIVFFlat:
-		idx.ivfFlatIndex = C.faiss_gpu_index_ivf_flat_new(idx.resources, C.int(idx.dim), C.int(idx.nlist))
+		idx.ivfFlatIndex = C.lb_faiss_gpu_index_ivf_flat_new(idx.resources, C.int(idx.dim), C.int(idx.nlist))
 		if idx.ivfFlatIndex == nil {
 			return fmt.Errorf("failed to create FAISS GPU IVF flat index")
 		}
@@ -100,7 +100,7 @@ func (idx *FaissGPUIndex) createIndex() error {
 		if m < 1 {
 			m = 1
 		}
-		idx.ivfPQIndex = C.faiss_gpu_index_ivf_pq_new(idx.resources, C.int(idx.dim), C.int(idx.nlist), C.int(m), 8)
+		idx.ivfPQIndex = C.lb_faiss_gpu_index_ivf_pq_new(idx.resources, C.int(idx.dim), C.int(idx.nlist), C.int(m), 8)
 		if idx.ivfPQIndex == nil {
 			return fmt.Errorf("failed to create FAISS GPU IVF-PQ index")
 		}
@@ -116,7 +116,7 @@ func (idx *FaissGPUIndex) Train(vectors []float32) error {
 
 	switch idx.indexType {
 	case FaissIndexIVFFlat:
-		ret := C.faiss_gpu_index_ivf_flat_train(
+		ret := C.lb_faiss_gpu_index_ivf_flat_train(
 			idx.ivfFlatIndex,
 			n,
 			(*C.float)(unsafe.Pointer(&vectors[0])),
@@ -125,7 +125,7 @@ func (idx *FaissGPUIndex) Train(vectors []float32) error {
 			return fmt.Errorf("failed to train IVF flat index")
 		}
 	case FaissIndexIVFPQ:
-		ret := C.faiss_gpu_index_ivf_pq_train(
+		ret := C.lb_faiss_gpu_index_ivf_pq_train(
 			idx.ivfPQIndex,
 			n,
 			(*C.float)(unsafe.Pointer(&vectors[0])),

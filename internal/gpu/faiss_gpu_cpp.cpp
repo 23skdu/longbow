@@ -44,7 +44,14 @@ void lb_faiss_gpu_resources_free(FaissGpuResourcesPtr ptr) {
 FaissGpuIndexFlatPtr lb_faiss_gpu_index_flat_l2_new(FaissGpuResourcesPtr res, int dim) {
     try {
         faiss::gpu::StandardGpuResources* resources = (faiss::gpu::StandardGpuResources*)res;
-        faiss::gpu::GpuIndexFlatL2* index = new faiss::gpu::GpuIndexFlatL2(*resources, dim);
+        
+        // Create CPU index first
+        faiss::IndexFlatL2* cpu_index = new faiss::IndexFlatL2(dim);
+        
+        faiss::gpu::GpuIndexFlatConfig config;
+        
+        // Wrap in GPU index
+        faiss::gpu::GpuIndexFlatL2* index = new faiss::gpu::GpuIndexFlatL2(resources, cpu_index, config);
         return (FaissGpuIndexFlatPtr)index;
     } catch (const std::exception& e) {
         strncpy(faiss_last_error_msg, e.what(), sizeof(faiss_last_error_msg) - 1);
@@ -101,9 +108,6 @@ FaissGpuIndexIVFPtr lb_faiss_gpu_index_ivf_flat_new(FaissGpuResourcesPtr res, in
         
         // Wrap in GPU index
         faiss::gpu::GpuIndexIVFFlat* index = new faiss::gpu::GpuIndexIVFFlat(resources, cpu_index, config);
-        
-        // Ownership is transferred to GpuIndex, but we need to manage the cpu_index memory?
-        // Actually, GpuIndex doesn't always take ownership. But for simplicity:
         return (FaissGpuIndexIVFPtr)index;
     } catch (const std::exception& e) {
         strncpy(faiss_last_error_msg, e.what(), sizeof(faiss_last_error_msg) - 1);

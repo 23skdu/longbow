@@ -17,8 +17,8 @@ RUN sed -i 's/^go 1.26.1/go 1.25/' go.mod && go mod download
 
 COPY . .
 
-# Ensure the patch persists after the full copy
-RUN sed -i 's/^go 1.26.1/go 1.25/' go.mod
+# Ensure the patch persists after the full copy and tidy up
+RUN sed -i 's/^go 1.26.1/go 1.25/' go.mod && go mod tidy
 
 # Build with io_uring support
 RUN CGO_ENABLED=1 go build \

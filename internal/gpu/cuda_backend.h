@@ -11,11 +11,11 @@ extern "C" {
 #endif
 
 // CUDA initialization functions
-int cudaInitDevice(int device);
-int cudaGetDeviceCountWrap(int* count);
-int cudaGetDevicePropertiesWrap(int device, char* name, size_t nameLen,
+int lb_cuda_init_device(int device);
+int lb_cuda_get_device_count(int* count);
+int lb_cuda_get_device_properties(int device, char* name, size_t nameLen,
                                  int* major, int* minor, size_t* totalMem);
-int cudaGetMemInfo(size_t* free, size_t* total);
+int lb_cuda_get_mem_info(size_t* free, size_t* total);
 
 #ifdef __cplusplus
 }

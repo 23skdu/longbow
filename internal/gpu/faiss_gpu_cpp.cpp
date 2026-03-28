@@ -14,22 +14,22 @@ static char faiss_last_error_msg[1024];
 
 extern "C" {
 
-int faiss_get_last_error_code() {
+int lb_faiss_get_last_error_code() {
     return faiss_last_error_code;
 }
 
-const char* faiss_get_last_error_msg() {
+const char* lb_faiss_get_last_error_msg() {
     return faiss_last_error_msg;
 }
 
 // GPU Resources
-FaissGpuResourcesPtr faiss_gpu_resources_new(int device) {
+FaissGpuResourcesPtr lb_faiss_gpu_resources_new(int device) {
     cudaSetDevice(device);
     faiss::gpu::StandardGpuResources* res = new faiss::gpu::StandardGpuResources();
     return (FaissGpuResourcesPtr)res;
 }
 
-void faiss_gpu_resources_free(FaissGpuResourcesPtr ptr) {
+void lb_faiss_gpu_resources_free(FaissGpuResourcesPtr ptr) {
     if (ptr) {
         faiss::gpu::StandardGpuResources* res = (faiss::gpu::StandardGpuResources*)ptr;
         delete res;
@@ -37,7 +37,7 @@ void faiss_gpu_resources_free(FaissGpuResourcesPtr ptr) {
 }
 
 // Flat L2 Index
-FaissGpuIndexFlatPtr faiss_gpu_index_flat_l2_new(FaissGpuResourcesPtr res, int dim) {
+FaissGpuIndexFlatPtr lb_faiss_gpu_index_flat_l2_new(FaissGpuResourcesPtr res, int dim) {
     try {
         faiss::gpu::StandardGpuResources* resources = (faiss::gpu::StandardGpuResources*)res;
         faiss::gpu::GpuIndexFlatL2* index = new faiss::gpu::GpuIndexFlatL2(*resources, dim);
@@ -49,14 +49,14 @@ FaissGpuIndexFlatPtr faiss_gpu_index_flat_l2_new(FaissGpuResourcesPtr res, int d
     }
 }
 
-void faiss_gpu_index_flat_l2_free(FaissGpuIndexFlatPtr ptr) {
+void lb_faiss_gpu_index_flat_l2_free(FaissGpuIndexFlatPtr ptr) {
     if (ptr) {
         faiss::gpu::GpuIndexFlatL2* index = (faiss::gpu::GpuIndexFlatL2*)ptr;
         delete index;
     }
 }
 
-int faiss_gpu_index_flat_l2_add(FaissGpuIndexFlatPtr ptr, int64_t n, float* vectors) {
+int lb_faiss_gpu_index_flat_l2_add(FaissGpuIndexFlatPtr ptr, int64_t n, float* vectors) {
     try {
         faiss::gpu::GpuIndexFlatL2* index = (faiss::gpu::GpuIndexFlatL2*)ptr;
         index->add(n, vectors);
@@ -68,7 +68,7 @@ int faiss_gpu_index_flat_l2_add(FaissGpuIndexFlatPtr ptr, int64_t n, float* vect
     }
 }
 
-int faiss_gpu_index_flat_l2_search(FaissGpuIndexFlatPtr ptr, int64_t n, float* queries, int k, float* distances, int64_t* labels) {
+int lb_faiss_gpu_index_flat_l2_search(FaissGpuIndexFlatPtr ptr, int64_t n, float* queries, int k, float* distances, int64_t* labels) {
     try {
         faiss::gpu::GpuIndexFlatL2* index = (faiss::gpu::GpuIndexFlatL2*)ptr;
         index->search(n, queries, k, distances, labels);
@@ -80,13 +80,13 @@ int faiss_gpu_index_flat_l2_search(FaissGpuIndexFlatPtr ptr, int64_t n, float* q
     }
 }
 
-int faiss_gpu_index_flat_l2_ntotal(FaissGpuIndexFlatPtr ptr) {
+int lb_faiss_gpu_index_flat_l2_ntotal(FaissGpuIndexFlatPtr ptr) {
     faiss::gpu::GpuIndexFlatL2* index = (faiss::gpu::GpuIndexFlatL2*)ptr;
     return index->ntotal;
 }
 
 // IVF Index
-FaissGpuIndexIVFPtr faiss_gpu_index_ivf_flat_new(FaissGpuResourcesPtr res, int dim, int nlist) {
+FaissGpuIndexIVFPtr lb_faiss_gpu_index_ivf_flat_new(FaissGpuResourcesPtr res, int dim, int nlist) {
     try {
         faiss::gpu::StandardGpuResources* resources = (faiss::gpu::StandardGpuResources*)res;
         faiss::gpu::GpuIndexIVFFlat* index = new faiss::gpu::GpuIndexIVFFlat(*resources, dim, nlist, faiss::METRIC_L2);
@@ -98,14 +98,14 @@ FaissGpuIndexIVFPtr faiss_gpu_index_ivf_flat_new(FaissGpuResourcesPtr res, int d
     }
 }
 
-void faiss_gpu_index_ivf_flat_free(FaissGpuIndexIVFPtr ptr) {
+void lb_faiss_gpu_index_ivf_flat_free(FaissGpuIndexIVFPtr ptr) {
     if (ptr) {
         faiss::gpu::GpuIndexIVFFlat* index = (faiss::gpu::GpuIndexIVFFlat*)ptr;
         delete index;
     }
 }
 
-int faiss_gpu_index_ivf_flat_train(FaissGpuIndexIVFPtr ptr, int64_t n, float* vectors) {
+int lb_faiss_gpu_index_ivf_flat_train(FaissGpuIndexIVFPtr ptr, int64_t n, float* vectors) {
     try {
         faiss::gpu::GpuIndexIVFFlat* index = (faiss::gpu::GpuIndexIVFFlat*)ptr;
         index->train(n, vectors);
@@ -117,7 +117,7 @@ int faiss_gpu_index_ivf_flat_train(FaissGpuIndexIVFPtr ptr, int64_t n, float* ve
     }
 }
 
-int faiss_gpu_index_ivf_flat_add(FaissGpuIndexIVFPtr ptr, int64_t n, float* vectors) {
+int lb_faiss_gpu_index_ivf_flat_add(FaissGpuIndexIVFPtr ptr, int64_t n, float* vectors) {
     try {
         faiss::gpu::GpuIndexIVFFlat* index = (faiss::gpu::GpuIndexIVFFlat*)ptr;
         index->add(n, vectors);
@@ -129,7 +129,7 @@ int faiss_gpu_index_ivf_flat_add(FaissGpuIndexIVFPtr ptr, int64_t n, float* vect
     }
 }
 
-int faiss_gpu_index_ivf_flat_search(FaissGpuIndexIVFPtr ptr, int64_t n, float* queries, int k, float* distances, int64_t* labels) {
+int lb_faiss_gpu_index_ivf_flat_search(FaissGpuIndexIVFPtr ptr, int64_t n, float* queries, int k, float* distances, int64_t* labels) {
     try {
         faiss::gpu::GpuIndexIVFFlat* index = (faiss::gpu::GpuIndexIVFFlat*)ptr;
         index->search(n, queries, k, distances, labels);
@@ -141,14 +141,14 @@ int faiss_gpu_index_ivf_flat_search(FaissGpuIndexIVFPtr ptr, int64_t n, float* q
     }
 }
 
-int faiss_gpu_index_ivf_flat_set_nprobe(FaissGpuIndexIVFPtr ptr, int nprobe) {
+int lb_faiss_gpu_index_ivf_flat_set_nprobe(FaissGpuIndexIVFPtr ptr, int nprobe) {
     faiss::gpu::GpuIndexIVFFlat* index = (faiss::gpu::GpuIndexIVFFlat*)ptr;
     index->setNumProbes(nprobe);
     return 0;
 }
 
 // IVF-PQ Index
-FaissGpuIndexIVFPQPtr faiss_gpu_index_ivf_pq_new(FaissGpuResourcesPtr res, int dim, int nlist, int m, int nbits_per_idx) {
+FaissGpuIndexIVFPQPtr lb_faiss_gpu_index_ivf_pq_new(FaissGpuResourcesPtr res, int dim, int nlist, int m, int nbits_per_idx) {
     try {
         faiss::gpu::StandardGpuResources* resources = (faiss::gpu::StandardGpuResources*)res;
         faiss::gpu::GpuIndexIVFPQ* index = new faiss::gpu::GpuIndexIVFPQ(*resources, dim, nlist, m, nbits_per_idx, faiss::METRIC_L2);
@@ -160,14 +160,14 @@ FaissGpuIndexIVFPQPtr faiss_gpu_index_ivf_pq_new(FaissGpuResourcesPtr res, int d
     }
 }
 
-void faiss_gpu_index_ivf_pq_free(FaissGpuIndexIVFPQPtr ptr) {
+void lb_faiss_gpu_index_ivf_pq_free(FaissGpuIndexIVFPQPtr ptr) {
     if (ptr) {
         faiss::gpu::GpuIndexIVFPQ* index = (faiss::gpu::GpuIndexIVFPQ*)ptr;
         delete index;
     }
 }
 
-int faiss_gpu_index_ivf_pq_train(FaissGpuIndexIVFPQPtr ptr, int64_t n, float* vectors) {
+int lb_faiss_gpu_index_ivf_pq_train(FaissGpuIndexIVFPQPtr ptr, int64_t n, float* vectors) {
     try {
         faiss::gpu::GpuIndexIVFPQ* index = (faiss::gpu::GpuIndexIVFPQ*)ptr;
         index->train(n, vectors);
@@ -179,7 +179,7 @@ int faiss_gpu_index_ivf_pq_train(FaissGpuIndexIVFPQPtr ptr, int64_t n, float* ve
     }
 }
 
-int faiss_gpu_index_ivf_pq_add(FaissGpuIndexIVFPQPtr ptr, int64_t n, float* vectors) {
+int lb_faiss_gpu_index_ivf_pq_add(FaissGpuIndexIVFPQPtr ptr, int64_t n, float* vectors) {
     try {
         faiss::gpu::GpuIndexIVFPQ* index = (faiss::gpu::GpuIndexIVFPQ*)ptr;
         index->add(n, vectors);
@@ -191,7 +191,7 @@ int faiss_gpu_index_ivf_pq_add(FaissGpuIndexIVFPQPtr ptr, int64_t n, float* vect
     }
 }
 
-int faiss_gpu_index_ivf_pq_search(FaissGpuIndexIVFPQPtr ptr, int64_t n, float* queries, int k, float* distances, int64_t* labels) {
+int lb_faiss_gpu_index_ivf_pq_search(FaissGpuIndexIVFPQPtr ptr, int64_t n, float* queries, int k, float* distances, int64_t* labels) {
     try {
         faiss::gpu::GpuIndexIVFPQ* index = (faiss::gpu::GpuIndexIVFPQ*)ptr;
         index->search(n, queries, k, distances, labels);
@@ -203,7 +203,7 @@ int faiss_gpu_index_ivf_pq_search(FaissGpuIndexIVFPQPtr ptr, int64_t n, float* q
     }
 }
 
-int faiss_gpu_index_ivf_pq_set_nprobe(FaissGpuIndexIVFPQPtr ptr, int nprobe) {
+int lb_faiss_gpu_index_ivf_pq_set_nprobe(FaissGpuIndexIVFPQPtr ptr, int nprobe) {
     faiss::gpu::GpuIndexIVFPQ* index = (faiss::gpu::GpuIndexIVFPQ*)ptr;
     index->setNumProbes(nprobe);
     return 0;

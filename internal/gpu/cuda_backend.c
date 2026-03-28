@@ -4,7 +4,7 @@
 #include <string.h>
 
 // CUDA initialization functions
-int cudaInitDevice(int device) {
+int lb_cuda_init_device(int device) {
     cudaError_t err = cudaSetDevice(device);
     if (err != cudaSuccess) {
         return -1;
@@ -18,7 +18,7 @@ int cudaInitDevice(int device) {
     return 0;
 }
 
-int cudaGetDeviceCountWrap(int* count) {
+int lb_cuda_get_device_count(int* count) {
     cudaError_t err = cudaGetDeviceCount(count);
     if (err != cudaSuccess) {
         return -1;
@@ -26,7 +26,7 @@ int cudaGetDeviceCountWrap(int* count) {
     return 0;
 }
 
-int cudaGetDevicePropertiesWrap(int device, char* name, size_t nameLen,
+int lb_cuda_get_device_properties(int device, char* name, size_t nameLen,
                                  int* major, int* minor, size_t* totalMem) {
     struct cudaDeviceProp prop;
     cudaError_t err = cudaGetDeviceProperties(&prop, device);
@@ -43,7 +43,7 @@ int cudaGetDevicePropertiesWrap(int device, char* name, size_t nameLen,
     return 0;
 }
 
-int cudaGetMemInfo(size_t* free, size_t* total) {
+int lb_cuda_get_mem_info(size_t* free, size_t* total) {
     cudaError_t err = cudaMemGetInfo(free, total);
     if (err != cudaSuccess) {
         return -1;

@@ -153,31 +153,31 @@ func (idx *FaissGPUIndex) Add(ids []int64, vectors []float32) error {
 
 	switch idx.indexType {
 	case FaissIndexFlat:
-		ret := C.faiss_gpu_index_flat_l2_add(
+		ret := C.lb_faiss_gpu_index_flat_l2_add(
 			idx.flatIndex,
 			n,
 			(*C.float)(unsafe.Pointer(&vectors[0])),
 		)
 		if ret != 0 {
-			return fmt.Errorf("GPU flat index add failed")
+			return fmt.Errorf("GPU flat index add failed: %s", C.GoString(C.lb_faiss_get_last_error_msg()))
 		}
 	case FaissIndexIVFFlat:
-		ret := C.faiss_gpu_index_ivf_flat_add(
+		ret := C.lb_faiss_gpu_index_ivf_flat_add(
 			idx.ivfFlatIndex,
 			n,
 			(*C.float)(unsafe.Pointer(&vectors[0])),
 		)
 		if ret != 0 {
-			return fmt.Errorf("GPU IVF flat index add failed")
+			return fmt.Errorf("GPU IVF flat index add failed: %s", C.GoString(C.lb_faiss_get_last_error_msg()))
 		}
 	case FaissIndexIVFPQ:
-		ret := C.faiss_gpu_index_ivf_pq_add(
+		ret := C.lb_faiss_gpu_index_ivf_pq_add(
 			idx.ivfPQIndex,
 			n,
 			(*C.float)(unsafe.Pointer(&vectors[0])),
 		)
 		if ret != 0 {
-			return fmt.Errorf("GPU IVF-PQ index add failed")
+			return fmt.Errorf("GPU IVF-PQ index add failed: %s", C.GoString(C.lb_faiss_get_last_error_msg()))
 		}
 	}
 
@@ -204,7 +204,7 @@ func (idx *FaissGPUIndex) Search(vector []float32, k int) ([]int64, []float32, e
 
 	switch idx.indexType {
 	case FaissIndexFlat:
-		ret := C.faiss_gpu_index_flat_l2_search(
+		ret := C.lb_faiss_gpu_index_flat_l2_search(
 			idx.flatIndex,
 			1,
 			(*C.float)(unsafe.Pointer(&vector[0])),
@@ -217,7 +217,7 @@ func (idx *FaissGPUIndex) Search(vector []float32, k int) ([]int64, []float32, e
 			return nil, nil, fmt.Errorf("GPU flat search failed with code %d", ret)
 		}
 	case FaissIndexIVFFlat:
-		ret := C.faiss_gpu_index_ivf_flat_search(
+		ret := C.lb_faiss_gpu_index_ivf_flat_search(
 			idx.ivfFlatIndex,
 			1,
 			(*C.float)(unsafe.Pointer(&vector[0])),
@@ -230,7 +230,7 @@ func (idx *FaissGPUIndex) Search(vector []float32, k int) ([]int64, []float32, e
 			return nil, nil, fmt.Errorf("GPU IVF flat search failed")
 		}
 	case FaissIndexIVFPQ:
-		ret := C.faiss_gpu_index_ivf_pq_search(
+		ret := C.lb_faiss_gpu_index_ivf_pq_search(
 			idx.ivfPQIndex,
 			1,
 			(*C.float)(unsafe.Pointer(&vector[0])),
@@ -271,7 +271,7 @@ func (idx *FaissGPUIndex) SearchBatch(queries []float32, k int) ([][]int64, [][]
 
 	switch idx.indexType {
 	case FaissIndexFlat:
-		ret := C.faiss_gpu_index_flat_l2_search(
+		ret := C.lb_faiss_gpu_index_flat_l2_search(
 			idx.flatIndex,
 			C.int64_t(n),
 			(*C.float)(unsafe.Pointer(&queries[0])),
@@ -305,9 +305,9 @@ func (idx *FaissGPUIndex) SetNumProbes(nprobe int) {
 
 	switch idx.indexType {
 	case FaissIndexIVFFlat:
-		C.faiss_gpu_index_ivf_flat_set_nprobe(idx.ivfFlatIndex, C.int(nprobe))
+		C.lb_faiss_gpu_index_ivf_flat_set_nprobe(idx.ivfFlatIndex, C.int(nprobe))
 	case FaissIndexIVFPQ:
-		C.faiss_gpu_index_ivf_pq_set_nprobe(idx.ivfPQIndex, C.int(nprobe))
+		C.lb_faiss_gpu_index_ivf_pq_set_nprobe(idx.ivfPQIndex, C.int(nprobe))
 	}
 }
 
@@ -320,22 +320,22 @@ func (idx *FaissGPUIndex) Close() error {
 	}
 
 	if idx.flatIndex != nil {
-		C.faiss_gpu_index_flat_l2_free(idx.flatIndex)
+		C.lb_faiss_gpu_index_flat_l2_free(idx.flatIndex)
 		idx.flatIndex = nil
 	}
 
 	if idx.ivfFlatIndex != nil {
-		C.faiss_gpu_index_ivf_flat_free(idx.ivfFlatIndex)
+		C.lb_faiss_gpu_index_ivf_flat_free(idx.ivfFlatIndex)
 		idx.ivfFlatIndex = nil
 	}
 
 	if idx.ivfPQIndex != nil {
-		C.faiss_gpu_index_ivf_pq_free(idx.ivfPQIndex)
+		C.lb_faiss_gpu_index_ivf_pq_free(idx.ivfPQIndex)
 		idx.ivfPQIndex = nil
 	}
 
 	if idx.resources != nil {
-		C.faiss_gpu_resources_free(idx.resources)
+		C.lb_faiss_gpu_resources_free(idx.resources)
 		idx.resources = nil
 	}
 

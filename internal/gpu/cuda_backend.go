@@ -23,7 +23,7 @@ type CUDADevice struct {
 
 // InitializeCUDA initializes the CUDA runtime for the specified device
 func InitializeCUDA(deviceID int) error {
-	ret := C.cudaInitDevice(C.int(deviceID))
+	ret := C.lb_cuda_init_device(C.int(deviceID))
 	if ret != 0 {
 		return fmt.Errorf("failed to initialize CUDA device %d: error code %d", deviceID, ret)
 	}
@@ -33,7 +33,7 @@ func InitializeCUDA(deviceID int) error {
 // GetCUDADeviceCount returns the number of CUDA-capable devices
 func GetCUDADeviceCount() int {
 	var count C.int
-	ret := C.cudaGetDeviceCountWrap(&count)
+	ret := C.lb_cuda_get_device_count(&count)
 	if ret != 0 {
 		return 0
 	}
@@ -46,7 +46,7 @@ func GetCUDADeviceInfo(deviceID int) (*CUDADevice, error) {
 	var major, minor C.int
 	var totalMem C.size_t
 
-	ret := C.cudaGetDevicePropertiesWrap(
+	ret := C.lb_cuda_get_device_properties(
 		C.int(deviceID),
 		&nameBuf[0],
 		C.size_t(len(nameBuf)),
@@ -69,7 +69,7 @@ func GetCUDADeviceInfo(deviceID int) (*CUDADevice, error) {
 
 	// Get current memory info
 	var free, total C.size_t
-	ret = C.cudaGetMemInfo(&free, &total)
+	ret = C.lb_cuda_get_mem_info(&free, &total)
 	if ret == 0 {
 		device.FreeMemory = uint64(free)
 	}
@@ -84,7 +84,7 @@ func GetCUDAMemoryInfo(deviceID int) (free, total uint64, err error) {
 	}
 
 	var cFree, cTotal C.size_t
-	ret := C.cudaGetMemInfo(&cFree, &cTotal)
+	ret := C.lb_cuda_get_mem_info(&cFree, &cTotal)
 	if ret != 0 {
 		return 0, 0, fmt.Errorf("failed to get CUDA memory info")
 	}

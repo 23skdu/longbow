@@ -215,7 +215,7 @@ do_grow:
 	ctx.Reset()
 	defer func() {
 		metrics.HNSWInsertPoolPutTotal.Inc()
-		h.searchPool.Put(ctx)
+		h.searchPool.PutWithMetrics(ctx, h.config.DataType.String(), strconv.Itoa(int(h.dims.Load())))
 	}()
 
 	levelsChunk := data.GetLevelsChunk(cID)

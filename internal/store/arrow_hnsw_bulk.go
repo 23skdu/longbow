@@ -412,7 +412,7 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 				// Thread-local context
 				ctxSearch := h.searchPool.Get()
 				ctxSearch.Reset()
-				defer h.searchPool.Put(ctxSearch)
+				defer h.searchPool.PutWithMetrics(ctxSearch, h.config.DataType.String(), strconv.Itoa(int(h.dims.Load())))
 
 				for _, idx := range indices {
 					node := activeNodes[idx]
@@ -668,7 +668,7 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 
 				ctxSearch := h.searchPool.Get() // Removed type assertion
 				ctxSearch.Reset()
-				defer h.searchPool.Put(ctxSearch)
+				defer h.searchPool.PutWithMetrics(ctxSearch, h.config.DataType.String(), strconv.Itoa(int(h.dims.Load())))
 
 				maxConn := h.mMax
 				if lc == 0 {
@@ -766,7 +766,7 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 
 				ctxSearch := h.searchPool.Get() // Removed type assertion
 				ctxSearch.Reset()
-				defer h.searchPool.Put(ctxSearch)
+				defer h.searchPool.PutWithMetrics(ctxSearch, h.config.DataType.String(), strconv.Itoa(int(h.dims.Load())))
 
 				for _, idx := range indices {
 					node := activeNodes[idx]

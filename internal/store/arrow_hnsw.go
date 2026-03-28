@@ -1028,7 +1028,7 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 		if metrics.HNSWSearchPoolPutTotal != nil {
 			metrics.HNSWSearchPoolPutTotal.Inc()
 		}
-		h.searchPool.Put(searchCtx)
+		h.searchPool.PutWithMetrics(searchCtx, typeLabel, dimsStr)
 	}()
 
 	ep := h.entryPoint.Load()
@@ -1743,6 +1743,11 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 // searchLayer is used by insertion logic
 // searchLayer implements HNSW layer search
 func (h *ArrowHNSW) searchLayer(_ context.Context, computer any, entryPoint uint32, ef, layer int, ctx *ArrowSearchContext, data *types.GraphData, queryVec any) ([]Candidate, error) {
+	start := time.Now()
+	defer func() {
+		ctx.distComputeTime += time.Since(start)
+	}()
+
 	// Initialize Heaps
 	// ctx.candidates (MinHeap) - Nodes to visit
 	// ctx.resultSet (MaxHeap) - Best nodes found so far
@@ -1769,6 +1774,7 @@ func (h *ArrowHNSW) searchLayer(_ context.Context, computer any, entryPoint uint
 	}); ok {
 		distComputer = comp.ComputeSingle
 		var err error
+		ctx.distComputeCount++
 		epDist, err = comp.ComputeSingle(entryPoint)
 		if err != nil {
 			return nil, err
@@ -1908,13 +1914,11 @@ func (h *ArrowHNSW) searchLayer(_ context.Context, computer any, entryPoint uint
 							sum += diff * diff
 						}
 					} else {
-						// Fallback
-						for i, val := range q8 {
-							diff := float32(val) - float32(v8[i])
-							sum += diff * diff
-						}
+						// use optimized SIMD kernel
+						qI8 := *(*[]int8)(unsafe.Pointer(&q8))
+						vI8 := *(*[]int8)(unsafe.Pointer(&v8))
+						return h.distFuncInt8(qI8, vI8)
 					}
-					return float32(math.Sqrt(float64(sum))), nil
 				}
 				return math.MaxFloat32, nil
 			}
@@ -2150,6 +2154,7 @@ func (h *ArrowHNSW) searchLayer(_ context.Context, computer any, entryPoint uint
 				continue
 			}
 
+			ctx.distComputeCount++
 			d, err := distComputer(n)
 			if err != nil {
 				// Warn or continue? Continue.
@@ -2770,13 +2775,12 @@ func (c *int8Computer) ComputeSingle(id uint32) (float32, error) {
 				sum += diff * diff
 			}
 			return float32(math.Sqrt(float64(sum))), nil
+		} else {
+			// use optimized SIMD kernel
+			qI8 := *(*[]int8)(unsafe.Pointer(&c.q))
+			vI8 := *(*[]int8)(unsafe.Pointer(&v8))
+			return c.h.distFuncInt8(qI8, vI8)
 		}
-		var sum float32
-		for i, val := range c.q {
-			diff := float32(val) - float32(v8[i])
-			sum += diff * diff
-		}
-		return float32(math.Sqrt(float64(sum))), nil
 	}
 	return math.MaxFloat32, nil
 }

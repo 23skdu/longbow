@@ -3,7 +3,9 @@ package store
 import (
 	"container/heap"
 	"sync"
+	"time"
 
+	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/RoaringBitmap/roaring/v2"
 )
 
@@ -193,8 +195,10 @@ type ArrowSearchContext struct {
 	// Reset tracking
 	dirty bool
 
-	// Thread-local metrics (optional)
-	operations int
+	// Thread-local metrics
+	operations       int
+	distComputeTime  time.Duration
+	distComputeCount int
 }
 
 // ArrowSearchContextPool manages reusable ArrowSearchContext objects.
@@ -248,7 +252,7 @@ func (p *ArrowSearchContextPool) Get() *ArrowSearchContext {
 	return ctx
 }
 
-// Put returns an ArrowSearchContext to the pool.
+// Put returns an ArrowSearchContext to the pool without recording metrics.
 func (p *ArrowSearchContextPool) Put(ctx *ArrowSearchContext) {
 	if ctx == nil {
 		return
@@ -259,6 +263,20 @@ func (p *ArrowSearchContextPool) Put(ctx *ArrowSearchContext) {
 	p.mu.Unlock()
 
 	p.pool.Put(ctx)
+}
+
+// PutWithMetrics returns an ArrowSearchContext to the pool and records accumulated metrics.
+func (p *ArrowSearchContextPool) PutWithMetrics(ctx *ArrowSearchContext, dtype, dimension string) {
+	if ctx == nil {
+		return
+	}
+
+	// Flush accumulated metrics if present
+	if ctx.distComputeCount > 0 {
+		metrics.RecordSearchBatchMetrics(dtype, dimension, "euclidean", ctx.distComputeCount, ctx.distComputeTime)
+	}
+
+	p.Put(ctx)
 }
 
 // Reset clears the context for reuse.
@@ -277,6 +295,8 @@ func (ctx *ArrowSearchContext) Reset() {
 	ctx.rotatedQueryTQ = ctx.rotatedQueryTQ[:0]
 	ctx.dirty = false
 	ctx.operations = 0
+	ctx.distComputeTime = 0
+	ctx.distComputeCount = 0
 
 	// Clear temp buffer without reallocating
 	for i := range ctx.distsTemp {

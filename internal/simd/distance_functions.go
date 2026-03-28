@@ -130,6 +130,10 @@ func EuclideanDistanceFloat64(a, b []float64) (float32, error) {
 	if len(a) == 0 {
 		return 0, nil
 	}
+	// Use blocked SIMD for high dimensions (768+)
+	if len(a) >= 768 {
+		return EuclideanFloat64Blocked(a, b)
+	}
 	return euclideanDistanceFloat64Impl(a, b)
 }
 
@@ -190,6 +194,10 @@ func DotProductF64(a, b []float64) (float32, error) {
 	if len(a) == 0 {
 		return 0, nil
 	}
+	// Use blocked SIMD for high dimensions (768+)
+	if len(a) >= 768 {
+		return DotProductFloat64Blocked(a, b)
+	}
 	return dotFloat64Unrolled4x(a, b)
 }
 
@@ -201,6 +209,12 @@ func DotProductComplex64(a, b []complex64) (float32, error) {
 	if len(a) == 0 {
 		return 0, nil
 	}
+	// Complex64 at 384 dims = float32 at 768, use blocked
+	if len(a) >= 384 {
+		vfA := unsafe.Slice((*float32)(unsafe.Pointer(&a[0])), len(a)*2)
+		vfB := unsafe.Slice((*float32)(unsafe.Pointer(&b[0])), len(b)*2)
+		return DotProductFloat32Blocked(vfA, vfB)
+	}
 	return dotComplex64Unrolled(a, b)
 }
 
@@ -211,6 +225,12 @@ func DotProductComplex128(a, b []complex128) (float32, error) {
 	}
 	if len(a) == 0 {
 		return 0, nil
+	}
+	// Complex128 at 384 dims = float64 at 768, use blocked
+	if len(a) >= 384 {
+		vfA := unsafe.Slice((*float64)(unsafe.Pointer(&a[0])), len(a)*2)
+		vfB := unsafe.Slice((*float64)(unsafe.Pointer(&b[0])), len(b)*2)
+		return DotProductFloat64Blocked(vfA, vfB)
 	}
 	return dotComplex128Unrolled(a, b)
 }
@@ -259,7 +279,86 @@ func EuclideanDistanceInt8(a, b []int8) (float32, error) {
 	if len(a) == 0 {
 		return 0, nil
 	}
+	// Use blocked SIMD for high dimensions (768+)
+	if len(a) >= 768 {
+		return EuclideanInt8Blocked(a, b)
+	}
 	return euclideanDistanceInt8Impl(a, b)
+}
+
+// DotProductInt8 calculates the dot product of two Int8 vectors.
+func DotProductInt8(a, b []int8) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: vector length mismatch")
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	// Use blocked SIMD for high dimensions (768+)
+	if len(a) >= 768 {
+		return DotProductInt8Blocked(a, b)
+	}
+	return dotInt8Unrolled4x(a, b)
+}
+
+// EuclideanDistanceInt16 calculates Euclidean distance for Int16 vectors.
+func EuclideanDistanceInt16(a, b []int16) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: vector length mismatch")
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	// Use blocked SIMD for high dimensions (768+)
+	if len(a) >= 768 {
+		return EuclideanInt16Blocked(a, b)
+	}
+	return euclideanDistanceInt16Impl(a, b)
+}
+
+// DotProductInt16 calculates the dot product of two Int16 vectors.
+func DotProductInt16(a, b []int16) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: vector length mismatch")
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	// Use blocked SIMD for high dimensions (768+)
+	if len(a) >= 768 {
+		return DotProductInt16Blocked(a, b)
+	}
+	return dotInt16Unrolled4x(a, b)
+}
+
+// EuclideanDistanceInt32 calculates Euclidean distance for Int32 vectors.
+func EuclideanDistanceInt32(a, b []int32) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: vector length mismatch")
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	// Use blocked SIMD for high dimensions (768+)
+	if len(a) >= 768 {
+		return EuclideanInt32Blocked(a, b)
+	}
+	return euclideanInt32Unrolled4x(a, b)
+}
+
+// DotProductInt32 calculates the dot product of two Int32 vectors.
+func DotProductInt32(a, b []int32) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: vector length mismatch")
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	// Use blocked SIMD for high dimensions (768+)
+	if len(a) >= 768 {
+		return DotProductInt32Blocked(a, b)
+	}
+	return dotInt32Unrolled4x(a, b)
 }
 
 // Prefetch hints to the CPU to fetch data into cache for future use.

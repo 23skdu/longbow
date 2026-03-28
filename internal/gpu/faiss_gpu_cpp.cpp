@@ -89,7 +89,10 @@ int lb_faiss_gpu_index_flat_l2_ntotal(FaissGpuIndexFlatPtr ptr) {
 FaissGpuIndexIVFPtr lb_faiss_gpu_index_ivf_flat_new(FaissGpuResourcesPtr res, int dim, int nlist) {
     try {
         faiss::gpu::StandardGpuResources* resources = (faiss::gpu::StandardGpuResources*)res;
-        faiss::gpu::GpuIndexIVFFlat* index = new faiss::gpu::GpuIndexIVFFlat(*resources, dim, nlist, faiss::METRIC_L2);
+        faiss::gpu::GpuIndexIVFFlatConfig config;
+        config.device = resources->getDefaultDevice();
+        config.metric = faiss::METRIC_L2;
+        faiss::gpu::GpuIndexIVFFlat* index = new faiss::gpu::GpuIndexIVFFlat(resources, dim, nlist, config);
         return (FaissGpuIndexIVFPtr)index;
     } catch (const std::exception& e) {
         strncpy(faiss_last_error_msg, e.what(), sizeof(faiss_last_error_msg) - 1);
@@ -143,7 +146,7 @@ int lb_faiss_gpu_index_ivf_flat_search(FaissGpuIndexIVFPtr ptr, int64_t n, float
 
 int lb_faiss_gpu_index_ivf_flat_set_nprobe(FaissGpuIndexIVFPtr ptr, int nprobe) {
     faiss::gpu::GpuIndexIVFFlat* index = (faiss::gpu::GpuIndexIVFFlat*)ptr;
-    index->setNumProbes(nprobe);
+    index->nprobe = nprobe;
     return 0;
 }
 
@@ -151,7 +154,10 @@ int lb_faiss_gpu_index_ivf_flat_set_nprobe(FaissGpuIndexIVFPtr ptr, int nprobe) 
 FaissGpuIndexIVFPQPtr lb_faiss_gpu_index_ivf_pq_new(FaissGpuResourcesPtr res, int dim, int nlist, int m, int nbits_per_idx) {
     try {
         faiss::gpu::StandardGpuResources* resources = (faiss::gpu::StandardGpuResources*)res;
-        faiss::gpu::GpuIndexIVFPQ* index = new faiss::gpu::GpuIndexIVFPQ(*resources, dim, nlist, m, nbits_per_idx, faiss::METRIC_L2);
+        faiss::gpu::GpuIndexIVFPQConfig config;
+        config.device = resources->getDefaultDevice();
+        config.metric = faiss::METRIC_L2;
+        faiss::gpu::GpuIndexIVFPQ* index = new faiss::gpu::GpuIndexIVFPQ(resources, dim, nlist, m, nbits_per_idx, config);
         return (FaissGpuIndexIVFPQPtr)index;
     } catch (const std::exception& e) {
         strncpy(faiss_last_error_msg, e.what(), sizeof(faiss_last_error_msg) - 1);
@@ -205,7 +211,7 @@ int lb_faiss_gpu_index_ivf_pq_search(FaissGpuIndexIVFPQPtr ptr, int64_t n, float
 
 int lb_faiss_gpu_index_ivf_pq_set_nprobe(FaissGpuIndexIVFPQPtr ptr, int nprobe) {
     faiss::gpu::GpuIndexIVFPQ* index = (faiss::gpu::GpuIndexIVFPQ*)ptr;
-    index->setNumProbes(nprobe);
+    index->nprobe = nprobe;
     return 0;
 }
 

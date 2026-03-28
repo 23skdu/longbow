@@ -1,5 +1,5 @@
 # Dockerfile for io_uring testing and development
-FROM golang:1.23.6-bookworm
+FROM golang:1.26.1-bookworm
 
 WORKDIR /app
 

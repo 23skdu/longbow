@@ -108,13 +108,6 @@ func (p *GPUMemPool) GetAvailableMemory() int64 {
 	return p.totalBytes - p.usedBytes
 }
 
-// allocateCUDAMemory allocates CUDA memory (fallback stub)
-// This stub is only used when building without -tags gpu or on non-Linux platforms.
-// For actual CUDA support, build with: go build -tags gpu ./...
-func (p *GPUMemPool) allocateCUDAMemory(_ int64) (unsafe.Pointer, error) {
-	return nil, fmt.Errorf("CUDA support not compiled in. Build with -tags gpu on a Linux system with CUDA installed")
-}
-
 // allocateCPUMemory allocates CPU memory (fallback)
 func (p *GPUMemPool) allocateCPUMemory(size int64) (unsafe.Pointer, error) {
 	ptr := make([]byte, size)
@@ -123,46 +116,7 @@ func (p *GPUMemPool) allocateCPUMemory(size int64) (unsafe.Pointer, error) {
 	return unsafe.Pointer(&ptr[0]), nil
 }
 
-// freeCUDAMemory frees CUDA memory (stub)
-func (p *GPUMemPool) freeCUDAMemory(_ unsafe.Pointer) error {
-	return fmt.Errorf("CUDA memory free not implemented yet")
-}
-
 // freeCPUMemory frees CPU memory
 func (p *GPUMemPool) freeCPUMemory(_ unsafe.Pointer) error {
 	return nil
-}
-
-// cudaMemcpyHostToDevice copies data from host to device in CUDA (stub)
-func (p *GPUMemPool) cudaMemcpyHostToDevice(_, _ unsafe.Pointer, _ int64) error {
-	return fmt.Errorf("CUDA memcpy not implemented yet")
-}
-
-// metalMemcpyHostToDevice copies data from host to device in Metal (stub)
-func (p *GPUMemPool) metalMemcpyHostToDevice(_, _ unsafe.Pointer, _ int64) error {
-	return fmt.Errorf("Metal memcpy not implemented yet")
-}
-
-// cudaMemcpyDeviceToHost copies data from device to host in CUDA (stub)
-func (p *GPUMemPool) cudaMemcpyDeviceToHost(_, _ unsafe.Pointer, _ int64) error {
-	return fmt.Errorf("CUDA memcpy not implemented yet")
-}
-
-func (p *GPUMemPool) metalMemcpyDeviceToHost(_, _ unsafe.Pointer, _ int64) error {
-	return fmt.Errorf("Metal memcpy not implemented yet")
-}
-
-func (p *GPUMemPool) allocateMetalMemoryImpl(_ int64) (unsafe.Pointer, error) {
-	return nil, fmt.Errorf("Metal memory allocation not available")
-}
-
-func (p *GPUMemPool) freeMetalMemoryImpl(_ unsafe.Pointer) {
-}
-
-func (p *GPUMemPool) metalMemcpyHostToDeviceImpl(_, _ unsafe.Pointer, _ int64) error {
-	return fmt.Errorf("Metal memcpy not available")
-}
-
-func (p *GPUMemPool) metalMemcpyDeviceToHostImpl(_, _ unsafe.Pointer, _ int64) error {
-	return fmt.Errorf("Metal memcpy not available")
 }

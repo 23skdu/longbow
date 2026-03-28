@@ -3,6 +3,7 @@
 package gpu
 
 /*
+#cgo CFLAGS: -DUSE_GPU
 #cgo LDFLAGS: -lfaiss -lfaiss_gpu -lcudart -lcublas -lstdc++
 #cgo pkg-config: faiss
 #include "faiss_gpu_cpp.h"

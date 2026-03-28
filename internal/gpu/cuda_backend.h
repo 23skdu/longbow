@@ -4,7 +4,9 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
+#ifdef USE_GPU
 #include <cuda_runtime.h>
+#endif
 
 #ifdef __cplusplus
 extern "C" {

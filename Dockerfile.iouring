@@ -13,12 +13,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
 
 # Temporary downgrade of go.mod version to match the 1.25 toolchain
 # This is required to bypass the Go 1.26 syscall.Sockaddr linker issue in iouring-go
-RUN sed -i 's/^go 1.26.1/go 1.25/' go.mod && go mod download
-
-COPY . .
+# We do this AFTER 'COPY . .' to ensure it isn't overwritten by the original file.
+RUN sed -i 's/^go 1.26.1/go 1.25/' go.mod
 
 # Build with io_uring support
 RUN CGO_ENABLED=1 go build \

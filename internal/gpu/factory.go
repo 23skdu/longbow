@@ -11,7 +11,7 @@ func NewIndexWithBackend(cfg GPUConfig, backend GPUBackend) (Index, error) {
 	case BackendCUDA:
 		return NewIndexWithConfig(cfg)
 	case BackendMetal:
-		return NewMetalIndex(cfg)
+		return NewMetalIndexImpl(cfg)
 	case BackendCPU, BackendOpenCL:
 		return NewCPUIndex(cfg)
 	default:
@@ -31,7 +31,7 @@ func NewIndex(cfg GPUConfig) (Index, error) {
 	case BackendCUDA:
 		return NewIndexWithConfig(cfg)
 	case BackendMetal:
-		return NewMetalIndex(cfg)
+		return NewMetalIndexImpl(cfg)
 	default:
 		return NewCPUIndex(cfg)
 	}

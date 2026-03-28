@@ -1,6 +1,8 @@
 #ifndef FAISS_GPU_CPP_H
 #define FAISS_GPU_CPP_H
 
+#ifdef USE_GPU
+
 #include <stddef.h>
 #include <stdint.h>
 
@@ -48,4 +50,6 @@ int lb_faiss_gpu_index_ivf_pq_set_nprobe(FaissGpuIndexIVFPQPtr ptr, int nprobe);
 }
 #endif
 
-#endif
+#endif // USE_GPU
+
+#endif // FAISS_GPU_CPP_H

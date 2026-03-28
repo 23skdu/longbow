@@ -62,6 +62,7 @@ COPY . .
 # Set CGO flags for FAISS GPU linking
 ENV CGO_ENABLED=1
 ENV CGO_CFLAGS="-I/opt/conda/include -I/usr/local/cuda/include"
+ENV CGO_CXXFLAGS="-I/opt/conda/include -I/usr/local/cuda/include"
 ENV CGO_LDFLAGS="-L/opt/conda/lib -L/usr/local/cuda/lib64 -lfaiss -lfaiss_gpu -lcudart -lcublas -lstdc++"
 
 # Build with GPU support

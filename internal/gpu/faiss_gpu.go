@@ -13,6 +13,7 @@ package gpu
 #include <faiss/gpu/GpuIndexIVF.h>
 #include <faiss/gpu/GpuIndexIVFPQ.h>
 #include <faiss/gpu/StandardGpuResources.h>
+#include <exception>
 
 typedef void* FaissGpuResourcesPtr;
 typedef void* FaissGpuIndexFlatPtr;

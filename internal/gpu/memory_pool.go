@@ -10,8 +10,7 @@ import (
 )
 
 /*
-#include <stdlib.h>
-#include <cuda_runtime.h>
+#include "cuda_backend.h"
 */
 import "C"
 

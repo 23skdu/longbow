@@ -118,7 +118,7 @@ func (idx *FaissGPUIndex) Train(vectors []float32) error {
 	case FaissIndexIVFFlat:
 		ret := C.lb_faiss_gpu_index_ivf_flat_train(
 			idx.ivfFlatIndex,
-			n,
+			C.int64_t(n),
 			(*C.float)(unsafe.Pointer(&vectors[0])),
 		)
 		if ret != 0 {
@@ -127,7 +127,7 @@ func (idx *FaissGPUIndex) Train(vectors []float32) error {
 	case FaissIndexIVFPQ:
 		ret := C.lb_faiss_gpu_index_ivf_pq_train(
 			idx.ivfPQIndex,
-			n,
+			C.int64_t(n),
 			(*C.float)(unsafe.Pointer(&vectors[0])),
 		)
 		if ret != 0 {
@@ -155,7 +155,7 @@ func (idx *FaissGPUIndex) Add(ids []int64, vectors []float32) error {
 	case FaissIndexFlat:
 		ret := C.lb_faiss_gpu_index_flat_l2_add(
 			idx.flatIndex,
-			n,
+			C.int64_t(n),
 			(*C.float)(unsafe.Pointer(&vectors[0])),
 		)
 		if ret != 0 {
@@ -164,7 +164,7 @@ func (idx *FaissGPUIndex) Add(ids []int64, vectors []float32) error {
 	case FaissIndexIVFFlat:
 		ret := C.lb_faiss_gpu_index_ivf_flat_add(
 			idx.ivfFlatIndex,
-			n,
+			C.int64_t(n),
 			(*C.float)(unsafe.Pointer(&vectors[0])),
 		)
 		if ret != 0 {
@@ -173,7 +173,7 @@ func (idx *FaissGPUIndex) Add(ids []int64, vectors []float32) error {
 	case FaissIndexIVFPQ:
 		ret := C.lb_faiss_gpu_index_ivf_pq_add(
 			idx.ivfPQIndex,
-			n,
+			C.int64_t(n),
 			(*C.float)(unsafe.Pointer(&vectors[0])),
 		)
 		if ret != 0 {

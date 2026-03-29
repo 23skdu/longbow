@@ -68,3 +68,70 @@ var (
 		[]string{"dataset", "strategy"},
 	)
 )
+
+// =============================================================================
+// GraphRAG Spreading Activation Metrics (Item 4)
+// =============================================================================
+
+var (
+	// GraphRAGOperationsTotal tracks spreading-activation GraphRAG operations.
+	GraphRAGOperationsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_graph_rag_operations_total",
+			Help: "Total number of GraphRAG spreading-activation operations",
+		},
+		[]string{"dataset", "result"}, // result: success|empty|error
+	)
+
+	// GraphRAGAlphaValue tracks the distribution of alpha (damping) values used.
+	// alpha=0.0 means no damping (all activation decays immediately);
+	// alpha=1.0 means full spreading with no decay.
+	GraphRAGAlphaValue = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_graph_rag_alpha_value",
+			Help:    "Distribution of GraphRAG spreading activation alpha (damping) values",
+			Buckets: []float64{0.0, 0.1, 0.25, 0.5, 0.75, 0.85, 0.9, 0.95, 1.0},
+		},
+		[]string{"dataset"},
+	)
+
+	// GraphRAGDepthValue tracks the distribution of traversal depth values.
+	GraphRAGDepthValue = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_graph_rag_depth_value",
+			Help:    "Distribution of GraphRAG traversal depth values",
+			Buckets: []float64{0, 1, 2, 3, 4, 5, 8, 10},
+		},
+		[]string{"dataset"},
+	)
+
+	// GraphRAGReRankLatencySeconds measures the time for the graph re-ranking phase.
+	GraphRAGReRankLatencySeconds = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_graph_rag_rerank_latency_seconds",
+			Help:    "Latency of the GraphRAG graph re-ranking phase",
+			Buckets: []float64{0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5},
+		},
+		[]string{"dataset"},
+	)
+
+	// GraphRAGSeedNodesTotal tracks the number of ANN seed nodes before graph expansion.
+	GraphRAGSeedNodesTotal = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_graph_rag_seed_nodes_total",
+			Help:    "Number of ANN seed nodes before GraphRAG graph expansion",
+			Buckets: []float64{1, 5, 10, 20, 50, 100, 200, 500},
+		},
+		[]string{"dataset"},
+	)
+
+	// GraphRAGExpandedNodesTotal tracks the total nodes returned after graph expansion.
+	GraphRAGExpandedNodesTotal = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_graph_rag_expanded_nodes_total",
+			Help:    "Number of nodes returned after GraphRAG graph expansion",
+			Buckets: []float64{1, 5, 10, 20, 50, 100, 200, 500, 1000},
+		},
+		[]string{"dataset"},
+	)
+)

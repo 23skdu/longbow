@@ -96,3 +96,90 @@ var (
 		[]string{"queue_name"},
 	)
 )
+
+// =============================================================================
+// EOF Normalisation Metrics (Item 1)
+// =============================================================================
+
+var (
+	// EOFNormalisationTotal counts how often stream-terminal errors are
+	// successfully normalised to nil (expected, healthy stream termination).
+	EOFNormalisationTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_eof_normalisation_total",
+			Help: "Total number of stream EOF normalisations (healthy stream terminations detected)",
+		},
+		[]string{"direction", "protocol"}, // direction: client|server; protocol: arrow|grpc
+	)
+
+	// StreamTerminationErrors counts unexpected stream termination errors
+	// that are NOT normal EOF (e.g. transport resets, timeouts).
+	StreamTerminationErrors = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_stream_termination_errors_total",
+			Help: "Total number of unexpected stream termination errors (non-EOF)",
+		},
+		[]string{"direction", "error_type"}, // error_type: canceled|deadline_exceeded|transport|other
+	)
+)
+
+// =============================================================================
+// Search Consistency Level Metrics (Item 2)
+// =============================================================================
+
+var (
+	// SearchConsistencyLevelTotal counts searches by requested consistency level.
+	SearchConsistencyLevelTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_search_consistency_level_total",
+			Help: "Total number of vector searches by consistency level",
+		},
+		[]string{"dataset", "level"}, // level: eventual|strong
+	)
+
+	// SearchStrongModeLatencySeconds tracks the latency overhead introduced
+	// by strong-consistency mode (ExactK=true + elevated Ef).
+	SearchStrongModeLatencySeconds = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_search_strong_mode_latency_seconds",
+			Help:    "Latency of searches running in strong consistency mode",
+			Buckets: []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0},
+		},
+		[]string{"dataset"},
+	)
+)
+
+// =============================================================================
+// GetNeighbors Metrics (Item 6)
+// =============================================================================
+
+var (
+	// GetNeighborsTotal counts GetNeighbors operations by result outcome.
+	GetNeighborsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_get_neighbors_total",
+			Help: "Total number of GetNeighbors operations",
+		},
+		[]string{"dataset", "index_type", "result"}, // result: success|not_found|not_supported|error
+	)
+
+	// GetNeighborsLatencySeconds tracks the latency of GetNeighbors calls.
+	GetNeighborsLatencySeconds = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_get_neighbors_latency_seconds",
+			Help:    "Latency of GetNeighbors operations",
+			Buckets: []float64{0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1},
+		},
+		[]string{"dataset", "index_type"},
+	)
+
+	// GetNeighborsResultSize tracks the distribution of neighbor set sizes returned.
+	GetNeighborsResultSize = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_get_neighbors_result_size",
+			Help:    "Number of neighbors returned per GetNeighbors call",
+			Buckets: []float64{1, 2, 5, 10, 20, 32, 64, 128},
+		},
+		[]string{"dataset"},
+	)
+)

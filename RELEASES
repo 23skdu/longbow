@@ -1,3 +1,13 @@
+# Longbow Release 0.1.8-rc1
+
+The v0.1.8-rc1 release candidate focuses on high-dimensional vector search optimizations (3072+) and improved stability for multi-host deployments.
+
+## Major Changes
+
+* **Optimized 3072-Dimension Support**: Enhanced SIMD kernels for AVX2 and ARM NEON to handle high-dimensional vectors with minimal tail-loop overhead.
+* **Stable Docker-on-NVIDIA**: Refined the CUDA backend for smoother integration with modern NVIDIA drivers and Docker environments.
+* **Memory Pressure Management**: Improved circuit breakers for high-vector counts, ensuring stable performance up to 18GB/12GB limits.
+
 # Longbow Release 0.1.7
 
 The v0.1.7 release of Longbow represents a foundational leap in processing performance and scalability. This release introduces comprehensive GPU acceleration, refined resource management, and optimized SIMD kernels, alongside new indexing and search flexibility.
@@ -13,15 +23,16 @@ The v0.1.7 release of Longbow represents a foundational leap in processing perfo
 
 ## Core Features and Refinements
 
-- Added `Delete` operations support to both `mem_vector_store` and `disk_vector_store`.
-- Enhanced `efSearch` configuration for HNSW from 16 to 4096 per-query.
-- Integrated consistent partitioning and vector search consistency levels.
-- Full performance audit baseline established with a 440-case test matrix.
+* Added `Delete` operations support to both `mem_vector_store` and `disk_vector_store`.
+* Enhanced `efSearch` configuration for HNSW from 16 to 4096 per-query.
+* Integrated consistent partitioning and vector search consistency levels.
+* Full performance audit baseline established with a 440-case test matrix.
 
 ## Deployment
 
 The 0.1.7 release is available as four specialized Docker images:
-- `ghcr.io/23skdu/longbow:latest` (Core engine)
-- `ghcr.io/23skdu/longbow-gpu:latest` (Apple Metal accelerated)
-- `ghcr.io/23skdu/longbow-nvidia:latest` (NVIDIA CUDA accelerated)
-- `ghcr.io/23skdu/longbow-iouring:latest` (Optimized for io_uring)
+
+* `ghcr.io/23skdu/longbow:latest` (Core engine)
+* `ghcr.io/23skdu/longbow-gpu:latest` (Apple Metal accelerated)
+* `ghcr.io/23skdu/longbow-nvidia:latest` (NVIDIA CUDA accelerated)
+* `ghcr.io/23skdu/longbow-iouring:latest` (Optimized for io_uring)

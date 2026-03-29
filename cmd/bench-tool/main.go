@@ -79,7 +79,7 @@ func main() {
 	switch *dtype {
 	case "int8", "uint8":
 		bytesPerElement = 1
-	case "int16", "uint16":
+	case "int16", "uint16", "float16":
 		bytesPerElement = 2
 	case "int32", "uint32", "float32":
 		bytesPerElement = 4
@@ -404,6 +404,8 @@ func generateRecord(count int, dim int, dtype string) (arrow.Record, *arrow.Sche
 		dt = arrow.PrimitiveTypes.Float32
 	case "float64":
 		dt = arrow.PrimitiveTypes.Float64
+	case "float16":
+		dt = arrow.FixedWidthTypes.Float16
 	case "int32":
 		dt = arrow.PrimitiveTypes.Int32
 	case "int16":
@@ -430,7 +432,7 @@ func generateRecord(count int, dim int, dtype string) (arrow.Record, *arrow.Sche
 
 	listLen := int32(dim)
 	var meta arrow.Metadata
-	if dtype == "complex64" || dtype == "complex128" || dtype == "turboquant" {
+	if dtype == "complex64" || dtype == "complex128" || dtype == "turboquant" || dtype == "float16" {
 		if dtype == "complex64" || dtype == "complex128" {
 			listLen = int32(2 * dim)
 		}

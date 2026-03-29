@@ -60,5 +60,5 @@ perf_summary.md
 .env*
 *.json
 !grafana/**/*.json
-!longbowclientsdk/**/*.json
+!longbowclientsdk/**/*
 !clients/**/*.json

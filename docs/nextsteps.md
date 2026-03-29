@@ -12,7 +12,7 @@ This pipeline outlines the active stabilization work to finalize the v0.1.8-rc1 
 ### Final Implementation Plan
 
 1. **Environment Sanitization**: Clear all stale binaries (`bin/`), historical telemetry (`data/perf_logs/`), and transient data (`data/bench/`, `wal/`, `snapshots/`) to ensure a fresh audit state.
-2. **HNSW Engine Stabilization**: 
+2. **HNSW Engine Stabilization**:
    - [x] Fix HNSW Search Layer state leakage (visited bitset/heap resets) — **DONE**.
    - [x] Restore robust and type-safe parallel vector extraction for diverse Arrow types (Float64, etc.) — **DONE**.
    - [x] Fix HNSW search traversal filtering logic to prevent 0-result regressions — **DONE**.
@@ -26,11 +26,11 @@ This pipeline outlines the active stabilization work to finalize the v0.1.8-rc1 
 - `[x]` Fix vector extraction for Parallel Search (Float64 conversion)
 - `[x]` Verify resolution with `internal/store/index_datatype_test.go`
 - `[x]` Fix `store_actions.go` linter issues (dataType switch)
-- `[/]` Reproduce and Fix 4-digit dimension mismatch (TurboQuant)
-- `[/]` Performance Benchmark Matrix Audit (CPU & Metal)
-- `[ ]` Update `docs/performance.md` and `docs/performance_metal.md`
-- `[ ]` Finalize Release: Commit and Push to remote
-- `[ ]` Docker Release: Build `0.1.8-rc1` and `latest` tags, Push to ghcr.io
+- `[x]` Reproduce and Fix 1536 dimension mismatch (TurboQuant)
+- `[x]` Performance Benchmark Matrix Audit (CPU & Metal)
+- `[x]` Update `docs/performance.md` and `docs/performance_metal.md`
+- `[x]` Finalize Release: Commit and Push to remote
+- `[x]` Docker Release: Build `0.1.8-rc1` and `latest` tags, Push to ghcr.io
 
 ---
 
@@ -38,15 +38,17 @@ This pipeline outlines the active stabilization work to finalize the v0.1.8-rc1 
 
 ### 1. Recommendations for Longbow
 
-**Problem**: While Longbow provides high-performance vector search, it currently lacks a built-in recommendation engine (e.g., "users who liked this also liked...") that leverages graph connectivity and vector similarity in a unified way. 
+**Problem**: While Longbow provides high-performance vector search, it currently lacks a built-in recommendation engine (e.g., "users who liked this also liked...") that leverages graph connectivity and vector similarity in a unified way.
 
 **Plan**:
+
 - Implement a `Recommend` API action that takes a seed `VectorID` and returns K candidates.
 - Use a hybrid scoring mechanism: `α * similarity(q, v) + (1-α) * graph_connectivity(q, v)`.
 - Support multi-seed recommendations (centroid-based query).
 - Document recommendations strategy in `docs/recommendations.md`.
 
 **Unit Tests** (`internal/store/recommend_test.go`):
+
 ```go
 // TestRecommend_SingleSeed — verify result set contains neighbors and similar vectors
 // TestRecommend_MultiSeed — verify results are near the centroid of seeds
@@ -55,6 +57,7 @@ This pipeline outlines the active stabilization work to finalize the v0.1.8-rc1 
 ```
 
 **Prometheus Metrics** (add to `internal/metrics/search_metrics.go`):
+
 ```go
 // RecommendationsTotal — counter{dataset, result="success|error"}
 // RecommendationsLatencySeconds — histogram{dataset}
@@ -70,6 +73,7 @@ check for the string `"EOF"`. This mismatch causes silent stream termination fai
 boundaries (Python Archer client, benchmark tool, etc.).
 
 **Plan**:
+
 - In the Arrow Flight `DoGet`/`DoPut`/`DoExchange` server handlers, normalize stream-end signals:
   - Replace bare `io.EOF` propagation with a canonical wrapper in `internal/flight/`.
   - Add a helper `IsStreamEOF(err error) bool` that checks both `io.EOF` and `errors.Is(err, io.EOF)`.
@@ -77,6 +81,7 @@ boundaries (Python Archer client, benchmark tool, etc.).
 - Update protocol documentation in `docs/arrow-protocol.md`.
 
 **Unit Tests** (`internal/flight/eof_test.go`):
+
 ```go
 // TestIsStreamEOF_GoSentinel — verify io.EOF → true
 // TestIsStreamEOF_WrappedEOF — verify fmt.Errorf("context: %w", io.EOF) → true
@@ -87,6 +92,7 @@ boundaries (Python Archer client, benchmark tool, etc.).
 ```
 
 **Prometheus Metrics** (add to `internal/metrics/search_metrics.go`):
+
 ```go
 // EOFNormalisationTotal — counter{direction="client|server", protocol="arrow|grpc"}
 // StreamTerminationErrors — counter{direction, error_type}
@@ -100,25 +106,29 @@ boundaries (Python Archer client, benchmark tool, etc.).
 for clients to request `eventual` (fast, lower ef) vs `strong` (slower, higher ef, more accurate) search.
 
 **Plan**:
+
 - Add `Consistency` field to `SearchOptions` (in `internal/store/vector_types.go`):
-  ```go
-  type SearchOptions struct {
-      IncludeVectors bool
-      VectorFormat   VectorDataType
-      Filter         any
-      FilterExpr     FilterExpr
-      ExactK         bool
-      Ef             int
-      // NEW
-      Consistency string // "eventual" | "strong" | "" (default = eventual)
-  }
-  ```
+
+```go
+type SearchOptions struct {
+    IncludeVectors bool
+    VectorFormat   VectorDataType
+    Filter         any
+    FilterExpr     FilterExpr
+    ExactK         bool
+    Ef             int
+    // NEW
+    Consistency string // "eventual" | "strong" | "" (default = eventual)
+}
+```
+
 - In `VectorSearchRequest` proto/Arrow exchange, surface as `consistency` field.
 - In `internal/store/vector_search_exchange.go`, map `consistency == "strong"` → `ExactK = true`
   and auto-promote `Ef` to `max(Ef, 2*K)`.
 - Document in `docs/vectorsearch.md` with benchmark tradeoff table.
 
 **Unit Tests** (`internal/store/consistency_test.go`):
+
 ```go
 // TestConsistencyLevelEventual — search with consistency="eventual", assert Ef unchanged
 // TestConsistencyLevelStrong — search with consistency="strong", assert ExactK=true & Ef >= 2*K
@@ -129,6 +139,7 @@ for clients to request `eventual` (fast, lower ef) vs `strong` (slower, higher e
 ```
 
 **Prometheus Metrics** (add to `internal/metrics/search_metrics.go`):
+
 ```go
 // SearchConsistencyLevelTotal — counter{dataset, level="eventual|strong"}
 // SearchStrongModeLatencySeconds — histogram{dataset} (latency overhead of strong mode)
@@ -143,17 +154,21 @@ with incorrect or default dimensions. There is no auto-detection, and the error 
 actionable detail.
 
 **Plan**:
+
 - Detect dimension from the **first vector** ingested if the dataset was created with `dimension=0`
   (or a sentinel like `-1`). Lock the dimension after first insert.
 - Enrich the existing error path with the dataset name, expected dimension, and received dimension:
-  ```
-  dataset "embeddings": dimension mismatch — expected 768, received 4 (hint: re-create
-  the dataset with CreateDataset(dimension=4) or verify embedding model output dimension)
-  ```
+
+```text
+dataset "embeddings": dimension mismatch — expected 768, received 4 (hint: re-create
+the dataset with CreateDataset(dimension=4) or verify embedding model output dimension)
+```
+
 - Add `DimensionAutoDetected bool` to dataset metadata (stored in WAL header).
 - Gate: once dimension is locked, reject inserts with a clear sentinel `ErrDimensionLocked`.
 
 **Unit Tests** (`internal/store/dimension_test.go`):
+
 ```go
 // TestAutoDimension_FirstVectorSets — insert first vec of dim 128 into dim-0 dataset → locked
 // TestAutoDimension_SecondVectorMatchesDim — second vec dimension matches → ok
@@ -164,6 +179,7 @@ actionable detail.
 ```
 
 **Prometheus Metrics** (add to `internal/metrics/storage_metrics.go`):
+
 ```go
 // DatasetDimensionAutoDetectTotal — counter{dataset, result="success|conflict"}
 // DatasetDimensionMismatchTotal — counter{dataset}
@@ -178,6 +194,7 @@ activation graph traversal for GraphRAG workloads. Neither the algorithm nor the
 documented, and there are no metrics for graph re-ranking performance.
 
 **Plan**:
+
 - Create `docs/graphrag_internals.md` covering:
   - The spreading activation algorithm: seed nodes → BFS/beam expansion with alpha decay.
   - `GraphAlpha` (damping coefficient 0.0–1.0) and `GraphDepth` (max BFS hops) semantics.
@@ -187,6 +204,7 @@ documented, and there are no metrics for graph re-ranking performance.
 - Reference existing `internal/metrics/graph_navigation_metrics.go` and extend it.
 
 **Unit Tests** (`internal/store/graphrag_spreading_test.go`):
+
 ```go
 // TestGraphAlpha_ZeroCollapsesToSingleHop — alpha=0.0 → only direct neighbors returned
 // TestGraphAlpha_OneFullSpread — alpha=1.0 → full depth traversal, no damping
@@ -198,6 +216,7 @@ documented, and there are no metrics for graph re-ranking performance.
 ```
 
 **Prometheus Metrics** (extend `internal/metrics/graph_navigation_metrics.go`):
+
 ```go
 // GraphRAGOperationsTotal — counter{dataset, result="success|empty|error"}
 // GraphRAGAlphaValue — histogram{dataset} (distribution of alpha values used)
@@ -217,10 +236,13 @@ Clients have no explicit way to declare `vector_type = "turboquant"` at the API 
 cannot opt into the more storage-efficient and faster TurboQuant index path.
 
 **Plan**:
+
 - Add `VectorType` to `VectorSearchRequest` (Arrow exchange metadata and REST/gRPC stubs):
-  ```
-  vector_type: "float32" | "turboquant" | "int8" | "binary"
-  ```
+
+```text
+vector_type: "float32" | "turboquant" | "int8" | "binary"
+```
+
 - Create `docs/turboquant_storage.md` documenting:
   - How to create a TurboQuant-indexed dataset: `CreateDataset(vector_type="turboquant", dimension=768)`
   - Wire format: packed `uint8` buffer with TQ header.
@@ -229,6 +251,7 @@ cannot opt into the more storage-efficient and faster TurboQuant index path.
   aliased from `types` package (verify against `internal/store/types/`).
 
 **Unit Tests** (`internal/store/turboquant_storage_test.go`):
+
 ```go
 // TestCreateDataset_VectorTypeTurboQuant — create dataset with vector_type=turboquant → ok
 // TestInsert_TurboQuantVector — insert pre-encoded TQ vector → stored without re-encoding
@@ -240,6 +263,7 @@ cannot opt into the more storage-efficient and faster TurboQuant index path.
 ```
 
 **Prometheus Metrics** (add to `internal/metrics/storage_metrics.go`):
+
 ```go
 // DatasetVectorTypeTotal — gauge{dataset, vector_type} (tracks type distribution at creation)
 // TurboQuantEncodingTotal — counter{dataset, direction="client_provided|server_encoded"}
@@ -256,18 +280,22 @@ This is a documented, client-visible action that should either be fully implemen
 structured error.
 
 **Plan**:
+
 - **Option A (Implement)**: Wire `GetNeighbors` through the HNSW index to call
   `GetLayerNeighbors(id, layer=0)`. Return the neighbor IDs and distances as an Arrow record batch.
   - Add `GetNeighbors(ctx, id VectorID, k int) ([]SearchResult, error)` to the `Index` interface
     in `internal/store/pluggable_index.go`.
   - Implement for HNSW, DiskANN, and IVFFlat (returning `ErrNotSupported` for IVFFlat).
 - **Option B (Reject Clearly)**: Return gRPC `codes.Unimplemented` with message:
-  ```
-  GetNeighbors is not yet supported on this index type. Use SearchVectors with a stored vector as query.
-  ```
+
+```text
+GetNeighbors is not yet supported on this index type. Use SearchVectors with a stored vector as query.
+```
+
 - **Recommendation**: Implement Option A for HNSW (complete), Option B with clear message for others.
 
 **Unit Tests** (`internal/store/get_neighbors_test.go`):
+
 ```go
 // TestGetNeighbors_HNSW_ReturnsTrueNeighbors — insert 100 vecs, get neighbors of vec[0] →
 //   result set == HNSW layer-0 neighbor list
@@ -280,6 +308,7 @@ structured error.
 ```
 
 **Prometheus Metrics** (add to `internal/metrics/search_metrics.go`):
+
 ```go
 // GetNeighborsTotal — counter{dataset, index_type, result="success|not_found|not_supported|error"}
 // GetNeighborsLatencySeconds — histogram{dataset, index_type}
@@ -295,6 +324,7 @@ latencies, but lacks observability into **result composition** (dense vs sparse 
 timing** as a separate phase, and **graph re-ranking overhead** when used together with hybrid.
 
 **Plan**:
+
 - Add dense vs sparse result ratio tracking to the RRF merge path.
 - Separate the RRF fusion phase from other merge operations (already started in
   `HybridSearchMergeDuration` — keep that and add finer-grained sub-phase metrics).
@@ -302,6 +332,7 @@ timing** as a separate phase, and **graph re-ranking overhead** when used togeth
 - All new metrics go in `internal/metrics/metrics_hybrid.go` alongside existing hybrid metrics.
 
 **Unit Tests** (`internal/metrics/metrics_hybrid_test.go`):
+
 ```go
 // TestHybridDenseResultRatio_AllDense — 100% dense results → ratio gauge == 1.0
 // TestHybridDenseResultRatio_AllSparse — 100% sparse results → ratio gauge == 0.0
@@ -314,6 +345,7 @@ timing** as a separate phase, and **graph re-ranking overhead** when used togeth
 ```
 
 **Prometheus Metrics** (add to `internal/metrics/metrics_hybrid.go`):
+
 ```go
 // HybridDenseResultRatio — gauge{dataset} (fraction of top-K results from dense ANN)
 // HybridSparseResultRatio — gauge{dataset} (fraction of top-K results from BM25)

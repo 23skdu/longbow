@@ -1,6 +1,7 @@
 //go:build gpu && darwin && arm64
 
-package gpu
+package metal
+import "github.com/23skdu/longbow/internal/gpu/types"
 
 /*
 #cgo CFLAGS: -x objective-c -fobjc-arc
@@ -172,7 +173,7 @@ type MetalHybridIndex struct {
 }
 
 // NewMetalHybridIndex creates a hybrid Metal/CPU index
-func NewMetalHybridIndex(cfg GPUConfig) (Index, error) {
+func NewMetalHybridIndex(cfg types.GPUConfig) (types.Index, error) {
 	handle := C.metal_hybrid_init(C.int(cfg.Dimension))
 	if handle == nil {
 		return nil, fmt.Errorf("failed to initialize hybrid Metal device")
@@ -302,13 +303,13 @@ func (idx *MetalHybridIndex) Close() error {
 	return nil
 }
 
-func (idx *MetalHybridIndex) Backend() GPUBackend {
-	return BackendMetal
+func (idx *MetalHybridIndex) Backend() types.GPUBackend {
+	return types.BackendMetal
 }
 
-func (idx *MetalHybridIndex) GetDeviceInfo() (*GPUInfo, error) {
-	return &GPUInfo{
-		Backend:  BackendMetal,
+func (idx *MetalHybridIndex) GetDeviceInfo() (*types.GPUInfo, error) {
+	return &types.GPUInfo{
+		Backend:  types.BackendMetal,
 		Name:     "Apple Silicon GPU",
 		DeviceID: 0,
 	}, nil

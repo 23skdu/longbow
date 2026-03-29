@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/23skdu/longbow/internal/pq"
+	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 )
@@ -48,6 +50,10 @@ type Dataset struct {
 	Name       string
 	Schema     *arrow.Schema
 	Topo       *NUMATopology
+
+	// Vector Configuration
+	PreferredVectorType types.VectorDataType
+	TurboQuantBits      int // Bits per dimension for TurboQuant encoding (4, 8)
 
 	// Schema Evolution
 	SchemaManager *SchemaEvolutionManager
@@ -211,17 +217,27 @@ func NewDataset(name string, schema *arrow.Schema) *Dataset {
 	ds.fragmentationTracker = NewFragmentationTracker()
 	ds.fragmentationTracker.SetDatasetName(name)
 
-	// Parse metric from metadata if present
+	// Parse configuration from metadata if present
 	if schema != nil {
 		md := schema.Metadata()
 		if val, ok := md.GetValue("longbow.metric"); ok {
-			switch val {
+			switch strings.ToLower(val) {
 			case "cosine":
 				ds.Metric = MetricCosine
 			case "dot_product":
 				ds.Metric = MetricDotProduct
-			case "euclidean":
+			case "euclidean", "l2":
 				ds.Metric = MetricEuclidean
+			}
+		}
+		if val, ok := md.GetValue("longbow.vector_type"); ok {
+			if dt, err := ParseVectorType(val); err == nil {
+				ds.PreferredVectorType = dt
+			}
+		}
+		if val, ok := md.GetValue("longbow.turboquant_bits"); ok {
+			if bits, err := strconv.Atoi(val); err == nil {
+				ds.TurboQuantBits = bits
 			}
 		}
 	}

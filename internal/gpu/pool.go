@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/23skdu/longbow/internal/gpu/types"
 	"github.com/23skdu/longbow/internal/metrics"
 )
 
@@ -27,7 +28,7 @@ type GPUIndexPool struct {
 	totalReused  int        // Total times indexes were reused
 
 	// Index factory
-	createFunc func(GPUConfig) (Index, error)
+	createFunc func(types.GPUConfig) (types.Index, error)
 
 	// Shutdown flag
 	closed bool
@@ -51,8 +52,8 @@ func DefaultGPUIndexPoolConfig() GPUIndexPoolConfig {
 
 // pooledIndex wraps an index with pool metadata
 type pooledIndex struct {
-	index      Index
-	config     GPUConfig
+	index      types.Index
+	config     types.GPUConfig
 	createdAt  time.Time
 	lastUsedAt time.Time
 	useCount   int
@@ -70,7 +71,7 @@ func NewGPUIndexPool(config GPUIndexPoolConfig) *GPUIndexPool {
 }
 
 // GetGPUIndex gets a GPU index from the pool or creates a new one
-func (p *GPUIndexPool) GetGPUIndex(config GPUConfig) (Index, error) {
+func (p *GPUIndexPool) GetGPUIndex(config types.GPUConfig) (types.Index, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -95,7 +96,7 @@ func (p *GPUIndexPool) GetGPUIndex(config GPUConfig) (Index, error) {
 	// Check if we can create a new index
 	if p.active >= p.maxConcurrent {
 		// Pool is at capacity
-		return nil, &GPUNotAvailableError{
+		return nil, &types.GPUNotAvailableError{
 			Reason: fmt.Sprintf("max concurrent GPU indexes reached (%d)", p.maxConcurrent),
 		}
 	}
@@ -121,7 +122,7 @@ func (p *GPUIndexPool) GetGPUIndex(config GPUConfig) (Index, error) {
 }
 
 // ReturnGPUIndex returns a GPU index to the pool
-func (p *GPUIndexPool) ReturnGPUIndex(index Index) error {
+func (p *GPUIndexPool) ReturnGPUIndex(index types.Index) error {
 	wrapper, ok := index.(*pooledIndexWrapper)
 	if !ok {
 		// Not from our pool, just close it
@@ -153,7 +154,7 @@ func (p *GPUIndexPool) ReturnGPUIndex(index Index) error {
 }
 
 // matchesConfig checks if two configs are compatible for reuse
-func (p *GPUIndexPool) matchesConfig(a, b GPUConfig) bool {
+func (p *GPUIndexPool) matchesConfig(a, b types.GPUConfig) bool {
 	// For now, match on dimension and device
 	// More sophisticated matching could compare all fields
 	return a.Dimension == b.Dimension && a.DeviceID == b.DeviceID
@@ -282,12 +283,12 @@ func (w *pooledIndexWrapper) Close() error {
 }
 
 // Backend delegates to the wrapped index
-func (w *pooledIndexWrapper) Backend() GPUBackend {
+func (w *pooledIndexWrapper) Backend() types.GPUBackend {
 	return w.pooled.index.Backend()
 }
 
 // GetDeviceInfo delegates to the wrapped index
-func (w *pooledIndexWrapper) GetDeviceInfo() (*GPUInfo, error) {
+func (w *pooledIndexWrapper) GetDeviceInfo() (*types.GPUInfo, error) {
 	return w.pooled.index.GetDeviceInfo()
 }
 

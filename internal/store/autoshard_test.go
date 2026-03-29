@@ -1,6 +1,7 @@
 package store_test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/23skdu/longbow/internal/store"
@@ -20,7 +21,7 @@ func TestAutoShardingGetNeighbors(t *testing.T) {
 
 	// Check GetNeighbors signature
 	// Cast to uint32
-	_, err := idx.GetNeighbors(uint32(0))
+	_, err := idx.GetNeighbors(context.Background(), uint32(0), 10)
 	// Expected error since no vectors inserted, but should build and run
 	assert.Error(t, err)
 }

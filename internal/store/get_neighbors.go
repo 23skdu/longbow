@@ -77,8 +77,8 @@ func arrowHNSWLookupNeighbors(h *ArrowHNSW, externalID uint64, k int) ([]Neighbo
 		return nil, fmt.Errorf("%w: id=%d", ErrVectorNotFound, externalID)
 	}
 
-	// Delegate to the existing GetNeighbors method on ArrowHNSW.
-	neighborIDs, err := h.GetNeighbors(internalID)
+	// Delegate to the renamed GetRawNeighbors method on ArrowHNSW.
+	neighborIDs, err := h.GetRawNeighbors(internalID)
 	if err != nil {
 		return nil, err
 	}

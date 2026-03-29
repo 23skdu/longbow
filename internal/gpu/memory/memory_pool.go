@@ -1,6 +1,6 @@
 //go:build gpu && linux
 
-package gpu
+package memory
 
 import (
 	"fmt"
@@ -10,7 +10,8 @@ import (
 )
 
 /*
-#include "cuda_backend.h"
+#include <cuda_runtime.h>
+#include <stdlib.h>
 */
 import "C"
 

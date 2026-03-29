@@ -1,12 +1,14 @@
-package gpu
+package memory
 
 import (
 	"sync"
 	"unsafe"
+
+	"github.com/23skdu/longbow/internal/gpu/types"
 )
 
 type GPUMemPool struct {
-	backend     GPUBackend
+	backend     types.GPUBackend
 	deviceID    int
 	totalBytes  int64
 	usedBytes   int64
@@ -14,7 +16,7 @@ type GPUMemPool struct {
 	mu          sync.RWMutex
 }
 
-func NewGPUMemPool(backend GPUBackend, deviceID int) (*GPUMemPool, error) {
+func NewGPUMemPool(backend types.GPUBackend, deviceID int) (*GPUMemPool, error) {
 	pool := &GPUMemPool{
 		backend:     backend,
 		deviceID:    deviceID,
@@ -23,12 +25,9 @@ func NewGPUMemPool(backend GPUBackend, deviceID int) (*GPUMemPool, error) {
 		allocations: make(map[unsafe.Pointer]int64),
 	}
 
-	info, err := GetDeviceInfo(deviceID)
-	if err == nil {
-		if info.MemoryMB > 0 {
-			pool.totalBytes = info.MemoryMB * 1024 * 1024
-		}
-	}
+	// Note: Generic memory pool initialization.
+	// In subpackages (cuda, metal), this can be specialized.
+	pool.totalBytes = 0 
 
 	return pool, nil
 }

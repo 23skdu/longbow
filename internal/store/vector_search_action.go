@@ -151,6 +151,8 @@ func (s *VectorStore) handleVectorSearchAction(action *flight.Action, stream fli
 				VectorFormat:   types.MapStringToVectorDataType(req.VectorFormat),
 				FilterExpr:     ParseFilter(req.FilterExpr),
 				Ef:             req.EfSearch,
+				VectorType:     types.MapStringToVectorDataType(req.VectorType),
+				TurboQuantBits: req.TurboQuantBits,
 			})
 			if errSearch != nil {
 				ds.dataMu.RUnlock()

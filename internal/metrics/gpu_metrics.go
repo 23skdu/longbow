@@ -1,12 +1,12 @@
-package gpu
+package metrics
 
 import (
+	"github.com/23skdu/longbow/internal/gpu/types"
 	"context"
 	"fmt"
 	"net/http"
 	"time"
 
-	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -55,9 +55,9 @@ func (e *MetricsExporter) StartHTTPServer(addr string) error {
 func (e *MetricsExporter) healthHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	backend := DetectGPUBackend()
+	backend := types.DetectGPUBackend()
 	status := "healthy"
-	if backend == BackendCPU {
+	if backend == types.BackendCPU {
 		status = "cpu_fallback"
 	}
 
@@ -78,80 +78,80 @@ func (e *MetricsExporter) Stop() error {
 
 // UpdateDeviceMetrics updates GPU device-level metrics
 // This should be called periodically (e.g., by a background goroutine)
-func UpdateDeviceMetrics(deviceID int, backend GPUBackend) {
+func UpdateDeviceMetrics(deviceID int, backend types.GPUBackend) {
 	deviceLabel := fmt.Sprintf("%d", deviceID)
 
 	// Get memory info if available
-	if backend == BackendCUDA {
+	if backend == types.BackendCUDA {
 		// Note: These would require actual CUDA calls
 		// For now, we set placeholders that can be updated with real values
 		// when CUDA is available
 
 		// Utilization (0-100%)
 		// This would come from nvidia-smi or NVML
-		metrics.GPUDeviceUtilization.WithLabelValues(deviceLabel).Set(0)
+		GPUDeviceUtilization.WithLabelValues(deviceLabel).Set(0)
 
 		// Temperature (Celsius)
-		metrics.GPUDeviceTemperature.WithLabelValues(deviceLabel).Set(0)
+		GPUDeviceTemperature.WithLabelValues(deviceLabel).Set(0)
 
 		// Power usage (Watts)
-		metrics.GPUDevicePowerUsage.WithLabelValues(deviceLabel).Set(0)
+		GPUDevicePowerUsage.WithLabelValues(deviceLabel).Set(0)
 	}
 }
 
 // RecordGPUSearch records metrics for a GPU search operation
 func RecordGPUSearch(duration time.Duration, backend string, k int) {
-	metrics.GPUSearchDurationSeconds.WithLabelValues(backend).Observe(duration.Seconds())
-	metrics.VectorSearchGPULatencySeconds.WithLabelValues("search").Observe(duration.Seconds())
-	metrics.VectorSearchGPUOperationsTotal.WithLabelValues("search", "success").Inc()
+	GPUSearchDurationSeconds.WithLabelValues(backend).Observe(duration.Seconds())
+	VectorSearchGPULatencySeconds.WithLabelValues("search").Observe(duration.Seconds())
+	VectorSearchGPUOperationsTotal.WithLabelValues("search", "success").Inc()
 }
 
 // RecordGPUSearchError records metrics for a failed GPU search
 func RecordGPUSearchError(errorType string) {
-	metrics.VectorSearchGPUOperationsTotal.WithLabelValues("search", "error").Inc()
-	metrics.GPUFallbackTotal.WithLabelValues(errorType).Inc()
+	VectorSearchGPUOperationsTotal.WithLabelValues("search", "error").Inc()
+	GPUFallbackTotal.WithLabelValues(errorType).Inc()
 }
 
 // RecordGPUSync records metrics for a GPU sync operation
 func RecordGPUSync(duration time.Duration, batchSize int) {
-	metrics.GPUSyncDurationSeconds.Observe(duration.Seconds())
-	metrics.GPUOperationsTotal.WithLabelValues("sync", "batch").Inc()
-	metrics.GPUBatchSize.Set(float64(batchSize))
+	GPUSyncDurationSeconds.Observe(duration.Seconds())
+	GPUOperationsTotal.WithLabelValues("sync", "batch").Inc()
+	GPUBatchSize.Set(float64(batchSize))
 }
 
 // RecordGPUSyncError records metrics for a failed GPU sync
 func RecordGPUSyncError() {
-	metrics.GPUOperationsTotal.WithLabelValues("sync", "error").Inc()
+	GPUOperationsTotal.WithLabelValues("sync", "error").Inc()
 }
 
 // RecordGPUIndexSize updates the GPU index size metric
 func RecordGPUIndexSize(deviceID int, size int64) {
 	deviceLabel := fmt.Sprintf("%d", deviceID)
-	metrics.GPUIndexSize.WithLabelValues(deviceLabel).Set(float64(size))
+	GPUIndexSize.WithLabelValues(deviceLabel).Set(float64(size))
 }
 
 // RecordGPUMemory updates GPU memory metrics
 func RecordGPUMemory(deviceID int, total, used, free int64) {
 	deviceLabel := fmt.Sprintf("%d", deviceID)
-	metrics.GPUMemoryBytes.WithLabelValues(deviceLabel, "total").Set(float64(total))
-	metrics.GPUMemoryBytes.WithLabelValues(deviceLabel, "used").Set(float64(used))
-	metrics.GPUMemoryBytes.WithLabelValues(deviceLabel, "free").Set(float64(free))
+	GPUMemoryBytes.WithLabelValues(deviceLabel, "total").Set(float64(total))
+	GPUMemoryBytes.WithLabelValues(deviceLabel, "used").Set(float64(used))
+	GPUMemoryBytes.WithLabelValues(deviceLabel, "free").Set(float64(free))
 }
 
 // RecordGPUUtilization updates GPU utilization metric
 func RecordGPUUtilization(deviceID int, utilization float64) {
 	deviceLabel := fmt.Sprintf("%d", deviceID)
-	metrics.GPUDeviceUtilization.WithLabelValues(deviceLabel).Set(utilization)
+	GPUDeviceUtilization.WithLabelValues(deviceLabel).Set(utilization)
 }
 
 // RecordGPUTemperature updates GPU temperature metric
 func RecordGPUTemperature(deviceID int, temp float64) {
 	deviceLabel := fmt.Sprintf("%d", deviceID)
-	metrics.GPUDeviceTemperature.WithLabelValues(deviceLabel).Set(temp)
+	GPUDeviceTemperature.WithLabelValues(deviceLabel).Set(temp)
 }
 
 // RecordGPUPower updates GPU power usage metric
 func RecordGPUPower(deviceID int, power float64) {
 	deviceLabel := fmt.Sprintf("%d", deviceID)
-	metrics.GPUDevicePowerUsage.WithLabelValues(deviceLabel).Set(power)
+	GPUDevicePowerUsage.WithLabelValues(deviceLabel).Set(power)
 }

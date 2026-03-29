@@ -254,6 +254,16 @@ func (b *BruteForceIndex) EstimateMemory() int64 {
 	return int64(len(b.locations) * 8)
 }
 
+// GetRawNeighbors is not supported for BruteForceIndex.
+func (b *BruteForceIndex) GetRawNeighbors(id uint32) ([]uint32, error) {
+	return nil, errors.New("GetRawNeighbors not supported for BruteForceIndex")
+}
+
+// GetNeighbors is not supported for BruteForceIndex.
+func (b *BruteForceIndex) GetNeighbors(ctx context.Context, id uint32, k int) ([]SearchResult, error) {
+	return nil, errors.New("GetNeighbors not supported for BruteForceIndex")
+}
+
 // SearchVectors returns the k nearest neighbors using linear scan.
 func (b *BruteForceIndex) SearchVectors(ctx context.Context, q any, k int, filters []query.Filter, options SearchOptions) ([]SearchResult, error) {
 	qF32, ok := q.([]float32)
@@ -589,6 +599,26 @@ func (a *AdaptiveIndex) EstimateMemory() int64 {
 		return a.bruteForce.EstimateMemory()
 	}
 	return 0
+}
+
+// GetRawNeighbors returns internal neighbor IDs, delegating to HNSW if active.
+func (a *AdaptiveIndex) GetRawNeighbors(id uint32) ([]uint32, error) {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	if a.usingHNSW.Load() {
+		return a.hnsw.GetRawNeighbors(id)
+	}
+	return nil, errors.New("GetRawNeighbors not supported for BruteForceIndex")
+}
+
+// GetNeighbors returns k-nearest neighbors, delegating to HNSW if active.
+func (a *AdaptiveIndex) GetNeighbors(ctx context.Context, id uint32, k int) ([]SearchResult, error) {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	if a.usingHNSW.Load() {
+		return a.hnsw.GetNeighbors(ctx, id, k)
+	}
+	return nil, errors.New("GetNeighbors not supported for BruteForceIndex")
 }
 
 func (a *AdaptiveIndex) migrateToHNSW() {

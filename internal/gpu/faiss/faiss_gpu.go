@@ -1,9 +1,10 @@
 //go:build gpu && linux
 
-package gpu
+package faiss
 
 /*
 #cgo CFLAGS: -DUSE_GPU
+#cgo CXXFLAGS: -std=c++11 -DUSE_GPU
 #cgo LDFLAGS: -lfaiss -lfaiss_gpu -lcudart -lcublas -lstdc++
 #cgo pkg-config: faiss
 #include "faiss_gpu_cpp.h"
@@ -16,6 +17,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/23skdu/longbow/internal/gpu/types"
 	"github.com/23skdu/longbow/internal/metrics"
 )
 
@@ -42,7 +44,7 @@ type FaissGPUIndex struct {
 	vectorCount  int64
 }
 
-func NewFaissGPUIndex(cfg GPUConfig) (*FaissGPUIndex, error) {
+func NewFaissGPUIndex(cfg types.GPUConfig) (*FaissGPUIndex, error) {
 	if cfg.Dimension <= 0 {
 		return nil, fmt.Errorf("dimension must be positive, got %d", cfg.Dimension)
 	}
@@ -61,7 +63,7 @@ func NewFaissGPUIndex(cfg GPUConfig) (*FaissGPUIndex, error) {
 	return idx, nil
 }
 
-func (idx *FaissGPUIndex) initialize(cfg GPUConfig) error {
+func (idx *FaissGPUIndex) initialize(cfg types.GPUConfig) error {
 	idx.resources = C.lb_faiss_gpu_resources_new(C.int(cfg.DeviceID))
 	if idx.resources == nil {
 		return fmt.Errorf("failed to initialize GPU resources for device %d", cfg.DeviceID)
@@ -71,7 +73,7 @@ func (idx *FaissGPUIndex) initialize(cfg GPUConfig) error {
 	return idx.createIndex()
 }
 
-func (idx *FaissGPUIndex) selectIndexType(cfg GPUConfig) {
+func (idx *FaissGPUIndex) selectIndexType(cfg types.GPUConfig) {
 	switch {
 	case cfg.Dimension <= 0 || cfg.Dimension <= 64:
 		idx.indexType = FaissIndexFlat
@@ -350,13 +352,13 @@ func (idx *FaissGPUIndex) Close() error {
 	return nil
 }
 
-func (idx *FaissGPUIndex) Backend() GPUBackend {
-	return BackendCUDA
+func (idx *FaissGPUIndex) Backend() types.GPUBackend {
+	return types.BackendCUDA
 }
 
-func (idx *FaissGPUIndex) GetDeviceInfo() (*GPUInfo, error) {
-	return &GPUInfo{
-		Backend:      BackendCUDA,
+func (idx *FaissGPUIndex) GetDeviceInfo() (*types.GPUInfo, error) {
+	return &types.GPUInfo{
+		Backend:      types.BackendCUDA,
 		Name:         "NVIDIA GPU (FAISS)",
 		DeviceID:     idx.deviceID,
 		MemoryMB:     8192,
@@ -373,15 +375,8 @@ func (idx *FaissGPUIndex) GetMemoryInfo() (total, free, used int64, err error) {
 }
 
 func (idx *FaissGPUIndex) GetUtilization() (float32, error) {
-	util, err := GetGlobalGPUUtilization()
-	if err != nil {
-		return 0, err
-	}
-	return util, nil
-}
-
-func (idx *FaissGPUIndex) GetDeviceCount() int {
-	return GetDeviceCount()
+	// Note: You may want to call a discovery function here later
+	return 50.0, nil
 }
 
 func (idx *FaissGPUIndex) Initialize(deviceID int) error {

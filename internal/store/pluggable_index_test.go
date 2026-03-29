@@ -1,11 +1,14 @@
 package store
 
 import (
+	"context"
 	"math/rand"
 	"os"
 	"path/filepath"
 	"sync"
 	"testing"
+
+	"github.com/23skdu/longbow/internal/store/types"
 )
 
 // =============================================================================
@@ -349,6 +352,25 @@ func (m *mockPluggableIndex) SearchBatch(queries [][]float32, k int) ([][]IndexS
 	return results, nil
 }
 
+func (m *mockPluggableIndex) GetNeighbors(ctx context.Context, id types.VectorID, k int) ([]types.SearchResult, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	results := make([]types.SearchResult, 0, k)
+	count := 0
+	for otherID := range m.vectors {
+		if otherID == uint64(id) {
+			continue
+		}
+		results = append(results, types.SearchResult{ID: types.VectorID(otherID)})
+		count++
+		if count >= k {
+			break
+		}
+	}
+	return results, nil
+}
+
 func (m *mockPluggableIndex) Build() error {
 	m.built = true
 	return nil
@@ -379,6 +401,10 @@ func (m *mockPluggableIndex) SearchVectors(query []float32, k int, options Searc
 		searchResults[i] = SearchResult{ID: VectorID(r.ID), Score: r.Distance}
 	}
 	return searchResults
+}
+
+func (m *mockPluggableIndex) GetVectorID(loc Location) (uint64, bool) {
+	return 0, false
 }
 
 func (m *mockPluggableIndex) Len() int {

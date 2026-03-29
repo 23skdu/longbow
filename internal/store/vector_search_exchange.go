@@ -2,6 +2,7 @@ package store
 
 import (
 	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/flight"
@@ -90,6 +91,20 @@ func (s *VectorStore) handleVectorSearchExchange(stream flight.FlightService_DoE
 		ef = int(rec.Column(idxEf).(*array.Int32).Value(0))
 	}
 
+	// Extract VectorType
+	idxVT := colIdx("vector_type")
+	vectorType := ""
+	if idxVT != -1 {
+		vectorType = rec.Column(idxVT).(*array.String).Value(0)
+	}
+
+	// Extract TurboQuantBits
+	idxTQB := colIdx("turboquant_bits")
+	tqb := 0
+	if idxTQB != -1 {
+		tqb = int(rec.Column(idxTQB).(*array.Int32).Value(0))
+	}
+
 	// Extract Query Vector (FixedSizeList<Float32> or List<Float32>)
 	idxVec := colIdx("query_vector")
 	if idxVec == -1 {
@@ -144,6 +159,8 @@ func (s *VectorStore) handleVectorSearchExchange(stream flight.FlightService_DoE
 	searchOpts := SearchOptions{
 		IncludeVectors: false,
 		Ef:             ef,
+		VectorType:     types.MapStringToVectorDataType(vectorType),
+		TurboQuantBits: tqb,
 	}
 
 	searchResults, err := ds.Index.SearchVectors(stream.Context(), queryVec, k, nil, searchOpts)

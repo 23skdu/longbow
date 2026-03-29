@@ -1,31 +1,34 @@
-//go:build gpu && darwin && arm64
-
-package gpu
+package memory
 
 import (
 	"fmt"
 	"unsafe"
+
+	"github.com/23skdu/longbow/internal/gpu/types"
 )
 
-// GPUMemPool is defined in memory_base.go
+// Re-export common types from types subpackage for convenience
+type GPUBackend = types.GPUBackend
 
-type GPUAllocation struct {
-	Ptr       unsafe.Pointer
-	Size      int64
-	DevicePtr unsafe.Pointer
-}
+const (
+	BackendCPU   = types.BackendCPU
+	BackendCUDA  = types.BackendCUDA
+	BackendMetal = types.BackendMetal
+)
 
 func (p *GPUMemPool) AllocateGPU(size int64) (unsafe.Pointer, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if p.usedBytes+size > p.totalBytes {
+	if p.totalBytes > 0 && p.usedBytes+size > p.totalBytes {
 		return nil, fmt.Errorf("GPU out of memory: requested %d bytes, available %d bytes", size, p.totalBytes-p.usedBytes)
 	}
 
 	switch p.backend {
 	case BackendMetal:
 		return p.allocateMetalMemoryImpl(size)
+	case BackendCUDA:
+		return p.allocateCUDAMemory(size)
 	case BackendCPU:
 		return p.allocateCPUMemory(size)
 	default:
@@ -49,6 +52,8 @@ func (p *GPUMemPool) FreeGPU(ptr unsafe.Pointer) error {
 	case BackendMetal:
 		p.freeMetalMemoryImpl(ptr)
 		return nil
+	case BackendCUDA:
+		return p.freeCUDAMemory(ptr)
 	case BackendCPU:
 		return nil
 	default:
@@ -71,6 +76,9 @@ func (p *GPUMemPool) GetUsedMemory() int64 {
 func (p *GPUMemPool) GetAvailableMemory() int64 {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
+	if p.totalBytes == 0 {
+		return 0
+	}
 	return p.totalBytes - p.usedBytes
 }
 
@@ -86,4 +94,12 @@ func (p *GPUMemPool) Close() error {
 	defer p.mu.Unlock()
 	p.allocations = nil
 	return nil
+}
+
+func (p *GPUMemPool) Backend() GPUBackend {
+	return p.backend
+}
+
+func (p *GPUMemPool) DeviceID() int {
+	return p.deviceID
 }

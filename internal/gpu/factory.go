@@ -5,36 +5,24 @@ import (
 	"sort"
 )
 
-// NewIndexWithBackend creates a GPU index with specified backend (delegates to existing implementation)
+// NewIndexWithBackend creates a GPU index with specified backend (delegates to implementation)
 func NewIndexWithBackend(cfg GPUConfig, backend GPUBackend) (Index, error) {
 	switch backend {
-	case BackendCUDA:
-		return NewIndexWithConfig(cfg)
-	case BackendMetal:
-		return NewMetalIndexImpl(cfg)
 	case BackendCPU, BackendOpenCL:
 		return NewCPUIndex(cfg)
 	default:
-		return nil, fmt.Errorf("unsupported GPU backend: %v", backend)
+		return newGPUIndexImpl(cfg, backend)
 	}
 }
 
-// NewIndex creates a GPU index with auto-detected backend (delegates to existing implementation)
+// NewIndex creates a GPU index with auto-detected backend (delegates to implementation)
 func NewIndex(cfg GPUConfig) (Index, error) {
 	if cfg.Backend == BackendCPU || !cfg.Enabled {
 		return NewCPUIndex(cfg)
 	}
 
 	preferredBackend := DetectGPUBackend()
-
-	switch preferredBackend {
-	case BackendCUDA:
-		return NewIndexWithConfig(cfg)
-	case BackendMetal:
-		return NewMetalIndexImpl(cfg)
-	default:
-		return NewCPUIndex(cfg)
-	}
+	return NewIndexWithBackend(cfg, preferredBackend)
 }
 
 // CPUIndex implements a CPU-only fallback index using linear scan
@@ -55,7 +43,6 @@ func (i *CPUIndex) Add(ids []int64, vectors []float32) error {
 		return nil
 	}
 
-	// Vectors are passed as a flat array: [v1_0, v1_1, ..., v2_0, v2_1, ...]
 	vectorsPerID := len(vectors) / len(ids)
 
 	for idx, id := range ids {
@@ -99,9 +86,9 @@ func (i *CPUIndex) Search(vector []float32, k int) (ids []int64, distances []flo
 	// Return top k results
 	ids = make([]int64, k)
 	distances = make([]float32, k)
-	for i := 0; i < k && i < len(results); i++ {
-		ids[i] = results[i].id
-		distances[i] = results[i].distance
+	for idx := 0; idx < k && idx < len(results); idx++ {
+		ids[idx] = results[idx].id
+		distances[idx] = results[idx].distance
 	}
 
 	return ids, distances, nil
@@ -135,24 +122,15 @@ func (i *CPUIndex) GetDeviceInfo() (*GPUInfo, error) {
 }
 
 func (i *CPUIndex) GetMemoryInfo() (total, free, used int64, err error) {
-	// Estimate memory usage
 	var totalMem int64
 	for _, vec := range i.vectors {
-		totalMem += int64(len(vec) * 4) // 4 bytes per float32
+		totalMem += int64(len(vec) * 4)
 	}
 	return totalMem, 0, totalMem, nil
 }
 
 func (i *CPUIndex) GetUtilization() (float32, error) {
 	return 0, nil
-}
-
-func (i *CPUIndex) GetDeviceCount() int {
-	return 0
-}
-
-func (i *CPUIndex) Initialize(deviceID int) error {
-	return nil
 }
 
 func (i *CPUIndex) SearchBatch(vectors [][]float32, k int) ([][]int64, [][]float32, error) {

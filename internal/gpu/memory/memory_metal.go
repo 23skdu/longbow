@@ -1,6 +1,6 @@
 //go:build gpu && darwin && arm64
 
-package gpu
+package memory
 
 /*
 #cgo CFLAGS: -x objective-c -fobjc-arc

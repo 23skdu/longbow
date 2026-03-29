@@ -1,6 +1,7 @@
 //go:build gpu && darwin && arm64
 
-package gpu
+package metal
+import "github.com/23skdu/longbow/internal/gpu/types"
 
 /*
 #cgo CFLAGS: -x objective-c -fobjc-arc
@@ -654,7 +655,7 @@ type MetalIndexOptimized struct {
 }
 
 // NewMetalIndexOptimized creates an optimized Metal-based GPU index with compute shaders
-func NewMetalIndexOptimized(cfg GPUConfig) (Index, error) {
+func NewMetalIndexOptimized(cfg types.GPUConfig) (types.Index, error) {
 	handle := C.metal_init_optimized(C.int(cfg.Dimension))
 	if handle == nil {
 		return nil, fmt.Errorf("failed to initialize optimized Metal device")
@@ -783,13 +784,13 @@ func (idx *MetalIndexOptimized) Close() error {
 	return nil
 }
 
-func (idx *MetalIndexOptimized) Backend() GPUBackend {
-	return BackendMetal
+func (idx *MetalIndexOptimized) Backend() types.GPUBackend {
+	return types.BackendMetal
 }
 
-func (idx *MetalIndexOptimized) GetDeviceInfo() (*GPUInfo, error) {
-	return &GPUInfo{
-		Backend:  BackendMetal,
+func (idx *MetalIndexOptimized) GetDeviceInfo() (*types.GPUInfo, error) {
+	return &types.GPUInfo{
+		Backend:  types.BackendMetal,
 		Name:     "Apple Silicon GPU (Optimized)",
 		DeviceID: 0,
 	}, nil

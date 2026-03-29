@@ -96,7 +96,7 @@ func TestRRF_BasicFusion(t *testing.T) {
 	// D: 1/(60+4) + 0 = 0.0156
 	// E: 0 + 1/(60+3) = 0.0159
 
-	fused := ReciprocalRankFusion(denseResults, sparseResults, 60, 10)
+	fused := ReciprocalRankFusion("test_dataset", denseResults, sparseResults, 60, 10)
 
 	if len(fused) == 0 {
 		t.Fatal("expected non-empty fused results")
@@ -110,14 +110,14 @@ func TestRRF_BasicFusion(t *testing.T) {
 
 func TestRRF_EmptyInputs(t *testing.T) {
 	// Both empty
-	result := ReciprocalRankFusion(nil, nil, 60, 10)
+	result := ReciprocalRankFusion("test_dataset", nil, nil, 60, 10)
 	if len(result) != 0 {
 		t.Errorf("expected empty result for empty inputs")
 	}
 
 	// One empty
 	dense := []SearchResult{{ID: VectorID(0), Score: 1.0}}
-	result = ReciprocalRankFusion(dense, nil, 60, 10)
+	result = ReciprocalRankFusion("test_dataset", dense, nil, 60, 10)
 	if len(result) != 1 {
 		t.Errorf("expected 1 result when sparse is empty")
 	}
@@ -141,8 +141,8 @@ func TestRRF_KParameter(t *testing.T) {
 	// With k=60: ranks matter less, more uniform
 	// Results should still be similar but scores closer
 
-	resultK1 := ReciprocalRankFusion(dense, sparse, 1, 10)
-	resultK60 := ReciprocalRankFusion(dense, sparse, 60, 10)
+	resultK1 := ReciprocalRankFusion("test_dataset", dense, sparse, 1, 10)
+	resultK60 := ReciprocalRankFusion("test_dataset", dense, sparse, 60, 10)
 
 	if len(resultK1) != 2 || len(resultK60) != 2 {
 		t.Error("expected 2 results for each k value")
@@ -263,7 +263,7 @@ func (hs *HybridSearcher) SearchHybrid(query []float32, textQuery string, k int,
 	if rrfK <= 0 {
 		rrfK = 60
 	}
-	return ReciprocalRankFusion(dense, sparse, rrfK, k)
+	return ReciprocalRankFusion("test_dataset", dense, sparse, rrfK, k)
 }
 
 func (hs *HybridSearcher) SearchHybridWeighted(query []float32, textQuery string, k int, alpha float32, rrfK int) []SearchResult {
@@ -403,6 +403,6 @@ func BenchmarkRRF(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		ReciprocalRankFusion(dense, sparse, 60, 10)
+		ReciprocalRankFusion("test_dataset", dense, sparse, 60, 10)
 	}
 }

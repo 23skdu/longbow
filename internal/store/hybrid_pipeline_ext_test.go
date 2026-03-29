@@ -136,7 +136,7 @@ func TestFuseRRF_LimitTruncation(t *testing.T) {
 		dense[i] = SearchResult{ID: VectorID(i), Score: float32(20 - i)}
 	}
 
-	results := FuseRRF(dense, nil, 60, 5)
+	results := FuseRRF("test_dataset", dense, nil, 60, 5)
 	if len(results) != 5 {
 		t.Errorf("expected 5 results, got %d", len(results))
 	}
@@ -149,13 +149,13 @@ func TestFuseRRF_SingleSource(t *testing.T) {
 	}
 
 	// Only dense, no sparse
-	results := FuseRRF(dense, nil, 60, 10)
+	results := FuseRRF("test_dataset", dense, nil, 60, 10)
 	if len(results) != 2 {
 		t.Errorf("expected 2 results, got %d", len(results))
 	}
 
 	// Only sparse, no dense
-	results = FuseRRF(nil, dense, 60, 10)
+	results = FuseRRF("test_dataset", nil, dense, 60, 10)
 	if len(results) != 2 {
 		t.Errorf("expected 2 results, got %d", len(results))
 	}

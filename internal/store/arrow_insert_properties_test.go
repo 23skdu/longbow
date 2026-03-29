@@ -99,7 +99,7 @@ func TestInsertProperties(t *testing.T) {
 				queue = queue[1:]
 				found++
 
-				neighbors, _ := index.GetNeighbors(uint32(curr)) // Assuming this method works on graph
+				neighbors, _ := index.GetRawNeighbors(uint32(curr)) // Assuming this method works on graph
 				for _, n := range neighbors {
 					nid := uint32(n)
 					if !visited[nid] {

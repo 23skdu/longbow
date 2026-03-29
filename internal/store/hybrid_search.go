@@ -102,6 +102,7 @@ func SearchHybrid(ctx context.Context, s *VectorStore, name string, queryVec []f
 
 	// 3. Fusion logic
 	var finalResults []SearchResult
+	mergeStart := time.Now()
 	switch alpha {
 	case 1.0:
 		finalResults = denseResults
@@ -112,7 +113,9 @@ func SearchHybrid(ctx context.Context, s *VectorStore, name string, queryVec []f
 		if rrfK <= 0 {
 			rrfK = 60 // Default
 		}
-		finalResults = ReciprocalRankFusion(denseResults, sparseResults, rrfK, k)
+		finalResults = ReciprocalRankFusion(name, denseResults, sparseResults, rrfK, k)
+		metrics.HybridSearchMergeDuration.WithLabelValues(name).Observe(time.Since(mergeStart).Seconds())
+		metrics.HybridRRFFusionLatencySeconds.WithLabelValues(name).Observe(time.Since(mergeStart).Seconds())
 	}
 
 	// 4. Graph Re-ranking (GraphRAG) - Re-acquire RLock for post-processing
@@ -121,11 +124,30 @@ func SearchHybrid(ctx context.Context, s *VectorStore, name string, queryVec []f
 		if graphDepth <= 0 {
 			graphDepth = 2 // Default hop depth
 		}
+		metrics.HybridGraphReRankEnabled.WithLabelValues(name, "true").Inc()
+		rerankStart := time.Now()
+
+		// Store results before reranking to track "graph_expanded" origin
+		preRerankIds := make(map[lbtypes.VectorID]bool)
+		for _, r := range finalResults {
+			preRerankIds[r.ID] = true
+		}
+
 		// Rerank using graph topology
 		ranked := ds.Graph.RankWithGraph(finalResults, graphAlpha, graphDepth)
+		metrics.HybridGraphReRankLatencySeconds.WithLabelValues(name).Observe(time.Since(rerankStart).Seconds())
+
 		if len(ranked) > 0 {
 			finalResults = ranked
+			// Track results newly introduced by graph expansion
+			for _, r := range finalResults {
+				if !preRerankIds[r.ID] {
+					metrics.HybridResultOriginTotal.WithLabelValues(name, "graph_expanded").Inc()
+				}
+			}
 		}
+	} else {
+		metrics.HybridGraphReRankEnabled.WithLabelValues(name, "false").Inc()
 	}
 
 	// Map internal IDs to user IDs (Phase 14 integration)

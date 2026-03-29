@@ -1,8 +1,11 @@
 package store
 
 import (
+	"context"
 	"os"
 	"sync"
+
+	lbtypes "github.com/23skdu/longbow/internal/store/types"
 )
 
 // =============================================================================
@@ -75,6 +78,26 @@ func (h *HNSWPluggableAdapter) SearchBatch(queries [][]float32, k int) ([][]Inde
 	return results, nil
 }
 
+func (h *HNSWPluggableAdapter) GetNeighbors(ctx context.Context, id lbtypes.VectorID, k int) ([]lbtypes.SearchResult, error) {
+	// Simple mock implementation for the adapter
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	results := make([]lbtypes.SearchResult, 0, k)
+	count := 0
+	for otherID := range h.vectors {
+		if uint32(otherID) == uint32(id) {
+			continue
+		}
+		results = append(results, lbtypes.SearchResult{ID: lbtypes.VectorID(otherID)})
+		count++
+		if count >= k {
+			break
+		}
+	}
+	return results, nil
+}
+
 func (h *HNSWPluggableAdapter) Build() error {
 	return nil // HNSW builds incrementally
 }
@@ -96,15 +119,20 @@ func (h *HNSWPluggableAdapter) AddByLocation(batchIdx, rowIdx int) error {
 	return nil
 }
 
-func (h *HNSWPluggableAdapter) SearchVectors(query []float32, k int, options SearchOptions) []SearchResult {
+func (h *HNSWPluggableAdapter) GetVectorID(loc Location) (uint64, bool) {
+	// Adapter doesn't support structured location mapping yet
+	return 0, false
+}
+
+func (h *HNSWPluggableAdapter) SearchVectors(query []float32, k int, options SearchOptions) []lbtypes.SearchResult {
 	results, _ := h.Search(query, k)
-	searchResults := make([]SearchResult, len(results))
+	searchResults := make([]lbtypes.SearchResult, len(results))
 	for i, r := range results {
 		id := r.ID
 		if id > 4294967295 {
 			id = 4294967295
 		}
-		searchResults[i] = SearchResult{ID: VectorID(id), Score: r.Distance}
+		searchResults[i] = lbtypes.SearchResult{ID: lbtypes.VectorID(id), Score: r.Distance}
 	}
 	return searchResults
 }

@@ -1,6 +1,11 @@
 //go:build gpu && darwin && arm64
 
-package gpu
+package metal
+import (
+	"github.com/23skdu/longbow/internal/gpu/memory"
+	"github.com/23skdu/longbow/internal/gpu/types"
+	"github.com/23skdu/longbow/internal/metrics"
+)
 
 /*
 #cgo CFLAGS: -x objective-c -fobjc-arc
@@ -251,8 +256,8 @@ type MetalIndex struct {
 	dim        int
 	mu         sync.RWMutex
 	closed     bool
-	memPool    *GPUMemPool
-	deviceInfo *GPUInfo
+	memPool    *memory.GPUMemPool
+	deviceInfo *types.GPUInfo
 
 	// Batch sync support
 	batchIDs     []int64
@@ -268,11 +273,11 @@ type MetalIndex struct {
 }
 
 // NewMetalIndexImpl creates a new Metal-based GPU index with integrated memory pool
-func NewMetalIndexImpl(cfg GPUConfig) (Index, error) {
+func NewMetalIndexImpl(cfg types.GPUConfig) (types.Index, error) {
 	if cfg.Dimension <= 0 {
-		return nil, &GPUInitializationError{
+		return nil, &types.GPUInitializationError{
 			DeviceID: cfg.DeviceID,
-			Backend:  BackendMetal,
+			Backend:  types.BackendMetal,
 			Cause:    fmt.Errorf("dimension must be positive, got %d", cfg.Dimension),
 		}
 	}
@@ -280,9 +285,9 @@ func NewMetalIndexImpl(cfg GPUConfig) (Index, error) {
 	initialCapacity := 10000
 	handle := C.metal_init(C.int(cfg.Dimension), C.int(initialCapacity))
 	if handle == nil {
-		return nil, &GPUInitializationError{
+		return nil, &types.GPUInitializationError{
 			DeviceID: cfg.DeviceID,
-			Backend:  BackendMetal,
+			Backend:  types.BackendMetal,
 			Cause:    fmt.Errorf("failed to initialize Metal device"),
 		}
 	}
@@ -295,8 +300,8 @@ func NewMetalIndexImpl(cfg GPUConfig) (Index, error) {
 	idx := &MetalIndex{
 		handle: handle,
 		dim:    cfg.Dimension,
-		deviceInfo: &GPUInfo{
-			Backend:  BackendMetal,
+		deviceInfo: &types.GPUInfo{
+			Backend:  types.BackendMetal,
 			Name:     C.GoString(&nameBuf[0]),
 			DeviceID: cfg.DeviceID,
 			MemoryMB: int64(totalMem) / (1024 * 1024),
@@ -307,7 +312,7 @@ func NewMetalIndexImpl(cfg GPUConfig) (Index, error) {
 	}
 
 	// Initialize memory pool
-	pool, err := NewGPUMemPool(BackendMetal, cfg.DeviceID)
+	pool, err := memory.NewGPUMemPool(types.BackendMetal, cfg.DeviceID)
 	if err == nil {
 		idx.memPool = pool
 	}
@@ -388,7 +393,7 @@ func (idx *MetalIndex) Flush() error {
 		estimatedMem += int64(newCapacity) * 8
 
 		if idx.maxMemory > 0 && estimatedMem > idx.maxMemory {
-			return &GPUSyncError{
+			return &types.GPUSyncError{
 				BatchSize: batchCount,
 				DeviceID:  idx.deviceInfo.DeviceID,
 				Cause:     fmt.Errorf("GPU memory limit exceeded: estimated %d bytes, limit %d", estimatedMem, idx.maxMemory),
@@ -406,7 +411,7 @@ func (idx *MetalIndex) Flush() error {
 	duration := time.Since(start)
 
 	if ret != 0 {
-		return &GPUSyncError{
+		return &types.GPUSyncError{
 			BatchSize: len(idx.batchIDs),
 			DeviceID:  idx.deviceInfo.DeviceID,
 			Cause:     fmt.Errorf("failed to add vectors to Metal buffer"),
@@ -414,7 +419,7 @@ func (idx *MetalIndex) Flush() error {
 	}
 
 	// Record metrics
-	RecordGPUSync(duration, len(idx.batchIDs))
+	metrics.RecordGPUSync(duration, len(idx.batchIDs))
 
 	// Clear batch
 	idx.batchIDs = idx.batchIDs[:0]
@@ -461,7 +466,7 @@ func (idx *MetalIndex) Search(vector []float32, k int) ([]int64, []float32, erro
 	duration := time.Since(start)
 
 	if ret != 0 {
-		return nil, nil, &GPUComputeError{
+		return nil, nil, &types.GPUComputeError{
 			Operation: "search",
 			DeviceID:  idx.deviceInfo.DeviceID,
 			Cause:     fmt.Errorf("Metal search failed"),
@@ -469,7 +474,7 @@ func (idx *MetalIndex) Search(vector []float32, k int) ([]int64, []float32, erro
 	}
 
 	// Record metrics
-	RecordGPUSearch(duration, "metal", k)
+	metrics.RecordGPUSearch(duration, "metal", k)
 
 	return resultIDs, resultDistances, nil
 }
@@ -528,12 +533,12 @@ func (idx *MetalIndex) Close() error {
 }
 
 // Backend returns GPU backend type
-func (idx *MetalIndex) Backend() GPUBackend {
-	return BackendMetal
+func (idx *MetalIndex) Backend() types.GPUBackend {
+	return types.BackendMetal
 }
 
 // GetDeviceInfo returns information about the GPU device
-func (idx *MetalIndex) GetDeviceInfo() (*GPUInfo, error) {
+func (idx *MetalIndex) GetDeviceInfo() (*types.GPUInfo, error) {
 	return idx.deviceInfo, nil
 }
 
@@ -565,7 +570,7 @@ func (idx *MetalIndex) Initialize(deviceID int) error {
 }
 
 // startSyncTicker starts background sync for batch operations
-func (idx *MetalIndex) startSyncTicker(cfg GPUConfig) {
+func (idx *MetalIndex) startSyncTicker(cfg types.GPUConfig) {
 	if cfg.SyncInterval <= 0 {
 		return
 	}

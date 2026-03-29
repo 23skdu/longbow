@@ -1,9 +1,6 @@
-//go:build !gpu
-// +build !gpu
+//go:build !gpu || !linux
 
-package gpu
-
-import "C"
+package memory
 
 import (
 	"fmt"

@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/23skdu/longbow/internal/pq"
 	"github.com/23skdu/longbow/internal/query"
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/RoaringBitmap/roaring/v2"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/stretchr/testify/mock"
+	"io"
 )
 
 // MockVectorIndex is a mock implementation of VectorIndex interface
@@ -81,9 +83,14 @@ func (m *MockVectorIndex) SetIndexedColumns(cols []string) {
 	m.Called(cols)
 }
 
-func (m *MockVectorIndex) GetNeighbors(id uint32) ([]uint32, error) {
+func (m *MockVectorIndex) GetRawNeighbors(id uint32) ([]uint32, error) {
 	args := m.Called(id)
 	return args.Get(0).([]uint32), args.Error(1)
+}
+
+func (m *MockVectorIndex) GetNeighbors(ctx context.Context, id uint32, k int) ([]types.SearchResult, error) {
+	args := m.Called(ctx, id, k)
+	return args.Get(0).([]types.SearchResult), args.Error(1)
 }
 
 func (m *MockVectorIndex) PreWarm(targetSize int) {
@@ -105,9 +112,9 @@ func (m *MockVectorIndex) TrainPQ(vectors [][]float32) error {
 	return args.Error(0)
 }
 
-func (m *MockVectorIndex) GetPQEncoder() *any { // Adjust return type if needed, strict check might require casting
-	// Simplified signature for now
-	return nil
+func (m *MockVectorIndex) GetPQEncoder() *pq.PQEncoder {
+	args := m.Called()
+	return args.Get(0).(*pq.PQEncoder)
 }
 
 func (m *MockVectorIndex) Close() error {
@@ -135,12 +142,12 @@ func (m *MockVectorIndex) ImportState(data []byte) error {
 	return args.Error(0)
 }
 
-func (m *MockVectorIndex) ExportGraph(w interface{}) error { // avoiding io.Writer for simplicity in string
+func (m *MockVectorIndex) ExportGraph(w io.Writer) error {
 	args := m.Called(w)
 	return args.Error(0)
 }
 
-func (m *MockVectorIndex) ImportGraph(r interface{}) error {
+func (m *MockVectorIndex) ImportGraph(r io.Reader) error {
 	args := m.Called(r)
 	return args.Error(0)
 }
@@ -162,6 +169,11 @@ func (m *MockVectorIndex) SetParallelSearchConfig(cfg types.ParallelSearchConfig
 func (m *MockVectorIndex) GetParallelSearchConfig() types.ParallelSearchConfig {
 	args := m.Called()
 	return args.Get(0).(types.ParallelSearchConfig)
+}
+
+func (m *MockVectorIndex) RemapLocations(ctx context.Context, mapping map[uint32]any) error {
+	args := m.Called(ctx, mapping)
+	return args.Error(0)
 }
 
 // Additional interface requirements?

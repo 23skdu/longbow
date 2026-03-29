@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/23skdu/longbow/internal/store/types"
+	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -58,4 +59,24 @@ func TestTurboQuantStorageRatio_Compression(t *testing.T) {
 	tqBytes := int64(vectorCount * dims * bitsPerDim / 8)
 	ratio := TurboQuantStorageRatio(tqBytes, vectorCount, dims)
 	assert.Less(t, ratio, 1.0, "TQ at 3 bits must use less storage than float32")
+}
+
+// TestNewDataset_MetadataParsing verifies that VectorType and TurboQuantBits
+// are correctly parsed from schema metadata during dataset initialization.
+func TestNewDataset_MetadataParsing(t *testing.T) {
+	metaMap := map[string]string{
+		"longbow.vector_type":     "turboquant",
+		"longbow.turboquant_bits": "4",
+		"longbow.metric":          "cosine",
+	}
+	meta := arrow.MetadataFrom(metaMap)
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "id", Type: arrow.BinaryTypes.String},
+		{Name: "vector", Type: arrow.FixedSizeListOf(768, arrow.PrimitiveTypes.Float32)},
+	}, &meta)
+
+	ds := NewDataset("test_tq", schema)
+	assert.Equal(t, types.VectorTypeTQ, ds.PreferredVectorType)
+	assert.Equal(t, 4, ds.TurboQuantBits)
+	assert.Equal(t, MetricCosine, ds.Metric)
 }

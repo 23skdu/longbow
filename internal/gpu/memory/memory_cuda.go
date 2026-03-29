@@ -1,6 +1,6 @@
 //go:build gpu && linux
 
-package gpu
+package memory
 
 /*
 #cgo LDFLAGS: -lcudart

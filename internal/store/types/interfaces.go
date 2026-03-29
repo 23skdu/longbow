@@ -30,7 +30,11 @@ type VectorIndexer interface {
 	SetIndexedColumns(cols []string)
 
 	// Diagnostic/Repair
-	GetNeighbors(id uint32) ([]uint32, error)
+	// GetRawNeighbors returns internal neighbor IDs for diagnostics
+	GetRawNeighbors(id uint32) ([]uint32, error)
+
+	// GetNeighbors returns the k nearest neighbors for a given vector ID
+	GetNeighbors(ctx context.Context, id uint32, k int) ([]SearchResult, error)
 	PreWarm(targetSize int)
 
 	// Maintenance

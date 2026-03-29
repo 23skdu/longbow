@@ -20,8 +20,6 @@ extern "C" {
 static int faiss_last_error_code = 0;
 static char faiss_last_error_msg[1024];
 
-extern "C" {
-
 int lb_faiss_get_last_error_code() {
     return faiss_last_error_code;
 }
@@ -237,5 +235,5 @@ int lb_faiss_gpu_index_ivf_pq_set_nprobe(FaissGpuIndexIVFPQPtr ptr, int nprobe) 
     return 0;
 }
 
-}
+} // extern "C"
 #endif // USE_GPU

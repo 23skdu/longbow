@@ -1249,17 +1249,27 @@ func (h *ArrowHNSW) Warmup() int {
 	return int(h.nodeCount.Load())
 }
 
-func (h *ArrowHNSW) GetNeighbors(id uint32) ([]uint32, error) {
+// GetLayerNeighbors returns internal neighbor IDs for a specific layer
+func (h *ArrowHNSW) GetLayerNeighbors(id uint32, layer int) ([]uint32, error) {
 	data := h.data.Load()
 	if data == nil {
 		return nil, fmt.Errorf("index data is nil")
 	}
 
+	maxLevel := h.GetMaxLevel()
+	if maxLevel < 0 {
+		return nil, nil // Index is empty
+	}
+
+	if layer < 0 || int32(layer) > maxLevel {
+		return nil, fmt.Errorf("invalid layer: %d", layer)
+	}
+
 	cID := chunkID(id)
 	cOff := chunkOffset(id)
 
-	neighborhood := data.GetNeighborsChunk(0, cID)
-	counts := data.GetCountsChunk(0, cID)
+	neighborhood := data.GetNeighborsChunk(layer, cID)
+	counts := data.GetCountsChunk(layer, cID)
 	if neighborhood == nil || counts == nil {
 		return nil, nil
 	}
@@ -1274,6 +1284,58 @@ func (h *ArrowHNSW) GetNeighbors(id uint32) ([]uint32, error) {
 	copy(neighbors, neighborhood[startIdx:startIdx+int(count)])
 
 	return neighbors, nil
+}
+
+// GetRawNeighbors implements the VectorIndexer interface
+func (h *ArrowHNSW) GetRawNeighbors(id uint32) ([]uint32, error) {
+	return h.GetLayerNeighbors(id, 0)
+}
+
+func (h *ArrowHNSW) GetNeighbors(ctx context.Context, id uint32, k int) ([]types.SearchResult, error) {
+	neighbors, err := h.GetLayerNeighbors(id, 0)
+	if err != nil || len(neighbors) == 0 {
+		return nil, err
+	}
+
+	// 1. Get query vector
+	qVecAny, err := h.GetVector(id)
+	if err != nil {
+		return nil, err
+	}
+	qVec, ok := qVecAny.( []float32)
+	if !ok {
+		// If not float32, we can't easily compute distances here for now
+		// but we still return the neighbors without distances or with 0
+		results := make([]types.SearchResult, 0, min(k, len(neighbors)))
+		for i := 0; i < len(neighbors) && i < k; i++ {
+			results = append(results, types.SearchResult{
+				ID: types.VectorID(neighbors[i]),
+			})
+		}
+		return results, nil
+	}
+
+	results := make([]types.SearchResult, 0, min(k, len(neighbors)))
+	for i := 0; i < len(neighbors) && i < k; i++ {
+		nID := neighbors[i]
+		nVecAny, err := h.GetVector(nID)
+		if err != nil || nVecAny == nil {
+			continue
+		}
+
+		dist := float32(0.0)
+		if nVec, ok := nVecAny.( []float32); ok {
+			dist, _ = h.distFunc(qVec, nVec)
+		}
+
+		results = append(results, types.SearchResult{
+			ID:       types.VectorID(nID),
+			Distance: dist,
+			Score:    dist,
+		})
+	}
+
+	return results, nil
 }
 
 func (h *ArrowHNSW) PreWarm(targetSize int) {

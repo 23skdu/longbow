@@ -168,15 +168,20 @@ func (p *HybridSearchPipeline) Search(q *HybridSearchQuery) ([]SearchResult, err
 
 	// 4. Fuse results based on mode
 	var fused []SearchResult
+	datasetName := ""
+	if p.dataset != nil {
+		datasetName = p.dataset.Name
+	}
+
 	switch p.config.FusionMode {
 	case FusionModeRRF:
-		fused = ReciprocalRankFusion(denseResults, sparseResults, p.config.RRFk, q.K)
+		fused = ReciprocalRankFusion(datasetName, denseResults, sparseResults, p.config.RRFk, q.K)
 	case FusionModeLinear:
 		fused = FuseLinear(denseResults, sparseResults, alpha, q.K)
 	case FusionModeCascade:
 		fused = FuseCascade(filterBitmap, sparseResults, denseResults, q.K)
 	default:
-		fused = ReciprocalRankFusion(denseResults, sparseResults, p.config.RRFk, q.K)
+		fused = ReciprocalRankFusion(datasetName, denseResults, sparseResults, p.config.RRFk, q.K)
 	}
 
 	// 5. Re-ranking stage (Stage 2)
@@ -232,8 +237,8 @@ func FuseLinear(dense, sparse []SearchResult, alpha float32, limit int) []Search
 }
 
 // FuseRRF is an alias for ReciprocalRankFusion (legacy alignment)
-func FuseRRF(dense, sparse []SearchResult, k, limit int) []SearchResult {
-	return ReciprocalRankFusion(dense, sparse, k, limit)
+func FuseRRF(dataset string, dense, sparse []SearchResult, k, limit int) []SearchResult {
+	return ReciprocalRankFusion(dataset, dense, sparse, k, limit)
 }
 
 // FuseCascade implements cascade-style filtering: exact -> keyword -> vector

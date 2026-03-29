@@ -1,11 +1,13 @@
 package store
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"time"
 
 	"github.com/23skdu/longbow/internal/metrics"
+	lbtypes "github.com/23skdu/longbow/internal/store/types"
 )
 
 // =============================================================================
@@ -64,6 +66,9 @@ type PluggableVectorIndex interface {
 	// SearchBatch performs batch search for multiple queries
 	SearchBatch(queries [][]float32, k int) ([][]IndexSearchResult, error)
 
+	// GetNeighbors returns the k nearest neighbors for a given vector ID
+	GetNeighbors(ctx context.Context, id lbtypes.VectorID, k int) ([]lbtypes.SearchResult, error)
+
 	// Build builds the index (for algorithms requiring training)
 	Build() error
 
@@ -78,7 +83,8 @@ type PluggableVectorIndex interface {
 
 	// Legacy interface compatibility
 	AddByLocation(batchIdx, rowIdx int) error
-	SearchVectors(query []float32, k int, options SearchOptions) []SearchResult
+	GetVectorID(loc Location) (uint64, bool)
+	SearchVectors(query []float32, k int, options SearchOptions) []lbtypes.SearchResult
 	Len() int
 }
 

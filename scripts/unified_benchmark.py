@@ -32,7 +32,7 @@ except ImportError:
     HAS_LONGBOW_SDK = False
 
 # All supported data types
-ALL_DTYPES = "float32,float64,int8,int16,int32,int64,uint8,uint16,uint32,uint64,complex64,complex128,turboquant"
+ALL_DTYPES = "float32,float64,float16,int8,int16,int32,int64,uint8,uint16,uint32,uint64,complex64,complex128,turboquant"
 
 # Bytes per element for each dtype
 DTYPE_BYTES = {
@@ -43,6 +43,7 @@ DTYPE_BYTES = {
     "int32": 4,
     "uint32": 4,
     "float32": 4,
+    "float16": 2,
     "complex64": 4,
     "int64": 8,
     "uint64": 8,

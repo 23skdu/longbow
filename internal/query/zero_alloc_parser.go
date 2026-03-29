@@ -2,6 +2,7 @@ package query
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 
@@ -16,6 +17,7 @@ type TicketQuery struct {
 	Filters    []Filter                 `json:"filters"`
 	Search     *VectorSearchRequest     `json:"search,omitempty"`
 	SearchByID *VectorSearchByIDRequest `json:"search_by_id,omitempty"`
+	Recommend  *RecommendRequest        `json:"recommend,omitempty"`
 }
 
 type Filter struct {
@@ -66,6 +68,8 @@ func (p *ZeroAllocTicketParser) Parse(data []byte) (TicketQuery, error) {
 	p.result.Name = ""
 	p.result.Limit = 0
 	p.result.Search = nil
+	p.result.SearchByID = nil
+	p.result.Recommend = nil
 	p.filters = p.filters[:0]
 
 	if len(data) == 0 {
@@ -166,6 +170,19 @@ func (p *ZeroAllocTicketParser) Parse(data []byte) (TicketQuery, error) {
 				return p.result, err
 			}
 			p.result.SearchByID = &req
+			i = newPos
+		case "recommend":
+			// Parse RecommendRequest from JSON object
+			start := i
+			newPos, err := skipObject(data, i)
+			if err != nil {
+				return p.result, err
+			}
+			var req RecommendRequest
+			if err := parseRecommendRequest(data[start:newPos], &req); err != nil {
+				return p.result, err
+			}
+			p.result.Recommend = &req
 			i = newPos
 		default:
 			newPos, err := skipValue(data, i)
@@ -750,4 +767,122 @@ func parseSearchByIDRequest(data []byte, req *VectorSearchByIDRequest) error {
 			i++
 		}
 	}
+}
+
+func parseRecommendRequest(data []byte, req *RecommendRequest) error {
+	i := skipWhitespace(data, 0)
+	if i >= len(data) || data[i] != '{' {
+		return errors.New("expected opening brace")
+	}
+	i++
+
+	for {
+		i = skipWhitespace(data, i)
+		if i >= len(data) {
+			return errors.New("unexpected end")
+		}
+		if data[i] == '}' {
+			return nil
+		}
+
+		key, newPos, err := parseString(data, i)
+		if err != nil {
+			return err
+		}
+		i = newPos
+		i = skipWhitespace(data, i)
+		if i >= len(data) || data[i] != ':' {
+			return errors.New("expected colon")
+		}
+		i++
+		i = skipWhitespace(data, i)
+
+		switch key {
+		case "dataset":
+			val, newPos, err := parseString(data, i)
+			if err != nil {
+				return err
+			}
+			req.Dataset = val
+			i = newPos
+		case "seed_ids":
+			if i >= len(data) || data[i] != '[' {
+				return errors.New("expected opening bracket for seed_ids")
+			}
+			i++
+			for {
+				i = skipWhitespace(data, i)
+				if i >= len(data) {
+					return errors.New("unexpected end in seed_ids")
+				}
+				if data[i] == ']' {
+					i++
+					break
+				}
+				val, newPos, err := parseString(data, i)
+				if err != nil {
+					return err
+				}
+				req.SeedIDs = append(req.SeedIDs, val)
+				i = newPos
+				i = skipWhitespace(data, i)
+				if i < len(data) && data[i] == ',' {
+					i++
+				}
+			}
+		case "k":
+			val, newPos, err := parseInt64(data, i)
+			if err != nil {
+				return err
+			}
+			req.K = int(val)
+			i = newPos
+		case "alpha":
+			val, newPos, err := parseNumber(data, i)
+			if err != nil {
+				return err
+			}
+			req.Alpha = float32(val)
+			i = newPos
+		case "max_hops":
+			val, newPos, err := parseInt64(data, i)
+			if err != nil {
+				return err
+			}
+			req.MaxHops = int(val)
+			i = newPos
+		case "decay":
+			val, newPos, err := parseNumber(data, i)
+			if err != nil {
+				return err
+			}
+			req.Decay = float32(val)
+			i = newPos
+		default:
+			newPos, err := skipValue(data, i)
+			if err != nil {
+				return err
+			}
+			i = newPos
+		}
+
+		i = skipWhitespace(data, i)
+		if i < len(data) && data[i] == ',' {
+			i++
+		}
+	}
+}
+
+func parseNumber(data []byte, pos int) (float64, int, error) {
+	start := pos
+	if pos < len(data) && data[pos] == '-' {
+		pos++
+	}
+	for pos < len(data) && ((data[pos] >= '0' && data[pos] <= '9') || data[pos] == '.' || data[pos] == 'e' || data[pos] == 'E' || data[pos] == '-' || data[pos] == '+') {
+		pos++
+	}
+	s := string(data[start:pos])
+	var val float64
+	fmt.Sscanf(s, "%f", &val)
+	return val, pos, nil
 }

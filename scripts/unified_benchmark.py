@@ -24,6 +24,13 @@ import time
 import numpy as np
 from datetime import datetime
 
+try:
+    from longbow import LongbowClient
+
+    HAS_LONGBOW_SDK = True
+except ImportError:
+    HAS_LONGBOW_SDK = False
+
 # All supported data types
 ALL_DTYPES = "float32,float64,int8,int16,int32,int64,uint8,uint16,uint32,uint64,complex64,complex128,turboquant"
 
@@ -176,9 +183,9 @@ class BenchmarkRunner:
 
         # Server uses envconfig, not command-line flags
         env["LONGBOW_LISTEN_ADDR"] = f"127.0.0.1:{port}"
-        env["LONGBOW_META_ADDR"] = f"127.0.0.1:{port+1}"
-        env["LONGBOW_REST_ADDR"] = f"127.0.0.1:{port+80}" # e.g. 3080
-        env["LONGBOW_METRICS_ADDR"] = f"127.0.0.1:{port+6000}" # e.g. 9000
+        env["LONGBOW_META_ADDR"] = f"127.0.0.1:{port + 1}"
+        env["LONGBOW_REST_ADDR"] = f"127.0.0.1:{port + 80}"  # e.g. 3080
+        env["LONGBOW_METRICS_ADDR"] = f"127.0.0.1:{port + 6000}"  # e.g. 9000
         env["LONGBOW_DATA_PATH"] = data_root
         env["LONGBOW_NODE_ID"] = self.node_id
 
@@ -219,7 +226,7 @@ class BenchmarkRunner:
             except:
                 pass
             self.server_pid = None
-        
+
         # Kill any leftovers
         subprocess.run(
             "pkill -9 longbow || true",
@@ -282,12 +289,144 @@ class BenchmarkRunner:
         print(f" {metrics.get('ingest_vec_per_sec', 0):.0f} vec/s")
         return True
 
+    def execute_recommend(self):
+        if not HAS_LONGBOW_SDK:
+            print(
+                "Error: longbow Python SDK not installed. Install with: pip install longbow"
+            )
+            return
+
+        dims = [int(d) for d in self.args.dims.split(",")]
+        counts = [int(c) for c in self.args.counts.split(",")]
+        alpha_values = [float(a) for a in self.args.alpha_values.split(",")]
+        k_values = [int(k) for k in self.args.k_values.split(",")]
+
+        count = counts[0] if counts else 10000
+        dim = dims[0] if dims else 128
+        dtype = "float32"
+
+        print("=" * 80)
+        print(f"RECOMMEND BENCHMARK (Hybrid vs ANN)")
+        print(f"Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"Dim: {dim}, Count: {count}")
+        print(f"Alpha values: {alpha_values} (0.0=graph, 1.0=ANN, 0.5=hybrid)")
+        print(f"K values: {k_values}")
+        print(f"Max hops: {self.args.max_hops}, Decay: {self.args.decay}")
+        print("=" * 80)
+
+        label = f"rec_{dtype}_{dim}_{count}"
+        if not self.start_server(label):
+            print("  Failed to start server!")
+            return
+
+        try:
+            client = LongbowClient(
+                uri=f"grpc://{self.server_addr}",
+                meta_uri=f"grpc://{self.server_addr.replace('3000', '3001')}",
+            )
+
+            dataset_name = f"rec_bench_{dim}d"
+            print(f"\nCreating dataset {dataset_name}...")
+
+            vectors = np.random.rand(count, dim).astype(np.float32).tolist()
+            ids = [str(i) for i in range(count)]
+
+            client.insert(
+                dataset_name,
+                [{"id": id, "vector": vec} for id, vec in zip(ids, vectors)],
+            )
+            time.sleep(2)
+
+            seed_ids = [str(i) for i in range(self.args.num_seeds)]
+            print(f"Using seed IDs: {seed_ids}")
+
+            total_tests = len(alpha_values) * len(k_values)
+            current = 0
+
+            for alpha in alpha_values:
+                for k in k_values:
+                    current += 1
+                    print(f"\n[{current}/{total_tests}] Alpha={alpha}, K={k}")
+
+                    latencies = []
+                    for _ in range(self.args.queries):
+                        start = time.time()
+                        try:
+                            results = client.recommend(
+                                dataset=dataset_name,
+                                seed_ids=seed_ids,
+                                k=k,
+                                alpha=alpha,
+                                max_hops=self.args.max_hops,
+                                decay=self.args.decay,
+                            )
+                            latency = (time.time() - start) * 1000
+                            latencies.append(latency)
+                        except Exception as e:
+                            print(f"  Error: {e}")
+                            continue
+
+                    if latencies:
+                        latencies.sort()
+                        qps = 1000.0 / (sum(latencies) / len(latencies))
+                        self.results.append(
+                            {
+                                "dim": dim,
+                                "dtype": dtype,
+                                "count": count,
+                                "alpha": alpha,
+                                "k": k,
+                                "qps": qps,
+                                "p50": latencies[int(0.5 * len(latencies))],
+                                "p95": latencies[int(0.95 * len(latencies))],
+                                "p99": latencies[int(0.99 * len(latencies))],
+                                "timestamp": datetime.now().isoformat(),
+                            }
+                        )
+                        print(
+                            f"  QPS: {qps:.1f}, P50: {latencies[int(0.5 * len(latencies))]:.2f}ms"
+                        )
+
+        except Exception as e:
+            print(f"Error: {e}")
+        finally:
+            self.stop_server()
+            data_root = os.path.join(self.data_dir, label)
+            subprocess.run(f"rm -rf {data_root}", shell=True)
+
+        with open(self.output_file, "w") as f:
+            json.dump(
+                {
+                    "mode": "recommend",
+                    "timestamp": self.timestamp,
+                    "config": {
+                        "dim": dim,
+                        "count": count,
+                        "alpha_values": alpha_values,
+                        "k_values": k_values,
+                        "max_hops": self.args.max_hops,
+                        "decay": self.args.decay,
+                        "num_seeds": self.args.num_seeds,
+                        "queries": self.args.queries,
+                    },
+                    "results": self.results,
+                },
+                f,
+                indent=2,
+            )
+
+        self.print_summary()
+        print(f"\nResults saved to: {self.output_file}")
+
     def execute(self):
+        if self.args.mode == "recommend":
+            self.execute_recommend()
+            return
+
         dims = [int(d) for d in self.args.dims.split(",")]
         counts = [int(c) for c in self.args.counts.split(",")]
         dtypes = self.args.dtypes.split(",")
 
-        # Only use first count (we run all dims against same count)
         count = counts[0] if counts else 1000
 
         total = len(dims) * len(dtypes)
@@ -305,7 +444,6 @@ class BenchmarkRunner:
         print(f"Duration per test: {self.args.duration}s")
         print("=" * 80)
 
-        # Run each config with a FRESH server (no WAL interference)
         for count in counts:
             print(f"\n{'=' * 70}")
             print(f"Vector Count: {count}")
@@ -319,7 +457,9 @@ class BenchmarkRunner:
                 for dim in dims:
                     current += 1
                     label = f"{dtype}_{dim}_{count}"
-                    print(f"\n[{current}/{total * len(counts)}] {dtype} dim={dim} count={count}")
+                    print(
+                        f"\n[{current}/{total * len(counts)}] {dtype} dim={dim} count={count}"
+                    )
 
                     # Start fresh server for this config
                     if not self.start_server(label):
@@ -363,6 +503,27 @@ class BenchmarkRunner:
         print("=" * 80)
 
     def print_summary(self):
+        if self.args.mode == "recommend":
+            print("\n" + "─" * 100)
+            print("RECOMMEND BENCHMARK SUMMARY (Hybrid vs ANN)")
+            print("─" * 100)
+            print(
+                f"{'Alpha':<8} {'K':<6} {'QPS':<12} {'P50 ms':<10} {'P95 ms':<10} {'P99 ms':<10}"
+            )
+            print("─" * 100)
+
+            for r in self.results:
+                print(
+                    f"{r['alpha']:<8} "
+                    f"{r['k']:<6} "
+                    f"{r['qps']:<12.1f} "
+                    f"{r['p50']:<10.2f} "
+                    f"{r['p95']:<10.2f} "
+                    f"{r['p99']:<10.2f}"
+                )
+            print("─" * 100)
+            return
+
         print("\n" + "─" * 100)
         print("BENCHMARK SUMMARY")
         print("─" * 100)
@@ -386,12 +547,40 @@ class BenchmarkRunner:
         print("─" * 100)
 
     def generate_markdown_report(self):
-        """Generate a full markdown report for inclusion in documentation."""
+        if self.args.mode == "recommend":
+            md_file = self.output_file.replace(".json", ".md")
+            with open(md_file, "w") as f:
+                f.write("# Recommend Benchmark Results (Hybrid vs ANN)\n\n")
+                f.write(f"**Generated**: {datetime.now().strftime('%Y-%m-%d')}\n")
+                f.write(f"**Test Tool**: Longbow Unified Benchmark Script\n\n")
+
+                f.write("## Alpha Comparison\n\n")
+                f.write("| Alpha | Mode | K | QPS | P50 (ms) | P95 (ms) | P99 (ms) |\n")
+                f.write("|-------|------|---|-----|----------|----------|----------|\n")
+
+                for r in self.results:
+                    mode = (
+                        "Pure ANN"
+                        if r["alpha"] == 1.0
+                        else ("Graph" if r["alpha"] == 0.0 else "Hybrid")
+                    )
+                    f.write(
+                        f"| {r['alpha']} | {mode} | {r['k']} | {r['qps']:.1f} | {r['p50']:.2f} | {r['p95']:.2f} | {r['p99']:.2f} |\n"
+                    )
+
+                f.write("\n## Key Insights\n\n")
+                f.write(
+                    "- **Alpha = 0.0**: Pure graph-based connectivity (BFS traversal)\n"
+                )
+                f.write("- **Alpha = 1.0**: Pure vector similarity (ANN search)\n")
+                f.write("- **Alpha = 0.5**: Hybrid blend of both approaches\n")
+            return
+
         md_file = self.output_file.replace(".json", ".md")
         mode_title = self.args.mode.upper()
         if self.args.mode == "metal":
             mode_title = "Metal GPU"
-        
+
         with open(md_file, "w") as f:
             f.write(f"# Performance Validation Matrix — Apple M3 Pro {mode_title}\n\n")
             f.write(f"**Generated**: {datetime.now().strftime('%Y-%m-%d')}\n")
@@ -399,38 +588,54 @@ class BenchmarkRunner:
             f.write(f"**Memory**: {self.args.memory // (1024**3)}GB allocated\n")
             f.write(f"**Test Tool**: Longbow Unified Benchmark Script\n")
             f.write(f"**Queries**: {self.args.queries} per test\n\n")
-            
+
             f.write("## Results Table\n\n")
-            f.write("| DType | Dim | Count | Ingest (vec/s) | Dense QPS | Dense P50 | Hybrid QPS | Hybrid P50 | Filtered QPS | Filtered P50 | ByID QPS | ByID P50 |\n")
-            f.write("|-------|-----|-------|----------------|-----------|-----------|------------|------------|--------------|--------------|----------|----------|\n")
-            
+            f.write(
+                "| DType | Dim | Count | Ingest (vec/s) | Dense QPS | Dense P50 | Hybrid QPS | Hybrid P50 | Filtered QPS | Filtered P50 | ByID QPS | ByID P50 |\n"
+            )
+            f.write(
+                "|-------|-----|-------|----------------|-----------|-----------|------------|------------|--------------|--------------|----------|----------|\n"
+            )
+
             for r in self.results:
                 search = r["search"]
                 dense = search.get("dense", {"qps": 0, "p50": 0})
                 hybrid = search.get("hybrid", {"qps": 0, "p50": 0})
                 filtered = search.get("filtered", {"qps": 0, "p50": 0})
                 byid = search.get("byid", {"qps": 0, "p50": 0})
-                
-                f.write(f"| {r['dtype']} | {r['dim']} | {r['count']:,} | {r['ingest']['vec_per_sec']:,.0f} | "
-                        f"{dense['qps']:,.0f} | {dense['p50']:.3f}ms | "
-                        f"{hybrid['qps']:,.0f} | {hybrid['p50']:.3f}ms | "
-                        f"{filtered['qps']:,.0f} | {filtered['p50']:.3f}ms | "
-                        f"{byid['qps']:,.0f} | {byid['p50']:.3f}ms |\n")
-            
+
+                f.write(
+                    f"| {r['dtype']} | {r['dim']} | {r['count']:,} | {r['ingest']['vec_per_sec']:,.0f} | "
+                    f"{dense['qps']:,.0f} | {dense['p50']:.3f}ms | "
+                    f"{hybrid['qps']:,.0f} | {hybrid['p50']:.3f}ms | "
+                    f"{filtered['qps']:,.0f} | {filtered['p50']:.3f}ms | "
+                    f"{byid['qps']:,.0f} | {byid['p50']:.3f}ms |\n"
+                )
+
             f.write("\n---\n\n")
-            f.write(f"## {datetime.now().strftime('%Y-%m-%d')} Full Performance Benchmark Summary ({mode_title})\n\n")
-            f.write("| Dim | Dtype | Vec/s Ingest | Search QPS | P50 ms | P90 ms | P95 ms | P99 ms |\n")
-            f.write("|-----|-------|--------------|------------|--------|--------|--------|--------|\n")
-            
+            f.write(
+                f"## {datetime.now().strftime('%Y-%m-%d')} Full Performance Benchmark Summary ({mode_title})\n\n"
+            )
+            f.write(
+                "| Dim | Dtype | Vec/s Ingest | Search QPS | P50 ms | P90 ms | P95 ms | P99 ms |\n"
+            )
+            f.write(
+                "|-----|-------|--------------|------------|--------|--------|--------|--------|\n"
+            )
+
             # Use largest count for the summary table
             max_count = max(r["count"] for r in self.results) if self.results else 0
             for r in self.results:
                 if r["count"] == max_count:
-                    dense = r["search"].get("dense", {"qps": 0, "p50": 0, "p90": 0, "p95": 0, "p99": 0})
-                    f.write(f"| {r['dim']} | {r['dtype']} | {r['ingest']['vec_per_sec']:,.0f} | "
-                            f"{dense['qps']:,.1f} | {dense['p50']:.3f} | {dense.get('p90', 0.0):.3f} | "
-                            f"{dense['p95']:.3f} | {dense['p99']:.3f} |\n")
-            
+                    dense = r["search"].get(
+                        "dense", {"qps": 0, "p50": 0, "p90": 0, "p95": 0, "p99": 0}
+                    )
+                    f.write(
+                        f"| {r['dim']} | {r['dtype']} | {r['ingest']['vec_per_sec']:,.0f} | "
+                        f"{dense['qps']:,.1f} | {dense['p50']:.3f} | {dense.get('p90', 0.0):.3f} | "
+                        f"{dense['p95']:.3f} | {dense['p99']:.3f} |\n"
+                    )
+
             f.write("\n")
 
 
@@ -438,9 +643,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Unified Longbow Benchmark Script")
     parser.add_argument(
         "--mode",
-        choices=["cpu", "metal", "cuda"],
+        choices=["cpu", "metal", "cuda", "recommend"],
         default="cpu",
-        help="Benchmark mode: cpu, metal (macOS), cuda (Linux)",
+        help="Benchmark mode: cpu, metal (macOS), cuda (Linux), recommend (hybrid vs ANN)",
     )
     parser.add_argument(
         "--dims", default="128,384,768,1536,3072", help="Comma-separated dimensions"
@@ -472,6 +677,35 @@ if __name__ == "__main__":
         "--startup-timeout", type=int, default=60, help="Server startup timeout"
     )
     parser.add_argument("--addr", default="127.0.0.1:3000", help="Server address")
+    # Recommend mode specific parameters
+    parser.add_argument(
+        "--alpha-values",
+        default="0.0,0.5,1.0",
+        help="Comma-separated alpha values to test (0.0=graph, 1.0=ANN, 0.5=hybrid)",
+    )
+    parser.add_argument(
+        "--k-values",
+        default="5,10,20",
+        help="Comma-separated k values (number of recommendations)",
+    )
+    parser.add_argument(
+        "--num-seeds",
+        type=int,
+        default=5,
+        help="Number of seed IDs to use for recommendations",
+    )
+    parser.add_argument(
+        "--max-hops",
+        type=int,
+        default=2,
+        help="Maximum BFS hops for graph connectivity",
+    )
+    parser.add_argument(
+        "--decay",
+        type=float,
+        default=0.5,
+        help="Multi-hop connectivity decay factor",
+    )
 
     args = parser.parse_args()
     runner = BenchmarkRunner(args)

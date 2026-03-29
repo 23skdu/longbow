@@ -146,12 +146,13 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 	defer mem.Release()
 
 	// Handle Search Request via DoGet (Native Arrow Streaming)
-	if query.Search != nil {
+	switch {
+	case query.Search != nil:
 		return s.handleDoGetSearch(query.Search, stream, mem)
-	}
-
-	if query.SearchByID != nil {
+	case query.SearchByID != nil:
 		return s.handleDoGetSearchByID(query.SearchByID, stream, mem)
+	case query.Recommend != nil:
+		return s.handleDoGetRecommend(query.Recommend, stream, mem)
 	}
 
 	// Existing Dataset Fetch Logic
@@ -935,5 +936,43 @@ func (s *VectorStore) handleDoGetSearchByID(req *qry.VectorSearchByIDRequest, st
 	}
 	rec.Release()
 
+	return nil
+}
+
+func (s *VectorStore) handleDoGetRecommend(req *qry.RecommendRequest, stream flight.FlightService_DoGetServer, mem memory.Allocator) error {
+	results, err := s.Recommend(stream.Context(), req)
+	if err != nil {
+		return status.Errorf(codes.Internal, "Recommendation failed: %v", err)
+	}
+
+	// Schema for recommendations: id (uint64), score (float32)
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "id", Type: arrow.PrimitiveTypes.Uint64},
+		{Name: "score", Type: arrow.PrimitiveTypes.Float32},
+	}, nil)
+
+	w := flight.NewRecordWriter(stream, ipc.WithSchema(schema))
+	defer func() { _ = w.Close() }()
+
+	builder := array.NewRecordBuilder(mem, schema)
+	defer builder.Release()
+
+	idBuilder := builder.Field(0).(*array.Uint64Builder)
+	scoreBuilder := builder.Field(1).(*array.Float32Builder)
+
+	idBuilder.Reserve(len(results))
+	scoreBuilder.Reserve(len(results))
+
+	for _, res := range results {
+		idBuilder.Append(uint64(res.ID))
+		scoreBuilder.Append(res.Score)
+	}
+
+	rec := builder.NewRecordBatch()
+	if err := w.Write(rec); err != nil {
+		rec.Release()
+		return status.Errorf(codes.Internal, "failed to write arrow batch: %v", err)
+	}
+	rec.Release()
 	return nil
 }

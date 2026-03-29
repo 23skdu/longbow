@@ -77,10 +77,13 @@ graph TB
 
 ### Features
 * [Vector Search](vectorsearch.md) - Search modes and filtering
+* [Recommendations](recommendations.md) - Hybrid recommendation engine
+* [GraphRAG](graph_rag.md) - Graph-based re-ranking and knowledge graphs
+* [TurboQuant](turboquant.md) - Extreme compression (6-8x memory reduction)
 * [Reranking](rerank.md) - ML-enhanced reranking
 * [ONNX Metal Runtime](onnx.md) - Native Apple Silicon ML inference
 * [Persistence](persistence.md) - Data durability
-* [GPU Integration](gpu_integration.md) - GPU acceleration
+* [GPU Acceleration](gpu-acceleration.md) - CUDA and Metal GPU support
 
 ### Operations
 * [Metrics](metrics.md) - Prometheus metrics reference

@@ -40,6 +40,11 @@ func (g *GraphData) Serialize(w io.Writer) error {
 	if g.PQEnabled {
 		flags |= 1 << 2
 	}
+	if g.TurboQuantEnabled {
+		flags |= 1 << 3
+	}
+	// Bits for TurboQuant: 4-7
+	flags |= uint32(g.TurboQuantBits&0xF) << 4
 	if err := binary.Write(w, binary.LittleEndian, flags); err != nil {
 		return err
 	}
@@ -374,9 +379,14 @@ func DeserializeGraphData(r io.Reader) (*GraphData, error) {
 		return nil, err
 	}
 
-	sq8 := (flags & 1) != 0
-	bq := (flags & 2) != 0
-	pqEnabled := (flags & 4) != 0
+	sq8 := (flags & (1 << 0)) != 0
+	bq := (flags & (1 << 1)) != 0
+	pqEnabled := (flags & (1 << 2)) != 0
+	tqEnabled := (flags & (1 << 3)) != 0
+	tqBits := int((flags >> 4) & 0xF)
+	if tqBits == 0 && tqEnabled {
+		tqBits = 8 // Default
+	}
 
 	var pqM int32
 	if err := binary.Read(r, binary.LittleEndian, &pqM); err != nil {
@@ -384,7 +394,7 @@ func DeserializeGraphData(r io.Reader) (*GraphData, error) {
 	}
 
 	// Initialize GraphData
-	g := NewGraphData(int(capacity), int(dims), false, false, 0, false, sq8, false, VectorDataType(typeCode), bq, pqEnabled)
+	g := NewGraphData(int(capacity), int(dims), false, false, 0, false, sq8, false, VectorDataType(typeCode), bq, pqEnabled, tqEnabled, tqBits)
 	g.PQM = int(pqM)
 
 	// 1. Levels

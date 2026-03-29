@@ -12,7 +12,7 @@ import (
 
 func createTestGraph(t *testing.T) *types.GraphData {
 	// Create a simple graph with 10 nodes, 2 dimensions
-	g := types.NewGraphData(100, 2, false, false, 0, false, false, false, types.VectorTypeFloat32, false, false)
+	g := types.NewGraphData(100, 2, false, false, 0, false, false, false, types.VectorTypeFloat32, false, false, false, 8)
 	err := g.EnsureChunk(0, 0, 2)
 	require.NoError(t, err)
 

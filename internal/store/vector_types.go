@@ -14,6 +14,8 @@ const (
 	VectorTypeFloat16    = types.VectorTypeFloat16
 	VectorTypeInt32      = types.VectorTypeInt32
 	VectorTypeInt64      = types.VectorTypeInt64
+	VectorTypeTQ         = types.VectorTypeTQ
+	VectorTypeBQ         = types.VectorTypeBQ
 )
 
 type SearchOptions struct {

@@ -219,3 +219,19 @@ func (e *TurboQuantEncoder) unpackAngles(src []byte, dst []float32) {
 		dst[i] = norm*2*math.Pi - math.Pi
 	}
 }
+// PackedSize calculates the total byte size required to store a TurboQuant-encoded vector
+// for the given logical dimension, including power-of-2 padding and bit-packing overhead.
+func PackedSize(dims int, bitsPerAngle int) int {
+	if dims <= 0 {
+		return 0
+	}
+	p2 := int(1 << uint(math.Ceil(math.Log2(float64(dims)))))
+	angleBytes := ((p2-1)*bitsPerAngle + 7) / 8
+	bitBytes := (p2 + 7) / 8
+	return 4 + angleBytes + bitBytes
+}
+
+// PackedSize returns the stride needed for this encoder's configuration.
+func (e *TurboQuantEncoder) PackedSize() int {
+	return PackedSize(e.dims, e.params.BitsPerAngle)
+}

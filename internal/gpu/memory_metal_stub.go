@@ -1,5 +1,5 @@
-//go:build !metal
-// +build !metal
+//go:build !gpu || !darwin || !arm64
+// +build !gpu !darwin !arm64
 
 package gpu
 

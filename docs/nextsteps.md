@@ -5,14 +5,65 @@
 
 ---
 
-## 🔴 TOP PRIORITY — API & Server Quality Improvements
+## 🏗️ v0.1.8-rc1 Final Release Pipeline (Current)
 
-The following seven items represent the highest-priority engineering work for the next release cycle.
-Each item includes a concrete implementation plan, required unit test coverage, and Prometheus metrics to add.
+This pipeline outlines the active stabilization work to finalize the v0.1.8-rc1 release, focusing on HNSW search correctness, TurboQuant data-type parity, and a comprehensive performance audit.
+
+### Final Implementation Plan
+
+1. **Environment Sanitization**: Clear all stale binaries (`bin/`), historical telemetry (`data/perf_logs/`), and transient data (`data/bench/`, `wal/`, `snapshots/`) to ensure a fresh audit state.
+2. **HNSW Engine Stabilization**: 
+   - [x] Fix HNSW Search Layer state leakage (visited bitset/heap resets) — **DONE**.
+   - [x] Restore robust and type-safe parallel vector extraction for diverse Arrow types (Float64, etc.) — **DONE**.
+   - [x] Fix HNSW search traversal filtering logic to prevent 0-result regressions — **DONE**.
+3. **Performance Audit**: Execute a representative 60-case matrix for CPU and Metal backends using `scripts/unified_benchmark.py` (Scales: 1k, 10k | Dims: 128, 768, 1536).
+4. **Release Quality**: Complete a final security/lint audit and update `performance.md` metrics.
+
+### Active Release Tasks
+
+- `[x]` Resolve HNSW Search Regression (0 results for Float64)
+- `[x]` Restore `visited.Clear()` and heap resets in `searchLayer`
+- `[x]` Fix vector extraction for Parallel Search (Float64 conversion)
+- `[x]` Verify resolution with `internal/store/index_datatype_test.go`
+- `[x]` Fix `store_actions.go` linter issues (dataType switch)
+- `[/]` Reproduce and Fix 4-digit dimension mismatch (TurboQuant)
+- `[/]` Performance Benchmark Matrix Audit (CPU & Metal)
+- `[ ]` Update `docs/performance.md` and `docs/performance_metal.md`
+- `[ ]` Finalize Release: Commit and Push to remote
+- `[ ]` Docker Release: Build `0.1.8-rc1` and `latest` tags, Push to ghcr.io
 
 ---
 
-### 1. EOF Detection Consistency
+## 🔴 TOP PRIORITY — API & Architecture Enhancements
+
+### 1. Recommendations for Longbow
+
+**Problem**: While Longbow provides high-performance vector search, it currently lacks a built-in recommendation engine (e.g., "users who liked this also liked...") that leverages graph connectivity and vector similarity in a unified way. 
+
+**Plan**:
+- Implement a `Recommend` API action that takes a seed `VectorID` and returns K candidates.
+- Use a hybrid scoring mechanism: `α * similarity(q, v) + (1-α) * graph_connectivity(q, v)`.
+- Support multi-seed recommendations (centroid-based query).
+- Document recommendations strategy in `docs/recommendations.md`.
+
+**Unit Tests** (`internal/store/recommend_test.go`):
+```go
+// TestRecommend_SingleSeed — verify result set contains neighbors and similar vectors
+// TestRecommend_MultiSeed — verify results are near the centroid of seeds
+// TestRecommend_AlphaTuning — verify α=1.0 matches pure ANN search
+// TestRecommend_EmptySeed — assert ErrInvalidSeed error
+```
+
+**Prometheus Metrics** (add to `internal/metrics/search_metrics.go`):
+```go
+// RecommendationsTotal — counter{dataset, result="success|error"}
+// RecommendationsLatencySeconds — histogram{dataset}
+// RecommendationsSeedCount — histogram{dataset} (number of seeds per request)
+```
+
+---
+
+### 2. EOF Detection Consistency
 
 **Problem**: The `arrow-go` library returns `io.EOF` (a Go sentinel), but several client-side consumers
 check for the string `"EOF"`. This mismatch causes silent stream termination failures across language
@@ -43,7 +94,7 @@ boundaries (Python Archer client, benchmark tool, etc.).
 
 ---
 
-### 2. Expose Search Consistency Levels
+### 3. Expose Search Consistency Levels
 
 **Problem**: The server supports HNSW with variable ef (entry factor), but there is no API-visible way
 for clients to request `eventual` (fast, lower ef) vs `strong` (slower, higher ef, more accurate) search.
@@ -85,7 +136,7 @@ for clients to request `eventual` (fast, lower ef) vs `strong` (slower, higher e
 
 ---
 
-### 3. Dynamic Dimension Handling
+### 4. Dynamic Dimension Handling
 
 **Problem**: Clients receive `"dimension mismatch (expected 2, got 4)"` when datasets are created
 with incorrect or default dimensions. There is no auto-detection, and the error message lacks
@@ -120,7 +171,7 @@ actionable detail.
 
 ---
 
-### 4. GraphRAG Server-Side Documentation & Metrics
+### 5. GraphRAG Server-Side Documentation & Metrics
 
 **Problem**: The `GraphAlpha` and `GraphDepth` parameters in the search API control a spreading-
 activation graph traversal for GraphRAG workloads. Neither the algorithm nor the parameters are
@@ -158,7 +209,7 @@ documented, and there are no metrics for graph re-ranking performance.
 
 ---
 
-### 5. Native TurboQuant Storage
+### 6. Native TurboQuant Storage
 
 **Problem**: Archer (and other clients) store float32 vectors in Longbow and rely on server-side
 quantization implicitly. However, Longbow already supports TurboQuant-encoded vectors natively.
@@ -357,9 +408,11 @@ Enable optimized SIMD kernels for all supported dimensions (128-3072) across all
 
 ### Step 8: Integrate Metrics into Search Hot Paths (with Sampling)
 
-**Status**: 📋 IN PROGRESS
+**Status**: ✅ COMPLETE
 
-- Sampling logic for search layer to avoid overhead.
+- Implemented `nodesVisitedCount` and `distComputeCount` tracking in `ArrowSearchContext`.
+- Added atomic modulo-based sampling to avoid Histogram overhead in the search hot path.
+- Verified with unit tests covering 100% and near-0% sampling scenarios.
 
 ### Step 9: Run Final Performance Matrix
 

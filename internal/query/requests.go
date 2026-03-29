@@ -29,6 +29,16 @@ type VectorSearchRequest struct {
 	EfSearch int `json:"ef_search,omitempty"`
 }
 
+// RecommendRequest defines the request for the built-in recommendation engine (v0.1.9)
+type RecommendRequest struct {
+	Dataset   string   `json:"dataset"`
+	SeedIDs   []string `json:"seed_ids"` // User IDs (mapped strings)
+	K         int      `json:"k"`
+	Alpha     float32  `json:"alpha"`    // 1.0=pure vector, 0.0=pure graph
+	MaxHops   int      `json:"max_hops,omitempty"`
+	Decay     float32  `json:"decay,omitempty"`
+}
+
 // VectorSearchResponse defines the response format for VectorSearch action
 type VectorSearchResponse struct {
 	IDs    []uint64  `json:"ids"`

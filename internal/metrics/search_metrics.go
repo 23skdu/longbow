@@ -182,4 +182,37 @@ var (
 		},
 		[]string{"dataset"},
 	)
+
+	// =============================================================================
+	// Recommendation Engine Metrics (v0.1.9)
+	// =============================================================================
+
+	// RecommendationsTotal counts Recommend operations by result outcome.
+	RecommendationsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_recommendations_total",
+			Help: "Total number of Recommend operations",
+		},
+		[]string{"dataset", "result"}, // result: success|error
+	)
+
+	// RecommendationsLatencySeconds tracks the latency of Recommend calls.
+	RecommendationsLatencySeconds = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_recommendations_latency_seconds",
+			Help:    "Latency of Recommend operations",
+			Buckets: []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0},
+		},
+		[]string{"dataset"},
+	)
+
+	// RecommendationsSeedCount tracks the number of seeds per request.
+	RecommendationsSeedCount = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_recommendations_seed_count",
+			Help:    "Number of seeds provided per Recommend request",
+			Buckets: []float64{1, 2, 5, 10, 20, 50, 100},
+		},
+		[]string{"dataset"},
+	)
 )

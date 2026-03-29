@@ -209,6 +209,43 @@ class LongbowClient:
         except Exception as e:
             raise LongbowQueryError(f"SearchByID failed: {e}")
 
+    def recommend(self, dataset: str, seed_ids: List[str], k: int = 10, alpha: float = 0.5, max_hops: int = 2, decay: float = 0.5) -> "pd.DataFrame":
+        """
+        Produce a list of recommendations based on seed IDs (hybrid vector-graph closeness).
+        
+        Args:
+            dataset: The dataset name.
+            seed_ids: List of source IDs to use as seeds.
+            k: Number of recommendations to return.
+            alpha: Hybrid blend (1.0 = pure vector similarity, 0.0 = pure graph connectivity).
+            max_hops: BFS depth for graph connectivity.
+            decay: Multi-hop connectivity decay factor.
+            
+        Returns:
+            Pandas DataFrame with 'id' and 'score'.
+        """
+        if self._data_client is None:
+            self.connect()
+
+        req = {
+            "dataset": dataset,
+            "seed_ids": seed_ids,
+            "k": k,
+            "alpha": float(alpha),
+            "max_hops": int(max_hops),
+            "decay": float(decay)
+        }
+
+        ticket_json = {"recommend": req}
+        ticket = flight.Ticket(json.dumps(ticket_json).encode("utf-8"))
+
+        try:
+            reader = self._data_client.do_get(ticket, options=self._get_call_options())
+            table = reader.read_all()
+            return table.to_pandas()
+        except Exception as e:
+            raise LongbowQueryError(f"Recommendation failed: {e}")
+
     def create_namespace(self, name: str, dims: int = 128, data_type: str = "float32", force: bool = False, **hnsw_config):
         """
         Create a new dataset/namespace.

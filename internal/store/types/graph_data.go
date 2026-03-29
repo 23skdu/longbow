@@ -150,11 +150,19 @@ func (g *GraphData) GetVectorsChunk(chunkID int) []float32 {
 	return nil
 }
 
+func (g *GraphData) PackedSize() int {
+	if g.Dims <= 0 {
+		return 0
+	}
+	p2 := int(1 << uint(math.Ceil(math.Log2(float64(g.Dims)))))
+	angleBytes := ((p2-1)*g.TurboQuantBits + 7) / 8
+	bitBytes := (p2 + 7) / 8
+	return 4 + angleBytes + bitBytes
+}
+
 func (g *GraphData) GetVectorsTQChunk(chunkID int) []byte {
 	if chunkID < len(g.VectorsTQ) && g.Uint8Arena != nil {
-		// Calculate size based on TQ format: 4B Radius + (N-1)*Bits/8 + N/8 QJL
-		// For simplicity, we'll need to know Dims and Bits here or store precomputed stride
-		stride := 4 + (g.Dims-1)*g.TurboQuantBits/8 + (g.Dims+7)/8
+		stride := g.PackedSize()
 		return g.Uint8Arena.Get(memory.SliceRef{Offset: g.VectorsTQ[chunkID], Len: uint32(ChunkSize * stride), Cap: uint32(ChunkSize * stride)})
 	}
 	return nil
@@ -608,6 +616,25 @@ func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
 				return err
 			}
 			g.VectorsInt16 = append(g.VectorsInt16, ref.Offset)
+		}
+	}
+
+	// Ensure TQ if enabled
+	if g.TurboQuantEnabled {
+		for len(g.VectorsTQ) <= cID {
+			stride := g.PackedSize()
+			if g.Uint8Arena == nil {
+				slabSize := ChunkSize*stride + 64
+				if slabSize < 1024*1024 {
+					slabSize = 1024 * 1024
+				}
+				g.Uint8Arena = memory.NewTypedArena[uint8](memory.NewSlabArena(slabSize))
+			}
+			ref, err := g.Uint8Arena.AllocSliceDirty(ChunkSize * stride)
+			if err != nil {
+				return err
+			}
+			g.VectorsTQ = append(g.VectorsTQ, ref.Offset)
 		}
 	}
 
@@ -1424,6 +1451,8 @@ func (g *GraphData) Clone() *GraphData {
 	newG.VectorsBQ = nil
 	newG.VectorsPQ = nil
 	newG.VectorsF16 = nil
+	newG.VectorsSQ8 = nil
+	newG.VectorsTQ = nil
 	newG.VectorsInt8 = nil
 	newG.VectorsInt64 = nil
 	newG.VectorsInt16 = nil
@@ -1431,6 +1460,9 @@ func (g *GraphData) Clone() *GraphData {
 	newG.VectorsUint64 = nil
 	newG.VectorsInt32 = nil
 	newG.VectorsUint32 = nil
+	newG.VectorsFloat64Offsets = nil
+	newG.VectorsComplex64Offsets = nil
+	newG.VectorsComplex128Offsets = nil
 	if g.VectorsFloat64 != nil {
 		newG.VectorsFloat64 = make([][]float64, len(g.VectorsFloat64))
 		copy(newG.VectorsFloat64, g.VectorsFloat64)
@@ -1512,6 +1544,26 @@ func (g *GraphData) PreAllocate(capacity int) error {
 				return err
 			}
 			g.VectorsFloat64Offsets = append(g.VectorsFloat64Offsets, ref.Offset)
+		}
+	}
+
+	// Pre-allocate TurboQuant arena chunks
+	if g.TurboQuantEnabled {
+		stride := g.PackedSize()
+		requiredSize := numChunks * ChunkSize * stride
+		slabSize := requiredSize + 4096
+		if slabSize < 1024*1024 {
+			slabSize = 1024 * 1024
+		}
+		if g.Uint8Arena == nil {
+			g.Uint8Arena = memory.NewTypedArena[uint8](memory.NewSlabArena(slabSize))
+		}
+		for i := 0; i < numChunks; i++ {
+			ref, err := g.Uint8Arena.AllocSliceDirty(ChunkSize * stride)
+			if err != nil {
+				return err
+			}
+			g.VectorsTQ = append(g.VectorsTQ, ref.Offset)
 		}
 	}
 
@@ -1796,7 +1848,8 @@ func (g *GraphData) PreAllocate(capacity int) error {
 // NewGraphData creates a new GraphData instance.
 func NewGraphData(capacity, dim int, mmap bool, useDisk bool, fd int,
 	quantization bool, sq8 bool, persistent bool,
-	dataType VectorDataType, bqEnabled bool, pqEnabled bool) *GraphData {
+	dataType VectorDataType, bqEnabled bool, pqEnabled bool,
+	tqEnabled bool, tqBits int) *GraphData {
 
 	// Initialize arenas with power-of-2 slab sizes
 	// Slab size: fit at least one chunk + overhead.
@@ -1861,6 +1914,8 @@ func NewGraphData(capacity, dim int, mmap bool, useDisk bool, fd int,
 		VectorsFloat64:    make([][]float64, numChunks),
 		VectorsComplex64:  make([][]complex64, numChunks),
 		VectorsComplex128: make([][]complex128, numChunks),
+		TurboQuantEnabled: tqEnabled,
+		TurboQuantBits:    tqBits,
 		Neighbors:         make([][][]uint32, ArrowMaxLayers),
 		Counts:            make([][][]int32, ArrowMaxLayers),
 		Versions:          make([][][]uint32, ArrowMaxLayers),
@@ -1871,7 +1926,8 @@ func NewGraphData(capacity, dim int, mmap bool, useDisk bool, fd int,
 		Int8Arena:         memory.NewTypedArena[int8](i8Arena),
 		Int64Arena:        memory.NewTypedArena[int64](i64Arena),
 		Complex64Arena:    memory.NewTypedArena[complex64](c64Arena),
-		Complex128Arena:   memory.NewTypedArena[complex128](c128Arena),
+		Complex128Arena:    memory.NewTypedArena[complex128](c128Arena),
+		VectorsTQ:          make([]uint64, 0, numChunks),
 	}
 
 	for i := 0; i < ArrowMaxLayers; i++ {

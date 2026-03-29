@@ -111,4 +111,45 @@ func TestArrowHNSW_Metrics(t *testing.T) {
 		countF16 := testutil.ToFloat64(metrics.HNSWPolymorphicSearchCount.WithLabelValues("float16"))
 		assert.Equal(t, 1.0, countF16, "Should record 1 float16 search")
 	})
+
+	t.Run("SearchLayerSampling", func(t *testing.T) {
+		config := DefaultArrowHNSWConfig()
+		config.SearchLayerSampleRate = 1.0 // 100% sampling
+		idx := NewArrowHNSW(ds, &config)
+		
+		// Add vector to ensure search has work to do
+		_, err := idx.AddByLocation(context.Background(), 0, 0)
+		require.NoError(t, err)
+
+		// Record initial distance calculation count
+		initialDistCalcs := testutil.ToFloat64(metrics.HnswDistanceCalculations)
+
+		// Search
+		q := []float32{1.0, 0.0}
+		_, err = idx.Search(context.Background(), q, 1, nil)
+		require.NoError(t, err)
+
+		// Verify distance calculations (always recorded)
+		finalDistCalcs := testutil.ToFloat64(metrics.HnswDistanceCalculations)
+		assert.Greater(t, finalDistCalcs, initialDistCalcs, "Should increase distance calculations")
+
+		// Verify nodes visited (sampled at 1.0)
+		// We check if any observations were recorded
+		assert.Greater(t, testutil.CollectAndCount(metrics.HnswNodesVisited), 0, "Should record nodes visited when sampled at 1.0")
+
+		// Test with 0% sampling
+		// Note: HnswNodesVisited is a global, so we can't easily reset it.
+		// We'll track the count before and after.
+		initialObsCount := testutil.CollectAndCount(metrics.HnswNodesVisited)
+		
+		configNoSample := DefaultArrowHNSWConfig()
+		configNoSample.SearchLayerSampleRate = 0.0000001 // Practically 0
+		idxNoSample := NewArrowHNSW(ds, &configNoSample)
+
+		_, err = idxNoSample.Search(context.Background(), q, 1, nil)
+		require.NoError(t, err)
+
+		finalObsCount := testutil.CollectAndCount(metrics.HnswNodesVisited)
+		assert.Equal(t, initialObsCount, finalObsCount, "Should NOT increase observations when sampled at near-zero")
+	})
 }

@@ -13,7 +13,7 @@ import (
 func TestSentinelVector_Fallback(t *testing.T) {
 	// 1. Setup GraphData with no data
 	// func NewGraphData(capacity, dims int, sq8Enabled, pqEnabled bool, pqDims int, bqEnabled, float16Enabled, packedAdjacencyEnabled bool)
-	gd := lbtypes.NewGraphData(100, 384, false, false, 0, false, false, false, lbtypes.VectorTypeFloat32, false, false)
+	gd := lbtypes.NewGraphData(100, 384, false, false, 0, false, false, false, lbtypes.VectorTypeFloat32, false, false, false, 8)
 
 	// 2. Setup ArrowHNSW
 	// We need a dummy HNSW structure. We can't easily create a full one without data,

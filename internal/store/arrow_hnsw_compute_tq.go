@@ -4,18 +4,18 @@ import (
 	"fmt"
 
 	"github.com/23skdu/longbow/internal/simd"
-	"github.com/23skdu/longbow/internal/store/types"
 )
 
 type TurboQuantCompute struct {
-	data    *types.GraphData
+	h       *ArrowHNSW
 	encoder *TurboQuantEncoder
 }
 
-func NewTurboQuantCompute(data *types.GraphData) *TurboQuantCompute {
+func NewTurboQuantCompute(h *ArrowHNSW) *TurboQuantCompute {
+	data := h.data.Load()
 	encoder := NewTurboQuantEncoder(data.Dims, data.TurboQuantBits, 42)
 	return &TurboQuantCompute{
-		data:    data,
+		h:       h,
 		encoder: encoder,
 	}
 }
@@ -64,19 +64,17 @@ func (c *TurboQuantCompute) PrecomputeRotatedQuery(vec []float32, output []float
 }
 
 func (c *TurboQuantCompute) getVector(id uint32) ([]float32, error) {
-	chunkID := int(id / uint32(types.ChunkSize))
-	offset := int(id % uint32(types.ChunkSize))
-
-	chunk := c.data.GetVectorsTQChunk(chunkID)
+	cID := chunkID(id)
+	cOff := chunkOffset(id)
+	data := c.h.data.Load()
+	chunk := data.GetVectorsTQChunk(cID)
 	if chunk == nil {
-		return nil, fmt.Errorf("tq chunk %d not found", chunkID)
+		return nil, fmt.Errorf("tq chunk %d not found", cID)
 	}
-
-	stride := 4 + (c.data.Dims-1)*c.data.TurboQuantBits/8 + (c.data.Dims+7)/8
-	start := offset * stride
+	stride := PackedSize(int(data.Dims), data.TurboQuantBits)
+	start := cOff * stride
 	if start+stride > len(chunk) {
 		return nil, fmt.Errorf("tq offset out of bounds")
 	}
-
 	return c.encoder.Decode(chunk[start : start+stride])
 }

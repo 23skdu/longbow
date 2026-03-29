@@ -124,7 +124,7 @@ func TestAddConnection(t *testing.T) {
 	index := NewArrowHNSW(dataset, &config)
 
 	// Initialize GraphData manually
-	data := lbtypes.NewGraphData(0, 64, false, false, 0, false, false, false, lbtypes.VectorTypeFloat32, false, false)
+	data := lbtypes.NewGraphData(0, 64, false, false, 0, false, false, false, lbtypes.VectorTypeFloat32, false, false, false, 8)
 	index.data.Store(data)
 
 	// Allocate chunks
@@ -183,7 +183,7 @@ func TestPruneConnections(t *testing.T) {
 	index := NewArrowHNSW(dataset, &config)
 
 	// Initialize GraphData manually
-	data := lbtypes.NewGraphData(20, 11, false, false, 0, false, false, false, lbtypes.VectorTypeFloat32, false, false)
+	data := lbtypes.NewGraphData(20, 11, false, false, 0, false, false, false, lbtypes.VectorTypeFloat32, false, false, false, 8)
 	index.data.Store(data)
 
 	// Allocate chunks

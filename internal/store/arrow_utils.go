@@ -364,6 +364,10 @@ func InferVectorDataType(schema *arrow.Schema, fieldName string) types.VectorDat
 			finalType = types.VectorTypeComplex64
 		} else if val, _ := smd.GetValue("longbow.complex"); val == "true" {
 			finalType = types.VectorTypeComplex64
+		} else if val, _ := fmd.GetValue("longbow.vector_type"); val == "turboquant" || val == "tq" {
+			finalType = types.VectorTypeTQ
+		} else if val, _ := smd.GetValue("longbow.vector_type"); val == "turboquant" || val == "tq" {
+			finalType = types.VectorTypeTQ
 		}
 	case arrow.FLOAT64:
 		finalType = types.VectorTypeFloat64
@@ -425,6 +429,8 @@ func parseVectorType(val string) types.VectorDataType {
 		return types.VectorTypeInt64
 	case "uint64":
 		return types.VectorTypeUint64
+	case "turboquant", "tq":
+		return types.VectorTypeTQ
 	default:
 		return types.VectorTypeFloat32
 	}

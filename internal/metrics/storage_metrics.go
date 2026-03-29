@@ -721,3 +721,70 @@ var (
 		},
 	)
 )
+
+// =============================================================================
+// Dimension Auto-Detection Metrics (Item 3)
+// =============================================================================
+
+var (
+	// DatasetDimensionAutoDetectTotal counts auto-dimension-detection events.
+	DatasetDimensionAutoDetectTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_dataset_dimension_auto_detect_total",
+			Help: "Total number of dataset dimension auto-detection events",
+		},
+		[]string{"dataset", "result"}, // result: success|conflict
+	)
+
+	// DatasetDimensionMismatchTotal counts dimension mismatch validation failures.
+	DatasetDimensionMismatchTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_dataset_dimension_mismatch_total",
+			Help: "Total number of vector dimension mismatch errors",
+		},
+		[]string{"dataset"},
+	)
+)
+
+// =============================================================================
+// TurboQuant Native Storage Metrics (Item 5)
+// =============================================================================
+
+var (
+	// DatasetVectorTypeTotal tracks the vector type distribution at dataset creation.
+	DatasetVectorTypeTotal = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "longbow_dataset_vector_type_total",
+			Help: "Number of datasets by declared vector type",
+		},
+		[]string{"dataset", "vector_type"}, // vector_type: float32|turboquant|int8|binary
+	)
+
+	// TurboQuantEncodingTotal counts TurboQuant encoding events by direction.
+	TurboQuantEncodingTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_turboquant_encoding_total",
+			Help: "Total number of TurboQuant encoding operations",
+		},
+		[]string{"dataset", "direction"}, // direction: client_provided|server_encoded
+	)
+
+	// TurboQuantEncodingLatencySeconds tracks how long server-side TQ encoding takes.
+	TurboQuantEncodingLatencySeconds = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_turboquant_encoding_latency_seconds",
+			Help:    "Latency of server-side TurboQuant encoding operations",
+			Buckets: []float64{0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05},
+		},
+		[]string{"dataset"},
+	)
+
+	// TurboQuantStorageBytesTotal tracks cumulative storage bytes for TQ datasets.
+	TurboQuantStorageBytesTotal = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "longbow_turboquant_storage_bytes_total",
+			Help: "Total storage bytes used by TurboQuant-encoded vectors (vs float32 baseline)",
+		},
+		[]string{"dataset"},
+	)
+)

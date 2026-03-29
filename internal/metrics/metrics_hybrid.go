@@ -129,3 +129,71 @@ var (
 		[]string{"dataset"},
 	)
 )
+
+// =============================================================================
+// Hybrid Search Result Composition Metrics (Item 7)
+// =============================================================================
+
+var (
+	// HybridDenseResultRatio tracks the fraction of top-K results sourced from
+	// dense ANN search (0.0 = all sparse, 1.0 = all dense).
+	HybridDenseResultRatio = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "longbow_hybrid_dense_result_ratio",
+			Help: "Fraction of top-K results sourced from dense ANN search (0–1)",
+		},
+		[]string{"dataset"},
+	)
+
+	// HybridSparseResultRatio tracks the fraction of top-K results sourced from
+	// sparse BM25 search (0.0 = all dense, 1.0 = all sparse).
+	HybridSparseResultRatio = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "longbow_hybrid_sparse_result_ratio",
+			Help: "Fraction of top-K results sourced from sparse BM25 search (0–1)",
+		},
+		[]string{"dataset"},
+	)
+
+	// HybridRRFFusionLatencySeconds tracks the duration of the RRF rank-fusion
+	// phase only (separate from BM25 and vector search phases).
+	HybridRRFFusionLatencySeconds = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_hybrid_rrf_fusion_latency_seconds",
+			Help:    "Duration of the Reciprocal Rank Fusion phase in hybrid search",
+			Buckets: []float64{0.00001, 0.00005, 0.0001, 0.0005, 0.001, 0.005, 0.01},
+		},
+		[]string{"dataset"},
+	)
+
+	// HybridGraphReRankLatencySeconds tracks the optional graph re-ranking
+	// phase that follows RRF fusion when GraphDepth > 0.
+	HybridGraphReRankLatencySeconds = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_hybrid_graph_rerank_latency_seconds",
+			Help:    "Duration of the graph re-ranking phase in hybrid search",
+			Buckets: []float64{0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1},
+		},
+		[]string{"dataset"},
+	)
+
+	// HybridGraphReRankEnabled counts hybrid searches by whether graph re-ranking
+	// was enabled (GraphDepth > 0) or disabled for feature usage analysis.
+	HybridGraphReRankEnabled = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_hybrid_graph_rerank_enabled_total",
+			Help: "Total number of hybrid searches with graph re-ranking enabled or disabled",
+		},
+		[]string{"dataset", "enabled"}, // enabled: "true"|"false"
+	)
+
+	// HybridResultOriginTotal counts individual result items by their provenance
+	// for debugging result composition in hybrid search.
+	HybridResultOriginTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_hybrid_result_origin_total",
+			Help: "Per-result provenance counter for hybrid search (dense, sparse, graph_expanded)",
+		},
+		[]string{"dataset", "origin"}, // origin: dense|sparse|graph_expanded
+	)
+)

@@ -22,5 +22,6 @@ type SearchOptions struct {
 	Filter         any        // Legacy filter mechanism
 	FilterExpr     FilterExpr // Rich AST JSON Filter
 	ExactK         bool
-	Ef             int // Entry factor for HNSW search (controls search breadth)
+	Ef             int    // Entry factor for HNSW search (controls search breadth)
+	Consistency    string // "eventual" | "strong" | "" (default = eventual)
 }

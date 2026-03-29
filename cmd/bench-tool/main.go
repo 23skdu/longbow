@@ -1,19 +1,14 @@
 package main
 
-// nosec G404 - math/rand is used for benchmark test data, not security-sensitive
 import (
 	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io"
 	"log"
-	"math"
 	"math/rand"
 	"os"
-	"strings"
-	"sync"
-	"sync/atomic"
+	"sort"
 	"time"
 
 	"github.com/23skdu/longbow/client"
@@ -22,238 +17,590 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"github.com/apache/arrow-go/v18/arrow/memory"
-	"github.com/google/uuid"
 )
 
-var (
-	peers       = flag.String("peers", "127.0.0.1:3000", "Comma-separated list of peer addresses (e.g., 127.0.0.1:3000,127.0.0.1:3010)")
-	duration    = flag.Duration("duration", 10*time.Second, "Duration of the benchmark")
-	concurrency = flag.Int("concurrency", 1, "Number of concurrent workers")
-	mode        = flag.String("mode", "ingest", "Benchmark mode: 'ingest' or 'search'")
-	batchSize   = flag.Int("batch-size", 1000, "Number of records per batch (ingest mode)")
-	dim         = flag.Int("dim", 128, "Vector dimension")
-)
+type BenchmarkResult struct {
+	Name             string    `json:"name"`
+	DurationSeconds  float64   `json:"duration_seconds"`
+	Throughput       float64   `json:"throughput"`
+	ThroughputUnit   string    `json:"throughput_unit"`
+	ThroughputMBs    float64   `json:"throughput_mbs"`
+	Rows             int64     `json:"rows"`
+	BytesProcessed   int64     `json:"bytes_processed"`
+	LatenciesMs      []float64 `json:"latencies_ms,omitempty"`
+	P50LatencyMs     float64   `json:"p50_latency_ms,omitempty"`
+	P95LatencyMs     float64   `json:"p95_latency_ms,omitempty"`
+	P99LatencyMs     float64   `json:"p99_latency_ms,omitempty"`
+	IndexingDuration float64   `json:"indexing_duration_seconds,omitempty"`
+}
 
 func main() {
-	if err := run(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+	uri := flag.String("uri", "127.0.0.1:3000", "Data plane address (host:port)")
+	dim := flag.Int("dim", 128, "Vector dimension (up to 3072)")
+	scale := flag.Int("scale", 1000, "Vector count")
+	dtype := flag.String("dtype", "float32", "Data type (float32, int32, etc, including turboquant)")
+	dataset := flag.String("dataset", "bench_go", "Target dataset name")
+	queries := flag.Int("queries", 1000, "Number of search queries")
+	outputJson := flag.String("json", "", "Save stats as JSON file")
+	flag.Parse()
+
+	if *dim > 3072 {
+		log.Printf("WARNING: Dimension %d exceeds recommended 3072 limit. Proceeding anyway.\n", *dim)
+	}
+
+	log.Printf("Starting Go Benchmark: Dataset=%s, Scale=%d, Dim=%d, Type=%s\n", *dataset, *scale, *dim, *dtype)
+
+	sc, err := client.NewSmartClient(*uri)
+	if err != nil {
+		log.Fatalf("Failed to connect SmartClient: %v", err)
+	}
+	defer sc.Close()
+
+	var results []BenchmarkResult
+
+	// 1. Ingest/DoPut
+	log.Println("[PUT] Generating vectors and uploading...")
+	record, schema, err := generateRecord(*scale, *dim, *dtype)
+	if err != nil {
+		log.Fatalf("Generation failed: %v", err)
+	}
+	defer record.Release()
+
+	putCtx, putCancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	start := time.Now()
+	if err := uploadBatch(putCtx, sc, *dataset, record, schema); err != nil {
+		putCancel()
+		log.Fatalf("DoPut failed: %v", err)
+	}
+	putCancel()
+	duration := time.Since(start).Seconds()
+
+	var bytesPerElement int64 = 4
+	switch *dtype {
+	case "int8", "uint8":
+		bytesPerElement = 1
+	case "int16", "uint16":
+		bytesPerElement = 2
+	case "int32", "uint32", "float32":
+		bytesPerElement = 4
+	case "int64", "uint64", "float64", "complex64":
+		bytesPerElement = 8
+	case "complex128":
+		bytesPerElement = 16
+	case "turboquant":
+		bytesPerElement = 1
+	}
+
+	var totalBytes int64
+	if *dtype == "turboquant" {
+		totalBytes = int64(*scale) * (int64(*dim)*3/8 + 1)
+	} else {
+		totalBytes = int64(*scale) * int64(*dim) * bytesPerElement
+	}
+
+	results = append(results, BenchmarkResult{
+		Name:            "DoPut",
+		DurationSeconds: duration,
+		Throughput:      float64(*scale) / duration,
+		ThroughputUnit:  "vec/s",
+		ThroughputMBs:   (float64(totalBytes) / (1024 * 1024)) / duration,
+		Rows:            int64(*scale),
+		BytesProcessed:  totalBytes,
+	})
+	log.Printf("[PUT] Completed in %.4fs (%.2f vec/s, %.2f MB/s)\n", duration, float64(*scale)/duration, (float64(totalBytes)/(1024*1024))/duration)
+
+	log.Println("Waiting for background indexing to complete...")
+	waitCtx, waitCancel := context.WithTimeout(context.Background(), 660*time.Second)
+	indexingStart := time.Now()
+	readyStatus := waitForIndexingComplete(waitCtx, sc, *dataset, 600*time.Second)
+	waitCancel()
+	indexingSeconds := time.Since(indexingStart).Seconds()
+	log.Printf("Indexing complete in %.4fs (status: %s).", indexingSeconds, readyStatus)
+
+	// 2. DoGet
+	log.Println("[GET] Downloading to verify scan...")
+	getCtx, getCancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	start = time.Now()
+	rowsRead, err := downloadBatch(getCtx, sc, *dataset)
+	getCancel()
+	if err != nil {
+		log.Fatalf("DoGet failed: %v", err)
+	}
+	duration = time.Since(start).Seconds()
+	totalBytesGet := rowsRead * int64(*dim) * bytesPerElement
+
+	results = append(results, BenchmarkResult{
+		Name:            "DoGet",
+		DurationSeconds: duration,
+		Throughput:      float64(rowsRead) / duration,
+		ThroughputUnit:  "vec/s",
+		ThroughputMBs:   (float64(totalBytesGet) / (1024 * 1024)) / duration,
+		Rows:            rowsRead,
+		BytesProcessed:  totalBytesGet,
+	})
+	log.Printf("[GET] Completed in %.4fs (%.2f vec/s, %.2f MB/s)\n", duration, float64(rowsRead)/duration, (float64(totalBytesGet)/(1024*1024))/duration)
+
+	// 3. Search
+	modes := []string{"Dense", "Hybrid", "Filtered", "ByID"}
+	searchCtx, searchCancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer searchCancel()
+	for _, mode := range modes {
+		log.Printf("[SEARCH][%s] Running queries...\n", mode)
+		start = time.Now()
+		var latencies []float64
+		for i := 0; i < *queries; i++ {
+			qStart := time.Now()
+			if err := executeSearch(searchCtx, sc, *dataset, *dim, *dtype, mode); err != nil {
+				log.Printf("[%s] Query %d failed: %v\n", mode, i, err)
+				continue
+			}
+			latencies = append(latencies, time.Since(qStart).Seconds()*1000)
+		}
+		duration = time.Since(start).Seconds()
+
+		p50, p95, p99 := 0.0, 0.0, 0.0
+		if len(latencies) > 0 {
+			sort.Float64s(latencies)
+			p50 = latencies[len(latencies)/2]
+			p95 = latencies[int(float64(len(latencies))*0.95)]
+			p99 = latencies[int(float64(len(latencies))*0.99)]
+		}
+
+		results = append(results, BenchmarkResult{
+			Name:            "Search_" + mode,
+			DurationSeconds: duration,
+			Throughput:      float64(len(latencies)) / duration,
+			ThroughputUnit:  "queries/s",
+			Rows:            int64(len(latencies)),
+			LatenciesMs:     latencies,
+			P50LatencyMs:    p50,
+			P95LatencyMs:    p95,
+			P99LatencyMs:    p99,
+		})
+		log.Printf("[SEARCH][%s] Completed %d queries in %.4fs (%.2f QPS, P50: %.2fms, P95: %.2fms, P99: %.2fms)\n", mode, len(latencies), duration, float64(len(latencies))/duration, p50, p95, p99)
+	}
+
+	// 4. Print Summary
+	fmt.Printf("\n%s\n", "BENCHMARK SUITE SUMMARY")
+	fmt.Printf("%-20s | %-18s | %-18s | %-10s | %-10s | %-10s | %-10s\n", "Name", "Throughput (vec/s)", "Throughput (MB/s)", "Rows", "P50(ms)", "P95(ms)", "P99(ms)")
+	for _, r := range results {
+		fmt.Printf("%-20s | %-18.2f | %-18.2f | %-10d | %-10.2f | %-10.2f | %-10.2f\n", r.Name, r.Throughput, r.ThroughputMBs, r.Rows, r.P50LatencyMs, r.P95LatencyMs, r.P99LatencyMs)
+	}
+
+	if *outputJson != "" {
+		f, err := os.Create(*outputJson)
+		if err != nil {
+			log.Fatalf("Failed to create JSON: %v", err)
+		}
+		defer f.Close()
+		json.NewEncoder(f).Encode(results)
+		log.Printf("Results saved to %s\n", *outputJson)
 	}
 }
 
-func run() error {
-	flag.Parse()
-
-	peerList := strings.Split(*peers, ",")
-	if len(peerList) == 0 || (len(peerList) == 1 && peerList[0] == "") {
-		return fmt.Errorf("no peers specified: use -peers flag to specify at least one peer address (e.g., 127.0.0.1:3000)")
+func uploadBatch(ctx context.Context, sc *client.SmartClient, dataset string, record arrow.Record, schema *arrow.Schema) error {
+	desc := &flight.FlightDescriptor{
+		Type: flight.DescriptorPATH,
+		Path: []string{dataset},
+	}
+	stream, err := sc.DoPut(ctx, desc)
+	if err != nil {
+		return err
 	}
 
-	if *dim > math.MaxInt32 || *dim < 1 {
-		return fmt.Errorf("invalid dimension: %d (must be between 1 and %d)", *dim, math.MaxInt32)
+	writer := flight.NewRecordWriter(stream, ipc.WithSchema(schema))
+	writer.SetFlightDescriptor(desc)
+
+	if err := writer.Write(record); err != nil {
+		writer.Close()
+		return err
 	}
 
-	fmt.Printf("Starting benchmark:\n")
-	fmt.Printf("  Mode:        %s\n", *mode)
-	fmt.Printf("  Peers:       %v\n", peerList)
-	fmt.Printf("  Concurrency: %d\n", *concurrency)
-	fmt.Printf("  Duration:    %s\n", *duration)
-	fmt.Printf("  Batch Size:  %d\n", *batchSize)
-	fmt.Printf("  Dimension:   %d\n", *dim)
-
-	ctx, cancel := context.WithTimeout(context.Background(), *duration+5*time.Second)
-	defer cancel()
-
-	var ops atomic.Int64
-	var errors atomic.Int64
-	var latency sumLatency
-
-	start := time.Now()
-	var wg sync.WaitGroup
-
-	for i := 0; i < *concurrency; i++ {
-		wg.Add(1)
-		go func(id int) {
-			defer wg.Done()
-
-			// Round-robin or random peer selection for initial connection
-			initialPeer := peerList[id%len(peerList)]
-			c, err := client.NewSmartClient(initialPeer)
-			if err != nil {
-				log.Printf("Worker %d failed to connect: %v", id, err)
-				errors.Add(1)
-				return
-			}
-			defer func() { _ = c.Close() }()
-
-			endTime := start.Add(*duration)
-
-			for time.Now().Before(endTime) {
-				t0 := time.Now()
-				var err error
-
-				switch *mode {
-				case "ingest":
-					err = runIngest(ctx, c)
-				case "search":
-					err = runSearch(ctx, c)
-				default:
-					log.Printf("Unknown mode: %s", *mode)
-					return
-				}
-
-				dur := time.Since(t0)
-				latency.Record(dur)
-
-				if err != nil {
-					if errors.Load() == 0 {
-						log.Printf("First Error: %v", err)
-					}
-					errors.Add(1)
-				} else {
-					ops.Add(1)
-				}
-			}
-		}(i)
+	if err := writer.Close(); err != nil {
+		return err
 	}
 
-	wg.Wait()
-	printResults(time.Since(start), ops.Load(), errors.Load(), &latency)
+	if err := stream.CloseSend(); err != nil {
+		return err
+	}
+
+	_, _ = stream.Recv()
+
 	return nil
 }
 
-// runIngest generates a random batch and sends it via DoPut
-func runIngest(ctx context.Context, c *client.SmartClient) error {
-	// Generate Schema
+// downloadBatch performs a DoGet download and returns count.
+// Retries up to 30s if dataset is empty (persistence worker populates ds.Records async).
+func downloadBatch(ctx context.Context, sc *client.SmartClient, dataset string) (int64, error) {
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		reqBytes, _ := json.Marshal(map[string]string{"name": dataset})
+		stream, err := sc.DoGet(ctx, reqBytes)
+		if err != nil {
+			return 0, err
+		}
+
+		reader, err := flight.NewRecordReader(stream)
+		if err != nil {
+			return 0, err
+		}
+
+		var total int64
+		for reader.Next() {
+			total += reader.Record().NumRows()
+		}
+		err = reader.Err()
+		reader.Release()
+
+		if total > 0 || time.Now().After(deadline) {
+			return total, err
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+}
+
+// executeSearch performs search by setting JSON ticket in DoGet
+func executeSearch(ctx context.Context, sc *client.SmartClient, dataset string, dim int, dtype string, mode string) error {
+	// For complex64/complex128, the index stores 2*dim float32 values (real+imaginary parts per element)
+	queryLen := dim
+	if dtype == "complex64" || dtype == "complex128" {
+		queryLen = dim * 2
+	}
+	vector := make([]float32, queryLen)
+	for i := range vector {
+		vector[i] = rand.Float32()
+	}
+
+	req := map[string]interface{}{
+		"dataset": dataset,
+		"k":       10,
+	}
+
+	switch mode {
+	case "Dense":
+		req["vector"] = vector
+	case "Hybrid":
+		req["vector"] = vector
+		req["text_query"] = "benchmark search term"
+		req["alpha"] = 0.5
+	case "Filtered":
+		req["vector"] = vector
+		req["filters"] = []map[string]interface{}{
+			{
+				"field":    "id",
+				"operator": ">",
+				"value":    "10",
+			},
+		}
+	case "ByID":
+		// SearchByID requires an existing ID. We use ID "0" from our ingest.
+		req["id"] = "0"
+		ticketBytes, _ := json.Marshal(map[string]interface{}{"search_by_id": req})
+		stream, err := sc.DoGet(ctx, ticketBytes)
+		if err != nil {
+			return err
+		}
+		reader, err := flight.NewRecordReader(stream)
+		if err != nil {
+			return err
+		}
+		defer reader.Release()
+		for reader.Next() {
+			_ = reader.Record()
+		}
+		return reader.Err()
+	}
+
+	ticketBytes, _ := json.Marshal(map[string]interface{}{"search": req})
+	stream, err := sc.DoGet(ctx, ticketBytes)
+	if err != nil {
+		return err
+	}
+
+	reader, err := flight.NewRecordReader(stream)
+	if err != nil {
+		return err
+	}
+	defer reader.Release()
+
+	for reader.Next() {
+		_ = reader.Record() // Consume
+	}
+	return reader.Err()
+}
+
+// waitForIndexingComplete polls until the dataset is indexed.
+// The passed ctx is used for the initial action; polling uses an independent Background context.
+func waitForIndexingComplete(ctx context.Context, sc *client.SmartClient, dataset string, timeout time.Duration) string {
+	actionBody, _ := json.Marshal(map[string]string{"dataset": dataset})
+	action := &flight.Action{Type: "wait-for-indexing", Body: actionBody}
+	stream, err := sc.DoAction(ctx, action)
+	if err == nil {
+		for {
+			if result, err := stream.Recv(); err != nil {
+				break
+			} else {
+				body := result.Body
+				if len(body) > 0 {
+					var status map[string]interface{}
+					if err := json.Unmarshal(body, &status); err == nil {
+						if s, ok := status["status"].(string); ok {
+							return s
+						}
+					}
+				}
+			}
+		}
+		return "complete"
+	}
+	log.Printf("wait-for-indexing action failed, polling check_readiness: %v", err)
+
+	pollCtx, pollCancel := context.WithTimeout(context.Background(), timeout)
+	defer pollCancel()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		checkBody, _ := json.Marshal(map[string]string{"dataset": dataset})
+		checkAction := &flight.Action{Type: "check_readiness", Body: checkBody}
+		checkStream, err := sc.DoAction(pollCtx, checkAction)
+		if err != nil {
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+
+		for {
+			if result, err := checkStream.Recv(); err != nil {
+				break
+			} else {
+				body := result.Body
+				if len(body) > 0 {
+					var status map[string]interface{}
+					if err := json.Unmarshal(body, &status); err == nil {
+						if s, ok := status["status"].(string); ok {
+							if s == "READY" {
+								return s
+							}
+							if reason, ok := status["reason"].(string); ok {
+								log.Printf("  Still indexing... (%s)", reason)
+							}
+						}
+					}
+				}
+			}
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	log.Printf("WARNING: Timeout (%v) waiting for indexing to complete for dataset %s", timeout, dataset)
+	return "timeout"
+}
+
+// generateRecord is a multi-type arrow table builder
+func generateRecord(count int, dim int, dtype string) (arrow.Record, *arrow.Schema, error) {
+	pool := memory.NewGoAllocator()
+	var dt arrow.DataType
+
+	switch dtype {
+	case "float32", "turboquant":
+		dt = arrow.PrimitiveTypes.Float32
+	case "float64":
+		dt = arrow.PrimitiveTypes.Float64
+	case "int32":
+		dt = arrow.PrimitiveTypes.Int32
+	case "int16":
+		dt = arrow.PrimitiveTypes.Int16
+	case "int8":
+		dt = arrow.PrimitiveTypes.Int8
+	case "uint32":
+		dt = arrow.PrimitiveTypes.Uint32
+	case "uint16":
+		dt = arrow.PrimitiveTypes.Uint16
+	case "uint8":
+		dt = arrow.PrimitiveTypes.Uint8
+	case "int64":
+		dt = arrow.PrimitiveTypes.Int64
+	case "uint64":
+		dt = arrow.PrimitiveTypes.Uint64
+	case "complex64":
+		dt = arrow.PrimitiveTypes.Float32
+	case "complex128":
+		dt = arrow.PrimitiveTypes.Float64
+	default:
+		return nil, nil, fmt.Errorf("unsupported dtype: %s", dtype)
+	}
+
+	listLen := int32(dim)
+	var meta arrow.Metadata
+	if dtype == "complex64" || dtype == "complex128" || dtype == "turboquant" {
+		if dtype == "complex64" || dtype == "complex128" {
+			listLen = int32(2 * dim)
+		}
+		meta = arrow.NewMetadata([]string{"longbow.vector_type"}, []string{dtype})
+	}
+
+	var vecField arrow.Field
+	if meta.Len() > 0 {
+		vecField = arrow.Field{Name: "vector", Type: arrow.FixedSizeListOf(listLen, dt), Metadata: meta}
+	} else {
+		vecField = arrow.Field{Name: "vector", Type: arrow.FixedSizeListOf(listLen, dt)}
+	}
+
 	schema := arrow.NewSchema(
 		[]arrow.Field{
-			{Name: "id", Type: arrow.BinaryTypes.String},
-			{Name: "embedding", Type: arrow.FixedSizeListOf(int32(*dim), arrow.PrimitiveTypes.Float32)}, //nosec G115
+			{Name: "id", Type: arrow.PrimitiveTypes.Int64},
+			vecField,
+			{Name: "timestamp", Type: arrow.FixedWidthTypes.Timestamp_ns},
 		},
 		nil,
 	)
 
-	// Build Record
-	pool := memory.NewGoAllocator()
-	b := array.NewRecordBuilder(pool, schema)
-	defer b.Release()
+	// 1. Build IDs
+	idBldr := array.NewInt64Builder(pool)
+	defer idBldr.Release()
+	idBldr.Reserve(count)
+	for i := 0; i < count; i++ {
+		idBldr.Append(int64(i))
+	}
+	idArr := idBldr.NewArray()
+	defer idArr.Release()
 
-	idBuilder := b.Field(0).(*array.StringBuilder)
-	vecBuilder := b.Field(1).(*array.FixedSizeListBuilder)
-	valBuilder := vecBuilder.ValueBuilder().(*array.Float32Builder)
+	// 2. Build Vectors
+	listBldr := array.NewFixedSizeListBuilder(pool, listLen, dt)
+	defer listBldr.Release()
+	listBldr.Reserve(count)
 
-	for i := 0; i < *batchSize; i++ {
-		idBuilder.Append(uuid.New().String())
-		vecBuilder.Append(true)
-		for j := 0; j < *dim; j++ {
-			valBuilder.Append(rand.Float32()) //nosec G404
+	dimensionMultiplier := 1
+	if dtype == "complex64" || dtype == "complex128" {
+		dimensionMultiplier = 2
+	}
+
+	switch dtype {
+	case "float32", "complex64", "turboquant":
+		vb := listBldr.ValueBuilder().(*array.Float32Builder)
+		stride := dim * dimensionMultiplier
+		vb.Reserve(count * stride)
+		vals := make([]float32, count*stride)
+		for i := range vals {
+			vals[i] = rand.Float32()
+		}
+		for i := 0; i < count; i++ {
+			listBldr.Append(true)
+			vb.AppendValues(vals[i*stride:(i+1)*stride], nil)
+		}
+	case "float64", "complex128":
+		vb := listBldr.ValueBuilder().(*array.Float64Builder)
+		stride := dim * dimensionMultiplier
+		vb.Reserve(count * stride)
+		vals := make([]float64, count*stride)
+		for i := range vals {
+			vals[i] = rand.Float64()
+		}
+		for i := 0; i < count; i++ {
+			listBldr.Append(true)
+			vb.AppendValues(vals[i*stride:(i+1)*stride], nil)
+		}
+	case "int32":
+		vb := listBldr.ValueBuilder().(*array.Int32Builder)
+		vb.Reserve(count * dim)
+		vals := make([]int32, count*dim)
+		for i := range vals {
+			vals[i] = int32(rand.Intn(1000))
+		}
+		for i := 0; i < count; i++ {
+			listBldr.Append(true)
+			vb.AppendValues(vals[i*dim:(i+1)*dim], nil)
+		}
+	case "int16":
+		vb := listBldr.ValueBuilder().(*array.Int16Builder)
+		vb.Reserve(count * dim)
+		vals := make([]int16, count*dim)
+		for i := range vals {
+			vals[i] = int16(rand.Intn(1000))
+		}
+		for i := 0; i < count; i++ {
+			listBldr.Append(true)
+			vb.AppendValues(vals[i*dim:(i+1)*dim], nil)
+		}
+	case "int8":
+		vb := listBldr.ValueBuilder().(*array.Int8Builder)
+		vb.Reserve(count * dim)
+		vals := make([]int8, count*dim)
+		for i := range vals {
+			vals[i] = int8(rand.Intn(127))
+		}
+		for i := 0; i < count; i++ {
+			listBldr.Append(true)
+			vb.AppendValues(vals[i*dim:(i+1)*dim], nil)
+		}
+	case "uint32":
+		vb := listBldr.ValueBuilder().(*array.Uint32Builder)
+		vb.Reserve(count * dim)
+		vals := make([]uint32, count*dim)
+		for i := range vals {
+			vals[i] = uint32(rand.Intn(1000))
+		}
+		for i := 0; i < count; i++ {
+			listBldr.Append(true)
+			vb.AppendValues(vals[i*dim:(i+1)*dim], nil)
+		}
+	case "uint16":
+		vb := listBldr.ValueBuilder().(*array.Uint16Builder)
+		vb.Reserve(count * dim)
+		vals := make([]uint16, count*dim)
+		for i := range vals {
+			vals[i] = uint16(rand.Intn(1000))
+		}
+		for i := 0; i < count; i++ {
+			listBldr.Append(true)
+			vb.AppendValues(vals[i*dim:(i+1)*dim], nil)
+		}
+	case "uint8":
+		vb := listBldr.ValueBuilder().(*array.Uint8Builder)
+		vb.Reserve(count * dim)
+		vals := make([]uint8, count*dim)
+		for i := range vals {
+			vals[i] = uint8(rand.Intn(255))
+		}
+		for i := 0; i < count; i++ {
+			listBldr.Append(true)
+			vb.AppendValues(vals[i*dim:(i+1)*dim], nil)
+		}
+	case "int64":
+		vb := listBldr.ValueBuilder().(*array.Int64Builder)
+		vb.Reserve(count * dim)
+		vals := make([]int64, count*dim)
+		for i := range vals {
+			vals[i] = int64(rand.Intn(1000))
+		}
+		for i := 0; i < count; i++ {
+			listBldr.Append(true)
+			vb.AppendValues(vals[i*dim:(i+1)*dim], nil)
+		}
+	case "uint64":
+		vb := listBldr.ValueBuilder().(*array.Uint64Builder)
+		vb.Reserve(count * dim)
+		vals := make([]uint64, count*dim)
+		for i := range vals {
+			vals[i] = uint64(rand.Intn(1000))
+		}
+		for i := 0; i < count; i++ {
+			listBldr.Append(true)
+			vb.AppendValues(vals[i*dim:(i+1)*dim], nil)
 		}
 	}
 
-	rec := b.NewRecordBatch()
-	defer rec.Release()
+	vecArr := listBldr.NewArray()
+	defer vecArr.Release()
 
-	// DoPut
-	desc := &flight.FlightDescriptor{
-		Type: flight.DescriptorPATH,
-		Path: []string{"bench_collection"},
+	// 3. Build Timestamp
+	tsBldr := array.NewTimestampBuilder(pool, arrow.FixedWidthTypes.Timestamp_ns.(*arrow.TimestampType))
+	defer tsBldr.Release()
+	tsBldr.Reserve(count)
+	now := arrow.Timestamp(time.Now().UnixNano())
+	for i := 0; i < count; i++ {
+		tsBldr.Append(now)
 	}
-	stream, err := c.DoPut(ctx, desc)
-	if err != nil {
-		return err
-	}
+	tsArr := tsBldr.NewArray()
+	defer tsArr.Release()
 
-	wr := flight.NewRecordWriter(stream, ipc.WithSchema(schema))
-	wr.SetFlightDescriptor(desc)
-	defer func() { _ = wr.Close() }()
-
-	if err := wr.Write(rec); err != nil {
-		return err
-	}
-
-	return wr.Close()
-}
-
-// runSearch performs a VectorSearch DoAction
-func runSearch(ctx context.Context, c *client.SmartClient) error {
-	// Generate random query vector
-	queryVec := make([]float32, *dim)
-	for i := 0; i < *dim; i++ {
-		queryVec[i] = rand.Float32() //nosec G404
-	}
-
-	req := map[string]any{
-		"dataset": "bench_collection",
-		"vector":  queryVec,
-		"k":       10,
-	}
-	body, err := json.Marshal(req)
-	if err != nil {
-		return err
-	}
-
-	action := &flight.Action{
-		Type: "VectorSearch",
-		Body: body,
-	}
-
-	stream, err := c.DoAction(ctx, action)
-	if err != nil {
-		return err
-	}
-
-	// Drain results
-	for {
-		_, err := stream.Recv()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// Latency tracking
-type sumLatency struct {
-	totalNs atomic.Int64
-	count   atomic.Int64
-	maxNs   atomic.Int64
-}
-
-func (l *sumLatency) Record(d time.Duration) {
-	ns := d.Nanoseconds()
-	l.totalNs.Add(ns)
-	l.count.Add(1)
-
-	// Simple spin-loop max update
-	for {
-		current := l.maxNs.Load()
-		if ns <= current {
-			break
-		}
-		if l.maxNs.CompareAndSwap(current, ns) {
-			break
-		}
-	}
-}
-
-func printResults(d time.Duration, ops, errs int64, l *sumLatency) {
-	seconds := d.Seconds()
-	throughput := float64(ops) / seconds
-
-	var avgLatency time.Duration
-	if count := l.count.Load(); count > 0 {
-		avgLatency = time.Duration(l.totalNs.Load() / count)
-	}
-	maxLatency := time.Duration(l.maxNs.Load())
-
-	fmt.Println("\n--- Results ---")
-	fmt.Printf("Elapsed:     %.2fs\n", seconds)
-	fmt.Printf("Total Ops:   %d\n", ops)
-	fmt.Printf("Errors:      %d\n", errs)
-	fmt.Printf("Throughput:  %.2f ops/sec\n", throughput)
-	fmt.Printf("Avg Latency: %v\n", avgLatency)
-	fmt.Printf("Max Latency: %v\n", maxLatency)
+	return array.NewRecordBatch(schema, []arrow.Array{idArr, vecArr, tsArr}, int64(count)), schema, nil
 }

@@ -196,9 +196,10 @@ type ArrowSearchContext struct {
 	dirty bool
 
 	// Thread-local metrics
-	operations       int
-	distComputeTime  time.Duration
-	distComputeCount int
+	operations        int
+	distComputeTime   time.Duration
+	distComputeCount  int
+	nodesVisitedCount int
 }
 
 // ArrowSearchContextPool manages reusable ArrowSearchContext objects.
@@ -297,6 +298,7 @@ func (ctx *ArrowSearchContext) Reset() {
 	ctx.operations = 0
 	ctx.distComputeTime = 0
 	ctx.distComputeCount = 0
+	ctx.nodesVisitedCount = 0
 
 	// Clear temp buffer without reallocating
 	for i := range ctx.distsTemp {

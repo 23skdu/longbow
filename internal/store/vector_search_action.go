@@ -124,7 +124,16 @@ func (s *VectorStore) handleVectorSearchAction(action *flight.Action, stream fli
 			expectedDim := ds.Index.GetDimension()
 			actualDim := uint32(len(queryVec))
 			dsType := InferVectorDataType(ds.Schema, "vector")
-			if dsType == VectorTypeComplex64 || dsType == VectorTypeComplex128 {
+			
+			// Check if dataset is logically complex (interleaved floats)
+			isComplex := dsType == VectorTypeComplex64 || dsType == VectorTypeComplex128
+			if !isComplex && ds.Schema != nil {
+				if val, ok := ds.Schema.Metadata().GetValue("longbow.complex"); ok && val == "true" {
+					isComplex = true
+				}
+			}
+
+			if isComplex {
 				// Interleaved float32s -> logical complex dimension is half
 				actualDim /= 2
 			}

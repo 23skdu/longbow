@@ -1028,11 +1028,23 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 			hnswCfg := DefaultArrowHNSWConfig()
 			hnswCfg.Metric = ds.Metric
 			hnswCfg.DataType = dataType
+			if dataType == VectorTypeTQ {
+				hnswCfg.TurboQuantEnabled = true
+				if hnswCfg.TurboQuantBits == 0 {
+					hnswCfg.TurboQuantBits = 8
+				}
+			}
 			config.IndexConfig = &hnswCfg
 		} else {
 			// Clone the config to avoid polluting the shared autoShardingConfig
 			clonedCfg := *config.IndexConfig
 			clonedCfg.DataType = dataType
+			if dataType == VectorTypeTQ {
+				clonedCfg.TurboQuantEnabled = true
+				if clonedCfg.TurboQuantBits == 0 {
+					clonedCfg.TurboQuantBits = 8
+				}
+			}
 			config.IndexConfig = &clonedCfg
 		}
 
@@ -1041,7 +1053,8 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 			if listArr, ok := vecCol.(*array.FixedSizeList); ok {
 				dim := int(listArr.DataType().(*arrow.FixedSizeListType).Len())
 				s.logger.Info().Str("dataset", name).Int("dim", dim).Str("dataType", dataType.String()).Msg("findVectorColumn result")
-				if dataType == VectorTypeFloat32 {
+				switch dataType {
+				case VectorTypeFloat32:
 					if listType, ok := listArr.DataType().(*arrow.FixedSizeListType); ok {
 						if listType.Elem().ID() == arrow.FLOAT32 && dim%2 == 0 {
 							dataType = VectorTypeComplex64
@@ -1051,7 +1064,7 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 							s.logger.Info().Str("dataset", name).Int("dim", dim).Str("dataType", dataType.String()).Msg("Detected complex64 from physical dimension")
 						}
 					}
-				} else if dataType == VectorTypeComplex64 || dataType == VectorTypeComplex128 {
+				case VectorTypeComplex64, VectorTypeComplex128:
 					dim /= 2
 				}
 				aIdx.SetInitialDimension(dim)

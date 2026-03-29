@@ -75,8 +75,11 @@ type ArrowHNSWConfig struct {
 	Float16Enabled         bool
 	SQ8TrainingThreshold   int
 	PackedAdjacencyEnabled bool
+	SearchLayerSampleRate   float64
 
 	Registerer prometheus.Registerer
+	TurboQuantEnabled bool
+	TurboQuantBits    int
 }
 
 // DefaultArrowHNSWConfig returns a configuration with sensible defaults
@@ -98,6 +101,9 @@ func DefaultArrowHNSWConfig() ArrowHNSWConfig {
 		DiskPath:                "./data",
 		DataType:                types.VectorTypeFloat32,
 		SQ8TrainingThreshold:    5000,
+		SearchLayerSampleRate:   0.24,
+		TurboQuantEnabled:       false,
+		TurboQuantBits:          8,
 		SelectionHeuristicLimit: 400,
 		Metric:                  core.MetricEuclidean,
 	}
@@ -149,6 +155,7 @@ type ArrowHNSW struct {
 
 	name                   string
 	disableNodeCountMetric atomic.Bool
+	metricsSampleCounter   atomic.Uint64
 
 	distFunc     func([]float32, []float32) (float32, error)
 	distFuncF64  func([]float64, []float64) (float32, error)
@@ -435,6 +442,8 @@ func NewArrowHNSW(dataset *Dataset, config *ArrowHNSWConfig) *ArrowHNSW {
 		dt,
 		config.BQEnabled,
 		config.PQEnabled,
+		config.TurboQuantEnabled,
+		config.TurboQuantBits,
 	)
 	if h.pqEncoder != nil {
 		gd.PQM = h.pqEncoder.CodeSize()
@@ -461,7 +470,7 @@ func NewArrowHNSW(dataset *Dataset, config *ArrowHNSWConfig) *ArrowHNSW {
 		h.tqEncoder = NewTurboQuantEncoder(config.Dims, bits, 42)
 		h.data.Load().TurboQuantEnabled = true
 		h.data.Load().TurboQuantBits = bits
-		h.tqCompute = NewTurboQuantCompute(h.data.Load())
+		h.tqCompute = NewTurboQuantCompute(h)
 	}
 
 	return h
@@ -1024,6 +1033,7 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 		metrics.HNSWPolymorphicThroughput.WithLabelValues(typeLabel).Add(byteThroughput)
 
 		searchCtx.filterBitmap = nil
+		h.flushSearchMetrics(searchCtx)
 
 		if metrics.HNSWSearchPoolPutTotal != nil {
 			metrics.HNSWSearchPoolPutTotal.Inc()
@@ -1158,6 +1168,7 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 		// Greedy search: keep 1 best candidate
 		res, err := h.searchLayer(ctx, computer, currObj.ID, 1, level, searchCtx, data, queryVec)
 		if err != nil {
+			h.flushSearchMetrics(searchCtx)
 			return nil, err
 		}
 
@@ -1208,6 +1219,7 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 	for attempt := 0; attempt < 3; attempt++ {
 		res, err := h.searchLayer(ctx, computer, currObj.ID, efSearch, 0, searchCtx, data, queryVec)
 		if err != nil {
+			h.flushSearchMetrics(searchCtx)
 			return nil, err
 		}
 
@@ -1229,6 +1241,7 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 
 	}
 
+	h.flushSearchMetrics(searchCtx)
 	return results, nil
 }
 
@@ -1351,6 +1364,8 @@ func (h *ArrowHNSW) growInternal(capacity, dims int) error {
 			h.config.DataType,
 			h.config.BQEnabled,
 			h.config.PQEnabled,
+			h.config.TurboQuantEnabled,
+			h.config.TurboQuantBits,
 		)
 		h.data.Store(gd)
 		if dims > math.MaxInt32 {
@@ -1379,6 +1394,8 @@ func (h *ArrowHNSW) growInternal(capacity, dims int) error {
 	newData.PQM = h.config.PQM
 	newData.SQ8Enabled = h.config.SQ8Enabled
 	newData.BQEnabled = h.config.BQEnabled
+	newData.TurboQuantEnabled = h.config.TurboQuantEnabled
+	newData.TurboQuantBits = h.config.TurboQuantBits
 
 	// If dims changed, we need to reinitialize arenas for the new size
 	if dims != currentDims {
@@ -1740,6 +1757,36 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 	return nil
 }
 
+// MinCandidateHeapAdapter makes a []Candidate a Min-Heap (closest on top)
+type MinCandidateHeapAdapter []Candidate
+
+func (h MinCandidateHeapAdapter) Len() int           { return len(h) }
+func (h MinCandidateHeapAdapter) Less(i, j int) bool { return h[i].Dist < h[j].Dist }
+func (h MinCandidateHeapAdapter) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+func (h *MinCandidateHeapAdapter) Push(x any)        { *h = append(*h, x.(Candidate)) }
+func (h *MinCandidateHeapAdapter) Pop() any {
+	old := *h
+	n := len(old)
+	x := old[n-1]
+	*h = old[:n-1]
+	return x
+}
+
+// MaxCandidateHeapAdapter makes a []Candidate a Max-Heap (furthest on top)
+type MaxCandidateHeapAdapter []Candidate
+
+func (h MaxCandidateHeapAdapter) Len() int           { return len(h) }
+func (h MaxCandidateHeapAdapter) Less(i, j int) bool { return h[i].Dist > h[j].Dist }
+func (h MaxCandidateHeapAdapter) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+func (h *MaxCandidateHeapAdapter) Push(x any)        { *h = append(*h, x.(Candidate)) }
+func (h *MaxCandidateHeapAdapter) Pop() any {
+	old := *h
+	n := len(old)
+	x := old[n-1]
+	*h = old[:n-1]
+	return x
+}
+
 // searchLayer is used by insertion logic
 // searchLayer implements HNSW layer search
 func (h *ArrowHNSW) searchLayer(_ context.Context, computer any, entryPoint uint32, ef, layer int, ctx *ArrowSearchContext, data *types.GraphData, queryVec any) ([]Candidate, error) {
@@ -1747,22 +1794,6 @@ func (h *ArrowHNSW) searchLayer(_ context.Context, computer any, entryPoint uint
 	defer func() {
 		ctx.distComputeTime += time.Since(start)
 	}()
-
-	// Initialize Heaps
-	// ctx.candidates (MinHeap) - Nodes to visit
-	// ctx.resultSet (MaxHeap) - Best nodes found so far
-
-	ctx.visited.Clear()
-
-	// We need MinCandidateHeap wrapper for ctx.candidates (which is []Candidate)
-	minHeap := (*MinCandidateHeap)(&ctx.candidates)
-	*minHeap = (*minHeap)[:0] // Clear
-
-	// Clear Result Set
-	ctx.resultSet.Clear()
-
-	// Use resultSet directly (it now implements heap.Interface)
-	resultSetAdapter := &ctx.resultSet
 
 	// Define polymorphic distance computer
 	var distComputer func(uint32) (float32, error)
@@ -2065,6 +2096,14 @@ func (h *ArrowHNSW) searchLayer(_ context.Context, computer any, entryPoint uint
 		}
 	}
 
+	// 1. Reset Frontier for this layer
+	ctx.candidates = ctx.candidates[:0]
+	ctx.resultSet = ctx.resultSet[:0]
+	ctx.visited.Clear()
+
+	minHeap := (*MinCandidateHeapAdapter)(&ctx.candidates)
+	resultSetAdapter := (*MaxCandidateHeapAdapter)(&ctx.resultSet)
+
 	epCand := Candidate{ID: entryPoint, Dist: epDist}
 	heap.Push(minHeap, epCand)
 	heap.Push(resultSetAdapter, epCand) // resultSet is MaxHeap
@@ -2073,6 +2112,7 @@ func (h *ArrowHNSW) searchLayer(_ context.Context, computer any, entryPoint uint
 	for minHeap.Len() > 0 {
 		// Pop closest candidate
 		curr := heap.Pop(minHeap).(Candidate)
+		ctx.nodesVisitedCount++
 
 		// Furthest in resultSet (MaxHeap Top)
 		// We can Peek using index 0 if internal structure is known (slice)
@@ -2147,21 +2187,24 @@ func (h *ArrowHNSW) searchLayer(_ context.Context, computer any, entryPoint uint
 			}
 			ctx.visited.Set(int(n))
 
+			ctx.distComputeCount++
+			d, err := distComputer(n)
+			if err != nil {
+				continue
+			}
+
+			cand := Candidate{ID: n, Dist: d}
+
+			// Add to candidates for traversal regardless of filter
+			heap.Push(minHeap, cand)
+
+			// Only add to resultSet if it passes filters
 			if ctx.filterBitmap != nil && !ctx.filterBitmap.Contains(n) {
 				continue
 			}
 			if h.deleted != nil && h.deleted.Contains(n) {
 				continue
 			}
-
-			ctx.distComputeCount++
-			d, err := distComputer(n)
-			if err != nil {
-				// Warn or continue? Continue.
-				continue
-			}
-
-			cand := Candidate{ID: n, Dist: d}
 
 			if len(ctx.resultSet) > 0 {
 				furthest := ctx.resultSet[0]
@@ -2191,6 +2234,34 @@ func (h *ArrowHNSW) searchLayer(_ context.Context, computer any, entryPoint uint
 		res[i] = heap.Pop(resultSetAdapter).(Candidate)
 	}
 	return res, nil
+}
+
+// flushSearchMetrics handles the efficient emission of search-layer metrics,
+// including sampling logic for Histogram metrics to avoid overhead.
+func (h *ArrowHNSW) flushSearchMetrics(ctx *ArrowSearchContext) {
+	if ctx == nil {
+		return
+	}
+
+	// Always increment global distance counter (low overhead atomic)
+	if ctx.distComputeCount > 0 {
+		metrics.HnswDistanceCalculations.Add(float64(ctx.distComputeCount))
+	}
+
+	// Sampling for Histogram metrics (e.g. nodes visited)
+	if h.config.SearchLayerSampleRate > 0 {
+		count := h.metricsSampleCounter.Add(1)
+		// Deterministic sampling: if rate is 0.1, record every 10th search.
+		// For very small rates, it might never trigger if rate < 1/MaxUint64 (unlikely).
+		interval := uint64(1.0 / h.config.SearchLayerSampleRate)
+		if interval == 0 {
+			interval = 1
+		}
+
+		if count%interval == 0 {
+			metrics.HnswNodesVisited.WithLabelValues(h.name).Observe(float64(ctx.nodesVisitedCount))
+		}
+	}
 }
 
 func (h *ArrowHNSW) Len() int {
@@ -2470,11 +2541,49 @@ func (h *ArrowHNSW) ExtractVectorForParallel(rec arrow.RecordBatch, rowIdx int) 
 		return f32, nil
 	}
 
-	f32, ok := vec.([]float32)
-	if !ok {
-		return nil, fmt.Errorf("expected []float32, got %T", vec)
+	// Convert other types to float32 for parallel refinement
+	switch v := vec.(type) {
+	case []float32:
+		return v, nil
+	case []float64:
+		res := make([]float32, len(v))
+		for i, val := range v {
+			res[i] = float32(val)
+		}
+		return res, nil
+	case []float16.Num:
+		res := make([]float32, len(v))
+		for i, val := range v {
+			res[i] = val.Float32()
+		}
+		return res, nil
+	case []int32:
+		res := make([]float32, len(v))
+		for i, val := range v {
+			res[i] = float32(val)
+		}
+		return res, nil
+	case []uint32:
+		res := make([]float32, len(v))
+		for i, val := range v {
+			res[i] = float32(val)
+		}
+		return res, nil
+	case []int8:
+		res := make([]float32, len(v))
+		for i, val := range v {
+			res[i] = float32(val)
+		}
+		return res, nil
+	case []uint8:
+		res := make([]float32, len(v))
+		for i, val := range v {
+			res[i] = float32(val)
+		}
+		return res, nil
 	}
-	return f32, nil
+
+	return nil, fmt.Errorf("unsupported vector type %T for parallel search refinement", vec)
 }
 
 func (h *ArrowHNSW) GetDistanceFuncForParallel() func([]float32, []float32) float32 {
@@ -2542,28 +2651,18 @@ func (h *ArrowHNSW) ExtractVectorByIDForParallel(id uint32) ([]float32, error) {
 			res[i] = float32(val)
 		}
 		return res, nil
-	}
-
-	// Handle SQ8 de-quantization for DiskGraph/Compressed vectors
-	if h.quantizer != nil && h.sq8Ready.Load() {
-		if v8, ok := vecAny.([]byte); ok {
-			return h.quantizer.Decode(v8), nil
+	case []int32:
+		res := make([]float32, len(v))
+		for i, val := range v {
+			res[i] = float32(val)
 		}
-	}
-
-	// Handle PQ codes for parallel search (they are returned as []byte from GetVector)
-	if h.config.PQEnabled && h.pqEncoder != nil {
-		if v8, ok := vecAny.([]byte); ok {
-			// The parallel search worker expects PQ codes to be packed into the first M bytes of a []float32
-			codeSize := h.pqEncoder.CodeSize()
-			if len(v8) == codeSize {
-				res := make([]float32, (codeSize+3)/4)
-				ptr := unsafe.Pointer(&res[0])
-				dest := unsafe.Slice((*byte)(ptr), codeSize)
-				copy(dest, v8)
-				return res, nil
-			}
+		return res, nil
+	case []uint32:
+		res := make([]float32, len(v))
+		for i, val := range v {
+			res[i] = float32(val)
 		}
+		return res, nil
 	}
 
 	return nil, fmt.Errorf("unsupported vector type %T for parallel search", vecAny)
@@ -2777,9 +2876,8 @@ func (c *int8Computer) ComputeSingle(id uint32) (float32, error) {
 			return float32(math.Sqrt(float64(sum))), nil
 		} else {
 			// use optimized SIMD kernel
-			qI8 := *(*[]int8)(unsafe.Pointer(&c.q))
 			vI8 := *(*[]int8)(unsafe.Pointer(&v8))
-			return c.h.distFuncInt8(qI8, vI8)
+			return c.h.distFuncInt8(c.qInt8, vI8)
 		}
 	}
 	return math.MaxFloat32, nil

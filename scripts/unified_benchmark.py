@@ -176,6 +176,9 @@ class BenchmarkRunner:
 
         # Server uses envconfig, not command-line flags
         env["LONGBOW_LISTEN_ADDR"] = f"127.0.0.1:{port}"
+        env["LONGBOW_META_ADDR"] = f"127.0.0.1:{port+1}"
+        env["LONGBOW_REST_ADDR"] = f"127.0.0.1:{port+80}" # e.g. 3080
+        env["LONGBOW_METRICS_ADDR"] = f"127.0.0.1:{port+6000}" # e.g. 9000
         env["LONGBOW_DATA_PATH"] = data_root
         env["LONGBOW_NODE_ID"] = self.node_id
 
@@ -216,12 +219,19 @@ class BenchmarkRunner:
             except:
                 pass
             self.server_pid = None
+        
+        # Kill any leftovers
         subprocess.run(
-            f"pkill -9 -f 'longbow.*{self.node_id}'",
+            "pkill -9 longbow || true",
             shell=True,
             stderr=subprocess.DEVNULL,
         )
-        time.sleep(1)
+        subprocess.run(
+            "pkill -9 longbow-metal || true",
+            shell=True,
+            stderr=subprocess.DEVNULL,
+        )
+        time.sleep(2)
 
     def run_benchmark(self, dim, dtype, count, label):
         """Run benchmark-tool with JSON output for a configuration."""

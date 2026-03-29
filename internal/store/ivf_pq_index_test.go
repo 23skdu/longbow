@@ -139,7 +139,7 @@ func TestIVFPQIndex_Search(t *testing.T) {
 		query[j] = float32(0) + float32(j)*0.1
 	}
 
-	results, err := idx.Search(context.Background(), query, 10, nil, SearchOptions{})
+	results, err := idx.SearchInternal(context.Background(), query, 10, nil, SearchOptions{})
 	require.NoError(t, err)
 	require.NotEmpty(t, results)
 
@@ -187,7 +187,7 @@ func TestIVFPQIndex_SearchWithK(t *testing.T) {
 
 	// Test different k values
 	for _, k := range []int{1, 5, 10, 50} {
-		results, err := idx.Search(context.Background(), query, k, nil, SearchOptions{})
+		results, err := idx.SearchInternal(context.Background(), query, k, nil, SearchOptions{})
 		require.NoError(t, err)
 		assert.Len(t, results, k, "k=%d should return k results", k)
 	}
@@ -214,7 +214,7 @@ func TestIVFPQIndex_MemoryUsage(t *testing.T) {
 	err = idx.Add(context.Background(), vectors)
 	require.NoError(t, err)
 
-	memUsage := idx.GetMemoryUsage()
+	memUsage := idx.EstimateMemory()
 
 	// Vector store: numVectors * dim * 4 bytes
 	expectedMin := int64(numVectors * dim * 4)
@@ -271,7 +271,7 @@ func TestIVFPQIndex_DimensionMismatch(t *testing.T) {
 	err = idx.Add(context.Background(), vectors)
 	require.NoError(t, err)
 
-	_, err = idx.Search(context.Background(), []float32{1, 2, 3}, 1, nil, SearchOptions{})
+	_, err = idx.SearchInternal(context.Background(), []float32{1, 2, 3}, 1, nil, SearchOptions{})
 	assert.Error(t, err)
 }
 
@@ -310,7 +310,7 @@ func TestIVFPQIndex_SearchQueryInCluster(t *testing.T) {
 		query[j] = clusters[0][j%len(clusters[0])] + 0.1
 	}
 
-	results, err := idx.Search(context.Background(), query, 20, nil, SearchOptions{})
+	results, err := idx.SearchInternal(context.Background(), query, 20, nil, SearchOptions{})
 	require.NoError(t, err)
 	require.NotEmpty(t, results)
 
@@ -360,7 +360,7 @@ func BenchmarkIVFPQIndex_Search(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = idx.Search(context.Background(), query, 10, nil, SearchOptions{})
+		_, _ = idx.SearchInternal(context.Background(), query, 10, nil, SearchOptions{})
 	}
 }
 
@@ -398,7 +398,7 @@ func BenchmarkIVFPQIndex_MemoryReduction(b *testing.B) {
 	// The index stores PQ codes (M=8 bytes per vector) in clusters
 	// Vector store is kept for accurate search scoring
 	originalMemory := int64(numVectors * dim * 4)
-	indexMemory := idx.GetMemoryUsage()
+	indexMemory := idx.EstimateMemory()
 	pqCodeMemory := int64(numVectors * config.M)
 
 	b.ReportMetric(float64(originalMemory)/float64(indexMemory+pqCodeMemory), "reduction_factor")

@@ -9,6 +9,10 @@ import (
 
 	"github.com/23skdu/longbow/internal/pq"
 	"github.com/23skdu/longbow/internal/query"
+	"github.com/23skdu/longbow/internal/store/types"
+	"github.com/RoaringBitmap/roaring/v2"
+	"github.com/apache/arrow-go/v18/arrow"
+	"io"
 )
 
 // IVFPQConfig holds configuration for IVF-PQ index
@@ -212,8 +216,8 @@ type IVFPQSearchResult struct {
 	Distance float32
 }
 
-// Search searches for k nearest neighbors using IVF-PQ
-func (idx *IVFPQIndex) Search(ctx context.Context, queryVec []float32, k int, _ []query.Filter, _ SearchOptions) ([]SearchResult, error) {
+// SearchInternal searches for k nearest neighbors using IVF-PQ
+func (idx *IVFPQIndex) SearchInternal(ctx context.Context, queryVec []float32, k int, _ []query.Filter, _ SearchOptions) ([]types.SearchResult, error) {
 	if len(queryVec) != idx.dim {
 		return nil, errors.New("query dimension mismatch")
 	}
@@ -261,10 +265,10 @@ func (idx *IVFPQIndex) Search(ctx context.Context, queryVec []float32, k int, _ 
 	}
 
 	// 5. Convert to SearchResult format
-	searchResults := make([]SearchResult, len(results))
+	searchResults := make([]types.SearchResult, len(results))
 	for i, r := range results {
-		searchResults[i] = SearchResult{
-			ID:       VectorID(r.ID),
+		searchResults[i] = types.SearchResult{
+			ID:       types.VectorID(r.ID),
 			Distance: r.Distance,
 			Score:    1.0 / (1.0 + r.Distance),
 		}
@@ -314,65 +318,119 @@ func (idx *IVFPQIndex) computeADCDistance(pqCode []byte, adt []float32) float32 
 	return dist
 }
 
-// Size returns the number of vectors in the index
+func (idx *IVFPQIndex) AddByLocation(ctx context.Context, batchIdx, rowIdx int) (uint32, error) {
+	return 0, errors.New("AddByLocation not supported for IVFPQIndex")
+}
+
+func (idx *IVFPQIndex) AddByRecord(ctx context.Context, rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32, error) {
+	return 0, errors.New("AddByRecord not supported for IVFPQIndex")
+}
+
+func (idx *IVFPQIndex) Search(ctx context.Context, query any, k int, filter any) ([]types.Candidate, error) {
+	return nil, errors.New("Search not supported for IVFPQIndex (use SearchVectors)")
+}
+
 func (idx *IVFPQIndex) Size() int {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 	return int(idx.nextID)
 }
 
-// GetDimension returns the vector dimension
+func (idx *IVFPQIndex) Len() int {
+	return idx.Size()
+}
+
+func (idx *IVFPQIndex) GetEntryPoint() uint32 {
+	return 0
+}
+
+func (idx *IVFPQIndex) GetLocation(id uint32) (any, bool) {
+	return nil, false
+}
+
+func (idx *IVFPQIndex) GetVectorID(loc any) (uint32, bool) {
+	return 0, false
+}
+
 func (idx *IVFPQIndex) GetDimension() uint32 {
 	return uint32(idx.dim)
 }
 
-// GetMemoryUsage returns approximate memory usage in bytes
-func (idx *IVFPQIndex) GetMemoryUsage() int64 {
-	idx.mu.RLock()
-	defer idx.mu.RUnlock()
+func (idx *IVFPQIndex) SetIndexedColumns(cols []string) {}
 
-	var bytes int64
-
-	// Coarse centroids
-	bytes += int64(len(idx.coarseCentroids) * 4)
-
-	// PQ codebooks
-	bytes += int64(idx.config.M * idx.config.K * idx.dim / idx.config.M * 4)
-
-	// Vector store
-	for _, vec := range idx.vectorStore {
-		bytes += int64(len(vec) * 4)
-	}
-
-	// PQ codes (M bytes per vector)
-	bytes += int64(idx.nextID * uint32(idx.config.M))
-
-	return bytes
+func (idx *IVFPQIndex) GetRawNeighbors(id uint32) ([]uint32, error) {
+	return nil, errors.New("GetRawNeighbors not supported for IVFPQIndex")
 }
 
-// VectorIndex interface implementation for compatibility
-func (idx *IVFPQIndex) SearchVectorsWithBitmap(ctx context.Context, q any, k int, filter any, options any) ([]SearchResult, error) {
+func (idx *IVFPQIndex) GetNeighbors(ctx context.Context, id uint32, k int) ([]types.SearchResult, error) {
+	return nil, errors.New("GetNeighbors not supported for IVFPQIndex")
+}
+
+func (idx *IVFPQIndex) PreWarm(targetSize int) {}
+
+func (idx *IVFPQIndex) Warmup() int {
+	return idx.Size()
+}
+
+func (idx *IVFPQIndex) EstimateMemory() int64 {
+	return idx.GetMemoryUsage()
+}
+
+func (idx *IVFPQIndex) GetPQEncoder() *pq.PQEncoder {
+	return idx.pqEncoder
+}
+
+func (idx *IVFPQIndex) Close() error {
+	return nil
+}
+
+func (idx *IVFPQIndex) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowIdxs, batchIdxs []int) ([]uint32, error) {
+	return nil, errors.New("AddBatch not supported for IVFPQIndex")
+}
+
+func (idx *IVFPQIndex) DeleteBatch(ctx context.Context, ids []uint32) error {
+	return errors.New("DeleteBatch not supported for IVFPQIndex")
+}
+
+func (idx *IVFPQIndex) SearchVectorsWithBitmap(ctx context.Context, q any, k int, filter *roaring.Bitmap, options any) ([]types.SearchResult, error) {
 	queryVec, ok := q.([]float32)
 	if !ok {
 		return nil, errors.New("unsupported query type")
 	}
 	opts, _ := options.(SearchOptions)
-	return idx.Search(ctx, queryVec, k, nil, opts)
+	return idx.SearchInternal(ctx, queryVec, k, nil, opts)
 }
 
-func (idx *IVFPQIndex) SearchVectors(ctx context.Context, q any, k int, filters []query.Filter, options any) ([]SearchResult, error) {
+func (idx *IVFPQIndex) SearchVectors(ctx context.Context, q any, k int, filters []query.Filter, options any) ([]types.SearchResult, error) {
 	return idx.SearchVectorsWithBitmap(ctx, q, k, nil, options)
+}
+
+func (idx *IVFPQIndex) TrainPQ(vectors [][]float32) error {
+	return idx.Train(vectors)
+}
+
+func (idx *IVFPQIndex) ExportState() ([]byte, error)                  { return nil, nil }
+func (idx *IVFPQIndex) ImportState(data []byte) error               { return nil }
+func (idx *IVFPQIndex) ExportGraph(w io.Writer) error                { return nil }
+func (idx *IVFPQIndex) ImportGraph(r io.Reader) error                { return nil }
+func (idx *IVFPQIndex) ExportDelta(fromV uint64) (*types.DeltaSync, error) { return nil, nil }
+func (idx *IVFPQIndex) ApplyDelta(delta *types.DeltaSync) error       { return nil }
+func (idx *IVFPQIndex) SetParallelSearchConfig(cfg types.ParallelSearchConfig) {}
+func (idx *IVFPQIndex) GetParallelSearchConfig() types.ParallelSearchConfig  { return types.ParallelSearchConfig{} }
+func (idx *IVFPQIndex) RemapLocations(ctx context.Context, m map[uint32]any) error { return nil }
+
+func (idx *IVFPQIndex) GetMemoryUsage() int64 {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	var bytes int64
+	bytes += int64(len(idx.coarseCentroids) * 4)
+	bytes += int64(idx.config.M * idx.config.K * idx.dim / idx.config.M * 4)
+	for _, vec := range idx.vectorStore {
+		bytes += int64(len(vec) * 4)
+	}
+	bytes += int64(idx.nextID * uint32(idx.config.M))
+	return bytes
 }
 
 func (idx *IVFPQIndex) IsSharded() bool               { return false }
 func (idx *IVFPQIndex) GetShardedIndex() *ShardedHNSW { return nil }
-
-// IndexLen returns the number of indexed vectors
-func (idx *IVFPQIndex) IndexLen() int {
-	return idx.Size()
-}
-
-// Warmup returns the number of vectors for warmup
-func (idx *IVFPQIndex) Warmup() int {
-	return idx.Size()
-}

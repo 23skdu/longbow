@@ -1,13 +1,13 @@
 //go:build !gpu || !darwin || !arm64
 // +build !gpu !darwin !arm64
 
-package gpu
-
-import "C"
+package memory
 
 import (
 	"fmt"
 	"unsafe"
+
+	"github.com/23skdu/longbow/internal/gpu/types"
 )
 
 // allocateMetalMemoryImpl is a stub for non-Metal platforms
@@ -30,6 +30,6 @@ func (p *GPUMemPool) metalMemcpyDeviceToHostImpl(_, _ unsafe.Pointer, _ int64) e
 }
 
 // NewMetalIndexImpl is a stub for non-Metal platforms
-func NewMetalIndexImpl(cfg GPUConfig) (Index, error) {
+func NewMetalIndexImpl(cfg types.GPUConfig) (types.Index, error) {
 	return nil, fmt.Errorf("Metal support not compiled in")
 }

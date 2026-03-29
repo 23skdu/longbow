@@ -742,8 +742,8 @@ func (s *ShardedHNSW) PreWarm(targetSize int) {
 	}
 }
 
-// GetNeighbors returns the nearest neighbors for a given vector ID.
-func (s *ShardedHNSW) GetNeighbors(id uint32) ([]uint32, error) {
+// GetRawNeighbors returns the nearest neighbors for a given vector ID as raw IDs.
+func (s *ShardedHNSW) GetRawNeighbors(id uint32) ([]uint32, error) {
 	shardIdx := s.GetShardForID(VectorID(id))
 
 	s.shardsMu.RLock()
@@ -760,7 +760,7 @@ func (s *ShardedHNSW) GetNeighbors(id uint32) ([]uint32, error) {
 	}
 
 	// Get local neighbors
-	localNeighbors, err := shard.index.GetNeighbors(localID)
+	localNeighbors, err := shard.index.GetRawNeighbors(localID)
 	if err != nil {
 		return nil, err
 	}
@@ -775,6 +775,23 @@ func (s *ShardedHNSW) GetNeighbors(id uint32) ([]uint32, error) {
 		globalNeighbors = append(globalNeighbors, uint32(globalID))
 	}
 	return globalNeighbors, nil
+}
+
+// GetNeighbors returns the k nearest neighbors for a given vector ID as SearchResults.
+func (s *ShardedHNSW) GetNeighbors(ctx context.Context, id uint32, k int) ([]types.SearchResult, error) {
+	neighbors, err := s.GetRawNeighbors(id)
+	if err != nil {
+		return nil, err
+	}
+
+	results := make([]types.SearchResult, 0, min(k, len(neighbors)))
+	for i := 0; i < len(neighbors) && i < k; i++ {
+		results = append(results, types.SearchResult{
+			ID: types.VectorID(neighbors[i]),
+		})
+	}
+
+	return results, nil
 }
 
 // Stats returns multi-index statistics for all shards.

@@ -23,6 +23,7 @@ import (
 	lmem "github.com/23skdu/longbow/internal/memory"
 	"github.com/23skdu/longbow/internal/metrics"
 	qry "github.com/23skdu/longbow/internal/query"
+	"github.com/23skdu/longbow/internal/store/types"
 )
 
 // DoAction handles custom actions like deletion and status
@@ -550,6 +551,51 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 		}
 		body, _ := json.Marshal(resp)
 		return stream.Send(&flight.Result{Body: body})
+
+	case "create_dataset", "CreateDataset":
+		var req struct {
+			Name           string `json:"name"`
+			Dimension      int    `json:"dimension"`
+			VectorType     string `json:"vector_type,omitempty"`
+			TurboQuantBits int    `json:"turboquant_bits,omitempty"`
+			Metric         string `json:"metric,omitempty"`
+		}
+		if err := json.Unmarshal(action.Body, &req); err != nil {
+			return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
+		}
+		if req.Name == "" {
+			return status.Errorf(codes.InvalidArgument, "dataset name is required")
+		}
+
+		// Create metadata with longbow prefix
+		metaMap := make(map[string]string)
+		if req.VectorType != "" {
+			metaMap["longbow.vector_type"] = req.VectorType
+		}
+		if req.TurboQuantBits > 0 {
+			metaMap["longbow.turboquant_bits"] = fmt.Sprintf("%d", req.TurboQuantBits)
+		}
+		if req.Metric != "" {
+			metaMap["longbow.metric"] = req.Metric
+		}
+		meta := arrow.MetadataFrom(metaMap)
+
+		schema := arrow.NewSchema([]arrow.Field{
+			{Name: "id", Type: arrow.BinaryTypes.String},
+			{Name: "vector", Type: arrow.FixedSizeListOf(int32(req.Dimension), arrow.PrimitiveTypes.Float32)},
+			{Name: "timestamp", Type: arrow.FixedWidthTypes.Timestamp_ns},
+		}, &meta)
+
+		_, created := s.getOrCreateDataset(req.Name, func() *Dataset {
+			ds := NewDataset(req.Name, schema)
+			ds.Logger = s.logger
+			ds.Topo = s.numaTopology
+			return ds
+		})
+
+		resp := map[string]any{"status": "created", "dataset": req.Name, "created": created}
+		body, _ := json.Marshal(resp)
+		return stream.Send(&flight.Result{Body: body})
 	}
 	return status.Error(codes.Unimplemented, "unknown action type "+action.Type)
 }
@@ -1027,10 +1073,18 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 		if config.IndexConfig == nil {
 			hnswCfg := DefaultArrowHNSWConfig()
 			hnswCfg.Metric = ds.Metric
+			
+			// Use preferred type if specified via create_dataset or metadata
+			if ds.PreferredVectorType != types.VectorTypeFloat32 {
+				dataType = ds.PreferredVectorType
+			}
 			hnswCfg.DataType = dataType
+			
 			if dataType == VectorTypeTQ {
 				hnswCfg.TurboQuantEnabled = true
-				if hnswCfg.TurboQuantBits == 0 {
+				if ds.TurboQuantBits > 0 {
+					hnswCfg.TurboQuantBits = ds.TurboQuantBits
+				} else if hnswCfg.TurboQuantBits == 0 {
 					hnswCfg.TurboQuantBits = 8
 				}
 			}
@@ -1038,10 +1092,18 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 		} else {
 			// Clone the config to avoid polluting the shared autoShardingConfig
 			clonedCfg := *config.IndexConfig
+			
+			// Use preferred type if specified
+			if ds.PreferredVectorType != types.VectorTypeFloat32 {
+				dataType = ds.PreferredVectorType
+			}
 			clonedCfg.DataType = dataType
+			
 			if dataType == VectorTypeTQ {
 				clonedCfg.TurboQuantEnabled = true
-				if clonedCfg.TurboQuantBits == 0 {
+				if ds.TurboQuantBits > 0 {
+					clonedCfg.TurboQuantBits = ds.TurboQuantBits
+				} else if clonedCfg.TurboQuantBits == 0 {
 					clonedCfg.TurboQuantBits = 8
 				}
 			}

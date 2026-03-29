@@ -1,6 +1,6 @@
 //go:build gpu && linux
 
-package gpu
+package cuda
 
 /*
 #cgo CFLAGS: -DUSE_GPU

@@ -54,10 +54,10 @@ func CombineHybridResults(vectorResults, bm25Results []SearchResult, alpha float
 	}
 
 	// Use RRF by default as it handles different score scales well
-	return ReciprocalRankFusion(vectorResults, bm25Results, 60, k)
+	return ReciprocalRankFusion("", vectorResults, bm25Results, 60, k)
 }
 
 // CombineHybridResultsRRF combines results using Reciprocal Rank Fusion (legacy alignment)
 func CombineHybridResultsRRF(vectorResults, bm25Results []SearchResult, rrfK, limit int) []SearchResult {
-	return ReciprocalRankFusion(vectorResults, bm25Results, rrfK, limit)
+	return ReciprocalRankFusion("", vectorResults, bm25Results, rrfK, limit)
 }

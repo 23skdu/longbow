@@ -142,7 +142,7 @@ func TestFuseRRF(t *testing.T) {
 		{ID: 5, Score: 3.0},
 	}
 
-	results := FuseRRF(dense, sparse, 60, 5)
+	results := FuseRRF("test_dataset", dense, sparse, 60, 5)
 
 	if len(results) == 0 {
 		t.Fatal("expected results")
@@ -164,7 +164,7 @@ func TestFuseRRF(t *testing.T) {
 }
 
 func TestFuseRRFEmpty(t *testing.T) {
-	results := FuseRRF(nil, nil, 60, 10)
+	results := FuseRRF("test_dataset", nil, nil, 60, 10)
 	if len(results) != 0 {
 		t.Error("expected empty results")
 	}
@@ -236,7 +236,7 @@ func BenchmarkFuseRRF(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		FuseRRF(dense, sparse, 60, 10)
+		FuseRRF("test_dataset", dense, sparse, 60, 10)
 	}
 }
 

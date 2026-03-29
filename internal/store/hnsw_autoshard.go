@@ -526,20 +526,39 @@ func (idx *AutoShardingIndex) Close() error {
 	return idx.current.Close()
 }
 
-// GetNeighbors returns the nearest neighbors for a given vector ID.
-func (idx *AutoShardingIndex) GetNeighbors(id uint32) ([]uint32, error) {
+// GetRawNeighbors returns the diagnostic neighbor IDs for a given vector ID.
+func (idx *AutoShardingIndex) GetRawNeighbors(id uint32) ([]uint32, error) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 
 	// Primarily check current index
-	neighbors, err := idx.current.GetNeighbors(id)
+	neighbors, err := idx.current.GetRawNeighbors(id)
 	if err == nil {
 		return neighbors, nil
 	}
 
 	// If not found and merging, check interim
 	if idx.interimIndex != nil {
-		return idx.interimIndex.GetNeighbors(id)
+		return idx.interimIndex.GetRawNeighbors(id)
+	}
+
+	return nil, err
+}
+
+// GetNeighbors returns the k nearest neighbors for a given vector ID as SearchResults.
+func (idx *AutoShardingIndex) GetNeighbors(ctx context.Context, id uint32, k int) ([]types.SearchResult, error) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	// Primarily check current index
+	res, err := idx.current.GetNeighbors(ctx, id, k)
+	if err == nil {
+		return res, nil
+	}
+
+	// If not found and merging, check interim
+	if idx.interimIndex != nil {
+		return idx.interimIndex.GetNeighbors(ctx, id, k)
 	}
 
 	return nil, err

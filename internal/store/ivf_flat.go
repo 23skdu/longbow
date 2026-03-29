@@ -2,6 +2,7 @@ package store
 
 // nosec G404 - math/rand is used for IVF centroid selection, not security-sensitive
 import (
+	"context"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"sync"
 
 	"github.com/23skdu/longbow/internal/simd"
+	lbtypes "github.com/23skdu/longbow/internal/store/types"
 )
 
 const (
@@ -215,6 +217,11 @@ func (ivf *IVFFlatIndex) SearchBatch(queries [][]float32, k int) ([][]IndexSearc
 		results[i] = r
 	}
 	return results, nil
+}
+
+// GetNeighbors is not supported for IVF-Flat index
+func (ivf *IVFFlatIndex) GetNeighbors(ctx context.Context, id lbtypes.VectorID, k int) ([]lbtypes.SearchResult, error) {
+	return nil, fmt.Errorf("graph-based neighbor retrieval not supported for IVF-Flat: %w", os.ErrPermission)
 }
 
 func (ivf *IVFFlatIndex) Save(path string) error {
@@ -429,16 +436,21 @@ func (ivf *IVFFlatIndex) AddByLocation(batchIdx, rowIdx int) error {
 	return nil
 }
 
-func (ivf *IVFFlatIndex) SearchVectors(query []float32, k int, options SearchOptions) []SearchResult {
+func (ivf *IVFFlatIndex) GetVectorID(loc Location) (uint64, bool) {
+	// Not supported for IVFFlat adapter
+	return 0, false
+}
+
+func (ivf *IVFFlatIndex) SearchVectors(query []float32, k int, options SearchOptions) []lbtypes.SearchResult {
 	results, _ := ivf.Search(query, k)
-	searchResults := make([]SearchResult, len(results))
+	searchResults := make([]lbtypes.SearchResult, len(results))
 	for i, r := range results {
 		id := r.ID
 		if id > 4294967295 {
 			id = 4294967295
 		}
-		searchResults[i] = SearchResult{
-			ID:       VectorID(id),
+		searchResults[i] = lbtypes.SearchResult{
+			ID:       lbtypes.VectorID(id),
 			Distance: r.Distance,
 			Score:    1.0 / (1.0 + r.Distance),
 		}

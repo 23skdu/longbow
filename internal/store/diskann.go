@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/23skdu/longbow/internal/simd"
+	lbtypes "github.com/23skdu/longbow/internal/store/types"
 )
 
 const (
@@ -336,6 +338,26 @@ func (d *DiskANNIndex) SearchBatch(queries [][]float32, k int) ([][]IndexSearchR
 	return results, nil
 }
 
+func (d *DiskANNIndex) GetNeighbors(ctx context.Context, id lbtypes.VectorID, k int) ([]lbtypes.SearchResult, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	neighbors, ok := d.graph[uint64(id)]
+	if !ok {
+		return nil, fmt.Errorf("vector id %d not found in DiskANN index", id)
+	}
+
+	results := make([]lbtypes.SearchResult, 0, min(k, len(neighbors)))
+	for i := 0; i < len(neighbors) && i < k; i++ {
+		neighborID := neighbors[i]
+		results = append(results, lbtypes.SearchResult{
+			ID: lbtypes.VectorID(neighborID),
+		})
+	}
+
+	return results, nil
+}
+
 func (d *DiskANNIndex) Save(path string) error {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
@@ -551,16 +573,21 @@ func (d *DiskANNIndex) AddByLocation(batchIdx, rowIdx int) error {
 	return nil
 }
 
-func (d *DiskANNIndex) SearchVectors(query []float32, k int, options SearchOptions) []SearchResult {
+func (d *DiskANNIndex) GetVectorID(loc Location) (uint64, bool) {
+	// Not supported for DiskANN adapter
+	return 0, false
+}
+
+func (d *DiskANNIndex) SearchVectors(query []float32, k int, options SearchOptions) []lbtypes.SearchResult {
 	results, _ := d.Search(query, k)
-	searchResults := make([]SearchResult, len(results))
+	searchResults := make([]lbtypes.SearchResult, len(results))
 	for i, r := range results {
 		id := r.ID
 		if id > 4294967295 {
 			id = 4294967295
 		}
-		searchResults[i] = SearchResult{
-			ID:       VectorID(id),
+		searchResults[i] = lbtypes.SearchResult{
+			ID:       lbtypes.VectorID(id),
 			Distance: r.Distance,
 			Score:    1.0 / (1.0 + r.Distance),
 		}

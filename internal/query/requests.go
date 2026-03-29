@@ -15,6 +15,10 @@ type VectorSearchRequest struct {
 	// GraphRAG Fields
 	GraphAlpha float32 `json:"graph_alpha,omitempty"` // 0.0=disabled, >0 blends graph score
 
+	// Vector Type & Quantization (TurboQuant)
+	VectorType     string `json:"vector_type,omitempty"`     // "float32", "turboquant", "int8", "binary"
+	TurboQuantBits int    `json:"turboquant_bits,omitempty"` // 4, 8 bits (default = 8)
+
 	// Vector Transport
 	IncludeVectors bool   `json:"include_vectors,omitempty"`
 	VectorFormat   string `json:"vector_format,omitempty"` // "quantized", "f32", "f16", "bq"
@@ -38,4 +42,6 @@ type VectorSearchByIDRequest struct {
 	K              int    `json:"k"`
 	IncludeVectors bool   `json:"include_vectors,omitempty"`
 	VectorFormat   string `json:"vector_format,omitempty"`
+	VectorType     string `json:"vector_type,omitempty"`
+	TurboQuantBits int    `json:"turboquant_bits,omitempty"`
 }

@@ -48,9 +48,29 @@ func IsGPUComputeError(err error) bool {
 	return types.IsGPUComputeError(err)
 }
 
-// GetGPURequirements returns the requirements for GPU acceleration (stub)
+// GetGPURequirements returns the requirements for GPU acceleration based on backend
 func GetGPURequirements(backend GPUBackend) (bool, string, error) {
-	return true, "CUDA 11.0+ or Metal-compatible hardware", nil
+	switch backend {
+	case BackendCUDA:
+		// Check for NVIDIA GPU via nvidia-smi
+		_, err := exec.LookPath("nvidia-smi")
+		if err != nil {
+			return false, "nvidia-smi not found - CUDA requires NVIDIA GPU and driver", nil
+		}
+		return true, "CUDA 11.0+ with NVIDIA GPU and nvidia-smi available", nil
+	case BackendMetal:
+		if runtime.GOOS != "darwin" {
+			return false, "Metal requires macOS (Apple Silicon or Intel Mac)", nil
+		}
+		if runtime.GOARCH != "arm64" && runtime.GOARCH != "amd64" {
+			return false, "Metal requires macOS with Apple Silicon or Intel Mac", nil
+		}
+		return true, "Metal requires macOS with Apple Silicon (M1/M2/M3) or Intel Mac with Metal support", nil
+	case BackendOpenCL:
+		return false, "OpenCL backend not yet implemented", nil
+	default:
+		return false, "Unknown GPU backend", nil
+	}
 }
 
 // DefaultGPUConfig returns default GPU configuration

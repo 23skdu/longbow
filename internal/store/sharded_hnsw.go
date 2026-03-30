@@ -587,6 +587,82 @@ func (s *ShardedHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any,
 	return merged, nil
 }
 
+func (s *ShardedHNSW) SearchVectorsInRange(ctx context.Context, queryVec any, threshold float32, filters []query.Filter, options any) ([]SearchResult, error) {
+	type shardResult struct {
+		results  []SearchResult
+		shardIdx int
+		err      error
+	}
+	ch := make(chan shardResult, len(s.shards))
+	var wg sync.WaitGroup
+
+	s.shardsMu.RLock()
+	currentShards := s.shards
+	s.shardsMu.RUnlock()
+
+	for i, shard := range currentShards {
+		if shard == nil || shard.index == nil {
+			continue
+		}
+		wg.Add(1)
+		go func(idx int, sh *hnswShard) {
+			defer wg.Done()
+			res, err := sh.index.SearchVectorsInRange(ctx, queryVec, threshold, nil, options)
+			ch <- shardResult{results: res, shardIdx: idx, err: err}
+		}(i, shard)
+	}
+
+	go func() {
+		wg.Wait()
+		close(ch)
+	}()
+
+	var merged []SearchResult
+	for sr := range ch {
+		if sr.err != nil {
+			continue
+		}
+		shard := currentShards[sr.shardIdx]
+		for _, r := range sr.results {
+			globalID, ok := shard.getGlobalID(uint32(r.ID))
+			if !ok {
+				continue
+			}
+			r.ID = globalID
+
+			if len(filters) > 0 {
+				_, ok := s.locationStore.Get(globalID)
+				if !ok {
+					continue
+				}
+			}
+			merged = append(merged, r)
+		}
+	}
+
+	if len(filters) > 0 && s.dataset != nil {
+		s.dataset.dataMu.RLock()
+		if len(s.dataset.Records) > 0 {
+			filtered := merged[:0]
+			for _, r := range merged {
+				loc, ok := s.locationStore.Get(r.ID)
+				if !ok || loc.BatchIdx >= len(s.dataset.Records) {
+					continue
+				}
+				filtered = append(filtered, r)
+			}
+			merged = filtered
+		}
+		s.dataset.dataMu.RUnlock()
+	}
+
+	sort.Slice(merged, func(i, j int) bool {
+		return merged[i].Score < merged[j].Score
+	})
+
+	return merged, nil
+}
+
 // Len implements VectorIndex.
 func (s *ShardedHNSW) Len() int {
 	return int(s.nextID.Load())

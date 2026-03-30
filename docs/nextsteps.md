@@ -151,9 +151,11 @@ Missing features for parity with leading vector databases:
 | 1 | **FP16 (half-precision) kernels** | Metal | ✅ Done | `internal/gpu/metal/metal_gpu_optimized.go:269-371` — `compute_l2_distances_fp16`, `compute_cosine_similarity_fp16`, `compute_dot_product_fp16` |
 | 2 | **SIMD/warp-level reductions** | Metal | ✅ Done | `internal/gpu/metal/metal_gpu_optimized.go:373-472` — `compute_l2_distances_warp`, `compute_l2_and_topk_warp` using `simd_shuffle_down` |
 | 3 | **Multiple index types (IVF, PQ, Flat)** | CUDA | ✅ Done | `internal/gpu/faiss/faiss_gpu.go:26-30` — `FaissIndexFlat`, `FaissIndexIVFFlat`, `FaissIndexIVFPQ` |
-| 4 | **GPU-side HNSW refinement** | Hybrid | ⏳ Pending | `internal/store/hnsw_gpu.go:343-366` — CPU refinement fallback |
-| 5 | **Adaptive SyncBatchSize** | GPU sync | ⏳ Pending | `internal/store/hnsw_gpu.go:23-28` — default 1000 |
-| 6 | **Cross-backend memory pooling** | Both | ⏳ Pending | `internal/gpu/memory/memory_pool.go:37-55` |
+| 4 | **GPU-side HNSW refinement** | Hybrid | ✅ Done | `internal/store/hnsw_gpu.go:307-441` — Hybrid search: GPU candidates + CPU graph refinement |
+| 5 | **Adaptive SyncBatchSize** | GPU sync | ✅ Done | `internal/store/hnsw_gpu.go:22-28` — Configurable `SyncBatchSize` (default 1000) and `SyncInterval` (default 5s) |
+
+**Note**: True GPU-side HNSW (full graph traversal on GPU) would require cuHNSW/cuVS integration - current hybrid approach is pragmatic.
+| 6 | **Cross-backend memory pooling** | Both | ✅ Done | `internal/gpu/memory/memory_pool.go:37-64` — GPU memory pool with small/large buffer allocation |
 | 7 | **Tensor Core paths (FP16/TF32)** | CUDA | ⏳ Pending | FAISS GPU supports FP16, requires Go bindings |
 | 8 | **SoA memory layout** | GPU storage | ⏳ Pending | `internal/gpu/metal/metal_gpu.go` — AoS layout |
 | 9 | **Mixed-precision compute path** | Both | ⏳ Pending | `docs/performance.md:38-55` — dtype coverage |

@@ -226,7 +226,7 @@ After evaluation, **recommend KEEPING FAISS** for production use. See rationale 
 
 ---
 
-**Last Updated**: 2026-03-29
+**Last Updated**: 2026-03-30
 
 ---
 
@@ -257,21 +257,96 @@ Ran comprehensive benchmarks for CPU and Metal modes covering:
 
 ---
 
-## 6. Known Issues & Recommendations
+## 6. Namespace Support Investigation (2026-03-30) 🔴 CRITICAL
 
-### Unified Benchmark Script Issues
+**Status**: INVESTIGATION COMPLETE - PLANNING
+
+### Findings
+
+| Issue | Severity | Location |
+|-------|----------|----------|
+| DeleteNamespace doesn't check for datasets | 🔴 Critical | `internal/store/namespace.go:108-125` |
+| AddDataset/RemoveDataset not called on dataset create/delete | 🔴 Critical | `internal/store/store.go`, `internal/store/store_actions.go` |
+| No race condition protection | 🔴 Critical | All namespace/dataset operations |
+| DeleteDataset doesn't notify namespace | 🔴 Critical | `internal/store/store_actions.go:322-358` |
+
+### Current Issues
+
+1. **Namespace deletion allows non-empty deletion**: `DeleteNamespace()` in `namespace.go` doesn't check `DatasetCount()` before deleting
+2. **No dataset-namespace linkage**: Datasets are not registered in namespaces when created (`getOrCreateDataset` doesn't call `ns.AddDataset`)
+3. **No cleanup on dataset deletion**: `delete-dataset` action doesn't call `ns.RemoveDataset()`
+4. **Race conditions**: No locking between check and delete operations
+
+### Implementation Plan
+
+#### Subtask 1: Fix Namespace-Dataset Linkage (P0)
+
+- [ ] **1.1** Update `store.go:getOrCreateDataset()` to call `ns.AddDataset()` when a dataset is created
+- [ ] **1.2** Update `store_actions.go:delete-dataset` handler to call `ns.RemoveDataset()` when a dataset is deleted
+- [ ] **1.3** Add proper namespace lookup from dataset name (parse namespaced path)
+- [ ] **1.4** Add unit tests for dataset-namespace linkage
+
+#### Subtask 2: Fix Namespace Deletion (P0)
+
+- [ ] **2.1** Update `DeleteNamespace()` to check `DatasetCount() > 0` before deletion
+- [ ] **2.2** Return clear error: "cannot delete namespace with N remaining datasets"
+- [ ] **2.3** Add force delete option for cleanup scripts
+- [ ] **2.4** Add unit tests for namespace deletion with/without datasets
+
+#### Subtask 3: Fix Race Conditions (P1)
+
+- [ ] **3.1** Add write lock around check-and-delete in DeleteNamespace
+- [ ] **3.2** Add atomic check in namespace deletion handler
+- [ ] **3.3** Add distributed lock for multi-node namespace operations (if gossip-based)
+- [ ] **3.4** Add integration tests for concurrent namespace/dataset operations
+
+#### Subtask 4: API & SDK Updates (P2)
+
+- [ ] **4.1** Add `ListDatasetsInNamespace` API endpoint
+- [ ] **4.2** Add `GetNamespaceInfo` API (dataset count, total vectors, etc.)
+- [ ] **4.3** Update Python SDK with namespace management methods
+- [ ] **4.4** Add namespace-aware dataset operations
+
+#### Subtask 5: Documentation (P3)
+
+- [ ] **5.1** Document namespace/dataset lifecycle
+- [ ] **5.2** Add examples for namespace operations
+- [ ] **5.3** Document race condition handling
+
+### Code References
+
+| File | Issue |
+|------|-------|
+| `internal/store/namespace.go:108-125` | DeleteNamespace missing dataset check |
+| `internal/store/store.go:352-382` | getOrCreateDataset no namespace linkage |
+| `internal/store/store_actions.go:322-358` | delete-dataset no namespace notification |
+| `internal/store/servers.go:275-286` | handleDeleteNamespace handler |
+
+### Testing Strategy
+
+1. Unit tests for each component
+2. Integration tests for namespace/dataset lifecycle
+3. Concurrent deletion tests (goroutines creating/deleting simultaneously)
+4. Multi-node tests (if distributed)
+
+---
+
+## 7. Known Issues & Recommendations
+
+### Unified Benchmark Script Issues ✅ FIXED
 
 | Issue | Severity | Status |
 |-------|----------|--------|
-| Python SDK import detection | Medium | Needs fix - bench-tool lookup returns wrong binary |
-| Metal mode bench-tool execution | Medium | Works but needs verification |
-| Deletion test namespace cleanup | Low | SDK missing drop_dataset method |
+| Python SDK import detection | Medium | ✅ Fixed - bench-tool now preferred |
+| Metal mode bench-tool execution | Medium | Works - verified |
+| Deletion test namespace cleanup | Low | ✅ Fixed - drop_dataset() added |
 
 ### Recommendations
 
-1. **Fix unified_benchmark.py**: Update bench-tool path lookup to prefer `./bin/bench-tool`
-2. **Add Python SDK method**: Add `drop_dataset()` to LongbowClient
-3. **Expand dimension coverage**: Add 768, 1536 dimension tests
-4. **Add multi-node cluster testing**: Scripts for Ancalagon/Linux cluster testing
+1. **Implement namespace-dataset linkage** - Critical fix per Section 6
+2. **Fix namespace deletion** - Add dataset count check before delete
+3. **Add race condition protection** - Proper locking for namespace ops
+4. **Expand dimension coverage**: Add 768, 1536 dimension tests
+5. **Add multi-node cluster testing**: Scripts for Ancalagon/Linux cluster testing
 
 All HIGH PRIORITY items complete.

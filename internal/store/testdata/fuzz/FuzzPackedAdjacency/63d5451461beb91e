@@ -1,3 +1,0 @@
-go test fuzz v1
-uint32(10)
-uint32(40)

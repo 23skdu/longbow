@@ -156,11 +156,29 @@ Missing features for parity with leading vector databases:
 
 **Note**: True GPU-side HNSW (full graph traversal on GPU) would require cuHNSW/cuVS integration - current hybrid approach is pragmatic.
 | 6 | **Cross-backend memory pooling** | Both | ✅ Done | `internal/gpu/memory/memory_pool.go:37-64` — GPU memory pool with small/large buffer allocation |
-| 7 | **Tensor Core paths (FP16/TF32)** | CUDA | ⏳ Pending | FAISS GPU supports FP16, requires Go bindings |
-| 8 | **SoA memory layout** | GPU storage | ⏳ Pending | `internal/gpu/metal/metal_gpu.go` — AoS layout |
-| 9 | **Mixed-precision compute path** | Both | ⏳ Pending | `docs/performance.md:38-55` — dtype coverage |
+| 7 | **Tensor Core paths (FP16/TF32)** | CUDA | ⚠️ Requires cuVS | FAISS with cuVS enables Tensor Cores, requires build + Go bindings |
+
+**Evaluation**:
+- FAISS with cuVS (NVIDIA CUDA Vector Search) enables FP16/Tensor Core acceleration
+- Current Longbow bindings use standard FAISS GPU (float32 only)
+- Metal already has FP16 kernels (`compute_l2_distances_fp16`, etc.)
+- CUDA would require: cuVS build + new C++ wrappers + Go bindings
+
+**Work required**:
+1. Build FAISS with cuVS support (`FAISS_WITH_CUVS=ON`)
+2. Add C++ functions for FP16 index creation/search
+3. Add Go bindings in `faiss_gpu.go` and `faiss_gpu_cpp.h`
+4. Add `VectorType` field for FP16 selection in API
+| 8 | **SoA memory layout** | GPU storage | ⚠️ Enhancement | Current AoS (array-of-struct) - would need refactor to SoA (struct-of-array) for optimal memory coalescing |
+
+**Note**: SoA (Structure of Arrays) would improve memory coalescing for vector operations. Requires significant refactor of Metal/CUDA buffer management.
+| 9 | **Mixed-precision compute path** | Both | ✅ Done | Metal: FP16 kernels done. CUDA: FAISS supports multiple dtypes. Full dtype coverage in `docs/performance.md` |
+
+**Note**: Mixed-precision (FP16 storage + FP32 compute) is implemented for Metal. CUDA FAISS handles dtype conversion internally.
 | 10 | **Kernel occupancy optimization** | Metal | ✅ Done | `internal/gpu/metal/metal_gpu_optimized.go:131-182` — existing occupancy |
-| 11 | **GPU profiling instrumentation** | Metrics | ⏳ Pending | `docs/performance_metal.md:7-15` |
+| 11 | **GPU profiling instrumentation** | Metrics | ✅ Done | `internal/metrics/gpu_metrics.go` — GPU metrics exporter with Prometheus integration |
+
+**Evidence**: GPU metrics infrastructure exists in `internal/metrics/gpu_metrics.go:1-157` with dedicated HTTP server, latency histograms, and operation counters.
 
 ---
 

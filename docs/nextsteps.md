@@ -7,6 +7,19 @@
 
 ## 🚨 HIGH PRIORITY — Pending Items
 
+### 0. Stub & Incomplete Code Fixes
+
+**Status**: IN PROGRESS
+
+- [ ] Fix `GetGPURequirements()` to detect actual GPU requirements instead of returning hardcoded string
+- [ ] Fix `stubMLModel` to return meaningful fallback scores (currently returns 0.5 for all)
+
+**Evidence**:
+- `internal/gpu/interface.go:52-53` - Returns `"CUDA 11.0+ or Metal-compatible hardware"` (hardcoded)
+- `internal/store/ml_reranker.go:131-137` - Always returns `0.5` for all documents
+
+---
+
 ### 1. Native TurboQuant Storage API
 
 **Problem**: Clients cannot explicitly declare `vector_type = "turboquant"` at the API level to opt into the more storage-efficient TurboQuant index path.

@@ -2,12 +2,12 @@ package main
 
 import (
 	"context"
-	"github.com/apache/arrow-go/v18/parquet/file"
-	"github.com/apache/arrow-go/v18/parquet/pqarrow"
-	"github.com/sbinet/npyio"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/apache/arrow-go/v18/parquet/file"
+	"github.com/apache/arrow-go/v18/parquet/pqarrow"
+	"github.com/sbinet/npyio"
 	"log"
 	"math/rand"
 	"os"
@@ -42,6 +42,8 @@ func main() {
 		runDeleteNamespace(ctx, os.Args[2:])
 	case "list-namespaces":
 		runListNamespaces(ctx, os.Args[2:])
+	case "list-datasets-in-namespace":
+		runListDatasetsInNamespace(ctx, os.Args[2:])
 	case "stats":
 		runStats(ctx, os.Args[2:])
 	case "help", "-h", "--help":
@@ -65,6 +67,7 @@ Commands:
   create-namespace Create a new dataset namespace
   delete-namespace Delete a dataset namespace
   list-namespaces  List all dataset namespaces
+  list-datasets-in-namespace List datasets in a namespace
   stats            Show dataset statistics
 
 Global Options:
@@ -596,7 +599,6 @@ func runDeleteNamespace(ctx context.Context, args []string) {
 	fmt.Printf("Namespace '%s' deleted successfully\n", *name)
 }
 
-
 func runAlterNamespace(ctx context.Context, args []string) {
 	fs := flag.NewFlagSet("alter-namespace", flag.ExitOnError)
 	dataset := fs.String("dataset", "", "Dataset name (required)")
@@ -627,11 +629,13 @@ func runAlterNamespace(ctx context.Context, args []string) {
 	if err != nil {
 		log.Fatalf("Alter namespace failed: %v\n", err)
 	}
-	
+
 	msg := ""
 	for {
 		r, err := res.Recv()
-		if err != nil { break }
+		if err != nil {
+			break
+		}
 		msg += string(r.Body)
 	}
 	fmt.Printf("Success: %s\n", msg)
@@ -656,6 +660,51 @@ func runListNamespaces(ctx context.Context, args []string) {
 		}
 		if len(result.Body) > 0 {
 			fmt.Printf("  %s\n", string(result.Body))
+		}
+	}
+}
+
+func runListDatasetsInNamespace(ctx context.Context, args []string) {
+	fs := flag.NewFlagSet("list-datasets-in-namespace", flag.ExitOnError)
+	name := fs.String("namespace", "default", "Namespace name")
+	fs.Parse(args)
+
+	uri, _ := getClientURI(args)
+	sc := mustGetClient(uri)
+	defer sc.Close()
+
+	body, err := json.Marshal(map[string]string{"name": *name})
+	if err != nil {
+		log.Fatalf("Failed to marshal request: %v", err)
+	}
+
+	action := &flight.Action{Type: "ListDatasetsInNamespace", Body: body}
+	stream, err := sc.DoAction(ctx, action)
+	if err != nil {
+		log.Fatalf("Failed to list datasets in namespace: %v", err)
+	}
+
+	result, err := stream.Recv()
+	if err != nil {
+		log.Fatalf("Failed to receive response: %v", err)
+	}
+
+	var resp map[string][]string
+	if err := json.Unmarshal(result.Body, &resp); err != nil {
+		log.Fatalf("Failed to parse response: %v", err)
+	}
+
+	datasets, ok := resp["datasets"]
+	if !ok {
+		log.Fatalf("Invalid response format")
+	}
+
+	fmt.Printf("Datasets in namespace '%s':\n", *name)
+	if len(datasets) == 0 {
+		fmt.Println("  (none)")
+	} else {
+		for _, ds := range datasets {
+			fmt.Printf("  %s\n", ds)
 		}
 	}
 }

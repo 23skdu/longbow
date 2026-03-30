@@ -7,73 +7,69 @@
 
 ## 🚨 HIGH PRIORITY — Pending Items
 
-### 0. Stub & Incomplete Code Fixes
+### 0. Stub & Incomplete Code Fixes ✅ DONE
 
-**Status**: IN PROGRESS
+**Status**: COMPLETE (2026-03-29)
 
-- [ ] Fix `GetGPURequirements()` to detect actual GPU requirements instead of returning hardcoded string
-- [ ] Fix `stubMLModel` to return meaningful fallback scores (currently returns 0.5 for all)
+Fixed both incomplete stubs:
 
-**Evidence**:
-- `internal/gpu/interface.go:52-53` - Returns `"CUDA 11.0+ or Metal-compatible hardware"` (hardcoded)
-- `internal/store/ml_reranker.go:131-137` - Always returns `0.5` for all documents
+| Fix | Status | Evidence |
+|-----|--------|----------|
+| `GetGPURequirements()` | ✅ Done | Now detects actual GPU availability for CUDA/Metal/OpenCL |
+| `stubMLModel.Score()` | ✅ Done | Now uses keyword matching (0.3-0.9 scores) instead of hardcoded 0.5 |
 
 ---
 
-### 1. Native TurboQuant Storage API
+### 1. Native TurboQuant Storage API ✅ DONE
 
-**Problem**: Clients cannot explicitly declare `vector_type = "turboquant"` at the API level to opt into the more storage-efficient TurboQuant index path.
+**Status**: COMPLETE (2026-03-29)
 
-**Plan**:
-- Add `VectorType` field to `VectorSearchRequest` (Arrow exchange metadata):
-  ```text
-  vector_type: "float32" | "turboquant" | "int8" | "binary"
-  ```
-- Create `docs/turboquant_storage.md` documenting:
-  - How to create a TurboQuant-indexed dataset: `CreateDataset(vector_type="turboquant", dimension=768)`
-  - Wire format: packed `uint8` buffer with TQ header
-  - Benchmark comparison: storage size, ingestion QPS, search QPS vs float32
+The TurboQuant storage API is fully implemented:
 
-**Unit Tests** (`internal/store/turboquant_storage_test.go`):
-```go
-// TestCreateDataset_VectorTypeTurboQuant — create dataset with vector_type=turboquant → ok
-// TestInsert_TurboQuantVector — insert pre-encoded TQ vector → stored without re-encoding
-// TestSearch_TurboQuantDataset — search returns correct neighbours with TQ index
-// TestVectorTypeField_PropagatesToSearchOptions — vector_type flows end-to-end
-```
+| Component | Status | Evidence |
+|-----------|--------|----------|
+| API VectorType field | ✅ Done | `internal/query/requests.go:18-20` - `VectorType` and `TurboQuantBits` fields |
+| Unit Tests | ✅ Done | `internal/store/turboquant_storage_test.go`, `turboquant_test.go` |
+| Documentation | ✅ Done | `docs/turboquant.md` (181 lines) |
+| Prometheus Metrics | ✅ Done | `internal/metrics/storage_metrics.go:750+` |
 
-**Prometheus Metrics**:
-```go
-// DatasetVectorTypeTotal — gauge{dataset, vector_type}
-// TurboQuantEncodingTotal — counter{dataset, direction="client_provided|server_encoded"}
-// TurboQuantStorageBytesTotal — gauge{dataset}
+**Usage**:
+```json
+{
+  "type": "create_dataset",
+  "body": {
+    "name": "my_tq_dataset",
+    "dimension": 768,
+    "vector_type": "turboquant",
+    "turboquant_bits": 8
+  }
+}
 ```
 
 ---
 
-### 2. Performance Matrix Audit
+### 2. Performance Matrix Audit ✅ DONE
 
-**Status**: PENDING
+**Status**: COMPLETE (2026-03-29)
 
-Run unified benchmark with:
-- Scales: 1k, 10k, 100k
-- Dimensions: 128, 768, 1536, 2048
-- Backends: CPU, Metal
-- Modes: search, hybrid, recommend
+Ran unified benchmarks and generated performance docs:
 
-Command:
-```bash
-python scripts/unified_benchmark.py --scales 1k,10k,100k --dims 128,768,1536,2048 --backends cpu,metal --modes search,hybrid,recommend
-```
+| Doc | Description |
+|-----|-------------|
+| `docs/performance.md` | CPU performance summary |
+| `docs/performance_metal.md` | Metal GPU benchmarks |
+| `docs/performance_ancalagon.md` | Ancalagon (Linux) benchmarks |
+
+Benchmarks covered: float32, float64, float16, int8, int16, int32, int64, uint8, uint16, uint32, uint64, complex64, complex128, turboquant at dimensions 128-3072.
 
 ---
 
-### 3. Docker Release v0.1.8-rc1
+### 3. Docker Release v0.1.8-rc1 ✅ DONE
 
-**Status**: PENDING
+**Status**: COMPLETE (2026-03-29)
 
-- Build and push tags: `0.1.8-rc1` and `latest`
-- Registry: `ghcr.io/23skdu/longbow`
+- Release tag: `0.1.8-rc1`
+- Built and pushed to: `ghcr.io/23skdu/longbow`
 
 ---
 

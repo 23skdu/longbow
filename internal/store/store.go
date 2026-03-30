@@ -378,6 +378,14 @@ func (s *VectorStore) getOrCreateDataset(name string, createFn func() *Dataset) 
 		}
 	})
 
+	// 3. Register dataset in namespace (after creation)
+	if created && result != nil {
+		nsName, _ := ParseNamespacedPath(name)
+		if ns := s.GetNamespace(nsName); ns != nil {
+			ns.AddDataset(name)
+		}
+	}
+
 	return result, created
 }
 
@@ -733,7 +741,7 @@ func (s *VectorStore) broadcastCDC(dataset string, batches []arrow.RecordBatch) 
 	if !ok || len(subs) == 0 {
 		return
 	}
-	
+
 	for _, batch := range batches {
 		for _, sub := range subs {
 			batch.Retain()

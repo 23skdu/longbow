@@ -27,6 +27,7 @@ func createTestRecord(t *testing.T) arrow.Record { //nolint:staticcheck
 func TestPeerReplicator_NewPeerReplicator(t *testing.T) {
 	cfg := DefaultReplicatorConfig()
 	r := NewPeerReplicator(cfg)
+	defer r.Stop()
 
 	if r == nil {
 		t.Fatal("expected non-nil peer replicator")
@@ -41,6 +42,7 @@ func TestPeerReplicator_NewPeerReplicator(t *testing.T) {
 
 func TestPeerReplicator_AddPeer(t *testing.T) {
 	r := NewPeerReplicator(DefaultReplicatorConfig())
+	defer r.Stop()
 
 	err := r.AddPeer("peer1", "localhost:9090")
 	if err != nil {
@@ -58,6 +60,7 @@ func TestPeerReplicator_AddPeer(t *testing.T) {
 
 func TestPeerReplicator_RemovePeer(t *testing.T) {
 	r := NewPeerReplicator(DefaultReplicatorConfig())
+	defer r.Stop()
 	_ = r.AddPeer("peer1", "localhost:9090")
 
 	r.RemovePeer("peer1")
@@ -69,7 +72,6 @@ func TestPeerReplicator_RemovePeer(t *testing.T) {
 }
 
 func TestPeerReplicator_ReplicateRecord(t *testing.T) {
-	// Use very short timeout to fail fast
 	cfg := ReplicatorConfig{
 		Timeout:      100 * time.Millisecond,
 		MaxRetries:   0,
@@ -81,6 +83,7 @@ func TestPeerReplicator_ReplicateRecord(t *testing.T) {
 		},
 	}
 	r := NewPeerReplicator(cfg)
+	defer r.Stop()
 	_ = r.AddPeer("peer1", "invalid:9090")
 
 	record := createTestRecord(t)
@@ -112,6 +115,7 @@ func TestPeerReplicator_ReplicateWithCircuitBreaker(t *testing.T) {
 		},
 	}
 	r := NewPeerReplicator(cfg)
+	defer r.Stop()
 	_ = r.AddPeer("peer1", "invalid:9090")
 
 	record := createTestRecord(t)
@@ -178,19 +182,18 @@ func TestPeerReplicator_AsyncReplication(t *testing.T) {
 }
 
 func TestPeerReplicator_QuorumReplication(t *testing.T) {
-	// Test quorum with short timeouts
 	cfg := ReplicatorConfig{
 		Timeout:      50 * time.Millisecond,
 		MaxRetries:   0,
 		RetryBackoff: 10 * time.Millisecond,
-		QuorumSize:   1, // Quorum of 1
+		QuorumSize:   1,
 		CircuitBreakerConfig: CircuitBreakerConfig{
 			FailureThreshold: 1,
 			Timeout:          100 * time.Millisecond,
 		},
 	}
 	r := NewPeerReplicator(cfg)
-	// Add invalid peer - will fail
+	defer r.Stop()
 	_ = r.AddPeer("peer1", "invalid:9090")
 
 	record := createTestRecord(t)
@@ -209,6 +212,7 @@ func TestPeerReplicator_QuorumReplication(t *testing.T) {
 
 func TestPeerReplicator_Stats(t *testing.T) {
 	r := NewPeerReplicator(DefaultReplicatorConfig())
+	defer r.Stop()
 
 	stats := r.Stats()
 	if stats.SuccessTotal != 0 {
@@ -221,6 +225,7 @@ func TestPeerReplicator_Stats(t *testing.T) {
 
 func TestPeerReplicator_GetCircuitBreaker(t *testing.T) {
 	r := NewPeerReplicator(DefaultReplicatorConfig())
+	defer r.Stop()
 	_ = r.AddPeer("peer1", "localhost:9090")
 
 	cb := r.GetCircuitBreaker("peer1")

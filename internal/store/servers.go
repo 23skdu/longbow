@@ -184,6 +184,8 @@ func (s *MetaServer) DoAction(action *flight.Action, stream flight.FlightService
 		return s.handleGetTotalNamespaceCount(action, stream)
 	case "GetNamespaceDatasetCount":
 		return s.handleGetNamespaceDatasetCount(action, stream)
+	case "ListDatasetsInNamespace":
+		return s.handleListDatasetsInNamespace(action, stream)
 	case "GetGraphStats":
 		return s.handleGetGraphStats(action.Body, stream)
 	default:
@@ -325,6 +327,29 @@ func (s *MetaServer) handleGetNamespaceDatasetCount(action *flight.Action, strea
 	count := s.GetNamespaceDatasetCount(req.Name)
 	resp := map[string]int{
 		"count": count,
+	}
+	body, err := json.Marshal(resp)
+	if err != nil {
+		return status.Errorf(codes.Internal, "failed to marshal response: %v", err)
+	}
+	return stream.Send(&flight.Result{Body: body})
+}
+
+func (s *MetaServer) handleListDatasetsInNamespace(action *flight.Action, stream flight.FlightService_DoActionServer) error {
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(action.Body, &req); err != nil {
+		return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
+	}
+
+	if !s.NamespaceExists(req.Name) {
+		return status.Errorf(codes.NotFound, "namespace not found: %s", req.Name)
+	}
+
+	datasets := s.ListDatasetsInNamespace(req.Name)
+	resp := map[string][]string{
+		"datasets": datasets,
 	}
 	body, err := json.Marshal(resp)
 	if err != nil {

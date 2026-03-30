@@ -63,6 +63,17 @@ func (n *Namespace) HasDataset(name string) bool {
 	return n.datasets[name]
 }
 
+func (n *Namespace) ListDatasets() []string {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+
+	datasets := make([]string, 0, len(n.datasets))
+	for name := range n.datasets {
+		datasets = append(datasets, name)
+	}
+	return datasets
+}
+
 // namespaces holds all namespaces in the VectorStore
 type namespaceManager struct {
 	namespaces map[string]*Namespace
@@ -85,6 +96,10 @@ func (vs *VectorStore) CreateNamespace(name string) error {
 		return errors.New("namespace name cannot be empty")
 	}
 
+	if vs.nsManager == nil {
+		return errors.New("namespace manager not initialized")
+	}
+
 	vs.nsManager.mu.Lock()
 	defer vs.nsManager.mu.Unlock()
 
@@ -99,24 +114,37 @@ func (vs *VectorStore) CreateNamespace(name string) error {
 
 // NamespaceExists checks if a namespace exists.
 func (vs *VectorStore) NamespaceExists(name string) bool {
+	if vs.nsManager == nil {
+		return false
+	}
 	vs.nsManager.mu.RLock()
 	defer vs.nsManager.mu.RUnlock()
 	_, exists := vs.nsManager.namespaces[name]
 	return exists
 }
 
-// DeleteNamespace removes a namespace.
-// Returns error if namespace is "default" or doesn't exist.
 func (vs *VectorStore) DeleteNamespace(name string) error {
 	if name == "default" {
 		return errors.New("cannot delete default namespace")
 	}
 
+	if vs.nsManager == nil {
+		return errors.New("namespace manager not initialized")
+	}
+
 	vs.nsManager.mu.Lock()
 	defer vs.nsManager.mu.Unlock()
 
-	if _, exists := vs.nsManager.namespaces[name]; !exists {
+	ns, exists := vs.nsManager.namespaces[name]
+	if !exists {
 		return errors.New("namespace not found: " + name)
+	}
+
+	ns.mu.Lock()
+	defer ns.mu.Unlock()
+
+	if len(ns.datasets) > 0 {
+		return errors.New("cannot delete namespace with existing datasets")
 	}
 
 	delete(vs.nsManager.namespaces, name)
@@ -126,6 +154,9 @@ func (vs *VectorStore) DeleteNamespace(name string) error {
 
 // ListNamespaces returns all namespace names.
 func (vs *VectorStore) ListNamespaces() []string {
+	if vs.nsManager == nil {
+		return nil
+	}
 	vs.nsManager.mu.RLock()
 	defer vs.nsManager.mu.RUnlock()
 
@@ -138,6 +169,9 @@ func (vs *VectorStore) ListNamespaces() []string {
 
 // GetNamespaceDatasetCount returns the number of datasets in a namespace.
 func (vs *VectorStore) GetNamespaceDatasetCount(name string) int {
+	if vs.nsManager == nil {
+		return 0
+	}
 	vs.nsManager.mu.RLock()
 	defer vs.nsManager.mu.RUnlock()
 
@@ -150,13 +184,33 @@ func (vs *VectorStore) GetNamespaceDatasetCount(name string) int {
 
 // GetTotalNamespaceCount returns the total number of namespaces.
 func (vs *VectorStore) GetTotalNamespaceCount() int {
+	if vs.nsManager == nil {
+		return 0
+	}
 	vs.nsManager.mu.RLock()
 	defer vs.nsManager.mu.RUnlock()
 	return len(vs.nsManager.namespaces)
 }
 
+func (vs *VectorStore) ListDatasetsInNamespace(name string) []string {
+	if vs.nsManager == nil {
+		return nil
+	}
+	vs.nsManager.mu.RLock()
+	defer vs.nsManager.mu.RUnlock()
+
+	ns, exists := vs.nsManager.namespaces[name]
+	if !exists {
+		return nil
+	}
+	return ns.ListDatasets()
+}
+
 // GetNamespace returns a namespace by name, or nil if not found.
 func (vs *VectorStore) GetNamespace(name string) *Namespace {
+	if vs.nsManager == nil {
+		return nil
+	}
 	vs.nsManager.mu.RLock()
 	defer vs.nsManager.mu.RUnlock()
 	return vs.nsManager.namespaces[name]

@@ -75,9 +75,9 @@ type ArrowHNSWConfig struct {
 	Float16Enabled         bool
 	SQ8TrainingThreshold   int
 	PackedAdjacencyEnabled bool
-	SearchLayerSampleRate   float64
+	SearchLayerSampleRate  float64
 
-	Registerer prometheus.Registerer
+	Registerer        prometheus.Registerer
 	TurboQuantEnabled bool
 	TurboQuantBits    int
 }
@@ -1302,7 +1302,7 @@ func (h *ArrowHNSW) GetNeighbors(ctx context.Context, id uint32, k int) ([]types
 	if err != nil {
 		return nil, err
 	}
-	qVec, ok := qVecAny.( []float32)
+	qVec, ok := qVecAny.([]float32)
 	if !ok {
 		// If not float32, we can't easily compute distances here for now
 		// but we still return the neighbors without distances or with 0
@@ -1324,7 +1324,7 @@ func (h *ArrowHNSW) GetNeighbors(ctx context.Context, id uint32, k int) ([]types
 		}
 
 		dist := float32(0.0)
-		if nVec, ok := nVecAny.( []float32); ok {
+		if nVec, ok := nVecAny.([]float32); ok {
 			dist, _ = h.distFunc(qVec, nVec)
 		}
 
@@ -1430,12 +1430,13 @@ func (h *ArrowHNSW) growInternal(capacity, dims int) error {
 			h.config.TurboQuantBits,
 		)
 		h.data.Store(gd)
-		if dims > math.MaxInt32 {
-			panic("dims exceed MaxInt32")
-		}
-		h.dims.Store(int32(dims)) // #nosec G115
 		data = gd
 	}
+
+	if dims > math.MaxInt32 {
+		panic("dims exceed MaxInt32")
+	}
+	h.dims.Store(int32(dims)) // #nosec G115
 
 	// Calculate current vs target
 	currentDims := data.Dims

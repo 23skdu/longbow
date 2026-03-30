@@ -351,6 +351,11 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 		// Use existing eviction logic to free memory and close resources
 		s.evictDataset(ds.Name)
 
+		nsName, _ := ParseNamespacedPath(dsName)
+		if ns := s.GetNamespace(nsName); ns != nil {
+			ns.RemoveDataset(dsName)
+		}
+
 		s.logger.Info().Str("dataset", dsName).Msg("Dataset deleted")
 		if err := stream.Send(&flight.Result{Body: []byte("deleted")}); err != nil {
 			return err
@@ -1073,13 +1078,13 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 		if config.IndexConfig == nil {
 			hnswCfg := DefaultArrowHNSWConfig()
 			hnswCfg.Metric = ds.Metric
-			
+
 			// Use preferred type if specified via create_dataset or metadata
 			if ds.PreferredVectorType != types.VectorTypeFloat32 {
 				dataType = ds.PreferredVectorType
 			}
 			hnswCfg.DataType = dataType
-			
+
 			if dataType == VectorTypeTQ {
 				hnswCfg.TurboQuantEnabled = true
 				if ds.TurboQuantBits > 0 {
@@ -1092,13 +1097,13 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 		} else {
 			// Clone the config to avoid polluting the shared autoShardingConfig
 			clonedCfg := *config.IndexConfig
-			
+
 			// Use preferred type if specified
 			if ds.PreferredVectorType != types.VectorTypeFloat32 {
 				dataType = ds.PreferredVectorType
 			}
 			clonedCfg.DataType = dataType
-			
+
 			if dataType == VectorTypeTQ {
 				clonedCfg.TurboQuantEnabled = true
 				if ds.TurboQuantBits > 0 {

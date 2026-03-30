@@ -18,6 +18,11 @@ type VectorIndexer interface {
 	Search(ctx context.Context, query any, k int, filter any) ([]Candidate, error)
 	SearchVectors(ctx context.Context, q any, k int, filters []query.Filter, options any) ([]SearchResult, error)
 	SearchVectorsWithBitmap(ctx context.Context, q any, k int, filter *roaring.Bitmap, options any) ([]SearchResult, error)
+
+	// RangeSearch returns all vectors within a similarity threshold.
+	// This is useful for clustering, duplicate detection, and radius-based queries.
+	// Returns all vectors where distance <= threshold (or score >= minScore for similarity metrics).
+	SearchVectorsInRange(ctx context.Context, q any, threshold float32, filters []query.Filter, options any) ([]SearchResult, error)
 	IsSharded() bool
 
 	// Metadata operations

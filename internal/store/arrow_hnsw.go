@@ -1782,6 +1782,111 @@ func (h *ArrowHNSW) SearchVectors(ctx context.Context, queryVec any, k int, filt
 	return h.SearchVectorsWithBitmap(ctx, queryVec, k, roaringFilter, options)
 }
 
+func (h *ArrowHNSW) SearchVectorsInRange(ctx context.Context, queryVec any, threshold float32, filters []query.Filter, options any) ([]SearchResult, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	h.ensureReady()
+
+	if h.nodeCount.Load() == 0 {
+		return nil, nil
+	}
+
+	var filterExpr FilterExpr
+	if opts, ok := options.(SearchOptions); ok {
+		filterExpr = opts.FilterExpr
+	}
+
+	var bitset *query.Bitset
+	if (len(filters) > 0 || filterExpr != nil) && h.dataset != nil {
+		var err error
+		bitset, err = h.dataset.GenerateFilterBitset(filters, filterExpr)
+		if err != nil {
+			return nil, err
+		}
+		if bitset != nil {
+			defer bitset.Release()
+		}
+	}
+
+	var roaringFilter *roaring.Bitmap
+	if bitset != nil {
+		roaringFilter = bitset.AsRoaring()
+	}
+
+	start := time.Now()
+
+	data := h.data.Load()
+	if data == nil {
+		return nil, nil
+	}
+
+	computer := h.resolveHNSWComputer(data, nil, queryVec, false)
+	if computer == nil {
+		return nil, fmt.Errorf("failed to resolve search computer")
+	}
+
+	maxNodeCount := int(h.nodeCount.Load())
+	ep := h.entryPoint.Load()
+	maxLevel := h.maxLevel.Load()
+
+	searchCtx := h.searchPool.Get()
+	defer func() {
+		searchCtx.filterBitmap = nil
+		if metrics.HNSWSearchPoolPutTotal != nil {
+			metrics.HNSWSearchPoolPutTotal.Inc()
+		}
+		h.searchPool.Put(searchCtx)
+	}()
+
+	searchCtx.filterBitmap = roaringFilter
+	if roaringFilter != nil {
+		metrics.HNSWPreFilteredSearchesTotal.WithLabelValues(h.name).Inc()
+	}
+
+	computer = h.resolveHNSWComputer(data, searchCtx, queryVec, false)
+
+	currObj := types.Candidate{ID: ep, Dist: math.MaxFloat32}
+	for level := int(maxLevel); level > 0; level-- {
+		res, err := h.searchLayer(ctx, computer, currObj.ID, 1, level, searchCtx, data, queryVec)
+		if err != nil {
+			return nil, err
+		}
+		if len(res) > 0 {
+			currObj = res[0]
+		}
+	}
+
+	res, err := h.searchLayer(ctx, computer, currObj.ID, maxNodeCount, 0, searchCtx, data, queryVec)
+	if err != nil {
+		return nil, err
+	}
+
+	var results []SearchResult
+	for _, c := range res {
+		if c.Dist > threshold {
+			continue
+		}
+		if h.deleted != nil && h.deleted.Contains(c.ID) {
+			continue
+		}
+		if roaringFilter != nil && !roaringFilter.Contains(c.ID) {
+			continue
+		}
+		results = append(results, SearchResult{
+			ID:       VectorID(c.ID),
+			Distance: c.Dist,
+			Score:    1.0 / (1.0 + c.Dist),
+		})
+	}
+
+	_ = time.Since(start)
+	_ = maxNodeCount
+
+	return results, nil
+}
+
 func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowSearchContext, queryVal any, _ bool) any {
 	switch q := queryVal.(type) {
 	case []float32:

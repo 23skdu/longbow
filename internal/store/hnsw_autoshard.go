@@ -396,6 +396,30 @@ func (a *AutoShardingIndex) SearchVectorsWithBitmap(ctx context.Context, q any, 
 	return res, nil
 }
 
+func (a *AutoShardingIndex) SearchVectorsInRange(ctx context.Context, q any, threshold float32, filters []query.Filter, options any) ([]SearchResult, error) {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	sharded := a.sharded
+	if sharded {
+		return a.current.SearchVectorsInRange(ctx, q, threshold, filters, options)
+	}
+
+	interim := a.interimIndex
+	res, err := a.current.SearchVectorsInRange(ctx, q, threshold, filters, options)
+	if err != nil {
+		return nil, err
+	}
+	if interim != nil {
+		res2, err := interim.SearchVectorsInRange(ctx, q, threshold, filters, options)
+		if err == nil {
+			res = append(res, res2...)
+		}
+	}
+
+	return res, nil
+}
+
 func (a *AutoShardingIndex) mergeSearchResults(res1, res2 []SearchResult, k int) []SearchResult {
 	if len(res1) == 0 {
 		if len(res2) > k {

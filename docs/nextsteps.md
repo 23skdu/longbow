@@ -166,51 +166,39 @@ Missing features for parity with leading vector databases:
 
 ### 4. Native Go GPU Kernels — Replace FAISS Dependency
 
-**Status**: PENDING EVALUATION
+**Status**: ✅ EVALUATED (2026-03-29)
 
-Evaluate implementing native Go GPU kernels to replace FAISS C++ bindings, enabling CUDA support without external FAISS dependency.
+After evaluation, **recommend KEEPING FAISS** for production use. See rationale below.
 
 | Aspect | Current State | Target State |
 |--------|---------------|--------------|
-| **FAISS** | CGO bindings to `libfaiss` and `libfaiss_gpu` | Native Go implementation |
-| **CUDA** | Depends on FAISS C++ library | Native Go CUDA kernels via `cuda-go` or similar |
-| **Build** | Requires `faiss` + `cudart` + `cublas` linking | Pure Go + CUDA driver API |
-| **Cross-compile** | Complex C++ toolchain | Go cross-compile to Linux/ARM64 |
+| **FAISS** | CGO bindings to `libfaiss` and `libfaiss_gpu` | Keep as-is |
+| **CUDA** | Depends on FAISS C++ library | Continue using FAISS |
+| **Build** | Requires `faiss` + `cudart` + `cublas` linking | Keep complex build |
+| **Cross-compile** | Complex C++ toolchain | Use cross-compile flags |
 
-**Motivation**:
-- Eliminate CGO dependency chain (`libfaiss`, `libfaiss_gpu`, `libcublas`)
-- Simplify build system (no C++ compilation, no FAISS_HOME)
-- Enable true cross-compilation for CUDA deployments
-- Reduce attack surface (no C++ library vulnerabilities)
-- Full control over kernel optimization for Longbow's specific use cases
+**Evaluation findings**:
 
-**Implementation candidates**:
+| Option | Status | Notes |
+|--------|--------|-------|
+| **FAISS (current)** | ✅ Keep | Production-ready, well-tested, full index type support |
+| **cuVS (NVIDIA)** | ❌ Not viable | Requires cuDNN/cuVS installation, same C++ complexity |
+| **kelindar/search** | ⚠️ Limited | Pure Go, uses llama.cpp, for embedded/small scale |
+| **cudago** | ⚠️ Early | Pure Go CUDA, insufficient vector search features |
+| **go-cuda-toolkit** | ⚠️ Early | Driver API only, no high-level index abstractions |
 
-| Approach | Pros | Cons |
-|----------|------|------|
-| **cuda-go** (pure Go CUDA) | No CGO, pure Go | Early stage, limited features |
-| **go-cuda** (driver API) | Full CUDA access | Verbose, manual memory management |
-| **custom FFI** (C → Go) | Reuse existing C kernels | Still has C dependency |
-| **MPS-based** (CUDA MPS) | Leverage CUDA MPS | Requires CUDA runtime |
+**Why keep FAISS**:
+1. **Mature**: 20+ years of development, battle-tested in production
+2. **Complete**: IVF-Flat, IVF-PQ, HNSW, DiskANN all implemented
+3. **Performant**: Hand-tuned CUDA kernels, Tensor Core support
+4. **Supported**: Active maintenance by NVIDIA community
+5. **Risk**: Replacing would introduce significant integration risk
 
-**Evidence**:
-- Current FAISS integration: `internal/gpu/faiss/faiss_gpu.go` (lines 1-45)
-- CGO bindings: `internal/gpu/faiss/faiss_gpu_cpp_gpu.cpp` (GPU kernels)
-- CUDA backend wrappers: `internal/gpu/cuda/cuda_backend.go` (device management)
-- Build requirements: `Makefile` and `faiss_gpu.go` lines 6-9 show `-lfaiss -lfaiss_gpu -lcudart -lcublas`
+**Alternative consideration**:
+- For **embedded/edge** use cases: Consider `kelindar/search` (pure Go, llama.cpp)
+- For **serverless**: Keep FAISS, simplify builds with Docker multi-stage
 
-**Scope evaluation**:
-- Index types to replicate: Flat (brute-force), IVF-Flat, IVF-PQ
-- Distance metrics: L2, IP, Cosine (already in Go CPU code)
-- Memory management: GPU buffer pools (existing in `internal/gpu/memory/`)
-- Integration point: `internal/gpu/factory.go` for backend selection
-
-**Risk assessment**:
-- **High risk**: Implementing all FAISS index types (IVF-PQ is complex)
-- **Medium risk**: Performance parity with FAISS hand-tuned kernels
-- **Low risk**: Basic flat index with optimized distance kernels
-
-**Recommendation**: Start with Flat index + optimized distance kernels for proof-of-concept, then evaluate IVF/PQ if performance justifies.
+**Recommendation**: Close as "not pursuing" — maintain FAISS for CUDA backend.
 
 ---
 

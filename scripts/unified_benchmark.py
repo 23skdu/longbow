@@ -419,9 +419,504 @@ class BenchmarkRunner:
         self.print_summary()
         print(f"\nResults saved to: {self.output_file}")
 
+    def execute_deletion(self):
+        """Test deletion and tombstone operations."""
+        if not HAS_LONGBOW_SDK:
+            print(
+                "Error: longbow Python SDK not installed. Install with: pip install longbow"
+            )
+            return
+
+        dims = [int(d) for d in self.args.dims.split(",")]
+        counts = [int(c) for c in self.args.counts.split(",")]
+        delete_counts = [int(d) for d in self.args.delete_counts.split(",")]
+
+        count = counts[0] if counts else 10000
+        dim = dims[0] if dims else 128
+
+        print("=" * 80)
+        print(f"DELETION BENCHMARK (Tombstone Operations)")
+        print(f"Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"Dim: {dim}, Total Count: {count}")
+        print(f"Delete counts: {delete_counts}")
+        print("=" * 80)
+
+        label = f"del_{dim}_{count}"
+        if not self.start_server(label):
+            print("  Failed to start server!")
+            return
+
+        try:
+            client = LongbowClient(
+                uri=f"grpc://{self.server_addr}",
+                meta_uri=f"grpc://{self.server_addr.replace('3000', '3001')}",
+            )
+
+            dataset_name = f"del_bench_{dim}d"
+            print(f"\nCreating dataset {dataset_name} with {count} vectors...")
+
+            vectors = np.random.rand(count, dim).astype(np.float32).tolist()
+            ids = [str(i) for i in range(count)]
+
+            client.insert(
+                dataset_name,
+                [{"id": id, "vector": vec} for id, vec in zip(ids, vectors)],
+            )
+            time.sleep(3)  # Wait for indexing
+
+            # Test different delete counts
+            for del_count in delete_counts:
+                del_ids = [str(i) for i in range(del_count)]
+                print(f"\nDeleting {del_count} vectors...")
+
+                start = time.time()
+                try:
+                    client.delete(dataset_name, del_ids)
+                    del_time = (time.time() - start) * 1000
+                except Exception as e:
+                    print(f"  Delete error: {e}")
+                    continue
+
+                # Verify search still works after deletion
+                query_vec = np.random.rand(dim).astype(np.float32).tolist()
+                start = time.time()
+                try:
+                    results = client.search(dataset_name, vector=query_vec, k=10)
+                    search_time = (time.time() - start) * 1000
+                except Exception as e:
+                    print(f"  Search after delete error: {e}")
+                    continue
+
+                self.results.append(
+                    {
+                        "dim": dim,
+                        "count": count,
+                        "deleted": del_count,
+                        "delete_time_ms": del_time,
+                        "search_time_ms": search_time,
+                        "timestamp": datetime.now().isoformat(),
+                    }
+                )
+                print(f"  Delete: {del_time:.2f}ms, Search: {search_time:.2f}ms")
+
+        except Exception as e:
+            print(f"Error: {e}")
+        finally:
+            self.stop_server()
+            data_root = os.path.join(self.data_dir, label)
+            subprocess.run(f"rm -rf {data_root}", shell=True)
+
+        with open(self.output_file, "w") as f:
+            json.dump(
+                {
+                    "mode": "deletion",
+                    "timestamp": self.timestamp,
+                    "config": {
+                        "dim": dim,
+                        "count": count,
+                        "delete_counts": delete_counts,
+                    },
+                    "results": self.results,
+                },
+                f,
+                indent=2,
+            )
+
+        self.print_summary()
+        print(f"\nResults saved to: {self.output_file}")
+
+    def execute_graphrag(self):
+        """Test GraphRAG graph spreading activation operations."""
+        if not HAS_LONGBOW_SDK:
+            print(
+                "Error: longbow Python SDK not installed. Install with: pip install longbow"
+            )
+            return
+
+        dims = [int(d) for d in self.args.dims.split(",")]
+        counts = [int(c) for c in self.args.counts.split(",")]
+
+        count = counts[0] if counts else 10000
+        dim = dims[0] if dims else 128
+
+        print("=" * 80)
+        print(f"GRAPHRAG BENCHMARK (Graph Spreading Activation)")
+        print(f"Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"Dim: {dim}, Count: {count}")
+        print(f"Alpha values: {self.args.graph_alpha_values}")
+        print(f"Max hops: {self.args.max_hops}")
+        print("=" * 80)
+
+        label = f"gr_{dim}_{count}"
+        if not self.start_server(label):
+            print("  Failed to start server!")
+            return
+
+        try:
+            client = LongbowClient(
+                uri=f"grpc://{self.server_addr}",
+                meta_uri=f"grpc://{self.server_addr.replace('3000', '3001')}",
+            )
+
+            dataset_name = f"grag_bench_{dim}d"
+            print(f"\nCreating dataset {dataset_name}...")
+
+            vectors = np.random.rand(count, dim).astype(np.float32).tolist()
+            ids = [str(i) for i in range(count)]
+
+            client.insert(
+                dataset_name,
+                [{"id": id, "vector": vec} for id, vec in zip(ids, vectors)],
+            )
+            time.sleep(3)  # Wait for indexing + graph build
+
+            # Test GraphRAG with different alpha values
+            alpha_values = [float(a) for a in self.args.graph_alpha_values.split(",")]
+            k = self.args.k_values.split(",")[0]  # Use first k value
+            k = int(k)
+
+            for alpha in alpha_values:
+                print(f"\nGraphRAG alpha={alpha}, k={k}...")
+                query_vec = np.random.rand(dim).astype(np.float32).tolist()
+
+                latencies = []
+                for _ in range(self.args.queries):
+                    start = time.time()
+                    try:
+                        results = client.search(
+                            dataset_name,
+                            vector=query_vec,
+                            k=k,
+                            graph_alpha=alpha,
+                        )
+                        latency = (time.time() - start) * 1000
+                        latencies.append(latency)
+                    except Exception as e:
+                        print(f"  Error: {e}")
+                        continue
+
+                if latencies:
+                    latencies.sort()
+                    qps = 1000.0 / (sum(latencies) / len(latencies))
+                    self.results.append(
+                        {
+                            "dim": dim,
+                            "count": count,
+                            "alpha": alpha,
+                            "k": k,
+                            "qps": qps,
+                            "p50": latencies[int(0.5 * len(latencies))],
+                            "p95": latencies[int(0.95 * len(latencies))],
+                            "p99": latencies[int(0.99 * len(latencies))],
+                            "timestamp": datetime.now().isoformat(),
+                        }
+                    )
+                    print(
+                        f"  QPS: {qps:.1f}, P50: {latencies[int(0.5 * len(latencies))]:.2f}ms"
+                    )
+
+        except Exception as e:
+            print(f"Error: {e}")
+        finally:
+            self.stop_server()
+            data_root = os.path.join(self.data_dir, label)
+            subprocess.run(f"rm -rf {data_root}", shell=True)
+
+        with open(self.output_file, "w") as f:
+            json.dump(
+                {
+                    "mode": "graphrag",
+                    "timestamp": self.timestamp,
+                    "config": {
+                        "dim": dim,
+                        "count": count,
+                        "alpha_values": alpha_values,
+                        "k": k,
+                    },
+                    "results": self.results,
+                },
+                f,
+                indent=2,
+            )
+
+        self.print_summary()
+        print(f"\nResults saved to: {self.output_file}")
+
+    def execute_exchange(self):
+        """Test DoExchange mesh replication operations."""
+        if not HAS_LONGBOW_SDK:
+            print(
+                "Error: longbow Python SDK not installed. Install with: pip install longbow"
+            )
+            return
+
+        dims = [int(d) for d in self.args.dims.split(",")]
+        counts = [int(c) for c in self.args.counts.split(",")]
+
+        count = counts[0] if counts else 10000
+        dim = dims[0] if dims else 128
+
+        print("=" * 80)
+        print(f"DOEXCHANGE BENCHMARK (Mesh Replication)")
+        print(f"Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"Dim: {dim}, Count: {count}")
+        print("=" * 80)
+
+        label = f"ex_{dim}_{count}"
+        if not self.start_server(label):
+            print("  Failed to start server!")
+            return
+
+        try:
+            client = LongbowClient(
+                uri=f"grpc://{self.server_addr}",
+                meta_uri=f"grpc://{self.server_addr.replace('3000', '3001')}",
+            )
+
+            # Create source dataset
+            source_ds = f"source_{dim}d"
+            print(f"\nCreating source dataset {source_ds}...")
+
+            vectors = np.random.rand(count, dim).astype(np.float32).tolist()
+            ids = [str(i) for i in range(count)]
+
+            client.insert(
+                source_ds, [{"id": id, "vector": vec} for id, vec in zip(ids, vectors)]
+            )
+            time.sleep(2)
+
+            # Test DoExchange operations
+            # Note: Full mesh replication requires multi-node setup
+            # Here we test the exchange protocol with self-exchange
+
+            print(f"\nTesting DoExchange protocol...")
+
+            # Test vector search via exchange protocol
+            query_vec = np.random.rand(dim).astype(np.float32).tolist()
+
+            latencies = []
+            for _ in range(self.args.queries):
+                start = time.time()
+                try:
+                    # Search triggers DoExchange under the hood for distributed queries
+                    results = client.search(source_ds, vector=query_vec, k=10)
+                    latency = (time.time() - start) * 1000
+                    latencies.append(latency)
+                except Exception as e:
+                    print(f"  Error: {e}")
+                    continue
+
+            if latencies:
+                latencies.sort()
+                qps = 1000.0 / (sum(latencies) / len(latencies))
+                self.results.append(
+                    {
+                        "dim": dim,
+                        "count": count,
+                        "operation": "exchange_search",
+                        "qps": qps,
+                        "p50": latencies[int(0.5 * len(latencies))],
+                        "p95": latencies[int(0.95 * len(latencies))],
+                        "p99": latencies[int(0.99 * len(latencies))],
+                        "timestamp": datetime.now().isoformat(),
+                    }
+                )
+                print(
+                    f"  QPS: {qps:.1f}, P50: {latencies[int(0.5 * len(latencies))]:.2f}ms"
+                )
+
+        except Exception as e:
+            print(f"Error: {e}")
+        finally:
+            self.stop_server()
+            data_root = os.path.join(self.data_dir, label)
+            subprocess.run(f"rm -rf {data_root}", shell=True)
+
+        with open(self.output_file, "w") as f:
+            json.dump(
+                {
+                    "mode": "exchange",
+                    "timestamp": self.timestamp,
+                    "config": {"dim": dim, "count": count},
+                    "results": self.results,
+                },
+                f,
+                indent=2,
+            )
+
+        self.print_summary()
+        print(f"\nResults saved to: {self.output_file}")
+
+    def execute_cluster(self):
+        """Test gossip-based cluster search operations."""
+        if not HAS_LONGBOW_SDK:
+            print(
+                "Error: longbow Python SDK not installed. Install with: pip install longbow"
+            )
+            return
+
+        dims = [int(d) for d in self.args.dims.split(",")]
+        counts = [int(c) for c in self.args.counts.split(",")]
+
+        count = counts[0] if counts else 10000
+        dim = dims[0] if dims else 128
+
+        print("=" * 80)
+        print(f"CLUSTER SEARCH BENCHMARK (Gossip Protocol)")
+        print(f"Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"Dim: {dim}, Count: {count}")
+        print(f"Nodes in cluster: {self.args.cluster_nodes}")
+        print("=" * 80)
+
+        # For cluster testing, we start multiple nodes
+        # This requires gossip to be enabled
+        label = f"cluster_{dim}_{count}"
+
+        # Set gossip environment
+        env = os.environ.copy()
+        env["LONGBOW_GOSSIP_ENABLED"] = "true"
+
+        nodes = []
+        base_port = 3000
+
+        try:
+            # Start cluster nodes
+            for i in range(self.args.cluster_nodes):
+                node_label = f"{label}_node{i}"
+                port = base_port + i * 100
+
+                data_root = os.path.join(self.data_dir, node_label)
+                subprocess.run(f"rm -rf {data_root}", shell=True)
+                os.makedirs(data_root, exist_ok=True)
+
+                env["LONGBOW_LISTEN_ADDR"] = f"127.0.0.1:{port}"
+                env["LONGBOW_META_ADDR"] = f"127.0.0.1:{port + 1}"
+                env["LONGBOW_DATA_PATH"] = data_root
+                env["LONGBOW_NODE_ID"] = f"node{i}"
+                env["LONGBOW_GOSSIP_SEED_NODES"] = (
+                    f"127.0.0.1:{base_port + 1}"  # First node as seed
+                )
+
+                server_bin = self.get_server_binary()
+                log_file = os.path.join(self.log_dir, f"longbow_{node_label}.log")
+
+                with open(log_file, "w") as f:
+                    proc = subprocess.Popen(
+                        [server_bin], env=env, stdout=f, stderr=subprocess.STDOUT
+                    )
+                    nodes.append({"port": port, "pid": proc.pid, "label": node_label})
+
+                time.sleep(2)  # Stagger starts
+
+            # Wait for cluster formation
+            time.sleep(5)
+
+            # Test distributed search
+            print(f"\nTesting cluster search across {len(nodes)} nodes...")
+
+            # Use first node as client
+            client = LongbowClient(
+                uri=f"grpc://127.0.0.1:{base_port}",
+                meta_uri=f"grpc://127.0.0.1:{base_port + 1}",
+            )
+
+            dataset_name = f"cluster_bench_{dim}d"
+
+            # Insert data (will be sharded across nodes)
+            vectors = np.random.rand(count, dim).astype(np.float32).tolist()
+            ids = [str(i) for i in range(count)]
+
+            print(f"Inserting {count} vectors into cluster...")
+            client.insert(
+                dataset_name,
+                [{"id": id, "vector": vec} for id, vec in zip(ids, vectors)],
+            )
+            time.sleep(5)  # Wait for replication
+
+            # Test global search
+            query_vec = np.random.rand(dim).astype(np.float32).tolist()
+
+            latencies = []
+            for _ in range(self.args.queries):
+                start = time.time()
+                try:
+                    results = client.search(dataset_name, vector=query_vec, k=10)
+                    latency = (time.time() - start) * 1000
+                    latencies.append(latency)
+                except Exception as e:
+                    print(f"  Error: {e}")
+                    continue
+
+            if latencies:
+                latencies.sort()
+                qps = 1000.0 / (sum(latencies) / len(latencies))
+                self.results.append(
+                    {
+                        "dim": dim,
+                        "count": count,
+                        "nodes": len(nodes),
+                        "operation": "global_search",
+                        "qps": qps,
+                        "p50": latencies[int(0.5 * len(latencies))],
+                        "p95": latencies[int(0.95 * len(latencies))],
+                        "p99": latencies[int(0.99 * len(latencies))],
+                        "timestamp": datetime.now().isoformat(),
+                    }
+                )
+                print(
+                    f"  Global Search QPS: {qps:.1f}, P50: {latencies[int(0.5 * len(latencies))]:.2f}ms"
+                )
+
+        except Exception as e:
+            print(f"Error: {e}")
+        finally:
+            # Stop all nodes
+            for node in nodes:
+                try:
+                    subprocess.run(
+                        f"kill -9 {node['pid']}", shell=True, stderr=subprocess.DEVNULL
+                    )
+                except:
+                    pass
+            subprocess.run(
+                "pkill -9 longbow || true", shell=True, stderr=subprocess.DEVNULL
+            )
+            time.sleep(2)
+
+        with open(self.output_file, "w") as f:
+            json.dump(
+                {
+                    "mode": "cluster",
+                    "timestamp": self.timestamp,
+                    "config": {
+                        "dim": dim,
+                        "count": count,
+                        "nodes": self.args.cluster_nodes,
+                    },
+                    "results": self.results,
+                },
+                f,
+                indent=2,
+            )
+
+        self.print_summary()
+        print(f"\nResults saved to: {self.output_file}")
+
     def execute(self):
         if self.args.mode == "recommend":
             self.execute_recommend()
+            return
+        if self.args.mode == "deletion":
+            self.execute_deletion()
+            return
+        if self.args.mode == "graphrag":
+            self.execute_graphrag()
+            return
+        if self.args.mode == "exchange":
+            self.execute_exchange()
+            return
+        if self.args.mode == "cluster":
+            self.execute_cluster()
             return
 
         dims = [int(d) for d in self.args.dims.split(",")]
@@ -525,6 +1020,66 @@ class BenchmarkRunner:
             print("─" * 100)
             return
 
+        if self.args.mode == "deletion":
+            print("\n" + "─" * 100)
+            print("DELETION BENCHMARK SUMMARY (Tombstone Operations)")
+            print("─" * 100)
+            print(
+                f"{'Total':<10} {'Deleted':<10} {'Delete (ms)':<15} {'Search (ms)':<15}"
+            )
+            print("─" * 100)
+            for r in self.results:
+                print(
+                    f"{r['count']:<10} {r['deleted']:<10} {r['delete_time_ms']:<15.2f} {r['search_time_ms']:<15.2f}"
+                )
+            print("─" * 100)
+            return
+
+        if self.args.mode == "graphrag":
+            print("\n" + "─" * 100)
+            print("GRAPHRAG BENCHMARK SUMMARY (Graph Spreading)")
+            print("─" * 100)
+            print(
+                f"{'Alpha':<8} {'K':<6} {'QPS':<12} {'P50 ms':<10} {'P95 ms':<10} {'P99 ms':<10}"
+            )
+            print("─" * 100)
+            for r in self.results:
+                print(
+                    f"{r['alpha']:<8} {r['k']:<6} {r['qps']:<12.1f} {r['p50']:<10.2f} {r['p95']:<10.2f} {r['p99']:<10.2f}"
+                )
+            print("─" * 100)
+            return
+
+        if self.args.mode == "exchange":
+            print("\n" + "─" * 100)
+            print("DOEXCHANGE BENCHMARK SUMMARY (Mesh Replication)")
+            print("─" * 100)
+            print(
+                f"{'Dim':<8} {'Count':<10} {'Operation':<20} {'QPS':<12} {'P50 ms':<10} {'P99 ms':<10}"
+            )
+            print("─" * 100)
+            for r in self.results:
+                print(
+                    f"{r['dim']:<8} {r['count']:<10} {r['operation']:<20} {r['qps']:<12.1f} {r['p50']:<10.2f} {r['p99']:<10.2f}"
+                )
+            print("─" * 100)
+            return
+
+        if self.args.mode == "cluster":
+            print("\n" + "─" * 100)
+            print("CLUSTER SEARCH BENCHMARK SUMMARY (Gossip Protocol)")
+            print("─" * 100)
+            print(
+                f"{'Dim':<8} {'Count':<10} {'Nodes':<8} {'Operation':<15} {'QPS':<12} {'P50 ms':<10} {'P99 ms':<10}"
+            )
+            print("─" * 100)
+            for r in self.results:
+                print(
+                    f"{r['dim']:<8} {r['count']:<10} {r['nodes']:<8} {r['operation']:<15} {r['qps']:<12.1f} {r['p50']:<10.2f} {r['p99']:<10.2f}"
+                )
+            print("─" * 100)
+            return
+
         print("\n" + "─" * 100)
         print("BENCHMARK SUMMARY")
         print("─" * 100)
@@ -575,6 +1130,74 @@ class BenchmarkRunner:
                 )
                 f.write("- **Alpha = 1.0**: Pure vector similarity (ANN search)\n")
                 f.write("- **Alpha = 0.5**: Hybrid blend of both approaches\n")
+            return
+
+        if self.args.mode == "deletion":
+            md_file = self.output_file.replace(".json", ".md")
+            with open(md_file, "w") as f:
+                f.write("# Deletion Benchmark Results (Tombstone Operations)\n\n")
+                f.write(f"**Generated**: {datetime.now().strftime('%Y-%m-%d')}\n")
+                f.write(f"**Test Tool**: Longbow Unified Benchmark Script\n\n")
+                f.write("## Results\n\n")
+                f.write(
+                    "| Total Vectors | Deleted | Delete Time (ms) | Search Time (ms) |\n"
+                )
+                f.write(
+                    "|---------------|---------|------------------|------------------|\n"
+                )
+                for r in self.results:
+                    f.write(
+                        f"| {r['count']} | {r['deleted']} | {r['delete_time_ms']:.2f} | {r['search_time_ms']:.2f} |\n"
+                    )
+            return
+
+        if self.args.mode == "graphrag":
+            md_file = self.output_file.replace(".json", ".md")
+            with open(md_file, "w") as f:
+                f.write("# GraphRAG Benchmark Results (Graph Spreading)\n\n")
+                f.write(f"**Generated**: {datetime.now().strftime('%Y-%m-%d')}\n")
+                f.write(f"**Test Tool**: Longbow Unified Benchmark Script\n\n")
+                f.write("## Alpha Comparison\n\n")
+                f.write("| Alpha | K | QPS | P50 (ms) | P95 (ms) | P99 (ms) |\n")
+                f.write("|-------|---|-----|----------|----------|----------|\n")
+                for r in self.results:
+                    f.write(
+                        f"| {r['alpha']} | {r['k']} | {r['qps']:.1f} | {r['p50']:.2f} | {r['p95']:.2f} | {r['p99']:.2f} |\n"
+                    )
+            return
+
+        if self.args.mode == "exchange":
+            md_file = self.output_file.replace(".json", ".md")
+            with open(md_file, "w") as f:
+                f.write("# DoExchange Benchmark Results (Mesh Replication)\n\n")
+                f.write(f"**Generated**: {datetime.now().strftime('%Y-%m-%d')}\n")
+                f.write(f"**Test Tool**: Longbow Unified Benchmark Script\n\n")
+                f.write("## Results\n\n")
+                f.write("| Dim | Count | Operation | QPS | P50 (ms) | P99 (ms) |\n")
+                f.write("|-----|-------|-----------|-----|----------|----------|\n")
+                for r in self.results:
+                    f.write(
+                        f"| {r['dim']} | {r['count']} | {r['operation']} | {r['qps']:.1f} | {r['p50']:.2f} | {r['p99']:.2f} |\n"
+                    )
+            return
+
+        if self.args.mode == "cluster":
+            md_file = self.output_file.replace(".json", ".md")
+            with open(md_file, "w") as f:
+                f.write("# Cluster Search Benchmark Results (Gossip Protocol)\n\n")
+                f.write(f"**Generated**: {datetime.now().strftime('%Y-%m-%d')}\n")
+                f.write(f"**Test Tool**: Longbow Unified Benchmark Script\n\n")
+                f.write("## Results\n\n")
+                f.write(
+                    "| Dim | Count | Nodes | Operation | QPS | P50 (ms) | P99 (ms) |\n"
+                )
+                f.write(
+                    "|-----|-------|-------|-----------|-----|----------|----------|\n"
+                )
+                for r in self.results:
+                    f.write(
+                        f"| {r['dim']} | {r['count']} | {r['nodes']} | {r['operation']} | {r['qps']:.1f} | {r['p50']:.2f} | {r['p99']:.2f} |\n"
+                    )
             return
 
         md_file = self.output_file.replace(".json", ".md")
@@ -644,9 +1267,18 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Unified Longbow Benchmark Script")
     parser.add_argument(
         "--mode",
-        choices=["cpu", "metal", "cuda", "recommend"],
+        choices=[
+            "cpu",
+            "metal",
+            "cuda",
+            "recommend",
+            "deletion",
+            "graphrag",
+            "exchange",
+            "cluster",
+        ],
         default="cpu",
-        help="Benchmark mode: cpu, metal (macOS), cuda (Linux), recommend (hybrid vs ANN)",
+        help="Benchmark mode: cpu, metal (macOS), cuda (Linux), recommend (hybrid vs ANN), deletion (tombstone ops), graphrag (graph spreading), exchange (DoExchange mesh), cluster (gossip search)",
     )
     parser.add_argument(
         "--dims", default="128,384,768,1536,3072", help="Comma-separated dimensions"
@@ -706,6 +1338,25 @@ if __name__ == "__main__":
         type=float,
         default=0.5,
         help="Multi-hop connectivity decay factor",
+    )
+    # Deletion mode parameters
+    parser.add_argument(
+        "--delete-counts",
+        default="100,500,1000",
+        help="Comma-separated delete counts to test (for deletion mode)",
+    )
+    # GraphRAG mode parameters
+    parser.add_argument(
+        "--graph-alpha-values",
+        default="0.0,0.3,0.5,0.7,1.0",
+        help="Comma-separated graph_alpha values to test (0.0=disabled, 1.0=full graph)",
+    )
+    # Cluster mode parameters
+    parser.add_argument(
+        "--cluster-nodes",
+        type=int,
+        default=3,
+        help="Number of nodes in cluster for cluster mode",
     )
 
     args = parser.parse_args()

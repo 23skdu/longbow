@@ -405,18 +405,54 @@ func (idx *IVFPQIndex) SearchVectors(ctx context.Context, q any, k int, filters 
 	return idx.SearchVectorsWithBitmap(ctx, q, k, nil, options)
 }
 
+func (idx *IVFPQIndex) SearchVectorsInRange(ctx context.Context, q any, threshold float32, filters []query.Filter, options any) ([]SearchResult, error) {
+	// For IVF-PQ, range search uses high k to get candidates then filters by threshold
+	qF32, ok := q.([]float32)
+	if !ok {
+		return nil, errors.New("IVFPQIndex only supports []float32 queries")
+	}
+
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	if idx.nextID == 0 {
+		return nil, nil
+	}
+
+	// Use max possible candidates (all vectors)
+	allResults, err := idx.SearchInternal(ctx, qF32, int(idx.nextID), nil, SearchOptions{})
+	if err != nil {
+		return nil, err
+	}
+
+	var results []SearchResult
+	for _, r := range allResults {
+		if r.Distance <= threshold {
+			results = append(results, SearchResult{
+				ID:       VectorID(r.ID),
+				Distance: r.Distance,
+				Score:    r.Score,
+			})
+		}
+	}
+
+	return results, nil
+}
+
 func (idx *IVFPQIndex) TrainPQ(vectors [][]float32) error {
 	return idx.Train(vectors)
 }
 
-func (idx *IVFPQIndex) ExportState() ([]byte, error)                  { return nil, nil }
-func (idx *IVFPQIndex) ImportState(data []byte) error               { return nil }
-func (idx *IVFPQIndex) ExportGraph(w io.Writer) error                { return nil }
-func (idx *IVFPQIndex) ImportGraph(r io.Reader) error                { return nil }
-func (idx *IVFPQIndex) ExportDelta(fromV uint64) (*types.DeltaSync, error) { return nil, nil }
-func (idx *IVFPQIndex) ApplyDelta(delta *types.DeltaSync) error       { return nil }
+func (idx *IVFPQIndex) ExportState() ([]byte, error)                           { return nil, nil }
+func (idx *IVFPQIndex) ImportState(data []byte) error                          { return nil }
+func (idx *IVFPQIndex) ExportGraph(w io.Writer) error                          { return nil }
+func (idx *IVFPQIndex) ImportGraph(r io.Reader) error                          { return nil }
+func (idx *IVFPQIndex) ExportDelta(fromV uint64) (*types.DeltaSync, error)     { return nil, nil }
+func (idx *IVFPQIndex) ApplyDelta(delta *types.DeltaSync) error                { return nil }
 func (idx *IVFPQIndex) SetParallelSearchConfig(cfg types.ParallelSearchConfig) {}
-func (idx *IVFPQIndex) GetParallelSearchConfig() types.ParallelSearchConfig  { return types.ParallelSearchConfig{} }
+func (idx *IVFPQIndex) GetParallelSearchConfig() types.ParallelSearchConfig {
+	return types.ParallelSearchConfig{}
+}
 func (idx *IVFPQIndex) RemapLocations(ctx context.Context, m map[uint32]any) error { return nil }
 
 func (idx *IVFPQIndex) GetMemoryUsage() int64 {

@@ -327,6 +327,47 @@ func (b *BruteForceIndex) SearchVectors(ctx context.Context, q any, k int, filte
 	return results, nil
 }
 
+func (b *BruteForceIndex) SearchVectorsInRange(ctx context.Context, q any, threshold float32, filters []query.Filter, options any) ([]SearchResult, error) {
+	qF32, ok := q.([]float32)
+	if !ok {
+		return nil, errors.New("BruteForceIndex only supports []float32 queries")
+	}
+
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+
+	if len(b.locations) == 0 {
+		return nil, nil
+	}
+
+	var results []SearchResult
+	for i, loc := range b.locations {
+		if i%1000 == 0 {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+		}
+
+		vec, release := b.getVectorUnsafe(loc)
+		if vec == nil || release == nil {
+			continue
+		}
+
+		dist, _ := simd.EuclideanDistance(qF32, vec)
+		release()
+
+		if dist <= threshold {
+			results = append(results, SearchResult{
+				ID:       VectorID(i),
+				Distance: dist,
+				Score:    1.0 / (1.0 + dist),
+			})
+		}
+	}
+
+	return results, nil
+}
+
 func (b *BruteForceIndex) Len() int {
 	start := time.Now()
 	b.mu.RLock()
@@ -688,6 +729,21 @@ func (a *AdaptiveIndex) SearchVectors(ctx context.Context, q any, k int, filters
 	metrics.BruteForceSearchesTotal.Inc()
 	if a.bruteForce != nil {
 		return a.bruteForce.SearchVectors(ctx, q, k, filters, options)
+	}
+	return nil, nil
+}
+
+func (a *AdaptiveIndex) SearchVectorsInRange(ctx context.Context, q any, threshold float32, filters []query.Filter, options any) ([]SearchResult, error) {
+	start := time.Now()
+	a.mu.RLock()
+	metrics.IndexLockWaitDuration.WithLabelValues(a.dataset.Name, "read").Observe(time.Since(start).Seconds())
+	defer a.mu.RUnlock()
+
+	if a.usingHNSW.Load() {
+		return a.hnsw.SearchVectorsInRange(ctx, q, threshold, filters, options)
+	}
+	if a.bruteForce != nil {
+		return a.bruteForce.SearchVectorsInRange(ctx, q, threshold, filters, options)
 	}
 	return nil, nil
 }

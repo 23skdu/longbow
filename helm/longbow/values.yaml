@@ -58,6 +58,34 @@ hnsw:
   refinementFactor: 1.0
   useDisk: false
 
+# Compaction Configuration
+compaction:
+  enabled: true
+  interval: "30s"
+  targetBatchSize: 10000
+  minBatches: 10
+
+# Auto-Sharding Configuration
+autoSharding:
+  enabled: true
+  threshold: 10000
+  splitThreshold: 65536
+
+# Ring Sharding Configuration
+ringSharding:
+  enabled: true
+
+# Ingestion Worker Configuration
+ingestion:
+  workerCount: 0  # 0 = runtime.NumCPU()
+
+# Storage I/O Configuration
+storage:
+  asyncFsync: true
+  doPutBatchSize: 100
+  useIOUring: false  # Requires Linux kernel with io_uring support
+  useDirectIO: false
+
 # Memory & GC Configuration
 memory:
   evictionHeadroom: 0.10
@@ -70,13 +98,6 @@ memory:
 gpu:
   enabled: false
   deviceId: 0
-
-# Storage Configuration
-storage:
-  asyncFsync: true
-  doPutBatchSize: 100
-  useIOUring: false
-  useDirectIO: false
 
 service:
   data:

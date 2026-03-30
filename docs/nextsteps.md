@@ -125,8 +125,6 @@ Benchmarks covered: float32, float64, float16, int8, int16, int32, int64, uint8,
 
 ## 📋 Backlog (Future Considerations)
 
-- Local buffer pool for high-dim vectors (Med priority)
-- Search-layer metric sampling (Low priority)
 - Final regression test for full matrix (Med priority)
 
 ---

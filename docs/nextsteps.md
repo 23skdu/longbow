@@ -1,6 +1,6 @@
 # Longbow Next Steps & Recommendations
 
-**Last Updated**: 2026-03-29
+**Last Updated**: 2026-03-30
 **Platform**: Apple M3 Pro (Bahamut), macOS ARM64 + Linux (Ancalagon)
 
 ---
@@ -227,5 +227,51 @@ After evaluation, **recommend KEEPING FAISS** for production use. See rationale 
 ---
 
 **Last Updated**: 2026-03-29
+
+---
+
+## 5. Benchmark Run Results (2026-03-30) ✅ COMPLETE
+
+**Status**: COMPLETE (2026-03-30)
+
+Ran comprehensive benchmarks for CPU and Metal modes covering:
+
+| Test | Data Types | Dimensions | Counts | Status |
+|------|------------|------------|--------|--------|
+| Ingest | float32, int32, uint32, complex128, turboquant | 128, 384 | 1k-15k | ✅ Done |
+| Search (Dense/Hybrid/Filtered/ByID) | All dtypes | 128, 384 | 1k-15k | ✅ Done |
+| Deletion | float32 | 128, 384 | 1k, 10k | ✅ Done |
+| GraphRAG | float32 | 128 | 1k | ✅ Done |
+| DoExchange | float32 | 128 | 1k | ✅ Done |
+| Cluster Search | float32 | 128 | 1k | ✅ Done |
+
+**Key Findings**:
+
+| Metric | CPU (128dim, 1k) | CPU (128dim, 10k) | Metal (128dim, 10k) |
+|--------|------------------|-------------------|---------------------|
+| Ingest (vec/s) | 607K | 1.5M | 629K |
+| Search QPS | 3,315 | 2,126 | 797 |
+| Search P50 | 0.30ms | 0.38ms | 0.91ms |
+
+**Documentation**: `docs/performance.md` (freshly generated)
+
+---
+
+## 6. Known Issues & Recommendations
+
+### Unified Benchmark Script Issues
+
+| Issue | Severity | Status |
+|-------|----------|--------|
+| Python SDK import detection | Medium | Needs fix - bench-tool lookup returns wrong binary |
+| Metal mode bench-tool execution | Medium | Works but needs verification |
+| Deletion test namespace cleanup | Low | SDK missing drop_dataset method |
+
+### Recommendations
+
+1. **Fix unified_benchmark.py**: Update bench-tool path lookup to prefer `./bin/bench-tool`
+2. **Add Python SDK method**: Add `drop_dataset()` to LongbowClient
+3. **Expand dimension coverage**: Add 768, 1536 dimension tests
+4. **Add multi-node cluster testing**: Scripts for Ancalagon/Linux cluster testing
 
 All HIGH PRIORITY items complete.

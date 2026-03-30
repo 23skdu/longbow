@@ -15,6 +15,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/flight"
+	"github.com/apache/arrow-go/v18/arrow/float16"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 )
@@ -499,6 +500,17 @@ func generateRecord(count int, dim int, dtype string) (arrow.Record, *arrow.Sche
 		for i := 0; i < count; i++ {
 			listBldr.Append(true)
 			vb.AppendValues(vals[i*stride:(i+1)*stride], nil)
+		}
+	case "float16":
+		vb := listBldr.ValueBuilder().(*array.Float16Builder)
+		vb.Reserve(count * dim)
+		vals := make([]float16.Num, count*dim)
+		for i := range vals {
+			vals[i] = float16.New(rand.Float32())
+		}
+		for i := 0; i < count; i++ {
+			listBldr.Append(true)
+			vb.AppendValues(vals[i*dim:(i+1)*dim], nil)
 		}
 	case "int32":
 		vb := listBldr.ValueBuilder().(*array.Int32Builder)

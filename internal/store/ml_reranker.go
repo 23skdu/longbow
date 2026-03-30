@@ -130,10 +130,81 @@ type stubMLModel struct {
 
 func (r *stubMLModel) Score(query string, documents []string) ([]float32, error) {
 	scores := make([]float32, len(documents))
-	for i := range documents {
-		scores[i] = 0.5
+	queryLower := toLowerCase(query)
+	for i, doc := range documents {
+		docLower := toLowerCase(doc)
+		score := float32(0.3)
+		if len(docLower) > 0 {
+			if contains(docLower, queryLower) {
+				score = 0.9
+			} else {
+				matchCount := countKeywordMatches(queryLower, docLower)
+				score = float32(0.3) + float32(matchCount)*float32(0.15)
+				if score > 0.8 {
+					score = 0.8
+				}
+			}
+		}
+		scores[i] = score
 	}
 	return scores, nil
+}
+
+func toLowerCase(s string) string {
+	result := make([]byte, len(s))
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c >= 'A' && c <= 'Z' {
+			result[i] = c + 32
+		} else {
+			result[i] = c
+		}
+	}
+	return string(result)
+}
+
+func contains(doc, query string) bool {
+	return len(query) > 0 && len(doc) > 0 &&
+		(len(doc) >= len(query) &&
+			(len(doc) < 100 && findSubstring(doc, query) >= 0))
+}
+
+func findSubstring(s, sub string) int {
+	for i := 0; i <= len(s)-len(sub); i++ {
+		if s[i:i+len(sub)] == sub {
+			return i
+		}
+	}
+	return -1
+}
+
+func countKeywordMatches(query, doc string) int {
+	count := 0
+	words := splitWords(query)
+	for _, word := range words {
+		if len(word) > 2 && findSubstring(doc, word) >= 0 {
+			count++
+		}
+	}
+	return count
+}
+
+func splitWords(s string) []string {
+	words := []string{}
+	word := []byte{}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') {
+			word = append(word, c)
+		} else if len(word) > 0 {
+			words = append(words, string(word))
+			word = nil
+		}
+	}
+	if len(word) > 0 {
+		words = append(words, string(word))
+	}
+	return words
 }
 
 func (r *stubMLModel) Close() error {

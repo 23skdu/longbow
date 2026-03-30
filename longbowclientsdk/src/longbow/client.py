@@ -12,10 +12,17 @@ from .ingest import to_arrow_table
 
 logger = logging.getLogger(__name__)
 
+
 class LongbowClient:
     """Client for interacting with the Longbow Vector Database."""
 
-    def __init__(self, uri: str = "grpc://localhost:3000", meta_uri: Optional[str] = None, api_key: Optional[str] = None, headers: Optional[Dict[str, str]] = None):
+    def __init__(
+        self,
+        uri: str = "grpc://localhost:3000",
+        meta_uri: Optional[str] = None,
+        api_key: Optional[str] = None,
+        headers: Optional[Dict[str, str]] = None,
+    ):
         """
         Initialize the Longbow Client.
 
@@ -28,7 +35,7 @@ class LongbowClient:
         self.meta_uri = meta_uri or uri
         self.api_key = api_key
         self.headers = headers or {}
-        
+
         self._data_client = None
         self._meta_client = None
 
@@ -41,7 +48,9 @@ class LongbowClient:
                 ("grpc.max_send_message_length", 1024 * 1024 * 1024),
             ]
             self._data_client = flight.FlightClient(self.uri, generic_options=options)
-            self._meta_client = flight.FlightClient(self.meta_uri, generic_options=options)
+            self._meta_client = flight.FlightClient(
+                self.meta_uri, generic_options=options
+            )
         except Exception as e:
             raise LongbowConnectionError(f"Failed to connect: {e}")
 
@@ -60,19 +69,27 @@ class LongbowClient:
     def _get_call_options(self, timeout: Optional[float] = None):
         call_headers = []
         for k, v in self.headers.items():
-            call_headers.append((k.encode('utf-8'), v.encode('utf-8')))
-        
+            call_headers.append((k.encode("utf-8"), v.encode("utf-8")))
+
         if self.api_key:
-            call_headers.append((b"authorization", f"Bearer {self.api_key}".encode('utf-8')))
-        
+            call_headers.append(
+                (b"authorization", f"Bearer {self.api_key}".encode("utf-8"))
+            )
+
         if timeout is not None:
             return flight.FlightCallOptions(headers=call_headers, timeout=timeout)
         return flight.FlightCallOptions(headers=call_headers)
 
-    def insert(self, dataset: str, data: Union[pd.DataFrame, List[Dict]], batch_size: int = 10000, timeout: float = 180.0) -> None:
+    def insert(
+        self,
+        dataset: str,
+        data: Union[pd.DataFrame, List[Dict]],
+        batch_size: int = 10000,
+        timeout: float = 180.0,
+    ) -> None:
         """
         Insert vectors into a dataset.
-        
+
         Args:
             dataset: Name of the target dataset.
             data: Data to insert (Pandas DataFrame or List of Dicts).
@@ -86,7 +103,12 @@ class LongbowClient:
         table = to_arrow_table(data)
         self._upload_batch(dataset, table, timeout=timeout)
 
-    def _upload_batch(self, dataset: str, data: Union[pd.DataFrame, List[Dict], pa.Table], timeout: float = 180.0):
+    def _upload_batch(
+        self,
+        dataset: str,
+        data: Union[pd.DataFrame, List[Dict], pa.Table],
+        timeout: float = 180.0,
+    ):
         """Internal helper to upload a materialized batch with timeout."""
         if isinstance(data, pa.Table):
             table = data
@@ -94,10 +116,12 @@ class LongbowClient:
             table = to_arrow_table(data)
         descriptor = flight.FlightDescriptor.for_path(dataset)
         call_opts = self._get_call_options(timeout=timeout)
-        writer, reader = self._data_client.do_put(descriptor, table.schema, options=call_opts)
+        writer, reader = self._data_client.do_put(
+            descriptor, table.schema, options=call_opts
+        )
         writer.write_table(table)
         writer.done_writing()  # Signal completion without blocking
-        
+
         # Read server acknowledgment if available
         try:
             # FlightMetadataReader.read() returns metadata, not iterable
@@ -107,16 +131,16 @@ class LongbowClient:
         except Exception as e:
             # Log but don't fail - data was already sent
             logger.debug(f"Could not read server response (non-critical): {e}")
-        
+
         logger.debug(f"Uploaded batch of {table.num_rows} rows to {dataset}")
 
     def search(
-        self, 
-        dataset: str, 
-        vector: List[float], 
-        k: int = 10, 
+        self,
+        dataset: str,
+        vector: List[float],
+        k: int = 10,
         filters: Optional[List[Dict]] = None,
-        **kwargs
+        **kwargs,
     ) -> pd.DataFrame:
         """
         Perform a K-Nearest Neighbor search.
@@ -137,6 +161,7 @@ class LongbowClient:
         # Handle complex query vectors and sanitization for JSON
         try:
             import numpy as np
+
             has_numpy = True
         except ImportError:
             has_numpy = False
@@ -145,13 +170,19 @@ class LongbowClient:
             if np.issubdtype(vector.dtype, np.complexfloating):
                 # Flatten complex to [real, imag, real, imag...]
                 # Use correct float type matching the complex precision
-                target_dtype = np.float32 if vector.dtype == np.complex64 else np.float64
+                target_dtype = (
+                    np.float32 if vector.dtype == np.complex64 else np.float64
+                )
                 vector = vector.view(target_dtype).flatten().tolist()
             elif isinstance(vector, np.ndarray):
                 vector = vector.tolist()
-        
+
         # Handle Python list of complex numbers (e.g. [1+1j, 2+2j])
-        if isinstance(vector, list) and len(vector) > 0 and isinstance(vector[0], complex):
+        if (
+            isinstance(vector, list)
+            and len(vector) > 0
+            and isinstance(vector[0], complex)
+        ):
             flat_vector = []
             for v in vector:
                 flat_vector.append(float(v.real))
@@ -160,9 +191,12 @@ class LongbowClient:
 
         # Sanitize: Ensure no NaN/Inf which breaks server JSON parsing
         import math
+
         for i, v in enumerate(vector):
             if isinstance(v, (int, float)) and not math.isfinite(v):
-                raise ValueError(f"Query vector contains invalid value (NaN or Inf) at index {i}")
+                raise ValueError(
+                    f"Query vector contains invalid value (NaN or Inf) at index {i}"
+                )
 
         req = {
             "dataset": dataset,
@@ -172,7 +206,7 @@ class LongbowClient:
 
         if filters:
             req["filters"] = filters
-        
+
         # Merge extra args (e.g. alpha, text_query)
         for k, v in kwargs.items():
             if v is not None:
@@ -180,39 +214,47 @@ class LongbowClient:
 
         ticket_bytes = json.dumps({"search": req}).encode("utf-8")
         ticket = flight.Ticket(ticket_bytes)
-        
+
         try:
             reader = self._data_client.do_get(ticket, options=self._get_call_options())
             table = reader.read_all()
-            return table.to_pandas() # Convert to Pandas
-                
+            return table.to_pandas()  # Convert to Pandas
+
         except Exception as e:
             raise LongbowQueryError(f"Search failed: {e}")
 
-    def search_by_id(self, dataset: str, id: Union[int, str], k: int = 10) -> Dict[str, Any]:
+    def search_by_id(
+        self, dataset: str, id: Union[int, str], k: int = 10
+    ) -> Dict[str, Any]:
         """Search for similar vectors by ID."""
         if self._data_client is None:
             self.connect()
-            
-        req = {
-            "dataset": dataset,
-            "id": id,
-            "k": k
-        }
+
+        req = {"dataset": dataset, "id": id, "k": k}
         action = flight.Action("VectorSearchByID", json.dumps(req).encode("utf-8"))
         try:
             # We assume single result batch for this action
-            results = list(self._meta_client.do_action(action, options=self._get_call_options()))
+            results = list(
+                self._meta_client.do_action(action, options=self._get_call_options())
+            )
             if results:
                 return json.loads(results[0].body.to_pybytes())
             return {}
         except Exception as e:
             raise LongbowQueryError(f"SearchByID failed: {e}")
 
-    def recommend(self, dataset: str, seed_ids: List[str], k: int = 10, alpha: float = 0.5, max_hops: int = 2, decay: float = 0.5) -> "pd.DataFrame":
+    def recommend(
+        self,
+        dataset: str,
+        seed_ids: List[str],
+        k: int = 10,
+        alpha: float = 0.5,
+        max_hops: int = 2,
+        decay: float = 0.5,
+    ) -> "pd.DataFrame":
         """
         Produce a list of recommendations based on seed IDs (hybrid vector-graph closeness).
-        
+
         Args:
             dataset: The dataset name.
             seed_ids: List of source IDs to use as seeds.
@@ -220,7 +262,7 @@ class LongbowClient:
             alpha: Hybrid blend (1.0 = pure vector similarity, 0.0 = pure graph connectivity).
             max_hops: BFS depth for graph connectivity.
             decay: Multi-hop connectivity decay factor.
-            
+
         Returns:
             Pandas DataFrame with 'id' and 'score'.
         """
@@ -233,7 +275,7 @@ class LongbowClient:
             "k": k,
             "alpha": float(alpha),
             "max_hops": int(max_hops),
-            "decay": float(decay)
+            "decay": float(decay),
         }
 
         ticket_json = {"recommend": req}
@@ -246,10 +288,17 @@ class LongbowClient:
         except Exception as e:
             raise LongbowQueryError(f"Recommendation failed: {e}")
 
-    def create_namespace(self, name: str, dims: int = 128, data_type: str = "float32", force: bool = False, **hnsw_config):
+    def create_namespace(
+        self,
+        name: str,
+        dims: int = 128,
+        data_type: str = "float32",
+        force: bool = False,
+        **hnsw_config,
+    ):
         """
         Create a new dataset/namespace.
-        
+
         Args:
             name: Name of the namespace.
             dims: Vector dimensions.
@@ -259,13 +308,13 @@ class LongbowClient:
         """
         if self._meta_client is None:
             self.connect()
-            
+
         req = {
             "name": name,
             "dims": dims,
             "data_type": data_type,
             "overwrite": force,
-            "hnsw_config": hnsw_config
+            "hnsw_config": hnsw_config,
         }
         action_body = json.dumps(req).encode("utf-8")
         action = flight.Action("CreateNamespace", action_body)
@@ -276,49 +325,56 @@ class LongbowClient:
         """List all available datasets."""
         if self._meta_client is None:
             self.connect()
-        return [f.descriptor.path[0].decode("utf-8") for f in self._meta_client.list_flights()]
+        return [
+            f.descriptor.path[0].decode("utf-8")
+            for f in self._meta_client.list_flights()
+        ]
 
-    def download_arrow(self, dataset: str, filter: Optional[List[Dict]] = None) -> pa.Table:
+    def download_arrow(
+        self, dataset: str, filter: Optional[List[Dict]] = None
+    ) -> pa.Table:
         """Download dataset as Arrow Table (zero-copy, high performance).
-        
+
         Args:
             dataset: Name of the dataset to download
             filter: Optional list of filter dictionaries [{"field": "...", "op": "...", "value": "..."}]
-            
+
         Returns:
             pyarrow.Table: The complete dataset as an Arrow Table
-            
+
         Example:
             >>> table = client.download_arrow("my_dataset")
             >>> print(f"Downloaded {table.num_rows} rows")
         """
         if self._data_client is None:
             self.connect()
-        
+
         req = {"name": dataset}
         if filter:
             req["filters"] = filter
-            
+
         ticket_bytes = json.dumps(req).encode("utf-8")
         ticket = flight.Ticket(ticket_bytes)
-        
+
         try:
             reader = self._data_client.do_get(ticket, options=self._get_call_options())
             # Zero-copy: read all batches into single Arrow Table
             return reader.read_all()
         except Exception as e:
             raise LongbowQueryError(f"Download failed: {e}")
-    
-    def download_stream(self, dataset: str, filter: Optional[List[Dict]] = None) -> Iterator[pa.RecordBatch]:
+
+    def download_stream(
+        self, dataset: str, filter: Optional[List[Dict]] = None
+    ) -> Iterator[pa.RecordBatch]:
         """Stream dataset as Arrow RecordBatches (memory-efficient for large datasets).
-        
+
         Args:
             dataset: Name of the dataset to download
             filter: Optional list of filter dictionaries
-            
+
         Yields:
             pyarrow.RecordBatch: Individual batches of data
-            
+
         Example:
             >>> for batch in client.download_stream("large_dataset"):
             ...     print(f"Processing batch with {batch.num_rows} rows")
@@ -326,14 +382,14 @@ class LongbowClient:
         """
         if self._data_client is None:
             self.connect()
-        
+
         req = {"name": dataset}
         if filter:
             req["filters"] = filter
-            
+
         ticket_bytes = json.dumps(req).encode("utf-8")
         ticket = flight.Ticket(ticket_bytes)
-        
+
         try:
             reader = self._data_client.do_get(ticket, options=self._get_call_options())
             # Stream batches one at a time (memory-efficient)
@@ -341,18 +397,18 @@ class LongbowClient:
                 yield chunk.data
         except Exception as e:
             raise LongbowQueryError(f"Download stream failed: {e}")
-    
+
     def download(self, dataset: str, filter: Optional[List[Dict]] = None) -> pa.Table:
         """Download dataset as Arrow Table.
-        
+
         DEPRECATED: This method now returns pa.Table instead of dd.DataFrame.
         Use download_arrow() for explicit Arrow Table return.
         Use download_stream() for memory-efficient streaming.
-        
+
         Args:
             dataset: Name of the dataset to download
             filter: Optional list of filter dictionaries
-            
+
         Returns:
             pyarrow.Table: The complete dataset (changed from dd.DataFrame)
         """
@@ -360,7 +416,7 @@ class LongbowClient:
             "download() now returns pa.Table instead of dd.DataFrame. "
             "Use download_arrow() explicitly or download_stream() for streaming.",
             DeprecationWarning,
-            stacklevel=2
+            stacklevel=2,
         )
         return self.download_arrow(dataset, filter)
 
@@ -368,7 +424,7 @@ class LongbowClient:
         """Delete specific IDs from a dataset."""
         if self._meta_client is None:
             self.connect()
-            
+
         req = {"dataset": dataset}
         if ids:
             # Server "delete" action takes "id" (string) and "dataset".
@@ -376,15 +432,16 @@ class LongbowClient:
             # We iterate here.
             # Convert all IDs to string as server expects string IDs (currently).
             for i in ids:
-                single_req = {
-                    "dataset": dataset,
-                    "id": str(i)
-                }
+                single_req = {"dataset": dataset, "id": str(i)}
                 action_body = json.dumps(single_req).encode("utf-8")
                 # ignore result for now, just best effort
                 try:
                     action = flight.Action("delete", action_body)
-                    list(self._meta_client.do_action(action, options=self._get_call_options()))
+                    list(
+                        self._meta_client.do_action(
+                            action, options=self._get_call_options()
+                        )
+                    )
                 except Exception as e:
                     # Log or warn? For batch delete, partial failure is tricky.
                     # We continue.
@@ -399,11 +456,15 @@ class LongbowClient:
         """Delete an entire dataset."""
         self.delete(dataset)
 
+    def drop_dataset(self, dataset: str):
+        """Drop (delete) an entire dataset. Alias for delete_namespace."""
+        self.delete_namespace(dataset)
+
     def snapshot(self):
         """Trigger a manual snapshot of the database."""
         if self._meta_client is None:
             self.connect()
-        
+
         action = flight.Action("ForceSnapshot", b"")
         list(self._meta_client.do_action(action, options=self._get_call_options()))
 
@@ -411,16 +472,25 @@ class LongbowClient:
         """Get information about a dataset."""
         if self._meta_client is None:
             self.connect()
-        
+
         descriptor = flight.FlightDescriptor.for_path(dataset)
-        info = self._meta_client.get_flight_info(descriptor, options=self._get_call_options())
+        info = self._meta_client.get_flight_info(
+            descriptor, options=self._get_call_options()
+        )
         return {
             "schema": str(info.schema),
             "total_records": info.total_records,
-            "total_bytes": info.total_bytes
+            "total_bytes": info.total_bytes,
         }
 
-    def add_edge(self, dataset: str, subject: int, predicate: str, object: int, weight: float = 1.0) -> None:
+    def add_edge(
+        self,
+        dataset: str,
+        subject: int,
+        predicate: str,
+        object: int,
+        weight: float = 1.0,
+    ) -> None:
         """Add a directed edge to the graph."""
         if self._meta_client is None:
             self.connect()
@@ -430,7 +500,7 @@ class LongbowClient:
             "subject": subject,
             "predicate": predicate,
             "object": object,
-            "weight": weight
+            "weight": weight,
         }
         action = flight.Action("add-edge", json.dumps(req).encode("utf-8"))
         try:
@@ -438,7 +508,15 @@ class LongbowClient:
         except Exception as e:
             raise LongbowQueryError(f"Add edge failed: {e}")
 
-    def traverse(self, dataset: str, start: int, max_hops: int = 2, incoming: bool = False, decay: float = 0.0, weighted: bool = True) -> List[Dict]:
+    def traverse(
+        self,
+        dataset: str,
+        start: int,
+        max_hops: int = 2,
+        incoming: bool = False,
+        decay: float = 0.0,
+        weighted: bool = True,
+    ) -> List[Dict]:
         """Traverse the graph from a start node."""
         if self._meta_client is None:
             self.connect()
@@ -449,12 +527,14 @@ class LongbowClient:
             "max_hops": max_hops,
             "incoming": incoming,
             "weighted": weighted,
-            "decay": decay
+            "decay": decay,
         }
         action = flight.Action("traverse-graph", json.dumps(req).encode("utf-8"))
         try:
             results = []
-            for res in self._meta_client.do_action(action, options=self._get_call_options()):
+            for res in self._meta_client.do_action(
+                action, options=self._get_call_options()
+            ):
                 results.append(json.loads(res.body.to_pybytes()))
             return results
         except Exception as e:
@@ -468,7 +548,9 @@ class LongbowClient:
         req = {"dataset": dataset}
         action = flight.Action("GetGraphStats", json.dumps(req).encode("utf-8"))
         try:
-            results = list(self._meta_client.do_action(action, options=self._get_call_options()))
+            results = list(
+                self._meta_client.do_action(action, options=self._get_call_options())
+            )
             if results:
                 return json.loads(results[0].body.to_pybytes())
             return {}

@@ -140,11 +140,11 @@ class BenchmarkRunner:
         return path
 
     def get_bench_tool(self):
-        for name in ["benchmark-tool", "bench-tool"]:
+        for name in ["bench-tool", "benchmark-tool"]:
             path = os.path.join(self.bin_dir, name)
             if os.path.exists(path):
                 return path
-        return os.path.join(self.bin_dir, "benchmark-tool")
+        return os.path.join(self.bin_dir, "bench-tool")
 
     def check_cuda(self):
         if self.args.mode == "cuda" and platform.system() != "Linux":

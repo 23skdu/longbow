@@ -1,392 +1,527 @@
-# Longbow Next Steps & Recommendations
+# Longbow Next Steps — Feature Roadmap 2026
 
 **Last Updated**: 2026-03-30
 **Platform**: Apple M3 Pro (Bahamut), macOS ARM64 + Linux (Ancalagon)
+**Purpose**: Create competitive features comparable to Pinecone, Milvus, Qdrant, Weaviate
 
 ---
 
-## 🚨 HIGH PRIORITY — Pending Items
+## Executive Summary
 
-### A. Test Failures — Root Cause Analysis & Fixes ✅ COMPLETE
+This document outlines a 20-part roadmap to enhance Longbow with features comparable to or superior to leading commercial vector database offerings. Based on analysis of Pinecone, Milvus, Qdrant, Weaviate, Chroma, and LanceDB, we identify key differentiators and implementation paths.
 
-**Status**: COMPLETE (2026-03-30)
-
-**Summary**: Fixed 2 tests, skipped 6 flaky tests. Removed goleak detection (false positive). Goroutine leak is pre-existing.
-
-#### Test Fixes Applied
-
-| # | Test | Category | Status | Evidence |
-|---|------|----------|--------|----------|
-| 1 | **TestShardedSearchWithBitmapFiltering** | Bug Fix | ✅ FIXED | Changed sort order in `sharded_hnsw.go` |
-| 2 | **TestObservability_GranularMetrics** | Bug Fix | ✅ FIXED | Fixed Grow() in `arrow_hnsw.go` to always update dims |
-| 3 | **TestInsertProperties** | Flaky | ✅ SKIPPED | Added t.Skip() - gopter seed flakiness |
-| 4 | **TestSearchContextCancellation** | Passes | ✅ FIXED | Was flaky - passes now |
-| 5 | **TestBruteForceIndex_ZeroCopyVectorAccess** | Flaky | ✅ SKIPPED | Added t.Skip() - allocation timing |
-| 6 | **TestBatchedIndexing** | Timing | ✅ SKIPPED | Added t.Skip() - async timing issues |
-| 7 | **TestIngestionPipeline_Backpressure** | Timing | ✅ SKIPPED | Added t.Skip() - backpressure timing |
-| 8 | **TestRepairIntegration_DeleteAndRepair** | Logic | ✅ SKIPPED | Added t.Skip() - repair logic flakiness |
-| 9 | **TestShardedHNSW_Metrics** | Timing | ✅ SKIPPED | Added t.Skip() - metrics timing |
-| 10 | **TestShardedHNSW_Compaction** | Timing | ✅ SKIPPED | Added t.Skip() - compaction timing |
-
-#### Additional Changes
-
-- Added `EfSearch=128` to PQ config for better recall
-- Lowered PQ recall threshold from 0.5 to 0.4
-- Added `list-datasets-in-namespace` CLI command
-
-#### Remaining Issues
-
-- **Goroutine Leak**: Pre-existing issue - goleak detection removed to avoid false positives
-
-#### Dependencies
-
-| Dependency | Purpose |
-|------------|---------|
-| `go test -v -run TestX` | Verify each fix |
-| `go test -race` | Check for race conditions |
-| `GODEBUG=gctrace=1` | Debug allocations in zero-copy test |
-| Prometheus metrics | Verify observability test fixes |
-
-#### Files to Modify
-
-| File | Tests Affected |
-|------|----------------|
-| `internal/store/sharded_hnsw.go` | ✅ TestShardedSearchWithBitmapFiltering |
-| `internal/store/observability_test.go` | TestObservability_GranularMetrics |
-| `internal/store/arrow_insert_properties_test.go` | TestInsertProperties |
-| `internal/store/batched_indexing_test.go` | TestBatchedIndexing |
-| `internal/store/ingestion_pipeline_test.go` | TestIngestionPipeline_Backpressure |
-| `internal/store/hnsw_repair_integration_test.go` | TestRepairIntegration_DeleteAndRepair |
-| `internal/store/pq_integration_test.go` | TestPQ_EndToEnd |
-| `internal/store/arrow_hnsw.go` (search path) | TestSearchContextCancellation |
+**Current State**: Longbow has strong foundations — Arrow-based zero-copy paths, HNSW/IVF-PQ/TurboQuant indexes, distributed sharding, tiered storage, and GPU support. Gaps exist in enterprise features, developer experience, and advanced query capabilities.
 
 ---
 
-### 0. Stub & Incomplete Code Fixes ✅ DONE
+## Part 1: Serverless Auto-Scaling 🔴 HIGH PRIORITY
 
-**Status**: COMPLETE (2026-03-29)
+**Comparable to**: Pinecone serverless, LanceDB embedded
 
-Fixed both incomplete stubs:
+### Rationale
+Pinecone's serverless model eliminates infrastructure management. Longbow can achieve similar UX with automatic resource provisioning based on query load and data size.
 
-| Fix | Status | Evidence |
-|-----|--------|----------|
-| `GetGPURequirements()` | ✅ Done | Now detects actual GPU availability for CUDA/Metal/OpenCL |
-| `stubMLModel.Score()` | ✅ Done | Now uses keyword matching (0.3-0.9 scores) instead of hardcoded 0.5 |
+### Implementation Plan
 
----
+- [ ] **1.1** Create auto-scaler component that monitors query QPS and latency
+- [ ] **1.2** Implement dynamic worker pool sizing (ingestion workers, search threads)
+- [ ] **1.3** Add memory-based admission control with backpressure signals
+- [ ] **1.4** Design tiered storage triggers (hot → warm → cold based on access patterns)
+- [ ] **1.5** Add API endpoints for capacity planning and auto-scale configuration
 
-### 1. Native TurboQuant Storage API ✅ DONE
-
-**Status**: COMPLETE (2026-03-29)
-
-The TurboQuant storage API is fully implemented:
-
-| Component | Status | Evidence |
-|-----------|--------|----------|
-| API VectorType field | ✅ Done | `internal/query/requests.go:18-20` - `VectorType` and `TurboQuantBits` fields |
-| Unit Tests | ✅ Done | `internal/store/turboquant_storage_test.go`, `turboquant_test.go` |
-| Documentation | ✅ Done | `docs/turboquant.md` (181 lines) |
-| Prometheus Metrics | ✅ Done | `internal/metrics/storage_metrics.go:750+` |
-
-**Usage**:
-```json
-{
-  "type": "create_dataset",
-  "body": {
-    "name": "my_tq_dataset",
-    "dimension": 768,
-    "vector_type": "turboquant",
-    "turboquant_bits": 8
-  }
-}
-```
+### Files to Modify
+- `internal/store/memory_backpressure.go` — Extend for auto-scaling
+- `internal/store/index_queue.go` — Dynamic worker sizing
+- `cmd/longbow/config.go` — Auto-scale config options
 
 ---
 
-### 2. Performance Matrix Audit ✅ DONE
+## Part 2: Enhanced Multi-Tenancy with Strict Isolation 🔴 HIGH PRIORITY
 
-**Status**: COMPLETE (2026-03-29)
+**Comparable to**: Pinecone namespaces, Milvus partition keys
 
-Ran unified benchmarks and generated performance docs:
+### Rationale
+Enterprise customers require strict tenant isolation. Longbow's namespace exists but needs enhancement for resource quotas and access control.
 
-| Doc | Description |
-|-----|-------------|
-| `docs/performance.md` | CPU performance summary |
-| `docs/performance_metal.md` | Metal GPU benchmarks |
-| `docs/performance_ancalagon.md` | Ancalagon (Linux) benchmarks |
+### Implementation Plan
 
-Benchmarks covered: float32, float64, float16, int8, int16, int32, int64, uint8, uint16, uint32, uint64, complex64, complex128, turboquant at dimensions 128-3072.
+- [ ] **2.1** Add tenant resource quotas (max vectors, max dimensions, storage limits)
+- [ ] **2.2** Implement tenant-specific caching to prevent cross-tenant pollution
+- [ ] **2.3** Add tenant-aware metrics (per-namespace QPS, latency, storage)
+- [ ] **2.4** Create tenant-level rate limiting
+- [ ] **2.5** Add tenant migration APIs (move namespace to different node)
 
----
-
-### 3. Docker Release v0.1.8-rc1 ✅ DONE
-
-**Status**: COMPLETE (2026-03-29)
-
-- Release tag: `0.1.8-rc1`
-- Built and pushed to: `ghcr.io/23skdu/longbow`
+### Files to Modify
+- `internal/store/namespace.go` — Extend with quotas
+- `internal/metrics/` — Add tenant-scoped metrics
+- `internal/store/memory.go` — Tenant-level caching
 
 ---
 
-## ✅ COMPLETED ITEMS (Validated)
+## Part 3: Rich Payload Filtering with Indexed Fields 🟡 MEDIUM PRIORITY
 
-### API & Architecture Enhancements
+**Comparable to**: Qdrant payload filtering, indexed numeric/keyword/geo/datetime
 
-| Feature | Status | Evidence |
-|---------|--------|----------|
-| **Recommend API** | ✅ DONE | `internal/store/recommend.go`, `recommend_test.go`, `docs/recommendations.md`, Prometheus metrics |
-| **EOF Detection** | ✅ DONE | `internal/flight/eof.go`, `eof_test.go`, `IsStreamEOF()` helper |
-| **Consistency Levels** | ✅ DONE | `internal/store/consistency.go`, `consistency_test.go`, `SearchOptions.Consistency` field |
-| **Dynamic Dimension** | ✅ DONE | `internal/store/dimension.go`, `dimension_test.go`, `DimensionAutoDetected` |
-| **GetNeighbors** | ✅ DONE | `internal/store/get_neighbors.go`, `get_neighbors_test.go` |
-| **GraphRAG Docs** | ✅ DONE | `docs/graphrag_internals.md` |
-| **Hybrid Search Metrics** | ✅ DONE | `internal/metrics/metrics_hybrid.go`, `metrics_hybrid_test.go` |
+### Rationale
+Qdrant's indexed payload filtering is a key differentiator. Longbow needs faster filtering for metadata beyond vector similarity.
 
-### v0.1.8-rc1 Release Tasks
+### Implementation Plan
 
-| Task | Status | Evidence |
-|------|--------|----------|
-| HNSW Search Layer fixes | ✅ DONE | `visited.Clear()` in `arrow_hnsw.go:searchLayer` |
-| Float64 vector extraction | ✅ DONE | Type-safe parallel extraction in `arrow_search_context.go` |
-| HNSW filtering logic | ✅ DONE | Fixed in `arrow_hnsw.go` |
-| Store actions linter | ✅ DONE | Fixed `dataType` switch in `store_actions.go` |
-| TurboQuant 1536-dim fix | ✅ DONE | Dimension handling in `dataset.go` |
-| Performance docs | ✅ DONE | Consolidated in `docs/performance.md` |
+- [ ] **3.1** Implement indexed field types (numeric, keyword, boolean, datetime)
+- [ ] **3.2** Add bitmap indexes for high-cardinality filter fields
+- [ ] **3.3** Create filter compilation to pushdown (execute filters during search, not post-filter)
+- [ ] **3.4** Add composite filter optimization (AND/OR/NOT with index hints)
+- [ ] **3.5** Benchmark filter pushdown vs post-filter for various selectivity rates
 
-### Optimization Status (2026-03-27)
-
-| Optimization | Status | Impact |
-|-------------|--------|--------|
-| Blocked SIMD for float/int/uint (768+) | ✅ Complete | +30-50% QPS |
-| Complex64/128 blocked via cast | ✅ Complete | +20-30% QPS |
-| TurboQuant NEON Kernels (FWHT) | ✅ Complete | +3.7x Core / +40% QPS |
-| HNSW M=32 for 768+ dims | ✅ Complete | +15-20% QPS |
-| Prefetch for 1536+ dims | ✅ Complete | +10-15% QPS |
-
-### SIMD Kernel Status
-
-| Dimension | float32 | float64 | int32 | int16 | int8 | turboquant |
-|-----------|---------|---------|-------|-------|------|------------|
-| 128 | ✅ Optimized | ✅ Optimized | ✅ Optimized | ✅ Optimized | ✅ Optimized | ✅ Optimized |
-| 256 | ✅ Optimized | ✅ Optimized | ✅ Optimized | ✅ Optimized | ✅ Optimized | ✅ Optimized |
-| 384 | ✅ Optimized | ✅ Optimized | ✅ Optimized | ✅ Optimized | ✅ Optimized | ✅ Optimized |
-| 768 | ✅ Blocked | ✅ Blocked | ✅ Blocked | ✅ Blocked | ✅ Blocked | ✅ Blocked |
-| 1024 | ✅ Blocked | ✅ Blocked | ✅ Blocked | ✅ Blocked | ✅ Blocked | ✅ Blocked |
-| 1536 | ✅ Blocked+Prefetch | ✅ Blocked | ✅ Blocked | ✅ Blocked | ✅ Blocked | ✅ Blocked |
-| 2048 | ✅ Blocked+Prefetch | ✅ Blocked | ✅ Blocked | ✅ Blocked | ✅ Blocked | ✅ Blocked |
-| 3072 | ✅ Blocked+Prefetch | ✅ Blocked | ✅ Blocked | ✅ Blocked | ✅ Blocked | ✅ Blocked |
+### Files to Modify
+- `internal/store/bitmap_index.go` — Extend for payload fields
+- `internal/store/filters.go` — Filter optimization
+- `internal/query/` — Filter expression parser
 
 ---
 
-## 🎯 Feature Parity — Milvus / Pinecone / Qdrant
+## Part 4: Built-in Vectorization Modules 🟡 MEDIUM PRIORITY
 
-Missing features for parity with leading vector databases:
+**Comparable to**: Weaviate text2vec, Cohere integration
 
-| # | Feature | Milvus | Pinecone | Qdrant | Evidence |
-|---|---------|--------|----------|--------|----------|
-| 1 | **Multiple index types** (IVF, PQ, DiskANN) | ✅ | ✅ | ✅ | [Milvus README](https://github.com/milvus-io/milvus/blob/master/README.md) |
-| 2 | **Full-text / hybrid search** (BM25 + vector) | ✅ | ✅ | ✅ | [Qdrant QUICK_START](https://github.com/qdrant/qdrant/blob/master/docs/QUICK_START.md) |
-| 3 | **Multi-tenancy** (namespaces, tenant isolation) | ✅ | ✅ | ✅ | [Milvus RBAC PR](https://github.com/milvus-io/milvus/pull/48197) |
-| 4 | **Rich scalar types** (JSON, arrays) | ✅ | ✅ | ✅ | [Milvus Data Fields](https://github.com/milvus-io/milvus) |
-| 5 | **Cloud-native managed services** (BYOC, serverless) | ✅ | ✅ | ✅ | [Milvus Zilliz Cloud](https://github.com/milvus-io/milvus) |
-| 6 | **Backup / restore snapshots** | ✅ | ✅ | ✅ | [Pinecone Backup](https://docs.pinecone.io/guides/manage-data/back-up-an-index) |
-| 7 | **Fine-grained RBAC** | ✅ | ✅ | ✅ | [Milvus RBAC](https://github.com/milvus-io/milvus/pull/48197) |
-| 8 | **Dedicated read nodes / replicas** | ✅ | ✅ | ✅ | [Pinecone Read Nodes](https://docs.pinecone.io/guides/index-data/dedicated-read-nodes) |
-| 9 | **Enhanced observability** (beyond Prometheus) | ✅ | ✅ | ✅ | [Milvus Monitoring](https://github.com/milvus-io/milvus) |
-| 10 | **Tiered storage** (hot/cold, S3 backend) | ✅ | ✅ | ✅ | [Qdrant Storage](https://github.com/qdrant/qdrant/pull/6603) |
+### Rationale
+Weaviate's built-in vectorization reduces pipeline complexity. Longbow can offer on-device embedding generation for privacy-sensitive workloads.
 
----
+### Implementation Plan
 
-## ⚡ GPU Performance Improvements — Metal & CUDA
+- [ ] **4.1** Create embedding generation interface (pluggable providers)
+- [ ] **4.2** Implement local embedding model (e.g., sentence-transformers via ONNX)
+- [ ] **4.3** Add batch embedding generation for bulk ingestion
+- [ ] **4.4** Support external providers (OpenAI, Cohere, HuggingFace) as fallbacks
+- [ ] **4.5** Add embedding model versioning and caching
 
-10 optimizations for Metal and CUDA backends across all dtypes:
-
-| # | Improvement | Target Backend | Status | Evidence |
-|---|-------------|----------------|--------|----------|
-| 1 | **FP16 (half-precision) kernels** | Metal | ✅ Done | `internal/gpu/metal/metal_gpu_optimized.go:269-371` — `compute_l2_distances_fp16`, `compute_cosine_similarity_fp16`, `compute_dot_product_fp16` |
-| 2 | **SIMD/warp-level reductions** | Metal | ✅ Done | `internal/gpu/metal/metal_gpu_optimized.go:373-472` — `compute_l2_distances_warp`, `compute_l2_and_topk_warp` using `simd_shuffle_down` |
-| 3 | **Multiple index types (IVF, PQ, Flat)** | CUDA | ✅ Done | `internal/gpu/faiss/faiss_gpu.go:26-30` — `FaissIndexFlat`, `FaissIndexIVFFlat`, `FaissIndexIVFPQ` |
-| 4 | **GPU-side HNSW refinement** | Hybrid | ✅ Done | `internal/store/hnsw_gpu.go:307-441` — Hybrid search: GPU candidates + CPU graph refinement |
-| 5 | **Adaptive SyncBatchSize** | GPU sync | ✅ Done | `internal/store/hnsw_gpu.go:22-28` — Configurable `SyncBatchSize` (default 1000) and `SyncInterval` (default 5s) |
-
-**Note**: True GPU-side HNSW (full graph traversal on GPU) would require cuHNSW/cuVS integration - current hybrid approach is pragmatic.
-| 6 | **Cross-backend memory pooling** | Both | ✅ Done | `internal/gpu/memory/memory_pool.go:37-64` — GPU memory pool with small/large buffer allocation |
-| 7 | **Tensor Core paths (FP16/TF32)** | CUDA | ⚠️ Requires cuVS | FAISS with cuVS enables Tensor Cores, requires build + Go bindings |
-
-**Evaluation**:
-- FAISS with cuVS (NVIDIA CUDA Vector Search) enables FP16/Tensor Core acceleration
-- Current Longbow bindings use standard FAISS GPU (float32 only)
-- Metal already has FP16 kernels (`compute_l2_distances_fp16`, etc.)
-- CUDA would require: cuVS build + new C++ wrappers + Go bindings
-
-**Work required**:
-1. Build FAISS with cuVS support (`FAISS_WITH_CUVS=ON`)
-2. Add C++ functions for FP16 index creation/search
-3. Add Go bindings in `faiss_gpu.go` and `faiss_gpu_cpp.h`
-4. Add `VectorType` field for FP16 selection in API
-| 8 | **SoA memory layout** | GPU storage | ⚠️ Enhancement | Current AoS (array-of-struct) - would need refactor to SoA (struct-of-array) for optimal memory coalescing |
-
-**Note**: SoA (Structure of Arrays) would improve memory coalescing for vector operations. Requires significant refactor of Metal/CUDA buffer management.
-| 9 | **Mixed-precision compute path** | Both | ✅ Done | Metal: FP16 kernels done. CUDA: FAISS supports multiple dtypes. Full dtype coverage in `docs/performance.md` |
-
-**Note**: Mixed-precision (FP16 storage + FP32 compute) is implemented for Metal. CUDA FAISS handles dtype conversion internally.
-| 10 | **Kernel occupancy optimization** | Metal | ✅ Done | `internal/gpu/metal/metal_gpu_optimized.go:131-182` — existing occupancy |
-| 11 | **GPU profiling instrumentation** | Metrics | ✅ Done | `internal/metrics/gpu_metrics.go` — GPU metrics exporter with Prometheus integration |
-
-**Evidence**: GPU metrics infrastructure exists in `internal/metrics/gpu_metrics.go:1-157` with dedicated HTTP server, latency histograms, and operation counters.
+### Files to Modify
+- `internal/store/` — New `embedding/` package
+- `internal/ml/` — Extend ONNX integration
+- `cmd/cli/` — Add `embed` command
 
 ---
 
-## 📋 Backlog (Future Considerations)
+## Part 5: Hybrid Search (Vector + BM25) 🟢 HIGH VALUE
 
-### 4. Native Go GPU Kernels — Replace FAISS Dependency
+**Comparable to**: Weaviate hybrid search, Qdrant hybrid
 
-**Status**: ✅ EVALUATED (2026-03-29)
+### Rationale
+Hybrid search combining dense vectors with sparse BM25 dramatically improves recall for text search. Longbow has BM25 infrastructure — needs tighter integration.
 
-After evaluation, **recommend KEEPING FAISS** for production use. See rationale below.
+### Implementation Plan
 
-| Aspect | Current State | Target State |
-|--------|---------------|--------------|
-| **FAISS** | CGO bindings to `libfaiss` and `libfaiss_gpu` | Keep as-is |
-| **CUDA** | Depends on FAISS C++ library | Continue using FAISS |
-| **Build** | Requires `faiss` + `cudart` + `cublas` linking | Keep complex build |
-| **Cross-compile** | Complex C++ toolchain | Use cross-compile flags |
+- [ ] **5.1** Add unified search API accepting both vector and text queries
+- [ ] **5.2** Implement reciprocal rank fusion (RRF) for combining results
+- [ ] **5.3** Create learned weight configuration (auto-tune vector vs text weights)
+- [ ] **5.4** Add cross-encoder reranking for hybrid result reordering
+- [ ] **5.5** Benchmark hybrid vs pure vector for various query types
 
-**Evaluation findings**:
-
-| Option | Status | Notes |
-|--------|--------|-------|
-| **FAISS (current)** | ✅ Keep | Production-ready, well-tested, full index type support |
-| **cuVS (NVIDIA)** | ❌ Not viable | Requires cuDNN/cuVS installation, same C++ complexity |
-| **kelindar/search** | ⚠️ Limited | Pure Go, uses llama.cpp, for embedded/small scale |
-| **cudago** | ⚠️ Early | Pure Go CUDA, insufficient vector search features |
-| **go-cuda-toolkit** | ⚠️ Early | Driver API only, no high-level index abstractions |
-
-**Why keep FAISS**:
-1. **Mature**: 20+ years of development, battle-tested in production
-2. **Complete**: IVF-Flat, IVF-PQ, HNSW, DiskANN all implemented
-3. **Performant**: Hand-tuned CUDA kernels, Tensor Core support
-4. **Supported**: Active maintenance by NVIDIA community
-5. **Risk**: Replacing would introduce significant integration risk
-
-**Alternative consideration**:
-- For **embedded/edge** use cases: Consider `kelindar/search` (pure Go, llama.cpp)
-- For **serverless**: Keep FAISS, simplify builds with Docker multi-stage
-
-**Recommendation**: Close as "not pursuing" — maintain FAISS for CUDA backend.
+### Files to Modify
+- `internal/store/hybrid_search.go` — Extend hybrid API
+- `internal/store/bm25_inverted_index.go` — BM25 integration
+- `internal/store/global_search.go` — RRF implementation
 
 ---
 
-- Final regression test for full matrix (Med priority)
+## Part 6: GPU-Accelerated Search Enhancement 🟢 HIGH VALUE
+
+**Comparable to**: Milvus GPU indexes, Zilliz Cloud
+
+### Rationale
+Milvus leads with GPU-accelerated search. Longbow has Metal/CUDA but needs production GPU indexing.
+
+### Implementation Plan
+
+- [ ] **6.1** Implement GPU-based HNSW graph construction
+- [ ] **6.2** Add GPU-accelerated batch distance calculations (CUDA kernels)
+- [ ] **6.3** Create GPU memory pool with explicit allocation
+- [ ] **6.4** Add multi-GPU support (CUDA aware, peer memory access)
+- [ ] **6.5** Benchmark GPU vs CPU for various batch sizes
+
+### Files to Modify
+- `internal/gpu/cuda/` — CUDA HNSW kernels
+- `internal/gpu/metal/` — Metal HNSW kernels  
+- `internal/store/hnsw_gpu.go` — GPU orchestration
 
 ---
 
-**Last Updated**: 2026-03-30
+## Part 7: Disk-Based Indexing (Beyond RAM) 🟢 HIGH VALUE
+
+**Comparable to**: LanceDB disk-based IVF-PQ, Milvus DiskANN
+
+### Rationale
+LanceDB's disk-based indexing enables billion-vector datasets on limited RAM. Longbow's tiered storage needs index-aware tiering.
+
+### Implementation Plan
+
+- [ ] **7.1** Implement mmap-based vector storage for disk-resident vectors
+- [ ] **7.2** Create disk-optimized HNSW (Graphgeons/DiskANN-style)
+- [ ] **7.3** Add SSD-tier caching for graph navigation
+- [ ] **7.4** Implement hybrid RAM+disk search (search RAM graph, fetch disk vectors)
+- [ ] **7.5** Add I/O scheduling to maximize SSD throughput
+
+### Files to Modify
+- `internal/store/disk_vector_store.go` — Extend for index-aware storage
+- `internal/store/arrow_hnsw.go` — Disk-backed graph
+- `internal/storage/` — SSD-optimized I/O
 
 ---
 
-## 5. Benchmark Run Results (2026-03-30) ✅ COMPLETE
+## Part 8: Automatic Data Versioning 🟡 MEDIUM PRIORITY
 
-**Status**: COMPLETE (2026-03-30)
+**Comparable to**: LanceDB automatic versioning
 
-Ran comprehensive benchmarks for CPU and Metal modes covering:
+### Rationale
+LanceDB's automatic versioning enables time-travel queries. Longbow can leverage its existing snapshot infrastructure.
 
-| Test | Data Types | Dimensions | Counts | Status |
-|------|------------|------------|--------|--------|
-| Ingest | float32, int32, uint32, complex128, turboquant | 128, 384 | 1k-15k | ✅ Done |
-| Search (Dense/Hybrid/Filtered/ByID) | All dtypes | 128, 384 | 1k-15k | ✅ Done |
-| Deletion | float32 | 128, 384 | 1k, 10k | ✅ Done |
-| GraphRAG | float32 | 128 | 1k | ✅ Done |
-| DoExchange | float32 | 128 | 1k | ✅ Done |
-| Cluster Search | float32 | 128 | 1k | ✅ Done |
+### Implementation Plan
 
-**Key Findings**:
+- [ ] **8.1** Add version metadata to vector records (timestamp, version number)
+- [ ] **8.2** Implement time-travel queries (query historical state)
+- [ ] **8.3** Create version retention policies (auto-expire old versions)
+- [ ] **8.4** Add branch/merge semantics for experimental datasets
+- [ ] **8.5** API for listing and comparing versions
 
-| Metric | CPU (128dim, 1k) | CPU (128dim, 10k) | Metal (128dim, 10k) |
-|--------|------------------|-------------------|---------------------|
-| Ingest (vec/s) | 607K | 1.5M | 629K |
-| Search QPS | 3,315 | 2,126 | 797 |
-| Search P50 | 0.30ms | 0.38ms | 0.91ms |
-
-**Documentation**: `docs/performance.md` (freshly generated)
+### Files to Modify
+- `internal/store/dataset.go` — Version metadata
+- `internal/store/store_persistence.go` — Version-aware snapshots
+- `cmd/cli/` — Add `version` commands
 
 ---
 
-## 6. Namespace Support Investigation (2026-03-30) 🔴 CRITICAL
+## Part 9: Enterprise Backup & Disaster Recovery 🟡 MEDIUM PRIORITY
 
-**Status**: ✅ COMPLETE (2026-03-30)
+**Comparable to**: Pinecone snapshots, Milvus backup
 
-### Completed Fixes
+### Rationale
+Enterprise requires point-in-time recovery. Longbow needs comprehensive backup/restore beyond current snapshots.
 
-| Issue | Status | Location |
-|-------|--------|----------|
-| DeleteNamespace doesn't check for datasets | ✅ Fixed | `internal/store/namespace.go:108-130` |
-| AddDataset/RemoveDataset not called on dataset create/delete | ✅ Fixed | `internal/store/store.go:381-387`, `store_actions.go:354-356` |
-| No race condition protection | ✅ Fixed | `internal/store/namespace.go` - proper locking |
-| DeleteDataset doesn't notify namespace | ✅ Fixed | `internal/store/store_actions.go:354-356` |
+### Implementation Plan
 
-### Implementation Summary
+- [ ] **9.1** Add incremental backup (capture WAL deltas)
+- [ ] **9.2** Implement cross-region replication for disaster recovery
+- [ ] **9.3** Create backup verification (checksum validation)
+- [ ] **9.4** Add point-in-time recovery API
+- [ ] **9.5** Implement backup scheduling and retention policies
 
-#### Subtask 1: Fix Namespace-Dataset Linkage (P0) ✅
-
-- [x] **1.1** Update `store.go:getOrCreateDataset()` to call `ns.AddDataset()` when a dataset is created
-- [x] **1.2** Update `store_actions.go:delete-dataset` handler to call `ns.RemoveDataset()` when a dataset is deleted
-- [x] **1.3** Add proper namespace lookup from dataset name (parse namespaced path)
-
-#### Subtask 2: Fix Namespace Deletion (P0) ✅
-
-- [x] **2.1** Update `DeleteNamespace()` to check `DatasetCount() > 0` before deletion
-- [x] **2.2** Return clear error: "cannot delete namespace with existing datasets"
-
-#### Subtask 3: Fix Race Conditions (P1) ✅
-
-- [x] **3.1** Add write lock around check-and-delete in DeleteNamespace
-- [x] **3.2** Added proper locking order (nsManager.mu then ns.mu)
-
-#### Subtask 4: API & SDK Updates (P2) ✅
-
-- [x] **4.1** Add `ListDatasetsInNamespace` API endpoint
-- [x] **4.3** Update Python SDK with `list_datasets_in_namespace()` method
-- [x] **4.4** Added CLI command `list-datasets-in-namespace`
-
-#### Subtask 5: Documentation (P3) ✅
-
-- [x] Updated this document with completion status
-
-### Code References
-
-| File | Issue |
-|------|-------|
-| `internal/store/namespace.go:108-125` | DeleteNamespace missing dataset check |
-| `internal/store/store.go:352-382` | getOrCreateDataset no namespace linkage |
-| `internal/store/store_actions.go:322-358` | delete-dataset no namespace notification |
-| `internal/store/servers.go:275-286` | handleDeleteNamespace handler |
-
-### Testing Strategy
-
-1. Unit tests for each component
-2. Integration tests for namespace/dataset lifecycle
-3. Concurrent deletion tests (goroutines creating/deleting simultaneously)
-4. Multi-node tests (if distributed)
+### Files to Modify
+- `internal/store/store_persistence.go` — Incremental backup
+- `internal/store/replication.go` — Cross-region support
+- `cmd/cli/` — Add `backup`/`restore` commands
 
 ---
 
-## 7. Known Issues & Recommendations
+## Part 10: Fine-Grained RBAC & Audit Logging 🟡 MEDIUM PRIORITY
 
-### Unified Benchmark Script Issues ✅ FIXED
+**Comparable to**: Milvus RBAC, Pinecone API keys
 
-| Issue | Severity | Status |
-|-------|----------|--------|
-| Python SDK import detection | Medium | ✅ Fixed - bench-tool now preferred |
-| Metal mode bench-tool execution | Medium | Works - verified |
-| Deletion test namespace cleanup | Low | ✅ Fixed - drop_dataset() added |
+### Rationale
+Enterprise requires role-based access control. Longbow has basic auth — needs permission tiers.
 
-### Recommendations
+### Implementation Plan
 
-1. **Implement namespace-dataset linkage** - Critical fix per Section 6
-2. **Fix namespace deletion** - Add dataset count check before delete
-3. **Add race condition protection** - Proper locking for namespace ops
-4. **Expand dimension coverage**: Add 768, 1536 dimension tests
-5. **Add multi-node cluster testing**: Scripts for Ancalagon/Linux cluster testing
+- [ ] **10.1** Define roles (admin, read-write, read-only, ingest-only)
+- [ ] **10.2** Implement permission checks on dataset/namespace operations
+- [ ] **10.3** Add API key management with scopes
+- [ ] **10.4** Create comprehensive audit logging (who did what, when)
+- [ ] **10.5** Add SSO/OAuth integration support
 
-All HIGH PRIORITY items complete.
+### Files to Modify
+- `internal/security/` — Extend auth middleware
+- `internal/security/audit.go` — Enhanced audit
+- `cmd/longbow/` — RBAC config
+
+---
+
+## Part 11: GraphQL API Alternative 🟢 HIGH VALUE
+
+**Comparable to**: Weaviate GraphQL
+
+### Rationale
+GraphQL is preferred by frontend developers. Longbow's REST/gRPC could be supplemented with GraphQL.
+
+### Implementation Plan
+
+- [ ] **11.1** Design GraphQL schema for vector operations
+- [ ] **11.2** Implement GraphQL resolver layer over existing store
+- [ ] **11.3** Add subscription support for real-time updates
+- [ ] **11.4** Create GraphQL playground (like Weaviate console)
+- [ ] **11.5** Benchmark GraphQL vs REST/gRPC for common queries
+
+### Files to Modify
+- `cmd/longbow/` — New GraphQL server
+- `internal/api/graphql/` — GraphQL schema and resolvers
+
+---
+
+## Part 12: OpenTelemetry Distributed Tracing 🔴 HIGH PRIORITY
+
+**Comparable to**: Leading observability standards
+
+### Rationale
+Production debugging requires distributed tracing across nodes. Longbow has metrics — needs tracing.
+
+### Implementation Plan
+
+- [ ] **12.1** Add OpenTelemetry tracing to all critical paths
+- [ ] **12.2** Implement trace propagation across nodes (W3C format)
+- [ ] **12.3** Create span attributes for search, ingest, replication
+- [ ] **12.4** Add trace-based performance profiling
+- [ ] **12.5** Integrate with Jaeger/Zipkin/Tempo
+
+### Files to Modify
+- `internal/telemetry/` — Extend tracing
+- `internal/store/` — Add spans to hot paths
+- `internal/flight/` — Trace propagation
+
+---
+
+## Part 13: Geo-Spatial Search 🟢 HIGH VALUE
+
+**Comparable to**: Qdrant geo filters
+
+### Rationale
+Location-based vector search enables geo-recommendations. Not currently supported.
+
+### Implementation Plan
+
+- [ ] **13.1** Add geo-point vector type (lat, lon as vector)
+- [ ] **13.2** Implement geo-distance functions (Haversine, approximate)
+- [ ] **13.3** Create geo-bounded search (within radius, polygon)
+- [ ] **13.4** Add geo-index for fast filtering
+- [ ] **13.5** Combine geo-filter with vector similarity
+
+### Files to Modify
+- `internal/store/vector_types.go` — Geo types
+- `internal/store/distance_resolvers.go` — Geo distances
+- `internal/store/filters.go` — Geo filters
+
+---
+
+## Part 14: Time-Travel & Temporal Queries 🟡 MEDIUM PRIORITY
+
+**Comparable to**: Time-series awareness
+
+### Rationale
+Temporal filtering (query vectors at specific times) is key for temporal ML apps.
+
+### Implementation Plan
+
+- [ ] **14.1** Add timestamp metadata to all vectors
+- [ ] **14.2** Implement temporal index for fast time-range queries
+- [ ] **14.3** Create "as-of" queries (what did this vector look like at time T)
+- [ ] **14.4** Add sliding window search (last N time units)
+- [ ] **14.5** Implement delete-by-time (tombstones with TTL)
+
+### Files to Modify
+- `internal/store/vector_clock.go` — Timestamp handling
+- `internal/store/memory.go` — Temporal indexes
+- `internal/store/filters.go` — Temporal filters
+
+---
+
+## Part 15: Range Search (Vector Similarity Threshold) 🟢 HIGH VALUE
+
+**Comparable to**: Approximate nearest neighbors with radius
+
+### Rationale
+Range queries (all vectors within similarity threshold) complement top-k for clustering/duplicates.
+
+### Implementation Plan
+
+- [ ] **15.1** Implement range search API (similarity > threshold)
+- [ ] **15.2** Add range index for efficient threshold queries
+- [ ] **15.3** Create "find duplicates" using range search
+- [ ] **15.4** Benchmark range vs top-k for various thresholds
+- [ ] **15.5** Add range search to distributed search path
+
+### Files to Modify
+- `internal/store/sharded_hnsw.go` — Range search
+- `internal/store/global_search.go` — Distributed range
+- `internal/query/` — Range query API
+
+---
+
+## Part 16: Learned Indexes (ML-Based Index Selection) 🟡 MEDIUM PRIORITY
+
+**Comparable to**: Emerging research
+
+### Rationale
+Static index parameters (M, efConstruction) may be suboptimal. ML can predict best index per query.
+
+### Implementation Plan
+
+- [ ] **16.1** Create index performance predictor model
+- [ ] **16.2** Implement query → index mapping (choose HNSW vs IVF-PQ per query)
+- [ ] **16.3** Add runtime index adaptation (rebuild with better params)
+- [ ] **16.4** Benchmark learned vs fixed index selection
+- [ ] **16.5** Add index recommendation API
+
+### Files to Modify
+- `internal/store/` — New `learned_index/` package
+- `internal/query/` — Index selector
+
+---
+
+## Part 17: Streaming & Real-Time Updates 🟡 MEDIUM PRIORITY
+
+**Comparable to**: Change streams
+
+### Rationale
+Real-time ML pipelines need streaming vector updates. Longbow should emit change events.
+
+### Implementation Plan
+
+- [ ] **17.1** Implement change data capture (CDC) for vector operations
+- [ ] **17.2** Create WebSocket subscription for real-time updates
+- [ ] **17.3** Add Kafka/Pulsar export for event-driven pipelines
+- [ ] **17.4** Implement optimistic concurrent updates
+- [ ] **17.5** Add streaming aggregation (moving average vectors)
+
+### Files to Modify
+- `internal/store/` — CDC infrastructure
+- `internal/flight/` — Streaming subscriptions
+- `cmd/longbow/` — Export connectors
+
+---
+
+## Part 18: Federated Search (Cross-Collection) 🟡 MEDIUM PRIORITY
+
+**Comparable to**: Cross-index queries
+
+### Rationale
+Enterprise data spans multiple datasets. Federated search queries across collections.
+
+### Implementation Plan
+
+- [ ] **18.1** Add collection/dataset registry for discovery
+- [ ] **18.2** Implement federated query router
+- [ ] **18.3** Create cross-collection result merging (RRF)
+- [ ] **18.4** Add collection routing rules (tag-based)
+- [ ] **18.5** Benchmark federated vs single-collection
+
+### Files to Modify
+- `internal/store/global_search.go` — Federated routing
+- `internal/sharding/` — Collection registry
+
+---
+
+## Part 19: Semantic Query Cache 🟡 MEDIUM PRIORITY
+
+**Comparable to**: Query understanding, result reuse
+
+### Rationale
+Similar queries return similar results. Caching semantic similarity reduces costs.
+
+### Implementation Plan
+
+- [ ] **19.1** Implement query embedding cache (LRU)
+- [ ] **19.2** Add result caching with similarity-based invalidation
+- [ ] **19.3** Create cache warming for popular queries
+- [ ] **19.4** Add cache metrics (hit rate, latency improvement)
+- [ ] **19.5** Implement distributed cache (Redis-compatible)
+
+### Files to Modify
+- `internal/store/search_pool.go` — Add cache layer
+- `internal/cache/` — New cache package
+- `internal/metrics/` — Cache metrics
+
+---
+
+## Part 20: Developer Experience & Documentation 🟢 HIGH VALUE
+
+**Comparable to**: Weaviate/Chromadb DX
+
+### Rationale
+Developer experience differentiates adoption. Longbow needs polished docs, examples, and tooling.
+
+### Implementation Plan
+
+- [ ] **20.1** Create comprehensive API documentation (OpenAPI/Swagger)
+- [ ] **20.2** Add interactive API explorer (web UI for testing)
+- [ ] **20.3** Implement language-specific SDK generators (Python, JS, Go)
+- [ ] **20.4** Create example applications (RAG, recommendation, similarity search)
+- [ ] **20.5** Add benchmarking playground for parameter tuning
+
+### Files to Modify
+- `docs/` — Comprehensive docs
+- `cmd/longbow/` — API explorer UI
+- `client/` — SDK enhancements
+
+---
+
+## Priority Matrix
+
+| Part | Feature | Priority | Effort | Impact |
+|------|---------|----------|--------|--------|
+| 1 | Serverless Auto-Scaling | 🔴 HIGH | High | High |
+| 2 | Enhanced Multi-Tenancy | 🔴 HIGH | Medium | High |
+| 3 | Rich Payload Filtering | 🟡 MEDIUM | Medium | High |
+| 4 | Built-in Vectorization | 🟡 MEDIUM | High | Medium |
+| 5 | Hybrid Search (Vector+BM25) | 🟢 HIGH | Medium | High |
+| 6 | GPU-Accelerated Search | 🟢 HIGH | High | High |
+| 7 | Disk-Based Indexing | 🟢 HIGH | High | High |
+| 8 | Automatic Data Versioning | 🟡 MEDIUM | Medium | Medium |
+| 9 | Backup & Disaster Recovery | 🟡 MEDIUM | Medium | High |
+| 10 | Fine-Grained RBAC | 🟡 MEDIUM | Medium | High |
+| 11 | GraphQL API | 🟢 HIGH | Medium | High |
+| 12 | OpenTelemetry Tracing | 🔴 HIGH | Medium | High |
+| 13 | Geo-Spatial Search | 🟢 HIGH | Medium | Medium |
+| 14 | Time-Travel Queries | 🟡 MEDIUM | Medium | Medium |
+| 15 | Range Search | 🟢 HIGH | Low | High |
+| 16 | Learned Indexes | 🟡 MEDIUM | High | Medium |
+| 17 | Streaming & Real-Time | 🟡 MEDIUM | Medium | Medium |
+| 18 | Federated Search | 🟡 MEDIUM | Medium | Medium |
+| 19 | Semantic Query Cache | 🟡 MEDIUM | Low | High |
+| 20 | Developer Experience | 🟢 HIGH | Medium | High |
+
+---
+
+## Quick Wins (Low Effort, High Impact)
+
+1. **Range Search** (Part 15) — Simple API addition, high value
+2. **Semantic Cache** (Part 19) — Cache layer, immediate latency wins
+3. **OpenTelemetry** (Part 12) — Existing telemetry package, needs tracing
+4. **RBAC Enhancement** (Part 10) — Extend existing auth
+
+---
+
+## Dependencies & References
+
+### Codebase References
+
+| Component | Files |
+|-----------|-------|
+| Core Vector Store | `internal/store/arrow_hnsw.go`, `internal/store/sharded_hnsw.go` |
+| Storage Backends | `internal/store/disk_vector_store.go`, `internal/store/mem_vector_store.go` |
+| Index Types | `internal/store/ivf_pq_index.go`, `internal/store/turboquant.go` |
+| Distributed | `internal/sharding/ring.go`, `internal/mesh/gossip.go` |
+| Search | `internal/store/global_search.go`, `internal/store/hybrid_search.go` |
+| Metrics | `internal/metrics/`, `internal/telemetry/` |
+| Security | `internal/security/audit.go`, `internal/security/auth.go` |
+
+### External References
+
+- **Pinecone**: Serverless, namespaces, metadata filtering
+- **Milvus**: GPU indexes, DiskANN, enterprise scale
+- **Qdrant**: Payload filtering, Rust performance, quantization
+- **Weaviate**: Built-in vectorization, GraphQL, hybrid search
+- **Chroma**: Developer experience, embedded
+- **LanceDB**: Zero-copy, disk-based, automatic versioning
+
+---
+
+## Conclusion
+
+This roadmap positions Longbow to compete with leading vector databases through a combination of performance optimizations (Parts 5-7, 15), enterprise features (Parts 2, 9-10, 12), and developer experience (Parts 4, 11, 20).
+
+**Recommended Focus**:
+1. **Immediate**: Parts 12, 15, 19 (tracing, range search, cache) — quick wins
+2. **Q2 2026**: Parts 1, 2, 5 (serverless, multi-tenancy, hybrid) — competitive parity
+3. **Q3 2026**: Parts 6, 7, 11 (GPU, disk indexing, GraphQL) — differentiation
+4. **Q4 2026**: Parts 16, 17, 18 (learned indexes, streaming, federated) — innovation
+
+---
+
+*Last Updated: 2026-03-30*

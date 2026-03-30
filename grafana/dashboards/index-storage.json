@@ -1,0 +1,209 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {"type": "datasource", "uid": "grafana"},
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0},
+      "id": 1,
+      "panels": [],
+      "title": "Vector Index",
+      "type": "row"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 1},
+      "id": 2,
+      "targets": [{"expr": "longbow_vector_index_size", "legendFormat": "{{dataset}}", "refId": "A"}],
+      "title": "Vector Index Size",
+      "type": "stat"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 1},
+      "id": 3,
+      "targets": [{"expr": "longbow_hnsw_node_count", "legendFormat": "{{dataset}}", "refId": "A"}],
+      "title": "HNSW Node Count",
+      "type": "stat"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 4, "w": 6, "x": 12, "y": 1},
+      "id": 4,
+      "targets": [{"expr": "longbow_hnsw_graph_height", "legendFormat": "Height", "refId": "A"}],
+      "title": "Graph Height",
+      "type": "stat"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 4, "w": 6, "x": 18, "y": 1},
+      "id": 5,
+      "targets": [{"expr": "longbow_hnsw_average_degree", "legendFormat": "Avg Degree", "refId": "A"}],
+      "title": "Average Degree",
+      "type": "stat"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 5},
+      "id": 6,
+      "panels": [],
+      "title": "Index Operations",
+      "type": "row"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 6},
+      "id": 7,
+      "targets": [
+        {"expr": "histogram_quantile(0.95, sum(rate(longbow_index_job_latency_seconds_bucket[5m])) by (le))", "legendFormat": "P95", "refId": "A"},
+        {"expr": "histogram_quantile(0.99, sum(rate(longbow_index_job_latency_seconds_bucket[5m])) by (le))", "legendFormat": "P99", "refId": "B"}
+      ],
+      "title": "Index Job Latency",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 6},
+      "id": 8,
+      "targets": [{"expr": "longbow_index_queue_depth", "refId": "A"}],
+      "title": "Index Queue Depth",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 8, "x": 16, "y": 6},
+      "id": 9,
+      "targets": [{"expr": "rate(longbow_hnsw_insert_ops_total[1m])", "legendFormat": "{{type}}", "refId": "A"}],
+      "title": "HNSW Insert Rate",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 12},
+      "id": 10,
+      "panels": [],
+      "title": "Index Build",
+      "type": "row"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 12, "x": 0, "y": 13},
+      "id": 11,
+      "targets": [{"expr": "histogram_quantile(0.99, sum(rate(longbow_index_build_latency_seconds_bucket[5m])) by (le))", "legendFormat": "P99", "refId": "A"}],
+      "title": "Index Build Latency P99",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 12, "x": 12, "y": 13},
+      "id": 12,
+      "targets": [{"expr": "rate(longbow_hnsw_bulk_vectors_processed_total[1m])", "legendFormat": "Vectors/s", "refId": "A"}],
+      "title": "Bulk Index Throughput",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 19},
+      "id": 13,
+      "panels": [],
+      "title": "WAL Persistence",
+      "type": "row"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 20},
+      "id": 14,
+      "targets": [{"expr": "rate(longbow_wal_writes_total[1m])", "legendFormat": "Writes/s", "refId": "A"}],
+      "title": "WAL Write Rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 20},
+      "id": 15,
+      "targets": [{"expr": "histogram_quantile(0.99, sum(rate(longbow_wal_fsync_duration_seconds_bucket[5m])) by (le))", "legendFormat": "P99", "refId": "A"}],
+      "title": "WAL Fsync Duration P99",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 8, "x": 16, "y": 20},
+      "id": 16,
+      "targets": [
+        {"expr": "avg(longbow_wal_batch_size)", "legendFormat": "Avg Batch", "refId": "A"},
+        {"expr": "longbow_wal_pending_entries", "legendFormat": "Pending", "refId": "B"}
+      ],
+      "title": "WAL Batch & Pending",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 26},
+      "id": 17,
+      "panels": [],
+      "title": "Compaction",
+      "type": "row"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 12, "x": 0, "y": 27},
+      "id": 18,
+      "targets": [{"expr": "rate(longbow_compaction_operations_total[1m])", "legendFormat": "Ops/s", "refId": "A"}],
+      "title": "Compaction Rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 12, "x": 12, "y": 27},
+      "id": 19,
+      "targets": [{"expr": "rate(longbow_compaction_auto_triggers_total[1m])", "legendFormat": "Auto Triggers/s", "refId": "A"}],
+      "title": "Auto Compaction Triggers",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 38,
+  "tags": ["longbow", "index", "storage"],
+  "templating": {
+    "list": [
+      {
+        "current": {"selected": false, "text": "Prometheus", "value": "Prometheus"},
+        "hide": 0,
+        "includeAll": false,
+        "label": "Data Source",
+        "multi": false,
+        "name": "datasource",
+        "options": [],
+        "query": "prometheus",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "type": "datasource"
+      }
+    ]
+  },
+  "time": {"from": "now-1h", "to": "now"},
+  "timepicker": {},
+  "timezone": "",
+  "title": "Longbow Index & Storage",
+  "uid": "longbow-index-storage",
+  "version": 1,
+  "weekStart": ""
+}

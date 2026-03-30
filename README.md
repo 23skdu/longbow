@@ -78,6 +78,7 @@ Longbow supports the following vector data types with optimized SIMD kernels:
 | Data Type | Dimensions Supported | Notes |
 |-----------|---------------------|-------|
 | **float32** | 128, 256, 384, 768, 1024, 1536, 2048, 3072 | Full SIMD optimization |
+| **float16** | 128, 256, 384, 768, 1024, 1536, 2048, 3072 | Metal GPU FP16 kernels |
 | **float64** | 128, 256, 384, 768, 1024, 1536, 2048, 3072 | Full SIMD optimization |
 | **int8** | 128, 256, 384, 768, 1024, 1536, 2048, 3072 | AVX2/NEON optimized |
 | **int16** | 128, 256, 384, 768, 1024, 1536, 2048, 3072 | AVX2/NEON optimized |

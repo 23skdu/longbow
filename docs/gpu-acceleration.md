@@ -204,6 +204,43 @@ total, free, used := pool.GetUsedMemory(), pool.GetTotalMemory()
 log.Printf("GPU Memory: %d used / %d total", used, total)
 ```
 
+## Recent Enhancements (v0.1.8)
+
+### FP16 (Half-Precision) Metal Kernels
+
+Added in v0.1.8-rc1: Half-precision Metal compute shaders for memory-bandwidth-bound workloads:
+
+- `compute_l2_distances_fp16` - L2 distance with FP16 storage, FP32 accumulation
+- `compute_cosine_similarity_fp16` - Cosine similarity with FP16
+- `compute_dot_product_fp16` - Dot product with FP16
+
+Benefits: ~50% memory reduction, 2x faster for memory-bandwidth-bound operations.
+
+### SIMD/Warp-Level Reductions
+
+Added in v0.1.8-rc1: Warp-level parallel reductions using Apple Silicon's 32-thread warps:
+
+- `compute_l2_distances_warp` - Uses `simd_shuffle_down` for efficient warp reductions
+- `compute_l2_and_topk_warp` - Fused distance + top-k kernel
+
+Benefits: Reduced memory traffic, improved occupancy on Apple Silicon GPUs.
+
+### Multiple Index Types (CUDA)
+
+CUDA backend via FAISS supports multiple index types:
+
+- **Flat** - Brute-force exact search (fastest for small datasets)
+- **IVF-Flat** - Inverted File with flat quantization (balanced)
+- **IVF-PQ** - IVF with Product Quantization (compressed, large datasets)
+
+### Memory Pooling
+
+Cross-backend GPU memory pooling implemented in `internal/gpu/memory/memory_pool.go`:
+
+- Small buffer pool (≤64KB) for frequent allocations
+- Large buffer pool for bulk operations
+- Automatic hit/miss tracking
+
 ## Performance Considerations
 
 ### When to Use GPU
@@ -288,11 +325,18 @@ See [Performance Documentation](performance.md) for detailed benchmarks comparin
 
 ## Future Enhancements
 
-- [ ] GPU memory management and limits
+- [ ] GPU-accelerated index building (HNSW construction)
 - [ ] Multi-GPU support for large indexes
-- [ ] GPU-accelerated index building
-- [ ] Performance metrics and monitoring
-- [ ] Configurable hybrid search parameters
+- [ ] cuVS/Tensor Core paths for CUDA FP16
+- [ ] SoA memory layout optimization
+
+## Changelog
+
+| Version | Changes |
+|---------|---------|
+| v0.1.8 | FP16 Metal kernels, SIMD/warp reductions, memory pooling, IVF-PQ |
+| v0.1.7 | Hybrid GPU/CPU search, circuit breaker |
+| v0.1.6 | Metal GPU support, CUDA FAISS integration |
 
 ## References
 

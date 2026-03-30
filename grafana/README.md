@@ -2,50 +2,61 @@
 
 This directory contains the necessary configuration for monitoring Longbow with Prometheus and Grafana.
 
-## Files
+## Dashboards
 
-- `dashboards/longbow.json`: A comprehensive Grafana dashboard.
-- `rules.yml`: Prometheus alerting and recording rules.
+Longbow now has **6 focused dashboards** for better organization and performance:
+
+| Dashboard | UID | Description |
+|-----------|-----|-------------|
+| [Overview](dashboards/overview.json) | `longbow-overview` | High-level cluster health, key metrics at a glance |
+| [Search & Query](dashboards/search-query.json) | `longbow-search-query` | gRPC operations, search latency, connection pools |
+| [Index & Storage](dashboards/index-storage.json) | `longbow-index-storage` | HNSW, vectors, WAL, compaction |
+| [Memory & Performance](dashboards/memory-performance.json) | `longbow-memory-performance` | Memory, SIMD, GPU acceleration |
+| [Cluster & Replication](dashboards/cluster-replication.json) | `longbow-cluster-replication` | Gossip, sharding, quorum, global search |
+| [Advanced Features](dashboards/advanced.json) | `longbow-advanced` | Hybrid search, pipelines, HNSW adaptive, quantization |
+
+### Legacy Dashboard
+
+- `dashboards/longbow.json`: Original monolithic dashboard (3137 lines) - **deprecated**
 
 ## Metrics Overview
 
-Longbow exposes 100+ metrics on port `:9090/metrics`. Key metric categories include:
+Longbow exposes **500+ metrics** on port `:9090/metrics`. Key metric categories:
 
 ### Flight Operations
-
-Metrics tracking the performance and volume of `DoPut` and `DoGet` operations.
-
-- `longbow_flight_operations_total`: Request counts by method and status.
-- `longbow_flight_duration_seconds`: Response time histograms.
-- `longbow_flight_rows_processed_total`: Throughput measured in rows.
+- `longbow_flight_ops_total`: Request counts by method and status
+- `longbow_flight_duration_seconds`: Response time histograms
+- `longbow_flight_rows_processed_total`: Throughput in rows
 
 ### Vector Index (HNSW)
+- `longbow_hnsw_search_duration_seconds`: k-NN search latency
+- `longbow_index_queue_depth`: Async indexing lag
+- `longbow_hnsw_nodes_visited`: Search complexity
 
-Metrics related to the performance of vector searches and background indexing.
+### Memory & Performance
+- `longbow_memory_heap_in_use_bytes`: Heap memory
+- `longbow_simd_operations_total`: SIMD acceleration
+- `longbow_gpu_*`: GPU metrics
 
-- `longbow_vector_search_latency_seconds`: k-NN search latency distribution.
-- `longbow_index_queue_depth`: Lag indicator for asynchronous indexing.
-- `longbow_hnsw_nodes_visited`: Search complexity indicator.
-
-### Reliability & Lifecycle
-
-- `longbow_ipc_decode_errors_total`: Decoding failures or recovered panics.
-- `longbow_tombstones_total`: Count of active deletions.
-- `longbow_evictions_total`: Cache eviction counts.
+### Reliability
+- `longbow_evictions_total`: Cache evictions
+- `longbow_tombstones_total`: Active deletions
+- `longbow_ipc_buffer_pool_utilization`: IPC pool health
 
 ## Prometheus Rules
 
-The `rules.yml` file includes:
+`rules.yml` contains:
+- **Critical Alerts**: High search latency (>1s p99)
+- **Warning Alerts**: IPC errors, indexing lag, memory pressure
+- **Recording Rules**: Pre-calculated QPS for search/ingestion
 
-1. **Critical Alerts**: High search latency (>1s p99).
-2. **Warning Alerts**: High IPC error rates, indexing lag (>10k jobs), and memory pressure.
-3. **Recording Rules**: Pre-calculated QPS rates for search and ingestion.
+## Importing Dashboards
 
-## Grafana Dashboard
+```bash
+# Import each dashboard via Grafana UI or API
+curl -X POST http://localhost:3000/api/dashboards/import \
+  -H "Content-Type: application/json" \
+  -d @dashboards/overview.json
+```
 
-Import the `dashboards/longbow.json` file into Grafana to visualize:
-
-- **Operation Overview**: QPS and Latency for all Flight methods.
-- **Index Performance**: HNSW search latency and queue depth.
-- **Resource Usage**: Memory fragmentation and Arrow allocator stats.
-- **Error Tracking**: IPC decodes and validation failures.
+Set `${datasource}` to your Prometheus data source name when importing.

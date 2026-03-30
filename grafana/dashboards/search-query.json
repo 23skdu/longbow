@@ -1,0 +1,243 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {"type": "datasource", "uid": "grafana"},
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0},
+      "id": 1,
+      "panels": [],
+      "title": "Flight Operations",
+      "type": "row"
+    },
+    {
+      "datasource": "${datasource}",
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{"color": "green", "value": null}]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 1},
+      "id": 2,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {"calcs": ["mean"], "fields": "", "values": false},
+        "textMode": "auto"
+      },
+      "targets": [{"expr": "sum(longbow_flight_ops_total)", "refId": "A"}],
+      "title": "Total Flight Ops",
+      "type": "stat"
+    },
+    {
+      "datasource": "${datasource}",
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {"drawStyle": "line"},
+          "unit": "ops"
+        }
+      },
+      "gridPos": {"h": 6, "w": 9, "x": 6, "y": 1},
+      "id": 3,
+      "targets": [{"expr": "rate(longbow_flight_ops_total[1m])", "legendFormat": "{{action}}", "refId": "A"}],
+      "title": "Flight Operations Rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {"drawStyle": "line"},
+          "unit": "s"
+        }
+      },
+      "gridPos": {"h": 6, "w": 9, "x": 15, "y": 1},
+      "id": 4,
+      "targets": [
+        {"expr": "histogram_quantile(0.99, sum(rate(longbow_flight_duration_seconds_bucket[5m])) by (le, action))", "legendFormat": "P99 {{action}}", "refId": "A"},
+        {"expr": "histogram_quantile(0.95, sum(rate(longbow_flight_duration_seconds_bucket[5m])) by (le, action))", "legendFormat": "P95 {{action}}", "refId": "B"}
+      ],
+      "title": "Flight Latency P95/P99",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 7},
+      "id": 5,
+      "panels": [],
+      "title": "Search Performance",
+      "type": "row"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 8},
+      "id": 6,
+      "targets": [{"expr": "histogram_quantile(0.99, sum(rate(longbow_hnsw_search_duration_seconds_bucket[5m])) by (le))", "legendFormat": "P99", "refId": "A"}],
+      "title": "HNSW Search Latency P99",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 8},
+      "id": 7,
+      "targets": [{"expr": "rate(longbow_hnsw_search_ops_total[1m])", "legendFormat": "{{type}}", "refId": "A"}],
+      "title": "HNSW Search Rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 8, "x": 16, "y": 8},
+      "id": 8,
+      "targets": [{"expr": "rate(longbow_hnsw_nodes_visited[1m])", "legendFormat": "Nodes/s", "refId": "A"}],
+      "title": "HNSW Nodes Visited/s",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 14},
+      "id": 9,
+      "panels": [],
+      "title": "gRPC Connection Pool",
+      "type": "row"
+    },
+    {
+      "datasource": "${datasource}",
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 50},
+              {"color": "red", "value": 100}
+            ]
+          }
+        }
+      },
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 15},
+      "id": 10,
+      "targets": [{"expr": "longbow_flight_pool_connections_active", "legendFormat": "Active", "refId": "A"}],
+      "title": "Active Connections",
+      "type": "stat"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 15},
+      "id": 11,
+      "targets": [{"expr": "longbow_flight_stream_pool_size", "refId": "A"}],
+      "title": "Stream Pool Size",
+      "type": "stat"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 4, "w": 6, "x": 12, "y": 15},
+      "id": 12,
+      "targets": [{"expr": "histogram_quantile(0.99, sum(rate(longbow_flight_pool_wait_duration_seconds_bucket[5m])) by (le))", "legendFormat": "P99", "refId": "A"}],
+      "title": "Pool Wait P99",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 4, "w": 6, "x": 18, "y": 15},
+      "id": 13,
+      "targets": [{"expr": "longbow_flight_active_tickets", "refId": "A"}],
+      "title": "Active Tickets",
+      "type": "stat"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 19},
+      "id": 14,
+      "panels": [],
+      "title": "Data Transfer",
+      "type": "row"
+    },
+    {
+      "datasource": "${datasource}",
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {"drawStyle": "line"},
+          "unit": "Bps"
+        }
+      },
+      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 20},
+      "id": 15,
+      "targets": [
+        {"expr": "rate(longbow_flight_bytes_read_total[1m])", "legendFormat": "Read", "refId": "A"},
+        {"expr": "rate(longbow_flight_bytes_written_total[1m])", "legendFormat": "Write", "refId": "B"}
+      ],
+      "title": "Flight Bytes R/W",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 20},
+      "id": 16,
+      "targets": [{"expr": "rate(longbow_vector_access_zerocopy_total{index_type=\"zero_copy_retain\"}[1m]) / (rate(longbow_vector_access_zerocopy_total[1m]) + 1)", "legendFormat": "Zero-Copy Ratio", "refId": "A"}],
+      "title": "Zero-Copy Ratio",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 8, "x": 16, "y": 20},
+      "id": 17,
+      "targets": [{"expr": "histogram_quantile(0.99, sum(rate(longbow_doput_batch_size_bytes_bucket[5m])) by (le))", "legendFormat": "P99", "refId": "A"}],
+      "title": "DoPut Payload Size P99",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 38,
+  "tags": ["longbow", "search", "query"],
+  "templating": {
+    "list": [
+      {
+        "current": {"selected": false, "text": "Prometheus", "value": "Prometheus"},
+        "hide": 0,
+        "includeAll": false,
+        "label": "Data Source",
+        "multi": false,
+        "name": "datasource",
+        "options": [],
+        "query": "prometheus",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "type": "datasource"
+      }
+    ]
+  },
+  "time": {"from": "now-1h", "to": "now"},
+  "timepicker": {},
+  "timezone": "",
+  "title": "Longbow Search & Query",
+  "uid": "longbow-search-query",
+  "version": 1,
+  "weekStart": ""
+}

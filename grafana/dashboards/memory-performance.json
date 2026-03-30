@@ -1,0 +1,229 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {"type": "datasource", "uid": "grafana"},
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0},
+      "id": 1,
+      "panels": [],
+      "title": "Memory Usage",
+      "type": "row"
+    },
+    {
+      "datasource": "${datasource}",
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {"drawStyle": "line"},
+          "unit": "bytes"
+        }
+      },
+      "gridPos": {"h": 6, "w": 12, "x": 0, "y": 1},
+      "id": 2,
+      "targets": [
+        {"expr": "longbow_memory_heap_in_use_bytes", "legendFormat": "Heap In-Use", "refId": "A"},
+        {"expr": "longbow_arrow_memory_used_bytes", "legendFormat": "Arrow", "refId": "B"}
+      ],
+      "title": "Memory Usage",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 6, "x": 12, "y": 1},
+      "id": 3,
+      "targets": [{"expr": "longbow_memory_utilization", "refId": "A"}],
+      "title": "Memory Utilization",
+      "type": "gauge"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 6, "x": 18, "y": 1},
+      "id": 4,
+      "targets": [{"expr": "longbow_memory_fragmentation_ratio", "refId": "A"}],
+      "title": "Fragmentation Ratio",
+      "type": "gauge"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 7},
+      "id": 5,
+      "panels": [],
+      "title": "Arena & Slabs",
+      "type": "row"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 8},
+      "id": 6,
+      "targets": [
+        {"expr": "longbow_arena_allocated_bytes", "legendFormat": "Allocated", "refId": "A"}
+      ],
+      "title": "Arena Memory",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 8},
+      "id": 7,
+      "targets": [{"expr": "longbow_arena_slabs_total", "legendFormat": "Total Slabs", "refId": "A"}],
+      "title": "Total Slabs",
+      "type": "stat"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 8, "x": 16, "y": 8},
+      "id": 8,
+      "targets": [{"expr": "longbow_slab_fragmentation_ratio", "legendFormat": "Ratio", "refId": "A"}],
+      "title": "Slab Fragmentation",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 14},
+      "id": 9,
+      "panels": [],
+      "title": "Eviction",
+      "type": "row"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 12, "x": 0, "y": 15},
+      "id": 10,
+      "targets": [{"expr": "sum(rate(longbow_evictions_total[5m])) by (reason)", "legendFormat": "{{reason}}", "refId": "A"}],
+      "title": "Eviction Rate by Reason",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 6, "x": 12, "y": 15},
+      "id": 11,
+      "targets": [{"expr": "rate(longbow_eviction_rejected_queries_total[1m])", "refId": "A"}],
+      "title": "Eviction Rejections/s",
+      "type": "stat"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 6, "x": 18, "y": 15},
+      "id": 12,
+      "targets": [{"expr": "longbow_memory_backpressure_rejects_total", "refId": "A"}],
+      "title": "Backpressure Rejects",
+      "type": "stat"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 21},
+      "id": 13,
+      "panels": [],
+      "title": "SIMD Operations",
+      "type": "row"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 22},
+      "id": 14,
+      "targets": [{"expr": "rate(longbow_simd_operations_total[1m])", "legendFormat": "Ops/s", "refId": "A"}],
+      "title": "SIMD Operations Rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 22},
+      "id": 15,
+      "targets": [
+        {"expr": "rate(longbow_simd_cosine_batch_calls_total[1m])", "legendFormat": "Cosine", "refId": "A"},
+        {"expr": "rate(longbow_simd_dot_product_batch_calls_total[1m])", "legendFormat": "DotProduct", "refId": "B"}
+      ],
+      "title": "SIMD Batch Calls/s",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 8, "x": 16, "y": 22},
+      "id": 16,
+      "targets": [{"expr": "rate(longbow_batch_distance_compute_simd_used_total[1m]) / rate(longbow_batch_distance_compute_total[1m])", "legendFormat": "SIMD Usage %", "refId": "A"}],
+      "title": "SIMD Usage Ratio",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 28},
+      "id": 17,
+      "panels": [],
+      "title": "GPU Acceleration",
+      "type": "row"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 29},
+      "id": 18,
+      "targets": [{"expr": "rate(longbow_vector_search_gpu_operations_total[1m])", "legendFormat": "GPU Ops/s", "refId": "A"}],
+      "title": "GPU Search Operations/s",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 29},
+      "id": 19,
+      "targets": [{"expr": "histogram_quantile(0.99, sum(rate(longbow_vector_search_gpu_latency_seconds_bucket[5m])) by (le))", "legendFormat": "GPU P99", "refId": "A"}],
+      "title": "GPU Search Latency P99",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 8, "x": 16, "y": 29},
+      "id": 20,
+      "targets": [
+        {"expr": "longbow_gpu_memory_bytes", "legendFormat": "GPU Memory", "refId": "A"},
+        {"expr": "longbow_gpu_device_utilization_percent", "legendFormat": "Util %", "refId": "B"}
+      ],
+      "title": "GPU Memory & Utilization",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 38,
+  "tags": ["longbow", "memory", "performance", "simd", "gpu"],
+  "templating": {
+    "list": [
+      {
+        "current": {"selected": false, "text": "Prometheus", "value": "Prometheus"},
+        "hide": 0,
+        "includeAll": false,
+        "label": "Data Source",
+        "multi": false,
+        "name": "datasource",
+        "options": [],
+        "query": "prometheus",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "type": "datasource"
+      }
+    ]
+  },
+  "time": {"from": "now-1h", "to": "now"},
+  "timepicker": {},
+  "timezone": "",
+  "title": "Longbow Memory & Performance",
+  "uid": "longbow-memory-performance",
+  "version": 1,
+  "weekStart": ""
+}

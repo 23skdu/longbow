@@ -1,0 +1,296 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {"type": "datasource", "uid": "grafana"},
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0},
+      "id": 1,
+      "panels": [],
+      "title": "HNSW Adaptive Parameters",
+      "type": "row"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 4, "w": 8, "x": 0, "y": 1},
+      "id": 2,
+      "targets": [{"expr": "longbow_hnsw_adaptive_m_value", "legendFormat": "M Value", "refId": "A"}],
+      "title": "Adaptive M Value",
+      "type": "stat"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 4, "w": 8, "x": 8, "y": 1},
+      "id": 3,
+      "targets": [{"expr": "longbow_hnsw_intrinsic_dimensionality", "legendFormat": "Intrinsic Dim", "refId": "A"}],
+      "title": "Intrinsic Dimensionality",
+      "type": "stat"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 4, "w": 8, "x": 16, "y": 1},
+      "id": 4,
+      "targets": [{"expr": "rate(longbow_hnsw_adaptive_adjustments_total[1m])", "refId": "A"}],
+      "title": "Adaptive Adjustments/s",
+      "type": "stat"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 5},
+      "id": 5,
+      "panels": [],
+      "title": "HNSW Repair",
+      "type": "row"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 6},
+      "id": 6,
+      "targets": [{"expr": "rate(longbow_hnsw_repair_total[1m])", "legendFormat": "Repair/s", "refId": "A"}],
+      "title": "Repair Rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 6},
+      "id": 7,
+      "targets": [{"expr": "rate(longbow_hnsw_repaired_connections_total[1m])", "legendFormat": "Connections/s", "refId": "A"}],
+      "title": "Repaired Connections/s",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 8, "x": 16, "y": 6},
+      "id": 8,
+      "targets": [
+        {"expr": "longbow_hnsw_disconnected_components", "legendFormat": "Components", "refId": "A"},
+        {"expr": "longbow_hnsw_orphan_nodes", "legendFormat": "Orphans", "refId": "B"}
+      ],
+      "title": "Components & Orphans",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 12},
+      "id": 9,
+      "panels": [],
+      "title": "Quantization",
+      "type": "row"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 13},
+      "id": 10,
+      "targets": [{"expr": "longbow_bq_vectors_total", "refId": "A"}],
+      "title": "BQ Vectors",
+      "type": "stat"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 13},
+      "id": 11,
+      "targets": [{"expr": "longbow_hnsw_pq_compressed_bytes_total", "refId": "A"}],
+      "title": "PQ Compressed Bytes",
+      "type": "stat"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 4, "w": 6, "x": 12, "y": 13},
+      "id": 12,
+      "targets": [{"expr": "longbow_hnsw_pq_enabled", "refId": "A"}],
+      "title": "PQ Enabled",
+      "type": "gauge"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 4, "w": 6, "x": 18, "y": 13},
+      "id": 13,
+      "targets": [{"expr": "rate(longbow_hnsw_pq_training_triggered_total[1m])", "refId": "A"}],
+      "title": "PQ Training/s",
+      "type": "stat"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 17},
+      "id": 14,
+      "panels": [],
+      "title": "Pipeline Operations",
+      "type": "row"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 18},
+      "id": 15,
+      "targets": [{"expr": "rate(longbow_pipeline_operations_total[1m])", "legendFormat": "Ops/s", "refId": "A"}],
+      "title": "Pipeline Ops/sec",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 18},
+      "id": 16,
+      "targets": [{"expr": "histogram_quantile(0.99, sum(rate(longbow_pipeline_duration_seconds_bucket[5m])) by (le))", "legendFormat": "P99", "refId": "A"}],
+      "title": "Pipeline Duration P99",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 8, "x": 16, "y": 18},
+      "id": 17,
+      "targets": [
+        {"expr": "longbow_pipeline_batches_per_second", "legendFormat": "Batches/s", "refId": "A"},
+        {"expr": "longbow_pipeline_worker_utilization", "legendFormat": "Worker %", "refId": "B"}
+      ],
+      "title": "Pipeline Throughput & Workers",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 24},
+      "id": 18,
+      "panels": [],
+      "title": "Hybrid Search",
+      "type": "row"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 25},
+      "id": 19,
+      "targets": [
+        {"expr": "rate(longbow_hybrid_search_vector_total[1m])", "legendFormat": "Vector", "refId": "A"},
+        {"expr": "rate(longbow_hybrid_search_keyword_total[1m])", "legendFormat": "Keyword", "refId": "B"}
+      ],
+      "title": "Hybrid Search Rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 25},
+      "id": 20,
+      "targets": [{"expr": "longbow_hybrid_bm25_documents_indexed_total", "refId": "A"}],
+      "title": "BM25 Documents Indexed",
+      "type": "stat"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 8, "x": 16, "y": 25},
+      "id": 21,
+      "targets": [
+        {"expr": "rate(longbow_hybrid_search_cache_hits_total[1m])", "legendFormat": "Hits/s", "refId": "A"},
+        {"expr": "rate(longbow_hybrid_search_cache_misses_total[1m])", "legendFormat": "Misses/s", "refId": "B"}
+      ],
+      "title": "Hybrid Search Cache",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 31},
+      "id": 22,
+      "panels": [],
+      "title": "Filtering",
+      "type": "row"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 32},
+      "id": 23,
+      "targets": [{"expr": "histogram_quantile(0.95, sum(rate(longbow_filter_execution_duration_seconds_bucket[5m])) by (le))", "legendFormat": "P95", "refId": "A"}],
+      "title": "Filter Execution Duration P95",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 32},
+      "id": 24,
+      "targets": [{"expr": "longbow_filter_selectivity_ratio", "legendFormat": "Ratio", "refId": "A"}],
+      "title": "Filter Selectivity Ratio",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 8, "x": 16, "y": 32},
+      "id": 25,
+      "targets": [
+        {"expr": "rate(longbow_filter_evaluator_ops_total{method=\"MatchesBatchFused\"}[1m])", "legendFormat": "Fused", "refId": "A"},
+        {"expr": "rate(longbow_filter_evaluator_ops_total{method=\"MatchesBatch\"}[1m])", "legendFormat": "Batch", "refId": "B"}
+      ],
+      "title": "Filter Evaluator Ops",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 38},
+      "id": 26,
+      "panels": [],
+      "title": "Search Pools",
+      "type": "row"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 12, "x": 0, "y": 39},
+      "id": 27,
+      "targets": [
+        {"expr": "rate(longbow_search_result_pool_hits_total[1m])", "legendFormat": "Hits/s", "refId": "A"},
+        {"expr": "rate(longbow_search_result_pool_misses_total[1m])", "legendFormat": "Misses/s", "refId": "B"}
+      ],
+      "title": "Search Result Pool",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 12, "x": 12, "y": 39},
+      "id": 28,
+      "targets": [
+        {"expr": "rate(longbow_hnsw_search_pool_get_total[1m])", "legendFormat": "Gets/s", "refId": "A"},
+        {"expr": "rate(longbow_hnsw_search_pool_put_total[1m])", "legendFormat": "Puts/s", "refId": "B"}
+      ],
+      "title": "HNSW Search Pool",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 38,
+  "tags": ["longbow", "advanced", "hybrid", "pipeline", "hnsw"],
+  "templating": {
+    "list": [
+      {
+        "current": {"selected": false, "text": "Prometheus", "value": "Prometheus"},
+        "hide": 0,
+        "includeAll": false,
+        "label": "Data Source",
+        "multi": false,
+        "name": "datasource",
+        "options": [],
+        "query": "prometheus",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "type": "datasource"
+      }
+    ]
+  },
+  "time": {"from": "now-1h", "to": "now"},
+  "timepicker": {},
+  "timezone": "",
+  "title": "Longbow Advanced Features",
+  "uid": "longbow-advanced",
+  "version": 1,
+  "weekStart": ""
+}

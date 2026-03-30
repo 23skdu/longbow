@@ -17,6 +17,9 @@ const (
 // Close performs a graceful shutdown with a default timeout.
 // It is an alias for Shutdown(context.Background()) but handy for defer.
 func (s *VectorStore) Close() error {
+	if s.replicator != nil {
+		s.replicator.Stop()
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	return s.Shutdown(ctx)

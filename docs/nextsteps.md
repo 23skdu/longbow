@@ -123,7 +123,96 @@ Benchmarks covered: float32, float64, float16, int8, int16, int32, int64, uint8,
 
 ---
 
+## 🎯 Feature Parity — Milvus / Pinecone / Qdrant
+
+Missing features for parity with leading vector databases:
+
+| # | Feature | Milvus | Pinecone | Qdrant | Evidence |
+|---|---------|--------|----------|--------|----------|
+| 1 | **Multiple index types** (IVF, PQ, DiskANN) | ✅ | ✅ | ✅ | [Milvus README](https://github.com/milvus-io/milvus/blob/master/README.md) |
+| 2 | **Full-text / hybrid search** (BM25 + vector) | ✅ | ✅ | ✅ | [Qdrant QUICK_START](https://github.com/qdrant/qdrant/blob/master/docs/QUICK_START.md) |
+| 3 | **Multi-tenancy** (namespaces, tenant isolation) | ✅ | ✅ | ✅ | [Milvus RBAC PR](https://github.com/milvus-io/milvus/pull/48197) |
+| 4 | **Rich scalar types** (JSON, arrays) | ✅ | ✅ | ✅ | [Milvus Data Fields](https://github.com/milvus-io/milvus) |
+| 5 | **Cloud-native managed services** (BYOC, serverless) | ✅ | ✅ | ✅ | [Milvus Zilliz Cloud](https://github.com/milvus-io/milvus) |
+| 6 | **Backup / restore snapshots** | ✅ | ✅ | ✅ | [Pinecone Backup](https://docs.pinecone.io/guides/manage-data/back-up-an-index) |
+| 7 | **Fine-grained RBAC** | ✅ | ✅ | ✅ | [Milvus RBAC](https://github.com/milvus-io/milvus/pull/48197) |
+| 8 | **Dedicated read nodes / replicas** | ✅ | ✅ | ✅ | [Pinecone Read Nodes](https://docs.pinecone.io/guides/index-data/dedicated-read-nodes) |
+| 9 | **Enhanced observability** (beyond Prometheus) | ✅ | ✅ | ✅ | [Milvus Monitoring](https://github.com/milvus-io/milvus) |
+| 10 | **Tiered storage** (hot/cold, S3 backend) | ✅ | ✅ | ✅ | [Qdrant Storage](https://github.com/qdrant/qdrant/pull/6603) |
+
+---
+
+## ⚡ GPU Performance Improvements — Metal & CUDA
+
+10 optimizations for Metal and CUDA backends across all dtypes:
+
+| # | Improvement | Target Backend | Status | Evidence |
+|---|-------------|----------------|--------|----------|
+| 1 | **FP16 (half-precision) kernels** | Metal | ✅ Done | `internal/gpu/metal/metal_gpu_optimized.go:269-371` — `compute_l2_distances_fp16`, `compute_cosine_similarity_fp16`, `compute_dot_product_fp16` |
+| 2 | **SIMD/warp-level reductions** | Metal | ✅ Done | `internal/gpu/metal/metal_gpu_optimized.go:373-472` — `compute_l2_distances_warp`, `compute_l2_and_topk_warp` using `simd_shuffle_down` |
+| 3 | **Multiple index types (IVF, PQ, Flat)** | CUDA | ✅ Done | `internal/gpu/faiss/faiss_gpu.go:26-30` — `FaissIndexFlat`, `FaissIndexIVFFlat`, `FaissIndexIVFPQ` |
+| 4 | **GPU-side HNSW refinement** | Hybrid | ⏳ Pending | `internal/store/hnsw_gpu.go:343-366` — CPU refinement fallback |
+| 5 | **Adaptive SyncBatchSize** | GPU sync | ⏳ Pending | `internal/store/hnsw_gpu.go:23-28` — default 1000 |
+| 6 | **Cross-backend memory pooling** | Both | ⏳ Pending | `internal/gpu/memory/memory_pool.go:37-55` |
+| 7 | **Tensor Core paths (FP16/TF32)** | CUDA | ⏳ Pending | FAISS GPU supports FP16, requires Go bindings |
+| 8 | **SoA memory layout** | GPU storage | ⏳ Pending | `internal/gpu/metal/metal_gpu.go` — AoS layout |
+| 9 | **Mixed-precision compute path** | Both | ⏳ Pending | `docs/performance.md:38-55` — dtype coverage |
+| 10 | **Kernel occupancy optimization** | Metal | ✅ Done | `internal/gpu/metal/metal_gpu_optimized.go:131-182` — existing occupancy |
+| 11 | **GPU profiling instrumentation** | Metrics | ⏳ Pending | `docs/performance_metal.md:7-15` |
+
+---
+
 ## 📋 Backlog (Future Considerations)
+
+### 4. Native Go GPU Kernels — Replace FAISS Dependency
+
+**Status**: PENDING EVALUATION
+
+Evaluate implementing native Go GPU kernels to replace FAISS C++ bindings, enabling CUDA support without external FAISS dependency.
+
+| Aspect | Current State | Target State |
+|--------|---------------|--------------|
+| **FAISS** | CGO bindings to `libfaiss` and `libfaiss_gpu` | Native Go implementation |
+| **CUDA** | Depends on FAISS C++ library | Native Go CUDA kernels via `cuda-go` or similar |
+| **Build** | Requires `faiss` + `cudart` + `cublas` linking | Pure Go + CUDA driver API |
+| **Cross-compile** | Complex C++ toolchain | Go cross-compile to Linux/ARM64 |
+
+**Motivation**:
+- Eliminate CGO dependency chain (`libfaiss`, `libfaiss_gpu`, `libcublas`)
+- Simplify build system (no C++ compilation, no FAISS_HOME)
+- Enable true cross-compilation for CUDA deployments
+- Reduce attack surface (no C++ library vulnerabilities)
+- Full control over kernel optimization for Longbow's specific use cases
+
+**Implementation candidates**:
+
+| Approach | Pros | Cons |
+|----------|------|------|
+| **cuda-go** (pure Go CUDA) | No CGO, pure Go | Early stage, limited features |
+| **go-cuda** (driver API) | Full CUDA access | Verbose, manual memory management |
+| **custom FFI** (C → Go) | Reuse existing C kernels | Still has C dependency |
+| **MPS-based** (CUDA MPS) | Leverage CUDA MPS | Requires CUDA runtime |
+
+**Evidence**:
+- Current FAISS integration: `internal/gpu/faiss/faiss_gpu.go` (lines 1-45)
+- CGO bindings: `internal/gpu/faiss/faiss_gpu_cpp_gpu.cpp` (GPU kernels)
+- CUDA backend wrappers: `internal/gpu/cuda/cuda_backend.go` (device management)
+- Build requirements: `Makefile` and `faiss_gpu.go` lines 6-9 show `-lfaiss -lfaiss_gpu -lcudart -lcublas`
+
+**Scope evaluation**:
+- Index types to replicate: Flat (brute-force), IVF-Flat, IVF-PQ
+- Distance metrics: L2, IP, Cosine (already in Go CPU code)
+- Memory management: GPU buffer pools (existing in `internal/gpu/memory/`)
+- Integration point: `internal/gpu/factory.go` for backend selection
+
+**Risk assessment**:
+- **High risk**: Implementing all FAISS index types (IVF-PQ is complex)
+- **Medium risk**: Performance parity with FAISS hand-tuned kernels
+- **Low risk**: Basic flat index with optimized distance kernels
+
+**Recommendation**: Start with Flat index + optimized distance kernels for proof-of-concept, then evaluate IVF/PQ if performance justifies.
+
+---
 
 - Final regression test for full matrix (Med priority)
 

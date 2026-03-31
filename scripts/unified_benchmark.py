@@ -251,7 +251,8 @@ class BenchmarkRunner:
         # Run benchmark-tool (does ingest + search + all modes)
         cmd = f"{bench_tool} --uri={self.server_addr} --dim={dim} --dtype={dtype} --scale={batch_size} --queries={self.args.queries} --dataset={label} --json={json_file}"
         print(f"  Running {dtype} dim={dim}...", end="", flush=True)
-        result = run_command(cmd, timeout=duration * 3 + 60)
+        timeout = getattr(self.args, "timeout", duration * 3 + 60)
+        result = run_command(cmd, timeout=timeout)
 
         if not result or result.returncode != 0:
             print(" FAILED")
@@ -952,7 +953,7 @@ class BenchmarkRunner:
 
                 for dim in dims:
                     current += 1
-                    label = f"{dtype}_{dim}_{count}"
+                    label = f"{self.args.mode}_{dtype}_{dim}_{count}"
                     print(
                         f"\n[{current}/{total * len(counts)}] {dtype} dim={dim} count={count}"
                     )
@@ -1296,6 +1297,12 @@ if __name__ == "__main__":
         type=int,
         default=10 * 1024 * 1024 * 1024,
         help="LONGBOW_MAX_MEMORY (default 10GB)",
+    )
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=1800,
+        help="Command timeout in seconds (default 1800)",
     )
     parser.add_argument(
         "--duration", type=int, default=15, help="Duration in seconds per test"

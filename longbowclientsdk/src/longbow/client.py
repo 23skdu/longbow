@@ -330,6 +330,23 @@ class LongbowClient:
             for f in self._meta_client.list_flights()
         ]
 
+    def list_datasets_in_namespace(self, namespace: str = "default") -> List[str]:
+        if self._meta_client is None:
+            self.connect()
+
+        req = {"name": namespace}
+        action_body = json.dumps(req).encode("utf-8")
+        action = flight.Action("ListDatasetsInNamespace", action_body)
+        results = list(
+            self._meta_client.do_action(action, options=self._get_call_options())
+        )
+
+        if not results:
+            return []
+
+        resp = json.loads(results[0].body.to_py())
+        return resp.get("datasets", [])
+
     def download_arrow(
         self, dataset: str, filter: Optional[List[Dict]] = None
     ) -> pa.Table:

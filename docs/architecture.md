@@ -11,8 +11,7 @@ graph TB
     subgraph Client["Client Applications"]
         Python["Python SDK"]
         Go["Go SDK"]
-        HTTP["HTTP/REST"]
-        Flight["Arrow Flight"]
+        Flight["Arrow Flight (gRPC)"]
     end
 
     subgraph Longbow["Longbow Cluster"]

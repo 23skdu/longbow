@@ -339,6 +339,34 @@ var (
 		[]string{"dataset"},
 	)
 
+	// HNSWRangeSearchOpsTotal tracks range search operations
+	HNSWRangeSearchOpsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_hnsw_range_search_ops_total",
+			Help: "Total number of range search operations",
+		},
+		[]string{"dataset"},
+	)
+
+	// HNSWRangeSearchResultsTotal tracks results returned by range search
+	HNSWRangeSearchResultsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_hnsw_range_search_results_total",
+			Help: "Total number of results returned by range search",
+		},
+		[]string{"dataset"},
+	)
+
+	// HNSWRangeSearchDurationSeconds tracks range search latency
+	HNSWRangeSearchDurationSeconds = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_hnsw_range_search_duration_seconds",
+			Help:    "Duration of range search operations",
+			Buckets: []float64{0.001, 0.01, 0.05, 0.1, 0.5, 1.0},
+		},
+		[]string{"dataset"},
+	)
+
 	// HNSWAverageDegree tracks the average degree of nodes in the HNSW graph
 	HNSWAverageDegree = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{

@@ -102,69 +102,74 @@ Weaviate's built-in vectorization reduces pipeline complexity. Longbow can offer
 
 ---
 
-## Part 5: Hybrid Search (Vector + BM25) 🟢 HIGH VALUE
+## Part 5: Hybrid Search (Vector + BM25) 🟢 HIGH VALUE ✅ PARTIALLY COMPLETE
 
 **Comparable to**: Weaviate hybrid search, Qdrant hybrid
 
 ### Rationale
 Hybrid search combining dense vectors with sparse BM25 dramatically improves recall for text search. Longbow has BM25 infrastructure — needs tighter integration.
 
-### Implementation Plan
+### Implementation Status
 
-- [ ] **5.1** Add unified search API accepting both vector and text queries
-- [ ] **5.2** Implement reciprocal rank fusion (RRF) for combining results
-- [ ] **5.3** Create learned weight configuration (auto-tune vector vs text weights)
-- [ ] **5.4** Add cross-encoder reranking for hybrid result reordering
-- [ ] **5.5** Benchmark hybrid vs pure vector for various query types
+| Task | Status | Evidence |
+|------|--------|----------|
+| 5.1 Unified search API | ✅ DONE | `hybrid_search.go:SearchHybrid()` accepts both vector and text |
+| 5.2 RRF | ✅ DONE | `hybrid_search.go:ReciprocalRankFusion()` implemented |
+| 5.3 Auto-tune alpha | ✅ DONE | `hybrid_search.go:EstimateAlpha()` - heuristic-based |
+| 5.4 Cross-encoder | 🔴 NOT DONE | Requires ML reranking integration |
+| 5.5 Benchmark | 🔴 NOT DONE | No formal benchmarks yet |
 
-### Files to Modify
-- `internal/store/hybrid_search.go` — Extend hybrid API
+### Files
+- `internal/store/hybrid_search.go` — Already implemented
 - `internal/store/bm25_inverted_index.go` — BM25 integration
 - `internal/store/global_search.go` — RRF implementation
 
 ---
 
-## Part 6: GPU-Accelerated Search Enhancement 🟢 HIGH VALUE
+## Part 6: GPU-Accelerated Search Enhancement 🟢 HIGH VALUE ✅ PARTIALLY COMPLETE
 
 **Comparable to**: Milvus GPU indexes, Zilliz Cloud
 
 ### Rationale
 Milvus leads with GPU-accelerated search. Longbow has Metal/CUDA but needs production GPU indexing.
 
-### Implementation Plan
+### Implementation Status
 
-- [ ] **6.1** Implement GPU-based HNSW graph construction
-- [ ] **6.2** Add GPU-accelerated batch distance calculations (CUDA kernels)
-- [ ] **6.3** Create GPU memory pool with explicit allocation
-- [ ] **6.4** Add multi-GPU support (CUDA aware, peer memory access)
-- [ ] **6.5** Benchmark GPU vs CPU for various batch sizes
+| Task | Status | Evidence |
+|------|--------|----------|
+| 6.1 GPU HNSW construction | 🔴 NOT DONE | Distance computation only |
+| 6.2 GPU batch distance | ✅ DONE | `internal/gpu/metal/metal_gpu_optimized.go` |
+| 6.3 GPU memory pool | ✅ DONE | `internal/gpu/memory/memory_pool.go` |
+| 6.4 Multi-GPU | 🔴 NOT DONE | Single GPU only |
 
-### Files to Modify
-- `internal/gpu/cuda/` — CUDA HNSW kernels
-- `internal/gpu/metal/` — Metal HNSW kernels  
-- `internal/store/hnsw_gpu.go` — GPU orchestration
+### Files
+- `internal/gpu/metal/` — Metal GPU kernels
+- `internal/gpu/cuda/` — CUDA support (FAISS)
+- `internal/store/hnsw_gpu.go` — Hybrid GPU search
 
 ---
 
-## Part 7: Disk-Based Indexing (Beyond RAM) 🟢 HIGH VALUE
+## Part 7: Disk-Based Indexing (Beyond RAM) 🟢 HIGH VALUE ✅ PARTIALLY COMPLETE
 
 **Comparable to**: LanceDB disk-based IVF-PQ, Milvus DiskANN
 
 ### Rationale
 LanceDB's disk-based indexing enables billion-vector datasets on limited RAM. Longbow's tiered storage needs index-aware tiering.
 
-### Implementation Plan
+### Implementation Status
 
-- [ ] **7.1** Implement mmap-based vector storage for disk-resident vectors
-- [ ] **7.2** Create disk-optimized HNSW (Graphgeons/DiskANN-style)
-- [ ] **7.3** Add SSD-tier caching for graph navigation
-- [ ] **7.4** Implement hybrid RAM+disk search (search RAM graph, fetch disk vectors)
-- [ ] **7.5** Add I/O scheduling to maximize SSD throughput
+| Task | Status | Evidence |
+|------|--------|----------|
+| 7.1 mmap storage | ✅ DONE | `disk_vector_store.go` with mmap |
+| 7.2 DiskANN | ✅ DONE | `diskann.go` - DiskANN index |
+| 7.3 SSD caching | ✅ DONE | `SetTieredConfig()` with block cache |
+| 7.4 Hybrid RAM+disk | 🔴 NOT DONE | |
+| 7.5 I/O scheduling | 🔴 NOT DONE | |
 
-### Files to Modify
-- `internal/store/disk_vector_store.go` — Extend for index-aware storage
-- `internal/store/arrow_hnsw.go` — Disk-backed graph
-- `internal/storage/` — SSD-optimized I/O
+### Files
+- `internal/store/disk_vector_store.go` — Block compression, tiered storage
+- `internal/store/diskann.go` — DiskANN implementation
+- `internal/store/disk_graph.go` — Graph persistence on disk
 
 ---
 
@@ -234,24 +239,20 @@ Enterprise requires role-based access control. Longbow has basic auth — needs 
 
 ---
 
-## Part 11: GraphQL API Alternative 🟢 HIGH VALUE
+## Part 11: GraphQL API Alternative 🟢 HIGH VALUE ❌ NOT IMPLEMENTING
 
 **Comparable to**: Weaviate GraphQL
 
 ### Rationale
 GraphQL is preferred by frontend developers. Longbow's REST/gRPC could be supplemented with GraphQL.
 
-### Implementation Plan
+### Decision: NOT PURSUING
+- Current REST/Arrow Flight API is sufficient
+- GraphQL adds complexity without significant benefit for vector ops
+- OpenAPI spec (docs/openapi.yaml) provides REST documentation instead
 
-- [ ] **11.1** Design GraphQL schema for vector operations
-- [ ] **11.2** Implement GraphQL resolver layer over existing store
-- [ ] **11.3** Add subscription support for real-time updates
-- [ ] **11.4** Create GraphQL playground (like Weaviate console)
-- [ ] **11.5** Benchmark GraphQL vs REST/gRPC for common queries
-
-### Files to Modify
-- `cmd/longbow/` — New GraphQL server
-- `internal/api/graphql/` — GraphQL schema and resolvers
+### Alternative Implemented
+- OpenAPI 3.0 spec at `docs/openapi.yaml` - comprehensive REST API documentation
 
 ---
 
@@ -321,25 +322,33 @@ Temporal filtering (query vectors at specific times) is key for temporal ML apps
 
 ---
 
-## Part 15: Range Search (Vector Similarity Threshold) 🟢 HIGH VALUE
+## Part 15: Range Search (Vector Similarity Threshold) 🟢 HIGH VALUE ✅ COMPLETE
 
 **Comparable to**: Approximate nearest neighbors with radius
 
 ### Rationale
 Range queries (all vectors within similarity threshold) complement top-k for clustering/duplicates.
 
-### Implementation Plan
+### Implementation Status
 
-- [ ] **15.1** Implement range search API (similarity > threshold)
-- [ ] **15.2** Add range index for efficient threshold queries
-- [ ] **15.3** Create "find duplicates" using range search
-- [ ] **15.4** Benchmark range vs top-k for various thresholds
-- [ ] **15.5** Add range search to distributed search path
+| Task | Status | Evidence |
+|------|--------|----------|
+| 15.1 Range search API | ✅ DONE | `SearchVectorsInRange()` in all index types |
+| 15.2 Range index | 🔴 NOT DONE | Uses HNSW traversal |
+| 15.3 Find duplicates | 🔴 NOT DONE | Can use range search |
+| 15.4 Benchmark | 🔴 NOT DONE | |
+| 15.5 Distributed | ✅ DONE | ShardedHNSW implements range |
 
-### Files to Modify
-- `internal/store/sharded_hnsw.go` — Range search
-- `internal/store/global_search.go` — Distributed range
-- `internal/query/` — Range query API
+### Files
+- `internal/store/types/interfaces.go` — Interface added
+- `internal/store/arrow_hnsw.go` — Implementation
+- `internal/store/sharded_hnsw.go` — Distributed range
+- `internal/store/range_search_test.go` — Unit tests
+
+### Metrics Added
+- `longbow_hnsw_range_search_ops_total`
+- `longbow_hnsw_range_search_results_total`
+- `longbow_hnsw_range_search_duration_seconds`
 
 ---
 
@@ -429,25 +438,28 @@ Similar queries return similar results. Caching semantic similarity reduces cost
 
 ---
 
-## Part 20: Developer Experience & Documentation 🟢 HIGH VALUE
+## Part 20: Developer Experience & Documentation 🟢 HIGH VALUE ✅ PARTIALLY COMPLETE
 
 **Comparable to**: Weaviate/Chromadb DX
 
 ### Rationale
 Developer experience differentiates adoption. Longbow needs polished docs, examples, and tooling.
 
-### Implementation Plan
+### Implementation Status
 
-- [ ] **20.1** Create comprehensive API documentation (OpenAPI/Swagger)
-- [ ] **20.2** Add interactive API explorer (web UI for testing)
-- [ ] **20.3** Implement language-specific SDK generators (Python, JS, Go)
-- [ ] **20.4** Create example applications (RAG, recommendation, similarity search)
-- [ ] **20.5** Add benchmarking playground for parameter tuning
+| Task | Status | Evidence |
+|------|--------|----------|
+| 20.1 OpenAPI/Swagger | ✅ DONE | `docs/openapi.yaml` - OpenAPI 3.0 spec |
+| 20.2 Interactive explorer | 🔴 NOT DONE | |
+| 20.3 SDK generators | 🔴 NOT DONE | Python client exists |
+| 20.4 Example apps | 🔴 NOT DONE | |
+| 20.5 Benchmark playground | 🔴 NOT DONE | bench-tool exists |
 
-### Files to Modify
-- `docs/` — Comprehensive docs
-- `cmd/longbow/` — API explorer UI
-- `client/` — SDK enhancements
+### Files
+- `docs/openapi.yaml` — OpenAPI 3.0 specification
+- `docs/api.md` — REST API reference
+- `docs/cli.md` — CLI documentation
+- `docs/python_client.md` — Python SDK docs
 
 ---
 

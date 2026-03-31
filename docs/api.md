@@ -2,11 +2,19 @@
 
 ## Overview
 
-Longbow provides multiple APIs for interacting with the vector store:
+Longbow provides **gRPC + Apache Arrow Flight only**. No REST/HTTP API for data operations.
 
 - **Arrow Flight API** - Primary gRPC-based protocol for high-performance operations
-- **HTTP REST API** - Web UI and administrative endpoints
 - **Admin Actions** - Flight-based administrative operations
+- **Prometheus Metrics** - HTTP metrics endpoint on port 9090
+
+## Protocol Ports
+
+| Port | Service | Protocol |
+|------|---------|----------|
+| 3000 | Data Server | gRPC/Arrow Flight |
+| 3001 | Meta Server | gRPC/Arrow Flight |
+| 9090 | Metrics | HTTP/Prometheus |
 
 ## Arrow Flight API
 
@@ -101,6 +109,23 @@ results = reader.read_all()
 **Example:**
 
 ```python
+# Get dataset details
+action = pf.Action("get_dataset", b"dataset_name")
+for result in client.do_action(action):
+    print(result)
+```
+
+## gRPC + Arrow Flight Only
+
+**Longbow does NOT provide a REST HTTP API.** All data operations are via gRPC + Apache Arrow Flight.
+
+- Port 3000: Data Server (DoGet, DoPut, DoExchange)
+- Port 3001: Meta Server (ListFlights, DoAction)
+- Port 9090: Prometheus metrics (HTTP)
+
+### Administrative Actions
+
+```python
 # Create dataset
 action = pf.Action("create_dataset", schema.serialize())
 client.do_action(action)
@@ -113,117 +138,6 @@ list(client.do_action(action))
 action = pf.Action("metrics", b"")
 for result in client.do_action(action):
     print(result)
-```
-
-## HTTP REST API
-
-Longbow provides a built-in web UI and REST API on port 8080 (configurable via `WEBUI_ADDR`).
-
-### Endpoints
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/` | Web UI dashboard |
-| GET | `/api/health` | Health check |
-| GET | `/api/metrics` | Runtime metrics |
-| GET | `/api/datasets` | List all datasets |
-| GET | `/api/dataset?name=XXX` | Get dataset details |
-| POST | `/api/search` | Execute vector search |
-
-#### GET /api/health
-
-Response:
-
-```json
-{
-  "success": true,
-  "data": {
-    "status": "healthy",
-    "datasets": 5,
-    "memory_usage": 1073741824
-  }
-}
-```
-
-#### GET /api/datasets
-
-Response:
-
-```json
-{
-  "success": true,
-  "data": [
-    {
-      "name": "my_dataset",
-      "record_count": 10000,
-      "vector_size": 128,
-      "status": "active",
-      "memory_bytes": 5242880,
-      "dimensions": 128
-    }
-  ]
-}
-```
-
-#### GET /api/dataset?name=XXX
-
-Response:
-
-```json
-{
-  "success": true,
-  "data": {
-    "name": "my_dataset",
-    "record_count": 10000,
-    "vector_size": 128,
-    "status": "active",
-    "memory_bytes": 5242880,
-    "dimensions": 128
-  }
-}
-```
-
-#### POST /api/search
-
-**Request:**
-
-```json
-{
-  "dataset": "my_dataset",
-  "query": [0.1, 0.2, 0.3, ...],
-  "k": 10,
-  "filter": "id > 100"
-}
-```
-
-**Response:**
-
-```json
-{
-  "success": true,
-  "data": {
-    "results": [
-      {"id": 123, "distance": 0.123, "score": 0.877},
-      {"id": 456, "distance": 0.234, "score": 0.766}
-    ],
-    "took_ms": 5
-  }
-}
-```
-
-#### GET /api/metrics
-
-Response:
-
-```json
-{
-  "success": true,
-  "data": {
-    "current_memory": 524288000,
-    "peak_memory": 1073741824,
-    "dataset_count": 5
-  }
-}
 ```
 
 ## Prometheus Metrics
@@ -339,6 +253,80 @@ results := client.Search("my_dataset", []float32{0.15, 0.25}, 10)
 | `LISTEN_ADDR` | `0.0.0.0:3000` | gRPC/Flight server |
 | `META_ADDR` | `0.0.0.0:3001` | Meta server |
 | `METRICS_ADDR` | `0.0.0.0:9090` | Prometheus metrics |
-| `WEBUI_ADDR` | `0.0.0.0:8080` | Web UI / REST API |
 | `DATA_PATH` | `./data` | Data directory |
 | `MAX_MEMORY` | `1073741824` | Max memory (bytes) |
+
+---
+
+## Admin API
+
+Longbow provides management capabilities via the **Meta Server** (`DoAction` and `ListFlights`).
+
+### Namespace Management
+
+#### `CreateNamespace`
+
+Creates a new namespace for vector data.
+
+- **Type**: `CreateNamespace`
+- **Body**: `{"name": "my_namespace"}`
+- **Response**: `{"status": "created"}`
+
+#### `DeleteNamespace`
+
+Deletes an entire namespace and its associated datasets.
+
+- **Type**: `DeleteNamespace`
+- **Body**: `{"name": "my_namespace"}`
+- **Response**: `{"status": "deleted"}`
+
+#### `ListNamespaces`
+
+Returns a list of all active namespaces.
+
+- **Type**: `ListNamespaces`
+- **Body**: (empty)
+- **Response**: `{"namespaces": ["ns1", "ns2"], "count": 2}`
+
+### Dataset Management
+
+#### `delete-dataset`
+
+Removes a dataset from memory.
+
+- **Type**: `delete-dataset`
+- **Body**: `{"dataset": "my_dataset"}`
+- **Response**: `"deleted"` (string)
+
+#### `delete-vector`
+
+Deletes a specific vector by its internal `VectorID`.
+
+- **Type**: `delete-vector`
+- **Body**: `{"dataset": "my_dataset", "vector_id": 123}`
+- **Response**: `"deleted"` (string)
+
+### Mesh & Cluster Status
+
+#### `MeshStatus`
+
+Retrieves the status of the gossip mesh and connected members.
+
+- **Type**: `MeshStatus`
+- **Response**: List of member objects including ID, Addr, and Status.
+
+#### `cluster-status`
+
+Retrieves cluster-level health and member identity.
+
+- **Type**: `cluster-status`
+- **Response**: JSON object containing `self` identity and `members` list.
+
+### Backpressure Monitoring
+
+The Data Server (`DoPut`) monitors the Write-Ahead Log (WAL) queue depth. If the queue exceeds **80% capacity**, the server applies backpressure:
+
+1. Server logs a `wal_pressure` warning.
+2. `DoPut` responses include metadata: `{"status": "slow_down", "reason": "wal_pressure"}`.
+
+Clients (including the Python SDK) monitor this metadata and should implement backoff or throttling to avoid overloading the persistence layer.

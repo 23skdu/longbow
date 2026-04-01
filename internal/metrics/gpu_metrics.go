@@ -214,3 +214,57 @@ func RecordMetalShaderCompile(duration time.Duration, success bool, kernelCount 
 		MetalShaderCompileTotal.WithLabelValues("error").Inc()
 	}
 }
+
+// RecordMultiGPUQuery records metrics for multi-GPU query operations
+func RecordMultiGPUQuery(duration time.Duration, deviceCount int, strategy string) {
+	MultiGPUQueryDurationSeconds.WithLabelValues(strategy).Observe(duration.Seconds())
+	MultiGPUTotalDevices.Set(float64(deviceCount))
+	MultiGPUQueriesTotal.WithLabelValues(strategy, "success").Inc()
+}
+
+// RecordMultiGPUQueryError records metrics for failed multi-GPU queries
+func RecordMultiGPUQueryError(strategy string, errorType string) {
+	MultiGPUQueriesTotal.WithLabelValues(strategy, "error").Inc()
+	MultiGPUFallbackTotal.WithLabelValues(errorType).Inc()
+}
+
+// RecordMultiGPUReplicate records metrics for multi-GPU replication
+func RecordMultiGPUReplicate(duration time.Duration, deviceCount int, vectorCount int) {
+	MultiGPUReplicateDurationSeconds.Observe(duration.Seconds())
+	MultiGPUReplicateOperationsTotal.WithLabelValues("success").Inc()
+	MultiGPUReplicateVectorsProcessed.Add(float64(vectorCount))
+}
+
+// RecordMultiGPUReplicateError records metrics for failed multi-GPU replication
+func RecordMultiGPUReplicateError() {
+	MultiGPUReplicateOperationsTotal.WithLabelValues("error").Inc()
+}
+
+// RecordMultiGPUDeviceStats updates per-device stats for multi-GPU
+func RecordMultiGPUDeviceStats(deviceID int, queries int64, errors int64) {
+	deviceLabel := fmt.Sprintf("%d", deviceID)
+	MultiGPUDeviceQueries.WithLabelValues(deviceLabel).Set(float64(queries))
+	MultiGPUDeviceErrors.WithLabelValues(deviceLabel).Set(float64(errors))
+}
+
+// RecordGPUHNSWBuild records metrics for GPU-accelerated HNSW construction
+func RecordGPUHNSWBuild(duration time.Duration, vectorCount int, success bool) {
+	GPUHNSWBuildDurationSeconds.Observe(duration.Seconds())
+	if success {
+		GPUHNSWBuildOperationsTotal.WithLabelValues("success").Inc()
+		GPUHNSWBuildVectorsProcessed.Add(float64(vectorCount))
+	} else {
+		GPUHNSWBuildOperationsTotal.WithLabelValues("error").Inc()
+	}
+}
+
+// RecordGPUHNSWBuildBatch records metrics for a batch in GPU HNSW construction
+func RecordGPUHNSWBuildBatch(duration time.Duration, batchSize int) {
+	GPUHNSWBuildBatchDurationSeconds.Observe(duration.Seconds())
+	GPUHNSWBuildBatchSize.Set(float64(batchSize))
+}
+
+// RecordGPUHNSWBuildFallback records metrics when GPU HNSW build falls back to CPU
+func RecordGPUHNSWBuildFallback(reason string) {
+	GPUHNSWBuildFallbackTotal.WithLabelValues(reason).Inc()
+}

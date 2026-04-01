@@ -149,10 +149,136 @@ func TestGraphStore_DictionaryMemorySavings(t *testing.T) {
 }
 
 // TestGraphStore_FromArrowBatch tests loading edges from Arrow RecordBatch
-// Note: Arrow serialization for GraphStore is not yet implemented.
-// This test serves as a placeholder for future implementation.
 func TestGraphStore_FromArrowBatch(t *testing.T) {
-	t.Skip("Arrow serialization for GraphStore not yet implemented")
+	gs := NewGraphStore()
+
+	// Build a simple graph
+	_ = gs.AddEdge(Edge{Subject: VectorID(1), Predicate: "owns", Object: VectorID(10), Weight: 1.0})
+	_ = gs.AddEdge(Edge{Subject: VectorID(1), Predicate: "likes", Object: VectorID(11), Weight: 0.8})
+	_ = gs.AddEdge(Edge{Subject: VectorID(2), Predicate: "owns", Object: VectorID(12), Weight: 0.5})
+
+	predicates := gs.PredicateVocabulary()
+
+	// Export to Arrow
+	record, err := gs.ToArrowBatch()
+	if err != nil {
+		t.Fatalf("ToArrowBatch failed: %v", err)
+	}
+	if record == nil {
+		t.Fatal("ToArrowBatch returned nil record")
+	}
+	defer record.Release()
+
+	if record.NumRows() != 3 {
+		t.Errorf("expected 3 rows, got %d", record.NumRows())
+	}
+
+	// Create new store and load from Arrow
+	gs2 := NewGraphStore()
+	err = gs2.FromArrowBatch(record, predicates)
+	if err != nil {
+		t.Fatalf("FromArrowBatch failed: %v", err)
+	}
+
+	// Verify edge count
+	if gs2.EdgeCount() != 3 {
+		t.Errorf("expected 3 edges after load, got %d", gs2.EdgeCount())
+	}
+
+	// Verify predicates loaded
+	vocab := gs2.PredicateVocabulary()
+	if len(vocab) != 2 {
+		t.Errorf("expected 2 predicates, got %d", len(vocab))
+	}
+
+	// Verify edges
+	edges := gs2.GetEdgesBySubject(1)
+	if len(edges) != 2 {
+		t.Errorf("expected 2 edges from subject 1, got %d", len(edges))
+	}
+
+	// Verify specific edge
+	found := false
+	for _, e := range edges {
+		if e.Object == 11 && e.Predicate == "likes" && e.Weight == 0.8 {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected edge (1, likes, 11, 0.8) not found")
+	}
+}
+
+// TestGraphStore_ToArrowBatch_Empty tests exporting empty graph
+func TestGraphStore_ToArrowBatch_Empty(t *testing.T) {
+	gs := NewGraphStore()
+
+	record, err := gs.ToArrowBatch()
+	if err != nil {
+		t.Fatalf("ToArrowBatch failed: %v", err)
+	}
+	if record != nil {
+		t.Error("expected nil record for empty graph")
+	}
+}
+
+// TestGraphStore_RoundTrip tests full export/import cycle
+func TestGraphStore_RoundTrip(t *testing.T) {
+	// Create complex graph
+	gs1 := NewGraphStore()
+	edges := []Edge{
+		{Subject: 1, Predicate: "author", Object: 100, Weight: 1.0},
+		{Subject: 1, Predicate: "author", Object: 101, Weight: 1.0},
+		{Subject: 2, Predicate: "cites", Object: 100, Weight: 0.9},
+		{Subject: 2, Predicate: "cites", Object: 101, Weight: 0.8},
+		{Subject: 100, Predicate: "references", Object: 200, Weight: 0.7},
+	}
+	for _, e := range edges {
+		_ = gs1.AddEdge(e)
+	}
+
+	predicates := gs1.PredicateVocabulary()
+
+	// Export
+	record, err := gs1.ToArrowBatch()
+	if err != nil {
+		t.Fatalf("ToArrowBatch failed: %v", err)
+	}
+	defer record.Release()
+
+	// Import to new store
+	gs2 := NewGraphStore()
+	err = gs2.FromArrowBatch(record, predicates)
+	if err != nil {
+		t.Fatalf("FromArrowBatch failed: %v", err)
+	}
+
+	// Verify counts match
+	if gs1.EdgeCount() != gs2.EdgeCount() {
+		t.Errorf("edge count mismatch: %d vs %d", gs1.EdgeCount(), gs2.EdgeCount())
+	}
+
+	// Verify all predicates present
+	vocab1 := gs1.PredicateVocabulary()
+	vocab2 := gs2.PredicateVocabulary()
+	if len(vocab1) != len(vocab2) {
+		t.Errorf("predicate count mismatch: %d vs %d", len(vocab1), len(vocab2))
+	}
+
+	// Verify edges by subject
+	for _, e := range edges {
+		found := false
+		for _, loaded := range gs2.GetEdgesBySubject(uint32(e.Subject)) {
+			if loaded.Object == e.Object && loaded.Predicate == e.Predicate && loaded.Weight == e.Weight {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("edge %+v not found after round-trip", e)
+		}
+	}
 }
 
 // TestGraphStore_TraverseSingleHop tests finding direct neighbors

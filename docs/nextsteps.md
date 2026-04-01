@@ -15,7 +15,7 @@ These are actual code gaps found in the codebase that need immediate attention:
 |---|-----------|------|-------|--------|
 | 1 | **CUDA Memory Ops** | `internal/gpu/memory/memory_cuda_stub.go` | `freeCUDAMemory()`, `cudaMemcpyHostToDevice()`, `cudaMemcpyDeviceToHost()` all return "not implemented" errors | GPU memory operations fall back to CPU, severe performance penalty on CUDA systems |
 | 2 | **IVF-PQ Filter Support** | `internal/store/ivf_pq_index_test.go:323` | Test skipped: "Filter support not yet implemented" | Cannot filter during IVF-PQ search, requires post-filter which degrades performance |
-| 3 | **GraphStore Arrow Serialization** | `internal/store/graph_store_test.go:155` | Test skipped: "Arrow serialization for GraphStore not yet implemented" | Graph data cannot be persisted/recovered via Arrow format, only in-memory |
+| 3 | **GraphStore Arrow Serialization** | `internal/store/graph_store.go` | ✅ FIXED: Implemented `FromArrowBatch()` and `FromArrowRecord()`, added comprehensive tests | Graph data can now be persisted/recovered via Arrow format |
 | 4 | **Metal Index Optimized** | `internal/gpu/metal/metal_gpu_optimized.go` | ✅ FIXED: Replaced invalid `float8`/`half8` types with `float4`/`half4`, removed `simd_shuffle_down` usage | Apple Silicon GPU acceleration now functional |
 | 5 | **Request Forwarder Gaps** | `internal/sharding/forwarder.go:256` | Many forwarding methods return "not yet implemented" | Some cluster operations cannot be proxied between nodes |
 | 6 | **OpenCL Backend** | `internal/gpu/interface.go:70` | Returns "OpenCL backend not yet implemented" | No cross-platform GPU support (AMD, Intel GPUs) |
@@ -42,8 +42,8 @@ These are actual code gaps found in the codebase that need immediate attention:
 | **Flaky Tests** | 8+ | `sharded_hnsw_lifecycle_test.go`, `metric_test.go`, `arrow_insert_properties_test.go` | Sorting/timing issues, need investigation |
 | **Platform-Specific** | 40+ | `simd_fma_test.go`, `simd_fma_portable_test.go`, `hadamard_arm64_test.go` | AVX512/NEON not available on current platform |
 | **Integration Tests** | 20+ | `s3_remote_test.go`, `gcs_remote_test.go`, `wal_backend_test.go` | Missing credentials or CI environment |
-| **Known Bugs** | 5+ | `metal_optimized_test.go`, `batched_indexing_test.go` | Shader compilation issues, timing dependencies |
-| **Unimplemented Features** | 4 | `ivf_pq_index_test.go`, `graph_store_test.go` | Features marked as not yet implemented |
+| **Known Bugs** | 3+ | `batched_indexing_test.go` | Timing dependencies |
+| **Unimplemented Features** | 3 | `ivf_pq_index_test.go` | Features marked as not yet implemented |
 
 ### Critical Flaky Tests to Fix:
 1. `sharded_indexing_test.go:205` - "Could not find two datasets with different shards"
@@ -189,7 +189,7 @@ The codebase already has substantial performance tooling:
 | Feature | Test File | Status | Action Required |
 |---------|-----------|--------|-----------------|
 | IVF-PQ Filtering | `ivf_pq_index_test.go:323` | Skipped | Implement filter pushdown, enable test |
-| GraphStore Serialization | `graph_store_test.go:155` | Skipped | Implement Arrow serialization |
+| GraphStore Serialization | `graph_store_test.go` | ✅ Fixed | Arrow serialization implemented |
 | Metal Optimized Index | `metal_optimized_test.go` | ✅ Fixed | Shader compilation issues resolved |
 | CUDA Memory Ops | `memory_cuda_stub.go` | Stub | Implement actual CUDA calls |
 

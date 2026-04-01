@@ -375,6 +375,127 @@ var (
 		},
 	)
 
+	// Multi-GPU metrics
+
+	MultiGPUQueryDurationSeconds = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_multi_gpu_query_duration_seconds",
+			Help:    "Duration of multi-GPU query operations",
+			Buckets: prometheus.DefBuckets,
+		},
+		[]string{"strategy"},
+	)
+
+	MultiGPUTotalDevices = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "longbow_multi_gpu_total_devices",
+			Help: "Total number of GPU devices in multi-GPU setup",
+		},
+	)
+
+	MultiGPUQueriesTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_multi_gpu_queries_total",
+			Help: "Total number of multi-GPU queries",
+		},
+		[]string{"strategy", "status"},
+	)
+
+	MultiGPUFallbackTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_multi_gpu_fallback_total",
+			Help: "Total number of multi-GPU fallback events",
+		},
+		[]string{"reason"},
+	)
+
+	MultiGPUReplicateDurationSeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_multi_gpu_replicate_duration_seconds",
+			Help:    "Duration of multi-GPU replication operations",
+			Buckets: prometheus.DefBuckets,
+		},
+	)
+
+	MultiGPUReplicateOperationsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_multi_gpu_replicate_operations_total",
+			Help: "Total number of multi-GPU replication operations",
+		},
+		[]string{"status"},
+	)
+
+	MultiGPUReplicateVectorsProcessed = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_multi_gpu_replicate_vectors_processed_total",
+			Help: "Total number of vectors replicated across GPUs",
+		},
+	)
+
+	MultiGPUDeviceQueries = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "longbow_multi_gpu_device_queries",
+			Help: "Number of queries processed by each GPU device",
+		},
+		[]string{"device"},
+	)
+
+	MultiGPUDeviceErrors = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "longbow_multi_gpu_device_errors",
+			Help: "Number of errors on each GPU device",
+		},
+		[]string{"device"},
+	)
+
+	// GPU HNSW Build metrics
+
+	GPUHNSWBuildDurationSeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_gpu_hnsw_build_duration_seconds",
+			Help:    "Duration of GPU-accelerated HNSW index building",
+			Buckets: prometheus.DefBuckets,
+		},
+	)
+
+	GPUHNSWBuildOperationsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_gpu_hnsw_build_operations_total",
+			Help: "Total number of GPU HNSW build operations",
+		},
+		[]string{"status"},
+	)
+
+	GPUHNSWBuildVectorsProcessed = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_gpu_hnsw_build_vectors_processed_total",
+			Help: "Total number of vectors processed during GPU HNSW build",
+		},
+	)
+
+	GPUHNSWBuildBatchDurationSeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_gpu_hnsw_build_batch_duration_seconds",
+			Help:    "Duration of GPU HNSW build batch operations",
+			Buckets: prometheus.DefBuckets,
+		},
+	)
+
+	GPUHNSWBuildBatchSize = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "longbow_gpu_hnsw_build_batch_size",
+			Help: "Current batch size for GPU HNSW build",
+		},
+	)
+
+	GPUHNSWBuildFallbackTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_gpu_hnsw_build_fallback_total",
+			Help: "Total number of GPU HNSW build fallback events",
+		},
+		[]string{"reason"},
+	)
+
 	// ResultPoolHitsTotal
 	ResultPoolHitsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{

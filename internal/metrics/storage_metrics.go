@@ -250,6 +250,131 @@ var (
 		},
 	)
 
+	// Metal-specific metrics for Apple Silicon GPU operations
+
+	// MetalInitDurationSeconds measures Metal GPU initialization duration
+	MetalInitDurationSeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_metal_init_duration_seconds",
+			Help:    "Duration of Metal GPU initialization",
+			Buckets: prometheus.DefBuckets,
+		},
+	)
+
+	// MetalInitOperationsTotal counts Metal initialization operations
+	MetalInitOperationsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_metal_init_operations_total",
+			Help: "Total number of Metal initialization operations",
+		},
+		[]string{"status"}, // "success", "error"
+	)
+
+	// MetalSearchDurationSeconds measures Metal search operation duration
+	MetalSearchDurationSeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_metal_search_duration_seconds",
+			Help:    "Duration of Metal search operations",
+			Buckets: prometheus.DefBuckets,
+		},
+	)
+
+	// MetalSearchOperationsTotal counts Metal search operations
+	MetalSearchOperationsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_metal_search_operations_total",
+			Help: "Total number of Metal search operations",
+		},
+		[]string{"status"}, // "success", "error"
+	)
+
+	// MetalSearchVectorsProcessed tracks total vectors processed by Metal search
+	MetalSearchVectorsProcessed = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_metal_search_vectors_processed_total",
+			Help: "Total number of vectors processed by Metal search operations",
+		},
+	)
+
+	// MetalAddDurationSeconds measures Metal add operation duration
+	MetalAddDurationSeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_metal_add_duration_seconds",
+			Help:    "Duration of Metal add operations",
+			Buckets: prometheus.DefBuckets,
+		},
+	)
+
+	// MetalAddOperationsTotal counts Metal add operations
+	MetalAddOperationsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_metal_add_operations_total",
+			Help: "Total number of Metal add operations",
+		},
+		[]string{"status"}, // "success", "error"
+	)
+
+	// MetalAddVectorsProcessed tracks total vectors added via Metal
+	MetalAddVectorsProcessed = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_metal_add_vectors_processed_total",
+			Help: "Total number of vectors added via Metal operations",
+		},
+	)
+
+	// MetalIndexVectors tracks number of vectors in Metal index
+	MetalIndexVectors = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "longbow_metal_index_vectors",
+			Help: "Number of vectors stored in Metal index",
+		},
+		[]string{"device"},
+	)
+
+	// MetalIndexDimensions tracks dimensions of Metal index
+	MetalIndexDimensions = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "longbow_metal_index_dimensions",
+			Help: "Number of dimensions in Metal index",
+		},
+		[]string{"device"},
+	)
+
+	// MetalMemoryBytes tracks Metal GPU memory usage
+	MetalMemoryBytes = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "longbow_metal_memory_bytes",
+			Help: "Metal GPU memory usage in bytes",
+		},
+		[]string{"type"}, // "allocated", "used", "vectors"
+	)
+
+	// MetalShaderCompileDurationSeconds measures Metal shader compilation duration
+	MetalShaderCompileDurationSeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_metal_shader_compile_duration_seconds",
+			Help:    "Duration of Metal shader compilation",
+			Buckets: prometheus.DefBuckets,
+		},
+	)
+
+	// MetalShaderCompileTotal counts Metal shader compilation attempts
+	MetalShaderCompileTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_metal_shader_compile_total",
+			Help: "Total number of Metal shader compilation attempts",
+		},
+		[]string{"status"}, // "success", "error"
+	)
+
+	// MetalShaderKernelCount tracks number of kernels compiled
+	MetalShaderKernelCount = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "longbow_metal_shader_kernel_count",
+			Help: "Number of Metal shader kernels compiled",
+		},
+	)
+
 	// ResultPoolHitsTotal
 	ResultPoolHitsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{

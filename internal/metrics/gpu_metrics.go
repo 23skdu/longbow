@@ -1,9 +1,9 @@
 package metrics
 
 import (
-	"github.com/23skdu/longbow/internal/gpu/types"
 	"context"
 	"fmt"
+	"github.com/23skdu/longbow/internal/gpu/types"
 	"net/http"
 	"time"
 
@@ -154,4 +154,63 @@ func RecordGPUTemperature(deviceID int, temp float64) {
 func RecordGPUPower(deviceID int, power float64) {
 	deviceLabel := fmt.Sprintf("%d", deviceID)
 	GPUDevicePowerUsage.WithLabelValues(deviceLabel).Set(power)
+}
+
+// RecordMetalInit records metrics for Metal GPU initialization
+func RecordMetalInit(duration time.Duration, success bool) {
+	MetalInitDurationSeconds.Observe(duration.Seconds())
+	if success {
+		MetalInitOperationsTotal.WithLabelValues("success").Inc()
+	} else {
+		MetalInitOperationsTotal.WithLabelValues("error").Inc()
+	}
+}
+
+// RecordMetalSearch records metrics for a Metal search operation
+func RecordMetalSearch(duration time.Duration, k int, vectorCount int) {
+	MetalSearchDurationSeconds.Observe(duration.Seconds())
+	MetalSearchOperationsTotal.WithLabelValues("success").Inc()
+	MetalSearchVectorsProcessed.Add(float64(vectorCount))
+}
+
+// RecordMetalSearchError records metrics for a failed Metal search
+func RecordMetalSearchError(errorType string) {
+	MetalSearchOperationsTotal.WithLabelValues("error").Inc()
+}
+
+// RecordMetalAdd records metrics for a Metal add operation
+func RecordMetalAdd(duration time.Duration, vectorCount int, dim int) {
+	MetalAddDurationSeconds.Observe(duration.Seconds())
+	MetalAddOperationsTotal.WithLabelValues("success").Inc()
+	MetalAddVectorsProcessed.Add(float64(vectorCount))
+	MetalMemoryBytes.WithLabelValues("vectors").Add(float64(vectorCount * dim * 4))
+}
+
+// RecordMetalAddError records metrics for a failed Metal add
+func RecordMetalAddError(errorType string) {
+	MetalAddOperationsTotal.WithLabelValues("error").Inc()
+}
+
+// RecordMetalIndexSize updates the Metal index size metric
+func RecordMetalIndexSize(deviceID int, vectorCount int, dim int) {
+	deviceLabel := fmt.Sprintf("%d", deviceID)
+	MetalIndexVectors.WithLabelValues(deviceLabel).Set(float64(vectorCount))
+	MetalIndexDimensions.WithLabelValues(deviceLabel).Set(float64(dim))
+}
+
+// RecordMetalMemory updates Metal memory metrics
+func RecordMetalMemory(allocated int64, used int64) {
+	MetalMemoryBytes.WithLabelValues("allocated").Set(float64(allocated))
+	MetalMemoryBytes.WithLabelValues("used").Set(float64(used))
+}
+
+// RecordMetalShaderCompile records metrics for Metal shader compilation
+func RecordMetalShaderCompile(duration time.Duration, success bool, kernelCount int) {
+	MetalShaderCompileDurationSeconds.Observe(duration.Seconds())
+	if success {
+		MetalShaderCompileTotal.WithLabelValues("success").Inc()
+		MetalShaderKernelCount.Set(float64(kernelCount))
+	} else {
+		MetalShaderCompileTotal.WithLabelValues("error").Inc()
+	}
 }

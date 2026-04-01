@@ -62,3 +62,6 @@ perf_summary.md
 !grafana/**/*.json
 !longbowclientsdk/**/*
 !clients/**/*.json
+
+# Backup files
+*.bak

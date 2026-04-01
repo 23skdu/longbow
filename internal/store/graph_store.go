@@ -404,7 +404,7 @@ func (gs *GraphStore) Close() error {
 	return nil
 }
 
-func (gs *GraphStore) ToArrowBatch() (arrow.RecordBatch, error) {
+func (gs *GraphStore) ToArrowBatch() (arrow.Record, error) {
 	gs.mu.RLock()
 	defer gs.mu.RUnlock()
 
@@ -457,4 +457,78 @@ func (gs *GraphStore) ToArrowBatch() (arrow.RecordBatch, error) {
 	}, int64(len(subjects)))
 
 	return record, nil
+}
+
+// FromArrowBatch loads edges from an Arrow Record into the GraphStore.
+// The record must have the schema: subject (uint32), predicate_idx (int32), object (uint32), weight (float32).
+// The predicates parameter provides the mapping from predicate indices to predicate strings.
+func (gs *GraphStore) FromArrowBatch(record arrow.Record, predicates []string) error {
+	if record == nil || record.NumRows() == 0 {
+		return nil
+	}
+
+	gs.mu.Lock()
+	defer gs.mu.Unlock()
+
+	// Validate schema
+	schema := record.Schema()
+	if schema.NumFields() != 4 {
+		return arrow.ErrInvalid
+	}
+
+	// Get columns
+	subjectCol := record.Column(0).(*array.Uint32)
+	predicateIdxCol := record.Column(1).(*array.Int32)
+	objectCol := record.Column(2).(*array.Uint32)
+	weightCol := record.Column(3).(*array.Float32)
+
+	// Load predicates vocabulary if provided
+	if len(predicates) > 0 && len(gs.predicates) == 0 {
+		gs.predicates = make([]string, len(predicates))
+		copy(gs.predicates, predicates)
+		for i, p := range predicates {
+			gs.predicateMap[p] = int32(i)
+		}
+	}
+
+	// Load edges
+	numRows := int(record.NumRows())
+	for i := 0; i < numRows; i++ {
+		subject := subjectCol.Value(i)
+		predicateIdx := predicateIdxCol.Value(i)
+		object := objectCol.Value(i)
+		weight := weightCol.Value(i)
+
+		// Get predicate string from index
+		var predicate string
+		if int(predicateIdx) < len(gs.predicates) {
+			predicate = gs.predicates[predicateIdx]
+		} else {
+			predicate = "unknown"
+		}
+
+		edge := Edge{
+			Subject:   VectorID(subject),
+			Predicate: predicate,
+			Object:    VectorID(object),
+			Weight:    weight,
+		}
+
+		// Add to maps (without going through AddEdge to avoid duplicate predicate handling)
+		gs.forwardEdges[subject] = append(gs.forwardEdges[subject], edge)
+		gs.backwardEdges[object] = append(gs.backwardEdges[object], edge)
+		gs.edgeCount++
+	}
+
+	return nil
+}
+
+// ToArrowRecord is an alias for ToArrowBatch for API consistency.
+func (gs *GraphStore) ToArrowRecord() (arrow.Record, error) {
+	return gs.ToArrowBatch()
+}
+
+// FromArrowRecord is an alias for FromArrowBatch for API consistency.
+func (gs *GraphStore) FromArrowRecord(record arrow.Record, predicates []string) error {
+	return gs.FromArrowBatch(record, predicates)
 }

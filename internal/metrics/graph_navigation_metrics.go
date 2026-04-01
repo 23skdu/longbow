@@ -134,4 +134,67 @@ var (
 		},
 		[]string{"dataset"},
 	)
+
+	// GraphStore Serialization Metrics
+
+	// GraphStoreExportDurationSeconds measures the duration of Arrow export operations
+	GraphStoreExportDurationSeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_graph_store_export_duration_seconds",
+			Help:    "Duration of GraphStore Arrow export operations",
+			Buckets: prometheus.DefBuckets,
+		},
+	)
+
+	// GraphStoreImportDurationSeconds measures the duration of Arrow import operations
+	GraphStoreImportDurationSeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_graph_store_import_duration_seconds",
+			Help:    "Duration of GraphStore Arrow import operations",
+			Buckets: prometheus.DefBuckets,
+		},
+	)
+
+	// GraphStoreExportTotal counts GraphStore export operations
+	GraphStoreExportTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_graph_store_export_total",
+			Help: "Total number of GraphStore export operations",
+		},
+		[]string{"status"}, // "success", "error"
+	)
+
+	// GraphStoreImportTotal counts GraphStore import operations
+	GraphStoreImportTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_graph_store_import_total",
+			Help: "Total number of GraphStore import operations",
+		},
+		[]string{"status"}, // "success", "error"
+	)
+
+	// GraphStoreEdgeCount tracks the number of edges in GraphStore
+	GraphStoreEdgeCount = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "longbow_graph_store_edge_count",
+			Help: "Number of edges in GraphStore",
+		},
+	)
+
+	// GraphStorePredicateCount tracks the number of unique predicates
+	GraphStorePredicateCount = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "longbow_graph_store_predicate_count",
+			Help: "Number of unique predicates in GraphStore",
+		},
+	)
+
+	// GraphStoreExportBytes tracks the size of Arrow export data
+	GraphStoreExportBytes = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_graph_store_export_bytes",
+			Help:    "Size of GraphStore Arrow export in bytes",
+			Buckets: prometheus.ExponentialBuckets(1024, 2, 10), // 1KB to 512KB
+		},
+	)
 )

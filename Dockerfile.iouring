@@ -1,15 +1,7 @@
-FROM golang:1.26.1-bookworm
+# Stage 1: Build with io_uring support
+FROM golang:1.26.1-bookworm AS builder
 
 WORKDIR /app
-
-# Install tools for testing and debugging
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    strace \
-    htop \
-    iotop \
-    sysstat \
-    linux-perf \
-    && rm -rf /var/lib/apt/lists/*
 
 COPY go.mod go.sum ./
 RUN go mod download
@@ -23,10 +15,19 @@ RUN CGO_ENABLED=1 go build \
     -ldflags="-s -w -checklinkname=0" \
     -o longbow ./cmd/longbow
 
+# Stage 2: Minimal runtime
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /app/longbow /usr/local/bin/longbow
+
 # Environment for io_uring
 ENV LONGBOW_STORAGE_USE_IOURING=true
 ENV LONGBOW_IOURING_QUEUE_DEPTH=256
 
 EXPOSE 3000 3001 9090
 
-ENTRYPOINT ["/app/longbow"]
+ENTRYPOINT ["/usr/local/bin/longbow"]

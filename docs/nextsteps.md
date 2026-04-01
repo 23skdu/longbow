@@ -1,7 +1,205 @@
 # Longbow Next Steps — Feature Roadmap 2026
 
-**Last Updated**: 2026-03-30
+**Last Updated**: 2026-03-31
 **Purpose**: Create competitive features comparable to Pinecone, Milvus, Qdrant, Weaviate
+
+---
+
+## 🚨 Critical Code Gaps (Stubbed/Incomplete Features)
+
+These are actual code gaps found in the codebase that need immediate attention:
+
+### HIGH PRIORITY FIXES
+
+| # | Component | File | Issue | Impact |
+|---|-----------|------|-------|--------|
+| 1 | **CUDA Memory Ops** | `internal/gpu/memory/memory_cuda_stub.go` | `freeCUDAMemory()`, `cudaMemcpyHostToDevice()`, `cudaMemcpyDeviceToHost()` all return "not implemented" errors | GPU memory operations fall back to CPU, severe performance penalty on CUDA systems |
+| 2 | **IVF-PQ Filter Support** | `internal/store/ivf_pq_index_test.go:323` | Test skipped: "Filter support not yet implemented" | Cannot filter during IVF-PQ search, requires post-filter which degrades performance |
+| 3 | **GraphStore Arrow Serialization** | `internal/store/graph_store_test.go:155` | Test skipped: "Arrow serialization for GraphStore not yet implemented" | Graph data cannot be persisted/recovered via Arrow format, only in-memory |
+| 4 | **Metal Index Optimized** | `internal/gpu/metal/metal_gpu_optimized.go` | ✅ FIXED: Replaced invalid `float8`/`half8` types with `float4`/`half4`, removed `simd_shuffle_down` usage | Apple Silicon GPU acceleration now functional |
+| 5 | **Request Forwarder Gaps** | `internal/sharding/forwarder.go:256` | Many forwarding methods return "not yet implemented" | Some cluster operations cannot be proxied between nodes |
+| 6 | **OpenCL Backend** | `internal/gpu/interface.go:70` | Returns "OpenCL backend not yet implemented" | No cross-platform GPU support (AMD, Intel GPUs) |
+
+### MEDIUM PRIORITY FIXES
+
+| # | Component | File | Issue |
+|---|-----------|------|-------|
+| 7 | **Hybrid RAM+Disk Index** | `docs/nextsteps.md:98` | Listed as NOT DONE - hot/cold tiering not implemented |
+| 8 | **Multi-GPU Support** | `docs/nextsteps.md:87` | Listed as NOT DONE - single GPU only |
+| 9 | **GPU HNSW Construction** | `docs/nextsteps.md:84` | Listed as NOT DONE - CPU-only index building |
+| 10 | **Cross-Encoder Reranker** | `docs/nextsteps.md:75` | Listed as NOT DONE (though implementation exists, may be incomplete) |
+| 11 | **Example Apps** | `docs/nextsteps.md:197` | No example applications for quick start |
+| 12 | **Benchmark Playground** | `docs/nextsteps.md:198` | No interactive benchmark tool |
+
+---
+
+## 📊 Test Health Analysis
+
+### Skipped Tests Summary: **150 tests skipped**
+
+| Category | Count | Files | Reason |
+|----------|-------|-------|--------|
+| **Flaky Tests** | 8+ | `sharded_hnsw_lifecycle_test.go`, `metric_test.go`, `arrow_insert_properties_test.go` | Sorting/timing issues, need investigation |
+| **Platform-Specific** | 40+ | `simd_fma_test.go`, `simd_fma_portable_test.go`, `hadamard_arm64_test.go` | AVX512/NEON not available on current platform |
+| **Integration Tests** | 20+ | `s3_remote_test.go`, `gcs_remote_test.go`, `wal_backend_test.go` | Missing credentials or CI environment |
+| **Known Bugs** | 5+ | `metal_optimized_test.go`, `batched_indexing_test.go` | Shader compilation issues, timing dependencies |
+| **Unimplemented Features** | 4 | `ivf_pq_index_test.go`, `graph_store_test.go` | Features marked as not yet implemented |
+
+### Critical Flaky Tests to Fix:
+1. `sharded_indexing_test.go:205` - "Could not find two datasets with different shards"
+2. `metric_test.go:86` - "Flaky - sorting issue with sharded index results"
+3. `batched_indexing_test.go:18` - "async indexing timing issues - needs refactor"
+4. `ingestion_pipeline_test.go:59` - "timing-dependent backpressure test - needs refactor"
+5. `hnsw_repair_integration_test.go:14` - "repair integration test flakiness - needs investigation"
+
+---
+
+## 🚀 Performance Improvement Opportunities
+
+Based on codebase analysis, here are **5 high-impact performance improvements**:
+
+### 1. Implement CUDA Memory Operations (Critical GPU Path)
+
+**File**: `internal/gpu/memory/memory_cuda_stub.go`  
+**Current State**: All operations return errors, falling back to CPU  
+**Impact**: 10-100x speedup on NVIDIA GPU systems for batch distance calculations
+
+```
+Tasks:
+- [ ] Implement freeCUDAMemory() using cuMemFree
+- [ ] Implement cudaMemcpyHostToDevice() using cuMemcpyHtoD
+- [ ] Implement cudaMemcpyDeviceToHost() using cuMemcpyDtoH
+- [ ] Add proper error handling with CUDA error codes
+- [ ] Add benchmark tests comparing GPU vs CPU paths
+```
+
+### 2. Fix Metal Optimized Index Shader Compilation ✅ COMPLETED
+
+**File**: `internal/gpu/metal/metal_gpu_optimized.go`  
+**Status**: **FIXED** - Replaced invalid `float8`/`half8` types with `float4`/`half4`, removed problematic `simd_shuffle_down` usage  
+**Impact**: Enables 3-5x speedup on Apple Silicon for optimized index operations
+
+```
+Completed:
+- [x] Fixed Metal shader compilation errors (float8→float4, half8→half4)
+- [x] Fixed kernel dispatch for optimized distance calculations  
+- [x] Added proper error messages for shader failures
+- [x] Enabled MetalIndexOptimized tests (removed skip)
+- [x] Added comprehensive unit tests for Metal index
+```
+
+### 3. Implement IVF-PQ Filter Pushdown
+
+**File**: `internal/store/ivf_pq_index.go`  
+**Current State**: Filter support not implemented, requires post-filter  
+**Impact**: 2-5x faster filtered searches by reducing candidates early
+
+```
+Tasks:
+- [ ] Add filter predicate to IVF-PQ search parameters
+- [ ] Implement probe-list filtering before distance calculation
+- [ ] Add selective probe selection based on filter selectivity
+- [ ] Benchmark filter pushdown vs post-filter
+- [ ] Update IVFPQIndex.SearchWithFilter test
+```
+
+### 4. Implement GraphStore Arrow Serialization
+
+**File**: `internal/store/graph_store.go`  
+**Current State**: No Arrow serialization, only in-memory  
+**Impact**: Enables graph persistence, recovery, and zero-copy transfer
+
+```
+Tasks:
+- [ ] Implement GraphStore.ToArrowRecord() for edges
+- [ ] Implement GraphStore.FromArrowRecord() for recovery
+- [ ] Add predicate vocabulary serialization
+- [ ] Integrate with WAL for durability
+- [ ] Enable TestGraphStore_FromArrowBatch test
+```
+
+### 5. Complete Request Forwarder for All Methods
+
+**File**: `internal/sharding/forwarder.go`  
+**Current State**: Many methods return "not yet implemented"  
+**Impact**: Enables full cluster operations without direct node access
+
+```
+Tasks:
+- [ ] Implement forwarding for ListFlights
+- [ ] Implement forwarding for GetFlightInfo
+- [ ] Implement forwarding for DoAction (non-streaming)
+- [ ] Add retry logic for transient failures
+- [ ] Add forwarding latency metrics
+```
+
+---
+
+## 📈 Existing Performance Infrastructure
+
+The codebase already has substantial performance tooling:
+
+### Benchmark Coverage (40+ benchmarks across 17 files)
+
+| Component | Files | Benchmark Focus |
+|-----------|-------|-----------------|
+| **SIMD Distance** | `internal/simd/simd_*_bench_test.go` | 128/256/384/768/1024/1536/2048/3072 dims |
+| **HNSW Search** | `internal/store/arrow_search_bench_test.go` | Small/Large index search latency |
+| **Insert Paths** | `internal/store/arrow_insert_bench_test.go` | Batch insert throughput |
+| **Memory Arenas** | `internal/memory/arena_compaction_test.go` | Alloc/Get performance |
+| **WAL I/O** | `internal/storage/benchmark/io_benchmark_test.go` | Throughput, DirectIO vs buffered |
+| **Consistent Hash** | `internal/sharding/ring_test.go` | Node lookup, preference list |
+| **GPU Distance** | `internal/gpu/metal_optimized_test.go` | Metal GPU acceleration |
+| **BM25 Index** | `internal/store/bm25_inverted_index_test.go` | Inverted index scoring |
+
+### Performance Configuration Points
+
+| Setting | Location | Default | Purpose |
+|---------|----------|---------|---------|
+| `IOURING_QUEUE_DEPTH` | `internal/storage/wal_backend_arrow_iouring.go` | 256 | io_uring SQE queue depth |
+| `GPU_DEVICE_ID` | `internal/gpu/interface.go` | 0 | GPU selection for multi-GPU |
+| `LONGBOW_WAL_BATCH_SIZE` | `internal/storage/batched_wal.go` | 1024 | WAL write batching |
+| `LONGBOW_ARENA_SLAB_SIZE` | `internal/memory/slab_pool.go` | 64KB | Memory slab allocation |
+
+### Key Performance Patterns Already Implemented
+
+1. **SIMD Dispatch**: `internal/simd/dispatch.go` - Runtime CPU feature detection, auto-selects AVX2/AVX512/NEON
+2. **Zero-Copy**: Arrow Flight streaming with `ipc.NewReader/Writer`
+3. **Memory Arenas**: Size-classed allocation with compaction support
+4. **Adaptive GC**: `internal/gc/adaptive.go` - Dynamic GOGC tuning based on allocation rate
+5. **io_uring**: Async kernel I/O for WAL writes (Linux only)
+
+---
+
+## 🔧 Test Health Improvements Needed
+
+### Critical Test Fixes (High Priority)
+
+| Priority | Test | Issue | Recommended Action |
+|----------|------|-------|-------------------|
+| P0 | `batched_indexing_test.go` | Async timing issues | Refactor to use deterministic synchronization |
+| P0 | `ingestion_pipeline_test.go` | Timing-dependent backpressure | Replace sleep with condition variable |
+| P1 | `sharded_hnsw_lifecycle_test.go` | Flaky sorting results | Use stable sort or tolerant assertions |
+| P1 | `metric_test.go` | Flaky sharded index results | Fix concurrent metric aggregation |
+| P1 | `hnsw_repair_integration_test.go` | Repair test flakiness | Add deterministic seed, increase timeouts |
+| P2 | `arrow_insert_properties_test.go` | Flaky gopter tests | Fix or remove property-based tests |
+
+### Test Coverage Gaps (Unimplemented Features)
+
+| Feature | Test File | Status | Action Required |
+|---------|-----------|--------|-----------------|
+| IVF-PQ Filtering | `ivf_pq_index_test.go:323` | Skipped | Implement filter pushdown, enable test |
+| GraphStore Serialization | `graph_store_test.go:155` | Skipped | Implement Arrow serialization |
+| Metal Optimized Index | `metal_optimized_test.go` | ✅ Fixed | Shader compilation issues resolved |
+| CUDA Memory Ops | `memory_cuda_stub.go` | Stub | Implement actual CUDA calls |
+
+### Test Environment Requirements
+
+Many integration tests require external services:
+- **S3 Tests**: Set `S3_TEST_ENDPOINT` and `S3_TEST_BUCKET`
+- **GCS Tests**: Set `GCS_TEST_BUCKET` and authenticate
+- **GPU Tests**: Require CUDA/Metal hardware
+- **DirectIO Tests**: Require Linux with proper alignment support
 
 ---
 
@@ -242,4 +440,4 @@ Longbow uses **gRPC + Apache Arrow Flight only**. No REST/HTTP API for data oper
 
 ---
 
-*Last Updated: 2026-03-30*
+*Last Updated: 2026-03-31*

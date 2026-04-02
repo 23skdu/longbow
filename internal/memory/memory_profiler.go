@@ -165,7 +165,7 @@ func (ma *MemoryAnalyzer) AnalyzeUsage() MemoryAnalysis {
 		ProfilerStats:   profilerStats,
 		RuntimeStats:    runtimeStats,
 		HeapUtilization: float64(runtimeStats.HeapInuse) / float64(runtimeStats.HeapSys) * 100,
-		MemoryPressure:  ma.calculateMemoryPressure(&profilerStats, runtimeStats),
+		MemoryPressure:  ma.calculateMemoryPressure(runtimeStats),
 		Recommendations: ma.generateRecommendations(&profilerStats, runtimeStats),
 	}
 
@@ -189,7 +189,7 @@ const (
 	PressureCritical MemoryPressure = "critical"
 )
 
-func (ma *MemoryAnalyzer) calculateMemoryPressure(profilerStats *MemoryStats, runtimeStats RuntimeMemoryStats) MemoryPressure {
+func (ma *MemoryAnalyzer) calculateMemoryPressure(runtimeStats RuntimeMemoryStats) MemoryPressure {
 	heapUtilization := float64(runtimeStats.HeapInuse) / float64(runtimeStats.HeapSys)
 	goroutineCount := float64(runtimeStats.NumGoroutines)
 	gcFraction := runtimeStats.GCCPUFraction

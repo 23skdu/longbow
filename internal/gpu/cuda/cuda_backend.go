@@ -4,7 +4,7 @@ package cuda
 
 /*
 #cgo CFLAGS: -DUSE_GPU
-#include "cuda_backend.h"
+#include "cuda_backend_linux.h"
 */
 import "C"
 import (

@@ -1,4 +1,4 @@
-#include "faiss_gpu_cpp.h"
+#include "faiss_gpu_cpp_linux.h"
 
 #ifdef USE_GPU
 #include <faiss/gpu/StandardGpuResources.h>

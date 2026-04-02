@@ -42,10 +42,10 @@ func TestSizeClassArena_AllocSlice(t *testing.T) {
 			var zero int32
 			expectedClass := map[int]string{
 				40:     "tiny",
-				400:    "small",
-				2000:   "medium",
-				8000:   "large",
-				40000:  "xlarge",
+				400:    "medium",
+				2000:   "large",
+				8000:   "xlarge",
+				40000:  "huge",
 				200000: "huge",
 			}[int(unsafe.Sizeof(zero))*tc.count]
 

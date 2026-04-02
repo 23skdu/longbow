@@ -1,6 +1,6 @@
 //go:build gpu && linux
 
-#include "cuda_backend_linux.h"
+#include "cuda_backend_linux.h" // IWYU pragma: keep
 
 #ifdef USE_GPU
 #include <cuda_runtime.h>

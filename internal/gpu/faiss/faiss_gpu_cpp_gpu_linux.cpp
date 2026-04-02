@@ -1,4 +1,4 @@
-#include "faiss_gpu_cpp_linux.h"
+#include "faiss_gpu_cpp_linux.h" // IWYU pragma: keep
 
 #ifdef USE_GPU
 #include <faiss/gpu/StandardGpuResources.h>

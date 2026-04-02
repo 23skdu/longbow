@@ -1,3 +1,6 @@
+//go:build gpu && linux
+// +build gpu,linux
+
 #ifndef CUDA_BACKEND_H
 #define CUDA_BACKEND_H
 

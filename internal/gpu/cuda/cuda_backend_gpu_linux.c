@@ -1,4 +1,6 @@
-#include "cuda_backend.h"
+//go:build gpu && linux
+
+#include "cuda_backend_linux.h"
 
 #ifdef USE_GPU
 #include <cuda_runtime.h>

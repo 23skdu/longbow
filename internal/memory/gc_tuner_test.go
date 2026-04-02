@@ -26,6 +26,7 @@ func TestGCTuner_Logic(t *testing.T) {
 	tuner := NewGCTuner(limit, high, low, &logger)
 	mockReader := &mockMemStatsReader{}
 	tuner.reader = mockReader
+	tuner.EnableGPUTuning = false // Disable GPU tuning for pure heap logic check
 
 	tests := []struct {
 		name         string

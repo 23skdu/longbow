@@ -1,6 +1,6 @@
 # Longbow Next Steps — Feature Roadmap 2026
 
-**Last Updated**: 2026-03-31
+**Last Updated**: 2026-04-03
 **Purpose**: Create competitive features comparable to Pinecone, Milvus, Qdrant, Weaviate
 
 ---
@@ -11,13 +11,8 @@ These are actual code gaps found in the codebase that need immediate attention:
 
 ### HIGH PRIORITY FIXES
 
-| # | Component | File | Issue | Impact |
-|---|-----------|------|-------|--------|
-| 1 | **CUDA Memory Ops** | `internal/gpu/memory/memory_cuda.go` | ✅ FIXED: Implemented with cuMemFree, cuMemcpyHtoD, cuMemcpyDtoH via CGO | GPU memory operations now functional on CUDA systems |
-| 2 | **IVF-PQ Filter Support** | `internal/store/ivf_pq_index_test.go:323` | Test skipped: "Filter support not yet implemented" | Cannot filter during IVF-PQ search, requires post-filter which degrades performance |
-| 3 | **GraphStore Arrow Serialization** | `internal/store/graph_store.go` | ✅ FIXED: Implemented `FromArrowBatch()` and `FromArrowRecord()`, added comprehensive tests | Graph data can now be persisted/recovered via Arrow format |
-| 4 | **Metal Index Optimized** | `internal/gpu/metal/metal_gpu_optimized.go` | ✅ FIXED: Replaced invalid `float8`/`half8` types with `float4`/`half4`, removed `simd_shuffle_down` usage | Apple Silicon GPU acceleration now functional |
-| 5 | **Request Forwarder Gaps** | `internal/sharding/forwarder.go:256` | Many forwarding methods return "not yet implemented" | Some cluster operations cannot be proxied between nodes |
+| # | Feature | Location | Issue | Impact |
+|---|---------|----------|-------|--------|
 | 6 | **OpenCL Backend** | `internal/gpu/interface.go:70` | Returns "OpenCL backend not yet implemented" | No cross-platform GPU support (AMD, Intel GPUs) |
 
 ### MEDIUM PRIORITY FIXES
@@ -45,7 +40,8 @@ These are actual code gaps found in the codebase that need immediate attention:
 | **Known Bugs** | 3+ | `batched_indexing_test.go` | Timing dependencies |
 | **Unimplemented Features** | 3 | `ivf_pq_index_test.go` | Features marked as not yet implemented |
 
-### Critical Flaky Tests to Fix:
+### Critical Flaky Tests to Fix
+
 1. `sharded_indexing_test.go:205` - "Could not find two datasets with different shards"
 2. `metric_test.go:86` - "Flaky - sorting issue with sharded index results"
 3. `batched_indexing_test.go:18` - "async indexing timing issues - needs refactor"
@@ -56,83 +52,65 @@ These are actual code gaps found in the codebase that need immediate attention:
 
 ## 🚀 Performance Improvement Opportunities
 
-Based on codebase analysis, here are **5 high-impact performance improvements**:
+Based on codebase analysis, here are **3 remaining high-impact performance improvements**:
 
-### 1. Implement CUDA Memory Operations (Critical GPU Path)
-
-**File**: `internal/gpu/memory/memory_cuda.go`  
-**Status**: **FIXED** - Fully implemented with CGO bindings to CUDA runtime (cuMemFree, cuMemcpyHtoD, cuMemcpyDtoH)  
-**Impact**: 10-100x speedup on NVIDIA GPU systems for batch distance calculations
-
-```
-Completed:
-- [x] Implemented freeCUDAMemory() using cuMemFree
-- [x] Implemented cudaMemcpyHostToDevice() using cuMemcpyHtoD
-- [x] Implemented cudaMemcpyDeviceToHost() using cuMemcpyDtoH
-- [x] Added proper error handling with CUDA error codes
-- [x] Added GPU HNSW construction acceleration (new file: hnsw_gpu_build.go)
-- [x] Added Multi-GPU support (new file: multi_gpu.go)
-- [x] Added Prometheus metrics for CUDA and Multi-GPU operations
-```
-
-### 2. Fix Metal Optimized Index Shader Compilation ✅ COMPLETED
-
-**File**: `internal/gpu/metal/metal_gpu_optimized.go`  
-**Status**: **FIXED** - Replaced invalid `float8`/`half8` types with `float4`/`half4`, removed problematic `simd_shuffle_down` usage  
-**Impact**: Enables 3-5x speedup on Apple Silicon for optimized index operations
-
-```
-Completed:
-- [x] Fixed Metal shader compilation errors (float8→float4, half8→half4)
-- [x] Fixed kernel dispatch for optimized distance calculations  
-- [x] Added proper error messages for shader failures
-- [x] Enabled MetalIndexOptimized tests (removed skip)
-- [x] Added comprehensive unit tests for Metal index
-```
-
-### 3. Implement IVF-PQ Filter Pushdown
+### 1. Implement IVF-PQ Filter Pushdown - ✅ COMPLETED
 
 **File**: `internal/store/ivf_pq_index.go`  
-**Current State**: Filter support not implemented, requires post-filter  
+**Current State**: Full filter pushdown implemented using roaring bitmaps.  
 **Impact**: 2-5x faster filtered searches by reducing candidates early
 
 ```
 Tasks:
-- [ ] Add filter predicate to IVF-PQ search parameters
-- [ ] Implement probe-list filtering before distance calculation
-- [ ] Add selective probe selection based on filter selectivity
-- [ ] Benchmark filter pushdown vs post-filter
-- [ ] Update IVFPQIndex.SearchWithFilter test
+- [x] Add filter predicate to IVF-PQ search parameters
+- [x] Implement probe-list filtering before distance calculation
+- [x] Add selective probe selection based on filter selectivity
+- [x] Benchmark filter pushdown vs post-filter
+- [x] Update IVFPQIndex.SearchWithFilter test
 ```
 
-### 4. Implement GraphStore Arrow Serialization
+### 4. Implement GraphStore Arrow Serialization - ✅ COMPLETED
 
 **File**: `internal/store/graph_store.go`  
-**Current State**: No Arrow serialization, only in-memory  
-**Impact**: Enables graph persistence, recovery, and zero-copy transfer
+**Current State**: Full Arrow serialization implemented with Dictionary Encoding.  
+**Impact**: Enables self-contained graph persistence and recovery.
 
 ```
 Tasks:
-- [ ] Implement GraphStore.ToArrowRecord() for edges
-- [ ] Implement GraphStore.FromArrowRecord() for recovery
-- [ ] Add predicate vocabulary serialization
-- [ ] Integrate with WAL for durability
-- [ ] Enable TestGraphStore_FromArrowBatch test
+- [x] Implement GraphStore.ToArrowRecord() for edges
+- [x] Implement GraphStore.FromArrowRecord() for recovery
+- [x] Add predicate vocabulary serialization (via Dictionary)
+- [x] Enable TestGraphStore_FromArrowBatch test
+- [x] Add TestGraphStore_IPCRoundTrip for verification
 ```
 
-### 5. Complete Request Forwarder for All Methods
+### 5. Complete Request Forwarder for All Methods - ✅ COMPLETED
 
 **File**: `internal/sharding/forwarder.go`  
-**Current State**: Many methods return "not yet implemented"  
+**Current State**: Generic gRPC proxying implemented via byteCodec.  
 **Impact**: Enables full cluster operations without direct node access
 
 ```
 Tasks:
-- [ ] Implement forwarding for ListFlights
-- [ ] Implement forwarding for GetFlightInfo
-- [ ] Implement forwarding for DoAction (non-streaming)
-- [ ] Add retry logic for transient failures
-- [ ] Add forwarding latency metrics
+- [x] Implement forwarding for ListFlights
+- [x] Implement forwarding for GetFlightInfo
+- [x] Implement forwarding for DoAction (non-streaming)
+- [x] Implement forwarding for DoExchange (streaming)
+- [x] Add forwarding latency metrics
+```
+
+### 6. Implement Distributed Global Search (Scatter-Gather-Merge) - ✅ COMPLETED
+
+**File**: `internal/store/global_search.go`, `internal/store/store_query.go`  
+**Current State**: Full scatter-gather logic implemented with replica hedging and heap-based binary merge.  
+**Impact**: Enables cluster-wide vector searches with unified top-K results.
+
+```
+Tasks:
+- [x] Integrate FlightClientPool into GlobalSearchCoordinator
+- [x] Implement x-longbow-global metadata detection in DoGet
+- [x] Implement binary heap merge for top-K results
+- [x] Add TestDoGetSearch_Integration for verification
 ```
 
 ---
@@ -166,9 +144,13 @@ The codebase already has substantial performance tooling:
 ### Key Performance Patterns Already Implemented
 
 1. **SIMD Dispatch**: `internal/simd/dispatch.go` - Runtime CPU feature detection, auto-selects AVX2/AVX512/NEON
+
 2. **Zero-Copy**: Arrow Flight streaming with `ipc.NewReader/Writer`
+
 3. **Memory Arenas**: Size-classed allocation with compaction support
+
 4. **Adaptive GC**: `internal/gc/adaptive.go` - Dynamic GOGC tuning based on allocation rate
+
 5. **io_uring**: Async kernel I/O for WAL writes (Linux only)
 
 ---
@@ -190,9 +172,9 @@ The codebase already has substantial performance tooling:
 
 | Feature | Test File | Status | Action Required |
 |---------|-----------|--------|-----------------|
-| IVF-PQ Filtering | `ivf_pq_index_test.go:323` | Skipped | Implement filter pushdown, enable test |
-| GraphStore Serialization | `graph_store_test.go` | ✅ Fixed | Arrow serialization implemented |
-| Metal Optimized Index | `metal_optimized_test.go` | ✅ Fixed | Shader compilation issues resolved |
+| IVF-PQ Filtering | `ivf_pq_index_test.go:323` | ✅ PASS | Filter pushdown implemented, tests enabled |
+| GraphStore Roundtrip | `graph_store_test.go:227` | ✅ PASS | Self-contained Arrow serialization verified |
+| GraphStore IPC | `graph_store_test.go:507` | ✅ PASS | Verified dictionary preservation across IPC |
 | CUDA Memory Ops | `memory_cuda_stub.go` | Stub | Implement actual CUDA calls |
 
 ### Test Environment Requirements
@@ -209,49 +191,50 @@ Many integration tests require external services:
 
 ### 🔴 HIGH PRIORITY
 
-#### Part 1: Serverless Auto-Scaling
+#### Part 1: Serverless Auto-Scaling - ✅ COMPLETED
 
 **Comparable to**: Pinecone serverless, LanceDB embedded
 
-- [ ] **1.1** Create auto-scaler component that monitors query QPS and latency
-- [ ] **1.2** Implement dynamic worker pool sizing (ingestion workers, search threads)
-- [ ] **1.3** Add memory-based admission control with backpressure signals
+- [x] **1.1** Create auto-scaler component that monitors query QPS and latency
+- [x] **1.2** Implement dynamic worker pool sizing (ingestion workers, search threads)
+- [x] **1.3** Add memory-based admission control with backpressure signals
 - [ ] **1.4** Design tiered storage triggers (hot → warm → cold based on access patterns)
 - [ ] **1.5** Add API endpoints for capacity planning and auto-scale configuration
 
-#### Part 2: Enhanced Multi-Tenancy with Strict Isolation
+#### Part 2: Enhanced Multi-Tenancy with Strict Isolation - 🔶 INFRA EXISTS
 
-**Comparable to**: Pinecone namespaces, Milvus partition keys
+**Comparable to**: Pinecone namespaces, Milvus partition key
 
+- [x] **2.0** Namespace struct (`internal/store/namespace.go`) with dataset isolation
 - [ ] **2.1** Add tenant resource quotas (max vectors, max dimensions, storage limits)
 - [ ] **2.2** Implement tenant-specific caching to prevent cross-tenant pollution
 - [ ] **2.3** Add tenant-aware metrics (per-namespace QPS, latency, storage)
 - [ ] **2.4** Create tenant-level rate limiting
 - [ ] **2.5** Add tenant migration APIs (move namespace to different node)
 
-#### Part 12: OpenTelemetry Distributed Tracing
+#### Part 12: OpenTelemetry Distributed Tracing - ✅ COMPLETED
 
 **Comparable to**: Leading observability standards
 
-- [ ] **12.1** Add OpenTelemetry tracing to all critical paths
-- [ ] **12.2** Implement trace propagation across nodes (W3C format)
-- [ ] **12.3** Create span attributes for search, ingest, replication
-- [ ] **12.4** Add trace-based performance profiling
-- [ ] **12.5** Integrate with Jaeger/Zipkin/Tempo
+- [x] **12.1** Add OpenTelemetry tracing to all critical paths
+- [x] **12.2** Implement trace propagation across nodes (W3C format)
+- [x] **12.3** Create span attributes for search, ingest, replication
+- [x] **12.4** Add trace-based performance profiling
+- [x] **12.5** Integrate with Jaeger/Zipkin/Tempo
 
 ---
 
 ### 🟡 MEDIUM PRIORITY
 
-#### Part 3: Rich Payload Filtering with Indexed Fields
+#### Part 3: Rich Payload Filtering with Indexed Fields - ✅ COMPLETED
 
 **Comparable to**: Qdrant payload filtering
 
-- [ ] **3.1** Implement indexed field types (numeric, keyword, boolean, datetime)
-- [ ] **3.2** Add bitmap indexes for high-cardinality filter fields
-- [ ] **3.3** Create filter compilation to pushdown
-- [ ] **3.4** Add composite filter optimization (AND/OR/NOT with index hints)
-- [ ] **3.5** Benchmark filter pushdown vs post-filter
+- [x] **3.1** Implement indexed field types (numeric, keyword, boolean, datetime)
+- [x] **3.2** Add bitmap indexes for high-cardinality filter fields
+- [x] **3.3** Create filter compilation to pushdown
+- [x] **3.4** Add composite filter optimization (AND/OR/NOT with index hints)
+- [x] **3.5** Benchmark filter pushdown vs post-filter
 
 #### Part 4: Built-in Vectorization Modules
 
@@ -263,40 +246,39 @@ Many integration tests require external services:
 - [ ] **4.4** Support external providers (OpenAI, Cohere, HuggingFace)
 - [ ] **4.5** Add embedding model versioning and caching
 
-#### Part 5: Hybrid Search (Vector + BM25) - REMAINING WORK
+#### Part 5: Hybrid Search (Vector + BM25) - ✅ IMPLEMENTED
 
 **Comparable to**: Weaviate hybrid search
 
-| Task | Status |
-|------|--------|
-| 5.1 Unified search API | ✅ DONE |
-| 5.2 RRF | ✅ DONE |
-| 5.3 Auto-tune alpha | ✅ DONE |
-| 5.4 Cross-encoder | 🔴 NOT DONE |
-| 5.5 Benchmark | 🔴 NOT DONE |
+- [x] **5.1** BM25 index with inverted index scoring
+- [x] **5.2** Vector search with HNSW
+- [x] **5.3** RRF fusion for combining results
+- [x] **5.4** Cross-encoder reranking (`internal/store/ml_reranker.go`)
+- [ ] **5.5** Hybrid search benchmark
 
 #### Part 6: GPU-Accelerated Search - ✅ COMPLETED
 
-**Comparable to**: Milvus GPU indexes
+- [x] GPU HNSW construction
+- [x] GPU batch distance
+- [x] GPU memory pool
+- [x] Multi-GPU support
 
-| Task | Status |
-|------|--------|
-| 6.1 GPU HNSW construction | ✅ DONE |
-| 6.2 GPU batch distance | ✅ DONE |
-| 6.3 GPU memory pool | ✅ DONE |
-| 6.4 Multi-GPU | ✅ DONE |
+#### Part 21: TurboQuant Performance Validation - ✅ COMPLETED
 
-#### Part 7: Disk-Based Indexing - REMAINING WORK
+- [x] Benchmark 1k, 3k, 5k, 7k batches (128d & 768d)
+- [x] pprof Heap & CPU profiling under peak stress
+- [x] Memory stability/leak verification (confirmed pre-allocation behavior)
+- [x] SIMD dequantization bottleneck analysis
+
+#### Part 7: Disk-Based Indexing - ✅ IMPLEMENTED
 
 **Comparable to**: LanceDB disk-based, Milvus DiskANN
 
-| Task | Status |
-|------|--------|
-| 7.1 mmap storage | ✅ DONE |
-| 7.2 DiskANN | ✅ DONE |
-| 7.3 SSD caching | ✅ DONE |
-| 7.4 Hybrid RAM+disk | 🔴 NOT DONE |
-| 7.5 I/O scheduling | 🔴 NOT DONE |
+- [x] **7.1** DiskANN index implementation (`internal/store/diskann.go`)
+- [x] **7.2** Vamana graph construction
+- [x] **7.3** Beam search with pruning
+- [ ] **7.4** Hybrid RAM+disk tiered storage (hot → warm → cold)
+- [ ] **7.5** I/O scheduling for disk-based search
 
 #### Part 8: Automatic Data Versioning
 
@@ -318,14 +300,14 @@ Many integration tests require external services:
 - [ ] **9.4** Add point-in-time recovery API
 - [ ] **9.5** Implement backup scheduling and retention policies
 
-#### Part 10: Fine-Grained RBAC & Audit Logging
+#### Part 10: Fine-Grained RBAC & Audit Logging - 🔶 INFRA EXISTS
 
 **Comparable to**: Milvus RBAC, Pinecone API keys
 
 - [ ] **10.1** Define roles (admin, read-write, read-only, ingest-only)
 - [ ] **10.2** Implement permission checks on dataset/namespace operations
 - [ ] **10.3** Add API key management with scopes
-- [ ] **10.4** Create comprehensive audit logging
+- [x] **10.4** Create comprehensive audit logging (`internal/security/audit.go`)
 - [ ] **10.5** Add SSO/OAuth integration support
 
 #### Part 13: Geo-Spatial Search
@@ -378,22 +360,22 @@ Many integration tests require external services:
 - [ ] **18.4** Add collection routing rules (tag-based)
 - [ ] **18.5** Benchmark federated vs single-collection
 
-#### Part 19: Semantic Query Cache
+#### Part 19: Semantic Query Cache - ✅ COMPLETED
 
 **Comparable to**: Query understanding, result reuse
 
-- [ ] **19.1** Implement query embedding cache (LRU)
-- [ ] **19.2** Add result caching with similarity-based invalidation
-- [ ] **19.3** Create cache warming for popular queries
-- [ ] **19.4** Add cache metrics (hit rate, latency improvement)
+- [x] **19.1** Implement query embedding cache (LRU)
+- [x] **19.2** Add result caching with similarity-based invalidation
+- [x] **19.3** Create cache warming for popular queries
+- [x] **19.4** Add cache metrics (hit rate, latency improvement)
 - [ ] **19.5** Implement distributed cache (Redis-compatible)
 
 #### Part 20: Developer Experience - REMAINING WORK
 
+**Comparable to**: Developer tools
+
 | Task | Status |
 |------|--------|
-| 20.1 gRPC/Flight protocol | ✅ DONE |
-| 20.2 Python client | ✅ DONE |
 | 20.3 Example apps | 🔴 NOT DONE |
 | 20.4 Benchmark playground | 🔴 NOT DONE |
 
@@ -401,9 +383,12 @@ Many integration tests require external services:
 
 ## Quick Wins (Low Effort, High Impact)
 
-1. **Semantic Cache** (Part 19) — Cache layer, immediate latency wins
-2. **OpenTelemetry** (Part 12) — Existing telemetry package, needs tracing
-3. **RBAC Enhancement** (Part 10) — Extend existing auth
+1. ✅ **Semantic Cache** (Part 19) — Completed with similarity-based invalidation
+2. ✅ **OpenTelemetry** (Part 12) — Completed with tracing on critical paths
+3. 🔶 **RBAC Enhancement** (Part 10) — Audit logging exists, RBAC not wired
+4. ⬜ **Tiered Storage** (Part 1.4) — Hot/warm/cold tiering
+5. ⬜ **Example Apps** (Part 20.3) — No example applications
+6. ⬜ **Benchmark Playground** (Part 20.4) — Interactive benchmark tool
 
 ---
 
@@ -412,7 +397,7 @@ Many integration tests require external services:
 ### Protocol Ports
 - **3000**: Data Server (gRPC/Arrow Flight)
 - **3001**: Meta Server (gRPC/Arrow Flight)
-- **9090**: Prometheus metrics
+- **9000**: pprof/Prometheus metrics (reassigned from 9090)
 
 ### Protocol
 Longbow uses **gRPC + Apache Arrow Flight only**. No REST/HTTP API for data operations.
@@ -442,4 +427,4 @@ Longbow uses **gRPC + Apache Arrow Flight only**. No REST/HTTP API for data oper
 
 ---
 
-*Last Updated: 2026-03-31*
+*Last Updated: 2026-04-03*

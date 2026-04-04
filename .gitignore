@@ -59,7 +59,9 @@ perf_summary.md
 .idea/
 .env*
 *.json
+!.docker/config.json
 !grafana/**/*.json
+!.gitlab-ci.yml
 !longbowclientsdk/**/*
 !clients/**/*.json
 

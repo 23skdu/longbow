@@ -219,7 +219,7 @@ graph TB
             subgraph MPS["Metal Performance Shaders"]
                 MPSDistance["MPSDistance"]
                 MPSReduce["MPSReduce"]
-                MPSSort["MPSSort"
+                MPSSort["MPSSort"]
             end
             
             subgraph GPUCompute["GPU Kernels"]
@@ -386,3 +386,268 @@ See [Configuration Guide](configuration.md) for details on:
 - `LONGBOW_GOSSIP_ENABLED`
 - `LONGBOW_GPU_ENABLED`
 - `LONGBOW_HYBRID_SEARCH_ENABLED`
+
+---
+
+## Observability: OpenTelemetry Tracing
+
+```mermaid
+graph TB
+    subgraph Client["Client"]
+        Tracer["OpenTelemetry Tracer"]
+    end
+
+    subgraph TraceContext["W3C Trace Context"]
+        Propagator["Trace Context Propagator"]
+    end
+
+    subgraph Node1["Node 1"]
+        IngestSpan["DoPut Span"]
+        SearchSpan["DoGet Search Span"]
+    end
+
+    subgraph Node2["Node 2"]
+        GlobalSpan["Global Search Span"]
+        RemoteSpan["Remote Query Span"]
+    end
+
+    subgraph Exporters["Exporters"]
+        Jaeger["Jaeger"]
+        Zipkin["Zipkin"]
+        Tempo["Grafana Tempo"]
+    end
+
+    Client --> Tracer
+    Tracer --> Propagator
+    Propagator --> IngestSpan
+    IngestSpan --> SearchSpan
+    SearchSpan --> GlobalSpan
+    GlobalSpan --> RemoteSpan
+    RemoteSpan --> Jaeger
+    RemoteSpan --> Zipkin
+    RemoteSpan --> Tempo
+```
+
+### Traced Operations
+
+| Operation | Span Attributes |
+|-----------|-----------------|
+| `DoPut` | dataset, batch_size, vector_dim |
+| `DoGet` | dataset, k, filters, latency_ms |
+| `GlobalSearch` | nodes_queried, results_merged |
+| `HybridSearch` | bm25_score, vector_score, alpha |
+| `Rerank` | candidates, model, top_k |
+
+---
+
+## Semantic Query Cache
+
+```mermaid
+graph LR
+    Query["Query Vector"] --> Cache[Query Cache]
+    Cache -->|Hit| Results["Cached Results"]
+    Cache -->|Miss| Embed[Embedding Model]
+    Embed --> Search[HNSW Search]
+    Search --> Results
+    Results -->|Cache| Cache
+```
+
+### Cache Features
+
+- **LRU with TTL**: Configurable expiration per dataset
+- **Similarity-Based Invalidation**: Invalidates on dataset mutations
+- **Cache Warming**: Pre-loads frequent queries
+- **Metrics**: Hit rate, latency improvement tracked
+
+---
+
+## Global Search (Scatter-Gather)
+
+```mermaid
+graph TB
+    subgraph Coordinator["Global Search Coordinator"]
+        Hedge["Replica Hedging"]
+        Merge["Heap Merge (Top-K)"]
+    end
+
+    subgraph Nodes["Longbow Nodes"]
+        Node1["Node 1"]
+        Node2["Node 2"]
+        Node3["Node 3"]
+    end
+
+    Query["Query"] --> Coordinator
+    Coordinator --> Hedge
+    Hedge -->|Parallel| Node1
+    Hedge -->|Parallel| Node2
+    Hedge -->|Parallel| Node3
+    Node1 -->|Results| Merge
+    Node2 -->|Results| Merge
+    Node3 -->|Results| Merge
+    Merge --> Final["Top-K Results"]
+```
+
+---
+
+## Auto-Scaling
+
+```mermaid
+graph TB
+    subgraph AutoScaler["AutoScaler"]
+        QPS["Search QPS Monitor"]
+        Latency["Latency Monitor"]
+        Reconcile["Reconciler"]
+    end
+
+    subgraph Admission["Admission Controller"]
+        Memory["Memory Tracker"]
+        Backpressure["Backpressure Signals"]
+    end
+
+    subgraph Workers["Worker Pools"]
+        IndexWorkers["Indexing Workers"]
+        IngestWorkers["Ingestion Workers"]
+    end
+
+    QPS --> Reconcile
+    Latency --> Reconcile
+    Reconcile --> IndexWorkers
+    Reconcile --> IngestWorkers
+    Memory --> Backpressure
+    Backpressure -->|Reject| Admission
+```
+
+### Scaling Triggers
+
+| Metric | Scale Up | Scale Down |
+|--------|----------|------------|
+| Search QPS | > 80% capacity | < 20% capacity |
+| Latency | p99 > 100ms | p99 < 10ms |
+| Memory | > 90% used | < 50% used |
+
+---
+
+## Multi-Tenancy
+
+```mermaid
+graph TB
+    subgraph Namespaces["Namespace Isolation"]
+        NS1["Namespace A"]
+        NS2["Namespace B"]
+        NS3["Namespace C"]
+    end
+
+    subgraph Resources["Per-Namespace Resources"]
+        Quota["Resource Quotas"]
+        Cache["Tenant Cache"]
+        Metrics["Per-Tenant Metrics"]
+    end
+
+    NS1 --> Quota
+    NS2 --> Quota
+    NS3 --> Quota
+    NS1 --> Cache
+    NS2 --> Cache
+    NS1 --> Metrics
+    NS2 --> Metrics
+```
+
+---
+
+## Disk-Based Indexing (DiskANN)
+
+```mermaid
+graph TB
+    subgraph Hot["Hot Tier (RAM)"]
+        HNSW["HNSW Index"]
+        MemVectors["Hot Vectors"]
+    end
+
+    subgraph Warm["Warm Tier (SSD)"]
+        DiskANN["DiskANN Index"]
+        DiskVectors["Warm Vectors"]
+    end
+
+    subgraph Cold["Cold Tier (Object Store)"]
+        Parquet["Parquet Snapshots"]
+        WAL["Archived WAL"]
+    end
+
+    Query["Query"] --> HNSW
+    HNSW -->|Miss| DiskANN
+    DiskVectors --> DiskANN
+    DiskANN --> Parquet
+```
+
+---
+
+## Rich Payload Filtering
+
+```mermaid
+graph TB
+    subgraph Filters["Filter Types"]
+        Numeric["Numeric (=, >, <, >=, <=)"]
+        Keyword["Keyword (exact match)"]
+        Boolean["Boolean"]
+        Date["Date64/Timestamp (range, before, after)"]
+        Composite["Composite (AND, OR, NOT)"]
+    end
+
+    subgraph Index["Bitmap Indexes"]
+        Roaring["Roaring Bitmaps"]
+        Selectivity["Selectivity Estimator"]
+    end
+
+    subgraph Pushdown["Filter Pushdown"]
+        Compile["Compile to Bitmap"]
+        Apply["Apply to Candidates"]
+        Optimize["Index Hints"]
+    end
+
+    Filters --> Index
+    Index --> Pushdown
+    Pushdown --> HNSW[HNSW Search]
+```
+
+### Supported Field Types
+
+| Type | Operators | Index Type |
+|------|-----------|------------|
+| `int64` | `=`, `>`, `<`, `>=`, `<=`, `range` | Roaring Bitmap |
+| `float32` | `=`, `>`, `<`, `>=`, `<=` | Roaring Bitmap |
+| `string` | `=`, `IN` | Hash Map |
+| `bool` | `=` | Bitmap |
+| `timestamp` | `>`, `<`, `range`, `before`, `after` | Roaring Bitmap |
+| `date64` | `>`, `<`, `range`, `before`, `after` | Roaring Bitmap |
+
+---
+
+## Hybrid Search + Cross-Encoder Reranking
+
+```mermaid
+graph TB
+    subgraph Query["Query Processing"]
+        VecQuery["Vector Query"]
+        TextQuery["Text Query (BM25)"]
+    end
+
+    subgraph Fusion["RRF Fusion"]
+        BM25["BM25 Score"]
+        Vector["Vector Score"]
+        RRF["Reciprocal Rank Fusion"]
+    end
+
+    subgraph Rerank["Cross-Encoder Reranking"]
+        Candidates["Top-K Candidates"]
+        CrossEncoder["Cross-Encoder Model"]
+        ReScore["Re-scored Results"]
+    end
+
+    VecQuery --> BM25
+    TextQuery --> Vector
+    BM25 --> RRF
+    Vector --> RRF
+    RRF --> Candidates
+    Candidates --> CrossEncoder
+    CrossEncoder --> ReScore
+```

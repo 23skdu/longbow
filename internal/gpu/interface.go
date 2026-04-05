@@ -2,6 +2,7 @@ package gpu
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"runtime"
 	"strconv"
@@ -67,10 +68,42 @@ func GetGPURequirements(backend GPUBackend) (bool, string, error) {
 		}
 		return true, "Metal requires macOS with Apple Silicon (M1/M2/M3) or Intel Mac with Metal support", nil
 	case BackendOpenCL:
-		return false, "OpenCL backend not yet implemented", nil
+		if runtime.GOOS == "darwin" {
+			return true, "OpenCL available on macOS (CPU fallback or discrete GPU)", nil
+		}
+		if runtime.GOOS == "linux" {
+			return checkOpenCLOnLinux()
+		}
+		if runtime.GOOS == "windows" {
+			return checkOpenCLOnWindows()
+		}
+		return false, "OpenCL not available on this platform", nil
 	default:
 		return false, "Unknown GPU backend", nil
 	}
+}
+
+func checkOpenCLOnLinux() (bool, string, error) {
+	libraryPaths := []string{
+		"/usr/lib/x86_64-linux-gnu/libOpenCL.so.1",
+		"/usr/lib64/libOpenCL.so.1",
+		"/usr/local/lib/libOpenCL.so.1",
+		"/opt/intel/opencl/libOpenCL.so.1",
+	}
+	for _, path := range libraryPaths {
+		if _, err := os.Stat(path); err == nil {
+			return true, "OpenCL available on Linux (AMD/Intel/NVIDIA)", nil
+		}
+	}
+	return false, "OpenCL libraries not found on Linux", nil
+}
+
+func checkOpenCLOnWindows() (bool, string, error) {
+	clPath := `C:\Windows\System32\OpenCL.dll`
+	if _, err := os.Stat(clPath); err == nil {
+		return true, "OpenCL available on Windows", nil
+	}
+	return false, "OpenCL not found on Windows", nil
 }
 
 // DefaultGPUConfig returns default GPU configuration

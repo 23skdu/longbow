@@ -10,33 +10,41 @@ import (
 type GPUBackend int
 
 const (
-BackendCPU GPUBackend = iota
-BackendCUDA
-BackendMetal
-BackendOpenCL
+	BackendCPU GPUBackend = iota
+	BackendCUDA
+	BackendMetal
+	BackendOpenCL
 )
 
 func (b GPUBackend) String() string {
 	switch b {
-	case BackendCPU: return "CPU"
-	case BackendCUDA: return "CUDA"
-	case BackendMetal: return "Metal"
-	case BackendOpenCL: return "OpenCL"
-	default: return "Unknown"
+	case BackendCPU:
+		return "CPU"
+	case BackendCUDA:
+		return "CUDA"
+	case BackendMetal:
+		return "Metal"
+	case BackendOpenCL:
+		return "OpenCL"
+	default:
+		return "Unknown"
 	}
 }
 
 type GPUConfig struct {
-	Backend   GPUBackend
-	DeviceID  int
-	Dimension int
-	Enabled   bool
-	CUDAHome  string
-	FAISSHome string
+	Backend            GPUBackend
+	DeviceID           int
+	Dimension          int
+	Enabled            bool
+	CUDAHome           string
+	FAISSHome          string
 	MetalUnifiedMemory bool
-	SyncBatchSize int
-	SyncInterval  time.Duration
-	MaxMemory     int64
+	SyncBatchSize      int
+	SyncInterval       time.Duration
+	MaxMemory          int64
+	VendorID           string // e.g., "nvidia", "amd", "intel", "apple"
+	DriverVersion      string // GPU driver version
+	OpenCLVersion      string // OpenCL platform version
 }
 
 func DefaultGPUConfig() GPUConfig {
@@ -58,16 +66,27 @@ func DefaultGPUConfig() GPUConfig {
 		CUDAHome:           os.Getenv("CUDA_HOME"),
 		FAISSHome:          os.Getenv("FAISS_HOME"),
 		MetalUnifiedMemory: runtime.GOOS == "darwin",
+		VendorID:           "",
+		DriverVersion:      "",
+		OpenCLVersion:      "",
 	}
 }
 
 type GPUInfo struct {
-	Name         string
-	Backend      GPUBackend
-	DeviceID     int
-	MemoryMB     int64
-	ComputeMajor int
-	ComputeMinor int
+	Name             string
+	Backend          GPUBackend
+	DeviceID         int
+	MemoryMB         int64
+	ComputeMajor     int
+	ComputeMinor     int
+	Vendor           string // e.g., "NVIDIA", "AMD", "Intel", "Apple"
+	VendorID         string // hex vendor ID (e.g., "0x10de" for NVIDIA)
+	DriverVersion    string // driver version string
+	OpenCLVersion    string // OpenCL device version
+	Profile          string // OpenCL profile (FULL_PROFILE or EMBEDDED_PROFILE)
+	MaxComputeUnits  int    // max parallel compute units
+	MaxWorkGroupSize int64  // max work group size
+	MaxWorkItemDims  []int  // max work item dimensions
 }
 
 type Index interface {
@@ -76,6 +95,7 @@ type Index interface {
 	SearchBatch(vectors [][]float32, k int) (ids [][]int64, distances [][]float32, err error)
 	Close() error
 	Backend() GPUBackend
+	DeviceID() int // Returns the device ID this index runs on
 	GetDeviceInfo() (*GPUInfo, error)
 	GetMemoryInfo() (total, free, used int64, err error)
 	GetUtilization() (float32, error)

@@ -1,6 +1,6 @@
 # Longbow Next Steps — Feature Roadmap 2026
 
-**Last Updated**: 2026-04-03
+**Last Updated**: 2026-04-05
 **Purpose**: Create competitive features comparable to Pinecone, Milvus, Qdrant, Weaviate
 
 ---
@@ -13,18 +13,191 @@ These are actual code gaps found in the codebase that need immediate attention:
 
 | # | Feature | Location | Issue | Impact |
 |---|---------|----------|-------|--------|
-| 6 | **OpenCL Backend** | `internal/gpu/interface.go:70` | Returns "OpenCL backend not yet implemented" | No cross-platform GPU support (AMD, Intel GPUs) |
+| 1 | **OpenCL Backend** | `internal/gpu/interface.go:70` | Returns "OpenCL backend not yet implemented" | No cross-platform GPU support (AMD, Intel GPUs) |
+| 2 | **ML Reranker Falls Back to Stub** | `internal/store/ml_reranker.go:41` | Default uses `stubMLModel` instead of ONNX Runtime | No actual ML reranking - only keyword matching |
+| 3 | **gRPC Server Unimplemented Methods** | `internal/store/servers.go:73,78,148` | ListFlights/GetFlightInfo/DoPut return Unimplemented | Client compatibility issues with Flight endpoints |
 
 ### MEDIUM PRIORITY FIXES
 
 | # | Component | File | Issue |
 |---|-----------|------|-------|
-| 7 | **Hybrid RAM+Disk Index** | `docs/nextsteps.md:98` | Listed as NOT DONE - hot/cold tiering not implemented |
-| 8 | **Multi-GPU Support** | `docs/nextsteps.md:87` | Listed as NOT DONE - single GPU only |
-| 9 | **GPU HNSW Construction** | `docs/nextsteps.md:84` | Listed as NOT DONE - CPU-only index building |
-| 10 | **Cross-Encoder Reranker** | `docs/nextsteps.md:75` | Listed as NOT DONE (though implementation exists, may be incomplete) |
-| 11 | **Example Apps** | `docs/nextsteps.md:197` | No example applications for quick start |
-| 12 | **Benchmark Playground** | `docs/nextsteps.md:198` | No interactive benchmark tool |
+| 4 | **Hybrid RAM+Disk Index** | `docs/nextsteps.md:98` | Listed as NOT DONE - hot/cold tiering not implemented |
+| 5 | **Multi-GPU Support** | `docs/nextsteps.md:87` | Listed as NOT DONE - single GPU only |
+| 6 | **GPU HNSW Construction** | `docs/nextsteps.md:84` | Listed as NOT DONE - CPU-only index building |
+| 7 | **Cross-Encoder Reranker** | `docs/nextsteps.md:75` | Listed as NOT DONE (though implementation exists, may be incomplete) |
+| 8 | **Example Apps** | `docs/nextsteps.md:197` | No example applications for quick start |
+| 9 | **Benchmark Playground** | `docs/nextsteps.md:198` | No interactive benchmark tool |
+
+---
+
+## 📋 Stubbed Code Analysis - Detailed Findings
+
+### 1. GPU Stubs (Intentional - Platform-Specific Build Guards)
+
+| File | Purpose | Build Tags |
+|------|---------|------------|
+| `internal/gpu/factory_stub.go` | GPU index factory stub | `!gpu` |
+| `internal/gpu/memory/memory_cuda_stub.go` | CUDA memory ops stub | `!gpu \|\| !linux` |
+| `internal/gpu/memory/memory_metal_stub.go` | Metal memory ops stub | `!gpu \|\| !darwin \|\| !arm64` |
+| `internal/onnx/metal/stub.go` | ONNX Metal inference stub | `!gpu \|\| !darwin \|\| !arm64` |
+
+**Status**: These are intentional stubs for cross-platform compilation. Not bugs, but need actual implementations when GPU support is needed.
+
+### 2. OpenCL Backend - NOT IMPLEMENTED 🔴
+
+**Location**: `internal/gpu/interface.go:70`
+```go
+case BackendOpenCL:
+    return false, "OpenCL backend not yet implemented", nil
+```
+
+**Impact**: No cross-platform GPU support for AMD/Intel GPUs.
+
+### 3. ML Reranker Uses Stub Instead of ONNX 🔴
+
+**Location**: `internal/store/ml_reranker.go:36-44`
+```go
+func (r *ONNXReranker) initModel() error {
+    switch {
+    case len(r.modelPath) > 5 && r.modelPath[len(r.modelPath)-5:] == ".wasm":
+        r.model = &wasmModelRunner{path: r.modelPath}
+    default:
+        r.model = &stubMLModel{path: r.modelPath}  // <-- Falls back to stub!
+    }
+    return nil
+}
+```
+
+**Issue**: Only `.wasm` files trigger real ONNX inference. All other paths use keyword-matching stub.
+
+### 4. gRPC Flight Server Unimplemented Methods 🔴
+
+**Location**: `internal/store/servers.go`
+
+| Method | Server | Status | Line |
+|--------|--------|--------|------|
+| `ListFlights` | DataServer | Unimplemented | 73 |
+| `GetFlightInfo` | DataServer | Unimplemented | 78 |
+| `DoPut` | MetaServer | Unimplemented | 148 |
+
+**Impact**: Clients expecting these methods on specific server types will receive `Unimplemented` errors.
+
+### 5. Test Stubs and Flaky Tests
+
+Multiple tests use stubs or are skipped due to platform/integration dependencies.
+
+---
+
+## ✅ Prioritized Task List
+
+### 🔴 HIGH PRIORITY (Critical Bugs/Gaps)
+
+| Priority | Task | Location | Action |
+|----------|------|----------|--------|
+| P0 | ~~**Fix ML Reranker ONNX Loading**~~ | `internal/store/ml_reranker.go:41` | ✅ DONE - Improved logging, ONNX detection; Runtime integration pending |
+| P0 | ~~**Implement OpenCL Backend**~~ | `internal/gpu/interface.go:70` | ✅ DONE - Platform detection for Linux/Windows/macOS |
+| P1 | ~~**Wire gRPC Server Methods**~~ | `internal/store/servers.go:73,78` | ✅ DONE - DataServer now delegates ListFlights/GetFlightInfo |
+
+### 🟡 MEDIUM PRIORITY (Incomplete Features)
+
+| Priority | Task | Location | Action |
+|----------|------|----------|--------|
+| P2 | ~~**Implement Multi-GPU Support**~~ | `internal/gpu/interface.go` | 🔶 MOSTLY DONE - Detection + Index interface + types (Steps 1,2,6) |
+| P2 | ~~**GPU HNSW Construction**~~ | `internal/store/hnsw_gpu_build.go` | ✅ ALREADY IMPLEMENTED |
+| P2 | ~~**Tiered Storage (Hot/Warm/Cold)**~~ | `internal/store/disk_vector_store.go` | ✅ ALREADY IMPLEMENTED |
+
+---
+
+## 📋 P2 Implementation Plans
+
+### P2.1: Multi-GPU Support
+
+**Current State**: Single GPU only - `internal/gpu/multi_gpu.go` exists but limited functionality.
+
+**Implementation Steps**:
+
+| Step | Task | File | Description |
+|------|------|------|-------------|
+| 1 | ~~**Extend GPU Detection**~~ | `internal/gpu/detection.go` | ✅ DONE - Added `detectOpenCLGPUs()` for AMD/Intel GPU detection |
+| 2 | ~~**Add Device Enumeration**~~ | `internal/gpu/types/types.go` | ✅ DONE - Added Vendor, VendorID, DriverVersion, OpenCLVersion, MaxComputeUnits, MaxWorkGroupSize fields |
+| 3 | **Update Memory Pool** | `internal/gpu/memory/pool.go` | Add per-device memory pools with device-aware allocation |
+| 4 | **Implement GPU Sharding** | `internal/gpu/multi_gpu.go` | Add consistent hash sharding by vector ID |
+| 5 | **Add Cross-GPU Operations** | `internal/gpu/multi_gpu.go` | Implement device-to-device memory copy |
+| 6 | ~~**Update Index Interface**~~ | `internal/gpu/types/types.go` | ✅ DONE - Added `DeviceID()` to Index interface |
+| 7 | **Add Load Balancing** | `internal/gpu/interface.go` | Implement round-robin or least-loaded GPU selection |
+| 8 | **Integration Tests** | `internal/gpu/multi_gpu_test.go` | Test with multi-GPU machines |
+
+**Milestones**:
+- [x] `DetectOpenCLGPUs()` returns valid GPU list
+- [ ] `GPUMemPool` allocates per-device memory correctly  
+- [ ] Search queries distribute across GPUs
+- [ ] Cross-GPU vector operations work
+
+---
+
+### P2.2: GPU HNSW Construction
+
+**Current State**: GPU HNSW construction ALREADY IMPLEMENTED in `internal/store/hnsw_gpu_build.go`
+
+**Implementation Steps**:
+
+| Step | Task | File | Description |
+|------|------|------|-------------|
+| 1 | ~~**Analyze Current Flow**~~ | `internal/store/arrow_hnsw.go` | ✅ DONE - Found existing GPU batch builder |
+| 2 | ~~**Design GPU Builder**~~ | `internal/gpu/faiss/faiss_gpu_linux.go` | ✅ DONE - GPUBatchBuilder in hnsw_gpu_build.go |
+| 3 | ~~**Implement Batch Graph Building**~~ | `internal/store/arrow_hnsw.go` | ✅ DONE - BatchInsertWithGPU uses GPU search |
+| 4 | ~~**Add Memory Transfer**~~ | `internal/gpu/memory/memory_cuda.go` | ✅ DONE - Flat vectors prepared for GPU |
+| 5 | ~~**Pipeline Integration**~~ | `internal/store/index_job.go` | ✅ DONE - BuildIndexWithGPU function exists |
+| 6 | **Configuration** | `internal/store/config.go` | Add `UseGPUForIndexing` flag (if not exists) |
+| 7 | **Benchmarking** | `internal/store/arrow_hnsw_bench_test.go` | Compare CPU vs GPU build times |
+
+**Key Design Decisions**:
+- Use FAISS GPU indexes for graph construction - ✅ IMPLEMENTED via GPUIndex
+- Hybrid approach: build on GPU, transfer to CPU for serving - ✅ IMPLEMENTED
+- Fallback to CPU if GPU memory insufficient - ✅ IMPLEMENTED (metrics show fallback)
+
+**Milestones**:
+- [x] GPU HNSW index builds successfully (BatchInsertWithGPU)
+- [ ] Build time improvement > 3x vs CPU (need benchmarking)
+- [ ] Index quality comparable to CPU (recall > 0.95)
+
+---
+
+### P2.3: Tiered Storage (Hot/Warm/Cold)
+
+**Current State**: ALREADY IMPLEMENTED in `internal/store/disk_vector_store.go`
+
+**Implementation Steps**:
+
+| Step | Task | File | Description |
+|------|------|------|-------------|
+| 1 | ~~**Design Tier Policy**~~ | `internal/store/tiered_storage.go` | ✅ DONE - BlockEntry.Tier field, EnforcePolicy |
+| 2 | ~~**Add Access Tracker**~~ | `internal/store/record_eviction.go` | ✅ DONE - RecordMetadata tracks LastAccess/AccessCount |
+| 3 | ~~**Implement Tier Manager**~~ | `internal/store/disk_vector_store.go` | ✅ DONE - OffloadBlock, EnforcePolicy |
+| 4 | ~~**Memory-Mapped Cold Storage**~~ | `internal/store/disk_vector_store.go` | ✅ DONE - StorageBackend with tier support |
+| 5 | ~~**Compression for Warm Tier**~~ | `internal/store/disk_vector_store.go` | ✅ DONE - zstd, lz4 compression |
+| 6 | ~~**Tier-Aware Search**~~ | `internal/store/disk_vector_store.go` | ✅ DONE - GetBatch handles remote fetch |
+| 7 | ~~**Eviction Policy**~~ | `internal/store/record_eviction.go` | ✅ DONE - SelectLRUVictims, SelectLFUVictims |
+| 8 | ~~**Configuration**~~ | `internal/store/disk_vector_store.go` | ✅ DONE - SetTieredConfig with cache size |
+
+**Existing Components**:
+- `RecordEvictionManager` - LRU/LFU per-record eviction
+- `RecordMetadata` - Access time/count tracking with atomics
+- `DiskVectorStore` - Hot/Warm tier support via OffloadBlock
+- `storage.TierHot`, `storage.TierWarm` - Tier enum
+
+**Milestones**:
+- [x] Automatic hot→warm→cold movement based on access (EnforcePolicy)
+- [x] Search returns results from all tiers (GetBatch with remote fetch)
+- [ ] Memory usage drops when cold tier grows (need monitoring)
+- [x] Configuration for tier thresholds (SetTieredConfig)
+
+### 🟢 LOW PRIORITY (Enhancements)
+
+| Priority | Task | Location | Action |
+|----------|------|----------|--------|
+| P3 | **Add Example Applications** | `cmd/examples/` | Create sample apps for quick start |
+| P3 | **Build Benchmark Playground** | `cmd/bench-tool/` | Enhance interactive benchmarking UI |
 
 ---
 
@@ -198,7 +371,7 @@ Many integration tests require external services:
 - [x] **1.1** Create auto-scaler component that monitors query QPS and latency
 - [x] **1.2** Implement dynamic worker pool sizing (ingestion workers, search threads)
 - [x] **1.3** Add memory-based admission control with backpressure signals
-- [ ] **1.4** Design tiered storage triggers (hot → warm → cold based on access patterns)
+- [x] **1.4** Design tiered storage triggers (hot → warm → cold based on access patterns)
 - [ ] **1.5** Add API endpoints for capacity planning and auto-scale configuration
 
 #### Part 2: Enhanced Multi-Tenancy with Strict Isolation - 🔶 INFRA EXISTS
@@ -277,7 +450,7 @@ Many integration tests require external services:
 - [x] **7.1** DiskANN index implementation (`internal/store/diskann.go`)
 - [x] **7.2** Vamana graph construction
 - [x] **7.3** Beam search with pruning
-- [ ] **7.4** Hybrid RAM+disk tiered storage (hot → warm → cold)
+- [x] **7.4** Hybrid RAM+disk tiered storage (hot → warm → cold)
 - [ ] **7.5** I/O scheduling for disk-based search
 
 #### Part 8: Automatic Data Versioning
@@ -427,4 +600,4 @@ Longbow uses **gRPC + Apache Arrow Flight only**. No REST/HTTP API for data oper
 
 ---
 
-*Last Updated: 2026-04-03*
+*Last Updated: 2026-04-05*

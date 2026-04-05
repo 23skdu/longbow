@@ -287,6 +287,11 @@ func (w *pooledIndexWrapper) Backend() types.GPUBackend {
 	return w.pooled.index.Backend()
 }
 
+// DeviceID delegates to the wrapped index
+func (w *pooledIndexWrapper) DeviceID() int {
+	return w.pooled.index.DeviceID()
+}
+
 // GetDeviceInfo delegates to the wrapped index
 func (w *pooledIndexWrapper) GetDeviceInfo() (*types.GPUInfo, error) {
 	return w.pooled.index.GetDeviceInfo()

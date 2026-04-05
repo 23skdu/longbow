@@ -5,6 +5,8 @@ import (
 	"errors"
 	"sort"
 	"sync"
+
+	"github.com/rs/zerolog"
 )
 
 // MLModel defines the interface for ML model inference
@@ -17,16 +19,20 @@ type MLModel interface {
 type ONNXReranker struct {
 	model     MLModel
 	modelPath string
+	logger    zerolog.Logger
 	mu        sync.RWMutex
 }
 
 // NewONNXReranker creates a new ONNX-based reranker
-func NewONNXReranker(modelPath string) (*ONNXReranker, error) {
+func NewONNXReranker(modelPath string, logger zerolog.Logger) (*ONNXReranker, error) {
 	if modelPath == "" {
 		return nil, errors.New("model path is required")
 	}
 
-	r := &ONNXReranker{modelPath: modelPath}
+	r := &ONNXReranker{
+		modelPath: modelPath,
+		logger:    logger,
+	}
 	if err := r.initModel(); err != nil {
 		return nil, err
 	}
@@ -34,12 +40,23 @@ func NewONNXReranker(modelPath string) (*ONNXReranker, error) {
 }
 
 func (r *ONNXReranker) initModel() error {
-	switch {
-	case len(r.modelPath) > 5 && r.modelPath[len(r.modelPath)-5:] == ".wasm":
-		r.model = &wasmModelRunner{path: r.modelPath}
-	default:
-		r.model = &stubMLModel{path: r.modelPath}
+	// Check file extension to determine model type
+	if len(r.modelPath) > 5 {
+		ext := r.modelPath[len(r.modelPath)-5:]
+		switch ext {
+		case ".wasm":
+			// WebAssembly model - use wazero runtime
+			r.model = &wasmModelRunner{path: r.modelPath}
+			return nil
+		case ".onnx":
+			// ONNX model - requires ONNX Runtime integration
+			// TODO: Integrate ONNX Runtime Go bindings
+			// For now, fall through to stub with logging
+			r.logger.Info().Str("path", r.modelPath).Msg("ONNX model detected - ONNX Runtime integration pending, using fallback")
+		}
 	}
+	// Default: use heuristic stub model
+	r.model = &stubMLModel{path: r.modelPath}
 	return nil
 }
 
@@ -227,7 +244,8 @@ func (f *RerankerFactory) CreateReranker(config map[string]interface{}) (Reranke
 		cr := NewCohereReranker(apiKey, model)
 		return &ONNXReranker{model: cr, modelPath: "cohere-external"}, nil
 	case "onnx", "ml":
-		return NewONNXReranker(modelPath)
+		logger := zerolog.Nop()
+		return NewONNXReranker(modelPath, logger)
 	case "heuristic", "":
 		return &CrossEncoderReranker{ModelName: "default"}, nil
 	default:

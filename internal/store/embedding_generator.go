@@ -1,8 +1,14 @@
 package store
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"net/http"
+	"strings"
+	"time"
 )
 
 type EmbeddingGenerator interface {
@@ -43,16 +49,328 @@ func NewEmbeddingGenerator(config EmbeddingConfig) (EmbeddingGenerator, error) {
 	}
 }
 
-func NewOpenAIEmbedding(config EmbeddingConfig) (EmbeddingGenerator, error) {
-	return nil, errors.New("OpenAI embedding not yet implemented - requires API client")
+type openAIEmbeddingGenerator struct {
+	apiKey     string
+	model      string
+	dimension  int
+	httpClient *http.Client
 }
 
-func NewCohereEmbedding(config EmbeddingConfig) (EmbeddingGenerator, error) {
-	return nil, errors.New("Cohere embedding not yet implemented - requires API client")
+func NewOpenAIEmbedding(config EmbeddingConfig) (*openAIEmbeddingGenerator, error) {
+	if config.APIKey == "" {
+		return nil, errors.New("API key is required for OpenAI embedding")
+	}
+
+	model := config.ModelName
+	if model == "" {
+		model = "text-embedding-3-small"
+	}
+
+	dim := config.Dimension
+	if dim <= 0 {
+		dim = 1536
+	}
+
+	return &openAIEmbeddingGenerator{
+		apiKey:     config.APIKey,
+		model:      model,
+		dimension:  dim,
+		httpClient: &http.Client{Timeout: 60 * time.Second},
+	}, nil
 }
 
-func NewHuggingFaceEmbedding(config EmbeddingConfig) (EmbeddingGenerator, error) {
-	return nil, errors.New("HuggingFace embedding not yet implemented - requires API client")
+type openAIEmbeddingRequest struct {
+	Input string `json:"input"`
+	Model string `json:"model"`
+}
+
+type openAIEmbeddingResponse struct {
+	Data  []openAIEmbeddingData `json:"data"`
+	Usage openAIUsage           `json:"usage"`
+	Error *openAIError          `json:"error,omitempty"`
+}
+
+type openAIEmbeddingData struct {
+	Embedding []float32 `json:"embedding"`
+	Index     int       `json:"index"`
+}
+
+type openAIUsage struct {
+	PromptTokens int `json:"prompt_tokens"`
+}
+
+type openAIError struct {
+	Message string `json:"message"`
+	Type    string `json:"type"`
+}
+
+func (g *openAIEmbeddingGenerator) Generate(ctx context.Context, texts []string) ([][]float32, error) {
+	if len(texts) == 0 {
+		return [][]float32{}, nil
+	}
+
+	results := make([][]float32, 0, len(texts))
+
+	for _, text := range texts {
+		req := openAIEmbeddingRequest{
+			Input: text,
+			Model: g.model,
+		}
+
+		body, err := json.Marshal(req)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal request: %w", err)
+		}
+
+		httpReq, err := http.NewRequestWithContext(ctx, "POST", "https://api.openai.com/v1/embeddings", bytes.NewReader(body))
+		if err != nil {
+			return nil, fmt.Errorf("failed to create request: %w", err)
+		}
+
+		httpReq.Header.Set("Authorization", "Bearer "+g.apiKey)
+		httpReq.Header.Set("Content-Type", "application/json")
+
+		resp, err := g.httpClient.Do(httpReq)
+		if err != nil {
+			return nil, fmt.Errorf("failed to send request: %w", err)
+		}
+		defer resp.Body.Close()
+
+		var embResp openAIEmbeddingResponse
+		if err := json.NewDecoder(resp.Body).Decode(&embResp); err != nil {
+			return nil, fmt.Errorf("failed to decode response: %w", err)
+		}
+
+		if embResp.Error != nil {
+			return nil, fmt.Errorf("OpenAI API error: %s", embResp.Error.Message)
+		}
+
+		if len(embResp.Data) == 0 {
+			return nil, errors.New("no embedding returned")
+		}
+
+		results = append(results, embResp.Data[0].Embedding)
+	}
+
+	return results, nil
+}
+
+func (g *openAIEmbeddingGenerator) GenerateSingle(ctx context.Context, text string) ([]float32, error) {
+	results, err := g.Generate(ctx, []string{text})
+	if err != nil {
+		return nil, err
+	}
+	if len(results) == 0 {
+		return nil, errors.New("no embeddings generated")
+	}
+	return results[0], nil
+}
+
+func (g *openAIEmbeddingGenerator) Dimension() int {
+	return g.dimension
+}
+
+func (g *openAIEmbeddingGenerator) Close() error {
+	return nil
+}
+
+type cohereEmbeddingGenerator struct {
+	apiKey     string
+	model      string
+	dimension  int
+	httpClient *http.Client
+}
+
+func NewCohereEmbedding(config EmbeddingConfig) (*cohereEmbeddingGenerator, error) {
+	if config.APIKey == "" {
+		return nil, errors.New("API key is required for Cohere embedding")
+	}
+
+	model := config.ModelName
+	if model == "" {
+		model = "embed-english-v3.0"
+	}
+
+	dim := config.Dimension
+	if dim <= 0 {
+		dim = 1024
+	}
+
+	return &cohereEmbeddingGenerator{
+		apiKey:     config.APIKey,
+		model:      model,
+		dimension:  dim,
+		httpClient: &http.Client{Timeout: 60 * time.Second},
+	}, nil
+}
+
+type cohereEmbeddingRequest struct {
+	Texts []string `json:"texts"`
+	Model string   `json:"model"`
+}
+
+type cohereEmbeddingResponse struct {
+	Embeddings [][]float32 `json:"embeddings"`
+	ID         string      `json:"id"`
+	Meta       cohereMeta  `json:"meta"`
+}
+
+type cohereMeta struct {
+	APIVersion  cohereAPIVersion `json:"api_version"`
+	BilledUnits interface{}      `json:"billed_units"`
+}
+
+type cohereAPIVersion struct {
+	Version string `json:"version"`
+}
+
+func (g *cohereEmbeddingGenerator) Generate(ctx context.Context, texts []string) ([][]float32, error) {
+	if len(texts) == 0 {
+		return [][]float32{}, nil
+	}
+
+	req := cohereEmbeddingRequest{
+		Texts: texts,
+		Model: g.model,
+	}
+
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", "https://api.cohere.ai/v1/embed", bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	httpReq.Header.Set("Authorization", "Bearer "+g.apiKey)
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Cohere-Version", "2024-01-01")
+
+	resp, err := g.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var embResp cohereEmbeddingResponse
+	if err := json.NewDecoder(resp.Body).Decode(&embResp); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return embResp.Embeddings, nil
+}
+
+func (g *cohereEmbeddingGenerator) GenerateSingle(ctx context.Context, text string) ([]float32, error) {
+	results, err := g.Generate(ctx, []string{text})
+	if err != nil {
+		return nil, err
+	}
+	if len(results) == 0 {
+		return nil, errors.New("no embeddings generated")
+	}
+	return results[0], nil
+}
+
+func (g *cohereEmbeddingGenerator) Dimension() int {
+	return g.dimension
+}
+
+func (g *cohereEmbeddingGenerator) Close() error {
+	return nil
+}
+
+type huggingFaceEmbeddingGenerator struct {
+	apiKey     string
+	model      string
+	dimension  int
+	httpClient *http.Client
+}
+
+func NewHuggingFaceEmbedding(config EmbeddingConfig) (*huggingFaceEmbeddingGenerator, error) {
+	if config.APIKey == "" {
+		return nil, errors.New("API key is required for HuggingFace embedding")
+	}
+
+	model := config.ModelName
+	if model == "" {
+		model = "sentence-transformers/all-MiniLM-L6-v2"
+	}
+
+	dim := config.Dimension
+	if dim <= 0 {
+		dim = 384
+	}
+
+	return &huggingFaceEmbeddingGenerator{
+		apiKey:     config.APIKey,
+		model:      model,
+		dimension:  dim,
+		httpClient: &http.Client{Timeout: 120 * time.Second},
+	}, nil
+}
+
+type hfEmbeddingRequest struct {
+	Inputs []string `json:"inputs"`
+}
+
+type hfEmbeddingResponse [][]float32
+
+func (g *huggingFaceEmbeddingGenerator) Generate(ctx context.Context, texts []string) ([][]float32, error) {
+	if len(texts) == 0 {
+		return [][]float32{}, nil
+	}
+
+	req := hfEmbeddingRequest{
+		Inputs: texts,
+	}
+
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	modelURL := strings.Replace(g.model, " ", "%20", -1)
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", "https://api-inference.huggingface.co/pipeline/feature-extraction/"+modelURL, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	httpReq.Header.Set("Authorization", "Bearer "+g.apiKey)
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := g.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var embResp hfEmbeddingResponse
+	if err := json.NewDecoder(resp.Body).Decode(&embResp); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return embResp, nil
+}
+
+func (g *huggingFaceEmbeddingGenerator) GenerateSingle(ctx context.Context, text string) ([]float32, error) {
+	results, err := g.Generate(ctx, []string{text})
+	if err != nil {
+		return nil, err
+	}
+	if len(results) == 0 {
+		return nil, errors.New("no embeddings generated")
+	}
+	return results[0], nil
+}
+
+func (g *huggingFaceEmbeddingGenerator) Dimension() int {
+	return g.dimension
+}
+
+func (g *huggingFaceEmbeddingGenerator) Close() error {
+	return nil
 }
 
 type localEmbeddingGenerator struct {

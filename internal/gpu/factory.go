@@ -29,12 +29,14 @@ func NewIndex(cfg GPUConfig) (Index, error) {
 type CPUIndex struct {
 	vectors   map[int64][]float32
 	dimension int
+	deviceID  int
 }
 
 func NewCPUIndex(cfg GPUConfig) (Index, error) {
 	return &CPUIndex{
 		vectors:   make(map[int64][]float32),
 		dimension: cfg.Dimension,
+		deviceID:  cfg.DeviceID,
 	}, nil
 }
 
@@ -111,6 +113,10 @@ func (i *CPUIndex) Close() error {
 
 func (i *CPUIndex) Backend() GPUBackend {
 	return BackendCPU
+}
+
+func (i *CPUIndex) DeviceID() int {
+	return i.deviceID
 }
 
 func (i *CPUIndex) GetDeviceInfo() (*GPUInfo, error) {

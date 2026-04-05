@@ -68,14 +68,18 @@ func (s *DataServer) DoExchange(stream flight.FlightService_DoExchangeServer) er
 	return ToGRPCStatus(err)
 }
 
-// ListFlights returns Unimplemented on DataServer
+// ListFlights delegates to VectorStore for dataset listing
 func (s *DataServer) ListFlights(c *flight.Criteria, stream flight.FlightService_ListFlightsServer) error {
-	return status.Error(codes.Unimplemented, "ListFlights not implemented on DataServer; use MetaServer")
+	LogClientAction(stream.Context(), s.logger, s.Mesh, "ListFlights", nil)
+	err := s.VectorStore.ListFlights(c, stream)
+	return ToGRPCStatus(err)
 }
 
-// GetFlightInfo returns Unimplemented on DataServer
+// GetFlightInfo returns dataset metadata, delegating to VectorStore
 func (s *DataServer) GetFlightInfo(ctx context.Context, desc *flight.FlightDescriptor) (*flight.FlightInfo, error) {
-	return nil, status.Error(codes.Unimplemented, "GetFlightInfo not implemented on DataServer; use MetaServer")
+	LogClientAction(ctx, s.logger, s.Mesh, "GetFlightInfo", nil)
+	info, err := s.VectorStore.GetFlightInfo(ctx, desc)
+	return info, ToGRPCStatus(err)
 }
 
 // GetSchema delegates to VectorStore with error conversion
@@ -100,7 +104,7 @@ type MetaServer struct {
 }
 
 func NewMetaServer(store *VectorStore) *MetaServer {
-	coord := NewGlobalSearchCoordinator(store.logger)
+	coord := NewGlobalSearchCoordinator(store.logger, store.pool)
 	store.SetCoordinator(coord)
 	return &MetaServer{
 		VectorStore: store,

@@ -18,12 +18,18 @@ func DetectAvailableGPUs() []GPUInfo {
 	if runtime.GOOS == "linux" {
 		cudaGPUs := detectCUDAGPUs()
 		gpus = append(gpus, cudaGPUs...)
+		// Also check for OpenCL GPUs on Linux (AMD, Intel)
+		openclGPUs := detectOpenCLGPUs()
+		gpus = append(gpus, openclGPUs...)
 	}
 
-	// Detect Metal GPUs on macOS
+	// Detect Metal GPUs on macOS (also supports OpenCL fallback)
 	if runtime.GOOS == "darwin" {
 		metalGPUs := detectMetalGPUs()
 		gpus = append(gpus, metalGPUs...)
+		// macOS also has OpenCL support
+		openclGPUs := detectOpenCLGPUs()
+		gpus = append(gpus, openclGPUs...)
 	}
 
 	return gpus
@@ -164,6 +170,243 @@ func detectMetalGPUs() []GPUInfo {
 	}
 
 	return gpus
+}
+
+// detectOpenCLGPUs detects OpenCL-capable GPUs (AMD, Intel on Linux/macOS)
+func detectOpenCLGPUs() []GPUInfo {
+	var gpus []GPUInfo
+
+	// First check if OpenCL is available at all
+	if !checkOpenCLAvailable() {
+		return gpus
+	}
+
+	// Try to query OpenCL devices using clinfo or similar tools
+	// Different platforms have different tools
+	switch runtime.GOOS {
+	case "linux":
+		gpus = detectOpenCLLinux()
+	case "darwin":
+		gpus = detectOpenCLDarwin()
+	case "windows":
+		gpus = detectOpenCLWindows()
+	}
+
+	return gpus
+}
+
+func checkOpenCLAvailable() bool {
+	paths := []string{
+		"/usr/lib/x86_64-linux-gnu/libOpenCL.so.1",
+		"/usr/lib64/libOpenCL.so.1",
+		"/usr/local/lib/libOpenCL.so.1",
+		"/System/Library/Frameworks/OpenCL.framework",
+		`C:\Windows\System32\OpenCL.dll`,
+	}
+
+	for _, path := range paths {
+		if _, err := os.Stat(path); err == nil {
+			return true
+		}
+	}
+
+	// Try using ocl-icd utility if available
+	if path, err := exec.LookPath("clinfo"); err == nil {
+		cmd := exec.Command(path)
+		if output, err := cmd.Output(); err == nil && len(output) > 0 {
+			return true
+		}
+	}
+
+	return false
+}
+
+func detectOpenCLLinux() []GPUInfo {
+	var gpus []GPUInfo
+
+	// Try clinfo to get OpenCL device info
+	if path, err := exec.LookPath("clinfo"); err == nil {
+		cmd := exec.Command(path)
+		output, err := cmd.Output()
+		if err == nil {
+			gpus = parseClinfoOutput(string(output), BackendOpenCL)
+		}
+	}
+
+	// Fallback: check for specific vendor libraries
+	if len(gpus) == 0 {
+		// Check AMD
+		if _, err := os.Stat("/usr/lib/x86_64-linux-gnu/libOpenCL.so.1"); err == nil {
+			// Try lspci to detect GPU
+			if path, err := exec.LookPath("lspci"); err == nil {
+				cmd := exec.Command(path, "-d", "1002:") // AMD vendor ID
+				output, _ := cmd.Output()
+				if strings.Contains(string(output), "VGA") || strings.Contains(string(output), "GPU") {
+					gpus = append(gpus, GPUInfo{
+						Backend:  BackendOpenCL,
+						Name:     "AMD GPU (OpenCL)",
+						DeviceID: 0,
+						MemoryMB: 8192,
+					})
+				}
+			}
+		}
+
+		// Check Intel
+		if len(gpus) == 0 {
+			if path, err := exec.LookPath("lspci"); err == nil {
+				cmd := exec.Command(path, "-d", "8086:") // Intel vendor ID
+				output, _ := cmd.Output()
+				if strings.Contains(string(output), "VGA") || strings.Contains(string(output), "GPU") {
+					gpus = append(gpus, GPUInfo{
+						Backend:  BackendOpenCL,
+						Name:     "Intel GPU (OpenCL)",
+						DeviceID: 0,
+						MemoryMB: 4096,
+					})
+				}
+			}
+		}
+	}
+
+	return gpus
+}
+
+func detectOpenCLDarwin() []GPUInfo {
+	var gpus []GPUInfo
+
+	// macOS has OpenCL through the system
+	// Use system_profiler to get GPU info
+	cmd := exec.Command("system_profiler", "SPDisplaysDataType", "-xml")
+	output, err := cmd.Output()
+	if err == nil {
+		outputStr := string(output)
+		if strings.Contains(outputStr, "OpenGL") || strings.Contains(outputStr, "Metal") {
+			gpus = append(gpus, GPUInfo{
+				Backend:  BackendOpenCL,
+				Name:     "Apple GPU (OpenCL)",
+				DeviceID: 0,
+				MemoryMB: 16384,
+			})
+		}
+	}
+
+	return gpus
+}
+
+func detectOpenCLWindows() []GPUInfo {
+	var gpus []GPUInfo
+
+	// Check registry for GPU info or use WMI
+	// For now, just check if OpenCL.dll exists
+	if _, err := os.Stat(`C:\Windows\System32\OpenCL.dll`); err == nil {
+		// Try to get GPU info from registry
+		cmd := exec.Command("wmic", "path", "win32_VideoController", "get", "name", "/value")
+		output, err := cmd.Output()
+		if err == nil {
+			outputStr := string(output)
+			// Simple parsing - look for common GPU names
+			if strings.Contains(outputStr, "NVIDIA") {
+				gpus = append(gpus, GPUInfo{
+					Backend:  BackendOpenCL,
+					Name:     "NVIDIA GPU (OpenCL)",
+					DeviceID: 0,
+					MemoryMB: 8192,
+				})
+			} else if strings.Contains(outputStr, "AMD") || strings.Contains(outputStr, "Radeon") {
+				gpus = append(gpus, GPUInfo{
+					Backend:  BackendOpenCL,
+					Name:     "AMD GPU (OpenCL)",
+					DeviceID: 0,
+					MemoryMB: 8192,
+				})
+			} else if strings.Contains(outputStr, "Intel") {
+				gpus = append(gpus, GPUInfo{
+					Backend:  BackendOpenCL,
+					Name:     "Intel GPU (OpenCL)",
+					DeviceID: 0,
+					MemoryMB: 4096,
+				})
+			}
+		}
+	}
+
+	return gpus
+}
+
+func parseClinfoOutput(output string, backend GPUBackend) []GPUInfo {
+	var gpus []GPUInfo
+
+	lines := strings.Split(output, "\n")
+	var currentGPU *GPUInfo
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+
+		if strings.HasPrefix(line, "Platform") {
+			if currentGPU != nil && currentGPU.Name != "" {
+				gpus = append(gpus, *currentGPU)
+			}
+			currentGPU = &GPUInfo{
+				Backend:  backend,
+				DeviceID: len(gpus),
+			}
+		}
+
+		if currentGPU == nil {
+			continue
+		}
+
+		if strings.HasPrefix(line, "Name:") {
+			currentGPU.Name = strings.TrimSpace(strings.TrimPrefix(line, "Name:"))
+		} else if strings.HasPrefix(line, "Device Version:") {
+			version := strings.TrimSpace(strings.TrimPrefix(line, "Device Version:"))
+			currentGPU.OpenCLVersion = version
+		} else if strings.HasPrefix(line, "Global memory size:") {
+			memStr := strings.TrimPrefix(line, "Global memory size:")
+			memStr = strings.TrimSpace(strings.TrimSuffix(memStr, "MB"))
+			if memMB, err := strconv.ParseInt(memStr, 10, 64); err == nil {
+				currentGPU.MemoryMB = memMB
+			}
+		} else if strings.HasPrefix(line, "Vendor:") {
+			currentGPU.Vendor = strings.TrimSpace(strings.TrimPrefix(line, "Vendor:"))
+			currentGPU.VendorID = getVendorID(currentGPU.Vendor)
+		} else if strings.HasPrefix(line, "Profile:") {
+			currentGPU.Profile = strings.TrimSpace(strings.TrimPrefix(line, "Profile:"))
+		} else if strings.HasPrefix(line, "Max compute units:") {
+			val := strings.TrimSpace(strings.TrimPrefix(line, "Max compute units:"))
+			if units, err := strconv.Atoi(val); err == nil {
+				currentGPU.MaxComputeUnits = units
+			}
+		} else if strings.HasPrefix(line, "Max work group size:") {
+			val := strings.TrimSpace(strings.TrimPrefix(line, "Max work group size:"))
+			if size, err := strconv.ParseInt(val, 10, 64); err == nil {
+				currentGPU.MaxWorkGroupSize = size
+			}
+		}
+	}
+
+	if currentGPU != nil && currentGPU.Name != "" {
+		gpus = append(gpus, *currentGPU)
+	}
+
+	return gpus
+}
+
+func getVendorID(vendor string) string {
+	vendorLower := strings.ToLower(vendor)
+	switch {
+	case strings.Contains(vendorLower, "nvidia"):
+		return "0x10de"
+	case strings.Contains(vendorLower, "amd") || strings.Contains(vendorLower, "advanced"):
+		return "0x1002"
+	case strings.Contains(vendorLower, "intel"):
+		return "0x8086"
+	case strings.Contains(vendorLower, "apple"):
+		return "0x106b"
+	default:
+		return ""
+	}
 }
 
 // findNvidiaSmi finds the nvidia-smi executable

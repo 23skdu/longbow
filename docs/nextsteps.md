@@ -413,11 +413,13 @@ Many integration tests require external services:
 
 **Comparable to**: Weaviate text2vec, Cohere integration
 
-- [ ] **4.1** Create embedding generation interface (pluggable providers)
-- [ ] **4.2** Implement local embedding model (ONNX)
-- [ ] **4.3** Add batch embedding generation for bulk ingestion
-- [ ] **4.4** Support external providers (OpenAI, Cohere, HuggingFace)
-- [ ] **4.5** Add embedding model versioning and caching
+| Step | Task | Status | Implementation Notes |
+|------|------|--------|----------------------|
+| 4.1 | Create embedding generation interface | 🔶 START | Add EmbeddingGenerator interface |
+| 4.2 | Implement local embedding model | ⬜ TODO | ONNX-based embedding |
+| 4.3 | Add batch embedding generation | ⬜ TODO | Bulk ingestion support |
+| 4.4 | Support external providers | ⬜ TODO | OpenAI, Cohere, HuggingFace |
+| 4.5 | Add embedding model versioning | ⬜ TODO | Caching and model management |
 
 #### Part 5: Hybrid Search (Vector + BM25) - ✅ IMPLEMENTED
 
@@ -453,45 +455,53 @@ Many integration tests require external services:
 - [x] **7.4** Hybrid RAM+disk tiered storage (hot → warm → cold)
 - [ ] **7.5** I/O scheduling for disk-based search
 
-#### Part 8: Automatic Data Versioning
+#### Part 8: Automatic Data Versioning - 🔶 START
 
 **Comparable to**: LanceDB automatic versioning
 
-- [ ] **8.1** Add version metadata to vector records (timestamp, version number)
-- [ ] **8.2** Implement time-travel queries (query historical state)
-- [ ] **8.3** Create version retention policies (auto-expire old versions)
-- [ ] **8.4** Add branch/merge semantics for experimental datasets
-- [ ] **8.5** API for listing and comparing versions
+| Step | Task | Status | Implementation Notes |
+|------|------|--------|----------------------|
+| 8.1 | Add version metadata | 🔶 START | Add timestamp/version to vector records |
+| 8.2 | Implement time-travel queries | ⬜ TODO | Query historical state |
+| 8.3 | Create version retention policies | ⬜ TODO | Auto-expire old versions |
+| 8.4 | Add branch/merge semantics | ⬜ TODO | Experimental dataset branches |
+| 8.5 | API for listing versions | ⬜ TODO | Version comparison API |
 
-#### Part 9: Enterprise Backup & Disaster Recovery
+#### Part 9: Enterprise Backup & Disaster Recovery - 🔶 START
 
 **Comparable to**: Pinecone snapshots, Milvus backup
 
-- [ ] **9.1** Add incremental backup (capture WAL deltas)
-- [ ] **9.2** Implement cross-region replication for disaster recovery
-- [ ] **9.3** Create backup verification (checksum validation)
-- [ ] **9.4** Add point-in-time recovery API
-- [ ] **9.5** Implement backup scheduling and retention policies
+| Step | Task | Status | Implementation Notes |
+|------|------|--------|----------------------|
+| 9.1 | Add incremental backup | 🔶 START | Capture WAL deltas |
+| 9.2 | Cross-region replication | ⬜ TODO | Disaster recovery |
+| 9.3 | Backup verification | ⬜ TODO | Checksum validation |
+| 9.4 | Point-in-time recovery | ⬜ TODO | Recovery API |
+| 9.5 | Backup scheduling | ⬜ TODO | Retention policies |
 
-#### Part 10: Fine-Grained RBAC & Audit Logging - 🔶 INFRA EXISTS
+#### Part 10: Fine-Grained RBAC & Audit Logging - 🔶 PARTIAL
 
 **Comparable to**: Milvus RBAC, Pinecone API keys
 
-- [ ] **10.1** Define roles (admin, read-write, read-only, ingest-only)
-- [ ] **10.2** Implement permission checks on dataset/namespace operations
-- [ ] **10.3** Add API key management with scopes
-- [x] **10.4** Create comprehensive audit logging (`internal/security/audit.go`)
-- [ ] **10.5** Add SSO/OAuth integration support
+| Step | Task | Status | Implementation Notes |
+|------|------|--------|----------------------|
+| 10.1 | Define roles | ⬜ TODO | admin, read-write, read-only, ingest-only |
+| 10.2 | Permission checks | ⬜ TODO | Dataset/namespace operations |
+| 10.3 | API key management | ⬜ TODO | Scoped API keys |
+| 10.4 | Audit logging | ✅ DONE | `internal/security/audit.go` |
+| 10.5 | SSO/OAuth | ⬜ TODO | Not started |
 
 #### Part 13: Geo-Spatial Search
 
 **Comparable to**: Qdrant geo filters
 
-- [ ] **13.1** Add geo-point vector type (lat, lon as vector)
-- [ ] **13.2** Implement geo-distance functions (Haversine, approximate)
-- [ ] **13.3** Create geo-bounded search (within radius, polygon)
-- [ ] **13.4** Add geo-index for fast filtering
-- [ ] **13.5** Combine geo-filter with vector similarity
+| Step | Task | Status | Implementation Notes |
+|------|------|--------|----------------------|
+| 13.1 | Add geo-point vector type | ⬜ TODO | lat, lon as vector |
+| 13.2 | Implement geo-distance | ⬜ TODO | Haversine, approximate |
+| 13.3 | Geo-bounded search | ⬜ TODO | Within radius, polygon |
+| 13.4 | Add geo-index | ⬜ TODO | Fast filtering |
+| 13.5 | Combine geo + vector | ⬜ TODO | Hybrid search |
 
 #### Part 14: Time-Travel & Temporal Queries
 
@@ -601,3 +611,25 @@ Longbow uses **gRPC + Apache Arrow Flight only**. No REST/HTTP API for data oper
 ---
 
 *Last Updated: 2026-04-05*
+
+---
+
+## 🎯 Immediate Next Steps
+
+Based on recent code fixes, here are recommended next actions:
+
+### Priority 1: Complete Multi-GPU Support (P2.1)
+Remaining steps:
+- Step 3: Update Memory Pool for per-device allocation
+- Step 4: Implement GPU sharding by vector ID
+- Step 5: Add Cross-GPU operations
+
+### Priority 2: Build Example Applications (P3)
+Quick wins for developer experience:
+- Create simple Go client example
+- Add Python client quick-start
+- Basic docker-compose setup
+
+### Priority 3: Implement Part 4 - Vectorization (connects to ONNX work)
+- Build on existing ONNX reranker infrastructure
+- Add embedding generation interface

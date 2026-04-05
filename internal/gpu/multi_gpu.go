@@ -2,6 +2,7 @@ package gpu
 
 import (
 	"fmt"
+	"hash/fnv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -411,4 +412,90 @@ func DetectAvailableDevices() ([]int, error) {
 	}
 
 	return devices, nil
+}
+
+func (m *MultiGPUManager) shardVectorID(id int64) int {
+	if len(m.devices) == 1 {
+		return 0
+	}
+	h := fnv.New64a()
+	_, _ = h.Write([]byte{byte(id), byte(id >> 8), byte(id >> 16), byte(id >> 24), byte(id >> 32), byte(id >> 40), byte(id >> 48), byte(id >> 56)})
+	return int(h.Sum64() % uint64(len(m.devices)))
+}
+
+func (m *MultiGPUManager) ShardDevice(vectorID int64) *GPUDevice {
+	m.deviceMu.RLock()
+	defer m.deviceMu.RUnlock()
+
+	if len(m.devices) == 0 {
+		return nil
+	}
+
+	shardIdx := m.shardVectorID(vectorID)
+	return m.devices[shardIdx]
+}
+
+func (m *MultiGPUManager) AddVectorsSharded(ids []int64, vectors []float32) error {
+	if len(ids) == 0 {
+		return nil
+	}
+
+	dimension := len(vectors) / len(ids)
+	if len(ids)*dimension != len(vectors) {
+		return fmt.Errorf("ids and vectors length mismatch: %d ids, %d floats (dim=%d)", len(ids), len(vectors), dimension)
+	}
+
+	m.deviceMu.RLock()
+	defer m.deviceMu.RUnlock()
+
+	batches := make(map[int][]int64)
+
+	for _, id := range ids {
+		shardIdx := m.shardVectorID(id)
+		batches[shardIdx] = append(batches[shardIdx], id)
+	}
+
+	var wg sync.WaitGroup
+	errCh := make(chan error, len(batches))
+
+	for shardIdx, batchIDs := range batches {
+		wg.Add(1)
+		go func(idx int, batchIDs []int64) {
+			defer wg.Done()
+			device := m.devices[idx]
+			vecBatch := make([]float32, len(batchIDs)*dimension)
+			for i, id := range batchIDs {
+				srcStart := 0
+				for j, sid := range ids {
+					if sid == id {
+						srcStart = j * dimension
+						break
+					}
+				}
+				copy(vecBatch[i*dimension:], vectors[srcStart:srcStart+dimension])
+			}
+			if err := device.Index.Add(batchIDs, vecBatch); err != nil {
+				errCh <- fmt.Errorf("device %d: %w", idx, err)
+			}
+		}(shardIdx, batchIDs)
+	}
+
+	wg.Wait()
+	close(errCh)
+
+	for err := range errCh {
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (m *MultiGPUManager) GetDeviceByVectorID(id int64) (*GPUDevice, error) {
+	device := m.ShardDevice(id)
+	if device == nil {
+		return nil, fmt.Errorf("no device found for vector ID %d", id)
+	}
+	return device, nil
 }

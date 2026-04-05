@@ -410,10 +410,10 @@ Many integration tests require external services:
 
 | Step | Task | Status | Implementation Notes |
 |------|------|--------|----------------------|
-| 4.1 | Create embedding generation interface | 🔶 START | Add EmbeddingGenerator interface |
-| 4.2 | Implement local embedding model | ⬜ TODO | ONNX-based embedding |
-| 4.3 | Add batch embedding generation | ⬜ TODO | Bulk ingestion support |
-| 4.4 | Support external providers | ⬜ TODO | OpenAI, Cohere, HuggingFace |
+| 4.1 | ~~Create embedding generation interface~~ | ✅ DONE | Add EmbeddingGenerator interface in internal/store/embedding_generator.go |
+| 4.2 | ~~Implement local embedding model~~ | ✅ DONE | Added localEmbeddingGenerator with stub/onnx/wasm support |
+| 4.3 | ~~Add batch embedding generation~~ | ✅ DONE | Batch processing with configurable batch size |
+| 4.4 | Support external providers | 🔶 STUB | OpenAI, Cohere, HuggingFace stubs ready for API integration |
 | 4.5 | Add embedding model versioning | ⬜ TODO | Caching and model management |
 
 #### Part 5: Hybrid Search (Vector + BM25) - ✅ IMPLEMENTED

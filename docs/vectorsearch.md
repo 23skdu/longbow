@@ -97,7 +97,6 @@ Longbow stores vectors in compressed format using Product Quantization (PQ) to r
 
 * **Encoding**: Vectors are split into `M` sub-vectors and quantized to 256 centroids (1 byte each).
 * **Storage**: A 1536-dim vector (6KB) is compressed to 96 bytes (PQ96) or 24 bytes (PQ24).
-* **Storage**: A 1536-dim vector (6KB) is compressed to 96 bytes (PQ96) or 24 bytes (PQ24).
 * **Search**: Uses Symmetric Distance Computation (SDC) lookup tables for fast distance approximation.
 
 ### Dynamic Sharding & Migration
@@ -284,9 +283,7 @@ based on graph topology.
 results := dataset.Graph.RankWithGraph(initialResults, 0.5, 2)
 ```
 
-```go
-
-#### HybridSearcher
+### HybridSearcher
 
 ```go
 hs := store.NewHybridSearcher()
@@ -306,8 +303,6 @@ sparseResults := hs.SearchSparse("error", 10)
 // graphAlpha=0.3 (Graph influence), graphDepth=2 (2-hop expansion)
 hybridResults := hs.SearchHybrid(queryVector, "error", 10, 0.5, 60, 0.3, 2)
 ```
-
-```text
 
 ### Reciprocal Rank Fusion (RRF)
 
@@ -426,8 +421,6 @@ Automatically estimate alpha based on query length (keyword vs. natural language
 // "this is a long natural language query" -> alpha=0.8 (Dense bias)
 results := hs.SearchHybridWeighted(query, "short query", 10, -1.0, 60)
 ```
-
-```text
 
 ## API Reference
 

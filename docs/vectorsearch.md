@@ -469,3 +469,241 @@ func ReciprocalRankFusion(
     limit int, // Max results
 ) []SearchResult
 ```
+
+## Streaming & Real-Time Updates
+
+Longbow supports real-time vector operations with CDC, WebSocket subscriptions, and message queue export.
+
+### Change Data Capture (CDC)
+
+Longbow implements a configurable CDC system for tracking vector operations:
+
+```go
+config := store.CDCConfig{
+    EnableCDC:           true,
+    FilterOperations:    []store.CDCOperationType{store.CDCOperationInsert, store.CDCOperationUpdate},
+    FilterCollections:    []string{"documents", "embeddings"},
+    IncludeMetadata:     true,
+    BufferSize:          1000,
+    FlushInterval:       time.Second,
+}
+
+cdc := store.NewCDC(logger, config)
+defer cdc.Stop()
+```
+
+Features:
+- **Selective capture**: Filter by operation type (Insert, Update, Delete, Upsert) and collection
+- **Non-blocking**: Asynchronous processing with configurable buffer and flush intervals
+- **Metrics**: Tracks events emitted, dropped, queue size, and processing latency
+
+### WebSocket Subscriptions
+
+Real-time vector update notifications via WebSocket:
+
+```go
+wsServer := store.NewWebSocketServer(logger, store.WebSocketConfig{
+    Port:            8080,
+    ReadTimeout:     30 * time.Second,
+    WriteTimeout:    30 * time.Second,
+    MaxMessageSize:  1024 * 1024,
+})
+
+// Subscribe to collection updates
+wsServer.Subscribe("collection_name", func(event store.WSMessage) {
+    fmt.Printf("Received: %+v\n", event)
+})
+
+go wsServer.Start()
+defer wsServer.Stop()
+```
+
+### Message Queue Export
+
+Export vector events to Kafka or Pulsar:
+
+```go
+exporter := store.NewMQExporter(logger, store.MQConfig{
+    Provider:         store.MQProviderKafka,
+    Brokers:         []string{"localhost:9092"},
+    Topic:            "vector-updates",
+    Authentication:  store.MQAuthNone,
+})
+
+go exporter.Start()
+defer exporter.Stop()
+
+// Emit event
+exporter.EmitCDCEvent(store.CDCEvent{
+    Collection: "documents",
+    VectorID:   store.VectorID(123),
+    Operation:  store.CDCOperationInsert,
+    Timestamp:  time.Now(),
+})
+```
+
+### Optimistic Concurrent Updates
+
+Optimistic locking for high-concurrency scenarios:
+
+```go
+updater := store.NewOptimisticUpdater(logger, store.OptimisticConfig{
+    MaxRetries:        3,
+    RetryDelay:        100 * time.Millisecond,
+    EnableVersioning:  true,
+})
+
+versioned, err := updater.VersionedUpdate(collection, vectorID, newVector, func(existing *store.VectorMetadata) error {
+    existing.UpdatedAt = time.Now()
+    return nil
+})
+```
+
+### Streaming Aggregation
+
+Real-time aggregation over vector streams:
+
+```go
+agg := store.NewStreamingAggregator(logger)
+
+// Moving average over last 100 search latencies
+movAvg := agg.MovingAverage("search_latency", 100)
+
+// Exponential weighted moving average (alpha=0.3)
+ewma := agg.EWMA("query_latency", 0.3)
+
+// Cumulative counter
+counter := agg.Counter("total_queries")
+
+// Process metrics
+agg.RecordValue("search_latency", 45.5)
+agg.RecordValue("search_latency", 52.3)
+
+fmt.Printf("Moving Avg: %.2f\n", movAvg.GetValue())
+```
+
+## Learned Indexes (ML-Based Index Selection)
+
+Longbow uses machine learning to automatically select the optimal index type based on query characteristics.
+
+### Index Performance Predictor
+
+Automatically predicts best index type for given query features:
+
+```go
+predictor := store.NewIndexPerformancePredictor(logger, store.LearnedIndexConfig{
+    EnableAutoSelection: true,
+    MinTrainingSamples:  100,
+    ConfidenceThreshold: 0.7,
+    ModelType:          "ensemble",
+})
+
+// Add training samples
+predictor.AddTrainingSample(store.TrainingSample{
+    Features: store.QueryFeatures{
+        DatasetSize:     500000,
+        SearchK:         100,
+        QueryComplexity: "medium",
+    },
+    Latency:  25 * time.Millisecond,
+    Recall:   0.95,
+    Index:    store.IndexTypeHNSW,
+})
+
+// Predict best index for query
+prediction := predictor.Predict(store.QueryFeatures{
+    DatasetSize:     1000000,
+    SearchK:         50,
+    QueryComplexity: "simple",
+})
+
+fmt.Printf("Recommended: %s (confidence: %.2f)\n", prediction.RecommendedIndex, prediction.Confidence)
+```
+
+### Query-to-Index Mapping
+
+Maps queries to optimal indexes with caching:
+
+```go
+mapper := store.NewQueryIndexMapper(logger, predictor, store.IndexMapperConfig{
+    EnableAutoMapping:  true,
+    CacheEnabled:       true,
+    CacheTTL:           10 * time.Minute,
+    EnableFallback:     true,
+    FallbackIndex:      store.IndexTypeHNSW,
+})
+
+index := mapper.GetIndexForQuery("query_123", features)
+```
+
+### Runtime Index Adaptation
+
+Automatically adapts indexes based on runtime metrics:
+
+```go
+adapter := store.NewRuntimeIndexAdapter(logger, predictor, store.IndexAdaptationConfig{
+    EnableAutoAdaptation:  true,
+    LatencyThresholdMs:    100.0,
+    RecallThreshold:       0.95,
+    CheckInterval:         5 * time.Minute,
+    EnableRollback:        true,
+}, metricsCollector)
+
+adapter.Start()
+defer adapter.Stop()
+```
+
+### Index Benchmark
+
+Compare learned vs fixed index selection:
+
+```go
+benchmark := store.NewIndexBenchmark(logger, predictor, []store.IndexType{
+    store.IndexTypeHNSW,
+    store.LearnedIVFPQ,
+    store.IndexTypeDiskANN,
+})
+
+features := store.QueryFeatures{
+    DatasetSize:     500000,
+    SearchK:         100,
+    VectorDimension: 384,
+}
+
+result := benchmark.RunComparison(features, 10)
+fmt.Printf("Speedup: %.2fx, Recall diff: %.4f\n", result.SpeedupFactor, result.RecallDiff)
+
+// Aggregated stats
+summary := benchmark.GetAggregatedStats()
+fmt.Printf("Learned win rate: %.2f%%\n", summary.WinRateLearned*100)
+```
+
+### Index Recommendation API
+
+Programmatic access to index recommendations:
+
+```go
+api := store.NewIndexRecommendationAPI(logger, predictor, mapper)
+
+// Get recommendation
+prediction := api.GetRecommendation(features)
+
+// Track acceptance
+api.AcceptRecommendation("query_123", prediction.RecommendedIndex)
+
+// Get acceptance rate
+rate := api.GetAcceptanceRate()
+fmt.Printf("Acceptance rate: %.2f%%\n", rate*100)
+
+// Top recommendations
+topRecs := api.GetTopRecommendations(5)
+```
+
+### Supported Index Types
+
+| Index Type | Best For | Characteristics |
+|------------|----------|-----------------|
+| `hnsw` | <100K vectors | Low latency, high recall |
+| `ivf_pq` | 100K-5M vectors | Memory efficient, fast search |
+| `diskann` | >1M vectors | Disk-backed, large scale |
+| `auto` | ML-based selection | Learned index selection |

@@ -1,13 +1,13 @@
 package store
 
 import (
+	"context"
 	"fmt"
 	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"context"
 	"errors"
 
 	"github.com/apache/arrow-go/v18/arrow"
@@ -16,6 +16,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/rs/zerolog"
 
+	"github.com/23skdu/longbow/internal/autoscale"
 	"github.com/23skdu/longbow/internal/cache"
 	"github.com/23skdu/longbow/internal/gc"
 	"github.com/23skdu/longbow/internal/gpu"
@@ -60,6 +61,11 @@ type VectorStore struct {
 	// configMu protects configuration fields
 	configMu sync.RWMutex
 
+	// Worker management (Part 1.2)
+	workerMu               sync.Mutex
+	indexingWorkerCancels  []context.CancelFunc
+	ingestionWorkerCancels []context.CancelFunc
+
 	// Mesh integration
 	Mesh            *mesh.Gossip
 	meshStatusCache *MeshStatusCache // Cache for mesh status serialization
@@ -89,6 +95,9 @@ type VectorStore struct {
 	// Namespace management
 	nsManager *namespaceManager
 
+	// Rate limiting per namespace
+	rateLimiterManager *RateLimiterManager
+
 	// GPU acceleration (optional)
 	gpuBackend   gpu.GPUBackend
 	gpuDeviceID  int
@@ -113,9 +122,13 @@ type VectorStore struct {
 	// Memory Tuner
 	tuner *lbmem.GCTuner
 
-	// Distributed search coordinator (shared between Data/Meta servers)
+	// AutoScaler (Part 1.1)
+	scaler    *autoscale.AutoScaler
+	admission *AdmissionController
+
 	// Distributed search coordinator (shared between Data/Meta servers)
 	coordinator *GlobalSearchCoordinator
+	pool        *FlightClientPool
 
 	// Query Cache (Phase 23)
 	queryCache *cache.QueryCache[[]SearchResult]
@@ -205,6 +218,10 @@ func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes 
 	s.replicator = NewPeerReplicator(DefaultReplicatorConfig())
 	s.replicator.Start()
 
+	// Initialize Flight client pool for distributed coordination
+	s.pool = NewFlightClientPool(DefaultFlightClientPoolConfig())
+
+	s.admission = NewAdmissionController(&s.maxMemory, &s.currentMemory, nil)
 	return s
 }
 
@@ -251,13 +268,10 @@ func (s *VectorStore) IsNUMAEnabled() bool {
 // should throttle incoming requests.
 // Returns true if backpressure should be applied.
 func (s *VectorStore) CheckIngestionBackpressure() bool {
-	// 1. Memory Pressure
-	// If current memory > 90% of max memory, throttle.
-	maxMem := s.maxMemory.Load()
-	if maxMem > 0 {
-		currMem := s.currentMemory.Load()
-		if float64(currMem) > float64(maxMem)*0.9 {
-			return true
+	// First check admission controller
+	if s.admission != nil {
+		if err := s.admission.Admit(context.Background(), "ingest"); err != nil {
+			return true // Apply backpressure if admission rejected
 		}
 	}
 
@@ -269,6 +283,7 @@ func (s *VectorStore) CheckIngestionBackpressure() bool {
 			return true
 		}
 	}
+
 	// 3. Global Heap Pressure (v0.1.4-rc5 fix)
 	if s.tuner != nil {
 		ratio := s.tuner.GetUtilizationRatio()
@@ -301,6 +316,17 @@ func stackTrace() string {
 // SetGCTuner sets the memory tuner for backpressure.
 func (s *VectorStore) SetGCTuner(tuner *lbmem.GCTuner) {
 	s.tuner = tuner
+}
+
+// GetAdmissionController returns the admission controller for the store.
+func (s *VectorStore) GetAdmissionController() *AdmissionController {
+	return s.admission
+}
+
+// SetAutoScaler registers an auto-scaler for load monitoring.
+func (s *VectorStore) SetAutoScaler(scaler *autoscale.AutoScaler) {
+	s.scaler = scaler
+	s.admission.scaler = scaler
 }
 
 // RCU Helpers

@@ -27,11 +27,11 @@
 
 | Step | Task | Status | Implementation Notes |
 |------|------|--------|----------------------|
-| 8.1 | Add version metadata | 🔶 START | Add timestamp/version to vector records |
-| 8.2 | Implement time-travel queries | ⬜ TODO | Query historical state |
-| 8.3 | Create version retention policies | ⬜ TODO | Auto-expire old versions |
-| 8.4 | Add branch/merge semantics | ⬜ TODO | Experimental dataset branches |
-| 8.5 | API for listing versions | ⬜ TODO | Version comparison API |
+| 8.1 | ~~Add version metadata~~ | ✅ DONE | Added RecordVersion, VersionedDataset in versioning.go |
+| 8.2 | ~~Implement time-travel queries~~ | ✅ DONE | Added VersionQuery with AsOfTime support |
+| 8.3 | ~~Create version retention policies~~ | ✅ DONE | Added VersionRetentionPolicy with MaxVersions/MaxAge |
+| 8.4 | ~~Add branch/merge semantics~~ | ✅ DONE | Added CreateBranch, GetBranch, ListBranches, DeleteBranch |
+| 8.5 | ~~API for listing versions~~ | ✅ DONE | Added ListVersions, QueryVersion |
 
 #### Part 9: Enterprise Backup & Disaster Recovery
 

@@ -17,7 +17,7 @@
 |------|------|--------|----------------------|
 | 2.1 | ~~Add tenant resource quotas~~ | ✅ DONE | Added MaxVectors, MaxDimensions, MaxStorageBytes to Namespace |
 | 2.2 | ~~Implement tenant-specific caching~~ | ✅ DONE | Added NamespaceCacheManager for per-namespace cache isolation |
-| 2.3 | Add tenant-aware metrics | ⬜ TODO | Per-namespace QPS, latency, storage |
+| 2.3 | ~~Add tenant-aware metrics~~ | ✅ DONE | Added NamespaceQPS, NamespaceLatency, NamespaceStorageBytes, etc. |
 | 2.4 | Create tenant-level rate limiting | ⬜ TODO | Rate limiting per tenant |
 | 2.5 | Add tenant migration APIs | ⬜ TODO | Move namespace to different node |
 

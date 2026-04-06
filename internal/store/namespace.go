@@ -85,6 +85,16 @@ func (n *Namespace) SetQuota(maxVectors int64, maxDimensions int, maxStorageByte
 	n.MaxVectors = maxVectors
 	n.MaxDimensions = maxDimensions
 	n.MaxStorageBytes = maxStorageBytes
+
+	if maxVectors > 0 {
+		metrics.SetNamespaceQuotaLimit(n.Name, "vectors", float64(maxVectors))
+	}
+	if maxDimensions > 0 {
+		metrics.SetNamespaceQuotaLimit(n.Name, "dimensions", float64(maxDimensions))
+	}
+	if maxStorageBytes > 0 {
+		metrics.SetNamespaceQuotaLimit(n.Name, "storage", float64(maxStorageBytes))
+	}
 }
 
 func (n *Namespace) CheckQuota(vectors int64, dimensions int, storageBytes int64) error {
@@ -105,6 +115,11 @@ func (n *Namespace) AddUsage(vectors int64, storageBytes int64) {
 	defer n.mu.Unlock()
 	n.CurrentVectors += vectors
 	n.CurrentStorageBytes += storageBytes
+
+	metrics.SetNamespaceQuotaUsed(n.Name, "vectors", float64(n.CurrentVectors))
+	metrics.SetNamespaceQuotaUsed(n.Name, "storage", float64(n.CurrentStorageBytes))
+	metrics.RecordNamespaceVectors(n.Name, n.CurrentVectors)
+	metrics.RecordNamespaceStorage(n.Name, n.CurrentStorageBytes)
 }
 
 func (n *Namespace) RemoveUsage(vectors int64, storageBytes int64) {

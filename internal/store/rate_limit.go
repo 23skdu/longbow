@@ -2,6 +2,7 @@ package store
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -172,4 +173,102 @@ func (vs *VectorStore) GetNamespaceRateLimit(namespace string) (RateLimitConfig,
 		return RateLimitConfig{}, nil
 	}
 	return vs.rateLimiterManager.GetLimiter(namespace).GetConfig(), nil
+}
+
+type NamespaceMigrationConfig struct {
+	SourceNamespace string
+	TargetNamespace string
+	TargetNode      string
+	Datasets        []string
+	CopyMode        bool
+}
+
+type NamespaceMigrationResult struct {
+	Success          bool
+	MigratedDatasets int
+	FailedDatasets   []string
+	Duration         time.Duration
+}
+
+func (vs *VectorStore) MigrateNamespace(config NamespaceMigrationConfig) (*NamespaceMigrationResult, error) {
+	startTime := time.Now()
+	result := &NamespaceMigrationResult{
+		FailedDatasets: make([]string, 0),
+	}
+
+	sourceNS := vs.GetNamespace(config.SourceNamespace)
+	if sourceNS == nil {
+		return result, errors.New("source namespace not found")
+	}
+
+	targetNS := vs.GetNamespace(config.TargetNamespace)
+	if targetNS == nil {
+		if err := vs.CreateNamespace(config.TargetNamespace); err != nil {
+			return result, fmt.Errorf("failed to create target namespace: %w", err)
+		}
+		targetNS = vs.GetNamespace(config.TargetNamespace)
+	}
+
+	datasets := sourceNS.ListDatasets()
+	if len(config.Datasets) > 0 {
+		var filtered []string
+		for _, ds := range datasets {
+			for _, wanted := range config.Datasets {
+				if ds == wanted {
+					filtered = append(filtered, ds)
+				}
+			}
+		}
+		datasets = filtered
+	}
+
+	for _, dataset := range datasets {
+		newName := config.TargetNamespace + "/" + dataset[len(config.SourceNamespace)+1:]
+
+		if config.CopyMode {
+			if err := vs.CloneDataset(dataset, newName); err != nil {
+				result.FailedDatasets = append(result.FailedDatasets, dataset)
+				continue
+			}
+		} else {
+			data, err := vs.ExportDataset(dataset)
+			if err != nil {
+				result.FailedDatasets = append(result.FailedDatasets, dataset)
+				continue
+			}
+
+			if err := vs.ImportDataset(newName, data); err != nil {
+				result.FailedDatasets = append(result.FailedDatasets, dataset)
+				continue
+			}
+		}
+
+		result.MigratedDatasets++
+	}
+
+	result.Success = len(result.FailedDatasets) == 0
+	result.Duration = time.Since(startTime)
+
+	return result, nil
+}
+
+func (vs *VectorStore) ExportDataset(name string) ([]byte, error) {
+	_, ok := vs.getDataset(name)
+	if !ok {
+		return nil, errors.New("dataset not found")
+	}
+
+	return nil, errors.New("export not implemented - requires serialization logic")
+}
+
+func (vs *VectorStore) ImportDataset(name string, data []byte) error {
+	return errors.New("import not implemented - requires deserialization logic")
+}
+
+func (vs *VectorStore) CloneDataset(source, target string) error {
+	data, err := vs.ExportDataset(source)
+	if err != nil {
+		return err
+	}
+	return vs.ImportDataset(target, data)
 }

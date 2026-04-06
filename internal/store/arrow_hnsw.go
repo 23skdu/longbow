@@ -1117,40 +1117,30 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 				dist, err = simd.EuclideanDistanceComplex128(q, v)
 			}
 		case []int8, []uint8:
-			var v8 []uint8
-			switch vt := vec.(type) {
-			case []int8:
-				v8 = *(*[]uint8)(unsafe.Pointer(&vt))
-			case []uint8:
-				v8 = vt
+			// Already handled above
+		case []int16:
+			if v, ok := vec.([]int16); ok {
+				dist = euclideanDistanceInt16(q, v)
 			}
-
-			var q8 []uint8
-			switch qt := q.(type) {
-			case []int8:
-				q8 = *(*[]uint8)(unsafe.Pointer(&qt))
-			case []uint8:
-				q8 = qt
+		case []uint16:
+			if v, ok := vec.([]uint16); ok {
+				dist = euclideanDistanceUint16(q, v)
 			}
-
-			if h.quantizer != nil && h.sq8Ready.Load() && len(q8) > 0 && len(v8) > 0 {
-				minV, maxV := h.quantizer.Params()
-				scale := (maxV - minV) / 255.0
-				var sum float32
-				for i := range q8 {
-					deqQ := minV + float32(q8[i])*scale
-					deqV := minV + float32(v8[i])*scale
-					diff := deqQ - deqV
-					sum += diff * diff
-				}
-				dist = float32(math.Sqrt(float64(sum)))
-			} else if len(q8) > 0 && len(v8) > 0 {
-				var sum float32
-				for i := range q8 {
-					diff := float32(q8[i]) - float32(v8[i])
-					sum += diff * diff
-				}
-				dist = float32(math.Sqrt(float64(sum)))
+		case []int32:
+			if v, ok := vec.([]int32); ok {
+				dist = euclideanDistanceInt32(q, v)
+			}
+		case []uint32:
+			if v, ok := vec.([]uint32); ok {
+				dist = euclideanDistanceUint32(q, v)
+			}
+		case []int64:
+			if v, ok := vec.([]int64); ok {
+				dist = euclideanDistanceInt64(q, v)
+			}
+		case []uint64:
+			if v, ok := vec.([]uint64); ok {
+				dist = euclideanDistanceUint64(q, v)
 			}
 		default:
 			return nil, fmt.Errorf("unsupported query vector type %T", queryVec)
@@ -2248,12 +2238,71 @@ func (h *ArrowHNSW) searchLayer(_ context.Context, computer any, entryPoint uint
 					if len(q) != len(v) {
 						return math.MaxFloat32, nil
 					}
-					var sum float32
-					for i, val := range q {
-						diff := float32(val) - float32(v[i])
-						sum += diff * diff
+					return euclideanDistanceInt32(q, v), nil
+				}
+				return math.MaxFloat32, nil
+			}
+			epDist, _ = distComputer(entryPoint)
+
+		case []int16:
+			distComputer = func(id uint32) (float32, error) {
+				vecAny, err := h.getVectorWithData(data, id)
+				if err != nil {
+					return 0, err
+				}
+				if v, ok := vecAny.([]int16); ok {
+					if len(q) != len(v) {
+						return math.MaxFloat32, nil
 					}
-					return float32(math.Sqrt(float64(sum))), nil
+					return euclideanDistanceInt16(q, v), nil
+				}
+				return math.MaxFloat32, nil
+			}
+			epDist, _ = distComputer(entryPoint)
+
+		case []uint16:
+			distComputer = func(id uint32) (float32, error) {
+				vecAny, err := h.getVectorWithData(data, id)
+				if err != nil {
+					return 0, err
+				}
+				if v, ok := vecAny.([]uint16); ok {
+					if len(q) != len(v) {
+						return math.MaxFloat32, nil
+					}
+					return euclideanDistanceUint16(q, v), nil
+				}
+				return math.MaxFloat32, nil
+			}
+			epDist, _ = distComputer(entryPoint)
+
+		case []int64:
+			distComputer = func(id uint32) (float32, error) {
+				vecAny, err := h.getVectorWithData(data, id)
+				if err != nil {
+					return 0, err
+				}
+				if v, ok := vecAny.([]int64); ok {
+					if len(q) != len(v) {
+						return math.MaxFloat32, nil
+					}
+					return euclideanDistanceInt64(q, v), nil
+				}
+				return math.MaxFloat32, nil
+			}
+			epDist, _ = distComputer(entryPoint)
+
+		case []uint64:
+			distComputer = func(id uint32) (float32, error) {
+				vecAny, err := h.getVectorWithData(data, id)
+				if err != nil {
+					return 0, err
+				}
+				if v, ok := vecAny.([]uint64); ok {
+					if len(q) != len(v) {
+						return math.MaxFloat32, nil
+					}
+					return euclideanDistanceUint64(q, v), nil
 				}
 				return math.MaxFloat32, nil
 			}
@@ -2993,6 +3042,78 @@ func (c *float32Computer) ComputeSingle(id uint32) (float32, error) {
 		return float32(math.Sqrt(sum)), nil
 	}
 	return math.MaxFloat32, nil
+}
+
+func euclideanDistanceInt16(a, b []int16) float32 {
+	if len(a) != len(b) || len(a) == 0 {
+		return math.MaxFloat32
+	}
+	var sum float64
+	for i := range a {
+		diff := float64(a[i]) - float64(b[i])
+		sum += diff * diff
+	}
+	return float32(math.Sqrt(sum))
+}
+
+func euclideanDistanceUint16(a, b []uint16) float32 {
+	if len(a) != len(b) || len(a) == 0 {
+		return math.MaxFloat32
+	}
+	var sum float64
+	for i := range a {
+		diff := float64(a[i]) - float64(b[i])
+		sum += diff * diff
+	}
+	return float32(math.Sqrt(sum))
+}
+
+func euclideanDistanceInt32(a, b []int32) float32 {
+	if len(a) != len(b) || len(a) == 0 {
+		return math.MaxFloat32
+	}
+	var sum float64
+	for i := range a {
+		diff := float64(a[i]) - float64(b[i])
+		sum += diff * diff
+	}
+	return float32(math.Sqrt(sum))
+}
+
+func euclideanDistanceUint32(a, b []uint32) float32 {
+	if len(a) != len(b) || len(a) == 0 {
+		return math.MaxFloat32
+	}
+	var sum float64
+	for i := range a {
+		diff := float64(a[i]) - float64(b[i])
+		sum += diff * diff
+	}
+	return float32(math.Sqrt(sum))
+}
+
+func euclideanDistanceInt64(a, b []int64) float32 {
+	if len(a) != len(b) || len(a) == 0 {
+		return math.MaxFloat32
+	}
+	var sum float64
+	for i := range a {
+		diff := float64(a[i]) - float64(b[i])
+		sum += diff * diff
+	}
+	return float32(math.Sqrt(sum))
+}
+
+func euclideanDistanceUint64(a, b []uint64) float32 {
+	if len(a) != len(b) || len(a) == 0 {
+		return math.MaxFloat32
+	}
+	var sum float64
+	for i := range a {
+		diff := float64(a[i]) - float64(b[i])
+		sum += diff * diff
+	}
+	return float32(math.Sqrt(sum))
 }
 
 type int8Computer struct {

@@ -101,6 +101,10 @@ type VectorStore struct {
 	// Version management for Part 8
 	versionManager *VersionManager
 
+	// Backup management for Part 9
+	backupManager          *BackupManager
+	backupScheduleInterval time.Duration
+
 	// GPU acceleration (optional)
 	gpuBackend   gpu.GPUBackend
 	gpuDeviceID  int

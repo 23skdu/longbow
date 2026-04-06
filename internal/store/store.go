@@ -98,6 +98,9 @@ type VectorStore struct {
 	// Rate limiting per namespace
 	rateLimiterManager *RateLimiterManager
 
+	// Version management for Part 8
+	versionManager *VersionManager
+
 	// GPU acceleration (optional)
 	gpuBackend   gpu.GPUBackend
 	gpuDeviceID  int
@@ -184,6 +187,7 @@ func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes 
 	s.persistenceQueue = make(chan persistenceJob, 64) // Reduced from 10000 to prevent OOM
 
 	s.nsManager = newNamespaceManager()
+	s.versionManager = NewVersionManager()
 	s.columnIndex = NewColumnInvertedIndex()
 
 	// Default Cache: 1024 entries, 60s TTL

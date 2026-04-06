@@ -12,11 +12,16 @@ import (
 // Namespace represents a tenant isolation unit containing related datasets.
 // Namespaces provide multi-tenancy support with dataset isolation.
 type Namespace struct {
-	Name      string
-	CreatedAt time.Time
-	Metadata  map[string]string
-	datasets  map[string]bool // tracks dataset names in this namespace
-	mu        sync.RWMutex
+	Name                string
+	CreatedAt           time.Time
+	Metadata            map[string]string
+	datasets            map[string]bool // tracks dataset names in this namespace
+	mu                  sync.RWMutex
+	MaxVectors          int64
+	MaxDimensions       int
+	MaxStorageBytes     int64
+	CurrentVectors      int64
+	CurrentStorageBytes int64
 }
 
 // NewNamespace creates a new namespace with the given name.
@@ -72,6 +77,53 @@ func (n *Namespace) ListDatasets() []string {
 		datasets = append(datasets, name)
 	}
 	return datasets
+}
+
+func (n *Namespace) SetQuota(maxVectors int64, maxDimensions int, maxStorageBytes int64) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.MaxVectors = maxVectors
+	n.MaxDimensions = maxDimensions
+	n.MaxStorageBytes = maxStorageBytes
+}
+
+func (n *Namespace) CheckQuota(vectors int64, dimensions int, storageBytes int64) error {
+	if n.MaxVectors > 0 && n.CurrentVectors+vectors > n.MaxVectors {
+		return errors.New("namespace quota exceeded: max vectors")
+	}
+	if n.MaxDimensions > 0 && dimensions > n.MaxDimensions {
+		return errors.New("namespace quota exceeded: max dimensions")
+	}
+	if n.MaxStorageBytes > 0 && n.CurrentStorageBytes+storageBytes > n.MaxStorageBytes {
+		return errors.New("namespace quota exceeded: max storage")
+	}
+	return nil
+}
+
+func (n *Namespace) AddUsage(vectors int64, storageBytes int64) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.CurrentVectors += vectors
+	n.CurrentStorageBytes += storageBytes
+}
+
+func (n *Namespace) RemoveUsage(vectors int64, storageBytes int64) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.CurrentVectors -= vectors
+	n.CurrentStorageBytes -= storageBytes
+	if n.CurrentVectors < 0 {
+		n.CurrentVectors = 0
+	}
+	if n.CurrentStorageBytes < 0 {
+		n.CurrentStorageBytes = 0
+	}
+}
+
+func (n *Namespace) GetUsage() (vectors int64, storageBytes int64) {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	return n.CurrentVectors, n.CurrentStorageBytes
 }
 
 // namespaces holds all namespaces in the VectorStore

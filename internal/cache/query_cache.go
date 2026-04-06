@@ -21,18 +21,31 @@ type QueryCache[T any] struct {
 	items    map[uint64]*list.Element
 	lru      *list.List
 
-	// Dataset label for metrics
-	dataset string
+	dataset   string
+	namespace string
+
+	warmQueries   []uint64
+	warmEnabled   bool
+	freqTracker   map[uint64]int
+	freqThreshold int
 }
 
 func NewQueryCache[T any](capacity int, ttl time.Duration, dataset string) *QueryCache[T] {
 	return &QueryCache[T]{
-		capacity: capacity,
-		ttl:      ttl,
-		items:    make(map[uint64]*list.Element),
-		lru:      list.New(),
-		dataset:  dataset,
+		capacity:      capacity,
+		ttl:           ttl,
+		items:         make(map[uint64]*list.Element),
+		lru:           list.New(),
+		dataset:       dataset,
+		freqTracker:   make(map[uint64]int),
+		freqThreshold: 3,
 	}
+}
+
+func NewQueryCacheWithNamespace[T any](capacity int, ttl time.Duration, dataset, namespace string) *QueryCache[T] {
+	c := NewQueryCache[T](capacity, ttl, dataset)
+	c.namespace = namespace
+	return c
 }
 
 func (c *QueryCache[T]) Get(key uint64) (T, bool) {
@@ -103,6 +116,14 @@ func (c *QueryCache[T]) evictOldest() {
 	}
 }
 
+// InvalidateDataset clears cache entries for a specific dataset.
+func (c *QueryCache[T]) InvalidateDataset(dataset string) {
+	if c.dataset != dataset {
+		return
+	}
+	c.Clear()
+}
+
 // Clear purges the cache
 func (c *QueryCache[T]) Clear() {
 	c.mu.Lock()
@@ -110,4 +131,49 @@ func (c *QueryCache[T]) Clear() {
 	c.lru.Init()
 	c.items = make(map[uint64]*list.Element)
 	metrics.QueryCacheSize.WithLabelValues(c.dataset).Set(0)
+}
+
+// CacheStats returns current cache statistics
+func (c *QueryCache[T]) CacheStats() (size int, hits, misses, evictions int64) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	size = c.lru.Len()
+	return
+}
+
+type CacheStats struct {
+	Size      int
+	Namespace string
+	Dataset   string
+}
+
+func (c *QueryCache[T]) Stats() CacheStats {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return CacheStats{
+		Size:      c.lru.Len(),
+		Namespace: c.namespace,
+		Dataset:   c.dataset,
+	}
+}
+
+func (c *QueryCache[T]) RecordAccess(key uint64) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.freqTracker[key]++
+	return c.freqTracker[key] >= c.freqThreshold
+}
+
+func (c *QueryCache[T]) GetFrequentQueries() []uint64 {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	var result []uint64
+	for k, v := range c.freqTracker {
+		if v >= c.freqThreshold {
+			result = append(result, k)
+		}
+	}
+	return result
 }

@@ -51,10 +51,10 @@
 
 | Step | Task | Status | Implementation Notes |
 |------|------|--------|----------------------|
-| 10.1 | Define roles | ⬜ TODO | admin, read-write, read-only, ingest-only |
-| 10.2 | Permission checks | ⬜ TODO | Dataset/namespace operations |
-| 10.3 | API key management | ⬜ TODO | Scoped API keys |
-| 10.4 | Audit logging | ✅ DONE | `internal/security/audit.go` |
+| 10.1 | ~~Define roles~~ | ✅ DONE | Added RoleAdmin, RoleReadWrite, RoleReadOnly, RoleIngest |
+| 10.2 | ~~Permission checks~~ | ✅ DONE | Added CheckPermission with namespace/dataset scoping |
+| 10.3 | ~~API key management~~ | ✅ DONE | Added CreateAPIKey, ValidateAPIKey, RevokeAPIKey, DeleteAPIKey |
+| 10.4 | ~~Audit logging~~ | ✅ DONE | `internal/security/audit.go` |
 | 10.5 | SSO/OAuth | ⬜ TODO | Not started |
 
 ---

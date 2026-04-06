@@ -24,6 +24,7 @@ import (
 	"github.com/23skdu/longbow/internal/metrics"
 	qry "github.com/23skdu/longbow/internal/query"
 	"github.com/23skdu/longbow/internal/store/types"
+	"github.com/23skdu/longbow/internal/tracing"
 )
 
 // DoAction handles custom actions like deletion and status
@@ -607,8 +608,11 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 
 // DoPut - Optimized implementation with batching
 func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
-	// Use TrackingAllocator to monitor zero-copy behavior (expecting low allocations)
-	// and track metadata overhead.
+	_, span := tracing.CreateSpan(stream.Context(), "DoPut")
+	if span != nil {
+		defer span.End()
+	}
+
 	trackAlloc := lmem.NewTrackingAllocator(s.pooledMem)
 	r, err := flight.NewRecordReader(stream, ipc.WithAllocator(trackAlloc))
 	if err != nil {
@@ -669,6 +673,13 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 		return status.Errorf(codes.Internal, "failed to retrieve or create dataset %s", name)
 	}
 
+	// Namespace quota check (will be done per-flush in the loop below)
+	nsName, _ := ParseNamespacedPath(name)
+	var ns *Namespace
+	if ns = s.GetNamespace(nsName); ns != nil {
+		// Check initial quota on first batch
+	}
+
 	// Schema Evolution & Validation
 	// Validate compatibility and evolve if additive changes are present
 	if err := ds.SchemaManager.Evolve(r.Schema()); err != nil {
@@ -710,6 +721,19 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 	flush := func() error {
 		if len(batch) == 0 {
 			return nil
+		}
+
+		// Namespace quota check on flush
+		if ns != nil {
+			numVectors := int64(0)
+			totalBytes := int64(0)
+			for _, b := range batch {
+				numVectors += b.NumRows()
+				totalBytes += estimateBatchSize(b)
+			}
+			if err := ns.CheckQuota(numVectors, 0, totalBytes); err != nil {
+				return status.Errorf(codes.ResourceExhausted, "namespace quota exceeded: %v", err)
+			}
 		}
 
 		// Check total size of batch
@@ -829,6 +853,15 @@ func (s *VectorStore) flushPutBatch(ctx context.Context, ds *Dataset, batch []ar
 	// Since both are async queues now, the latency is just channel send.
 
 	ts := time.Now().UnixNano()
+
+	// Record to auto-scaler (Part 1.1)
+	if s.scaler != nil {
+		totalRows := 0
+		for _, rec := range batch {
+			totalRows += int(rec.NumRows())
+		}
+		s.scaler.RecordIngest(totalRows)
+	}
 
 	// Backpressure: Check if we should throttle
 	if s.CheckIngestionBackpressure() {

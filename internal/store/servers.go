@@ -192,6 +192,12 @@ func (s *MetaServer) DoAction(action *flight.Action, stream flight.FlightService
 		return s.handleListDatasetsInNamespace(action, stream)
 	case "GetGraphStats":
 		return s.handleGetGraphStats(action.Body, stream)
+	case "GetCapacityPlan":
+		return s.handleGetCapacityPlan(action, stream)
+	case "GetAutoScaleConfig":
+		return s.handleGetAutoScaleConfig(action, stream)
+	case "SetAutoScaleConfig":
+		return s.handleSetAutoScaleConfig(action, stream)
 	default:
 		return s.VectorStore.DoAction(action, stream)
 	}
@@ -383,4 +389,42 @@ func ToGRPCStatus(err error) error {
 		return status.Errorf(codes.Unavailable, "%v", e)
 	}
 	return status.Errorf(codes.Internal, "%v", err)
+}
+
+func (s *MetaServer) handleGetCapacityPlan(action *flight.Action, stream flight.FlightService_DoActionServer) error {
+	plan, err := s.GetCapacityPlan()
+	if err != nil {
+		return status.Errorf(codes.Internal, "failed to get capacity plan: %v", err)
+	}
+	data, err := json.Marshal(plan)
+	if err != nil {
+		return status.Errorf(codes.Internal, "failed to marshal capacity plan: %v", err)
+	}
+	return stream.Send(&flight.Result{Body: data})
+}
+
+func (s *MetaServer) handleGetAutoScaleConfig(action *flight.Action, stream flight.FlightService_DoActionServer) error {
+	config := s.GetAutoScaleConfig()
+	data, err := json.Marshal(config)
+	if err != nil {
+		return status.Errorf(codes.Internal, "failed to marshal auto-scale config: %v", err)
+	}
+	return stream.Send(&flight.Result{Body: data})
+}
+
+func (s *MetaServer) handleSetAutoScaleConfig(action *flight.Action, stream flight.FlightService_DoActionServer) error {
+	var req AutoScaleConfig
+	if len(action.Body) > 0 {
+		if err := json.Unmarshal(action.Body, &req); err != nil {
+			return status.Errorf(codes.InvalidArgument, "invalid auto-scale config: %v", err)
+		}
+	}
+	if err := s.SetAutoScaleConfig(req); err != nil {
+		return status.Errorf(codes.InvalidArgument, "failed to set auto-scale config: %v", err)
+	}
+	data, err := json.Marshal(req)
+	if err != nil {
+		return status.Errorf(codes.Internal, "failed to marshal response: %v", err)
+	}
+	return stream.Send(&flight.Result{Body: data})
 }

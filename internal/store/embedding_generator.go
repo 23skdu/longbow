@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -27,8 +28,124 @@ type EmbeddingConfig struct {
 	APIKey       string
 	Provider     string
 	ModelName    string
+	ModelVersion string
 	MaxRetries   int
 	CacheEnabled bool
+	CacheTTL     time.Duration
+}
+
+type ModelVersion struct {
+	Version   string    `json:"version"`
+	ModelName string    `json:"model_name"`
+	Provider  string    `json:"provider"`
+	CreatedAt time.Time `json:"created_at"`
+	IsDefault bool      `json:"is_default"`
+	Dimension int       `json:"dimension"`
+	Checksum  string    `json:"checksum,omitempty"`
+}
+
+type EmbeddingModelRegistry struct {
+	mu         sync.RWMutex
+	models     map[string]map[string]ModelVersion
+	generators map[string]EmbeddingGenerator
+	cache      *EmbeddingCache
+}
+
+type EmbeddingCache struct {
+	mu         sync.RWMutex
+	entries    map[string][]float32
+	maxEntries int
+	ttl        time.Duration
+	hits       int64
+	misses     int64
+}
+
+func NewEmbeddingModelRegistry(cacheTTL time.Duration, maxCacheEntries int) *EmbeddingModelRegistry {
+	return &EmbeddingModelRegistry{
+		models:     make(map[string]map[string]ModelVersion),
+		generators: make(map[string]EmbeddingGenerator),
+		cache:      NewEmbeddingCache(cacheTTL, maxCacheEntries),
+	}
+}
+
+func NewEmbeddingCache(ttl time.Duration, maxEntries int) *EmbeddingCache {
+	return &EmbeddingCache{
+		entries:    make(map[string][]float32),
+		maxEntries: maxEntries,
+		ttl:        ttl,
+	}
+}
+
+func (c *EmbeddingCache) Get(key string) ([]float32, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	entry, ok := c.entries[key]
+	if ok {
+		c.hits++
+	}
+	return entry, ok
+}
+
+func (c *EmbeddingCache) Set(key string, value []float32) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.entries) >= c.maxEntries {
+		for k := range c.entries {
+			delete(c.entries, k)
+			break
+		}
+	}
+	c.entries[key] = value
+}
+
+func (c *EmbeddingCache) Stats() (hits, misses int64, size int) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.hits, c.misses, len(c.entries)
+}
+
+func (r *EmbeddingModelRegistry) RegisterModel(provider, modelName string, version ModelVersion) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.models[provider] == nil {
+		r.models[provider] = make(map[string]ModelVersion)
+	}
+	r.models[provider][modelName] = version
+	return nil
+}
+
+func (r *EmbeddingModelRegistry) GetModel(provider, modelName string) (ModelVersion, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	v, ok := r.models[provider][modelName]
+	return v, ok
+}
+
+func (r *EmbeddingModelRegistry) ListModels(provider string) []ModelVersion {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	versions := make([]ModelVersion, 0)
+	for _, v := range r.models[provider] {
+		versions = append(versions, v)
+	}
+	return versions
+}
+
+func (r *EmbeddingModelRegistry) SetGenerator(key string, gen EmbeddingGenerator) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.generators[key] = gen
+}
+
+func (r *EmbeddingModelRegistry) GetGenerator(key string) (EmbeddingGenerator, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	g, ok := r.generators[key]
+	return g, ok
+}
+
+func (r *EmbeddingModelRegistry) GetCache() *EmbeddingCache {
+	return r.cache
 }
 
 func NewEmbeddingGenerator(config EmbeddingConfig) (EmbeddingGenerator, error) {

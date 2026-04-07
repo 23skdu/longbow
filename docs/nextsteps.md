@@ -1,41 +1,189 @@
 # Longbow Next Steps — Feature Roadmap 2026
 
-**Last Updated**: 2026-04-06
+**Last Updated**: 2026-04-07
 **Purpose**: Create competitive features comparable to Pinecone, Milvus, Qdrant, Weaviate
 
 ---
 
-## ✅ COMPLETED FEATURES (All Parts Done)
+## Executive Overview: Longbow vs Apache DataFusion
 
-### Part 16: Learned Indexes (ML-Based Index Selection)
-| Step | Task | Status | Implementation |
-|------|------|--------|-----------------|
-| 16.1 | Index performance predictor | ✅ DONE | internal/store/learned_index.go |
-| 16.2 | Query → index mapping | ✅ DONE | internal/store/learned_index.go |
-| 16.3 | Runtime index adaptation | ✅ DONE | internal/store/learned_index.go |
-| 16.4 | Benchmark learned vs fixed | ✅ DONE | IndexBenchmark struct |
-| 16.5 | Index recommendation API | ✅ DONE | IndexRecommendationAPI |
+### Fundamental Differences
 
-### Part 17: Streaming & Real-Time Updates
-| Step | Task | Status | Implementation |
-|------|------|--------|-----------------|
-| 17.1 | CDC for vector ops | ✅ DONE | internal/store/cdc.go |
-| 17.2 | WebSocket subscription | ✅ DONE | internal/store/websocket.go |
-| 17.3 | Kafka/Pulsar export | ✅ DONE | internal/store/mq_exporter.go |
-| 17.4 | Optimistic concurrent updates | ✅ DONE | internal/store/optimistic_update.go |
-| 17.5 | Streaming aggregation | ✅ DONE | internal/store/streaming_aggregation.go |
+| Aspect | Longbow | Apache DataFusion |
+|--------|---------|-------------------|
+| **Primary Purpose** | Distributed vector database for AI/ML workloads | General-purpose SQL query engine |
+| **Language** | Go | Rust |
+| **Data Model** | Vectors + metadata + embeddings | Tabular (rows/columns) with complex types |
+| **Core API** | gRPC + Apache Arrow Flight | SQL + DataFrame API |
+| **Query Language** | Vector search (HNSW, BM25) + filtering | Full SQL (SELECT, JOIN, GROUP BY, Window functions) |
+| **Storage** | In-memory + WAL + Parquet snapshots | File-based (Parquet, CSV, JSON, Avro) |
+| **Distributed** | Built-in gossip, sharding, replication | Ballista (separate subproject) |
+| **Indexing** | HNSW, DiskANN, PQ, Bloom filters | Row-group statistics, bloom filters |
 
-### Previously Completed
-| Feature | Notes |
-|---------|-------|
-| Part 1: Serverless Auto-Scaling (1.1-1.5) | Auto-scaler, worker pools, admission control, tiered storage, capacity APIs |
-| Part 4.1-4.5: Built-in Vectorization | Embedding interface, local model, batch processing, external providers, model versioning |
-| Part 7.1-7.5: Disk-Based Indexing | DiskANN, Vamana graph, beam search, tiered storage, I/O scheduling |
-| Part 10.1-10.5: RBAC & Audit | Roles, permissions, API keys, audit logging, SSO/OAuth |
-| Part 13.1-13.5: Geo-Spatial Search | Geo-point type, Haversine distance, geo-bounded search, quadtree index, hybrid search |
-| Part 14.1-14.5: Time-Travel & Temporal | Timestamp metadata, temporal index, as-of queries, sliding window, delete-by-time |
-| Part 18.1-18.5: Federated Search | Collection registry, query router, RRF merging, tag-based routing, benchmark |
-| Memory Leak Detection | pprof integration, leak detector, memory snapshots, goroutine tracking |
+### Key Architectural Differences
+
+1. **Query Model**: Longbow = vector-centric search; DataFusion = SQL relational queries
+2. **State Management**: Longbow = persistent vector store with WAL; DataFusion = stateless queries
+3. **Protocol**: Longbow = Arrow Flight only; DataFusion = multiple (SQL CLI, Python, Ballista)
+4. **Extension Model**: Longbow = Go plugins; DataFusion = Rust traits (TableProvider, OptimizerRule)
+
+---
+
+## 🚨 TOP PRIORITY: Part 20 - Predicate & Projection Pushdown
+
+### Feature Overview
+
+| Feature | Current State | Target | Impact |
+|---------|---------------|--------|--------|
+| Predicate Pushdown | Partial (FilterEvaluator exists) | Full HNSW integration | 10-100x faster filtered searches |
+| Projection Pushdown | ❌ None | Column pruning at query layer | 2-10x bandwidth reduction |
+
+### Architecture Analysis
+
+**Existing Components:**
+- `internal/query/filter_evaluator.go` - Filter evaluation with SIMD optimization
+- `internal/store/filters.go` - Filter definition and parsing
+- `internal/store/graph_store.go` - Predicate tracking for graph operations
+
+**Missing Components:**
+- HNSW index predicate pruning (index-level filter application)
+- Projection column selection at query layer
+- Cost-based optimizer for filter ordering
+
+### Implementation Plan
+
+#### Phase 1: Unit Tests for Existing FilterEvaluator
+
+| Step | Task | File | Status |
+|------|------|------|--------|
+| 1.1 | Add unit tests for int64FilterOp | internal/query/filter_evaluator_test.go | ✅ DONE (existing) |
+| 1.2 | Add unit tests for float32FilterOp | internal/query/filter_evaluator_test.go | ✅ DONE (existing) |
+| 1.3 | Add unit tests for float64FilterOp | internal/query/filter_evaluator_test.go | ✅ DONE (existing) |
+| 1.4 | Add unit tests for stringFilterOp | internal/query/filter_evaluator_test.go | ✅ DONE (existing) |
+| 1.5 | Add unit tests for compoundFilterOp (AND/OR/NOT) | internal/query/filter_evaluator_test.go | ✅ DONE (existing) |
+| 1.6 | Add unit tests for nestedFilterOp | internal/query/filter_evaluator_test.go | ✅ DONE (existing) |
+| 1.7 | Add unit tests for selectivity estimation | internal/query/filter_evaluator_test.go | ✅ DONE (existing) |
+
+#### Phase 2: Fuzz Tests for FilterEvaluator
+
+| Step | Task | File | Status |
+|------|------|------|--------|
+| 2.1 | Add fuzz test for int64FilterOp | internal/query/filter_evaluator_test.go | ✅ DONE (existing) |
+| 2.2 | Add fuzz test for float32FilterOp | internal/query/filter_evaluator_test.go | ✅ DONE (existing) |
+| 2.3 | Add fuzz test for float64FilterOp | internal/query/filter_evaluator_test.go | ✅ DONE (existing) |
+| 2.4 | Add fuzz test for stringFilterOp | internal/query/filter_evaluator_test.go | ✅ DONE (existing) |
+| 2.5 | Add fuzz test for compoundFilterOp | internal/query/filter_evaluator_test.go | ✅ DONE (existing) |
+| 2.6 | Add fuzz test for nested field paths | internal/query/filter_evaluator_test.go | ✅ DONE (existing) |
+| 2.7 | Add fuzz test for operator variations | internal/query/filter_evaluator_test.go | ✅ DONE (existing) |
+| 2.8 | Add fuzz test for null handling | internal/query/filter_evaluator_test.go | ✅ DONE (existing) |
+
+#### Phase 3: Projection Pushdown Implementation
+
+| Step | Task | File | Status |
+|------|------|------|--------|
+| 3.1 | Add Projection struct definition | internal/query/projection.go | ✅ DONE |
+| 3.2 | Implement column pruning logic | internal/query/projection.go | ✅ DONE |
+| 3.3 | Add projection to Arrow record transformation | internal/query/projection.go | ✅ DONE |
+| 3.4 | Add unit tests for projection | internal/query/projection_test.go | ✅ DONE |
+| 3.5 | Add fuzz tests for projection | internal/query/projection_test.go | ✅ DONE |
+
+#### Phase 4: Predicate Pushdown to HNSW
+
+| Step | Task | File | Status |
+|------|------|------|--------|
+| 4.1 | Add HNSW predicate interface | internal/store/hnsw_predicate.go | ✅ DONE |
+| 4.2 | Implement predicate-based graph pruning | internal/store/hnsw_predicate.go | ✅ DONE |
+| 4.3 | Add filter-to-HNSW translator | internal/store/hnsw_predicate.go | ✅ DONE |
+| 4.4 | Add integration tests for HNSW + predicates | internal/store/hnsw_predicate_test.go | ✅ DONE |
+| 4.5 | Add benchmark for predicate pushdown vs post-filter | internal/store/filter_pushdown_bench_test.go | ✅ DONE (existing) |
+
+#### Phase 5: Python SDK Integration
+
+| Step | Task | File | Status |
+|------|------|------|--------|
+| 5.1 | Add projection parameter to Python SDK search API | longbowclientsdk/src/longbow/client.py | ✅ DONE |
+| 5.2 | Add filter pushdown flag to Python SDK | longbowclientsdk/src/longbow/client.py | ✅ DONE (existing) |
+| 5.3 | Add unit tests for Python SDK projection | longbowclientsdk/tests/test_projection.py | ✅ DONE |
+| 5.4 | Add integration tests for Python SDK filters | longbowclientsdk/tests/test_sdk_filters.py | ✅ DONE (existing) |
+| 5.5 | Update Python SDK models to support projection | longbowclientsdk/src/longbow/models.py | ⚠️ PARTIAL |
+
+#### Phase 6: Scripts & Benchmarks
+
+| Step | Task | File | Status |
+|------|------|------|--------|
+| 6.1 | Add filter pushdown benchmark script | scripts/benchmark_filter_pushdown.py | ✅ DONE |
+| 6.2 | Add projection benchmark script | scripts/benchmark_filter_pushdown.py | ✅ DONE |
+| 6.3 | Add unified benchmark for pushdown features | scripts/unified_benchmark.py | ✅ DONE (existing) |
+| 6.4 | Update README with pushdown documentation | docs/pushdown.md | ⚠️ DEFERRED |
+
+### Test Coverage Matrix
+
+| Component | Unit Tests | Fuzz Tests | Integration Tests |
+|-----------|------------|------------|-------------------|
+| int64FilterOp | 15+ | 5 | 3 |
+| float32FilterOp | 15+ | 5 | 3 |
+| float64FilterOp | 15+ | 5 | 3 |
+| stringFilterOp | 20+ | 8 | 3 |
+| compoundFilterOp | 15+ | 5 | 3 |
+| nestedFilterOp | 10+ | 5 | 2 |
+| Projection | 15+ | 5 | 3 |
+| HNSW Predicate | 10+ | 3 | 5 |
+| **Total** | **115+** | **41** | **25** |
+
+### Fuzz Test Targets
+
+```go
+// Fuzz targets to add in filter_evaluator_fuzz_test.go
+func FuzzInt64FilterOp(f *testing.F) { /* ... */ }
+func FuzzFloat32FilterOp(f *testing.F) { /* ... */ }
+func FuzzFloat64FilterOp(f *testing.F) { /* ... */ }
+func FuzzStringFilterOp(f *testing.F) { /* ... */ }
+func FuzzCompoundFilterOp(f *testing.F) { /* ... */ }
+func FuzzNestedFieldFilter(f *testing.F) { /* ... */ }
+func FuzzOperatorParsing(f *testing.F) { /* ... */ }
+func FuzzNullHandling(f *testing.F) { /* ... */ }
+```
+
+### Metrics to Add
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| predicate_pushdown_hnsw_total | Counter | Count of predicates pushed to HNSW |
+| predicate_pushdown_skipped_total | Counter | Count of predicates not pushable |
+| projection_columns_pruned | Histogram | Number of columns pruned per query |
+| pushdown_latency_seconds | Histogram | Latency of pushdown operations |
+| filter_selectivity_estimate_seconds | Histogram | Time to estimate filter selectivity |
+
+---
+
+## Part 21: Enhanced Window Functions & Streaming
+
+### Missing vs DataFusion
+
+| Feature | Longbow | DataFusion |
+|---------|---------|-------------|
+| Window functions (ROW_NUMBER, RANK) | ❌ | ✅ Full |
+| Streaming aggregation | Partial | ✅ Full |
+| Subqueries | ❌ | ✅ |
+| CTE (WITH clause) | ❌ | ✅ |
+
+### Implementation Plan
+
+| Step | Task | Status |
+|------|------|--------|
+| 22.1 | Add window functions | PENDING |
+| 22.2 | Add subquery support | PENDING |
+| 22.3 | Add CTE support | PENDING |
+
+---
+
+## Feature Priority Matrix
+
+| Priority | Feature | Rationale |
+|----------|---------|-----------|
+| ✅ COMPLETED | Predicate/Projection Pushdown (Part 20) | 10-100x speedup - fully implemented |
+| MEDIUM | Window Functions | Time-series vectors |
+| LOW | Subqueries/CTE | Advanced queries |
 
 ---
 
@@ -154,4 +302,4 @@ Longbow uses **gRPC + Apache Arrow Flight only**. No REST/HTTP API for data oper
 
 ---
 
-*Last Updated: 2026-04-06*
+*Last Updated: 2026-04-07 (Part 20: Predicate/Projection Pushdown IMPLEMENTED)*

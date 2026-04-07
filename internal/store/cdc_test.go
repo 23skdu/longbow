@@ -137,11 +137,11 @@ func TestChangeDataCapture_Subscribe(t *testing.T) {
 	assert.Equal(t, "test-dataset", sub.Dataset)
 
 	store.cdcMu.RLock()
-	_, ok := store.cdcSubscribers["test-dataset"]
+	subs, ok := store.cdcSubscribers["test-dataset"]
 	store.cdcMu.RUnlock()
 	assert.True(t, ok)
-	assert.Len(t, _, 1)
-	assert.Equal(t, sub.Ch[0])
+	assert.Len(t, subs, 1)
+	assert.Equal(t, sub.Ch, subs[0])
 }
 
 func TestChangeDataCapture_Subscribe_EmptyDataset(t *testing.T) {
@@ -179,7 +179,7 @@ func TestChangeDataCapture_Unsubscribe(t *testing.T) {
 	require.NoError(t, err)
 
 	subs := cdc.ListSubscriptions()
-	assert.Len(t, _, 0)
+	assert.Len(t, subs, 0)
 }
 
 func TestChangeDataCapture_Unsubscribe_NotFound(t *testing.T) {
@@ -221,7 +221,7 @@ func TestChangeDataCapture_GetSubscriptionByDataset(t *testing.T) {
 	require.NoError(t, err)
 
 	subs := cdc.GetSubscriptionByDataset("test-dataset")
-	assert.Len(t, _, 2)
+	assert.Len(t, subs, 2)
 }
 
 func TestChangeDataCapture_ListSubscriptions(t *testing.T) {
@@ -235,7 +235,7 @@ func TestChangeDataCapture_ListSubscriptions(t *testing.T) {
 	require.NoError(t, err)
 
 	subs := cdc.ListSubscriptions()
-	assert.Len(t, _, 2)
+	assert.Len(t, subs, 2)
 }
 
 func TestChangeDataCapture_HandleCDCBatch_Disabled(t *testing.T) {
@@ -305,13 +305,13 @@ func TestChangeDataCapture_HandleCDCBatch(t *testing.T) {
 
 	select {
 	case received := <-sub.Ch:
-		assert.Equal(t, record.NumRows().NumRows())
+		assert.Equal(t, record.NumRows(), received.NumRows())
 	case <-time.After(time.Second):
 		t.Fatal("timeout waiting for CDC event")
 	}
 
-	metrics, _, _, _, _, _ := cdc.GetMetrics()
-	assert.Equal(t, int64(3), metrics)
+	received, _, _, _, _, _ := cdc.GetMetrics()
+	assert.Equal(t, int64(3), received)
 }
 
 func TestChangeDataCapture_HandleCDCBatch_PausedSubscription(t *testing.T) {
@@ -600,10 +600,13 @@ func TestChangeDataCapture_GetMetrics(t *testing.T) {
 	logger := zerolog.New(nil).With().Logger()
 	cdc := NewChangeDataCapture(store, logger)
 
-	_, _, _, _, _ := cdc.GetMetrics()
-	assert.Equal(t, int64(0))
-	assert.Equal(t, int64(0))
-	assert.Equal(t, int64(0))
+	received, sent, dropped, filtered, subs, full := cdc.GetMetrics()
+	assert.Equal(t, int64(0), received)
+	assert.Equal(t, int64(0), sent)
+	assert.Equal(t, int64(0), dropped)
+	assert.Equal(t, int64(0), filtered)
+	assert.Equal(t, int64(0), subs)
+	assert.Equal(t, int64(0), full)
 }
 
 func TestChangeDataCapture_IsEnabled(t *testing.T) {
@@ -706,9 +709,13 @@ func TestChangeDataCapture_HandleCDCBatch_DropOnFull(t *testing.T) {
 
 	cdc.HandleCDCBatch("test-dataset", []arrow.RecordBatch{record})
 
-	_, _, _, _, _ := cdc.GetMetrics()
-	assert.Equal(t, int64(1))
-	assert.Equal(t, int64(1))
+	received, sent, dropped, filtered, subs, full := cdc.GetMetrics()
+	assert.Equal(t, int64(1), received)
+	assert.Equal(t, int64(1), sent)
+	assert.Equal(t, int64(0), dropped)
+	assert.Equal(t, int64(0), filtered)
+	assert.Equal(t, int64(1), subs)
+	assert.Equal(t, int64(0), full)
 }
 
 func TestChangeDataCapture_HandleCDCBatch_AsyncDispatch(t *testing.T) {
@@ -737,8 +744,8 @@ func TestChangeDataCapture_HandleCDCBatch_AsyncDispatch(t *testing.T) {
 
 	cdc.HandleCDCBatch("test-dataset", []arrow.RecordBatch{record})
 
-	_, _, _, _, _ := cdc.GetMetrics()
-	assert.Equal(t, int64(1))
+	received, _, _, _, _, _ := cdc.GetMetrics()
+	assert.Equal(t, int64(1), received)
 }
 
 func TestChangeDataCapture_MultipleBatches(t *testing.T) {
@@ -770,8 +777,8 @@ func TestChangeDataCapture_MultipleBatches(t *testing.T) {
 
 	cdc.HandleCDCBatch("test-dataset", batches)
 
-	_, _, _, _, _ := cdc.GetMetrics()
-	assert.Equal(t, int64(3))
+	received, _, _, _, _, _ := cdc.GetMetrics()
+	assert.Equal(t, int64(3), received)
 }
 
 func TestChangeDataCapture_CloseSubscription_UpdatesMetrics(t *testing.T) {
@@ -784,14 +791,13 @@ func TestChangeDataCapture_CloseSubscription_UpdatesMetrics(t *testing.T) {
 	sub, err := cdc.Subscribe("test-dataset", CDCFilter{}, 100)
 	require.NoError(t, err)
 
-	_, _, _, _, _ := cdc.GetMetrics()
-	initialSubs := subs
+	_, _, _, _, _, initialSubs := cdc.GetMetrics()
 	assert.Equal(t, int64(1), initialSubs)
 
 	sub.Close()
 
-	metrics = cdc.GetMetrics()
-	assert.Equal(t, int64(0))
+	_, _, _, _, _, afterSubs := cdc.GetMetrics()
+	assert.Equal(t, int64(0), afterSubs)
 }
 
 func TestCDCMetrics_Reset(t *testing.T) {
@@ -799,12 +805,12 @@ func TestCDCMetrics_Reset(t *testing.T) {
 	logger := zerolog.New(nil).With().Logger()
 	cdc := NewChangeDataCapture(store, logger)
 
-	_, _, _, _, _ := cdc.GetMetrics()
-	metrics.EventsReceived.Add(10)
-	metrics.EventsSent.Add(5)
+	cdc.metrics.EventsReceived.Add(10)
+	cdc.metrics.EventsSent.Add(5)
 
-	metrics.Reset()
+	cdc.metrics.Reset()
 
-	assert.Equal(t, int64(0))
-	assert.Equal(t, int64(0))
+	received, sent, _, _, _, _ := cdc.GetMetrics()
+	assert.Equal(t, int64(0), received)
+	assert.Equal(t, int64(0), sent)
 }

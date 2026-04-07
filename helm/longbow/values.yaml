@@ -132,22 +132,6 @@ config:
   # Ingestion worker count (0 = runtime.NumCPU())
   ingestionWorkerCount: 0
 
-# Compaction Configuration
-compaction:
-  enabled: true
-  interval: "30s"
-  targetBatchSize: 10000
-  minBatches: 10
-
-# Sharding Configuration
-sharding:
-  auto:
-    enabled: true # Auto-sharding enabled by default
-    threshold: 10000
-    splitThreshold: 65536
-  ring:
-    enabled: true
-
 # Hybrid Search Configuration
 hybrid:
   enabled: true
@@ -178,6 +162,22 @@ gossip:
     labelSelector: "app.kubernetes.io/name=longbow"
     # For DNS discovery: SRV record to query
     dnsRecord: "_gossip._udp.longbow.default.svc.cluster.local"
+
+# Learned Index Configuration
+# ML-based index selection using learned index predictors
+learnedIndex:
+  enabled: false
+  minSamples: 100
+  confidenceThreshold: 0.7
+  updateInterval: "1h"
+
+# Ollama Integration
+# Local LLM server for embedding-based index prediction
+ollama:
+  enabled: false
+  endpoint: "http://localhost:11434"
+  model: "" # e.g., "nomic-embed-text:latest" or "qwen3-embedding:8b"
+  timeout: 30
 
 # Persistence configuration
 persistence:
@@ -305,6 +305,8 @@ autoscaling:
   minReplicas: 1
   maxReplicas: 100
   targetCPUUtilizationPercentage: 80
+  targetSearchQPS: 100 # Target QPS per pod before scaling up
+  targetSearchLatencyMs: 200 # Target P99 latency in ms
 
 nodeSelector: {}
 

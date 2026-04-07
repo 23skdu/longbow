@@ -158,6 +158,85 @@ func (p *IndexPerformancePredictor) Predict(features QueryFeatures) IndexPredict
 	}
 }
 
+func (p *IndexPerformancePredictor) PredictWithEmbedding(features QueryFeatures, embedding []float64) IndexPrediction {
+	p.stats.PredictionsMade.Add(1)
+
+	if len(embedding) == 0 {
+		return p.getDefaultPrediction(features)
+	}
+
+	embeddingNorm := 0.0
+	for _, v := range embedding {
+		embeddingNorm += v * v
+	}
+	embeddingNorm = math.Sqrt(embeddingNorm)
+
+	scores := p.calculateIndexScoresWithEmbedding(features, embedding, embeddingNorm)
+
+	var bestIndex IndexType
+	var bestScore float64 = -math.MaxFloat64
+
+	for idx, score := range scores {
+		if score > bestScore {
+			bestScore = score
+			bestIndex = idx
+		}
+	}
+
+	confidence := p.calculateConfidence(scores)
+	latency := p.estimateLatency(features, bestIndex)
+	recall := p.estimateRecall(features, bestIndex)
+
+	alternatives := p.getAlternatives(scores, bestIndex)
+
+	return IndexPrediction{
+		RecommendedIndex: bestIndex,
+		Confidence:       confidence,
+		EstimatedLatency: latency,
+		EstimatedRecall:  recall,
+		Alternatives:     alternatives,
+	}
+}
+
+func (p *IndexPerformancePredictor) calculateIndexScoresWithEmbedding(features QueryFeatures, embedding []float64, norm float64) map[IndexType]float64 {
+	scores := map[IndexType]float64{
+		IndexTypeHNSW:    0.0,
+		LearnedIVFPQ:     0.0,
+		IndexTypeDiskANN: 0.0,
+	}
+
+	dimBias := 0.0
+	if len(embedding) >= 4 {
+		dimBias = math.Abs(embedding[0]) * 0.3
+	}
+	scores[IndexTypeHNSW] = p.scoreHNSW(features) + dimBias
+
+	complexityBias := 0.0
+	if len(embedding) >= 8 {
+		complexityBias = embedding[7] * 0.2
+	}
+	scores[LearnedIVFPQ] = p.scoreIVFPQ(features) + complexityBias
+
+	scaleBias := 0.0
+	if len(embedding) >= 16 {
+		scaleBias = math.Min(0.3, math.Abs(embedding[15])*0.3)
+	}
+	scores[IndexTypeDiskANN] = p.scoreDiskANN(features) + scaleBias
+
+	if norm > 0 {
+		normFactor := math.Min(0.2, norm/10.0)
+		if features.DatasetSize < 100000 {
+			scores[IndexTypeHNSW] += normFactor
+		} else if features.DatasetSize >= 1000000 {
+			scores[IndexTypeDiskANN] += normFactor
+		} else {
+			scores[LearnedIVFPQ] += normFactor
+		}
+	}
+
+	return scores
+}
+
 func (p *IndexPerformancePredictor) calculateIndexScores(features QueryFeatures) map[IndexType]float64 {
 	scores := map[IndexType]float64{
 		IndexTypeHNSW:    0.0,

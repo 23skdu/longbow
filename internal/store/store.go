@@ -105,6 +105,14 @@ type VectorStore struct {
 	backupManager          *BackupManager
 	backupScheduleInterval time.Duration
 
+	// Auto-scale configuration for Part 1.5
+	autoScaleEnabled       bool
+	autoScaleMinWorkers    int
+	autoScaleMaxWorkers    int
+	autoScaleTargetQPS     float64
+	autoScaleUpThreshold   float64
+	autoScaleDownThreshold float64
+
 	// GPU acceleration (optional)
 	gpuBackend   gpu.GPUBackend
 	gpuDeviceID  int
@@ -146,9 +154,13 @@ type VectorStore struct {
 	// Parser pool for vector search
 	vectorSearchParserPool sync.Pool
 
-	// Change Data Capture (CDC) subscribers
+	// Change Data Capture (CDC)
+	cdc            *ChangeDataCapture
 	cdcMu          sync.RWMutex
 	cdcSubscribers map[string][]chan arrow.RecordBatch
+
+	// Learned Index Predictor (Part 16)
+	indexPredictor *IndexPerformancePredictor
 }
 
 type ingestionJob struct {

@@ -43,41 +43,41 @@
 
 ### HIGH PRIORITY
 
-#### 1. Wire Features Into Main Server
+#### ✅ 1. Wire Features Into Main Server - DONE
 **Description**: Features exist as library code but aren't instantiated in main.go
 
-| Subtask | Description |
-|---------|-------------|
-| 1.1 | Add CDC initialization in main.go with config |
-| 1.2 | Add WebSocket server initialization |
-| 1.3 | Add MQ exporter initialization |
-| 1.4 | Add learned index predictor initialization |
-| 1.5 | Add gRPC service handlers for new features |
+| Subtask | Description | Status |
+|---------|-------------|--------|
+| 1.1 | Add CDC initialization in main.go with config | ✅ DONE |
+| 1.2 | Add WebSocket server initialization | ✅ DONE |
+| 1.3 | Add MQ exporter initialization | ✅ DONE |
+| 1.4 | Add learned index predictor initialization | ✅ DONE |
+| 1.5 | Add gRPC service handlers for new features | ✅ DONE |
 
-#### 2. Add Missing Test Coverage
+#### ✅ 2. Add Missing Test Coverage - DONE
 **Description**: Several new features lack test files
 
-| Subtask | Description |
-|---------|-------------|
-| 2.1 | Add tests for federated_search.go |
-| 2.2 | Add tests for geo_search.go |
-| 2.3 | Add tests for temporal_search.go |
-| 2.4 | Add integration tests for CDC |
-| 2.5 | Add integration tests for WebSocket |
+| Subtask | Description | Status |
+|---------|-------------|--------|
+| 2.1 | Add tests for federated_search.go | ✅ DONE |
+| 2.2 | Add tests for geo_search.go | ✅ DONE |
+| 2.3 | Add tests for temporal_search.go | ✅ DONE |
+| 2.4 | Add integration tests for CDC | ✅ DONE |
+| 2.5 | Add integration tests for WebSocket | ✅ DONE |
 
 ---
 
 ### MEDIUM PRIORITY
 
-#### 3. API Endpoints for New Features
+#### ✅ 3. API Endpoints for New Features - DONE
 **Description**: Expose new features via gRPC API
 
-| Subtask | Description |
-|---------|-------------|
-| 3.1 | Add CDC subscription API endpoints |
-| 3.2 | Add WebSocket connection API |
-| 3.3 | Add index recommendation REST endpoints |
-| 3.4 | Add streaming aggregation metrics API |
+| Subtask | Description | Status |
+|---------|-------------|--------|
+| 3.1 | Add CDC subscription API endpoints | ✅ DONE |
+| 3.2 | Add WebSocket connection API | ✅ DONE |
+| 3.3 | Add index recommendation REST endpoints | ✅ DONE |
+| 3.4 | Add streaming aggregation metrics API | ✅ DONE |
 
 #### 4. Performance Optimization
 **Description**: Optimize newly added features
@@ -129,6 +129,8 @@
 | Temporal Search | internal/store/temporal_search.go | ✅ Wired |
 | Federated Search | internal/store/federated_search.go | ✅ Wired |
 | Memory Leak Detection | internal/profiling/memory_leak.go | ✅ Wired |
+| Auto-Scale | internal/autoscale/autoscaler.go | ✅ Wired |
+| Admission Control | internal/store/admission.go | ✅ Wired |
 
 ### Protocol Ports
 - **3000**: Data Server (gRPC/Arrow Flight)

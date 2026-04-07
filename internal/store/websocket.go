@@ -57,6 +57,68 @@ type WebSocketServer struct {
 	httpServer *http.Server
 	serverWg   sync.WaitGroup
 	stopChan   chan struct{}
+	pool       *WSConnectionPool
+}
+
+type WSConnectionPool struct {
+	mu          sync.Mutex
+	available   []*WSConnection
+	active      map[string]*WSConnection
+	maxSize     int
+	idleTimeout time.Duration
+}
+
+func NewWSConnectionPool(maxSize int, idleTimeout time.Duration) *WSConnectionPool {
+	return &WSConnectionPool{
+		active:      make(map[string]*WSConnection),
+		maxSize:     maxSize,
+		idleTimeout: idleTimeout,
+	}
+}
+
+func (p *WSConnectionPool) Add(conn *WSConnection) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if len(p.active) >= p.maxSize {
+		return fmt.Errorf("connection pool exhausted")
+	}
+
+	p.active[conn.id] = conn
+	return nil
+}
+
+func (p *WSConnectionPool) Remove(id string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if conn, ok := p.active[id]; ok {
+		delete(p.active, id)
+		conn.Close()
+	}
+}
+
+func (p *WSConnectionPool) Get(id string) (*WSConnection, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	conn, ok := p.active[id]
+	return conn, ok
+}
+
+func (p *WSConnectionPool) Len() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return len(p.active)
+}
+
+func (p *WSConnectionPool) Close() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	for _, conn := range p.active {
+		conn.Close()
+	}
+	p.active = make(map[string]*WSConnection)
 }
 
 type WSConnection struct {
@@ -85,12 +147,18 @@ func (ws *WSConnection) Close() {
 	ws.mu.Unlock()
 }
 
+const (
+	DefaultWSMaxConnections = 1000
+	DefaultWSIdleTimeout    = 5 * time.Minute
+)
+
 func NewWebSocketServer(logger zerolog.Logger, cdc *ChangeDataCapture) *WebSocketServer {
 	return &WebSocketServer{
 		logger:   logger,
 		cdc:      cdc,
 		conns:    make(map[*websocket.Conn]*WSConnection),
 		stopChan: make(chan struct{}),
+		pool:     NewWSConnectionPool(DefaultWSMaxConnections, DefaultWSIdleTimeout),
 	}
 }
 

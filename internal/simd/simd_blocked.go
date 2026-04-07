@@ -631,3 +631,247 @@ func EuclideanInt8Blocked(a, b []int8) (float32, error) {
 
 	return float32(math.Sqrt(sum)), nil
 }
+
+// =============================================================================
+// Uint16 Blocked Implementations
+// =============================================================================
+
+// EuclideanUint16Blocked calculates Euclidean distance for uint16 vectors using blocked processing.
+func EuclideanUint16Blocked(a, b []uint16) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+
+	var sum float64
+	blockSize := blockedSimdThreshold
+	if len(a) >= 2048 {
+		blockSize = blockedSimdThreshold512
+	}
+
+	i := 0
+	for ; i <= len(a)-blockSize; i += blockSize {
+		for j := i; j < i+blockSize; j++ {
+			d := float64(a[j]) - float64(b[j])
+			sum += d * d
+		}
+	}
+
+	for ; i < len(a); i++ {
+		d := float64(a[i]) - float64(b[i])
+		sum += d * d
+	}
+
+	return float32(math.Sqrt(sum)), nil
+}
+
+// DotProductUint16Blocked calculates dot product for uint16 vectors using blocked processing.
+func DotProductUint16Blocked(a, b []uint16) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+
+	var sum float64
+	blockSize := blockedSimdThreshold
+
+	i := 0
+	for ; i <= len(a)-blockSize; i += blockSize {
+		for j := i; j < i+blockSize; j++ {
+			sum += float64(a[j]) * float64(b[j])
+		}
+	}
+
+	for ; i < len(a); i++ {
+		sum += float64(a[i]) * float64(b[i])
+	}
+
+	return float32(sum), nil
+}
+
+// =============================================================================
+// Uint32 Blocked Implementations
+// =============================================================================
+
+// EuclideanUint32Blocked calculates Euclidean distance for uint32 vectors using blocked processing.
+func EuclideanUint32Blocked(a, b []uint32) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+
+	var sum float64
+	blockSize := blockedSimdThreshold
+	if len(a) >= 2048 {
+		blockSize = blockedSimdThreshold512
+	}
+
+	i := 0
+	for ; i <= len(a)-blockSize; i += blockSize {
+		for j := i; j < i+blockSize; j++ {
+			d := float64(a[j]) - float64(b[j])
+			sum += d * d
+		}
+	}
+
+	for ; i < len(a); i++ {
+		d := float64(a[i]) - float64(b[i])
+		sum += d * d
+	}
+
+	return float32(math.Sqrt(sum)), nil
+}
+
+// DotProductUint32Blocked calculates dot product for uint32 vectors using blocked processing.
+func DotProductUint32Blocked(a, b []uint32) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+
+	var sum float64
+	blockSize := blockedSimdThreshold
+
+	i := 0
+	for ; i <= len(a)-blockSize; i += blockSize {
+		for j := i; j < i+blockSize; j++ {
+			sum += float64(a[j]) * float64(b[j])
+		}
+	}
+
+	for ; i < len(a); i++ {
+		sum += float64(a[i]) * float64(b[i])
+	}
+
+	return float32(sum), nil
+}
+
+// =============================================================================
+// Int64 Blocked Implementations
+// =============================================================================
+
+// EuclideanInt64Blocked calculates Euclidean distance for int64 vectors using blocked processing.
+func EuclideanInt64Blocked(a, b []int64) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+
+	var sum float64
+	blockSize := blockedSimdThreshold
+	if len(a) >= 2048 {
+		blockSize = blockedSimdThreshold512
+	}
+
+	i := 0
+	for ; i <= len(a)-blockSize; i += blockSize {
+		for j := i; j < i+blockSize; j++ {
+			d := float64(a[j]) - float64(b[j])
+			sum += d * d
+		}
+	}
+
+	for ; i < len(a); i++ {
+		d := float64(a[i]) - float64(b[i])
+		sum += d * d
+	}
+
+	return float32(math.Sqrt(sum)), nil
+}
+
+// DotProductInt64Blocked calculates dot product for int64 vectors using blocked processing.
+func DotProductInt64Blocked(a, b []int64) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+
+	var sum float64
+	blockSize := blockedSimdThreshold
+
+	i := 0
+	for ; i <= len(a)-blockSize; i += blockSize {
+		for j := i; j < i+blockSize; j++ {
+			sum += float64(a[j]) * float64(b[j])
+		}
+	}
+
+	for ; i < len(a); i++ {
+		sum += float64(a[i]) * float64(b[i])
+	}
+
+	return float32(sum), nil
+}
+
+// =============================================================================
+// Uint64 Blocked Implementations
+// =============================================================================
+
+// EuclideanUint64Blocked calculates Euclidean distance for uint64 vectors using blocked processing.
+func EuclideanUint64Blocked(a, b []uint64) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+
+	var sum float64
+	blockSize := blockedSimdThreshold
+	if len(a) >= 2048 {
+		blockSize = blockedSimdThreshold512
+	}
+
+	i := 0
+	for ; i <= len(a)-blockSize; i += blockSize {
+		for j := i; j < i+blockSize; j++ {
+			d := float64(a[j]) - float64(b[j])
+			sum += d * d
+		}
+	}
+
+	for ; i < len(a); i++ {
+		d := float64(a[i]) - float64(b[i])
+		sum += d * d
+	}
+
+	return float32(math.Sqrt(sum)), nil
+}
+
+// DotProductUint64Blocked calculates dot product for uint64 vectors using blocked processing.
+func DotProductUint64Blocked(a, b []uint64) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+
+	var sum float64
+	blockSize := blockedSimdThreshold
+
+	i := 0
+	for ; i <= len(a)-blockSize; i += blockSize {
+		for j := i; j < i+blockSize; j++ {
+			sum += float64(a[j]) * float64(b[j])
+		}
+	}
+
+	for ; i < len(a); i++ {
+		sum += float64(a[i]) * float64(b[i])
+	}
+
+	return float32(sum), nil
+}

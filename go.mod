@@ -15,7 +15,7 @@ require (
 )
 
 require (
-	cloud.google.com/go/storage v1.61.3
+	cloud.google.com/go/storage v1.62.0
 	github.com/IBM/sarama v1.47.0
 	github.com/RoaringBitmap/roaring/v2 v2.16.0
 	github.com/apache/pulsar-client-go v0.18.0
@@ -46,7 +46,6 @@ require (
 	golang.org/x/sync v0.20.0
 	golang.org/x/time v0.15.0
 	google.golang.org/api v0.274.0
-	google.golang.org/protobuf v1.36.11
 )
 
 require (
@@ -164,6 +163,7 @@ require (
 	google.golang.org/genproto v0.0.0-20260319201613-d00831a3d3e7 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260401024825-9d38bb4040a9 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260401024825-9d38bb4040a9 // indirect
+	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	k8s.io/apimachinery v0.32.3 // indirect

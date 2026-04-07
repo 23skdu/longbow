@@ -18,6 +18,7 @@ import (
 	"runtime"
 	"runtime/debug"
 
+	"github.com/23skdu/longbow/internal/autoscale"
 	"github.com/23skdu/longbow/internal/gpu"
 	"github.com/23skdu/longbow/internal/limiter"
 	"github.com/23skdu/longbow/internal/logging"
@@ -125,6 +126,29 @@ type Config struct {
 	AutoShardingSplitThreshold int  `envconfig:"AUTO_SHARDING_SPLIT_THRESHOLD" default:"65536"` // Default chunk size
 	RingShardingEnabled        bool `envconfig:"RING_SHARDING_ENABLED" default:"true"`
 	IngestionWorkerCount       int  `envconfig:"INGESTION_WORKER_COUNT" default:"0"` // 0 = runtime.NumCPU()
+
+	// CDC Configuration (Part 17.1)
+	CDCEnabled        bool `envconfig:"CDC_ENABLED" default:"false"`
+	CDCBufferSize     int  `envconfig:"CDC_BUFFER_SIZE" default:"1024"`
+	CDCAsyncDispatch  bool `envconfig:"CDC_ASYNC_DISPATCH" default:"true"`
+	CDCWorkerPoolSize int  `envconfig:"CDC_WORKER_POOL_SIZE" default:"4"`
+
+	// WebSocket Configuration (Part 17.2)
+	WebSocketEnabled bool   `envconfig:"WEBSOCKET_ENABLED" default:"false"`
+	WebSocketAddr    string `envconfig:"WEBSOCKET_ADDR" default:"0.0.0.0:3002"`
+
+	// MQ Exporter Configuration (Part 17.3)
+	MQEnabled   bool   `envconfig:"MQ_ENABLED" default:"false"`
+	MQType      string `envconfig:"MQ_TYPE" default:"kafka"` // kafka or pulsar
+	MQBrokers   string `envconfig:"MQ_BROKERS" default:""`
+	MQTopic     string `envconfig:"MQ_TOPIC" default:""`
+	MQBatchSize int    `envconfig:"MQ_BATCH_SIZE" default:"100"`
+
+	// Learned Index Configuration (Part 16)
+	LearnedIndexEnabled          bool          `envconfig:"LEARNED_INDEX_ENABLED" default:"false"`
+	LearnedIndexMinSamples       int           `envconfig:"LEARNED_INDEX_MIN_SAMPLES" default:"100"`
+	LearnedIndexConfidenceThresh float64       `envconfig:"LEARNED_INDEX_CONFIDENCE_THRESH" default:"0.7"`
+	LearnedIndexUpdateInterval   time.Duration `envconfig:"LEARNED_INDEX_UPDATE_INTERVAL" default:"1h"`
 }
 
 // Global config instance for hook functions
@@ -208,15 +232,22 @@ func run() error {
 		logger.Info().Int("value", cfg.GOGC).Msg("GOGC tuned (static)")
 	}
 
-	// Keep ballast alive until the end of run()
-	defer runtime.KeepAlive(ballast)
-
 	// Create memory allocator
 	mem := store.NewPooledAllocator()
 
+	// Initialize AutoScaler (Part 1.1)
+	scaler := autoscale.NewAutoScaler(logger)
 	// Initialize vector store
 	vectorStore := store.NewVectorStore(mem, logger, cfg.MaxMemory, cfg.MaxWALSize, cfg.TTL)
 	vectorStore.SetGCTuner(tuner)
+	vectorStore.SetAutoScaler(scaler)
+	scaler.SetReconciler(vectorStore)
+
+	go scaler.Start(ctx)
+	logger.Info().Msg("Serverless Auto-Scaler monitoring started")
+
+	// Keep ballast alive until the end of run()
+	defer runtime.KeepAlive(ballast)
 
 	// Configure memory management
 	vectorStore.SetMemoryConfig(store.MemoryConfig{
@@ -298,6 +329,69 @@ func run() error {
 	}
 	if err := vectorStore.InitPersistence(storageCfg); err != nil {
 		logger.Panic().Err(err).Msg("Failed to initialize persistence")
+	}
+
+	// Initialize CDC (Part 17.1)
+	var cdc *store.ChangeDataCapture
+	if cfg.CDCEnabled {
+		cdc = store.NewChangeDataCapture(vectorStore, logger)
+		vectorStore.SetCDC(cdc)
+		logger.Info().
+			Int("buffer_size", cfg.CDCBufferSize).
+			Int("worker_pool_size", cfg.CDCWorkerPoolSize).
+			Bool("async_dispatch", cfg.CDCAsyncDispatch).
+			Msg("CDC initialized")
+	}
+
+	// Initialize WebSocket Server (Part 17.2)
+	var wsServer *store.WebSocketServer
+	if cfg.WebSocketEnabled && cdc != nil {
+		wsServer = store.NewWebSocketServer(logger, cdc)
+		go func() {
+			if err := wsServer.Start(cfg.WebSocketAddr); err != nil {
+				logger.Error().Err(err).Msg("WebSocket server failed")
+			}
+		}()
+		logger.Info().Str("addr", cfg.WebSocketAddr).Msg("WebSocket server started")
+	}
+
+	// Initialize MQ Exporter (Part 17.3)
+	var mqExporter *store.MessageQueueExporter
+	if cfg.MQEnabled && cdc != nil {
+		mqCfg := store.MQConfig{
+			Type:           store.MQType(cfg.MQType),
+			Brokers:        cfg.MQBrokers,
+			Topic:          cfg.MQTopic,
+			BatchSize:      cfg.MQBatchSize,
+			BatchTimeoutMs: 100,
+		}
+		var err error
+		mqExporter, err = store.NewMessageQueueExporter(logger, cdc, mqCfg)
+		if err != nil {
+			logger.Warn().Err(err).Msg("Failed to initialize MQ exporter, continuing without it")
+		} else {
+			go mqExporter.Start()
+			logger.Info().
+				Str("type", cfg.MQType).
+				Str("topic", cfg.MQTopic).
+				Msg("MQ exporter started")
+		}
+	}
+
+	// Initialize Learned Index Predictor (Part 16)
+	var indexPredictor *store.IndexPerformancePredictor
+	if cfg.LearnedIndexEnabled {
+		indexPredictor = store.NewIndexPerformancePredictor(logger, store.LearnedIndexConfig{
+			EnableAutoSelection: true,
+			MinTrainingSamples:  cfg.LearnedIndexMinSamples,
+			ConfidenceThreshold: cfg.LearnedIndexConfidenceThresh,
+			UpdateInterval:      cfg.LearnedIndexUpdateInterval,
+		})
+		vectorStore.SetIndexPredictor(indexPredictor)
+		logger.Info().
+			Int("min_samples", cfg.LearnedIndexMinSamples).
+			Float64("confidence_thresh", cfg.LearnedIndexConfidenceThresh).
+			Msg("Learned index predictor initialized")
 	}
 
 	// Start background indexing workers
@@ -483,11 +577,13 @@ func run() error {
 	// Add Interceptors (Chained)
 	serverOpts = append(serverOpts,
 		grpc.ChainUnaryInterceptor(
+			middleware.AdmissionInterceptor(vectorStore.GetAdmissionController()),
 			middleware.CircuitBreakerInterceptor(),
 			rateLimiter.UnaryInterceptor(),
 			sharding.PartitionProxyInterceptor(ringManager, forwarder),
 		),
 		grpc.ChainStreamInterceptor(
+			middleware.AdmissionStreamInterceptor(vectorStore.GetAdmissionController()),
 			rateLimiter.StreamInterceptor(),
 			sharding.PartitionProxyStreamInterceptor(ringManager, forwarder, streamAggregator),
 		),

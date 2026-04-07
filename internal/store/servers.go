@@ -198,6 +198,14 @@ func (s *MetaServer) DoAction(action *flight.Action, stream flight.FlightService
 		return s.handleGetAutoScaleConfig(action, stream)
 	case "SetAutoScaleConfig":
 		return s.handleSetAutoScaleConfig(action, stream)
+	case "CDCSubscribe":
+		return s.handleCDCSubscribe(action, stream)
+	case "CDCUnsubscribe":
+		return s.handleCDCUnsubscribe(action, stream)
+	case "CDCGetMetrics":
+		return s.handleCDCGetMetrics(action, stream)
+	case "GetIndexRecommendation":
+		return s.handleGetIndexRecommendation(action, stream)
 	default:
 		return s.VectorStore.DoAction(action, stream)
 	}
@@ -425,6 +433,128 @@ func (s *MetaServer) handleSetAutoScaleConfig(action *flight.Action, stream flig
 	data, err := json.Marshal(req)
 	if err != nil {
 		return status.Errorf(codes.Internal, "failed to marshal response: %v", err)
+	}
+	return stream.Send(&flight.Result{Body: data})
+}
+
+type CDCSubscribeRequest struct {
+	Dataset    string   `json:"dataset"`
+	EventTypes []string `json:"event_types,omitempty"`
+	Columns    []string `json:"columns,omitempty"`
+	BufferSize int      `json:"buffer_size,omitempty"`
+}
+
+func (s *MetaServer) handleCDCSubscribe(action *flight.Action, stream flight.FlightService_DoActionServer) error {
+	var req CDCSubscribeRequest
+	if len(action.Body) > 0 {
+		if err := json.Unmarshal(action.Body, &req); err != nil {
+			return status.Errorf(codes.InvalidArgument, "invalid CDC subscribe request: %v", err)
+		}
+	}
+
+	if req.BufferSize <= 0 {
+		req.BufferSize = 1024
+	}
+
+	filter := CDCFilter{
+		EventTypes: []CDCEventType{},
+		Columns:    req.Columns,
+	}
+
+	sub, err := s.cdc.Subscribe(req.Dataset, filter, req.BufferSize)
+	if err != nil {
+		return status.Errorf(codes.Internal, "failed to create CDC subscription: %v", err)
+	}
+
+	resp := map[string]interface{}{
+		"subscription_id": sub.ID,
+		"dataset":         req.Dataset,
+		"status":          "subscribed",
+	}
+	data, err := json.Marshal(resp)
+	if err != nil {
+		return status.Errorf(codes.Internal, "failed to marshal response: %v", err)
+	}
+	return stream.Send(&flight.Result{Body: data})
+}
+
+func (s *MetaServer) handleCDCUnsubscribe(action *flight.Action, stream flight.FlightService_DoActionServer) error {
+	var req struct {
+		SubscriptionID string `json:"subscription_id"`
+	}
+	if len(action.Body) > 0 {
+		if err := json.Unmarshal(action.Body, &req); err != nil {
+			return status.Errorf(codes.InvalidArgument, "invalid CDC unsubscribe request: %v", err)
+		}
+	}
+
+	if err := s.cdc.Unsubscribe(req.SubscriptionID); err != nil {
+		return status.Errorf(codes.Internal, "failed to unsubscribe: %v", err)
+	}
+
+	resp := map[string]interface{}{
+		"subscription_id": req.SubscriptionID,
+		"status":          "unsubscribed",
+	}
+	data, err := json.Marshal(resp)
+	if err != nil {
+		return status.Errorf(codes.Internal, "failed to marshal response: %v", err)
+	}
+	return stream.Send(&flight.Result{Body: data})
+}
+
+func (s *MetaServer) handleCDCGetMetrics(action *flight.Action, stream flight.FlightService_DoActionServer) error {
+	received, sent, dropped, filtered, subs, full := s.cdc.GetMetrics()
+
+	resp := map[string]interface{}{
+		"events_received": received,
+		"events_sent":     sent,
+		"events_dropped":  dropped,
+		"events_filtered": filtered,
+		"subscriptions":   subs,
+		"channel_full":    full,
+	}
+	data, err := json.Marshal(resp)
+	if err != nil {
+		return status.Errorf(codes.Internal, "failed to marshal metrics: %v", err)
+	}
+	return stream.Send(&flight.Result{Body: data})
+}
+
+func (s *MetaServer) handleGetIndexRecommendation(action *flight.Action, stream flight.FlightService_DoActionServer) error {
+	var req struct {
+		VectorDimension int     `json:"vector_dimension"`
+		NumQueryVectors int     `json:"num_query_vectors"`
+		SearchK         int     `json:"search_k"`
+		DatasetSize     int     `json:"dataset_size"`
+		NumCollections  int     `json:"num_collections"`
+		QueryComplexity string  `json:"query_complexity"`
+		AvgVectorNorm   float64 `json:"avg_vector_norm"`
+		IsFiltered      bool    `json:"is_filtered"`
+		IsHybrid        bool    `json:"is_hybrid"`
+	}
+	if len(action.Body) > 0 {
+		if err := json.Unmarshal(action.Body, &req); err != nil {
+			return status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
+		}
+	}
+
+	features := QueryFeatures{
+		VectorDimension: req.VectorDimension,
+		NumQueryVectors: req.NumQueryVectors,
+		SearchK:         req.SearchK,
+		DatasetSize:     req.DatasetSize,
+		NumCollections:  req.NumCollections,
+		QueryComplexity: req.QueryComplexity,
+		AvgVectorNorm:   req.AvgVectorNorm,
+		IsFiltered:      req.IsFiltered,
+		IsHybrid:        req.IsHybrid,
+	}
+
+	prediction := s.GetIndexRecommendation(features)
+	data, err := json.Marshal(prediction)
+	if err != nil {
+		return status.Errorf(codes.Internal, "failed to marshal prediction: %v", err)
 	}
 	return stream.Send(&flight.Result{Body: data})
 }

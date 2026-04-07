@@ -137,6 +137,8 @@ type ChangeDataCapture struct {
 	metrics       CDCMetrics
 	stopChan      chan struct{}
 	wg            sync.WaitGroup
+
+	batchAggregator *CDCBatchAggregator
 }
 
 func NewChangeDataCapture(store *VectorStore, logger zerolog.Logger) *ChangeDataCapture {
@@ -547,4 +549,79 @@ func (c *ChangeDataCapture) Disable() {
 func (c *ChangeDataCapture) Stop() {
 	close(c.stopChan)
 	c.wg.Wait()
+}
+
+type CDCBatchAggregator struct {
+	mu          sync.Mutex
+	batches     [][]arrow.RecordBatch
+	pendingSize int
+	maxSize     int
+	interval    time.Duration
+	timer       *time.Timer
+	onFlush     func(dataset string, batches [][]arrow.RecordBatch)
+	dataset     string
+	closed      bool
+}
+
+func NewCDCBatchAggregator(dataset string, maxSize int, interval time.Duration, onFlush func(string, [][]arrow.RecordBatch)) *CDCBatchAggregator {
+	return &CDCBatchAggregator{
+		dataset:  dataset,
+		maxSize:  maxSize,
+		interval: interval,
+		onFlush:  onFlush,
+		batches:  make([][]arrow.RecordBatch, 0),
+	}
+}
+
+func (ba *CDCBatchAggregator) AddBatch(batch arrow.RecordBatch) {
+	ba.mu.Lock()
+	defer ba.mu.Unlock()
+
+	if ba.closed {
+		return
+	}
+
+	ba.batches = append(ba.batches, []arrow.RecordBatch{batch})
+	ba.pendingSize += int(batch.NumRows())
+
+	if ba.pendingSize >= ba.maxSize {
+		ba.flushLocked()
+	} else if ba.timer == nil {
+		ba.timer = time.AfterFunc(ba.interval, func() {
+			ba.mu.Lock()
+			ba.flushLocked()
+			ba.mu.Unlock()
+		})
+	}
+}
+
+func (ba *CDCBatchAggregator) flushLocked() {
+	if len(ba.batches) == 0 {
+		return
+	}
+
+	if ba.timer != nil {
+		ba.timer.Stop()
+		ba.timer = nil
+	}
+
+	ba.onFlush(ba.dataset, ba.batches)
+	ba.batches = make([][]arrow.RecordBatch, 0)
+	ba.pendingSize = 0
+}
+
+func (ba *CDCBatchAggregator) Flush() {
+	ba.mu.Lock()
+	defer ba.mu.Unlock()
+	ba.flushLocked()
+}
+
+func (ba *CDCBatchAggregator) Close() {
+	ba.mu.Lock()
+	defer ba.mu.Unlock()
+	ba.closed = true
+	if ba.timer != nil {
+		ba.timer.Stop()
+	}
+	ba.flushLocked()
 }

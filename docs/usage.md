@@ -101,6 +101,24 @@ When running the Longbow container directly (e.g., via Docker), you can configur
 | `LONGBOW_HYBRID_TEXT_COLUMNS` | Comma-separated columns to index | `` |
 | `LONGBOW_HYBRID_ALPHA` | Weight for dense vectors (0.0-1.0) | `0.5` |
 
+### Learned Index
+
+| Variable | Description | Default |
+| :--- | :--- | :--- |
+| `LONGBOW_LEARNED_INDEX_ENABLED` | Enable learned index predictor | `false` |
+| `LONGBOW_LEARNED_INDEX_MIN_SAMPLES` | Min training samples required | `100` |
+| `LONGBOW_LEARNED_INDEX_CONFIDENCE_THRESH` | Confidence threshold (0.0-1.0) | `0.7` |
+| `LONGBOW_LEARNED_INDEX_UPDATE_INTERVAL` | Model update interval | `1h` |
+
+### Ollama Integration
+
+| Variable | Description | Default |
+| :--- | :--- | :--- |
+| `LONGBOW_OLLAMA_ENABLED` | Enable Ollama for embeddings | `false` |
+| `LONGBOW_OLLAMA_ENDPOINT` | Ollama server endpoint | `http://localhost:11434` |
+| `LONGBOW_OLLAMA_MODEL` | Ollama model name for embeddings | `` |
+| `LONGBOW_OLLAMA_TIMEOUT` | Request timeout in seconds | `30` |
+
 ### Gossip Mesh
 
 | Variable | Description | Default |

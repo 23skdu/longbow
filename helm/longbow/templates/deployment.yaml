@@ -206,6 +206,24 @@ spec:
             # Ingestion Worker Count
             - name: LONGBOW_INGESTION_WORKER_COUNT
               value: {{ .Values.config.ingestionWorkerCount | quote }}
+            # Learned Index Configuration
+            - name: LONGBOW_LEARNED_INDEX_ENABLED
+              value: {{ .Values.learnedIndex.enabled | quote }}
+            - name: LONGBOW_LEARNED_INDEX_MIN_SAMPLES
+              value: {{ .Values.learnedIndex.minSamples | quote }}
+            - name: LONGBOW_LEARNED_INDEX_CONFIDENCE_THRESH
+              value: {{ .Values.learnedIndex.confidenceThreshold | quote }}
+            - name: LONGBOW_LEARNED_INDEX_UPDATE_INTERVAL
+              value: {{ .Values.learnedIndex.updateInterval | quote }}
+            # Ollama Configuration
+            - name: LONGBOW_OLLAMA_ENABLED
+              value: {{ .Values.ollama.enabled | quote }}
+            - name: LONGBOW_OLLAMA_ENDPOINT
+              value: {{ .Values.ollama.endpoint | quote }}
+            - name: LONGBOW_OLLAMA_MODEL
+              value: {{ .Values.ollama.model | quote }}
+            - name: LONGBOW_OLLAMA_TIMEOUT
+              value: {{ .Values.ollama.timeout | quote }}
 
           ports:
             - name: grpc-data

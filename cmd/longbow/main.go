@@ -149,6 +149,12 @@ type Config struct {
 	LearnedIndexMinSamples       int           `envconfig:"LEARNED_INDEX_MIN_SAMPLES" default:"100"`
 	LearnedIndexConfidenceThresh float64       `envconfig:"LEARNED_INDEX_CONFIDENCE_THRESH" default:"0.7"`
 	LearnedIndexUpdateInterval   time.Duration `envconfig:"LEARNED_INDEX_UPDATE_INTERVAL" default:"1h"`
+
+	// Ollama Configuration (Part 4.1)
+	OllamaEnabled  bool   `envconfig:"OLLAMA_ENABLED" default:"false"`
+	OllamaEndpoint string `envconfig:"OLLAMA_ENDPOINT" default:"http://localhost:11434"`
+	OllamaModel    string `envconfig:"OLLAMA_MODEL" default:""`
+	OllamaTimeout  int    `envconfig:"OLLAMA_TIMEOUT" default:"30"`
 }
 
 // Global config instance for hook functions
@@ -380,6 +386,7 @@ func run() error {
 
 	// Initialize Learned Index Predictor (Part 16)
 	var indexPredictor *store.IndexPerformancePredictor
+	var learnedWithOllama *store.LearnedIndexWithOllama
 	if cfg.LearnedIndexEnabled {
 		indexPredictor = store.NewIndexPerformancePredictor(logger, store.LearnedIndexConfig{
 			EnableAutoSelection: true,
@@ -387,12 +394,29 @@ func run() error {
 			ConfidenceThreshold: cfg.LearnedIndexConfidenceThresh,
 			UpdateInterval:      cfg.LearnedIndexUpdateInterval,
 		})
-		vectorStore.SetIndexPredictor(indexPredictor)
-		logger.Info().
-			Int("min_samples", cfg.LearnedIndexMinSamples).
-			Float64("confidence_thresh", cfg.LearnedIndexConfidenceThresh).
-			Msg("Learned index predictor initialized")
+
+		// Initialize Ollama client for learned index (Part 4.1)
+		if cfg.OllamaEnabled && cfg.OllamaModel != "" {
+			ollamaConfig := store.OllamaConfig{
+				Endpoint: cfg.OllamaEndpoint,
+				Model:    cfg.OllamaModel,
+				Timeout:  cfg.OllamaTimeout,
+			}
+			learnedWithOllama = store.NewLearnedIndexWithOllama(logger, indexPredictor, ollamaConfig)
+			vectorStore.SetIndexPredictor(indexPredictor)
+			logger.Info().
+				Str("endpoint", cfg.OllamaEndpoint).
+				Str("model", cfg.OllamaModel).
+				Msg("Learned index with Ollama initialized")
+		} else {
+			vectorStore.SetIndexPredictor(indexPredictor)
+			logger.Info().
+				Int("min_samples", cfg.LearnedIndexMinSamples).
+				Float64("confidence_thresh", cfg.LearnedIndexConfidenceThresh).
+				Msg("Learned index predictor initialized")
+		}
 	}
+	_ = learnedWithOllama // Reserved for future API exposure
 
 	// Start background indexing workers
 	vectorStore.StartIndexingWorkers(runtime.NumCPU())

@@ -82,12 +82,24 @@
 #### 4. Performance Optimization
 **Description**: Optimize newly added features
 
+| Subtask | Description | Status |
+|---------|-------------|--------|
+| 4.1 | Optimize learned index predictor with actual ML model | IN PROGRESS |
+| 4.2 | Add SIMD acceleration for integer distance functions | ✅ DONE |
+| 4.3 | Optimize CDC batching and buffering | ✅ DONE |
+| 4.4 | Add connection pooling for WebSocket | ✅ DONE |
+
+##### 4.1 Learned Index ML Model - Subtasks
 | Subtask | Description |
 |---------|-------------|
-| 4.1 | Optimize learned index predictor with actual ML model |
-| 4.2 | Add SIMD acceleration for integer distance functions |
-| 4.3 | Optimize CDC batching and buffering |
-| 4.4 | Add connection pooling for WebSocket |
+| 4.1.1 | Add Ollama client integration |
+| 4.1.2 | Create embedding-based feature encoder |
+| 4.1.3 | Add model inference for index prediction |
+| 4.1.4 | Add fallback to rule-based predictor |
+| 4.1.5 | Add env vars for Ollama endpoint/model |
+| 4.1.6 | Update usage.md with new config |
+| 4.1.7 | Update helm values with new env vars |
+| 4.1.8 | Update grafana dashboard |
 
 ---
 

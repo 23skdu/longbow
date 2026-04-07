@@ -361,6 +361,118 @@ func DotProductInt32(a, b []int32) (float32, error) {
 	return dotInt32Unrolled4x(a, b)
 }
 
+// EuclideanDistanceUint16 calculates Euclidean distance for Uint16 vectors.
+func EuclideanDistanceUint16(a, b []uint16) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: vector length mismatch")
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	if len(a) >= 768 {
+		return EuclideanUint16Blocked(a, b)
+	}
+	return euclideanUint16Unrolled4x(a, b)
+}
+
+// DotProductUint16 calculates the dot product of two Uint16 vectors.
+func DotProductUint16(a, b []uint16) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: vector length mismatch")
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	if len(a) >= 768 {
+		return DotProductUint16Blocked(a, b)
+	}
+	return dotUint16Unrolled4x(a, b)
+}
+
+// EuclideanDistanceUint32 calculates Euclidean distance for Uint32 vectors.
+func EuclideanDistanceUint32(a, b []uint32) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: vector length mismatch")
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	if len(a) >= 768 {
+		return EuclideanUint32Blocked(a, b)
+	}
+	return euclideanUint32Unrolled4x(a, b)
+}
+
+// DotProductUint32 calculates the dot product of two Uint32 vectors.
+func DotProductUint32(a, b []uint32) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: vector length mismatch")
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	if len(a) >= 768 {
+		return DotProductUint32Blocked(a, b)
+	}
+	return dotUint32Unrolled4x(a, b)
+}
+
+// EuclideanDistanceInt64 calculates Euclidean distance for Int64 vectors.
+func EuclideanDistanceInt64(a, b []int64) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: vector length mismatch")
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	if len(a) >= 768 {
+		return EuclideanInt64Blocked(a, b)
+	}
+	return euclideanInt64Unrolled4x(a, b)
+}
+
+// DotProductInt64 calculates the dot product of two Int64 vectors.
+func DotProductInt64(a, b []int64) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: vector length mismatch")
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	if len(a) >= 768 {
+		return DotProductInt64Blocked(a, b)
+	}
+	return dotInt64Unrolled4x(a, b)
+}
+
+// EuclideanDistanceUint64 calculates Euclidean distance for Uint64 vectors.
+func EuclideanDistanceUint64(a, b []uint64) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: vector length mismatch")
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	if len(a) >= 768 {
+		return EuclideanUint64Blocked(a, b)
+	}
+	return euclideanUint64Unrolled4x(a, b)
+}
+
+// DotProductUint64 calculates the dot product of two Uint64 vectors.
+func DotProductUint64(a, b []uint64) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: vector length mismatch")
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	if len(a) >= 768 {
+		return DotProductUint64Blocked(a, b)
+	}
+	return dotUint64Unrolled4x(a, b)
+}
+
 // Prefetch hints to the CPU to fetch data into cache for future use.
 // It uses the PREFETCHNTA instruction on x86 for non-temporal access.
 func Prefetch(p unsafe.Pointer) {

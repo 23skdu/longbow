@@ -155,6 +155,17 @@ type Config struct {
 	OllamaEndpoint string `envconfig:"OLLAMA_ENDPOINT" default:"http://localhost:11434"`
 	OllamaModel    string `envconfig:"OLLAMA_MODEL" default:""`
 	OllamaTimeout  int    `envconfig:"OLLAMA_TIMEOUT" default:"30"`
+
+	// Temporal Query Configuration (Part 22)
+	TemporalEnabled            bool          `envconfig:"TEMPORAL_ENABLED" default:"false"`
+	TemporalVersionHistory     bool          `envconfig:"TEMPORAL_VERSION_HISTORY" default:"false"`
+	TemporalMaxVersions        int           `envconfig:"TEMPORAL_MAX_VERSIONS" default:"10"`
+	TemporalRetentionPeriod    time.Duration `envconfig:"TEMPORAL_RETENTION_PERIOD" default:"168h"` // 7 days
+	TemporalTTLEnabled         bool          `envconfig:"TEMPORAL_TTL_ENABLED" default:"false"`
+	TemporalDefaultTTL         time.Duration `envconfig:"TEMPORAL_DEFAULT_TTL" default:"720h"` // 30 days
+	TemporalCleanupInterval    time.Duration `envconfig:"TEMPORAL_CLEANUP_INTERVAL" default:"1h"`
+	TemporalAggregationEnabled bool          `envconfig:"TEMPORAL_AGGREGATION_ENABLED" default:"false"`
+	TemporalMaxBuckets         int           `envconfig:"TEMPORAL_MAX_BUCKETS" default:"1000"`
 }
 
 // Global config instance for hook functions
@@ -417,6 +428,32 @@ func run() error {
 		}
 	}
 	_ = learnedWithOllama // Reserved for future API exposure
+
+	// Initialize Temporal Index (Part 22)
+	var temporalIndex *store.TemporalIndex
+	if cfg.TemporalEnabled {
+		temporalConfig := store.TemporalConfig{
+			Enabled:            cfg.TemporalEnabled,
+			VersionHistory:     cfg.TemporalVersionHistory,
+			MaxVersions:        cfg.TemporalMaxVersions,
+			RetentionPeriod:    cfg.TemporalRetentionPeriod,
+			TTLEnabled:         cfg.TemporalTTLEnabled,
+			DefaultTTL:         cfg.TemporalDefaultTTL,
+			CleanupInterval:    cfg.TemporalCleanupInterval,
+			AggregationEnabled: cfg.TemporalAggregationEnabled,
+			MaxBuckets:         cfg.TemporalMaxBuckets,
+		}
+		temporalIndex = store.NewTemporalIndex(128)
+		vectorStore.SetTemporalIndex(temporalIndex, temporalConfig)
+		logger.Info().
+			Bool("version_history", cfg.TemporalVersionHistory).
+			Int("max_versions", cfg.TemporalMaxVersions).
+			Dur("retention_period", cfg.TemporalRetentionPeriod).
+			Bool("ttl_enabled", cfg.TemporalTTLEnabled).
+			Bool("aggregation_enabled", cfg.TemporalAggregationEnabled).
+			Msg("Temporal index initialized")
+	}
+	_ = temporalIndex // Reserved for future API exposure
 
 	// Start background indexing workers
 	vectorStore.StartIndexingWorkers(runtime.NumCPU())

@@ -2,8 +2,8 @@ package store
 
 import (
 	"context"
-
 	"encoding/json"
+	"sort"
 
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/prometheus/client_golang/prometheus"
@@ -206,6 +206,14 @@ func (s *MetaServer) DoAction(action *flight.Action, stream flight.FlightService
 		return s.handleCDCGetMetrics(action, stream)
 	case "GetIndexRecommendation":
 		return s.handleGetIndexRecommendation(action, stream)
+	case "TemporalSearch":
+		return s.handleTemporalSearch(action, stream)
+	case "TemporalRangeSearch":
+		return s.handleTemporalRangeSearch(action, stream)
+	case "TemporalVersionHistory":
+		return s.handleTemporalVersionHistory(action, stream)
+	case "TemporalAggregation":
+		return s.handleTemporalAggregation(action, stream)
 	default:
 		return s.VectorStore.DoAction(action, stream)
 	}
@@ -555,6 +563,167 @@ func (s *MetaServer) handleGetIndexRecommendation(action *flight.Action, stream 
 	data, err := json.Marshal(prediction)
 	if err != nil {
 		return status.Errorf(codes.Internal, "failed to marshal prediction: %v", err)
+	}
+	return stream.Send(&flight.Result{Body: data})
+}
+
+func (s *MetaServer) handleTemporalSearch(action *flight.Action, stream flight.FlightService_DoActionServer) error {
+	if s.temporalIndex == nil {
+		return status.Error(codes.FailedPrecondition, "temporal index not enabled")
+	}
+
+	var req TemporalSearchRequest
+	if len(action.Body) > 0 {
+		if err := json.Unmarshal(action.Body, &req); err != nil {
+			return status.Errorf(codes.InvalidArgument, "invalid temporal search request: %v", err)
+		}
+	}
+
+	if err := req.Validate(); err != nil {
+		return status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
+	}
+
+	var results []SearchResult
+	var err error
+
+	switch req.SearchType {
+	case "as_of":
+		results, err = s.temporalIndex.SearchAsOf(stream.Context(), req.Timestamp, req.K)
+	case "range":
+		results, err = s.temporalIndex.SearchRange(stream.Context(), req.StartTime, req.EndTime, req.K)
+	case "sliding_window":
+		results, err = s.temporalIndex.SearchSlidingWindow(stream.Context(), req.WindowSize, req.K)
+	case "sliding_window_time":
+		results, err = s.temporalIndex.SearchSlidingWindowByTime(stream.Context(), req.Duration, req.K)
+	default:
+		results, err = s.temporalIndex.SearchAsOf(stream.Context(), req.Timestamp, req.K)
+	}
+
+	if err != nil {
+		return status.Errorf(codes.Internal, "temporal search failed: %v", err)
+	}
+
+	type temporalResult struct {
+		ID       uint64  `json:"id"`
+		Distance float32 `json:"distance"`
+		Score    float32 `json:"score"`
+	}
+
+	respResults := make([]temporalResult, len(results))
+	for i, r := range results {
+		respResults[i] = temporalResult{
+			ID:       uint64(r.ID),
+			Distance: r.Distance,
+			Score:    r.Score,
+		}
+	}
+
+	data, err := json.Marshal(map[string]interface{}{
+		"results": respResults,
+	})
+	if err != nil {
+		return status.Errorf(codes.Internal, "failed to marshal response: %v", err)
+	}
+	return stream.Send(&flight.Result{Body: data})
+}
+
+func (s *MetaServer) handleTemporalRangeSearch(action *flight.Action, stream flight.FlightService_DoActionServer) error {
+	if s.temporalIndex == nil {
+		return status.Error(codes.FailedPrecondition, "temporal index not enabled")
+	}
+
+	var req struct {
+		StartTime int64 `json:"start_time"`
+		EndTime   int64 `json:"end_time"`
+	}
+	if err := json.Unmarshal(action.Body, &req); err != nil {
+		return status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
+	}
+
+	vectors := s.temporalIndex.GetVectorsInRange(req.StartTime, req.EndTime)
+
+	data, err := json.Marshal(map[string]interface{}{
+		"vectors": vectors,
+		"count":   len(vectors),
+	})
+	if err != nil {
+		return status.Errorf(codes.Internal, "failed to marshal response: %v", err)
+	}
+	return stream.Send(&flight.Result{Body: data})
+}
+
+func (s *MetaServer) handleTemporalVersionHistory(action *flight.Action, stream flight.FlightService_DoActionServer) error {
+	if s.temporalIndex == nil {
+		return status.Error(codes.FailedPrecondition, "temporal index not enabled")
+	}
+
+	var req struct {
+		VectorID uint64 `json:"vector_id"`
+	}
+	if err := json.Unmarshal(action.Body, &req); err != nil {
+		return status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
+	}
+
+	history := s.temporalIndex.GetHistory(req.VectorID)
+
+	data, err := json.Marshal(map[string]interface{}{
+		"history": history,
+		"count":   len(history),
+	})
+	if err != nil {
+		return status.Errorf(codes.Internal, "failed to marshal response: %v", err)
+	}
+	return stream.Send(&flight.Result{Body: data})
+}
+
+func (s *MetaServer) handleTemporalAggregation(action *flight.Action, stream flight.FlightService_DoActionServer) error {
+	if s.temporalIndex == nil {
+		return status.Error(codes.FailedPrecondition, "temporal index not enabled")
+	}
+
+	var req struct {
+		AggregationType string `json:"aggregation_type"` // count, min, max, mean
+		StartTime       int64  `json:"start_time"`
+		EndTime         int64  `json:"end_time"`
+		Interval        int64  `json:"interval"` // bucket interval in nanoseconds
+	}
+	if err := json.Unmarshal(action.Body, &req); err != nil {
+		return status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
+	}
+
+	if req.Interval <= 0 {
+		req.Interval = 3600000000000 // 1 hour default
+	}
+
+	vectors := s.temporalIndex.GetVectorsInRange(req.StartTime, req.EndTime)
+
+	type bucket struct {
+		Timestamp int64 `json:"timestamp"`
+		Count     int   `json:"count"`
+	}
+
+	var buckets []bucket
+	if req.AggregationType == "count" {
+		bucketMap := make(map[int64]int)
+		for _, v := range vectors {
+			bucketTs := (v.Timestamp.UnixNano() / req.Interval) * req.Interval
+			bucketMap[bucketTs]++
+		}
+		for ts, count := range bucketMap {
+			buckets = append(buckets, bucket{Timestamp: ts, Count: count})
+		}
+		sort.Slice(buckets, func(i, j int) bool {
+			return buckets[i].Timestamp < buckets[j].Timestamp
+		})
+	}
+
+	data, err := json.Marshal(map[string]interface{}{
+		"aggregation_type": req.AggregationType,
+		"buckets":          buckets,
+		"total_count":      len(vectors),
+	})
+	if err != nil {
+		return status.Errorf(codes.Internal, "failed to marshal response: %v", err)
 	}
 	return stream.Send(&flight.Result{Body: data})
 }

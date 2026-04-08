@@ -578,3 +578,127 @@ class LongbowClient:
             return {}
         except Exception as e:
             raise LongbowQueryError(f"GetGraphStats failed: {e}")
+
+    def temporal_search(
+        self,
+        search_type: str,
+        timestamp: Optional[int] = None,
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
+        window_size: Optional[int] = None,
+        duration: Optional[str] = None,
+        k: int = 10,
+    ) -> List[Dict[str, Any]]:
+        """
+        Perform a temporal search on the temporal index.
+
+        Args:
+            search_type: Type of temporal search - "as_of", "range", "sliding_window", "sliding_window_time"
+            timestamp: Timestamp for as_of search (unix nanoseconds)
+            start_time: Start time for range search (unix nanoseconds)
+            end_time: End time for range search (unix nanoseconds)
+            window_size: Window size for sliding_window
+            duration: Duration for sliding_window_time (e.g., "1h", "30m")
+            k: Number of results
+
+        Returns:
+            List of search results with id, distance, and score
+        """
+        if self._meta_client is None:
+            self.connect()
+
+        req = {
+            "search_type": search_type,
+            "k": k,
+        }
+
+        if timestamp is not None:
+            req["timestamp"] = timestamp
+        if start_time is not None:
+            req["start_time"] = start_time
+        if end_time is not None:
+            req["end_time"] = end_time
+        if window_size is not None:
+            req["window_size"] = window_size
+        if duration is not None:
+            req["duration"] = duration
+
+        action = flight.Action("TemporalSearch", json.dumps(req).encode("utf-8"))
+        try:
+            results = list(
+                self._meta_client.do_action(action, options=self._get_call_options())
+            )
+            if results:
+                return json.loads(results[0].body.to_pybytes())
+            return []
+        except Exception as e:
+            raise LongbowQueryError(f"Temporal search failed: {e}")
+
+    def temporal_version_history(self, vector_id: int) -> List[Dict[str, Any]]:
+        """
+        Get version history for a vector.
+
+        Args:
+            vector_id: ID of the vector
+
+        Returns:
+            List of versioned vectors with timestamps
+        """
+        if self._meta_client is None:
+            self.connect()
+
+        req = {"vector_id": vector_id}
+        action = flight.Action(
+            "TemporalVersionHistory", json.dumps(req).encode("utf-8")
+        )
+        try:
+            results = list(
+                self._meta_client.do_action(action, options=self._get_call_options())
+            )
+            if results:
+                return json.loads(results[0].body.to_pybytes())
+            return []
+        except Exception as e:
+            raise LongbowQueryError(f"Version history failed: {e}")
+
+    def temporal_aggregation(
+        self,
+        aggregation_type: str,
+        start_time: int,
+        end_time: int,
+        interval: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """
+        Perform temporal aggregation (count, min, max, mean) over time buckets.
+
+        Args:
+            aggregation_type: Type of aggregation - "count", "min", "max", "mean"
+            start_time: Start time (unix nanoseconds)
+            end_time: End time (unix nanoseconds)
+            interval: Bucket interval in nanoseconds (default: 1 hour)
+
+        Returns:
+            Dictionary with buckets and total_count
+        """
+        if self._meta_client is None:
+            self.connect()
+
+        req = {
+            "aggregation_type": aggregation_type,
+            "start_time": start_time,
+            "end_time": end_time,
+        }
+
+        if interval is not None:
+            req["interval"] = interval
+
+        action = flight.Action("TemporalAggregation", json.dumps(req).encode("utf-8"))
+        try:
+            results = list(
+                self._meta_client.do_action(action, options=self._get_call_options())
+            )
+            if results:
+                return json.loads(results[0].body.to_pybytes())
+            return {}
+        except Exception as e:
+            raise LongbowQueryError(f"Temporal aggregation failed: {e}")

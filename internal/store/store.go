@@ -161,6 +161,10 @@ type VectorStore struct {
 
 	// Learned Index Predictor (Part 16)
 	indexPredictor *IndexPerformancePredictor
+
+	// Temporal Index (Part 22)
+	temporalIndex  *TemporalIndex
+	temporalConfig TemporalConfig
 }
 
 type ingestionJob struct {
@@ -529,6 +533,17 @@ func (s *VectorStore) SetAutoGPUConfig(deviceID int) {
 	backend := gpu.GetPreferredBackend()
 	s.logger.Info().Str("backend", backend.String()).Msg("Auto-detected GPU backend")
 	s.SetGPUConfig(backend, deviceID)
+}
+
+// SetTemporalIndex configures the temporal index for Part 22
+func (s *VectorStore) SetTemporalIndex(idx *TemporalIndex, cfg TemporalConfig) {
+	s.temporalIndex = idx
+	s.temporalConfig = cfg
+}
+
+// GetTemporalIndex returns the temporal index
+func (s *VectorStore) GetTemporalIndex() *TemporalIndex {
+	return s.temporalIndex
 }
 
 // GetGPUIndexPool returns the GPU index pool for this store

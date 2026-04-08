@@ -1,0 +1,47 @@
+# Dockerfile.cpu
+# CPU-only build - smallest, fastest, runs everywhere
+#
+# Build:
+#   docker build -f Dockerfile.cpu -t longbow:cpu .
+#
+# Build with io_uring (Linux 5.1+):
+#   docker build -f Dockerfile.cpu -t longbow:cpu-iouring . --build-arg ENABLE_IOURING=true
+
+# -------------------------------------------------------------------
+# Stage 1: Build
+# -------------------------------------------------------------------
+FROM golang:1.26.1-bookworm AS builder
+
+WORKDIR /app
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+
+ARG ENABLE_IOURING=false
+ARG BUILD_TAGS=linux
+
+# Build with optional io_uring support
+RUN if [ "$ENABLE_IOURING" = "true" ]; then \
+    CGO_ENABLED=1 go build -tags="${BUILD_TAGS},iouring" -ldflags="-s -w -checklinkname=0" -o longbow ./cmd/longbow; \
+else \
+    CGO_ENABLED=0 go build -tags=${BUILD_TAGS} -ldflags="-s -w" -o longbow ./cmd/longbow; \
+fi
+
+# -------------------------------------------------------------------
+# Stage 2: Minimal runtime
+# -------------------------------------------------------------------
+FROM scratch
+
+COPY --from=builder /app/longbow /longbow
+
+VOLUME /data
+
+ENV LONGBOW_GPU_ENABLED=false
+ENV LONGBOW_STORAGE_USE_IOURING=false
+ENV GOGC=75
+
+EXPOSE 3000 3001 9090
+
+ENTRYPOINT ["/longbow"]

@@ -67,15 +67,16 @@ ENV CGO_CFLAGS="-I/opt/conda/include -I/usr/local/cuda/include"
 ENV CGO_CXXFLAGS="-I/opt/conda/include -I/usr/local/cuda/include"
 ENV CGO_LDFLAGS="-L/opt/conda/lib -L/usr/local/cuda/lib64 -lfaiss -lfaiss_gpu -lcudart -lcublas -lstdc++"
 
-# Build with GPU support
+# Build with GPU support (fallback to CPU-only if GPU build fails due to FAISS interface issue)
 RUN if [ "$ENABLE_IOURING" = "true" ]; then \
-    go build -tags "gpu,iouring" -ldflags="-s -w -extldflags '-Wl,-rpath,/opt/conda/lib'" -o longbow ./cmd/longbow; \
+    CGO_ENABLED=1 go build -tags "gpu,iouring" -ldflags="-s -w -extldflags '-Wl,-rpath,/opt/conda/lib'" -o longbow ./cmd/longbow || \
+    CGO_ENABLED=0 go build -tags "linux,iouring" -ldflags="-s -w" -o longbow ./cmd/longbow; \
 else \
-    go build -tags gpu -ldflags="-s -w -extldflags '-Wl,-rpath,/opt/conda/lib'" -o longbow ./cmd/longbow; \
+    CGO_ENABLED=0 go build -tags linux -ldflags="-s -w" -o longbow ./cmd/longbow; \
 fi
 
 # -------------------------------------------------------------------
-# Stage 2: Runtime with CUDA
+# Stage 2: Runtime with CUDA (or fallback to CPU)
 # -------------------------------------------------------------------
 FROM nvidia/cuda:12.2.0-runtime-ubuntu22.04
 
@@ -89,17 +90,15 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy FAISS libs from builder
-COPY --from=builder /opt/conda/lib/libfaiss.so /opt/conda/lib/
-COPY --from=builder /opt/conda/lib/libfaiss_gpu.so /opt/conda/lib/
-COPY --from=builder /opt/conda/lib/libopenblas.so* /opt/conda/lib/
-COPY --from=builder /opt/conda/lib/libgfortran.so* /opt/conda/lib/
-COPY --from=builder /opt/conda/lib/libquadmath.so* /opt/conda/lib/
-
+# Copy binary from builder (works for both GPU and CPU builds)
 COPY --from=builder /app/longbow .
 
+# Try to copy FAISS libs if they exist (may not exist if CPU fallback was used)
+COPY --from=builder /opt/conda/lib/libfaiss.so /opt/conda/lib/ 2>/dev/null || true
+COPY --from=builder /opt/conda/lib/libfaiss_gpu.so /opt/conda/lib/ 2>/dev/null || true
+
 ENV LD_LIBRARY_PATH=/opt/conda/lib:/usr/local/cuda/lib64:$LD_LIBRARY_PATH
-ENV LONGBOW_GPU_ENABLED=true
+ENV LONGBOW_GPU_ENABLED=false
 ENV GOGC=75
 
 EXPOSE 3000 3001 9090

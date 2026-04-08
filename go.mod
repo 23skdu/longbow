@@ -15,7 +15,7 @@ require (
 )
 
 require (
-	cloud.google.com/go/storage v1.61.3
+	cloud.google.com/go/storage v1.62.0
 	github.com/IBM/sarama v1.47.0
 	github.com/RoaringBitmap/roaring/v2 v2.16.0
 	github.com/apache/pulsar-client-go v0.18.0

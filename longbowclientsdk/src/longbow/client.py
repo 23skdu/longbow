@@ -140,6 +140,7 @@ class LongbowClient:
         vector: List[float],
         k: int = 10,
         filters: Optional[List[Dict]] = None,
+        projection: Optional[List[str]] = None,
         **kwargs,
     ) -> pd.DataFrame:
         """
@@ -149,7 +150,8 @@ class LongbowClient:
             dataset: Target dataset.
             vector: Query vector.
             k: Number of results.
-            filter: Optional filter criteria.
+            filters: Optional filter criteria.
+            projection: Optional list of columns to return (reduces bandwidth).
             **kwargs: Additional arguments passed to the search query (e.g. 'alpha', 'text_query', 'include_vectors').
 
         Returns:
@@ -206,6 +208,9 @@ class LongbowClient:
 
         if filters:
             req["filters"] = filters
+
+        if projection:
+            req["projection"] = projection
 
         # Merge extra args (e.g. alpha, text_query)
         for k, v in kwargs.items():

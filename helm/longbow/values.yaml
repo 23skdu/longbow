@@ -163,6 +163,15 @@ gossip:
     # For DNS discovery: SRV record to query
     dnsRecord: "_gossip._udp.longbow.default.svc.cluster.local"
 
+# Sharding Configuration
+sharding:
+  ring:
+    enabled: false
+  auto:
+    enabled: false
+    threshold: 100
+    splitThreshold: 1000
+
 # Learned Index Configuration
 # ML-based index selection using learned index predictors
 learnedIndex:

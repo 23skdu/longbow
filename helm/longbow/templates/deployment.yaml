@@ -196,13 +196,13 @@ spec:
               value: {{ .Values.compaction.minBatches | quote }}
             # Sharding Configuration
             - name: RING_SHARDING_ENABLED
-              value: {{ .Values.sharding.ring.enabled | quote }}
+              value: {{ .Values.sharding.ring.enabled | default false | quote }}
             - name: AUTO_SHARDING_ENABLED
-              value: {{ .Values.sharding.auto.enabled | quote }}
+              value: {{ .Values.sharding.auto.enabled | default false | quote }}
             - name: AUTO_SHARDING_THRESHOLD
-              value: {{ .Values.sharding.auto.threshold | quote }}
+              value: {{ .Values.sharding.auto.threshold | default 100 | quote }}
             - name: AUTO_SHARDING_SPLIT_THRESHOLD
-              value: {{ .Values.sharding.auto.splitThreshold | quote }}
+              value: {{ .Values.sharding.auto.splitThreshold | default 1000 | quote }}
             # Ingestion Worker Count
             - name: LONGBOW_INGESTION_WORKER_COUNT
               value: {{ .Values.config.ingestionWorkerCount | quote }}

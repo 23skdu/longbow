@@ -11,6 +11,32 @@ import (
 	lbtypes "github.com/23skdu/longbow/internal/store/types"
 )
 
+type TemporalConfig struct {
+	Enabled            bool
+	VersionHistory     bool
+	MaxVersions        int
+	RetentionPeriod    time.Duration
+	TTLEnabled         bool
+	DefaultTTL         time.Duration
+	CleanupInterval    time.Duration
+	AggregationEnabled bool
+	MaxBuckets         int
+}
+
+func DefaultTemporalConfig() TemporalConfig {
+	return TemporalConfig{
+		Enabled:            false,
+		VersionHistory:     false,
+		MaxVersions:        10,
+		RetentionPeriod:    7 * 24 * time.Hour,
+		TTLEnabled:         false,
+		DefaultTTL:         30 * 24 * time.Hour,
+		CleanupInterval:    time.Hour,
+		AggregationEnabled: false,
+		MaxBuckets:         1000,
+	}
+}
+
 type TemporalVector struct {
 	ID        uint64
 	Vector    []float32

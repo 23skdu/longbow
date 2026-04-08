@@ -748,6 +748,128 @@ class BenchmarkRunner:
         self.print_summary()
         print(f"\nResults saved to: {self.output_file}")
 
+    def execute_temporal(self):
+        """Test temporal query capabilities."""
+        if not HAS_LONGBOW_SDK:
+            print("ERROR: longbow SDK not installed. Install with: pip install longbow")
+            return
+
+        print("=" * 80)
+        print("TEMPORAL QUERY BENCHMARK")
+        print("Started:", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        print("=" * 80)
+
+        dim = 128
+        count = 1000
+
+        print(f"\n[1/5] Starting server with TEMPORAL_ENABLED=true...")
+        label = f"temporal_{dim}_{count}"
+        if not self.start_server(label, env_overrides={"TEMPORAL_ENABLED": "true"}):
+            print("  Failed to start server!")
+            return
+
+        try:
+            print(f"\n[2/5] Generating {count} vectors with timestamps...")
+            vectors = []
+            now = time.time()
+            base_timestamp = int(now * 1e9)
+
+            for i in range(count):
+                vec = np.random.randn(dim).astype(np.float32)
+                vectors.append(
+                    {
+                        "id": i,
+                        "vector": vec.tolist(),
+                        "timestamp": base_timestamp + i * 1000000000,
+                        "metadata": {"index": i},
+                    }
+                )
+
+            print(f"\n[3/5] Inserting {count} vectors...")
+            client = LongbowClient(f"grpc://{self.args.addr}")
+            client.connect()
+
+            df = pd.DataFrame(vectors)
+            client.insert(f"temporal_test_{dim}", df, batch_size=100)
+            print("  Insert complete!")
+
+            results = []
+            search_types = ["as_of", "range", "sliding_window", "sliding_window_time"]
+
+            print(f"\n[4/5] Testing temporal search types...")
+            for stype in search_types:
+                try:
+                    if stype == "as_of":
+                        res = client.temporal_search(
+                            search_type=stype,
+                            timestamp=base_timestamp + count * 500000000,
+                            k=10,
+                        )
+                    elif stype == "range":
+                        res = client.temporal_search(
+                            search_type=stype,
+                            start_time=base_timestamp,
+                            end_time=base_timestamp + count * 1000000000,
+                            k=10,
+                        )
+                    elif stype == "sliding_window":
+                        res = client.temporal_search(
+                            search_type=stype, window_size=100, k=10
+                        )
+                    elif stype == "sliding_window_time":
+                        res = client.temporal_search(
+                            search_type=stype, duration="1h", k=10
+                        )
+
+                    results.append(
+                        {"search_type": stype, "count": len(res) if res else 0}
+                    )
+                    print(f"  {stype}: {len(res) if res else 0} results")
+                except Exception as e:
+                    print(f"  {stype}: ERROR - {e}")
+                    results.append({"search_type": stype, "error": str(e)})
+
+            print(f"\n[5/5] Testing version history and aggregation...")
+            try:
+                history = client.temporal_version_history(vector_id=0)
+                print(f"  Version history: {len(history) if history else 0} versions")
+                results.append(
+                    {"version_history_count": len(history) if history else 0}
+                )
+            except Exception as e:
+                print(f"  Version history: ERROR - {e}")
+
+            try:
+                agg = client.temporal_aggregation(
+                    aggregation_type="count",
+                    start_time=base_timestamp,
+                    end_time=base_timestamp + count * 1000000000,
+                    interval=360000000000,
+                )
+                print(f"  Aggregation: {agg.get('total_count', 0)} total")
+                results.append({"aggregation": agg})
+            except Exception as e:
+                print(f"  Aggregation: ERROR - {e}")
+
+            print("\n" + "=" * 80)
+            print("TEMPORAL BENCHMARK RESULTS")
+            print("=" * 80)
+            for r in results:
+                print(f"  {r}")
+
+        finally:
+            self.stop_server()
+            data_root = os.path.join(self.data_dir, label)
+            subprocess.run(f"rm -rf {data_root}", shell=True)
+
+        with open(self.output_file, "w") as f:
+            json.dump(
+                {"mode": "temporal", "timestamp": self.timestamp, "results": results},
+                f,
+                indent=2,
+            )
+        print(f"\nResults saved to {self.output_file}")
+
     def execute_cluster(self):
         """Test gossip-based cluster search operations."""
         if not HAS_LONGBOW_SDK:
@@ -918,6 +1040,9 @@ class BenchmarkRunner:
             return
         if self.args.mode == "cluster":
             self.execute_cluster()
+            return
+        if self.args.mode == "temporal":
+            self.execute_temporal()
             return
 
         dims = [int(d) for d in self.args.dims.split(",")]
@@ -1277,9 +1402,10 @@ if __name__ == "__main__":
             "graphrag",
             "exchange",
             "cluster",
+            "temporal",
         ],
         default="cpu",
-        help="Benchmark mode: cpu, metal (macOS), cuda (Linux), recommend (hybrid vs ANN), deletion (tombstone ops), graphrag (graph spreading), exchange (DoExchange mesh), cluster (gossip search)",
+        help="Benchmark mode: cpu, metal (macOS), cuda (Linux), recommend (hybrid vs ANN), deletion (tombstone ops), graphrag (graph spreading), exchange (DoExchange mesh), cluster (gossip search), temporal (temporal queries)",
     )
     parser.add_argument(
         "--dims", default="128,384,768,1536,3072", help="Comma-separated dimensions"

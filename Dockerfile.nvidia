@@ -1,12 +1,17 @@
 # Dockerfile.nvidia
-# CUDA-enabled build with FAISS GPU support for vector operations
+# NVIDIA CUDA-enabled build with GPU support
+#
+# Build:
+#   docker build -f Dockerfile.nvidia -t longbow:nvidia .
+#
+# Build with io_uring:
+#   docker build -f Dockerfile.nvidia -t longbow:nvidia-iouring . --build-arg ENABLE_IOURING=true
 
 # -------------------------------------------------------------------
 # Stage 1: Build with CUDA and FAISS GPU
 # -------------------------------------------------------------------
 FROM nvidia/cuda:12.2.0-devel-ubuntu22.04 AS builder
 
-# Avoid interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Install system dependencies
@@ -36,83 +41,65 @@ RUN wget --quiet https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86
     conda clean -ay
 
 # Install FAISS GPU with CUDA 12 support
-# Note: faiss-gpu package supports CUDA 11.x by default, so we use conda-forge
-RUN conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main && \
-    conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r && \
-    conda install -y -c conda-forge faiss-gpu && \
+RUN conda install -y -c conda-forge faiss-gpu && \
     conda clean -ay
 
-# Verify FAISS installation and create pkg-config file
-RUN python -c "import faiss; print(f'FAISS version: {faiss.__version__}')" && \
-    ls -la /opt/conda/lib/libfaiss* && \
+# Verify FAISS and create pkg-config
+RUN python -c "import faiss; print(f'FAISS: {faiss.__version__}')" && \
     mkdir -p /usr/lib/pkgconfig && \
-    echo "prefix=/opt/conda\nexec_prefix=\${prefix}\nlibdir=\${exec_prefix}/lib\nincludedir=\${prefix}/include\n\nName: faiss\nDescription: FAISS Vector Database Library\nVersion: 1.12.0\nLibs: -L\${libdir} -lfaiss\nCflags: -I\${includedir}" > /usr/lib/pkgconfig/faiss.pc && \
-    if [ ! -f /opt/conda/lib/libfaiss_gpu.so ]; then ln -s /opt/conda/lib/libfaiss.so /opt/conda/lib/libfaiss_gpu.so; fi
+    echo "prefix=/opt/conda\nexec_prefix=\${prefix}\nlibdir=\${exec_prefix}/lib\nincludedir=\${prefix}/include\n\nName: faiss\nDescription: FAISS\nVersion: 1.12.0\nLibs: -L\${libdir} -lfaiss\nCflags: -I\${includedir}" > /usr/lib/pkgconfig/faiss.pc && \
+    ln -sf /opt/conda/lib/libfaiss.so /opt/conda/lib/libfaiss_gpu.so || true
 
-# Set up workdir
 WORKDIR /app
 
-# Copy dependency files first for better caching
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy source
 COPY . .
 
-# Set CGO flags for FAISS GPU linking
+ARG ENABLE_IOURING=false
 ENV CGO_ENABLED=1
 ENV CGO_CFLAGS="-I/opt/conda/include -I/usr/local/cuda/include"
 ENV CGO_CXXFLAGS="-I/opt/conda/include -I/usr/local/cuda/include"
 ENV CGO_LDFLAGS="-L/opt/conda/lib -L/usr/local/cuda/lib64 -lfaiss -lfaiss_gpu -lcudart -lcublas -lstdc++"
 
 # Build with GPU support
-RUN go build \
-    -tags gpu \
-    -ldflags="-s -w -extldflags '-Wl,-rpath,/opt/conda/lib'" \
-    -o longbow ./cmd/longbow
+RUN if [ "$ENABLE_IOURING" = "true" ]; then \
+    go build -tags "gpu,iouring" -ldflags="-s -w -extldflags '-Wl,-rpath,/opt/conda/lib'" -o longbow ./cmd/longbow; \
+else \
+    go build -tags gpu -ldflags="-s -w -extldflags '-Wl,-rpath,/opt/conda/lib'" -o longbow ./cmd/longbow; \
+fi
 
 # -------------------------------------------------------------------
-# Stage 2: Runtime with CUDA and FAISS
+# Stage 2: Runtime with CUDA
 # -------------------------------------------------------------------
 FROM nvidia/cuda:12.2.0-runtime-ubuntu22.04
 
-# Avoid interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive
 
 WORKDIR /app
 
-# Install runtime dependencies
 RUN apt-get update && apt-get install -y \
     libopenblas0 \
     libgomp1 \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy Miniconda with FAISS from builder (minimal subset)
+# Copy FAISS libs from builder
 COPY --from=builder /opt/conda/lib/libfaiss.so /opt/conda/lib/
 COPY --from=builder /opt/conda/lib/libfaiss_gpu.so /opt/conda/lib/
 COPY --from=builder /opt/conda/lib/libopenblas.so* /opt/conda/lib/
 COPY --from=builder /opt/conda/lib/libgfortran.so* /opt/conda/lib/
 COPY --from=builder /opt/conda/lib/libquadmath.so* /opt/conda/lib/
 
-# Copy binary from builder
 COPY --from=builder /app/longbow .
 
-# Set library path
 ENV LD_LIBRARY_PATH=/opt/conda/lib:/usr/local/cuda/lib64:$LD_LIBRARY_PATH
-
-# Environment variables for Longbow
 ENV LONGBOW_GPU_ENABLED=true
-ENV LONGBOW_STORAGE_USE_IOURING=true
 ENV GOGC=75
 
-# Expose ports
-# 3000: Data Server (gRPC/Arrow Flight)
-# 3001: Meta Server (gRPC)
-# 9090: Metrics Server (Prometheus)
 EXPOSE 3000 3001 9090
 
-# Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:9090/metrics || exit 1
 

@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"sync"
 	"time"
 
@@ -10,43 +11,41 @@ import (
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/query"
 	lbtypes "github.com/23skdu/longbow/internal/store/types"
+	"github.com/23skdu/longbow/internal/tracing"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/rs/zerolog"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 )
-
-type clientEntry struct {
-	client  flight.Client
-	lastUse time.Time
-}
 
 // GlobalSearchCoordinator handles scatter-gather logic
 type GlobalSearchCoordinator struct {
 	logger zerolog.Logger
-	// clients: map[string]*clientEntry
-	clients     sync.Map
-	idleTimeout time.Duration
-	stopCh      chan struct{}
+	pool   *FlightClientPool
 }
 
 //nolint:gocritic // Logger passed by value for simplicity
-func NewGlobalSearchCoordinator(logger zerolog.Logger) *GlobalSearchCoordinator {
-	c := &GlobalSearchCoordinator{
-		logger:      logger,
-		idleTimeout: 5 * time.Minute,
-		stopCh:      make(chan struct{}),
+func NewGlobalSearchCoordinator(logger zerolog.Logger, pool *FlightClientPool) *GlobalSearchCoordinator {
+	return &GlobalSearchCoordinator{
+		logger: logger,
+		pool:   pool,
 	}
-	go c.cleanupLoop()
-	return c
 }
 
 // GlobalSearch performs scatter-gather search across the cluster
 func (c *GlobalSearchCoordinator) GlobalSearch(ctx context.Context, localResults []SearchResult, req *query.VectorSearchRequest, peers []mesh.Member) ([]SearchResult, error) {
 	start := time.Now()
+
+	_, span := tracing.CreateSpan(ctx, "GlobalSearch")
+	if span != nil {
+		span.SetAttributes(
+			"component", "distributed",
+			"level", "coordination",
+			"peers", fmt.Sprint(len(peers)),
+		)
+		defer span.End()
+	}
 
 	// If no peers, just return local
 	if len(peers) == 0 {
@@ -125,15 +124,13 @@ func (c *GlobalSearchCoordinator) GlobalSearch(ctx context.Context, localResults
 				go func(p mesh.Member) {
 					defer wgReplicas.Done()
 
-					client, err := c.getClient(p.MetaAddr)
+					conn, err := c.pool.Get(subCtx, p.MetaAddr)
 					if err != nil {
 						failSignal <- struct{}{}
 						return
 					}
-					// Mark used
-					if entry, ok := c.clients.Load(p.MetaAddr); ok {
-						entry.(*clientEntry).lastUse = time.Now()
-					}
+					defer c.pool.Put(conn)
+					client := conn.Client()
 
 					c.logger.Debug().Str("peer", p.ID).Str("addr", p.MetaAddr).Msg("Sending DoGet to peer")
 
@@ -277,61 +274,7 @@ func (c *GlobalSearchCoordinator) GlobalSearch(ctx context.Context, localResults
 	return finalResults, nil
 }
 
-func (c *GlobalSearchCoordinator) getClient(addr string) (flight.Client, error) {
-	if v, ok := c.clients.Load(addr); ok {
-		entry := v.(*clientEntry)
-		return entry.client, nil
-	}
-
-	// Dial new
-	client, err := flight.NewClientWithMiddleware(addr, nil, nil,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(1024*1024*10)),
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	c.clients.Store(addr, &clientEntry{
-		client:  client,
-		lastUse: time.Now(),
-	})
-	return client, nil
-}
-
-func (c *GlobalSearchCoordinator) cleanupLoop() {
-	ticker := time.NewTicker(time.Minute)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-c.stopCh:
-			return
-		case <-ticker.C:
-			c.pruneVisible()
-		}
-	}
-}
-
-func (c *GlobalSearchCoordinator) pruneVisible() {
-	c.clients.Range(func(key, value any) bool {
-		entry := value.(*clientEntry)
-		if time.Since(entry.lastUse) > c.idleTimeout {
-			c.logger.Info().Str("addr", key.(string)).Msg("Pruning idle flight client")
-			_ = entry.client.Close()
-			c.clients.Delete(key)
-		}
-		return true
-	})
-}
-
 func (c *GlobalSearchCoordinator) Close() error {
-	close(c.stopCh)
-	c.clients.Range(func(key, value any) bool {
-		entry := value.(*clientEntry)
-		_ = entry.client.Close()
-		c.clients.Delete(key)
-		return true
-	})
+	// The pool is managed externally, so we don't need to close it here.
 	return nil
 }

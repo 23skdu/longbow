@@ -302,4 +302,138 @@ Longbow uses **gRPC + Apache Arrow Flight only**. No REST/HTTP API for data oper
 
 ---
 
-*Last Updated: 2026-04-07 (Part 20: Predicate/Projection Pushdown IMPLEMENTED)*
+## Part 22: Temporal Query Capabilities
+
+### Feature Overview
+
+| Feature | Current State | Target | Impact |
+|---------|---------------|--------|--------|
+| Temporal Index | ✅ Implemented | Integration with main server | Full temporal search API |
+| Version History | ✅ Implemented | Multi-version tracking | Time-travel queries |
+| Time-based TTL | ✅ Implemented | Auto-expiration of old vectors | Storage management |
+| Temporal Aggregation | ✅ Implemented | Time-windowed aggregations | Analytics support |
+| gRPC API | ✅ Implemented | Exposed to clients | Full client access |
+| Python SDK | ✅ Implemented | Temporal search API | Client usability |
+| HNSW Integration | ✅ Implemented | Time-constrained HNSW | Vector search with temporal |
+
+### Existing Components
+
+| Component | File | Status |
+|-----------|------|--------|
+| TemporalTree | internal/store/temporal_search.go:30 | ✅ Implemented |
+| TemporalIndex | internal/store/temporal_search.go:22 | ✅ Implemented |
+| Temporal Search Methods | internal/store/temporal_search.go:226-375 | ✅ Implemented |
+| Temporal Tests | internal/store/temporal_search_test.go | ✅ Implemented |
+| TemporalConfig | internal/store/temporal_search.go:14 | ✅ Implemented |
+| VersionHistory | internal/store/version_history.go | ✅ Implemented |
+| VersionHistory Tests | internal/store/version_history_test.go | ✅ Implemented |
+| TTLPolicy | internal/store/ttl_policy.go | ✅ Implemented |
+| TemporalAggregator | internal/store/temporal_aggregation.go | ✅ Implemented |
+| TemporalHNSWIndex | internal/store/hnsw_temporal.go | ✅ Implemented |
+| Python SDK Temporal API | longbowclientsdk/src/longbow/client.py | ✅ Implemented |
+
+### Server Integration (Phase 1)
+
+| Step | Task | File | Status |
+|------|------|------|--------|
+| 1.1 | Add TemporalIndex to main server initialization | cmd/longbow/main.go | ✅ DONE |
+| 1.2 | Add temporal config struct | internal/store/temporal_search.go | ✅ DONE |
+| 1.3 | Add temporal index to server state | internal/store/store.go | ✅ DONE |
+| 1.4 | Wire temporal index into server | internal/store/servers.go | ✅ DONE |
+
+### gRPC API Endpoints (Phase 2)
+
+| Step | Task | File | Status |
+|------|------|------|--------|
+| 2.1 | Implement temporal search handler | internal/store/servers.go | ✅ DONE |
+| 2.2 | Add temporal action types to FlightServer | internal/store/servers.go | ✅ DONE |
+| 2.3 | Add temporal DoAction endpoints | internal/store/servers.go | ✅ DONE |
+
+### Version History Enhancement (Phase 3)
+
+| Step | Task | File | Status |
+|------|------|------|--------|
+| 3.1 | Add version history storage | internal/store/version_history.go | ✅ DONE |
+| 3.2 | Implement GetVersionAt with history lookup | internal/store/version_history.go | ✅ DONE |
+| 3.3 | Add version pruning policy | internal/store/version_history.go | ✅ DONE |
+| 3.4 | Add unit tests for version history | internal/store/version_history_test.go | ✅ DONE |
+
+### TTL & Expiration Engine (Phase 4)
+
+| Step | Task | File | Status |
+|------|------|------|--------|
+| 4.1 | Add TTL policy struct | internal/store/ttl_policy.go | ✅ DONE |
+| 4.2 | Implement time-based expiration | internal/store/ttl_policy.go | ✅ DONE |
+| 4.3 | Add background cleanup goroutine | internal/store/ttl_policy.go | ✅ DONE |
+| 4.4 | Add TTL configuration to config | cmd/longbow/main.go | ✅ DONE |
+
+### Time-Windowed Aggregation (Phase 5)
+
+| Step | Task | File | Status |
+|------|------|------|--------|
+| 5.1 | Add temporal aggregation struct | internal/store/temporal_aggregation.go | ✅ DONE |
+| 5.2 | Implement time-bucket aggregations | internal/store/temporal_aggregation.go | ✅ DONE |
+| 5.3 | Add count/min/max/mean aggregations | internal/store/temporal_aggregation.go | ✅ DONE |
+
+### HNSW Integration (Phase 6)
+
+| Step | Task | File | Status |
+|------|------|------|--------|
+| 6.1 | Add temporal HNSW index | internal/store/hnsw_temporal.go | ✅ DONE |
+| 6.2 | Implement time-constrained search | internal/store/hnsw_temporal.go | ✅ DONE |
+| 6.3 | Add temporal + vector hybrid search | internal/store/hnsw_temporal.go | ✅ DONE |
+
+### Python SDK (Phase 7)
+
+| Step | Task | File | Status |
+|------|------|------|--------|
+| 7.1 | Add temporal search to Python client | longbowclientsdk/src/longbow/client.py | ✅ DONE |
+| 7.2 | Add version history methods | longbowclientsdk/src/longbow/client.py | ✅ DONE |
+| 7.3 | Add temporal aggregation methods | longbowclientsdk/src/longbow/client.py | ✅ DONE |
+
+### Configuration
+
+```yaml
+# Temporal Query Configuration
+temporal:
+  enabled: true
+  version_history:
+    max_versions_per_vector: 10
+    retention_period: 7d
+  ttl:
+    enabled: true
+    default_ttl: 30d
+    cleanup_interval: 1h
+  aggregation:
+    enabled: true
+    max_buckets: 1000
+```
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| TEMPORAL_ENABLED | false | Enable temporal index |
+| TEMPORAL_VERSION_HISTORY | false | Enable version history tracking |
+| TEMPORAL_MAX_VERSIONS | 10 | Max versions per vector |
+| TEMPORAL_RETENTION_PERIOD | 168h | Version retention period |
+| TEMPORAL_TTL_ENABLED | false | Enable TTL expiration |
+| TEMPORAL_DEFAULT_TTL | 720h | Default TTL for vectors |
+| TEMPORAL_CLEANUP_INTERVAL | 1h | TTL cleanup interval |
+| TEMPORAL_AGGREGATION_ENABLED | false | Enable temporal aggregation |
+| TEMPORAL_MAX_BUCKETS | 1000 | Max aggregation buckets |
+
+### Metrics
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| temporal_search_total | Counter | Total temporal searches |
+| temporal_search_duration_seconds | Histogram | Temporal search latency |
+| temporal_version_history_size | Gauge | Version history entries |
+| temporal_ttl_expired_total | Counter | Vectors expired by TTL |
+| temporal_aggregation_duration_seconds | Histogram | Aggregation latency |
+| temporal_index_size | Gauge | Total temporal vectors |
+
+---
+
+*Last Updated: 2026-04-07 (Part 22: Temporal Query Capabilities COMPLETED)*

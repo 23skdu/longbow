@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
 	"go.opentelemetry.io/otel/sdk/resource"
@@ -87,6 +88,17 @@ func (s *TraceSpan) SetError(err error) {
 		s.span.RecordError(err)
 		s.span.SetStatus(codes.Error, err.Error())
 	}
+}
+
+func (s *TraceSpan) SetAttributes(keyValues ...string) {
+	if s == nil || s.span == nil {
+		return
+	}
+	var attrs []attribute.KeyValue
+	for i := 0; i < len(keyValues)-1; i += 2 {
+		attrs = append(attrs, attribute.String(keyValues[i], keyValues[i+1]))
+	}
+	s.span.SetAttributes(attrs...)
 }
 
 func (s *TraceSpan) GetTraceID() string {

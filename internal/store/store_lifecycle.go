@@ -9,7 +9,6 @@ import (
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
-	"github.com/apache/arrow-go/v18/arrow/memory"
 )
 
 // StoreLifecycle manages startup/shutdown of standard components
@@ -104,36 +103,100 @@ func (s *VectorStore) StartMetricsTicker(d time.Duration)                       
 
 // StartEvictionTicker is defined later
 
-// StartIndexingWorkers starts the background indexing workers
+// StartIndexingWorkers starts more background indexing workers
 func (s *VectorStore) StartIndexingWorkers(numWorkers int) {
-	s.startIndexingOnce.Do(func() {
-		for i := 0; i < numWorkers; i++ {
-			s.indexWg.Add(1)
-			go func() {
-				defer s.indexWg.Done()
-				s.runIndexWorker(nil)
-			}()
-		}
-		s.logger.Info().Int("count", numWorkers).Msg("Started indexing workers")
-	})
+	s.workerMu.Lock()
+	defer s.workerMu.Unlock()
+
+	for i := 0; i < numWorkers; i++ {
+		workerCtx, cancel := context.WithCancel(s.ctx)
+		s.indexingWorkerCancels = append(s.indexingWorkerCancels, cancel)
+		s.indexWg.Add(1)
+		go func() {
+			defer s.indexWg.Done()
+			s.runIndexWorker(workerCtx)
+		}()
+	}
+	s.logger.Info().Int("added", numWorkers).Int("total", len(s.indexingWorkerCancels)).Msg("Started indexing workers")
 }
 
-// StartIngestionWorkers starts the background ingestion workers.
-// If count is <= 0, it defaults to runtime.NumCPU().
+// StopIndexingWorkers stops n background indexing workers
+func (s *VectorStore) StopIndexingWorkers(numWorkers int) {
+	s.workerMu.Lock()
+	defer s.workerMu.Unlock()
+
+	active := len(s.indexingWorkerCancels)
+	if numWorkers > active {
+		numWorkers = active
+	}
+
+	for i := 0; i < numWorkers; i++ {
+		idx := active - 1 - i
+		s.indexingWorkerCancels[idx]()
+	}
+	s.indexingWorkerCancels = s.indexingWorkerCancels[:active-numWorkers]
+	s.logger.Info().Int("stopped", numWorkers).Int("remaining", len(s.indexingWorkerCancels)).Msg("Stopped indexing workers")
+}
+
+// StartIngestionWorkers starts background ingestion workers.
 func (s *VectorStore) StartIngestionWorkers(count int) {
 	if count <= 0 {
 		count = runtime.NumCPU()
 	}
-	s.ingestionStartOnce.Do(func() {
-		s.workerWg.Add(count)
-		for i := 0; i < count; i++ {
-			go s.runIngestionWorker()
-		}
-		s.logger.Info().Int("count", count).Msg("Started ingestion workers")
-	})
+	s.workerMu.Lock()
+	defer s.workerMu.Unlock()
+
+	for i := 0; i < count; i++ {
+		workerCtx, cancel := context.WithCancel(s.ctx)
+		s.ingestionWorkerCancels = append(s.ingestionWorkerCancels, cancel)
+		s.workerWg.Add(1)
+		go func() {
+			defer s.workerWg.Done()
+			s.runIngestionWorkerWithCtx(workerCtx)
+		}()
+	}
+	s.logger.Info().Int("added", count).Int("total", len(s.ingestionWorkerCancels)).Msg("Started ingestion workers")
 }
 
-func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
+// StopIngestionWorkers stops n background ingestion workers
+func (s *VectorStore) StopIngestionWorkers(numWorkers int) {
+	s.workerMu.Lock()
+	defer s.workerMu.Unlock()
+
+	active := len(s.ingestionWorkerCancels)
+	if numWorkers > active {
+		numWorkers = active
+	}
+
+	for i := 0; i < numWorkers; i++ {
+		idx := active - 1 - i
+		s.ingestionWorkerCancels[idx]()
+	}
+	s.ingestionWorkerCancels = s.ingestionWorkerCancels[:active-numWorkers]
+	s.logger.Info().Int("stopped", numWorkers).Int("remaining", len(s.ingestionWorkerCancels)).Msg("Stopped ingestion workers")
+}
+
+// AdjustWorkerCounts resizes pools to match target counts
+func (s *VectorStore) AdjustWorkerCounts(indexing, ingestion int) {
+	s.workerMu.Lock()
+	currIndexing := len(s.indexingWorkerCancels)
+	currIngestion := len(s.ingestionWorkerCancels)
+	s.workerMu.Unlock()
+
+	if indexing > currIndexing {
+		s.StartIndexingWorkers(indexing - currIndexing)
+	} else if indexing < currIndexing {
+		s.StopIndexingWorkers(currIndexing - indexing)
+	}
+
+	if ingestion > currIngestion {
+		s.StartIngestionWorkers(ingestion - currIngestion)
+	} else if ingestion < currIngestion {
+		s.StopIngestionWorkers(currIngestion - ingestion)
+	}
+}
+
+func (s *VectorStore) runIndexWorker(ctx context.Context) {
 	maxBatch := 1000
 	var currentBatch int
 
@@ -355,9 +418,11 @@ func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
 		}
 
 		if len(jobs) == 0 {
-			// Check for shutdown
+			// Check for shutdown or context cancellation
 			select {
 			case <-s.stopChan:
+				return
+			case <-ctx.Done():
 				return
 			default:
 			}
@@ -388,6 +453,11 @@ func (s *VectorStore) runIndexWorker(_ memory.Allocator) {
 
 		select {
 		case <-s.stopChan:
+			if len(jobs) > 0 {
+				processBatch(jobs)
+			}
+			return
+		case <-ctx.Done():
 			if len(jobs) > 0 {
 				processBatch(jobs)
 			}

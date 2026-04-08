@@ -94,8 +94,8 @@ RUN apt-get update && apt-get install -y \
 COPY --from=builder /app/longbow .
 
 # Try to copy FAISS libs if they exist (may not exist if CPU fallback was used)
-COPY --from=builder /opt/conda/lib/libfaiss.so /opt/conda/lib/ 2>/dev/null || true
-COPY --from=builder /opt/conda/lib/libfaiss_gpu.so /opt/conda/lib/ 2>/dev/null || true
+RUN cp /opt/conda/lib/libfaiss.so /opt/conda/lib/ 2>/dev/null || true && \
+    cp /opt/conda/lib/libfaiss_gpu.so /opt/conda/lib/ 2>/dev/null || true
 
 ENV LD_LIBRARY_PATH=/opt/conda/lib:/usr/local/cuda/lib64:$LD_LIBRARY_PATH
 ENV LONGBOW_GPU_ENABLED=false

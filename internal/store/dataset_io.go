@@ -1,0 +1,602 @@
+package store
+
+import (
+	"bytes"
+	"context"
+	"encoding/binary"
+	"encoding/json"
+	"fmt"
+	"io"
+	"math"
+	"os"
+	"sync"
+	"time"
+
+	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/storage"
+	"github.com/apache/arrow-go/v18/arrow"
+	"github.com/apache/arrow-go/v18/arrow/array"
+	"github.com/apache/arrow-go/v18/arrow/ipc"
+	"github.com/apache/arrow-go/v18/arrow/memory"
+	"github.com/parquet-go/parquet-go"
+)
+
+const (
+	DatasetFileExtension = ".parquet"
+	DatasetMagic         = "LONGDATASET"
+	DatasetVersion       = 1
+)
+
+var datasetExportBufferPool = sync.Pool{
+	New: func() interface{} {
+		return new(bytes.Buffer)
+	},
+}
+
+func getDatasetBuffer() *bytes.Buffer {
+	return datasetExportBufferPool.Get().(*bytes.Buffer)
+}
+
+func putDatasetBuffer(b *bytes.Buffer) {
+	b.Reset()
+	datasetExportBufferPool.Put(b)
+}
+
+type DatasetIO struct {
+	vs *VectorStore
+}
+
+func NewDatasetIO(vs *VectorStore) *DatasetIO {
+	return &DatasetIO{vs: vs}
+}
+
+type DatasetHeader struct {
+	Magic      string    `json:"magic"`
+	Version    int       `json:"version"`
+	Name       string    `json:"name"`
+	NumRecords int       `json:"num_records"`
+	NumVectors int64     `json:"num_vectors"`
+	SchemaJSON string    `json:"schema_json"`
+	CreatedAt  time.Time `json:"created_at"`
+	ExportedAt time.Time `json:"exported_at"`
+	VectorDim  int       `json:"vector_dim"`
+	VectorType string    `json:"vector_type"`
+}
+
+func (d *DatasetHeader) Validate() error {
+	if d.Magic != DatasetMagic {
+		return fmt.Errorf("invalid magic: expected %s, got %s", DatasetMagic, d.Magic)
+	}
+	if d.Version != DatasetVersion {
+		return fmt.Errorf("unsupported version: %d", d.Version)
+	}
+	return nil
+}
+
+type DatasetParquetRecord struct {
+	ID        int64  `parquet:"id,optional"`
+	Vector    []byte `parquet:"vector,optional"`
+	Metadata  []byte `parquet:"metadata,optional"`
+	CreatedAt int64  `parquet:"created_at,optional"`
+}
+
+func (d *DatasetIO) ExportToParquet(ctx context.Context, name string, backend storage.SnapshotBackend) (int64, error) {
+	startTime := time.Now()
+	ds, ok := d.vs.getDataset(name)
+	if !ok {
+		metrics.DatasetExportFailures.WithLabelValues(name).Inc()
+		return 0, fmt.Errorf("dataset not found: %s", name)
+	}
+
+	ds.dataMu.RLock()
+	numRecords := len(ds.Records)
+	ds.dataMu.RUnlock()
+
+	if numRecords == 0 {
+		metrics.DatasetExportEmpty.WithLabelValues(name).Inc()
+		return 0, nil
+	}
+
+	schemaJSON, err := json.Marshal(ds.Schema)
+	if err != nil {
+		metrics.DatasetExportFailures.WithLabelValues(name).Inc()
+		return 0, fmt.Errorf("failed to marshal schema: %w", err)
+	}
+
+	var vectorDim int
+	ds.dataMu.RLock()
+	if len(ds.Records) > 0 {
+		rec := ds.Records[0]
+		for _, f := range rec.Schema().Fields() {
+			if f.Name == "vector" {
+				if fType, ok := f.Type.(*arrow.FixedSizeListType); ok {
+					vectorDim = int(fType.Len())
+				}
+				break
+			}
+		}
+	}
+	ds.dataMu.RUnlock()
+
+	header := &DatasetHeader{
+		Magic:      DatasetMagic,
+		Version:    DatasetVersion,
+		Name:       name,
+		NumRecords: numRecords,
+		SchemaJSON: string(schemaJSON),
+		CreatedAt:  time.Now(),
+		ExportedAt: time.Now(),
+		VectorDim:  vectorDim,
+		VectorType: "fixed_size_list",
+	}
+
+	headerJSON, err := json.Marshal(header)
+	if err != nil {
+		metrics.DatasetExportFailures.WithLabelValues(name).Inc()
+		return 0, fmt.Errorf("failed to marshal header: %w", err)
+	}
+
+	headerBuf := getDatasetBuffer()
+	defer putDatasetBuffer(headerBuf)
+	headerBuf.Write(headerJSON)
+	headerBuf.Write([]byte{'\n'})
+
+	if err := backend.WriteSnapshotFile(ctx, name+".header", ".header", bytes.NewReader(headerBuf.Bytes())); err != nil {
+		metrics.DatasetExportFailures.WithLabelValues(name).Inc()
+		return 0, fmt.Errorf("failed to write header: %w", err)
+	}
+
+	parquetBuf := getDatasetBuffer()
+	defer putDatasetBuffer(parquetBuf)
+	ds.dataMu.RLock()
+	totalVectors, err := d.writeRecordsToParquet(ds.Records, parquetBuf)
+	ds.dataMu.RUnlock()
+
+	if err != nil {
+		metrics.DatasetExportFailures.WithLabelValues(name).Inc()
+		return 0, fmt.Errorf("failed to write parquet: %w", err)
+	}
+
+	header.NumVectors = totalVectors
+	metrics.DatasetExportVectors.WithLabelValues(name).Set(float64(totalVectors))
+
+	if err := backend.WriteSnapshotFile(ctx, name, DatasetFileExtension, bytes.NewReader(parquetBuf.Bytes())); err != nil {
+		metrics.DatasetExportFailures.WithLabelValues(name).Inc()
+		return 0, fmt.Errorf("failed to write parquet: %w", err)
+	}
+
+	metrics.DatasetExportTotal.WithLabelValues(name).Inc()
+	duration := time.Since(startTime)
+	metrics.DatasetExportDuration.WithLabelValues(name).Observe(duration.Seconds())
+	metrics.DatasetExportBytes.WithLabelValues(name).Observe(float64(parquetBuf.Len()))
+
+	d.vs.logger.Info().
+		Str("dataset", name).
+		Int("records", numRecords).
+		Int64("vectors", totalVectors).
+		Int("bytes", parquetBuf.Len()).
+		Dur("duration", duration).
+		Msg("dataset exported to parquet")
+
+	return totalVectors, nil
+}
+
+func (d *DatasetIO) writeRecordsToParquet(records []arrow.RecordBatch, buf *bytes.Buffer) (int64, error) {
+	if len(records) == 0 {
+		return 0, nil
+	}
+
+	pw := parquet.NewGenericWriter[DatasetParquetRecord](buf, parquet.Compression(&parquet.Zstd))
+	defer pw.Close()
+
+	totalRows := int64(0)
+	for _, rec := range records {
+		numRows := rec.NumRows()
+		if numRows == 0 {
+			continue
+		}
+		totalRows += numRows
+
+		idColIdx := -1
+		vectorColIdx := -1
+		metadataColIdx := -1
+		createdAtColIdx := -1
+
+		for i, f := range rec.Schema().Fields() {
+			switch f.Name {
+			case "id":
+				idColIdx = i
+			case "vector":
+				vectorColIdx = i
+			case "metadata":
+				metadataColIdx = i
+			case "created_at":
+				createdAtColIdx = i
+			}
+		}
+
+		records := make([]DatasetParquetRecord, numRows)
+		for rowIdx := int64(0); rowIdx < numRows; rowIdx++ {
+			record := DatasetParquetRecord{}
+
+			if idColIdx >= 0 {
+				col := rec.Column(idColIdx)
+				switch arr := col.(type) {
+				case *array.Int64:
+					if !arr.IsNull(int(rowIdx)) {
+						record.ID = arr.Value(int(rowIdx))
+					}
+				case *array.String:
+					if !arr.IsNull(int(rowIdx)) {
+						var id int64
+						fmt.Sscanf(arr.Value(int(rowIdx)), "%d", &id)
+						record.ID = id
+					}
+				}
+			}
+
+			if vectorColIdx >= 0 {
+				col := rec.Column(vectorColIdx)
+				switch arr := col.(type) {
+				case *array.FixedSizeList:
+					child := arr.ListValues()
+					if floatArr, ok := child.(*array.Float32); ok {
+						vec := make([]byte, floatArr.Len()*4)
+						for i := 0; i < floatArr.Len(); i++ {
+							binary.LittleEndian.PutUint32(vec[i*4:], math.Float32bits(floatArr.Value(i)))
+						}
+						record.Vector = vec
+					}
+				case *array.FixedSizeBinary:
+					if !arr.IsNull(int(rowIdx)) {
+						record.Vector = arr.Value(int(rowIdx))
+					}
+				}
+			}
+
+			if metadataColIdx >= 0 {
+				col := rec.Column(metadataColIdx)
+				switch arr := col.(type) {
+				case *array.Binary:
+					if !arr.IsNull(int(rowIdx)) {
+						record.Metadata = arr.Value(int(rowIdx))
+					}
+				case *array.String:
+					if !arr.IsNull(int(rowIdx)) {
+						record.Metadata = []byte(arr.Value(int(rowIdx)))
+					}
+				}
+			}
+
+			if createdAtColIdx >= 0 {
+				col := rec.Column(createdAtColIdx)
+				switch arr := col.(type) {
+				case *array.Int64:
+					if !arr.IsNull(int(rowIdx)) {
+						record.CreatedAt = arr.Value(int(rowIdx))
+					}
+				}
+			}
+
+			records[rowIdx] = record
+		}
+
+		if _, err := pw.Write(records); err != nil {
+			return totalRows, fmt.Errorf("failed to write rows: %w", err)
+		}
+		rec.Release()
+	}
+
+	if err := pw.Close(); err != nil {
+		return totalRows, fmt.Errorf("failed to close writer: %w", err)
+	}
+
+	return totalRows, nil
+}
+
+func (d *DatasetIO) ImportFromParquet(ctx context.Context, name string, backend storage.SnapshotBackend, schema *arrow.Schema) (int64, error) {
+	startTime := time.Now()
+
+	var header DatasetHeader
+
+	headerFile, err := backend.ReadSnapshotFile(ctx, name, ".header")
+	if err == nil {
+		defer headerFile.Close()
+		headerData, err := io.ReadAll(headerFile)
+		if err != nil {
+			metrics.DatasetImportFailures.WithLabelValues(name).Inc()
+			return 0, fmt.Errorf("failed to read header: %w", err)
+		}
+
+		if err := json.Unmarshal(headerData, &header); err != nil {
+			metrics.DatasetImportFailures.WithLabelValues(name).Inc()
+			return 0, fmt.Errorf("failed to parse header: %w", err)
+		}
+
+		if err := header.Validate(); err != nil {
+			metrics.DatasetImportFailures.WithLabelValues(name).Inc()
+			return 0, err
+		}
+
+		if schema == nil {
+			if err := json.Unmarshal([]byte(header.SchemaJSON), &schema); err != nil {
+				metrics.DatasetImportFailures.WithLabelValues(name).Inc()
+				return 0, fmt.Errorf("failed to parse schema from header: %w", err)
+			}
+		}
+	} else if !storage.IsNotFoundError(err) {
+		metrics.DatasetImportFailures.WithLabelValues(name).Inc()
+		return 0, fmt.Errorf("failed to read header: %w", err)
+	}
+
+	var parquetData []byte
+
+	parquetFile, err := backend.ReadSnapshotFile(ctx, name, DatasetFileExtension)
+	if err == nil {
+		defer parquetFile.Close()
+		parquetData, err = io.ReadAll(parquetFile)
+		if err != nil {
+			metrics.DatasetImportFailures.WithLabelValues(name).Inc()
+			return 0, fmt.Errorf("failed to read parquet data: %w", err)
+		}
+	} else {
+		parquetFile, err = backend.ReadSnapshot(ctx, name)
+		if err != nil {
+			metrics.DatasetImportFailures.WithLabelValues(name).Inc()
+			return 0, fmt.Errorf("failed to read parquet: %w", err)
+		}
+		defer parquetFile.Close()
+		parquetData, err = io.ReadAll(parquetFile)
+		if err != nil {
+			metrics.DatasetImportFailures.WithLabelValues(name).Inc()
+			return 0, fmt.Errorf("failed to read parquet data: %w", err)
+		}
+	}
+
+	ds, _ := d.vs.getOrCreateDataset(name, func() *Dataset {
+		return NewDataset(name, schema)
+	})
+
+	totalRows, err := d.readParquetToRecords(bytes.NewReader(parquetData), ds)
+	if err != nil {
+		metrics.DatasetImportFailures.WithLabelValues(name).Inc()
+		return 0, fmt.Errorf("failed to read parquet: %w", err)
+	}
+
+	metrics.DatasetImportTotal.WithLabelValues(name).Inc()
+	metrics.DatasetImportVectors.WithLabelValues(name).Set(float64(totalRows))
+	duration := time.Since(startTime)
+	metrics.DatasetImportDuration.WithLabelValues(name).Observe(duration.Seconds())
+	metrics.DatasetImportBytes.WithLabelValues(name).Observe(float64(len(parquetData)))
+
+	d.vs.logger.Info().
+		Str("dataset", name).
+		Int64("vectors", totalRows).
+		Int("bytes", len(parquetData)).
+		Dur("duration", duration).
+		Msg("dataset imported from parquet")
+
+	return totalRows, nil
+}
+
+func (d *DatasetIO) readParquetToRecords(r io.Reader, ds *Dataset) (int64, error) {
+	tmpFile, err := os.CreateTemp("", "parquet-*.parquet")
+	if err != nil {
+		return 0, fmt.Errorf("failed to create temp file: %w", err)
+	}
+	defer os.Remove(tmpFile.Name())
+
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return 0, fmt.Errorf("failed to read data: %w", err)
+	}
+	if _, err := tmpFile.Write(data); err != nil {
+		return 0, fmt.Errorf("failed to write temp file: %w", err)
+	}
+	if err := tmpFile.Close(); err != nil {
+		return 0, fmt.Errorf("failed to close temp file: %w", err)
+	}
+
+	f, err := os.Open(tmpFile.Name())
+	if err != nil {
+		return 0, fmt.Errorf("failed to open temp file: %w", err)
+	}
+	defer f.Close()
+
+	stat, err := f.Stat()
+	if err != nil {
+		return 0, fmt.Errorf("failed to stat temp file: %w", err)
+	}
+
+	pf, err := parquet.OpenFile(f, stat.Size())
+	if err != nil {
+		return 0, fmt.Errorf("failed to open parquet file: %w", err)
+	}
+
+	pr := parquet.NewGenericReader[DatasetParquetRecord](pf)
+	rows := make([]DatasetParquetRecord, pr.NumRows())
+	_, err = pr.Read(rows)
+	if err != nil && err != io.EOF {
+		return 0, fmt.Errorf("failed to read parquet: %w", err)
+	}
+
+	if len(rows) == 0 {
+		return 0, nil
+	}
+
+	pool := memory.NewGoAllocator()
+	totalRows := int64(len(rows))
+
+	idColIdx := -1
+	vectorColIdx := -1
+	metadataColIdx := -1
+	createdAtColIdx := -1
+
+	for i, f := range ds.Schema.Fields() {
+		switch f.Name {
+		case "id":
+			idColIdx = i
+		case "vector":
+			vectorColIdx = i
+		case "metadata":
+			metadataColIdx = i
+		case "created_at":
+			createdAtColIdx = i
+		}
+	}
+
+	b := array.NewRecordBuilder(pool, ds.Schema)
+	defer b.Release()
+
+	for _, row := range rows {
+		if idColIdx >= 0 && row.ID != 0 {
+			b.Field(idColIdx).(*array.Int64Builder).Append(row.ID)
+		} else if idColIdx >= 0 {
+			b.Field(idColIdx).AppendNull()
+		}
+
+		if vectorColIdx >= 0 && row.Vector != nil {
+			vecLen := len(row.Vector) / 4
+			listBuilder := b.Field(vectorColIdx).(*array.FixedSizeListBuilder)
+			valBuilder := listBuilder.ValueBuilder().(*array.Float32Builder)
+			for i := 0; i < vecLen; i++ {
+				v := binary.LittleEndian.Uint32(row.Vector[i*4:])
+				valBuilder.Append(math.Float32frombits(v))
+			}
+			listBuilder.Append(true)
+		} else if vectorColIdx >= 0 {
+			b.Field(vectorColIdx).AppendNull()
+		}
+
+		if metadataColIdx >= 0 && row.Metadata != nil {
+			b.Field(metadataColIdx).(*array.BinaryBuilder).Append(row.Metadata)
+		} else if metadataColIdx >= 0 {
+			b.Field(metadataColIdx).AppendNull()
+		}
+
+		if createdAtColIdx >= 0 && row.CreatedAt != 0 {
+			b.Field(createdAtColIdx).(*array.Int64Builder).Append(row.CreatedAt)
+		} else if createdAtColIdx >= 0 {
+			b.Field(createdAtColIdx).AppendNull()
+		}
+	}
+
+	rec := b.NewRecord()
+	ds.dataMu.Lock()
+	ds.Records = append(ds.Records, rec)
+	ds.BatchNodes = append(ds.BatchNodes, -1)
+	ds.dataMu.Unlock()
+
+	return totalRows, nil
+}
+
+func (d *DatasetIO) ExportToArrowIPC(ctx context.Context, name string, backend storage.SnapshotBackend) (int64, error) {
+	startTime := time.Now()
+	ds, ok := d.vs.getDataset(name)
+	if !ok {
+		metrics.DatasetExportFailures.WithLabelValues(name).Inc()
+		return 0, fmt.Errorf("dataset not found: %s", name)
+	}
+
+	ds.dataMu.RLock()
+	numRecords := len(ds.Records)
+	ds.dataMu.RUnlock()
+
+	if numRecords == 0 {
+		return 0, nil
+	}
+
+	buf := getDatasetBuffer()
+	defer putDatasetBuffer(buf)
+
+	writer := ipc.NewWriter(buf, ipc.WithSchema(ds.Schema))
+	if writer == nil {
+		return 0, fmt.Errorf("failed to create IPC writer")
+	}
+
+	ds.dataMu.RLock()
+	totalRows := int64(0)
+	for _, rec := range ds.Records {
+		totalRows += rec.NumRows()
+		if err := writer.Write(rec); err != nil {
+			ds.dataMu.RUnlock()
+			writer.Close()
+			return totalRows, fmt.Errorf("failed to write record: %w", err)
+		}
+	}
+	ds.dataMu.RUnlock()
+
+	if err := writer.Close(); err != nil {
+		return 0, fmt.Errorf("failed to close writer: %w", err)
+	}
+
+	if err := backend.WriteSnapshotFile(ctx, name, ".arrow", bytes.NewReader(buf.Bytes())); err != nil {
+		metrics.DatasetExportFailures.WithLabelValues(name).Inc()
+		return 0, fmt.Errorf("failed to write arrow IPC: %w", err)
+	}
+
+	metrics.DatasetExportTotal.WithLabelValues(name).Inc()
+	duration := time.Since(startTime)
+	metrics.DatasetExportDuration.WithLabelValues(name).Observe(duration.Seconds())
+	metrics.DatasetExportBytes.WithLabelValues(name).Observe(float64(buf.Len()))
+
+	return totalRows, nil
+}
+
+func (d *DatasetIO) ImportFromArrowIPC(ctx context.Context, name string, backend storage.SnapshotBackend, schema *arrow.Schema) (int64, error) {
+	startTime := time.Now()
+
+	file, err := backend.ReadSnapshotFile(ctx, name, ".arrow")
+	if err != nil {
+		metrics.DatasetImportFailures.WithLabelValues(name).Inc()
+		return 0, fmt.Errorf("failed to read arrow IPC: %w", err)
+	}
+	defer file.Close()
+
+	data, err := io.ReadAll(file)
+	if err != nil {
+		metrics.DatasetImportFailures.WithLabelValues(name).Inc()
+		return 0, fmt.Errorf("failed to read arrow data: %w", err)
+	}
+
+	reader, err := ipc.NewReader(bytes.NewReader(data), ipc.WithSchema(schema))
+	if err != nil {
+		metrics.DatasetImportFailures.WithLabelValues(name).Inc()
+		return 0, fmt.Errorf("failed to create IPC reader: %w", err)
+	}
+
+	totalRows := int64(0)
+	ds, _ := d.vs.getOrCreateDataset(name, func() *Dataset {
+		return NewDataset(name, schema)
+	})
+
+	ds.dataMu.Lock()
+	for reader.Next() {
+		rec := reader.Record()
+		if rec == nil {
+			break
+		}
+		totalRows += rec.NumRows()
+		batchIdx := len(ds.Records)
+		ds.Records = append(ds.Records, rec)
+		ds.BatchNodes = append(ds.BatchNodes, -1)
+
+		if d.vs.indexQueue != nil {
+			job := IndexJob{
+				DatasetName: name,
+				Record:      rec,
+				BatchIdx:    batchIdx,
+				CreatedAt:   time.Now(),
+			}
+			d.vs.indexQueue.Send(job)
+		}
+	}
+	ds.dataMu.Unlock()
+
+	metrics.DatasetImportTotal.WithLabelValues(name).Inc()
+	duration := time.Since(startTime)
+	metrics.DatasetImportDuration.WithLabelValues(name).Observe(duration.Seconds())
+	metrics.DatasetImportBytes.WithLabelValues(name).Observe(float64(len(data)))
+
+	return totalRows, nil
+}

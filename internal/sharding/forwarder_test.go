@@ -3,11 +3,16 @@ package sharding
 import (
 	"context"
 	"fmt"
+	"net"
 	"testing"
 	"time"
 
+	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
+	"google.golang.org/protobuf/proto"
 )
 
 // MockResolver
@@ -398,4 +403,63 @@ func FuzzRequestForwarder_ConcurrentAccess(f *testing.F) {
 			}
 		}
 	})
+}
+
+// Mock Flight Server for integration testing
+type testFlightServer struct {
+	flight.BaseFlightServer
+}
+
+func (s *testFlightServer) GetFlightInfo(ctx context.Context, desc *flight.FlightDescriptor) (*flight.FlightInfo, error) {
+	return &flight.FlightInfo{
+		FlightDescriptor: desc,
+		TotalRecords:     123,
+	}, nil
+}
+
+func (s *testFlightServer) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGetServer) error {
+	// Send some dummy data
+	return stream.Send(&flight.FlightData{
+		DataHeader: tkt.GetTicket(),
+	})
+}
+
+func TestRequestForwarder_TransparentIntegration(t *testing.T) {
+	// 1. Start a real gRPC server locally
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	addr := lis.Addr().String()
+
+	s := grpc.NewServer()
+	flight.RegisterFlightServiceServer(s, &testFlightServer{})
+	go func() {
+		_ = s.Serve(lis)
+	}()
+	defer s.Stop()
+
+	// 2. Setup Forwarder
+	resolver := new(MockResolver)
+	resolver.On("GetNodeAddr", "node-remote").Return(addr)
+
+	config := DefaultForwarderConfig()
+	fwd := NewRequestForwarder(&config, resolver)
+	defer func() { _ = fwd.Close() }()
+
+	ctx := context.Background()
+
+	t.Run("Forward Unary (GetFlightInfo)", func(t *testing.T) {
+		req := &flight.FlightDescriptor{Type: flight.DescriptorPATH, Path: []string{"test"}}
+		respBytes, err := fwd.Forward(ctx, "node-remote", req, "/arrow.flight.protocol.FlightService/GetFlightInfo")
+		require.NoError(t, err)
+
+		var info flight.FlightInfo
+		err = proto.Unmarshal(respBytes.([]byte), &info)
+		require.NoError(t, err)
+		assert.Equal(t, int64(123), info.TotalRecords)
+	})
+
+	// Note: ForwardStream (Streaming) is used by the PartitionProxyStreamInterceptor.
+	// Accurate end-to-end testing of ForwardStream requires both client and server 
+	// to operate at the byte level, which is handled at the interceptor layer.
+	// The binary-level proxying of Forward (Unary) above confirms the byteCodec logic.
 }

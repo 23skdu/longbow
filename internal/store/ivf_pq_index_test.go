@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/RoaringBitmap/roaring/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -320,7 +321,77 @@ func TestIVFPQIndex_SearchQueryInCluster(t *testing.T) {
 }
 
 func TestIVFPQIndex_SearchWithFilter(t *testing.T) {
-	t.Skip("Filter support not yet implemented")
+	dim := 64
+	numVectors := 300
+	config := IVFPQConfig{
+		Nlist:  16,
+		M:      8,
+		K:      256,
+		Nprobe: 16,
+	}
+
+	vectors := make([][]float32, numVectors)
+	for i := 0; i < numVectors; i++ {
+		vec := make([]float32, dim)
+		for j := 0; j < dim; j++ {
+			vec[j] = float32(i) * 0.1
+		}
+		vectors[i] = vec
+	}
+
+	idx, err := NewIVFPQIndex(dim, config)
+	require.NoError(t, err)
+	err = idx.Train(vectors)
+	require.NoError(t, err)
+	err = idx.Add(context.Background(), vectors)
+	require.NoError(t, err)
+
+	query := make([]float32, dim)
+	for j := 0; j < dim; j++ {
+		query[j] = 5.0 // Near ID 50
+	}
+
+	t.Run("Nil Filter", func(t *testing.T) {
+		results, err := idx.SearchInternal(context.Background(), query, 10, nil, SearchOptions{})
+		require.NoError(t, err)
+		assert.Len(t, results, 10)
+	})
+
+	t.Run("Selective Filter", func(t *testing.T) {
+		// Only IDs 10, 20, 30, 40, 50
+		filter := roaring.New()
+		filter.AddMany([]uint32{10, 20, 30, 40, 50})
+
+		results, err := idx.SearchInternal(context.Background(), query, 10, filter, SearchOptions{})
+		require.NoError(t, err)
+		
+		// Should return all 5 allowed IDs since k=10
+		assert.Len(t, results, 5)
+		
+		for _, r := range results {
+			assert.True(t, filter.Contains(uint32(r.ID)), "Result ID %d should be in filter", r.ID)
+		}
+		
+		// Verify top result is closest (ID 50)
+		assert.Equal(t, uint32(50), uint32(results[0].ID))
+	})
+
+	t.Run("Empty Filter", func(t *testing.T) {
+		filter := roaring.New()
+		results, err := idx.SearchInternal(context.Background(), query, 10, filter, SearchOptions{})
+		require.NoError(t, err)
+		assert.Empty(t, results)
+	})
+
+	t.Run("Full Filter", func(t *testing.T) {
+		filter := roaring.New()
+		for i := 0; i < numVectors; i++ {
+			filter.Add(uint32(i))
+		}
+		results, err := idx.SearchInternal(context.Background(), query, 10, filter, SearchOptions{})
+		require.NoError(t, err)
+		assert.Len(t, results, 10)
+	})
 }
 
 func BenchmarkIVFPQIndex_Search(b *testing.B) {

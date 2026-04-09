@@ -37,14 +37,15 @@
 |---|---------|--------|-------|
 | ~~1~~ | ~~Dataset Import/Export~~ | ✅ DONE | `internal/store/dataset_io.go` |
 | 2 | ONNX Runtime Integration | STUB | `internal/store/ml_reranker.go`, `internal/store/embedding_generator.go` |
-| 3 | CUDA Memory Operations | STUB | `internal/gpu/memory/memory_cuda_stub.go` |
+| ~~3~~ | ~~CUDA Memory Operations~~ | ✅ DONE | `internal/gpu/cuda/cuda_index.go` |
 
 ### MEDIUM PRIORITY
 
 | # | Feature | Status | Files |
 |---|---------|--------|-------|
-| 4 | Window Functions | PARTIAL | Advanced SQL features |
-| 5 | Subqueries/CTE | NOT IMPLEMENTED | Advanced SQL features |
+| 4 | ONNX Runtime Integration | STUB | `internal/store/ml_reranker.go`, `internal/store/embedding_generator.go` |
+| 5 | Window Functions | PARTIAL | Advanced SQL features |
+| 6 | Subqueries/CTE | NOT IMPLEMENTED | Advanced SQL features |
 
 ### LOW PRIORITY
 

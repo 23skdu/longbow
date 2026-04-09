@@ -216,8 +216,8 @@ type IVFPQSearchResult struct {
 	Distance float32
 }
 
-// SearchInternal searches for k nearest neighbors using IVF-PQ
-func (idx *IVFPQIndex) SearchInternal(ctx context.Context, queryVec []float32, k int, _ []query.Filter, _ SearchOptions) ([]types.SearchResult, error) {
+// SearchInternal searches for k nearest neighbors using IVF-PQ with optional bitmap filtering
+func (idx *IVFPQIndex) SearchInternal(ctx context.Context, queryVec []float32, k int, filter *roaring.Bitmap, _ SearchOptions) ([]types.SearchResult, error) {
 	if len(queryVec) != idx.dim {
 		return nil, errors.New("query dimension mismatch")
 	}
@@ -245,6 +245,11 @@ func (idx *IVFPQIndex) SearchInternal(ctx context.Context, queryVec []float32, k
 		cluster.mu.RUnlock()
 
 		for _, entry := range entries {
+			// Apply filter pushdown
+			if filter != nil && !filter.Contains(entry.VectorID) {
+				continue
+			}
+
 			// Compute ADC distance: sum of precomputed distances
 			dist := idx.computeADCDistance(entry.PQCode, adt)
 
@@ -398,7 +403,7 @@ func (idx *IVFPQIndex) SearchVectorsWithBitmap(ctx context.Context, q any, k int
 		return nil, errors.New("unsupported query type")
 	}
 	opts, _ := options.(SearchOptions)
-	return idx.SearchInternal(ctx, queryVec, k, nil, opts)
+	return idx.SearchInternal(ctx, queryVec, k, filter, opts)
 }
 
 func (idx *IVFPQIndex) SearchVectors(ctx context.Context, q any, k int, filters []query.Filter, options any) ([]types.SearchResult, error) {

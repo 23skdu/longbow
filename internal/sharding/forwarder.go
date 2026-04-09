@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/23skdu/longbow/internal/metrics"
-	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/rs/zerolog"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -16,6 +15,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
 
 // HealthCheckFunc is a function that checks if a connection is healthy
@@ -46,6 +46,32 @@ func DefaultForwarderConfig() ForwarderConfig {
 		HealthCheckFunc:     DefaultHealthCheck,
 		MaxConnAge:          5 * time.Minute,
 	}
+}
+
+// byteCodec is a generic gRPC codec that just passes raw bytes through.
+type byteCodec struct{}
+
+func (byteCodec) Marshal(v any) ([]byte, error) {
+	switch b := v.(type) {
+	case []byte:
+		return b, nil
+	default:
+		return nil, fmt.Errorf("byteCodec: unexpected type %T", v)
+	}
+}
+
+func (byteCodec) Unmarshal(data []byte, v any) error {
+	switch b := v.(type) {
+	case *[]byte:
+		*b = data
+		return nil
+	default:
+		return fmt.Errorf("byteCodec: unexpected type %T", v)
+	}
+}
+
+func (byteCodec) Name() string {
+	return "bytecodec"
 }
 
 // NodeResolver resolves node IDs to addresses
@@ -209,6 +235,7 @@ func (f *RequestForwarder) GetConn(ctx context.Context, target string) (*grpc.Cl
 }
 
 // Forward forwards a unary request to the target node transparently.
+// It uses byteCodec to handle any request/response type as raw bytes.
 func (f *RequestForwarder) Forward(ctx context.Context, targetNodeID string, req any, method string) (any, error) {
 	addr := f.resolver.GetNodeAddr(targetNodeID)
 	if addr == "" {
@@ -220,52 +247,38 @@ func (f *RequestForwarder) Forward(ctx context.Context, targetNodeID string, req
 		return nil, status.Errorf(codes.Unavailable, "forwarder: get conn: %v", err)
 	}
 
-	// Since we don't know the response type here, we need to handle it carefully.
-	// For "fully transparent" proxying in an interceptor, we ideally want to return
-	// the same type the server expects.
-	// However, we can use the original req's type to help with discovery if needed.
-
 	// Propagate metadata
 	if md, ok := metadata.FromIncomingContext(ctx); ok {
 		ctx = metadata.NewOutgoingContext(ctx, md)
 	}
 
-	// We use the rawCodec to handle the request/response as bytes or proto.Message.
-	// If it's already a proto.Message, grpc will use the default codec unless we override.
-	// But in an interceptor, we are already unmarshaled.
-
-	// Since we are in Longbow, we know most methods are FlightService.
-	// For now, let's implement a typed forward for known methods if we can,
-	// or fallback to a smarter generic approach.
-
-	var reply any
-	switch method {
-	case "/arrow.flight.protocol.FlightService/GetFlightInfo":
-		reply = &flight.FlightInfo{}
-	case "/arrow.flight.protocol.FlightService/GetSchema":
-		reply = &flight.SchemaResult{}
-	case "/arrow.flight.protocol.FlightService/ListFlights",
-		"/arrow.flight.protocol.FlightService/DoAction",
-		"/arrow.flight.protocol.FlightService/ListActions",
-		"/arrow.flight.protocol.FlightService/DoPut",
-		"/arrow.flight.protocol.FlightService/DoGet",
-		"/arrow.flight.protocol.FlightService/DoExchange",
-		"/arrow.flight.protocol.FlightService/Handshake":
-		return nil, status.Errorf(codes.InvalidArgument, "Method %s is a streaming method, use ForwardStream", method)
+	// Marshal request if it's a proto.Message
+	var requestBytes []byte
+	switch r := req.(type) {
+	case []byte:
+		requestBytes = r
+	case proto.Message:
+		var err error
+		requestBytes, err = proto.Marshal(r)
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "forwarder: failed to marshal request: %v", err)
+		}
 	default:
-		return nil, status.Errorf(codes.Unimplemented, "forwarding for method %s not yet implemented", method)
+		return nil, status.Errorf(codes.Internal, "forwarder: unexpected request type %T", req)
 	}
 
-	err = conn.Invoke(ctx, method, req, reply)
+	var responseBytes []byte
+	err = conn.Invoke(ctx, method, requestBytes, &responseBytes, grpc.ForceCodec(byteCodec{}))
 	if err != nil {
 		return nil, err
 	}
 
-	return reply, nil
+	return responseBytes, nil
 }
 
 // ForwardStream handles transparent proxying for streaming gRPC calls.
-func (f *RequestForwarder) ForwardStream(ctx context.Context, targetNodeID string, serverStream grpc.ServerStream, method string) error {
+// initialRequest is optional and should be provided if the request has already been consumed by the handler (e.g., in Server-Streaming RPCs like DoGet).
+func (f *RequestForwarder) ForwardStream(ctx context.Context, targetNodeID string, serverStream grpc.ServerStream, method string, initialRequest any) error {
 	addr := f.resolver.GetNodeAddr(targetNodeID)
 	if addr == "" {
 		return status.Errorf(codes.Unavailable, "forwarder: unknown node ID %s", targetNodeID)
@@ -281,46 +294,57 @@ func (f *RequestForwarder) ForwardStream(ctx context.Context, targetNodeID strin
 		ctx = metadata.NewOutgoingContext(ctx, md)
 	}
 
-	// Create client stream
-	// We use a custom Desc to handle arbitrary streams
+	// Create client stream using byteCodec for generic proxying
 	desc := &grpc.StreamDesc{
 		ServerStreams: true,
 		ClientStreams: true,
 	}
 
-	clientStream, err := conn.NewStream(ctx, desc, method)
+	clientStream, err := conn.NewStream(ctx, desc, method, grpc.ForceCodec(byteCodec{}))
 	if err != nil {
 		return status.Errorf(codes.Internal, "failed to create client stream: %v", err)
+	}
+
+	// If there's an initial request, send it first
+	if initialRequest != nil {
+		var requestBytes []byte
+		switch r := initialRequest.(type) {
+		case []byte:
+			requestBytes = r
+		case proto.Message:
+			var err error
+			requestBytes, err = proto.Marshal(r)
+			if err != nil {
+				return status.Errorf(codes.Internal, "forwarder: failed to marshal initial request: %v", err)
+			}
+		default:
+			return status.Errorf(codes.Internal, "forwarder: unexpected initial request type %T", initialRequest)
+		}
+		if err := clientStream.SendMsg(requestBytes); err != nil {
+			return status.Errorf(codes.Internal, "forwarder: failed to send initial request: %v", err)
+		}
 	}
 
 	// Bi-directional piping of messages
 	errChan := make(chan error, 2)
 
-	// Server -> Client (Forwarding request/data)
+	// Server -> Client (Forwarding request/data from the client of the proxy to the target server)
 	go func() {
 		for {
-			var msg any
-			switch method {
-			case "/arrow.flight.protocol.FlightService/DoGet":
-				msg = &flight.Ticket{}
-			case "/arrow.flight.protocol.FlightService/DoAction":
-				msg = &flight.Action{}
-			case "/arrow.flight.protocol.FlightService/Handshake":
-				msg = &flight.HandshakeRequest{}
-			case "/arrow.flight.protocol.FlightService/ListFlights":
-				msg = &flight.Criteria{}
-			case "/arrow.flight.protocol.FlightService/ListActions":
-				msg = &flight.Empty{}
-			default:
-				msg = &flight.FlightData{}
-			}
-
-			if err := serverStream.RecvMsg(msg); err != nil {
+			var msg []byte
+			if err := serverStream.RecvMsg(&msg); err != nil {
 				_ = clientStream.CloseSend()
 				if err == io.EOF {
 					errChan <- nil
 				} else {
-					errChan <- err
+					// For server-streaming RPCs where the request is already consumed, 
+					// RecvMsg will fail. We treat this as "nothing more to receive" 
+					// if we already sent the initial request.
+					if initialRequest != nil {
+						errChan <- nil
+					} else {
+						errChan <- err
+					}
 				}
 				return
 			}
@@ -334,23 +358,8 @@ func (f *RequestForwarder) ForwardStream(ctx context.Context, targetNodeID strin
 	// Client -> Server (Returning data/response)
 	go func() {
 		for {
-			var msg any
-			switch method {
-			case "/arrow.flight.protocol.FlightService/DoAction":
-				msg = &flight.Result{}
-			case "/arrow.flight.protocol.FlightService/DoPut":
-				msg = &flight.PutResult{}
-			case "/arrow.flight.protocol.FlightService/ListFlights":
-				msg = &flight.FlightInfo{}
-			case "/arrow.flight.protocol.FlightService/ListActions":
-				msg = &flight.ActionType{}
-			case "/arrow.flight.protocol.FlightService/Handshake":
-				msg = &flight.HandshakeResponse{}
-			default:
-				msg = &flight.FlightData{}
-			}
-
-			if err := clientStream.RecvMsg(msg); err != nil {
+			var msg []byte
+			if err := clientStream.RecvMsg(&msg); err != nil {
 				if err == io.EOF {
 					errChan <- nil
 				} else {

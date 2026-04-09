@@ -1,12 +1,15 @@
 package store
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sync"
 	"time"
 
 	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/storage"
+	"github.com/apache/arrow-go/v18/arrow"
 )
 
 type RateLimitConfig struct {
@@ -226,18 +229,29 @@ func (vs *VectorStore) MigrateNamespace(config NamespaceMigrationConfig) (*Names
 		newName := config.TargetNamespace + "/" + dataset[len(config.SourceNamespace)+1:]
 
 		if config.CopyMode {
-			if err := vs.CloneDataset(dataset, newName); err != nil {
+			if vs.engine != nil && vs.engine.GetSnapshotBackend() != nil {
+				if err := vs.CloneDataset(context.Background(), dataset, newName, vs.engine.GetSnapshotBackend()); err != nil {
+					result.FailedDatasets = append(result.FailedDatasets, dataset)
+					continue
+				}
+			} else {
 				result.FailedDatasets = append(result.FailedDatasets, dataset)
 				continue
 			}
 		} else {
-			data, err := vs.ExportDataset(dataset)
-			if err != nil {
-				result.FailedDatasets = append(result.FailedDatasets, dataset)
-				continue
-			}
+			if vs.engine != nil && vs.engine.GetSnapshotBackend() != nil {
+				_, err := vs.ExportDataset(dataset, vs.engine.GetSnapshotBackend())
+				if err != nil {
+					result.FailedDatasets = append(result.FailedDatasets, dataset)
+					continue
+				}
 
-			if err := vs.ImportDataset(newName, data); err != nil {
+				_, err = vs.ImportDataset(context.Background(), newName, vs.engine.GetSnapshotBackend(), nil)
+				if err != nil {
+					result.FailedDatasets = append(result.FailedDatasets, dataset)
+					continue
+				}
+			} else {
 				result.FailedDatasets = append(result.FailedDatasets, dataset)
 				continue
 			}
@@ -252,23 +266,22 @@ func (vs *VectorStore) MigrateNamespace(config NamespaceMigrationConfig) (*Names
 	return result, nil
 }
 
-func (vs *VectorStore) ExportDataset(name string) ([]byte, error) {
-	_, ok := vs.getDataset(name)
-	if !ok {
-		return nil, errors.New("dataset not found")
-	}
-
-	return nil, errors.New("export not implemented - requires serialization logic")
+func (vs *VectorStore) ExportDataset(name string, backend storage.SnapshotBackend) (int64, error) {
+	datasetIO := NewDatasetIO(vs)
+	return datasetIO.ExportToParquet(vs.ctx, name, backend)
 }
 
-func (vs *VectorStore) ImportDataset(name string, data []byte) error {
-	return errors.New("import not implemented - requires deserialization logic")
+func (vs *VectorStore) ImportDataset(ctx context.Context, name string, backend storage.SnapshotBackend, schema *arrow.Schema) (int64, error) {
+	datasetIO := NewDatasetIO(vs)
+	return datasetIO.ImportFromParquet(ctx, name, backend, schema)
 }
 
-func (vs *VectorStore) CloneDataset(source, target string) error {
-	data, err := vs.ExportDataset(source)
+func (vs *VectorStore) CloneDataset(ctx context.Context, source, target string, backend storage.SnapshotBackend) error {
+	datasetIO := NewDatasetIO(vs)
+	_, err := datasetIO.ExportToParquet(ctx, source, backend)
 	if err != nil {
 		return err
 	}
-	return vs.ImportDataset(target, data)
+	_, err = datasetIO.ImportFromParquet(ctx, target, backend, nil)
+	return err
 }

@@ -1,6 +1,7 @@
 //go:build gpu && darwin && arm64
 
 package metal
+
 import "github.com/23skdu/longbow/internal/gpu/types"
 
 /*
@@ -305,6 +306,10 @@ func (idx *MetalHybridIndex) Close() error {
 
 func (idx *MetalHybridIndex) Backend() types.GPUBackend {
 	return types.BackendMetal
+}
+
+func (idx *MetalHybridIndex) DeviceID() int {
+	return 0
 }
 
 func (idx *MetalHybridIndex) GetDeviceInfo() (*types.GPUInfo, error) {

@@ -987,6 +987,10 @@ func (idx *MetalIndexOptimized) Backend() types.GPUBackend {
 	return types.BackendMetal
 }
 
+func (idx *MetalIndexOptimized) DeviceID() int {
+	return 0
+}
+
 func (idx *MetalIndexOptimized) GetDeviceInfo() (*types.GPUInfo, error) {
 	return &types.GPUInfo{
 		Backend:  types.BackendMetal,

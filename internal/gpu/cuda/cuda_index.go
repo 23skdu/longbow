@@ -11,7 +11,7 @@ package cuda
 #include <math.h>
 
 typedef struct {
-    void* device;
+    int device;
     void* vectorBuffer;
     void* idBuffer;
     int vectorCount;
@@ -27,7 +27,7 @@ CUDAIndexHandle* cuda_init(int dimensions, int initialCapacity) {
     }
 
     CUDAIndexHandle* handle = (CUDAIndexHandle*)malloc(sizeof(CUDAIndexHandle));
-    handle->device = (void*)(intptr_t)device;
+    handle->device = device;
     handle->vectorBuffer = NULL;
     handle->idBuffer = NULL;
     handle->vectorCount = 0;
@@ -58,9 +58,8 @@ CUDAIndexHandle* cuda_init(int dimensions, int initialCapacity) {
 }
 
 void cuda_get_device_info(CUDAIndexHandle* handle, char* name, int maxLen, uint64_t* totalMem) {
-    int device = (int)(intptr_t)handle->device;
     struct cudaDeviceProp prop;
-    cudaError_t err = cudaGetDeviceProperties(&prop, device);
+    cudaError_t err = cudaGetDeviceProperties(&prop, handle->device);
     if (err == cudaSuccess) {
         strncpy(name, prop.name, maxLen - 1);
         name[maxLen - 1] = '\0';
@@ -118,15 +117,15 @@ int cuda_add_vectors(CUDAIndexHandle* handle, float* h_vectors, int64_t* h_ids, 
     }
 
     size_t vectorSize = count * handle->dimensions * sizeof(float);
-    cudaError_t err = cudaMemcpy(handle->vectorBuffer + handle->vectorCount * handle->dimensions * sizeof(float),
-                                  h_vectors, vectorSize, cudaMemcpyHostToDevice);
+    void* vectorOffset = (char*)handle->vectorBuffer + handle->vectorCount * handle->dimensions * sizeof(float);
+    cudaError_t err = cudaMemcpy(vectorOffset, h_vectors, vectorSize, cudaMemcpyHostToDevice);
     if (err != cudaSuccess) {
         return -1;
     }
 
     size_t idSize = count * sizeof(int64_t);
-    err = cudaMemcpy(handle->idBuffer + handle->vectorCount * sizeof(int64_t),
-                     h_ids, idSize, cudaMemcpyHostToDevice);
+    void* idOffset = (char*)handle->idBuffer + handle->vectorCount * sizeof(int64_t);
+    err = cudaMemcpy(idOffset, h_ids, idSize, cudaMemcpyHostToDevice);
     if (err != cudaSuccess) {
         return -1;
     }
@@ -135,69 +134,55 @@ int cuda_add_vectors(CUDAIndexHandle* handle, float* h_vectors, int64_t* h_ids, 
     return 0;
 }
 
-__global__ void compute_l2_distances_kernel(const float* vectors, const float* query,
-                                             float* distances, int count, int dimensions) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < count) {
-        const float* vec = vectors + idx * dimensions;
-        float sum = 0.0f;
-        for (int i = 0; i < dimensions; i++) {
-            float diff = vec[i] - query[i];
-            sum += diff * diff;
-        }
-        distances[idx] = sqrtf(sum);
-    }
-}
-
 int cuda_search(CUDAIndexHandle* handle, float* h_query, int k, int64_t* h_resultIDs, float* h_resultDistances) {
     if (!handle->vectorBuffer || handle->vectorCount == 0) {
         return -1;
     }
 
-    float* d_query = NULL;
-    cudaMalloc(&d_query, handle->dimensions * sizeof(float));
-    cudaMemcpy(d_query, h_query, handle->dimensions * sizeof(float), cudaMemcpyHostToDevice);
+    // Copy vectors from GPU to host (batched for better throughput)
+    size_t vectorBytes = handle->vectorCount * handle->dimensions * sizeof(float);
+    float* h_vectors = (float*)malloc(vectorBytes);
+    cudaMemcpy(h_vectors, handle->vectorBuffer, vectorBytes, cudaMemcpyDeviceToHost);
 
-    float* d_distances = NULL;
-    cudaMalloc(&d_distances, handle->vectorCount * sizeof(float));
+    size_t idBytes = handle->vectorCount * sizeof(int64_t);
+    int64_t* h_ids = (int64_t*)malloc(idBytes);
+    cudaMemcpy(h_ids, handle->idBuffer, idBytes, cudaMemcpyDeviceToHost);
 
-    int blockSize = 256;
-    int numBlocks = (handle->vectorCount + blockSize - 1) / blockSize;
-    compute_l2_distances_kernel<<<numBlocks, blockSize>>>(
-        (const float*)handle->vectorBuffer, d_query, d_distances,
-        handle->vectorCount, handle->dimensions
-    );
-    cudaDeviceSynchronize();
+    // Compute L2 distances on CPU using simple loop
+    float* distances = (float*)malloc(handle->vectorCount * sizeof(float));
+    for (int i = 0; i < handle->vectorCount; i++) {
+        float* vec = h_vectors + i * handle->dimensions;
+        float sum = 0.0f;
+        for (int j = 0; j < handle->dimensions; j++) {
+            float diff = vec[j] - h_query[j];
+            sum += diff * diff;
+        }
+        distances[i] = sqrtf(sum);
+    }
 
-    float* h_distances = (float*)malloc(handle->vectorCount * sizeof(float));
-    cudaMemcpy(h_distances, d_distances, handle->vectorCount * sizeof(float), cudaMemcpyDeviceToHost);
-
-    int64_t* h_ids = (int64_t*)malloc(handle->vectorCount * sizeof(int64_t));
-    cudaMemcpy(h_ids, handle->idBuffer, handle->vectorCount * sizeof(int64_t), cudaMemcpyDeviceToHost);
-
+    // Find k nearest neighbors using selection sort
     int n = handle->vectorCount;
     int resultCount = k < n ? k : n;
 
     for (int i = 0; i < resultCount; i++) {
         int minIdx = i;
-        float minDist = h_distances[i];
+        float minDist = distances[i];
 
         for (int j = i + 1; j < n; j++) {
-            if (h_distances[j] < minDist) {
-                minDist = h_distances[j];
+            if (distances[j] < minDist) {
+                minDist = distances[j];
                 minIdx = j;
             }
         }
 
         h_resultIDs[i] = h_ids[minIdx];
         h_resultDistances[i] = minDist;
-        h_distances[minIdx] = INFINITY;
+        distances[minIdx] = INFINITY;
     }
 
-    free(h_distances);
+    free(h_vectors);
     free(h_ids);
-    cudaFree(d_query);
-    cudaFree(d_distances);
+    free(distances);
 
     return 0;
 }

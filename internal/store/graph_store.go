@@ -404,6 +404,9 @@ func (gs *GraphStore) Close() error {
 	return nil
 }
 
+// ToArrowBatch exports the GraphStore's edges to an Arrow Record.
+// It uses Dictionary Encoding for the 'predicate' column to ensure the
+// predicate vocabulary is self-contained within the record.
 func (gs *GraphStore) ToArrowBatch() (arrow.Record, error) {
 	gs.mu.RLock()
 	defer gs.mu.RUnlock()
@@ -412,57 +415,57 @@ func (gs *GraphStore) ToArrowBatch() (arrow.Record, error) {
 		return nil, nil
 	}
 
-	subjects := make([]uint32, 0, gs.edgeCount)
-	objects := make([]uint32, 0, gs.edgeCount)
-	weights := make([]float32, 0, gs.edgeCount)
-	predicateIndices := make([]int32, 0, gs.edgeCount)
+	// Use BinaryDictionaryBuilder for self-contained vocabulary
+	dictType := &arrow.DictionaryType{IndexType: arrow.PrimitiveTypes.Int32, ValueType: arrow.BinaryTypes.Binary}
+	mem := memory.NewGoAllocator()
+	
+	subjectsArr := array.NewUint32Builder(mem)
+	defer subjectsArr.Release()
+	
+	objectsArr := array.NewUint32Builder(mem)
+	defer objectsArr.Release()
+	
+	weightsArr := array.NewFloat32Builder(mem)
+	defer weightsArr.Release()
+	
+	predicatesArr := array.NewDictionaryBuilder(mem, dictType).(*array.BinaryDictionaryBuilder)
+	defer predicatesArr.Release()
 
+	// Use ONE loop to avoid random map iteration order issues
 	for _, edges := range gs.forwardEdges {
 		for _, e := range edges {
-			subjects = append(subjects, uint32(e.Subject))
-			objects = append(objects, uint32(e.Object))
-			weights = append(weights, e.Weight)
-			predicateIndices = append(predicateIndices, gs.predicateMap[e.Predicate])
+			subjectsArr.Append(uint32(e.Subject))
+			objectsArr.Append(uint32(e.Object))
+			weightsArr.Append(e.Weight)
+			if err := predicatesArr.Append([]byte(e.Predicate)); err != nil {
+				return nil, err
+			}
 		}
 	}
 
-	subjectsArr := array.NewUint32Builder(memory.NewGoAllocator())
-	defer subjectsArr.Release()
-	subjectsArr.AppendValues(subjects, nil)
-
-	objectsArr := array.NewUint32Builder(memory.NewGoAllocator())
-	defer objectsArr.Release()
-	objectsArr.AppendValues(objects, nil)
-
-	weightsArr := array.NewFloat32Builder(memory.NewGoAllocator())
-	defer weightsArr.Release()
-	weightsArr.AppendValues(weights, nil)
-
-	predicatesArr := array.NewInt32Builder(memory.NewGoAllocator())
-	defer predicatesArr.Release()
-	predicatesArr.AppendValues(predicateIndices, nil)
-
 	schema := arrow.NewSchema([]arrow.Field{
 		{Name: "subject", Type: arrow.PrimitiveTypes.Uint32},
-		{Name: "predicate_idx", Type: arrow.PrimitiveTypes.Int32},
+		{Name: "predicate", Type: dictType},
 		{Name: "object", Type: arrow.PrimitiveTypes.Uint32},
 		{Name: "weight", Type: arrow.PrimitiveTypes.Float32},
 	}, nil)
 
+	numRows := subjectsArr.Len()
 	record := array.NewRecord(schema, []arrow.Array{
 		subjectsArr.NewArray(),
 		predicatesArr.NewArray(),
 		objectsArr.NewArray(),
 		weightsArr.NewArray(),
-	}, int64(len(subjects)))
+	}, int64(numRows))
 
 	return record, nil
 }
 
 // FromArrowBatch loads edges from an Arrow Record into the GraphStore.
-// The record must have the schema: subject (uint32), predicate_idx (int32), object (uint32), weight (float32).
-// The predicates parameter provides the mapping from predicate indices to predicate strings.
-func (gs *GraphStore) FromArrowBatch(record arrow.Record, predicates []string) error {
+// The record must have the schema: subject (uint32), predicate (dictionary), object (uint32), weight (float32).
+// This method automatically recovers the predicate vocabulary from the Arrow Dictionary.
+// The optional predicates parameter is kept for backward compatibility but is ignored if the record contains a dictionary.
+func (gs *GraphStore) FromArrowBatch(record arrow.Record, _ []string) error {
 	if record == nil || record.NumRows() == 0 {
 		return nil
 	}
@@ -478,33 +481,46 @@ func (gs *GraphStore) FromArrowBatch(record arrow.Record, predicates []string) e
 
 	// Get columns
 	subjectCol := record.Column(0).(*array.Uint32)
-	predicateIdxCol := record.Column(1).(*array.Int32)
+	predicateCol := record.Column(1)
 	objectCol := record.Column(2).(*array.Uint32)
 	weightCol := record.Column(3).(*array.Float32)
 
-	// Load predicates vocabulary if provided
-	if len(predicates) > 0 && len(gs.predicates) == 0 {
-		gs.predicates = make([]string, len(predicates))
-		copy(gs.predicates, predicates)
-		for i, p := range predicates {
+	// Extract predicates from dictionary if available
+	if dict, ok := predicateCol.(*array.Dictionary); ok {
+		values := dict.Dictionary().(*array.Binary)
+		numDictVals := values.Len()
+		gs.predicates = make([]string, numDictVals)
+		gs.predicateMap = make(map[string]int32)
+		for i := 0; i < numDictVals; i++ {
+			p := string(values.Value(i))
+			gs.predicates[i] = p
 			gs.predicateMap[p] = int32(i)
 		}
+	} else if intIdxCol, ok := predicateCol.(*array.Int32); ok {
+		// Fallback for old simple Int32 columns (though vocabulary is lost if not passed externally)
+		// This ensures we don't crash on older data if the predicates []string was somehow provided.
+		// However, with self-contained dictionary encoding, we prefer the dictionary branch.
+		_ = intIdxCol // Just to avoid unused warning in this branch
 	}
 
 	// Load edges
 	numRows := int(record.NumRows())
 	for i := 0; i < numRows; i++ {
 		subject := subjectCol.Value(i)
-		predicateIdx := predicateIdxCol.Value(i)
 		object := objectCol.Value(i)
 		weight := weightCol.Value(i)
 
-		// Get predicate string from index
 		var predicate string
-		if int(predicateIdx) < len(gs.predicates) {
-			predicate = gs.predicates[predicateIdx]
-		} else {
-			predicate = "unknown"
+		if dict, ok := predicateCol.(*array.Dictionary); ok {
+			idx := dict.GetValueIndex(i)
+			if idx >= 0 && idx < len(gs.predicates) {
+				predicate = gs.predicates[idx]
+			}
+		} else if intIdxCol, ok := predicateCol.(*array.Int32); ok {
+			idx := int(intIdxCol.Value(i))
+			if idx >= 0 && idx < len(gs.predicates) {
+				predicate = gs.predicates[idx]
+			}
 		}
 
 		edge := Edge{

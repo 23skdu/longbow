@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"io"
 	"sync"
 	"testing"
@@ -100,7 +101,7 @@ func runBenchmark(b *testing.B, mem memory.Allocator, schema *arrow.Schema, rec 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		s.runIndexWorker(mem)
+		s.runIndexWorker(context.Background())
 	}()
 
 	b.ResetTimer()

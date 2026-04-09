@@ -11,7 +11,8 @@ import (
 )
 
 func TestGlobalSearchCoordinator_Merge(t *testing.T) {
-	coord := NewGlobalSearchCoordinator(zerolog.Nop())
+	pool := NewFlightClientPool(DefaultFlightClientPoolConfig())
+	coord := NewGlobalSearchCoordinator(zerolog.Nop(), pool)
 	defer func() { _ = coord.Close() }()
 
 	// Local results: [1 (1.0), 3 (0.8)]
@@ -34,7 +35,8 @@ func TestGlobalSearchCoordinator_Merge(t *testing.T) {
 }
 
 func TestGlobalSearchCoordinator_NoPeers(t *testing.T) {
-	coord := NewGlobalSearchCoordinator(zerolog.Nop())
+	pool := NewFlightClientPool(DefaultFlightClientPoolConfig())
+	coord := NewGlobalSearchCoordinator(zerolog.Nop(), pool)
 	defer func() { _ = coord.Close() }()
 
 	req := qry.VectorSearchRequest{K: 5}

@@ -94,7 +94,9 @@ func PartitionProxyStreamInterceptor(rm *RingManager, forwarder *RequestForwarde
 		}
 
 		// Forwarding logic
-		return forwarder.ForwardStream(ctx, owner, ss, info.FullMethod)
+		// For a StreamInterceptor, the request message hasn't been consumed yet,
+		// so ForwardStream will correctly receive it via RecvMsg.
+		return forwarder.ForwardStream(ctx, owner, ss, info.FullMethod, nil)
 	}
 }
 

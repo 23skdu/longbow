@@ -1,7 +1,11 @@
 package store
 
 import (
+	"bytes"
 	"testing"
+
+	"github.com/apache/arrow-go/v18/arrow/ipc"
+	"github.com/stretchr/testify/require"
 )
 
 // TestGraphStore_AddEdge tests adding edges to the graph store
@@ -157,8 +161,6 @@ func TestGraphStore_FromArrowBatch(t *testing.T) {
 	_ = gs.AddEdge(Edge{Subject: VectorID(1), Predicate: "likes", Object: VectorID(11), Weight: 0.8})
 	_ = gs.AddEdge(Edge{Subject: VectorID(2), Predicate: "owns", Object: VectorID(12), Weight: 0.5})
 
-	predicates := gs.PredicateVocabulary()
-
 	// Export to Arrow
 	record, err := gs.ToArrowBatch()
 	if err != nil {
@@ -175,7 +177,7 @@ func TestGraphStore_FromArrowBatch(t *testing.T) {
 
 	// Create new store and load from Arrow
 	gs2 := NewGraphStore()
-	err = gs2.FromArrowBatch(record, predicates)
+	err = gs2.FromArrowBatch(record, nil) // Pass nil: predicates should be recovered from dictionary
 	if err != nil {
 		t.Fatalf("FromArrowBatch failed: %v", err)
 	}
@@ -188,7 +190,7 @@ func TestGraphStore_FromArrowBatch(t *testing.T) {
 	// Verify predicates loaded
 	vocab := gs2.PredicateVocabulary()
 	if len(vocab) != 2 {
-		t.Errorf("expected 2 predicates, got %d", len(vocab))
+		t.Errorf("expected 2 predicates, got %d: %v", len(vocab), vocab)
 	}
 
 	// Verify edges
@@ -238,8 +240,6 @@ func TestGraphStore_RoundTrip(t *testing.T) {
 		_ = gs1.AddEdge(e)
 	}
 
-	predicates := gs1.PredicateVocabulary()
-
 	// Export
 	record, err := gs1.ToArrowBatch()
 	if err != nil {
@@ -249,10 +249,11 @@ func TestGraphStore_RoundTrip(t *testing.T) {
 
 	// Import to new store
 	gs2 := NewGraphStore()
-	err = gs2.FromArrowBatch(record, predicates)
+	err = gs2.FromArrowBatch(record, nil) // Self-contained loading
 	if err != nil {
 		t.Fatalf("FromArrowBatch failed: %v", err)
 	}
+	defer gs2.Close()
 
 	// Verify counts match
 	if gs1.EdgeCount() != gs2.EdgeCount() {
@@ -500,4 +501,51 @@ func TestGraphStore_TraverseWeighted(t *testing.T) {
 	if !foundWeakPath {
 		t.Errorf("Did not find weak path via node 2")
 	}
+}
+
+// TestGraphStore_IPCRoundTrip verifies that Arrow IPC correctly preserves the dictionary
+func TestGraphStore_IPCRoundTrip(t *testing.T) {
+	gs1 := NewGraphStore()
+	err := gs1.AddEdge(Edge{Subject: 1, Predicate: "owns", Object: 10, Weight: 1.0})
+	require.NoError(t, err)
+	err = gs1.AddEdge(Edge{Subject: 2, Predicate: "likes", Object: 20, Weight: 0.5})
+	require.NoError(t, err)
+
+	require.Equal(t, 2, gs1.EdgeCount(), "gs1 should have 2 edges")
+
+	// Export to Record
+	record, err := gs1.ToArrowRecord()
+	require.NoError(t, err)
+	require.NotNil(t, record)
+	defer record.Release()
+
+	require.Equal(t, int64(2), record.NumRows(), "record should have 2 rows")
+
+	// 1. Serialize to IPC Byte Stream
+	var buf bytes.Buffer
+	writer := ipc.NewWriter(&buf, ipc.WithSchema(record.Schema()))
+	err = writer.Write(record)
+	require.NoError(t, err)
+	err = writer.Close()
+	require.NoError(t, err)
+
+	// 2. Deserialize from IPC Byte Stream
+	reader, err := ipc.NewReader(&buf)
+	require.NoError(t, err)
+	defer reader.Release()
+
+	require.True(t, reader.Next(), "No records found in IPC stream")
+	recoveredRecord := reader.Record()
+	require.NotNil(t, recoveredRecord)
+	require.Equal(t, int64(2), recoveredRecord.NumRows(), "recovered record should have 2 rows")
+
+	// 3. Import to new GraphStore
+	gs2 := NewGraphStore()
+	err = gs2.FromArrowRecord(recoveredRecord, nil)
+	require.NoError(t, err)
+
+	// 4. Verify data integrity
+	require.Equal(t, 2, gs2.EdgeCount(), "recovered store should have 2 edges")
+	vocab := gs2.PredicateVocabulary()
+	require.Equal(t, 2, len(vocab), "expected 2 predicates recovered from IPC dictionary")
 }

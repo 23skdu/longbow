@@ -10,6 +10,15 @@ import (
 // =============================================================================
 
 var (
+	// SearchRequestsTotal counts total number of search requests (vector, hybrid, etc.)
+	SearchRequestsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_search_requests_total",
+			Help: "Total number of search requests processed",
+		},
+		[]string{"dataset", "type"},
+	)
+
 	// SearchResultPool metrics
 	SearchResultPoolGetTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{

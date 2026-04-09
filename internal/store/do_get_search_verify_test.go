@@ -97,7 +97,8 @@ func TestDoGetSearch_Integration(t *testing.T) {
 	}, 5*time.Second, 100*time.Millisecond, "Index should reach 3 records")
 
 	// 2. Setup Client (GlobalSearchCoordinator)
-	coord := NewGlobalSearchCoordinator(logger)
+	poolClient := NewFlightClientPool(DefaultFlightClientPoolConfig())
+	coord := NewGlobalSearchCoordinator(logger, poolClient)
 	defer func() { _ = coord.Close() }()
 
 	// 3. Execute Search

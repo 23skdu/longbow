@@ -441,6 +441,10 @@ func (e *StorageEngine) SetSnapshotBackend(backend SnapshotBackend) {
 	e.snapshotBackend = backend
 }
 
+func (e *StorageEngine) GetSnapshotBackend() SnapshotBackend {
+	return e.snapshotBackend
+}
+
 func (e *StorageEngine) WriteWAL(name string, rec arrow.RecordBatch, seq uint64, ts int64) error {
 	return e.WriteToWAL(name, rec, seq, ts)
 }

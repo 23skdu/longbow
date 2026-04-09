@@ -112,6 +112,10 @@ func (idx *ColumnInvertedIndex) IndexRecord(datasetName string, recordIdx int, r
 				valueStr = fmt.Sprintf("%g", arr.Value(rowIdx))
 			case *array.Boolean:
 				valueStr = fmt.Sprintf("%t", arr.Value(rowIdx))
+			case *array.Date64:
+				valueStr = fmt.Sprintf("%d", arr.Value(rowIdx))
+			case *array.Timestamp:
+				valueStr = fmt.Sprintf("%d", arr.Value(rowIdx))
 			default:
 				// Skip unsupported types
 				continue

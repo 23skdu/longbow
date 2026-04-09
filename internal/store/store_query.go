@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
 	"github.com/apache/arrow-go/v18/arrow"
@@ -24,6 +25,7 @@ import (
 	"github.com/23skdu/longbow/internal/metrics"
 	qry "github.com/23skdu/longbow/internal/query"
 	lbtypes "github.com/23skdu/longbow/internal/store/types"
+	"github.com/23skdu/longbow/internal/tracing"
 )
 
 func (s *VectorStore) ListFlights(c *flight.Criteria, stream flight.FlightService_ListFlightsServer) error {
@@ -146,8 +148,20 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 	defer mem.Release()
 
 	// Handle Search Request via DoGet (Native Arrow Streaming)
+	md, _ := metadata.FromIncomingContext(stream.Context())
+	isGlobal := false
+	if vals := md.Get("x-longbow-global"); len(vals) > 0 && vals[0] == "true" {
+		isGlobal = true
+	}
+
 	switch {
 	case query.Search != nil:
+		if isGlobal {
+			query.Search.LocalOnly = false
+		} else {
+			// Default to local if not explicitly global or already set in ticket
+			// Note: ticket might already have local_only=true set by a coordinator
+		}
 		return s.handleDoGetSearch(query.Search, stream, mem)
 	case query.SearchByID != nil:
 		return s.handleDoGetSearchByID(query.SearchByID, stream, mem)
@@ -629,6 +643,28 @@ func findVectorColumn(rec arrow.RecordBatch) arrow.Array {
 
 // handleDoGetSearch executes a search request and streams results as Arrow Records
 func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, stream flight.FlightService_DoGetServer, mem memory.Allocator) error {
+	start := time.Now()
+
+	_, span := tracing.CreateSpan(stream.Context(), "DoGetSearch")
+	if span != nil {
+		span.SetAttributes(
+			"component", "search",
+			"level", "hotpath",
+			"dataset", req.Dataset,
+		)
+		defer span.End()
+	}
+
+	// Increment search requests counter
+	metrics.SearchRequestsTotal.WithLabelValues(req.Dataset, "vector").Inc()
+
+	// Record to auto-scaler (Part 1.1)
+	if s.scaler != nil {
+		defer func() {
+			s.scaler.RecordSearch(time.Since(start))
+		}()
+	}
+
 	// 1. Validate Request
 	if req.K < 1 {
 		return status.Error(codes.InvalidArgument, "k must be at least 1")

@@ -148,6 +148,78 @@ func (r *EmbeddingModelRegistry) GetCache() *EmbeddingCache {
 	return r.cache
 }
 
+type ModelHealthStatus struct {
+	ModelName   string    `json:"model_name"`
+	Provider    string    `json:"provider"`
+	Status      string    `json:"status"` // "healthy", "degraded", "unhealthy"
+	LastChecked time.Time `json:"last_checked"`
+	LatencyMs   int64     `json:"latency_ms"`
+	ErrorCount  int       `json:"error_count"`
+}
+
+func (r *EmbeddingModelRegistry) ListAllModels() map[string][]ModelVersion {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	result := make(map[string][]ModelVersion)
+	for provider, models := range r.models {
+		versions := make([]ModelVersion, 0, len(models))
+		for _, v := range models {
+			versions = append(versions, v)
+		}
+		result[provider] = versions
+	}
+	return result
+}
+
+func (r *EmbeddingModelRegistry) UpdateModelVersion(provider, modelName string, version ModelVersion) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.models[provider] == nil {
+		return fmt.Errorf("provider %s not found", provider)
+	}
+	if _, ok := r.models[provider][modelName]; !ok {
+		return fmt.Errorf("model %s not found in provider %s", modelName, provider)
+	}
+	r.models[provider][modelName] = version
+	return nil
+}
+
+func (r *EmbeddingModelRegistry) SetDefaultModel(provider, modelName string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.models[provider] == nil {
+		return fmt.Errorf("provider %s not found", provider)
+	}
+	for name := range r.models[provider] {
+		original := r.models[provider][name]
+		isDefault := (name == modelName)
+		r.models[provider][name] = ModelVersion{
+			Version:   original.Version,
+			ModelName: original.ModelName,
+			Provider:  original.Provider,
+			CreatedAt: original.CreatedAt,
+			IsDefault: isDefault,
+			Dimension: original.Dimension,
+			Checksum:  original.Checksum,
+		}
+	}
+	return nil
+}
+
+func (r *EmbeddingModelRegistry) GetDefaultModel(provider string) (ModelVersion, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if r.models[provider] == nil {
+		return ModelVersion{}, false
+	}
+	for _, v := range r.models[provider] {
+		if v.IsDefault {
+			return v, true
+		}
+	}
+	return ModelVersion{}, false
+}
+
 func NewEmbeddingGenerator(config EmbeddingConfig) (EmbeddingGenerator, error) {
 	switch config.Provider {
 	case "openai":

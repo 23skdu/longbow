@@ -29,4 +29,22 @@ spec:
           type: Utilization
           averageUtilization: {{ .Values.autoscaling.targetMemoryUtilizationPercentage }}
     {{- end }}
+    {{- if .Values.autoscaling.targetSearchQPS }}
+    - type: Pods
+      pods:
+        metric:
+          name: longbow_search_requests_total_rate
+        target:
+          type: AverageValue
+          averageValue: {{ .Values.autoscaling.targetSearchQPS }}
+    {{- end }}
+    {{- if .Values.autoscaling.targetSearchLatencyMs }}
+    - type: Pods
+      pods:
+        metric:
+          name: longbow_search_latency_seconds_p99
+        target:
+          type: AverageValue
+          averageValue: {{ div .Values.autoscaling.targetSearchLatencyMs 1000 }}s
+    {{- end }}
 {{- end }}

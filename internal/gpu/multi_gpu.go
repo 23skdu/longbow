@@ -324,23 +324,22 @@ func (m *MultiGPUManager) EncodePQ(vectors []float32) ([]byte, error) {
 		status = "error"
 	}
 
-	metrics.PQEncodingDuration.WithLabelValues("multi_gpu", fmt.Sprintf("%d", len(vectors)/device.Info.MemoryMB)).Observe(duration.Seconds()) // Dummy dimension check or similar
+	metrics.PQEncodingDuration.WithLabelValues("multi_gpu", fmt.Sprintf("%d", len(vectors)/int(device.Info.MemoryMB))).Observe(duration.Seconds())
 	metrics.PQOperationsTotal.WithLabelValues("multi_gpu", "encode", status).Inc()
 
 	return codes, err
 }
 
-
 func (m *MultiGPUManager) SearchMerged(query []float32, k int) ([]int64, []float32, error) {
 	allIDs, allDistances, allErrors := m.SearchAllDevices(query, k)
-	
+
 	// Check for errors
 	for _, err := range allErrors {
 		if err != nil {
 			return nil, nil, err
 		}
 	}
-	
+
 	return m.mergeResults(allIDs, allDistances, k)
 }
 

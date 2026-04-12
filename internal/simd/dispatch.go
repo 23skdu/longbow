@@ -158,14 +158,17 @@ func initializeDispatch() {
 		euclideanDistanceVerticalBatchImpl = euclideanVerticalBatchAVX2
 		euclideanDistanceSQ8BatchImpl = euclideanSQ8BatchAVX2
 		euclideanDistanceF16BatchImpl = euclideanF16BatchAVX2
-		andBytesImpl = andBytesGeneric
+		andBytesImpl = andBytesAVX2
+		orBytesImpl = orBytesAVX2
+		notBytesImpl = notBytesGeneric
+		isAllZerosImpl = isAllZerosAVX2
 		euclideanDistanceF16Impl = euclideanF16AVX2
 		cosineDistanceF16Impl = cosineF16AVX2
 		dotProductF16Impl = dotF16AVX2
 		euclideanDistanceFloat64Impl = euclideanFloat64AVX2
 		cosineDistanceFloat64Impl = cosineFloat64Unrolled4x // Fallback for now
-		euclideanDistanceInt8Impl = euclideanInt8AVX2
-		euclideanDistanceInt16Impl = euclideanInt16AVX2
+		euclideanDistanceInt8Impl = euclideanDistanceInt8AVX2
+		euclideanDistanceInt16Impl = euclideanDistanceInt16AVX2
 	case "neon":
 		euclideanDistanceImpl = euclideanNEON
 		euclideanDistance384Impl = euclidean384NEON
@@ -192,6 +195,9 @@ func initializeDispatch() {
 		euclideanDistanceSQ8BatchImpl = euclideanSQ8BatchGeneric // Fallback to generic for now
 		euclideanDistanceF16BatchImpl = euclideanF16BatchGeneric
 		andBytesImpl = andBytesGeneric
+		orBytesImpl = orBytesGeneric
+		notBytesImpl = notBytesGeneric
+		isAllZerosImpl = isAllZerosGeneric
 		// F16 Kernels
 		// Use generic unrolled implementations for F16 to avoid flaky assembly bugs
 		euclideanDistanceF16Impl = euclideanF16Unrolled4x
@@ -229,6 +235,9 @@ func initializeDispatch() {
 		euclideanDistanceSQ8BatchImpl = euclideanSQ8BatchGeneric
 		euclideanDistanceF16BatchImpl = euclideanF16BatchGeneric
 		andBytesImpl = andBytesGeneric
+		orBytesImpl = orBytesGeneric
+		notBytesImpl = notBytesGeneric
+		isAllZerosImpl = isAllZerosGeneric
 		euclideanDistanceF16Impl = euclideanF16Unrolled4x
 		cosineDistanceF16Impl = cosineF16Unrolled4x
 		dotProductF16Impl = dotF16Unrolled4x

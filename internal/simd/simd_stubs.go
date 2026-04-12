@@ -105,3 +105,10 @@ func euclideanF16BatchAVX2(query []float16.Num, vectors [][]float16.Num, results
 func euclideanF16BatchAVX512(query []float16.Num, vectors [][]float16.Num, results []float32) error {
 	return euclideanF16BatchGeneric(query, vectors, results)
 }
+
+func andBytesAVX2(dst, src []byte) { andBytesGeneric(dst, src) }
+func orBytesAVX2(dst, src []byte)  { orBytesGeneric(dst, src) }
+func isAllZerosAVX2(src []byte) bool { return isAllZerosGeneric(src) }
+
+func euclideanDistanceInt8AVX2(a, b []int8) (float32, error) { return 0, errors.New("not implemented") }
+func euclideanDistanceInt16AVX2(a, b []int16) (float32, error) { return 0, errors.New("not implemented") }

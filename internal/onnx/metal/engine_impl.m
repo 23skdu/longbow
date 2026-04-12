@@ -1,3 +1,6 @@
+//go:build gpu && darwin && arm64
+// +build gpu,darwin,arm64
+
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
 #import <MetalPerformanceShaders/MetalPerformanceShaders.h>

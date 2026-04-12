@@ -23,3 +23,33 @@ func hammingAVX2(a, b []uint64) int {
 	}
 	return hammingAVX2Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a))
 }
+
+//go:noescape
+func andBytesAVX2Kernel(dst, src unsafe.Pointer, n int)
+
+//go:noescape
+func orBytesAVX2Kernel(dst, src unsafe.Pointer, n int)
+
+func andBytesAVX2(dst, src []byte) {
+	if len(dst) == 0 {
+		return
+	}
+	andBytesAVX2Kernel(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), len(dst))
+}
+
+func orBytesAVX2(dst, src []byte) {
+	if len(dst) == 0 {
+		return
+	}
+	orBytesAVX2Kernel(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), len(dst))
+}
+
+//go:noescape
+func isAllZerosAVX2Kernel(src unsafe.Pointer, n int) bool
+
+func isAllZerosAVX2(src []byte) bool {
+	if len(src) == 0 {
+		return true
+	}
+	return isAllZerosAVX2Kernel(unsafe.Pointer(&src[0]), len(src))
+}

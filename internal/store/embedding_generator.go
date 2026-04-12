@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"github.com/23skdu/longbow/internal/onnx"
 )
 
 type EmbeddingGenerator interface {
@@ -731,14 +732,37 @@ func hashString(s string) uint64 {
 }
 
 type onnxEmbeddingModel struct {
-	path string
+	path    string
+	session *onnx.Session
 }
 
 func (m *onnxEmbeddingModel) Inference(input []string) ([][]float32, error) {
-	return nil, errors.New("ONNX embedding model not yet implemented - requires ONNX Runtime Go bindings")
+	if m.session == nil {
+		session, err := onnx.NewSession(m.path)
+		if err != nil {
+			return nil, err
+		}
+		m.session = session
+	}
+
+	results := make([][]float32, len(input))
+	for i, text := range input {
+		// Embeddings typically use the Score method or similar with single input
+		// Real implementation would use Mean Pooling on hidden states
+		score, err := m.session.Score(context.Background(), text, []string{text})
+		if err != nil {
+			return nil, err
+		}
+		results[i] = score
+	}
+
+	return results, nil
 }
 
 func (m *onnxEmbeddingModel) Close() error {
+	if m.session != nil {
+		return m.session.Close()
+	}
 	return nil
 }
 

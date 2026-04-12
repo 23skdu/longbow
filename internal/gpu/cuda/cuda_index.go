@@ -518,6 +518,14 @@ func (idx *CUDAIndex) SearchPQ(lookupTable []float32, m int, k int) ([]int64, []
 	return resultIDs, resultDistances, nil
 }
 
+func (idx *CUDAIndex) TrainPQ(vectors []float32, m int, k int) error {
+	return fmt.Errorf("TrainPQ not implemented for CUDAIndex")
+}
+
+func (idx *CUDAIndex) EncodePQ(vectors []float32) ([]byte, error) {
+	return nil, fmt.Errorf("EncodePQ not implemented for CUDAIndex")
+}
+
 func (idx *CUDAIndex) SearchBatch(vectors [][]float32, k int) ([][]int64, [][]float32, error) {
 	if len(vectors) == 0 {
 		return nil, nil, nil

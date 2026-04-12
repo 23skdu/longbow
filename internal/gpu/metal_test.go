@@ -5,12 +5,13 @@ package gpu
 import (
 	"testing"
 
+	"github.com/23skdu/longbow/internal/gpu/metal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestMetalIndex_Basic(t *testing.T) {
-	idx, err := NewMetalIndex(GPUConfig{
+	idx, err := metal.NewMetalIndexImpl(GPUConfig{
 		DeviceID:  0,
 		Dimension: 128,
 	})
@@ -43,7 +44,7 @@ func TestMetalIndex_Basic(t *testing.T) {
 }
 
 func TestMetalIndex_LargeDataset(t *testing.T) {
-	idx, err := NewMetalIndex(GPUConfig{
+	idx, err := metal.NewMetalIndexImpl(GPUConfig{
 		DeviceID:  0,
 		Dimension: 128,
 	})
@@ -76,7 +77,7 @@ func TestMetalIndex_LargeDataset(t *testing.T) {
 }
 
 func BenchmarkMetalSearch(b *testing.B) {
-	idx, err := NewMetalIndex(GPUConfig{
+	idx, err := metal.NewMetalIndexImpl(GPUConfig{
 		DeviceID:  0,
 		Dimension: 128,
 	})

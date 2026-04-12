@@ -270,6 +270,26 @@ func fastPathInt64(arr *array.Int64, val int64, equal bool, builder *array.Boole
 	values := arr.Int64Values()
 	n := arr.Len()
 
+	var useAVX2 bool
+	if equal && n >= 4 {
+		feats := simd.GetCPUFeatures()
+		useAVX2 = feats.HasAVX2
+	}
+
+	if useAVX2 {
+		metrics.HNSWFilterVectorizedOpsTotal.Inc()
+		results := make([]int64, n)
+		fastPathInt64EqualAVX2Kernel(unsafe.Pointer(&values[0]), n, val, unsafe.Pointer(&results[0]))
+		for i := 0; i < n; i++ {
+			if arr.IsNull(i) {
+				builder.Append(false)
+			} else {
+				builder.Append(results[i] != 0)
+			}
+		}
+		return
+	}
+
 	if equal {
 		for i := 0; i < n; i++ {
 			if arr.IsNull(i) {
@@ -387,6 +407,26 @@ func fastPathUint32(arr *array.Uint32, val uint32, equal bool, builder *array.Bo
 func fastPathFloat64(arr *array.Float64, val float64, equal bool, builder *array.BooleanBuilder) {
 	values := arr.Float64Values()
 	n := arr.Len()
+
+	var useAVX2 bool
+	if equal && n >= 4 {
+		feats := simd.GetCPUFeatures()
+		useAVX2 = feats.HasAVX2
+	}
+
+	if useAVX2 {
+		metrics.HNSWFilterVectorizedOpsTotal.Inc()
+		results := make([]float64, n)
+		fastPathFloat64EqualAVX2Kernel(unsafe.Pointer(&values[0]), n, val, unsafe.Pointer(&results[0]))
+		for i := 0; i < n; i++ {
+			if arr.IsNull(i) {
+				builder.Append(false)
+			} else {
+				builder.Append(results[i] != 0)
+			}
+		}
+		return
+	}
 
 	if equal {
 		for i := 0; i < n; i++ {

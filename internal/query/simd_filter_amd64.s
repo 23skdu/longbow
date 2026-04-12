@@ -129,3 +129,60 @@ bool_done:
 // For now, it stays as a placeholder or handles fixed-length if desired.
 TEXT ·fastPathStringEqualAVX2Kernel(SB), NOSPLIT, $0-48
     RET
+
+// func fastPathInt64EqualAVX2Kernel(src unsafe.Pointer, n int, val int64, result unsafe.Pointer)
+TEXT ·fastPathInt64EqualAVX2Kernel(SB), NOSPLIT, $0-32
+    MOVQ    src+0(FP), SI
+    MOVQ    n+8(FP), CX
+    MOVQ    val+16(FP), DX
+    MOVQ    result+24(FP), DI
+
+    // Broadcast scalar val to Y0
+    VMOVQ   DX, X0
+    VPBROADCASTQ X0, Y0
+
+loop_i64:
+    CMPQ    CX, $4
+    JL      tail_i64
+
+    VMOVDQU (SI), Y1
+    VPCMPEQQ Y0, Y1, Y2      // Y2 = (Y0 == Y1) ? 0xFFFFFFFFFFFFFFFF : 0
+    
+    VMOVDQU Y2, (DI)         // Store 32 bytes (4 results)
+    
+    ADDQ    $32, SI
+    ADDQ    $32, DI
+    SUBQ    $4, CX
+    JMP     loop_i64
+
+tail_i64:
+    VZEROUPPER
+    RET
+
+// func fastPathFloat64EqualAVX2Kernel(src unsafe.Pointer, n int, val float64, result unsafe.Pointer)
+TEXT ·fastPathFloat64EqualAVX2Kernel(SB), NOSPLIT, $0-32
+    MOVQ    src+0(FP), SI
+    MOVQ    n+8(FP), CX
+    VMOVSD  val+16(FP), X0
+    MOVQ    result+24(FP), DI
+
+    // Broadcast scalar val to Y0
+    VBROADCASTSD X0, Y0
+
+loop_f64:
+    CMPQ    CX, $4
+    JL      tail_f64
+
+    VMOVUPS (SI), Y1
+    VCMPPD  $0, Y0, Y1, Y2    // $0 = _CMP_EQ_OQ
+    
+    VMOVDQU Y2, (DI)
+    
+    ADDQ    $32, SI
+    ADDQ    $32, DI
+    SUBQ    $4, CX
+    JMP     loop_f64
+
+tail_f64:
+    VZEROUPPER
+    RET

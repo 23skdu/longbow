@@ -282,6 +282,55 @@ func (m *MultiGPUManager) EncodePQ(vectors []float32) ([]byte, error) {
 }
 
 
+func (m *MultiGPUManager) SearchMerged(query []float32, k int) ([]int64, []float32, error) {
+	allIDs, allDistances, allErrors := m.SearchAllDevices(query, k)
+	
+	// Check for errors
+	for _, err := range allErrors {
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	
+	return m.mergeResults(allIDs, allDistances, k)
+}
+
+func (m *MultiGPUManager) SearchMergedPQ(lookupTable []float32, mSub int, k int) ([]int64, []float32, error) {
+	m.deviceMu.RLock()
+	defer m.deviceMu.RUnlock()
+
+	allIDs := make([][]int64, len(m.devices))
+	allDistances := make([][]float32, len(m.devices))
+	allErrors := make([]error, len(m.devices))
+
+	var wg sync.WaitGroup
+	for i, device := range m.devices {
+		wg.Add(1)
+		go func(idx int, d *GPUDevice) {
+			defer wg.Done()
+			d.QueryCount.Add(1)
+			d.LastUsed.Store(time.Now().UnixNano())
+			ids, distances, err := d.Index.SearchPQ(lookupTable, mSub, k)
+			if err != nil {
+				d.ErrorCount.Add(1)
+				allErrors[idx] = err
+				return
+			}
+			allIDs[idx] = ids
+			allDistances[idx] = distances
+		}(i, device)
+	}
+	wg.Wait()
+
+	for _, err := range allErrors {
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+
+	return m.mergeResults(allIDs, allDistances, k)
+}
+
 func (m *MultiGPUManager) SearchAllDevices(query []float32, k int) ([][]int64, [][]float32, []error) {
 	m.deviceMu.RLock()
 	defer m.deviceMu.RUnlock()
@@ -310,6 +359,52 @@ func (m *MultiGPUManager) SearchAllDevices(query []float32, k int) ([][]int64, [
 	wg.Wait()
 
 	return allIDs, allDistances, allErrors
+}
+
+func (m *MultiGPUManager) mergeResults(allIDs [][]int64, allDistances [][]float32, k int) ([]int64, []float32, error) {
+	numDevices := len(allIDs)
+	if numDevices == 0 {
+		return nil, nil, nil
+	}
+	if numDevices == 1 {
+		resIDs := allIDs[0]
+		resDistances := allDistances[0]
+		if len(resIDs) > k {
+			resIDs = resIDs[:k]
+			resDistances = resDistances[:k]
+		}
+		return resIDs, resDistances, nil
+	}
+
+	// Classic merge of sorted lists
+	indices := make([]int, numDevices)
+	mergedIDs := make([]int64, 0, k)
+	mergedDistances := make([]float32, 0, k)
+
+	for len(mergedIDs) < k {
+		bestDevice := -1
+		var minDistance float32 = 1e38
+
+		for i := 0; i < numDevices; i++ {
+			if indices[i] < len(allDistances[i]) {
+				dist := allDistances[i][indices[i]]
+				if bestDevice == -1 || dist < minDistance {
+					minDistance = dist
+					bestDevice = i
+				}
+			}
+		}
+
+		if bestDevice == -1 {
+			break
+		}
+
+		mergedIDs = append(mergedIDs, allIDs[bestDevice][indices[bestDevice]])
+		mergedDistances = append(mergedDistances, allDistances[bestDevice][indices[bestDevice]])
+		indices[bestDevice]++
+	}
+
+	return mergedIDs, mergedDistances, nil
 }
 
 func (m *MultiGPUManager) GetStats() MultiGPUStats {

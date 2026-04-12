@@ -346,12 +346,6 @@ func (s *StreamingAggregation) evictOldestLocked() {
 	s.stats.AggregatesEvicted.Add(1)
 }
 
-func (s *StreamingAggregation) evictOldest() {
-	s.aggregateMu.Lock()
-	defer s.aggregateMu.Unlock()
-	s.evictOldestLocked()
-}
-
 func (s *StreamingAggregation) Clear() {
 	s.aggregateMu.Lock()
 	defer s.aggregateMu.Unlock()

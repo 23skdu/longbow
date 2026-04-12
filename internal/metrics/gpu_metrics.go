@@ -78,24 +78,28 @@ func (e *MetricsExporter) Stop() error {
 
 // UpdateDeviceMetrics updates GPU device-level metrics
 // This should be called periodically (e.g., by a background goroutine)
-func UpdateDeviceMetrics(deviceID int, backend types.GPUBackend) {
-	deviceLabel := fmt.Sprintf("%d", deviceID)
+func UpdateDeviceMetrics(idx types.Index) {
+	deviceID := idx.DeviceID()
 
-	// Get memory info if available
-	if backend == types.BackendCUDA {
-		// Note: These would require actual CUDA calls
-		// For now, we set placeholders that can be updated with real values
-		// when CUDA is available
+	// Get memory info
+	total, free, used, err := idx.GetMemoryInfo()
+	if err == nil {
+		RecordGPUMemory(deviceID, total, used, free)
+	}
 
-		// Utilization (0-100%)
-		// This would come from nvidia-smi or NVML
-		GPUDeviceUtilization.WithLabelValues(deviceLabel).Set(0)
+	// Get utilization
+	util, err := idx.GetUtilization()
+	if err == nil {
+		RecordGPUUtilization(deviceID, float64(util))
+	}
 
-		// Temperature (Celsius)
-		GPUDeviceTemperature.WithLabelValues(deviceLabel).Set(0)
-
-		// Power usage (Watts)
-		GPUDevicePowerUsage.WithLabelValues(deviceLabel).Set(0)
+	// Get device info for name/backend
+	info, err := idx.GetDeviceInfo()
+	if err == nil {
+		// Update static info if needed, or other dynamic metrics
+		if info.Backend == types.BackendCUDA {
+			// CUDA specific metrics if any
+		}
 	}
 }
 

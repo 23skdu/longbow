@@ -80,6 +80,7 @@ type ArrowHNSWConfig struct {
 	Registerer        prometheus.Registerer
 	TurboQuantEnabled bool
 	TurboQuantBits    int
+	LockFreeThreshold int // Layer threshold for CAS-based lock-free updates (e.g. 2)
 }
 
 // DefaultArrowHNSWConfig returns a configuration with sensible defaults
@@ -141,7 +142,6 @@ type ArrowHNSW struct {
 	mMax  int
 	mMax0 int
 
-	shardedLocks *AlignedShardedMutex
 
 	// DiskGraph backing
 	diskGraph atomic.Pointer[DiskGraph]
@@ -156,6 +156,7 @@ type ArrowHNSW struct {
 	name                   string
 	disableNodeCountMetric atomic.Bool
 	metricsSampleCounter   atomic.Uint64
+	topLayerManager        *TopLayerManager
 
 	distFunc     func([]float32, []float32) (float32, error)
 	distFuncF64  func([]float64, []float64) (float32, error)
@@ -305,11 +306,14 @@ func NewArrowHNSW(dataset *Dataset, config *ArrowHNSWConfig) *ArrowHNSW {
 		m:               config.M,
 		mMax:            config.MMax,
 		mMax0:           config.MMax0,
-		shardedLocks:    NewAlignedShardedMutex(AlignedShardedMutexConfig{NumShards: 64}),
 		searchPool:      NewArrowSearchContextPool(),
 		locationStore:   NewChunkedLocationStore(),
 		deleted:         roaring.New(),
 		levelMultiplier: 1.0 / math.Log(float64(config.M)),
+		topLayerManager: NewTopLayerManager(config.LockFreeThreshold),
+	}
+	if h.topLayerManager.threshold == 0 {
+		h.topLayerManager.threshold = 2 // Default to layer 2+
 	}
 	if dataset != nil {
 		h.name = dataset.Name
@@ -546,9 +550,6 @@ func (h *ArrowHNSW) GetMaxLevel() int32 {
 }
 
 // GetShardedLocks returns the sharded mutex for concurrent access
-func (h *ArrowHNSW) GetShardedLocks() *AlignedShardedMutex {
-	return h.shardedLocks
-}
 
 // GetDiskGraph returns the disk graph if enabled
 func (h *ArrowHNSW) GetDiskGraph() *DiskGraph {
@@ -935,9 +936,7 @@ func (h *ArrowHNSW) ensureReady() {
 		if h.locationStore == nil {
 			h.locationStore = NewChunkedLocationStore()
 		}
-		if h.shardedLocks == nil {
-			h.shardedLocks = NewAlignedShardedMutex(AlignedShardedMutexConfig{NumShards: 64})
-		}
+
 		h.initMu.Unlock()
 	}
 }
@@ -1015,6 +1014,14 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 	searchCtx.filterBitmap = filter
 	if filter != nil {
 		metrics.HNSWPreFilteredSearchesTotal.WithLabelValues(h.name).Inc()
+		if filter.IsEmpty() {
+			metrics.HNSWFilterEarlyExitTotal.WithLabelValues(h.name).Inc()
+			if metrics.HNSWSearchPoolPutTotal != nil {
+				metrics.HNSWSearchPoolPutTotal.Inc()
+			}
+			h.searchPool.Put(searchCtx)
+			return nil, nil
+		}
 	}
 
 	defer func() {
@@ -2357,7 +2364,7 @@ func (h *ArrowHNSW) searchLayer(_ context.Context, computer any, entryPoint uint
 
 		// Lock/RLock needed?
 		// Neighbors are atomic unless resize?
-		neighbors := data.GetNeighbors(layer, curr.ID, nil)
+		neighbors := h.GetNeighborsCombined(layer, curr.ID)
 
 		prefetchLimit := h.mMax
 		if prefetchLimit > 64 {

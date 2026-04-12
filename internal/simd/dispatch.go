@@ -114,7 +114,11 @@ func initializeDispatch() {
 		prefetchImpl = prefetchNTA
 		matchInt64Impl = matchInt64AVX2     // Fallback to AVX2 for now
 		matchFloat32Impl = matchFloat32AVX2 // Fallback to AVX2 for now
-		adcDistanceBatchImpl = adcBatchAVX512
+		if features.HasVNNI {
+			adcDistanceBatchImpl = adcBatchVNNI
+		} else {
+			adcDistanceBatchImpl = adcBatchAVX512
+		}
 		euclideanDistanceVerticalBatchImpl = euclideanVerticalBatchAVX512
 		euclideanDistanceSQ8BatchImpl = euclideanSQ8BatchAVX512
 		euclideanDistanceF16BatchImpl = euclideanF16BatchAVX512

@@ -485,6 +485,18 @@ func adcBatchAVX512(table []float32, flatCodes []byte, m int, results []float32)
 	return nil
 }
 
+func adcBatchVNNI(table []float32, flatCodes []byte, m int, results []float32) error {
+	if !features.HasVNNI {
+		return adcBatchAVX512(table, flatCodes, m, results)
+	}
+	if len(results) == 0 {
+		return nil
+	}
+	// For VNNI, we might need a different table format, but for now we dispatch to the kernel.
+	adcBatchVNNIKernel(unsafe.Pointer(&table[0]), unsafe.Pointer(&flatCodes[0]), m, unsafe.Pointer(&results[0]), len(results))
+	return nil
+}
+
 // AVX2 optimized Batch Dot Product
 func dotBatchAVX2(query []float32, vectors [][]float32, results []float32) error {
 	if !features.HasAVX2 {
@@ -650,6 +662,24 @@ func dotFloat64AVX2Kernel(a, b unsafe.Pointer, n int) float32
 
 //go:noescape
 func dotFloat64AVX512Kernel(a, b unsafe.Pointer, n int) float32
+
+// VNNI (AVX-512 VNNI) optimized distance for PQ (INT8 dot product)
+func euclideanPQVNNI(query []byte, centroids []byte, subDim int, k int, results []float32) error {
+	if !features.HasVNNI {
+		// Fallback to AVX2 if VNNI is missing
+		return euclideanSQ8BatchAVX2(query, [][]byte{centroids}, results)
+	}
+
+	qPtr := unsafe.Pointer(&query[0])
+	cPtr := unsafe.Pointer(&centroids[0])
+	rPtr := unsafe.Pointer(&results[0])
+
+	euclideanPQVNNIKernel(qPtr, cPtr, subDim, k, rPtr)
+	return nil
+}
+
+//go:noescape
+func euclideanPQVNNIKernel(q, c unsafe.Pointer, subDim, k int, res unsafe.Pointer)
 
 func matchInt64AVX2(src []int64, val int64, op CompareOp, dst []byte) error {
 	if len(src) != len(dst) {
@@ -858,9 +888,11 @@ func euclideanFloat64AVX512(a, b []float64) (float32, error) {
 
 //go:noescape
 func adcBatchAVX2Kernel(table, codes unsafe.Pointer, m int, results unsafe.Pointer, n int)
+func adcBatchAVX512Kernel(table, codes unsafe.Pointer, m int, results unsafe.Pointer, n int)
+
 
 //go:noescape
-func adcBatchAVX512Kernel(table, codes unsafe.Pointer, m int, results unsafe.Pointer, n int)
+func adcBatchVNNIKernel(table, codes unsafe.Pointer, m int, results unsafe.Pointer, n int)
 
 // =============================================================================
 // Int8 Implementations

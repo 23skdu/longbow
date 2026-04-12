@@ -302,6 +302,24 @@ var (
 		[]string{"dataset"},
 	)
 
+	// HNSWFilterVectorizedOpsTotal counts operations executed via SIMD filter paths
+	HNSWFilterVectorizedOpsTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_filter_vectorized_ops_total",
+			Help: "Total number of filter evaluations using SIMD paths",
+		},
+	)
+
+	// HNSWFilterEarlyExitTotal counts searches skipped due to all-zero filter bitmasks
+	HNSWFilterEarlyExitTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_filter_early_exit_total",
+			Help: "Count of searches skipped due to all-zero filter bitmasks",
+		},
+		[]string{"dataset"},
+	)
+
+
 	// HNSWSearchEarlyTerminationsTotal counts number of searches that terminated early
 	HNSWSearchEarlyTerminationsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{

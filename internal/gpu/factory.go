@@ -158,3 +158,11 @@ func (i *CPUIndex) SearchBatch(vectors [][]float32, k int) ([][]int64, [][]float
 
 	return results, distances, nil
 }
+
+
+func (i *CPUIndex) SearchPQ(lookupTable []float32, m int, k int) (ids []int64, distances []float32, err error) {
+	// Fallback implementation for CPU
+	// In real PQ search, we would use the distance table and encoded vectors.
+	// But CPUIndex stores full vectors. This is just to satisfy the interface.
+	return nil, nil, fmt.Errorf("SearchPQ not implemented for CPUIndex (interface only)")
+}

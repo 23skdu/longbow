@@ -46,4 +46,18 @@ func BenchmarkPQ_1536d(b *testing.B) {
 			_, _ = encoder.BuildADCTable(vector)
 		}
 	})
+
+	table, _ := encoder.BuildADCTable(vector)
+	numDB := 1000
+	flatCodes := make([]byte, numDB*m)
+	for i := range flatCodes {
+		flatCodes[i] = byte(rng.Intn(256))
+	}
+	results := make([]float32, numDB)
+
+	b.Run("ADCDistanceBatch", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			_ = encoder.ADCDistanceBatch(table, flatCodes, results)
+		}
+	})
 }

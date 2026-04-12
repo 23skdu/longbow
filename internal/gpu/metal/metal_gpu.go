@@ -480,6 +480,12 @@ func (idx *MetalIndex) Search(vector []float32, k int) ([]int64, []float32, erro
 	return resultIDs, resultDistances, nil
 }
 
+func (idx *MetalIndex) SearchPQ(lookupTable []float32, m int, k int) ([]int64, []float32, error) {
+	// TODO: Implement optimized Metal PQ kernel using MPS matrix multiplication or custom shader.
+	// For now, fall back to Search on a reconstructed vector if needed, or return error.
+	return nil, nil, fmt.Errorf("SearchPQ not implemented for Metal backend")
+}
+
 // SearchBatch queries the Metal GPU index with multiple vectors in parallel.
 func (idx *MetalIndex) SearchBatch(vectors [][]float32, k int) ([][]int64, [][]float32, error) {
 	if len(vectors) == 0 {

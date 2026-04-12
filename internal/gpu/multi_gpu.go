@@ -247,6 +247,25 @@ func (m *MultiGPUManager) Search(query []float32, k int) ([]int64, []float32, er
 	return ids, distances, nil
 }
 
+func (m *MultiGPUManager) SearchPQ(lookupTable []float32, mSub int, k int) ([]int64, []float32, error) {
+	device := m.SelectDevice()
+	if device == nil {
+		return nil, nil, fmt.Errorf("no GPU device available")
+	}
+
+	device.QueryCount.Add(1)
+	device.LastUsed.Store(time.Now().UnixNano())
+
+	ids, distances, err := device.Index.SearchPQ(lookupTable, mSub, k)
+	if err != nil {
+		device.ErrorCount.Add(1)
+		return nil, nil, err
+	}
+
+	return ids, distances, nil
+}
+
+
 func (m *MultiGPUManager) SearchAllDevices(query []float32, k int) ([][]int64, [][]float32, []error) {
 	m.deviceMu.RLock()
 	defer m.deviceMu.RUnlock()

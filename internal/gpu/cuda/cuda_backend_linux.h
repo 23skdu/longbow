@@ -22,6 +22,11 @@ int lb_cuda_get_device_properties(int device, char* name, size_t nameLen,
                                  int* major, int* minor, size_t* totalMem);
 int lb_cuda_get_mem_info(size_t* free, size_t* total);
 
+// Distance Kernels
+void launch_l2_distance_kernel(const float* vectors, const float* query, float* distances, int dimensions, int count, void* stream);
+void launch_pq_distance_kernel(const float* lookupTable, const unsigned char* codes, float* distances, int m, int count, void* stream);
+
+
 #ifdef __cplusplus
 }
 #endif

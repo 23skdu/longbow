@@ -73,44 +73,35 @@ func (c *compoundFilterOp) Match(rowIdx int) bool {
 }
 
 func (c *compoundFilterOp) MatchBitmap(dst []byte) {
-	// For compound ops, fall back to row-by-row
-	for i := range dst {
-		dst[i] = 0
+	if len(dst) == 0 {
+		return
 	}
-	// AND: rows must pass all children
-	// OR: rows pass any child
-	// NOT: invert first child result
+
+	temp := make([]byte, len(dst))
+
 	switch c.logic {
 	case "AND":
+		// Initialize with all 1s
 		for i := range dst {
-			match := true
-			for _, child := range c.children {
-				if !child.Match(i) {
-					match = false
-					break
-				}
-			}
-			if match {
-				dst[i] = 1
-			}
+			dst[i] = 1
+		}
+		for _, child := range c.children {
+			child.MatchBitmap(temp)
+			_ = simd.AndBytes(dst, temp)
 		}
 	case "OR":
+		// Initialize with all 0s
 		for i := range dst {
-			for _, child := range c.children {
-				if child.Match(i) {
-					dst[i] = 1
-					break
-				}
-			}
+			dst[i] = 0
+		}
+		for _, child := range c.children {
+			child.MatchBitmap(temp)
+			_ = simd.OrBytes(dst, temp)
 		}
 	case "NOT":
 		if len(c.children) > 0 {
-			child := c.children[0]
-			for i := range dst {
-				if !child.Match(i) {
-					dst[i] = 1
-				}
-			}
+			c.children[0].MatchBitmap(dst)
+			_ = simd.NotBytes(dst)
 		} else {
 			for i := range dst {
 				dst[i] = 1
@@ -793,6 +784,19 @@ func (o *float64FilterOp) Match(rowIdx int) bool {
 }
 
 func (o *float64FilterOp) MatchBitmap(dst []byte) {
+	if len(dst) == 0 {
+		return
+	}
+
+	// For now, float64 Match is implemented in float64Unrolled (distance) but not as scalar MatchInt64-like in simd.go.
+	// Wait, I see MatchFloat32 in simd.go but NOT MatchFloat64.
+	// I'll add MatchFloat64 to simd.go.
+	// But actually, I just implemented AVX2 for it in internal/query/simd_filter_amd64.go?
+	// No, that was fastPathFloat64.
+	
+	// I'll fall back to my query-package kernel if available or loop.
+	// But it's better to add it to simd.go.
+	
 	for i := 0; i < len(dst); i++ {
 		if o.Match(i) {
 			dst[i] = 1

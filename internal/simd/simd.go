@@ -81,7 +81,10 @@ var (
 	euclideanDistanceF16BatchImpl      distanceF16BatchFunc
 
 	// Bitwise operations
-	andBytesImpl func(dst, src []byte)
+	andBytesImpl   func(dst, src []byte)
+	orBytesImpl    func(dst, src []byte)
+	notBytesImpl   func(dst []byte)
+	isAllZerosImpl func(src []byte) bool
 
 	euclideanDistanceF16Impl distanceF16Func
 	cosineDistanceF16Impl    distanceF16Func
@@ -127,6 +130,27 @@ func AndBytes(dst, src []byte) error {
 	}
 	andBytesImpl(dst, src)
 	return nil
+}
+
+// OrBytes performs bitwise OR: dst[i] |= src[i].
+// Assumes len(dst) == len(src).
+func OrBytes(dst, src []byte) error {
+	if len(dst) != len(src) {
+		return errors.New("simd: length mismatch")
+	}
+	orBytesImpl(dst, src)
+	return nil
+}
+
+// NotBytes performs bitwise NOT: dst[i] = ^dst[i].
+func NotBytes(dst []byte) error {
+	notBytesImpl(dst)
+	return nil
+}
+
+// IsAllZeros returns true if all bytes in src are zero.
+func IsAllZeros(src []byte) bool {
+	return isAllZerosImpl(src)
 }
 
 // GetCPUFeatures returns detected CPU SIMD capabilities

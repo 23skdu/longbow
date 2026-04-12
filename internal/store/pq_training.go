@@ -43,8 +43,25 @@ func (h *ArrowHNSW) TrainPQ(vectors [][]float32) error {
 		return err
 	}
 
-	if err := encoder.Train(vectors); err != nil {
-		return err
+	useGPU := h.IsGPUEnabled()
+	if useGPU {
+		// Flatten vectors for GPU training
+		flatVectors := make([]float32, len(vectors)*dims)
+		for i, v := range vectors {
+			copy(flatVectors[i*dims:(i+1)*dims], v)
+		}
+		if err := h.TrainPQOnGPU(flatVectors, m, k); err == nil {
+			h.gpuTrained.Store(true)
+		} else {
+			// Fallback to CPU training
+			if err := encoder.Train(vectors); err != nil {
+				return err
+			}
+		}
+	} else {
+		if err := encoder.Train(vectors); err != nil {
+			return err
+		}
 	}
 
 	h.pqEncoder = encoder
@@ -77,29 +94,58 @@ func (h *ArrowHNSW) TrainPQ(vectors [][]float32) error {
 
 		if data.VectorsPQ != nil {
 			nodeCount := int(h.nodeCount.Load())
-			for i := uint32(0); i < uint32(nodeCount); i++ {
-				v := h.mustGetVectorFromData(data, i)
-				if v == nil {
-					continue
-				}
-				vf32, ok := v.([]float32)
-				if !ok {
-					continue
-				}
-				code, err := encoder.Encode(vf32)
-				if err != nil {
-					continue
-				}
-				cID := chunkID(i)
-				cOff := chunkOffset(i)
+			m := h.config.PQM
+			dims := int(h.dims.Load())
 
-				data, err = h.ensureChunkInternal(cID, cOff, data.Dims)
-				if err != nil {
-					continue
-				}
+			if h.gpuTrained.Load() {
+				// Batch encode on GPU
+				batchSize := 1024
+				for i := 0; i < nodeCount; i += batchSize {
+					end := i + batchSize
+					if end > nodeCount {
+						end = nodeCount
+					}
 
-				if chunk := data.GetVectorsPQChunk(cID); chunk != nil {
-					copy(chunk[int(cOff)*m:(int(cOff)+1)*m], code)
+					// Collect vectors for batch
+					batchVectors := make([]float32, 0, (end-i)*dims)
+					validIDs := make([]uint32, 0, end-i)
+
+					for j := i; j < end; j++ {
+						v := h.mustGetVectorFromData(data, uint32(j))
+						if vf32, ok := v.([]float32); ok {
+							batchVectors = append(batchVectors, vf32...)
+							validIDs = append(validIDs, uint32(j))
+						}
+					}
+
+					if len(batchVectors) > 0 {
+						codes, err := h.EncodePQOnGPU(batchVectors)
+						if err == nil {
+							// Copy codes to PQ chunks
+							for idx, vid := range validIDs {
+								cID := chunkID(vid)
+								cOff := chunkOffset(vid)
+								if chunk := data.GetVectorsPQChunk(cID); chunk != nil {
+									copy(chunk[int(cOff)*m:(int(cOff)+1)*m], codes[idx*m:(idx+1)*m])
+								}
+							}
+						}
+					}
+				}
+			} else {
+				// Sequential CPU encoding
+				for i := uint32(0); i < uint32(nodeCount); i++ {
+					v := h.mustGetVectorFromData(data, i)
+					if vf32, ok := v.([]float32); ok {
+						code, err := encoder.Encode(vf32)
+						if err == nil {
+							cID := chunkID(i)
+							cOff := chunkOffset(i)
+							if chunk := data.GetVectorsPQChunk(cID); chunk != nil {
+								copy(chunk[int(cOff)*m:(int(cOff)+1)*m], code)
+							}
+						}
+					}
 				}
 			}
 		}

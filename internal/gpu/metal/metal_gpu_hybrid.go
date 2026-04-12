@@ -324,6 +324,18 @@ func (idx *MetalHybridIndex) GetMemoryInfo() (int64, int64, int64, error) {
 	return 0, 0, 0, nil
 }
 
+func (idx *MetalHybridIndex) SearchPQ(lookupTable []float32, m, k int) ([]int64, []float32, error) {
+	return nil, nil, fmt.Errorf("SearchPQ not implemented for hybrid Metal index")
+}
+
+func (idx *MetalHybridIndex) TrainPQ(vectors []float32, m, k int) error {
+	return fmt.Errorf("TrainPQ not implemented for hybrid Metal index")
+}
+
+func (idx *MetalHybridIndex) EncodePQ(vectors []float32) ([]byte, error) {
+	return nil, fmt.Errorf("EncodePQ not implemented for hybrid Metal index")
+}
+
 func (idx *MetalHybridIndex) GetUtilization() (float32, error) {
 	return 50.0, nil
 }

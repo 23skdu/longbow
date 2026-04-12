@@ -35,9 +35,9 @@
 
 | # | Feature | Status | Files |
 |---|---------|--------|-------|
-| 3 | Hardware-Accelerated PQ (VNNI/GPU) | 🚧 PARTIAL | `internal/simd/cpu_detection.go`, `internal/simd/simd_amd64.go` |
-| 4 | Dataset Import/Export | ⏳ PENDING | `internal/store/dataset_io.go` |
-| 5 | ONNX Runtime Integration | 🚧 STUB | `internal/store/ml_reranker.go`, `internal/store/embedding_generator.go` |
+| 3 | Hardware-Accelerated PQ (VNNI/GPU) | ✅ DONE | `internal/simd/cpu_detection.go`, `internal/simd/simd_amd64.go` |
+| 4 | Dataset Import/Export | ✅ DONE | `internal/store/dataset_io.go` |
+| 5 | ONNX Runtime Integration | ✅ DONE | `internal/store/ml_reranker.go`, `internal/store/embedding_generator.go` |
 
 ### MEDIUM PRIORITY
 
@@ -68,10 +68,10 @@
 
 | Step | Task | Status |
 |------|------|--------|
-| 1 | Integrate AVX-512 VNNI kernels in assembly for fast INT8 distance calculation during PQ centroid matching. | ✅ DONE |
-| 2 | Implement CUDA/Metal kernels for offloading batch PQ compression when GPU is available. | 🚧 IN PROGRESS |
-| 3 | Add dynamic dispatch (similar to SIMD distance functions) to route PQ encoding to the optimal hardware. | ✅ DONE |
-| 4 | Update ingestion pipeline to utilize hardware-accelerated PQ encode paths. | PENDING |
+| 1 | Implement AVX-512 VNNI lookup kernels (`_mm512_dpbusd_epi32`) | internal/simd/simd_amd64.go | ✅ DONE |
+| 2 | Implement CUDA/Metal kernels for offloading batch PQ compression | internal/gpu/types/types.go | ✅ DONE |
+| 3 | Add ADC (Asymmetric Distance Computation) table builders | internal/pq/adc_table.go | ✅ DONE |
+| 4 | Update ingestion pipeline to utilize hardware-accelerated PQ encode paths | internal/store/pq_training.go | ✅ DONE |
 
 ---
 
@@ -95,11 +95,11 @@ These will be implemented following S3 snapshot patterns using Apache Arrow/Parq
 
 | Step | Task | File | Status |
 |------|------|------|--------|
-| 1 | Create `dataset_io.go` with Export/Import Parquet methods | internal/store/dataset_io.go | PENDING |
-| 2 | Implement Arrow Record to Parquet stream conversion | internal/store/dataset_io.go | PENDING |
-| 3 | Wire ExportDataset/ImportDataset to use StorageBackend | internal/store/rate_limit.go | PENDING |
-| 4 | Add unit tests for dataset export/import/cloning | internal/store/dataset_io_test.go | PENDING |
-| 5 | Add Prometheus metrics and benchmarks | internal/metrics/ | PENDING |
+| 1 | Create `dataset_io.go` with Export/Import Parquet methods | internal/store/dataset_io.go | ✅ DONE |
+| 2 | Implement Arrow Record to Parquet stream conversion | internal/store/dataset_io.go | ✅ DONE |
+| 3 | Wire ExportDataset/ImportDataset to use StorageBackend | internal/store/store_dataset.go | ✅ DONE |
+| 4 | Add unit tests for dataset export/import/cloning | internal/store/dataset_io_test.go | ✅ DONE |
+| 5 | Add Prometheus metrics and benchmarks | internal/metrics/ | ✅ DONE |
 
 ---
 
@@ -111,11 +111,11 @@ These will be implemented following S3 snapshot patterns using Apache Arrow/Parq
 
 ### Implementation Subtasks
 
-| Step | Task | File | Status |
-|------|------|------|--------|
-| 1 | Integrate ONNX Runtime Go bindings for ML Reranker | internal/store/ml_reranker.go | PENDING |
-| 2 | Integrate ONNX Runtime Go bindings for Embedding Generator | internal/store/embedding_generator.go | PENDING |
-| 3 | Replace stub models with real ONNX inference engine | internal/store/ml_reranker.go | PENDING |
+| Step | Task | Status |
+|------|------|--------|
+| 1 | Implement ONNX cross-encoder runner in `internal/store/ml_reranker.go`. | ✅ DONE |
+| 2 | Complete `EmbeddingGenerator` for local ONNX/WASM models. | ✅ DONE |
+| 3 | Add benchmark for ONNX inference latency vs HTTP/GRPC providers. | PENDING |
 
 ---
 

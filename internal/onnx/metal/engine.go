@@ -51,8 +51,8 @@ func IsAvailable() bool {
 	return available
 }
 
-// MetalEngine provides ONNX inference via Metal
-type MetalEngine struct {
+// Engine provides ONNX inference via Metal
+type Engine struct {
 	engine     *C.MetalEngine
 	deviceName string
 	loaded     bool
@@ -67,13 +67,13 @@ type ModelInfo struct {
 	Parameters int64
 }
 
-// NewMetalEngine creates a new Metal ONNX engine
-func NewMetalEngine() (*MetalEngine, error) {
+// NewEngine creates a new Metal ONNX engine
+func NewEngine() (*Engine, error) {
 	if !IsAvailable() {
 		return nil, errors.New("Metal is not available")
 	}
 
-	engine := &MetalEngine{
+	engine := &Engine{
 		engine: C.metal_engine_create(),
 	}
 
@@ -81,7 +81,7 @@ func NewMetalEngine() (*MetalEngine, error) {
 		return nil, errors.New("failed to create Metal engine")
 	}
 
-	runtime.SetFinalizer(engine, func(e *MetalEngine) {
+	runtime.SetFinalizer(engine, func(e *Engine) {
 		e.Close()
 	})
 
@@ -89,7 +89,7 @@ func NewMetalEngine() (*MetalEngine, error) {
 }
 
 // LoadModel loads an ONNX model from file
-func (e *MetalEngine) LoadModel(path string) error {
+func (e *Engine) LoadModel(path string) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -110,7 +110,7 @@ func (e *MetalEngine) LoadModel(path string) error {
 }
 
 // Score computes relevance scores for query-document pairs
-func (e *MetalEngine) Score(ctx context.Context, query string, documents []string) ([]float32, error) {
+func (e *Engine) Score(ctx context.Context, query string, documents []string) ([]float32, error) {
 	if !e.loaded {
 		return nil, errors.New("model not loaded")
 	}
@@ -152,7 +152,7 @@ func (e *MetalEngine) Score(ctx context.Context, query string, documents []strin
 }
 
 // ScoreBatch scores multiple queries against documents
-func (e *MetalEngine) ScoreBatch(ctx context.Context, queries, documents []string) ([][]float32, error) {
+func (e *Engine) ScoreBatch(ctx context.Context, queries, documents []string) ([][]float32, error) {
 	if len(queries) == 0 || len(documents) == 0 {
 		return [][]float32{}, nil
 	}
@@ -172,14 +172,14 @@ func (e *MetalEngine) ScoreBatch(ctx context.Context, queries, documents []strin
 }
 
 // Warmup performs warmup inference
-func (e *MetalEngine) Warmup() error {
+func (e *Engine) Warmup() error {
 	dummyDocs := []string{"warmup document"}
 	_, err := e.Score(context.Background(), "warmup query", dummyDocs)
 	return err
 }
 
 // ModelInfo returns information about the loaded model
-func (e *MetalEngine) ModelInfo() (*ModelInfo, error) {
+func (e *Engine) ModelInfo() (*ModelInfo, error) {
 	if !e.loaded {
 		return nil, errors.New("model not loaded")
 	}
@@ -193,7 +193,7 @@ func (e *MetalEngine) ModelInfo() (*ModelInfo, error) {
 }
 
 // Close releases Metal resources
-func (e *MetalEngine) Close() error {
+func (e *Engine) Close() error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 

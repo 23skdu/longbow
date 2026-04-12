@@ -1,12 +1,3 @@
-//go:build gpu && darwin && arm64
-// +build gpu,darwin,arm64
-
-package metal
-
-/*
-#cgo CFLAGS: -x objective-c -fobjc-arc
-#cgo LDFLAGS: -framework Metal -framework MetalPerformanceShaders -framework Foundation -framework Accelerate
-
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
 #import <MetalPerformanceShaders/MetalPerformanceShaders.h>
@@ -79,23 +70,24 @@ void metal_engine_destroy(MetalEngine* engine) {
     if (!engine) return;
     
     @autoreleasepool {
-        // Release Metal objects
-        if (engine->library) [engine->library release];
-        if (engine->matmulPipeline) [engine->matmulPipeline release];
-        if (engine->addPipeline) [engine->addPipeline release];
-        if (engine->reluPipeline) [engine->reluPipeline release];
-        if (engine->softmaxPipeline) [engine->softmaxPipeline release];
+        // With ARC enabled, we don't need explicit release calls
+        // Just set pointers to nil if needed, or rely on autoreleasepool
+        engine->library = nil;
+        engine->matmulPipeline = nil;
+        engine->addPipeline = nil;
+        engine->reluPipeline = nil;
+        engine->softmaxPipeline = nil;
         
-        if (engine->modelWeights) [engine->modelWeights release];
-        if (engine->inputBuffer) [engine->inputBuffer release];
-        if (engine->outputBuffer) [engine->outputBuffer release];
+        engine->modelWeights = nil;
+        engine->inputBuffer = nil;
+        engine->outputBuffer = nil;
         
         for (int i = 0; i < engine->poolSize; i++) {
-            if (engine->tensorPool[i]) [engine->tensorPool[i] release];
+            engine->tensorPool[i] = nil;
         }
         
-        if (engine->queue) [engine->queue release];
-        if (engine->device) [engine->device release];
+        engine->queue = nil;
+        engine->device = nil;
         
         free(engine);
     }
@@ -105,7 +97,6 @@ bool metal_engine_available() {
     @autoreleasepool {
         id<MTLDevice> device = MTLCreateSystemDefaultDevice();
         if (!device) return false;
-        [device release];
         return true;
     }
 }
@@ -195,7 +186,3 @@ void metal_engine_free_scores(float* scores) {
         free(scores);
     }
 }
-
-*/
-import "C"
-import "unsafe"

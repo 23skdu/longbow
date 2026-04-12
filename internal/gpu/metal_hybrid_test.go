@@ -5,12 +5,13 @@ package gpu
 import (
 	"testing"
 
+	"github.com/23skdu/longbow/internal/gpu/metal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestMetalHybridIndex_Basic(t *testing.T) {
-	idx, err := NewMetalHybridIndex(GPUConfig{
+	idx, err := metal.NewMetalHybridIndex(GPUConfig{
 		DeviceID:  0,
 		Dimension: 128,
 	})
@@ -38,7 +39,7 @@ func TestMetalHybridIndex_Basic(t *testing.T) {
 }
 
 func BenchmarkMetalHybridSearch(b *testing.B) {
-	idx, err := NewMetalHybridIndex(GPUConfig{
+	idx, err := metal.NewMetalHybridIndex(GPUConfig{
 		DeviceID:  0,
 		Dimension: 128,
 	})

@@ -202,6 +202,7 @@ type ArrowHNSW struct {
 	// Graph Navigation
 	navigator *GraphNavigator
 	tqCompute *TurboQuantCompute
+	gpuTrained atomic.Bool
 }
 
 func (h *ArrowHNSW) GetVector(id uint32) (any, error) {

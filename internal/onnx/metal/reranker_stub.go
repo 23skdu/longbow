@@ -7,7 +7,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/23skdu/longbow/internal/store"
+	"github.com/23skdu/longbow/internal/store/types"
 )
 
 // MetalReranker is a stub for non-Metal platforms
@@ -21,7 +21,7 @@ func NewMetalReranker(modelPath string) (*MetalReranker, error) {
 }
 
 // Rerank returns an error on non-Metal platforms
-func (r *MetalReranker) Rerank(ctx context.Context, query string, results []store.SearchResult) ([]store.SearchResult, error) {
+func (r *MetalReranker) Rerank(ctx context.Context, query string, results []types.SearchResult) ([]types.SearchResult, error) {
 	return nil, errors.New("Metal is not available on this platform")
 }
 

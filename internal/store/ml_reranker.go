@@ -6,6 +6,7 @@ import (
 	"sort"
 	"sync"
 
+	"github.com/23skdu/longbow/internal/onnx"
 	"github.com/rs/zerolog"
 )
 
@@ -49,15 +50,30 @@ func (r *ONNXReranker) initModel() error {
 			r.model = &wasmModelRunner{path: r.modelPath}
 			return nil
 		case ".onnx":
-			// ONNX model - requires ONNX Runtime integration
-			// TODO: Integrate ONNX Runtime Go bindings
-			// For now, fall through to stub with logging
-			r.logger.Info().Str("path", r.modelPath).Msg("ONNX model detected - ONNX Runtime integration pending, using fallback")
+			// ONNX model - use our internal onnx bridge
+			session, err := onnx.NewSession(r.modelPath)
+			if err == nil {
+				r.model = &onnxModelWrapper{session: session}
+				return nil
+			}
+			r.logger.Warn().Err(err).Str("path", r.modelPath).Msg("Failed to initialize ONNX session, using fallback")
 		}
 	}
 	// Default: use heuristic stub model
 	r.model = &stubMLModel{path: r.modelPath}
 	return nil
+}
+
+type onnxModelWrapper struct {
+	session *onnx.Session
+}
+
+func (w *onnxModelWrapper) Score(query string, documents []string) ([]float32, error) {
+	return w.session.Score(context.Background(), query, documents)
+}
+
+func (w *onnxModelWrapper) Close() error {
+	return w.session.Close()
 }
 
 func (r *ONNXReranker) Rerank(ctx context.Context, query string, results []SearchResult) ([]SearchResult, error) {

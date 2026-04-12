@@ -481,9 +481,15 @@ func (idx *MetalIndex) Search(vector []float32, k int) ([]int64, []float32, erro
 }
 
 func (idx *MetalIndex) SearchPQ(lookupTable []float32, m int, k int) ([]int64, []float32, error) {
-	// TODO: Implement optimized Metal PQ kernel using MPS matrix multiplication or custom shader.
-	// For now, fall back to Search on a reconstructed vector if needed, or return error.
 	return nil, nil, fmt.Errorf("SearchPQ not implemented for Metal backend")
+}
+
+func (idx *MetalIndex) TrainPQ(vectors []float32, m int, k int) error {
+	return fmt.Errorf("TrainPQ not implemented for MetalIndex")
+}
+
+func (idx *MetalIndex) EncodePQ(vectors []float32) ([]byte, error) {
+	return nil, fmt.Errorf("EncodePQ not implemented for MetalIndex")
 }
 
 // SearchBatch queries the Metal GPU index with multiple vectors in parallel.

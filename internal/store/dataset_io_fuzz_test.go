@@ -2,8 +2,10 @@ package store
 
 import (
 	"context"
+	"os"
 	"testing"
 
+	"github.com/23skdu/longbow/internal/storage"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
@@ -59,11 +61,12 @@ func FuzzDatasetIOExportImport(f *testing.F) {
 		rec := b.NewRecord()
 		ds.Records = append(ds.Records, rec)
 		ds.BatchNodes = append(ds.BatchNodes, -1)
-
 		vs := NewVectorStore(pool, zerolog.Nop(), 1<<30, 0, 0)
 		vs.datasets.Store(&map[string]*Dataset{"fuzz-dataset": ds})
 
-		backend := newTestSnapshotBackend()
+		tmpDir, _ := os.MkdirTemp("", "fuzz-*")
+		defer os.RemoveAll(tmpDir)
+		backend, _ := storage.NewFileSnapshotBackend(tmpDir)
 		dio := NewDatasetIO(vs)
 		ctx := context.Background()
 

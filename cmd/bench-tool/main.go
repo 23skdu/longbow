@@ -142,10 +142,11 @@ func main() {
 	log.Printf("[GET] Completed in %.4fs (%.2f vec/s, %.2f MB/s)\n", duration, float64(rowsRead)/duration, (float64(totalBytesGet)/(1024*1024))/duration)
 
 	// 3. Search
-	modes := []string{"Dense", "Hybrid", "Filtered", "ByID"}
+	modes := []string{"Dense", "Hybrid", "Filtered", "FilteredBool", "FilteredString", "ByID"}
 	searchCtx, searchCancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer searchCancel()
 	for _, mode := range modes {
+
 		log.Printf("[SEARCH][%s] Running queries...\n", mode)
 		start = time.Now()
 		var latencies []float64
@@ -293,7 +294,26 @@ func executeSearch(ctx context.Context, sc *client.SmartClient, dataset string, 
 				"value":    "10",
 			},
 		}
+	case "FilteredBool":
+		req["vector"] = vector
+		req["filters"] = []map[string]interface{}{
+			{
+				"field":    "active",
+				"operator": "==",
+				"value":    true, // Requires schema to have "active" boolean
+			},
+		}
+	case "FilteredString":
+		req["vector"] = vector
+		req["filters"] = []map[string]interface{}{
+			{
+				"field":    "category",
+				"operator": "==",
+				"value":    "electronics", // Requires schema to have "category" string
+			},
+		}
 	case "ByID":
+
 		// SearchByID requires an existing ID. We use ID "0" from our ingest.
 		req["id"] = "0"
 		ticketBytes, _ := json.Marshal(map[string]interface{}{"search_by_id": req})
@@ -452,9 +472,12 @@ func generateRecord(count int, dim int, dtype string) (arrow.Record, *arrow.Sche
 			{Name: "id", Type: arrow.PrimitiveTypes.Int64},
 			vecField,
 			{Name: "timestamp", Type: arrow.FixedWidthTypes.Timestamp_ns},
+			{Name: "active", Type: arrow.FixedWidthTypes.Boolean},
+			{Name: "category", Type: arrow.BinaryTypes.String},
 		},
 		nil,
 	)
+
 
 	// 1. Build IDs
 	idBldr := array.NewInt64Builder(pool)
@@ -616,5 +639,27 @@ func generateRecord(count int, dim int, dtype string) (arrow.Record, *arrow.Sche
 	tsArr := tsBldr.NewArray()
 	defer tsArr.Release()
 
-	return array.NewRecordBatch(schema, []arrow.Array{idArr, vecArr, tsArr}, int64(count)), schema, nil
+	// 4. Build Active (Boolean)
+	boolBldr := array.NewBooleanBuilder(pool)
+	defer boolBldr.Release()
+	boolBldr.Reserve(count)
+	for i := 0; i < count; i++ {
+		boolBldr.Append(rand.Float32() > 0.5) // ~50% true
+	}
+	activeArr := boolBldr.NewArray()
+	defer activeArr.Release()
+
+	// 5. Build Category (String)
+	strBldr := array.NewStringBuilder(pool)
+	defer strBldr.Release()
+	strBldr.Reserve(count)
+	categories := []string{"electronics", "clothing", "home", "books"}
+	for i := 0; i < count; i++ {
+		strBldr.Append(categories[rand.Intn(len(categories))])
+	}
+	catArr := strBldr.NewArray()
+	defer catArr.Release()
+
+	return array.NewRecordBatch(schema, []arrow.Array{idArr, vecArr, tsArr, activeArr, catArr}, int64(count)), schema, nil
 }
+

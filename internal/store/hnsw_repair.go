@@ -51,16 +51,6 @@ func (h *ArrowHNSW) RepairTombstones(ctx context.Context, batchSize int) int {
 			continue
 		}
 
-		// Lock node
-		lockID := nid % 1024
-		h.shardedLocks.Lock(uint64(lockID))
-
-		// Re-check validity
-		if h.deleted.Contains(nid) {
-			h.shardedLocks.Unlock(uint64(lockID))
-			continue
-		}
-
 		// Scan layers
 		for lvl := 0; lvl < types.ArrowMaxLayers; lvl++ {
 			cID := chunkID(nid)
@@ -71,6 +61,10 @@ func (h *ArrowHNSW) RepairTombstones(ctx context.Context, batchSize int) int {
 			if lvl >= len(data.Neighbors) || int(cID) >= len(data.Neighbors[lvl]) || data.Neighbors[lvl][cID] == nil {
 				continue
 			}
+
+			// Acquire Node Lock for this layer
+			oldVer := data.LockNode(lvl, nid)
+
 
 			neighborsChunk := data.GetNeighborsChunk(lvl, cID)
 			countsChunk := data.GetCountsChunk(lvl, cID)
@@ -206,8 +200,8 @@ func (h *ArrowHNSW) RepairTombstones(ctx context.Context, batchSize int) int {
 
 				repaired++
 			}
+			data.UnlockNode(lvl, nid, oldVer)
 		}
-		h.shardedLocks.Unlock(uint64(lockID))
 	}
 
 	return repaired

@@ -27,6 +27,10 @@ func adcBatchAVX512(table []float32, flatCodes []byte, m int, results []float32)
 	return adcBatchGeneric(table, flatCodes, m, results)
 }
 
+func adcBatchVNNI(table []float32, flatCodes []byte, m int, results []float32) error {
+	return adcBatchGeneric(table, flatCodes, m, results)
+}
+
 func euclideanAVX2(a, b []float32) (float32, error)       { return euclideanGeneric(a, b) }
 func euclideanAVX512(a, b []float32) (float32, error)     { return euclideanGeneric(a, b) }
 func cosineAVX2(a, b []float32) (float32, error)          { return cosineGeneric(a, b) }

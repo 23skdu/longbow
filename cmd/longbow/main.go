@@ -19,6 +19,7 @@ import (
 	"runtime/debug"
 
 	"github.com/23skdu/longbow/internal/autoscale"
+	lbflight "github.com/23skdu/longbow/internal/flight"
 	"github.com/23skdu/longbow/internal/gpu"
 	"github.com/23skdu/longbow/internal/limiter"
 	"github.com/23skdu/longbow/internal/logging"
@@ -166,6 +167,11 @@ type Config struct {
 	TemporalCleanupInterval    time.Duration `envconfig:"TEMPORAL_CLEANUP_INTERVAL" default:"1h"`
 	TemporalAggregationEnabled bool          `envconfig:"TEMPORAL_AGGREGATION_ENABLED" default:"false"`
 	TemporalMaxBuckets         int           `envconfig:"TEMPORAL_MAX_BUCKETS" default:"1000"`
+	
+	// RDMA Configuration
+	RDMAEnabled   bool   `envconfig:"RDMA_ENABLED" default:"false"`
+	RDMAInterface string `envconfig:"RDMA_INTERFACE" default:"eth0"`
+	RDMAPort      int    `envconfig:"RDMA_PORT" default:"3002"`
 }
 
 // Global config instance for hook functions
@@ -712,6 +718,18 @@ func run() error {
 			logger.Error().Err(err).Msg("Meta gRPC server failed")
 		}
 	}()
+
+	// Start RDMA Server if enabled
+	if cfg.RDMAEnabled {
+		rdmaSrv := lbflight.NewRDMAServer(true)
+		go func() {
+			addr := fmt.Sprintf("0.0.0.0:%d", cfg.RDMAPort)
+			logger.Info().Str("addr", addr).Msg("Starting RDMA Zero-Copy Server")
+			if err := rdmaSrv.StartRDMAListener(addr); err != nil {
+				logger.Error().Err(err).Msg("RDMA server failed")
+			}
+		}()
+	}
 
 	// System is now ready to receive traffic
 	globalIsReady.Store(true)

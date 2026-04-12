@@ -12,6 +12,11 @@ import (
 )
 
 func (h *ArrowHNSW) AddConnection(ctx *ArrowSearchContext, data *GraphData, source, target uint32, layer, maxConn int, dist float32) {
+	// 0. Use Lock-Free path if applicable
+	if h.topLayerManager != nil && h.topLayerManager.AddConnectionCAS(layer, source, target) {
+		return
+	}
+
 	// 1. Structural/Promotion (Optimistic check first)
 	// COW Promotion
 	data = h.promoteNode(data, source)
@@ -36,7 +41,7 @@ func (h *ArrowHNSW) AddConnection(ctx *ArrowSearchContext, data *GraphData, sour
 	// 2. Lock-free Duplicate Check (Seqlock read style)
 	// We check for duplicates without the lock first.
 	// If found, we skip completely.
-	currentNeighbors := data.GetNeighbors(layer, source, nil)
+	currentNeighbors := h.GetNeighborsCombined(layer, source)
 	for _, n := range currentNeighbors {
 		if n == target {
 			return
@@ -129,7 +134,7 @@ func (h *ArrowHNSW) AddConnectionsBatch(ctx *ArrowSearchContext, data *GraphData
 	}
 
 	// 1. Optimistic Duplicate Check
-	currentNeighbors := data.GetNeighbors(layer, target, nil)
+	currentNeighbors := h.GetNeighborsCombined(layer, target)
 	var toAddIdxs []int
 	for i, src := range sources {
 		found := false

@@ -19,6 +19,10 @@ typedef struct {
     int capacity;
 } CUDAIndexHandle;
 
+// Function declarations from kernels.cu
+void launch_l2_distance_kernel(const float* vectors, const float* query, float* distances, int dimensions, int count, cudaStream_t stream);
+void launch_pq_distance_kernel(const float* lookupTable, const unsigned char* codes, float* distances, int m, int count, cudaStream_t stream);
+
 CUDAIndexHandle* cuda_init(int dimensions, int initialCapacity) {
     int device = 0;
     cudaError_t err = cudaSetDevice(device);
@@ -139,51 +143,105 @@ int cuda_search(CUDAIndexHandle* handle, float* h_query, int k, int64_t* h_resul
         return -1;
     }
 
-    // Copy vectors from GPU to host (batched for better throughput)
-    size_t vectorBytes = handle->vectorCount * handle->dimensions * sizeof(float);
-    float* h_vectors = (float*)malloc(vectorBytes);
-    cudaMemcpy(h_vectors, handle->vectorBuffer, vectorBytes, cudaMemcpyDeviceToHost);
+    // Allocate GPU memory for query and distances
+    float* d_query;
+    float* d_distances;
+    size_t querySize = handle->dimensions * sizeof(float);
+    size_t distancesSize = handle->vectorCount * sizeof(float);
+    
+    cudaMalloc(&d_query, querySize);
+    cudaMalloc(&d_distances, distancesSize);
+    
+    cudaMemcpy(d_query, h_query, querySize, cudaMemcpyHostToDevice);
 
-    size_t idBytes = handle->vectorCount * sizeof(int64_t);
-    int64_t* h_ids = (int64_t*)malloc(idBytes);
-    cudaMemcpy(h_ids, handle->idBuffer, idBytes, cudaMemcpyDeviceToHost);
-
-    // Compute L2 distances on CPU using simple loop
-    float* distances = (float*)malloc(handle->vectorCount * sizeof(float));
-    for (int i = 0; i < handle->vectorCount; i++) {
-        float* vec = h_vectors + i * handle->dimensions;
-        float sum = 0.0f;
-        for (int j = 0; j < handle->dimensions; j++) {
-            float diff = vec[j] - h_query[j];
-            sum += diff * diff;
-        }
-        distances[i] = sqrtf(sum);
-    }
-
-    // Find k nearest neighbors using selection sort
+    // Launch kernel using launcher
+    launch_l2_distance_kernel((float*)handle->vectorBuffer, d_query, d_distances, handle->dimensions, handle->vectorCount, 0);
+    
+    // Copy distances back to host
+    float* h_distances = (float*)malloc(distancesSize);
+    cudaMemcpy(h_distances, d_distances, distancesSize, cudaMemcpyDeviceToHost);
+    
+    // Selection sort on CPU (still okay for small k, but distances calculated on GPU)
     int n = handle->vectorCount;
     int resultCount = k < n ? k : n;
 
+    // Get IDs from GPU (we could also keep them on CPU if it's faster)
+int64_t* h_ids = (int64_t*)malloc(n * sizeof(int64_t));
+    cudaMemcpy(h_ids, handle->idBuffer, n * sizeof(int64_t), cudaMemcpyDeviceToHost);
+
     for (int i = 0; i < resultCount; i++) {
         int minIdx = i;
-        float minDist = distances[i];
+        float minDist = h_distances[i];
 
         for (int j = i + 1; j < n; j++) {
-            if (distances[j] < minDist) {
-                minDist = distances[j];
+            if (h_distances[j] < minDist) {
+                minDist = h_distances[j];
                 minIdx = j;
             }
         }
 
         h_resultIDs[i] = h_ids[minIdx];
         h_resultDistances[i] = minDist;
-        distances[minIdx] = INFINITY;
+        h_distances[minIdx] = INFINITY;
     }
 
-    free(h_vectors);
+    // Cleanup
+    cudaFree(d_query);
+    cudaFree(d_distances);
+    free(h_distances);
     free(h_ids);
-    free(distances);
 
+    return 0;
+}
+
+int cuda_search_pq(CUDAIndexHandle* handle, float* h_lookupTable, int m, int k, int64_t* h_resultIDs, float* h_resultDistances) {
+    if (!handle->idBuffer || handle->vectorCount == 0) {
+        return -1;
+    }
+
+    // Distance calculation on GPU
+    float* d_table;
+    float* d_distances;
+    size_t tableSize = m * 256 * sizeof(float);
+    size_t distancesSize = handle->vectorCount * sizeof(float);
+    
+    cudaMalloc(&d_table, tableSize);
+    cudaMalloc(&d_distances, distancesSize);
+    cudaMemcpy(d_table, h_lookupTable, tableSize, cudaMemcpyHostToDevice);
+
+    // Launch PQ kernel
+    // Codes are stored in handle->vectorBuffer as uint8 (if configured for PQ)
+    // Actually, current CUDAIndex assumes float vectors. 
+    // If it's a PQ index, it should store uint8 codes.
+    
+    launch_pq_distance_kernel(d_table, (unsigned char*)handle->vectorBuffer, d_distances, m, handle->vectorCount, 0);
+
+    float* h_distances = (float*)malloc(distancesSize);
+    cudaMemcpy(h_distances, d_distances, distancesSize, cudaMemcpyDeviceToHost);
+
+    int n = handle->vectorCount;
+    int resultCount = k < n ? k : n;
+    int64_t* h_ids = (int64_t*)malloc(n * sizeof(int64_t));
+    cudaMemcpy(h_ids, handle->idBuffer, n * sizeof(int64_t), cudaMemcpyDeviceToHost);
+
+    for (int i = 0; i < resultCount; i++) {
+        int minIdx = i;
+        float minDist = h_distances[i];
+        for (int j = i + 1; j < n; j++) {
+            if (h_distances[j] < minDist) {
+                minDist = h_distances[j];
+                minIdx = j;
+            }
+        }
+        h_resultIDs[i] = h_ids[minIdx];
+        h_resultDistances[i] = minDist;
+        h_distances[minIdx] = INFINITY;
+    }
+
+    cudaFree(d_table);
+    cudaFree(d_distances);
+    free(h_distances);
+    free(h_ids);
     return 0;
 }
 
@@ -427,6 +485,36 @@ func (idx *CUDAIndex) Search(vector []float32, k int) ([]int64, []float32, error
 
 	metrics.RecordGPUSearch(duration, "cuda", k)
 
+	return resultIDs, resultDistances, nil
+}
+
+func (idx *CUDAIndex) SearchPQ(lookupTable []float32, m int, k int) ([]int64, []float32, error) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	if idx.closed {
+		return nil, nil, fmt.Errorf("index is closed")
+	}
+
+	resultIDs := make([]int64, k)
+	resultDistances := make([]float32, k)
+
+	start := time.Now()
+	ret := C.cuda_search_pq(
+		idx.handle,
+		(*C.float)(unsafe.Pointer(&lookupTable[0])),
+		C.int(m),
+		C.int(k),
+		(*C.int64_t)(unsafe.Pointer(&resultIDs[0])),
+		(*C.float)(unsafe.Pointer(&resultDistances[0])),
+	)
+	duration := time.Since(start)
+
+	if ret != 0 {
+		return nil, nil, fmt.Errorf("CUDA PQ search failed")
+	}
+
+	metrics.RecordGPUSearch(duration, "cuda_pq", k)
 	return resultIDs, resultDistances, nil
 }
 

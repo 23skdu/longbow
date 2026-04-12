@@ -66,59 +66,45 @@ func DefaultShardedHNSWConfig() ShardedHNSWConfig {
 // hnswShard represents a single HNSW graph shard backed by any VectorIndex.
 type hnswShard struct {
 	index         VectorIndex
-	mu            sync.RWMutex
-	globalToLocal map[VectorID]uint32
-	localToGlobal []VectorID
+	globalToLocal sync.Map // map[VectorID]uint32
+	locationStore *ChunkedLocationStore // reusing this to store VectorID mappings instead of Locations
 }
 
 func newHnswShard(idx VectorIndex) *hnswShard {
 	return &hnswShard{
 		index:         idx,
-		localToGlobal: make([]VectorID, 0),
-		globalToLocal: make(map[VectorID]uint32),
+		locationStore: NewChunkedLocationStore(),
 	}
 }
 
 // registerID records the mapping between a local shard ID and a global VectorID.
 func (s *hnswShard) registerID(localID uint32, globalID VectorID) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	// 1. Store Local -> Global mapping (Lock-Free)
+	s.locationStore.EnsureCapacity(VectorID(localID))
+	// We cheat and use the BatchIdx/RowIdx as the VectorID representation
+	s.locationStore.Set(VectorID(localID), Location{BatchIdx: int(globalID)})
+	s.locationStore.UpdateSize(VectorID(localID))
 
-	// Ensure localToGlobal slice is large enough
-	if int(localID) >= len(s.localToGlobal) {
-		newLen := int(localID) + 1
-		if cap(s.localToGlobal) < newLen {
-			newCap := cap(s.localToGlobal) * 2
-			if newCap < newLen {
-				newCap = newLen
-			}
-			newSlice := make([]VectorID, newLen, newCap)
-			copy(newSlice, s.localToGlobal)
-			s.localToGlobal = newSlice
-		}
-		s.localToGlobal = s.localToGlobal[:newLen]
-	}
-
-	s.localToGlobal[localID] = globalID
-	s.globalToLocal[globalID] = localID
+	// 2. Store Global -> Local mapping (Lock-Free Map)
+	s.globalToLocal.Store(globalID, localID)
 }
 
 // getGlobalID returns the global ID for a local ID.
 func (s *hnswShard) getGlobalID(localID uint32) (VectorID, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if int(localID) >= len(s.localToGlobal) {
+	loc, ok := s.locationStore.Get(VectorID(localID))
+	if !ok {
 		return 0, false
 	}
-	return s.localToGlobal[localID], true
+	return VectorID(loc.BatchIdx), true
 }
 
 // getLocalID returns the local ID for a global ID.
 func (s *hnswShard) getLocalID(globalID VectorID) (uint32, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	lid, ok := s.globalToLocal[globalID]
-	return lid, ok
+	val, ok := s.globalToLocal.Load(globalID)
+	if !ok {
+		return 0, false
+	}
+	return val.(uint32), true
 }
 
 // Warmup accesses all nodes in the shard.
@@ -1033,17 +1019,15 @@ func (s *ShardedHNSW) ExportGraph(w io.Writer) error {
 			continue
 		}
 
-		shard.mu.RLock()
-		localToGlobal := make([]VectorID, len(shard.localToGlobal))
-		copy(localToGlobal, shard.localToGlobal)
-		shard.mu.RUnlock()
-
-		if err := binary.Write(w, binary.LittleEndian, uint32(len(localToGlobal))); err != nil {
+		mappingsCount := shard.locationStore.Len()
+		if err := binary.Write(w, binary.LittleEndian, uint32(mappingsCount)); err != nil {
 			return fmt.Errorf("failed to write shard %d mappings count: %w", i, err)
 		}
 
-		for _, globalID := range localToGlobal {
-			if err := binary.Write(w, binary.LittleEndian, uint64(globalID)); err != nil {
+		for j := 0; j < mappingsCount; j++ {
+			loc, _ := shard.locationStore.Get(VectorID(j))
+			globalID := uint64(loc.BatchIdx) // We store globalID in BatchIdx
+			if err := binary.Write(w, binary.LittleEndian, globalID); err != nil {
 				return fmt.Errorf("failed to write shard %d mapping: %w", i, err)
 			}
 		}
@@ -1112,14 +1096,11 @@ func (s *ShardedHNSW) ImportGraph(r io.Reader) error {
 			globalIDs[j] = VectorID(globalID)
 		}
 
-		shard.mu.Lock()
-		shard.localToGlobal = make([]VectorID, mappingCount)
-		shard.globalToLocal = make(map[VectorID]uint32, mappingCount)
+		shard.locationStore.Reset()
+		shard.locationStore.EnsureCapacity(VectorID(mappingCount - 1))
 		for j, globalID := range globalIDs {
-			shard.localToGlobal[j] = globalID
-			shard.globalToLocal[globalID] = uint32(j)
+			shard.registerID(uint32(j), globalID)
 		}
-		shard.mu.Unlock()
 
 		if shard.index != nil {
 			if err := shard.index.ImportGraph(r); err != nil {
@@ -1142,13 +1123,13 @@ func (s *ShardedHNSW) ExportDelta(fromVersion uint64) (*types.DeltaSync, error) 
 		if shard == nil {
 			continue
 		}
-		shard.mu.RLock()
-		for _, globalID := range shard.localToGlobal {
-			if loc, ok := s.locationStore.Get(VectorID(globalID)); ok {
-				allLocs = append(allLocs, loc)
+		for j := 0; j < shard.locationStore.Len(); j++ {
+			if loc, ok := shard.getGlobalID(uint32(j)); ok {
+				if gLoc, ok := s.locationStore.Get(loc); ok {
+					allLocs = append(allLocs, gLoc)
+				}
 			}
 		}
-		shard.mu.RUnlock()
 	}
 
 	return &types.DeltaSync{
@@ -1176,11 +1157,8 @@ func (s *ShardedHNSW) ApplyDelta(delta *types.DeltaSync) error {
 		}
 
 		shard := s.shards[shardIdx]
-		shard.mu.Lock()
-		localID := uint32(len(shard.localToGlobal))
-		shard.localToGlobal = append(shard.localToGlobal, globalID)
-		shard.globalToLocal[globalID] = localID
-		shard.mu.Unlock()
+		localID := uint32(shard.locationStore.Len())
+		shard.registerID(localID, globalID)
 
 		s.locationStore.Set(VectorID(globalID), loc)
 	}

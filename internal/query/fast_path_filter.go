@@ -4,11 +4,16 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"unsafe"
+
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
+	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/simd"
 )
+
 
 // IsFastPathSupported returns true if the data type and operator can use
 // the fast path that bypasses Arrow Compute overhead.
@@ -289,6 +294,28 @@ func fastPathInt32(arr *array.Int32, val int32, equal bool, builder *array.Boole
 	values := arr.Int32Values()
 	n := arr.Len()
 
+	var useAVX2 bool
+	if equal && n >= 8 {
+		feats := simd.GetCPUFeatures()
+		useAVX2 = feats.HasAVX2
+	}
+
+	if useAVX2 {
+		metrics.HNSWFilterVectorizedOpsTotal.Inc()
+		// SIMD Fast Path
+		results := make([]int32, n)
+
+		fastPathInt32EqualAVX2Kernel(unsafe.Pointer(&values[0]), n, val, unsafe.Pointer(&results[0]))
+		for i := 0; i < n; i++ {
+			if arr.IsNull(i) {
+				builder.Append(false)
+			} else {
+				builder.Append(results[i] != 0)
+			}
+		}
+		return
+	}
+
 	if equal {
 		for i := 0; i < n; i++ {
 			if arr.IsNull(i) {
@@ -384,6 +411,30 @@ func fastPathFloat64(arr *array.Float64, val float64, equal bool, builder *array
 func fastPathFloat32(arr *array.Float32, val float32, equal bool, builder *array.BooleanBuilder) {
 	values := arr.Float32Values()
 	n := arr.Len()
+
+	var useAVX2 bool
+	if equal && n >= 8 {
+		feats := simd.GetCPUFeatures()
+		useAVX2 = feats.HasAVX2
+	}
+
+	if useAVX2 {
+		metrics.HNSWFilterVectorizedOpsTotal.Inc()
+
+		// SIMD Fast Path
+		results := make([]float32, n)
+
+		fastPathFloat32EqualAVX2Kernel(unsafe.Pointer(&values[0]), n, val, unsafe.Pointer(&results[0]))
+		for i := 0; i < n; i++ {
+			if arr.IsNull(i) {
+				builder.Append(false)
+			} else {
+				// VCMPPS returns all 1s in the lane if true
+				builder.Append(results[i] != 0)
+			}
+		}
+		return
+	}
 
 	if equal {
 		for i := 0; i < n; i++ {
@@ -499,6 +550,39 @@ func fastPathUint8(arr *array.Uint8, val uint8, equal bool, builder *array.Boole
 // fastPathBool compares boolean array with scalar value.
 func fastPathBool(arr *array.Boolean, val, equal bool, builder *array.BooleanBuilder) {
 	n := arr.Len()
+	negate := val != equal
+
+	var useAVX2 bool
+	if n >= 64 {
+		feats := simd.GetCPUFeatures()
+		useAVX2 = feats.HasAVX2
+	}
+
+	if useAVX2 {
+		metrics.HNSWFilterVectorizedOpsTotal.Inc()
+
+		// SIMD Fast Path for bit-packed data
+		data := arr.Data().Buffers()[1].Bytes()
+
+
+		nBytes := (n + 7) / 8
+		results := make([]byte, nBytes)
+		fastPathBoolAVX2Kernel(unsafe.Pointer(&data[0]), nBytes, negate, unsafe.Pointer(&results[0]))
+		
+		// Fill the builder from the transformed bitmap
+		for i := 0; i < n; i++ {
+			if arr.IsNull(i) {
+				builder.Append(false)
+			} else {
+				byteIdx := i / 8
+				bitIdx := uint(i % 8)
+				val := (results[byteIdx] & (1 << bitIdx)) != 0
+				builder.Append(val)
+			}
+		}
+		return
+	}
+
 	if equal {
 		for i := 0; i < n; i++ {
 			if arr.IsNull(i) {

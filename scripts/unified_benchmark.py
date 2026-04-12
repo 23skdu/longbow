@@ -175,6 +175,10 @@ class BenchmarkRunner:
         env = os.environ.copy()
         env["LONGBOW_MAX_MEMORY"] = str(self.args.memory)
         env["ARROW_DISABLE_LOCKING"] = "1"
+        if self.args.rdma:
+            env["LONGBOW_RDMA_ENABLED"] = "true"
+        if self.args.iouring:
+            env["LONGBOW_STORAGE_USE_IOURING"] = "true"
 
         # Use unique port per config to avoid conflicts
         base_port = int(self.server_addr.split(":")[-1])
@@ -1490,6 +1494,17 @@ if __name__ == "__main__":
         type=int,
         default=3,
         help="Number of nodes in cluster for cluster mode",
+    )
+    # Hardware acceleration flags
+    parser.add_argument(
+        "--rdma",
+        action="store_true",
+        help="Enable RDMA/RoCEv2 zero-copy ingest",
+    )
+    parser.add_argument(
+        "--iouring",
+        action="store_true",
+        help="Enable io_uring optimized Parquet snapshots",
     )
 
     args = parser.parse_args()

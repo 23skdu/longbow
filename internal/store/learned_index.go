@@ -391,7 +391,7 @@ func (p *IndexPerformancePredictor) estimateLatency(features QueryFeatures, inde
 	return baseLatency
 }
 
-func (p *IndexPerformancePredictor) estimateRecall(features QueryFeatures, index IndexType) float64 {
+func (p *IndexPerformancePredictor) estimateRecall(_ QueryFeatures, index IndexType) float64 {
 	switch index {
 	case IndexTypeHNSW:
 		return 0.98
@@ -1019,7 +1019,7 @@ func (b *IndexBenchmark) simulateQuery(index IndexType, features QueryFeatures) 
 	return time.Duration(float64(baseLatency) + variance)
 }
 
-func (b *IndexBenchmark) simulateRecall(index IndexType, features QueryFeatures) float64 {
+func (b *IndexBenchmark) simulateRecall(index IndexType, _ QueryFeatures) float64 {
 	switch index {
 	case IndexTypeHNSW:
 		return 0.98

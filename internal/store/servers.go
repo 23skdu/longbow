@@ -407,7 +407,7 @@ func ToGRPCStatus(err error) error {
 	return status.Errorf(codes.Internal, "%v", err)
 }
 
-func (s *MetaServer) handleGetCapacityPlan(action *flight.Action, stream flight.FlightService_DoActionServer) error {
+func (s *MetaServer) handleGetCapacityPlan(_ *flight.Action, stream flight.FlightService_DoActionServer) error {
 	plan, err := s.GetCapacityPlan()
 	if err != nil {
 		return status.Errorf(codes.Internal, "failed to get capacity plan: %v", err)
@@ -419,7 +419,7 @@ func (s *MetaServer) handleGetCapacityPlan(action *flight.Action, stream flight.
 	return stream.Send(&flight.Result{Body: data})
 }
 
-func (s *MetaServer) handleGetAutoScaleConfig(action *flight.Action, stream flight.FlightService_DoActionServer) error {
+func (s *MetaServer) handleGetAutoScaleConfig(_ *flight.Action, stream flight.FlightService_DoActionServer) error {
 	config := s.GetAutoScaleConfig()
 	data, err := json.Marshal(config)
 	if err != nil {
@@ -511,7 +511,7 @@ func (s *MetaServer) handleCDCUnsubscribe(action *flight.Action, stream flight.F
 	return stream.Send(&flight.Result{Body: data})
 }
 
-func (s *MetaServer) handleCDCGetMetrics(action *flight.Action, stream flight.FlightService_DoActionServer) error {
+func (s *MetaServer) handleCDCGetMetrics(_ *flight.Action, stream flight.FlightService_DoActionServer) error {
 	received, sent, dropped, filtered, subs, full := s.cdc.GetMetrics()
 
 	resp := map[string]interface{}{

@@ -1,57 +1,16 @@
 package query
 
-// VectorSearchRequest defines the request format for VectorSearch action
-type VectorSearchRequest struct {
-	Dataset   string      `json:"dataset"`
-	Vector    []float32   `json:"vector,omitempty"`  // Single vector (legacy/simple)
-	Vectors   [][]float32 `json:"vectors,omitempty"` // Multiple vectors for pipelining
-	K         int         `json:"k"`
-	Filters    []Filter               `json:"filters,omitempty"`
-	FilterExpr map[string]interface{} `json:"filter_expr,omitempty"` // Rich AST filters
-	LocalOnly  bool                   `json:"local_only,omitempty"`
-	// Hybrid Search Fields
-	TextQuery string  `json:"text_query,omitempty"`
-	Alpha     float32 `json:"alpha,omitempty"` // 0.0=sparse, 1.0=dense, 0.5=hybrid
-	// GraphRAG Fields
-	GraphAlpha float32 `json:"graph_alpha,omitempty"` // 0.0=disabled, >0 blends graph score
+import "github.com/23skdu/longbow/internal/core"
 
-	// Vector Type & Quantization (TurboQuant)
-	VectorType     string `json:"vector_type,omitempty"`     // "float32", "turboquant", "int8", "binary"
-	TurboQuantBits int    `json:"turboquant_bits,omitempty"` // 4, 8 bits (default = 8)
+// Type aliases to resolve circular dependencies and maintain backward compatibility
+type VectorSearchRequest = core.VectorSearchRequest
+type VectorSearchByIDRequest = core.VectorSearchByIDRequest
+type RecommendRequest = core.RecommendRequest
+type VectorSearchResponse = core.VectorSearchResponse
+type Filter = core.Filter
+type WindowFunction = core.WindowFunction
+type WindowSpec = core.WindowSpec
+type WindowOrder = core.WindowOrder
 
-	// Vector Transport
-	IncludeVectors bool   `json:"include_vectors,omitempty"`
-	VectorFormat   string `json:"vector_format,omitempty"` // "quantized", "f32", "f16", "bq"
-
-	// Consistency Level for distributed queries
-	Consistency string `json:"consistency,omitempty"` // "ONE", "QUORUM", "ALL"
-
-	EfSearch int `json:"ef_search,omitempty"`
-}
-
-// RecommendRequest defines the request for the built-in recommendation engine (v0.1.9)
-type RecommendRequest struct {
-	Dataset   string   `json:"dataset"`
-	SeedIDs   []string `json:"seed_ids"` // User IDs (mapped strings)
-	K         int      `json:"k"`
-	Alpha     float32  `json:"alpha"`    // 1.0=pure vector, 0.0=pure graph
-	MaxHops   int      `json:"max_hops,omitempty"`
-	Decay     float32  `json:"decay,omitempty"`
-}
-
-// VectorSearchResponse defines the response format for VectorSearch action
-type VectorSearchResponse struct {
-	IDs    []uint64  `json:"ids"`
-	Scores []float32 `json:"scores"`
-}
-
-// VectorSearchByIDRequest defines the request format for searching by User ID
-type VectorSearchByIDRequest struct {
-	Dataset        string `json:"dataset"`
-	ID             string `json:"id"` // User ID (stringified)
-	K              int    `json:"k"`
-	IncludeVectors bool   `json:"include_vectors,omitempty"`
-	VectorFormat   string `json:"vector_format,omitempty"`
-	VectorType     string `json:"vector_type,omitempty"`
-	TurboQuantBits int    `json:"turboquant_bits,omitempty"`
-}
+// TicketQuery is also aliased for convenience
+type TicketQuery = core.TicketQuery

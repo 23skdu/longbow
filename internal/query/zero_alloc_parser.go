@@ -2,40 +2,22 @@ package query
 
 import (
 	"errors"
-	"fmt"
 	"sync"
 	"sync/atomic"
 
-	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/core"
 	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
 )
 
-type TicketQuery struct {
-	Name       string                   `json:"name"`
-	Limit      int64                    `json:"limit"`
-	Filters    []Filter                 `json:"filters"`
-	Search     *VectorSearchRequest     `json:"search,omitempty"`
-	SearchByID *VectorSearchByIDRequest `json:"search_by_id,omitempty"`
-	Recommend  *RecommendRequest        `json:"recommend,omitempty"`
-}
 
-type Filter struct {
-	Field    string `json:"field,omitempty"`
-	Operator string `json:"operator,omitempty"`
-	Value    string `json:"value,omitempty"`
-	// Logic combines multiple filters: "AND", "OR", "NOT"
-	Logic   string   `json:"logic,omitempty"`
-	Filters []Filter `json:"filters,omitempty"`
-}
 
-// Hash returns a unique string representation of the filter for caching purposes.
-func (f *Filter) Hash() string {
+// Hash returns a unique string representation of a filter for caching purposes.
+func FilterHash(f core.Filter) string {
 	h := f.Field + ":" + f.Operator + ":" + f.Value + ":" + f.Logic
 	if len(f.Filters) > 0 {
 		h += "("
 		for i := range f.Filters {
-			h += f.Filters[i].Hash()
+			h += FilterHash(f.Filters[i])
 			if i < len(f.Filters)-1 {
 				h += ","
 			}
@@ -50,6 +32,7 @@ func (f *Filter) Hash() string {
 type ZeroAllocTicketParser struct {
 	result       TicketQuery
 	filters      []Filter
+	windowFunctions []WindowFunction
 	searchParser *ZeroAllocVectorSearchParser
 	logger       zerolog.Logger
 }
@@ -58,6 +41,7 @@ type ZeroAllocTicketParser struct {
 func NewZeroAllocTicketParser(logger *zerolog.Logger) *ZeroAllocTicketParser {
 	return &ZeroAllocTicketParser{
 		filters:      make([]Filter, 0, 16),
+		windowFunctions: make([]WindowFunction, 0, 4),
 		searchParser: NewZeroAllocVectorSearchParser(768, logger), // Default max dims
 		logger:       *logger,
 	}
@@ -71,6 +55,7 @@ func (p *ZeroAllocTicketParser) Parse(data []byte) (TicketQuery, error) {
 	p.result.SearchByID = nil
 	p.result.Recommend = nil
 	p.filters = p.filters[:0]
+	p.windowFunctions = p.windowFunctions[:0]
 
 	if len(data) == 0 {
 		return p.result, nil
@@ -94,6 +79,12 @@ func (p *ZeroAllocTicketParser) Parse(data []byte) (TicketQuery, error) {
 				copy(p.result.Filters, p.filters)
 			} else {
 				p.result.Filters = nil
+			}
+			if len(p.windowFunctions) > 0 {
+				p.result.WindowFunctions = make([]WindowFunction, len(p.windowFunctions))
+				copy(p.result.WindowFunctions, p.windowFunctions)
+			} else {
+				p.result.WindowFunctions = nil
 			}
 			return p.result, nil
 		}
@@ -143,6 +134,12 @@ func (p *ZeroAllocTicketParser) Parse(data []byte) (TicketQuery, error) {
 				return p.result, err
 			}
 			i = newPos
+		case "window_functions":
+			newPos, err := p.parseWindowFunctions(data, i)
+			if err != nil {
+				return p.result, err
+			}
+			i = newPos
 		case "search":
 			// Extract object slice
 			start := i
@@ -165,7 +162,7 @@ func (p *ZeroAllocTicketParser) Parse(data []byte) (TicketQuery, error) {
 				return p.result, err
 			}
 			// Parse the JSON object into VectorSearchByIDRequest
-			var req VectorSearchByIDRequest
+			var req core.VectorSearchByIDRequest
 			if err := parseSearchByIDRequest(data[start:newPos], &req); err != nil {
 				return p.result, err
 			}
@@ -178,7 +175,7 @@ func (p *ZeroAllocTicketParser) Parse(data []byte) (TicketQuery, error) {
 			if err != nil {
 				return p.result, err
 			}
-			var req RecommendRequest
+			var req core.RecommendRequest
 			if err := parseRecommendRequest(data[start:newPos], &req); err != nil {
 				return p.result, err
 			}
@@ -201,688 +198,51 @@ func (p *ZeroAllocTicketParser) Parse(data []byte) (TicketQuery, error) {
 	return p.result, errors.New("unexpected end of JSON")
 }
 
+
+func (p *ZeroAllocTicketParser) parseWindowFunctions(data []byte, pos int) (int, error) {
+	wfs, newPos, err := parseWindowFunctionsShared(data, pos)
+	if err != nil {
+		return pos, err
+	}
+	p.windowFunctions = wfs
+	return newPos, nil
+}
+
 func (p *ZeroAllocTicketParser) parseFilters(data []byte, pos int) (int, error) {
-	if pos+4 <= len(data) && string(data[pos:pos+4]) == "null" {
-		return pos + 4, nil
-	}
-	if pos >= len(data) || data[pos] != '[' {
-		return pos, errors.New("expected opening bracket")
-	}
-	pos++
-
-	for pos < len(data) {
-		pos = skipWhitespace(data, pos)
-		if pos >= len(data) {
-			return pos, errors.New("unexpected end in filters")
-		}
-
-		if data[pos] == ']' {
-			return pos + 1, nil
-		}
-
-		f, newPos, err := parseFilter(data, pos)
-		if err != nil {
-			return pos, err
-		}
-		p.filters = append(p.filters, f)
-		pos = newPos
-
-		pos = skipWhitespace(data, pos)
-		if pos < len(data) && data[pos] == ',' {
-			pos++
-		}
-	}
-
-	return pos, errors.New("unexpected end in filters")
-}
-
-func parseFilter(data []byte, pos int) (Filter, int, error) {
-	var f Filter
-
-	if pos >= len(data) || data[pos] != '{' {
-		return f, pos, errors.New("expected opening brace for filter")
-	}
-	pos++
-
-	for pos < len(data) {
-		pos = skipWhitespace(data, pos)
-		if pos >= len(data) {
-			return f, pos, errors.New("unexpected end in filter")
-		}
-
-		if data[pos] == '}' {
-			return f, pos + 1, nil
-		}
-
-		if data[pos] != '"' {
-			return f, pos, errors.New("expected quote for filter key")
-		}
-
-		key, newPos, err := parseString(data, pos)
-		if err != nil {
-			return f, pos, err
-		}
-		pos = newPos
-
-		pos = skipWhitespace(data, pos)
-		if pos >= len(data) || data[pos] != ':' {
-			return f, pos, errors.New("expected colon in filter")
-		}
-		pos++
-		pos = skipWhitespace(data, pos)
-
-		switch key {
-		case "field":
-			fieldVal, newPos, err := parseString(data, pos)
-			if err != nil {
-				return f, pos, err
-			}
-			f.Field = fieldVal
-			pos = newPos
-		case "operator", "op":
-			opVal, newPos, err := parseString(data, pos)
-			if err != nil {
-				return f, pos, err
-			}
-			f.Operator = opVal
-			pos = newPos
-		case "value":
-			// Value can be string or number (but stored as string)
-			if pos < len(data) && data[pos] == '"' {
-				strVal, newPos, err := parseString(data, pos)
-				if err != nil {
-					return f, pos, err
-				}
-				f.Value = strVal
-				pos = newPos
-			} else {
-				// Numeric value - extract as string
-				start := pos
-				if pos < len(data) && data[pos] == '-' {
-					pos++
-				}
-				for pos < len(data) && ((data[pos] >= '0' && data[pos] <= '9') || data[pos] == '.' || data[pos] == 'e' || data[pos] == 'E') {
-					pos++
-				}
-				f.Value = safeString(data[start:pos])
-			}
-		case "logic":
-			logicVal, newPos, err := parseString(data, pos)
-			if err != nil {
-				return f, pos, err
-			}
-			f.Logic = logicVal
-			pos = newPos
-		case "filters":
-			// Recursive parsing of filters list
-			// We need a temporary zeroParser-like logic or extract a list
-			// Reusing ZeroAllocTicketParser.parseFilters logic but detached?
-			// The existing parseFilters method is attached to ZeroAllocTicketParser and appends to p.filters.
-			// Currently, TicketParser flattens top-level filters.
-			// For recursive filters, we should support nested parsing.
-			// Let's implement a standalone parseFilterList helper or reuse parseFilters by creating a new context?
-			// Simpler: Just implement array parsing here loop.
-			newFilters := make([]Filter, 0, 4)
-			newPos, err := parseFilterArray(data, pos, &newFilters)
-			if err != nil {
-				return f, pos, err
-			}
-			f.Filters = newFilters
-			pos = newPos
-		default:
-			newPos, err := skipValue(data, pos)
-			if err != nil {
-				return f, pos, err
-			}
-			pos = newPos
-		}
-
-		pos = skipWhitespace(data, pos)
-		if pos < len(data) && data[pos] == ',' {
-			pos++
-		}
-	}
-
-	return f, pos, errors.New("unexpected end in filter")
-}
-
-func parseFilterArray(data []byte, pos int, filters *[]Filter) (int, error) {
-	if pos+4 <= len(data) && string(data[pos:pos+4]) == "null" {
-		return pos + 4, nil
-	}
-	if pos >= len(data) || data[pos] != '[' {
-		return pos, errors.New("expected opening bracket for filters")
-	}
-	pos++
-
-	for pos < len(data) {
-		pos = skipWhitespace(data, pos)
-		if pos >= len(data) {
-			return pos, errors.New("unexpected end in nested filters")
-		}
-
-		if data[pos] == ']' {
-			return pos + 1, nil
-		}
-
-		f, newPos, err := parseFilter(data, pos)
-		if err != nil {
-			return pos, err
-		}
-		*filters = append(*filters, f)
-		pos = newPos
-
-		pos = skipWhitespace(data, pos)
-		if pos < len(data) && data[pos] == ',' {
-			pos++
-		}
-	}
-
-	return pos, errors.New("unexpected end in nested filters")
-}
-
-// ... Primitives ...
-
-func skipWhitespace(data []byte, pos int) int {
-	for pos < len(data) && (data[pos] == ' ' || data[pos] == '\t' || data[pos] == '\n' || data[pos] == '\r') {
-		pos++
-	}
-	return pos
-}
-
-func safeString(b []byte) string {
-	return string(b)
-}
-
-func parseString(data []byte, pos int) (s string, newPos int, err error) {
-	if pos >= len(data) || data[pos] != '"' {
-		return "", pos, errors.New("expected quote at start of string")
-	}
-	pos++
-	start := pos
-
-	// Fast path: scan for end quote, check if escapes present
-	hasEscape := false
-	for i := pos; i < len(data); i++ {
-		c := data[i]
-		if c == '"' {
-			if !hasEscape {
-				// No escapes, return direct slice (zero-alloc)
-				return safeString(data[start:i]), i + 1, nil
-			}
-			// Has escapes, decode them
-			return decodeEscapes(data[start:i]), i + 1, nil
-		}
-		if c == '\\' {
-			hasEscape = true
-			i++ // Skip next char
-		}
-	}
-
-	return "", pos, errors.New("unterminated string")
-}
-
-func decodeEscapes(data []byte) string {
-	buf := make([]byte, 0, len(data))
-	i := 0
-	for i < len(data) {
-		if data[i] == '\\' && i+1 < len(data) {
-			i++
-			switch data[i] {
-			case '"':
-				buf = append(buf, '"')
-			case '\\':
-				buf = append(buf, '\\')
-			case '/':
-				buf = append(buf, '/')
-			case 'b':
-				buf = append(buf, '\b')
-			case 'f':
-				buf = append(buf, '\f')
-			case 'n':
-				buf = append(buf, '\n')
-			case 'r':
-				buf = append(buf, '\r')
-			case 't':
-				buf = append(buf, '\t')
-			case 'u':
-				// Unicode escape: \uXXXX
-				if i+4 < len(data) {
-					r := parseHex4(data[i+1 : i+5])
-					if r >= 0 {
-						// Encode rune as UTF-8
-						var tmp [4]byte
-						n := encodeRune(tmp[:], rune(r))
-						buf = append(buf, tmp[:n]...)
-						i += 4
-					} else {
-						buf = append(buf, data[i])
-					}
-				} else {
-					buf = append(buf, data[i])
-				}
-			default:
-				buf = append(buf, data[i])
-			}
-			i++
-		} else {
-			buf = append(buf, data[i])
-			i++
-		}
-	}
-	return string(buf)
-}
-
-func parseHex4(data []byte) int {
-	var r int
-	for _, c := range data {
-		r <<= 4
-		switch {
-		case c >= '0' && c <= '9':
-			r |= int(c - '0')
-		case c >= 'a' && c <= 'f':
-			r |= int(c - 'a' + 10)
-		case c >= 'A' && c <= 'F':
-			r |= int(c - 'A' + 10)
-		default:
-			return -1
-		}
-	}
-	return r
-}
-
-func encodeRune(buf []byte, r rune) int {
-	if r < 0x80 {
-		buf[0] = byte(r)
-		return 1
-	}
-	if r < 0x800 {
-		buf[0] = byte(0xC0 | (r >> 6))
-		buf[1] = byte(0x80 | (r & 0x3F))
-		return 2
-	}
-	if r < 0x10000 {
-		buf[0] = byte(0xE0 | (r >> 12))
-		buf[1] = byte(0x80 | ((r >> 6) & 0x3F))
-		buf[2] = byte(0x80 | (r & 0x3F))
-		return 3
-	}
-	buf[0] = byte(0xF0 | (r >> 18))
-	buf[1] = byte(0x80 | ((r >> 12) & 0x3F))
-	buf[2] = byte(0x80 | ((r >> 6) & 0x3F))
-	buf[3] = byte(0x80 | (r & 0x3F))
-	return 4
-}
-
-func parseInt64(data []byte, pos int) (val int64, newPos int, err error) {
-	start := pos
-	var neg bool
-
-	if pos < len(data) && data[pos] == '-' {
-		neg = true
-		pos++
-	}
-
-	if pos >= len(data) || data[pos] < '0' || data[pos] > '9' {
-		return 0, start, errors.New("expected digit")
-	}
-
-	for pos < len(data) && data[pos] >= '0' && data[pos] <= '9' {
-		val = val*10 + int64(data[pos]-'0')
-		pos++
-	}
-
-	if neg {
-		val = -val
-	}
-
-	return val, pos, nil
-}
-
-func skipValue(data []byte, pos int) (int, error) {
-	if pos >= len(data) {
-		return pos, errors.New("unexpected end")
-	}
-
-	switch data[pos] {
-	case '"':
-		_, newPos, err := parseString(data, pos)
-		return newPos, err
-	case '{':
-		return skipObject(data, pos)
-	case '[':
-		return skipArray(data, pos)
-	case 't', 'f', 'n':
-		return skipLiteral(data, pos)
-	default:
-		return skipNumber(data, pos)
-	}
-}
-
-func skipObject(data []byte, pos int) (int, error) {
-	if pos >= len(data) || data[pos] != '{' {
-		return pos, errors.New("expected opening brace")
-	}
-	depth := 1
-	pos++
-	for pos < len(data) && depth > 0 {
-		switch data[pos] {
-		case '{':
-			depth++
-		case '}':
-			depth--
-		case '"':
-			_, newPos, err := parseString(data, pos)
-			if err != nil {
-				return pos, err
-			}
-			pos = newPos
-			continue
-		}
-		pos++
-	}
-	if depth != 0 {
-		return pos, errors.New("unterminated object")
-	}
-	return pos, nil
-}
-
-func skipArray(data []byte, pos int) (int, error) {
-	if pos >= len(data) || data[pos] != '[' {
-		return pos, errors.New("expected opening bracket")
-	}
-	depth := 1
-	pos++
-	for pos < len(data) && depth > 0 {
-		switch data[pos] {
-		case '[':
-			depth++
-		case ']':
-			depth--
-		case '"':
-			_, newPos, err := parseString(data, pos)
-			if err != nil {
-				return pos, err
-			}
-			pos = newPos
-			continue
-		}
-		pos++
-	}
-	if depth != 0 {
-		return pos, errors.New("unterminated array")
-	}
-	return pos, nil
-}
-
-func skipLiteral(data []byte, pos int) (int, error) {
-	if pos+4 <= len(data) && string(data[pos:pos+4]) == "true" {
-		return pos + 4, nil
-	}
-	if pos+5 <= len(data) && string(data[pos:pos+5]) == "false" {
-		return pos + 5, nil
-	}
-	if pos+4 <= len(data) && string(data[pos:pos+4]) == "null" {
-		return pos + 4, nil
-	}
-	return pos, errors.New("unknown literal")
-}
-
-func skipNumber(data []byte, pos int) (int, error) {
-	if pos < len(data) && data[pos] == '-' {
-		pos++
-	}
-	for pos < len(data) && ((data[pos] >= '0' && data[pos] <= '9') || data[pos] == '.' || data[pos] == 'e' || data[pos] == 'E' || data[pos] == '+' || data[pos] == '-') {
-		pos++
-	}
-	return pos, nil
-}
-
-// ParserPoolStats tracks pool usage statistics
-type ParserPoolStats struct {
-	Gets   uint64
-	Puts   uint64
-	Hits   uint64
-	Misses uint64
+	return parseFilterArray(data, pos, &p.filters)
 }
 
 var (
-	// ticketParserPool is a thread-safe pool of parsers
-	ticketParserPool sync.Pool
-
-	// Pool statistics tracked with atomics for thread-safety
-	parserPoolGets   uint64
-	parserPoolPuts   uint64
-	parserPoolHits   uint64
-	parserPoolMisses uint64
+	parserPool = sync.Pool{
+		New: func() interface{} {
+			nopLogger := zerolog.Nop()
+			return NewZeroAllocTicketParser(&nopLogger)
+		},
+	}
+	poolGets uint64
+	poolPuts uint64
 )
 
-// GetParserPoolStats returns current pool statistics
+// ParseTicketQuerySafe uses a pool of parsers to thread-safely parse TicketQuery
+func ParseTicketQuerySafe(data []byte) (TicketQuery, error) {
+	parser := parserPool.Get().(*ZeroAllocTicketParser)
+	atomic.AddUint64(&poolGets, 1)
+	
+	res, err := parser.Parse(data)
+	
+	parserPool.Put(parser)
+	atomic.AddUint64(&poolPuts, 1)
+	return res, err
+}
+
+type ParserPoolStats struct {
+	Gets uint64
+	Puts uint64
+}
+
 func GetParserPoolStats() ParserPoolStats {
 	return ParserPoolStats{
-		Gets:   atomic.LoadUint64(&parserPoolGets),
-		Puts:   atomic.LoadUint64(&parserPoolPuts),
-		Hits:   atomic.LoadUint64(&parserPoolHits),
-		Misses: atomic.LoadUint64(&parserPoolMisses),
+		Gets: atomic.LoadUint64(&poolGets),
+		Puts: atomic.LoadUint64(&poolPuts),
 	}
-}
-
-// ParseTicketQuerySafe is a thread-safe wrapper that uses pooled parsers
-func ParseTicketQuerySafe(data []byte) (TicketQuery, error) {
-	atomic.AddUint64(&parserPoolGets, 1)
-	if metrics.ParserPoolGets != nil {
-		metrics.ParserPoolGets.Inc()
-	}
-
-	// Try to get a parser from the pool
-	pooled := ticketParserPool.Get()
-	var parser *ZeroAllocTicketParser
-	if pooled != nil {
-		atomic.AddUint64(&parserPoolHits, 1)
-		if metrics.ParserPoolHits != nil {
-			metrics.ParserPoolHits.Inc()
-		}
-		parser = pooled.(*ZeroAllocTicketParser)
-	} else {
-		atomic.AddUint64(&parserPoolMisses, 1)
-		if metrics.ParserPoolMisses != nil {
-			metrics.ParserPoolMisses.Inc()
-		}
-		parser = NewZeroAllocTicketParser(&log.Logger)
-	}
-
-	// Parse the data
-	result, err := parser.Parse(data)
-
-	// Return parser to pool
-	ticketParserPool.Put(parser)
-	atomic.AddUint64(&parserPoolPuts, 1)
-	if metrics.ParserPoolPuts != nil {
-		metrics.ParserPoolPuts.Inc()
-	}
-
-	return result, err
-}
-
-func parseSearchByIDRequest(data []byte, req *VectorSearchByIDRequest) error {
-	i := skipWhitespace(data, 0)
-	if i >= len(data) || data[i] != '{' {
-		return errors.New("expected opening brace")
-	}
-	i++
-
-	for {
-		i = skipWhitespace(data, i)
-		if i >= len(data) {
-			return errors.New("unexpected end")
-		}
-		if data[i] == '}' {
-			return nil
-		}
-
-		key, newPos, err := parseString(data, i)
-		if err != nil {
-			return err
-		}
-		i = newPos
-		i = skipWhitespace(data, i)
-		if i >= len(data) || data[i] != ':' {
-			return errors.New("expected colon")
-		}
-		i++
-		i = skipWhitespace(data, i)
-
-		switch key {
-		case "dataset":
-			val, newPos, err := parseString(data, i)
-			if err != nil {
-				return err
-			}
-			req.Dataset = val
-			i = newPos
-		case "id":
-			val, newPos, err := parseString(data, i)
-			if err != nil {
-				return err
-			}
-			req.ID = val
-			i = newPos
-		case "k":
-			val, newPos, err := parseInt64(data, i)
-			if err != nil {
-				return err
-			}
-			req.K = int(val)
-			i = newPos
-		default:
-			newPos, err := skipValue(data, i)
-			if err != nil {
-				return err
-			}
-			i = newPos
-		}
-
-		i = skipWhitespace(data, i)
-		if i < len(data) && data[i] == ',' {
-			i++
-		}
-	}
-}
-
-func parseRecommendRequest(data []byte, req *RecommendRequest) error {
-	i := skipWhitespace(data, 0)
-	if i >= len(data) || data[i] != '{' {
-		return errors.New("expected opening brace")
-	}
-	i++
-
-	for {
-		i = skipWhitespace(data, i)
-		if i >= len(data) {
-			return errors.New("unexpected end")
-		}
-		if data[i] == '}' {
-			return nil
-		}
-
-		key, newPos, err := parseString(data, i)
-		if err != nil {
-			return err
-		}
-		i = newPos
-		i = skipWhitespace(data, i)
-		if i >= len(data) || data[i] != ':' {
-			return errors.New("expected colon")
-		}
-		i++
-		i = skipWhitespace(data, i)
-
-		switch key {
-		case "dataset":
-			val, newPos, err := parseString(data, i)
-			if err != nil {
-				return err
-			}
-			req.Dataset = val
-			i = newPos
-		case "seed_ids":
-			if i >= len(data) || data[i] != '[' {
-				return errors.New("expected opening bracket for seed_ids")
-			}
-			i++
-			for {
-				i = skipWhitespace(data, i)
-				if i >= len(data) {
-					return errors.New("unexpected end in seed_ids")
-				}
-				if data[i] == ']' {
-					i++
-					break
-				}
-				val, newPos, err := parseString(data, i)
-				if err != nil {
-					return err
-				}
-				req.SeedIDs = append(req.SeedIDs, val)
-				i = newPos
-				i = skipWhitespace(data, i)
-				if i < len(data) && data[i] == ',' {
-					i++
-				}
-			}
-		case "k":
-			val, newPos, err := parseInt64(data, i)
-			if err != nil {
-				return err
-			}
-			req.K = int(val)
-			i = newPos
-		case "alpha":
-			val, newPos, err := parseNumber(data, i)
-			if err != nil {
-				return err
-			}
-			req.Alpha = float32(val)
-			i = newPos
-		case "max_hops":
-			val, newPos, err := parseInt64(data, i)
-			if err != nil {
-				return err
-			}
-			req.MaxHops = int(val)
-			i = newPos
-		case "decay":
-			val, newPos, err := parseNumber(data, i)
-			if err != nil {
-				return err
-			}
-			req.Decay = float32(val)
-			i = newPos
-		default:
-			newPos, err := skipValue(data, i)
-			if err != nil {
-				return err
-			}
-			i = newPos
-		}
-
-		i = skipWhitespace(data, i)
-		if i < len(data) && data[i] == ',' {
-			i++
-		}
-	}
-}
-
-func parseNumber(data []byte, pos int) (float64, int, error) {
-	start := pos
-	if pos < len(data) && data[pos] == '-' {
-		pos++
-	}
-	for pos < len(data) && ((data[pos] >= '0' && data[pos] <= '9') || data[pos] == '.' || data[pos] == 'e' || data[pos] == 'E' || data[pos] == '-' || data[pos] == '+') {
-		pos++
-	}
-	s := string(data[start:pos])
-	var val float64
-	fmt.Sscanf(s, "%f", &val)
-	return val, pos, nil
 }

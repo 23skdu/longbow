@@ -2,8 +2,6 @@ package query
 
 import (
 	"errors"
-	"math"
-	"strconv"
 
 	"github.com/rs/zerolog"
 )
@@ -168,6 +166,13 @@ func (p *ZeroAllocVectorSearchParser) Parse(data []byte) (VectorSearchRequest, e
 				p.result.VectorFormat = val
 				i = newPos
 			}
+		case "window_functions":
+			wfs, newPos, err := parseWindowFunctionsShared(data, i)
+			if err != nil {
+				return p.result, err
+			}
+			p.result.WindowFunctions = wfs
+			i = newPos
 		default:
 			// Unknown field: return error to trigger fallback to json.Unmarshal
 			// This is important because the zero-alloc parser doesn't support 'vectors' yet.
@@ -223,96 +228,7 @@ func (p *ZeroAllocVectorSearchParser) parseFloat32Array(data []byte, pos int) (i
 	return pos, errors.New("unexpected end in vector array")
 }
 
-// parseFloat32 parses a JSON number as float32.
-// Handles integers, decimals, and scientific notation.
-func parseFloat32(data []byte, pos int) (float32, int, error) { //nolint:gocritic // unnamedResult - clarity preferred for parser utility
-	start := pos
-
-	// Handle negative sign
-	if pos < len(data) && data[pos] == '-' {
-		pos++
-	}
-
-	// Integer part
-	if pos >= len(data) || (data[pos] < '0' || data[pos] > '9') {
-		return 0, start, errors.New("expected digit in number")
-	}
-	for pos < len(data) && data[pos] >= '0' && data[pos] <= '9' {
-		pos++
-	}
-
-	// Fractional part
-	if pos < len(data) && data[pos] == '.' {
-		pos++
-		for pos < len(data) && data[pos] >= '0' && data[pos] <= '9' {
-			pos++
-		}
-	}
-
-	// Exponent part
-	if pos < len(data) && (data[pos] == 'e' || data[pos] == 'E') {
-		pos++
-		if pos < len(data) && (data[pos] == '+' || data[pos] == '-') {
-			pos++
-		}
-		for pos < len(data) && data[pos] >= '0' && data[pos] <= '9' {
-			pos++
-		}
-	}
-
-	// Use strconv.ParseFloat for accurate conversion
-	val, err := strconv.ParseFloat(string(data[start:pos]), 32)
-	if err != nil {
-		return 0, start, err
-	}
-
-	return float32(val), pos, nil
-}
 
 func (p *ZeroAllocVectorSearchParser) parseFilters(data []byte, pos int) (int, error) {
-	if pos+4 <= len(data) && string(data[pos:pos+4]) == "null" {
-		return pos + 4, nil
-	}
-	if pos >= len(data) || data[pos] != '[' {
-		return pos, errors.New("expected opening bracket")
-	}
-	pos++
-
-	for pos < len(data) {
-		pos = skipWhitespace(data, pos)
-		if pos >= len(data) {
-			return pos, errors.New("unexpected end in filters")
-		}
-
-		if data[pos] == ']' {
-			return pos + 1, nil
-		}
-
-		f, newPos, err := parseFilter(data, pos)
-		if err != nil {
-			return pos, err
-		}
-		p.filters = append(p.filters, f)
-		pos = newPos
-
-		pos = skipWhitespace(data, pos)
-		if pos < len(data) && data[pos] == ',' {
-			pos++
-		}
-	}
-
-	return pos, errors.New("unexpected end in filters")
+	return parseFilterArray(data, pos, &p.filters)
 }
-
-func parseBool(data []byte, pos int) (val bool, newPos int, err error) {
-	if pos+4 <= len(data) && string(data[pos:pos+4]) == "true" {
-		return true, pos + 4, nil
-	}
-	if pos+5 <= len(data) && string(data[pos:pos+5]) == "false" {
-		return false, pos + 5, nil
-	}
-	return false, pos, errors.New("expected boolean")
-}
-
-// Ensure imports are used
-var _ = math.MaxFloat32

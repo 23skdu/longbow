@@ -4,8 +4,8 @@ import (
 	"context"
 	"io"
 
+	"github.com/23skdu/longbow/internal/core"
 	"github.com/23skdu/longbow/internal/pq"
-	"github.com/23skdu/longbow/internal/query"
 	"github.com/RoaringBitmap/roaring/v2"
 	"github.com/apache/arrow-go/v18/arrow"
 )
@@ -16,13 +16,13 @@ type VectorIndexer interface {
 	AddByLocation(ctx context.Context, batchIdx, rowIdx int) (uint32, error)
 	AddByRecord(ctx context.Context, rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32, error)
 	Search(ctx context.Context, query any, k int, filter any) ([]Candidate, error)
-	SearchVectors(ctx context.Context, q any, k int, filters []query.Filter, options any) ([]SearchResult, error)
+	SearchVectors(ctx context.Context, q any, k int, filters []core.Filter, options any) ([]SearchResult, error)
 	SearchVectorsWithBitmap(ctx context.Context, q any, k int, filter *roaring.Bitmap, options any) ([]SearchResult, error)
 
 	// RangeSearch returns all vectors within a similarity threshold.
 	// This is useful for clustering, duplicate detection, and radius-based queries.
 	// Returns all vectors where distance <= threshold (or score >= minScore for similarity metrics).
-	SearchVectorsInRange(ctx context.Context, q any, threshold float32, filters []query.Filter, options any) ([]SearchResult, error)
+	SearchVectorsInRange(ctx context.Context, q any, threshold float32, filters []core.Filter, options any) ([]SearchResult, error)
 	IsSharded() bool
 
 	// Metadata operations

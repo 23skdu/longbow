@@ -38,3 +38,34 @@ var (
 		[]string{"dataset", "column"},
 	)
 )
+
+var (
+	// PQTrainingDuration measures latency of Product Quantization training
+	PQTrainingDuration = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_pq_training_duration_seconds",
+			Help:    "Latency of PQ training operations",
+			Buckets: []float64{0.1, 0.5, 1, 5, 10, 30, 60, 120, 300},
+		},
+		[]string{"dataset", "dimension", "subspaces"},
+	)
+
+	// PQEncodingDuration measures latency of Product Quantization encoding
+	PQEncodingDuration = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_pq_encoding_duration_seconds",
+			Help:    "Latency of PQ encoding operations",
+			Buckets: []float64{0.001, 0.01, 0.1, 0.5, 1, 5},
+		},
+		[]string{"dataset", "vector_count"},
+	)
+
+	// PQOperationsTotal tracks total PQ operations
+	PQOperationsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_pq_operations_total",
+			Help: "Total number of PQ operations",
+		},
+		[]string{"dataset", "operation", "status"}, // operation: "train", "encode"
+	)
+)

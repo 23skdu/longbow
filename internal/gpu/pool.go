@@ -277,8 +277,16 @@ func (w *pooledIndexWrapper) Search(vector []float32, k int) ([]int64, []float32
 	return w.pooled.index.Search(vector, k)
 }
 
-func (w *pooledIndexWrapper) SearchPQ(lookupTable []float32, m int, k int) ([]int64, []float32, error) {
-	return w.pooled.index.SearchPQ(lookupTable, m, k)
+func (pw *pooledIndexWrapper) SearchPQ(lookupTable []float32, m int, k int) (ids []int64, distances []float32, err error) {
+	return pw.pooled.index.SearchPQ(lookupTable, m, k)
+}
+
+func (pw *pooledIndexWrapper) TrainPQ(vectors []float32, m int, k int) error {
+	return pw.pooled.index.TrainPQ(vectors, m, k)
+}
+
+func (pw *pooledIndexWrapper) EncodePQ(vectors []float32) ([]byte, error) {
+	return pw.pooled.index.EncodePQ(vectors)
 }
 
 // Close returns the index to the pool instead of closing it

@@ -239,11 +239,13 @@ func (d *DatasetIO) writeRecordsToParquet(records []arrow.RecordBatch, buf *byte
 				col := rec.Column(vectorColIdx)
 				switch arr := col.(type) {
 				case *array.FixedSizeList:
+					dim := arr.Len()
 					child := arr.ListValues()
 					if floatArr, ok := child.(*array.Float32); ok {
-						vec := make([]byte, floatArr.Len()*4)
-						for i := 0; i < floatArr.Len(); i++ {
-							binary.LittleEndian.PutUint32(vec[i*4:], math.Float32bits(floatArr.Value(i)))
+						vec := make([]byte, dim*4)
+						offset := int(rowIdx) * dim
+						for i := 0; i < dim; i++ {
+							binary.LittleEndian.PutUint32(vec[i*4:], math.Float32bits(floatArr.Value(offset+i)))
 						}
 						record.Vector = vec
 					}
@@ -294,83 +296,84 @@ func (d *DatasetIO) writeRecordsToParquet(records []arrow.RecordBatch, buf *byte
 	return totalRows, nil
 }
 
-func (d *DatasetIO) ImportFromParquet(ctx context.Context, name string, backend storage.SnapshotBackend, schema *arrow.Schema) (int64, error) {
+func (d *DatasetIO) ImportFromParquet(ctx context.Context, snapshotName, datasetName string, backend storage.SnapshotBackend, schema *arrow.Schema) (int64, error) {
 	startTime := time.Now()
 
 	var header DatasetHeader
 
-	headerFile, err := backend.ReadSnapshotFile(ctx, name, ".header")
+	headerFile, err := backend.ReadSnapshotFile(ctx, snapshotName, ".header")
 	if err == nil {
 		defer headerFile.Close()
 		headerData, err := io.ReadAll(headerFile)
 		if err != nil {
-			metrics.DatasetImportFailures.WithLabelValues(name).Inc()
+			metrics.DatasetImportFailures.WithLabelValues(datasetName).Inc()
 			return 0, fmt.Errorf("failed to read header: %w", err)
 		}
 
 		if err := json.Unmarshal(headerData, &header); err != nil {
-			metrics.DatasetImportFailures.WithLabelValues(name).Inc()
+			metrics.DatasetImportFailures.WithLabelValues(datasetName).Inc()
 			return 0, fmt.Errorf("failed to parse header: %w", err)
 		}
 
 		if err := header.Validate(); err != nil {
-			metrics.DatasetImportFailures.WithLabelValues(name).Inc()
+			metrics.DatasetImportFailures.WithLabelValues(datasetName).Inc()
 			return 0, err
 		}
 
 		if schema == nil {
 			if err := json.Unmarshal([]byte(header.SchemaJSON), &schema); err != nil {
-				metrics.DatasetImportFailures.WithLabelValues(name).Inc()
+				metrics.DatasetImportFailures.WithLabelValues(datasetName).Inc()
 				return 0, fmt.Errorf("failed to parse schema from header: %w", err)
 			}
 		}
 	} else if !storage.IsNotFoundError(err) {
-		metrics.DatasetImportFailures.WithLabelValues(name).Inc()
+		metrics.DatasetImportFailures.WithLabelValues(datasetName).Inc()
 		return 0, fmt.Errorf("failed to read header: %w", err)
 	}
 
 	var parquetData []byte
 
-	parquetFile, err := backend.ReadSnapshotFile(ctx, name, DatasetFileExtension)
+	parquetFile, err := backend.ReadSnapshotFile(ctx, snapshotName, DatasetFileExtension)
 	if err == nil {
 		defer parquetFile.Close()
 		parquetData, err = io.ReadAll(parquetFile)
 		if err != nil {
-			metrics.DatasetImportFailures.WithLabelValues(name).Inc()
+			metrics.DatasetImportFailures.WithLabelValues(datasetName).Inc()
 			return 0, fmt.Errorf("failed to read parquet data: %w", err)
 		}
 	} else {
-		parquetFile, err = backend.ReadSnapshot(ctx, name)
+		parquetFile, err = backend.ReadSnapshot(ctx, snapshotName)
 		if err != nil {
-			metrics.DatasetImportFailures.WithLabelValues(name).Inc()
+			metrics.DatasetImportFailures.WithLabelValues(datasetName).Inc()
 			return 0, fmt.Errorf("failed to read parquet: %w", err)
 		}
 		defer parquetFile.Close()
 		parquetData, err = io.ReadAll(parquetFile)
 		if err != nil {
-			metrics.DatasetImportFailures.WithLabelValues(name).Inc()
+			metrics.DatasetImportFailures.WithLabelValues(datasetName).Inc()
 			return 0, fmt.Errorf("failed to read parquet data: %w", err)
 		}
 	}
 
-	ds, _ := d.vs.getOrCreateDataset(name, func() *Dataset {
-		return NewDataset(name, schema)
+	ds, _ := d.vs.getOrCreateDataset(datasetName, func() *Dataset {
+		return NewDataset(datasetName, schema)
 	})
 
 	totalRows, err := d.readParquetToRecords(bytes.NewReader(parquetData), ds)
 	if err != nil {
-		metrics.DatasetImportFailures.WithLabelValues(name).Inc()
+		metrics.DatasetImportFailures.WithLabelValues(datasetName).Inc()
 		return 0, fmt.Errorf("failed to read parquet: %w", err)
 	}
 
-	metrics.DatasetImportTotal.WithLabelValues(name).Inc()
-	metrics.DatasetImportVectors.WithLabelValues(name).Set(float64(totalRows))
+	metrics.DatasetImportTotal.WithLabelValues(datasetName).Inc()
+	metrics.DatasetImportVectors.WithLabelValues(datasetName).Set(float64(totalRows))
 	duration := time.Since(startTime)
-	metrics.DatasetImportDuration.WithLabelValues(name).Observe(duration.Seconds())
-	metrics.DatasetImportBytes.WithLabelValues(name).Observe(float64(len(parquetData)))
+	metrics.DatasetImportDuration.WithLabelValues(datasetName).Observe(duration.Seconds())
+	metrics.DatasetImportBytes.WithLabelValues(datasetName).Observe(float64(len(parquetData)))
 
 	d.vs.logger.Info().
-		Str("dataset", name).
+		Str("dataset", datasetName).
+		Str("snapshot", snapshotName).
 		Int64("vectors", totalRows).
 		Int("bytes", len(parquetData)).
 		Dur("duration", duration).

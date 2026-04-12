@@ -1003,6 +1003,18 @@ func (idx *MetalIndexOptimized) GetMemoryInfo() (int64, int64, int64, error) {
 	return 0, 0, 0, nil
 }
 
+func (idx *MetalIndexOptimized) SearchPQ(lookupTable []float32, m, k int) ([]int64, []float32, error) {
+	return nil, nil, fmt.Errorf("SearchPQ not implemented for optimized Metal index")
+}
+
+func (idx *MetalIndexOptimized) TrainPQ(vectors []float32, m, k int) error {
+	return fmt.Errorf("TrainPQ not implemented for optimized Metal index")
+}
+
+func (idx *MetalIndexOptimized) EncodePQ(vectors []float32) ([]byte, error) {
+	return nil, fmt.Errorf("EncodePQ not implemented for optimized Metal index")
+}
+
 func (idx *MetalIndexOptimized) GetUtilization() (float32, error) {
 	return 50.0, nil
 }

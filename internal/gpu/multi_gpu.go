@@ -265,6 +265,22 @@ func (m *MultiGPUManager) SearchPQ(lookupTable []float32, mSub int, k int) ([]in
 	return ids, distances, nil
 }
 
+func (m *MultiGPUManager) TrainPQ(vectors []float32, mSub, kCentroids int) error {
+	device := m.SelectDevice()
+	if device == nil {
+		return fmt.Errorf("no GPU device available")
+	}
+	return device.Index.TrainPQ(vectors, mSub, kCentroids)
+}
+
+func (m *MultiGPUManager) EncodePQ(vectors []float32) ([]byte, error) {
+	device := m.SelectDevice()
+	if device == nil {
+		return nil, fmt.Errorf("no GPU device available")
+	}
+	return device.Index.EncodePQ(vectors)
+}
+
 
 func (m *MultiGPUManager) SearchAllDevices(query []float32, k int) ([][]int64, [][]float32, []error) {
 	m.deviceMu.RLock()

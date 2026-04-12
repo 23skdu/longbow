@@ -6,15 +6,16 @@ package metal
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 
 	"github.com/23skdu/longbow/internal/metrics"
-	"github.com/23skdu/longbow/internal/store"
+	"github.com/23skdu/longbow/internal/store/types"
 )
 
 // MetalReranker uses Metal ONNX for cross-encoder reranking
 type MetalReranker struct {
-	engine    *MetalEngine
+	engine    *Engine
 	modelPath string
 	mu        sync.RWMutex
 }
@@ -29,7 +30,7 @@ func NewMetalReranker(modelPath string) (*MetalReranker, error) {
 		return nil, errors.New("Metal is not available on this platform")
 	}
 
-	engine, err := NewMetalEngine()
+	engine, err := NewEngine()
 	if err != nil {
 		return nil, err
 	}
@@ -50,15 +51,13 @@ func NewMetalReranker(modelPath string) (*MetalReranker, error) {
 }
 
 // Rerank reranks results using Metal ONNX
-func (r *MetalReranker) Rerank(ctx context.Context, query string, results []store.SearchResult) ([]store.SearchResult, error) {
+func (r *MetalReranker) Rerank(ctx context.Context, query string, results []types.SearchResult) ([]types.SearchResult, error) {
 	if len(results) == 0 {
 		return results, nil
 	}
 
 	if r.engine == nil || !r.engine.loaded {
-		// Fallback to heuristic
-		hr := &store.CrossEncoderReranker{ModelName: "fallback"}
-		return hr.Rerank(ctx, query, results)
+		return results, nil // Fallback handled by caller
 	}
 
 	// Extract documents
@@ -74,7 +73,7 @@ func (r *MetalReranker) Rerank(ctx context.Context, query string, results []stor
 			}
 		}
 		if documents[i] == "" {
-			documents[i] = result.ID.String()
+			documents[i] = fmt.Sprintf("%d", result.ID)
 		}
 	}
 
@@ -82,13 +81,12 @@ func (r *MetalReranker) Rerank(ctx context.Context, query string, results []stor
 	scores, err := r.engine.Score(ctx, query, documents)
 	if err != nil {
 		metrics.RerankerErrors.WithLabelValues("inference").Inc()
-		hr := &store.CrossEncoderReranker{ModelName: "fallback"}
-		return hr.Rerank(ctx, query, results)
+		return results, err
 	}
 
 	// Combine scores
 	type scoredResult struct {
-		result store.SearchResult
+		result types.SearchResult
 		score  float32
 	}
 
@@ -110,7 +108,7 @@ func (r *MetalReranker) Rerank(ctx context.Context, query string, results []stor
 	}
 
 	// Build result
-	reranked := make([]store.SearchResult, len(results))
+	reranked := make([]types.SearchResult, len(results))
 	for i, sr := range scored {
 		reranked[i] = sr.result
 		reranked[i].Score = sr.score

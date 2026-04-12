@@ -5,6 +5,8 @@ package gpu
 import (
 	"math"
 	"testing"
+
+	"github.com/23skdu/longbow/internal/gpu/metal"
 )
 
 func TestMetal3072Dimensions(t *testing.T) {
@@ -15,7 +17,7 @@ func TestMetal3072Dimensions(t *testing.T) {
 		Backend:   BackendMetal,
 	}
 
-	index, err := NewMetalIndexOptimized(cfg)
+	index, err := metal.NewMetalIndexOptimized(cfg)
 	if err != nil {
 		t.Fatalf("Failed to create MetalIndexOptimized: %v", err)
 	}

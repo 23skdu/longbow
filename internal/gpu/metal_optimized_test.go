@@ -5,12 +5,13 @@ package gpu
 import (
 	"testing"
 
+	"github.com/23skdu/longbow/internal/gpu/metal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestMetalIndexOptimized_Basic(t *testing.T) {
-	idx, err := NewMetalIndexOptimized(GPUConfig{
+	idx, err := metal.NewMetalIndexOptimized(GPUConfig{
 		DeviceID:  0,
 		Dimension: 128,
 	})
@@ -45,7 +46,7 @@ func TestMetalIndexOptimized_Basic(t *testing.T) {
 }
 
 func TestMetalIndexOptimized_SearchCorrectness(t *testing.T) {
-	idx, err := NewMetalIndexOptimized(GPUConfig{
+	idx, err := metal.NewMetalIndexOptimized(GPUConfig{
 		DeviceID:  0,
 		Dimension: 64,
 	})
@@ -88,7 +89,7 @@ func TestMetalIndexOptimized_Dimensions(t *testing.T) {
 
 	for _, dim := range testDims {
 		t.Run("dim_"+string(rune('0'+dim/100))+string(rune('0'+(dim/10)%10))+string(rune('0'+dim%10)), func(t *testing.T) {
-			idx, err := NewMetalIndexOptimized(GPUConfig{
+			idx, err := metal.NewMetalIndexOptimized(GPUConfig{
 				DeviceID:  0,
 				Dimension: dim,
 			})
@@ -121,7 +122,7 @@ func TestMetalIndexOptimized_Dimensions(t *testing.T) {
 }
 
 func TestMetalIndexOptimized_Close(t *testing.T) {
-	idx, err := NewMetalIndexOptimized(GPUConfig{
+	idx, err := metal.NewMetalIndexOptimized(GPUConfig{
 		DeviceID:  0,
 		Dimension: 128,
 	})
@@ -144,7 +145,7 @@ func TestMetalIndexOptimized_Close(t *testing.T) {
 }
 
 func TestMetalIndexOptimized_MetricTypes(t *testing.T) {
-	idx, err := NewMetalIndexOptimized(GPUConfig{
+	idx, err := metal.NewMetalIndexOptimized(GPUConfig{
 		DeviceID:  0,
 		Dimension: 64,
 	})
@@ -171,7 +172,7 @@ func TestMetalIndexOptimized_MetricTypes(t *testing.T) {
 }
 
 func BenchmarkMetalOptimizedSearch(b *testing.B) {
-	idx, err := NewMetalIndexOptimized(GPUConfig{
+	idx, err := metal.NewMetalIndexOptimized(GPUConfig{
 		DeviceID:  0,
 		Dimension: 128,
 	})
@@ -203,7 +204,7 @@ func BenchmarkMetalOptimizedSearch(b *testing.B) {
 }
 
 func BenchmarkMetalOptimizedAdd(b *testing.B) {
-	idx, err := NewMetalIndexOptimized(GPUConfig{
+	idx, err := metal.NewMetalIndexOptimized(GPUConfig{
 		DeviceID:  0,
 		Dimension: 128,
 	})

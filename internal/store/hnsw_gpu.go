@@ -543,6 +543,26 @@ func (h *ArrowHNSW) IsGPUEnabled() bool {
 	return h.gpuEnabled
 }
 
+// TrainPQOnGPU trains the PQ encoder on the GPU.
+func (h *ArrowHNSW) TrainPQOnGPU(vectors []float32, m, k int) error {
+	h.gpuMu.RLock()
+	defer h.gpuMu.RUnlock()
+	if !h.gpuEnabled || h.gpuIndex == nil {
+		return fmt.Errorf("GPU not enabled")
+	}
+	return h.gpuIndex.TrainPQ(vectors, m, k)
+}
+
+// EncodePQOnGPU compresses vectors using the GPU.
+func (h *ArrowHNSW) EncodePQOnGPU(vectors []float32) ([]byte, error) {
+	h.gpuMu.RLock()
+	defer h.gpuMu.RUnlock()
+	if !h.gpuEnabled || h.gpuIndex == nil {
+		return nil, fmt.Errorf("GPU not enabled")
+	}
+	return h.gpuIndex.EncodePQ(vectors)
+}
+
 // GetGPUCircuitBreakerStats returns the current circuit breaker statistics
 func (h *ArrowHNSW) GetGPUCircuitBreakerStats() gpu.CircuitBreakerStats {
 	if h.gpuCircuitBreaker == nil {

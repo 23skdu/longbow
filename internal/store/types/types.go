@@ -113,11 +113,7 @@ func (vdt VectorDataType) ElementSize() int {
 }
 
 // Candidate represents a search result candidate with ID and distance
-type Candidate struct {
-	ID    uint32
-	Dist  float32
-	Level int // for hierarchical structures
-}
+type Candidate = core.Candidate
 
 // MaxNeighbors is the maximum number of neighbors per node in HNSW
 const MaxNeighbors = 128
@@ -136,10 +132,4 @@ const NodeLockMask uint32 = 1 << 31
 type VectorID = core.VectorID
 
 // SearchResult represents a single flight search result
-type SearchResult struct {
-	ID       VectorID
-	Distance float32
-	Score    float32
-	Metadata map[string]interface{}
-	Vector   []byte // Binary payload for the vector if requested
-}
+type SearchResult = core.SearchResult

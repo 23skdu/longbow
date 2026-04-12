@@ -281,7 +281,7 @@ func (d *Dataset) GenerateFilterBitset(filters []qry.Filter, filterExpr FilterEx
 	// Generate hash
 	var hash string
 	for _, f := range filters {
-		hash += f.Hash() + ";"
+		hash += qry.FilterHash(f) + ";"
 	}
 
 	d.filterMu.RLock()

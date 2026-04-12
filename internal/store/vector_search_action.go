@@ -211,15 +211,34 @@ func (s *VectorStore) handleVectorSearchAction(action *flight.Action, stream fli
 			}
 		}
 
+		// Execute Window Functions
+		if len(req.WindowFunctions) > 0 {
+			windowOp := query.NewWindowOperator()
+			searchResults = windowOp.Execute(searchResults, req.WindowFunctions)
+		}
+
 		// Build Arrow RecordBatch
 		pool := mem
-		schema := arrow.NewSchema(
-			[]arrow.Field{
-				{Name: "id", Type: arrow.PrimitiveTypes.Uint64},
-				{Name: "score", Type: arrow.PrimitiveTypes.Float32},
-			},
-			nil,
-		)
+		fields := []arrow.Field{
+			{Name: "id", Type: arrow.PrimitiveTypes.Uint64},
+			{Name: "score", Type: arrow.PrimitiveTypes.Float32},
+		}
+
+		// Add dynamic Window Function columns
+		for _, wf := range req.WindowFunctions {
+			var colType arrow.DataType
+			switch wf.Name {
+			case "row_number", "rank", "dense_rank":
+				colType = arrow.PrimitiveTypes.Int64
+			case "sum", "avg", "min", "max":
+				colType = arrow.PrimitiveTypes.Float64
+			default:
+				colType = arrow.PrimitiveTypes.Float64
+			}
+			fields = append(fields, arrow.Field{Name: wf.As, Type: colType})
+		}
+
+		schema := arrow.NewSchema(fields, nil)
 
 		builder := array.NewRecordBuilder(pool, schema)
 		// deferred release removed to avoid accumulation in loop
@@ -233,6 +252,25 @@ func (s *VectorStore) handleVectorSearchAction(action *flight.Action, stream fli
 		for _, res := range searchResults {
 			idBuilder.Append(uint64(res.ID))
 			scoreBuilder.Append(res.Score)
+
+			colOffset := 2
+			// Append Window Function results
+			for wfIdx, wf := range req.WindowFunctions {
+				val, ok := res.Metadata[wf.As]
+				if !ok {
+					builder.Field(colOffset + wfIdx).AppendNull()
+					continue
+				}
+
+				switch wf.Name {
+				case "row_number", "rank", "dense_rank":
+					builder.Field(colOffset + wfIdx).(*array.Int64Builder).Append(int64(val.(int)))
+				case "sum", "avg", "min", "max":
+					builder.Field(colOffset + wfIdx).(*array.Float64Builder).Append(val.(float64))
+				default:
+					builder.Field(colOffset + wfIdx).(*array.Float64Builder).Append(val.(float64))
+				}
+			}
 		}
 
 		rec := builder.NewRecordBatch()

@@ -98,6 +98,49 @@ func TestZeroAllocTicketParser_Parse(t *testing.T) {
 		assert.Equal(t, "city", nested.Filters[0].Field)
 		assert.Equal(t, "NYC", nested.Filters[0].Value)
 	})
+
+	t.Run("WithWindowFunctions", func(t *testing.T) {
+		data := []byte(`{
+			"name": "search",
+			"window_functions": [
+				{
+					"name": "row_number",
+					"as": "rn",
+					"over": {
+						"partition_by": ["category"],
+						"order_by": [{"field": "score", "descending": true}]
+					}
+				},
+				{
+					"name": "rank",
+					"as": "rk",
+					"over": {
+						"order_by": [{"field": "score", "descending": true}]
+					}
+				}
+			]
+		}`)
+		query, err := parser.Parse(data)
+		require.NoError(t, err)
+		assert.Equal(t, 2, len(query.WindowFunctions))
+		
+		wf1 := query.WindowFunctions[0]
+		assert.Equal(t, "row_number", wf1.Name)
+		assert.Equal(t, "rn", wf1.As)
+		require.Equal(t, 1, len(wf1.Over.PartitionBy))
+		assert.Equal(t, "category", wf1.Over.PartitionBy[0])
+		require.Equal(t, 1, len(wf1.Over.OrderBy))
+		assert.Equal(t, "score", wf1.Over.OrderBy[0].Field)
+		assert.True(t, wf1.Over.OrderBy[0].Descending)
+
+		wf2 := query.WindowFunctions[1]
+		assert.Equal(t, "rank", wf2.Name)
+		assert.Equal(t, "rk", wf2.As)
+		assert.Equal(t, 0, len(wf2.Over.PartitionBy))
+		require.Equal(t, 1, len(wf2.Over.OrderBy))
+		assert.Equal(t, "score", wf2.Over.OrderBy[0].Field)
+		assert.True(t, wf2.Over.OrderBy[0].Descending)
+	})
 }
 
 func TestParseTicketQuerySafe(t *testing.T) {

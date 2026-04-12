@@ -158,11 +158,8 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 	case query.Search != nil:
 		if isGlobal {
 			query.Search.LocalOnly = false
-		} else {
-			// Default to local if not explicitly global or already set in ticket
-			// Note: ticket might already have local_only=true set by a coordinator
 		}
-		return s.handleDoGetSearch(query.Search, stream, mem)
+		return s.handleDoGetSearch(query.Search, query.WindowFunctions, stream, mem)
 	case query.SearchByID != nil:
 		return s.handleDoGetSearchByID(query.SearchByID, stream, mem)
 	case query.Recommend != nil:
@@ -642,7 +639,7 @@ func findVectorColumn(rec arrow.RecordBatch) arrow.Array {
 }
 
 // handleDoGetSearch executes a search request and streams results as Arrow Records
-func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, stream flight.FlightService_DoGetServer, mem memory.Allocator) error {
+func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, windowFunctions []qry.WindowFunction, stream flight.FlightService_DoGetServer, mem memory.Allocator) error {
 	start := time.Now()
 
 	_, span := tracing.CreateSpan(stream.Context(), "DoGetSearch")
@@ -783,6 +780,12 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, stream fli
 
 	} // End of Cache Miss block
 
+	// Execute Window Functions
+	if len(windowFunctions) > 0 {
+		windowOp := qry.NewWindowOperator()
+		searchResults = windowOp.Execute(searchResults, windowFunctions)
+	}
+
 	// 5. Stream Results (Arrow)
 	// Schema: id (uint64), score (float32)
 	pool := mem
@@ -793,6 +796,21 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, stream fli
 	if req.IncludeVectors {
 		fields = append(fields, arrow.Field{Name: "vector", Type: arrow.BinaryTypes.Binary})
 	}
+
+	// Add dynamic Window Function columns
+	for _, wf := range windowFunctions {
+		var colType arrow.DataType
+		switch wf.Name {
+		case "row_number", "rank", "dense_rank":
+			colType = arrow.PrimitiveTypes.Int64
+		case "sum", "avg", "min", "max":
+			colType = arrow.PrimitiveTypes.Float64
+		default:
+			colType = arrow.PrimitiveTypes.Float64
+		}
+		fields = append(fields, arrow.Field{Name: wf.As, Type: colType})
+	}
+
 	schema := arrow.NewSchema(fields, nil)
 
 	w := flight.NewRecordWriter(stream, ipc.WithSchema(schema))
@@ -823,11 +841,32 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, stream fli
 		for j := i; j < end; j++ {
 			idBuilder.Append(uint64(searchResults[j].ID))
 			scoreBuilder.Append(searchResults[j].Score)
+			
+			colOffset := 2
 			if req.IncludeVectors && vectorBuilder != nil {
 				if searchResults[j].Vector != nil {
 					vectorBuilder.Append(searchResults[j].Vector)
 				} else {
 					vectorBuilder.AppendNull()
+				}
+				colOffset++
+			}
+
+			// Append Window Function results
+			for wfIdx, wf := range windowFunctions {
+				val, ok := searchResults[j].Metadata[wf.As]
+				if !ok {
+					builder.Field(colOffset + wfIdx).AppendNull()
+					continue
+				}
+
+				switch wf.Name {
+				case "row_number", "rank", "dense_rank":
+					builder.Field(colOffset + wfIdx).(*array.Int64Builder).Append(int64(val.(int)))
+				case "sum", "avg", "min", "max":
+					builder.Field(colOffset + wfIdx).(*array.Float64Builder).Append(val.(float64))
+				default:
+					builder.Field(colOffset + wfIdx).(*array.Float64Builder).Append(val.(float64))
 				}
 			}
 		}

@@ -9,6 +9,7 @@ import (
 
 	"github.com/23skdu/longbow/internal/gpu/memory"
 	"github.com/23skdu/longbow/internal/gpu/types"
+	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/rs/zerolog"
 )
 
@@ -95,7 +96,31 @@ func NewMultiGPUManager(config MultiGPUConfig, logger zerolog.Logger) (*MultiGPU
 		Str("strategy", config.Strategy.String()).
 		Msg("Multi-GPU manager initialized")
 
+	mgr.startMetricsCollector()
+
 	return mgr, nil
+}
+
+func (m *MultiGPUManager) startMetricsCollector() {
+	ticker := time.NewTicker(10 * time.Second)
+	go func() {
+		for {
+			select {
+			case <-ticker.C:
+				if m.closed.Load() {
+					ticker.Stop()
+					return
+				}
+				m.deviceMu.RLock()
+				for _, d := range m.devices {
+					if d.Index != nil {
+						metrics.UpdateDeviceMetrics(d.Index)
+					}
+				}
+				m.deviceMu.RUnlock()
+			}
+		}
+	}()
 }
 
 func (m *MultiGPUManager) initializeDevice(deviceID int) (*GPUDevice, error) {
@@ -270,7 +295,19 @@ func (m *MultiGPUManager) TrainPQ(vectors []float32, mSub, kCentroids int) error
 	if device == nil {
 		return fmt.Errorf("no GPU device available")
 	}
-	return device.Index.TrainPQ(vectors, mSub, kCentroids)
+	start := time.Now()
+	err := device.Index.TrainPQ(vectors, mSub, kCentroids)
+	duration := time.Since(start)
+
+	status := "success"
+	if err != nil {
+		status = "error"
+	}
+
+	metrics.PQTrainingDuration.WithLabelValues("multi_gpu", fmt.Sprintf("%d", len(vectors)/mSub), fmt.Sprintf("%d", mSub)).Observe(duration.Seconds())
+	metrics.PQOperationsTotal.WithLabelValues("multi_gpu", "train", status).Inc()
+
+	return err
 }
 
 func (m *MultiGPUManager) EncodePQ(vectors []float32) ([]byte, error) {
@@ -278,7 +315,19 @@ func (m *MultiGPUManager) EncodePQ(vectors []float32) ([]byte, error) {
 	if device == nil {
 		return nil, fmt.Errorf("no GPU device available")
 	}
-	return device.Index.EncodePQ(vectors)
+	start := time.Now()
+	codes, err := device.Index.EncodePQ(vectors)
+	duration := time.Since(start)
+
+	status := "success"
+	if err != nil {
+		status = "error"
+	}
+
+	metrics.PQEncodingDuration.WithLabelValues("multi_gpu", fmt.Sprintf("%d", len(vectors)/device.Info.MemoryMB)).Observe(duration.Seconds()) // Dummy dimension check or similar
+	metrics.PQOperationsTotal.WithLabelValues("multi_gpu", "encode", status).Inc()
+
+	return codes, err
 }
 
 

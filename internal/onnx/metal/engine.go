@@ -31,6 +31,7 @@ import (
 	"unsafe"
 
 	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/tracing"
 )
 
 var (
@@ -144,6 +145,15 @@ func (e *Engine) Score(ctx context.Context, query string, documents []string) ([
 		scores[i] = float32(_scores[i])
 	}
 
+	// Record tracing
+	newCtx, span := tracing.CreateSpan(ctx, "onnx_metal_score")
+	defer span.End()
+	span.SetAttributes(
+		"query_len", fmt.Sprintf("%d", len(query)),
+		"doc_count", fmt.Sprintf("%d", len(documents)),
+		"backend", "metal",
+	)
+
 	// Record metrics
 	metrics.OnnxMetalInferenceDuration.WithLabelValues("single").Observe(float64(len(documents)) * 0.001)
 	metrics.OnnxMetalBatchSize.Observe(float64(len(documents)))
@@ -157,12 +167,18 @@ func (e *Engine) ScoreBatch(ctx context.Context, queries, documents []string) ([
 		return [][]float32{}, nil
 	}
 
-	results := make([][]float32, len(queries))
+	// Sequential processing with tracing
+	newCtx, span := tracing.CreateSpan(ctx, "onnx_metal_score_batch")
+	defer span.End()
+	span.SetAttributes(
+		"query_count", fmt.Sprintf("%d", len(queries)),
+		"doc_count", fmt.Sprintf("%d", len(documents)),
+	)
 
-	// Simple sequential processing for now
 	for i, query := range queries {
-		scores, err := e.Score(ctx, query, documents)
+		scores, err := e.Score(newCtx, query, documents)
 		if err != nil {
+			span.SetError(err)
 			return nil, err
 		}
 		results[i] = scores

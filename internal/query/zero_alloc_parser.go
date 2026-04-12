@@ -9,8 +9,6 @@ import (
 	"github.com/rs/zerolog"
 )
 
-
-
 // Hash returns a unique string representation of a filter for caching purposes.
 func FilterHash(f core.Filter) string {
 	h := f.Field + ":" + f.Operator + ":" + f.Value + ":" + f.Logic
@@ -30,20 +28,22 @@ func FilterHash(f core.Filter) string {
 // ZeroAllocTicketParser parses TicketQuery JSON with zero allocations
 // for the common case (no escape sequences).
 type ZeroAllocTicketParser struct {
-	result       TicketQuery
-	filters      []Filter
+	result          TicketQuery
+	filters         []Filter
 	windowFunctions []WindowFunction
-	searchParser *ZeroAllocVectorSearchParser
-	logger       zerolog.Logger
+	ctes            []core.CTE
+	searchParser    *ZeroAllocVectorSearchParser
+	logger          zerolog.Logger
 }
 
 // NewZeroAllocTicketParser creates a new reusable parser
 func NewZeroAllocTicketParser(logger *zerolog.Logger) *ZeroAllocTicketParser {
 	return &ZeroAllocTicketParser{
-		filters:      make([]Filter, 0, 16),
+		filters:         make([]Filter, 0, 16),
 		windowFunctions: make([]WindowFunction, 0, 4),
-		searchParser: NewZeroAllocVectorSearchParser(768, logger), // Default max dims
-		logger:       *logger,
+		ctes:            make([]core.CTE, 0, 4),
+		searchParser:    NewZeroAllocVectorSearchParser(768, logger), // Default max dims
+		logger:          *logger,
 	}
 }
 
@@ -198,7 +198,6 @@ func (p *ZeroAllocTicketParser) Parse(data []byte) (TicketQuery, error) {
 	return p.result, errors.New("unexpected end of JSON")
 }
 
-
 func (p *ZeroAllocTicketParser) parseWindowFunctions(data []byte, pos int) (int, error) {
 	wfs, newPos, err := parseWindowFunctionsShared(data, pos)
 	if err != nil {
@@ -227,9 +226,9 @@ var (
 func ParseTicketQuerySafe(data []byte) (TicketQuery, error) {
 	parser := parserPool.Get().(*ZeroAllocTicketParser)
 	atomic.AddUint64(&poolGets, 1)
-	
+
 	res, err := parser.Parse(data)
-	
+
 	parserPool.Put(parser)
 	atomic.AddUint64(&poolPuts, 1)
 	return res, err

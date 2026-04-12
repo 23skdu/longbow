@@ -752,6 +752,50 @@ class BenchmarkRunner:
         self.print_summary()
         print(f"\nResults saved to: {self.output_file}")
 
+    def execute_onnx(self):
+        """Test ONNX reranker benchmarks via Go test binary."""
+        print("=" * 80)
+        print("ONNX RERANKER BENCHMARK")
+        print("Started:", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        print("=" * 80)
+
+        bench_bin = os.path.join(self.bin_dir, "longbow")
+        if not os.path.exists(bench_bin):
+            bench_bin = os.path.join(self.bin_dir, "longbow-metal")
+        if not os.path.exists(bench_bin):
+            print("  Error: No longbow binary found")
+            return
+
+        run_cmd = f"{bench_bin} test -bench=BenchmarkMetalReranker -benchtime={self.args.duration}x -run=^$"
+        print(f"  Running: {run_cmd}")
+
+        result = run_command(run_cmd, timeout=self.args.timeout)
+
+        if result and result.returncode == 0:
+            self.results.append(
+                {
+                    "mode": "onnx",
+                    "output": result.stdout,
+                    "timestamp": datetime.now().isoformat(),
+                }
+            )
+            print(f"  COMPLETED")
+            print(result.stdout)
+        else:
+            print(f"  FAILED: {result.stderr if result else 'no output'}")
+
+        with open(self.output_file, "w") as f:
+            json.dump(
+                {
+                    "mode": "onnx",
+                    "timestamp": self.timestamp,
+                    "results": self.results,
+                },
+                f,
+                indent=2,
+            )
+        print(f"\nResults saved to {self.output_file}")
+
     def execute_temporal(self):
         """Test temporal query capabilities."""
         if not HAS_LONGBOW_SDK:
@@ -1044,6 +1088,9 @@ class BenchmarkRunner:
             return
         if self.args.mode == "cluster":
             self.execute_cluster()
+            return
+        if self.args.mode == "onnx":
+            self.execute_onnx()
             return
         if self.args.mode == "temporal":
             self.execute_temporal()
@@ -1401,6 +1448,7 @@ if __name__ == "__main__":
             "cpu",
             "metal",
             "cuda",
+            "onnx",
             "recommend",
             "deletion",
             "graphrag",
@@ -1409,7 +1457,7 @@ if __name__ == "__main__":
             "temporal",
         ],
         default="cpu",
-        help="Benchmark mode: cpu, metal (macOS), cuda (Linux), recommend (hybrid vs ANN), deletion (tombstone ops), graphrag (graph spreading), exchange (DoExchange mesh), cluster (gossip search), temporal (temporal queries)",
+        help="Benchmark mode: cpu, metal (macOS), cuda (Linux), onnx (ONNX reranker), recommend (hybrid vs ANN), deletion (tombstone ops), graphrag (graph spreading), exchange (DoExchange mesh), cluster (gossip search), temporal (temporal queries)",
     )
     parser.add_argument(
         "--dims", default="128,384,768,1536,3072", help="Comma-separated dimensions"

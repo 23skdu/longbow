@@ -99,6 +99,16 @@ Longbow uses the SWIM protocol for decentralized membership.
 - **Tracing**: Longbow supports OpenTelemetry. Use `OTEL_EXPORTER_OTLP_ENDPOINT` to direct traces
   to a collector.
 
+## RDMA over RoCEv2 (Zero-Copy)
+
+| Variable | Default | Description |
+| :--- | :--- | :--- |
+| `LONGBOW_RDMA_ENABLED` | `false` | Enable zero-copy RDMA transport for Arrow batches. |
+| `LONGBOW_RDMA_INTERFACE` | `eth0` | Network interface with RoCEv2 support. |
+| `LONGBOW_RDMA_PORT` | `3002` | Port for RDMA handshake and completion management. |
+
+Note: RDMA requires `libibverbs` on the host and appropriate NIC hardware (e.g., Mellanox ConnectX).
+
 ## Circuit Breaker & Rate Limiting
 
 - **LONGBOW_RATE_LIMIT_RPS**: Limit incoming requests per second.

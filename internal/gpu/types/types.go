@@ -93,6 +93,7 @@ type Index interface {
 	Add(ids []int64, vectors []float32) error
 	Search(vector []float32, k int) (ids []int64, distances []float32, err error)
 	SearchBatch(vectors [][]float32, k int) (ids [][]int64, distances [][]float32, err error)
+	SearchPQ(lookupTable []float32, m int, k int) (ids []int64, distances []float32, err error)
 	Close() error
 	Backend() GPUBackend
 	DeviceID() int // Returns the device ID this index runs on

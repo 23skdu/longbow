@@ -277,6 +277,10 @@ func (w *pooledIndexWrapper) Search(vector []float32, k int) ([]int64, []float32
 	return w.pooled.index.Search(vector, k)
 }
 
+func (w *pooledIndexWrapper) SearchPQ(lookupTable []float32, m int, k int) ([]int64, []float32, error) {
+	return w.pooled.index.SearchPQ(lookupTable, m, k)
+}
+
 // Close returns the index to the pool instead of closing it
 func (w *pooledIndexWrapper) Close() error {
 	return w.pool.ReturnGPUIndex(w)

@@ -23,6 +23,7 @@ RUN apt-get update && apt-get install -y \
     liblapack-dev \
     pkg-config \
     ca-certificates \
+    libibverbs-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Go 1.26.1
@@ -88,6 +89,8 @@ RUN apt-get update && apt-get install -y \
     libopenblas0 \
     libgomp1 \
     ca-certificates \
+    libibverbs1 \
+    ibverbs-providers \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy binary from builder (works for both GPU and CPU builds)

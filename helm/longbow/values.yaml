@@ -95,9 +95,14 @@ memory:
   gogc: 100
 
 # GPU Configuration
-gpu:
-  enabled: false
   deviceId: 0
+
+# RDMA (RoCEv2) Configuration
+# Requires RDMA-capable NICs and libibverbs on the host.
+rdma:
+  enabled: false
+  interface: "eth0"
+  port: 3002
 
 service:
   data:

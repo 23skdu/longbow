@@ -224,6 +224,14 @@ spec:
               value: {{ .Values.ollama.model | quote }}
             - name: LONGBOW_OLLAMA_TIMEOUT
               value: {{ .Values.ollama.timeout | quote }}
+            # RDMA Configuration
+            - name: LONGBOW_RDMA_ENABLED
+              value: {{ .Values.rdma.enabled | quote }}
+            - name: LONGBOW_RDMA_INTERFACE
+              value: {{ .Values.rdma.interface | quote }}
+            - name: LONGBOW_RDMA_PORT
+              value: {{ .Values.rdma.port | quote }}
+
 
           ports:
             - name: grpc-data

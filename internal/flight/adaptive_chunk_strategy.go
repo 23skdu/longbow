@@ -102,5 +102,5 @@ func (s *LinearChunkStrategy) CurrentSize() int {
 
 // Reset resets to minimum size.
 func (s *LinearChunkStrategy) Reset() {
-	s.currentSize.Store(int32(s.minSize))
+	s.currentSize.Store(int32(s.minSize)) // #nosec G115 - minSize is within int32 range
 }

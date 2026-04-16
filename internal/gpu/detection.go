@@ -452,7 +452,7 @@ func checkCUDALibraries() bool {
 	}
 
 	for _, path := range libraryPaths {
-		if _, err := os.Stat(path); err == nil {
+		if _, err := os.Stat(path); err == nil { // #nosec G703 - pre-defined system library paths
 			return true
 		}
 	}

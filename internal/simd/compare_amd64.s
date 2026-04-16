@@ -790,4 +790,192 @@ next_f32_512:
     JMP     scalar_f32_512_loop
 
 end_f32_512:
+end_f32_512:
     RET
+
+// func matchFloat64AVX2Kernel(src unsafe.Pointer, val float64, op int, dst unsafe.Pointer, n int)
+TEXT ·matchFloat64AVX2Kernel(SB), NOSPLIT, $0-40
+    MOVQ    src+0(FP), SI
+    MOVSD   val+8(FP), X0
+    MOVQ    op+16(FP), BX
+    MOVQ    dst+24(FP), DI
+    MOVQ    n+32(FP), CX
+
+    VPBROADCASTQ X0, Y0
+    LEAQ    maskLUT<>(SB), R8
+
+loop_f64_avx2:
+    CMPQ    CX, $4
+    JL      tail_f64_avx2
+
+    VMOVUPS (SI), Y1 // Load 4 float64s
+    
+    // Op: 0=Eq, 1=Neq, 2=Gt, 3=Ge, 4=Lt, 5=Le
+    // VCMPPD imm: 0=EQ, 1=LT, 2=LE, 4=NEQ, 14=GT (swapped or OS), etc.
+    // Let's use swapped Lt/Le for Gt/Ge to be safe with standard imm.
+
+    CMPQ    BX, $0
+    JE      f64_eq
+    CMPQ    BX, $1
+    JE      f64_neq
+    CMPQ    BX, $2
+    JE      f64_gt
+    CMPQ    BX, $3
+    JE      f64_ge
+    CMPQ    BX, $4
+    JE      f64_lt
+    JMP     f64_le
+
+f64_eq:
+    VCMPPD  $0, Y0, Y1, Y2
+    JMP     f64_store
+f64_neq:
+    VCMPPD  $4, Y0, Y1, Y2
+    JMP     f64_store
+f64_gt:
+    VCMPPD  $1, Y1, Y0, Y2 // val < src
+    JMP     f64_store
+f64_ge:
+    VCMPPD  $2, Y1, Y0, Y2 // val <= src
+    JMP     f64_store
+f64_lt:
+    VCMPPD  $1, Y0, Y1, Y2 // src < val
+    JMP     f64_store
+f64_le:
+    VCMPPD  $2, Y0, Y1, Y2 // src <= val
+
+f64_store:
+    VMOVMSKPD Y2, DX
+    MOVL    (R8)(DX*4), R9
+    MOVL    R9, (DI)
+
+    ADDQ    $32, SI
+    ADDQ    $4, DI
+    SUBQ    $4, CX
+    JMP     loop_f64_avx2
+
+tail_f64_avx2:
+    CMPQ    CX, $0
+    JE      done_f64_avx2
+    
+    MOVSD   (SI), X1
+    MOVB    $0, (DI)
+
+    // Scalar Op check
+    CMPQ    BX, $0
+    JE      s_eq_f64
+    CMPQ    BX, $1
+    JE      s_neq_f64
+    CMPQ    BX, $2
+    JE      s_gt_f64
+    CMPQ    BX, $3
+    JE      s_ge_f64
+    CMPQ    BX, $4
+    JE      s_lt_f64
+    JMP     s_le_f64
+
+s_eq_f64:
+    UCOMISD X0, X1
+    JNE     next_f64
+    JP      next_f64
+    MOVB    $1, (DI)
+    JMP     next_f64
+s_neq_f64:
+    UCOMISD X0, X1
+    JNE     set_f64
+    JP      set_f64
+    JMP     next_f64
+s_gt_f64:
+    UCOMISD X0, X1
+    JA      set_f64
+    JMP     next_f64
+s_ge_f64:
+    UCOMISD X0, X1
+    JAE     set_f64
+    JMP     next_f64
+s_lt_f64:
+    UCOMISD X0, X1
+    JB      set_f64
+    JMP     next_f64
+s_le_f64:
+    UCOMISD X0, X1
+    JBE     set_f64
+    JMP     next_f64
+
+set_f64:
+    MOVB    $1, (DI)
+next_f64:
+    ADDQ    $8, SI
+    ADDQ    $1, DI
+    DECQ    CX
+    JMP     tail_f64_avx2
+
+done_f64_avx2:
+    VZEROUPPER
+    RET
+
+// func matchFloat64AVX512Kernel(src unsafe.Pointer, val float64, op int, dst unsafe.Pointer, n int)
+TEXT ·matchFloat64AVX512Kernel(SB), NOSPLIT, $0-40
+    MOVQ    src+0(FP), SI
+    MOVSD   val+8(FP), X0
+    MOVQ    op+16(FP), BX
+    MOVQ    dst+24(FP), DI
+    MOVQ    n+32(FP), CX
+
+    VPBROADCASTQ X0, Z0
+    MOVQ    $1, R9
+    MOVQ    R9, X4
+    VPBROADCASTB X4, Z4
+
+loop_f64_512:
+    CMPQ    CX, $8
+    JL      tail_f64_512
+
+    VMOVUPS (SI), Z1
+    
+    // VPCMPPD (AVX512 version)
+    CMPQ    BX, $0
+    JE      f64_eq_512
+    CMPQ    BX, $1
+    JE      f64_neq_512
+    CMPQ    BX, $2
+    JE      f64_gt_512
+    CMPQ    BX, $3
+    JE      f64_ge_512
+    CMPQ    BX, $4
+    JE      f64_lt_512
+    JMP     f64_le_512
+
+f64_eq_512:
+    VCMPPD  $0, Z1, Z0, K1
+    JMP     f64_store_512
+f64_neq_512:
+    VCMPPD  $4, Z1, Z0, K1
+    JMP     f64_store_512
+f64_gt_512:
+    VCMPPD  $1, Z0, Z1, K1 // val < src
+    JMP     f64_store_512
+f64_ge_512:
+    VCMPPD  $2, Z0, Z1, K1 // val <= src
+    JMP     f64_store_512
+f64_lt_512:
+    VCMPPD  $1, Z1, Z0, K1
+    JMP     f64_store_512
+f64_le_512:
+    VCMPPD  $2, Z1, Z0, K1
+
+f64_store_512:
+    VPMOVM2B K1, X2
+    VPAND    X2, X4, X2
+    MOVQ    X2, (DI)
+
+    ADDQ    $64, SI
+    ADDQ    $8, DI
+    SUBQ    $8, CX
+    JMP     loop_f64_512
+
+tail_f64_512:
+    VZEROUPPER
+    // Reuse scalar logic from AVX2 tail
+    MOVSD   val+8(FP), X0
+    JMP     tail_f64_avx2

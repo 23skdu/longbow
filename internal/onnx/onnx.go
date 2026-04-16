@@ -185,7 +185,7 @@ func (s *Session) Score(ctx context.Context, query string, docs []string) ([]flo
 	}
 
 	outputs := make([]ort.Value, len(s.outputNames))
-	err = s.ortSession.Run(inputs, outputs)
+	err := s.ortSession.Run(inputs, outputs)
 	if err != nil {
 		return nil, fmt.Errorf("inference failed: %w", err)
 	}
@@ -198,7 +198,7 @@ func (s *Session) Score(ctx context.Context, query string, docs []string) ([]flo
 	}()
 
 	// Extract scores from first output
-	if len(outputValues) == 0 {
+	if len(outputs) == 0 {
 		return nil, fmt.Errorf("no output from model")
 	}
 	

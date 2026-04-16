@@ -231,17 +231,29 @@ func resolveNestedFieldParts(schema arrow.Schema, parts []string, depth int) ([]
 	case arrow.STRUCT:
 		childType := field.Type.(*arrow.StructType)
 		childSchema := arrow.NewSchema(childType.Fields(), nil)
-		return resolveNestedFieldParts(*childSchema, parts[1:], depth+1)
+		rest, dt, err := resolveNestedFieldParts(*childSchema, parts[1:], depth+1)
+		if err != nil {
+			return nil, nil, err
+		}
+		return append(idx, rest...), dt, nil
 	case arrow.LIST:
 		childType := field.Type.(*arrow.ListType)
 		elemField := childType.ElemField()
 		childSchema := arrow.NewSchema([]arrow.Field{elemField}, nil)
-		return resolveNestedFieldParts(*childSchema, parts[1:], depth+1)
+		rest, dt, err := resolveNestedFieldParts(*childSchema, parts[1:], depth+1)
+		if err != nil {
+			return nil, nil, err
+		}
+		return append(idx, rest...), dt, nil
 	case arrow.FIXED_SIZE_LIST:
 		childType := field.Type.(*arrow.FixedSizeListType)
 		elemField := childType.ElemField()
 		childSchema := arrow.NewSchema([]arrow.Field{elemField}, nil)
-		return resolveNestedFieldParts(*childSchema, parts[1:], depth+1)
+		rest, dt, err := resolveNestedFieldParts(*childSchema, parts[1:], depth+1)
+		if err != nil {
+			return nil, nil, err
+		}
+		return append(idx, rest...), dt, nil
 	}
 
 	return nil, nil, fmt.Errorf("field %q is not nested at depth %d", parts[0], depth)
@@ -572,6 +584,138 @@ func (o *int64FilterOp) FilterBatch(indices []int) []int {
 			if !hasNulls || !o.col.IsNull(idx) {
 				result = append(result, idx)
 			}
+		}
+	}
+	return result
+}
+
+type int32FilterOp struct {
+	col      *array.Int32
+	val      int32
+	operator string
+	colIdx   int
+}
+
+func (o *int32FilterOp) Compound() bool { return false }
+func (o *int32FilterOp) MatchValue(val interface{}) bool {
+	switch v := val.(type) {
+	case int32:
+		return o.compareInt32(v)
+	case int64:
+		return o.compareInt32(int32(v))
+	}
+	return false
+}
+func (o *int32FilterOp) compareInt32(v int32) bool {
+	switch o.operator {
+	case "=", "eq", "==":
+		return v == o.val
+	case "!=", "neq":
+		return v != o.val
+	case ">", "gt":
+		return v > o.val
+	case "<", "lt":
+		return v < o.val
+	case ">=", "ge":
+		return v >= o.val
+	case "<=", "le":
+		return v <= o.val
+	}
+	return false
+}
+func (o *int32FilterOp) Bind(col arrow.Array) error {
+	if col.DataType().ID() != arrow.INT32 {
+		return fmt.Errorf("expected int32 column, got %s", col.DataType())
+	}
+	o.col = col.(*array.Int32)
+	return nil
+}
+func (o *int32FilterOp) Match(rowIdx int) bool {
+	if o.col.IsNull(rowIdx) {
+		return false
+	}
+	v := o.col.Value(rowIdx)
+	return o.compareInt32(v)
+}
+func (o *int32FilterOp) MatchBitmap(dst []byte) {
+	for i := range dst {
+		if o.Match(i) {
+			dst[i] = 1
+		} else {
+			dst[i] = 0
+		}
+	}
+}
+func (o *int32FilterOp) FilterBatch(indices []int) []int {
+	result := make([]int, 0, len(indices))
+	for _, idx := range indices {
+		if o.Match(idx) {
+			result = append(result, idx)
+		}
+	}
+	return result
+}
+
+type uint64FilterOp struct {
+	col      *array.Uint64
+	val      uint64
+	operator string
+	colIdx   int
+}
+
+func (o *uint64FilterOp) Compound() bool { return false }
+func (o *uint64FilterOp) MatchValue(val interface{}) bool {
+	switch v := val.(type) {
+	case uint64:
+		return o.compareUint64(v)
+	}
+	return false
+}
+func (o *uint64FilterOp) compareUint64(v uint64) bool {
+	switch o.operator {
+	case "=", "eq", "==":
+		return v == o.val
+	case "!=", "neq":
+		return v != o.val
+	case ">", "gt":
+		return v > o.val
+	case "<", "lt":
+		return v < o.val
+	case ">=", "ge":
+		return v >= o.val
+	case "<=", "le":
+		return v <= o.val
+	}
+	return false
+}
+func (o *uint64FilterOp) Bind(col arrow.Array) error {
+	if col.DataType().ID() != arrow.UINT64 {
+		return fmt.Errorf("expected uint64 column, got %s", col.DataType())
+	}
+	o.col = col.(*array.Uint64)
+	return nil
+}
+func (o *uint64FilterOp) Match(rowIdx int) bool {
+	if o.col.IsNull(rowIdx) {
+		return false
+	}
+	v := o.col.Value(rowIdx)
+	return o.compareUint64(v)
+}
+func (o *uint64FilterOp) MatchBitmap(dst []byte) {
+	for i := range dst {
+		if o.Match(i) {
+			dst[i] = 1
+		} else {
+			dst[i] = 0
+		}
+	}
+}
+func (o *uint64FilterOp) FilterBatch(indices []int) []int {
+	result := make([]int, 0, len(indices))
+	for _, idx := range indices {
+		if o.Match(idx) {
+			result = append(result, idx)
 		}
 	}
 	return result
@@ -1146,14 +1290,27 @@ func buildFilterOp(schema arrow.Schema, rec arrow.RecordBatch, f *Filter) (filte
 
 	opStr := strings.ToLower(f.Operator)
 	colIdx := colIndices[0]
-
+	
 	switch nestedType.ID() {
+
 	case arrow.INT64:
 		val, err := strconv.ParseInt(f.Value, 10, 64)
 		if err != nil {
 			return nil, fmt.Errorf("invalid int64 value %q for field %s", f.Value, f.Field)
 		}
 		return &int64FilterOp{col: col.(*array.Int64), val: val, operator: opStr, colIdx: colIdx}, nil
+	case arrow.INT32:
+		val, err := strconv.ParseInt(f.Value, 10, 32)
+		if err != nil {
+			return nil, fmt.Errorf("invalid int32 value %q for field %s", f.Value, f.Field)
+		}
+		return &int32FilterOp{col: col.(*array.Int32), val: int32(val), operator: opStr, colIdx: colIdx}, nil
+	case arrow.UINT64:
+		val, err := strconv.ParseUint(f.Value, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid uint64 value %q for field %s", f.Value, f.Field)
+		}
+		return &uint64FilterOp{col: col.(*array.Uint64), val: val, operator: opStr, colIdx: colIdx}, nil
 	case arrow.FLOAT32:
 		val, err := strconv.ParseFloat(f.Value, 32)
 		if err != nil {

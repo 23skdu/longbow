@@ -663,7 +663,7 @@ func fastPathBool(arr *array.Boolean, val, equal bool, builder *array.BooleanBui
 	}
 
 	if useAVX2 {
-		metrics.HNSWFilterVectorizedOpsTotal.Inc()
+		metrics.HNSWFilterVectorizedOpsTotal.WithLabelValues("avx2").Inc()
 
 		// SIMD Fast Path for bit-packed data
 		data := arr.Data().Buffers()[1].Bytes()
@@ -717,7 +717,7 @@ func fastPathString(arr *array.String, val string, equal bool, builder *array.Bo
 	}
 
 	if useAVX2 {
-		metrics.HNSWFilterVectorizedOpsTotal.Inc()
+		metrics.HNSWFilterVectorizedOpsTotal.WithLabelValues("avx2").Inc()
 		results := make([]int32, n)
 		
 		offsets := arr.ValueOffsets()

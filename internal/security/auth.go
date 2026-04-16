@@ -142,7 +142,7 @@ func (m *OAuthManager) createOAuth2Config(provider OAuthProvider) *oauth2.Config
 	case ProviderMicrosoft:
 		baseCfg.Endpoint = microsoft.AzureADEndpoint("common")
 	case ProviderOIDC:
-		baseCfg.Endpoint = oauth2.Endpoint{
+		baseCfg.Endpoint = oauth2.Endpoint{ // #nosec G101 - official OIDC endpoint URLs, not credentials
 			AuthURL:  "https://accounts.google.com/o/oauth2/auth",
 			TokenURL: "https://oauth2.googleapis.com/token",
 		}

@@ -47,6 +47,7 @@ const (
 type (
 	matchInt64Func   func(src []int64, val int64, op CompareOp, dst []byte) error
 	matchFloat32Func func(src []float32, val float32, op CompareOp, dst []byte) error
+	matchFloat64Func func(src []float64, val float64, op CompareOp, dst []byte) error
 )
 
 var (
@@ -74,6 +75,7 @@ var (
 
 	matchInt64Impl   matchInt64Func
 	matchFloat32Impl matchFloat32Func
+	matchFloat64Impl matchFloat64Func
 
 	adcDistanceBatchImpl               adcDistanceBatchFunc
 	euclideanDistanceVerticalBatchImpl distanceBatchFunc
@@ -685,6 +687,15 @@ func MatchFloat32(src []float32, val float32, op CompareOp, dst []byte) error {
 	return nil
 }
 
+// MatchFloat64 performs a comparison of src elements against val, storing the result (0 or 1) in dst.
+// One byte per element is written to dst.
+func MatchFloat64(src []float64, val float64, op CompareOp, dst []byte) error {
+	if len(src) != len(dst) {
+		return errors.New("simd: length mismatch")
+	}
+	return matchFloat64Impl(src, val, op, dst)
+}
+
 func matchInt64Generic(src []int64, val int64, op CompareOp, dst []byte) error {
 	switch op {
 	case CompareEq:
@@ -859,6 +870,70 @@ func matchFloat32Generic(src []float32, val float32, op CompareOp, dst []byte) e
 	return nil
 }
 
+// matchFloat64Generic implements branchless float64 matching
+func matchFloat64Generic(src []float64, val float64, op CompareOp, dst []byte) error {
+	switch op {
+	case CompareEq:
+		for i, v := range src {
+			if v == val {
+				dst[i] = 1
+			} else {
+				dst[i] = 0
+			}
+		}
+	case CompareNeq:
+		for i, v := range src {
+			if v != val {
+				dst[i] = 1
+			} else {
+				dst[i] = 0
+			}
+		}
+	case CompareGt:
+		for i, v := range src {
+			if v > val {
+				dst[i] = 1
+			} else {
+				dst[i] = 0
+			}
+		}
+	case CompareGe:
+		for i, v := range src {
+			if v >= val {
+				dst[i] = 1
+			} else {
+				dst[i] = 0
+			}
+		}
+	case CompareLt:
+		for i, v := range src {
+			if v < val {
+				dst[i] = 1
+			} else {
+				dst[i] = 0
+			}
+		}
+	case CompareLe:
+		for i, v := range src {
+			if v <= val {
+				dst[i] = 1
+			} else {
+				dst[i] = 0
+			}
+		}
+	default:
+		// Fallback
+		for i, v := range src {
+			if v == val {
+				dst[i] = 1
+			} else {
+				dst[i] = 0
+			}
+		}
+	}
+	return nil
+}
+
 // =============================================================================
 // FP16 Generic Implementations (Unrolled 4x)
 // =============================================================================
@@ -944,4 +1019,268 @@ func cosineF16Unrolled4x(a, b []float16.Num) (float32, error) {
 		return 1.0, nil
 	}
 	return 1.0 - (dot / float32(math.Sqrt(float64(normA)*float64(normB)))), nil
+}
+
+func dotInt8Unrolled4x(a, b []int8) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	var sum0, sum1, sum2, sum3 int32
+	n := len(a)
+	i := 0
+	for ; i <= n-4; i += 4 {
+		sum0 += int32(a[i]) * int32(b[i])
+		sum1 += int32(a[i+1]) * int32(b[i+1])
+		sum2 += int32(a[i+2]) * int32(b[i+2])
+		sum3 += int32(a[i+3]) * int32(b[i+3])
+	}
+	for ; i < n; i++ {
+		sum0 += int32(a[i]) * int32(b[i])
+	}
+	return float32(sum0 + sum1 + sum2 + sum3), nil
+}
+
+func dotInt16Unrolled4x(a, b []int16) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	var sum0, sum1, sum2, sum3 int64
+	n := len(a)
+	i := 0
+	for ; i <= n-4; i += 4 {
+		sum0 += int64(a[i]) * int64(b[i])
+		sum1 += int64(a[i+1]) * int64(b[i+1])
+		sum2 += int64(a[i+2]) * int64(b[i+2])
+		sum3 += int64(a[i+3]) * int64(b[i+3])
+	}
+	for ; i < n; i++ {
+		sum0 += int64(a[i]) * int64(b[i])
+	}
+	return float32(sum0 + sum1 + sum2 + sum3), nil
+}
+
+func euclideanInt8Unrolled4x(a, b []int8) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	var sum0, sum1, sum2, sum3 int32
+	n := len(a)
+	i := 0
+	for ; i <= n-4; i += 4 {
+		d0 := int32(a[i]) - int32(b[i])
+		d1 := int32(a[i+1]) - int32(b[i+1])
+		d2 := int32(a[i+2]) - int32(b[i+2])
+		d3 := int32(a[i+3]) - int32(b[i+3])
+		sum0 += d0 * d0
+		sum1 += d1 * d1
+		sum2 += d2 * d2
+		sum3 += d3 * d3
+	}
+	for ; i < n; i++ {
+		d := int32(a[i]) - int32(b[i])
+		sum0 += d * d
+	}
+	return float32(math.Sqrt(float64(sum0 + sum1 + sum2 + sum3))), nil
+}
+
+func euclideanInt16Unrolled4x(a, b []int16) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	var sum0, sum1, sum2, sum3 int64
+	n := len(a)
+	i := 0
+	for ; i <= n-4; i += 4 {
+		d0 := int64(a[i]) - int64(b[i])
+		d1 := int64(a[i+1]) - int64(b[i+1])
+		d2 := int64(a[i+2]) - int64(b[i+2])
+		d3 := int64(a[i+3]) - int64(b[i+3])
+		sum0 += d0 * d0
+		sum1 += d1 * d1
+		sum2 += d2 * d2
+		sum3 += d3 * d3
+	}
+	for ; i < n; i++ {
+		d := int64(a[i]) - int64(b[i])
+		sum0 += d * d
+	}
+	return float32(math.Sqrt(float64(sum0 + sum1 + sum2 + sum3))), nil
+}
+
+func euclideanInt32Unrolled4x(a, b []int32) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	var sum0, sum1, sum2, sum3 int64
+	n := len(a)
+	i := 0
+	for ; i <= n-4; i += 4 {
+		d0 := int64(a[i]) - int64(b[i])
+		d1 := int64(a[i+1]) - int64(b[i+1])
+		d2 := int64(a[i+2]) - int64(b[i+2])
+		d3 := int64(a[i+3]) - int64(b[i+3])
+		sum0 += d0 * d0
+		sum1 += d1 * d1
+		sum2 += d2 * d2
+		sum3 += d3 * d3
+	}
+	for ; i < n; i++ {
+		d := int64(a[i]) - int64(b[i])
+		sum0 += d * d
+	}
+	return float32(math.Sqrt(float64(sum0 + sum1 + sum2 + sum3))), nil
+}
+
+func euclideanInt64Unrolled4x(a, b []int64) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	var sum float64
+	for i := 0; i < len(a); i++ {
+		d := float64(a[i]) - float64(b[i])
+		sum += d * d
+	}
+	return float32(math.Sqrt(sum)), nil
+}
+
+func euclideanFloat64Unrolled4x(a, b []float64) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	var sum0, sum1, sum2, sum3 float64
+	n := len(a)
+	i := 0
+	for ; i <= n-4; i += 4 {
+		d0 := a[i] - b[i]
+		d1 := a[i+1] - b[i+1]
+		d2 := a[i+2] - b[i+2]
+		d3 := a[i+3] - b[i+3]
+		sum0 += d0 * d0
+		sum1 += d1 * d1
+		sum2 += d2 * d2
+		sum3 += d3 * d3
+	}
+	for ; i < n; i++ {
+		d := a[i] - b[i]
+		sum0 += d * d
+	}
+	return float32(math.Sqrt(sum0 + sum1 + sum2 + sum3)), nil
+}
+
+func dotFloat64Unrolled4x(a, b []float64) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	var sum0, sum1, sum2, sum3 float64
+	n := len(a)
+	i := 0
+	for ; i <= n-4; i += 4 {
+		sum0 += a[i] * b[i]
+		sum1 += a[i+1] * b[i+1]
+		sum2 += a[i+2] * b[i+2]
+		sum3 += a[i+3] * b[i+3]
+	}
+	for ; i < n; i++ {
+		sum0 += a[i] * b[i]
+	}
+	return float32(sum0 + sum1 + sum2 + sum3), nil
+}
+
+func euclideanUint8Unrolled4x(a, b []uint8) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	var sum uint64
+	for i := 0; i < len(a); i++ {
+		var d int32
+		if a[i] > b[i] {
+			d = int32(a[i] - b[i])
+		} else {
+			d = int32(b[i] - a[i])
+		}
+		sum += uint64(d * d)
+	}
+	return float32(math.Sqrt(float64(sum))), nil
+}
+
+func euclideanUint16Unrolled4x(a, b []uint16) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	var sum uint64
+	for i := 0; i < len(a); i++ {
+		var d int32
+		if a[i] > b[i] {
+			d = int32(a[i] - b[i])
+		} else {
+			d = int32(b[i] - a[i])
+		}
+		sum += uint64(d * d)
+	}
+	return float32(math.Sqrt(float64(sum))), nil
+}
+
+func euclideanUint32Unrolled4x(a, b []uint32) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	var sum float64
+	for i := 0; i < len(a); i++ {
+		d := float64(a[i]) - float64(b[i])
+		sum += d * d
+	}
+	return float32(math.Sqrt(sum)), nil
+}
+
+func euclideanUint64Unrolled4x(a, b []uint64) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	var sum float64
+	for i := 0; i < len(a); i++ {
+		d := float64(a[i]) - float64(b[i])
+		sum += d * d
+	}
+	return float32(math.Sqrt(sum)), nil
+}
+
+func euclideanComplex64Unrolled(a, b []complex64) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	var sum float32
+	for i := 0; i < len(a); i++ {
+		dr := real(a[i]) - real(b[i])
+		di := imag(a[i]) - imag(b[i])
+		sum += dr*dr + di*di
+	}
+	return float32(math.Sqrt(float64(sum))), nil
+}
+
+func dotComplex64Unrolled(a, b []complex64) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	var sumr, sumi float32
+	for i := 0; i < len(a); i++ {
+		// (ar + ai*j) * (br + bi*j) = (ar*br - ai*bi) + (ar*bi + ai*br)*j
+		br := real(b[i])
+		bi := imag(b[i])
+		sumr += real(a[i])*br - imag(a[i])*bi
+		sumi += real(a[i])*bi + imag(a[i])*br
+	}
+	return float32(math.Sqrt(float64(sumr*sumr + sumi*sumi))), nil
+}
+
+func euclideanComplex128Unrolled(a, b []complex128) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	var sum float64
+	for i := 0; i < len(a); i++ {
+		dr := real(a[i]) - real(b[i])
+		di := imag(a[i]) - imag(b[i])
+		sum += dr*dr + di*di
+	}
+	return float32(math.Sqrt(sum)), nil
 }

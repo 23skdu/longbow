@@ -27,3 +27,19 @@ func fastPathInt64EqualAVX2Kernel(src unsafe.Pointer, n int, val int64, result u
 func fastPathFloat64EqualAVX2Kernel(src unsafe.Pointer, n int, val float64, result unsafe.Pointer) {
 	panic("not implemented on this arch")
 }
+
+func fastPathInt32EqualAVX512Kernel(src unsafe.Pointer, n int, val int32, result unsafe.Pointer) {
+	panic("not implemented on this arch")
+}
+
+func fastPathFloat32EqualAVX512Kernel(src unsafe.Pointer, n int, val float32, result unsafe.Pointer) {
+	panic("not implemented on this arch")
+}
+
+func fastPathInt64EqualAVX512Kernel(src unsafe.Pointer, n int, val int64, result unsafe.Pointer) {
+	panic("not implemented on this arch")
+}
+
+func fastPathFloat64EqualAVX512Kernel(src unsafe.Pointer, n int, val float64, result unsafe.Pointer) {
+	panic("not implemented on this arch")
+}

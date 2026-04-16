@@ -303,11 +303,12 @@ var (
 	)
 
 	// HNSWFilterVectorizedOpsTotal counts operations executed via SIMD filter paths
-	HNSWFilterVectorizedOpsTotal = promauto.NewCounter(
+	HNSWFilterVectorizedOpsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_filter_vectorized_ops_total",
 			Help: "Total number of filter evaluations using SIMD paths",
 		},
+		[]string{"arch"},
 	)
 
 	// HNSWFilterEarlyExitTotal counts searches skipped due to all-zero filter bitmasks

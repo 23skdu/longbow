@@ -112,8 +112,9 @@ func initializeDispatch() {
 		dotProductBatchImpl = dotBatchAVX512
 		l2SquaredImpl = l2SquaredAVX512 // uses AVX512 kernel
 		prefetchImpl = prefetchNTA
-		matchInt64Impl = matchInt64AVX2     // Fallback to AVX2 for now
-		matchFloat32Impl = matchFloat32AVX2 // Fallback to AVX2 for now
+		matchInt64Impl = matchInt64AVX512
+		matchFloat32Impl = matchFloat32AVX512
+		matchFloat64Impl = matchFloat64AVX512
 		if features.HasVNNI {
 			adcDistanceBatchImpl = adcBatchVNNI
 		} else {
@@ -154,6 +155,7 @@ func initializeDispatch() {
 		prefetchImpl = prefetchNTA
 		matchInt64Impl = matchInt64AVX2
 		matchFloat32Impl = matchFloat32AVX2
+		matchFloat64Impl = matchFloat64AVX2
 		adcDistanceBatchImpl = adcBatchAVX2
 		euclideanDistanceVerticalBatchImpl = euclideanVerticalBatchAVX2
 		euclideanDistanceSQ8BatchImpl = euclideanSQ8BatchAVX2
@@ -190,6 +192,7 @@ func initializeDispatch() {
 		prefetchImpl = prefetchGeneric
 		matchInt64Impl = matchInt64Generic
 		matchFloat32Impl = matchFloat32Generic
+		matchFloat64Impl = matchFloat64Generic
 		adcDistanceBatchImpl = adcBatchNEON
 		euclideanDistanceVerticalBatchImpl = euclideanVerticalBatchNEON
 		euclideanDistanceSQ8BatchImpl = euclideanSQ8BatchGeneric // Fallback to generic for now
@@ -230,6 +233,7 @@ func initializeDispatch() {
 		prefetchImpl = prefetchGeneric
 		matchInt64Impl = matchInt64Generic
 		matchFloat32Impl = matchFloat32Generic
+		matchFloat64Impl = matchFloat64Generic
 		adcDistanceBatchImpl = adcBatchGeneric
 		euclideanDistanceVerticalBatchImpl = euclideanBatchGeneric
 		euclideanDistanceSQ8BatchImpl = euclideanSQ8BatchGeneric

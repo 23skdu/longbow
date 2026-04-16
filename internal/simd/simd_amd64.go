@@ -634,7 +634,13 @@ func matchInt64AVX2Kernel(src unsafe.Pointer, val int64, op int, dst unsafe.Poin
 func matchFloat32AVX2Kernel(src unsafe.Pointer, val float32, op int, dst unsafe.Pointer, n int)
 
 //go:noescape
+func matchFloat64AVX2Kernel(src unsafe.Pointer, val float64, op int, dst unsafe.Pointer, n int)
+
+//go:noescape
 func matchInt64AVX512Kernel(src unsafe.Pointer, val int64, op int, dst unsafe.Pointer, n int)
+
+//go:noescape
+func matchFloat64AVX512Kernel(src unsafe.Pointer, val float64, op int, dst unsafe.Pointer, n int)
 
 //go:noescape
 func euclidean16AVX512(a, b unsafe.Pointer) float32
@@ -656,6 +662,26 @@ func euclideanInt8Unrolled4xAVX2Kernel(a, b unsafe.Pointer, n int) float32
 
 //go:noescape
 func euclideanInt16AVX2Kernel(a, b unsafe.Pointer, n int) float32
+
+func euclideanInt8AVX2(a, b []int8) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	return euclideanInt8AVX2Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a)), nil
+}
+
+func euclideanInt16AVX2(a, b []int16) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	return euclideanInt16AVX2Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a)), nil
+}
 
 //go:noescape
 func dotFloat64AVX2Kernel(a, b unsafe.Pointer, n int) float32
@@ -734,6 +760,34 @@ func matchFloat32AVX512(src []float32, val float32, op CompareOp, dst []byte) er
 		return nil
 	}
 	matchFloat32AVX512Kernel(unsafe.Pointer(&src[0]), val, int(op), unsafe.Pointer(&dst[0]), len(src))
+	return nil
+}
+
+func matchFloat64AVX2(src []float64, val float64, op CompareOp, dst []byte) error {
+	if len(src) != len(dst) {
+		return errors.New("simd: length mismatch")
+	}
+	if !features.HasAVX2 {
+		return matchFloat64Generic(src, val, op, dst)
+	}
+	if len(src) == 0 {
+		return nil
+	}
+	matchFloat64AVX2Kernel(unsafe.Pointer(&src[0]), val, int(op), unsafe.Pointer(&dst[0]), len(src))
+	return nil
+}
+
+func matchFloat64AVX512(src []float64, val float64, op CompareOp, dst []byte) error {
+	if len(src) != len(dst) {
+		return errors.New("simd: length mismatch")
+	}
+	if !features.HasAVX512 {
+		return matchFloat64AVX2(src, val, op, dst)
+	}
+	if len(src) == 0 {
+		return nil
+	}
+	matchFloat64AVX512Kernel(unsafe.Pointer(&src[0]), val, int(op), unsafe.Pointer(&dst[0]), len(src))
 	return nil
 }
 

@@ -658,30 +658,7 @@ func euclideanFloat64AVX512Kernel(a, b unsafe.Pointer, n int) float32
 func euclideanInt8AVX2Kernel(a, b unsafe.Pointer, n int) float32
 
 //go:noescape
-func euclideanInt8Unrolled4xAVX2Kernel(a, b unsafe.Pointer, n int) float32
-
-//go:noescape
 func euclideanInt16AVX2Kernel(a, b unsafe.Pointer, n int) float32
-
-func euclideanInt8AVX2(a, b []int8) (float32, error) {
-	if len(a) != len(b) {
-		return 0, errors.New("simd: length mismatch")
-	}
-	if len(a) == 0 {
-		return 0, nil
-	}
-	return euclideanInt8AVX2Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a)), nil
-}
-
-func euclideanInt16AVX2(a, b []int16) (float32, error) {
-	if len(a) != len(b) {
-		return 0, errors.New("simd: length mismatch")
-	}
-	if len(a) == 0 {
-		return 0, nil
-	}
-	return euclideanInt16AVX2Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a)), nil
-}
 
 //go:noescape
 func dotFloat64AVX2Kernel(a, b unsafe.Pointer, n int) float32
@@ -934,6 +911,51 @@ func euclideanFloat64AVX512(a, b []float64) (float32, error) {
 		return 0, nil
 	}
 	return float32(euclideanFloat64AVX512Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a))), nil
+}
+
+func dotFloat64AVX2(a, b []float64) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	if !features.HasAVX2 {
+		return dotFloat64Unrolled4x(a, b)
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	return dotFloat64AVX2Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a)), nil
+}
+
+func dotFloat64AVX512(a, b []float64) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	if !features.HasAVX512 {
+		return dotFloat64AVX2(a, b)
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	return dotFloat64AVX512Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a)), nil
+}
+
+// Specialized 16-dimension wrappers for AVX512
+func euclidean16AVX512Wrapper(a, b []float32) (float32, error) {
+	if len(a) != 16 || len(b) != 16 {
+		return 0, errors.New("simd: expected dimension 16")
+	}
+	return euclidean16AVX512(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0])), nil
+}
+
+func cosine16AVX512Wrapper(a, b []float32) (float32, error) {
+	if len(a) != 16 || len(b) != 16 {
+		return 0, errors.New("simd: expected dimension 16")
+	}
+	dot, normA, normB := cosine16AVX512(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]))
+	if normA == 0 || normB == 0 {
+		return 1.0, nil
+	}
+	return 1.0 - (dot / float32(math.Sqrt(float64(normA)*float64(normB)))), nil
 }
 
 // =============================================================================

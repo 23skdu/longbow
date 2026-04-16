@@ -125,9 +125,123 @@ bool_done:
     RET
 
 // func fastPathStringEqualAVX2Kernel(offsets unsafe.Pointer, data unsafe.Pointer, n int, target unsafe.Pointer, targetLen int, result unsafe.Pointer)
-// This is a stub for string acceleration - actual vectorization over variable offsets is highly complex.
-// For now, it stays as a placeholder or handles fixed-length if desired.
 TEXT ·fastPathStringEqualAVX2Kernel(SB), NOSPLIT, $0-48
+    MOVQ    offsets+0(FP), SI   // *int32
+    MOVQ    data+8(FP), DX      // *byte
+    MOVQ    n+16(FP), R15       // use R15 for count to keep CX for CMPSB
+    MOVQ    target+24(FP), R8   // *byte
+    MOVQ    targetLen+32(FP), R9// int
+    MOVQ    result+40(FP), DI   // *int32
+
+    // Broadcast targetLen for vectorized check
+    VMOVQ   R9, X0
+    VPBROADCASTD X0, Y0
+
+next_block:
+    CMPQ    R15, $8
+    JL      tail_str
+
+    // Load 8 offsets + 1 next offset
+    VMOVDQU (SI), Y1
+    VMOVDQU 4(SI), Y2
+    VPSUBD  Y1, Y2, Y3
+    VPCMPEQD Y0, Y3, Y4
+    
+    VPTEST  Y4, Y4
+    JZ      skip_data_block
+    
+    VPMOVMSKB Y4, AX
+    
+    MOVQ    $0, R13
+loop_block:
+    CMPQ    R13, $8
+    JE      skip_data_block
+    
+    MOVQ    R13, R14
+    SHLQ    $2, R14
+    BTQ     R14, AX
+    JNC     next_in_block
+    
+    MOVL    (SI)(R13*4), R10
+    MOVQ    DX, R12
+    ADDQ    R10, R12
+    
+    PUSHQ   SI
+    PUSHQ   DI
+    PUSHQ   DX
+    PUSHQ   AX
+    
+    MOVQ    R12, SI
+    MOVQ    R8, DI
+    MOVQ    R9, CX              // length into CX for CMPSB
+    REPE    CMPSB
+    JNE     data_mismatch
+    
+    POPQ    AX
+    POPQ    DX
+    POPQ    DI
+    POPQ    SI
+    MOVL    $0xFFFFFFFF, (DI)(R13*4)
+    JMP     next_in_block
+
+data_mismatch:
+    POPQ    AX
+    POPQ    DX
+    POPQ    DI
+    POPQ    SI
+    MOVL    $0, (DI)(R13*4)
+
+next_in_block:
+    INCQ    R13
+    JMP     loop_block
+
+skip_data_block:
+    ADDQ    $32, SI
+    ADDQ    $32, DI
+    SUBQ    $8, R15
+    JMP     next_block
+
+tail_str:
+    CMPQ    R15, $0
+    JE      done_str
+    
+    MOVL    (SI), R10
+    MOVL    4(SI), R11
+    SUBL    R10, R11
+    
+    MOVL    $0, (DI)
+    CMPL    R11, R9
+    JNE     tail_advance
+    
+    MOVQ    DX, R12
+    ADDQ    R10, R12
+    
+    PUSHQ   SI
+    PUSHQ   DI
+    MOVQ    R12, SI
+    MOVQ    R8, DI
+    MOVQ    R9, CX
+    REPE    CMPSB
+    JNE     tail_mismatch
+    
+    POPQ    DI
+    POPQ    SI
+    MOVL    $0xFFFFFFFF, (DI)
+    JMP     tail_advance
+
+tail_mismatch:
+    POPQ    DI
+    POPQ    SI
+tail_advance:
+    ADDQ    $4, SI
+    ADDQ    $4, DI
+    DECQ    R15
+    JMP     tail_str
+    
+done_str:
+    VZEROUPPER
+    RET
+    VZEROUPPER
     RET
 
 // func fastPathInt64EqualAVX2Kernel(src unsafe.Pointer, n int, val int64, result unsafe.Pointer)

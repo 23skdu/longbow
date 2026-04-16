@@ -271,13 +271,29 @@ func fastPathInt64(arr *array.Int64, val int64, equal bool, builder *array.Boole
 	n := arr.Len()
 
 	var useAVX2 bool
+	var useAVX512 bool
 	if equal && n >= 4 {
 		feats := simd.GetCPUFeatures()
-		useAVX2 = feats.HasAVX2
+		useAVX512 = feats.HasAVX512
+		useAVX2 = feats.HasAVX2 && !useAVX512
+	}
+
+	if useAVX512 {
+		metrics.HNSWFilterVectorizedOpsTotal.WithLabelValues("avx512").Inc()
+		results := make([]int64, n)
+		fastPathInt64EqualAVX512Kernel(unsafe.Pointer(&values[0]), n, val, unsafe.Pointer(&results[0]))
+		for i := 0; i < n; i++ {
+			if arr.IsNull(i) {
+				builder.Append(false)
+			} else {
+				builder.Append(results[i] != 0)
+			}
+		}
+		return
 	}
 
 	if useAVX2 {
-		metrics.HNSWFilterVectorizedOpsTotal.Inc()
+		metrics.HNSWFilterVectorizedOpsTotal.WithLabelValues("avx2").Inc()
 		results := make([]int64, n)
 		fastPathInt64EqualAVX2Kernel(unsafe.Pointer(&values[0]), n, val, unsafe.Pointer(&results[0]))
 		for i := 0; i < n; i++ {
@@ -315,13 +331,29 @@ func fastPathInt32(arr *array.Int32, val int32, equal bool, builder *array.Boole
 	n := arr.Len()
 
 	var useAVX2 bool
+	var useAVX512 bool
 	if equal && n >= 8 {
 		feats := simd.GetCPUFeatures()
-		useAVX2 = feats.HasAVX2
+		useAVX512 = feats.HasAVX512
+		useAVX2 = feats.HasAVX2 && !useAVX512
+	}
+
+	if useAVX512 {
+		metrics.HNSWFilterVectorizedOpsTotal.WithLabelValues("avx512").Inc()
+		results := make([]int32, n)
+		fastPathInt32EqualAVX512Kernel(unsafe.Pointer(&values[0]), n, val, unsafe.Pointer(&results[0]))
+		for i := 0; i < n; i++ {
+			if arr.IsNull(i) {
+				builder.Append(false)
+			} else {
+				builder.Append(results[i] != 0)
+			}
+		}
+		return
 	}
 
 	if useAVX2 {
-		metrics.HNSWFilterVectorizedOpsTotal.Inc()
+		metrics.HNSWFilterVectorizedOpsTotal.WithLabelValues("avx2").Inc()
 		// SIMD Fast Path
 		results := make([]int32, n)
 
@@ -409,13 +441,29 @@ func fastPathFloat64(arr *array.Float64, val float64, equal bool, builder *array
 	n := arr.Len()
 
 	var useAVX2 bool
+	var useAVX512 bool
 	if equal && n >= 4 {
 		feats := simd.GetCPUFeatures()
-		useAVX2 = feats.HasAVX2
+		useAVX512 = feats.HasAVX512
+		useAVX2 = feats.HasAVX2 && !useAVX512
+	}
+
+	if useAVX512 {
+		metrics.HNSWFilterVectorizedOpsTotal.WithLabelValues("avx512").Inc()
+		results := make([]float64, n)
+		fastPathFloat64EqualAVX512Kernel(unsafe.Pointer(&values[0]), n, val, unsafe.Pointer(&results[0]))
+		for i := 0; i < n; i++ {
+			if arr.IsNull(i) {
+				builder.Append(false)
+			} else {
+				builder.Append(results[i] != 0)
+			}
+		}
+		return
 	}
 
 	if useAVX2 {
-		metrics.HNSWFilterVectorizedOpsTotal.Inc()
+		metrics.HNSWFilterVectorizedOpsTotal.WithLabelValues("avx2").Inc()
 		results := make([]float64, n)
 		fastPathFloat64EqualAVX2Kernel(unsafe.Pointer(&values[0]), n, val, unsafe.Pointer(&results[0]))
 		for i := 0; i < n; i++ {
@@ -453,13 +501,29 @@ func fastPathFloat32(arr *array.Float32, val float32, equal bool, builder *array
 	n := arr.Len()
 
 	var useAVX2 bool
+	var useAVX512 bool
 	if equal && n >= 8 {
 		feats := simd.GetCPUFeatures()
-		useAVX2 = feats.HasAVX2
+		useAVX512 = feats.HasAVX512
+		useAVX2 = feats.HasAVX2 && !useAVX512
+	}
+
+	if useAVX512 {
+		metrics.HNSWFilterVectorizedOpsTotal.WithLabelValues("avx512").Inc()
+		results := make([]float32, n)
+		fastPathFloat32EqualAVX512Kernel(unsafe.Pointer(&values[0]), n, val, unsafe.Pointer(&results[0]))
+		for i := 0; i < n; i++ {
+			if arr.IsNull(i) {
+				builder.Append(false)
+			} else {
+				builder.Append(results[i] != 0)
+			}
+		}
+		return
 	}
 
 	if useAVX2 {
-		metrics.HNSWFilterVectorizedOpsTotal.Inc()
+		metrics.HNSWFilterVectorizedOpsTotal.WithLabelValues("avx2").Inc()
 
 		// SIMD Fast Path
 		results := make([]float32, n)
@@ -645,6 +709,44 @@ func fastPathBool(arr *array.Boolean, val, equal bool, builder *array.BooleanBui
 // fastPathString compares string array with scalar value.
 func fastPathString(arr *array.String, val string, equal bool, builder *array.BooleanBuilder) {
 	n := arr.Len()
+
+	var useAVX2 bool
+	if equal && n >= 8 {
+		feats := simd.GetCPUFeatures()
+		useAVX2 = feats.HasAVX2
+	}
+
+	if useAVX2 {
+		metrics.HNSWFilterVectorizedOpsTotal.Inc()
+		results := make([]int32, n)
+		
+		offsets := arr.ValueOffsets()
+		data := arr.ValueBytes()
+		
+		var targetPtr unsafe.Pointer
+		if len(val) > 0 {
+			targetPtr = unsafe.Pointer(unsafe.StringData(val))
+		}
+
+		fastPathStringEqualAVX2Kernel(
+			unsafe.Pointer(&offsets[0]),
+			unsafe.Pointer(&data[0]),
+			n,
+			targetPtr,
+			len(val),
+			unsafe.Pointer(&results[0]),
+		)
+
+		for i := 0; i < n; i++ {
+			if arr.IsNull(i) {
+				builder.Append(false)
+			} else {
+				builder.Append(results[i] != 0)
+			}
+		}
+		return
+	}
+
 	if equal {
 		for i := 0; i < n; i++ {
 			if arr.IsNull(i) {

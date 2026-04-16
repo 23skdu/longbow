@@ -788,20 +788,48 @@ func (o *float64FilterOp) MatchBitmap(dst []byte) {
 		return
 	}
 
-	// For now, float64 Match is implemented in float64Unrolled (distance) but not as scalar MatchInt64-like in simd.go.
-	// Wait, I see MatchFloat32 in simd.go but NOT MatchFloat64.
-	// I'll add MatchFloat64 to simd.go.
-	// But actually, I just implemented AVX2 for it in internal/query/simd_filter_amd64.go?
-	// No, that was fastPathFloat64.
-	
-	// I'll fall back to my query-package kernel if available or loop.
-	// But it's better to add it to simd.go.
-	
-	for i := 0; i < len(dst); i++ {
-		if o.Match(i) {
-			dst[i] = 1
-		} else {
+	var op simd.CompareOp
+	switch o.operator {
+	case "=", "eq", "==":
+		op = simd.CompareEq
+	case "!=", "neq":
+		op = simd.CompareNeq
+	case ">", "gt":
+		op = simd.CompareGt
+	case ">=", "ge":
+		op = simd.CompareGe
+	case "<", "lt":
+		op = simd.CompareLt
+	case "<=", "le":
+		op = simd.CompareLe
+	default:
+		for i := 0; i < len(dst); i++ {
+			if o.Match(i) {
+				dst[i] = 1
+			} else {
+				dst[i] = 0
+			}
+		}
+		return
+	}
+
+	data := o.col.Float64Values()
+	if len(data) < len(dst) {
+		// Should not happen with correct dst length, but handle safely
+		_ = simd.MatchFloat64(data, o.val, op, dst[:len(data)])
+		for i := len(data); i < len(dst); i++ {
 			dst[i] = 0
+		}
+	} else {
+		_ = simd.MatchFloat64(data[:len(dst)], o.val, op, dst)
+	}
+
+	// Handle nulls
+	if o.col.NullN() > 0 {
+		for i := 0; i < len(dst); i++ {
+			if o.col.IsNull(i) {
+				dst[i] = 0
+			}
 		}
 	}
 }

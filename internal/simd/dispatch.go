@@ -128,6 +128,7 @@ func initializeDispatch() {
 		cosineDistanceF16Impl = cosineF16AVX512
 		dotProductF16Impl = dotF16AVX512
 		euclideanDistanceFloat64Impl = euclideanFloat64AVX512
+		dotProductFloat64Impl = dotFloat64AVX512
 		cosineDistanceFloat64Impl = cosineFloat64Unrolled4x // Fallback for now
 		euclideanDistanceInt8Impl = euclideanInt8AVX2
 		euclideanDistanceInt16Impl = euclideanInt16AVX2
@@ -168,9 +169,10 @@ func initializeDispatch() {
 		cosineDistanceF16Impl = cosineF16AVX2
 		dotProductF16Impl = dotF16AVX2
 		euclideanDistanceFloat64Impl = euclideanFloat64AVX2
+		dotProductFloat64Impl = dotFloat64AVX2
 		cosineDistanceFloat64Impl = cosineFloat64Unrolled4x // Fallback for now
-		euclideanDistanceInt8Impl = euclideanDistanceInt8AVX2
-		euclideanDistanceInt16Impl = euclideanDistanceInt16AVX2
+		euclideanDistanceInt8Impl = euclideanInt8AVX2
+		euclideanDistanceInt16Impl = euclideanInt16AVX2
 	case "neon":
 		euclideanDistanceImpl = euclideanNEON
 		euclideanDistance384Impl = euclidean384NEON
@@ -193,22 +195,23 @@ func initializeDispatch() {
 		matchInt64Impl = matchInt64Generic
 		matchFloat32Impl = matchFloat32Generic
 		matchFloat64Impl = matchFloat64Generic
-		adcDistanceBatchImpl = adcBatchNEON
-		euclideanDistanceVerticalBatchImpl = euclideanVerticalBatchNEON
-		euclideanDistanceSQ8BatchImpl = euclideanSQ8BatchGeneric // Fallback to generic for now
+		adcDistanceBatchImpl = adcBatchGeneric
+		euclideanDistanceVerticalBatchImpl = euclideanBatchNEON
+		cosineDistanceBatchImpl = cosineBatchNEON
+		euclideanDistanceSQ8BatchImpl = euclideanSQ8BatchGeneric
 		euclideanDistanceF16BatchImpl = euclideanF16BatchGeneric
 		andBytesImpl = andBytesGeneric
 		orBytesImpl = orBytesGeneric
 		notBytesImpl = notBytesGeneric
 		isAllZerosImpl = isAllZerosGeneric
 		// F16 Kernels
-		// Use generic unrolled implementations for F16 to avoid flaky assembly bugs
 		euclideanDistanceF16Impl = euclideanF16Unrolled4x
 		cosineDistanceF16Impl = cosineF16Unrolled4x
 		dotProductF16Impl = dotF16Unrolled4x
 		euclideanDistanceComplex64Impl = euclideanComplex64Optimized
-		euclideanDistanceComplex128Impl = euclideanComplex128Unrolled // Fallback
+		euclideanDistanceComplex128Impl = euclideanComplex128Unrolled
 		euclideanDistanceFloat64Impl = euclideanFloat64Unrolled4x
+		dotProductFloat64Impl = dotFloat64Unrolled4x
 		cosineDistanceFloat64Impl = cosineFloat64Unrolled4x
 		euclideanDistanceInt8Impl = euclideanInt8Unrolled4x
 		euclideanDistanceInt16Impl = euclideanInt16Unrolled4x

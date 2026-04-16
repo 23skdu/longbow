@@ -27,6 +27,14 @@ func matchFloat64AVX512(src []float64, val float64, op CompareOp, dst []byte) er
 	return matchFloat64Generic(src, val, op, dst)
 }
 
+func matchInt64AVX512(src []int64, val int64, op CompareOp, dst []byte) error {
+	return matchInt64Generic(src, val, op, dst)
+}
+
+func matchFloat32AVX512(src []float32, val float32, op CompareOp, dst []byte) error {
+	return matchFloat32Generic(src, val, op, dst)
+}
+
 func adcBatchAVX2(table []float32, flatCodes []byte, m int, results []float32) error {
 	return adcBatchGeneric(table, flatCodes, m, results)
 }
@@ -118,5 +126,8 @@ func andBytesAVX2(dst, src []byte) { andBytesGeneric(dst, src) }
 func orBytesAVX2(dst, src []byte)  { orBytesGeneric(dst, src) }
 func isAllZerosAVX2(src []byte) bool { return isAllZerosGeneric(src) }
 
-func euclideanDistanceInt8AVX2(a, b []int8) (float32, error) { return 0, errors.New("not implemented") }
-func euclideanDistanceInt16AVX2(a, b []int16) (float32, error) { return 0, errors.New("not implemented") }
+func dotFloat64AVX2(a, b []float64) (float32, error)   { return dotFloat64Unrolled4x(a, b) }
+func dotFloat64AVX512(a, b []float64) (float32, error) { return dotFloat64Unrolled4x(a, b) }
+
+func euclidean16AVX512Wrapper(a, b []float32) (float32, error) { return euclideanGeneric(a, b) }
+func cosine16AVX512Wrapper(a, b []float32) (float32, error)    { return cosineGeneric(a, b) }

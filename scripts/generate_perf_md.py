@@ -185,19 +185,32 @@ def main():
     print(f"Loaded {len(cpu_results)} CPU results")
     print(f"Loaded {len(metal_results)} Metal results")
 
-    graphrag_file = "/Users/rsd/REPOS/longbow/data/perf_logs/perf_matrix_graphrag_20260331_150216.json"
-    deletion_file = "/Users/rsd/REPOS/longbow/data/perf_logs/perf_matrix_deletion_20260331_150246.json"
+    def get_latest_matrix(prefix):
+        files = glob.glob(f"/Users/rsd/REPOS/longbow/data/perf_logs/perf_matrix_{prefix}_*.json")
+        if not files:
+            return None
+        return max(files, key=os.path.getmtime)
+
+    recommend_file = get_latest_matrix("recommend")
+    graphrag_file = get_latest_matrix("graphrag")
+    deletion_file = get_latest_matrix("deletion")
+
+    recommend_results = []
+    if recommend_file and os.path.exists(recommend_file):
+        with open(recommend_file) as f:
+            recommend_results = json.load(f).get("results", [])
 
     graphrag_results = []
-    if os.path.exists(graphrag_file):
+    if graphrag_file and os.path.exists(graphrag_file):
         with open(graphrag_file) as f:
             graphrag_results = json.load(f).get("results", [])
 
     deletion_results = []
-    if os.path.exists(deletion_file):
+    if deletion_file and os.path.exists(deletion_file):
         with open(deletion_file) as f:
             deletion_results = json.load(f).get("results", [])
 
+    print(f"Loaded {len(recommend_results)} Recommend results")
     print(f"Loaded {len(graphrag_results)} GraphRAG results")
     print(f"Loaded {len(deletion_results)} Deletion results")
 
@@ -205,7 +218,7 @@ def main():
     md = []
     md.append("# Performance Documentation")
     md.append("")
-    md.append("**Generated**: 2026-03-31")
+    md.append(f"**Generated**: 2026-04-17")
     md.append("**Platform**: Darwin arm64 (Apple Silicon)")
     md.append("**Test Tool**: Longbow Unified Benchmark Script")
     md.append("")
@@ -316,6 +329,20 @@ def main():
     md.append("")
     for count in COUNTS:
         md.append(generate_latency_table(metal_results, "metal", count, "dense", "p99"))
+        md.append("")
+
+    # Recommend Performance
+    if recommend_results:
+        md.append("---")
+        md.append("")
+        md.append("## Recommend Performance (Hybrid vs ANN)")
+        md.append("")
+        md.append("| Alpha | K | QPS | P50 (ms) | P95 (ms) | P99 (ms) |")
+        md.append("|-------|---|-----|----------|----------|----------|")
+        for r in recommend_results:
+            md.append(
+                f"| {r.get('alpha', 'N/A')} | {r.get('k', 'N/A')} | {r.get('qps', 0):,.1f} | {r.get('p50', 0):.3f} | {r.get('p95', 0):.3f} | {r.get('p99', 0):.3f} |"
+            )
         md.append("")
 
     # GraphRAG Performance

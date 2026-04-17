@@ -38,7 +38,50 @@
       },
       "id": 1,
       "panels": [],
-      "title": "GPU Health",
+      "title": "GPU Health Overview",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {"options": {"match": "null", "result": {"color": "gray", "text": "N/A"}}, "type": "special"},
+            {"options": {"at": 1, "color": "green", "op": "=", "text": "Healthy"}, "type": "value"},
+            {"options": {"at": 0.5, "color": "yellow", "op": "=", "text": "Degraded"}, "type": "value"},
+            {"options": {"at": 0, "color": "red", "op": "=", "text": "Unhealthy"}, "type": "value"}
+          ],
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}
+        }
+      },
+      "gridPos": {"h": 4, "w": 24, "x": 0, "y": 1},
+      "id": 100,
+      "options": {
+        "displayMode": "basic",
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "showUnfilled": true
+      },
+      "targets": [{"expr": "component_health_status{component=~\"gpu.*|onnx.*\"}", "legendFormat": "{{component}}", "refId": "A"}],
+      "title": "GPU & ONNX Subsystem Health",
+      "type": "status-history"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 5
+      },
+      "id": 1,
+      "panels": [],
+      "title": "GPU & ONNX Performance",
       "type": "row"
     },
     {

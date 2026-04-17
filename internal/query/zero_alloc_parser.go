@@ -141,46 +141,58 @@ func (p *ZeroAllocTicketParser) Parse(data []byte) (TicketQuery, error) {
 			}
 			i = newPos
 		case "search":
-			// Extract object slice
-			start := i
-			newPos, err := skipObject(data, i)
-			if err != nil {
-				return p.result, err
+			if i+4 <= len(data) && string(data[i:i+4]) == "null" {
+				i += 4
+			} else {
+				// Extract object slice
+				start := i
+				newPos, err := skipObject(data, i)
+				if err != nil {
+					return p.result, err
+				}
+				// Parse nested
+				searchReq, err := p.searchParser.Parse(data[start:newPos])
+				if err != nil {
+					return p.result, err
+				}
+				p.result.Search = &searchReq
+				i = newPos
 			}
-			// Parse nested
-			searchReq, err := p.searchParser.Parse(data[start:newPos])
-			if err != nil {
-				return p.result, err
-			}
-			p.result.Search = &searchReq
-			i = newPos
 		case "search_by_id":
-			// Parse VectorSearchByIDRequest from JSON object
-			start := i
-			newPos, err := skipObject(data, i)
-			if err != nil {
-				return p.result, err
+			if i+4 <= len(data) && string(data[i:i+4]) == "null" {
+				i += 4
+			} else {
+				// Parse VectorSearchByIDRequest from JSON object
+				start := i
+				newPos, err := skipObject(data, i)
+				if err != nil {
+					return p.result, err
+				}
+				// Parse the JSON object into VectorSearchByIDRequest
+				var req core.VectorSearchByIDRequest
+				if err := parseSearchByIDRequest(data[start:newPos], &req); err != nil {
+					return p.result, err
+				}
+				p.result.SearchByID = &req
+				i = newPos
 			}
-			// Parse the JSON object into VectorSearchByIDRequest
-			var req core.VectorSearchByIDRequest
-			if err := parseSearchByIDRequest(data[start:newPos], &req); err != nil {
-				return p.result, err
-			}
-			p.result.SearchByID = &req
-			i = newPos
 		case "recommend":
-			// Parse RecommendRequest from JSON object
-			start := i
-			newPos, err := skipObject(data, i)
-			if err != nil {
-				return p.result, err
+			if i+4 <= len(data) && string(data[i:i+4]) == "null" {
+				i += 4
+			} else {
+				// Parse RecommendRequest from JSON object
+				start := i
+				newPos, err := skipObject(data, i)
+				if err != nil {
+					return p.result, err
+				}
+				var req core.RecommendRequest
+				if err := parseRecommendRequest(data[start:newPos], &req); err != nil {
+					return p.result, err
+				}
+				p.result.Recommend = &req
+				i = newPos
 			}
-			var req core.RecommendRequest
-			if err := parseRecommendRequest(data[start:newPos], &req); err != nil {
-				return p.result, err
-			}
-			p.result.Recommend = &req
-			i = newPos
 		default:
 			newPos, err := skipValue(data, i)
 			if err != nil {

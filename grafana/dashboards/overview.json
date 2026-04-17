@@ -268,9 +268,42 @@
       },
       "gridPos": {"h": 4, "w": 6, "x": 18, "y": 11},
       "id": 17,
-      "targets": [{"expr": "rate(longbow_wal_write_errors_total[1m])", "refId": "A"}],
-      "title": "WAL Write Errors/s",
+      "targets": [{"expr": "rate(longbow_log_errors_total[1m])", "refId": "A"}],
+      "title": "Log Errors/s",
       "type": "stat"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 15},
+      "id": 18,
+      "panels": [],
+      "title": "Component Health Status",
+      "type": "row"
+    },
+    {
+      "datasource": "${datasource}",
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "mappings": [
+            {"options": {"match": "null", "result": {"color": "gray", "text": "N/A"}}, "type": "special"},
+            {"options": {"at": 1, "color": "green", "op": "=", "text": "Healthy"}, "type": "value"},
+            {"options": {"at": 0.5, "color": "yellow", "op": "=", "text": "Degraded"}, "type": "value"},
+            {"options": {"at": 0, "color": "red", "op": "=", "text": "Unhealthy"}, "type": "value"}
+          ],
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}
+        }
+      },
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 16},
+      "id": 19,
+      "options": {
+        "displayMode": "basic",
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "showUnfilled": true
+      },
+      "targets": [{"expr": "component_health_status", "legendFormat": "{{component}}", "refId": "A"}],
+      "title": "Subsystem Health Status",
+      "type": "status-history"
     }
   ],
   "refresh": "10s",

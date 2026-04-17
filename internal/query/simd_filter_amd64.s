@@ -81,7 +81,7 @@ TEXT ·fastPathBoolAVX2Kernel(SB), NOSPLIT, $0-32
     JZ      identity
 
     // Negate using VPXOR with all 1s
-    VPPCMPEQD Y0, Y0, Y0     // Y0 = all 1s
+    VPCMPEQD Y0, Y0, Y0     // Y0 = all 1s
 
 bool_loop:
     CMPQ    CX, $32
@@ -174,7 +174,7 @@ loop_block:
     MOVQ    R12, SI
     MOVQ    R8, DI
     MOVQ    R9, CX              // length into CX for CMPSB
-    REPE    CMPSB
+    REP; CMPSB
     JNE     data_mismatch
     
     POPQ    AX
@@ -221,7 +221,7 @@ tail_str:
     MOVQ    R12, SI
     MOVQ    R8, DI
     MOVQ    R9, CX
-    REPE    CMPSB
+    REP; CMPSB
     JNE     tail_mismatch
     
     POPQ    DI

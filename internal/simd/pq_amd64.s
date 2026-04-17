@@ -40,18 +40,21 @@ loop_8_vectors:
     ADDQ    DX, R10
     MOVB    (R10), R11B
     VPINSRD $3, R11, X1, X1
+    
     ADDQ    DX, R10
     MOVB    (R10), R11B
-    VPINSRD $4, R11, X1, X1
+    VPINSRD $0, R11, X2, X2
     ADDQ    DX, R10
     MOVB    (R10), R11B
-    VPINSRD $5, R11, X1, X1
+    VPINSRD $1, R11, X2, X2
     ADDQ    DX, R10
     MOVB    (R10), R11B
-    VPINSRD $6, R11, X1, X1
+    VPINSRD $2, R11, X2, X2
     ADDQ    DX, R10
     MOVB    (R10), R11B
-    VPINSRD $7, R11, X1, X1
+    VPINSRD $3, R11, X2, X2
+    
+    VINSERTI128 $1, X2, Y1, Y1
 
     // table_base
     MOVQ    CX, R10
@@ -59,7 +62,7 @@ loop_8_vectors:
     ADDQ    DI, R10
 
     VPCMPEQD Y3, Y3, Y3
-    VPGATHERDD (R10)(Y1*4), Y3, Y2
+    VPGATHERDD 0(R10)(Y1*4), Y3, Y2
     VADDPS  Y2, Y0, Y0
 
     INCQ    CX
@@ -197,7 +200,7 @@ subspace512_loop:
 
     MOVW    $0xFFFF, R11
     KMOVW   R11, K1
-    VPGATHERDD (R10)(Z1*4), K1, Z2
+    VPGATHERDD 0(R10)(Z1*4), K1, Z2
     VADDPS  Z2, Z0, Z0
 
     INCQ    CX

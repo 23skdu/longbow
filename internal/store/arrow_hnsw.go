@@ -671,13 +671,33 @@ func (h *ArrowHNSW) ensureChunkInternal(cID, cOff, dims int) (*types.GraphData, 
 	// Reload data to ensure we have the latest view before modifying
 	data := h.data.Load()
 
-	// Ensure dims is synced between atomic and data struct
-	if data.Dims == 0 && dims > 0 {
-		data.Dims = dims
+	// Check if we actually need a new chunk
+	if !data.NeedsChunk(cID) {
+		// Even if chunk exists, we might need to sync dims if it was 0
+		if data.Dims == 0 && dims > 0 {
+			// This part still potentially modifies in-place, but Dims is just an int.
+			// To be purely safe, we could COW here too, but dims usually set on first insert.
+			newData := data.Clone()
+			newData.Dims = dims
+			h.data.Store(newData)
+			return newData, nil
+		}
+		return data, nil
 	}
 
-	err := data.EnsureChunk(cID, cOff, dims)
-	return data, err
+	// Structural growth requires COW to avoid racing with readers
+	newData := data.Clone()
+	if newData.Dims == 0 && dims > 0 {
+		newData.Dims = dims
+	}
+
+	err := newData.EnsureChunk(cID, cOff, dims)
+	if err != nil {
+		return nil, err
+	}
+
+	h.data.Store(newData)
+	return newData, nil
 }
 
 // DeleteBatch invokes Delete for each id.
@@ -870,7 +890,11 @@ func (h *ArrowHNSW) Close() error {
 			return err
 		}
 	}
-	h.data.Store(nil)
+	// Atomically swap in nil to stop new operations
+	data := h.data.Swap(nil)
+	if data != nil {
+		data.Release()
+	}
 	h.dataset = nil
 	h.searchPool = nil
 	h.locationStore = nil
@@ -1494,17 +1518,14 @@ func (h *ArrowHNSW) growInternal(capacity, dims int) error {
 	}
 
 	oldData := h.data.Swap(newData)
-	if oldData != nil {
-		// Defer release to avoid use-after-free data races with concurrent lock-free readers
-		time.AfterFunc(10*time.Second, func() {
-			oldData.Release()
-		})
-	}
+	// We no longer release oldData here because it shares arenas with newData.
+	// Manual lifecycle management of shared arenas is complex; for 0.1.8 we let Go GC 
+	// handle the metadata slices and reserve manual Release() for ArrowHNSW.Close().
+	_ = oldData
 	return nil
 }
 
 func (h *ArrowHNSW) SetEfConstruction(ef int32) {
-	h.config.EfConstruction = ef
 	h.efConstruction.Store(ef)
 }
 

@@ -21,8 +21,8 @@ import (
 // BULK_INSERT_THRESHOLD defines the minimum batch size to trigger parallel bulk insert
 const BULK_INSERT_THRESHOLD = 1000
 
-// reverseUpdate tracks a reverse connection to be added.
-type reverseUpdate struct {
+// linkageUpdate tracks a connection (source -> target) to be added to the graph.
+type linkageUpdate struct {
 	target uint32
 	source uint32
 	dist   float32
@@ -366,9 +366,9 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 	ringSize := uint64(4096) // Capacity per shard ring
 
 	// Initialize Rings
-	rings := make([]*LockFreeRingBuffer[reverseUpdate], numShards)
+	rings := make([]*LockFreeRingBuffer[linkageUpdate], numShards)
 	for i := 0; i < numShards; i++ {
-		rings[i] = NewLockFreeRingBuffer[reverseUpdate](ringSize)
+		rings[i] = NewLockFreeRingBuffer[linkageUpdate](ringSize)
 	}
 
 	for lc := topL; lc >= 0; lc-- {
@@ -801,37 +801,20 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 
 					neighbors := h.selectNeighbors(ctxSearch, candidates, m, data)
 
-					// 1. Forward Connections (Immediate)
-					fwdTargets := make([]uint32, len(neighbors))
-					fwdDists := make([]float32, len(neighbors))
-					for j, nb := range neighbors {
-						fwdTargets[j] = nb.ID
-						fwdDists[j] = nb.Dist
+					// 1. Forward Connections (Push to Ring for Isolation)
+					// We push our neighbors to the ring targeting OURSELVES.
+					// This ensures all updates for node.id are serialized by node.id % numShards worker.
+					for _, neighbor := range neighbors {
+						targetID := node.id
+						shardID := targetID % uint32(numShards)
+						h.pushLinkageUpdate(ctx, rings[shardID], linkageUpdate{target: targetID, source: neighbor.ID, dist: neighbor.Dist})
 					}
-					h.AddConnectionsBatch(ctxSearch, data, node.id, fwdTargets, fwdDists, lc, maxConn)
 
 					// 2. Reverse Connections (Push to Ring)
 					for _, neighbor := range neighbors {
 						targetID := neighbor.ID
-						lockID := targetID % uint32(numShards) // Shard selection
-
-						update := reverseUpdate{target: targetID, source: node.id, dist: neighbor.Dist}
-
-						// Push Blocking to handle backpressure
-						if !rings[lockID].PushBlocking(update, 100*time.Millisecond) {
-							// Check context before spinning
-							if ctx.Err() != nil {
-								return ctx.Err()
-							}
-
-							// Force push loop with context check to avoid infinite hang if consumers fail
-							for !rings[lockID].Push(update) {
-								if ctx.Err() != nil {
-									return ctx.Err()
-								}
-								runtime.Gosched()
-							}
-						}
+						shardID := targetID % uint32(numShards)
+						h.pushLinkageUpdate(ctx, rings[shardID], linkageUpdate{target: targetID, source: node.id, dist: neighbor.Dist})
 					}
 				}
 				return nil
@@ -876,4 +859,17 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 	}
 
 	return nil
+}
+
+func (h *ArrowHNSW) pushLinkageUpdate(ctx context.Context, ring *LockFreeRingBuffer[linkageUpdate], update linkageUpdate) {
+	// Push Blocking to handle backpressure
+	if !ring.PushBlocking(update, 100*time.Millisecond) {
+		// Force push loop with context check to avoid infinite hang if consumers fail
+		for !ring.Push(update) {
+			if ctx.Err() != nil {
+				return
+			}
+			runtime.Gosched()
+		}
+	}
 }

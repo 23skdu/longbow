@@ -309,7 +309,8 @@ do_grow:
 	startL := min(level, maxL)
 
 	for l := startL; l >= 0; l-- {
-		ef := int(h.config.EfConstruction)
+		// Use atomic load for efConstruction to avoid data race
+		ef := int(h.efConstruction.Load())
 		if h.config.AdaptiveEf {
 			ef = h.getAdaptiveEf(int(h.nodeCount.Load()))
 		}

@@ -975,6 +975,66 @@ f64_store_512:
 
 tail_f64_512:
     VZEROUPPER
-    // Reuse scalar logic from AVX2 tail
+    CMPQ    CX, $0
+    JE      done_f64_512
+    
     MOVSD   val+8(FP), X0
-    JMP     tail_f64_avx2
+
+scalar_f64_512_loop:
+    CMPQ    CX, $0
+    JE      done_f64_512
+    
+    MOVSD   (SI), X1
+    MOVB    $0, (DI)
+
+    // Scalar Op check
+    CMPQ    BX, $0
+    JE      s_eq_f64_512
+    CMPQ    BX, $1
+    JE      s_neq_f64_512
+    CMPQ    BX, $2
+    JE      s_gt_f64_512
+    CMPQ    BX, $3
+    JE      s_ge_f64_512
+    CMPQ    BX, $4
+    JE      s_lt_f64_512
+    JMP     s_le_f64_512
+
+s_eq_f64_512:
+    UCOMISD X0, X1
+    JNE     next_f64_512
+    JP      next_f64_512
+    MOVB    $1, (DI)
+    JMP     next_f64_512
+s_neq_f64_512:
+    UCOMISD X0, X1
+    JNE     set_f64_512
+    JP      set_f64_512
+    JMP     next_f64_512
+s_gt_f64_512:
+    UCOMISD X0, X1
+    JA      set_f64_512
+    JMP     next_f64_512
+s_ge_f64_512:
+    UCOMISD X0, X1
+    JAE     set_f64_512
+    JMP     next_f64_512
+s_lt_f64_512:
+    UCOMISD X0, X1
+    JB      set_f64_512
+    JMP     next_f64_512
+s_le_f64_512:
+    UCOMISD X0, X1
+    JBE     set_f64_512
+    JMP     next_f64_512
+
+set_f64_512:
+    MOVB    $1, (DI)
+next_f64_512:
+    ADDQ    $8, SI
+    ADDQ    $1, DI
+    DECQ    CX
+    JMP     scalar_f64_512_loop
+
+done_f64_512:
+    RET

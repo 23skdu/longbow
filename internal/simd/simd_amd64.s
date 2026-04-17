@@ -1432,7 +1432,7 @@ tail512_check_8:
     JMP ·adcBatchAVX2Kernel(SB)
 
 // func euclideanPQVNNIKernel(q, c unsafe.Pointer, subDim, k int, res unsafe.Pointer)
-TEXT ·euclideanPQVNNIKernel(SB), NOSPLIT, zsh-40
+TEXT ·euclideanPQVNNIKernel(SB), NOSPLIT, $0-40
     MOVQ    q+0(FP), SI         // SI = query (uint8)
     MOVQ    c+8(FP), DI         // DI = centroids (uint8)
     MOVQ    subDim+16(FP), CX   // CX = subDim

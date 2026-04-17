@@ -656,6 +656,7 @@ func euclideanFloat64AVX512Kernel(a, b unsafe.Pointer, n int) float32
 
 //go:noescape
 func euclideanInt8AVX2Kernel(a, b unsafe.Pointer, n int) float32
+func euclideanInt8Unrolled4xAVX2Kernel(a, b unsafe.Pointer, n int) float32
 
 //go:noescape
 func euclideanInt16AVX2Kernel(a, b unsafe.Pointer, n int) float32

@@ -14,7 +14,12 @@ func (h *ArrowHNSW) searchLayerForInsert(goCtx context.Context, ctx *ArrowSearch
 	if err != nil {
 		return nil, err
 	}
-	return res, nil
+
+	// Important: Return a clone of the results to avoid aliasing the context's internal buffers
+	// which will be reused as soon as the context is returned to the pool.
+	cloned := make([]Candidate, len(res))
+	copy(cloned, res)
+	return cloned, nil
 }
 
 // selectNeighbors selects the best M neighbors using the RobustPrune heuristic.

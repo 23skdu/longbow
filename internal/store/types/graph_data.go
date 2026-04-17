@@ -137,6 +137,17 @@ func (g *GraphData) GetNodeCount() int {
 	return g.Capacity
 }
 
+// NeedsChunk returns true if the given chunk ID requires allocation.
+func (g *GraphData) NeedsChunk(cID int) bool {
+	if cID >= len(g.Levels) {
+		return true
+	}
+	if g.Levels[cID] == nil {
+		return true
+	}
+	return false
+}
+
 // GetVectorsChunk returns the vector chunk for the given ID.
 func (g *GraphData) GetVectorsChunk(chunkID int) []float32 {
 	// Try arena first (off-heap, GC-free)
@@ -1385,7 +1396,36 @@ func (g *GraphData) GetLevelsChunk(chunkID int) []uint8 {
 // Clone creates a shallow copy of the GraphData with deep copies of the structure slices.
 // This allows concurrent readers to safely access the old structure while a new one is being built (COW).
 func (g *GraphData) Clone() *GraphData {
-	newG := *g
+	newG := &GraphData{}
+
+	// Metadata - use atomic loads for fields that might be modified concurrently
+	newG.Capacity = g.Capacity
+	newG.Dims = g.Dims
+	newG.Type = g.Type
+	newG.SQ8Enabled = g.SQ8Enabled
+	newG.SQ8Ready = atomic.LoadUint32(&g.SQ8Ready)
+	newG.BQEnabled = g.BQEnabled
+	newG.PQEnabled = g.PQEnabled
+	newG.PQM = g.PQM
+	newG.GlobalVersion = atomic.LoadUint64(&g.GlobalVersion)
+	newG.BackingGraph = g.BackingGraph
+	newG.TurboQuantEnabled = g.TurboQuantEnabled
+	newG.TurboQuantBits = g.TurboQuantBits
+
+	// Slabs/Arenas (Shallow copy pointers)
+	newG.Float32Arena = g.Float32Arena
+	newG.Float64Arena = g.Float64Arena
+	newG.Uint8Arena = g.Uint8Arena
+	newG.Uint16Arena = g.Uint16Arena
+	newG.Uint32Arena = g.Uint32Arena
+	newG.Uint64Arena = g.Uint64Arena
+	newG.Int8Arena = g.Int8Arena
+	newG.Int16Arena = g.Int16Arena
+	newG.Int32Arena = g.Int32Arena
+	newG.Int64Arena = g.Int64Arena
+	newG.Float16Arena = g.Float16Arena
+	newG.Complex64Arena = g.Complex64Arena
+	newG.Complex128Arena = g.Complex128Arena
 
 	// Deep copy Vectors (Slice of slices)
 	if g.Vectors != nil {
@@ -1432,37 +1472,59 @@ func (g *GraphData) Clone() *GraphData {
 		copy(newG.Levels, g.Levels)
 	}
 
-	// Deep copy other vector types
+	// Deep copy vector offset slices
+	if g.VectorsF32 != nil {
+		newG.VectorsF32 = make([]uint64, len(g.VectorsF32))
+		copy(newG.VectorsF32, g.VectorsF32)
+	}
+	if g.VectorsBQ != nil {
+		newG.VectorsBQ = make([]uint64, len(g.VectorsBQ))
+		copy(newG.VectorsBQ, g.VectorsBQ)
+	}
 	if g.VectorsPQ != nil {
 		newG.VectorsPQ = make([]uint64, len(g.VectorsPQ))
+		copy(newG.VectorsPQ, g.VectorsPQ)
+	}
+	if g.VectorsF16 != nil {
+		newG.VectorsF16 = make([]uint64, len(g.VectorsF16))
+		copy(newG.VectorsF16, g.VectorsF16)
 	}
 	if g.VectorsSQ8 != nil {
 		newG.VectorsSQ8 = make([]uint64, len(g.VectorsSQ8))
+		copy(newG.VectorsSQ8, g.VectorsSQ8)
 	}
-	newG.Uint8Arena = nil
-	newG.Uint64Arena = nil
-	newG.Float32Arena = nil
-	newG.Float64Arena = nil
-	newG.Int8Arena = nil
-	newG.Int64Arena = nil
-	newG.Complex64Arena = nil
-	newG.Complex128Arena = nil
-	newG.VectorsF32 = nil
-	newG.VectorsBQ = nil
-	newG.VectorsPQ = nil
-	newG.VectorsF16 = nil
-	newG.VectorsSQ8 = nil
-	newG.VectorsTQ = nil
-	newG.VectorsInt8 = nil
-	newG.VectorsInt64 = nil
-	newG.VectorsInt16 = nil
-	newG.VectorsUint16 = nil
-	newG.VectorsUint64 = nil
-	newG.VectorsInt32 = nil
-	newG.VectorsUint32 = nil
-	newG.VectorsFloat64Offsets = nil
-	newG.VectorsComplex64Offsets = nil
-	newG.VectorsComplex128Offsets = nil
+	if g.VectorsTQ != nil {
+		newG.VectorsTQ = make([]uint64, len(g.VectorsTQ))
+		copy(newG.VectorsTQ, g.VectorsTQ)
+	}
+	if g.VectorsInt8 != nil {
+		newG.VectorsInt8 = make([]uint64, len(g.VectorsInt8))
+		copy(newG.VectorsInt8, g.VectorsInt8)
+	}
+	if g.VectorsInt16 != nil {
+		newG.VectorsInt16 = make([]uint64, len(g.VectorsInt16))
+		copy(newG.VectorsInt16, g.VectorsInt16)
+	}
+	if g.VectorsUint16 != nil {
+		newG.VectorsUint16 = make([]uint64, len(g.VectorsUint16))
+		copy(newG.VectorsUint16, g.VectorsUint16)
+	}
+	if g.VectorsInt64 != nil {
+		newG.VectorsInt64 = make([]uint64, len(g.VectorsInt64))
+		copy(newG.VectorsInt64, g.VectorsInt64)
+	}
+	if g.VectorsUint64 != nil {
+		newG.VectorsUint64 = make([]uint64, len(g.VectorsUint64))
+		copy(newG.VectorsUint64, g.VectorsUint64)
+	}
+	if g.VectorsInt32 != nil {
+		newG.VectorsInt32 = make([]uint64, len(g.VectorsInt32))
+		copy(newG.VectorsInt32, g.VectorsInt32)
+	}
+	if g.VectorsUint32 != nil {
+		newG.VectorsUint32 = make([]uint64, len(g.VectorsUint32))
+		copy(newG.VectorsUint32, g.VectorsUint32)
+	}
 	if g.VectorsFloat64 != nil {
 		newG.VectorsFloat64 = make([][]float64, len(g.VectorsFloat64))
 		copy(newG.VectorsFloat64, g.VectorsFloat64)
@@ -1488,7 +1550,7 @@ func (g *GraphData) Clone() *GraphData {
 		copy(newG.VectorsComplex128Offsets, g.VectorsComplex128Offsets)
 	}
 
-	return &newG
+	return newG
 }
 
 // PreAllocate pre-allocates memory for the given number of vectors.

@@ -391,6 +391,10 @@ func parseFilter(data []byte, pos int) (core.Filter, int, error) {
 }
 
 func parseFilterArray(data []byte, pos int, filters *[]core.Filter) (int, error) {
+	pos = skipWhitespace(data, pos)
+	if pos+4 <= len(data) && string(data[pos:pos+4]) == "null" {
+		return pos + 4, nil
+	}
 	if pos >= len(data) || data[pos] != '[' {
 		return pos, errors.New("expected [")
 	}
@@ -418,6 +422,10 @@ func parseFilterArray(data []byte, pos int, filters *[]core.Filter) (int, error)
 }
 
 func parseWindowFunctionsShared(data []byte, pos int) ([]core.WindowFunction, int, error) {
+	pos = skipWhitespace(data, pos)
+	if pos+4 <= len(data) && string(data[pos:pos+4]) == "null" {
+		return nil, pos + 4, nil
+	}
 	if pos >= len(data) || data[pos] != '[' {
 		return nil, pos, errors.New("expected [")
 	}
@@ -540,6 +548,11 @@ func parseWindowSpecShared(data []byte, pos int) (core.WindowSpec, int, error) {
 		pos = skipWhitespace(data, pos)
 		switch key {
 		case "partition_by":
+			pos = skipWhitespace(data, pos)
+			if pos+4 <= len(data) && string(data[pos:pos+4]) == "null" {
+				pos += 4
+				break
+			}
 			if data[pos] != '[' {
 				return spec, pos, errors.New("expected [")
 			}
@@ -562,6 +575,11 @@ func parseWindowSpecShared(data []byte, pos int) (core.WindowSpec, int, error) {
 				}
 			}
 		case "order_by":
+			pos = skipWhitespace(data, pos)
+			if pos+4 <= len(data) && string(data[pos:pos+4]) == "null" {
+				pos += 4
+				break
+			}
 			if data[pos] != '[' {
 				return spec, pos, errors.New("expected [")
 			}

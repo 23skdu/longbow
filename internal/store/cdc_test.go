@@ -672,8 +672,8 @@ func TestGetValueAt(t *testing.T) {
 	})
 
 	t.Run("unsupported type", func(t *testing.T) {
-		builder := array.NewInt8Builder(mem)
-		builder.AppendValues([]int8{1}, nil)
+		builder := array.NewFixedSizeBinaryBuilder(mem, &arrow.FixedSizeBinaryType{ByteWidth: 4})
+		builder.Append([]byte("test"))
 		arr := builder.NewArray()
 		defer arr.Release()
 

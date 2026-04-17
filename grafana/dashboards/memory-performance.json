@@ -74,9 +74,9 @@
       "gridPos": {"h": 6, "w": 8, "x": 0, "y": 8},
       "id": 6,
       "targets": [
-        {"expr": "longbow_arena_allocated_bytes", "legendFormat": "Allocated", "refId": "A"}
+        {"expr": "longbow_arena_allocated_bytes", "legendFormat": "{{type}}", "refId": "A"}
       ],
-      "title": "Arena Memory",
+      "title": "Arena Memory by Type",
       "type": "timeseries"
     },
     {
@@ -84,20 +84,31 @@
       "gridPos": {"h": 6, "w": 8, "x": 8, "y": 8},
       "id": 7,
       "targets": [{"expr": "longbow_arena_slabs_total", "legendFormat": "Total Slabs", "refId": "A"}],
-      "title": "Total Slabs",
+      "title": "Total Arena Slabs",
       "type": "stat"
     },
     {
       "datasource": "${datasource}",
       "gridPos": {"h": 6, "w": 8, "x": 16, "y": 8},
       "id": 8,
-      "targets": [{"expr": "longbow_slab_fragmentation_ratio", "legendFormat": "Ratio", "refId": "A"}],
-      "title": "Slab Fragmentation",
+      "targets": [{"expr": "longbow_slab_fragmentation_ratio", "legendFormat": "Size {{size}}", "refId": "A"}],
+      "title": "Slab Pool Fragmentation",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 24, "x": 0, "y": 14},
+      "id": 21,
+      "targets": [
+        {"expr": "rate(longbow_allocator_bytes_allocated_total[1m])", "legendFormat": "Allocated", "refId": "A"},
+        {"expr": "rate(longbow_allocator_bytes_freed_total[1m])", "legendFormat": "Freed", "refId": "B"}
+      ],
+      "title": "Allocator Throughput (Bytes/s)",
       "type": "timeseries"
     },
     {
       "collapsed": false,
-      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 14},
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 20},
       "id": 9,
       "panels": [],
       "title": "Eviction",

@@ -176,6 +176,51 @@
       "targets": [{"expr": "rate(longbow_compaction_auto_triggers_total[1m])", "legendFormat": "Auto Triggers/s", "refId": "A"}],
       "title": "Auto Compaction Triggers",
       "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 33},
+      "id": 20,
+      "panels": [],
+      "title": "io_uring Performance [Linux]",
+      "type": "row"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 34},
+      "id": 21,
+      "targets": [
+        {"expr": "rate(longbow_iouring_bytes_read_total[1m])", "legendFormat": "Read", "refId": "A"},
+        {"expr": "rate(longbow_iouring_bytes_written_total[1m])", "legendFormat": "Write", "refId": "B"}
+      ],
+      "title": "io_uring Throughput (Bytes/s)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 34},
+      "id": 22,
+      "targets": [
+        {"expr": "histogram_quantile(0.99, sum(rate(longbow_iouring_complete_latency_seconds_bucket[5m])) by (le, operation))", "legendFormat": "P99 {{operation}}", "refId": "A"}
+      ],
+      "title": "io_uring Completion Latency (P99)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 12, "x": 0, "y": 42},
+      "id": 23,
+      "targets": [{"expr": "longbow_iouring_sq_depth", "refId": "A"}],
+      "title": "io_uring Submission Queue Depth",
+      "type": "gauge"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 12, "x": 12, "y": 42},
+      "id": 24,
+      "targets": [{"expr": "longbow_iouring_buffer_pool_utilization", "refId": "A"}],
+      "title": "io_uring Buffer Pool Utilization",
+      "type": "gauge"
     }
   ],
   "refresh": "10s",

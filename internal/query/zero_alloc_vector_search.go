@@ -101,11 +101,15 @@ func (p *ZeroAllocVectorSearchParser) Parse(data []byte) (VectorSearchRequest, e
 			p.result.K = int(val)
 			i = newPos
 		case "vector":
-			newPos, err := p.parseFloat32Array(data, i)
-			if err != nil {
-				return p.result, err
+			if i+4 <= len(data) && string(data[i:i+4]) == "null" {
+				i += 4
+			} else {
+				newPos, err := p.parseFloat32Array(data, i)
+				if err != nil {
+					return p.result, err
+				}
+				i = newPos
 			}
-			i = newPos
 		case "filters":
 			newPos, err := p.parseFilters(data, i)
 			if err != nil {

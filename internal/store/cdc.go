@@ -500,6 +500,16 @@ func GetValueAt(col arrow.Array, row int) (interface{}, error) {
 		return col.Value(row), nil
 	case *array.Boolean:
 		return col.Value(row), nil
+	case *array.Timestamp:
+		return col.Value(row), nil
+	case *array.Date32:
+		return col.Value(row), nil
+	case *array.Date64:
+		return col.Value(row), nil
+	case *array.Duration:
+		return col.Value(row), nil
+	case *array.Null:
+		return nil, nil
 	default:
 		return nil, fmt.Errorf("unsupported column type: %T", col)
 	}

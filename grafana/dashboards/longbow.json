@@ -3093,6 +3093,35 @@
       ],
       "title": "HNSW PreWarm Duration",
       "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 110},
+      "id": 10000,
+      "panels": [],
+      "title": "Network & Core Performance",
+      "type": "row"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 111},
+      "id": 10001,
+      "targets": [
+        {"expr": "rate(longbow_flight_bytes_read_total[1m])", "legendFormat": "Read", "refId": "A"},
+        {"expr": "rate(longbow_flight_bytes_written_total[1m])", "legendFormat": "Write", "refId": "B"}
+      ],
+      "title": "Flight Throughput (Bytes/s)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 111},
+      "id": 10002,
+      "targets": [
+        {"expr": "histogram_quantile(0.99, sum(rate(longbow_hnsw_simd_dispatch_latency_seconds_bucket[5m])) by (le, type))", "legendFormat": "{{type}} SIMD Dispatch", "refId": "A"}
+      ],
+      "title": "Polymorphic SIMD Dispatch Latency (P99)",
+      "type": "timeseries"
     }
   ],
   "refresh": "5s",

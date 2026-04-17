@@ -210,6 +210,46 @@
       "targets": [{"expr": "histogram_quantile(0.99, sum(rate(longbow_doput_batch_size_bytes_bucket[5m])) by (le))", "legendFormat": "P99", "refId": "A"}],
       "title": "DoPut Payload Size P99",
       "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 26},
+      "id": 18,
+      "panels": [],
+      "title": "Advanced Search Diagnostics",
+      "type": "row"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 27},
+      "id": 19,
+      "targets": [{"expr": "histogram_quantile(0.99, sum(rate(longbow_hnsw_simd_dispatch_latency_seconds_bucket[5m])) by (le, type))", "legendFormat": "P99 {{type}}", "refId": "A"}],
+      "title": "SIMD Dispatch Latency (P99)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 27},
+      "id": 20,
+      "targets": [{"expr": "sum(rate(longbow_hnsw_polymorphic_throughput_bytes[1m])) by (type)", "legendFormat": "{{type}}", "refId": "A"}],
+      "title": "Polymorphic Search Throughput",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 12, "x": 0, "y": 35},
+      "id": 21,
+      "targets": [{"expr": "sum(rate(graph_navigator_hops_per_query_sum[5m])) / sum(rate(graph_navigator_hops_per_query_count[5m]))", "refId": "A"}],
+      "title": "Avg Hops per Path",
+      "type": "stat"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 12, "x": 12, "y": 35},
+      "id": 22,
+      "targets": [{"expr": "sum(rate(graph_navigator_cache_hits_total[5m])) / (sum(rate(graph_navigator_cache_hits_total[5m])) + sum(rate(graph_navigator_cache_misses_total[5m])) + 1)", "refId": "A"}],
+      "title": "Graph Navigation Cache Hit Rate",
+      "type": "gauge"
     }
   ],
   "refresh": "10s",

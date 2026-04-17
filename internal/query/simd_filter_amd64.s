@@ -125,7 +125,7 @@ bool_done:
     RET
 
 // func fastPathStringEqualAVX2Kernel(offsets unsafe.Pointer, data unsafe.Pointer, n int, target unsafe.Pointer, targetLen int, result unsafe.Pointer)
-TEXT ·fastPathStringEqualAVX2Kernel(SB), NOSPLIT, $0-48
+TEXT ·fastPathStringEqualAVX2Kernel(SB), NOSPLIT, $32-48
     MOVQ    offsets+0(FP), SI   // *int32
     MOVQ    data+8(FP), DX      // *byte
     MOVQ    n+16(FP), R15       // use R15 for count to keep CX for CMPSB
@@ -166,10 +166,11 @@ loop_block:
     MOVQ    DX, R12
     ADDQ    R10, R12
     
-    PUSHQ   SI
-    PUSHQ   DI
-    PUSHQ   DX
-    PUSHQ   AX
+    // Save registers on stack frame
+    MOVQ    SI, 0(SP)
+    MOVQ    DI, 8(SP)
+    MOVQ    DX, 16(SP)
+    MOVQ    AX, 24(SP)
     
     MOVQ    R12, SI
     MOVQ    R8, DI
@@ -177,18 +178,19 @@ loop_block:
     REP; CMPSB
     JNE     data_mismatch
     
-    POPQ    AX
-    POPQ    DX
-    POPQ    DI
-    POPQ    SI
+    // Restore registers
+    MOVQ    24(SP), AX
+    MOVQ    16(SP), DX
+    MOVQ    8(SP), DI
+    MOVQ    0(SP), SI
     MOVL    $0xFFFFFFFF, (DI)(R13*4)
     JMP     next_in_block
 
 data_mismatch:
-    POPQ    AX
-    POPQ    DX
-    POPQ    DI
-    POPQ    SI
+    MOVQ    24(SP), AX
+    MOVQ    16(SP), DX
+    MOVQ    8(SP), DI
+    MOVQ    0(SP), SI
     MOVL    $0, (DI)(R13*4)
 
 next_in_block:
@@ -216,22 +218,23 @@ tail_str:
     MOVQ    DX, R12
     ADDQ    R10, R12
     
-    PUSHQ   SI
-    PUSHQ   DI
+    // Save registers on stack frame
+    MOVQ    SI, 0(SP)
+    MOVQ    DI, 8(SP)
     MOVQ    R12, SI
     MOVQ    R8, DI
     MOVQ    R9, CX
     REP; CMPSB
     JNE     tail_mismatch
     
-    POPQ    DI
-    POPQ    SI
+    MOVQ    8(SP), DI
+    MOVQ    0(SP), SI
     MOVL    $0xFFFFFFFF, (DI)
     JMP     tail_advance
 
 tail_mismatch:
-    POPQ    DI
-    POPQ    SI
+    MOVQ    8(SP), DI
+    MOVQ    0(SP), SI
 tail_advance:
     ADDQ    $4, SI
     ADDQ    $4, DI

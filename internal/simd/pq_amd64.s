@@ -26,44 +26,59 @@ loop_8_vectors:
     MOVQ    SI, R10
     ADDQ    CX, R10
 
-    // Load 8 indices
-    // This part is the bottleneck: gathering indices from 8 vectors
+    // table_base for current subspace
+    MOVQ    CX, R13
+    SHLQ    $10, R13
+    ADDQ    DI, R13
+
+    // Manually gather 8 values for 8 vectors
+    // Vector 0
     MOVQ    $0, R11
     MOVB    (R10), R11B
-    VPINSRD $0, R11, X1, X1
-    ADDQ    DX, R10
-    MOVB    (R10), R11B
-    VPINSRD $1, R11, X1, X1
-    ADDQ    DX, R10
-    MOVB    (R10), R11B
-    VPINSRD $2, R11, X1, X1
-    ADDQ    DX, R10
-    MOVB    (R10), R11B
-    VPINSRD $3, R11, X1, X1
+    VMOVSS  (R13)(R11*4), X1
     
+    // Vector 1
     ADDQ    DX, R10
     MOVB    (R10), R11B
-    VPINSRD $0, R11, X2, X2
-    ADDQ    DX, R10
-    MOVB    (R10), R11B
-    VPINSRD $1, R11, X2, X2
-    ADDQ    DX, R10
-    MOVB    (R10), R11B
-    VPINSRD $2, R11, X2, X2
-    ADDQ    DX, R10
-    MOVB    (R10), R11B
-    VPINSRD $3, R11, X2, X2
+    VPINSRD $1, (R13)(R11*4), X1, X1
     
-    VINSERTI128 $1, X2, Y1, Y1
+    // Vector 2
+    ADDQ    DX, R10
+    MOVB    (R10), R11B
+    VPINSRD $2, (R13)(R11*4), X1, X1
+    
+    // Vector 3
+    ADDQ    DX, R10
+    MOVB    (R10), R11B
+    VPINSRD $3, (R13)(R11*4), X1, X1
 
-    // table_base
-    MOVQ    CX, R10
-    SHLQ    $10, R10
-    ADDQ    DI, R10
+    // Vector 4
+    ADDQ    DX, R10
+    MOVB    (R10), R11B
+    VMOVSS  (R13)(R11*4), X2
+    
+    // Vector 5
+    ADDQ    DX, R10
+    MOVB    (R10), R11B
+    VPINSRD $1, (R13)(R11*4), X2, X2
+    
+    // Vector 6
+    ADDQ    DX, R10
+    MOVB    (R10), R11B
+    VPINSRD $2, (R13)(R11*4), X2, X2
+    
+    // Vector 7
+    ADDQ    DX, R10
+    MOVB    (R10), R11B
+    VPINSRD $3, (R13)(R11*4), X2, X2
 
-    VPCMPEQD Y3, Y3, Y3
-    VPGATHERDD 0(R10)(Y1*4), Y3, Y2
-    VADDPS  Y2, Y0, Y0
+    VINSERTF128 $1, X2, Y1, Y1 // Combine to Y1 (X1 is low 128 bits of Y1)
+    // Error in VINSERTF128? Usually VINSERTF128 dst, src, imm.
+    // Actually: VINSERTF128 $1, X2, Y1, Y1. Wait, Y1 must be initialized with X1.
+    // Correct sequence:
+    VINSERTF128 $1, X2, Y1, Y1
+
+    VADDPS  Y1, Y0, Y0
 
     INCQ    CX
     JMP     subspace_loop

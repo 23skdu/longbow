@@ -790,7 +790,6 @@ next_f32_512:
     JMP     scalar_f32_512_loop
 
 end_f32_512:
-end_f32_512:
     RET
 
 // func matchFloat64AVX2Kernel(src unsafe.Pointer, val float64, op int, dst unsafe.Pointer, n int)

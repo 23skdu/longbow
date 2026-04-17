@@ -101,7 +101,14 @@ func NewMessageQueueExporter(logger zerolog.Logger, cdc *ChangeDataCapture, conf
 
 func (m *MessageQueueExporter) initKafka() error {
 	saramaConfig := sarama.NewConfig()
-	saramaConfig.Producer.RequiredAcks = sarama.RequiredAcks(m.config.Acks)
+	// Ensure Acks is within valid int16 range for Kafka
+	acks := m.config.Acks
+	if acks > 32767 {
+		acks = 32767
+	} else if acks < -1 {
+		acks = -1
+	}
+	saramaConfig.Producer.RequiredAcks = sarama.RequiredAcks(acks)
 	saramaConfig.Producer.Compression = m.compressionFromString(m.config.Compression)
 	saramaConfig.Producer.Flush.Messages = m.config.BatchSize
 	saramaConfig.Producer.Flush.Frequency = time.Duration(m.config.BatchTimeoutMs) * time.Millisecond

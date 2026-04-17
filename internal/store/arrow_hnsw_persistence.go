@@ -17,7 +17,7 @@ func (h *ArrowHNSW) LoadFromMmap(path string) error {
 
 	// Verify dimensions match
 	if h.config.Dims > 0 && int(dg.header.Dims) != h.config.Dims {
-		_ = dg.Close()
+		_ = dg.Close() // #nosec G104
 		return fmt.Errorf("dimension mismatch: graph has %d, config has %d", dg.header.Dims, h.config.Dims)
 	}
 

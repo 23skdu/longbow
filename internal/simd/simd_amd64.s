@@ -1458,9 +1458,9 @@ inner_loop:
     // For PQ, we often use uint8.
     VPDPBUSD Z1, Z2, Z0         // Z0 += dot(Z1, Z2)
     
-    ADDQ    , R9
-    ADDQ    , R10
-    SUBQ    , BX
+    ADDQ    $64, R9
+    ADDQ    $64, R10
+    SUBQ    $64, BX
     JG      inner_loop
 
     // Horizontal sum of Z0 (i32)
@@ -1473,7 +1473,7 @@ inner_loop:
     // VMOVSS ...
     
     ADDQ    subDim+16(FP), DI   // Move to next centroid
-    ADDQ    , R8              // Move to next result slot
+    ADDQ    $4, R8              // Move to next result slot
     DECQ    DX
     JNZ     centroid_loop
 

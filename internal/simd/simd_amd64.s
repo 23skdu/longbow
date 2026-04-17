@@ -1101,30 +1101,6 @@ euc_i8_u4_avx2_finalize:
     RET
 
 
-    
-    VADDPS  Z2, Z0, Z0
-
-    INCQ    CX
-    JMP     subspace512_loop
-
-subspace512_done:
-    VSQRTPS Z0, Z0
-    VMOVUPS Z0, (R8)
-
-    ADDQ    $64, R8
-    MOVQ    DX, R10
-    SHLQ    $4, R10 // 16 * m
-    ADDQ    R10, SI
-    
-    SUBQ    $16, R9
-    CMPQ    R9, $16
-    JGE     loop_16_vectors
-
-tail512_check_8:
-    // Call AVX2 kernel for remaining multiples of 8?
-    // JMP tail_start (reuse AVX2 tail logic)
-    JMP ·adcBatchAVX2Kernel(SB)
-
 // func euclideanPQVNNIKernel(q, c unsafe.Pointer, subDim, k int, res unsafe.Pointer)
 TEXT ·euclideanPQVNNIKernel(SB), NOSPLIT, $0-40
     MOVQ    q+0(FP), SI         // SI = query (uint8)

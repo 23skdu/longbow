@@ -104,21 +104,18 @@ func NewMultiGPUManager(config MultiGPUConfig, logger zerolog.Logger) (*MultiGPU
 func (m *MultiGPUManager) startMetricsCollector() {
 	ticker := time.NewTicker(10 * time.Second)
 	go func() {
-		for {
-			select {
-			case <-ticker.C:
-				if m.closed.Load() {
-					ticker.Stop()
-					return
-				}
-				m.deviceMu.RLock()
-				for _, d := range m.devices {
-					if d.Index != nil {
-						metrics.UpdateDeviceMetrics(d.Index)
-					}
-				}
-				m.deviceMu.RUnlock()
+		for range ticker.C {
+			if m.closed.Load() {
+				ticker.Stop()
+				return
 			}
+			m.deviceMu.RLock()
+			for _, d := range m.devices {
+				if d.Index != nil {
+					metrics.UpdateDeviceMetrics(d.Index)
+				}
+			}
+			m.deviceMu.RUnlock()
 		}
 	}()
 }

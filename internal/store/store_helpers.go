@@ -262,17 +262,30 @@ func extractVectorFromCol(rec arrow.RecordBatch, rowIdx int) ([]float32, error) 
 		return nil, fmt.Errorf("invalid vector column type")
 	}
 
-	values := listArr.ListValues().(*array.Float32).Float32Values()
 	width := int(listArr.DataType().(*arrow.FixedSizeListType).Len())
-
 	start := rowIdx * width
 	end := start + width
-	if start < 0 || end > len(values) {
-		return nil, fmt.Errorf("index out of bounds")
+	vec := make([]float32, width)
+
+	switch valuesArr := listArr.ListValues().(type) {
+	case *array.Float32:
+		vals := valuesArr.Float32Values()
+		if start < 0 || end > len(vals) {
+			return nil, fmt.Errorf("index out of bounds")
+		}
+		copy(vec, vals[start:end])
+	case *array.Float64:
+		vals := valuesArr.Float64Values()
+		if start < 0 || end > len(vals) {
+			return nil, fmt.Errorf("index out of bounds")
+		}
+		for j := 0; j < width; j++ {
+			vec[j] = float32(vals[start+j])
+		}
+	default:
+		return nil, fmt.Errorf("unsupported vector element type: %s", valuesArr.DataType())
 	}
 
-	vec := make([]float32, width)
-	copy(vec, values[start:end])
 	return vec, nil
 }
 

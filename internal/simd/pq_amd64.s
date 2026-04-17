@@ -29,28 +29,28 @@ loop_8_vectors:
     // Load 8 indices
     // This part is the bottleneck: gathering indices from 8 vectors
     MOVQ    $0, R11
-    MOVB    (R10), R11L
+    MOVB    (R10), R11B
     VPINSRD $0, R11, X1, X1
     ADDQ    DX, R10
-    MOVB    (R10), R11L
+    MOVB    (R10), R11B
     VPINSRD $1, R11, X1, X1
     ADDQ    DX, R10
-    MOVB    (R10), R11L
+    MOVB    (R10), R11B
     VPINSRD $2, R11, X1, X1
     ADDQ    DX, R10
-    MOVB    (R10), R11L
+    MOVB    (R10), R11B
     VPINSRD $3, R11, X1, X1
     ADDQ    DX, R10
-    MOVB    (R10), R11L
+    MOVB    (R10), R11B
     VPINSRD $4, R11, X1, X1
     ADDQ    DX, R10
-    MOVB    (R10), R11L
+    MOVB    (R10), R11B
     VPINSRD $5, R11, X1, X1
     ADDQ    DX, R10
-    MOVB    (R10), R11L
+    MOVB    (R10), R11B
     VPINSRD $6, R11, X1, X1
     ADDQ    DX, R10
-    MOVB    (R10), R11L
+    MOVB    (R10), R11B
     VPINSRD $7, R11, X1, X1
 
     // table_base
@@ -88,7 +88,7 @@ tail_subspace_loop:
     CMPQ    CX, DX
     JGE     tail_subspace_done
     MOVQ    $0, R10
-    MOVB    (SI)(CX*1), R10L
+    MOVB    (SI)(CX*1), R10B
     MOVQ    CX, R11
     SHLQ    $10, R11
     ADDQ    DI, R11
@@ -135,55 +135,55 @@ subspace512_loop:
     // Load 16 indices explicitly
     // (Optimized if m was known, but DX is variable)
     MOVQ    $0, R11
-    MOVB    (R10), R11L
+    MOVB    (R10), R11B
     VPINSRD $0, R11, X1, X1
     ADDQ    DX, R10
-    MOVB    (R10), R11L
+    MOVB    (R10), R11B
     VPINSRD $1, R11, X1, X1
     ADDQ    DX, R10
-    MOVB    (R10), R11L
+    MOVB    (R10), R11B
     VPINSRD $2, R11, X1, X1
     ADDQ    DX, R10
-    MOVB    (R10), R11L
+    MOVB    (R10), R11B
     VPINSRD $3, R11, X1, X1
 
     ADDQ    DX, R10
-    MOVB    (R10), R11L
+    MOVB    (R10), R11B
     VPINSRD $0, R11, X2, X2
     ADDQ    DX, R10
-    MOVB    (R10), R11L
+    MOVB    (R10), R11B
     VPINSRD $1, R11, X2, X2
     ADDQ    DX, R10
-    MOVB    (R10), R11L
+    MOVB    (R10), R11B
     VPINSRD $2, R11, X2, X2
     ADDQ    DX, R10
-    MOVB    (R10), R11L
+    MOVB    (R10), R11B
     VPINSRD $3, R11, X2, X2
 
     ADDQ    DX, R10
-    MOVB    (R10), R11L
+    MOVB    (R10), R11B
     VPINSRD $0, R11, X3, X3
     ADDQ    DX, R10
-    MOVB    (R10), R11L
+    MOVB    (R10), R11B
     VPINSRD $1, R11, X3, X3
     ADDQ    DX, R10
-    MOVB    (R10), R11L
+    MOVB    (R10), R11B
     VPINSRD $2, R11, X3, X3
     ADDQ    DX, R10
-    MOVB    (R10), R11L
+    MOVB    (R10), R11B
     VPINSRD $3, R11, X3, X3
 
     ADDQ    DX, R10
-    MOVB    (R10), R11L
+    MOVB    (R10), R11B
     VPINSRD $0, R11, X4, X4
     ADDQ    DX, R10
-    MOVB    (R10), R11L
+    MOVB    (R10), R11B
     VPINSRD $1, R11, X4, X4
     ADDQ    DX, R10
-    MOVB    (R10), R11L
+    MOVB    (R10), R11B
     VPINSRD $2, R11, X4, X4
     ADDQ    DX, R10
-    MOVB    (R10), R11L
+    MOVB    (R10), R11B
     VPINSRD $3, R11, X4, X4
 
     VINSERTI128 $1, X2, Y1, Y1

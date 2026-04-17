@@ -113,6 +113,9 @@ func (e *PQEncoder) encodeSequential(vector []float32) []byte {
 				bestIdx = k
 			}
 		}
+		if bestIdx > 255 {
+			bestIdx = 255
+		}
 		codes[m] = byte(bestIdx)
 	}
 
@@ -129,6 +132,9 @@ func (e *PQEncoder) encodeSIMD(vector []float32) []byte {
 
 		// Use SIMD batch to find nearest centroid
 		bestIdx, _ := simd.FindNearestCentroid(subVec, centroids, e.SubDim, e.K)
+		if bestIdx > 255 {
+			bestIdx = 255
+		}
 		codes[m] = byte(bestIdx)
 	}
 

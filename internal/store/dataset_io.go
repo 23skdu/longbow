@@ -138,8 +138,8 @@ func (d *DatasetIO) ExportToParquet(ctx context.Context, name string, backend st
 
 	headerBuf := getDatasetBuffer()
 	defer putDatasetBuffer(headerBuf)
-	headerBuf.Write(headerJSON)
-	headerBuf.Write([]byte{'\n'})
+	_, _ = headerBuf.Write(headerJSON)      // #nosec G104
+	_, _ = headerBuf.Write([]byte{'\n'}) // #nosec G104
 
 	if err := backend.WriteSnapshotFile(ctx, name+".header", ".header", bytes.NewReader(headerBuf.Bytes())); err != nil {
 		metrics.DatasetExportFailures.WithLabelValues(name).Inc()
@@ -187,7 +187,7 @@ func (d *DatasetIO) writeRecordsToParquet(records []arrow.RecordBatch, buf *byte
 	}
 
 	pw := parquet.NewGenericWriter[DatasetParquetRecord](buf, parquet.Compression(&parquet.Zstd))
-	defer pw.Close()
+	defer func() { _ = pw.Close() }() // #nosec G104
 
 	totalRows := int64(0)
 	for _, rec := range records {
@@ -303,7 +303,7 @@ func (d *DatasetIO) ImportFromParquet(ctx context.Context, snapshotName, dataset
 
 	headerFile, err := backend.ReadSnapshotFile(ctx, snapshotName, ".header")
 	if err == nil {
-		defer headerFile.Close()
+		defer func() { _ = headerFile.Close() }() // #nosec G104
 		headerData, err := io.ReadAll(headerFile)
 		if err != nil {
 			metrics.DatasetImportFailures.WithLabelValues(datasetName).Inc()
@@ -335,7 +335,7 @@ func (d *DatasetIO) ImportFromParquet(ctx context.Context, snapshotName, dataset
 
 	parquetFile, err := backend.ReadSnapshotFile(ctx, snapshotName, DatasetFileExtension)
 	if err == nil {
-		defer parquetFile.Close()
+		defer func() { _ = parquetFile.Close() }() // #nosec G104
 		parquetData, err = io.ReadAll(parquetFile)
 		if err != nil {
 			metrics.DatasetImportFailures.WithLabelValues(datasetName).Inc()
@@ -347,7 +347,7 @@ func (d *DatasetIO) ImportFromParquet(ctx context.Context, snapshotName, dataset
 			metrics.DatasetImportFailures.WithLabelValues(datasetName).Inc()
 			return 0, fmt.Errorf("failed to read parquet: %w", err)
 		}
-		defer parquetFile.Close()
+		defer func() { _ = parquetFile.Close() }() // #nosec G104
 		parquetData, err = io.ReadAll(parquetFile)
 		if err != nil {
 			metrics.DatasetImportFailures.WithLabelValues(datasetName).Inc()
@@ -387,7 +387,7 @@ func (d *DatasetIO) readParquetToRecords(r io.Reader, ds *Dataset) (int64, error
 	if err != nil {
 		return 0, fmt.Errorf("failed to create temp file: %w", err)
 	}
-	defer os.Remove(tmpFile.Name())
+	defer func() { _ = os.Remove(tmpFile.Name()) }() // #nosec G104
 
 	data, err := io.ReadAll(r)
 	if err != nil {
@@ -404,7 +404,7 @@ func (d *DatasetIO) readParquetToRecords(r io.Reader, ds *Dataset) (int64, error
 	if err != nil {
 		return 0, fmt.Errorf("failed to open temp file: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }() // #nosec G104
 
 	stat, err := f.Stat()
 	if err != nil {
@@ -554,7 +554,7 @@ func (d *DatasetIO) ImportFromArrowIPC(ctx context.Context, name string, backend
 		metrics.DatasetImportFailures.WithLabelValues(name).Inc()
 		return 0, fmt.Errorf("failed to read arrow IPC: %w", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }() // #nosec G104
 
 	data, err := io.ReadAll(file)
 	if err != nil {

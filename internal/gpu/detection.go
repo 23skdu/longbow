@@ -423,7 +423,7 @@ func findNvidiaSmi() string {
 	}
 
 	for _, path := range paths {
-		if _, err := os.Stat(path); err == nil {
+		if _, err := os.Stat(path); err == nil { // #nosec G703 - pre-defined system locations
 			return path
 		}
 	}

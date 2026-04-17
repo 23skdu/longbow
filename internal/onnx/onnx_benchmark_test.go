@@ -1,3 +1,6 @@
+//go:build onnx
+// +build onnx
+
 package onnx_test
 
 import (

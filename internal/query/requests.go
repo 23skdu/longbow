@@ -11,6 +11,7 @@ type Filter = core.Filter
 type WindowFunction = core.WindowFunction
 type WindowSpec = core.WindowSpec
 type WindowOrder = core.WindowOrder
+type CTE = core.CTE
 
 // TicketQuery is also aliased for convenience
 type TicketQuery = core.TicketQuery

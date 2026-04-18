@@ -8,6 +8,10 @@ type Filter struct {
 	// Logic combines multiple filters: "AND", "OR", "NOT"
 	Logic   string   `json:"logic,omitempty"`
 	Filters []Filter `json:"filters,omitempty"`
+	// Subquery allows filtering based on the results of another query
+	Subquery *TicketQuery `json:"subquery,omitempty"`
+	// ResolvedValues stores the results of a subquery after it's executed
+	ResolvedValues []any `json:"-"`
 }
 
 // WindowFunction defines an analytical function to be applied over result sets

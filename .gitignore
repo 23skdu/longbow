@@ -48,6 +48,10 @@ benchmark_results*.json
 perf_*.json
 results_*.json
 perf_summary.md
+coverage.out
+coverage.html
+race_report*.txt
+metrics.out
 
 # Profiling
 *.prof
@@ -64,6 +68,14 @@ perf_summary.md
 !.gitlab-ci.yml
 !longbowclientsdk/**/*
 !clients/**/*.json
+.python-version
+scripts/venv/
+venv/
 
 # Backup files
 *.bak
+1,
+.venv/
+.ruff_cache/
+bin/*
+!bin/.gitkeep

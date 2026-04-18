@@ -49,11 +49,8 @@ func NewZeroAllocTicketParser(logger *zerolog.Logger) *ZeroAllocTicketParser {
 
 // Parse parses the JSON data into a TicketQuery
 func (p *ZeroAllocTicketParser) Parse(data []byte) (TicketQuery, error) {
-	p.result.Name = ""
-	p.result.Limit = 0
-	p.result.Search = nil
-	p.result.SearchByID = nil
-	p.result.Recommend = nil
+	// Reset result state
+	p.result = TicketQuery{}
 	p.filters = p.filters[:0]
 	p.windowFunctions = p.windowFunctions[:0]
 
@@ -158,6 +155,12 @@ func (p *ZeroAllocTicketParser) Parse(data []byte) (TicketQuery, error) {
 				p.result.Search = &searchReq
 				i = newPos
 			}
+		case "with", "ctes":
+			newPos, err := p.parseCTEs(data, i)
+			if err != nil {
+				return p.result, err
+			}
+			i = newPos
 		case "search_by_id":
 			if i+4 <= len(data) && string(data[i:i+4]) == "null" {
 				i += 4
@@ -220,7 +223,96 @@ func (p *ZeroAllocTicketParser) parseWindowFunctions(data []byte, pos int) (int,
 }
 
 func (p *ZeroAllocTicketParser) parseFilters(data []byte, pos int) (int, error) {
-	return parseFilterArray(data, pos, &p.filters)
+	return parseFilterArrayRecursive(data, pos, &p.filters, p)
+}
+
+func (p *ZeroAllocTicketParser) parseCTEs(data []byte, pos int) (int, error) {
+	pos = skipWhitespace(data, pos)
+	if data[pos] != '[' {
+		return pos, errors.New("expected [ for ctes")
+	}
+	pos++
+
+	for pos < len(data) {
+		pos = skipWhitespace(data, pos)
+		if data[pos] == ']' {
+			return pos + 1, nil
+		}
+
+		var cte core.CTE
+		newPos, err := p.parseCTEObject(data, pos, &cte)
+		if err != nil {
+			return pos, err
+		}
+		p.result.CTEs = append(p.result.CTEs, cte)
+		pos = newPos
+
+		pos = skipWhitespace(data, pos)
+		if pos < len(data) && data[pos] == ',' {
+			pos++
+		}
+	}
+	return pos, nil
+}
+
+func (p *ZeroAllocTicketParser) parseCTEObject(data []byte, pos int, cte *core.CTE) (int, error) {
+	if data[pos] != '{' {
+		return pos, errors.New("expected { for cte object")
+	}
+	pos++
+
+	for pos < len(data) {
+		pos = skipWhitespace(data, pos)
+		if data[pos] == '}' {
+			return pos + 1, nil
+		}
+
+		key, newPos, err := parseString(data, pos)
+		if err != nil {
+			return pos, err
+		}
+		pos = newPos
+
+		pos = skipWhitespace(data, pos)
+		if data[pos] != ':' {
+			return pos, errors.New("expected : in cte object")
+		}
+		pos++
+		pos = skipWhitespace(data, pos)
+
+		switch key {
+		case "name":
+			val, newPos, err := parseString(data, pos)
+			if err != nil {
+				return pos, err
+			}
+			cte.Name = val
+			pos = newPos
+		case "search":
+			start := pos
+			newPos, err := skipObject(data, pos)
+			if err != nil {
+				return pos, err
+			}
+			searchReq, err := p.searchParser.Parse(data[start:newPos])
+			if err != nil {
+				return pos, err
+			}
+			cte.Search = &searchReq
+			pos = newPos
+		default:
+			pos, err = skipValue(data, pos)
+			if err != nil {
+				return pos, err
+			}
+		}
+
+		pos = skipWhitespace(data, pos)
+		if pos < len(data) && data[pos] == ',' {
+			pos++
+		}
+	}
+	return pos, nil
 }
 
 var (

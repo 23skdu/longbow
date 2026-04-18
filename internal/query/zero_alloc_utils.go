@@ -307,6 +307,10 @@ func safeString(b []byte) string {
 }
 
 func parseFilter(data []byte, pos int) (core.Filter, int, error) {
+	return parseFilterRecursive(data, pos, nil)
+}
+
+func parseFilterRecursive(data []byte, pos int, parser *ZeroAllocTicketParser) (core.Filter, int, error) {
 	var f core.Filter
 	if pos >= len(data) || data[pos] != '{' {
 		return f, pos, errors.New("expected {")
@@ -370,12 +374,34 @@ func parseFilter(data []byte, pos int) (core.Filter, int, error) {
 			pos = newPos
 		case "filters":
 			var sub []core.Filter
-			newPos, err := parseFilterArray(data, pos, &sub)
+			newPos, err := parseFilterArrayRecursive(data, pos, &sub, parser)
 			if err != nil {
 				return f, pos, err
 			}
 			f.Filters = sub
 			pos = newPos
+		case "subquery":
+			if parser != nil {
+				start := pos
+				newPos, err := skipObject(data, pos)
+				if err != nil {
+					return f, pos, err
+				}
+				// We need a fresh parser or reset state for subquery to avoid corrupting current result
+				subParser := NewZeroAllocTicketParser(&parser.logger)
+				subQuery, err := subParser.Parse(data[start:newPos])
+				if err != nil {
+					return f, pos, err
+				}
+				f.Subquery = &subQuery
+				pos = newPos
+			} else {
+				// If no parser context, skip
+				pos, err = skipValue(data, pos)
+				if err != nil {
+					return f, pos, err
+				}
+			}
 		default:
 			pos, err = skipValue(data, pos)
 			if err != nil {
@@ -391,6 +417,10 @@ func parseFilter(data []byte, pos int) (core.Filter, int, error) {
 }
 
 func parseFilterArray(data []byte, pos int, filters *[]core.Filter) (int, error) {
+	return parseFilterArrayRecursive(data, pos, filters, nil)
+}
+
+func parseFilterArrayRecursive(data []byte, pos int, filters *[]core.Filter, parser *ZeroAllocTicketParser) (int, error) {
 	pos = skipWhitespace(data, pos)
 	if pos+4 <= len(data) && string(data[pos:pos+4]) == "null" {
 		return pos + 4, nil
@@ -407,7 +437,7 @@ func parseFilterArray(data []byte, pos int, filters *[]core.Filter) (int, error)
 			}
 			return pos, nil
 		}
-		f, newPos, err := parseFilter(data, pos)
+		f, newPos, err := parseFilterRecursive(data, pos, parser)
 		if err != nil {
 			return pos, err
 		}

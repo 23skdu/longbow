@@ -330,6 +330,8 @@ func extractScalarValue(col arrow.Array, rowIdx int) interface{} {
 		return col.(*array.Float64).Value(rowIdx)
 	case arrow.STRING:
 		return col.(*array.String).Value(rowIdx)
+	case arrow.UINT64:
+		return col.(*array.Uint64).Value(rowIdx)
 	case arrow.INT32:
 		return col.(*array.Int32).Value(rowIdx)
 	case arrow.UINT32:
@@ -1230,7 +1232,6 @@ func NewFilterEvaluator(rec arrow.RecordBatch, filters []Filter) (*FilterEvaluat
 			ops = append(ops, op)
 		}
 	}
-
 	if len(ops) == 0 && len(filters) > 0 {
 		return nil, fmt.Errorf("failed to bind any filters to schema fields")
 	}
@@ -1243,6 +1244,10 @@ func buildFilterOp(schema arrow.Schema, rec arrow.RecordBatch, f *Filter) (filte
 		return buildCompoundOp(schema, rec, logic, f.Filters)
 	}
 
+	if f.Subquery != nil {
+		return buildSubqueryOp(schema, rec, f)
+	}
+
 	isNested := strings.Contains(f.Field, ".")
 
 	if isNested {
@@ -1252,6 +1257,7 @@ func buildFilterOp(schema arrow.Schema, rec arrow.RecordBatch, f *Filter) (filte
 		}
 
 		opStr := strings.ToLower(f.Operator)
+		_ = colIndices
 		colIdx := colIndices[0]
 
 		var innerOp filterOp
@@ -1328,6 +1334,90 @@ func buildFilterOp(schema arrow.Schema, rec arrow.RecordBatch, f *Filter) (filte
 	default:
 		return nil, nil
 	}
+}
+
+func buildSubqueryOp(schema arrow.Schema, rec arrow.RecordBatch, f *Filter) (filterOp, error) {
+	if f.Subquery == nil {
+		return nil, nil
+	}
+
+	_, col, dt, err := resolveFilterColumnEx(schema, rec, f.Field)
+	if err != nil || col == nil {
+		return nil, nil
+	}
+
+	// Create a map for fast lookups of resolved subquery results
+	valueSet := make(map[any]struct{})
+	for _, v := range f.ResolvedValues {
+		valueSet[v] = struct{}{}
+	}
+
+	return &subqueryFilterOp{
+		field:    f.Field,
+		col:      col,
+		dataType: dt,
+		valueSet: valueSet,
+		op:       strings.ToLower(f.Operator),
+	}, nil
+}
+
+type subqueryFilterOp struct {
+	field    string
+	col      arrow.Array
+	dataType arrow.DataType
+	valueSet map[any]struct{}
+	op       string
+}
+
+func (s *subqueryFilterOp) Compound() bool { return false }
+
+func (s *subqueryFilterOp) Match(rowIdx int) bool {
+	if s.col.IsNull(rowIdx) {
+		return false
+	}
+	val := extractScalarValue(s.col, rowIdx)
+	if val == nil {
+		return false
+	}
+
+	_, match := s.valueSet[val]
+	if s.op == "not in" {
+		return !match
+	}
+	return match
+}
+
+func (s *subqueryFilterOp) MatchBitmap(dst []byte) {
+	for i := range dst {
+		if s.Match(i) {
+			dst[i] = 1
+		} else {
+			dst[i] = 0
+		}
+	}
+}
+
+func (s *subqueryFilterOp) FilterBatch(indices []int) []int {
+	result := make([]int, 0, len(indices))
+	for _, idx := range indices {
+		if s.Match(idx) {
+			result = append(result, idx)
+		}
+	}
+	return result
+}
+
+func (s *subqueryFilterOp) Bind(col arrow.Array) error {
+	s.col = col
+	return nil
+}
+
+func (s *subqueryFilterOp) MatchValue(val interface{}) bool {
+	_, match := s.valueSet[val]
+	if s.op == "not in" {
+		return !match
+	}
+	return match
 }
 
 func resolveFilterColumnEx(schema arrow.Schema, rec arrow.RecordBatch, fieldPath string) ([]int, arrow.Array, arrow.DataType, error) {

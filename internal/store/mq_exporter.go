@@ -308,7 +308,9 @@ func (m *MessageQueueExporter) Stop() error {
 	}
 
 	if m.sub != nil {
-		m.cdc.Unsubscribe(m.sub.ID)
+		if err := m.cdc.Unsubscribe(m.sub.ID); err != nil {
+			m.logger.Warn().Err(err).Str("sub_id", m.sub.ID).Msg("Failed to unsubscribe during exporter stop")
+		}
 	}
 
 	m.wg.Wait()

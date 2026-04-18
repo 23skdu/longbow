@@ -229,7 +229,7 @@ func (d *DatasetIO) writeRecordsToParquet(records []arrow.RecordBatch, buf *byte
 				case *array.String:
 					if !arr.IsNull(int(rowIdx)) {
 						var id int64
-						fmt.Sscanf(arr.Value(int(rowIdx)), "%d", &id)
+						_, _ = fmt.Sscanf(arr.Value(int(rowIdx)), "%d", &id)
 						record.ID = id
 					}
 				}
@@ -523,7 +523,7 @@ func (d *DatasetIO) ExportToArrowIPC(ctx context.Context, name string, backend s
 		totalRows += rec.NumRows()
 		if err := writer.Write(rec); err != nil {
 			ds.dataMu.RUnlock()
-			writer.Close()
+			_ = writer.Close()
 			return totalRows, fmt.Errorf("failed to write record: %w", err)
 		}
 	}

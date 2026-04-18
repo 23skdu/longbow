@@ -131,7 +131,7 @@ func ExtractVectorGeneric[T any](rec arrow.RecordBatch, rowIdx, colIdx int) ([]T
 	start := (listOffset + rowIdx) * width
 	values := listArr.Data().Children()[0]
 	var zero T
-	elemSize := int(unsafe.Sizeof(zero))
+	elemSize := int(unsafe.Sizeof(zero)) // #nosec G115
 
 	// Validate bounds and handle potentially truncated buffers (e.g. from Flight IPC)
 	if len(values.Buffers()) > 1 && values.Buffers()[1] != nil {
@@ -169,7 +169,7 @@ func unsafeVectorSliceGeneric[T any](data arrow.ArrayData, offset, length int) [
 	}
 
 	var zero T
-	elementSize := int(unsafe.Sizeof(zero))
+	elementSize := int(unsafe.Sizeof(zero)) // #nosec G115
 	bytes := buf.Bytes()
 	if offset*elementSize >= len(bytes) {
 		if length == 0 {

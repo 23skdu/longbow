@@ -114,7 +114,7 @@ func (sl *ConcurrentSkipList) find(key uint32) (preds []*skipListNode, succs []*
 
 func (sl *ConcurrentSkipList) randomLevel() int {
 	lvl := 0
-	for rand.Float64() < skipListP && lvl < maxSkipListLevel-1 {
+	for rand.Float64() < skipListP && lvl < maxSkipListLevel-1 { // #nosec G404
 		lvl++
 	}
 	return lvl
@@ -127,7 +127,7 @@ func (sl *ConcurrentSkipList) GetRandom() (uint32, bool) {
 	if curr == nil {
 		return 0, false
 	}
-	steps := rand.IntN(32)
+	steps := rand.IntN(32) // #nosec G404
 	for i := 0; i < steps; i++ {
 		next := curr.next[0].Load()
 		if next == nil {

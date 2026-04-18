@@ -141,7 +141,7 @@ func (ws *WSConnection) Close() {
 	ws.closed = true
 	ws.cancel()
 	if ws.conn != nil {
-		ws.conn.Close()
+		_ = ws.conn.Close()
 	}
 	close(ws.writeChan)
 	ws.mu.Unlock()
@@ -189,7 +189,7 @@ func (w *WebSocketServer) Stop() error {
 
 	w.connMu.Lock()
 	for conn := range w.conns {
-		conn.Close()
+		_ = conn.Close()
 	}
 	w.conns = make(map[*websocket.Conn]*WSConnection)
 	w.connMu.Unlock()
@@ -230,13 +230,13 @@ func (w *WebSocketServer) handleWS(wr http.ResponseWriter, req *http.Request) {
 func (w *WebSocketServer) readPump(wsConn *WSConnection) {
 	defer func() {
 		w.removeConnection(wsConn)
-		wsConn.conn.Close()
+		_ = wsConn.conn.Close()
 	}()
 
 	wsConn.conn.SetReadLimit(8192)
-	wsConn.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	_ = wsConn.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 	wsConn.conn.SetPongHandler(func(string) error {
-		wsConn.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+		_ = wsConn.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 		return nil
 	})
 
@@ -260,15 +260,15 @@ func (w *WebSocketServer) writePump(wsConn *WSConnection) {
 	defer func() {
 		ticker.Stop()
 		w.removeConnection(wsConn)
-		wsConn.conn.Close()
+		_ = wsConn.conn.Close()
 	}()
 
 	for {
 		select {
 		case msg, ok := <-wsConn.writeChan:
-			wsConn.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			_ = wsConn.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 			if !ok {
-				wsConn.conn.WriteMessage(websocket.CloseMessage, []byte{})
+				_ = wsConn.conn.WriteMessage(websocket.CloseMessage, []byte{})
 				return
 			}
 
@@ -277,7 +277,7 @@ func (w *WebSocketServer) writePump(wsConn *WSConnection) {
 			}
 
 		case <-ticker.C:
-			wsConn.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			_ = wsConn.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 			if err := wsConn.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return
 			}
@@ -468,7 +468,9 @@ func (w *WebSocketServer) removeConnection(wsConn *WSConnection) {
 
 	wsConn.mu.Lock()
 	for _, sub := range wsConn.subs {
-		w.cdc.Unsubscribe(sub.ID)
+		if err := w.cdc.Unsubscribe(sub.ID); err != nil {
+			w.logger.Warn().Err(err).Str("sub_id", sub.ID).Msg("Failed to unsubscribe during connection removal")
+		}
 	}
 	wsConn.subs = make(map[string]*CDCSubscription)
 	wsConn.closed = true

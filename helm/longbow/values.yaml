@@ -95,7 +95,10 @@ memory:
   gogc: 100
 
 # GPU Configuration
+gpu:
+  enabled: false
   deviceId: 0
+  backend: "auto" # auto, cuda, metal
 
 # RDMA (RoCEv2) Configuration
 # Requires RDMA-capable NICs and libibverbs on the host.
@@ -184,6 +187,25 @@ learnedIndex:
   minSamples: 100
   confidenceThreshold: 0.7
   updateInterval: "1h"
+
+# SIMD Configuration
+simd:
+  implementation: "" # auto-detect: avx512, avx2, neon, generic
+  fallbackEnabled: true
+
+# PQ (Product Quantization) Configuration
+pq:
+  enabled: false
+  codeSize: 8
+  numSubCentroids: 256
+  minVectors: 1000
+
+# ONNX Runtime Configuration
+onnx:
+  enabled: false
+  ep: "CPU" # CPU, CUDA, CoreML, TensorRT
+  intraOpNumThreads: 0 # 0 = auto
+  interOpNumThreads: 0 # 0 = auto
 
 # Ollama Integration
 # Local LLM server for embedding-based index prediction

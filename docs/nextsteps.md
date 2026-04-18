@@ -16,7 +16,7 @@ The `internal/store` package is currently over-bloated (500+ files). This 6-part
 | 3 | Indexing & Sharding | P1 | ✅ COMPLETE |
 | 4 | Persistence & Storage | P1 | ✅ COMPLETE |
 | 5 | Background Workers | P2 | ✅ COMPLETE |
-| 6 | API Refinement & Metrics | P2 | ⏳ IN PROGRESS |
+| 6 | API Refinement & Metrics | P2 | ✅ COMPLETE |
 
 ### New Features
 

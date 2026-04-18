@@ -169,6 +169,6 @@ func (ta *TypedArena[T]) Get(ref SliceRef) []T {
 	}
 
 	// Use unsafe.Slice instead of deprecated reflect.SliceHeader
-	ptr := unsafe.Pointer(&byteSlice[0])
-	return unsafe.Slice((*T)(ptr), ref.Len)
+	ptr := unsafe.Pointer(&byteSlice[0])     // #nosec G103
+	return unsafe.Slice((*T)(ptr), ref.Len) // #nosec G103
 }

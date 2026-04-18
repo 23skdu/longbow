@@ -5,6 +5,7 @@ package store
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"sync"
 )
 
@@ -16,7 +17,8 @@ type DiskWriterUring struct {
 }
 
 func NewDiskWriterUring(path string) (*DiskWriterUring, error) {
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0666)
+	path = filepath.Clean(path)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0600) // #nosec G304 G302
 	if err != nil {
 		return nil, err
 	}

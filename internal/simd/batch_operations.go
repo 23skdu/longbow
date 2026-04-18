@@ -170,6 +170,6 @@ func float32SliceToBytes(vec []float32) []byte {
 		return nil
 	}
 	size := len(vec) * 4
-	ptr := unsafe.Pointer(&vec[0])
-	return unsafe.Slice((*byte)(ptr), size)
+	ptr := unsafe.Pointer(&vec[0])           // #nosec G103
+	return unsafe.Slice((*byte)(ptr), size) // #nosec G103
 }

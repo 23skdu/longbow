@@ -185,8 +185,8 @@ func DotProductFloat32BlockedPrefetch(a, b []float32) (float32, error) {
 		// Prefetch next block while processing current
 		nextIdx := i + (prefetchAhead * blockSize)
 		if nextIdx < len(a) {
-			Prefetch(unsafe.Pointer(&a[nextIdx]))
-			Prefetch(unsafe.Pointer(&b[nextIdx]))
+			Prefetch(unsafe.Pointer(&a[nextIdx])) // #nosec G103
+			Prefetch(unsafe.Pointer(&b[nextIdx])) // #nosec G103
 		}
 
 		chunkA := a[i : i+blockSize]
@@ -229,8 +229,8 @@ func EuclideanFloat32BlockedPrefetch(a, b []float32) (float32, error) {
 		// Prefetch next block
 		nextIdx := i + (prefetchAhead * blockSize)
 		if nextIdx < len(a) {
-			Prefetch(unsafe.Pointer(&a[nextIdx]))
-			Prefetch(unsafe.Pointer(&b[nextIdx]))
+			Prefetch(unsafe.Pointer(&a[nextIdx])) // #nosec G103
+			Prefetch(unsafe.Pointer(&b[nextIdx])) // #nosec G103
 		}
 
 		d, err := L2SquaredFloat32(a[i:i+blockSize], b[i:i+blockSize])

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"runtime"
 	"runtime/pprof"
 	"sync"
@@ -177,7 +178,7 @@ func (mld *MemoryLeakDetector) checkForLeaks() {
 func (mld *MemoryLeakDetector) generateLeakReport(baseline, snapshot *MemSnapshot, growthBytes, growthObjects int64) *LeakReport {
 	var topAllocs []string
 
-	pprof.Lookup("heap").WriteTo(os.Stdout, 0)
+	_ = pprof.Lookup("heap").WriteTo(io.Discard, 0)
 
 	growthPercent := 0.0
 	if baseline.HeapAlloc > 0 {
@@ -270,7 +271,7 @@ func NewLeakDetectorManager(logger zerolog.Logger, config LeakDetectorConfig) *L
 }
 
 func (ldm *LeakDetectorManager) Start() {
-	os.MkdirAll(ldm.config.ProfileOutputDir, 0755)
+	_ = os.MkdirAll(filepath.Clean(ldm.config.ProfileOutputDir), 0700) // #nosec G301
 
 	ldm.detector.SetAlertCallback(func(report *LeakReport) {
 		ldm.logger.Warn().

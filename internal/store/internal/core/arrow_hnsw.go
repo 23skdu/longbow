@@ -167,7 +167,7 @@ func (h *ArrowHNSW) GetVector(id uint32) (any, error) {
 		chunk := data.GetVectorsTQChunk(types.ChunkID(id))
 		if chunk != nil {
 			stride := 4 + (data.Dims-1)*data.TurboQuantBits/8 + (data.Dims+7)/8
-			start := int(types.ChunkOffset(id)) * stride
+			start := int(types.ChunkOffset(id)) * stride // #nosec G115
 			return h.tqEncoder.Decode(chunk[start : start+stride])
 		}
 	}
@@ -1111,7 +1111,8 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 	distToEp := dist
 	currObj := types.Candidate{ID: ep, Dist: distToEp}
 
-	for level := int(maxLevel); level > 0; level-- {
+	// 2. Greedy search down through levels
+	for level := int(maxLevel); level > 0; level-- { // #nosec G115
 		// Greedy search: keep 1 best candidate
 		res, err := h.searchLayer(ctx, computer, currObj.ID, 1, level, searchCtx, data, queryVec)
 		if err != nil {
@@ -1227,8 +1228,8 @@ func (h *ArrowHNSW) GetLayerNeighbors(id uint32, layer int) ([]uint32, error) {
 	}
 
 	neighbors := make([]uint32, count)
-	startIdx := int(cOff) * types.MaxNeighbors
-	copy(neighbors, neighborhood[startIdx:startIdx+int(count)])
+	startIdx := int(cOff) * types.MaxNeighbors // #nosec G115
+	copy(neighbors, neighborhood[startIdx:startIdx+int(count)]) // #nosec G115
 
 	return neighbors, nil
 }
@@ -1495,8 +1496,8 @@ func (h *ArrowHNSW) SetIndexedColumns(columns []string) {
 }
 
 func (h *ArrowHNSW) generateLevel() int {
-	l := int(math.Floor(-math.Log(rand.Float64()) * h.levelMultiplier))
-	if l > types.ArrowMaxLayers-1 {
+	l := int(math.Floor(-math.Log(rand.Float64()) * h.levelMultiplier)) // #nosec G404
+	if l >= types.ArrowMaxLayers {
 		l = types.ArrowMaxLayers - 1
 	}
 	return l
@@ -1889,11 +1890,11 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 		var q8 []uint8
 		var qInt8 []int8
 		if qi8, ok := queryVal.([]int8); ok {
-			q8 = *(*[]uint8)(unsafe.Pointer(&qi8))
+			q8 = *(*[]uint8)(unsafe.Pointer(&qi8)) // #nosec G103
 			qInt8 = qi8
 		} else {
 			q8 = queryVal.([]uint8)
-			qInt8 = *(*[]int8)(unsafe.Pointer(&q8))
+			qInt8 = *(*[]int8)(unsafe.Pointer(&q8)) // #nosec G103
 		}
 		return &int8Computer{data: data, q: q8, qInt8: qInt8, dims: len(q8), h: h}
 	case []float64:
@@ -2008,7 +2009,7 @@ func (h *ArrowHNSW) searchLayer(_ context.Context, computer any, entryPoint uint
 				case []int8, []uint8:
 					var v8 []uint8
 					if vi8, ok := v.([]int8); ok {
-						v8 = *(*[]uint8)(unsafe.Pointer(&vi8))
+						v8 = *(*[]uint8)(unsafe.Pointer(&vi8)) // #nosec G103
 					} else {
 						v8 = v.([]uint8)
 					}
@@ -2087,13 +2088,13 @@ func (h *ArrowHNSW) searchLayer(_ context.Context, computer any, entryPoint uint
 				case []int8, []uint8:
 					var v8 []uint8
 					if vi8, ok := vAny.([]int8); ok {
-						v8 = *(*[]uint8)(unsafe.Pointer(&vi8))
+						v8 = *(*[]uint8)(unsafe.Pointer(&vi8)) // #nosec G103
 					} else {
 						v8 = vAny.([]uint8)
 					}
 
 					var q8 []uint8
-					q8 = *(*[]uint8)(unsafe.Pointer(&q))
+					q8 = *(*[]uint8)(unsafe.Pointer(&q)) // #nosec G103
 
 					if len(q8) != len(v8) {
 						return math.MaxFloat32, nil
@@ -2112,8 +2113,8 @@ func (h *ArrowHNSW) searchLayer(_ context.Context, computer any, entryPoint uint
 						}
 					} else {
 						// use optimized SIMD kernel
-						qI8 := *(*[]int8)(unsafe.Pointer(&q8))
-						vI8 := *(*[]int8)(unsafe.Pointer(&v8))
+						qI8 := *(*[]int8)(unsafe.Pointer(&q8)) // #nosec G103
+						vI8 := *(*[]int8)(unsafe.Pointer(&v8)) // #nosec G103
 						return h.distFuncInt8(qI8, vI8)
 					}
 				}
@@ -2332,7 +2333,7 @@ func (h *ArrowHNSW) searchLayer(_ context.Context, computer any, entryPoint uint
 	epCand := types.Candidate{ID: entryPoint, Dist: epDist}
 	heap.Push(minHeap, epCand)
 	heap.Push(resultSetAdapter, epCand) // resultSet is MaxHeap
-	ctx.visited.Set(int(entryPoint))
+	ctx.visited.Set(int(entryPoint)) // #nosec G115
 
 	for minHeap.Len() > 0 {
 		// Pop closest candidate
@@ -2376,8 +2377,8 @@ func (h *ArrowHNSW) searchLayer(_ context.Context, computer any, entryPoint uint
 		}
 		for i := 0; i < len(neighbors) && i < prefetchLimit; i++ {
 			nID := neighbors[i]
-			cID := int(nID) / types.ChunkSize
-			cOff := int(nID) % types.ChunkSize
+			cID := int(nID) / types.ChunkSize // #nosec G115
+			cOff := int(nID) % types.ChunkSize // #nosec G115
 			chunk := data.GetVectorsChunk(cID)
 			if chunk != nil {
 				start := cOff * data.Dims
@@ -2407,10 +2408,10 @@ func (h *ArrowHNSW) searchLayer(_ context.Context, computer any, entryPoint uint
 		}
 
 		for _, n := range neighbors {
-			if ctx.visited.IsSet(int(n)) {
+			if ctx.visited.IsSet(int(n)) { // #nosec G115
 				continue
 			}
-			ctx.visited.Set(int(n))
+			ctx.visited.Set(int(n)) // #nosec G115
 
 			ctx.distComputeCount++
 			d, err := distComputer(n)
@@ -2843,7 +2844,7 @@ func (h *ArrowHNSW) ExtractVectorByIDForParallel(id uint32) ([]float32, error) {
 		if len(v) == 0 {
 			return nil, nil
 		}
-		res := unsafe.Slice((*float32)(unsafe.Pointer(&v[0])), len(v)*2)
+		res := unsafe.Slice((*float32)(unsafe.Pointer(&v[0])), len(v)*2) // #nosec G103
 		// We should return a copy since the parallel worker might use it concurrently
 		resCopy := make([]float32, len(res))
 		copy(resCopy, res)
@@ -2997,7 +2998,7 @@ func (c *float32Computer) ComputeSingle(id uint32) (float32, error) {
 	case []int8, []uint8:
 		var v8 []uint8
 		if vi8, ok := v.([]int8); ok {
-			v8 = *(*[]uint8)(unsafe.Pointer(&vi8))
+			v8 = *(*[]uint8)(unsafe.Pointer(&vi8)) // #nosec G103
 		} else {
 			v8 = v.([]uint8)
 		}
@@ -3025,7 +3026,7 @@ func (c *float32Computer) ComputeSingle(id uint32) (float32, error) {
 			return math.MaxFloat32, nil
 		}
 		// Unsafe cast to []float32
-		vf := unsafe.Slice((*float32)(unsafe.Pointer(&v[0])), len(v)*2)
+		vf := unsafe.Slice((*float32)(unsafe.Pointer(&v[0])), len(v)*2) // #nosec G103
 		return simd.EuclideanDistance(c.q, vf)
 	case []complex128:
 		// Treats complex128 as flattened []float64, but query is float32
@@ -3172,12 +3173,12 @@ func (c *int8Computer) ComputeSingle(id uint32) (float32, error) {
 	cID := types.ChunkID(id)
 	// Try specialized chunk fetch first
 	if chunk := c.data.GetVectorsSQ8Chunk(cID); chunk != nil {
-		cOff := int(id) % types.ChunkSize
-		start := cOff * c.data.Dims
+		cOff := int(id) % types.ChunkSize // #nosec G115
+		start := cOff * c.data.Dims // #nosec G115
 		if start+c.dims <= len(chunk) {
 			v8 := chunk[start : start+c.dims]
 			// Already optimized for SIMD if via distFuncInt8
-			return c.h.distFuncInt8(c.qInt8, *(*[]int8)(unsafe.Pointer(&v8)))
+			return c.h.distFuncInt8(c.qInt8, *(*[]int8)(unsafe.Pointer(&v8))) // #nosec G103
 		}
 	}
 
@@ -3221,7 +3222,7 @@ func (c *int8Computer) ComputeSingle(id uint32) (float32, error) {
 			return float32(math.Sqrt(float64(sum))), nil
 		} else {
 			// use optimized SIMD kernel
-			vI8 := *(*[]int8)(unsafe.Pointer(&v8))
+			vI8 := *(*[]int8)(unsafe.Pointer(&v8)) // #nosec G103
 			return c.h.distFuncInt8(c.qInt8, vI8)
 		}
 	}

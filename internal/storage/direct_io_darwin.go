@@ -5,13 +5,14 @@ package storage
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"syscall"
 )
 
 // OpenFileDirect opens a file with Direct I/O enabled (F_NOCACHE on macOS).
 func OpenFileDirect(path string, flags int, perm os.FileMode) (*os.File, error) {
 	// Open standard file first
-	f, err := os.OpenFile(path, flags, perm)
+	f, err := os.OpenFile(filepath.Clean(path), flags, perm)
 	if err != nil {
 		return nil, err
 	}

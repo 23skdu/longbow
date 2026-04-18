@@ -45,13 +45,13 @@ func (va *VectorArena) AllocVector(dim int, vecType VectorType) (uint64, interfa
 	var slice interface{}
 	switch vecType {
 	case VectorTypeFloat32:
-		slice = unsafe.Slice((*float32)(ptr), dim)
+		slice = unsafe.Slice((*float32)(ptr), dim) // #nosec G103
 	case VectorTypeFloat16:
-		slice = unsafe.Slice((*uint16)(ptr), dim)
+		slice = unsafe.Slice((*uint16)(ptr), dim) // #nosec G103
 	case VectorTypeInt8:
-		slice = unsafe.Slice((*int8)(ptr), dim)
+		slice = unsafe.Slice((*int8)(ptr), dim) // #nosec G103
 	case VectorTypeComplex64:
-		slice = unsafe.Slice((*complex64)(ptr), dim)
+		slice = unsafe.Slice((*complex64)(ptr), dim) // #nosec G103
 	default:
 		return 0, nil, errors.New("unsupported vector type")
 	}
@@ -74,13 +74,13 @@ func (va *VectorArena) GetVector(offset uint64, dim int, vecType VectorType) (in
 	// Create typed slice based on vector type
 	switch vecType {
 	case VectorTypeFloat32:
-		return unsafe.Slice((*float32)(ptr), dim), nil
+		return unsafe.Slice((*float32)(ptr), dim), nil // #nosec G103
 	case VectorTypeFloat16:
-		return unsafe.Slice((*uint16)(ptr), dim), nil
+		return unsafe.Slice((*uint16)(ptr), dim), nil // #nosec G103
 	case VectorTypeInt8:
-		return unsafe.Slice((*int8)(ptr), dim), nil
+		return unsafe.Slice((*int8)(ptr), dim), nil // #nosec G103
 	case VectorTypeComplex64:
-		return unsafe.Slice((*complex64)(ptr), dim), nil
+		return unsafe.Slice((*complex64)(ptr), dim), nil // #nosec G103
 	default:
 		return nil, errors.New("unsupported vector type")
 	}

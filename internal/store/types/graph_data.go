@@ -309,8 +309,8 @@ func (g *GraphData) GetVectorsPQChunk(chunkID int) []byte {
 		}
 
 		// Cast uint64 to byte slice
-		ptr := unsafe.Pointer(&chunk[0])
-		return unsafe.Slice((*byte)(ptr), numWords*8)
+		ptr := unsafe.Pointer(&chunk[0])           // #nosec G103
+		return unsafe.Slice((*byte)(ptr), numWords*8) // #nosec G103
 	}
 	return nil
 }
@@ -339,8 +339,8 @@ func (g *GraphData) SetVectorPQ(id uint32, code []byte) error {
 		}
 
 		// Cast uint64 to byte slice
-		ptr := unsafe.Pointer(&chunk[0])
-		byteChunk := unsafe.Slice((*byte)(ptr), numWords*8)
+		ptr := unsafe.Pointer(&chunk[0])           // #nosec G103
+		byteChunk := unsafe.Slice((*byte)(ptr), numWords*8) // #nosec G103
 
 		start := cOff * m
 		if start+m <= len(byteChunk) {
@@ -1110,7 +1110,7 @@ func (g *GraphData) SetVector(id uint32, vec any) error {
 			if chunk != nil {
 				start := cOff * g.Dims
 				if start+len(v) <= len(chunk) {
-					v8 := *(*[]int8)(unsafe.Pointer(&v))
+					v8 := *(*[]int8)(unsafe.Pointer(&v)) // #nosec G103
 					copy(chunk[start:start+len(v)], v8)
 				}
 			}

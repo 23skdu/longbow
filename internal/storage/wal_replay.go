@@ -50,7 +50,7 @@ func (e *StorageEngine) ReplayWAL(applier ApplierFunc) (uint64, error) {
 	}()
 
 	walPath := filepath.Join(e.dataPath, walFileName)
-	f, err := os.Open(walPath)
+	f, err := os.Open(filepath.Clean(walPath)) // #nosec G304
 	if os.IsNotExist(err) {
 		return 0, nil
 	}
@@ -312,7 +312,6 @@ func (e *StorageEngine) reorderBufferRoutine(in chan decodedWALEntry, out chan d
 	// Map to hold out-of-order entries
 	buffer := make(map[uint64]decodedWALEntry)
 	nextSeq := uint64(0)
-	activeDecoders := numDecoders
 
 	// Track decoder completion - close input channel when all decoders are done
 	go func() {
@@ -320,65 +319,59 @@ func (e *StorageEngine) reorderBufferRoutine(in chan decodedWALEntry, out chan d
 		close(in)
 	}()
 
-	for {
-		select {
-		case entry, ok := <-in:
-			if !ok {
-				// Input channel closed, all decoders are done
-				activeDecoders--
-				if activeDecoders == 0 {
-					// Flush remaining buffer
-					for len(buffer) > 0 {
-						if entry, exists := buffer[nextSeq]; exists {
-							delete(buffer, nextSeq)
-							out <- entry
-							nextSeq++
-						} else {
-							// We're missing entries, this shouldn't happen
-							// But we need to skip to next available
-							for seq := range buffer {
-								if seq > nextSeq {
-									nextSeq = seq
-									break
-								}
-							}
-						}
-					}
-					return
+	for entry := range in {
+		// Handle errors immediately
+		if entry.err != nil {
+			out <- entry
+			return
+		}
+
+		// If this is the expected next sequence, output it
+		if entry.seq == nextSeq {
+			out <- entry
+			nextSeq++
+
+			// Check if we can output more from buffer
+			for {
+				if buffered, exists := buffer[nextSeq]; exists {
+					delete(buffer, nextSeq)
+					out <- buffered
+					nextSeq++
+				} else {
+					break
 				}
-				continue
 			}
+		} else if entry.seq > nextSeq {
+			// Store out-of-order entry in buffer
+			buffer[entry.seq] = entry
+		} else {
+			// This shouldn't happen (seq < nextSeq), but handle it
+			log.Warn().
+				Uint64("seq", entry.seq).
+				Uint64("nextSeq", nextSeq).
+				Msg("ReplayWAL: Received entry with seq < nextSeq, dropping")
+		}
+	}
 
-			// Handle errors immediately
-			if entry.err != nil {
-				out <- entry
-				return
-			}
-
-			// If this is the expected next sequence, output it
-			if entry.seq == nextSeq {
-				out <- entry
-				nextSeq++
-
-				// Check if we can output more from buffer
-				for {
-					if buffered, exists := buffer[nextSeq]; exists {
-						delete(buffer, nextSeq)
-						out <- buffered
-						nextSeq++
-					} else {
-						break
-					}
+	// Flush remaining buffer
+	for len(buffer) > 0 {
+		if entry, exists := buffer[nextSeq]; exists {
+			delete(buffer, nextSeq)
+			out <- entry
+			nextSeq++
+		} else {
+			// We're missing entries, this shouldn't happen
+			// But we need to skip to next available
+			foundNext := false
+			for seq := range buffer {
+				if seq > nextSeq {
+					nextSeq = seq
+					foundNext = true
+					break
 				}
-			} else if entry.seq > nextSeq {
-				// Store out-of-order entry in buffer
-				buffer[entry.seq] = entry
-			} else {
-				// This shouldn't happen (seq < nextSeq), but handle it
-				log.Warn().
-					Uint64("seq", entry.seq).
-					Uint64("nextSeq", nextSeq).
-					Msg("ReplayWAL: Received entry with seq < nextSeq, dropping")
+			}
+			if !foundNext {
+				break
 			}
 		}
 	}

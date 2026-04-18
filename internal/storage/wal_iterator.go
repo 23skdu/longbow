@@ -33,7 +33,7 @@ type WALIterator struct {
 
 func NewWALIterator(dir string, mem memory.Allocator) (*WALIterator, error) {
 	path := filepath.Join(dir, walFileName)
-	f, err := os.Open(path)
+	f, err := os.Open(filepath.Clean(path)) // #nosec G304
 	if err != nil {
 		return nil, err
 	}

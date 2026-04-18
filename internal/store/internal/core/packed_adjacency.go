@@ -157,10 +157,10 @@ func (pa *PackedAdjacency) SetNeighborsF16(id uint32, neighbors []uint32, distan
 
 	// Layout: [neighbors...][distances...]
 	// Use unsafe to get headers. Pointer to start of dest.
-	nDest := unsafe.Slice((*uint32)(unsafe.Pointer(&dest[0])), len(neighbors))
+	nDest := unsafe.Slice((*uint32)(unsafe.Pointer(&dest[0])), len(neighbors)) // #nosec G103
 	copy(nDest, neighbors)
 
-	dDest := unsafe.Slice((*float16.Num)(unsafe.Pointer(&dest[len(neighbors)*4])), len(distances))
+	dDest := unsafe.Slice((*float16.Num)(unsafe.Pointer(&dest[len(neighbors)*4])), len(distances)) // #nosec G103
 	copy(dDest, distances)
 
 	// 2. Pack Ref
@@ -242,8 +242,8 @@ func (pa *PackedAdjacency) GetNeighborsF16(id uint32) ([]uint32, []float16.Num, 
 		return nil, nil, false
 	}
 
-	neighbors := unsafe.Slice((*uint32)(unsafe.Pointer(&dest[0])), length)
-	distances := unsafe.Slice((*float16.Num)(unsafe.Pointer(&dest[length*4])), length)
+	neighbors := unsafe.Slice((*uint32)(unsafe.Pointer(&dest[0])), length) // #nosec G103
+	distances := unsafe.Slice((*float16.Num)(unsafe.Pointer(&dest[length*4])), length) // #nosec G103
 
 	return neighbors, distances, true
 }

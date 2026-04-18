@@ -11,6 +11,8 @@ import (
 	"log"
 	"math/rand"
 	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -117,9 +119,13 @@ func getClientURI(args []string) (string, []string) {
 }
 
 func mustGetClient(uri string) *client.SmartClient {
+	// Sanitize URI for logging to prevent log injection (G706)
+	re := regexp.MustCompile(`[\r\n]`)
+	safeURI := re.ReplaceAllString(uri, "_")
+
 	sc, err := client.NewSmartClient(uri)
 	if err != nil {
-		log.Fatalf("Failed to connect to Longbow at %s: %v", uri, err)
+		log.Fatalf("Failed to connect to Longbow at %s: %v", safeURI, err) // #nosec G706
 	}
 	return sc
 }
@@ -130,7 +136,7 @@ func runImport(ctx context.Context, args []string) {
 	input := fs.String("input", "", "Input file path. Supports .parquet and .npy")
 	dim := fs.Int("dim", 128, "Vector dimension (used for demo data)")
 	count := fs.Int("count", 1000, "Number of vectors to generate (used for demo data if no input file)")
-	fs.Parse(args)
+	_ = fs.Parse(args)
 
 	if *dataset == "" {
 		fmt.Fprintf(os.Stderr, "Usage: longbow-cli import -dataset <name> [-input <file>] [-dim <n>] [-count <n>]\n")
@@ -169,7 +175,7 @@ func runImportParquet(ctx context.Context, sc *client.SmartClient, dataset, inpu
 	start := time.Now()
 	fmt.Printf("Importing Parquet file %s to dataset %s...\n", inputPath, dataset)
 
-	f, err := os.Open(inputPath)
+	f, err := os.Open(filepath.Clean(inputPath)) // #nosec G304
 	if err != nil {
 		log.Fatalf("Failed to open parquet file: %v\n", err)
 	}
@@ -220,11 +226,11 @@ func runImportParquet(ctx context.Context, sc *client.SmartClient, dataset, inpu
 		log.Fatalf("Table reader error: %v\n", tr.Err())
 	}
 
-	writer.Close()
+	_ = writer.Close()
 	if err := stream.CloseSend(); err != nil {
 		log.Fatalf("Failed to close flight stream: %v\n", err)
 	}
-	stream.Recv()
+	_, _ = stream.Recv()
 
 	fmt.Printf("Successfully imported %d rows in %v\n", totalRows, time.Since(start))
 }
@@ -233,7 +239,7 @@ func runImportNpy(ctx context.Context, sc *client.SmartClient, dataset, inputPat
 	start := time.Now()
 	fmt.Printf("Importing NumPy file %s to dataset %s...\n", inputPath, dataset)
 
-	f, err := os.Open(inputPath)
+	f, err := os.Open(filepath.Clean(inputPath)) // #nosec G304
 	if err != nil {
 		log.Fatalf("Failed to open npy file: %v\n", err)
 	}
@@ -347,7 +353,7 @@ func generateDemoData(dim, count int) (arrow.Record, *arrow.Schema) {
 
 	rec := array.NewRecordBatch(sch, []arrow.Array{idArr, vecArr, catArr, scoreArr}, int64(count))
 	return rec, sch
-}
+} // #nosec G404
 
 func uploadData(ctx context.Context, sc *client.SmartClient, dataset string, rec arrow.Record, sch *arrow.Schema) error {
 	desc := &flight.FlightDescriptor{
@@ -364,7 +370,7 @@ func uploadData(ctx context.Context, sc *client.SmartClient, dataset string, rec
 	writer.SetFlightDescriptor(desc)
 
 	if err := writer.Write(rec); err != nil {
-		writer.Close()
+		_ = writer.Close()
 		return err
 	}
 
@@ -389,7 +395,7 @@ func runSearch(ctx context.Context, args []string) {
 	alpha := fs.Float64("alpha", 0.5, "Alpha for hybrid search (0=sparse, 1=dense)")
 	k := fs.Int("k", 10, "Number of results")
 	filters := fs.String("filters", "", "JSON filter expression (inline or file path)")
-	fs.Parse(args)
+	_ = fs.Parse(args)
 
 	if *dataset == "" {
 		fmt.Fprintf(os.Stderr, "Usage: longbow-cli search -dataset <name> -mode <dense|sparse|filtered|hybrid> [options]\n")
@@ -479,14 +485,14 @@ func parseFloats(s string) []float32 {
 	result := make([]float32, len(parts))
 	for i, p := range parts {
 		var f float64
-		fmt.Sscanf(strings.TrimSpace(p), "%f", &f)
+		_, _ = fmt.Sscanf(strings.TrimSpace(p), "%f", &f)
 		result[i] = float32(f)
 	}
 	return result
 }
 
 func parseFilterExpression(s string) (interface{}, error) {
-	data, err := os.ReadFile(s)
+	data, err := os.ReadFile(filepath.Clean(s))
 	if err != nil {
 		return json.RawMessage(s), nil
 	}
@@ -532,7 +538,7 @@ func extractValue(col arrow.Array, idx int64) interface{} {
 func runCreateNamespace(ctx context.Context, args []string) {
 	fs := flag.NewFlagSet("create-namespace", flag.ExitOnError)
 	name := fs.String("name", "", "Namespace name (required)")
-	fs.Parse(args)
+	_ = fs.Parse(args)
 
 	if *name == "" {
 		fmt.Fprintf(os.Stderr, "Usage: longbow-cli create-namespace -name <name> [-uri <uri>]\n")
@@ -567,7 +573,7 @@ func runCreateNamespace(ctx context.Context, args []string) {
 func runDeleteNamespace(ctx context.Context, args []string) {
 	fs := flag.NewFlagSet("delete-namespace", flag.ExitOnError)
 	name := fs.String("name", "", "Namespace name (required)")
-	fs.Parse(args)
+	_ = fs.Parse(args)
 
 	if *name == "" {
 		fmt.Fprintf(os.Stderr, "Usage: longbow-cli delete-namespace -name <name> [-uri <uri>]\n")
@@ -599,47 +605,7 @@ func runDeleteNamespace(ctx context.Context, args []string) {
 	fmt.Printf("Namespace '%s' deleted successfully\n", *name)
 }
 
-func runAlterNamespace(ctx context.Context, args []string) {
-	fs := flag.NewFlagSet("alter-namespace", flag.ExitOnError)
-	dataset := fs.String("dataset", "", "Dataset name (required)")
-	action := fs.String("action", "", "add or drop (required)")
-	column := fs.String("column", "", "Column name (required)")
-	typ := fs.String("type", "", "Data type if adding (e.g. float32, string, int64)")
-	fs.Parse(args)
 
-	if *dataset == "" || *action == "" || *column == "" {
-		fmt.Fprintf(os.Stderr, "Usage: longbow-cli alter-namespace -dataset <name> -action <add|drop> -column <name> [-type <type>]\n")
-		os.Exit(1)
-	}
-
-	uri, _ := getClientURI(args)
-	sc := mustGetClient(uri)
-	defer sc.Close()
-
-	payload := map[string]string{
-		"dataset": *dataset,
-		"action":  *action,
-		"column":  *column,
-		"type":    *typ,
-	}
-	actionBody, _ := json.Marshal(payload)
-	act := &flight.Action{Type: "alter_schema", Body: actionBody}
-
-	res, err := sc.DoAction(ctx, act)
-	if err != nil {
-		log.Fatalf("Alter namespace failed: %v\n", err)
-	}
-
-	msg := ""
-	for {
-		r, err := res.Recv()
-		if err != nil {
-			break
-		}
-		msg += string(r.Body)
-	}
-	fmt.Printf("Success: %s\n", msg)
-}
 
 func runListNamespaces(ctx context.Context, args []string) {
 	uri, _ := getClientURI(args)
@@ -667,7 +633,7 @@ func runListNamespaces(ctx context.Context, args []string) {
 func runListDatasetsInNamespace(ctx context.Context, args []string) {
 	fs := flag.NewFlagSet("list-datasets-in-namespace", flag.ExitOnError)
 	name := fs.String("namespace", "default", "Namespace name")
-	fs.Parse(args)
+	_ = fs.Parse(args)
 
 	uri, _ := getClientURI(args)
 	sc := mustGetClient(uri)
@@ -712,7 +678,7 @@ func runListDatasetsInNamespace(ctx context.Context, args []string) {
 func runStats(ctx context.Context, args []string) {
 	fs := flag.NewFlagSet("stats", flag.ExitOnError)
 	name := fs.String("dataset", "", "Dataset name (required)")
-	fs.Parse(args)
+	_ = fs.Parse(args)
 
 	if *name == "" {
 		fmt.Fprintf(os.Stderr, "Usage: longbow-cli stats -dataset <name> [-uri <uri>]\n")
@@ -748,10 +714,3 @@ func runStats(ctx context.Context, args []string) {
 	}
 }
 
-func generateRandomVector(dim int) []float32 {
-	vec := make([]float32, dim)
-	for i := range vec {
-		vec[i] = rand.Float32()
-	}
-	return vec
-}

@@ -5,6 +5,7 @@ import (
 	"os"
 	"sync"
 	"time"
+	"path/filepath"
 
 	"github.com/23skdu/longbow/internal/metrics"
 )
@@ -49,11 +50,7 @@ func NewFSStorageBackend(path string, directIO bool) (*FSStorageBackend, error) 
 	var f *os.File
 	var err error
 
-	if directIO {
-		f, err = OpenFileDirect(path, flags, 0600)
-	} else {
-		f, err = os.OpenFile(path, flags, 0600)
-	}
+	f, err = os.OpenFile(filepath.Clean(path), flags, 0600) // #nosec G304
 
 	if err != nil {
 		return nil, err

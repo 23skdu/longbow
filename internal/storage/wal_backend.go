@@ -2,6 +2,7 @@ package storage
 
 import (
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -57,7 +58,8 @@ func NewWALBackend(path string, preferAsync, directIO bool) (WALBackend, error) 
 }
 
 func NewFSBackend(path string) (*FSBackend, error) {
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+	path = filepath.Clean(path)
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600) // #nosec G304
 	if err != nil {
 		return nil, err
 	}

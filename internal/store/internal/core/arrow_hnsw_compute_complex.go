@@ -58,7 +58,7 @@ func (c *complex64Computer) Prefetch(id uint32) {
 		cOff := int(id) % types.ChunkSize
 		start := cOff * c.data.Dims
 		if start < len(chunk) {
-			simd.Prefetch(unsafe.Pointer(&chunk[start]))
+			simd.Prefetch(unsafe.Pointer(&chunk[start])) // #nosec G103
 		}
 	}
 }
@@ -113,7 +113,7 @@ func (c *complex128Computer) Prefetch(id uint32) {
 		cOff := int(id) % types.ChunkSize
 		start := cOff * c.data.Dims
 		if start < len(chunk) {
-			simd.Prefetch(unsafe.Pointer(&chunk[start]))
+			simd.Prefetch(unsafe.Pointer(&chunk[start])) // #nosec G103
 		}
 	}
 }

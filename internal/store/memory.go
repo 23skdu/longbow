@@ -52,7 +52,7 @@ func AdviseMemory(ptr unsafe.Pointer, size uintptr, advice MemoryAdvice) error {
 
 	// Create a slice header to pass to Madvise
 	// Note: Madvise expects a byte slice
-	b := unsafe.Slice((*byte)(ptr), size)
+	b := unsafe.Slice((*byte)(ptr), size) // #nosec G103
 	return unix.Madvise(b, unixAdvice)
 }
 
@@ -61,7 +61,7 @@ func LockMemory(ptr unsafe.Pointer, size uintptr) error {
 	if runtime.GOOS == "windows" {
 		return nil
 	}
-	b := unsafe.Slice((*byte)(ptr), size)
+	b := unsafe.Slice((*byte)(ptr), size) // #nosec G103
 	return unix.Mlock(b)
 }
 
@@ -70,7 +70,7 @@ func UnlockMemory(ptr unsafe.Pointer, size uintptr) error {
 	if runtime.GOOS == "windows" {
 		return nil
 	}
-	b := unsafe.Slice((*byte)(ptr), size)
+	b := unsafe.Slice((*byte)(ptr), size) // #nosec G103
 	return unix.Munlock(b)
 }
 
@@ -143,7 +143,7 @@ func adviseData(data arrow.ArrayData, advice MemoryAdvice) {
 		b := buf.Bytes()
 		size := uintptr(len(b))
 		if size > 0 {
-			ptr := unsafe.Pointer(&b[0])
+			ptr := unsafe.Pointer(&b[0]) // #nosec G103
 			_ = AdviseMemory(ptr, size, advice)
 		}
 	}

@@ -126,7 +126,7 @@ func (p *Profiler) collectProfiles() {
 }
 
 func (p *Profiler) writeCPUProfile(filename string) error {
-	f, err := os.Create(filename)
+	f, err := os.Create(filepath.Clean(filename))
 	if err != nil {
 		return err
 	}
@@ -136,7 +136,7 @@ func (p *Profiler) writeCPUProfile(filename string) error {
 }
 
 func (p *Profiler) writeMemProfile(filename string) error {
-	f, err := os.Create(filename)
+	f, err := os.Create(filepath.Clean(filename))
 	if err != nil {
 		return err
 	}

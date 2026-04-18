@@ -84,9 +84,9 @@ func (p *GPUMemPool) GetAvailableMemory() int64 {
 
 func (p *GPUMemPool) allocateCPUMemory(size int64) (unsafe.Pointer, error) {
 	ptr := make([]byte, size)
-	p.allocations[unsafe.Pointer(&ptr[0])] = size
+	p.allocations[unsafe.Pointer(&ptr[0])] = size // #nosec G103
 	p.usedBytes += size
-	return unsafe.Pointer(&ptr[0]), nil
+	return unsafe.Pointer(&ptr[0]), nil // #nosec G103
 }
 
 func (p *GPUMemPool) Close() error {

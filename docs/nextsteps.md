@@ -1,22 +1,34 @@
 # Longbow Next Steps — Feature Roadmap 2026
 
-**Last Updated**: 2026-04-16
+**Last Updated**: 2026-04-17
 
 ---
 
 ## 🎯 REMAINING WORK
 
+### Store Modularization (Priority: HIGH)
+The `internal/store` package is currently over-bloated (500+ files). This 6-part plan aims to restructure it for scalability.
+
+| Phase | Component | Priority | Status |
+|-------|-----------|----------|--------|
+| 1 | Foundation & Types | P0 | ✅ COMPLETE |
+| 2 | Core HNSW Algorithms | P0 | ✅ COMPLETE |
+| 3 | Indexing & Sharding | P1 | ✅ COMPLETE |
+| 4 | Persistence & Storage | P1 | ⏳ IN PROGRESS |
+| 5 | Background Workers | P2 | ⏳ NOT STARTED |
+| 6 | API Refinement & Metrics | P2 | ⏳ NOT STARTED |
+
 ### New Features
 
 | # | Feature | Status | Notes |
 |---|---------|--------|-------|
-| 5 | Subqueries/CTE | ⏳ NOT STARTED | Advanced SQL - parser updates needed for `WITH` and nested `SELECT`. |
 | 6 | ONNX Benchmarks | ⏳ NOT STARTED | `internal/onnx/benchmarks_test.go` missing (only `onnx_benchmark_test.go` exists). |
 
 ---
 
 ## ✅ VERIFIED COMPLETED (2026)
 
+- [x] **Advanced SQL (Subqueries/CTE)**: Nested query resolution and CTE support fully implemented.
 - [x] **ONNX Linux/CUDA Backend**: Functional `onnxruntime_go` integration with CUDA EP support.
 - [x] **SIMD String Filtering**: Semi-vectorized length-first string equality kernels for AVX2.
 - [x] **Float64 SIMD Match**: Full AVX2/AVX-512 comparison kernels integrated into query engine.

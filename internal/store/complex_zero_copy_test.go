@@ -44,7 +44,7 @@ func TestArrowHNSW_Complex64_ZeroCopy(t *testing.T) {
 
 	// 3. Verify Storage Type
 	// Read back ID 0
-	valAny, err := idx.getVectorAny(0)
+	valAny, err := idx.GetVectorAny(0)
 	require.NoError(t, err)
 
 	// Should be exactly []complex64
@@ -94,7 +94,7 @@ func TestArrowHNSW_Complex128_ZeroCopy(t *testing.T) {
 	require.NoError(t, err)
 
 	// Read Back
-	valAny, err := idx.getVectorAny(0)
+	valAny, err := idx.GetVectorAny(0)
 	require.NoError(t, err)
 	valC128, ok := valAny.([]complex128)
 	require.True(t, ok, "Expected []complex128 storage")

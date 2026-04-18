@@ -1074,16 +1074,14 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 	var needsReindex bool
 	if ds.Index != nil {
 		if hnsw, ok := ds.Index.(*ArrowHNSW); ok {
-			vecColName := "vector"
-			for _, f := range rec.Schema().Fields() {
-				if f.Name == "vector" || f.Name == "embedding" {
-					vecColName = f.Name
+			for _, f := range ds.Schema.Fields() {
+				if f.Name == "vector" {
 					break
 				}
 			}
-			wantType := InferVectorDataType(rec.Schema(), vecColName)
-			if hnsw.config.DataType != wantType {
-				s.logger.Info().Str("dataset", name).Str("have", hnsw.config.DataType.String()).Str("want", wantType.String()).Msg("Re-creating index for DataType mismatch")
+			wantType := InferVectorDataType(ds.Schema, "vector")
+			if hnsw.GetConfig().DataType != wantType {
+				s.logger.Info().Str("dataset", name).Str("have", hnsw.GetConfig().DataType.String()).Str("want", wantType.String()).Msg("Re-creating index for DataType mismatch")
 				needsReindex = true
 			}
 		}

@@ -157,6 +157,7 @@ type HybridSearcher struct {
 	hnsw    *ArrowHNSW
 	bm25    *InvertedIndex
 	deleted map[VectorID]bool
+	dataset *Dataset
 }
 
 func NewHybridSearcher() *HybridSearcher {
@@ -165,6 +166,7 @@ func NewHybridSearcher() *HybridSearcher {
 		hnsw:    NewTestHNSWIndex(ds),
 		bm25:    NewInvertedIndex(),
 		deleted: make(map[VectorID]bool),
+		dataset: ds,
 	}
 }
 
@@ -193,10 +195,10 @@ func (hs *HybridSearcher) Add(id VectorID, vector []float32, text string) {
 	rec := b.NewRecordBatch()
 
 	// 2. Add to dataset records
-	hs.hnsw.dataset.dataMu.Lock()
-	batchIdx := len(hs.hnsw.dataset.Records)
-	hs.hnsw.dataset.Records = append(hs.hnsw.dataset.Records, rec)
-	hs.hnsw.dataset.dataMu.Unlock()
+	hs.dataset.dataMu.Lock()
+	batchIdx := len(hs.dataset.Records)
+	hs.dataset.Records = append(hs.dataset.Records, rec)
+	hs.dataset.dataMu.Unlock()
 
 	// 3. Add to HNSW index
 	_, _ = hs.hnsw.AddByLocation(context.Background(), batchIdx, 0)

@@ -4,6 +4,9 @@ import (
 	"math"
 	"testing"
 
+	"github.com/23skdu/longbow/internal/store/internal/core"
+	"github.com/23skdu/longbow/internal/store/types"
+
 	"github.com/23skdu/longbow/internal/pq"
 	"github.com/apache/arrow-go/v18/arrow/float16"
 	"github.com/stretchr/testify/assert"
@@ -18,7 +21,7 @@ func TestQuantizerInterface(t *testing.T) {
 			{1.0, 2.0, 3.0, 4.0},
 			{5.0, 6.0, 7.0, 8.0},
 		}
-		encoder, err := TrainSQ8Encoder(vectors)
+		encoder, err := core.TrainSQ8Encoder(vectors)
 		require.NoError(t, err)
 		require.NotNil(t, encoder)
 		assert.Equal(t, 4, encoder.Dims())
@@ -26,7 +29,7 @@ func TestQuantizerInterface(t *testing.T) {
 
 	// Test BQ quantizer interface
 	t.Run("BQ", func(t *testing.T) {
-		encoder := NewBQEncoder(64)
+		encoder := types.NewBQEncoder(64)
 		require.NotNil(t, encoder)
 		assert.Equal(t, 1, encoder.CodeSize()) // 64 dims = 1 uint64
 	})
@@ -48,7 +51,7 @@ func TestQuantizer_EncodeDecode_RoundTrip(t *testing.T) {
 			{0.0, 1.0, 2.0, 3.0, 4.0},
 			{5.0, 6.0, 7.0, 8.0, 9.0},
 		}
-		encoder, err := TrainSQ8Encoder(vectors)
+		encoder, err := core.TrainSQ8Encoder(vectors)
 		require.NoError(t, err)
 
 		original := []float32{2.5, 3.5, 4.5, 5.5, 6.5}
@@ -66,7 +69,7 @@ func TestQuantizer_EncodeDecode_RoundTrip(t *testing.T) {
 	})
 
 	t.Run("BQ", func(t *testing.T) {
-		encoder := NewBQEncoder(64)
+		encoder := types.NewBQEncoder(64)
 		original := make([]float32, 64)
 		for i := range original {
 			if i%2 == 0 {
@@ -130,7 +133,7 @@ func TestQuantizer_EncodeMultipleVectors(t *testing.T) {
 			{5.0, 6.0, 7.0, 8.0},
 			{9.0, 10.0, 11.0, 12.0},
 		}
-		encoder, err := TrainSQ8Encoder(vectors)
+		encoder, err := core.TrainSQ8Encoder(vectors)
 		require.NoError(t, err)
 
 		// Encode each vector
@@ -141,7 +144,7 @@ func TestQuantizer_EncodeMultipleVectors(t *testing.T) {
 	})
 
 	t.Run("BQ", func(t *testing.T) {
-		encoder := NewBQEncoder(128)
+		encoder := types.NewBQEncoder(128)
 		vectors := [][]float32{
 			make([]float32, 128),
 			make([]float32, 128),
@@ -162,7 +165,7 @@ func TestQuantizer_EncodeHandlesTypeConversion(t *testing.T) {
 
 	t.Run("SQ8_Float32Only", func(t *testing.T) {
 		vectors := [][]float32{{1.0, 2.0, 3.0}, {4.0, 5.0, 6.0}}
-		encoder, err := TrainSQ8Encoder(vectors)
+		encoder, err := core.TrainSQ8Encoder(vectors)
 		require.NoError(t, err)
 
 		// Works with float32
@@ -175,7 +178,7 @@ func TestQuantizer_EncodeHandlesTypeConversion(t *testing.T) {
 func TestQuantizer_DecodeEmptyInput(t *testing.T) {
 	t.Run("SQ8", func(t *testing.T) {
 		vectors := [][]float32{{1.0, 2.0, 3.0}, {4.0, 5.0, 6.0}}
-		encoder, err := TrainSQ8Encoder(vectors)
+		encoder, err := core.TrainSQ8Encoder(vectors)
 		require.NoError(t, err)
 
 		decoded := encoder.Decode([]uint8{})
@@ -183,7 +186,7 @@ func TestQuantizer_DecodeEmptyInput(t *testing.T) {
 	})
 
 	t.Run("BQ", func(t *testing.T) {
-		encoder := NewBQEncoder(64)
+		encoder := types.NewBQEncoder(64)
 		decoded := encoder.Decode([]uint64{})
 		assert.Equal(t, 64, len(decoded))
 		// Returns default values (all -1.0) for empty input
@@ -196,7 +199,7 @@ func TestGenericQuantizer_Float32ToUint8(t *testing.T) {
 		{0.0, 0.0, 0.0},
 		{10.0, 10.0, 10.0},
 	}
-	encoder, err := TrainSQ8Encoder(vectors)
+	encoder, err := core.TrainSQ8Encoder(vectors)
 	require.NoError(t, err)
 
 	vec := []float32{5.0, 5.0, 5.0}
@@ -213,7 +216,7 @@ func TestGenericQuantizer_Float32ToUint8(t *testing.T) {
 
 // TestGenericQuantizer_Float32ToUint64 tests float32 -> uint64 binary quantization (BQ style)
 func TestGenericQuantizer_Float32ToUint64(t *testing.T) {
-	encoder := NewBQEncoder(64)
+	encoder := types.NewBQEncoder(64)
 
 	// Use 64 dimensions to match encoder
 	vec := make([]float32, 64)
@@ -267,7 +270,7 @@ func TestQuantizer_TypeConversion_Float16ToFloat32(t *testing.T) {
 		}
 	}
 
-	encoder, err := TrainSQ8EncoderFloat16(vecs)
+	encoder, err := core.TrainSQ8EncoderFloat16(vecs)
 	require.NoError(t, err)
 	require.NotNil(t, encoder)
 
@@ -283,7 +286,7 @@ func TestQuantizer_TypeConversion_Int8ToFloat32(t *testing.T) {
 	vecs[1] = []int8{0, 32, 64, 96, 127, -128, -64, 48}
 	vecs[2] = []int8{16, 48, 80, 112, -50, -96, -32, 127}
 
-	encoder, err := TrainSQ8EncoderInt8(vecs)
+	encoder, err := core.TrainSQ8EncoderInt8(vecs)
 	require.NoError(t, err)
 	require.NotNil(t, encoder)
 
@@ -308,7 +311,7 @@ func TestGenericSQ8Quantizer(t *testing.T) {
 		{1.0, 2.0, 3.0, 4.0},
 		{5.0, 6.0, 7.0, 8.0},
 	}
-	encoder, err := TrainSQ8Encoder(vectors)
+	encoder, err := core.TrainSQ8Encoder(vectors)
 	require.NoError(t, err)
 
 	wrapper := NewGenericSQ8Quantizer(encoder)
@@ -331,7 +334,7 @@ func TestGenericSQ8Quantizer(t *testing.T) {
 
 // TestGenericBQQuantizer tests the generic BQ quantizer wrapper
 func TestGenericBQQuantizer(t *testing.T) {
-	encoder := NewBQEncoder(64)
+	encoder := types.NewBQEncoder(64)
 	wrapper := NewGenericBQQuantizer(encoder)
 	require.NotNil(t, wrapper)
 
@@ -400,7 +403,7 @@ func TestSQ8_PerDimensionBounds(t *testing.T) {
 		{0.0, 0.0},   // Min for both dims
 		{100.0, 1.0}, // Max for dim 0, small range for dim 1
 	}
-	encoder, err := TrainSQ8Encoder(vectors)
+	encoder, err := core.TrainSQ8Encoder(vectors)
 	require.NoError(t, err)
 
 	minVals, maxVals := encoder.GetBounds()
@@ -416,7 +419,7 @@ func TestSQ8_EncodeInto(t *testing.T) {
 		{1.0, 2.0, 3.0, 4.0},
 		{5.0, 6.0, 7.0, 8.0},
 	}
-	encoder, err := TrainSQ8Encoder(vectors)
+	encoder, err := core.TrainSQ8Encoder(vectors)
 	require.NoError(t, err)
 
 	dst := make([]uint8, 4)
@@ -426,7 +429,7 @@ func TestSQ8_EncodeInto(t *testing.T) {
 
 // TestBQ_HammingDistanceBatch tests batch distance computation
 func TestBQ_HammingDistanceBatch(t *testing.T) {
-	encoder := NewBQEncoder(64)
+	encoder := types.NewBQEncoder(64)
 
 	query := make([]float32, 64)
 	query[0] = 1.0
@@ -474,14 +477,14 @@ func TestBQ_CodeSize(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		encoder := NewBQEncoder(tc.dims)
+		encoder := types.NewBQEncoder(tc.dims)
 		assert.Equal(t, tc.expected, encoder.CodeSize(), "Dimensions: %d", tc.dims)
 	}
 }
 
 // TestBQ_Float32ToHamming tests threshold conversion
 func TestBQ_Float32ToHamming(t *testing.T) {
-	encoder := NewBQEncoder(100)
+	encoder := types.NewBQEncoder(100)
 
 	// Similarity 0.9 should allow 10 bits different
 	hamming := encoder.Float32ToHamming(0.9)
@@ -508,7 +511,7 @@ func FuzzQuantizer_RoundTrip(f *testing.F) {
 			{v4, v3, v2, v1},
 		}
 
-		encoder, err := TrainSQ8Encoder(vectors)
+		encoder, err := core.TrainSQ8Encoder(vectors)
 		if err != nil {
 			t.Skip("Training failed")
 		}

@@ -49,7 +49,7 @@ func TestComplex64_Support(t *testing.T) {
 	// Verify vector storage
 	// Use ID 0 for verification
 	id0 := uint64(0)
-	vecAny, err := idx.getVectorAny(uint32(id0))
+	vecAny, err := idx.GetVectorAny(uint32(id0))
 	assert.NoError(t, err)
 	vecC64, ok := vecAny.([]complex64)
 	assert.True(t, ok)
@@ -97,7 +97,7 @@ func TestComplex128_Support(t *testing.T) {
 	// Verify vector storage
 	// Use ID 0 for verification
 	id0 := uint64(0)
-	vecAny, err := idx.getVectorAny(uint32(id0))
+	vecAny, err := idx.GetVectorAny(uint32(id0))
 	assert.NoError(t, err)
 	vecC128, ok := vecAny.([]complex128)
 	assert.True(t, ok)

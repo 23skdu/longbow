@@ -22,18 +22,8 @@ import (
 )
 
 // IndexJob represents a job for the indexing worker
-type IndexJob struct {
-	DatasetName string
-	Record      arrow.RecordBatch
-	BatchIdx    int
-	CreatedAt   time.Time
-}
 
 // RowLocation represents a physical location of a row
-type RowLocation struct {
-	BatchIdx int
-	RowIdx   int
-}
 
 // Dataset wraps records with metadata for eviction and tombstones
 type HNSWSettings struct {
@@ -191,6 +181,53 @@ func (d *Dataset) GetRecord(idx int) (arrow.RecordBatch, bool) {
 		return d.Records[idx], true
 	}
 	return nil, false
+}
+
+// GetName returns the name of the dataset
+func (d *Dataset) GetName() string {
+	return d.Name
+}
+
+// GetRecords returns the records in the dataset
+func (d *Dataset) GetRecords() []arrow.RecordBatch {
+	return d.Records
+}
+
+// GetIndex returns the underlying vector index
+func (d *Dataset) GetIndex() any {
+	return d.Index
+}
+
+// GetSchema returns the schema of the dataset
+func (d *Dataset) GetSchema() *arrow.Schema {
+	return d.Schema
+}
+
+// GetTombstones returns the tombstones for the dataset
+func (d *Dataset) GetTombstones() map[int]*qry.Bitset {
+	return d.Tombstones
+}
+
+// GetPQEncoder returns the PQ encoder for the dataset
+func (d *Dataset) GetPQEncoder() *pq.PQEncoder {
+	return d.PQEncoder
+}
+
+// RLockData acquires a read lock on the dataset data
+func (d *Dataset) RLockData() {
+	d.dataMu.RLock()
+}
+
+// RUnlockData releases a read lock on the dataset data
+func (d *Dataset) RUnlockData() {
+	d.dataMu.RUnlock()
+}
+
+// ResetTombstones clears all tombstones in the dataset
+func (d *Dataset) ResetTombstones() {
+	d.dataMu.Lock()
+	defer d.dataMu.Unlock()
+	d.Tombstones = make(map[int]*qry.Bitset)
 }
 
 func NewDataset(name string, schema *arrow.Schema) *Dataset {

@@ -10,33 +10,6 @@ import (
 // IndexJobQueue - Non-Blocking Index Job Queue with Overflow Strategy
 // =============================================================================
 
-// IndexJobQueueConfig configures the non-blocking index job queue.
-type IndexJobQueueConfig struct {
-	MainChannelSize    int           // Primary channel buffer size
-	OverflowBufferSize int           // Secondary overflow buffer size
-	DropOnOverflow     bool          // If true, drop jobs when both buffers full
-	DrainInterval      time.Duration // How often to drain overflow to main channel
-}
-
-// DefaultIndexJobQueueConfig returns sensible defaults for production.
-func DefaultIndexJobQueueConfig() IndexJobQueueConfig {
-	return IndexJobQueueConfig{
-		MainChannelSize:    10000,
-		OverflowBufferSize: 50000,
-		DropOnOverflow:     true,
-		DrainInterval:      1 * time.Millisecond,
-	}
-}
-
-// IndexJobQueueStats tracks queue statistics.
-type IndexJobQueueStats struct {
-	TotalSent     uint64 // Total jobs sent
-	DirectSent    uint64 // Jobs sent directly to main channel
-	OverflowCount uint64 // Jobs sent to overflow buffer
-	DrainedCount  uint64 // Jobs drained from overflow to main
-	DroppedCount  uint64 // Jobs dropped when both buffers full
-}
-
 // IndexJobQueue provides non-blocking job submission with overflow handling.
 type IndexJobQueue struct {
 	cfg IndexJobQueueConfig

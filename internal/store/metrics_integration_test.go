@@ -23,10 +23,9 @@ func TestMetricsIntegration_HNSWSearch(t *testing.T) {
 
 	// 2. Setup Index
 	config := DefaultArrowHNSWConfig()
-	ds := &Dataset{}
+	ds := &Dataset{Name: "test_dataset"}
 	// Set name for labeling
 	idx := NewArrowHNSW(ds, &config)
-	idx.name = "test_dataset"
 
 	// Insert some data to ensure search does something
 	err := idx.InsertWithVector(1, []float32{1.0, 0.0}, 0)
@@ -57,9 +56,8 @@ func TestMetricsIntegration_HNSWInsert(t *testing.T) {
 	defer ts.Close()
 
 	config := DefaultArrowHNSWConfig()
-	ds := &Dataset{}
+	ds := &Dataset{Name: "insert_dataset"}
 	idx := NewArrowHNSW(ds, &config)
-	idx.name = "insert_dataset"
 
 	initialInsertOps := getMetricCount(t, ts.URL, "longbow_hnsw_insert_ops_total", "dataset=\"insert_dataset\"")
 	initialNodesAdded := getMetricCount(t, ts.URL, "longbow_hnsw_nodes_added_total", "dataset=\"insert_dataset\"")
@@ -77,7 +75,7 @@ func TestMetricsIntegration_HNSWInsert(t *testing.T) {
 	assert.Equal(t, initialNodesAdded+float64(numInserts), finalNodesAdded, "Nodes added total should increment")
 
 	nodeCount := getMetricCount(t, ts.URL, "longbow_hnsw_node_count", "dataset=\"insert_dataset\"")
-	assert.Equal(t, float64(idx.nodeCount.Load()), nodeCount, "Node count gauge should match HNSW state")
+	assert.Equal(t, float64(idx.Len()), nodeCount, "Node count gauge should match HNSW state")
 }
 
 // Helper to scrape metrics and find a specific value

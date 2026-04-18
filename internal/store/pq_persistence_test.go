@@ -72,7 +72,7 @@ func TestPQPersistence(t *testing.T) {
 		err = idx.TrainPQ(vectors)
 		require.NoError(t, err)
 		trained = true
-		ds.PQEncoder = idx.pqEncoder
+		ds.PQEncoder = idx.GetPQEncoder()
 	case *ShardedHNSW:
 		fmt.Printf("DEBUG: Index is ShardedHNSW, not yet supported for TrainPQ in test\n")
 	case *AutoShardingIndex:
@@ -81,7 +81,7 @@ func TestPQPersistence(t *testing.T) {
 			err = arrowIdx.TrainPQ(vectors)
 			require.NoError(t, err)
 			trained = true
-			ds.PQEncoder = arrowIdx.pqEncoder
+			ds.PQEncoder = arrowIdx.GetPQEncoder()
 		}
 	default:
 		fmt.Printf("DEBUG: Index type not supported for TrainPQ: %T\n", ds.Index)
@@ -118,9 +118,9 @@ func TestPQPersistence(t *testing.T) {
 
 	// 6. Verify Index Picks it up
 	cfg2 := DefaultArrowHNSWConfig()
+	cfg2.Dims = 128
+	cfg2.M = 16
 	idx2 := NewArrowHNSW(ds2, &cfg2)
-	idx2.m = 16
-	idx2.dims.Store(128)
 
 	// Trigger "Train" ensuring it picks up
 	err = idx2.TrainPQ(vectors)

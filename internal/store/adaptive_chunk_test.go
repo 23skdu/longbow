@@ -180,8 +180,8 @@ func TestAdaptiveChunkSize_ConfigThresholds(t *testing.T) {
 
 func TestAdaptiveChunkSize_ConcurrentSafety(t *testing.T) {
 	mem := memory.NewGoAllocator()
-	vectors := generateTestVectors(100, 4)
-	rec := makeBatchTestRecord(mem, 4, vectors)
+	vectors := GenerateTestVectors(100, 4)
+	rec := MakeBatchTestRecord(mem, 4, vectors)
 
 	ds := &Dataset{
 		Name:    "test",
@@ -226,8 +226,8 @@ func BenchmarkAdaptiveChunkSize_ParallelVsSerial(b *testing.B) {
 	mem := memory.NewGoAllocator()
 	dims := 128
 	numVectors := 10000
-	vectors := generateTestVectors(numVectors, dims)
-	rec := makeBatchTestRecord(mem, dims, vectors)
+	vectors := GenerateTestVectors(numVectors, dims)
+	rec := MakeBatchTestRecord(mem, dims, vectors)
 	defer rec.Release()
 
 	ds := &Dataset{
@@ -266,7 +266,7 @@ func BenchmarkAdaptiveChunkSize_ParallelVsSerial(b *testing.B) {
 		b.ResetTimer()
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			_ = idx.processResultsParallel(context.Background(), query, neighbors500, 10, nil)
+			_ = idx.ProcessResultsParallel(context.Background(), query, neighbors500, 10, nil)
 		}
 	})
 
@@ -279,7 +279,7 @@ func BenchmarkAdaptiveChunkSize_ParallelVsSerial(b *testing.B) {
 		b.ResetTimer()
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			_ = idx.processResultsParallel(context.Background(), query, neighbors5000, 10, nil)
+			_ = idx.ProcessResultsParallel(context.Background(), query, neighbors5000, 10, nil)
 		}
 	})
 }

@@ -4,10 +4,14 @@ import (
 	"context"
 	"testing"
 
+	"github.com/apache/arrow-go/v18/arrow"
+	"github.com/apache/arrow-go/v18/arrow/array"
+	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 )
+
 
 // TDD Red Phase: Tests for batch distance search integration
 
@@ -176,4 +180,52 @@ func TestSearchWithBatchDistance_KGreaterThanSize(t *testing.T) {
 	if len(results) > 3 {
 		t.Errorf("Expected at most 3 results, got %d", len(results))
 	}
+}
+
+// =============================================================================
+// Helper: Create test dataset with vectors
+// =============================================================================
+
+func createTestDataset(t *testing.T, name string, dims, numVectors int) *Dataset {
+	t.Helper()
+
+	mem := memory.NewGoAllocator()
+	schema := arrow.NewSchema(
+		[]arrow.Field{
+			{Name: "id", Type: arrow.PrimitiveTypes.Int64},
+			{Name: "vector", Type: arrow.FixedSizeListOf(int32(dims), arrow.PrimitiveTypes.Float32)},
+		},
+		nil,
+	)
+
+	builder := array.NewRecordBuilder(mem, schema)
+	defer builder.Release()
+
+	idBuilder := builder.Field(0).(*array.Int64Builder)
+	vecBuilder := builder.Field(1).(*array.FixedSizeListBuilder)
+	floatBuilder := vecBuilder.ValueBuilder().(*array.Float32Builder)
+
+	for i := 0; i < numVectors; i++ {
+		idBuilder.Append(int64(i))
+		vecBuilder.Append(true)
+		for d := 0; d < dims; d++ {
+			floatBuilder.Append(float32(i*dims+d) * 0.01)
+		}
+	}
+
+	record := builder.NewRecordBatch()
+
+	return &Dataset{
+		Name:    name,
+		Records: []arrow.RecordBatch{record},
+		Schema:  schema,
+	}
+}
+
+func makeTestVector(dims int, seed int) []float32 {
+	v := make([]float32, dims)
+	for i := 0; i < dims; i++ {
+		v[i] = float32(seed*dims+i) * 0.01
+	}
+	return v
 }

@@ -14,9 +14,9 @@ The `internal/store` package is currently over-bloated (500+ files). This 6-part
 | 1 | Foundation & Types | P0 | ✅ COMPLETE |
 | 2 | Core HNSW Algorithms | P0 | ✅ COMPLETE |
 | 3 | Indexing & Sharding | P1 | ✅ COMPLETE |
-| 4 | Persistence & Storage | P1 | ⏳ IN PROGRESS |
-| 5 | Background Workers | P2 | ⏳ NOT STARTED |
-| 6 | API Refinement & Metrics | P2 | ⏳ NOT STARTED |
+| 4 | Persistence & Storage | P1 | ✅ COMPLETE |
+| 5 | Background Workers | P2 | ✅ COMPLETE |
+| 6 | API Refinement & Metrics | P2 | ⏳ IN PROGRESS |
 
 ### New Features
 

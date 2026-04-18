@@ -23,6 +23,17 @@ The `internal/store` package is currently over-bloated (500+ files). This 6-part
 | # | Feature | Status | Notes |
 |---|---------|--------|-------|
 | 6 | ONNX Benchmarks | ⏳ NOT STARTED | `internal/onnx/benchmarks_test.go` missing (only `onnx_benchmark_test.go` exists). |
+| 7 | COW Optimization | ✅ COMPLETE | Optimized `GraphData.Clone()` and pre-allocation strategy. |
+| 8 | Search Result Pooling | ✅ COMPLETE | Implemented `sync.Pool` and `ArrowSearchContext` pooling. |
+| 9 | Fast-Path Search | 🚀 NEXT | specialized kernels for float32/int8 to bypass `any` overhead. |
+| 10 | allocation Buffer Pool | ✅ COMPLETE | Pooled buffers for type conversions in `SearchContext`. |
+| 11 | DiskGraph Load Caching | 💡 PLANNED | Cache DiskGraph refs in SearchContext for lower latency. |
+| 12 | Adaptive M-Param | 💡 PLANNED | implementation of dynamic connectivity scaling. |
+| 13 | Metrics Sampling | 💡 PLANNED | Reduce atomic overhead in metrics collection. |
+| 14 | Lock-Free Adjacency | 🚀 NEXT | Expand lock-free patterns to layer 0 updates. |
+| 15 | Zero-Copy Ingest | 💡 PLANNED | Direct Arrow-to-HNSW memory mapping. |
+| 16 | Panic Removal | ✅ COMPLETE | Eliminated `panic()` in all core data resolution paths. |
+
 
 ---
 

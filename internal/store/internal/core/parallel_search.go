@@ -41,10 +41,7 @@ type ParallelSearchHost interface {
 	IsDeleted(id uint32) bool
 }
 
-// processResultsParallel processes candidate neighbors using worker pool
-func (h *ArrowHNSW) processResultsParallel(ctx context.Context, query []float32, candidates []types.Candidate, k int, filters []qry.Filter) []types.SearchResult { //nolint:unparam
-	return processResultsParallelInternal(ctx, h, query, candidates, k, filters, nil)
-}
+
 
 // processResultsParallelInternal is the generalized parallel result processing routine.
 func processResultsParallelInternal(ctx context.Context, h ParallelSearchHost, query []float32, candidates []types.Candidate, k int, filters []qry.Filter, bitmap *roaring.Bitmap) []types.SearchResult {

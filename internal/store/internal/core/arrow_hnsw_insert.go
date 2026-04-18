@@ -16,10 +16,10 @@ func (h *ArrowHNSW) searchLayerForInsert(goCtx context.Context, ctx *ArrowSearch
 		return nil, err
 	}
 
-	// Important: Return a clone of the results to avoid aliasing the context's internal buffers
+	// Important: Return a pooled/cloned slice to avoid aliasing the context's internal buffers
 	// which will be reused as soon as the context is returned to the pool.
-	cloned := make([]types.Candidate, len(res))
-	copy(cloned, res)
+	cloned := h.getCandidateSlice(len(res))
+	cloned = append(cloned, res...)
 	return cloned, nil
 }
 
@@ -43,10 +43,20 @@ func (h *ArrowHNSW) selectNeighbors(ctx *ArrowSearchContext, candidates []types.
 		return h.selectNeighborsFloat32(ctx, candidates, m, data)
 	}
 
-	selected := make([]types.Candidate, 0, m)
+	var selected []types.Candidate
+	if ctx != nil {
+		selected = ctx.scratchSelected[:0]
+	} else {
+		selected = make([]types.Candidate, 0, m)
+	}
 
 	// HNSW "Heuristic 2" (Diversity Heuristic)
-	vectorCache := make(map[uint32]any, len(candidates))
+	var vectorCache map[uint32]any
+	if ctx != nil {
+		vectorCache = ctx.vectorCache
+	} else {
+		vectorCache = make(map[uint32]any, len(candidates))
+	}
 
 	for _, cand := range candidates {
 		if len(selected) >= m {
@@ -60,12 +70,36 @@ func (h *ArrowHNSW) selectNeighbors(ctx *ArrowSearchContext, candidates []types.
 			v1 = vecAny
 			// Cast integer types to float32 once when fetched into bypass double-loop builds
 			if vInt, ok := vecAny.([]int32); ok {
-				v1f := make([]float32, len(vInt))
-				for i, val := range vInt { v1f[i] = float32(val) }
+				var v1f []float32
+				if ctx != nil {
+					// Use pooled buffer
+					ctx.vectorBuf = ctx.vectorBuf[:0]
+					for _, val := range vInt { ctx.vectorBuf = append(ctx.vectorBuf, float32(val)) }
+					v1f = ctx.vectorBuf
+				} else {
+					v1f = make([]float32, len(vInt))
+					for i, val := range vInt { v1f[i] = float32(val) }
+				}
 				v1 = v1f
 			} else if vUint, ok := vecAny.([]uint32); ok {
-				v1f := make([]float32, len(vUint))
-				for i, val := range vUint { v1f[i] = float32(val) }
+				var v1f []float32
+				if ctx != nil {
+					ctx.vectorBuf = ctx.vectorBuf[:0]
+					for _, val := range vUint { ctx.vectorBuf = append(ctx.vectorBuf, float32(val)) }
+					v1f = make([]float32, len(ctx.vectorBuf))
+					copy(v1f, ctx.vectorBuf)
+				} else {
+					v1f = make([]float32, len(vUint))
+					for i, val := range vUint { v1f[i] = float32(val) }
+				}
+				v1 = v1f
+			} else if vInt8, ok := vecAny.([]int8); ok {
+				v1f := make([]float32, len(vInt8))
+				for i, val := range vInt8 { v1f[i] = float32(val) }
+				v1 = v1f
+			} else if vUint8, ok := vecAny.([]uint8); ok {
+				v1f := make([]float32, len(vUint8))
+				for i, val := range vUint8 { v1f[i] = float32(val) }
 				v1 = v1f
 			}
 			vectorCache[cand.ID] = v1
@@ -112,29 +146,22 @@ func (h *ArrowHNSW) selectNeighbors(ctx *ArrowSearchContext, candidates []types.
 					d = float32(df64)
 				}
 			case []int8:
-				// Fallback to float32
-				v1f := make([]float32, len(v1Typed))
-				for i, val := range v1Typed {
-					v1f[i] = float32(val)
-				}
+				// Should be pre-converted to float32 in vectorCache filling
 				if v2Typed, ok := v2.([]int8); ok {
+					// Fallback for safety if somehow reached
+					v1f := make([]float32, len(v1Typed))
+					for i, val := range v1Typed { v1f[i] = float32(val) }
 					v2f := make([]float32, len(v2Typed))
-					for i, val := range v2Typed {
-						v2f[i] = float32(val)
-					}
+					for i, val := range v2Typed { v2f[i] = float32(val) }
 					d, err = h.distFunc(v1f, v2f)
 				}
 			case []uint8:
-				// Fallback to SQ8 explicitly if enabled handled elsewhere, but default to float32
-				v1f := make([]float32, len(v1Typed))
-				for i, val := range v1Typed {
-					v1f[i] = float32(val)
-				}
+				// Should be pre-converted to float32 in vectorCache filling
 				if v2Typed, ok := v2.([]uint8); ok {
+					v1f := make([]float32, len(v1Typed))
+					for i, val := range v1Typed { v1f[i] = float32(val) }
 					v2f := make([]float32, len(v2Typed))
-					for i, val := range v2Typed {
-						v2f[i] = float32(val)
-					}
+					for i, val := range v2Typed { v2f[i] = float32(val) }
 					d, err = h.distFunc(v1f, v2f)
 				}
 			}
@@ -197,7 +224,12 @@ func (h *ArrowHNSW) selectNeighborsFloat32(ctx *ArrowSearchContext, candidates [
 		selected = make([]types.Candidate, 0, m)
 	}
 
-	vectorCache := make(map[uint32][]float32, len(candidates))
+	var vectorCache map[uint32]any
+	if ctx != nil {
+		vectorCache = ctx.vectorCache
+	} else {
+		vectorCache = make(map[uint32]any, len(candidates))
+	}
 
 	for _, cand := range candidates {
 		if len(selected) >= m {
@@ -205,26 +237,32 @@ func (h *ArrowHNSW) selectNeighborsFloat32(ctx *ArrowSearchContext, candidates [
 		}
 
 		isDiverse := true
-		v1, ok := vectorCache[cand.ID]
+		v1Any, ok := vectorCache[cand.ID]
+		var v1 []float32
 		if !ok {
 			vecAny, _ := data.GetVector(cand.ID)
 			if v, ok := vecAny.([]float32); ok {
 				v1 = v
 				vectorCache[cand.ID] = v
 			}
+		} else {
+			v1, _ = v1Any.([]float32)
 		}
 		if v1 == nil {
 			continue
 		}
 
 		for _, sel := range selected {
-			v2, ok := vectorCache[sel.ID]
+			v2Any, ok := vectorCache[sel.ID]
+			var v2 []float32
 			if !ok {
 				vecAny, _ := data.GetVector(sel.ID)
 				if v, ok := vecAny.([]float32); ok {
 					v2 = v
 					vectorCache[sel.ID] = v
 				}
+			} else {
+				v2, _ = v2Any.([]float32)
 			}
 			if v2 == nil {
 				continue

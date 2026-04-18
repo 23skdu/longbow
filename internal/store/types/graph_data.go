@@ -437,24 +437,31 @@ func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
 		g.Counts = make([][][]int32, ArrowMaxLayers)
 		g.Versions = make([][][]uint32, ArrowMaxLayers)
 	}
+
+	requiredLen := cID + 1
 	for l := 0; l < ArrowMaxLayers; l++ {
 		// Ensure Neighbors
-		for len(g.Neighbors[l]) <= cID {
-			g.Neighbors[l] = append(g.Neighbors[l], nil)
+		if len(g.Neighbors[l]) < requiredLen {
+			delta := requiredLen - len(g.Neighbors[l])
+			g.Neighbors[l] = append(g.Neighbors[l], make([][]uint32, delta)...)
 		}
 		if g.Neighbors[l][cID] == nil {
 			g.Neighbors[l][cID] = make([]uint32, ChunkSize*MaxNeighbors)
 		}
+
 		// Ensure Counts
-		for len(g.Counts[l]) <= cID {
-			g.Counts[l] = append(g.Counts[l], nil)
+		if len(g.Counts[l]) < requiredLen {
+			delta := requiredLen - len(g.Counts[l])
+			g.Counts[l] = append(g.Counts[l], make([][]int32, delta)...)
 		}
 		if g.Counts[l][cID] == nil {
 			g.Counts[l][cID] = make([]int32, ChunkSize)
 		}
+
 		// Ensure Versions
-		for len(g.Versions[l]) <= cID {
-			g.Versions[l] = append(g.Versions[l], nil)
+		if len(g.Versions[l]) < requiredLen {
+			delta := requiredLen - len(g.Versions[l])
+			g.Versions[l] = append(g.Versions[l], make([][]uint32, delta)...)
 		}
 		if g.Versions[l][cID] == nil {
 			g.Versions[l][cID] = make([]uint32, ChunkSize)
@@ -796,10 +803,6 @@ func (g *GraphData) SetNeighbors(id uint32, neighbors []uint32) error {
 		neighborsChunk[baseIdx+i] = n
 	}
 
-	// Update count
-	if len(neighbors) > math.MaxInt32 {
-		panic("too many neighbors")
-	}
 	countsChunk[cOff] = int32(len(neighbors)) // #nosec G115
 
 	if versionsChunk != nil {
@@ -1434,11 +1437,17 @@ func (g *GraphData) Clone() *GraphData {
 	}
 
 	// Deep copy Neighbors (Layer -> Chunk)
+	// Optimization: Pre-allocate outer slices with extra capacity to reduce re-allocations during growth
 	if g.Neighbors != nil {
 		newG.Neighbors = make([][][]uint32, len(g.Neighbors))
 		for l := range g.Neighbors {
 			if g.Neighbors[l] != nil {
-				newG.Neighbors[l] = make([][]uint32, len(g.Neighbors[l]))
+				// Allocate with some headroom for future chunks
+				targetCap := len(g.Neighbors[l])
+				if targetCap < 16 {
+					targetCap = 16
+				}
+				newG.Neighbors[l] = make([][]uint32, len(g.Neighbors[l]), targetCap)
 				copy(newG.Neighbors[l], g.Neighbors[l])
 			}
 		}
@@ -1449,7 +1458,11 @@ func (g *GraphData) Clone() *GraphData {
 		newG.Counts = make([][][]int32, len(g.Counts))
 		for l := range g.Counts {
 			if g.Counts[l] != nil {
-				newG.Counts[l] = make([][]int32, len(g.Counts[l]))
+				targetCap := len(g.Counts[l])
+				if targetCap < 16 {
+					targetCap = 16
+				}
+				newG.Counts[l] = make([][]int32, len(g.Counts[l]), targetCap)
 				copy(newG.Counts[l], g.Counts[l])
 			}
 		}
@@ -1460,7 +1473,11 @@ func (g *GraphData) Clone() *GraphData {
 		newG.Versions = make([][][]uint32, len(g.Versions))
 		for l := range g.Versions {
 			if g.Versions[l] != nil {
-				newG.Versions[l] = make([][]uint32, len(g.Versions[l]))
+				targetCap := len(g.Versions[l])
+				if targetCap < 16 {
+					targetCap = 16
+				}
+				newG.Versions[l] = make([][]uint32, len(g.Versions[l]), targetCap)
 				copy(newG.Versions[l], g.Versions[l])
 			}
 		}
@@ -1913,7 +1930,10 @@ func NewGraphData(capacity, dim int, mmap bool, useDisk bool, fd int,
 	dataType VectorDataType, bqEnabled bool, pqEnabled bool,
 	tqEnabled bool, tqBits int) *GraphData {
 
-	// Initialize arenas with power-of-2 slab sizes
+	// Enforce minimum capacity to avoid rapid initial COW cycles
+	if capacity < 1024 {
+		capacity = 1024
+	}
 	// Slab size: fit at least one chunk + overhead.
 	// Float32: 1024 * dim * 4 bytes.
 	f32SlabSize := ChunkSize*dim*4 + 64
@@ -2004,6 +2024,45 @@ func NewGraphData(capacity, dim int, mmap bool, useDisk bool, fd int,
 	}
 
 	return gd
+}
+
+func (g *GraphData) GrowMetadataSlices(numChunks int) {
+	if numChunks <= 0 {
+		return
+	}
+
+	// 1. Topology Chunks (Layered)
+	if len(g.Neighbors) == 0 {
+		const ArrowMaxLayers = 16 // Consistent with types.go
+		g.Neighbors = make([][][]uint32, ArrowMaxLayers)
+		g.Counts = make([][][]int32, ArrowMaxLayers)
+		g.Versions = make([][][]uint32, ArrowMaxLayers)
+	}
+
+	for l := range g.Neighbors {
+		if len(g.Neighbors[l]) < numChunks {
+			newN := make([][]uint32, numChunks)
+			copy(newN, g.Neighbors[l])
+			g.Neighbors[l] = newN
+		}
+		if len(g.Counts[l]) < numChunks {
+			newC := make([][]int32, numChunks)
+			copy(newC, g.Counts[l])
+			g.Counts[l] = newC
+		}
+		if len(g.Versions[l]) < numChunks {
+			newV := make([][]uint32, numChunks)
+			copy(newV, g.Versions[l])
+			g.Versions[l] = newV
+		}
+	}
+
+	// 2. Levels
+	if len(g.Levels) < numChunks {
+		newL := make([][]uint8, numChunks)
+		copy(newL, g.Levels)
+		g.Levels = newL
+	}
 }
 
 func (g *GraphData) Release() {

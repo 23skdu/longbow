@@ -94,10 +94,7 @@ func ExtractVectorF16FromArrow(rec arrow.RecordBatch, rowIdx, colIdx int) ([]flo
 	return nil, fmt.Errorf("cannot convert %T to []float16.Num", anyVec)
 }
 
-// extractVectorCopy extracts a vector and returns a copy as []float32.
-func extractVectorCopy(rec arrow.RecordBatch, rowIdx, colIdx int) ([]float32, error) {
-	return ExtractVectorFromArrow(rec, rowIdx, colIdx)
-}
+
 
 // ExtractVectorGeneric extracts a vector of the requested type from an Arrow record batch.
 func ExtractVectorGeneric[T any](rec arrow.RecordBatch, rowIdx, colIdx int) ([]T, error) {

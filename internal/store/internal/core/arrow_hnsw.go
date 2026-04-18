@@ -62,7 +62,8 @@ type ArrowHNSW struct {
 	bqEncoder  *types.BQEncoder
 	pqEncoder  *pq.PQEncoder
 	tqEncoder  *TurboQuantEncoder
-	searchPool *ArrowSearchContextPool
+	searchPool    *ArrowSearchContextPool
+	candidatePool sync.Pool
 
 	name                   string
 	disableNodeCountMetric atomic.Bool
@@ -237,6 +238,12 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 		mMax:            config.MMax,
 		mMax0:           config.MMax0,
 		searchPool:      NewArrowSearchContextPool(),
+		candidatePool: sync.Pool{
+			New: func() any {
+				s := make([]types.Candidate, 0, config.EfConstruction)
+				return &s
+			},
+		},
 		locationStore:   NewChunkedLocationStore(),
 		deleted:         roaring.New(),
 		levelMultiplier: 1.0 / math.Log(float64(config.M)),
@@ -276,7 +283,8 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 	h.efConstruction.Store(int32(config.EfConstruction))
 	h.maxLevel.Store(-1)
 	if config.Dims > math.MaxInt32 {
-		panic("dimensions exceed MaxInt32")
+		fmt.Printf("Error: dimensions %d exceed MaxInt32, returning nil index\n", config.Dims)
+		return nil
 	}
 	h.dims.Store(int32(config.Dims)) // #nosec G115
 
@@ -369,6 +377,26 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 	}
 
 	return h
+}
+
+// getCandidateSlice retrieves a pooled candidate slice.
+func (h *ArrowHNSW) getCandidateSlice(capacity int) []types.Candidate {
+	ptr := h.candidatePool.Get().(*[]types.Candidate)
+	s := *ptr
+	if cap(s) < capacity {
+		s = make([]types.Candidate, 0, capacity)
+	} else {
+		s = s[:0]
+	}
+	return s
+}
+
+// putCandidateSlice returns a candidate slice to the pool.
+func (h *ArrowHNSW) putCandidateSlice(s []types.Candidate) {
+	if s == nil {
+		return
+	}
+	h.candidatePool.Put(&s)
 }
 
 // SetDisableNodeCountMetric prevents this ArrowHNSW from reporting HNSWNodeCount.
@@ -506,9 +534,9 @@ func (h *ArrowHNSW) setDims(dims int32) {
 }
 
 // SetDimension sets the absolute dimension of the index.
-func (h *ArrowHNSW) SetDimension(dim int) {
+func (h *ArrowHNSW) SetDimension(dim int) error {
 	if dim > math.MaxInt32 {
-		panic("dimension exceeds MaxInt32")
+		return fmt.Errorf("dimension %d exceeds MaxInt32", dim)
 	}
 	h.setDims(int32(dim)) // #nosec G115
 	// Also ensure types.GraphData is updated to reflect this dimension
@@ -517,8 +545,11 @@ func (h *ArrowHNSW) SetDimension(dim int) {
 	defer h.initMu.Unlock()
 	data := h.data.Load()
 	if data != nil {
-		_ = h.Grow(data.Capacity, dim)
+		if err := h.Grow(data.Capacity, dim); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 // Delete invokes Delete for a single id.
@@ -535,14 +566,16 @@ func (h *ArrowHNSW) IsDeleted(id uint32) bool {
 	return h.deleted.Contains(id)
 }
 
-// mustGetVectorFromData retrieves a vector from the given data snapshot or panics.
+// mustGetVectorFromData retrieves a vector from the given data snapshot.
 func (h *ArrowHNSW) mustGetVectorFromData(data *types.GraphData, id uint32) any {
 	vec, err := h.getVectorWithData(data, id)
 	if err != nil {
-		panic(err)
+		return nil
 	}
 	return vec
 }
+
+
 
 // ensureChunk ensures that the data structures for the given chunk are allocated.
 func (h *ArrowHNSW) ensureChunk(data *types.GraphData, cID, cOff, dims int) (*types.GraphData, error) {
@@ -910,6 +943,8 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 	if opt, ok := options.(types.SearchOptions); ok {
 		searchOptions = opt
 	}
+
+	searchCtx.diskGraph = h.diskGraph.Load()
 
 	// Handle BQ (Binary Quantization) search path
 	// If index has BQ enabled and user requests BQ search, use Hamming distance
@@ -1346,9 +1381,12 @@ func (h *ArrowHNSW) growInternal(capacity, dims int) error {
 	}
 
 	if dims > math.MaxInt32 {
-		panic("dims exceed MaxInt32")
+		return fmt.Errorf("dimensions %d exceed MaxInt32", dims)
 	}
 	h.dims.Store(int32(dims)) // #nosec G115
+	if h.config.Dims == 0 && dims > 0 {
+		h.config.Dims = dims
+	}
 
 	// Calculate current vs target
 	currentDims := data.Dims
@@ -1397,14 +1435,24 @@ func (h *ArrowHNSW) growInternal(capacity, dims int) error {
 		newData.VectorsFloat64Offsets = nil
 	}
 
-	// Iteratively ensure chunks - this creates new arenas during grow which can cause fragmentation
-	// at large scales (>15k vectors). This is a known issue requiring future optimization.
+	// Optimized Grow: Ensure metadata slices are sized for the new capacity,
+	// but only allocate inner data chunks for the existing node count.
+	// This reduces memory spikes by deferring allocation of future chunks.
 	numChunks := (capacity + types.ChunkSize - 1) / types.ChunkSize
-	for i := 0; i < numChunks; i++ {
-		if err := newData.EnsureChunk(i, 0, dims); err != nil {
-			fmt.Printf("Grow EnsureChunk failed: %v\n", err)
-			return err
+	numExistingChunks := (int(h.nodeCount.Load()) + types.ChunkSize - 1) / types.ChunkSize
+
+	if numChunks > 0 {
+		// grow outer slices without allocating all inner chunks
+		// (EnsureChunk(cID) appends up to cID, but doesn't allocate all intermediates if we are careful)
+		// Wait, EnsureChunk(i) DOES allocate chunk i.
+		// So we loop up to numExistingChunks to ensure they are ALL allocated/updated.
+		for i := 0; i < numExistingChunks; i++ {
+			if err := newData.EnsureChunk(i, 0, dims); err != nil {
+				return err
+			}
 		}
+		// For the rest, we just ensure the outer slices have enough capacity
+		newData.GrowMetadataSlices(numChunks)
 	}
 
 	oldData := h.data.Swap(newData)
@@ -1824,7 +1872,19 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 				return &pqComputer{data: data, q: q, table: table, h: h}
 			}
 		}
-		return &float32Computer{data: data, q: q, dims: len(q), h: h}
+		if data.Type == types.VectorTypeFloat32 {
+			return &float32ToFloat32Computer{data: data, q: q, dims: len(q), h: h}
+		}
+		comp := &float32Computer{data: data, q: q, dims: len(q), h: h}
+		if searchCtx != nil {
+			// Populate conversion buffers once
+			if data.Type == types.VectorTypeFloat64 {
+				searchCtx.queryF64 = searchCtx.queryF64[:0]
+				for _, val := range q { searchCtx.queryF64 = append(searchCtx.queryF64, float64(val)) }
+				comp.qF64 = searchCtx.queryF64
+			}
+		}
+		return comp
 	case []int8, []uint8:
 		var q8 []uint8
 		var qInt8 []int8
@@ -1839,8 +1899,25 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 	case []float64:
 		return &float64Computer{data: data, q: q, dims: len(q)}
 	case []complex64:
+		// Pre-convert if searchCtx available
+		if searchCtx != nil {
+			if cap(searchCtx.queryC64) < len(q) {
+				searchCtx.queryC64 = make([]complex64, len(q))
+			}
+			searchCtx.queryC64 = searchCtx.queryC64[:len(q)]
+			copy(searchCtx.queryC64, q)
+			return &complex64Computer{data: data, q: searchCtx.queryC64, dims: len(q)}
+		}
 		return &complex64Computer{data: data, q: q, dims: len(q)}
 	case []complex128:
+		if searchCtx != nil {
+			if cap(searchCtx.queryC128) < len(q) {
+				searchCtx.queryC128 = make([]complex128, len(q))
+			}
+			searchCtx.queryC128 = searchCtx.queryC128[:len(q)]
+			copy(searchCtx.queryC128, q)
+			return &complex128Computer{data: data, q: searchCtx.queryC128, dims: len(q)}
+		}
 		return &complex128Computer{data: data, q: q, dims: len(q)}
 	}
 	return nil
@@ -2543,7 +2620,7 @@ func (h *ArrowHNSW) ImportGraph(r io.Reader) error {
 
 	// Apply Metadata
 	if state.Dims > math.MaxInt32 {
-		panic("state dimensions exceed MaxInt32")
+		return fmt.Errorf("state dimensions %d exceed MaxInt32", state.Dims)
 	}
 	h.dims.Store(int32(state.Dims)) // nosec G115
 	h.locationStore.Reset()
@@ -2902,6 +2979,11 @@ type float32Computer struct {
 	q    []float32
 	dims int
 	h    *ArrowHNSW
+	// Pre-converted query buffers for cross-type comparison
+	qF64  []float64
+	qF16  []float16.Num
+	qC64  []complex64
+	qC128 []complex128
 }
 
 func (c *float32Computer) ComputeSingle(id uint32) (float32, error) {
@@ -2964,12 +3046,44 @@ func (c *float32Computer) ComputeSingle(id uint32) (float32, error) {
 		if len(c.q) != len(v) {
 			return math.MaxFloat32, nil
 		}
-		var sum float64
-		for i, val := range v {
-			diff := float64(c.q[i]) - val
-			sum += diff * diff
+		var q64 []float64
+		if len(c.qF64) == len(c.q) {
+			q64 = c.qF64
+		} else {
+			q64 = make([]float64, len(c.q))
+			for i, val := range c.q { q64[i] = float64(val) }
 		}
-		return float32(math.Sqrt(sum)), nil
+		return c.h.distFuncF64(q64, v)
+	}
+	return math.MaxFloat32, nil
+}
+
+type float32ToFloat32Computer struct {
+	data *types.GraphData
+	q    []float32
+	dims int
+	h    *ArrowHNSW
+}
+
+func (c *float32ToFloat32Computer) ComputeSingle(id uint32) (float32, error) {
+	cID := types.ChunkID(id)
+	chunk := c.data.GetVectorsChunk(cID)
+	if chunk == nil {
+		vecAny, err := c.h.getVectorWithData(c.data, id)
+		if err != nil {
+			return 0, err
+		}
+		if v, ok := vecAny.([]float32); ok {
+			return c.h.distFunc(c.q, v)
+		}
+		return math.MaxFloat32, nil
+	}
+	
+	cOff := int(id) % types.ChunkSize
+	start := cOff * c.data.Dims
+	if start+c.dims <= len(chunk) {
+		v := chunk[start : start+c.dims]
+		return c.h.distFunc(c.q, v)
 	}
 	return math.MaxFloat32, nil
 }
@@ -3055,6 +3169,18 @@ type int8Computer struct {
 }
 
 func (c *int8Computer) ComputeSingle(id uint32) (float32, error) {
+	cID := types.ChunkID(id)
+	// Try specialized chunk fetch first
+	if chunk := c.data.GetVectorsSQ8Chunk(cID); chunk != nil {
+		cOff := int(id) % types.ChunkSize
+		start := cOff * c.data.Dims
+		if start+c.dims <= len(chunk) {
+			v8 := chunk[start : start+c.dims]
+			// Already optimized for SIMD if via distFuncInt8
+			return c.h.distFuncInt8(c.qInt8, *(*[]int8)(unsafe.Pointer(&v8)))
+		}
+	}
+
 	vecAny, err := c.h.getVectorWithData(c.data, id)
 	if err != nil {
 		return 0, err

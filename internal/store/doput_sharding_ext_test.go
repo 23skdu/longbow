@@ -132,17 +132,10 @@ func TestDatasetSearchDataset_NoIndex(t *testing.T) {
 }
 
 func TestDatasetSearchDataset_WithHNSW(t *testing.T) {
-	ds := &Dataset{
-		Name:  "test",
-		Index: NewTestHNSWIndex(nil),
-	}
-	if ds != nil { // Check initial state
-		t.Error("new dataset: index dataset ref incorrect before assignment")
-	}
-	_ = ds
-	if ds != ds { // Check after assignment
-		t.Error("new dataset: index dataset ref incorrect after assignment")
-	}
+	ds := &Dataset{Name: "test"}
+	idx := NewTestHNSWIndex(ds)
+	ds.Index = idx
+	defer idx.Close()
 
 	// Empty index should return empty results
 	results, _ := ds.SearchDataset(context.Background(), []float32{1, 2, 3}, 10)

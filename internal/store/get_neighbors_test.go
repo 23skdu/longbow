@@ -65,6 +65,7 @@ func buildSmallDataset(t *testing.T, n, dim int) (*Dataset, *ArrowHNSW) {
 	cfg.InitialCapacity = n + 10
 
 	idx := NewArrowHNSW(ds, &cfg)
+	ds.Index = idx
 	t.Cleanup(func() { _ = idx.Close() })
 
 	rowIdxs := make([]int, n)

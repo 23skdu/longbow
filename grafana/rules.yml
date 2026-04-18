@@ -347,6 +347,66 @@ groups:
 
       - alert: LongbowVectorClockConflicts
         expr: rate(longbow_vector_clock_conflicts_total[1m]) > 10
+
+  - name: longbow_simd_alerts
+    rules:
+      - alert: LongbowSIMDDispatchSlow
+        expr: histogram_quantile(0.95, sum(rate(longbow_hnsw_simd_dispatch_latency_seconds_bucket[5m])) by (le)) > 0.01
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "SIMD dispatch latency high"
+          description: "SIMD kernel dispatch taking >10ms, may indicate dispatch overhead."
+
+      - alert: LongbowSIMDFallback
+        expr: rate(longbow_simd_fallback_total[5m]) > 10
+        for: 5m
+        labels:
+          severity: info
+        annotations:
+          summary: "High SIMD fallback rate"
+          description: "SIMD falling back to generic {{ $value }}/sec."
+
+  - name: longbow_graph_navigation_alerts
+    rules:
+      - alert: LongbowGraphNavigationSlow
+        expr: histogram_quantile(0.99, sum(rate(longbow_graph_navigation_latency_seconds_bucket[5m])) by (le)) > 5
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Graph navigation slow"
+          description: "Graph path finding P99 taking >5s."
+
+      - alert: LongbowGraphNavigationStalled
+        expr: longbow_graph_navigation_operations_total == 0
+        for: 10m
+        labels:
+          severity: info
+        annotations:
+          summary: "Graph navigation stalled"
+          description: "No graph navigation activity for 10 minutes."
+
+  - name: longbow_rdma_alerts
+    rules:
+      - alert: LongbowRDMACriticalErrors
+        expr: rate(longbow_rdma_errors_total[1m]) > 1
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "RDMA critical errors"
+          description: "RDMA errors occurring at {{ $value }}/sec."
+
+      - alert: LongbowRDMANoActivity
+        expr: longbow_rdma_bytes_processed_total == 0
+        for: 15m
+        labels:
+          severity: info
+        annotations:
+          summary: "RDMA no activity"
+          description: "RDMA enabled but no bytes processed for 15 minutes."
         for: 2m
         labels:
           severity: warning

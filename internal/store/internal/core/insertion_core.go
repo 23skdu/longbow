@@ -123,6 +123,7 @@ do_grow:
 						return fmt.Errorf("failed to grow during initial resize: %w", err)
 					}
 					h.dims.Store(int32(inputDims))
+					h.config.Dims = inputDims // Sync config for GetConfig() calls
 				}
 				h.initMu.Unlock()
 			}
@@ -279,6 +280,7 @@ do_grow:
 			if len(neighbors) > 0 {
 				ep = neighbors[0].ID
 			}
+			h.putCandidateSlice(neighbors)
 		}
 	}
 
@@ -348,6 +350,7 @@ do_grow:
 		if len(neighbors) > 0 {
 			ep = neighbors[0].ID
 		}
+		h.putCandidateSlice(candidates)
 	}
 
 	if level > maxL {

@@ -47,6 +47,9 @@ func (c ShardedHNSWConfig) Validate() error {
 	if c.EfConstruction <= 0 {
 		return fmt.Errorf("efConstruction must be > 0")
 	}
+	if c.EfConstruction > math.MaxInt32 {
+		return fmt.Errorf("efConstruction exceeds MaxInt32")
+	}
 	return nil
 }
 
@@ -178,10 +181,8 @@ func (s *ShardedHNSW) newShard(_ int) *hnswShard {
 	arrowConfig.M = s.config.M
 	arrowConfig.MMax = s.config.M * 3
 	arrowConfig.MMax0 = s.config.M * 2
-	if s.config.EfConstruction > math.MaxInt32 {
-		panic("efConstruction exceeds MaxInt32")
-	}
-	arrowConfig.EfConstruction = int32(s.config.EfConstruction) // #nosec G115
+	// ArrowHNSW uses int32 for performance and atomic safety
+	arrowConfig.EfConstruction = int32(s.config.EfConstruction)
 	arrowConfig.InitialCapacity = 1024                          // Start small, grow dynamically
 	arrowConfig.Metric = s.config.Metric
 	arrowConfig.PackedAdjacencyEnabled = s.config.PackedAdjacencyEnabled
@@ -194,10 +195,13 @@ func (s *ShardedHNSW) newShard(_ int) *hnswShard {
 	// We pass nil for ChunkedLocationStore because shards use local IDs and don't manage global locations
 	// The ShardedHNSW manages the global location store.
 	idx := NewArrowHNSW(s.dataset, &arrowConfig)
+	if idx == nil {
+		return nil
+	}
 	idx.SetDisableNodeCountMetric(true)
 
 	// Correct dimension initialization
-	idx.SetDimension(int(s.dimension))
+	_ = idx.SetDimension(int(s.dimension))
 
 	return newHnswShard(idx)
 }
@@ -777,10 +781,11 @@ func (s *ShardedHNSW) SetEfConstruction(ef int) {
 			case interface{ SetEfConstruction(int) }:
 				h.SetEfConstruction(ef)
 			case interface{ SetEfConstruction(int32) }:
-				if ef > math.MaxInt32 {
-					panic("ef exceeds MaxInt32")
+				val := ef
+				if val > math.MaxInt32 {
+					val = math.MaxInt32
 				}
-				h.SetEfConstruction(int32(ef)) // #nosec G115
+				h.SetEfConstruction(int32(val))
 			}
 		}
 	}

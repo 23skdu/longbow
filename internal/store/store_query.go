@@ -1179,10 +1179,10 @@ func (s *VectorStore) executeInternalTicket(ctx context.Context, query *qry.Tick
 	}
 
 	// Table scan fallback for metadata-only internal queries
-	return s.executeInternalTable(ctx, query)
+	return s.executeInternalTable(query)
 }
 
-func (s *VectorStore) executeInternalTable(ctx context.Context, query *qry.TicketQuery) ([]lbtypes.SearchResult, error) {
+func (s *VectorStore) executeInternalTable(query *qry.TicketQuery) ([]lbtypes.SearchResult, error) {
 	ds, ok := s.getDataset(query.Name)
 	if !ok {
 		return nil, fmt.Errorf("dataset %s not found", query.Name)
@@ -1206,7 +1206,7 @@ func (s *VectorStore) executeInternalTable(ctx context.Context, query *qry.Ticke
 		var eval *qry.FilterEvaluator
 		if len(query.Filters) > 0 {
 			var err error
-			eval, err = s.evaluateFilters(ctx, ds, i, query.Filters)
+			eval, err = s.evaluateFilters(ds, i, query.Filters)
 			if err != nil {
 				return nil, err
 			}
@@ -1269,7 +1269,7 @@ func (s *VectorStore) executeInternalTable(ctx context.Context, query *qry.Ticke
 	return results, nil
 }
 
-func (s *VectorStore) evaluateFilters(ctx context.Context, ds *Dataset, batchIdx int, filters []core.Filter) (*qry.FilterEvaluator, error) {
+func (s *VectorStore) evaluateFilters(ds *Dataset, batchIdx int, filters []core.Filter) (*qry.FilterEvaluator, error) {
 	rec := ds.Records[batchIdx]
 	eval, err := qry.NewFilterEvaluator(rec, filters)
 	if err != nil {

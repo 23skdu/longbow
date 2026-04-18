@@ -1,6 +1,7 @@
 package store
 
 import (
+	"fmt"
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/simd"
 )
@@ -8,14 +9,14 @@ import (
 // BatchDistanceCompute computes distances for multiple query-candidate pairs.
 // This enables better cache utilization and SIMD batching optimizations.
 // Uses Prometheus metrics to track performance characteristics.
-func BatchDistanceCompute(queries, candidates [][]float32, results []float32) {
+func BatchDistanceCompute(queries, candidates [][]float32, results []float32) error {
 	if len(queries) != len(candidates) || len(queries) != len(results) {
-		panic("hnsw2: batch distance length mismatch")
+		return fmt.Errorf("hnsw2: batch distance length mismatch: queries=%d, candidates=%d, results=%d", len(queries), len(candidates), len(results))
 	}
 
 	n := len(queries)
 	if n == 0 {
-		return
+		return nil
 	}
 
 	metrics.BatchDistanceComputeTotal.Inc()
@@ -34,11 +35,12 @@ func BatchDistanceCompute(queries, candidates [][]float32, results []float32) {
 			d, _ := simd.EuclideanDistance(queries[i], candidates[i])
 			results[i] = d
 		}
-		return
+		return nil
 	}
 
 	metrics.BatchDistanceComputeFallbackTotal.Inc()
 	for i := range queries {
 		results[i] = distanceSIMD(queries[i], candidates[i])
 	}
+	return nil
 }

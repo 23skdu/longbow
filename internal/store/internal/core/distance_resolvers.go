@@ -65,31 +65,5 @@ func (h *ArrowHNSW) resolveDistanceFuncC64() func(a, b []complex64) (float32, er
 
 
 
-// resolveDistanceFuncC128 returns the Complex128 distance function.
-func (h *ArrowHNSW) resolveDistanceFuncC128() func(a, b []complex128) (float32, error) {
-	return simd.EuclideanDistanceComplex128
-}
 
-
-
-// resolveBatchDistanceFunc returns the batch distance function.
-func (h *ArrowHNSW) resolveBatchDistanceFunc() func(query []float32, vectors [][]float32, results []float32) error {
-	switch h.config.Metric {
-	case basecore.MetricCosine:
-		return simd.CosineDistanceBatch
-	case basecore.MetricDotProduct:
-		return func(query []float32, vectors [][]float32, results []float32) error {
-			err := simd.DotProductBatch(query, vectors, results)
-			if err != nil {
-				return err
-			}
-			for i := range results {
-				results[i] = -results[i]
-			}
-			return nil
-		}
-	default:
-		return simd.EuclideanDistanceBatch
-	}
-}
 

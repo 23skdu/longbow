@@ -460,7 +460,7 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 		// ... (Same logic as before) ...
 
 		// Outputs
-		graphCandidates := make([][]types.Candidate, n) // Only for activeIndices
+		graphCandidates := make([]*[]types.Candidate, n)
 
 		gLayer, _ := errgroup.WithContext(ctx)
 		gLayer.SetLimit(runtime.GOMAXPROCS(0))
@@ -512,9 +512,13 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 						}
 						// Store candidates (make copy as ctx is reused)
 						// searchLayerForInsert returns slice from ctx.scratchResults
-						cp := make([]types.Candidate, len(res), len(res)+16) // Pre-alloc extra cap for intra-batch
-						copy(cp, res)
-						graphCandidates[idx] = cp
+						// Store candidates (using pool to avoid per-node allocation)
+						pBuf := h.candidatePool.Get().(*[]types.Candidate)
+						*pBuf = (*pBuf)[:0]
+						for _, r := range res {
+							*pBuf = append(*pBuf, r)
+						}
+						graphCandidates[idx] = pBuf
 
 						// Update ep for next layer
 						if len(res) > 0 {
@@ -700,14 +704,20 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 								// Use a max-heap to keep only the top efConstruction candidates.
 								// [0] is the max distance in the heap.
 								efC := int(h.efConstruction.Load())
-								if len(graphCandidates[qIdx]) < efC {
-									graphCandidates[qIdx] = append(graphCandidates[qIdx], types.Candidate{ID: otherID, Dist: dist})
-									if len(graphCandidates[qIdx]) == efC {
-										heap.Init((*CandidateHeap)(&graphCandidates[qIdx]))
+								buf := graphCandidates[qIdx]
+								if buf == nil {
+									continue
+								}
+								cands := *buf
+								if len(cands) < efC {
+									cands = append(cands, types.Candidate{ID: otherID, Dist: dist})
+									*buf = cands
+									if len(cands) == efC {
+										heap.Init((*CandidateHeap)(buf))
 									}
-								} else if dist < graphCandidates[qIdx][0].Dist {
-									graphCandidates[qIdx][0] = types.Candidate{ID: otherID, Dist: dist}
-									heap.Fix((*CandidateHeap)(&graphCandidates[qIdx]), 0)
+								} else if dist < cands[0].Dist {
+									cands[0] = types.Candidate{ID: otherID, Dist: dist}
+									heap.Fix((*CandidateHeap)(buf), 0)
 								}
 							}
 						}
@@ -846,7 +856,12 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 						continue
 					}
 
-					candidates := graphCandidates[idx]
+
+					candidatesBuf := graphCandidates[idx]
+					if candidatesBuf == nil {
+						continue
+					}
+					candidates := *candidatesBuf
 
 					// Determine M
 					m := h.m
@@ -903,6 +918,14 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 		// Wait for consumers
 		if err := gRev.Wait(); err != nil {
 			return err
+		}
+
+		// Return pooled candidate buffers
+		for _, idx := range activeIndices {
+			if graphCandidates[idx] != nil {
+				h.candidatePool.Put(graphCandidates[idx])
+				graphCandidates[idx] = nil
+			}
 		}
 
 		// End of Layer Loop

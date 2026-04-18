@@ -8,6 +8,7 @@ import (
 
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/RoaringBitmap/roaring/v2"
+	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
 // CandidateHeap implements a max-heap of Candidates for search results
@@ -164,6 +165,12 @@ type ArrowSearchContext struct {
 	// Cached rotated query for TurboQuant search (avoid recomputing per distance call)
 	rotatedQueryTQ []float32
 
+	// Pre-converted query buffers for cross-type search
+	queryF64  []float64
+	queryF16  []float16.Num
+	queryC64  []complex64
+	queryC128 []complex128
+
 	// Distance calculation buffers
 	dists     []float32
 	distsTemp []float32
@@ -181,6 +188,9 @@ type ArrowSearchContext struct {
 
 	scratchDists []float32
 
+	vectorCache map[uint32]any
+	vectorBuf   []float32
+
 	pruneDepth int
 
 	// BQ (Binary Quantization) search mode
@@ -188,6 +198,9 @@ type ArrowSearchContext struct {
 
 	// Filter bitmap for early filtering during search
 	filterBitmap *roaring.Bitmap
+
+	// Cached DiskGraph reference for the duration of the search
+	diskGraph *DiskGraph
 
 	// Reset tracking
 	dirty bool
@@ -223,6 +236,8 @@ func NewArrowSearchContext() *ArrowSearchContext {
 		queryBQ:          make([]uint64, 0, 256),
 		querySQ8:         make([]uint8, 0, 1536),
 		queryTQ:          make([]byte, 0, 512),
+		vectorCache:      make(map[uint32]any, 100),
+		vectorBuf:        make([]float32, 0, 384),
 		dirty:            false,
 		operations:       0,
 	}
@@ -291,11 +306,18 @@ func (ctx *ArrowSearchContext) Reset() {
 	ctx.querySQ8 = ctx.querySQ8[:0]
 	ctx.queryTQ = ctx.queryTQ[:0]
 	ctx.rotatedQueryTQ = ctx.rotatedQueryTQ[:0]
+	ctx.queryF64 = ctx.queryF64[:0]
+	ctx.queryF16 = ctx.queryF16[:0]
+	ctx.queryC64 = ctx.queryC64[:0]
+	ctx.queryC128 = ctx.queryC128[:0]
+	ctx.vectorBuf = ctx.vectorBuf[:0]
+	clear(ctx.vectorCache)
 	ctx.dirty = false
 	ctx.operations = 0
 	ctx.distComputeTime = 0
 	ctx.distComputeCount = 0
 	ctx.nodesVisitedCount = 0
+	ctx.diskGraph = nil
 
 	// Clear temp buffer without reallocating
 	for i := range ctx.distsTemp {

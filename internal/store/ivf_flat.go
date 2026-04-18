@@ -9,6 +9,7 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"path/filepath"
 	"sort"
 	"sync"
 
@@ -228,7 +229,8 @@ func (ivf *IVFFlatIndex) Save(path string) error {
 	ivf.mu.RLock()
 	defer ivf.mu.RUnlock()
 
-	f, err := os.Create(path)
+	path = filepath.Clean(path)
+	f, err := os.Create(path) // #nosec G304
 	if err != nil {
 		return fmt.Errorf("failed to create file: %w", err)
 	}
@@ -323,7 +325,8 @@ func (ivf *IVFFlatIndex) Save(path string) error {
 }
 
 func (ivf *IVFFlatIndex) Load(path string) error {
-	f, err := os.Open(path)
+	path = filepath.Clean(path)
+	f, err := os.Open(path) // #nosec G304
 	if err != nil {
 		return fmt.Errorf("failed to open file: %w", err)
 	}

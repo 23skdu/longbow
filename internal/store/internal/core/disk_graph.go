@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"path/filepath"
 	"sort"
 	"unsafe"
 
@@ -63,7 +64,8 @@ type DiskGraphHeader struct {
 
 // NewDiskGraph opens a graph file and maps it into memory.
 func NewDiskGraph(path string) (*DiskGraph, error) {
-	f, err := os.Open(path)
+	path = filepath.Clean(path)
+	f, err := os.Open(path) // #nosec G304
 	if err != nil {
 		return nil, err
 	}
@@ -160,13 +162,13 @@ func (dg *DiskGraph) parse() error {
 
 		// Create slice view
 		// Unsafe but standard for mmap views
-		ptr := unsafe.Pointer(&dg.data[l0Off])
+		ptr := unsafe.Pointer(&dg.data[l0Off]) // #nosec G103
 		// Construct the slice header
 		// Go 1.17+ unsafe.Slice is available but we might be on older? Assuming 1.20+
 		// dg.l0Offsets = unsafe.Slice((*uint64)(ptr), int(dg.header.NumNodes))
 		// Use manual header construction for compatibility if unsure, but unsafe.Slice is cleaner.
 		// Let's use manual for broad compat or verify Go version. Assuming modern Go.
-		dg.l0Offsets = unsafe.Slice((*uint64)(ptr), int(dg.header.NumNodes))
+		dg.l0Offsets = unsafe.Slice((*uint64)(ptr), int(dg.header.NumNodes)) // #nosec G103
 	}
 
 	// Parse Upper Layers
@@ -194,12 +196,12 @@ func (dg *DiskGraph) parse() error {
 			return fmt.Errorf("truncated sparse index bucket %d", i)
 		}
 
-		nodeIDsPtr := unsafe.Pointer(&dg.data[nodeIDsStart])
-		offsetsPtr := unsafe.Pointer(&dg.data[offsetsStart])
+		nodeIDsPtr := unsafe.Pointer(&dg.data[nodeIDsStart]) // #nosec G103
+		offsetsPtr := unsafe.Pointer(&dg.data[offsetsStart]) // #nosec G103
 
 		dg.upperLayers[i] = SparseLayerIndex{
-			NodeIDs: unsafe.Slice((*uint32)(nodeIDsPtr), int(count)),
-			Offsets: unsafe.Slice((*uint64)(offsetsPtr), int(count)),
+			NodeIDs: unsafe.Slice((*uint32)(nodeIDsPtr), int(count)), // #nosec G103
+			Offsets: unsafe.Slice((*uint64)(offsetsPtr), int(count)), // #nosec G103
 		}
 	}
 
@@ -312,7 +314,7 @@ func (dg *DiskGraph) GetNeighbors(layer int, nodeID uint32, buf []uint32) []uint
 			res = make([]uint32, count)
 		}
 
-		src := unsafe.Slice((*uint32)(unsafe.Pointer(&dg.data[start])), int(count))
+		src := unsafe.Slice((*uint32)(unsafe.Pointer(&dg.data[start])), int(count)) // #nosec G103
 		copy(res, src)
 		return res
 	}

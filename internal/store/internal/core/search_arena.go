@@ -86,8 +86,8 @@ func (a *SearchArena) AllocFloat32Slice(count int) []float32 {
 	a.offset = alignedOffset + bytesNeeded
 
 	// Convert byte slice to float32 slice using unsafe
-	ptr := unsafe.Pointer(&a.buf[alignedOffset])
-	return unsafe.Slice((*float32)(ptr), count)
+	ptr := unsafe.Pointer(&a.buf[alignedOffset]) // #nosec G103
+	return unsafe.Slice((*float32)(ptr), count)  // #nosec G103
 }
 
 // AllocVectorIDSlice allocates a slice of types.VectorID values from the arena.
@@ -114,8 +114,8 @@ func (a *SearchArena) AllocVectorIDSlice(count int) []types.VectorID {
 	a.offset = alignedOffset + bytesNeeded
 
 	// Convert byte slice to types.VectorID slice using unsafe
-	ptr := unsafe.Pointer(&a.buf[alignedOffset])
-	return unsafe.Slice((*types.VectorID)(ptr), count)
+	ptr := unsafe.Pointer(&a.buf[alignedOffset]) // #nosec G103
+	return unsafe.Slice((*types.VectorID)(ptr), count) // #nosec G103
 }
 
 // DefaultArenaSize is the default capacity for pooled arenas (64KB)

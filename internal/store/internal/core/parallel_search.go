@@ -163,7 +163,7 @@ func processChunkInternal(ctx context.Context, h ParallelSearchHost, query []flo
 
 	// Prefetch first batch of candidates
 	for i := 0; i < prefetchCount && i < len(candidates); i++ {
-		simd.Prefetch(unsafe.Pointer(&candidates[i]))
+		simd.Prefetch(unsafe.Pointer(&candidates[i])) // #nosec G103
 		prefetchOps++
 	}
 
@@ -171,7 +171,7 @@ func processChunkInternal(ctx context.Context, h ParallelSearchHost, query []flo
 		// Software prefetch next candidate
 		nextIdx := i + prefetchCount
 		if nextIdx < len(candidates) {
-			simd.Prefetch(unsafe.Pointer(&candidates[nextIdx]))
+			simd.Prefetch(unsafe.Pointer(&candidates[nextIdx])) // #nosec G103
 			prefetchOps++
 		}
 
@@ -319,7 +319,7 @@ func processChunkInternal(ctx context.Context, h ParallelSearchHost, query []flo
 		offset := i * dims
 		copy(flatBuffer[offset:offset+dims], t.vec)
 		if i+4 < numTasks {
-			simd.Prefetch(unsafe.Pointer(&flatBuffer[(i+4)*dims]))
+			simd.Prefetch(unsafe.Pointer(&flatBuffer[(i+4)*dims])) // #nosec G103
 		}
 	}
 

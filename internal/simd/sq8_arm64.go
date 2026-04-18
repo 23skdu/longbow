@@ -23,5 +23,5 @@ func euclideanSQ8NEON(a, b []byte) (int32, error) {
 	if len(a) == 0 {
 		return 0, nil
 	}
-	return euclideanSQ8NEONKernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a)), nil
+	return euclideanSQ8NEONKernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a)), nil // #nosec G103
 }

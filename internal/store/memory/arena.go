@@ -59,7 +59,7 @@ func AllocStruct[T any](a *SlabAllocator) *T {
 	var zero T
 	size := int(unsafe.Sizeof(zero))
 	bytes := a.Alloc(size)
-	return (*T)(unsafe.Pointer(&bytes[0]))
+	return (*T)(unsafe.Pointer(&bytes[0])) // #nosec G103
 }
 
 // Reset frees all allocated memory by dropping references to slabs.

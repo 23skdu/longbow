@@ -81,7 +81,7 @@ func runMmapBenchmark(dir string, sizeMB int, blockSize int, workers int, durati
 	fileSize := prepFile(dir, sizeMB, blockSize)
 	defer os.Remove(filename)
 
-	f, err := os.Open(filename)
+	f, err := os.Open(filepath.Clean(filename))
 	if err != nil {
 		panic(err)
 	}
@@ -194,7 +194,7 @@ func runWriteBenchmark(dir string, sizeMB int, blockSize int, workers int, durat
 		go func(id int) {
 			defer wg.Done()
 			filename := filepath.Join(dir, fmt.Sprintf("bench_write_%d.dat", id))
-			f, err := os.Create(filename)
+			f, err := os.Create(filepath.Clean(filename))
 			if err != nil {
 				fmt.Printf("Worker %d error creating file: %v\n", id, err)
 				return
@@ -253,7 +253,7 @@ func runReadBenchmark(dir string, sizeMB int, blockSize int, workers int, durati
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
-			f, err := os.Open(filename)
+			f, err := os.Open(filepath.Clean(filename))
 			if err != nil {
 				fmt.Printf("Worker %d error opening file: %v\n", id, err)
 				return
@@ -301,7 +301,7 @@ func prepFile(dir string, sizeMB int, blockSize int) int64 {
 	}
 
 	fmt.Printf("Preparing %dMB read file...\n", sizeMB)
-	f, err := os.Create(filename)
+	f, err := os.Create(filepath.Clean(filename))
 	if err != nil {
 		panic(err)
 	}

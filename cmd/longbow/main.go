@@ -482,10 +482,10 @@ func run() error {
 		mux.HandleFunc("/ready", func(w http.ResponseWriter, r *http.Request) {
 			if globalIsReady.Load() {
 				w.WriteHeader(http.StatusOK)
-				w.Write([]byte("OK"))
+				_, _ = w.Write([]byte("OK"))
 			} else {
 				w.WriteHeader(http.StatusServiceUnavailable)
-				w.Write([]byte("Not Ready"))
+				_, _ = w.Write([]byte("Not Ready"))
 			}
 		})
 

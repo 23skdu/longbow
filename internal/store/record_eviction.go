@@ -98,7 +98,7 @@ func evictionRecordKey(rec arrow.RecordBatch) uintptr { //nolint:staticcheck
 		typ  uintptr
 		data uintptr
 	}
-	return (*iface)(unsafe.Pointer(&rec)).data
+	return (*iface)(unsafe.Pointer(&rec)).data // #nosec G103
 }
 
 // Register adds a record to the eviction manager with optional TTL

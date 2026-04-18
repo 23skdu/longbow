@@ -158,8 +158,8 @@ func EuclideanDistanceComplex64(a, b []complex64) (float32, error) {
 		return 0, nil
 	}
 	// Unsafe cast to []float32
-	vfA := unsafe.Slice((*float32)(unsafe.Pointer(&a[0])), len(a)*2)
-	vfB := unsafe.Slice((*float32)(unsafe.Pointer(&b[0])), len(b)*2)
+	vfA := unsafe.Slice((*float32)(unsafe.Pointer(&a[0])), len(a)*2) // #nosec G103
+	vfB := unsafe.Slice((*float32)(unsafe.Pointer(&b[0])), len(b)*2) // #nosec G103
 
 	return EuclideanDistance(vfA, vfB)
 }
@@ -180,8 +180,8 @@ func EuclideanDistanceComplex128(a, b []complex128) (float32, error) {
 	// exactly what 2N float64 euclidean distance calculates.
 
 	// Unsafe cast to []float64
-	vfA := unsafe.Slice((*float64)(unsafe.Pointer(&a[0])), len(a)*2)
-	vfB := unsafe.Slice((*float64)(unsafe.Pointer(&b[0])), len(b)*2)
+	vfA := unsafe.Slice((*float64)(unsafe.Pointer(&a[0])), len(a)*2) // #nosec G103
+	vfB := unsafe.Slice((*float64)(unsafe.Pointer(&b[0])), len(b)*2) // #nosec G103
 
 	return EuclideanDistanceFloat64(vfA, vfB)
 }
@@ -211,8 +211,8 @@ func DotProductComplex64(a, b []complex64) (float32, error) {
 	}
 	// Complex64 at 384 dims = float32 at 768, use blocked
 	if len(a) >= 384 {
-		vfA := unsafe.Slice((*float32)(unsafe.Pointer(&a[0])), len(a)*2)
-		vfB := unsafe.Slice((*float32)(unsafe.Pointer(&b[0])), len(b)*2)
+		vfA := unsafe.Slice((*float32)(unsafe.Pointer(&a[0])), len(a)*2) // #nosec G103
+		vfB := unsafe.Slice((*float32)(unsafe.Pointer(&b[0])), len(b)*2) // #nosec G103
 		return DotProductFloat32Blocked(vfA, vfB)
 	}
 	return dotComplex64Unrolled(a, b)
@@ -228,8 +228,8 @@ func DotProductComplex128(a, b []complex128) (float32, error) {
 	}
 	// Complex128 at 384 dims = float64 at 768, use blocked
 	if len(a) >= 384 {
-		vfA := unsafe.Slice((*float64)(unsafe.Pointer(&a[0])), len(a)*2)
-		vfB := unsafe.Slice((*float64)(unsafe.Pointer(&b[0])), len(b)*2)
+		vfA := unsafe.Slice((*float64)(unsafe.Pointer(&a[0])), len(a)*2) // #nosec G103
+		vfB := unsafe.Slice((*float64)(unsafe.Pointer(&b[0])), len(b)*2) // #nosec G103
 		return DotProductFloat64Blocked(vfA, vfB)
 	}
 	return dotComplex128Unrolled(a, b)

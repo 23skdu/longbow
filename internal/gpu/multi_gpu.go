@@ -134,14 +134,14 @@ func (m *MultiGPUManager) initializeDevice(deviceID int) (*GPUDevice, error) {
 
 	memPool, err := memory.NewGPUMemPool(types.BackendCUDA, deviceID)
 	if err != nil {
-		idx.Close()
+		_ = idx.Close()
 		return nil, fmt.Errorf("failed to create memory pool for device %d: %w", deviceID, err)
 	}
 
 	info, err := idx.GetDeviceInfo()
 	if err != nil {
-		memPool.Close()
-		idx.Close()
+		_ = memPool.Close()
+		_ = idx.Close()
 		return nil, fmt.Errorf("failed to get device info for device %d: %w", deviceID, err)
 	}
 

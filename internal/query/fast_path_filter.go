@@ -281,7 +281,7 @@ func fastPathInt64(arr *array.Int64, val int64, equal bool, builder *array.Boole
 	if useAVX512 {
 		metrics.HNSWFilterVectorizedOpsTotal.WithLabelValues("avx512").Inc()
 		results := make([]int64, n)
-		fastPathInt64EqualAVX512Kernel(unsafe.Pointer(&values[0]), n, val, unsafe.Pointer(&results[0]))
+		fastPathInt64EqualAVX512Kernel(unsafe.Pointer(&values[0]), n, val, unsafe.Pointer(&results[0])) // #nosec G103
 		for i := 0; i < n; i++ {
 			if arr.IsNull(i) {
 				builder.Append(false)
@@ -295,7 +295,7 @@ func fastPathInt64(arr *array.Int64, val int64, equal bool, builder *array.Boole
 	if useAVX2 {
 		metrics.HNSWFilterVectorizedOpsTotal.WithLabelValues("avx2").Inc()
 		results := make([]int64, n)
-		fastPathInt64EqualAVX2Kernel(unsafe.Pointer(&values[0]), n, val, unsafe.Pointer(&results[0]))
+		fastPathInt64EqualAVX2Kernel(unsafe.Pointer(&values[0]), n, val, unsafe.Pointer(&results[0])) // #nosec G103
 		for i := 0; i < n; i++ {
 			if arr.IsNull(i) {
 				builder.Append(false)
@@ -341,7 +341,7 @@ func fastPathInt32(arr *array.Int32, val int32, equal bool, builder *array.Boole
 	if useAVX512 {
 		metrics.HNSWFilterVectorizedOpsTotal.WithLabelValues("avx512").Inc()
 		results := make([]int32, n)
-		fastPathInt32EqualAVX512Kernel(unsafe.Pointer(&values[0]), n, val, unsafe.Pointer(&results[0]))
+		fastPathInt32EqualAVX512Kernel(unsafe.Pointer(&values[0]), n, val, unsafe.Pointer(&results[0])) // #nosec G103
 		for i := 0; i < n; i++ {
 			if arr.IsNull(i) {
 				builder.Append(false)
@@ -357,7 +357,7 @@ func fastPathInt32(arr *array.Int32, val int32, equal bool, builder *array.Boole
 		// SIMD Fast Path
 		results := make([]int32, n)
 
-		fastPathInt32EqualAVX2Kernel(unsafe.Pointer(&values[0]), n, val, unsafe.Pointer(&results[0]))
+		fastPathInt32EqualAVX2Kernel(unsafe.Pointer(&values[0]), n, val, unsafe.Pointer(&results[0])) // #nosec G103
 		for i := 0; i < n; i++ {
 			if arr.IsNull(i) {
 				builder.Append(false)
@@ -451,7 +451,7 @@ func fastPathFloat64(arr *array.Float64, val float64, equal bool, builder *array
 	if useAVX512 {
 		metrics.HNSWFilterVectorizedOpsTotal.WithLabelValues("avx512").Inc()
 		results := make([]float64, n)
-		fastPathFloat64EqualAVX512Kernel(unsafe.Pointer(&values[0]), n, val, unsafe.Pointer(&results[0]))
+		fastPathFloat64EqualAVX512Kernel(unsafe.Pointer(&values[0]), n, val, unsafe.Pointer(&results[0])) // #nosec G103
 		for i := 0; i < n; i++ {
 			if arr.IsNull(i) {
 				builder.Append(false)
@@ -465,7 +465,7 @@ func fastPathFloat64(arr *array.Float64, val float64, equal bool, builder *array
 	if useAVX2 {
 		metrics.HNSWFilterVectorizedOpsTotal.WithLabelValues("avx2").Inc()
 		results := make([]float64, n)
-		fastPathFloat64EqualAVX2Kernel(unsafe.Pointer(&values[0]), n, val, unsafe.Pointer(&results[0]))
+		fastPathFloat64EqualAVX2Kernel(unsafe.Pointer(&values[0]), n, val, unsafe.Pointer(&results[0])) // #nosec G103
 		for i := 0; i < n; i++ {
 			if arr.IsNull(i) {
 				builder.Append(false)
@@ -511,7 +511,7 @@ func fastPathFloat32(arr *array.Float32, val float32, equal bool, builder *array
 	if useAVX512 {
 		metrics.HNSWFilterVectorizedOpsTotal.WithLabelValues("avx512").Inc()
 		results := make([]float32, n)
-		fastPathFloat32EqualAVX512Kernel(unsafe.Pointer(&values[0]), n, val, unsafe.Pointer(&results[0]))
+		fastPathFloat32EqualAVX512Kernel(unsafe.Pointer(&values[0]), n, val, unsafe.Pointer(&results[0])) // #nosec G103
 		for i := 0; i < n; i++ {
 			if arr.IsNull(i) {
 				builder.Append(false)
@@ -528,7 +528,7 @@ func fastPathFloat32(arr *array.Float32, val float32, equal bool, builder *array
 		// SIMD Fast Path
 		results := make([]float32, n)
 
-		fastPathFloat32EqualAVX2Kernel(unsafe.Pointer(&values[0]), n, val, unsafe.Pointer(&results[0]))
+		fastPathFloat32EqualAVX2Kernel(unsafe.Pointer(&values[0]), n, val, unsafe.Pointer(&results[0])) // #nosec G103
 		for i := 0; i < n; i++ {
 			if arr.IsNull(i) {
 				builder.Append(false)
@@ -671,7 +671,7 @@ func fastPathBool(arr *array.Boolean, val, equal bool, builder *array.BooleanBui
 
 		nBytes := (n + 7) / 8
 		results := make([]byte, nBytes)
-		fastPathBoolAVX2Kernel(unsafe.Pointer(&data[0]), nBytes, negate, unsafe.Pointer(&results[0]))
+		fastPathBoolAVX2Kernel(unsafe.Pointer(&data[0]), nBytes, negate, unsafe.Pointer(&results[0])) // #nosec G103
 		
 		// Fill the builder from the transformed bitmap
 		for i := 0; i < n; i++ {
@@ -725,16 +725,16 @@ func fastPathString(arr *array.String, val string, equal bool, builder *array.Bo
 		
 		var targetPtr unsafe.Pointer
 		if len(val) > 0 {
-			targetPtr = unsafe.Pointer(unsafe.StringData(val))
+			targetPtr = unsafe.Pointer(unsafe.StringData(val)) // #nosec G103
 		}
 
 		fastPathStringEqualAVX2Kernel(
-			unsafe.Pointer(&offsets[0]),
-			unsafe.Pointer(&data[0]),
+			unsafe.Pointer(&offsets[0]), // #nosec G103
+			unsafe.Pointer(&data[0]),    // #nosec G103
 			n,
 			targetPtr,
 			len(val),
-			unsafe.Pointer(&results[0]),
+			unsafe.Pointer(&results[0]), // #nosec G103
 		)
 
 		for i := 0; i < n; i++ {

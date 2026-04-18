@@ -18,7 +18,7 @@ func ReleaseSlab(b []byte) error {
 	}
 
 	// Get the underlying memory address
-	ptr := unsafe.Pointer(&b[0])
+	ptr := unsafe.Pointer(&b[0]) // #nosec G103
 	length := uintptr(cap(b))
 
 	// Call madvise with MADV_DONTNEED

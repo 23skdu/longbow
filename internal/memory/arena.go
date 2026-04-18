@@ -65,7 +65,6 @@ type SlabArena struct {
 	slabCap uint32                  // capacity in BYTES
 }
 
-// Stats returns the total capacity and used bytes in the arena.
 func (a *SlabArena) Stats() ArenaStats {
 	slabsPtr := a.slabs.Load()
 	if slabsPtr == nil {
@@ -76,7 +75,6 @@ func (a *SlabArena) Stats() ArenaStats {
 		TotalCapacity: int64(len(slabs)) * int64(a.slabCap),
 	}
 	// Note: We need to sum up used portions. This is a bit slow but okay for tuning.
-	// For production, we might want to track this atomically.
 	for _, s := range slabs {
 		stats.UsedBytes += int64(s.offset)
 	}
@@ -360,5 +358,5 @@ func (a *SlabArena) GetPointer(offset uint64) unsafe.Pointer {
 		return nil
 	}
 	s := slabs[slabIdx]
-	return unsafe.Pointer(&s.data[localOffset])
+	return unsafe.Pointer(&s.data[localOffset]) // #nosec G103
 }

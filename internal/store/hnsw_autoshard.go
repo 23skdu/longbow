@@ -89,7 +89,7 @@ func (a *AutoShardingIndex) SetInitialDimension(dim int) {
 	defer a.mu.Unlock()
 
 	if h, ok := a.current.(*ArrowHNSW); ok {
-		h.SetDimension(int(dim))
+		_ = h.SetDimension(int(dim))
 	}
 }
 

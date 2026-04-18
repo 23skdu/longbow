@@ -18,5 +18,5 @@ func hammingNEON(a, b []uint64) int {
 	if len(a) == 0 {
 		return 0
 	}
-	return hammingNEONKernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a))
+	return hammingNEONKernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a)) // #nosec G103
 }

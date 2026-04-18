@@ -8,6 +8,7 @@ import (
 
 	"github.com/rs/zerolog"
 	"golang.org/x/sys/unix"
+	"path/filepath"
 )
 
 type MmapVectorStorage struct {
@@ -40,8 +41,8 @@ func NewMmapVectorStorage(name string, opts MmapOptions) (*MmapVectorStorage, er
 	}
 
 	flags |= os.O_CREATE
-
-	f, err := os.OpenFile(name, flags, 0600)
+	name = filepath.Clean(name)
+	f, err := os.OpenFile(name, flags, 0600) // #nosec G304
 	if err != nil {
 		return nil, fmt.Errorf("failed to open file: %w", err)
 	}
@@ -63,7 +64,7 @@ func NewMmapVectorStorage(name string, opts MmapOptions) (*MmapVectorStorage, er
 		}
 	}
 
-	mmap, err := unix.Mmap(int(f.Fd()), 0, int(size), unix.PROT_READ|unix.PROT_WRITE, unix.MAP_SHARED)
+	mmap, err := unix.Mmap(int(f.Fd()), 0, int(size), unix.PROT_READ|unix.PROT_WRITE, unix.MAP_SHARED) // #nosec G115
 	if err != nil {
 		_ = f.Close() // nosec G104
 		return nil, fmt.Errorf("mmap failed: %w", err)
@@ -79,7 +80,7 @@ func NewMmapVectorStorage(name string, opts MmapOptions) (*MmapVectorStorage, er
 	}
 
 	if opts.Dimension > 0 {
-		mvs.count = int(size) / (opts.Dimension * 4)
+		mvs.count = int(size) / (opts.Dimension * 4) // #nosec G115
 	}
 
 	return mvs, nil
@@ -100,7 +101,7 @@ func (m *MmapVectorStorage) WriteVector(id int, vector []float32) error {
 
 	dst := m.data[offset:]
 	for i, v := range vector {
-		*(*float32)(unsafe.Pointer(&dst[i*4])) = v
+		*(*float32)(unsafe.Pointer(&dst[i*4])) = v // #nosec G103
 	}
 
 	m.mu.Lock()
@@ -122,7 +123,7 @@ func (m *MmapVectorStorage) ReadVector(id int) ([]float32, error) {
 	src := m.data[offset : offset+m.dimension*4]
 
 	for i := 0; i < m.dimension; i++ {
-		vector[i] = *(*float32)(unsafe.Pointer(&src[i*4]))
+		vector[i] = *(*float32)(unsafe.Pointer(&src[i*4])) // #nosec G103
 	}
 
 	return vector, nil
@@ -136,7 +137,7 @@ func (m *MmapVectorStorage) ReadVectorInto(id int, vector []float32) error {
 
 	src := m.data[offset : offset+m.dimension*4]
 	for i := 0; i < m.dimension && i < len(vector); i++ {
-		vector[i] = *(*float32)(unsafe.Pointer(&src[i*4]))
+		vector[i] = *(*float32)(unsafe.Pointer(&src[i*4])) // #nosec G103
 	}
 
 	return nil
@@ -162,7 +163,7 @@ func (m *MmapVectorStorage) grow(newSize int64) error {
 		return fmt.Errorf("truncate failed: %w", err)
 	}
 
-	mmap, err := unix.Mmap(int(m.file.Fd()), 0, int(newSize), unix.PROT_READ|unix.PROT_WRITE, unix.MAP_SHARED)
+	mmap, err := unix.Mmap(int(m.file.Fd()), 0, int(newSize), unix.PROT_READ|unix.PROT_WRITE, unix.MAP_SHARED) // #nosec G115
 	if err != nil {
 		return fmt.Errorf("mmap failed: %w", err)
 	}

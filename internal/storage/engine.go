@@ -245,7 +245,7 @@ func (e *StorageEngine) writeSnapshotItem(item *SnapshotItem, tempDir string) er
 	// Write Data Records
 	if len(item.Records) > 0 {
 		path := filepath.Join(tempDir, item.Name+".parquet")
-		f, err := os.Create(path)
+		f, err := os.Create(filepath.Clean(path))
 		if err != nil {
 			return fmt.Errorf("failed to create record parquet: %w", err)
 		}
@@ -273,7 +273,7 @@ func (e *StorageEngine) writeSnapshotItem(item *SnapshotItem, tempDir string) er
 	// Write Graph Records
 	if len(item.GraphRecords) > 0 {
 		path := filepath.Join(tempDir, item.Name+".graph.parquet")
-		f, err := os.Create(path)
+		f, err := os.Create(filepath.Clean(path))
 		if err != nil {
 			return fmt.Errorf("failed to create graph parquet: %w", err)
 		}
@@ -300,7 +300,7 @@ func (e *StorageEngine) writeSnapshotItem(item *SnapshotItem, tempDir string) er
 	// Write PQ
 	if len(item.PQCodebook) > 0 {
 		path := filepath.Join(tempDir, item.Name+".pq")
-		if err := os.WriteFile(path, item.PQCodebook, 0600); err != nil {
+		if err := os.WriteFile(filepath.Clean(path), item.PQCodebook, 0600); err != nil {
 			return fmt.Errorf("failed to write PQ codebook: %w", err)
 		}
 	}
@@ -308,7 +308,7 @@ func (e *StorageEngine) writeSnapshotItem(item *SnapshotItem, tempDir string) er
 	// Write Config
 	if len(item.IndexConfig) > 0 || item.IndexConfigWriter != nil {
 		path := filepath.Join(tempDir, item.Name+".config")
-		f, err := os.Create(path)
+		f, err := os.Create(filepath.Clean(path))
 		if err != nil {
 			return fmt.Errorf("failed to create index config file: %w", err)
 		}
@@ -371,7 +371,7 @@ func (e *StorageEngine) LoadSnapshots(loader func(*SnapshotItem) error) error {
 			}
 		}
 
-		f, err := os.Open(fullPath)
+		f, err := os.Open(filepath.Clean(fullPath))
 		if err != nil {
 			continue
 		}
@@ -392,12 +392,12 @@ func (e *StorageEngine) LoadSnapshots(loader func(*SnapshotItem) error) error {
 				item.GraphRecords = append(item.GraphRecords, rec)
 			}
 		case name + ".pq":
-			data, err := os.ReadFile(fullPath)
+			data, err := os.ReadFile(filepath.Clean(fullPath))
 			if err == nil {
 				item.PQCodebook = data
 			}
 		case name + ".config":
-			data, err := os.ReadFile(fullPath)
+			data, err := os.ReadFile(filepath.Clean(fullPath))
 			if err == nil {
 				item.IndexConfig = data
 			}

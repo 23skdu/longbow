@@ -49,7 +49,7 @@ func (g *GCSRemoteStorage) Put(ctx context.Context, key string, r io.Reader) err
 	// We copy bytes from io.Reader to the GCS streaming writer.
 	uploaded, err := io.Copy(writer, r)
 	if err != nil {
-		writer.Close() // Best effort
+		_ = writer.Close() // Best effort
 		status = "error"
 		metrics.RemoteStorageDurationSeconds.WithLabelValues("gcs", op).Observe(time.Since(start).Seconds())
 		metrics.RemoteStorageOpsTotal.WithLabelValues("gcs", op, status).Inc()

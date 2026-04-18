@@ -13,8 +13,8 @@ func euclideanComplex64Optimized(a, b []complex64) (float32, error) {
 		return 0, nil
 	}
 	// Cast to float32 slice (len*2)
-	vfA := unsafe.Slice((*float32)(unsafe.Pointer(&a[0])), len(a)*2)
-	vfB := unsafe.Slice((*float32)(unsafe.Pointer(&b[0])), len(b)*2)
+	vfA := unsafe.Slice((*float32)(unsafe.Pointer(&a[0])), len(a)*2) // #nosec G103
+	vfB := unsafe.Slice((*float32)(unsafe.Pointer(&b[0])), len(b)*2) // #nosec G103
 
 	// Call the function pointer directly to avoid wrapper overhead
 	return euclideanDistanceImpl(vfA, vfB)

@@ -316,7 +316,6 @@ func (h *ArrowHNSW) pruneConnectionsLocked(ctx *ArrowSearchContext, data *types.
 	candidates := make([]types.Candidate, count)
 
 	// Unified Distance Calculation (v0.1.4-rc2)
-	// We MUST handle mixed types because SQ8 nodes can have Float32 neighbors (from early training)
 	nodeVecAny, err := data.GetVector(nodeID)
 	if err != nil || nodeVecAny == nil {
 		return
@@ -368,7 +367,7 @@ func (h *ArrowHNSW) pruneConnectionsLocked(ctx *ArrowSearchContext, data *types.
 				return res
 			case []int8:
 				if h.quantizer != nil && h.sq8Ready.Load() {
-					byteVec := *(*[]byte)(unsafe.Pointer(&vf))
+					byteVec := *(*[]byte)(unsafe.Pointer(&vf)) // #nosec G103
 					return h.quantizer.Decode(byteVec)
 				}
 				res := make([]float32, len(vf))
@@ -522,7 +521,7 @@ func (h *ArrowHNSW) computeDistances(data *types.GraphData, nodeID uint32, neigh
 				return res
 			case []int8:
 				if h.quantizer != nil && h.sq8Ready.Load() {
-					byteVec := *(*[]byte)(unsafe.Pointer(&vf))
+					byteVec := *(*[]byte)(unsafe.Pointer(&vf)) // #nosec G103
 					return h.quantizer.Decode(byteVec)
 				}
 				res := make([]float32, len(vf))

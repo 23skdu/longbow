@@ -183,7 +183,7 @@ func PackBytesToFloat32s(bytes []byte) []float32 {
 	numFloats := (len(bytes) + 3) / 4
 	res := make([]float32, numFloats)
 	// Use unsafe to view the float32 slice as a byte slice and copy
-	resBytes := unsafe.Slice((*byte)(unsafe.Pointer(&res[0])), len(res)*4)
+	resBytes := unsafe.Slice((*byte)(unsafe.Pointer(&res[0])), len(res)*4) // #nosec G103
 	copy(resBytes, bytes)
 	return res
 }
@@ -194,7 +194,7 @@ func UnpackFloat32sToBytes(floats []float32, size int) []byte {
 		return nil
 	}
 	res := make([]byte, size)
-	floatBytes := unsafe.Slice((*byte)(unsafe.Pointer(&floats[0])), len(floats)*4)
+	floatBytes := unsafe.Slice((*byte)(unsafe.Pointer(&floats[0])), len(floats)*4) // #nosec G103
 	copy(res, floatBytes[:size])
 	return res
 }

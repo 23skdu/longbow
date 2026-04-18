@@ -195,7 +195,7 @@ func main() {
 			log.Fatalf("Failed to create JSON: %v", err)
 		}
 		defer f.Close()
-		json.NewEncoder(f).Encode(results)
+		_ = json.NewEncoder(f).Encode(results)
 		log.Printf("Results saved to %s\n", *outputJson)
 	}
 }
@@ -214,7 +214,7 @@ func uploadBatch(ctx context.Context, sc *client.SmartClient, dataset string, re
 	writer.SetFlightDescriptor(desc)
 
 	if err := writer.Write(record); err != nil {
-		writer.Close()
+		_ = writer.Close()
 		return err
 	}
 
@@ -270,7 +270,7 @@ func executeSearch(ctx context.Context, sc *client.SmartClient, dataset string, 
 	}
 	vector := make([]float32, queryLen)
 	for i := range vector {
-		vector[i] = rand.Float32()
+		vector[i] = rand.Float32() // #nosec G404
 	}
 
 	req := map[string]interface{}{

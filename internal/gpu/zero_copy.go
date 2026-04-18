@@ -46,7 +46,7 @@ func NewPinnedBuffer(size int) (*ZeroCopyBuffer, error) {
 		return nil, fmt.Errorf("failed to allocate pinned memory: %w", err)
 	}
 
-	buf.ptr = unsafe.Pointer(&ptr[0])
+	buf.ptr = unsafe.Pointer(&ptr[0]) // #nosec G103
 
 	runtime.SetFinalizer(buf, func(b *ZeroCopyBuffer) {
 		b.Free()
@@ -67,7 +67,7 @@ func (b *ZeroCopyBuffer) Slice() []byte {
 	if b.ptr == nil {
 		return nil
 	}
-	return unsafe.Slice((*byte)(b.ptr), b.size)
+	return unsafe.Slice((*byte)(b.ptr), b.size) // #nosec G103
 }
 
 func (b *ZeroCopyBuffer) AddRef() {
@@ -224,7 +224,7 @@ func (zcm *ZeroCopyManager) Close() {
 }
 
 func GetGPUFriendlySlice(data []float32) []byte {
-	slice := unsafe.Slice((*byte)(unsafe.Pointer(&data[0])), len(data)*4)
+	slice := unsafe.Slice((*byte)(unsafe.Pointer(&data[0])), len(data)*4) // #nosec G103
 	return slice
 }
 
@@ -232,5 +232,5 @@ func GetGPUFriendlyPtr(data []float32) unsafe.Pointer {
 	if len(data) == 0 {
 		return nil
 	}
-	return unsafe.Pointer(&data[0])
+	return unsafe.Pointer(&data[0]) // #nosec G103
 }

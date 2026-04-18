@@ -178,8 +178,8 @@ func unsafeVectorSliceGeneric[T any](data arrow.ArrayData, offset, length int) [
 		// If length > 0 but offset is out of bounds, this is an error or corruption
 		return nil
 	}
-	ptr := unsafe.Pointer(&bytes[offset*elementSize])
-	return unsafe.Slice((*T)(ptr), length)
+	ptr := unsafe.Pointer(&bytes[offset*elementSize]) // #nosec G103
+	return unsafe.Slice((*T)(ptr), length)           // #nosec G103
 }
 
 // extractVectorRaw extracts a vector and returns it in its native Arrow type (any).

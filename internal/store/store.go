@@ -240,7 +240,7 @@ func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes 
 	}
 
 	s.replicator = NewPeerReplicator(DefaultReplicatorConfig())
-	s.replicator.Start()
+	_ = s.replicator.Start()
 
 	// Initialize Flight client pool for distributed coordination
 	s.pool = NewFlightClientPool(DefaultFlightClientPoolConfig())

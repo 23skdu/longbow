@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/23skdu/longbow/internal/store/types"
 )
 
 func TestStructuredErrors(t *testing.T) {
@@ -23,8 +24,8 @@ func TestStructuredErrors(t *testing.T) {
 		assert.Contains(t, cfgErr.Error(), "field=bad-value")
 	})
 
-	t.Run("ErrVectorDimensionMismatch", func(t *testing.T) {
-		err := &ErrVectorDimensionMismatch{ID: 5, Expected: 128, Actual: 256}
+	t.Run("types.ErrVectorDimensionMismatch", func(t *testing.T) {
+		err := &types.ErrVectorDimensionMismatch{ID: 5, Expected: 128, Actual: 256}
 		require.Error(t, err)
 		assert.Equal(t, 5, err.ID)
 		assert.Equal(t, 128, err.Expected)
@@ -35,14 +36,14 @@ func TestStructuredErrors(t *testing.T) {
 		assert.Contains(t, err.Error(), "got 256")
 	})
 
-	t.Run("ErrVectorDimensionMismatchAs", func(t *testing.T) {
+	t.Run("types.ErrVectorDimensionMismatchAs", func(t *testing.T) {
 		err := NewConfigError("comp", "f", "v", "m")
 		var cfg *ConfigError
 		require.True(t, errors.As(err, &cfg))
 	})
 
-	t.Run("ErrNeighborSelectionLengthMismatch", func(t *testing.T) {
-		err := &ErrNeighborSelectionLengthMismatch{DistancesLen: 10, IDsLen: 7}
+	t.Run("types.ErrNeighborSelectionLengthMismatch", func(t *testing.T) {
+		err := &types.ErrNeighborSelectionLengthMismatch{DistancesLen: 10, IDsLen: 7}
 		require.Error(t, err)
 		assert.Equal(t, 10, err.DistancesLen)
 		assert.Equal(t, 7, err.IDsLen)

@@ -97,9 +97,9 @@ func TestExtractVectorCopy(t *testing.T) {
 	defer rec.Release()
 
 	// Get copy
-	vec, err := extractVectorCopy(rec, 0, 0) // Column 0 is vector
+	vec, err := ExtractVectorFromArrow(rec, 0, 0) // Column 0 is vector
 	if err != nil {
-		t.Fatalf("extractVectorCopy failed: %v", err)
+		t.Fatalf("ExtractVectorFromArrow failed: %v", err)
 	}
 
 	// Modify copy - should not affect original
@@ -181,7 +181,7 @@ func BenchmarkExtractVectorCopy(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = extractVectorCopy(rec, i%1000, 0)
+		_, _ = ExtractVectorFromArrow(rec, i%1000, 0)
 	}
 }
 

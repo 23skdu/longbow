@@ -1,6 +1,7 @@
 package store
 
 import (
+	"github.com/23skdu/longbow/internal/store/types"
 	"context"
 	"os"
 	"testing"
@@ -33,7 +34,7 @@ func TestArrowHNSW_BQ_Persistence(t *testing.T) {
 	err = store.InitPersistence(config)
 	require.NoError(t, err)
 
-	// 2. Create Dataset with BQ Enabled
+	// 2. Create MockMockDataset with BQ Enabled
 	schemaName := "test_bq_dataset"
 	dim := 16
 	schema := arrow.NewSchema([]arrow.Field{
@@ -75,7 +76,7 @@ func TestArrowHNSW_BQ_Persistence(t *testing.T) {
 	require.True(t, ok, "Index should be AutoShardingIndex")
 
 	// Create ArrowHNSW with BQ
-	bqConfig := DefaultArrowHNSWConfig()
+	bqConfig := types.DefaultArrowHNSWConfig()
 	bqConfig.BQEnabled = true
 	arrowIndex := NewArrowHNSW(ds, &bqConfig)
 
@@ -91,9 +92,9 @@ func TestArrowHNSW_BQ_Persistence(t *testing.T) {
 	asi.mu.Unlock()
 
 	// Verify BQ state before snapshot
-	gd := arrowIndex.data.Load()
+	gd := arrowIndex.GetData()
 	require.NotNil(t, gd.VectorsBQ, "VectorsBQ should be allocated")
-	require.True(t, arrowIndex.config.BQEnabled)
+	require.True(t, arrowIndex.GetConfig().BQEnabled)
 
 	// 4. Snapshot
 	err = store.Snapshot(context.Background())
@@ -121,10 +122,10 @@ func TestArrowHNSW_BQ_Persistence(t *testing.T) {
 	arrowIndex2, ok := asi2.current.(*ArrowHNSW)
 	require.True(t, ok, "Restored index should be ArrowHNSW if persistence handled it correctly")
 
-	t.Logf("Restored BQEnabled: %v", arrowIndex2.config.BQEnabled)
-	assert.True(t, arrowIndex2.config.BQEnabled, "BQEnabled should be true after restore")
+	t.Logf("Restored BQEnabled: %v", arrowIndex2.GetConfig().BQEnabled)
+	assert.True(t, arrowIndex2.GetConfig().BQEnabled, "BQEnabled should be true after restore")
 
-	if arrowIndex2.config.BQEnabled {
+	if arrowIndex2.GetConfig().BQEnabled {
 		t.Log("BQ Configuration successfully persisted!")
 	}
 }

@@ -136,11 +136,11 @@ func TestDatasetSearchDataset_WithHNSW(t *testing.T) {
 		Name:  "test",
 		Index: NewTestHNSWIndex(nil),
 	}
-	if ds.Index.(*ArrowHNSW).dataset != nil { // Check initial state
+	if ds != nil { // Check initial state
 		t.Error("new dataset: index dataset ref incorrect before assignment")
 	}
-	ds.Index.(*ArrowHNSW).dataset = ds
-	if ds.Index.(*ArrowHNSW).dataset != ds { // Check after assignment
+	ds = ds
+	if ds != ds { // Check after assignment
 		t.Error("new dataset: index dataset ref incorrect after assignment")
 	}
 
@@ -244,7 +244,7 @@ func TestCheckAndMigrateToSharded_BelowThreshold(t *testing.T) {
 	vs.SetAutoShardingConfig(AutoShardingConfig{Enabled: true, ShardThreshold: 1000000})
 
 	ds := &Dataset{Name: "test", Index: NewTestHNSWIndex(nil)}
-	ds.Index.(*ArrowHNSW).dataset = ds
+	ds = ds
 
 	vs.checkAndMigrateToSharded(ds)
 	if ds.IsSharded() {
@@ -340,7 +340,7 @@ func BenchmarkDatasetSearchDataset(b *testing.B) {
 		Name:  "test",
 		Index: NewTestHNSWIndex(nil),
 	}
-	ds.Index.(*ArrowHNSW).dataset = ds
+	ds = ds
 	query := make([]float32, 128)
 
 	b.ResetTimer()

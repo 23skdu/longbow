@@ -3,13 +3,14 @@ package store
 import (
 	"math/rand"
 	"testing"
+	"github.com/23skdu/longbow/internal/store/types"
 
 	"github.com/stretchr/testify/assert"
 )
 
 func TestBQEncoder_Encode(t *testing.T) {
 	dims := 128
-	enc := NewBQEncoder(dims)
+	enc := types.NewBQEncoder(dims)
 
 	// Case 1: All Positive -> All 1s
 	vec1 := make([]float32, dims)
@@ -36,7 +37,7 @@ func TestBQEncoder_Encode(t *testing.T) {
 	vec3[1] = -1.0
 	vec3[63] = 1.0 // Bit 63 -> 1
 
-	encSmall := NewBQEncoder(64)
+	encSmall := types.NewBQEncoder(64)
 	code3 := encSmall.Encode(vec3)
 	assert.Equal(t, 1, len(code3))
 	expected := uint64(1) | (1 << 63)
@@ -44,7 +45,7 @@ func TestBQEncoder_Encode(t *testing.T) {
 }
 
 func TestBQEncoder_HammingDistance(t *testing.T) {
-	enc := NewBQEncoder(64)
+	enc := types.NewBQEncoder(64)
 
 	a := []uint64{0}
 	b := []uint64{0xFFFFFFFFFFFFFFFF}
@@ -58,7 +59,7 @@ func TestBQEncoder_HammingDistance(t *testing.T) {
 
 func TestBQEncoder_Integration(t *testing.T) {
 	dims := 1024
-	enc := NewBQEncoder(dims)
+	enc := types.NewBQEncoder(dims)
 
 	// Generate two random vectors
 	v1 := make([]float32, dims)

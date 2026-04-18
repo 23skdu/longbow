@@ -18,14 +18,4 @@ const (
 	VectorTypeBQ         = types.VectorTypeBQ
 )
 
-type SearchOptions struct {
-	IncludeVectors bool
-	VectorFormat   VectorDataType
-	Filter         any        // Legacy filter mechanism
-	FilterExpr     FilterExpr // Rich AST JSON Filter
-	ExactK         bool
-	Ef             int            // Entry factor for HNSW search (controls search breadth)
-	Consistency    string         // "eventual" | "strong" | "" (default = eventual)
-	VectorType     VectorDataType // Explicit index type selection for search (float32, turboquant)
-	TurboQuantBits int            // Bit depth for TurboQuant search (4, 8)
-}
+type SearchOptions = types.SearchOptions

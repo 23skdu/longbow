@@ -6,6 +6,7 @@ import (
 
 	"github.com/23skdu/longbow/internal/core"
 	"github.com/23skdu/longbow/internal/pq"
+	"github.com/23skdu/longbow/internal/query"
 	"github.com/RoaringBitmap/roaring/v2"
 	"github.com/apache/arrow-go/v18/arrow"
 )
@@ -126,4 +127,18 @@ type StorageInterface interface {
 	// Metadata
 	Path() string
 	Size() int64
+}
+
+// IndexDataProvider defines the interface for data access required by vector indexes
+type IndexDataProvider interface {
+	GetName() string
+	GetRecords() []arrow.RecordBatch
+	GetSchema() *arrow.Schema
+	GetTombstones() map[int]*query.Bitset
+	GetPQEncoder() *pq.PQEncoder
+	RLockData()
+	RUnlockData()
+	GenerateFilterBitset(filters []core.Filter, expr FilterExpr) (*query.Bitset, error)
+	ResetTombstones()
+	GetIndex() any
 }

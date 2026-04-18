@@ -3,7 +3,7 @@ package types
 import (
 	"fmt"
 
-	"github.com/23skdu/longbow/internal/core"
+	basecore "github.com/23skdu/longbow/internal/core"
 )
 
 // VectorDataType represents the data type of vector elements
@@ -113,7 +113,7 @@ func (vdt VectorDataType) ElementSize() int {
 }
 
 // Candidate represents a search result candidate with ID and distance
-type Candidate = core.Candidate
+type Candidate = basecore.Candidate
 
 // MaxNeighbors is the maximum number of neighbors per node in HNSW
 const MaxNeighbors = 128
@@ -129,7 +129,71 @@ const ArrowMaxLayers = 16
 const NodeLockMask uint32 = 1 << 31
 
 // VectorID is a type alias for vector identifiers
-type VectorID = core.VectorID
+type VectorID = basecore.VectorID
 
 // SearchResult represents a single flight search result
-type SearchResult = core.SearchResult
+type SearchResult = basecore.SearchResult
+
+// Location represents a physical location of a row
+type Location = basecore.Location
+
+// LocationChunkSize is the size of chunks in the location store
+const LocationChunkSize = 1024
+
+// SearchOptions defines the options for search operations
+type SearchOptions struct {
+	IncludeVectors bool
+	VectorFormat   VectorDataType
+	Filter         any        // Legacy filter mechanism
+	FilterExpr     FilterExpr // Rich AST JSON Filter
+	ExactK         bool
+	Ef             int            // Entry factor for HNSW search (controls search breadth)
+	Consistency    string         // "eventual" | "strong" | "" (default = eventual)
+	VectorType     VectorDataType // Explicit index type selection for search (float32, turboquant)
+	TurboQuantBits int            // Bit depth for TurboQuant search (4, 8)
+}
+
+// FilterExpr is the AST node interface for evaluating complex boolean nesting conditions.
+type FilterExpr interface {
+	Evaluate(metadata map[string]interface{}) bool
+}
+
+// ChunkID returns the chunk index for a given vector identifier
+func ChunkID(id uint32) int {
+	return int(id / uint32(ChunkSize))
+}
+
+// ChunkOffset returns the offset within a chunk for a given vector identifier
+func ChunkOffset(id uint32) int {
+	return int(id % uint32(ChunkSize))
+}
+
+// ErrVectorDimensionMismatch represents a mismatch between vector dimensions.
+type ErrVectorDimensionMismatch struct {
+	ID       int
+	Expected int
+	Actual   int
+}
+
+func (e *ErrVectorDimensionMismatch) Error() string {
+	return fmt.Sprintf("dimension mismatch for vector %d: expected %d, got %d", e.ID, e.Expected, e.Actual)
+}
+
+// NewVectorDimensionMismatchError creates a new ErrVectorDimensionMismatch.
+func NewVectorDimensionMismatchError(id, expected, actual int) error {
+	return &ErrVectorDimensionMismatch{
+		ID:       id,
+		Expected: expected,
+		Actual:   actual,
+	}
+}
+
+// ErrNeighborSelectionLengthMismatch represents a mismatch between distances and IDs lengths during neighbor selection.
+type ErrNeighborSelectionLengthMismatch struct {
+	DistancesLen int
+	IDsLen       int
+}
+
+func (e *ErrNeighborSelectionLengthMismatch) Error() string {
+	return fmt.Sprintf("length mismatch: got %d distances and %d IDs", e.DistancesLen, e.IDsLen)
+}

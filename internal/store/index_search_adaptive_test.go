@@ -118,8 +118,8 @@ func TestAdaptiveHNSW_AdjustsM(t *testing.T) {
 	}
 
 	// 5. Assert M has changed
-	// We access the config directly from the struct (internal test)
-	currentM := idx.config.M
+	// We access the config securely
+	currentM := idx.GetConfig().M
 	t.Logf("Initial M: %d, Current M: %d", 16, currentM)
 
 	// With 128D uniform noise, intrinsic dimensionality is high.

@@ -221,7 +221,7 @@ func (a *AutoShardingIndex) migrateToSharded() {
 	// Get DataType from old index (it's ArrowHNSW at this point)
 	var oldDataType types.VectorDataType
 	if ah, ok := oldIndex.(*ArrowHNSW); ok {
-		oldDataType = ah.config.DataType
+		oldDataType = ah.GetConfig().DataType
 	}
 
 	// Create new ShardedHNSW config

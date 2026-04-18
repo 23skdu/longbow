@@ -316,7 +316,7 @@ func TestHybridSearchPipeline_ExactFilters(t *testing.T) {
 	hnsw := NewTestHNSWIndex(ds)
 	// Add locations so findVectorID works
 	for i := 0; i < 10; i++ {
-		hnsw.locationStore.Append(Location{BatchIdx: 0, RowIdx: i})
+		_, _ = hnsw.AddByLocation(context.Background(), 0, i)
 	}
 	p.SetHNSWIndex(hnsw)
 
@@ -354,6 +354,7 @@ func TestHybridSearchPipeline_ExactFilters(t *testing.T) {
 func createHybridTestRecordBatch() arrow.RecordBatch {
 	schema := arrow.NewSchema([]arrow.Field{
 		{Name: "category", Type: arrow.BinaryTypes.String},
+		{Name: "vector", Type: arrow.FixedSizeListOf(2, arrow.PrimitiveTypes.Float32)},
 	}, nil)
 
 	pool := memory.NewGoAllocator()
@@ -361,12 +362,17 @@ func createHybridTestRecordBatch() arrow.RecordBatch {
 	defer bldr.Release()
 
 	catBldr := bldr.Field(0).(*array.StringBuilder)
+	vecBldr := bldr.Field(1).(*array.FixedSizeListBuilder)
+	floatBldr := vecBldr.ValueBuilder().(*array.Float32Builder)
+	
 	for i := 0; i < 10; i++ {
 		if i == 5 {
 			catBldr.Append("electronics")
 		} else {
 			catBldr.Append("books")
 		}
+		vecBldr.Append(true)
+		floatBldr.AppendValues([]float32{float32(i), float32(i)}, nil)
 	}
 
 	return bldr.NewRecordBatch()

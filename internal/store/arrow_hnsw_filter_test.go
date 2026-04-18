@@ -1,6 +1,7 @@
 package store
 
 import (
+	"github.com/23skdu/longbow/internal/store/types"
 	"context"
 	"os"
 	"testing"
@@ -34,7 +35,7 @@ func TestArrowHNSW_VectorizedFilter(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = store.Close() }()
 
-	// 1. Create Dataset with Metadata
+	// 1. Create MockDataset with Metadata
 	schemaName := "filter_dataset"
 	dim := 8
 	schema := arrow.NewSchema([]arrow.Field{
@@ -87,13 +88,13 @@ func TestArrowHNSW_VectorizedFilter(t *testing.T) {
 		{Field: "category", Operator: "=", Value: "1"},
 	}
 
-	results, err := ds.Index.SearchVectors(context.Background(), qVec, 10, filters, SearchOptions{})
+	results, err := ds.Index.SearchVectors(context.Background(), qVec, 10, filters, types.SearchOptions{})
 	require.NoError(t, err)
 
 	t.Logf("Found %d results for cat=1", len(results))
 	for _, res := range results {
 		// Verify
-		// Get RowIdx? SearchResult only has ID/Score.
+		// Get RowIdx? types.SearchResult only has ID/Score.
 		// We trust ID corresponds to row.
 		id := int(res.ID)
 		assert.Equal(t, 1, id%2, "Expected category 1 (id%%2==1)")
@@ -105,7 +106,7 @@ func TestArrowHNSW_VectorizedFilter(t *testing.T) {
 		{Field: "score", Operator: ">", Value: "0.5"},
 	}
 
-	results2, err := ds.Index.SearchVectors(context.Background(), qVec, 10, filters2, SearchOptions{})
+	results2, err := ds.Index.SearchVectors(context.Background(), qVec, 10, filters2, types.SearchOptions{})
 	require.NoError(t, err)
 
 	t.Logf("Found %d results for score > 0.5", len(results2))

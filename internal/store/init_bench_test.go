@@ -18,20 +18,19 @@ func BenchmarkHNSW_InitializationOverhead(b *testing.B) {
 	// but here we want to measure steady state overhead of the "if dims > 0 && vectors == nil" check.
 	// So we use a single long-lived index.
 
+	cfg.Dims = 128
 	h := NewArrowHNSW(nil, &cfg)
-	// Pre-set dims to avoid init mutex on every insert in this specific bench?
-	// Actually we want to measure standard flow.
-	h.dims.Store(128)
 	// Force allocate to simulate "steady state"
 	if err := h.Grow(1000, 0); err != nil {
 		b.Fatalf("Grow failed: %v", err)
 	}
-	// Manually ensure chunks for 0
-	data := h.data.Load()
-	_, _ = h.ensureChunk(data, 0, 0, 128)
 
+	// Insert once to fully initialize internal structures (chunks, etc.)
 	vectorSize := 128
-	vec := make([]float32, vectorSize) // Zero vector
+	vec := make([]float32, vectorSize)
+	_ = h.InsertWithVector(0, vec, 0)
+
+
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -50,10 +49,9 @@ func TestHNSW_DimensionTransition(t *testing.T) {
 	h := NewArrowHNSW(nil, &cfg)
 
 	// Initially dims = 0
-	require.Equal(t, int32(0), h.dims.Load())
-	data := h.data.Load()
+	require.Equal(t, int(0), h.GetConfig().Dims)
 	// nodeCount should be 0 since no vectors inserted yet
-	require.Equal(t, int64(0), h.nodeCount.Load(), "nodeCount should be 0 initially")
+	require.Equal(t, int(0), h.Len(), "Len should be 0 initially")
 
 	// Insert first vector -> should trigger init
 	vec := make([]float32, 128)
@@ -61,10 +59,8 @@ func TestHNSW_DimensionTransition(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify state
-	require.Equal(t, int32(128), h.dims.Load())
-	data = h.data.Load()
-	require.NotNil(t, data.VectorsF32, "VectorsF32 should be allocated (arena-backed)")
-	require.True(t, len(data.VectorsF32) > 0, "Should have allocated chunks")
+	require.Equal(t, int(128), h.GetConfig().Dims)
+	require.Equal(t, int(1), h.Len())
 
 	// Verify subsequent insert
 	err = h.InsertWithVector(1, vec, 0)

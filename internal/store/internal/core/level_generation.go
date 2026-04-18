@@ -1,0 +1,46 @@
+package core
+
+// nosec G404 - math/rand is used for HNSW level generation, not security-sensitive
+import (
+	"math"
+	"math/rand"
+	"sync"
+
+	"github.com/23skdu/longbow/internal/store/types"
+)
+
+// LevelGenerator generates random levels for HNSW nodes using exponential decay.
+// This ensures higher layers have exponentially fewer nodes, creating a hierarchical structure.
+type LevelGenerator struct {
+	ml  float64
+	rng *rand.Rand
+	mu  sync.Mutex
+}
+
+// NewLevelGenerator creates a new level generator with the specified ml parameter.
+// ml controls the decay rate - higher ml means nodes reach higher levels more frequently.
+func NewLevelGenerator(ml float64) *LevelGenerator {
+	return &LevelGenerator{
+		ml:  ml,
+		rng: rand.New(rand.NewSource(42)), // #nosec G404
+	}
+}
+
+// Generate returns a random level using exponential decay.
+// Uses the formula: level = -ln(uniform(0,1)) * ml
+// The level is capped at types.ArrowMaxLayers - 1 to prevent excessive memory usage.
+func (lg *LevelGenerator) Generate() int {
+	lg.mu.Lock()
+	defer lg.mu.Unlock()
+
+	// Use exponential distribution: -ln(uniform(0,1)) * ml
+	uniform := lg.rng.Float64()
+	level := int(-math.Log(uniform) * lg.ml)
+
+	// Cap at types.ArrowMaxLayers - 1
+	if level >= types.ArrowMaxLayers {
+		level = types.ArrowMaxLayers - 1
+	}
+
+	return level
+}

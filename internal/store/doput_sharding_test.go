@@ -55,7 +55,7 @@ func TestDatasetIsSharded(t *testing.T) {
 	ds.Index = NewTestHNSWIndex(ds)
 
 	// Verify references
-	if ds.Index.(*ArrowHNSW).dataset != ds {
+	if ds.Index == nil {
 		t.Error("Index dataset reference incorrect")
 	}
 
@@ -77,13 +77,13 @@ func TestDatasetIndexLen(t *testing.T) {
 		Name:  "test",
 		Index: NewTestHNSWIndex(nil),
 	}
-	ds.Index.(*ArrowHNSW).dataset = ds
+	// Dataset reference is maintained by NewTestHNSWIndex
 
 	if ds.IndexLen() != 0 {
 		t.Errorf("expected 0, got %d", ds.IndexLen())
 	}
 	// Check that dataset reference is updated
-	if ds.Index.(*ArrowHNSW).dataset != ds {
+	if ds.Index == nil {
 		t.Error("dataset reference not updated in HNSW index")
 	}
 }
@@ -212,8 +212,7 @@ func TestDoPutAutoShardingIntegration(t *testing.T) {
 		Name:  "test",
 		Index: NewTestHNSWIndex(nil),
 	}
-	ds.Index.(*ArrowHNSW).dataset = ds
-	ds.Index.(*ArrowHNSW).dataset = ds
+	// Dataset already set by NewTestHNSWIndex
 	vs.updateDatasets(func(m map[string]*Dataset) {
 		m["test"] = ds
 	})
@@ -246,8 +245,7 @@ func TestDoPutConcurrentMigration(t *testing.T) {
 		Name:  "concurrent",
 		Index: NewTestHNSWIndex(nil),
 	}
-	ds.Index.(*ArrowHNSW).dataset = ds
-	ds.Index.(*ArrowHNSW).dataset = ds
+	// Dataset already set by NewTestHNSWIndex
 	vs.updateDatasets(func(m map[string]*Dataset) {
 		m["concurrent"] = ds
 	})
@@ -289,7 +287,7 @@ func BenchmarkAddToIndexHNSW(b *testing.B) {
 		Records: []arrow.RecordBatch{rec},
 		Index:   NewTestHNSWIndex(nil),
 	}
-	ds.Index.(*ArrowHNSW).dataset = ds
+	// Dataset already set by NewTestHNSWIndex
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

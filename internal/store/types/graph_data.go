@@ -827,7 +827,7 @@ func (g *GraphData) GetVector(id uint32) (any, error) {
 	// Based on type, get the appropriate chunk
 	// Only supporting float32 and float16 for now in this generic method
 	// for simplicity, as they are the primary types used in tests.
-	if g.Uint8Arena != nil && len(g.VectorsSQ8) > cID && (g.SQ8Enabled || atomic.LoadUint32(&g.SQ8Ready) == 1) {
+	if g.Uint8Arena != nil && len(g.VectorsSQ8) > cID && g.SQ8Enabled && atomic.LoadUint32(&g.SQ8Ready) == 1 {
 		chunk := g.GetVectorsSQ8Chunk(cID)
 		if chunk != nil {
 			paddedDims := (g.Dims + 63) & ^63

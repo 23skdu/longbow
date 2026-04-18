@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"runtime"
 	"strconv"
 	"strings"
@@ -19,6 +20,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 
 	"github.com/23skdu/longbow/internal/cache"
+	"github.com/23skdu/longbow/internal/core"
 	lbflight "github.com/23skdu/longbow/internal/flight"
 	lbmem "github.com/23skdu/longbow/internal/memory"
 	"github.com/23skdu/longbow/internal/mesh"
@@ -142,6 +144,21 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 		err = nil // Clear error after fallback
 	}
 
+	// Resolve CTEs if present
+	cteResults := make(map[string][]lbtypes.SearchResult)
+	if len(query.CTEs) > 0 {
+		if err := s.resolveCTEs(stream.Context(), query.CTEs, cteResults); err != nil {
+			return status.Errorf(codes.Internal, "failed to resolve CTEs: %v", err)
+		}
+	}
+
+	// Resolve Subqueries in filters
+	if len(query.Filters) > 0 {
+		if err := s.resolveSubqueries(stream.Context(), query.Filters); err != nil {
+			return status.Errorf(codes.Internal, "failed to resolve subqueries: %v", err)
+		}
+	}
+
 	// Create Request-Scoped Arena Allocator
 	// This reduces GC pressure for transient buffers (masks, filtered batches, serialized records)
 	mem := lbmem.NewArenaAllocator()
@@ -173,6 +190,11 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 		Int("filters", len(query.Filters)).
 		Interface("parsed_filters", query.Filters).
 		Msg("DoGet called")
+
+	// Check CTE first
+	if cteRes, exists := cteResults[name]; exists {
+		return s.streamSearchResults(cteRes, query.WindowFunctions, stream, mem)
+	}
 
 	ds, ok := s.getDataset(name)
 	if !ok {
@@ -1050,4 +1072,264 @@ func (s *VectorStore) handleDoGetRecommend(req *qry.RecommendRequest, stream fli
 	}
 	rec.Release()
 	return nil
+}
+
+func (s *VectorStore) resolveCTEs(ctx context.Context, ctes []qry.CTE, results map[string][]lbtypes.SearchResult) error {
+	for _, cte := range ctes {
+		if cte.Search == nil {
+			continue
+		}
+		// Execute the search for this CTE
+		// Wrap Search in a TicketQuery to use executeInternalTicket with fallback support
+		tkt := &qry.TicketQuery{
+			Name:   cte.Search.Dataset,
+			Search: cte.Search,
+		}
+		res, err := s.executeInternalTicket(ctx, tkt)
+		if err != nil {
+			return err
+		}
+		s.logger.Debug().Str("cte", cte.Name).Int("results", len(res)).Msg("CTE resolved")
+		results[cte.Name] = res
+	}
+	return nil
+}
+
+func (s *VectorStore) resolveSubqueries(ctx context.Context, filters []qry.Filter) error {
+	for i := range filters {
+		f := &filters[i]
+		// Recursive check
+		if len(f.Filters) > 0 {
+			if err := s.resolveSubqueries(ctx, f.Filters); err != nil {
+				return err
+			}
+		}
+
+		if f.Subquery != nil {
+			// Execute subquery
+			res, err := s.executeInternalTicket(ctx, f.Subquery)
+			if err != nil {
+				return err
+			}
+			s.logger.Debug().Str("field", f.Field).Int("results", len(res)).Msg("Subquery resolved")
+			// Extract IDs (or first column) into ResolvedValues
+			resolved := make([]any, len(res))
+			for j, r := range res {
+				resolved[j] = uint64(r.ID)
+			}
+			f.ResolvedValues = resolved
+		}
+	}
+	return nil
+}
+
+func (s *VectorStore) executeInternalSearch(ctx context.Context, req *qry.VectorSearchRequest) ([]lbtypes.SearchResult, error) {
+	isHybrid := req.TextQuery != "" || (req.Alpha > 0 && req.Alpha < 1.0)
+	var queryVec []float32
+	if len(req.Vector) > 0 {
+		queryVec = req.Vector
+	}
+
+	if isHybrid {
+		return s.SearchHybrid(ctx, req.Dataset, queryVec, req.TextQuery, req.K, req.Alpha, 60, req.GraphAlpha, 2)
+	}
+
+	ds, ok := s.getDataset(req.Dataset)
+	if !ok {
+		return nil, fmt.Errorf("dataset %s not found", req.Dataset)
+	}
+
+	ds.dataMu.RLock()
+	defer ds.dataMu.RUnlock()
+
+	if ds.Index == nil {
+		return nil, fmt.Errorf("index not initialized for %s", req.Dataset)
+	}
+
+	res, err := ds.Index.SearchVectors(ctx, queryVec, req.K, req.Filters, SearchOptions{
+		IncludeVectors: req.IncludeVectors,
+		VectorFormat:   lbtypes.MapStringToVectorDataType(req.VectorFormat),
+		FilterExpr:     ParseFilter(req.FilterExpr),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return s.mapInternalToUserIDsLocked(ds, res), nil
+}
+
+func (s *VectorStore) executeInternalTicket(ctx context.Context, query *qry.TicketQuery) ([]lbtypes.SearchResult, error) {
+	// If search is present AND has a vector/text, use vector search path
+	if query.Search != nil && (len(query.Search.Vector) > 0 || query.Search.TextQuery != "") {
+		return s.executeInternalSearch(ctx, query.Search)
+	}
+
+	// If search is present but has NO vector (metadata only), 
+	// copy its parameters to the main query for table scan.
+	if query.Search != nil {
+		if query.Name == "" {
+			query.Name = query.Search.Dataset
+		}
+		if query.Limit == 0 {
+			query.Limit = int64(query.Search.K)
+		}
+		if len(query.Filters) == 0 && len(query.Search.Filters) > 0 {
+			query.Filters = query.Search.Filters
+		}
+	}
+
+	// Table scan fallback for metadata-only internal queries
+	return s.executeInternalTable(ctx, query)
+}
+
+func (s *VectorStore) executeInternalTable(ctx context.Context, query *qry.TicketQuery) ([]lbtypes.SearchResult, error) {
+	ds, ok := s.getDataset(query.Name)
+	if !ok {
+		return nil, fmt.Errorf("dataset %s not found", query.Name)
+	}
+
+	ds.dataMu.RLock()
+	defer ds.dataMu.RUnlock()
+
+	var results []lbtypes.SearchResult
+	limit := int(query.Limit)
+	if limit <= 0 {
+		limit = 1000 // Default internal limit
+	}
+
+	for i, rec := range ds.Records {
+		if len(results) >= limit {
+			break
+		}
+
+		// Apply filters
+		var eval *qry.FilterEvaluator
+		if len(query.Filters) > 0 {
+			var err error
+			eval, err = s.evaluateFilters(ctx, ds, i, query.Filters)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		// Apply tombstones
+		ts := ds.Tombstones[i]
+
+		// Find ID column
+		idColIdx := -1
+		for j, field := range rec.Schema().Fields() {
+			if field.Name == "id" {
+				idColIdx = j
+				break
+			}
+		}
+
+		numRows := int(rec.NumRows())
+		for rowIdx := 0; rowIdx < numRows; rowIdx++ {
+			if len(results) >= limit {
+				break
+			}
+
+			// Check filters
+			if eval != nil && !eval.Matches(rowIdx) {
+				continue
+			}
+
+			// Check tombstones
+			if ts != nil && ts.Contains(rowIdx) {
+				continue
+			}
+
+			var res lbtypes.SearchResult
+			// We need a numeric ID for SearchResult.
+			// If 'id' column exists, try to extract it.
+			if idColIdx != -1 {
+				col := rec.Column(idColIdx)
+				switch c := col.(type) {
+				case *array.Uint32:
+					res.ID = lbtypes.VectorID(c.Value(rowIdx))
+				case *array.Uint64:
+					res.ID = lbtypes.VectorID(c.Value(rowIdx))
+				case *array.Int64:
+					res.ID = lbtypes.VectorID(c.Value(rowIdx))
+				case *array.Int32:
+					res.ID = lbtypes.VectorID(c.Value(rowIdx))
+				default:
+					// Fallback to internal ID (constructed from batch/row)
+					res.ID = lbtypes.VectorID(uint32(i)<<16 | uint32(rowIdx))
+				}
+			} else {
+				res.ID = lbtypes.VectorID(uint32(i)<<16 | uint32(rowIdx))
+			}
+
+			results = append(results, res)
+		}
+	}
+
+	return results, nil
+}
+
+func (s *VectorStore) evaluateFilters(ctx context.Context, ds *Dataset, batchIdx int, filters []core.Filter) (*qry.FilterEvaluator, error) {
+	rec := ds.Records[batchIdx]
+	eval, err := qry.NewFilterEvaluator(rec, filters)
+	if err != nil {
+		return nil, err
+	}
+	return eval, nil
+}
+
+// streamSearchResults is a helper to stream a list of search results as RecordBatches
+func (s *VectorStore) streamSearchResults(results []lbtypes.SearchResult, windowFunctions []qry.WindowFunction, stream flight.FlightService_DoGetServer, mem memory.Allocator) error {
+	// Execute Window Functions
+	if len(windowFunctions) > 0 {
+		windowOp := qry.NewWindowOperator()
+		results = windowOp.Execute(results, windowFunctions)
+	}
+
+	fields := []arrow.Field{
+		{Name: "id", Type: arrow.PrimitiveTypes.Uint64},
+		{Name: "score", Type: arrow.PrimitiveTypes.Float32},
+	}
+	// Handle window functions in schema
+	for _, wf := range windowFunctions {
+		var colType arrow.DataType
+		switch wf.Name {
+		case "row_number", "rank", "dense_rank":
+			colType = arrow.PrimitiveTypes.Int64
+		default:
+			colType = arrow.PrimitiveTypes.Float64
+		}
+		fields = append(fields, arrow.Field{Name: wf.As, Type: colType})
+	}
+
+	schema := arrow.NewSchema(fields, nil)
+	w := flight.NewRecordWriter(stream, ipc.WithSchema(schema))
+	defer func() { _ = w.Close() }()
+
+	builder := array.NewRecordBuilder(mem, schema)
+	defer builder.Release()
+
+	for _, res := range results {
+		builder.Field(0).(*array.Uint64Builder).Append(uint64(res.ID))
+		builder.Field(1).(*array.Float32Builder).Append(res.Score)
+
+		colOffset := 2
+		for wfIdx, wf := range windowFunctions {
+			val, ok := res.Metadata[wf.As]
+			if !ok {
+				builder.Field(colOffset + wfIdx).AppendNull()
+				continue
+			}
+			switch wf.Name {
+			case "row_number", "rank", "dense_rank":
+				builder.Field(colOffset + wfIdx).(*array.Int64Builder).Append(int64(val.(int)))
+			default:
+				builder.Field(colOffset + wfIdx).(*array.Float64Builder).Append(val.(float64))
+			}
+		}
+	}
+
+	rec := builder.NewRecordBatch()
+	defer rec.Release()
+	return w.Write(rec)
 }

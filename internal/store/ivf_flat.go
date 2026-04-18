@@ -518,7 +518,7 @@ func (ivf *IVFFlatIndex) kMeansClustering(vectors [][]float32, k int) ([][]float
 				}
 			} else {
 				// Reinitialize empty cluster
-				newCentroids[i] = vectors[rand.Intn(n)]
+				newCentroids[i] = vectors[rand.Intn(n)] // #nosec G404
 			}
 
 			// Calculate maximum centroid movement
@@ -567,7 +567,7 @@ func (ivf *IVFFlatIndex) kMeansPlusPlusInit(vectors [][]float32, k int) [][]floa
 	centroids := make([][]float32, 0, k)
 
 	// Choose first centroid randomly
-	firstIdx := rand.Intn(n)
+	firstIdx := rand.Intn(n) // #nosec G404
 	centroids = append(centroids, vectors[firstIdx])
 
 	// Choose remaining centroids
@@ -590,7 +590,7 @@ func (ivf *IVFFlatIndex) kMeansPlusPlusInit(vectors [][]float32, k int) [][]floa
 		}
 
 		// Choose next centroid with probability proportional to distance squared
-		r := rand.Float64() * totalDist
+		r := rand.Float64() * totalDist // #nosec G404
 		cumsum := 0.0
 		nextIdx := 0
 		for i, dist := range distances {

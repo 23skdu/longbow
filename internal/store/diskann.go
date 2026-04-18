@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"path/filepath"
 	"sort"
 	"sync"
 
@@ -362,6 +363,7 @@ func (d *DiskANNIndex) Save(path string) error {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
+	path = filepath.Clean(path)
 	f, err := os.Create(path)
 	if err != nil {
 		return fmt.Errorf("failed to create file: %w", err)
@@ -460,6 +462,7 @@ func (d *DiskANNIndex) Save(path string) error {
 }
 
 func (d *DiskANNIndex) Load(path string) error {
+	path = filepath.Clean(path)
 	f, err := os.Open(path)
 	if err != nil {
 		return fmt.Errorf("failed to open file: %w", err)

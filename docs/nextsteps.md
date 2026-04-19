@@ -1,12 +1,21 @@
 # Longbow Next Steps — Feature Roadmap 2026
 
-**Last Updated**: 2026-04-17
+**Last Updated**: 2026-04-19
 
 ---
 
 ## 🎯 REMAINING WORK
 
+### Performance Optimization (Priority: HIGH)
+
+- [ ] **Numerical Parity**: Verify SIMD results against high-precision float64 baseline.
+- [ ] **DiskGraph Load Caching**: 💡 PLANNED | Cache DiskGraph refs in SearchContext for lower latency.
+- [ ] **Adaptive M-Param**: 💡 PLANNED | implementation of dynamic connectivity scaling.
+- [ ] **Metrics Sampling**: 💡 PLANNED | Reduce atomic overhead in metrics collection.
+- [ ] **Zero-Copy Ingest**: 💡 PLANNED | Direct Arrow-to-HNSW memory mapping.
+
 ### Store Modularization (Priority: HIGH)
+
 The `internal/store` package is currently over-bloated (500+ files). This 6-part plan aims to restructure it for scalability.
 
 | Phase | Component | Priority | Status |
@@ -25,20 +34,16 @@ The `internal/store` package is currently over-bloated (500+ files). This 6-part
 | 6 | ONNX Benchmarks | ⏳ NOT STARTED | `internal/onnx/benchmarks_test.go` missing (only `onnx_benchmark_test.go` exists). |
 | 7 | COW Optimization | ✅ COMPLETE | Optimized `GraphData.Clone()` and pre-allocation strategy. |
 | 8 | Search Result Pooling | ✅ COMPLETE | Implemented `sync.Pool` and `ArrowSearchContext` pooling. |
-| 9 | Fast-Path Search | 🚀 NEXT | specialized kernels for float32/int8 to bypass `any` overhead. |
+| 9 | Fast-Path Search | ✅ COMPLETE | Specialized kernels for all types to bypass `any` overhead. |
 | 10 | allocation Buffer Pool | ✅ COMPLETE | Pooled buffers for type conversions in `SearchContext`. |
-| 11 | DiskGraph Load Caching | 💡 PLANNED | Cache DiskGraph refs in SearchContext for lower latency. |
-| 12 | Adaptive M-Param | 💡 PLANNED | implementation of dynamic connectivity scaling. |
-| 13 | Metrics Sampling | 💡 PLANNED | Reduce atomic overhead in metrics collection. |
-| 14 | Lock-Free Adjacency | 🚀 NEXT | Expand lock-free patterns to layer 0 updates. |
-| 15 | Zero-Copy Ingest | 💡 PLANNED | Direct Arrow-to-HNSW memory mapping. |
-| 16 | Panic Removal | ✅ COMPLETE | Eliminated `panic()` in all core data resolution paths. |
-
+| 11 | Lock-Free Adjacency | 🚀 NEXT | Expand lock-free patterns to layer 0 updates. |
+| 12 | Zero-Copy Tensor Stream | 💡 PLANNED | Direct GPU-to-GPU tensor transfer via Arrow Flight. |
 
 ---
 
 ## ✅ VERIFIED COMPLETED (2026)
 
+- [x] **Comprehensive Multi-Metric Support**: Full Euclidean, Cosine, and DotProduct support across all supported data types (int8-uint64, complex, turboquant). Verified with matrix correctness tests and 1M+ exec fuzzing.
 - [x] **Advanced SQL (Subqueries/CTE)**: Nested query resolution and CTE support fully implemented.
 - [x] **ONNX Linux/CUDA Backend**: Functional `onnxruntime_go` integration with CUDA EP support.
 - [x] **SIMD String Filtering**: Semi-vectorized length-first string equality kernels for AVX2.
@@ -49,7 +54,7 @@ The `internal/store` package is currently over-bloated (500+ files). This 6-part
 - [x] **CUDA Memory Ops**: Stable CGO-based unified memory management.
 - [x] **Zero-Copy RDMA**: `libibverbs` integration for Linux/RoCEv2 transport.
 - [x] **Metal ONNX**: Reranker and embedding generation functional on macOS ARM64.
-- [x] **Core Coverage Stabilization**: Reached ~67% statement coverage across `simd`, `query`, and `onnx` (100% of reachable ARM64 logic). Exhaustive type tests and JSON parser verification implemented.
+- [x] **Core Coverage Stabilization**: Reached ~67% statement coverage across `simd`, `query`, and `onnx`.
 
 ---
 

@@ -30,7 +30,7 @@ func (c *TurboQuantCompute) Distance(id1, id2 uint32) (float32, error) {
 	if err != nil {
 		return 0, err
 	}
-	return simd.L2SquaredFloat32(vec1, vec2)
+	return c.h.distFunc(vec1, vec2)
 }
 
 func (c *TurboQuantCompute) DistanceWithVector(id uint32, vec []float32) (float32, error) {
@@ -45,7 +45,7 @@ func (c *TurboQuantCompute) DistanceWithVector(id uint32, vec []float32) (float3
 		return 0, err
 	}
 
-	return simd.L2SquaredFloat32(vec1, rotatedQuery)
+	return c.h.distFunc(vec1, rotatedQuery)
 }
 
 func (c *TurboQuantCompute) DistanceWithRotatedQuery(id uint32, rotatedQuery []float32) (float32, error) {
@@ -53,7 +53,7 @@ func (c *TurboQuantCompute) DistanceWithRotatedQuery(id uint32, rotatedQuery []f
 	if err != nil {
 		return 0, err
 	}
-	return simd.L2SquaredFloat32(vec1, rotatedQuery)
+	return c.h.distFunc(vec1, rotatedQuery)
 }
 
 func (c *TurboQuantCompute) PrecomputeRotatedQuery(vec []float32, output []float32) error {

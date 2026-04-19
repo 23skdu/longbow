@@ -13,6 +13,7 @@ type float64Computer struct {
 	data *types.GraphData
 	q    []float64
 	dims int
+	h    *ArrowHNSW
 }
 
 func (c *float64Computer) Compute(ids []uint32, dists []float32) error {
@@ -24,11 +25,11 @@ func (c *float64Computer) Compute(ids []uint32, dists []float32) error {
 			start := cOff * c.data.Dims
 			if start+c.dims <= len(chunk) {
 				v := chunk[start : start+c.dims]
-				d, err := simd.EuclideanDistanceFloat64(c.q, v)
+				d, err := c.h.distFuncF64(c.q, v)
 				if err != nil {
 					return err
 				}
-				dists[i] = float32(d)
+				dists[i] = d
 				continue
 			}
 		}
@@ -45,8 +46,7 @@ func (c *float64Computer) ComputeSingle(id uint32) (float32, error) {
 		start := cOff * c.data.Dims
 		if start+c.dims <= len(chunk) {
 			v := chunk[start : start+c.dims]
-			d, err := simd.EuclideanDistanceFloat64(c.q, v)
-			return float32(d), err
+			return c.h.distFuncF64(c.q, v)
 		}
 	}
 	return math.MaxFloat32, nil

@@ -286,25 +286,48 @@ func initializeDispatch() {
 
 	// Baseline Fallbacks for all other types
 	Registry.Register(MetricEuclidean, DataTypeInt8, 0, euclideanDistanceInt8Impl)
+	Registry.Register(MetricCosine, DataTypeInt8, 0, CosineDistanceInt8)
 	Registry.Register(MetricDotProduct, DataTypeInt8, 0, dotInt8Unrolled4x)
 
 	Registry.Register(MetricEuclidean, DataTypeInt16, 0, euclideanDistanceInt16Impl)
+	Registry.Register(MetricCosine, DataTypeInt16, 0, CosineDistanceInt16)
 	Registry.Register(MetricDotProduct, DataTypeInt16, 0, dotInt16Unrolled4x)
 
 	Registry.Register(MetricEuclidean, DataTypeInt32, 0, euclideanInt32Unrolled4x)
-	Registry.Register(MetricEuclidean, DataTypeInt64, 0, euclideanInt64Unrolled4x)
+	Registry.Register(MetricCosine, DataTypeInt32, 0, CosineDistanceInt32)
+	Registry.Register(MetricDotProduct, DataTypeInt32, 0, dotInt32Unrolled4x)
 
-	Registry.Register(MetricEuclidean, DataTypeUint8, 0, euclideanUint8Unrolled4x)
+	Registry.Register(MetricEuclidean, DataTypeInt64, 0, euclideanInt64Unrolled4x)
+	Registry.Register(MetricCosine, DataTypeInt64, 0, CosineDistanceInt64)
+	Registry.Register(MetricDotProduct, DataTypeInt64, 0, dotInt64Unrolled4x)
+
+	Registry.Register(MetricEuclidean, DataTypeUint8, 0, EuclideanDistanceUint8)
+	Registry.Register(MetricCosine, DataTypeUint8, 0, CosineDistanceUint8)
+	Registry.Register(MetricDotProduct, DataTypeUint8, 0, DotProductUint8)
+
 	Registry.Register(MetricEuclidean, DataTypeUint16, 0, euclideanUint16Unrolled4x)
+	Registry.Register(MetricCosine, DataTypeUint16, 0, CosineDistanceUint16)
+	Registry.Register(MetricDotProduct, DataTypeUint16, 0, dotUint16Unrolled4x)
+
 	Registry.Register(MetricEuclidean, DataTypeUint32, 0, euclideanUint32Unrolled4x)
+	Registry.Register(MetricCosine, DataTypeUint32, 0, CosineDistanceUint32)
+	Registry.Register(MetricDotProduct, DataTypeUint32, 0, dotUint32Unrolled4x)
+
 	Registry.Register(MetricEuclidean, DataTypeUint64, 0, euclideanUint64Unrolled4x)
+	Registry.Register(MetricCosine, DataTypeUint64, 0, CosineDistanceUint64)
+	Registry.Register(MetricDotProduct, DataTypeUint64, 0, dotUint64Unrolled4x)
 
 	Registry.Register(MetricEuclidean, DataTypeFloat64, 0, euclideanFloat64Unrolled4x)
+	Registry.Register(MetricCosine, DataTypeFloat64, 0, cosineFloat64Unrolled4x)
 	Registry.Register(MetricDotProduct, DataTypeFloat64, 0, dotFloat64Unrolled4x)
 
 	Registry.Register(MetricEuclidean, DataTypeComplex64, 0, euclideanComplex64Unrolled)
+	Registry.Register(MetricCosine, DataTypeComplex64, 0, CosineDistanceComplex64)
 	Registry.Register(MetricDotProduct, DataTypeComplex64, 0, dotComplex64Unrolled)
+
 	Registry.Register(MetricEuclidean, DataTypeComplex128, 0, euclideanComplex128Unrolled)
+	Registry.Register(MetricCosine, DataTypeComplex128, 0, CosineDistanceComplex128)
+	Registry.Register(MetricDotProduct, DataTypeComplex128, 0, dotComplex128Unrolled)
 }
 
 // DispatchDistance computes the distance between two vectors using the best available kernel.

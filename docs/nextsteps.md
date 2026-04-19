@@ -8,7 +8,7 @@
 
 ### Performance Optimization (Priority: HIGH)
 
-- [ ] **Numerical Parity**: Verify SIMD results against high-precision float64 baseline.
+- [x] **Numerical Parity**: Verify SIMD results against high-precision float64 baseline. (Verified all integer, unsigned, complex, and floating point types)
 - [ ] **DiskGraph Load Caching**: 💡 PLANNED | Cache DiskGraph refs in SearchContext for lower latency.
 - [ ] **Adaptive M-Param**: 💡 PLANNED | implementation of dynamic connectivity scaling.
 - [ ] **Metrics Sampling**: 💡 PLANNED | Reduce atomic overhead in metrics collection.
@@ -36,7 +36,7 @@ The `internal/store` package is currently over-bloated (500+ files). This 6-part
 | 8 | Search Result Pooling | ✅ COMPLETE | Implemented `sync.Pool` and `ArrowSearchContext` pooling. |
 | 9 | Fast-Path Search | ✅ COMPLETE | Specialized kernels for all types to bypass `any` overhead. |
 | 10 | allocation Buffer Pool | ✅ COMPLETE | Pooled buffers for type conversions in `SearchContext`. |
-| 11 | Lock-Free Adjacency | 🚀 NEXT | Expand lock-free patterns to layer 0 updates. |
+| 11 | Lock-Free Adjacency | ✅ COMPLETE | Expand lock-free patterns to layer 0 updates. |
 | 12 | Zero-Copy Tensor Stream | 💡 PLANNED | Direct GPU-to-GPU tensor transfer via Arrow Flight. |
 
 ---

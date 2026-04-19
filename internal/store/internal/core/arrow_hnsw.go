@@ -1427,11 +1427,23 @@ func (h *ArrowHNSW) growInternal(capacity, dims int) error {
 		data.PQEnabled == h.config.PQEnabled &&
 		data.SQ8Enabled == h.config.SQ8Enabled &&
 		data.BQEnabled == h.config.BQEnabled &&
-		data.TurboQuantEnabled == h.config.TurboQuantEnabled &&
-		(!h.config.PQEnabled || len(data.VectorsPQ) > 0) &&
-		(!h.config.SQ8Enabled || len(data.VectorsSQ8) > 0) &&
-		(!h.config.BQEnabled || len(data.VectorsBQ) > 0) {
-		return nil
+		data.TurboQuantEnabled == h.config.TurboQuantEnabled {
+
+		// Ensure all enabled quantization types already have allocated vectors
+		alreadyInitialized := true
+		if h.config.PQEnabled && len(data.VectorsPQ) == 0 {
+			alreadyInitialized = false
+		}
+		if h.config.SQ8Enabled && len(data.VectorsSQ8) == 0 {
+			alreadyInitialized = false
+		}
+		if h.config.BQEnabled && len(data.VectorsBQ) == 0 {
+			alreadyInitialized = false
+		}
+
+		if alreadyInitialized {
+			return nil
+		}
 	}
 
 	// COW: Clone the current data structure

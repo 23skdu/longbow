@@ -35,20 +35,24 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 	var dims int
 	defer func() {
 		duration := time.Since(start).Seconds()
-		metrics.HNSWInsertDurationSeconds.Observe(duration)
 		nodeCount := float64(h.nodeCount.Load())
-		metrics.HNSWNodesAddedTotal.WithLabelValues(h.name).Inc()
-		if !h.disableNodeCountMetric.Load() {
-			metrics.HNSWNodeCount.WithLabelValues(h.name, "0").Set(nodeCount)
+		// Metrics Sampling: Reduce atomic overhead in hot paths
+		typeStr := h.config.DataType.String()
+		if int(id)%100 == 0 {
+			metrics.HNSWNodesAddedTotal.WithLabelValues(h.name).Add(100)
+			metrics.HNSWInsertOpsTotal.WithLabelValues(h.name, typeStr).Add(100)
+			metrics.HNSWIngestionThroughputVectorsPerSecond.WithLabelValues(h.name, typeStr).Add(100)
 		}
 
-		typeStr := h.config.DataType.String()
-		metrics.HNSWInsertOpsTotal.WithLabelValues(h.name, typeStr).Inc()
+		if int(id)%10 == 0 {
+			metrics.HNSWInsertDurationSeconds.Observe(duration)
+			metrics.HNSWInsertLatencyByType.WithLabelValues(typeStr).Observe(duration)
+			metrics.HNSWInsertLatencyByDim.WithLabelValues(strconv.Itoa(dims)).Observe(duration)
+		}
 
-		metrics.HNSWIngestionThroughputVectorsPerSecond.WithLabelValues(h.name, typeStr).Inc()
-
-		metrics.HNSWInsertLatencyByType.WithLabelValues(typeStr).Observe(duration)
-		metrics.HNSWInsertLatencyByDim.WithLabelValues(strconv.Itoa(dims)).Observe(duration)
+		if !h.disableNodeCountMetric.Load() && int(id)%100 == 0 {
+			metrics.HNSWNodeCount.WithLabelValues(h.name, "0").Set(nodeCount)
+		}
 	}()
 
 	// 1. SQ8 Training (Outside any lock to avoid deadlock with ensureTrained -> growMu.Lock())

@@ -25,11 +25,9 @@ func (h *ArrowHNSW) adjustMParameter(data *types.GraphData, sampleSize int) {
 	}
 
 	for i := uint32(0); i < uint32(sampleSize); i++ {
-		v := h.mustGetVectorFromData(data, i)
-		if v != nil {
-			if vf32, ok := v.([]float32); ok {
-				sampleVecs = append(sampleVecs, vf32)
-			}
+		vf32 := h.getVectorF32(data, i)
+		if vf32 != nil {
+			sampleVecs = append(sampleVecs, vf32)
 		}
 	}
 

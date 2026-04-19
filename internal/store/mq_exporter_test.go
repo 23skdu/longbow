@@ -199,11 +199,11 @@ func TestMessageQueueExporter_compressionFromString(t *testing.T) {
 		input    string
 		expected string
 	}{
-		{"gzip", "GZIP"},
-		{"snappy", "Snappy"},
-		{"lz4", "LZ4"},
-		{"none", "None"},
-		{"invalid", "None"},
+		{"gzip", "gzip"},
+		{"snappy", "snappy"},
+		{"lz4", "lz4"},
+		{"none", "none"},
+		{"invalid", "none"},
 	}
 
 	for _, tt := range tests {

@@ -1447,21 +1447,18 @@ func (h *ArrowHNSW) growInternal(capacity, dims int) error {
 		} else {
 			newData.PQM = h.config.PQM
 		}
-		if newData.VectorsPQ == nil {
-			newData.VectorsPQ = []uint64{}
-		}
 	}
 	newData.SQ8Enabled = h.config.SQ8Enabled
-	if newData.SQ8Enabled && newData.VectorsSQ8 == nil {
+	if newData.SQ8Enabled && len(newData.VectorsSQ8) == 0 {
 		newData.VectorsSQ8 = []uint64{}
 	}
 	newData.BQEnabled = h.config.BQEnabled
-	if newData.BQEnabled && newData.VectorsBQ == nil {
+	if newData.BQEnabled && len(newData.VectorsBQ) == 0 {
 		newData.VectorsBQ = []uint64{}
 	}
 	newData.TurboQuantEnabled = h.config.TurboQuantEnabled
 	newData.TurboQuantBits = h.config.TurboQuantBits
-	if newData.TurboQuantEnabled && newData.VectorsTQ == nil {
+	if newData.TurboQuantEnabled && len(newData.VectorsTQ) == 0 {
 		newData.VectorsTQ = []uint64{}
 	}
 
@@ -1572,8 +1569,8 @@ func (h *ArrowHNSW) SetEfConstruction(ef int32) {
 
 func (h *ArrowHNSW) CleanupTombstones(threshold int) int {
 	h.dataset.RLockData()
-	defer h.dataset.RUnlockData()
-
+	
+	shouldReset := false
 	totalPruned := 0
 	for _, ts := range h.dataset.GetTombstones() {
 		if ts == nil {
@@ -1581,11 +1578,15 @@ func (h *ArrowHNSW) CleanupTombstones(threshold int) int {
 		}
 		count := int(ts.Count())
 		if count > threshold {
-			ts.Release()
-			h.dataset.ResetTombstones()
-			totalPruned += count
+			shouldReset = true
+			totalPruned = count
 			break
 		}
+	}
+	h.dataset.RUnlockData()
+
+	if shouldReset {
+		h.dataset.ResetTombstones()
 	}
 	return totalPruned
 }

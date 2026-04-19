@@ -31,7 +31,7 @@ The `internal/store` package is currently over-bloated (500+ files). This 6-part
 
 | # | Feature | Status | Notes |
 |---|---------|--------|-------|
-| 6 | ONNX Benchmarks | ⏳ NOT STARTED | `internal/onnx/benchmarks_test.go` missing (only `onnx_benchmark_test.go` exists). |
+| 6 | ONNX Benchmarks | ✅ COMPLETE | Implemented `internal/onnx/benchmarks_test.go` covering ALL backends. |
 | 7 | COW Optimization | ✅ COMPLETE | Optimized `GraphData.Clone()` and pre-allocation strategy. |
 | 8 | Search Result Pooling | ✅ COMPLETE | Implemented `sync.Pool` and `ArrowSearchContext` pooling. |
 | 9 | Fast-Path Search | ✅ COMPLETE | Specialized kernels for all types to bypass `any` overhead. |

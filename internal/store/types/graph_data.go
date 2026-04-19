@@ -1764,12 +1764,14 @@ func (g *GraphData) PreAllocate(capacity int) error {
 		if g.Float64Arena == nil {
 			g.Float64Arena = memory.NewTypedArena[float64](memory.NewSlabArena(slabSize))
 		}
-		for i := 0; i < numChunks; i++ {
-			ref, err := g.Float64Arena.AllocSliceDirty(ChunkSize * g.Dims)
-			if err != nil {
-				return err
+		if len(g.VectorsFloat64Offsets) < numChunks {
+			for i := len(g.VectorsFloat64Offsets); i < numChunks; i++ {
+				ref, err := g.Float64Arena.AllocSliceDirty(ChunkSize * g.Dims)
+				if err != nil {
+					return err
+				}
+				g.VectorsFloat64Offsets = append(g.VectorsFloat64Offsets, ref.Offset)
 			}
-			g.VectorsFloat64Offsets = append(g.VectorsFloat64Offsets, ref.Offset)
 		}
 	}
 
@@ -1784,12 +1786,14 @@ func (g *GraphData) PreAllocate(capacity int) error {
 		if g.Uint8Arena == nil {
 			g.Uint8Arena = memory.NewTypedArena[uint8](memory.NewSlabArena(slabSize))
 		}
-		for i := 0; i < numChunks; i++ {
-			ref, err := g.Uint8Arena.AllocSliceDirty(ChunkSize * stride)
-			if err != nil {
-				return err
+		if len(g.VectorsTQ) < numChunks {
+			for i := len(g.VectorsTQ); i < numChunks; i++ {
+				ref, err := g.Uint8Arena.AllocSliceDirty(ChunkSize * stride)
+				if err != nil {
+					return err
+				}
+				g.VectorsTQ = append(g.VectorsTQ, ref.Offset)
 			}
-			g.VectorsTQ = append(g.VectorsTQ, ref.Offset)
 		}
 	}
 
@@ -1803,23 +1807,35 @@ func (g *GraphData) PreAllocate(capacity int) error {
 		if g.Complex64Arena == nil {
 			g.Complex64Arena = memory.NewTypedArena[complex64](memory.NewSlabArena(slabSize))
 		}
-		for i := 0; i < numChunks; i++ {
-			ref, err := g.Complex64Arena.AllocSliceDirty(ChunkSize * g.Dims)
-			if err != nil {
-				return err
+		if len(g.VectorsComplex64Offsets) < numChunks {
+			for i := len(g.VectorsComplex64Offsets); i < numChunks; i++ {
+				ref, err := g.Complex64Arena.AllocSliceDirty(ChunkSize * g.Dims)
+				if err != nil {
+					return err
+				}
+				g.VectorsComplex64Offsets = append(g.VectorsComplex64Offsets, ref.Offset)
 			}
-			g.VectorsComplex64Offsets = append(g.VectorsComplex64Offsets, ref.Offset)
 		}
 	}
 
 	// Pre-allocate Complex128 arena chunks
 	if g.Type == VectorTypeComplex128 {
-		for i := 0; i < numChunks; i++ {
-			ref, err := g.Complex128Arena.AllocSliceDirty(ChunkSize * g.Dims)
-			if err != nil {
-				return err
+		requiredSize := numChunks * ChunkSize * g.Dims * 16
+		slabSize := requiredSize + 4096
+		if slabSize < 1024*1024 {
+			slabSize = 1024 * 1024
+		}
+		if g.Complex128Arena == nil {
+			g.Complex128Arena = memory.NewTypedArena[complex128](memory.NewSlabArena(slabSize))
+		}
+		if len(g.VectorsComplex128Offsets) < numChunks {
+			for i := len(g.VectorsComplex128Offsets); i < numChunks; i++ {
+				ref, err := g.Complex128Arena.AllocSliceDirty(ChunkSize * g.Dims)
+				if err != nil {
+					return err
+				}
+				g.VectorsComplex128Offsets = append(g.VectorsComplex128Offsets, ref.Offset)
 			}
-			g.VectorsComplex128Offsets = append(g.VectorsComplex128Offsets, ref.Offset)
 		}
 	}
 
@@ -1834,12 +1850,14 @@ func (g *GraphData) PreAllocate(capacity int) error {
 		if g.Uint8Arena == nil {
 			g.Uint8Arena = memory.NewTypedArena[uint8](memory.NewSlabArena(slabSize))
 		}
-		for i := 0; i < numChunks; i++ {
-			ref, err := g.Uint8Arena.AllocSliceDirty(ChunkSize * paddedDims)
-			if err != nil {
-				return err
+		if len(g.VectorsSQ8) < numChunks {
+			for i := len(g.VectorsSQ8); i < numChunks; i++ {
+				ref, err := g.Uint8Arena.AllocSliceDirty(ChunkSize * paddedDims)
+				if err != nil {
+					return err
+				}
+				g.VectorsSQ8 = append(g.VectorsSQ8, ref.Offset)
 			}
-			g.VectorsSQ8 = append(g.VectorsSQ8, ref.Offset)
 		}
 	}
 
@@ -1855,12 +1873,14 @@ func (g *GraphData) PreAllocate(capacity int) error {
 		if g.Uint64Arena == nil {
 			g.Uint64Arena = memory.NewTypedArena[uint64](memory.NewSlabArena(slabSize))
 		}
-		for i := 0; i < numChunks; i++ {
-			ref, err := g.Uint64Arena.AllocSliceDirty(numWords)
-			if err != nil {
-				return err
+		if len(g.VectorsPQ) < numChunks {
+			for i := len(g.VectorsPQ); i < numChunks; i++ {
+				ref, err := g.Uint64Arena.AllocSliceDirty(numWords)
+				if err != nil {
+					return err
+				}
+				g.VectorsPQ = append(g.VectorsPQ, ref.Offset)
 			}
-			g.VectorsPQ = append(g.VectorsPQ, ref.Offset)
 		}
 	}
 
@@ -1877,12 +1897,14 @@ func (g *GraphData) PreAllocate(capacity int) error {
 		if g.Uint64Arena == nil {
 			g.Uint64Arena = memory.NewTypedArena[uint64](memory.NewSlabArena(slabSize))
 		}
-		for i := 0; i < numChunks; i++ {
-			ref, err := g.Uint64Arena.AllocSliceDirty(numWords)
-			if err != nil {
-				return err
+		if len(g.VectorsBQ) < numChunks {
+			for i := len(g.VectorsBQ); i < numChunks; i++ {
+				ref, err := g.Uint64Arena.AllocSliceDirty(numWords)
+				if err != nil {
+					return err
+				}
+				g.VectorsBQ = append(g.VectorsBQ, ref.Offset)
 			}
-			g.VectorsBQ = append(g.VectorsBQ, ref.Offset)
 		}
 	}
 

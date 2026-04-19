@@ -12,7 +12,7 @@
 - [x] **DiskGraph Load Caching**: ✅ COMPLETE | Cache DiskGraph refs in SearchContext for lower latency.
 - [x] **Adaptive M-Param**: ✅ COMPLETE | implementation of dynamic connectivity scaling.
 - [x] **Metrics Sampling**: ✅ COMPLETE | Reduce atomic overhead in metrics collection.
-- [ ] **Zero-Copy Ingest**: 💡 PLANNED | Direct Arrow-to-HNSW memory mapping.
+- [x] **Zero-Copy Ingest**: ✅ COMPLETE | Direct Arrow-to-HNSW memory mapping.
 
 ### Store Modularization (Priority: HIGH)
 

@@ -1630,17 +1630,78 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 			switch h.config.DataType {
 			case types.VectorTypeFloat32:
 				f32s := make([][]float32, n)
+				// Cache raw slices per record batch to avoid expensive column calls
+				valuesCache := make(map[arrow.RecordBatch][]float32)
+				physicalDims := int(h.dims.Load())
+				
 				for i := range rowIdxs {
 					rec := recs[batchIdxs[i]]
-					if v, ok := h.extractVector(rec, vecColIdx, rowIdxs[i]).([]float32); ok {
-						f32s[i] = v
-						h.SetLocation(types.VectorID(startID+uint32(i)), types.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
+					values, ok := valuesCache[rec]
+					if !ok {
+						col := rec.Column(vecColIdx)
+						if f32Arr, okCol := col.(*arrowarray.Float32); okCol {
+							values = f32Arr.Float32Values()
+							valuesCache[rec] = values
+						}
+					}
+					
+					if values != nil {
+						start := rowIdxs[i] * physicalDims
+						if start+physicalDims <= len(values) {
+							f32s[i] = values[start : start+physicalDims]
+							h.SetLocation(types.VectorID(startID+uint32(i)), types.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
+						} else {
+							supported = false
+							break
+						}
 					} else {
-						supported = false
-						break
+						// Fallback to slow path if type mismatch
+						if v, okC := h.extractVector(rec, vecColIdx, rowIdxs[i]).([]float32); okC {
+							f32s[i] = v
+							h.SetLocation(types.VectorID(startID+uint32(i)), types.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
+						} else {
+							supported = false
+							break
+						}
 					}
 				}
 				vecs = f32s
+
+				// Zero-Copy Direct Mapping Optimization
+				// If we are ingesting a full contiguous block that aligns with HNSW chunks,
+				// we map the Arrow memory directly instead of copying into arenas.
+				if len(recs) == 1 && startID%uint32(types.ChunkSize) == 0 && n >= types.ChunkSize {
+					isContiguous := rowIdxs[0]%types.ChunkSize == 0
+					if isContiguous {
+						for j := 1; j < n; j++ {
+							if rowIdxs[j] != rowIdxs[j-1]+1 {
+								isContiguous = false
+								break
+							}
+						}
+					}
+
+					if isContiguous {
+						rec := recs[0]
+						values := valuesCache[rec]
+						if values != nil {
+							data := h.data.Load()
+							numFullChunks := n / types.ChunkSize
+							for c := 0; c < numFullChunks; c++ {
+								cID := int(startID)/types.ChunkSize + c
+								rowOffset := rowIdxs[0] + (c * types.ChunkSize)
+								
+								offset := rowOffset * physicalDims
+								dataSize := types.ChunkSize * physicalDims
+								if offset+dataSize <= len(values) {
+									chunkData := values[offset : offset+dataSize]
+									col := rec.Column(vecColIdx)
+									_ = data.SetZeroCopyMapping(cID, chunkData, col)
+								}
+							}
+						}
+					}
+				}
 			case types.VectorTypeFloat16:
 				f16s := make([][]float16.Num, n)
 				for i := range rowIdxs {

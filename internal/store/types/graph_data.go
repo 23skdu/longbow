@@ -130,6 +130,7 @@ type PackedNeighbors interface {
 	SetNeighbors(id uint32, neighbors []uint32) error
 	GetNeighborsF16(id uint32) ([]uint32, []float16.Num, bool)
 	SetNeighborsF16(id uint32, neighbors []uint32, dists []float16.Num) error
+	EnsureCapacity(id uint32)
 }
 
 // GetNodeCount returns the current capacity of the graph (number of addressable nodes).
@@ -1487,6 +1488,12 @@ func (g *GraphData) Clone() *GraphData {
 	if g.Levels != nil {
 		newG.Levels = make([][]uint8, len(g.Levels))
 		copy(newG.Levels, g.Levels)
+	}
+
+	// Shallow copy PackedNeighbors (the structures themselves are thread-safe and manage their own growth)
+	if g.PackedNeighbors != nil {
+		newG.PackedNeighbors = make([]PackedNeighbors, len(g.PackedNeighbors))
+		copy(newG.PackedNeighbors, g.PackedNeighbors)
 	}
 
 	// Deep copy vector offset slices

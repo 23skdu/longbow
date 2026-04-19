@@ -363,6 +363,13 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 	if h.pqEncoder != nil {
 		gd.PQM = h.pqEncoder.CodeSize()
 	}
+
+	// Initialize Layer 0 Lock-Free Adjacency ([#11] Lock-Free Adjacency)
+	gd.PackedNeighbors = make([]types.PackedNeighbors, types.ArrowMaxLayers)
+	// We use a dedicated SlabArena for Layer 0 adjacency to maximize throughput
+	adjArena := memory.NewSlabArena(1024 * 1024 * 32) // 32MB initial slab
+	gd.PackedNeighbors[0] = NewPackedAdjacency(adjArena, capacity)
+
 	h.data.Store(gd)
 
 	// Initialize Graph Navigator
@@ -1421,6 +1428,15 @@ func (h *ArrowHNSW) growInternal(capacity, dims int) error {
 	newData.BQEnabled = h.config.BQEnabled
 	newData.TurboQuantEnabled = h.config.TurboQuantEnabled
 	newData.TurboQuantBits = h.config.TurboQuantBits
+
+	// Ensure PackedNeighbors are resized for new capacity
+	if len(newData.PackedNeighbors) > 0 {
+		for _, pn := range newData.PackedNeighbors {
+			if pn != nil {
+				pn.EnsureCapacity(uint32(capacity))
+			}
+		}
+	}
 
 	// If dims changed, we need to reinitialize arenas for the new size
 	if dims != currentDims {

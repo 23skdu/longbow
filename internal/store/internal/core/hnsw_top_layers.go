@@ -92,12 +92,20 @@ func (tlm *TopLayerManager) AddConnectionCAS(layer int, source, target uint32) b
 // GetNeighborsCombined returns neighbors from both the standard graph data
 // and the lock-free upper layers, ensuring a consistent view.
 func (h *ArrowHNSW) GetNeighborsCombined(layer int, id uint32) []uint32 {
-	// 1. Try Lock-Free first
+	// 1. Try TopLayerManager (Persistent lock-free upper layers)
 	lf := h.topLayerManager.GetNeighborsLockFree(layer, id)
 	if lf != nil {
 		return lf
 	}
 	
-	// 2. Fallback to standard types.GraphData (which is lock-safe for reads)
-	return h.data.Load().GetNeighbors(layer, id, nil)
+	// 2. Try GraphData PackedNeighbors (Dynamic lock-free adjacency)
+	data := h.data.Load()
+	if layer < len(data.PackedNeighbors) && data.PackedNeighbors[layer] != nil {
+		if neighbors, ok := data.PackedNeighbors[layer].GetNeighbors(id); ok {
+			return neighbors
+		}
+	}
+	
+	// 3. Fallback to standard types.GraphData (which is lock-safe for reads)
+	return data.GetNeighbors(layer, id, nil)
 }

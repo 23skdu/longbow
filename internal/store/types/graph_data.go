@@ -7,6 +7,7 @@ import (
 	"unsafe"
 
 	"github.com/23skdu/longbow/internal/memory"
+	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
@@ -117,6 +118,10 @@ type GraphData struct {
 
 	TurboQuantEnabled bool
 	TurboQuantBits    int
+	
+	// ArrowRefs holds references to external Arrow arrays providing vector data.
+	// Used for zero-copy ingestion paths.
+	ArrowRefs []arrow.Array
 }
 
 type graphFallback interface {
@@ -1077,7 +1082,12 @@ func (g *GraphData) SetVector(id uint32, vec any) error {
 		if chunk != nil {
 			start := cOff * g.Dims
 			if start+len(v) <= len(chunk) {
-				copy(chunk[start:start+len(v)], v)
+				dest := chunk[start : start+len(v)]
+				// Zero-Copy Optimization: Skip copy if source and destination are the same memory
+				if len(dest) > 0 && len(v) > 0 && &dest[0] == &v[0] {
+					return nil
+				}
+				copy(dest, v)
 			}
 		}
 	case []float16.Num:
@@ -1085,7 +1095,11 @@ func (g *GraphData) SetVector(id uint32, vec any) error {
 		if chunk != nil {
 			start := cOff * g.Dims
 			if start+len(v) <= len(chunk) {
-				copy(chunk[start:start+len(v)], v)
+				dest := chunk[start : start+len(v)]
+				if len(dest) > 0 && len(v) > 0 && &dest[0] == &v[0] {
+					return nil
+				}
+				copy(dest, v)
 			}
 		}
 	case []float64:
@@ -1093,7 +1107,11 @@ func (g *GraphData) SetVector(id uint32, vec any) error {
 		if chunk != nil {
 			start := cOff * g.Dims
 			if start+len(v) <= len(chunk) {
-				copy(chunk[start:start+len(v)], v)
+				dest := chunk[start : start+len(v)]
+				if len(dest) > 0 && len(v) > 0 && &dest[0] == &v[0] {
+					return nil
+				}
+				copy(dest, v)
 			}
 		}
 	case []complex64:
@@ -1579,6 +1597,17 @@ func (g *GraphData) Clone() *GraphData {
 		copy(newG.PackedNeighbors, g.PackedNeighbors)
 	}
 
+	// Copy Arrow References (with Retain if not nil)
+	if g.ArrowRefs != nil {
+		newG.ArrowRefs = make([]arrow.Array, len(g.ArrowRefs))
+		for i, ref := range g.ArrowRefs {
+			if ref != nil {
+				ref.Retain()
+				newG.ArrowRefs[i] = ref
+			}
+		}
+	}
+
 	// Deep copy vector offset slices
 	copyOffsetSlice := func(src []uint64, enabled bool) []uint64 {
 		if src == nil { 
@@ -1626,6 +1655,62 @@ func (g *GraphData) Clone() *GraphData {
 	}
 
 	return newG
+}
+
+// SetExternalVectorsChunk maps a chunk of the graph directly to an external slice.
+// This is used for zero-copy ingestion from Arrow buffers.
+func (g *GraphData) SetExternalVectorsChunk(chunkID int, data []float32, ref arrow.Array) error {
+	// Ensure metadata matches
+	if g.Type != VectorTypeFloat32 && g.Type != VectorTypeUnknown {
+		return fmt.Errorf("SetExternalVectorsChunk only supported for Float32 vectors")
+	}
+	
+	// Pre-allocate legacy Vectors slice if needed
+	for len(g.Vectors) <= chunkID {
+		g.Vectors = append(g.Vectors, nil)
+	}
+	
+	g.Vectors[chunkID] = data
+	
+	// Retain external reference to prevent premature release
+	if ref != nil {
+		ref.Retain()
+		g.ArrowRefs = append(g.ArrowRefs, ref)
+	}
+	
+	return nil
+}
+
+
+// SetZeroCopyMapping maps a chunk of the graph directly to an external slice of memory.
+// This is used for Zero-Copy Arrow ingestion. It ensures that GetVectorsChunk will 
+// return this external slice by bypassing the arena-based storage for this specific chunk.
+func (g *GraphData) SetZeroCopyMapping(chunkID int, data []float32, ref arrow.Array) error {
+	if g.Type != VectorTypeFloat32 && g.Type != VectorTypeUnknown {
+		return fmt.Errorf("Zero-Copy mapping only supported for Float32 vectors")
+	}
+
+	// Step 1: Ensure legacy Vectors slice has the slot
+	for len(g.Vectors) <= chunkID {
+		g.Vectors = append(g.Vectors, nil)
+	}
+	g.Vectors[chunkID] = data
+
+	// Step 2: Ensure arena offset slice has the slot but is set to 0 (NULL)
+	// This tells GetVectorsChunk to fall back to the legacy Vectors slice.
+	for len(g.VectorsF32) <= chunkID {
+		g.VectorsF32 = append(g.VectorsF32, 0)
+	}
+	// Note: We don't overwrite if it was already allocated unless we are sure.
+	g.VectorsF32[chunkID] = 0 
+
+	// Step 3: Retain reference
+	if ref != nil {
+		ref.Retain()
+		g.ArrowRefs = append(g.ArrowRefs, ref)
+	}
+
+	return nil
 }
 
 // PreAllocate pre-allocates memory for the given number of vectors.
@@ -2242,6 +2327,15 @@ func (g *GraphData) GrowMetadataSlices(numChunks int) {
 }
 
 func (g *GraphData) Release() {
+	// Release Arrow references
+	for _, ref := range g.ArrowRefs {
+		if ref != nil {
+			ref.Release()
+		}
+	}
+	g.ArrowRefs = nil
+	g.Vectors = nil
+
 	if g.Float32Arena != nil {
 		g.Float32Arena.Free()
 		g.Float32Arena = nil

@@ -526,3 +526,268 @@ func cosineFloat64Unrolled4x(a, b []float64) (float32, error) {
 	// Cosine distance = 1 - similarity
 	return float32(1.0 - similarity), nil
 }
+func dotUint8Unrolled4x(a, b []uint8) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	var sum0, sum1, sum2, sum3 float32
+	n := len(a)
+	i := 0
+	for ; i <= n-4; i += 4 {
+		sum0 += float32(a[i]) * float32(b[i])
+		sum1 += float32(a[i+1]) * float32(b[i+1])
+		sum2 += float32(a[i+2]) * float32(b[i+2])
+		sum3 += float32(a[i+3]) * float32(b[i+3])
+	}
+	for ; i < n; i++ {
+		sum0 += float32(a[i]) * float32(b[i])
+	}
+	return sum0 + sum1 + sum2 + sum3, nil
+}
+
+// =============================================================================
+// Generic Cosine Distance Helper
+// =============================================================================
+
+func cosineDistanceInt8Unrolled4x(a, b []int8) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	if len(a) == 0 {
+		return 1.0, nil
+	}
+	var dot, normA, normB float64
+	n := len(a)
+	i := 0
+	for ; i <= n-4; i += 4 {
+		va0, vb0 := float64(a[i]), float64(b[i])
+		va1, vb1 := float64(a[i+1]), float64(b[i+1])
+		va2, vb2 := float64(a[i+2]), float64(b[i+2])
+		va3, vb3 := float64(a[i+3]), float64(b[i+3])
+		dot += va0*vb0 + va1*vb1 + va2*vb2 + va3*vb3
+		normA += va0*va0 + va1*va1 + va2*va2 + va3*va3
+		normB += vb0*vb0 + vb1*vb1 + vb2*vb2 + vb3*vb3
+	}
+	for ; i < n; i++ {
+		va, vb := float64(a[i]), float64(b[i])
+		dot += va * vb
+		normA += va * va
+		normB += vb * vb
+	}
+	if normA <= 0 || normB <= 0 {
+		return 1.0, nil
+	}
+	similarity := dot / (math.Sqrt(normA) * math.Sqrt(normB))
+	return float32(math.Max(0, math.Min(2, 1.0-similarity))), nil
+}
+
+func cosineDistanceUint8Unrolled4x(a, b []uint8) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	if len(a) == 0 {
+		return 1.0, nil
+	}
+	var dot, normA, normB float64
+	n := len(a)
+	i := 0
+	for ; i <= n-4; i += 4 {
+		va0, vb0 := float64(a[i]), float64(b[i])
+		va1, vb1 := float64(a[i+1]), float64(b[i+1])
+		va2, vb2 := float64(a[i+2]), float64(b[i+2])
+		va3, vb3 := float64(a[i+3]), float64(b[i+3])
+		dot += va0*vb0 + va1*vb1 + va2*vb2 + va3*vb3
+		normA += va0*va0 + va1*va1 + va2*va2 + va3*va3
+		normB += vb0*vb0 + vb1*vb1 + vb2*vb2 + vb3*vb3
+	}
+	for ; i < n; i++ {
+		va, vb := float64(a[i]), float64(b[i])
+		dot += va * vb
+		normA += va * va
+		normB += vb * vb
+	}
+	if normA <= 0 || normB <= 0 {
+		return 1.0, nil
+	}
+	similarity := dot / (math.Sqrt(normA) * math.Sqrt(normB))
+	return float32(math.Max(0, math.Min(2, 1.0-similarity))), nil
+}
+
+func cosineDistanceInt16Unrolled4x(a, b []int16) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	if len(a) == 0 {
+		return 1.0, nil
+	}
+	var dot, normA, normB float64
+	for i := range a {
+		va, vb := float64(a[i]), float64(b[i])
+		dot += va * vb
+		normA += va * va
+		normB += vb * vb
+	}
+	if normA <= 0 || normB <= 0 {
+		return 1.0, nil
+	}
+	similarity := dot / (math.Sqrt(normA) * math.Sqrt(normB))
+	return float32(1.0 - similarity), nil
+}
+
+func cosineDistanceUint16Unrolled4x(a, b []uint16) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	if len(a) == 0 {
+		return 1.0, nil
+	}
+	var dot, normA, normB float64
+	for i := range a {
+		va, vb := float64(a[i]), float64(b[i])
+		dot += va * vb
+		normA += va * va
+		normB += vb * vb
+	}
+	if normA <= 0 || normB <= 0 {
+		return 1.0, nil
+	}
+	similarity := dot / (math.Sqrt(normA) * math.Sqrt(normB))
+	return float32(1.0 - similarity), nil
+}
+
+func cosineDistanceInt32Unrolled4x(a, b []int32) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	if len(a) == 0 {
+		return 1.0, nil
+	}
+	var dot, normA, normB float64
+	for i := range a {
+		va, vb := float64(a[i]), float64(b[i])
+		dot += va * vb
+		normA += va * va
+		normB += vb * vb
+	}
+	if normA <= 0 || normB <= 0 {
+		return 1.0, nil
+	}
+	similarity := dot / (math.Sqrt(normA) * math.Sqrt(normB))
+	return float32(1.0 - similarity), nil
+}
+
+func cosineDistanceUint32Unrolled4x(a, b []uint32) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	if len(a) == 0 {
+		return 1.0, nil
+	}
+	var dot, normA, normB float64
+	for i := range a {
+		va, vb := float64(a[i]), float64(b[i])
+		dot += va * vb
+		normA += va * va
+		normB += vb * vb
+	}
+	if normA <= 0 || normB <= 0 {
+		return 1.0, nil
+	}
+	similarity := dot / (math.Sqrt(normA) * math.Sqrt(normB))
+	return float32(1.0 - similarity), nil
+}
+
+func cosineDistanceInt64Unrolled4x(a, b []int64) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	if len(a) == 0 {
+		return 1.0, nil
+	}
+	var dot, normA, normB float64
+	for i := range a {
+		va, vb := float64(a[i]), float64(b[i])
+		dot += va * vb
+		normA += va * va
+		normB += vb * vb
+	}
+	if normA <= 0 || normB <= 0 {
+		return 1.0, nil
+	}
+	similarity := dot / (math.Sqrt(normA) * math.Sqrt(normB))
+	return float32(1.0 - similarity), nil
+}
+
+func cosineDistanceUint64Unrolled4x(a, b []uint64) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	if len(a) == 0 {
+		return 1.0, nil
+	}
+	var dot, normA, normB float64
+	for i := range a {
+		va, vb := float64(a[i]), float64(b[i])
+		dot += va * vb
+		normA += va * va
+		normB += vb * vb
+	}
+	if normA <= 0 || normB <= 0 {
+		return 1.0, nil
+	}
+	similarity := dot / (math.Sqrt(normA) * math.Sqrt(normB))
+	return float32(1.0 - similarity), nil
+}
+
+func cosineComplex64Unrolled(a, b []complex64) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	if len(a) == 0 {
+		return 1.0, nil
+	}
+	var dotR, dotI, normA, normB float64
+	for i := range a {
+		va_r, va_i := float64(real(a[i])), float64(imag(a[i]))
+		vb_r, vb_i := float64(real(b[i])), float64(imag(b[i]))
+		
+		// dot(a, b) = sum(a[i] * conj(b[i]))
+		// (ar + i*ai) * (br - i*bi) = (ar*br + ai*bi) + i*(ai*br - ar*bi)
+		dotR += va_r*vb_r + va_i*vb_i
+		dotI += va_i*vb_r - va_r*vb_i
+		
+		normA += va_r*va_r + va_i*va_i
+		normB += vb_r*vb_r + vb_i*vb_i
+	}
+	if normA <= 0 || normB <= 0 {
+		return 1.0, nil
+	}
+	// We use the real part for cosine similarity in most vdb contexts
+	similarity := dotR / (math.Sqrt(normA) * math.Sqrt(normB))
+	return float32(1.0 - similarity), nil
+}
+
+func cosineComplex128Unrolled(a, b []complex128) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	if len(a) == 0 {
+		return 1.0, nil
+	}
+	var dotR, dotI, normA, normB float64
+	for i := range a {
+		va_r, va_i := real(a[i]), imag(a[i])
+		vb_r, vb_i := real(b[i]), imag(b[i])
+		
+		dotR += va_r*vb_r + va_i*vb_i
+		dotI += va_i*vb_r - va_r*vb_i
+		
+		normA += va_r*va_r + va_i*va_i
+		normB += vb_r*vb_r + vb_i*vb_i
+	}
+	if normA <= 0 || normB <= 0 {
+		return 1.0, nil
+	}
+	similarity := dotR / (math.Sqrt(normA) * math.Sqrt(normB))
+	return float32(1.0 - similarity), nil
+}

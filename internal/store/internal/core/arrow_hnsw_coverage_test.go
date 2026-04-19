@@ -204,6 +204,7 @@ func TestComplexComputers(t *testing.T) {
 		data: gd,
 		q:    []complex64{complex(1, 2), complex(3, 4)},
 		dims: 2,
+		h:    h,
 	}
 	dist, err := c64Comp.ComputeSingle(0)
 	assert.NoError(t, err)
@@ -226,6 +227,7 @@ func TestComplexComputers(t *testing.T) {
 		data: gd128,
 		q:    []complex128{complex(1, 2), complex(3, 4)},
 		dims: 2,
+		h:    h,
 	}
 	dist, err = c128Comp.ComputeSingle(1)
 	assert.NoError(t, err)
@@ -257,6 +259,7 @@ func TestMoreComputers(t *testing.T) {
 		data: gd,
 		q:    []float64{1.0, 2.0, 3.0, 4.0},
 		dims: 4,
+		h:    h,
 	}
 	dist, err := f64Comp.ComputeSingle(0)
 	assert.NoError(t, err)

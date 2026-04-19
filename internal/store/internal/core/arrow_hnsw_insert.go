@@ -141,9 +141,7 @@ func (h *ArrowHNSW) selectNeighbors(ctx *ArrowSearchContext, candidates []types.
 				}
 			case []complex128:
 				if v2Typed, ok := v2.([]complex128); ok {
-					var df64 float64
-					df64, err = h.distFuncC128(v1Typed, v2Typed)
-					d = float32(df64)
+					d, err = h.distFuncC128(v1Typed, v2Typed)
 				}
 			case []int8:
 				// Should be pre-converted to float32 in vectorCache filling

@@ -74,8 +74,15 @@ type ArrowHNSW struct {
 	distFuncF64  func([]float64, []float64) (float32, error)
 	distFuncF16  func([]float16.Num, []float16.Num) (float32, error)
 	distFuncC64  func([]complex64, []complex64) (float32, error)
-	distFuncC128 func([]complex128, []complex128) (float64, error)
+	distFuncC128 func([]complex128, []complex128) (float32, error)
 	distFuncInt8 func([]int8, []int8) (float32, error)
+	distFuncUint8 func([]uint8, []uint8) (float32, error)
+	distFuncInt16 func([]int16, []int16) (float32, error)
+	distFuncUint16 func([]uint16, []uint16) (float32, error)
+	distFuncInt32 func([]int32, []int32) (float32, error)
+	distFuncUint32 func([]uint32, []uint32) (float32, error)
+	distFuncInt64 func([]int64, []int64) (float32, error)
+	distFuncUint64 func([]uint64, []uint64) (float32, error)
 
 	adaptiveMTriggered atomic.Bool
 
@@ -273,11 +280,15 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 	h.distFuncF64 = h.resolveDistanceFuncF64()
 	h.distFuncF16 = h.resolveDistanceFuncF16()
 	h.distFuncC64 = h.resolveDistanceFuncC64()
-	h.distFuncC128 = func(a, b []complex128) (float64, error) {
-		d, err := simd.EuclideanDistanceComplex128(a, b)
-		return float64(d), err
-	}
-	h.distFuncInt8 = simd.EuclideanDistanceInt8
+	h.distFuncC128 = h.resolveDistanceFuncC128()
+	h.distFuncInt8 = h.resolveDistanceFuncInt8()
+	h.distFuncUint8 = h.resolveDistanceFuncUint8()
+	h.distFuncInt16 = h.resolveDistanceFuncInt16()
+	h.distFuncUint16 = h.resolveDistanceFuncUint16()
+	h.distFuncInt32 = h.resolveDistanceFuncInt32()
+	h.distFuncUint32 = h.resolveDistanceFuncUint32()
+	h.distFuncInt64 = h.resolveDistanceFuncInt64()
+	h.distFuncUint64 = h.resolveDistanceFuncUint64()
 
 	// Initialize atomic values
 	h.efConstruction.Store(int32(config.EfConstruction))
@@ -1898,7 +1909,7 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 		}
 		return &int8Computer{data: data, q: q8, qInt8: qInt8, dims: len(q8), h: h}
 	case []float64:
-		return &float64Computer{data: data, q: q, dims: len(q)}
+		return &float64Computer{data: data, q: q, dims: len(q), h: h}
 	case []complex64:
 		// Pre-convert if searchCtx available
 		if searchCtx != nil {
@@ -1907,9 +1918,9 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 			}
 			searchCtx.queryC64 = searchCtx.queryC64[:len(q)]
 			copy(searchCtx.queryC64, q)
-			return &complex64Computer{data: data, q: searchCtx.queryC64, dims: len(q)}
+			return &complex64Computer{data: data, q: searchCtx.queryC64, dims: len(q), h: h}
 		}
-		return &complex64Computer{data: data, q: q, dims: len(q)}
+		return &complex64Computer{data: data, q: q, dims: len(q), h: h}
 	case []complex128:
 		if searchCtx != nil {
 			if cap(searchCtx.queryC128) < len(q) {
@@ -1917,9 +1928,21 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 			}
 			searchCtx.queryC128 = searchCtx.queryC128[:len(q)]
 			copy(searchCtx.queryC128, q)
-			return &complex128Computer{data: data, q: searchCtx.queryC128, dims: len(q)}
+			return &complex128Computer{data: data, q: searchCtx.queryC128, dims: len(q), h: h}
 		}
-		return &complex128Computer{data: data, q: q, dims: len(q)}
+		return &complex128Computer{data: data, q: q, dims: len(q), h: h}
+	case []int16:
+		return &int16Computer{data: data, q: q, dims: len(q), h: h}
+	case []uint16:
+		return &uint16Computer{data: data, q: q, dims: len(q), h: h}
+	case []int32:
+		return &int32Computer{data: data, q: q, dims: len(q), h: h}
+	case []uint32:
+		return &uint32Computer{data: data, q: q, dims: len(q), h: h}
+	case []int64:
+		return &int64Computer{data: data, q: q, dims: len(q), h: h}
+	case []uint64:
+		return &uint64Computer{data: data, q: q, dims: len(q), h: h}
 	}
 	return nil
 }

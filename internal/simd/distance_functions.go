@@ -235,6 +235,28 @@ func DotProductComplex128(a, b []complex128) (float32, error) {
 	return dotComplex128Unrolled(a, b)
 }
 
+// CosineDistanceComplex64 calculates the cosine distance for Complex64 vectors.
+func CosineDistanceComplex64(a, b []complex64) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: vector length mismatch")
+	}
+	if len(a) == 0 {
+		return 1.0, nil
+	}
+	return cosineComplex64Unrolled(a, b)
+}
+
+// CosineDistanceComplex128 calculates the cosine distance for Complex128 vectors.
+func CosineDistanceComplex128(a, b []complex128) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: vector length mismatch")
+	}
+	if len(a) == 0 {
+		return 1.0, nil
+	}
+	return cosineComplex128Unrolled(a, b)
+}
+
 // L2SquaredFloat32 calculates the squared Euclidean distance using a generic implementation.
 // This is used for PQ training where we need precise control over the implementation.
 func L2SquaredFloat32(a, b []float32) (float32, error) {
@@ -271,6 +293,39 @@ func L2SquaredFloat32(a, b []float32) (float32, error) {
 	return sum0 + sum1 + sum2 + sum3, nil
 }
 
+// EuclideanDistanceUint8 calculates Euclidean distance for Uint8 vectors.
+func EuclideanDistanceUint8(a, b []uint8) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: vector length mismatch")
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	return euclideanUint8Unrolled4x(a, b)
+}
+
+// CosineDistanceUint8 calculates the cosine distance for Uint8 vectors.
+func CosineDistanceUint8(a, b []uint8) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: vector length mismatch")
+	}
+	if len(a) == 0 {
+		return 1.0, nil
+	}
+	return cosineDistanceUint8Unrolled4x(a, b)
+}
+
+// DotProductUint8 calculates the dot product of two Uint8 vectors.
+func DotProductUint8(a, b []uint8) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: vector length mismatch")
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	return dotUint8Unrolled4x(a, b)
+}
+
 // EuclideanDistanceInt8 calculates Euclidean distance for Int8 vectors.
 func EuclideanDistanceInt8(a, b []int8) (float32, error) {
 	if len(a) != len(b) {
@@ -284,6 +339,17 @@ func EuclideanDistanceInt8(a, b []int8) (float32, error) {
 		return EuclideanInt8Blocked(a, b)
 	}
 	return euclideanDistanceInt8Impl(a, b)
+}
+
+// CosineDistanceInt8 calculates the cosine distance for Int8 vectors.
+func CosineDistanceInt8(a, b []int8) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: vector length mismatch")
+	}
+	if len(a) == 0 {
+		return 1.0, nil
+	}
+	return cosineDistanceInt8Unrolled4x(a, b)
 }
 
 // DotProductInt8 calculates the dot product of two Int8 vectors.
@@ -316,6 +382,17 @@ func EuclideanDistanceInt16(a, b []int16) (float32, error) {
 	return euclideanDistanceInt16Impl(a, b)
 }
 
+// CosineDistanceInt16 calculates the cosine distance for Int16 vectors.
+func CosineDistanceInt16(a, b []int16) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: vector length mismatch")
+	}
+	if len(a) == 0 {
+		return 1.0, nil
+	}
+	return cosineDistanceInt16Unrolled4x(a, b)
+}
+
 // DotProductInt16 calculates the dot product of two Int16 vectors.
 func DotProductInt16(a, b []int16) (float32, error) {
 	if len(a) != len(b) {
@@ -344,6 +421,17 @@ func EuclideanDistanceInt32(a, b []int32) (float32, error) {
 		return EuclideanInt32Blocked(a, b)
 	}
 	return euclideanInt32Unrolled4x(a, b)
+}
+
+// CosineDistanceInt32 calculates the cosine distance for Int32 vectors.
+func CosineDistanceInt32(a, b []int32) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: vector length mismatch")
+	}
+	if len(a) == 0 {
+		return 1.0, nil
+	}
+	return cosineDistanceInt32Unrolled4x(a, b)
 }
 
 // DotProductInt32 calculates the dot product of two Int32 vectors.
@@ -375,6 +463,17 @@ func EuclideanDistanceUint16(a, b []uint16) (float32, error) {
 	return euclideanUint16Unrolled4x(a, b)
 }
 
+// CosineDistanceUint16 calculates the cosine distance for Uint16 vectors.
+func CosineDistanceUint16(a, b []uint16) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: vector length mismatch")
+	}
+	if len(a) == 0 {
+		return 1.0, nil
+	}
+	return cosineDistanceUint16Unrolled4x(a, b)
+}
+
 // DotProductUint16 calculates the dot product of two Uint16 vectors.
 func DotProductUint16(a, b []uint16) (float32, error) {
 	if len(a) != len(b) {
@@ -401,6 +500,17 @@ func EuclideanDistanceUint32(a, b []uint32) (float32, error) {
 		return EuclideanUint32Blocked(a, b)
 	}
 	return euclideanUint32Unrolled4x(a, b)
+}
+
+// CosineDistanceUint32 calculates the cosine distance for Uint32 vectors.
+func CosineDistanceUint32(a, b []uint32) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: vector length mismatch")
+	}
+	if len(a) == 0 {
+		return 1.0, nil
+	}
+	return cosineDistanceUint32Unrolled4x(a, b)
 }
 
 // DotProductUint32 calculates the dot product of two Uint32 vectors.
@@ -431,6 +541,17 @@ func EuclideanDistanceInt64(a, b []int64) (float32, error) {
 	return euclideanInt64Unrolled4x(a, b)
 }
 
+// CosineDistanceInt64 calculates the cosine distance for Int64 vectors.
+func CosineDistanceInt64(a, b []int64) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: vector length mismatch")
+	}
+	if len(a) == 0 {
+		return 1.0, nil
+	}
+	return cosineDistanceInt64Unrolled4x(a, b)
+}
+
 // DotProductInt64 calculates the dot product of two Int64 vectors.
 func DotProductInt64(a, b []int64) (float32, error) {
 	if len(a) != len(b) {
@@ -457,6 +578,17 @@ func EuclideanDistanceUint64(a, b []uint64) (float32, error) {
 		return EuclideanUint64Blocked(a, b)
 	}
 	return euclideanUint64Unrolled4x(a, b)
+}
+
+// CosineDistanceUint64 calculates the cosine distance for Uint64 vectors.
+func CosineDistanceUint64(a, b []uint64) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: vector length mismatch")
+	}
+	if len(a) == 0 {
+		return 1.0, nil
+	}
+	return cosineDistanceUint64Unrolled4x(a, b)
 }
 
 // DotProductUint64 calculates the dot product of two Uint64 vectors.

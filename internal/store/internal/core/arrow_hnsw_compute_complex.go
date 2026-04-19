@@ -13,6 +13,7 @@ type complex64Computer struct {
 	data *types.GraphData
 	q    []complex64
 	dims int
+	h    *ArrowHNSW
 }
 
 func (c *complex64Computer) Compute(ids []uint32, dists []float32) error {
@@ -24,7 +25,7 @@ func (c *complex64Computer) Compute(ids []uint32, dists []float32) error {
 			start := cOff * c.data.Dims
 			if start+c.dims <= len(chunk) {
 				v := chunk[start : start+c.dims]
-				d, err := simd.EuclideanDistanceComplex64(c.q, v)
+				d, err := c.h.distFuncC64(c.q, v)
 				if err != nil {
 					return err
 				}
@@ -45,7 +46,7 @@ func (c *complex64Computer) ComputeSingle(id uint32) (float32, error) {
 		start := cOff * c.data.Dims
 		if start+c.dims <= len(chunk) {
 			v := chunk[start : start+c.dims]
-			return simd.EuclideanDistanceComplex64(c.q, v)
+			return c.h.distFuncC64(c.q, v)
 		}
 	}
 	return math.MaxFloat32, nil
@@ -68,6 +69,7 @@ type complex128Computer struct {
 	data *types.GraphData
 	q    []complex128
 	dims int
+	h    *ArrowHNSW
 }
 
 func (c *complex128Computer) Compute(ids []uint32, dists []float32) error {
@@ -79,7 +81,7 @@ func (c *complex128Computer) Compute(ids []uint32, dists []float32) error {
 			start := cOff * c.data.Dims
 			if start+c.dims <= len(chunk) {
 				v := chunk[start : start+c.dims]
-				d, err := simd.EuclideanDistanceComplex128(c.q, v)
+				d, err := c.h.distFuncC128(c.q, v)
 				if err != nil {
 					return err
 				}
@@ -100,7 +102,7 @@ func (c *complex128Computer) ComputeSingle(id uint32) (float32, error) {
 		start := cOff * c.data.Dims
 		if start+c.dims <= len(chunk) {
 			v := chunk[start : start+c.dims]
-			return simd.EuclideanDistanceComplex128(c.q, v)
+			return c.h.distFuncC128(c.q, v)
 		}
 	}
 	return math.MaxFloat32, nil

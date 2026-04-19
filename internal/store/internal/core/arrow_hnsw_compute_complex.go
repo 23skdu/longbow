@@ -10,10 +10,11 @@ import (
 
 // complex64Computer handles Complex64 vectors
 type complex64Computer struct {
-	data *types.GraphData
-	q    []complex64
-	dims int
-	h    *ArrowHNSW
+	data      *types.GraphData
+	q         []complex64
+	dims      int
+	h         *ArrowHNSW
+	diskGraph *DiskGraph
 }
 
 func (c *complex64Computer) Compute(ids []uint32, dists []float32) error {
@@ -39,13 +40,9 @@ func (c *complex64Computer) Compute(ids []uint32, dists []float32) error {
 }
 
 func (c *complex64Computer) ComputeSingle(id uint32) (float32, error) {
-	cID := types.ChunkID(id)
-	chunk := c.data.GetVectorsComplex64Chunk(cID)
-	if chunk != nil {
-		cOff := int(id) % types.ChunkSize
-		start := cOff * c.data.Dims
-		if start+c.dims <= len(chunk) {
-			v := chunk[start : start+c.dims]
+	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id)
+	if err == nil {
+		if v, ok := vecAny.([]complex64); ok {
 			return c.h.distFuncC64(c.q, v)
 		}
 	}
@@ -66,10 +63,11 @@ func (c *complex64Computer) Prefetch(id uint32) {
 
 // complex128Computer handles Complex128 vectors
 type complex128Computer struct {
-	data *types.GraphData
-	q    []complex128
-	dims int
-	h    *ArrowHNSW
+	data      *types.GraphData
+	q         []complex128
+	dims      int
+	h         *ArrowHNSW
+	diskGraph *DiskGraph
 }
 
 func (c *complex128Computer) Compute(ids []uint32, dists []float32) error {
@@ -95,13 +93,9 @@ func (c *complex128Computer) Compute(ids []uint32, dists []float32) error {
 }
 
 func (c *complex128Computer) ComputeSingle(id uint32) (float32, error) {
-	cID := types.ChunkID(id)
-	chunk := c.data.GetVectorsComplex128Chunk(cID)
-	if chunk != nil {
-		cOff := int(id) % types.ChunkSize
-		start := cOff * c.data.Dims
-		if start+c.dims <= len(chunk) {
-			v := chunk[start : start+c.dims]
+	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id)
+	if err == nil {
+		if v, ok := vecAny.([]complex128); ok {
 			return c.h.distFuncC128(c.q, v)
 		}
 	}

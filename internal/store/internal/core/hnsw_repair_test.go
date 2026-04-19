@@ -46,6 +46,20 @@ func TestHNSW_TombstoneRepair_WiresAround(t *testing.T) {
 	hasTombstoneLinks := false
 	data := idx.GetData()
 
+	// 2. Add some connections from non-deleted to deleted
+	// SearchContext needs to be acquired from the index pool
+	ctx := idx.searchPool.Get()
+	defer idx.searchPool.Put(ctx)
+
+	for i := deletedCnt; i < count; i++ {
+		dist := rand.Float32()
+		data = idx.AddConnection(ctx, data, uint32(i), uint32(i-1), 0, 10, dist)
+	}
+
+	// Commit mutations back to index for visibility before check
+	idx.data.Store(data)
+	data = idx.GetData()
+
 	for i := deletedCnt; i < count; i++ {
 		nid := uint32(i)
 		cID := types.ChunkID(nid)
@@ -57,12 +71,17 @@ func TestHNSW_TombstoneRepair_WiresAround(t *testing.T) {
 		if nc != nil && cc != nil {
 			cnt := int(atomic.LoadInt32(&cc[cOff]))
 			base := int(cOff) * types.MaxNeighbors
+			
+			var nodeNeighbors []uint32
 			for k := 0; k < cnt; k++ {
 				neighbor := nc[base+k]
+				nodeNeighbors = append(nodeNeighbors, neighbor)
 				if int(neighbor) < deletedCnt {
 					hasTombstoneLinks = true
-					break
 				}
+			}
+			if i < deletedCnt + 5 {
+				fmt.Printf("[DEBUG] Node %d neighbors: %v\n", i, nodeNeighbors)
 			}
 		}
 		if hasTombstoneLinks {
@@ -72,10 +91,13 @@ func TestHNSW_TombstoneRepair_WiresAround(t *testing.T) {
 	assert.True(t, hasTombstoneLinks, "Graph should initially contain links to tombstones")
 
 	// 4. Run Repair
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	goCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	repairedCount := idx.RepairTombstones(ctx, 100)
+	repairedCount := idx.RepairTombstones(goCtx, 100)
+
+	// Reload data from index because RepairTombstones performs COW
+	data = idx.data.Load()
 
 	// We expect some repairs, but it depends if wiring around was needed/possible
 	assert.Greater(t, repairedCount, 0, "Should have repaired some connections")

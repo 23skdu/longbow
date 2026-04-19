@@ -144,12 +144,15 @@ func TestAddConnection(t *testing.T) {
 	defer index.searchPool.Put(ctx)
 
 	// Add connection 0 -> 1 at layer 0
-	index.AddConnection(ctx, data, 0, 1, 0, 10, 0.0)
+	data = index.AddConnection(ctx, data, 0, 1, 0, 10, 0.0)
 
-	// Check count
+	// Reload data from index as AddConnection may have performed COW
+	data = index.data.Load()
 	cID := types.ChunkID(0)
 	cOff := types.ChunkOffset(0)
 	counts := data.GetCountsChunk(0, cID)
+
+	// Check count
 	count := int32(0)
 	if counts != nil {
 		count = atomic.LoadInt32(&counts[cOff])
@@ -166,6 +169,10 @@ func TestAddConnection(t *testing.T) {
 
 	// Adding same connection again should be idempotent
 	index.AddConnection(ctx, data, 0, 1, 0, 10, 0.0)
+
+	// Reload data from index again
+	data = index.data.Load()
+	counts = data.GetCountsChunk(0, cID)
 
 	if counts != nil {
 		count = atomic.LoadInt32(&counts[cOff])
@@ -219,43 +226,44 @@ func TestPruneConnections(t *testing.T) {
 
 	// Point VectorPtrs to these slices
 	// Copy vectors to Dense Storage
-	paddedDims := data.GetPaddedDims()
 	for i := 0; i <= 10; i++ {
-		cID := types.ChunkID(uint32(i))
-		cOff := types.ChunkOffset(uint32(i))
-		vecChunk := data.GetVectorsChunk(cID)
-		if vecChunk != nil {
-			copy(vecChunk[int(cOff)*paddedDims:], vecs[i])
+		if err := data.SetVector(uint32(i), vecs[i]); err != nil {
+			t.Fatalf("failed to set vector: %v", err)
 		}
 	}
-	// Add 10 connections to Node 0
-	// Neighbors are 1..10. All dist 1.0. Sorted by ID (impl detail).
-	// Node 0 is at chunk 0, offset 0
-	baseIdx := 0 // Node 0
-	neighbors := data.GetNeighborsChunk(0, 0)
-	if neighbors != nil {
-		for i := 1; i <= 10; i++ {
-			idx := baseIdx + (i - 1)
-			// Access Chunk 0 of Neighbors
-			neighbors[idx] = uint32(i)
-		}
-	}
-
-	counts := data.GetCountsChunk(0, 0)
-	if counts != nil {
-		atomic.StoreInt32(&counts[0], 10)
-	}
-
-	// Prune to 5
-	// HNSW Heuristic:
-	// Select 1 (Dist 1).
-	// Check 2. Dist(2,1)=1.41. Dist(2,0)=1. 1.41 * 1.0 > 1. Keep!
-	// So orthogonal neighbors should be preserved up to M.
-
 	ctx := index.searchPool.Get()
 	defer index.searchPool.Put(ctx)
 
-	index.PruneConnections(ctx, data, 0, 5, 0)
+	// Add 10 dummy neighbors
+	for i := uint32(1); i <= 10; i++ {
+		// New signature: (ctx, data, id, neighborID, layer, maxConn, dist)
+		data = index.AddConnection(ctx, data, 0, i, 0, 10, 1.0)
+	}
+	
+	// Reload from index
+	data = index.data.Load()
+
+	// Verify we actually have 10 neighbors before pruning
+	n1 := index.GetNeighborsCombined(0, 0)
+	if len(n1) != 10 {
+		t.Fatalf("expected 10 neighbors before prune, got %d. n1=%v", len(n1), n1)
+	}
+
+	// Print some distances to verify vectors
+	v0, _ := index.GetVectorAny(0)
+	v1, _ := index.GetVectorAny(1)
+	v2, _ := index.GetVectorAny(2)
+	d01, _ := index.distFunc(v0.([]float32), v1.([]float32))
+	d12, _ := index.distFunc(v1.([]float32), v2.([]float32))
+	t.Logf("v0: %v, v1: %v, v2: %v", v0, v1, v2)
+	t.Logf("Dist(0,1): %v, Dist(1,2): %v", d01, d12)
+
+	// Prune to 5
+	data = index.PruneConnections(ctx, data, 0, 5, 0)
+	
+	// Reload data from index as PruneConnections may have performed COW
+	data = index.data.Load()
+	counts := data.GetCountsChunk(0, 0)
 
 	count := int32(0)
 	if counts != nil {
@@ -267,6 +275,11 @@ func TestPruneConnections(t *testing.T) {
 
 	// Check idempotency - count should still be 5 after pruning again
 	index.PruneConnections(ctx, data, 0, 5, 0)
+	
+	// Reload data from index again
+	data = index.data.Load()
+	counts = data.GetCountsChunk(0, 0)
+
 	count2 := int32(0)
 	if counts != nil {
 		count2 = atomic.LoadInt32(&counts[0])

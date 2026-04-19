@@ -342,3 +342,13 @@ func (ctx *ArrowSearchContext) MarkDirty() {
 func (ctx *ArrowSearchContext) IsDirty() bool {
 	return ctx.dirty
 }
+
+// GetDiskGraph returns the cached DiskGraph reference if available.
+func (ctx *ArrowSearchContext) GetDiskGraph() *DiskGraph {
+	return ctx.diskGraph
+}
+
+// SetDiskGraph sets the DiskGraph reference to be cached for this search.
+func (ctx *ArrowSearchContext) SetDiskGraph(dg *DiskGraph) {
+	ctx.diskGraph = dg
+}

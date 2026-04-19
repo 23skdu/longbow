@@ -88,10 +88,24 @@ func (tlm *TopLayerManager) AddConnectionCAS(layer int, source, target uint32) b
 		// Lose race, retry
 	}
 }
+// ClearNeighbors removes a node's shadow adjacency list from TopLayerManager.
+// This is used during maintenance operations to ensure standard GraphData chunks
+// become the source of truth for the node's connectivity.
+func (tlm *TopLayerManager) ClearNeighbors(layer int, id uint32) {
+	if layer < tlm.threshold || layer >= types.ArrowMaxLayers {
+		return
+	}
+	tlm.layers[layer].Delete(id)
+}
 
 // GetNeighborsCombined returns neighbors from both the standard graph data
 // and the lock-free upper layers, ensuring a consistent view.
 func (h *ArrowHNSW) GetNeighborsCombined(layer int, id uint32) []uint32 {
+	return h.GetNeighborsCombinedCached(layer, id, nil)
+}
+
+// GetNeighborsCombinedCached returns neighbors, using the provided DiskGraph cache if available.
+func (h *ArrowHNSW) GetNeighborsCombinedCached(layer int, id uint32, dg *DiskGraph) []uint32 {
 	// 1. Try TopLayerManager (Persistent lock-free upper layers)
 	lf := h.topLayerManager.GetNeighborsLockFree(layer, id)
 	if lf != nil {
@@ -100,12 +114,27 @@ func (h *ArrowHNSW) GetNeighborsCombined(layer int, id uint32) []uint32 {
 	
 	// 2. Try GraphData PackedNeighbors (Dynamic lock-free adjacency)
 	data := h.data.Load()
-	if layer < len(data.PackedNeighbors) && data.PackedNeighbors[layer] != nil {
+	if data != nil && layer < len(data.PackedNeighbors) && data.PackedNeighbors[layer] != nil {
 		if neighbors, ok := data.PackedNeighbors[layer].GetNeighbors(id); ok {
 			return neighbors
 		}
 	}
 	
-	// 3. Fallback to standard types.GraphData (which is lock-safe for reads)
-	return data.GetNeighbors(layer, id, nil)
+	// 3. Fallback to standard types.GraphData (lock-safe for reads)
+	if data != nil {
+		neighbors := data.GetNeighbors(layer, id, nil)
+		if len(neighbors) > 0 {
+			return neighbors
+		}
+	}
+
+	// 4. Fallback to DiskGraph in hybrid mode
+	if dg == nil {
+		dg = h.diskGraph.Load()
+	}
+	if dg != nil {
+		return dg.GetNeighbors(layer, id, nil)
+	}
+	
+	return nil
 }

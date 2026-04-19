@@ -60,7 +60,7 @@ func TestPQ_EndToEnd(t *testing.T) {
 	// Verify not yet quantized
 	gd := hnsw.data.Load()
 	require.NotNil(t, gd)
-	assert.Nil(t, gd.VectorsPQ, "VectorsPQ should be nil before training")
+	assert.Empty(t, gd.VectorsPQ, "VectorsPQ should be empty before training")
 
 	// 4. Train PQ
 	// We use the first batch as training data

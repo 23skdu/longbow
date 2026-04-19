@@ -10,10 +10,11 @@ import (
 
 // float64Computer handles Float64 vectors
 type float64Computer struct {
-	data *types.GraphData
-	q    []float64
-	dims int
-	h    *ArrowHNSW
+	data      *types.GraphData
+	q         []float64
+	dims      int
+	h         *ArrowHNSW
+	diskGraph *DiskGraph
 }
 
 func (c *float64Computer) Compute(ids []uint32, dists []float32) error {
@@ -39,13 +40,9 @@ func (c *float64Computer) Compute(ids []uint32, dists []float32) error {
 }
 
 func (c *float64Computer) ComputeSingle(id uint32) (float32, error) {
-	cID := types.ChunkID(id)
-	chunk := c.data.GetVectorsFloat64Chunk(cID)
-	if chunk != nil {
-		cOff := int(id) % types.ChunkSize
-		start := cOff * c.data.Dims
-		if start+c.dims <= len(chunk) {
-			v := chunk[start : start+c.dims]
+	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id)
+	if err == nil {
+		if v, ok := vecAny.([]float64); ok {
 			return c.h.distFuncF64(c.q, v)
 		}
 	}

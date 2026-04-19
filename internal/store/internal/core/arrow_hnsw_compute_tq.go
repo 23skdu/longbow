@@ -49,7 +49,11 @@ func (c *TurboQuantCompute) DistanceWithVector(id uint32, vec []float32) (float3
 }
 
 func (c *TurboQuantCompute) DistanceWithRotatedQuery(id uint32, rotatedQuery []float32) (float32, error) {
-	vec1, err := c.getVector(id)
+	return c.DistanceWithRotatedQueryAndDisk(id, rotatedQuery, nil)
+}
+
+func (c *TurboQuantCompute) DistanceWithRotatedQueryAndDisk(id uint32, rotatedQuery []float32, dg *DiskGraph) (float32, error) {
+	vec1, err := c.getVectorWithDisk(id, dg)
 	if err != nil {
 		return 0, err
 	}
@@ -65,17 +69,39 @@ func (c *TurboQuantCompute) PrecomputeRotatedQuery(vec []float32, output []float
 }
 
 func (c *TurboQuantCompute) getVector(id uint32) ([]float32, error) {
+	return c.getVectorWithDisk(id, nil)
+}
+
+func (c *TurboQuantCompute) getVectorWithDisk(id uint32, dg *DiskGraph) ([]float32, error) {
 	cID := types.ChunkID(id)
 	cOff := types.ChunkOffset(id)
 	data := c.h.data.Load()
 	chunk := data.GetVectorsTQChunk(cID)
-	if chunk == nil {
-		return nil, fmt.Errorf("tq chunk %d not found", cID)
+
+	var tqCode []byte
+	var stride int
+
+	if chunk != nil {
+		stride = PackedSize(int(data.Dims), data.TurboQuantBits)
+		start := cOff * stride
+		if start+stride <= len(chunk) {
+			tqCode = chunk[start : start+stride]
+		}
 	}
-	stride := PackedSize(int(data.Dims), data.TurboQuantBits)
-	start := cOff * stride
-	if start+stride > len(chunk) {
-		return nil, fmt.Errorf("tq offset out of bounds")
+
+	if tqCode == nil {
+		// Fallback to DiskGraph
+		if dg == nil {
+			dg = c.h.diskGraph.Load()
+		}
+		if dg != nil {
+			tqCode = dg.GetVectorTQ(id)
+		}
 	}
-	return c.encoder.Decode(chunk[start : start+stride])
+
+	if tqCode == nil {
+		return nil, fmt.Errorf("tq vector %d not found", id)
+	}
+
+	return c.encoder.Decode(tqCode)
 }

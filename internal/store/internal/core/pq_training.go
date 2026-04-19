@@ -70,12 +70,21 @@ func (h *ArrowHNSW) TrainPQ(vectors [][]float32) error {
 	h.config.PQM = m
 	h.config.PQK = k
 
-	data := h.data.Load()
-	if data != nil {
-		data.PQEnabled = true
-		data.PQM = m
+	// Atomic COW update for feature enablement
+	for {
+		oldData := h.data.Load()
+		if oldData == nil {
+			break
+		}
+		newData := oldData.Clone()
+		newData.PQEnabled = true
+		newData.PQM = m
+		if h.data.CompareAndSwap(oldData, newData) {
+			break
+		}
 	}
 
+	data := h.data.Load()
 	if h.config.AdaptiveMEnabled && !h.adaptiveMTriggered.Load() {
 		count := int(h.nodeCount.Load())
 		threshold := h.config.AdaptiveMThreshold
@@ -88,9 +97,14 @@ func (h *ArrowHNSW) TrainPQ(vectors [][]float32) error {
 		}
 	}
 	if data != nil {
-		if err := h.growNoLock(data.Capacity, data.Dims); err != nil {
+		targetCap := int(h.nodeCount.Load())
+		if targetCap < data.Capacity {
+			targetCap = data.Capacity
+		}
+		if err := h.growNoLock(targetCap, data.Dims); err != nil {
 			return err
 		}
+		// Refresh pointer after growth
 		data = h.data.Load()
 
 		if data.VectorsPQ != nil {

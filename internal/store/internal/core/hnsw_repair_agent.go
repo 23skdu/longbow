@@ -1,7 +1,6 @@
 package core
 
 import (
-	"github.com/23skdu/longbow/internal/store/types"
 	"math"
 	"sync"
 	"sync/atomic"
@@ -145,6 +144,7 @@ func (r *RepairAgent) detectOrphans() []uint32 {
 	}
 
 	data := r.index.data.Load()
+	dg := r.index.diskGraph.Load()
 	if data == nil {
 		return nil
 	}
@@ -182,8 +182,8 @@ func (r *RepairAgent) detectOrphans() []uint32 {
 			continue
 		}
 
-		// Get neighbors at layer 0
-		neighbors := r.getNeighbors(current, 0, data)
+		// Get neighbors at layer 0 using unified accessor with cached DiskGraph
+		neighbors := r.index.GetNeighborsCombinedCached(0, current, dg)
 		for _, neighbor := range neighbors {
 			if !reachable[neighbor] && !r.index.deleted.Contains(neighbor) {
 				queue = append(queue, neighbor)
@@ -280,66 +280,24 @@ func (r *RepairAgent) repairOrphan(orphan uint32, layer int) {
 	}
 
 	// Add bidirectional edges
+	searchCtx := r.index.searchPool.Get()
+	defer r.index.searchPool.Put(searchCtx)
+
+	maxConn := r.index.mMax
+	if layer == 0 {
+		maxConn = r.index.mMax0
+	}
+
 	for _, c := range candidates {
 		// Add edge from orphan to candidate
-		r.addEdge(orphan, c.id, layer, data)
+		data = r.index.AddConnection(searchCtx, data, orphan, c.id, layer, maxConn, c.dist)
 		// Add edge from candidate to orphan (bidirectional)
-		r.addEdge(c.id, orphan, layer, data)
+		data = r.index.AddConnection(searchCtx, data, c.id, orphan, layer, maxConn, c.dist)
 	}
 
 }
 
-// getNeighbors retrieves neighbors of a node at a given layer
-func (r *RepairAgent) getNeighbors(nodeID uint32, layer int, data *types.GraphData) []uint32 {
-	cID := types.ChunkID(nodeID)
-	cOff := types.ChunkOffset(nodeID)
+// getNeighbors is now deprecated in favor of r.index.GetNeighborsCombined.
 
-	nc := data.GetNeighborsChunk(layer, cID)
-	cc := data.GetCountsChunk(layer, cID)
-
-	if nc == nil || cc == nil {
-		return nil
-	}
-
-	count := int(atomic.LoadInt32(&cc[cOff]))
-	if count == 0 {
-		return nil
-	}
-
-	base := int(cOff) * types.MaxNeighbors
-	neighbors := make([]uint32, count)
-	for i := 0; i < count; i++ {
-		neighbors[i] = nc[base+i]
-	}
-
-	return neighbors
-}
-
-// addEdge adds an edge from 'from' to 'to' at the given layer
-func (r *RepairAgent) addEdge(from, to uint32, layer int, data *types.GraphData) {
-	cID := types.ChunkID(from)
-	cOff := types.ChunkOffset(from)
-
-	nc := data.GetNeighborsChunk(layer, cID)
-	cc := data.GetCountsChunk(layer, cID)
-
-	if nc == nil || cc == nil {
-		return
-	}
-
-	// Check if edge already exists
-	count := int(atomic.LoadInt32(&cc[cOff]))
-	base := int(cOff) * types.MaxNeighbors
-
-	for i := 0; i < count; i++ {
-		if nc[base+i] == to {
-			return // Edge already exists
-		}
-	}
-
-	// Add edge if there's space
-	if count < types.MaxNeighbors {
-		nc[base+count] = to
-		atomic.StoreInt32(&cc[cOff], int32(count+1))
-	}
-}
+// addEdge is now deprecated in favor of using r.index.AddConnection directly.
+// Removing it to prevent accidental bypassing of COW/Locking logic.

@@ -14,13 +14,16 @@ import (
 // RDMAServer handles zero-copy Arrow Flight transfers over RoCEv2.
 type RDMAServer struct {
 	flight.BaseFlightServer
-	ctx *mesh.RDMAContext
+	ctx     *mesh.RDMAContext
+	tensors *TensorStreamHandler
 }
 
 func NewRDMAServer(enabled bool) *RDMAServer {
-	return &RDMAServer{
+	s := &RDMAServer{
 		ctx: mesh.NewRDMAContext(enabled),
 	}
+	s.tensors = NewTensorStreamHandler(s)
+	return s
 }
 
 // DoPut implements the RDMA-accelerated path for data ingestion.
@@ -62,6 +65,20 @@ func (s *RDMAServer) DoPut(stream flight.FlightService_DoPutServer) error {
 	}
 	
 	return nil
+}
+
+// DoGet implements the RDMA-accelerated path for data retrieval (e.g., tensors).
+func (s *RDMAServer) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGetServer) error {
+	// 1. Detect if this is a tensor request (simplified for POC)
+	// In a real implementation, the ticket would contain the tensor ID
+	if string(tkt.Ticket) == "tensor_request" {
+		// Mock GPU pointer and size for demonstration
+		mockGPUPtr := uintptr(0xDEADBEEF)
+		mockSize := uint64(1024 * 1024 * 128) // 128MB
+		return s.tensors.StreamTensorRDMA(stream.Context(), stream, mockGPUPtr, mockSize)
+	}
+
+	return s.BaseFlightServer.DoGet(tkt, stream)
 }
 
 // StartRDMAListener starts the RDMA listener on the specified port.

@@ -37,7 +37,7 @@ The `internal/store` package is currently over-bloated (500+ files). This 6-part
 | 9 | Fast-Path Search | ✅ COMPLETE | Specialized kernels for all types to bypass `any` overhead. |
 | 10 | allocation Buffer Pool | ✅ COMPLETE | Pooled buffers for type conversions in `SearchContext`. |
 | 11 | Lock-Free Adjacency | ✅ COMPLETE | Expand lock-free patterns to layer 0 updates. |
-| 12 | Zero-Copy Tensor Stream | 💡 PLANNED | Direct GPU-to-GPU tensor transfer via Arrow Flight. |
+| 12 | Zero-Copy Tensor Stream | ✅ COMPLETE | Direct GPU-to-GPU tensor transfer via Arrow Flight. |
 
 ---
 

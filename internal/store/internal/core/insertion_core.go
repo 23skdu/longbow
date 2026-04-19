@@ -71,7 +71,9 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 	// Double-check if we need growth or and lazy initialization under lock
 	cID := types.ChunkID(id)
 	cOff := types.ChunkOffset(id)
-	needsStructuralChange := data == nil || int(id) >= data.Capacity || dims == 0 || (dims > 0 && data.Vectors == nil) || cID >= len(data.Vectors) || data.Vectors[cID] == nil
+
+	// Use Arena-aware check for structural changes
+	needsStructuralChange := data == nil || int(id) >= data.Capacity || dims == 0 || data.NeedsChunk(int(cID))
 
 	if needsStructuralChange {
 		h.growMu.RUnlock()
@@ -81,7 +83,7 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 		if currentData != data {
 			data = currentData
 			dims = int(h.dims.Load())
-			needsStructuralChange = data == nil || int(id) >= data.Capacity || dims == 0 || (dims > 0 && data.Vectors == nil) || cID >= len(data.Vectors) || data.Vectors[cID] == nil
+			needsStructuralChange = data == nil || int(id) >= data.Capacity || dims == 0 || data.NeedsChunk(int(cID))
 			if needsStructuralChange {
 				h.growMu.Lock()
 				defer h.growMu.Unlock()
@@ -214,6 +216,7 @@ do_grow:
 	metrics.HNSWInsertPoolGetTotal.Inc()
 	ctx := h.searchPool.Get()
 	ctx.Reset()
+	ctx.diskGraph = h.diskGraph.Load()
 	defer func() {
 		metrics.HNSWInsertPoolPutTotal.Inc()
 		h.searchPool.PutWithMetrics(ctx, h.config.DataType.String(), strconv.Itoa(int(h.dims.Load())))
@@ -342,9 +345,9 @@ do_grow:
 		// Create bidirectional connections
 		for _, nb := range neighbors {
 			// Add connection from new node to neighbor
-			h.AddConnection(ctx, data, id, nb.ID, l, maxConn, nb.Dist)
+			data = h.AddConnection(ctx, data, id, nb.ID, l, maxConn, nb.Dist)
 			// Add connection from neighbor back to new node (and prune if neighbor exceeds maxConn)
-			h.AddConnection(ctx, data, nb.ID, id, l, maxConn, nb.Dist)
+			data = h.AddConnection(ctx, data, nb.ID, id, l, maxConn, nb.Dist)
 		}
 
 		if len(neighbors) > 0 {
@@ -370,6 +373,9 @@ do_grow:
 			break
 		}
 	}
+
+	// Commit the final mutated snapshot to the index to ensure global visibility
+	h.data.Store(data)
 
 	return nil
 }

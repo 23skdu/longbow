@@ -764,7 +764,7 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 
 				flush := func() {
 					if len(curSources) > 0 {
-						h.AddConnectionsBatch(ctxSearch, data, curTarget, curSources, curDists, lc, maxConn)
+						data = h.AddConnectionsBatch(ctxSearch, data, curTarget, curSources, curDists, lc, maxConn)
 						curSources = curSources[:0]
 						curDists = curDists[:0]
 					}

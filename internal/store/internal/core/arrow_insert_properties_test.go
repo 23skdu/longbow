@@ -86,8 +86,8 @@ func TestInsertProperties(t *testing.T) {
 				// index.Insert(id, 0) // This would require full distance metric setup
 
 				// Manually connect to i-1
-				index.AddConnection(ctx, data, id, uint32(i-1), 0, config.MMax, 0.0)
-				index.AddConnection(ctx, data, uint32(i-1), id, 0, config.MMax, 0.0)
+				data = index.AddConnection(ctx, data, id, uint32(i-1), 0, config.MMax, 0.0)
+				data = index.AddConnection(ctx, data, uint32(i-1), id, 0, config.MMax, 0.0)
 
 				index.nodeCount.Add(1)
 			}
@@ -158,7 +158,7 @@ func TestInsertProperties(t *testing.T) {
 			for i := 0; i < 5; i++ {
 				for j := 0; j < 5; j++ {
 					if i != j {
-						index.AddConnection(ctx, data, uint32(i), uint32(j), 0, m*2, 0.0)
+						data = index.AddConnection(ctx, data, uint32(i), uint32(j), 0, m*2, 0.0)
 					}
 				}
 			}

@@ -14,7 +14,7 @@ import (
 
 const (
 	DiskGraphMagic   = 0x484E5357 // "HNSW"
-	DiskGraphVersion = 4
+	DiskGraphVersion = 5
 )
 
 // DiskGraph implements a read-only GraphBackend backed by a file (via mmap).
@@ -56,6 +56,9 @@ type DiskGraphHeader struct {
 	// Graph Entry Point (Version 3)
 	EntryPoint    uint32
 	GraphMaxLevel int32
+	TQOffset      uint64 // Offset to TQ Data start (if > 0)
+	TQBits        uint32 // Number of bits for TurboQuant
+	BQOffset      uint64 // Offset to BQ Data start (if > 0)
 
 	// Followed by:
 	// - Layer 0 Index Offset (uint64)
@@ -127,6 +130,9 @@ func (dg *DiskGraph) parse() error {
 		PQOffset:  binary.LittleEndian.Uint64(dg.data[28:36]),
 		PQDims:    binary.LittleEndian.Uint32(dg.data[36:40]),
 	}
+	if len(dg.data) >= 64 {
+		dg.header.TQOffset = binary.LittleEndian.Uint64(dg.data[56:64])
+	}
 
 	metaStart := 40
 	if version >= 3 {
@@ -134,7 +140,17 @@ func (dg *DiskGraph) parse() error {
 		dg.header.SQ8Max = math.Float32frombits(binary.LittleEndian.Uint32(dg.data[44:48]))
 		dg.header.EntryPoint = binary.LittleEndian.Uint32(dg.data[48:52])
 		dg.header.GraphMaxLevel = int32(binary.LittleEndian.Uint32(dg.data[52:56]))
-		metaStart = 56 // 48 + 4 + 4
+		metaStart = 56
+	}
+
+	if version >= 5 {
+		if len(dg.data) < 72 {
+			return fmt.Errorf("truncated version 5 header")
+		}
+		dg.header.TQOffset = binary.LittleEndian.Uint64(dg.data[56:64])
+		dg.header.TQBits = binary.LittleEndian.Uint32(dg.data[64:68])
+		dg.header.BQOffset = binary.LittleEndian.Uint64(dg.data[68:76])
+		metaStart = 76 // TQ(8) + bits(4) + BQ(8) = 20 -> 56+20 = 76
 	}
 
 	// Read Layer Meta offsets
@@ -342,16 +358,6 @@ func (dg *DiskGraph) GetVectorSQ8(nodeID uint32) []byte {
 	return dg.data[start:end]
 }
 
-func (dg *DiskGraph) GetVector(id uint32) (any, error) {
-	if dg.header.SQ8Offset > 0 {
-		return dg.GetVectorSQ8(id), nil
-	}
-	if dg.header.PQOffset > 0 {
-		return dg.GetVectorPQ(id), nil
-	}
-	return nil, nil
-}
-
 func (dg *DiskGraph) GetVectorPQ(nodeID uint32) []byte {
 	if dg.header.PQOffset == 0 || dg.header.PQDims == 0 {
 		return nil
@@ -369,6 +375,62 @@ func (dg *DiskGraph) GetVectorPQ(nodeID uint32) []byte {
 	}
 
 	return dg.data[start:end]
+}
+
+func (dg *DiskGraph) GetVector(id uint32) (any, error) {
+	if dg.header.SQ8Offset > 0 {
+		return dg.GetVectorSQ8(id), nil
+	}
+	if dg.header.PQOffset > 0 {
+		return dg.GetVectorPQ(id), nil
+	}
+	if dg.header.TQOffset > 0 {
+		return dg.GetVectorTQ(id), nil
+	}
+	return nil, nil
+}
+
+func (dg *DiskGraph) GetVectorTQ(nodeID uint32) []byte {
+	if dg.header.TQOffset == 0 || dg.header.Dims == 0 || dg.header.TQBits == 0 {
+		return nil
+	}
+	if nodeID >= dg.header.NumNodes {
+		return nil
+	}
+
+	dims := int(dg.header.Dims)
+	p2 := int(1 << uint(math.Ceil(math.Log2(float64(dims)))))
+	angleBytes := ((p2-1)*int(dg.header.TQBits) + 7) / 8
+	bitBytes := (p2 + 7) / 8
+	stride := 4 + angleBytes + bitBytes
+
+	start := dg.header.TQOffset + uint64(nodeID)*uint64(stride)
+	end := start + uint64(stride)
+	if end > uint64(len(dg.data)) {
+		return nil
+	}
+	return dg.data[start:end]
+}
+
+func (dg *DiskGraph) GetVectorBQ(nodeID uint32) []uint64 {
+	if dg.header.BQOffset == 0 || dg.header.Dims == 0 {
+		return nil
+	}
+	if nodeID >= dg.header.NumNodes {
+		return nil
+	}
+
+	paddedDims := (int(dg.header.Dims) + 63) & ^63
+	numWords := paddedDims / 64
+	stride := numWords * 8
+
+	start := dg.header.BQOffset + uint64(nodeID)*uint64(stride)
+	if start+uint64(stride) > uint64(len(dg.data)) {
+		return nil
+	}
+
+	ptr := unsafe.Pointer(&dg.data[start]) // #nosec G103
+	return unsafe.Slice((*uint64)(ptr), numWords) // #nosec G103
 }
 
 func (dg *DiskGraph) Capacity() int {

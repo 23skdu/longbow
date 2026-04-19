@@ -7,10 +7,11 @@ import (
 
 // int16Computer handles Int16 vectors
 type int16Computer struct {
-	data *types.GraphData
-	q    []int16
-	dims int
-	h    *ArrowHNSW
+	data      *types.GraphData
+	q         []int16
+	dims      int
+	h         *ArrowHNSW
+	diskGraph *DiskGraph
 }
 
 func (c *int16Computer) Compute(ids []uint32, dists []float32) error {
@@ -25,13 +26,9 @@ func (c *int16Computer) Compute(ids []uint32, dists []float32) error {
 }
 
 func (c *int16Computer) ComputeSingle(id uint32) (float32, error) {
-	cID := types.ChunkID(id)
-	chunk := c.data.GetVectorsInt16Chunk(cID)
-	if chunk != nil {
-		cOff := int(id) % types.ChunkSize
-		start := cOff * c.data.Dims
-		if start+c.dims <= len(chunk) {
-			v := chunk[start : start+c.dims]
+	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id)
+	if err == nil {
+		if v, ok := vecAny.([]int16); ok {
 			return c.h.distFuncInt16(c.q, v)
 		}
 	}
@@ -40,10 +37,11 @@ func (c *int16Computer) ComputeSingle(id uint32) (float32, error) {
 
 // uint16Computer handles Uint16 vectors
 type uint16Computer struct {
-	data *types.GraphData
-	q    []uint16
-	dims int
-	h    *ArrowHNSW
+	data      *types.GraphData
+	q         []uint16
+	dims      int
+	h         *ArrowHNSW
+	diskGraph *DiskGraph
 }
 
 func (c *uint16Computer) Compute(ids []uint32, dists []float32) error {
@@ -58,13 +56,9 @@ func (c *uint16Computer) Compute(ids []uint32, dists []float32) error {
 }
 
 func (c *uint16Computer) ComputeSingle(id uint32) (float32, error) {
-	cID := types.ChunkID(id)
-	chunk := c.data.GetVectorsUint16Chunk(cID)
-	if chunk != nil {
-		cOff := int(id) % types.ChunkSize
-		start := cOff * c.data.Dims
-		if start+c.dims <= len(chunk) {
-			v := chunk[start : start+c.dims]
+	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id)
+	if err == nil {
+		if v, ok := vecAny.([]uint16); ok {
 			return c.h.distFuncUint16(c.q, v)
 		}
 	}
@@ -73,10 +67,11 @@ func (c *uint16Computer) ComputeSingle(id uint32) (float32, error) {
 
 // int32Computer handles Int32 vectors
 type int32Computer struct {
-	data *types.GraphData
-	q    []int32
-	dims int
-	h    *ArrowHNSW
+	data      *types.GraphData
+	q         []int32
+	dims      int
+	h         *ArrowHNSW
+	diskGraph *DiskGraph
 }
 
 func (c *int32Computer) Compute(ids []uint32, dists []float32) error {
@@ -91,13 +86,9 @@ func (c *int32Computer) Compute(ids []uint32, dists []float32) error {
 }
 
 func (c *int32Computer) ComputeSingle(id uint32) (float32, error) {
-	cID := types.ChunkID(id)
-	chunk := c.data.GetVectorsInt32Chunk(cID)
-	if chunk != nil {
-		cOff := int(id) % types.ChunkSize
-		start := cOff * c.data.Dims
-		if start+c.dims <= len(chunk) {
-			v := chunk[start : start+c.dims]
+	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id)
+	if err == nil {
+		if v, ok := vecAny.([]int32); ok {
 			return c.h.distFuncInt32(c.q, v)
 		}
 	}
@@ -106,10 +97,11 @@ func (c *int32Computer) ComputeSingle(id uint32) (float32, error) {
 
 // uint32Computer handles Uint32 vectors
 type uint32Computer struct {
-	data *types.GraphData
-	q    []uint32
-	dims int
-	h    *ArrowHNSW
+	data      *types.GraphData
+	q         []uint32
+	dims      int
+	h         *ArrowHNSW
+	diskGraph *DiskGraph
 }
 
 func (c *uint32Computer) Compute(ids []uint32, dists []float32) error {
@@ -124,13 +116,9 @@ func (c *uint32Computer) Compute(ids []uint32, dists []float32) error {
 }
 
 func (c *uint32Computer) ComputeSingle(id uint32) (float32, error) {
-	cID := types.ChunkID(id)
-	chunk := c.data.GetVectorsUint32Chunk(cID)
-	if chunk != nil {
-		cOff := int(id) % types.ChunkSize
-		start := cOff * c.data.Dims
-		if start+c.dims <= len(chunk) {
-			v := chunk[start : start+c.dims]
+	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id)
+	if err == nil {
+		if v, ok := vecAny.([]uint32); ok {
 			return c.h.distFuncUint32(c.q, v)
 		}
 	}
@@ -139,10 +127,11 @@ func (c *uint32Computer) ComputeSingle(id uint32) (float32, error) {
 
 // int64Computer handles Int64 vectors
 type int64Computer struct {
-	data *types.GraphData
-	q    []int64
-	dims int
-	h    *ArrowHNSW
+	data      *types.GraphData
+	q         []int64
+	dims      int
+	h         *ArrowHNSW
+	diskGraph *DiskGraph
 }
 
 func (c *int64Computer) Compute(ids []uint32, dists []float32) error {
@@ -157,13 +146,9 @@ func (c *int64Computer) Compute(ids []uint32, dists []float32) error {
 }
 
 func (c *int64Computer) ComputeSingle(id uint32) (float32, error) {
-	cID := types.ChunkID(id)
-	chunk := c.data.GetVectorsInt64Chunk(cID)
-	if chunk != nil {
-		cOff := int(id) % types.ChunkSize
-		start := cOff * c.data.Dims
-		if start+c.dims <= len(chunk) {
-			v := chunk[start : start+c.dims]
+	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id)
+	if err == nil {
+		if v, ok := vecAny.([]int64); ok {
 			return c.h.distFuncInt64(c.q, v)
 		}
 	}
@@ -172,10 +157,11 @@ func (c *int64Computer) ComputeSingle(id uint32) (float32, error) {
 
 // uint64Computer handles Uint64 vectors
 type uint64Computer struct {
-	data *types.GraphData
-	q    []uint64
-	dims int
-	h    *ArrowHNSW
+	data      *types.GraphData
+	q         []uint64
+	dims      int
+	h         *ArrowHNSW
+	diskGraph *DiskGraph
 }
 
 func (c *uint64Computer) Compute(ids []uint32, dists []float32) error {
@@ -190,13 +176,9 @@ func (c *uint64Computer) Compute(ids []uint32, dists []float32) error {
 }
 
 func (c *uint64Computer) ComputeSingle(id uint32) (float32, error) {
-	cID := types.ChunkID(id)
-	chunk := c.data.GetVectorsUint64Chunk(cID)
-	if chunk != nil {
-		cOff := int(id) % types.ChunkSize
-		start := cOff * c.data.Dims
-		if start+c.dims <= len(chunk) {
-			v := chunk[start : start+c.dims]
+	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id)
+	if err == nil {
+		if v, ok := vecAny.([]uint64); ok {
 			return c.h.distFuncUint64(c.q, v)
 		}
 	}

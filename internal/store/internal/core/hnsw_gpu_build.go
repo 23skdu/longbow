@@ -328,8 +328,8 @@ func (h *ArrowHNSW) insertWithGPUCandidates(id uint32, vec any, level int, gpuCa
 			}
 
 			for _, n := range selected {
-				h.AddConnection(searchCtx, data, id, n.ID, l, maxConn, n.Dist)
-				h.AddConnection(searchCtx, data, n.ID, id, l, maxConn, n.Dist)
+				data = h.AddConnection(searchCtx, data, id, n.ID, l, maxConn, n.Dist)
+				data = h.AddConnection(searchCtx, data, n.ID, id, l, maxConn, n.Dist)
 			}
 
 			h.searchPool.Put(searchCtx)

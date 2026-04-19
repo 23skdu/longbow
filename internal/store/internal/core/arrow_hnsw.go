@@ -188,13 +188,19 @@ func (h *ArrowHNSW) GetVectorAny(id uint32) (any, error) {
 }
 
 func (h *ArrowHNSW) getVectorWithData(data *types.GraphData, id uint32) (any, error) {
+	return h.getVectorWithCachedDisk(data, nil, id)
+}
+
+func (h *ArrowHNSW) getVectorWithCachedDisk(data *types.GraphData, dg *DiskGraph, id uint32) (any, error) {
 	v, err := data.GetVector(id)
 	if v != nil || err != nil {
 		return v, err
 	}
 
 	// Fallback to DiskGraph
-	dg := h.diskGraph.Load()
+	if dg == nil {
+		dg = h.diskGraph.Load()
+	}
 	if dg != nil {
 		if h.config.SQ8Enabled {
 			return dg.GetVectorSQ8(id), nil
@@ -1041,7 +1047,7 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 
 	// Calculate distance to entry point
 	var dist float32
-	vec, err := h.getVectorWithData(data, ep)
+	vec, err := h.getVectorWithCachedDisk(data, searchCtx.diskGraph, ep)
 	if err != nil {
 		return nil, err
 	}
@@ -1408,60 +1414,129 @@ func (h *ArrowHNSW) growInternal(capacity, dims int) error {
 	}
 
 	// Calculate current vs target
+	currentCapacity := data.Capacity
 	currentDims := data.Dims
 
-	// If capacity and dims haven't changed, but PQ was enabled, we still need to run EnsureChunk
-	// because EnsureChunk handles conditional allocation of PQ/SQ8 buffers even if chunk already exists.
-	// However, if we want to be efficient, we only proceed if something changed OR if we need to ensure PQ/SQ8.
+	// Never shrink capacity
+	if capacity < currentCapacity {
+		capacity = currentCapacity
+	}
+
+	// If no structural change needed, return early
+	if capacity <= currentCapacity && dims == currentDims &&
+		data.PQEnabled == h.config.PQEnabled &&
+		data.SQ8Enabled == h.config.SQ8Enabled &&
+		data.BQEnabled == h.config.BQEnabled &&
+		data.TurboQuantEnabled == h.config.TurboQuantEnabled &&
+		(!h.config.PQEnabled || len(data.VectorsPQ) > 0) &&
+		(!h.config.SQ8Enabled || len(data.VectorsSQ8) > 0) &&
+		(!h.config.BQEnabled || len(data.VectorsBQ) > 0) {
+		return nil
+	}
 
 	// COW: Clone the current data structure
-	// This ensures readers holding old 'data' pointer are safe.
-	// New data structure will have updated capacity and chunks.
 	newData := data.Clone()
 	newData.Capacity = capacity
 	newData.Dims = dims
 
-	// Update flags from config to ensure EnsureChunk knows about them
+	// Update flags from config
 	newData.PQEnabled = h.config.PQEnabled
-	newData.PQM = h.config.PQM
+	if newData.PQEnabled {
+		if h.pqEncoder != nil {
+			newData.PQM = h.pqEncoder.CodeSize()
+		} else {
+			newData.PQM = h.config.PQM
+		}
+		if newData.VectorsPQ == nil {
+			newData.VectorsPQ = []uint64{}
+		}
+	}
 	newData.SQ8Enabled = h.config.SQ8Enabled
+	if newData.SQ8Enabled && newData.VectorsSQ8 == nil {
+		newData.VectorsSQ8 = []uint64{}
+	}
 	newData.BQEnabled = h.config.BQEnabled
+	if newData.BQEnabled && newData.VectorsBQ == nil {
+		newData.VectorsBQ = []uint64{}
+	}
 	newData.TurboQuantEnabled = h.config.TurboQuantEnabled
 	newData.TurboQuantBits = h.config.TurboQuantBits
+	if newData.TurboQuantEnabled && newData.VectorsTQ == nil {
+		newData.VectorsTQ = []uint64{}
+	}
 
 	// Ensure PackedNeighbors are resized for new capacity
-	if len(newData.PackedNeighbors) > 0 {
-		for _, pn := range newData.PackedNeighbors {
-			if pn != nil {
-				pn.EnsureCapacity(uint32(capacity))
-			}
+	for _, pn := range newData.PackedNeighbors {
+		if pn != nil {
+			pn.EnsureCapacity(uint32(capacity))
 		}
 	}
 
-	// If dims changed, we need to reinitialize arenas for the new size
-	if dims != currentDims {
-		// Calculate required slab size for new dims
-		requiredSize := types.ChunkSize * dims * 4
-		slabSize := requiredSize + 64
-		if slabSize < 1024*1024 {
-			slabSize = 1024 * 1024
+	// If dims changed OR structural flags changed OR required feature slices are missing
+	structuralChange := (dims != currentDims) ||
+		(data.PQEnabled != h.config.PQEnabled) ||
+		(data.SQ8Enabled != h.config.SQ8Enabled) ||
+		(data.BQEnabled != h.config.BQEnabled) ||
+		(data.TurboQuantEnabled != h.config.TurboQuantEnabled) ||
+		(h.config.PQEnabled && len(newData.VectorsPQ) == 0) ||
+		(h.config.SQ8Enabled && len(newData.VectorsSQ8) == 0) ||
+		(h.config.BQEnabled && len(newData.VectorsBQ) == 0)
+
+	if structuralChange {
+		// If dims changed, we must reset all dimension-dependent state
+		if dims != currentDims {
+			newData.Float32Arena = nil
+			newData.Float64Arena = nil
+			newData.Uint8Arena = nil
+			newData.Uint16Arena = nil
+			newData.Uint32Arena = nil
+			newData.Uint64Arena = nil
+			newData.Int8Arena = nil
+			newData.Int16Arena = nil
+			newData.Int32Arena = nil
+			newData.Int64Arena = nil
+			newData.Float16Arena = nil
+			newData.Complex64Arena = nil
+			newData.Complex128Arena = nil
+
+			newData.VectorsF32 = nil
+			newData.VectorsSQ8 = nil
+			newData.VectorsPQ = nil
+			newData.VectorsBQ = nil
+			newData.VectorsTQ = nil
+			newData.VectorsF16 = nil
+			newData.VectorsInt8 = nil
+			newData.VectorsInt16 = nil
+			newData.VectorsUint16 = nil
+			newData.VectorsInt32 = nil
+			newData.VectorsUint32 = nil
+			newData.VectorsInt64 = nil
+			newData.VectorsUint64 = nil
+			newData.VectorsFloat64Offsets = nil
+			newData.VectorsComplex64Offsets = nil
+			newData.VectorsComplex128Offsets = nil
+
+			// Legacy legacy
+			newData.Vectors = nil
+			newData.VectorsFloat64 = nil
+			newData.VectorsComplex64 = nil
+			newData.VectorsComplex128 = nil
 		}
-		// Create new arenas with correct size
-		newData.Float32Arena = memory.NewTypedArena[float32](memory.NewSlabArena(slabSize))
-		// Reset offset arrays since we have new arenas
-		newData.VectorsF32 = nil
+
+		// Re-run pre-allocation for the current/new structure
+		// PreAllocate is now idempotent, so it won't duplicate if nothing changed
+		if err := newData.PreAllocate(capacity); err != nil {
+			return err
+		}
+	} else if capacity > currentCapacity {
+		// Just capacity growth - PreAllocate is already capacity-aware
+		if err := newData.PreAllocate(capacity); err != nil {
+			return err
+		}
 	}
 
-	// If dims changed, reinitialize Float64Arena (Clone() nil'd it)
-	if dims != currentDims {
-		requiredSize := types.ChunkSize * dims * 8
-		slabSize := requiredSize + 64
-		if slabSize < 1024*1024 {
-			slabSize = 1024 * 1024
-		}
-		newData.Float64Arena = memory.NewTypedArena[float64](memory.NewSlabArena(slabSize))
-		newData.VectorsFloat64Offsets = nil
-	}
+	newData.Dims = dims
+	newData.Capacity = capacity
 
 	// Optimized Grow: Ensure metadata slices are sized for the new capacity,
 	// but only allocate inner data chunks for the existing node count.
@@ -1892,18 +1967,23 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 				searchCtx.rotatedQueryTQ = make([]float32, h.tqCompute.encoder.pow2)
 			}
 			_ = h.tqCompute.PrecomputeRotatedQuery(q, searchCtx.rotatedQueryTQ)
-			return &tqComputer{data: data, h: h, rotatedQuery: searchCtx.rotatedQueryTQ}
+			return &tqComputer{data: data, h: h, rotatedQuery: searchCtx.rotatedQueryTQ, diskGraph: searchCtx.diskGraph}
 		}
 		if h.config.PQEnabled && h.pqEncoder != nil {
 			table, err := h.pqEncoder.BuildADCTable(q)
 			if err == nil {
-				return &pqComputer{data: data, q: q, table: table, h: h}
+				return &pqComputer{data: data, q: q, table: table, h: h, diskGraph: searchCtx.GetDiskGraph()}
 			}
 		}
-		if data.Type == types.VectorTypeFloat32 {
-			return &float32ToFloat32Computer{data: data, q: q, dims: len(q), h: h}
+		// Temporarily disabled specialized computer to isolate test regressions
+		// if data.Type == types.VectorTypeFloat32 {
+		// 	return &float32ToFloat32Computer{data: data, q: q, dims: len(q), h: h, diskGraph: searchCtx.GetDiskGraph()}
+		// }
+		var dg *DiskGraph
+		if searchCtx != nil {
+			dg = searchCtx.GetDiskGraph()
 		}
-		comp := &float32Computer{data: data, q: q, dims: len(q), h: h}
+		comp := &float32Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg}
 		if searchCtx != nil {
 			// Populate conversion buffers once
 			if data.Type == types.VectorTypeFloat64 {
@@ -1923,9 +2003,9 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 			q8 = queryVal.([]uint8)
 			qInt8 = *(*[]int8)(unsafe.Pointer(&q8)) // #nosec G103
 		}
-		return &int8Computer{data: data, q: q8, qInt8: qInt8, dims: len(q8), h: h}
+		return &int8Computer{data: data, q: q8, qInt8: qInt8, dims: len(q8), h: h, diskGraph: searchCtx.diskGraph}
 	case []float64:
-		return &float64Computer{data: data, q: q, dims: len(q), h: h}
+		return &float64Computer{data: data, q: q, dims: len(q), h: h, diskGraph: searchCtx.diskGraph}
 	case []complex64:
 		// Pre-convert if searchCtx available
 		if searchCtx != nil {
@@ -1934,9 +2014,9 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 			}
 			searchCtx.queryC64 = searchCtx.queryC64[:len(q)]
 			copy(searchCtx.queryC64, q)
-			return &complex64Computer{data: data, q: searchCtx.queryC64, dims: len(q), h: h}
+			return &complex64Computer{data: data, q: searchCtx.queryC64, dims: len(q), h: h, diskGraph: searchCtx.diskGraph}
 		}
-		return &complex64Computer{data: data, q: q, dims: len(q), h: h}
+		return &complex64Computer{data: data, q: q, dims: len(q), h: h, diskGraph: searchCtx.diskGraph}
 	case []complex128:
 		if searchCtx != nil {
 			if cap(searchCtx.queryC128) < len(q) {
@@ -1944,7 +2024,7 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 			}
 			searchCtx.queryC128 = searchCtx.queryC128[:len(q)]
 			copy(searchCtx.queryC128, q)
-			return &complex128Computer{data: data, q: searchCtx.queryC128, dims: len(q), h: h}
+			return &complex128Computer{data: data, q: searchCtx.queryC128, dims: len(q), h: h, diskGraph: searchCtx.diskGraph}
 		}
 		return &complex128Computer{data: data, q: q, dims: len(q), h: h}
 	case []int16:
@@ -2020,7 +2100,7 @@ func (h *ArrowHNSW) searchLayer(_ context.Context, computer any, entryPoint uint
 		switch q := queryVec.(type) {
 		case []float32:
 			distComputer = func(id uint32) (float32, error) {
-				vecAny, err := h.getVectorWithData(data, id)
+				vecAny, err := h.getVectorWithCachedDisk(data, ctx.diskGraph, id)
 				if err != nil {
 					return 0, err
 				}
@@ -2108,7 +2188,7 @@ func (h *ArrowHNSW) searchLayer(_ context.Context, computer any, entryPoint uint
 
 		case []int8:
 			distComputer = func(id uint32) (float32, error) {
-				vecAny, err := h.getVectorWithData(data, id)
+				vecAny, err := h.getVectorWithCachedDisk(data, ctx.diskGraph, id)
 				if err != nil {
 					return 0, err
 				}
@@ -2163,7 +2243,7 @@ func (h *ArrowHNSW) searchLayer(_ context.Context, computer any, entryPoint uint
 
 		case []complex64:
 			distComputer = func(id uint32) (float32, error) {
-				vecAny, err := h.getVectorWithData(data, id)
+				vecAny, err := h.getVectorWithCachedDisk(data, ctx.diskGraph, id)
 				if err != nil {
 					return 0, err
 				}
@@ -2185,7 +2265,7 @@ func (h *ArrowHNSW) searchLayer(_ context.Context, computer any, entryPoint uint
 
 		case []complex128:
 			distComputer = func(id uint32) (float32, error) {
-				vecAny, err := h.getVectorWithData(data, id)
+				vecAny, err := h.getVectorWithCachedDisk(data, ctx.diskGraph, id)
 				if err != nil {
 					return 0, err
 				}
@@ -2207,7 +2287,7 @@ func (h *ArrowHNSW) searchLayer(_ context.Context, computer any, entryPoint uint
 
 		case []float64:
 			distComputer = func(id uint32) (float32, error) {
-				vecAny, err := h.getVectorWithData(data, id)
+				vecAny, err := h.getVectorWithCachedDisk(data, ctx.diskGraph, id)
 				if err != nil {
 					return 0, err
 				}
@@ -2232,7 +2312,7 @@ func (h *ArrowHNSW) searchLayer(_ context.Context, computer any, entryPoint uint
 
 		case []float16.Num:
 			distComputer = func(id uint32) (float32, error) {
-				vecAny, err := h.getVectorWithData(data, id)
+				vecAny, err := h.getVectorWithCachedDisk(data, ctx.diskGraph, id)
 				if err != nil {
 					return 0, err
 				}
@@ -2257,7 +2337,7 @@ func (h *ArrowHNSW) searchLayer(_ context.Context, computer any, entryPoint uint
 
 		case []uint32:
 			distComputer = func(id uint32) (float32, error) {
-				vecAny, err := h.getVectorWithData(data, id)
+				vecAny, err := h.getVectorWithCachedDisk(data, ctx.diskGraph, id)
 				if err != nil {
 					return 0, err
 				}
@@ -2278,7 +2358,7 @@ func (h *ArrowHNSW) searchLayer(_ context.Context, computer any, entryPoint uint
 
 		case []int32:
 			distComputer = func(id uint32) (float32, error) {
-				vecAny, err := h.getVectorWithData(data, id)
+				vecAny, err := h.getVectorWithCachedDisk(data, ctx.diskGraph, id)
 				if err != nil {
 					return 0, err
 				}
@@ -2294,7 +2374,7 @@ func (h *ArrowHNSW) searchLayer(_ context.Context, computer any, entryPoint uint
 
 		case []int16:
 			distComputer = func(id uint32) (float32, error) {
-				vecAny, err := h.getVectorWithData(data, id)
+				vecAny, err := h.getVectorWithCachedDisk(data, ctx.diskGraph, id)
 				if err != nil {
 					return 0, err
 				}
@@ -2310,7 +2390,7 @@ func (h *ArrowHNSW) searchLayer(_ context.Context, computer any, entryPoint uint
 
 		case []uint16:
 			distComputer = func(id uint32) (float32, error) {
-				vecAny, err := h.getVectorWithData(data, id)
+				vecAny, err := h.getVectorWithCachedDisk(data, ctx.diskGraph, id)
 				if err != nil {
 					return 0, err
 				}
@@ -2326,7 +2406,7 @@ func (h *ArrowHNSW) searchLayer(_ context.Context, computer any, entryPoint uint
 
 		case []int64:
 			distComputer = func(id uint32) (float32, error) {
-				vecAny, err := h.getVectorWithData(data, id)
+				vecAny, err := h.getVectorWithCachedDisk(data, ctx.diskGraph, id)
 				if err != nil {
 					return 0, err
 				}
@@ -2342,7 +2422,7 @@ func (h *ArrowHNSW) searchLayer(_ context.Context, computer any, entryPoint uint
 
 		case []uint64:
 			distComputer = func(id uint32) (float32, error) {
-				vecAny, err := h.getVectorWithData(data, id)
+				vecAny, err := h.getVectorWithCachedDisk(data, ctx.diskGraph, id)
 				if err != nil {
 					return 0, err
 				}
@@ -2405,7 +2485,7 @@ func (h *ArrowHNSW) searchLayer(_ context.Context, computer any, entryPoint uint
 
 		// Lock/RLock needed?
 		// Neighbors are atomic unless resize?
-		neighbors := h.GetNeighborsCombined(layer, curr.ID)
+		neighbors := h.GetNeighborsCombinedCached(layer, curr.ID, ctx.diskGraph)
 
 		prefetchLimit := h.mMax
 		if prefetchLimit > 64 {
@@ -2475,9 +2555,7 @@ func (h *ArrowHNSW) searchLayer(_ context.Context, computer any, entryPoint uint
 				furthest := ctx.resultSet[0]
 
 				if ctx.resultSet.Len() < ef || d < furthest.Dist {
-					heap.Push(minHeap, cand)
 					heap.Push(resultSetAdapter, cand)
-
 					if ctx.resultSet.Len() > ef {
 						heap.Pop(resultSetAdapter) // Remove furthest
 					}
@@ -2982,24 +3060,41 @@ func (h *ArrowHNSW) SearchWithArena(queryVec []float32, k int, arena any) []type
 }
 
 type pqComputer struct {
-	data  *types.GraphData
-	q     []float32
-	table []float32
-	h     *ArrowHNSW
+	data      *types.GraphData
+	q         []float32
+	table     []float32
+	h         *ArrowHNSW
+	diskGraph *DiskGraph
 }
 
 type tqComputer struct {
 	data         *types.GraphData
 	h            *ArrowHNSW
 	rotatedQuery []float32
+	diskGraph    *DiskGraph
 }
 
 func (c *tqComputer) ComputeSingle(id uint32) (float32, error) {
-	return c.h.tqCompute.DistanceWithRotatedQuery(id, c.rotatedQuery)
+	// If it's a TQ search, the TQ distance logic usually needs the TQ code.
+	// We can check if it's in data or DiskGraph.
+	return c.h.tqCompute.DistanceWithRotatedQueryAndDisk(id, c.rotatedQuery, c.diskGraph)
 }
 
 func (c *pqComputer) ComputeSingle(id uint32) (float32, error) {
 	code := c.data.GetVectorPQ(id)
+	if code == nil {
+		// Try DiskGraph
+		if c.diskGraph != nil {
+			code = c.diskGraph.GetVectorPQ(id)
+		} else {
+			// fallback/atomic
+			dg := c.h.diskGraph.Load()
+			if dg != nil {
+				code = dg.GetVectorPQ(id)
+			}
+		}
+	}
+
 	if code == nil {
 		return math.MaxFloat32, nil
 	}
@@ -3024,10 +3119,11 @@ type float32Computer struct {
 	qF16  []float16.Num
 	qC64  []complex64
 	qC128 []complex128
+	diskGraph *DiskGraph
 }
 
 func (c *float32Computer) ComputeSingle(id uint32) (float32, error) {
-	vecAny, err := c.h.getVectorWithData(c.data, id)
+	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id)
 	if err != nil {
 		return 0, err
 	}
@@ -3099,17 +3195,18 @@ func (c *float32Computer) ComputeSingle(id uint32) (float32, error) {
 }
 
 type float32ToFloat32Computer struct {
-	data *types.GraphData
-	q    []float32
-	dims int
-	h    *ArrowHNSW
+	data      *types.GraphData
+	q         []float32
+	dims      int
+	h         *ArrowHNSW
+	diskGraph *DiskGraph
 }
 
 func (c *float32ToFloat32Computer) ComputeSingle(id uint32) (float32, error) {
 	cID := types.ChunkID(id)
 	chunk := c.data.GetVectorsChunk(cID)
 	if chunk == nil {
-		vecAny, err := c.h.getVectorWithData(c.data, id)
+		vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id)
 		if err != nil {
 			return 0, err
 		}
@@ -3124,6 +3221,13 @@ func (c *float32ToFloat32Computer) ComputeSingle(id uint32) (float32, error) {
 	if start+c.dims <= len(chunk) {
 		v := chunk[start : start+c.dims]
 		return c.h.distFunc(c.q, v)
+	}
+	// Fallback to cached disk for out-of-bounds in memory
+	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id)
+	if err == nil {
+		if v, ok := vecAny.([]float32); ok {
+			return c.h.distFunc(c.q, v)
+		}
 	}
 	return math.MaxFloat32, nil
 }
@@ -3201,11 +3305,12 @@ func euclideanDistanceUint64(a, b []uint64) float32 {
 }
 
 type int8Computer struct {
-	data  *types.GraphData
-	q     []uint8
-	qInt8 []int8
-	dims  int
-	h     *ArrowHNSW
+	data      *types.GraphData
+	q         []uint8
+	qInt8     []int8
+	dims      int
+	h         *ArrowHNSW
+	diskGraph *DiskGraph
 }
 
 func (c *int8Computer) ComputeSingle(id uint32) (float32, error) {
@@ -3221,7 +3326,7 @@ func (c *int8Computer) ComputeSingle(id uint32) (float32, error) {
 		}
 	}
 
-	vecAny, err := c.h.getVectorWithData(c.data, id)
+	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id)
 	if err != nil {
 		return 0, err
 	}

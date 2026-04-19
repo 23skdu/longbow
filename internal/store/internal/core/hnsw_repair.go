@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"strconv"
 	"sync/atomic"
@@ -53,6 +54,9 @@ func (h *ArrowHNSW) RepairTombstones(ctx context.Context, batchSize int) int {
 
 		// Scan layers
 		for lvl := 0; lvl < types.ArrowMaxLayers; lvl++ {
+			// Reload data regularly to see latest snapshots from other threads/COW
+			data = h.data.Load()
+
 			cID := types.ChunkID(nid)
 			cOff := types.ChunkOffset(nid)
 
@@ -61,6 +65,9 @@ func (h *ArrowHNSW) RepairTombstones(ctx context.Context, batchSize int) int {
 			if lvl >= len(data.Neighbors) || int(cID) >= len(data.Neighbors[lvl]) || data.Neighbors[lvl][cID] == nil {
 				continue
 			}
+
+			// COW Promotion: Ensure nid is promoted before locking and modifying
+			data = h.promoteNode(data, nid)
 
 			// Acquire Node Lock for this layer
 			oldVer := data.LockNode(lvl, nid)
@@ -78,14 +85,17 @@ func (h *ArrowHNSW) RepairTombstones(ctx context.Context, batchSize int) int {
 				continue
 			}
 
-			baseIdx := int(cOff) * types.MaxNeighbors
+			// Scan neighbors using unified accessor (Shadow Topology support)
+			neighbors := h.GetNeighborsCombined(lvl, nid)
+			if len(neighbors) == 0 {
+				continue
+			}
 
 			// Check for tombstones in neighbor list
 			hasTombstone := false
 			var knownTombstones []uint32
 
-			for r := 0; r < count; r++ {
-				neighborID := neighborsChunk[baseIdx+r]
+			for _, neighborID := range neighbors {
 				if h.deleted.Contains(neighborID) {
 					hasTombstone = true
 					knownTombstones = append(knownTombstones, neighborID)
@@ -96,6 +106,7 @@ func (h *ArrowHNSW) RepairTombstones(ctx context.Context, batchSize int) int {
 				// Don't unlock here, just continue to next layer
 				continue
 			} else {
+				fmt.Printf("[DEBUG] RepairTombstones node %d layer %d: found tombstones %v\n", nid, lvl, knownTombstones)
 				// Repair Logic
 				// 1. Identify valid candidates: (Current Neighbors - Tombstones) U (Tombstones' Neighbors)
 
@@ -104,8 +115,7 @@ func (h *ArrowHNSW) RepairTombstones(ctx context.Context, batchSize int) int {
 				poolCtx.visited.ClearSIMD()
 
 				// Add existing VALID neighbors
-				for r := 0; r < count; r++ {
-					neighborID := neighborsChunk[baseIdx+r]
+				for _, neighborID := range neighbors {
 					if !h.deleted.Contains(neighborID) {
 						dist, err := h.distFunc(getVec(h, data, nid), getVec(h, data, neighborID))
 						if err != nil {
@@ -115,6 +125,8 @@ func (h *ArrowHNSW) RepairTombstones(ctx context.Context, batchSize int) int {
 						poolCtx.visited.Set(int(neighborID))
 					}
 				}
+				
+				baseIdx := int(cOff) * types.MaxNeighbors
 
 				// Add Tombstones' neighbors
 				for _, tID := range knownTombstones {
@@ -199,6 +211,10 @@ func (h *ArrowHNSW) RepairTombstones(ctx context.Context, batchSize int) int {
 				atomic.AddUint32(verAddr, 1) // Even
 
 				repaired++
+				
+				// CAS the updated data pointer back to h.data to ensure visibility
+				latest := h.data.Load()
+				h.data.CompareAndSwap(latest, data)
 			}
 			data.UnlockNode(lvl, nid, oldVer)
 		}

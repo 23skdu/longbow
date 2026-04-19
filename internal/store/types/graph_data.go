@@ -138,14 +138,47 @@ func (g *GraphData) GetNodeCount() int {
 	return g.Capacity
 }
 
-// NeedsChunk returns true if the given chunk ID requires allocation.
+// NeedsChunk returns true if the given chunk ID requires allocation for any enabled data type.
 func (g *GraphData) NeedsChunk(cID int) bool {
-	if cID >= len(g.Levels) {
+	// 1. Primary Float32 check
+	if (g.Type == VectorTypeFloat32 || g.Type == VectorTypeUnknown) {
+		if cID >= len(g.VectorsF32) || g.Float32Arena == nil {
+			return true
+		}
+	}
+
+	// 2. Specialized quantization checks
+	if g.SQ8Enabled {
+		if cID >= len(g.VectorsSQ8) || g.Uint8Arena == nil {
+			return true
+		}
+	}
+	if g.PQEnabled && g.PQM > 0 {
+		if cID >= len(g.VectorsPQ) || g.Uint64Arena == nil {
+			return true
+		}
+	}
+	if g.BQEnabled {
+		if cID >= len(g.VectorsBQ) || g.Uint64Arena == nil {
+			return true
+		}
+	}
+	if g.TurboQuantEnabled {
+		if cID >= len(g.VectorsTQ) || g.Uint8Arena == nil {
+			return true
+		}
+	}
+
+	// 3. Metadata and Neighbors
+	if cID >= len(g.Levels) || g.Levels[cID] == nil {
 		return true
 	}
-	if g.Levels[cID] == nil {
-		return true
+	if len(g.Neighbors) > 0 {
+		if cID >= len(g.Neighbors[0]) || g.Neighbors[0][cID] == nil {
+			return true
+		}
 	}
+
 	return false
 }
 
@@ -336,7 +369,7 @@ func (g *GraphData) SetVectorPQ(id uint32, code []byte) error {
 		})
 
 		if len(chunk) == 0 {
-			return fmt.Errorf("PQ chunk is empty")
+			return fmt.Errorf("PQ chunk is empty (arena %p, offset %d)", g.Uint64Arena, g.VectorsPQ[cID])
 		}
 
 		// Cast uint64 to byte slice
@@ -395,36 +428,66 @@ func (g *GraphData) GetVectorsUint16Chunk(chunkID int) []uint16 {
 }
 
 func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
-	// Ensure Vectors (Float32 is default/primary) - use arena for off-heap allocation
+	// 1. Ensure Vectors (Float32 / Unknown)
 	if g.Type == VectorTypeFloat32 || g.Type == VectorTypeUnknown {
 		for len(g.VectorsF32) <= cID {
-			// If dims is 0, allocate a placeholder (will be reallocated when actual dims known)
 			if dims == 0 {
 				g.VectorsF32 = append(g.VectorsF32, 0)
 				g.Vectors = append(g.Vectors, nil)
 				continue
 			}
-			// Create arena on first need
-			// Create arena if needed - always size for the required chunk + alignment buffer
 			requiredChunkSize := ChunkSize * dims * 4
 			if g.Float32Arena == nil {
 				slabSize := requiredChunkSize + 64
-				if slabSize < 1024*1024 {
-					slabSize = 1024 * 1024
-				}
+				if slabSize < 1024*1024 { slabSize = 1024 * 1024 }
 				g.Float32Arena = memory.NewTypedArena[float32](memory.NewSlabArena(slabSize))
 			}
 			ref, err := g.Float32Arena.AllocSliceDirty(ChunkSize * dims)
-			if err != nil {
-				return err
-			}
+			if err != nil { return err }
 			g.VectorsF32 = append(g.VectorsF32, ref.Offset)
-			// Also append nil to Vectors for backward compatibility
 			g.Vectors = append(g.Vectors, nil)
 		}
 	}
 
-	// Ensure Levels
+	// 2. Ensure SQ8 if enabled
+	if g.SQ8Enabled {
+		paddedDims := (dims + 63) & ^63
+		for len(g.VectorsSQ8) <= cID {
+			if dims == 0 {
+				g.VectorsSQ8 = append(g.VectorsSQ8, 0)
+				continue
+			}
+			if g.Uint8Arena == nil {
+				slabSize := ChunkSize * paddedDims + 64
+				if slabSize < 1024*1024 { slabSize = 1024 * 1024 }
+				g.Uint8Arena = memory.NewTypedArena[uint8](memory.NewSlabArena(slabSize))
+			}
+			ref, err := g.Uint8Arena.AllocSliceDirty(ChunkSize * paddedDims)
+			if err != nil { return err }
+			g.VectorsSQ8 = append(g.VectorsSQ8, ref.Offset)
+		}
+	}
+
+	// 3. Ensure PQ if enabled
+	if g.PQEnabled && g.PQM > 0 {
+		numWordsPerNode := (g.PQM + 7) / 8
+		for len(g.VectorsPQ) <= cID {
+			if dims == 0 {
+				g.VectorsPQ = append(g.VectorsPQ, 0)
+				continue
+			}
+			if g.Uint64Arena == nil {
+				slabSize := ChunkSize * numWordsPerNode * 8 + 64
+				if slabSize < 1024*1024 { slabSize = 1024 * 1024 }
+				g.Uint64Arena = memory.NewTypedArena[uint64](memory.NewSlabArena(slabSize))
+			}
+			ref, err := g.Uint64Arena.AllocSliceDirty(ChunkSize * numWordsPerNode)
+			if err != nil { return err }
+			g.VectorsPQ = append(g.VectorsPQ, ref.Offset)
+		}
+	}
+
+	// 4. Ensure Levels
 	for len(g.Levels) <= cID {
 		g.Levels = append(g.Levels, nil)
 	}
@@ -852,7 +915,7 @@ func (g *GraphData) GetVector(id uint32) (any, error) {
 		}
 	}
 
-	if len(g.Vectors) > cID {
+	if len(g.VectorsF32) > cID || len(g.Vectors) > cID {
 		chunk := g.GetVectorsChunk(cID)
 		if chunk != nil {
 			start := cOff * g.Dims
@@ -1449,12 +1512,17 @@ func (g *GraphData) Clone() *GraphData {
 					targetCap = 16
 				}
 				newG.Neighbors[l] = make([][]uint32, len(g.Neighbors[l]), targetCap)
-				copy(newG.Neighbors[l], g.Neighbors[l])
+				for c := range g.Neighbors[l] {
+					if g.Neighbors[l][c] != nil {
+						newG.Neighbors[l][c] = make([]uint32, len(g.Neighbors[l][c]))
+						copy(newG.Neighbors[l][c], g.Neighbors[l][c])
+					}
+				}
 			}
 		}
 	}
 
-	// Deep copy Counts (Layer -> Chunk)
+	// Deep copy Counts (Layer -> Chunk -> Data)
 	if g.Counts != nil {
 		newG.Counts = make([][][]int32, len(g.Counts))
 		for l := range g.Counts {
@@ -1464,12 +1532,17 @@ func (g *GraphData) Clone() *GraphData {
 					targetCap = 16
 				}
 				newG.Counts[l] = make([][]int32, len(g.Counts[l]), targetCap)
-				copy(newG.Counts[l], g.Counts[l])
+				for c := range g.Counts[l] {
+					if g.Counts[l][c] != nil {
+						newG.Counts[l][c] = make([]int32, len(g.Counts[l][c]))
+						copy(newG.Counts[l][c], g.Counts[l][c])
+					}
+				}
 			}
 		}
 	}
 
-	// Deep copy Versions (Layer -> Chunk)
+	// Deep copy Versions (Layer -> Chunk -> Data)
 	if g.Versions != nil {
 		newG.Versions = make([][][]uint32, len(g.Versions))
 		for l := range g.Versions {
@@ -1479,15 +1552,25 @@ func (g *GraphData) Clone() *GraphData {
 					targetCap = 16
 				}
 				newG.Versions[l] = make([][]uint32, len(g.Versions[l]), targetCap)
-				copy(newG.Versions[l], g.Versions[l])
+				for c := range g.Versions[l] {
+					if g.Versions[l][c] != nil {
+						newG.Versions[l][c] = make([]uint32, len(g.Versions[l][c]))
+						copy(newG.Versions[l][c], g.Versions[l][c])
+					}
+				}
 			}
 		}
 	}
 
-	// Deep copy Levels (Chunk)
+	// Deep copy Levels (Chunk -> Data)
 	if g.Levels != nil {
 		newG.Levels = make([][]uint8, len(g.Levels))
-		copy(newG.Levels, g.Levels)
+		for i := range g.Levels {
+			if g.Levels[i] != nil {
+				newG.Levels[i] = make([]uint8, len(g.Levels[i]))
+				copy(newG.Levels[i], g.Levels[i])
+			}
+		}
 	}
 
 	// Shallow copy PackedNeighbors (the structures themselves are thread-safe and manage their own growth)
@@ -1497,57 +1580,37 @@ func (g *GraphData) Clone() *GraphData {
 	}
 
 	// Deep copy vector offset slices
-	if g.VectorsF32 != nil {
-		newG.VectorsF32 = make([]uint64, len(g.VectorsF32))
-		copy(newG.VectorsF32, g.VectorsF32)
+	copyOffsetSlice := func(src []uint64, enabled bool) []uint64 {
+		if src == nil { 
+			if enabled { return []uint64{} }
+			return nil 
+		}
+		dst := make([]uint64, len(src))
+		copy(dst, src)
+		return dst
 	}
-	if g.VectorsBQ != nil {
-		newG.VectorsBQ = make([]uint64, len(g.VectorsBQ))
-		copy(newG.VectorsBQ, g.VectorsBQ)
-	}
-	if g.VectorsPQ != nil {
-		newG.VectorsPQ = make([]uint64, len(g.VectorsPQ))
-		copy(newG.VectorsPQ, g.VectorsPQ)
-	}
-	if g.VectorsF16 != nil {
-		newG.VectorsF16 = make([]uint64, len(g.VectorsF16))
-		copy(newG.VectorsF16, g.VectorsF16)
-	}
-	if g.VectorsSQ8 != nil {
-		newG.VectorsSQ8 = make([]uint64, len(g.VectorsSQ8))
-		copy(newG.VectorsSQ8, g.VectorsSQ8)
-	}
-	if g.VectorsTQ != nil {
-		newG.VectorsTQ = make([]uint64, len(g.VectorsTQ))
-		copy(newG.VectorsTQ, g.VectorsTQ)
-	}
-	if g.VectorsInt8 != nil {
-		newG.VectorsInt8 = make([]uint64, len(g.VectorsInt8))
-		copy(newG.VectorsInt8, g.VectorsInt8)
-	}
-	if g.VectorsInt16 != nil {
-		newG.VectorsInt16 = make([]uint64, len(g.VectorsInt16))
-		copy(newG.VectorsInt16, g.VectorsInt16)
-	}
-	if g.VectorsUint16 != nil {
-		newG.VectorsUint16 = make([]uint64, len(g.VectorsUint16))
-		copy(newG.VectorsUint16, g.VectorsUint16)
-	}
-	if g.VectorsInt64 != nil {
-		newG.VectorsInt64 = make([]uint64, len(g.VectorsInt64))
-		copy(newG.VectorsInt64, g.VectorsInt64)
-	}
-	if g.VectorsUint64 != nil {
-		newG.VectorsUint64 = make([]uint64, len(g.VectorsUint64))
-		copy(newG.VectorsUint64, g.VectorsUint64)
-	}
-	if g.VectorsInt32 != nil {
-		newG.VectorsInt32 = make([]uint64, len(g.VectorsInt32))
-		copy(newG.VectorsInt32, g.VectorsInt32)
-	}
-	if g.VectorsUint32 != nil {
-		newG.VectorsUint32 = make([]uint64, len(g.VectorsUint32))
-		copy(newG.VectorsUint32, g.VectorsUint32)
+
+	newG.VectorsF32 = copyOffsetSlice(g.VectorsF32, true)
+	newG.VectorsSQ8 = copyOffsetSlice(g.VectorsSQ8, g.SQ8Enabled)
+	newG.VectorsPQ = copyOffsetSlice(g.VectorsPQ, g.PQEnabled)
+	newG.VectorsBQ = copyOffsetSlice(g.VectorsBQ, g.BQEnabled)
+	newG.VectorsTQ = copyOffsetSlice(g.VectorsTQ, g.TurboQuantEnabled)
+	newG.VectorsF16 = copyOffsetSlice(g.VectorsF16, false)
+	newG.VectorsInt8 = copyOffsetSlice(g.VectorsInt8, false)
+	newG.VectorsInt16 = copyOffsetSlice(g.VectorsInt16, false)
+	newG.VectorsUint16 = copyOffsetSlice(g.VectorsUint16, false)
+	newG.VectorsInt32 = copyOffsetSlice(g.VectorsInt32, false)
+	newG.VectorsUint32 = copyOffsetSlice(g.VectorsUint32, false)
+	newG.VectorsInt64 = copyOffsetSlice(g.VectorsInt64, false)
+	newG.VectorsUint64 = copyOffsetSlice(g.VectorsUint64, false)
+	newG.VectorsFloat64Offsets = copyOffsetSlice(g.VectorsFloat64Offsets, false)
+	newG.VectorsComplex64Offsets = copyOffsetSlice(g.VectorsComplex64Offsets, false)
+	newG.VectorsComplex128Offsets = copyOffsetSlice(g.VectorsComplex128Offsets, false)
+
+	// Legacy compatibility: some older code might still check g.Vectors[chunkID] == nil
+	if g.Vectors != nil {
+		newG.Vectors = make([][]float32, len(g.Vectors))
+		copy(newG.Vectors, g.Vectors)
 	}
 	if g.VectorsFloat64 != nil {
 		newG.VectorsFloat64 = make([][]float64, len(g.VectorsFloat64))
@@ -1560,18 +1623,6 @@ func (g *GraphData) Clone() *GraphData {
 	if g.VectorsComplex128 != nil {
 		newG.VectorsComplex128 = make([][]complex128, len(g.VectorsComplex128))
 		copy(newG.VectorsComplex128, g.VectorsComplex128)
-	}
-	if g.VectorsFloat64Offsets != nil {
-		newG.VectorsFloat64Offsets = make([]uint64, len(g.VectorsFloat64Offsets))
-		copy(newG.VectorsFloat64Offsets, g.VectorsFloat64Offsets)
-	}
-	if g.VectorsComplex64Offsets != nil {
-		newG.VectorsComplex64Offsets = make([]uint64, len(g.VectorsComplex64Offsets))
-		copy(newG.VectorsComplex64Offsets, g.VectorsComplex64Offsets)
-	}
-	if g.VectorsComplex128Offsets != nil {
-		newG.VectorsComplex128Offsets = make([]uint64, len(g.VectorsComplex128Offsets))
-		copy(newG.VectorsComplex128Offsets, g.VectorsComplex128Offsets)
 	}
 
 	return newG
@@ -1604,13 +1655,17 @@ func (g *GraphData) PreAllocate(capacity int) error {
 			g.Float32Arena = memory.NewTypedArena[float32](memory.NewSlabArena(slabSize))
 		}
 		// Pre-allocate all chunks
-		for i := 0; i < numChunks; i++ {
-			ref, err := g.Float32Arena.AllocSliceDirty(ChunkSize * g.Dims)
-			if err != nil {
-				return err
+		if len(g.VectorsF32) < numChunks {
+			for i := len(g.VectorsF32); i < numChunks; i++ {
+				ref, err := g.Float32Arena.AllocSliceDirty(ChunkSize * g.Dims)
+				if err != nil {
+					return err
+				}
+				g.VectorsF32 = append(g.VectorsF32, ref.Offset)
+				if len(g.Vectors) < numChunks {
+					g.Vectors = append(g.Vectors, nil)
+				}
 			}
-			g.VectorsF32 = append(g.VectorsF32, ref.Offset)
-			g.Vectors = append(g.Vectors, nil) // Legacy compatibility
 		}
 	}
 
@@ -1669,6 +1724,99 @@ func (g *GraphData) PreAllocate(capacity int) error {
 				return err
 			}
 			g.VectorsComplex64Offsets = append(g.VectorsComplex64Offsets, ref.Offset)
+		}
+	}
+
+	// Pre-allocate Complex128 arena chunks
+	if g.Type == VectorTypeComplex128 {
+		for i := 0; i < numChunks; i++ {
+			ref, err := g.Complex128Arena.AllocSliceDirty(ChunkSize * g.Dims)
+			if err != nil {
+				return err
+			}
+			g.VectorsComplex128Offsets = append(g.VectorsComplex128Offsets, ref.Offset)
+		}
+	}
+
+	// Pre-allocate SQ8 arena chunks
+	if g.SQ8Enabled {
+		paddedDims := (g.Dims + 63) & ^63
+		requiredSize := numChunks * ChunkSize * paddedDims
+		slabSize := requiredSize + 4096
+		if slabSize < 1024*1024 {
+			slabSize = 1024 * 1024
+		}
+		if g.Uint8Arena == nil {
+			g.Uint8Arena = memory.NewTypedArena[uint8](memory.NewSlabArena(slabSize))
+		}
+		for i := 0; i < numChunks; i++ {
+			ref, err := g.Uint8Arena.AllocSliceDirty(ChunkSize * paddedDims)
+			if err != nil {
+				return err
+			}
+			g.VectorsSQ8 = append(g.VectorsSQ8, ref.Offset)
+		}
+	}
+
+	// Pre-allocate PQ arena chunks
+	if g.PQEnabled && g.PQM > 0 {
+		numWordsPerNode := (g.PQM + 7) / 8
+		numWords := ChunkSize * numWordsPerNode
+		requiredSize := numChunks * numWords * 8
+		slabSize := requiredSize + 4096
+		if slabSize < 1024*1024 {
+			slabSize = 1024 * 1024
+		}
+		if g.Uint64Arena == nil {
+			g.Uint64Arena = memory.NewTypedArena[uint64](memory.NewSlabArena(slabSize))
+		}
+		for i := 0; i < numChunks; i++ {
+			ref, err := g.Uint64Arena.AllocSliceDirty(numWords)
+			if err != nil {
+				return err
+			}
+			g.VectorsPQ = append(g.VectorsPQ, ref.Offset)
+		}
+	}
+
+	// Pre-allocate BQ arena chunks
+	if g.BQEnabled {
+		paddedDims := (g.Dims + 63) & ^63
+		numWordsPerNode := paddedDims / 64
+		numWords := ChunkSize * numWordsPerNode
+		requiredSize := numChunks * numWords * 8
+		slabSize := requiredSize + 4096
+		if slabSize < 1024*1024 {
+			slabSize = 1024 * 1024
+		}
+		if g.Uint64Arena == nil {
+			g.Uint64Arena = memory.NewTypedArena[uint64](memory.NewSlabArena(slabSize))
+		}
+		for i := 0; i < numChunks; i++ {
+			ref, err := g.Uint64Arena.AllocSliceDirty(numWords)
+			if err != nil {
+				return err
+			}
+			g.VectorsBQ = append(g.VectorsBQ, ref.Offset)
+		}
+	}
+
+	// Pre-allocate Int8 arena chunks
+	if g.Type == VectorTypeInt8 || g.Type == VectorTypeUint8 {
+		requiredSize := numChunks * ChunkSize * g.Dims
+		slabSize := requiredSize + 4096
+		if slabSize < 1024*1024 {
+			slabSize = 1024 * 1024
+		}
+		if g.Int8Arena == nil {
+			g.Int8Arena = memory.NewTypedArena[int8](memory.NewSlabArena(slabSize))
+		}
+		for i := 0; i < numChunks; i++ {
+			ref, err := g.Int8Arena.AllocSliceDirty(ChunkSize * g.Dims)
+			if err != nil {
+				return err
+			}
+			g.VectorsInt8 = append(g.VectorsInt8, ref.Offset)
 		}
 	}
 
@@ -1854,12 +2002,14 @@ func (g *GraphData) PreAllocate(capacity int) error {
 		if g.Uint8Arena == nil {
 			g.Uint8Arena = memory.NewTypedArena[uint8](memory.NewSlabArena(slabSize))
 		}
-		for i := 0; i < numChunks; i++ {
-			ref, err := g.Uint8Arena.AllocSliceDirty(ChunkSize * paddedDims)
-			if err != nil {
-				return err
+		if len(g.VectorsSQ8) < numChunks {
+			for i := len(g.VectorsSQ8); i < numChunks; i++ {
+				ref, err := g.Uint8Arena.AllocSliceDirty(ChunkSize * paddedDims)
+				if err != nil {
+					return err
+				}
+				g.VectorsSQ8 = append(g.VectorsSQ8, ref.Offset)
 			}
-			g.VectorsSQ8 = append(g.VectorsSQ8, ref.Offset)
 		}
 	}
 
@@ -1875,12 +2025,14 @@ func (g *GraphData) PreAllocate(capacity int) error {
 		if g.Uint64Arena == nil {
 			g.Uint64Arena = memory.NewTypedArena[uint64](memory.NewSlabArena(slabSize))
 		}
-		for i := 0; i < numChunks; i++ {
-			ref, err := g.Uint64Arena.AllocSliceDirty(ChunkSize * numWords)
-			if err != nil {
-				return err
+		if len(g.VectorsBQ) < numChunks {
+			for i := len(g.VectorsBQ); i < numChunks; i++ {
+				ref, err := g.Uint64Arena.AllocSliceDirty(ChunkSize * numWords)
+				if err != nil {
+					return err
+				}
+				g.VectorsBQ = append(g.VectorsBQ, ref.Offset)
 			}
-			g.VectorsBQ = append(g.VectorsBQ, ref.Offset)
 		}
 	}
 
@@ -1895,18 +2047,22 @@ func (g *GraphData) PreAllocate(capacity int) error {
 		if g.Uint64Arena == nil {
 			g.Uint64Arena = memory.NewTypedArena[uint64](memory.NewSlabArena(slabSize))
 		}
-		for i := 0; i < numChunks; i++ {
-			ref, err := g.Uint64Arena.AllocSliceDirty(ChunkSize * numWords)
-			if err != nil {
-				return err
+		if len(g.VectorsPQ) < numChunks {
+			for i := len(g.VectorsPQ); i < numChunks; i++ {
+				ref, err := g.Uint64Arena.AllocSliceDirty(ChunkSize * numWords)
+				if err != nil {
+					return err
+				}
+				g.VectorsPQ = append(g.VectorsPQ, ref.Offset)
 			}
-			g.VectorsPQ = append(g.VectorsPQ, ref.Offset)
 		}
 	}
 
 	// Pre-allocate Levels for all chunks
-	for i := 0; i < numChunks; i++ {
-		g.Levels = append(g.Levels, make([]uint8, ChunkSize))
+	if len(g.Levels) < numChunks {
+		for i := len(g.Levels); i < numChunks; i++ {
+			g.Levels = append(g.Levels, make([]uint8, ChunkSize))
+		}
 	}
 
 	// Pre-allocate Neighbors, Counts, Versions for all layers
@@ -1916,10 +2072,12 @@ func (g *GraphData) PreAllocate(capacity int) error {
 		g.Versions = make([][][]uint32, ArrowMaxLayers)
 	}
 	for layer := 0; layer < ArrowMaxLayers; layer++ {
-		for i := 0; i < numChunks; i++ {
-			g.Neighbors[layer] = append(g.Neighbors[layer], make([]uint32, ChunkSize*MaxNeighbors))
-			g.Counts[layer] = append(g.Counts[layer], make([]int32, ChunkSize))
-			g.Versions[layer] = append(g.Versions[layer], make([]uint32, ChunkSize))
+		if len(g.Neighbors[layer]) < numChunks {
+			for i := len(g.Neighbors[layer]); i < numChunks; i++ {
+				g.Neighbors[layer] = append(g.Neighbors[layer], make([]uint32, ChunkSize*MaxNeighbors))
+				g.Counts[layer] = append(g.Counts[layer], make([]int32, ChunkSize))
+				g.Versions[layer] = append(g.Versions[layer], make([]uint32, ChunkSize))
+			}
 		}
 	}
 
@@ -1987,6 +2145,10 @@ func NewGraphData(capacity, dim int, mmap bool, useDisk bool, fd int,
 	}
 	i64Arena := memory.NewSlabArena(i64SlabSize)
 
+	// Uint64/Uint32: 8/4 bytes (used for offsets and topology)
+	u64Arena := memory.NewSlabArena(i64SlabSize) // Reuse 8-byte sizing
+	u32Arena := memory.NewSlabArena(u8SlabSize * 4) // Reuse 4-fold 1-byte sizing
+
 	numChunks := (capacity + ChunkSize - 1) / ChunkSize
 	if numChunks < 0 {
 		numChunks = 0
@@ -2015,8 +2177,15 @@ func NewGraphData(capacity, dim int, mmap bool, useDisk bool, fd int,
 		Int8Arena:         memory.NewTypedArena[int8](i8Arena),
 		Int64Arena:        memory.NewTypedArena[int64](i64Arena),
 		Complex64Arena:    memory.NewTypedArena[complex64](c64Arena),
-		Complex128Arena:    memory.NewTypedArena[complex128](c128Arena),
-		VectorsTQ:          make([]uint64, 0, numChunks),
+		Complex128Arena:   memory.NewTypedArena[complex128](c128Arena),
+		Uint64Arena:       memory.NewTypedArena[uint64](u64Arena),
+		Uint32Arena:       memory.NewTypedArena[uint32](u32Arena),
+		VectorsTQ:         nil,
+		VectorsPQ:         nil,
+		VectorsSQ8:        nil,
+		VectorsBQ:         nil,
+		VectorsF16:        nil,
+		VectorsF32:         make([]uint64, 0, numChunks),
 	}
 
 	for i := 0; i < ArrowMaxLayers; i++ {

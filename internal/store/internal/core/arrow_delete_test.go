@@ -77,7 +77,7 @@ func TestDelete(t *testing.T) {
 	ctx := index.searchPool.Get()
 	defer index.searchPool.Put(ctx)
 	for i := 1; i < 10; i++ {
-		index.AddConnection(ctx, data, 0, uint32(i), 0, 16, 0.0)
+		data = index.AddConnection(ctx, data, 0, uint32(i), 0, 16, 0.0)
 	}
 
 	results, err := index.Search(context.Background(), query, 10, nil)

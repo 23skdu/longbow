@@ -1,9 +1,9 @@
 package core
 
 import (
-	"github.com/23skdu/longbow/internal/store/types"
 	"context"
 
+	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
@@ -272,6 +272,7 @@ func (h *ArrowHNSW) selectNeighborsFloat32(ctx *ArrowSearchContext, candidates [
 			if h.config.SQ8Enabled {
 				threshold *= 1.2
 			}
+
 
 			if err == nil && d > 0 && d < threshold {
 				isDiverse = false

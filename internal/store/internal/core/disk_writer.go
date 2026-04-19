@@ -56,8 +56,8 @@ func WriteDiskGraph(gd *types.GraphData, path string, maxNodeID int, sqMin, sqMa
 	numNodes := uint32(maxNodeID)
 
 	// 2. Prepare Headers
-	// Main Header: 40 bytes (Base) + 8 (SQ8) + 8 (EP/MaxL) = 56 bytes.
-	headerBaseSize := 56
+	// Main Header: 40 bytes (Base) + 8 (SQ8) + 8 (EP/MaxL) + 20 (TQ/BQ) = 76 bytes.
+	headerBaseSize := 76
 	metaSectionSize := int(fileMaxLayers) * 8
 	totalHeaderSize := headerBaseSize + metaSectionSize
 
@@ -245,6 +245,72 @@ func WriteDiskGraph(gd *types.GraphData, path string, maxNodeID int, sqMin, sqMa
 		}
 	}
 
+	// 5c. Write TQ Vectors
+	tqOffset := uint64(0)
+	if gd.TurboQuantEnabled {
+		stride := gd.PackedSize()
+		if stride > 0 {
+			tqOffset = uint64(currentOffset)
+			zeros := make([]byte, stride)
+			for id := uint32(0); id < numNodes; id++ {
+				vec := gd.GetVectorsTQChunk(int(id) / types.ChunkSize)
+				if vec != nil {
+					off := (int(id) % types.ChunkSize) * stride
+					if off+stride <= len(vec) {
+						if _, err := w.Write(vec[off : off+stride]); err != nil {
+							return err
+						}
+					} else {
+						if _, err := w.Write(zeros); err != nil {
+							return err
+						}
+					}
+				} else {
+					if _, err := w.Write(zeros); err != nil {
+						return err
+					}
+				}
+				currentOffset += int64(stride)
+			}
+		}
+	}
+
+	// 5d. Write BQ Vectors
+	bqOffset := uint64(0)
+	if gd.BQEnabled {
+		paddedDims := (gd.Dims + 63) & ^63
+		numWords := paddedDims / 64
+		stride := numWords * 8
+		if stride > 0 {
+			bqOffset = uint64(currentOffset)
+			zeros := make([]byte, stride)
+			for id := uint32(0); id < numNodes; id++ {
+				vec := gd.GetVectorsBQChunk(int(id) / types.ChunkSize)
+				if vec != nil {
+					off := (int(id) % types.ChunkSize) * numWords
+					if off+numWords <= len(vec) {
+						buf := make([]byte, stride)
+						for j := 0; j < numWords; j++ {
+							binary.LittleEndian.PutUint64(buf[j*8:], vec[off+j])
+						}
+						if _, err := w.Write(buf); err != nil {
+							return err
+						}
+					} else {
+						if _, err := w.Write(zeros); err != nil {
+							return err
+						}
+					}
+				} else {
+					if _, err := w.Write(zeros); err != nil {
+						return err
+					}
+				}
+				currentOffset += int64(stride)
+			}
+		}
+	}
+
 	// 6. Finalize Header
 	if err := w.Flush(); err != nil {
 		return err
@@ -279,8 +345,14 @@ func WriteDiskGraph(gd *types.GraphData, path string, maxNodeID int, sqMin, sqMa
 
 	// Offsets
 	for i := 0; i < int(fileMaxLayers); i++ {
-		binary.LittleEndian.PutUint64(headerBuf[56+i*8:], layerIndexOffsets[i])
+		binary.LittleEndian.PutUint64(headerBuf[headerBaseSize+i*8:], layerIndexOffsets[i])
 	}
+
+	// TQ Offset (Version 5)
+	binary.LittleEndian.PutUint64(headerBuf[56:], tqOffset)
+	binary.LittleEndian.PutUint32(headerBuf[64:], uint32(gd.TurboQuantBits))
+	// BQ Offset (Version 5)
+	binary.LittleEndian.PutUint64(headerBuf[68:], bqOffset)
 
 	if _, err := f.Write(headerBuf); err != nil {
 		return err

@@ -1,265 +1,66 @@
-# Persistence & Storage
+# Storage, Durability & Persistence
 
-Longbow uses a tiered storage architecture designed for high throughput
-ingestion and low-latency retrieval.
+Longbow provides a multi-layered storage architecture designed for high availability, transactional integrity, and automated data lifecycle management.
 
-## Architecture
+---
 
-### Hot Tier (Memory)
+## 1. Data Durability (WAL & Snapshots)
 
-- **Mutable Segments**: Incoming writes are stored as Arrow RecordBatches and indexed in the HNSW graph.
-- **Auto-Sharding**: Small datasets use a single HNSW index; larger datasets are transparently migrated
-  to a sharded, lock-striped `ShardedHNSW` for parallel insertion.
+Longbow ensures zero data loss using a combination of Write-Ahead Logs (WAL) and periodic Parquet snapshots.
 
-### Warm Tier (SSD Offloading)
+### Write-Ahead Log (WAL)
+- **Mechanism**: Every `DoPut` is synchronously written to a batched WAL before being acknowledged.
+- **Performance**: High-throughput writes using `io_uring` (Linux) and asynchronous fsync options.
+- **Recovery**: On startup, Longbow replays the WAL to reconstruct the in-memory HNSW index and Arrow buffers.
 
-- **Disk-Based Vectors**: When `LONGBOW_USE_DISK=1` is enabled, full-precision vectors are offloaded to an append-only file on SSD (`DiskVectorStore`).
-- **Hybrid Index**: The HNSW graph and compressed vector representations (PQ/SQ8) remain in RAM for fast traversal, while the final re-ranking step retrieves full vectors from disk.
-- **RAM Savings**: Significantly reduces memory footprint (e.g., 90% reduction for 3072d vectors), enabling billion-scale datasets on moderate hardware.
+### Snapshots (Parquet)
+- **Format**: Data is periodically flushed to Apache Parquet files, providing a columnar, compressed representation of the dataset.
+- **Cloud-Native**: Snapshots can be offloaded to **S3-compatible storage** for long-term retention and cross-region recovery.
 
-### Cold Tier (Object Storage)
+---
 
-- **Parquet Snapshots**: In-memory segments are periodically flushed to local disk or S3 as Parquet files.
-- **Leveled Compaction**: Background workers automatically merge small batches into larger
-  optimally-sized batches (e.g., 10k rows) to improve scan performance and reduce fragmentation.
-- **Async Fsync**: WAL writes are buffered and fsync'd asynchronously to maximize ingestion throughput
-  while maintaining durability.
-- **WAL Size Limit**: A configurable limit ensures that the Write-Ahead Log (WAL) doesn't grow
-  indefinitely. When reached, a snapshot is automatically triggered to compact data and truncate the WAL.
+## 2. Data Lifecycle: Eviction & TTL
 
-### Data Integrity
+Longbow automatically manages memory pressure and data staleness through active eviction policies.
 
-- **CRC32 Checksums**: All WAL entries are checksummed. The server validates integrity
-  on startup (replay) and stops if corruption is detected.
+### Time-To-Live (TTL)
+- **Behavior**: Removes datasets that have not been accessed within a configured duration.
+- **Configuration**: Set `LONGBOW_TTL` (e.g., `24h`) to enable automated cleanup of transient caches.
 
-### Graph Compaction (Vacuum)
+### Least Recently Used (LRU)
+- **Mechanism**: Triggered when memory usage approaches `LONGBOW_MAX_MEMORY`.
+- **Action**: Evicts the least active datasets to make room for new high-priority writes.
 
-While "Leveled Compaction" merges physical data (Arrow RecordBatches) on disk/S3, the in-memory HNSW
-graph requires separate maintenance to handle deletions efficiently.
+---
 
-- **Problem**: Deleted nodes are logically hidden via a `Deleted` bitset but remain in the graph
-  structure ("ghost nodes"), increasing traversal cost.
-- **Solution (Vacuum)**: A background process (`CleanupTombstones`) periodically scans the graph:
-  1. Identifies nodes marked as deleted.
-  2. Prunes connections to these nodes from their neighbors.
-  3. Atomically updates neighbor lists to maintain graph integrity.
-- **Config**: Controlled via `CompactionWorker` settings. Runs automatically alongside data compaction.
+## 3. Temporal Capabilities & Versioning
 
-## Data Format
+Longbow supports time-travel queries and multi-version concurrency control (MVCC) for evolving datasets.
 
-Longbow stores vectors and metadata in **Apache Parquet** format. This allows
-for:
+### Temporal Search
+Find vectors as they existed at a specific point in time or within a sliding window:
+- **As-Of Search**: `search_type: "as_of"` at timestamp $T$.
+- **Range Search**: Retrieve all updates within $[T_{start}, T_{end}]$.
+- **Sliding Window**: Search the $N$ most recent vectors back from now.
 
-- **Columnar Compression**: Efficient storage of homogeneous data.
-- **Zero-Copy Reads**: Mapping data directly from disk to memory.
-- **Ecosystem Compatibility**: Querying snapshots directly with tools like
-  Spark, Pandas, or other Arrow-compatible tools.
+### Version History
+Maintain a log of changes per vector ID (configured via `TEMPORAL_MAX_VERSIONS`). This allows for audit trails and tracking model drift over time.
 
-### Schema
+---
 
-| Column     | Type                     | Description                             |
-| :--------- | :----------------------- | :-------------------------------------- |
-| id         | int64                    | Unique identifier for the vector.       |
-| vector     | fixed_size_binary_array  | The embedding vector (e.g., 1536 dims). |
-| metadata   | binary (JSON)            | Associated metadata blob.               |
-| created_at | timestamp                | Ingestion timestamp.                    |
+## 4. Schema Evolution
 
-## Storage Backends
+Longbow allows datasets to evolve their metadata schema without requiring re-indexing or downtime.
 
-Longbow supports two storage backends for snapshots:
+- **Additive Evolution**: New columns can be appended to existing Arrow schemas.
+- **Compatibility**: Existing columns must retain their name and data type to ensure backward compatibility for search and scans.
+- **Enforcement**: Mismatched schemas that break these rules are rejected at the ingestion layer.
 
-| Backend    | Use Case                          | Configuration       |
-| :--------- | :-------------------------------- | :------------------ |
-| Local Disk | Development, single-node setups   | `storage.path`      |
-| S3         | Production, distributed, durable  | `storage.s3.*`      |
+---
 
-### Local Disk Backend (Default)
+## 5. Metrics & Observability
 
-Snapshots are written to a local directory. Best for development and single-node deployments.
-
-```bash
-export LONGBOW_DATA_PATH="/var/lib/longbow/data"
-export LONGBOW_SNAPSHOT_INTERVAL="1h"
-export LONGBOW_MAX_WAL_SIZE="104857600" # 100MB
-export LONGBOW_STORAGE_ASYNC_FSYNC="true"
-```
-
-### S3 Backend
-
-Snapshots are written to S3-compatible object storage. Recommended for production deployments
-requiring durability and distributed access.
-
-**Supported S3-compatible services:**
-
-- Amazon S3, MinIO, Cloudflare R2, DigitalOcean Spaces, etc.
-
-#### S3 Configuration
-
-```bash
-export LONGBOW_STORAGE_BACKEND="s3"
-export LONGBOW_S3_BUCKET="longbow-snapshots"
-export LONGBOW_S3_PREFIX="prod/vectors"
-export LONGBOW_S3_REGION="us-east-1"
-export LONGBOW_S3_ENDPOINT="http://minio.local:9000" # For MinIO
-export LONGBOW_S3_USE_PATH_STYLE="true"              # For MinIO
-```
-
-#### S3 Credentials
-
-Credentials are provided via environment variables (recommended) or config:
-
-```bash
-# Environment variables (recommended)
-export AWS_ACCESS_KEY_ID="your-access-key"
-export AWS_SECRET_ACCESS_KEY="your-secret-key"
-
-# Optional: for AWS IAM roles
-export AWS_SESSION_TOKEN="your-session-token"
-```
-
-Or in configuration (not recommended for production):
-
-```yaml
-storage:
-  s3:
-    access_key_id: "your-access-key"
-    secret_access_key: "your-secret-key"
-```
-
-#### MinIO Example
-
-For MinIO or other S3-compatible services, set the endpoint and enable
-path-style addressing:
-
-```yaml
-storage:
-  backend: "s3"
-  s3:
-    endpoint: "http://minio.local:9000"
-    bucket: "longbow-snapshots"
-    prefix: "dev"
-    region: "us-east-1"             # Required even for MinIO
-    use_path_style: true            # Required for MinIO
-```
-
-```bash
-export AWS_ACCESS_KEY_ID="minioadmin"
-export AWS_SECRET_ACCESS_KEY="minioadmin"
-```
-
-#### S3 Snapshot Path Structure
-
-Snapshots are stored with the following key pattern:
-
-```text
-{prefix}/snapshots/{collection_name}.parquet
-```
-
-Examples:
-
-| Prefix         | Collection    | S3 Key                                  |
-| :------------- | :------------ | :-------------------------------------- |
-| (none)       | my_vectors  | `snapshots/my_vectors.parquet`             |
-| prod         | embeddings  | `prod/snapshots/embeddings.parquet`        |
-| prod/vectors | user_data   | `prod/vectors/snapshots/user_data.parquet` |
-
-## Programmatic S3 Backend Usage
-
-The S3 backend can be used programmatically in Go:
-
-```go
-package main
-
-import (
-    "context"
-    "log"
-    "os"
-
-    "github.com/23skdu/longbow/internal/storage"
-)
-
-func main() {
-    cfg := &storage.S3BackendConfig{
-        Endpoint:        "http://minio:9000",  // Empty for AWS S3
-        Bucket:          "longbow-snapshots",
-        Prefix:          "prod/vectors",
-        AccessKeyID:     os.Getenv("AWS_ACCESS_KEY_ID"),
-        SecretAccessKey: os.Getenv("AWS_SECRET_ACCESS_KEY"),
-        Region:          "us-east-1",
-        UsePathStyle:    true,  // Required for MinIO
-    }
-
-    backend, err := storage.NewS3Backend(cfg)
-    if err != nil {
-        log.Fatal(err)
-    }
-
-    ctx := context.Background()
-
-    // Write a snapshot file
-    err = backend.WriteSnapshotFile(ctx, "my_collection", ".parquet", dataReader)
-    if err != nil {
-        log.Fatal(err)
-    }
-
-    // List all snapshots
-    collections, err := backend.ListSnapshots(ctx)
-    if err != nil {
-        log.Fatal(err)
-    }
-    log.Printf("Collections: %v", collections)
-
-    // Read a snapshot
-    reader, err := backend.ReadSnapshot(ctx, "my_collection")
-    if err != nil {
-        if storage.IsNotFoundError(err) {
-            log.Println("Snapshot not found")
-        } else {
-            log.Fatal(err)
-        }
-    }
-    defer func() { _ = reader.Close() }()
-}
-```
-
-## Metrics
-
-| Metric                             | Type      | Labels | Description                      |
-| :--------------------------------- | :-------- | :----- | :------------------------------- |
-| `longbow_flush_ops_total`          | Counter   | status | Total number of flush operations |
-| `longbow_snapshot_duration_seconds`| Histogram | -      | Duration of the snapshot process |
-
-## Best Practices
-
-### Development
-
-```yaml
-storage:
-  backend: "local"
-  path: "./data"
-  max_wal_size: 10485760  # 10MB for faster iterations
-```
-
-### Production (AWS S3)
-
-```yaml
-storage:
-  backend: "s3"
-  s3:
-    bucket: "mycompany-longbow-prod"
-    prefix: "vectors"
-    region: "us-west-2"
-```
-
-### Production (Self-hosted MinIO)
-
-```yaml
-storage:
-  backend: "s3"
-  s3:
-    endpoint: "https://minio.internal.mycompany.com"
-    bucket: "longbow"
-    prefix: "prod"
-    region: "us-east-1"
-    use_path_style: true
-```
+Monitor storage health via Prometheus:
+- `longbow_evictions_total{reason="ttl|lru"}`: Count of dataset evictions.
+- `longbow_persistence_wal_bytes_total`: WAL throughput.
+- `longbow_temporal_index_size`: Resident temporal vectors.

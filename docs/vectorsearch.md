@@ -40,8 +40,8 @@ Currently, Longbow uses a robust **Post-Filtering** strategy integrated with the
 4. **Result Selection**: The first `k` matching candidates that satisfy all predicates are returned to the client.
 
 > [!NOTE]
-> Pre-filtering using a `ColumnInvertedIndex` is supported for specific high-cardinality exact matches
-> but is not the default for complex range or composite filters.
+> Pre-filtering using a `ColumnInvertedIndex` is supported for high-cardinality exact matches.
+> For complex relational logic, Longbow now supports **SQL CTEs and Subqueries** – see [Advanced SQL](sql.md).
 
 This approach maintains the system's **zero-copy architecture** by accessing metadata directly from Arrow
 memory during the filtering phase.
@@ -78,11 +78,10 @@ This implementation operates directly on Arrow buffers without object overhead.
 
 #### Key Features
 
-* **Zero-Allocation**: Eliminates allocation churn through object pooling and pre-allocated buffers.
+* **Zero-Copy Ingest**: Direct Arrow-to-HNSW memory mapping for instantaneous bulk ingestion.
+* **Lock-Free Adjacency**: Optimized high-contention graph updates for Layer 0 using lock-free patterns.
 * **Arrow-Native**: Direct integration with Arrow record batches for zero-copy vector access.
-* **Concurrent Scale**: Multi-core graph building and search using fine-grained locking (`shardedLocks`).
-* **Hardware Acceleration**: SIMD-optimized distance calculations (AVX2/NEON) and Product
-  Quantization (ADC).
+* **Hardware Acceleration**: SIMD-optimized distance calculations (AVX2/NEON/AVX-512) and Product Quantization (ADC).
 
 #### Concurrent Graph Building
 

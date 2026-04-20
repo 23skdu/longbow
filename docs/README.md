@@ -49,17 +49,20 @@ graph TB
 
 ## Key Features
 
+* **Zero-Copy Ingest**: Instantaneous bulk ingestion via direct Arrow-to-HNSW memory mapping.
+* **Lock-Free Adjacency**: High-throughput graph updates for Layer 0 on multi-core systems.
 * **Apache Arrow Flight Protocol**: Zero-copy data transfer.
 * **Multiple Index Types**: HNSW, ArrowHNSW, IVF-Flat, DiskANN
 * **Polymorphic Vector Support**: Native support for Float32, FP16, SQ8, PQ, BQ, and Int8.
 * **High-Dimensionality**: Optimized for up to 3072 dimensions with cache-line padding and blocked SIMD.
 * **In-Memory Storage**: Fast read/write operations.
-* **ML-Enhanced Search**: Cross-encoder reranking with ONNX/Metal support.
-* **Native Apple Silicon**: Metal-based ONNX runtime for M1/M2/M3 Macs.
+* **ML-Enhanced Search**: Cross-encoder reranking with CPU, CUDA, and Metal support.
+* **Native Apple Silicon**: Metal-based ONNX runtime for M1/M2/M3/M4 Macs.
+* **Advanced SQL**: Support for Common Table Expressions (CTEs) and Subqueries.
 * **Persistence**: Export/Import, WAL, and Parquet Snapshots.
 * **Prometheus Metrics**: Built-in observability including ML inference metrics.
 * **Helm Deployment**: Easy installation on Kubernetes.
-* **Filtering**: Predicate pushdown for DoGet and Post-filtering for Vector Search.
+* **Filtering**: Predicate pushdown for DoGet and SQL-based filtering for Vector Search.
 * **Mesh Replication**: Multi-node sync using DoExchange.
 * **Security**: Configurable security contexts for Pods and Containers.
 
@@ -77,6 +80,7 @@ graph TB
 
 ### Features
 * [Vector Search](vectorsearch.md) - Search modes and filtering
+* [Advanced SQL](sql.md) - CTEs and Subqueries
 * [Recommendations](recommendations.md) - Hybrid recommendation engine
 * [GraphRAG](graph_rag.md) - Graph-based re-ranking and knowledge graphs
 * [TurboQuant](turboquant.md) - Extreme compression (6-8x memory reduction)

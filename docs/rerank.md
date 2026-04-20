@@ -46,17 +46,18 @@ reranker := &store.CrossEncoderReranker{
 
 **Use Cases**: Quick reranking, fallback when ML unavailable
 
-### 2. ONNX Reranker
+### 2. ONNX Reranker (CPU/CUDA)
 
-Uses ONNX Runtime for cross-encoder model inference.
+Uses ONNX Runtime for cross-encoder model inference. On Linux, this automatically leverages NVIDIA GPUs if the CUDA Execution Provider is available.
 
 ```go
+// Create ONNX reranker with specific EP
 reranker, err := store.NewONNXReranker("/path/to/model.onnx")
 ```
 
-**Advantages**: Full ML model support, industry standard
+**Advantages**: Full ML model support, CUDA-accelerated on Linux, industry standard.
 
-**Requirements**: ONNX Runtime library installed
+**Requirements**: ONNX Runtime library and CUDA Toolkit (for GPU acceleration).
 
 ### 3. Metal Reranker (Native Apple Silicon)
 

@@ -119,13 +119,16 @@ When running the Longbow container directly (e.g., via Docker), you can configur
 | `LONGBOW_OLLAMA_MODEL` | Ollama model name for embeddings | `` |
 | `LONGBOW_OLLAMA_TIMEOUT` | Request timeout in seconds | `30` |
 
-### Gossip Mesh
+### GPU & Acceleration
 
 | Variable | Description | Default |
 | :--- | :--- | :--- |
-| `LONGBOW_GOSSIP_ENABLED` | Enable gossip mesh | `false` |
-| `LONGBOW_GOSSIP_PORT` | Port for gossip protocol | `7946` |
-| `LONGBOW_GOSSIP_DISCOVERY_PROVIDER` | Discovery (`static`, `k8s`, `dns`) | `static` |
+| `GPU_ENABLED` | Enable GPU acceleration | `false` |
+| `LONGBOW_GPU_BACKEND` | Force backend (`cuda`, `metal`, `cpu`, `auto`) | `auto` |
+| `LONGBOW_ONNX_EP` | ONNX Execution Provider (`CPU`, `CUDA`, `Metal`) | `CPU` |
+| `LONGBOW_RDMA_ENABLED` | Enable Zero-Copy RDMA Tensor Streaming | `false` |
+
+### Gossip Mesh
 
 ## CLI Tools
 

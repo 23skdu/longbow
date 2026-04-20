@@ -28,7 +28,7 @@ type ImplementationDispatch struct {
 }
 
 // Global dispatch table - one per implementation
-var dispatchTable = map[string]ImplementationDispatch{
+var dispatchTable = map[string]*ImplementationDispatch{
 	"avx512": {
 		EuclideanDistance:          euclideanAVX512,
 		CosineDistance:             cosineAVX512,
@@ -90,7 +90,7 @@ func initializeDispatch() {
 		// Fallback to generic if implementation not found
 		dispatch = dispatchTable["generic"]
 	}
-	currentDispatch = &dispatch
+	currentDispatch = dispatch
 	switch implementation {
 	case "avx512":
 		euclideanDistanceImpl = euclideanAVX512

@@ -68,4 +68,23 @@ var (
 		},
 		[]string{"dataset", "operation", "status"}, // operation: "train", "encode"
 	)
+
+	// IngestionTotal tracks total records ingested via high-throughput paths
+	IngestionTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_ingestion_records_total",
+			Help: "Total number of records ingested",
+		},
+		[]string{"dataset", "source"}, // source: "parquet", "csv", "json"
+	)
+
+	// IngestionDurationSeconds measures latency of ingestion operations
+	IngestionDurationSeconds = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_ingestion_duration_seconds",
+			Help:    "Latency of high-throughput ingestion operations",
+			Buckets: []float64{0.1, 1, 5, 10, 30, 60, 300},
+		},
+		[]string{"dataset", "source"},
+	)
 )

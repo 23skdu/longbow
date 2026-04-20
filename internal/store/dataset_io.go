@@ -17,7 +17,6 @@ import (
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
-	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/parquet-go/parquet-go"
 )
 
@@ -383,114 +382,24 @@ func (d *DatasetIO) ImportFromParquet(ctx context.Context, snapshotName, dataset
 }
 
 func (d *DatasetIO) readParquetToRecords(r io.Reader, ds *Dataset) (int64, error) {
+	// Create a temporary file to support random access needed by Parquet
 	tmpFile, err := os.CreateTemp("", "parquet-*.parquet")
 	if err != nil {
 		return 0, fmt.Errorf("failed to create temp file: %w", err)
 	}
-	defer func() { _ = os.Remove(tmpFile.Name()) }() // #nosec G104
+	tmpPath := tmpFile.Name()
+	defer func() { _ = os.Remove(tmpPath) }()
 
-	data, err := io.ReadAll(r)
-	if err != nil {
-		return 0, fmt.Errorf("failed to read data: %w", err)
+	// Stream from reader to temp file
+	if _, err := io.Copy(tmpFile, r); err != nil {
+		_ = tmpFile.Close()
+		return 0, fmt.Errorf("failed to stream to temp file: %w", err)
 	}
-	if _, err := tmpFile.Write(data); err != nil {
-		return 0, fmt.Errorf("failed to write temp file: %w", err)
-	}
-	if err := tmpFile.Close(); err != nil {
-		return 0, fmt.Errorf("failed to close temp file: %w", err)
-	}
+	_ = tmpFile.Close()
 
-	f, err := os.Open(tmpFile.Name())
-	if err != nil {
-		return 0, fmt.Errorf("failed to open temp file: %w", err)
-	}
-	defer func() { _ = f.Close() }() // #nosec G104
-
-	stat, err := f.Stat()
-	if err != nil {
-		return 0, fmt.Errorf("failed to stat temp file: %w", err)
-	}
-
-	pf, err := parquet.OpenFile(f, stat.Size())
-	if err != nil {
-		return 0, fmt.Errorf("failed to open parquet file: %w", err)
-	}
-
-	pr := parquet.NewGenericReader[DatasetParquetRecord](pf)
-	rows := make([]DatasetParquetRecord, pr.NumRows())
-	_, err = pr.Read(rows)
-	if err != nil && err != io.EOF {
-		return 0, fmt.Errorf("failed to read parquet: %w", err)
-	}
-
-	if len(rows) == 0 {
-		return 0, nil
-	}
-
-	pool := memory.NewGoAllocator()
-	totalRows := int64(len(rows))
-
-	idColIdx := -1
-	vectorColIdx := -1
-	metadataColIdx := -1
-	createdAtColIdx := -1
-
-	for i, f := range ds.Schema.Fields() {
-		switch f.Name {
-		case "id":
-			idColIdx = i
-		case "vector":
-			vectorColIdx = i
-		case "metadata":
-			metadataColIdx = i
-		case "created_at":
-			createdAtColIdx = i
-		}
-	}
-
-	b := array.NewRecordBuilder(pool, ds.Schema)
-	defer b.Release()
-
-	for _, row := range rows {
-		if idColIdx >= 0 && row.ID != 0 {
-			b.Field(idColIdx).(*array.Int64Builder).Append(row.ID)
-		} else if idColIdx >= 0 {
-			b.Field(idColIdx).AppendNull()
-		}
-
-		if vectorColIdx >= 0 && row.Vector != nil {
-			vecLen := len(row.Vector) / 4
-			listBuilder := b.Field(vectorColIdx).(*array.FixedSizeListBuilder)
-			valBuilder := listBuilder.ValueBuilder().(*array.Float32Builder)
-			for i := 0; i < vecLen; i++ {
-				v := binary.LittleEndian.Uint32(row.Vector[i*4:])
-				valBuilder.Append(math.Float32frombits(v))
-			}
-			listBuilder.Append(true)
-		} else if vectorColIdx >= 0 {
-			b.Field(vectorColIdx).AppendNull()
-		}
-
-		if metadataColIdx >= 0 && row.Metadata != nil {
-			b.Field(metadataColIdx).(*array.BinaryBuilder).Append(row.Metadata)
-		} else if metadataColIdx >= 0 {
-			b.Field(metadataColIdx).AppendNull()
-		}
-
-		if createdAtColIdx >= 0 && row.CreatedAt != 0 {
-			b.Field(createdAtColIdx).(*array.Int64Builder).Append(row.CreatedAt)
-		} else if createdAtColIdx >= 0 {
-			b.Field(createdAtColIdx).AppendNull()
-		}
-	}
-
-	rec := b.NewRecord()
-	ds.dataMu.Lock()
-	ds.Records = append(ds.Records, rec)
-	ds.BatchNodes = append(ds.BatchNodes, -1)
-	ds.dataMu.Unlock()
-
-	return totalRows, nil
+	// Use ParquetIngester for optimized batch loading
+	ingester := NewParquetIngester(ds, 2048) // Process in 2K row batches
+	return ingester.Ingest(context.Background(), tmpPath)
 }
 
 func (d *DatasetIO) ExportToArrowIPC(ctx context.Context, name string, backend storage.SnapshotBackend) (int64, error) {

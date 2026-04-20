@@ -19,7 +19,7 @@ func (h *ArrowHNSW) AddConnection(ctx *ArrowSearchContext, data *types.GraphData
 	data = h.promoteNode(data, source)
 
 	oldVer := data.LockNode(layer, source)
-	h.addConnectionLocked(ctx, data, source, target, layer, maxConn, dist)
+	h.addConnectionLocked(ctx, data, source, target, layer, maxConn)
 	data.UnlockNode(layer, source, oldVer)
 
 	return data
@@ -35,7 +35,7 @@ func (h *ArrowHNSW) AddConnectionsBatch(ctx *ArrowSearchContext, data *types.Gra
 	cID := types.ChunkID(target)
 	if int(target) < data.Capacity && data.GetNeighborsChunk(0, cID) != nil {
 		oldVer := data.LockNode(layer, target)
-		h.addConnectionsBatchLocked(ctx, data, target, sources, dists, layer, maxConn)
+		h.addConnectionsBatchLocked(ctx, data, target, sources, layer, maxConn)
 		data.UnlockNode(layer, target, oldVer)
 		return data
 	}
@@ -44,7 +44,7 @@ func (h *ArrowHNSW) AddConnectionsBatch(ctx *ArrowSearchContext, data *types.Gra
 	data = h.promoteNode(data, target)
 
 	oldVer := data.LockNode(layer, target)
-	h.addConnectionsBatchLocked(ctx, data, target, sources, dists, layer, maxConn)
+	h.addConnectionsBatchLocked(ctx, data, target, sources, layer, maxConn)
 	data.UnlockNode(layer, target, oldVer)
 
 	return data
@@ -63,7 +63,7 @@ func (h *ArrowHNSW) PruneConnections(ctx *ArrowSearchContext, data *types.GraphD
 }
 
 // addConnectionLocked performs mutation assuming lock held.
-func (h *ArrowHNSW) addConnectionLocked(ctx *ArrowSearchContext, data *types.GraphData, source, target uint32, layer, maxConn int, dist float32) {
+func (h *ArrowHNSW) addConnectionLocked(ctx *ArrowSearchContext, data *types.GraphData, source, target uint32, layer, maxConn int) {
 	cID := types.ChunkID(source)
 	cOff := types.ChunkOffset(source)
 	countsChunk := data.GetCountsChunk(layer, cID)
@@ -110,7 +110,7 @@ func (h *ArrowHNSW) addConnectionLocked(ctx *ArrowSearchContext, data *types.Gra
 }
 
 // addConnectionsBatchLocked performs batch mutation assuming lock held.
-func (h *ArrowHNSW) addConnectionsBatchLocked(ctx *ArrowSearchContext, data *types.GraphData, target uint32, sources []uint32, dists []float32, layer, maxConn int) {
+func (h *ArrowHNSW) addConnectionsBatchLocked(ctx *ArrowSearchContext, data *types.GraphData, target uint32, sources []uint32, layer, maxConn int) {
 	cID := types.ChunkID(target)
 	cOff := types.ChunkOffset(target)
 	countsChunk := data.GetCountsChunk(layer, cID)

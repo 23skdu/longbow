@@ -2,7 +2,7 @@ replicaCount: 1
 
 image:
   repository: ghcr.io/23skdu/longbow
-  pullPolicy: IfNotPresent
+  pullPolicy: Always
   tag: "latest"
 
 imagePullSecrets: []

@@ -4,7 +4,7 @@ info:
   description: |
     High-performance vector database with Apache Arrow Flight protocol.
     Supports vector search, hybrid search, and distributed deployment.
-  version: 0.1.8
+  version: 0.1.9
   contact:
     name: Longbow Team
     url: https://github.com/23skdu/longbow

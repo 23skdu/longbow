@@ -17,11 +17,12 @@ This hybrid approach produces more relevant recommendations than pure similarity
 2. **Centroid Computation**: Calculate the centroid of all seed vectors
 3. **ANN Search**: Find top-K candidates using approximate nearest neighbor search
 4. **Graph Traversal**: Perform BFS from seeds up to `max_hops`, applying `decay` factor
-5. **Hybrid Scoring**: Combine scores using the formula:
+5. **SQL Filtering** (Optional): Apply complex relational predicates via **CTEs and Subqueries** to pre-filter seeds or post-filter the final candidate set (see [Advanced SQL](sql.md)).
+6. **Hybrid Scoring**: Combine scores using the formula:
    ```
    score = α × similarity(centroid, vector) + (1-α) × connectivity(seeds, vector)
    ```
-6. **Ranking**: Sort by hybrid score and return top-K
+7. **Ranking**: Sort by hybrid score and return top-K
 
 ## Parameters
 

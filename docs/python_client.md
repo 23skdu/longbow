@@ -12,7 +12,7 @@ pip install ./longbowclientsdk
 
 - **Zero-Copy Retrieval**: `download_arrow()` retrieves datasets as native Arrow Tables.
 - **Memory-Efficient Streaming**: `download_stream()` iterates over `RecordBatch` chunks.
-- **Integrated Search**: Unified `search()` method supporting both pure vector and filtered queries.
+- **Integrated Search**: Unified `search()` method supporting pure vector, filtered, and **Advanced SQL (CTEs/Subqueries)** queries.
 - **Graph Operations**: Dedicated methods for `add_edge()`, `traverse()`, and `get_graph_stats()`.
 
 ## Quick Start

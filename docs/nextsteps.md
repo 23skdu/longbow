@@ -8,14 +8,14 @@
 
 ### Stability & Production Readiness (Priority: CRITICAL)
 
-- [ ] **Release 0.1.9 Deployment**: Finalize the multi-platform Docker push (ARM64 Metal / AMD64 NVIDIA) and tag the 0.1.9 production release.
+- [x] **Release 0.1.9 Deployment**: Finalize the multi-platform Docker push (ARM64 Metal / AMD64 NVIDIA) and tag the 0.1.9 production release.
 - [x] **Gosec Hardening**: Systematically address the remaining 14 high-confidence security findings in the `internal/simd` and `internal/gpu` CGO bridge layers.
 - [x] **Expand Test Coverage**: Expand unit and integration test suites across `internal/store/core`, `internal/onnx`, and `internal/simd`. Added comprehensive SIMD test suite and core search context lifecycle tests. Achieved 100% coverage in `internal/onnx`.
 
 ## Next Release (0.1.10+)
 
 - [ ] **Achieve >95% Total Project Coverage**: Continue expanding tests into legacy edge cases.
-- [ ] **Transformer Mean Pooling**: Replace the `m.session.Score` hack in `onnxEmbeddingModel` with proper mean/max pooling across transformer hidden states for production-grade embedding quality.
+- [x] **Transformer Mean Pooling**: Replace the `m.session.Score` hack in `onnxEmbeddingModel` with proper mean/max pooling across transformer hidden states for production-grade embedding quality.
 - [ ] **Wazero WASM Runner**: Replace reranker/embedding WASM stubs with a functional `wazero` integration to enable cross-platform ML execution without local ONNX runtime dependencies.
 - [ ] **ML Cross-Encoder Finalization**: Replace the `stubMLModel` (keyword-matching) with a real cross-encoder model for high-recall semantic reranking.
 - [ ] **High-Throughput IO**: Implement Parquet/io_uring for optimized ingestion.

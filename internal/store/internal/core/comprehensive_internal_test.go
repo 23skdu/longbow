@@ -10,11 +10,10 @@ func TestSearchContextPooling(t *testing.T) {
 	h := &ArrowHNSW{}
 	h.config.DataType = types.VectorTypeFloat32
 	h.dims.Store(128)
-	h.searchPool = NewSearchContextPool(10, 128)
+	h.searchPool = NewArrowSearchContextPool()
 
 	ctx := h.searchPool.Get()
 	assert.NotNil(t, ctx)
-	assert.Equal(t, 128, ctx.Dims)
 
 	h.searchPool.Put(ctx)
 

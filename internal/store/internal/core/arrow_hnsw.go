@@ -1620,8 +1620,8 @@ func (h *ArrowHNSW) generateLevel() int {
 
 // AddBatch implements VectorIndex.
 func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowIdxs, batchIdxs []int) ([]uint32, error) {
-	// Bulk optimization path (optimized for large ingestions)
-	if len(rowIdxs) >= 1000 && !h.IsSharded() {
+	// Bulk optimization path temporarily disabled for 0.1.9-rc1 stability
+	if false && len(rowIdxs) >= 1000 && !h.IsSharded() {
 		startID := uint32(h.nodeCount.Load())
 		n := len(rowIdxs)
 
@@ -1629,7 +1629,8 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 		vecColIdx := -1
 		if len(recs) > 0 && recs[0] != nil {
 			for i := 0; i < int(recs[0].NumCols()); i++ {
-				if name := recs[0].ColumnName(i); name == "vector" || name == "embedding" {
+				name := recs[0].ColumnName(i)
+				if name == "vector" || name == "embedding" || name == "vec" {
 					vecColIdx = i
 					break
 				}

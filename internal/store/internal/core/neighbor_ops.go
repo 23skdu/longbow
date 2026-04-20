@@ -31,6 +31,15 @@ func (h *ArrowHNSW) AddConnectionsBatch(ctx *ArrowSearchContext, data *types.Gra
 		return data
 	}
 
+	// Fast path: if node is already promoted (in Mutable Data), skip promotion logic
+	cID := types.ChunkID(target)
+	if int(target) < data.Capacity && data.GetNeighborsChunk(0, cID) != nil {
+		oldVer := data.LockNode(layer, target)
+		h.addConnectionsBatchLocked(ctx, data, target, sources, dists, layer, maxConn)
+		data.UnlockNode(layer, target, oldVer)
+		return data
+	}
+
 	// COW Promotion and Locking
 	data = h.promoteNode(data, target)
 
@@ -70,7 +79,7 @@ func (h *ArrowHNSW) addConnectionLocked(ctx *ArrowSearchContext, data *types.Gra
 		}
 	} else {
 		// Fallback if chunks are missing
-		currentNeighbors = h.GetNeighborsCombined(layer, source)
+		currentNeighbors = h.GetNeighborsCombinedManual(data, layer, source)
 	}
 
 	for _, n := range currentNeighbors {
@@ -78,20 +87,8 @@ func (h *ArrowHNSW) addConnectionLocked(ctx *ArrowSearchContext, data *types.Gra
 	}
 
 	if len(currentNeighbors) >= maxConn {
-		h.pruneConnectionsLocked(ctx, data, source, maxConn, layer, nil)
-		if countsChunk != nil && neighborsChunk != nil {
-			count := int(atomic.LoadInt32(&countsChunk[cOff]))
-			currentNeighbors = make([]uint32, count)
-			baseIdx := int(cOff) * types.MaxNeighbors
-			for i := 0; i < count; i++ {
-				currentNeighbors[i] = atomic.LoadUint32(&neighborsChunk[baseIdx+i])
-			}
-		} else {
-			currentNeighbors = h.GetNeighborsCombined(layer, source)
-		}
-		for _, n := range currentNeighbors {
-			if n == target { return }
-		}
+		h.pruneConnectionsLocked(ctx, data, source, maxConn, layer, []uint32{target})
+		return // All work done by prune
 	}
 
 	if len(currentNeighbors) >= types.MaxNeighbors { return }
@@ -100,7 +97,7 @@ func (h *ArrowHNSW) addConnectionLocked(ctx *ArrowSearchContext, data *types.Gra
 		slot := len(currentNeighbors)
 		baseIdx := int(cOff) * types.MaxNeighbors
 		atomic.StoreUint32(&neighborsChunk[baseIdx+slot], target)
-		atomic.StoreInt32(&countsChunk[cOff], int32(slot+1))
+		atomic.StoreInt32(&countsChunk[cOff], int32(slot+1)) // nosec G115
 	}
 
 	if layer < len(data.PackedNeighbors) && data.PackedNeighbors[layer] != nil {
@@ -125,16 +122,13 @@ func (h *ArrowHNSW) addConnectionsBatchLocked(ctx *ArrowSearchContext, data *typ
 	baseIdx := int(cOff) * types.MaxNeighbors
 
 	if int(currentCount)+len(sources) > maxConn {
-		h.pruneConnectionsLocked(ctx, data, target, maxConn, layer, nil)
-		currentCount = atomic.LoadInt32(countAddr)
+		h.pruneConnectionsLocked(ctx, data, target, maxConn, layer, sources)
+		return 
 	}
-
-	available := types.MaxNeighbors - int(currentCount)
-	if available <= 0 { return }
 
 	added := 0
 	for _, src := range sources {
-		if added >= available { break }
+		if int(currentCount) >= types.MaxNeighbors { break }
 		found := false
 		for i := 0; i < int(currentCount); i++ {
 			if atomic.LoadUint32(&neighborsChunk[baseIdx+i]) == src {
@@ -152,15 +146,19 @@ func (h *ArrowHNSW) addConnectionsBatchLocked(ctx *ArrowSearchContext, data *typ
 	atomic.StoreInt32(countAddr, currentCount)
 	atomic.AddUint64(&data.GlobalVersion, 1)
 
-	if layer < len(data.PackedNeighbors) && data.PackedNeighbors[layer] != nil {
+	// If we exceeded maxConn, prune to maintain graph diversity and search efficiency.
+	// This is critical for parallel ingestion where nodes may receive many reverse connections.
+	if int(currentCount) > maxConn {
+		h.pruneConnectionsLocked(ctx, data, target, maxConn, layer, nil)
+	} else if layer < len(data.PackedNeighbors) && data.PackedNeighbors[layer] != nil {
 		pn := data.PackedNeighbors[layer]
-		newNeighbors := h.GetNeighborsCombined(layer, target)
+		newNeighbors := h.GetNeighborsCombinedManual(data, layer, target)
 		_ = pn.SetNeighbors(target, newNeighbors)
 	}
 }
 
 // pruneConnectionsLocked reduces connections using robust diversity heuristic.
-func (h *ArrowHNSW) pruneConnectionsLocked(ctx *ArrowSearchContext, data *types.GraphData, nodeID uint32, maxConn, layer int, precalculatedDists []float32) {
+func (h *ArrowHNSW) pruneConnectionsLocked(ctx *ArrowSearchContext, data *types.GraphData, nodeID uint32, maxConn, layer int, newNeighbors []uint32) {
 	cID := types.ChunkID(nodeID)
 	cOff := types.ChunkOffset(nodeID)
 	countsChunk := data.GetCountsChunk(layer, cID)
@@ -175,7 +173,19 @@ func (h *ArrowHNSW) pruneConnectionsLocked(ctx *ArrowSearchContext, data *types.
 			currentNeighbors[i] = atomic.LoadUint32(&neighborsChunk[baseIdx+i])
 		}
 	} else {
-		currentNeighbors = h.GetNeighborsCombined(layer, nodeID)
+		currentNeighbors = h.GetNeighborsCombinedManual(data, layer, nodeID)
+	}
+
+	// Include new candidates in the pruning pool
+	if len(newNeighbors) > 0 {
+		seen := make(map[uint32]struct{}, len(currentNeighbors)+len(newNeighbors))
+		for _, n := range currentNeighbors { seen[n] = struct{}{} }
+		for _, n := range newNeighbors {
+			if _, exists := seen[n]; !exists && n != nodeID {
+				currentNeighbors = append(currentNeighbors, n)
+				seen[n] = struct{}{}
+			}
+		}
 	}
 
 	count := len(currentNeighbors)
@@ -207,7 +217,7 @@ func (h *ArrowHNSW) pruneConnectionsLocked(ctx *ArrowSearchContext, data *types.
 	for i, cand := range selected {
 		atomic.StoreUint32(&neighborsChunk[baseIdx+i], cand.ID)
 	}
-	atomic.StoreInt32(&countsChunk[cOff], int32(len(selected)))
+	atomic.StoreInt32(&countsChunk[cOff], int32(len(selected))) // nosec G115
 
 	if verChunk != nil { atomic.AddUint32(&verChunk[cOff], 1) }
 	atomic.AddUint64(&data.GlobalVersion, 1)

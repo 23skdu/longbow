@@ -138,3 +138,35 @@ func (h *ArrowHNSW) GetNeighborsCombinedCached(layer int, id uint32, dg *DiskGra
 	
 	return nil
 }
+// GetNeighborsCombinedManual returns neighbors using the provided GraphData pointer.
+// This is critical for internal operations (like linkage) that operate on a local COW pointer.
+func (h *ArrowHNSW) GetNeighborsCombinedManual(data *types.GraphData, layer int, id uint32) []uint32 {
+	// 1. Try TopLayerManager
+	lf := h.topLayerManager.GetNeighborsLockFree(layer, id)
+	if lf != nil {
+		return lf
+	}
+	
+	// 2. Try GraphData PackedNeighbors
+	if data != nil && layer < len(data.PackedNeighbors) && data.PackedNeighbors[layer] != nil {
+		if neighbors, ok := data.PackedNeighbors[layer].GetNeighbors(id); ok {
+			return neighbors
+		}
+	}
+	
+	// 3. Fallback to standard types.GraphData
+	if data != nil {
+		neighbors := data.GetNeighbors(layer, id, nil)
+		if len(neighbors) > 0 {
+			return neighbors
+		}
+	}
+	
+	// 4. Fallback to DiskGraph
+	dg := h.diskGraph.Load()
+	if dg != nil {
+		return dg.GetNeighbors(layer, id, nil)
+	}
+	
+	return nil
+}

@@ -161,6 +161,34 @@ var (
 		},
 	)
 
+	// HNSW Stabilization Metrics
+	HnswRepairSuccessTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_hnsw_repair_success_total",
+			Help: "Total number of successful HNSW graph repairs",
+		},
+	)
+	HnswRepairFailureTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_hnsw_repair_failure_total",
+			Help: "Total number of failed HNSW graph repairs",
+		},
+	)
+	HnswRepairNodesVisitedTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_hnsw_repair_nodes_visited_total",
+			Help: "Total number of nodes visited during repair operations",
+		},
+	)
+
+	HnswSearchEarlyExitsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_hnsw_search_early_exits_total",
+			Help: "Total number of HNSW search early exits by reason",
+		},
+		[]string{"reason"}, // "timeout", "threshold", "no_candidates"
+	)
+
 	// NUMA Metrics
 	NUMANodeCount = promauto.NewGauge(
 		prometheus.GaugeOpts{
@@ -752,5 +780,51 @@ var (
 			Help: "Total bytes downloaded from remote storage",
 		},
 		[]string{"provider"},
+	)
+
+	// =============================================================================
+	// ML & Embedding Metrics
+	// =============================================================================
+
+	EmbeddingGenerationDurationSeconds = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_embedding_generation_duration_seconds",
+			Help:    "Time spent generating a batch of embeddings",
+			Buckets: []float64{0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5},
+		},
+		[]string{"provider", "model"},
+	)
+
+	EmbeddingPoolingDurationSeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_embedding_pooling_duration_seconds",
+			Help:    "Time spent on mean/max pooling of hidden states",
+			Buckets: []float64{0.0001, 0.0005, 0.001, 0.005, 0.01},
+		},
+	)
+
+	EmbeddingNormalizationDurationSeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_embedding_normalization_duration_seconds",
+			Help:    "Time spent normalizing embedding vectors",
+			Buckets: []float64{0.00001, 0.00005, 0.0001, 0.0005, 0.001},
+		},
+	)
+
+	WasmInferenceTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_wasm_inference_total",
+			Help: "Total number of WASM-based model inferences",
+		},
+		[]string{"model", "status"},
+	)
+
+	WasmInferenceDurationSeconds = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_wasm_inference_duration_seconds",
+			Help:    "Duration of WASM-based model inferences",
+			Buckets: []float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1},
+		},
+		[]string{"model"},
 	)
 )

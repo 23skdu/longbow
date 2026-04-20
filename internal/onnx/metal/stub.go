@@ -47,6 +47,11 @@ func (e *Engine) ScoreBatch(ctx context.Context, queries, documents []string) ([
 	return nil, errors.New("Metal not available on this platform")
 }
 
+// Embed returns an error on non-Metal platforms
+func (e *Engine) Embed(ctx context.Context, texts []string) ([][]float32, error) {
+	return nil, errors.New("Metal not available on this platform")
+}
+
 // Warmup is a no-op on non-Metal platforms
 func (e *Engine) Warmup() error {
 	return nil

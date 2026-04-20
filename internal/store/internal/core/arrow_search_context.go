@@ -348,6 +348,11 @@ func (ctx *ArrowSearchContext) GetDiskGraph() *DiskGraph {
 	return ctx.diskGraph
 }
 
+// RecordEarlyExit increments the early exit counter with a specific reason.
+func (ctx *ArrowSearchContext) RecordEarlyExit(reason string) {
+	metrics.HnswSearchEarlyExitsTotal.WithLabelValues(reason).Inc()
+}
+
 // SetDiskGraph sets the DiskGraph reference to be cached for this search.
 func (ctx *ArrowSearchContext) SetDiskGraph(dg *DiskGraph) {
 	ctx.diskGraph = dg

@@ -3,6 +3,8 @@ package core
 import (
 	"context"
 	"time"
+
+	"github.com/23skdu/longbow/internal/metrics"
 )
 
 // StartRepairWorker starts a background worker that periodically repairs tombstones.
@@ -19,8 +21,10 @@ func (h *ArrowHNSW) StartRepairWorker(ctx context.Context, interval time.Duratio
 				// Run repair
 				count := h.RepairTombstones(ctx, batchSize)
 				if count > 0 {
-					// Log or metric already handled in RepairTombstones (placeholder for future use)
-					_ = count
+					metrics.HnswRepairSuccessTotal.Inc()
+					metrics.HnswRepairNodesVisitedTotal.Add(float64(count))
+				} else if count < 0 {
+					metrics.HnswRepairFailureTotal.Inc()
 				}
 			}
 		}

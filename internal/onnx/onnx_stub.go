@@ -28,6 +28,11 @@ func (s *Session) Score(ctx context.Context, query string, docs []string) ([]flo
 	return nil, errors.New("ONNX Runtime not available in this build")
 }
 
+// Embed returns an error on non-ONNX platforms
+func (s *Session) Embed(ctx context.Context, texts []string) ([][]float32, error) {
+	return nil, errors.New("ONNX Runtime not available in this build")
+}
+
 // Close is a no-op on non-ONNX platforms
 func (s *Session) Close() error {
 	return nil

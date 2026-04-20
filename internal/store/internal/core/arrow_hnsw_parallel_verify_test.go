@@ -3,6 +3,7 @@ package core
 import (
 	"github.com/23skdu/longbow/internal/store/types"
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/apache/arrow-go/v18/arrow"
@@ -85,9 +86,11 @@ func TestArrowHNSW_AddBatch_Parallel_SQ8(t *testing.T) {
 	require.NotEmpty(t, res)
 
 	// Use len>=100 instead of exact count: when bulk insert path fails
-	// (race with parallel SQ8), some nodes remain unconnected and search
-	// returns fewer results. The idx.Size() assertion above already verified
-	// all vectors were inserted; here we verify search is functional.
+	ep := idx.entryPoint.Load()
+	epNeighbors := idx.GetNeighborsCombined(0, ep)
+	fmt.Printf("DEBUG: EP %d Neighbors at L0: %v\n", ep, epNeighbors)
+	
+	fmt.Printf("DEBUG: Found %d results\n", len(res))
 	assert.GreaterOrEqual(t, len(res), 100)
 
 	found := false

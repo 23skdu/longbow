@@ -35,6 +35,7 @@ func vectorButterflyNEONKernel(a, b []float32)
 //go:noescape
 func vectorButterfly16NEONKernel(a, b []float32)
 
+/*
 //go:noescape
 func euclideanF16NEONKernel(a, b []float16.Num) float32
 
@@ -43,6 +44,7 @@ func dotF16NEONKernel(a, b []float16.Num) float32
 
 //go:noescape
 func cosineF16NEONKernel(a, b []float16.Num) float32
+*/
 
 // Public Go wrappers (with error propagation)
 
@@ -133,9 +135,11 @@ func cosineNEON(a, b []float32) (float32, error) {
 	return 1.0 - (dot / float32(math.Sqrt(float64(normA)*float64(normB)))), nil
 }
 
+/*
 func adcBatchNEON(table []float32, flatCodes []byte, m int, results []float32) error {
 	return adcBatchGeneric(table, flatCodes, m, results)
 }
+*/
 func euclideanBatchNEON(query []float32, vectors [][]float32, results []float32) error {
 	for i, v := range vectors {
 		d, err := euclideanNEON(query, v)
@@ -169,9 +173,7 @@ func cosineBatchNEON(query []float32, vectors [][]float32, results []float32) er
 	return nil
 }
 
-func euclideanVerticalBatchNEON(query []float32, vectors [][]float32, results []float32) error {
-	return euclideanBatchNEON(query, vectors, results)
-}
+*/
 
 func l2SquaredNEON(a, b []float32) (float32, error) {
 	if len(a) != len(b) {

@@ -945,12 +945,18 @@ func euclidean16AVX512Wrapper(a, b []float32) (float32, error) {
 	if len(a) != 16 || len(b) != 16 {
 		return 0, errors.New("simd: expected dimension 16")
 	}
+	if !features.HasAVX512 {
+		return euclideanGeneric(a, b)
+	}
 	return euclidean16AVX512(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0])), nil
 }
 
 func cosine16AVX512Wrapper(a, b []float32) (float32, error) {
 	if len(a) != 16 || len(b) != 16 {
 		return 0, errors.New("simd: expected dimension 16")
+	}
+	if !features.HasAVX512 {
+		return cosineGeneric(a, b)
 	}
 	dot, normA, normB := cosine16AVX512(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]))
 	if normA == 0 || normB == 0 {

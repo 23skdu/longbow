@@ -2091,13 +2091,17 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 			copy(searchCtx.queryC64, q)
 			return &complex64Computer{data: data, q: searchCtx.queryC64, dims: len(q), h: h, diskGraph: searchCtx.diskGraph}
 		}
-		return &complex64Computer{data: data, q: q, dims: len(q), h: h, diskGraph: searchCtx.diskGraph}
+		return &complex64Computer{data: data, q: q, dims: len(q), h: h, diskGraph: h.diskGraph.Load()}
 	case []complex128:
 		if searchCtx != nil {
 			if cap(searchCtx.queryC128) < len(q) {
 				searchCtx.queryC128 = make([]complex128, len(q))
 			}
 			searchCtx.queryC128 = searchCtx.queryC128[:len(q)]
+			copy(searchCtx.queryC128, q)
+			return &complex128Computer{data: data, q: searchCtx.queryC128, dims: len(q), h: h, diskGraph: searchCtx.diskGraph}
+		}
+		return &complex128Computer{data: data, q: q, dims: len(q), h: h, diskGraph: h.diskGraph.Load()}
 			copy(searchCtx.queryC128, q)
 			return &complex128Computer{data: data, q: searchCtx.queryC128, dims: len(q), h: h, diskGraph: searchCtx.diskGraph}
 		}

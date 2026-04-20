@@ -13,6 +13,7 @@
 - [x] **Expand Test Coverage**: Expand unit and integration test suites across `internal/store/core`, `internal/onnx`, and `internal/simd`. Added comprehensive SIMD test suite and core search context lifecycle tests. Achieved 100% coverage in `internal/onnx`.
 
 ## Next Release (0.1.10+)
+
 - [ ] **Achieve >95% Total Project Coverage**: Continue expanding tests into legacy edge cases.
 - [ ] **Transformer Mean Pooling**: Replace the `m.session.Score` hack in `onnxEmbeddingModel` with proper mean/max pooling across transformer hidden states for production-grade embedding quality.
 - [ ] **Wazero WASM Runner**: Replace reranker/embedding WASM stubs with a functional `wazero` integration to enable cross-platform ML execution without local ONNX runtime dependencies.

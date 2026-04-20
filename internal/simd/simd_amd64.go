@@ -270,6 +270,9 @@ func dot384AVX512(a, b []float32) (float32, error) {
 	if len(a) != 384 || len(b) != 384 {
 		return 0, errors.New("simd: length must be 384")
 	}
+	if !features.HasAVX512 {
+		return dotGeneric(a, b)
+	}
 	return dot384AVX512Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0])), nil
 }
 
@@ -389,6 +392,9 @@ func euclideanF16BatchAVX2(query []float16.Num, vectors [][]float16.Num, results
 }
 
 func euclideanF16BatchAVX512(query []float16.Num, vectors [][]float16.Num, results []float32) error {
+	if !features.HasAVX512 {
+		return euclideanF16BatchAVX2(query, vectors, results)
+	}
 	if len(query) == 0 {
 		return nil
 	}
@@ -438,8 +444,14 @@ func euclideanVerticalBatchAVX2(query []float32, vectors [][]float32, results []
 }
 
 func euclideanVerticalBatchAVX512(query []float32, vectors [][]float32, results []float32) error {
+	if !features.HasAVX512 {
+		return euclideanVerticalBatchAVX2(query, vectors, results)
+	}
 	n := len(vectors)
 	i := 0
+	if len(query) == 0 {
+		return nil
+	}
 	qPtr := unsafe.Pointer(&query[0])
 	qLen := len(query)
 

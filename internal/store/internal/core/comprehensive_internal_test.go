@@ -22,13 +22,13 @@ func TestSearchContextPooling(t *testing.T) {
 }
 
 func TestCandidateHeap(t *testing.T) {
-	h := &CandidateHeap{
-		{ID: 1, Dist: 10.0},
-		{ID: 2, Dist: 5.0},
-		{ID: 3, Dist: 15.0},
-	}
+	h := &CandidateHeap{}
+	heap.Push(h, types.Candidate{ID: 1, Dist: 10.0})
+	heap.Push(h, types.Candidate{ID: 2, Dist: 5.0})
+	heap.Push(h, types.Candidate{ID: 3, Dist: 15.0})
+
 	// Max heap by distance
-	assert.Equal(t, float32(15.0), (*h)[0].Dist) // Skeletal - will check heap.Init
+	assert.Equal(t, float32(15.0), (*h)[0].Dist)
 }
 
 func TestHNSWRepairWorkers(t *testing.T) {

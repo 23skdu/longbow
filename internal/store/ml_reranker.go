@@ -53,7 +53,8 @@ func (r *ONNXReranker) initModel() error {
 			// WebAssembly model - use wazero runtime
 			runner, err := wasm.NewRunner(context.Background(), r.modelPath)
 			if err == nil {
-				r.model = &wasmModelWrapper{runner: runner}
+				tokenizer, _ := ml.NewTokenizer("vocab.txt", 512)
+				r.model = &wasmModelWrapper{runner: runner, tokenizer: tokenizer}
 				return nil
 			}
 			r.logger.Warn().Err(err).Str("path", r.modelPath).Msg("Failed to initialize WASM runner, using fallback")
@@ -85,21 +86,32 @@ func (w *onnxModelWrapper) Close() error {
 }
 
 type wasmModelWrapper struct {
-	runner *wasm.Runner
+	runner    *wasm.Runner
+	tokenizer *ml.Tokenizer
 }
 
 func (w *wasmModelWrapper) Score(query string, documents []string) ([]float32, error) {
-	// For now, we use the runner to check if it's alive. 
-	// Real scoring requires passing both query and docs into WASM memory.
-	// This ensures the WASM runtime is actually utilized.
-	_, err := w.runner.Inference(context.Background(), []float32{1.0})
-	if err != nil {
-		return nil, err
+	if w.tokenizer == nil {
+		// Fallback to basic tokenizer if not initialized
+		tok, _ := ml.NewTokenizer("vocab.txt", 512)
+		w.tokenizer = tok
 	}
-	
+
 	scores := make([]float32, len(documents))
-	for i := range scores {
-		scores[i] = 0.5
+	for i, doc := range documents {
+		combined := query + " " + doc
+		ids, mask := w.tokenizer.Encode(combined)
+		
+		output, err := w.runner.InferenceWithTokens(context.Background(), ids, mask)
+		if err != nil {
+			return nil, err
+		}
+		
+		if len(output) > 0 {
+			scores[i] = output[0]
+		} else {
+			scores[i] = 0.0
+		}
 	}
 	return scores, nil
 }

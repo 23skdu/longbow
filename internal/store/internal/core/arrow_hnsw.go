@@ -2102,10 +2102,6 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 			return &complex128Computer{data: data, q: searchCtx.queryC128, dims: len(q), h: h, diskGraph: searchCtx.diskGraph}
 		}
 		return &complex128Computer{data: data, q: q, dims: len(q), h: h, diskGraph: h.diskGraph.Load()}
-			copy(searchCtx.queryC128, q)
-			return &complex128Computer{data: data, q: searchCtx.queryC128, dims: len(q), h: h, diskGraph: searchCtx.diskGraph}
-		}
-		return &complex128Computer{data: data, q: q, dims: len(q), h: h}
 	case []int16:
 		return &int16Computer{data: data, q: q, dims: len(q), h: h}
 	case []uint16:

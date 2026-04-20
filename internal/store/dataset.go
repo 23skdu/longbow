@@ -2,9 +2,11 @@ package store
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"sync"
@@ -19,6 +21,7 @@ import (
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
+	"github.com/apache/arrow-go/v18/arrow/memory"
 )
 
 // IndexJob represents a job for the indexing worker
@@ -591,4 +594,95 @@ func (d *Dataset) WaitForIndexing() {
 	for d.PendingIndexJobs.Load() > 0 || d.PendingIngestion.Load() > 0 {
 		time.Sleep(10 * time.Millisecond)
 	}
+}
+// IngestBatch appends a batch of Parquet records to the dataset
+func (d *Dataset) IngestBatch(batch []DatasetParquetRecord) error {
+	if len(batch) == 0 {
+		return nil
+	}
+
+	d.PendingIngestion.Add(int64(len(batch)))
+	defer d.PendingIngestion.Add(-int64(len(batch)))
+
+	pool := memory.NewGoAllocator()
+	b := array.NewRecordBuilder(pool, d.Schema)
+	defer b.Release()
+
+	idColIdx := -1
+	vectorColIdx := -1
+	metadataColIdx := -1
+	createdAtColIdx := -1
+
+	for i, f := range d.Schema.Fields() {
+		switch f.Name {
+		case "id":
+			idColIdx = i
+		case "vector":
+			vectorColIdx = i
+		case "metadata":
+			metadataColIdx = i
+		case "created_at":
+			createdAtColIdx = i
+		}
+	}
+
+	for _, row := range batch {
+		if idColIdx >= 0 {
+			if row.ID != 0 {
+				b.Field(idColIdx).(*array.Int64Builder).Append(row.ID)
+			} else {
+				b.Field(idColIdx).AppendNull()
+			}
+		}
+
+		if vectorColIdx >= 0 {
+			if row.Vector != nil {
+				vecLen := len(row.Vector) / 4
+				listBuilder := b.Field(vectorColIdx).(*array.FixedSizeListBuilder)
+				valBuilder := listBuilder.ValueBuilder().(*array.Float32Builder)
+				for i := 0; i < vecLen; i++ {
+					v := binary.LittleEndian.Uint32(row.Vector[i*4:])
+					valBuilder.Append(math.Float32frombits(v))
+				}
+				listBuilder.Append(true)
+			} else {
+				b.Field(vectorColIdx).AppendNull()
+			}
+		}
+
+		if metadataColIdx >= 0 {
+			if row.Metadata != nil {
+				b.Field(metadataColIdx).(*array.BinaryBuilder).Append(row.Metadata)
+			} else {
+				b.Field(metadataColIdx).AppendNull()
+			}
+		}
+
+		if createdAtColIdx >= 0 {
+			if row.CreatedAt != 0 {
+				b.Field(createdAtColIdx).(*array.Int64Builder).Append(row.CreatedAt)
+			} else {
+				b.Field(createdAtColIdx).AppendNull()
+			}
+		}
+	}
+
+	rec := b.NewRecord()
+	
+	d.dataMu.Lock()
+	batchIdx := len(d.Records)
+	d.Records = append(d.Records, rec)
+	d.BatchNodes = append(d.BatchNodes, -1) // NUMA untracked for now
+	d.dataMu.Unlock()
+
+	// Update primary index and handle tombstones
+	idMap := d.ExtractIDs(rec)
+	if idMap != nil {
+		d.UpdatePrimaryIndexAsync(batchIdx, idMap)
+	}
+
+	// Trigger async indexing if needed (usually handled by indexer worker)
+	// We'll leave it to the worker to pick up NewRecords or send explicitly
+	
+	return nil
 }

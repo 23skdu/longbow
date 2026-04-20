@@ -3,10 +3,10 @@ package wasm
 import (
 	"context"
 	"fmt"
+	"math"
 	"os"
 	"sync"
 	"time"
-	"unsafe"
 
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/tetratelabs/wazero"

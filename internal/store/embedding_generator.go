@@ -12,6 +12,8 @@ import (
 	"time"
 	"github.com/23skdu/longbow/internal/onnx"
 	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/wasm"
+	"github.com/23skdu/longbow/internal/ml"
 )
 
 type EmbeddingGenerator interface {

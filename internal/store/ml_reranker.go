@@ -8,6 +8,7 @@ import (
 
 	"github.com/23skdu/longbow/internal/onnx"
 	"github.com/23skdu/longbow/internal/wasm"
+	"github.com/23skdu/longbow/internal/ml"
 	"github.com/rs/zerolog"
 )
 

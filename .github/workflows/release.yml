@@ -26,6 +26,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -36,7 +39,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata (tags, labels) for Docker
+      - name: Extract metadata (tags, labels) for Standard Image
         id: meta
         uses: docker/metadata-action@v5
         with:
@@ -44,13 +47,39 @@ jobs:
           tags: |
             type=ref,event=tag
             type=raw,value=latest
+            type=sha,prefix=sha-
 
-      - name: Build and push Docker image
+      - name: Build and push Standard Docker image
         uses: docker/build-push-action@v6
         with:
           context: .
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Extract metadata for NVIDIA Image
+        id: meta-nvidia
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          flavor: |
+            suffix=-nvidia
+          tags: |
+            type=ref,event=tag
+            type=raw,value=latest
+            type=sha,prefix=sha-
+
+      - name: Build and push NVIDIA Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.nvidia
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta-nvidia.outputs.tags }}
+          labels: ${{ steps.meta-nvidia.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

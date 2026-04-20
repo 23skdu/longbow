@@ -136,9 +136,9 @@ TEXT ·cosine8AVX2(SB), NOSPLIT, $0-28
     VMOVSS  X4, normB+24(FP)
     
     // ABI: Return values in X0, X1, X2
-    VMOVSS  X2, X0              // dot
-    VMOVSS  X3, X1              // normA
-    VMOVSS  X4, X2              // normB
+    MOVSS   X2, X0              // dot
+    MOVSS   X3, X1              // normA
+    MOVSS   X4, X2              // normB
     
     VZEROUPPER
     RET
@@ -193,9 +193,9 @@ TEXT ·cosine16AVX512(SB), NOSPLIT, $0-28
     VMOVSS  X4, normB+24(FP)
     
     // ABI: Return values in X0, X1, X2
-    VMOVSS  X2, X0              // dot
-    VMOVSS  X3, X1              // normA
-    VMOVSS  X4, X2              // normB
+    MOVSS   X2, X0              // dot
+    MOVSS   X3, X1              // normA
+    MOVSS   X4, X2              // normB
     
     VZEROUPPER
     RET

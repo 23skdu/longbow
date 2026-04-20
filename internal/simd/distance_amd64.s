@@ -293,8 +293,8 @@ cos_reduce_final:
     
     // ABI: Return values in X0, X1, X2
     // X0 already has Dot from line 270 (VMOVSS X0, dot+24(FP))
-    VMOVSS  X4, X1             // normA
-    VMOVSS  X8, X2             // normB
+    MOVSS   X4, X1             // normA
+    MOVSS   X8, X2             // normB
 
     VZEROUPPER
     RET

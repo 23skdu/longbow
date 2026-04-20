@@ -11,6 +11,7 @@
 - [ ] **Fix Parallel SQ8 Ingestion Contention**: Resolve the race condition in `TestArrowHNSW_AddBatch_Parallel_SQ8` where parallel ingestion with SQ8 quantization results in poor graph connectivity (search returning only 1 result).
 - [ ] **Release 0.1.9 Stabilization**: Perform a full soak test for at least 6 hours under 10k QPS mixed read/write load following the zero-copy ingest/streaming changes.
 - [ ] **Gosec Hardening**: Systematically address the remaining 14 high-confidence security findings in the `internal/simd` and `internal/gpu` CGO bridge layers.
+- [ ] **Achieve >95% Test Coverage**: Expand unit and integration test suites across `internal/store/core`, `internal/onnx`, and `internal/simd` to reach the 95% statement coverage threshold before the final 0.1.9 release.
 
 ---
 

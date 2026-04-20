@@ -192,6 +192,7 @@ learnedIndex:
 simd:
   implementation: "" # auto-detect: avx512, avx2, neon, generic
   fallbackEnabled: true
+  jitEnabled: false
 
 # PQ (Product Quantization) Configuration
 pq:

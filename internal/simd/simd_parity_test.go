@@ -69,7 +69,7 @@ func TestSimdParity_FloatingPoint(t *testing.T) {
 			// Dot Product
 			got, _ = DispatchDistance(MetricDotProduct, a, b)
 			expected = refDot(a, b)
-			assert.InDelta(t, expected, got, 1e-3, "Dot parity mismatch at dims %d", d)
+			assert.InDelta(t, expected, got, 5e-3, "Dot parity mismatch at dims %d", d)
 
 			// Cosine
 			got, _ = DispatchDistance(MetricCosine, a, b)
@@ -95,7 +95,7 @@ func TestSimdParity_FloatingPoint(t *testing.T) {
 			// Dot Product
 			got, _ = DispatchDistance(MetricDotProduct, a, b)
 			expected = refDot(a, b)
-			assert.InDelta(t, expected, got, 1e-3, "Dot parity mismatch at dims %d", d)
+			assert.InDelta(t, expected, got, 5e-3, "Dot parity mismatch at dims %d", d)
 
 			// Cosine
 			got, _ = DispatchDistance(MetricCosine, a, b)

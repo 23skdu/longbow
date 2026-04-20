@@ -762,13 +762,41 @@ func (m *onnxEmbeddingModel) Close() error {
 }
 
 type wasmEmbeddingModel struct {
-	path string
+	path      string
+	runner    *wasm.Runner
+	tokenizer *ml.Tokenizer
 }
 
 func (m *wasmEmbeddingModel) Inference(input []string) ([][]float32, error) {
-	return nil, errors.New("WASM embedding model not yet implemented - requires wazero runtime")
+	if m.runner == nil {
+		runner, err := wasm.NewRunner(context.Background(), m.path)
+		if err != nil {
+			return nil, err
+		}
+		m.runner = runner
+	}
+
+	if m.tokenizer == nil {
+		tok, _ := ml.NewTokenizer("vocab.txt", 512)
+		m.tokenizer = tok
+	}
+
+	results := make([][]float32, len(input))
+	for i, text := range input {
+		ids, mask := m.tokenizer.Encode(text)
+		output, err := m.runner.InferenceWithTokens(context.Background(), ids, mask)
+		if err != nil {
+			return nil, err
+		}
+		results[i] = output
+	}
+
+	return results, nil
 }
 
 func (m *wasmEmbeddingModel) Close() error {
+	if m.runner != nil {
+		return m.runner.Close(context.Background())
+	}
 	return nil
 }

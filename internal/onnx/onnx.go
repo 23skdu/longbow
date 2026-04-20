@@ -60,7 +60,17 @@ type Session struct {
 	isMetal     bool
 	inputNames  []string
 	outputNames []string
+	poolingMode PoolingMode
 }
+
+// PoolingMode defines the strategy for pooling transformer hidden states
+type PoolingMode int
+
+const (
+	PoolingMean PoolingMode = iota
+	PoolingMax
+	PoolingCLS
+)
 
 // NewSession creates a new ONNX session
 func NewSession(modelPath string) (*Session, error) {
@@ -104,8 +114,9 @@ func NewSession(modelPath string) (*Session, error) {
 	}
 
 	s := &Session{
-		ortSession: session,
-		isMetal:    false,
+		ortSession:  session,
+		isMetal:     false,
+		poolingMode: PoolingMean, // Default
 	}
 
 	// Initialize tokenizer with default search paths
@@ -327,7 +338,19 @@ func (s *Session) Embed(ctx context.Context, texts []string) ([][]float32, error
 		return res, nil
 	}
 
-	return s.meanPooling(hiddenStates, mask, outputShape), nil
+	switch s.poolingMode {
+	case PoolingMax:
+		return s.maxPooling(hiddenStates, mask, outputShape), nil
+	case PoolingCLS:
+		return s.clsPooling(hiddenStates, outputShape), nil
+	default:
+		return s.meanPooling(hiddenStates, mask, outputShape), nil
+	}
+}
+
+// SetPoolingMode sets the pooling strategy for embeddings
+func (s *Session) SetPoolingMode(mode PoolingMode) {
+	s.poolingMode = mode
 }
 
 func (s *Session) meanPooling(hiddenStates []float32, mask []int64, shape []int64) [][]float32 {
@@ -357,20 +380,70 @@ func (s *Session) meanPooling(hiddenStates []float32, mask []int64, shape []int6
 			}
 		}
 
-		// L2 Normalization
-		norm := float32(0)
-		for k := 0; k < dim; k++ {
-			norm += pooled[k] * pooled[k]
-		}
-		norm = float32(math.Sqrt(float64(norm)))
-		if norm > 0 {
-			for k := 0; k < dim; k++ {
-				pooled[k] /= norm
-			}
-		}
+		s.l2Normalize(pooled)
 		results[i] = pooled
 	}
 	return results
+}
+
+func (s *Session) maxPooling(hiddenStates []float32, mask []int64, shape []int64) [][]float32 {
+	batchSize := int(shape[0])
+	seqLen := int(shape[1])
+	dim := int(shape[2])
+
+	results := make([][]float32, batchSize)
+	for i := 0; i < batchSize; i++ {
+		pooled := make([]float32, dim)
+		for k := 0; k < dim; k++ {
+			pooled[k] = float32(math.Inf(-1))
+		}
+
+		for j := 0; j < seqLen; j++ {
+			m := float32(mask[i*seqLen+j])
+			if m == 0 {
+				continue
+			}
+			for k := 0; k < dim; k++ {
+				val := hiddenStates[i*seqLen*dim+j*dim+k]
+				if val > pooled[k] {
+					pooled[k] = val
+				}
+			}
+		}
+
+		s.l2Normalize(pooled)
+		results[i] = pooled
+	}
+	return results
+}
+
+func (s *Session) clsPooling(hiddenStates []float32, shape []int64) [][]float32 {
+	batchSize := int(shape[0])
+	seqLen := int(shape[1])
+	dim := int(shape[2])
+
+	results := make([][]float32, batchSize)
+	for i := 0; i < batchSize; i++ {
+		pooled := make([]float32, dim)
+		// CLS token is at index 0
+		copy(pooled, hiddenStates[i*seqLen*dim:i*seqLen*dim+dim])
+		s.l2Normalize(pooled)
+		results[i] = pooled
+	}
+	return results
+}
+
+func (s *Session) l2Normalize(vec []float32) {
+	norm := float32(0)
+	for _, v := range vec {
+		norm += v * v
+	}
+	norm = float32(math.Sqrt(float64(norm)))
+	if norm > 0 {
+		for i := range vec {
+			vec[i] /= norm
+		}
+	}
 }
 
 func (s *Session) Close() error {

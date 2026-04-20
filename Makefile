@@ -130,13 +130,25 @@ clean:
 
 # Build Docker image
 docker:
-	@echo "Building Docker image..."
+	@echo "Building standard Docker image..."
 	docker build -t longbow:latest .
+
+# Build NVIDIA Docker image
+docker-nvidia:
+	@echo "Building NVIDIA Docker image..."
+	docker build -f Dockerfile.nvidia -t longbow:nvidia .
+
+# Build Metal Docker image (requires binary built on host)
+docker-metal: build-metal
+	@echo "Building Metal Docker image..."
+	docker build -f Dockerfile.metal -t longbow:metal .
 
 # Push Docker image
 docker-push:
-	@echo "Pushing Docker image..."
+	@echo "Pushing Docker images..."
 	docker push longbow:latest
+	docker push longbow:nvidia
+	docker push longbow:metal
 
 # Install dependencies
 deps:

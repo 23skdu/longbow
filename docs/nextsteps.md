@@ -6,55 +6,26 @@
 
 ## 🎯 REMAINING WORK
 
-### Performance Optimization (Priority: HIGH)
+### Stability & Production Readiness (Priority: CRITICAL)
 
-- [x] **Numerical Parity**: Verify SIMD results against high-precision float64 baseline. (Verified all integer, unsigned, complex, and floating point types)
-- [x] **DiskGraph Load Caching**: ✅ COMPLETE | Cache DiskGraph refs in SearchContext for lower latency.
-- [x] **Adaptive M-Param**: ✅ COMPLETE | implementation of dynamic connectivity scaling.
-- [x] **Metrics Sampling**: ✅ COMPLETE | Reduce atomic overhead in metrics collection.
-- [x] **Zero-Copy Ingest**: ✅ COMPLETE | Direct Arrow-to-HNSW memory mapping.
-
-### Store Modularization (Priority: HIGH)
-
-The `internal/store` package is currently over-bloated (500+ files). This 6-part plan aims to restructure it for scalability.
-
-| Phase | Component | Priority | Status |
-|-------|-----------|----------|--------|
-| 1 | Foundation & Types | P0 | ✅ COMPLETE |
-| 2 | Core HNSW Algorithms | P0 | ✅ COMPLETE |
-| 3 | Indexing & Sharding | P1 | ✅ COMPLETE |
-| 4 | Persistence & Storage | P1 | ✅ COMPLETE |
-| 5 | Background Workers | P2 | ✅ COMPLETE |
-| 6 | API Refinement & Metrics | P2 | ✅ COMPLETE |
-
-### New Features
-
-| # | Feature | Status | Notes |
-|---|---------|--------|-------|
-| 6 | ONNX Benchmarks | ✅ COMPLETE | Implemented `internal/onnx/benchmarks_test.go` covering ALL backends. |
-| 7 | COW Optimization | ✅ COMPLETE | Optimized `GraphData.Clone()` and pre-allocation strategy. |
-| 8 | Search Result Pooling | ✅ COMPLETE | Implemented `sync.Pool` and `ArrowSearchContext` pooling. |
-| 9 | Fast-Path Search | ✅ COMPLETE | Specialized kernels for all types to bypass `any` overhead. |
-| 10 | allocation Buffer Pool | ✅ COMPLETE | Pooled buffers for type conversions in `SearchContext`. |
-| 11 | Lock-Free Adjacency | ✅ COMPLETE | Expand lock-free patterns to layer 0 updates. |
-| 12 | Zero-Copy Tensor Stream | ✅ COMPLETE | Direct GPU-to-GPU tensor transfer via Arrow Flight. |
+- [ ] **Fix Parallel SQ8 Ingestion Contention**: Resolve the race condition in `TestArrowHNSW_AddBatch_Parallel_SQ8` where parallel ingestion with SQ8 quantization results in poor graph connectivity (search returning only 1 result).
+- [ ] **Release 0.1.9 Stabilization**: Perform a full soak test for at least 6 hours under 10k QPS mixed read/write load following the zero-copy ingest/streaming changes.
+- [ ] **Gosec Hardening**: Systematically address the remaining 14 high-confidence security findings in the `internal/simd` and `internal/gpu` CGO bridge layers.
 
 ---
 
 ## ✅ VERIFIED COMPLETED (2026)
 
-- [x] **Comprehensive Multi-Metric Support**: Full Euclidean, Cosine, and DotProduct support across all supported data types (int8-uint64, complex, turboquant). Verified with matrix correctness tests and 1M+ exec fuzzing.
-- [x] **Advanced SQL (Subqueries/CTE)**: Nested query resolution and CTE support fully implemented.
-- [x] **ONNX Linux/CUDA Backend**: Functional `onnxruntime_go` integration with CUDA EP support.
-- [x] **SIMD String Filtering**: Semi-vectorized length-first string equality kernels for AVX2.
-- [x] **Float64 SIMD Match**: Full AVX2/AVX-512 comparison kernels integrated into query engine.
-- [x] **AVX-512 Filter Masks**: True K-mask based kernels for all numeric types implemented.
-- [x] **SQL Window Functions**: Analytical functions (Rank, RowNumber, Sum, etc.) fully implemented and integrated.
-- [x] **Dataset Import/Export**: Parquet and Arrow IPC export/import routines implemented.
-- [x] **CUDA Memory Ops**: Stable CGO-based unified memory management.
-- [x] **Zero-Copy RDMA**: `libibverbs` integration for Linux/RoCEv2 transport.
-- [x] **Metal ONNX**: Reranker and embedding generation functional on macOS ARM64.
-- [x] **Core Coverage Stabilization**: Reached ~67% statement coverage across `simd`, `query`, and `onnx`.
+- [x] **Zero-Copy Tensor Stream**: Direct GPU-to-GPU tensor transfer via Arrow Flight (RoCEv2/PeerDirect).
+- [x] **Zero-Copy HNSW Ingest**: Direct Arrow-to-HNSW memory mapping for zero-copy bulk ingestion.
+- [x] **ONNX Multi-Backend Benchmarks**: Comprehensive benchmarking suite covering CPU, CUDA, and Metal backends.
+- [x] **Store Modularization (Phases 1-6)**: Cleanly decoupled HNSW internals into modular sub-packages.
+- [x] **Lock-Free Adjacency (Layer 0)**: Optimized high-contention graph updates for 100k+ TPS ingestion.
+- [x] **Numerical Parity & FP64 Match**: Verified SIMD kernels against high-precision float64 baselines.
+- [x] **Adaptive M-Param & Search Context**: Dynamic connectivity scaling and pooled context management.
+- [x] **Advanced SQL (Subqueries/CTE)**: Nested query resolution and CTE support fully integrated.
+- [x] **Metal ONNX & CUDA Backend**: Functional GPU acceleration on macOS ARM64 and Linux NVIDIA.
+- [x] **Core Coverage Coverage**: Stabilized ~67% statement coverage across core performance packages.
 
 ---
 

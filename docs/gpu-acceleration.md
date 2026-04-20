@@ -1,356 +1,66 @@
-# GPU Acceleration Guide
+# Hardware Acceleration & GPU Guide
 
-Longbow supports GPU-accelerated vector search on NVIDIA (CUDA) and Apple Silicon (Metal) platforms. This guide covers setup, configuration, and integration.
+Longbow is optimized for heterogeneous hardware, providing native support for NVIDIA GPUs (CUDA), Apple Silicon (Metal), and high-performance networking (RDMA/RoCEv2) for zero-copy data movement.
 
-## Quick Start
+---
 
-```bash
-# Build with GPU support
-go build -tags=gpu -o longbow cmd/longbow/main.go
+## 1. GPU Acceleration (CUDA & Metal)
 
-# Run with GPU enabled
-GPU_ENABLED=true ./longbow
-```
+Longbow supports GPU-accelerated vector search and ML inference on both NVIDIA and Apple Silicon platforms.
 
-## Platform Support
+### Platform Support Matrix
 
-### Apple Silicon (Metal) - macOS ARM64
-
-**Requirements:**
-- macOS 12.0+ (Monterey or later)
-- Apple Silicon (M1/M2/M3/M4)
-- Xcode Command Line Tools
-- Metal framework (included with macOS)
-
-**Installation:**
-```bash
-# No additional dependencies required
-# Metal and Accelerate are included with macOS
-
-# Build with Metal GPU support
-go build -tags=gpu -o longbow-metal ./cmd/longbow
-
-# Run with GPU enabled
-GPU_ENABLED=true ./longbow-metal
-```
-
-**Performance:**
-- Optimized for Apple's unified memory architecture
-- Uses vDSP (Accelerate) for efficient distance calculations
-- No CPU↔GPU memory transfers required
-- Expected 2-4x speedup vs CPU-only for large datasets
-
-### NVIDIA GPUs (CUDA) - Linux
-
-**Requirements:**
-- NVIDIA GPU with compute capability 6.0+ (Pascal or newer)
-- CUDA Toolkit 11.8 or later
-- FAISS library with GPU support
-- CGO enabled
-
-**Installation** (Ubuntu/Debian):
-```bash
-# Install CUDA Toolkit
-wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-ubuntu2204.pin
-sudo mv cuda-ubuntu2204.pin /etc/apt/preferences.d/cuda-repository-pin-600
-sudo apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/3bf863cc.pub
-sudo add-apt-repository "deb https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/ /"
-sudo apt update
-sudo apt install cuda-toolkit-11-8
-
-# Build FAISS with GPU support
-git clone https://github.com/facebookresearch/faiss.git
-cd faiss
-cmake -B build -DFAISS_ENABLE_GPU=ON -DFAISS_ENABLE_PYTHON=OFF
-make -C build -j
-sudo make -C build install
-
-# Build Longbow with CUDA
-CGO_ENABLED=1 go build -tags=gpu -o longbow-cuda ./cmd/longbow
-```
-
-## Configuration
-
-### Environment Variables
-
-| Variable | Type | Default | Description |
-|----------|------|---------|-------------|
-| `GPU_ENABLED` | bool | `false` | Enable GPU acceleration |
-| `GPU_DEVICE_ID` | int | `0` | GPU device ID for multi-GPU systems |
-| `CUDA_HOME` | string | `/usr/local/cuda` | Path to CUDA installation |
-| `LONGBOW_GPU_BACKEND` | string | `auto` | Force backend: `cuda`, `metal`, or `cpu` |
-
-### Example Configuration
-
-```bash
-# Single GPU system
-export GPU_ENABLED=true
-export GPU_DEVICE_ID=0
-
-# Multi-GPU system (use second GPU)
-export GPU_ENABLED=true
-export GPU_DEVICE_ID=1
-```
-
-## Build System
-
-### Build Tags
-
-| Tag | Description |
-|-----|-------------|
-| `-tags gpu` | Enable GPU support (auto-detects CUDA or Metal) |
-| `-tags gpu,cuda` | Force CUDA backend |
-| `-tags gpu,metal` | Force Metal backend |
-| (no tags) | CPU-only build |
-
-### Build Commands
-
-```bash
-# CPU-only (default, works everywhere)
-go build ./cmd/longbow
-
-# GPU-enabled (auto-detects backend)
-go build -tags=gpu ./cmd/longbow
-
-# Platform-specific
-CGO_ENABLED=1 go build -tags gpu -o bin/longbow-cuda ./cmd/longbow   # Linux
-CGO_ENABLED=1 go build -tags gpu -o bin/longbow-metal ./cmd/longbow  # macOS
-
-# Test GPU package
-go test -tags=gpu ./internal/gpu/...
-```
-
-## How It Works
+| Platform | Library | Acceleration Tech | Support Status |
+| :--- | :--- | :--- | :--- |
+| **Linux (NVIDIA)** | CUDA 11.8+ | Tensor Cores, FAISS | ✅ Production |
+| **macOS (Apple)** | Metal | Unified Memory, vDSP | ✅ Production |
 
 ### Hybrid CPU/GPU Search
-
 Longbow uses a hybrid approach for optimal performance:
+1.  **Selection**: GPU performs coarse candidate generation (brute-force or IVF).
+2.  **Refinement**: CPU HNSW graph filters tombstones and refines to top-k results.
+3.  **Fallback**: If GPU resources are exhausted or unavailable, the system seamlessly falls back to CPU-only search.
 
-1. **GPU Candidate Generation**: GPU performs brute-force search to find top-(k×10) candidates
-2. **CPU Refinement**: CPU HNSW graph filters tombstones and refines to top-k results
-3. **Automatic Fallback**: If GPU fails, seamlessly falls back to CPU-only
+---
 
-### Automatic Initialization
+## 2. ONNX Runtime & Inference
 
-- GPU index is initialized automatically when a dataset is created
-- If initialization fails, Longbow logs a warning and continues with CPU-only
-- No manual intervention required
+Longbow includes a high-performance ONNX runtime for re-ranking and embedding generation.
 
-## API Usage
+### Backends
+- **Metal Backend**: Optimized for Apple Silicon M1-M4. Uses native Metal Shaders for cross-encoder inference.
+- **CUDA Backend**: Optimized for NVIDIA RTX/A-series. Leverages the CUDA Execution Provider (EP).
+- **CPU Backend**: Scalable fallback using parallel thread pools.
 
-### Go Integration
+### Configuration
+Set the execution provider via `LONGBOW_ONNX_EP`:
+- `Metal`: Force Apple Silicon GPU.
+- `CUDA`: Force NVIDIA GPU.
+- `CPU`: Standard multi-threaded execution.
 
-```go
-import "github.com/23skdu/longbow/internal/gpu"
+---
 
-// Configuration
-cfg := gpu.GPUConfig{
-    Backend:       gpu.BackendCUDA,    // or BackendMetal, BackendCPU
-    DeviceID:      0,
-    Dimension:     128,
-    Enabled:       true,
-    SyncBatchSize: 1000,
-}
+## 3. Zero-Copy Networking: RDMA over RoCEv2
 
-// Create index with specific backend
-index, err := gpu.NewIndexWithBackend(cfg, gpu.BackendCUDA)
-if err != nil {
-    log.Fatal(err)
-}
-defer index.Close()
-```
+For large-scale ingestion and distributed search, Longbow implements **RDMA (Remote Direct Memory Access)** over RoCEv2.
 
-### Backend Detection
+### The Zero-Copy Pipeline
+RDMA allows clients to push Apache Arrow batches directly into GPU VRAM or NUMA-aligned CPU memory, bypassing the kernel network stack and host CPU.
+1.  **Handshake**: Negotiation over TCP/gRPC.
+2.  **Registration**: Server registers a Memory Region (MR) and provides a Remote Key (`RKey`).
+3.  **Direct Transfer**: Client uses `ibv_post_send` (RDMA Write) to push data directly into pre-allocated VRAM.
+4.  **Completion**: Server receives a notification and immediately triggers indexing/inference.
 
-```go
-// Detect available GPU backend
-backend := gpu.DetectGPUBackend()
-switch backend {
-case gpu.BackendCUDA:
-    log.Println("Using NVIDIA CUDA")
-case gpu.BackendMetal:
-    log.Println("Using Apple Metal")
-case gpu.BackendCPU:
-    log.Println("Using CPU fallback")
-}
-```
+### Prerequisites & Setup
+- **Hardware**: Mellanox (NVIDIA) ConnectX-4+ NICs.
+- **Drivers**: CUDA with GPUDirect RDMA or GDRCopy enabled.
+- **Enabling**: Set `LONGBOW_RDMA_ENABLED=true` and `LONGBOW_RDMA_INTERFACE` (e.g., `eth0`).
 
-### Search with GPU
+---
 
-```go
-// Search returns IDs and distances
-ids, distances, err := index.Search(query, k)
-if err != nil {
-    log.Fatal(err)
-}
+## 4. Performance Metrics
 
-for i := 0; i < len(ids); i++ {
-    log.Printf("ID: %d, Distance: %f", ids[i], distances[i])
-}
-```
-
-### GPU Memory Management
-
-```go
-// Create memory pool
-pool, err := gpu.NewGPUMemPool(gpu.BackendCUDA, 0)
-if err != nil {
-    log.Fatal(err)
-}
-defer pool.Close()
-
-// Monitor memory usage
-total, free, used := pool.GetUsedMemory(), pool.GetTotalMemory()
-log.Printf("GPU Memory: %d used / %d total", used, total)
-```
-
-## Recent Enhancements (v0.1.9)
-
-### Zero-Copy Tensor Streaming (PeerDirect)
-
-Added in v0.1.9-rc1: High-performance, zero-copy GPU-to-GPU tensor transfers over Arrow Flight.
-
-- **Technology**: Leverages RDMA (RoCEv2) and NVIDIA PeerDirect for direct VRAM-to-VRAM transfer.
-- **Protocol**: Handshake performed via Arrow Flight headers; payload streamed over direct memory links.
-- **Benefit**: Bypasses the host CPU and system RAM, reducing inference-stage latency by up to 80% for distributed workloads.
-
-### FP16 (Half-Precision) Metal Kernels
-
-### FP16 (Half-Precision) Metal Kernels
-
-Added in v0.1.8-rc1: Half-precision Metal compute shaders for memory-bandwidth-bound workloads:
-
-- `compute_l2_distances_fp16` - L2 distance with FP16 storage, FP32 accumulation
-- `compute_cosine_similarity_fp16` - Cosine similarity with FP16
-- `compute_dot_product_fp16` - Dot product with FP16
-
-Benefits: ~50% memory reduction, 2x faster for memory-bandwidth-bound operations.
-
-### SIMD/Warp-Level Reductions
-
-Added in v0.1.8-rc1: Warp-level parallel reductions using Apple Silicon's 32-thread warps:
-
-- `compute_l2_distances_warp` - Uses `simd_shuffle_down` for efficient warp reductions
-- `compute_l2_and_topk_warp` - Fused distance + top-k kernel
-
-Benefits: Reduced memory traffic, improved occupancy on Apple Silicon GPUs.
-
-### Multiple Index Types (CUDA)
-
-CUDA backend via FAISS supports multiple index types:
-
-- **Flat** - Brute-force exact search (fastest for small datasets)
-- **IVF-Flat** - Inverted File with flat quantization (balanced)
-- **IVF-PQ** - IVF with Product Quantization (compressed, large datasets)
-
-### Memory Pooling
-
-Cross-backend GPU memory pooling implemented in `internal/gpu/memory/memory_pool.go`:
-
-- Small buffer pool (≤64KB) for frequent allocations
-- Large buffer pool for bulk operations
-- Automatic hit/miss tracking
-
-## Performance Considerations
-
-### When to Use GPU
-
-**Good for:**
-- Large datasets (>100K vectors)
-- High-dimensional vectors (>128 dimensions)
-- Batch search operations
-- Dedicated GPU hardware available
-
-**Not recommended for:**
-- Small datasets (<10K vectors)
-- Low-dimensional vectors (<64 dimensions)
-- Single-query workloads
-- Shared GPU resources
-
-### Optimal Vector Dimensions
-
-GPU acceleration is most effective for:
-
-| Dimensions | Expected Speedup |
-|-----------|-----------------|
-| 128-512 | 2-5x |
-| 512-1536 | 5-15x |
-| 1536+ | 10-50x |
-
-### Memory Management
-
-- GPU memory is limited compared to system RAM
-- Each index consumes GPU memory proportional to dataset size
-- Monitor with `longbow_gpu_memory_bytes` metric
-
-## Troubleshooting
-
-### GPU Initialization Failed
-
-```
-WARN  GPU initialization failed, using CPU-only  error="failed to initialize GPU resources"
-```
-
-**Causes:**
-- CUDA not installed or misconfigured
-- GPU device not available
-- Insufficient GPU memory
-- Wrong `GPU_DEVICE_ID`
-
-**Solution:** Longbow automatically falls back to CPU. Check CUDA installation and GPU availability.
-
-### Build Errors
-
-```
-undefined: gpu.NewIndexWithConfig
-```
-
-**Cause:** Building without `-tags=gpu` but GPU code is referenced.
-
-**Solution:** Either build with `-tags=gpu` or ensure `GPU_ENABLED=false`.
-
-### CUDA Version Mismatch
-
-```
-version `CUDA_X.Y' not found
-```
-
-**Cause:** FAISS compiled with different CUDA version than runtime.
-
-**Solution:** Rebuild FAISS with matching CUDA version or update CUDA runtime.
-
-### Metal Issues
-
-**Error: "Metal framework not found"**
-- Ensure macOS 12.0 or higher
-- Verify Metal support: `system_profiler SPDisplaysDataType`
-
-**Error: "Metal initialization failed"**
-- Check that you're running on Apple Silicon (not Intel Mac)
-- Verify Xcode Command Line Tools are installed
-
-## Performance Benchmarks
-
-See [Performance Documentation](performance.md) for detailed benchmarks comparing CPU vs Metal vs CUDA performance across all supported data types.
-
-## Future Enhancements
-
-- [ ] GPU-accelerated index building (HNSW construction)
-- [ ] Multi-GPU support for large indexes
-- [ ] cuVS/Tensor Core paths for CUDA FP16
-- [ ] SoA memory layout optimization
-
-## Changelog
-
-| Version | Changes |
-|---------|---------|
-| v0.1.9 | Zero-Copy Tensor Streaming (PeerDirect), Zero-Copy Ingest, CUDA Reranker stabilization |
-| v0.1.8 | FP16 Metal kernels, SIMD/warp reductions, memory pooling, IVF-PQ |
-| v0.1.7 | Hybrid GPU/CPU search, circuit breaker |
-| v0.1.6 | Metal GPU support, CUDA FAISS integration |
-
-## References
-
-- [FAISS GPU Documentation](https://github.com/facebookresearch/faiss/wiki/Faiss-on-the-GPU)
-- [CUDA Installation Guide](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/)
-- [Apple Metal Performance Shaders](https://developer.apple.com/documentation/metalperformanceshaders)
+Monitor hardware acceleration via the following Prometheus metrics:
+- `longbow_gpu_memory_bytes`: GPU VRAM utilization.
+- `longbow_onnx_inference_duration_seconds`: Inference latency by backend.
+- `longbow_rdma_bytes_received_total`: Data volume moved via zero-copy RDMA.

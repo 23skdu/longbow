@@ -1,79 +1,80 @@
+# Build artifacts
+longbow
+longbow-server
+longbow-gpu
+longbow_metal
+longbow_bin
+longbow_local
+server
+bin/
+build/
+dist/
+longbow_server
+bench-tool
+benchtool
+cmd/longbow/longbow
+cmd/soak_test/soak_test
 
+# Data and snapshots
+data/
+data*/
+*.parquet
+**/snapshots/*.parquet
+internal/store/wal.bin
+
+# Test and coverage artifacts
+*.test
+*test.out
+concurrent_race.txt
+core.out
+coverage.html
+coverage.out
+coverage.txt
+memory.test
+metrics.out
+race_report*.txt
+reports/
+test_results.txt
+types.test
+store.test
+simd.out
+soak_test
+
+# Python and Environment
+__pycache__/
+*.py[codz]
+*$py.class
+.venv/
+venv/
+scripts/venv/
+.python-version
+.env*
+.ruff_cache/
+
+# IDE and System
+.idea/
+.vscode/
+.DS_Store
+
+# Logs and Reports
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+benchmark_results/
+benchmark_results*.json
+perf_*.json
+perf_summary.md
+results_*.json
+
+# Node.js
+node_modules/
+.npm-cache/
+
+# Git and Config
 !.docker/config.json
 !.gitlab-ci.yml
 !bin/.gitkeep
 !clients/**/*.json
 !grafana/**/*.json
 !longbowclientsdk/**/*
-# Backup files
-# Build artifacts
-# Build tools
-# Byte-compiled / optimized / DLL files
-# C extensions
-# Go workspace
-# IDE and System
-# Logs and Reports
-# Node.js
-# Profiling
-*$py.class
-*.a
-*.bak
-*.bin
-*.json
-*.log
-*.o
-*.pprof
-*.prof
-*.py[codz]
-*.so
-*.test
-*test.out
-.DS_Store
-.env*
-.idea/
-.npm-cache/
-.python-version
-.ruff_cache/
-.venv/
-.vscode/
-1,
-__pycache__/
-bench-tool
-benchmark_results*.json
-benchmark_results/
-benchtool
-bin/
-bin/*
-build/
-concurrent_race.txt
-core.out
-coverage.html
-coverage.out
-data*/
-dist/
-go.work
-go.work.sum
-internal/store/wal.bin
-logs/
-longbow
-longbow-server
-longbow_bin
-longbow_metal
-longbow_server
-memory.test
-metrics.out
-node_modules/
-npm-debug.log*
-perf_*.json
-perf_summary.md
-race_report*.txt
-reports/
-results_*.json
-scripts/venv/
-simd.out
-soak_test
-store.test
-test_results.txt
-types.test
-venv/
-yarn-debug.log*

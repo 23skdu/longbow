@@ -997,13 +997,12 @@ func euclideanInt8AVX2(a, b []int8) (float32, error) {
 	if len(a) != len(b) {
 		return 0, errors.New("simd: length mismatch")
 	}
-	if !features.HasAVX2 {
-		return 0, errors.New("avx2 not supported")
+	var sum float64
+	for i := range a {
+		diff := float64(a[i]) - float64(b[i])
+		sum += diff * diff
 	}
-	if len(a) == 0 {
-		return 0, nil
-	}
-	return euclideanInt8Unrolled4xAVX2Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a)), nil
+	return float32(math.Sqrt(sum)), nil
 }
 
 // =============================================================================
@@ -1014,11 +1013,10 @@ func euclideanInt16AVX2(a, b []int16) (float32, error) {
 	if len(a) != len(b) {
 		return 0, errors.New("simd: length mismatch")
 	}
-	if !features.HasAVX2 {
-		return 0, errors.New("avx2 not supported")
+	var sum float64
+	for i := range a {
+		diff := float64(a[i]) - float64(b[i])
+		sum += diff * diff
 	}
-	if len(a) == 0 {
-		return 0, nil
-	}
-	return euclideanInt16AVX2Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a)), nil
+	return float32(math.Sqrt(sum)), nil
 }

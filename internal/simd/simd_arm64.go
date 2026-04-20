@@ -5,6 +5,8 @@ package simd
 import (
 	"errors"
 	"math"
+
+	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
 // ARM64 NEON implementations
@@ -33,7 +35,6 @@ func vectorButterflyNEONKernel(a, b []float32)
 //go:noescape
 func vectorButterfly16NEONKernel(a, b []float32)
 
-/*
 //go:noescape
 func euclideanF16NEONKernel(a, b []float16.Num) float32
 
@@ -42,7 +43,6 @@ func dotF16NEONKernel(a, b []float16.Num) float32
 
 //go:noescape
 func cosineF16NEONKernel(a, b []float16.Num) float32
-*/
 
 // Public Go wrappers (with error propagation)
 
@@ -131,6 +131,36 @@ func cosineNEON(a, b []float32) (float32, error) {
 		return 1.0, nil
 	}
 	return 1.0 - (dot / float32(math.Sqrt(float64(normA)*float64(normB)))), nil
+}
+
+func euclideanF16NEON(a, b []float16.Num) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	return euclideanF16NEONKernel(a, b), nil
+}
+
+func dotF16NEON(a, b []float16.Num) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	return dotF16NEONKernel(a, b), nil
+}
+
+func cosineF16NEON(a, b []float16.Num) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	if len(a) == 0 {
+		return 1.0, nil
+	}
+	return cosineF16NEONKernel(a, b), nil
 }
 
 /*

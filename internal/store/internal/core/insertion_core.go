@@ -82,21 +82,11 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 	if needsStructuralChange {
 		h.growMu.RUnlock()
 	} else {
-		h.growMu.RUnlock()
-		currentData := h.data.Load()
-		if currentData != data {
-			data = currentData
-			dims = int(h.dims.Load())
-			needsStructuralChange = data == nil || int(id) >= data.Capacity || dims == 0 || data.NeedsChunk(int(cID))
-			if needsStructuralChange {
-				h.growMu.Lock()
-				defer h.growMu.Unlock()
-				goto do_grow
-			}
-		}
+		// Keep RLock for the duration of insertion to protect graph structure
+		defer h.growMu.RUnlock()
 	}
 
-do_grow:
+
 	if needsStructuralChange {
 		if dims == 0 {
 			inputDims := 0
@@ -135,28 +125,36 @@ do_grow:
 			}
 		}
 
+		h.growMu.Lock()
 		currData := h.data.Load()
 		currDims := int(h.dims.Load())
+		
 		if currData == nil || int(id) >= currData.Capacity {
 			newCap := int(id) + 1
 			if currData != nil && currData.Capacity > 0 {
 				newCap = max(int(id)+1, currData.Capacity*2)
-				// Align capacity to optimal chunk sizes to prevent fragmentation
 				newCap = (newCap + types.ChunkSize - 1) & ^(types.ChunkSize - 1)
 			}
-			if err := h.Grow(newCap, currDims); err != nil {
+			if err := h.growInternal(newCap, currDims); err != nil {
+				h.growMu.Unlock()
 				return fmt.Errorf("failed to grow for ID %d: %w", id, err)
 			}
 		}
 
 		var err error
-		_, err = h.ensureChunk(h.data.Load(), cID, cOff, currDims)
+		_, err = h.ensureChunkInternal(cID, cOff, currDims)
 		if err != nil {
+			h.growMu.Unlock()
 			return err
 		}
 
 		data = h.data.Load()
 		dims = int(h.dims.Load())
+		
+		// Downgrade to RLock for the rest of insertion
+		h.growMu.Unlock()
+		h.growMu.RLock()
+		defer h.growMu.RUnlock()
 	}
 
 	currentData := h.data.Load()

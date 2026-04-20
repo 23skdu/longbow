@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 	"github.com/23skdu/longbow/internal/onnx"
+	"github.com/23skdu/longbow/internal/metrics"
 )
 
 type EmbeddingGenerator interface {
@@ -745,18 +746,12 @@ func (m *onnxEmbeddingModel) Inference(input []string) ([][]float32, error) {
 		m.session = session
 	}
 
-	results := make([][]float32, len(input))
-	for i, text := range input {
-		// Embeddings typically use the Score method or similar with single input
-		// Real implementation would use Mean Pooling on hidden states
-		score, err := m.session.Score(context.Background(), text, []string{text})
-		if err != nil {
-			return nil, err
-		}
-		results[i] = score
-	}
+	start := time.Now()
+	defer func() {
+		metrics.EmbeddingGenerationDurationSeconds.WithLabelValues("local", "onnx").Observe(time.Since(start).Seconds())
+	}()
 
-	return results, nil
+	return m.session.Embed(context.Background(), input)
 }
 
 func (m *onnxEmbeddingModel) Close() error {

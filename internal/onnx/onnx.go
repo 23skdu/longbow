@@ -2,16 +2,16 @@
 // +build onnx
 
 package onnx
-
 import (
 	"context"
 	"fmt"
+	"math"
 	"os"
 	"runtime"
-	"strings"
 	"sync"
 
 	"github.com/23skdu/longbow/internal/onnx/metal"
+	"github.com/23skdu/longbow/internal/ml"
 	ort "github.com/yalue/onnxruntime_go"
 )
 
@@ -56,6 +56,7 @@ func Init() error {
 type Session struct {
 	ortSession  *ort.DynamicAdvancedSession
 	metalEngine *metal.Engine
+	tokenizer   *ml.Tokenizer
 	isMetal     bool
 	inputNames  []string
 	outputNames []string
@@ -107,6 +108,12 @@ func NewSession(modelPath string) (*Session, error) {
 		isMetal:    false,
 	}
 
+	// Initialize tokenizer with default search paths
+	tokenizer, err := ml.NewTokenizer("vocab.txt", 512)
+	if err == nil {
+		s.tokenizer = tokenizer
+	}
+
 	s.inputNames = inputNames
 	s.outputNames = outputNames
 
@@ -136,19 +143,22 @@ func (s *Session) Score(ctx context.Context, query string, docs []string) ([]flo
 	// if we don't have a tokenizer integrated yet.
 	// But to make it "work" in a way that doesn't crash:
 	
-	// Assume max seq len 512
+	// Tokenization using real WordPiece logic
 	maxLen := 512
 	inputIds := make([]int64, numDocs*maxLen)
 	mask := make([]int64, numDocs*maxLen)
 	
-	// Very basic whitespace "tokenizer" for demo purposes
 	for i, doc := range docs {
 		combined := query + " " + doc
-		words := strings.Fields(combined)
-		for j := 0; j < len(words) && j < maxLen; j++ {
-			inputIds[i*maxLen+j] = int64(len(words[j])) // Mock ID
-			mask[i*maxLen+j] = 1
+		var ids, attn []int64
+		if s.tokenizer != nil {
+			ids, attn = s.tokenizer.Encode(combined)
+		} else {
+			ids = make([]int64, maxLen)
+			attn = make([]int64, maxLen)
 		}
+		copy(inputIds[i*maxLen:], ids)
+		copy(mask[i*maxLen:], attn)
 	}
 
 	// Create tensors
@@ -207,6 +217,160 @@ func (s *Session) Score(ctx context.Context, query string, docs []string) ([]flo
 	
 	scoresTensor := outputs[0].(*ort.Tensor[float32])
 	return scoresTensor.GetData(), nil
+}
+
+// Embed generates embeddings for the provided texts using transformer mean pooling.
+func (s *Session) Embed(ctx context.Context, texts []string) ([][]float32, error) {
+	if s.isMetal {
+		// Assume metal engine already handles pooling or we provide a metal implementation
+		return s.metalEngine.Embed(ctx, texts)
+	}
+
+	if s.ortSession == nil {
+		return nil, fmt.Errorf("session not initialized")
+	}
+
+	numTexts := len(texts)
+	if numTexts == 0 {
+		return [][]float32{}, nil
+	}
+
+	// Tokenization using real WordPiece logic
+	maxLen := 512
+	inputIds := make([]int64, numTexts*maxLen)
+	mask := make([]int64, numTexts*maxLen)
+	
+	for i, text := range texts {
+		var ids, attn []int64
+		if s.tokenizer != nil {
+			ids, attn = s.tokenizer.Encode(text)
+		} else {
+			// Fallback if no tokenizer
+			ids = make([]int64, maxLen)
+			attn = make([]int64, maxLen)
+		}
+		copy(inputIds[i*maxLen:], ids)
+		copy(mask[i*maxLen:], attn)
+	}
+
+	shape := []int64{int64(numTexts), int64(maxLen)}
+	inputTensor, _ := ort.NewTensor(shape, inputIds)
+	maskTensor, _ := ort.NewTensor(shape, mask)
+	defer inputTensor.Destroy()
+	defer maskTensor.Destroy()
+
+	inputValues := map[string]ort.Value{
+		"input_ids":      inputTensor,
+		"attention_mask": maskTensor,
+	}
+	
+	// Add token_type_ids
+	ttKey := ""
+	for _, name := range s.inputNames {
+		if name == "token_type_ids" {
+			ttKey = name
+			break
+		}
+	}
+	if ttKey != "" {
+		tokenTypeIds := make([]int64, numTexts*maxLen)
+		ttTensor, _ := ort.NewTensor(shape, tokenTypeIds)
+		defer ttTensor.Destroy()
+		inputValues[ttKey] = ttTensor
+	}
+
+	inputs := make([]ort.Value, 0, len(inputValues))
+	for _, name := range s.inputNames {
+		if v, ok := inputValues[name]; ok {
+			inputs = append(inputs, v)
+		}
+	}
+
+	outputs := make([]ort.Value, len(s.outputNames))
+	if err := s.ortSession.Run(inputs, outputs); err != nil {
+		return nil, err
+	}
+	defer func() {
+		for _, v := range outputs {
+			if v != nil {
+				v.Destroy()
+			}
+		}
+	}()
+
+	// Apply mean pooling on 'last_hidden_state' (usually index 0 or 1 depending on model)
+	// We'll search for an output with shape [batch, seq, dims]
+	var hiddenStates []float32
+	var outputShape []int64
+	for _, out := range outputs {
+		if out == nil {
+			continue
+		}
+		t := out.(*ort.Tensor[float32])
+		sh := t.GetShape()
+		if len(sh) == 3 {
+			outputShape = sh
+			hiddenStates = t.GetData()
+			break
+		}
+	}
+
+	if hiddenStates == nil {
+		// Fallback: use first output and assume it might already be pooled or just use it
+		t := outputs[0].(*ort.Tensor[float32])
+		vals := t.GetData()
+		res := make([][]float32, numTexts)
+		dim := len(vals) / numTexts
+		for i := 0; i < numTexts; i++ {
+			res[i] = vals[i*dim : (i+1)*dim]
+		}
+		return res, nil
+	}
+
+	return s.meanPooling(hiddenStates, mask, outputShape), nil
+}
+
+func (s *Session) meanPooling(hiddenStates []float32, mask []int64, shape []int64) [][]float32 {
+	batchSize := int(shape[0])
+	seqLen := int(shape[1])
+	dim := int(shape[2])
+
+	results := make([][]float32, batchSize)
+	for i := 0; i < batchSize; i++ {
+		pooled := make([]float32, dim)
+		sumMask := float32(0)
+
+		for j := 0; j < seqLen; j++ {
+			m := float32(mask[i*seqLen+j])
+			if m == 0 {
+				continue
+			}
+			sumMask += m
+			for k := 0; k < dim; k++ {
+				pooled[k] += hiddenStates[i*seqLen*dim+j*dim+k] * m
+			}
+		}
+
+		if sumMask > 0 {
+			for k := 0; k < dim; k++ {
+				pooled[k] /= sumMask
+			}
+		}
+
+		// L2 Normalization
+		norm := float32(0)
+		for k := 0; k < dim; k++ {
+			norm += pooled[k] * pooled[k]
+		}
+		norm = float32(math.Sqrt(float64(norm)))
+		if norm > 0 {
+			for k := 0; k < dim; k++ {
+				pooled[k] /= norm
+			}
+		}
+		results[i] = pooled
+	}
+	return results
 }
 
 func (s *Session) Close() error {

@@ -1,0 +1,98 @@
+=== RUN   TestArrowHNSW_AddBatch_Concurrent
+==================
+WARNING: DATA RACE
+Write at 0x00c0001f6070 by goroutine 651:
+  github.com/23skdu/longbow/internal/store/internal/core_test.TestArrowHNSW_AddBatch_Concurrent.func1()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/hnsw_batch_modification_test.go:110 +0x2f0
+  github.com/23skdu/longbow/internal/store/internal/core_test.TestArrowHNSW_AddBatch_Concurrent.gowrap1()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/hnsw_batch_modification_test.go:132 +0x38
+
+Previous read at 0x00c0001f6070 by goroutine 652:
+  github.com/23skdu/longbow/internal/store/internal/core_test.TestArrowHNSW_AddBatch_Concurrent.func1()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/hnsw_batch_modification_test.go:110 +0x26c
+  github.com/23skdu/longbow/internal/store/internal/core_test.TestArrowHNSW_AddBatch_Concurrent.gowrap1()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/hnsw_batch_modification_test.go:132 +0x38
+
+Goroutine 651 (running) created at:
+  github.com/23skdu/longbow/internal/store/internal/core_test.TestArrowHNSW_AddBatch_Concurrent()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/hnsw_batch_modification_test.go:98 +0x1dc
+  testing.tRunner()
+      /opt/homebrew/Cellar/go/1.26.2/libexec/src/testing/testing.go:2036 +0x164
+  testing.(*T).Run.gowrap1()
+      /opt/homebrew/Cellar/go/1.26.2/libexec/src/testing/testing.go:2101 +0x34
+
+Goroutine 652 (running) created at:
+  github.com/23skdu/longbow/internal/store/internal/core_test.TestArrowHNSW_AddBatch_Concurrent()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/hnsw_batch_modification_test.go:98 +0x1dc
+  testing.tRunner()
+      /opt/homebrew/Cellar/go/1.26.2/libexec/src/testing/testing.go:2036 +0x164
+  testing.(*T).Run.gowrap1()
+      /opt/homebrew/Cellar/go/1.26.2/libexec/src/testing/testing.go:2101 +0x34
+==================
+==================
+WARNING: DATA RACE
+Read at 0x00c00011a040 by goroutine 653:
+  runtime.growslice()
+      /opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/slice.go:178 +0x0
+  github.com/23skdu/longbow/internal/store/internal/core_test.TestArrowHNSW_AddBatch_Concurrent.func1()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/hnsw_batch_modification_test.go:110 +0x298
+  github.com/23skdu/longbow/internal/store/internal/core_test.TestArrowHNSW_AddBatch_Concurrent.gowrap1()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/hnsw_batch_modification_test.go:132 +0x38
+
+Previous write at 0x00c00011a040 by goroutine 652:
+  github.com/23skdu/longbow/internal/store/internal/core_test.TestArrowHNSW_AddBatch_Concurrent.func1()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/hnsw_batch_modification_test.go:110 +0x2b4
+  github.com/23skdu/longbow/internal/store/internal/core_test.TestArrowHNSW_AddBatch_Concurrent.gowrap1()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/hnsw_batch_modification_test.go:132 +0x38
+
+Goroutine 653 (running) created at:
+  github.com/23skdu/longbow/internal/store/internal/core_test.TestArrowHNSW_AddBatch_Concurrent()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/hnsw_batch_modification_test.go:98 +0x1dc
+  testing.tRunner()
+      /opt/homebrew/Cellar/go/1.26.2/libexec/src/testing/testing.go:2036 +0x164
+  testing.(*T).Run.gowrap1()
+      /opt/homebrew/Cellar/go/1.26.2/libexec/src/testing/testing.go:2101 +0x34
+
+Goroutine 652 (running) created at:
+  github.com/23skdu/longbow/internal/store/internal/core_test.TestArrowHNSW_AddBatch_Concurrent()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/hnsw_batch_modification_test.go:98 +0x1dc
+  testing.tRunner()
+      /opt/homebrew/Cellar/go/1.26.2/libexec/src/testing/testing.go:2036 +0x164
+  testing.(*T).Run.gowrap1()
+      /opt/homebrew/Cellar/go/1.26.2/libexec/src/testing/testing.go:2101 +0x34
+==================
+==================
+WARNING: DATA RACE
+Write at 0x00c0001f6070 by goroutine 653:
+  github.com/23skdu/longbow/internal/store/internal/core_test.TestArrowHNSW_AddBatch_Concurrent.func1()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/hnsw_batch_modification_test.go:110 +0x2f0
+  github.com/23skdu/longbow/internal/store/internal/core_test.TestArrowHNSW_AddBatch_Concurrent.gowrap1()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/hnsw_batch_modification_test.go:132 +0x38
+
+Previous read at 0x00c0001f6070 by goroutine 651:
+  github.com/23skdu/longbow/internal/store/internal/core_test.TestArrowHNSW_AddBatch_Concurrent.func1()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/hnsw_batch_modification_test.go:111 +0x32c
+  github.com/23skdu/longbow/internal/store/internal/core_test.TestArrowHNSW_AddBatch_Concurrent.gowrap1()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/hnsw_batch_modification_test.go:132 +0x38
+
+Goroutine 653 (running) created at:
+  github.com/23skdu/longbow/internal/store/internal/core_test.TestArrowHNSW_AddBatch_Concurrent()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/hnsw_batch_modification_test.go:98 +0x1dc
+  testing.tRunner()
+      /opt/homebrew/Cellar/go/1.26.2/libexec/src/testing/testing.go:2036 +0x164
+  testing.(*T).Run.gowrap1()
+      /opt/homebrew/Cellar/go/1.26.2/libexec/src/testing/testing.go:2101 +0x34
+
+Goroutine 651 (running) created at:
+  github.com/23skdu/longbow/internal/store/internal/core_test.TestArrowHNSW_AddBatch_Concurrent()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/hnsw_batch_modification_test.go:98 +0x1dc
+  testing.tRunner()
+      /opt/homebrew/Cellar/go/1.26.2/libexec/src/testing/testing.go:2036 +0x164
+  testing.(*T).Run.gowrap1()
+      /opt/homebrew/Cellar/go/1.26.2/libexec/src/testing/testing.go:2101 +0x34
+==================
+    testing.go:1712: race detected during execution of test
+--- FAIL: TestArrowHNSW_AddBatch_Concurrent (0.62s)
+FAIL
+FAIL	github.com/23skdu/longbow/internal/store/internal/core	1.123s
+FAIL

@@ -167,7 +167,9 @@ func (h *ArrowHNSW) selectNeighbors(ctx *ArrowSearchContext, candidates []types.
 			// Diversity Heuristic check: Loosen for SQ8 to allow more edges
 			threshold := cand.Dist
 			if h.config.SQ8Enabled {
-				threshold *= 1.2 // Allow 20% closer neighbors before pruning
+				threshold *= 1.5 // Relax pruning more for SQ8/Bulk to ensure connectivity
+			} else {
+				threshold *= 1.2 // Baseline relaxation for bulk paths
 			}
 
 			if err == nil && d > 0 && d < threshold {

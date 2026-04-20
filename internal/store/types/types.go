@@ -153,6 +153,14 @@ type SearchOptions struct {
 	TurboQuantBits int            // Bit depth for TurboQuant search (4, 8)
 }
 
+// DefaultSearchOptions returns SearchOptions with production defaults.
+func DefaultSearchOptions() SearchOptions {
+	return SearchOptions{
+		Ef:          50,
+		Consistency: "eventual",
+	}
+}
+
 // FilterExpr is the AST node interface for evaluating complex boolean nesting conditions.
 type FilterExpr interface {
 	Evaluate(metadata map[string]interface{}) bool

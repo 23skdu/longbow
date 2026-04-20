@@ -8,7 +8,7 @@ import (
 	"runtime"
 	"slices"
 	"strconv"
-	"sync/atomic"
+
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -379,6 +379,9 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 					vec:   v,
 				}
 
+				// Mandatory location registration for HNSW navigator
+				h.SetLocation(types.VectorID(id), types.Location{BatchIdx: 0, RowIdx: int(id)})
+
 				// Init levels chunk if needed
 				levelsChunk := data.GetLevelsChunk(cID)
 				if levelsChunk != nil {
@@ -390,9 +393,11 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 	}
 
 	if err := gPrep.Wait(); err != nil {
-
 		return err
 	}
+
+	// Update node count BEFORE discovery/linkage so internal checks permit these IDs
+	h.nodeCount.Add(int64(n))
 
 	// 2. Global Entry Point
 	// We start search from the current global entry point.
@@ -427,19 +432,12 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 
 	// Deferred Connection Pipeline (Phase 15 Implementation)
 	// ----------------------------------------------------
-	// We replace the phased approach (Link -> Wait -> Reverse) with a fully parallel pipeline.
-	// Producers (gLink) compute neighbors and add Forward connections immediately.
-	// They also Push Reverse connections to Sharded Lock-Free Ring Buffers.
-	// Consumers (gRev) drain the rings and apply Reverse connections concurrently.
 
-	// Constants
-	numShards := ShardedLockCount
-	ringSize := uint64(4096) // Capacity per shard ring
 
-	// Initialize Rings
-	rings := make([]*LockFreeRingBuffer[linkageUpdate], numShards)
-	for i := 0; i < numShards; i++ {
-		rings[i] = NewLockFreeRingBuffer[linkageUpdate](ringSize)
+	// 2.5 Pre-Promote all nodes in the batch to ensure chunks are allocated
+	// and mutable before parallel linkage starts. This avoids COW races.
+	for i := 0; i < n; i++ {
+		data = h.promoteNode(data, startID+uint32(i))
 	}
 
 	for lc := topL; lc >= 0; lc-- {
@@ -478,6 +476,7 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 				end = len(activeIndices)
 			}
 			indices := activeIndices[i:end]
+			workerData := data // Capture stable pointer for this layer
 
 			gLayer.Go(func() error {
 				// Thread-local context
@@ -491,7 +490,7 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 
 					if lc > node.level {
 						// Descent phase: ef=1
-						res, err := h.searchLayerForInsert(ctx, ctxSearch, node.vec, currEp, 1, lc, data)
+						res, err := h.searchLayerForInsert(ctx, ctxSearch, node.vec, currEp, 1, lc, workerData)
 						if err != nil {
 							return err
 						}
@@ -506,18 +505,16 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 							ef = h.getAdaptiveEf(int(h.nodeCount.Load()))
 						}
 
-						res, err := h.searchLayerForInsert(ctx, ctxSearch, node.vec, currEp, ef, lc, data)
+						res, err := h.searchLayerForInsert(ctx, ctxSearch, node.vec, currEp, ef, lc, workerData)
 						if err != nil {
 							return err
 						}
 						// Store candidates (make copy as ctx is reused)
 						// searchLayerForInsert returns slice from ctx.scratchResults
 						// Store candidates (using pool to avoid per-node allocation)
-						pBuf := h.candidatePool.Get().(*[]types.Candidate)
-						*pBuf = (*pBuf)[:0]
-						for _, r := range res {
-							*pBuf = append(*pBuf, r)
-						}
+						pBuf := new([]types.Candidate)
+						*pBuf = make([]types.Candidate, 0, len(res))
+						*pBuf = append(*pBuf, res...)
 						graphCandidates[idx] = pBuf
 
 						// Update ep for next layer
@@ -536,14 +533,9 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 		// 3b. Intra-Batch Matching (Blocked Matrix Multiplication)
 		// ... (Same logic, relying on graphCandidates pre-alloc) ...
 
-		// Optimization: Only do this for L <= node.level
-		insertingIndices := make([]int, 0, len(activeIndices))
-		for _, idx := range activeIndices {
-			if activeNodes[idx].level >= lc {
-				insertingIndices = append(insertingIndices, idx)
-			}
-		}
-
+		// Intra-batch matching: find neighbors among the nodes in this batch
+		// that are active at this layer.
+		insertingIndices := activeIndices
 		numNew := len(insertingIndices)
 		if numNew > 1 {
 			// Distance Matrix Allocation Removed to Optimize Memory.
@@ -731,204 +723,99 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 			}
 		}
 
-		// 3c. Linkage (Pipeline)
-		// Launch Consumers First
-		producersDone := atomic.Bool{}
-		producersDone.Store(false)
-
-		gRev, _ := errgroup.WithContext(ctx)
-		// Consumers: 1 per CPU core, processing shards of rings
-		numConsumers := runtime.NumCPU()
-		gRev.SetLimit(numConsumers)
-
-		for workerID := 0; workerID < numConsumers; workerID++ {
-			workerID := workerID
-			gRev.Go(func() error {
-				// Each worker handles slices: i, i+numConsumers, i+2*numConsumers...
-				// Efficient sharding
-
-				ctxSearch := h.searchPool.Get() // Removed type assertion
-				ctxSearch.Reset()
-				defer h.searchPool.PutWithMetrics(ctxSearch, h.config.DataType.String(), strconv.Itoa(int(h.dims.Load())))
-
-				maxConn := h.mMax
-				if lc == 0 {
-					maxConn = h.mMax0
-				}
-
-				// Reusable batch buffers
-				const batchSize = 64
-				var curTarget uint32
-				curSources := make([]uint32, 0, batchSize)
-				curDists := make([]float32, 0, batchSize)
-
-				flush := func() {
-					if len(curSources) > 0 {
-						data = h.AddConnectionsBatch(ctxSearch, data, curTarget, curSources, curDists, lc, maxConn)
-						curSources = curSources[:0]
-						curDists = curDists[:0]
-					}
-				}
-
-				// Loop until completed
-				defer func() {
-					if r := recover(); r != nil {
-						// h.config.Logger.Error().Interface("panic", r).Msg("Panic in HNSW bulk reverse writer")
-						// Simplified logging to avoid interface issues
-						fmt.Printf("Panic in HNSW bulk reverse writer: %v\n", r)
-					}
-				}()
-
-				for {
-					anyWork := false
-
-					// Iterate assigned rings
-					for rIdx := workerID; rIdx < numShards; rIdx += numConsumers {
-						ring := rings[rIdx]
-
-						// Drain ring completely
-						for {
-							up, ok := ring.Pop()
-							if !ok {
-								break
-							}
-							anyWork = true
-
-							// Batch logic
-							if len(curSources) > 0 {
-								if up.target != curTarget || len(curSources) >= batchSize {
-									flush()
-								}
-							}
-							curTarget = up.target
-							curSources = append(curSources, up.source)
-							curDists = append(curDists, up.dist)
-						}
-					}
-
-					flush() // Ensure flushed after drain cycle
-
-					if !anyWork {
-						if producersDone.Load() {
-							// Check one last time to ensure no race where producer pushed just before setting done
-							// Actually atomic store gives happens-before?
-							// A simple double check is safe.
-							stillEmpty := true
-							for rIdx := workerID; rIdx < numShards; rIdx += numConsumers {
-								if rings[rIdx].Len() > 0 {
-									stillEmpty = false
-									break
-								}
-							}
-							if stillEmpty {
-								return nil
-							}
-						} else {
-							runtime.Gosched()
-						}
-					}
-				}
-			})
-		}
-
-		// Producers (gLink)
-		gLink, _ := errgroup.WithContext(ctx)
-		gLink.SetLimit(runtime.GOMAXPROCS(0)) /**/
-
-		for i := 0; i < len(activeIndices); i += chunkSize {
-			// Capture range
-			end := i + chunkSize
-			if end > len(activeIndices) {
-				end = len(activeIndices)
-			}
-			indices := activeIndices[i:end]
-
-			gLink.Go(func() error {
-
-				ctxSearch := h.searchPool.Get() // Removed type assertion
-				ctxSearch.Reset()
-				defer h.searchPool.PutWithMetrics(ctxSearch, h.config.DataType.String(), strconv.Itoa(int(h.dims.Load())))
-
-				for _, idx := range indices {
-					node := activeNodes[idx]
-					// Only connect if insertion phase
-					if lc > node.level {
-						continue
-					}
-
-
-					candidatesBuf := graphCandidates[idx]
-					if candidatesBuf == nil {
-						continue
-					}
-					candidates := *candidatesBuf
-
-					// Determine M
-					m := h.m
-					maxConn := h.mMax
-					if lc == 0 {
-						m = h.m * 2
-						maxConn = h.mMax0
-					}
-					if m > maxConn {
-						m = maxConn
-					}
-
-					// Select Neighbors (Robust Prune)
-					slices.SortFunc(candidates, func(a, b types.Candidate) int {
-						if a.Dist < b.Dist {
-							return -1
-						}
-						if a.Dist > b.Dist {
-							return 1
-						}
-						return 0
-					})
-
-					neighbors := h.selectNeighbors(ctxSearch, candidates, m, data)
-
-					// 1. Forward Connections (Push to Ring for Isolation)
-					// We push our neighbors to the ring targeting OURSELVES.
-					// This ensures all updates for node.id are serialized by node.id % numShards worker.
-					for _, neighbor := range neighbors {
-						targetID := node.id
-						shardID := targetID % uint32(numShards)
-						h.pushLinkageUpdate(ctx, rings[shardID], linkageUpdate{target: targetID, source: neighbor.ID, dist: neighbor.Dist})
-					}
-
-					// 2. Reverse Connections (Push to Ring)
-					for _, neighbor := range neighbors {
-						targetID := neighbor.ID
-						shardID := targetID % uint32(numShards)
-						h.pushLinkageUpdate(ctx, rings[shardID], linkageUpdate{target: targetID, source: node.id, dist: neighbor.Dist})
-					}
-				}
-				return nil
-			})
-		}
-
-		// Wait for producers
-		if err := gLink.Wait(); err != nil {
-			return err
-		}
-
-		// Signal consumers
-		producersDone.Store(true)
-
-		// Wait for consumers
-		if err := gRev.Wait(); err != nil {
-			return err
-		}
-
-		// Return pooled candidate buffers
+		// 3b.5 Pre-Promote all candidates to ensure pointer stability during parallel linkage.
+		// Avoids COW cloning races inside workers.
 		for _, idx := range activeIndices {
-			if graphCandidates[idx] != nil {
-				h.candidatePool.Put(graphCandidates[idx])
-				graphCandidates[idx] = nil
+			if buf := graphCandidates[idx]; buf != nil {
+				for _, c := range *buf {
+					data = h.promoteNode(data, c.ID)
+				}
 			}
 		}
 
-		// End of Layer Loop
+		// 3c. Linkage (Serial for Stability in 0.1.9-rc1)
+		for _, idx := range activeIndices {
+			node := activeNodes[idx]
+			if lc > node.level {
+				continue
+			}
+
+			candidatesBuf := graphCandidates[idx]
+			if candidatesBuf == nil {
+				continue
+			}
+
+			// Filter out self-loops to avoid poisoning the diversity heuristic
+			allCandidates := *candidatesBuf
+			var candidates []types.Candidate
+			for _, c := range allCandidates {
+				if c.ID != node.id {
+					candidates = append(candidates, c)
+				}
+			}
+
+			if len(candidates) == 0 {
+				continue
+			}
+
+			// Determine M and MaxConn
+			m := h.m
+			maxConn := h.mMax
+			if lc == 0 {
+				m = h.m * 2
+				maxConn = h.mMax0
+			}
+			if m > maxConn {
+				m = maxConn
+			}
+
+			// Sort candidates by distance for robust pruning
+			slices.SortFunc(candidates, func(a, b types.Candidate) int {
+				if a.Dist < b.Dist { return -1 }
+				if a.Dist > b.Dist { return 1 }
+				return 0
+			})
+
+			// Thread-local context for pruning
+			ctxPrune := h.searchPool.Get()
+			ctxPrune.Reset()
+
+			// Direct Linkage (Disable diversity prune for first batch stability in 0.1.9)
+			limit := m
+			if len(candidates) < limit { limit = len(candidates) }
+			neighbors := candidates[:limit]
+			
+			if len(neighbors) == 0 {
+				h.searchPool.PutWithMetrics(ctxPrune, h.config.DataType.String(), strconv.Itoa(int(h.dims.Load())))
+				continue
+			}
+
+			// Forward connections (this node -> neighbors)
+			fSources := make([]uint32, 0, len(neighbors))
+			fDists := make([]float32, 0, len(neighbors))
+			for _, n := range neighbors {
+				fSources = append(fSources, n.ID)
+				fDists = append(fDists, n.Dist)
+			}
+			data = h.AddConnectionsBatch(ctxPrune, data, node.id, fSources, fDists, lc, maxConn)
+
+			// Reverse connections (neighbors -> this node)
+			for _, neighbor := range neighbors {
+				data = h.AddConnectionsBatch(ctxPrune, data, neighbor.ID, []uint32{node.id}, []float32{neighbor.Dist}, lc, maxConn)
+			}
+
+			h.searchPool.PutWithMetrics(ctxPrune, h.config.DataType.String(), strconv.Itoa(int(h.dims.Load())))
+		}
+
+		// Clean up for next layer
+		for _, idx := range activeIndices {
+			graphCandidates[idx] = nil
+		}
+
+		// End of Layer Linkage
+		// We MUST update the index's global view to ensure the next (lower) layer's 
+		// search-discovery can traverse these new connections!
+		h.data.Store(data) 
 	}
 
 	// 4. Update Global Stats
@@ -941,7 +828,7 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 	}
 	h.initMu.Unlock()
 
-	h.nodeCount.Add(int64(n))
+	h.data.Store(data)
 
 	if h.config.SQ8Enabled && h.quantizer != nil && !h.sq8Ready.Load() {
 		if vecsF32, ok := vecs.([][]float32); ok {

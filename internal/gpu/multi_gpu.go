@@ -1,6 +1,7 @@
 package gpu
 
 import (
+	"encoding/binary"
 	"fmt"
 	"hash/fnv"
 	"sync"
@@ -594,8 +595,10 @@ func (m *MultiGPUManager) shardVectorID(id int64) int {
 		return 0
 	}
 	h := fnv.New64a()
-	_, _ = h.Write([]byte{byte(id), byte(id >> 8), byte(id >> 16), byte(id >> 24), byte(id >> 32), byte(id >> 40), byte(id >> 48), byte(id >> 56)})
-	return int(h.Sum64() % uint64(len(m.devices)))
+	var b [8]byte
+	binary.LittleEndian.PutUint64(b[:], uint64(id)) // #nosec G115 - safe cast for hashing
+	_, _ = h.Write(b[:])
+	return int(h.Sum64() % uint64(len(m.devices))) // #nosec G115 - safe modulo conversion
 }
 
 func (m *MultiGPUManager) ShardDevice(vectorID int64) *GPUDevice {

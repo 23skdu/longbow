@@ -46,8 +46,8 @@ func detectCUDAGPUs() []GPUInfo {
 	}
 
 	// Query GPU information using nvidia-smi
-	// nosec G204 - nvidiaSmiPath is set from known config/locations, not user input
-	cmd := exec.Command(nvidiaSmiPath, "--query-gpu=index,name,memory.total,compute_cap", "--format=csv,noheader,nounits") // nosec G204
+	// #nosec G204 - nvidiaSmiPath is set from known config/locations, not user input
+	cmd := exec.Command(nvidiaSmiPath, "--query-gpu=index,name,memory.total,compute_cap", "--format=csv,noheader,nounits") // #nosec G204
 	output, err := cmd.Output()
 	if err != nil {
 		return gpus
@@ -212,7 +212,7 @@ func checkOpenCLAvailable() bool {
 
 	// Try using ocl-icd utility if available
 	if path, err := exec.LookPath("clinfo"); err == nil {
-		cmd := exec.Command(path)
+		cmd := exec.Command(path) // #nosec G204 - path is from LookPath, not user input
 		if output, err := cmd.Output(); err == nil && len(output) > 0 {
 			return true
 		}
@@ -226,7 +226,7 @@ func detectOpenCLLinux() []GPUInfo {
 
 	// Try clinfo to get OpenCL device info
 	if path, err := exec.LookPath("clinfo"); err == nil {
-		cmd := exec.Command(path)
+		cmd := exec.Command(path) // #nosec G204 - path is from LookPath
 		output, err := cmd.Output()
 		if err == nil {
 			gpus = parseClinfoOutput(string(output), BackendOpenCL)
@@ -239,7 +239,7 @@ func detectOpenCLLinux() []GPUInfo {
 		if _, err := os.Stat("/usr/lib/x86_64-linux-gnu/libOpenCL.so.1"); err == nil {
 			// Try lspci to detect GPU
 			if path, err := exec.LookPath("lspci"); err == nil {
-				cmd := exec.Command(path, "-d", "1002:") // AMD vendor ID
+				cmd := exec.Command(path, "-d", "1002:") // #nosec G204 - AMD vendor ID is constant
 				output, _ := cmd.Output()
 				if strings.Contains(string(output), "VGA") || strings.Contains(string(output), "GPU") {
 					gpus = append(gpus, GPUInfo{
@@ -255,7 +255,7 @@ func detectOpenCLLinux() []GPUInfo {
 		// Check Intel
 		if len(gpus) == 0 {
 			if path, err := exec.LookPath("lspci"); err == nil {
-				cmd := exec.Command(path, "-d", "8086:") // Intel vendor ID
+				cmd := exec.Command(path, "-d", "8086:") // #nosec G204 - Intel vendor ID is constant
 				output, _ := cmd.Output()
 				if strings.Contains(string(output), "VGA") || strings.Contains(string(output), "GPU") {
 					gpus = append(gpus, GPUInfo{

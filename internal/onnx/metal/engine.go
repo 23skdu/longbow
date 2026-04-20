@@ -140,7 +140,7 @@ func (e *Engine) Score(ctx context.Context, query string, documents []string) ([
 
 	// Convert to Go slice
 	_scores := (*[1 << 30]C.float)(unsafe.Pointer(scoresPtr))[:outCount:outCount]
-	scores := make([]float32, outCount)
+	scores := make([]float32, int(outCount))
 	for i := 0; i < int(outCount); i++ {
 		scores[i] = float32(_scores[i])
 	}
@@ -161,6 +161,16 @@ func (e *Engine) Score(ctx context.Context, query string, documents []string) ([
 	return scores, nil
 }
 
+// Embed generates embeddings for the provided texts using Metal acceleration
+func (e *Engine) Embed(ctx context.Context, texts []string) ([][]float32, error) {
+	if !e.loaded {
+		return nil, errors.New("model not loaded")
+	}
+	// Placeholder: Metal embedding path requires specific shader implementation.
+	// For now, we return an error to trigger the ONNX Runtime fallback.
+	return nil, errors.New("metal embedding acceleration not yet implemented")
+}
+
 // ScoreBatch scores multiple queries against documents
 func (e *Engine) ScoreBatch(ctx context.Context, queries, documents []string) ([][]float32, error) {
 	if len(queries) == 0 || len(documents) == 0 {
@@ -175,6 +185,7 @@ func (e *Engine) ScoreBatch(ctx context.Context, queries, documents []string) ([
 		"doc_count", fmt.Sprintf("%d", len(documents)),
 	)
 
+	results := make([][]float32, len(queries))
 	for i, query := range queries {
 		scores, err := e.Score(newCtx, query, documents)
 		if err != nil {

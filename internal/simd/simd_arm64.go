@@ -5,8 +5,6 @@ package simd
 import (
 	"errors"
 	"math"
-
-	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
 // ARM64 NEON implementations
@@ -172,8 +170,6 @@ func cosineBatchNEON(query []float32, vectors [][]float32, results []float32) er
 	}
 	return nil
 }
-
-*/
 
 func l2SquaredNEON(a, b []float32) (float32, error) {
 	if len(a) != len(b) {

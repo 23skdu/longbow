@@ -119,38 +119,29 @@ When running the Longbow container directly (e.g., via Docker), you can configur
 | `LONGBOW_OLLAMA_MODEL` | Ollama model name for embeddings | `` |
 | `LONGBOW_OLLAMA_TIMEOUT` | Request timeout in seconds | `30` |
 
-### GPU & Acceleration
+### SIMD & Acceleration
 
 | Variable | Description | Default |
 | :--- | :--- | :--- |
-| `GPU_ENABLED` | Enable GPU acceleration | `false` |
-| `LONGBOW_GPU_BACKEND` | Force backend (`cuda`, `metal`, `cpu`, `auto`) | `auto` |
-| `LONGBOW_ONNX_EP` | ONNX Execution Provider (`CPU`, `CUDA`, `Metal`) | `CPU` |
-| `LONGBOW_RDMA_ENABLED` | Enable Zero-Copy RDMA Tensor Streaming | `false` |
-
-### Gossip Mesh
+| `LONGBOW_SIMD_IMPL` | Force SIMD implementation (`avx512`, `avx2`, `neon`, `generic`) | `auto` |
+| `LONGBOW_JIT` | Enable Just-In-Time compiled SIMD kernels (experimental) | `false` |
+| `LONGBOW_SIMD_FALLBACK` | Allow fallback to generic paths if hardware support is missing | `true` |
 
 ## CLI Tools
 
-Longbow provides a comprehensive operations script `scripts/ops_test.py` for interacting with the server.
+Longbow provides a unified administrative tool at `scripts/longbow.py`.
 
 ### Basic Usage
 
 ```bash
-# Upload data
-python scripts/ops_test.py put --dataset test_data --rows 1000
+# Seed data
+python scripts/longbow.py data seed --dataset test --count 1000
 
-# Download data with filter (scan)
-python scripts/ops_test.py get --dataset test_data --filter "[{\"field\": \"id\", \"operator\": \">\", \"value\": \"500\"}]"
+# Run benchmarks
+python scripts/longbow.py bench run --mode cpu
 
-# Vector Search with filter (hybrid search)
-python scripts/ops_test.py search --dataset test_data --k 5 --filter "[{\"field\": \"category\", \"operator\": \"=\", \"value\": \"news\"}]"
-
-# Delete vectors (single or range)
-python scripts/ops_test.py delete --dataset test_data --ids 1,2,3-10
-
-# Bidirectional Health Check (Flight DoExchange)
-python scripts/ops_test.py validate
+# Enhance Grafana dashboard
+python scripts/longbow.py dashboard enhance
 ```
 
 ## Client Example (Python)

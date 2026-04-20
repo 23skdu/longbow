@@ -51,7 +51,12 @@ perf_summary.md
 coverage.out
 coverage.html
 race_report*.txt
+concurrent_race.txt
+test_results.txt
+simd.out
+core.out
 metrics.out
+*test.out
 
 # Profiling
 *.prof

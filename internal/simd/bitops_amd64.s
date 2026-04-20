@@ -131,7 +131,7 @@ or_done:
     RET
 
 // func isAllZerosAVX2Kernel(src unsafe.Pointer, n int) bool
-TEXT ·isAllZerosAVX2Kernel(SB), NOSPLIT, $0-25
+TEXT ·isAllZerosAVX2Kernel(SB), NOSPLIT, $0-17
     MOVQ    src+0(FP), SI
     MOVQ    n+8(FP), CX
     XORQ    AX, AX // Default false (0)

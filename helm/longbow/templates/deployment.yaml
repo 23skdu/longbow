@@ -231,6 +231,13 @@ spec:
               value: {{ .Values.rdma.interface | quote }}
             - name: LONGBOW_RDMA_PORT
               value: {{ .Values.rdma.port | quote }}
+            # SIMD & JIT Configuration
+            - name: LONGBOW_SIMD_IMPL
+              value: {{ .Values.simd.implementation | default "auto" | quote }}
+            - name: LONGBOW_SIMD_FALLBACK
+              value: {{ .Values.simd.fallbackEnabled | default true | quote }}
+            - name: LONGBOW_JIT
+              value: {{ .Values.simd.jitEnabled | default false | quote }}
 
 
           ports:

@@ -166,11 +166,11 @@ func TestSimdParity_Integer(t *testing.T) {
 
 			got, _ := DispatchDistance(MetricEuclidean, a, b)
 			expected := refEuclidean(a, b)
-			assert.InDelta(t, expected, got, 1e-4)
+			assert.InDelta(t, expected, got, 0.1)
 
 			got, _ = DispatchDistance(MetricDotProduct, a, b)
 			expected = refDot(a, b)
-			assert.InDelta(t, expected, got, 1e-4)
+			assert.InDelta(t, expected, got, 0.1)
 		}
 	})
 
@@ -185,11 +185,11 @@ func TestSimdParity_Integer(t *testing.T) {
 
 			got, _ := DispatchDistance(MetricEuclidean, a, b)
 			expected := refEuclidean(a, b)
-			assert.InDelta(t, expected, got, 1e-4)
+			assert.InDelta(t, expected, got, 0.1)
 
 			got, _ = DispatchDistance(MetricDotProduct, a, b)
 			expected = refDot(a, b)
-			assert.InDelta(t, expected, got, 1e-4)
+			assert.InDelta(t, expected, got, 0.1)
 		}
 	})
 

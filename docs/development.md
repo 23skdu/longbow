@@ -66,30 +66,6 @@ Longbow is designed as a high-performance vector database with modular subsystem
 - `grafana/` - Monitoring dashboards and observability configurations.
 - `helm/` - Kubernetes deployment charts.
 
-### Development Commands
-
-Use the provided development utilities in `scripts/dev/dev.sh`:
-
-```bash
-# Start in development mode with hot reload
-./scripts/dev/dev.sh start --dev
-
-# Check status
-./scripts/dev/dev.sh status
-
-# View logs
-./scripts/dev/dev.sh logs
-```
-
-### Hot Reload
-
-The development server supports hot reload via `scripts/dev/dev.sh`:
-
-- Automatic file watching for Go files.
-- Graceful restart to preserve in-memory datasets where possible.
-
-### Testing
-
 #### Quality Thresholds
 
 Longbow targets **>95% statement coverage** for all core performance packages (`internal/store`, `internal/simd`, `internal/onnx`).

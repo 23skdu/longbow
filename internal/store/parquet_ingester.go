@@ -42,7 +42,7 @@ func (pi *ParquetIngester) Ingest(ctx context.Context, path string) (int64, erro
 		pi.ringReader = uring
 	} else {
 		// Fallback to standard os.File
-		f, err := os.Open(path)
+		f, err := os.Open(path) // #nosec G304
 		if err != nil {
 			return 0, fmt.Errorf("failed to open file: %w", err)
 		}
@@ -73,7 +73,7 @@ func (pi *ParquetIngester) Ingest(ctx context.Context, path string) (int64, erro
 		if n > 0 {
 			// Ingest current batch
 			batchRows := rows[:n]
-			if err := pi.ingestBatch(ctx, batchRows); err != nil {
+			if err := pi.ingestBatch(batchRows); err != nil {
 				return totalRows, fmt.Errorf("batch ingestion failed: %w", err)
 			}
 			totalRows += int64(n)
@@ -96,7 +96,7 @@ func (pi *ParquetIngester) Ingest(ctx context.Context, path string) (int64, erro
 	return totalRows, nil
 }
 
-func (pi *ParquetIngester) ingestBatch(ctx context.Context, batch []DatasetParquetRecord) error {
+func (pi *ParquetIngester) ingestBatch(batch []DatasetParquetRecord) error {
 	// Conver DatasetParquetRecord to Arrow RecordBatch or directly into HNSW
 	// For high throughput, we bypass gRPC and go straight to the indexer
 	

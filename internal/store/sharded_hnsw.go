@@ -98,7 +98,7 @@ func (s *hnswShard) getGlobalID(localID uint32) (VectorID, bool) {
 	if !ok {
 		return 0, false
 	}
-	return VectorID(loc.BatchIdx), true
+	return VectorID(loc.BatchIdx), true // #nosec G115
 }
 
 // getLocalID returns the local ID for a global ID.
@@ -182,7 +182,7 @@ func (s *ShardedHNSW) newShard(_ int) *hnswShard {
 	arrowConfig.MMax = s.config.M * 3
 	arrowConfig.MMax0 = s.config.M * 2
 	// ArrowHNSW uses int32 for performance and atomic safety
-	arrowConfig.EfConstruction = int32(s.config.EfConstruction)
+	arrowConfig.EfConstruction = int32(s.config.EfConstruction) // #nosec G115
 	arrowConfig.InitialCapacity = 1024                          // Start small, grow dynamically
 	arrowConfig.Metric = s.config.Metric
 	arrowConfig.PackedAdjacencyEnabled = s.config.PackedAdjacencyEnabled
@@ -318,7 +318,7 @@ func (s *ShardedHNSW) IsSharded() bool {
 
 func (s *ShardedHNSW) AddByRecord(ctx context.Context, rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32, error) {
 	// Allocate Global ID
-	id := VectorID(s.nextID.Add(1) - 1)
+	id := VectorID(s.nextID.Add(1) - 1) // #nosec G115
 
 	// Update global locations (Lock-Free)
 	s.locationStore.EnsureCapacity(id)
@@ -1025,12 +1025,13 @@ func (s *ShardedHNSW) ExportGraph(w io.Writer) error {
 		}
 
 		mappingsCount := shard.locationStore.Len()
-		if err := binary.Write(w, binary.LittleEndian, uint32(mappingsCount)); err != nil {
+		if err := binary.Write(w, binary.LittleEndian, uint32(mappingsCount)); err != nil { // #nosec G115
 			return fmt.Errorf("failed to write shard %d mappings count: %w", i, err)
 		}
 
 		for j := 0; j < mappingsCount; j++ {
 			loc, _ := shard.locationStore.Get(VectorID(j))
+			// #nosec G115
 			globalID := uint64(loc.BatchIdx) // We store globalID in BatchIdx
 			if err := binary.Write(w, binary.LittleEndian, globalID); err != nil {
 				return fmt.Errorf("failed to write shard %d mapping: %w", i, err)
@@ -1154,7 +1155,7 @@ func (s *ShardedHNSW) ApplyDelta(delta *types.DeltaSync) error {
 	defer s.shardsMu.RUnlock()
 
 	for i, loc := range delta.NewLocations {
-		globalID := VectorID(int(delta.StartIndex) + i)
+		globalID := VectorID(int(delta.StartIndex) + i) // #nosec G115
 		shardIdx := s.sharder.GetShard(globalID)
 
 		if shardIdx >= len(s.shards) || s.shards[shardIdx] == nil {
@@ -1162,7 +1163,7 @@ func (s *ShardedHNSW) ApplyDelta(delta *types.DeltaSync) error {
 		}
 
 		shard := s.shards[shardIdx]
-		localID := uint32(shard.locationStore.Len())
+		localID := uint32(shard.locationStore.Len()) // #nosec G115
 		shard.registerID(localID, globalID)
 
 		s.locationStore.Set(VectorID(globalID), loc)

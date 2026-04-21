@@ -10,8 +10,9 @@ pip install ./longbowclientsdk
 
 ## Features
 
-- **Zero-Copy Retrieval**: `download_arrow()` retrieves datasets as native Arrow Tables.
-- **Memory-Efficient Streaming**: `download_stream()` iterates over `RecordBatch` chunks.
+- **Geospatial Search**: Native `geo_search()` for radius and bounding box queries.
+- **TurboQuant (TQ) & Quantization**: Support for SIMD-accelerated bit-packing during ingestion.
+- **Disk-ANN Offloading**: Configurable SSD-based storage for massive datasets.
 - **Integrated Search**: Unified `search()` method supporting pure vector, filtered, and **Advanced SQL (CTEs/Subqueries)** queries.
 - **Graph Operations**: Dedicated methods for `add_edge()`, `traverse()`, and `get_graph_stats()`.
 
@@ -42,6 +43,14 @@ print(f"Rows: {table.num_rows}")
 
 # Graph Traversal
 paths = client.traverse("my_graph", start=101, max_hops=2)
+
+# Geospatial Search (0.1.9)
+results = client.geo_search(
+    "cities", 
+    center={"lat": 40.7, "lon": -74.0}, 
+    radius_km=10.0,
+    k=10
+)
 ```
 
 ## API Reference
@@ -55,12 +64,12 @@ paths = client.traverse("my_graph", start=101, max_hops=2)
 
 ### Management & Control
 
-- `create_namespace(name)`: Create a new namespace.
+- `create_namespace(name)`: Create a new tenant isolation namespace.
+- `create_dataset(name, dimensions, vector_type="float32", geo_enabled=True)`: Create a dataset with 0.1.9 features.
 - `delete_namespace(name)`: Delete an entire namespace.
 - `list_namespaces()`: List all active datasets.
-- `snapshot()`: Trigger a manual snapshot (**Note**: Placeholder in SDK; backend implementation pending).
-- `delete(dataset, ids)`: Delete records (**Note**: Record deletion by ID is currently a stub;
-  works for deleting entire namespaces).
+- `snapshot()`: Trigger a manual snapshot.
+- `delete(dataset, ids)`: Delete records by ID or delete entire dataset if IDs omitted.
 
 ### Graph RAG
 

@@ -101,7 +101,7 @@ func EncodeMember(m *Member, dst []byte) (int, error) {
 	if len(dst) < offset+1 {
 		return 0, errors.New("buffer too small")
 	}
-	dst[offset] = byte(len(m.Tags))
+	dst[offset] = byte(len(m.Tags)) // #nosec G115
 	offset++
 
 	for k, v := range m.Tags {

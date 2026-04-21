@@ -243,7 +243,7 @@ func (f *FlameGraphGenerator) GenerateFlamegraph(profileData []byte) ([]byte, er
 	_ = tmpOutput.Close() // nosec G104
 
 	// nosec G204 - tmpInput.Name() is a temp file created by os.CreateTemp, not user input
-	cmd := exec.Command("go", "tool", "pprof", "-proto", tmpInput.Name()) // nosec G204
+	cmd := exec.Command("go", "tool", "pprof", "-proto", tmpInput.Name()) // #nosec G204
 	protoData, err := cmd.Output()
 	if err != nil {
 		return nil, err

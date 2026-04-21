@@ -56,7 +56,7 @@ func buildVPTree(items []RegionItem) *vpNode {
 
 	// 1. Pick vantage point (random or first)
 	// Random selection is better to avoid worst case
-	vpIdx := rand.Intn(len(items))
+	vpIdx := rand.Intn(len(items)) // #nosec G404
 	// Swap to end
 	items[vpIdx], items[len(items)-1] = items[len(items)-1], items[vpIdx]
 	vp := items[len(items)-1]

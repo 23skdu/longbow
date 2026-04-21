@@ -96,6 +96,9 @@ type Dataset struct {
 	// Per-record eviction
 	recordEviction *RecordEvictionManager
 
+	// Geospatial Index (Quadtree)
+	GeoIndex *GeoIndex
+
 	// Metric defines the distance metric for this dataset
 	HNSWConfig HNSWSettings
 	Metric     DistanceMetric

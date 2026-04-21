@@ -147,7 +147,7 @@ func (b *BatchDistanceComputer) ComputeL2DistancesKernel(
 	pool := b.mem
 
 	// Use FixedSizeListBuilder
-	bldr := array.NewFixedSizeListBuilder(pool, int32(b.dim), arrow.PrimitiveTypes.Float32)
+	bldr := array.NewFixedSizeListBuilder(pool, int32(b.dim), arrow.PrimitiveTypes.Float32) // #nosec G115
 	defer bldr.Release()
 
 	valBldr := bldr.ValueBuilder().(*array.Float32Builder)

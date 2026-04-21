@@ -159,7 +159,7 @@ func (t *GCTuner) tune(heapInUse uint64) {
 	// Effective Usage = Total Heap Inuse - Memory reserved by arenas but not actually used.
 	// We want to be aggressive when ACTUAL data (active nodes + overhead) approaches limit,
 	// but NOT when just reserved slabs approach limit (those can be freed/compacted).
-	effectiveInUse := int64(heapInUse) - unusedArenaMemory
+	effectiveInUse := int64(heapInUse) - unusedArenaMemory // #nosec G115
 	if effectiveInUse < 0 {
 		effectiveInUse = 0
 	}

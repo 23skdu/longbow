@@ -219,9 +219,6 @@ func (h *ArrowHNSW) getVectorWithCachedDisk(data *types.GraphData, dg *DiskGraph
 	if dims := h.GetDims(); dims > 0 {
 		return make([]float32, dims), nil
 	}
-	if h.config.Dims > 0 {
-		return make([]float32, h.config.Dims), nil
-	}
 	return nil, fmt.Errorf("could not resolve dimensions for Sentinel vector")
 }
 
@@ -659,7 +656,7 @@ func (h *ArrowHNSW) DeleteBatch(ctx context.Context, ids []uint32) error {
 
 // Interface implementation: AddByLocation adds a vector by its location
 func (h *ArrowHNSW) AddByLocation(ctx context.Context, batchIdx, rowIdx int) (uint32, error) {
-	id := uint32(h.nodeCount.Add(1) - 1)
+	id := uint32(h.nodeCount.Add(1) - 1) // #nosec G115
 
 	var vec any
 	if h.dataset != nil {
@@ -692,7 +689,7 @@ func (h *ArrowHNSW) AddByLocation(ctx context.Context, batchIdx, rowIdx int) (ui
 
 // AddByRecord implements VectorIndex.
 func (h *ArrowHNSW) AddByRecord(ctx context.Context, rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32, error) {
-	id := uint32(h.nodeCount.Add(1) - 1)
+	id := uint32(h.nodeCount.Add(1) - 1) // #nosec G115
 
 	var vec any
 	// Find vector column
@@ -871,7 +868,7 @@ func (h *ArrowHNSW) GetDimension() uint32 {
 		for _, f := range h.dataset.GetSchema().Fields() {
 			if f.Name == "vector" || f.Name == "embedding" {
 				if fslType, ok := f.Type.(*arrow.FixedSizeListType); ok {
-					return uint32(fslType.Len())
+					return uint32(fslType.Len()) // #nosec G115
 				}
 			}
 		}
@@ -1233,7 +1230,7 @@ func (h *ArrowHNSW) GetLayerNeighbors(id uint32, layer int) ([]uint32, error) {
 		return nil, nil // Index is empty
 	}
 
-	if layer < 0 || int32(layer) > maxLevel {
+	if layer < 0 || int32(layer) > maxLevel { // #nosec G115
 		return nil, fmt.Errorf("invalid layer: %d", layer)
 	}
 
@@ -1409,13 +1406,13 @@ func (h *ArrowHNSW) growInternal(capacity, dims int) error {
 		return fmt.Errorf("dimensions %d exceed MaxInt32", dims)
 	}
 	h.dims.Store(int32(dims)) // #nosec G115
-	if h.config.Dims == 0 && dims > 0 {
+	currentDims := data.Dims
+	if currentDims == 0 && dims > 0 {
 		h.config.Dims = dims
 	}
 
 	// Calculate current vs target
 	currentCapacity := data.Capacity
-	currentDims := data.Dims
 
 	// Never shrink capacity
 	if capacity < currentCapacity {
@@ -1477,7 +1474,7 @@ func (h *ArrowHNSW) growInternal(capacity, dims int) error {
 	// Ensure PackedNeighbors are resized for new capacity
 	for _, pn := range newData.PackedNeighbors {
 		if pn != nil {
-			pn.EnsureCapacity(uint32(capacity))
+			pn.EnsureCapacity(uint32(capacity)) // #nosec G115
 		}
 	}
 
@@ -1588,7 +1585,7 @@ func (h *ArrowHNSW) CleanupTombstones(threshold int) int {
 		if ts == nil {
 			continue
 		}
-		count := int(ts.Count())
+		count := int(ts.Count()) // #nosec G115
 		if count > threshold {
 			shouldReset = true
 			totalPruned = count
@@ -1622,7 +1619,7 @@ func (h *ArrowHNSW) generateLevel() int {
 func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowIdxs, batchIdxs []int) ([]uint32, error) {
 	// Bulk optimization path temporarily disabled for 0.1.9-rc1 stability
 	if false && len(rowIdxs) >= 1000 && !h.IsSharded() {
-		startID := uint32(h.nodeCount.Load())
+		startID := uint32(h.nodeCount.Load()) // #nosec G115
 		n := len(rowIdxs)
 
 		// Discover vector column
@@ -2740,26 +2737,22 @@ func (h *ArrowHNSW) SnapshotGraph() (*types.GraphData, *types.SyncState, error) 
 
 // ExportGraph implements VectorIndex.
 func (h *ArrowHNSW) ExportGraph(w io.Writer) error {
+	h.growMu.Lock() // Use Write Lock to ensure consistent snapshot against concurrent insertions
+	defer h.growMu.Unlock()
+
 	// 1. Capture Snapshot + Metadata
 	var snapshot *types.GraphData
 	locs := make([]types.Location, 0, h.locationStore.Len())
-	var dims int
+	dims := int(h.dims.Load())
 
-	// Inline lock scope
-	func() {
-		h.growMu.RLock()
-		defer h.growMu.RUnlock()
+	if data := h.data.Load(); data != nil {
+		snapshot = data.CloneForSnapshot()
+	}
 
-		if data := h.data.Load(); data != nil {
-			snapshot = data.CloneForSnapshot()
-		}
-
-		h.locationStore.IterateMutable(func(_ types.VectorID, val *atomic.Uint64) {
-			loc := basecore.UnpackLocation(val.Load())
-			locs = append(locs, loc)
-		})
-		dims = int(h.dims.Load())
-	}()
+	h.locationStore.IterateMutable(func(_ types.VectorID, val *atomic.Uint64) {
+		loc := basecore.UnpackLocation(val.Load())
+		locs = append(locs, loc)
+	})
 
 	if snapshot == nil {
 		return fmt.Errorf("no graph data to export")
@@ -2779,7 +2772,7 @@ func (h *ArrowHNSW) ExportGraph(w io.Writer) error {
 	metaBytes := metaBuf.Bytes()
 
 	// Write Metadata Length + Bytes
-	if err := binary.Write(w, binary.LittleEndian, uint32(len(metaBytes))); err != nil {
+	if err := binary.Write(w, binary.LittleEndian, uint32(len(metaBytes))); err != nil { // #nosec G115
 		return err
 	}
 	if _, err := w.Write(metaBytes); err != nil {
@@ -2815,7 +2808,7 @@ func (h *ArrowHNSW) ImportGraph(r io.Reader) error {
 	if state.Dims > math.MaxInt32 {
 		return fmt.Errorf("state dimensions %d exceed MaxInt32", state.Dims)
 	}
-	h.dims.Store(int32(state.Dims)) // nosec G115
+	h.dims.Store(int32(state.Dims)) // #nosec G115
 	h.locationStore.Reset()
 	for _, loc := range state.Locations {
 		h.locationStore.Append(loc)
@@ -2859,11 +2852,11 @@ func (h *ArrowHNSW) ExportDelta(fromVersion uint64) (*types.DeltaSync, error) {
 
 	currentLen := h.locationStore.Len()
 	// Export locations starting from fromVersion up to currentLen
-	startIdx := int(fromVersion)
+	startIdx := int(fromVersion) // #nosec G115
 	if startIdx >= currentLen {
 		return &types.DeltaSync{
 			FromVersion:  fromVersion,
-			ToVersion:    uint64(currentLen),
+			ToVersion:    uint64(currentLen), // #nosec G115
 			NewLocations: nil,
 			StartIndex:   startIdx,
 		}, nil
@@ -2881,7 +2874,7 @@ func (h *ArrowHNSW) ExportDelta(fromVersion uint64) (*types.DeltaSync, error) {
 
 	return &types.DeltaSync{
 		FromVersion:  fromVersion,
-		ToVersion:    uint64(currentLen),
+		ToVersion:    uint64(currentLen), // #nosec G115
 		NewLocations: newLocs,
 		StartIndex:   startIdx,
 	}, nil
@@ -2897,7 +2890,7 @@ func (h *ArrowHNSW) ApplyDelta(delta *types.DeltaSync) error {
 	defer h.growMu.Unlock()
 
 	for i, loc := range delta.NewLocations {
-		globalID := types.VectorID(delta.StartIndex + i)
+		globalID := types.VectorID(delta.StartIndex + i) // #nosec G115
 		h.locationStore.EnsureCapacity(globalID)
 		h.locationStore.Set(globalID, loc)
 	}

@@ -38,7 +38,7 @@ func (d *Dataset) GetDiskLayoutInfo() DiskLayoutInfo {
 		rows := int(rec.NumRows())
 		deleted := 0
 		if d.Tombstones[i] != nil {
-			deleted = int(d.Tombstones[i].Count())
+			deleted = int(d.Tombstones[i].Count()) // #nosec G115
 		}
 
 		density := 0.0

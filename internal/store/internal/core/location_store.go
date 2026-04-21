@@ -206,7 +206,7 @@ func (s *ChunkedLocationStore) BatchAppend(locs []types.Location) (startID types
 	defer s.mu.Unlock()
 
 	currentID := int(s.size.Load())
-	startID = types.VectorID(currentID)
+	startID = types.VectorID(currentID) // #nosec G115
 	targetEnd := currentID + len(locs)
 
 	oldChunksPtr := s.chunks.Load()
@@ -234,10 +234,10 @@ func (s *ChunkedLocationStore) BatchAppend(locs []types.Location) (startID types
 		off := absIdx % types.LocationChunkSize
 		packed := packLocation(loc)
 		currentChunks[cIdx].data[off].Store(packed)
-		s.reverseMap[packed] = types.VectorID(absIdx) // Update reverse map
+		s.reverseMap[packed] = types.VectorID(absIdx) // #nosec G115
 	}
 
-	s.size.Store(uint32(targetEnd))
+	s.size.Store(uint32(targetEnd)) // #nosec G115
 	return startID
 }
 

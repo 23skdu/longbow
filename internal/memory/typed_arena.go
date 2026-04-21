@@ -50,7 +50,7 @@ func (ta *TypedArena[T]) Compact(liveRefs []SliceRef) (*CompactionStats, error) 
 	defer ta.mu.Unlock()
 
 	var zero T
-	elemSize := int(unsafe.Sizeof(zero))
+	elemSize := int(unsafe.Sizeof(zero)) // #nosec G115
 
 	totalLiveBytes := int64(0)
 	for _, ref := range liveRefs {
@@ -103,7 +103,7 @@ func (ta *TypedArena[T]) Compact(liveRefs []SliceRef) (*CompactionStats, error) 
 
 func (ta *TypedArena[T]) AllocSlice(count int) (SliceRef, error) {
 	var zero T
-	elemSize := int(unsafe.Sizeof(zero))
+	elemSize := int(unsafe.Sizeof(zero)) // #nosec G115
 	totalBytes := count * elemSize
 
 	offset, err := ta.arena.Alloc(totalBytes)
@@ -113,8 +113,8 @@ func (ta *TypedArena[T]) AllocSlice(count int) (SliceRef, error) {
 
 	return SliceRef{
 		Offset: offset,
-		Len:    uint32(count),
-		Cap:    uint32(count),
+		Len:    uint32(count), // #nosec G115
+		Cap:    uint32(count), // #nosec G115
 	}, nil
 }
 
@@ -122,7 +122,7 @@ func (ta *TypedArena[T]) AllocSlice(count int) (SliceRef, error) {
 // Use this only if you intend to overwrite the entire slice immediately.
 func (ta *TypedArena[T]) AllocSliceDirty(count int) (SliceRef, error) {
 	var zero T
-	elemSize := int(unsafe.Sizeof(zero))
+	elemSize := int(unsafe.Sizeof(zero)) // #nosec G115
 	totalBytes := count * elemSize
 
 	offset, err := ta.arena.AllocDirty(totalBytes)
@@ -132,15 +132,15 @@ func (ta *TypedArena[T]) AllocSliceDirty(count int) (SliceRef, error) {
 
 	return SliceRef{
 		Offset: offset,
-		Len:    uint32(count),
-		Cap:    uint32(count),
+		Len:    uint32(count), // #nosec G115
+		Cap:    uint32(count), // #nosec G115
 	}, nil
 }
 
 // AllocSliceAligned allocates an aligned slice.
 func (ta *TypedArena[T]) AllocSliceAligned(count, align int) (SliceRef, error) {
 	var zero T
-	elemSize := int(unsafe.Sizeof(zero))
+	elemSize := int(unsafe.Sizeof(zero)) // #nosec G115
 	totalBytes := count * elemSize
 
 	offset, err := ta.arena.AllocAligned(totalBytes, align)
@@ -150,8 +150,8 @@ func (ta *TypedArena[T]) AllocSliceAligned(count, align int) (SliceRef, error) {
 
 	return SliceRef{
 		Offset: offset,
-		Len:    uint32(count),
-		Cap:    uint32(count),
+		Len:    uint32(count), // #nosec G115
+		Cap:    uint32(count), // #nosec G115
 	}, nil
 }
 

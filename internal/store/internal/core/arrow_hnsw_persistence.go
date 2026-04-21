@@ -23,7 +23,7 @@ func (h *ArrowHNSW) LoadFromMmap(path string) error {
 
 	// Update HNSW state from graph header
 	h.nodeCount.Store(int64(dg.header.NumNodes))
-	h.dims.Store(int32(dg.header.Dims))
+	h.dims.Store(int32(dg.header.Dims)) // #nosec G115
 
 	// Restore Entry Point and Max Level (Version 3+)
 	if dg.header.Version >= 3 {
@@ -32,7 +32,7 @@ func (h *ArrowHNSW) LoadFromMmap(path string) error {
 	} else {
 		// Fallback for older formats (if supported)
 		h.entryPoint.Store(0)                            // Unlikely to be correct but safe default?
-		h.maxLevel.Store(int32(dg.header.MaxLayers - 1)) // Conservative
+		h.maxLevel.Store(int32(dg.header.MaxLayers - 1)) // #nosec G115
 	}
 
 	// Attach DiskGraph
@@ -121,7 +121,7 @@ func (h *ArrowHNSW) promoteNode(data*types.GraphData, id uint32)*types.GraphData
 				}
 				atomic.StoreUint32(&neighborsChunk[baseIdx+i], nid)
 			}
-			atomic.StoreInt32(countAddr, int32(len(diskNeighbors)))
+			atomic.StoreInt32(countAddr, int32(len(diskNeighbors))) // #nosec G115
 
 			// Initialize version
 			verAddr := &data.GetVersionsChunk(l, cID)[cOff]

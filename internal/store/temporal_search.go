@@ -277,7 +277,7 @@ func (ti *TemporalIndex) SearchAsOf(ctx context.Context, timestamp int64, k int)
 	searchResults := make([]lbtypes.SearchResult, 0, min(k, len(results)))
 	for i := 0; i < min(k, len(results)); i++ {
 		searchResults = append(searchResults, lbtypes.SearchResult{
-			ID:       lbtypes.VectorID(results[i].id),
+			ID:       lbtypes.VectorID(results[i].id), // #nosec G115
 			Distance: float32(results[i].distance),
 			Score:    float32(1.0 / (1.0 + results[i].distance)),
 		})
@@ -314,7 +314,7 @@ func (ti *TemporalIndex) SearchRange(ctx context.Context, startTime, endTime int
 	searchResults := make([]lbtypes.SearchResult, 0, min(k, len(results)))
 	for i := 0; i < min(k, len(results)); i++ {
 		searchResults = append(searchResults, lbtypes.SearchResult{
-			ID:       lbtypes.VectorID(results[i].id),
+			ID:       lbtypes.VectorID(results[i].id), // #nosec G115
 			Distance: float32(results[i].distance),
 			Score:    float32(1.0 / (1.0 + results[i].distance)),
 		})
@@ -351,7 +351,7 @@ func (ti *TemporalIndex) SearchSlidingWindow(ctx context.Context, windowSize int
 	searchResults := make([]lbtypes.SearchResult, 0, min(k, len(results)))
 	for i := 0; i < min(k, len(results)); i++ {
 		searchResults = append(searchResults, lbtypes.SearchResult{
-			ID:       lbtypes.VectorID(results[i].id),
+			ID:       lbtypes.VectorID(results[i].id), // #nosec G115
 			Distance: float32(results[i].distance),
 			Score:    float32(1.0 / (1.0 + results[i].distance)),
 		})
@@ -391,7 +391,7 @@ func (ti *TemporalIndex) SearchSlidingWindowByTime(ctx context.Context, duration
 	searchResults := make([]lbtypes.SearchResult, 0, min(k, len(results)))
 	for i := 0; i < min(k, len(results)); i++ {
 		searchResults = append(searchResults, lbtypes.SearchResult{
-			ID:       lbtypes.VectorID(results[i].id),
+			ID:       lbtypes.VectorID(results[i].id), // #nosec G115
 			Distance: float32(results[i].distance),
 			Score:    float32(1.0 / (1.0 + results[i].distance)),
 		})

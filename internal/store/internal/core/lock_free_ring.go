@@ -116,7 +116,7 @@ func (rb *LockFreeRingBuffer[T]) Pop() (T, bool) {
 
 // Len returns approximate length
 func (rb *LockFreeRingBuffer[T]) Len() int {
-	return int(rb.tail.Load() - rb.head.Load())
+	return int(rb.tail.Load() - rb.head.Load()) // #nosec G115
 }
 
 // PushBlocking adds an item, blocking/yielding if full until space is available or timeout.

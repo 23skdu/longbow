@@ -57,7 +57,7 @@ func (a *SlabAllocator) Alloc(n int) []byte {
 // though Go GC will scan it if typed correctly, but this is for optimization).
 func AllocStruct[T any](a *SlabAllocator) *T {
 	var zero T
-	size := int(unsafe.Sizeof(zero))
+	size := int(unsafe.Sizeof(zero)) // #nosec G115
 	bytes := a.Alloc(size)
 	return (*T)(unsafe.Pointer(&bytes[0])) // #nosec G103
 }

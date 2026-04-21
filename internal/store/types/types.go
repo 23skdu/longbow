@@ -140,6 +140,11 @@ type Location = basecore.Location
 // LocationChunkSize is the size of chunks in the location store
 const LocationChunkSize = 1024
 
+type GeoPoint = basecore.GeoPoint
+type GeoBoundingBox = basecore.GeoBoundingBox
+type GeoSearchRequest = basecore.GeoSearchRequest
+type VectorSearchRequest = basecore.VectorSearchRequest
+
 // SearchOptions defines the options for search operations
 type SearchOptions struct {
 	IncludeVectors bool

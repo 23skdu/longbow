@@ -96,22 +96,22 @@ func (pr *PartitionedRecords) PartitionBatches(partitionIdx int) int {
 func (pr *PartitionedRecords) hashKey(key uint64) int {
 	h := fnv.New64a()
 	b := make([]byte, 8)
-	b[0] = byte(key)
-	b[1] = byte(key >> 8)
-	b[2] = byte(key >> 16)
-	b[3] = byte(key >> 24)
-	b[4] = byte(key >> 32)
-	b[5] = byte(key >> 40)
-	b[6] = byte(key >> 48)
+	b[0] = byte(key) // #nosec G115
+	b[1] = byte(key >> 8) // #nosec G115
+	b[2] = byte(key >> 16) // #nosec G115
+	b[3] = byte(key >> 24) // #nosec G115
+	b[4] = byte(key >> 32) // #nosec G115
+	b[5] = byte(key >> 40) // #nosec G115
+	b[6] = byte(key >> 48) // #nosec G115
 	b[7] = byte(key >> 56)
 	_, _ = h.Write(b)                                // nosec G104
-	return int(h.Sum64() % uint64(pr.numPartitions)) //nolint:gosec // G115 - partition index guaranteed to fit in int
+	return int(h.Sum64() % uint64(pr.numPartitions)) // #nosec G115
 }
 
 // Append adds a batch to a partition based on the provided routing key.
 // The batch is retained (ref count incremented).
 func (pr *PartitionedRecords) Append(batch arrow.RecordBatch, routingKey uint64) {
-	partIdx := int(routingKey % uint64(pr.numPartitions)) //nolint:gosec // G115 - partition index guaranteed to fit in int
+	partIdx := int(routingKey % uint64(pr.numPartitions)) // #nosec G115
 	pr.AppendToPartition(batch, partIdx)
 }
 

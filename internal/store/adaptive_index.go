@@ -114,7 +114,7 @@ func (b *BruteForceIndex) AddByLocation(ctx context.Context, batchIdx, rowIdx in
 	metrics.IndexLockWaitDuration.WithLabelValues(b.dataset.Name, "write").Observe(time.Since(start).Seconds())
 	defer b.mu.Unlock()
 
-	id := uint32(len(b.locations))
+	id := uint32(len(b.locations)) // #nosec G115
 	b.locations = append(b.locations, Location{
 		BatchIdx: batchIdx,
 		RowIdx:   rowIdx,
@@ -224,7 +224,7 @@ func (b *BruteForceIndex) GetDimension() uint32 {
 		for _, f := range b.dataset.Schema.Fields() {
 			if f.Name == "vector" || f.Name == "embedding" {
 				if fslType, ok := f.Type.(*arrow.FixedSizeListType); ok {
-					return uint32(fslType.Len())
+					return uint32(fslType.Len()) // #nosec G115
 				}
 			}
 		}

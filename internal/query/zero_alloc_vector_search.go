@@ -104,7 +104,7 @@ func (p *ZeroAllocVectorSearchParser) Parse(data []byte) (VectorSearchRequest, e
 			if i+4 <= len(data) && string(data[i:i+4]) == "null" {
 				i += 4
 			} else {
-				newPos, err := p.parseFloat32Array(data, i)
+				newPos, err := p.ParseVectorField(data, i, &p.vector)
 				if err != nil {
 					return p.result, err
 				}
@@ -193,12 +193,15 @@ func (p *ZeroAllocVectorSearchParser) Parse(data []byte) (VectorSearchRequest, e
 	return p.result, errors.New("unexpected end of JSON")
 }
 
-// parseFloat32Array parses a JSON array of numbers into p.vector
-func (p *ZeroAllocVectorSearchParser) parseFloat32Array(data []byte, pos int) (int, error) {
+// ParseVectorField parses a JSON array of numbers into the provided slice
+func (p *ZeroAllocVectorSearchParser) ParseVectorField(data []byte, pos int, outVec *[]float32) (int, error) {
 	if pos >= len(data) || data[pos] != '[' {
 		return pos, errors.New("expected opening bracket for vector")
 	}
 	pos++
+
+	// Clear outVec but keep capacity if any
+	*outVec = (*outVec)[:0]
 
 	for pos < len(data) {
 		pos = skipWhitespace(data, pos)
@@ -215,7 +218,7 @@ func (p *ZeroAllocVectorSearchParser) parseFloat32Array(data []byte, pos int) (i
 		if err != nil {
 			return pos, err
 		}
-		p.vector = append(p.vector, val)
+		*outVec = append(*outVec, val)
 		pos = newPos
 
 		pos = skipWhitespace(data, pos)

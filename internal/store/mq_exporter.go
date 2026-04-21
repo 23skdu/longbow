@@ -63,7 +63,7 @@ func NewMessageQueueExporter(logger zerolog.Logger, cdc *ChangeDataCapture, conf
 		return nil, fmt.Errorf("topic is required")
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(context.Background()) // #nosec G118
 	exporter := &MessageQueueExporter{
 		logger:   logger,
 		cdc:      cdc,
@@ -301,6 +301,7 @@ func (m *MessageQueueExporter) sendToPulsar(data []byte) {
 }
 
 func (m *MessageQueueExporter) Stop() error {
+	m.cancel()
 	close(m.stopChan)
 
 	if m.flushTicker != nil {

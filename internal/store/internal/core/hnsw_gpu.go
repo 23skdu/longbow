@@ -243,7 +243,7 @@ func (h *ArrowHNSW) flushGPUBatchLocked() error {
 	if err == nil {
 		deviceID := "0"
 		if info, err := h.gpuIndex.GetDeviceInfo(); err == nil {
-			deviceID = string(rune(info.DeviceID))
+			deviceID = string(rune(info.DeviceID)) // #nosec G115
 		}
 		metrics.GPUIndexSize.WithLabelValues(deviceID).Add(float64(batchSize))
 		// Record success in circuit breaker
@@ -376,7 +376,7 @@ func (h *ArrowHNSW) SearchHybridWithConfig(ctx context.Context, query []float32,
 	// Build candidates list from GPU results
 	candidates := make([]candidateResult, 0, len(candidateIDs))
 	for i := 0; i < len(candidateIDs); i++ {
-		vecID := types.VectorID(candidateIDs[i])
+		vecID := types.VectorID(candidateIDs[i]) // #nosec G115
 
 		// Verify this is a valid vector
 		locAny, ok := h.GetLocation(uint32(vecID))

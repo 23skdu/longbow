@@ -149,11 +149,11 @@ func (vc *VectorClock) Serialize() []byte {
 	sort.Strings(keys)
 
 	// Write the number of entries
-	_ = binary.Write(&buf, binary.LittleEndian, uint32(len(keys))) //nolint:gosec // G115 - length fits in uint32
+	_ = binary.Write(&buf, binary.LittleEndian, uint32(len(keys))) // #nosec G115
 
 	for _, k := range keys {
 		// Write key length + key
-		_ = binary.Write(&buf, binary.LittleEndian, uint32(len(k))) //nolint:gosec // G115 - key length fits in uint32
+		_ = binary.Write(&buf, binary.LittleEndian, uint32(len(k))) // #nosec G115
 		buf.WriteString(k)
 
 		// Write value

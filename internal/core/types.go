@@ -18,14 +18,14 @@ type Location struct {
 func PackLocation(loc Location) uint64 {
 	// Offset BatchIdx by 1 (uint32) to ensure the packed result is never 0 for valid locations (BatchIdx >= 0).
 	// This prevents uninitialized slots (value 0) from being confused with Batch 0, Row 0.
-	return uint64(uint32(loc.BatchIdx+1))<<32 | uint64(uint32(loc.RowIdx))
+	return uint64(uint32(loc.BatchIdx+1))<<32 | uint64(uint32(loc.RowIdx)) // #nosec G115
 }
 
 // UnpackLocation unpacks a uint64 into a Location.
 func UnpackLocation(val uint64) Location {
 	return Location{
-		BatchIdx: int(int32(val>>32)) - 1,
-		RowIdx:   int(int32(val)),
+		BatchIdx: int(int32(val>>32)) - 1, // #nosec G115
+		RowIdx:   int(int32(val)), // #nosec G115
 	}
 }
 

@@ -23,10 +23,10 @@ func (g *GraphData) Serialize(w io.Writer) error {
 	if err := binary.Write(w, binary.LittleEndian, int64(g.Capacity)); err != nil {
 		return err
 	}
-	if err := binary.Write(w, binary.LittleEndian, int32(g.Dims)); err != nil {
+	if err := binary.Write(w, binary.LittleEndian, int32(g.Dims)); err != nil { // #nosec G115
 		return err
 	}
-	if err := binary.Write(w, binary.LittleEndian, uint8(g.Type)); err != nil {
+	if err := binary.Write(w, binary.LittleEndian, uint8(g.Type)); err != nil { // #nosec G115
 		return err
 	}
 
@@ -48,7 +48,7 @@ func (g *GraphData) Serialize(w io.Writer) error {
 	if err := binary.Write(w, binary.LittleEndian, flags); err != nil {
 		return err
 	}
-	if err := binary.Write(w, binary.LittleEndian, int32(g.PQM)); err != nil {
+	if err := binary.Write(w, binary.LittleEndian, int32(g.PQM)); err != nil { // #nosec G115
 		return err
 	}
 
@@ -132,7 +132,7 @@ func (g *GraphData) Serialize(w io.Writer) error {
 			for i := 0; i < count; i++ {
 				var encodedCount uint32
 				if counts != nil {
-					encodedCount = uint32(counts[i])
+					encodedCount = uint32(counts[i]) // #nosec G115
 				}
 				if err := binary.Write(w, binary.LittleEndian, encodedCount); err != nil {
 					return err

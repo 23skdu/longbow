@@ -112,6 +112,10 @@ waitLoop:
 		s.logger.Info().Msg("Persistence closed successfully")
 	}
 
+	if s.cancel != nil {
+		s.cancel()
+	}
+
 	elapsed := time.Since(start)
 	if shutdownErr != nil {
 		s.logger.Error().

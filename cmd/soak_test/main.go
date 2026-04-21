@@ -233,7 +233,7 @@ func runWorker(ctx context.Context, wg *sync.WaitGroup, peer, mode string, stats
 func performIngest(ctx context.Context, c *client.SmartClient) error {
 	schema := arrow.NewSchema([]arrow.Field{
 		{Name: "id", Type: arrow.BinaryTypes.String},
-		{Name: "embedding", Type: arrow.FixedSizeListOf(int32(*dim), arrow.PrimitiveTypes.Float32)},
+		{Name: "embedding", Type: arrow.FixedSizeListOf(int32(*dim), arrow.PrimitiveTypes.Float32)}, // #nosec G115
 		{Name: "category", Type: arrow.PrimitiveTypes.Int64},
 		{Name: "score", Type: arrow.PrimitiveTypes.Float32},
 		{Name: "priority", Type: arrow.BinaryTypes.String},
@@ -267,13 +267,13 @@ func performIngest(ctx context.Context, c *client.SmartClient) error {
 		idB.Append(uuid.New().String())
 		vecB.Append(true)
 		for j := 0; j < *dim; j++ {
-			valB.Append(rand.Float32())
+			valB.Append(rand.Float32()) // #nosec G404
 		}
-		catB.Append(int64(rand.Intn(10)))
-		scoreB.Append(rand.Float32() * 100)
-		prioB.Append(categories[rand.Intn(len(categories))])
-		statusB.Append(statuses[rand.Intn(len(statuses))])
-		deletedB.Append(rand.Float32() < 0.1)
+		catB.Append(int64(rand.Intn(10))) // #nosec G404
+		scoreB.Append(rand.Float32() * 100) // #nosec G404
+		prioB.Append(categories[rand.Intn(len(categories))]) // #nosec G404
+		statusB.Append(statuses[rand.Intn(len(statuses))]) // #nosec G404
+		deletedB.Append(rand.Float32() < 0.1) // #nosec G404
 		tsB.Append(time.Now().UnixNano())
 		now := time.Now().UnixNano()
 		createdB.Append(now)
@@ -303,10 +303,10 @@ func performIngest(ctx context.Context, c *client.SmartClient) error {
 }
 
 func performSearchAndDelete(ctx context.Context, c *client.SmartClient, stats *Stats) (SearchMode, error) {
-	searchMode := SearchMode(rand.Intn(7))
+	searchMode := SearchMode(rand.Intn(7)) // #nosec G404
 	queryVec := make([]float32, *dim)
 	for i := 0; i < *dim; i++ {
-		queryVec[i] = rand.Float32()
+		queryVec[i] = rand.Float32() // #nosec G404
 	}
 
 	req := map[string]any{
@@ -320,7 +320,7 @@ func performSearchAndDelete(ctx context.Context, c *client.SmartClient, stats *S
 	case SparseSearch:
 		req["vector"] = queryVec
 		textQueries := []string{"machine learning", "neural network", "data science", "deep learning", "artificial intelligence"}
-		req["text_query"] = textQueries[rand.Intn(len(textQueries))]
+		req["text_query"] = textQueries[rand.Intn(len(textQueries))] // #nosec G404
 		req["alpha"] = 0.1
 	case FilteredSearch:
 		req["vector"] = queryVec
@@ -330,14 +330,14 @@ func performSearchAndDelete(ctx context.Context, c *client.SmartClient, stats *S
 	case HybridSearch:
 		req["vector"] = queryVec
 		textQueries := []string{"search query", "information retrieval", "vector database"}
-		req["text_query"] = textQueries[rand.Intn(len(textQueries))]
-		req["alpha"] = rand.Float64()
+		req["text_query"] = textQueries[rand.Intn(len(textQueries))] // #nosec G404
+		req["alpha"] = rand.Float64() // #nosec G404
 	case GlobalSearch:
 		req["vector"] = queryVec
 		req["global"] = true
 	case BM25Search:
 		textQueries := []string{"search query", "information retrieval", "vector database", "machine learning"}
-		req["text_query"] = textQueries[rand.Intn(len(textQueries))]
+		req["text_query"] = textQueries[rand.Intn(len(textQueries))] // #nosec G404
 		req["bm25_only"] = true
 	case RerankedSearch:
 		req["vector"] = queryVec
@@ -380,7 +380,7 @@ func performSearchAndDelete(ctx context.Context, c *client.SmartClient, stats *S
 		}
 	}
 
-	if rand.Float64() < *deleteRate {
+	if rand.Float64() < *deleteRate { // #nosec G404
 		compactReq := map[string]any{"dataset": *dataset}
 		cBody, _ := json.Marshal(compactReq)
 		compactAction := &flight.Action{
@@ -398,15 +398,15 @@ func performSearchAndDelete(ctx context.Context, c *client.SmartClient, stats *S
 
 func generateCompoundFilter() any {
 	filterTypes := []string{"AND", "OR", "NOT"}
-	filterType := filterTypes[rand.Intn(len(filterTypes))]
+	filterType := filterTypes[rand.Intn(len(filterTypes))] // #nosec G404
 
 	switch filterType {
 	case "AND":
 		return map[string]any{
 			"logic": "AND",
 			"filters": []any{
-				map[string]any{"field": "category", "operator": "=", "value": fmt.Sprintf("%d", rand.Intn(10))},
-				map[string]any{"field": "score", "operator": ">", "value": fmt.Sprintf("%d", rand.Intn(50))},
+				map[string]any{"field": "category", "operator": "=", "value": fmt.Sprintf("%d", rand.Intn(10))}, // #nosec G404
+				map[string]any{"field": "score", "operator": ">", "value": fmt.Sprintf("%d", rand.Intn(50))}, // #nosec G404
 			},
 		}
 	case "OR":
@@ -432,7 +432,7 @@ func generateDateFilter() any {
 	now := time.Now().UnixNano()
 	oneDayAgo := now - 24*60*60*1000000000
 	filterTypes := []string{"range", "before", "after"}
-	filterType := filterTypes[rand.Intn(len(filterTypes))]
+	filterType := filterTypes[rand.Intn(len(filterTypes))] // #nosec G404
 
 	switch filterType {
 	case "range":

@@ -106,7 +106,7 @@ func (it *WALIterator) Seek(seq uint64) error {
 			return nil
 		}
 
-		if _, err := it.f.Seek(int64(nameLen)+int64(recLen), 1); err != nil {
+		if _, err := it.f.Seek(int64(nameLen)+int64(recLen), 1); err != nil { // #nosec G115
 			return err
 		}
 	}
@@ -149,7 +149,7 @@ func (it *WALIterator) nextLocked() (seq uint64, ts int64, name string, rec arro
 
 	storedSum := binary.LittleEndian.Uint32(header[0:4])
 	seq = binary.LittleEndian.Uint64(header[4:12])
-	ts = int64(binary.LittleEndian.Uint64(header[12:20]))
+	ts = int64(binary.LittleEndian.Uint64(header[12:20])) // #nosec G115
 	nameLen := binary.LittleEndian.Uint32(header[20:24])
 	recLen := binary.LittleEndian.Uint64(header[24:32])
 
@@ -235,7 +235,7 @@ func (it *WALIterator) nextRawLocked() (seq uint64, ts int64, name string, recBy
 
 	storedSum := binary.LittleEndian.Uint32(header[0:4])
 	seq = binary.LittleEndian.Uint64(header[4:12])
-	ts = int64(binary.LittleEndian.Uint64(header[12:20]))
+	ts = int64(binary.LittleEndian.Uint64(header[12:20])) // #nosec G115
 	nameLen := binary.LittleEndian.Uint32(header[20:24])
 	recLen := binary.LittleEndian.Uint64(header[24:32])
 
@@ -299,7 +299,7 @@ func (it *WALIterator) readEntry(r io.Reader) (seq uint64, ts int64, name string
 	}
 
 	seq = binary.LittleEndian.Uint64(header[4:12])
-	ts = int64(binary.LittleEndian.Uint64(header[12:20]))
+	ts = int64(binary.LittleEndian.Uint64(header[12:20])) // #nosec G115
 	nameLen := binary.LittleEndian.Uint32(header[20:24])
 	recLen := binary.LittleEndian.Uint64(header[24:32])
 
@@ -327,7 +327,7 @@ func (it *WALIterator) readEntryRaw(r io.Reader) (seq uint64, ts int64, name str
 	}
 
 	seq = binary.LittleEndian.Uint64(header[4:12])
-	ts = int64(binary.LittleEndian.Uint64(header[12:20]))
+	ts = int64(binary.LittleEndian.Uint64(header[12:20])) // #nosec G115
 	nameLen := binary.LittleEndian.Uint32(header[20:24])
 	recLen := binary.LittleEndian.Uint64(header[24:32])
 

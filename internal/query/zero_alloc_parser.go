@@ -1,6 +1,7 @@
 package query
 
 import (
+	"encoding/json"
 	"errors"
 	"sync"
 	"sync/atomic"
@@ -161,6 +162,41 @@ func (p *ZeroAllocTicketParser) Parse(data []byte) (TicketQuery, error) {
 				return p.result, err
 			}
 			i = newPos
+		case "vector":
+			if i+4 <= len(data) && string(data[i:i+4]) == "null" {
+				i += 4
+			} else {
+				// Use the search parser's vector parsing method (or copy it)
+				// For now, extract and use searchParser to avoid duplication
+				newPos, err := p.searchParser.ParseVectorField(data, i, &p.result.Vector)
+				if err != nil {
+					return p.result, err
+				}
+				i = newPos
+			}
+		case "k":
+			val, newPos, err := parseInt64(data, i)
+			if err != nil {
+				return p.result, err
+			}
+			p.result.K = int(val)
+			i = newPos
+		case "geo_search":
+			if i+4 <= len(data) && string(data[i:i+4]) == "null" {
+				i += 4
+			} else {
+				start := i
+				newPos, err := skipObject(data, i)
+				if err != nil {
+					return p.result, err
+				}
+				var req core.GeoSearchRequest
+				if err := json.Unmarshal(data[start:newPos], &req); err != nil {
+					return p.result, err
+				}
+				p.result.GeoSearch = &req
+				i = newPos
+			}
 		case "search_by_id":
 			if i+4 <= len(data) && string(data[i:i+4]) == "null" {
 				i += 4

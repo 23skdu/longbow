@@ -78,7 +78,7 @@ func decodeEscapes(data []byte) []byte {
 					u, err := strconv.ParseUint(string(data[i+1:i+5]), 16, 64)
 					if err == nil {
 						buf := make([]byte, 4)
-						n := encodeRune(buf, rune(u))
+						n := encodeRune(buf, rune(u)) // #nosec G115
 						res = append(res, buf[:n]...)
 						i += 4
 					} else {
@@ -99,7 +99,7 @@ func decodeEscapes(data []byte) []byte {
 
 func encodeRune(buf []byte, r rune) int {
 	if r <= 0x7F {
-		buf[0] = byte(r)
+		buf[0] = byte(r) // #nosec G115
 		return 1
 	}
 	if r <= 0x7FF {

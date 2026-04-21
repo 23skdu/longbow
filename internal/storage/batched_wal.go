@@ -431,7 +431,7 @@ func (w *WALBatcher) drainAndFlush() {
 func encodeWALEntryHeader(buf []byte, crc uint32, seq uint64, ts int64, nameLen uint32, recLen uint64) {
 	binary.LittleEndian.PutUint32(buf[0:4], crc)
 	binary.LittleEndian.PutUint64(buf[4:12], seq)
-	binary.LittleEndian.PutUint64(buf[12:20], uint64(ts))
+	binary.LittleEndian.PutUint64(buf[12:20], uint64(ts)) // #nosec G115
 	binary.LittleEndian.PutUint32(buf[20:24], nameLen)
 	binary.LittleEndian.PutUint64(buf[24:32], recLen)
 }
@@ -451,7 +451,7 @@ func (w *WALBatcher) serializeEntry(out *bytes.Buffer, entry WALEntry, scratch *
 	recBytes := scratch.Bytes()
 
 	// Zero-allocation string length
-	nameLen := uint32(len(entry.Name))
+	nameLen := uint32(len(entry.Name)) // #nosec G115
 	recLen := uint64(len(recBytes))
 
 	// Calculate CRC

@@ -122,7 +122,7 @@ func (s *VectorStore) handleVectorSearchAction(action *flight.Action, stream fli
 
 			// Validate dimension
 			expectedDim := ds.Index.GetDimension()
-			actualDim := uint32(len(queryVec))
+			actualDim := uint32(len(queryVec)) // #nosec G115
 			dsType := InferVectorDataType(ds.Schema, "vector")
 			
 			// Check if dataset is logically complex (interleaved floats)

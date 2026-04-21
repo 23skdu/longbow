@@ -11,7 +11,7 @@ func TestHaversineDistance(t *testing.T) {
 	p1 := GeoPoint{Lat: 40.7128, Lon: -74.0060}
 	p2 := GeoPoint{Lat: 34.0522, Lon: -118.2437}
 
-	dist := HaversineDistance(p1, p2, 6371.0)
+	dist := HaversineDistance(p1, p2, 6371000.0)
 
 	assert.Greater(t, dist, 3900000.0)
 	assert.Less(t, dist, 4000000.0)
@@ -33,7 +33,7 @@ func TestQuadtree_Insert(t *testing.T) {
 		MinLon: -180,
 		MaxLon: 180,
 	}
-	q := NewQuadtree(bounds, 4)
+	q := NewQuadtree(bounds, 4, "test_dataset")
 
 	vec := &GeoIndexedVector{
 		ID:       1,
@@ -52,7 +52,7 @@ func TestQuadtree_Contains(t *testing.T) {
 		MinLon: -75.0,
 		MaxLon: -74.0,
 	}
-	q := NewQuadtree(bounds, 4)
+	q := NewQuadtree(bounds, 4, "test_dataset")
 
 	inside := GeoPoint{Lat: 40.5, Lon: -74.5}
 	outside := GeoPoint{Lat: 35.0, Lon: -80.0}
@@ -67,7 +67,7 @@ func TestGeoIndex_New(t *testing.T) {
 		EarthRadius:  6371.0,
 	}
 
-	idx := NewGeoIndex(128, config)
+	idx := NewGeoIndex("test_dataset", 128, config)
 
 	assert.NotNil(t, idx)
 	assert.Equal(t, 128, idx.dimension)
@@ -80,7 +80,7 @@ func TestGeoIndex_AddAndSearchRadius(t *testing.T) {
 		EarthRadius:  6371.0,
 	}
 
-	idx := NewGeoIndex(128, config)
+	idx := NewGeoIndex("test_dataset", 128, config)
 
 	vectors := []struct {
 		id  uint64
@@ -109,7 +109,7 @@ func TestGeoIndex_SearchBox(t *testing.T) {
 		EarthRadius:  6371.0,
 	}
 
-	idx := NewGeoIndex(128, config)
+	idx := NewGeoIndex("test_dataset", 128, config)
 
 	idx.Add(1, []float32{1.0, 2.0}, GeoPoint{Lat: 40.7128, Lon: -74.0060}, nil)
 	idx.Add(2, []float32{1.1, 2.1}, GeoPoint{Lat: 34.0522, Lon: -118.2437}, nil)
@@ -135,7 +135,7 @@ func TestGeoSearchRequest_Validate(t *testing.T) {
 		SearchType: "radius",
 	}
 
-	err := req.Validate()
+	err := ValidateGeoSearchRequest(req)
 	assert.NoError(t, err)
 }
 
@@ -144,7 +144,7 @@ func TestGeoSearchRequest_ValidateDefault(t *testing.T) {
 		SearchType: "unknown",
 	}
 
-	err := req.Validate()
+	err := ValidateGeoSearchRequest(req)
 	assert.NoError(t, err)
 	assert.Equal(t, "radius", req.SearchType)
 }
@@ -155,7 +155,7 @@ func TestGeoSearchRequest_ValidateErrors(t *testing.T) {
 		RadiusKm:   0,
 	}
 
-	err := req.Validate()
+	err := ValidateGeoSearchRequest(req)
 	assert.Error(t, err)
 }
 
@@ -194,7 +194,7 @@ func TestQuadtree_QueryRadius(t *testing.T) {
 		MinLon: -180,
 		MaxLon: 180,
 	}
-	q := NewQuadtree(bounds, 4)
+	q := NewQuadtree(bounds, 4, "test_dataset")
 
 	q.Insert(&GeoIndexedVector{ID: 1, GeoPoint: GeoPoint{Lat: 40.7128, Lon: -74.0060}})
 	q.Insert(&GeoIndexedVector{ID: 2, GeoPoint: GeoPoint{Lat: 34.0522, Lon: -118.2437}})
@@ -212,7 +212,7 @@ func TestQuadtree_QueryBox(t *testing.T) {
 		MinLon: -180,
 		MaxLon: 180,
 	}
-	q := NewQuadtree(bounds, 4)
+	q := NewQuadtree(bounds, 4, "test_dataset")
 
 	q.Insert(&GeoIndexedVector{ID: 1, GeoPoint: GeoPoint{Lat: 40.7128, Lon: -74.0060}})
 	q.Insert(&GeoIndexedVector{ID: 2, GeoPoint: GeoPoint{Lat: 34.0522, Lon: -118.2437}})

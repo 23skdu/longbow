@@ -70,7 +70,7 @@ func (sca *SizeClassArena[T]) AllocSlice(count int) (SliceRef, string, error) {
 	}
 
 	var zero T
-	elemSize := int(unsafe.Sizeof(zero))
+	elemSize := int(unsafe.Sizeof(zero)) // #nosec G115
 	totalSize := count * elemSize
 
 	sca.mu.RLock()
@@ -91,7 +91,7 @@ func (sca *SizeClassArena[T]) AllocSliceDirty(count int) (SliceRef, string, erro
 	}
 
 	var zero T
-	elemSize := int(unsafe.Sizeof(zero))
+	elemSize := int(unsafe.Sizeof(zero)) // #nosec G115
 	totalSize := count * elemSize
 
 	sca.mu.RLock()

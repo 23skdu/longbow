@@ -59,7 +59,7 @@ func (w *StdWAL) Write(name string, seq uint64, ts int64, record arrow.RecordBat
 	}
 	recBytes := buf.Bytes()
 	nameBytes := []byte(name)
-	nameLen := uint32(len(nameBytes))
+	nameLen := uint32(len(nameBytes)) // #nosec G115
 	recLen := uint64(len(recBytes))
 
 	crc := crc32.NewIEEE()
@@ -71,7 +71,7 @@ func (w *StdWAL) Write(name string, seq uint64, ts int64, record arrow.RecordBat
 	header := make([]byte, 32)
 	binary.LittleEndian.PutUint32(header[0:4], checksum)
 	binary.LittleEndian.PutUint64(header[4:12], seq)
-	binary.LittleEndian.PutUint64(header[12:20], uint64(ts))
+	binary.LittleEndian.PutUint64(header[12:20], uint64(ts)) // #nosec G115
 	binary.LittleEndian.PutUint32(header[20:24], nameLen)
 	binary.LittleEndian.PutUint64(header[24:32], recLen)
 

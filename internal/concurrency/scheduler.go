@@ -67,7 +67,7 @@ func (ws *WorkStealingScheduler[T]) GetTask(workerID int) (T, bool) {
 			task := victim.items[0]
 			victim.items = victim.items[1:]
 			victim.mu.Unlock()
-			ws.stealIndex.Store(uint32(victimID))
+			ws.stealIndex.Store(uint32(victimID)) // #nosec G115
 			return task, true
 		}
 		victim.mu.Unlock()

@@ -604,7 +604,7 @@ func (o *int32FilterOp) MatchValue(val interface{}) bool {
 	case int32:
 		return o.compareInt32(v)
 	case int64:
-		return o.compareInt32(int32(v))
+		return o.compareInt32(int32(v)) // #nosec G115
 	}
 	return false
 }

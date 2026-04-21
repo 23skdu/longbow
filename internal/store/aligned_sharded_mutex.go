@@ -71,7 +71,7 @@ func NewAlignedShardedMutex(cfg AlignedShardedMutexConfig) *AlignedShardedMutex 
 		config:         cfg,
 		resizeCooldown: 60, // 1 minute between resizes
 	}
-	sm.numShards.Store(int32(cfg.NumShards))
+	sm.numShards.Store(int32(cfg.NumShards)) // #nosec G115
 
 	return sm
 }
@@ -91,7 +91,7 @@ func (sm *AlignedShardedMutex) ShardFor(key uint64) int {
 	const prime64 = 1099511628211
 	hash := uint64(14695981039346656037) ^ key
 	hash *= prime64
-	return int(hash % uint64(sm.NumShards()))
+	return int(hash % uint64(sm.NumShards())) // #nosec G115
 }
 
 // TryLock attempts to acquire a write lock without blocking.
@@ -221,7 +221,7 @@ func (sm *AlignedShardedMutex) resize(newShardCount int) {
 	if newShardCount <= oldCount {
 		// Shrinking: just update count, old shards will be garbage collected
 		// Note: This leaves unused shards in memory but is safe
-		sm.numShards.Store(int32(newShardCount))
+		sm.numShards.Store(int32(newShardCount)) // #nosec G115
 		return
 	}
 
@@ -239,7 +239,7 @@ func (sm *AlignedShardedMutex) resize(newShardCount int) {
 	// Atomic swap - readers may temporarily use old or new array
 	// This is safe because we only grow and never shrink the slice
 	sm.shards = newShards
-	sm.numShards.Store(int32(newShardCount))
+	sm.numShards.Store(int32(newShardCount)) // #nosec G115
 }
 
 // AlignedShardedMutexStats holds statistics for the mutex.

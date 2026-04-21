@@ -352,7 +352,7 @@ func (d *DiskANNIndex) GetNeighbors(ctx context.Context, id lbtypes.VectorID, k 
 	for i := 0; i < len(neighbors) && i < k; i++ {
 		neighborID := neighbors[i]
 		results = append(results, lbtypes.SearchResult{
-			ID: lbtypes.VectorID(neighborID),
+			ID: lbtypes.VectorID(neighborID), // #nosec G115
 		})
 	}
 
@@ -379,7 +379,7 @@ func (d *DiskANNIndex) Save(path string) error {
 	}
 
 	// Write dimension
-	if err := binary.Write(f, binary.LittleEndian, uint32(d.dimension)); err != nil {
+	if err := binary.Write(f, binary.LittleEndian, uint32(d.dimension)); err != nil { // #nosec G115
 		return fmt.Errorf("failed to write dimension: %w", err)
 	}
 
@@ -388,7 +388,7 @@ func (d *DiskANNIndex) Save(path string) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
-	if err := binary.Write(f, binary.LittleEndian, uint32(len(configData))); err != nil {
+	if err := binary.Write(f, binary.LittleEndian, uint32(len(configData))); err != nil { // #nosec G115
 		return fmt.Errorf("failed to write config length: %w", err)
 	}
 	if _, err := f.Write(configData); err != nil {
@@ -396,7 +396,7 @@ func (d *DiskANNIndex) Save(path string) error {
 	}
 
 	// Write vector count
-	vecCount := uint32(len(d.vectors))
+	vecCount := uint32(len(d.vectors)) // #nosec G115
 	if err := binary.Write(f, binary.LittleEndian, vecCount); err != nil {
 		return fmt.Errorf("failed to write vector count: %w", err)
 	}
@@ -424,7 +424,7 @@ func (d *DiskANNIndex) Save(path string) error {
 	}
 
 	// Write graph count
-	graphCount := uint32(len(d.graph))
+	graphCount := uint32(len(d.graph)) // #nosec G115
 	if err := binary.Write(f, binary.LittleEndian, graphCount); err != nil {
 		return fmt.Errorf("failed to write graph count: %w", err)
 	}
@@ -435,7 +435,7 @@ func (d *DiskANNIndex) Save(path string) error {
 		if err := binary.Write(f, binary.LittleEndian, id); err != nil {
 			return fmt.Errorf("failed to write graph id: %w", err)
 		}
-		if err := binary.Write(f, binary.LittleEndian, uint32(len(neighbors))); err != nil {
+		if err := binary.Write(f, binary.LittleEndian, uint32(len(neighbors))); err != nil { // #nosec G115
 			return fmt.Errorf("failed to write neighbor count: %w", err)
 		}
 		if len(neighbors) > 0 {

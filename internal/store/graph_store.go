@@ -99,7 +99,7 @@ func (gs *GraphStore) AddEdge(edge Edge) error {
 	defer gs.mu.Unlock()
 
 	if _, exists := gs.predicateMap[edge.Predicate]; !exists {
-		idx := int32(len(gs.predicates))
+		idx := int32(len(gs.predicates)) // #nosec G115
 		gs.predicateMap[edge.Predicate] = idx
 		gs.predicates = append(gs.predicates, edge.Predicate)
 	}

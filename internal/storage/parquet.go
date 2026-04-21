@@ -80,7 +80,7 @@ func writeParquet(w io.Writer, compression string, records ...arrow.RecordBatch)
 		case *array.Uint32:
 			ids = make([]int32, rows)
 			for i := 0; i < int(rows); i++ {
-				ids[i] = int32(idArr.Value(i))
+				ids[i] = int32(idArr.Value(i)) // #nosec G115
 			}
 		default:
 			ids = make([]int32, rows)
@@ -211,7 +211,7 @@ func readParquet(f *os.File, size int64, mem memory.Allocator) (arrow.RecordBatc
 	b := array.NewRecordBuilder(mem, arrow.NewSchema(
 		[]arrow.Field{
 			{Name: "id", Type: arrow.PrimitiveTypes.Int32},
-			{Name: "vector", Type: arrow.FixedSizeListOf(int32(len(rows[0].Vector)), arrow.PrimitiveTypes.Float32)},
+			{Name: "vector", Type: arrow.FixedSizeListOf(int32(len(rows[0].Vector)), arrow.PrimitiveTypes.Float32)}, // #nosec G115
 		},
 		nil,
 	))

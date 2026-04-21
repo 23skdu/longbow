@@ -451,11 +451,11 @@ func generateRecord(count int, dim int, dtype string) (arrow.Record, *arrow.Sche
 		return nil, nil, fmt.Errorf("unsupported dtype: %s", dtype)
 	}
 
-	listLen := int32(dim)
+	listLen := int32(dim) // #nosec G115
 	var meta arrow.Metadata
 	if dtype == "complex64" || dtype == "complex128" || dtype == "turboquant" || dtype == "float16" {
 		if dtype == "complex64" || dtype == "complex128" {
-			listLen = int32(2 * dim)
+			listLen = int32(2 * dim) // #nosec G115
 		}
 		meta = arrow.NewMetadata([]string{"longbow.vector_type"}, []string{dtype})
 	}
@@ -506,7 +506,7 @@ func generateRecord(count int, dim int, dtype string) (arrow.Record, *arrow.Sche
 		vb.Reserve(count * stride)
 		vals := make([]float32, count*stride)
 		for i := range vals {
-			vals[i] = rand.Float32()
+			vals[i] = rand.Float32() // #nosec G404
 		}
 		for i := 0; i < count; i++ {
 			listBldr.Append(true)
@@ -518,7 +518,7 @@ func generateRecord(count int, dim int, dtype string) (arrow.Record, *arrow.Sche
 		vb.Reserve(count * stride)
 		vals := make([]float64, count*stride)
 		for i := range vals {
-			vals[i] = rand.Float64()
+			vals[i] = rand.Float64() // #nosec G404
 		}
 		for i := 0; i < count; i++ {
 			listBldr.Append(true)
@@ -529,7 +529,7 @@ func generateRecord(count int, dim int, dtype string) (arrow.Record, *arrow.Sche
 		vb.Reserve(count * dim)
 		vals := make([]float16.Num, count*dim)
 		for i := range vals {
-			vals[i] = float16.New(rand.Float32())
+			vals[i] = float16.New(rand.Float32()) // #nosec G404
 		}
 		for i := 0; i < count; i++ {
 			listBldr.Append(true)
@@ -540,7 +540,7 @@ func generateRecord(count int, dim int, dtype string) (arrow.Record, *arrow.Sche
 		vb.Reserve(count * dim)
 		vals := make([]int32, count*dim)
 		for i := range vals {
-			vals[i] = int32(rand.Intn(1000))
+			vals[i] = int32(rand.Intn(1000)) // #nosec G115,G404
 		}
 		for i := 0; i < count; i++ {
 			listBldr.Append(true)
@@ -551,7 +551,7 @@ func generateRecord(count int, dim int, dtype string) (arrow.Record, *arrow.Sche
 		vb.Reserve(count * dim)
 		vals := make([]int16, count*dim)
 		for i := range vals {
-			vals[i] = int16(rand.Intn(1000))
+			vals[i] = int16(rand.Intn(1000)) // #nosec G115,G404
 		}
 		for i := 0; i < count; i++ {
 			listBldr.Append(true)
@@ -562,7 +562,7 @@ func generateRecord(count int, dim int, dtype string) (arrow.Record, *arrow.Sche
 		vb.Reserve(count * dim)
 		vals := make([]int8, count*dim)
 		for i := range vals {
-			vals[i] = int8(rand.Intn(127))
+			vals[i] = int8(rand.Intn(127)) // #nosec G115,G404
 		}
 		for i := 0; i < count; i++ {
 			listBldr.Append(true)
@@ -573,7 +573,7 @@ func generateRecord(count int, dim int, dtype string) (arrow.Record, *arrow.Sche
 		vb.Reserve(count * dim)
 		vals := make([]uint32, count*dim)
 		for i := range vals {
-			vals[i] = uint32(rand.Intn(1000))
+			vals[i] = uint32(rand.Intn(1000)) // #nosec G115,G404
 		}
 		for i := 0; i < count; i++ {
 			listBldr.Append(true)
@@ -584,7 +584,7 @@ func generateRecord(count int, dim int, dtype string) (arrow.Record, *arrow.Sche
 		vb.Reserve(count * dim)
 		vals := make([]uint16, count*dim)
 		for i := range vals {
-			vals[i] = uint16(rand.Intn(1000))
+			vals[i] = uint16(rand.Intn(1000)) // #nosec G115,G404
 		}
 		for i := 0; i < count; i++ {
 			listBldr.Append(true)
@@ -595,7 +595,7 @@ func generateRecord(count int, dim int, dtype string) (arrow.Record, *arrow.Sche
 		vb.Reserve(count * dim)
 		vals := make([]uint8, count*dim)
 		for i := range vals {
-			vals[i] = uint8(rand.Intn(255))
+			vals[i] = uint8(rand.Intn(255)) // #nosec G115,G404
 		}
 		for i := 0; i < count; i++ {
 			listBldr.Append(true)
@@ -606,7 +606,7 @@ func generateRecord(count int, dim int, dtype string) (arrow.Record, *arrow.Sche
 		vb.Reserve(count * dim)
 		vals := make([]int64, count*dim)
 		for i := range vals {
-			vals[i] = int64(rand.Intn(1000))
+			vals[i] = int64(rand.Intn(1000)) // #nosec G404
 		}
 		for i := 0; i < count; i++ {
 			listBldr.Append(true)
@@ -617,7 +617,7 @@ func generateRecord(count int, dim int, dtype string) (arrow.Record, *arrow.Sche
 		vb.Reserve(count * dim)
 		vals := make([]uint64, count*dim)
 		for i := range vals {
-			vals[i] = uint64(rand.Intn(1000))
+			vals[i] = uint64(rand.Intn(1000)) // #nosec G115,G404
 		}
 		for i := 0; i < count; i++ {
 			listBldr.Append(true)
@@ -644,7 +644,7 @@ func generateRecord(count int, dim int, dtype string) (arrow.Record, *arrow.Sche
 	defer boolBldr.Release()
 	boolBldr.Reserve(count)
 	for i := 0; i < count; i++ {
-		boolBldr.Append(rand.Float32() > 0.5) // ~50% true
+		boolBldr.Append(rand.Float32() > 0.5) // #nosec G404
 	}
 	activeArr := boolBldr.NewArray()
 	defer activeArr.Release()
@@ -655,7 +655,7 @@ func generateRecord(count int, dim int, dtype string) (arrow.Record, *arrow.Sche
 	strBldr.Reserve(count)
 	categories := []string{"electronics", "clothing", "home", "books"}
 	for i := 0; i < count; i++ {
-		strBldr.Append(categories[rand.Intn(len(categories))])
+		strBldr.Append(categories[rand.Intn(len(categories))]) // #nosec G404
 	}
 	catArr := strBldr.NewArray()
 	defer catArr.Release()

@@ -228,6 +228,63 @@ class LongbowClient:
         except Exception as e:
             raise LongbowQueryError(f"Search failed: {e}")
 
+    def geo_search(
+        self,
+        dataset: str,
+        center: Optional[Dict[str, float]] = None,
+        radius_km: Optional[float] = None,
+        box: Optional[Dict[str, float]] = None,
+        search_type: str = "radius",
+        k: int = 10,
+        filters: Optional[List[Dict]] = None,
+        **kwargs,
+    ) -> pd.DataFrame:
+        """
+        Perform a Geospatial search (radius or bounding box).
+
+        Args:
+            dataset: Target dataset (must have geospatial index enabled).
+            center: Center point {"lat": 1.2, "lon": 3.4}. Required for radius/hybrid.
+            radius_km: Search radius in kilometers. Required for radius/hybrid.
+            box: Bounding box {"min_lat": ..., "max_lat": ..., "min_lon": ..., "max_lon": ...}. Required for box search.
+            search_type: "radius", "box", or "hybrid".
+            k: Number of results.
+            filters: Optional metadata filters.
+            **kwargs: Extra parameters.
+
+        Returns:
+            pandas.DataFrame: Search results with 'id' and 'distance'.
+        """
+        if self._data_client is None:
+            self.connect()
+
+        geo_req = {
+            "dataset": dataset,
+            "k": k,
+            "search_type": search_type,
+        }
+
+        if center:
+            geo_req["center"] = center
+        if radius_km:
+            geo_req["radius_km"] = radius_km
+        if box:
+            geo_req["box"] = box
+        if filters:
+            geo_req["filters"] = filters
+
+        geo_req.update(kwargs)
+
+        ticket_bytes = json.dumps({"geo_search": geo_req}).encode("utf-8")
+        ticket = flight.Ticket(ticket_bytes)
+
+        try:
+            reader = self._data_client.do_get(ticket, options=self._get_call_options())
+            table = reader.read_all()
+            return table.to_pandas()
+        except Exception as e:
+            raise LongbowQueryError(f"Geo-Search failed: {e}")
+
     def search_by_id(
         self, dataset: str, id: Union[int, str], k: int = 10
     ) -> Dict[str, Any]:
@@ -323,6 +380,44 @@ class LongbowClient:
         }
         action_body = json.dumps(req).encode("utf-8")
         action = flight.Action("CreateNamespace", action_body)
+        list(self._meta_client.do_action(action, options=self._get_call_options()))
+
+    def create_dataset(
+        self,
+        name: str,
+        dimensions: int,
+        vector_type: str = "float32",
+        turboquant_bits: int = 8,
+        geo_enabled: bool = False,
+        disk_enabled: bool = False,
+        metric: str = "cosine",
+    ):
+        """
+        Create a new dataset with specific feature configurations.
+
+        Args:
+            name: Name of the dataset (e.g. "tenant/vectors").
+            dimensions: Vector dimensionality.
+            vector_type: "float32", "turboquant" (tq), "int8", "float16".
+            turboquant_bits: Bit depth for TQ (4 or 8).
+            geo_enabled: Enable geospatial indexing (Quadtree).
+            disk_enabled: Enable Disk-ANN offloading.
+            metric: Distance metric ("cosine", "l2", "ip").
+        """
+        if self._meta_client is None:
+            self.connect()
+
+        req = {
+            "name": name,
+            "dimension": dimensions,
+            "vector_type": vector_type,
+            "turboquant_bits": turboquant_bits,
+            "geo_enabled": geo_enabled,
+            "disk_enabled": disk_enabled,
+            "metric": metric,
+        }
+        action_body = json.dumps(req).encode("utf-8")
+        action = flight.Action("CreateDataset", action_body)
         list(self._meta_client.do_action(action, options=self._get_call_options()))
         # Check results if needed
 

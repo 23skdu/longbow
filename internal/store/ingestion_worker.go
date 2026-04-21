@@ -39,7 +39,7 @@ func (s *VectorStore) runIngestionWorkerWithCtx(ctx context.Context) {
 				default:
 				}
 			}
-			timer.Reset(50 * time.Microsecond)
+			timer.Reset(1 * time.Millisecond)
 
 			select {
 			case <-s.stopChan:

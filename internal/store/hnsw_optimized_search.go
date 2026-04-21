@@ -137,7 +137,7 @@ func BeamSearchOptimized(
 
 			if len(results) < numResults || dist < results[len(results)-1].Dist {
 				heap.Push(candidates, BeamSearchCandidate{
-					ID:    uint32(i),
+					ID:    uint32(i), // #nosec G115
 					Dist:  dist,
 					Layer: 0,
 				})
@@ -209,7 +209,7 @@ func ParallelBeamSearch(
 	}
 
 	var wg sync.WaitGroup
-	sharedResult := NewParallelSearchResult(numResults, uint32(len(vectors)))
+	sharedResult := NewParallelSearchResult(numResults, uint32(len(vectors))) // #nosec G115
 
 	for t := 0; t < numThreads; t++ {
 		wg.Add(1)
@@ -226,7 +226,7 @@ func ParallelBeamSearch(
 			threadResults := BeamSearchOptimized(query, threadVectors, numResults, config)
 
 			for i := range threadResults {
-				threadResults[i].ID = uint32(int(threadResults[i].ID) + start)
+				threadResults[i].ID = uint32(int(threadResults[i].ID) + start) // #nosec G115
 				sharedResult.Add(threadResults[i])
 			}
 		}(t)

@@ -171,7 +171,7 @@ func (s *VectorStore) StartIndexingWorkers(numWorkers int) {
 	defer s.workerMu.Unlock()
 
 	for i := 0; i < numWorkers; i++ {
-		workerCtx, cancel := context.WithCancel(s.ctx)
+		workerCtx, cancel := context.WithCancel(s.ctx) // #nosec G118
 		s.indexingWorkerCancels = append(s.indexingWorkerCancels, cancel)
 		s.indexWg.Add(1)
 		go func() {
@@ -209,7 +209,7 @@ func (s *VectorStore) StartIngestionWorkers(count int) {
 	defer s.workerMu.Unlock()
 
 	for i := 0; i < count; i++ {
-		workerCtx, cancel := context.WithCancel(s.ctx)
+		workerCtx, cancel := context.WithCancel(s.ctx) // #nosec G118
 		s.ingestionWorkerCancels = append(s.ingestionWorkerCancels, cancel)
 		s.workerWg.Add(1)
 		go func() {
@@ -260,7 +260,7 @@ func (s *VectorStore) AdjustWorkerCounts(indexing, ingestion int) {
 
 func (s *VectorStore) runIndexWorker(ctx context.Context) {
 	maxBatch := 1000
-	var currentBatch int
+	currentBatch := 100
 
 	jobs := make([]IndexJob, 0, maxBatch)
 

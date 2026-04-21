@@ -35,7 +35,7 @@ func setupServer(t *testing.T) (store *VectorStore, dir string, dialer func(cont
 	}
 
 	mem := memory.NewGoAllocator()
-	logger := zerolog.Nop()
+	logger := zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr}).With().Timestamp().Logger()
 	vs := NewVectorStore(mem, logger, 1024*1024*100, 0, 0) // 100MB limit
 
 	// Init persistence

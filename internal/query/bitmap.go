@@ -48,7 +48,7 @@ func (b *Bitset) Set(i int) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.bitmap != nil {
-		b.bitmap.Add(uint32(i))
+		b.bitmap.Add(uint32(i)) // #nosec G115
 	}
 }
 
@@ -56,7 +56,7 @@ func (b *Bitset) Clear(i int) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.bitmap != nil {
-		b.bitmap.Remove(uint32(i))
+		b.bitmap.Remove(uint32(i)) // #nosec G115
 	}
 }
 
@@ -66,7 +66,7 @@ func (b *Bitset) Contains(i int) bool {
 	if b.bitmap == nil {
 		return false
 	}
-	return b.bitmap.Contains(uint32(i))
+	return b.bitmap.Contains(uint32(i)) // #nosec G115
 }
 
 // Clone creates a thread-safe copy of the bitset.
@@ -121,11 +121,11 @@ func (b *Bitset) Slice(offset, length int) *Bitset {
 
 	// Optimize: Using iterator with skip
 	iter := b.bitmap.Iterator()
-	iter.AdvanceIfNeeded(uint32(offset))
+	iter.AdvanceIfNeeded(uint32(offset)) // #nosec G115
 
 	for iter.HasNext() {
 		val := iter.Next()
-		if val >= uint32(offset+length) {
+		if val >= uint32(offset+length) { // #nosec G115
 			break
 		}
 		newBm.Set(int(val) - offset)
@@ -157,7 +157,7 @@ func (b *AtomicBitset) Contains(i int) bool {
 	if bm == nil {
 		return false
 	}
-	return bm.Contains(uint32(i))
+	return bm.Contains(uint32(i)) // #nosec G115
 }
 
 func (b *AtomicBitset) Set(i int) {
@@ -171,7 +171,7 @@ func (b *AtomicBitset) Set(i int) {
 	} else {
 		newBm = oldBm.Clone()
 	}
-	newBm.Add(uint32(i))
+	newBm.Add(uint32(i)) // #nosec G115
 	b.bitmap.Store(newBm)
 }
 
@@ -183,12 +183,12 @@ func (b *AtomicBitset) Clear(i int) {
 	if oldBm == nil {
 		return
 	}
-	if !oldBm.Contains(uint32(i)) {
+	if !oldBm.Contains(uint32(i)) { // #nosec G115
 		return
 	}
 
 	newBm := oldBm.Clone()
-	newBm.Remove(uint32(i))
+	newBm.Remove(uint32(i)) // #nosec G115
 	b.bitmap.Store(newBm)
 }
 

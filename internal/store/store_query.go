@@ -143,6 +143,7 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 		}
 		err = nil // Clear error after fallback
 	}
+	s.logger.Info().Interface("parsed_query", query).Msg("DEBUG: DoGet parsed query")
 
 	// Resolve CTEs if present
 	cteResults := make(map[string][]lbtypes.SearchResult)
@@ -172,6 +173,8 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 	}
 
 	switch {
+	case query.GeoSearch != nil:
+		return s.handleDoGetGeoSearch(query.GeoSearch, query.WindowFunctions, stream, mem)
 	case query.Search != nil:
 		if isGlobal {
 			query.Search.LocalOnly = false
@@ -181,6 +184,13 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 		return s.handleDoGetSearchByID(query.SearchByID, stream, mem)
 	case query.Recommend != nil:
 		return s.handleDoGetRecommend(query.Recommend, stream, mem)
+	case len(query.Vector) > 0:
+		searchReq := &lbtypes.VectorSearchRequest{
+			Dataset: query.Name,
+			Vector:  query.Vector,
+			K:       query.K,
+		}
+		return s.handleDoGetSearch(searchReq, query.WindowFunctions, stream, mem)
 	}
 
 	// Existing Dataset Fetch Logic
@@ -579,33 +589,28 @@ func (s *VectorStore) mapInternalToUserIDsLocked(ds *Dataset, results []lbtypes.
 			}
 		case *array.Uint64:
 			if loc.RowIdx < c.Len() {
-				resolvedID = lbtypes.VectorID(c.Value(loc.RowIdx)) // Truncate if needed
+				resolvedID = lbtypes.VectorID(c.Value(loc.RowIdx)) // #nosec G115
 			} else {
 				resolvedID = res.ID
 			}
 		case *array.Int64:
 			if loc.RowIdx < c.Len() {
-				resolvedID = lbtypes.VectorID(c.Value(loc.RowIdx))
+				resolvedID = lbtypes.VectorID(c.Value(loc.RowIdx)) // #nosec G115
 			} else {
 				resolvedID = res.ID
 			}
 		case *array.Int32:
 			if loc.RowIdx < c.Len() {
-				resolvedID = lbtypes.VectorID(c.Value(loc.RowIdx))
+				resolvedID = lbtypes.VectorID(c.Value(loc.RowIdx)) // #nosec G115
 			} else {
 				resolvedID = res.ID
 			}
 		case *array.String:
 			if loc.RowIdx < c.Len() {
-				// We can't return string IDs in the uint64 field.
-				// But we can try to parse it if it's a numeric string,
-				// or hash it if we really need a uint64.
-				// However, for archer integration, we often use numeric strings for testing,
-				// or we need a way to return the actual string.
 				val := c.Value(loc.RowIdx)
 				u, err := strconv.ParseUint(val, 10, 64)
 				if err == nil {
-					resolvedID = lbtypes.VectorID(u)
+					resolvedID = lbtypes.VectorID(u) // #nosec G115
 				} else {
 					// If not numeric, we're stuck with internal ID for the uint64 field.
 					// A better fix would be to return StringIDs in the response.
@@ -1249,11 +1254,11 @@ func (s *VectorStore) executeInternalTable(query *qry.TicketQuery) ([]lbtypes.Se
 				case *array.Uint32:
 					res.ID = lbtypes.VectorID(c.Value(rowIdx))
 				case *array.Uint64:
-					res.ID = lbtypes.VectorID(c.Value(rowIdx))
+					res.ID = lbtypes.VectorID(c.Value(rowIdx)) // #nosec G115
 				case *array.Int64:
-					res.ID = lbtypes.VectorID(c.Value(rowIdx))
+					res.ID = lbtypes.VectorID(c.Value(rowIdx)) // #nosec G115
 				case *array.Int32:
-					res.ID = lbtypes.VectorID(c.Value(rowIdx))
+					res.ID = lbtypes.VectorID(c.Value(rowIdx)) // #nosec G115
 				default:
 					// Fallback to internal ID (constructed from batch/row)
 					res.ID = lbtypes.VectorID(uint32(i)<<16 | uint32(rowIdx))
@@ -1332,4 +1337,44 @@ func (s *VectorStore) streamSearchResults(results []lbtypes.SearchResult, window
 	rec := builder.NewRecordBatch()
 	defer rec.Release()
 	return w.Write(rec)
+}
+func (s *VectorStore) handleDoGetGeoSearch(req *lbtypes.GeoSearchRequest, wfs []qry.WindowFunction, stream flight.FlightService_DoGetServer, mem *lbmem.ArenaAllocator) error {
+	ds, ok := s.getDataset(req.Dataset)
+	if !ok {
+		return status.Errorf(codes.NotFound, "dataset %s not found", req.Dataset)
+	}
+
+	if ds.GeoIndex == nil {
+		return status.Error(codes.FailedPrecondition, "dataset has no geospatial index")
+	}
+
+	// Lock dataset for search
+	ds.dataMu.RLock()
+	defer ds.dataMu.RUnlock()
+
+	var results []lbtypes.SearchResult
+	var err error
+
+	switch req.SearchType {
+	case "radius":
+		results, err = ds.GeoIndex.SearchRadius(stream.Context(), req.Center, req.RadiusKm, req.K)
+	case "box":
+		if req.Box == nil {
+			return status.Error(codes.InvalidArgument, "bounding box required for 'box' search")
+		}
+		results, err = ds.GeoIndex.SearchBox(stream.Context(), *req.Box, req.K)
+	case "hybrid":
+		results, err = ds.GeoIndex.HybridSearch(stream.Context(), nil, req.Center, req.RadiusKm, req.K)
+	default:
+		return status.Errorf(codes.InvalidArgument, "invalid search_type: %s", req.SearchType)
+	}
+
+	if err != nil {
+		return status.Errorf(codes.Internal, "geospatial search failed: %v", err)
+	}
+
+	// Map internal IDs to user IDs if primary index exists
+	results = s.mapInternalToUserIDsLocked(ds, results)
+
+	return s.streamSearchResults(results, wfs, stream, mem)
 }

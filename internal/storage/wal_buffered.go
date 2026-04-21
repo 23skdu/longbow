@@ -78,7 +78,7 @@ func (w *BufferedWAL) Write(name string, seq uint64, ts int64, record arrow.Reco
 	const headerSize = 32
 
 	nameBytes := []byte(name)
-	nameLen := uint32(len(nameBytes))
+	nameLen := uint32(len(nameBytes)) // #nosec G115
 
 	// 1. Reserve Header Space (Write placeholder)
 	headerOffset := w.buf.Len()
@@ -103,7 +103,7 @@ func (w *BufferedWAL) Write(name string, seq uint64, ts int64, record arrow.Reco
 		return err
 	}
 	recEndOffset := w.buf.Len()
-	recLen := uint64(recEndOffset - recStartOffset)
+	recLen := uint64(recEndOffset - recStartOffset) // #nosec G115
 
 	// 4. Calculate Checksum (Name + RecordBytes)
 	// We can access the written bytes directly from the buffer slice
@@ -120,7 +120,7 @@ func (w *BufferedWAL) Write(name string, seq uint64, ts int64, record arrow.Reco
 	header := make([]byte, headerSize)
 	binary.LittleEndian.PutUint32(header[0:4], checksum)
 	binary.LittleEndian.PutUint64(header[4:12], seq)
-	binary.LittleEndian.PutUint64(header[12:20], uint64(ts))
+	binary.LittleEndian.PutUint64(header[12:20], uint64(ts)) // #nosec G115
 	binary.LittleEndian.PutUint32(header[20:24], nameLen)
 	binary.LittleEndian.PutUint64(header[24:32], recLen)
 

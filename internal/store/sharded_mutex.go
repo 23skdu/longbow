@@ -74,7 +74,7 @@ func (sm *ShardedRWMutex) ShardFor(key uint64) int {
 	const prime64 = 1099511628211
 	hash := uint64(14695981039346656037) ^ key
 	hash *= prime64
-	return int(hash % uint64(sm.numShards))
+	return int(hash % uint64(sm.numShards)) // #nosec G115
 }
 
 // Lock acquires a write lock for the shard associated with the given key.

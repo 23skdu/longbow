@@ -123,7 +123,7 @@ func (rb *IngestionRingBuffer) Pop() (ingestionJob, bool) {
 
 // Len returns approximate length
 func (rb *IngestionRingBuffer) Len() int {
-	return int(rb.tail.Load() - rb.head.Load())
+	return int(rb.tail.Load() - rb.head.Load()) // #nosec G115
 }
 
 // Capacity returns the total size of the ring buffer

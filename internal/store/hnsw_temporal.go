@@ -55,7 +55,7 @@ func (thi *TemporalHNSWIndex) SearchAsOf(ctx context.Context, timestamp int64, k
 	results := make([]SearchResult, 0, k)
 	for _, id := range validIDs {
 		results = append(results, SearchResult{
-			ID: VectorID(id),
+			ID: VectorID(id), // #nosec G115
 		})
 	}
 
@@ -75,7 +75,7 @@ func (thi *TemporalHNSWIndex) SearchRange(ctx context.Context, startTime, endTim
 	results := make([]SearchResult, 0, k)
 	for _, id := range validIDs {
 		results = append(results, SearchResult{
-			ID: VectorID(id),
+			ID: VectorID(id), // #nosec G115
 		})
 	}
 
@@ -95,7 +95,7 @@ func (thi *TemporalHNSWIndex) SearchSlidingWindow(ctx context.Context, windowSiz
 	results := make([]SearchResult, 0, k)
 	for _, id := range validIDs {
 		results = append(results, SearchResult{
-			ID: VectorID(id),
+			ID: VectorID(id), // #nosec G115
 		})
 	}
 

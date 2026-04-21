@@ -2,27 +2,20 @@ package store
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"math"
 	"sort"
 	"sync"
 
+	"time"
+
+	"github.com/23skdu/longbow/internal/metrics"
 	lbtypes "github.com/23skdu/longbow/internal/store/types"
 )
 
-type GeoPoint struct {
-	Lat  float64 `json:"lat"`
-	Lon  float64 `json:"lon"`
-	Name string  `json:"name,omitempty"`
-}
+type GeoPoint = lbtypes.GeoPoint
 
-type GeoBoundingBox struct {
-	MinLat float64 `json:"min_lat"`
-	MaxLat float64 `json:"max_lat"`
-	MinLon float64 `json:"min_lon"`
-	MaxLon float64 `json:"max_lon"`
-}
+type GeoBoundingBox = lbtypes.GeoBoundingBox
 
 type GeoPolygon []GeoPoint
 
@@ -55,24 +48,27 @@ type GeoIndex struct {
 	pointIndex   *Quadtree
 	nearestCache map[uint64][]lbtypes.SearchResult
 	config       *GeoSearchConfig
+	datasetName  string // For metrics
 }
 
 type Quadtree struct {
-	mu        sync.RWMutex
-	bounds    GeoBoundingBox
-	capacity  int
-	vectors   []*GeoIndexedVector
-	divided   bool
-	northwest *Quadtree
-	northeast *Quadtree
-	southwest *Quadtree
-	southeast *Quadtree
+	mu          sync.RWMutex
+	bounds      GeoBoundingBox
+	capacity    int
+	vectors     []*GeoIndexedVector
+	divided     bool
+	northwest   *Quadtree
+	northeast   *Quadtree
+	southwest   *Quadtree
+	southeast   *Quadtree
+	datasetName string
 }
 
-func NewQuadtree(bounds GeoBoundingBox, capacity int) *Quadtree {
+func NewQuadtree(bounds GeoBoundingBox, capacity int, datasetName string) *Quadtree {
 	return &Quadtree{
-		bounds:   bounds,
-		capacity: capacity,
+		bounds:      bounds,
+		capacity:    capacity,
+		datasetName: datasetName,
 	}
 }
 
@@ -100,24 +96,29 @@ func (q *Quadtree) Contains(point GeoPoint) bool {
 }
 
 func (q *Quadtree) subdivide() {
+	metrics.QuadtreeSubdivisionsTotal.WithLabelValues(q.datasetName).Inc()
 	midLat := (q.bounds.MinLat + q.bounds.MaxLat) / 2
 	midLon := (q.bounds.MinLon + q.bounds.MaxLon) / 2
 
 	q.northwest = &Quadtree{
-		bounds:   GeoBoundingBox{MinLat: midLat, MaxLat: q.bounds.MaxLat, MinLon: q.bounds.MinLon, MaxLon: midLon},
-		capacity: q.capacity,
+		bounds:      GeoBoundingBox{MinLat: midLat, MaxLat: q.bounds.MaxLat, MinLon: q.bounds.MinLon, MaxLon: midLon},
+		capacity:    q.capacity,
+		datasetName: q.datasetName,
 	}
 	q.northeast = &Quadtree{
-		bounds:   GeoBoundingBox{MinLat: midLat, MaxLat: q.bounds.MaxLat, MinLon: midLon, MaxLon: q.bounds.MaxLon},
-		capacity: q.capacity,
+		bounds:      GeoBoundingBox{MinLat: midLat, MaxLat: q.bounds.MaxLat, MinLon: midLon, MaxLon: q.bounds.MaxLon},
+		capacity:    q.capacity,
+		datasetName: q.datasetName,
 	}
 	q.southwest = &Quadtree{
-		bounds:   GeoBoundingBox{MinLat: q.bounds.MinLat, MaxLat: midLat, MinLon: q.bounds.MinLon, MaxLon: midLon},
-		capacity: q.capacity,
+		bounds:      GeoBoundingBox{MinLat: q.bounds.MinLat, MaxLat: midLat, MinLon: q.bounds.MinLon, MaxLon: midLon},
+		capacity:    q.capacity,
+		datasetName: q.datasetName,
 	}
 	q.southeast = &Quadtree{
-		bounds:   GeoBoundingBox{MinLat: q.bounds.MinLat, MaxLat: midLat, MinLon: midLon, MaxLon: q.bounds.MaxLon},
-		capacity: q.capacity,
+		bounds:      GeoBoundingBox{MinLat: q.bounds.MinLat, MaxLat: midLat, MinLon: midLon, MaxLon: q.bounds.MaxLon},
+		capacity:    q.capacity,
+		datasetName: q.datasetName,
 	}
 
 	for _, v := range q.vectors {
@@ -197,7 +198,7 @@ func (q *Quadtree) QueryBox(box GeoBoundingBox) []*GeoIndexedVector {
 	return results
 }
 
-func NewGeoIndex(dimension int, config *GeoSearchConfig) *GeoIndex {
+func NewGeoIndex(datasetName string, dimension int, config *GeoSearchConfig) *GeoIndex {
 	if config == nil {
 		config = &GeoSearchConfig{
 			DistanceType: GeoDistanceHaversine,
@@ -207,9 +208,10 @@ func NewGeoIndex(dimension int, config *GeoSearchConfig) *GeoIndex {
 	}
 
 	return &GeoIndex{
+		datasetName:  datasetName,
 		dimension:    dimension,
 		vectors:      make(map[uint64]*GeoIndexedVector),
-		pointIndex:   NewQuadtree(GeoBoundingBox{-90, 90, -180, 180}, 4),
+		pointIndex:   NewQuadtree(GeoBoundingBox{MinLat: -90, MaxLat: 90, MinLon: -180, MaxLon: 180}, 4, datasetName),
 		nearestCache: make(map[uint64][]lbtypes.SearchResult),
 		config:       config,
 	}
@@ -229,6 +231,7 @@ func (gi *GeoIndex) Add(id uint64, vector []float32, point GeoPoint, metadata ma
 
 	gi.vectors[id] = geoVec
 	gi.pointIndex.Insert(geoVec)
+	metrics.GeoIndexPointsTotal.WithLabelValues(gi.datasetName).Set(float64(len(gi.vectors)))
 
 	for k := range gi.nearestCache {
 		delete(gi.nearestCache, k)
@@ -238,6 +241,12 @@ func (gi *GeoIndex) Add(id uint64, vector []float32, point GeoPoint, metadata ma
 }
 
 func (gi *GeoIndex) SearchRadius(ctx context.Context, center GeoPoint, radiusKm float64, k int) ([]lbtypes.SearchResult, error) {
+	start := time.Now()
+	defer func() {
+		metrics.GeoSearchOpsTotal.WithLabelValues(gi.datasetName, "radius").Inc()
+		metrics.GeoSearchDurationSeconds.WithLabelValues(gi.datasetName, "radius").Observe(time.Since(start).Seconds())
+	}()
+
 	gi.mu.RLock()
 	defer gi.mu.RUnlock()
 
@@ -274,7 +283,7 @@ func (gi *GeoIndex) SearchRadius(ctx context.Context, center GeoPoint, radiusKm 
 	searchResults := make([]lbtypes.SearchResult, 0, min(k, len(results)))
 	for i := 0; i < min(k, len(results)); i++ {
 		searchResults = append(searchResults, lbtypes.SearchResult{
-			ID:       lbtypes.VectorID(results[i].id),
+			ID:       lbtypes.VectorID(results[i].id), // #nosec G115
 			Distance: float32(results[i].distance),
 			Score:    float32(1.0 / (1.0 + results[i].distance)),
 		})
@@ -284,6 +293,12 @@ func (gi *GeoIndex) SearchRadius(ctx context.Context, center GeoPoint, radiusKm 
 }
 
 func (gi *GeoIndex) SearchBox(ctx context.Context, box GeoBoundingBox, k int) ([]lbtypes.SearchResult, error) {
+	start := time.Now()
+	defer func() {
+		metrics.GeoSearchOpsTotal.WithLabelValues(gi.datasetName, "box").Inc()
+		metrics.GeoSearchDurationSeconds.WithLabelValues(gi.datasetName, "box").Observe(time.Since(start).Seconds())
+	}()
+
 	gi.mu.RLock()
 	defer gi.mu.RUnlock()
 
@@ -293,7 +308,7 @@ func (gi *GeoIndex) SearchBox(ctx context.Context, box GeoBoundingBox, k int) ([
 	for i := 0; i < min(k, len(candidates)); i++ {
 		c := candidates[i]
 		searchResults = append(searchResults, lbtypes.SearchResult{
-			ID:       lbtypes.VectorID(c.ID),
+			ID:       lbtypes.VectorID(c.ID), // #nosec G115
 			Distance: 0,
 			Score:    1.0,
 		})
@@ -303,6 +318,12 @@ func (gi *GeoIndex) SearchBox(ctx context.Context, box GeoBoundingBox, k int) ([
 }
 
 func (gi *GeoIndex) HybridSearch(ctx context.Context, queryVector []float32, center GeoPoint, radiusKm float64, k int) ([]lbtypes.SearchResult, error) {
+	start := time.Now()
+	defer func() {
+		metrics.GeoSearchOpsTotal.WithLabelValues(gi.datasetName, "hybrid").Inc()
+		metrics.GeoSearchDurationSeconds.WithLabelValues(gi.datasetName, "hybrid").Observe(time.Since(start).Seconds())
+	}()
+
 	gi.mu.RLock()
 	defer gi.mu.RUnlock()
 
@@ -339,7 +360,7 @@ func (gi *GeoIndex) HybridSearch(ctx context.Context, queryVector []float32, cen
 	searchResults := make([]lbtypes.SearchResult, 0, min(k, len(results)))
 	for i := 0; i < min(k, len(results)); i++ {
 		searchResults = append(searchResults, lbtypes.SearchResult{
-			ID:       lbtypes.VectorID(results[i].id),
+			ID:       lbtypes.VectorID(results[i].id), // #nosec G115
 			Distance: float32(results[i].distance),
 			Score:    float32(results[i].distance),
 		})
@@ -388,16 +409,9 @@ func EuclideanDistanceGeo(p1, p2 GeoPoint) float64 {
 	return math.Sqrt(dLat*dLat + dLon*dLon)
 }
 
-type GeoSearchRequest struct {
-	Center     GeoPoint               `json:"center"`
-	RadiusKm   float64                `json:"radius_km"`
-	Box        *GeoBoundingBox        `json:"box,omitempty"`
-	K          int                    `json:"k"`
-	Filter     map[string]interface{} `json:"filter,omitempty"`
-	SearchType string                 `json:"search_type"` // "radius", "box", "hybrid"
-}
+type GeoSearchRequest = lbtypes.GeoSearchRequest
 
-func (req *GeoSearchRequest) Validate() error {
+func ValidateGeoSearchRequest(req *GeoSearchRequest) error {
 	if req.K <= 0 {
 		req.K = 10
 	}
@@ -423,38 +437,6 @@ func (req *GeoSearchRequest) Validate() error {
 	return nil
 }
 
-func (g *GeoPoint) MarshalJSON() ([]byte, error) {
-	return json.Marshal(struct {
-		Lat  float64 `json:"lat"`
-		Lon  float64 `json:"lon"`
-		Name string  `json:"name,omitempty"`
-	}{
-		Lat:  g.Lat,
-		Lon:  g.Lon,
-		Name: g.Name,
-	})
-}
-
-func (g *GeoPoint) UnmarshalJSON(data []byte) error {
-	var parsed struct {
-		Lat  float64 `json:"lat"`
-		Lon  float64 `json:"lon"`
-		Name string  `json:"name,omitempty"`
-	}
-	if err := json.Unmarshal(data, &parsed); err != nil {
-		return err
-	}
-	if parsed.Lat < -90 || parsed.Lat > 90 {
-		return fmt.Errorf("latitude must be between -90 and 90")
-	}
-	if parsed.Lon < -180 || parsed.Lon > 180 {
-		return fmt.Errorf("longitude must be between -180 and 180")
-	}
-	g.Lat = parsed.Lat
-	g.Lon = parsed.Lon
-	g.Name = parsed.Name
-	return nil
-}
 
 func VectorDistance(v1, v2 []float32) float64 {
 	if len(v1) != len(v2) {

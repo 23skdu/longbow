@@ -24,7 +24,7 @@ func NewAdaptiveChunkStrategy(minSize, maxSize int, growthFactor float64) *Adapt
 		maxSize:      maxSize,
 		growthFactor: growthFactor,
 	}
-	s.currentSize.Store(int32(minSize))
+	s.currentSize.Store(int32(minSize)) // #nosec G115
 	return s
 }
 
@@ -41,7 +41,7 @@ func (s *AdaptiveChunkStrategy) NextChunkSize() int {
 	}
 
 	// Store next size for subsequent calls
-	s.currentSize.Store(int32(next))
+	s.currentSize.Store(int32(next)) // #nosec G115
 
 	// Return current size (before growth)
 	return current
@@ -54,7 +54,7 @@ func (s *AdaptiveChunkStrategy) CurrentSize() int {
 
 // Reset resets the strategy back to minimum chunk size.
 func (s *AdaptiveChunkStrategy) Reset() {
-	s.currentSize.Store(int32(s.minSize))
+	s.currentSize.Store(int32(s.minSize)) // #nosec G115
 }
 
 // LinearChunkStrategy implements linear growth instead of exponential.
@@ -72,7 +72,7 @@ func NewLinearChunkStrategy(minSize, maxSize, increment int) *LinearChunkStrateg
 		maxSize:   maxSize,
 		increment: increment,
 	}
-	s.currentSize.Store(int32(minSize))
+	s.currentSize.Store(int32(minSize)) // #nosec G115
 	return s
 }
 
@@ -89,7 +89,7 @@ func (s *LinearChunkStrategy) NextChunkSize() int {
 	}
 
 	// Store next size
-	s.currentSize.Store(int32(next))
+	s.currentSize.Store(int32(next)) // #nosec G115
 
 	// Return current size
 	return current

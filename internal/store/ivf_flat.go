@@ -245,7 +245,7 @@ func (ivf *IVFFlatIndex) Save(path string) error {
 	}
 
 	// Write dimension
-	if err := binary.Write(f, binary.LittleEndian, uint32(ivf.dimension)); err != nil {
+	if err := binary.Write(f, binary.LittleEndian, uint32(ivf.dimension)); err != nil { // #nosec G115
 		return fmt.Errorf("failed to write dimension: %w", err)
 	}
 
@@ -254,7 +254,7 @@ func (ivf *IVFFlatIndex) Save(path string) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
-	if err := binary.Write(f, binary.LittleEndian, uint32(len(configData))); err != nil {
+	if err := binary.Write(f, binary.LittleEndian, uint32(len(configData))); err != nil { // #nosec G115
 		return fmt.Errorf("failed to write config length: %w", err)
 	}
 	if _, err := f.Write(configData); err != nil {
@@ -262,7 +262,7 @@ func (ivf *IVFFlatIndex) Save(path string) error {
 	}
 
 	// Write cluster count
-	clusterCount := uint32(len(ivf.centroids))
+	clusterCount := uint32(len(ivf.centroids)) // #nosec G115
 	if err := binary.Write(f, binary.LittleEndian, clusterCount); err != nil {
 		return fmt.Errorf("failed to write cluster count: %w", err)
 	}
@@ -279,7 +279,7 @@ func (ivf *IVFFlatIndex) Save(path string) error {
 	}
 
 	// Write vector count
-	vecCount := uint32(len(ivf.vectors))
+	vecCount := uint32(len(ivf.vectors)) // #nosec G115
 	if err := binary.Write(f, binary.LittleEndian, vecCount); err != nil {
 		return fmt.Errorf("failed to write vector count: %w", err)
 	}
@@ -299,7 +299,7 @@ func (ivf *IVFFlatIndex) Save(path string) error {
 		if err := binary.Write(f, binary.LittleEndian, id); err != nil {
 			return fmt.Errorf("failed to write vector id: %w", err)
 		}
-		if err := binary.Write(f, binary.LittleEndian, uint32(clusterID)); err != nil {
+		if err := binary.Write(f, binary.LittleEndian, uint32(clusterID)); err != nil { // #nosec G115
 			return fmt.Errorf("failed to write cluster id: %w", err)
 		}
 

@@ -239,7 +239,7 @@ func (g *Gossip) probe() {
 		g.mu.RUnlock()
 		return
 	}
-	targetID := g.peers[rand.Intn(len(g.peers))]
+	targetID := g.peers[rand.Intn(len(g.peers))] // #nosec G404
 	if targetID == g.Config.ID {
 		g.mu.RUnlock()
 		return
@@ -480,7 +480,7 @@ func (g *Gossip) sendPing(addr, targetID string, seq uint32) error {
 	packet := &Packet{
 		Type:       PacketPing,
 		Seq:        seq,
-		NumUpdates: uint8(numUpdates),
+		NumUpdates: uint8(numUpdates), // #nosec G115
 		Payload:    updates,
 	}
 

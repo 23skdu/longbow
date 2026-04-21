@@ -63,7 +63,7 @@ func (idx *BM25ArenaIndex) IndexDocument(docID uint32, tokens []string) error {
 	defer idx.mu.Unlock()
 
 	// Ensure docLengths array is large enough
-	for uint32(len(idx.docLengths)) <= docID {
+	for uint32(len(idx.docLengths)) <= docID { // #nosec G115
 		idx.docLengths = append(idx.docLengths, 0)
 	}
 
@@ -75,7 +75,7 @@ func (idx *BM25ArenaIndex) IndexDocument(docID uint32, tokens []string) error {
 	}
 
 	// Update document length
-	idx.docLengths[docID] = uint32(len(tokens))
+	idx.docLengths[docID] = uint32(len(tokens)) // #nosec G115
 	idx.totalDocs++
 	idx.avgDocLength = (idx.avgDocLength*float64(idx.totalDocs-1) + float64(len(tokens))) / float64(idx.totalDocs)
 
@@ -131,7 +131,7 @@ func (idx *BM25ArenaIndex) getOrCreateTokenID(token string) uint32 {
 
 // ensureDocFreqCapacity ensures docFreqs array is large enough
 func (idx *BM25ArenaIndex) ensureDocFreqCapacity(tokenID uint32) {
-	for uint32(len(idx.docFreqs)) <= tokenID {
+	for uint32(len(idx.docFreqs)) <= tokenID { // #nosec G115
 		idx.docFreqs = append(idx.docFreqs, 0)
 	}
 }

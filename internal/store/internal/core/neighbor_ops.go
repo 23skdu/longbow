@@ -97,7 +97,7 @@ func (h *ArrowHNSW) addConnectionLocked(ctx *ArrowSearchContext, data *types.Gra
 		slot := len(currentNeighbors)
 		baseIdx := int(cOff) * types.MaxNeighbors
 		atomic.StoreUint32(&neighborsChunk[baseIdx+slot], target)
-		atomic.StoreInt32(&countsChunk[cOff], int32(slot+1)) // nosec G115
+		atomic.StoreInt32(&countsChunk[cOff], int32(slot+1)) // #nosec G115
 	}
 
 	if layer < len(data.PackedNeighbors) && data.PackedNeighbors[layer] != nil {
@@ -217,7 +217,7 @@ func (h *ArrowHNSW) pruneConnectionsLocked(ctx *ArrowSearchContext, data *types.
 	for i, cand := range selected {
 		atomic.StoreUint32(&neighborsChunk[baseIdx+i], cand.ID)
 	}
-	atomic.StoreInt32(&countsChunk[cOff], int32(len(selected))) // nosec G115
+	atomic.StoreInt32(&countsChunk[cOff], int32(len(selected))) // #nosec G115
 
 	if verChunk != nil { atomic.AddUint32(&verChunk[cOff], 1) }
 	atomic.AddUint64(&data.GlobalVersion, 1)

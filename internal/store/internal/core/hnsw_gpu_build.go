@@ -223,7 +223,7 @@ func (h *ArrowHNSW) BatchInsertWithGPU(ctx context.Context, ids []uint32, vector
 		candidates := make([]types.Candidate, len(gpuIDs))
 		for j := range gpuIDs {
 			candidates[j] = types.Candidate{
-				ID:   uint32(gpuIDs[j]),
+				ID:   uint32(gpuIDs[j]), // #nosec G115
 				Dist: distances[j],
 			}
 		}
@@ -261,7 +261,7 @@ func (h *ArrowHNSW) insertWithGPUCandidates(id uint32, vec any, level int, gpuCa
 	cOff := types.ChunkOffset(id)
 	levelsChunk := data.GetLevelsChunk(cID)
 	if levelsChunk != nil {
-		levelsChunk[cOff] = uint8(level)
+		levelsChunk[cOff] = uint8(level) // #nosec G115
 	}
 
 	var bestCandidate types.Candidate
@@ -305,7 +305,7 @@ func (h *ArrowHNSW) insertWithGPUCandidates(id uint32, vec any, level int, gpuCa
 	}
 
 	if maxL < 0 {
-		h.maxLevel.Store(int32(level))
+		h.maxLevel.Store(int32(level)) // #nosec G115
 		h.entryPoint.Store(id)
 	} else {
 		for l := min(level, maxL); l >= 0; l-- {

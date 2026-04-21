@@ -39,12 +39,15 @@ These parameters control the HNSW graph construction and search behavior.
 | `LONGBOW_HNSW_ALPHA` | `1.0` | **Pragma**: Diversity parameter for neighbor selection. Set to `1.2` for better connectivity at scale. |
 | `LONGBOW_HNSW_KEEP_PRUNED` | `false` | **Pragma**: If true, ensures nodes always reach `M` connections by backfilling pruned edges. |
 | `LONGBOW_HNSW_SQ8_ENABLED` | `false` | Enable SQ8 scalar quantization for 4x memory reduction. |
+| `LONGBOW_HNSW_PQ_ENABLED` | `false` | Enable Product Quantization for up to 32x memory reduction. |
+| `LONGBOW_HNSW_PQ_M` | `16` | Number of sub-spaces for Product Quantization. |
+| `LONGBOW_HNSW_PQ_K` | `256` | Number of centroids per sub-space for Product Quantization. |
+| `LONGBOW_HNSW_TURBOQUANT_ENABLED`| `false` | Enable SIMD-accelerated bit-packing (TQ) for extreme throughput. |
 | `LONGBOW_HNSW_FLOAT16_ENABLED` | `false` | Enable native Float16 storage for 2x memory reduction. |
+| `LONGBOW_GEO_SEARCH_ENABLED` | `false` | Enable geospatial indexing (Quadtree) and Haversine distance. |
 | `LONGBOW_USE_DISK` | `false` | Enable SSD-based vector offloading (Disk-ANN) for Reduced RAM usage. |
 
-| `LONGBOW_HNSW_REFINEMENT_FACTOR` | `1.0` | Refinement factor for SQ8 search. `2.0-4.0` recommended for high recall. |
-| `LONGBOW_HNSW_PQ_ENABLED` | `false` | Enable Product Quantization. |
-| `LONGBOW_USE_DISK` | `false` | Enable SSD-based vector offloading (Disk-ANN) for Reduced RAM usage. |
+| `LONGBOW_HNSW_REFINEMENT_FACTOR` | `1.0` | Refinement factor for SQ8/PQ search. `2.0-4.0` recommended for high recall. |
 | `LONGBOW_AUTO_SHARDING_THRESHOLD` | `10000` | Number of vectors per shard before triggering a split. |
 | `LONGBOW_AUTO_SHARDING_SPLIT_THRESHOLD` | `65536` | Chunk size for sharded HNSW. |
 | `LONGBOW_RING_SHARDING_ENABLED` | `true` | Enable consistent hashing ring sharding. |
@@ -92,6 +95,8 @@ Longbow uses the SWIM protocol for decentralized membership.
 | `LONGBOW_STORAGE_GCS_BUCKET` | `""` | Enable Google Cloud Storage remote storage and specify bucket name. |
 | `LONGBOW_STORAGE_ASYNC_FSYNC` | `true` | When true, WAL flushes don't block the ingestion hot path. |
 | `LONGBOW_STORAGE_DOPUT_BATCH_SIZE`| `100` | Target batch size for WAL writes. |
+| `LONGBOW_INGESTION_ADAPTIVE_BATCHING`| `true` | Dynamically adjust batch sizes based on system pressure. |
+| `LONGBOW_INGESTION_LOCKFREE_QUEUE` | `true` | Use LockFreeRingBuffer for ingestion workers. |
 | `LONGBOW_SNAPSHOT_INTERVAL` | `1h` | Frequency of full index snapshots to disk. |
 | `LONGBOW_MAX_WAL_SIZE` | `100MB` | Maximum size of a WAL segment before rotation. |
 
@@ -110,6 +115,36 @@ Longbow uses the SWIM protocol for decentralized membership.
 | `LONGBOW_HYBRID_SEARCH_ENABLED` | `false` | Enables BM25 inverted indexes alongside HNSW. |
 | `LONGBOW_HYBRID_TEXT_COLUMNS` | `""` | Comma-separated list of columns to index for keyword search. |
 | `LONGBOW_HYBRID_ALPHA` | `0.5` | Weighting between Vector (1.0) and Keyword (0.0) results. |
+
+## CDC & Event Streaming
+
+| Variable | Default | Description |
+| :--- | :--- | :--- |
+| `LONGBOW_CDC_ENABLED` | `false` | Enable Change Data Capture for all store operations. |
+| `LONGBOW_CDC_BUFFER_SIZE` | `1024` | Size of the internal CDC event buffer. |
+| `LONGBOW_CDC_ASYNC_DISPATCH` | `true` | When true, CDC dispatching is non-blocking. |
+| `LONGBOW_CDC_WORKER_POOL_SIZE` | `4` | Number of concurrent CDC dispatch workers. |
+| `LONGBOW_WEBSOCKET_ENABLED` | `false` | Enable WebSocket event stream at `/ws`. |
+| `LONGBOW_MQ_ENABLED` | `false` | Enable outbound MQ exporting (Kafka/Pulsar). |
+
+## Temporal & Versioning
+
+| Variable | Default | Description |
+| :--- | :--- | :--- |
+| `LONGBOW_TEMPORAL_ENABLED` | `false` | Enable temporal query support. |
+| `LONGBOW_TEMPORAL_VERSION_HISTORY`| `false` | Maintain full version history for all vectors. |
+| `LONGBOW_TEMPORAL_MAX_VERSIONS` | `10` | Max number of versions per vector ID. |
+| `LONGBOW_TEMPORAL_RETENTION_PERIOD`| `168h` | How long to keep historical versions. |
+| `LONGBOW_TEMPORAL_TTL_ENABLED` | `false` | Enable automatic cleanup of expired versions. |
+| `LONGBOW_TEMPORAL_AGGREGATION_ENABLED`| `false` | Enable time-series level aggregation. |
+
+## SIMD & Execution Strategy
+
+| Variable | Default | Description |
+| :--- | :--- | :--- |
+| `LONGBOW_SIMD_IMPL` | `auto` | Override SIMD: `avx512`, `avx2`, `neon`, `generic`. |
+| `LONGBOW_SIMD_FALLBACK` | `true` | Enable generic fallback if optimized kernel fails. |
+| `LONGBOW_JIT` | `false` | Enable LLVM-based JIT for complex filtering. |
 
 ## Observability
 

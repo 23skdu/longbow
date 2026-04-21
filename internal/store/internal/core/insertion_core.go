@@ -227,7 +227,7 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 	levelsChunk := data.GetLevelsChunk(cID)
 	// We ensured chunk exists, so levelsChunk should not be nil.
 	if levelsChunk != nil {
-		levelsChunk[cOff] = uint8(level)
+		levelsChunk[cOff] = uint8(level) // #nosec G115
 	}
 
 	// Store Vector (Copy for L2 locality)

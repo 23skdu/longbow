@@ -272,7 +272,7 @@ func SQ8DistanceFast(q1, q2 []uint8) uint32 {
 	for i := range q1 {
 		diff := int32(q1[i]) - int32(q2[i])
 		// diff is in range [-255, 255], squared is max 65025, safe for uint32
-		sum += uint32(diff * diff) //nolint:gosec // G115
+		sum += uint32(diff * diff) // #nosec G115
 	}
 	return sum
 }

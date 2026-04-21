@@ -72,28 +72,38 @@ spec:
             - name: LONGBOW_GRPC_KEEPALIVE_PERMIT_WITHOUT_STREAM
               value: {{ .Values.grpc.keepAlivePermitWithoutStream | quote }}
             # Rate Limiting
-            - name: RATE_LIMIT_RPS
+            - name: LONGBOW_RATE_LIMIT_RPS
               value: {{ .Values.rateLimit.rps | quote }}
-            - name: RATE_LIMIT_BURST
+            - name: LONGBOW_RATE_LIMIT_BURST
               value: {{ .Values.rateLimit.burst | quote }}
             # HNSW Configuration
-            - name: HNSW_M
+            - name: LONGBOW_HNSW_M
               value: {{ .Values.hnsw.m | quote }}
-            - name: HNSW_EF_CONSTRUCTION
+            - name: LONGBOW_HNSW_EF_CONSTRUCTION
               value: {{ .Values.hnsw.efConstruction | quote }}
-            - name: HNSW_ALPHA
+            - name: LONGBOW_HNSW_ALPHA
               value: {{ .Values.hnsw.alpha | quote }}
-            - name: HNSW_KEEP_PRUNED
+            - name: LONGBOW_HNSW_KEEP_PRUNED
               value: {{ .Values.hnsw.keepPruned | quote }}
-            - name: HNSW_SQ8_ENABLED
+            - name: LONGBOW_HNSW_SQ8_ENABLED
               value: {{ .Values.hnsw.sq8Enabled | quote }}
-            - name: HNSW_BQ_ENABLED
+            - name: LONGBOW_HNSW_BQ_ENABLED
               value: {{ .Values.hnsw.bqEnabled | quote }}
-            - name: HNSW_FLOAT16_ENABLED
+            - name: LONGBOW_HNSW_FLOAT16_ENABLED
               value: {{ .Values.hnsw.float16Enabled | quote }}
+            - name: LONGBOW_HNSW_PQ_ENABLED
+              value: {{ .Values.hnsw.pqEnabled | quote }}
+            - name: LONGBOW_HNSW_PQ_M
+              value: {{ .Values.pq.m | quote }}
+            - name: LONGBOW_HNSW_PQ_K
+              value: {{ .Values.pq.k | quote }}
+            - name: LONGBOW_HNSW_TURBOQUANT_ENABLED
+              value: {{ .Values.hnsw.turboQuantEnabled | quote }}
+            - name: LONGBOW_GEO_SEARCH_ENABLED
+              value: {{ .Values.hnsw.geoSearchEnabled | quote }}
 
 
-            - name: HNSW_REFINEMENT_FACTOR
+            - name: LONGBOW_HNSW_REFINEMENT_FACTOR
               value: {{ .Values.hnsw.refinementFactor | quote }}
             - name: LONGBOW_USE_DISK
               value: {{ .Values.hnsw.useDisk | quote }}
@@ -118,20 +128,20 @@ spec:
             - name: LONGBOW_INDEXING_WORKER_POOL_SIZE
               value: {{ .Values.indexing.workerPool.size | quote }}
             # Memory & GC
-            - name: MEMORY_EVICTION_HEADROOM
+            - name: LONGBOW_MEMORY_EVICTION_HEADROOM
               value: {{ .Values.memory.evictionHeadroom | quote }}
-            - name: MEMORY_EVICTION_POLICY
+            - name: LONGBOW_MEMORY_EVICTION_POLICY
               value: {{ .Values.memory.evictionPolicy | quote }}
-            - name: MEMORY_REJECT_WRITES
+            - name: LONGBOW_MEMORY_REJECT_WRITES
               value: {{ .Values.memory.rejectWrites | quote }}
-            - name: GC_BALLAST_G
+            - name: LONGBOW_GC_BALLAST_G
               value: {{ .Values.memory.gcBallastGB | quote }}
-            - name: GOGC
+            - name: LONGBOW_GOGC
               value: {{ .Values.memory.gogc | quote }}
             # GPU Configuration
-            - name: GPU_ENABLED
+            - name: LONGBOW_GPU_ENABLED
               value: {{ .Values.gpu.enabled | quote }}
-            - name: GPU_DEVICE_ID
+            - name: LONGBOW_GPU_DEVICE_ID
               value: {{ .Values.gpu.deviceId | quote }}
             {{- if .Values.s3.enabled }}
             - name: LONGBOW_S3_ENABLED
@@ -178,58 +188,107 @@ spec:
             - name: LONGBOW_HYBRID_ALPHA
               value: {{ .Values.hybrid.alpha | quote }}
             # Gossip Configuration
-            - name: GOSSIP_ENABLED
+            - name: LONGBOW_GOSSIP_ENABLED
               value: {{ .Values.gossip.enabled | quote }}
-            - name: GOSSIP_PORT
+            - name: LONGBOW_GOSSIP_PORT
               value: {{ .Values.gossip.port | quote }}
-            - name: GOSSIP_INTERVAL
+            - name: LONGBOW_GOSSIP_INTERVAL
               value: {{ .Values.gossip.interval | quote }}
-            - name: GOSSIP_PROTOCOL_PERIOD
+            - name: LONGBOW_GOSSIP_PROTOCOL_PERIOD
               value: {{ .Values.gossip.protocolPeriod | quote }}
-            - name: GOSSIP_ACK_TIMEOUT
+            - name: LONGBOW_GOSSIP_ACK_TIMEOUT
               value: {{ .Values.gossip.ackTimeout | quote }}
-            - name: GOSSIP_SUSPICION_TIMEOUT
+            - name: LONGBOW_GOSSIP_SUSPICION_TIMEOUT
               value: {{ .Values.gossip.suspicionTimeout | quote }}
             {{- if .Values.gossip.advertiseAddr }}
-            - name: GOSSIP_ADVERTISE_ADDR
+            - name: LONGBOW_GOSSIP_ADVERTISE_ADDR
               value: {{ .Values.gossip.advertiseAddr | quote }}
             {{- end }}
-            - name: GOSSIP_STATIC_PEERS
+            - name: LONGBOW_GOSSIP_STATIC_PEERS
               value: {{ .Values.gossip.discovery.staticPeers | quote }}
-            - name: GOSSIP_DISCOVERY_PROVIDER
+            - name: LONGBOW_GOSSIP_DISCOVERY_PROVIDER
               value: {{ .Values.gossip.discovery.provider | quote }}
             # Storage Configuration
-            - name: STORAGE_ASYNC_FSYNC
+            - name: LONGBOW_STORAGE_ASYNC_FSYNC
               value: {{ .Values.storage.asyncFsync | quote }}
-            - name: STORAGE_DOPUT_BATCH_SIZE
+            - name: LONGBOW_STORAGE_DOPUT_BATCH_SIZE
               value: {{ .Values.storage.doPutBatchSize | quote }}
-            - name: STORAGE_USE_IOURING
+            - name: LONGBOW_STORAGE_USE_IOURING
               value: {{ .Values.storage.useIOUring | quote }}
-            - name: STORAGE_USE_DIRECT_IO
+            - name: LONGBOW_STORAGE_USE_DIRECT_IO
               value: {{ .Values.storage.useDirectIO | quote }}
             - name: LONGBOW_STORAGE_USE_PARQUET_V2
               value: {{ .Values.storage.useParquetV2 | quote }}
+            # Ingestion Tuning
+            - name: LONGBOW_INGESTION_ADAPTIVE_BATCHING
+              value: {{ .Values.ingestion.adaptiveBatching | quote }}
+            - name: LONGBOW_INGESTION_LOCKFREE_QUEUE
+              value: {{ .Values.ingestion.lockFreeQueue | quote }}
             # Compaction Configuration
-            - name: COMPACTION_ENABLED
+            - name: LONGBOW_COMPACTION_ENABLED
               value: {{ .Values.compaction.enabled | quote }}
-            - name: COMPACTION_INTERVAL
+            - name: LONGBOW_COMPACTION_INTERVAL
               value: {{ .Values.compaction.interval | quote }}
-            - name: COMPACTION_TARGET_BATCH_SIZE
+            - name: LONGBOW_COMPACTION_TARGET_BATCH_SIZE
               value: {{ .Values.compaction.targetBatchSize | quote }}
-            - name: COMPACTION_MIN_BATCHES
+            - name: LONGBOW_COMPACTION_MIN_BATCHES
               value: {{ .Values.compaction.minBatches | quote }}
             # Sharding Configuration
-            - name: RING_SHARDING_ENABLED
+            - name: LONGBOW_RING_SHARDING_ENABLED
               value: {{ .Values.sharding.ring.enabled | default false | quote }}
-            - name: AUTO_SHARDING_ENABLED
+            - name: LONGBOW_AUTO_SHARDING_ENABLED
               value: {{ .Values.sharding.auto.enabled | default false | quote }}
-            - name: AUTO_SHARDING_THRESHOLD
+            - name: LONGBOW_AUTO_SHARDING_THRESHOLD
               value: {{ .Values.sharding.auto.threshold | default 100 | quote }}
-            - name: AUTO_SHARDING_SPLIT_THRESHOLD
+            - name: LONGBOW_AUTO_SHARDING_SPLIT_THRESHOLD
               value: {{ .Values.sharding.auto.splitThreshold | default 1000 | quote }}
             # Ingestion Worker Count
             - name: LONGBOW_INGESTION_WORKER_COUNT
               value: {{ .Values.config.ingestionWorkerCount | quote }}
+            # CDC Configuration
+            - name: LONGBOW_CDC_ENABLED
+              value: {{ .Values.cdc.enabled | quote }}
+            - name: LONGBOW_CDC_BUFFER_SIZE
+              value: {{ .Values.cdc.bufferSize | quote }}
+            - name: LONGBOW_CDC_ASYNC_DISPATCH
+              value: {{ .Values.cdc.asyncDispatch | quote }}
+            - name: LONGBOW_CDC_WORKER_POOL_SIZE
+              value: {{ .Values.cdc.workerPoolSize | quote }}
+            # WebSocket Configuration
+            - name: LONGBOW_WEBSOCKET_ENABLED
+              value: {{ .Values.websocket.enabled | quote }}
+            - name: LONGBOW_WEBSOCKET_ADDR
+              value: "0.0.0.0:{{ .Values.websocket.port }}"
+            # MQ Exporter Configuration
+            - name: LONGBOW_MQ_ENABLED
+              value: {{ .Values.mq.enabled | quote }}
+            - name: LONGBOW_MQ_TYPE
+              value: {{ .Values.mq.type | quote }}
+            - name: LONGBOW_MQ_BROKERS
+              value: {{ .Values.mq.brokers | quote }}
+            - name: LONGBOW_MQ_TOPIC
+              value: {{ .Values.mq.topic | quote }}
+            - name: LONGBOW_MQ_BATCH_SIZE
+              value: {{ .Values.mq.batchSize | quote }}
+            # Temporal Query Configuration
+            - name: LONGBOW_TEMPORAL_ENABLED
+              value: {{ .Values.temporal.enabled | quote }}
+            - name: LONGBOW_TEMPORAL_VERSION_HISTORY
+              value: {{ .Values.temporal.versionHistory | quote }}
+            - name: LONGBOW_TEMPORAL_MAX_VERSIONS
+              value: {{ .Values.temporal.maxVersions | quote }}
+            - name: LONGBOW_TEMPORAL_RETENTION_PERIOD
+              value: {{ .Values.temporal.retentionPeriod | quote }}
+            - name: LONGBOW_TEMPORAL_TTL_ENABLED
+              value: {{ .Values.temporal.ttl.enabled | quote }}
+            - name: LONGBOW_TEMPORAL_DEFAULT_TTL
+              value: {{ .Values.temporal.ttl.default | quote }}
+            - name: LONGBOW_TEMPORAL_CLEANUP_INTERVAL
+              value: {{ .Values.temporal.cleanupInterval | quote }}
+            - name: LONGBOW_TEMPORAL_AGGREGATION_ENABLED
+              value: {{ .Values.temporal.aggregation.enabled | quote }}
+            - name: LONGBOW_TEMPORAL_MAX_BUCKETS
+              value: {{ .Values.temporal.aggregation.maxBuckets | quote }}
             # Learned Index Configuration
             - name: LONGBOW_LEARNED_INDEX_ENABLED
               value: {{ .Values.learnedIndex.enabled | quote }}

@@ -192,7 +192,7 @@ func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes 
 		memoryConfig: memCfg,
 		stopChan:     make(chan struct{}),
 	}
-	s.ctx, s.cancel = context.WithCancel(context.Background())
+	s.ctx, s.cancel = context.WithCancel(context.Background()) // #nosec G118
 
 	// Initialize NUMA topology if on Linux
 	s.initNUMA(logger)

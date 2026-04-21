@@ -32,7 +32,7 @@ func HashHybridQuery(dataset string, vector []float32, textQuery string, k int, 
 	// Params
 	// K
 	var buf8 [8]byte
-	binary.LittleEndian.PutUint64(buf8[:], uint64(k))
+	binary.LittleEndian.PutUint64(buf8[:], uint64(k)) // #nosec G115
 	_, _ = h.Write(buf8[:])
 
 	// Alpha
@@ -40,7 +40,7 @@ func HashHybridQuery(dataset string, vector []float32, textQuery string, k int, 
 	_, _ = h.Write(buf[:])
 
 	// RRF K
-	binary.LittleEndian.PutUint64(buf8[:], uint64(rrfK))
+	binary.LittleEndian.PutUint64(buf8[:], uint64(rrfK)) // #nosec G115
 	_, _ = h.Write(buf8[:])
 
 	// Graph Alpha
@@ -48,7 +48,7 @@ func HashHybridQuery(dataset string, vector []float32, textQuery string, k int, 
 	_, _ = h.Write(buf[:])
 
 	// Graph Depth
-	binary.LittleEndian.PutUint64(buf8[:], uint64(graphDepth))
+	binary.LittleEndian.PutUint64(buf8[:], uint64(graphDepth)) // #nosec G115
 	_, _ = h.Write(buf8[:])
 
 	return h.Sum64()

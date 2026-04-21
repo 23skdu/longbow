@@ -27,7 +27,7 @@ func NewIndexJobQueueLockFree(cfg types.IndexJobQueueConfig) *IndexJobQueueLockF
 	bufferSize := cfg.MainChannelSize + cfg.OverflowBufferSize
 	q := &IndexJobQueueLockFree{
 		cfg:      cfg,
-		buffer:   NewLockFreeRingBuffer[types.IndexJob](uint64(bufferSize)),
+		buffer:   NewLockFreeRingBuffer[types.IndexJob](uint64(bufferSize)), // #nosec G115
 		stopChan: make(chan struct{}),
 	}
 

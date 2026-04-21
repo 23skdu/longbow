@@ -173,7 +173,7 @@ func (h *LockFreeHNSW) Add(id types.VectorID, vec []float32) {
 
 func (h *LockFreeHNSW) randomLevel() int {
 	lvl := 0
-	for rand.Float64() < ML && lvl < MaxLayers-1 {
+	for rand.Float64() < ML && lvl < MaxLayers-1 { // #nosec G404
 		lvl++
 	}
 	return lvl

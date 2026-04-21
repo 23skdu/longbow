@@ -55,6 +55,9 @@ hnsw:
   keepPruned: false
   sq8Enabled: false
   bqEnabled: false
+  pqEnabled: false
+  turboQuantEnabled: false
+  geoSearchEnabled: false
   float16Enabled: false
   refinementFactor: 1.0
   useDisk: false
@@ -79,6 +82,8 @@ ringSharding:
 # Ingestion Worker Configuration
 ingestion:
   workerCount: 0  # 0 = runtime.NumCPU()
+  adaptiveBatching: true
+  lockFreeQueue: true
 
 # Storage I/O Configuration
 storage:
@@ -144,8 +149,8 @@ config:
 
 # Hybrid Search Configuration
 hybrid:
-  enabled: true
-  textColumns: "text" # Comma-separated list of columns to index for keyword search
+  enabled: false
+  textColumns: "" # Comma-separated list of columns to index for keyword search
   alpha: 0.5 # Default weight (0.5 = equal dense/sparse)
 
 # Gossip Mesh Configuration
@@ -199,8 +204,8 @@ simd:
 # PQ (Product Quantization) Configuration
 pq:
   enabled: false
-  codeSize: 8
-  numSubCentroids: 256
+  m: 16
+  k: 256
   minVectors: 1000
 
 # ONNX / ML Inference & Reranking Configuration
@@ -250,6 +255,40 @@ persistence:
     accessMode: ReadWriteOnce
     size: 10Gi
     path: /snapshots
+
+# Change Data Capture (CDC) Configuration
+cdc:
+  enabled: false
+  bufferSize: 1024
+  asyncDispatch: true
+  workerPoolSize: 4
+
+# WebSocket Events Configuration
+websocket:
+  enabled: false
+  port: 3002
+
+# MQ Export Configuration (Kafka/Pulsar)
+mq:
+  enabled: false
+  type: "kafka" # kafka or pulsar
+  brokers: ""
+  topic: ""
+  batchSize: 100
+
+# Temporal Versioning & Retention
+temporal:
+  enabled: false
+  versionHistory: false
+  maxVersions: 10
+  retentionPeriod: "168h" # 7 days
+  ttl:
+    enabled: false
+    default: "720h" # 30 days
+  cleanupInterval: "1h"
+  aggregation:
+    enabled: false
+    maxBuckets: 1000
 
 # S3 Backend for Snapshots
 # When enabled, snapshots are stored in S3-compatible storage

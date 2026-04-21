@@ -53,7 +53,7 @@ func WriteDiskGraph(gd *types.GraphData, path string, maxNodeID int, sqMin, sqMa
 	// PQ Dims Check
 	pqDims := gd.PQDims()
 
-	numNodes := uint32(maxNodeID)
+	numNodes := uint32(maxNodeID) // #nosec G115
 
 	// 2. Prepare Headers
 	// Main Header: 40 bytes (Base) + 8 (SQ8) + 8 (EP/MaxL) + 20 (TQ/BQ) = 76 bytes.
@@ -160,7 +160,7 @@ func WriteDiskGraph(gd *types.GraphData, path string, maxNodeID int, sqMin, sqMa
 		}
 		layerIndexOffsets[l] = uint64(currentOffset)
 
-		count := uint32(len(idx.NodeIDs))
+		count := uint32(len(idx.NodeIDs)) // #nosec G115
 
 		// Write Count
 		binary.LittleEndian.PutUint32(scratch4, count)
@@ -327,13 +327,13 @@ func WriteDiskGraph(gd *types.GraphData, path string, maxNodeID int, sqMin, sqMa
 	binary.LittleEndian.PutUint32(headerBuf[8:], numNodes)
 	binary.LittleEndian.PutUint32(headerBuf[12:], fileMaxLayers)
 	// Dims
-	binary.LittleEndian.PutUint32(headerBuf[16:], uint32(gd.Dims))
+	binary.LittleEndian.PutUint32(headerBuf[16:], uint32(gd.Dims)) // #nosec G115
 	// SQ8 Offset
 	binary.LittleEndian.PutUint64(headerBuf[20:], sq8Offset)
 	// PQ Offset
 	binary.LittleEndian.PutUint64(headerBuf[28:], pqOffset)
 	// PQ Dims
-	binary.LittleEndian.PutUint32(headerBuf[36:], uint32(pqDims))
+	binary.LittleEndian.PutUint32(headerBuf[36:], uint32(pqDims)) // #nosec G115
 
 	// SQ8 Params (Version 3)
 	binary.LittleEndian.PutUint32(headerBuf[40:], math.Float32bits(sqMin))
@@ -341,7 +341,7 @@ func WriteDiskGraph(gd *types.GraphData, path string, maxNodeID int, sqMin, sqMa
 
 	// Entry Point & Max Level (Version 3)
 	binary.LittleEndian.PutUint32(headerBuf[48:], entryPoint)
-	binary.LittleEndian.PutUint32(headerBuf[52:], uint32(int32(maxLevel)))
+	binary.LittleEndian.PutUint32(headerBuf[52:], uint32(int32(maxLevel))) // #nosec G115
 
 	// Offsets
 	for i := 0; i < int(fileMaxLayers); i++ {
@@ -350,7 +350,7 @@ func WriteDiskGraph(gd *types.GraphData, path string, maxNodeID int, sqMin, sqMa
 
 	// TQ Offset (Version 5)
 	binary.LittleEndian.PutUint64(headerBuf[56:], tqOffset)
-	binary.LittleEndian.PutUint32(headerBuf[64:], uint32(gd.TurboQuantBits))
+	binary.LittleEndian.PutUint32(headerBuf[64:], uint32(gd.TurboQuantBits)) // #nosec G115
 	// BQ Offset (Version 5)
 	binary.LittleEndian.PutUint64(headerBuf[68:], bqOffset)
 

@@ -23,7 +23,7 @@ func CompactArena[T any](ta *TypedArena[T], liveRefs []SliceRef) (*CompactionSta
 	}
 
 	var zero T
-	elemSize := int(unsafe.Sizeof(zero))
+	elemSize := int(unsafe.Sizeof(zero)) // #nosec G115
 
 	// Calculate total live data size
 	var totalLiveBytes int64

@@ -12,6 +12,9 @@ type WindowFunction = core.WindowFunction
 type WindowSpec = core.WindowSpec
 type WindowOrder = core.WindowOrder
 type CTE = core.CTE
+type GeoPoint = core.GeoPoint
+type GeoBoundingBox = core.GeoBoundingBox
+type GeoSearchRequest = core.GeoSearchRequest
 
 // TicketQuery is also aliased for convenience
 type TicketQuery = core.TicketQuery

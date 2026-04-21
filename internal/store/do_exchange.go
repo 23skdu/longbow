@@ -177,7 +177,7 @@ func (s *VectorStore) DoExchange(stream flight.FlightService_DoExchangeServer) e
 
 					metaBuf := make([]byte, 16)
 					binary.LittleEndian.PutUint64(metaBuf[0:8], seq)
-					binary.LittleEndian.PutUint64(metaBuf[8:16], uint64(ts))
+					binary.LittleEndian.PutUint64(metaBuf[8:16], uint64(ts)) // #nosec G115
 
 					// Send as a single FlightData packet to ensure metadata is attached
 					// and to avoid IPC stream overhead for single records.

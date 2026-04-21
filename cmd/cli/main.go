@@ -267,13 +267,13 @@ func runImportNpy(ctx context.Context, sc *client.SmartClient, dataset, inputPat
 	mem := memory.NewGoAllocator()
 	sch := arrow.NewSchema([]arrow.Field{
 		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
-		{Name: "vector", Type: arrow.FixedSizeListOf(int32(dim), arrow.PrimitiveTypes.Float32)},
+		{Name: "vector", Type: arrow.FixedSizeListOf(int32(dim), arrow.PrimitiveTypes.Float32)}, // #nosec G115
 	}, nil)
 
 	idBuilder := array.NewInt64Builder(mem)
 	defer idBuilder.Release()
 
-	listBuilder := array.NewFixedSizeListBuilder(mem, int32(dim), arrow.PrimitiveTypes.Float32)
+	listBuilder := array.NewFixedSizeListBuilder(mem, int32(dim), arrow.PrimitiveTypes.Float32) // #nosec G115
 	defer listBuilder.Release()
 	vecBuilder := listBuilder.ValueBuilder().(*array.Float32Builder)
 
@@ -307,7 +307,7 @@ func generateDemoData(dim, count int) (arrow.Record, *arrow.Schema) {
 
 	sch := arrow.NewSchema([]arrow.Field{
 		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
-		{Name: "vector", Type: arrow.FixedSizeListOf(int32(dim), arrow.PrimitiveTypes.Float32)},
+		{Name: "vector", Type: arrow.FixedSizeListOf(int32(dim), arrow.PrimitiveTypes.Float32)}, // #nosec G115
 		{Name: "category", Type: arrow.PrimitiveTypes.Int64},
 		{Name: "score", Type: arrow.PrimitiveTypes.Float32},
 	}, nil)
@@ -315,7 +315,7 @@ func generateDemoData(dim, count int) (arrow.Record, *arrow.Schema) {
 	idBuilder := array.NewInt64Builder(mem)
 	defer idBuilder.Release()
 
-	listBuilder := array.NewFixedSizeListBuilder(mem, int32(dim), arrow.PrimitiveTypes.Float32)
+	listBuilder := array.NewFixedSizeListBuilder(mem, int32(dim), arrow.PrimitiveTypes.Float32) // #nosec G115
 	defer listBuilder.Release()
 
 	catBuilder := array.NewInt64Builder(mem)

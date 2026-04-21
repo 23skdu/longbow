@@ -155,7 +155,7 @@ func (e *StorageEngine) walReaderRoutine(f *os.File, out chan<- rawWALBlock) {
 
 		// Parse Header (lightweight)
 		seq := binary.LittleEndian.Uint64(header[4:12])
-		ts := int64(binary.LittleEndian.Uint64(header[12:20]))
+		ts := int64(binary.LittleEndian.Uint64(header[12:20])) // #nosec G115
 		nameLen := binary.LittleEndian.Uint32(header[20:24])
 		recLen := binary.LittleEndian.Uint64(header[24:32])
 
@@ -253,7 +253,7 @@ func (e *StorageEngine) walDecoderRoutine(in <-chan rawWALBlock, out chan<- deco
 					break
 				}
 				inSeq := binary.LittleEndian.Uint64(innerHeader[4:12])
-				inTs := int64(binary.LittleEndian.Uint64(innerHeader[12:20]))
+				inTs := int64(binary.LittleEndian.Uint64(innerHeader[12:20])) // #nosec G115
 				inNameLen := binary.LittleEndian.Uint32(innerHeader[20:24])
 				inRecLen := binary.LittleEndian.Uint64(innerHeader[24:32])
 

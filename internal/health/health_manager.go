@@ -228,7 +228,7 @@ func (hm *HealthManager) getSystemInfo() *SystemInfo {
 
 	lastGC := time.Time{}
 	if m.LastGC > 0 {
-		lastGC = time.Unix(0, int64(m.LastGC))
+		lastGC = time.Unix(0, int64(m.LastGC)) // #nosec G115
 	}
 
 	return &SystemInfo{

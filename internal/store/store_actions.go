@@ -134,6 +134,7 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 		if err := json.Unmarshal(action.Body, &req); err != nil {
 			return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
 		}
+		s.WaitForIndexing(req.Dataset)
 
 		ds, ok := s.getDataset(req.Dataset)
 		if !ok {
@@ -143,52 +144,35 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 			return status.Errorf(codes.NotFound, "dataset %s not found", req.Dataset)
 		}
 
-		found := false
 		ds.dataMu.RLock()
+		found := false
+		ds.metadataMu.Lock()
 
 		// Use PrimaryIndex for O(1) lookup
 		if ds.PrimaryIndex != nil {
 			if loc, ok := ds.PrimaryIndex[req.ID]; ok {
 				// We found the location!
 
-				// Optimization: Check if already deleted inside the read lock first
-				// to avoid Upgrade to Write Lock if not needed.
+				// Check if already deleted
 				if ts, ok := ds.Tombstones[loc.BatchIdx]; ok && ts != nil && ts.Contains(loc.RowIdx) {
 					// Already deleted, treat as success
 					found = true
 				} else {
-					// Need to set tombstone. Upgrade to write lock.
-					dsLockStart := time.Now()
-					ds.dataMu.RUnlock()
-					ds.dataMu.Lock()
-					metrics.DatasetLockWaitDurationSeconds.WithLabelValues("delete_upgrade").Observe(time.Since(dsLockStart).Seconds())
-
-					// Re-verify location after re-lock (though PrimaryIndex is append-only for IDs usually)
-					// Verify tombstone again
+					// Set tombstone.
 					if ds.Tombstones[loc.BatchIdx] == nil {
 						ds.Tombstones[loc.BatchIdx] = qry.NewBitset()
 					}
 					ds.Tombstones[loc.BatchIdx].Set(loc.RowIdx)
-					// Also update global 'deleted' set in HNSW if needed?
-					// Currently HNSW relies on dataset Tombstones or its own bitset.
-					// HNSW has 'deleted' bitset, synced via CleanupTombstones usually.
-					// But we should probably mark it here too if HNSW is tightly coupled?
-					// The architecture seems to be: Dataset Tombstones are source of truth.
-
-					metrics.TombstonesTotal.WithLabelValues(req.Dataset).Inc()
-
-					// Re-acquire read lock for remaining logic if needed (e.g., if we were in a loop)
-					// But we are effectively done.
-					// To match surrounding code flow:
-					ds.dataMu.Unlock()
-					ds.dataMu.RLock() // Re-lock to match defer RUnlock()
+					ds.RecordBatchDeletion(loc.BatchIdx)
+					metrics.TombstonesTotal.WithLabelValues(ds.Name).Inc()
 					found = true
 				}
 			}
 		}
+		ds.metadataMu.Unlock()
 
-		// Fallback Linear Scan (only if PrimaryIndex failed or nil)
-		if !found && ds.PrimaryIndex == nil {
+		// Fallback Linear Scan (if not found in PrimaryIndex)
+		if !found {
 			for i, rec := range ds.Records {
 				idColIdx := -1
 				for j, field := range rec.Schema().Fields() {
@@ -243,16 +227,15 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 						break
 					}
 
-					ds.dataMu.RUnlock()
-					ds.dataMu.Lock()
+					ds.metadataMu.Lock()
 					if ds.Tombstones[i] == nil {
 						ds.Tombstones[i] = qry.NewBitset()
 					}
 					ds.Tombstones[i].Set(rowIdx)
-					ds.dataMu.Unlock()
+					ds.RecordBatchDeletion(i)
+					ds.metadataMu.Unlock()
 					metrics.TombstonesTotal.WithLabelValues(req.Dataset).Inc()
 					found = true
-					ds.dataMu.RLock()
 					break
 				}
 			}
@@ -565,6 +548,8 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 			VectorType     string `json:"vector_type,omitempty"`
 			TurboQuantBits int    `json:"turboquant_bits,omitempty"`
 			Metric         string `json:"metric,omitempty"`
+			GeoEnabled     bool   `json:"geo_enabled,omitempty"`
+			DiskEnabled    bool   `json:"disk_enabled,omitempty"`
 		}
 		if err := json.Unmarshal(action.Body, &req); err != nil {
 			return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
@@ -588,7 +573,7 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 
 		schema := arrow.NewSchema([]arrow.Field{
 			{Name: "id", Type: arrow.BinaryTypes.String},
-			{Name: "vector", Type: arrow.FixedSizeListOf(int32(req.Dimension), arrow.PrimitiveTypes.Float32)},
+			{Name: "vector", Type: arrow.FixedSizeListOf(int32(req.Dimension), arrow.PrimitiveTypes.Float32)}, // #nosec G115
 			{Name: "timestamp", Type: arrow.FixedWidthTypes.Timestamp_ns},
 		}, &meta)
 
@@ -596,11 +581,85 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 			ds := NewDataset(req.Name, schema)
 			ds.Logger = s.logger
 			ds.Topo = s.numaTopology
+			if req.GeoEnabled {
+				geoCfg := &GeoSearchConfig{
+					DistanceType: GeoDistanceHaversine,
+					EarthRadius:  6371.0,
+				}
+				ds.GeoIndex = NewGeoIndex(ds.Name, req.Dimension, geoCfg)
+			}
+			if req.DiskEnabled {
+				ds.DiskStore, _ = NewDiskVectorStore(filepath.Join(s.dataPath, "disk", ds.Name), req.Dimension)
+			}
 			return ds
 		})
 
 		resp := map[string]any{"status": "created", "dataset": req.Name, "created": created}
 		body, _ := json.Marshal(resp)
+		return stream.Send(&flight.Result{Body: body})
+
+	case "CreateNamespace":
+		var req struct {
+			Name string `json:"name"`
+		}
+		if err := json.Unmarshal(action.Body, &req); err != nil {
+			return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
+		}
+		if err := s.CreateNamespace(req.Name); err != nil {
+			return status.Errorf(codes.AlreadyExists, "failed to create namespace: %v", err)
+		}
+		return stream.Send(&flight.Result{Body: []byte("namespace created")})
+
+
+	case "ListNamespaces":
+		names := s.ListNamespaces()
+		body, _ := json.Marshal(map[string]any{"namespaces": names})
+		return stream.Send(&flight.Result{Body: body})
+
+	case "ListDatasetsInNamespace":
+		var req struct {
+			Name string `json:"name"`
+		}
+		if err := json.Unmarshal(action.Body, &req); err != nil {
+			return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
+		}
+		datasets := s.ListDatasetsInNamespace(req.Name)
+		body, _ := json.Marshal(map[string]any{"datasets": datasets})
+		return stream.Send(&flight.Result{Body: body})
+
+	case "GeoSearch":
+		var req types.GeoSearchRequest
+		if err := json.Unmarshal(action.Body, &req); err != nil {
+			return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
+		}
+		ds, ok := s.getDataset(req.Dataset)
+		if !ok {
+			return status.Errorf(codes.NotFound, "dataset %s not found", req.Dataset)
+		}
+		if ds.GeoIndex == nil {
+			return status.Error(codes.FailedPrecondition, "dataset has no geo index")
+		}
+		ds.dataMu.RLock()
+		defer ds.dataMu.RUnlock()
+
+		var results []types.SearchResult
+		var err error
+		switch req.SearchType {
+		case "radius":
+			results, err = ds.GeoIndex.SearchRadius(stream.Context(), req.Center, req.RadiusKm, req.K)
+		case "box":
+			if req.Box == nil {
+				return status.Error(codes.InvalidArgument, "box required")
+			}
+			results, err = ds.GeoIndex.SearchBox(stream.Context(), *req.Box, req.K)
+		case "hybrid":
+			results, err = ds.GeoIndex.HybridSearch(stream.Context(), nil, req.Center, req.RadiusKm, req.K)
+		}
+		if err != nil {
+			return status.Errorf(codes.Internal, "geo search failed: %v", err)
+		}
+		results = s.mapInternalToUserIDsLocked(ds, results)
+		body, _ := json.Marshal(results)
 		return stream.Send(&flight.Result{Body: body})
 	}
 	return status.Error(codes.Unimplemented, "unknown action type "+action.Type)

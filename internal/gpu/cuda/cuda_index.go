@@ -39,7 +39,7 @@ CUDAIndexHandle* cuda_init(int dimensions, int initialCapacity) {
     handle->capacity = initialCapacity > 0 ? initialCapacity : 10000;
 
     size_t bufferSize = handle->capacity * dimensions * sizeof(float);
-    err = cudaMalloc(&handle->vectorBuffer, bufferSize);
+    err = cudaMalloc((void**)&handle->vectorBuffer, bufferSize);
     if (err != cudaSuccess) {
         handle->vectorBuffer = NULL;
         free(handle);
@@ -47,7 +47,7 @@ CUDAIndexHandle* cuda_init(int dimensions, int initialCapacity) {
     }
 
     size_t idBufferSize = handle->capacity * sizeof(int64_t);
-    err = cudaMalloc(&handle->idBuffer, idBufferSize);
+    err = cudaMalloc((void**)&handle->idBuffer, idBufferSize);
     if (err != cudaSuccess) {
         if (handle->vectorBuffer) cudaFree(handle->vectorBuffer);
         handle->vectorBuffer = NULL;
@@ -88,7 +88,7 @@ int cuda_add_vectors(CUDAIndexHandle* handle, float* h_vectors, int64_t* h_ids, 
 
         size_t newBufferSize = newCapacity * handle->dimensions * sizeof(float);
         void* newVectorBuffer = NULL;
-        cudaError_t err = cudaMalloc(&newVectorBuffer, newBufferSize);
+        cudaError_t err = cudaMalloc((void**)&newVectorBuffer, newBufferSize);
         if (err != cudaSuccess) {
             return -1;
         }
@@ -104,7 +104,7 @@ int cuda_add_vectors(CUDAIndexHandle* handle, float* h_vectors, int64_t* h_ids, 
 
         size_t newIdBufferSize = newCapacity * sizeof(int64_t);
         void* newIdBuffer = NULL;
-        err = cudaMalloc(&newIdBuffer, newIdBufferSize);
+        err = cudaMalloc((void**)&newIdBuffer, newIdBufferSize);
         if (err != cudaSuccess) {
             return -1;
         }
@@ -149,8 +149,8 @@ int cuda_search(CUDAIndexHandle* handle, float* h_query, int k, int64_t* h_resul
     size_t querySize = handle->dimensions * sizeof(float);
     size_t distancesSize = handle->vectorCount * sizeof(float);
     
-    cudaMalloc(&d_query, querySize);
-    cudaMalloc(&d_distances, distancesSize);
+    cudaMalloc((void**)&d_query, querySize);
+    cudaMalloc((void**)&d_distances, distancesSize);
     
     cudaMemcpy(d_query, h_query, querySize, cudaMemcpyHostToDevice);
 
@@ -205,8 +205,8 @@ int cuda_search_pq(CUDAIndexHandle* handle, float* h_lookupTable, int m, int k, 
     size_t tableSize = m * 256 * sizeof(float);
     size_t distancesSize = handle->vectorCount * sizeof(float);
     
-    cudaMalloc(&d_table, tableSize);
-    cudaMalloc(&d_distances, distancesSize);
+    cudaMalloc((void**)&d_table, tableSize);
+    cudaMalloc((void**)&d_distances, distancesSize);
     cudaMemcpy(d_table, h_lookupTable, tableSize, cudaMemcpyHostToDevice);
 
     // Launch PQ kernel

@@ -4,7 +4,7 @@ This directory contains the necessary configuration for monitoring Longbow with 
 
 ## Dashboards
 
-Longbow now has **6 focused dashboards** for better organization and performance:
+Longbow now has **7 focused dashboards** for better organization and performance:
 
 | Dashboard | UID | Description |
 |-----------|-----|-------------|

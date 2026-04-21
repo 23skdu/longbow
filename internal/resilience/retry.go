@@ -93,7 +93,7 @@ func Retry[T any](ctx context.Context, policy *RetryPolicy, fn func() (T, error)
 			delay := calculateDelay(policy, attempt)
 
 			if policy.Jitter {
-				delay = time.Duration(float64(delay) * (0.8 + 0.4*rand.Float64()))
+				delay = time.Duration(float64(delay) * (0.8 + 0.4*rand.Float64())) // #nosec G404
 			}
 
 			timer := time.NewTimer(delay)

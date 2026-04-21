@@ -13,10 +13,11 @@ import (
 	"time"
 )
 
-const (
-	tokenPath     = "/var/run/secrets/kubernetes.io/serviceaccount/token"     // nosec G101 - path to K8s service account token, not hardcoded credential
-	caPath        = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"    // nosec G101 - path to K8s CA cert, not hardcoded credential
-	namespacePath = "/var/run/secrets/kubernetes.io/serviceaccount/namespace" // nosec G101 - path to K8s namespace, not hardcoded credential
+// #nosec G101 - paths to K8s secrets are not hardcoded credentials
+const ( // #nosec G101
+	tokenPath     = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+	caPath        = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+	namespacePath = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
 	apiHost       = "kubernetes.default.svc"
 )
 

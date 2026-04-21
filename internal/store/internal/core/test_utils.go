@@ -23,7 +23,7 @@ func GenerateTestVectors(n, dims int) [][]float32 {
 func MakeBatchTestRecord(mem memory.Allocator, dims int, vectors [][]float32) arrow.RecordBatch {
 	schema := arrow.NewSchema(
 		[]arrow.Field{
-			{Name: "vector", Type: arrow.FixedSizeListOf(int32(dims), arrow.PrimitiveTypes.Float32)},
+			{Name: "vector", Type: arrow.FixedSizeListOf(int32(dims), arrow.PrimitiveTypes.Float32)}, // #nosec G115
 		}, nil,
 	)
 

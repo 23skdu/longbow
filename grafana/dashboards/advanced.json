@@ -301,6 +301,54 @@
       ],
       "title": "HNSW Search Pool",
       "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 45},
+      "id": 29,
+      "panels": [],
+      "title": "Geospatial Search",
+      "type": "row"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 12, "x": 0, "y": 46},
+      "id": 30,
+      "targets": [{"expr": "rate(longbow_geo_search_ops_total[1m])", "legendFormat": "{{search_type}}", "refId": "A"}],
+      "title": "Geo Search Ops/s",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 12, "x": 12, "y": 46},
+      "id": 31,
+      "targets": [{"expr": "histogram_quantile(0.99, sum(rate(longbow_geo_search_duration_seconds_bucket[5m])) by (le, search_type))", "legendFormat": "{{search_type}} P99", "refId": "A"}],
+      "title": "Geo Search Latency (P99)",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 52},
+      "id": 32,
+      "panels": [],
+      "title": "SIMD Kernel Performance",
+      "type": "row"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 12, "x": 0, "y": 53},
+      "id": 33,
+      "targets": [{"expr": "rate(longbow_simd_kernel_operations_total[1m])", "legendFormat": "{{operation}} ({{dtype}}, {{dimension}})", "refId": "A"}],
+      "title": "SIMD Kernel Throughput",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 12, "x": 12, "y": 53},
+      "id": 34,
+      "targets": [{"expr": "histogram_quantile(0.99, sum(rate(longbow_simd_kernel_duration_seconds_bucket[5m])) by (le, operation))", "legendFormat": "{{operation}} P99", "refId": "A"}],
+      "title": "SIMD Kernel Latency (P99)",
+      "type": "timeseries"
     }
   ],
   "refresh": "10s",

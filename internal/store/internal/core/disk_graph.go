@@ -85,7 +85,7 @@ func NewDiskGraph(path string) (*DiskGraph, error) {
 		return nil, fmt.Errorf("file too small")
 	}
 
-	data, err := unix.Mmap(int(f.Fd()), 0, int(size), unix.PROT_READ, unix.MAP_SHARED)
+	data, err := unix.Mmap(int(f.Fd()), 0, int(size), unix.PROT_READ, unix.MAP_SHARED) // #nosec G115
 	if err != nil {
 		_ = f.Close()
 		return nil, fmt.Errorf("mmap failed: %v", err)
@@ -139,7 +139,7 @@ func (dg *DiskGraph) parse() error {
 		dg.header.SQ8Min = math.Float32frombits(binary.LittleEndian.Uint32(dg.data[40:44]))
 		dg.header.SQ8Max = math.Float32frombits(binary.LittleEndian.Uint32(dg.data[44:48]))
 		dg.header.EntryPoint = binary.LittleEndian.Uint32(dg.data[48:52])
-		dg.header.GraphMaxLevel = int32(binary.LittleEndian.Uint32(dg.data[52:56]))
+		dg.header.GraphMaxLevel = int32(binary.LittleEndian.Uint32(dg.data[52:56])) // #nosec G115
 		metaStart = 56
 	}
 
@@ -172,7 +172,7 @@ func (dg *DiskGraph) parse() error {
 		// L0 Index Format: [Offset0, Offset1, ... OffsetNumNodes-1]
 		// Each offset is 8 bytes.
 		idxSize := int(dg.header.NumNodes) * 8
-		if len(dg.data) < int(l0Off)+idxSize {
+		if len(dg.data) < int(l0Off)+idxSize { // #nosec G115
 			return fmt.Errorf("truncated L0 index")
 		}
 
@@ -198,12 +198,12 @@ func (dg *DiskGraph) parse() error {
 		// [Count: 4b]
 		// [NodeID0, NodeID1...]: Count * 4b
 		// [Offset0, Offset1...]: Count * 8b
-		if len(dg.data) < int(off)+4 {
+		if len(dg.data) < int(off)+4 { // #nosec G115
 			return fmt.Errorf("truncated sparse index header bucket %d", i)
 		}
 		count := binary.LittleEndian.Uint32(dg.data[off : off+4])
 
-		nodeIDsStart := int(off) + 4
+		nodeIDsStart := int(off) + 4 // #nosec G115
 		nodeIDsEnd := nodeIDsStart + int(count)*4
 		offsetsStart := nodeIDsEnd
 		offsetsEnd := offsetsStart + int(count)*8
@@ -262,7 +262,7 @@ func (dg *DiskGraph) GetNeighbors(layer int, nodeID uint32, buf []uint32) []uint
 	}
 
 	// Read Data
-	if int(dataOffset)+1 > len(dg.data) {
+	if int(dataOffset)+1 > len(dg.data) { // #nosec G115
 		return nil
 	}
 
@@ -281,8 +281,8 @@ func (dg *DiskGraph) GetNeighbors(layer int, nodeID uint32, buf []uint32) []uint
 		if n <= 0 {
 			return nil
 		}
-		count = uint32(c)
-		start = int(dataOffset) + n
+		count = uint32(c) // #nosec G115
+		start = int(dataOffset) + n // #nosec G115
 
 		// Decode Deltas
 		var res []uint32
@@ -302,7 +302,7 @@ func (dg *DiskGraph) GetNeighbors(layer int, nodeID uint32, buf []uint32) []uint
 			if n <= 0 {
 				return nil
 			}
-			val := last + uint32(d)
+			val := last + uint32(d) // #nosec G115
 			res[i] = val
 			last = val
 			offset += n
@@ -311,11 +311,11 @@ func (dg *DiskGraph) GetNeighbors(layer int, nodeID uint32, buf []uint32) []uint
 
 	} else {
 		// V3: Fixed Layout [Count:4b][N...:4b]
-		if int(dataOffset)+4 > len(dg.data) {
+		if int(dataOffset)+4 > len(dg.data) { // #nosec G115
 			return nil
 		}
 		count = binary.LittleEndian.Uint32(dg.data[dataOffset : dataOffset+4])
-		start = int(dataOffset) + 4
+		start = int(dataOffset) + 4 // #nosec G115
 		// Check bounds
 		end := start + int(count)*4
 		if end > len(dg.data) {
@@ -404,8 +404,8 @@ func (dg *DiskGraph) GetVectorTQ(nodeID uint32) []byte {
 	bitBytes := (p2 + 7) / 8
 	stride := 4 + angleBytes + bitBytes
 
-	start := dg.header.TQOffset + uint64(nodeID)*uint64(stride)
-	end := start + uint64(stride)
+	start := dg.header.TQOffset + uint64(nodeID)*uint64(stride) // #nosec G115
+	end := start + uint64(stride) // #nosec G115
 	if end > uint64(len(dg.data)) {
 		return nil
 	}

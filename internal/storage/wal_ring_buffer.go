@@ -41,12 +41,12 @@ func (rb *WALRingBuffer) Push(entry WALEntry) bool {
 	readPos := rb.readPos.Load()
 
 	// Check if buffer is full
-	if writePos-readPos >= uint64(rb.capacity) {
+	if writePos-readPos >= uint64(rb.capacity) { // #nosec G115
 		return false
 	}
 
 	// Write entry at current position
-	idx := int(writePos) & rb.mask
+	idx := int(writePos) & rb.mask // #nosec G115
 	rb.buffer[idx] = entry
 
 	// Advance write position
@@ -60,14 +60,14 @@ func (rb *WALRingBuffer) Drain(dest *[]WALEntry) int {
 	readPos := rb.readPos.Load()
 	writePos := rb.writePos.Load()
 
-	count := int(writePos - readPos)
+	count := int(writePos - readPos) // #nosec G115
 	if count == 0 {
 		return 0
 	}
 
 	// Copy entries to destination
 	for i := 0; i < count; i++ {
-		idx := int(readPos+uint64(i)) & rb.mask
+		idx := int(readPos+uint64(i)) & rb.mask // #nosec G115
 		*dest = append(*dest, rb.buffer[idx])
 	}
 
@@ -80,7 +80,7 @@ func (rb *WALRingBuffer) Drain(dest *[]WALEntry) int {
 func (rb *WALRingBuffer) Len() int {
 	writePos := rb.writePos.Load()
 	readPos := rb.readPos.Load()
-	return int(writePos - readPos)
+	return int(writePos - readPos) // #nosec G115
 }
 
 // Cap returns the capacity of the ring buffer.

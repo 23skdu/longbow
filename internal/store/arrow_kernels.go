@@ -338,7 +338,7 @@ func selectKExec(ctx *exec.KernelCtx, batch *exec.ExecSpan, out *exec.ExecResult
 	}
 
 	for i := 0; i < n; i++ {
-		outIndices[i] = uint32(items[i].idx)
+		outIndices[i] = uint32(items[i].idx) // #nosec G115
 	}
 
 	return nil

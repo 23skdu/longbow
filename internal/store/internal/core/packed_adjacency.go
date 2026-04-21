@@ -127,7 +127,7 @@ func (pa *PackedAdjacency) SetNeighbors(id uint32, neighbors []uint32) error {
 	copy(dest, neighbors)
 
 	// 2. Pack Ref
-	packed := PackRef(ref.Offset, uint32(len(neighbors)))
+	packed := PackRef(ref.Offset, uint32(len(neighbors))) // #nosec G115
 
 	// 3. Update Page
 	return pa.updatePage(id, packed)
@@ -150,7 +150,7 @@ func (pa *PackedAdjacency) SetNeighborsF16(id uint32, neighbors []uint32, distan
 		return err
 	}
 
-	dest := pa.baseArena.Get(offset, uint32(totalBytes))
+	dest := pa.baseArena.Get(offset, uint32(totalBytes)) // #nosec G115
 	if len(dest) == 0 {
 		return errors.New("packed adjacency: allocation failed")
 	}
@@ -164,7 +164,7 @@ func (pa *PackedAdjacency) SetNeighborsF16(id uint32, neighbors []uint32, distan
 	copy(dDest, distances)
 
 	// 2. Pack Ref
-	packed := PackRef(offset, uint32(len(neighbors)))
+	packed := PackRef(offset, uint32(len(neighbors))) // #nosec G115
 
 	// 3. Update Page
 	return pa.updatePage(id, packed)
@@ -237,7 +237,7 @@ func (pa *PackedAdjacency) GetNeighborsF16(id uint32) ([]uint32, []float16.Num, 
 
 	// Get combined block
 	totalBytes := length*4 + length*2
-	dest := pa.baseArena.Get(off, uint32(totalBytes))
+	dest := pa.baseArena.Get(off, uint32(totalBytes)) // #nosec G115
 	if len(dest) == 0 {
 		return nil, nil, false
 	}

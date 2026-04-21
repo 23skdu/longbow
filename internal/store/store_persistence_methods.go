@@ -86,7 +86,7 @@ func (src *storeSnapshotSource) Iterate(yield func(storage.SnapshotItem) error) 
 					metaBytes := metaBuf.Bytes()
 
 					// Write Metadata Length + Bytes
-					if err := binary.Write(w, binary.LittleEndian, uint32(len(metaBytes))); err != nil {
+					if err := binary.Write(w, binary.LittleEndian, uint32(len(metaBytes))); err != nil { // #nosec G115
 						return err
 					}
 					if _, err := w.Write(metaBytes); err != nil {

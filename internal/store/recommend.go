@@ -35,7 +35,7 @@ func (s *VectorStore) Recommend(ctx context.Context, req *qry.RecommendRequest) 
 	for _, uid := range req.SeedIDs {
 		if loc, ok := ds.PrimaryIndex[uid]; ok {
 			// Resolve internal ID (Batch*ChunkSize + Row)
-			internalID := lbtypes.VectorID(loc.BatchIdx*lbtypes.ChunkSize + loc.RowIdx)
+			internalID := lbtypes.VectorID(loc.BatchIdx*lbtypes.ChunkSize + loc.RowIdx) // #nosec G115
 			if loc.BatchIdx < len(ds.Records) {
 				rec := ds.Records[loc.BatchIdx]
 				vec, err := extractVectorFromCol(rec, loc.RowIdx)

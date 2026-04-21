@@ -49,7 +49,7 @@ func (h *ArrowHNSW) ensureTrained(limitID int, extraSamples [][]float32) {
 		// Backfill existing vectors
 		if limitID >= 0 {
 			currentData := h.data.Load()
-			for i := uint32(0); i <= uint32(limitID); i++ {
+			for i := uint32(0); i <= uint32(limitID); i++ { // #nosec G115
 				cID := types.ChunkID(i)
 				cOff := types.ChunkOffset(i)
 

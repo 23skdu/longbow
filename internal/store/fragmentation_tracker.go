@@ -1,6 +1,7 @@
 package store
 
 import (
+	"fmt"
 	"sync"
 	"sync/atomic"
 
@@ -212,6 +213,6 @@ func (f *FragmentationTracker) updateMetrics(batchIdx int, batch *batchFragmenta
 	}
 
 	// Update density metric
-	batchLabel := string(rune('0' + batchIdx)) // Simple label for now
+	batchLabel := fmt.Sprintf("%d", batchIdx)
 	metrics.CompactionTombstoneDensity.WithLabelValues(f.datasetName, batchLabel).Set(density)
 }

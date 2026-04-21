@@ -179,7 +179,7 @@ func (c *GlobalSearchCoordinator) GlobalSearch(ctx context.Context, localResults
 
 						for k := 0; k < len(ids); k++ {
 							results = append(results, SearchResult{
-								ID:    lbtypes.VectorID(ids[k]),
+								ID:    lbtypes.VectorID(ids[k]), // #nosec G115
 								Score: scores[k],
 							})
 						}

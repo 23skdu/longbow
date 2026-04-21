@@ -21,12 +21,6 @@ import (
 // BULK_INSERT_THRESHOLD defines the minimum batch size to trigger parallel bulk insert
 const BULK_INSERT_THRESHOLD = 1000
 
-// linkageUpdate tracks a connection (source -> target) to be added to the graph.
-type linkageUpdate struct {
-	target uint32
-	source uint32
-	dist   float32
-}
 
 const ShardedLockCount = 1024
 
@@ -210,7 +204,7 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 				return ctxPrep.Err()
 			}
 			for j := offset; j < end; j++ {
-				id := startID + uint32(j)
+				id := startID + uint32(j) // #nosec G115
 				cID := types.ChunkID(id)
 				cOff := types.ChunkOffset(id)
 
@@ -385,7 +379,7 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 				// Init levels chunk if needed
 				levelsChunk := data.GetLevelsChunk(cID)
 				if levelsChunk != nil {
-					levelsChunk[cOff] = uint8(level)
+					levelsChunk[cOff] = uint8(level) // #nosec G115
 				}
 			}
 			return nil
@@ -840,17 +834,4 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 	}
 
 	return nil
-}
-
-func (h *ArrowHNSW) pushLinkageUpdate(ctx context.Context, ring *LockFreeRingBuffer[linkageUpdate], update linkageUpdate) {
-	// Push Blocking to handle backpressure
-	if !ring.PushBlocking(update, 100*time.Millisecond) {
-		// Force push loop with context check to avoid infinite hang if consumers fail
-		for !ring.Push(update) {
-			if ctx.Err() != nil {
-				return
-			}
-			runtime.Gosched()
-		}
-	}
 }

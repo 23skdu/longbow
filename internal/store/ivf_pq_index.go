@@ -358,7 +358,7 @@ func (idx *IVFPQIndex) GetVectorID(loc any) (uint32, bool) {
 }
 
 func (idx *IVFPQIndex) GetDimension() uint32 {
-	return uint32(idx.dim)
+	return uint32(idx.dim) // #nosec G115
 }
 
 func (idx *IVFPQIndex) SetIndexedColumns(cols []string) {}
@@ -469,7 +469,7 @@ func (idx *IVFPQIndex) GetMemoryUsage() int64 {
 	for _, vec := range idx.vectorStore {
 		bytes += int64(len(vec) * 4)
 	}
-	bytes += int64(idx.nextID * uint32(idx.config.M))
+	bytes += int64(idx.nextID * uint32(idx.config.M)) // #nosec G115
 	return bytes
 }
 

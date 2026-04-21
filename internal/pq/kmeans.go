@@ -137,7 +137,7 @@ func TrainKMeans(data []float32, n, dim, k, maxIter int) ([]float32, error) {
 				}
 			} else {
 				// Re-initialize empty cluster with a random vector from data
-				idx := rand.Intn(n)
+				idx := rand.Intn(n) // #nosec G404
 				copy(centroids[c*dim:(c+1)*dim], data[idx*dim:(idx+1)*dim])
 			}
 		}

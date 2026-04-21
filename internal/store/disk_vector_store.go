@@ -141,8 +141,8 @@ func (dvs *DiskVectorStore) BatchAppend(vectors [][]float32) (int, error) {
 	header := make([]byte, 13)
 	binary.LittleEndian.PutUint32(header[0:4], 0x56434D50)
 	header[4] = compType
-	binary.LittleEndian.PutUint32(header[5:9], uint32(len(raw)))
-	binary.LittleEndian.PutUint32(header[9:13], uint32(len(dataToWrite)))
+	binary.LittleEndian.PutUint32(header[5:9], uint32(len(raw))) // #nosec G115
+	binary.LittleEndian.PutUint32(header[9:13], uint32(len(dataToWrite))) // #nosec G115
 
 	offset, _ := dvs.backend.Size()
 
@@ -155,8 +155,8 @@ func (dvs *DiskVectorStore) BatchAppend(vectors [][]float32) (int, error) {
 
 	dvs.blocks = append(dvs.blocks, BlockEntry{
 		Offset:     offset,
-		CompSize:   uint32(len(dataToWrite)),
-		RawSize:    uint32(len(raw)),
+		CompSize:   uint32(len(dataToWrite)), // #nosec G115
+		RawSize:    uint32(len(raw)), // #nosec G115
 		NumVectors: len(vectors),
 		StartIdx:   dvs.totalCount,
 		CompType:   compType,

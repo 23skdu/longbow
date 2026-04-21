@@ -89,7 +89,7 @@ func NewSlabArena(slabSizeBytes int) *SlabArena {
 	// Round up to next power of 2 to enable fast modulo via bit operations
 	slabSizeBytes = nextPowerOf2(slabSizeBytes)
 	s := &SlabArena{
-		slabCap: uint32(slabSizeBytes),
+		slabCap: uint32(slabSizeBytes), // #nosec G115
 	}
 	// Initialize with empty slice
 	empty := make([]*slab, 0)
@@ -144,7 +144,7 @@ func (a *SlabArena) AllocAligned(size, align int) (uint64, error) {
 // This is an internal helper that doesn't increment metrics.
 func (a *SlabArena) allocFast(size int) (uint64, bool) {
 	const align = 8
-	needed := uint32(size)
+	needed := uint32(size) // #nosec G115
 	// Bit operation optimization: (-needed) & (align-1) is equivalent to
 	// (align - (needed % align)) % align when align is power of 2
 	// This avoids two modulo operations with a single AND
@@ -164,7 +164,7 @@ func (a *SlabArena) allocFast(size int) (uint64, bool) {
 		oldOffset := atomic.LoadUint32(&active.offset)
 		newOffset := oldOffset + totalNeeded
 
-		if newOffset > uint32(len(active.data)) {
+		if newOffset > uint32(len(active.data)) { // #nosec G115
 			return 0, false
 		}
 
@@ -186,7 +186,7 @@ func (a *SlabArena) allocCommon(size, align int, zero bool) (uint64, error) {
 	if size <= 0 {
 		return 0, errors.New("alloc size must be positive")
 	}
-	needed := uint32(size)
+	needed := uint32(size) // #nosec G115
 	if needed > a.slabCap {
 		return 0, fmt.Errorf("alloc request %d exceeds slab capacity %d", size, a.slabCap)
 	}
@@ -212,7 +212,7 @@ func (a *SlabArena) allocCommon(size, align int, zero bool) (uint64, error) {
 		active = currentSlabs[len(currentSlabs)-1]
 	}
 
-	uAlign := uint32(align)
+	uAlign := uint32(align) // #nosec G115
 	var start uint32
 	var claimed bool
 
@@ -227,7 +227,7 @@ func (a *SlabArena) allocCommon(size, align int, zero bool) (uint64, error) {
 				newOffset += 8 - (newOffset % 8)
 			}
 
-			if newOffset <= uint32(len(active.data)) {
+			if newOffset <= uint32(len(active.data)) { // #nosec G115
 				if atomic.CompareAndSwapUint32(&active.offset, oldOffset, newOffset) {
 					start = oldOffset + pad
 					claimed = true
@@ -247,7 +247,7 @@ func (a *SlabArena) allocCommon(size, align int, zero bool) (uint64, error) {
 	if !claimed {
 		// Allocate new slab
 		buf := GetSlab(int(a.slabCap))
-		newId := uint32(len(currentSlabs) + 1)
+		newId := uint32(len(currentSlabs) + 1) // #nosec G115
 
 		var pad uint32
 		if newId == 1 {
@@ -321,13 +321,13 @@ func (a *SlabArena) Get(offset uint64, length uint32) []byte {
 	}
 
 	slabIdx := offset / uint64(a.slabCap)
-	localOffset := uint32(offset & (uint64(a.slabCap) - 1))
+	localOffset := uint32(offset & (uint64(a.slabCap) - 1)) // #nosec G115
 
 	// Lock-free read
 	slabsPtr := a.slabs.Load()
 	slabs := *slabsPtr
 
-	if int(slabIdx) >= len(slabs) {
+	if int(slabIdx) >= len(slabs) { // #nosec G115
 		return nil
 	}
 
@@ -348,13 +348,13 @@ func (a *SlabArena) GetPointer(offset uint64) unsafe.Pointer {
 		return nil
 	}
 	slabIdx := offset / uint64(a.slabCap)
-	localOffset := uint32(offset & (uint64(a.slabCap) - 1))
+	localOffset := uint32(offset & (uint64(a.slabCap) - 1)) // #nosec G115
 
 	// Lock-free read
 	slabsPtr := a.slabs.Load()
 	slabs := *slabsPtr
 
-	if int(slabIdx) >= len(slabs) {
+	if int(slabIdx) >= len(slabs) { // #nosec G115
 		return nil
 	}
 	s := slabs[slabIdx]

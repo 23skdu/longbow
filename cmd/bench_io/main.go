@@ -88,7 +88,7 @@ func runMmapBenchmark(dir string, sizeMB int, blockSize int, workers int, durati
 	defer f.Close()
 
 	// Mmap the file
-	data, err := unix.Mmap(int(f.Fd()), 0, int(fileSize), unix.PROT_READ, unix.MAP_SHARED)
+	data, err := unix.Mmap(int(f.Fd()), 0, int(fileSize), unix.PROT_READ, unix.MAP_SHARED) // #nosec G115
 	if err != nil {
 		panic(fmt.Sprintf("mmap failed: %v", err))
 	}
@@ -135,7 +135,7 @@ func runMmapBenchmark(dir string, sizeMB int, blockSize int, workers int, durati
 				default:
 					var offset int
 					if random {
-						blockIdx := rand.Intn(numBlocks)
+						blockIdx := rand.Intn(numBlocks) // #nosec G404
 						offset = blockIdx * blockSize
 					} else {
 						offset = localOffset
@@ -162,7 +162,7 @@ func runMmapBenchmark(dir string, sizeMB int, blockSize int, workers int, durati
 					}
 
 					atomic.AddUint64(&totalOps, 1)
-					atomic.AddUint64(&totalBytes, uint64(blockSize))
+					atomic.AddUint64(&totalBytes, uint64(blockSize)) // #nosec G115
 				}
 			}
 		}(i)
@@ -179,7 +179,7 @@ func runWriteBenchmark(dir string, sizeMB int, blockSize int, workers int, durat
 
 	// Pre-generate a data block to avoid measuring generation time
 	data := make([]byte, blockSize)
-	rand.Read(data)
+	rand.Read(data) // #nosec G404
 
 	var wg sync.WaitGroup
 	var totalOps uint64
@@ -221,7 +221,7 @@ func runWriteBenchmark(dir string, sizeMB int, blockSize int, workers int, durat
 						_ = f.Sync()  // nosec G104
 					}
 					atomic.AddUint64(&totalOps, 1)
-					atomic.AddUint64(&totalBytes, uint64(n))
+					atomic.AddUint64(&totalBytes, uint64(n)) // #nosec G115
 				}
 			}
 		}(i)
@@ -269,7 +269,7 @@ func runReadBenchmark(dir string, sizeMB int, blockSize int, workers int, durati
 					return
 				default:
 					// Random seek
-					blockIdx := rand.Int63n(numBlocks)
+					blockIdx := rand.Int63n(numBlocks) // #nosec G404
 					offset := blockIdx * int64(blockSize)
 
 					_, err := f.ReadAt(buf, offset)
@@ -278,7 +278,7 @@ func runReadBenchmark(dir string, sizeMB int, blockSize int, workers int, durati
 						return
 					}
 					atomic.AddUint64(&totalOps, 1)
-					atomic.AddUint64(&totalBytes, uint64(blockSize))
+					atomic.AddUint64(&totalBytes, uint64(blockSize)) // #nosec G115
 				}
 			}
 		}(i)
@@ -309,7 +309,7 @@ func prepFile(dir string, sizeMB int, blockSize int) int64 {
 
 	// Fill with random-ish data
 	chunk := make([]byte, 1024*1024) // 1MB chunk
-	rand.Read(chunk)
+	rand.Read(chunk) // #nosec G404
 
 	written := int64(0)
 	for written < targetSize {

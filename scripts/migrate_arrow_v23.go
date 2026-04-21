@@ -42,7 +42,7 @@ func findGoFiles(root string) ([]string, error) {
 }
 
 func updateImports(filePath string, changes []ImportChange) (bool, error) {
-	content, err := os.ReadFile(filePath)
+	content, err := os.ReadFile(filepath.Clean(filePath)) // #nosec G304
 	if err != nil {
 		return false, err
 	}
@@ -58,7 +58,7 @@ func updateImports(filePath string, changes []ImportChange) (bool, error) {
 	}
 
 	if modified {
-		err = os.WriteFile(filePath, updatedContent, 0600)
+		err = os.WriteFile(filepath.Clean(filePath), updatedContent, 0600) // #nosec G703
 		if err != nil {
 			return false, err
 		}

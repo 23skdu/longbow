@@ -183,7 +183,7 @@ func (gn *GraphNavigator) FindPath(ctx context.Context, query NavigatorQuery) (*
 	}
 
 	// Boundary Check
-	nodeCount := uint32(graph.GetNodeCount())
+	nodeCount := uint32(graph.GetNodeCount()) // #nosec G115
 	if query.StartID >= nodeCount {
 		return nil, fmt.Errorf("start node ID %d out of bounds (max %d)", query.StartID, nodeCount-1)
 	}

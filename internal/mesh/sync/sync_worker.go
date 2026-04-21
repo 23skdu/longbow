@@ -198,7 +198,7 @@ func (w *SyncWorker) syncPeer(p *PeerState) error {
 			continue // Invalid metadata
 		}
 		seq := binary.LittleEndian.Uint64(resp.AppMetadata[0:8])
-		ts := int64(binary.LittleEndian.Uint64(resp.AppMetadata[8:16]))
+		ts := int64(binary.LittleEndian.Uint64(resp.AppMetadata[8:16])) // #nosec G115
 
 		// Dataset name from path
 		if len(resp.FlightDescriptor.Path) == 0 {

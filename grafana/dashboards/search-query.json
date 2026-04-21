@@ -250,6 +250,30 @@
       "targets": [{"expr": "sum(rate(graph_navigator_cache_hits_total[5m])) / (sum(rate(graph_navigator_cache_hits_total[5m])) + sum(rate(graph_navigator_cache_misses_total[5m])) + 1)", "refId": "A"}],
       "title": "Graph Navigation Cache Hit Rate",
       "type": "gauge"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 41},
+      "id": 23,
+      "panels": [],
+      "title": "Geospatial Search",
+      "type": "row"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 12, "x": 0, "y": 42},
+      "id": 24,
+      "targets": [{"expr": "rate(longbow_geo_search_ops_total[1m])", "legendFormat": "{{search_type}}", "refId": "A"}],
+      "title": "Geo Search Rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 12, "x": 12, "y": 42},
+      "id": 25,
+      "targets": [{"expr": "histogram_quantile(0.99, sum(rate(longbow_geo_search_duration_seconds_bucket[5m])) by (le, search_type))", "legendFormat": "P99 {{search_type}}", "refId": "A"}],
+      "title": "Geo Search Latency (P99)",
+      "type": "timeseries"
     }
   ],
   "refresh": "10s",

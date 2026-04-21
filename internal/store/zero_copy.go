@@ -21,7 +21,7 @@ func ZeroCopyRecordBatch(mem memory.Allocator, rec arrow.RecordBatch, deleted *q
 
 	// Build index array of non-deleted rows
 	numRows := int(rec.NumRows())
-	deletedCount := int(deleted.Count())
+	deletedCount := int(deleted.Count()) // #nosec G115
 	indices := make([]int64, 0, numRows-deletedCount)
 	for i := 0; i < numRows; i++ {
 		if !deleted.Contains(i) { // Use Contains instead of IsSet

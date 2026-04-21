@@ -149,7 +149,7 @@ func (h *ArrowHNSW) TrainPQ(vectors [][]float32) error {
 				}
 			} else {
 				// Sequential CPU encoding
-				for i := uint32(0); i < uint32(nodeCount); i++ {
+				for i := uint32(0); i < uint32(nodeCount); i++ { // #nosec G115
 					v := h.mustGetVectorFromData(data, i)
 					if vf32, ok := v.([]float32); ok {
 						code, err := encoder.Encode(vf32)

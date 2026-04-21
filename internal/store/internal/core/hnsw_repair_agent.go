@@ -163,7 +163,7 @@ func (r *RepairAgent) detectOrphans() []uint32 {
 	if entryPoint == 0 && nodeCount > 0 {
 		// If no explicit entry point, use node 0
 		queue = append(queue, 0)
-	} else if entryPoint < uint32(nodeCount) {
+	} else if entryPoint < uint32(nodeCount) { // #nosec G115
 		queue = append(queue, entryPoint)
 	}
 

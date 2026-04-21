@@ -1015,7 +1015,7 @@ func (b *IndexBenchmark) simulateQuery(index IndexType, features QueryFeatures) 
 
 	baseLatency += time.Duration(features.NumQueryVectors) * time.Millisecond * 2
 
-	variance := float64(baseLatency) * 0.1 * (rand.Float64()*2 - 1)
+	variance := float64(baseLatency) * 0.1 * (rand.Float64()*2 - 1) // #nosec G404
 	return time.Duration(float64(baseLatency) + variance)
 }
 

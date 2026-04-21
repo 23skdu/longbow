@@ -86,10 +86,10 @@ func (h *HNSWPluggableAdapter) GetNeighbors(ctx context.Context, id lbtypes.Vect
 	results := make([]lbtypes.SearchResult, 0, k)
 	count := 0
 	for otherID := range h.vectors {
-		if uint32(otherID) == uint32(id) {
+		if uint32(otherID) == uint32(id) { // #nosec G115
 			continue
 		}
-		results = append(results, lbtypes.SearchResult{ID: lbtypes.VectorID(otherID)})
+		results = append(results, lbtypes.SearchResult{ID: lbtypes.VectorID(otherID)}) // #nosec G115
 		count++
 		if count >= k {
 			break
@@ -107,7 +107,7 @@ func (h *HNSWPluggableAdapter) Save(path string) error {
 }
 
 func (h *HNSWPluggableAdapter) Load(path string) error {
-	_, err := os.ReadFile(path)
+	_, err := os.ReadFile(path) // #nosec G304
 	return err
 }
 

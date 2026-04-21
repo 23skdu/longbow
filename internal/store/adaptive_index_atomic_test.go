@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func createTestDatasetWithVectors(t *testing.T, name string, numVectors int) *Dataset {
+func createTestDatasetWithVectors(name string, numVectors int) *Dataset {
 	pool := memory.NewGoAllocator()
 	schema := arrow.NewSchema(
 		[]arrow.Field{
@@ -48,7 +48,7 @@ func TestAdaptiveIndex_AsyncMigration(t *testing.T) {
 	// We need enough vectors to make migration noticeable or controllable?
 	// Without dependency injection, relying on real migration time might be flaky.
 	// But `ArrowHNSW` build is somewhat heavy.
-	ds := createTestDatasetWithVectors(t, "adaptive_async", 20) // 20 vectors
+	ds := createTestDatasetWithVectors("adaptive_async", 20) // 20 vectors
 
 	idx := NewAdaptiveIndex(ds, cfg)
 

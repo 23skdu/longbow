@@ -33,7 +33,7 @@ require (
 	github.com/leanovate/gopter v0.2.11
 	github.com/pierrec/lz4/v4 v4.1.26
 	github.com/prometheus/client_model v0.6.2
-	github.com/rs/zerolog v1.35.0
+	github.com/rs/zerolog v1.35.1
 	github.com/sbinet/npyio v0.9.0
 	github.com/tetratelabs/wazero v1.11.0
 	github.com/yalue/onnxruntime_go v1.27.0

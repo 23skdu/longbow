@@ -163,6 +163,17 @@ func SearchHybrid(ctx context.Context, s *VectorStore, name string, queryVec []f
 		Int("count", len(resolved)).
 		Msg("SearchHybrid completed")
 
+	// Record the query for learned index training, including the active embedding context.
+	embProvider, embModel := s.GetActiveEmbedding()
+	s.RecordQueryPerformance(QueryFeatures{
+		VectorDimension:   len(queryVec),
+		SearchK:           k,
+		IsHybrid:          true,
+		IsFiltered:        false,
+		EmbeddingProvider: embProvider,
+		EmbeddingModel:    embModel,
+	}, time.Since(start).Seconds()*1000, 1.0, IndexTypeHNSW, embProvider, embModel)
+
 	return resolved, nil
 }
 

@@ -37,7 +37,28 @@ Longbow's metrics and logs.
 * **Configuration**: Ensure `LONGBOW_MAX_MEMORY` is set to a value lower than
   your container's hard limit.
 
-### 3. Slow Startup
+### 3. Memory Spikes during Index Migration
+
+**Symptom**: Memory usage suddenly doubles, leading to OOM kills, even when data ingestion rate is stable.
+
+**Check Metrics**:
+- `longbow_learned_index_adaptations_total{status="running"}`: Is a background index swap in progress?
+- `longbow_store_memory_usage_bytes`: Identify the spike onset.
+
+**Cause**:
+Longbow's **Adaptive Learned Index** and **Auto-Sharding** mechanisms build replacement indices in the background to ensure zero-downtime search. This process temporarily doubles the memory footprint of the index being replaced.
+
+**Solution**:
+1. **Increase Buffer**: Ensure `LONGBOW_MAX_MEMORY` is set with at least a 50% buffer above your steady-state index size.
+2. **Limit Concurrent Migrations**: Avoid triggering multiple collection migrations simultaneously.
+3. **Disable Auto-Adaptation**: If memory is critical, disable automatic switching via config:
+   ```yaml
+   learned_index:
+     adaptation:
+       enable_adaptation: false
+   ```
+
+### 4. Slow Startup
 
 **Symptom**: Longbow takes a long time to become ready after a restart.
 

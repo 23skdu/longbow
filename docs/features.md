@@ -12,7 +12,8 @@
 - **Lock-Free Ingestion Workers**: High-performance ingestion pipeline using `LockFreeRingBuffer` and adaptive batching to eliminate mutex contention during high-velocity data loads.
 - **Adaptive Batching Engine**: Dynamically adjusts WAL flush and indexing batch sizes based on real-time pressure and latency metrics.
 - **High-Throughput Parquet IO**: Reflection-free Arrow-to-Parquet encoding using `io.ReaderAt` compatible buffers for multi-threaded snapshotting.
-- **Adaptive Indexing**: Automated, zero-downtime migration from flat (linear) scan to HNSW indexing based on collection growth metrics and automated worker-pool lifecycle management.
+- **Runtime Learned Index (k-NN Classifier)**: `IndexPerformancePredictor` selects the optimal ANN index type (HNSW, IVF-PQ, DiskANN) per query using a k-nearest-neighbour classifier (k=7) over accumulated `TrainingSamples`. Feature weights are updated asynchronously via Fisher between-class variance (LDA), ensuring the scorer improves as operational data accumulates. A configurable `MinTrainingSamples` threshold guards the heuristic fallback path during cold-start.
+- **Adaptive Flat→HNSW Migration**: Automated, zero-downtime promotion from flat (linear) scan to HNSW indexing triggered by collection growth metrics, with background worker-pool lifecycle management.
 
 ### 🧠 Advanced Quantization Suite
 

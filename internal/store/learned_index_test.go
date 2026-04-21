@@ -138,74 +138,6 @@ func TestIndexPerformancePredictor_Predict_MediumDataset(t *testing.T) {
 	assert.Equal(t, LearnedIVFPQ, prediction.RecommendedIndex)
 }
 
-func TestIndexPerformancePredictor_calculateIndexScores(t *testing.T) {
-	logger := zerolog.New(nil).With().Logger()
-	p := NewIndexPerformancePredictor(logger, LearnedIndexConfig{})
-
-	features := QueryFeatures{
-		VectorDimension: 128,
-		DatasetSize:     100000,
-		SearchK:         10,
-		IsFiltered:      false,
-		IsHybrid:        false,
-		QueryComplexity: "simple",
-	}
-
-	scores := p.calculateIndexScores(features)
-
-	assert.Contains(t, scores, IndexTypeHNSW)
-	assert.Contains(t, scores, LearnedIVFPQ)
-	assert.Contains(t, scores, IndexTypeDiskANN)
-}
-
-func TestIndexPerformancePredictor_scoreHNSW(t *testing.T) {
-	logger := zerolog.New(nil).With().Logger()
-	p := NewIndexPerformancePredictor(logger, LearnedIndexConfig{})
-
-	features := QueryFeatures{
-		DatasetSize:     50000,
-		SearchK:         50,
-		IsFiltered:      false,
-		IsHybrid:        false,
-		QueryComplexity: "simple",
-	}
-
-	score := p.scoreHNSW(features)
-
-	assert.Greater(t, score, 0.0)
-}
-
-func TestIndexPerformancePredictor_scoreIVFPQ(t *testing.T) {
-	logger := zerolog.New(nil).With().Logger()
-	p := NewIndexPerformancePredictor(logger, LearnedIndexConfig{})
-
-	features := QueryFeatures{
-		DatasetSize:     200000,
-		NumQueryVectors: 10,
-		SearchK:         200,
-		VectorDimension: 1024,
-	}
-
-	score := p.scoreIVFPQ(features)
-
-	assert.Greater(t, score, 0.0)
-}
-
-func TestIndexPerformancePredictor_scoreDiskANN(t *testing.T) {
-	logger := zerolog.New(nil).With().Logger()
-	p := NewIndexPerformancePredictor(logger, LearnedIndexConfig{})
-
-	features := QueryFeatures{
-		DatasetSize:     5000000,
-		IsFiltered:      true,
-		IsHybrid:        true,
-		QueryComplexity: "complex",
-	}
-
-	score := p.scoreDiskANN(features)
-
-	assert.Greater(t, score, 0.0)
-}
 
 func TestIndexPerformancePredictor_calculateConfidence(t *testing.T) {
 	logger := zerolog.New(nil).With().Logger()
@@ -713,4 +645,415 @@ func TestRuntimeIndexAdapter_ListAdaptations(t *testing.T) {
 
 	adaptations := adapter.ListAdaptations()
 	assert.Len(t, adaptations, 2)
+}
+
+// =============================================================================
+// k-NN Scorer Tests
+// =============================================================================
+
+// TestKNNPredict_LearnFromSamples proves that kNNPredict changes its
+// recommendations based on the training data it has observed — the core
+// behaviour that was previously broken.
+func TestKNNPredict_LearnFromSamples(t *testing.T) {
+	logger := zerolog.New(nil).With().Logger()
+	p := NewIndexPerformancePredictor(logger, LearnedIndexConfig{
+		MinTrainingSamples: 50,
+		KNN:                7,
+	})
+
+	// Seed: small datasets → HNSW wins.
+	for i := 0; i < 80; i++ {
+		p.AddTrainingSample(TrainingSample{
+			Features: QueryFeatures{
+				VectorDimension: 128,
+				DatasetSize:     10000 + i*100,
+				SearchK:         10,
+			},
+			Latency: 5 * time.Millisecond,
+			Recall:  0.98,
+			Index:   IndexTypeHNSW,
+		})
+	}
+
+	// Seed: large datasets → DiskANN wins.
+	for i := 0; i < 80; i++ {
+		p.AddTrainingSample(TrainingSample{
+			Features: QueryFeatures{
+				VectorDimension: 128,
+				DatasetSize:     3000000 + i*10000,
+				SearchK:         10,
+			},
+			Latency: 30 * time.Millisecond,
+			Recall:  0.95,
+			Index:   IndexTypeDiskANN,
+		})
+	}
+
+	// k-NN should recommend HNSW for a small-dataset query.
+	smallPred := p.Predict(QueryFeatures{
+		VectorDimension: 128,
+		DatasetSize:     15000,
+		SearchK:         10,
+	})
+	assert.Equal(t, IndexTypeHNSW, smallPred.RecommendedIndex,
+		"k-NN must recommend HNSW for small dataset matching training distribution")
+
+	// k-NN should recommend DiskANN for a large-dataset query.
+	largePred := p.Predict(QueryFeatures{
+		VectorDimension: 128,
+		DatasetSize:     4000000,
+		SearchK:         10,
+	})
+	assert.Equal(t, IndexTypeDiskANN, largePred.RecommendedIndex,
+		"k-NN must recommend DiskANN for large dataset matching training distribution")
+}
+
+// TestKNNPredict_OverridesHeuristic verifies that the k-NN scorer overrides the
+// static heuristic when training data contradicts it.
+func TestKNNPredict_OverridesHeuristic(t *testing.T) {
+	logger := zerolog.New(nil).With().Logger()
+	p := NewIndexPerformancePredictor(logger, LearnedIndexConfig{
+		MinTrainingSamples: 30,
+		KNN:                5,
+	})
+
+	// The heuristic scores HNSW highly for small datasets. Teach k-NN the
+	// opposite: always prefer DiskANN for these features.
+	for i := 0; i < 60; i++ {
+		p.AddTrainingSample(TrainingSample{
+			Features: QueryFeatures{
+				VectorDimension: 64,
+				DatasetSize:     50000,
+				SearchK:         50,
+				IsFiltered:      true,
+			},
+			Index: IndexTypeDiskANN,
+		})
+	}
+
+	pred := p.Predict(QueryFeatures{
+		VectorDimension: 64,
+		DatasetSize:     50000,
+		SearchK:         50,
+		IsFiltered:      true,
+	})
+	assert.Equal(t, IndexTypeDiskANN, pred.RecommendedIndex,
+		"k-NN must override heuristic when all training samples point to DiskANN")
+}
+
+// TestKNNPredict_ConcurrentAddAndPredict stresses the scorer under concurrent
+// reads and writes. Any race will be detected by the -race flag.
+func TestKNNPredict_ConcurrentAddAndPredict(t *testing.T) {
+	logger := zerolog.New(nil).With().Logger()
+	p := NewIndexPerformancePredictor(logger, LearnedIndexConfig{
+		MinTrainingSamples: 50,
+		UpdateInterval:     time.Hour, // disable async updates during this test
+		KNN:                7,
+	})
+
+	// Pre-seed to cross the MinTrainingSamples threshold.
+	for i := 0; i < 60; i++ {
+		p.AddTrainingSample(TrainingSample{
+			Features: QueryFeatures{DatasetSize: 10000 * (i + 1)},
+			Index:    IndexTypeHNSW,
+		})
+	}
+
+	done := make(chan struct{})
+
+	// 8 writers.
+	for i := 0; i < 8; i++ {
+		go func(i int) {
+			for j := 0; j < 50; j++ {
+				p.AddTrainingSample(TrainingSample{
+					Features: QueryFeatures{DatasetSize: i*1000 + j},
+					Index:    IndexTypeHNSW,
+				})
+			}
+			done <- struct{}{}
+		}(i)
+	}
+
+	// 4 readers.
+	for i := 0; i < 4; i++ {
+		go func() {
+			for j := 0; j < 50; j++ {
+				_ = p.Predict(QueryFeatures{DatasetSize: j * 1000})
+			}
+			done <- struct{}{}
+		}()
+	}
+
+	for i := 0; i < 12; i++ {
+		<-done
+	}
+}
+
+// =============================================================================
+// FeatureNormalizer Tests
+// =============================================================================
+
+func TestFeatureNormalizer_MinMax(t *testing.T) {
+	n := newFeatureNormalizer()
+	assert.False(t, n.Ready())
+
+	// First update sets min and max to the same value.
+	v1 := [numFeatures]float64{100, 5, 10, 500000, 1, 0.5, 1.2, 0, 0, 12, 3, 1, 4.0}
+	n.Update(v1)
+	assert.True(t, n.Ready())
+
+	// Second update with larger values expands max.
+	v2 := [numFeatures]float64{512, 20, 100, 3000000, 3, 1.0, 2.5, 1, 1, 18, 6, 3, 2.67}
+	n.Update(v2)
+
+	normed := n.Normalize(v1)
+	for i, val := range normed {
+		assert.GreaterOrEqualf(t, val, 0.0, "feature %d below 0", i)
+		assert.LessOrEqualf(t, val, 1.0, "feature %d above 1", i)
+	}
+}
+
+func TestFeatureNormalizer_NormalizeOutput(t *testing.T) {
+	n := newFeatureNormalizer()
+	lo := [numFeatures]float64{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+	hi := [numFeatures]float64{1024, 100, 1000, 5000000, 10, 1.0, 5.0, 1, 1, 23, 6, 6, 4.0}
+	n.Update(lo)
+	n.Update(hi)
+
+	normedLo := n.Normalize(lo)
+	normedHi := n.Normalize(hi)
+	for i := range normedLo {
+		assert.InDelta(t, 0.0, normedLo[i], 1e-9, "low endpoint feature %d", i)
+		assert.InDelta(t, 1.0, normedHi[i], 1e-9, "high endpoint feature %d", i)
+	}
+}
+
+func TestFeatureNormalizer_ZeroSpanReturns05(t *testing.T) {
+	n := newFeatureNormalizer()
+	// Both updates identical → zero span for all features.
+	v := [numFeatures]float64{42, 1, 10, 100000, 1, 0.5, 1.0, 0, 0, 9, 2, 0, 1.0}
+	n.Update(v)
+	n.Update(v)
+
+	normed := n.Normalize(v)
+	for i, val := range normed {
+		assert.InDeltaf(t, 0.5, val, 1e-9, "zero-span feature %d should be 0.5", i)
+	}
+}
+
+// =============================================================================
+// Online Weight Update Tests
+// =============================================================================
+
+// TestOnlineWeightUpdate_ConvergesDirection verifies that updateWeights assigns
+// a higher weight to dataset_size when it is the dominant discriminating feature.
+func TestOnlineWeightUpdate_ConvergesDirection(t *testing.T) {
+	logger := zerolog.New(nil).With().Logger()
+	p := NewIndexPerformancePredictor(logger, LearnedIndexConfig{
+		MinTrainingSamples: 10,
+		UpdateInterval:     0, // force immediate update on next trigger
+	})
+
+	// All samples differ only in dataset_size; same dimension across all.
+	for i := 0; i < 60; i++ {
+		idx := IndexTypeHNSW
+		ds := 10000
+		if i >= 30 {
+			idx = IndexTypeDiskANN
+			ds = 4000000
+		}
+		p.AddTrainingSample(TrainingSample{
+			Features: QueryFeatures{
+				VectorDimension: 128, // constant — zero between-class variance
+				DatasetSize:     ds,
+				SearchK:         10, // constant
+			},
+			Index: idx,
+		})
+	}
+
+	// Run weight update synchronously.
+	p.updateWeights()
+
+	p.samplesMu.RLock()
+	dsWeight := p.featureWeights["dataset_size"]
+	dimWeight := p.featureWeights["vector_dimension"]
+	p.samplesMu.RUnlock()
+
+	assert.Greater(t, dsWeight, dimWeight,
+		"dataset_size should have higher weight than vector_dimension when it is the sole discriminator")
+}
+
+// =============================================================================
+// PredictionCorrect / Feedback Loop Tests
+// =============================================================================
+
+func TestPredictionCorrect_IncrementOnFeedback(t *testing.T) {
+	logger := zerolog.New(nil).With().Logger()
+	p := NewIndexPerformancePredictor(logger, LearnedIndexConfig{
+		MinTrainingSamples: 50,
+		KNN:                5,
+	})
+
+	// Seed enough samples for k-NN to kick in.
+	for i := 0; i < 60; i++ {
+		p.AddTrainingSample(TrainingSample{
+			Features: QueryFeatures{DatasetSize: 10000},
+			Index:    IndexTypeHNSW,
+		})
+	}
+
+	// Make a prediction — this stores lastPredictedIdx.
+	pred := p.Predict(QueryFeatures{DatasetSize: 10000, SearchK: 10})
+
+	beforeCorrect, _, _ := p.GetStats()
+	_ = beforeCorrect // TrainingSamplesCollected, not PredictionCorrect
+
+	// Add a sample that matches the prediction.
+	p.AddTrainingSample(TrainingSample{
+		Features: QueryFeatures{DatasetSize: 10000},
+		Index:    pred.RecommendedIndex,
+	})
+
+	assert.Greater(t, p.stats.PredictionCorrect.Load(), int64(0),
+		"PredictionCorrect must increment when sample.Index matches last k-NN prediction")
+}
+
+// =============================================================================
+// Rollback Tests
+// =============================================================================
+
+// mockSwitcher implements IndexSwitcher for testing.
+type mockSwitcher struct {
+	switchCalled bool
+	switchTarget IndexType
+	switchErr    error
+}
+
+func (m *mockSwitcher) SwitchIndex(_ string, to IndexType) error {
+	m.switchCalled = true
+	m.switchTarget = to
+	return m.switchErr
+}
+
+func TestRollback_IsNotNoOp(t *testing.T) {
+	logger := zerolog.New(nil).With().Logger()
+	predictor := NewIndexPerformancePredictor(logger, LearnedIndexConfig{})
+	adapter := NewRuntimeIndexAdapter(logger, predictor, IndexAdaptationConfig{
+		EnableRollback: true,
+	}, nil)
+
+	sw := &mockSwitcher{}
+	adapter.WithIndexSwitcher(sw)
+
+	// Register a fake adaptation with a prior index to roll back to.
+	adapter.adaptationMu.Lock()
+	adapter.adaptations["col1"] = &IndexAdaptation{
+		CollectionName: "col1",
+		CurrentIndex:   IndexTypeHNSW,
+		ProposedIndex:  IndexTypeDiskANN,
+		Status:         AdaptationStatusComplete,
+	}
+	adapter.adaptationMu.Unlock()
+
+	err := adapter.Rollback("col1")
+	assert.NoError(t, err, "Rollback should succeed when IndexSwitcher is wired")
+	assert.True(t, sw.switchCalled, "IndexSwitcher.SwitchIndex must be called during rollback")
+	assert.Equal(t, IndexTypeHNSW, sw.switchTarget, "Rollback must target CurrentIndex (prior index)")
+}
+
+func TestRollback_NoSwitcher_ReturnsError(t *testing.T) {
+	logger := zerolog.New(nil).With().Logger()
+	predictor := NewIndexPerformancePredictor(logger, LearnedIndexConfig{})
+	adapter := NewRuntimeIndexAdapter(logger, predictor, IndexAdaptationConfig{
+		EnableRollback: true,
+	}, nil)
+
+	// No IndexSwitcher wired.
+	adapter.adaptationMu.Lock()
+	adapter.adaptations["col1"] = &IndexAdaptation{
+		CollectionName: "col1",
+		CurrentIndex:   IndexTypeHNSW,
+		Status:         AdaptationStatusComplete,
+	}
+	adapter.adaptationMu.Unlock()
+
+	err := adapter.Rollback("col1")
+	assert.Error(t, err, "Rollback without an IndexSwitcher must return an error, not silently succeed")
+}
+
+func TestRollback_UnknownCollection_ReturnsError(t *testing.T) {
+	logger := zerolog.New(nil).With().Logger()
+	predictor := NewIndexPerformancePredictor(logger, LearnedIndexConfig{})
+	adapter := NewRuntimeIndexAdapter(logger, predictor, IndexAdaptationConfig{
+		EnableRollback: true,
+	}, nil)
+
+	sw := &mockSwitcher{}
+	adapter.WithIndexSwitcher(sw)
+
+	err := adapter.Rollback("does-not-exist")
+	assert.Error(t, err)
+	assert.False(t, sw.switchCalled, "SwitchIndex must not be called for an unknown collection")
+}
+
+// =============================================================================
+// extractFeatureVector Tests
+// =============================================================================
+
+func TestExtractFeatureVector_ComplexityMapping(t *testing.T) {
+	cases := []struct {
+		complexity string
+		want       float64
+	}{
+		{"simple", 0.0},
+		{"medium", 0.5},
+		{"complex", 1.0},
+		{"unknown", 0.25},
+		{"", 0.25},
+	}
+	for _, tc := range cases {
+		fv := extractFeatureVector(QueryFeatures{QueryComplexity: tc.complexity})
+		assert.InDelta(t, tc.want, fv[5], 1e-9, "complexity=%q", tc.complexity)
+	}
+}
+
+func TestExtractFeatureVector_BoolFields(t *testing.T) {
+	fvFiltered := extractFeatureVector(QueryFeatures{IsFiltered: true})
+	assert.InDelta(t, 1.0, fvFiltered[7], 1e-9)
+
+	fvHybrid := extractFeatureVector(QueryFeatures{IsHybrid: true})
+	assert.InDelta(t, 1.0, fvHybrid[8], 1e-9)
+
+	fvBoth := extractFeatureVector(QueryFeatures{})
+	assert.InDelta(t, 0.0, fvBoth[7], 1e-9)
+	assert.InDelta(t, 0.0, fvBoth[8], 1e-9)
+}
+
+// =============================================================================
+// weightedEuclidean Tests
+// =============================================================================
+
+func TestWeightedEuclidean_ZeroDistance(t *testing.T) {
+	var v [numFeatures]float64
+	for i := range v {
+		v[i] = float64(i) * 0.1
+	}
+	var w [numFeatures]float64
+	for i := range w {
+		w[i] = 1.0 / numFeatures
+	}
+	dist := weightedEuclidean(v, v, w)
+	assert.InDelta(t, 0.0, dist, 1e-9, "distance to self must be zero")
+}
+
+func TestWeightedEuclidean_Symmetry(t *testing.T) {
+	var a, b, w [numFeatures]float64
+	for i := range a {
+		a[i] = float64(i)
+		b[i] = float64(numFeatures - i)
+		w[i] = 1.0 / numFeatures
+	}
+	assert.InDelta(t, weightedEuclidean(a, b, w), weightedEuclidean(b, a, w), 1e-9,
+		"weighted Euclidean distance must be symmetric")
 }

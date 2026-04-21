@@ -12,31 +12,27 @@ Longbow supports GPU-accelerated vector search and ML inference on both NVIDIA a
 
 | Platform | Library | Acceleration Tech | Support Status |
 | :--- | :--- | :--- | :--- |
-| **Linux (NVIDIA)** | CUDA 11.8+ | Tensor Cores, FAISS | ✅ Production |
-| **macOS (Apple)** | Metal | Unified Memory, vDSP | ✅ Production |
+| **Linux (NVIDIA)** | CUDA 12.6+ | Custom Kernels, Tensor Cores | ✅ Production |
+| **macOS (Apple)** | Metal | Custom Shaders, Unified Memory | ✅ Production |
+| **Cross-Platform** | Wazero | Sandboxed WASM Execution | ✅ Production |
 
 ### Hybrid CPU/GPU Search
 Longbow uses a hybrid approach for optimal performance:
-1.  **Selection**: GPU performs coarse candidate generation (brute-force or IVF).
-2.  **Refinement**: CPU HNSW graph filters tombstones and refines to top-k results.
-3.  **Fallback**: If GPU resources are exhausted or unavailable, the system seamlessly falls back to CPU-only search.
+1.  **Selection**: GPU performs coarse candidate generation or batch distance computation.
+2.  **Refinement**: CPU HNSW graph filters tombstones and refines to final top-k results.
+3.  **Fallback**: Seamlessly falls back to CPU-only search if resources are constrained.
 
 ---
 
-## 2. ONNX Runtime & Inference
+## 2. ML Inference Runtimes
 
-Longbow includes a high-performance ONNX runtime for re-ranking and embedding generation.
+Longbow includes a unified bridge supporting multiple inference runtimes for re-ranking and embedding generation.
 
 ### Backends
+- **Wazero Runner (WASM)**: The default for cross-platform, zero-dependency deployments. Ideal for edge nodes and multi-tenant sandboxing.
 - **Metal Backend**: Optimized for Apple Silicon M1-M4. Uses native Metal Shaders for cross-encoder inference.
 - **CUDA Backend**: Optimized for NVIDIA RTX/A-series. Leverages the CUDA Execution Provider (EP).
-- **CPU Backend**: Scalable fallback using parallel thread pools.
-
-### Configuration
-Set the execution provider via `LONGBOW_ONNX_EP`:
-- `Metal`: Force Apple Silicon GPU.
-- `CUDA`: Force NVIDIA GPU.
-- `CPU`: Standard multi-threaded execution.
+- **CPU Backend**: Scalable fallback using parallel thread pools with SIMD acceleration.
 
 ---
 

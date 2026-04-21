@@ -595,6 +595,34 @@
       ],
       "title": "PQ Latency",
       "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 28},
+      "id": 2001,
+      "panels": [],
+      "title": "Cross-Encoder Reranking",
+      "type": "row"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 29},
+      "id": 2002,
+      "targets": [
+        {"expr": "rate(longbow_reranker_inference_duration_seconds_sum[5m]) / rate(longbow_reranker_inference_duration_seconds_count[5m])", "legendFormat": "Reranker Latency", "refId": "A"}
+      ],
+      "title": "Reranker Latency",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 29},
+      "id": 2003,
+      "targets": [
+        {"expr": "rate(longbow_reranker_scores_computed_total[1m])", "legendFormat": "Pair/s", "refId": "A"}
+      ],
+      "title": "Reranker Throughput (Scores/s)",
+      "type": "timeseries"
     }
   ],
   "refresh": "5s",

@@ -8,21 +8,21 @@ Longbow is engineered for large-scale vector search, providing advanced quantiza
 
 Longbow offers multiple compression strategies to balance memory footprint, search recall, and ingestion throughput.
 
-### Product Quantization (PQ)
-Compresses high-dimensional vectors by splitting them into sub-vectors and quantizing each subspace separately using K-Means.
-- **ADC (Asymmetric Distance Computation)**: Fast distance approximation using pre-computed lookup tables.
-- **Compression**: Up to 64x reduction for high-dimensional models.
+### Scalar Quantization (SQ8)
+Mapping 32-bit floats to 8-bit integers while preserving relative distances.
+- **Recall**: ~99% retention with 4x memory reduction.
+- **Search Speed**: Native SIMD instructions (VNNI) allow for massive throughput gains.
 
-### TurboQuant (Extreme Compression)
-A state-of-the-art compression engine achieving **6-8x reduction** with superior recall retention compared to standard PQ.
-1.  **Hadamard Transform**: Spreads vector energy uniformly using a SIMD-accelerated Fast Walsh-Hadamard Transform (FWHT).
-2.  **PolarQuant**: Recursive polar coordinate quantization (Radius + Angles).
-3.  **QJL (1-bit Error Correction)**: Sign-correction derived from Johnson-Lindenstrauss transforms to eliminate bias.
+### Binary Quantization (BQ)
+Extreme 1-bit quantization for extremely large-scale retrieval where memory is the primary bottleneck.
+- **Search Speed**: Utilizes Popcount and XOR bitwise operations.
+- **Compression**: 32x reduction from FP32.
 
 | Quantizer | Compression | Recall | Search Speed |
 | :--- | :--- | :--- | :--- |
 | **Scalar (SQ8)** | 4x | High | Fast |
 | **Product (PQ)** | 4-16x | Medium | Moderate |
+| **Binary (BQ)** | **32x** | Moderate | Extreme |
 | **TurboQuant** | **6-8x** | **High** | **Fast** |
 
 ---
@@ -56,7 +56,21 @@ The tuner monitors heap utilization relative to a configured **soft memory limit
 
 ---
 
-## 4. Scaling: Auto-Sharding
+---
+
+## 4. Adaptive Indexing (Flat to HNSW)
+
+Longbow manages the search strategy automatically based on dataset size. Small datasets use a high-performance **Flat (Linear)** scan to avoid the indexing overhead of HNSW. As the dataset grows, the engine triggers an automated migration.
+
+### Migration Lifecycle
+1.  **Detection**: Triggered when `dataset.Len()` exceeds the threshold or growth acceleration is detected.
+2.  **Worker-Pool Construction**: A background indexing pool is spawned to build the HNSW graph using available system cycles.
+3.  **Zero-Downtime Cutover**: The search path stays hot on the Flat index while the graph builds. Once complete, the engine atomically swaps the search dispatcher.
+4.  **Resource Cleanup**: Finalization of the migration releases the Flat index's auxiliary structures to conserve memory.
+
+---
+
+## 5. Scaling: Auto-Sharding
 
 Transparently scales the HNSW index by migrating from a single monolithic graph to a partitioned architecture as the dataset grows.
 

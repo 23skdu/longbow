@@ -87,6 +87,8 @@ spec:
               value: {{ .Values.hnsw.keepPruned | quote }}
             - name: HNSW_SQ8_ENABLED
               value: {{ .Values.hnsw.sq8Enabled | quote }}
+            - name: HNSW_BQ_ENABLED
+              value: {{ .Values.hnsw.bqEnabled | quote }}
             - name: HNSW_FLOAT16_ENABLED
               value: {{ .Values.hnsw.float16Enabled | quote }}
 
@@ -95,6 +97,26 @@ spec:
               value: {{ .Values.hnsw.refinementFactor | quote }}
             - name: LONGBOW_USE_DISK
               value: {{ .Values.hnsw.useDisk | quote }}
+            # ML Inference & Reranking Configuration
+            - name: LONGBOW_ML_MODEL_PATH
+              value: {{ .Values.ml.modelPath | quote }}
+            - name: LONGBOW_ML_TOKENIZER_PATH
+              value: {{ .Values.ml.tokenizerPath | quote }}
+            - name: LONGBOW_ML_RUNNER
+              value: {{ .Values.ml.runner | quote }}
+            - name: LONGBOW_RERANKER_ENABLED
+              value: {{ .Values.ml.reranker.enabled | quote }}
+            - name: LONGBOW_RERANKER_TYPE
+              value: {{ .Values.ml.reranker.type | quote }}
+            - name: LONGBOW_RERANKER_TOP_K
+              value: {{ .Values.ml.reranker.topK | quote }}
+            # Adaptive Indexing Configuration
+            - name: LONGBOW_INDEXING_ADAPTIVE_ENABLED
+              value: {{ .Values.indexing.adaptive.enabled | quote }}
+            - name: LONGBOW_INDEXING_ADAPTIVE_THRESHOLD
+              value: {{ .Values.indexing.adaptive.threshold | quote }}
+            - name: LONGBOW_INDEXING_WORKER_POOL_SIZE
+              value: {{ .Values.indexing.workerPool.size | quote }}
             # Memory & GC
             - name: MEMORY_EVICTION_HEADROOM
               value: {{ .Values.memory.evictionHeadroom | quote }}
@@ -185,6 +207,8 @@ spec:
               value: {{ .Values.storage.useIOUring | quote }}
             - name: STORAGE_USE_DIRECT_IO
               value: {{ .Values.storage.useDirectIO | quote }}
+            - name: LONGBOW_STORAGE_USE_PARQUET_V2
+              value: {{ .Values.storage.useParquetV2 | quote }}
             # Compaction Configuration
             - name: COMPACTION_ENABLED
               value: {{ .Values.compaction.enabled | quote }}

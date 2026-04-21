@@ -61,10 +61,29 @@ Longbow uses the SWIM protocol for decentralized membership.
 | `LONGBOW_GOSSIP_STATIC_PEERS` | `""` | Comma-separated list of seed nodes (e.g., `node1:7946,node2:7946`). |
 | `LONGBOW_GOSSIP_INTERVAL` | `200ms` | Frequency of membership probes. |
 
+## ML Inference & Reranking (New)
+
+| Variable | Default | Description |
+| :--- | :--- | :--- |
+| `LONGBOW_ML_MODEL_PATH` | `""` | Path to the ONNX or WASM model file. |
+| `LONGBOW_ML_TOKENIZER_PATH` | `""` | Path to the `vocab.txt` or tokenizer configuration. |
+| `LONGBOW_ML_RUNNER` | `wazero` | ML execution engine (`onnx`, `wazero`, or `quarrel`). |
+| `LONGBOW_RERANKER_ENABLED` | `false` | Enable the secondary Cross-Encoder reranking stage. |
+| `LONGBOW_RERANKER_TOP_K` | `10` | Number of results to rerank from the initial vector search. |
+
+## Indexing & Adaptive Construction
+
+| Variable | Default | Description |
+| :--- | :--- | :--- |
+| `LONGBOW_INDEXING_ADAPTIVE_ENABLED` | `true` | Enable automated Flat-to-HNSW migration. |
+| `LONGBOW_INDEXING_ADAPTIVE_THRESHOLD` | `1024` | Vector count at which to trigger HNSW construction. |
+| `LONGBOW_INDEXING_WORKER_POOL_SIZE` | `0` | Threads dedicated to background indexing (0 = system CPU count). |
+
 ## Storage & Persistence
 
 | Variable | Default | Description |
 | :--- | :--- | :--- |
+| `LONGBOW_STORAGE_USE_PARQUET_V2` | `true` | Enable reflection-free high-throughput Parquet encoding. |
 | `LONGBOW_STORAGE_USE_IOURING` | `false` | Enable `io_uring` for high-performance WAL writes (Linux only). |
 | `LONGBOW_STORAGE_USE_DIRECT_IO` | `false` | Enable direct I/O for WAL writes. |
 | `LONGBOW_STORAGE_S3_BUCKET` | `""` | Enable S3 remote storage and specify bucket name. |

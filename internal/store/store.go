@@ -89,6 +89,9 @@ type VectorStore struct {
 	compactionConfig CompactionConfig
 	compactionWorker *CompactionWorker
 
+	// learnedIndexAdapter manages the online learning and index adaptation loop.
+	indexAdapter *RuntimeIndexAdapter
+
 	// Auto-sharding (Phase 13)
 	autoShardingConfig AutoShardingConfig
 
@@ -160,7 +163,12 @@ type VectorStore struct {
 	cdcSubscribers map[string][]chan arrow.RecordBatch
 
 	// Learned Index Predictor (Part 16)
-	indexPredictor *IndexPerformancePredictor
+	indexPredictor          *IndexPerformancePredictor
+	// activeEmbeddingProvider and activeEmbeddingModel track the currently active
+	// EmbeddingGenerator backend (set via SetActiveEmbedding). These are propagated
+	// into QueryFeatures by RecordQueryPerformance for learned index training.
+	activeEmbeddingProvider string
+	activeEmbeddingModel    string
 
 	// Temporal Index (Part 22)
 	temporalIndex  *TemporalIndex
@@ -241,6 +249,20 @@ func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes 
 
 	s.replicator = NewPeerReplicator(DefaultReplicatorConfig())
 	_ = s.replicator.Start()
+
+	// Initialize and start the Adaptive Learned Index Adapter (v0.1.9)
+	if s.indexPredictor != nil {
+		adaptConfig := IndexAdaptationConfig{
+			EnableRollback:      true,
+			RollbackWindow:      30 * time.Minute,
+			LatencyThresholdMs:  200.0,
+			RecallThreshold:     0.90,
+			CheckInterval:       5 * time.Minute,
+		}
+		s.indexAdapter = NewRuntimeIndexAdapter(s.logger, s.indexPredictor, adaptConfig, nil)
+		s.indexAdapter.WithIndexSwitcher(s)
+		s.indexAdapter.Start()
+	}
 
 	// Initialize Flight client pool for distributed coordination
 	s.pool = NewFlightClientPool(DefaultFlightClientPoolConfig())

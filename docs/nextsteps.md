@@ -1,6 +1,86 @@
 # Longbow Next Steps — Feature Roadmap 2026
 
-**Last Updated**: 2026-04-20
+**Last Updated**: 2026-04-21
+
+---
+
+---
+
+## ✅ COMPLETED (2026-04-21): Learned Index k-NN Wiring
+
+Fully wired the `IndexPerformancePredictor` adaptive index scorer. Previously the
+`AddTrainingSample()` pipeline collected data that was never used. The feedback loop
+is now closed.
+
+- [x] **`FeatureNormalizer`**: Online min/max normaliser over 11 `QueryFeatures` dimensions.
+- [x] **`extractFeatureVector`**: Dense float64 projection of `QueryFeatures` → normalised vector.
+- [x] **`kNNPredict`**: k-nearest-neighbour scorer (inverse-distance-weighted voting, k=7 default).
+- [x] **`updateWeights` (LDA)**:  Async goroutine that recomputes `featureWeights` via Fisher
+  between-class variance — ensures the k-NN distance metric improves as data accumulates.
+- [x] **`AddTrainingSample` rewrite**: Updates normaliser, emits overflow/gauge metrics, triggers
+  async weight update when `count >= MinTrainingSamples && interval elapsed`.
+- [x] **`Predict` rewrite**: Routes through `kNNPredict` when trained, `getDefaultPrediction`
+  when not; emits `longbow_learned_index_predictions_total{method}` counter.
+- [x] **`IndexSwitcher` interface + `Rollback` implementation**: Rollback now either calls
+  `SwitchIndex` on the wired `IndexSwitcher`, or returns a typed error (no longer a no-op).
+- [x] **`LearnedIndexConfig.KNN`**: Configurable k, defaults to 7.
+- [x] **Prometheus metrics**: 8 new metrics in `internal/metrics/learned_index_metrics.go`.
+- [x] **Unit tests**: 15 new tests covering k-NN correctness, normaliser, weight update
+  direction, feedback loop, rollback lifecycle — all passing with `-race`.
+- [x] **Fuzz tests**: `FuzzKNNPredict` and `FuzzFeatureNormalizer` in
+  `learned_index_knn_fuzz_test.go`.
+- [x] **`scripts/unified_benchmark.py`**: New `learned_index` mode with 4-stage validation.
+- [x] **Docs**: Updated `vectorsearch.md`, `features.md`, `nextsteps.md`.
+
+---
+
+## ✅ COMPLETED (2026-04-21): EmbeddingGenerator → Learned Index Integration
+
+Connect Longbow's `EmbeddingGenerator` backends (OpenAI, Cohere, HuggingFace, ONNX, WASM) to
+the `IndexPerformancePredictor` so that which embedding model is active becomes a discriminating
+feature for k-NN index selection. Hybrid (dense+BM25) queries use different optimal index
+configurations depending on embedding provider characteristics (latency, dimension, batch behaviour).
+
+- [x] **Extend `QueryFeatures`**: Added `EmbeddingProvider string` and `EmbeddingModel string`.
+- [x] **Expand feature vector** (`numFeatures` 11→13): `embedding_provider` (ordinal 0-6) and
+  `embedding_model_dim` (ratio relative to 384d reference) added to `featureKeys`,
+  `extractFeatureVector`, `initializeWeights`, and `embeddingProviderOrdinal`/`embeddingModelDimRatio`.
+- [x] **`SetActiveEmbedding` / `GetActiveEmbedding`**: New mutex-guarded methods on `VectorStore`
+  so any layer that provisions an `EmbeddingGenerator` can register context once.
+- [x] **`RecordQueryPerformance` signature updated**: Now accepts `provider, model string` and
+  populates `QueryFeatures.EmbeddingProvider`/`EmbeddingModel` before `AddTrainingSample`.
+- [x] **`SearchHybrid` wired**: Calls `RecordQueryPerformance` after every hybrid search, fetching
+  the active embedding context via `GetActiveEmbedding()`.
+- [x] **`QueryFeatures.String()` updated** (Ollama path) to include provider/model.
+- [x] **Unit tests** (`learned_index_embedding_test.go`): 6 tests covering ordinal stability,
+  model dim ratio for all known combos, feature vector length invariant, and end-to-end
+  provider-discriminating convergence — all pass with `-race`.
+- [x] **`docs/agentmemory.md`**: Agent memory architecture doc.
+
+---
+
+## 🎯 IN PROGRESS (2026-04-21): Learned Index Production Hardening
+
+Address critical architectural gaps in the adaptive learned index system to move from
+"aspirational" to "production-grade".
+
+### Plan
+
+- [ ] **Unified k-NN Predictor**:
+    - Unify `Predict` and `PredictWithEmbedding` search paths.
+    - Make k-NN the primary decision engine for all query types.
+    - Remove hand-coded heuristics and complexity biases (move to data-driven features).
+- [ ] **Implementation of `IndexSwitcher`**:
+    - Implement the `IndexSwitcher` interface on `VectorStore`.
+    - Create `SwitchIndex(collection, indexType)` which triggers a background rebuild
+      of the index from source records followed by an atomic swap.
+- [ ] **Production Wiring**:
+    - Wire `RuntimeIndexAdapter` into the `VectorStore` lifecycle.
+    - Establish a bidirectional link: Store calls Predictor; Adapter (watching Store) calls Switcher.
+- [ ] **Closed-Loop Feedback**:
+    - Record adaptation outcomes (success, failure, rollback) as training samples.
+    - Implement "failure decomposition": record degradation events as negative learning
+      signals to prevent repetitive bad advice.
 
 ---
 

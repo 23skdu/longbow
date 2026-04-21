@@ -880,6 +880,7 @@ type RuntimeIndexAdapter struct {
 }
 
 type MetricsCollector interface {
+	GetCollections() []string
 	GetQueryLatencies(collection string) (p50, p99, avg float64)
 	GetQueriesPerSecond(collection string) float64
 	GetRecall(collection string) float64
@@ -990,6 +991,9 @@ func (a *RuntimeIndexAdapter) checkAndAdapt() {
 }
 
 func (a *RuntimeIndexAdapter) getMonitoredCollections() []string {
+	if a.metricsCollector != nil {
+		return a.metricsCollector.GetCollections()
+	}
 	return []string{"default"}
 }
 
@@ -1003,13 +1007,14 @@ func (a *RuntimeIndexAdapter) collectMetrics(collection string) AdaptationMetric
 		metrics.IndexSizeMB = a.metricsCollector.GetIndexSize(collection)
 		metrics.MemoryUsageMB = a.metricsCollector.GetMemoryUsage(collection)
 	} else {
-		metrics.AvgLatencyMs = 50.0
-		metrics.P50LatencyMs = 40.0
-		metrics.P99LatencyMs = 100.0
-		metrics.RecallAchieved = 0.98
-		metrics.QueriesPerSec = 1000.0
-		metrics.IndexSizeMB = 1000.0
-		metrics.MemoryUsageMB = 500.0
+		// More realistic simulated metrics for testing/dev if no collector is provided
+		metrics.AvgLatencyMs = 12.5
+		metrics.P50LatencyMs = 8.2
+		metrics.P99LatencyMs = 45.0
+		metrics.RecallAchieved = 0.99
+		metrics.QueriesPerSec = 450.0
+		metrics.IndexSizeMB = 256.0
+		metrics.MemoryUsageMB = 128.0
 	}
 
 	return metrics

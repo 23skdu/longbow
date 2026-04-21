@@ -12,13 +12,33 @@
 - [x] **Gosec Hardening**: Systematically address the remaining 14 high-confidence security findings in the `internal/simd` and `internal/gpu` CGO bridge layers.
 - [x] **Expand Test Coverage**: Expand unit and integration test suites across `internal/store/core`, `internal/onnx`, and `internal/simd`. Added comprehensive SIMD test suite and core search context lifecycle tests. Achieved 100% coverage in `internal/onnx`.
 
-## Next Release (0.1.10+)
 
-- [ ] **Achieve >95% Total Project Coverage**: Continue expanding tests into legacy edge cases.
-- [x] **Transformer Mean Pooling**: Replace the `m.session.Score` hack in `onnxEmbeddingModel` with proper mean/max pooling across transformer hidden states for production-grade embedding quality.
-- [ ] **Wazero WASM Runner**: Replace reranker/embedding WASM stubs with a functional `wazero` integration to enable cross-platform ML execution without local ONNX runtime dependencies.
-- [ ] **ML Cross-Encoder Finalization**: Replace the `stubMLModel` (keyword-matching) with a real cross-encoder model for high-recall semantic reranking.
-- [ ] **High-Throughput IO**: Implement Parquet/io_uring for optimized ingestion.
+## 🎯 CURRENT RELEASE: 0.1.9-rc3
+
+- **Total Coverage**: ~53% (Target: >95%)
+- **Status Headroom**: Functional features complete. Focus shifted to deep unit test coverage.
+
+### Completed (Session 0.1.9-rc3-B)
+
+- [x] Parquet High-Throughput IO (+tests)
+- [x] ML Cross-Encoder Integration (+mock tests)
+- [x] Wazero WASM Runner Finalization
+- [x] Adaptive Index Lifecycle Testing
+- [x] Storage Backend Unit Tests (FileBackend)
+- [x] Query Engine Extended Type Coverage (Int32, Uint64, Float64, String)
+- [x] Sharding Result Aggregator Coverage (Merge & Sort)
+
+### Immediate Next Steps (Coverage Push)
+
+1. **Security & RBAC Coverage**: Implement tests for `internal/store/rbac.go`.
+2. **GPU Mocking**: Create a mock layer for `internal/gpu`.
+3. **Remote Storage Mocks**: Mock S3/GCS in `internal/storage`.
+4. **Final 0.1.9 Tagging**: Once coverage hits critical mass (>80%+).
+
+## 🚀 Future Roadmap (0.1.10+)
+
+- [ ] **Transformer Mean Pooling**: Proper pooling across transformer hidden states.
+- [ ] **Dynamic Sharding**: Auto-rebalancing shards based on node load.
 
 ---
 

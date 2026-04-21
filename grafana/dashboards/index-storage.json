@@ -221,6 +221,35 @@
       "targets": [{"expr": "longbow_iouring_buffer_pool_utilization", "refId": "A"}],
       "title": "io_uring Buffer Pool Utilization",
       "type": "gauge"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 48},
+      "id": 1001,
+      "panels": [],
+      "title": "Snapshot & Archival (Parquet V2)",
+      "type": "row"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 49},
+      "id": 1002,
+      "targets": [
+        {"expr": "histogram_quantile(0.99, sum(rate(longbow_snapshot_write_duration_seconds_bucket[5m])) by (le))", "legendFormat": "P99", "refId": "A"},
+        {"expr": "histogram_quantile(0.95, sum(rate(longbow_snapshot_write_duration_seconds_bucket[5m])) by (le))", "legendFormat": "P95", "refId": "B"}
+      ],
+      "title": "Parquet Write Latency",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 49},
+      "id": 1003,
+      "targets": [
+        {"expr": "histogram_quantile(0.5, sum(rate(longbow_snapshot_size_bytes_bucket[5m])) by (le))", "legendFormat": "Median Size", "refId": "A"}
+      ],
+      "title": "Snapshot Size Distribution",
+      "type": "timeseries"
     }
   ],
   "refresh": "10s",

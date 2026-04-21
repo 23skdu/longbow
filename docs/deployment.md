@@ -14,11 +14,18 @@ The recommended way to deploy Longbow is using the official Helm chart.
 helm install my-release ./helm/longbow
 ```
 
-### Key Configuration (values.yaml)
+### Docker & Multi-Platform Support
 
-- **Services**: Toggle `data` (port 3000) and `meta` (port 3001) services.
-- **Resources**: Set CPU/Memory limits (ensure memory is ~2.5x the sharding threshold).
-- **gRPC Tuning**: Adjust `maxRecvMsgSize` and `maxConcurrentStreams` for high-throughput batching.
+Official images are available on GitHub Container Registry (`ghcr.io/23skdu/longbow`):
+
+- **Apple Silicon (`arm64`)**: `latest-arm64-metal` - Optimized for Metal GPU and Mach CPU clusters.
+- **NVIDIA GPU (`amd64`)**: `latest-amd64-nvidia` - Includes custom CUDA 12.6 kernels and zero-copy tensor bridge.
+- **General CPU (`amd64`)**: `latest-amd64-cpu` - Broadwell-level AVX2 optimizations with `io_uring` support.
+
+### Performance Tuning
+
+- **IO Performance**: Enable `LONGBOW_STORAGE_USE_IOURING=true` on Linux kernels 5.6+ to double WAL ingestion throughput.
+- **Memory Limits**: Set `GOMEMLIMIT` to 90% of the container limit. Longbow's **GCTuner** will automatically balance GC frequency to prevent OOMs.
 
 ---
 

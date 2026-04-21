@@ -79,7 +79,20 @@ The `HybridSearchPipeline` integrates retrieval, fusion, and re-ranking into a s
 ### Multi-Stage Reranking
 Longbow supports secondary re-ranking for higher precision:
 - **Heuristic**: Weighted blend of vector distance (70%) and keyword matches (30%).
-- **ONNX/Metal**: High-fidelity cross-encoder models (e.g., `bge-reranker-base`) running natively on CPU, CUDA, or Metal GPUs.
+- **Transformer Cross-Encoder**: High-fidelity reranking using transformer models.
+  - **Native/ONNX**: Optimized execution on CUDA/Metal GPUs.
+  - **Wazero (Cross-Platform)**: Sandboxed WASM execution for zero-dependency environments.
+  - **WordPiece Tokenization**: Integrated subword encoding ensuring semantic continuity between the model and the search index.
+
+---
+
+## 4. Quantized Search (Memory Optimization)
+
+When using **SQ8** or **BQ** quantization, Longbow optimizes the traversal path to minimize floating-point operations.
+
+- **SQ8 Search**: Uses 8-bit integer SIMD kernels for distance calculations, falling back to a **refined** FP32 distance only for top-k candidates to maintain precision.
+- **BQ (Binary) Search**: Uses `Popcount` and `XOR` logic for 32x faster distance scoring on massive datasets.
+- **Auto-Refinement**: Configurable `LONGBOW_HNSW_REFINEMENT_FACTOR` automatically re-scores quantized candidates with original vectors during the final ranking phase.
 
 ---
 

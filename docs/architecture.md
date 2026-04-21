@@ -61,18 +61,20 @@ graph TB
 ### 1. Vector Engine
 
 - **Hybrid Indexing**:
-  - **Dense**: HNSW (Hierarchical Navigable Small World) for approximate nearest neighbor search.
+  - **Dense**: HNSW (Hierarchical Navigable Small World) for approximate nearest neighbor search. Support for FP32, SQ8 (Scalar Quantization), and BQ (Binary Quantization).
   - **Sparse**: Inverted Index (BM25/Sparse) for keyword matching.
   - **Auto-Sharding**: Transparently upgrades standard indices to **ShardedHNSW** (lock-striped) when thresholds are met.
+- **Adaptive Indexing**: Automated migration from flat linear scans to HNSW indexing based on collection size and growth acceleration. Worker-pool lifecycle is managed to ensure zero-downtime during background construction.
 - **Interim Sharding**: Uses a temporary sharded index during migration to eliminate double-indexing overhead.
 - **Zero-Copy**: Utilizes Apache Arrow for zero-copy data representation, minimizing serialization overhead.
 - **Concurrency**: Concurrent HNSW with fine-grained locking per node/level to maximize throughput.
-- **SIMD**: Optimized for modern CPU architectures with SIMD instructions (AVX2/AVX-512).
+- **SIMD**: Optimized for modern CPU architectures with SIMD instructions (AVX2/AVX-512/NEON).
 
 ### 2. Storage Layer
 
 - **WAL-Backed Engine**: Log-structured storage with an in-memory primary store and background record-batch compaction.
-- **Durability**: Periodic checkpoints and snapshots ensure data durability.
+- **High-Throughput Snapshots**: Reflection-free Arrow-to-Parquet serialization using `parquet-go` for maximum disk throughput. Operates directly on `io.ReaderAt` compatible buffers.
+- **Durability**: Periodic checkpoints and snapshots ensure data durability across node restarts.
 
 ---
 

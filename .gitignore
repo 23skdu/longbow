@@ -35,6 +35,7 @@ metrics.out
 race_report*.txt
 reports/
 test_results.txt
+gosec_report.json
 types.test
 store.test
 simd.out

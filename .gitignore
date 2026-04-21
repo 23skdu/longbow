@@ -78,3 +78,5 @@ node_modules/
 !clients/**/*.json
 !grafana/**/*.json
 !longbowclientsdk/**/*
+coverage.*
+*.out

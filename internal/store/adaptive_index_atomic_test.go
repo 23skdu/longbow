@@ -6,8 +6,37 @@ import (
 	"testing"
 	"time"
 
+	"github.com/apache/arrow-go/v18/arrow"
+	"github.com/apache/arrow-go/v18/arrow/array"
+	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/stretchr/testify/assert"
 )
+
+func createTestDatasetWithVectors(t *testing.T, name string, numVectors int) *Dataset {
+	pool := memory.NewGoAllocator()
+	schema := arrow.NewSchema(
+		[]arrow.Field{
+			{Name: "vector", Type: arrow.FixedSizeListOf(4, arrow.PrimitiveTypes.Float32)},
+		},
+		nil,
+	)
+	ds := NewDataset(name, schema)
+
+	b := array.NewRecordBuilder(pool, schema)
+	defer b.Release()
+	
+	listBuilder := b.Field(0).(*array.FixedSizeListBuilder)
+	valBuilder := listBuilder.ValueBuilder().(*array.Float32Builder)
+	
+	for i := 0; i < numVectors; i++ {
+		valBuilder.AppendValues([]float32{float32(i), 0, 0, 0}, nil)
+		listBuilder.Append(true)
+	}
+	
+	rec := b.NewRecord()
+	ds.Records = append(ds.Records, rec)
+	return ds
+}
 
 // TestAdaptiveIndex_AsyncMigration verifies that migration happens asynchronously
 // and does not block concurrent writers for an excessive amount of time.

@@ -1,5 +1,5 @@
 # Build artifacts
-longbow
+/longbow
 longbow-server
 longbow-gpu
 longbow_metal

@@ -31,11 +31,6 @@ Located at `cmd/bench-tool/main.go`, this Go binary performs ingest and search b
 - Supports all data types: float32, float16, int8, int64, complex64, complex128, turboquant
 - Outputs JSON results for programmatic analysis
 
-## 📁 Subdirectories
-
-- **`ci/`**: Continuous Integration scripts (e.g., `build.sh`).
-- **`dev/`**: Development environment helpers (e.g., `dev.sh`).
-- **`chaos_tools/`**: Low-level chaos triggers.
 
 ## 📦 Requirements
 

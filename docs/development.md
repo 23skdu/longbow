@@ -47,20 +47,24 @@ This document provides guidance for contributing to and developing Longbow.
 Longbow is designed as a high-performance vector database with modular subsystems:
 
 - **`internal/store`**: The core vector store engine. Handles datasets, indices, and the Search/Put lifecycles.
+- **`internal/store/internal/core`**: Low-level HNSW, IVF-PQ, and DiskANN index implementations optimized for Arrow memory.
 - **`internal/simd`**: Accelerated vector kernels (AVX-512, Neon) for distance computations and quantization.
 - **`internal/gpu`**: Hardware-specific backends for CUDA and Metal acceleration.
-- **`internal/store/learned_index.go`**: The **Adaptive Learned Index** system. Uses a k-NN classifier to dynamically select and migrate between HNSW, IVF-PQ, and DiskANN based on real-time performance data.
-- **`internal/onnx` & `internal/wazero`**: ML inference backends for embeddings and reranking.
+- **`internal/store/learned_index.go`**: The **Adaptive Learned Index** system. Uses a k-NN classifier to dynamically select and migrate between indices based on real-time performance data.
+- **`internal/onnx` & **`internal/wasm`**: ML inference backends (using ONNX Runtime and Wazero) for embeddings and reranking.
 
 ## Development Workflow
 
 ### Code Organization
 
 - `cmd/` - Main entry points for the longbow server and CLI tools.
-- `internal/` - Private core implementation (Store, SIMD, GPU, ML).
-- `pkg/` - Public APIs and SDK components.
+- `internal/` - Private core implementation (Store, SIMD, GPU, ML, Storage).
+- `client/` - Public Go client library.
+- `longbowclientsdk/` - Python SDK implementation.
 - `docs/` - Architectural documentation and user guides.
 - `scripts/` - Development utilities, benchmarks, and release automation.
+- `grafana/` - Monitoring dashboards and observability configurations.
+- `helm/` - Kubernetes deployment charts.
 
 ### Development Commands
 

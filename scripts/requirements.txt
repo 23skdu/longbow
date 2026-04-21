@@ -1,8 +1,12 @@
-pyarrow>=18.0.1
-numpy>=1.26.4
-pandas>=2.2.2
+pyarrow>=18.0.0
+numpy>=1.26.0
+pandas>=2.2.0
 sentence-transformers>=2.2.2
 lorem-text>=2.1
 psutil>=5.9.8
 matplotlib>=3.8.4
 requests>=2.31.0
+grpcio>=1.60.0
+grpcio-tools>=1.60.0
+protobuf>=4.25.0
+pydantic>=2.5.0

@@ -1,15 +1,20 @@
 # Longbow Scripts Directory
 
-This directory contains consolidated utility tools for testing, benchmarking, and deploying Longbow.
+This directory contains utility tools for testing, benchmarking, and deploying Longbow.
 
 ## 🛠️ Main Tools
 
-### `benchmark_tool.py` (Performance & Benchmarking)
-A unified Python CLI for performance testing and documentation.
-- **`run`**: Execute exhaustive benchmarks (CPU, Metal, CUDA).
-- **`summary`**: Aggregates the latest JSON results into a readable summary.
-- **`report`**: Generates `docs/performance.md` from test results.
-- **`pushdown`**: Runs specialized filter/projection pushdown benchmarks.
+### `unified_benchmark.py` (Performance & Benchmarking)
+The primary benchmark tool for Longbow performance testing.
+- **Modes**: `cpu`, `metal`, `cuda`, `onnx`, `recommend`, `deletion`, `graphrag`, `exchange`, `cluster`, `temporal`
+- **Usage**:
+  ```bash
+  python3 scripts/unified_benchmark.py --mode cpu
+  python3 scripts/unified_benchmark.py --mode metal
+  python3 scripts/unified_benchmark.py --dims 128,384,768 --counts 1000,5000,10000 --dtypes float32,int8,complex64
+  ```
+- Supports exhaustive matrix testing across dimensions, data types, and batch sizes
+- Generates JSON results and Markdown reports automatically
 
 ### `cluster_tool.sh` (Infrastructure & Ops)
 A shell utility for Kubernetes environment management and resilience testing.
@@ -20,16 +25,11 @@ A shell utility for Kubernetes environment management and resilience testing.
 - **`chaos-heal`**: Resolve active partitions.
 - **`down`**: Tear down the cluster.
 
-### `data_tool.py` (Data & Demos)
-Integrated utility for data seeding and feature demonstrations.
-- **`seed`**: Add graph edges to a dataset.
-- **`lorem`**: Large-scale NLP vector search benchmarking with Lorem Ipsum data.
-- **`rag`**: GraphRAG embedding demonstration.
-- **`metrics`**: Showcase distance metric comparisons.
-
-### `dashboard_tool.py` (Observability)
-Automates the generation and enhancement of Grafana dashboards.
-- **`enhance`**: Adds comprehensive observability panels to `grafana/dashboards/longbow.json`.
+### `bench-tool` (Go Benchmark Binary)
+Located at `cmd/bench-tool/main.go`, this Go binary performs ingest and search benchmarking against a running Longbow server.
+- Connects to Longbow via gRPC
+- Supports all data types: float32, float16, int8, int64, complex64, complex128, turboquant
+- Outputs JSON results for programmatic analysis
 
 ## 📁 Subdirectories
 
@@ -46,6 +46,8 @@ pip install -r scripts/requirements.txt
 ```
 
 ## 📝 Notes
+
 - Most scripts expect a running Longbow instance or cluster.
 - Default ports: 3000 (data), 3001 (meta), 9090 (metrics).
 - Generated logs and profiles are gitignored.
+- Results are saved to `data/perf_logs/perf_matrix_*.json`

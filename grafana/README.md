@@ -12,6 +12,7 @@ Longbow now has **6 focused dashboards** for better organization and performance
 | [Search & Query](dashboards/search-query.json) | `longbow-search-query` | gRPC operations, search latency, connection pools |
 | [Index & Storage](dashboards/index-storage.json) | `longbow-index-storage` | HNSW, vectors, WAL, compaction |
 | [Memory & Performance](dashboards/memory-performance.json) | `longbow-memory-performance` | Memory, SIMD, GPU acceleration |
+| [GPU & ONNX Health](dashboards/gpu-onnx-health.json) | `longbow-gpu-onnx` | Metal/CUDA performance and ONNX model execution health |
 | [Cluster & Replication](dashboards/cluster-replication.json) | `longbow-cluster-replication` | Gossip, sharding, quorum, global search |
 | [Advanced Features](dashboards/advanced.json) | `longbow-advanced` | Hybrid search, pipelines, HNSW adaptive, quantization |
 

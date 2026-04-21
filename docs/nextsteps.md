@@ -10,16 +10,16 @@
  
 These items were identified during a deep code review as being non-functional mocks or stubs that block production reliability.
  
-- [ ] **Metal ONNX Acceleration (Real Implementation)**:
-    - [ ] Replace character-overlap scoring in `internal/onnx/metal/engine_impl.m` with actual Metal Compute Shaders (MSL).
-    - [ ] Implement `Embed` in `internal/onnx/metal/engine.go`.
-- [ ] **Learned Index Hardening**:
-    - [ ] Remove hardcoded `[]string{"default"}` from `getMonitoredCollections`.
-    - [ ] Implement live metrics collection for latency and recall in `RuntimeIndexAdapter`.
-- [ ] **Tokenizer Reliability**:
-    - [ ] Remove dummy vocab fallback in `internal/ml/tokenizer.go`; require `vocab.txt`.
-- [ ] **GPU Detection Accuracy**:
-    - [ ] Implement actual Metal memory detection in `internal/gpu/detection.go` instead of 16GB estimate.
+- [x] **Metal ONNX Acceleration (Real Implementation)**:
+  - [x] Replace character-overlap scoring in `internal/onnx/metal/engine_impl.m` with actual Metal Compute Shaders (MSL).
+  - [x] Implement `Embed` in `internal/onnx/metal/engine.go`.
+- [x] **Learned Index Hardening**:
+  - [x] Remove hardcoded `[]string{"default"}` from `getMonitoredCollections`.
+  - [x] Implement live metrics collection for latency and recall in `RuntimeIndexAdapter`.
+- [x] **Tokenizer Reliability**:
+  - [x] Remove dummy vocab fallback in `internal/ml/tokenizer.go`; require `vocab.txt`.
+- [x] **GPU Detection Accuracy**:
+  - [x] Implement actual Metal memory detection in `internal/gpu/detection.go` instead of 16GB estimate.
  
 ---
 

@@ -6,6 +6,23 @@
 
 ---
 
+## 🎯 IMMEDIATE REMEDIATION (2026-04-21: 0.1.9-rc4)
+ 
+These items were identified during a deep code review as being non-functional mocks or stubs that block production reliability.
+ 
+- [ ] **Metal ONNX Acceleration (Real Implementation)**:
+    - [ ] Replace character-overlap scoring in `internal/onnx/metal/engine_impl.m` with actual Metal Compute Shaders (MSL).
+    - [ ] Implement `Embed` in `internal/onnx/metal/engine.go`.
+- [ ] **Learned Index Hardening**:
+    - [ ] Remove hardcoded `[]string{"default"}` from `getMonitoredCollections`.
+    - [ ] Implement live metrics collection for latency and recall in `RuntimeIndexAdapter`.
+- [ ] **Tokenizer Reliability**:
+    - [ ] Remove dummy vocab fallback in `internal/ml/tokenizer.go`; require `vocab.txt`.
+- [ ] **GPU Detection Accuracy**:
+    - [ ] Implement actual Metal memory detection in `internal/gpu/detection.go` instead of 16GB estimate.
+ 
+---
+
 ## ✅ COMPLETED (2026-04-21): Learned Index k-NN Wiring
 
 Fully wired the `IndexPerformancePredictor` adaptive index scorer. Previously the

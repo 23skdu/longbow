@@ -2,6 +2,7 @@ package ml
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,14 +22,7 @@ func NewTokenizer(vocabPath string, maxLen int) (*Tokenizer, error) {
  // #nosec G304
 	file, err := os.Open(filepath.Clean(vocabPath)) // #nosec G304
 	if err != nil {
-		// Fallback: create a dummy vocab if file not found to avoid blocking 0.1.9 release
-		// In production, the vocab.txt must be provided.
-		vocab["[PAD]"] = 0
-		vocab["[UNK]"] = 1
-		vocab["[CLS]"] = 2
-		vocab["[SEP]"] = 3
-		vocab["[MASK]"] = 4
-		return &Tokenizer{vocab: vocab, invVocab: invVocab, maxLen: maxLen}, nil
+		return nil, fmt.Errorf("failed to open vocab file %s: %w", vocabPath, err)
 	}
 	defer file.Close()
 

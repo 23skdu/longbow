@@ -306,9 +306,7 @@ func safeString(b []byte) string {
 	return string(b)
 }
 
-func parseFilter(data []byte, pos int) (core.Filter, int, error) {
-	return parseFilterRecursive(data, pos, nil)
-}
+
 
 func parseFilterRecursive(data []byte, pos int, parser *ZeroAllocTicketParser) (core.Filter, int, error) {
 	var f core.Filter

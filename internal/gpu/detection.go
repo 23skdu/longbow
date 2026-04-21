@@ -107,67 +107,13 @@ func detectCUDAGPUs() []GPUInfo {
 
 // detectMetalGPUs detects Metal-capable GPUs on macOS
 func detectMetalGPUs() []GPUInfo {
+	live := detectMetalGPULive()
+	if len(live) > 0 {
+		return live
+	}
+
 	var gpus []GPUInfo
-
-	// Check for Metal framework
-	if _, err := os.Stat("/System/Library/Frameworks/Metal.framework"); os.IsNotExist(err) {
-		return gpus
-	}
-
-	// On macOS, we typically have one Metal device
-	// Try to get more info using system_profiler
-	cmd := exec.Command("system_profiler", "SPDisplaysDataType", "-xml")
-	output, err := cmd.Output()
-	if err == nil {
-		// Parse XML output to get GPU info (simplified)
-		// In production, you'd use proper XML parsing
-		outputStr := string(output)
-		if strings.Contains(outputStr, "Metal") {
-			// Try to get device name
-			name := "Apple Silicon GPU"
-			if runtime.GOARCH == "amd64" {
-				name = "Intel GPU"
-			}
-
-			// Estimate memory (actual detection requires Metal API calls)
-			memoryMB := int64(16384) // Default estimate
-
-			// Check for Apple Silicon specific features
-			isAppleSilicon := runtime.GOARCH == "arm64"
-			if isAppleSilicon {
-				name = "Apple Silicon GPU (Metal)"
-			}
-
-			gpu := GPUInfo{
-				Backend:      BackendMetal,
-				Name:         name,
-				DeviceID:     0,
-				MemoryMB:     memoryMB,
-				ComputeMajor: 0, // Metal doesn't use compute capability
-				ComputeMinor: 0,
-			}
-			gpus = append(gpus, gpu)
-		}
-	} else {
-		// Fallback: check Metal framework exists
-		if _, err := os.Stat("/System/Library/Frameworks/Metal.framework"); err == nil {
-			name := "Apple GPU"
-			switch runtime.GOARCH {
-			case "arm64":
-				name = "Apple Silicon GPU"
-			case "amd64":
-				name = "Intel/AMD GPU"
-			}
-
-			gpu := GPUInfo{
-				Backend:  BackendMetal,
-				Name:     name,
-				DeviceID: 0,
-				MemoryMB: 16384,
-			}
-			gpus = append(gpus, gpu)
-		}
-	}
+	// Fallback to basic detection if live CGO call fails
 
 	return gpus
 }

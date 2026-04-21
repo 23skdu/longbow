@@ -6,10 +6,14 @@ This document provides guidance for contributing to and developing Longbow.
 
 ### Prerequisites
 
-- Go 1.24.x or later
-- Git
-- Docker (optional)
-- Make
+- **Go 1.24.x or later**: Longbow uses the latest Go features for performance and safety.
+- **Git**: For version control.
+- **Docker**: For multi-platform builds and deployment testing.
+- **Make**: For running build and test targets.
+- **Python 3.10+**: Required for running the unified benchmark suite and analysis tools.
+- **Hardware Backends (Optional)**:
+  - **Metal**: Required for GPU acceleration on macOS (Apple Silicon).
+  - **CUDA 12.6+**: Required for NVIDIA GPU acceleration on Linux.
 
 ### Setup Development Environment
 
@@ -26,21 +30,37 @@ This document provides guidance for contributing to and developing Longbow.
    make deps
    ```
 
-3. **Run tests to verify setup**
+3. **Install Python benchmark dependencies**
+
+   ```bash
+   pip install -r scripts/requirements.txt
+   ```
+
+4. **Run tests to verify setup**
 
    ```bash
    make test
    ```
 
+## Architecture & Subsystems
+
+Longbow is designed as a high-performance vector database with modular subsystems:
+
+- **`internal/store`**: The core vector store engine. Handles datasets, indices, and the Search/Put lifecycles.
+- **`internal/simd`**: Accelerated vector kernels (AVX-512, Neon) for distance computations and quantization.
+- **`internal/gpu`**: Hardware-specific backends for CUDA and Metal acceleration.
+- **`internal/store/learned_index.go`**: The **Adaptive Learned Index** system. Uses a k-NN classifier to dynamically select and migrate between HNSW, IVF-PQ, and DiskANN based on real-time performance data.
+- **`internal/onnx` & `internal/wazero`**: ML inference backends for embeddings and reranking.
+
 ## Development Workflow
 
 ### Code Organization
 
-- `cmd/` - Entry points
-- `internal/` - Core implementation
-- `pkg/` - Public APIs
-- `docs/` - Documentation
-- `scripts/` - Utility scripts
+- `cmd/` - Main entry points for the longbow server and CLI tools.
+- `internal/` - Private core implementation (Store, SIMD, GPU, ML).
+- `pkg/` - Public APIs and SDK components.
+- `docs/` - Architectural documentation and user guides.
+- `scripts/` - Development utilities, benchmarks, and release automation.
 
 ### Development Commands
 
@@ -55,23 +75,20 @@ Use the provided development utilities in `scripts/dev/dev.sh`:
 
 # View logs
 ./scripts/dev/dev.sh logs
-
-# Run benchmarks
-./scripts/dev/dev.sh bench
-
-# Profile performance
-./scripts/dev/dev.sh profile
 ```
 
 ### Hot Reload
 
-The development server supports hot reload for faster iteration:
+The development server supports hot reload via `scripts/dev/dev.sh`:
 
-- Automatic file watching
-- Graceful restart on file changes
-- Configuration reload via signals
+- Automatic file watching for Go files.
+- Graceful restart to preserve in-memory datasets where possible.
 
 ### Testing
+
+#### Quality Thresholds
+
+Longbow targets **>95% statement coverage** for all core performance packages (`internal/store`, `internal/simd`, `internal/onnx`).
 
 #### Running Tests
 
@@ -79,159 +96,87 @@ The development server supports hot reload for faster iteration:
 # Run all tests
 make test
 
-# Run tests with race detection
+# Run tests with race detection (MANDATORY for store changes)
 make race
 
-# Run tests with coverage
+# Run tests with coverage report
 make test-coverage
 
 # Run specific test
 go test -v ./internal/store -run TestVectorStore
 ```
 
-#### Test Structure
+#### Fuzzing
 
-- Unit tests: Test individual components
-- Integration tests: Test component interaction
-- Performance tests: Benchmark critical paths
-- Fuzz tests: Test with random inputs
-
-### Building
+Critical paths (quantization, predictor logic, Arrow extraction) must include fuzz tests:
 
 ```bash
-# Build for development
-make build
-
-# Build for production
-make prod
-
-# Build Docker image
-make docker
-
-# Push Docker image
-make docker-push
+go test -fuzz=FuzzKNNPredict ./internal/store
 ```
 
-### Debugging
+## Performance Benchmarking
 
-#### Profiling
+Performance is a first-class citizen in Longbow. All major changes should be verified using the **Unified Benchmark Suite**.
 
-Longbow exposes pprof endpoints for debugging:
+### Unified Benchmark Script
 
-- CPU Profile: <http://localhost:9090/debug/pprof/profile>
-- Heap Profile: <http://localhost:9090/debug/pprof/heap>
-- Goroutine Profile: <http://localhost:9090/debug/pprof/goroutine>
-- Block Profile: <http://localhost:9090/debug/pprof/block>
-
-> **Note**: Collecting heap profiles under high memory load can cause system crashes. The profiling scripts include memory pressure checks to avoid this. If you encounter crashes during profiling, ensure sufficient free memory (>512MB) before collecting heap profiles.
-
-#### Debug Logging
-
-Enable debug logging:
+The `scripts/unified_benchmark.py` is the standard tool for verifying performance across dimensions and data types.
 
 ```bash
-export LONGBOW_LOG_LEVEL=debug
-./scripts/dev/dev.sh start --debug
+# Run standard CPU benchmarks
+python3 scripts/unified_benchmark.py --mode cpu
+
+# Run Learned Index adaptation verification
+python3 scripts/unified_benchmark.py --mode learned_index
 ```
 
-#### Common Issues
+The `learned_index` mode performs a 4-stage validation:
 
-1. **Build failures**: Ensure Go version compatibility
-2. **Test timeouts**: Check for race conditions
-3. **Memory issues**: Monitor via pprof heap profile
-4. **Port conflicts**: Use different ports with `--port` flag
+1. Cold start (default heuristics).
+2. Data accumulation (training sample collection).
+3. Adaptation (k-NN prediction and index migration).
+4. Stabilization (performance verification of the new index).
 
-### Code Standards
+## Contributing
 
-#### Formatting
+### How to Contribute
 
-Use the provided formatting tools:
+1. **Fork the repository** and create a feature branch.
+2. **Implement changes** following the [Architecture Guide](architecture.md).
+3. **Close the Loop**: If you modify search behavior, ensure you update `RecordQueryPerformance` calls to provide accurate signals for the Learned Index.
+4. **Add Tests**: Include unit, integration, and (if applicable) fuzz tests.
+5. **Verify Performance**: Run `make benchmark` and Attach the results to your PR.
+6. **Submit a Pull Request**.
 
-```bash
-# Format code
-make fmt
+### Guidelines for the Learned Index
 
-# Run linter
-make lint
-```
+When adding new index types or search optimizations:
+- Update `QueryFeatures` if new signals are needed for selection.
+- Update `IndexPerformancePredictor` weights if the new component drastically changes the performance landscape.
+- Add failure decomposition signals if the component has specific failure modes (e.g., high memory pressure).
 
-#### Documentation
+## Debugging & Observability
 
-Update godoc comments for all exported types and functions.
+### Profiling
 
-#### Performance Considerations
+Longbow exposes pprof endpoints at `:9090`:
 
-- Use batched operations where possible
-- Implement lock-free data structures
-- Consider memory allocation patterns
-- Profile before optimizing
+- CPU Profile: `http://localhost:9090/debug/pprof/profile`
+- Heap Profile: `http://localhost:9090/debug/pprof/heap`
 
-### Configuration
+> [!CAUTION]
+> Heap profiling under high memory pressure (>90% allocation) can cause system instability. Use the `scripts/dev/profile.sh` utility which includes safety checks.
 
-Development uses these environment variables:
+### Prometheus Metrics
 
-- `LONGBOW_LOG_LEVEL` - Debug logging (debug/info/warn/error)
-- `LONGBOW_HOT_RELOAD` - Enable hot reload (true/false)
-- `LONGBOW_DEV_MODE` - Development mode optimizations
+Development builds expose metrics on port `:9091/metrics`. Key metrics to watch:
 
-### Contributing
+- `longbow_learned_index_training_samples_total`: Training pool size.
+- `longbow_learned_index_predictions_total`: prediction distribution (k-NN vs default).
+- `longbow_store_memory_usage_bytes`: Real-time memory footprint.
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests for new functionality
-5. Ensure all tests pass
-6. Update documentation
-7. Submit a pull request
+## Getting Help
 
-### Development Tools
-
-#### IDE Configuration
-
-For VS Code, install these extensions:
-
-- Go extension
-- Docker extension
-- Better Comments extension
-
-#### Git Hooks
-
-Configure pre-commit hooks:
-
-```bash
-# Install pre-commit
-go install github.com/pre-commit/pre-commit@latest
-
-# Configure .pre-commit-config.yaml
-pre-commit install
-```
-
-### Performance Testing
-
-Run comprehensive benchmarks:
-
-```bash
-# Run full benchmark suite
-make benchmark
-
-# Run I/O benchmarks
-go test -bench=BenchmarkWALStandard -benchmem ./internal/storage/benchmark/
-
-# Run memory benchmarks
-go test -bench=BenchmarkMemory -benchmem ./internal/memory/
-```
-
-### Getting Help
-
-For additional help:
-
-```bash
-# Development utilities help
-./scripts/dev/dev.sh help
-
-# Makefile targets
-make help
-
-# Check dependencies
-./scripts/dev/dev.sh deps
-```
+- **Documentation**: See [docs/](file:///docs/) for deep dives into specific subsystems.
+- **Issues**: Search the [GitHub Issues](https://github.com/23skdu/longbow/issues) for known bugs or feature requests.
+- **Architecture**: For Agent Memory specific patterns, see [docs/agentmemory.md](file:///docs/agentmemory.md).

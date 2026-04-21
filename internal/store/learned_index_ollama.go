@@ -170,7 +170,10 @@ func (l *LearnedIndexWithOllama) Predict(ctx context.Context, features QueryFeat
 }
 
 func (f QueryFeatures) String() string {
-	return fmt.Sprintf("dim=%d,queries=%d,k=%d,dataset=%d,collections=%d,complexity=%s,filtered=%v,hybrid=%v",
+	return fmt.Sprintf(
+		"dim=%d,queries=%d,k=%d,dataset=%d,collections=%d,complexity=%s,filtered=%v,hybrid=%v,provider=%s,model=%s",
 		f.VectorDimension, f.NumQueryVectors, f.SearchK, f.DatasetSize, f.NumCollections,
-		f.QueryComplexity, f.IsFiltered, f.IsHybrid)
+		f.QueryComplexity, f.IsFiltered, f.IsHybrid,
+		f.EmbeddingProvider, f.EmbeddingModel,
+	)
 }

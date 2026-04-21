@@ -65,19 +65,36 @@ Longbow manages the search strategy automatically based on dataset size. Small d
 ### Migration Lifecycle
 1.  **Detection**: Triggered when `dataset.Len()` exceeds the threshold or growth acceleration is detected.
 2.  **Worker-Pool Construction**: A background indexing pool is spawned to build the HNSW graph using available system cycles.
-3.  **Zero-Downtime Cutover**: The search path stays hot on the Flat index while the graph builds. Once complete, the engine atomically swaps the search dispatcher.
-4.  **Resource Cleanup**: Finalization of the migration releases the Flat index's auxiliary structures to conserve memory.
+3.  **Memory Impact**: During migration, vectors remain searchable in the Flat index while the HNSW graph is built. This results in **temporarily higher memory usage** as both structures coexist.
+4.  **Zero-Downtime Cutover**: Once the HNSW graph is ready, the engine atomically swaps the search dispatcher.
+5.  **Resource Cleanup**: Finalization of the migration releases the Flat index's auxiliary structures to conserve memory.
 
 ---
 
-## 5. Scaling: Auto-Sharding
+## 5. Adaptive Learned Index (Production Hardened)
+
+For large-scale deployments, Longbow uses a data-driven **IndexPerformancePredictor** to select the optimal ANN index type (HNSW, IVF-PQ, DiskANN) based on real-time query features and hardware characteristics.
+
+### Index Switching Lifecycle
+1.  **Prediction**: The system monitors latency and recall. If a threshold is breached, the k-NN predictor proposes a superior index type (e.g., migrating from HNSW to DiskANN for better scale).
+2.  **Background Build**: The new index is built in the background from existing records. 
+3.  **Memory Footprint**: During this background build, index-related **memory usage will double** for the specific dataset being migrated.
+4.  **Atomic Swap**: The switcher atomically replaces the old index once building and training (e.g., for PQ codebooks) are complete.
+5.  **Rollback**: If the new index fails to achieve performance targets, a rollback is triggered, involving another index swap.
+
+> [!WARNING]
+> **Migration Buffer**: Always ensure your environment has at least 50% memory headroom relative to your largest collection's index size to accommodate these background builds.
+
+---
+
+## 6. Scaling: Auto-Sharding
 
 Transparently scales the HNSW index by migrating from a single monolithic graph to a partitioned architecture as the dataset grows.
 
 ### Migration Lifecycle
 1.  **Detection**: Triggered when `dataset.Len() >= LONGBOW_AUTO_SHARDING_THRESHOLD`.
 2.  **Dual-Index State**: A new `ShardedHNSW` index is built in the background while the old index remains searchable.
-3.  **Memory Spike**: During migration, **RAM usage doubles** as both indices coexist in memory.
+3.  **Memory Spike**: During migration, **RAM usage doubles** as both indices (the monolithic one and the new sharded one) coexist in memory.
 4.  **Cutover**: Atomically swaps indices and releases old HNSW resources.
 
 ### Sharding Performance

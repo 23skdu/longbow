@@ -3,7 +3,7 @@
 package cuda
 
 /*
-#cgo LDFLAGS: -lcudart -lcublas -lm
+#cgo LDFLAGS: -lcudart -lcublas -lm ${SRCDIR}/kernels.o
 #include <cuda_runtime.h>
 #include <cublas_v2.h>
 #include <stdlib.h>

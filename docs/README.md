@@ -19,7 +19,8 @@ Comprehensive guide to search:
 
 ### 3. [High-Performance Indexing](indexing.md)
 Tuning for scale and speed:
-- **Compression**: PQ, SQ8, and TurboQuant.
+- **Compression**: PQ, SQ8, BQ, and TurboQuant.
+- **Adaptive**: Automated Flat-to-HNSW migration for zero-config scaling.
 - **Hardware**: NUMA affinity and CPU pinning.
 - **Memory**: GOGC Auto-tuning and heap management.
 - **Scaling**: Auto-sharding and partitioned indices.
@@ -27,7 +28,7 @@ Tuning for scale and speed:
 ### 4. [Hardware Acceleration & GPU](gpu-acceleration.md)
 Unleash hardware performance:
 - **GPU**: CUDA (NVIDIA) and Metal (Apple Silicon).
-- **Inference**: High-speed ONNX Runtimes.
+- **Inference**: Wazero (WASM) and ONNX Runtimes.
 - **Networking**: Zero-copy RDMA over RoCEv2.
 
 ### 5. [Storage & Durability](persistence.md)

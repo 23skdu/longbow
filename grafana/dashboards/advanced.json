@@ -96,7 +96,7 @@
     },
     {
       "datasource": "${datasource}",
-      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 13},
+      "gridPos": {"h": 4, "w": 4, "x": 0, "y": 13},
       "id": 10,
       "targets": [{"expr": "longbow_bq_vectors_total", "refId": "A"}],
       "title": "BQ Vectors",
@@ -104,7 +104,7 @@
     },
     {
       "datasource": "${datasource}",
-      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 13},
+      "gridPos": {"h": 4, "w": 4, "x": 4, "y": 13},
       "id": 11,
       "targets": [{"expr": "longbow_hnsw_pq_compressed_bytes_total", "refId": "A"}],
       "title": "PQ Compressed Bytes",
@@ -112,7 +112,15 @@
     },
     {
       "datasource": "${datasource}",
-      "gridPos": {"h": 4, "w": 6, "x": 12, "y": 13},
+      "gridPos": {"h": 4, "w": 4, "x": 8, "y": 13},
+      "id": 122,
+      "targets": [{"expr": "longbow_turboquant_storage_bytes_total", "refId": "A"}],
+      "title": "TurboQuant Storage",
+      "type": "stat"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 4, "w": 4, "x": 12, "y": 13},
       "id": 12,
       "targets": [{"expr": "longbow_hnsw_pq_enabled", "refId": "A"}],
       "title": "PQ Enabled",
@@ -120,7 +128,7 @@
     },
     {
       "datasource": "${datasource}",
-      "gridPos": {"h": 4, "w": 6, "x": 18, "y": 13},
+      "gridPos": {"h": 4, "w": 8, "x": 16, "y": 13},
       "id": 13,
       "targets": [{"expr": "rate(longbow_hnsw_pq_training_triggered_total[1m])", "refId": "A"}],
       "title": "PQ Training/s",
@@ -131,9 +139,39 @@
       "gridPos": {"h": 1, "w": 24, "x": 0, "y": 17},
       "id": 14,
       "panels": [],
-      "title": "Pipeline Operations",
+      "title": "Cross-Encoder Reranking",
       "type": "row"
     },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 12, "x": 0, "y": 18},
+      "id": 155,
+      "targets": [
+        {"expr": "histogram_quantile(0.99, sum(rate(longbow_reranker_inference_duration_seconds_bucket[5m])) by (le))", "legendFormat": "P99", "refId": "A"},
+        {"expr": "histogram_quantile(0.95, sum(rate(longbow_reranker_inference_duration_seconds_bucket[5m])) by (le))", "legendFormat": "P95", "refId": "B"}
+      ],
+      "title": "Reranker Latency",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 12, "x": 12, "y": 18},
+      "id": 166,
+      "targets": [
+        {"expr": "rate(longbow_reranker_scores_computed_total[1m])", "legendFormat": "Scores/s", "refId": "A"}
+      ],
+      "title": "Reranker Throughput",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 24},
+      "id": 1444,
+      "panels": [],
+      "title": "Pipeline Operations",
+      "type": "row"
+    }
+,
     {
       "datasource": "${datasource}",
       "gridPos": {"h": 6, "w": 8, "x": 0, "y": 18},

@@ -123,34 +123,61 @@ Last Updated: 2026-04-16
 
 ---
 
+## ML Inference & Reranking
+
+### longbow_onnx_inference_duration_seconds
+**Type**: Histogram  
+**Labels**: `backend`, `operation`  
+**Description**: Duration of ONNX inference operations (embedding, reranking).
+
+### longbow_reranker_inference_duration_seconds
+**Type**: Histogram  
+**Description**: Latency of the cross-encoder reranking stage.
+
+### longbow_reranker_scores_computed_total
+**Type**: Counter  
+**Description**: Total number of doc-query pairs re-scored by the cross-encoder.
+
+### longbow_onnx_metal_memory_used_bytes
+**Type**: Gauge  
+**Description**: Current VRAM utilization for the Metal (Apple Silicon) inference backend.
+
+---
+
+## High-Throughput IO (Parquet V2)
+
+### longbow_snapshot_write_duration_seconds
+**Type**: Histogram  
+**Description**: Latency of reflection-free Parquet snapshotting.
+
+### longbow_snapshot_size_bytes
+**Type**: Histogram  
+**Description**: Distribution of Parquet snapshot file sizes.
+
+---
+
+## Adaptive Indexing
+
+### longbow_hnsw_adaptive_m_value
+**Type**: Gauge  
+**Labels**: `index_name`  
+**Description**: Current dynamically adjusted `M` parameter (connections per node).
+
+### longbow_hnsw_adaptive_adjustments_total
+**Type**: Counter  
+**Labels**: `index_name`  
+**Description**: Cumulative count of dynamic graph structure adjustments.
+
+---
+
 ## Graph Navigation
 
-### graph_navigator_queries_total
-
-**Type**: Counter  
-**Description**: Total number of high-level graph navigation/pathfinding queries.
-
-### graph_navigator_hops_per_query
-
+### longbow_graph_rag_rerank_latency_seconds
 **Type**: Histogram  
-**Description**: Distribution of hops (nodes visited) per successful navigation query.
+**Labels**: `dataset`  
+**Description**: Latency of the spreading activation re-ranking phase.
 
 ---
 
-## Health & Logging
-
-### health_check_status
-
-**Type**: Gauge  
-**Labels**: `component`  
-**Description**: Binary health status (1=healthy, 0=unhealthy) for internal components.
-
-### longbow_log_errors_total
-
-**Type**: Counter  
-**Description**: Total number of ERROR or FATAL log entries emitted.
-
----
-
-**Total Metrics Documented**: 120+  
-**Last Updated**: 2026-04-16
+**Total Metrics Documented**: 140+  
+**Last Updated**: 2026-04-20

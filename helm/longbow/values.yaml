@@ -54,6 +54,7 @@ hnsw:
   alpha: 1.0
   keepPruned: false
   sq8Enabled: false
+  bqEnabled: false
   float16Enabled: false
   refinementFactor: 1.0
   useDisk: false
@@ -85,6 +86,7 @@ storage:
   doPutBatchSize: 100
   useIOUring: false  # Requires Linux kernel with io_uring support
   useDirectIO: false
+  useParquetV2: true
 
 # Memory & GC Configuration
 memory:
@@ -201,7 +203,25 @@ pq:
   numSubCentroids: 256
   minVectors: 1000
 
-# ONNX Runtime Configuration
+# ONNX / ML Inference & Reranking Configuration
+ml:
+  modelPath: ""
+  tokenizerPath: ""
+  runner: "wazero" # wazero, onnx, or quarrel
+  reranker:
+    enabled: false
+    type: "cross-encoder"
+    topK: 10
+
+# Adaptive Indexing Configuration
+indexing:
+  adaptive:
+    enabled: true
+    threshold: 1024
+  workerPool:
+    size: 0 # 0 = auto-detect CPU count
+
+# ONNX Runtime Configuration (Legacy/Native)
 onnx:
   enabled: false
   ep: "CPU" # CPU, CUDA, CoreML, TensorRT

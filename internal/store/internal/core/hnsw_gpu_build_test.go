@@ -1,9 +1,8 @@
 //go:build gpu
 
-package core_test
+package core
 
 import (
-	"github.com/23skdu/longbow/internal/store/internal/core"
 	"context"
 	"testing"
 
@@ -86,10 +85,10 @@ func TestBatchInsertWithGPU_CPUFallback(t *testing.T) {
 	config.DataType = types.VectorTypeFloat32
 	config.Dims = 128
 
-	ds := &core.MockDataset{
+	ds := &MockDataset{
 		Schema: nil,
 	}
-	index := core.NewArrowHNSW(ds, &config)
+	index := NewArrowHNSW(ds, &config)
 
 	vectors := [][]float32{
 		make([]float32, 128),
@@ -117,10 +116,10 @@ func TestBuildIndexWithGPU_CPUFallback(t *testing.T) {
 	config.DataType = types.VectorTypeFloat32
 	config.Dims = 128
 
-	ds := &core.MockDataset{
+	ds := &MockDataset{
 		Schema: nil,
 	}
-	index := core.NewArrowHNSW(ds, &config)
+	index := NewArrowHNSW(ds, &config)
 
 	nVectors := 100
 	vectors := make([][]float32, nVectors)

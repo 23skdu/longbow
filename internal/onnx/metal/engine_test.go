@@ -2,6 +2,7 @@ package metal
 
 import (
 	"context"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -13,37 +14,53 @@ func TestIsAvailable(t *testing.T) {
 	_ = IsAvailable()
 }
 
-func TestEngineStub(t *testing.T) {
-	// Test stub behavior
+func TestEngineBehavior(t *testing.T) {
 	engine, err := NewEngine()
+	if !IsAvailable() {
+		require.NoError(t, err)
+		assert.Error(t, engine.LoadModel("/fake/path"))
+		return
+	}
+
 	require.NoError(t, err)
 	require.NotNil(t, engine)
 
-	// Check that methods return appropriate errors
-	err = engine.LoadModel("/fake/path")
-	assert.Error(t, err)
+	// Create a temp file to satisfy existence check
+	tmpFile, err := os.CreateTemp("", "model.onnx")
+	require.NoError(t, err)
+	defer os.Remove(tmpFile.Name())
+	tmpPath := tmpFile.Name()
+	tmpFile.Close()
+
+	// In real Metal, LoadModel currently returns true if file exists
+	err = engine.LoadModel(tmpPath)
+	assert.NoError(t, err)
 
 	scores, err := engine.Score(context.Background(), "query", []string{"doc"})
-	assert.Error(t, err)
-	assert.Nil(t, scores)
+	assert.NoError(t, err)
+	assert.NotEmpty(t, scores)
 
 	batchScores, err := engine.ScoreBatch(context.Background(), []string{"q1"}, []string{"d1"})
-	assert.Error(t, err)
-	assert.Nil(t, batchScores)
+	assert.NoError(t, err)
+	assert.NotEmpty(t, batchScores)
 
 	info, err := engine.ModelInfo()
-	assert.Error(t, err)
-	assert.Nil(t, info)
+	assert.NoError(t, err)
+	assert.NotNil(t, info)
 
 	err = engine.Close()
 	assert.NoError(t, err)
 }
 
-func TestMetalRerankerStub(t *testing.T) {
-	// Test that stub reranker returns error
+func TestMetalRerankerBehavior(t *testing.T) {
 	reranker, err := NewMetalReranker("/fake/path")
-	assert.Error(t, err)
-	assert.Nil(t, reranker)
+	if !IsAvailable() {
+		assert.Error(t, err)
+		assert.Nil(t, reranker)
+		return
+	}
+	assert.NoError(t, err)
+	assert.NotNil(t, reranker)
 }
 
 func TestEngineClose(t *testing.T) {

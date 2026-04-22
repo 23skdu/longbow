@@ -701,62 +701,19 @@ func matchInt64Generic(src []int64, val int64, op CompareOp, dst []byte) error {
 	switch op {
 	case CompareEq:
 		for i, v := range src {
-			// Branchless Equal: If v == val, xora is 0.
-			// If v != val, xora is non-zero.
-			// We want 1 if v == val, else 0.
-			// trick: 1 if xora == 0 else 0.
-			// Standard C-style: (xora == 0)
-			// Go branchless:
-			// diff = v ^ val
-			// res = 1 - ( (diff | -diff) >> 63 ) ? No, that's for 0 check on int64?
-			// Simpler:
-			if v == val {
-				dst[i] = 1
-			} else {
-				dst[i] = 0
-			}
-			// Wait, simple if/else IS branchy.
-			// Let's use the verified bitwise logic from plan/benchmark?
-			// Go compiler might optimize `v==val` to setcc.
-			// But let's force it if we want to be sure.
-			// Actually, let's keep it readable but simple first.
-			// Benchmark showed:
-			// if v == val { dst[i] = 1 } else { dst[i] = 0 }
-			// was significantly slower than
-			// var res byte = 0; if v == val { res = 1 }; dst[i] = res
-			//
-			// Optimization:
-			// diff := v ^ val
-			// mask := (diff | -diff) >> 63  (0 if equal, -1 if not)
-			// dst[i] = byte((mask + 1) & 1) (1 if equal, 0 if not)
-			// Need to be careful with uint64 cast for shift.
-
-			// diff := uint64(v ^ val)
-			// For 0 check: (diff - 1) >> 63
-
-			// Re-evaluating: The benchmark code `if v == val { dst[i] = 1 } else { dst[i] = 0 }` was the fastest?
-			// No, benchmark showed "Branchless" logic (manual) was faster.
-			// Using the benchmark's "if v==val res=1" is still an `if`.
-			// Let's use pure bitwise for guarantees.
-
-			// Equality:
-			// d := v ^ val
-			// d = (d | -d) >> 63
-			// res = byte(1 ^ d)
-			// (If equal, d=0. 0|-0=0. >>63=0. 1^0=1).
-			// (If not, d!=0. high bit likely set after | -d? Yes.)
-
-			if v == val {
-				dst[i] = 1
-			} else {
-				dst[i] = 0
-			}
+			// Branchless Equal: 1 if v == val, else 0
+			diff := uint64(v ^ val)
+			// (diff | -diff) >> 63 is 0 if diff is 0, else 1
+			// We want the inverse of that
+			res := 1 ^ ((diff | uint64(-int64(diff))) >> 63)
+			dst[i] = byte(res)
 		}
 	case CompareNeq:
 		for i, v := range src {
-			diff := v ^ val
-			msb := uint64(diff|-diff) >> 63
-			dst[i] = byte(msb)
+			// Branchless Not Equal: 1 if v != val, else 0
+			diff := uint64(v ^ val)
+			res := (diff | uint64(-int64(diff))) >> 63
+			dst[i] = byte(res)
 		}
 	case CompareGt:
 		for i, v := range src {

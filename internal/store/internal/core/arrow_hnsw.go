@@ -2685,15 +2685,6 @@ func (h *ArrowHNSW) Len() int {
 
 // ExportState implements VectorIndex.
 func (h *ArrowHNSW) ExportState() ([]byte, error) {
-	h.growMu.RLock()
-	defer h.growMu.RUnlock()
-
-	locs := make([]types.Location, 0, h.locationStore.Len())
-	h.locationStore.IterateMutable(func(_ types.VectorID, val *atomic.Uint64) {
-		loc := basecore.UnpackLocation(val.Load())
-		locs = append(locs, loc)
-	})
-
 	var buf bytes.Buffer
 	if err := h.ExportGraph(&buf); err != nil {
 		return nil, err

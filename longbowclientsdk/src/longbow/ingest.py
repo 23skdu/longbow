@@ -123,16 +123,39 @@ def to_arrow_table(
         orig_dtype = str(vecs.dtype)
         is_complex = False
         
+        # Explicitly handle complex types first
         if vecs.dtype == np.complex64:
-            # view as float32: (N, dim) -> (N, 2*dim)
             vecs = vecs.view(np.float32).reshape(vecs.shape[0], -1)
             is_complex = True
+            value_type = pa.float32()
         elif vecs.dtype == np.complex128:
-            # view as float64: (N, dim) -> (N, 2*dim)
             vecs = vecs.view(np.float64).reshape(vecs.shape[0], -1)
             is_complex = True
+            value_type = pa.float64()
         elif vecs.dtype == np.object_:
             vecs = vecs.astype(np.float32)
+            value_type = pa.float32()
+        else:
+            # Map common numpy types to Arrow types
+            DTYPE_MAP = {
+                np.dtype('float16'): pa.float16(),
+                np.dtype('float32'): pa.float32(),
+                np.dtype('float64'): pa.float64(),
+                np.dtype('int8'): pa.int8(),
+                np.dtype('int16'): pa.int16(),
+                np.dtype('int32'): pa.int32(),
+                np.dtype('int64'): pa.int64(),
+                np.dtype('uint8'): pa.uint8(),
+                np.dtype('uint16'): pa.uint16(),
+                np.dtype('uint32'): pa.uint32(),
+                np.dtype('uint64'): pa.uint64(),
+            }
+            if vecs.dtype in DTYPE_MAP:
+                value_type = DTYPE_MAP[vecs.dtype]
+            else:
+                # Default fallback
+                vecs = vecs.astype(np.float32)
+                value_type = pa.float32()
             
         # Update dim if it's complex (physical dim is 2x logical dim)
         current_dim = vecs.shape[1]
@@ -140,12 +163,12 @@ def to_arrow_table(
         # Create FixedSizeListArray
         flat_vecs = vecs.flatten()
         # Create the value array with appropriate type
-        value_arr = pa.array(flat_vecs)
+        value_arr = pa.array(flat_vecs, type=value_type)
         arrow_vecs = pa.FixedSizeListArray.from_arrays(value_arr, current_dim)
         
         # arrow_ids = pa.array(data['id'].values, type=pa.int64())
         # Allow string IDs for test compatibility
-        arrow_ids = pa.array(data['id'].values)
+        arrow_ids = pa.array(data['id'].values, type=pa.string())
         arrow_ts = pa.array(data['timestamp'].values, type=pa.timestamp("ns"))
         
         arrays = [arrow_ids, arrow_vecs, arrow_ts]

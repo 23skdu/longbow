@@ -10,8 +10,10 @@ import (
 	"runtime"
 	"sync"
 
+	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/onnx/metal"
 	"github.com/23skdu/longbow/internal/ml"
+	"time"
 	ort "github.com/yalue/onnxruntime_go"
 )
 
@@ -354,6 +356,11 @@ func (s *Session) SetPoolingMode(mode PoolingMode) {
 }
 
 func (s *Session) meanPooling(hiddenStates []float32, mask []int64, shape []int64) [][]float32 {
+	start := time.Now()
+	defer func() {
+		metrics.EmbeddingPoolingDurationSeconds.Observe(time.Since(start).Seconds())
+	}()
+
 	batchSize := int(shape[0])
 	seqLen := int(shape[1])
 	dim := int(shape[2])
@@ -387,6 +394,11 @@ func (s *Session) meanPooling(hiddenStates []float32, mask []int64, shape []int6
 }
 
 func (s *Session) maxPooling(hiddenStates []float32, mask []int64, shape []int64) [][]float32 {
+	start := time.Now()
+	defer func() {
+		metrics.EmbeddingPoolingDurationSeconds.Observe(time.Since(start).Seconds())
+	}()
+
 	batchSize := int(shape[0])
 	seqLen := int(shape[1])
 	dim := int(shape[2])

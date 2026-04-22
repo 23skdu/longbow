@@ -143,7 +143,7 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 		}
 		err = nil // Clear error after fallback
 	}
-	s.logger.Info().Interface("parsed_query", query).Msg("DEBUG: DoGet parsed query")
+	// s.logger.Info().Interface("parsed_query", query).Msg("DEBUG: DoGet parsed query")
 
 	// Resolve CTEs if present
 	cteResults := make(map[string][]lbtypes.SearchResult)
@@ -729,7 +729,11 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, windowFunc
 		}
 
 		if isHybrid {
-			searchResults, err = s.SearchHybrid(stream.Context(), req.Dataset, queryVec, req.TextQuery, req.K, req.Alpha, 60, req.GraphAlpha, 2)
+			depth := req.GraphDepth
+			if depth <= 0 {
+				depth = 2
+			}
+			searchResults, err = s.SearchHybrid(stream.Context(), req.Dataset, queryVec, req.TextQuery, req.K, req.Alpha, 60, req.GraphAlpha, depth)
 		} else {
 			// Standard Vector Search
 			ds, ok := s.getDataset(req.Dataset)
@@ -762,7 +766,11 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, windowFunc
 			ds.dataMu.RLock()
 			// Graph Re-ranking
 			if req.GraphAlpha > 0 && graph != nil {
-				ranked := graph.RankWithGraph(searchResults, req.GraphAlpha, 2)
+				depth := req.GraphDepth
+				if depth <= 0 {
+					depth = 2
+				}
+				ranked := graph.RankWithGraph(searchResults, req.GraphAlpha, depth)
 				if len(ranked) > 0 {
 					searchResults = ranked
 				}
@@ -954,10 +962,37 @@ func (s *VectorStore) handleDoGetSearchByID(req *qry.VectorSearchByIDRequest, st
 
 	if !found {
 		for batchIdx, rec := range ds.Records {
-			idCol := rec.Column(0)
+			idColIdx := -1
+			for i, field := range rec.Schema().Fields() {
+				if field.Name == "id" {
+					idColIdx = i
+					break
+				}
+			}
+
+			if idColIdx == -1 {
+				continue
+			}
+
+			idCol := rec.Column(idColIdx)
 			for rowIdx := 0; rowIdx < int(rec.NumRows()); rowIdx++ {
-				id := idCol.(*array.String).Value(rowIdx)
-				if id == req.ID {
+				var idStr string
+				switch c := idCol.(type) {
+				case *array.String:
+					idStr = c.Value(rowIdx)
+				case *array.Int64:
+					idStr = strconv.FormatInt(c.Value(rowIdx), 10)
+				case *array.Uint64:
+					idStr = strconv.FormatUint(c.Value(rowIdx), 10)
+				case *array.Int32:
+					idStr = strconv.FormatInt(int64(c.Value(rowIdx)), 10)
+				case *array.Uint32:
+					idStr = strconv.FormatUint(uint64(c.Value(rowIdx)), 10)
+				default:
+					continue
+				}
+
+				if idStr == req.ID {
 					isDeleted := false
 					if ts, ok := ds.Tombstones[batchIdx]; ok && ts != nil && ts.Contains(rowIdx) {
 						isDeleted = true

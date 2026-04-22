@@ -1,0 +1,57 @@
+usage: unified_benchmark.py [-h]
+                            [--mode {cpu,metal,cuda,onnx,recommend,deletion,graphrag,exchange,cluster,temporal,learned_index}]
+                            [--dims DIMS] [--counts COUNTS] [--dtypes DTYPES]
+                            [--memory MEMORY] [--timeout TIMEOUT]
+                            [--duration DURATION] [--queries QUERIES]
+                            [--batch-size BATCH_SIZE]
+                            [--startup-timeout STARTUP_TIMEOUT] [--addr ADDR]
+                            [--metrics-addr METRICS_ADDR]
+                            [--alpha-values ALPHA_VALUES]
+                            [--k-values K_VALUES] [--num-seeds NUM_SEEDS]
+                            [--max-hops MAX_HOPS] [--decay DECAY]
+                            [--delete-counts DELETE_COUNTS]
+                            [--graph-alpha-values GRAPH_ALPHA_VALUES]
+                            [--cluster-nodes CLUSTER_NODES] [--rdma]
+                            [--iouring]
+
+Unified Longbow Benchmark Script
+
+options:
+  -h, --help            show this help message and exit
+  --mode {cpu,metal,cuda,onnx,recommend,deletion,graphrag,exchange,cluster,temporal,learned_index}
+                        Benchmark mode: cpu, metal, cuda, onnx, recommend,
+                        deletion, graphrag, exchange, cluster, temporal,
+                        learned_index (k-NN adaptive index scorer)
+  --dims DIMS           Comma-separated dimensions
+  --counts COUNTS       Comma-separated vector counts (uses first)
+  --dtypes DTYPES       Comma-separated datatypes
+  --memory MEMORY       LONGBOW_MAX_MEMORY (default 10GB)
+  --timeout TIMEOUT     Command timeout in seconds (default 1800)
+  --duration DURATION   Duration in seconds per test
+  --queries QUERIES     Number of search queries
+  --batch-size BATCH_SIZE
+                        Batch size for ingest
+  --startup-timeout STARTUP_TIMEOUT
+                        Server startup timeout
+  --addr ADDR           Server address
+  --metrics-addr METRICS_ADDR
+                        Prometheus metrics endpoint for learned_index mode
+                        (default 127.0.0.1:9090)
+  --alpha-values ALPHA_VALUES
+                        Comma-separated alpha values to test (0.0=graph,
+                        1.0=ANN, 0.5=hybrid)
+  --k-values K_VALUES   Comma-separated k values (number of recommendations)
+  --num-seeds NUM_SEEDS
+                        Number of seed IDs to use for recommendations
+  --max-hops MAX_HOPS   Maximum BFS hops for graph connectivity
+  --decay DECAY         Multi-hop connectivity decay factor
+  --delete-counts DELETE_COUNTS
+                        Comma-separated delete counts to test (for deletion
+                        mode)
+  --graph-alpha-values GRAPH_ALPHA_VALUES
+                        Comma-separated graph_alpha values to test
+                        (0.0=disabled, 1.0=full graph)
+  --cluster-nodes CLUSTER_NODES
+                        Number of nodes in cluster for cluster mode
+  --rdma                Enable RDMA/RoCEv2 zero-copy ingest
+  --iouring             Enable io_uring optimized Parquet snapshots

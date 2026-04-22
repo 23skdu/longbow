@@ -159,7 +159,8 @@ func (l *LearnedIndexWithOllama) Predict(ctx context.Context, features QueryFeat
 		if err != nil {
 			l.logger.Warn().Err(err).Msg("Ollama embed failed, falling back to rule-based")
 		} else {
-			prediction := l.predictor.PredictWithEmbedding(features, embedding)
+			features.UpdateFromEmbedding(embedding)
+			prediction := l.predictor.Predict(features)
 			if prediction.Confidence >= l.predictor.config.ConfidenceThreshold {
 				return prediction
 			}

@@ -204,6 +204,18 @@ type QueryFeatures struct {
 	EmbeddingModel string `json:"embedding_model,omitempty"`
 }
 
+// UpdateFromEmbedding updates the feature vector with signals derived from a raw embedding.
+func (f *QueryFeatures) UpdateFromEmbedding(embedding []float64) {
+	if len(embedding) == 0 {
+		return
+	}
+	sumSq := 0.0
+	for _, v := range embedding {
+		sumSq += v * v
+	}
+	f.AvgVectorNorm = math.Sqrt(sumSq)
+}
+
 type IndexPrediction struct {
 	RecommendedIndex IndexType     `json:"recommended_index"`
 	Confidence       float64       `json:"confidence"`
@@ -343,8 +355,9 @@ func (p *IndexPerformancePredictor) Predict(features QueryFeatures) IndexPredict
 	sampleCount := len(p.samples)
 	p.samplesMu.RUnlock()
 
-	// If we don't have enough data yet, fall back to a simple, safe default heuristic.
-	if sampleCount < p.config.MinTrainingSamples {
+	// If we have ZERO data, fall back to a safe default.
+	// Otherwise, we ALWAYS use the k-NN model (data-driven).
+	if sampleCount == 0 {
 		pred := p.getDefaultPrediction(features)
 		metrics.LearnedIndexPredictionsTotal.WithLabelValues(string(pred.RecommendedIndex), "default").Inc()
 		return pred
@@ -384,24 +397,6 @@ func (p *IndexPerformancePredictor) Predict(features QueryFeatures) IndexPredict
 	}
 }
 
-// PredictWithEmbedding is a wrapper around Predict that incorporates raw vector signals
-// into the QueryFeatures if necessary. In this unified model, semantic signal is 
-// captured via the EmbeddingProvider and EmbeddingModel fields in QueryFeatures, 
-// ensuring the k-NN model can distinguish between different model behaviors.
-func (p *IndexPerformancePredictor) PredictWithEmbedding(features QueryFeatures, embedding []float64) IndexPrediction {
-	if len(embedding) > 0 && features.AvgVectorNorm == 0 {
-		// Update norm if not provided, as it's a useful feature for some indexes.
-		sumSq := 0.0
-		for _, v := range embedding {
-			sumSq += v * v
-		}
-		features.AvgVectorNorm = math.Sqrt(sumSq)
-	}
-
-	// Delegate to the unified learned predictor.
-	return p.Predict(features)
-}
-
 // Heuristic scoring methods were removed in favor of data-driven k-NN prediction (v0.1.9).
 
 // kNNPredict scores candidate index types using weighted k-nearest-neighbour
@@ -432,8 +427,7 @@ func (p *IndexPerformancePredictor) kNNPredict(features QueryFeatures, k int) ma
 	p.samplesMu.RUnlock()
 
 	if len(snap) == 0 {
-		pred := p.getDefaultPrediction(features)
-		return map[IndexType]float64{pred.RecommendedIndex: 1.0}
+		return map[IndexType]float64{IndexTypeHNSW: 1.0}
 	}
 	if k > len(snap) {
 		k = len(snap)
@@ -837,6 +831,7 @@ type IndexAdaptation struct {
 	Metrics        AdaptationMetrics
 	Timestamp      time.Time
 	Status         AdaptationStatus
+	Features       QueryFeatures // Features that triggered the adaptation
 }
 
 type AdaptationMetrics struct {
@@ -1060,12 +1055,12 @@ func (a *RuntimeIndexAdapter) triggerAdaptation(collection string, metrics Adapt
 
 	adaptation := &IndexAdaptation{
 		CollectionName: collection,
-		CurrentIndex:   IndexTypeHNSW,
 		ProposedIndex:  prediction.RecommendedIndex,
 		TriggerReason:  a.determineTriggerReason(metrics),
 		Metrics:        metrics,
 		Timestamp:      time.Now(),
 		Status:         AdaptationStatusPending,
+		Features:       features,
 	}
 
 	a.adaptationMu.Lock()
@@ -1074,7 +1069,6 @@ func (a *RuntimeIndexAdapter) triggerAdaptation(collection string, metrics Adapt
 
 	a.logger.Info().
 		Str("collection", collection).
-		Str("current", string(adaptation.CurrentIndex)).
 		Str("proposed", string(adaptation.ProposedIndex)).
 		Str("reason", adaptation.TriggerReason).
 		Msg("Triggering index adaptation")
@@ -1139,8 +1133,9 @@ func (a *RuntimeIndexAdapter) CompleteAdaptation(collection string, success bool
 		a.logger.Info().Str("collection", collection).Msg("Index adaptation completed")
 
 		// Record successful adaptation as a positive signal
+		// In a real system, we'd use the ACTUAL features that triggered the adaptation.
 		a.predictor.AddTrainingSample(TrainingSample{
-			Features: QueryFeatures{DatasetSize: int(adaptation.Metrics.IndexSizeMB * 1000)},
+			Features: adaptation.Features, // Assuming we store features in adaptation
 			Latency:  time.Duration(adaptation.Metrics.AvgLatencyMs * float64(time.Millisecond)),
 			Recall:   adaptation.Metrics.RecallAchieved,
 			Index:    adaptation.ProposedIndex,
@@ -1149,6 +1144,16 @@ func (a *RuntimeIndexAdapter) CompleteAdaptation(collection string, success bool
 		adaptation.Status = AdaptationStatusFailed
 		a.stats.AdaptationsFailed.Add(1)
 		a.logger.Error().Str("collection", collection).Msg("Index adaptation failed")
+
+		// Record failure as a negative signal (failure decomposition)
+		// We record a "virtual" sample with extremely high latency to penalize this index type
+		// for the given query features.
+		a.predictor.AddTrainingSample(TrainingSample{
+			Features: adaptation.Features,
+			Latency:  10 * time.Second, // Penalty latency
+			Recall:   0.0,             // Zero recall
+			Index:    adaptation.ProposedIndex,
+		})
 	}
 
 	return nil

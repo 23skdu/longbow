@@ -14,6 +14,24 @@ const (
 	stateShutdown int32 = 1
 )
 
+// stopWorkers cancels the store context and stops background workers.
+func (s *VectorStore) stopWorkers() {
+	s.stopOnce.Do(func() {
+		if s.compactionWorker != nil {
+			s.compactionWorker.Stop()
+		}
+		if s.stopChan != nil {
+			close(s.stopChan)
+		}
+		// Cancel the store context so workers that select on ctx.Done()
+		// (e.g. runIndexWorker, runIngestionWorkerWithCtx) exit immediately
+		// instead of waiting for the next time.Sleep tick.
+		if s.cancel != nil {
+			s.cancel()
+		}
+	})
+}
+
 // Close performs a graceful shutdown with a default timeout.
 // It is an alias for Shutdown(context.Background()) but handy for defer.
 func (s *VectorStore) Close() error {
@@ -110,10 +128,6 @@ waitLoop:
 		s.logger.Error().Err(err).Msg("Failed to close persistence")
 	} else {
 		s.logger.Info().Msg("Persistence closed successfully")
-	}
-
-	if s.cancel != nil {
-		s.cancel()
 	}
 
 	elapsed := time.Since(start)

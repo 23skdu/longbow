@@ -686,3 +686,27 @@ func (a *AutoShardingIndex) RemapLocations(ctx context.Context, mapping map[uint
 	defer a.mu.Unlock()
 	return a.current.RemapLocations(ctx, mapping)
 }
+
+// GetData returns graph data from the current index.
+func (a *AutoShardingIndex) GetData() *types.GraphData {
+	a.mu.RLock()
+	curr := a.current
+	a.mu.RUnlock()
+
+	if g, ok := curr.(interface{ GetData() *types.GraphData }); ok {
+		return g.GetData()
+	}
+	return nil
+}
+
+// GetShardedIndex returns the underlying sharded index if it exists.
+func (a *AutoShardingIndex) GetShardedIndex() *ShardedHNSW {
+	a.mu.RLock()
+	curr := a.current
+	a.mu.RUnlock()
+
+	if s, ok := curr.(interface{ GetShardedIndex() *ShardedHNSW }); ok {
+		return s.GetShardedIndex()
+	}
+	return nil
+}

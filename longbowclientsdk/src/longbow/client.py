@@ -674,6 +674,73 @@ class LongbowClient:
         except Exception as e:
             raise LongbowQueryError(f"GetGraphStats failed: {e}")
 
+    def calculate_pagerank(
+        self,
+        dataset: str,
+        damping_factor: float = 0.85,
+        max_iterations: int = 20,
+        tolerance: float = 1e-4,
+    ) -> Dict[str, float]:
+        """
+        Calculate PageRank centrality for all nodes in the dataset's HNSW graph.
+
+        Args:
+            dataset: Name of the dataset.
+            damping_factor: Damping coefficient (default 0.85).
+            max_iterations: Maximum iterations (default 20).
+            tolerance: Convergence tolerance (default 1e-4).
+
+        Returns:
+            Dict[str, float]: Mapping of node IDs to PageRank scores.
+        """
+        if self._meta_client is None:
+            self.connect()
+
+        req = {
+            "dataset": dataset,
+            "damping_factor": damping_factor,
+            "max_iterations": max_iterations,
+            "tolerance": tolerance,
+        }
+        action = flight.Action("calculate-pagerank", json.dumps(req).encode("utf-8"))
+        try:
+            results = list(
+                self._meta_client.do_action(action, options=self._get_call_options())
+            )
+            if results:
+                raw_res = json.loads(results[0].body.to_pybytes())
+                # Result structure: {"Scores": {"id": score}}
+                return raw_res.get("Scores", {})
+            return {}
+        except Exception as e:
+            raise LongbowQueryError(f"PageRank calculation failed: {e}")
+
+    def detect_communities(self, dataset: str, max_iterations: int = 10) -> Dict[str, Any]:
+        """
+        Run community detection (LPA) on the dataset's HNSW graph.
+
+        Args:
+            dataset: Name of the dataset.
+            max_iterations: Maximum iterations for propagation (default 10).
+
+        Returns:
+            Dict[str, Any]: Result containing 'CommunityCount' and 'Labels' mapping.
+        """
+        if self._meta_client is None:
+            self.connect()
+
+        req = {"dataset": dataset, "max_iterations": max_iterations}
+        action = flight.Action("detect-communities", json.dumps(req).encode("utf-8"))
+        try:
+            results = list(
+                self._meta_client.do_action(action, options=self._get_call_options())
+            )
+            if results:
+                return json.loads(results[0].body.to_pybytes())
+            return {}
+        except Exception as e:
+            raise LongbowQueryError(f"Community detection failed: {e}")
+
     def temporal_search(
         self,
         search_type: str,

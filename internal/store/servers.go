@@ -696,6 +696,7 @@ func (s *MetaServer) handleTemporalAggregation(action *flight.Action, stream fli
 	}
 
 	vectors := s.temporalIndex.GetVectorsInRange(req.StartTime, req.EndTime)
+	s.logger.Info().Int64("start", req.StartTime).Int64("end", req.EndTime).Int("count", len(vectors)).Msg("Temporal aggregation vectors found")
 
 	type bucket struct {
 		Timestamp int64 `json:"timestamp"`

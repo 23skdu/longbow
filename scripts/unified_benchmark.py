@@ -178,9 +178,11 @@ class BenchmarkRunner:
         if self.args.iouring:
             env["LONGBOW_STORAGE_USE_IOURING"] = "true"
 
-        # Use unique port per config to avoid conflicts
-        base_port = int(self.server_addr.split(":")[-1])
-        port = base_port  # Use fixed port since we kill server between runs
+        # Use ports from server_addr if available, otherwise default
+        if ":" in self.server_addr:
+            port = int(self.server_addr.split(":")[-1])
+        else:
+            port = 3000 + (os.getpid() % 1000)
 
         log_file = os.path.join(self.log_dir, f"longbow_{self.args.mode}_{label}.log")
 
@@ -230,24 +232,19 @@ class BenchmarkRunner:
                 pass
             self.server_pid = None
 
-        # Robust cleanup using port discovery (current and base ports)
-        ports_to_clean = [3000, 3001, 9000, 10000]
-        # Extract port from current server_addr if set
+        # Surgical cleanup using port discovery for the specific port
         if ":" in self.server_addr:
             try:
-                current_port = int(self.server_addr.split(":")[-1])
-                ports_to_clean.extend([current_port, current_port + 1, current_port + 6000, current_port + 7000])
+                port = int(self.server_addr.split(":")[-1])
+                # Only kill processes on our specific ports
+                for p in [port, port + 1, port + 6000, port + 7000, port + 80]:
+                    subprocess.run(f"lsof -ti:{p} | xargs kill -9 2>/dev/null || true", shell=True)
             except:
                 pass
         
-        for port in set(ports_to_clean):
-            subprocess.run(f"lsof -ti:{port} | xargs kill -9 2>/dev/null || true", shell=True)
-        
-        # Brute force fallback for all known binaries
-        subprocess.run("pkill -9 longbow || true", shell=True, stderr=subprocess.DEVNULL)
-        subprocess.run("pkill -9 longbow-metal || true", shell=True, stderr=subprocess.DEVNULL)
-        subprocess.run("pkill -9 bench-tool || true", shell=True, stderr=subprocess.DEVNULL)
-        time.sleep(1) # Reduced from 2s to speed up but still allow OS cleanup
+        # Avoid global pkill if possible, it breaks parallel runs
+        # subprocess.run("pkill -9 longbow || true", shell=True, stderr=subprocess.DEVNULL)
+        time.sleep(1)
 
     def run_benchmark(self, dim, dtype, count, label):
         """Run benchmark-tool with JSON output for a configuration."""
@@ -260,7 +257,25 @@ class BenchmarkRunner:
         cmd = f"{bench_tool} --uri={self.server_addr} --dim={dim} --dtype={dtype} --scale={batch_size} --queries={self.args.queries} --dataset={label} --json={json_file}"
         print(f"  Running {dtype} dim={dim}...", end="", flush=True)
         timeout = getattr(self.args, "timeout", duration * 3 + 60)
+        
+        # Start background pprof collection if on localhost
+        pprof_file = os.path.join(self.log_dir, f"profile_{label}.pprof")
+        metrics_port = int(self.server_addr.split(":")[-1]) + 6000
+        pprof_url = f"http://127.0.0.1:{metrics_port}/debug/pprof/profile?seconds=20"
+        
+        pprof_proc = None
+        if "127.0.0.1" in self.server_addr or "localhost" in self.server_addr:
+            pprof_proc = subprocess.Popen(
+                f"curl -s -o {pprof_file} \"{pprof_url}\"",
+                shell=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+
         result = run_command(cmd, timeout=timeout)
+
+        if pprof_proc:
+            pprof_proc.wait()
 
         if not result or result.returncode != 0:
             print(" FAILED")
@@ -334,7 +349,7 @@ class BenchmarkRunner:
         try:
             client = LongbowClient(
                 uri=f"grpc://{self.server_addr}",
-                meta_uri=f"grpc://{self.server_addr.replace('3000', '3001')}",
+                meta_uri=f"grpc://127.0.0.1:{int(self.server_addr.split(':')[-1]) + 1}",
             )
 
             dataset_name = f"rec_bench_{dim}d"
@@ -460,7 +475,7 @@ class BenchmarkRunner:
         try:
             client = LongbowClient(
                 uri=f"grpc://{self.server_addr}",
-                meta_uri=f"grpc://{self.server_addr.replace('3000', '3001')}",
+                meta_uri=f"grpc://127.0.0.1:{int(self.server_addr.split(':')[-1]) + 1}",
             )
 
             dataset_name = f"del_bench_{dim}d"
@@ -546,92 +561,122 @@ class BenchmarkRunner:
 
         dims = [int(d) for d in self.args.dims.split(",")]
         counts = [int(c) for c in self.args.counts.split(",")]
+        dtypes = self.args.dtypes.split(",")
+        
+        dtype_map = {
+            "float32": np.float32, "float64": np.float64, "float16": np.float16,
+            "int8": np.int8, "int16": np.int16, "int32": np.int32, "int64": np.int64,
+            "uint8": np.uint8, "uint16": np.uint16, "uint32": np.uint32, "uint64": np.uint64,
+            "complex64": np.complex64, "complex128": np.complex128, "turboquant": np.float32,
+        }
 
-        count = counts[0] if counts else 10000
-        dim = dims[0] if dims else 128
+        all_results = []
+        alpha_values = [float(a) for a in self.args.graph_alpha_values.split(",")]
+        k_val = int(self.args.k_values.split(",")[0])
 
-        print("=" * 80)
-        print(f"GRAPHRAG BENCHMARK (Graph Spreading Activation)")
-        print(f"Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        print(f"Dim: {dim}, Count: {count}")
-        print(f"Alpha values: {self.args.graph_alpha_values}")
-        print(f"Max hops: {self.args.max_hops}")
-        print("=" * 80)
-
-        label = f"gr_{dim}_{count}"
-        if not self.start_server(label):
-            print("  Failed to start server!")
-            return
-
-        try:
-            client = LongbowClient(
-                uri=f"grpc://{self.server_addr}",
-                meta_uri=f"grpc://{self.server_addr.replace('3000', '3001')}",
-            )
-
-            dataset_name = f"grag_bench_{dim}d"
-            print(f"\nCreating dataset {dataset_name}...")
-
-            vectors = np.random.rand(count, dim).astype(np.float32).tolist()
-            ids = [str(i) for i in range(count)]
-
-            client.insert(
-                dataset_name,
-                [{"id": id, "vector": vec} for id, vec in zip(ids, vectors)],
-            )
-            time.sleep(3)  # Wait for indexing + graph build
-
-            # Test GraphRAG with different alpha values
-            alpha_values = [float(a) for a in self.args.graph_alpha_values.split(",")]
-            k = self.args.k_values.split(",")[0]  # Use first k value
-            k = int(k)
-
-            for alpha in alpha_values:
-                print(f"\nGraphRAG alpha={alpha}, k={k}...")
-                query_vec = np.random.rand(dim).astype(np.float32).tolist()
-
-                latencies = []
-                for _ in range(self.args.queries):
-                    start = time.time()
-                    try:
-                        results = client.search(
-                            dataset_name,
-                            vector=query_vec,
-                            k=k,
-                            graph_alpha=alpha,
-                        )
-                        latency = (time.time() - start) * 1000
-                        latencies.append(latency)
-                    except Exception as e:
-                        print(f"  Error: {e}")
+        for count in counts:
+            for dim in dims:
+                for dtype in dtypes:
+                    print(f"\n{'=' * 80}")
+                    print(f"GRAPHRAG Test: {dtype} dim={dim} count={count}")
+                    print(f"Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                    print("=" * 80)
+                    
+                    label = f"gr_{dtype}_{dim}_{count}"
+                    if not self.start_server(label):
+                        print(f"  Failed to start server for {label}!")
                         continue
 
-                if latencies:
-                    latencies.sort()
-                    qps = 1000.0 / (sum(latencies) / len(latencies))
-                    self.results.append(
-                        {
-                            "dim": dim,
-                            "count": count,
-                            "alpha": alpha,
-                            "k": k,
-                            "qps": qps,
-                            "p50": latencies[int(0.5 * len(latencies))],
-                            "p95": latencies[int(0.95 * len(latencies))],
-                            "p99": latencies[int(0.99 * len(latencies))],
-                            "timestamp": datetime.now().isoformat(),
-                        }
-                    )
-                    print(
-                        f"  QPS: {qps:.1f}, P50: {latencies[int(0.5 * len(latencies))]:.2f}ms"
-                    )
+                    try:
+                        client = LongbowClient(
+                            uri=f"grpc://{self.server_addr}",
+                            meta_uri=f"grpc://127.0.0.1:{int(self.server_addr.split(':')[-1]) + 1}",
+                        )
+                        client.connect()
 
-        except Exception as e:
-            print(f"Error: {e}")
-        finally:
-            self.stop_server()
-            data_root = os.path.join(self.data_dir, label)
-            subprocess.run(f"rm -rf {data_root}", shell=True)
+                        pprof_proc = None
+                        dataset_name = f"grag_bench_{dtype}_{dim}_{count}"
+                        print(f"  Creating dataset {dataset_name}...")
+
+                        # Start background pprof collection
+                        pprof_file = os.path.join(self.log_dir, f"profile_{label}.pprof")
+                        metrics_port = int(self.server_addr.split(":")[-1]) + 6000
+                        pprof_url = f"http://127.0.0.1:{metrics_port}/debug/pprof/profile?seconds=20"
+                        pprof_proc = subprocess.Popen(
+                            f"curl -s -o {pprof_file} \"{pprof_url}\"",
+                            shell=True,
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL
+                        )
+
+                        np_dtype = dtype_map.get(dtype, np.float32)
+                        if "complex" in dtype:
+                            vectors = (np.random.randn(count, dim) + 1j * np.random.randn(count, dim)).astype(np_dtype)
+                        elif "int" in dtype or "uint" in dtype:
+                            vectors = np.random.randint(0, 100, size=(count, dim)).astype(np_dtype)
+                        else:
+                            vectors = np.random.randn(count, dim).astype(np_dtype)
+                            
+                        ids = [str(i) for i in range(count)]
+                        client.insert(
+                            dataset_name,
+                            [{"id": id, "vector": vec.tolist()} for id, vec in zip(ids, vectors)],
+                        )
+                        time.sleep(3)  # Wait for indexing + graph build
+
+                        for alpha in alpha_values:
+                            print(f"    GraphRAG alpha={alpha}, k={k_val}...", end="", flush=True)
+                            
+                            if "complex" in dtype:
+                                query_vec = (np.random.randn(dim) + 1j * np.random.randn(dim)).astype(np_dtype).tolist()
+                            elif "int" in dtype or "uint" in dtype:
+                                query_vec = np.random.randint(0, 100, size=dim).astype(np_dtype).tolist()
+                            else:
+                                query_vec = np.random.randn(dim).astype(np_dtype).tolist()
+
+                            latencies = []
+                            for _ in range(self.args.queries):
+                                start = time.time()
+                                try:
+                                    _ = client.search(
+                                        dataset_name,
+                                        vector=query_vec,
+                                        k=k_val,
+                                        graph_alpha=alpha,
+                                    )
+                                    latency = (time.time() - start) * 1000
+                                    latencies.append(latency)
+                                except Exception as e:
+                                    continue
+
+                            if latencies:
+                                latencies.sort()
+                                qps = 1000.0 / (sum(latencies) / len(latencies))
+                                result_entry = {
+                                    "dim": dim,
+                                    "dtype": dtype,
+                                    "count": count,
+                                    "alpha": alpha,
+                                    "k": k_val,
+                                    "qps": qps,
+                                    "p50": latencies[int(0.5 * len(latencies))],
+                                    "p95": latencies[int(0.95 * len(latencies))],
+                                    "p99": latencies[int(0.99 * len(latencies))],
+                                    "timestamp": datetime.now().isoformat(),
+                                }
+                                all_results.append(result_entry)
+                                print(f" QPS: {qps:.1f}, P50: {latencies[int(0.5 * len(latencies))]:.2f}ms")
+                            else:
+                                print(" FAILED")
+
+                    except Exception as e:
+                        print(f"  Error: {e}")
+                    finally:
+                        if pprof_proc:
+                            pprof_proc.wait()
+                        self.stop_server()
+                        data_root = os.path.join(self.data_dir, label)
+                        subprocess.run(f"rm -rf {data_root}", shell=True)
 
         with open(self.output_file, "w") as f:
             json.dump(
@@ -639,12 +684,13 @@ class BenchmarkRunner:
                     "mode": "graphrag",
                     "timestamp": self.timestamp,
                     "config": {
-                        "dim": dim,
-                        "count": count,
+                        "dims": dims,
+                        "counts": counts,
+                        "dtypes": dtypes,
                         "alpha_values": alpha_values,
-                        "k": k,
+                        "k": k_val,
                     },
-                    "results": self.results,
+                    "results": all_results,
                 },
                 f,
                 indent=2,
@@ -681,7 +727,7 @@ class BenchmarkRunner:
         try:
             client = LongbowClient(
                 uri=f"grpc://{self.server_addr}",
-                meta_uri=f"grpc://{self.server_addr.replace('3000', '3001')}",
+                meta_uri=f"grpc://127.0.0.1:{int(self.server_addr.split(':')[-1]) + 1}",
             )
 
             # Create source dataset
@@ -813,112 +859,154 @@ class BenchmarkRunner:
         print("Started:", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
         print("=" * 80)
 
-        dim = 128
-        count = 1000
+        dims = [int(d) for d in self.args.dims.split(",")]
+        counts = [int(c) for c in self.args.counts.split(",")]
+        dtypes = self.args.dtypes.split(",")
+        
+        dtype_map = {
+            "float32": np.float32, "float64": np.float64, "float16": np.float16,
+            "int8": np.int8, "int16": np.int16, "int32": np.int32, "int64": np.int64,
+            "uint8": np.uint8, "uint16": np.uint16, "uint32": np.uint32, "uint64": np.uint64,
+            "complex64": np.complex64, "complex128": np.complex128, "turboquant": np.float32,
+        }
 
-        print(f"\n[1/5] Starting server with TEMPORAL_ENABLED=true...")
-        label = f"temporal_{dim}_{count}"
-        if not self.start_server(label, env_overrides={"TEMPORAL_ENABLED": "true"}):
-            print("  Failed to start server!")
-            return
+        pprof_proc = None
+        for count in counts:
+            for dim in dims:
+                for dtype in dtypes:
+                    print(f"\n{'=' * 80}")
+                    print(f"Temporal Test: {dtype} dim={dim} count={count}")
+                    print(f"Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                    print("=" * 80)
+                    
+                    label = f"temporal_{dtype}_{dim}_{count}"
+                    if not self.start_server(label, env_overrides={"TEMPORAL_ENABLED": "true", "LONGBOW_TEMPORAL_DIM": str(dim)}):
+                        print(f"  Failed to start server for {label}!")
+                        continue
 
-        try:
-            print(f"\n[2/5] Generating {count} vectors with timestamps...")
-            vectors = []
-            now = time.time()
-            base_timestamp = int(now * 1e9)
+                    try:
+                        print(f"  Generating {count} vectors with timestamps...")
+                        vectors = []
+                        now = time.time()
+                        base_timestamp = int(now * 1e9)
+                        np_dtype = dtype_map.get(dtype, np.float32)
 
-            for i in range(count):
-                vec = np.random.randn(dim).astype(np.float32)
-                vectors.append(
-                    {
-                        "id": i,
-                        "vector": vec.tolist(),
-                        "timestamp": base_timestamp + i * 1000000000,
-                        "metadata": {"index": i},
-                    }
-                )
+                        for i in range(count):
+                            if "complex" in dtype:
+                                vec = (np.random.randn(dim) + 1j * np.random.randn(dim)).astype(np_dtype)
+                            elif "int" in dtype or "uint" in dtype:
+                                vec = np.random.randint(0, 100, size=dim).astype(np_dtype)
+                            else:
+                                vec = np.random.randn(dim).astype(np_dtype)
+                                
+                            vectors.append(
+                                {
+                                    "id": str(i),
+                                    "vector": vec.tolist(),
+                                    "timestamp": base_timestamp + i * 1000000000,
+                                    "metadata": {"index": i},
+                                }
+                            )
 
-            print(f"\n[3/5] Inserting {count} vectors...")
-            client = LongbowClient(f"grpc://{self.args.addr}")
-            client.connect()
-
-            df = pd.DataFrame(vectors)
-            client.insert(f"temporal_test_{dim}", df, batch_size=100)
-            print("  Insert complete!")
-
-            results = []
-            search_types = ["as_of", "range", "sliding_window", "sliding_window_time"]
-
-            print(f"\n[4/5] Testing temporal search types...")
-            for stype in search_types:
-                try:
-                    if stype == "as_of":
-                        res = client.temporal_search(
-                            search_type=stype,
-                            timestamp=base_timestamp + count * 500000000,
-                            k=10,
-                        )
-                    elif stype == "range":
-                        res = client.temporal_search(
-                            search_type=stype,
-                            start_time=base_timestamp,
-                            end_time=base_timestamp + count * 1000000000,
-                            k=10,
-                        )
-                    elif stype == "sliding_window":
-                        res = client.temporal_search(
-                            search_type=stype, window_size=100, k=10
-                        )
-                    elif stype == "sliding_window_time":
-                        res = client.temporal_search(
-                            search_type=stype, duration="1h", k=10
+                        print(f"  Inserting {count} vectors...")
+                        client = LongbowClient(
+                            uri=f"grpc://{self.server_addr}",
+                            meta_uri=f"grpc://127.0.0.1:{int(self.server_addr.split(':')[-1]) + 1}",
                         )
 
-                    results.append(
-                        {"search_type": stype, "count": len(res) if res else 0}
-                    )
-                    print(f"  {stype}: {len(res) if res else 0} results")
-                except Exception as e:
-                    print(f"  {stype}: ERROR - {e}")
-                    results.append({"search_type": stype, "error": str(e)})
+                        df = pd.DataFrame(vectors)
+                        client.insert(f"temporal_{dtype}_{dim}", df, batch_size=100)
+                        print("  Insert complete!")
 
-            print(f"\n[5/5] Testing version history and aggregation...")
-            try:
-                history = client.temporal_version_history(vector_id=0)
-                print(f"  Version history: {len(history) if history else 0} versions")
-                results.append(
-                    {"version_history_count": len(history) if history else 0}
-                )
-            except Exception as e:
-                print(f"  Version history: ERROR - {e}")
+                        results = []
+                        search_types = ["as_of", "range", "sliding_window", "sliding_window_time"]
 
-            try:
-                agg = client.temporal_aggregation(
-                    aggregation_type="count",
-                    start_time=base_timestamp,
-                    end_time=base_timestamp + count * 1000000000,
-                    interval=360000000000,
-                )
-                print(f"  Aggregation: {agg.get('total_count', 0)} total")
-                results.append({"aggregation": agg})
-            except Exception as e:
-                print(f"  Aggregation: ERROR - {e}")
+                        # Start background pprof collection
+                        pprof_file = os.path.join(self.log_dir, f"profile_{label}.pprof")
+                        metrics_port = int(self.server_addr.split(":")[-1]) + 6000
+                        pprof_url = f"http://127.0.0.1:{metrics_port}/debug/pprof/profile?seconds=20"
+                        pprof_proc = subprocess.Popen(
+                            f"curl -s -o {pprof_file} \"{pprof_url}\"",
+                            shell=True,
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL
+                        )
 
-            print("\n" + "=" * 80)
-            print("TEMPORAL BENCHMARK RESULTS")
-            print("=" * 80)
-            for r in results:
-                print(f"  {r}")
+                        print(f"  Testing temporal search types...")
+                        for stype in search_types:
+                            try:
+                                if stype == "as_of":
+                                    res = client.temporal_search(
+                                        search_type=stype,
+                                        timestamp=base_timestamp + count * 500000000,
+                                        k=10,
+                                    )
+                                elif stype == "range":
+                                    res = client.temporal_search(
+                                        search_type=stype,
+                                        start_time=base_timestamp,
+                                        end_time=base_timestamp + count * 1000000000,
+                                        k=10,
+                                    )
+                                elif stype == "sliding_window":
+                                    res = client.temporal_search(
+                                        search_type=stype, window_size=100, k=10
+                                    )
+                                elif stype == "sliding_window_time":
+                                    res = client.temporal_search(
+                                        search_type=stype, duration=3600 * 1000000000, k=10
+                                    )
 
-        finally:
-            self.stop_server()
-            data_root = os.path.join(self.data_dir, label)
-            subprocess.run(f"rm -rf {data_root}", shell=True)
+                                results.append(
+                                    {"search_type": stype, "count": len(res) if res else 0}
+                                )
+                                print(f"    {stype}: {len(res) if res else 0} results")
+                            except Exception as e:
+                                print(f"    {stype}: ERROR - {e}")
+                                results.append({"search_type": stype, "error": str(e)})
+
+                        print(f"  Testing version history and aggregation...")
+                        try:
+                            history = client.temporal_version_history(vector_id=0)
+                            print(f"    Version history: {len(history) if history else 0} versions")
+                            results.append(
+                                {"version_history_count": len(history) if history else 0}
+                            )
+                        except Exception as e:
+                            print(f"    Version history: ERROR - {e}")
+
+                        try:
+                            agg = client.temporal_aggregation(
+                                aggregation_type="count",
+                                start_time=base_timestamp,
+                                end_time=base_timestamp + count * 1000000000,
+                                interval=360000000000,
+                            )
+                            print(f"    Aggregation: {agg.get('total_count', 0)} total")
+                            results.append({"aggregation": agg})
+                        except Exception as e:
+                            print(f"    Aggregation: ERROR - {e}")
+
+
+                        self.results.append({
+                            "dim": dim,
+                            "dtype": dtype,
+                            "count": count,
+                            "mode": "temporal",
+                            "results": results,
+                            "timestamp": datetime.now().isoformat()
+                        })
+
+                    finally:
+                        if pprof_proc:
+                            pprof_proc.wait()
+                        self.stop_server()
+                        data_root = os.path.join(self.data_dir, label)
+                        subprocess.run(f"rm -rf {data_root}", shell=True)
 
         with open(self.output_file, "w") as f:
             json.dump(
-                {"mode": "temporal", "timestamp": self.timestamp, "results": results},
+                {"mode": "temporal", "timestamp": self.timestamp, "results": self.results},
                 f,
                 indent=2,
             )
@@ -1159,7 +1247,7 @@ class BenchmarkRunner:
         try:
             client = LongbowClient(
                 uri=f"grpc://{self.server_addr}",
-                meta_uri=f"grpc://{self.server_addr.replace('3000', '3001')}",
+                meta_uri=f"grpc://127.0.0.1:{int(self.server_addr.split(':')[-1]) + 1}",
             )
 
             # ------------------------------------------------------------------

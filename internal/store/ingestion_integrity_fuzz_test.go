@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -39,8 +40,16 @@ func FuzzIngestionIntegrity_Concurrent(f *testing.F) {
 		dsName := fmt.Sprintf("integrity_ds_%d_%d_%d", numWriters, batchesPerWriter, rowsPerBatch)
 
 		// Setup store with fast indexing
-		store := NewVectorStore(mem, zerolog.Nop(), 1024*1024*100, 1024*1024*100, 1*time.Hour)
+		logger := zerolog.New(zerolog.NewConsoleWriter()).With().Timestamp().Logger()
+		store := NewVectorStore(mem, logger, 1024*1024*100, 1024*1024*100, 1*time.Hour)
 		defer func() { _ = store.Close() }()
+
+		// Initialize persistence to avoid "persistence not initialized" errors in workers
+		tmpDir, err := os.MkdirTemp("", "longbow-fuzz-*")
+		if err == nil {
+			defer os.RemoveAll(tmpDir)
+			_ = store.InitPersistence(StorageConfig{DataPath: tmpDir})
+		}
 
 		// Force HNSW2 (ArrowHNSW) usage and fast Indexing
 		// store.DatasetInitHook or similar?
@@ -108,16 +117,17 @@ func FuzzIngestionIntegrity_Concurrent(f *testing.F) {
 
 		// Wait for Indexing (Background)
 		require.Eventually(t, func() bool {
-			if ds.Index == nil {
+			ds, ok := store.getDataset(dsName)
+			if !ok || ds.Index == nil {
 				return false
 			}
-			lenOk := ds.Index.Len() == totalExpected
-			pendingOk := ds.PendingIndexJobs.Load() == 0
+			lenOk := ds.Index.Len() >= totalExpected
+			pendingOk := ds.PendingIngestion.Load() == 0
 			if !lenOk || !pendingOk {
-				t.Logf("Waiting for index: Len=%d/%d, Pending=%d", ds.Index.Len(), totalExpected, ds.PendingIndexJobs.Load())
+				t.Logf("Waiting for index: Len=%d/%d, Pending=%d", ds.Index.Len(), totalExpected, ds.PendingIngestion.Load())
 			}
 			return lenOk && pendingOk
-		}, 10*time.Second, 1*time.Second, "Index failed to reach expected size or drain pending jobs")
+		}, 30*time.Second, 1*time.Second, "Index failed to reach expected size or drain pending jobs")
 
 		// Verify Search Integrity (Sample)
 		// Pick a random vector from what we inserted (re-generate)

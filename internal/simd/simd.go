@@ -2,13 +2,12 @@ package simd
 
 import (
 	"errors"
+	"fmt"
 	"math"
 	"os"
 	"unsafe"
 
 	"github.com/apache/arrow-go/v18/arrow/float16"
-
-	"github.com/rs/zerolog/log"
 )
 
 var (
@@ -111,7 +110,7 @@ func init() {
 
 	if os.Getenv("LONGBOW_JIT") == "1" {
 		if err := initJIT(); err != nil {
-			log.Error().Err(err).Msg("Failed to init JIT")
+			fmt.Printf("Failed to init JIT: %v\n", err)
 		} else {
 			// Override with JIT implementation
 			euclideanDistanceBatchImpl = func(query []float32, vectors [][]float32, results []float32) error {
@@ -120,7 +119,7 @@ func init() {
 				}
 				return nil
 			}
-			log.Info().Msg("JIT SIMD Enabled for Euclidean Batch")
+			fmt.Printf("JIT SIMD Enabled for Euclidean Batch\n")
 		}
 	}
 }

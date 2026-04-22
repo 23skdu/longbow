@@ -44,7 +44,7 @@ func FuzzHNSW_SearchEarlyTermination(f *testing.F) {
 		cfg := DefaultArrowHNSWConfig()
 		h := NewArrowHNSW(nil, &cfg)
 		h.SetDimension(1)
-		if err := h.InsertWithVector(1, []float32{val}, 0); err != nil {
+		if err := h.InsertWithVector(0, []float32{val}, 0); err != nil {
 			t.Fatalf("Insert failed: %v", err)
 		}
 

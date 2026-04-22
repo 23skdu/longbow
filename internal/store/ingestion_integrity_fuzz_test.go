@@ -107,14 +107,17 @@ func FuzzIngestionIntegrity_Concurrent(f *testing.F) {
 		require.True(t, ok)
 
 		// Wait for Indexing (Background)
-		// We don't have a direct "Index Drained" signal in public API easily without metrics.
-		// But we can check ds.Index.Len()
 		require.Eventually(t, func() bool {
 			if ds.Index == nil {
 				return false
 			}
-			return ds.Index.Len() == totalExpected
-		}, 10*time.Second, 100*time.Millisecond, "Index failed to reach expected size")
+			lenOk := ds.Index.Len() == totalExpected
+			pendingOk := ds.PendingIndexJobs.Load() == 0
+			if !lenOk || !pendingOk {
+				t.Logf("Waiting for index: Len=%d/%d, Pending=%d", ds.Index.Len(), totalExpected, ds.PendingIndexJobs.Load())
+			}
+			return lenOk && pendingOk
+		}, 10*time.Second, 1*time.Second, "Index failed to reach expected size or drain pending jobs")
 
 		// Verify Search Integrity (Sample)
 		// Pick a random vector from what we inserted (re-generate)
@@ -154,8 +157,8 @@ func FuzzIngestionIntegrity_Concurrent(f *testing.F) {
 		require.NoError(t, err)
 		require.GreaterOrEqual(t, len(results), 1, "Should find at least 1 result")
 
-		// Distance/Score should be very close to 0 (exact match)
-		require.InDelta(t, 0.0, results[0].Score, 0.0001, "Top match should be exact vector")
+		// Score should be very close to 1.0 (exact match where Score = 1/(1+Dist) and Dist=0)
+		require.InDelta(t, 1.0, results[0].Score, 0.0001, "Top match should be exact vector")
 	})
 }
 

@@ -578,7 +578,7 @@ func detectTPUsWithRoot(root string) []GPUInfo {
 
 		// Check for Google Vendor ID (0x1ae0)
 		vendorPath := filepath.Join(accelDir, devName, "device/vendor")
-		vendorData, err := os.ReadFile(vendorPath)
+		vendorData, err := os.ReadFile(vendorPath) // #nosec G304
 		if err != nil || strings.TrimSpace(string(vendorData)) != "0x1ae0" {
 			continue
 		}
@@ -588,7 +588,7 @@ func detectTPUsWithRoot(root string) []GPUInfo {
 		memoryMB := int64(192 * 1024) // Default for v7x
 
 		devicePath := filepath.Join(accelDir, devName, "device/device")
-		deviceData, _ := os.ReadFile(devicePath)
+		deviceData, _ := os.ReadFile(devicePath) // #nosec G304
 		deviceIDHex := strings.TrimSpace(string(deviceData))
 
 		switch deviceIDHex {

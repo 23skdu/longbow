@@ -25,6 +25,23 @@ func (h *ArrowHNSW) AddConnection(ctx *ArrowSearchContext, data *types.GraphData
 	return data
 }
 
+// AddConnectionLocked is like AddConnection but assumes growMu.Lock() is already held.
+func (h *ArrowHNSW) AddConnectionLocked(ctx *ArrowSearchContext, data *types.GraphData, source, target uint32, layer, maxConn int, dist float32) *types.GraphData {
+	// 0. Use Lock-Free path if applicable
+	if h.topLayerManager != nil && h.topLayerManager.AddConnectionCAS(layer, source, target) {
+		return data
+	}
+
+	// COW Promotion and Locking (Locked version)
+	data = h.promoteNodeLocked(data, source)
+
+	oldVer := data.LockNode(layer, source)
+	h.addConnectionLocked(ctx, data, source, target, layer, maxConn)
+	data.UnlockNode(layer, source, oldVer)
+
+	return data
+}
+
 // AddConnectionsBatch adds multiple directed edges to a single target node at the given layer.
 func (h *ArrowHNSW) AddConnectionsBatch(ctx *ArrowSearchContext, data *types.GraphData, target uint32, sources []uint32, dists []float32, layer, maxConn int) *types.GraphData {
 	if len(sources) == 0 {

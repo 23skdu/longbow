@@ -11,6 +11,7 @@ import (
 	"io"
 	"math"
 	"math/rand"
+	"runtime"
 	"sort"
 	"strconv"
 	"sync"
@@ -43,7 +44,8 @@ type ArrowHNSW struct {
 	data          atomic.Pointer[types.GraphData]
 	locationStore *ChunkedLocationStore
 
-	nodeCount      atomic.Int64
+	nodeCount      atomic.Int64 // Number of nodes ready for search
+	nextID         atomic.Int64 // Next ID to allocate for insertion
 	dims           atomic.Int32
 	entryPoint     atomic.Uint32
 	maxLevel       atomic.Int32
@@ -654,9 +656,17 @@ func (h *ArrowHNSW) DeleteBatch(ctx context.Context, ids []uint32) error {
 	return nil
 }
 
+func (h *ArrowHNSW) commitID(id uint32) {
+	for h.nodeCount.Load() < int64(id) {
+		runtime.Gosched()
+	}
+	h.nodeCount.CompareAndSwap(int64(id), int64(id+1))
+}
+
 // Interface implementation: AddByLocation adds a vector by its location
 func (h *ArrowHNSW) AddByLocation(ctx context.Context, batchIdx, rowIdx int) (uint32, error) {
-	id := uint32(h.nodeCount.Add(1) - 1) // #nosec G115
+	id := uint32(h.nextID.Add(1) - 1) // Use nextID for allocation
+	defer h.commitID(id)
 
 	var vec any
 	if h.dataset != nil {
@@ -689,7 +699,8 @@ func (h *ArrowHNSW) AddByLocation(ctx context.Context, batchIdx, rowIdx int) (ui
 
 // AddByRecord implements VectorIndex.
 func (h *ArrowHNSW) AddByRecord(ctx context.Context, rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32, error) {
-	id := uint32(h.nodeCount.Add(1) - 1) // #nosec G115
+	id := uint32(h.nextID.Add(1) - 1) // Use nextID for allocation, nodeCount will be updated by InsertWithVector
+	defer h.commitID(id)
 
 	var vec any
 	// Find vector column
@@ -1619,8 +1630,8 @@ func (h *ArrowHNSW) generateLevel() int {
 func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowIdxs, batchIdxs []int) ([]uint32, error) {
 	// Bulk optimization path temporarily disabled for 0.1.9-rc1 stability
 	if false && len(rowIdxs) >= 1000 && !h.IsSharded() {
-		startID := uint32(h.nodeCount.Load()) // #nosec G115
 		n := len(rowIdxs)
+		startID := uint32(h.nextID.Add(int64(n)) - int64(n)) 
 
 		// Discover vector column
 		vecColIdx := -1

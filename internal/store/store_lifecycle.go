@@ -314,6 +314,10 @@ func (s *VectorStore) runIndexWorker(ctx context.Context) {
 					totalRowsInGroup += int(j.Record.NumRows())
 				}
 
+				defer func() {
+					ds.PendingIndexJobs.Add(int64(-totalRowsInGroup))
+				}()
+
 				// Find max batch index to size the recs slice correctly
 				maxBatchIdx := -1
 				for _, j := range dsGroup {
@@ -466,9 +470,7 @@ func (s *VectorStore) runIndexWorker(ctx context.Context) {
 					// s.indexQueue.DecreaseEstimatedBytes(size)
 				}
 
-				// Decrement pending jobs count
-				// Decrement pending jobs count
-				ds.PendingIndexJobs.Add(int64(-totalRowsInGroup))
+				// Decrement pending jobs count handled by defer
 			}()
 		}
 	}

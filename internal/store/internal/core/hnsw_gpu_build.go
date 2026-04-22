@@ -256,6 +256,7 @@ func (h *ArrowHNSW) insertWithGPUCandidates(id uint32, vec any, level int, gpuCa
 	if err := data.SetVector(id, vec); err != nil {
 		return err
 	}
+	h.data.Store(data)
 
 	cID := types.ChunkID(id)
 	cOff := types.ChunkOffset(id)

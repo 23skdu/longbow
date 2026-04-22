@@ -15,7 +15,7 @@ FROM debian:bookworm-slim
 WORKDIR /app
 
 # Metal binary would be copied here if built on macOS
-# COPY longbow /usr/local/bin/longbow
+COPY longbow-metal /usr/local/bin/longbow
 
 ENV LONGBOW_GPU_ENABLED=true
 ENV LONGBOW_STORAGE_USE_IOURING=false

@@ -28,7 +28,7 @@ func TestMetricsIntegration_HNSWSearch(t *testing.T) {
 	idx := NewArrowHNSW(ds, &config)
 
 	// Insert some data to ensure search does something
-	err := idx.InsertWithVector(1, []float32{1.0, 0.0}, 0)
+	err := idx.InsertWithVector(0, []float32{1.0, 0.0}, 0)
 	require.NoError(t, err)
 
 	// Get initial count of search operations
@@ -64,7 +64,7 @@ func TestMetricsIntegration_HNSWInsert(t *testing.T) {
 
 	numInserts := 10
 	for i := 0; i < numInserts; i++ {
-		err := idx.InsertWithVector(uint32(i+100), []float32{0.5, 0.5}, 0)
+		err := idx.InsertWithVector(uint32(i), []float32{0.5, 0.5}, 0)
 		require.NoError(t, err)
 	}
 

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -1247,11 +1248,14 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 				case VectorTypeFloat32:
 					if listType, ok := listArr.DataType().(*arrow.FixedSizeListType); ok {
 						if listType.Elem().ID() == arrow.FLOAT32 && dim%2 == 0 {
-							dataType = VectorTypeComplex64
-							dim /= 2
-							config.IndexConfig.DataType = dataType
-							aIdx = NewAutoShardingIndex(ds, config)
-							s.logger.Info().Str("dataset", name).Int("dim", dim).Str("dataType", dataType.String()).Msg("Detected complex64 from physical dimension")
+							// Only detect complex if field name suggests it
+							if strings.Contains(strings.ToLower(vecCol.Data().DataType().Name()), "complex") {
+								dataType = VectorTypeComplex64
+								dim /= 2
+								config.IndexConfig.DataType = dataType
+								aIdx = NewAutoShardingIndex(ds, config)
+								s.logger.Info().Str("dataset", name).Int("dim", dim).Str("dataType", dataType.String()).Msg("Detected complex64 from physical dimension")
+							}
 						}
 					}
 				case VectorTypeComplex64, VectorTypeComplex128:
@@ -1293,6 +1297,54 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 			s.logger.Error().Err(err).Msg("Failed to batch append to DiskStore (Zero-Copy)")
 		} else {
 			metrics.DiskStoreWriteBytesTotal.WithLabelValues(name).Add(float64(rec.NumRows() * int64(ds.DiskStore.dim) * 4))
+		}
+	}
+
+	// Temporal Index Hook
+	if s.temporalIndex != nil {
+		idColIdx := -1
+		vecColIdx := -1
+		for i, f := range rec.Schema().Fields() {
+			switch f.Name {
+			case "id":
+				idColIdx = i
+			case "vector", "embedding":
+				vecColIdx = i
+			}
+		}
+
+		if idColIdx != -1 && vecColIdx != -1 {
+			idArr := rec.Column(idColIdx).(*array.String)
+			vecArr := rec.Column(vecColIdx).(*array.FixedSizeList)
+			for i := 0; i < int(rec.NumRows()); i++ {
+				if idArr.IsValid(i) && vecArr.IsValid(i) {
+					idStr := idArr.Value(i)
+					id, _ := strconv.ParseUint(idStr, 10, 64)
+
+					// Extract vector slice based on actual type
+					listLen := int(vecArr.DataType().(*arrow.FixedSizeListType).Len())
+					start := i * listLen
+					end := (i + 1) * listLen
+
+					var sub []float32
+					switch values := vecArr.ListValues().(type) {
+					case *array.Float32:
+						sub = values.Float32Values()[start:end]
+					case *array.Float64:
+						f64Values := values.Float64Values()[start:end]
+						sub = make([]float32, len(f64Values))
+						for j, v := range f64Values {
+							sub[j] = float32(v)
+						}
+					default:
+						s.logger.Warn().Str("type", vecArr.ListValues().DataType().String()).Msg("Temporal index hook: unsupported vector type")
+						continue
+					}
+
+					// Note: Metadata is nil for now as benchmark doesn't use it for temporal search results
+					_ = s.temporalIndex.Add(id, sub, ts, nil)
+				}
+			}
 		}
 	}
 

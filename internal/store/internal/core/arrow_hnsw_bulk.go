@@ -719,13 +719,6 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 
 		// 3b.5 Pre-Promote all candidates to ensure pointer stability during parallel linkage.
 		// Avoids COW cloning races inside workers.
-		for _, idx := range activeIndices {
-			if buf := graphCandidates[idx]; buf != nil {
-				for _, c := range *buf {
-					data = h.promoteNode(data, c.ID)
-				}
-			}
-		}
 
 		// 3c. Linkage (Serial for Stability in 0.1.9-rc1)
 		for _, idx := range activeIndices {
@@ -791,6 +784,8 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 				fSources = append(fSources, n.ID)
 				fDists = append(fDists, n.Dist)
 			}
+			// Reload data to ensure we have latest COW state
+			data = h.data.Load()
 			data = h.AddConnectionsBatch(ctxPrune, data, node.id, fSources, fDists, lc, maxConn)
 
 			// Reverse connections (neighbors -> this node)

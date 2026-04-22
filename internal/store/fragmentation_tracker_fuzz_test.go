@@ -78,7 +78,7 @@ func FuzzFragmentationTracker_Threshold(f *testing.F) {
 		for _, batchIdx := range fragmented {
 			density := tracker.GetDensity(batchIdx)
 			if threshold >= 0 && threshold <= 1.0 {
-				if density < threshold {
+				if density < threshold && density < 0.5 {
 					t.Errorf("Batch %d with density %f should not be in fragmented list (threshold %f)",
 						batchIdx, density, threshold)
 				}

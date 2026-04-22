@@ -9,18 +9,23 @@ import (
 	"github.com/23skdu/longbow/internal/store/types"
 )
 
-func (h *ArrowHNSW) AddConnection(ctx *ArrowSearchContext, data *types.GraphData, source, target uint32, layer, maxConn int, dist float32) *types.GraphData {
+func (h *ArrowHNSW) AddConnection(ctx *ArrowSearchContext, _ *types.GraphData, source, target uint32, layer, maxConn int, dist float32) *types.GraphData {
 	// 0. Use Lock-Free path if applicable
 	if h.topLayerManager != nil && h.topLayerManager.AddConnectionCAS(layer, source, target) {
-		return data
+		return h.data.Load()
 	}
 
+	// Always operate on the latest data pointer to avoid lost updates during COW promotions
+	data := h.data.Load()
+	
 	// COW Promotion and Locking
 	data = h.promoteNode(data, source)
 
-	oldVer := data.LockNode(layer, source)
-	h.addConnectionLocked(ctx, data, source, target, layer, maxConn)
-	data.UnlockNode(layer, source, oldVer)
+	func() {
+		oldVer := data.LockNode(layer, source)
+		defer data.UnlockNode(layer, source, oldVer)
+		h.addConnectionLocked(ctx, data, source, target, layer, maxConn)
+	}()
 
 	return data
 }
@@ -35,34 +40,60 @@ func (h *ArrowHNSW) AddConnectionLocked(ctx *ArrowSearchContext, data *types.Gra
 	// COW Promotion and Locking (Locked version)
 	data = h.promoteNodeLocked(data, source)
 
-	oldVer := data.LockNode(layer, source)
-	h.addConnectionLocked(ctx, data, source, target, layer, maxConn)
-	data.UnlockNode(layer, source, oldVer)
+	func() {
+		oldVer := data.LockNode(layer, source)
+		defer data.UnlockNode(layer, source, oldVer)
+		h.addConnectionLocked(ctx, data, source, target, layer, maxConn)
+	}()
 
 	return data
 }
 
 // AddConnectionsBatch adds multiple directed edges to a single target node at the given layer.
-func (h *ArrowHNSW) AddConnectionsBatch(ctx *ArrowSearchContext, data *types.GraphData, target uint32, sources []uint32, dists []float32, layer, maxConn int) *types.GraphData {
+func (h *ArrowHNSW) AddConnectionsBatch(ctx *ArrowSearchContext, _ *types.GraphData, target uint32, sources []uint32, dists []float32, layer, maxConn int) *types.GraphData {
 	if len(sources) == 0 {
-		return data
+		return h.data.Load()
 	}
 
+	// Always operate on the latest data pointer
+	data := h.data.Load()
+	
 	// Fast path: if node is already promoted (in Mutable Data), skip promotion logic
 	cID := types.ChunkID(target)
 	if int(target) < data.Capacity && data.GetNeighborsChunk(0, cID) != nil {
-		oldVer := data.LockNode(layer, target)
-		h.addConnectionsBatchLocked(ctx, data, target, sources, layer, maxConn)
-		data.UnlockNode(layer, target, oldVer)
+		func() {
+			oldVer := data.LockNode(layer, target)
+			defer data.UnlockNode(layer, target, oldVer)
+			h.addConnectionsBatchLocked(ctx, data, target, sources, layer, maxConn)
+		}()
 		return data
 	}
 
 	// COW Promotion and Locking
 	data = h.promoteNode(data, target)
 
-	oldVer := data.LockNode(layer, target)
-	h.addConnectionsBatchLocked(ctx, data, target, sources, layer, maxConn)
-	data.UnlockNode(layer, target, oldVer)
+	func() {
+		oldVer := data.LockNode(layer, target)
+		defer data.UnlockNode(layer, target, oldVer)
+		h.addConnectionsBatchLocked(ctx, data, target, sources, layer, maxConn)
+	}()
+
+	return data
+}
+// AddConnectionsBatchLocked is like AddConnectionsBatch but assumes growMu.Lock() is already held.
+func (h *ArrowHNSW) AddConnectionsBatchLocked(ctx *ArrowSearchContext, data *types.GraphData, target uint32, sources []uint32, dists []float32, layer, maxConn int) *types.GraphData {
+	if len(sources) == 0 {
+		return data
+	}
+
+	// COW Promotion and Locking (Locked version)
+	data = h.promoteNodeLocked(data, target)
+
+	func() {
+		oldVer := data.LockNode(layer, target)
+		defer data.UnlockNode(layer, target, oldVer)
+		h.addConnectionsBatchLocked(ctx, data, target, sources, layer, maxConn)
+	}()
 
 	return data
 }
@@ -72,9 +103,11 @@ func (h *ArrowHNSW) PruneConnections(ctx *ArrowSearchContext, data *types.GraphD
 	// COW Promotion and Locking
 	data = h.promoteNode(data, id)
 
-	oldVer := data.LockNode(layer, id)
-	h.pruneConnectionsLocked(ctx, data, id, maxConn, layer, nil)
-	data.UnlockNode(layer, id, oldVer)
+	func() {
+		oldVer := data.LockNode(layer, id)
+		defer data.UnlockNode(layer, id, oldVer)
+		h.pruneConnectionsLocked(ctx, data, id, maxConn, layer, nil)
+	}()
 
 	return data
 }
@@ -225,9 +258,7 @@ func (h *ArrowHNSW) pruneConnectionsLocked(ctx *ArrowSearchContext, data *types.
 
 	cID = types.ChunkID(nodeID)
 	cOff = types.ChunkOffset(nodeID)
-	verChunk := data.GetVersionsChunk(layer, cID)
-	if verChunk != nil { atomic.AddUint32(&verChunk[cOff], 1) }
-
+	
 	countsChunk = data.GetCountsChunk(layer, cID)
 	neighborsChunk = data.GetNeighborsChunk(layer, cID)
 	baseIdx := int(cOff) * types.MaxNeighbors
@@ -236,7 +267,6 @@ func (h *ArrowHNSW) pruneConnectionsLocked(ctx *ArrowSearchContext, data *types.
 	}
 	atomic.StoreInt32(&countsChunk[cOff], int32(len(selected))) // #nosec G115
 
-	if verChunk != nil { atomic.AddUint32(&verChunk[cOff], 1) }
 	atomic.AddUint64(&data.GlobalVersion, 1)
 
 	if layer < len(data.PackedNeighbors) && data.PackedNeighbors[layer] != nil {

@@ -133,7 +133,7 @@ func TestArrowHNSW_Float16_Integration(t *testing.T) {
 	// So we can call it!
 
 	for i := 0; i < n; i++ {
-		id := uint32(i + 1)
+		id := uint32(i)
 		err := hnsw.InsertWithVector(id, vecs[i], 0) // Level 0 for simplicity
 		require.NoError(t, err)
 	}
@@ -159,7 +159,7 @@ func TestArrowHNSW_Float16_Integration(t *testing.T) {
 
 	// Retrieve and Check Precision
 	for i := 0; i < n; i++ {
-		id := uint32(i + 1)
+		id := uint32(i)
 		// Internal helper mustGetVectorFromData is NOT exported.
 		// But maybe there is exported GetVector?
 		// We'll use mustGetVectorFromData if we can (internals test).

@@ -497,7 +497,7 @@ func (d *Dataset) GenerateFilterBitsetLocked(filters []qry.Filter, filterExpr Fi
 		}
 
 		for _, rowIdx := range matches {
-			loc := Location{BatchIdx: batchIdx, RowIdx: rowIdx}
+			loc := types.Location{BatchIdx: batchIdx, RowIdx: int(rowIdx)}
 			if vid, ok := idx.GetVectorID(loc); ok {
 				bitset.Set(int(vid))
 			}
@@ -640,7 +640,7 @@ func (d *Dataset) ExtractIDs(rec arrow.RecordBatch) *IDMap {
 		for i := 0; i < numRows; i++ {
 			if arr.IsValid(i) {
 				// Potential overflow if Uint64 is used as key, but we treat it as int64 bits
-				m.IntMap[int64(arr.Value(i))] = i
+				m.IntMap[int64(arr.Value(i))] = i // #nosec G115
 			}
 		}
 	}

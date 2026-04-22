@@ -665,7 +665,7 @@ func (h *ArrowHNSW) commitID(id uint32) {
 
 // Interface implementation: AddByLocation adds a vector by its location
 func (h *ArrowHNSW) AddByLocation(ctx context.Context, batchIdx, rowIdx int) (uint32, error) {
-	id := uint32(h.nextID.Add(1) - 1) // Use nextID for allocation
+	id := uint32(h.nextID.Add(1) - 1) // Use nextID for allocation // #nosec G115
 	defer h.commitID(id)
 
 	var vec any
@@ -699,7 +699,7 @@ func (h *ArrowHNSW) AddByLocation(ctx context.Context, batchIdx, rowIdx int) (ui
 
 // AddByRecord implements VectorIndex.
 func (h *ArrowHNSW) AddByRecord(ctx context.Context, rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32, error) {
-	id := uint32(h.nextID.Add(1) - 1) // Use nextID for allocation, nodeCount will be updated by InsertWithVector
+	id := uint32(h.nextID.Add(1) - 1) // Use nextID for allocation, nodeCount will be updated by InsertWithVector // #nosec G115
 	defer h.commitID(id)
 
 	var vec any
@@ -1197,6 +1197,10 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 
 	maxNodeCount := int(h.nodeCount.Load())
 	for attempt := 0; attempt < 3; attempt++ {
+		if err := ctx.Err(); err != nil {
+			h.flushSearchMetrics(searchCtx)
+			return nil, err
+		}
 		res, err := h.searchLayer(ctx, computer, currObj.ID, efSearch, 0, searchCtx, data, queryVec)
 		if err != nil {
 			h.flushSearchMetrics(searchCtx)
@@ -1237,8 +1241,8 @@ func (h *ArrowHNSW) GetLayerNeighbors(id uint32, layer int) ([]uint32, error) {
 	}
 
 	maxLevel := h.GetMaxLevel()
-	if maxLevel < 0 {
-		return nil, nil // Index is empty
+	if maxLevel < 0 || int64(id) >= h.nodeCount.Load() {
+		return nil, fmt.Errorf("vector id %d not found in index", id)
 	}
 
 	if layer < 0 || int32(layer) > maxLevel { // #nosec G115
@@ -1631,7 +1635,7 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 	// Bulk optimization path temporarily disabled for 0.1.9-rc1 stability
 	if false && len(rowIdxs) >= 1000 && !h.IsSharded() {
 		n := len(rowIdxs)
-		startID := uint32(h.nextID.Add(int64(n)) - int64(n)) 
+		startID := uint32(h.nextID.Add(int64(n)) - int64(n)) // #nosec G115
 
 		// Discover vector column
 		vecColIdx := -1
@@ -2158,7 +2162,7 @@ func (h *MaxCandidateHeapAdapter) Pop() any {
 
 // searchLayer is used by insertion logic
 // searchLayer implements HNSW layer search
-func (h *ArrowHNSW) searchLayer(_ context.Context, computer any, entryPoint uint32, ef, layer int, ctx *ArrowSearchContext, data *types.GraphData, queryVec any) ([]types.Candidate, error) {
+func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint uint32, ef, layer int, ctx *ArrowSearchContext, data *types.GraphData, queryVec any) ([]types.Candidate, error) {
 	start := time.Now()
 	defer func() {
 		ctx.distComputeTime += time.Since(start)
@@ -2538,6 +2542,9 @@ func (h *ArrowHNSW) searchLayer(_ context.Context, computer any, entryPoint uint
 	ctx.visited.Set(int(entryPoint)) // #nosec G115
 
 	for minHeap.Len() > 0 {
+		if err := goCtx.Err(); err != nil {
+			return nil, err
+		}
 		// Pop closest candidate
 		curr := heap.Pop(minHeap).(types.Candidate)
 		ctx.nodesVisitedCount++

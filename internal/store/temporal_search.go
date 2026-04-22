@@ -526,6 +526,7 @@ func (ti *TemporalIndex) GetVectorsInRange(startTime, endTime int64) []VectorTim
 	defer ti.mu.RUnlock()
 
 	ids := ti.temporalTree.GetRange(startTime, endTime)
+	// fmt.Printf("GetVectorsInRange: found %d ids in range %d to %d\n", len(ids), startTime, endTime)
 
 	results := make([]VectorTimestamp, 0, len(ids))
 	for _, id := range ids {

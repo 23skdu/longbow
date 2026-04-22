@@ -17,6 +17,7 @@ longbow
 longbow-gpu
 tmp/
 .venv/
+venv/
 __pycache__/
 
 profiles_*/

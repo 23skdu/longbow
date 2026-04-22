@@ -114,6 +114,8 @@ spec:
               value: {{ .Values.ml.tokenizerPath | quote }}
             - name: LONGBOW_ML_RUNNER
               value: {{ .Values.ml.runner | quote }}
+            - name: ONNX_RUNTIME_LIB_PATH
+              value: {{ .Values.ml.onnx.libPath | quote }}
             - name: LONGBOW_RERANKER_ENABLED
               value: {{ .Values.ml.reranker.enabled | quote }}
             - name: LONGBOW_RERANKER_TYPE

@@ -119,6 +119,17 @@ When running the Longbow container directly (e.g., via Docker), you can configur
 | `LONGBOW_OLLAMA_MODEL` | Ollama model name for embeddings | `` |
 | `LONGBOW_OLLAMA_TIMEOUT` | Request timeout in seconds | `30` |
 
+### ML Inference (ONNX & WASM)
+
+| Variable | Description | Default |
+| :--- | :--- | :--- |
+| `LONGBOW_ML_RUNNER` | ML inference engine (`wazero`, `onnx`, or `quarrel`) | `wazero` |
+| `LONGBOW_ML_MODEL_PATH` | Path to the `.onnx` or `.wasm` model file | `` |
+| `LONGBOW_ML_TOKENIZER_PATH` | Path to `vocab.txt` for tokenization | `` |
+| `ONNX_RUNTIME_LIB_PATH` | Path to `libonnxruntime.dylib` or `.so` | - |
+| `LONGBOW_RERANKER_ENABLED` | Enable cross-encoder reranking | `false` |
+| `LONGBOW_RERANKER_TOP_K` | Number of documents to rerank | `10` |
+
 ### SIMD & Acceleration
 
 | Variable | Description | Default |

@@ -98,6 +98,9 @@ The following table lists the configurable parameters of the Longbow chart and t
 | `learnedIndex.confidenceThreshold` | Confidence threshold for predictor | `0.7` |
 | `learnedIndex.updateInterval` | Predictor training interval | `1h` |
 | `ml.runner` | ML inference engine (`wazero`, `onnx`, `quarrel`) | `wazero` |
+| `ml.modelPath` | Path to the model file | `""` |
+| `ml.tokenizerPath` | Path to the tokenizer vocab file | `""` |
+| `ml.onnx.libPath` | Path to ONNX Runtime shared library | `""` |
 | `ml.reranker.enabled` | Enable search result reranking | `false` |
 | `ml.reranker.type` | Reranker model type | `cross-encoder` |
 | `ollama.enabled` | Enable Ollama local LLM integration | `false` |

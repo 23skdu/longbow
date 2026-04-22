@@ -213,6 +213,8 @@ ml:
   modelPath: ""
   tokenizerPath: ""
   runner: "wazero" # wazero, onnx, or quarrel
+  onnx:
+    libPath: "" # Path to libonnxruntime.so/dylib
   reranker:
     enabled: false
     type: "cross-encoder"

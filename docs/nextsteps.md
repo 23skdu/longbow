@@ -1,15 +1,12 @@
 # Longbow Next Steps — Feature Roadmap 2026
 
-**Last Updated**: 2026-04-21
-
----
+**Last Updated**: 2026-04-22
 
 ---
 
 ## 🎯 IMMEDIATE REMEDIATION (2026-04-21: 0.1.9-rc4)
- 
+
 These items were identified during a deep code review as being non-functional mocks or stubs that block production reliability.
- 
 - [x] **Metal ONNX Acceleration (Real Implementation)**:
   - [x] Replace character-overlap scoring in `internal/onnx/metal/engine_impl.m` with actual Metal Compute Shaders (MSL).
   - [x] Implement `Embed` in `internal/onnx/metal/engine.go`.
@@ -20,7 +17,7 @@ These items were identified during a deep code review as being non-functional mo
   - [x] Remove dummy vocab fallback in `internal/ml/tokenizer.go`; require `vocab.txt`.
 - [x] **GPU Detection Accuracy**:
   - [x] Implement actual Metal memory detection in `internal/gpu/detection.go` instead of 16GB estimate.
- 
+
 ---
 
 ## ✅ COMPLETED (2026-04-21): Learned Index k-NN Wiring
@@ -76,30 +73,32 @@ configurations depending on embedding provider characteristics (latency, dimensi
 
 ---
 
-## 🎯 IN PROGRESS (2026-04-21): Learned Index Production Hardening
+## ✅ COMPLETED (2026-04-21): Learned Index Production Hardening
 
-Address critical architectural gaps in the adaptive learned index system to move from
-"aspirational" to "production-grade".
+Finalized production hardening of the adaptive learned index and GraphRAG systems, enabling fully data-driven index management.
 
-### Plan
-
-- [ ] **Unified k-NN Predictor**:
-    - Unify `Predict` and `PredictWithEmbedding` search paths.
-    - Make k-NN the primary decision engine for all query types.
-    - Remove hand-coded heuristics and complexity biases (move to data-driven features).
-- [ ] **Implementation of `IndexSwitcher`**:
-    - Implement the `IndexSwitcher` interface on `VectorStore`.
-    - Create `SwitchIndex(collection, indexType)` which triggers a background rebuild
-      of the index from source records followed by an atomic swap.
-- [ ] **Production Wiring**:
-    - Wire `RuntimeIndexAdapter` into the `VectorStore` lifecycle.
-    - Establish a bidirectional link: Store calls Predictor; Adapter (watching Store) calls Switcher.
-- [ ] **Closed-Loop Feedback**:
-    - Record adaptation outcomes (success, failure, rollback) as training samples.
-    - Implement "failure decomposition": record degradation events as negative learning
-      signals to prevent repetitive bad advice.
+- [x] **Transformer Mean Pooling**:
+  - Proper pooling across transformer hidden states with attention mask support in `internal/onnx/onnx.go`.
+  - Added L2 normalization and performance metrics.
+- [x] **Dynamic Sharding**:
+  - Auto-rebalancing shards based on node load (thresholds: 0.8 to reduce, 0.4 to increase).
+  - Updated `RingManager` and `ConsistentHash` to support runtime vnode adjustments.
+- [x] **Unified k-NN Predictor**:
+  - Unified `Predict` and `PredictWithEmbedding` search paths in `internal/store/learned_index.go`.
+  - Made k-NN the primary decision engine, removing all hardcoded rule-based heuristics.
+- [x] **Implementation of `IndexSwitcher`**:
+  - Implemented background rebuild and atomic index swaps in `VectorStore`.
+  - Added `activeSwitches` tracking to prevent concurrent conflicting migrations.
+- [x] **Production Wiring**:
+  - Wired `RuntimeIndexAdapter` into `VectorStore` lifecycle.
+  - Implemented `MetricsCollector` interface on `VectorStore` to provide latency, recall, and QPS signals to the adapter.
+- [x] **Closed-Loop Feedback**:
+  - Recorded adaptation outcomes as training samples for the predictor.
+  - Implemented "failure decomposition": recorded failed adaptations as negative signals (high latency penalty) to prevent oscillation.
 
 ---
+
+## 🎯 NEXT STEPS (2026-04-21: 0.1.9-rc5)
 
 ## 🎯 REMAINING WORK
 
@@ -108,7 +107,6 @@ Address critical architectural gaps in the adaptive learned index system to move
 - [x] **Release 0.1.9 Deployment**: Finalize the multi-platform Docker push (ARM64 Metal / AMD64 NVIDIA) and tag the 0.1.9 production release.
 - [x] **Gosec Hardening**: Systematically address the remaining 14 high-confidence security findings in the `internal/simd` and `internal/gpu` CGO bridge layers.
 - [x] **Expand Test Coverage**: Expand unit and integration test suites across `internal/store/core`, `internal/onnx`, and `internal/simd`. Added comprehensive SIMD test suite and core search context lifecycle tests. Achieved 100% coverage in `internal/onnx`.
-
 
 ## 🎯 CURRENT RELEASE: 0.1.9-rc3
 
@@ -125,17 +123,45 @@ Address critical architectural gaps in the adaptive learned index system to move
 - [x] Query Engine Extended Type Coverage (Int32, Uint64, Float64, String)
 - [x] Sharding Result Aggregator Coverage (Merge & Sort)
 
-### Immediate Next Steps (Coverage Push)
+- [x] **Apache Arrow Zero-Copy & Performance Remediation**:
+  - [x] **`ExtractVectorFromArrow` Optimization**:
+    - [x] Remove `copy()` in `float32` path; return direct slice from Arrow memory.
+    - [x] Implement type-specific zero-copy extraction pointers (`ExtractVectorF32`, `ExtractVectorInt8`, etc.).
+    - [x] Documented Pattern: Use `ExtractVector<Type>` for O(1) raw memory access; avoid `ExtractVectorFromArrow` in compute-heavy loops.
+  - [x] **`ExtractIDs` Hardening**:
+    - [x] Use `int64` keys for numeric ID columns to avoid `strconv.FormatInt` and string allocations.
+    - [x] Pool `idMap` allocations to reduce GC pressure during high-throughput ingestion.
+  - [x] **Branchless SIMD Logic**:
+    - [x] Replace `if/else` branches in `matchInt64Generic` and other element-wise comparison loops with bitwise branchless logic.
+  - [x] **Bulk Ingestion Throughput**:
+    - [x] Optimize `applyBatchToMemory` to avoid row-by-row vector extraction for `DiskStore` (implemented `BatchAppendArrow`).
+    - [x] Transition `IngestBatch` from `RecordBuilder` (row-at-a-time) to Arrow batch column-wise construction.
 
-1. **Security & RBAC Coverage**: Implement tests for `internal/store/rbac.go`.
-2. **GPU Mocking**: Create a mock layer for `internal/gpu`.
-3. **Remote Storage Mocks**: Mock S3/GCS in `internal/storage`.
-4. **Final 0.1.9 Tagging**: Once coverage hits critical mass (>80%+).
+- [x] **Performance Benchmarking & Orchestration**:
+    - [x] Hardened `scripts/unified_benchmark.py` for sequential, multi-port execution.
+    - [x] Fixed race conditions in `ZeroAllocTicketParser` and data type inference bugs for `int8`/`uint8`.
+    - [x] Optimized server logging to reduce I/O overhead during search benchmarks.
+- [x] **Final 0.1.9 Tagging**: Completed full performance matrix validation and release tagging (0.1.9-rc5).
 
 ## 🚀 Future Roadmap (0.1.10+)
 
-- [ ] **Transformer Mean Pooling**: Proper pooling across transformer hidden states.
-- [ ] **Dynamic Sharding**: Auto-rebalancing shards based on node load.
+- [ ] **Google TPU v7x (Ironwood) Support**:
+  - **Phase 1: Architecture & Detection**:
+    - Implement `TPUDetector` in `internal/gpu/detection.go` for `linux/amd64`.
+    - Detect dual-chiplet topology and NUMA affinity (2 NUMA nodes per VM).
+  - **Phase 2: XLA-Backed Inference**:
+    - Implement `TPUBackend` using OpenXLA/Pallas for custom vector kernels.
+    - Optimize for 192GB HBM per chip and multi-tier memory (VMEM/HBM/PCIe).
+  - **Phase 3: Observability & Metrics**:
+    - Track `longbow_tpu_hbm_usage_bytes`.
+    - Track `longbow_tpu_core_utilization_ratio` (TensorCore vs SparseCore).
+    - Monitor D2D (Die-to-Die) interconnect latency.
+  - **Phase 4: Verification & Stability**:
+    - **Unit Tests**: Mock TPU devices using `libtpu` stubs; verify host-to-device tensor transfers.
+    - **Fuzz Tests**: `FuzzTPUKernels` to verify boundary conditions in XLA-compiled MSL-equivalent kernels.
+    - **Benchmark**: Comparative parity testing between TPU v7x, CUDA 12.6, and Metal.
+- [ ] **Cross-Shard Atomic Commits**: Two-phase commit protocol for cross-shard vector updates.
+- [ ] **KV-Integrated Indexing**: Native integration with FoundationDB for metadata-heavy searches.
 
 ---
 

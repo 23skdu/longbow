@@ -99,6 +99,37 @@ func (c *ConsistentHash) RemoveNode(nodeID string) {
 	c.invalidateCache()
 }
 
+// UpdateVNodeCount updates the number of virtual nodes for a specific nodeID.
+// This is used for load-based rebalancing (dynamic weighting).
+func (c *ConsistentHash) UpdateVNodeCount(nodeID string, count int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	// 1. Remove all existing hashes for this node
+	newHashes := make([]uint64, 0, len(c.sortedHashes))
+	for _, h := range c.sortedHashes {
+		if c.nodes[h] == nodeID {
+			delete(c.nodes, h)
+		} else {
+			newHashes = append(newHashes, h)
+		}
+	}
+	c.sortedHashes = newHashes
+
+	// 2. Add new hashes based on the new count
+	for i := 0; i < count; i++ {
+		h := c.hash(fmt.Sprintf("%s:%d", nodeID, i))
+		c.nodes[h] = nodeID
+		c.sortedHashes = append(c.sortedHashes, h)
+	}
+	sort.Slice(c.sortedHashes, func(i, j int) bool {
+		return c.sortedHashes[i] < c.sortedHashes[j]
+	})
+
+	// 3. Invalidate cache
+	c.invalidateCache()
+}
+
 // GetNode returns the node responsible for the given key
 // Uses hot key caching for improved performance on repeated lookups
 func (c *ConsistentHash) GetNode(key string) string {

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -34,6 +35,36 @@ type HNSWSettings struct {
 	EfConstruction int
 }
 
+// IDMap is a pooled container for ID to row index mappings.
+// Supports both string and int64 IDs to avoid allocation/conversion.
+type IDMap struct {
+	StringMap map[string]int
+	IntMap    map[int64]int
+	IsNumeric bool
+}
+
+func (m *IDMap) Release() {
+	if m == nil {
+		return
+	}
+	if m.StringMap != nil {
+		clear(m.StringMap)
+	}
+	if m.IntMap != nil {
+		clear(m.IntMap)
+	}
+	idMapPool.Put(m)
+}
+
+var idMapPool = sync.Pool{
+	New: func() any {
+		return &IDMap{
+			StringMap: make(map[string]int, 1024),
+			IntMap:    make(map[int64]int, 1024),
+		}
+	},
+}
+
 type Dataset struct {
 	Records    []arrow.RecordBatch
 	lastAccess int64 // UnixNano
@@ -58,7 +89,8 @@ type Dataset struct {
 	BatchNodes []int
 
 	// PrimaryIndex maps ID -> Physical Location (O(1) lookup)
-	PrimaryIndex map[string]RowLocation
+	PrimaryIndex        map[string]RowLocation
+	NumericPrimaryIndex map[int64]RowLocation
 	// metadataMu protects PrimaryIndex, LWW, and Merkle updates
 	metadataMu sync.Mutex
 
@@ -98,6 +130,9 @@ type Dataset struct {
 
 	// Geospatial Index (Quadtree)
 	GeoIndex *GeoIndex
+
+	// Adaptive Metrics
+	queryStats *QueryStats
 
 	// Metric defines the distance metric for this dataset
 	HNSWConfig HNSWSettings
@@ -140,6 +175,67 @@ func (d *Dataset) ResetBatchFragmentation(batchIdx int) {
 	if d.fragmentationTracker != nil {
 		d.fragmentationTracker.Reset(batchIdx)
 	}
+}
+
+type QueryStats struct {
+	mu           sync.RWMutex
+	latencies    []time.Duration
+	recalls      []float64
+	queriesCount int64
+	lastReset    time.Time
+}
+
+func (s *QueryStats) Record(latency time.Duration, recall float64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.latencies = append(s.latencies, latency)
+	s.recalls = append(s.recalls, recall)
+	s.queriesCount++
+
+	// Keep only last 1000 samples
+	if len(s.latencies) > 1000 {
+		s.latencies = s.latencies[1:]
+		s.recalls = s.recalls[1:]
+	}
+}
+
+func (s *QueryStats) GetMetrics() (p50, p99, avg float64, recall float64, qps float64) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if len(s.latencies) == 0 {
+		return 0, 0, 0, 0, 0
+	}
+
+	// Work on a copy to avoid holding lock too long and for sorting
+	lats := make([]time.Duration, len(s.latencies))
+	copy(lats, s.latencies)
+	recs := make([]float64, len(s.recalls))
+	copy(recs, s.recalls)
+
+	sort.Slice(lats, func(i, j int) bool { return lats[i] < lats[j] })
+	
+	p50 = lats[len(lats)/2].Seconds() * 1000.0
+	p99 = lats[len(lats)*99/100].Seconds() * 1000.0
+	
+	sum := 0.0
+	for _, l := range lats {
+		sum += l.Seconds() * 1000.0
+	}
+	avg = sum / float64(len(lats))
+
+	sumRecall := 0.0
+	for _, r := range recs {
+		sumRecall += r
+	}
+	recall = sumRecall / float64(len(recs))
+
+	duration := time.Since(s.lastReset).Seconds()
+	if duration > 0 {
+		qps = float64(s.queriesCount) / duration
+	}
+
+	return
 }
 
 // IsSharded returns true if the dataset's vector index is sharded.
@@ -243,10 +339,14 @@ func NewDataset(name string, schema *arrow.Schema) *Dataset {
 		Records:         make([]arrow.RecordBatch, 0),
 		BatchNodes:      make([]int, 0),
 		Schema:          schema,
-		Tombstones:      make(map[int]*qry.Bitset),
-		PrimaryIndex:    make(map[string]RowLocation),
+		Tombstones:          make(map[int]*qry.Bitset),
+		PrimaryIndex:        make(map[string]RowLocation),
+		NumericPrimaryIndex: make(map[int64]RowLocation),
 		LWW:             NewTimestampMap(),
 		Merkle:          NewMerkleTree(),
+		queryStats: &QueryStats{
+			lastReset: time.Now(),
+		},
 		InvertedIndexes: make(map[string]*InvertedIndex),
 		Graph:           NewGraphStore(),
 		filterCache:     make(map[string]*qry.Bitset),
@@ -497,12 +597,13 @@ func (d *Dataset) Close() {
 	d.Records = nil
 
 	d.PrimaryIndex = nil
+	d.NumericPrimaryIndex = nil
 	d.recordEviction = nil
 }
 
-// ExtractIDs extracts primary IDs from a record batch into a map of ID -> RowIdx.
+// ExtractIDs extracts primary IDs from a record batch into an IDMap.
 // This can be called outside of dataMu lock to prepare for a bulk update.
-func (d *Dataset) ExtractIDs(rec arrow.RecordBatch) map[string]int {
+func (d *Dataset) ExtractIDs(rec arrow.RecordBatch) *IDMap {
 	idColIdx := -1
 	for i, f := range rec.Schema().Fields() {
 		if f.Name == "id" {
@@ -517,36 +618,38 @@ func (d *Dataset) ExtractIDs(rec arrow.RecordBatch) map[string]int {
 
 	col := rec.Column(idColIdx)
 	numRows := int(rec.NumRows())
-	idMap := make(map[string]int, numRows)
+	m := idMapPool.Get().(*IDMap)
 
 	switch arr := col.(type) {
 	case *array.String:
+		m.IsNumeric = false
 		for i := 0; i < numRows; i++ {
 			if arr.IsValid(i) {
-				idMap[arr.Value(i)] = i
+				m.StringMap[arr.Value(i)] = i
 			}
 		}
 	case *array.Int64:
+		m.IsNumeric = true
 		for i := 0; i < numRows; i++ {
 			if arr.IsValid(i) {
-				idStr := strconv.FormatInt(arr.Value(i), 10)
-				idMap[idStr] = i
+				m.IntMap[arr.Value(i)] = i
 			}
 		}
 	case *array.Uint64:
+		m.IsNumeric = true
 		for i := 0; i < numRows; i++ {
 			if arr.IsValid(i) {
-				idStr := strconv.FormatUint(arr.Value(i), 10)
-				idMap[idStr] = i
+				// Potential overflow if Uint64 is used as key, but we treat it as int64 bits
+				m.IntMap[int64(arr.Value(i))] = i
 			}
 		}
 	}
-	return idMap
+	return m
 }
 
 // UpdatePrimaryIndex updates the ID mapping for a given batch using a pre-extracted ID map.
 // The caller must hold dataMu lock.
-func (d *Dataset) UpdatePrimaryIndex(batchIdx int, idMap map[string]int) {
+func (d *Dataset) UpdatePrimaryIndex(batchIdx int, idMap *IDMap) {
 	d.metadataMu.Lock()
 	defer d.metadataMu.Unlock()
 	if idMap == nil {
@@ -555,22 +658,40 @@ func (d *Dataset) UpdatePrimaryIndex(batchIdx int, idMap map[string]int) {
 	if d.PrimaryIndex == nil {
 		d.PrimaryIndex = make(map[string]RowLocation)
 	}
-	for id, rowIdx := range idMap {
-		if oldLoc, exists := d.PrimaryIndex[id]; exists {
-			if d.Tombstones[oldLoc.BatchIdx] == nil {
-				d.Tombstones[oldLoc.BatchIdx] = qry.NewBitset()
+	if d.NumericPrimaryIndex == nil {
+		d.NumericPrimaryIndex = make(map[int64]RowLocation)
+	}
+
+	if idMap.IsNumeric {
+		for id, rowIdx := range idMap.IntMap {
+			if oldLoc, exists := d.NumericPrimaryIndex[id]; exists {
+				if d.Tombstones[oldLoc.BatchIdx] == nil {
+					d.Tombstones[oldLoc.BatchIdx] = qry.NewBitset()
+				}
+				d.Tombstones[oldLoc.BatchIdx].Set(oldLoc.RowIdx)
+				d.RecordBatchDeletion(oldLoc.BatchIdx)
+				metrics.TombstonesTotal.WithLabelValues(d.Name).Inc()
 			}
-			d.Tombstones[oldLoc.BatchIdx].Set(oldLoc.RowIdx)
-			d.RecordBatchDeletion(oldLoc.BatchIdx)
-			metrics.TombstonesTotal.WithLabelValues(d.Name).Inc()
+			d.NumericPrimaryIndex[id] = RowLocation{BatchIdx: batchIdx, RowIdx: rowIdx}
 		}
-		d.PrimaryIndex[id] = RowLocation{BatchIdx: batchIdx, RowIdx: rowIdx}
+	} else {
+		for id, rowIdx := range idMap.StringMap {
+			if oldLoc, exists := d.PrimaryIndex[id]; exists {
+				if d.Tombstones[oldLoc.BatchIdx] == nil {
+					d.Tombstones[oldLoc.BatchIdx] = qry.NewBitset()
+				}
+				d.Tombstones[oldLoc.BatchIdx].Set(oldLoc.RowIdx)
+				d.RecordBatchDeletion(oldLoc.BatchIdx)
+				metrics.TombstonesTotal.WithLabelValues(d.Name).Inc()
+			}
+			d.PrimaryIndex[id] = RowLocation{BatchIdx: batchIdx, RowIdx: rowIdx}
+		}
 	}
 }
 
 // UpdatePrimaryIndexAsync updates the primary index without holding dataMu.
 // Uses a dedicated mutex for serialization.
-func (d *Dataset) UpdatePrimaryIndexAsync(batchIdx int, idMap map[string]int) {
+func (d *Dataset) UpdatePrimaryIndexAsync(batchIdx int, idMap *IDMap) {
 	d.metadataMu.Lock()
 	defer d.metadataMu.Unlock()
 	if idMap == nil {
@@ -579,16 +700,34 @@ func (d *Dataset) UpdatePrimaryIndexAsync(batchIdx int, idMap map[string]int) {
 	if d.PrimaryIndex == nil {
 		d.PrimaryIndex = make(map[string]RowLocation)
 	}
-	for id, rowIdx := range idMap {
-		if oldLoc, exists := d.PrimaryIndex[id]; exists {
-			if d.Tombstones[oldLoc.BatchIdx] == nil {
-				d.Tombstones[oldLoc.BatchIdx] = qry.NewBitset()
+	if d.NumericPrimaryIndex == nil {
+		d.NumericPrimaryIndex = make(map[int64]RowLocation)
+	}
+
+	if idMap.IsNumeric {
+		for id, rowIdx := range idMap.IntMap {
+			if oldLoc, exists := d.NumericPrimaryIndex[id]; exists {
+				if d.Tombstones[oldLoc.BatchIdx] == nil {
+					d.Tombstones[oldLoc.BatchIdx] = qry.NewBitset()
+				}
+				d.Tombstones[oldLoc.BatchIdx].Set(oldLoc.RowIdx)
+				d.RecordBatchDeletion(oldLoc.BatchIdx)
+				metrics.TombstonesTotal.WithLabelValues(d.Name).Inc()
 			}
-			d.Tombstones[oldLoc.BatchIdx].Set(oldLoc.RowIdx)
-			d.RecordBatchDeletion(oldLoc.BatchIdx)
-			metrics.TombstonesTotal.WithLabelValues(d.Name).Inc()
+			d.NumericPrimaryIndex[id] = RowLocation{BatchIdx: batchIdx, RowIdx: rowIdx}
 		}
-		d.PrimaryIndex[id] = RowLocation{BatchIdx: batchIdx, RowIdx: rowIdx}
+	} else {
+		for id, rowIdx := range idMap.StringMap {
+			if oldLoc, exists := d.PrimaryIndex[id]; exists {
+				if d.Tombstones[oldLoc.BatchIdx] == nil {
+					d.Tombstones[oldLoc.BatchIdx] = qry.NewBitset()
+				}
+				d.Tombstones[oldLoc.BatchIdx].Set(oldLoc.RowIdx)
+				d.RecordBatchDeletion(oldLoc.BatchIdx)
+				metrics.TombstonesTotal.WithLabelValues(d.Name).Inc()
+			}
+			d.PrimaryIndex[id] = RowLocation{BatchIdx: batchIdx, RowIdx: rowIdx}
+		}
 	}
 }
 
@@ -629,43 +768,58 @@ func (d *Dataset) IngestBatch(batch []DatasetParquetRecord) error {
 		}
 	}
 
-	for _, row := range batch {
-		if idColIdx >= 0 {
-			if row.ID != 0 {
-				b.Field(idColIdx).(*array.Int64Builder).Append(row.ID)
-			} else {
-				b.Field(idColIdx).AppendNull()
-			}
-		}
+	numRows := len(batch)
+	ids := make([]int64, numRows)
+	idValid := make([]bool, numRows)
+	metas := make([][]byte, numRows)
+	metaValid := make([]bool, numRows)
+	createdAts := make([]int64, numRows)
+	createdAtValid := make([]bool, numRows)
 
-		if vectorColIdx >= 0 {
+	// Collect scalar columns in bulk
+	for i, row := range batch {
+		if idColIdx >= 0 {
+			ids[i] = row.ID
+			idValid[i] = row.ID != 0
+		}
+		if metadataColIdx >= 0 {
+			metas[i] = row.Metadata
+			metaValid[i] = row.Metadata != nil
+		}
+		if createdAtColIdx >= 0 {
+			createdAts[i] = row.CreatedAt
+			createdAtValid[i] = row.CreatedAt != 0
+		}
+	}
+
+	// Bulk append scalars
+	if idColIdx >= 0 {
+		b.Field(idColIdx).(*array.Int64Builder).AppendValues(ids, idValid)
+	}
+	if metadataColIdx >= 0 {
+		b.Field(metadataColIdx).(*array.BinaryBuilder).AppendValues(metas, metaValid)
+	}
+	if createdAtColIdx >= 0 {
+		b.Field(createdAtColIdx).(*array.Int64Builder).AppendValues(createdAts, createdAtValid)
+	}
+
+	// Vector column (FixedSizeList) remains row-by-row for now due to complex nested structure,
+	// but inner loop is optimized.
+	if vectorColIdx >= 0 {
+		listBuilder := b.Field(vectorColIdx).(*array.FixedSizeListBuilder)
+		valBuilder := listBuilder.ValueBuilder().(*array.Float32Builder)
+		for _, row := range batch {
 			if row.Vector != nil {
 				vecLen := len(row.Vector) / 4
-				listBuilder := b.Field(vectorColIdx).(*array.FixedSizeListBuilder)
-				valBuilder := listBuilder.ValueBuilder().(*array.Float32Builder)
+				// Optimize: Use unsafe cast for float32 bytes if aligned (advanced)
+				// For now, keep the loop but minimize builder calls
 				for i := 0; i < vecLen; i++ {
 					v := binary.LittleEndian.Uint32(row.Vector[i*4:])
 					valBuilder.Append(math.Float32frombits(v))
 				}
 				listBuilder.Append(true)
 			} else {
-				b.Field(vectorColIdx).AppendNull()
-			}
-		}
-
-		if metadataColIdx >= 0 {
-			if row.Metadata != nil {
-				b.Field(metadataColIdx).(*array.BinaryBuilder).Append(row.Metadata)
-			} else {
-				b.Field(metadataColIdx).AppendNull()
-			}
-		}
-
-		if createdAtColIdx >= 0 {
-			if row.CreatedAt != 0 {
-				b.Field(createdAtColIdx).(*array.Int64Builder).Append(row.CreatedAt)
-			} else {
-				b.Field(createdAtColIdx).AppendNull()
+				listBuilder.AppendNull()
 			}
 		}
 	}
@@ -682,6 +836,7 @@ func (d *Dataset) IngestBatch(batch []DatasetParquetRecord) error {
 	idMap := d.ExtractIDs(rec)
 	if idMap != nil {
 		d.UpdatePrimaryIndexAsync(batchIdx, idMap)
+		idMap.Release()
 	}
 
 	// Trigger async indexing if needed (usually handled by indexer worker)

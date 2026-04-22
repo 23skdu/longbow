@@ -35,12 +35,9 @@ func TestTokenizer(t *testing.T) {
 	assert.Equal(t, int64(1), mask[0]) // CLS mask should be 1
 }
 
-func TestTokenizerFallback(t *testing.T) {
-	// Test loading with non-existent file - should use fallback
+func TestTokenizerMissingVocab(t *testing.T) {
+	// Test loading with non-existent file - should fail
 	tokenizer, err := NewTokenizer("non-existent-vocab.txt", 128)
-	require.NoError(t, err)
-	assert.NotNil(t, tokenizer)
-	
-	ids, _ := tokenizer.Encode("test")
-	assert.NotEmpty(t, ids)
+	require.Error(t, err)
+	assert.Nil(t, tokenizer)
 }

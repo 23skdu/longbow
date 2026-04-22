@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -425,6 +426,12 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 	case "GetGraphStats":
 		return s.handleGetGraphStats(action.Body, stream)
 
+	case "calculate-pagerank":
+		return s.handleCalculatePageRank(action.Body, stream)
+
+	case "detect-communities":
+		return s.handleDetectCommunities(action.Body, stream)
+
 	case "HybridSearch":
 		var req struct {
 			Dataset   string         `json:"dataset"`
@@ -571,10 +578,48 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 		}
 		meta := arrow.MetadataFrom(metaMap)
 
+		var vectorType arrow.DataType = arrow.PrimitiveTypes.Float32
+		if req.Dimension > math.MaxInt32 || req.Dimension < 0 {
+			return fmt.Errorf("vector dimension %d out of range (max %d)", req.Dimension, math.MaxInt32)
+		}
+		vecDim := int32(req.Dimension) // #nosec G115 (checked above)
+		switch strings.ToLower(req.VectorType) {
+		case "float16":
+			vectorType = arrow.FixedWidthTypes.Float16
+		case "float32":
+			vectorType = arrow.PrimitiveTypes.Float32
+		case "float64":
+			vectorType = arrow.PrimitiveTypes.Float64
+		case "int8":
+			vectorType = arrow.PrimitiveTypes.Int8
+		case "int16":
+			vectorType = arrow.PrimitiveTypes.Int16
+		case "int32":
+			vectorType = arrow.PrimitiveTypes.Int32
+		case "int64":
+			vectorType = arrow.PrimitiveTypes.Int64
+		case "uint8":
+			vectorType = arrow.PrimitiveTypes.Uint8
+		case "uint16":
+			vectorType = arrow.PrimitiveTypes.Uint16
+		case "uint32":
+			vectorType = arrow.PrimitiveTypes.Uint32
+		case "uint64":
+			vectorType = arrow.PrimitiveTypes.Uint64
+		case "complex64":
+			vectorType = arrow.PrimitiveTypes.Float32
+			vecDim *= 2
+		case "complex128":
+			vectorType = arrow.PrimitiveTypes.Float64
+			vecDim *= 2
+		case "turboquant", "tq":
+			vectorType = arrow.PrimitiveTypes.Float32
+		}
+
 		schema := arrow.NewSchema([]arrow.Field{
 			{Name: "id", Type: arrow.BinaryTypes.String},
-			{Name: "vector", Type: arrow.FixedSizeListOf(int32(req.Dimension), arrow.PrimitiveTypes.Float32)}, // #nosec G115
-			{Name: "timestamp", Type: arrow.FixedWidthTypes.Timestamp_ns},
+			{Name: "vector", Type: arrow.FixedSizeListOf(vecDim, vectorType)}, // #nosec G115
+			{Name: "timestamp", Type: &arrow.TimestampType{Unit: arrow.Nanosecond}},
 		}, &meta)
 
 		_, created := s.getOrCreateDataset(req.Name, func() *Dataset {
@@ -1102,25 +1147,13 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 	// Extract IDs and Vectors outside lock for better concurrency
 	idMap := ds.ExtractIDs(rec)
 
-	// Prepare DiskStore data outside lock
-	var diskVecs [][]float32
+	// Determine vector column for DiskStore (Zero-Copy Persistence)
+	diskVecColIdx := -1
 	if ds.DiskStore != nil {
-		vecColIdx := -1
 		for i, f := range rec.Schema().Fields() {
 			if f.Name == "vector" || f.Name == "embedding" {
-				vecColIdx = i
+				diskVecColIdx = i
 				break
-			}
-		}
-		if vecColIdx != -1 {
-			n := int(rec.NumRows())
-			diskVecs = make([][]float32, 0, n)
-			for i := 0; i < n; i++ {
-				vec, err := ExtractVectorFromArrow(rec, i, vecColIdx)
-				if err != nil {
-					continue
-				}
-				diskVecs = append(diskVecs, vec)
 			}
 		}
 	}
@@ -1170,7 +1203,7 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 			hnswCfg.Metric = ds.Metric
 
 			// Use preferred type if specified via create_dataset or metadata
-			if ds.PreferredVectorType != types.VectorTypeFloat32 {
+			if ds.PreferredVectorType != types.VectorTypeUnknown {
 				dataType = ds.PreferredVectorType
 			}
 			hnswCfg.DataType = dataType
@@ -1189,7 +1222,7 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 			clonedCfg := *config.IndexConfig
 
 			// Use preferred type if specified
-			if ds.PreferredVectorType != types.VectorTypeFloat32 {
+			if ds.PreferredVectorType != types.VectorTypeUnknown {
 				dataType = ds.PreferredVectorType
 			}
 			clonedCfg.DataType = dataType
@@ -1253,14 +1286,15 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 	// contention while processing O(N) metadata updates.
 	// metadataMu inside these methods ensures consistency.
 	ds.UpdatePrimaryIndexAsync(batchIdx, idMap)
+	idMap.Release()
 	s.updateLWWAndMerkle(ds, rec, ts)
 
 	// Batch append to DiskStore outside main dataset lock to avoid blocking other workers
-	if len(diskVecs) > 0 {
-		if _, err := ds.DiskStore.BatchAppend(diskVecs); err != nil {
-			s.logger.Error().Err(err).Msg("Failed to batch append to DiskStore")
+	if diskVecColIdx != -1 {
+		if _, err := ds.DiskStore.BatchAppendArrow(rec, diskVecColIdx); err != nil {
+			s.logger.Error().Err(err).Msg("Failed to batch append to DiskStore (Zero-Copy)")
 		} else {
-			metrics.DiskStoreWriteBytesTotal.WithLabelValues(name).Add(float64(len(diskVecs) * ds.DiskStore.dim * 4))
+			metrics.DiskStoreWriteBytesTotal.WithLabelValues(name).Add(float64(rec.NumRows() * int64(ds.DiskStore.dim) * 4))
 		}
 	}
 

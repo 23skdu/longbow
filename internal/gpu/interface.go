@@ -20,6 +20,7 @@ const (
 	BackendCUDA   = types.BackendCUDA
 	BackendMetal  = types.BackendMetal
 	BackendOpenCL = types.BackendOpenCL
+	BackendTPU    = types.BackendTPU
 )
 
 type GPUConfig = types.GPUConfig
@@ -78,6 +79,15 @@ func GetGPURequirements(backend GPUBackend) (bool, string, error) {
 			return checkOpenCLOnWindows()
 		}
 		return false, "OpenCL not available on this platform", nil
+	case BackendTPU:
+		if runtime.GOOS != "linux" {
+			return false, "TPU is only supported on Linux", nil
+		}
+		// Check for accel devices
+		if _, err := os.Stat("/sys/class/accel"); err != nil {
+			return false, "No TPU (accel) devices found in /sys/class/accel", nil
+		}
+		return true, "Google Cloud TPU (v2-v7x) available via sysfs/accel", nil
 	default:
 		return false, "Unknown GPU backend", nil
 	}
@@ -120,10 +130,20 @@ func DetectGPUBackend() GPUBackend {
 		return BackendCUDA
 	}
 
-	// 2. Check for Metal (Darwin/Apple Silicon)
-	// We assume BackendMetal is the primary accelerator for Darwin.
+	// 2. Check for Metal (Darwin arm64)
 	if runtime.GOOS == "darwin" {
-		return BackendMetal
+		// We could call DetectAvailableGPUs() here but it might be heavy.
+		// Use the simple check for now.
+		if runtime.GOARCH == "arm64" {
+			return BackendMetal
+		}
+	}
+
+	// 3. Check for TPU (Linux)
+	if runtime.GOOS == "linux" {
+		if _, err := os.Stat("/sys/class/accel"); err == nil {
+			return BackendTPU
+		}
 	}
 
 	return BackendCPU

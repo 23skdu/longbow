@@ -94,92 +94,121 @@ func (s *VectorStore) GetCDC() *ChangeDataCapture {
 
 // SwitchIndex performs a live migration of a collection's vector index to a new type.
 // It implements the IndexSwitcher interface used by the adaptive learned index loop.
-// The migration is performed by building a new index in memory from existing records
-// and then atomically swapping the index pointer in the dataset.
+// The migration is performed in the background by building a new index from source 
+// records and then atomically swapping the index pointer in the dataset.
 func (s *VectorStore) SwitchIndex(collection string, to IndexType) error {
 	ds, ok := s.getDataset(collection)
 	if !ok {
 		return fmt.Errorf("dataset %q not found", collection)
 	}
 
-	ds.dataMu.RLock()
-	currentIndex := ds.Index
-	ds.dataMu.RUnlock()
+	// 1. Check if a switch is already in progress for this collection
+	if _, loaded := s.activeSwitches.LoadOrStore(collection, true); loaded {
+		return fmt.Errorf("index switch already in progress for collection %q", collection)
+	}
 
-	if currentIndex != nil {
-		if typed, ok := currentIndex.(interface{ Type() IndexType }); ok {
-			if typed.Type() == to {
-				return nil // Already using the target index type
+	// 2. Perform the switch in a background goroutine
+	go func() {
+		defer s.activeSwitches.Delete(collection)
+
+		ds.dataMu.RLock()
+		currentIndex := ds.Index
+		ds.dataMu.RUnlock()
+
+		if currentIndex != nil {
+			if typed, ok := currentIndex.(interface{ Type() IndexType }); ok {
+				if typed.Type() == to {
+					s.logger.Info().Str("collection", collection).Str("type", string(to)).Msg("Already using target index type, skipping switch")
+					return
+				}
 			}
 		}
-	}
 
-	fromType := IndexType("unknown")
-	if typed, ok := currentIndex.(interface{ Type() IndexType }); ok {
-		fromType = typed.Type()
-	}
+		fromType := IndexType("unknown")
+		if typed, ok := currentIndex.(interface{ Type() IndexType }); ok {
+			fromType = typed.Type()
+		}
 
-	s.logger.Info().
-		Str("collection", collection).
-		Str("from", string(fromType)).
-		Str("to", string(to)).
-		Msg("Starting live index migration")
+		s.logger.Info().
+			Str("collection", collection).
+			Str("from", string(fromType)).
+			Str("to", string(to)).
+			Msg("Starting background live index migration")
 
-	// 1. Create the replacement index using the factory.
-	factory := NewIndexFactory()
-	cfg := IndexConfig{
-		Type:      to,
-		Dimension: int(ds.Schema.Field(1).Type.(*arrow.FixedSizeListType).Len()), // Simplified dimension extraction
-	}
-	// TODO: Pull optimal HNSW/DiskANN parameters from a registry or predictor recommendation.
-	newIdx, err := factory.Create(cfg)
-	if err != nil {
-		return fmt.Errorf("failed to create replacement index: %w", err)
-	}
-
-	// 2. Populate the new index from existing records.
-	// We iterate over the records under RLock to prevent them from being deleted/evicted,
-	// though records are append-only.
-	ds.dataMu.RLock()
-	records := make([]arrow.RecordBatch, len(ds.Records))
-	copy(records, ds.Records)
-	ds.dataMu.RUnlock()
-
-	for _, rec := range records {
-		ids, vectors, err := s.extractVectorsFromRecord(rec)
+		// 3. Create the replacement index using the factory.
+		factory := NewIndexFactory()
+		cfg := IndexConfig{
+			Type:      to,
+			Dimension: int(ds.Schema.Field(1).Type.(*arrow.FixedSizeListType).Len()),
+		}
+		newIdx, err := factory.Create(cfg)
 		if err != nil {
-			_ = newIdx.Close() // #nosec G104
-			return fmt.Errorf("failed to extract vectors for migration: %w", err)
+			s.logger.Error().Err(err).Str("collection", collection).Msg("Failed to create replacement index")
+			if s.indexAdapter != nil {
+				_ = s.indexAdapter.CompleteAdaptation(collection, false)
+			}
+			return
 		}
 
-		if err := newIdx.AddBatch(ids, vectors); err != nil {
-			_ = newIdx.Close() // #nosec G104
-			return fmt.Errorf("failed to add vectors to new index: %w", err)
+		// 4. Populate the new index from existing records.
+		ds.dataMu.RLock()
+		records := make([]arrow.RecordBatch, len(ds.Records))
+		copy(records, ds.Records)
+		ds.dataMu.RUnlock()
+
+		for _, rec := range records {
+			ids, vectors, err := s.extractVectorsFromRecord(rec)
+			if err != nil {
+				s.logger.Error().Err(err).Str("collection", collection).Msg("Failed to extract vectors for migration")
+				_ = newIdx.Close()
+				if s.indexAdapter != nil {
+					_ = s.indexAdapter.CompleteAdaptation(collection, false)
+				}
+				return
+			}
+
+			if err := newIdx.AddBatch(ids, vectors); err != nil {
+				s.logger.Error().Err(err).Str("collection", collection).Msg("Failed to add vectors to new index")
+				_ = newIdx.Close()
+				if s.indexAdapter != nil {
+					_ = s.indexAdapter.CompleteAdaptation(collection, false)
+				}
+				return
+			}
 		}
-	}
 
-	// 3. Build the index if required (e.g. DiskANN, IVF).
-	if newIdx.NeedsBuild() {
-		if err := newIdx.Build(); err != nil {
-			_ = newIdx.Close() // #nosec G104
-			return fmt.Errorf("failed to build replacement index: %w", err)
+		// 5. Build the index if required.
+		if newIdx.NeedsBuild() {
+			if err := newIdx.Build(); err != nil {
+				s.logger.Error().Err(err).Str("collection", collection).Msg("Failed to build replacement index")
+				_ = newIdx.Close()
+				if s.indexAdapter != nil {
+					_ = s.indexAdapter.CompleteAdaptation(collection, false)
+				}
+				return
+			}
 		}
-	}
 
-	// 4. Atomic Swap.
-	ds.dataMu.Lock()
-	oldIdx := ds.Index
-	ds.Index = NewPluggableInternalAdapter(newIdx) // Bridge the pluggable and internal interface
-	ds.dataMu.Unlock()
+		// 6. Atomic Swap.
+		ds.dataMu.Lock()
+		oldIdx := ds.Index
+		ds.Index = NewPluggableInternalAdapter(newIdx)
+		ds.dataMu.Unlock()
 
-	// 5. Cleanup.
-	if oldIdx != nil {
-		_ = oldIdx.Close() // #nosec G104
-	}
+		// 7. Cleanup and Callback.
+		if oldIdx != nil {
+			_ = oldIdx.Close()
+		}
 
-	s.logger.Info().
-		Str("collection", collection).
-		Msg("Live index migration completed successfully")
+		if s.indexAdapter != nil {
+			_ = s.indexAdapter.CompleteAdaptation(collection, true)
+		}
+
+		s.logger.Info().
+			Str("collection", collection).
+			Str("to", string(to)).
+			Msg("Background index migration completed successfully")
+	}()
 
 	return nil
 }
@@ -190,9 +219,10 @@ func (s *VectorStore) extractVectorsFromRecord(rec arrow.RecordBatch) ([]uint64,
 	idColIdx := -1
 	vectorColIdx := -1
 	for i, f := range rec.Schema().Fields() {
-		if f.Name == "id" {
+		switch f.Name {
+		case "id":
 			idColIdx = i
-		} else if f.Name == "vector" {
+		case "vector":
 			vectorColIdx = i
 		}
 	}
@@ -237,4 +267,57 @@ func (s *VectorStore) extractVectorsFromRecord(rec arrow.RecordBatch) ([]uint64,
 // GetWebSocketServer returns the WebSocket server instance.
 func (s *VectorStore) GetWebSocketServer() *WebSocketServer {
 	return nil
+}
+
+// MetricsCollector Implementation
+
+func (s *VectorStore) GetCollections() []string {
+	var names []string
+	s.IterateDatasets(func(name string, _ *Dataset) {
+		names = append(names, name)
+	})
+	return names
+}
+
+func (s *VectorStore) GetQueryLatencies(collection string) (p50, p99, avg float64) {
+	ds, ok := s.getDataset(collection)
+	if !ok || ds.queryStats == nil {
+		return 0, 0, 0
+	}
+	p50, p99, avg, _, _ = ds.queryStats.GetMetrics()
+	return
+}
+
+func (s *VectorStore) GetQueriesPerSecond(collection string) float64 {
+	ds, ok := s.getDataset(collection)
+	if !ok || ds.queryStats == nil {
+		return 0
+	}
+	_, _, _, _, qps := ds.queryStats.GetMetrics()
+	return qps
+}
+
+func (s *VectorStore) GetRecall(collection string) float64 {
+	ds, ok := s.getDataset(collection)
+	if !ok || ds.queryStats == nil {
+		return 0
+	}
+	_, _, _, recall, _ := ds.queryStats.GetMetrics()
+	return recall
+}
+
+func (s *VectorStore) GetIndexSize(collection string) float64 {
+	ds, ok := s.getDataset(collection)
+	if !ok {
+		return 0
+	}
+	return float64(ds.IndexMemoryBytes.Load()) / 1024.0 / 1024.0
+}
+
+func (s *VectorStore) GetMemoryUsage(collection string) float64 {
+	ds, ok := s.getDataset(collection)
+	if !ok {
+		return 0
+	}
+	return float64(ds.SizeBytes.Load()) / 1024.0 / 1024.0
 }

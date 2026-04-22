@@ -1204,3 +1204,7 @@ func (s *ShardedHNSW) RemapLocations(ctx context.Context, mapping map[uint32]any
 	// Propagate to shards if needed (though usually global location store is enough if shards use local IDs)
 	return nil
 }
+// GetShardedIndex returns this index as a ShardedHNSW pointer.
+func (s *ShardedHNSW) GetShardedIndex() *ShardedHNSW {
+	return s
+}

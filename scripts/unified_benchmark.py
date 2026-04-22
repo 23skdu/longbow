@@ -22,6 +22,7 @@ import subprocess
 import sys
 import time
 import numpy as np
+import pandas as pd
 from datetime import datetime
 
 try:
@@ -73,31 +74,26 @@ def parse_bench_json(json_file):
     """Parse benchmark-tool JSON output to extract metrics."""
     try:
         with open(json_file) as f:
-            results = json.load(f)
+            data = json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
         return {}
 
     metrics = {}
-    for r in results:
-        name = r.get("name", "")
-        if name == "DoPut":
-            metrics["ingest_vec_per_sec"] = r.get("throughput", 0)
-            metrics["ingest_mb_per_sec"] = r.get("throughput_mbs", 0)
-        elif name == "DoGet":
-            metrics["get_vec_per_sec"] = r.get("throughput", 0)
-            metrics["get_mb_per_sec"] = r.get("throughput_mbs", 0)
-        elif name.startswith("Search_"):
-            # Generic search parser
-            prefix = name.replace("Search_", "").lower()
-            metrics[f"{prefix}_qps"] = r.get("throughput", 0)
-
-            # Extract latency percentiles
-            latencies = sorted(r.get("latencies_ms", []))
-            if latencies:
-                metrics[f"{prefix}_p50_ms"] = r.get("p50_latency_ms", 0)
-                metrics[f"{prefix}_p90_ms"] = latencies[int(0.9 * (len(latencies) - 1))]
-                metrics[f"{prefix}_p95_ms"] = r.get("p95_latency_ms", 0)
-                metrics[f"{prefix}_p99_ms"] = r.get("p99_latency_ms", 0)
+    if isinstance(data, list):
+        for entry in data:
+            name = entry.get("name", "")
+            if name == "DoPut":
+                metrics["ingest_vec_per_sec"] = entry.get("throughput", 0)
+            elif name == "DoGet":
+                metrics["get_vec_per_sec"] = entry.get("throughput", 0)
+            elif name.startswith("Search_"):
+                prefix = name.replace("Search_", "").lower()
+                metrics[f"{prefix}_qps"] = entry.get("throughput", 0)
+                metrics[f"{prefix}_p50_ms"] = entry.get("p50_latency_ms", 0)
+                metrics[f"{prefix}_p95_ms"] = entry.get("p95_latency_ms", 0)
+                metrics[f"{prefix}_p99_ms"] = entry.get("p99_latency_ms", 0)
+    elif isinstance(data, dict):
+        metrics = data
 
     return metrics
 
@@ -160,12 +156,12 @@ class BenchmarkRunner:
             print("  WARNING: No CUDA GPU detected")
         return True
 
-    def start_server(self, label):
+    def start_server(self, label, env_overrides=None):
+        """Start a fresh Longbow server for a specific configuration."""
         self.stop_server()
-
         server_bin = self.get_server_binary()
         if not os.path.exists(server_bin):
-            print(f"  Error: Server binary not found at {server_bin}")
+            print(f"  Error: {server_bin} not found!")
             return False
 
         data_root = os.path.join(self.data_dir, label)
@@ -173,6 +169,8 @@ class BenchmarkRunner:
         os.makedirs(data_root, exist_ok=True)
 
         env = os.environ.copy()
+        if env_overrides:
+            env.update(env_overrides)
         env["LONGBOW_MAX_MEMORY"] = str(self.args.memory)
         env["ARROW_DISABLE_LOCKING"] = "1"
         if self.args.rdma:
@@ -232,18 +230,24 @@ class BenchmarkRunner:
                 pass
             self.server_pid = None
 
-        # Kill any leftovers
-        subprocess.run(
-            "pkill -9 longbow || true",
-            shell=True,
-            stderr=subprocess.DEVNULL,
-        )
-        subprocess.run(
-            "pkill -9 longbow-metal || true",
-            shell=True,
-            stderr=subprocess.DEVNULL,
-        )
-        time.sleep(2)
+        # Robust cleanup using port discovery (current and base ports)
+        ports_to_clean = [3000, 3001, 9000, 10000]
+        # Extract port from current server_addr if set
+        if ":" in self.server_addr:
+            try:
+                current_port = int(self.server_addr.split(":")[-1])
+                ports_to_clean.extend([current_port, current_port + 1, current_port + 6000, current_port + 7000])
+            except:
+                pass
+        
+        for port in set(ports_to_clean):
+            subprocess.run(f"lsof -ti:{port} | xargs kill -9 2>/dev/null || true", shell=True)
+        
+        # Brute force fallback for all known binaries
+        subprocess.run("pkill -9 longbow || true", shell=True, stderr=subprocess.DEVNULL)
+        subprocess.run("pkill -9 longbow-metal || true", shell=True, stderr=subprocess.DEVNULL)
+        subprocess.run("pkill -9 bench-tool || true", shell=True, stderr=subprocess.DEVNULL)
+        time.sleep(1) # Reduced from 2s to speed up but still allow OS cleanup
 
     def run_benchmark(self, dim, dtype, count, label):
         """Run benchmark-tool with JSON output for a configuration."""
@@ -260,6 +264,8 @@ class BenchmarkRunner:
 
         if not result or result.returncode != 0:
             print(" FAILED")
+            if result and result.stderr:
+                print(f"    Error: {result.stderr.strip()}")
             return False
 
         metrics = parse_bench_json(json_file)
@@ -928,147 +934,151 @@ class BenchmarkRunner:
 
         dims = [int(d) for d in self.args.dims.split(",")]
         counts = [int(c) for c in self.args.counts.split(",")]
-
-        count = counts[0] if counts else 10000
-        dim = dims[0] if dims else 128
+        dtypes = self.args.dtypes.split(",")
 
         print("=" * 80)
         print(f"CLUSTER SEARCH BENCHMARK (Gossip Protocol)")
         print(f"Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        print(f"Dim: {dim}, Count: {count}")
         print(f"Nodes in cluster: {self.args.cluster_nodes}")
         print("=" * 80)
 
-        # For cluster testing, we start multiple nodes
-        # This requires gossip to be enabled
-        label = f"cluster_{dim}_{count}"
-
-        # Set gossip environment
         env = os.environ.copy()
         env["LONGBOW_GOSSIP_ENABLED"] = "true"
+        env["LONGBOW_GPU_ENABLED"] = "true"
+        env["LONGBOW_MAX_MEMORY"] = "8589934592"
 
-        nodes = []
-        base_port = 3000
+        for count in counts:
+            for dtype in dtypes:
+                for dim in dims:
+                    label = f"cluster_{dim}_{dtype}_{count}"
+                    nodes = []
+                    base_port = 3000
 
-        try:
-            # Start cluster nodes
-            for i in range(self.args.cluster_nodes):
-                node_label = f"{label}_node{i}"
-                port = base_port + i * 100
+                    try:
+                        # Start cluster nodes
+                        for i in range(self.args.cluster_nodes):
+                            node_label = f"{label}_node{i}"
+                            port = base_port + i * 100
 
-                data_root = os.path.join(self.data_dir, node_label)
-                subprocess.run(f"rm -rf {data_root}", shell=True)
-                os.makedirs(data_root, exist_ok=True)
+                            data_root = os.path.join(self.data_dir, node_label)
+                            subprocess.run(f"rm -rf {data_root}", shell=True)
+                            os.makedirs(data_root, exist_ok=True)
 
-                env["LONGBOW_LISTEN_ADDR"] = f"127.0.0.1:{port}"
-                env["LONGBOW_META_ADDR"] = f"127.0.0.1:{port + 1}"
-                env["LONGBOW_DATA_PATH"] = data_root
-                env["LONGBOW_NODE_ID"] = f"node{i}"
-                env["LONGBOW_GOSSIP_SEED_NODES"] = (
-                    f"127.0.0.1:{base_port + 1}"  # First node as seed
-                )
+                            env["LONGBOW_LISTEN_ADDR"] = f"127.0.0.1:{port}"
+                            env["LONGBOW_META_ADDR"] = f"127.0.0.1:{port + 1}"
+                            env["LONGBOW_DATA_PATH"] = data_root
+                            env["LONGBOW_NODE_ID"] = f"node{i}"
+                            env["LONGBOW_GOSSIP_PORT"] = str(7946 + i)
+                            env["LONGBOW_GOSSIP_ADVERTISE_ADDR"] = "127.0.0.1"
+                            if i > 0:
+                                env["LONGBOW_GOSSIP_STATIC_PEERS"] = "127.0.0.1:7946"
+                            else:
+                                env["LONGBOW_GOSSIP_STATIC_PEERS"] = ""
 
-                server_bin = self.get_server_binary()
-                log_file = os.path.join(self.log_dir, f"longbow_{node_label}.log")
+                            server_bin = self.get_server_binary()
+                            log_file = os.path.join(self.log_dir, f"longbow_{node_label}.log")
 
-                with open(log_file, "w") as f:
-                    proc = subprocess.Popen(
-                        [server_bin], env=env, stdout=f, stderr=subprocess.STDOUT
-                    )
-                    nodes.append({"port": port, "pid": proc.pid, "label": node_label})
+                            with open(log_file, "w") as f:
+                                proc = subprocess.Popen(
+                                    [server_bin], env=env, stdout=f, stderr=subprocess.STDOUT
+                                )
+                                nodes.append({"port": port, "pid": proc.pid, "label": node_label})
 
-                time.sleep(2)  # Stagger starts
+                            time.sleep(2)
 
-            # Wait for cluster formation
-            time.sleep(5)
+                        # Wait for cluster formation (increased for Metal init)
+                        time.sleep(10)
 
-            # Test distributed search
-            print(f"\nTesting cluster search across {len(nodes)} nodes...")
+                        print(f"\n[{dtype} {dim}d {count}] Testing cluster search...")
+                        client = LongbowClient(uri=f"grpc://127.0.0.1:{base_port}")
+                        dataset_name = f"cluster_bench_{dim}_{dtype}_{count}"
 
-            # Use first node as client
-            client = LongbowClient(
-                uri=f"grpc://127.0.0.1:{base_port}",
-                meta_uri=f"grpc://127.0.0.1:{base_port + 1}",
-            )
+                        # Create dataset with correct type
+                        vtype = dtype
+                        tq_bits = 0
+                        if dtype == "turboquant":
+                            vtype = "turboquant"
+                            tq_bits = 8
 
-            dataset_name = f"cluster_bench_{dim}d"
+                        client.create_dataset(
+                            dataset_name,
+                            dimensions=dim,
+                            vector_type=vtype,
+                            turboquant_bits=tq_bits,
+                            metric="cosine"
+                        )
 
-            # Insert data (will be sharded across nodes)
-            vectors = np.random.rand(count, dim).astype(np.float32).tolist()
-            ids = [str(i) for i in range(count)]
+                        # Insert data
+                        if dtype == "complex128":
+                            vectors = (np.random.rand(count, dim) + 1j * np.random.rand(count, dim)).astype(np.complex128)
+                        elif dtype == "int8":
+                            vectors = np.random.randint(-128, 127, (count, dim)).astype(np.int8)
+                        elif dtype == "uint8":
+                            vectors = np.random.randint(0, 255, (count, dim)).astype(np.uint8)
+                        else:
+                            vectors = np.random.rand(count, dim).astype(np.float32)
 
-            print(f"Inserting {count} vectors into cluster...")
-            client.insert(
-                dataset_name,
-                [{"id": id, "vector": vec} for id, vec in zip(ids, vectors)],
-            )
-            time.sleep(5)  # Wait for replication
+                        ids = [str(i) for i in range(count)]
+                        df = pd.DataFrame({
+                            "id": ids,
+                            "vector": [v for v in vectors],
+                            "timestamp": [datetime.now()] * count
+                        })
 
-            # Test global search
-            query_vec = np.random.rand(dim).astype(np.float32).tolist()
+                        start_ingest = time.time()
+                        client.insert(dataset_name, df)
+                        ingest_duration = time.time() - start_ingest
+                        ingest_vec_per_sec = count / ingest_duration if ingest_duration > 0 else 0
+                        print(f"  Ingest: {ingest_vec_per_sec:.0f} vec/s")
 
-            latencies = []
-            for _ in range(self.args.queries):
-                start = time.time()
-                try:
-                    results = client.search(dataset_name, vector=query_vec, k=10)
-                    latency = (time.time() - start) * 1000
-                    latencies.append(latency)
-                except Exception as e:
-                    print(f"  Error: {e}")
-                    continue
+                        time.sleep(3)
 
-            if latencies:
-                latencies.sort()
-                qps = 1000.0 / (sum(latencies) / len(latencies))
-                self.results.append(
-                    {
-                        "dim": dim,
-                        "count": count,
-                        "nodes": len(nodes),
-                        "operation": "global_search",
-                        "qps": qps,
-                        "p50": latencies[int(0.5 * len(latencies))],
-                        "p95": latencies[int(0.95 * len(latencies))],
-                        "p99": latencies[int(0.99 * len(latencies))],
-                        "timestamp": datetime.now().isoformat(),
-                    }
-                )
-                print(
-                    f"  Global Search QPS: {qps:.1f}, P50: {latencies[int(0.5 * len(latencies))]:.2f}ms"
-                )
+                        # Test global search
+                        query_vec = np.random.rand(dim).astype(np.float32).tolist()
+                        latencies = []
+                        for _ in range(self.args.queries):
+                            start = time.time()
+                            try:
+                                client.search(dataset_name, vector=query_vec, k=10)
+                                latency = (time.time() - start) * 1000
+                                latencies.append(latency)
+                            except Exception as e:
+                                pass
 
-        except Exception as e:
-            print(f"Error: {e}")
-        finally:
-            # Stop all nodes
-            for node in nodes:
-                try:
-                    subprocess.run(
-                        f"kill -9 {node['pid']}", shell=True, stderr=subprocess.DEVNULL
-                    )
-                except:
-                    pass
-            subprocess.run(
-                "pkill -9 longbow || true", shell=True, stderr=subprocess.DEVNULL
-            )
-            time.sleep(2)
+                        if latencies:
+                            latencies.sort()
+                            avg_lat = sum(latencies) / len(latencies)
+                            qps = 1000.0 / avg_lat if avg_lat > 0 else 0
+                            self.results.append({
+                                "dim": dim,
+                                "dtype": dtype,
+                                "count": count,
+                                "nodes": len(nodes),
+                                "operation": "global_search",
+                                "qps": qps,
+                                "ingest_vec_per_sec": ingest_vec_per_sec,
+                                "p50": latencies[int(0.5 * len(latencies))],
+                                "p99": latencies[int(0.99 * len(latencies))],
+                                "timestamp": datetime.now().isoformat(),
+                            })
+                            print(f"  Global Search QPS: {qps:.1f}, P50: {latencies[int(0.5 * len(latencies))]:.2f}ms")
+
+                    except Exception as e:
+                        print(f"Error: {e}")
+                    finally:
+                        for node in nodes:
+                            try:
+                                subprocess.run(f"kill -9 {node['pid']}", shell=True, stderr=subprocess.DEVNULL)
+                            except: pass
+                        subprocess.run("pkill -9 longbow || true", shell=True, stderr=subprocess.DEVNULL)
+                        time.sleep(2)
 
         with open(self.output_file, "w") as f:
-            json.dump(
-                {
-                    "mode": "cluster",
-                    "timestamp": self.timestamp,
-                    "config": {
-                        "dim": dim,
-                        "count": count,
-                        "nodes": self.args.cluster_nodes,
-                    },
-                    "results": self.results,
-                },
-                f,
-                indent=2,
-            )
+            json.dump({
+                "mode": "cluster",
+                "timestamp": self.timestamp,
+                "results": self.results,
+            }, f, indent=2)
 
         self.print_summary()
         print(f"\nResults saved to: {self.output_file}")
@@ -1380,11 +1390,17 @@ class BenchmarkRunner:
                 print(f"Data Type: {dtype} (Count: {count})")
                 print(f"{'━' * 70}")
 
+                base_port = 3000
+                port_offset = 0
                 for dim in dims:
                     current += 1
+                    current_port = base_port + (port_offset % 1000)
+                    self.server_addr = f"127.0.0.1:{current_port}"
+                    port_offset += 10
+                    
                     label = f"{self.args.mode}_{dtype}_{dim}_{count}"
                     print(
-                        f"\n[{current}/{total * len(counts)}] {dtype} dim={dim} count={count}"
+                        f"\n[{current}/{total * len(counts)}] {dtype} dim={dim} count={count} port={current_port}"
                     )
 
                     # Start fresh server for this config

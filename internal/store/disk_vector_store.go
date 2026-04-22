@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/23skdu/longbow/internal/storage"
+	"github.com/apache/arrow-go/v18/arrow"
+	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/klauspost/compress/zstd"
 	"github.com/pierrec/lz4/v4"
 )
@@ -97,6 +99,102 @@ func (dvs *DiskVectorStore) Close() error {
 		return dvs.backend.Close()
 	}
 	return nil
+}
+
+// BatchAppendArrow appends vectors directly from an Arrow RecordBatch.
+// This is significantly faster than BatchAppend as it avoids row-by-row extraction.
+func (dvs *DiskVectorStore) BatchAppendArrow(rec arrow.RecordBatch, colIdx int) (int, error) {
+	if rec == nil {
+		return 0, nil
+	}
+
+	numRows := int(rec.NumRows())
+	if numRows == 0 {
+		return 0, nil
+	}
+
+	col := rec.Column(colIdx)
+	listArr, ok := col.(*array.FixedSizeList)
+	if !ok {
+		return 0, fmt.Errorf("column %d is not a FixedSizeList", colIdx)
+	}
+
+	// Get the underlying values array (e.g. Float32Array)
+	values := listArr.Data().Children()[0]
+	if len(values.Buffers()) < 2 || values.Buffers()[1] == nil {
+		return 0, fmt.Errorf("invalid arrow data: missing value buffer")
+	}
+
+	// Get the specific range for this batch
+	width := int(listArr.DataType().(*arrow.FixedSizeListType).Len())
+	offset := listArr.Data().Offset()
+	elemSize := 4 // float32
+	startBytes := offset * width * elemSize
+	lenBytes := numRows * width * elemSize
+
+	raw := values.Buffers()[1].Bytes()
+	if startBytes+lenBytes > len(raw) {
+		return 0, fmt.Errorf("arrow buffer out of bounds")
+	}
+
+	dataSlice := raw[startBytes : startBytes+lenBytes]
+
+	dvs.mu.Lock()
+	defer dvs.mu.Unlock()
+
+	var dataToWrite []byte
+	var compType byte // 0: none, 1: zstd, 2: lz4
+
+	// 2. Compress
+	switch dvs.compression {
+	case "zstd":
+		dataToWrite = dvs.zstdEnc.EncodeAll(dataSlice, nil)
+		compType = 1
+	case "lz4":
+		maxLen := lz4.CompressBlockBound(len(dataSlice))
+		compressed := make([]byte, maxLen)
+		n, err := lz4.CompressBlock(dataSlice, compressed, nil)
+		if err != nil {
+			return 0, fmt.Errorf("lz4 compression failed: %w", err)
+		}
+		dataToWrite = compressed[:n]
+		compType = 2
+	default:
+		dataToWrite = dataSlice
+		compType = 0
+	}
+
+	// 3. Write Block
+	header := make([]byte, 13)
+	binary.LittleEndian.PutUint32(header[0:4], 0x56434D50)
+	header[4] = compType
+	binary.LittleEndian.PutUint32(header[5:9], uint32(lenBytes))           // #nosec G115
+	binary.LittleEndian.PutUint32(header[9:13], uint32(len(dataToWrite))) // #nosec G115
+
+	writeOffset, _ := dvs.backend.Size()
+	if _, err := dvs.backend.WriteAt(header, writeOffset); err != nil {
+		return 0, err
+	}
+	if _, err := dvs.backend.WriteAt(dataToWrite, writeOffset+13); err != nil {
+		return 0, err
+	}
+
+	dvs.blocks = append(dvs.blocks, BlockEntry{
+		Offset:     writeOffset,
+		CompSize:   uint32(len(dataToWrite)), // #nosec G115
+		RawSize:    uint32(lenBytes),         // #nosec G115
+		NumVectors: numRows,
+		StartIdx:   dvs.totalCount,
+		CompType:   compType,
+		CreatedAt:  time.Now(),
+	})
+	dvs.totalCount += numRows
+
+	if err := dvs.backend.Sync(); err != nil {
+		return 0, err
+	}
+
+	return numRows, nil
 }
 
 func (dvs *DiskVectorStore) BatchAppend(vectors [][]float32) (int, error) {

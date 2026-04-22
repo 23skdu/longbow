@@ -15,6 +15,8 @@ type RingManager struct {
 	logger      zerolog.Logger
 	nodeAddrs   map[string]string // ID -> Data Addr
 	metaAddrs   map[string]string // ID -> Meta Addr
+	nodeLoads   map[string]float64 // ID -> load ratio (0.0-1.0)
+	baseVNodes  int
 }
 
 // NewRingManager creates a new RingManager
@@ -27,6 +29,8 @@ func NewRingManager(localNodeID string, logger zerolog.Logger) *RingManager {
 		logger:      logger,
 		nodeAddrs:   make(map[string]string),
 		metaAddrs:   make(map[string]string),
+		nodeLoads:   make(map[string]float64),
+		baseVNodes:  20,
 	}
 }
 
@@ -56,7 +60,45 @@ func (rm *RingManager) NotifyLeave(member *mesh.Member) {
 
 // NotifyUpdate is invoked when a node is updated
 func (rm *RingManager) NotifyUpdate(member *mesh.Member) {
-	// No-op for ring structure
+	// Update addresses if they changed
+	rm.mu.Lock()
+	defer rm.mu.Unlock()
+	rm.nodeAddrs[member.ID] = member.GRPCAddr
+	rm.metaAddrs[member.ID] = member.MetaAddr
+}
+
+// UpdateNodeLoad updates the reported load for a node and triggers rebalancing if necessary
+func (rm *RingManager) UpdateNodeLoad(nodeID string, load float64) {
+	rm.mu.Lock()
+	defer rm.mu.Unlock()
+
+	rm.nodeLoads[nodeID] = load
+	rm.logger.Debug().Str("node", nodeID).Float64("load", load).Msg("Node load updated")
+
+	// Trigger rebalancing logic (could be debounced or on a ticker, but we do it here for now)
+	rm.rebalance()
+}
+
+// rebalance adjusts vnode counts based on node loads to distribute traffic more fairly
+func (rm *RingManager) rebalance() {
+	// Rebalance policy:
+	// - If load > 0.8, decrease vnodes (reduce incoming traffic)
+	// - If load < 0.4, increase vnodes (accept more traffic)
+	// - Otherwise, keep at baseVNodes
+
+	for nodeID, load := range rm.nodeLoads {
+		targetVNodes := rm.baseVNodes
+		if load > 0.8 {
+			targetVNodes = rm.baseVNodes / 2
+			if targetVNodes < 1 {
+				targetVNodes = 1
+			}
+		} else if load < 0.4 {
+			targetVNodes = rm.baseVNodes * 2
+		}
+
+		rm.ring.UpdateVNodeCount(nodeID, targetVNodes)
+	}
 }
 
 // GetNode returns the owner of a key

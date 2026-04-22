@@ -449,7 +449,13 @@ func run() error {
 			AggregationEnabled: cfg.TemporalAggregationEnabled,
 			MaxBuckets:         cfg.TemporalMaxBuckets,
 		}
-		temporalIndex = store.NewTemporalIndex(128)
+		temporalDim := 128
+		if dimStr := os.Getenv("LONGBOW_TEMPORAL_DIM"); dimStr != "" {
+			if d, err := strconv.Atoi(dimStr); err == nil {
+				temporalDim = d
+			}
+		}
+		temporalIndex = store.NewTemporalIndex(temporalDim)
 		vectorStore.SetTemporalIndex(temporalIndex, temporalConfig)
 		logger.Info().
 			Bool("version_history", cfg.TemporalVersionHistory).

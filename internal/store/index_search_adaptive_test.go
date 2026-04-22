@@ -54,6 +54,7 @@ func TestAdaptiveSearch_RetryLogic(t *testing.T) {
 	config.InitialCapacity = 1024
 
 	index := NewArrowHNSW(dataset, &config)
+	dataset.Index = index
 
 	// Insert all vectors
 	for i := 0; i < count; i++ {
@@ -113,7 +114,7 @@ func TestAdaptiveHNSW_AdjustsM(t *testing.T) {
 
 	// 4. Insert vectors
 	for i := 0; i < n; i++ {
-		err := idx.InsertWithVector(uint32(i+1), vecs[i], 0)
+		err := idx.InsertWithVector(uint32(i), vecs[i], 0)
 		require.NoError(t, err)
 	}
 

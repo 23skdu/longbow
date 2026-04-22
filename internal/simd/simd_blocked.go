@@ -61,9 +61,14 @@ func L2Float32Blocked(a, b []float32) (float32, error) {
 	}
 
 	var sum float32
+	impl := l2SquaredImpl
+	if impl == nil {
+		impl = L2SquaredFloat32
+	}
+
 	i := 0
 	for ; i <= len(a)-blockedSimdThreshold; i += blockedSimdThreshold {
-		d, err := L2SquaredFloat32(a[i:i+blockedSimdThreshold], b[i:i+blockedSimdThreshold])
+		d, err := impl(a[i:i+blockedSimdThreshold], b[i:i+blockedSimdThreshold])
 		if err != nil {
 			return 0, err
 		}
@@ -72,7 +77,7 @@ func L2Float32Blocked(a, b []float32) (float32, error) {
 
 	// Remainder
 	if i < len(a) {
-		d, err := L2SquaredFloat32(a[i:], b[i:])
+		d, err := impl(a[i:], b[i:])
 		if err != nil {
 			return 0, err
 		}
@@ -98,6 +103,10 @@ func EuclideanDistanceTiledBatch(query []float32, vectors [][]float32, results [
 
 	numVecs := len(vectors)
 	dims := len(query)
+	impl := l2SquaredImpl
+	if impl == nil {
+		impl = L2SquaredFloat32
+	}
 
 	// Outer loop over dimension tiles
 	for i := 0; i < dims; i += blockedSimdThreshold {
@@ -110,7 +119,7 @@ func EuclideanDistanceTiledBatch(query []float32, vectors [][]float32, results [
 		// Inner loop over vectors
 		for j := 0; j < numVecs; j++ {
 			vTile := vectors[j][i:end]
-			d, err := L2SquaredFloat32(qTile, vTile)
+			d, err := impl(qTile, vTile)
 			if err != nil {
 				return err
 			}
@@ -223,6 +232,10 @@ func EuclideanFloat32BlockedPrefetch(a, b []float32) (float32, error) {
 	var sum float32
 	blockSize := blockedSimdThreshold512
 	prefetchAhead := 1
+	impl := l2SquaredImpl
+	if impl == nil {
+		impl = L2SquaredFloat32
+	}
 
 	i := 0
 	for ; i <= len(a)-blockSize; i += blockSize {
@@ -233,7 +246,7 @@ func EuclideanFloat32BlockedPrefetch(a, b []float32) (float32, error) {
 			Prefetch(unsafe.Pointer(&b[nextIdx])) // #nosec G103
 		}
 
-		d, err := L2SquaredFloat32(a[i:i+blockSize], b[i:i+blockSize])
+		d, err := impl(a[i:i+blockSize], b[i:i+blockSize])
 		if err != nil {
 			return 0, err
 		}
@@ -242,7 +255,7 @@ func EuclideanFloat32BlockedPrefetch(a, b []float32) (float32, error) {
 
 	// Remainder
 	if i < len(a) {
-		d, err := L2SquaredFloat32(a[i:], b[i:])
+		d, err := impl(a[i:], b[i:])
 		if err != nil {
 			return 0, err
 		}
@@ -293,6 +306,10 @@ func euclideanBlockedGeneric(a, b []float32, blockSize int) (float32, error) {
 
 	var totalSum float32
 	dim := len(a)
+	impl := l2SquaredImpl
+	if impl == nil {
+		impl = L2SquaredFloat32
+	}
 
 	for i := 0; i < dim; i += blockSize {
 		end := i + blockSize
@@ -301,7 +318,7 @@ func euclideanBlockedGeneric(a, b []float32, blockSize int) (float32, error) {
 		}
 		chunkA := a[i:end]
 		chunkB := b[i:end]
-		chunkSum, err := L2SquaredFloat32(chunkA, chunkB)
+		chunkSum, err := impl(chunkA, chunkB)
 		if err != nil {
 			return 0, err
 		}
@@ -322,7 +339,11 @@ func euclideanBlocked(a, b []float32) (float32, error) {
 	if len(a) == 0 {
 		return 0, nil
 	}
-	sum, err := L2SquaredFloat32(a, b)
+	impl := l2SquaredImpl
+	if impl == nil {
+		impl = L2SquaredFloat32
+	}
+	sum, err := impl(a, b)
 	if err != nil {
 		return 0, err
 	}

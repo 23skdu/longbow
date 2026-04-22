@@ -41,7 +41,7 @@ build-cuda:
 			echo "Found CUDA at /usr/local/cuda"; \
 		fi; \
 	fi
-	CGO_ENABLED=1 go build -tags gpu -v -o bin/longbow-cuda ./cmd/longbow
+	CGO_ENABLED=1 go build -tags "gpu onnx" -v -o bin/longbow-cuda ./cmd/longbow
 
 # Build with Metal GPU support (macOS ARM64)
 build-metal:
@@ -55,7 +55,7 @@ build-metal:
 		echo "Error: Metal support requires ARM64 architecture"; \
 		exit 1; \
 	fi
-	CGO_ENABLED=1 go build -tags gpu -v -o bin/longbow-metal ./cmd/longbow
+	CGO_ENABLED=1 go build -tags "gpu onnx" -v -o bin/longbow-metal ./cmd/longbow
 
 # Build with GPU support (auto-detect backend based on platform)
 build-gpu:

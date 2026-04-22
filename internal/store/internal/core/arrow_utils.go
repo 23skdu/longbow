@@ -182,6 +182,66 @@ func unsafeVectorSliceGeneric[T any](data arrow.ArrayData, offset, length int) [
 	return unsafe.Slice((*T)(ptr), length)           // #nosec G103
 }
 
+// ExtractVectorF32 extracts a vector as []float32 (Zero-Copy).
+func ExtractVectorF32(rec arrow.RecordBatch, rowIdx, colIdx int) ([]float32, error) {
+	return ExtractVectorGeneric[float32](rec, rowIdx, colIdx)
+}
+
+// ExtractVectorF64 extracts a vector as []float64 (Zero-Copy).
+func ExtractVectorF64(rec arrow.RecordBatch, rowIdx, colIdx int) ([]float64, error) {
+	return ExtractVectorGeneric[float64](rec, rowIdx, colIdx)
+}
+
+// ExtractVectorInt8 extracts a vector as []int8 (Zero-Copy).
+func ExtractVectorInt8(rec arrow.RecordBatch, rowIdx, colIdx int) ([]int8, error) {
+	return ExtractVectorGeneric[int8](rec, rowIdx, colIdx)
+}
+
+// ExtractVectorUint8 extracts a vector as []uint8 (Zero-Copy).
+func ExtractVectorUint8(rec arrow.RecordBatch, rowIdx, colIdx int) ([]uint8, error) {
+	return ExtractVectorGeneric[uint8](rec, rowIdx, colIdx)
+}
+
+// ExtractVectorInt16 extracts a vector as []int16 (Zero-Copy).
+func ExtractVectorInt16(rec arrow.RecordBatch, rowIdx, colIdx int) ([]int16, error) {
+	return ExtractVectorGeneric[int16](rec, rowIdx, colIdx)
+}
+
+// ExtractVectorUint16 extracts a vector as []uint16 (Zero-Copy).
+func ExtractVectorUint16(rec arrow.RecordBatch, rowIdx, colIdx int) ([]uint16, error) {
+	return ExtractVectorGeneric[uint16](rec, rowIdx, colIdx)
+}
+
+// ExtractVectorInt32 extracts a vector as []int32 (Zero-Copy).
+func ExtractVectorInt32(rec arrow.RecordBatch, rowIdx, colIdx int) ([]int32, error) {
+	return ExtractVectorGeneric[int32](rec, rowIdx, colIdx)
+}
+
+// ExtractVectorUint32 extracts a vector as []uint32 (Zero-Copy).
+func ExtractVectorUint32(rec arrow.RecordBatch, rowIdx, colIdx int) ([]uint32, error) {
+	return ExtractVectorGeneric[uint32](rec, rowIdx, colIdx)
+}
+
+// ExtractVectorInt64 extracts a vector as []int64 (Zero-Copy).
+func ExtractVectorInt64(rec arrow.RecordBatch, rowIdx, colIdx int) ([]int64, error) {
+	return ExtractVectorGeneric[int64](rec, rowIdx, colIdx)
+}
+
+// ExtractVectorUint64 extracts a vector as []uint64 (Zero-Copy).
+func ExtractVectorUint64(rec arrow.RecordBatch, rowIdx, colIdx int) ([]uint64, error) {
+	return ExtractVectorGeneric[uint64](rec, rowIdx, colIdx)
+}
+
+// ExtractVectorComplex64 extracts a vector as []complex64 (Zero-Copy).
+func ExtractVectorComplex64(rec arrow.RecordBatch, rowIdx, colIdx int) ([]complex64, error) {
+	return ExtractVectorGeneric[complex64](rec, rowIdx, colIdx)
+}
+
+// ExtractVectorComplex128 extracts a vector as []complex128 (Zero-Copy).
+func ExtractVectorComplex128(rec arrow.RecordBatch, rowIdx, colIdx int) ([]complex128, error) {
+	return ExtractVectorGeneric[complex128](rec, rowIdx, colIdx)
+}
+
 // extractVectorRaw extracts a vector and returns it in its native Arrow type (any).
 // For Complex128: returns []float64 (Arrow stores complex as pairs of float64).
 // Use this for internal paths that need the raw type.
@@ -231,9 +291,7 @@ func ExtractVectorFromArrow(rec arrow.RecordBatch, rowIdx, colIdx int) ([]float3
 	}
 	switch v := vec.(type) {
 	case []float32:
-		cpy := make([]float32, len(v))
-		copy(cpy, v)
-		return cpy, nil
+		return v, nil
 	case []float16.Num:
 		res := make([]float32, len(v))
 		for i, val := range v {

@@ -36,7 +36,8 @@ func (p *ZeroAllocVectorSearchParser) Parse(data []byte) (VectorSearchRequest, e
 	p.result.K = 0
 	p.result.TextQuery = ""
 	p.result.Alpha = 0
-	p.result.GraphAlpha = 0 // Reset
+	p.result.GraphAlpha = 0
+	p.result.GraphDepth = 0
 	p.vector = p.vector[:0]
 	p.filters = p.filters[:0]
 
@@ -57,8 +58,13 @@ func (p *ZeroAllocVectorSearchParser) Parse(data []byte) (VectorSearchRequest, e
 		}
 
 		if data[i] == '}' {
-			// Copy vector to result (shares backing array)
-			p.result.Vector = p.vector
+			// Copy vector to result (avoid sharing internal buffer after Parse returns)
+			if len(p.vector) > 0 {
+				p.result.Vector = make([]float32, len(p.vector))
+				copy(p.result.Vector, p.vector)
+			} else {
+				p.result.Vector = nil
+			}
 			if len(p.filters) > 0 {
 				p.result.Filters = make([]Filter, len(p.filters))
 				copy(p.result.Filters, p.filters)
@@ -149,6 +155,13 @@ func (p *ZeroAllocVectorSearchParser) Parse(data []byte) (VectorSearchRequest, e
 				return p.result, err
 			}
 			p.result.GraphAlpha = val
+			i = newPos
+		case "graph_depth":
+			val, newPos, err := parseInt64(data, i)
+			if err != nil {
+				return p.result, err
+			}
+			p.result.GraphDepth = int(val)
 			i = newPos
 		case "include_vectors":
 			val, newPos, err := parseBool(data, i)

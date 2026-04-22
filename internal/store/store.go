@@ -107,6 +107,7 @@ type VectorStore struct {
 	// Backup management for Part 9
 	backupManager          *BackupManager
 	backupScheduleInterval time.Duration
+	activeSwitches         sync.Map // collection -> bool
 
 	// Auto-scale configuration for Part 1.5
 	autoScaleEnabled       bool
@@ -259,7 +260,7 @@ func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes 
 			RecallThreshold:     0.90,
 			CheckInterval:       5 * time.Minute,
 		}
-		s.indexAdapter = NewRuntimeIndexAdapter(s.logger, s.indexPredictor, adaptConfig, nil)
+		s.indexAdapter = NewRuntimeIndexAdapter(s.logger, s.indexPredictor, adaptConfig, s)
 		s.indexAdapter.WithIndexSwitcher(s)
 		s.indexAdapter.Start()
 	}
@@ -760,16 +761,7 @@ func (s *VectorStore) WaitForIndexing(name string) {
 	}
 }
 
-func (s *VectorStore) stopWorkers() {
-	s.stopOnce.Do(func() {
-		if s.compactionWorker != nil {
-			s.compactionWorker.Stop()
-		}
-		if s.stopChan != nil {
-			close(s.stopChan)
-		}
-	})
-}
+
 
 func (s *VectorStore) ClosePersistence() error {
 	if s.engine != nil {

@@ -427,3 +427,28 @@ func BenchmarkConsistentHash_CacheHitRate(b *testing.B) {
 		}
 	}
 }
+
+func TestConsistentHash_UpdateVNodeCount(t *testing.T) {
+	c := NewConsistentHash(10)
+	c.AddNode("node1")
+	c.AddNode("node2")
+
+	// Calculate initial distribution
+	counts1 := make(map[string]int)
+	for i := 0; i < 1000; i++ {
+		counts1[c.GetNode(fmt.Sprintf("key-%d", i))]++
+	}
+
+	// Update node1 to have many more vnodes
+	c.UpdateVNodeCount("node1", 100)
+
+	// Calculate new distribution
+	counts2 := make(map[string]int)
+	for i := 0; i < 1000; i++ {
+		counts2[c.GetNode(fmt.Sprintf("key-%d", i))]++
+	}
+
+	// node1 should have gained a significant share of keys
+	assert.Greater(t, counts2["node1"], counts1["node1"], "node1 should have more keys after increasing vnodes")
+	assert.Less(t, counts2["node2"], counts1["node2"], "node2 should have fewer keys after node1 vnodes increased")
+}

@@ -14,6 +14,7 @@ const (
 	BackendCUDA
 	BackendMetal
 	BackendOpenCL
+	BackendTPU
 )
 
 func (b GPUBackend) String() string {
@@ -24,8 +25,8 @@ func (b GPUBackend) String() string {
 		return "CUDA"
 	case BackendMetal:
 		return "Metal"
-	case BackendOpenCL:
-		return "OpenCL"
+	case BackendTPU:
+		return "TPU"
 	default:
 		return "Unknown"
 	}

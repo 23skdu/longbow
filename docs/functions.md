@@ -7,8 +7,15 @@ It also maps these functions to the `scripts/ops_test.py` CLI tool, which serves
 
 ## Overview
 
-- **Data Server (Port 3000)**: Handles high-throughput data operations (Ingestion, Bulk Retrieval).
-- **Meta Server (Port 3001)**: Handles control plane operations, search queries, namespaces, and graph operations.
+- **Data Plane (Port 3000)**: Optimized for raw throughput and local node operations. Handles:
+  - **Ingestion (`DoPut`)**: Standard way to write data.
+  - **Bulk Scan (`DoGet`)**: Full dataset retrieval with optional filters.
+  - **Local Search (`DoGet`)**: Single-node vector/hybrid search.
+- **Meta/Query Plane (Port 3001)**: Optimized for coordination and global visibility. Handles:
+  - **Global Search (`DoGet`)**: Distributed search across the entire cluster (automatically handles scatter-gather).
+  - **Advanced Analytics (`DoAction`)**: PageRank, Community Detection, and Graph Traversal.
+  - **Management (`DoAction`)**: Namespaces, Cluster Status, and Dataset deletion.
+  - **CDC & Discovery**: Coordination of change data capture and mesh membership.
 
 ---
 
@@ -55,9 +62,12 @@ Used for synchronization and advanced bidirectional protocols.
 
 ## 2. Control & Query Plane (`MetaServer` - Port 3001)
 
-### `DoGet` (Search)
+### `DoGet` (Global Search)
 
-Performs Vector or Hybrid search.
+Performs distributed Vector or Hybrid search across the entire cluster.
+
+> [!IMPORTANT]
+> `DoPut` (Ingestion) is **DISABLED** on the Meta/Query port to prevent control-plane saturation. All data ingestion MUST target Port 3000.
 
 - **Input**: Ticket containing JSON wrapped in "search" key:
 
@@ -67,7 +77,9 @@ Performs Vector or Hybrid search.
       "dataset": "name",
       "vector": [...],
       "text_query": "optional", 
-      "k": 10
+      "k": 10,
+      "graph_alpha": 0.5,
+      "graph_depth": 2
     }
   }
   ```
@@ -121,6 +133,8 @@ Executes specific control commands.
 | :--- | :--- | :--- |
 | `add-edge` | Add semantic edge (Subject->Predicate->Object). | `python3 scripts/ops_test.py add-edge ...` |
 | `traverse-graph` | Traverse graph from start node. | `python3 scripts/ops_test.py traverse ...` |
+| `calculate-pagerank`| Compute importance scores for nodes. | `scripts/graph_functional_test.py` |
+| `detect-communities`| Group nodes into clusters based on topology. | `scripts/graph_functional_test.py` |
 | `GetGraphStats` | Get graph statistics (nodes, edges). | `python3 scripts/ops_test.py graph-stats ...` |
 
 #### System

@@ -216,6 +216,7 @@ func TestIndexPerformancePredictor_GetStats(t *testing.T) {
 	assert.Equal(t, int64(0), correct)
 }
 
+
 func TestIndexPerformancePredictor_GetConfig(t *testing.T) {
 	logger := zerolog.New(nil).With().Logger()
 	config := LearnedIndexConfig{
@@ -1056,4 +1057,61 @@ func TestWeightedEuclidean_Symmetry(t *testing.T) {
 	}
 	assert.InDelta(t, weightedEuclidean(a, b, w), weightedEuclidean(b, a, w), 1e-9,
 		"weighted Euclidean distance must be symmetric")
+}
+
+func TestRuntimeIndexAdapter_FeedbackLoop(t *testing.T) {
+	logger := zerolog.New(nil).With().Logger()
+	predictor := NewIndexPerformancePredictor(logger, LearnedIndexConfig{
+		MinTrainingSamples: 1,
+	})
+	config := IndexAdaptationConfig{
+		EnableAutoAdaptation: true,
+	}
+	
+	adapter := NewRuntimeIndexAdapter(logger, predictor, config, nil)
+	
+	collection := "test-feedback"
+	features := QueryFeatures{DatasetSize: 50000}
+	
+	// 1. Manually trigger an adaptation entry
+	adapter.adaptationMu.Lock()
+	adapter.adaptations[collection] = &IndexAdaptation{
+		CollectionName: collection,
+		ProposedIndex:  IndexTypeDiskANN,
+		Status:         AdaptationStatusRunning,
+		Features:       features,
+		Metrics: AdaptationMetrics{
+			AvgLatencyMs: 150.0,
+		},
+	}
+	adapter.adaptationMu.Unlock()
+	
+	// 2. Complete with success
+	err := adapter.CompleteAdaptation(collection, true)
+	assert.NoError(t, err)
+	assert.Equal(t, int64(1), predictor.stats.TrainingSamplesCollected.Load())
+	
+	// 3. Trigger another one
+	adapter.adaptationMu.Lock()
+	adapter.adaptations[collection] = &IndexAdaptation{
+		CollectionName: collection,
+		ProposedIndex:  LearnedIVFPQ,
+		Status:         AdaptationStatusRunning,
+		Features:       features,
+	}
+	adapter.adaptationMu.Unlock()
+	
+	// 4. Complete with failure (should record negative signal)
+	err = adapter.CompleteAdaptation(collection, false)
+	assert.NoError(t, err)
+	assert.Equal(t, int64(2), predictor.stats.TrainingSamplesCollected.Load())
+	
+	// Verify that the second sample has the failure penalty
+	predictor.samplesMu.RLock()
+	lastSample := predictor.samples[len(predictor.samples)-1]
+	predictor.samplesMu.RUnlock()
+	
+	assert.Equal(t, LearnedIVFPQ, lastSample.Index)
+	assert.Equal(t, 10*time.Second, lastSample.Latency) // Failure penalty
+	assert.Equal(t, 0.0, lastSample.Recall)
 }

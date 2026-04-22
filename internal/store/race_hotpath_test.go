@@ -38,7 +38,8 @@ func TestRace_ConcurrentSearchAndInsert(t *testing.T) {
 	datasetName := "race_dataset"
 	s.PrewarmDataset(datasetName, schema)
 
-	var wg sync.WaitGroup
+	var insertWg sync.WaitGroup
+	var searchWg sync.WaitGroup
 	numInserters := 2
 	numSearchers := 4
 	rowsPerBatch := 100
@@ -46,9 +47,9 @@ func TestRace_ConcurrentSearchAndInsert(t *testing.T) {
 
 	// Inserters
 	for i := 0; i < numInserters; i++ {
-		wg.Add(1)
+		insertWg.Add(1)
 		go func(id int) {
-			defer wg.Done()
+			defer insertWg.Done()
 			for b := 0; b < numBatches; b++ {
 				builder := array.NewRecordBuilder(mem, schema)
 				ids := builder.Field(0).(*array.StringBuilder)
@@ -78,14 +79,15 @@ func TestRace_ConcurrentSearchAndInsert(t *testing.T) {
 		}(i)
 	}
 
-	// Searchers
+	searchCtx, searchCancel := context.WithCancel(ctx)
+	defer searchCancel()
 	for i := 0; i < numSearchers; i++ {
-		wg.Add(1)
+		searchWg.Add(1)
 		go func(id int) {
-			defer wg.Done()
+			defer searchWg.Done()
 			for {
 				select {
-				case <-ctx.Done():
+				case <-searchCtx.Done():
 					return
 				default:
 					query := make([]float32, 128)
@@ -93,7 +95,7 @@ func TestRace_ConcurrentSearchAndInsert(t *testing.T) {
 						query[i] = rand.Float32()
 					}
 					// Use SearchHybrid as it exercises RCU and Index
-					_, err := s.SearchHybrid(ctx, datasetName, query, "", 10, 1.0, 60, 0.1, 2)
+					_, err := s.SearchHybrid(searchCtx, datasetName, query, "", 10, 1.0, 60, 0.1, 2)
 					if err != nil {
 						// Dataset might be empty initially, which is fine
 						_ = err
@@ -104,5 +106,7 @@ func TestRace_ConcurrentSearchAndInsert(t *testing.T) {
 		}(i)
 	}
 
-	wg.Wait()
+	insertWg.Wait()
+	searchCancel()
+	searchWg.Wait()
 }

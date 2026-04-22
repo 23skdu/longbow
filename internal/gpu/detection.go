@@ -21,6 +21,9 @@ func DetectAvailableGPUs() []GPUInfo {
 		// Also check for OpenCL GPUs on Linux (AMD, Intel)
 		openclGPUs := detectOpenCLGPUs()
 		gpus = append(gpus, openclGPUs...)
+		// Detect TPU on Linux
+		tpuGPUs := detectTPUs()
+		gpus = append(gpus, tpuGPUs...)
 	}
 
 	// Detect Metal GPUs on macOS (also supports OpenCL fallback)
@@ -526,4 +529,95 @@ func GetGPUByID(deviceID int) (*GPUInfo, error) {
 	}
 
 	return nil, fmt.Errorf("GPU device %d not found", deviceID)
+}
+var accelSysfsRoot = "/sys/class/accel"
+
+// detectTPUs detects Google Cloud TPU devices (v2-v7x)
+func detectTPUs() []GPUInfo {
+	return detectTPUsWithRoot(accelSysfsRoot)
+}
+
+func detectTPUsWithRoot(root string) []GPUInfo {
+	var gpus []GPUInfo
+
+	if runtime.GOOS != "linux" {
+		return gpus
+	}
+
+	// TPU devices are exposed via the 'accel' class in modern kernels
+	accelDir := root
+	if _, err := os.Stat(accelDir); err != nil {
+		// Fallback for older kernels/drivers: check /dev/tpu*
+		for i := 0; i < 8; i++ {
+			tpuDev := fmt.Sprintf("/dev/tpu%d", i)
+			if _, err := os.Stat(tpuDev); err == nil {
+				gpus = append(gpus, GPUInfo{
+					Backend:  BackendTPU,
+					Name:     "Google TPU",
+					DeviceID: i,
+					MemoryMB: 16384, // Generic fallback
+				})
+			}
+		}
+		return gpus
+	}
+
+	devices, err := os.ReadDir(accelDir)
+	if err != nil {
+		return gpus
+	}
+
+	for _, dev := range devices {
+		devName := dev.Name()
+		if !strings.HasPrefix(devName, "accel") {
+			continue
+		}
+
+		idStr := strings.TrimPrefix(devName, "accel")
+		deviceID, _ := strconv.Atoi(idStr)
+
+		// Check for Google Vendor ID (0x1ae0)
+		vendorPath := filepath.Join(accelDir, devName, "device/vendor")
+		vendorData, err := os.ReadFile(vendorPath)
+		if err != nil || strings.TrimSpace(string(vendorData)) != "0x1ae0" {
+			continue
+		}
+
+		// Try to identify the chip version (Ironwood = TPU v7x)
+		name := "Google TPU"
+		memoryMB := int64(192 * 1024) // Default for v7x
+
+		devicePath := filepath.Join(accelDir, devName, "device/device")
+		deviceData, _ := os.ReadFile(devicePath)
+		deviceIDHex := strings.TrimSpace(string(deviceData))
+
+		switch deviceIDHex {
+		case "0x0063": // Example ID for Ironwood
+			name = "Google TPU v7x (Ironwood)"
+		case "0x005e": // Example ID for v5p
+			name = "Google TPU v5p"
+			memoryMB = 95 * 1024
+		}
+
+		// Check for NUMA affinity
+		numaNode := -1
+		numaPath := filepath.Join(accelDir, devName, "device/numa_node")
+		if numaData, err := os.ReadFile(numaPath); err == nil {
+			if node, err := strconv.Atoi(strings.TrimSpace(string(numaData))); err == nil {
+				numaNode = node
+			}
+		}
+
+		gpus = append(gpus, GPUInfo{
+			Backend:      BackendTPU,
+			Name:         name,
+			DeviceID:     deviceID,
+			MemoryMB:     memoryMB,
+			Vendor:       "Google",
+			VendorID:     "0x1ae0",
+			ComputeMajor: numaNode, // Reusing ComputeMajor to store NUMA node for now
+		})
+	}
+
+	return gpus
 }

@@ -773,3 +773,33 @@ func (a *AdaptiveIndex) Len() int {
 	}
 	return 0
 }
+
+// GetData returns graph data if HNSW is active.
+func (a *AdaptiveIndex) GetData() *lbtypes.GraphData {
+	a.mu.RLock()
+	hnsw := a.hnsw
+	a.mu.RUnlock()
+
+	if hnsw == nil {
+		return nil
+	}
+	if g, ok := hnsw.(interface{ GetData() *lbtypes.GraphData }); ok {
+		return g.GetData()
+	}
+	return nil
+}
+
+// GetShardedIndex returns the underlying sharded index if active.
+func (a *AdaptiveIndex) GetShardedIndex() *ShardedHNSW {
+	a.mu.RLock()
+	hnsw := a.hnsw
+	a.mu.RUnlock()
+
+	if hnsw == nil {
+		return nil
+	}
+	if s, ok := hnsw.(interface{ GetShardedIndex() *ShardedHNSW }); ok {
+		return s.GetShardedIndex()
+	}
+	return nil
+}

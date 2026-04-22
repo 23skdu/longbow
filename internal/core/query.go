@@ -103,6 +103,7 @@ type VectorSearchRequest struct {
 	TextQuery       string                 `json:"text_query,omitempty"`
 	Alpha           float32                `json:"alpha,omitempty"`
 	GraphAlpha      float32                `json:"graph_alpha,omitempty"`
+	GraphDepth      int                    `json:"graph_depth,omitempty"`
 	IncludeVectors  bool                   `json:"include_vectors,omitempty"`
 	VectorFormat    string                 `json:"vector_format,omitempty"`
 	VectorType      string                 `json:"vector_type,omitempty"`     // "float32", "turboquant", etc.

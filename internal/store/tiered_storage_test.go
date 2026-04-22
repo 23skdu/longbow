@@ -20,7 +20,7 @@ func TestTieredStorage_OffloadAndFetch(t *testing.T) {
 	require.NoError(t, err)
 	defer dvs.Close()
 
-	remote := storage.NewMockRemoteStorage()
+	remote := storage.NewMockRemoteStorage("s3")
 	dvs.SetTieredConfig(remote, 10) // 10MB cache
 
 	// 1. Add some vectors
@@ -64,7 +64,7 @@ func TestTieredStorage_EnforcePolicy(t *testing.T) {
 	require.NoError(t, err)
 	defer dvs.Close()
 
-	remote := storage.NewMockRemoteStorage()
+	remote := storage.NewMockRemoteStorage("s3")
 	dvs.SetTieredConfig(remote, 10)
 
 	// Add vector

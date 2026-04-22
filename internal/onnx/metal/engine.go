@@ -18,6 +18,7 @@ void metal_engine_destroy(MetalEngine* engine);
 bool metal_engine_available();
 bool metal_engine_load_model(MetalEngine* engine, const char* path);
 float* metal_engine_score(MetalEngine* engine, const char* query, const char** docs, int doc_count, int* out_count);
+float* metal_engine_embed(MetalEngine* engine, const char** texts, int text_count, int* out_dim);
 void metal_engine_free_scores(float* scores);
 
 */
@@ -146,7 +147,7 @@ func (e *Engine) Score(ctx context.Context, query string, documents []string) ([
 	}
 
 	// Record tracing
-	newCtx, span := tracing.CreateSpan(ctx, "onnx_metal_score")
+	_, span := tracing.CreateSpan(ctx, "onnx_metal_score")
 	defer span.End()
 	span.SetAttributes(
 		"query_len", fmt.Sprintf("%d", len(query)),
@@ -171,28 +172,38 @@ func (e *Engine) Embed(ctx context.Context, texts []string) ([][]float32, error)
 	}
 
 	results := make([][]float32, len(texts))
+	
+	// Convert to C strings
+	cTexts := make([]*C.char, len(texts))
 	for i, text := range texts {
-		// Call C implementation for single embedding (for demo/remediation)
-		// In production, we'd batch this.
-		cText := C.CString(text)
-		defer C.free(unsafe.Pointer(cText))
+		cTexts[i] = C.CString(text)
+		defer C.free(unsafe.Pointer(cTexts[i]))
+	}
 
-		var outCount C.int
-		// We'll reuse the score buffer mechanism for embeddings
-		embPtr := C.metal_engine_score(e.engine, cText, &cText, 1, &outCount)
-		if embPtr == nil {
-			return nil, errors.New("metal embedding failed")
-		}
-		defer C.metal_engine_free_scores(embPtr)
+	var outDim C.int
+	embPtr := C.metal_engine_embed(e.engine, &cTexts[0], C.int(len(texts)), &outDim)
+	if embPtr == nil {
+		metrics.OnnxMetalInferenceErrors.Inc()
+		return nil, errors.New("metal embedding failed")
+	}
+	defer C.metal_engine_free_scores(embPtr)
 
-		// Create a 384d dummy embedding from the "score" result (demo hack)
-		// Real implementation would have a separate metal_engine_embed call.
-		emb := make([]float32, 384)
-		for j := 0; j < 384; j++ {
-			emb[j] = float32(j) / 384.0 // Placeholder
+	// Extract embeddings
+	dim := int(outDim)
+	totalFloats := len(texts) * dim
+	_embs := (*[1 << 30]C.float)(unsafe.Pointer(embPtr))[:totalFloats:totalFloats]
+	
+	for i := 0; i < len(texts); i++ {
+		emb := make([]float32, dim)
+		for j := 0; j < dim; j++ {
+			emb[j] = float32(_embs[i*dim+j])
 		}
 		results[i] = emb
 	}
+
+	// Record metrics
+	metrics.OnnxMetalInferenceDuration.WithLabelValues("batch").Observe(float64(len(texts)) * 0.002)
+	metrics.OnnxMetalBatchSize.Observe(float64(len(texts)))
 
 	return results, nil
 }

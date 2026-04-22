@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"path/filepath"
 	"runtime"
 	"sync"
 
@@ -108,27 +109,39 @@ func NewSession(modelPath string) (*Session, error) {
 	}
 
 	// Load model
+	// We use a dynamic session but we'll try to guess input names if not provided
 	inputNames := []string{"input_ids", "attention_mask", "token_type_ids"}
-	outputNames := []string{"logits", "output"} // Adjust based on expected model outputs
+	outputNames := []string{"logits", "output", "last_hidden_state"}
 	session, err := ort.NewDynamicAdvancedSession(modelPath, inputNames, outputNames, options)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create ONNX session: %w", err)
+		// Try again with fewer inputs if the model is simpler
+		inputNames = []string{"input_ids", "attention_mask"}
+		session, err = ort.NewDynamicAdvancedSession(modelPath, inputNames, outputNames, options)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create ONNX session: %w", err)
+		}
 	}
 
 	s := &Session{
 		ortSession:  session,
 		isMetal:     false,
 		poolingMode: PoolingMean, // Default
+		inputNames:  inputNames,
+		outputNames: outputNames,
 	}
 
-	// Initialize tokenizer with default search paths
-	tokenizer, err := ml.NewTokenizer("vocab.txt", 512)
+	// Initialize tokenizer - look for vocab.txt in model directory
+	modelDir := filepath.Dir(modelPath)
+	vocabPath := filepath.Join(modelDir, "vocab.txt")
+	if _, err := os.Stat(vocabPath); err != nil {
+		// Fallback to current directory or default search paths
+		vocabPath = "vocab.txt"
+	}
+	
+	tokenizer, err := ml.NewTokenizer(vocabPath, 512)
 	if err == nil {
 		s.tokenizer = tokenizer
 	}
-
-	s.inputNames = inputNames
-	s.outputNames = outputNames
 
 	return s, nil
 }

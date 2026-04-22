@@ -41,9 +41,9 @@ func TestBatchDistanceCompute_MismatchedQueryCandidateLengths_ReturnsError(t *te
 	}
 	results := make([]float32, 1)
 
-	assert.PanicsWithValue(t, "hnsw2: batch distance length mismatch", func() {
-		BatchDistanceCompute(queries, candidates, results)
-	})
+	err := BatchDistanceCompute(queries, candidates, results)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "batch distance length mismatch")
 }
 
 func TestBatchDistanceCompute_MismatchedResultsLength_ReturnsError(t *testing.T) {
@@ -56,9 +56,9 @@ func TestBatchDistanceCompute_MismatchedResultsLength_ReturnsError(t *testing.T)
 	}
 	results := make([]float32, 1)
 
-	assert.PanicsWithValue(t, "hnsw2: batch distance length mismatch", func() {
-		BatchDistanceCompute(queries, candidates, results)
-	})
+	err := BatchDistanceCompute(queries, candidates, results)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "batch distance length mismatch")
 }
 
 func TestBatchDistanceCompute_SingleQuery(t *testing.T) {
@@ -173,23 +173,3 @@ func TestBatchDistanceCompute_MixedDimensions(t *testing.T) {
 	}
 }
 
-func TestBatchDistanceCompute_PanicIsRecoverable(t *testing.T) {
-	defer func() {
-		if r := recover(); r != nil {
-			assert.Equal(t, "hnsw2: batch distance length mismatch", r)
-		} else {
-			t.Error("expected panic but did not panic")
-		}
-	}()
-
-	queries := [][]float32{
-		{1.0, 0.0, 0.0},
-		{0.0, 1.0, 0.0},
-	}
-	candidates := [][]float32{
-		{1.0, 0.0, 0.0},
-	}
-	results := make([]float32, 1)
-
-	BatchDistanceCompute(queries, candidates, results)
-}

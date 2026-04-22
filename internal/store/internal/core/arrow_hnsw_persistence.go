@@ -132,5 +132,40 @@ func (h *ArrowHNSW) promoteNode(data*types.GraphData, id uint32)*types.GraphData
 	return data
 }
 
+// promoteNodeLocked is like promoteNode but assumes growMu.Lock() is already held.
+func (h *ArrowHNSW) promoteNodeLocked(data *types.GraphData, id uint32) *types.GraphData {
+	if int(id) >= data.Capacity {
+		return data
+	}
+
+	cID := types.ChunkID(id)
+	cOff := types.ChunkOffset(id)
+
+	dg := h.diskGraph.Load()
+	if dg == nil {
+		return data
+	}
+
+	neighborsChunkL0 := data.GetNeighborsChunk(0, cID)
+	if neighborsChunkL0 != nil {
+		return data
+	}
+
+	for l := 0; l < types.ArrowMaxLayers; l++ {
+		diskNeighbors := dg.GetNeighbors(l, id, nil)
+		if len(diskNeighbors) == 0 {
+			continue
+		}
+
+		var err error
+		data, err = h.ensureChunkInternal(cID, cOff, data.Dims)
+		if err != nil {
+			return data
+		}
+	}
+
+	return data
+}
+
 // ensureChunk wrapper that handles promotion if needed?
 // No, promoteNode should be called by AddConnection before writing.

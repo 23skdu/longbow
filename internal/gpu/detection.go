@@ -602,6 +602,7 @@ func detectTPUsWithRoot(root string) []GPUInfo {
 		// Check for NUMA affinity
 		numaNode := -1
 		numaPath := filepath.Join(accelDir, devName, "device/numa_node")
+		// #nosec G304 - numaPath is constructed from trusted accelDir and device name, not user input
 		if numaData, err := os.ReadFile(numaPath); err == nil {
 			if node, err := strconv.Atoi(strings.TrimSpace(string(numaData))); err == nil {
 				numaNode = node

@@ -143,11 +143,13 @@ func (s *VectorStore) applyReplayBatch(name string, rec arrow.RecordBatch, seq u
 
 	// queue for indexing
 	ds.PendingIndexJobs.Add(rec.NumRows())
+	bIdx := len(ds.Records) - 1
+	s.logger.Debug().Str("dataset", name).Int("batch_idx", bIdx).Msg("Sending indexing job")
 	s.indexQueue.Send(IndexJob{
 		DatasetName: name,
 		Record:      rec, // Queue takes ownership (Retain?)
 		CreatedAt:   time.Now(),
-		BatchIdx:    len(ds.Records) - 1,
+		BatchIdx:    bIdx,
 	})
 	rec.Retain() // For Queue
 

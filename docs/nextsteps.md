@@ -104,9 +104,15 @@ Finalized production hardening of the adaptive learned index and GraphRAG system
 
 ### Stability & Production Readiness (Priority: CRITICAL)
 
-- [x] **Release 0.1.9 Deployment**: Finalize the multi-platform Docker push (ARM64 Metal / AMD64 NVIDIA) and tag the 0.1.9 production release.
-- [x] **Gosec Hardening**: Systematically address the remaining 14 high-confidence security findings in the `internal/simd` and `internal/gpu` CGO bridge layers.
-- [x] **Expand Test Coverage**: Expand unit and integration test suites across `internal/store/core`, `internal/onnx`, and `internal/simd`. Added comprehensive SIMD test suite and core search context lifecycle tests. Achieved 100% coverage in `internal/onnx`.
+- [x] **GraphRAG Indexing Stability**:
+  - [x] Resolved reentrant `growMu` deadlock in `InsertWithVector` during large-scale (25k+) ingestion.
+  - [x] Hardened `searchLayer` against nil context dereferences in background workers.
+  - [x] Eliminated redundant atomic `nodeCount` updates to reduce cache contention.
+- [x] **Release 0.1.9 Performance Benchmarking**: Finalized the full performance matrix across 14 dtypes and 8 batch sizes (128d to 768d).
+- [ ] **Performance Optimizations (Post-0.1.9)**:
+  - [ ] **Dynamic Neighbor Selection**: Implement heuristic-based neighbor pruning during `SearchHybrid` to reduce graph traversal overhead when `alpha < 0.5`.
+  - [ ] **Lock-Free Search Context**: Transition `ArrowSearchContext` from a pool to a lock-free thread-local storage pattern for lower hot-path latency.
+  - [ ] **Asynchronous Graph Enrichment**: Move `AddEdge` operations to a dedicated background worker to decouple logical graph updates from physical vector ingestion.
 
 ## 🎯 CURRENT RELEASE: 0.1.9-rc3
 

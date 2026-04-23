@@ -4,6 +4,34 @@
 
 ---
 
+## 🔴 PENDING: Bulk Insert Test Failures
+
+Two HNSW bulk insert tests fail due to poor recall (self not found in search results):
+
+### TestBulkDeferredConnections (`internal/store/bulk_test.go:116`)
+- **Issue**: Random vectors not found in search after bulk insert
+- **Root Cause**: Likely entry point not properly set after batch, or search starting from stale EP
+
+### TestArrowHNSW_AddBatch_Parallel_Dense_Packed (`internal/store/internal/core/arrow_hnsw_dense_packed_test.go:69`)
+- **Issue**: Search returns wrong ID (returns 1 instead of expected 50)
+- **Root Cause**: Same as above - search finds wrong entry point region
+
+### Investigation Summary
+- Search at layer 0 uses `entryPoint.Load()` as starting point
+- `AddBatchBulk` updates entry point AFTER all linkage (line 816)
+- During linkage, `currentEps[idx]` is set from search results (line 492, 516)
+- **Hypothesis**: Nodes in same layer don't connect to each other because `selectNeighbors` filters by distance threshold (only connects if `d < threshold`), and with random vectors, most distances exceed threshold
+- **Fix Plan**: Either:
+  1. **Immediate**: Ensure each node connects to its nearest neighbor in the batch at layer 0 (guaranteed connectivity)
+  2. **Add debug logging** to track entry point updates and search traversal counts
+  3. **Increase M values** or lower distance thresholds for small batches
+
+### Affected Files
+- `internal/store/internal/core/arrow_hnsw_bulk.go` (line 770-793)
+- `internal/store/internal/core/arrow_hnsw_insert.go` (line 255-279)
+
+---
+
 ## ✅ COMPLETED (2026-04-23): Production Hardening (0.1.9)
 
 Successfully finalized the production hardening for the 0.1.9 release, focusing on high-performance compute and memory locality.

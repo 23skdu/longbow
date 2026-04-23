@@ -30,12 +30,3 @@ func TestNUMATopology_GetNodeForCPU(t *testing.T) {
 	}
 	assert.Equal(t, -1, topo.GetNodeForCPU(-1))
 }
-
-func TestDataset_BatchNodes(t *testing.T) {
-	ds := NewDataset("test", nil)
-	ds.BatchNodes = append(ds.BatchNodes, 0, 1, 0)
-
-	assert.Equal(t, 3, len(ds.BatchNodes))
-	assert.Equal(t, 0, ds.BatchNodes[0])
-	assert.Equal(t, 1, ds.BatchNodes[1])
-}

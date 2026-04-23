@@ -3486,3 +3486,6 @@ func (h *ArrowHNSW) RemapLocations(ctx context.Context, mapping map[uint32]any) 
 	}
 	return nil
 }
+func (h *ArrowHNSW) GetNUMANode() (int, *memory.NUMATopology) {
+	return h.config.NUMANode, h.topo
+}

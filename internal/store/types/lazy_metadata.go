@@ -10,8 +10,9 @@ import (
 type LazyMetadata struct {
 	data []byte
 	once sync.Once
+	// Deprecated: use ArrowMetadata for zero-alloc access
 	decoded map[string]interface{}
-	err error
+	err     error
 }
 
 func NewLazyMetadata(data []byte) *LazyMetadata {
@@ -26,6 +27,13 @@ func (l *LazyMetadata) Get() (map[string]interface{}, error) {
 }
 
 func (l *LazyMetadata) GetField(field string) (interface{}, bool) {
+	// Optimization: Use zero-alloc decoder first
+	meta := core.NewArrowMetadata(l.data)
+	if val, ok := meta.GetField(field); ok {
+		return val, true
+	}
+
+	// Fallback to full decode if needed (unlikely with ArrowMetadata)
 	m, err := l.Get()
 	if err != nil {
 		return nil, false

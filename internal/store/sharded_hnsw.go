@@ -176,7 +176,7 @@ func NewShardedHNSW(config ShardedHNSWConfig, dataset *Dataset) *ShardedHNSW {
 	return s
 }
 
-func (s *ShardedHNSW) newShard(_ int) *hnswShard {
+func (s *ShardedHNSW) newShard(shardIdx int) *hnswShard {
 	// Map ShardedHNSWConfig to ArrowHNSWConfig
 	arrowConfig := DefaultArrowHNSWConfig()
 	arrowConfig.M = s.config.M
@@ -199,6 +199,12 @@ func (s *ShardedHNSW) newShard(_ int) *hnswShard {
 	if s.dataset != nil {
 		topo = s.dataset.Topo
 	}
+
+	// Assign shard to NUMA node if topology is available
+	if topo != nil && topo.NumNodes > 0 {
+		arrowConfig.NUMANode = shardIdx % topo.NumNodes
+	}
+
 	idx := NewArrowHNSW(s.dataset, &arrowConfig, topo)
 	if idx == nil {
 		return nil
@@ -435,6 +441,16 @@ func (s *ShardedHNSW) SearchVectors(ctx context.Context, queryVec any, k int, fi
 		i := i
 		shard := shard
 		g.Go(func() error {
+			// Pin thread to shard's NUMA node if possible
+			if h, ok := shard.index.(interface {
+				GetNUMANode() (int, *memory.NUMATopology)
+			}); ok {
+				nodeID, topo := h.GetNUMANode()
+				if topo != nil && nodeID >= 0 {
+					_ = memory.PinToNUMANode(topo, nodeID)
+				}
+			}
+
 			res, err := shard.index.SearchVectors(ctx, queryVec, k*2, nil, options) // Oversample, evaluate filters on merge
 			if err != nil {
 				return err
@@ -527,7 +543,7 @@ func (s *ShardedHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any,
 		err      error
 	}
 	ch := make(chan shardResult, len(s.shards))
-	var wg sync.WaitGroup
+	g, ctx := errgroup.WithContext(ctx)
 
 	s.shardsMu.RLock()
 	currentShards := s.shards
@@ -537,23 +553,37 @@ func (s *ShardedHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any,
 		if shard == nil || shard.index == nil {
 			continue
 		}
-		wg.Add(1)
-		go func(idx int, sh *hnswShard) {
-			defer wg.Done()
+		i := i
+		shard := shard
+		g.Go(func() error {
+			// Pin thread to shard's NUMA node if possible
+			if h, ok := shard.index.(interface {
+				GetNUMANode() (int, *memory.NUMATopology)
+			}); ok {
+				nodeID, topo := h.GetNUMANode()
+				if topo != nil && nodeID >= 0 {
+					_ = memory.PinToNUMANode(topo, nodeID)
+				}
+			}
+
 			// Pass nil filter to shard, filter globally
-			res, err := sh.index.SearchVectorsWithBitmap(ctx, queryVec, k*2, nil, options)
-			ch <- shardResult{results: res, shardIdx: idx, err: err}
-		}(i, shard)
+			res, err := shard.index.SearchVectorsWithBitmap(ctx, queryVec, k*2, nil, options)
+			if err != nil {
+				return err
+			}
+			ch <- shardResult{results: res, shardIdx: i}
+			return nil
+		})
 	}
-	wg.Wait()
+	
+	if err := g.Wait(); err != nil {
+		return nil, err
+	}
 	close(ch)
 
 	// Check for errors first
 	merged := make([]SearchResult, 0, k*2)
 	for sr := range ch {
-		if sr.err != nil {
-			return nil, sr.err
-		}
 		shard := currentShards[sr.shardIdx]
 		for _, r := range sr.results {
 			globalID, ok := shard.getGlobalID(uint32(r.ID))
@@ -589,8 +619,8 @@ func (s *ShardedHNSW) SearchVectorsInRange(ctx context.Context, queryVec any, th
 		err      error
 	}
 	ch := make(chan shardResult, len(s.shards))
-	var wg sync.WaitGroup
-
+	g, ctx := errgroup.WithContext(ctx)
+	
 	s.shardsMu.RLock()
 	currentShards := s.shards
 	s.shardsMu.RUnlock()
@@ -599,18 +629,32 @@ func (s *ShardedHNSW) SearchVectorsInRange(ctx context.Context, queryVec any, th
 		if shard == nil || shard.index == nil {
 			continue
 		}
-		wg.Add(1)
-		go func(idx int, sh *hnswShard) {
-			defer wg.Done()
-			res, err := sh.index.SearchVectorsInRange(ctx, queryVec, threshold, nil, options)
-			ch <- shardResult{results: res, shardIdx: idx, err: err}
-		}(i, shard)
+		i := i
+		shard := shard
+		g.Go(func() error {
+			// Pin thread to shard's NUMA node if possible
+			if h, ok := shard.index.(interface {
+				GetNUMANode() (int, *memory.NUMATopology)
+			}); ok {
+				nodeID, topo := h.GetNUMANode()
+				if topo != nil && nodeID >= 0 {
+					_ = memory.PinToNUMANode(topo, nodeID)
+				}
+			}
+
+			res, err := shard.index.SearchVectorsInRange(ctx, queryVec, threshold, nil, options)
+			if err != nil {
+				return err
+			}
+			ch <- shardResult{results: res, shardIdx: i}
+			return nil
+		})
 	}
 
-	go func() {
-		wg.Wait()
-		close(ch)
-	}()
+	if err := g.Wait(); err != nil {
+		return nil, err
+	}
+	close(ch)
 
 	var merged []SearchResult
 	for sr := range ch {

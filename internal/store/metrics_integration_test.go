@@ -25,7 +25,7 @@ func TestMetricsIntegration_HNSWSearch(t *testing.T) {
 	config := DefaultArrowHNSWConfig()
 	ds := &Dataset{Name: "test_dataset"}
 	// Set name for labeling
-	idx := NewArrowHNSW(ds, &config)
+	idx := NewArrowHNSW(ds, &config, nil)
 
 	// Insert some data to ensure search does something
 	err := idx.InsertWithVector(0, []float32{1.0, 0.0}, 0)
@@ -57,7 +57,7 @@ func TestMetricsIntegration_HNSWInsert(t *testing.T) {
 
 	config := DefaultArrowHNSWConfig()
 	ds := &Dataset{Name: "insert_dataset"}
-	idx := NewArrowHNSW(ds, &config)
+	idx := NewArrowHNSW(ds, &config, nil)
 
 	initialInsertOps := getMetricCount(t, ts.URL, "longbow_hnsw_insert_ops_total", "dataset=\"insert_dataset\"")
 	initialNodesAdded := getMetricCount(t, ts.URL, "longbow_hnsw_nodes_added_total", "dataset=\"insert_dataset\"")

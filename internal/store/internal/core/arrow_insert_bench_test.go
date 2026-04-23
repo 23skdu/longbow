@@ -70,7 +70,7 @@ func BenchmarkArrowHNSWInsert(b *testing.B) {
 	// If b.N is large, we might fill it up.
 	// We want to measure amortized insertion time.
 
-	index := NewArrowHNSW(ds, &config)
+	index := NewArrowHNSW(ds, &config, nil)
 
 	// Pre-train PQ if configured
 

@@ -120,6 +120,7 @@ type ArrowHNSWConfig struct {
 	TurboQuantEnabled bool
 	TurboQuantBits    int
 	LockFreeThreshold int // Layer threshold for CAS-based lock-free updates (e.g. 2)
+	NUMANode          int // Target NUMA node for memory pinning (-1 for default)
 }
 
 // DefaultArrowHNSWConfig returns a configuration with sensible defaults
@@ -147,6 +148,7 @@ func DefaultArrowHNSWConfig() ArrowHNSWConfig {
 		SelectionHeuristicLimit: 400,
 		Metric:                  core.MetricEuclidean,
 		ParallelSearch:          DefaultParallelSearchConfig(),
+		NUMANode:                -1,
 	}
 
 	if os.Getenv("LONGBOW_LOW_MEM") == "1" || os.Getenv("LONGBOW_LOW_MEM") == "true" {

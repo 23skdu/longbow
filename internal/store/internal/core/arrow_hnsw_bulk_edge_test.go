@@ -31,7 +31,7 @@ func TestArrowHNSW_AddBatchBulk_EdgeCases(t *testing.T) {
 	cfg := types.DefaultArrowHNSWConfig()
 	cfg.Dims = dims
 
-	idx := core.NewArrowHNSW(ds, &cfg)
+	idx := core.NewArrowHNSW(ds, &cfg, nil)
 	defer func() { _ = idx.Close() }()
 
 	t.Run("EmptyBatch", func(t *testing.T) {

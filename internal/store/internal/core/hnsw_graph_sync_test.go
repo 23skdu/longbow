@@ -19,7 +19,7 @@ func TestHNSWGraphSync_ExportState(t *testing.T) {
 
 	config := types.DefaultArrowHNSWConfig()
 	config.Dims = 128
-	idx := NewArrowHNSW(ds, &config)
+	idx := NewArrowHNSW(ds, &config, nil)
 
 	for i := 0; i < 10; i++ {
 		idx.locationStore.Append(types.Location{BatchIdx: i / 5, RowIdx: i % 5})
@@ -44,7 +44,7 @@ func TestHNSWGraphSync_ImportState(t *testing.T) {
 	ds := NewMockDataset("test", schema)
 	config := types.DefaultArrowHNSWConfig()
 	config.Dims = 128
-	idx := NewArrowHNSW(ds, &config)
+	idx := NewArrowHNSW(ds, &config, nil)
 	for i := 0; i < 10; i++ {
 		idx.locationStore.Append(types.Location{BatchIdx: i / 5, RowIdx: i % 5})
 	}
@@ -52,7 +52,7 @@ func TestHNSWGraphSync_ImportState(t *testing.T) {
 	state, _ := gsync.ExportState()
 
 	ds2 := NewMockDataset("test2", schema)
-	idx2 := NewArrowHNSW(ds2, &config)
+	idx2 := NewArrowHNSW(ds2, &config, nil)
 	gsync2 := NewHNSWGraphSync(idx2)
 	err := gsync2.ImportState(state)
 	if err != nil {
@@ -83,7 +83,7 @@ func TestHNSWGraphSync_GraphExportImport(t *testing.T) {
 	ds := NewMockDataset("test", schema)
 	config := types.DefaultArrowHNSWConfig()
 	config.Dims = 128
-	idx := NewArrowHNSW(ds, &config)
+	idx := NewArrowHNSW(ds, &config, nil)
 	gsync := NewHNSWGraphSync(idx)
 	var buf bytes.Buffer
 	err := gsync.ExportGraph(&buf)
@@ -91,7 +91,7 @@ func TestHNSWGraphSync_GraphExportImport(t *testing.T) {
 		t.Fatalf("ExportGraph failed: %v", err)
 	}
 	ds2 := NewMockDataset("test2", schema)
-	idx2 := NewArrowHNSW(ds2, &config)
+	idx2 := NewArrowHNSW(ds2, &config, nil)
 	gsync2 := NewHNSWGraphSync(idx2)
 	err = gsync2.ImportGraph(bytes.NewReader(buf.Bytes()))
 	if err != nil {
@@ -109,7 +109,7 @@ func TestHNSWGraphSync_DeltaSync(t *testing.T) {
 	ds := NewMockDataset("test", schema)
 	config := types.DefaultArrowHNSWConfig()
 	config.Dims = 128
-	idx := NewArrowHNSW(ds, &config)
+	idx := NewArrowHNSW(ds, &config, nil)
 	for i := 0; i < 10; i++ {
 		idx.locationStore.Append(types.Location{BatchIdx: 0, RowIdx: i})
 	}
@@ -141,7 +141,7 @@ func TestHNSWGraphSync_Metrics(t *testing.T) {
 	ds := NewMockDataset("test", schema)
 	config := types.DefaultArrowHNSWConfig()
 	config.Dims = 128
-	idx := NewArrowHNSW(ds, &config)
+	idx := NewArrowHNSW(ds, &config, nil)
 	for i := 0; i < 10; i++ {
 		idx.locationStore.Append(types.Location{BatchIdx: 0, RowIdx: i})
 	}
@@ -162,7 +162,7 @@ func TestHNSWGraphSync_EmptyGraph(t *testing.T) {
 	ds := NewMockDataset("test", schema)
 	config := types.DefaultArrowHNSWConfig()
 	config.Dims = 128
-	idx := NewArrowHNSW(ds, &config)
+	idx := NewArrowHNSW(ds, &config, nil)
 	gsync := NewHNSWGraphSync(idx)
 	state, err := gsync.ExportState()
 	if err != nil {
@@ -183,7 +183,7 @@ func TestHNSWGraphSync_ConcurrentSync(t *testing.T) {
 	ds := NewMockDataset("test", schema)
 	config := types.DefaultArrowHNSWConfig()
 	config.Dims = 128
-	idx := NewArrowHNSW(ds, &config)
+	idx := NewArrowHNSW(ds, &config, nil)
 	for i := 0; i < 100; i++ {
 		idx.locationStore.Append(types.Location{BatchIdx: i / 10, RowIdx: i % 10})
 	}
@@ -213,7 +213,7 @@ func TestHNSWGraphSync_ApplyDelta(t *testing.T) {
 	ds := NewMockDataset("test", schema)
 	config := types.DefaultArrowHNSWConfig()
 	config.Dims = 128
-	idx := NewArrowHNSW(ds, &config)
+	idx := NewArrowHNSW(ds, &config, nil)
 	for i := 0; i < 10; i++ {
 		idx.locationStore.Append(types.Location{BatchIdx: 0, RowIdx: i})
 	}
@@ -225,7 +225,7 @@ func TestHNSWGraphSync_ApplyDelta(t *testing.T) {
 	gsync.IncrementVersion()
 	delta, _ := gsync.ExportDelta(version1)
 	ds2 := NewMockDataset("test2", schema)
-	idx2 := NewArrowHNSW(ds2, &config)
+	idx2 := NewArrowHNSW(ds2, &config, nil)
 	for i := 0; i < 10; i++ {
 		idx2.locationStore.Append(types.Location{BatchIdx: 0, RowIdx: i})
 	}

@@ -73,7 +73,7 @@ func TestArrowHNSW_BinaryQuantization_Integration(t *testing.T) {
 	dataset := &MockDataset{Schema: schema, Records: []arrow.RecordBatch{rec}}
 
 	// Create Index
-	index := NewArrowHNSW(dataset, &config)
+	index := NewArrowHNSW(dataset, &config, nil)
 
 	// Insert Vectors
 	for i := 0; i < count; i++ {

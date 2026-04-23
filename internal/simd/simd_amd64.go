@@ -240,30 +240,10 @@ func dotAVX512(a, b []float32) (float32, error) {
 	if !features.HasAVX512 {
 		return dotAVX2(a, b)
 	}
-
-	var sum float32
-	n := len(a)
-	i := 0
-
-	for ; i <= n-16; i += 16 {
-		sum += dot16AVX512(
-			unsafe.Pointer(&a[i]),
-			unsafe.Pointer(&b[i]),
-		)
+	if len(a) == 0 {
+		return 0, nil
 	}
-
-	for ; i <= n-8; i += 8 {
-		sum += dot8AVX2(
-			unsafe.Pointer(&a[i]),
-			unsafe.Pointer(&b[i]),
-		)
-	}
-
-	for ; i < n; i++ {
-		sum += a[i] * b[i]
-	}
-
-	return sum, nil
+	return dotAVX512Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a)), nil
 }
 
 func dot384AVX512(a, b []float32) (float32, error) {
@@ -611,6 +591,9 @@ func matchFloat32AVX512Kernel(src unsafe.Pointer, val float32, op int, dst unsaf
 
 //go:noescape
 func euclidean384AVX512Kernel(a, b unsafe.Pointer) float32
+
+//go:noescape
+func dotAVX512Kernel(a, b unsafe.Pointer, n int) float32
 
 //go:noescape
 func dot384AVX512Kernel(a, b unsafe.Pointer) float32

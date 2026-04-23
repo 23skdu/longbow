@@ -72,7 +72,7 @@ func TestArrowHNSW_PQ_Integration(t *testing.T) {
 	config.M = 16
 	config.EfConstruction = 100
 
-	index := NewArrowHNSW(dataset, &config)
+	index := NewArrowHNSW(dataset, &config, nil)
 	index.SetPQEncoder(encoder)
 
 	// 4. Insert Vectors

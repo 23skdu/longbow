@@ -54,7 +54,7 @@ func TestArrowHNSW_PQ_ParallelSearch(t *testing.T) {
 	config.ParallelSearch.Workers = 4
 	config.ParallelSearch.MinChunkSize = 10 // Force parallel with small count
 
-	index := NewArrowHNSW(dataset, &config)
+	index := NewArrowHNSW(dataset, &config, nil)
 	index.SetPQEncoder(encoder)
 
 	for i := 0; i < count; i++ {

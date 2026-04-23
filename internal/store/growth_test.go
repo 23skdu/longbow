@@ -47,7 +47,7 @@ func TestHighDimGrowth(t *testing.T) {
 	config.Dims = dims
 	config.DataType = lbtypes.VectorTypeFloat32
 
-	idx := NewArrowHNSW(ds, &config)
+	idx := NewArrowHNSW(ds, &config, nil)
 	defer func() { _ = idx.Close() }()
 
 	require.Equal(t, 0, idx.Len())

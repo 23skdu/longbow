@@ -63,7 +63,7 @@ func TestArrowHNSW_LargeBatchIngestion_30k(t *testing.T) {
 	cfg.Dims = dims
 	// Ensure Bulk Threshold is met (default 1000)
 
-	idx := NewArrowHNSW(ds, &cfg)
+	idx := NewArrowHNSW(ds, &cfg, nil)
 	defer func() { _ = idx.Close() }()
 
 	// 1. Create Batch

@@ -144,6 +144,92 @@ reduce_final:
 
 
 // ----------------------------------------------------------------------------
+// func dotAVX512Kernel(a, b unsafe.Pointer, n int) float32
+// ----------------------------------------------------------------------------
+TEXT ·dotAVX512Kernel(SB), NOSPLIT, $0-28
+    MOVQ    a+0(FP), SI
+    MOVQ    b+8(FP), DI
+    MOVQ    n+16(FP), BX
+
+    VXORPS  Z0, Z0, Z0
+    VXORPS  Z1, Z1, Z1
+    VXORPS  Z2, Z2, Z2
+    VXORPS  Z3, Z3, Z3
+
+    CMPQ    BX, $64
+    JL      dot_tail_check
+
+loop_dot_64:
+    VMOVUPS (SI), Z4
+    VMOVUPS 64(SI), Z5
+    VMOVUPS 128(SI), Z6
+    VMOVUPS 192(SI), Z7
+
+    VFMADD231PS (DI), Z4, Z0
+    VFMADD231PS 64(DI), Z5, Z1
+    VFMADD231PS 128(DI), Z6, Z2
+    VFMADD231PS 192(DI), Z7, Z3
+
+    ADDQ    $256, SI
+    ADDQ    $256, DI
+    SUBQ    $64, BX
+    CMPQ    BX, $64
+    JGE     loop_dot_64
+
+dot_tail_check:
+    VADDPS  Z1, Z0, Z0
+    VADDPS  Z2, Z0, Z0
+    VADDPS  Z3, Z0, Z0
+
+    CMPQ    BX, $0
+    JE      dot_reduce_final
+
+loop_dot_16:
+    CMPQ    BX, $16
+    JL      dot_tail_masked
+
+    VMOVUPS (SI), Z4
+    VFMADD231PS (DI), Z4, Z0
+
+    ADDQ    $64, SI
+    ADDQ    $64, DI
+    SUBQ    $16, BX
+    JMP     loop_dot_16
+
+dot_tail_masked:
+    CMPQ    BX, $0
+    JE      dot_reduce_final
+
+    MOVQ    $1, R8
+    MOVQ    BX, CX
+    SHLQ    CX, R8
+    SUBQ    $1, R8
+    KMOVQ   R8, K1
+
+    VPXORD  Z4, Z4, Z4
+    VPXORD  Z5, Z5, Z5
+    
+    VMOVDQU32 (SI), K1, Z4
+    VMOVDQU32 (DI), K1, Z5
+    VFMADD231PS Z4, Z5, Z0
+
+dot_reduce_final:
+    VEXTRACTF64X4 $1, Z0, Y1
+    VADDPS  Y1, Y0, Y0
+    VEXTRACTF128 $1, Y0, X1
+    VADDPS  X1, X0, X0
+    VMOVHLPS X0, X1, X1
+    VADDPS  X1, X0, X0
+    VMOVSHDUP X0, X1
+    VADDSS  X1, X0, X0
+
+    VMOVSS  X0, ret+24(FP)
+    VZEROUPPER
+    RET
+
+
+
+// ----------------------------------------------------------------------------
 // func cosineDotAVX512(a, b unsafe.Pointer, n int) (dot, normA, normB float32)
 // ----------------------------------------------------------------------------
 TEXT ·cosineDotAVX512(SB), NOSPLIT, $0-36

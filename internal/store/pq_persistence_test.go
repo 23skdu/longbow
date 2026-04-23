@@ -120,7 +120,7 @@ func TestPQPersistence(t *testing.T) {
 	cfg2 := DefaultArrowHNSWConfig()
 	cfg2.Dims = 128
 	cfg2.M = 16
-	idx2 := NewArrowHNSW(ds2, &cfg2)
+	idx2 := NewArrowHNSW(ds2, &cfg2, nil)
 
 	// Trigger "Train" ensuring it picks up
 	err = idx2.TrainPQ(vectors)

@@ -100,6 +100,29 @@ Finalized production hardening of the adaptive learned index and GraphRAG system
 
 ## 🎯 NEXT STEPS (2026-04-21: 0.1.9-rc5)
 
+## 🎯 IMMEDIATE PRODUCTION HARDENING (Priority: P0 - Release 0.1.9)
+
+### 🚀 High-Performance Compute & Memory (P0)
+
+- [ ] **Specialized FP16 CUDA Kernels**:
+  - [ ] **Task**: Implement specialized FP16 CUDA kernels in `internal/gpu/cuda/kernels.cu` to maximize Tensor Core utilization on RTX 40/50 series.
+  - [ ] **Metrics**: Track `longbow_cuda_tensor_core_utilization_ratio` and `longbow_gpu_instruction_throughput`.
+  - [ ] **Tests**: Numerical parity tests between FP32/FP16 kernels; benchmark throughput gain on `ancalagon`.
+- [ ] **Arrow-Native Metadata Transition**:
+  - [ ] **Task**: Transition metadata storage from `map[string]interface{}` to **Arrow-native binary format** (columnar) to eliminate heap fragmentation.
+  - [ ] **Metrics**: Track `longbow_metadata_heap_alloc_bytes` and GC pause duration during large-scale (50k+) searches.
+  - [ ] **Tests**: Benchmark memory pressure and lookup latency for columnar metadata vs. Go maps.
+- [ ] **NUMA-Local Memory Pinning (HNSW)**:
+  - [ ] **Task**: Implement NUMA-aware memory allocation and pinning for HNSW layers to reduce cross-socket latency on multi-socket servers (e.g., `ancalagon`).
+  - [ ] **Metrics**: Track `longbow_hnsw_cross_numa_latency_ns` and socket-specific cache miss rates.
+  - [ ] **Tests**: Comparative latency testing on `ancalagon` with/without NUMA pinning.
+- [ ] **AVX-512 Kernels for AMD64**:
+  - [ ] **Task**: Implement AVX-512 SIMD kernels for distance calculations (`L2`, `Cosine`, `Dot`) in `internal/simd/avx512.go`.
+  - [ ] **Metrics**: Track `longbow_cpu_instruction_set_active{isa="avx512"}` and cycle-per-vector efficiency.
+  - [ ] **Tests**: Verify numerical parity against generic and AVX2 baselines; test on `ancalagon` Intel i7.
+
+---
+
 ## 🎯 REMAINING WORK
 
 ### Stability & Production Readiness (Priority: CRITICAL)

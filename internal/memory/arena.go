@@ -306,6 +306,11 @@ func (a *SlabArena) allocCommon(size, align int, zero bool) (uint64, error) {
 	return globalOffset, nil
 }
 
+// SlabSize returns the capacity of each slab in this arena.
+func (a *SlabArena) SlabSize() int {
+	return int(a.slabCap)
+}
+
 func (a *SlabArena) Free() {
 	a.mu.Lock()
 	defer a.mu.Unlock()

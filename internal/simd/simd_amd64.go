@@ -298,6 +298,9 @@ func euclideanInt8Unrolled4xAVX2Kernel(a, b unsafe.Pointer, n int) float32
 
 //go:noescape
 func euclideanInt16AVX2Kernel(a, b unsafe.Pointer, n int) float32
+func euclideanUint16AVX2Kernel(a, b unsafe.Pointer, n int) float32
+func dotInt16AVX2Kernel(a, b unsafe.Pointer, n int) float32
+func dotUint16AVX2Kernel(a, b unsafe.Pointer, n int) float32
 
 //go:noescape
 func dotFloat64AVX2Kernel(a, b unsafe.Pointer, n int) float32
@@ -463,10 +466,38 @@ func euclideanInt16AVX2(a, b []int16) (float32, error) {
 	if len(a) != len(b) {
 		return 0, errors.New("simd: length mismatch")
 	}
-	var sum float64
-	for i := range a {
-		diff := float64(a[i]) - float64(b[i])
-		sum += diff * diff
+	if len(a) == 0 {
+		return 0, nil
 	}
-	return float32(math.Sqrt(sum)), nil
+	return euclideanInt16AVX2Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a)), nil
+}
+
+func euclideanUint16AVX2(a, b []uint16) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	return euclideanUint16AVX2Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a)), nil
+}
+
+func dotInt16AVX2(a, b []int16) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	return dotInt16AVX2Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a)), nil
+}
+
+func dotUint16AVX2(a, b []uint16) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	return dotUint16AVX2Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a)), nil
 }

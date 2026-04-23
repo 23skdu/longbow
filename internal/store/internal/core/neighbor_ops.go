@@ -7,14 +7,18 @@ import (
 	"sync/atomic"
 
 	"github.com/23skdu/longbow/internal/store/types"
+	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
-func (h *ArrowHNSW) AddConnection(ctx *ArrowSearchContext, _ *types.GraphData, source, target uint32, layer, maxConn int, dist float32) *types.GraphData {
+func (h *ArrowHNSW) AddConnection(ctx *ArrowSearchContext, data *types.GraphData, source, target uint32, layer, maxConn int, dist float32) *types.GraphData {
 	if h.topLayerManager != nil && h.topLayerManager.AddConnectionCAS(layer, source, target) {
+		if data != nil { return data }
 		return h.data.Load()
 	}
 
-	data := h.data.Load()
+	if data == nil {
+		data = h.data.Load()
+	}
 	cID := types.ChunkID(source)
 
 	if int(source) < data.Capacity && data.GetNeighborsChunk(0, cID) != nil {
@@ -52,12 +56,15 @@ func (h *ArrowHNSW) AddConnectionLocked(ctx *ArrowSearchContext, data *types.Gra
 }
 
 // AddConnectionsBatch adds multiple directed edges to a single target node at the given layer.
-func (h *ArrowHNSW) AddConnectionsBatch(ctx *ArrowSearchContext, _ *types.GraphData, target uint32, sources []uint32, dists []float32, layer, maxConn int) *types.GraphData {
+func (h *ArrowHNSW) AddConnectionsBatch(ctx *ArrowSearchContext, data *types.GraphData, target uint32, sources []uint32, dists []float32, layer, maxConn int) *types.GraphData {
 	if len(sources) == 0 {
+		if data != nil { return data }
 		return h.data.Load()
 	}
 
-	data := h.data.Load()
+	if data == nil {
+		data = h.data.Load()
+	}
 	cID := types.ChunkID(target)
 
 	if int(target) < data.Capacity && data.GetNeighborsChunk(0, cID) != nil {
@@ -312,6 +319,39 @@ func (h *ArrowHNSW) getVectorF32(data *types.GraphData, id uint32) []float32 {
 	case []uint8:
 		f := make([]float32, len(v))
 		for i, val := range v { f[i] = float32(val) }
+		return f
+	case []int16:
+		f := make([]float32, len(v))
+		for i, val := range v { f[i] = float32(val) }
+		return f
+	case []uint16:
+		f := make([]float32, len(v))
+		for i, val := range v { f[i] = float32(val) }
+		return f
+	case []float64:
+		f := make([]float32, len(v))
+		for i, val := range v { f[i] = float32(val) }
+		return f
+	case []float16.Num:
+		f := make([]float32, len(v))
+		for i, val := range v { f[i] = val.Float32() }
+		return f
+	case []complex64:
+		// Use real part or magnitude? Standard HNSW for complex usually uses magnitude.
+		// But here we need []float32. Let's return real parts for now if that's the pattern,
+		// or better, return it in a way that matches extractVector.
+		f := make([]float32, len(v)*2)
+		for i, val := range v {
+			f[2*i] = real(val)
+			f[2*i+1] = imag(val)
+		}
+		return f
+	case []complex128:
+		f := make([]float32, len(v)*2)
+		for i, val := range v {
+			f[2*i] = float32(real(val))
+			f[2*i+1] = float32(imag(val))
+		}
 		return f
 	default: return nil
 	}

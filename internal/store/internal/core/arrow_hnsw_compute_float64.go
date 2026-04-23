@@ -23,7 +23,8 @@ func (c *float64Computer) Compute(ids []uint32, dists []float32) error {
 		chunk := c.data.GetVectorsFloat64Chunk(cID)
 		if chunk != nil {
 			cOff := int(id) % types.ChunkSize
-			start := cOff * c.data.Dims
+			pd := c.data.GetPaddedDimsForType(types.VectorTypeFloat64)
+			start := cOff * pd
 			if start+c.dims <= len(chunk) {
 				v := chunk[start : start+c.dims]
 				d, err := c.h.distFuncF64(c.q, v)
@@ -46,6 +47,19 @@ func (c *float64Computer) ComputeSingle(id uint32) (float32, error) {
 			return c.h.distFuncF64(c.q, v)
 		}
 	}
+
+	// Fallback to direct chunk access
+	cID := types.ChunkID(id)
+	chunk := c.data.GetVectorsFloat64Chunk(cID)
+	if chunk != nil {
+		cOff := int(id) % types.ChunkSize
+		pd := c.data.GetPaddedDimsForType(types.VectorTypeFloat64)
+		start := cOff * pd
+		if start+c.dims <= len(chunk) {
+			return c.h.distFuncF64(c.q, chunk[start:start+c.dims])
+		}
+	}
+
 	return math.MaxFloat32, nil
 }
 
@@ -54,7 +68,8 @@ func (c *float64Computer) Prefetch(id uint32) {
 	chunk := c.data.GetVectorsFloat64Chunk(cID)
 	if chunk != nil {
 		cOff := int(id) % types.ChunkSize
-		start := cOff * c.data.Dims
+		pd := c.data.GetPaddedDimsForType(types.VectorTypeFloat64)
+		start := cOff * pd
 		if start < len(chunk) {
 			simd.Prefetch(unsafe.Pointer(&chunk[start])) // #nosec G103
 		}

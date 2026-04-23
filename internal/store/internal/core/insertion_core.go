@@ -85,6 +85,12 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 			case []float64: inputDims = len(v)
 			case []int8: inputDims = len(v)
 			case []uint8: inputDims = len(v)
+			case []int16: inputDims = len(v)
+			case []uint16: inputDims = len(v)
+			case []int32: inputDims = len(v)
+			case []uint32: inputDims = len(v)
+			case []int64: inputDims = len(v)
+			case []uint64: inputDims = len(v)
 			}
 			if inputDims > 0 {
 				h.dims.Store(int32(inputDims))
@@ -119,6 +125,11 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 	}
 	h.growMu.Unlock()
 	data = h.data.Load()
+
+	// Store raw vector in GraphData (idempotent if already set)
+	if err := data.SetVector(id, vec); err != nil {
+		return err
+	}
 
 	if h.config.AdaptiveMEnabled && !h.adaptiveMTriggered.Load() {
 		count := int(h.nodeCount.Load())

@@ -1201,3 +1201,170 @@ inner_loop:
 
     VZEROUPPER
     RET
+
+// func euclideanUint16AVX2Kernel(a, b unsafe.Pointer, n int) float32
+TEXT ·euclideanUint16AVX2Kernel(SB), NOSPLIT, $0-28
+    MOVQ    a+0(FP), SI
+    MOVQ    b+8(FP), DI
+    MOVQ    n+16(FP), BX
+
+    VXORPS  Y0, Y0, Y0          // sum accumulator (float32)
+
+    CMPQ    BX, $8
+    JL      euc_u16_avx2_tail
+
+euc_u16_avx2_loop:
+    VPMOVZXWD (SI), Y1          // Load 8 uint16 -> 8 uint32
+    VCVTDQ2PS Y1, Y1            // Convert 8 uint32 -> 8 float32
+    
+    VPMOVZXWD (DI), Y2
+    VCVTDQ2PS Y2, Y2
+    
+    VSUBPS  Y2, Y1, Y1          // diff (float)
+    VFMADD231PS Y1, Y1, Y0      // sum += diff * diff (float)
+
+    ADDQ    $16, SI             // 8 * 2 bytes
+    ADDQ    $16, DI
+    SUBQ    $8, BX
+    CMPQ    BX, $8
+    JGE     euc_u16_avx2_loop
+
+euc_u16_avx2_tail:
+    // Reduction Y0 (float) -> X0
+    VEXTRACTF128 $1, Y0, X1
+    VADDPS  X1, X0, X0
+    VHADDPS X0, X0, X0
+    VHADDPS X0, X0, X0
+
+    CMPQ    BX, $0
+    JE      euc_u16_avx2_done
+
+euc_u16_avx2_tail_loop:
+    MOVW    (SI), R8            // Load uint16
+    MOVW    (DI), R9
+    MOVZWQ  R8, R8
+    MOVZWQ  R9, R9
+    SUBQ    R9, R8
+    IMULQ   R8, R8
+    
+    XORPS   X1, X1
+    VCVTSI2SS R8, X1, X1        // int64 -> float32
+    VADDSS  X1, X0, X0
+    
+    ADDQ    $2, SI
+    ADDQ    $2, DI
+    DECQ    BX
+    JNZ     euc_u16_avx2_tail_loop
+
+euc_u16_avx2_done:
+    VSQRTSS X0, X0, X0
+    MOVSS   X0, ret+24(FP)
+    RET
+
+// func dotInt16AVX2Kernel(a, b unsafe.Pointer, n int) float32
+TEXT ·dotInt16AVX2Kernel(SB), NOSPLIT, $0-28
+    MOVQ    a+0(FP), SI
+    MOVQ    b+8(FP), DI
+    MOVQ    n+16(FP), BX
+
+    VXORPS  Y0, Y0, Y0          // sum accumulator (float32)
+
+    CMPQ    BX, $8
+    JL      dot_i16_avx2_tail
+
+dot_i16_avx2_loop:
+    VPMOVSXWD (SI), Y1          // Load 8 int16 -> 8 int32
+    VCVTDQ2PS Y1, Y1            // Convert 8 int32 -> 8 float32
+    
+    VPMOVSXWD (DI), Y2
+    VCVTDQ2PS Y2, Y2
+    
+    VFMADD231PS Y1, Y2, Y0      // sum += a * b (float)
+
+    ADDQ    $16, SI             // 8 * 2 bytes
+    ADDQ    $16, DI
+    SUBQ    $8, BX
+    CMPQ    BX, $8
+    JGE     dot_i16_avx2_loop
+
+dot_i16_avx2_tail:
+    VEXTRACTF128 $1, Y0, X1
+    VADDPS  X1, X0, X0
+    VHADDPS X0, X0, X0
+    VHADDPS X0, X0, X0
+
+    CMPQ    BX, $0
+    JE      dot_i16_avx2_done
+
+dot_i16_avx2_tail_loop:
+    MOVWQSX (SI), R8            // Load int16 and sign-extend
+    MOVWQSX (DI), R9
+    IMULQ   R8, R9
+    
+    XORPS   X1, X1
+    VCVTSI2SS R9, X1, X1
+    VADDSS  X1, X0, X0
+    
+    ADDQ    $2, SI
+    ADDQ    $2, DI
+    DECQ    BX
+    JNZ     dot_i16_avx2_tail_loop
+
+dot_i16_avx2_done:
+    MOVSS   X0, ret+24(FP)
+    RET
+
+// func dotUint16AVX2Kernel(a, b unsafe.Pointer, n int) float32
+TEXT ·dotUint16AVX2Kernel(SB), NOSPLIT, $0-28
+    MOVQ    a+0(FP), SI
+    MOVQ    b+8(FP), DI
+    MOVQ    n+16(FP), BX
+
+    VXORPS  Y0, Y0, Y0          // sum accumulator (float32)
+
+    CMPQ    BX, $8
+    JL      dot_u16_avx2_tail
+
+dot_u16_avx2_loop:
+    VPMOVZXWD (SI), Y1          // Load 8 uint16 -> 8 uint32
+    VCVTDQ2PS Y1, Y1            // Convert 8 uint32 -> 8 float32
+    
+    VPMOVZXWD (DI), Y2
+    VCVTDQ2PS Y2, Y2
+    
+    VFMADD231PS Y1, Y2, Y0      // sum += a * b (float)
+
+    ADDQ    $16, SI             // 8 * 2 bytes
+    ADDQ    $16, DI
+    SUBQ    $8, BX
+    CMPQ    BX, $8
+    JGE     dot_u16_avx2_loop
+
+dot_u16_avx2_tail:
+    VEXTRACTF128 $1, Y0, X1
+    VADDPS  X1, X0, X0
+    VHADDPS X0, X0, X0
+    VHADDPS X0, X0, X0
+
+    CMPQ    BX, $0
+    JE      dot_u16_avx2_done
+
+dot_u16_avx2_tail_loop:
+    MOVW    (SI), R8
+    MOVW    (DI), R9
+    MOVZWQ  R8, R8
+    MOVZWQ  R9, R9
+    IMULQ   R8, R9
+    
+    XORPS   X1, X1
+    VCVTSI2SS R9, X1, X1
+    VADDSS  X1, X0, X0
+    
+    ADDQ    $2, SI
+    ADDQ    $2, DI
+    DECQ    BX
+    JNZ     dot_u16_avx2_tail_loop
+
+dot_u16_avx2_done:
+    MOVSS   X0, ret+24(FP)
+    RET

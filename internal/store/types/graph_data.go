@@ -2276,6 +2276,34 @@ func NewGraphData(capacity, dim int, mmap bool, useDisk bool, fd int,
 	}
 	i64Arena := memory.NewSlabArena(i64SlabSize)
 
+	// Int16: 2 bytes
+	i16SlabSize := ChunkSize*dim*2 + 64
+	if i16SlabSize < 1024*1024 {
+		i16SlabSize = 1024 * 1024
+	}
+	i16Arena := memory.NewSlabArena(i16SlabSize)
+
+	// Uint16: 2 bytes
+	u16SlabSize := ChunkSize*dim*2 + 64
+	if u16SlabSize < 1024*1024 {
+		u16SlabSize = 1024 * 1024
+	}
+	u16Arena := memory.NewSlabArena(u16SlabSize)
+
+	// Int32: 4 bytes
+	i32SlabSize := ChunkSize*dim*4 + 64
+	if i32SlabSize < 1024*1024 {
+		i32SlabSize = 1024 * 1024
+	}
+	i32Arena := memory.NewSlabArena(i32SlabSize)
+
+	// Float16: 2 bytes
+	f16SlabSize := ChunkSize*dim*2 + 64
+	if f16SlabSize < 1024*1024 {
+		f16SlabSize = 1024 * 1024
+	}
+	f16Arena := memory.NewSlabArena(f16SlabSize)
+
 	// Uint64/Uint32: 8/4 bytes (used for offsets and topology)
 	u64Arena := memory.NewSlabArena(i64SlabSize) // Reuse 8-byte sizing
 	u32Arena := memory.NewSlabArena(u8SlabSize * 4) // Reuse 4-fold 1-byte sizing
@@ -2307,6 +2335,10 @@ func NewGraphData(capacity, dim int, mmap bool, useDisk bool, fd int,
 		Float64Arena:      memory.NewTypedArena[float64](f64Arena),
 		Int8Arena:         memory.NewTypedArena[int8](i8Arena),
 		Int64Arena:        memory.NewTypedArena[int64](i64Arena),
+		Int16Arena:        memory.NewTypedArena[int16](i16Arena),
+		Uint16Arena:       memory.NewTypedArena[uint16](u16Arena),
+		Int32Arena:        memory.NewTypedArena[int32](i32Arena),
+		Float16Arena:      memory.NewTypedArena[float16.Num](f16Arena),
 		Complex64Arena:    memory.NewTypedArena[complex64](c64Arena),
 		Complex128Arena:   memory.NewTypedArena[complex128](c128Arena),
 		Uint64Arena:       memory.NewTypedArena[uint64](u64Arena),

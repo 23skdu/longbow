@@ -2,6 +2,7 @@ package core
 
 import (
 	"github.com/23skdu/longbow/internal/store/types"
+	"fmt"
 	"math"
 )
 
@@ -29,6 +30,22 @@ func (c *int16Computer) ComputeSingle(id uint32) (float32, error) {
 	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id)
 	if err == nil {
 		if v, ok := vecAny.([]int16); ok {
+			return c.h.distFuncInt16(c.q, v)
+		}
+	}
+
+	// Fallback to direct chunk access if type-specific GetVector fails (COW path)
+	cID := types.ChunkID(id)
+	chunk := c.data.GetVectorsInt16Chunk(cID)
+	if chunk != nil {
+		cOff := types.ChunkOffset(id)
+		pd := c.data.GetPaddedDimsForType(types.VectorTypeInt16)
+		start := cOff * pd
+		if start+c.dims <= len(chunk) {
+			v := chunk[start:start+c.dims]
+			if id == 500 {
+				fmt.Printf("DEBUG: ID 500 stored vector: %v, query vector: %v\n", v, c.q)
+			}
 			return c.h.distFuncInt16(c.q, v)
 		}
 	}
@@ -62,6 +79,18 @@ func (c *uint16Computer) ComputeSingle(id uint32) (float32, error) {
 			return c.h.distFuncUint16(c.q, v)
 		}
 	}
+
+	// Fallback to direct chunk access
+	cID := types.ChunkID(id)
+	chunk := c.data.GetVectorsUint16Chunk(cID)
+	if chunk != nil {
+		cOff := types.ChunkOffset(id)
+		pd := c.data.GetPaddedDimsForType(types.VectorTypeUint16)
+		start := cOff * pd
+		if start+c.dims <= len(chunk) {
+			return c.h.distFuncUint16(c.q, chunk[start:start+c.dims])
+		}
+	}
 	return math.MaxFloat32, nil
 }
 
@@ -90,6 +119,18 @@ func (c *int32Computer) ComputeSingle(id uint32) (float32, error) {
 	if err == nil {
 		if v, ok := vecAny.([]int32); ok {
 			return c.h.distFuncInt32(c.q, v)
+		}
+	}
+
+	// Fallback to direct chunk access
+	cID := types.ChunkID(id)
+	chunk := c.data.GetVectorsInt32Chunk(cID)
+	if chunk != nil {
+		cOff := types.ChunkOffset(id)
+		pd := c.data.GetPaddedDimsForType(types.VectorTypeInt32)
+		start := cOff * pd
+		if start+c.dims <= len(chunk) {
+			return c.h.distFuncInt32(c.q, chunk[start:start+c.dims])
 		}
 	}
 	return math.MaxFloat32, nil
@@ -122,6 +163,18 @@ func (c *uint32Computer) ComputeSingle(id uint32) (float32, error) {
 			return c.h.distFuncUint32(c.q, v)
 		}
 	}
+
+	// Fallback to direct chunk access
+	cID := types.ChunkID(id)
+	chunk := c.data.GetVectorsUint32Chunk(cID)
+	if chunk != nil {
+		cOff := types.ChunkOffset(id)
+		pd := c.data.GetPaddedDimsForType(types.VectorTypeUint32)
+		start := cOff * pd
+		if start+c.dims <= len(chunk) {
+			return c.h.distFuncUint32(c.q, chunk[start:start+c.dims])
+		}
+	}
 	return math.MaxFloat32, nil
 }
 
@@ -152,6 +205,18 @@ func (c *int64Computer) ComputeSingle(id uint32) (float32, error) {
 			return c.h.distFuncInt64(c.q, v)
 		}
 	}
+
+	// Fallback to direct chunk access
+	cID := types.ChunkID(id)
+	chunk := c.data.GetVectorsInt64Chunk(cID)
+	if chunk != nil {
+		cOff := types.ChunkOffset(id)
+		pd := c.data.GetPaddedDimsForType(types.VectorTypeInt64)
+		start := cOff * pd
+		if start+c.dims <= len(chunk) {
+			return c.h.distFuncInt64(c.q, chunk[start:start+c.dims])
+		}
+	}
 	return math.MaxFloat32, nil
 }
 
@@ -180,6 +245,18 @@ func (c *uint64Computer) ComputeSingle(id uint32) (float32, error) {
 	if err == nil {
 		if v, ok := vecAny.([]uint64); ok {
 			return c.h.distFuncUint64(c.q, v)
+		}
+	}
+
+	// Fallback to direct chunk access
+	cID := types.ChunkID(id)
+	chunk := c.data.GetVectorsUint64Chunk(cID)
+	if chunk != nil {
+		cOff := types.ChunkOffset(id)
+		pd := c.data.GetPaddedDimsForType(types.VectorTypeUint64)
+		start := cOff * pd
+		if start+c.dims <= len(chunk) {
+			return c.h.distFuncUint64(c.q, chunk[start:start+c.dims])
 		}
 	}
 	return math.MaxFloat32, nil

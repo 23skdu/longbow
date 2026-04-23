@@ -102,6 +102,9 @@ func euclideanFloat64AVX512(a, b []float64) (float32, error) {
 }
 func euclideanInt8AVX2(a, b []int8) (float32, error)   { return 0, errors.New("avx2 not supported") }
 func euclideanInt16AVX2(a, b []int16) (float32, error) { return 0, errors.New("avx2 not supported") }
+func euclideanUint16AVX2(a, b []uint16) (float32, error) { return 0, errors.New("avx2 not supported") }
+func dotInt16AVX2(a, b []int16) (float32, error) { return 0, errors.New("avx2 not supported") }
+func dotUint16AVX2(a, b []uint16) (float32, error) { return 0, errors.New("avx2 not supported") }
 
 func l2SquaredAVX2(a, b []float32) (float32, error)   { return L2SquaredFloat32(a, b) }
 func l2SquaredAVX512(a, b []float32) (float32, error) { return L2SquaredFloat32(a, b) }

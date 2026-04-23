@@ -131,7 +131,13 @@ func initializeDispatch() {
 		dotProductFloat64Impl = dotFloat64AVX512
 		cosineDistanceFloat64Impl = cosineFloat64Unrolled4x // Fallback for now
 		euclideanDistanceInt8Impl = euclideanInt8AVX2
+		dotProductInt8Impl = dotInt8Unrolled4x
+		dotProductUint8Impl = dotUint8Unrolled4x
+		euclideanDistanceUint8Impl = euclideanUint8Unrolled4x
 		euclideanDistanceInt16Impl = euclideanInt16AVX2
+		euclideanDistanceUint16Impl = euclideanUint16AVX2
+		dotProductInt16Impl = dotInt16AVX2
+		dotProductUint16Impl = dotUint16AVX2
 		// Optimization: Use float32 AVX kernels for complex64
 		euclideanDistanceComplex64Impl = euclideanComplex64Optimized
 	case "avx2":
@@ -172,7 +178,13 @@ func initializeDispatch() {
 		dotProductFloat64Impl = dotFloat64AVX2
 		cosineDistanceFloat64Impl = cosineFloat64Unrolled4x // Fallback for now
 		euclideanDistanceInt8Impl = euclideanInt8AVX2
+		dotProductInt8Impl = dotInt8Unrolled4x
+		dotProductUint8Impl = dotUint8Unrolled4x
+		euclideanDistanceUint8Impl = euclideanUint8Unrolled4x
 		euclideanDistanceInt16Impl = euclideanInt16AVX2
+		euclideanDistanceUint16Impl = euclideanUint16AVX2
+		dotProductInt16Impl = dotInt16AVX2
+		dotProductUint16Impl = dotUint16AVX2
 	case "neon":
 		euclideanDistanceImpl = euclideanNEON
 		euclideanDistance384Impl = euclidean384NEON
@@ -214,7 +226,11 @@ func initializeDispatch() {
 		dotProductFloat64Impl = dotFloat64Unrolled4x
 		cosineDistanceFloat64Impl = cosineFloat64Unrolled4x
 		euclideanDistanceInt8Impl = euclideanInt8Unrolled4x
+		euclideanDistanceUint8Impl = euclideanUint8Unrolled4x
 		euclideanDistanceInt16Impl = euclideanInt16Unrolled4x
+		euclideanDistanceUint16Impl = euclideanUint16Unrolled4x
+		dotProductInt16Impl = dotInt16Unrolled4x
+		dotProductUint16Impl = dotUint16Unrolled4x
 	default:
 		euclideanDistanceImpl = euclideanUnrolled4x
 		euclideanDistance384Impl = euclideanUnrolled4x
@@ -254,6 +270,9 @@ func initializeDispatch() {
 		cosineDistanceFloat64Impl = cosineFloat64Unrolled4x
 		euclideanDistanceInt8Impl = euclideanInt8Unrolled4x
 		euclideanDistanceInt16Impl = euclideanInt16Unrolled4x
+		euclideanDistanceUint16Impl = euclideanUint16Unrolled4x
+		dotProductInt16Impl = dotInt16Unrolled4x
+		dotProductUint16Impl = dotUint16Unrolled4x
 	}
 
 	// Register current implementations into the new dynamic registry.
@@ -287,11 +306,11 @@ func initializeDispatch() {
 	// Baseline Fallbacks for all other types
 	Registry.Register(MetricEuclidean, DataTypeInt8, 0, euclideanDistanceInt8Impl)
 	Registry.Register(MetricCosine, DataTypeInt8, 0, CosineDistanceInt8)
-	Registry.Register(MetricDotProduct, DataTypeInt8, 0, dotInt8Unrolled4x)
+	Registry.Register(MetricDotProduct, DataTypeInt8, 0, dotProductInt8Impl)
 
 	Registry.Register(MetricEuclidean, DataTypeInt16, 0, euclideanDistanceInt16Impl)
 	Registry.Register(MetricCosine, DataTypeInt16, 0, CosineDistanceInt16)
-	Registry.Register(MetricDotProduct, DataTypeInt16, 0, dotInt16Unrolled4x)
+	Registry.Register(MetricDotProduct, DataTypeInt16, 0, dotProductInt16Impl)
 
 	Registry.Register(MetricEuclidean, DataTypeInt32, 0, euclideanInt32Unrolled4x)
 	Registry.Register(MetricCosine, DataTypeInt32, 0, CosineDistanceInt32)
@@ -301,13 +320,13 @@ func initializeDispatch() {
 	Registry.Register(MetricCosine, DataTypeInt64, 0, CosineDistanceInt64)
 	Registry.Register(MetricDotProduct, DataTypeInt64, 0, dotInt64Unrolled4x)
 
-	Registry.Register(MetricEuclidean, DataTypeUint8, 0, EuclideanDistanceUint8)
+	Registry.Register(MetricEuclidean, DataTypeUint8, 0, euclideanDistanceUint8Impl)
 	Registry.Register(MetricCosine, DataTypeUint8, 0, CosineDistanceUint8)
-	Registry.Register(MetricDotProduct, DataTypeUint8, 0, DotProductUint8)
+	Registry.Register(MetricDotProduct, DataTypeUint8, 0, dotProductUint8Impl)
 
-	Registry.Register(MetricEuclidean, DataTypeUint16, 0, euclideanUint16Unrolled4x)
+	Registry.Register(MetricEuclidean, DataTypeUint16, 0, euclideanDistanceUint16Impl)
 	Registry.Register(MetricCosine, DataTypeUint16, 0, CosineDistanceUint16)
-	Registry.Register(MetricDotProduct, DataTypeUint16, 0, dotUint16Unrolled4x)
+	Registry.Register(MetricDotProduct, DataTypeUint16, 0, dotProductUint16Impl)
 
 	Registry.Register(MetricEuclidean, DataTypeUint32, 0, euclideanUint32Unrolled4x)
 	Registry.Register(MetricCosine, DataTypeUint32, 0, CosineDistanceUint32)

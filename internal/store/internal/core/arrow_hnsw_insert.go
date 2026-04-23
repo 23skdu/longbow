@@ -93,6 +93,22 @@ func (h *ArrowHNSW) selectNeighbors(ctx *ArrowSearchContext, candidates []types.
 					for i, val := range vUint { v1f[i] = float32(val) }
 				}
 				v1 = v1f
+			} else if vInt32, ok := vecAny.([]int32); ok {
+				v1f := make([]float32, len(vInt32))
+				for i, val := range vInt32 { v1f[i] = float32(val) }
+				v1 = v1f
+			} else if vUint32, ok := vecAny.([]uint32); ok {
+				v1f := make([]float32, len(vUint32))
+				for i, val := range vUint32 { v1f[i] = float32(val) }
+				v1 = v1f
+			} else if vInt16, ok := vecAny.([]int16); ok {
+				v1f := make([]float32, len(vInt16))
+				for i, val := range vInt16 { v1f[i] = float32(val) }
+				v1 = v1f
+			} else if vUint16, ok := vecAny.([]uint16); ok {
+				v1f := make([]float32, len(vUint16))
+				for i, val := range vUint16 { v1f[i] = float32(val) }
+				v1 = v1f
 			} else if vInt8, ok := vecAny.([]int8); ok {
 				v1f := make([]float32, len(vInt8))
 				for i, val := range vInt8 { v1f[i] = float32(val) }
@@ -142,6 +158,22 @@ func (h *ArrowHNSW) selectNeighbors(ctx *ArrowSearchContext, candidates []types.
 			case []complex128:
 				if v2Typed, ok := v2.([]complex128); ok {
 					d, err = h.distFuncC128(v1Typed, v2Typed)
+				}
+			case []int32:
+				if v2Typed, ok := v2.([]int32); ok {
+					d, err = h.distFuncInt32(v1Typed, v2Typed)
+				}
+			case []uint32:
+				if v2Typed, ok := v2.([]uint32); ok {
+					d, err = h.distFuncUint32(v1Typed, v2Typed)
+				}
+			case []int16:
+				if v2Typed, ok := v2.([]int16); ok {
+					d, err = h.distFuncInt16(v1Typed, v2Typed)
+				}
+			case []uint16:
+				if v2Typed, ok := v2.([]uint16); ok {
+					d, err = h.distFuncUint16(v1Typed, v2Typed)
 				}
 			case []int8:
 				// Should be pre-converted to float32 in vectorCache filling

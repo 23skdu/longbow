@@ -610,18 +610,28 @@ class BenchmarkRunner:
                         )
 
                         np_dtype = dtype_map.get(dtype, np.float32)
-                        if "complex" in dtype:
-                            vectors = (np.random.randn(count, dim) + 1j * np.random.randn(count, dim)).astype(np_dtype)
-                        elif "int" in dtype or "uint" in dtype:
-                            vectors = np.random.randint(0, 100, size=(count, dim)).astype(np_dtype)
-                        else:
-                            vectors = np.random.randn(count, dim).astype(np_dtype)
+                        
+                        # Fix: Batch insertion to avoid massive memory usage in Python
+                        batch_size = 5000
+                        for i in range(0, count, batch_size):
+                            end = min(i + batch_size, count)
+                            batch_count = end - i
                             
-                        ids = [str(i) for i in range(count)]
-                        client.insert(
-                            dataset_name,
-                            [{"id": id, "vector": vec.tolist()} for id, vec in zip(ids, vectors)],
-                        )
+                            if "complex" in dtype:
+                                vectors_batch = (np.random.randn(batch_count, dim) + 1j * np.random.randn(batch_count, dim)).astype(np_dtype)
+                            elif "int" in dtype or "uint" in dtype:
+                                vectors_batch = np.random.randint(0, 100, size=(batch_count, dim)).astype(np_dtype)
+                            else:
+                                vectors_batch = np.random.randn(batch_count, dim).astype(np_dtype)
+                                
+                            batch_ids = [str(j) for j in range(i, end)]
+                            
+                            # Note: vec.tolist() still converts to float64, but we only do it for one batch at a time
+                            client.insert(
+                                dataset_name,
+                                [{"id": id, "vector": vec.tolist()} for id, vec in zip(batch_ids, vectors_batch)],
+                            )
+                            
                         time.sleep(3)  # Wait for indexing + graph build
 
                         for alpha in alpha_values:
@@ -886,36 +896,41 @@ class BenchmarkRunner:
 
                     try:
                         print(f"  Generating {count} vectors with timestamps...")
-                        vectors = []
                         now = time.time()
                         base_timestamp = int(now * 1e9)
                         np_dtype = dtype_map.get(dtype, np.float32)
-
-                        for i in range(count):
-                            if "complex" in dtype:
-                                vec = (np.random.randn(dim) + 1j * np.random.randn(dim)).astype(np_dtype)
-                            elif "int" in dtype or "uint" in dtype:
-                                vec = np.random.randint(0, 100, size=dim).astype(np_dtype)
-                            else:
-                                vec = np.random.randn(dim).astype(np_dtype)
-                                
-                            vectors.append(
-                                {
-                                    "id": str(i),
-                                    "vector": vec.tolist(),
-                                    "timestamp": base_timestamp + i * 1000000000,
-                                    "metadata": {"index": i},
-                                }
-                            )
-
-                        print(f"  Inserting {count} vectors...")
+                        print(f"  Inserting {count} vectors in batches...")
                         client = LongbowClient(
                             uri=f"grpc://{self.server_addr}",
                             meta_uri=f"grpc://127.0.0.1:{int(self.server_addr.split(':')[-1]) + 1}",
                         )
 
-                        df = pd.DataFrame(vectors)
-                        client.insert(f"temporal_{dtype}_{dim}", df, batch_size=100)
+                        batch_size = 5000
+                        for i in range(0, count, batch_size):
+                            end = min(i + batch_size, count)
+                            batch_count = end - i
+                            
+                            vectors_batch = []
+                            for j in range(i, end):
+                                if "complex" in dtype:
+                                    vec = (np.random.randn(dim) + 1j * np.random.randn(dim)).astype(np_dtype)
+                                elif "int" in dtype or "uint" in dtype:
+                                    vec = np.random.randint(0, 100, size=dim).astype(np_dtype)
+                                else:
+                                    vec = np.random.randn(dim).astype(np_dtype)
+                                    
+                                vectors_batch.append(
+                                    {
+                                        "id": str(j),
+                                        "vector": vec.tolist(),
+                                        "timestamp": base_timestamp + j * 1000000000,
+                                        "metadata": {"index": j},
+                                    }
+                                )
+                            
+                            df_batch = pd.DataFrame(vectors_batch)
+                            client.insert(f"temporal_{dtype}_{dim}", df_batch)
+                            
                         print("  Insert complete!")
 
                         results = []

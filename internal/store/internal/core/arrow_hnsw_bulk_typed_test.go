@@ -27,6 +27,12 @@ func TestAddBatch_Bulk_Typed(t *testing.T) {
 		{"Float64", types.VectorTypeFloat64, 8},
 		{"Complex64", types.VectorTypeComplex64, 8}, // 8 complex = 16 float32 components
 		{"Complex128", types.VectorTypeComplex128, 4},
+		{"Int16", types.VectorTypeInt16, 16},
+		{"Uint16", types.VectorTypeUint16, 16},
+		{"Int32", types.VectorTypeInt32, 16},
+		{"Uint32", types.VectorTypeUint32, 16},
+		{"Int64", types.VectorTypeInt64, 16},
+		{"Uint64", types.VectorTypeUint64, 16},
 	}
 
 	for _, tt := range tests {
@@ -92,6 +98,30 @@ func TestAddBatch_Bulk_Typed(t *testing.T) {
 						valB.Append(float32(i) + float32(j)*0.1)       // Real
 						valB.Append(float32(i) + float32(j)*0.1 + 0.5) // Imag
 					}
+				case *array.Int16Builder:
+					for j := 0; j < tt.dims; j++ {
+						valB.Append(int16(i + j))
+					}
+				case *array.Uint16Builder:
+					for j := 0; j < tt.dims; j++ {
+						valB.Append(uint16(i + j))
+					}
+				case *array.Int32Builder:
+					for j := 0; j < tt.dims; j++ {
+						valB.Append(int32(i + j))
+					}
+				case *array.Uint32Builder:
+					for j := 0; j < tt.dims; j++ {
+						valB.Append(uint32(i + j))
+					}
+				case *array.Int64Builder:
+					for j := 0; j < tt.dims; j++ {
+						valB.Append(int64(i + j))
+					}
+				case *array.Uint64Builder:
+					for j := 0; j < tt.dims; j++ {
+						valB.Append(uint64(i + j))
+					}
 				}
 			}
 
@@ -125,6 +155,24 @@ func TestAddBatch_Bulk_Typed(t *testing.T) {
 			case types.VectorTypeFloat64:
 				_, ok := vecAny.([]float64)
 				assert.True(t, ok, "Expected []float64")
+			case types.VectorTypeInt16:
+				_, ok := vecAny.([]int16)
+				assert.True(t, ok, "Expected []int16")
+			case types.VectorTypeUint16:
+				_, ok := vecAny.([]uint16)
+				assert.True(t, ok, "Expected []uint16")
+			case types.VectorTypeInt32:
+				_, ok := vecAny.([]int32)
+				assert.True(t, ok, "Expected []int32")
+			case types.VectorTypeUint32:
+				_, ok := vecAny.([]uint32)
+				assert.True(t, ok, "Expected []uint32")
+			case types.VectorTypeInt64:
+				_, ok := vecAny.([]int64)
+				assert.True(t, ok, "Expected []int64")
+			case types.VectorTypeUint64:
+				_, ok := vecAny.([]uint64)
+				assert.True(t, ok, "Expected []uint64")
 			}
 
 			// Verify Search (sanity check)
@@ -197,6 +245,18 @@ func getArrowType(dt types.VectorDataType) arrow.DataType {
 		return arrow.PrimitiveTypes.Int8
 	case types.VectorTypeFloat16:
 		return arrow.FixedWidthTypes.Float16
+	case types.VectorTypeInt16:
+		return arrow.PrimitiveTypes.Int16
+	case types.VectorTypeUint16:
+		return arrow.PrimitiveTypes.Uint16
+	case types.VectorTypeInt32:
+		return arrow.PrimitiveTypes.Int32
+	case types.VectorTypeUint32:
+		return arrow.PrimitiveTypes.Uint32
+	case types.VectorTypeInt64:
+		return arrow.PrimitiveTypes.Int64
+	case types.VectorTypeUint64:
+		return arrow.PrimitiveTypes.Uint64
 	case types.VectorTypeFloat32:
 		return arrow.PrimitiveTypes.Float32
 	case types.VectorTypeFloat64:

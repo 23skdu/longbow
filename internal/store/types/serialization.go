@@ -170,6 +170,14 @@ func (g *GraphData) serializeVectors(w io.Writer) error {
 		if err := g.writeF16Vectors(w); err != nil {
 			return err
 		}
+	case VectorTypeInt16:
+		if err := g.writeInt16Vectors(w); err != nil {
+			return err
+		}
+	case VectorTypeUint16:
+		if err := g.writeUint16Vectors(w); err != nil {
+			return err
+		}
 	}
 
 	// Always write quantized vectors if enabled
@@ -325,15 +333,70 @@ func (g *GraphData) writeF16Vectors(w io.Writer) error {
 				return err
 			}
 		} else {
-			// Chunk is []float16.Num (uint16)
-			limit := toWriteNodes * g.Dims
-			if len(chunk) < limit {
-				limit = len(chunk)
+			paddedDims := g.GetPaddedDimsForType(VectorTypeFloat16)
+			for j := 0; j < toWriteNodes; j++ {
+				start := j * paddedDims
+				if err := binary.Write(w, binary.LittleEndian, chunk[start:start+g.Dims]); err != nil {
+					return err
+				}
 			}
-			// Cast to []uint16 for binary write optimization? float16.Num usually wraps uint16
-			// binary.Write handles slices of fixed-size values fine.
-			if err := binary.Write(w, binary.LittleEndian, chunk[:limit]); err != nil {
+		}
+		nodesWritten += toWriteNodes
+	}
+	return nil
+}
+
+func (g *GraphData) writeInt16Vectors(w io.Writer) error {
+	nodesWritten := 0
+	for i := 0; nodesWritten < g.Capacity; i++ {
+		remaining := g.Capacity - nodesWritten
+		toWriteNodes := ChunkSize
+		if toWriteNodes > remaining {
+			toWriteNodes = remaining
+		}
+
+		chunk := g.GetVectorsInt16Chunk(i)
+		if chunk == nil {
+			zeros := make([]int16, toWriteNodes*g.Dims)
+			if err := binary.Write(w, binary.LittleEndian, zeros); err != nil {
 				return err
+			}
+		} else {
+			paddedDims := g.GetPaddedDimsForType(VectorTypeInt16)
+			for j := 0; j < toWriteNodes; j++ {
+				start := j * paddedDims
+				if err := binary.Write(w, binary.LittleEndian, chunk[start:start+g.Dims]); err != nil {
+					return err
+				}
+			}
+		}
+		nodesWritten += toWriteNodes
+	}
+	return nil
+}
+
+func (g *GraphData) writeUint16Vectors(w io.Writer) error {
+	nodesWritten := 0
+	for i := 0; nodesWritten < g.Capacity; i++ {
+		remaining := g.Capacity - nodesWritten
+		toWriteNodes := ChunkSize
+		if toWriteNodes > remaining {
+			toWriteNodes = remaining
+		}
+
+		chunk := g.GetVectorsUint16Chunk(i)
+		if chunk == nil {
+			zeros := make([]uint16, toWriteNodes*g.Dims)
+			if err := binary.Write(w, binary.LittleEndian, zeros); err != nil {
+				return err
+			}
+		} else {
+			paddedDims := g.GetPaddedDimsForType(VectorTypeUint16)
+			for j := 0; j < toWriteNodes; j++ {
+				start := j * paddedDims
+				if err := binary.Write(w, binary.LittleEndian, chunk[start:start+g.Dims]); err != nil {
+					return err
+				}
 			}
 		}
 		nodesWritten += toWriteNodes
@@ -489,6 +552,14 @@ func (g *GraphData) deserializeVectors(r io.Reader) error {
 		if err := g.readF16Vectors(r); err != nil {
 			return err
 		}
+	case VectorTypeInt16:
+		if err := g.readInt16Vectors(r); err != nil {
+			return err
+		}
+	case VectorTypeUint16:
+		if err := g.readUint16Vectors(r); err != nil {
+			return err
+		}
 	}
 
 	if g.SQ8Enabled {
@@ -630,9 +701,68 @@ func (g *GraphData) readF16Vectors(r io.Reader) error {
 			return err
 		}
 		chunk := g.GetVectorsF16Chunk(cID)
-		limit := toRead * g.Dims
-		if err := binary.Read(r, binary.LittleEndian, chunk[:limit]); err != nil {
+		paddedDims := g.GetPaddedDimsForType(VectorTypeFloat16)
+		for j := 0; j < toRead; j++ {
+			start := j * paddedDims
+			if err := binary.Read(r, binary.LittleEndian, chunk[start:start+g.Dims]); err != nil {
+				return err
+			}
+		}
+
+		nodesRead += toRead
+		cID++
+	}
+	return nil
+}
+
+func (g *GraphData) readInt16Vectors(r io.Reader) error {
+	nodesRead := 0
+	cID := 0
+	for nodesRead < g.Capacity {
+		remaining := g.Capacity - nodesRead
+		toRead := ChunkSize
+		if toRead > remaining {
+			toRead = remaining
+		}
+
+		if err := g.EnsureChunk(cID, 0, g.Dims); err != nil {
 			return err
+		}
+		chunk := g.GetVectorsInt16Chunk(cID)
+		paddedDims := g.GetPaddedDimsForType(VectorTypeInt16)
+		for j := 0; j < toRead; j++ {
+			start := j * paddedDims
+			if err := binary.Read(r, binary.LittleEndian, chunk[start:start+g.Dims]); err != nil {
+				return err
+			}
+		}
+
+		nodesRead += toRead
+		cID++
+	}
+	return nil
+}
+
+func (g *GraphData) readUint16Vectors(r io.Reader) error {
+	nodesRead := 0
+	cID := 0
+	for nodesRead < g.Capacity {
+		remaining := g.Capacity - nodesRead
+		toRead := ChunkSize
+		if toRead > remaining {
+			toRead = remaining
+		}
+
+		if err := g.EnsureChunk(cID, 0, g.Dims); err != nil {
+			return err
+		}
+		chunk := g.GetVectorsUint16Chunk(cID)
+		paddedDims := g.GetPaddedDimsForType(VectorTypeUint16)
+		for j := 0; j < toRead; j++ {
+			start := j * paddedDims
+			if err := binary.Read(r, binary.LittleEndian, chunk[start:start+g.Dims]); err != nil {
+				return err
+			}
 		}
 
 		nodesRead += toRead

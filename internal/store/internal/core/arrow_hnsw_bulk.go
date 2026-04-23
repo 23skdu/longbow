@@ -97,6 +97,14 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 			if len(vs) > 0 {
 				dims = len(vs[0])
 			}
+		case [][]int64:
+			if len(vs) > 0 {
+				dims = len(vs[0])
+			}
+		case [][]uint64:
+			if len(vs) > 0 {
+				dims = len(vs[0])
+			}
 		}
 
 		if dims > 0 {
@@ -108,6 +116,15 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 				h.distFuncF64 = h.resolveDistanceFuncF64()
 				h.distFuncF16 = h.resolveDistanceFuncF16()
 				h.distFuncC64 = h.resolveDistanceFuncC64()
+				h.distFuncC128 = h.resolveDistanceFuncC128()
+				h.distFuncInt8 = h.resolveDistanceFuncInt8()
+				h.distFuncUint8 = h.resolveDistanceFuncUint8()
+				h.distFuncInt16 = h.resolveDistanceFuncInt16()
+				h.distFuncUint16 = h.resolveDistanceFuncUint16()
+				h.distFuncInt32 = h.resolveDistanceFuncInt32()
+				h.distFuncUint32 = h.resolveDistanceFuncUint32()
+				h.distFuncInt64 = h.resolveDistanceFuncInt64()
+				h.distFuncUint64 = h.resolveDistanceFuncUint64()
 
 				// Allocate initial graph data if not already present with these dims
 				data := h.data.Load()
@@ -246,6 +263,10 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 					v = vs[j]
 				case [][]int8:
 					v = vs[j]
+				case [][]int64:
+					v = vs[j]
+				case [][]uint64:
+					v = vs[j]
 				case [][]float64:
 					v = vs[j]
 				case [][]complex64:
@@ -281,6 +302,10 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 				case []uint16:
 					vLen = len(vec)
 				case []int16:
+					vLen = len(vec)
+				case []int64:
+					vLen = len(vec)
+				case []uint64:
 					vLen = len(vec)
 				case []float64:
 					vLen = len(vec)
@@ -428,11 +453,25 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 	// ----------------------------------------------------
 
 
-	// 2.5 Pre-Promote all nodes in the batch to ensure chunks are allocated
-	// and mutable before parallel linkage starts. This avoids COW races.
+	// 2.5 Pre-Promote all nodes in the batch and SET VECTORS
+	// This ensures chunks are allocated and vectors are persistent before linkage.
 	for i := 0; i < n; i++ {
 		data = h.promoteNode(data, startID+uint32(i))
+		if err := data.SetVector(startID+uint32(i), activeNodes[i].vec); err != nil {
+			return fmt.Errorf("failed to set vector for node %d during bulk insert: %w", startID+uint32(i), err)
+		}
 	}
+
+	// 2.6 Initial Linkage: Link each node to its predecessor to form a simple chain
+	// This provides a fallback path for reachability during the initial build.
+	for i := 0; i < n; i++ {
+		if i > 0 {
+			// AddConnection now respects the passed 'data' pointer
+			data = h.AddConnection(nil, data, activeNodes[i].id, activeNodes[i-1].id, 0, h.mMax0, 0.0)
+			data = h.AddConnection(nil, data, activeNodes[i-1].id, activeNodes[i].id, 0, h.mMax0, 0.0)
+		}
+	}
+	h.data.Store(data) // Publish initial chain to enable traversal
 
 	for lc := topL; lc >= 0; lc-- {
 
@@ -671,13 +710,17 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 										}
 									case []int8:
 										if t, ok := tVec.([]int8); ok {
-											// Fallback: Convert to float32 on the fly and compute Euclidean
-											var sum float32
-											for k := 0; k < len(q) && k < len(t); k++ {
-												diff := float32(q[k]) - float32(t[k])
-												sum += diff * diff
-											}
-											dist = float32(math.Sqrt(float64(sum)))
+											dist, _ = h.distFuncInt8(q, t)
+											done = true
+										}
+									case []int16:
+										if t, ok := tVec.([]int16); ok {
+											dist, _ = h.distFuncInt16(q, t)
+											done = true
+										}
+									case []uint16:
+										if t, ok := tVec.([]uint16); ok {
+											dist, _ = h.distFuncUint16(q, t)
 											done = true
 										}
 									default:

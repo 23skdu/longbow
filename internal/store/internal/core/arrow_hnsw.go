@@ -176,7 +176,9 @@ func (h *ArrowHNSW) GetVector(id uint32) (any, error) {
 	if h.tqEncoder != nil {
 		chunk := data.GetVectorsTQChunk(types.ChunkID(id))
 		if chunk != nil {
-			stride := 4 + (data.Dims-1)*data.TurboQuantBits/8 + (data.Dims+7)/8
+			// TQ stride calculation must match GraphData's layout
+			paddedDims := data.GetPaddedDimsForType(types.VectorTypeTQ)
+			stride := (paddedDims * data.TurboQuantBits) / 8
 			start := int(types.ChunkOffset(id)) * stride // #nosec G115
 			return h.tqEncoder.Decode(chunk[start : start+stride])
 		}
@@ -782,6 +784,10 @@ func (h *ArrowHNSW) extractVector(rec arrow.RecordBatch, colIdx, rowIdx int) any
 			return arr.Uint8Values()[start:end]
 		case *arrowarray.Int8:
 			return arr.Int8Values()[start:end]
+		case *arrowarray.Int64:
+			return arr.Int64Values()[start:end]
+		case *arrowarray.Uint64:
+			return arr.Uint64Values()[start:end]
 
 		case *arrowarray.Float16:
 			return arr.Values()[start:end]
@@ -820,6 +826,7 @@ func (h *ArrowHNSW) Search(ctx context.Context, queryVal any, k int, filter any)
 		return []types.Candidate{}, nil
 	}
 
+	// Perform search to find closest neighbors
 	results, err := h.SearchVectorsWithBitmap(ctx, queryVal, k, nil, nil)
 
 	// Record search metrics
@@ -934,6 +941,10 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	data := h.data.Load()
+	if data == nil {
+		return nil, fmt.Errorf("graph data is nil")
+	}
 
 	h.ensureReady()
 
@@ -1041,25 +1052,14 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 
 	ep := h.entryPoint.Load()
 	maxLevel := h.maxLevel.Load()
-	data := h.data.Load()
 
-	// data might be stale relative to ep if a concurrent growth occurred.
-	// Reload data if necessary to ensure it covers the entry point.
-	if data == nil || int(ep) >= data.Capacity {
-		data = h.data.Load()
-		if data == nil {
-			return nil, fmt.Errorf("graph data is nil")
+	if ep >= uint32(data.Capacity) {
+		// During initial bulk ingestion, ep might be 0 while data is empty.
+		// If data is empty, just return nil.
+		if h.nodeCount.Load() == 0 {
+			return nil, nil
 		}
-		// If still out of bounds, it's a critical error or race that shouldn't happen with correct ordering,
-		// but we can't proceed.
-		if int(ep) >= data.Capacity {
-			// It is possible ep was just updated and Grow logic finished, but we loaded data just before Grow swapped?
-			// But we just reloaded.
-			// Only explanation: ep > data.Capacity.
-			// This might happen if 'ep' update happened BUT 'Grow' used a new 'data' pointer, and we see 'ep' but 'data' is still old?
-			// Wait, if we reloaded data, we should see the new pointer.
-			return nil, fmt.Errorf("entry point %d out of bounds (capacity %d)", ep, data.Capacity)
-		}
+		return nil, fmt.Errorf("entry point %d out of bounds (capacity %d)", ep, data.Capacity)
 	}
 
 	// Calculate distance to entry point
@@ -1114,31 +1114,37 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 			if v, ok := vec.([]complex128); ok {
 				dist, err = simd.EuclideanDistanceComplex128(q, v)
 			}
-		case []int8, []uint8:
-			// Already handled above
+		case []int8:
+			if v, ok := vec.([]int8); ok {
+				dist, _ = h.distFuncInt8(q, v)
+			}
+		case []uint8:
+			if v, ok := vec.([]uint8); ok {
+				dist, _ = h.distFuncUint8(q, v)
+			}
 		case []int16:
 			if v, ok := vec.([]int16); ok {
-				dist = euclideanDistanceInt16(q, v)
+				dist, _ = h.distFuncInt16(q, v)
 			}
 		case []uint16:
 			if v, ok := vec.([]uint16); ok {
-				dist = euclideanDistanceUint16(q, v)
+				dist, _ = h.distFuncUint16(q, v)
 			}
 		case []int32:
 			if v, ok := vec.([]int32); ok {
-				dist = euclideanDistanceInt32(q, v)
+				dist, _ = h.distFuncInt32(q, v)
 			}
 		case []uint32:
 			if v, ok := vec.([]uint32); ok {
-				dist = euclideanDistanceUint32(q, v)
+				dist, _ = h.distFuncUint32(q, v)
 			}
 		case []int64:
 			if v, ok := vec.([]int64); ok {
-				dist = euclideanDistanceInt64(q, v)
+				dist, _ = h.distFuncInt64(q, v)
 			}
 		case []uint64:
 			if v, ok := vec.([]uint64); ok {
-				dist = euclideanDistanceUint64(q, v)
+				dist, _ = h.distFuncUint64(q, v)
 			}
 		default:
 			return nil, fmt.Errorf("unsupported query vector type %T", queryVec)
@@ -1704,7 +1710,7 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 
 				// Zero-Copy Direct Mapping Optimization
 				// If we are ingesting a full contiguous block that aligns with HNSW chunks,
-				// we map the Arrow memory directly instead of copying into arenas.
+				// we map the Arrow memory instead of copying into arenas.
 				if len(recs) == 1 && startID%uint32(types.ChunkSize) == 0 && n >= types.ChunkSize {
 					isContiguous := rowIdxs[0]%types.ChunkSize == 0
 					if isContiguous {
@@ -1828,6 +1834,58 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 					}
 				}
 				vecs = i32s
+			case types.VectorTypeInt16:
+				i16s := make([][]int16, n)
+				for i := range rowIdxs {
+					rec := recs[batchIdxs[i]]
+					if v, ok := h.extractVector(rec, vecColIdx, rowIdxs[i]).([]int16); ok {
+						i16s[i] = v
+						h.SetLocation(types.VectorID(startID+uint32(i)), types.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
+					} else {
+						supported = false
+						break
+					}
+				}
+				vecs = i16s
+			case types.VectorTypeUint16:
+				u16s := make([][]uint16, n)
+				for i := range rowIdxs {
+					rec := recs[batchIdxs[i]]
+					if v, ok := h.extractVector(rec, vecColIdx, rowIdxs[i]).([]uint16); ok {
+						u16s[i] = v
+						h.SetLocation(types.VectorID(startID+uint32(i)), types.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
+					} else {
+						supported = false
+						break
+					}
+				}
+				vecs = u16s
+			case types.VectorTypeInt64:
+				i64s := make([][]int64, n)
+				for i := range rowIdxs {
+					rec := recs[batchIdxs[i]]
+					if v, ok := h.extractVector(rec, vecColIdx, rowIdxs[i]).([]int64); ok {
+						i64s[i] = v
+						h.SetLocation(types.VectorID(startID+uint32(i)), types.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
+					} else {
+						supported = false
+						break
+					}
+				}
+				vecs = i64s
+			case types.VectorTypeUint64:
+				u64s := make([][]uint64, n)
+				for i := range rowIdxs {
+					rec := recs[batchIdxs[i]]
+					if v, ok := h.extractVector(rec, vecColIdx, rowIdxs[i]).([]uint64); ok {
+						u64s[i] = v
+						h.SetLocation(types.VectorID(startID+uint32(i)), types.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
+					} else {
+						supported = false
+						break
+					}
+				}
+				vecs = u64s
 			default:
 				supported = false
 			}
@@ -1846,6 +1904,17 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 		}
 	}
 
+	// Use optimized bulk ingestion path
+	err := h.AddBatchBulk(ctx, uint32(rowIdxs[0]), len(rowIdxs), recs)
+	if err == nil {
+		ids := make([]uint32, len(rowIdxs))
+		for i := range rowIdxs {
+			ids[i] = uint32(rowIdxs[0]) + uint32(i)
+		}
+		return ids, nil
+	}
+	
+	// Fallback to sequential insertion if bulk fails (rare)
 	ids := make([]uint32, 0, len(rowIdxs))
 	for i := range rowIdxs {
 		if i%100 == 0 {
@@ -2099,42 +2168,103 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 			q8 = queryVal.([]uint8)
 			qInt8 = *(*[]int8)(unsafe.Pointer(&q8)) // #nosec G103
 		}
-		return &int8Computer{data: data, q: q8, qInt8: qInt8, dims: len(q8), h: h, diskGraph: searchCtx.diskGraph}
-	case []float64:
-		return &float64Computer{data: data, q: q, dims: len(q), h: h, diskGraph: searchCtx.diskGraph}
-	case []complex64:
-		// Pre-convert if searchCtx available
+		var dg *DiskGraph
 		if searchCtx != nil {
+			dg = searchCtx.diskGraph
+		} else {
+			dg = h.diskGraph.Load()
+		}
+		return &int8Computer{data: data, q: q8, qInt8: qInt8, dims: len(q8), h: h, diskGraph: dg}
+	case []float64:
+		var dg *DiskGraph
+		if searchCtx != nil {
+			dg = searchCtx.diskGraph
+		} else {
+			dg = h.diskGraph.Load()
+		}
+		return &float64Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg}
+	case []float16.Num:
+		var dg *DiskGraph
+		if searchCtx != nil {
+			dg = searchCtx.diskGraph
+		} else {
+			dg = h.diskGraph.Load()
+		}
+		return &float16Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg}
+	case []complex64:
+		var dg *DiskGraph
+		if searchCtx != nil {
+			dg = searchCtx.diskGraph
 			if cap(searchCtx.queryC64) < len(q) {
 				searchCtx.queryC64 = make([]complex64, len(q))
 			}
 			searchCtx.queryC64 = searchCtx.queryC64[:len(q)]
 			copy(searchCtx.queryC64, q)
-			return &complex64Computer{data: data, q: searchCtx.queryC64, dims: len(q), h: h, diskGraph: searchCtx.diskGraph}
+			return &complex64Computer{data: data, q: searchCtx.queryC64, dims: len(q), h: h, diskGraph: dg}
 		}
-		return &complex64Computer{data: data, q: q, dims: len(q), h: h, diskGraph: h.diskGraph.Load()}
+		dg = h.diskGraph.Load()
+		return &complex64Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg}
 	case []complex128:
+		var dg *DiskGraph
 		if searchCtx != nil {
+			dg = searchCtx.diskGraph
 			if cap(searchCtx.queryC128) < len(q) {
 				searchCtx.queryC128 = make([]complex128, len(q))
 			}
 			searchCtx.queryC128 = searchCtx.queryC128[:len(q)]
 			copy(searchCtx.queryC128, q)
-			return &complex128Computer{data: data, q: searchCtx.queryC128, dims: len(q), h: h, diskGraph: searchCtx.diskGraph}
+			return &complex128Computer{data: data, q: searchCtx.queryC128, dims: len(q), h: h, diskGraph: dg}
 		}
-		return &complex128Computer{data: data, q: q, dims: len(q), h: h, diskGraph: h.diskGraph.Load()}
+		dg = h.diskGraph.Load()
+		return &complex128Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg}
 	case []int16:
-		return &int16Computer{data: data, q: q, dims: len(q), h: h}
+		var dg *DiskGraph
+		if searchCtx != nil {
+			dg = searchCtx.diskGraph
+		} else {
+			dg = h.diskGraph.Load()
+		}
+		return &int16Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg}
 	case []uint16:
-		return &uint16Computer{data: data, q: q, dims: len(q), h: h}
+		var dg *DiskGraph
+		if searchCtx != nil {
+			dg = searchCtx.diskGraph
+		} else {
+			dg = h.diskGraph.Load()
+		}
+		return &uint16Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg}
 	case []int32:
-		return &int32Computer{data: data, q: q, dims: len(q), h: h}
+		var dg *DiskGraph
+		if searchCtx != nil {
+			dg = searchCtx.diskGraph
+		} else {
+			dg = h.diskGraph.Load()
+		}
+		return &int32Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg}
 	case []uint32:
-		return &uint32Computer{data: data, q: q, dims: len(q), h: h}
+		var dg *DiskGraph
+		if searchCtx != nil {
+			dg = searchCtx.diskGraph
+		} else {
+			dg = h.diskGraph.Load()
+		}
+		return &uint32Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg}
 	case []int64:
-		return &int64Computer{data: data, q: q, dims: len(q), h: h}
+		var dg *DiskGraph
+		if searchCtx != nil {
+			dg = searchCtx.diskGraph
+		} else {
+			dg = h.diskGraph.Load()
+		}
+		return &int64Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg}
 	case []uint64:
-		return &uint64Computer{data: data, q: q, dims: len(q), h: h}
+		var dg *DiskGraph
+		if searchCtx != nil {
+			dg = searchCtx.diskGraph
+		} else {
+			dg = h.diskGraph.Load()
+		}
+		return &uint64Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg}
 	}
 	return nil
 }
@@ -3414,13 +3544,23 @@ type int8Computer struct {
 
 func (c *int8Computer) ComputeSingle(id uint32) (float32, error) {
 	cID := types.ChunkID(id)
-	// Try specialized chunk fetch first
-	if chunk := c.data.GetVectorsSQ8Chunk(cID); chunk != nil {
+	// Try direct arena access first (COW path or Bulk ingested)
+	if chunk := c.data.GetVectorsInt8Chunk(int(cID)); chunk != nil {
 		cOff := int(id) % types.ChunkSize // #nosec G115
-		start := cOff * c.data.Dims // #nosec G115
+		pd := c.data.GetPaddedDimsForType(types.VectorTypeInt8)
+		start := cOff * pd // #nosec G115
 		if start+c.dims <= len(chunk) {
 			v8 := chunk[start : start+c.dims]
-			// Already optimized for SIMD if via distFuncInt8
+			return c.h.distFuncInt8(c.qInt8, v8)
+		}
+	}
+	// Fallback to SQ8 chunks if specifically enabled for Int8 (rare but supported)
+	if chunk := c.data.GetVectorsSQ8Chunk(cID); chunk != nil {
+		cOff := int(id) % types.ChunkSize
+		pd := c.data.GetPaddedDimsForType(types.VectorTypeUint8) // SQ8 uses Uint8
+		start := cOff * pd
+		if start+c.dims <= len(chunk) {
+			v8 := chunk[start : start+c.dims]
 			return c.h.distFuncInt8(c.qInt8, *(*[]int8)(unsafe.Pointer(&v8))) // #nosec G103
 		}
 	}

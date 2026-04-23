@@ -203,3 +203,67 @@ func BenchmarkConcurrentSIMD(b *testing.B) {
 		}
 	})
 }
+
+func BenchmarkEuclideanInt16(b *testing.B) {
+	dims := 128
+	a := make([]int16, dims)
+	vector := make([]int16, dims)
+	r := rand.New(rand.NewSource(42))
+	for i := 0; i < dims; i++ {
+		a[i] = int16(r.Intn(1000))
+		vector[i] = int16(r.Intn(1000))
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = DispatchDistance(MetricEuclidean, a, vector)
+	}
+}
+
+func BenchmarkEuclideanUint16(b *testing.B) {
+	dims := 128
+	a := make([]uint16, dims)
+	vector := make([]uint16, dims)
+	r := rand.New(rand.NewSource(42))
+	for i := 0; i < dims; i++ {
+		a[i] = uint16(r.Intn(1000))
+		vector[i] = uint16(r.Intn(1000))
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = DispatchDistance(MetricEuclidean, a, vector)
+	}
+}
+
+func BenchmarkDotInt16(b *testing.B) {
+	dims := 128
+	a := make([]int16, dims)
+	vector := make([]int16, dims)
+	r := rand.New(rand.NewSource(42))
+	for i := 0; i < dims; i++ {
+		a[i] = int16(r.Intn(1000))
+		vector[i] = int16(r.Intn(1000))
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = DispatchDistance(MetricDotProduct, a, vector)
+	}
+}
+
+func BenchmarkEuclideanInt64(b *testing.B) {
+	dims := 128
+	a := make([]int64, dims)
+	vector := make([]int64, dims)
+	r := rand.New(rand.NewSource(42))
+	for i := 0; i < dims; i++ {
+		a[i] = int64(r.Intn(1000))
+		vector[i] = int64(r.Intn(1000))
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = DispatchDistance(MetricEuclidean, a, vector)
+	}
+}

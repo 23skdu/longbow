@@ -94,144 +94,91 @@ func (ta *TemporalAggregator) countBuckets(req TemporalAggRequest, vectors []Vec
 	return ta.truncateBuckets(buckets)
 }
 
-func (ta *TemporalAggregator) minBuckets(req TemporalAggRequest, vectors []VectorTimestamp) []AggregationBucket {
+func (ta *TemporalAggregator) extractValues(req TemporalAggRequest, vectors []VectorTimestamp) map[int64][]float32 {
 	bucketMap := make(map[int64][]float32)
 
 	for _, v := range vectors {
-		if len(v.Vector) == 0 {
-			continue
-		}
 		bucketTs := (v.Timestamp.UnixNano() / req.Interval) * req.Interval
-		bucketMap[bucketTs] = append(bucketMap[bucketTs], v.Vector...)
+		
+		var values []float32
+		if req.MetricField != "" && v.Metadata != nil {
+			if val, ok := v.Metadata[req.MetricField]; ok {
+				switch typedVal := val.(type) {
+				case float32:
+					values = []float32{typedVal}
+				case float64:
+					values = []float32{float32(typedVal)}
+				case int:
+					values = []float32{float32(typedVal)}
+				case int64:
+					values = []float32{float32(typedVal)}
+				}
+			}
+		} else {
+			values = v.Vector
+		}
+		
+		if len(values) > 0 {
+			bucketMap[bucketTs] = append(bucketMap[bucketTs], values...)
+		}
 	}
+	return bucketMap
+}
 
+func (ta *TemporalAggregator) minBuckets(req TemporalAggRequest, vectors []VectorTimestamp) []AggregationBucket {
+	bucketMap := ta.extractValues(req, vectors)
 	buckets := make([]AggregationBucket, 0, len(bucketMap))
 	for ts, values := range bucketMap {
-		if len(values) == 0 {
-			continue
-		}
+		if len(values) == 0 { continue }
 		minVal := values[0]
 		for _, v := range values[1:] {
-			if v < minVal {
-				minVal = v
-			}
+			if v < minVal { minVal = v }
 		}
-		buckets = append(buckets, AggregationBucket{
-			Timestamp: ts,
-			Count:     len(values),
-			Min:       &minVal,
-		})
+		buckets = append(buckets, AggregationBucket{Timestamp: ts, Count: len(values), Min: &minVal})
 	}
-
-	sort.Slice(buckets, func(i, j int) bool {
-		return buckets[i].Timestamp < buckets[j].Timestamp
-	})
-
+	sort.Slice(buckets, func(i, j int) bool { return buckets[i].Timestamp < buckets[j].Timestamp })
 	return ta.truncateBuckets(buckets)
 }
 
 func (ta *TemporalAggregator) maxBuckets(req TemporalAggRequest, vectors []VectorTimestamp) []AggregationBucket {
-	bucketMap := make(map[int64][]float32)
-
-	for _, v := range vectors {
-		if len(v.Vector) == 0 {
-			continue
-		}
-		bucketTs := (v.Timestamp.UnixNano() / req.Interval) * req.Interval
-		bucketMap[bucketTs] = append(bucketMap[bucketTs], v.Vector...)
-	}
-
+	bucketMap := ta.extractValues(req, vectors)
 	buckets := make([]AggregationBucket, 0, len(bucketMap))
 	for ts, values := range bucketMap {
-		if len(values) == 0 {
-			continue
-		}
+		if len(values) == 0 { continue }
 		maxVal := values[0]
 		for _, v := range values[1:] {
-			if v > maxVal {
-				maxVal = v
-			}
+			if v > maxVal { maxVal = v }
 		}
-		buckets = append(buckets, AggregationBucket{
-			Timestamp: ts,
-			Count:     len(values),
-			Max:       &maxVal,
-		})
+		buckets = append(buckets, AggregationBucket{Timestamp: ts, Count: len(values), Max: &maxVal})
 	}
-
-	sort.Slice(buckets, func(i, j int) bool {
-		return buckets[i].Timestamp < buckets[j].Timestamp
-	})
-
+	sort.Slice(buckets, func(i, j int) bool { return buckets[i].Timestamp < buckets[j].Timestamp })
 	return ta.truncateBuckets(buckets)
 }
 
 func (ta *TemporalAggregator) meanBuckets(req TemporalAggRequest, vectors []VectorTimestamp) []AggregationBucket {
-	bucketMap := make(map[int64][]float32)
-
-	for _, v := range vectors {
-		if len(v.Vector) == 0 {
-			continue
-		}
-		bucketTs := (v.Timestamp.UnixNano() / req.Interval) * req.Interval
-		bucketMap[bucketTs] = append(bucketMap[bucketTs], v.Vector...)
-	}
-
+	bucketMap := ta.extractValues(req, vectors)
 	buckets := make([]AggregationBucket, 0, len(bucketMap))
 	for ts, values := range bucketMap {
-		if len(values) == 0 {
-			continue
-		}
+		if len(values) == 0 { continue }
 		var sum float32
-		for _, v := range values {
-			sum += v
-		}
+		for _, v := range values { sum += v }
 		meanVal := sum / float32(len(values))
-		buckets = append(buckets, AggregationBucket{
-			Timestamp: ts,
-			Count:     len(values),
-			Mean:      &meanVal,
-		})
+		buckets = append(buckets, AggregationBucket{Timestamp: ts, Count: len(values), Mean: &meanVal})
 	}
-
-	sort.Slice(buckets, func(i, j int) bool {
-		return buckets[i].Timestamp < buckets[j].Timestamp
-	})
-
+	sort.Slice(buckets, func(i, j int) bool { return buckets[i].Timestamp < buckets[j].Timestamp })
 	return ta.truncateBuckets(buckets)
 }
 
 func (ta *TemporalAggregator) sumBuckets(req TemporalAggRequest, vectors []VectorTimestamp) []AggregationBucket {
-	bucketMap := make(map[int64][]float32)
-
-	for _, v := range vectors {
-		if len(v.Vector) == 0 {
-			continue
-		}
-		bucketTs := (v.Timestamp.UnixNano() / req.Interval) * req.Interval
-		bucketMap[bucketTs] = append(bucketMap[bucketTs], v.Vector...)
-	}
-
+	bucketMap := ta.extractValues(req, vectors)
 	buckets := make([]AggregationBucket, 0, len(bucketMap))
 	for ts, values := range bucketMap {
-		if len(values) == 0 {
-			continue
-		}
+		if len(values) == 0 { continue }
 		var sum float32
-		for _, v := range values {
-			sum += v
-		}
-		buckets = append(buckets, AggregationBucket{
-			Timestamp: ts,
-			Count:     len(values),
-			Sum:       &sum,
-		})
+		for _, v := range values { sum += v }
+		buckets = append(buckets, AggregationBucket{Timestamp: ts, Count: len(values), Sum: &sum})
 	}
-
-	sort.Slice(buckets, func(i, j int) bool {
-		return buckets[i].Timestamp < buckets[j].Timestamp
-	})
-
+	sort.Slice(buckets, func(i, j int) bool { return buckets[i].Timestamp < buckets[j].Timestamp })
 	return ta.truncateBuckets(buckets)
 }
 

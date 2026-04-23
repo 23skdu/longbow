@@ -172,7 +172,8 @@ type VectorStore struct {
 	activeEmbeddingModel    string
 
 	// Temporal Index (Part 22)
-	temporalIndex  *TemporalIndex
+	temporalIndex      *TemporalIndex
+	temporalAggregator *TemporalAggregator
 	temporalConfig TemporalConfig
 }
 
@@ -218,6 +219,7 @@ func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes 
 	s.nsManager = newNamespaceManager()
 	s.versionManager = NewVersionManager()
 	s.columnIndex = NewColumnInvertedIndex()
+	s.temporalAggregator = NewTemporalAggregator(1000)
 
 	// Default Cache: 1024 entries, 60s TTL
 

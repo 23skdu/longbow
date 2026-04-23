@@ -1027,6 +1027,379 @@ class BenchmarkRunner:
             )
         print(f"\nResults saved to: {self.output_file}")
 
+    def execute_geo(self):
+        """Test geo-spatial search capabilities (radius, box, hybrid, Quadtree)."""
+        if not HAS_LONGBOW_SDK:
+            print("ERROR: longbow SDK not installed. Install with: pip install longbow")
+            return
+
+        print("=" * 80)
+        print("GEO-SPATIAL SEARCH BENCHMARK")
+        print("Started:", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        print("=" * 80)
+
+        dims = [int(d) for d in self.args.dims.split(",")]
+        counts = [int(c) for c in self.args.counts.split(",")]
+        dtypes = [d for d in self.args.dtypes.split(",") if "float" in d]
+        if not dtypes:
+            dtypes = ["float32"]
+
+        dtype_map = {
+            "float32": np.float32, "float64": np.float64, "float16": np.float16,
+        }
+
+        geo_centers = [
+            {"lat": 40.7128, "lon": -74.0060},   # NYC
+            {"lat": 34.0522, "lon": -118.2437}, # LA
+            {"lat": 51.5074, "lon": -0.1278},    # London
+            {"lat": 48.8566, "lon": 2.3522},     # Paris
+            {"lat": 35.6762, "lon": 139.6503},  # Tokyo
+        ]
+        radius_values = [5.0, 25.0, 100.0, 500.0]
+
+        all_results = []
+        for count in counts:
+            for dim in dims:
+                for dtype in dtypes:
+                    print(f"\n{'=' * 80}")
+                    print(f"Geo Search: {dtype} dim={dim} count={count}")
+                    print("=" * 80)
+
+                    label = f"geo_{dtype}_{dim}_{count}"
+                    env_overrides = {
+                        "GEO_ENABLED": "true",
+                        "LONGBOW_MAX_MEMORY": str(self.args.memory),
+                    }
+                    if not self.start_server(label, env_overrides=env_overrides):
+                        print(f"  Failed to start server for {label}!")
+                        continue
+
+                    try:
+                        client = LongbowClient(
+                            uri=f"grpc://{self.server_addr}",
+                            meta_uri=f"grpc://127.0.0.1:{int(self.server_addr.split(':')[-1]) + 1}",
+                        )
+                        client.connect()
+
+                        np_dtype = dtype_map.get(dtype, np.float32)
+                        print(f"  Inserting {count} geo-tagged vectors...")
+
+                        batch_size = 5000
+                        for i in range(0, count, batch_size):
+                            end = min(i + batch_size, count)
+                            batch_count = end - i
+
+                            vectors_batch = []
+                            for j in range(i, end):
+                                vec = np.random.randn(dim).astype(np_dtype)
+                                center_idx = j % len(geo_centers)
+                                center = geo_centers[center_idx]
+                                lat = center["lat"] + (np.random.rand() - 0.5) * 2.0
+                                lon = center["lon"] + (np.random.rand() - 0.5) * 2.0
+                                vectors_batch.append({
+                                    "id": str(j),
+                                    "vector": vec.tolist(),
+                                    "geo_point": {"lat": float(lat), "lon": float(lon)},
+                                })
+
+                            client.insert(
+                                f"geo_{dtype}_{dim}",
+                                [{"id": r["id"], "vector": r["vector"],
+                                  "geo_point": r["geo_point"]} for r in vectors_batch],
+                            )
+
+                        time.sleep(3)
+                        print(f"  Indexing complete.")
+
+                        search_types = [
+                            ("radius_5km", {"radius_km": 5.0, "k": 10}),
+                            ("radius_25km", {"radius_km": 25.0, "k": 10}),
+                            ("radius_100km", {"radius_km": 100.0, "k": 10}),
+                            ("radius_500km", {"radius_km": 500.0, "k": 10}),
+                            ("box_1deg", {"geo_box": {"min_lat": 39.5, "max_lat": 41.5,
+                                                      "min_lon": -75.5, "max_lon": -73.5}, "k": 10}),
+                        ]
+
+                        for geo_type, params in search_types:
+                            latencies = []
+                            center = geo_centers[0]
+                            query_vec = np.random.randn(dim).astype(np_dtype).tolist()
+                            for _ in range(self.args.queries):
+                                start = time.time()
+                                try:
+                                    if geo_type.startswith("radius"):
+                                        res = client.search(
+                                            f"geo_{dtype}_{dim}",
+                                            vector=query_vec,
+                                            geo_center=center,
+                                            geo_radius_km=params["radius_km"],
+                                            k=params["k"],
+                                        )
+                                    else:
+                                        res = client.search(
+                                            f"geo_{dtype}_{dim}",
+                                            vector=query_vec,
+                                            geo_box=params["geo_box"],
+                                            k=params["k"],
+                                        )
+                                    latency = (time.time() - start) * 1000
+                                    latencies.append(latency)
+                                except Exception:
+                                    pass
+
+                            if latencies:
+                                latencies.sort()
+                                avg_ms = sum(latencies) / len(latencies)
+                                qps = 1000.0 / avg_ms if avg_ms > 0 else 0
+                                all_results.append({
+                                    "dim": dim, "dtype": dtype, "count": count,
+                                    "search_type": geo_type,
+                                    "qps": qps,
+                                    "p50_ms": latencies[int(0.5 * len(latencies))],
+                                    "p95_ms": latencies[int(0.95 * len(latencies))],
+                                    "p99_ms": latencies[int(0.99 * len(latencies))],
+                                    "avg_ms": avg_ms,
+                                })
+                                print(f"    {geo_type}: QPS={qps:.1f} P50={latencies[int(0.5*len(latencies))]:.2f}ms")
+                            else:
+                                print(f"    {geo_type}: FAILED")
+
+                        print("  Testing hybrid (vector + geo) search...")
+                        hyb_latencies = []
+                        for _ in range(min(200, self.args.queries)):
+                            start = time.time()
+                            try:
+                                res = client.search(
+                                    f"geo_{dtype}_{dim}",
+                                    vector=query_vec,
+                                    geo_center=center,
+                                    geo_radius_km=50.0,
+                                    k=10,
+                                )
+                                hyb_latencies.append((time.time() - start) * 1000)
+                            except Exception:
+                                pass
+                        if hyb_latencies:
+                            hyb_latencies.sort()
+                            all_results.append({
+                                "dim": dim, "dtype": dtype, "count": count,
+                                "search_type": "hybrid_vector_geo",
+                                "qps": 1000.0 / (sum(hyb_latencies) / len(hyb_latencies)),
+                                "p50_ms": hyb_latencies[int(0.5 * len(hyb_latencies))],
+                                "p95_ms": hyb_latencies[int(0.95 * len(hyb_latencies))],
+                                "p99_ms": hyb_latencies[int(0.99 * len(hyb_latencies))],
+                                "avg_ms": sum(hyb_latencies) / len(hyb_latencies),
+                            })
+                            print(f"    hybrid_vector_geo: QPS={1000.0/(sum(hyb_latencies)/len(hyb_latencies)):.1f}")
+
+                    except Exception as e:
+                        print(f"  Error: {e}")
+                    finally:
+                        self.stop_server()
+                        subprocess.run(f"rm -rf {os.path.join(self.data_dir, label)}",
+                                       shell=True, capture_output=True)
+
+        with open(self.output_file, "w") as f:
+            json.dump({"mode": "geo", "timestamp": self.timestamp, "results": all_results}, f, indent=2)
+        print(f"\nResults saved to: {self.output_file}")
+
+    def execute_churn(self):
+        """Churn soak test: repeated add/delete cycles with varying payload sizes.
+
+        Simulates real-world churn by cycling through adds and deletes while
+        tracking memory pressure, fragmentation, and search quality.
+        """
+        if not HAS_LONGBOW_SDK:
+            print("ERROR: longbow SDK not installed. Install with: pip install longbow")
+            return
+
+        print("=" * 80)
+        print("CHURN SOAK TEST (Add/Delete Cycling)")
+        print("Started:", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        print("=" * 80)
+
+        dims = [int(d) for d in self.args.dims.split(",")]
+        dtypes = self.args.dtypes.split(",")
+
+        payload_sizes_kb = [int(s) for s in self.args.churn_payload_sizes.split(",")]
+        if not payload_sizes_kb:
+            payload_sizes_kb = [0, 1, 4, 64, 256, 1024]
+
+        cycles = int(self.args.churn_cycles)
+        chunk_size = int(self.args.churn_chunk_size)
+
+        dtype_map = {
+            "float32": np.float32, "float64": np.float64, "float16": np.float16,
+            "int8": np.int8, "int16": np.int16, "int32": np.int32, "int64": np.int64,
+            "uint8": np.uint8, "uint16": np.uint16, "uint32": np.uint32, "uint64": np.uint64,
+            "complex64": np.complex64, "complex128": np.complex128, "turboquant": np.float32,
+        }
+
+        def make_lorem_payload(size_kb: int) -> dict:
+            """Generate lorem-ipsum metadata payload of approx size_kb."""
+            if size_kb <= 0:
+                return {}
+            words = [
+                "lorem", "ipsum", "dolor", "sit", "amet", "consectetur", "adipiscing",
+                "elit", "sed", "do", "eiusmod", "tempor", "incididunt", "ut", "labore",
+                "et", "dolore", "magna", "aliqua", "enim", "ad", "minim", "veniam",
+                "quis", "nostrud", "exercitation", "ullamco", "laboris", "nisi",
+                "ut", "aliquip", "ex", "ea", "commodo", "consequat",
+            ]
+            target_chars = size_kb * 1024
+            text = " ".join(np.random.choice(words, size=max(1, target_chars // 6)))
+            while len(text) < target_chars:
+                text += " " + " ".join(np.random.choice(words, size=50))
+            return {"description": text[:target_chars]}
+
+        all_results = []
+        for dtype in dtypes:
+            for dim in dims:
+                print(f"\n{'=' * 80}")
+                print(f"Churn Test: {dtype} dim={dim}")
+                print(f"Payload sizes: {payload_sizes_kb} KB, {cycles} cycles x {chunk_size} vectors")
+                print("=" * 80)
+
+                label = f"churn_{dtype}_{dim}"
+                env_overrides = {"LONGBOW_MAX_MEMORY": str(self.args.memory)}
+                if not self.start_server(label, env_overrides=env_overrides):
+                    print(f"  Failed to start server!")
+                    continue
+
+                try:
+                    client = LongbowClient(
+                        uri=f"grpc://{self.server_addr}",
+                        meta_uri=f"grpc://127.0.0.1:{int(self.server_addr.split(':')[-1]) + 1}",
+                    )
+                    client.connect()
+
+                    np_dtype = dtype_map.get(dtype, np.float32)
+
+                    for payload_kb in payload_sizes_kb:
+                        dataset = f"churn_{dtype}_{dim}_p{payload_kb}"
+                        print(f"\n  Payload={payload_kb}KB")
+
+                        base_ids = list(range(chunk_size))
+                        id_counter = chunk_size
+
+                        cycle_results = []
+                        query_vec = None
+
+                        for cycle in range(cycles):
+                            added = 0
+                            deleted = 0
+                            cycle_start = time.time()
+
+                            batch_add_ids = list(range(id_counter, id_counter + chunk_size))
+                            id_counter += chunk_size
+
+                            add_batch = []
+                            for vec_id in batch_add_ids:
+                                if "complex" in dtype:
+                                    vec = (np.random.randn(dim) + 1j * np.random.randn(dim)).astype(np_dtype)
+                                elif "int" in dtype or "uint" in dtype:
+                                    vec = np.random.randint(0, 100, size=dim).astype(np_dtype)
+                                else:
+                                    vec = np.random.randn(dim).astype(np_dtype)
+
+                                record = {
+                                    "id": str(vec_id),
+                                    "vector": vec.tolist(),
+                                    **make_lorem_payload(payload_kb),
+                                }
+                                add_batch.append(record)
+
+                            t0 = time.time()
+                            client.insert(dataset, add_batch)
+                            add_ms = (time.time() - t0) * 1000
+                            added = chunk_size
+
+                            delete_ids = base_ids if cycle == 0 else list(range(
+                                id_counter - chunk_size * 2 if id_counter > chunk_size * 2 else 0,
+                                id_counter - chunk_size,
+                            ))
+                            if delete_ids:
+                                t0 = time.time()
+                                for did in delete_ids:
+                                    try:
+                                        client.delete(dataset, str(did))
+                                        deleted += 1
+                                    except Exception:
+                                        pass
+                                delete_ms = (time.time() - t0) * 1000
+                            else:
+                                delete_ms = 0
+
+                            if query_vec is None:
+                                if "complex" in dtype:
+                                    query_vec = (np.random.randn(dim) + 1j * np.random.randn(dim)).astype(np_dtype).tolist()
+                                elif "int" in dtype or "uint" in dtype:
+                                    query_vec = np.random.randint(0, 100, size=dim).astype(np_dtype).tolist()
+                                else:
+                                    query_vec = np.random.randn(dim).astype(np_dtype).tolist()
+
+                            search_latencies = []
+                            for _ in range(min(50, self.args.queries)):
+                                t0 = time.time()
+                                try:
+                                    res = client.search(dataset, vector=query_vec, k=10)
+                                    search_latencies.append((time.time() - t0) * 1000)
+                                except Exception:
+                                    pass
+
+                            cycle_elapsed = (time.time() - cycle_start) * 1000
+                            base_ids = batch_add_ids
+
+                            entry = {
+                                "dtype": dtype, "dim": dim, "payload_kb": payload_kb,
+                                "cycle": cycle + 1, "added": added, "deleted": deleted,
+                                "add_ms": add_ms, "delete_ms": delete_ms,
+                                "cycle_ms": cycle_elapsed,
+                            }
+                            if search_latencies:
+                                search_latencies.sort()
+                                entry.update({
+                                    "search_qps": 1000.0 / (sum(search_latencies) / len(search_latencies)),
+                                    "search_p50_ms": search_latencies[int(0.5 * len(search_latencies))],
+                                    "search_p99_ms": search_latencies[int(0.99 * len(search_latencies))],
+                                })
+
+                            cycle_results.append(entry)
+                            print(f"    Cycle {cycle+1}: add={add_ms:.0f}ms del={delete_ms:.0f}ms "
+                                  f"search={entry.get('search_p50_ms', 'N/A')}ms")
+
+                        all_results.append({
+                            "dtype": dtype, "dim": dim, "payload_kb": payload_kb,
+                            "cycles": cycle_results,
+                        })
+
+                        try:
+                            client.delete_dataset(dataset)
+                        except Exception:
+                            pass
+
+                except Exception as e:
+                    print(f"  Error: {e}")
+                finally:
+                    self.stop_server()
+                    subprocess.run(f"rm -rf {os.path.join(self.data_dir, label)}",
+                                   shell=True, capture_output=True)
+
+        with open(self.output_file, "w") as f:
+            json.dump({"mode": "churn", "timestamp": self.timestamp, "results": all_results}, f, indent=2)
+
+        print("\n" + "=" * 80)
+        print("CHURN SUMMARY")
+        print("=" * 80)
+        for r in all_results:
+            cycles = r.get("cycles", [])
+            if cycles:
+                avg_cycle_ms = sum(c["cycle_ms"] for c in cycles) / len(cycles)
+                print(f"  {r['dtype']} dim={r['dim']} payload={r['payload_kb']}KB: "
+                      f"avg_cycle={avg_cycle_ms:.0f}ms over {len(cycles)} cycles")
+
+        print(f"\nResults saved to: {self.output_file}")
+
     def execute_cluster(self):
         """Test gossip-based cluster search operations."""
         if not HAS_LONGBOW_SDK:
@@ -1459,7 +1832,44 @@ class BenchmarkRunner:
             self.execute_onnx()
             return
         if self.args.mode == "temporal":
-            self.execute_temporal()
+            print("\n" + "─" * 100)
+            print("TEMPORAL QUERY BENCHMARK SUMMARY")
+            print("─" * 100)
+            for r in self.results:
+                print(f"  dim={r['dim']} dtype={r['dtype']} count={r['count']}")
+            print("─" * 100)
+            return
+
+        if self.args.mode == "geo":
+            print("\n" + "─" * 100)
+            print("GEO-SPATIAL SEARCH BENCHMARK SUMMARY")
+            print("─" * 100)
+            print(f"{'Type':<25} {'QPS':<12} {'P50 ms':<10} {'P95 ms':<10} {'P99 ms':<10}")
+            print("─" * 100)
+            for r in self.results:
+                print(f"{r['search_type']:<25} {r['qps']:<12.1f} {r['p50_ms']:<10.2f} "
+                      f"{r['p95_ms']:<10.2f} {r['p99_ms']:<10.2f}")
+            print("─" * 100)
+            return
+
+        if self.args.mode == "churn":
+            print("\n" + "─" * 100)
+            print("CHURN SOAK TEST SUMMARY")
+            print("─" * 100)
+            for r in self.results:
+                cycles = r.get("cycles", [])
+                if cycles:
+                    avg_p50 = sum(c.get("search_p50_ms", 0) for c in cycles) / len(cycles)
+                    avg_add = sum(c["add_ms"] for c in cycles) / len(cycles)
+                    print(f"  {r['dtype']} dim={r['dim']} payload={r['payload_kb']}KB: "
+                          f"avg_add={avg_add:.0f}ms avg_search={avg_p50:.2f}ms x{len(cycles)}cycles")
+            print("─" * 100)
+            return
+        if self.args.mode == "geo":
+            self.execute_geo()
+            return
+        if self.args.mode == "churn":
+            self.execute_churn()
             return
 
         dims = [int(d) for d in self.args.dims.split(",")]
@@ -1749,6 +2159,36 @@ class BenchmarkRunner:
                     )
             return
 
+        if self.args.mode == "geo":
+            md_file = self.output_file.replace(".json", ".md")
+            with open(md_file, "w") as f:
+                f.write("# Geo-Spatial Search Benchmark Results\n\n")
+                f.write(f"**Generated**: {datetime.now().strftime('%Y-%m-%d')}\n")
+                f.write(f"**Test Tool**: Longbow Unified Benchmark Script\n\n")
+                f.write("## Radius Search\n\n")
+                f.write("| Search Type | QPS | P50 (ms) | P95 (ms) | P99 (ms) |\n")
+                f.write("|-------------|-----|----------|----------|----------|\n")
+                for r in self.results:
+                    f.write(f"| {r['search_type']} | {r['qps']:.1f} | {r['p50_ms']:.2f} | "
+                            f"{r['p95_ms']:.2f} | {r['p99_ms']:.2f} |\n")
+            return
+
+        if self.args.mode == "churn":
+            md_file = self.output_file.replace(".json", ".md")
+            with open(md_file, "w") as f:
+                f.write("# Churn Soak Test Results (Add/Delete Cycling)\n\n")
+                f.write(f"**Generated**: {datetime.now().strftime('%Y-%m-%d')}\n")
+                f.write(f"**Test Tool**: Longbow Unified Benchmark Script\n\n")
+                f.write("## Per-Cycle Summary\n\n")
+                f.write("| Dtype | Dim | Payload KB | Cycle | Add (ms) | Delete (ms) | Search P50 (ms) |\n")
+                f.write("|-------|-----|------------|-------|----------|-------------|----------------|\n")
+                for r in self.results:
+                    for c in r.get("cycles", []):
+                        f.write(f"| {r['dtype']} | {r['dim']} | {r['payload_kb']} | "
+                                f"{c['cycle']} | {c['add_ms']:.0f} | {c.get('delete_ms', 0):.0f} | "
+                                f"{c.get('search_p50_ms', 'N/A')} |\n")
+            return
+
         md_file = self.output_file.replace(".json", ".md")
         mode_title = self.args.mode.upper()
         if self.args.mode == "metal":
@@ -1827,10 +2267,12 @@ if __name__ == "__main__":
             "exchange",
             "cluster",
             "temporal",
+            "geo",
+            "churn",
             "learned_index",
         ],
         default="cpu",
-        help="Benchmark mode: cpu, metal, cuda, onnx, recommend, deletion, graphrag, exchange, cluster, temporal, learned_index (k-NN adaptive index scorer)",
+        help="Benchmark mode: cpu, metal, cuda, onnx, recommend, deletion, graphrag, exchange, cluster, temporal, geo, churn, learned_index (k-NN adaptive index scorer)",
     )
     parser.add_argument(
         "--dims", default="128,384,768,1536,3072", help="Comma-separated dimensions"
@@ -1920,6 +2362,22 @@ if __name__ == "__main__":
         type=int,
         default=3,
         help="Number of nodes in cluster for cluster mode",
+    )
+    # Churn (soak test) mode parameters
+    parser.add_argument(
+        "--churn-payload-sizes",
+        default="0,1,4,64,256,1024",
+        help="Comma-separated lorem-ipsum payload sizes in KB (0=minimal metadata)",
+    )
+    parser.add_argument(
+        "--churn-cycles",
+        default="10",
+        help="Number of add/delete cycles per churn test (default 10)",
+    )
+    parser.add_argument(
+        "--churn-chunk-size",
+        default="1000",
+        help="Number of vectors added/deleted per churn cycle (default 1000)",
     )
     # Hardware acceleration flags
     parser.add_argument(

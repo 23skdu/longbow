@@ -10,23 +10,25 @@ import (
 )
 
 func (h *ArrowHNSW) AddConnection(ctx *ArrowSearchContext, _ *types.GraphData, source, target uint32, layer, maxConn int, dist float32) *types.GraphData {
-	// 0. Use Lock-Free path if applicable
 	if h.topLayerManager != nil && h.topLayerManager.AddConnectionCAS(layer, source, target) {
 		return h.data.Load()
 	}
 
-	// Always operate on the latest data pointer to avoid lost updates during COW promotions
 	data := h.data.Load()
-	
-	// COW Promotion and Locking
-	data = h.promoteNode(data, source)
+	cID := types.ChunkID(source)
 
-	func() {
+	if int(source) < data.Capacity && data.GetNeighborsChunk(0, cID) != nil {
 		oldVer := data.LockNode(layer, source)
 		defer data.UnlockNode(layer, source, oldVer)
 		h.addConnectionLocked(ctx, data, source, target, layer, maxConn)
-	}()
+		return data
+	}
 
+	data = h.promoteNode(data, source)
+
+	oldVer := data.LockNode(layer, source)
+	defer data.UnlockNode(layer, source, oldVer)
+	h.addConnectionLocked(ctx, data, source, target, layer, maxConn)
 	return data
 }
 
@@ -55,46 +57,41 @@ func (h *ArrowHNSW) AddConnectionsBatch(ctx *ArrowSearchContext, _ *types.GraphD
 		return h.data.Load()
 	}
 
-	// Always operate on the latest data pointer
 	data := h.data.Load()
-	
-	// Fast path: if node is already promoted (in Mutable Data), skip promotion logic
 	cID := types.ChunkID(target)
+
 	if int(target) < data.Capacity && data.GetNeighborsChunk(0, cID) != nil {
-		func() {
-			oldVer := data.LockNode(layer, target)
-			defer data.UnlockNode(layer, target, oldVer)
-			h.addConnectionsBatchLocked(ctx, data, target, sources, layer, maxConn)
-		}()
-		return data
-	}
-
-	// COW Promotion and Locking
-	data = h.promoteNode(data, target)
-
-	func() {
 		oldVer := data.LockNode(layer, target)
 		defer data.UnlockNode(layer, target, oldVer)
 		h.addConnectionsBatchLocked(ctx, data, target, sources, layer, maxConn)
-	}()
+		return data
+	}
 
+	data = h.promoteNode(data, target)
+
+	oldVer := data.LockNode(layer, target)
+	defer data.UnlockNode(layer, target, oldVer)
+	h.addConnectionsBatchLocked(ctx, data, target, sources, layer, maxConn)
 	return data
 }
-// AddConnectionsBatchLocked is like AddConnectionsBatch but assumes growMu.Lock() is already held.
 func (h *ArrowHNSW) AddConnectionsBatchLocked(ctx *ArrowSearchContext, data *types.GraphData, target uint32, sources []uint32, dists []float32, layer, maxConn int) *types.GraphData {
 	if len(sources) == 0 {
 		return data
 	}
 
-	// COW Promotion and Locking (Locked version)
-	data = h.promoteNodeLocked(data, target)
-
-	func() {
+	cID := types.ChunkID(target)
+	if int(target) < data.Capacity && data.GetNeighborsChunk(0, cID) != nil {
 		oldVer := data.LockNode(layer, target)
 		defer data.UnlockNode(layer, target, oldVer)
 		h.addConnectionsBatchLocked(ctx, data, target, sources, layer, maxConn)
-	}()
+		return data
+	}
 
+	data = h.promoteNodeLocked(data, target)
+
+	oldVer := data.LockNode(layer, target)
+	defer data.UnlockNode(layer, target, oldVer)
+	h.addConnectionsBatchLocked(ctx, data, target, sources, layer, maxConn)
 	return data
 }
 

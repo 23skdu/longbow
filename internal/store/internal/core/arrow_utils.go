@@ -291,7 +291,9 @@ func ExtractVectorFromArrow(rec arrow.RecordBatch, rowIdx, colIdx int) ([]float3
 	}
 	switch v := vec.(type) {
 	case []float32:
-		return v, nil
+		res := make([]float32, len(v))
+		copy(res, v)
+		return res, nil
 	case []float16.Num:
 		res := make([]float32, len(v))
 		for i, val := range v {

@@ -102,3 +102,8 @@ func ExtractVectorGeneric[T any](rec arrow.RecordBatch, rowIdx, colIdx int) ([]T
 var LookupNeighbors = hnswcore.LookupNeighbors
 var ErrVectorNotFound = hnswcore.ErrVectorNotFound
 var ErrGetNeighborsNotSupported = hnswcore.ErrGetNeighborsNotSupported
+
+// Temporal Aliases
+type TemporalSearchRequest = core.TemporalSearchRequest
+type TemporalAggregationRequest = core.TemporalAggregationRequest
+type TemporalVersionHistoryRequest = core.TemporalVersionHistoryRequest

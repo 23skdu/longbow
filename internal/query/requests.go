@@ -18,3 +18,7 @@ type GeoSearchRequest = core.GeoSearchRequest
 
 // TicketQuery is also aliased for convenience
 type TicketQuery = core.TicketQuery
+
+type TemporalSearchRequest = core.TemporalSearchRequest
+type TemporalAggregationRequest = core.TemporalAggregationRequest
+type TemporalVersionHistoryRequest = core.TemporalVersionHistoryRequest

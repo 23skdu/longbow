@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/23skdu/longbow/internal/core"
 	"github.com/23skdu/longbow/internal/query"
 	lbtypes "github.com/23skdu/longbow/internal/store/types"
 	"github.com/RoaringBitmap/roaring/v2"
@@ -381,15 +382,18 @@ func (r *CrossEncoderReranker) scoreResult(query string, result SearchResult) fl
 	distanceScore := 1.0 / (1.0 + float32(result.Distance))
 
 	textMatchScore := float32(0.0)
-	if result.Metadata != nil {
-		if title, ok := result.Metadata["title"].(string); ok {
-			textMatchScore += r.textMatchScore(query, title)
-		}
-		if description, ok := result.Metadata["description"].(string); ok {
-			textMatchScore += r.textMatchScore(query, description) * 0.5
-		}
-		if content, ok := result.Metadata["content"].(string); ok {
-			textMatchScore += r.textMatchScore(query, content) * 0.3
+	if len(result.Metadata) > 0 {
+		metaMap, _ := core.DecodeMetadata(result.Metadata)
+		if metaMap != nil {
+			if title, ok := metaMap["title"].(string); ok {
+				textMatchScore += r.textMatchScore(query, title)
+			}
+			if description, ok := metaMap["description"].(string); ok {
+				textMatchScore += r.textMatchScore(query, description) * 0.5
+			}
+			if content, ok := metaMap["content"].(string); ok {
+				textMatchScore += r.textMatchScore(query, content) * 0.3
+			}
 		}
 	}
 

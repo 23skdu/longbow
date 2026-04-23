@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/23skdu/longbow/internal/core"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -11,21 +12,26 @@ func TestTemporalAggregator_Aggregate(t *testing.T) {
 	aggregator := NewTemporalAggregator(100)
 
 	now := time.Now().Truncate(time.Hour)
+	
+	m1, _ := core.EncodeMetadata(map[string]interface{}{"price": float64(10.0)})
+	m2, _ := core.EncodeMetadata(map[string]interface{}{"price": float64(20.0)})
+	m3, _ := core.EncodeMetadata(map[string]interface{}{"price": float64(30.0)})
+
 	vectors := []VectorTimestamp{
 		{
 			Timestamp: now,
 			Vector:    []float32{1.0, 2.0},
-			Metadata:  map[string]interface{}{"price": 10.0},
+			Metadata:  m1,
 		},
 		{
 			Timestamp: now.Add(15 * time.Minute),
 			Vector:    []float32{3.0, 4.0},
-			Metadata:  map[string]interface{}{"price": 20.0},
+			Metadata:  m2,
 		},
 		{
 			Timestamp: now.Add(2 * time.Hour),
 			Vector:    []float32{5.0, 6.0},
-			Metadata:  map[string]interface{}{"price": 30.0},
+			Metadata:  m3,
 		},
 	}
 

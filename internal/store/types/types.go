@@ -168,7 +168,7 @@ func DefaultSearchOptions() SearchOptions {
 
 // FilterExpr is the AST node interface for evaluating complex boolean nesting conditions.
 type FilterExpr interface {
-	Evaluate(metadata map[string]interface{}) bool
+	Evaluate(metadata *LazyMetadata) bool
 }
 
 // ChunkID returns the chunk index for a given vector identifier

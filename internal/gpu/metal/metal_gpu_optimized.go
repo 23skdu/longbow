@@ -385,6 +385,201 @@ const char* metalShaderSource =
 "}\n"
 "\n"
 "// ============================================================================\n"
+"// Complex64 / Complex128 Kernels - Phasor & signal processing\n"
+"// ============================================================================\n"
+"\n"
+"// complex128 L2 distance: treat real/imag pairs as 2D vectors\n"
+"kernel void compute_l2_distances_complex128(\n"
+"    device const float* query [[buffer(0)]],\n"
+"    device const float* vectors [[buffer(1)]],\n"
+"    device float* distances [[buffer(2)]],\n"
+"    constant uint& dim [[buffer(3)]],\n"
+"    constant uint& numVectors [[buffer(4)]],\n"
+"    uint gid [[thread_position_in_grid]])\n"
+"{\n"
+"    if (gid >= numVectors) return;\n"
+"    \n"
+"    uint vecDim = dim / 2;  // logical complex dims\n"
+"    uint offset = gid * dim;\n"
+"    \n"
+"    float sumReal = 0.0f;\n"
+"    float sumImag = 0.0f;\n"
+"    \n"
+"    // Process pairs: [real0, imag0, real1, imag1, ...]\n"
+"    for (uint i = 0; i < vecDim; i++) {\n"
+"        float2 q2 = float2(query[i*2], query[i*2+1]);\n"
+"        float2 v2 = float2(vectors[offset + i*2], vectors[offset + i*2+1]);\n"
+"        float2 diff = q2 - v2;\n"
+"        sumReal += diff.x * diff.x;\n"
+"        sumImag += diff.y * diff.y;\n"
+"    }\n"
+"    \n"
+"    distances[gid] = sqrt(sumReal + sumImag);\n"
+"}\n"
+"\n"
+"// complex128 cosine similarity\n"
+"kernel void compute_cosine_similarity_complex128(\n"
+"    device const float* query [[buffer(0)]],\n"
+"    device const float* vectors [[buffer(1)]],\n"
+"    device float* similarities [[buffer(2)]],\n"
+"    constant uint& dim [[buffer(3)]],\n"
+"    constant uint& numVectors [[buffer(4)]],\n"
+"    uint gid [[thread_position_in_grid]])\n"
+"{\n"
+"    if (gid >= numVectors) return;\n"
+"    \n"
+"    uint vecDim = dim / 2;\n"
+"    uint offset = gid * dim;\n"
+"    \n"
+"    float dotReal = 0.0f;\n"
+"    float dotImag = 0.0f;\n"
+"    float qMag = 0.0f;\n"
+"    float vMag = 0.0f;\n"
+"    \n"
+"    for (uint i = 0; i < vecDim; i++) {\n"
+"        float qRe = query[i*2];\n"
+"        float qIm = query[i*2+1];\n"
+"        float vRe = vectors[offset + i*2];\n"
+"        float vIm = vectors[offset + i*2+1];\n"
+"        dotReal += qRe*vRe + qIm*vIm;\n"
+"        dotImag += qRe*vIm - qIm*vRe;\n"
+"        qMag += qRe*qRe + qIm*qIm;\n"
+"        vMag += vRe*vRe + vIm*vIm;\n"
+"    }\n"
+"    \n"
+"    float dotMod = sqrt(dotReal*dotReal + dotImag*dotImag);\n"
+"    float denom = sqrt(qMag) * sqrt(vMag);\n"
+"    similarities[gid] = (denom > 1e-10f) ? (dotMod / denom) : 0.0f;\n"
+"}\n"
+"\n"
+"// complex128 dot product = (a_r*b_r - a_i*b_i) + (a_r*b_i + a_i*b_r)i\n"
+"kernel void compute_dot_product_complex128(\n"
+"    device const float* query [[buffer(0)]],\n"
+"    device const float* vectors [[buffer(1)]],\n"
+"    device float* realOut [[buffer(2)]],\n"
+"    device float* imagOut [[buffer(3)]],\n"
+"    constant uint& dim [[buffer(4)]],\n"
+"    constant uint& numVectors [[buffer(5)]],\n"
+"    uint gid [[thread_position_in_grid]])\n"
+"{\n"
+"    if (gid >= numVectors) return;\n"
+"    \n"
+"    uint vecDim = dim / 2;\n"
+"    uint offset = gid * dim;\n"
+"    \n"
+"    float dotReal = 0.0f;\n"
+"    float dotImag = 0.0f;\n"
+"    \n"
+"    for (uint i = 0; i < vecDim; i++) {\n"
+"        float qRe = query[i*2];\n"
+"        float qIm = query[i*2+1];\n"
+"        float vRe = vectors[offset + i*2];\n"
+"        float vIm = vectors[offset + i*2+1];\n"
+"        dotReal += qRe*vRe - qIm*vIm;\n"
+"        dotImag += qRe*vIm + qIm*vRe;\n"
+"    }\n"
+"    \n"
+"    realOut[gid] = dotReal;\n"
+"    imagOut[gid] = dotImag;\n"
+"}\n"
+"\n"
+"// complex64 L2 distance (half storage, float32 accumulation)\n"
+"kernel void compute_l2_distances_complex64(\n"
+"    device const half* query [[buffer(0)]],\n"
+"    device const half* vectors [[buffer(1)]],\n"
+"    device float* distances [[buffer(2)]],\n"
+"    constant uint& dim [[buffer(3)]],\n"
+"    constant uint& numVectors [[buffer(4)]],\n"
+"    uint gid [[thread_position_in_grid]])\n"
+"{\n"
+"    if (gid >= numVectors) return;\n"
+"    \n"
+"    uint vecDim = dim / 2;\n"
+"    uint offset = gid * dim;\n"
+"    \n"
+"    float sumReal = 0.0f;\n"
+"    float sumImag = 0.0f;\n"
+"    \n"
+"    for (uint i = 0; i < vecDim; i++) {\n"
+"        half2 q2 = half2(query[i*2], query[i*2+1]);\n"
+"        half2 v2 = half2(vectors[offset + i*2], vectors[offset + i*2+1]);\n"
+"        float2 q = float2(q2);\n"
+"        float2 v = float2(v2);\n"
+"        float2 diff = q - v;\n"
+"        sumReal += diff.x * diff.x;\n"
+"        sumImag += diff.y * diff.y;\n"
+"    }\n"
+"    \n"
+"    distances[gid] = sqrt(sumReal + sumImag);\n"
+"}\n"
+"\n"
+"// complex64 cosine similarity\n"
+"kernel void compute_cosine_similarity_complex64(\n"
+"    device const half* query [[buffer(0)]],\n"
+"    device const half* vectors [[buffer(1)]],\n"
+"    device float* similarities [[buffer(2)]],\n"
+"    constant uint& dim [[buffer(3)]],\n"
+"    constant uint& numVectors [[buffer(4)]],\n"
+"    uint gid [[thread_position_in_grid]])\n"
+"{\n"
+"    if (gid >= numVectors) return;\n"
+"    \n"
+"    uint vecDim = dim / 2;\n"
+"    uint offset = gid * dim;\n"
+"    \n"
+"    float dotReal = 0.0f;\n"
+"    float dotImag = 0.0f;\n"
+"    float qMag = 0.0f;\n"
+"    float vMag = 0.0f;\n"
+"    \n"
+"    for (uint i = 0; i < vecDim; i++) {\n"
+"        half2 qh = half2(query[i*2], query[i*2+1]);\n"
+"        half2 vh = half2(vectors[offset + i*2], vectors[offset + i*2+1]);\n"
+"        float2 q = float2(qh);\n"
+"        float2 v = float2(vh);\n"
+"        dotReal += q.x*v.x + q.y*v.y;\n"
+"        dotImag += q.x*v.y - q.y*v.x;\n"
+"        qMag += dot(q,q);\n"
+"        vMag += dot(v,v);\n"
+"    }\n"
+"    \n"
+"    float dotMod = sqrt(dotReal*dotReal + dotImag*dotImag);\n"
+"    float denom = sqrt(qMag) * sqrt(vMag);\n"
+"    similarities[gid] = (denom > 1e-10f) ? (dotMod / denom) : 0.0f;\n"
+"}\n"
+"\n"
+"// complex64 dot product\n"
+"kernel void compute_dot_product_complex64(\n"
+"    device const half* query [[buffer(0)]],\n"
+"    device const half* vectors [[buffer(1)]],\n"
+"    device float* realOut [[buffer(2)]],\n"
+"    device float* imagOut [[buffer(3)]],\n"
+"    constant uint& dim [[buffer(4)]],\n"
+"    constant uint& numVectors [[buffer(5)]],\n"
+"    uint gid [[thread_position_in_grid]])\n"
+"{\n"
+"    if (gid >= numVectors) return;\n"
+"    \n"
+"    uint vecDim = dim / 2;\n"
+"    uint offset = gid * dim;\n"
+"    \n"
+"    float dotReal = 0.0f;\n"
+"    float dotImag = 0.0f;\n"
+"    \n"
+"    for (uint i = 0; i < vecDim; i++) {\n"
+"        half2 qh = half2(query[i*2], query[i*2+1]);\n"
+"        half2 vh = half2(vectors[offset + i*2], vectors[offset + i*2+1]);\n"
+"        float2 q = float2(qh);\n"
+"        float2 v = float2(vh);\n"
+"        dotReal += q.x*v.x - q.y*v.y;\n"
+"        dotImag += q.x*v.y + q.y*v.x;\n"
+"    }\n"
+"    \n"
+"    realOut[gid] = dotReal;\n"
+"    imagOut[gid] = dotImag;\n"
+"}\n"
+"\n"
+"// ============================================================================\n"
 "// SIMD/Warp-level Reduction Kernels - Optimized for Apple Silicon\n"
 "// ============================================================================\n"
 "\n"
@@ -543,6 +738,13 @@ typedef struct {
     void* cosinePipeline;
     void* dotPipeline;
     void* topKPipeline;
+    void* l2Fp16Pipeline;
+    void* cosineFp16Pipeline;
+    void* dotFp16Pipeline;
+    void* l2C64Pipeline;
+    void* cosineC64Pipeline;
+    void* l2C128Pipeline;
+    void* cosineC128Pipeline;
     int vectorCount;
     int dimensions;
     int capacity;
@@ -577,10 +779,28 @@ MetalIndexOptimized* metal_init_optimized(int dimensions) {
         id<MTLFunction> dotFunc = [library newFunctionWithName:@"compute_dot_product"];
         id<MTLFunction> topKFunc = [library newFunctionWithName:@"find_top_k_heap"];
 
+        // FP16 pipelines
+        id<MTLFunction> l2Fp16Func = [library newFunctionWithName:@"compute_l2_distances_fp16"];
+        id<MTLFunction> cosineFp16Func = [library newFunctionWithName:@"compute_cosine_similarity_fp16"];
+        id<MTLFunction> dotFp16Func = [library newFunctionWithName:@"compute_dot_product_fp16"];
+
+        // Complex pipelines
+        id<MTLFunction> l2C128Func = [library newFunctionWithName:@"compute_l2_distances_complex128"];
+        id<MTLFunction> cosineC128Func = [library newFunctionWithName:@"compute_cosine_similarity_complex128"];
+        id<MTLFunction> l2C64Func = [library newFunctionWithName:@"compute_l2_distances_complex64"];
+        id<MTLFunction> cosineC64Func = [library newFunctionWithName:@"compute_cosine_similarity_complex64"];
+
         id<MTLComputePipelineState> l2Pipeline = nil;
         id<MTLComputePipelineState> cosinePipeline = nil;
         id<MTLComputePipelineState> dotPipeline = nil;
         id<MTLComputePipelineState> topKPipeline = nil;
+        id<MTLComputePipelineState> l2Fp16Pipeline = nil;
+        id<MTLComputePipelineState> cosineFp16Pipeline = nil;
+        id<MTLComputePipelineState> dotFp16Pipeline = nil;
+        id<MTLComputePipelineState> l2C128Pipeline = nil;
+        id<MTLComputePipelineState> cosineC128Pipeline = nil;
+        id<MTLComputePipelineState> l2C64Pipeline = nil;
+        id<MTLComputePipelineState> cosineC64Pipeline = nil;
 
         if (l2DistanceFunc) {
             l2Pipeline = [device newComputePipelineStateWithFunction:l2DistanceFunc error:&error];
@@ -593,6 +813,27 @@ MetalIndexOptimized* metal_init_optimized(int dimensions) {
         }
         if (topKFunc) {
             topKPipeline = [device newComputePipelineStateWithFunction:topKFunc error:&error];
+        }
+        if (l2Fp16Func) {
+            l2Fp16Pipeline = [device newComputePipelineStateWithFunction:l2Fp16Func error:&error];
+        }
+        if (cosineFp16Func) {
+            cosineFp16Pipeline = [device newComputePipelineStateWithFunction:cosineFp16Func error:&error];
+        }
+        if (dotFp16Func) {
+            dotFp16Pipeline = [device newComputePipelineStateWithFunction:dotFp16Func error:&error];
+        }
+        if (l2C128Func) {
+            l2C128Pipeline = [device newComputePipelineStateWithFunction:l2C128Func error:&error];
+        }
+        if (cosineC128Func) {
+            cosineC128Pipeline = [device newComputePipelineStateWithFunction:cosineC128Func error:&error];
+        }
+        if (l2C64Func) {
+            l2C64Pipeline = [device newComputePipelineStateWithFunction:l2C64Func error:&error];
+        }
+        if (cosineC64Func) {
+            cosineC64Pipeline = [device newComputePipelineStateWithFunction:cosineC64Func error:&error];
         }
 
         if (!l2Pipeline || !topKPipeline) {
@@ -609,6 +850,13 @@ MetalIndexOptimized* metal_init_optimized(int dimensions) {
         handle->cosinePipeline = (__bridge_retained void*)cosinePipeline;
         handle->dotPipeline = (__bridge_retained void*)dotPipeline;
         handle->topKPipeline = (__bridge_retained void*)topKPipeline;
+        handle->l2Fp16Pipeline = (__bridge_retained void*)l2Fp16Pipeline;
+        handle->cosineFp16Pipeline = (__bridge_retained void*)cosineFp16Pipeline;
+        handle->dotFp16Pipeline = (__bridge_retained void*)dotFp16Pipeline;
+        handle->l2C128Pipeline = (__bridge_retained void*)l2C128Pipeline;
+        handle->cosineC128Pipeline = (__bridge_retained void*)cosineC128Pipeline;
+        handle->l2C64Pipeline = (__bridge_retained void*)l2C64Pipeline;
+        handle->cosineC64Pipeline = (__bridge_retained void*)cosineC64Pipeline;
         handle->vectorCount = 0;
         handle->dimensions = dimensions;
         handle->capacity = 0;
@@ -826,6 +1074,27 @@ void metal_cleanup_optimized(MetalIndexOptimized* handle) {
             if (handle->distanceComputePipeline) {
                 CFRelease(handle->distanceComputePipeline);
             }
+            if (handle->l2Fp16Pipeline) {
+                CFRelease(handle->l2Fp16Pipeline);
+            }
+            if (handle->cosineFp16Pipeline) {
+                CFRelease(handle->cosineFp16Pipeline);
+            }
+            if (handle->dotFp16Pipeline) {
+                CFRelease(handle->dotFp16Pipeline);
+            }
+            if (handle->l2C128Pipeline) {
+                CFRelease(handle->l2C128Pipeline);
+            }
+            if (handle->cosineC128Pipeline) {
+                CFRelease(handle->cosineC128Pipeline);
+            }
+            if (handle->l2C64Pipeline) {
+                CFRelease(handle->l2C64Pipeline);
+            }
+            if (handle->cosineC64Pipeline) {
+                CFRelease(handle->cosineC64Pipeline);
+            }
             if (handle->commandQueue) {
                 CFRelease(handle->commandQueue);
             }
@@ -834,6 +1103,126 @@ void metal_cleanup_optimized(MetalIndexOptimized* handle) {
             }
             free(handle);
         }
+    }
+}
+// Vector type enum for GPU kernels
+typedef enum {
+    VECTOR_F32 = 0,
+    VECTOR_F16 = 1,
+    VECTOR_C64 = 2,
+    VECTOR_C128 = 3
+} VectorTypeGPU;
+
+// Multi-type search dispatch - selects the correct pipeline based on vector type
+int metal_search_typed(MetalIndexOptimized* handle, void* query, int k, int64_t* resultIDs, float* resultDistances, VectorTypeGPU vtype) {
+    @autoreleasepool {
+        if (!handle->vectorBuffer || handle->vectorCount == 0 || !query) {
+            return -1;
+        }
+
+        id<MTLDevice> device = (__bridge id<MTLDevice>)handle->device;
+        id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)handle->commandQueue;
+        id<MTLBuffer> vectorBuffer = (__bridge id<MTLBuffer>)handle->vectorBuffer;
+
+        // Select distance pipeline by type
+        id<MTLComputePipelineState> distancePipeline = NULL;
+        switch (vtype) {
+            case VECTOR_F16:
+                distancePipeline = (__bridge id<MTLComputePipelineState>)handle->l2Fp16Pipeline;
+                break;
+            case VECTOR_C64:
+                distancePipeline = (__bridge id<MTLComputePipelineState>)handle->l2C64Pipeline;
+                break;
+            case VECTOR_C128:
+                distancePipeline = (__bridge id<MTLComputePipelineState>)handle->l2C128Pipeline;
+                break;
+            default:
+                distancePipeline = (__bridge id<MTLComputePipelineState>)handle->distanceComputePipeline;
+        }
+
+        if (!distancePipeline) {
+            distancePipeline = (__bridge id<MTLComputePipelineState>)handle->distanceComputePipeline;
+        }
+
+        id<MTLComputePipelineState> topKPipeline = (__bridge id<MTLComputePipelineState>)handle->topKPipeline;
+
+        // Create query buffer
+        id<MTLBuffer> queryBuffer;
+        if (vtype == VECTOR_F16 || vtype == VECTOR_C64) {
+            queryBuffer = [device newBufferWithBytes:query
+                                              length:handle->dimensions * sizeof(uint16_t)
+                                             options:MTLResourceStorageModeShared];
+        } else {
+            queryBuffer = [device newBufferWithBytes:query
+                                              length:handle->dimensions * sizeof(float)
+                                             options:MTLResourceStorageModeShared];
+        }
+
+        id<MTLBuffer> distanceBuffer = [device newBufferWithLength:handle->vectorCount * sizeof(float)
+                                                            options:MTLResourceStorageModeShared];
+
+        id<MTLBuffer> indicesBuffer = [device newBufferWithLength:k * sizeof(int)
+                                                           options:MTLResourceStorageModeShared];
+
+        id<MTLBuffer> topDistancesBuffer = [device newBufferWithLength:k * sizeof(float)
+                                                                options:MTLResourceStorageModeShared];
+
+        for (int i = 0; i < k; i++) {
+            ((int*)indicesBuffer.contents)[i] = -1;
+            ((float*)topDistancesBuffer.contents)[i] = INFINITY;
+        }
+
+        id<MTLCommandBuffer> commandBuffer = [queue commandBuffer];
+        id<MTLComputeCommandEncoder> encoder = [commandBuffer computeCommandEncoder];
+
+        [encoder setComputePipelineState:distancePipeline];
+        [encoder setBuffer:queryBuffer offset:0 atIndex:0];
+        [encoder setBuffer:vectorBuffer offset:0 atIndex:1];
+        [encoder setBuffer:distanceBuffer offset:0 atIndex:2];
+        [encoder setBytes:&handle->dimensions length:sizeof(uint32_t) atIndex:3];
+        [encoder setBytes:&handle->vectorCount length:sizeof(uint32_t) atIndex:4];
+
+        MTLSize gridSize = MTLSizeMake(handle->vectorCount, 1, 1);
+        NSUInteger threadGroupSize = distancePipeline.maxTotalThreadsPerThreadgroup;
+        if (threadGroupSize > (NSUInteger)handle->vectorCount) {
+            threadGroupSize = handle->vectorCount;
+        }
+        MTLSize threadgroupSize = MTLSizeMake(threadGroupSize, 1, 1);
+
+        [encoder dispatchThreads:gridSize threadsPerThreadgroup:threadgroupSize];
+
+        [encoder setComputePipelineState:topKPipeline];
+        [encoder setBuffer:distanceBuffer offset:0 atIndex:0];
+        [encoder setBuffer:indicesBuffer offset:0 atIndex:1];
+        [encoder setBuffer:topDistancesBuffer offset:0 atIndex:2];
+        [encoder setBytes:&handle->vectorCount length:sizeof(uint32_t) atIndex:3];
+        [encoder setBytes:&k length:sizeof(uint32_t) atIndex:4];
+
+        [encoder dispatchThreads:MTLSizeMake(1, 1, 1) threadsPerThreadgroup:MTLSizeMake(1, 1, 1)];
+
+        [encoder endEncoding];
+        [commandBuffer commit];
+        [commandBuffer waitUntilCompleted];
+
+        int* indices = (int*)[indicesBuffer contents];
+        float* distances = (float*)[topDistancesBuffer contents];
+
+        if (handle->idBuffer) {
+            id<MTLBuffer> idBuffer = (__bridge id<MTLBuffer>)handle->idBuffer;
+            int64_t* ids = (int64_t*)[idBuffer contents];
+            for (int i = 0; i < k; i++) {
+                resultIDs[i] = (indices[i] >= 0 && indices[i] < handle->vectorCount) ?
+                    ids[indices[i]] : -1;
+                resultDistances[i] = distances[i];
+            }
+        } else {
+            for (int i = 0; i < k; i++) {
+                resultIDs[i] = indices[i];
+                resultDistances[i] = distances[i];
+            }
+        }
+
+        return 0;
     }
 }
 */
@@ -936,6 +1325,106 @@ func (idx *MetalIndexOptimized) Search(vector []float32, k int) ([]int64, []floa
 
 	if ret != 0 {
 		return nil, nil, fmt.Errorf("optimized Metal search failed")
+	}
+
+	return resultIDs, resultDistances, nil
+}
+
+const (
+	vecTypeF32  = C.VectorTypeGPU(0)
+	vecTypeF16  = C.VectorTypeGPU(1)
+	vecTypeC64  = C.VectorTypeGPU(2)
+	vecTypeC128 = C.VectorTypeGPU(3)
+)
+
+func (idx *MetalIndexOptimized) SearchFloat16(query []uint16, k int) ([]int64, []float32, error) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	if idx.closed {
+		return nil, nil, fmt.Errorf("index is closed")
+	}
+
+	if len(query) != idx.dim {
+		return nil, nil, fmt.Errorf("query vector dimension %d does not match index dimension %d", len(query), idx.dim)
+	}
+
+	resultIDs := make([]int64, k)
+	resultDistances := make([]float32, k)
+
+	ret := C.metal_search_typed(
+		idx.handle,
+		unsafe.Pointer(&query[0]),
+		C.int(k),
+		(*C.int64_t)(unsafe.Pointer(&resultIDs[0])),
+		(*C.float)(unsafe.Pointer(&resultDistances[0])),
+		vecTypeF16,
+	)
+
+	if ret != 0 {
+		return nil, nil, fmt.Errorf("Metal float16 search failed")
+	}
+
+	return resultIDs, resultDistances, nil
+}
+
+func (idx *MetalIndexOptimized) SearchComplex64(query []uint16, k int) ([]int64, []float32, error) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	if idx.closed {
+		return nil, nil, fmt.Errorf("index is closed")
+	}
+
+	if len(query) != idx.dim {
+		return nil, nil, fmt.Errorf("query vector dimension %d does not match index dimension %d", len(query), idx.dim)
+	}
+
+	resultIDs := make([]int64, k)
+	resultDistances := make([]float32, k)
+
+	ret := C.metal_search_typed(
+		idx.handle,
+		unsafe.Pointer(&query[0]),
+		C.int(k),
+		(*C.int64_t)(unsafe.Pointer(&resultIDs[0])),
+		(*C.float)(unsafe.Pointer(&resultDistances[0])),
+		vecTypeC64,
+	)
+
+	if ret != 0 {
+		return nil, nil, fmt.Errorf("Metal complex64 search failed")
+	}
+
+	return resultIDs, resultDistances, nil
+}
+
+func (idx *MetalIndexOptimized) SearchComplex128(query []float32, k int) ([]int64, []float32, error) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	if idx.closed {
+		return nil, nil, fmt.Errorf("index is closed")
+	}
+
+	if len(query) != idx.dim {
+		return nil, nil, fmt.Errorf("query vector dimension %d does not match index dimension %d", len(query), idx.dim)
+	}
+
+	resultIDs := make([]int64, k)
+	resultDistances := make([]float32, k)
+
+	ret := C.metal_search_typed(
+		idx.handle,
+		unsafe.Pointer(&query[0]),
+		C.int(k),
+		(*C.int64_t)(unsafe.Pointer(&resultIDs[0])),
+		(*C.float)(unsafe.Pointer(&resultDistances[0])),
+		vecTypeC128,
+	)
+
+	if ret != 0 {
+		return nil, nil, fmt.Errorf("Metal complex128 search failed")
 	}
 
 	return resultIDs, resultDistances, nil

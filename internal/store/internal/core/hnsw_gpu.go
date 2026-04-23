@@ -347,6 +347,9 @@ func (h *ArrowHNSW) SearchHybridWithConfig(ctx context.Context, query []float32,
 	}
 
 	candidateIDs, distances, err := h.gpuIndex.Search(query, candidateCount)
+	if err == nil {
+		metrics.GPUUsed.WithLabelValues("metal", "f32").Inc()
+	}
 	if err != nil {
 		// Record failure in circuit breaker
 		if h.gpuCircuitBreaker != nil {

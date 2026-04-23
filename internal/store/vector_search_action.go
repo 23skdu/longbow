@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/23skdu/longbow/internal/core"
 	lbmem "github.com/23skdu/longbow/internal/memory"
 	"github.com/23skdu/longbow/internal/mesh"
 	"github.com/23skdu/longbow/internal/metrics"
@@ -255,20 +256,36 @@ func (s *VectorStore) handleVectorSearchAction(action *flight.Action, stream fli
 
 			colOffset := 2
 			// Append Window Function results
-			for wfIdx, wf := range req.WindowFunctions {
-				val, ok := res.Metadata[wf.As]
-				if !ok {
-					builder.Field(colOffset + wfIdx).AppendNull()
-					continue
-				}
+			if len(req.WindowFunctions) > 0 {
+				metaMap, _ := core.DecodeMetadata(res.Metadata)
+				for wfIdx, wf := range req.WindowFunctions {
+					val, ok := metaMap[wf.As]
+					if !ok {
+						builder.Field(colOffset + wfIdx).AppendNull()
+						continue
+					}
 
-				switch wf.Name {
-				case "row_number", "rank", "dense_rank":
-					builder.Field(colOffset + wfIdx).(*array.Int64Builder).Append(int64(val.(int)))
-				case "sum", "avg", "min", "max":
-					builder.Field(colOffset + wfIdx).(*array.Float64Builder).Append(val.(float64))
-				default:
-					builder.Field(colOffset + wfIdx).(*array.Float64Builder).Append(val.(float64))
+					switch wf.Name {
+					case "row_number", "rank", "dense_rank":
+						var intVal int64
+						switch v := val.(type) {
+						case int: intVal = int64(v)
+						case int64: intVal = v
+						case float64: intVal = int64(v)
+						}
+						builder.Field(colOffset + wfIdx).(*array.Int64Builder).Append(intVal)
+					case "sum", "avg", "min", "max":
+						var floatVal float64
+						switch v := val.(type) {
+						case float64: floatVal = v
+						case float32: floatVal = float64(v)
+						case int: floatVal = float64(v)
+						case int64: floatVal = float64(v)
+						}
+						builder.Field(colOffset + wfIdx).(*array.Float64Builder).Append(floatVal)
+					default:
+						builder.Field(colOffset + wfIdx).(*array.Float64Builder).Append(0.0)
+					}
 				}
 			}
 		}

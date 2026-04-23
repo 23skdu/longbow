@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/23skdu/longbow/internal/core"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -155,11 +156,12 @@ func TestTemporalIndex_SearchSlidingWindow(t *testing.T) {
 }
 
 func TestTemporalVector_Structure(t *testing.T) {
+	m, _ := core.EncodeMetadata(map[string]interface{}{"key": "value"})
 	vec := &TemporalVector{
 		ID:        1,
 		Vector:    []float32{1.0, 2.0, 3.0},
 		Timestamp: time.Now().UnixNano(),
-		Metadata:  map[string]interface{}{"key": "value"},
+		Metadata:  m,
 		Tombstone: false,
 	}
 

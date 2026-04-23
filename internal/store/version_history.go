@@ -11,7 +11,7 @@ type VersionedVector struct {
 	ID        uint64
 	Vector    []float32
 	Timestamp int64
-	Metadata  map[string]interface{}
+	Metadata  []byte
 	Version   int
 }
 
@@ -42,7 +42,7 @@ func NewVersionHistory(cfg VersionHistoryConfig) *VersionHistory {
 	}
 }
 
-func (vh *VersionHistory) Add(id uint64, vector []float32, timestamp int64, metadata map[string]interface{}) {
+func (vh *VersionHistory) Add(id uint64, vector []float32, timestamp int64, metadata []byte) {
 	vh.mu.Lock()
 	defer vh.mu.Unlock()
 

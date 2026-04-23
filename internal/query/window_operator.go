@@ -46,117 +46,216 @@ func (o *WindowOperator) applyGlobal(results []core.SearchResult, fn WindowFunct
 		})
 	}
 
+	// Decode all metadata first for efficient processing
+	metas := make([]map[string]interface{}, len(results))
+	for i := range results {
+		metas[i], _ = core.DecodeMetadata(results[i].Metadata)
+		if metas[i] == nil {
+			metas[i] = make(map[string]interface{})
+		}
+	}
+
 	switch fn.Name {
 	case "row_number":
-		for i := range results {
-			if results[i].Metadata == nil {
-				results[i].Metadata = make(map[string]interface{})
-			}
-			results[i].Metadata[fn.As] = i + 1
+		for i := range metas {
+			metas[i][fn.As] = i + 1
 		}
 	case "rank":
-		o.applyRank(results, fn, false)
+		o.applyRank(results, metas, fn, false)
 	case "dense_rank":
-		o.applyRank(results, fn, true)
+		o.applyRank(results, metas, fn, true)
 	case "sum":
 		sum := 0.0
-		for _, r := range results {
-			if val, ok := r.Metadata[fn.Field]; ok {
+		for _, m := range metas {
+			if val, ok := m[fn.Field]; ok {
 				sum += o.toFloat64(val)
 			}
 		}
-		for i := range results {
-			if results[i].Metadata == nil {
-				results[i].Metadata = make(map[string]interface{})
-			}
-			results[i].Metadata[fn.As] = sum
+		for i := range metas {
+			metas[i][fn.As] = sum
 		}
 	case "avg":
 		sum := 0.0
 		count := 0
-		for _, r := range results {
-			if val, ok := r.Metadata[fn.Field]; ok {
+		for _, m := range metas {
+			if val, ok := m[fn.Field]; ok {
 				sum += o.toFloat64(val)
 				count++
 			}
 		}
 		if count > 0 {
 			avg := sum / float64(count)
-			for i := range results {
-				if results[i].Metadata == nil {
-					results[i].Metadata = make(map[string]interface{})
-				}
-				results[i].Metadata[fn.As] = avg
+			for i := range metas {
+				metas[i][fn.As] = avg
 			}
 		}
 	case "min":
 		min := 1e30 // Large number
-		for _, r := range results {
-			if val, ok := r.Metadata[fn.Field]; ok {
+		for _, m := range metas {
+			if val, ok := m[fn.Field]; ok {
 				fval := o.toFloat64(val)
 				if fval < min {
 					min = fval
 				}
 			}
 		}
-		for i := range results {
-			if results[i].Metadata == nil {
-				results[i].Metadata = make(map[string]interface{})
-			}
-			results[i].Metadata[fn.As] = min
+		for i := range metas {
+			metas[i][fn.As] = min
 		}
 	case "max":
 		max := -1e30 // Small number
-		for _, r := range results {
-			if val, ok := r.Metadata[fn.Field]; ok {
+		for _, m := range metas {
+			if val, ok := m[fn.Field]; ok {
 				fval := o.toFloat64(val)
 				if fval > max {
 					max = fval
 				}
 			}
 		}
-		for i := range results {
-			if results[i].Metadata == nil {
-				results[i].Metadata = make(map[string]interface{})
-			}
-			results[i].Metadata[fn.As] = max
+		for i := range metas {
+			metas[i][fn.As] = max
 		}
+	}
+
+	// Re-encode metadata
+	for i := range results {
+		results[i].Metadata, _ = core.EncodeMetadata(metas[i])
 	}
 
 	return results
 }
 
 func (o *WindowOperator) applyPartitioned(results []core.SearchResult, fn WindowFunction) []core.SearchResult {
+	// Decode all metadata first
+	metas := make([]map[string]interface{}, len(results))
+	for i := range results {
+		metas[i], _ = core.DecodeMetadata(results[i].Metadata)
+		if metas[i] == nil {
+			metas[i] = make(map[string]interface{})
+		}
+	}
+
 	// Group results by partition key
 	partitions := make(map[string][]int)
-	for i, r := range results {
-		key := o.getPartitionKey(r, fn.Over.PartitionBy)
+	for i, m := range metas {
+		key := o.getPartitionKey(m, fn.Over.PartitionBy)
 		partitions[key] = append(partitions[key], i)
 	}
 
 	// Apply function to each partition
 	for _, indices := range partitions {
 		partitionResults := make([]core.SearchResult, len(indices))
+		partitionMetas := make([]map[string]interface{}, len(indices))
 		for i, idx := range indices {
 			partitionResults[i] = results[idx]
+			partitionMetas[i] = metas[idx]
 		}
 
-		// Apply global logic to this partition
-		o.applyGlobal(partitionResults, fn)
+		// Apply global logic to this partition (modified to accept decoded metas)
+		o.applyGlobalOnDecoded(partitionResults, partitionMetas, fn)
 
 		// Put back
 		for i, idx := range indices {
 			results[idx] = partitionResults[i]
+			metas[idx] = partitionMetas[i]
 		}
+	}
+
+	// Re-encode metadata
+	for i := range results {
+		results[i].Metadata, _ = core.EncodeMetadata(metas[i])
 	}
 
 	return results
 }
 
-func (o *WindowOperator) getPartitionKey(r core.SearchResult, fields []string) string {
+func (o *WindowOperator) applyGlobalOnDecoded(results []core.SearchResult, metas []map[string]interface{}, fn WindowFunction) {
+	if len(fn.Over.OrderBy) > 0 {
+		// Sorting is tricky here because results and metas must stay in sync
+		type pair struct {
+			res  core.SearchResult
+			meta map[string]interface{}
+		}
+		pairs := make([]pair, len(results))
+		for i := range results {
+			pairs[i] = pair{results[i], metas[i]}
+		}
+		sort.SliceStable(pairs, func(i, j int) bool {
+			return o.compareInternal(pairs[i].res, pairs[i].meta, pairs[j].res, pairs[j].meta, fn.Over.OrderBy)
+		})
+		for i := range results {
+			results[i] = pairs[i].res
+			metas[i] = pairs[i].meta
+		}
+	}
+
+	switch fn.Name {
+	case "row_number":
+		for i := range metas {
+			metas[i][fn.As] = i + 1
+		}
+	case "rank":
+		o.applyRank(results, metas, fn, false)
+	case "dense_rank":
+		o.applyRank(results, metas, fn, true)
+	case "sum":
+		sum := 0.0
+		for _, m := range metas {
+			if val, ok := m[fn.Field]; ok {
+				sum += o.toFloat64(val)
+			}
+		}
+		for i := range metas {
+			metas[i][fn.As] = sum
+		}
+	case "avg":
+		sum := 0.0
+		count := 0
+		for _, m := range metas {
+			if val, ok := m[fn.Field]; ok {
+				sum += o.toFloat64(val)
+				count++
+			}
+		}
+		if count > 0 {
+			avg := sum / float64(count)
+			for i := range metas {
+				metas[i][fn.As] = avg
+			}
+		}
+	case "min":
+		min := 1e30
+		for _, m := range metas {
+			if val, ok := m[fn.Field]; ok {
+				fval := o.toFloat64(val)
+				if fval < min {
+					min = fval
+				}
+			}
+		}
+		for i := range metas {
+			metas[i][fn.As] = min
+		}
+	case "max":
+		max := -1e30
+		for _, m := range metas {
+			if val, ok := m[fn.Field]; ok {
+				fval := o.toFloat64(val)
+				if fval > max {
+					max = fval
+				}
+			}
+		}
+		for i := range metas {
+			metas[i][fn.As] = max
+		}
+	}
+}
+
+func (o *WindowOperator) getPartitionKey(m map[string]interface{}, fields []string) string {
 	var key string
 	for _, field := range fields {
-		if val, ok := r.Metadata[field]; ok {
+		if val, ok := m[field]; ok {
 			key += ":" + o.valToString(val)
 		} else {
 			key += ":<nil>"
@@ -170,13 +269,17 @@ func (o *WindowOperator) valToString(v interface{}) string {
 	case string:
 		return val
 	default:
-		// Not the most efficient but works for now as a generic key
-		// In a real system we'd use a more specialized hash or byte slice
 		return ""
 	}
 }
 
 func (o *WindowOperator) compare(a, b core.SearchResult, orders []WindowOrder) bool {
+	metaA, _ := core.DecodeMetadata(a.Metadata)
+	metaB, _ := core.DecodeMetadata(b.Metadata)
+	return o.compareInternal(a, metaA, b, metaB, orders)
+}
+
+func (o *WindowOperator) compareInternal(a core.SearchResult, metaA map[string]interface{}, b core.SearchResult, metaB map[string]interface{}, orders []WindowOrder) bool {
 	for _, order := range orders {
 		var valA, valB interface{}
 		var okA, okB bool
@@ -188,8 +291,12 @@ func (o *WindowOperator) compare(a, b core.SearchResult, orders []WindowOrder) b
 			valA, okA = a.Score, true
 			valB, okB = b.Score, true
 		} else {
-			valA, okA = a.Metadata[order.Field]
-			valB, okB = b.Metadata[order.Field]
+			if metaA != nil {
+				valA, okA = metaA[order.Field]
+			}
+			if metaB != nil {
+				valB, okB = metaB[order.Field]
+			}
 		}
 
 		if !okA && !okB {
@@ -206,7 +313,6 @@ func (o *WindowOperator) compare(a, b core.SearchResult, orders []WindowOrder) b
 			continue
 		}
 
-		// Comparison logic for different types
 		less := o.isLess(valA, valB)
 		if order.Descending {
 			return !less
@@ -232,18 +338,14 @@ func (o *WindowOperator) isLess(a, b interface{}) bool {
 	return false
 }
 
-func (o *WindowOperator) applyRank(results []core.SearchResult, fn WindowFunction, dense bool) {
+func (o *WindowOperator) applyRank(results []core.SearchResult, metas []map[string]interface{}, fn WindowFunction, dense bool) {
 	if len(results) == 0 {
 		return
 	}
 
 	rank := 1
 	for i := range results {
-		if results[i].Metadata == nil {
-			results[i].Metadata = make(map[string]interface{})
-		}
-
-		if i > 0 && o.isEqual(results[i], results[i-1], fn.Over.OrderBy) {
+		if i > 0 && o.isEqualInternal(results[i], metas[i], results[i-1], metas[i-1], fn.Over.OrderBy) {
 			// Same rank as previous
 		} else {
 			if dense {
@@ -254,7 +356,7 @@ func (o *WindowOperator) applyRank(results []core.SearchResult, fn WindowFunctio
 				rank = i + 1
 			}
 		}
-		results[i].Metadata[fn.As] = rank
+		metas[i][fn.As] = rank
 	}
 }
 
@@ -273,11 +375,10 @@ func (o *WindowOperator) toFloat64(v interface{}) float64 {
 	}
 }
 
-func (o *WindowOperator) isEqual(a, b core.SearchResult, orders []WindowOrder) bool {
+func (o *WindowOperator) isEqualInternal(a core.SearchResult, metaA map[string]interface{}, b core.SearchResult, metaB map[string]interface{}, orders []WindowOrder) bool {
 	if len(orders) == 0 {
-		return true // No order specified means all rows are tied
+		return true
 	}
-	// Return true if all order by fields are equal
 	for _, order := range orders {
 		var valA, valB interface{}
 		if order.Field == "distance" {
@@ -285,8 +386,12 @@ func (o *WindowOperator) isEqual(a, b core.SearchResult, orders []WindowOrder) b
 		} else if order.Field == "score" {
 			valA, valB = a.Score, b.Score
 		} else {
-			valA = a.Metadata[order.Field]
-			valB = b.Metadata[order.Field]
+			if metaA != nil {
+				valA = metaA[order.Field]
+			}
+			if metaB != nil {
+				valB = metaB[order.Field]
+			}
 		}
 		if valA != valB {
 			return false

@@ -41,7 +41,7 @@ type TemporalVector struct {
 	ID        uint64
 	Vector    []float32
 	Timestamp int64
-	Metadata  map[string]interface{}
+	Metadata  []byte
 	Tombstone bool
 }
 
@@ -187,7 +187,7 @@ func NewTemporalIndex(dimension int) *TemporalIndex {
 	}
 }
 
-func (ti *TemporalIndex) Add(id uint64, vector []float32, timestamp int64, metadata map[string]interface{}) error {
+func (ti *TemporalIndex) Add(id uint64, vector []float32, timestamp int64, metadata []byte) error {
 	ti.mu.Lock()
 	defer ti.mu.Unlock()
 
@@ -223,7 +223,7 @@ func (ti *TemporalIndex) Delete(id uint64) error {
 	return nil
 }
 
-func (ti *TemporalIndex) Update(id uint64, vector []float32, timestamp int64, metadata map[string]interface{}) error {
+func (ti *TemporalIndex) Update(id uint64, vector []float32, timestamp int64, metadata []byte) error {
 	ti.mu.Lock()
 	defer ti.mu.Unlock()
 
@@ -481,7 +481,7 @@ type VectorTimestamp struct {
 	ID        uint64                 `json:"id"`
 	Timestamp time.Time              `json:"timestamp"`
 	Vector    []float32              `json:"vector,omitempty"`
-	Metadata  map[string]interface{} `json:"metadata,omitempty"`
+	Metadata  []byte                 `json:"metadata,omitempty"`
 }
 
 func (ti *TemporalIndex) GetVectorsInRange(startTime, endTime int64) []VectorTimestamp {
@@ -520,7 +520,7 @@ func (ti *TemporalIndex) MarshalJSON() ([]byte, error) {
 		ID        uint64                 `json:"id"`
 		Vector    []float32              `json:"vector"`
 		Timestamp int64                  `json:"timestamp"`
-		Metadata  map[string]interface{} `json:"metadata"`
+		Metadata  []byte                 `json:"metadata"`
 		Tombstone bool                   `json:"tombstone"`
 	}
 

@@ -8,6 +8,7 @@ import (
 
 	"github.com/23skdu/longbow/internal/onnx"
 	"github.com/23skdu/longbow/internal/wasm"
+	"github.com/23skdu/longbow/internal/core"
 	"github.com/23skdu/longbow/internal/ml"
 	"github.com/rs/zerolog"
 )
@@ -137,13 +138,16 @@ func (r *ONNXReranker) Rerank(ctx context.Context, query string, results []Searc
 
 	documents := make([]string, len(results))
 	for i, result := range results {
-		if result.Metadata != nil {
-			if text, ok := result.Metadata["text"].(string); ok {
-				documents[i] = text
-			} else if content, ok := result.Metadata["content"].(string); ok {
-				documents[i] = content
-			} else if desc, ok := result.Metadata["description"].(string); ok {
-				documents[i] = desc
+		if len(result.Metadata) > 0 {
+			metaMap, _ := core.DecodeMetadata(result.Metadata)
+			if metaMap != nil {
+				if text, ok := metaMap["text"].(string); ok {
+					documents[i] = text
+				} else if content, ok := metaMap["content"].(string); ok {
+					documents[i] = content
+				} else if desc, ok := metaMap["description"].(string); ok {
+					documents[i] = desc
+				}
 			}
 		}
 		if documents[i] == "" {

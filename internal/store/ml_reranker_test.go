@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/23skdu/longbow/internal/core"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -34,13 +35,9 @@ func TestONNXReranker(t *testing.T) {
 		{ID: 3, Distance: 0.2},
 	}
 	
-	// mock returns 3 scores for 3 docs
-	// documents will be retrieved from dataset but since we mock Score, it doesn't matter for the internal call here
-	// Wait, ONNXReranker retrieves content from results.Metadata if available?
-	
-	results[0].Metadata = map[string]interface{}{"content": "doc1"}
-	results[1].Metadata = map[string]interface{}{"content": "doc2"}
-	results[2].Metadata = map[string]interface{}{"content": "doc3"}
+	results[0].Metadata, _ = core.EncodeMetadata(map[string]interface{}{"content": "doc1"})
+	results[1].Metadata, _ = core.EncodeMetadata(map[string]interface{}{"content": "doc2"})
+	results[2].Metadata, _ = core.EncodeMetadata(map[string]interface{}{"content": "doc3"})
 
 	reranked, err := r.Rerank(context.Background(), "query", results)
 	require.NoError(t, err)

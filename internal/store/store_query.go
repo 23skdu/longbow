@@ -624,9 +624,36 @@ func (s *VectorStore) mapInternalToUserIDsLocked(ds *Dataset, results []lbtypes.
 			resolvedID = res.ID
 		}
 
+		// 5. Extract Metadata
+		metadataColIdx := -1
+		for i, f := range rec.Schema().Fields() {
+			if f.Name == "metadata" {
+				metadataColIdx = i
+				break
+			}
+		}
+
+		var metadata []byte
+		if metadataColIdx != -1 {
+			metaCol := rec.Column(metadataColIdx)
+			if binCol, ok := metaCol.(*array.Binary); ok {
+				if loc.RowIdx < binCol.Len() && binCol.IsValid(loc.RowIdx) {
+					metadata = binCol.Value(loc.RowIdx)
+				}
+			} else if strCol, ok := metaCol.(*array.String); ok {
+				if loc.RowIdx < strCol.Len() && strCol.IsValid(loc.RowIdx) {
+					// Legacy string/JSON column - we'll keep as raw bytes for now
+					metadata = []byte(strCol.Value(loc.RowIdx))
+				}
+			}
+		}
+
 		mappedResults = append(mappedResults, lbtypes.SearchResult{
-			ID:    resolvedID,
-			Score: res.Score,
+			ID:       resolvedID,
+			Score:    res.Score,
+			Distance: res.Distance,
+			Metadata: metadata,
+			Vector:   res.Vector,
 		})
 	}
 
@@ -888,20 +915,36 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, windowFunc
 			}
 
 			// Append Window Function results
-			for wfIdx, wf := range windowFunctions {
-				val, ok := searchResults[j].Metadata[wf.As]
-				if !ok {
-					builder.Field(colOffset + wfIdx).AppendNull()
-					continue
-				}
+			if len(windowFunctions) > 0 {
+				metaMap, _ := core.DecodeMetadata(searchResults[j].Metadata)
+				for wfIdx, wf := range windowFunctions {
+					val, ok := metaMap[wf.As]
+					if !ok {
+						builder.Field(colOffset + wfIdx).AppendNull()
+						continue
+					}
 
-				switch wf.Name {
-				case "row_number", "rank", "dense_rank":
-					builder.Field(colOffset + wfIdx).(*array.Int64Builder).Append(int64(val.(int)))
-				case "sum", "avg", "min", "max":
-					builder.Field(colOffset + wfIdx).(*array.Float64Builder).Append(val.(float64))
-				default:
-					builder.Field(colOffset + wfIdx).(*array.Float64Builder).Append(val.(float64))
+					switch wf.Name {
+					case "row_number", "rank", "dense_rank":
+						var intVal int64
+						switch v := val.(type) {
+						case int: intVal = int64(v)
+						case int64: intVal = v
+						case float64: intVal = int64(v)
+						}
+						builder.Field(colOffset + wfIdx).(*array.Int64Builder).Append(intVal)
+					case "sum", "avg", "min", "max":
+						var floatVal float64
+						switch v := val.(type) {
+						case float64: floatVal = v
+						case float32: floatVal = float64(v)
+						case int: floatVal = float64(v)
+						case int64: floatVal = float64(v)
+						}
+						builder.Field(colOffset + wfIdx).(*array.Float64Builder).Append(floatVal)
+					default:
+						builder.Field(colOffset + wfIdx).(*array.Float64Builder).Append(0.0)
+					}
 				}
 			}
 		}
@@ -1354,17 +1397,33 @@ func (s *VectorStore) streamSearchResults(results []lbtypes.SearchResult, window
 		builder.Field(1).(*array.Float32Builder).Append(res.Score)
 
 		colOffset := 2
-		for wfIdx, wf := range windowFunctions {
-			val, ok := res.Metadata[wf.As]
-			if !ok {
-				builder.Field(colOffset + wfIdx).AppendNull()
-				continue
-			}
-			switch wf.Name {
-			case "row_number", "rank", "dense_rank":
-				builder.Field(colOffset + wfIdx).(*array.Int64Builder).Append(int64(val.(int)))
-			default:
-				builder.Field(colOffset + wfIdx).(*array.Float64Builder).Append(val.(float64))
+		if len(windowFunctions) > 0 {
+			metaMap, _ := core.DecodeMetadata(res.Metadata)
+			for wfIdx, wf := range windowFunctions {
+				val, ok := metaMap[wf.As]
+				if !ok {
+					builder.Field(colOffset + wfIdx).AppendNull()
+					continue
+				}
+				switch wf.Name {
+				case "row_number", "rank", "dense_rank":
+					// Try to cast to various numeric types
+					var intVal int64
+					switch v := val.(type) {
+					case int64: intVal = v
+					case int: intVal = int64(v)
+					case float64: intVal = int64(v)
+					}
+					builder.Field(colOffset + wfIdx).(*array.Int64Builder).Append(intVal)
+				default:
+					var floatVal float64
+					switch v := val.(type) {
+					case float64: floatVal = v
+					case int64: floatVal = float64(v)
+					case int: floatVal = float64(v)
+					}
+					builder.Field(colOffset + wfIdx).(*array.Float64Builder).Append(floatVal)
+				}
 			}
 		}
 	}

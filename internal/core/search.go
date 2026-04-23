@@ -5,8 +5,8 @@ type SearchResult struct {
 	ID       VectorID
 	Distance float32
 	Score    float32
-	Metadata map[string]interface{}
-	Vector   []byte // Binary payload for the vector if requested
+	Metadata []byte                 // Binary metadata payload (zero-copy optimized)
+	Vector   []byte                 // Binary payload for the vector if requested
 }
 
 // Candidate represents a search result candidate with ID and distance

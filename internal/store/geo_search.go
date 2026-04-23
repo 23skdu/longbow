@@ -38,7 +38,7 @@ type GeoIndexedVector struct {
 	Vector    []float32
 	GeoPoint  GeoPoint
 	Timestamp int64
-	Metadata  map[string]interface{}
+	Metadata  []byte
 }
 
 type GeoIndex struct {
@@ -217,7 +217,7 @@ func NewGeoIndex(datasetName string, dimension int, config *GeoSearchConfig) *Ge
 	}
 }
 
-func (gi *GeoIndex) Add(id uint64, vector []float32, point GeoPoint, metadata map[string]interface{}) error {
+func (gi *GeoIndex) Add(id uint64, vector []float32, point GeoPoint, metadata []byte) error {
 	gi.mu.Lock()
 	defer gi.mu.Unlock()
 

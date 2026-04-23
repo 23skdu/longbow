@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/23skdu/longbow/internal/core"
 	lbtypes "github.com/23skdu/longbow/internal/store/types"
 )
 
@@ -288,13 +289,14 @@ func (fqr *FederatedQueryRouter) mergeResultsRRF(partials []partialResult, k int
 
 	results := make([]lbtypes.SearchResult, limit)
 	for i := 0; i < limit; i++ {
+		metaBytes, _ := core.EncodeMetadata(map[string]interface{}{
+			"collection": uniqueScored[i].collection,
+		})
 		results[i] = lbtypes.SearchResult{
 			ID:       uniqueScored[i].id,
 			Distance: uniqueScored[i].distance,
 			Score:    float32(uniqueScored[i].score),
-			Metadata: map[string]interface{}{
-				"collection": uniqueScored[i].collection,
-			},
+			Metadata: metaBytes,
 		}
 	}
 

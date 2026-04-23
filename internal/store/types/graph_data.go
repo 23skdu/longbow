@@ -250,28 +250,32 @@ func (g *GraphData) GetVectorsComplex128Chunk(chunkID int) []complex128 {
 
 func (g *GraphData) GetVectorsInt64Chunk(chunkID int) []int64 {
 	if chunkID < len(g.VectorsInt64) && g.Int64Arena != nil {
-		return g.Int64Arena.Get(memory.SliceRef{Offset: g.VectorsInt64[chunkID], Len: uint32(ChunkSize * g.Dims), Cap: uint32(ChunkSize * g.Dims)}) // #nosec G115
+		pd := g.GetPaddedDimsForType(VectorTypeInt64)
+		return g.Int64Arena.Get(memory.SliceRef{Offset: g.VectorsInt64[chunkID], Len: uint32(ChunkSize * pd), Cap: uint32(ChunkSize * pd)}) // #nosec G115
 	}
 	return nil
 }
 
 func (g *GraphData) GetVectorsUint64Chunk(chunkID int) []uint64 {
 	if chunkID < len(g.VectorsUint64) && g.Uint64Arena != nil {
-		return g.Uint64Arena.Get(memory.SliceRef{Offset: g.VectorsUint64[chunkID], Len: uint32(ChunkSize * g.Dims), Cap: uint32(ChunkSize * g.Dims)}) // #nosec G115
+		pd := g.GetPaddedDimsForType(VectorTypeUint64)
+		return g.Uint64Arena.Get(memory.SliceRef{Offset: g.VectorsUint64[chunkID], Len: uint32(ChunkSize * pd), Cap: uint32(ChunkSize * pd)}) // #nosec G115
 	}
 	return nil
 }
 
 func (g *GraphData) GetVectorsInt32Chunk(chunkID int) []int32 {
 	if chunkID < len(g.VectorsInt32) && g.Int32Arena != nil {
-		return g.Int32Arena.Get(memory.SliceRef{Offset: g.VectorsInt32[chunkID], Len: uint32(ChunkSize * g.Dims), Cap: uint32(ChunkSize * g.Dims)}) // #nosec G115
+		pd := g.GetPaddedDimsForType(VectorTypeInt32)
+		return g.Int32Arena.Get(memory.SliceRef{Offset: g.VectorsInt32[chunkID], Len: uint32(ChunkSize * pd), Cap: uint32(ChunkSize * pd)}) // #nosec G115
 	}
 	return nil
 }
 
 func (g *GraphData) GetVectorsUint32Chunk(chunkID int) []uint32 {
 	if chunkID < len(g.VectorsUint32) && g.Uint32Arena != nil {
-		return g.Uint32Arena.Get(memory.SliceRef{Offset: g.VectorsUint32[chunkID], Len: uint32(ChunkSize * g.Dims), Cap: uint32(ChunkSize * g.Dims)}) // #nosec G115
+		pd := g.GetPaddedDimsForType(VectorTypeUint32)
+		return g.Uint32Arena.Get(memory.SliceRef{Offset: g.VectorsUint32[chunkID], Len: uint32(ChunkSize * pd), Cap: uint32(ChunkSize * pd)}) // #nosec G115
 	}
 	return nil
 }
@@ -413,21 +417,24 @@ func (g *GraphData) GetVersionsChunk(layer, chunkID int) []uint32 {
 
 func (g *GraphData) GetVectorsInt8Chunk(chunkID int) []int8 {
 	if chunkID < len(g.VectorsInt8) && g.Int8Arena != nil {
-		return g.Int8Arena.Get(memory.SliceRef{Offset: g.VectorsInt8[chunkID], Len: uint32(ChunkSize * g.Dims), Cap: uint32(ChunkSize * g.Dims)}) // #nosec G115
+		paddedDims := g.GetPaddedDimsForType(VectorTypeInt8)
+		return g.Int8Arena.Get(memory.SliceRef{Offset: g.VectorsInt8[chunkID], Len: uint32(ChunkSize * paddedDims), Cap: uint32(ChunkSize * paddedDims)}) // #nosec G115
 	}
 	return nil
 }
 
 func (g *GraphData) GetVectorsInt16Chunk(chunkID int) []int16 {
 	if chunkID < len(g.VectorsInt16) && g.Int16Arena != nil {
-		return g.Int16Arena.Get(memory.SliceRef{Offset: g.VectorsInt16[chunkID], Len: uint32(ChunkSize * g.Dims), Cap: uint32(ChunkSize * g.Dims)}) // #nosec G115
+		paddedDims := g.GetPaddedDimsForType(VectorTypeInt16)
+		return g.Int16Arena.Get(memory.SliceRef{Offset: g.VectorsInt16[chunkID], Len: uint32(ChunkSize * paddedDims), Cap: uint32(ChunkSize * paddedDims)}) // #nosec G115
 	}
 	return nil
 }
 
 func (g *GraphData) GetVectorsUint16Chunk(chunkID int) []uint16 {
 	if chunkID < len(g.VectorsUint16) && g.Uint16Arena != nil {
-		return g.Uint16Arena.Get(memory.SliceRef{Offset: g.VectorsUint16[chunkID], Len: uint32(ChunkSize * g.Dims), Cap: uint32(ChunkSize * g.Dims)}) // #nosec G115
+		paddedDims := g.GetPaddedDimsForType(VectorTypeUint16)
+		return g.Uint16Arena.Get(memory.SliceRef{Offset: g.VectorsUint16[chunkID], Len: uint32(ChunkSize * paddedDims), Cap: uint32(ChunkSize * paddedDims)}) // #nosec G115
 	}
 	return nil
 }
@@ -435,20 +442,24 @@ func (g *GraphData) GetVectorsUint16Chunk(chunkID int) []uint16 {
 func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
 	// 1. Ensure Vectors (Float32 / Unknown)
 	if g.Type == VectorTypeFloat32 || g.Type == VectorTypeUnknown {
+		paddedDims := g.GetPaddedDimsForType(VectorTypeFloat32)
 		for len(g.VectorsF32) <= cID {
 			if dims == 0 {
 				g.VectorsF32 = append(g.VectorsF32, 0)
 				g.Vectors = append(g.Vectors, nil)
 				continue
 			}
-			requiredChunkSize := ChunkSize * dims * 4
 			if g.Float32Arena == nil {
-				slabSize := requiredChunkSize + 64
-				if slabSize < 1024*1024 { slabSize = 1024 * 1024 }
+				slabSize := ChunkSize*paddedDims*4 + 64
+				if slabSize < 1024*1024 {
+					slabSize = 1024 * 1024
+				}
 				g.Float32Arena = memory.NewTypedArena[float32](memory.NewSlabArena(slabSize))
 			}
-			ref, err := g.Float32Arena.AllocSliceDirty(ChunkSize * dims)
-			if err != nil { return err }
+			ref, err := g.Float32Arena.AllocSlice(ChunkSize * paddedDims)
+			if err != nil {
+				return err
+			}
 			g.VectorsF32 = append(g.VectorsF32, ref.Offset)
 			g.Vectors = append(g.Vectors, nil)
 		}
@@ -463,12 +474,16 @@ func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
 				continue
 			}
 			if g.Uint8Arena == nil {
-				slabSize := ChunkSize * paddedDims + 64
-				if slabSize < 1024*1024 { slabSize = 1024 * 1024 }
+				slabSize := ChunkSize*paddedDims + 64
+				if slabSize < 1024*1024 {
+					slabSize = 1024 * 1024
+				}
 				g.Uint8Arena = memory.NewTypedArena[uint8](memory.NewSlabArena(slabSize))
 			}
 			ref, err := g.Uint8Arena.AllocSliceDirty(ChunkSize * paddedDims)
-			if err != nil { return err }
+			if err != nil {
+				return err
+			}
 			g.VectorsSQ8 = append(g.VectorsSQ8, ref.Offset)
 		}
 	}
@@ -482,12 +497,16 @@ func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
 				continue
 			}
 			if g.Uint64Arena == nil {
-				slabSize := ChunkSize * numWordsPerNode * 8 + 64
-				if slabSize < 1024*1024 { slabSize = 1024 * 1024 }
+				slabSize := ChunkSize*numWordsPerNode*8 + 64
+				if slabSize < 1024*1024 {
+					slabSize = 1024 * 1024
+				}
 				g.Uint64Arena = memory.NewTypedArena[uint64](memory.NewSlabArena(slabSize))
 			}
 			ref, err := g.Uint64Arena.AllocSliceDirty(ChunkSize * numWordsPerNode)
-			if err != nil { return err }
+			if err != nil {
+				return err
+			}
 			g.VectorsPQ = append(g.VectorsPQ, ref.Offset)
 		}
 	}
@@ -537,41 +556,18 @@ func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
 		}
 	}
 
-	// Ensure SQ8 if enabled
-	if g.SQ8Enabled {
-		for len(g.VectorsSQ8) <= cID {
-			// Allocate in arena
-			if g.Uint8Arena == nil {
-				// Create a slab arena with reasonable size (e.g. 1MB or fits 1 chunk)
-				// SQ8 requires padding to 64 bytes
-				paddedDims := (dims + 63) & ^63
-				slabSize := ChunkSize*paddedDims + 64
-				if slabSize < 1024*1024 {
-					slabSize = 1024 * 1024
-				}
-				slabArena := memory.NewSlabArena(slabSize)
-				g.Uint8Arena = memory.NewTypedArena[uint8](slabArena)
-			}
-			paddedDims := (dims + 63) & ^63
-			ref, err := g.Uint8Arena.AllocSliceDirty(ChunkSize * paddedDims)
-			if err != nil {
-				return err
-			}
-			g.VectorsSQ8 = append(g.VectorsSQ8, ref.Offset)
-		}
-	}
-
 	// Ensure Float64 - use arena for off-heap allocation
 	if g.Type == VectorTypeFloat64 {
+		paddedDims := g.GetPaddedDimsForType(VectorTypeFloat64)
 		for len(g.VectorsFloat64Offsets) <= cID {
 			if g.Float64Arena == nil {
-				slabSize := ChunkSize*dims*8 + 64
+				slabSize := ChunkSize*paddedDims*8 + 64
 				if slabSize < 1024*1024 {
 					slabSize = 1024 * 1024
 				}
 				g.Float64Arena = memory.NewTypedArena[float64](memory.NewSlabArena(slabSize))
 			}
-			ref, err := g.Float64Arena.AllocSliceDirty(ChunkSize * dims)
+			ref, err := g.Float64Arena.AllocSlice(ChunkSize * paddedDims)
 			if err != nil {
 				return err
 			}
@@ -581,15 +577,16 @@ func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
 
 	// Ensure Complex64 - use arena for off-heap allocation
 	if g.Type == VectorTypeComplex64 {
+		paddedDims := g.GetPaddedDimsForType(VectorTypeComplex64)
 		for len(g.VectorsComplex64Offsets) <= cID {
 			if g.Complex64Arena == nil {
-				slabSize := ChunkSize*dims*8 + 64
+				slabSize := ChunkSize*paddedDims*8 + 64
 				if slabSize < 1024*1024 {
 					slabSize = 1024 * 1024
 				}
 				g.Complex64Arena = memory.NewTypedArena[complex64](memory.NewSlabArena(slabSize))
 			}
-			ref, err := g.Complex64Arena.AllocSliceDirty(ChunkSize * dims)
+			ref, err := g.Complex64Arena.AllocSlice(ChunkSize * paddedDims)
 			if err != nil {
 				return err
 			}
@@ -599,15 +596,16 @@ func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
 
 	// Ensure Complex128 - use arena for off-heap allocation
 	if g.Type == VectorTypeComplex128 {
+		paddedDims := g.GetPaddedDimsForType(VectorTypeComplex128)
 		for len(g.VectorsComplex128Offsets) <= cID {
 			if g.Complex128Arena == nil {
-				slabSize := ChunkSize*dims*16 + 64
+				slabSize := ChunkSize*paddedDims*16 + 64
 				if slabSize < 1024*1024 {
 					slabSize = 1024 * 1024
 				}
 				g.Complex128Arena = memory.NewTypedArena[complex128](memory.NewSlabArena(slabSize))
 			}
-			ref, err := g.Complex128Arena.AllocSliceDirty(ChunkSize * dims)
+			ref, err := g.Complex128Arena.AllocSlice(ChunkSize * paddedDims)
 			if err != nil {
 				return err
 			}
@@ -617,16 +615,16 @@ func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
 
 	// Ensure Int64 - use arena for off-heap allocation
 	if g.Type == VectorTypeInt64 {
+		paddedDims := g.GetPaddedDimsForType(VectorTypeInt64)
 		for len(g.VectorsInt64) <= cID {
-			// Create arena if needed
 			if g.Int64Arena == nil {
-				slabSize := ChunkSize*dims*8 + 64
+				slabSize := ChunkSize*paddedDims*8 + 64
 				if slabSize < 1024*1024 {
 					slabSize = 1024 * 1024
 				}
 				g.Int64Arena = memory.NewTypedArena[int64](memory.NewSlabArena(slabSize))
 			}
-			ref, err := g.Int64Arena.AllocSliceDirty(ChunkSize * dims)
+			ref, err := g.Int64Arena.AllocSlice(ChunkSize * paddedDims)
 			if err != nil {
 				return err
 			}
@@ -636,15 +634,16 @@ func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
 
 	// Ensure Uint64 - use arena for off-heap allocation
 	if g.Type == VectorTypeUint64 {
+		paddedDims := g.GetPaddedDimsForType(VectorTypeUint64)
 		for len(g.VectorsUint64) <= cID {
 			if g.Uint64Arena == nil {
-				slabSize := ChunkSize*dims*8 + 64
+				slabSize := ChunkSize*paddedDims*8 + 64
 				if slabSize < 1024*1024 {
 					slabSize = 1024 * 1024
 				}
 				g.Uint64Arena = memory.NewTypedArena[uint64](memory.NewSlabArena(slabSize))
 			}
-			ref, err := g.Uint64Arena.AllocSliceDirty(ChunkSize * dims)
+			ref, err := g.Uint64Arena.AllocSlice(ChunkSize * paddedDims)
 			if err != nil {
 				return err
 			}
@@ -652,17 +651,18 @@ func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
 		}
 	}
 
-	// Ensure Int32 - use arena for off-heap allocation
+	// Ensure Int32
 	if g.Type == VectorTypeInt32 {
+		paddedDims := g.GetPaddedDimsForType(VectorTypeInt32)
 		for len(g.VectorsInt32) <= cID {
 			if g.Int32Arena == nil {
-				slabSize := ChunkSize*dims*4 + 64
+				slabSize := ChunkSize*paddedDims*4 + 64
 				if slabSize < 1024*1024 {
 					slabSize = 1024 * 1024
 				}
 				g.Int32Arena = memory.NewTypedArena[int32](memory.NewSlabArena(slabSize))
 			}
-			ref, err := g.Int32Arena.AllocSliceDirty(ChunkSize * dims)
+			ref, err := g.Int32Arena.AllocSlice(ChunkSize * paddedDims)
 			if err != nil {
 				return err
 			}
@@ -670,17 +670,18 @@ func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
 		}
 	}
 
-	// Ensure Uint32 - use arena for off-heap allocation
+	// Ensure Uint32
 	if g.Type == VectorTypeUint32 {
+		paddedDims := g.GetPaddedDimsForType(VectorTypeUint32)
 		for len(g.VectorsUint32) <= cID {
 			if g.Uint32Arena == nil {
-				slabSize := ChunkSize*dims*4 + 64
+				slabSize := ChunkSize*paddedDims*4 + 64
 				if slabSize < 1024*1024 {
 					slabSize = 1024 * 1024
 				}
 				g.Uint32Arena = memory.NewTypedArena[uint32](memory.NewSlabArena(slabSize))
 			}
-			ref, err := g.Uint32Arena.AllocSliceDirty(ChunkSize * dims)
+			ref, err := g.Uint32Arena.AllocSlice(ChunkSize * paddedDims)
 			if err != nil {
 				return err
 			}
@@ -690,15 +691,16 @@ func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
 
 	// Ensure Int16 - use arena for off-heap allocation
 	if g.Type == VectorTypeInt16 {
+		paddedDims := g.GetPaddedDimsForType(VectorTypeInt16)
 		for len(g.VectorsInt16) <= cID {
 			if g.Int16Arena == nil {
-				slabSize := ChunkSize*dims*2 + 64
+				slabSize := ChunkSize*paddedDims*2 + 64
 				if slabSize < 1024*1024 {
 					slabSize = 1024 * 1024
 				}
 				g.Int16Arena = memory.NewTypedArena[int16](memory.NewSlabArena(slabSize))
 			}
-			ref, err := g.Int16Arena.AllocSliceDirty(ChunkSize * dims)
+			ref, err := g.Int16Arena.AllocSlice(ChunkSize * paddedDims)
 			if err != nil {
 				return err
 			}
@@ -717,7 +719,7 @@ func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
 				}
 				g.Uint8Arena = memory.NewTypedArena[uint8](memory.NewSlabArena(slabSize))
 			}
-			ref, err := g.Uint8Arena.AllocSliceDirty(ChunkSize * stride)
+			ref, err := g.Uint8Arena.AllocSlice(ChunkSize * stride)
 			if err != nil {
 				return err
 			}
@@ -727,15 +729,16 @@ func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
 
 	// Ensure Uint16 - use arena for off-heap allocation
 	if g.Type == VectorTypeUint16 {
+		paddedDims := g.GetPaddedDimsForType(VectorTypeUint16)
 		for len(g.VectorsUint16) <= cID {
 			if g.Uint16Arena == nil {
-				slabSize := ChunkSize*dims*2 + 64
+				slabSize := ChunkSize*paddedDims*2 + 64
 				if slabSize < 1024*1024 {
 					slabSize = 1024 * 1024
 				}
 				g.Uint16Arena = memory.NewTypedArena[uint16](memory.NewSlabArena(slabSize))
 			}
-			ref, err := g.Uint16Arena.AllocSliceDirty(ChunkSize * dims)
+			ref, err := g.Uint16Arena.AllocSlice(ChunkSize * paddedDims)
 			if err != nil {
 				return err
 			}
@@ -745,15 +748,16 @@ func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
 
 	// Ensure Int8/Uint8
 	if g.Type == VectorTypeInt8 || g.Type == VectorTypeUint8 {
+		paddedDims := g.GetPaddedDimsForType(g.Type)
 		for len(g.VectorsInt8) <= cID {
 			if g.Int8Arena == nil {
-				slabSize := ChunkSize*dims + 64
+				slabSize := ChunkSize*paddedDims + 64
 				if slabSize < 1024*1024 {
 					slabSize = 1024 * 1024
 				}
 				g.Int8Arena = memory.NewTypedArena[int8](memory.NewSlabArena(slabSize))
 			}
-			ref, err := g.Int8Arena.AllocSliceDirty(ChunkSize * dims)
+			ref, err := g.Int8Arena.AllocSlice(ChunkSize * paddedDims)
 			if err != nil {
 				return err
 			}
@@ -763,19 +767,17 @@ func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
 
 	// Ensure BQ if enabled
 	if g.BQEnabled {
+		paddedDims := (dims + 63) & ^63
+		numWords := paddedDims / 64
 		for len(g.VectorsBQ) <= cID {
 			if g.Uint64Arena == nil {
-				paddedDims := (dims + 63) & ^63
-				numWords := paddedDims / 64
 				slabSize := ChunkSize*numWords*8 + 64
 				if slabSize < 1024*1024 {
 					slabSize = 1024 * 1024
 				}
 				g.Uint64Arena = memory.NewTypedArena[uint64](memory.NewSlabArena(slabSize))
 			}
-			paddedDims := (dims + 63) & ^63
-			numWords := paddedDims / 64
-			ref, err := g.Uint64Arena.AllocSliceDirty(ChunkSize * numWords)
+			ref, err := g.Uint64Arena.AllocSlice(ChunkSize * numWords)
 			if err != nil {
 				return err
 			}
@@ -783,38 +785,18 @@ func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
 		}
 	}
 
-	// Ensure PQ if enabled
-	if g.PQEnabled && g.PQM > 0 {
-		for len(g.VectorsPQ) <= cID {
-			if g.Uint64Arena == nil {
-				// Allocate based on PQM
-				numWords := (g.PQM + 7) / 8
-				slabSize := ChunkSize*numWords*8 + 64
-				if slabSize < 1024*1024 {
-					slabSize = 1024 * 1024
-				}
-				g.Uint64Arena = memory.NewTypedArena[uint64](memory.NewSlabArena(slabSize))
-			}
-			numWords := (g.PQM + 7) / 8
-			ref, err := g.Uint64Arena.AllocSliceDirty(ChunkSize * numWords)
-			if err != nil {
-				return err
-			}
-			g.VectorsPQ = append(g.VectorsPQ, ref.Offset)
-		}
-	}
-
 	// Ensure F16
 	if g.Type == VectorTypeFloat16 {
+		paddedDims := g.GetPaddedDimsForType(VectorTypeFloat16)
 		for len(g.VectorsF16) <= cID {
 			if g.Float16Arena == nil {
-				slabSize := ChunkSize*dims*2 + 64
+				slabSize := ChunkSize*paddedDims*2 + 64
 				if slabSize < 1024*1024 {
 					slabSize = 1024 * 1024
 				}
 				g.Float16Arena = memory.NewTypedArena[float16.Num](memory.NewSlabArena(slabSize))
 			}
-			ref, err := g.Float16Arena.AllocSliceDirty(ChunkSize * dims)
+			ref, err := g.Float16Arena.AllocSlice(ChunkSize * paddedDims)
 			if err != nil {
 				return err
 			}
@@ -886,7 +868,8 @@ func (g *GraphData) SetNeighbors(id uint32, neighbors []uint32) error {
 
 func (g *GraphData) GetVectorsF16Chunk(chunkID int) []float16.Num {
 	if chunkID < len(g.VectorsF16) && g.Float16Arena != nil {
-		return g.Float16Arena.Get(memory.SliceRef{Offset: g.VectorsF16[chunkID], Len: uint32(ChunkSize * g.Dims), Cap: uint32(ChunkSize * g.Dims)}) // #nosec G115
+		paddedDims := g.GetPaddedDimsForType(VectorTypeFloat16)
+		return g.Float16Arena.Get(memory.SliceRef{Offset: g.VectorsF16[chunkID], Len: uint32(ChunkSize * paddedDims), Cap: uint32(ChunkSize * paddedDims)}) // #nosec G115
 	}
 	return nil
 }
@@ -898,7 +881,6 @@ func (g *GraphData) GetVector(id uint32) (any, error) {
 
 	// Based on type, get the appropriate chunk
 	// Only supporting float32 and float16 for now in this generic method
-	// for simplicity, as they are the primary types used in tests.
 	if g.Uint8Arena != nil && len(g.VectorsSQ8) > cID && g.SQ8Enabled && atomic.LoadUint32(&g.SQ8Ready) == 1 {
 		chunk := g.GetVectorsSQ8Chunk(cID)
 		if chunk != nil {
@@ -910,10 +892,34 @@ func (g *GraphData) GetVector(id uint32) (any, error) {
 		}
 	}
 
-	if g.Int8Arena != nil && len(g.VectorsInt8) > cID {
+	switch g.Type {
+	case VectorTypeUint8:
 		chunk := g.GetVectorsInt8Chunk(cID)
+		if chunk == nil {
+			return nil, nil
+		}
+		pd := g.GetPaddedDimsForType(VectorTypeUint8)
+		start := cOff * pd
+		if start+g.Dims <= len(chunk) {
+			ptr := unsafe.Pointer(&chunk[0])
+			u8Chunk := unsafe.Slice((*uint8)(ptr), len(chunk))
+			return u8Chunk[start : start+g.Dims], nil
+		}
+	case VectorTypeInt8:
+		chunk := g.GetVectorsInt8Chunk(cID)
+		if chunk == nil {
+			return nil, nil
+		}
+		pd := g.GetPaddedDimsForType(VectorTypeInt8)
+		start := cOff * pd
+		if start+g.Dims <= len(chunk) {
+			return chunk[start : start+g.Dims], nil
+		}
+	case VectorTypeFloat32:
+		chunk := g.GetVectorsChunk(cID)
 		if chunk != nil {
-			start := cOff * g.Dims
+			paddedDims := g.GetPaddedDimsForType(VectorTypeFloat32)
+			start := cOff * paddedDims
 			if start+g.Dims <= len(chunk) {
 				return chunk[start : start+g.Dims], nil
 			}
@@ -923,27 +929,41 @@ func (g *GraphData) GetVector(id uint32) (any, error) {
 	if len(g.VectorsF32) > cID || len(g.Vectors) > cID {
 		chunk := g.GetVectorsChunk(cID)
 		if chunk != nil {
-			start := cOff * g.Dims
+			paddedDims := g.GetPaddedDimsForType(VectorTypeFloat32)
+			start := cOff * paddedDims
 			if start+g.Dims <= len(chunk) {
 				return chunk[start : start+g.Dims], nil
 			}
 		}
 	}
 
-	if len(g.VectorsComplex64) > cID {
+	if len(g.VectorsComplex64Offsets) > cID || len(g.VectorsComplex64) > cID {
 		chunk := g.GetVectorsComplex64Chunk(cID)
 		if chunk != nil {
-			start := cOff * g.Dims
+			paddedDims := g.GetPaddedDimsForType(VectorTypeComplex64)
+			start := cOff * paddedDims
 			if start+g.Dims <= len(chunk) {
 				return chunk[start : start+g.Dims], nil
 			}
 		}
 	}
 
-	if len(g.VectorsComplex128) > cID {
+	if len(g.VectorsComplex128Offsets) > cID || len(g.VectorsComplex128) > cID {
 		chunk := g.GetVectorsComplex128Chunk(cID)
 		if chunk != nil {
-			start := cOff * g.Dims
+			paddedDims := g.GetPaddedDimsForType(VectorTypeComplex128)
+			start := cOff * paddedDims
+			if start+g.Dims <= len(chunk) {
+				return chunk[start : start+g.Dims], nil
+			}
+		}
+	}
+
+	if len(g.VectorsFloat64Offsets) > cID || len(g.VectorsFloat64) > cID {
+		chunk := g.GetVectorsFloat64Chunk(cID)
+		if chunk != nil {
+			paddedDims := g.GetPaddedDimsForType(VectorTypeFloat64)
+			start := cOff * paddedDims
 			if start+g.Dims <= len(chunk) {
 				return chunk[start : start+g.Dims], nil
 			}
@@ -953,7 +973,8 @@ func (g *GraphData) GetVector(id uint32) (any, error) {
 	if len(g.VectorsInt64) > cID {
 		chunk := g.GetVectorsInt64Chunk(cID)
 		if chunk != nil {
-			start := cOff * g.Dims
+			paddedDims := g.GetPaddedDimsForType(VectorTypeInt64)
+			start := cOff * paddedDims
 			if start+g.Dims <= len(chunk) {
 				return chunk[start : start+g.Dims], nil
 			}
@@ -963,7 +984,8 @@ func (g *GraphData) GetVector(id uint32) (any, error) {
 	if len(g.VectorsUint64) > cID {
 		chunk := g.GetVectorsUint64Chunk(cID)
 		if chunk != nil {
-			start := cOff * g.Dims
+			paddedDims := g.GetPaddedDimsForType(VectorTypeUint64)
+			start := cOff * paddedDims
 			if start+g.Dims <= len(chunk) {
 				return chunk[start : start+g.Dims], nil
 			}
@@ -973,7 +995,8 @@ func (g *GraphData) GetVector(id uint32) (any, error) {
 	if len(g.VectorsInt32) > cID {
 		chunk := g.GetVectorsInt32Chunk(cID)
 		if chunk != nil {
-			start := cOff * g.Dims
+			paddedDims := g.GetPaddedDimsForType(VectorTypeInt32)
+			start := cOff * paddedDims
 			if start+g.Dims <= len(chunk) {
 				return chunk[start : start+g.Dims], nil
 			}
@@ -983,7 +1006,8 @@ func (g *GraphData) GetVector(id uint32) (any, error) {
 	if len(g.VectorsUint32) > cID {
 		chunk := g.GetVectorsUint32Chunk(cID)
 		if chunk != nil {
-			start := cOff * g.Dims
+			paddedDims := g.GetPaddedDimsForType(VectorTypeUint32)
+			start := cOff * paddedDims
 			if start+g.Dims <= len(chunk) {
 				return chunk[start : start+g.Dims], nil
 			}
@@ -993,7 +1017,8 @@ func (g *GraphData) GetVector(id uint32) (any, error) {
 	if len(g.VectorsInt16) > cID {
 		chunk := g.GetVectorsInt16Chunk(cID)
 		if chunk != nil {
-			start := cOff * g.Dims
+			paddedDims := g.GetPaddedDimsForType(VectorTypeInt16)
+			start := cOff * paddedDims
 			if start+g.Dims <= len(chunk) {
 				return chunk[start : start+g.Dims], nil
 			}
@@ -1003,7 +1028,8 @@ func (g *GraphData) GetVector(id uint32) (any, error) {
 	if len(g.VectorsUint16) > cID {
 		chunk := g.GetVectorsUint16Chunk(cID)
 		if chunk != nil {
-			start := cOff * g.Dims
+			paddedDims := g.GetPaddedDimsForType(VectorTypeUint16)
+			start := cOff * paddedDims
 			if start+g.Dims <= len(chunk) {
 				return chunk[start : start+g.Dims], nil
 			}
@@ -1013,7 +1039,8 @@ func (g *GraphData) GetVector(id uint32) (any, error) {
 	if len(g.VectorsF16) > cID {
 		chunk := g.GetVectorsF16Chunk(cID)
 		if chunk != nil {
-			start := cOff * g.Dims
+			paddedDims := g.GetPaddedDimsForType(VectorTypeFloat16)
+			start := cOff * paddedDims
 			if start+g.Dims <= len(chunk) {
 				return chunk[start : start+g.Dims], nil
 			}
@@ -1069,7 +1096,8 @@ func (g *GraphData) SetVector(id uint32, vec any) error {
 			// Convert to Float16
 			chunk := g.GetVectorsF16Chunk(cID)
 			if chunk != nil {
-				start := cOff * g.Dims
+				paddedDims := g.GetPaddedDimsForType(VectorTypeFloat16)
+				start := cOff * paddedDims
 				if start+len(v) <= len(chunk) {
 					for i, val := range v {
 						chunk[start+i] = float16.New(val)
@@ -1080,7 +1108,8 @@ func (g *GraphData) SetVector(id uint32, vec any) error {
 		}
 		chunk := g.GetVectorsChunk(cID)
 		if chunk != nil {
-			start := cOff * g.Dims
+			paddedDims := g.GetPaddedDimsForType(VectorTypeFloat32)
+			start := cOff * paddedDims
 			if start+len(v) <= len(chunk) {
 				dest := chunk[start : start+len(v)]
 				// Zero-Copy Optimization: Skip copy if source and destination are the same memory
@@ -1093,7 +1122,8 @@ func (g *GraphData) SetVector(id uint32, vec any) error {
 	case []float16.Num:
 		chunk := g.GetVectorsF16Chunk(cID)
 		if chunk != nil {
-			start := cOff * g.Dims
+			paddedDims := g.GetPaddedDimsForType(VectorTypeFloat16)
+			start := cOff * paddedDims
 			if start+len(v) <= len(chunk) {
 				dest := chunk[start : start+len(v)]
 				if len(dest) > 0 && len(v) > 0 && &dest[0] == &v[0] {
@@ -1105,7 +1135,8 @@ func (g *GraphData) SetVector(id uint32, vec any) error {
 	case []float64:
 		chunk := g.GetVectorsFloat64Chunk(cID)
 		if chunk != nil {
-			start := cOff * g.Dims
+			paddedDims := g.GetPaddedDimsForType(VectorTypeFloat64)
+			start := cOff * paddedDims
 			if start+len(v) <= len(chunk) {
 				dest := chunk[start : start+len(v)]
 				if len(dest) > 0 && len(v) > 0 && &dest[0] == &v[0] {
@@ -1117,7 +1148,8 @@ func (g *GraphData) SetVector(id uint32, vec any) error {
 	case []complex64:
 		chunk := g.GetVectorsComplex64Chunk(cID)
 		if chunk != nil {
-			start := cOff * g.Dims
+			paddedDims := g.GetPaddedDimsForType(VectorTypeComplex64)
+			start := cOff * paddedDims
 			if start+len(v) <= len(chunk) {
 				copy(chunk[start:start+len(v)], v)
 			}
@@ -1125,15 +1157,28 @@ func (g *GraphData) SetVector(id uint32, vec any) error {
 	case []complex128:
 		chunk := g.GetVectorsComplex128Chunk(cID)
 		if chunk != nil {
-			start := cOff * g.Dims
+			paddedDims := g.GetPaddedDimsForType(VectorTypeComplex128)
+			start := cOff * paddedDims
 			if start+len(v) <= len(chunk) {
 				copy(chunk[start:start+len(v)], v)
+			}
+		}
+	case []uint8:
+		chunk := g.GetVectorsInt8Chunk(cID)
+		if chunk != nil {
+			paddedDims := g.GetPaddedDimsForType(VectorTypeUint8)
+			start := cOff * paddedDims
+			if start+len(v) <= len(chunk) {
+				// Copy []uint8 to []int8 chunk via unsafe cast
+				uint8Chunk := *(*[]uint8)(unsafe.Pointer(&chunk)) // #nosec G103
+				copy(uint8Chunk[start:start+len(v)], v)
 			}
 		}
 	case []int8:
 		chunk := g.GetVectorsInt8Chunk(cID)
 		if chunk != nil {
-			start := cOff * g.Dims
+			paddedDims := g.GetPaddedDimsForType(VectorTypeInt8)
+			start := cOff * paddedDims
 			if start+len(v) <= len(chunk) {
 				copy(chunk[start:start+len(v)], v)
 			}
@@ -1141,7 +1186,8 @@ func (g *GraphData) SetVector(id uint32, vec any) error {
 	case []int16:
 		chunk := g.GetVectorsInt16Chunk(cID)
 		if chunk != nil {
-			start := cOff * g.Dims
+			paddedDims := g.GetPaddedDimsForType(VectorTypeInt16)
+			start := cOff * paddedDims
 			if start+len(v) <= len(chunk) {
 				copy(chunk[start:start+len(v)], v)
 			}
@@ -1149,7 +1195,8 @@ func (g *GraphData) SetVector(id uint32, vec any) error {
 	case []uint16:
 		chunk := g.GetVectorsUint16Chunk(cID)
 		if chunk != nil {
-			start := cOff * g.Dims
+			paddedDims := g.GetPaddedDimsForType(VectorTypeUint16)
+			start := cOff * paddedDims
 			if start+len(v) <= len(chunk) {
 				copy(chunk[start:start+len(v)], v)
 			}
@@ -1157,7 +1204,8 @@ func (g *GraphData) SetVector(id uint32, vec any) error {
 	case []int64:
 		chunk := g.GetVectorsInt64Chunk(cID)
 		if chunk != nil {
-			start := cOff * g.Dims
+			paddedDims := g.GetPaddedDimsForType(VectorTypeInt64)
+			start := cOff * paddedDims
 			if start+len(v) <= len(chunk) {
 				copy(chunk[start:start+len(v)], v)
 			}
@@ -1165,7 +1213,8 @@ func (g *GraphData) SetVector(id uint32, vec any) error {
 	case []uint64:
 		chunk := g.GetVectorsUint64Chunk(cID)
 		if chunk != nil {
-			start := cOff * g.Dims
+			paddedDims := g.GetPaddedDimsForType(VectorTypeUint64)
+			start := cOff * paddedDims
 			if start+len(v) <= len(chunk) {
 				copy(chunk[start:start+len(v)], v)
 			}
@@ -1173,7 +1222,8 @@ func (g *GraphData) SetVector(id uint32, vec any) error {
 	case []int32:
 		chunk := g.GetVectorsInt32Chunk(cID)
 		if chunk != nil {
-			start := cOff * g.Dims
+			paddedDims := g.GetPaddedDimsForType(VectorTypeInt32)
+			start := cOff * paddedDims
 			if start+len(v) <= len(chunk) {
 				copy(chunk[start:start+len(v)], v)
 			}
@@ -1181,26 +1231,7 @@ func (g *GraphData) SetVector(id uint32, vec any) error {
 	case []uint32:
 		chunk := g.GetVectorsUint32Chunk(cID)
 		if chunk != nil {
-			start := cOff * g.Dims
-			if start+len(v) <= len(chunk) {
-				copy(chunk[start:start+len(v)], v)
-			}
-		}
-	case []uint8: // same as []byte
-		if g.Type == VectorTypeUint8 && g.Int8Arena != nil {
-			chunk := g.GetVectorsInt8Chunk(cID)
-			if chunk != nil {
-				start := cOff * g.Dims
-				if start+len(v) <= len(chunk) {
-					v8 := *(*[]int8)(unsafe.Pointer(&v)) // #nosec G103
-					copy(chunk[start:start+len(v)], v8)
-				}
-			}
-			return nil
-		}
-		chunk := g.GetVectorsSQ8Chunk(cID)
-		if chunk != nil {
-			paddedDims := (g.Dims + 63) & ^63
+			paddedDims := g.GetPaddedDimsForType(VectorTypeUint32)
 			start := cOff * paddedDims
 			if start+len(v) <= len(chunk) {
 				copy(chunk[start:start+len(v)], v)
@@ -1728,9 +1759,9 @@ func (g *GraphData) PreAllocate(capacity int) error {
 
 	// Pre-allocate Float32 arena chunks
 	if g.Type == VectorTypeFloat32 || g.Type == VectorTypeUnknown {
-		// Calculate optimal slab size: fit all chunks + alignment buffer
-		// Use power-of-2 for efficient memory management
-		requiredSize := numChunks * ChunkSize * g.Dims * 4
+		// FIX: Use padded dims for SIMD alignment
+		paddedDims := g.GetPaddedDimsForType(VectorTypeFloat32)
+		requiredSize := numChunks * ChunkSize * paddedDims * 4
 		slabSize := requiredSize + 4096 // 4KB alignment buffer
 		if slabSize < 1024*1024 {
 			slabSize = 1024 * 1024
@@ -1742,7 +1773,7 @@ func (g *GraphData) PreAllocate(capacity int) error {
 		// Pre-allocate all chunks
 		if len(g.VectorsF32) < numChunks {
 			for i := len(g.VectorsF32); i < numChunks; i++ {
-				ref, err := g.Float32Arena.AllocSliceDirty(ChunkSize * g.Dims)
+				ref, err := g.Float32Arena.AllocSlice(ChunkSize * paddedDims) // FIX: use AllocSlice for zeroed padding
 				if err != nil {
 					return err
 				}
@@ -1756,7 +1787,8 @@ func (g *GraphData) PreAllocate(capacity int) error {
 
 	// Pre-allocate Float64 arena chunks
 	if g.Type == VectorTypeFloat64 {
-		requiredSize := numChunks * ChunkSize * g.Dims * 8
+		paddedDims := g.GetPaddedDimsForType(VectorTypeFloat64)
+		requiredSize := numChunks * ChunkSize * paddedDims * 8
 		slabSize := requiredSize + 4096
 		if slabSize < 1024*1024 {
 			slabSize = 1024 * 1024
@@ -1766,7 +1798,7 @@ func (g *GraphData) PreAllocate(capacity int) error {
 		}
 		if len(g.VectorsFloat64Offsets) < numChunks {
 			for i := len(g.VectorsFloat64Offsets); i < numChunks; i++ {
-				ref, err := g.Float64Arena.AllocSliceDirty(ChunkSize * g.Dims)
+				ref, err := g.Float64Arena.AllocSlice(ChunkSize * paddedDims) // FIX: AllocSlice for zeroed padding
 				if err != nil {
 					return err
 				}
@@ -1799,7 +1831,8 @@ func (g *GraphData) PreAllocate(capacity int) error {
 
 	// Pre-allocate Complex64 arena chunks
 	if g.Type == VectorTypeComplex64 {
-		requiredSize := numChunks * ChunkSize * g.Dims * 8
+		paddedDims := g.GetPaddedDimsForType(VectorTypeComplex64)
+		requiredSize := numChunks * ChunkSize * paddedDims * 8
 		slabSize := requiredSize + 4096
 		if slabSize < 1024*1024 {
 			slabSize = 1024 * 1024
@@ -1809,7 +1842,7 @@ func (g *GraphData) PreAllocate(capacity int) error {
 		}
 		if len(g.VectorsComplex64Offsets) < numChunks {
 			for i := len(g.VectorsComplex64Offsets); i < numChunks; i++ {
-				ref, err := g.Complex64Arena.AllocSliceDirty(ChunkSize * g.Dims)
+				ref, err := g.Complex64Arena.AllocSlice(ChunkSize * paddedDims)
 				if err != nil {
 					return err
 				}
@@ -1820,7 +1853,8 @@ func (g *GraphData) PreAllocate(capacity int) error {
 
 	// Pre-allocate Complex128 arena chunks
 	if g.Type == VectorTypeComplex128 {
-		requiredSize := numChunks * ChunkSize * g.Dims * 16
+		paddedDims := g.GetPaddedDimsForType(VectorTypeComplex128)
+		requiredSize := numChunks * ChunkSize * paddedDims * 16
 		slabSize := requiredSize + 4096
 		if slabSize < 1024*1024 {
 			slabSize = 1024 * 1024
@@ -1830,7 +1864,7 @@ func (g *GraphData) PreAllocate(capacity int) error {
 		}
 		if len(g.VectorsComplex128Offsets) < numChunks {
 			for i := len(g.VectorsComplex128Offsets); i < numChunks; i++ {
-				ref, err := g.Complex128Arena.AllocSliceDirty(ChunkSize * g.Dims)
+				ref, err := g.Complex128Arena.AllocSlice(ChunkSize * paddedDims)
 				if err != nil {
 					return err
 				}
@@ -1910,7 +1944,8 @@ func (g *GraphData) PreAllocate(capacity int) error {
 
 	// Pre-allocate Int8 arena chunks
 	if g.Type == VectorTypeInt8 || g.Type == VectorTypeUint8 {
-		requiredSize := numChunks * ChunkSize * g.Dims
+		paddedDims := g.GetPaddedDimsForType(g.Type)
+		requiredSize := numChunks * ChunkSize * paddedDims
 		slabSize := requiredSize + 4096
 		if slabSize < 1024*1024 {
 			slabSize = 1024 * 1024
@@ -1919,7 +1954,7 @@ func (g *GraphData) PreAllocate(capacity int) error {
 			g.Int8Arena = memory.NewTypedArena[int8](memory.NewSlabArena(slabSize))
 		}
 		for i := len(g.VectorsInt8); i < numChunks; i++ {
-			ref, err := g.Int8Arena.AllocSliceDirty(ChunkSize * g.Dims)
+			ref, err := g.Int8Arena.AllocSlice(ChunkSize * paddedDims)
 			if err != nil {
 				return err
 			}
@@ -1929,7 +1964,8 @@ func (g *GraphData) PreAllocate(capacity int) error {
 
 	// Pre-allocate Complex128 arena chunks
 	if g.Type == VectorTypeComplex128 {
-		requiredSize := numChunks * ChunkSize * g.Dims * 16
+		paddedDims := g.GetPaddedDimsForType(VectorTypeComplex128)
+		requiredSize := numChunks * ChunkSize * paddedDims * 16
 		slabSize := requiredSize + 4096
 		if slabSize < 1024*1024 {
 			slabSize = 1024 * 1024
@@ -1938,7 +1974,7 @@ func (g *GraphData) PreAllocate(capacity int) error {
 			g.Complex128Arena = memory.NewTypedArena[complex128](memory.NewSlabArena(slabSize))
 		}
 		for i := len(g.VectorsComplex128Offsets); i < numChunks; i++ {
-			ref, err := g.Complex128Arena.AllocSliceDirty(ChunkSize * g.Dims)
+			ref, err := g.Complex128Arena.AllocSlice(ChunkSize * paddedDims)
 			if err != nil {
 				return err
 			}
@@ -1948,7 +1984,8 @@ func (g *GraphData) PreAllocate(capacity int) error {
 
 	// Pre-allocate Int64 arena chunks
 	if g.Type == VectorTypeInt64 {
-		requiredSize := numChunks * ChunkSize * g.Dims * 8
+		paddedDims := g.GetPaddedDimsForType(VectorTypeInt64)
+		requiredSize := numChunks * ChunkSize * paddedDims * 8
 		slabSize := requiredSize + 4096
 		if slabSize < 1024*1024 {
 			slabSize = 1024 * 1024
@@ -1957,7 +1994,7 @@ func (g *GraphData) PreAllocate(capacity int) error {
 			g.Int64Arena = memory.NewTypedArena[int64](memory.NewSlabArena(slabSize))
 		}
 		for i := len(g.VectorsInt64); i < numChunks; i++ {
-			ref, err := g.Int64Arena.AllocSliceDirty(ChunkSize * g.Dims)
+			ref, err := g.Int64Arena.AllocSlice(ChunkSize * paddedDims)
 			if err != nil {
 				return err
 			}
@@ -1967,7 +2004,8 @@ func (g *GraphData) PreAllocate(capacity int) error {
 
 	// Pre-allocate Uint64 arena chunks
 	if g.Type == VectorTypeUint64 {
-		requiredSize := numChunks * ChunkSize * g.Dims * 8
+		paddedDims := g.GetPaddedDimsForType(VectorTypeUint64)
+		requiredSize := numChunks * ChunkSize * paddedDims * 8
 		slabSize := requiredSize + 4096
 		if slabSize < 1024*1024 {
 			slabSize = 1024 * 1024
@@ -1976,7 +2014,7 @@ func (g *GraphData) PreAllocate(capacity int) error {
 			g.Uint64Arena = memory.NewTypedArena[uint64](memory.NewSlabArena(slabSize))
 		}
 		for i := len(g.VectorsUint64); i < numChunks; i++ {
-			ref, err := g.Uint64Arena.AllocSliceDirty(ChunkSize * g.Dims)
+			ref, err := g.Uint64Arena.AllocSlice(ChunkSize * paddedDims)
 			if err != nil {
 				return err
 			}
@@ -1986,7 +2024,8 @@ func (g *GraphData) PreAllocate(capacity int) error {
 
 	// Pre-allocate Int32 arena chunks
 	if g.Type == VectorTypeInt32 {
-		requiredSize := numChunks * ChunkSize * g.Dims * 4
+		paddedDims := g.GetPaddedDimsForType(VectorTypeInt32)
+		requiredSize := numChunks * ChunkSize * paddedDims * 4
 		slabSize := requiredSize + 4096
 		if slabSize < 1024*1024 {
 			slabSize = 1024 * 1024
@@ -1995,7 +2034,7 @@ func (g *GraphData) PreAllocate(capacity int) error {
 			g.Int32Arena = memory.NewTypedArena[int32](memory.NewSlabArena(slabSize))
 		}
 		for i := len(g.VectorsInt32); i < numChunks; i++ {
-			ref, err := g.Int32Arena.AllocSliceDirty(ChunkSize * g.Dims)
+			ref, err := g.Int32Arena.AllocSlice(ChunkSize * paddedDims)
 			if err != nil {
 				return err
 			}
@@ -2005,7 +2044,8 @@ func (g *GraphData) PreAllocate(capacity int) error {
 
 	// Pre-allocate Uint32 arena chunks
 	if g.Type == VectorTypeUint32 {
-		requiredSize := numChunks * ChunkSize * g.Dims * 4
+		paddedDims := g.GetPaddedDimsForType(VectorTypeUint32)
+		requiredSize := numChunks * ChunkSize * paddedDims * 4
 		slabSize := requiredSize + 4096
 		if slabSize < 1024*1024 {
 			slabSize = 1024 * 1024
@@ -2014,7 +2054,7 @@ func (g *GraphData) PreAllocate(capacity int) error {
 			g.Uint32Arena = memory.NewTypedArena[uint32](memory.NewSlabArena(slabSize))
 		}
 		for i := len(g.VectorsUint32); i < numChunks; i++ {
-			ref, err := g.Uint32Arena.AllocSliceDirty(ChunkSize * g.Dims)
+			ref, err := g.Uint32Arena.AllocSlice(ChunkSize * paddedDims)
 			if err != nil {
 				return err
 			}
@@ -2024,7 +2064,8 @@ func (g *GraphData) PreAllocate(capacity int) error {
 
 	// Pre-allocate Int16 arena chunks
 	if g.Type == VectorTypeInt16 {
-		requiredSize := numChunks * ChunkSize * g.Dims * 2
+		paddedDims := g.GetPaddedDimsForType(VectorTypeInt16)
+		requiredSize := numChunks * ChunkSize * paddedDims * 2
 		slabSize := requiredSize + 4096
 		if slabSize < 1024*1024 {
 			slabSize = 1024 * 1024
@@ -2033,7 +2074,7 @@ func (g *GraphData) PreAllocate(capacity int) error {
 			g.Int16Arena = memory.NewTypedArena[int16](memory.NewSlabArena(slabSize))
 		}
 		for i := len(g.VectorsInt16); i < numChunks; i++ {
-			ref, err := g.Int16Arena.AllocSliceDirty(ChunkSize * g.Dims)
+			ref, err := g.Int16Arena.AllocSlice(ChunkSize * paddedDims)
 			if err != nil {
 				return err
 			}
@@ -2043,7 +2084,8 @@ func (g *GraphData) PreAllocate(capacity int) error {
 
 	// Pre-allocate Uint16 arena chunks
 	if g.Type == VectorTypeUint16 {
-		requiredSize := numChunks * ChunkSize * g.Dims * 2
+		paddedDims := g.GetPaddedDimsForType(VectorTypeUint16)
+		requiredSize := numChunks * ChunkSize * paddedDims * 2
 		slabSize := requiredSize + 4096
 		if slabSize < 1024*1024 {
 			slabSize = 1024 * 1024
@@ -2052,7 +2094,7 @@ func (g *GraphData) PreAllocate(capacity int) error {
 			g.Uint16Arena = memory.NewTypedArena[uint16](memory.NewSlabArena(slabSize))
 		}
 		for i := len(g.VectorsUint16); i < numChunks; i++ {
-			ref, err := g.Uint16Arena.AllocSliceDirty(ChunkSize * g.Dims)
+			ref, err := g.Uint16Arena.AllocSlice(ChunkSize * paddedDims)
 			if err != nil {
 				return err
 			}
@@ -2062,7 +2104,8 @@ func (g *GraphData) PreAllocate(capacity int) error {
 
 	// Pre-allocate Float16 arena chunks
 	if g.Type == VectorTypeFloat16 {
-		requiredSize := numChunks * ChunkSize * g.Dims * 2
+		paddedDims := g.GetPaddedDimsForType(VectorTypeFloat16)
+		requiredSize := numChunks * ChunkSize * paddedDims * 2
 		slabSize := requiredSize + 4096
 		if slabSize < 1024*1024 {
 			slabSize = 1024 * 1024
@@ -2071,7 +2114,7 @@ func (g *GraphData) PreAllocate(capacity int) error {
 			g.Float16Arena = memory.NewTypedArena[float16.Num](memory.NewSlabArena(slabSize))
 		}
 		for i := len(g.VectorsF16); i < numChunks; i++ {
-			ref, err := g.Float16Arena.AllocSliceDirty(ChunkSize * g.Dims)
+			ref, err := g.Float16Arena.AllocSlice(ChunkSize * paddedDims)
 			if err != nil {
 				return err
 			}
@@ -2092,7 +2135,7 @@ func (g *GraphData) PreAllocate(capacity int) error {
 		}
 		if len(g.VectorsSQ8) < numChunks {
 			for i := len(g.VectorsSQ8); i < numChunks; i++ {
-				ref, err := g.Uint8Arena.AllocSliceDirty(ChunkSize * paddedDims)
+				ref, err := g.Uint8Arena.AllocSlice(ChunkSize * paddedDims)
 				if err != nil {
 					return err
 				}

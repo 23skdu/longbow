@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"encoding/json"
-	"sort"
 
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/prometheus/client_golang/prometheus"
@@ -677,46 +676,38 @@ func (s *MetaServer) handleTemporalVersionHistory(action *flight.Action, stream 
 }
 
 func (s *MetaServer) handleTemporalAggregation(action *flight.Action, stream flight.FlightService_DoActionServer) error {
-	if s.temporalIndex == nil {
-		return status.Error(codes.FailedPrecondition, "temporal index not enabled")
+	if s.temporalIndex == nil || s.temporalAggregator == nil {
+		return status.Error(codes.FailedPrecondition, "temporal index or aggregator not enabled")
 	}
 
 	var req struct {
-		AggregationType string `json:"aggregation_type"` // count, min, max, mean
+		AggregationType string `json:"aggregation_type"` // count, min, max, mean, sum
 		StartTime       int64  `json:"start_time"`
 		EndTime         int64  `json:"end_time"`
 		Interval        int64  `json:"interval"` // bucket interval in nanoseconds
+		MetricField     string `json:"metric_field,omitempty"`
 	}
 	if err := json.Unmarshal(action.Body, &req); err != nil {
 		return status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
 	}
 
-	if req.Interval <= 0 {
-		req.Interval = 3600000000000 // 1 hour default
+	aggReq := TemporalAggRequest{
+		AggType:     TemporalAggType(req.AggregationType),
+		StartTime:   req.StartTime,
+		EndTime:     req.EndTime,
+		Interval:    req.Interval,
+		MetricField: req.MetricField,
 	}
 
 	vectors := s.temporalIndex.GetVectorsInRange(req.StartTime, req.EndTime)
-	s.logger.Info().Int64("start", req.StartTime).Int64("end", req.EndTime).Int("count", len(vectors)).Msg("Temporal aggregation vectors found")
+	s.logger.Info().
+		Int64("start", req.StartTime).
+		Int64("end", req.EndTime).
+		Int("count", len(vectors)).
+		Str("type", req.AggregationType).
+		Msg("Executing temporal aggregation")
 
-	type bucket struct {
-		Timestamp int64 `json:"timestamp"`
-		Count     int   `json:"count"`
-	}
-
-	var buckets []bucket
-	if req.AggregationType == "count" {
-		bucketMap := make(map[int64]int)
-		for _, v := range vectors {
-			bucketTs := (v.Timestamp.UnixNano() / req.Interval) * req.Interval
-			bucketMap[bucketTs]++
-		}
-		for ts, count := range bucketMap {
-			buckets = append(buckets, bucket{Timestamp: ts, Count: count})
-		}
-		sort.Slice(buckets, func(i, j int) bool {
-			return buckets[i].Timestamp < buckets[j].Timestamp
-		})
-	}
+	buckets := s.temporalAggregator.Aggregate(aggReq, vectors)
 
 	data, err := json.Marshal(map[string]interface{}{
 		"aggregation_type": req.AggregationType,

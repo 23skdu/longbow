@@ -186,11 +186,19 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 			return err
 		}
 
+		// Filter out self-loops (can happen for first node insertion)
+		var filteredNeighbors []types.Candidate
+		for _, nb := range neighbors {
+			if nb.ID != id {
+				filteredNeighbors = append(filteredNeighbors, nb)
+			}
+		}
+		neighbors = filteredNeighbors
+
 		maxConn := h.mMax
 		if l == 0 { maxConn = h.mMax0 }
 
 		for _, nb := range neighbors {
-			// AddConnection handles its own COW and internal locking
 			data = h.AddConnection(ctx, data, id, nb.ID, l, maxConn, nb.Dist)
 			data = h.AddConnection(ctx, data, nb.ID, id, l, maxConn, nb.Dist)
 		}
@@ -203,6 +211,12 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 		h.maxLevel.Store(int32(level)) // #nosec G115
 		h.entryPoint.Store(id)
 	}
+
+	// Publish the updated data pointer so search can see the new connections
+	h.data.Store(data)
+
+	// Increment node count so GetLayerNeighbors and search work correctly
+	h.nodeCount.Add(1)
 
 	return nil
 }

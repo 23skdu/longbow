@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"encoding/binary"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -479,20 +478,18 @@ func (d *Dataset) GenerateFilterBitsetLocked(filters []qry.Filter, filterExpr Fi
 			var validMatches []int
 			if metaIdx >= 0 {
 				metaCol := rec.Column(metaIdx)
-				strData := array.NewStringData(metaCol.Data())
+				binData := array.NewBinaryData(metaCol.Data())
 
 				for _, rowIdx := range matches {
-					if strData.IsValid(rowIdx) {
-						metaStr := strData.Value(rowIdx)
-						var metaMap map[string]interface{}
-						if err := json.Unmarshal([]byte(metaStr), &metaMap); err == nil {
-							if filterExpr.Evaluate(metaMap) {
-								validMatches = append(validMatches, rowIdx)
-							}
+					if binData.IsValid(rowIdx) {
+						metaBytes := binData.Value(rowIdx)
+						lazyMeta := types.NewLazyMetadata(metaBytes)
+						if filterExpr.Evaluate(lazyMeta) {
+							validMatches = append(validMatches, rowIdx)
 						}
 					}
 				}
-				strData.Release()
+				binData.Release()
 				matches = validMatches
 			}
 		}

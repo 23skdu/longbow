@@ -3,6 +3,8 @@ package store
 import (
 	"sort"
 	"sync"
+
+	"github.com/23skdu/longbow/internal/core"
 )
 
 type TemporalAggregator struct {
@@ -101,8 +103,9 @@ func (ta *TemporalAggregator) extractValues(req TemporalAggRequest, vectors []Ve
 		bucketTs := (v.Timestamp.UnixNano() / req.Interval) * req.Interval
 		
 		var values []float32
-		if req.MetricField != "" && v.Metadata != nil {
-			if val, ok := v.Metadata[req.MetricField]; ok {
+		if req.MetricField != "" && len(v.Metadata) > 0 {
+			metaMap, _ := core.DecodeMetadata(v.Metadata)
+			if val, ok := metaMap[req.MetricField]; ok {
 				switch typedVal := val.(type) {
 				case float32:
 					values = []float32{typedVal}

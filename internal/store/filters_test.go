@@ -2,8 +2,15 @@ package store
 
 import (
 	"testing"
+	"github.com/23skdu/longbow/internal/core"
+	lbtypes "github.com/23skdu/longbow/internal/store/types"
 	"github.com/stretchr/testify/assert"
 )
+
+func helperLazyMeta(m map[string]interface{}) *lbtypes.LazyMetadata {
+	b, _ := core.EncodeMetadata(m)
+	return lbtypes.NewLazyMetadata(b)
+}
 
 func TestParseFilterAndEvaluate_AST(t *testing.T) {
 	node := map[string]interface{}{
@@ -32,28 +39,28 @@ func TestParseFilterAndEvaluate_AST(t *testing.T) {
 		"status": "active",
 		"role":   "super_admin_user",
 	}
-	assert.True(t, filter.Evaluate(metadataMatch1))
+	assert.True(t, filter.Evaluate(helperLazyMeta(metadataMatch1)))
 
 	// Test Match 2: eq "superuser"
 	metadataMatch2 := map[string]interface{}{
 		"status": "active",
 		"role":   "superuser",
 	}
-	assert.True(t, filter.Evaluate(metadataMatch2))
+	assert.True(t, filter.Evaluate(helperLazyMeta(metadataMatch2)))
 
 	// Test Non-Match 1: wrong status
 	metadataNoMatch1 := map[string]interface{}{
 		"status": "inactive",
 		"role":   "superuser",
 	}
-	assert.False(t, filter.Evaluate(metadataNoMatch1))
+	assert.False(t, filter.Evaluate(helperLazyMeta(metadataNoMatch1)))
 
 	// Test Non-Match 2: wrong role
 	metadataNoMatch2 := map[string]interface{}{
 		"status": "active",
 		"role":   "guest",
 	}
-	assert.False(t, filter.Evaluate(metadataNoMatch2))
+	assert.False(t, filter.Evaluate(helperLazyMeta(metadataNoMatch2)))
 	
 	// Test NotExpr
 	notNode := map[string]interface{}{
@@ -64,6 +71,6 @@ func TestParseFilterAndEvaluate_AST(t *testing.T) {
 	notFilter := ParseFilter(notNode)
 	assert.NotNil(t, notFilter)
 
-	assert.True(t, notFilter.Evaluate(map[string]interface{}{"status": "active"}))
-	assert.False(t, notFilter.Evaluate(map[string]interface{}{"status": "deleted"}))
+	assert.True(t, notFilter.Evaluate(helperLazyMeta(map[string]interface{}{"status": "active"})))
+	assert.False(t, notFilter.Evaluate(helperLazyMeta(map[string]interface{}{"status": "deleted"})))
 }

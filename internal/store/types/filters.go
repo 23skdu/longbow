@@ -9,7 +9,7 @@ type AndExpr struct {
 	Conditions []FilterExpr
 }
 
-func (a *AndExpr) Evaluate(metadata map[string]interface{}) bool {
+func (a *AndExpr) Evaluate(metadata *LazyMetadata) bool {
 	if len(a.Conditions) == 0 {
 		return true
 	}
@@ -25,7 +25,7 @@ type OrExpr struct {
 	Conditions []FilterExpr
 }
 
-func (o *OrExpr) Evaluate(metadata map[string]interface{}) bool {
+func (o *OrExpr) Evaluate(metadata *LazyMetadata) bool {
 	if len(o.Conditions) == 0 {
 		return true
 	}
@@ -41,7 +41,7 @@ type NotExpr struct {
 	Condition FilterExpr
 }
 
-func (n *NotExpr) Evaluate(metadata map[string]interface{}) bool {
+func (n *NotExpr) Evaluate(metadata *LazyMetadata) bool {
 	return !n.Condition.Evaluate(metadata)
 }
 
@@ -51,8 +51,8 @@ type EqExpr struct {
 	Value interface{}
 }
 
-func (e *EqExpr) Evaluate(metadata map[string]interface{}) bool {
-	val, ok := metadata[e.Field]
+func (e *EqExpr) Evaluate(metadata *LazyMetadata) bool {
+	val, ok := metadata.GetField(e.Field)
 	if !ok {
 		return false
 	}
@@ -64,8 +64,8 @@ type ContainsExpr struct {
 	Value string
 }
 
-func (c *ContainsExpr) Evaluate(metadata map[string]interface{}) bool {
-	val, ok := metadata[c.Field]
+func (c *ContainsExpr) Evaluate(metadata *LazyMetadata) bool {
+	val, ok := metadata.GetField(c.Field)
 	if !ok {
 		return false
 	}

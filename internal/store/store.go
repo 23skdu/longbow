@@ -157,6 +157,7 @@ type VectorStore struct {
 
 	// Parser pool for vector search
 	vectorSearchParserPool sync.Pool
+	temporalParserPool     sync.Pool
 
 	// Change Data Capture (CDC)
 	cdc            *ChangeDataCapture
@@ -243,10 +244,15 @@ func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes 
 	s.StartIndexingWorkers(runtime.NumCPU())
 	s.StartIngestionWorkers(runtime.NumCPU())
 
-	// Initialize parser pool
+	// Initialize parser pools
 	s.vectorSearchParserPool = sync.Pool{
 		New: func() any {
 			return query.NewZeroAllocVectorSearchParser(768, &s.logger)
+		},
+	}
+	s.temporalParserPool = sync.Pool{
+		New: func() any {
+			return query.NewZeroAllocTemporalParser()
 		},
 	}
 

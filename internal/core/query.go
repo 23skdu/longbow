@@ -2,6 +2,8 @@ package core
 
 import (
 	"encoding/json"
+	"errors"
+	"time"
 )
 
 // Filter defines a filter for search results
@@ -162,4 +164,60 @@ type TicketQuery struct {
 type VectorSearchResponse struct {
 	IDs    []uint64  `json:"ids"`
 	Scores []float32 `json:"scores"`
+}
+
+// TemporalSearchRequest defines the request format for temporal queries
+type TemporalSearchRequest struct {
+	SearchType string        `json:"search_type"` // "as_of", "range", "sliding_window", "sliding_window_time"
+	K          int           `json:"k"`
+	Timestamp  int64         `json:"timestamp,omitempty"`
+	StartTime  int64         `json:"start_time,omitempty"`
+	EndTime    int64         `json:"end_time,omitempty"`
+	WindowSize int           `json:"window_size,omitempty"`
+	Duration   time.Duration `json:"duration,omitempty"`
+}
+
+// TemporalAggregationRequest defines analytical temporal query
+type TemporalAggregationRequest struct {
+	AggregationType string `json:"aggregation_type"` // count, min, max, mean, sum
+	StartTime       int64  `json:"start_time"`
+	EndTime         int64  `json:"end_time"`
+	Interval        int64  `json:"interval"` // bucket interval in nanoseconds
+	MetricField     string `json:"metric_field,omitempty"`
+}
+
+func (req *TemporalSearchRequest) Validate() error {
+	if req.K <= 0 {
+		req.K = 10
+	}
+
+	switch req.SearchType {
+	case "as_of":
+		if req.Timestamp <= 0 {
+			return errors.New("timestamp required for as_of search")
+		}
+	case "range":
+		if req.StartTime <= 0 || req.EndTime <= 0 {
+			return errors.New("start_time and end_time required for range search")
+		}
+	}
+	return nil
+}
+
+func (req *TemporalAggregationRequest) Validate() error {
+	if req.StartTime <= 0 || req.EndTime <= 0 {
+		return errors.New("start_time and end_time required")
+	}
+	if req.StartTime >= req.EndTime {
+		return errors.New("start_time must be before end_time")
+	}
+	if req.Interval <= 0 {
+		return errors.New("interval must be positive")
+	}
+	return nil
+}
+
+// TemporalVersionHistoryRequest defines request for version history
+type TemporalVersionHistoryRequest struct {
+	VectorID uint64 `json:"vector_id"`
 }

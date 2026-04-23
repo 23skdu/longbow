@@ -142,10 +142,9 @@ func TestBatchDistanceCompute_MismatchedLengths(t *testing.T) {
 	candidates := [][]float32{{3.0}}
 	results := make([]float32, 1)
 
-	// Should panic due to length mismatch
-	assert.Panics(t, func() {
-		BatchDistanceCompute(queries, candidates, results)
-	})
+	// Should return error due to length mismatch
+	err := BatchDistanceCompute(queries, candidates, results)
+	assert.Error(t, err)
 }
 
 func FuzzBatchDistanceCompute(f *testing.F) {

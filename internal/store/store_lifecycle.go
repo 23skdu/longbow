@@ -326,13 +326,24 @@ func (s *VectorStore) runIndexWorker(ctx context.Context) {
 					}
 				}
 
+				if maxBatchIdx < 0 && len(dsGroup) > 0 {
+					s.logger.Error().Int("group_len", len(dsGroup)).Msg("maxBatchIdx is -1 but dsGroup is not empty")
+				}
+
 				recs := make([]arrow.RecordBatch, maxBatchIdx+1)
 				rowIdxs := make([]int, 0, totalRowsInGroup)
 				batchIdxs := make([]int, 0, totalRowsInGroup)
 				for _, j := range dsGroup {
 					if j.Record != nil && j.BatchIdx >= 0 && j.BatchIdx < len(recs) {
 						recs[j.BatchIdx] = j.Record
+					} else if j.Record != nil {
+						s.logger.Warn().Int("batch_idx", j.BatchIdx).Int("recs_len", len(recs)).Msg("Skipping record in indexing batch due to index mismatch")
 					}
+					
+					if j.Record == nil {
+						continue
+					}
+					
 					n := int(j.Record.NumRows())
 					for r := 0; r < n; r++ {
 						rowIdxs = append(rowIdxs, r)

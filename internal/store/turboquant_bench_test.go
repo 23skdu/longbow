@@ -36,7 +36,7 @@ func BenchmarkTurboQuantSearch(b *testing.B) {
 			config.DataType = dtype
 			config.M = 16
 			config.EfConstruction = 100
-			h := NewArrowHNSW(ds, &config)
+			h := NewArrowHNSW(ds, &config, nil)
 
 			// Build vectors
 			builder := array.NewRecordBuilder(mem, schema)

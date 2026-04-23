@@ -18,7 +18,7 @@ func TestArrowHNSW_EmptyIndex(t *testing.T) {
 		Name: "empty_test",
 	}
 	cfg := types.DefaultArrowHNSWConfig()
-	idx := NewArrowHNSW(ds, &cfg)
+	idx := NewArrowHNSW(ds, &cfg, nil)
 
 	q := []float32{0, 0, 0, 0}
 	result, err := idx.Search(context.Background(), q, 10, nil)
@@ -38,7 +38,7 @@ func TestArrowHNSW_SingleVector(t *testing.T) {
 		Records: []arrow.RecordBatch{rec},
 	}
 	cfg := types.DefaultArrowHNSWConfig()
-	idx := NewArrowHNSW(ds, &cfg)
+	idx := NewArrowHNSW(ds, &cfg, nil)
 
 	// Add the single vector
 	_, err := idx.AddByLocation(context.Background(), 0, 0)
@@ -76,7 +76,7 @@ func TestArrowHNSW_KGreaterThanTotal(t *testing.T) {
 		Records: []arrow.RecordBatch{rec},
 	}
 	cfg := types.DefaultArrowHNSWConfig()
-	idx := NewArrowHNSW(ds, &cfg)
+	idx := NewArrowHNSW(ds, &cfg, nil)
 
 	// Add all vectors
 	for i := 0; i < 3; i++ {
@@ -110,7 +110,7 @@ func TestArrowHNSW_DuplicateVectors(t *testing.T) {
 		Records: []arrow.RecordBatch{rec},
 	}
 	cfg := types.DefaultArrowHNSWConfig()
-	idx := NewArrowHNSW(ds, &cfg)
+	idx := NewArrowHNSW(ds, &cfg, nil)
 
 	// Add all duplicate vectors
 	for i := 0; i < 3; i++ {
@@ -157,7 +157,7 @@ func TestArrowHNSW_HighDimensionalVectors(t *testing.T) {
 	}
 	cfg := types.DefaultArrowHNSWConfig()
 	cfg.Dims = dims
-	idx := NewArrowHNSW(ds, &cfg)
+	idx := NewArrowHNSW(ds, &cfg, nil)
 
 	// Add all vectors
 	for i := 0; i < 3; i++ {
@@ -195,7 +195,7 @@ func TestArrowHNSW_ConcurrentAdd(t *testing.T) {
 		Records: []arrow.RecordBatch{rec},
 	}
 	cfg := types.DefaultArrowHNSWConfig()
-	idx := NewArrowHNSW(ds, &cfg)
+	idx := NewArrowHNSW(ds, &cfg, nil)
 
 	// Add vectors concurrently from multiple goroutines
 	var wg sync.WaitGroup

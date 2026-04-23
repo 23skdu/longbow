@@ -71,7 +71,7 @@ type VectorStore struct {
 	meshStatusCache *MeshStatusCache // Cache for mesh status serialization
 
 	// NUMA integration (Phase 4/5)
-	numaTopology *NUMATopology
+	numaTopology *lbmem.NUMATopology
 
 	// Hybrid search (Phase 20)
 	hybridSearchConfig HybridSearchConfig
@@ -283,7 +283,7 @@ func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes 
 // initNUMA initializes NUMA topology detection and enables NUMA-aware allocations
 // when multiple NUMA nodes are detected on the system.
 func (s *VectorStore) initNUMA(logger zerolog.Logger) {
-	topo, err := DetectNUMATopology()
+	topo, err := lbmem.DetectNUMATopology()
 	if err != nil {
 		logger.Warn().Err(err).Msg("Failed to detect NUMA topology")
 		s.numaEnabled = false
@@ -310,7 +310,7 @@ func (s *VectorStore) initNUMA(logger zerolog.Logger) {
 }
 
 // GetNUMATopology returns the NUMA topology if available
-func (s *VectorStore) GetNUMATopology() *NUMATopology {
+func (s *VectorStore) GetNUMATopology() *lbmem.NUMATopology {
 	return s.numaTopology
 }
 

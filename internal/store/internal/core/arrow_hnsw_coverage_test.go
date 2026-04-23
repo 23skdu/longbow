@@ -14,7 +14,7 @@ func TestArrowHNSW_Coverage_ExtractVectorByIDForParallel(t *testing.T) {
 	dims := 4
 	config := types.DefaultArrowHNSWConfig()
 	config.Dims = dims
-	h := NewArrowHNSW(nil, &config)
+	h := NewArrowHNSW(nil, &config, nil)
 
 	testCases := []struct {
 		name       string
@@ -78,7 +78,7 @@ func TestArrowHNSW_Coverage_ExtractVectorByIDForParallel(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			h = NewArrowHNSW(nil, &config)
+			h = NewArrowHNSW(nil, &config, nil)
 			h.dims.Store(int32(tc.vectorDims))
 
 			gd := types.NewGraphData(10, tc.vectorDims, false, false, 0, false, false, false, tc.dataType, false, false, false, 8)
@@ -161,7 +161,7 @@ func TestArrowHNSW_Coverage_ComputeSingle(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			h := NewArrowHNSW(nil, &config)
+			h := NewArrowHNSW(nil, &config, nil)
 			h.dims.Store(int32(tc.dims))
 			gd := types.NewGraphData(10, tc.dims, false, false, 0, false, false, false, tc.dataType, false, false, false, 8)
 			atomic.StoreUint32(&gd.SQ8Ready, 1)
@@ -190,7 +190,7 @@ func TestComplexComputers(t *testing.T) {
 	dims := 2
 	config := types.DefaultArrowHNSWConfig()
 	config.Dims = dims
-	h := NewArrowHNSW(nil, &config)
+	h := NewArrowHNSW(nil, &config, nil)
 	gd := types.NewGraphData(10, dims, false, false, 0, false, false, false, types.VectorTypeComplex64, false, false, false, 8)
 	h.data.Store(gd)
 
@@ -243,7 +243,7 @@ func TestMoreComputers(t *testing.T) {
 	dims := 4
 	config := types.DefaultArrowHNSWConfig()
 	config.Dims = dims
-	h := NewArrowHNSW(nil, &config)
+	h := NewArrowHNSW(nil, &config, nil)
 	gd := types.NewGraphData(10, dims, false, false, 0, false, false, false, types.VectorTypeFloat64, false, false, false, 8)
 	atomic.StoreUint32(&gd.SQ8Ready, 1)
 	h.data.Store(gd)
@@ -309,7 +309,7 @@ func TestSQ8Computers(t *testing.T) {
 	config := types.DefaultArrowHNSWConfig()
 	config.Dims = dims
 	config.SQ8Enabled = true
-	h := NewArrowHNSW(nil, &config)
+	h := NewArrowHNSW(nil, &config, nil)
 
 	h.quantizer = NewScalarQuantizerFromParams(dims, 0.0, 1.0)
 	h.sq8Ready.Store(true)

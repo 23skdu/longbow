@@ -88,7 +88,7 @@ func TestBatchInsertWithGPU_CPUFallback(t *testing.T) {
 	ds := &MockDataset{
 		Schema: nil,
 	}
-	index := NewArrowHNSW(ds, &config)
+	index := NewArrowHNSW(ds, &config, nil)
 
 	vectors := [][]float32{
 		make([]float32, 128),
@@ -119,7 +119,7 @@ func TestBuildIndexWithGPU_CPUFallback(t *testing.T) {
 	ds := &MockDataset{
 		Schema: nil,
 	}
-	index := NewArrowHNSW(ds, &config)
+	index := NewArrowHNSW(ds, &config, nil)
 
 	nVectors := 100
 	vectors := make([][]float32, nVectors)

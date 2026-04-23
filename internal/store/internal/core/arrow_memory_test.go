@@ -70,7 +70,7 @@ func TestMemoryUsage(t *testing.T) {
 	cfg.SQ8Enabled = false // Baseline float32
 	cfg.M = 32             // Explicit M
 
-	idx := NewArrowHNSW(ds, &cfg)
+	idx := NewArrowHNSW(ds, &cfg, nil)
 
 	start := time.Now()
 	// Insert one by one (simulating stream) or batch?

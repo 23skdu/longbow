@@ -1,6 +1,6 @@
 //go:build darwin
 
-package store
+package memory
 
 /*
 #include <sys/sysctl.h>

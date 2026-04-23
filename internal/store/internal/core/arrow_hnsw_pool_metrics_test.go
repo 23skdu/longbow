@@ -30,7 +30,7 @@ func TestArrowHNSW_PoolMetrics(t *testing.T) {
 	rec := MakeBatchTestRecord(mem, 128, [][]float32{vec})
 
 	ds := &MockDataset{Name: "metrics_test", Records: []arrow.RecordBatch{rec}}
-	idx := NewArrowHNSW(ds, &config)
+	idx := NewArrowHNSW(ds, &config, nil)
 
 	// Baseline
 	getBefore := getCounterValue(metrics.HNSWInsertPoolGetTotal)

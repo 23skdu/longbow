@@ -24,6 +24,8 @@ int lb_cuda_get_mem_info(size_t* free, size_t* total);
 
 // Distance Kernels
 void launch_l2_distance_kernel(const float* vectors, const float* query, float* distances, int dimensions, int count, void* stream);
+void launch_l2_distance_fp16_kernel(const uint16_t* vectors, const uint16_t* query, float* distances, int dimensions, int count, void* stream);
+void launch_dot_distance_fp16_kernel(const uint16_t* vectors, const uint16_t* query, float* distances, int dimensions, int count, void* stream);
 void launch_pq_distance_kernel(const float* lookupTable, const unsigned char* codes, float* distances, int m, int count, void* stream);
 
 

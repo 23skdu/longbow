@@ -62,7 +62,7 @@ func TestArrowHNSW_Concurrency_AddBatch(t *testing.T) {
 	config.EfConstruction = 100
 	config.M = 16
 
-	idx := NewArrowHNSW(ds, &config)
+	idx := NewArrowHNSW(ds, &config, nil)
 
 	// Simulate concurrent batch ingestion
 	// We will split the 1000 rows into 10 chunks of 100, processed by 10 goroutines.
@@ -128,7 +128,7 @@ func TestArrowHNSW_Concurrency_MixedReadWrite(t *testing.T) {
 	ds.Records = append(ds.Records, rec)
 
 	config := types.DefaultArrowHNSWConfig()
-	idx := NewArrowHNSW(ds, &config)
+	idx := NewArrowHNSW(ds, &config, nil)
 
 	// Goal: Concurrent Writes (AddBatch) and Reads (SearchVectors)
 

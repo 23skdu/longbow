@@ -32,7 +32,7 @@ func TestInsertProperties(t *testing.T) {
 			config.MMax = 20
 			config.MMax0 = 20
 
-			index := NewArrowHNSW(nil, &config)
+			index := NewArrowHNSW(nil, &config, nil)
 			index.dims.Store(2)
 
 			// Init data
@@ -131,7 +131,7 @@ func TestInsertProperties(t *testing.T) {
 			config.MMax = m * 2
 			config.MMax0 = m
 
-			index := NewArrowHNSW(nil, &config)
+			index := NewArrowHNSW(nil, &config, nil)
 			index.dims.Store(1) // use 1-dim vectors
 
 			// Initialize GraphData manually

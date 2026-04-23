@@ -684,7 +684,7 @@ func (a *AdaptiveIndex) migrateToHNSW() {
 		config := DefaultArrowHNSWConfig()
 		config.Metric = a.dataset.Metric
 		config.Logger = a.dataset.Logger
-		newHNSW := NewArrowHNSW(a.dataset, &config)
+		newHNSW := NewArrowHNSW(a.dataset, &config, a.dataset.Topo)
 
 		for _, loc := range snapshotLocations {
 			_, _ = newHNSW.AddByLocation(context.Background(), loc.BatchIdx, loc.RowIdx)

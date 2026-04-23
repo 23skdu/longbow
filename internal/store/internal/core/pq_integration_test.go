@@ -39,7 +39,7 @@ func TestPQ_EndToEnd(t *testing.T) {
 	// IF the vectors are present in types.GraphData.
 	// However, getVector checks locationStore then dataset.
 	// Let's rely on types.GraphData being populated by InsertWithVector.
-	hnsw := NewArrowHNSW(nil, &config)
+	hnsw := NewArrowHNSW(nil, &config, nil)
 
 	// 2. Generate Random Data
 	rng := rand.New(rand.NewSource(42)) // Fixed seed for reproducibility

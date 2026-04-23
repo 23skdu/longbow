@@ -17,12 +17,13 @@ import (
 	"github.com/23skdu/longbow/internal/metrics"
 	qry "github.com/23skdu/longbow/internal/query"
 	"github.com/rs/zerolog"
+	"github.com/23skdu/longbow/internal/memory"
+	amemory "github.com/apache/arrow-go/v18/arrow/memory"
 
 	"github.com/23skdu/longbow/internal/pq"
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
-	"github.com/apache/arrow-go/v18/arrow/memory"
 )
 
 // IndexJob represents a job for the indexing worker
@@ -73,7 +74,7 @@ type Dataset struct {
 	dataMu     sync.RWMutex // Protects Records slice (append-only)
 	Name       string
 	Schema     *arrow.Schema
-	Topo       *NUMATopology
+	Topo       *memory.NUMATopology
 
 	// Vector Configuration
 	PreferredVectorType types.VectorDataType
@@ -746,7 +747,7 @@ func (d *Dataset) IngestBatch(batch []DatasetParquetRecord) error {
 	d.PendingIngestion.Add(int64(len(batch)))
 	defer d.PendingIngestion.Add(-int64(len(batch)))
 
-	pool := memory.NewGoAllocator()
+	pool := amemory.NewGoAllocator()
 	b := array.NewRecordBuilder(pool, d.Schema)
 	defer b.Release()
 

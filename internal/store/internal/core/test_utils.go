@@ -48,5 +48,5 @@ func NewTestHNSWIndex(ds types.IndexDataProvider) *ArrowHNSW {
 	config := types.DefaultArrowHNSWConfig()
 	config.M = 16
 	config.EfConstruction = 100
-	return NewArrowHNSW(ds, &config)
+	return NewArrowHNSW(ds, &config, nil)
 }

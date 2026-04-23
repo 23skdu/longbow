@@ -19,7 +19,7 @@ bench-tool
 benchtool
 cmd/longbow/longbow
 cmd/soak_test/soak_test
-cmd/scratch/scratch
+scratch/
 
 # Temp and swap files
 *.tmp

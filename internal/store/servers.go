@@ -11,6 +11,7 @@ import (
 
 	"github.com/23skdu/longbow/internal/core"
 	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/query"
 )
 
 // DataServer handles data plane operations (DoGet, DoPut)
@@ -573,8 +574,17 @@ func (s *MetaServer) handleTemporalSearch(action *flight.Action, stream flight.F
 
 	var req TemporalSearchRequest
 	if len(action.Body) > 0 {
-		if err := json.Unmarshal(action.Body, &req); err != nil {
-			return status.Errorf(codes.InvalidArgument, "invalid temporal search request: %v", err)
+		parser := s.temporalParserPool.Get().(*query.ZeroAllocTemporalParser)
+		defer s.temporalParserPool.Put(parser)
+
+		var err error
+		req, err = parser.ParseSearch(action.Body)
+		if err != nil {
+			// Fallback to standard unmarshal if zero-alloc parser fails
+			req = TemporalSearchRequest{}
+			if err := json.Unmarshal(action.Body, &req); err != nil {
+				return status.Errorf(codes.InvalidArgument, "invalid temporal search request: %v", err)
+			}
 		}
 	}
 
@@ -656,9 +666,7 @@ func (s *MetaServer) handleTemporalVersionHistory(action *flight.Action, stream 
 		return status.Error(codes.FailedPrecondition, "temporal index not enabled")
 	}
 
-	var req struct {
-		VectorID uint64 `json:"vector_id"`
-	}
+	var req TemporalVersionHistoryRequest
 	if err := json.Unmarshal(action.Body, &req); err != nil {
 		return status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
 	}
@@ -680,15 +688,20 @@ func (s *MetaServer) handleTemporalAggregation(action *flight.Action, stream fli
 		return status.Error(codes.FailedPrecondition, "temporal index or aggregator not enabled")
 	}
 
-	var req struct {
-		AggregationType string `json:"aggregation_type"` // count, min, max, mean, sum
-		StartTime       int64  `json:"start_time"`
-		EndTime         int64  `json:"end_time"`
-		Interval        int64  `json:"interval"` // bucket interval in nanoseconds
-		MetricField     string `json:"metric_field,omitempty"`
-	}
-	if err := json.Unmarshal(action.Body, &req); err != nil {
-		return status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
+	var req TemporalAggregationRequest
+	if len(action.Body) > 0 {
+		parser := s.temporalParserPool.Get().(*query.ZeroAllocTemporalParser)
+		defer s.temporalParserPool.Put(parser)
+
+		var err error
+		req, err = parser.ParseAggregation(action.Body)
+		if err != nil {
+			// Fallback to standard unmarshal
+			req = TemporalAggregationRequest{}
+			if err := json.Unmarshal(action.Body, &req); err != nil {
+				return status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
+			}
+		}
 	}
 
 	aggReq := TemporalAggRequest{

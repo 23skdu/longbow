@@ -475,44 +475,7 @@ func (ti *TemporalIndex) computeNorm(vector []float32) float32 {
 	return sum
 }
 
-type TemporalSearchRequest struct {
-	SearchType string        `json:"search_type"` // "as_of", "range", "sliding_window", "sliding_window_time"
-	K          int           `json:"k"`
-	Timestamp  int64         `json:"timestamp,omitempty"`
-	StartTime  int64         `json:"start_time,omitempty"`
-	EndTime    int64         `json:"end_time,omitempty"`
-	WindowSize int           `json:"window_size,omitempty"`
-	Duration   time.Duration `json:"duration,omitempty"`
-}
 
-func (req *TemporalSearchRequest) Validate() error {
-	if req.K <= 0 {
-		req.K = 10
-	}
-
-	switch req.SearchType {
-	case "as_of":
-		if req.Timestamp <= 0 {
-			return fmt.Errorf("timestamp required for as_of search")
-		}
-	case "range":
-		if req.StartTime <= 0 || req.EndTime <= 0 {
-			return fmt.Errorf("start_time and end_time required for range search")
-		}
-	case "sliding_window":
-		if req.WindowSize <= 0 {
-			req.WindowSize = 100
-		}
-	case "sliding_window_time":
-		if req.Duration <= 0 {
-			req.Duration = time.Hour
-		}
-	default:
-		req.SearchType = "as_of"
-	}
-
-	return nil
-}
 
 type VectorTimestamp struct {
 	ID        uint64                 `json:"id"`

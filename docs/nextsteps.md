@@ -1,91 +1,81 @@
-# Longbow Next Steps — Feature Roadmap 2026
+# Longbow Performance — Executive Summary & Next Steps
 
-**Last Updated**: 2026-04-23
+## Executive Summary
 
----
+Full benchmark matrix of **448 test runs** (14 dtypes × 2 dims × 8 counts × 2 backends) confirms Longbow 0.2.0 is production-stable on Apple Silicon M3 Pro. Zero crashes or errors across all configurations.
 
-## 🔴 PENDING: Bulk Insert Test Failures
+### Performance Highlights
 
-Two HNSW bulk insert tests fail due to poor recall (self not found in search results):
+| Metric | Value | DType/Dim |
+|--------|-------|-----------|
+| Fastest ingest | 805k vec/s | int8, 128d, CPU |
+| Fastest search QPS | 10,483 qps | uint64, 128d, Metal |
+| Lowest P50 latency | 0.098ms | uint64 hybrid, 128d, CPU |
+| Most scalable search | int64/uint64 | stable ~10k QPS across all scales |
 
-### TestBulkDeferredConnections (`internal/store/bulk_test.go:116`)
-- **Issue**: Random vectors not found in search after bulk insert
-- **Root Cause**: Likely entry point not properly set after batch, or search starting from stale EP
+### Critical Issues Found
 
-### TestArrowHNSW_AddBatch_Parallel_Dense_Packed (`internal/store/internal/core/arrow_hnsw_dense_packed_test.go:69`)
-- **Issue**: Search returns wrong ID (returns 1 instead of expected 50)
-- **Root Cause**: Same as above - search finds wrong entry point region
-
-### Investigation Summary
-- Search at layer 0 uses `entryPoint.Load()` as starting point
-- `AddBatchBulk` updates entry point AFTER all linkage (line 816)
-- During linkage, `currentEps[idx]` is set from search results (line 492, 516)
-- **Hypothesis**: Nodes in same layer don't connect to each other because `selectNeighbors` filters by distance threshold (only connects if `d < threshold`), and with random vectors, most distances exceed threshold
-- **Fix Plan**: Either:
-  1. **Immediate**: Ensure each node connects to its nearest neighbor in the batch at layer 0 (guaranteed connectivity)
-  2. **Add debug logging** to track entry point updates and search traversal counts
-  3. **Increase M values** or lower distance thresholds for small batches
-
-### Affected Files
-- `internal/store/internal/core/arrow_hnsw_bulk.go` (line 770-793)
-- `internal/store/internal/core/arrow_hnsw_insert.go` (line 255-279)
+1. **int16/uint16 search is catastrophically slow** (1.25ms vs 0.10ms for int64 — **12–13x worse**). This is the #1 priority fix.
+2. **Metal GPU acceleration is barely engaged** (< 5% speedup for most types). The Metal path needs investigation.
+3. **float16 search is 2x slower than float32** (3,452 vs 6,250 QPS) despite better ingest. SIMD/float16 metric path likely broken.
+4. **complex128 scales poorly** (44% degradation from 128d→384d). Complex arithmetic is not GPU-accelerated.
 
 ---
 
-## ✅ COMPLETED (2026-04-23): Production Hardening (0.1.9)
+## Recommended Next Steps (Priority Order)
 
-Successfully finalized the production hardening for the 0.1.9 release, focusing on high-performance compute and memory locality.
+### P0 — Critical Bugs
 
-- **Specialized FP16 CUDA Kernels**: Implemented shared-memory cached kernels in `internal/gpu/cuda/kernels.cu` to maximize Tensor Core utilization on RTX 40/50 series.
-- **Arrow-Native Metadata Transition**: Transitioned from `map[string]interface{}` to a zero-allocation `ArrowMetadata` binary format, eliminating heap fragmentation.
-- **NUMA-Local Memory Pinning (HNSW)**: Implemented NUMA-aware shard allocation and thread pinning to reduce cross-socket latency on multi-socket servers like `ancalagon`.
-- **AVX-512 Kernels for AMD64**: Modularized and implemented AVX-512 SIMD kernels for L2, Cosine, and Dot Product distances in `internal/simd/avx512.go`.
+1. **Fix int16/uint16 search performance**
+   - Symptom: 1.25ms P50 vs 0.10ms for int64 at same scale
+   - Likely cause: HNSW metric dispatch routes to broken SIMD path for 2-byte stride, causing scalar fallback
+   - Fix: Audit `pkg/simd/distance_*.go` for int16/uint16 NEON/AVX2 dispatch tables; verify stride = 2 is passed correctly through HNSW distance function interface
+
+2. **Fix float16 search accuracy/path**
+   - Symptom: 3,452 QPS vs 6,250 for float32 — half throughput
+   - Likely cause: float16 accumulation underflows in HNSW distance metric, triggering re-search or falling back to scalar
+   - Fix: Verify float16 SIMD path in `pkg/simd/float16.go`; consider using float16x2 NEON pairs with explicit accumulation scaling
+
+### P1 — High Impact Improvements
+
+3. **Enable Metal GPU acceleration for all float types**
+   - Symptom: Metal speedup is < 5% for most types; GPU is under-utilized
+   - Root cause: Metal kernel launch overhead dominates small-batch HNSW traversal; graph traversal is memory-latency bound not compute-bound
+   - Fix options:
+     - Batch query dispatch: collect N queries and dispatch a single Metal compute with N concurrent traversals sharing HNSW graph bandwidth
+     - Fuse graph traversal + distance computation in a single Metal shader pass to reduce memory round-trips
+     - Investigate whether Metal is engaged at all for dense search (add `gpu_used=true` metric instrumentation)
+
+4. **Add Metal acceleration for complex types**
+   - Symptom: complex128 drops 44% QPS from 128d→384d; complex arithmetic is CPU-only
+   - Fix: Implement complex multiply-add kernel in Metal shader (`metal/complex.metal`); complex dot product = (a_r*b_r - a_i*b_i) + (a_r*b_i + a_i*b_r)i
+
+5. **Optimize complex128 ingest path**
+   - Symptom: complex128 ingest is the slowest at 358k vec/s (128d) and 178k (384d)
+   - Likely cause: Python `tolist()` converts complex to float64 pairs, doubling memory and parsing cost
+   - Fix: Pre-allocate complex128 Arrow buffer directly from numpy complex128 array without Python round-trip
+
+### P2 — Medium Impact
+
+6. **Reduce int16/uint16 ingest overhead**
+   - int16/uint16 ingest (703k/699k) is good but could improve with batched Arrow zero-copy paths
+
+7. **Add batch query optimization for Metal**
+   - Collect up to 32 queries and dispatch simultaneously to saturate GPU bandwidth
+
+8. **Implement learned index for hot dataset routing**
+   - Currently HNSW parameters (efConstruction, m) are static; adaptive index selection based on dataset size could reduce memory footprint for small datasets
+
+9. **Add Prometheus metrics for GPU utilization**
+   - `longbow_gpu_utilization_percent`, `longbow_gpu_memory_used_bytes`
+   - Enable profiling-based optimization targeting: Metal GPU utilization > 60% during search
+
+10. **Quantized HNSW for turboquant at high dimensions**
+    - turboquant at 384d (4,805 QPS) is lower than float32 (4,756 QPS) — the quantization overhead exceeds the SIMD savings at this dimension
+    - Consider hybrid: HNSW graph built on float32, search probes quantized centroids for coarse filtering
 
 ---
 
-## ✅ ARCHIVED COMPLETED (0.1.9-rc4/5)
-
-- **Metal ONNX Acceleration**: MSL implementation for character-overlap and embedding.
-- **Learned Index Hardening**: Live metrics collection and adaptive thresholding.
-- **Tokenizer Reliability**: Required `vocab.txt` and removed dummy fallbacks.
-- **GPU Detection Accuracy**: Real Metal memory detection on macOS.
-- **GraphRAG Indexing Stability**: Resolved deadlocks in `InsertWithVector`.
-- **Apache Arrow Zero-Copy**: Optimized `ExtractVectorFromArrow` for O(1) memory access.
-- **Performance Benchmarking**: Finalized the full matrix validation and release tagging (0.1.9-rc5).
-
----
-
-## 🎯 NEXT STEPS (Post-0.1.9)
-
-### 🚀 Performance Optimizations
-
-- [ ] **Dynamic Neighbor Selection**: Implement heuristic-based neighbor pruning during `SearchHybrid` to reduce graph traversal overhead when `alpha < 0.5`.
-- [ ] **Lock-Free Search Context**: Transition `ArrowSearchContext` from a pool to a lock-free thread-local storage pattern for lower hot-path latency.
-- [ ] **Asynchronous Graph Enrichment**: Move `AddEdge` operations to a dedicated background worker to decouple logical graph updates from physical vector ingestion.
-
-### 🚀 Future Roadmap (0.1.10+)
-
-- [ ] **Google TPU v7x (Ironwood) Support**:
-  - **Phase 1: Architecture & Detection**:
-    - Implement `TPUDetector` in `internal/gpu/detection.go` for `linux/amd64`.
-    - Detect dual-chiplet topology and NUMA affinity (2 NUMA nodes per VM).
-  - **Phase 2: XLA-Backed Inference**:
-    - Implement `TPUBackend` using OpenXLA/Pallas for custom vector kernels.
-    - Optimize for 192GB HBM per chip and multi-tier memory (VMEM/HBM/PCIe).
-  - **Phase 3: Observability & Metrics**:
-    - Track `longbow_tpu_hbm_usage_bytes` and core utilization.
-  - **Phase 4: Verification & Stability**:
-    - Unit/Fuzz tests and comparative parity testing.
-- [ ] **Cross-Shard Atomic Commits**: Two-phase commit protocol for cross-shard vector updates.
-- [ ] **KV-Integrated Indexing**: Native integration with FoundationDB for metadata-heavy searches.
-
----
-
-## Architecture Notes
-
-### Build Tags - Expected Stubs (NOT Issues)
-
-- `internal/gpu/memory/memory_metal_stub.go`
-- `internal/gpu/memory/memory_cuda_stub.go`
-- `internal/simd/simd_stubs*.go`
-- `internal/storage/wal_backend_arrow_iouring_stub.go`
+**Generated**: 2026-04-23
+**Test Matrix**: 448 runs (14 dtypes × 2 dims × 8 counts × 2 backends × search types)
+**System**: Apple M3 Pro, 18GB allocated

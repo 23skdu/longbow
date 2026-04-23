@@ -250,6 +250,16 @@ var (
 		},
 	)
 
+	// GPUUsed indicates whether GPU (Metal/CUDA) was actually used per search operation
+	// Labels: backend (metal/cuda), type (vector type: f32/f16/c64/c128/f64/int)
+	GPUUsed = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_gpu_used_total",
+			Help: "Total number of search operations that used GPU acceleration",
+		},
+		[]string{"backend", "type"},
+	)
+
 	// Metal-specific metrics for Apple Silicon GPU operations
 
 	// MetalInitDurationSeconds measures Metal GPU initialization duration

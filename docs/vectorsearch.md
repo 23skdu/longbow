@@ -129,6 +129,109 @@ path, _ := index.Navigate(ctx, query)
 
 ---
 
+## 4. Geo-Spatial Search
+
+Longbow supports location-aware search with native geo-spatial indexing using a **Quadtree** spatial index. Every vector can carry a `GeoPoint` (lat/lon), enabling radius queries, bounding-box queries, and hybrid geo+vector searches.
+
+### Core Types
+
+```go
+type GeoPoint struct {
+    Lat float64
+    Lon float64
+}
+
+type GeoBoundingBox struct {
+    MinLat, MaxLat float64
+    MinLon, MaxLon float64
+}
+```
+
+### Distance Metrics
+
+| Metric | Formula | Use Case |
+|---|---|---|
+| **Haversine** | `R × 2 × atan2(√a, √(1−a))` | Spherical great-circle distance on Earth |
+| **Euclidean** | `√((Δlat)² + (Δlon)²)` | Flat-plane approximation for local regions |
+| **Approximate** | Pre-indexed bounding box | Fast first-pass culling before precise distance |
+
+### Quadtree Index
+
+The `Quadtree` recursively subdivides the global bounding box (-90°..90° lat, -180°..180° lon) into quadrants, keeping up to 4 vectors per leaf node before splitting. This gives O(log n) average-case query performance for radius and box queries.
+
+### Search Modes
+
+**Radius Search** — find all vectors within N kilometers of a center point:
+
+```go
+center := lbtypes.GeoPoint{Lat: 40.7128, Lon: -74.0060}
+results, err := geoIndex.SearchRadius(ctx, center, 50.0, k=20)
+// Returns vectors sorted by Haversine distance
+```
+
+**Bounding Box Search** — find all vectors inside a rectangular region:
+
+```go
+box := lbtypes.GeoBoundingBox{
+    MinLat: 40.5, MaxLat: 41.0,
+    MinLon: -75.0, MaxLon: -74.0,
+}
+results, err := geoIndex.SearchBox(ctx, box, k=20)
+// Returns all vectors in the box; distance=0, score=1.0
+```
+
+**Hybrid Search** — combine vector similarity with geo-proximity scoring:
+
+```go
+geoIndex.HybridSearch(ctx, queryVector, center, radiusKm, k=10)
+// Score = 0.5 × geoScore + 0.5 × vectorScore
+// geoScore = 1 / (1 + haversineDist)
+// vectorScore = 1 / (1 + L2Dist)
+```
+
+### Python SDK
+
+```python
+results = client.search(
+    "my_dataset",
+    vector=[...],
+    geo_center={"lat": 40.7128, "lon": -74.0060},
+    geo_radius_km=50,
+    k=10,
+)
+```
+
+### Configuration
+
+```go
+config := &GeoSearchConfig{
+    DistanceType: GeoDistanceHaversine,  // or Euclidean, Approximate
+    EarthRadius:  6371.0,                 // km (default: Earth's mean radius)
+    IndexType:    "quadtree",             // spatial index type
+}
+geoIndex := NewGeoIndex("dataset_name", dimension, config)
+```
+
+### Performance Characteristics
+
+| Operation | Avg Complexity | Notes |
+|---|---|---|
+| `Insert` | O(log n) | Quadtree subdivision |
+| `SearchRadius` | O(log n + k) | Bounding box culling + Haversine refinement |
+| `SearchBox` | O(log n + k) | Direct quadrant intersection |
+| `HybridSearch` | O(log n + k) | Adds L2 vector distance per candidate |
+
+All geo searches emit Prometheus metrics on port 9090:
+
+| Metric | Labels | Description |
+|---|---|---|
+| `longbow_geo_search_ops_total{dataset, type}` | `type`: `radius\|box\|hybrid` | Total geo search operations |
+| `longbow_geo_search_duration_seconds{dataset, type}` | `type`: `radius\|box\|hybrid` | Search latency histogram |
+| `longbow_quadtree_subdivisions_total{dataset}` | | Number of quadrant splits |
+| `longbow_geo_index_points_total{dataset}` | | Total indexed geo points |
+
+---
+
 ## 5. Resilience: The Circuit Breaker
 
 To maintain stability under load, search operations are protected by a **Circuit Breaker**:

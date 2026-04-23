@@ -16,8 +16,6 @@ func (h *ArrowHNSW) searchLayerForInsert(goCtx context.Context, ctx *ArrowSearch
 		return nil, err
 	}
 
-	// Important: Return a pooled/cloned slice to avoid aliasing the context's internal buffers
-	// which will be reused as soon as the context is returned to the pool.
 	cloned := h.getCandidateSlice(len(res))
 	cloned = append(cloned, res...)
 	return cloned, nil

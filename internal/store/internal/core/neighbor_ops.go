@@ -132,7 +132,6 @@ func (h *ArrowHNSW) addConnectionLocked(ctx *ArrowSearchContext, data *types.Gra
 			currentNeighbors[i] = atomic.LoadUint32(&neighborsChunk[baseIdx+i])
 		}
 	} else {
-		// Fallback if chunks are missing
 		currentNeighbors = h.GetNeighborsCombinedManual(data, layer, source)
 	}
 
@@ -142,7 +141,7 @@ func (h *ArrowHNSW) addConnectionLocked(ctx *ArrowSearchContext, data *types.Gra
 
 	if len(currentNeighbors) >= maxConn {
 		h.pruneConnectionsLocked(ctx, data, source, maxConn, layer, []uint32{target})
-		return // All work done by prune
+		return
 	}
 
 	if len(currentNeighbors) >= types.MaxNeighbors { return }

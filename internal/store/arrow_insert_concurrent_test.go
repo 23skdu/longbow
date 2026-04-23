@@ -8,7 +8,7 @@ import (
 func TestConcurrentInsert(t *testing.T) {
 	dataset := &Dataset{Name: "test"}
 	cfg := DefaultArrowHNSWConfig()
-	index := NewArrowHNSW(dataset, &cfg)
+	index := NewArrowHNSW(dataset, &cfg, nil)
 	lg := NewLevelGenerator(1.44269504089)
 
 	// Note: Inserts will fail without vector storage, but tests locking
@@ -44,7 +44,7 @@ func TestConcurrentInsert(t *testing.T) {
 func BenchmarkConcurrentInsert(b *testing.B) {
 	dataset := &Dataset{Name: "test"}
 	cfg := DefaultArrowHNSWConfig()
-	index := NewArrowHNSW(dataset, &cfg)
+	index := NewArrowHNSW(dataset, &cfg, nil)
 	lg := NewLevelGenerator(1.44269504089)
 
 	b.Run("Sequential", func(b *testing.B) {

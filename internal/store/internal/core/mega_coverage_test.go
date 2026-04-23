@@ -33,7 +33,7 @@ func TestMegaCoverage(t *testing.T) {
 	config.SelectionHeuristicLimit = 10 
 	config.SearchLayerSampleRate = 0.5
 
-	idx := core.NewArrowHNSW(nil, &config)
+	idx := core.NewArrowHNSW(nil, &config, nil)
 	defer func() { _ = idx.Close() }()
 
 	// 1. Build Data
@@ -105,7 +105,7 @@ func TestMegaCoverage(t *testing.T) {
 func TestCore_EdgeCases(t *testing.T) {
 	config := types.DefaultArrowHNSWConfig()
 	config.Dims = 16
-	idx := core.NewArrowHNSW(nil, &config)
+	idx := core.NewArrowHNSW(nil, &config, nil)
 	defer func() { _ = idx.Close() }()
 
 	t.Run("GetNonExistent", func(t *testing.T) {

@@ -149,7 +149,7 @@ func runType(t *testing.T, typeName string, dim, numVecs int, genFunc func(*arra
 	}
 
 	ds := store.NewDataset("bench_"+typeName, schema)
-	idx := store.NewArrowHNSW(ds, &cfg)
+	idx := store.NewArrowHNSW(ds, &cfg, nil)
 
 	ingestStart := time.Now()
 

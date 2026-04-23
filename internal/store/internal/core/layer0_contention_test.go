@@ -12,7 +12,7 @@ func BenchmarkLayer0Contention(b *testing.B) {
 	config.Dims = 128
 	config.InitialCapacity = 1000
 	
-	idx := NewArrowHNSW(nil, &config)
+	idx := NewArrowHNSW(nil, &config, nil)
 	data := idx.data.Load()
 	
 	// Pre-allocate node 0
@@ -39,7 +39,7 @@ func TestConcurrentLayer0Adds(t *testing.T) {
 	config.PackedAdjacencyEnabled = true
 	config.LockFreeThreshold = 2
 	config.Dims = 128
-	idx := NewArrowHNSW(nil, &config)
+	idx := NewArrowHNSW(nil, &config, nil)
 	data := idx.data.Load()
 	_ = data.EnsureChunk(0, 0, 128)
 	

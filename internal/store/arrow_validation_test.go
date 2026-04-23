@@ -23,7 +23,7 @@ type DualIndexHarness struct {
 func NewDualIndexHarness(dataset *Dataset) *DualIndexHarness {
 	cfg := DefaultArrowHNSWConfig()
 	return &DualIndexHarness{
-		candidate: NewArrowHNSW(dataset, &cfg),
+		candidate: NewArrowHNSW(dataset, &cfg, nil),
 		dataset:   dataset,
 		vectors:   make(map[uint32][]float32),
 	}

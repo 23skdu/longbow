@@ -1,6 +1,6 @@
 //go:build linux
 
-package store
+package memory
 
 import (
 	"runtime"

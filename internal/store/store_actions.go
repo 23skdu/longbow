@@ -1273,7 +1273,7 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 	ds.Records = append(ds.Records, rec)
 	rec.Retain()
 
-	currCPU := GetCurrentCPU()
+	currCPU := lmem.GetCurrentCPU()
 	currNode := -1
 	if s.numaTopology != nil {
 		currNode = s.numaTopology.GetNodeForCPU(currCPU)

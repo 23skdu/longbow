@@ -78,7 +78,7 @@ func TestArrowHNSW_BQ_Persistence(t *testing.T) {
 	// Create ArrowHNSW with BQ
 	bqConfig := types.DefaultArrowHNSWConfig()
 	bqConfig.BQEnabled = true
-	arrowIndex := NewArrowHNSW(ds, &bqConfig)
+	arrowIndex := NewArrowHNSW(ds, &bqConfig, nil)
 
 	// Re-add data to this new index
 	_, err = arrowIndex.AddByRecord(context.Background(), rec, 0, 0)

@@ -18,7 +18,7 @@ func TestChunkedGrowth(t *testing.T) {
 	}
 	schema := arrow.NewSchema(fields, nil)
 	ds := NewMockDataset("test", schema)
-	h := NewArrowHNSW(ds, &config)
+	h := NewArrowHNSW(ds, &config, nil)
 
 	// Verify initial chunks
 	data := h.data.Load()

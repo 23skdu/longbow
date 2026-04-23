@@ -170,7 +170,7 @@ func measureRecall(ctx context.Context, t *testing.T, numVectors, dim, numQuerie
 	} else {
 		config = store.DefaultArrowHNSWConfig()
 	}
-	hnsw2Index := store.NewArrowHNSW(ds, &config)
+	hnsw2Index := store.NewArrowHNSW(ds, &config, nil)
 
 	// Validate that vectors can be retrieved correctly from Arrow
 	// This ensures zero-copy retrieval is working

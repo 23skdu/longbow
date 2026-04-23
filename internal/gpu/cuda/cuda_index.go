@@ -21,6 +21,8 @@ typedef struct {
 
 // Function declarations from kernels.cu
 void launch_l2_distance_kernel(const float* vectors, const float* query, float* distances, int dimensions, int count, cudaStream_t stream);
+void launch_l2_distance_fp16_kernel(const uint16_t* vectors, const uint16_t* query, float* distances, int dimensions, int count, cudaStream_t stream);
+void launch_dot_distance_fp16_kernel(const uint16_t* vectors, const uint16_t* query, float* distances, int dimensions, int count, cudaStream_t stream);
 void launch_pq_distance_kernel(const float* lookupTable, const unsigned char* codes, float* distances, int m, int count, cudaStream_t stream);
 
 CUDAIndexHandle* cuda_init(int dimensions, int initialCapacity) {
@@ -138,12 +140,68 @@ int cuda_add_vectors(CUDAIndexHandle* handle, float* h_vectors, int64_t* h_ids, 
     return 0;
 }
 
+int cuda_add_vectors_fp16(CUDAIndexHandle* handle, uint16_t* h_vectors, int64_t* h_ids, int count) {
+    if (!handle->vectorBuffer || count <= 0) {
+        return -1;
+    }
+
+    int requiredCapacity = handle->vectorCount + count;
+    if (requiredCapacity > handle->capacity) {
+        int newCapacity = handle->capacity;
+        while (newCapacity < requiredCapacity) {
+            newCapacity *= 2;
+        }
+
+        // Each vector element is uint16_t (2 bytes)
+        size_t newBufferSize = newCapacity * handle->dimensions * sizeof(uint16_t);
+        void* newVectorBuffer = NULL;
+        cudaError_t err = cudaMalloc((void**)&newVectorBuffer, newBufferSize);
+        if (err != cudaSuccess) return -1;
+
+        if (handle->vectorCount > 0) {
+            cudaMemcpy(newVectorBuffer, handle->vectorBuffer,
+                       handle->vectorCount * handle->dimensions * sizeof(uint16_t),
+                       cudaMemcpyDeviceToDevice);
+        }
+
+        cudaFree(handle->vectorBuffer);
+        handle->vectorBuffer = newVectorBuffer;
+
+        size_t newIdBufferSize = newCapacity * sizeof(int64_t);
+        void* newIdBuffer = NULL;
+        err = cudaMalloc((void**)&newIdBuffer, newIdBufferSize);
+        if (err != cudaSuccess) return -1;
+
+        if (handle->vectorCount > 0) {
+            cudaMemcpy(newIdBuffer, handle->idBuffer,
+                       handle->vectorCount * sizeof(int64_t),
+                       cudaMemcpyDeviceToDevice);
+        }
+
+        cudaFree(handle->idBuffer);
+        handle->idBuffer = newIdBuffer;
+        handle->capacity = newCapacity;
+    }
+
+    size_t vectorSize = count * handle->dimensions * sizeof(uint16_t);
+    void* vectorOffset = (char*)handle->vectorBuffer + handle->vectorCount * handle->dimensions * sizeof(uint16_t);
+    cudaError_t err = cudaMemcpy(vectorOffset, h_vectors, vectorSize, cudaMemcpyHostToDevice);
+    if (err != cudaSuccess) return -1;
+
+    size_t idSize = count * sizeof(int64_t);
+    void* idOffset = (char*)handle->idBuffer + handle->vectorCount * sizeof(int64_t);
+    err = cudaMemcpy(idOffset, h_ids, idSize, cudaMemcpyHostToDevice);
+    if (err != cudaSuccess) return -1;
+
+    handle->vectorCount += count;
+    return 0;
+}
+
 int cuda_search(CUDAIndexHandle* handle, float* h_query, int k, int64_t* h_resultIDs, float* h_resultDistances) {
     if (!handle->vectorBuffer || handle->vectorCount == 0) {
         return -1;
     }
 
-    // Allocate GPU memory for query and distances
     float* d_query;
     float* d_distances;
     size_t querySize = handle->dimensions * sizeof(float);
@@ -154,43 +212,91 @@ int cuda_search(CUDAIndexHandle* handle, float* h_query, int k, int64_t* h_resul
     
     cudaMemcpy(d_query, h_query, querySize, cudaMemcpyHostToDevice);
 
-    // Launch kernel using launcher
     launch_l2_distance_kernel((float*)handle->vectorBuffer, d_query, d_distances, handle->dimensions, handle->vectorCount, 0);
     
-    // Copy distances back to host
     float* h_distances = (float*)malloc(distancesSize);
     cudaMemcpy(h_distances, d_distances, distancesSize, cudaMemcpyDeviceToHost);
     
-    // Selection sort on CPU (still okay for small k, but distances calculated on GPU)
     int n = handle->vectorCount;
     int resultCount = k < n ? k : n;
-
-    // Get IDs from GPU (we could also keep them on CPU if it's faster)
-int64_t* h_ids = (int64_t*)malloc(n * sizeof(int64_t));
+    int64_t* h_ids = (int64_t*)malloc(n * sizeof(int64_t));
     cudaMemcpy(h_ids, handle->idBuffer, n * sizeof(int64_t), cudaMemcpyDeviceToHost);
 
     for (int i = 0; i < resultCount; i++) {
         int minIdx = i;
         float minDist = h_distances[i];
-
         for (int j = i + 1; j < n; j++) {
             if (h_distances[j] < minDist) {
                 minDist = h_distances[j];
                 minIdx = j;
             }
         }
-
         h_resultIDs[i] = h_ids[minIdx];
         h_resultDistances[i] = minDist;
         h_distances[minIdx] = INFINITY;
     }
 
-    // Cleanup
     cudaFree(d_query);
     cudaFree(d_distances);
     free(h_distances);
     free(h_ids);
+    return 0;
+}
 
+int cuda_search_fp16(CUDAIndexHandle* handle, uint16_t* h_query, int k, int metric, int64_t* h_resultIDs, float* h_resultDistances) {
+    if (!handle->vectorBuffer || handle->vectorCount == 0) {
+        return -1;
+    }
+
+    uint16_t* d_query;
+    float* d_distances;
+    size_t querySize = handle->dimensions * sizeof(uint16_t);
+    size_t distancesSize = handle->vectorCount * sizeof(float);
+    
+    cudaMalloc((void**)&d_query, querySize);
+    cudaMalloc((void**)&d_distances, distancesSize);
+    
+    cudaMemcpy(d_query, h_query, querySize, cudaMemcpyHostToDevice);
+
+    if (metric == 0) { // L2
+        launch_l2_distance_fp16_kernel((uint16_t*)handle->vectorBuffer, d_query, d_distances, handle->dimensions, handle->vectorCount, 0);
+    } else { // Dot
+        launch_dot_distance_fp16_kernel((uint16_t*)handle->vectorBuffer, d_query, d_distances, handle->dimensions, handle->vectorCount, 0);
+    }
+    
+    float* h_distances = (float*)malloc(distancesSize);
+    cudaMemcpy(h_distances, d_distances, distancesSize, cudaMemcpyDeviceToHost);
+    
+    int n = handle->vectorCount;
+    int resultCount = k < n ? k : n;
+    int64_t* h_ids = (int64_t*)malloc(n * sizeof(int64_t));
+    cudaMemcpy(h_ids, handle->idBuffer, n * sizeof(int64_t), cudaMemcpyDeviceToHost);
+
+    for (int i = 0; i < resultCount; i++) {
+        int bestIdx = i;
+        float bestVal = h_distances[i];
+        for (int j = i + 1; j < n; j++) {
+            if (metric == 0) { // L2 (smaller is better)
+                if (h_distances[j] < bestVal) {
+                    bestVal = h_distances[j];
+                    bestIdx = j;
+                }
+            } else { // Dot (larger is better)
+                if (h_distances[j] > bestVal) {
+                    bestVal = h_distances[j];
+                    bestIdx = j;
+                }
+            }
+        }
+        h_resultIDs[i] = h_ids[bestIdx];
+        h_resultDistances[i] = bestVal;
+        h_distances[bestIdx] = (metric == 0) ? INFINITY : -INFINITY;
+    }
+
+    cudaFree(d_query);
+    cudaFree(d_distances);
+    free(h_distances);
+    free(h_ids);
     return 0;
 }
 

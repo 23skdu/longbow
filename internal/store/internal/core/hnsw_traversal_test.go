@@ -39,7 +39,7 @@ func TestArrowHNSW_SearchEarlyTermination(t *testing.T) {
 	config.M = 16
 	config.EfConstruction = 40
 
-	idx := core.NewArrowHNSW(ds, &config) // Signature match
+	idx := core.NewArrowHNSW(ds, &config, nil) // Signature match
 
 	for i := 0; i < 100; i++ {
 		_, err := idx.AddByLocation(context.Background(), 0, i)
@@ -85,7 +85,7 @@ func TestArrowHNSW_SearchWithEfGreaterThanResults(t *testing.T) {
 	config.M = 8
 	config.EfConstruction = 40
 
-	idx := core.NewArrowHNSW(ds, &config)
+	idx := core.NewArrowHNSW(ds, &config, nil)
 
 	for i := 0; i < 50; i++ {
 		_, err := idx.AddByLocation(context.Background(), 0, i)
@@ -128,7 +128,7 @@ func TestArrowHNSW_NeedsCompaction_Empty(t *testing.T) {
 	}
 
 	config := types.DefaultArrowHNSWConfig()
-	idx := core.NewArrowHNSW(ds, &config)
+	idx := core.NewArrowHNSW(ds, &config, nil)
 	_ = idx
 
 	// NeedsCompaction method check
@@ -166,7 +166,7 @@ func TestArrowHNSW_NeedsCompaction_NoDeleted(t *testing.T) {
 	}
 
 	config := types.DefaultArrowHNSWConfig()
-	idx := core.NewArrowHNSW(ds, &config)
+	idx := core.NewArrowHNSW(ds, &config, nil)
 
 	for i := 0; i < 10; i++ {
 		_, err := idx.AddByLocation(context.Background(), 0, i)
@@ -202,7 +202,7 @@ func TestArrowHNSW_VisitedListGrowth(t *testing.T) {
 	config.M = 8
 	config.EfConstruction = 40
 
-	idx := core.NewArrowHNSW(ds, &config)
+	idx := core.NewArrowHNSW(ds, &config, nil)
 
 	for i := 0; i < 1000; i++ {
 		_, err := idx.AddByLocation(context.Background(), 0, i)
@@ -234,7 +234,7 @@ func TestArrowHNSW_SearchEmptyIndex(t *testing.T) {
 	}
 
 	config := types.DefaultArrowHNSWConfig()
-	idx := core.NewArrowHNSW(ds, &config)
+	idx := core.NewArrowHNSW(ds, &config, nil)
 
 	query := []float32{1.0, 2.0}
 
@@ -261,7 +261,7 @@ func TestArrowHNSW_SearchSingleVector(t *testing.T) {
 	}
 
 	config := types.DefaultArrowHNSWConfig()
-	idx := core.NewArrowHNSW(ds, &config)
+	idx := core.NewArrowHNSW(ds, &config, nil)
 
 	_, err := idx.AddByLocation(context.Background(), 0, 0)
 	require.NoError(t, err)
@@ -290,7 +290,7 @@ func TestArrowHNSW_EstimateMemory(t *testing.T) {
 	}
 
 	config := types.DefaultArrowHNSWConfig()
-	idx := core.NewArrowHNSW(ds, &config)
+	idx := core.NewArrowHNSW(ds, &config, nil)
 
 	memBefore := idx.EstimateMemory()
 
@@ -312,7 +312,7 @@ func TestArrowHNSW_EstimateMemory(t *testing.T) {
 		Schema:  rec.Schema(),
 	}
 
-	idx2 := core.NewArrowHNSW(ds2, &config)
+	idx2 := core.NewArrowHNSW(ds2, &config, nil)
 
 	for i := 0; i < 10; i++ {
 		_, err := idx2.AddByLocation(context.Background(), 0, i)
@@ -342,7 +342,7 @@ func TestArrowHNSW_SearchVectors_Empty(t *testing.T) {
 	}
 
 	config := types.DefaultArrowHNSWConfig()
-	hnswIdx := core.NewArrowHNSW(ds, &config)
+	hnswIdx := core.NewArrowHNSW(ds, &config, nil)
 
 	query := []float32{1.0, 2.0}
 

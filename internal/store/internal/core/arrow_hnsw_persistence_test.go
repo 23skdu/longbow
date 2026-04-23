@@ -32,7 +32,7 @@ func TestArrowHNSW_PersistenceRefactor(t *testing.T) {
 	cfg := types.DefaultArrowHNSWConfig()
 	cfg.EfConstruction = 40
 	cfg.M = 16
-	idx := NewArrowHNSW(ds, &cfg)
+	idx := NewArrowHNSW(ds, &cfg, nil)
 	idx.SetDimension(4)
 
 	// Add Vectors
@@ -74,7 +74,7 @@ func TestArrowHNSW_PersistenceRefactor(t *testing.T) {
 	assert.NotEmpty(t, stateBytes)
 
 	// Create New Index and Import
-	idx2 := NewArrowHNSW(ds, &cfg)
+	idx2 := NewArrowHNSW(ds, &cfg, nil)
 	idx2.SetDimension(4)
 	err = idx2.ImportState(stateBytes)
 	assert.NoError(t, err)

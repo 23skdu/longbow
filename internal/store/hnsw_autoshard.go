@@ -66,13 +66,13 @@ func NewAutoShardingIndex(ds *Dataset, config AutoShardingConfig) *AutoShardingI
 
 	var idx VectorIndex
 	if config.IndexConfig != nil {
-		idx = NewArrowHNSW(ds, config.IndexConfig)
+		idx = NewArrowHNSW(ds, config.IndexConfig, ds.Topo)
 	} else {
 		// Use ArrowHNSW as default for better performance (parallelism, batching)
 		hnswConfig := DefaultArrowHNSWConfig()
 		hnswConfig.Metric = ds.Metric
 		hnswConfig.Logger = ds.Logger
-		idx = NewArrowHNSW(ds, &hnswConfig)
+		idx = NewArrowHNSW(ds, &hnswConfig, ds.Topo)
 	}
 
 	return &AutoShardingIndex{

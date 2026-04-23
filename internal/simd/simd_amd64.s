@@ -587,10 +587,32 @@ euc_f16_avx512_tail:
     CMPQ    BX, $0
     JE      euc_f16_avx512_done
 
-    // Tail mask for AVX-512?
-    // Let's use scalar loop for simplicity in tail
-euc_f16_avx512_tail_loop:
-    JMP euc_f16_avx512_done
+    // Create mask for BX elements
+    MOVQ    $1, R8
+    MOVQ    BX, CX
+    SHLQ    CX, R8
+    SUBQ    $1, R8
+    KMOVQ   R8, K1
+
+    // Masked load of FP16s (16-bit elements)
+    VMOVDQU16 (SI), K1, Z1
+    VMOVDQU16 (DI), K1, Z2
+
+    // Convert and accumulate
+    VCVTPH2PS Z1, Z1
+    VCVTPH2PS Z2, Z2
+    VSUBPS  Z2, Z1, Z1
+    VFMADD231PS Z1, Z1, Z0
+
+    // Re-reduce Z0 for the tail contribution
+    VEXTRACTF64X4 $1, Z0, Y1
+    VADDPS  Y1, Y0, Y0
+    VEXTRACTF128 $1, Y0, X1
+    VADDPS  X1, X0, X0
+    VMOVHLPS X0, X1, X1
+    VADDPS  X1, X0, X0
+    VMOVSHDUP X0, X1
+    VADDSS  X1, X0, X0
 
 euc_f16_avx512_done:
     VSQRTSS X0, X0, X0
@@ -632,8 +654,28 @@ dot_f16_avx512_tail:
     CMPQ    BX, $0
     JE      dot_f16_avx512_done
 
-dot_f16_avx512_tail_loop:
-    JMP dot_f16_avx512_done
+    // Masked tail
+    MOVQ    $1, R8
+    MOVQ    BX, CX
+    SHLQ    CX, R8
+    SUBQ    $1, R8
+    KMOVQ   R8, K1
+
+    VMOVDQU16 (SI), K1, Z1
+    VMOVDQU16 (DI), K1, Z2
+    VCVTPH2PS Z1, Z1
+    VCVTPH2PS Z2, Z2
+    VFMADD231PS Z1, Z2, Z0
+
+    // Re-reduce
+    VEXTRACTF64X4 $1, Z0, Y1
+    VADDPS  Y1, Y0, Y0
+    VEXTRACTF128 $1, Y0, X1
+    VADDPS  X1, X0, X0
+    VMOVHLPS X0, X1, X1
+    VADDPS  X1, X0, X0
+    VMOVSHDUP X0, X1
+    VADDSS  X1, X0, X0
 
 dot_f16_avx512_done:
     VMOVSS  X0, ret+24(FP)

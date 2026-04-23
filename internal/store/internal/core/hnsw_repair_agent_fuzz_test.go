@@ -27,7 +27,7 @@ func FuzzRepairAgent_GraphSize(f *testing.F) {
 
 		hnswConfig := types.DefaultArrowHNSWConfig()
 		hnswConfig.M = 8
-		idx := NewArrowHNSW(nil, &hnswConfig)
+		idx := NewArrowHNSW(nil, &hnswConfig, nil)
 
 		// Insert nodes
 		for i := 0; i < nodeCount; i++ {
@@ -66,7 +66,7 @@ func FuzzRepairAgent_DeletionPattern(f *testing.F) {
 
 		hnswConfig := types.DefaultArrowHNSWConfig()
 		hnswConfig.M = 8
-		idx := NewArrowHNSW(nil, &hnswConfig)
+		idx := NewArrowHNSW(nil, &hnswConfig, nil)
 
 		// Insert nodes
 		for i := 0; i < totalCount; i++ {
@@ -103,7 +103,7 @@ func FuzzRepairAgent_MaxRepairs(f *testing.F) {
 		}
 
 		hnswConfig := types.DefaultArrowHNSWConfig()
-		idx := NewArrowHNSW(nil, &hnswConfig)
+		idx := NewArrowHNSW(nil, &hnswConfig, nil)
 
 		// Insert some nodes
 		for i := 0; i < 50; i++ {
@@ -151,7 +151,7 @@ func FuzzRepairAgent_MParameter(f *testing.F) {
 
 		hnswConfig := types.DefaultArrowHNSWConfig()
 		hnswConfig.M = m
-		idx := NewArrowHNSW(nil, &hnswConfig)
+		idx := NewArrowHNSW(nil, &hnswConfig, nil)
 
 		// Insert nodes
 		for i := 0; i < 100; i++ {
@@ -204,7 +204,7 @@ func FuzzRepairAgent_Combined(f *testing.F) {
 
 		hnswConfig := types.DefaultArrowHNSWConfig()
 		hnswConfig.M = m
-		idx := NewArrowHNSW(nil, &hnswConfig)
+		idx := NewArrowHNSW(nil, &hnswConfig, nil)
 
 		// Insert nodes
 		for i := 0; i < nodeCount; i++ {

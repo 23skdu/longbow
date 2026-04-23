@@ -1,6 +1,6 @@
 //go:build !linux && !darwin
 
-package store
+package memory
 
 import "errors"
 

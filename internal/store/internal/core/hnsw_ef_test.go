@@ -41,7 +41,7 @@ func TestHNSW_EfParameter(t *testing.T) {
 
 	cfg := types.DefaultArrowHNSWConfig()
 	cfg.Metric = basecore.MetricEuclidean
-	idx := core.NewArrowHNSW(ds, &cfg)
+	idx := core.NewArrowHNSW(ds, &cfg, nil)
 
 	// Add all vectors
 	for i := 0; i < len(vectors); i++ {

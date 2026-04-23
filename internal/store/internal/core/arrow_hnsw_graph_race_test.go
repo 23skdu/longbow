@@ -22,7 +22,7 @@ func TestArrowHNSW_AddBatchBulk_EnsureChunkRace(t *testing.T) {
 			Name: "test-dataset",
 		}
 
-		h := core.NewArrowHNSW(ds, &cfg)
+		h := core.NewArrowHNSW(ds, &cfg, nil)
 
 		// Helper function to get vector from core.ArrowHNSW
 		getVectorFloat32 := func(hnsw *core.ArrowHNSW, id uint32) []float32 {

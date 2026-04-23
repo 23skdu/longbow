@@ -29,7 +29,7 @@ func TestSQ8Indexing(t *testing.T) {
 	cfg.SQ8TrainingThreshold = 100
 	// To test quantization, we need vectors that are not 0.
 
-	idx := NewArrowHNSW(ds, &cfg)
+	idx := NewArrowHNSW(ds, &cfg, nil)
 
 	// insert 500 vectors
 	n := 500

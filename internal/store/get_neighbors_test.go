@@ -64,7 +64,7 @@ func buildSmallDataset(t *testing.T, n, dim int) (*Dataset, *ArrowHNSW) {
 	cfg.EfConstruction = 50
 	cfg.InitialCapacity = n + 10
 
-	idx := NewArrowHNSW(ds, &cfg)
+	idx := NewArrowHNSW(ds, &cfg, nil)
 	ds.Index = idx
 	t.Cleanup(func() { _ = idx.Close() })
 

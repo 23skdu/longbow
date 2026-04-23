@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"unsafe"
 
+	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/23skdu/longbow/internal/metrics"
 )
 
@@ -63,6 +64,7 @@ type SlabArena struct {
 	mu      sync.Mutex              // Only guards Alloc (writes)
 	slabs   atomic.Pointer[[]*slab] // Lock-free access to slabs slice
 	slabCap uint32                  // capacity in BYTES
+	alloc   memory.Allocator        // Optional custom allocator (e.g. NUMA)
 }
 
 func (a *SlabArena) Stats() ArenaStats {
@@ -83,6 +85,11 @@ func (a *SlabArena) Stats() ArenaStats {
 
 // NewSlabArena creates a new arena with specified slab byte size.
 func NewSlabArena(slabSizeBytes int) *SlabArena {
+	return NewSlabArenaWithAllocator(slabSizeBytes, nil)
+}
+
+// NewSlabArenaWithAllocator creates a new arena using a specific allocator for slabs.
+func NewSlabArenaWithAllocator(slabSizeBytes int, alloc memory.Allocator) *SlabArena {
 	if slabSizeBytes < 1024 {
 		slabSizeBytes = 1024
 	}
@@ -90,6 +97,7 @@ func NewSlabArena(slabSizeBytes int) *SlabArena {
 	slabSizeBytes = nextPowerOf2(slabSizeBytes)
 	s := &SlabArena{
 		slabCap: uint32(slabSizeBytes), // #nosec G115
+		alloc:   alloc,
 	}
 	// Initialize with empty slice
 	empty := make([]*slab, 0)
@@ -246,7 +254,12 @@ func (a *SlabArena) allocCommon(size, align int, zero bool) (uint64, error) {
 
 	if !claimed {
 		// Allocate new slab
-		buf := GetSlab(int(a.slabCap))
+		var buf []byte
+		if a.alloc != nil {
+			buf = a.alloc.Allocate(int(a.slabCap))
+		} else {
+			buf = GetSlab(int(a.slabCap))
+		}
 		newId := uint32(len(currentSlabs) + 1) // #nosec G115
 
 		var pad uint32
@@ -304,7 +317,11 @@ func (a *SlabArena) Free() {
 	currentSlabs := *currentSlabsPtr
 
 	for _, s := range currentSlabs {
-		PutSlab(s.data)
+		if a.alloc != nil {
+			a.alloc.Free(s.data)
+		} else {
+			PutSlab(s.data)
+		}
 		s.data = nil
 	}
 

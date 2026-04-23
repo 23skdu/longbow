@@ -18,6 +18,7 @@ import (
 	"github.com/23skdu/longbow/internal/query"
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/RoaringBitmap/roaring/v2"
+	"github.com/23skdu/longbow/internal/memory"
 	"github.com/apache/arrow-go/v18/arrow"
 	"golang.org/x/sync/errgroup"
 )
@@ -194,7 +195,11 @@ func (s *ShardedHNSW) newShard(_ int) *hnswShard {
 
 	// We pass nil for ChunkedLocationStore because shards use local IDs and don't manage global locations
 	// The ShardedHNSW manages the global location store.
-	idx := NewArrowHNSW(s.dataset, &arrowConfig)
+	var topo *memory.NUMATopology
+	if s.dataset != nil {
+		topo = s.dataset.Topo
+	}
+	idx := NewArrowHNSW(s.dataset, &arrowConfig, topo)
 	if idx == nil {
 		return nil
 	}

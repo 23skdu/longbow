@@ -124,6 +124,7 @@ type ArrowHNSW struct {
 	navigator *GraphNavigator
 	tqCompute *TurboQuantCompute
 	gpuTrained atomic.Bool
+	topo       *memory.NUMATopology
 }
 
 func (h *ArrowHNSW) GetVector(id uint32) (any, error) {
@@ -237,12 +238,12 @@ func (h *ArrowHNSW) GetDataset() types.IndexDataProvider {
 	return h.dataset
 }
 // NewArrowHNSW creates a new ArrowHNSW index.
-func NewArrowHNSW(dataset types.IndexDataProvider, config *types.ArrowHNSWConfig) *ArrowHNSW {
-	return NewArrowHNSWWithConfig(dataset, *config)
+func NewArrowHNSW(dataset types.IndexDataProvider, config *types.ArrowHNSWConfig, topo *memory.NUMATopology) *ArrowHNSW {
+	return NewArrowHNSWWithConfig(dataset, *config, topo)
 }
 
 // NewArrowHNSWWithConfig creates a new ArrowHNSW index with the given configuration.
-func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowHNSWConfig) *ArrowHNSW {
+func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowHNSWConfig, topo *memory.NUMATopology) *ArrowHNSW {
 	h := &ArrowHNSW{
 		config:          config,
 		dataset:         dataset,
@@ -260,6 +261,7 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 		deleted:         roaring.New(),
 		levelMultiplier: 1.0 / math.Log(float64(config.M)),
 		topLayerManager: NewTopLayerManager(config.LockFreeThreshold),
+		topo:            topo,
 	}
 
 	if h.topLayerManager.threshold == 0 {
@@ -372,7 +374,14 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 	// Initialize Layer 0 Lock-Free Adjacency ([#11] Lock-Free Adjacency)
 	gd.PackedNeighbors = make([]types.PackedNeighbors, types.ArrowMaxLayers)
 	// We use a dedicated SlabArena for Layer 0 adjacency to maximize throughput
-	adjArena := memory.NewSlabArena(1024 * 1024 * 32) // 32MB initial slab
+	
+	var adjArena *memory.SlabArena
+	if config.NUMANode >= 0 && topo != nil {
+		numaAlloc := memory.NewNUMAAllocator(topo, config.NUMANode)
+		adjArena = memory.NewSlabArenaWithAllocator(1024*1024*32, numaAlloc)
+	} else {
+		adjArena = memory.NewSlabArena(1024 * 1024 * 32) // 32MB initial slab
+	}
 	gd.PackedNeighbors[0] = NewPackedAdjacency(adjArena, capacity)
 
 	h.data.Store(gd)

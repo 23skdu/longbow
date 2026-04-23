@@ -19,7 +19,7 @@ func BenchmarkHNSW_InitializationOverhead(b *testing.B) {
 	// So we use a single long-lived index.
 
 	cfg.Dims = 128
-	h := NewArrowHNSW(nil, &cfg)
+	h := NewArrowHNSW(nil, &cfg, nil)
 	// Force allocate to simulate "steady state"
 	if err := h.Grow(1000, 0); err != nil {
 		b.Fatalf("Grow failed: %v", err)
@@ -46,7 +46,7 @@ func BenchmarkHNSW_InitializationOverhead(b *testing.B) {
 func TestHNSW_DimensionTransition(t *testing.T) {
 	cfg := DefaultArrowHNSWConfig()
 	cfg.InitialCapacity = 10
-	h := NewArrowHNSW(nil, &cfg)
+	h := NewArrowHNSW(nil, &cfg, nil)
 
 	// Initially dims = 0
 	require.Equal(t, int(0), h.GetConfig().Dims)

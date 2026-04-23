@@ -26,7 +26,7 @@ func TestVacuum_Basic(t *testing.T) {
 	}
 
 	cfg := DefaultArrowHNSWConfig()
-	h := NewArrowHNSW(ds, &cfg)
+	h := NewArrowHNSW(ds, &cfg, nil)
 	defer func() { _ = h.Close() }()
 
 	// Add data
@@ -53,7 +53,7 @@ func TestVacuum_SearchImpact(t *testing.T) {
 
 	ds := &Dataset{Records: []arrow.RecordBatch{rec}}
 	cfg := DefaultArrowHNSWConfig()
-	h := NewArrowHNSW(ds, &cfg)
+	h := NewArrowHNSW(ds, &cfg, nil)
 
 	_, _ = h.AddByLocation(context.Background(), 0, 0)
 

@@ -16,7 +16,7 @@ func BenchmarkHNSW_LockContention(b *testing.B) {
 	dims := 32
 	capacity := 100000
 	cfg := types.DefaultArrowHNSWConfig()
-	h := core.NewArrowHNSW(nil, &cfg)
+	h := core.NewArrowHNSW(nil, &cfg, nil)
 	_ = h.Grow(capacity, 0)
 
 	// Pre-fill some data to ensure graph connectivity and non-trivial traversals

@@ -38,7 +38,7 @@ func TestArrowHNSW_Metrics(t *testing.T) {
 		config.EfConstruction = 100
 		config.Metric = basecore.MetricCosine
 
-		idx := NewArrowHNSW(ds, &config)
+		idx := NewArrowHNSW(ds, &config, nil)
 
 		// Add vectors 0 and 1
 		_, err := idx.AddByLocation(context.Background(), 0, 0)
@@ -80,7 +80,7 @@ func TestArrowHNSW_Metrics(t *testing.T) {
 
 		// Create ArrowHNSW
 		config := types.DefaultArrowHNSWConfig()
-		idx := NewArrowHNSW(ds, &config)
+		idx := NewArrowHNSW(ds, &config, nil)
 
 		// Add vector
 		_, err := idx.AddByLocation(context.Background(), 0, 0)
@@ -101,7 +101,7 @@ func TestArrowHNSW_Metrics(t *testing.T) {
 		// Test Float16 configuration
 		configF16 := types.DefaultArrowHNSWConfig()
 		configF16.Float16Enabled = true
-		idxF16 := NewArrowHNSW(ds, &configF16)
+		idxF16 := NewArrowHNSW(ds, &configF16, nil)
 
 		// Must add a vector so search doesn't early return
 		_, err = idxF16.AddByLocation(context.Background(), 0, 0)
@@ -117,7 +117,7 @@ func TestArrowHNSW_Metrics(t *testing.T) {
 	t.Run("SearchLayerSampling", func(t *testing.T) {
 		config := types.DefaultArrowHNSWConfig()
 		config.SearchLayerSampleRate = 1.0 // 100% sampling
-		idx := NewArrowHNSW(ds, &config)
+		idx := NewArrowHNSW(ds, &config, nil)
 		
 		// Add vector to ensure search has work to do
 		_, err := idx.AddByLocation(context.Background(), 0, 0)
@@ -146,7 +146,7 @@ func TestArrowHNSW_Metrics(t *testing.T) {
 		
 		configNoSample := types.DefaultArrowHNSWConfig()
 		configNoSample.SearchLayerSampleRate = 0.0000001 // Practically 0
-		idxNoSample := NewArrowHNSW(ds, &configNoSample)
+		idxNoSample := NewArrowHNSW(ds, &configNoSample, nil)
 
 		_, err = idxNoSample.Search(context.Background(), q, 1, nil)
 		require.NoError(t, err)

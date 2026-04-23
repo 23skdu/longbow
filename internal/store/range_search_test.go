@@ -19,7 +19,7 @@ func TestArrowHNSW_RangeSearch(t *testing.T) {
 	config.EfConstruction = 64
 	config.EfSearch = 64
 
-	idx := NewArrowHNSW(nil, &config)
+	idx := NewArrowHNSW(nil, &config, nil)
 
 	vectors := make([][]float32, count)
 	for i := 0; i < count; i++ {
@@ -65,7 +65,7 @@ func TestArrowHNSW_RangeSearch_Empty(t *testing.T) {
 	config.Dims = dims
 	config.DataType = lbtypes.VectorTypeFloat32
 
-	idx := NewArrowHNSW(nil, &config)
+	idx := NewArrowHNSW(nil, &config, nil)
 
 	ctx := context.Background()
 	queryVec := make([]float32, dims)

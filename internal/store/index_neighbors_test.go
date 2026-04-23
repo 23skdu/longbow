@@ -23,7 +23,7 @@ func TestIndexGetNeighborsStandardized(t *testing.T) {
 	t.Run("ArrowHNSW", func(t *testing.T) {
 		cfg := DefaultArrowHNSWConfig()
 		cfg.Dims = dim
-		idx := NewArrowHNSW(ds, &cfg)
+		idx := NewArrowHNSW(ds, &cfg, nil)
 
 		// Get neighbors for ID 0 (empty index)
 		neighbors, err := idx.GetNeighbors(ctx, 0, 5)

@@ -24,7 +24,7 @@ func TestArrowHNSW_AddBatch_Sequential(t *testing.T) {
 	cfg := types.DefaultArrowHNSWConfig()
 	cfg.M = 16
 	cfg.EfConstruction = 100
-	idx := core.NewArrowHNSW(ds, &cfg)
+	idx := core.NewArrowHNSW(ds, &cfg, nil)
 	// Manually set dims since we bypass full initialization
 
 	// 2. Generate and Insert Batches
@@ -89,7 +89,7 @@ func TestArrowHNSW_AddBatch_Concurrent(t *testing.T) {
 	cfg := types.DefaultArrowHNSWConfig()
 	cfg.M = 16
 	cfg.EfConstruction = 100
-	idx := core.NewArrowHNSW(ds, &cfg)
+	idx := core.NewArrowHNSW(ds, &cfg, nil)
 
 	var wg sync.WaitGroup
 	wg.Add(numWorkers)

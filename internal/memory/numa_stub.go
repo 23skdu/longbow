@@ -1,6 +1,6 @@
 //go:build !linux
 
-package store
+package memory
 
 // NUMATopology represents the NUMA topology of the system.
 // On non-Linux systems, this always returns a single-node topology.

@@ -146,7 +146,7 @@ func TestGraphRAG_Stability_Large(t *testing.T) {
 		DataType:       types.VectorTypeFloat32,
 		Metric:         basecore.MetricEuclidean,
 	}
-	hnsw := storecore.NewArrowHNSW(ds, &config)
+	hnsw := storecore.NewArrowHNSW(ds, &config, nil)
 	ds.dataMu.Lock()
 	ds.Index = hnsw
 	ds.dataMu.Unlock()
@@ -207,7 +207,7 @@ func TestHNSW_SearchLayer_NilContext_Regression(t *testing.T) {
 		Dims:           128,
 		DataType:       types.VectorTypeFloat32,
 		Metric:         basecore.MetricEuclidean,
-	})
+	}, nil)
 	
 	// Create some data
 	vec := make([]float32, 128)

@@ -2165,12 +2165,19 @@ func (h *MaxCandidateHeapAdapter) Pop() any {
 func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint uint32, ef, layer int, ctx *ArrowSearchContext, data *types.GraphData, queryVec any) ([]types.Candidate, error) {
 	start := time.Now()
 	defer func() {
-		ctx.distComputeTime += time.Since(start)
+		if ctx != nil {
+			ctx.distComputeTime += time.Since(start)
+		}
 	}()
 
 	// Define polymorphic distance computer
 	var distComputer func(uint32) (float32, error)
 	var epDist float32
+
+	var disk *DiskGraph
+	if ctx != nil {
+		disk = ctx.diskGraph
+	}
 
 	// Optimization: Use specialized computer if available
 	if comp, ok := computer.(interface {
@@ -2178,7 +2185,9 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 	}); ok {
 		distComputer = comp.ComputeSingle
 		var err error
-		ctx.distComputeCount++
+		if ctx != nil {
+			ctx.distComputeCount++
+		}
 		epDist, err = comp.ComputeSingle(entryPoint)
 		if err != nil {
 			return nil, err
@@ -2187,7 +2196,11 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 		switch q := queryVec.(type) {
 		case []float32:
 			distComputer = func(id uint32) (float32, error) {
-				vecAny, err := h.getVectorWithCachedDisk(data, ctx.diskGraph, id)
+				var disk *DiskGraph
+				if ctx != nil {
+					disk = ctx.diskGraph
+				}
+				vecAny, err := h.getVectorWithCachedDisk(data, disk, id)
 				if err != nil {
 					return 0, err
 				}
@@ -2275,7 +2288,7 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 
 		case []int8:
 			distComputer = func(id uint32) (float32, error) {
-				vecAny, err := h.getVectorWithCachedDisk(data, ctx.diskGraph, id)
+				vecAny, err := h.getVectorWithCachedDisk(data, disk, id)
 				if err != nil {
 					return 0, err
 				}
@@ -2330,7 +2343,7 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 
 		case []complex64:
 			distComputer = func(id uint32) (float32, error) {
-				vecAny, err := h.getVectorWithCachedDisk(data, ctx.diskGraph, id)
+				vecAny, err := h.getVectorWithCachedDisk(data, disk, id)
 				if err != nil {
 					return 0, err
 				}
@@ -2352,7 +2365,7 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 
 		case []complex128:
 			distComputer = func(id uint32) (float32, error) {
-				vecAny, err := h.getVectorWithCachedDisk(data, ctx.diskGraph, id)
+				vecAny, err := h.getVectorWithCachedDisk(data, disk, id)
 				if err != nil {
 					return 0, err
 				}
@@ -2374,7 +2387,7 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 
 		case []float64:
 			distComputer = func(id uint32) (float32, error) {
-				vecAny, err := h.getVectorWithCachedDisk(data, ctx.diskGraph, id)
+				vecAny, err := h.getVectorWithCachedDisk(data, disk, id)
 				if err != nil {
 					return 0, err
 				}
@@ -2399,7 +2412,7 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 
 		case []float16.Num:
 			distComputer = func(id uint32) (float32, error) {
-				vecAny, err := h.getVectorWithCachedDisk(data, ctx.diskGraph, id)
+				vecAny, err := h.getVectorWithCachedDisk(data, disk, id)
 				if err != nil {
 					return 0, err
 				}
@@ -2424,7 +2437,7 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 
 		case []uint32:
 			distComputer = func(id uint32) (float32, error) {
-				vecAny, err := h.getVectorWithCachedDisk(data, ctx.diskGraph, id)
+				vecAny, err := h.getVectorWithCachedDisk(data, disk, id)
 				if err != nil {
 					return 0, err
 				}
@@ -2445,7 +2458,7 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 
 		case []int32:
 			distComputer = func(id uint32) (float32, error) {
-				vecAny, err := h.getVectorWithCachedDisk(data, ctx.diskGraph, id)
+				vecAny, err := h.getVectorWithCachedDisk(data, disk, id)
 				if err != nil {
 					return 0, err
 				}
@@ -2461,7 +2474,7 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 
 		case []int16:
 			distComputer = func(id uint32) (float32, error) {
-				vecAny, err := h.getVectorWithCachedDisk(data, ctx.diskGraph, id)
+				vecAny, err := h.getVectorWithCachedDisk(data, disk, id)
 				if err != nil {
 					return 0, err
 				}
@@ -2477,7 +2490,7 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 
 		case []uint16:
 			distComputer = func(id uint32) (float32, error) {
-				vecAny, err := h.getVectorWithCachedDisk(data, ctx.diskGraph, id)
+				vecAny, err := h.getVectorWithCachedDisk(data, disk, id)
 				if err != nil {
 					return 0, err
 				}
@@ -2493,7 +2506,7 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 
 		case []int64:
 			distComputer = func(id uint32) (float32, error) {
-				vecAny, err := h.getVectorWithCachedDisk(data, ctx.diskGraph, id)
+				vecAny, err := h.getVectorWithCachedDisk(data, disk, id)
 				if err != nil {
 					return 0, err
 				}
@@ -2509,7 +2522,7 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 
 		case []uint64:
 			distComputer = func(id uint32) (float32, error) {
-				vecAny, err := h.getVectorWithCachedDisk(data, ctx.diskGraph, id)
+				vecAny, err := h.getVectorWithCachedDisk(data, disk, id)
 				if err != nil {
 					return 0, err
 				}
@@ -2575,7 +2588,7 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 
 		// Lock/RLock needed?
 		// Neighbors are atomic unless resize?
-		neighbors := h.GetNeighborsCombinedCached(layer, curr.ID, ctx.diskGraph)
+		neighbors := h.GetNeighborsCombinedCached(layer, curr.ID, disk)
 
 		prefetchLimit := h.mMax
 		if prefetchLimit > 64 {

@@ -28,9 +28,6 @@ func (h *ArrowHNSW) Insert(id uint32, level int) error {
 
 // InsertWithVector inserts a vector that has already been retrieved.
 func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
-	h.growMu.Lock()
-	defer h.growMu.Unlock()
-
 	if level < 0 {
 		level = h.generateLevel()
 	}
@@ -123,9 +120,6 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 	h.growMu.Unlock()
 	data = h.data.Load()
 
-	// Ensure nodeCount progress even on failure/panic
-	defer h.nodeCount.Add(1)
-
 	if h.config.AdaptiveMEnabled && !h.adaptiveMTriggered.Load() {
 		count := int(h.nodeCount.Load())
 		threshold := h.config.AdaptiveMThreshold
@@ -147,6 +141,9 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 			if err == nil { _ = data.SetVectorPQ(id, code) }
 		}
 	}
+	ctx := h.searchPool.Get()
+	defer h.searchPool.PutWithMetrics(ctx, h.config.DataType.String(), strconv.Itoa(dims))
+	ctx.Reset()
 
 	ep := h.entryPoint.Load()
 	maxL := int(h.maxLevel.Load())
@@ -154,7 +151,7 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 	// Phase 1: Descend layers
 	if maxL >= 0 {
 		for l := maxL; l > level; l-- {
-			neighbors, err := h.searchLayer(context.Background(), nil, ep, 1, l, nil, data, vec)
+			neighbors, err := h.searchLayer(context.Background(), nil, ep, 1, l, ctx, data, vec)
 			if err != nil {
 				return err
 			}
@@ -164,9 +161,6 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 		}
 	}
 
-	ctx := h.searchPool.Get()
-	defer h.searchPool.PutWithMetrics(ctx, h.config.DataType.String(), strconv.Itoa(dims))
-	ctx.Reset()
 
 	// Phase 2: Layer-by-Layer Insertion
 	for l := min(level, maxL+1); l >= 0; l-- {

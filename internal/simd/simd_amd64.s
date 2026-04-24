@@ -595,12 +595,12 @@ euc_f16_avx512_tail:
     KMOVQ   R8, K1
 
     // Masked load of FP16s (16-bit elements)
-    VMOVDQU16 (SI), K1, Z1
-    VMOVDQU16 (DI), K1, Z2
+    VMOVDQU16 (SI), K1, Y1
+    VMOVDQU16 (DI), K1, Y2
 
     // Convert and accumulate
-    VCVTPH2PS Z1, Z1
-    VCVTPH2PS Z2, Z2
+    VCVTPH2PS Y1, Z1
+    VCVTPH2PS Y2, Z2
     VSUBPS  Z2, Z1, Z1
     VFMADD231PS Z1, Z1, Z0
 
@@ -661,10 +661,10 @@ dot_f16_avx512_tail:
     SUBQ    $1, R8
     KMOVQ   R8, K1
 
-    VMOVDQU16 (SI), K1, Z1
-    VMOVDQU16 (DI), K1, Z2
-    VCVTPH2PS Z1, Z1
-    VCVTPH2PS Z2, Z2
+    VMOVDQU16 (SI), K1, Y1
+    VMOVDQU16 (DI), K1, Y2
+    VCVTPH2PS Y1, Z1
+    VCVTPH2PS Y2, Z2
     VFMADD231PS Z1, Z2, Z0
 
     // Re-reduce
@@ -1242,13 +1242,13 @@ euc_u16_avx2_tail:
 euc_u16_avx2_tail_loop:
     MOVW    (SI), R8            // Load uint16
     MOVW    (DI), R9
-    MOVZWQ  R8, R8
-    MOVZWQ  R9, R9
+    MOVWLZX R8, R8
+    MOVWLZX R9, R9
     SUBQ    R9, R8
     IMULQ   R8, R8
     
     XORPS   X1, X1
-    VCVTSI2SS R8, X1, X1        // int64 -> float32
+    VCVTSI2SSQ R8, X1, X1        // int64 -> float32
     VADDSS  X1, X0, X0
     
     ADDQ    $2, SI
@@ -1302,7 +1302,7 @@ dot_i16_avx2_tail_loop:
     IMULQ   R8, R9
     
     XORPS   X1, X1
-    VCVTSI2SS R9, X1, X1
+    VCVTSI2SSQ R9, X1, X1
     VADDSS  X1, X0, X0
     
     ADDQ    $2, SI
@@ -1352,12 +1352,12 @@ dot_u16_avx2_tail:
 dot_u16_avx2_tail_loop:
     MOVW    (SI), R8
     MOVW    (DI), R9
-    MOVZWQ  R8, R8
-    MOVZWQ  R9, R9
+    MOVWLZX R8, R8
+    MOVWLZX R9, R9
     IMULQ   R8, R9
     
     XORPS   X1, X1
-    VCVTSI2SS R9, X1, X1
+    VCVTSI2SSQ R9, X1, X1
     VADDSS  X1, X0, X0
     
     ADDQ    $2, SI

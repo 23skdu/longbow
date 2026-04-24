@@ -4,21 +4,40 @@ package metal
 
 import (
 	"fmt"
-
-	"github.com/23skdu/longbow/internal/gpu/memory"
-	"github.com/23skdu/longbow/internal/gpu/types"
-	"github.com/23skdu/longbow/internal/metrics"
-	"github.com/23skdu/longbow/internal/pq"
 )
 
 /*
 #cgo CFLAGS: -x objective-c -fobjc-arc
 #cgo LDFLAGS: -framework Accelerate -framework Metal -framework MetalPerformanceShaders -framework Foundation
 
-#import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
 #import <MetalPerformanceShaders/MetalPerformanceShaders.h>
 #import <Accelerate/Accelerate.h>
+
+const char* pqShaderSource =
+"#include <metal_stdlib>\n"
+"using namespace metal;\n"
+"\n"
+"kernel void compute_pq_distances(\n"
+"    device const float* lookupTable [[buffer(0)]],\n"
+"    device const uchar* codes [[buffer(1)]],\n"
+"    device float* distances [[buffer(2)]],\n"
+"    constant uint& m [[buffer(3)]],\n"
+"    constant uint& numVectors [[buffer(4)]],\n"
+"    uint gid [[thread_position_in_grid]])\n"
+"{\n"
+"    if (gid >= numVectors) return;\n"
+"    \n"
+"    float sum = 0.0f;\n"
+"    uint offset = gid * m;\n"
+"    \n"
+"    for (uint i = 0; i < m; i++) {\n"
+"        uchar code = codes[offset + i];\n"
+"        sum += lookupTable[i * 256 + code];\n"
+"    }\n"
+"    \n"
+"    distances[gid] = sum;\n"
+"}\n";
 
 // MetalIndex wraps Metal GPU resources
 typedef struct {
@@ -26,6 +45,7 @@ typedef struct {
     void* commandQueue;
     void* vectorBuffer;
     void* idBuffer;
+    void* pqPipeline;
     int vectorCount;
     int dimensions;
     int capacity;
@@ -49,11 +69,22 @@ MetalIndexHandle* metal_init(int dimensions, int initialCapacity) {
         handle->commandQueue = (__bridge_retained void*)queue;
         handle->vectorBuffer = NULL;
         handle->idBuffer = NULL;
+        handle->pqPipeline = NULL;
         handle->vectorCount = 0;
         handle->dimensions = dimensions;
         handle->capacity = initialCapacity > 0 ? initialCapacity : 10000;
 
-        // Pre-allocate buffer with unified memory for better performance
+        // Compile PQ shader
+        NSError* error = nil;
+        NSString* shaderSource = [NSString stringWithUTF8String:pqShaderSource];
+        id<MTLLibrary> library = [device newLibraryWithSource:shaderSource options:nil error:&error];
+        if (library) {
+            id<MTLFunction> pqFunc = [library newFunctionWithName:@"compute_pq_distances"];
+            id<MTLComputePipelineState> pipeline = [device newComputePipelineStateWithFunction:pqFunc error:&error];
+            if (pipeline) {
+                handle->pqPipeline = (__bridge_retained void*)pipeline;
+            }
+        }
         size_t bufferSize = handle->capacity * dimensions * sizeof(float);
         id<MTLBuffer> buffer = [device newBufferWithLength:bufferSize
                                                     options:MTLResourceStorageModeShared];
@@ -237,26 +268,104 @@ void metal_cleanup(MetalIndexHandle* handle) {
         if (handle->commandQueue) {
             CFRelease(handle->commandQueue);
         }
+        if (handle->pqPipeline) {
+            CFRelease(handle->pqPipeline);
+        }
         if (handle->device) {
             CFRelease(handle->device);
         }
         free(handle);
     }
 }
+
+// Full Metal SearchPQ implementation
+int metal_search_pq(MetalIndexHandle* handle, float* lookupTable, int m, int k, int64_t* resultIDs, float* resultDistances) {
+    @autoreleasepool {
+        if (!handle->vectorBuffer || handle->vectorCount == 0 || !handle->pqPipeline) {
+            return -1;
+        }
+
+        id<MTLDevice> device = (__bridge id<MTLDevice>)handle->device;
+        id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)handle->commandQueue;
+        id<MTLBuffer> codesBuffer = (__bridge id<MTLBuffer>)handle->vectorBuffer;
+        id<MTLComputePipelineState> pipeline = (__bridge id<MTLComputePipelineState>)handle->pqPipeline;
+
+        // Allocate distance buffer on GPU
+        size_t distSize = handle->vectorCount * sizeof(float);
+        id<MTLBuffer> distBuffer = [device newBufferWithLength:distSize options:MTLResourceStorageModeShared];
+        
+        // Create lookup table buffer
+        size_t tableSize = m * 256 * sizeof(float);
+        id<MTLBuffer> tableBuffer = [device newBufferWithBytes:lookupTable length:tableSize options:MTLResourceStorageModeShared];
+
+        id<MTLCommandBuffer> commandBuffer = [queue commandBuffer];
+        id<MTLComputeCommandEncoder> encoder = [commandBuffer computeCommandEncoder];
+
+        [encoder setComputePipelineState:pipeline];
+        [encoder setBuffer:tableBuffer offset:0 atIndex:0];
+        [encoder setBuffer:codesBuffer offset:0 atIndex:1];
+        [encoder setBuffer:distBuffer offset:0 atIndex:2];
+        [encoder setBytes:&m length:sizeof(int) atIndex:3];
+        [encoder setBytes:&handle->vectorCount length:sizeof(int) atIndex:4];
+
+        MTLSize gridSize = MTLSizeMake(handle->vectorCount, 1, 1);
+        NSUInteger threadGroupSize = pipeline.maxTotalThreadsPerThreadgroup;
+        if (threadGroupSize > handle->vectorCount) threadGroupSize = handle->vectorCount;
+        MTLSize threadgroupSize = MTLSizeMake(threadGroupSize, 1, 1);
+
+        [encoder dispatchThreads:gridSize threadsPerThreadgroup:threadgroupSize];
+        [encoder endEncoding];
+        [commandBuffer commit];
+        [commandBuffer waitUntilCompleted];
+
+        float* distances = (float*)[distBuffer contents];
+        int64_t* ids = (int64_t*)[(__bridge id<MTLBuffer>)handle->idBuffer contents];
+
+        // Selection sort for top-k (CPU side for simplicity, consistent with metal_search)
+        int n = handle->vectorCount;
+        int resultCount = k < n ? k : n;
+        for (int i = 0; i < resultCount; i++) {
+            int minIdx = i;
+            float minDist = distances[i];
+            for (int j = i + 1; j < n; j++) {
+                if (distances[j] < minDist) {
+                    minDist = distances[j];
+                    minIdx = j;
+                }
+            }
+            resultIDs[i] = ids[minIdx];
+            resultDistances[i] = minDist;
+            distances[minIdx] = INFINITY;
+        }
+
+        return 0;
+    }
+}
+
+// Get buffer pointers
+void* metal_get_vector_buffer(MetalIndexHandle* handle) {
+    id<MTLBuffer> buffer = (__bridge id<MTLBuffer>)handle->vectorBuffer;
+    return [buffer contents];
+}
+
+void* metal_get_id_buffer(MetalIndexHandle* handle) {
+    id<MTLBuffer> buffer = (__bridge id<MTLBuffer>)handle->idBuffer;
+    return [buffer contents];
+}
 */
 import "C"
 import (
-	"fmt"
 	"math"
 	"runtime"
 	"sync"
 	"time"
 	"unsafe"
 
-	"github.com/23skdu/longbow/internal/metrics"
-	"github.com/23skdu/longbow/internal/store/types"
-	"github.com/apache/arrow-go/v18/arrow/float16"
 	"github.com/23skdu/longbow/internal/gpu/memory"
+	gputypes "github.com/23skdu/longbow/internal/gpu/types"
+	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/pq"
+	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
 // MetalIndex implements GPU-accelerated vector search using Apple Metal
@@ -266,7 +375,7 @@ type MetalIndex struct {
 	mu         sync.RWMutex
 	closed     bool
 	memPool    *memory.GPUMemPool
-	deviceInfo *types.GPUInfo
+	deviceInfo *gputypes.GPUInfo
 	pqEncoder  *pq.PQEncoder // CPU fallback for PQ operations
 
 	// Batch sync support
@@ -283,11 +392,11 @@ type MetalIndex struct {
 }
 
 // NewMetalIndexImpl creates a new Metal-based GPU index with integrated memory pool
-func NewMetalIndexImpl(cfg types.GPUConfig) (types.Index, error) {
+func NewMetalIndexImpl(cfg gputypes.GPUConfig) (gputypes.Index, error) {
 	if cfg.Dimension <= 0 {
-		return nil, &types.GPUInitializationError{
+		return nil, &gputypes.GPUInitializationError{
 			DeviceID: cfg.DeviceID,
-			Backend:  types.BackendMetal,
+			Backend:  gputypes.BackendMetal,
 			Cause:    fmt.Errorf("dimension must be positive, got %d", cfg.Dimension),
 		}
 	}
@@ -295,9 +404,9 @@ func NewMetalIndexImpl(cfg types.GPUConfig) (types.Index, error) {
 	initialCapacity := 10000
 	handle := C.metal_init(C.int(cfg.Dimension), C.int(initialCapacity))
 	if handle == nil {
-		return nil, &types.GPUInitializationError{
+		return nil, &gputypes.GPUInitializationError{
 			DeviceID: cfg.DeviceID,
-			Backend:  types.BackendMetal,
+			Backend:  gputypes.BackendMetal,
 			Cause:    fmt.Errorf("failed to initialize Metal device"),
 		}
 	}
@@ -310,8 +419,8 @@ func NewMetalIndexImpl(cfg types.GPUConfig) (types.Index, error) {
 	idx := &MetalIndex{
 		handle: handle,
 		dim:    cfg.Dimension,
-		deviceInfo: &types.GPUInfo{
-			Backend:  types.BackendMetal,
+		deviceInfo: &gputypes.GPUInfo{
+			Backend:  gputypes.BackendMetal,
 			Name:     C.GoString(&nameBuf[0]),
 			DeviceID: cfg.DeviceID,
 			MemoryMB: int64(totalMem) / (1024 * 1024),
@@ -322,7 +431,7 @@ func NewMetalIndexImpl(cfg types.GPUConfig) (types.Index, error) {
 	}
 
 	// Initialize memory pool
-	pool, err := memory.NewGPUMemPool(types.BackendMetal, cfg.DeviceID)
+	pool, err := memory.NewGPUMemPool(gputypes.BackendMetal, cfg.DeviceID)
 	if err == nil {
 		idx.memPool = pool
 	}
@@ -336,10 +445,11 @@ func NewMetalIndexImpl(cfg types.GPUConfig) (types.Index, error) {
 
 // Add adds vectors to the Metal GPU index with batching support
 func (idx *MetalIndex) Add(ids []int64, vectors []float32) error {
-	idx.mu.Lock()
-	defer idx.mu.Unlock()
+	idx.mu.RLock()
+	closed := idx.closed
+	idx.mu.RUnlock()
 
-	if idx.closed {
+	if closed {
 		return fmt.Errorf("index is closed")
 	}
 
@@ -379,11 +489,12 @@ func (idx *MetalIndex) Flush() error {
 	start := time.Now()
 	batchCount := len(idx.batchIDs)
 
-	// Estimate potential memory growth if we were to grow
-	idx.mu.RLock()
+	// Take mutation lock
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+
 	currentCount := int(C.metal_get_count(idx.handle))
 	currentCapacity := int(idx.handle.capacity)
-	idx.mu.RUnlock()
 
 	requiredCapacity := currentCount + batchCount
 	if requiredCapacity > currentCapacity {
@@ -403,7 +514,7 @@ func (idx *MetalIndex) Flush() error {
 		estimatedMem += int64(newCapacity) * 8
 
 		if idx.maxMemory > 0 && estimatedMem > idx.maxMemory {
-			return &types.GPUSyncError{
+			return &gputypes.GPUSyncError{
 				BatchSize: batchCount,
 				DeviceID:  idx.deviceInfo.DeviceID,
 				Cause:     fmt.Errorf("GPU memory limit exceeded: estimated %d bytes, limit %d", estimatedMem, idx.maxMemory),
@@ -421,7 +532,7 @@ func (idx *MetalIndex) Flush() error {
 	duration := time.Since(start)
 
 	if ret != 0 {
-		return &types.GPUSyncError{
+		return &gputypes.GPUSyncError{
 			BatchSize: len(idx.batchIDs),
 			DeviceID:  idx.deviceInfo.DeviceID,
 			Cause:     fmt.Errorf("failed to add vectors to Metal buffer"),
@@ -441,6 +552,11 @@ func (idx *MetalIndex) Flush() error {
 
 // Search queries the Metal GPU index for k-nearest neighbors
 func (idx *MetalIndex) Search(vector []float32, k int) ([]int64, []float32, error) {
+	// Flush any pending batches before search
+	if err := idx.Flush(); err != nil {
+		return nil, nil, err
+	}
+
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 
@@ -476,7 +592,7 @@ func (idx *MetalIndex) Search(vector []float32, k int) ([]int64, []float32, erro
 	duration := time.Since(start)
 
 	if ret != 0 {
-		return nil, nil, &types.GPUComputeError{
+		return nil, nil, &gputypes.GPUComputeError{
 			Operation: "search",
 			DeviceID:  idx.deviceInfo.DeviceID,
 			Cause:     fmt.Errorf("Metal search failed"),
@@ -490,6 +606,11 @@ func (idx *MetalIndex) Search(vector []float32, k int) ([]int64, []float32, erro
 }
 
 func (idx *MetalIndex) SearchPQ(lookupTable []float32, m int, k int) ([]int64, []float32, error) {
+	// Flush any pending batches before search
+	if err := idx.Flush(); err != nil {
+		return nil, nil, err
+	}
+
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 
@@ -497,31 +618,37 @@ func (idx *MetalIndex) SearchPQ(lookupTable []float32, m int, k int) ([]int64, [
 		return nil, nil, fmt.Errorf("index is closed")
 	}
 
-	// CPU fallback for PQ search using lookup table
-	// lookupTable contains precomputed distances for each vector and each PQ code
-	// For now, do a simple linear scan using the lookup table
-	numVecs := idx.vectorCount
+	numVecs := int(C.metal_get_count(idx.handle))
+	if numVecs == 0 {
+		return []int64{}, []float32{}, nil
+	}
+
 	if k > numVecs {
 		k = numVecs
 	}
 
-	type result struct {
-		id       int64
-		distance float32
+	resultIDs := make([]int64, k)
+	resultDistances := make([]float32, k)
+
+	start := time.Now()
+	ret := C.metal_search_pq(
+		idx.handle,
+		(*C.float)(unsafe.Pointer(&lookupTable[0])),
+		C.int(m),
+		C.int(k),
+		(*C.int64_t)(unsafe.Pointer(&resultIDs[0])),
+		(*C.float)(unsafe.Pointer(&resultDistances[0])),
+	)
+	duration := time.Since(start)
+
+	if ret != 0 {
+		return nil, nil, fmt.Errorf("Metal PQ search failed (check if pipeline initialized)")
 	}
 
-	results := make([]result, 0, numVecs)
-	for i := 0; i < numVecs; i++ {
-		id := idx.ids[i]
-		// Use the lookup table to get distance for this vector
-		// The lookup table format depends on the PQ configuration
-		dist := lookupTable[i*m] // Simplified - actual implementation depends on table format
-		results = append(results, result{id: id, distance: dist})
-	}
+	// Record metrics
+	metrics.RecordGPUSearch(duration, "metal_pq", k)
 
-	// Sort by distance
-	// (Implementation simplified - would need proper sorting)
-	return nil, nil, fmt.Errorf("SearchPQ CPU fallback not fully implemented")
+	return resultIDs, resultDistances, nil
 }
 
 func (idx *MetalIndex) TrainPQ(vectors []float32, m int, k int) error {
@@ -533,7 +660,7 @@ func (idx *MetalIndex) TrainPQ(vectors []float32, m int, k int) error {
 	}
 
 	// CPU fallback: Train PQ codebooks using K-Means
-	dims := idx.dimension
+	dims := idx.dim
 	if dims%m != 0 {
 		return fmt.Errorf("dimension %d must be divisible by M %d", dims, m)
 	}
@@ -573,7 +700,7 @@ func (idx *MetalIndex) EncodePQ(vectors []float32) ([]byte, error) {
 	}
 
 	// Encode each vector
-	dims := idx.dimension
+	dims := idx.dim
 	numVecs := len(vectors) / dims
 	codes := make([]byte, numVecs*idx.pqEncoder.M)
 
@@ -612,6 +739,9 @@ func (idx *MetalIndex) SearchBatch(vectors [][]float32, k int) ([][]int64, [][]f
 
 // Close releases Metal GPU resources
 func (idx *MetalIndex) Close() error {
+	// Flush pending batches
+	idx.Flush()
+
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
 
@@ -624,9 +754,6 @@ func (idx *MetalIndex) Close() error {
 		idx.syncTicker.Stop()
 		close(idx.stopSync)
 	}
-
-	// Flush pending batches
-	idx.Flush()
 
 	// Close memory pool
 	if idx.memPool != nil {
@@ -643,8 +770,8 @@ func (idx *MetalIndex) Close() error {
 }
 
 // Backend returns GPU backend type
-func (idx *MetalIndex) Backend() types.GPUBackend {
-	return types.BackendMetal
+func (idx *MetalIndex) Backend() gputypes.GPUBackend {
+	return gputypes.BackendMetal
 }
 
 func (idx *MetalIndex) DeviceID() int {
@@ -652,7 +779,7 @@ func (idx *MetalIndex) DeviceID() int {
 }
 
 // GetDeviceInfo returns information about the GPU device
-func (idx *MetalIndex) GetDeviceInfo() (*types.GPUInfo, error) {
+func (idx *MetalIndex) GetDeviceInfo() (*gputypes.GPUInfo, error) {
 	return idx.deviceInfo, nil
 }
 
@@ -684,7 +811,7 @@ func (idx *MetalIndex) Initialize(deviceID int) error {
 }
 
 // startSyncTicker starts background sync for batch operations
-func (idx *MetalIndex) startSyncTicker(cfg types.GPUConfig) {
+func (idx *MetalIndex) startSyncTicker(cfg gputypes.GPUConfig) {
 	if cfg.SyncInterval <= 0 {
 		return
 	}
@@ -694,11 +821,7 @@ func (idx *MetalIndex) startSyncTicker(cfg types.GPUConfig) {
 		for {
 			select {
 			case <-idx.syncTicker.C:
-				idx.batchMu.Lock()
-				if len(idx.batchIDs) > 0 && time.Since(idx.lastSyncTime) >= cfg.SyncInterval {
-					idx.Flush()
-				}
-				idx.batchMu.Unlock()
+				idx.Flush()
 			case <-idx.stopSync:
 				return
 			}
@@ -717,7 +840,7 @@ func (idx *MetalIndex) SearchFloat16(vector []uint16, k int) ([]int64, []float32
 	// Convert uint16 (fp16) to float32 for search
 	f32Vec := make([]float32, len(vector))
 	for i, v := range vector {
-		f32Vec[i] = float16.Float16bitsToFloat32(v)
+		f32Vec[i] = float16.FromBits(v).Float32()
 	}
 
 	return idx.searchFloat32(f32Vec, k)
@@ -735,7 +858,7 @@ func (idx *MetalIndex) SearchComplex64(vector []uint16, k int) ([]int64, []float
 	// complex64 has 2 elements for every float32 dims
 	f32Vec := make([]float32, len(vector)*2)
 	for i, v := range vector {
-		f32Vec[i*2] = float16.Float16bitsToFloat32(v)
+		f32Vec[i*2] = float16.FromBits(v).Float32()
 	}
 
 	return idx.searchFloat32(f32Vec, k)
@@ -760,11 +883,6 @@ func (idx *MetalIndex) searchFloat32(vector []float32, k int) ([]int64, []float3
 		return nil, nil, fmt.Errorf("query vector dimension %d does not match index dimension %d", len(vector), idx.dim)
 	}
 
-	// Flush any pending batches before search
-	if err := idx.Flush(); err != nil {
-		return nil, nil, err
-	}
-
 	resultIDs := make([]int64, k)
 	resultDistances := make([]float32, k)
 
@@ -784,7 +902,7 @@ func (idx *MetalIndex) searchFloat32(vector []float32, k int) ([]int64, []float3
 	duration := time.Since(start)
 
 	if ret != 0 {
-		return nil, nil, &types.GPUComputeError{
+		return nil, nil, &gputypes.GPUComputeError{
 			Operation: "search",
 			DeviceID:  idx.deviceInfo.DeviceID,
 			Cause:     fmt.Errorf("Metal search failed"),

@@ -42,11 +42,32 @@ func MbindMemory(ptr unsafe.Pointer, size int, nodeID int) error {
 	}
 
 	// Create a node bitmask
-	// unix.Mbind takes a slice of uint64 for the node mask
-	// Each bit represents a node ID
-	mask := []uint64{uint64(1 << uint(nodeID))} // #nosec G115
+	mask := uint64(1 << uint(nodeID)) // #nosec G115
 
-	// 0x7fffffffffffffff is the max size for mbind on 64-bit systems
-	// But we use the actual size passed in.
-	return unix.Mbind(ptr, uintptr(size), mpolBind, mask, uint32(nodeID+1), 0)
+	// On amd64, SYS_MBIND is 237. On arm64, it's 235.
+	// Since this is linux-only, we can use a small switch or constant.
+	var sysMbind uintptr
+	switch runtime.GOARCH {
+	case "amd64":
+		sysMbind = 237
+	case "arm64":
+		sysMbind = 235
+	default:
+		return nil // Unsupported architecture for mbind
+	}
+
+	// maxnode is the number of bits in the mask
+	maxnode := uintptr(nodeID + 1)
+
+	_, _, errno := unix.RawSyscall6(sysMbind,
+		uintptr(ptr),
+		uintptr(size),
+		uintptr(mpolBind),
+		uintptr(unsafe.Pointer(&mask)),
+		maxnode+1, // bits are 0-indexed, so we need at least nodeID+1 bits
+		0)
+	if errno != 0 && errno != unix.ENOSYS {
+		return errno
+	}
+	return nil
 }

@@ -42,7 +42,7 @@ Longbow follows the **Twelve-Factor App** methodology and is configured entirely
 | `LONGBOW_HNSW_M` | `16` | Connections per node. Use `32-48` for high-dim (768+). |
 | `LONGBOW_HNSW_EF_CONSTRUCTION` | `200` | Increase to `400-800` for 99.9% recall. |
 | `LONGBOW_HNSW_SQ8_ENABLED` | `false` | 4x memory reduction via 8-bit quantization. |
-| `LONGBOW_HNSW_TURBOQUANT_ENABLED`| `true` | **Default 0.2.0**: SIMD-accelerated bit-packing. |
+| `LONGBOW_HNSW_TURBOQUANT_ENABLED`| `true` | **Default 0.1.9**: SIMD-accelerated bit-packing. |
 | `LONGBOW_USE_DISK` | `false` | Enable SSD offloading (Disk-ANN style). |
 
 ### Storage & Persistence

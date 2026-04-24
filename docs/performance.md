@@ -1,10 +1,10 @@
-# Longbow 0.2.0 Performance Benchmark Matrix
+# Longbow 0.1.9 Performance Benchmark Matrix
 
 **Generated on**: 2026-04-24
 **Status**: ⚠️ PARTIAL RESULTS (Benchmarks in progress)
 
 ## Executive Summary
-This report tracks the performance hardening of Longbow 0.2.0 across ARM64 (Apple Silicon) and AMD64 (Linux/NVIDIA). 
+This report tracks the performance hardening of Longbow 0.1.9 across ARM64 (Apple Silicon) and AMD64 (Linux/NVIDIA). 
 
 ### Key Findings (So Far)
 - **TurboQuant**: Shows ~2x-3x higher ingestion throughput vs Float32 in many cases.

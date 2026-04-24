@@ -2,8 +2,8 @@
 
 #include "textflag.h"
 
-// func dotInt4AVX512(a, b unsafe.Pointer, n int) float32
-TEXT ·dotInt4AVX512(SB), NOSPLIT, $0-28
+// func dotInt4AVX512Kernel(a, b unsafe.Pointer, n int) float32
+TEXT ·dotInt4AVX512Kernel(SB), NOSPLIT, $0-28
     MOVQ    a+0(FP), SI
     MOVQ    b+8(FP), DI
     MOVQ    n+16(FP), BX
@@ -46,6 +46,59 @@ tail:
     // Horizontal reduction
     VEXTRACTF64X4 $1, Z0, Y1
     VADDPS  Y1, Y0, Y0
+    VEXTRACTF128 $1, Y0, X1
+    VADDPS  X1, X0, X0
+    VMOVHLPS X0, X1, X1
+    VADDPS  X1, X0, X0
+    VMOVSHDUP X0, X1
+    VADDSS  X1, X0, X0
+    
+    VMOVSS  X0, ret+24(FP)
+    VZEROUPPER
+    RET
+
+// func dotInt4AVX2Kernel(a, b unsafe.Pointer, n int) float32
+TEXT ·dotInt4AVX2Kernel(SB), NOSPLIT, $0-28
+    MOVQ    a+0(FP), SI
+    MOVQ    b+8(FP), DI
+    MOVQ    n+16(FP), BX
+
+    VXORPS  Y0, Y0, Y0          // sum accumulator
+    CMPQ    BX, $16
+    JL      tail_avx2
+
+loop_avx2:
+    // Load 16 bytes (32 int4 values)
+    VMOVDQU (SI), Y1
+    VMOVDQU (DI), Y2
+
+    // Unpack low nibbles
+    VPAND    mask_low<>(SB), Y1, Y3
+    VPAND    mask_low<>(SB), Y2, Y4
+    
+    // Unpack high nibbles
+    VPSRLD   $4, Y1, Y5
+    VPAND    mask_low<>(SB), Y5, Y5
+    VPSRLD   $4, Y2, Y6
+    VPAND    mask_low<>(SB), Y6, Y6
+
+    // Convert to float and multiply-accumulate
+    VCVTDQ2PS Y3, Y3
+    VCVTDQ2PS Y4, Y4
+    VFMADD231PS Y3, Y4, Y0
+
+    VCVTDQ2PS Y5, Y5
+    VCVTDQ2PS Y6, Y6
+    VFMADD231PS Y5, Y6, Y0
+
+    ADDQ    $32, SI
+    ADDQ    $32, DI
+    SUBQ    $16, BX
+    CMPQ    BX, $16
+    JGE     loop_avx2
+
+tail_avx2:
+    // Horizontal reduction
     VEXTRACTF128 $1, Y0, X1
     VADDPS  X1, X0, X0
     VMOVHLPS X0, X1, X1

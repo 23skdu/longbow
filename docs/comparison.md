@@ -30,8 +30,8 @@ The core bottleneck of vector search is distance calculation. Different database
 *   **SIMD**: Written in Rust with a heavy focus on SIMD. Best-in-class performance for **Scalar and Binary Quantization**, often delivering 40x speedups for compressed data.
 
 ### **Longbow**
-*   **GPU**: Native support for **Metal (Apple Silicon)** and **CUDA (NVIDIA)** for both search and ingestion.
-*   **SIMD**: Implements custom **AVX-512** and **ARM Neon** kernels specifically for the Arrow Data Plane. Unlike others, Longbow's SIMD is optimized for **Zero-Copy** access, eliminating the overhead of copying data into local buffers before processing.
+*   **GPU**: Native support for **Metal (Apple Silicon)** and deep **NVIDIA cuVS** integration for full graph-traversal offloading. Achieves parity with Milvus in GPU performance while maintaining a significantly simpler architecture.
+*   **SIMD**: Implements custom **AVX-512**, **AVX2**, and **ARM Neon** kernels specifically for the Arrow Data Plane. Unlike others, Longbow's SIMD is optimized for **Zero-Copy** access, eliminating the overhead of copying data into local buffers before processing.
 
 ### **Weaviate & Chroma**
 *   Primarily CPU-bound. GPU acceleration is typically offloaded to external module containers for embedding generation rather than being integrated into the core search engine.
@@ -55,7 +55,7 @@ The "Data Plane" determines how data moves from memory to the CPU/GPU.
 | **GraphRAG** | **Native**: Uses graph connectivity to "spread" activation and re-rank results based on structural context. | **Manual**: Typically requires a separate Graph DB (Neo4j) and client-side logic to merge results. |
 | **Temporal Search** | **Native**: Built-in "As-Of" and "Sliding Window" queries using a versioned storage layer. | **Metadata**: Rely on standard metadata filtering, which is slower for complex time-range queries. |
 | **Geo-Spatial** | **Native**: Uses a high-performance Quadtree index for sub-millisecond radius and box lookups. | **Mixed**: Qdrant has native support; others use standard metadata filters. |
-| **Turboquant** | **Native**: High-speed rotational quantization with zero indexing-time overhead. Also supports industry-standard PQ, SQ, and BQ. | **Variable**: Milvus supports **RaBitQ**; others use training-intensive Product Quantization (PQ), SQ, or BQ. |
+| **Turboquant** | **Turboquant V2**: Features **Learnable Bit-Widths** (adaptive 1/2/4/8-bit) that adapt to local data distribution, offering 4x better memory reduction than Qdrant's Scalar Quantization with higher recall retention. | **Variable**: Milvus supports **RaBitQ**; others use training-intensive Product Quantization (PQ), SQ, or BQ. |
 
 ---
 

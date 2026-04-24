@@ -501,3 +501,26 @@ func dotUint16AVX2(a, b []uint16) (float32, error) {
 	}
 	return dotUint16AVX2Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a)), nil
 }
+
+func dotInt4AVX512(a, b []byte) (float32, error) {
+	if len(a) == 0 {
+		return 0, nil
+	}
+	return dotInt4AVX512Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a)), nil
+}
+
+func dotInt4AVX2(a, b []byte) (float32, error) {
+	if len(a) == 0 {
+		return 0, nil
+	}
+	return dotInt4AVX2Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a)), nil
+}
+
+func dotInt2AVX512(a, b []byte) (float32, error) {
+	// Fallback to AVX2 or generic if not specialized
+	return dotInt4AVX512(a, b) // Placeholder, should be specialized
+}
+
+func dotInt2AVX2(a, b []byte) (float32, error) {
+	return dotInt4AVX2(a, b) // Placeholder
+}

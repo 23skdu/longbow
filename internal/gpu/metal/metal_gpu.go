@@ -608,3 +608,15 @@ func (idx *MetalIndex) startSyncTicker(cfg types.GPUConfig) {
 		}
 	}()
 }
+
+func (idx *MetalIndex) SearchFloat16(vector []uint16, k int) ([]int64, []float32, error) {
+	return nil, nil, fmt.Errorf("SearchFloat16 not implemented for MetalIndex")
+}
+
+func (idx *MetalIndex) SearchComplex64(vector []uint16, k int) ([]int64, []float32, error) {
+	return nil, nil, fmt.Errorf("SearchComplex64 not implemented for MetalIndex")
+}
+
+func (idx *MetalIndex) SearchComplex128(vector []float32, k int) ([]int64, []float32, error) {
+	return nil, nil, fmt.Errorf("SearchComplex128 not implemented for MetalIndex")
+}

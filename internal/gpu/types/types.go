@@ -103,6 +103,11 @@ type Index interface {
 	GetDeviceInfo() (*GPUInfo, error)
 	GetMemoryInfo() (total, free, used int64, err error)
 	GetUtilization() (float32, error)
+
+	// Typed search methods for different vector types
+	SearchFloat16(vector []uint16, k int) (ids []int64, distances []float32, err error)
+	SearchComplex64(vector []uint16, k int) (ids []int64, distances []float32, err error)
+	SearchComplex128(vector []float32, k int) (ids []int64, distances []float32, err error)
 }
 
 func DetectGPUBackend() GPUBackend {

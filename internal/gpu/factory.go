@@ -172,3 +172,15 @@ func (i *CPUIndex) TrainPQ(vectors []float32, m int, k int) error {
 func (i *CPUIndex) EncodePQ(vectors []float32) ([]byte, error) {
 	return nil, fmt.Errorf("EncodePQ not implemented for CPUIndex")
 }
+
+func (i *CPUIndex) SearchFloat16(vector []uint16, k int) ([]int64, []float32, error) {
+	return nil, nil, fmt.Errorf("SearchFloat16 not implemented for CPUIndex")
+}
+
+func (i *CPUIndex) SearchComplex64(vector []uint16, k int) ([]int64, []float32, error) {
+	return nil, nil, fmt.Errorf("SearchComplex64 not implemented for CPUIndex")
+}
+
+func (i *CPUIndex) SearchComplex128(vector []float32, k int) ([]int64, []float32, error) {
+	return nil, nil, fmt.Errorf("SearchComplex128 not implemented for CPUIndex")
+}

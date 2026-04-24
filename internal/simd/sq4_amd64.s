@@ -17,15 +17,18 @@ loop:
     VMOVDQU32 (SI), Z1
     VMOVDQU32 (DI), Z2
 
+    // Load mask into Z10
+    VMOVDQU32 mask_low<>(SB), Z10
+
     // Unpack low nibbles
-    VPANDD   mask_low<>(SB), Z1, Z3
-    VPANDD   mask_low<>(SB), Z2, Z4
+    VPANDD   Z10, Z1, Z3
+    VPANDD   Z10, Z2, Z4
     
     // Unpack high nibbles
     VPSRLD   $4, Z1, Z5
-    VPANDD   mask_low<>(SB), Z5, Z5
+    VPANDD   Z10, Z5, Z5
     VPSRLD   $4, Z2, Z6
-    VPANDD   mask_low<>(SB), Z6, Z6
+    VPANDD   Z10, Z6, Z6
 
     // Convert to float and multiply-accumulate
     VCVTDQ2PS Z3, Z3
@@ -72,15 +75,18 @@ loop_avx2:
     VMOVDQU (SI), Y1
     VMOVDQU (DI), Y2
 
+    // Load mask into Y10
+    VMOVDQU mask_low<>(SB), Y10
+
     // Unpack low nibbles
-    VPAND    mask_low<>(SB), Y1, Y3
-    VPAND    mask_low<>(SB), Y2, Y4
+    VPAND    Y10, Y1, Y3
+    VPAND    Y10, Y2, Y4
     
     // Unpack high nibbles
     VPSRLD   $4, Y1, Y5
-    VPAND    mask_low<>(SB), Y5, Y5
+    VPAND    Y10, Y5, Y5
     VPSRLD   $4, Y2, Y6
-    VPAND    mask_low<>(SB), Y6, Y6
+    VPAND    Y10, Y6, Y6
 
     // Convert to float and multiply-accumulate
     VCVTDQ2PS Y3, Y3

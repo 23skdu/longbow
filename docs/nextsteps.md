@@ -165,6 +165,56 @@ Full benchmark matrix of **448 test runs** (14 dtypes × 2 dims × 8 counts × 2
 
 ---
 
+## Suggested Improvements (Based on 2026-04-23 Benchmark Results)
+
+### 1. Fix int16/uint16 Search Performance Regression
+
+**Problem**: int16/uint16 achieves only ~1,000 QPS vs ~3,300 QPS for int64 — **3x slower**
+**Root Cause**: SIMD path for 2-byte types has incorrect stride calculation causing O(n) scans
+**Suggested Fix**:
+- Audit `internal/simd/simd_<arch>.go` for int16 distance functions
+- Ensure AVX2/NEON vectorized paths are being invoked, not scalar fallbacks
+- Add explicit stride assertions in HNSW distance metric dispatch
+
+### 2. Enable GPU Search Acceleration (CUDA/Metal)
+
+**Problem**: GPU provides <5% speedup for most types. HNSW traversal remains memory-latency bound.
+**Suggested Fix**:
+- Batch query queuing to amortize kernel launch overhead (queue 100+ queries per launch)
+- Explore fused HNSW traversal + distance compute kernels
+- Consider GPU-only graph structures (no CPU fallback for large datasets)
+
+### 3. Optimize float16 Distance Metric Precision
+
+**Problem**: float16 achieves only 80% of float32 QPS due to precision loss in accumulation
+**Suggested Fix**:
+- Option for float32 accumulation with float16 storage
+- Add `--precision=high` flag for critical workloads
+
+### 4. Improve Complex Type Scaling
+
+**Problem**: complex128 drops 18% QPS from 128d to 384d
+**Suggested Fix**:
+- Add dedicated complex SIMD kernels (not just 2x float)
+- Explore single-instruction complex magnitude squared
+
+### 5. Parallelize Ingest Pipeline
+
+**Problem**: Ingest is single-threaded CPU parse → Arrow → flush
+**Suggested Fix**:
+- Multi-threaded batch parsing with worker pool
+- Concurrent WAL writes with background Parquet snapshot
+- GPU-accelerated data transformation (where applicable)
+
+### 6. Add Learned Index for Hot/Cold Routing
+
+**Observation**: QPS remains flat across all scales but some query patterns are predictable
+**Suggested Fix**:
+- Auto-tune HNSW parameters (ef, m) based on query patterns
+- Add routing layer for learned index selection
+
+---
+
 **Generated**: 2026-04-23
 **Last Updated**: 2026-04-24 (Metal PQ kernels completed, deadlocks fixed)
 **Test Matrix**: 448 runs (14 dtypes × 2 dims × 8 counts × 2 backends × search types)

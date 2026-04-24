@@ -132,5 +132,10 @@ func isAllZerosAVX2(src []byte) bool { return isAllZerosGeneric(src) }
 func dotFloat64AVX2(a, b []float64) (float32, error)   { return dotFloat64Unrolled4x(a, b) }
 func dotFloat64AVX512(a, b []float64) (float32, error) { return dotFloat64Unrolled4x(a, b) }
 
+func dotInt4AVX512(a, b []byte) (float32, error) { return dotInt4Generic(a, b) }
+func dotInt4AVX2(a, b []byte) (float32, error)   { return dotInt4Generic(a, b) }
+func dotInt2AVX512(a, b []byte) (float32, error) { return dotInt2Generic(a, b) }
+func dotInt2AVX2(a, b []byte) (float32, error)   { return dotInt2Generic(a, b) }
+
 func euclidean16AVX512Wrapper(a, b []float32) (float32, error) { return euclideanGeneric(a, b) }
 func cosine16AVX512Wrapper(a, b []float32) (float32, error)    { return cosineGeneric(a, b) }

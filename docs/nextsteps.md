@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-Full benchmark matrix of **448 test runs** (14 dtypes × 2 dims × 8 counts × 2 backends) confirms Longbow 0.2.0 is production-stable on Apple Silicon M3 Pro. Zero crashes or errors across all configurations.
+Full benchmark matrix of **448 test runs** (14 dtypes × 2 dims × 8 counts × 2 backends) confirms Longbow is production-stable on Apple Silicon M3 Pro. Zero crashes or errors across all configurations.
 
 ### Performance Highlights
 
